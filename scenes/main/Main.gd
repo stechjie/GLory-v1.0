@@ -7,8 +7,8 @@ var _reconnect_overlay: CanvasLayer
 var _pending_team_menu_action := ""
 var _pending_team_room_id := 0
 var _pending_public_token := ""
-
-const BOSS_FORMATION_DAMAGE_BONUS := 4
+# 离线自测·单位测试模式(officetest):进入前的 team_mode 快照,退出时还原。
+var _selftest_prev_team_mode := false
 
 func _ready() -> void:
 	DataRegistry.load_all()
@@ -183,8 +183,6 @@ func _show_menu() -> void:
 	# 重连改为手动：主菜单的"游戏重连"按钮（有本地凭证才显示）才连回上一场，
 	# 不再一进菜单就偷偷自动连（那会把玩家拽进夹生半状态、按不动开始）。
 	_menu = preload("res://scenes/menu/MainMenu.tscn").instantiate()
-	_menu.new_game_requested.connect(_on_new_game)
-	_menu.continue_requested.connect(_on_continue)
 	_menu.team_host_requested.connect(_on_team_host_requested)
 	_menu.team_join_requested.connect(_on_team_join_requested)
 	_menu.team_room_create_requested.connect(_on_team_room_create_requested)
@@ -226,7 +224,22 @@ func _show_team3v3_lobby() -> void:
 	var lobby := preload("res://scenes/menu/Team3v3Lobby.tscn").instantiate()
 	lobby.start_requested.connect(_on_team3v3_start)
 	lobby.back_requested.connect(_on_lobby_back)
+	lobby.selftest_requested.connect(_show_selftest)
 	add_child(lobby)
+
+# 离线自测·单位测试模式(officetest):独立场景,不走备战/回合/存档,
+# 返回时还原 team_mode,不在 GameState 留任何痕迹。
+func _show_selftest() -> void:
+	_clear()
+	_selftest_prev_team_mode = GameState.team_mode
+	GameState.team_mode = true
+	var screen := preload("res://officetest/OfficeTestScreen.tscn").instantiate()
+	screen.back_requested.connect(_on_selftest_back)
+	add_child(screen)
+
+func _on_selftest_back() -> void:
+	GameState.team_mode = _selftest_prev_team_mode
+	_show_team3v3_lobby()
 
 func _on_lobby_back() -> void:
 	NetworkService.disconnect_session()
@@ -324,7 +337,7 @@ func _on_pending_join_session_changed() -> void:
 		NetworkService.SessionState.FAILED, NetworkService.SessionState.OFFLINE:
 			NetworkService.session_changed.disconnect(_on_pending_join_session_changed)
 			if is_instance_valid(_menu) and _menu.has_method("show_connection_error"):
-				_menu.show_connection_error(NetworkService.last_error if NetworkService.last_error != "" else tr("net_err_connect_generic"))
+				_menu.show_connection_error(NetworkService.last_error if NetworkService.last_error != "" else "连接失败")
 
 func _on_team_room_list_requested() -> void:
 	_start_team_menu_action("list")
@@ -369,7 +382,7 @@ func _on_pending_team_menu_session_changed() -> void:
 			if NetworkService.session_changed.is_connected(_on_pending_team_menu_session_changed):
 				NetworkService.session_changed.disconnect(_on_pending_team_menu_session_changed)
 			if is_instance_valid(_menu) and _menu.has_method("show_connection_error"):
-				_menu.show_connection_error(NetworkService.last_error if NetworkService.last_error != "" else tr("net_err_connect_generic"))
+				_menu.show_connection_error(NetworkService.last_error if NetworkService.last_error != "" else "连接失败")
 
 func _run_pending_team_menu_action() -> void:
 	match _pending_team_menu_action:
@@ -411,11 +424,6 @@ func _on_team_room_action_failed(reason: String) -> void:
 func _on_public_token_changed(token_id: String) -> void:
 	if is_instance_valid(_menu) and _menu.has_method("show_public_token"):
 		_menu.show_public_token(token_id)
-
-func _on_new_game() -> void:
-	GameState.team_mode = false
-	SaveManager.new_run()
-	_show_prep()
 
 func _on_team3v3_start() -> void:
 	SaveManager.new_run()
@@ -564,12 +572,6 @@ func _team_local_kill_gold(result: Dictionary) -> int:
 	var by_slot: Dictionary = result.get("kill_gold_by_slot", {})
 	return int(by_slot.get(slot, by_slot.get(str(slot), 0)))
 
-func _on_continue() -> void:
-	GameState.team_mode = false
-	if not SaveManager.load_run():
-		SaveManager.new_run()
-	_show_prep()
-
 func _on_battle_requested() -> void:
 	var loaded_battle_scene: PackedScene = null
 	if _prep != null and _prep.has_method("take_loaded_battle_scene"):
@@ -578,61 +580,9 @@ func _on_battle_requested() -> void:
 		if TutorialMode.begin_battle():
 			_show_battle(loaded_battle_scene)
 		return
-	if GameState.team_mode:
-		# 3v3 gates on its own per-round ready sync (team_round_start); board
-		# collection still happens in the battle screen.
-		_show_battle(loaded_battle_scene)
-		return
-	NetworkService.send_board_snapshot()
-	if NetworkService.is_online() and not NetworkService.both_ready():
-		if _prep != null and _prep.has_method("show_message"):
-			_prep.show_message(tr("net_wait_both_ready"))
-		return
-	if NetworkService.is_online() and RoundService.is_pvp_schedule_round(GameState.round_index) and not NetworkService.has_current_opponent_snapshot():
-		if _prep != null and _prep.has_method("show_message"):
-			_prep.show_message(tr("net_wait_board_sync"))
-		return
+	# 3v3 gates on its own per-round ready sync (team_round_start); board
+	# collection still happens in the battle screen.
 	_show_battle(loaded_battle_scene)
-
-func _show_tutorial_result(message: String) -> void:
-	_clear()
-	var bg := ColorRect.new()
-	bg.color = Color(0.05, 0.06, 0.075)
-	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(center)
-	var box := VBoxContainer.new()
-	box.custom_minimum_size = Vector2(480, 0)
-	box.add_theme_constant_override("separation", 16)
-	center.add_child(box)
-	var title := Label.new()
-	title.text = "Tutorial Victory" if LocaleManager.get_locale() == "en" else "教学战斗胜利"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 28)
-	title.add_theme_color_override("font_color", Color(0.98, 0.92, 0.74))
-	box.add_child(title)
-	var body := Label.new()
-	body.text = message
-	body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	body.add_theme_font_size_override("font_size", 20)
-	body.add_theme_color_override("font_color", Color(0.96, 0.96, 0.92))
-	box.add_child(body)
-	var btn := Button.new()
-	btn.text = "Continue" if LocaleManager.get_locale() == "en" else "继续"
-	btn.custom_minimum_size = Vector2(180, 44)
-	btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	btn.pressed.connect(_on_tutorial_result_continue)
-	box.add_child(btn)
-
-func _on_tutorial_result_continue() -> void:
-	if TutorialMode.step == TutorialMode.Step.DONE:
-		TutorialMode.finish()
-		_on_new_game()
-		return
-	_show_prep()
 
 func _on_return_menu_requested() -> void:
 	SaveManager.save_run()
@@ -651,90 +601,6 @@ func _on_battle_finished(result: Dictionary = {}) -> void:
 	if GameState.team_mode:
 		_on_team_battle_finished(result)
 		return
-	var completed_round := GameState.round_index
-	var kind := str(result.get("kind", RoundService.kind_for_round(GameState.round_index, NetworkService.has_online_opponent())))
-	_apply_battle_rewards(kind, result)
-	_apply_post_battle_unit_outcomes(result)
-	RaceRelationService.advance_round(GameState.board_slots, GameState.bench_slots)
-	if kind == "pve":
-		GameState.pve_completed += 1
-	elif kind == "boss":
-		GameState.boss_completed += 1
-	GameState.battle_history.append(result)
-	if kind == "final":
-		GameState.final_battle_pending = false
-		GameState.final_battle_complete = true
-		GameState.round_index = GameState.FINAL_ROUND
-	else:
-		GameState.round_index += 1
-		if GameState.round_index > GameState.FINAL_ROUND:
-			GameState.round_index = GameState.FINAL_ROUND
-	GameState.reset_shop_refreshes()
-	GameState.clear_shop()
-	GameState.clear_mercenaries()
-	if NetworkService.is_online():
-		if NetworkService.is_host:
-			NetworkService.send_match_state(_build_match_state(completed_round))
-		else:
-			_apply_latest_match_state(completed_round)
-		NetworkService.set_ready(false)
-	if _is_run_over():
-		SaveManager.save_run()
-		_show_game_over()
-		return
-	_start_treasure_for_completed_round(completed_round)
-	_show_prep()
-
-func _apply_battle_rewards(kind: String, result: Dictionary) -> void:
-	var player_wins := bool(result.get("player_wins", false))
-	if player_wins:
-		GameState.enemy_formation_hp = maxi(0, GameState.enemy_formation_hp - _formation_damage_for_result(kind, result, true))
-		match kind:
-			"pve":
-				GameState.gold += EconomyService.pve_kill_reward(GameState.pve_completed)
-				GameState.gold += int(result.get("player_kill_gold", 0))
-			"boss":
-				GameState.gold += EconomyService.boss_win_reward(GameState.round_index)
-	else:
-		GameState.player_formation_hp = maxi(0, GameState.player_formation_hp - _formation_damage_for_result(kind, result, false))
-		if kind == "boss":
-			GameState.gold += EconomyService.boss_loss_reward(GameState.round_index, int(result.get("enemy_hp_current", 0)), maxi(1, int(result.get("enemy_hp_max", 1))))
-	if kind == "pvp" or kind == "final":
-		GameState.gold += int(result.get("player_kill_gold", 0))
-		GameState.gold += EconomyService.pvp_result_bonus(player_wins)
-	if player_wins:
-		GameState.loss_streak = 0
-	else:
-		GameState.loss_streak += 1
-		GameState.gold += EconomyService.consolation_reward(GameState.loss_streak)
-	var merchant_gold := 0
-	for cell in GameState.board_slots:
-		if cell != null and str(cell.get("def", {}).get("skill_id", "")) == "post_battle_gold_by_star":
-			merchant_gold += int(cell.get("star", 1))
-	GameState.gold += merchant_gold
-	GameState.gold += int(result.get("bonus_gold", 0))
-	if GameState.player_formation_hp > 0 and GameState.owned_treasures.has("def_formation_heal"):
-		var formation_heal := 2 if TreasureService.has_linkage("link_hu_pai_master") else 1
-		GameState.player_formation_hp = mini(GameState.START_FORMATION_HP, GameState.player_formation_hp + formation_heal)
-	if GameState.owned_treasures.has("money_lucky_envelope"):
-		GameState.gold += 1 + (randi() % 3)
-	if TreasureService.has_linkage("link_money_magic"):
-		GameState.gold += 5 + (randi() % 3)
-		if randf() < 0.10:
-			GameState.gold += 10
-	var interest := EconomyService.base_interest(GameState.gold)
-	if GameState.owned_treasures.has("money_compound"):
-		interest += int(floor(float(GameState.gold) * 0.05))
-	GameState.gold += interest
-
-func _formation_damage_for_result(kind: String, result: Dictionary, player_wins: bool) -> int:
-	var damage := int(result.get("player_alive", 0)) if player_wins else int(result.get("enemy_alive", 0))
-	if kind == "boss" and not player_wins:
-		damage += BOSS_FORMATION_DAMAGE_BONUS
-	return maxi(0, damage)
-
-func _is_run_over() -> bool:
-	return GameState.final_battle_complete or GameState.player_formation_hp <= 0 or GameState.enemy_formation_hp <= 0
 
 func _game_over_title() -> String:
 	if GameState.team_mode:
@@ -771,15 +637,6 @@ func _last_battle_result() -> Dictionary:
 		return last
 	return {}
 
-func _build_match_state(completed_round: int) -> Dictionary:
-	return {
-		"completed_round": completed_round,
-		"round_index": GameState.round_index,
-		"player_formation_hp": GameState.player_formation_hp,
-		"enemy_formation_hp": GameState.enemy_formation_hp,
-		"final_battle_complete": GameState.final_battle_complete,
-	}
-
 func _on_network_match_state_received(state_payload: Dictionary) -> void:
 	if _battle != null and is_instance_valid(_battle):
 		return
@@ -795,26 +652,6 @@ func _on_network_match_state_received(state_payload: Dictionary) -> void:
 		_apply_team_match_state_payload(state_payload)
 		if _prep != null and is_instance_valid(_prep) and _prep.has_method("_refresh_all"):
 			_prep.call_deferred("_refresh_all")
-		return
-	_apply_match_state(state_payload)
-
-func _apply_latest_match_state(completed_round: int) -> void:
-	var state_payload := NetworkService.latest_match_state
-	if state_payload.is_empty() or int(state_payload.get("completed_round", -1)) != completed_round:
-		return
-	_apply_match_state(state_payload)
-
-func _apply_match_state(state_payload: Dictionary) -> void:
-	if NetworkService.is_host:
-		return
-	if state_payload.is_empty():
-		return
-	GameState.round_index = int(state_payload.get("round_index", GameState.round_index))
-	GameState.player_formation_hp = int(state_payload.get("enemy_formation_hp", GameState.player_formation_hp))
-	GameState.enemy_formation_hp = int(state_payload.get("player_formation_hp", GameState.enemy_formation_hp))
-	GameState.final_battle_complete = bool(state_payload.get("final_battle_complete", GameState.final_battle_complete))
-	if _prep != null and is_instance_valid(_prep) and _prep.has_method("_refresh_all"):
-		_prep.call_deferred("_refresh_all")
 
 func _apply_post_battle_unit_outcomes(result: Dictionary) -> void:
 	if not result.has("player_survivor_slots"):

@@ -2,6 +2,7 @@ extends Control
 
 signal start_requested
 signal back_requested
+signal selftest_requested
 
 const REF_SIZE := Vector2(1536.0, 1024.0)
 const SLOT_LABELS := ["A", "B", "C", "1", "2", "3"]
@@ -34,6 +35,7 @@ var _room_id_lbl: Label
 var _start_btn: Button
 var _start_lbl: Label
 var _host_hint_lbl: Label
+var _selftest_btn: Button
 var _screen_bands: Array[Dictionary] = []
 var _menu_music_player: AudioStreamPlayer
 
@@ -133,6 +135,11 @@ func _build() -> void:
 	_add_texture(TEX_START, Vector2(1364, 900), Vector2(260, 73))
 	_start_lbl = _add_label("", Vector2(1392, 916), Vector2(205, 40), 30)
 	_start_btn = _add_hit(Vector2(1364, 900), Vector2(260, 73), _on_primary_pressed)
+	# 离线自测专用入口(officetest):开始游戏上方,仅离线显示,纯追加不动原布局。
+	_selftest_btn = _add_ai_button(Vector2(1364, 826), Vector2(260, 60), func(): selftest_requested.emit())
+	_selftest_btn.text = _room_text("自测开始", "Self-Test")
+	_selftest_btn.add_theme_font_size_override("font_size", 24)
+	_selftest_btn.visible = not _online()
 	_host_hint_lbl = _add_label(_room_text("等待其他玩家准备后可按", "Waiting for players"), Vector2(1218, 934), Vector2(320, 30), 20, Color(1.0, 0.94, 0.78))
 	_status_lbl = _add_label("", Vector2(560, 104), Vector2(420, 30), 18, Color(0.98, 0.94, 0.78))
 
@@ -246,6 +253,8 @@ func _refresh() -> void:
 			_start_lbl.text = tr("lobby_ready_done") if ready else tr("lobby_ready")
 	if _host_hint_lbl != null:
 		_host_hint_lbl.visible = is_host_seat
+	if _selftest_btn != null:
+		_selftest_btn.visible = not _online()
 
 # 3v3 大厅状态：取代原先误显示的 1v1 session_label（棋盘/对手准备那套）。
 func _lobby_status_text() -> String:
