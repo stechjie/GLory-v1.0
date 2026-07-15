@@ -2,7 +2,7 @@ extends "res://scenes/battle/BattleUI.gd"
 
 const FIRE_GLOW_TEXTURE_PATH := "res://assets/vfx/battlefield/fire_glow_soft.png"
 const FIRE_SPARK_TEXTURE_PATH := "res://assets/vfx/battlefield/fire_spark_dot.png"
-const BATTLE_2_5D_BASE_PATH := "res://assets/board/2_5d/battlefield_base_clean.png"
+const BATTLE_2_5D_BASE_PATH := "res://assets/board/2_5d/battlefield_forest_handdrawn_v2_no_sockets.png"
 const BATTLE_2_5D_PVP_BASE_PATH := "res://assets/board/2_5d/battlefield_pvp_ice.png"
 const BATTLE_2_5D_FRONT_PATH := "res://assets/board/2_5d/battlefield_front_occlusion_full.png"
 const BATTLE_2_5D_FIRE_PATH := "res://assets/board/2_5d/fire_single_source.png"
@@ -142,7 +142,6 @@ func _add_layered_battle_background(arena_wrap: Control) -> void:
 	if not _uses_pvp_battlefield():
 		_add_crystal_glows()
 		_add_fire_layer()
-		_add_front_occlusion()
 	_fit_battlefield_2_5d()
 	arena_wrap.resized.connect(_fit_battlefield_2_5d)
 
