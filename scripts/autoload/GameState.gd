@@ -4,6 +4,10 @@ const START_FORMATION_HP := 50
 const START_GOLD := 10
 const MAX_NORMAL_UNITS := 7
 const MAX_UNIT_STAR := 3
+# Copies of a unit at a given star required to fuse into the next star.
+# 1-star fuses from 2 copies; 2-star fuses from 3. Single source of truth for
+# both the prep-board merge/auto-combine and the tutorial's guidance/arrows.
+const STAR_UPGRADE_COPIES := {1: 2, 2: 3}
 const FINAL_ROUND := 21
 const BATTLE_DECAY_START_SEC := 10.0
 const BATTLE_DECAY_INTERVAL_SEC := 6.0
@@ -32,13 +36,9 @@ var pending_treasure := {
 var pve_completed := 0
 var boss_completed := 0
 var loss_streak := 0
-var used_boss_ids: Array[String] = []
 var shop_refresh_uses_this_round := 0
 var golden_altar_uses := 0
 var gamble_used := false
-var is_online := false
-var is_host := false
-var final_battle_pending := false
 var final_battle_complete := false
 var battle_history: Array = []
 var pending_battle_package: Dictionary = {}
@@ -72,11 +72,9 @@ func reset_run() -> void:
 	pve_completed = 0
 	boss_completed = 0
 	loss_streak = 0
-	used_boss_ids.clear()
 	shop_refresh_uses_this_round = 0
 	golden_altar_uses = 0
 	gamble_used = false
-	final_battle_pending = false
 	final_battle_complete = false
 	battle_history.clear()
 	pending_battle_package.clear()
@@ -86,6 +84,9 @@ func normal_unit_cap() -> int:
 		return MAX_NORMAL_UNITS
 	# Fury Roster: 7 -> 8. With Hu Pai Master active, +1 more (7 -> 9).
 	return 9 if TreasureService.has_linkage("link_hu_pai_master") else 8
+
+func copies_to_upgrade(star: int) -> int:
+	return int(STAR_UPGRADE_COPIES.get(star, 3))
 
 func star_stat_multiplier(star: int) -> float:
 	match clampi(star, 1, MAX_UNIT_STAR):

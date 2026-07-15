@@ -33,6 +33,9 @@ const ARROW_DOWN_Y_OFFSET := -100.0
 var active := false
 var step: int = Step.BUY_3
 var bought_units := 0
+# 教学 PVP 步的伪造对手棋盘（原先借用 NetworkService.opponent_board_snapshot，
+# 1v1 联机删除后由教学模式自持，BattleSimulator 的教学 PVP 路径从这里读）。
+var opponent_snapshot: Dictionary = {}
 var _prep: Control
 var _overlay: Control
 var _arrow: Label
@@ -66,6 +69,7 @@ func start() -> void:
 func finish() -> void:
 	active = false
 	GameState.tutorial_mode = false
+	opponent_snapshot = {}
 	_detach()
 	completed.emit()
 
@@ -121,7 +125,7 @@ func begin_battle() -> bool:
 			_prep.show_message(follow_arrow_hint())
 		return false
 	if step == Step.START_PVP:
-		NetworkService.opponent_board_snapshot = _tutorial_opponent_snapshot()
+		opponent_snapshot = _tutorial_opponent_snapshot()
 	_detach()
 	return true
 
@@ -167,7 +171,7 @@ func current_text() -> String:
 		Step.START_PVE_1:
 			return _t("已经上阵 3 个棋子，点击开始战斗，打 3 个小怪。", "You placed 3 units. Start battle to fight 3 monsters.")
 		Step.UPGRADE_2:
-			return _t("在商店买 2 个「民兵」（不够就点刷新），凑齐后把 1 个拖到场上的民兵身上，升到 2 星。", "Buy 2 Militia from the shop (refresh if needed), then drag one onto your board Militia to reach 2-star.")
+			return _t("在商店买 1 个「民兵」（不够就点刷新），拖到场上的民兵身上，升到 2 星。", "Buy 1 Militia from the shop (refresh if needed), then drag it onto your board Militia to reach 2-star.")
 		Step.START_PVE_2:
 			return _t("主力已经 2 星了。再开始战斗，这次打 4 个小怪。", "Your main unit is 2-star. Start battle again against 4 monsters.")
 		Step.TAKE_TREASURE_1:
@@ -175,7 +179,7 @@ func current_text() -> String:
 		Step.UPGRADE_3:
 			return _t("现在给你 2 个 2 星材料。拖 1 个材料到主力身上，升到 3 星。", "You now have two 2-star copies. Drag one copy onto your main unit to make it 3-star.")
 		Step.UPGRADE_OTHERS:
-			return _t("在商店买弓手和商人各 2 个（不够就刷新），分别拖到场上的同名棋子上，升到 2 星。", "Buy 2 Archers and 2 Merchants from the shop (refresh if needed), then drag each onto its matching board unit to reach 2-star.")
+			return _t("在商店买弓手和商人各 1 个（不够就刷新），分别拖到场上的同名棋子上，升到 2 星。", "Buy 1 Archer and 1 Merchant from the shop (refresh if needed), then drag each onto its matching board unit to reach 2-star.")
 		Step.BOND_HINT:
 			return _t("同族数量够了会激活羁绊。看看左侧的羁绊效果，点一下继续。", "Matching races activate bonds. Check the bond effects on the left, then tap to continue.")
 		Step.VIEW_TREASURE:
@@ -361,9 +365,10 @@ func _target_control() -> Control:
 			# UPGRADE_3 用自动发的 2 星材料（一进来场上1+待命2=3个），直接教拖拽。
 			if step == Step.UPGRADE_3:
 				return _upgrade_target_control() if _holding_upgrade_piece() else _upgrade_material_control()
-			# 2 星步（自己在商店买）：凑够 3 个（场上+待命 ≥ 3）才能合，
-			# 够了才指待命区教拖拽；不够就一直指商店买下一个，别过早指待命区。
-			if _upgrade_total_copies() >= 3:
+			# 2-star steps (player buys from shop): only point at the standby area to
+			# teach dragging once enough copies are gathered (board + standby); until
+			# then keep pointing at the shop to buy the next copy.
+			if _upgrade_total_copies() >= GameState.copies_to_upgrade(_upgrade_star()):
 				return _upgrade_target_control() if _holding_upgrade_piece() else _upgrade_material_control()
 			return _upgrade_shop_control()
 		Step.START_PVE_1, Step.START_PVE_2, Step.START_BOSS, Step.START_PVP:
@@ -405,8 +410,9 @@ func _upgrade_shop_control() -> Control:
 		return _prep.get("_buy_shop_button") as Control
 	return _first_available_shop_control()
 
-# 场上 + 待命区里，目标棋子在目标星级的总份数。凑够 3 个才能合成升星，
-# 用它决定升星步的箭头是继续指商店（不够）还是转去指待命区教拖拽（够了）。
+# Total copies of the target unit at the target star across board + standby.
+# Compared against GameState.copies_to_upgrade() to decide whether the upgrade
+# arrow keeps pointing at the shop (not enough) or moves to standby (enough).
 func _upgrade_total_copies() -> int:
 	var id := _upgrade_id()
 	var star := _upgrade_star()

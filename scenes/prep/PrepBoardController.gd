@@ -293,7 +293,7 @@ func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
 	elif _can_merge_cells(target, incoming):
 		if GameState.gold < cost:
 			return
-		if not _merge_three_into_cell(target, incoming, [board_index], []):
+		if not _merge_copies_into_cell(target, incoming, [board_index], []):
 			return
 		GameState.gold -= cost
 		GameState.shop_sold[shop_index] = true
@@ -324,7 +324,7 @@ func _buy_or_merge_shop_to_bench(shop_index: int, bench_index: int) -> void:
 	elif _can_merge_cells(target, incoming):
 		if GameState.gold < cost:
 			return
-		if not _merge_three_into_cell(target, incoming, [], [bench_index]):
+		if not _merge_copies_into_cell(target, incoming, [], [bench_index]):
 			return
 		GameState.gold -= cost
 		GameState.shop_sold[shop_index] = true
@@ -368,7 +368,7 @@ func _move_or_merge_board(from_index: int, to_index: int) -> void:
 		GameState.board_slots[to_index] = from_cell
 		GameState.board_slots[from_index] = null
 	elif _can_merge_cells(to_cell, from_cell):
-		if not _merge_three_into_cell(to_cell, from_cell, [from_index, to_index], []):
+		if not _merge_copies_into_cell(to_cell, from_cell, [from_index, to_index], []):
 			_selected_board = -1
 			_refresh_all()
 			return
@@ -397,7 +397,7 @@ func _move_or_merge_board_to_bench(from_index: int, bench_index: int) -> void:
 		GameState.bench_slots[bench_index] = from_cell
 		GameState.board_slots[from_index] = null
 	elif _can_merge_cells(to_cell, from_cell):
-		if not _merge_three_into_cell(to_cell, from_cell, [from_index], [bench_index]):
+		if not _merge_copies_into_cell(to_cell, from_cell, [from_index], [bench_index]):
 			_selected_board = -1
 			_refresh_all()
 			return
@@ -442,7 +442,7 @@ func _move_or_merge_bench_to_board(from_index: int, board_index: int) -> void:
 		GameState.board_slots[board_index] = from_cell
 		GameState.bench_slots[from_index] = null
 	elif _can_merge_cells(to_cell, from_cell):
-		if not _merge_three_into_cell(to_cell, from_cell, [board_index], [from_index]):
+		if not _merge_copies_into_cell(to_cell, from_cell, [board_index], [from_index]):
 			_selected_bench = -1
 			_refresh_all()
 			return
@@ -476,7 +476,7 @@ func _move_or_merge_bench(from_index: int, to_index: int) -> void:
 		GameState.bench_slots[to_index] = from_cell
 		GameState.bench_slots[from_index] = null
 	elif _can_merge_cells(to_cell, from_cell):
-		if not _merge_three_into_cell(to_cell, from_cell, [], [from_index, to_index]):
+		if not _merge_copies_into_cell(to_cell, from_cell, [], [from_index, to_index]):
 			_selected_bench = -1
 			_refresh_all()
 			return
@@ -551,16 +551,20 @@ func _can_merge_cells(target: Dictionary, incoming: Dictionary) -> bool:
 		return false
 	return str(target.get("id", "")) == str(incoming.get("id", "")) and int(target.get("star", 1)) == int(incoming.get("star", 1)) and int(target.get("star", 1)) < GameState.MAX_UNIT_STAR
 
-func _merge_three_into_cell(target: Dictionary, incoming: Dictionary, excluded_board: Array = [], excluded_bench: Array = []) -> bool:
+func _merge_copies_into_cell(target: Dictionary, incoming: Dictionary, excluded_board: Array = [], excluded_bench: Array = []) -> bool:
 	if not _can_merge_cells(target, incoming):
 		return false
 	var id := str(target.get("id", ""))
 	var star := int(target.get("star", 1))
-	var extra := _take_extra_merge_piece(id, star, excluded_board, excluded_bench)
-	if extra.is_empty():
-		return false
+	# target + incoming already provide 2 copies. 1-star fuses from those 2 alone;
+	# 2-star needs one more copy pulled from the board or bench.
+	var extra := {}
+	if GameState.copies_to_upgrade(star) > 2:
+		extra = _take_extra_merge_piece(id, star, excluded_board, excluded_bench)
+		if extra.is_empty():
+			return false
 	_preserve_unique_king_growth_on_merge(target, incoming, extra)
-	target.star = int(target.get("star", 1)) + 1
+	target.star = star + 1
 	return true
 
 func _take_extra_merge_piece(id: String, star: int, excluded_board: Array, excluded_bench: Array) -> Dictionary:
@@ -625,8 +629,8 @@ func _auto_combine_pass() -> bool:
 		_gather_star_pieces(GameState.board_slots, "board", star, groups)
 		_gather_star_pieces(GameState.bench_slots, "bench", star, groups)
 		for id in groups:
-			if (groups[id] as Array).size() >= 3:
-				_combine_three_auto(star, groups[id])
+			if (groups[id] as Array).size() >= GameState.copies_to_upgrade(star):
+				_combine_copies_auto(star, groups[id])
 				return true
 	return false
 
@@ -644,23 +648,24 @@ func _gather_star_pieces(slots: Array, location: String, star: int, groups: Dict
 			groups[id] = []
 		groups[id].append([location, i])
 
-func _combine_three_auto(star: int, locs: Array) -> void:
-	var trio: Array = locs.slice(0, 3)
+func _combine_copies_auto(star: int, locs: Array) -> void:
+	# Consume exactly the copies this star needs to fuse (2 for 1-star, 3 for 2-star).
+	var fuse: Array = locs.slice(0, GameState.copies_to_upgrade(star))
 	# Keeper: prefer a board cell so the upgraded unit stays on the board.
-	var keeper_loc: Array = trio[0]
-	for loc in trio:
+	var keeper_loc: Array = fuse[0]
+	for loc in fuse:
 		if str(loc[0]) == "board":
 			keeper_loc = loc
 			break
 	var cells: Array = []
-	for loc in trio:
+	for loc in fuse:
 		var arr: Array = GameState.board_slots if str(loc[0]) == "board" else GameState.bench_slots
 		cells.append(arr[int(loc[1])])
 	var keeper_arr: Array = GameState.board_slots if str(keeper_loc[0]) == "board" else GameState.bench_slots
 	var keeper: Dictionary = keeper_arr[int(keeper_loc[1])]
 	_preserve_unique_king_growth_among(keeper, cells)
 	keeper.star = star + 1
-	for loc in trio:
+	for loc in fuse:
 		if str(loc[0]) == str(keeper_loc[0]) and int(loc[1]) == int(keeper_loc[1]):
 			continue
 		var arr: Array = GameState.board_slots if str(loc[0]) == "board" else GameState.bench_slots
