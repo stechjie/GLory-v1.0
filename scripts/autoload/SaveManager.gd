@@ -75,7 +75,6 @@ func _write_now() -> void:
 		"pve_completed": GameState.pve_completed,
 		"boss_completed": GameState.boss_completed,
 		"loss_streak": GameState.loss_streak,
-		"used_boss_ids": GameState.used_boss_ids,
 		"golden_altar_uses": GameState.golden_altar_uses,
 		"gamble_used": GameState.gamble_used,
 		# 组队局字段（重连恢复用；team_mode 本身由 Main 显式控制，不入档）
@@ -113,7 +112,6 @@ func load_run() -> bool:
 	GameState.pve_completed = int(parsed.get("pve_completed", 0))
 	GameState.boss_completed = int(parsed.get("boss_completed", 0))
 	GameState.loss_streak = int(parsed.get("loss_streak", 0))
-	GameState.used_boss_ids.assign(parsed.get("used_boss_ids", []))
 	GameState.golden_altar_uses = int(parsed.get("golden_altar_uses", 0))
 	GameState.gamble_used = bool(parsed.get("gamble_used", false))
 	GameState.team_hp = int(parsed.get("team_hp", GameState.team_hp))
