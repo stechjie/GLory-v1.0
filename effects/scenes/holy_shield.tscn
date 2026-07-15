@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/ProceduralVFXEffect.gd" id="1"]
+
+[node name="HOLY_SHIELD" type="Node2D"]
+script = ExtResource("1")
+effect_id = "HOLY_SHIELD"

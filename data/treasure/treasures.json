@@ -1,0 +1,291 @@
+{
+    "max_owned":  5,
+    "draw_rounds":  [
+                        4,
+                        8,
+                        12,
+                        16,
+                        20
+                    ],
+    "refresh_costs":  [
+                          5,
+                          10,
+                          20,
+                          40
+                      ],
+    "sets":  {
+                 "defense":  "normal units hp+30 def+30 dodge+15",
+                 "control":  "extra debuff from slow/attack_down/silence/stun/poison/interrupt/bleed",
+                 "attack":  "normal units prefer lowest hp target",
+                 "money":  "shop and treasure refresh free",
+                 "element":  "20% attack proc, radius 180, enemies take 10% max hp"
+             },
+    "attribute_effects":  {
+                              "fire":  "extra 40% atk damage",
+                              "ice":  "slow and attack speed down 1.5 sec",
+                              "thunder":  "25% interrupt",
+                              "poison":  "poison"
+                          },
+    "treasures":  [
+                      {
+                          "id":  "def_iron_wall",
+                          "name":  "铁壁之护",
+                          "category":  "defense",
+                          "name_en":  "Iron Wall"
+                      },
+                      {
+                          "id":  "def_life_monument",
+                          "name":  "生命丰碑",
+                          "category":  "defense",
+                          "name_en":  "Life Monument"
+                      },
+                      {
+                          "id":  "def_formation_heal",
+                          "name":  "法阵回春",
+                          "category":  "defense",
+                          "name_en":  "Formation Heal"
+                      },
+                      {
+                          "id":  "def_soul_counter",
+                          "name":  "亡魂反击",
+                          "category":  "defense",
+                          "name_en":  "Soul Counter"
+                      },
+                      {
+                          "id":  "def_lifesteal_emblem",
+                          "name":  "吸血纹章",
+                          "category":  "defense",
+                          "name_en":  "Lifesteal Emblem"
+                      },
+                      {
+                          "id":  "def_phantom_step",
+                          "name":  "幻影步伐",
+                          "category":  "defense",
+                          "name_en":  "Phantom Step"
+                      },
+                      {
+                          "id":  "ctrl_shockwave",
+                          "name":  "震荡余波",
+                          "category":  "control",
+                          "cooldown":  5.0,
+                          "name_en":  "Shockwave"
+                      },
+                      {
+                          "id":  "ctrl_corrosive_needle",
+                          "name":  "腐蚀毒针",
+                          "category":  "control",
+                          "cooldown":  5.0,
+                          "name_en":  "Corrosive Needle"
+                      },
+                      {
+                          "id":  "ctrl_interrupt_chain",
+                          "name":  "打断锁链",
+                          "category":  "control",
+                          "cooldown":  5.0,
+                          "name_en":  "Interrupt Chain"
+                      },
+                      {
+                          "id":  "ctrl_time_compress",
+                          "name":  "时空压缩",
+                          "category":  "control",
+                          "skill_cooldown_multiplier":  0.75,
+                          "name_en":  "Time Compress"
+                      },
+                      {
+                          "id":  "ctrl_binding_weight",
+                          "name":  "束缚重压",
+                          "category":  "control",
+                          "move_down":  0.25,
+                          "attack_speed_down":  0.20,
+                          "duration":  2.0,
+                          "cooldown":  5.0,
+                          "name_en":  "Binding Weight"
+                      },
+                      {
+                          "id":  "atk_blood_pact",
+                          "name":  "血契之刃",
+                          "category":  "attack",
+                          "opening_atk_multiplier":  1.25,
+                          "name_en":  "Blood Pact"
+                      },
+                      {
+                          "id":  "atk_fury_roster",
+                          "name":  "狂怒阵容",
+                          "category":  "attack",
+                          "name_en":  "Fury Roster"
+                      },
+                      {
+                          "id":  "atk_burst_core",
+                          "name":  "爆裂核心",
+                          "category":  "attack",
+                          "opening_crit_bonus":  0.25,
+                          "name_en":  "Burst Core"
+                      },
+                      {
+                          "id":  "atk_wail_resonance",
+                          "name":  "哀鸣共鸣",
+                          "category":  "attack",
+                          "kill_radius":  180.0,
+                          "max_hp_true_damage":  0.10,
+                          "name_en":  "Wail Resonance"
+                      },
+                      {
+                          "id":  "atk_frenzy_assault",
+                          "name":  "狂暴进攻",
+                          "category":  "attack",
+                          "name_en":  "Frenzy Assault"
+                      },
+                      {
+                          "id":  "money_compound",
+                          "name":  "复利之道",
+                          "category":  "money",
+                          "name_en":  "Compound Interest"
+                      },
+                      {
+                          "id":  "money_generous_fate",
+                          "name":  "慷慨命运",
+                          "category":  "money",
+                          "name_en":  "Generous Fate"
+                      },
+                      {
+                          "id":  "money_discount",
+                          "name":  "折扣令牌",
+                          "category":  "money",
+                          "name_en":  "Discount Token"
+                      },
+                      {
+                          "id":  "money_golden_altar",
+                          "name":  "黄金祭坛",
+                          "category":  "money",
+                          "name_en":  "Golden Altar"
+                      },
+                      {
+                          "id":  "money_lucky_envelope",
+                          "name":  "幸运信封",
+                          "category":  "money",
+                          "name_en":  "Lucky Envelope"
+                      },
+                      {
+                          "id":  "elem_flame_shatter",
+                          "name":  "炎焰碎裂",
+                          "category":  "element",
+                          "proc_chance":  0.25,
+                          "true_damage_atk_pct":  0.40,
+                          "name_en":  "Flame Shatter"
+                      },
+                      {
+                          "id":  "elem_frost_blade",
+                          "name":  "冰封霜刃",
+                          "category":  "element",
+                          "proc_chance":  0.25,
+                          "move_down":  0.35,
+                          "attack_speed_down":  0.35,
+                          "duration":  1.5,
+                          "name_en":  "Frost Blade"
+                      },
+                      {
+                          "id":  "elem_thunder_haste",
+                          "name":  "雷霆加速",
+                          "category":  "element",
+                          "proc_chance":  0.25,
+                          "attack_speed_bonus":  0.60,
+                          "duration":  3.0,
+                          "name_en":  "Thunder Haste"
+                      },
+                      {
+                          "id":  "elem_toxic_spread",
+                          "name":  "剧毒蔓延",
+                          "category":  "element",
+                          "proc_chance":  0.25,
+                          "name_en":  "Toxic Spread"
+                      }
+                  ],
+    "linkages":  [
+                     {
+                         "id":  "link_phoenix",
+                         "requires":  [
+                                          "atk_wail_resonance",
+                                          "def_soul_counter"
+                                      ]
+                     },
+                     {
+                         "id":  "link_money_magic",
+                         "requires":  [
+                                          "money_lucky_envelope",
+                                          "ctrl_time_compress"
+                                      ]
+                     },
+                     {
+                         "id":  "link_blood_covenant",
+                         "requires":  [
+                                          "elem_flame_shatter",
+                                          "def_lifesteal_emblem"
+                                      ],
+                         "true_damage_atk_pct":  1.00
+                     },
+                     {
+                         "id":  "link_paralysis_shackles",
+                         "requires":  [
+                                          "ctrl_interrupt_chain",
+                                          "elem_frost_blade"
+                                      ],
+                         "ice_damage_taken_bonus":  0.15
+                     },
+                     {
+                         "id":  "link_oppression_counter",
+                         "requires":  [
+                                          "ctrl_binding_weight",
+                                          "atk_frenzy_assault"
+                                      ]
+                     },
+                     {
+                         "id":  "link_fraud_fate",
+                         "requires":  [
+                                          "def_phantom_step",
+                                          "money_generous_fate"
+                                      ]
+                     },
+                     {
+                         "id":  "link_iron_maiden",
+                         "requires":  [
+                                          "def_iron_wall",
+                                          "ctrl_corrosive_needle"
+                                      ]
+                     },
+                     {
+                         "id":  "link_toxic_burst",
+                         "requires":  [
+                                          "atk_burst_core",
+                                          "elem_toxic_spread"
+                                      ],
+                         "proc_chance":  0.50
+                     },
+                     {
+                         "id":  "link_rich_path",
+                         "requires":  [
+                                          "money_compound",
+                                          "elem_thunder_haste"
+                                      ],
+                         "attack_gold_chance":  0.10
+                     },
+                     {
+                         "id":  "link_clearance_sale",
+                         "requires":  [
+                                          "atk_fury_roster",
+                                          "money_discount"
+                                      ],
+                         "shop_price_multiplier":  0.60
+                     },
+                     {
+                         "id":  "link_hu_pai_master",
+                         "requires":  [
+                                          "def_life_monument",
+                                          "def_formation_heal",
+                                          "ctrl_shockwave",
+                                          "atk_blood_pact",
+                                          "atk_fury_roster"
+                                      ],
+                         "positive_effect_multiplier":  2.0
+                     }
+                 ]
+}

@@ -1,0 +1,92 @@
+[gd_scene format=3 uid="uid://ca2wb450btgmp"]
+
+[ext_resource type="Script" uid="uid://dwwopi34oxafn" path="res://scenes/debug/ModelBattlePreview.gd" id="1_preview"]
+[ext_resource type="Texture2D" path="res://assets/board/battle_forest_arena_2_5d.png" id="2_board_texture"]
+
+[sub_resource type="Environment" id="Environment_battle_preview"]
+background_mode = 1
+background_color = Color(0.018, 0.026, 0.022, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.42, 0.50, 0.43, 1)
+ambient_light_energy = 0.44
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_floor"]
+diffuse_mode = 3
+specular_mode = 1
+albedo_texture = ExtResource("2_board_texture")
+roughness = 0.96
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_floor"]
+size = Vector2(8.9, 5)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_line"]
+transparency = 1
+albedo_color = Color(0.38, 0.58, 0.36, 0.34)
+
+[sub_resource type="BoxMesh" id="BoxMesh_center_line"]
+size = Vector3(0.035, 0.018, 4.6)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_hit"]
+transparency = 1
+albedo_color = Color(1, 0.54, 0.22, 1)
+emission_enabled = true
+emission = Color(1, 0.35, 0.08, 1)
+emission_energy_multiplier = 1.8
+
+[sub_resource type="SphereMesh" id="SphereMesh_hit"]
+radius = 0.26
+height = 0.52
+radial_segments = 16
+rings = 8
+
+[node name="ModelBattlePreview" type="Node3D" unique_id=1261107452]
+script = ExtResource("1_preview")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=183708222]
+environment = SubResource("Environment_battle_preview")
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=75127297]
+transform = Transform3D(1, 0, 0, 0, 0.760406, 0.649448, 0, -0.649448, 0.760406, 0, 3, 5.25)
+current = true
+fov = 39.0
+
+[node name="KeyLight" type="DirectionalLight3D" parent="." unique_id=769804539]
+transform = Transform3D(0.739942, -0.28033, 0.611865, 0, 0.909961, 0.414694, -0.672671, -0.306865, 0.673326, 0, 4.5, 3)
+light_color = Color(1, 0.84, 0.62, 1)
+light_energy = 0.82
+shadow_enabled = true
+
+[node name="FillLight" type="OmniLight3D" parent="." unique_id=1429330814]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.2, 1.8, 2.4)
+light_color = Color(0.34, 0.50, 0.45, 1)
+light_energy = 0.13
+omni_range = 5.2
+
+[node name="Stage" type="Node3D" parent="." unique_id=883778053]
+
+[node name="Floor" type="MeshInstance3D" parent="Stage" unique_id=1956292047]
+material_override = SubResource("StandardMaterial3D_floor")
+mesh = SubResource("PlaneMesh_floor")
+
+[node name="CenterLine" type="MeshInstance3D" parent="Stage" unique_id=1396471870]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.015, 0)
+material_override = SubResource("StandardMaterial3D_line")
+mesh = SubResource("BoxMesh_center_line")
+
+[node name="LeftSlot" type="Node3D" parent="Stage" unique_id=1087432914]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.35, 0, 0)
+
+[node name="RightSlot" type="Node3D" parent="Stage" unique_id=1773277474]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.35, 0, 0)
+
+[node name="HitFlash" type="MeshInstance3D" parent="Stage" unique_id=244869440]
+transform = Transform3D(0.18, 0, 0, 0, 0.18, 0, 0, 0, 0.18, 0, 0.72, 0)
+visible = false
+material_override = SubResource("StandardMaterial3D_hit")
+mesh = SubResource("SphereMesh_hit")
+
+[node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=1329061187]
+
+[node name="InfoLabel" type="Label" parent="CanvasLayer" unique_id=1566760169]
+theme_override_font_sizes/font_size = 18
+text = "Model Battle Preview"

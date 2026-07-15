@@ -1,0 +1,8 @@
+{
+  "final_round": 21,
+  "pvp_rounds": [6, 12, 18, 21],
+  "boss_rounds": [5, 10, 15, 20],
+  "treasure_after_battle_rounds": [4, 8, 12, 16, 20],
+  "pvp_without_online_opponent": "pve"
+}
+

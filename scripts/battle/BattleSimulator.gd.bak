@@ -1,0 +1,2365 @@
+class_name BattleSimulator
+extends RefCounted
+
+const DECAY_START_SEC := 10.0
+const DECAY_INTERVAL_SEC := 6.0
+const HARD_TIMEOUT_SEC := 180.0
+const TICK_SEC := 0.1
+const ARENA_W := 1000.0
+const ARENA_H := 520.0
+const CELL_SPACING := 72.0
+const ATTACK_RANGE_SCALE := 72.0
+
+
+static func prepare_state(kind: String) -> Dictionary:
+	RngService.rng.randomize()
+	var player := build_player_fighters(kind)
+	var enemy := build_enemy_fighters(kind)
+	if kind == "final":
+		_add_final_formation_allies(player, enemy)
+	var battle_log: Array[String] = []
+	var player_syn := SynergyService.current_player_flags()
+	if player.is_empty():
+		return {"kind": kind, "player": player, "enemy": enemy, "elapsed": 0.0, "next_decay": DECAY_START_SEC, "finished": true, "forced_result": {"player_wins": false, "reason": "no_player_units", "log": ["没有上阵普通棋子。"]}}
+	if enemy.is_empty():
+		return {"kind": kind, "player": player, "enemy": enemy, "elapsed": 0.0, "next_decay": DECAY_START_SEC, "finished": true, "forced_result": {"player_wins": true, "reason": "no_enemy_units", "log": ["敌人为空。"]}}
+	battle_log.append("我方 %d 个单位，敌方 %d 个单位。" % [player.size(), enemy.size()])
+	var state := {"kind": kind, "player": player, "enemy": enemy, "elapsed": 0.0, "next_decay": DECAY_START_SEC, "finished": false, "log": battle_log, "player_syn": player_syn, "enemy_deaths": 0, "total_deaths": 0, "field_death_count": 0, "mother_death_counter": 0, "dark_kill_stacks": 0, "undead_trait_death_counter": 0, "race_trait_processed_deaths": {}, "death_history": [], "revive_queue": [], "player_kill_gold": 0, "enemy_kill_gold": 0, "player_kills": [], "enemy_kills": [], "bonus_gold": 0, "temporary_deaths": [], "visual_events": [], "unit_stats": {}}
+	_init_unit_stats(state)
+	DamageService.set_stat_state(state)
+	if TreasureService.has_set("defense"):
+		for f in player:
+			if not _ignores_treasure(f):
+				f.max_hp = maxi(1, int(round(float(f.max_hp) * 1.30)))
+				f.hp = int(f.max_hp)
+				f.defense = maxi(0, int(round(float(f.defense) * 1.30)))
+				f.dodge = float(f.get("dodge", 0.0)) + 0.15
+		battle_log.append("防御套：普通棋子生命、防御、闪避已生效。")
+	if bool(player_syn.get("god_invulnerable_opening", false)):
+		for f in player:
+			if str(f.get("def", {}).get("race", "")) == "god" and not _ignores_treasure(f):
+				DamageService.begin_stat_context(state, f)
+				StatusEffectService.add_status(f, "invulnerable", 1.5, {})
+				DamageService.clear_stat_context()
+		battle_log.append("神7：我方神族开战无敌1.5秒。")
+	if bool(player_syn.get("human_shield", false)):
+		for f in player:
+			if not _ignores_treasure(f):
+				f.shield = maxi(1, int(float(f.max_hp) * 0.08))
+		battle_log.append("人2：开战护盾已生效。")
+	_apply_opening_unit_skills(player, enemy, battle_log, state)
+	_apply_opening_treasures(player, battle_log)
+	return state
+
+# --- 3v3 team mode (prototype) ---------------------------------------------
+const TEAM_LANE_CENTERS := [230.0, 500.0, 770.0]
+
+static func prepare_team_state(forced_team: int = -1) -> Dictionary:
+	var kind := RoundService.schedule_kind_for_round(GameState.round_index)
+	if kind == "final":
+		kind = "pvp"
+	var my_slot: int = NetworkService.team_local_slot if NetworkService.team_active else 0
+	if my_slot < 0:
+		my_slot = 0
+	var my_team := 0 if my_slot < 3 else 1
+	if forced_team >= 0:
+		my_team = forced_team
+	# Canonical arrangement so every client watching this battle builds the exact
+	# same state (required for deterministic identical playback). PvP: all 6 see
+	# team A (slots 0-2) at the bottom vs team B (3-5). PvE/Boss: each team sees
+	# their own 3 boards vs monsters.
+	var ally_slots: Array
+	var rival_slots: Array
+	var seed_parts: Array
+	if kind == "pvp":
+		ally_slots = [0, 1, 2]
+		rival_slots = [3, 4, 5]
+		seed_parts = [NetworkService.shared_seed, GameState.round_index, "pvp"]
+	else:
+		ally_slots = [0, 1, 2] if my_team == 0 else [3, 4, 5]
+		rival_slots = [3, 4, 5] if my_team == 0 else [0, 1, 2]
+		seed_parts = [NetworkService.shared_seed, GameState.round_index, my_team]
+	if NetworkService.team_active:
+		RngService.seed_from_parts(seed_parts)
+	else:
+		RngService.rng.randomize()
+	var rng := RngService.rng
+	# Ally side (bottom): lane = position within your team. Each board carries its
+	# owner's treasures/synergies so the host applies them to that owner's units.
+	var lane_boards: Array = []
+	var ally_ctx: Array = []
+	var rival_ctx: Array = []
+	for lane in 3:
+		lane_boards.append(_team_board_for_slot(ally_slots[lane], rng))
+		ally_ctx.append(_team_owner_ctx_for_slot(ally_slots[lane]))
+		rival_ctx.append(_team_owner_ctx_for_slot(rival_slots[lane]))
+	var player: Array = []
+	for lane in 3:
+		_append_lane_board_fighters(player, lane_boards[lane], "player", lane, ally_ctx[lane].treasures, ally_ctx[lane].syn)
+	# Enemy side (top): per-lane by round type. Enemy TYPE picked once per round.
+	var monster_template := _round_monster_template()
+	var boss_template := _round_boss_template()
+	var enemy: Array = []
+	for lane in 3:
+		match kind:
+			"boss":
+				_append_lane_boss(enemy, lane, boss_template)
+			"pvp":
+				_append_lane_board_fighters(enemy, _team_board_for_slot(rival_slots[lane], rng), "enemy", lane, rival_ctx[lane].treasures, rival_ctx[lane].syn)
+			_:
+				_append_lane_monsters(enemy, lane, maxi(1, _count_units(lane_boards[lane])), monster_template)
+	# Mercenaries (Legion TD 2 "send"): PvP -> own mercs fight WITH you and the
+	# rival's with them; PvE/Boss -> your mercs are sent to your rival's lane, so
+	# the RIVAL lane partner's mercs appear in YOUR lane as enemies.
+	for lane in 3:
+		if kind == "pvp":
+			_append_lane_mercenaries(player, _team_mercs_for_slot(ally_slots[lane], rng), "player", lane)
+			_append_lane_mercenaries(enemy, _team_mercs_for_slot(rival_slots[lane], rng), "enemy", lane)
+		else:
+			_append_lane_mercenaries(enemy, _team_mercs_for_slot(rival_slots[lane], rng), "enemy", lane)
+	var battle_log: Array[String] = []
+	battle_log.append("3v3 %s：我方 %d 个单位，敌方 %d 个单位。" % [kind.to_upper(), player.size(), enemy.size()])
+	var state := {"kind": kind, "player": player, "enemy": enemy, "elapsed": 0.0, "next_decay": DECAY_START_SEC, "finished": false, "log": battle_log, "player_syn": {}, "enemy_deaths": 0, "total_deaths": 0, "field_death_count": 0, "mother_death_counter": 0, "dark_kill_stacks": 0, "undead_trait_death_counter": 0, "race_trait_processed_deaths": {}, "death_history": [], "revive_queue": [], "player_kill_gold": 0, "enemy_kill_gold": 0, "player_kills": [], "enemy_kills": [], "bonus_gold": 0, "temporary_deaths": [], "visual_events": [], "unit_stats": {}}
+	if player.is_empty():
+		state.finished = true
+		state.forced_result = {"player_wins": false, "reason": "no_player_units", "log": ["我方没有单位。"]}
+		return state
+	if enemy.is_empty():
+		state.finished = true
+		state.forced_result = {"player_wins": true, "reason": "no_enemy_units", "log": ["敌方没有单位。"]}
+		return state
+	# Per-owner synergy bookkeeping (keyed by team+lane = a single player's board).
+	var owner_syn_by_key: Dictionary = {}
+	for lane in 3:
+		owner_syn_by_key["player_%d" % lane] = ally_ctx[lane].syn
+		if kind == "pvp":
+			owner_syn_by_key["enemy_%d" % lane] = rival_ctx[lane].syn
+	state.owner_syn_by_key = owner_syn_by_key
+	state.owner_state = {}
+	# Opening treasures, applied per-owner (each unit uses its owner's treasures).
+	_apply_opening_treasures(player, battle_log)
+	_apply_opening_treasures(enemy, battle_log)
+	for f in (player + enemy):
+		if _ignores_treasure(f):
+			continue
+		if _f_has_set(f, "defense"):
+			f.max_hp = maxi(1, int(round(float(f.max_hp) * 1.30)))
+			f.hp = int(f.max_hp)
+			f.defense = maxi(0, int(round(float(f.defense) * 1.30)))
+			f.dodge = float(f.get("dodge", 0.0)) + 0.15
+		# (7) human opening shield: only the owner's own units.
+		if bool(_f_syn(f).get("human_shield", false)):
+			f.shield = maxi(int(f.get("shield", 0)), int(float(f.get("max_hp", 1)) * 0.08))
+		# (6) god opening invulnerability: only the owner's own god units.
+		if bool(_f_syn(f).get("god_invulnerable_opening", false)) and str(f.get("def", {}).get("race", "")) == "god":
+			StatusEffectService.add_status(f, "invulnerable", 1.5, {})
+	_init_unit_stats(state)
+	DamageService.set_stat_state(state)
+	return state
+
+# --- B: host computes the whole battle and records a replay -----------------
+# roster: uid -> render info (incl. def for the 3D model). frames: per-tick
+# arrays of [uid, x, y, hp, alive]. Clients play this back instead of simulating.
+static func compute_team_replay(forced_team: int) -> Dictionary:
+	var state := prepare_team_state(forced_team)
+	var roster: Dictionary = {}
+	var frames: Array = []
+	_replay_capture_roster(state, roster)
+	var steps := 0
+	while not bool(state.get("finished", false)) and steps < 4000:
+		step_state(state)
+		steps += 1
+		_replay_capture_roster(state, roster)
+		var frame: Array = []
+		for f in (state.get("player", []) + state.get("enemy", [])):
+			frame.append([str(f.get("uid", "")), float(f.pos.x), float(f.pos.y), int(f.get("hp", 0)), bool(f.get("alive", false))])
+		frames.append(frame)
+	return {"kind": str(state.get("kind", "pve")), "roster": roster, "frames": frames, "result": result_from_state(state)}
+
+static func _replay_capture_roster(state: Dictionary, roster: Dictionary) -> void:
+	for f in (state.get("player", []) + state.get("enemy", [])):
+		var uid := str(f.get("uid", ""))
+		if uid.is_empty() or roster.has(uid):
+			continue
+		roster[uid] = {
+			"uid": uid,
+			"id": str(f.get("id", "")),
+			"name": str(f.get("name", "")),
+			"team": str(f.get("team", "")),
+			"lane": int(f.get("lane", 0)),
+			"max_hp": int(f.get("max_hp", 1)),
+			"is_mercenary": bool(f.get("is_mercenary", false)),
+			"star": int(f.get("star", 1)),
+			"footprint_cells": int(f.get("footprint_cells", 1)),
+			"def": f.get("def", {}),
+		}
+
+static func _count_units(board: Array) -> int:
+	var c := 0
+	for cell in board:
+		if cell != null and typeof(cell) == TYPE_DICTIONARY:
+			c += 1
+	return c
+
+static func _place_in_lane(f: Dictionary, slot: int, team: String, lane: int) -> void:
+	var col := slot % GameConstants.BOARD_COLUMNS
+	var row := floori(float(slot) / float(GameConstants.BOARD_COLUMNS))
+	var lane_x: float = TEAM_LANE_CENTERS[lane] + (float(col) - 1.5) * 24.0
+	var y := 300.0 + float(row) * 40.0 if team == "player" else 220.0 - float(row) * 40.0
+	f.pos = Vector2(clampf(lane_x, 80.0, ARENA_W - 80.0), clampf(y, 60.0, ARENA_H - 60.0))
+	f["lane"] = lane
+
+static func _append_lane_board_fighters(out: Array, board: Array, team: String, lane: int, owner_treasures: Array = [], owner_syn: Dictionary = {}) -> void:
+	for i in board.size():
+		var cell = board[i]
+		if cell == null or typeof(cell) != TYPE_DICTIONARY:
+			continue
+		var f := _fighter_from_cell(cell, i, team)
+		_place_in_lane(f, i, team, lane)
+		f.uid = "%s_L%d_%d" % [team, lane, i]
+		f["owner_treasures"] = owner_treasures
+		f["owner_syn"] = owner_syn
+		out.append(f)
+
+# Per-fighter owner context (3v3): treasures/synergies come from the unit's
+# owner, not the local GameState. Helpers used by the combat code below.
+static func _f_treasures(f: Dictionary) -> Array:
+	# Team units carry their owner's list; 1v1 player units fall back to GameState.
+	if f.has("owner_treasures"):
+		return f.get("owner_treasures", [])
+	if str(f.get("team", "")) == "player":
+		return GameState.owned_treasures
+	return []
+
+static func _f_has_treasure(f: Dictionary, tid: String) -> bool:
+	return tid in _f_treasures(f)
+
+static func _f_has_set(f: Dictionary, category: String) -> bool:
+	return TreasureService.has_set_in(_f_treasures(f), category)
+
+static func _f_has_linkage(f: Dictionary, link_id: String) -> bool:
+	return TreasureService.has_linkage_in(_f_treasures(f), link_id)
+
+static func _resolve_syn(f: Dictionary, state: Dictionary) -> Dictionary:
+	if f.has("owner_syn"):
+		return f.get("owner_syn", {})
+	if str(f.get("team", "")) == "player":
+		return state.get("player_syn", {})
+	return {}
+
+static func _f_syn(f: Dictionary) -> Dictionary:
+	return f.get("owner_syn", {})
+
+# Per-owner synergy bookkeeping: each player's board (team+lane) tracks its own
+# counters (dark stacks, death counts, mother counter, last-stand flag).
+static func _owner_key(f: Dictionary) -> String:
+	return "%s_%d" % [str(f.get("team", "")), int(f.get("lane", -1))]
+
+static func _owner_state(state: Dictionary, key: String) -> Dictionary:
+	var os: Dictionary = state.get("owner_state", {})
+	if not os.has(key):
+		os[key] = {"dark_enemy_deaths": 0, "dark_stacks": 0, "undead_deaths": 0, "mother_count": 0, "last_stand_used": false}
+		state.owner_state = os
+	return os[key]
+
+static func _owner_syn(state: Dictionary, key: String) -> Dictionary:
+	return state.get("owner_syn_by_key", {}).get(key, {})
+
+static func _attacker_dark_stacks(attacker: Dictionary, state: Dictionary) -> int:
+	if state.has("owner_syn_by_key"):
+		return int(_owner_state(state, _owner_key(attacker)).get("dark_stacks", 0))
+	return int(state.get("dark_kill_stacks", 0))
+
+# Has the owner cleared the enemies in their own lane? (used by effects 1 & 4)
+static func _owner_lane_enemies_cleared(state: Dictionary, owner_team: String, lane: int) -> bool:
+	var enemy_side: Array = state.get("enemy", []) if owner_team == "player" else state.get("player", [])
+	for o in enemy_side:
+		if bool(o.get("alive", false)) and int(o.get("lane", -1)) == lane:
+			return false
+	return true
+
+static func _team_owner_ctx_for_slot(slot_idx: int) -> Dictionary:
+	if NetworkService.team_active:
+		if _team_slot_state(slot_idx) == "player":
+			var snap = NetworkService.team_boards.get(slot_idx, {})
+			if snap is Dictionary and not (snap as Dictionary).is_empty():
+				return {"treasures": NetProtocol.extract_treasures(snap), "syn": NetProtocol.extract_syn(snap)}
+		return {"treasures": [], "syn": {}}
+	if slot_idx == 0:
+		return {"treasures": GameState.owned_treasures.duplicate(), "syn": SynergyService.current_player_flags()}
+	return {"treasures": [], "syn": {}}
+
+static func _round_pick_index(size: int) -> int:
+	# Deterministic per-round pick so all lanes/players agree on the enemy type.
+	if size <= 0:
+		return 0
+	var r := RandomNumberGenerator.new()
+	r.seed = hash(GameState.round_index)
+	return r.randi_range(0, size - 1)
+
+static func _round_monster_template() -> Dictionary:
+	var monsters: Array = DataRegistry.get_table("pve_monsters").get("monsters", [])
+	if monsters.is_empty():
+		return {}
+	return monsters[_round_pick_index(monsters.size())]
+
+static func _round_boss_template() -> Dictionary:
+	var bosses: Array = DataRegistry.get_table("bosses").get("bosses", [])
+	if bosses.is_empty():
+		return {}
+	return bosses[_round_pick_index(bosses.size())]
+
+static func _append_lane_monsters(out: Array, lane: int, count: int, template: Dictionary) -> void:
+	if template.is_empty():
+		return
+	var growth := PveService.growth_for_completed(GameState.pve_completed)
+	for n in count:
+		var d := template.duplicate(true)
+		d.hp = maxi(1, int(round(float(d.get("hp", 1)) * float(growth.hp))))
+		d.atk = maxi(1, int(round(float(d.get("atk", 1)) * float(growth.atk))))
+		d.def = maxi(0, int(round(float(d.get("def", 0)) * float(growth.def))))
+		var f := _fighter_from_def(d, 2 + n, "enemy", n, count)
+		var lane_x: float = TEAM_LANE_CENTERS[lane] + (float(n % 3) - 1.0) * 30.0
+		var y := 200.0 - float(n / 3) * 38.0
+		f.pos = Vector2(clampf(lane_x, 80.0, ARENA_W - 80.0), clampf(y, 60.0, ARENA_H - 60.0))
+		f.uid = "enemy_L%d_m%d" % [lane, n]
+		f["lane"] = lane
+		out.append(f)
+
+static func _append_lane_boss(out: Array, lane: int, template: Dictionary) -> void:
+	if template.is_empty():
+		return
+	var growth := BossService.growth_for_completed(GameState.boss_completed)
+	var boss_mul := BossService.GLOBAL_STAT_MULTIPLIER
+	var d := template.duplicate(true)
+	d.hp = maxi(1, int(round(float(d.get("hp", 1)) * float(growth.hp) * boss_mul)))
+	d.atk = maxi(1, int(round(float(d.get("atk", 1)) * float(growth.atk) * boss_mul)))
+	d.def = maxi(0, int(round(float(d.get("def", 0)) * float(growth.def) * boss_mul)))
+	if d.has("skill_damage"):
+		d.skill_damage = maxi(1, int(round(float(d.get("skill_damage", 0)) * float(growth.skill_damage) * boss_mul)))
+	var f := _fighter_from_def(d, 12, "enemy", 0, 1)
+	f.pos = Vector2(TEAM_LANE_CENTERS[lane], 180.0)
+	f.uid = "enemy_L%d_boss" % lane
+	f["lane"] = lane
+	out.append(f)
+
+static func _dummy_merc_slots(rng: RandomNumberGenerator) -> Array:
+	# Offline stand-in for a rival's "sent" mercenaries (0-2 random mercs).
+	var mercs: Array = DataRegistry.get_table("mercenaries").get("mercenaries", [])
+	if mercs.is_empty():
+		return []
+	var out: Array = []
+	for k in rng.randi_range(0, 2):
+		var m: Dictionary = mercs[rng.randi_range(0, mercs.size() - 1)]
+		out.append({"id": str(m.get("id", "")), "star": 1, "def": m.duplicate(true), "is_mercenary": true})
+	return out
+
+static func _append_lane_mercenaries(out: Array, merc_slots: Array, team: String, lane: int) -> void:
+	var idx := 0
+	for i in merc_slots.size():
+		var cell = merc_slots[i]
+		if cell == null or typeof(cell) != TYPE_DICTIONARY:
+			continue
+		var f := _fighter_from_cell(cell, GameConstants.CELL_COUNT + i, team)
+		var lane_x: float = TEAM_LANE_CENTERS[lane] + (float(idx % 3) - 1.0) * 28.0
+		var y := 360.0 + float(idx / 3) * 34.0 if team == "player" else 150.0 - float(idx / 3) * 34.0
+		f.pos = Vector2(clampf(lane_x, 80.0, ARENA_W - 80.0), clampf(y, 60.0, ARENA_H - 60.0))
+		f.uid = "%s_L%d_merc%d" % [team, lane, i]
+		f["lane"] = lane
+		f["owner_treasures"] = []
+		f["owner_syn"] = {}
+		out.append(f)
+		idx += 1
+
+static func _team_slot_state(slot_idx: int) -> String:
+	var states: Array = NetworkService.team_slot_states if NetworkService.team_active else GameState.team_slot_states
+	return str(states[slot_idx]) if slot_idx < states.size() else "empty"
+
+static func _team_board_for_slot(slot_idx: int, rng: RandomNumberGenerator) -> Array:
+	# Online: every client builds every board from the SAME broadcast snapshot
+	# (including the local player's own) so the state is identical for everyone.
+	if NetworkService.team_active:
+		var st := _team_slot_state(slot_idx)
+		if st == "player":
+			var snap = NetworkService.team_boards.get(slot_idx, {})
+			if snap is Dictionary and not (snap as Dictionary).is_empty():
+				return NetProtocol.extract_board(snap)
+			return []
+		if st == "dummy":
+			return build_dummy_board(rng)
+		return []
+	# Offline: slot 0 = my board, dummy/player slots = random board.
+	if slot_idx == 0:
+		return GameState.board_slots
+	var st2 := _team_slot_state(slot_idx)
+	return build_dummy_board(rng) if (st2 == "dummy" or st2 == "player") else []
+
+static func _team_mercs_for_slot(slot_idx: int, rng: RandomNumberGenerator) -> Array:
+	if NetworkService.team_active:
+		var st := _team_slot_state(slot_idx)
+		if st == "player":
+			var snap = NetworkService.team_boards.get(slot_idx, {})
+			if snap is Dictionary and not (snap as Dictionary).is_empty():
+				return NetProtocol.extract_mercenaries(snap)
+			return []
+		if st == "dummy":
+			return _dummy_merc_slots(rng)
+		return []
+	# Offline: slot 0 = my mercs, dummy lanes = random sent mercs.
+	if slot_idx == 0:
+		return GameState.mercenary_slots
+	return _dummy_merc_slots(rng)
+
+static func build_dummy_board(rng: RandomNumberGenerator) -> Array:
+	var board: Array = []
+	board.resize(GameConstants.CELL_COUNT)
+	board.fill(null)
+	var units: Array = DataRegistry.get_table("race_units").get("units", [])
+	if units.is_empty():
+		return board
+	var slots: Array = []
+	for i in GameConstants.CELL_COUNT:
+		slots.append(i)
+	for i in range(slots.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var tmp = slots[i]
+		slots[i] = slots[j]
+		slots[j] = tmp
+	var count := mini(rng.randi_range(3, 5), slots.size())
+	for k in count:
+		var slot := int(slots[k])
+		var u: Dictionary = units[rng.randi_range(0, units.size() - 1)]
+		board[slot] = {"def": u.duplicate(true), "star": 1, "is_mercenary": false, "id": str(u.get("id", ""))}
+	return board
+
+static func step_state(state: Dictionary) -> void:
+	if bool(state.get("finished", false)):
+		return
+	var player: Array = state.player
+	var enemy: Array = state.enemy
+	_process_revives(state)
+	_process_temporary_deaths(state)
+	var p_alive := _alive(player)
+	var e_alive := _alive(enemy)
+	_apply_human_last_stand(state, p_alive)
+	if p_alive.is_empty() or (e_alive.is_empty() and state.get("revive_queue", []).is_empty()) or float(state.elapsed) >= HARD_TIMEOUT_SEC:
+		state.finished = true
+		return
+	if not e_alive.is_empty() and not _teams_have_valid_target_pair(p_alive, e_alive):
+		state.log.append("双方剩余单位无法互相攻击，提前按剩余战力判定。")
+		state.finished = true
+		return
+	_tick_statuses(p_alive + e_alive, state)
+	_tick_skills(p_alive, e_alive, state)
+	_tick_skills(e_alive, p_alive, state)
+	_process_boss_charges(state)
+	if float(state.elapsed) >= float(state.next_decay):
+		_decay_units(p_alive + e_alive)
+		state.log.append("%.0fs 战斗衰减触发。" % float(state.elapsed))
+		state.next_decay = float(state.next_decay) + DECAY_INTERVAL_SEC
+	_step_team(player, e_alive, float(state.elapsed), state)
+	_step_team(enemy, p_alive, float(state.elapsed), state)
+	_process_shared_links(state)
+	_process_race_death_traits(state)
+	state.elapsed = float(state.elapsed) + TICK_SEC
+
+static func result_from_state(state: Dictionary) -> Dictionary:
+	if state.has("forced_result"):
+		var forced: Dictionary = state.forced_result
+		var forced_player: Array = state.get("player", [])
+		var forced_enemy: Array = state.get("enemy", [])
+		var forced_player_alive := _alive(forced_player)
+		var forced_enemy_alive := _alive(forced_enemy)
+		return {
+			"kind": state.get("kind", "pve"),
+			"player_wins": bool(forced.get("player_wins", false)),
+			"reason": str(forced.get("reason", "forced")),
+			"elapsed": float(state.get("elapsed", 0.0)),
+			"player_alive": forced_player_alive.size(),
+			"enemy_alive": forced_enemy_alive.size(),
+			"player_power": timeout_power(forced_player_alive),
+			"enemy_power": timeout_power(forced_enemy_alive),
+			"player_hp_current": _team_current_hp(forced_player),
+			"player_hp_max": _team_max_hp(forced_player),
+			"enemy_hp_current": _team_current_hp(forced_enemy),
+			"enemy_hp_max": _team_max_hp(forced_enemy),
+			"log": forced.get("log", []),
+			"unit_stats": state.get("unit_stats", {}),
+		}
+	var player: Array = state.player
+	var enemy: Array = state.enemy
+	var p_end := _alive(player)
+	var e_end := _alive(enemy)
+	var player_wins := false
+	var reason := "wipeout"
+	if p_end.is_empty() and e_end.is_empty():
+		player_wins = true
+		reason = "double_ko_player_fallback"
+	elif e_end.is_empty():
+		player_wins = true
+	elif p_end.is_empty():
+		player_wins = false
+	else:
+		reason = "hard_timeout_power"
+		var p_power := timeout_power(p_end)
+		var e_power := timeout_power(e_end)
+		if is_equal_approx(p_power, e_power):
+			player_wins = GameState.player_formation_hp >= GameState.enemy_formation_hp
+		else:
+			player_wins = p_power > e_power
+		state.log.append("3分钟判定：我方战力 %.0f，敌方战力 %.0f。" % [p_power, e_power])
+	return {
+		"kind": state.get("kind", "pve"),
+		"player_wins": player_wins,
+		"reason": reason,
+		"elapsed": float(state.get("elapsed", 0.0)),
+		"player_alive": p_end.size(),
+		"enemy_alive": e_end.size(),
+		"player_power": timeout_power(p_end),
+		"enemy_power": timeout_power(e_end),
+		"player_hp_current": _team_current_hp(player),
+		"player_hp_max": _team_max_hp(player),
+		"enemy_hp_current": _team_current_hp(enemy),
+		"enemy_hp_max": _team_max_hp(enemy),
+		"player_survivor_slots": _survivor_slots(p_end),
+		"log": state.get("log", []),
+		"player_kill_gold": int(state.get("player_kill_gold", 0)),
+		"enemy_kill_gold": int(state.get("enemy_kill_gold", 0)),
+		"player_kills": state.get("player_kills", []),
+		"enemy_kills": state.get("enemy_kills", []),
+		"bonus_gold": int(state.get("bonus_gold", 0)),
+		"unit_stats": state.get("unit_stats", {}),
+	}
+
+static func build_player_fighters(kind: String) -> Array:
+	var out: Array = []
+	var unique_ids := {}
+	for i in GameState.board_slots.size():
+		var cell = GameState.board_slots[i]
+		if cell == null or _is_duplicate_unique_cell(cell, unique_ids):
+			continue
+		out.append(_fighter_from_cell(cell, i, "player"))
+	if NetworkService.is_online() and (kind == "pvp" or kind == "final"):
+		_add_mercenary_fighters(out, GameState.mercenary_slots, "player", false)
+	return out
+
+static func build_enemy_fighters(kind: String) -> Array:
+	match kind:
+		"boss": return _build_boss_fighters()
+		"pvp": return _build_pvp_fighters()
+		_: return _build_pve_fighters()
+
+static func _is_duplicate_unique_cell(cell: Dictionary, unique_ids: Dictionary) -> bool:
+	var d: Dictionary = cell.get("def", {})
+	if not bool(d.get("unique_on_board", false)):
+		return false
+	var id := str(cell.get("id", d.get("id", "")))
+	if id.is_empty():
+		return false
+	if unique_ids.has(id):
+		return true
+	unique_ids[id] = true
+	return false
+static func living_units(state: Dictionary) -> Array:
+	return _alive(state.get("player", [])) + _alive(state.get("enemy", []))
+
+static func _init_unit_stats(state: Dictionary) -> void:
+	state.unit_stats = {}
+	for side in ["player", "enemy"]:
+		var units: Array = state.get(side, [])
+		for f in units:
+			if typeof(f) == TYPE_DICTIONARY:
+				_register_unit_stat(state, f)
+
+static func _register_unit_stat(state: Dictionary, f: Dictionary) -> void:
+	var uid := str(f.get("uid", ""))
+	if uid.is_empty():
+		return
+	var d: Dictionary = f.get("def", {})
+	state.unit_stats[uid] = {
+		"name": str(f.get("name", d.get("name", f.get("id", "?")))),
+		"position": _stat_position_label(f),
+		"group": _stat_group(f),
+		"damage_dealt": 0,
+		"damage_taken": 0,
+		"healing_done": 0,
+		"debuffs": {},
+		"buffs": {},
+	}
+
+static func _stat_group(f: Dictionary) -> String:
+	var d: Dictionary = f.get("def", {})
+	if bool(d.get("is_boss", false)) or str(f.get("id", "")).begins_with("boss_") or d.has("series"):
+		return "boss"
+	return "player" if str(f.get("team", "")) == "player" else "enemy"
+
+static func _stat_position_label(f: Dictionary) -> String:
+	var slot := int(f.get("slot", -1))
+	var team_prefix := "我方" if str(f.get("team", "")) == "player" else "敌方"
+	if bool(f.get("is_mercenary", false)):
+		return "%s佣兵%d" % [team_prefix, maxi(1, slot - 24)]
+	if _stat_group(f) == "boss":
+		return "Boss%d" % maxi(1, slot + 1)
+	if slot >= 0 and slot < GameConstants.CELL_COUNT:
+		return "棋盘%d" % (slot + 1)
+	return "%s%d" % [team_prefix, maxi(1, slot + 1)]
+
+static func _build_pvp_fighters() -> Array:
+	var board := NetProtocol.extract_board(NetworkService.opponent_board_snapshot)
+	var out: Array = []
+	var unique_ids := {}
+	for i in board.size():
+		var cell = board[i]
+		if cell == null or typeof(cell) != TYPE_DICTIONARY or _is_duplicate_unique_cell(cell, unique_ids):
+			continue
+		out.append(_fighter_from_cell(cell, i, "enemy", true))
+	_add_mercenary_fighters(out, NetProtocol.extract_mercenaries(NetworkService.opponent_board_snapshot), "enemy", true)
+	return out
+static func _build_pve_fighters() -> Array:
+	var monsters: Array = DataRegistry.get_table("pve_monsters").get("monsters", [])
+	if monsters.is_empty():
+		return []
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	var template: Dictionary = monsters[rng.randi_range(0, monsters.size() - 1)]
+	var count_by_round: Dictionary = DataRegistry.get_table("pve_monsters").get("enemy_count_by_round", {})
+	var count := int(count_by_round.get(str(GameState.round_index), 3))
+	var growth := PveService.growth_for_completed(GameState.pve_completed)
+	var out: Array = []
+	for n in count:
+		var d := template.duplicate(true)
+		d.hp = maxi(1, int(round(float(d.get("hp", 1)) * float(growth.hp))))
+		d.atk = maxi(1, int(round(float(d.get("atk", 1)) * float(growth.atk))))
+		d.def = maxi(0, int(round(float(d.get("def", 0)) * float(growth.def))))
+		out.append(_fighter_from_def(d, 2 + n, "enemy", n, count))
+	if NetworkService.is_online():
+		_add_mercenary_fighters(out, NetProtocol.extract_mercenaries(NetworkService.opponent_board_snapshot), "enemy", false)
+	return out
+
+static func _build_boss_fighters() -> Array:
+	var bosses: Array = DataRegistry.get_table("bosses").get("bosses", [])
+	if bosses.is_empty():
+		return []
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	var pool: Array = []
+	for b in bosses:
+		if str(b.get("id", "")) not in GameState.used_boss_ids:
+			pool.append(b)
+	if pool.is_empty():
+		pool = bosses
+	var template: Dictionary = pool[rng.randi_range(0, pool.size() - 1)]
+	if str(template.get("id", "")) not in GameState.used_boss_ids:
+		GameState.used_boss_ids.append(str(template.id))
+	var growth := BossService.growth_for_completed(GameState.boss_completed)
+	var boss_mul := BossService.GLOBAL_STAT_MULTIPLIER
+	var d := template.duplicate(true)
+	d.hp = maxi(1, int(round(float(d.get("hp", 1)) * float(growth.hp) * boss_mul)))
+	d.atk = maxi(1, int(round(float(d.get("atk", 1)) * float(growth.atk) * boss_mul)))
+	d.def = maxi(0, int(round(float(d.get("def", 0)) * float(growth.def) * boss_mul)))
+	if d.has("skill_damage"):
+		d.skill_damage = maxi(1, int(round(float(d.get("skill_damage", 0)) * float(growth.skill_damage) * boss_mul)))
+	var out: Array = []
+	if bool(d.get("is_twin", false)):
+		var twin_group_id := "%s_%d" % [str(d.get("id", "boss_twin")), int(GameState.boss_completed)]
+		var first_twin := _fighter_from_def(d, 7, "enemy", 0, 2)
+		first_twin.pos = Vector2(390.0, 116.0)
+		first_twin.twin_group_id = twin_group_id
+		first_twin.twin_member_index = 0
+		out.append(first_twin)
+		var d2 := d.duplicate(true)
+		d2.element = str(d.get("twin_second_element", d.get("element", "sky")))
+		var second_twin := _fighter_from_def(d2, 17, "enemy", 1, 2)
+		second_twin.pos = Vector2(610.0, 116.0)
+		second_twin.twin_group_id = twin_group_id
+		second_twin.twin_member_index = 1
+		out.append(second_twin)
+	else:
+		var boss := _fighter_from_def(d, 12, "enemy", 0, 1)
+		boss.pos = Vector2(500.0, 116.0)
+		out.append(boss)
+	_add_boss_round_pve_monsters(out, rng)
+	if NetworkService.is_online():
+		_add_mercenary_fighters(out, NetProtocol.extract_mercenaries(NetworkService.opponent_board_snapshot), "enemy", false)
+	return out
+
+
+static func _add_boss_round_pve_monsters(out: Array, rng: RandomNumberGenerator) -> void:
+	var monsters: Array = DataRegistry.get_table("pve_monsters").get("monsters", [])
+	if monsters.is_empty():
+		return
+	var growth := PveService.growth_for_completed(GameState.pve_completed)
+	for n in 5:
+		var d: Dictionary = monsters[rng.randi_range(0, monsters.size() - 1)].duplicate(true)
+		d.hp = maxi(1, int(round(float(d.get("hp", 1)) * float(growth.hp))))
+		d.atk = maxi(1, int(round(float(d.get("atk", 1)) * float(growth.atk))))
+		d.def = maxi(0, int(round(float(d.get("def", 0)) * float(growth.def))))
+		if d.has("skill_damage"):
+			d.skill_damage = maxi(1, int(round(float(d.get("skill_damage", 0)) * float(growth.skill_damage))))
+		var monster := _fighter_from_def(d, 10 + n, "enemy", out.size(), out.size() + 5)
+		monster.pos = Vector2(350.0 + float(n) * CELL_SPACING, 224.0)
+		out.append(monster)
+static func _add_mercenary_fighters(out: Array, mercenary_slots: Array, team: String, mirror_enemy_slot: bool) -> void:
+	for i in mercenary_slots.size():
+		var cell = mercenary_slots[i]
+		if cell == null or typeof(cell) != TYPE_DICTIONARY:
+			continue
+		var visual_slot := GameConstants.CELL_COUNT + i
+		var fighter := _fighter_from_cell(cell, visual_slot, team, mirror_enemy_slot)
+		fighter.pos = _mercenary_slot_to_pos(i, team, mirror_enemy_slot)
+		out.append(fighter)
+
+static func _fighter_from_cell(cell: Dictionary, slot: int, team: String, mirror_enemy_slot: bool = false) -> Dictionary:
+	var d: Dictionary = cell.def.duplicate(true)
+	if not bool(cell.get("is_mercenary", false)):
+		var scaled := UnitFactory.apply_star_stats(d, int(cell.get("star", 1)))
+		var relation_multiplier := RaceRelationService.stat_multiplier_for_cell(cell)
+		d.hp = maxi(1, int(round(float(scaled.hp) * relation_multiplier)))
+		d.atk = maxi(1, int(round(float(scaled.atk) * relation_multiplier)))
+		d.def = maxi(0, int(round(float(scaled.def) * relation_multiplier)))
+	return _fighter_from_def(d, slot, team, slot, GameConstants.CELL_COUNT, int(cell.get("star", 1)), bool(cell.get("is_mercenary", false)), false, mirror_enemy_slot)
+
+static func _fighter_from_def(d: Dictionary, slot: int, team: String, order: int, total: int, star: int = 1, is_mercenary: bool = false, is_formation_ally: bool = false, mirror_enemy_slot: bool = false) -> Dictionary:
+	var pos := _slot_to_pos(slot, team, order, total, mirror_enemy_slot)
+	var hp := int(d.get("hp", 1))
+	return {"uid": "%s_%s_%d" % [team, str(d.get("id", "unit")), order], "id": str(d.get("id", "unit")), "name": str(d.get("name", d.get("id", "unit"))), "team": team, "slot": slot, "def": d, "star": star, "is_mercenary": is_mercenary or bool(d.get("is_mercenary", false)), "is_formation_ally": is_formation_ally, "footprint_cells": maxi(1, int(d.get("footprint_cells", 1))), "hp": hp, "max_hp": hp, "atk": int(d.get("atk", 1)), "defense": int(d.get("def", d.get("defense", 0))), "attack_speed": float(d.get("attack_speed", 1.0)), "range_px": float(d.get("range", 1)) * ATTACK_RANGE_SCALE, "move_speed_px": float(d.get("move_speed", 3.0)) * 55.0, "pos": pos, "next_attack": 0.0, "alive": true, "shield": 0, "attack_count": 0, "skill_ready": 0.0, "skill_stacks": 0, "linked_target_uid": "", "statuses": {}, "dodge": float(d.get("dodge", 0.0)), "revives_left": int(d.get("revives_per_twin", 0)), "treasure_cd": {}}
+
+static func _slot_to_pos(slot: int, team: String, order: int, total: int, mirror_enemy_slot: bool = false) -> Vector2:
+	var column := slot % GameConstants.BOARD_COLUMNS
+	var row := floori(float(slot) / float(GameConstants.BOARD_COLUMNS))
+	var base_x := ARENA_W * 0.5 + (float(column) - (float(GameConstants.BOARD_COLUMNS) - 1.0) * 0.5) * CELL_SPACING
+	var base_y := 272.0 + float(row) * CELL_SPACING
+	var x := base_x
+	var y := base_y
+	if team == "enemy":
+		if mirror_enemy_slot:
+			x = ARENA_W - base_x
+			y = ARENA_H - base_y
+		else:
+			y = 80.0 + float(order % maxi(1, total)) * 42.0
+			x = ARENA_W * 0.5 + (float(order % GameConstants.BOARD_COLUMNS) - (float(GameConstants.BOARD_COLUMNS) - 1.0) * 0.5) * CELL_SPACING
+	return Vector2(clampf(x, 80.0, ARENA_W - 80.0), clampf(y, 45.0, ARENA_H - 45.0))
+
+static func _mercenary_slot_to_pos(index: int, team: String, mirror_enemy_slot: bool = false) -> Vector2:
+	var col := index % 3
+	var row := floori(float(index) / 3.0)
+	var x := 314.0 + float(col) * 186.0
+	var y := 424.0 + float(row) * 54.0
+	if team == "enemy":
+		if mirror_enemy_slot:
+			x = ARENA_W - x
+			y = ARENA_H - y
+		else:
+			y = 96.0 + float(row) * 54.0
+	return Vector2(clampf(x, 80.0, ARENA_W - 80.0), clampf(y, 45.0, ARENA_H - 45.0))
+
+static func _step_team(team_units: Array, opponents: Array, elapsed: float, state: Dictionary) -> void:
+	for f in team_units:
+		if not bool(f.get("alive", false)):
+			continue
+		if StatusEffectService.is_stunned(f):
+			continue
+		var target := _select_target(f, opponents)
+		if target.is_empty():
+			continue
+		var delta: Vector2 = target.pos - f.pos
+		var dist: float = delta.length()
+		var attack_distance := _effective_attack_distance(f, target)
+		if dist > attack_distance:
+			var step := minf(float(f.move_speed_px) * StatusEffectService.move_speed_multiplier(f) * TICK_SEC, maxf(0.0, dist - attack_distance))
+			if dist > 0.001:
+				f.pos += delta.normalized() * step
+		elif elapsed >= float(f.next_attack):
+			if str(f.get("def", {}).get("skill_id", "")) == "random_attribute_bolt":
+				continue
+			DamageService.begin_stat_context(state, f)
+			var was_alive := bool(target.get("alive", false))
+			_perform_attack(f, target, state)
+			_handle_attack_kill(f, target, state, team_units, opponents, was_alive)
+			if bool(target.get("alive", false)) and str(f.get("def", {}).get("skill_id", "")) == "every_fourth_combo" and int(f.get("attack_count", 0)) % int(f.get("def", {}).get("every", 4)) == 0:
+				var combo_alive := bool(target.get("alive", false))
+				DamageService.apply_damage(target, maxi(1, int(round(float(f.atk) * float(f.get("def", {}).get("combo_atk_pct", 0.70))))), false)
+				_handle_attack_kill(f, target, state, team_units, opponents, combo_alive)
+			if str(f.get("def", {}).get("skill_id", "")) == "every_fifth_group_heal" and int(f.get("attack_count", 0)) % int(f.get("def", {}).get("every", 5)) == 0:
+				_group_heal(f, team_units, float(f.get("def", {}).get("heal_pct", 0.05)))
+			var aspd := clampf(float(f.attack_speed) * StatusEffectService.attack_speed_multiplier(f) * _dynamic_attack_speed_multiplier(f), 0.25, 2.5)
+			f.next_attack = elapsed + (1.0 / aspd)
+			DamageService.clear_stat_context()
+
+static func _effective_attack_distance(attacker: Dictionary, target: Dictionary) -> float:
+	var attacker_extra := float(maxi(0, int(attacker.get("footprint_cells", 1)) - 1)) * CELL_SPACING * 0.5
+	var target_extra := float(maxi(0, int(target.get("footprint_cells", 1)) - 1)) * CELL_SPACING * 0.5
+	return float(attacker.get("range_px", ATTACK_RANGE_SCALE)) + attacker_extra + target_extra
+static func _select_target(f: Dictionary, opponents: Array) -> Dictionary:
+	var taunter := _nearest_taunter(f, opponents)
+	if not taunter.is_empty():
+		return taunter
+	if GameState.team_mode:
+		return _team_select_target(f, opponents)
+	if str(f.get("def", {}).get("skill_id", "")) == "death_hunt":
+		var low2 := _lowest_targetable_hp_ratio(f, opponents)
+		if not low2.is_empty():
+			return low2
+	if _f_has_set(f, "attack"):
+		var low := _lowest_targetable_hp_ratio(f, opponents)
+		if not low.is_empty():
+			return low
+	return _nearest(f, opponents)
+
+static func _team_select_target(f: Dictionary, opponents: Array) -> Dictionary:
+	# Fight your own lane first; when it is clear, help the LEFT lane (lower
+	# index) before the RIGHT lane.
+	var my_lane := int(f.get("lane", 0))
+	var lane_order: Array = [my_lane]
+	for l in range(my_lane - 1, -1, -1):
+		lane_order.append(l)
+	for l in range(my_lane + 1, 3):
+		lane_order.append(l)
+	for lane in lane_order:
+		var best: Dictionary = {}
+		var best_dist := INF
+		for o in opponents:
+			if not bool(o.get("alive", false)) or int(o.get("lane", -1)) != lane or not _can_target(f, o):
+				continue
+			var dist: float = float(f.pos.distance_squared_to(o.pos))
+			if dist < best_dist:
+				best_dist = dist
+				best = o
+		if not best.is_empty():
+			return best
+	return _nearest(f, opponents)
+
+static func _nearest(f: Dictionary, opponents: Array) -> Dictionary:
+	var best: Dictionary = {}
+	var best_dist := INF
+	for o in opponents:
+		if not bool(o.get("alive", false)) or not _can_target(f, o):
+			continue
+		var dist: float = float(f.pos.distance_squared_to(o.pos))
+		if dist < best_dist:
+			best_dist = dist
+			best = o
+	return best
+
+static func _can_target(attacker: Dictionary, target: Dictionary) -> bool:
+	# 3v3 team mode: callers only ever pass opposing-team units, so anything on
+	# the enemy side is a valid target (mercenaries and bosses included).
+	if GameState.team_mode:
+		return true
+	if bool(attacker.get("is_mercenary", false)):
+		return not bool(target.get("is_mercenary", false)) and not bool(target.get("is_formation_ally", false)) and not bool(target.get("def", {}).get("is_boss", false)) and not target.get("def", {}).has("series")
+	var ad: Dictionary = attacker.get("def", {})
+	if (bool(ad.get("is_boss", false)) or ad.has("series")) and bool(target.get("is_mercenary", false)):
+		return false
+	return true
+
+static func _teams_have_valid_target_pair(player_units: Array, enemy_units: Array) -> bool:
+	for player_unit in player_units:
+		for enemy_unit in enemy_units:
+			if _can_target(player_unit, enemy_unit) or _can_target(enemy_unit, player_unit):
+				return true
+	return false
+
+static func _nearest_taunter(f: Dictionary, opponents: Array) -> Dictionary:
+	var best: Dictionary = {}
+	var best_dist := INF
+	for o in opponents:
+		if not bool(o.get("alive", false)) or not bool(o.get("taunt_active", false)) or not _can_target(f, o):
+			continue
+		var dist: float = float(f.pos.distance_squared_to(o.pos))
+		var radius := float(o.get("taunt_radius", 180.0))
+		if radius > 0.0 and dist > radius * radius:
+			continue
+		if dist < best_dist:
+			best_dist = dist
+			best = o
+	return best
+
+static func _alive(fighters: Array) -> Array:
+	var out: Array = []
+	for f in fighters:
+		if bool(f.get("alive", false)) and int(f.get("hp", 0)) > 0:
+			out.append(f)
+	return out
+
+static func _survivor_slots(fighters: Array) -> Array[int]:
+	var out: Array[int] = []
+	for f in fighters:
+		if bool(f.get("alive", false)) and int(f.get("slot", -1)) >= 0:
+			out.append(int(f.slot))
+	return out
+
+static func _team_current_hp(fighters: Array) -> int:
+	var total := 0
+	for f in fighters:
+		if bool(f.get("alive", false)):
+			total += maxi(0, int(f.get("hp", 0)))
+	return total
+
+static func _team_max_hp(fighters: Array) -> int:
+	var total := 0
+	for f in fighters:
+		total += maxi(0, int(f.get("max_hp", f.get("hp", 0))))
+	return total
+
+static func _handle_attack_kill(killer: Dictionary, target: Dictionary, state: Dictionary, killer_team: Array, victim_team: Array, was_alive: bool) -> void:
+	if not was_alive or bool(target.get("alive", false)):
+		return
+	_on_unit_killed(killer, target, state, killer_team, victim_team)
+
+static func _process_race_death_traits(state: Dictionary) -> void:
+	var fighters: Array = []
+	fighters.append_array(state.get("player", []))
+	fighters.append_array(state.get("enemy", []))
+	for f in fighters:
+		if bool(f.get("alive", true)) or int(f.get("hp", 0)) > 0:
+			continue
+		_process_single_race_death(state, f)
+
+static func _process_single_race_death(state: Dictionary, victim: Dictionary) -> void:
+	if victim.is_empty():
+		return
+	var uid := str(victim.get("uid", ""))
+	if uid.is_empty():
+		return
+	var processed: Dictionary = state.get("race_trait_processed_deaths", {})
+	if bool(processed.get(uid, false)):
+		return
+	processed[uid] = true
+	state.race_trait_processed_deaths = processed
+	state.field_death_count = int(state.get("field_death_count", 0)) + 1
+	_record_death_history(state, victim)
+	if state.has("owner_syn_by_key"):
+		# 3v3: each effect uses the dead unit's / opponent's OWNER synergy.
+		_owner_god_cleanse(state, victim)
+		_owner_dark_stack_on_death(state, victim)
+		_owner_undead_clone_on_death(state, victim)
+		return
+	if str(victim.get("team", "")) == "player":
+		_maybe_god_death_cleanse(state)
+	if str(victim.get("team", "")) == "enemy":
+		_apply_dark_death_stack(state)
+	_maybe_undead_death_clone(state)
+
+# (1) 神族·死亡净化: owner's unit dies -> cleanse one of the owner's units,
+# preferring its own; once the owner's lane enemies are cleared, can extend to
+# the owner's allies (same team, other lanes).
+static func _owner_god_cleanse(state: Dictionary, victim: Dictionary) -> void:
+	var key := _owner_key(victim)
+	if not bool(_owner_syn(state, key).get("god_death_cleanse", false)):
+		return
+	var team := str(victim.get("team", ""))
+	var lane := int(victim.get("lane", -1))
+	var side: Array = state.get("player", []) if team == "player" else state.get("enemy", [])
+	var pool: Array = []
+	var extend := _owner_lane_enemies_cleared(state, team, lane)
+	for f in side:
+		if not bool(f.get("alive", false)) or int(f.get("hp", 0)) <= 0:
+			continue
+		if extend or int(f.get("lane", -1)) == lane:
+			pool.append(f)
+	if pool.is_empty():
+		return
+	var target: Dictionary = pool[RngService.rng.randi() % pool.size()]
+	if StatusEffectService.clear_negative_statuses(target) > 0:
+		state.log.append("神族特性：%s 清除负面状态。" % str(target.get("name", "友军")))
+
+# (2) 暗族·死亡叠伤: count ALL deaths of the opposing team for each dark owner.
+static func _owner_dark_stack_on_death(state: Dictionary, victim: Dictionary) -> void:
+	var opp_team := "enemy" if str(victim.get("team", "")) == "player" else "player"
+	for lane in 3:
+		var key := "%s_%d" % [opp_team, lane]
+		if not bool(_owner_syn(state, key).get("dark_death_stack_enabled", false)):
+			continue
+		var os := _owner_state(state, key)
+		os.dark_enemy_deaths = int(os.get("dark_enemy_deaths", 0)) + 1
+		os.dark_stacks = floori(float(int(os.dark_enemy_deaths)) / 3.0)
+
+# (3) 亡灵·死亡克隆: count ALL deaths (whole field) for each undead owner.
+static func _owner_undead_clone_on_death(state: Dictionary, victim: Dictionary) -> void:
+	for key in state.get("owner_syn_by_key", {}):
+		var threshold := int(_owner_syn(state, key).get("undead_death_clone_threshold", 0))
+		if threshold <= 0:
+			continue
+		var os := _owner_state(state, key)
+		os.undead_deaths = int(os.get("undead_deaths", 0)) + 1
+		if int(os.undead_deaths) < threshold:
+			continue
+		os.undead_deaths = 0
+		_owner_clone_dead_undead(state, key)
+
+static func _owner_clone_dead_undead(state: Dictionary, key: String) -> void:
+	var parts := key.split("_")
+	if parts.size() < 2:
+		return
+	var team := str(parts[0])
+	var lane := int(parts[1])
+	var side: Array = state.get("player", []) if team == "player" else state.get("enemy", [])
+	var summoner: Dictionary = {}
+	for f in side:
+		if bool(f.get("alive", false)) and int(f.get("hp", 0)) > 0 and int(f.get("lane", -1)) == lane and str(f.get("def", {}).get("race", "")) == "undead" and not bool(f.get("is_race_trait_clone", false)):
+			summoner = f
+			break
+	if summoner.is_empty():
+		return
+	var sources: Array = []
+	for h in state.get("death_history", []):
+		if str(h.get("team", "")) == team and int(h.get("lane", -1)) == lane and str(h.get("def", {}).get("race", "")) == "undead":
+			sources.append(h)
+	if sources.is_empty():
+		return
+	var source: Dictionary = sources[RngService.rng.randi() % sources.size()]
+	_spawn_undead_trait_clone(state, summoner, source, int(state.get("field_death_count", 0)))
+	state.log.append("死灵特性：召唤一个亡灵分身。")
+
+static func _record_death_history(state: Dictionary, victim: Dictionary) -> void:
+	var history: Array = state.get("death_history", [])
+	var snapshot := victim.duplicate(true)
+	snapshot.alive = false
+	snapshot.statuses = {}
+	snapshot.erase("parasite_owner")
+	snapshot.erase("sacrifice_guardian")
+	snapshot.erase("shared_link_uid")
+	snapshot.erase("shared_link_peer")
+	history.append(snapshot)
+	while history.size() > 80:
+		history.pop_front()
+	state.death_history = history
+
+static func _maybe_god_death_cleanse(state: Dictionary) -> void:
+	var syn: Dictionary = state.get("player_syn", {})
+	if not bool(syn.get("god_death_cleanse", false)):
+		return
+	var candidates: Array = []
+	for f in state.get("player", []):
+		if bool(f.get("alive", false)) and int(f.get("hp", 0)) > 0:
+			candidates.append(f)
+	if candidates.is_empty():
+		return
+	var target: Dictionary = candidates[RngService.rng.randi() % candidates.size()]
+	var removed := StatusEffectService.clear_negative_statuses(target)
+	if removed > 0:
+		state.log.append("神族特性：%s 清除负面状态。" % str(target.get("name", "友军")))
+
+static func _apply_dark_death_stack(state: Dictionary) -> void:
+	var syn: Dictionary = state.get("player_syn", {})
+	if not bool(syn.get("dark_death_stack_enabled", false)):
+		return
+	state.enemy_deaths = int(state.get("enemy_deaths", 0)) + 1
+	var new_stacks := floori(float(int(state.enemy_deaths)) / 3.0)
+	if new_stacks > int(state.get("dark_kill_stacks", 0)):
+		state.dark_kill_stacks = new_stacks
+		state.log.append("暗族特性：对方死亡%d只，暗族伤害+%d%%。" % [int(state.enemy_deaths), int(state.dark_kill_stacks) * 6])
+
+static func _maybe_undead_death_clone(state: Dictionary) -> void:
+	var syn: Dictionary = state.get("player_syn", {})
+	var threshold := int(syn.get("undead_death_clone_threshold", 0))
+	if threshold <= 0:
+		return
+	state.undead_trait_death_counter = int(state.get("undead_trait_death_counter", 0)) + 1
+	if int(state.undead_trait_death_counter) < threshold:
+		return
+	state.undead_trait_death_counter = 0
+	var history: Array = state.get("death_history", [])
+	if history.is_empty():
+		return
+	var summoners: Array = []
+	for f in state.get("player", []):
+		if bool(f.get("alive", false)) and int(f.get("hp", 0)) > 0 and str(f.get("def", {}).get("race", "")) == "undead" and not bool(f.get("is_race_trait_clone", false)):
+			summoners.append(f)
+	if summoners.is_empty():
+		return
+	var spawned := 0
+	for summoner in summoners:
+		var source: Dictionary = history[RngService.rng.randi() % history.size()]
+		_spawn_undead_trait_clone(state, summoner, source, spawned)
+		spawned += 1
+	if spawned > 0:
+		state.log.append("死灵特性：全场死亡达到%d只，召唤%d个40%%分身。" % [threshold, spawned])
+
+static func _spawn_undead_trait_clone(state: Dictionary, summoner: Dictionary, source: Dictionary, idx: int) -> void:
+	var clone := source.duplicate(true)
+	var cloned_def: Dictionary = clone.get("def", {}).duplicate(true)
+	var base_id := str(source.get("id", cloned_def.get("id", "unit")))
+	var clone_id := "undead_trait_clone_%s" % base_id
+	cloned_def.id = clone_id
+	cloned_def.name = "%s分身" % str(source.get("name", cloned_def.get("name", "棋子")))
+	cloned_def.erase("is_boss")
+	cloned_def.erase("series")
+	cloned_def.erase("unique_on_board")
+	cloned_def.erase("remove_on_death")
+	clone.uid = "%s_undead_trait_%d_%d" % [str(summoner.get("uid", "undead")), int(state.get("field_death_count", 0)), idx]
+	clone.id = clone_id
+	clone.name = str(cloned_def.name)
+	clone.team = str(summoner.get("team", "player"))
+	clone["lane"] = int(summoner.get("lane", -1))
+	clone["owner_treasures"] = []
+	clone["owner_syn"] = summoner.get("owner_syn", {})
+	clone.slot = -1
+	clone.def = cloned_def
+	clone.star = 1
+	clone.is_mercenary = false
+	clone.is_formation_ally = false
+	clone.is_race_trait_clone = true
+	clone.max_hp = maxi(1, int(round(float(source.get("max_hp", source.get("hp", cloned_def.get("hp", 1)))) * 0.40)))
+	clone.hp = int(clone.max_hp)
+	clone.atk = maxi(1, int(round(float(source.get("atk", cloned_def.get("atk", 1))) * 0.40)))
+	clone.defense = maxi(0, int(round(float(source.get("defense", cloned_def.get("def", 0))) * 0.40)))
+	cloned_def.hp = int(clone.max_hp)
+	cloned_def.atk = int(clone.atk)
+	cloned_def.def = int(clone.defense)
+	clone.attack_speed = float(source.get("attack_speed", cloned_def.get("attack_speed", 1.0)))
+	clone.range_px = float(source.get("range_px", float(cloned_def.get("range", 1)) * ATTACK_RANGE_SCALE))
+	clone.move_speed_px = float(source.get("move_speed_px", float(cloned_def.get("move_speed", 3.0)) * 55.0))
+	var offset_x := (float(idx % GameConstants.BOARD_COLUMNS) - (float(GameConstants.BOARD_COLUMNS) - 1.0) * 0.5) * 18.0
+	var offset_y := float(floori(float(idx) / float(GameConstants.BOARD_COLUMNS)) + 1) * 18.0
+	clone.pos = Vector2(clampf(float(summoner.pos.x) + offset_x, 80.0, ARENA_W - 80.0), clampf(float(summoner.pos.y) + offset_y, 45.0, ARENA_H - 45.0))
+	clone.next_attack = float(state.get("elapsed", 0.0)) + 0.2
+	clone.alive = true
+	clone.shield = 0
+	clone.attack_count = 0
+	clone.skill_ready = 9999.0
+	clone.skill_stacks = 0
+	clone.linked_target_uid = ""
+	clone.statuses = {}
+	clone.dodge = float(source.get("dodge", cloned_def.get("dodge", 0.0)))
+	clone.revives_left = 0
+	clone.treasure_cd = {}
+	clone.erase("parasite_owner")
+	clone.erase("sacrifice_guardian")
+	clone.erase("shared_link_uid")
+	clone.erase("shared_link_peer")
+	if str(clone.team) == "player":
+		state.player.append(clone)
+	else:
+		state.enemy.append(clone)
+
+static func _decay_units(fighters: Array) -> void:
+	for f in fighters:
+		f.max_hp = maxi(1, int(floor(float(f.max_hp) * 0.8)))
+		f.hp = clampi(int(floor(float(f.hp) * 0.8)), 1, int(f.max_hp))
+		f.atk = maxi(1, int(floor(float(f.atk) * 0.8)))
+		f.defense = maxi(0, int(floor(float(f.defense) * 0.8)))
+
+static func timeout_power(fighters: Array) -> float:
+	var total := 0.0
+	for f in fighters:
+		if bool(f.get("alive", true)):
+			total += float(f.get("hp", 0)) + float(f.get("atk", 0)) * 2.0 + float(f.get("defense", f.get("def", 0))) * 5.0
+	return total
+
+
+
+
+static func _tick_statuses(fighters: Array, state: Dictionary) -> void:
+	DamageService.set_stat_state(state)
+	for f in fighters:
+		DamageService.clear_stat_context()
+		StatusEffectService.tick(f, TICK_SEC)
+	DamageService.clear_stat_context()
+
+static func _perform_attack(attacker: Dictionary, target: Dictionary, state: Dictionary) -> int:
+	if StatusEffectService.has_status(attacker, "interrupt"):
+		return 0
+	var d: Dictionary = attacker.get("def", {})
+	var base := float(attacker.get("atk", 1)) * StatusEffectService.attack_multiplier(attacker)
+	base *= _element_multiplier(str(d.get("element", "")), str(target.get("def", {}).get("element", "")))
+	var syn: Dictionary = _resolve_syn(attacker, state)
+	if str(d.get("race", "")) == "dark":
+		base *= 1.0 + float(syn.get("dark_damage_bonus", 0.0)) + float(_attacker_dark_stacks(attacker, state)) * 0.06
+	if str(d.get("skill_id", "")) == "balance_judge" and int(target.hp) > int(attacker.hp):
+		base *= 1.0 + float(d.get("bonus_vs_higher_hp", 0.40))
+	if str(d.get("skill_id", "")) == "blood_rampage":
+		base *= _blood_rampage_damage_multiplier(attacker, d)
+	if str(d.get("skill_id", "")) == "same_target_damage_stack" and str(attacker.get("linked_target_uid", "")) == str(target.get("uid", "")):
+		base *= 1.0 + float(attacker.get("skill_stacks", 0)) * float(d.get("stack_damage", 0.06))
+	var is_crit := false
+	attacker.attack_count = int(attacker.get("attack_count", 0)) + 1
+	if str(d.get("race", "")) == "human" and int(attacker.attack_count) % 3 == 0:
+		is_crit = true
+	elif RngService.rng.randf() < float(d.get("crit", 0.05)) + float(attacker.get("crit_bonus", 0.0)):
+		is_crit = true
+	if is_crit:
+		base *= float(d.get("crit_dmg", 1.5)) + float(attacker.get("crit_dmg_bonus", 0.0))
+	var before_status_count := _status_count(target)
+	var dealt := DamageService.apply_damage(target, maxi(1, int(round(base))), false)
+	if str(d.get("skill_id", "")) == "true_damage_attack":
+		dealt += DamageService.apply_damage(target, maxi(1, int(round(float(attacker.atk) * float(d.get("true_damage_pct", 0.18))))), true)
+	_apply_attack_statuses(attacker, target, state)
+	_apply_attack_treasure_effects(attacker, target, state)
+	_maybe_control_set_extra_debuff(attacker, target, state, before_status_count)
+	_apply_defender_reaction(attacker, target, dealt)
+	_apply_defender_treasure_reaction(target, attacker, state, dealt)
+	_apply_boss_attacker_passives(attacker)
+	_apply_post_damage_treasures(attacker, target, state, dealt)
+	_apply_blood_rampage_lifesteal(attacker, d, dealt)
+	_apply_boss_attack_lifesteal(attacker, d, dealt)
+	if str(d.get("skill_id", "")) == "same_target_damage_stack":
+		if str(attacker.get("linked_target_uid", "")) == str(target.get("uid", "")):
+			attacker.skill_stacks = mini(int(d.get("max_stacks", 5)), int(attacker.get("skill_stacks", 0)) + 1)
+		else:
+			attacker.linked_target_uid = str(target.get("uid", ""))
+			attacker.skill_stacks = 1
+	if str(attacker.get("team", "")) == "player" and float(syn.get("god_lifesteal", 0.0)) > 0.0 and str(d.get("race", "")) == "god":
+		_heal_unit(attacker, maxi(1, int(round(float(dealt) * float(syn.get("god_lifesteal", 0.0))))))
+	return dealt
+
+static func _apply_attack_statuses(attacker: Dictionary, target: Dictionary, state: Dictionary) -> void:
+	var d: Dictionary = attacker.get("def", {})
+	var sid := str(d.get("skill_id", ""))
+	var syn: Dictionary = _resolve_syn(attacker, state)
+	var strength := 1.0 + float(syn.get("dark_debuff_strength", 0.0))
+	var duration_bonus := 1.0 + float(syn.get("dark_debuff_duration", 0.0))
+	if sid == "curse_attack":
+		StatusEffectService.add_status(target, "attack_down", float(d.get("duration", 4.0)) * duration_bonus, {"pct": float(d.get("attack_down", 0.08)) * strength})
+		StatusEffectService.add_status(target, "slow", float(d.get("duration", 4.0)) * duration_bonus, {"attack_speed_pct": float(d.get("aspd_down", 0.08)) * strength, "move_pct": 0.0})
+	elif sid == "burn_claw":
+		StatusEffectService.add_poison(target, float(d.get("burn_duration", 3.0)), 0.0, 0.0)
+		StatusEffectService.add_status(target, "burn", float(d.get("burn_duration", 3.0)), {"dps": float(d.get("burn_dps", 18.0)), "tick_left": 0.0})
+	elif sid == "devour_bite":
+		_heal_unit(attacker, maxi(1, int(round(float(attacker.atk) * float(d.get("lifesteal", 0.18))))))
+	elif sid == "parasite_on_kill":
+		target.parasite_owner = attacker
+	elif sid == "poison_attack":
+		StatusEffectService.add_poison(target, 4.0 * duration_bonus, 0.03, float(syn.get("undead_poison_bonus", 0.0)))
+	elif sid == "defense_down_attack":
+		StatusEffectService.add_status(target, "defense_down", float(d.get("duration", 5.0)) * duration_bonus, {"pct": float(d.get("def_down_pct", 0.10)) * strength})
+	elif sid == "death_hunt":
+		StatusEffectService.add_status(target, "defense_flat_down", float(d.get("duration", 4.0)), {"amount": int(d.get("armor_break", 8))})
+		StatusEffectService.add_status(target, "heal_reduction", float(d.get("duration", 4.0)), {"pct": float(d.get("heal_reduction", 0.50))})
+	elif sid == "attack_interrupt" and RngService.rng.randf() < float(d.get("interrupt_chance", 0.12)):
+		StatusEffectService.interrupt(target)
+	elif sid == "random_attribute_attack":
+		_apply_attribute_effect(["fire", "ice", "thunder", "poison"][RngService.rng.randi() % 4], attacker, target)
+
+static func _apply_attack_treasure_effects(attacker: Dictionary, target: Dictionary, state: Dictionary) -> void:
+	if _ignores_treasure(attacker):
+		return
+	if _f_has_treasure(attacker, "atk_frenzy_assault"):
+		_apply_frenzy_assault(attacker, target)
+	if _f_has_treasure(attacker, "elem_flame_shatter") and RngService.rng.randf() < 0.25:
+		_apply_attribute_effect("fire", attacker, target)
+	if _f_has_treasure(attacker, "elem_frost_blade") and RngService.rng.randf() < 0.25:
+		_apply_attribute_effect("ice", attacker, target)
+	if _f_has_treasure(attacker, "elem_thunder_haste") and RngService.rng.randf() < 0.25:
+		StatusEffectService.add_status(attacker, "speed_bonus", 3.0, {"pct": 0.60})
+	if _f_has_treasure(attacker, "elem_toxic_spread") and RngService.rng.randf() < 0.25:
+		_apply_attribute_effect("poison", attacker, target)
+	if _f_has_set(attacker, "element") and RngService.rng.randf() < 0.20:
+		_apply_element_set_burst(attacker, target, state)
+	if _f_has_treasure(attacker, "ctrl_shockwave") and _treasure_ready(attacker, "ctrl_shockwave", float(state.elapsed)):
+		var shock_duration := 2.0 if _f_has_linkage(attacker, "link_hu_pai_master") else 1.0
+		StatusEffectService.add_status(target, "stun", shock_duration, {})
+		_set_treasure_cd(attacker, "ctrl_shockwave", float(state.elapsed), 5.0)
+	if _f_has_treasure(attacker, "ctrl_corrosive_needle") and int(attacker.get("attack_count", 0)) % 4 == 0 and _treasure_ready(attacker, "ctrl_corrosive_needle", float(state.elapsed)):
+		StatusEffectService.add_bleed(target, 3.0, 0.06)
+		_set_treasure_cd(attacker, "ctrl_corrosive_needle", float(state.elapsed), 5.0)
+	if _f_has_treasure(attacker, "ctrl_interrupt_chain") and _treasure_ready(attacker, "ctrl_interrupt_chain", float(state.elapsed)):
+		if RngService.rng.randf() < 0.25:
+			StatusEffectService.interrupt(target)
+			if _f_has_linkage(attacker, "link_paralysis_shackles"):
+				_apply_attribute_effect("ice", attacker, target)
+				StatusEffectService.add_status(target, "ice_vulnerable", 3.0, {"pct": 0.15})
+		_set_treasure_cd(attacker, "ctrl_interrupt_chain", float(state.elapsed), 5.0)
+	if _f_has_treasure(attacker, "ctrl_binding_weight") and _treasure_ready(attacker, "ctrl_binding_weight", float(state.elapsed)):
+		StatusEffectService.add_status(target, "slow", 2.0, {"move_pct": 0.25, "attack_speed_pct": 0.20})
+		_set_treasure_cd(attacker, "ctrl_binding_weight", float(state.elapsed), 5.0)
+
+
+
+static func _fire_bonus_multiplier(attacker: Dictionary) -> float:
+	if _f_has_linkage(attacker, "link_blood_covenant"):
+		return 1.00
+	return 0.40
+
+static func _apply_opening_treasures(player: Array, event_log: Array[String]) -> void:
+	for f in player:
+		if _ignores_treasure(f):
+			continue
+		if _f_has_treasure(f, "def_iron_wall"):
+			f.defense = int(f.get("defense", 0)) + 10
+		if _f_has_treasure(f, "def_life_monument"):
+			var life_multiplier := 1.40 if _f_has_linkage(f, "link_hu_pai_master") else 1.20
+			f.max_hp = maxi(1, int(round(float(f.max_hp) * life_multiplier)))
+			f.hp = int(f.max_hp)
+		if _f_has_treasure(f, "def_phantom_step"):
+			f.dodge = float(f.get("dodge", 0.0)) + 0.20
+		if _f_has_treasure(f, "ctrl_time_compress"):
+			f.skill_cd_multiplier = 0.75
+			f.skill_ready = float(f.get("skill_ready", 0.0)) * 0.75
+		if _f_has_treasure(f, "atk_blood_pact"):
+			var blood_multiplier := 1.50 if _f_has_linkage(f, "link_hu_pai_master") else 1.25
+			f.atk = maxi(1, int(round(float(f.atk) * blood_multiplier)))
+			StatusEffectService.add_bleed(f, 999.0, 0.06)
+		if _f_has_treasure(f, "atk_burst_core"):
+			f.crit_bonus = float(f.get("crit_bonus", 0.0)) + 0.25
+	if GameState.owned_treasures.has("ctrl_time_compress"):
+		event_log.append("时空压缩：普通棋子技能冷却缩短25%。")
+
+static func _apply_opening_unit_skills(player: Array, enemy: Array, event_log: Array[String], state: Dictionary) -> void:
+	var all_teams := [player, enemy]
+	for team_units in all_teams:
+		for f in team_units:
+			DamageService.begin_stat_context(state, f)
+			var d: Dictionary = f.get("def", {})
+			var sid := str(d.get("skill_id", ""))
+			if d.has("opening_cd"):
+				var open_cd := float(d.get("opening_cd", 0.0))
+				if open_cd > 0.0:
+					f.skill_ready = maxf(float(f.get("skill_ready", 0.0)), open_cd)
+			if sid == "guardian_shield_taunt":
+				f.shield = int(f.get("shield", 0)) + maxi(1, int(round(float(f.max_hp) * float(d.get("start_shield_pct", 0.20)))))
+				f.taunt_active = true
+				f.taunt_radius = float(d.get("taunt_radius", 180.0))
+			elif sid == "left_neighbor_sacrifice":
+				_apply_death_servant_aura(f, team_units, d)
+				var target := _unit_at_slot(team_units, int(f.get("slot", -1)) - 1)
+				if not target.is_empty():
+					target.sacrifice_guardian = f
+					f.guard_target_uid = str(target.get("uid", ""))
+			DamageService.clear_stat_context()
+	if _team_has_skill(player, "guardian_shield_taunt"):
+		event_log.append("光之卫士：开战护盾与周围嘲讽已生效。")
+	if _team_has_skill(player, "left_neighbor_sacrifice"):
+		event_log.append("死侍：已绑定左侧棋子并准备替死复活。")
+
+static func _apply_death_servant_aura(servant: Dictionary, team_units: Array, d: Dictionary) -> void:
+	var amount := int(d.get("ally_def_bonus", 3))
+	var duration := float(d.get("ally_def_duration", 5.0))
+	if amount <= 0 or duration <= 0.0:
+		return
+	var slot := int(servant.get("slot", -99))
+	for a in team_units:
+		if not bool(a.get("alive", false)) or a == servant:
+			continue
+		if abs(int(a.get("slot", -99)) - slot) <= 1:
+			StatusEffectService.add_status(a, "defense_flat_up", duration, {"amount": amount})
+static func _apply_post_damage_treasures(attacker: Dictionary, target: Dictionary, state: Dictionary, dealt: int) -> void:
+	if _ignores_treasure(attacker) or dealt <= 0:
+		return
+	if _f_has_treasure(attacker, "def_lifesteal_emblem"):
+		_heal_unit(attacker, maxi(1, int(round(float(dealt) * 0.20))))
+	if _f_has_linkage(attacker, "link_toxic_burst"):
+		_try_toxic_burst(target)
+	if _f_has_linkage(attacker, "link_rich_path"):
+		if RngService.rng.randf() < 0.10:
+			state.bonus_gold = int(state.get("bonus_gold", 0)) + 1
+
+static func _apply_defender_treasure_reaction(defender: Dictionary, attacker: Dictionary, state: Dictionary, _dealt: int) -> void:
+	if _ignores_treasure(defender) or not bool(attacker.get("alive", true)):
+		return
+	var prev_source := DamageService.current_stat_source_uid()
+	DamageService.begin_stat_context(state, defender)
+	if _f_has_linkage(defender, "link_oppression_counter"):
+		_apply_frenzy_assault(attacker, defender)
+		StatusEffectService.add_status(attacker, "attack_down", 2.0, {"pct": 0.20})
+	if _f_has_linkage(defender, "link_iron_maiden") and _treasure_ready(defender, "link_iron_maiden", float(state.elapsed)):
+		StatusEffectService.add_bleed(attacker, 3.0, 0.06)
+		StatusEffectService.add_status(attacker, "defense_flat_down", 3.0, {"amount": 6})
+		_set_treasure_cd(defender, "link_iron_maiden", float(state.elapsed), 5.0)
+	DamageService.set_stat_source_uid(prev_source)
+
+static func _apply_kill_treasures(killer: Dictionary, victim: Dictionary, enemies: Array) -> void:
+	if _ignores_treasure(killer):
+		return
+	if _f_has_treasure(killer, "atk_wail_resonance"):
+		for o in enemies:
+			if bool(o.get("alive", false)) and victim.pos.distance_to(o.pos) <= 180.0:
+				DamageService.apply_damage(o, maxi(1, int(round(float(o.max_hp) * 0.10))), true)
+
+
+
+static func _try_toxic_burst(target: Dictionary) -> void:
+	StatusEffectService.ensure_status(target)
+	if not bool(target.get("alive", false)) or not target.statuses.has("poison") or RngService.rng.randf() >= 0.50:
+		return
+	var poison: Dictionary = target.statuses.get("poison", {})
+	var remaining := maxf(0.0, float(poison.get("remaining", 0.0)))
+	var ticks := int(ceil(remaining / StatusEffectService.POISON_TICK_SEC))
+	if ticks <= 0:
+		return
+	var tick_damage := maxi(1, int(floor(float(target.max_hp) * float(poison.get("pct_max_hp", 0.03)))))
+	DamageService.apply_damage(target, tick_damage * ticks, true)
+	target.statuses.erase("poison")
+static func _apply_soul_counter_treasure(killer: Dictionary, victim: Dictionary) -> void:
+	if _ignores_treasure(victim):
+		return
+	if not _f_has_treasure(victim, "def_soul_counter"):
+		return
+	if not bool(killer.get("alive", false)):
+		return
+	DamageService.apply_damage(killer, maxi(1, int(round(float(killer.get("max_hp", 1)) * 0.35))), true)
+
+static func _queue_phoenix_revive(victim: Dictionary, state: Dictionary) -> void:
+	if _ignores_treasure(victim):
+		return
+	if not _f_has_linkage(victim, "link_phoenix"):
+		return
+	if bool(victim.get("phoenix_used", false)):
+		return
+	var revived := victim.duplicate(true)
+	revived.uid = "%s_phoenix_%d" % [str(victim.uid), int(state.get("total_deaths", 0))]
+	revived.alive = true
+	revived.phoenix_used = true
+	revived.hp = maxi(1, int(round(float(victim.max_hp) * 0.40)))
+	revived.statuses = {}
+	var queue: Array = state.get("revive_queue", [])
+	queue.append({"due": float(state.elapsed) + 0.1, "fighter": revived})
+	state.revive_queue = queue
+	var temp: Array = state.get("temporary_deaths", [])
+	temp.append({"due": float(state.elapsed) + 3.1, "uid": str(revived.uid)})
+	state.temporary_deaths = temp
+
+static func _process_temporary_deaths(state: Dictionary) -> void:
+	var queue: Array = state.get("temporary_deaths", [])
+	if queue.is_empty():
+		return
+	var keep: Array = []
+	for item in queue:
+		if float(state.elapsed) >= float(item.get("due", 0.0)):
+			var uid := str(item.get("uid", ""))
+			for f in state.get("player", []) + state.get("enemy", []):
+				if str(f.get("uid", "")) == uid and bool(f.get("alive", false)):
+					DamageService.set_stat_state(state)
+					DamageService.record_forced_hp_loss(f, -1, false)
+					f.hp = 0
+					f.alive = false
+		else:
+			keep.append(item)
+	state.temporary_deaths = keep
+static func _treasure_ready(attacker: Dictionary, key: String, elapsed: float) -> bool:
+	if not attacker.has("treasure_cd") or typeof(attacker.treasure_cd) != TYPE_DICTIONARY:
+		attacker.treasure_cd = {}
+	return elapsed >= float(attacker.treasure_cd.get(key, 0.0))
+
+static func _set_treasure_cd(attacker: Dictionary, key: String, elapsed: float, cd: float) -> void:
+	if not attacker.has("treasure_cd") or typeof(attacker.treasure_cd) != TYPE_DICTIONARY:
+		attacker.treasure_cd = {}
+	attacker.treasure_cd[key] = elapsed + cd
+
+static func _apply_element_set_burst(attacker: Dictionary, target: Dictionary, state: Dictionary) -> void:
+	var opponents: Array = state.enemy if str(attacker.team) == "player" else state.player
+	for o in opponents:
+		if bool(o.get("alive", false)) and target.pos.distance_to(o.pos) <= 180.0:
+			DamageService.apply_damage(o, maxi(1, int(round(float(o.max_hp) * 0.10))), true)
+
+static func _apply_frenzy_assault(attacker: Dictionary, target: Dictionary) -> void:
+	var target_uid := str(target.get("uid", ""))
+	if str(attacker.get("frenzy_target_uid", "")) != target_uid:
+		attacker.frenzy_target_uid = target_uid
+		attacker.frenzy_stacks = 0
+	attacker.frenzy_stacks = int(attacker.get("frenzy_stacks", 0)) + 1
+	attacker.attack_speed = clampf(float(attacker.attack_speed) * 1.15, 0.25, 2.5)
+static func _apply_attribute_effect(kind: String, attacker: Dictionary, target: Dictionary) -> void:
+	match kind:
+		"fire":
+			DamageService.apply_damage(target, maxi(1, int(round(float(attacker.atk) * _fire_bonus_multiplier(attacker)))), true)
+		"ice":
+			StatusEffectService.add_status(target, "slow", 1.5, {"move_pct": 0.35, "attack_speed_pct": 0.35})
+			StatusEffectService.add_status(target, "ice_affected", 1.5, {})
+		"thunder":
+			if RngService.rng.randf() < 0.25:
+				StatusEffectService.interrupt(target)
+		"poison":
+			StatusEffectService.add_poison(target)
+
+static func _element_multiplier(a: String, b: String) -> float:
+	if a == "sky" and b == "land": return 1.25
+	if a == "land" and b == "ren": return 1.25
+	if a == "ren" and b == "sky": return 1.25
+	if a == "land" and b == "sky": return 0.85
+	if a == "ren" and b == "land": return 0.85
+	if a == "sky" and b == "ren": return 0.85
+	return 1.0
+static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) -> void:
+	for caster in casters:
+		if not bool(caster.get("alive", false)):
+			continue
+		var d: Dictionary = caster.get("def", {})
+		var sid := str(d.get("skill_id", ""))
+		if sid.is_empty() or sid == "none":
+			continue
+		if StatusEffectService.has_status(caster, "silence"):
+			continue
+		if float(state.elapsed) < float(caster.get("skill_ready", 0.0)):
+			continue
+		var old_ready := float(caster.get("skill_ready", 0.0))
+		DamageService.begin_stat_context(state, caster)
+		match sid:
+			"lowest_ally_heal":
+				_skill_lowest_ally_heal(caster, casters, d)
+				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 4.0))
+			"nearest_ally_bless":
+				_skill_nearest_ally_bless(caster, casters, d)
+				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 6.0))
+			"nearby_ally_heal_buff":
+				_skill_nearby_ally_heal_buff(caster, casters, d)
+				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 7.0))
+			"random_attribute_bolt":
+				_skill_random_attribute_bolt(caster, opponents, d)
+				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 2.5))
+			"judgement_strike":
+				_skill_judgement(caster, opponents, d)
+				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 2.0))
+			"random_ally_damage_reduction":
+				_skill_archangel(caster, casters, d)
+				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 6.0))
+			"global_divine_blast":
+				_skill_god_king(caster, opponents, d)
+				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 8.0))
+			"silence_bolt":
+				_skill_silence_bolt(caster, opponents, d, state)
+				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 4.0))
+			"fear":
+				_skill_fear(caster, opponents, d, state)
+				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 6.0))
+			"stun":
+				_skill_stun(caster, opponents, d, state)
+				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 5.0))
+			"black_hole":
+				_skill_black_hole(caster, opponents, d, state)
+				caster.skill_ready = float(state.elapsed) + 8.0
+			"blink_low_def_backline":
+				var killed := _skill_blink_low_def_backline(caster, casters, opponents, d, state)
+				caster.skill_ready = float(state.elapsed) if killed and bool(d.get("refresh_on_kill", false)) else float(state.elapsed) + float(d.get("skill_cd", 5.0))
+			"shared_hp_link":
+				_skill_shared_hp_link(caster, opponents, d, state)
+				caster.skill_ready = float(state.elapsed) + 1.0
+			"front_cone_stun":
+				_skill_front_cone_stun(caster, opponents, d, state)
+				caster.skill_ready = float(state.elapsed) + 5.0
+			"element_meteor":
+				_skill_element_meteor(caster, opponents, d)
+				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 6.0))
+			"holy_purify":
+				_skill_holy_purify(caster, casters, d)
+				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 8.0))
+			"apocalypse_charge":
+				_skill_apocalypse_charge(caster, state, d)
+				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 10.0))
+			"mirror_clone":
+				_skill_mirror_clone(caster, state, d)
+				caster.skill_ready = float(state.elapsed) + 1.0
+			"shell_guard":
+				_skill_shell_guard(caster, d)
+				caster.skill_ready = float(state.elapsed) + 6.0
+			"bubble_dream":
+				_skill_bubble_dream(caster, casters, opponents, d)
+				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 6.0))
+			"holy_song":
+				_skill_holy_song(caster, casters, d)
+				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 10.0))
+			"twin_strike":
+				_skill_twin_strike(caster, state, d)
+				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 10.0))
+			"arrow_rain":
+				_skill_arrow_rain(caster, opponents, d)
+				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 6.0))
+			"steel_order":
+				_skill_steel_order(caster, casters, d)
+				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 8.0))
+			"time_slow":
+				_skill_time_slow(caster, opponents, d)
+				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 8.0))
+			"gold_charge":
+				_skill_gold_charge(caster, opponents, d)
+				caster.skill_ready = float(state.elapsed) + 7.0
+			"king_aura":
+				_skill_king_aura(caster, casters, d)
+				caster.skill_ready = float(state.elapsed) + 2.0
+		var new_ready := float(caster.get("skill_ready", old_ready))
+		if new_ready > float(state.elapsed) and float(caster.get("skill_cd_multiplier", 1.0)) < 1.0:
+			caster.skill_ready = float(state.elapsed) + (new_ready - float(state.elapsed)) * float(caster.skill_cd_multiplier)
+		if float(caster.get("skill_ready", old_ready)) != old_ready and _skill_cast_should_shake(caster):
+			_add_visual_event(state, "skill_shake", caster, 9.0 if bool(d.get("is_boss", false)) or d.has("series") else 6.5, 0.22)
+		DamageService.clear_stat_context()
+
+static func _skill_cast_should_shake(caster: Dictionary) -> bool:
+	var d: Dictionary = caster.get("def", {})
+	return bool(d.get("is_boss", false)) or d.has("series") or int(d.get("tier", 1)) >= 3
+
+static func _add_visual_event(state: Dictionary, event_type: String, caster: Dictionary, strength: float, duration: float) -> void:
+	if not state.has("visual_events") or typeof(state.visual_events) != TYPE_ARRAY:
+		state.visual_events = []
+	state.visual_events.append({
+		"type": event_type,
+		"uid": str(caster.get("uid", "")),
+		"pos": caster.get("pos", Vector2.ZERO),
+		"strength": strength,
+		"duration": duration,
+		"time": float(state.get("elapsed", 0.0)),
+	})
+
+static func _skill_lowest_ally_heal(_caster: Dictionary, allies: Array, d: Dictionary) -> void:
+	var target := _lowest_hp_ratio(allies)
+	if target.is_empty(): return
+	var heal := maxi(1, int(float(target.max_hp) * float(d.get("heal_pct", 0.06))))
+	_heal_unit(target, heal)
+	if RngService.rng.randf() < float(d.get("cleanse_chance", 0.25)):
+		target.statuses = {}
+
+static func _skill_nearest_ally_bless(caster: Dictionary, allies: Array, d: Dictionary) -> void:
+	var target := _nearest(caster, allies.filter(func(a): return a != caster and bool(a.get("alive", false))))
+	if target.is_empty(): return
+	target.atk = maxi(1, int(round(float(target.atk) * (1.0 + float(d.get("atk_bonus", 0.12))))))
+	target.attack_speed = clampf(float(target.attack_speed) + float(d.get("aspd_bonus", 0.15)), 0.25, 2.5)
+	target.statuses = {}
+
+static func _skill_nearby_ally_heal_buff(caster: Dictionary, allies: Array, d: Dictionary) -> void:
+	for a in allies:
+		if not bool(a.get("alive", false)) or caster.pos.distance_to(a.pos) > 180.0: continue
+		_heal_unit(a, maxi(1, int(float(a.max_hp) * float(d.get("heal_pct", 0.08)))))
+		a.atk = maxi(1, int(round(float(a.atk) * (1.0 + float(d.get("atk_bonus", 0.10))))))
+		a.attack_speed = clampf(float(a.attack_speed) + float(d.get("aspd_bonus", 0.15)), 0.25, 2.5)
+		a.statuses = {}
+
+static func _skill_random_attribute_bolt(caster: Dictionary, opponents: Array, d: Dictionary) -> void:
+	var alive := _alive(opponents)
+	if alive.is_empty():
+		return
+	var target: Dictionary = alive[RngService.rng.randi() % alive.size()]
+	DamageService.apply_damage(target, maxi(1, int(round(float(caster.atk) * float(d.get("damage_atk_pct", 3.0))))), false)
+	_apply_attribute_effect(["fire", "ice", "thunder", "poison"][RngService.rng.randi() % 4], caster, target)
+
+static func _skill_judgement(caster: Dictionary, opponents: Array, d: Dictionary) -> void:
+	var target := _nearest(caster, opponents)
+	if target.is_empty(): return
+	DamageService.apply_damage(target, maxi(1, int(float(caster.atk) * float(d.get("damage_atk_pct", 2.2)))), false)
+	caster.skill_stacks = mini(int(d.get("max_stacks", 5)), int(caster.get("skill_stacks", 0)) + 1)
+	caster.defense = int(round(float(caster.defense) * (1.0 + float(d.get("def_stack_pct", 0.06)))))
+
+static func _skill_archangel(_caster: Dictionary, allies: Array, d: Dictionary) -> void:
+	var alive := _alive(allies)
+	if alive.is_empty(): return
+	var target: Dictionary = alive[RngService.rng.randi() % alive.size()]
+	StatusEffectService.add_status(target, "damage_reduction", float(d.get("duration", 6.0)), {"pct": float(d.get("damage_reduction", 0.5))})
+
+static func _skill_god_king(caster: Dictionary, opponents: Array, d: Dictionary) -> void:
+	for o in opponents:
+		if not bool(o.get("alive", false)): continue
+		var dmg := int(float(caster.atk) * float(d.get("damage_atk_pct", 1.6))) + int(float(o.max_hp) * float(d.get("max_hp_bonus_pct", 0.08)))
+		DamageService.apply_damage(o, maxi(1, dmg), false)
+
+static func _skill_silence_bolt(caster: Dictionary, opponents: Array, d: Dictionary, state: Dictionary) -> void:
+	var target := _nearest(caster, opponents)
+	if target.is_empty(): return
+	var dur := _dark_duration(float(d.get("silence_sec", 1.2)), caster, state)
+	StatusEffectService.add_status(target, "silence", dur, {})
+	DamageService.apply_damage(target, maxi(1, int(float(caster.atk) * float(d.get("damage_atk_pct", 1.7)))), false)
+
+static func _skill_fear(caster: Dictionary, opponents: Array, d: Dictionary, state: Dictionary) -> void:
+	var target := _nearest(caster, opponents)
+	if target.is_empty(): return
+	var dur := _dark_duration(float(d.get("fear_sec", 1.5)), caster, state)
+	StatusEffectService.add_status(target, "stun", dur, {})
+	var away: Vector2 = (target.pos - caster.pos).normalized()
+	target.pos += away * 90.0
+
+static func _skill_stun(caster: Dictionary, opponents: Array, d: Dictionary, state: Dictionary) -> void:
+	var target := _nearest(caster, opponents)
+	if target.is_empty(): return
+	StatusEffectService.add_status(target, "stun", _dark_duration(float(d.get("stun_sec", 1.0)), caster, state), {})
+
+static func _skill_black_hole(caster: Dictionary, opponents: Array, d: Dictionary, state: Dictionary) -> void:
+	var dur := _dark_duration(float(d.get("pull_sec", 2.0)), caster, state)
+	for o in opponents:
+		if not bool(o.get("alive", false)) or caster.pos.distance_to(o.pos) > 220.0: continue
+		StatusEffectService.add_status(o, "stun", dur, {})
+		o.pos = o.pos.lerp(caster.pos, 0.45)
+		DamageService.apply_damage(o, maxi(1, int(float(caster.atk) * float(d.get("damage_atk_pct", 2.2)))), false)
+
+static func _lowest_targetable_hp_ratio(attacker: Dictionary, units: Array) -> Dictionary:
+	var best: Dictionary = {}
+	var best_ratio := INF
+	for u in units:
+		if not bool(u.get("alive", false)) or not _can_target(attacker, u): continue
+		var ratio := float(u.hp) / float(maxi(1, u.max_hp))
+		if ratio < best_ratio:
+			best_ratio = ratio
+			best = u
+	return best
+
+static func _lowest_hp_ratio(units: Array) -> Dictionary:
+	var best: Dictionary = {}
+	var best_ratio := INF
+	for u in units:
+		if not bool(u.get("alive", false)): continue
+		var ratio := float(u.hp) / float(maxi(1, u.max_hp))
+		if ratio < best_ratio:
+			best_ratio = ratio
+			best = u
+	return best
+
+static func _dark_duration(base: float, caster: Dictionary, state: Dictionary) -> float:
+	if str(caster.get("def", {}).get("race", "")) == "dark":
+		var syn: Dictionary = _resolve_syn(caster, state)
+		return base * (1.0 + float(syn.get("dark_debuff_duration", 0.0)))
+	return base
+
+static func _apply_defender_reaction(attacker: Dictionary, target: Dictionary, dealt: int) -> void:
+	var d: Dictionary = target.get("def", {})
+	var prev_source := DamageService.current_stat_source_uid()
+	DamageService.set_stat_source_uid(str(target.get("uid", "")))
+	if str(d.get("skill_id", "")) == "overload_counter" and dealt > 0 and bool(target.get("alive", false)):
+		target.skill_stacks = int(target.get("skill_stacks", 0)) + 1
+		if int(target.skill_stacks) >= int(d.get("hit_threshold", 8)):
+			target.skill_stacks = 0
+			DamageService.apply_damage(attacker, maxi(1, int(d.get("skill_damage", 150))), true)
+			if RngService.rng.randf() < float(d.get("interrupt_chance", 0.25)):
+				StatusEffectService.interrupt(attacker)
+	if str(d.get("skill_id", "")) == "poison_reflect_armor_stack" and dealt > 0 and bool(target.get("alive", false)):
+		DamageService.apply_damage(attacker, maxi(1, int(round(float(dealt) * float(d.get("reflect_taken_damage_pct", 0.12))))), true)
+		StatusEffectService.add_poison(attacker)
+		target.skill_stacks = mini(int(d.get("max_stacks", 10)), int(target.get("skill_stacks", 0)) + 1)
+		target.defense = int(target.get("defense", 0)) + int(d.get("armor_per_hit", 2))
+	DamageService.set_stat_source_uid(prev_source)
+
+static func _group_heal(caster: Dictionary, allies: Array, heal_pct: float) -> void:
+	for a in allies:
+		if bool(a.get("alive", false)) and caster.pos.distance_to(a.pos) <= 180.0:
+			_heal_unit(a, maxi(1, int(round(float(a.max_hp) * heal_pct))))
+
+static func _on_unit_killed(killer: Dictionary, victim: Dictionary, state: Dictionary, killer_team: Array, victim_team: Array) -> void:
+	state.total_deaths = int(state.get("total_deaths", 0)) + 1
+	if str(killer.get("def", {}).get("skill_id", "")) == "death_hunt":
+		_heal_unit(killer, maxi(1, int(round(float(killer.max_hp) * float(killer.get("def", {}).get("kill_heal_pct", 0.15))))))
+	if str(killer.get("def", {}).get("skill_id", "")) == "soul_devour":
+		_heal_unit(killer, maxi(1, int(round(float(killer.max_hp) * float(killer.get("def", {}).get("kill_heal_pct", 0.15))))))
+		killer.atk = maxi(1, int(round(float(killer.atk) * (1.0 + float(killer.get("def", {}).get("atk_stack", 0.10))))))
+	_queue_twin_revive(victim, state)
+	_queue_phoenix_revive(victim, state)
+	_apply_soul_counter_treasure(killer, victim)
+	if str(victim.get("team", "")) == "enemy":
+		_add_kill_reward(state, killer, victim, true)
+	else:
+		_add_kill_reward(state, killer, victim, false)
+	_apply_kill_treasures(killer, victim, victim_team)
+	var vd: Dictionary = victim.get("def", {})
+	if str(vd.get("skill_id", "")) == "death_poison_explosion":
+		for o in killer_team:
+			if bool(o.get("alive", false)) and victim.pos.distance_to(o.pos) <= 180.0:
+				DamageService.apply_damage(o, maxi(1, int(round(float(victim.atk) * float(vd.get("damage_atk_pct", 2.5))))), true)
+				StatusEffectService.add_poison(o)
+	var parasite_owner: Dictionary = victim.get("parasite_owner", {}) if typeof(victim.get("parasite_owner", {})) == TYPE_DICTIONARY else {}
+	if not parasite_owner.is_empty() and bool(parasite_owner.get("alive", false)):
+		var clone := victim.duplicate(true)
+		clone.uid = "%s_parasite_%d" % [str(parasite_owner.team), int(state.get("total_deaths", 0))]
+		clone.team = str(parasite_owner.team)
+		clone.hp = maxi(1, int(round(float(victim.max_hp) * float(parasite_owner.get("def", {}).get("clone_hp_pct", 0.10)))))
+		clone.max_hp = clone.hp
+		clone.atk = maxi(1, int(round(float(victim.atk) * float(parasite_owner.get("def", {}).get("clone_atk_def_pct", 0.50)))))
+		clone.defense = maxi(0, int(round(float(victim.defense) * float(parasite_owner.get("def", {}).get("clone_atk_def_pct", 0.50)))))
+		clone.alive = true
+		clone.statuses = {}
+		((state.player) if str(parasite_owner.team) == "player" else (state.enemy)).append(clone)
+	if str(victim.get("team", "")) == "enemy":
+		_maybe_mother_execute(state, victim_team)
+
+static func _maybe_mother_execute(state: Dictionary, enemies: Array) -> void:
+	# (4) 亡灵·母体处决: per OWNER. Each mother counts its own deaths (threshold
+	# scaled by its owner's undead synergy) and executes a target, preferring its
+	# OWN lane's enemies first, then any enemy (incl. allies' enemies).
+	if state.has("owner_syn_by_key"):
+		for mother in state.get("player", []):
+			if not bool(mother.get("alive", false)) or str(mother.get("def", {}).get("skill_id", "")) != "unique_death_execute":
+				continue
+			# Each mother unit counts independently (even multiple on one board).
+			var mkey := "mother_%s" % str(mother.get("uid", ""))
+			var threshold := maxi(1, int(ceil(5.0 * float(_owner_syn(state, _owner_key(mother)).get("undead_threshold_mul", 1.0)))))
+			var os := _owner_state(state, mkey)
+			os.mother_count = int(os.get("mother_count", 0)) + 1
+			if int(os.mother_count) < threshold:
+				continue
+			os.mother_count = 0
+			_mother_execute_target(state, int(mother.get("lane", -1)))
+		return
+	var mothers := []
+	for f in state.get("player", []):
+		if bool(f.get("alive", false)) and str(f.get("def", {}).get("skill_id", "")) == "unique_death_execute":
+			mothers.append(f)
+	if mothers.is_empty():
+		return
+	var syn: Dictionary = state.get("player_syn", {})
+	var threshold := maxi(1, int(ceil(5.0 * float(syn.get("undead_threshold_mul", 1.0)))))
+	state.mother_death_counter = int(state.get("mother_death_counter", 0)) + 1
+	if int(state.mother_death_counter) < threshold:
+		return
+	state.mother_death_counter = 0
+	_mother_execute_on(state, _alive(enemies))
+
+static func _mother_execute_target(state: Dictionary, lane: int) -> void:
+	var own_lane: Array = []
+	var all_alive: Array = []
+	for o in state.get("enemy", []):
+		if bool(o.get("alive", false)):
+			all_alive.append(o)
+			if int(o.get("lane", -1)) == lane:
+				own_lane.append(o)
+	_mother_execute_on(state, own_lane if not own_lane.is_empty() else all_alive)
+
+static func _mother_execute_on(state: Dictionary, candidates: Array) -> void:
+	if candidates.is_empty():
+		return
+	var target: Dictionary = candidates[RngService.rng.randi() % candidates.size()]
+	var tier := int(target.get("def", {}).get("tier", 1))
+	var roll := RngService.rng.randf()
+	var chance := 0.50 if tier <= 1 or bool(target.get("is_mercenary", false)) else 0.35 if tier == 2 else 0.10
+	if bool(target.get("def", {}).get("is_boss", false)):
+		DamageService.apply_damage(target, maxi(1, int(round(float(target.max_hp) * 0.20))), true)
+	elif roll < chance:
+		DamageService.apply_damage(target, int(target.hp), true)
+
+static func _skill_blink_low_def_backline(caster: Dictionary, allies: Array, opponents: Array, d: Dictionary, state: Dictionary) -> bool:
+	var target := _lowest_def_backline(caster, opponents)
+	if target.is_empty():
+		return false
+	var side := -1.0 if str(caster.get("team", "")) == "player" else 1.0
+	caster.pos = target.pos + Vector2(28.0 * side, 0.0)
+	var was_alive := bool(target.get("alive", false))
+	DamageService.apply_damage(target, maxi(1, int(round(float(caster.atk) * float(d.get("damage_atk_pct", 2.0))))), false)
+	_handle_attack_kill(caster, target, state, allies, opponents, was_alive)
+	return was_alive and not bool(target.get("alive", false))
+
+static func _skill_shared_hp_link(caster: Dictionary, opponents: Array, _d: Dictionary, state: Dictionary) -> void:
+	if bool(caster.get("shared_link_spent", false)):
+		return
+	var current := _fighter_by_uid(state.get("player", []) + state.get("enemy", []), str(caster.get("shared_link_uid", "")))
+	if not current.is_empty() and bool(current.get("alive", false)):
+		if _is_boss_fighter(current):
+			current.erase("shared_link_uid")
+			current.erase("shared_link_last_hp")
+			caster.erase("shared_link_uid")
+			caster.erase("shared_link_last_hp")
+		else:
+			return
+	var target := _nearest_non_boss(caster, opponents)
+	if target.is_empty():
+		return
+	_convert_link_target_to_caster_team(caster, target, opponents, state)
+	caster.shared_link_uid = str(target.uid)
+	target.shared_link_uid = str(caster.uid)
+	caster.shared_link_last_hp = int(caster.hp)
+	target.shared_link_last_hp = int(target.hp)
+	caster.shared_link_spent = true
+	state.log.append("%s 连接并策反 %s。" % [str(caster.get("name", "?")), str(target.get("name", "?"))])
+
+static func _nearest_non_boss(f: Dictionary, opponents: Array) -> Dictionary:
+	var best: Dictionary = {}
+	var best_dist := INF
+	for o in opponents:
+		if not bool(o.get("alive", false)) or _is_boss_fighter(o) or not _can_target(f, o):
+			continue
+		var dist: float = float(f.pos.distance_squared_to(o.pos))
+		if dist < best_dist:
+			best_dist = dist
+			best = o
+	return best
+
+static func _is_boss_fighter(fighter: Dictionary) -> bool:
+	var d: Dictionary = fighter.get("def", {})
+	var id := str(fighter.get("id", d.get("id", "")))
+	return bool(d.get("is_boss", false)) or id.begins_with("boss_")
+
+static func _convert_link_target_to_caster_team(caster: Dictionary, target: Dictionary, opponents: Array, state: Dictionary) -> void:
+	var caster_team := str(caster.get("team", ""))
+	var old_team := str(target.get("team", ""))
+	if caster_team.is_empty() or old_team == caster_team:
+		return
+	var from_team: Array = state.get("player", []) if old_team == "player" else state.get("enemy", [])
+	var to_team: Array = state.get("player", []) if caster_team == "player" else state.get("enemy", [])
+	from_team.erase(target)
+	opponents.erase(target)
+	target.team = caster_team
+	to_team.append(target)
+
+static func _lowest_def_backline(caster: Dictionary, opponents: Array) -> Dictionary:
+	var pool := []
+	for o in opponents:
+		if bool(o.get("alive", false)):
+			pool.append(o)
+	if pool.is_empty():
+		return {}
+	pool.sort_custom(func(a, b):
+		var ad := int(a.get("defense", 0))
+		var bd := int(b.get("defense", 0))
+		if ad != bd:
+			return ad < bd
+		var aback := float(a.pos.y) if str(caster.get("team", "")) == "player" else ARENA_H - float(a.pos.y)
+		var bback := float(b.pos.y) if str(caster.get("team", "")) == "player" else ARENA_H - float(b.pos.y)
+		return aback < bback
+	)
+	return pool[0]
+
+static func _process_shared_links(state: Dictionary) -> void:
+	var fighters: Array = state.get("player", []) + state.get("enemy", [])
+	var processed := {}
+	for f in fighters:
+		if not bool(f.get("alive", false)):
+			_clear_shared_link_for_dead_unit(f, fighters)
+			continue
+		var uid := str(f.get("uid", ""))
+		if processed.has(uid):
+			continue
+		var peer_uid := str(f.get("shared_link_uid", ""))
+		if peer_uid.is_empty():
+			continue
+		var peer := _fighter_by_uid(fighters, peer_uid)
+		if peer.is_empty() or not bool(peer.get("alive", false)):
+			f.erase("shared_link_uid")
+			f.erase("shared_link_last_hp")
+			continue
+		processed[uid] = true
+		processed[str(peer.get("uid", ""))] = true
+		var f_loss := maxi(0, int(f.get("shared_link_last_hp", f.hp)) - int(f.hp))
+		var peer_loss := maxi(0, int(peer.get("shared_link_last_hp", peer.hp)) - int(peer.hp))
+		if f_loss > 0:
+			DamageService.apply_damage(peer, f_loss, true)
+		if peer_loss > 0:
+			DamageService.apply_damage(f, peer_loss, true)
+		f.shared_link_last_hp = int(f.hp)
+		peer.shared_link_last_hp = int(peer.hp)
+
+static func _clear_shared_link_for_dead_unit(unit: Dictionary, fighters: Array) -> void:
+	var peer_uid := str(unit.get("shared_link_uid", ""))
+	if peer_uid.is_empty():
+		return
+	var peer := _fighter_by_uid(fighters, peer_uid)
+	unit.erase("shared_link_uid")
+	unit.erase("shared_link_last_hp")
+	if not peer.is_empty():
+		peer.erase("shared_link_uid")
+		peer.erase("shared_link_last_hp")
+static func _fighter_by_uid(fighters: Array, uid: String) -> Dictionary:
+	if uid.is_empty():
+		return {}
+	for f in fighters:
+		if str(f.get("uid", "")) == uid:
+			return f
+	return {}
+
+static func _unit_at_slot(units: Array, slot: int) -> Dictionary:
+	for u in units:
+		if bool(u.get("alive", false)) and int(u.get("slot", -1)) == slot:
+			return u
+	return {}
+
+static func _team_has_skill(units: Array, skill_id: String) -> bool:
+	for u in units:
+		if str(u.get("def", {}).get("skill_id", "")) == skill_id:
+			return true
+	return false
+
+static func _skill_front_cone_stun(caster: Dictionary, opponents: Array, d: Dictionary, state: Dictionary) -> void:
+	var target := _nearest(caster, opponents)
+	if target.is_empty():
+		return
+	DamageService.apply_damage(target, maxi(1, int(round(float(caster.atk) * float(d.get("damage_atk_pct", 1.5))))), false)
+	StatusEffectService.add_status(target, "stun", _dark_duration(float(d.get("stun_sec", 1.0)), caster, state), {})
+static func _skill_element_meteor(caster: Dictionary, opponents: Array, d: Dictionary) -> void:
+	var target := _nearest(caster, opponents)
+	if target.is_empty():
+		return
+	for o in opponents:
+		if bool(o.get("alive", false)) and target.pos.distance_to(o.pos) <= 180.0:
+			DamageService.apply_damage(o, maxi(1, int(d.get("skill_damage", 120))), true)
+			_apply_attribute_effect(str(d.get("element", "fire")), caster, o)
+
+static func _skill_holy_purify(_caster: Dictionary, allies: Array, d: Dictionary) -> void:
+	for a in allies:
+		if not bool(a.get("alive", false)):
+			continue
+		a.statuses = {}
+		_heal_unit(a, maxi(1, int(round(float(a.max_hp) * float(d.get("heal_pct", 0.12))))))
+		a.shield = int(a.get("shield", 0)) + maxi(1, int(round(float(a.max_hp) * float(d.get("shield_pct", 0.10)))))
+
+static func _skill_apocalypse_charge(caster: Dictionary, state: Dictionary, d: Dictionary) -> void:
+	if caster.has("apocalypse_due"):
+		return
+	var shield := maxi(1, int(round(float(caster.max_hp) * float(d.get("charge_shield_pct", 0.10)))))
+	caster.shield = int(caster.get("shield", 0)) + shield
+	caster.apocalypse_due = float(state.elapsed) + float(d.get("charge_sec", 2.0))
+	caster.apocalypse_damage_atk_pct = float(d.get("damage_atk_pct", 2.5))
+	caster.apocalypse_ignore_def = bool(d.get("ignore_def", true))
+	state.log.append("灭世裁决者开始蓄能。")
+
+static func _process_boss_charges(state: Dictionary) -> void:
+	for caster in state.get("player", []) + state.get("enemy", []):
+		if not bool(caster.get("alive", false)) or not caster.has("apocalypse_due"):
+			continue
+		if int(caster.get("shield", 0)) <= 0:
+			caster.erase("apocalypse_due")
+			state.log.append("灭世裁决者蓄能被打断。")
+			continue
+		if float(state.elapsed) < float(caster.apocalypse_due):
+			continue
+		var opponents: Array = state.player if str(caster.team) == "enemy" else state.enemy
+		DamageService.begin_stat_context(state, caster)
+		for o in opponents:
+			if bool(o.get("alive", false)):
+				DamageService.apply_damage(o, maxi(1, int(round(float(caster.atk) * float(caster.get("apocalypse_damage_atk_pct", 2.5))))), bool(caster.get("apocalypse_ignore_def", true)))
+		DamageService.clear_stat_context()
+		state.log.append("灭世裁决者蓄能完成。")
+		caster.erase("apocalypse_due")
+		caster.erase("apocalypse_damage_atk_pct")
+		caster.erase("apocalypse_ignore_def")
+
+static func _skill_mirror_clone(caster: Dictionary, state: Dictionary, d: Dictionary) -> void:
+	var missing := 1.0 - (float(caster.hp) / float(maxi(1, int(caster.max_hp))))
+	var should_have := int(floor(missing / float(d.get("clone_per_missing_hp_pct", 0.25))))
+	var have := int(caster.get("mirror_clones_spawned", 0))
+	if should_have <= have:
+		return
+	for idx in range(have + 1, should_have + 1):
+		var clone := caster.duplicate(true)
+		clone.uid = "%s_mirror_%d" % [str(caster.team), idx]
+		clone.hp = maxi(1, int(round(float(caster.max_hp) * float(d.get("clone_hp_pct", 0.30)))))
+		clone.max_hp = clone.hp
+		clone.atk = maxi(1, int(round(float(caster.atk) * float(d.get("clone_atk_pct", 0.40)))))
+		clone.defense = int(d.get("clone_def", 0))
+		clone.alive = true
+		clone.statuses = {}
+		clone.skill_ready = 9999.0
+		if str(caster.team) == "enemy":
+			state.enemy.append(clone)
+		else:
+			state.player.append(clone)
+	caster.mirror_clones_spawned = should_have
+
+static func _apply_boss_attacker_passives(attacker: Dictionary) -> void:
+	var d: Dictionary = attacker.get("def", {})
+	if str(d.get("skill_id", "")) == "rage_stack":
+		var old_stacks := int(attacker.get("skill_stacks", 0))
+		var new_stacks := mini(int(d.get("max_stacks", 20)), old_stacks + 1)
+		if new_stacks > old_stacks:
+			attacker.skill_stacks = new_stacks
+			attacker.atk = maxi(1, int(round(float(attacker.atk) * (1.0 + float(d.get("atk_per_hit", 0.03))))))
+			attacker.attack_speed = clampf(float(attacker.attack_speed) + float(d.get("aspd_per_hit", 0.03)), 0.25, 2.5)
+	elif str(d.get("skill_id", "")) == "blood_rage" and not bool(attacker.get("blood_rage_active", false)) and float(attacker.hp) / float(maxi(1, int(attacker.max_hp))) <= float(d.get("trigger_hp_pct", 0.35)):
+		attacker.blood_rage_active = true
+		attacker.atk = maxi(1, int(round(float(attacker.atk) * (1.0 + float(d.get("atk_bonus", 0.40))))))
+		attacker.attack_speed = clampf(float(attacker.attack_speed) + float(d.get("aspd_bonus", 0.30)), 0.25, 2.5)
+
+static func _apply_boss_attack_lifesteal(attacker: Dictionary, d: Dictionary, dealt: int) -> void:
+	if dealt <= 0 or str(d.get("skill_id", "")) != "blood_rage" or not bool(attacker.get("blood_rage_active", false)):
+		return
+	_heal_unit(attacker, maxi(1, int(round(float(dealt) * float(d.get("lifesteal", 0.10))))))
+
+static func _status_count(fighter: Dictionary) -> int:
+	if not fighter.has("statuses") or typeof(fighter.statuses) != TYPE_DICTIONARY:
+		return 0
+	return fighter.statuses.size()
+
+static func _maybe_control_set_extra_debuff(attacker: Dictionary, target: Dictionary, _state: Dictionary, before_count: int) -> void:
+	if not _f_has_set(attacker, "control"):
+		return
+	var after_count := _status_count(target)
+	if after_count > before_count:
+		_apply_control_set_random_debuff(target)
+
+static func _apply_control_set_random_debuff(target: Dictionary) -> void:
+	StatusEffectService.ensure_status(target)
+	var choices: Array[String] = []
+	for kind in StatusEffectService.DEBUFF_POOL:
+		if not target.statuses.has(kind):
+			choices.append(kind)
+	if choices.is_empty():
+		choices.assign(StatusEffectService.DEBUFF_POOL)
+	var picked := choices[RngService.rng.randi() % choices.size()]
+	match picked:
+		"slow":
+			StatusEffectService.add_status(target, "slow", 2.0, {"move_pct": 0.20, "attack_speed_pct": 0.20})
+		"attack_down":
+			StatusEffectService.add_status(target, "attack_down", 2.0, {"pct": 0.12})
+		"silence":
+			StatusEffectService.add_status(target, "silence", 1.0, {})
+		"stun":
+			StatusEffectService.add_status(target, "stun", 0.5, {})
+		"poison":
+			StatusEffectService.add_poison(target)
+		"interrupt":
+			StatusEffectService.interrupt(target)
+		"bleed":
+			StatusEffectService.add_bleed(target, 3.0, 0.06)
+
+
+static func _process_revives(state: Dictionary) -> void:
+	var queue: Array = state.get("revive_queue", [])
+	if queue.is_empty():
+		return
+	var keep: Array = []
+	for item in queue:
+		if float(state.elapsed) >= float(item.get("due", 0.0)):
+			var f: Dictionary = item.get("fighter", {})
+			if str(f.get("def", {}).get("skill_id", "")) == "twin_revive" and not _has_living_twin_partner(f, state):
+				state.log.append("双生守门人：另一只双生体已死亡，复活失败。")
+				continue
+			f.alive = true
+			f.statuses = {}
+			f.hp = maxi(1, int(round(float(f.max_hp) * float(f.get("def", {}).get("revive_hp_pct", 0.30)))))
+			f.shield = 0
+			f.next_attack = float(state.elapsed) + 0.5
+			if str(f.team) == "enemy":
+				state.enemy.append(f)
+			else:
+				state.player.append(f)
+			state.log.append("双生守门人：另一只双生体存活，一名双生体复活。")
+		else:
+			keep.append(item)
+	state.revive_queue = keep
+
+static func _has_living_twin_partner(fighter: Dictionary, state: Dictionary) -> bool:
+	var group_id := str(fighter.get("twin_group_id", ""))
+	var member_index := int(fighter.get("twin_member_index", -1))
+	if group_id.is_empty() or member_index < 0:
+		return false
+	var team_units: Array = state.get("enemy", []) if str(fighter.get("team", "")) == "enemy" else state.get("player", [])
+	for candidate in team_units:
+		if not bool(candidate.get("alive", false)) or int(candidate.get("hp", 0)) <= 0:
+			continue
+		if str(candidate.get("twin_group_id", "")) == group_id and int(candidate.get("twin_member_index", -1)) != member_index:
+			return true
+	return false
+
+static func _queue_twin_revive(victim: Dictionary, state: Dictionary) -> void:
+	var d: Dictionary = victim.get("def", {})
+	if str(d.get("skill_id", "")) != "twin_revive" or int(victim.get("revives_left", 0)) <= 0:
+		return
+	var revived := victim.duplicate(true)
+	revived.revives_left = int(victim.get("revives_left", 0)) - 1
+	revived.uid = "%s_revive_%d" % [str(victim.uid), int(state.get("total_deaths", 0))]
+	var queue: Array = state.get("revive_queue", [])
+	queue.append({"due": float(state.elapsed) + float(d.get("revive_delay", 5.0)), "fighter": revived})
+	state.revive_queue = queue
+	if not _has_living_twin_partner(victim, state):
+		_cancel_twin_group_revives(state, str(victim.get("twin_group_id", "")))
+		state.log.append("双生守门人：双生体全部死亡，复活立即取消。")
+		return
+	state.log.append("双生守门人：若另一只双生体存活，将在 %.0f 秒后复活。" % float(d.get("revive_delay", 5.0)))
+
+static func _cancel_twin_group_revives(state: Dictionary, group_id: String) -> void:
+	if group_id.is_empty():
+		return
+	var keep: Array = []
+	for item in state.get("revive_queue", []):
+		var queued: Dictionary = item.get("fighter", {})
+		if str(queued.get("twin_group_id", "")) != group_id:
+			keep.append(item)
+	state.revive_queue = keep
+
+static func _apply_human_last_stand(state: Dictionary, p_alive: Array) -> void:
+	# (5) 人族·背水一战: per OWNER. Counts only the owner's own normal units, so
+	# it fires when a single player is down to their last unit (allies ignored).
+	if state.has("owner_syn_by_key"):
+		for lane in 3:
+			_owner_last_stand(state, "player", lane)
+			if str(state.get("kind", "")) == "pvp":
+				_owner_last_stand(state, "enemy", lane)
+		return
+	var syn: Dictionary = state.get("player_syn", {})
+	if not bool(syn.get("human_last_stand", false)) or bool(state.get("human_last_stand_used", false)):
+		return
+	var normals := []
+	for f in p_alive:
+		if not _ignores_treasure(f):
+			normals.append(f)
+	if normals.size() != 1:
+		return
+	_trigger_last_stand(state, normals[0])
+	state.human_last_stand_used = true
+
+static func _owner_last_stand(state: Dictionary, team: String, lane: int) -> void:
+	var key := "%s_%d" % [team, lane]
+	if not bool(_owner_syn(state, key).get("human_last_stand", false)):
+		return
+	var os := _owner_state(state, key)
+	if bool(os.get("last_stand_used", false)):
+		return
+	var side: Array = state.get("player", []) if team == "player" else state.get("enemy", [])
+	var normals := []
+	for f in side:
+		if bool(f.get("alive", false)) and int(f.get("hp", 0)) > 0 and int(f.get("lane", -1)) == lane and not _ignores_treasure(f):
+			normals.append(f)
+	if normals.size() != 1:
+		return
+	# Only triggers for a human last unit; other races get nothing.
+	if str(normals[0].get("def", {}).get("race", "")) != "human":
+		return
+	_trigger_last_stand(state, normals[0])
+	os.last_stand_used = true
+
+static func _trigger_last_stand(state: Dictionary, last: Dictionary) -> void:
+	last.max_hp = maxi(1, int(round(float(last.max_hp) * 2.0)))
+	DamageService.begin_stat_context(state, last)
+	_heal_unit(last, maxi(1, int(round(float(last.max_hp) * 0.50))))
+	DamageService.clear_stat_context()
+	last.defense = maxi(0, int(round(float(last.get("defense", last.get("def", 0))) * 2.0)))
+	last.atk = maxi(1, int(round(float(last.atk) * 2.0)))
+	last.attack_speed = clampf(float(last.attack_speed) * 2.0, 0.25, 2.5)
+	last.crit_bonus = maxf(float(last.get("crit_bonus", 0.0)), 1.0)
+	last.crit_dmg_bonus = maxf(float(last.get("crit_dmg_bonus", 0.0)), 0.50)
+	state.log.append("人7：%s 触发背水一战（属性翻倍、回复50%%生命）。" % str(last.get("name", "最后棋子")))
+
+static func _apply_god_splash(attacker: Dictionary, primary: Dictionary, state: Dictionary, dealt: int) -> void:
+	var syn: Dictionary = _resolve_syn(attacker, state)
+	if str(attacker.get("def", {}).get("race", "")) != "god" or float(syn.get("god_splash_pct", 0.0)) <= 0.0 or dealt <= 0:
+		return
+	var opponents: Array = state.enemy if str(attacker.team) == "player" else state.player
+	var splashed := 0
+	for o in opponents:
+		if splashed >= int(syn.get("god_splash_targets", 2)):
+			break
+		if not bool(o.get("alive", false)) or str(o.get("uid", "")) == str(primary.get("uid", "")):
+			continue
+		if primary.pos.distance_to(o.pos) <= 180.0:
+			DamageService.apply_damage(o, maxi(1, int(round(float(dealt) * float(syn.get("god_splash_pct", 0.15))))), true)
+			splashed += 1
+static func _ignores_treasure(fighter: Dictionary) -> bool:
+	return bool(fighter.get("is_mercenary", false)) or bool(fighter.get("is_formation_ally", false))
+
+static func _formation_ally_def_for_hp(hp: int) -> Dictionary:
+	var ally_id := FormationAllyService.ally_id_for_hp(hp)
+	var allies: Array = DataRegistry.get_table("formation_allies").get("allies", [])
+	for a in allies:
+		if str(a.get("id", "")) == ally_id:
+			var d: Dictionary = a.duplicate(true)
+			d.tier = 4
+			d.cost = 0
+			return d
+	return {}
+
+static func _add_final_formation_allies(player: Array, enemy: Array) -> void:
+	var pd := _formation_ally_def_for_hp(GameState.player_formation_hp)
+	if not pd.is_empty():
+		player.append(_fighter_from_def(pd, 22, "player", player.size(), 26, 1, false, true))
+	var ed := _formation_ally_def_for_hp(GameState.enemy_formation_hp)
+	if not ed.is_empty():
+		enemy.append(_fighter_from_def(ed, 2, "enemy", enemy.size(), 26, 1, false, true))
+
+static func _kill_reward_for_victim(victim: Dictionary) -> int:
+	if bool(victim.get("is_formation_ally", false)):
+		return 0
+	var d: Dictionary = victim.get("def", {})
+	if bool(victim.get("is_mercenary", false)):
+		return EconomyService.pvp_mercenary_kill_reward(int(d.get("cost", 1)))
+	return EconomyService.pvp_normal_kill_reward(int(d.get("tier", 1)), int(victim.get("star", 1)))
+
+static func _add_kill_reward(state: Dictionary, killer: Dictionary, victim: Dictionary, player_killed_enemy: bool) -> void:
+	var reward := _kill_reward_for_victim(victim)
+	var rec := {"killer": str(killer.get("id", "")), "victim": str(victim.get("id", "")), "reward": reward}
+	state.log.append("击杀：%s > %s，奖励 %d 金。" % [str(killer.get("name", killer.get("id", "?"))), str(victim.get("name", victim.get("id", "?"))), reward])
+	if player_killed_enemy:
+		state.player_kill_gold = int(state.get("player_kill_gold", 0)) + reward
+		var arr: Array = state.get("player_kills", [])
+		arr.append(rec)
+		state.player_kills = arr
+	else:
+		state.enemy_kill_gold = int(state.get("enemy_kill_gold", 0)) + reward
+		var arr2: Array = state.get("enemy_kills", [])
+		arr2.append(rec)
+		state.enemy_kills = arr2
+static func _dynamic_attack_speed_multiplier(fighter: Dictionary) -> float:
+	var d: Dictionary = fighter.get("def", {})
+	if str(d.get("skill_id", "")) == "blood_rampage":
+		var missing := 1.0 - float(fighter.hp) / float(maxi(1, int(fighter.max_hp)))
+		var steps := int(floor(missing / float(d.get("hp_step", 0.10))))
+		return 1.0 + float(steps) * float(d.get("aspd_per_step", 0.10))
+	return 1.0
+
+static func _blood_rampage_damage_multiplier(attacker: Dictionary, d: Dictionary) -> float:
+	var missing := 1.0 - float(attacker.hp) / float(maxi(1, int(attacker.max_hp)))
+	var steps := int(floor(missing / float(d.get("hp_step", 0.10))))
+	return 1.0 + float(steps) * 0.03
+
+static func _apply_blood_rampage_lifesteal(attacker: Dictionary, d: Dictionary, dealt: int) -> void:
+	if dealt <= 0 or str(d.get("skill_id", "")) != "blood_rampage":
+		return
+	var missing := 1.0 - float(attacker.hp) / float(maxi(1, int(attacker.max_hp)))
+	var steps := int(floor(missing / float(d.get("hp_step", 0.10))))
+	var pct := float(steps) * float(d.get("lifesteal_per_step", 0.05))
+	if pct > 0.0:
+		_heal_unit(attacker, maxi(1, int(round(float(dealt) * pct))))
+
+static func _skill_bubble_dream(caster: Dictionary, allies: Array, opponents: Array, d: Dictionary) -> void:
+	var ally := _lowest_hp_ratio(allies)
+	if not ally.is_empty():
+		_heal_unit(ally, int(d.get("heal", 80)))
+	var target := _nearest(caster, opponents)
+	if not target.is_empty():
+		StatusEffectService.add_status(target, "slow", 3.0, {"move_pct": float(d.get("slow_pct", 0.30)), "attack_speed_pct": float(d.get("slow_pct", 0.30))})
+		DamageService.apply_damage(target, int(d.get("burst_damage", 70)), true)
+
+static func _skill_holy_song(_caster: Dictionary, allies: Array, d: Dictionary) -> void:
+	for a in allies:
+		if not bool(a.get("alive", false)):
+			continue
+		_heal_unit(a, maxi(1, int(round(float(a.max_hp) * float(d.get("heal_pct", 0.15))))))
+		if bool(d.get("cleanse_control", true)):
+			for key in ["slow", "attack_down", "silence", "stun", "interrupt", "defense_down", "defense_flat_down", "heal_reduction"]:
+				if a.has("statuses") and typeof(a.statuses) == TYPE_DICTIONARY:
+					a.statuses.erase(key)
+
+static func _skill_twin_strike(caster: Dictionary, state: Dictionary, d: Dictionary) -> void:
+	var clone := caster.duplicate(true)
+	clone.uid = "%s_twin_%d" % [str(caster.uid), int(state.get("total_deaths", 0))]
+	clone.hp = maxi(1, int(round(float(caster.max_hp) * float(d.get("clone_hp_pct", 0.30)))))
+	clone.max_hp = clone.hp
+	clone.atk = maxi(1, int(round(float(caster.atk) * float(d.get("clone_atk_pct", 0.40)))))
+	clone.statuses = {}
+	clone.skill_ready = 9999.0
+	if str(caster.team) == "player": state.player.append(clone)
+	else: state.enemy.append(clone)
+
+static func _skill_arrow_rain(caster: Dictionary, opponents: Array, d: Dictionary) -> void:
+	var targets := _nearest_n(caster, opponents, int(d.get("targets", 5)))
+	for o in targets:
+		DamageService.apply_damage(o, maxi(1, int(round(float(caster.atk) * 0.85))), false)
+
+static func _skill_steel_order(caster: Dictionary, allies: Array, d: Dictionary) -> void:
+	var targets := _nearest_n(caster, allies, int(d.get("buff_targets", 3)))
+	for a in targets:
+		if not bool(a.get("alive", false)):
+			continue
+		StatusEffectService.add_status(a, "damage_reduction", float(d.get("duration", 8.0)), {"pct": float(d.get("damage_reduction", 0.20))})
+		StatusEffectService.add_status(a, "speed_bonus", float(d.get("duration", 8.0)), {"pct": float(d.get("aspd_bonus", 0.20))})
+		StatusEffectService.add_status(a, "control_time_reduction", float(d.get("duration", 8.0)), {"pct": float(d.get("control_time_reduction", 0.30))})
+
+static func _skill_time_slow(caster: Dictionary, opponents: Array, d: Dictionary) -> void:
+	StatusEffectService.add_status(caster, "dodge_bonus", 1.2, {"pct": 0.50})
+	for o in opponents:
+		if bool(o.get("alive", false)):
+			StatusEffectService.add_status(o, "slow", float(d.get("duration", 5.0)), {"move_pct": float(d.get("slow_pct", 0.35)), "attack_speed_pct": float(d.get("slow_pct", 0.35))})
+
+static func _skill_gold_charge(caster: Dictionary, opponents: Array, d: Dictionary) -> void:
+	var target := _nearest(caster, opponents)
+	if target.is_empty(): return
+	caster.pos = target.pos + Vector2(-24, 0) if str(caster.team) == "player" else target.pos + Vector2(24, 0)
+	DamageService.apply_damage(target, int(d.get("skill_damage", 120)), true)
+	StatusEffectService.add_status(target, "stun", float(d.get("stun_sec", 1.2)), {})
+
+static func _skill_king_aura(caster: Dictionary, allies: Array, d: Dictionary) -> void:
+	var radius := float(d.get("aura_radius", 2)) * ATTACK_RANGE_SCALE
+	for a in allies:
+		if bool(a.get("alive", false)) and caster.pos.distance_to(a.pos) <= radius:
+			StatusEffectService.add_status(a, "speed_bonus", 2.2, {"pct": float(d.get("ally_aspd_bonus", 0.25))})
+			a.crit_bonus = maxf(float(a.get("crit_bonus", 0.0)), float(d.get("ally_crit_bonus", 0.15)))
+
+static func _nearest_n(f: Dictionary, units: Array, count: int) -> Array:
+	var pool := []
+	for u in units:
+		if bool(u.get("alive", false)) and _can_target(f, u):
+			pool.append(u)
+	pool.sort_custom(func(a, b): return f.pos.distance_squared_to(a.pos) < f.pos.distance_squared_to(b.pos))
+	return pool.slice(0, mini(maxi(0, count), pool.size()))
+static func _heal_unit(unit: Dictionary, amount: int) -> void:
+	if amount <= 0 or not bool(unit.get("alive", false)):
+		return
+	StatusEffectService.ensure_status(unit)
+	var final_amount := amount
+	if unit.statuses.has("heal_reduction"):
+		final_amount = maxi(0, int(round(float(final_amount) * maxf(0.0, 1.0 - float(unit.statuses.heal_reduction.get("pct", 0.0))))))
+	var before := int(unit.hp)
+	unit.hp = mini(int(unit.max_hp), int(unit.hp) + final_amount)
+	DamageService.record_heal(unit, maxi(0, int(unit.hp) - before))
+
+static func _skill_shell_guard(caster: Dictionary, d: Dictionary) -> void:
+	StatusEffectService.add_status(caster, "damage_reduction", float(d.get("duration", 5.0)), {"pct": float(d.get("reduction", 0.50))})
