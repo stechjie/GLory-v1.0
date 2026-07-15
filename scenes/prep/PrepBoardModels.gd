@@ -5,24 +5,24 @@ const PREP_RELATION_LINK_SCRIPT := preload("res://scenes/prep/PrepRelationLink3D
 const PREP_RIVER_ARENA_PATH := "res://assets/models/prep/river_arena/Meshy_AI_Verdant_River_Arena_0621085900_texture.fbx"
 const PREP_RIVER_MATERIAL_PATH := "res://assets/models/prep/river_arena/prep_river_arena_material.tres"
 # 2.5D 分层棋盘背景图（贴在 3D 平躺地面 quad 上，和棋子一起呈现 TFT 倾斜纵深）
-const PREP_BOARD_BASE_PATH := "res://assets/board/prep_2_5d/glory_prep_base_handdrawn_v2.png"
+const PREP_BOARD_BASE_PATH := "res://assets/board/prep_2_5d/glory_prep_base_handdrawn_v6.png"
 const PREP_READY_ZONE_PATH := "res://assets/board/prep_2_5d/v4_ready_zone.png"      # 4×4 主战场圈框（透明）
 const PREP_RIVER_TOP_PATH := "res://assets/board/prep_2_5d/prep20_river_top.png"        # 上河流（黑底，shader 键透明+流动）
-const PREP_RIVER_BOTTOM_PATH := "res://assets/board/prep_2_5d/glory_prep_river_bottom_full.png"  # 下河流（手绘底图版）
+const PREP_RIVER_BOTTOM_PATH := "res://assets/board/prep_2_5d/prep20_river_bottom.png"  # 下河流：恢复原始窄带高度
 const PREP_WAITING_LIST_PATH := "res://assets/board/prep_2_5d/v4_waiting_list.png"  # 待命圈框（透明）
 # 地面 quad 的世界坐标尺寸/位置（放大到超出屏幕，森林边框盖住四周不露天空）
-const PREP_BOARD_GROUND_SIZE := Vector2(8.0, 4.5)        # X(宽) × Z(深)，比例≈1.78贴合图
-const PREP_BOARD_GROUND_CENTER := Vector3(0.3, 0.0, -0.6)
+const PREP_BOARD_GROUND_SIZE := Vector2(8.0, 4.5)        # 恢复原始大场地比例
+const PREP_BOARD_GROUND_CENTER := Vector3(0.3, 0.0, -0.6)  # 原始 Prep Screen 位置
 const PREP_BOARD_GROUND_FLIP_V := false                  # 若图上下颠倒则改 true（翻转贴图 V）
 # 河流流动高光层（贴在棋盘上方、横向滚动的波光）
 const PREP_RIVER_FLOW_SHADER := "res://assets/shaders/prep_river_flow.gdshader"
 const PREP_RIVER_TOP_EF_PATH := "res://assets/board/prep_2_5d/prep20_river_top_ef.png"
-const PREP_RIVER_BOTTOM_EF_PATH := "res://assets/board/prep_2_5d/glory_prep_river_bottom_full_ef.png"
-const PREP_BAKED_WAITING_CIRCLES := true  # 新底图已包含左侧待命圈，避免与透明叠加层重复
+const PREP_RIVER_BOTTOM_EF_PATH := "res://assets/board/prep_2_5d/prep20_river_bottom_ef.png"
+const PREP_BAKED_WAITING_CIRCLES := false  # 圆圈由原始透明叠加层绘制，保持拖拽坐标一致
 # 各区域在棋盘图上的 UV 范围（贴图占比），棋子直接按这个落到 3D 平面上
 # 中石台贴图 x516..1035/1672, y216..690/941 → 略内缩留边
-const BOARD_STONE_U := Vector2(0.377, 0.725)             # 主战 4×4 横向范围（base_full 完整石台）
-const BOARD_STONE_V := Vector2(0.210, 0.782)             # 主战 4×4 纵向范围（base_full 完整石台）
+const BOARD_STONE_U := Vector2(0.377, 0.725)             # 原始 4x4 主战区 UV 范围
+const BOARD_STONE_V := Vector2(0.210, 0.782)             # 原始 4x4 主战区 UV 范围
 const BOARD_CELL_RADIUS := 0.20                          # 格子圆的世界半径（地面上真圆，投影成椭圆）
 const BOARD_CELL_SEGMENTS := 20                          # 圆的多边形段数
 # 待命 8 个落点（棋盘图 UV，左侧草地）——2列×4行规整网格，投影后自然随斜面倾斜
@@ -44,7 +44,7 @@ const PREP_RIVER_VIEWPORT_SIZE := Vector2i(960, 540)
 const PREP_RIVER_RENDER_HZ := 30.0  # 备战 3D 视口的渲染采样率（动画推进不受影响）
 const PREP_RIVER_STAGE_SCALE := Vector3(3.5, 3.2, 3.2)
 const PREP_RIVER_STAGE_POSITION := Vector3(0.5, 0.0, -0.5)
-const PREP_RIVER_CAMERA_POSITION := Vector3(0.0, 4.26, 2.24)  # 整体拉远约12%，给顶部按钮和底部商店留空间
+const PREP_RIVER_CAMERA_POSITION := Vector3(0.0, 3.8, 2.0)    # 恢复原始 Prep Screen 视距
 const PREP_RIVER_CAMERA_TARGET := Vector3(0.0, -0.07, -0.03)
 const PREP_RIVER_CAMERA_FOV := 44.0
 const PREP_MERCENARY_MODEL_TARGET_HEIGHT := 0.12
