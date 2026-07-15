@@ -233,7 +233,9 @@ func _show_selftest() -> void:
 	_clear()
 	_selftest_prev_team_mode = GameState.team_mode
 	GameState.team_mode = true
-	var screen := preload("res://officetest/OfficeTestScreen.tscn").instantiate()
+	# load() (not preload) so this optional officetest scene never becomes a
+	# parse-time dependency of Main on a cold boot before its .import exists.
+	var screen: Node = (load("res://officetest/OfficeTestScreen.tscn") as PackedScene).instantiate()
 	screen.back_requested.connect(_on_selftest_back)
 	add_child(screen)
 
