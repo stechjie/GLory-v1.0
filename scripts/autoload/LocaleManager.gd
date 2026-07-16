@@ -255,6 +255,24 @@ func _zh_strings() -> Dictionary:
 		"prep_wait_ready_opponent": "已准备，等待对方按本回合开始游戏。",
 		"prep_wait_board_sync": "双方已准备，等待对方本回合棋盘同步。",
 		"prep_wait_sync": "已准备，等待联机同步。",
+		# 宠物系统
+		"pet_title": "宠物",
+		"pet_set_active": "设为出战",
+		"pet_active_tag": "出战中",
+		"pet_locked": "未拥有",
+		"pet_starter_title": "选择你的初始宠物",
+		"pet_starter_hint": "三选一，只能选一只。可在备战界面随时切换出战宠物。",
+		"pet_pick": "选择",
+		"pet_back": "返回",
+		"pet_active_label": "出战宠物：%s",
+		"pet_none": "无",
+		# 宠物名 + 效果
+		"pet_name_pet_mushroom": "蘑菇",
+		"pet_name_pet_cat": "猫",
+		"pet_name_pet_duck": "鸭子",
+		"pet_effect_self_hp_pct": "自身棋子生命 +%d%%",
+		"pet_effect_self_atk_pct": "自身棋子攻击 +%d%%",
+		"pet_effect_interest_pct": "金币利息 +%d%%",
 	}
 
 func _en_strings() -> Dictionary:
@@ -486,4 +504,22 @@ func _en_strings() -> Dictionary:
 		"prep_wait_ready_opponent": "Ready. Waiting for opponent to start this round.",
 		"prep_wait_board_sync": "Both ready. Waiting for opponent's board sync this round.",
 		"prep_wait_sync": "Ready. Waiting for online sync.",
+		# Pet system
+		"pet_title": "Pets",
+		"pet_set_active": "Set Active",
+		"pet_active_tag": "Active",
+		"pet_locked": "Locked",
+		"pet_starter_title": "Choose Your Starter Pet",
+		"pet_starter_hint": "Pick one of three. You can switch your active pet anytime in Prep.",
+		"pet_pick": "Choose",
+		"pet_back": "Back",
+		"pet_active_label": "Active pet: %s",
+		"pet_none": "None",
+		# Pet names + effects
+		"pet_name_pet_mushroom": "Mushroom",
+		"pet_name_pet_cat": "Cat",
+		"pet_name_pet_duck": "Duck",
+		"pet_effect_self_hp_pct": "Own pieces HP +%d%%",
+		"pet_effect_self_atk_pct": "Own pieces ATK +%d%%",
+		"pet_effect_interest_pct": "Gold interest +%d%%",
 	}

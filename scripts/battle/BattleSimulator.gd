@@ -100,7 +100,7 @@ static func prepare_team_state(forced_team: int = -1) -> Dictionary:
 		rival_ctx.append(_team_owner_ctx_for_slot(rival_slots[lane]))
 	var player: Array = []
 	for lane in 3:
-		_append_lane_board_fighters(player, lane_boards[lane], "player", lane, ally_ctx[lane].treasures, ally_ctx[lane].syn, ally_slots[lane])
+		_append_lane_board_fighters(player, lane_boards[lane], "player", lane, ally_ctx[lane].treasures, ally_ctx[lane].syn, ally_slots[lane], ally_ctx[lane].get("pet", ""))
 	# Enemy side only exists if the opposing team has a real opponent: a host-added
 	# dummy (假想敌), or — only when online — a remote player. Offline there is just
 	# ONE real player (you), so a stray "player" slot marker must NOT count as an
@@ -129,7 +129,7 @@ static func prepare_team_state(forced_team: int = -1) -> Dictionary:
 					_append_lane_boss(enemy, lane, boss_template)
 					_append_lane_monsters(enemy, lane, lane_monster_count, monster_template)
 				"pvp":
-					_append_lane_board_fighters(enemy, _team_board_for_slot(rival_slots[lane], rng), "enemy", lane, rival_ctx[lane].treasures, rival_ctx[lane].syn, rival_slots[lane])
+					_append_lane_board_fighters(enemy, _team_board_for_slot(rival_slots[lane], rng), "enemy", lane, rival_ctx[lane].treasures, rival_ctx[lane].syn, rival_slots[lane], rival_ctx[lane].get("pet", ""))
 				_:
 					_append_lane_monsters(enemy, lane, lane_monster_count, monster_template)
 		# Mercenaries (Legion TD 2 "send"): PvP -> own mercs fight WITH you and the

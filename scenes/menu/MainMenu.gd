@@ -12,6 +12,7 @@ signal public_token_generate_requested
 signal public_token_resume_requested(token_id: String)
 signal team_offline_requested   # 不联网，本地单人 vs AI 自测
 signal team_reconnect_requested # 手动重连回上一场对局
+signal prep_requested           # 「备战」按钮：进入备战界面（暂时只有宠物系统）
 
 const REF_SIZE := Vector2(1672.0, 941.0)
 const TEX_BACKGROUND := preload("res://assets/ui/start_menu/background.png")
@@ -112,7 +113,7 @@ func _build() -> void:
 	_add_label(_menu_text("排位", "Ranked"), Vector2(732, 765), Vector2(196, 68), 38)
 	_add_label(_menu_text("自定房间", "Custom"), Vector2(1028, 848), Vector2(230, 46), 28)
 	_add_label(_menu_text("图鉴", "Gallery"), Vector2(1300, 848), Vector2(220, 46), 28)
-	_add_hit(Vector2(78, 724), Vector2(306, 190), _show_coming_soon)
+	_add_hit(Vector2(78, 724), Vector2(306, 190), _emit_prep)
 	_add_hit(Vector2(394, 724), Vector2(300, 190), _show_coming_soon)
 	_add_hit(Vector2(704, 664), Vector2(264, 228), _show_coming_soon)
 	_add_hit(Vector2(970, 724), Vector2(300, 190), _show_room_overlay)
@@ -375,6 +376,9 @@ func _emit_offline() -> void:
 
 func _emit_reconnect() -> void:
 	team_reconnect_requested.emit()
+
+func _emit_prep() -> void:
+	prep_requested.emit()
 
 func _show_coming_soon() -> void:
 	_coming_soon.popup_centered(Vector2(260, 120))

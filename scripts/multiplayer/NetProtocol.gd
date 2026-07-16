@@ -14,12 +14,13 @@ static func team_board_submission(board_slots: Array, mercenary_slots: Array = [
 		"mercenaries": _minimal_slots(mercenary_slots, true),
 		"treasures": _sanitize_treasure_ids(GameState.owned_treasures),
 		"syn": SynergyService.current_player_flags(),
+		"pet": _sanitize_pet_id(PlayerProfile.get_active()),
 	}
 
 static func board_snapshot(board_slots: Array, mercenary_slots: Array = []) -> Dictionary:
-	# 3v3: carry this player's treasures + synergy flags so the host can apply
-	# them to THIS player's units only (per-owner effects, synced for everyone).
-	return {"version": SNAPSHOT_VERSION, "round": GameState.round_index, "board": sanitize_board(board_slots), "mercenaries": sanitize_mercenaries(mercenary_slots), "treasures": GameState.owned_treasures.duplicate(), "syn": SynergyService.current_player_flags()}
+	# 3v3: carry this player's treasures + synergy flags + active pet so the host can
+	# apply them to THIS player's units only (per-owner effects, synced for everyone).
+	return {"version": SNAPSHOT_VERSION, "round": GameState.round_index, "board": sanitize_board(board_slots), "mercenaries": sanitize_mercenaries(mercenary_slots), "treasures": GameState.owned_treasures.duplicate(), "syn": SynergyService.current_player_flags(), "pet": _sanitize_pet_id(PlayerProfile.get_active())}
 
 static func validate_team_snapshot(snapshot: Variant, expected_round: int) -> Dictionary:
 	if typeof(snapshot) != TYPE_DICTIONARY:
@@ -50,19 +51,23 @@ static func validate_team_snapshot(snapshot: Variant, expected_round: int) -> Di
 			"mercenaries": merc_result.get("slots", []),
 			"treasures": treasures_result.get("treasures", []),
 			"syn": d.get("syn", {}) if typeof(d.get("syn", {})) == TYPE_DICTIONARY else {},
+			"pet": _sanitize_pet_id(d.get("pet", "")),
 		}
 	}
 
 static func normalize_snapshot(snapshot: Variant) -> Dictionary:
 	if typeof(snapshot) == TYPE_DICTIONARY:
 		var d: Dictionary = snapshot
-		return {"version": int(d.get("version", SNAPSHOT_VERSION)), "round": int(d.get("round", 0)), "board": sanitize_board(d.get("board", [])), "mercenaries": sanitize_mercenaries(d.get("mercenaries", [])), "treasures": d.get("treasures", []), "syn": d.get("syn", {})}
+		return {"version": int(d.get("version", SNAPSHOT_VERSION)), "round": int(d.get("round", 0)), "board": sanitize_board(d.get("board", [])), "mercenaries": sanitize_mercenaries(d.get("mercenaries", [])), "treasures": d.get("treasures", []), "syn": d.get("syn", {}), "pet": _sanitize_pet_id(d.get("pet", ""))}
 	if typeof(snapshot) == TYPE_ARRAY:
-		return {"version": SNAPSHOT_VERSION, "round": 0, "board": sanitize_board(snapshot), "mercenaries": [], "treasures": [], "syn": {}}
-	return {"version": SNAPSHOT_VERSION, "round": 0, "board": _empty_board(), "mercenaries": [], "treasures": [], "syn": {}}
+		return {"version": SNAPSHOT_VERSION, "round": 0, "board": sanitize_board(snapshot), "mercenaries": [], "treasures": [], "syn": {}, "pet": ""}
+	return {"version": SNAPSHOT_VERSION, "round": 0, "board": _empty_board(), "mercenaries": [], "treasures": [], "syn": {}, "pet": ""}
 
 static func extract_treasures(snapshot: Variant) -> Array:
 	return normalize_snapshot(snapshot).get("treasures", [])
+
+static func extract_pet(snapshot: Variant) -> String:
+	return str(normalize_snapshot(snapshot).get("pet", ""))
 
 static func extract_syn(snapshot: Variant) -> Dictionary:
 	return normalize_snapshot(snapshot).get("syn", {})
@@ -254,6 +259,15 @@ static func _sanitize_treasure_ids(value: Variant) -> Array:
 			continue
 		out.append(tid)
 	return out
+
+static func _sanitize_pet_id(value: Variant) -> String:
+	var pid := str(value)
+	if pid.is_empty():
+		return ""
+	for p in DataRegistry.get_table("pets").get("pets", []):
+		if str((p as Dictionary).get("id", "")) == pid:
+			return pid
+	return ""
 
 static func _empty_board() -> Array:
 	var out := []

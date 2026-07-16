@@ -1173,6 +1173,7 @@ func _server_gold_after_battle(gold_before: int, result: Dictionary, slot: int, 
 	var interest := EconomyService.base_interest(gold)
 	if treasures.has("money_compound"):
 		interest += int(floor(float(gold) * 0.05))
+	interest += EconomyService.pet_interest_bonus(gold, NetProtocol.extract_pet(snapshot))
 	gold += interest
 	return maxi(0, gold)
 

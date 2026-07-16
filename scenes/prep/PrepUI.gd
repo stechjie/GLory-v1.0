@@ -1591,7 +1591,8 @@ func _format_gold_interest_detail() -> String:
 	var money_compound_bonus := 0
 	if GameState.owned_treasures.has("money_compound"):
 		money_compound_bonus = int(floor(float(gold) * 0.05))
-	var total_interest := base_interest + money_compound_bonus
+	var pet_interest_bonus := EconomyService.pet_interest_bonus(gold, PlayerProfile.get_active())
+	var total_interest := base_interest + money_compound_bonus + pet_interest_bonus
 	var is_en := TranslationServer.get_locale().begins_with("en")
 	var lines: Array[String] = []
 	if is_en:

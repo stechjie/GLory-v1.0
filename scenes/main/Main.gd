@@ -179,6 +179,10 @@ func _select_language(locale: String) -> void:
 	_show_prep()
 
 func _show_menu() -> void:
+	# 首次启动：进主菜单前强制选择初始宠物（三选一，选完才放行）。
+	if PlayerProfile.needs_starter_pick:
+		_show_starter_pet_gate()
+		return
 	_clear()
 	# 重连改为手动：主菜单的"游戏重连"按钮（有本地凭证才显示）才连回上一场，
 	# 不再一进菜单就偷偷自动连（那会把玩家拽进夹生半状态、按不动开始）。
@@ -195,6 +199,7 @@ func _show_menu() -> void:
 	if not _menu.team_reconnect_requested.is_connected(_on_team_reconnect_requested):
 		_menu.team_reconnect_requested.connect(_on_team_reconnect_requested)
 	_menu.settings_requested.connect(_show_settings)
+	_menu.prep_requested.connect(_show_pet_screen)
 	add_child(_menu)
 
 func _on_team_reconnect_requested() -> void:
@@ -218,6 +223,20 @@ func _show_settings() -> void:
 	var settings := preload("res://scenes/menu/SettingsScreen.tscn").instantiate()
 	settings.back_requested.connect(_show_menu)
 	add_child(settings)
+
+# 备战界面（暂时只有宠物系统）。从主菜单「备战」按钮进入，返回回主菜单。
+func _show_pet_screen() -> void:
+	_clear()
+	var pet_screen := preload("res://scenes/menu/PetScreen.tscn").instantiate()
+	pet_screen.back_requested.connect(_show_menu)
+	add_child(pet_screen)
+
+# 首次启动的初始宠物三选一关卡：无返回按钮，选完后再进主菜单。
+func _show_starter_pet_gate() -> void:
+	_clear()
+	var pet_screen := preload("res://scenes/menu/PetScreen.tscn").instantiate()
+	pet_screen.starter_picked.connect(_show_menu)
+	add_child(pet_screen)
 
 func _show_team3v3_lobby() -> void:
 	_clear()
@@ -483,6 +502,7 @@ func _on_team_battle_finished(result: Dictionary) -> void:
 	var team_interest := EconomyService.base_interest(GameState.gold)
 	if GameState.owned_treasures.has("money_compound"):
 		team_interest += int(floor(float(GameState.gold) * 0.05))
+	team_interest += EconomyService.pet_interest_bonus(GameState.gold, PlayerProfile.get_active())
 	GameState.gold += team_interest
 	_apply_post_battle_unit_outcomes(result)
 	GameState.battle_history.append(result)

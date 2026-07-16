@@ -8,6 +8,7 @@ const DATA_FILES := {
 	"mercenaries": "res://data/mercenary/mercenaries.json",
 	"treasures": "res://data/treasure/treasures.json",
 	"formation_allies": "res://data/formation/formation_allies.json",
+	"pets": "res://data/pets/pets.json",
 }
 
 var data := {}

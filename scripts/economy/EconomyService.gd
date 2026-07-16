@@ -38,6 +38,10 @@ static func boss_loss_reward(round_index: int, boss_hp_current: int, boss_hp_max
 static func base_interest(gold_before_interest: int) -> int:
 	return int(floor(float(gold_before_interest) * BASE_INTEREST_RATE))
 
+# 宠物「猫」的额外利息（在 base_interest 基础上按宠物利息率加成）。pet_id 为空或非猫则为 0。
+static func pet_interest_bonus(gold_before_interest: int, pet_id: String) -> int:
+	return int(floor(float(maxi(0, gold_before_interest)) * PetService.interest_rate_bonus(pet_id)))
+
 static func escalating_unit_price(step_index: int) -> int:
 	var step := maxi(1, step_index)
 	var price := 1

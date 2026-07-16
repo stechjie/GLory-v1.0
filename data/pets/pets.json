@@ -1,0 +1,32 @@
+{
+	"starter_ids": ["pet_mushroom", "pet_cat", "pet_duck"],
+	"pets": [
+		{
+			"id": "pet_mushroom",
+			"name": "蘑菇",
+			"name_en": "Mushroom",
+			"effect": "self_hp_pct",
+			"value": 0.01,
+			"model": "",
+			"icon": ""
+		},
+		{
+			"id": "pet_cat",
+			"name": "猫",
+			"name_en": "Cat",
+			"effect": "interest_pct",
+			"value": 0.01,
+			"model": "",
+			"icon": ""
+		},
+		{
+			"id": "pet_duck",
+			"name": "鸭子",
+			"name_en": "Duck",
+			"effect": "self_atk_pct",
+			"value": 0.01,
+			"model": "",
+			"icon": ""
+		}
+	]
+}

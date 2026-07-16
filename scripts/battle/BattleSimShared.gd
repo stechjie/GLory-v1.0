@@ -38,7 +38,7 @@ static func _place_in_lane(f: Dictionary, slot: int, team: String, lane: int) ->
 	f["lane"] = lane
 
 
-static func _append_lane_board_fighters(out: Array, board: Array, team: String, lane: int, owner_treasures: Array = [], owner_syn: Dictionary = {}, owner_slot: int = -1) -> void:
+static func _append_lane_board_fighters(out: Array, board: Array, team: String, lane: int, owner_treasures: Array = [], owner_syn: Dictionary = {}, owner_slot: int = -1, owner_pet: String = "") -> void:
 	for i in board.size():
 		var cell = board[i]
 		if cell == null or typeof(cell) != TYPE_DICTIONARY:
@@ -49,6 +49,7 @@ static func _append_lane_board_fighters(out: Array, board: Array, team: String, 
 		f["owner_treasures"] = owner_treasures
 		f["owner_syn"] = owner_syn
 		f["owner_slot"] = owner_slot
+		f["owner_pet"] = owner_pet
 		out.append(f)
 
 # Per-fighter owner context (3v3): treasures/synergies come from the unit's
@@ -65,6 +66,16 @@ static func _f_treasures(f: Dictionary) -> Array:
 
 static func _f_has_treasure(f: Dictionary, tid: String) -> bool:
 	return tid in _f_treasures(f)
+
+
+static func _f_pet(f: Dictionary) -> String:
+	# Team units carry their owner's active pet; 1v1 player units fall back to the
+	# local account profile. Enemy units in 1v1 have no owner_pet → no bonus.
+	if f.has("owner_pet"):
+		return str(f.get("owner_pet", ""))
+	if str(f.get("team", "")) == "player":
+		return PlayerProfile.get_active()
+	return ""
 
 
 static func _f_has_set(f: Dictionary, category: String) -> bool:
@@ -132,11 +143,11 @@ static func _team_owner_ctx_for_slot(slot_idx: int) -> Dictionary:
 		if _team_slot_state(slot_idx) == "player":
 			var snap = NetworkService.team_boards.get(slot_idx, {})
 			if snap is Dictionary and not (snap as Dictionary).is_empty():
-				return {"treasures": NetProtocol.extract_treasures(snap), "syn": NetProtocol.extract_syn(snap)}
-		return {"treasures": [], "syn": {}}
+				return {"treasures": NetProtocol.extract_treasures(snap), "syn": NetProtocol.extract_syn(snap), "pet": NetProtocol.extract_pet(snap)}
+		return {"treasures": [], "syn": {}, "pet": ""}
 	if slot_idx == 0:
-		return {"treasures": GameState.owned_treasures.duplicate(), "syn": SynergyService.current_player_flags()}
-	return {"treasures": [], "syn": {}}
+		return {"treasures": GameState.owned_treasures.duplicate(), "syn": SynergyService.current_player_flags(), "pet": PlayerProfile.get_active()}
+	return {"treasures": [], "syn": {}, "pet": ""}
 
 
 static func _round_pick_index(size: int, salt: String) -> int:

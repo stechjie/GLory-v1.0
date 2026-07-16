@@ -205,6 +205,7 @@ func _settlement_preview(result: Dictionary) -> String:
 	var interest := EconomyService.base_interest(before_interest)
 	if GameState.owned_treasures.has("money_compound"):
 		interest += int(floor(float(before_interest) * 0.05))
+	interest += EconomyService.pet_interest_bonus(before_interest, PlayerProfile.get_active())
 	if merchant_gold > 0:
 		lines.append(tr("settle_merchant") % merchant_gold)
 	if bonus_gold > 0:

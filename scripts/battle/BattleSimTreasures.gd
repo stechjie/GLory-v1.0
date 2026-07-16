@@ -295,6 +295,16 @@ static func _apply_opening_treasures(player: Array, event_log: Array[String]) ->
 			StatusEffectService.add_bleed(f, 999.0, 0.06)
 		if _f_has_treasure(f, "atk_burst_core"):
 			f.crit_bonus = float(f.get("crit_bonus", 0.0)) + 0.25
+		# 宠物开局加成（按该棋子所属者的出战宠物）：蘑菇 +生命 / 鸭子 +攻击。
+		var pet_id := _f_pet(f)
+		if not pet_id.is_empty():
+			var hp_mult := PetService.opening_hp_mult(pet_id)
+			if hp_mult != 1.0:
+				f.max_hp = maxi(1, int(round(float(f.max_hp) * hp_mult)))
+				f.hp = int(f.max_hp)
+			var atk_mult := PetService.opening_atk_mult(pet_id)
+			if atk_mult != 1.0:
+				f.atk = maxi(1, int(round(float(f.atk) * atk_mult)))
 	if GameState.owned_treasures.has("ctrl_time_compress"):
 		event_log.append(TranslationServer.translate("log_time_compress"))
 
