@@ -126,7 +126,7 @@
                           "name":  "哀鸣共鸣",
                           "category":  "attack",
                           "kill_radius":  180.0,
-                          "max_hp_true_damage":  0.10,
+                          "max_hp_true_damage":  0.15,
                           "name_en":  "Wail Resonance"
                       },
                       {
