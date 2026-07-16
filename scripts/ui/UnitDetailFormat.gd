@@ -176,7 +176,7 @@ static func format_skill_detail(d: Dictionary) -> String:
 		"unique_death_execute":
 			return "母灵：每名玩家最多1只；3v3中多个玩家的母灵可同时生效且各自独立计数。每5个非母灵处决造成的敌军死亡触发一次；1阶/佣兵50%、2阶35%、3阶10%即死，Boss改为20%最大生命伤害。灵7改为每4个死亡触发。"
 		"attack_interrupt":
-			return "打断攻击：普通攻击有%s概率打断目标。" % pct(float(d.get("interrupt_chance", 0.12)))
+			return "缴械攻击：普通攻击有%s概率缴械目标（1 秒内无法普攻）。" % pct(float(d.get("interrupt_chance", 0.12)))
 		"post_battle_gold_by_star":
 			return "战后经商：参与战斗后，按星级获得金币。1星+10，2星+20，3星+30。"
 		"every_fourth_combo":
@@ -270,7 +270,7 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"unique_death_execute":
 			return "Mother Wisp: each player can field 1; in 3v3, each player's Mother Wisp works at the same time and counts independently. Every 5 enemy deaths not caused by Mother Wisp execute: Tier 1/Merc 50%, Tier 2 35%, Tier 3 10%; vs Boss deal 20% max HP instead. Undead 7: every 4 deaths."
 		"attack_interrupt":
-			return "Interrupt Strike: Normal attacks have a %s chance to interrupt the target." % pct(float(d.get("interrupt_chance", 0.12)))
+			return "Disarm Strike: Normal attacks have a %s chance to disarm the target (cannot use normal attacks for 1s)." % pct(float(d.get("interrupt_chance", 0.12)))
 		"post_battle_gold_by_star":
 			return "Trade: After each battle, gain gold by star level (★1 → +10G, ★2 → +20G, ★3 → +30G)."
 		"every_fourth_combo":

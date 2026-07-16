@@ -342,7 +342,7 @@ static func _apply_kill_treasures(killer: Dictionary, victim: Dictionary, enemie
 	if _f_has_treasure(killer, "atk_wail_resonance"):
 		for o in enemies:
 			if bool(o.get("alive", false)) and _can_target(killer, o, enemies) and victim.pos.distance_to(o.pos) <= 180.0:
-				DamageService.apply_damage(o, maxi(1, int(round(float(o.max_hp) * 0.10))), true)
+				DamageService.apply_damage(o, maxi(1, int(round(float(o.max_hp) * 0.15))), true)
 
 
 
@@ -597,6 +597,10 @@ static func _process_revives(state: Dictionary) -> void:
 			f.hp = maxi(1, int(round(float(f.max_hp) * float(f.get("def", {}).get("revive_hp_pct", 0.30)))))
 			f.shield = 0
 			f.next_attack = float(state.elapsed) + 0.5
+			# 凤凰涅槃：复活即满血并获得 3 秒无敌，撑到 temporary_deaths 的强制真死（+3.1s）。
+			if bool(f.get("phoenix_used", false)):
+				f.hp = int(f.max_hp)
+				StatusEffectService.add_status(f, "invulnerable", 3.0, {})
 			# 复活即清死亡标记：之后再被打死要能重新结算击杀金，也避免用到陈旧的致死来源。
 			f.erase("kill_reward_paid")
 			f.erase("killer_uid")

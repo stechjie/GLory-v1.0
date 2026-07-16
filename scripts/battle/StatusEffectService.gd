@@ -64,8 +64,8 @@ static func add_bleed(fighter: Dictionary, duration: float = 3.0, pct_current_hp
 	add_status(fighter, "bleed", duration, {"pct_current_hp": pct_current_hp, "tick_left": 0.0})
 
 static func interrupt(fighter: Dictionary) -> void:
-	fighter.next_attack = float(fighter.get("next_attack", 0.0)) + 0.35
-	add_status(fighter, "interrupt", 0.35, {})
+	# 缴械：1 秒内无法进行普通攻击（普攻在 _perform_attack 处被 has_status("interrupt") 拦下）。
+	add_status(fighter, "interrupt", 1.0, {})
 
 static func tick(fighter: Dictionary, delta: float) -> Array[int]:
 	ensure_status(fighter)
