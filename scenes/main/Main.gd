@@ -490,20 +490,29 @@ func _on_team_battle_finished(result: Dictionary) -> void:
 	elif not player_wins:
 		# Legacy fallback: only my team's HP, damage = surviving enemy count.
 		GameState.team_hp = maxi(0, GameState.team_hp - maxi(1, surviving_enemies))
-	# Economy: kill gold + base income, plus the local player's post-battle money
-	# treasures (per-player gold, so applied locally is correct).
-	GameState.gold += _team_local_kill_gold(result) + int(result.get("bonus_gold", 0)) + 5
-	if GameState.owned_treasures.has("money_lucky_envelope"):
-		GameState.gold += 1 + (randi() % 3)
-	if TreasureService.has_linkage("link_money_magic"):
-		GameState.gold += 5 + (randi() % 3)
-		if randf() < 0.10:
-			GameState.gold += 10
-	var team_interest := EconomyService.base_interest(GameState.gold)
-	if GameState.owned_treasures.has("money_compound"):
-		team_interest += int(floor(float(GameState.gold) * 0.05))
-	team_interest += EconomyService.pet_interest_bonus(GameState.gold, PlayerProfile.get_active())
-	GameState.gold += team_interest
+	# Economy: 全套战后结算走 EconomyService.settle_post_battle_gold —— 与专用服务器
+	# 的 NetworkService._server_gold_after_battle 共用同一份实现，两处不能再各写各的。
+	# 连败计数在这里维护（此前全代码从未 +1 过，安慰金因此恒为 +2）：胜利清零、
+	# 失败 +1，安慰金按结算后的连败数计算。
+	if player_wins:
+		GameState.loss_streak = 0
+	else:
+		GameState.loss_streak += 1
+	GameState.gold = EconomyService.settle_post_battle_gold({
+		"gold_before": GameState.gold,
+		"kill_gold": _team_local_kill_gold(result),
+		"bonus_gold": int(result.get("bonus_gold", 0)),
+		"kind": kind,
+		"player_wins": player_wins,
+		"round_index": completed_round,
+		"pve_completed_before": GameState.pve_completed,
+		"loss_streak_after": GameState.loss_streak,
+		"boss_hp_current": int(result.get("enemy_hp_current", 0)),
+		"boss_hp_max": maxi(1, int(result.get("enemy_hp_max", 1))),
+		"merchant_gold": EconomyService.merchant_gold_from_board(GameState.board_slots),
+		"treasures": GameState.owned_treasures,
+		"pet_id": PlayerProfile.get_active(),
+	})
 	_apply_post_battle_unit_outcomes(result)
 	GameState.battle_history.append(result)
 	if kind == "pve":
@@ -575,6 +584,7 @@ func _apply_team_match_state_payload(state_payload: Dictionary, result: Dictiona
 	GameState.gold = int(state_payload.get("gold", GameState.gold))
 	GameState.pve_completed = int(state_payload.get("pve_completed", GameState.pve_completed))
 	GameState.boss_completed = int(state_payload.get("boss_completed", GameState.boss_completed))
+	GameState.loss_streak = int(state_payload.get("loss_streak", GameState.loss_streak))
 	GameState.final_battle_complete = bool(state_payload.get("final_battle_complete", GameState.final_battle_complete))
 	GameState.team_run_won = bool(state_payload.get("team_run_won", GameState.team_run_won))
 	if not result.is_empty():
@@ -589,10 +599,7 @@ func _apply_team_match_state_payload(state_payload: Dictionary, result: Dictiona
 
 func _team_local_kill_gold(result: Dictionary) -> int:
 	var slot := NetworkService.team_local_slot if NetworkService.team_active else 0
-	if slot < 0:
-		slot = 0
-	var by_slot: Dictionary = result.get("kill_gold_by_slot", {})
-	return int(by_slot.get(slot, by_slot.get(str(slot), 0)))
+	return EconomyService.kill_gold_for_slot(result, maxi(0, slot))
 
 func _on_battle_requested() -> void:
 	var loaded_battle_scene: PackedScene = null

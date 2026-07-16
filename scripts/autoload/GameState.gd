@@ -1,7 +1,7 @@
 extends Node
 
 const START_FORMATION_HP := 50
-const START_GOLD := 10
+const START_GOLD := 100
 const MAX_NORMAL_UNITS := 7
 const MAX_UNIT_STAR := 3
 # Copies of a unit at a given star required to fuse into the next star.

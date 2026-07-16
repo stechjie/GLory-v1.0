@@ -318,7 +318,7 @@ static func _apply_post_damage_treasures(attacker: Dictionary, target: Dictionar
 		_try_toxic_burst(target)
 	if _f_has_linkage(attacker, "link_rich_path"):
 		if RngService.rng.randf() < 0.10:
-			state.bonus_gold = int(state.get("bonus_gold", 0)) + 1
+			state.bonus_gold = int(state.get("bonus_gold", 0)) + 10
 
 
 static func _apply_defender_treasure_reaction(defender: Dictionary, attacker: Dictionary, state: Dictionary, _dealt: int) -> void:

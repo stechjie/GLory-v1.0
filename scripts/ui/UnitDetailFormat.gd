@@ -178,7 +178,7 @@ static func format_skill_detail(d: Dictionary) -> String:
 		"attack_interrupt":
 			return "打断攻击：普通攻击有%s概率打断目标。" % pct(float(d.get("interrupt_chance", 0.12)))
 		"post_battle_gold_by_star":
-			return "战后经商：参与战斗后，按星级获得金币。1星+1，2星+2，3星+3。"
+			return "战后经商：参与战斗后，按星级获得金币。1星+10，2星+20，3星+30。"
 		"every_fourth_combo":
 			return "连射：每第%d次普通攻击额外造成自身攻击%s伤害。" % [int(d.get("every", 4)), pct(float(d.get("combo_atk_pct", 0.70)))]
 		"front_cone_stun":
@@ -272,7 +272,7 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"attack_interrupt":
 			return "Interrupt Strike: Normal attacks have a %s chance to interrupt the target." % pct(float(d.get("interrupt_chance", 0.12)))
 		"post_battle_gold_by_star":
-			return "Trade: After each battle, gain gold equal to this unit's star level (★1 → +1G, ★2 → +2G, ★3 → +3G)."
+			return "Trade: After each battle, gain gold by star level (★1 → +10G, ★2 → +20G, ★3 → +30G)."
 		"every_fourth_combo":
 			return "Rapid Fire: Every %d attacks, deal bonus %s ATK damage." % [int(d.get("every", 4)), pct(float(d.get("combo_atk_pct", 0.70)))]
 		"front_cone_stun":

@@ -46,7 +46,7 @@ static func validate_team_snapshot(snapshot: Variant, expected_round: int) -> Di
 			"version": SNAPSHOT_VERSION,
 			"protocol": NetworkConfig.NETWORK_PROTOCOL_VERSION,
 			"round": round_id,
-			"gold": clampi(int(d.get("gold", GameState.START_GOLD)), 0, 9999),
+			"gold": clampi(int(d.get("gold", GameState.START_GOLD)), 0, 99999),
 			"board": board_result.get("slots", _empty_board()),
 			"mercenaries": merc_result.get("slots", []),
 			"treasures": treasures_result.get("treasures", []),

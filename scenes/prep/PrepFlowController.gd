@@ -127,7 +127,7 @@ func _on_golden_altar() -> void:
 		GameState.team_hp -= 1
 	else:
 		GameState.player_formation_hp -= 1
-	GameState.gold += 5
+	GameState.gold += 50
 	GameState.golden_altar_uses += 1
 	SaveManager.save_run()
 	_refresh_all()

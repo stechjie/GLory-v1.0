@@ -399,6 +399,7 @@ func _new_room() -> Dictionary:
 		"team_hp": [GameState.START_FORMATION_HP, GameState.START_FORMATION_HP],
 		"pve_completed": 0,
 		"boss_completed": 0,
+		"team_loss_streak": [0, 0],
 		"final_battle_complete": false,
 		"last_match_state": {},
 		"shared_seed": randi(),
@@ -1090,7 +1091,25 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 	var completed_round := int(room.get("round_index", 1))
 	var team_hp: Array = room.get("team_hp", [GameState.START_FORMATION_HP, GameState.START_FORMATION_HP])
 	var res_a: Dictionary = replay_a.get("result", {})
+	var res_b: Dictionary = replay_b.get("result", {})
 	var kind := str(replay_a.get("kind", "pve"))
+	# 金币结算要按队伍的胜负给。PVE/Boss：两队各打各的怪，胜负互相独立；
+	# PVP：replay 是规范化棋局（A 队恒为 "player" 方），B 队胜负取反。
+	# 同款视角反转也在 Main._on_team_battle_finished 与 BattleUI._local_player_wins。
+	var team_wins := [bool(res_a.get("player_wins", false)), false]
+	if kind == "pvp":
+		team_wins[1] = not bool(res_a.get("player_wins", false))
+	else:
+		team_wins[1] = bool(res_b.get("player_wins", false))
+	# PVE 胜利奖励按「本回合累加前」的完成次数算——下面紧接着就 +1 了。
+	var pve_completed_before := int(room.get("pve_completed", 0))
+	# 连败计数按队维护：胜利清零、失败 +1。每回合只能走一次，不能放进座位循环。
+	var loss_streak: Array = room.get("team_loss_streak", [0, 0])
+	if loss_streak.size() < 2:
+		loss_streak = [0, 0]
+	for t in 2:
+		loss_streak[t] = 0 if team_wins[t] else int(loss_streak[t]) + 1
+	room.team_loss_streak = loss_streak
 	var hp_a := maxi(0, int(team_hp[0]) - maxi(0, int(res_a.get("team_damage_self", 0))))
 	var hp_b := maxi(0, int(team_hp[1]) - maxi(0, int(res_a.get("team_damage_rival", 0))))
 	if hp_a > 0:
@@ -1135,10 +1154,16 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 		var replay := replay_a if slot < 3 else replay_b
 		var result: Dictionary = replay.get("result", {})
 		var snap: Dictionary = boards.get(slot, {})
-		var gold_before := int(snap.get("gold", slot_gold[slot]))
-		var gold_after := _server_gold_after_battle(gold_before, result, slot, snap)
-		slot_gold[slot] = gold_after
 		var own_team := 0 if slot < 3 else 1
+		var gold_before := int(snap.get("gold", slot_gold[slot]))
+		var gold_after := _server_gold_after_battle(gold_before, result, slot, snap, {
+			"kind": kind,
+			"player_wins": bool(team_wins[own_team]),
+			"round_index": completed_round,
+			"pve_completed_before": pve_completed_before,
+			"loss_streak_after": int(loss_streak[own_team]),
+		})
+		slot_gold[slot] = gold_after
 		out[slot] = {
 			"protocol": NetworkConfig.NETWORK_PROTOCOL_VERSION,
 			"completed_round": completed_round,
@@ -1150,6 +1175,7 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 			"gold": gold_after,
 			"pve_completed": int(room.get("pve_completed", 0)),
 			"boss_completed": int(room.get("boss_completed", 0)),
+			"loss_streak": int(loss_streak[own_team]),
 			"run_over": run_over,
 			"final_battle_complete": completed_round >= GameState.FINAL_ROUND,
 			"team_run_won": team_a_won if own_team == 0 else not team_a_won,
@@ -1159,23 +1185,26 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 	_net_log("official match_state generated room=%d round=%d hp=%s gold=%s run_over=%s" % [int(room.get("id", 0)), completed_round, str(room.team_hp), str(slot_gold), str(run_over)])
 	return out
 
-func _server_gold_after_battle(gold_before: int, result: Dictionary, slot: int, snapshot: Dictionary) -> int:
-	var gold := maxi(0, gold_before)
-	var by_slot: Dictionary = result.get("kill_gold_by_slot", {})
-	gold += int(by_slot.get(slot, by_slot.get(str(slot), 0))) + int(result.get("bonus_gold", 0)) + 5
-	var treasures: Array = snapshot.get("treasures", [])
-	if treasures.has("money_lucky_envelope"):
-		gold += 1 + (randi() % 3)
-	if TreasureService.has_linkage_in(treasures, "link_money_magic"):
-		gold += 5 + (randi() % 3)
-		if randf() < 0.10:
-			gold += 10
-	var interest := EconomyService.base_interest(gold)
-	if treasures.has("money_compound"):
-		interest += int(floor(float(gold) * 0.05))
-	interest += EconomyService.pet_interest_bonus(gold, NetProtocol.extract_pet(snapshot))
-	gold += interest
-	return maxi(0, gold)
+# 专用服务器的权威结算：与本地/房主的 Main._on_team_battle_finished 共用
+# EconomyService.settle_post_battle_gold，两处不能再各写各的。
+# round_ctx 由 _room_build_match_states 按队伍算好：kind / player_wins /
+# round_index / pve_completed_before / loss_streak_after。
+func _server_gold_after_battle(gold_before: int, result: Dictionary, slot: int, snapshot: Dictionary, round_ctx: Dictionary) -> int:
+	return EconomyService.settle_post_battle_gold({
+		"gold_before": gold_before,
+		"kill_gold": EconomyService.kill_gold_for_slot(result, slot),
+		"bonus_gold": int(result.get("bonus_gold", 0)),
+		"kind": str(round_ctx.get("kind", "pve")),
+		"player_wins": bool(round_ctx.get("player_wins", false)),
+		"round_index": int(round_ctx.get("round_index", 0)),
+		"pve_completed_before": int(round_ctx.get("pve_completed_before", 0)),
+		"loss_streak_after": int(round_ctx.get("loss_streak_after", 0)),
+		"boss_hp_current": int(result.get("enemy_hp_current", 0)),
+		"boss_hp_max": maxi(1, int(result.get("enemy_hp_max", 1))),
+		"merchant_gold": EconomyService.merchant_gold_from_board(NetProtocol.extract_board(snapshot)),
+		"treasures": snapshot.get("treasures", []),
+		"pet_id": NetProtocol.extract_pet(snapshot),
+	})
 
 func _server_pending_treasure(completed_round: int, snapshot: Dictionary) -> Dictionary:
 	var owned: Array = snapshot.get("treasures", [])

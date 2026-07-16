@@ -2,13 +2,13 @@
 extends RefCounted
 
 const MAX_OWNED := 5
-const REFRESH_COSTS := [5, 10, 20, 40]
+const REFRESH_COSTS := [50, 100, 200, 400]
 
 static func refresh_cost(index: int, money_set_active: bool) -> int:
 	if money_set_active:
 		return 0
 	var i := maxi(index, 0)
-	# 5, 10, 20, 40, then keep doubling with no cap: 80, 160, ...
+	# 50, 100, 200, 400, then keep doubling with no cap: 800, 1600, ...
 	if i < REFRESH_COSTS.size():
 		return int(REFRESH_COSTS[i])
 	var cost := int(REFRESH_COSTS[REFRESH_COSTS.size() - 1])

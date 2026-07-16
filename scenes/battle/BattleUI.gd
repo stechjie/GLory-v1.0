@@ -94,12 +94,18 @@ func _finish_simulation() -> void:
 func _skip_animation() -> void:
 	pass
 
-func _battle_music_path() -> String:
+# 本回合真实的战斗类型。3v3 组队时 _kind 只是占位的 "team"（BattleScreen 直接播
+# 服务器 replay 时更是停在默认值 "pve"），必须优先取 replay/模拟状态里的 kind，
+# 再退回赛程表——与 BattleArena._uses_pvp_battlefield() 同理。
+# 结算面板、遭遇文案、法阵伤害、BGM 都得走这里：直接读 _kind 会按错误的类型算。
+func _effective_kind() -> String:
 	var kind := str(_state.get("kind", _kind))
-	# 3v3 组队：开局播 BGM 时服务器 replay 还没到，_state 为空、_kind 只是 "team"，
-	# 与 BattleArena._uses_pvp_battlefield() 同理，用赛程表提前判断本回合类型。
 	if kind == "team" or kind == "":
 		kind = RoundService.schedule_kind_for_round(GameState.round_index)
+	return kind
+
+func _battle_music_path() -> String:
+	var kind := _effective_kind()
 	return PVP_BATTLE_MUSIC_PATH if kind == "pvp" or kind == "final" else BATTLE_MUSIC_PATH
 
 func _start_battle_music() -> void:
@@ -171,14 +177,17 @@ func _live_count_summary() -> String:
 
 func _settlement_preview(result: Dictionary) -> String:
 	var lines: Array[String] = []
-	var win := bool(result.get("player_wins", false))
+	# 面板必须和 EconomyService.settle_post_battle_gold（实际到账）用同一批输入：
+	# 胜负走本地视角（3v3 PvP 的 B 队要反转），击杀金币取本地座位那份。
+	var win := _local_player_wins(result)
+	var kind := _effective_kind()
+	var slot := NetworkService.team_local_slot if NetworkService.team_active else 0
+	var kill_gold := EconomyService.kill_gold_for_slot(result, maxi(0, slot))
 	var gold_base := 0
-	match _kind:
+	match kind:
 		"pve":
 			if win:
-				var kill_gold := int(result.get("player_kill_gold", 0))
-				gold_base += kill_gold
-				gold_base += EconomyService.pve_kill_reward(GameState.pve_completed)
+				gold_base += kill_gold + EconomyService.pve_kill_reward(GameState.pve_completed)
 				lines.append(tr("settle_pve_kill") % kill_gold)
 				lines.append(tr("settle_pve_win") % EconomyService.pve_kill_reward(GameState.pve_completed))
 		"boss":
@@ -190,10 +199,8 @@ func _settlement_preview(result: Dictionary) -> String:
 				gold_base += loss_reward
 				lines.append(tr("settle_boss_loss") % loss_reward)
 		"pvp", "final":
-			var kill_gold := int(result.get("player_kill_gold", 0))
 			var result_bonus := EconomyService.pvp_result_bonus(win)
-			gold_base += kill_gold
-			gold_base += result_bonus
+			gold_base += kill_gold + result_bonus
 			lines.append(tr("settle_kill") % kill_gold)
 			lines.append(tr("settle_result_bonus") % [tr("battle_result_win") if win else tr("battle_result_lose"), result_bonus])
 	var merchant_gold := _merchant_gold_preview()
@@ -226,16 +233,12 @@ func _settlement_preview(result: Dictionary) -> String:
 
 func _formation_damage_preview(result: Dictionary, player_wins: bool) -> int:
 	var damage := int(result.get("player_alive", 0)) if player_wins else int(result.get("enemy_alive", 0))
-	if _kind == "boss" and not player_wins:
+	if _effective_kind() == "boss" and not player_wins:
 		damage += 4
 	return maxi(0, damage)
 
 func _merchant_gold_preview() -> int:
-	var total := 0
-	for cell in GameState.board_slots:
-		if cell != null and str(cell.get("def", {}).get("skill_id", "")) == "post_battle_gold_by_star":
-			total += int(cell.get("star", 1))
-	return total
+	return EconomyService.merchant_gold_from_board(GameState.board_slots)
 
 func _event_log_summary() -> String:
 	var log_items: Array = _result.get("log", _state.get("log", []))
@@ -248,7 +251,7 @@ func _event_log_summary() -> String:
 	return tr("event_log_prefix") + " | ".join(parts)
 
 func _encounter_summary() -> String:
-	match _kind:
+	match _effective_kind():
 		"boss": return _boss_summary()
 		"pvp": return tr("encounter_pvp")
 		"final": return _final_summary()
