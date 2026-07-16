@@ -210,7 +210,7 @@ func _hire_mercenary_to_slot(index: int, mercenary_index: int) -> void:
 	GameState.gold -= cost
 	var def := m.duplicate(true)
 	def["is_mercenary"] = true
-	GameState.mercenary_slots[mercenary_index] = {"id": def.id, "star": 1, "def": def, "is_mercenary": true, "merc_cost": cost}
+	GameState.mercenary_slots[mercenary_index] = {"id": def.id, "star": 1, "def": def, "is_mercenary": true}
 	_mark_online_board_changed()
 	SaveManager.save_run()
 	_refresh_all()
@@ -390,9 +390,6 @@ func _move_or_merge_board_to_bench(from_index: int, bench_index: int) -> void:
 	if from_cell == null:
 		_selected_board = -1
 		return
-	if bool(from_cell.get("is_mercenary", false)):
-		_selected_board = -1
-		return
 	if to_cell == null:
 		GameState.bench_slots[bench_index] = from_cell
 		GameState.board_slots[from_index] = null
@@ -547,8 +544,6 @@ func _bench_count() -> int:
 func _can_merge_cells(target: Dictionary, incoming: Dictionary) -> bool:
 	if target.is_empty() or incoming.is_empty():
 		return false
-	if bool(target.get("is_mercenary", false)) or bool(incoming.get("is_mercenary", false)):
-		return false
 	return str(target.get("id", "")) == str(incoming.get("id", "")) and int(target.get("star", 1)) == int(incoming.get("star", 1)) and int(target.get("star", 1)) < GameState.MAX_UNIT_STAR
 
 func _merge_copies_into_cell(target: Dictionary, incoming: Dictionary, excluded_board: Array = [], excluded_bench: Array = []) -> bool:
@@ -611,8 +606,6 @@ func _is_merge_piece(cell: Variant, id: String, star: int) -> bool:
 	if typeof(cell) != TYPE_DICTIONARY:
 		return false
 	var d: Dictionary = cell
-	if bool(d.get("is_mercenary", false)):
-		return false
 	return str(d.get("id", "")) == id and int(d.get("star", 1)) == star
 
 # TFT-style auto combine: any 3 copies of the same id+star across the board AND
@@ -637,7 +630,7 @@ func _auto_combine_pass() -> bool:
 func _gather_star_pieces(slots: Array, location: String, star: int, groups: Dictionary) -> void:
 	for i in slots.size():
 		var c = slots[i]
-		if typeof(c) != TYPE_DICTIONARY or bool(c.get("is_mercenary", false)):
+		if typeof(c) != TYPE_DICTIONARY:
 			continue
 		if int(c.get("star", 1)) != star:
 			continue
@@ -690,8 +683,6 @@ func _preserve_unique_king_growth_among(keeper: Dictionary, cells: Array) -> voi
 	keeper.id = str(best_def.get("id", keeper.get("id", "")))
 
 func _sell_refund_for_cell(cell: Dictionary) -> int:
-	if bool(cell.get("is_mercenary", false)):
-		return int(cell.get("merc_cost", 0))
 	return int(floor(float(int(cell.def.get("cost", 1)) * int(cell.get("star", 1))) * 0.5))
 
 func _on_refresh_shop() -> void:

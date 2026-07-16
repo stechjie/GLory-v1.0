@@ -209,16 +209,16 @@ func _current_player_power() -> float:
 		var d: Dictionary = dict.get("def", {}).duplicate(true)
 		if d.is_empty():
 			continue
-		if not bool(dict.get("is_mercenary", false)):
-			d = UnitFactory.apply_star_stats(d, int(dict.get("star", 1)))
+		d = UnitFactory.apply_star_stats(d, int(dict.get("star", 1)))
 		total += _unit_power_from_def(d)
 	return total
 
 func _next_round_kind() -> String:
-	# Team mode follows the fixed schedule; solo turns unmatched PvP rounds into PvE.
+	# Team mode follows the fixed schedule; tutorial's kind comes from TutorialMode —
+	# the same source BattleScreen uses, so the label always matches the actual battle.
 	if GameState.team_mode:
 		return RoundService.schedule_kind_for_round(GameState.round_index)
-	return RoundService.kind_for_round(GameState.round_index, NetworkService.has_online_opponent())
+	return TutorialMode.battle_kind()
 
 func _next_round_kind_label() -> String:
 	var kind := _next_round_kind()

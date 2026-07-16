@@ -307,15 +307,15 @@ func _prepare_battle_package_before_scene() -> bool:
 func _prepare_team_battle_package() -> bool:
 	_set_battle_data_progress(0.1)
 	if not NetworkService.team_active:
-		var solo_a: Dictionary = await BattleSim.compute_team_replay_async(0)
+		var local_a: Dictionary = await BattleSim.compute_team_replay_async(0)
 		if not is_inside_tree():
 			return false
 		_set_battle_data_progress(0.55)
-		var solo_b: Dictionary = await BattleSim.compute_team_replay_async(1)
+		var local_b: Dictionary = await BattleSim.compute_team_replay_async(1)
 		if not is_inside_tree():
 			return false
-		BattleSim.stamp_team_round_damages(solo_a, solo_b)
-		return _store_team_battle_package(solo_a)
+		BattleSim.stamp_team_round_damages(local_a, local_b)
+		return _store_team_battle_package(local_a)
 
 	NetworkService.team_replay = {}
 	NetworkService.team_submit_board(NetProtocol.team_board_submission(GameState.board_slots, GameState.mercenary_slots))

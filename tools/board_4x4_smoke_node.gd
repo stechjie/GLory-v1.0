@@ -52,7 +52,7 @@ func _ready() -> void:
 	prep.call("_refresh_board")
 	prep.call("_refresh_bench")
 	await get_tree().process_frame
-	var fighters := BattleSim.build_player_fighters("pve")
+	var fighters := BattleSim.build_tutorial_player_fighters("pve")
 	assert(fighters.size() == GameConstants.CELL_COUNT)
 	var positions: Dictionary = {}
 	for fighter in fighters:

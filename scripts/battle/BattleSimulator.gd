@@ -1,10 +1,14 @@
 class_name BattleSimulator
 extends BattleSimShared
 
-static func prepare_state(kind: String) -> Dictionary:
+# 教学专用战斗。唯一入口是 BattleScreen 的 `team_mode == false` 分支，而 team_mode
+# 只有 Main._select_language() → TutorialMode.start() 这一条路会留成 false，
+# 所以这里恒为教学模式（联机 3v3 与离线自测都走 prepare_team_state）。
+# 以后若真要做 1v1，请另起一套，不要复用本函数——它假定了教学的前提。
+static func prepare_tutorial_state(kind: String) -> Dictionary:
 	RngService.rng.randomize()
-	var player := build_player_fighters(kind)
-	var enemy := build_enemy_fighters(kind)
+	var player := build_tutorial_player_fighters(kind)
+	var enemy := build_tutorial_enemy_fighters(kind)
 	if kind == "final":
 		_add_final_formation_allies(player, enemy)
 	var battle_log: Array[String] = []
@@ -148,7 +152,7 @@ static func prepare_team_state(forced_team: int = -1) -> Dictionary:
 	battle_log.append(TranslationServer.translate("log_team_unit_counts") % [kind.to_upper(), player.size(), enemy.size()])
 	var state := {"kind": kind, "player": player, "enemy": enemy, "elapsed": 0.0, "next_decay": DECAY_START_SEC, "finished": false, "log": battle_log, "player_syn": {}, "enemy_deaths": 0, "total_deaths": 0, "field_death_count": 0, "mother_death_counter": 0, "dark_kill_stacks": 0, "undead_trait_death_counter": 0, "race_trait_processed_deaths": {}, "death_history": [], "revive_queue": [], "player_kill_gold": 0, "enemy_kill_gold": 0, "kill_gold_by_slot": {}, "player_kills": [], "enemy_kills": [], "bonus_gold": 0, "temporary_deaths": [], "visual_events": [], "unit_stats": {}}
 	# lane -> 座位 的映射：跨路击杀分账要靠它找到「路线主」（见 _add_kill_reward）。
-	# 单机 1v1 的 prepare_state 不会有这两个键，那边棋子的 lane 恒为 -1，分账自动跳过。
+	# 教学的 prepare_tutorial_state 不会有这两个键，那边棋子的 lane 恒为 -1，分账自动跳过。
 	state["ally_slots"] = ally_slots.duplicate()
 	state["rival_slots"] = rival_slots.duplicate()
 	# (Formation Heal in 3v3) Total post-battle team HP regen per side, from each
@@ -448,7 +452,7 @@ static func result_from_state(state: Dictionary) -> Dictionary:
 	}
 
 
-static func build_player_fighters(kind: String) -> Array:
+static func build_tutorial_player_fighters(kind: String) -> Array:
 	var out: Array = []
 	var unique_ids := {}
 	for i in GameState.board_slots.size():
@@ -456,21 +460,16 @@ static func build_player_fighters(kind: String) -> Array:
 		if cell == null or _is_duplicate_unique_cell(cell, unique_ids):
 			continue
 		out.append(_fighter_from_cell(cell, i, "player"))
-	if (NetworkService.is_online() or GameState.tutorial_mode) and (kind == "pvp" or kind == "final"):
+	if kind == "pvp" or kind == "final":
 		_add_mercenary_fighters(out, GameState.mercenary_slots, "player", false)
 	return out
 
 
-static func build_enemy_fighters(kind: String) -> Array:
-	if GameState.tutorial_mode:
-		match kind:
-			"boss": return _build_tutorial_boss_fighters()
-			"pvp": return _build_pvp_fighters()
-			_: return _build_tutorial_pve_fighters()
+static func build_tutorial_enemy_fighters(kind: String) -> Array:
 	match kind:
-		"boss": return _build_boss_fighters()
+		"boss": return _build_tutorial_boss_fighters()
 		"pvp": return _build_pvp_fighters()
-		_: return _build_pve_fighters()
+		_: return _build_tutorial_pve_fighters()
 
 
 static func _enemy_syn_for_kind(kind: String) -> Dictionary:
@@ -525,93 +524,6 @@ static func _tutorial_enemy_def(source: Dictionary, hp: int, atk: int, defense: 
 	d.erase("skill_id")
 	d.erase("skill_damage")
 	return d
-
-static func _build_pve_fighters() -> Array:
-	var monsters: Array = DataRegistry.get_table("pve_monsters").get("monsters", [])
-	if monsters.is_empty():
-		return []
-	var rng := RandomNumberGenerator.new()
-	rng.randomize()
-	var template: Dictionary = monsters[rng.randi_range(0, monsters.size() - 1)]
-	var count_by_round: Dictionary = DataRegistry.get_table("pve_monsters").get("enemy_count_by_round", {})
-	var count := int(count_by_round.get(str(GameState.round_index), 3))
-	var growth := PveService.growth_for_completed(GameState.pve_completed)
-	var out: Array = []
-	for n in count:
-		var d := template.duplicate(true)
-		d.hp = maxi(1, int(round(float(d.get("hp", 1)) * float(growth.hp))))
-		d.atk = maxi(1, int(round(float(d.get("atk", 1)) * float(growth.atk))))
-		d.def = maxi(0, int(round(float(d.get("def", 0)) * float(growth.def))))
-		out.append(_fighter_from_def(d, 2 + n, "enemy", n, count))
-	if NetworkService.is_online():
-		_add_mercenary_fighters(out, NetProtocol.extract_mercenaries(NetworkService.opponent_board_snapshot), "enemy", false)
-	return out
-
-
-static func _build_boss_fighters() -> Array:
-	var bosses: Array = DataRegistry.get_table("bosses").get("bosses", [])
-	if bosses.is_empty():
-		return []
-	var rng := RandomNumberGenerator.new()
-	rng.randomize()
-	var pool: Array = []
-	for b in bosses:
-		if str(b.get("id", "")) not in GameState.used_boss_ids:
-			pool.append(b)
-	if pool.is_empty():
-		pool = bosses
-	var template: Dictionary = pool[rng.randi_range(0, pool.size() - 1)]
-	if str(template.get("id", "")) not in GameState.used_boss_ids:
-		GameState.used_boss_ids.append(str(template.id))
-	var growth := BossService.growth_for_completed(GameState.boss_completed)
-	var boss_mul := BossService.GLOBAL_STAT_MULTIPLIER
-	var d := template.duplicate(true)
-	d.hp = maxi(1, int(round(float(d.get("hp", 1)) * float(growth.hp) * boss_mul)))
-	d.atk = maxi(1, int(round(float(d.get("atk", 1)) * float(growth.atk) * boss_mul)))
-	d.def = maxi(0, int(round(float(d.get("def", 0)) * float(growth.def) * boss_mul)))
-	if d.has("skill_damage"):
-		d.skill_damage = maxi(1, int(round(float(d.get("skill_damage", 0)) * float(growth.skill_damage) * boss_mul)))
-	var out: Array = []
-	if bool(d.get("is_twin", false)):
-		var twin_group_id := "%s_%d" % [str(d.get("id", "boss_twin")), int(GameState.boss_completed)]
-		var first_twin := _fighter_from_def(d, 7, "enemy", 0, 2)
-		first_twin.pos = Vector2(390.0, 116.0)
-		first_twin.twin_group_id = twin_group_id
-		first_twin.twin_member_index = 0
-		out.append(first_twin)
-		var d2 := d.duplicate(true)
-		d2.element = str(d.get("twin_second_element", d.get("element", "sky")))
-		var second_twin := _fighter_from_def(d2, 17, "enemy", 1, 2)
-		second_twin.pos = Vector2(610.0, 116.0)
-		second_twin.twin_group_id = twin_group_id
-		second_twin.twin_member_index = 1
-		out.append(second_twin)
-	else:
-		var boss := _fighter_from_def(d, 12, "enemy", 0, 1)
-		boss.pos = Vector2(500.0, 116.0)
-		out.append(boss)
-	_add_boss_round_pve_monsters(out, rng)
-	if NetworkService.is_online():
-		_add_mercenary_fighters(out, NetProtocol.extract_mercenaries(NetworkService.opponent_board_snapshot), "enemy", false)
-	return out
-
-
-
-static func _add_boss_round_pve_monsters(out: Array, rng: RandomNumberGenerator) -> void:
-	var monsters: Array = DataRegistry.get_table("pve_monsters").get("monsters", [])
-	if monsters.is_empty():
-		return
-	var growth := PveService.growth_for_completed(GameState.pve_completed)
-	for n in 5:
-		var d: Dictionary = monsters[rng.randi_range(0, monsters.size() - 1)].duplicate(true)
-		d.hp = maxi(1, int(round(float(d.get("hp", 1)) * float(growth.hp))))
-		d.atk = maxi(1, int(round(float(d.get("atk", 1)) * float(growth.atk))))
-		d.def = maxi(0, int(round(float(d.get("def", 0)) * float(growth.def))))
-		if d.has("skill_damage"):
-			d.skill_damage = maxi(1, int(round(float(d.get("skill_damage", 0)) * float(growth.skill_damage))))
-		var monster := _fighter_from_def(d, 10 + n, "enemy", out.size(), out.size() + 5)
-		monster.pos = Vector2(350.0 + float(n) * CELL_SPACING, 224.0)
-		out.append(monster)
 
 static func _add_mercenary_fighters(out: Array, mercenary_slots: Array, team: String, mirror_enemy_slot: bool) -> void:
 	for i in mercenary_slots.size():

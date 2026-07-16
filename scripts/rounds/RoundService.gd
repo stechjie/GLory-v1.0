@@ -1,16 +1,6 @@
 class_name RoundService
 extends RefCounted
 
-static func kind_for_round(round_index: int, has_online_opponent: bool) -> String:
-	if _is_final_round(round_index) and has_online_opponent:
-		return "final"
-	var schedule: Dictionary = DataRegistry.get_table("rounds")
-	if _array_has_round(schedule.get("boss_rounds", []), round_index):
-		return "boss"
-	if _array_has_round(schedule.get("pvp_rounds", []), round_index) and has_online_opponent:
-		return "pvp"
-	return "pve"
-
 static func schedule_kind_for_round(round_index: int) -> String:
 	if _is_final_round(round_index):
 		return "final"

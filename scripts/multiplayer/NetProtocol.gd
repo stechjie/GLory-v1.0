@@ -138,7 +138,6 @@ static func sanitize_cell(cell: Variant) -> Variant:
 		"star": clampi(int(c.get("star", 1)), 1, GameState.MAX_UNIT_STAR),
 		"def": def,
 		"is_mercenary": bool(c.get("is_mercenary", def.get("is_mercenary", false))),
-		"merc_cost": int(c.get("merc_cost", def.get("cost", 0))),
 		"race_relations": _safe_race_relations(c.get("race_relations", {})),
 	}
 
@@ -216,7 +215,6 @@ static func _validate_slots(value: Variant, mercenary: bool, max_slots: int) -> 
 			"star": star,
 			"def": def,
 			"is_mercenary": mercenary,
-			"merc_cost": int(def.get("cost", 0)),
 			"race_relations": _safe_race_relations(d.get("race_relations", {})),
 		}
 		if mercenary:

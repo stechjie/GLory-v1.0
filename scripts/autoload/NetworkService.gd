@@ -1066,6 +1066,14 @@ func _room_compute_and_broadcast_replays(room: Dictionary) -> void:
 	# 让 schedule_kind_for_round 在服务器算战斗时用 room 权威的 final 状态，
 	# 保证服务器和客户端对"第21回合是不是 final"判断一致（掐断 kind 不对称）。
 	GameState.final_battle_complete = bool(room.get("final_battle_complete", false))
+	# 第21回合法阵友军按血量区间召唤（_add_team_final_formation_allies 读
+	# GameState.team_hp / enemy_team_hp）。服务器进程这两个全局从没人写过，
+	# 恒为初始 50，导致双方永远召出最后一档厄夜；必须从 room 权威血量同步。
+	# final 棋局是规范化的："player" 侧恒为 A 队，所以 [0]=A / [1]=B 两次
+	# compute_team_replay 都成立。
+	var room_hp: Array = room.get("team_hp", [GameState.START_FORMATION_HP, GameState.START_FORMATION_HP])
+	GameState.team_hp = int(room_hp[0])
+	GameState.enemy_team_hp = int(room_hp[1])
 	team_slot_states = (room.get("slot_states", []) as Array).duplicate()
 	team_ready = (room.get("ready", []) as Array).duplicate()
 	team_boards = (room.get("boards", {}) as Dictionary).duplicate(true)

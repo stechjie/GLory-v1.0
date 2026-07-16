@@ -100,7 +100,7 @@ func star_stat_multiplier(star: int) -> float:
 func normal_unit_count() -> int:
 	var n := 0
 	for cell in board_slots:
-		if cell != null and not bool(cell.get("is_mercenary", false)):
+		if cell != null:
 			n += 1
 	return n
 
@@ -117,14 +117,6 @@ func clear_shop() -> void:
 		shop_sold[i] = false
 
 func clear_mercenaries() -> void:
-	for i in board_slots.size():
-		var cell = board_slots[i]
-		if cell != null and bool(cell.get("is_mercenary", false)):
-			board_slots[i] = null
-	for i in bench_slots.size():
-		var cell = bench_slots[i]
-		if cell != null and bool(cell.get("is_mercenary", false)):
-			bench_slots[i] = null
 	for i in mercenary_slots.size():
 		mercenary_slots[i] = null
 

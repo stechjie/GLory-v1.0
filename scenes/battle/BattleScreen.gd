@@ -31,14 +31,14 @@ func _ready() -> void:
 		_battle_setup_ready = true
 		if not NetworkService.team_active:
 			# 分帧计算：算的过程中玩家可能退出战斗界面，await 回来必须先确认还在树上。
-			var solo_a: Dictionary = await BattleSim.compute_team_replay_async(0)
+			var local_a: Dictionary = await BattleSim.compute_team_replay_async(0)
 			if not is_inside_tree():
 				return
-			var solo_b: Dictionary = await BattleSim.compute_team_replay_async(1)
+			var local_b: Dictionary = await BattleSim.compute_team_replay_async(1)
 			if not is_inside_tree():
 				return
-			BattleSim.stamp_team_round_damages(solo_a, solo_b)
-			_start_replay(solo_a)
+			BattleSim.stamp_team_round_damages(local_a, local_b)
+			_start_replay(local_a)
 			return
 		NetworkService.team_replay = {}
 		NetworkService.team_submit_board(NetProtocol.team_board_submission(GameState.board_slots, GameState.mercenary_slots))
@@ -75,8 +75,9 @@ func _ready() -> void:
 			print("[NET] replay received round=%d" % GameState.round_index)
 			_start_replay(NetworkService.team_replay)
 		return
-	_kind = TutorialMode.battle_kind() if GameState.tutorial_mode else RoundService.kind_for_round(GameState.round_index, NetworkService.has_online_opponent())
-	_state = BattleSim.prepare_state(_kind)
+	# 到这里 team_mode 必为 false，而那只有教学会留成 false（见 prepare_tutorial_state）。
+	_kind = TutorialMode.battle_kind()
+	_state = BattleSim.prepare_tutorial_state(_kind)
 	await get_tree().process_frame
 	if not is_inside_tree():
 		return

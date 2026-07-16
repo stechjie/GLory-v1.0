@@ -4,7 +4,7 @@ extends RefCounted
 static func count_races_from_board() -> Dictionary:
 	var counts := {"god": 0, "dark": 0, "undead": 0, "human": 0}
 	for cell in GameState.board_slots:
-		if cell == null or bool(cell.get("is_mercenary", false)):
+		if cell == null:
 			continue
 		var race := str(cell.def.get("race", ""))
 		if counts.has(race):

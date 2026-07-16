@@ -610,7 +610,7 @@ func _unit_def(id: String) -> Dictionary:
 func _owned_normal_count() -> int:
 	var count := 0
 	for cell in GameState.board_slots + GameState.bench_slots:
-		if typeof(cell) == TYPE_DICTIONARY and not bool((cell as Dictionary).get("is_mercenary", false)):
+		if typeof(cell) == TYPE_DICTIONARY:
 			count += 1
 	return count
 

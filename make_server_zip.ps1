@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 #  Glory 服务器包一键打包脚本
 #  推荐用法：双击同目录的 make_server_zip.bat（最稳）
 #  也可在 PowerShell 里执行： .\make_server_zip.ps1
@@ -8,7 +8,7 @@
 #  （journalctl -u glory-server）里 "server starting protocol=N" 必须和它一致。
 # ============================================================
 
-$src   = "C:\Users\Leno\Desktop\test toon\Beta 0.04"     # 游戏项目目录
+$src   = "C:\Users\Leno\Desktop\Github\GLory-v1.0"        # 游戏项目目录
 $out   = "D:\Glory android\glory_server_upload.zip"      # 输出的服务器包（固定名）
 $stage = "$env:TEMP\glory_server_stage_$(Get-Date -Format 'HHmmss')"  # 临时目录
 

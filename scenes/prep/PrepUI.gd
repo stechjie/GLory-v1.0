@@ -1058,7 +1058,8 @@ func _refresh_round_info_label() -> void:
 	if GameState.team_mode:
 		kind = RoundService.schedule_kind_for_round(GameState.round_index)
 	else:
-		kind = RoundService.kind_for_round(GameState.round_index, NetworkService.has_online_opponent())
+		# 教学：和 BattleScreen 用同一个来源，标签才不会和实战对不上。
+		kind = TutorialMode.battle_kind()
 	var type_txt := "Final Round" if kind == "final" else kind.to_upper()
 	if LocaleManager.get_locale() == "en":
 		_round_info_label.text = "Round %d · %s" % [GameState.round_index, type_txt]
@@ -1683,7 +1684,7 @@ func _refresh_mercenary_overlay() -> void:
 		_merc_overlay_grid.add_child(_create_mercenary_purchase_card(m, i))
 
 func _toggle_merc_picker() -> void:
-	_merc_picker_open = true
+	_merc_picker_open = not _merc_picker_open
 	_refresh_merc_panel()
 
 func _close_merc_picker() -> void:

@@ -3,9 +3,7 @@
                   "can_star_up":  false,
                   "affected_by_treasure":  false,
                   "counts_for_synergy":  false,
-                  "quantity_cap":  0,
-                  "sell_refund":  "full_cost",
-                  "pvp_kill_reward":  "round(cost*1.5)"
+                  "quantity_cap":  0
               },
     "mercenaries":  [
                         {
