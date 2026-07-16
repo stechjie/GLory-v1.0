@@ -18,6 +18,8 @@ const KIND_TABS := ["piece", "merc", "monster", "boss", "formation"]
 const KIND_NAMES_CN := {"piece": "棋子", "merc": "佣兵", "monster": "怪兽", "boss": "Boss", "formation": "法阵Boss"}
 const KIND_NAMES_EN := {"piece": "Pieces", "merc": "Mercs", "monster": "Monsters", "boss": "Bosses", "formation": "Formation"}
 const GRID_BTN_SIZE := Vector2(30.0, 30.0)
+# 统计表单元格内边距(左,上,右,下):不加的话 7 列会挤成一团。
+const CELL_PAD := "padding=6,2,14,2"
 
 var _config := {"placements": [], "slot_treasures": {}}
 var _edit_mode := true
@@ -53,6 +55,9 @@ var _treasure_chip_btns: Array = []
 
 var _summary_panel: PanelContainer
 var _summary_text: RichTextLabel
+
+var _detail_panel: PanelContainer
+var _detail_text: RichTextLabel
 
 
 func _tt(cn: String, en: String) -> String:
@@ -123,6 +128,8 @@ func _build_edit_ui() -> void:
 			btn.size = GRID_BTN_SIZE
 			btn.add_theme_font_size_override("font_size", 11)
 			btn.pressed.connect(_on_grid_pressed.bind(slot, cell))
+			# 长按看详细数值(只在编辑态生效,见 _show_unit_detail)。
+			_attach_long_press(btn, _show_unit_detail.bind(slot, cell))
 			_grid_layer.add_child(btn)
 			_grid_buttons["%d_%d" % [slot, cell]] = btn
 	_update_grid_buttons_state()
@@ -131,6 +138,7 @@ func _build_edit_ui() -> void:
 	_build_picker_panel()
 	_build_treasure_panel()
 	_build_summary_panel()
+	_build_detail_panel()
 
 	# 返回按钮独立于编辑 UI,演示中也可退回自测房间。
 	_back_btn = _make_text_button(_tt("返回房间", "Back"), 18)
@@ -300,8 +308,13 @@ func _update_grid_buttons_state() -> void:
 
 
 func _on_grid_pressed(slot: int, cell: int) -> void:
+	# 长按刚弹过详情:吞掉这次短按,别顺手把选择器也开了。
+	var btn := _grid_buttons.get("%d_%d" % [slot, cell]) as Button
+	if btn != null and bool(btn.get_meta("long_press_triggered", false)):
+		return
 	_treasure_panel.visible = false
 	_summary_panel.visible = false
+	_detail_panel.visible = false
 	_picker_slot = slot
 	_picker_cell = cell
 	var existing := OfficeTestSim.placement_at(_config, slot, cell)
@@ -562,6 +575,8 @@ func _set_edit_ui_visible(visible_now: bool) -> void:
 			_picker_panel.visible = false
 		if _treasure_panel != null:
 			_treasure_panel.visible = false
+		if _detail_panel != null:
+			_detail_panel.visible = false
 
 
 # 演示播完:不走父类的 battle_finished 导航,弹测试结算,可回编辑态。
@@ -610,10 +625,11 @@ func _build_summary_panel() -> void:
 	_summary_panel.anchor_right = 0.5
 	_summary_panel.anchor_top = 0.5
 	_summary_panel.anchor_bottom = 0.5
-	_summary_panel.offset_left = -280
-	_summary_panel.offset_right = 280
-	_summary_panel.offset_top = -260
-	_summary_panel.offset_bottom = 260
+	# 放得下 7 列统计表。
+	_summary_panel.offset_left = -470
+	_summary_panel.offset_right = 470
+	_summary_panel.offset_top = -280
+	_summary_panel.offset_bottom = 280
 	_summary_panel.visible = false
 	_summary_panel.z_index = 210
 	add_child(_summary_panel)
@@ -638,32 +654,135 @@ func _build_summary_panel() -> void:
 	col.add_child(back_to_edit)
 
 
+# ---------------------------------------------------------------------------
+# 长按看详细数值(编辑态)
+# ---------------------------------------------------------------------------
+
+# 战斗链没有备战链那套长按助手,这里放一份精简版:长按 0.7s 触发,拖动 >8px 取消。
+func _attach_long_press(btn: BaseButton, cb: Callable) -> void:
+	var timer := Timer.new()
+	timer.one_shot = true
+	timer.wait_time = 0.7
+	btn.add_child(timer)
+	btn.set_meta("long_press_timer", timer)
+	timer.timeout.connect(func():
+		if not bool(btn.get_meta("long_press_cancelled", false)):
+			btn.set_meta("long_press_triggered", true)
+			cb.call()
+	)
+	btn.button_down.connect(func():
+		btn.set_meta("long_press_start", btn.get_local_mouse_position())
+		btn.set_meta("long_press_cancelled", false)
+		btn.set_meta("long_press_triggered", false)
+		timer.start()
+	)
+	btn.button_up.connect(func():
+		timer.stop()
+	)
+	btn.gui_input.connect(func(event: InputEvent):
+		if not timer.time_left > 0.0:
+			return
+		if event is InputEventMouseMotion or event is InputEventScreenDrag:
+			var start: Vector2 = btn.get_meta("long_press_start", btn.get_local_mouse_position())
+			if btn.get_local_mouse_position().distance_to(start) > 8.0:
+				btn.set_meta("long_press_cancelled", true)
+				timer.stop()
+	)
+
+
+func _build_detail_panel() -> void:
+	_detail_panel = PanelContainer.new()
+	_detail_panel.add_theme_stylebox_override("panel", _panel_style())
+	_detail_panel.anchor_left = 0.5
+	_detail_panel.anchor_right = 0.5
+	_detail_panel.anchor_top = 0.5
+	_detail_panel.anchor_bottom = 0.5
+	_detail_panel.offset_left = -250
+	_detail_panel.offset_right = 250
+	_detail_panel.offset_top = -240
+	_detail_panel.offset_bottom = 240
+	_detail_panel.visible = false
+	_detail_panel.z_index = 220
+	add_child(_detail_panel)
+
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 8)
+	_detail_panel.add_child(col)
+
+	_detail_text = RichTextLabel.new()
+	_detail_text.bbcode_enabled = true
+	_detail_text.scroll_active = true
+	_detail_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_detail_text.add_theme_font_size_override("normal_font_size", 15)
+	_detail_text.add_theme_font_size_override("bold_font_size", 18)
+	_detail_text.add_theme_color_override("default_color", Color(0.95, 0.97, 0.92))
+	col.add_child(_detail_text)
+
+	var close_btn := _make_text_button(_tt("关闭", "Close"), 16)
+	close_btn.custom_minimum_size = Vector2(120, 38)
+	close_btn.pressed.connect(func(): _detail_panel.visible = false)
+	col.add_child(close_btn)
+
+
+# 长按格点:弹出该棋子的详细数值。数值口径与模拟器一致(走 OfficeTestSim 同一套 def/星级)。
+func _show_unit_detail(slot: int, cell: int) -> void:
+	if not _edit_mode:
+		return
+	var p := OfficeTestSim.placement_at(_config, slot, cell)
+	if p.is_empty():
+		return
+	var def := OfficeTestSim.def_for_placement(p)
+	if def.is_empty():
+		return
+	var kind := str(p.get("kind", "piece"))
+	var star := OfficeTestSim.star_for_placement(p)
+	var c := GameConstants.team_slot_color(slot)
+	var head := "[color=#%s][b]%s[/b][/color] · %s" % [c.to_html(false), _slot_display_name(slot), _kind_display_name(kind)]
+	_picker_panel.visible = false
+	_treasure_panel.visible = false
+	_summary_panel.visible = false
+	_detail_text.text = "%s\n\n%s" % [head, UnitDetailFormat.format_unit_def(def, star)]
+	_detail_panel.visible = true
+
+
 func _build_summary_data() -> Dictionary:
 	var result := _result
-	var roster: Dictionary = _replay.get("roster", {})
+	# 统计口径与主游戏「上局统计」一致:直接用模拟器产出的 unit_stats。
+	# 存活状态取自回放最后一帧(unit_stats 本身不记录生死)。
+	var alive_by_uid: Dictionary = {}
 	var frames: Array = _replay.get("frames", [])
-	var damage_rows: Array = []
 	if not frames.is_empty() and typeof(frames[frames.size() - 1]) == TYPE_ARRAY:
 		for entry in frames[frames.size() - 1]:
-			if typeof(entry) != TYPE_ARRAY or (entry as Array).size() < 11:
+			if typeof(entry) == TYPE_ARRAY and (entry as Array).size() >= 5:
+				alive_by_uid[str(entry[0])] = bool(entry[4])
+	var stats_value = result.get("unit_stats", {})
+	var rows: Array = []
+	if typeof(stats_value) == TYPE_DICTIONARY:
+		for uid in (stats_value as Dictionary).keys():
+			var entry_value = (stats_value as Dictionary)[uid]
+			if typeof(entry_value) != TYPE_DICTIONARY:
 				continue
-			var uid := str(entry[0])
-			var info: Dictionary = roster.get(uid, {})
-			var en := LocaleManager.get_locale() == "en"
-			var display := str(info.get("name_en", info.get("name", uid))) if en else str(info.get("name", uid))
-			damage_rows.append({
-				"name": display,
-				"owner_slot": int(info.get("owner_slot", -1)),
-				"damage": int(entry[10]),
-				"alive": bool(entry[4]),
-			})
-	damage_rows.sort_custom(func(a, b): return int(a.damage) > int(b.damage))
+			var row: Dictionary = (entry_value as Dictionary).duplicate(true)
+			row["alive"] = bool(alive_by_uid.get(str(uid), false))
+			rows.append(row)
+	# 造成伤害降序;并列时按槽位、名字稳定排序。
+	rows.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var da := int(a.get("damage_dealt", 0))
+		var db := int(b.get("damage_dealt", 0))
+		if da != db:
+			return da > db
+		var sa := int(a.get("owner_slot", -1))
+		var sb := int(b.get("owner_slot", -1))
+		if sa != sb:
+			return sa < sb
+		return str(a.get("name", "")) < str(b.get("name", ""))
+	)
 	return {
 		"player_wins": bool(result.get("player_wins", false)),
 		"elapsed": float(result.get("elapsed", 0.0)),
 		"player_alive": int(result.get("player_alive", 0)),
 		"enemy_alive": int(result.get("enemy_alive", 0)),
-		"damage_rows": damage_rows,
+		"rows": rows,
 	}
 
 
@@ -676,15 +795,38 @@ func _show_test_summary() -> void:
 	lines.append(winner)
 	lines.append(_tt("用时 %.1fs · 存活 红蓝绿 %d / 黄紫橙 %d", "Time %.1fs · Alive ABC %d / 123 %d") % [float(data.get("elapsed", 0.0)), int(data.get("player_alive", 0)), int(data.get("enemy_alive", 0))])
 	lines.append("")
-	lines.append("[b]%s[/b]" % _tt("伤害榜", "Damage Ranking"))
-	var rows: Array = data.get("damage_rows", [])
-	var shown := mini(10, rows.size())
-	for i in shown:
-		var row: Dictionary = rows[i]
-		var c := GameConstants.team_slot_color(int(row.get("owner_slot", -1)))
-		var dead_mark := "" if bool(row.get("alive", false)) else _tt("(阵亡)", "(dead)")
-		lines.append("%d. [color=#%s]%s[/color]%s  %d" % [i + 1, c.to_html(false), str(row.get("name", "?")), dead_mark, int(row.get("damage", 0))])
+	# 与主游戏「上局统计」同款 7 列表格,一张总表按槽位颜色区分六方。
+	var rows: Array = data.get("rows", [])
+	lines.append("[b]%s[/b]" % _tt("单位统计（按造成伤害排序）", "Unit Stats (by damage dealt)"))
+	lines.append("")
+	lines.append("[table=7]")
+	for header in [
+		_tt("单位", "Unit"), _tt("位置", "Pos"), _tt("造成伤害", "Dmg Dealt"),
+		_tt("承受伤害", "Dmg Taken"), _tt("治疗", "Healing"),
+		_tt("负面效果", "Debuffs"), _tt("正面效果", "Buffs"),
+	]:
+		lines.append("[cell %s][b]%s[/b][/cell]" % [CELL_PAD, header])
+	if rows.is_empty():
+		for value in [_tt("无", "None"), "-", "0", "0", "0", _tt("无", "None"), _tt("无", "None")]:
+			lines.append("[cell %s]%s[/cell]" % [CELL_PAD, value])
+	else:
+		for row in rows:
+			var dict: Dictionary = row
+			var dead_mark := "" if bool(dict.get("alive", false)) else _tt("(阵亡)", "(dead)")
+			for value in [
+				BattleStatsFormat.stats_display_name(dict) + dead_mark,
+				BattleStatsFormat.stats_display_position(dict),
+				int(dict.get("damage_dealt", 0)),
+				int(dict.get("damage_taken", 0)),
+				int(dict.get("healing_done", 0)),
+				BattleStatsFormat.sanitize_stats_cell(BattleStatsFormat.format_status_bucket(dict.get("debuffs", {}))),
+				BattleStatsFormat.sanitize_stats_cell(BattleStatsFormat.format_status_bucket(dict.get("buffs", {}))),
+			]:
+				lines.append("[cell %s]%s[/cell]" % [CELL_PAD, BattleStatsFormat.stats_color_cell(dict, str(value))])
+	lines.append("[/table]")
 	_summary_text.text = "\n".join(lines)
+	if _detail_panel != null:
+		_detail_panel.visible = false
 	_summary_panel.visible = true
 
 

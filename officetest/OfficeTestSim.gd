@@ -113,11 +113,39 @@ static func _syn_for_slot(slot_placements: Array) -> Dictionary:
 	return SynergyService.flags_from_counts(counts)
 
 
+# 摆放 -> 实际参战用的 def(Boss 全局倍率 / 法阵 tier 等已应用)。
+# _fighter_for_placement 与「长按看详情」共用同一份,避免两处数值口径跑偏。
+static func def_for_placement(p: Dictionary) -> Dictionary:
+	var kind := str(p.get("kind", "piece"))
+	var def := find_def(kind, str(p.get("unit_id", "")))
+	if def.is_empty():
+		return {}
+	match kind:
+		"boss":
+			# 同 _append_lane_boss:成长按 0 档,只保留 Boss 全局倍率。
+			var boss_mul: float = BossService.GLOBAL_STAT_MULTIPLIER
+			def.hp = maxi(1, int(round(float(def.get("hp", 1)) * boss_mul)))
+			def.atk = maxi(1, int(round(float(def.get("atk", 1)) * boss_mul)))
+			def.def = maxi(0, int(round(float(def.get("def", 0)) * boss_mul)))
+			if def.has("skill_damage"):
+				def.skill_damage = maxi(1, int(round(float(def.get("skill_damage", 0)) * boss_mul)))
+		"formation":
+			# 同 BattleSimShared._formation_ally_def_for_hp:tier 4、cost 0。
+			def.tier = 4
+			def.cost = 0
+	return def
+
+
+# 星级口径:只有 piece 吃星级倍率,佣兵/怪兽/Boss/法阵一律按 1 星(倍率 1.0)。
+static func star_for_placement(p: Dictionary) -> int:
+	return int(p.get("star", 1)) if str(p.get("kind", "piece")) == "piece" else 1
+
+
 static func _fighter_for_placement(p: Dictionary, team: String) -> Dictionary:
 	var kind := str(p.get("kind", "piece"))
 	var cell_idx := int(p.get("cell", 0))
 	var unit_id := str(p.get("unit_id", ""))
-	var def := find_def(kind, unit_id)
+	var def := def_for_placement(p)
 	if def.is_empty():
 		return {}
 	match kind:
@@ -131,18 +159,8 @@ static func _fighter_for_placement(p: Dictionary, team: String) -> Dictionary:
 			# 同 _append_lane_monsters:成长按 0 档(倍率 1.0),即原始属性。
 			return BattleSimulator._fighter_from_def(def, cell_idx, team, cell_idx, GameConstants.CELL_COUNT)
 		"boss":
-			# 同 _append_lane_boss:成长按 0 档,只保留 Boss 全局倍率。
-			var boss_mul: float = BossService.GLOBAL_STAT_MULTIPLIER
-			def.hp = maxi(1, int(round(float(def.get("hp", 1)) * boss_mul)))
-			def.atk = maxi(1, int(round(float(def.get("atk", 1)) * boss_mul)))
-			def.def = maxi(0, int(round(float(def.get("def", 0)) * boss_mul)))
-			if def.has("skill_damage"):
-				def.skill_damage = maxi(1, int(round(float(def.get("skill_damage", 0)) * boss_mul)))
 			return BattleSimulator._fighter_from_def(def, cell_idx, team, cell_idx, GameConstants.CELL_COUNT)
 		"formation":
-			# 同 BattleSimShared._formation_ally_def_for_hp:tier 4、cost 0。
-			def.tier = 4
-			def.cost = 0
 			return BattleSimulator._fighter_from_def(def, cell_idx, team, cell_idx, GameConstants.CELL_COUNT, 1, false, true)
 	return {}
 
