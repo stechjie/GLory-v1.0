@@ -843,12 +843,17 @@ static func _formation_ally_def_for_hp(hp: int) -> Dictionary:
 	return {}
 
 
-static func _kill_reward_for_victim(victim: Dictionary) -> int:
+# 判定顺序有意义：法阵友军 0 → 佣兵按费用 → PVE 小怪固定单价 → 其余按 tier/星级。
+# PVE 小怪没有 tier 字段，走 pvp_normal_kill_reward 会一律吃 tier 默认值 1，
+# 所以这里按局型直接给固定单价；佣兵不算「怪兽」，仍走费用公式。
+static func _kill_reward_for_victim(victim: Dictionary, state: Dictionary) -> int:
 	if bool(victim.get("is_formation_ally", false)):
 		return 0
 	var d: Dictionary = victim.get("def", {})
 	if bool(victim.get("is_mercenary", false)):
 		return EconomyService.pvp_mercenary_kill_reward(int(d.get("cost", 1)))
+	if str(state.get("kind", "")) == "pve":
+		return EconomyService.PVE_MONSTER_KILL_GOLD
 	return EconomyService.pvp_normal_kill_reward(int(d.get("tier", 1)), int(victim.get("star", 1)))
 
 

@@ -186,10 +186,13 @@ func _settlement_preview(result: Dictionary) -> String:
 	var gold_base := 0
 	match kind:
 		"pve":
+			# 击杀金输赢都给，只有回合奖励是胜利专属。
+			gold_base += kill_gold
+			lines.append(tr("settle_pve_kill") % kill_gold)
 			if win:
-				gold_base += kill_gold + EconomyService.pve_kill_reward(GameState.pve_completed)
-				lines.append(tr("settle_pve_kill") % kill_gold)
-				lines.append(tr("settle_pve_win") % EconomyService.pve_kill_reward(GameState.pve_completed))
+				var pve_bonus := EconomyService.pve_win_bonus(GameState.round_index)
+				gold_base += pve_bonus
+				lines.append(tr("settle_pve_win") % pve_bonus)
 		"boss":
 			if win:
 				gold_base += EconomyService.boss_win_reward(GameState.round_index)

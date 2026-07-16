@@ -1101,8 +1101,6 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 		team_wins[1] = not bool(res_a.get("player_wins", false))
 	else:
 		team_wins[1] = bool(res_b.get("player_wins", false))
-	# PVE 胜利奖励按「本回合累加前」的完成次数算——下面紧接着就 +1 了。
-	var pve_completed_before := int(room.get("pve_completed", 0))
 	# 连败计数按队维护：胜利清零、失败 +1。每回合只能走一次，不能放进座位循环。
 	var loss_streak: Array = room.get("team_loss_streak", [0, 0])
 	if loss_streak.size() < 2:
@@ -1160,7 +1158,6 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 			"kind": kind,
 			"player_wins": bool(team_wins[own_team]),
 			"round_index": completed_round,
-			"pve_completed_before": pve_completed_before,
 			"loss_streak_after": int(loss_streak[own_team]),
 		})
 		slot_gold[slot] = gold_after
@@ -1188,7 +1185,7 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 # 专用服务器的权威结算：与本地/房主的 Main._on_team_battle_finished 共用
 # EconomyService.settle_post_battle_gold，两处不能再各写各的。
 # round_ctx 由 _room_build_match_states 按队伍算好：kind / player_wins /
-# round_index / pve_completed_before / loss_streak_after。
+# round_index / loss_streak_after。
 func _server_gold_after_battle(gold_before: int, result: Dictionary, slot: int, snapshot: Dictionary, round_ctx: Dictionary) -> int:
 	return EconomyService.settle_post_battle_gold({
 		"gold_before": gold_before,
@@ -1197,7 +1194,6 @@ func _server_gold_after_battle(gold_before: int, result: Dictionary, slot: int, 
 		"kind": str(round_ctx.get("kind", "pve")),
 		"player_wins": bool(round_ctx.get("player_wins", false)),
 		"round_index": int(round_ctx.get("round_index", 0)),
-		"pve_completed_before": int(round_ctx.get("pve_completed_before", 0)),
 		"loss_streak_after": int(round_ctx.get("loss_streak_after", 0)),
 		"boss_hp_current": int(result.get("enemy_hp_current", 0)),
 		"boss_hp_max": maxi(1, int(result.get("enemy_hp_max", 1))),

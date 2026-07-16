@@ -116,6 +116,11 @@ static func apply_damage(target: Dictionary, amount: int, ignore_defense: bool =
 	target.hp = maxi(0, hp_before - remaining)
 	if int(target.hp) <= 0:
 		target.alive = false
+		# 记下致死来源，供 BattleSimulator._process_pending_kill_rewards 补结算击杀金：
+		# 普攻走 _handle_attack_kill 即时结算，技能/AOE 等路径不走那条线。
+		# 中毒/失血/衰减没有来源上下文（_tick_statuses 会 clear_stat_context），
+		# 这里会是空串——那类死亡不结算击杀金。
+		target["killer_uid"] = _stat_source_uid
 	_record_damage(target, mini(hp_before, remaining))
 	return remaining
 

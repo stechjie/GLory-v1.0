@@ -9,18 +9,22 @@ const BOSS_WIN_REWARDS := {5: 100, 10: 150, 15: 250, 20: 400}
 const BOSS_WIN_REWARD_FALLBACK := 100
 const PVP_WIN_BONUS := 100
 const PVP_LOSS_BONUS := 50
+# PVE 小怪单价：固定值，不随场次成长。PVE 收入的成长已经由另外两处提供——
+# 怪数（enemy_count_by_round 从 3 涨到 15）与胜利奖励（回合号从 1 涨到 19）；
+# 单价再挂场次就是第三重成长，三者相乘会让中后期金币失控。
+const PVE_MONSTER_KILL_GOLD := 15
+const PVE_WIN_BONUS_PER_ROUND := 10    # PVE 胜利奖励 = 当前回合号 × 此值
 # 下面几个是公式里原本隐含的「每档 1 金」基数——没有字面量可改，
 # 因此提成具名常量，直接写进位后的值。
-const PVE_WIN_BASE_GOLD := 10          # PVE 胜利保底
-const PVE_WIN_STEP_GOLD := 10          # 每完成 2 场 PVE 再加这么多
 const KILL_GOLD_PER_TIER := 10         # 普通棋子击杀金 = tier 档位 × 此值
 const KILL_GOLD_STAR2_BONUS := 20      # 2 星额外
 const KILL_GOLD_STAR3_BONUS := 30      # 3 星额外
 const MERCHANT_GOLD_PER_STAR := 10     # 商人棋子按星级给金
 
-static func pve_kill_reward(pve_completed_before: int) -> int:
-	var steps := int(floor(float(pve_completed_before) / 2.0))
-	return maxi(PVE_WIN_BASE_GOLD, steps * PVE_WIN_STEP_GOLD + PVE_WIN_BASE_GOLD)
+# PVE 胜利奖励：当前回合号 × 10，只有赢了才给。
+# 击杀金（小怪 × PVE_MONSTER_KILL_GOLD）输赢都给，不走这里。
+static func pve_win_bonus(round_index: int) -> int:
+	return maxi(0, round_index) * PVE_WIN_BONUS_PER_ROUND
 
 static func pvp_normal_kill_reward(tier: int, star: int) -> int:
 	var t := maxi(1, tier) * KILL_GOLD_PER_TIER
@@ -83,7 +87,7 @@ static func merchant_gold_from_board(board: Array) -> int:
 # 的公式显示 PVE/Boss/胜负/安慰金，玩家看到的和拿到的对不上。
 # 累加顺序与 docs/金币系统.md「战后金币结算顺序」一致。
 # ctx 键：gold_before, kill_gold, bonus_gold, kind, player_wins, round_index,
-#         pve_completed_before, loss_streak_after, boss_hp_current, boss_hp_max,
+#         loss_streak_after, boss_hp_current, boss_hp_max,
 #         merchant_gold, treasures(Array), pet_id(String)
 static func settle_post_battle_gold(ctx: Dictionary) -> int:
 	var gold := maxi(0, int(ctx.get("gold_before", 0)))
@@ -92,11 +96,13 @@ static func settle_post_battle_gold(ctx: Dictionary) -> int:
 	var kill_gold := maxi(0, int(ctx.get("kill_gold", 0)))
 	var treasures: Array = ctx.get("treasures", [])
 	# (1)(2)(3) 战斗类型基础奖励 / 补偿 + 击杀金币 + 胜负固定奖励。
-	# Boss 局按设计只给固定奖励与补偿，不结算击杀金币；PVE 失败一分不给。
+	# Boss 局按设计只给固定奖励与补偿，不结算击杀金币。
+	# PVE：击杀金输赢都给，只有回合奖励是胜利专属。
 	match kind:
 		"pve":
+			gold += kill_gold
 			if player_wins:
-				gold += kill_gold + pve_kill_reward(int(ctx.get("pve_completed_before", 0)))
+				gold += pve_win_bonus(int(ctx.get("round_index", 0)))
 		"boss":
 			var round_index := int(ctx.get("round_index", 0))
 			if player_wins:

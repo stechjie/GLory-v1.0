@@ -383,6 +383,9 @@ static func _queue_phoenix_revive(victim: Dictionary, state: Dictionary) -> void
 	revived.phoenix_used = true
 	revived.hp = maxi(1, int(round(float(victim.max_hp) * 0.40)))
 	revived.statuses = {}
+	# duplicate() 会把原体的死亡标记一起带过来：清掉，让复活体作为全新单位重新计死。
+	revived.erase("kill_reward_paid")
+	revived.erase("killer_uid")
 	var queue: Array = state.get("revive_queue", [])
 	queue.append({"due": float(state.elapsed) + 0.1, "fighter": revived})
 	state.revive_queue = queue
@@ -594,6 +597,9 @@ static func _process_revives(state: Dictionary) -> void:
 			f.hp = maxi(1, int(round(float(f.max_hp) * float(f.get("def", {}).get("revive_hp_pct", 0.30)))))
 			f.shield = 0
 			f.next_attack = float(state.elapsed) + 0.5
+			# 复活即清死亡标记：之后再被打死要能重新结算击杀金，也避免用到陈旧的致死来源。
+			f.erase("kill_reward_paid")
+			f.erase("killer_uid")
 			if str(f.team) == "enemy":
 				state.enemy.append(f)
 			else:

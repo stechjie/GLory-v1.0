@@ -147,6 +147,10 @@ static func prepare_team_state(forced_team: int = -1) -> Dictionary:
 	var battle_log: Array[String] = []
 	battle_log.append(TranslationServer.translate("log_team_unit_counts") % [kind.to_upper(), player.size(), enemy.size()])
 	var state := {"kind": kind, "player": player, "enemy": enemy, "elapsed": 0.0, "next_decay": DECAY_START_SEC, "finished": false, "log": battle_log, "player_syn": {}, "enemy_deaths": 0, "total_deaths": 0, "field_death_count": 0, "mother_death_counter": 0, "dark_kill_stacks": 0, "undead_trait_death_counter": 0, "race_trait_processed_deaths": {}, "death_history": [], "revive_queue": [], "player_kill_gold": 0, "enemy_kill_gold": 0, "kill_gold_by_slot": {}, "player_kills": [], "enemy_kills": [], "bonus_gold": 0, "temporary_deaths": [], "visual_events": [], "unit_stats": {}}
+	# lane -> 座位 的映射：跨路击杀分账要靠它找到「路线主」（见 _add_kill_reward）。
+	# 单机 1v1 的 prepare_state 不会有这两个键，那边棋子的 lane 恒为 -1，分账自动跳过。
+	state["ally_slots"] = ally_slots.duplicate()
+	state["rival_slots"] = rival_slots.duplicate()
 	# (Formation Heal in 3v3) Total post-battle team HP regen per side, from each
 	# owner's treasures. Host-authoritative so every client applies the same amount.
 	state.team_heal_ally = _team_formation_heal_total(ally_ctx)
@@ -366,6 +370,8 @@ static func step_state(state: Dictionary) -> void:
 	_step_team(player, e_alive, float(state.elapsed), state)
 	_step_team(enemy, p_alive, float(state.elapsed), state)
 	_process_shared_links(state)
+	# 本 tick 所有伤害都结算完了，再补发非普攻致死的击杀金（必须在 _step_team 之后）。
+	_process_pending_kill_rewards(state)
 	BattleSimTreasures._process_race_death_traits(state)
 	state.elapsed = float(state.elapsed) + TICK_SEC
 
@@ -1084,14 +1090,68 @@ static func _add_final_formation_allies(player: Array, enemy: Array) -> void:
 		enemy.append(_fighter_from_def(ed, 2, "enemy", enemy.size(), 26, 1, false, true))
 
 
+# 击杀金补结算：普通攻击打死目标时 _handle_attack_kill 会即时结算，但技能 / AOE /
+# 反伤等其他致死路径不走那条线，过去这些击杀一分钱都不产生（阵容里 AOE 越多收入越低）。
+# 这里在每个 tick 收尾扫一遍新死亡、按 DamageService 记下的 killer_uid 找回击杀者补上。
+# 与 _process_race_death_traits 同款清扫模式。
+# 无来源的死亡（中毒/失血/衰减：_tick_statuses 会清空来源上下文）仍不结算——
+# 找不到归属者，见 docs/金币系统.md 的「既存限制」。
+static func _process_pending_kill_rewards(state: Dictionary) -> void:
+	var fighters: Array = state.get("player", []) + state.get("enemy", [])
+	var by_uid := {}
+	for f in fighters:
+		by_uid[str(f.get("uid", ""))] = f
+	for f in fighters:
+		if bool(f.get("alive", true)) and int(f.get("hp", 0)) > 0:
+			continue
+		if bool(f.get("kill_reward_paid", false)):
+			continue
+		var killer_uid := str(f.get("killer_uid", ""))
+		if killer_uid.is_empty() or not by_uid.has(killer_uid):
+			continue
+		var killer: Dictionary = by_uid[killer_uid]
+		if str(killer.get("uid", "")) == str(f.get("uid", "")):
+			continue
+		_add_kill_reward(state, killer, f, str(f.get("team", "")) == "enemy")
+
+
+static func _credit_slot(state: Dictionary, slot: int, amount: int) -> void:
+	if slot < 0 or amount <= 0:
+		return
+	var by_slot: Dictionary = state.get("kill_gold_by_slot", {})
+	by_slot[slot] = int(by_slot.get(slot, 0)) + amount
+	state.kill_gold_by_slot = by_slot
+
+
+# 跨路击杀时被入侵那条路的主人（清空自己路的棋子可以去支援别路，见 _can_target）。
+# 没有跨路、或拿不到映射时返回 -1。lane 是出生时定死的归属路，棋子跑位不会影响判定。
+static func _lane_owner_slot_for_kill(state: Dictionary, killer: Dictionary, victim: Dictionary, player_killed_enemy: bool) -> int:
+	var killer_lane := int(killer.get("lane", -1))
+	var victim_lane := int(victim.get("lane", -1))
+	if killer_lane < 0 or victim_lane < 0 or killer_lane == victim_lane:
+		return -1
+	var lane_map: Array = state.get("ally_slots", []) if player_killed_enemy else state.get("rival_slots", [])
+	if victim_lane >= lane_map.size():
+		return -1
+	return int(lane_map[victim_lane])
+
+
 static func _add_kill_reward(state: Dictionary, killer: Dictionary, victim: Dictionary, player_killed_enemy: bool) -> void:
-	var reward := _kill_reward_for_victim(victim)
+	# 标记本次死亡已结算，_process_pending_kill_rewards 的补结算清扫据此跳过。
+	# 复活时会被清掉，所以复活后再被打死仍会再次结算（与既有行为一致）。
+	victim["kill_reward_paid"] = true
+	var reward := _kill_reward_for_victim(victim, state)
 	var rec := {"killer": str(killer.get("id", "")), "victim": str(victim.get("id", "")), "reward": reward}
 	var owner_slot := int(killer.get("owner_slot", -1))
-	if owner_slot >= 0:
-		var by_slot: Dictionary = state.get("kill_gold_by_slot", {})
-		by_slot[owner_slot] = int(by_slot.get(owner_slot, 0)) + reward
-		state.kill_gold_by_slot = by_slot
+	# 跨路击杀：赏金对半分，一半给击杀者、一半给路线主（奇数时余数归击杀者）。
+	# 回合奖励/胜利金按队伍发放，不在这里参与分配。
+	var lane_owner_slot := _lane_owner_slot_for_kill(state, killer, victim, player_killed_enemy)
+	if owner_slot >= 0 and lane_owner_slot >= 0 and lane_owner_slot != owner_slot:
+		var lane_share := reward / 2
+		_credit_slot(state, owner_slot, reward - lane_share)
+		_credit_slot(state, lane_owner_slot, lane_share)
+	else:
+		_credit_slot(state, owner_slot, reward)
 	state.log.append(TranslationServer.translate("log_kill") % [str(killer.get("name", killer.get("id", "?"))), str(victim.get("name", victim.get("id", "?"))), reward])
 	if player_killed_enemy:
 		state.player_kill_gold = int(state.get("player_kill_gold", 0)) + reward

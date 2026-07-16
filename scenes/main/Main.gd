@@ -505,7 +505,6 @@ func _on_team_battle_finished(result: Dictionary) -> void:
 		"kind": kind,
 		"player_wins": player_wins,
 		"round_index": completed_round,
-		"pve_completed_before": GameState.pve_completed,
 		"loss_streak_after": GameState.loss_streak,
 		"boss_hp_current": int(result.get("enemy_hp_current", 0)),
 		"boss_hp_max": maxi(1, int(result.get("enemy_hp_max", 1))),
