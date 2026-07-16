@@ -1,4 +1,4 @@
-{
+D{
   "boss_rounds": [5, 10, 15, 20],
   "growth_per_completed_boss": {"hp":1.45, "atk":1.35, "def":1.30, "skill_damage":1.45},
   "win_rewards": {"5":10, "10":15, "15":25, "20":40},
@@ -20,7 +20,7 @@
       "model": "res://assets/models/bosses/boss_meteor_caster_animated/boss_meteor_caster_animated.tscn",
       "model_visual_scale": 2.0,
       "model_base_yaw": 180.0,
-      "model_frame_fill": 0.96,
+      "model_frame_fill": 0.96, 
       "model_idle_animation_name": "idle",
       "model_attack_animation_name": "attack",
       "model_attack_sync_seek": 0.18,
@@ -40,7 +40,7 @@
       "footprint_cells": 2,
       "skill_id": "overload_counter",
       "hit_threshold": 8,
-      "skill_damage": 150,
+      "skill_damage": 150 ,
       "interrupt_chance": 0.25,
       "model": "res://assets/models/bosses/boss_thunder_core_animated/boss_thunder_core_animated.tscn",
       "model_visual_scale": 2.0,
@@ -132,7 +132,7 @@
       "id": "boss_blood_demon",
       "name": "血怒魔王",
       "element": "ren",
-      "hp": 1300,
+      "hp": 1000,
       "atk": 55,
       "def": 12,
       "attack_speed": 0.85,
