@@ -2,21 +2,15 @@ extends "res://scenes/battle/BattleUI.gd"
 
 const FIRE_GLOW_TEXTURE_PATH := "res://assets/vfx/battlefield/fire_glow_soft.png"
 const FIRE_SPARK_TEXTURE_PATH := "res://assets/vfx/battlefield/fire_spark_dot.png"
-const BATTLE_2_5D_BASE_PATH := "res://assets/board/2_5d/battlefield_jungle_pve.png"
-const BATTLE_2_5D_PVP_BASE_PATH := "res://assets/board/2_5d/battlefield_snow_pvp.png"
-const BATTLE_2_5D_FINAL_BASE_PATH := "res://assets/board/2_5d/battlefield_final_round.png"
+const BATTLE_2_5D_BASE_PATH := "res://assets/board/2_5d/battlefield_forest_handdrawn_v2_no_sockets.png"
+const BATTLE_2_5D_PVP_BASE_PATH := "res://assets/board/2_5d/battlefield_pvp_ice.png"
 const BATTLE_2_5D_FRONT_PATH := "res://assets/board/2_5d/battlefield_front_occlusion_full.png"
 const BATTLE_2_5D_FIRE_PATH := "res://assets/board/2_5d/fire_single_source.png"
 const FIRE_FLAME_SOURCE_RECT := Rect2(555.0, 20.0, 125.0, 120.0)
 const FIRE_FLAME_POINTS := [Vector2(526.0, 82.0), Vector2(1162.0, 82.0)]
-const BATTLE_PVP_BACKGROUND_SCALE := 1.0
+const BATTLE_PVP_BACKGROUND_SCALE := 1.2
 const BATTLE_VISUAL_SPACE_SCALE := 0.88
 const BATTLE_VISUAL_DOWN_SHIFT_RATIO := 0.1
-const BLUE_CRYSTAL_MODEL_PATH := "res://assets/models/battle_crystals/blue/Meshy_AI_Blue_Crystal_Spire_0717152101_texture_fbx/Meshy_AI_Blue_Crystal_Spire_0717152101_texture.fbx"
-const RED_CRYSTAL_MODEL_PATH := "res://assets/models/battle_crystals/red/Meshy_AI_Crimson_Prism_0717152324_texture_fbx/Meshy_AI_Crimson_Prism_0717152324_texture.fbx"
-const BATTLE_CRYSTAL_TARGET_HEIGHT := 1.55
-const BATTLE_CRYSTAL_BLUE_POSITION := Vector3(0.0, -0.14, -5.55)
-const BATTLE_CRYSTAL_RED_POSITION := Vector3(0.0, -0.14, 5.55)
 const CRYSTAL_GLOW_POINTS := [
 	Vector3(165.0, 155.0, 1.0),
 	Vector3(1505.0, 155.0, 1.0),
@@ -56,13 +50,7 @@ func _build() -> void:
 	_add_layered_battle_background(arena_wrap)
 
 	var arena_tint := ColorRect.new()
-	var battlefield_kind := _battlefield_kind()
-	if battlefield_kind == "final":
-		arena_tint.color = Color(0.055, 0.035, 0.060, 0.08)
-	elif battlefield_kind == "pvp":
-		arena_tint.color = Color(0.045, 0.070, 0.110, 0.08)
-	else:
-		arena_tint.color = Color(0.012, 0.030, 0.022, 0.08)
+	arena_tint.color = Color(0.045, 0.070, 0.110, 0.10) if _uses_pvp_battlefield() else Color(0.012, 0.030, 0.022, 0.22)
 	arena_tint.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	arena_wrap.add_child(arena_tint)
 	arena_tint.z_index = -10
@@ -151,32 +139,25 @@ func _add_layered_battle_background(arena_wrap: Control) -> void:
 	_battlefield_2_5d_root.name = "Battlefield2_5D"
 	arena_wrap.add_child(_battlefield_2_5d_root)
 	_add_battlefield_sprite("BaseBackground", _battlefield_base_path(), 0)
+	if not _uses_pvp_battlefield():
+		_add_crystal_glows()
+		_add_fire_layer()
 	_fit_battlefield_2_5d()
 	arena_wrap.resized.connect(_fit_battlefield_2_5d)
 
 
-func _battlefield_kind() -> String:
+func _uses_pvp_battlefield() -> bool:
 	var kind := str(_state.get("kind", _kind))
 	# 3v3 组队：首次 _build() 时服务器 replay 还没到，_state 为空、_kind 只是 "team"，
 	# 拿不到真实回合类型。_build() 只建一次（有 _battle_arena_ready 守卫），所以必须在
-	# 这里用赛程表提前判断真实回合类型，确保 PVE、PVP 和 final 各自使用正确战场。
+	# 这里用赛程表提前判断本回合是不是 PVP（final 也走雪地），否则组队 PVP 永远是草地。
 	if kind == "team" or kind == "":
 		kind = RoundService.schedule_kind_for_round(GameState.round_index)
-	return kind
-
-
-func _uses_pvp_battlefield() -> bool:
-	return _battlefield_kind() == "pvp"
+	return kind == "pvp" or kind == "final"
 
 
 func _battlefield_base_path() -> String:
-	match _battlefield_kind():
-		"final":
-			return BATTLE_2_5D_FINAL_BASE_PATH
-		"pvp":
-			return BATTLE_2_5D_PVP_BASE_PATH
-		_:
-			return BATTLE_2_5D_BASE_PATH
+	return BATTLE_2_5D_PVP_BASE_PATH if _uses_pvp_battlefield() else BATTLE_2_5D_BASE_PATH
 
 func _add_battlefield_sprite(sprite_name: String, texture_path: String, layer_z: int) -> Sprite2D:
 	var sprite := Sprite2D.new()
@@ -198,7 +179,7 @@ func _fit_battlefield_2_5d() -> void:
 	if arena_size.x <= 0.0 or arena_size.y <= 0.0:
 		return
 	var fit_scale := maxf(arena_size.x / _battlefield_2_5d_size.x, arena_size.y / _battlefield_2_5d_size.y)
-	if _battlefield_kind() == "pvp":
+	if _uses_pvp_battlefield():
 		fit_scale *= BATTLE_PVP_BACKGROUND_SCALE
 	_battlefield_2_5d_root.scale = Vector2.ONE * fit_scale
 	_battlefield_2_5d_root.position = (arena_size - _battlefield_2_5d_size * fit_scale) * 0.5
@@ -485,7 +466,6 @@ func _setup_battle_3d_view(arena_wrap: Control) -> void:
 	var world := Node3D.new()
 	_battle_3d_viewport.add_child(world)
 	_add_battle_3d_arena(world)
-	_add_battle_crystals(world)
 	_battle_3d_root = Node3D.new()
 	_battle_3d_root.name = "BattleModelRoot"
 	world.add_child(_battle_3d_root)
@@ -510,55 +490,6 @@ func _setup_battle_3d_view(arena_wrap: Control) -> void:
 	camera.current = true
 	_battle_3d_camera = camera
 	_battle_3d_viewport.add_child(camera)
-
-
-func _add_battle_crystals(world: Node3D) -> void:
-	_add_battle_crystal(world, "BlueCrystal12OClock", BLUE_CRYSTAL_MODEL_PATH, BATTLE_CRYSTAL_BLUE_POSITION, 180.0)
-	_add_battle_crystal(world, "RedCrystal6OClock", RED_CRYSTAL_MODEL_PATH, BATTLE_CRYSTAL_RED_POSITION, 0.0)
-
-
-func _add_battle_crystal(world: Node3D, crystal_name: String, model_path: String, target_position: Vector3, yaw: float) -> void:
-	var packed := load(model_path) as PackedScene
-	if packed == null:
-		push_warning("Battle crystal model failed to load: %s" % model_path)
-		return
-	var crystal := packed.instantiate() as Node3D
-	if crystal == null:
-		push_warning("Battle crystal model is not a Node3D: %s" % model_path)
-		return
-	crystal.name = crystal_name
-	world.add_child(crystal)
-	_clamp_crystal_material_emission(crystal)
-	var bounds := _node3d_bounds(crystal)
-	var scale_factor := 1.0
-	if bounds.size.y > 0.001:
-		scale_factor = BATTLE_CRYSTAL_TARGET_HEIGHT / bounds.size.y
-	var base_center := Vector3(
-		bounds.position.x + bounds.size.x * 0.5,
-		bounds.position.y,
-		bounds.position.z + bounds.size.z * 0.5
-	)
-	crystal.scale = Vector3.ONE * scale_factor
-	crystal.rotation_degrees.y = yaw
-	var rotated_base_center := Basis(Vector3.UP, deg_to_rad(yaw)) * (base_center * scale_factor)
-	crystal.position = target_position - rotated_base_center
-
-
-func _clamp_crystal_material_emission(root: Node) -> void:
-	for child in root.find_children("*", "MeshInstance3D", true, false):
-		var mesh_instance := child as MeshInstance3D
-		if mesh_instance == null or mesh_instance.mesh == null:
-			continue
-		var safe_mesh := mesh_instance.mesh.duplicate() as Mesh
-		if safe_mesh == null:
-			continue
-		mesh_instance.mesh = safe_mesh
-		for surface_index in safe_mesh.get_surface_count():
-			var source_material := safe_mesh.surface_get_material(surface_index)
-			if source_material is BaseMaterial3D:
-				var safe_material := source_material.duplicate() as BaseMaterial3D
-				safe_material.emission_energy_multiplier = minf(safe_material.emission_energy_multiplier, 0.45)
-				safe_mesh.surface_set_material(surface_index, safe_material)
 
 func _load_battle_background() -> Texture2D:
 	var texture := load(BATTLE_BG_PATH)
