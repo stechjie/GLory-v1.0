@@ -15,25 +15,15 @@ signal team_reconnect_requested # 手动重连回上一场对局
 signal prep_requested           # 「备战」按钮：进入备战界面（暂时只有宠物系统）
 
 const REF_SIZE := Vector2(1672.0, 941.0)
-const TEX_BACKGROUND := preload("res://assets/ui/main_menu_live/background.png")
-const TEX_PROFILE := preload("res://assets/ui/main_menu_live/profile.png")
-const TEX_GOLD := preload("res://assets/ui/main_menu_live/gold.png")
-const TEX_DIAMOND := preload("res://assets/ui/main_menu_live/diamond.png")
-const TEX_MAIL := preload("res://assets/ui/main_menu_live/mail.png")
-const TEX_BAG := preload("res://assets/ui/main_menu_live/bag.png")
-const TEX_SETTINGS := preload("res://assets/ui/main_menu_live/settings.png")
-const TEX_FRIENDS := preload("res://assets/ui/main_menu_live/friends.png")
-const TEX_CHAT := preload("res://assets/ui/main_menu_live/chat.png")
-const TEX_SHOP := preload("res://assets/ui/main_menu_live/shop.png")
-const TEX_NEWS := preload("res://assets/ui/main_menu_live/news.png")
-const TEX_PREP := preload("res://assets/ui/main_menu_live/prep.png")
-const TEX_CASUAL := preload("res://assets/ui/main_menu_live/casual.png")
-const TEX_RANKED := preload("res://assets/ui/main_menu_live/ranked.png")
-const TEX_CUSTOM := preload("res://assets/ui/main_menu_live/custom.png")
-const TEX_GALLERY := preload("res://assets/ui/main_menu_live/gallery.png")
-const TEX_GENERATE_TOKEN := preload("res://assets/ui/main_menu_live/generate_token.png")
-const TEX_ENTER_TOKEN := preload("res://assets/ui/main_menu_live/enter_token.png")
-const MAIN_MENU_AMBIENCE := preload("res://scenes/menu/MainMenuAmbience.gd")
+const TEX_BACKGROUND := preload("res://assets/ui/start_menu/background.png")
+const TEX_PROFILE := preload("res://assets/ui/start_menu/profile.png")
+const TEX_VIP := preload("res://assets/ui/start_menu/vip.png")
+const TEX_MAIL := preload("res://assets/ui/start_menu/mail.png")
+const TEX_BAG := preload("res://assets/ui/start_menu/bag.png")
+const TEX_SETTINGS := preload("res://assets/ui/start_menu/settings.png")
+const TEX_SMALL_BUTTON := preload("res://assets/ui/start_menu/small_button.png")
+const TEX_PANEL := preload("res://assets/ui/start_menu/panel.png")
+const TEX_BOTTOM_BAR := preload("res://assets/ui/start_menu/bottom_bar.png")
 const MENU_MUSIC_PATH := "res://assets/audio/bgm/menu_music.mp3"
 
 var _menu_music_player: AudioStreamPlayer
@@ -81,77 +71,72 @@ func _build() -> void:
 	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
 
-	var ambience := MAIN_MENU_AMBIENCE.new() as Control
-	add_child(ambience)
+	_add_screen_band(Color(0, 0, 0, 0.13), 0.0, 110.0, false)
+	_add_screen_band(Color(0, 0, 0, 0.13), 0.0, 281.0, true)
 
-	_add_texture(TEX_PROFILE, Vector2(18, 18), Vector2(390, 98))
-	_add_label("GloryMaster", Vector2(143, 39), Vector2(210, 29), 24)
-	_add_label(_menu_text("等级 45", "Lv. 45"), Vector2(143, 70), Vector2(105, 24), 18)
-	_add_texture(TEX_GOLD, Vector2(645, 35), Vector2(218, 55))
-	_add_label("89,450", Vector2(704, 48), Vector2(105, 30), 24)
-	_add_texture(TEX_DIAMOND, Vector2(886, 35), Vector2(218, 55))
-	_add_label("2,350", Vector2(947, 48), Vector2(102, 30), 24)
+	_add_texture(TEX_PROFILE, Vector2(34, 12), Vector2(430, 181))
+	_add_texture(TEX_VIP, Vector2(452, 51), Vector2(96, 69))
+	_add_label("VIP", Vector2(468, 68), Vector2(60, 28), 18)
 
-	_add_texture(TEX_FRIENDS, Vector2(28, 307), Vector2(132, 132))
-	_add_label(_menu_text("朋友", "Friends"), Vector2(47, 390), Vector2(94, 30), 21)
-	_add_hit(Vector2(28, 307), Vector2(132, 132), _show_coming_soon)
-	_add_texture(TEX_CHAT, Vector2(28, 437), Vector2(132, 132))
-	_add_label(_menu_text("聊天", "Chat"), Vector2(47, 522), Vector2(94, 30), 21)
-	_add_hit(Vector2(28, 437), Vector2(132, 132), _show_coming_soon)
+	_add_pill(_menu_text("金币", "Gold"), Vector2(1002, 44), Vector2(144, 34))
+	_add_pill(_menu_text("点券", "Coupon"), Vector2(1162, 44), Vector2(144, 34))
 
-	_add_texture(TEX_BAG, Vector2(1355, 25), Vector2(99, 100))
-	_add_hit(Vector2(1355, 25), Vector2(99, 100), _show_coming_soon)
-	_add_texture(TEX_MAIL, Vector2(1458, 25), Vector2(100, 100))
-	_add_hit(Vector2(1458, 25), Vector2(100, 100), _show_coming_soon)
-	_add_texture(TEX_SETTINGS, Vector2(1562, 25), Vector2(99, 99))
-	_add_hit(Vector2(1562, 25), Vector2(99, 99), _show_coming_soon)
+	_add_texture(TEX_SMALL_BUTTON, Vector2(38, 266), Vector2(300, 100))
+	_add_label(_menu_text("朋友", "Friends"), Vector2(88, 290), Vector2(200, 42), 30)
+	_add_hit(Vector2(38, 266), Vector2(300, 100), _show_coming_soon)
 
-	_add_texture(TEX_SHOP, Vector2(1383, 137), Vector2(267, 251))
-	_add_label(_menu_text("商店", "Shop"), Vector2(1450, 151), Vector2(130, 34), 24)
-	_add_hit(Vector2(1383, 137), Vector2(267, 251), _show_coming_soon)
-	_add_texture(TEX_NEWS, Vector2(1383, 371), Vector2(267, 330))
-	_add_label(_menu_text("公告 / 活动", "News / Events"), Vector2(1432, 383), Vector2(170, 34), 22)
-	_add_hit(Vector2(1383, 371), Vector2(267, 330), _show_coming_soon)
+	_add_texture(TEX_SMALL_BUTTON, Vector2(38, 380), Vector2(300, 100))
+	_add_label(_menu_text("聊天室", "Chat"), Vector2(88, 404), Vector2(200, 42), 30)
+	_add_hit(Vector2(38, 380), Vector2(300, 100), _show_coming_soon)
 
-	_add_texture(TEX_PREP, Vector2(179, 690), Vector2(222, 194))
-	_add_texture(TEX_CASUAL, Vector2(426, 692), Vector2(208, 188))
-	_add_texture(TEX_RANKED, Vector2(650, 650), Vector2(370, 260))
-	_add_texture(TEX_CUSTOM, Vector2(1025, 681), Vector2(219, 206))
-	_add_texture(TEX_GALLERY, Vector2(1274, 689), Vector2(222, 169))
-	_add_label(_menu_text("备战", "Prep"), Vector2(227, 807), Vector2(126, 36), 26)
-	_add_label(_menu_text("休闲", "Casual"), Vector2(469, 807), Vector2(120, 36), 26)
-	_add_label(_menu_text("排位", "Ranked"), Vector2(764, 836), Vector2(142, 43), 32)
-	_add_label(_menu_text("自定义", "Custom"), Vector2(1068, 808), Vector2(130, 36), 26)
-	_add_label(_menu_text("图鉴", "Gallery"), Vector2(1320, 808), Vector2(130, 36), 26)
-	_add_hit(Vector2(179, 690), Vector2(222, 194), _emit_prep)
-	_add_hit(Vector2(426, 692), Vector2(208, 188), _show_coming_soon)
-	_add_hit(Vector2(650, 650), Vector2(370, 260), _show_coming_soon)
-	_add_hit(Vector2(1025, 681), Vector2(219, 206), _show_room_overlay)
-	_add_hit(Vector2(1274, 689), Vector2(222, 169), _show_coming_soon)
+	_add_texture(_bag_texture(), Vector2(1308, 8), Vector2(118, 118))
+	_add_hit(Vector2(1308, 8), Vector2(118, 118), _show_coming_soon)
+	_add_texture(TEX_MAIL, Vector2(1424, 9), Vector2(120, 120))
+	_add_hit(Vector2(1424, 9), Vector2(120, 120), _show_coming_soon)
+	_add_texture(TEX_SETTINGS, Vector2(1548, 24), Vector2(86, 88))
+	_add_hit(Vector2(1548, 24), Vector2(86, 88), _show_coming_soon)
 
-	_add_texture(TEX_GENERATE_TOKEN, Vector2(610, 594), Vector2(214, 59))
-	_add_label(_menu_text("生成令牌", "Generate Token"), Vector2(664, 606), Vector2(137, 34), 18)
-	_add_hit(Vector2(610, 594), Vector2(214, 59), _emit_generate_token)
-	_add_texture(TEX_ENTER_TOKEN, Vector2(850, 594), Vector2(214, 59))
-	_add_label(_menu_text("输入令牌", "Enter Token"), Vector2(905, 606), Vector2(137, 34), 18)
-	_add_hit(Vector2(850, 594), Vector2(214, 59), _show_token_prompt)
+	_add_texture(TEX_PANEL, Vector2(1248, 126), Vector2(288, 267))
+	_add_label(_menu_text("商店", "Shop"), Vector2(1280, 134), Vector2(226, 36), 26)
+	_add_label(_menu_text("模型皮肤", "Skins"), Vector2(1295, 228), Vector2(198, 36), 22)
+	_add_hit(Vector2(1248, 126), Vector2(288, 267), _show_coming_soon)
 
+	_add_texture(TEX_PANEL, Vector2(1248, 414), Vector2(288, 267))
+	_add_label(_menu_text("公告 / 活动", "News / Events"), Vector2(1280, 422), Vector2(226, 36), 26)
+	_add_hit(Vector2(1248, 414), Vector2(288, 267), _show_coming_soon)
+
+	_add_texture(TEX_BOTTOM_BAR, Vector2(70, 660), Vector2(1532, 277))
+	_add_label(_menu_text("备战", "Prep"), Vector2(140, 848), Vector2(230, 46), 28)
+	_add_label(_menu_text("娱乐模式", "Casual"), Vector2(405, 848), Vector2(230, 46), 28)
+	_add_label(_menu_text("排位", "Ranked"), Vector2(732, 765), Vector2(196, 68), 38)
+	_add_label(_menu_text("自定房间", "Custom"), Vector2(1028, 848), Vector2(230, 46), 28)
+	_add_label(_menu_text("图鉴", "Gallery"), Vector2(1300, 848), Vector2(220, 46), 28)
+	_add_hit(Vector2(78, 724), Vector2(306, 190), _emit_prep)
+	_add_hit(Vector2(394, 724), Vector2(300, 190), _show_coming_soon)
+	_add_hit(Vector2(704, 664), Vector2(264, 228), _show_coming_soon)
+	_add_hit(Vector2(970, 724), Vector2(300, 190), _show_room_overlay)
+	_add_hit(Vector2(1276, 724), Vector2(292, 190), _show_coming_soon)
+
+	_add_text_button(_menu_text("生成 Token ID", "Generate Token"), Vector2(960, 586), Vector2(165, 52), _emit_generate_token)
+	_add_text_button(_menu_text("输入 Token ID", "Enter Token"), Vector2(1138, 586), Vector2(165, 52), _show_token_prompt)
+
+	# 离线自测入口：不联网直接进 3v3 大厅（team_active=false），可单人 vs AI 试玩。
+	# 独立样式按钮，放左下角空白处，不动原有美术布局。
 	var offline_btn := Button.new()
 	offline_btn.text = _menu_text("离线自测", "Offline")
 	offline_btn.focus_mode = Control.FOCUS_NONE
 	offline_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	var ob_style := StyleBoxFlat.new()
-	ob_style.bg_color = Color(0.11, 0.075, 0.035, 0.95)
-	ob_style.border_color = Color(0.78, 0.56, 0.24)
+	ob_style.bg_color = Color(1.0, 0.96, 0.82, 0.9)
+	ob_style.border_color = Color(0.57, 0.38, 0.13)
 	ob_style.set_border_width_all(2)
 	ob_style.set_corner_radius_all(26)
 	offline_btn.add_theme_stylebox_override("normal", ob_style)
 	offline_btn.add_theme_stylebox_override("hover", ob_style)
 	offline_btn.add_theme_stylebox_override("pressed", ob_style)
-	offline_btn.add_theme_color_override("font_color", Color(1.0, 0.90, 0.60))
+	offline_btn.add_theme_color_override("font_color", Color(0.45, 0.27, 0.08))
 	offline_btn.add_theme_font_size_override("font_size", 22)
 	offline_btn.pressed.connect(_emit_offline)
 	add_child(offline_btn)
@@ -164,20 +149,20 @@ func _build() -> void:
 	reconnect_btn.focus_mode = Control.FOCUS_NONE
 	reconnect_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	var rc_style := StyleBoxFlat.new()
-	rc_style.bg_color = Color(0.11, 0.075, 0.035, 0.95)
-	rc_style.border_color = Color(0.78, 0.56, 0.24)
+	rc_style.bg_color = Color(0.24, 0.62, 0.32, 0.95)
+	rc_style.border_color = Color(0.85, 0.98, 0.80)
 	rc_style.set_border_width_all(3)
 	rc_style.set_corner_radius_all(26)
 	reconnect_btn.add_theme_stylebox_override("normal", rc_style)
 	reconnect_btn.add_theme_stylebox_override("hover", rc_style)
 	reconnect_btn.add_theme_stylebox_override("pressed", rc_style)
-	reconnect_btn.add_theme_color_override("font_color", Color(1.0, 0.90, 0.60))
+	reconnect_btn.add_theme_color_override("font_color", Color(1.0, 1.0, 0.95))
 	reconnect_btn.add_theme_font_size_override("font_size", 26)
 	reconnect_btn.pressed.connect(_emit_reconnect)
 	# 仅在有重连凭证时才显示（没得连时不给一个点了没用的按钮）
 	reconnect_btn.visible = not SaveManager.load_reconnect().is_empty()
 	add_child(reconnect_btn)
-	_track(reconnect_btn, Vector2(1110, 594), Vector2(235, 58))
+	_track(reconnect_btn, Vector2(985, 656), Vector2(270, 58))
 
 	_net_status = _add_label("", Vector2(640, 64), Vector2(320, 32), 20)
 	_net_status.add_theme_color_override("font_color", Color(0.98, 0.88, 0.55))
@@ -449,9 +434,9 @@ func _add_label(text: String, pos: Vector2, size: Vector2, font_size: int) -> La
 	label.text = text
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.add_theme_color_override("font_color", Color(1.0, 0.92, 0.63))
-	label.add_theme_color_override("font_outline_color", Color(0.12, 0.07, 0.025, 0.95))
-	label.add_theme_constant_override("outline_size", 5)
+	label.add_theme_color_override("font_color", Color(0.45, 0.27, 0.08))
+	label.add_theme_color_override("font_outline_color", Color(1.0, 0.94, 0.78))
+	label.add_theme_constant_override("outline_size", 3)
 	label.add_theme_font_size_override("font_size", font_size)
 	add_child(label)
 	_track(label, pos, size, font_size)
@@ -511,3 +496,9 @@ func _dialog_button(text: String, cb: Callable) -> Button:
 
 func _track(node: Control, pos: Vector2, size: Vector2, font_size: int = 0) -> void:
 	_placed.append({"node": node, "pos": pos, "size": size, "font_size": font_size})
+
+func _bag_texture() -> Texture2D:
+	var atlas := AtlasTexture.new()
+	atlas.atlas = TEX_BAG
+	atlas.region = Rect2(14, 14, 572, 572)
+	return atlas
