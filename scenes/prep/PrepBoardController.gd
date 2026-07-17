@@ -212,6 +212,7 @@ func _hire_mercenary_to_slot(index: int, mercenary_index: int) -> void:
 	def["is_mercenary"] = true
 	GameState.mercenary_slots[mercenary_index] = {"id": def.id, "star": 1, "def": def, "is_mercenary": true}
 	_mark_online_board_changed()
+	NetworkService.team_send_prep_mercs()
 	SaveManager.save_run()
 	_refresh_all()
 

@@ -258,6 +258,7 @@ func team_host(port: int = DEFAULT_PORT, dedicated: bool = false) -> bool:
 	team_local_slot = -1 if dedicated else 0
 	team_slot_states = ["empty", "empty", "empty", "empty", "empty", "empty"] if dedicated else ["player", "empty", "empty", "empty", "empty", "empty"]
 	team_ready = [false, false, false, false, false, false]
+	team_prep_mercs = {}
 	_team_peer_slot.clear()
 	last_error = ""
 	if dedicated:
@@ -548,6 +549,7 @@ func _room_begin_next_prep(room: Dictionary) -> void:
 	if bool(room.get("final_battle_complete", false)):
 		return
 	room.boards = {}
+	room.prep_mercs = {}
 	# round_index 封顶到 FINAL_ROUND，和客户端一致（客户端从 match_state 拿的是 min(+1, 21)）
 	room.round_index = mini(int(room.get("round_index", 1)) + 1, GameState.FINAL_ROUND)
 	var ready: Array = room.get("ready", [])
@@ -857,6 +859,82 @@ func _broadcast_room_lobby(room: Dictionary) -> void:
 		if _peer_connected(int(peer_id)):
 			_rpc_team_lobby.rpc_id(int(peer_id), states, ready, round_i, phase)
 
+# --- 3v3 prep mercenary sync ------------------------------------------------
+# 备战阶段实时同步每个玩家已雇的佣兵 id 列表，供「队伍佣兵」弹窗展示。
+# 载荷极小（≤8 个 id + 回合号），每次雇佣发一次。条目带回合号，读取时按当前
+# 回合过滤，跨回合的旧数据自然失效，不依赖显式清理。
+signal team_prep_mercs_changed
+
+var team_prep_mercs: Dictionary = {}   # slot(int) -> {"round": int, "ids": Array[String]}
+
+func team_send_prep_mercs() -> void:
+	if not team_active or team_local_slot < 0:
+		return
+	var ids: Array = []
+	for cell in GameState.mercenary_slots:
+		if typeof(cell) == TYPE_DICTIONARY:
+			ids.append(str((cell as Dictionary).get("id", "")))
+	if is_host:
+		_store_team_prep_mercs(team_local_slot, GameState.round_index, ids)
+		_rpc_team_prep_mercs.rpc(team_local_slot, GameState.round_index, ids)
+	else:
+		_rpc_team_prep_mercs_submit.rpc_id(1, team_local_slot, GameState.round_index, ids)
+
+func team_prep_merc_ids(slot: int, round_index: int) -> Array:
+	var entry_value = team_prep_mercs.get(slot)
+	if typeof(entry_value) != TYPE_DICTIONARY:
+		return []
+	var entry: Dictionary = entry_value
+	if int(entry.get("round", -1)) != round_index:
+		return []
+	return (entry.get("ids", []) as Array).duplicate()
+
+func _store_team_prep_mercs(slot: int, round_index: int, ids: Array) -> void:
+	team_prep_mercs[slot] = {"round": round_index, "ids": _sanitize_prep_merc_ids(ids)}
+	team_prep_mercs_changed.emit()
+
+func _sanitize_prep_merc_ids(ids: Array) -> Array:
+	# 来路是网络：只收佣兵表里存在的 id，数量封顶佣兵栏容量。
+	var valid := {}
+	for row in (DataRegistry.get_table("mercenaries").get("mercenaries", []) as Array):
+		valid[str((row as Dictionary).get("id", ""))] = true
+	var out: Array = []
+	for id_value in ids:
+		var id := str(id_value)
+		if valid.has(id) and out.size() < GameState.MERCENARY_SLOTS:
+			out.append(id)
+	return out
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_team_prep_mercs_submit(slot: int, round_index: int, ids: Array) -> void:
+	if _dedicated_server:
+		var sender := multiplayer.get_remote_sender_id()
+		var room := _room_for_peer(sender)
+		if room.is_empty() or slot < 0 or slot >= TEAM_SLOTS:
+			return
+		if int((room.get("peer_slot", {}) as Dictionary).get(sender, -1)) != slot:
+			return
+		var clean := _sanitize_prep_merc_ids(ids)
+		var prep_mercs: Dictionary = room.get("prep_mercs", {})
+		prep_mercs[slot] = {"round": round_index, "ids": clean}
+		room.prep_mercs = prep_mercs
+		for peer_id in (room.get("peer_slot", {}) as Dictionary).keys():
+			if int(peer_id) != sender and _peer_connected(int(peer_id)):
+				_rpc_team_prep_mercs.rpc_id(int(peer_id), slot, round_index, clean)
+		return
+	if not is_host or slot < 0 or slot >= TEAM_SLOTS:
+		return
+	if int(_team_peer_slot.get(multiplayer.get_remote_sender_id(), -1)) != slot:
+		return
+	_store_team_prep_mercs(slot, round_index, ids)
+	_rpc_team_prep_mercs.rpc(slot, round_index, team_prep_merc_ids(slot, round_index))
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_team_prep_mercs(slot: int, round_index: int, ids: Array) -> void:
+	if slot < 0 or slot >= TEAM_SLOTS:
+		return
+	_store_team_prep_mercs(slot, round_index, ids)
+
 # --- 3v3 team board collection (N2) ----------------------------------------
 # After everyone presses "start battle" in prep, each player submits their board
 # snapshot. The host gathers all real-player boards, then broadcasts the full
@@ -872,6 +950,7 @@ func team_begin_round() -> void:
 	team_boards = {}
 	_team_boards_collecting = {}
 	team_replay = {}
+	team_prep_mercs = {}
 	# 权威回合对齐：本地回合号落后服务器（重连/漏包后遗症）时，提交棋盘会被
 	# wrong_round 拒收、整轮卡死。进新回合是安全的对齐时机（不会打断战斗播放）。
 	# 只升不降：结算阶段客户端可以合法领先服务器一轮（见 _room_begin_next_prep 惰性推进）。
@@ -2065,6 +2144,7 @@ func _rpc_team_room_closed(reason: String) -> void:
 	team_local_slot = -1
 	team_slot_states = []
 	team_ready = []
+	team_prep_mercs = {}
 	state = SessionState.FAILED
 	last_error = tr("net_err_room_closed") % reason
 	session_changed.emit()

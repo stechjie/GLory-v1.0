@@ -116,6 +116,22 @@ func _input(event: InputEvent) -> void:
 			if detail_touch_event.pressed:
 				_hide_detail()
 		return
+	if _team_mercs_open and _team_mercs_overlay != null and _team_mercs_overlay.visible:
+		var team_pointer := Vector2.ZERO
+		var team_should_check := false
+		if event is InputEventMouseButton:
+			var team_mouse := event as InputEventMouseButton
+			if team_mouse.pressed and team_mouse.button_index == MOUSE_BUTTON_LEFT:
+				team_pointer = team_mouse.position
+				team_should_check = true
+		elif event is InputEventScreenTouch:
+			var team_touch := event as InputEventScreenTouch
+			if team_touch.pressed:
+				team_pointer = team_touch.position
+				team_should_check = true
+		if team_should_check and not _team_mercs_overlay.get_global_rect().has_point(team_pointer):
+			_close_team_mercs_picker()
+		return
 	if not _merc_picker_open or _merc_overlay == null or not _merc_overlay.visible:
 		return
 	var pointer_position := Vector2.ZERO

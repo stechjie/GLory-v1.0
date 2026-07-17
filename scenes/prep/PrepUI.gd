@@ -20,6 +20,16 @@ const BUY_BTN_PATH := "res://assets/ui/buttons/btn_buy.png"               # 采�
 const REFRESH_BTN_PATH := "res://assets/ui/buttons/btn_refresh.png"       # 刷新循环箭头方框（1254x1254）
 const MERC_BTN_PATH := "res://assets/ui/buttons/btn_merc.png"             # 佣兵盾牌圆框（1254x1254）
 const MERC_BTN_SIZE := Vector2(132, 132)                                  # 方形
+# 「队伍佣兵」弹窗 3D 检阅台。缩放/相机抄备战河流视口的量级，取景不对就调这几个。
+# AREA_HALF / MIN_DIST 是 stage root 本地坐标（stage 再被 STAGE_SCALE 放大）。
+const TEAM_MERCS_STAGE_SCALE := 3.2
+const TEAM_MERCS_CAMERA_POSITION := Vector3(0.0, 2.4, 1.9)
+const TEAM_MERCS_CAMERA_TARGET := Vector3(0.0, 0.05, 0.0)
+const TEAM_MERCS_CAMERA_FOV := 40.0
+const TEAM_MERCS_AREA_HALF := Vector2(0.42, 0.24)
+const TEAM_MERCS_MIN_DIST := 0.15
+const TEAM_MERCS_PLATE_RADIUS := 0.055
+const TEAM_MERCS_PLATE_HEIGHT := 0.012
 const SHOP_BACKGROUND_OFFSET_LEFT := 0
 const SHOP_BACKGROUND_OFFSET_TOP := 0
 const SHOP_BACKGROUND_OFFSET_RIGHT := 0
@@ -768,6 +778,8 @@ func _build_rest(root: VBoxContainer) -> void:
 	_merc_overlay_grid.add_theme_constant_override("v_separation", 8)
 	overlay_box.add_child(_merc_overlay_grid)
 
+	_build_team_mercs_overlay(center_host)
+
 	_build_detail_popups()
 
 func _build_top_actions() -> void:
@@ -780,7 +792,7 @@ func _build_top_actions() -> void:
 	top_actions.offset_left = -STATS_BTN_SIZE.x - 8
 	top_actions.offset_top = 2
 	top_actions.offset_right = -8
-	top_actions.offset_bottom = 2 + STATS_BTN_SIZE.y * 3 + MERC_BTN_SIZE.y + 18
+	top_actions.offset_bottom = 2 + STATS_BTN_SIZE.y * 4 + MERC_BTN_SIZE.y + 24
 	top_actions.alignment = BoxContainer.ALIGNMENT_BEGIN
 	top_actions.add_theme_constant_override("separation", 6)
 	# 加到 self 最上层（z_index 高）：列向下延伸超出顶部条，避免被棋盘 body 拦截点击
@@ -810,6 +822,10 @@ func _build_top_actions() -> void:
 	merc_lbl.add_theme_constant_override("outline_size", 3)
 	merc_btn.add_child(merc_lbl)
 	top_actions.add_child(merc_btn)
+	# 队伍佣兵检阅台：教学模式没有队友，直接藏
+	var team_mercs_btn := _make_framed_text_button(tr("ui_team_mercs"), STATS_BTN_PATH, STATS_BTN_SIZE, 16, _toggle_team_mercs_picker)
+	team_mercs_btn.visible = not GameState.tutorial_mode
+	top_actions.add_child(team_mercs_btn)
 
 func _toggle_mute() -> void:
 	# 全局静音开关：静音 Master 总线（BGM + 音效都停），引擎级状态，切场景仍生效
@@ -1704,6 +1720,8 @@ func _refresh_mercenary_overlay() -> void:
 
 func _toggle_merc_picker() -> void:
 	_merc_picker_open = not _merc_picker_open
+	if _merc_picker_open:
+		_close_team_mercs_picker()
 	_refresh_merc_panel()
 
 func _close_merc_picker() -> void:
@@ -1711,6 +1729,231 @@ func _close_merc_picker() -> void:
 		return
 	_merc_picker_open = false
 	_refresh_merc_panel()
+
+# ─── team mercs review stage ──────────────────────────────────────────────────
+
+func _build_team_mercs_overlay(center_host: Control) -> void:
+	_team_mercs_overlay = PanelContainer.new()
+	_team_mercs_overlay.visible = false
+	_team_mercs_overlay.z_index = 40
+	_team_mercs_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	_team_mercs_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var overlay_style := StyleBoxFlat.new()
+	overlay_style.bg_color = Color(0.055, 0.065, 0.075, 0.98)
+	overlay_style.border_color = Color(0.42, 0.50, 0.58, 0.92)
+	overlay_style.set_border_width_all(2)
+	overlay_style.set_corner_radius_all(4)
+	_team_mercs_overlay.add_theme_stylebox_override("panel", overlay_style)
+	center_host.add_child(_team_mercs_overlay)
+	var overlay_margin := MarginContainer.new()
+	overlay_margin.add_theme_constant_override("margin_left", 12)
+	overlay_margin.add_theme_constant_override("margin_top", 10)
+	overlay_margin.add_theme_constant_override("margin_right", 12)
+	overlay_margin.add_theme_constant_override("margin_bottom", 12)
+	_team_mercs_overlay.add_child(overlay_margin)
+	var overlay_box := VBoxContainer.new()
+	overlay_box.add_theme_constant_override("separation", 8)
+	overlay_margin.add_child(overlay_box)
+	var overlay_title := Label.new()
+	overlay_title.text = tr("ui_team_mercs")
+	overlay_title.add_theme_font_size_override("font_size", 18)
+	overlay_box.add_child(overlay_title)
+	var stage_holder := Control.new()
+	stage_holder.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	overlay_box.add_child(stage_holder)
+	var viewport_container := SubViewportContainer.new()
+	viewport_container.stretch = true
+	viewport_container.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	viewport_container.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stage_holder.add_child(viewport_container)
+	_team_mercs_viewport = SubViewport.new()
+	_team_mercs_viewport.own_world_3d = true
+	_team_mercs_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	viewport_container.add_child(_team_mercs_viewport)
+	# 灯光/环境照抄备战河流视口，让模型观感一致；背景色同弹窗底色，视觉上无缝
+	var env_node := WorldEnvironment.new()
+	var stage_env := Environment.new()
+	stage_env.background_mode = Environment.BG_COLOR
+	stage_env.background_color = Color(0.055, 0.065, 0.075)
+	stage_env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	stage_env.ambient_light_color = Color(0.58, 0.68, 0.61)
+	stage_env.ambient_light_energy = 0.40
+	stage_env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	env_node.environment = stage_env
+	_team_mercs_viewport.add_child(env_node)
+	var key_light := DirectionalLight3D.new()
+	key_light.light_color = Color(1.0, 0.92, 0.76)
+	key_light.light_energy = 0.64
+	key_light.rotation_degrees = Vector3(-52.0, -28.0, 0.0)
+	key_light.shadow_enabled = false
+	_team_mercs_viewport.add_child(key_light)
+	var fill_light := DirectionalLight3D.new()
+	fill_light.light_color = Color(0.48, 0.68, 0.82)
+	fill_light.light_energy = 0.18
+	fill_light.rotation_degrees = Vector3(-38.0, 142.0, 0.0)
+	fill_light.shadow_enabled = false
+	_team_mercs_viewport.add_child(fill_light)
+	var camera := Camera3D.new()
+	camera.fov = TEAM_MERCS_CAMERA_FOV
+	camera.look_at_from_position(TEAM_MERCS_CAMERA_POSITION, TEAM_MERCS_CAMERA_TARGET, Vector3.UP)
+	camera.current = true
+	_team_mercs_viewport.add_child(camera)
+	_team_mercs_stage_root = Node3D.new()
+	_team_mercs_stage_root.name = "TeamMercsStageRoot"
+	_team_mercs_stage_root.scale = Vector3.ONE * TEAM_MERCS_STAGE_SCALE
+	_team_mercs_viewport.add_child(_team_mercs_stage_root)
+	_team_mercs_empty_label = Label.new()
+	_team_mercs_empty_label.text = tr("ui_team_mercs_empty")
+	_team_mercs_empty_label.visible = false
+	_team_mercs_empty_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_team_mercs_empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_team_mercs_empty_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_team_mercs_empty_label.add_theme_font_size_override("font_size", 18)
+	_team_mercs_empty_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stage_holder.add_child(_team_mercs_empty_label)
+	# 30Hz 渲染节流：和河流视口同一采样率，动画推进不受影响
+	_team_mercs_render_timer = Timer.new()
+	_team_mercs_render_timer.wait_time = 1.0 / PREP_RIVER_RENDER_HZ
+	_team_mercs_render_timer.timeout.connect(_on_team_mercs_render_tick)
+	add_child(_team_mercs_render_timer)
+	if not NetworkService.team_prep_mercs_changed.is_connected(_on_team_prep_mercs_changed):
+		NetworkService.team_prep_mercs_changed.connect(_on_team_prep_mercs_changed)
+
+func _on_team_mercs_render_tick() -> void:
+	if _team_mercs_open and _team_mercs_viewport != null and is_visible_in_tree():
+		_team_mercs_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+
+func _on_team_prep_mercs_changed() -> void:
+	if _team_mercs_open:
+		_refresh_team_mercs_overlay()
+
+func _toggle_team_mercs_picker() -> void:
+	_team_mercs_open = not _team_mercs_open
+	if _team_mercs_open:
+		_close_merc_picker()
+	_refresh_team_mercs_overlay()
+
+func _close_team_mercs_picker() -> void:
+	if not _team_mercs_open:
+		return
+	_team_mercs_open = false
+	_refresh_team_mercs_overlay()
+
+func _refresh_team_mercs_overlay() -> void:
+	if _team_mercs_overlay == null:
+		return
+	_team_mercs_overlay.visible = _team_mercs_open
+	if not _team_mercs_open:
+		# 关闭即清场：模型的 AnimationPlayer 不渲染也吃 CPU，不能留在树里空转
+		_team_mercs_stage_signature = "unset"
+		if _team_mercs_render_timer != null:
+			_team_mercs_render_timer.stop()
+		if _team_mercs_viewport != null:
+			_team_mercs_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+		if _team_mercs_stage_root != null:
+			for child in _team_mercs_stage_root.get_children():
+				child.queue_free()
+		return
+	_rebuild_team_mercs_stage()
+	if _team_mercs_render_timer != null and _team_mercs_render_timer.is_stopped():
+		_team_mercs_render_timer.start()
+
+func _team_mercs_entries() -> Array:
+	# 自己的佣兵直接读本地状态（永远最新）；队友的走备战期同步。
+	# AI/占位座位不会有同步数据，自然空着。
+	var my_slot := NetworkService.team_local_slot if NetworkService.team_active else 0
+	if my_slot < 0:
+		my_slot = 0
+	var first := 0 if my_slot < 3 else 3
+	var out: Array = []
+	for slot in range(first, first + 3):
+		var ids: Array = []
+		if slot == my_slot:
+			for cell in GameState.mercenary_slots:
+				if typeof(cell) == TYPE_DICTIONARY:
+					ids.append(str((cell as Dictionary).get("id", "")))
+		else:
+			ids = NetworkService.team_prep_merc_ids(slot, GameState.round_index)
+		for i in ids.size():
+			out.append({"slot": slot, "index": i, "id": str(ids[i])})
+	return out
+
+func _rebuild_team_mercs_stage() -> void:
+	if _team_mercs_stage_root == null:
+		return
+	var entries := _team_mercs_entries()
+	var sig := JSON.stringify([GameState.round_index, entries])
+	if sig == _team_mercs_stage_signature:
+		return
+	_team_mercs_stage_signature = sig
+	for child in _team_mercs_stage_root.get_children():
+		child.queue_free()
+	if _team_mercs_empty_label != null:
+		_team_mercs_empty_label.visible = entries.is_empty()
+	var defs := {}
+	for row in (DataRegistry.get_table("mercenaries").get("mercenaries", []) as Array):
+		defs[str((row as Dictionary).get("id", ""))] = row
+	var taken: Array = []
+	for entry_value in entries:
+		var entry: Dictionary = entry_value
+		var def_value = defs.get(str(entry.get("id", "")))
+		if typeof(def_value) != TYPE_DICTIONARY:
+			continue
+		var def: Dictionary = def_value
+		var slot := int(entry.get("slot", 0))
+		# 每回合固定的随机站位：种子=回合+槽位+序号，重开弹窗不变，
+		# 后买的佣兵也不会挪动先前佣兵的位置。
+		var rng := RandomNumberGenerator.new()
+		rng.seed = hash("team_mercs_%d_%d_%d" % [GameState.round_index, slot, int(entry.get("index", 0))])
+		var pos := _team_mercs_spot(rng, taken)
+		taken.append(pos)
+		var cell := {"id": str(entry.get("id", "")), "star": 1, "def": def, "is_mercenary": true}
+		var pivot := _make_prep_board_model(cell, def)
+		if pivot == null:
+			continue
+		var name_label := pivot.find_child("NameLabel3D", true, false) as Label3D
+		if name_label != null:
+			name_label.visible = false
+		var star_label := pivot.find_child("StarLabel3D", true, false) as Label3D
+		if star_label != null:
+			star_label.visible = false
+		pivot.position = pos
+		pivot.rotation_degrees = Vector3(0.0, float(def.get("model_base_yaw", 180.0)) + rng.randf_range(-20.0, 20.0), 0.0)
+		_team_mercs_stage_root.add_child(pivot)
+		_team_mercs_stage_root.add_child(_make_team_mercs_plate(slot, pos))
+
+func _team_mercs_spot(rng: RandomNumberGenerator, taken: Array) -> Vector3:
+	var candidate := Vector3.ZERO
+	for attempt in 24:
+		candidate = Vector3(
+			rng.randf_range(-TEAM_MERCS_AREA_HALF.x, TEAM_MERCS_AREA_HALF.x),
+			0.0,
+			rng.randf_range(-TEAM_MERCS_AREA_HALF.y, TEAM_MERCS_AREA_HALF.y)
+		)
+		var clear := true
+		for taken_pos in taken:
+			if candidate.distance_to(taken_pos) < TEAM_MERCS_MIN_DIST:
+				clear = false
+				break
+		if clear:
+			return candidate
+	return candidate
+
+func _make_team_mercs_plate(slot: int, pos: Vector3) -> MeshInstance3D:
+	var plate := MeshInstance3D.new()
+	var plate_mesh := CylinderMesh.new()
+	plate_mesh.top_radius = TEAM_MERCS_PLATE_RADIUS
+	plate_mesh.bottom_radius = TEAM_MERCS_PLATE_RADIUS
+	plate_mesh.height = TEAM_MERCS_PLATE_HEIGHT
+	plate.mesh = plate_mesh
+	var plate_material := StandardMaterial3D.new()
+	plate_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	plate_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	var slot_color := GameConstants.team_slot_color(slot)
+	plate_material.albedo_color = Color(slot_color.r, slot_color.g, slot_color.b, 0.92)
+	plate.material_override = plate_material
+	plate.position = Vector3(pos.x, TEAM_MERCS_PLATE_HEIGHT * 0.5, pos.z)
+	return plate
 
 func _refresh_treasure_panel() -> void:
 	if _treasure_overlay == null:

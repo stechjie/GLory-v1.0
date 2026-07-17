@@ -360,6 +360,13 @@ var _merc_overlay_grid: GridContainer
 var _merc_count_label: Label
 var _merc_button: Button
 var _merc_picker_open := false
+var _team_mercs_overlay: PanelContainer
+var _team_mercs_viewport: SubViewport
+var _team_mercs_stage_root: Node3D
+var _team_mercs_empty_label: Label
+var _team_mercs_render_timer: Timer
+var _team_mercs_open := false
+var _team_mercs_stage_signature := "unset"
 var _treasure_overlay: ColorRect
 var _treasure_timer_lbl: Label
 var _treasure_choice_row: HBoxContainer
