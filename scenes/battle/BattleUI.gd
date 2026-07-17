@@ -58,6 +58,9 @@ var _top5_atk_lbl: RichTextLabel
 # (4) When the local player is on the top (canonical "enemy") side of a PvP replay,
 # flip the arena vertically so THEIR units always appear at the bottom.
 var _arena_flip_y := false
+# 观战敌方战场中（BattleScreen 切镜头置位）。渲染层据此反转敌我配色：
+# 敌方棋子显示红色阵营，他们打的怪显示绿色阵营。
+var _watching_rival := false
 var _arena: Control
 var _title_lbl: Label
 var _battle_state_lbl: Label

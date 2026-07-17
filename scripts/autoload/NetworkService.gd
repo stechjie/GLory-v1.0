@@ -945,11 +945,13 @@ signal team_replay_received
 var team_boards: Dictionary = {}          # slot(int) -> snapshot Dictionary (after broadcast)
 var _team_boards_collecting: Dictionary = {}
 var team_replay: Dictionary = {}          # this client's team replay (B3, host-authoritative)
+var team_replay_rival: Dictionary = {}    # 敌方队伍同回合的 replay（战斗中切镜头观战用）
 
 func team_begin_round() -> void:
 	team_boards = {}
 	_team_boards_collecting = {}
 	team_replay = {}
+	team_replay_rival = {}
 	team_prep_mercs = {}
 	# 权威回合对齐：本地回合号落后服务器（重连/漏包后遗症）时，提交棋盘会被
 	# wrong_round 拒收、整轮卡死。进新回合是安全的对齐时机（不会打断战斗播放）。
@@ -993,11 +995,12 @@ func team_broadcast_replays(replay_a: Dictionary, replay_b: Dictionary) -> void:
 		return
 	for peer_id in _team_peer_slot:
 		var slot: int = _team_peer_slot[peer_id]
-		_rpc_team_replay.rpc_id(peer_id, replay_a if slot < 3 else replay_b)
+		_rpc_team_replay.rpc_id(peer_id, replay_a if slot < 3 else replay_b, replay_b if slot < 3 else replay_a)
 
 @rpc("authority", "call_remote", "reliable")
-func _rpc_team_replay(replay: Dictionary) -> void:
+func _rpc_team_replay(replay: Dictionary, rival_replay: Dictionary = {}) -> void:
 	team_replay = replay
+	team_replay_rival = rival_replay
 	_net_log("client received replay round=%d kind=%s" % [GameState.round_index, str(replay.get("kind", ""))])
 	team_replay_received.emit()
 
@@ -1169,7 +1172,7 @@ func _room_compute_and_broadcast_replays(room: Dictionary) -> void:
 		if not _peer_connected(int(peer_id)):
 			continue
 		var slot := int((room.get("peer_slot", {}) as Dictionary)[peer_id])
-		_rpc_team_replay.rpc_id(int(peer_id), replay_a if slot < 3 else replay_b)
+		_rpc_team_replay.rpc_id(int(peer_id), replay_a if slot < 3 else replay_b, replay_b if slot < 3 else replay_a)
 		_rpc_receive_match_state.rpc_id(int(peer_id), match_states.get(slot, {}))
 		_net_log("replay/result/match_state sent room=%d round=%d peer=%d slot=%d" % [int(room.get("id", 0)), int(room.get("round_index", 1)), int(peer_id), slot])
 	room.boards = {}

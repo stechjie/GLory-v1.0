@@ -162,9 +162,12 @@ func _hp_color_for_team(team: String) -> Color:
 
 # (4) Team color from the VIEWER's point of view: the local player's own units keep
 # the friendly color and the opponent stays red, even when the arena is flipped.
+# 观战敌方战场时同样反转：敌队 replay 里 "player" 侧是敌方棋子（显示红色），
+# "enemy" 侧是他们打的怪（显示绿色）。_arena_flip_y 只在 PVP、_watching_rival
+# 只在 PVE/Boss 出现，两者不会同时为真。
 func _display_team(f: Dictionary) -> String:
 	var t := str(f.get("team", ""))
-	if _arena_flip_y:
+	if _arena_flip_y or _watching_rival:
 		return "player" if t == "enemy" else "enemy"
 	return t
 

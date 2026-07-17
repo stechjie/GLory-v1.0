@@ -331,9 +331,11 @@ func _prepare_team_battle_package() -> bool:
 		if not is_inside_tree():
 			return false
 		BattleSim.stamp_team_round_damages(local_a, local_b)
+		NetworkService.team_replay_rival = local_b
 		return _store_team_battle_package(local_a)
 
 	NetworkService.team_replay = {}
+	NetworkService.team_replay_rival = {}
 	NetworkService.team_submit_board(NetProtocol.team_board_submission(GameState.board_slots, GameState.mercenary_slots))
 	_set_battle_data_progress(0.25)
 	var my_team := 0 if NetworkService.team_local_slot < 3 else 1
@@ -350,6 +352,7 @@ func _prepare_team_battle_package() -> bool:
 			return false
 		BattleSim.stamp_team_round_damages(replay_a, replay_b)
 		NetworkService.team_broadcast_replays(replay_a, replay_b)
+		NetworkService.team_replay_rival = replay_b if my_team == 0 else replay_a
 		return _store_team_battle_package(replay_a if my_team == 0 else replay_b)
 	return await _wait_for_team_replay()
 

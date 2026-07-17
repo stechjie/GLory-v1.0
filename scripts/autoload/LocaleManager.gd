@@ -122,6 +122,8 @@ func _zh_strings() -> Dictionary:
 		"lobby_slot_empty": "%s · 空(点击坐下)",
 		# 战斗 HUD
 		"battle_skip": "跳过画面",
+		"battle_view_rival": "观战敌方",
+		"battle_view_own": "返回我方",
 		"battle_team_hp": "团队法阵 HP  %d / %d",
 		"battle_state": "我方 %d / 敌方 %d · 时间 %.1fs%s",
 		"battle_ended_suffix": " · 已结束",
@@ -374,6 +376,8 @@ func _en_strings() -> Dictionary:
 		"lobby_slot_empty": "%s · Empty (tap to sit)",
 		# Battle HUD
 		"battle_skip": "Skip",
+		"battle_view_rival": "Watch Rivals",
+		"battle_view_own": "Back to Allies",
 		"battle_team_hp": "Team HP  %d / %d",
 		"battle_state": "Allies %d / Enemies %d · %.1fs%s",
 		"battle_ended_suffix": " · ended",

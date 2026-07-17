@@ -7,6 +7,11 @@ var _replay_mode := false
 var _replay_frame := 0
 var _replay_by_uid: Dictionary = {}
 var _battle_setup_ready := false
+# 切镜头观战：_replay 永远是"正在播放"的那份；自己队伍的原始 replay 存在
+# _replay_own（结算/跳过必须用它），敌方队伍的存在 _replay_rival。
+var _replay_own: Dictionary = {}
+var _replay_rival: Dictionary = {}
+var _view_toggle_btn: Button
 const TEAM_REPLAY_WAIT_TIMEOUT_SEC := 20.0
 
 func _ready() -> void:
@@ -38,9 +43,11 @@ func _ready() -> void:
 			if not is_inside_tree():
 				return
 			BattleSim.stamp_team_round_damages(local_a, local_b)
+			NetworkService.team_replay_rival = local_b
 			_start_replay(local_a)
 			return
 		NetworkService.team_replay = {}
+		NetworkService.team_replay_rival = {}
 		NetworkService.team_submit_board(NetProtocol.team_board_submission(GameState.board_slots, GameState.mercenary_slots))
 		var my_team := 0 if NetworkService.team_local_slot < 3 else 1
 		if NetworkService.is_host and not bool(NetworkService.get("_dedicated_server")):
@@ -56,6 +63,7 @@ func _ready() -> void:
 				return
 			BattleSim.stamp_team_round_damages(replay_a, replay_b)
 			NetworkService.team_broadcast_replays(replay_a, replay_b)
+			NetworkService.team_replay_rival = replay_b if my_team == 0 else replay_a
 			_start_replay(replay_a if my_team == 0 else replay_b)
 		else:
 			# Client waits for the host's replay, then plays it.
@@ -119,12 +127,17 @@ func _process(delta: float) -> void:
 	if _replay_mode:
 		_sim_accumulator += delta * PLAYBACK_SPEED
 		var frames: Array = _replay.get("frames", [])
-		while _sim_accumulator >= SIM_TICK_SEC and _replay_frame < frames.size():
+		# 时间线终点：看自己时就是己方 replay 的长度；观战敌方时取两边较长者，
+		# 敌方打得久也能看完，且己方结果照常在时间线走完后结算。
+		var own_size := (_replay_own.get("frames", []) as Array).size()
+		var timeline_end := maxi(frames.size(), own_size) if _watching_rival else frames.size()
+		while _sim_accumulator >= SIM_TICK_SEC and _replay_frame < timeline_end:
 			_sim_accumulator -= SIM_TICK_SEC
-			_apply_replay_frame(_replay_frame)
+			if _replay_frame < frames.size():
+				_apply_replay_frame(_replay_frame)
 			_replay_frame += 1
 		_refresh_visuals()
-		if _replay_frame >= frames.size():
+		if _replay_frame >= timeline_end:
 			_finish_replay()
 		return
 	# 3v3 只播服务器 replay;replay 没到时 _state 还是空 {}，绝不能跑本地模拟
@@ -156,8 +169,27 @@ func _start_replay(replay: Dictionary) -> void:
 	if _result_overlay_lbl != null:
 		_result_overlay_lbl.visible = false
 	_replay = replay
+	_replay_own = replay
+	_replay_rival = NetworkService.team_replay_rival if _valid_team_replay(NetworkService.team_replay_rival) else {}
+	_watching_rival = false
 	_replay_mode = true
 	_replay_frame = 0
+	_load_replay_roster(replay)
+	_prefetch_battle_assets()
+	# (4) PvP canonical arrangement puts team A at the bottom. If I'm on team B, flip
+	# the arena vertically so my own units are always the ones at the bottom.
+	var my_slot := NetworkService.team_local_slot if NetworkService.team_active else 0
+	var my_team := 0 if my_slot < 3 else 1
+	_arena_flip_y = str(replay.get("kind", "")) == "pvp" and my_team == 1
+	if not replay.get("frames", []).is_empty():
+		_apply_replay_frame(0)
+		_build()
+		_setup_view_toggle()
+		_start_battle_music()
+		_refresh_visuals()
+		_battle_setup_ready = true
+
+func _load_replay_roster(replay: Dictionary) -> void:
 	_replay_by_uid = {}
 	var players: Array = []
 	var enemies: Array = []
@@ -182,21 +214,75 @@ func _start_replay(replay: Dictionary) -> void:
 		else:
 			enemies.append(f)
 	_state = {"kind": str(replay.get("kind", "pve")), "player": players, "enemy": enemies, "elapsed": 0.0, "finished": false, "log": [], "visual_events": [], "unit_stats": {}}
-	_prefetch_battle_assets()
-	# (4) PvP canonical arrangement puts team A at the bottom. If I'm on team B, flip
-	# the arena vertically so my own units are always the ones at the bottom.
-	var my_slot := NetworkService.team_local_slot if NetworkService.team_active else 0
-	var my_team := 0 if my_slot < 3 else 1
-	_arena_flip_y = str(replay.get("kind", "")) == "pvp" and my_team == 1
-	if not replay.get("frames", []).is_empty():
-		_apply_replay_frame(0)
-		_build()
-		_start_battle_music()
-		_refresh_visuals()
-		_battle_setup_ready = true
 
 func _valid_team_replay(replay: Dictionary) -> bool:
 	return BattleReplayUtil.valid_team_replay(replay)
+
+# --- 切镜头观战敌方队伍 ------------------------------------------------------
+func _setup_view_toggle() -> void:
+	if _view_toggle_btn != null:
+		return
+	if not _valid_team_replay(_replay_rival):
+		return
+	# PVP/决赛双方同场对战，敌方就在画面里，没有第二个战场可切。
+	var kind := str(_replay_own.get("kind", ""))
+	if kind == "pvp" or kind == "final":
+		return
+	_view_toggle_btn = Button.new()
+	_view_toggle_btn.text = tr("battle_view_rival")
+	_view_toggle_btn.custom_minimum_size = Vector2(120, 36)
+	_view_toggle_btn.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	_view_toggle_btn.offset_left = -136
+	_view_toggle_btn.offset_top = 56
+	_view_toggle_btn.offset_right = -16
+	_view_toggle_btn.offset_bottom = 92
+	_view_toggle_btn.z_index = 100
+	_view_toggle_btn.pressed.connect(_on_view_toggle_pressed)
+	add_child(_view_toggle_btn)
+
+func _on_view_toggle_pressed() -> void:
+	if _finished or _return_emitted or not _replay_mode:
+		return
+	_set_watching_rival(not _watching_rival)
+
+func _set_watching_rival(watch_rival: bool) -> void:
+	if _watching_rival == watch_rival:
+		return
+	if watch_rival and not _valid_team_replay(_replay_rival):
+		return
+	_watching_rival = watch_rival
+	if _view_toggle_btn != null:
+		_view_toggle_btn.text = tr("battle_view_own") if _watching_rival else tr("battle_view_rival")
+	_switch_active_replay(_replay_rival if _watching_rival else _replay_own)
+
+func _switch_active_replay(replay: Dictionary) -> void:
+	_clear_unit_visuals()
+	_replay = replay
+	_load_replay_roster(replay)
+	_prefetch_battle_assets()
+	var frames: Array = replay.get("frames", [])
+	if not frames.is_empty():
+		# 两份 replay 同为 0.1s/帧的时间线，直接续在当前进度上（短的那份停在末帧）。
+		_apply_replay_frame(clampi(_replay_frame - 1, 0, frames.size() - 1))
+	_refresh_visuals()
+
+func _clear_unit_visuals() -> void:
+	# 两份 replay 的 uid 命名会撞车（都是 player_L0_0 这类），
+	# 切换前必须整场清空，否则旧模型会被错认成新阵容复用。
+	for node in _unit_nodes.values():
+		if node != null and is_instance_valid(node):
+			node.queue_free()
+	_unit_nodes.clear()
+	_hp_fill_by_id.clear()
+	for node in _battle_3d_models.values():
+		if node != null and is_instance_valid(node):
+			node.queue_free()
+	_battle_3d_models.clear()
+	_status_vfx_by_id.clear()
+	# VFX 差分缓存也按 uid 记上一帧血量/存活，不清会在切换瞬间放出假伤害/死亡特效。
+	_vfx_prev_units = {}
+	_vfx_seeded = false
+	_vfx_visual_event_index = 0
 
 func _show_team_waiting() -> void:
 	if _result_overlay_lbl == null:
@@ -253,6 +339,11 @@ func _fail_team_replay(reason: String) -> void:
 func _finish_replay() -> void:
 	if _return_emitted:
 		return
+	# 结算永远基于己方 replay：正观战敌方时先切回我方战场收尾。
+	if _watching_rival:
+		_set_watching_rival(false)
+	if _view_toggle_btn != null:
+		_view_toggle_btn.visible = false
 	_finished = true
 	_result = _replay.get("result", {})
 	_return_emitted = true
@@ -265,6 +356,8 @@ func _skip_animation() -> void:
 	if _replay_mode:
 		if _return_emitted:
 			return
+		if _watching_rival:
+			_set_watching_rival(false)
 		var frames: Array = _replay.get("frames", [])
 		if not frames.is_empty():
 			_apply_replay_frame(frames.size() - 1)
