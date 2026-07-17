@@ -357,6 +357,7 @@ var _merc_scroll: ScrollContainer
 var _merc_panel: VBoxContainer
 var _merc_overlay: PanelContainer
 var _merc_overlay_grid: GridContainer
+var _merc_count_label: Label
 var _merc_button: Button
 var _merc_picker_open := false
 var _treasure_overlay: ColorRect

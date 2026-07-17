@@ -91,6 +91,7 @@ func _zh_strings() -> Dictionary:
 		"ui_gamble": "慷慨命运 赌博：50%翻倍 / 50%损失80%",
 		# Prep 佣兵
 		"ui_choose_mercenary": "选择佣兵",
+		"ui_merc_hired_count": "已雇 %d/%d",
 		# Prep 宝藏
 		"ui_treasure_pick": "选择一件宝藏（长按看详情）",
 		"ui_treasure_refresh_free": "刷新（免费）",
@@ -340,6 +341,7 @@ func _en_strings() -> Dictionary:
 		"ui_gamble": "Fate Gamble: 50% double / 50% lose 80%",
 		# Prep Mercenary
 		"ui_choose_mercenary": "Choose Mercenary",
+		"ui_merc_hired_count": "Hired %d/%d",
 		# Prep Treasure
 		"ui_treasure_pick": "Pick a Treasure (hold to preview)",
 		"ui_treasure_refresh_free": "Refresh (Free)",

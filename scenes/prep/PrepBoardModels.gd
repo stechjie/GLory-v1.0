@@ -33,13 +33,6 @@ const STANDBY_SPOTS := [
 	Vector2(0.166, 0.677), Vector2(0.238, 0.677),
 ]
 const STANDBY_SPOT_RADIUS := 0.15
-# 佣兵 8 个落点（棋盘图 UV，base_full 右侧木阶上）——2列×4行
-const MERCENARY_SPOTS := [
-	Vector2(0.837, 0.298), Vector2(0.891, 0.298),
-	Vector2(0.837, 0.436), Vector2(0.891, 0.436),
-	Vector2(0.837, 0.574), Vector2(0.891, 0.574),
-	Vector2(0.837, 0.712), Vector2(0.891, 0.712),
-]
 const PREP_RIVER_VIEWPORT_SIZE := Vector2i(960, 540)
 const PREP_RIVER_RENDER_HZ := 30.0  # 备战 3D 视口的渲染采样率（动画推进不受影响）
 const PREP_RIVER_STAGE_SCALE := Vector3(3.5, 3.2, 3.2)
@@ -47,25 +40,13 @@ const PREP_RIVER_STAGE_POSITION := Vector3(0.5, 0.0, -0.5)
 const PREP_RIVER_CAMERA_POSITION := Vector3(0.0, 3.8, 2.0)    # 恢复原始 Prep Screen 视距
 const PREP_RIVER_CAMERA_TARGET := Vector3(0.0, -0.07, -0.03)
 const PREP_RIVER_CAMERA_FOV := 44.0
-const PREP_MERCENARY_MODEL_TARGET_HEIGHT := 0.12
 const PREP_MODEL_BASE_SCALE := 0.04
-const PREP_RIVER_MERCENARY_POSITIONS := [
-	Vector3(0.400, 0.035, -0.36),
-	Vector3(0.500, 0.035, -0.36),
-	Vector3(0.400, 0.035, -0.12),
-	Vector3(0.500, 0.035, -0.12),
-	Vector3(0.400, 0.035, 0.12),
-	Vector3(0.500, 0.035, 0.12),
-	Vector3(0.400, 0.035, 0.36),
-	Vector3(0.500, 0.035, 0.36),
-]
 
 var _prep_model_root: Node3D
 var _prep_standby_model_root: Node3D
 var _prep_relation_link_root: Node3D
 var _prep_river_viewport: SubViewport
 var _prep_river_stage_root: Node3D
-var _prep_river_mercenary_root: Node3D
 var _prep_river_camera: Camera3D
 var _prep_board_frame: Control
 var _prep_board_glow: CPUParticles2D
@@ -74,8 +55,6 @@ var _prep_standby_model_signatures: Dictionary = {}
 var _prep_river_background_ready := false
 var _prep_board_model_nodes: Dictionary = {}
 var _prep_board_model_signatures: Dictionary = {}
-var _prep_mercenary_model_nodes: Dictionary = {}
-var _prep_mercenary_model_signatures: Dictionary = {}
 var _prep_relation_link_nodes: Dictionary = {}
 var _prep_model_scene_cache: Dictionary = {}
 var _prep_animation_scene_cache: Dictionary = {}
@@ -144,10 +123,6 @@ func _setup_prep_river_background() -> void:
 	_prep_relation_link_root.rotation_degrees = board_rotation
 	_prep_relation_link_root.scale = board_scale
 	_prep_river_stage_root.add_child(_prep_relation_link_root)
-
-	_prep_river_mercenary_root = Node3D.new()
-	_prep_river_mercenary_root.name = "PrepRiverMercenaryRoot"
-	_prep_river_stage_root.add_child(_prep_river_mercenary_root)
 
 	var key_light := DirectionalLight3D.new()
 	key_light.name = "PrepRiverKeyLight"
@@ -506,77 +481,6 @@ func _refresh_prep_standby_models() -> void:
 			stale.queue_free()
 		_prep_standby_model_nodes.erase(key)
 		_prep_standby_model_signatures.erase(key)
-
-func _refresh_prep_mercenary_models() -> void:
-	if _prep_river_mercenary_root == null:
-		return
-	var active_slots: Dictionary = {}
-	for index in GameState.mercenary_slots.size():
-		var cell_value = GameState.mercenary_slots[index]
-		if typeof(cell_value) != TYPE_DICTIONARY or index >= PREP_RIVER_MERCENARY_POSITIONS.size():
-			continue
-		var cell: Dictionary = cell_value
-		var unit_def_value = cell.get("def", {})
-		if typeof(unit_def_value) != TYPE_DICTIONARY:
-			continue
-		var unit_def: Dictionary = unit_def_value
-		var model_path := str(unit_def.get("model", ""))
-		if not _prep_model_path_available(model_path):
-			continue
-		var signature := "%s|%s|%s" % [
-			str(cell.get("id", unit_def.get("id", ""))),
-			model_path,
-			str(unit_def.get("element", "")),
-		]
-		active_slots[index] = true
-		var existing := _prep_mercenary_model_nodes.get(index) as Node3D
-		if existing == null or str(_prep_mercenary_model_signatures.get(index, "")) != signature:
-			if existing != null:
-				existing.queue_free()
-			_prep_mercenary_model_nodes.erase(index)
-			_prep_mercenary_model_signatures.erase(index)
-			var model_node := _make_prep_mercenary_model(cell, unit_def)
-			if model_node != null:
-				_prep_river_mercenary_root.add_child(model_node)
-				_prep_mercenary_model_nodes[index] = model_node
-				_prep_mercenary_model_signatures[index] = signature
-				existing = model_node
-		if existing != null:
-			_position_prep_mercenary_model(existing, index, unit_def)
-			_request_prep_model_anchor_update(existing)
-
-	for key in _prep_mercenary_model_nodes.keys():
-		if active_slots.has(key):
-			continue
-		var stale := _prep_mercenary_model_nodes.get(key) as Node3D
-		if stale != null:
-			stale.queue_free()
-		_prep_mercenary_model_nodes.erase(key)
-		_prep_mercenary_model_signatures.erase(key)
-
-func _make_prep_mercenary_model(cell: Dictionary, unit_def: Dictionary) -> Node3D:
-	var pivot := _make_prep_board_model(cell, unit_def)
-	if pivot == null:
-		return null
-	pivot.name = "PrepMercenary_%s" % str(cell.get("id", "mercenary"))
-	var star_label := pivot.find_child("StarLabel3D", true, false) as Label3D
-	if star_label != null:
-		star_label.visible = false
-	var name_label := pivot.find_child("NameLabel3D", true, false) as Label3D
-	if name_label != null:
-		name_label.visible = false
-	return pivot
-
-func _position_prep_mercenary_model(model_node: Node3D, index: int, unit_def: Dictionary) -> void:
-	# 直接落到右石阶的 8 个点上（和棋盘其它区域同一套 3D 平面坐标）
-	if index >= 0 and index < MERCENARY_SPOTS.size() and _prep_river_mercenary_root != null and _prep_river_mercenary_root.is_inside_tree():
-		var spot: Vector2 = MERCENARY_SPOTS[index]
-		var world_pos := _board_plane_world_pos(spot.x, spot.y)
-		model_node.position = _prep_river_mercenary_root.to_local(world_pos)
-		model_node.position.y = unit_y_offset
-	elif index >= 0 and index < PREP_RIVER_MERCENARY_POSITIONS.size():
-		model_node.position = PREP_RIVER_MERCENARY_POSITIONS[index]
-	model_node.rotation_degrees = Vector3(0.0, float(unit_def.get("model_base_yaw", 180.0)), 0.0)
 
 func _request_prep_model_anchor_update(model_node: Node3D) -> void:
 	if bool(model_node.get_meta("prep_anchor_update_pending", false)):
