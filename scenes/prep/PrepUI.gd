@@ -751,6 +751,15 @@ func _build_rest(root: VBoxContainer) -> void:
 	overlay_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	overlay_title.add_theme_font_size_override("font_size", 18)
 	overlay_header.add_child(overlay_title)
+	# 右上角「已雇 N/8」：备战界面没有其它已购佣兵的提示，这里是唯一的计数反馈。
+	_merc_count_label = Label.new()
+	_merc_count_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_merc_count_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_merc_count_label.add_theme_font_size_override("font_size", 18)
+	_merc_count_label.add_theme_color_override("font_color", Color(0.96, 0.97, 1.0))
+	_merc_count_label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.95))
+	_merc_count_label.add_theme_constant_override("outline_size", 3)
+	overlay_header.add_child(_merc_count_label)
 	_merc_overlay_grid = GridContainer.new()
 	_merc_overlay_grid.columns = 4
 	_merc_overlay_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1653,9 +1662,16 @@ func _refresh_merc_panel() -> void:
 		_merc_scroll.visible = true
 	for child in _merc_panel.get_children():
 		child.queue_free()
-	# 佣兵「佣兵」开启按钮已移到右上角统计/战力列下面（盾牌框）
-	_refresh_prep_mercenary_models()
+	# 佣兵「佣兵」开启按钮已移到右上角统计/战力列下面（盾牌框）。
+	# 已购佣兵不在备战界面出模型，只在佣兵弹窗右上角显示「已雇 N/8」。
 	_refresh_mercenary_overlay()
+
+func _hired_mercenary_count() -> int:
+	var n := 0
+	for cell in GameState.mercenary_slots:
+		if cell != null:
+			n += 1
+	return n
 
 func _refresh_mercenary_overlay() -> void:
 	if _merc_overlay == null or _merc_overlay_grid == null:
@@ -1666,6 +1682,9 @@ func _refresh_mercenary_overlay() -> void:
 		for child in _merc_overlay_grid.get_children():
 			child.queue_free()
 		return
+	# 计数放在下面的签名短路之前，否则签名没变时会漏更新。
+	if _merc_count_label != null:
+		_merc_count_label.text = tr("ui_merc_hired_count") % [_hired_mercenary_count(), GameState.MERCENARY_SLOTS]
 	# 打开状态下只有影响卡片内容的数据变了才重建 12 张卡。
 	var sig := JSON.stringify([
 		GameState.gold,
