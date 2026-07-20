@@ -1,6 +1,10 @@
 class_name BattleSimSkills
 extends BattleSimShared
 
+static func _mark_vfx_target(caster: Dictionary, target: Dictionary) -> void:
+	# Visual metadata only. Combat selection and damage remain unchanged.
+	caster.vfx_skill_target_uid = str(target.get("uid", ""))
+
 static func _apply_death_servant_aura(servant: Dictionary, team_units: Array, d: Dictionary) -> void:
 	var amount := int(d.get("ally_def_bonus", 3))
 	var duration := float(d.get("ally_def_duration", 5.0))
@@ -13,9 +17,10 @@ static func _apply_death_servant_aura(servant: Dictionary, team_units: Array, d:
 		if abs(int(a.get("slot", -99)) - slot) <= 1:
 			StatusEffectService.add_status(a, "defense_flat_up", duration, {"amount": amount})
 
-static func _skill_lowest_ally_heal(_caster: Dictionary, allies: Array, d: Dictionary) -> void:
+static func _skill_lowest_ally_heal(caster: Dictionary, allies: Array, d: Dictionary) -> void:
 	var target := _lowest_hp_ratio(allies)
 	if target.is_empty(): return
+	_mark_vfx_target(caster, target)
 	var heal := maxi(1, int(float(target.max_hp) * float(d.get("heal_pct", 0.06))))
 	_heal_unit(target, heal)
 	if RngService.rng.randf() < float(d.get("cleanse_chance", 0.25)):
@@ -25,6 +30,7 @@ static func _skill_lowest_ally_heal(_caster: Dictionary, allies: Array, d: Dicti
 static func _skill_nearest_ally_bless(caster: Dictionary, allies: Array, d: Dictionary) -> void:
 	var target := _nearest(caster, allies.filter(func(a): return a != caster and bool(a.get("alive", false))))
 	if target.is_empty(): return
+	_mark_vfx_target(caster, target)
 	target.atk = maxi(1, int(round(float(target.atk) * (1.0 + float(d.get("atk_bonus", 0.12))))))
 	target.attack_speed = clampf(float(target.attack_speed) + float(d.get("aspd_bonus", 0.15)), 0.25, 2.5)
 	StatusEffectService.clear_negative_statuses(target)
@@ -44,6 +50,7 @@ static func _skill_random_attribute_bolt(caster: Dictionary, opponents: Array, d
 	if alive.is_empty():
 		return
 	var target: Dictionary = alive[RngService.rng.randi() % alive.size()]
+	_mark_vfx_target(caster, target)
 	DamageService.apply_damage(target, maxi(1, int(round(float(caster.atk) * float(d.get("damage_atk_pct", 3.0))))), false)
 	_apply_attribute_effect(["fire", "ice", "thunder", "poison"][RngService.rng.randi() % 4], caster, target)
 
@@ -51,15 +58,17 @@ static func _skill_random_attribute_bolt(caster: Dictionary, opponents: Array, d
 static func _skill_judgement(caster: Dictionary, opponents: Array, d: Dictionary) -> void:
 	var target := _nearest(caster, opponents)
 	if target.is_empty(): return
+	_mark_vfx_target(caster, target)
 	DamageService.apply_damage(target, maxi(1, int(float(caster.atk) * float(d.get("damage_atk_pct", 2.2)))), false)
 	caster.skill_stacks = mini(int(d.get("max_stacks", 5)), int(caster.get("skill_stacks", 0)) + 1)
 	caster.defense = int(round(float(caster.defense) * (1.0 + float(d.get("def_stack_pct", 0.06)))))
 
 
-static func _skill_archangel(_caster: Dictionary, allies: Array, d: Dictionary) -> void:
+static func _skill_archangel(caster: Dictionary, allies: Array, d: Dictionary) -> void:
 	var alive := _alive(allies)
 	if alive.is_empty(): return
 	var target: Dictionary = alive[RngService.rng.randi() % alive.size()]
+	_mark_vfx_target(caster, target)
 	StatusEffectService.add_status(target, "damage_reduction", float(d.get("duration", 6.0)), {"pct": float(d.get("damage_reduction", 0.5))})
 
 
@@ -73,6 +82,7 @@ static func _skill_god_king(caster: Dictionary, opponents: Array, d: Dictionary)
 static func _skill_silence_bolt(caster: Dictionary, opponents: Array, d: Dictionary, state: Dictionary) -> void:
 	var target := _nearest(caster, opponents)
 	if target.is_empty(): return
+	_mark_vfx_target(caster, target)
 	var dur := _dark_duration(float(d.get("silence_sec", 1.2)), caster, state)
 	StatusEffectService.add_status(target, "silence", dur, {})
 	DamageService.apply_damage(target, maxi(1, int(float(caster.atk) * float(d.get("damage_atk_pct", 1.7)))), false)
@@ -81,6 +91,7 @@ static func _skill_silence_bolt(caster: Dictionary, opponents: Array, d: Diction
 static func _skill_fear(caster: Dictionary, opponents: Array, d: Dictionary, state: Dictionary) -> void:
 	var target := _nearest(caster, opponents)
 	if target.is_empty(): return
+	_mark_vfx_target(caster, target)
 	var dur := _dark_duration(float(d.get("fear_sec", 1.5)), caster, state)
 	StatusEffectService.add_status(target, "stun", dur, {})
 	var away: Vector2 = (target.pos - caster.pos).normalized()
@@ -90,6 +101,7 @@ static func _skill_fear(caster: Dictionary, opponents: Array, d: Dictionary, sta
 static func _skill_stun(caster: Dictionary, opponents: Array, d: Dictionary, state: Dictionary) -> void:
 	var target := _nearest(caster, opponents)
 	if target.is_empty(): return
+	_mark_vfx_target(caster, target)
 	StatusEffectService.add_status(target, "stun", _dark_duration(float(d.get("stun_sec", 1.0)), caster, state), {})
 
 
@@ -106,6 +118,7 @@ static func _skill_blink_low_def_backline(caster: Dictionary, allies: Array, opp
 	var target := BattleSimulator._lowest_def_backline(caster, opponents)
 	if target.is_empty():
 		return false
+	_mark_vfx_target(caster, target)
 	var side := -1.0 if str(caster.get("team", "")) == "player" else 1.0
 	caster.pos = target.pos + Vector2(28.0 * side, 0.0)
 	var was_alive := bool(target.get("alive", false))
@@ -118,6 +131,7 @@ static func _skill_front_cone_stun(caster: Dictionary, opponents: Array, d: Dict
 	var target := _nearest(caster, opponents)
 	if target.is_empty():
 		return
+	_mark_vfx_target(caster, target)
 	DamageService.apply_damage(target, maxi(1, int(round(float(caster.atk) * float(d.get("damage_atk_pct", 1.5))))), false)
 	StatusEffectService.add_status(target, "stun", _dark_duration(float(d.get("stun_sec", 1.0)), caster, state), {})
 
@@ -125,6 +139,7 @@ static func _skill_element_meteor(caster: Dictionary, opponents: Array, d: Dicti
 	var target := _nearest(caster, opponents)
 	if target.is_empty():
 		return
+	_mark_vfx_target(caster, target)
 	for o in opponents:
 		if bool(o.get("alive", false)) and _can_target(caster, o, opponents) and target.pos.distance_to(o.pos) <= 180.0:
 			DamageService.apply_damage(o, maxi(1, int(d.get("skill_damage", 120))), true)

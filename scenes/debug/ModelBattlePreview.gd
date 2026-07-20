@@ -28,6 +28,12 @@ const VFX_SLASH_RING := preload("res://effects/vfx3d/modules/VFXSlashRing3D.gd")
 const VFX_ENERGY_BURST := preload("res://effects/vfx3d/modules/VFXEnergyBurst3D.gd")
 const VFX_GROUND_SIGIL := preload("res://effects/vfx3d/modules/VFXGroundSigil3D.gd")
 const VFX_PORTAL := preload("res://effects/vfx3d/modules/VFXPortal3D.gd")
+const VFX_PROJECTILE_3D := preload("res://effects/vfx3d/modules/VFXProjectile3D.gd")
+const VFX_METEOR_STRIKE := preload("res://effects/vfx3d/modules/VFXMeteorStrike3D.gd")
+const VFX_BARRIER_SHIELD := preload("res://effects/vfx3d/modules/VFXBarrierShield3D.gd")
+const VFX_FALLING_PILLAR := preload("res://effects/vfx3d/modules/VFXFallingPillar3D.gd")
+const VFX_ROAR_CONE := preload("res://effects/vfx3d/modules/VFXRoarCone3D.gd")
+const BOSS_SKILL_COMPOSER := preload("res://effects/vfx3d/boss/BossSkillVFXComposer3D.gd")
 const VFX_COMPOSITION := preload("res://effects/vfx3d/core/VFXComposition3D.gd")
 const VFX_PREVIEW_RECORDER := preload("res://effects/vfx3d/preview/VFXPreviewRecorder.gd")
 const VFX_VALIDATION := preload("res://effects/vfx3d/core/VFXValidationReport.gd")
@@ -45,6 +51,11 @@ const PROFILE_SLASH_RING := preload("res://effects/vfx3d/profiles/examples/slash
 const PROFILE_ENERGY_BURST := preload("res://effects/vfx3d/profiles/examples/energy_burst_heavy_example.tres")
 const PROFILE_GROUND_SIGIL := preload("res://effects/vfx3d/profiles/examples/ground_sigil_arcane_example.tres")
 const PROFILE_PORTAL := preload("res://effects/vfx3d/profiles/examples/portal_verdant_example.tres")
+const PROFILE_PROJECTILE_3D := preload("res://effects/vfx3d/profiles/examples/projectile_fire_example.tres")
+const PROFILE_METEOR_STRIKE := preload("res://effects/vfx3d/profiles/examples/meteor_strike_example.tres")
+const PROFILE_BARRIER_SHIELD := preload("res://effects/vfx3d/profiles/examples/barrier_shield_example.tres")
+const PROFILE_FALLING_PILLAR := preload("res://effects/vfx3d/profiles/examples/falling_pillar_example.tres")
+const PROFILE_ROAR_CONE := preload("res://effects/vfx3d/profiles/examples/roar_cone_example.tres")
 const RECIPE_FULL_STAGES := preload("res://effects/vfx3d/recipes/examples/full_skill_stages_demo.tres")
 const TARGET_HEIGHT := 1.32
 const TARGET_WIDTH := 1.06
@@ -283,6 +294,21 @@ func _build_vfx_test_panel() -> void:
 	vfx_select.add_item("Module: Energy Burst")
 	vfx_select.add_item("Module: Ground Sigil")
 	vfx_select.add_item("Module: Portal")
+	vfx_select.add_item("Module: Projectile 3D")
+	vfx_select.add_item("Module: Meteor Strike")
+	vfx_select.add_item("Module: Barrier Shield")
+	vfx_select.add_item("Module: Falling Pillar")
+	vfx_select.add_item("Module: Roar Cone")
+	vfx_select.add_item("Boss: Apocalypse Charge + Verdict")
+	vfx_select.add_item("Boss: Element Meteor")
+	vfx_select.add_item("Boss: Thunder Overload Counter")
+	vfx_select.add_item("Boss: Mirror Clone + Slash")
+	vfx_select.add_item("Boss: Holy Purify")
+	vfx_select.add_item("Boss: Rage Milestone")
+	vfx_select.add_item("Boss: Blood Rage + Lifesteal")
+	vfx_select.add_item("Boss: Soul Devour")
+	vfx_select.add_item("Boss: Twin Timer + Revive")
+	vfx_select.add_item("Validation: Moving Target Projectile")
 	select_row.add_child(vfx_select)
 	var action_row := HBoxContainer.new()
 	action_row.add_theme_constant_override("separation", 6)
@@ -481,6 +507,99 @@ func _on_vfx_play_pressed() -> void:
 			vfx_preview_effect = portal
 			portal.play_profile(PROFILE_PORTAL, {"target": target})
 			vfx_status_label.text = "Playing: Verdant Portal profile"
+		25:
+			var projectile_3d := VFX_PROJECTILE_3D.new()
+			projectile_3d.name = "PreviewProjectile3D"
+			vfx_preview_root.add_child(projectile_3d)
+			vfx_preview_effect = projectile_3d
+			projectile_3d.play_profile(PROFILE_PROJECTILE_3D, {"origin": Vector3(-0.52, 0.72, 0.0), "target": Vector3(1.25, 0.48, 0.0)})
+			vfx_status_label.text = "Playing: Layered Fire Projectile profile"
+		26:
+			var meteor_strike := VFX_METEOR_STRIKE.new()
+			meteor_strike.name = "PreviewMeteorStrike"
+			vfx_preview_root.add_child(meteor_strike)
+			vfx_preview_effect = meteor_strike
+			meteor_strike.play_profile(PROFILE_METEOR_STRIKE, {"target": Vector3(1.25, 0.18, 0.0)})
+			vfx_status_label.text = "Playing: Meteor Strike profile"
+		27:
+			var barrier_shield := VFX_BARRIER_SHIELD.new()
+			barrier_shield.name = "PreviewBarrierShield"
+			vfx_preview_root.add_child(barrier_shield)
+			vfx_preview_effect = barrier_shield
+			barrier_shield.play_profile(PROFILE_BARRIER_SHIELD, {"target": Vector3(-0.52, 0.18, 0.0)})
+			vfx_status_label.text = "Playing: Broken Arc Barrier profile"
+		28:
+			var falling_pillar := VFX_FALLING_PILLAR.new()
+			falling_pillar.name = "PreviewFallingPillar"
+			vfx_preview_root.add_child(falling_pillar)
+			vfx_preview_effect = falling_pillar
+			falling_pillar.play_profile(PROFILE_FALLING_PILLAR, {"target": Vector3(1.25, 0.18, 0.0)})
+			vfx_status_label.text = "Playing: Falling Pillar profile"
+		29:
+			var roar_cone := VFX_ROAR_CONE.new()
+			roar_cone.name = "PreviewRoarCone"
+			vfx_preview_root.add_child(roar_cone)
+			vfx_preview_effect = roar_cone
+			roar_cone.play_profile(PROFILE_ROAR_CONE, {"origin": Vector3(-0.52, 0.62, 0.0), "target": Vector3(1.25, 0.46, 0.0)})
+			vfx_status_label.text = "Playing: Directional Roar Cone profile"
+		30:
+			var boss_fx := _boss_composer_preview()
+			boss_fx.play_skill("apocalypse_charge", Vector3(-.52,.18,0), Vector3(-.52,.18,0))
+			await get_tree().create_timer(1.95).timeout
+			if is_instance_valid(boss_fx): boss_fx.play_skill("apocalypse_complete", Vector3(-.52,.18,0), Vector3(1.25,.18,0), {"targets":[Vector3(1.25,.18,0)]})
+			vfx_status_label.text = "Playing: Apocalypse charge and lane-local verdict"
+		31:
+			var boss_fx := _boss_composer_preview()
+			boss_fx.play_skill("element_meteor", Vector3(-.52,.18,0), Vector3(1.25,.18,0))
+			vfx_status_label.text = "Playing: Element Meteor composite"
+		32:
+			var boss_fx := _boss_composer_preview()
+			boss_fx.play_skill("overload_counter", left_slot.position, right_slot.position, {"target_node": right_slot})
+			vfx_status_label.text = "Playing: Thunder overload counter composite"
+		33:
+			var boss_fx := _boss_composer_preview()
+			boss_fx.play_skill("mirror_spawn", Vector3(-.52,.18,0), Vector3(-.52,.18,0))
+			await get_tree().create_timer(.45).timeout
+			if is_instance_valid(boss_fx): boss_fx.play_skill("mirror_slash", Vector3(-.52,.40,0), Vector3(1.25,.22,0))
+			vfx_status_label.text = "Playing: Mirror spawn and target slash"
+		34:
+			var boss_fx := _boss_composer_preview()
+			boss_fx.play_skill("holy_purify", Vector3(-.52,.18,0), Vector3(-.52,.18,0), {"targets":[Vector3(-.52,.18,0),Vector3(-1.15,.18,0)]})
+			vfx_status_label.text = "Playing: Holy purify ally layers"
+		35:
+			var boss_fx := _boss_composer_preview()
+			boss_fx.play_skill("rage_milestone", Vector3(-.52,.18,0), Vector3(1.25,.18,0), {"stacks":10})
+			vfx_status_label.text = "Playing: Rage milestone roar"
+		36:
+			var boss_fx := _boss_composer_preview()
+			boss_fx.play_skill("blood_rage", Vector3(-.52,.18,0), Vector3(-.52,.18,0))
+			await get_tree().create_timer(.34).timeout
+			if is_instance_valid(boss_fx): boss_fx.play_skill("blood_lifesteal", Vector3(-.52,.18,0), Vector3(1.25,.18,0))
+			vfx_status_label.text = "Playing: Blood rage and lifesteal return"
+		37:
+			var boss_fx := _boss_composer_preview()
+			boss_fx.play_skill("soul_devour", Vector3(-.52,.18,0), Vector3(1.25,.18,0))
+			vfx_status_label.text = "Playing: Soul fragment victim to Boss"
+		38:
+			var boss_fx := _boss_composer_preview()
+			boss_fx.play_skill("twin_timer", Vector3(-.52,.18,0), Vector3(1.25,.18,0))
+			await get_tree().create_timer(1.2).timeout
+			if is_instance_valid(boss_fx): boss_fx.play_skill("twin_revive", Vector3(-.52,.18,0), Vector3(-.52,.18,0))
+			vfx_status_label.text = "Playing: Twin timer, link and revive"
+		39:
+			var moving_ball := VFX_LIGHTNING_BALL.new()
+			moving_ball.name = "MovingTargetLightningBall"
+			vfx_preview_root.add_child(moving_ball)
+			vfx_preview_effect = moving_ball
+			moving_ball.play_ball(left_slot.position, right_slot.position, right_slot)
+			vfx_status_label.text = "Playing: exact moving model target tracking"
+
+func _boss_composer_preview() -> BossSkillVFXComposer3D:
+	var boss_fx := BOSS_SKILL_COMPOSER.new()
+	boss_fx.name = "PreviewBossSkillComposer"
+	vfx_preview_root.add_child(boss_fx)
+	vfx_preview_effect = boss_fx
+	return boss_fx
 
 func _play_preview_impact(target: Vector3) -> void:
 	var root := Node3D.new()

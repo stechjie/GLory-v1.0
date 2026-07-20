@@ -24,15 +24,16 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 
 	var damage_events: Array[Dictionary] = []
 	var death_events: Array[Dictionary] = []
+	var apocalypse_ended: Array[Dictionary] = []
 
 	for id: String in current.keys():
 		var now: Dictionary = current[id]
 		var prev: Dictionary = _vfx_prev_units.get(id, {})
 		if prev.is_empty():
 			if _vfx_seeded and str(now.get("skill_id", "")) == "twin_revive":
-				_spawn_boss_texture_variant(str(now.get("unit_id", "")), "revive", now.get("foot_pos", Vector2.ZERO))
+				_play_boss_procedural("twin_revive", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO))
 			if _vfx_seeded and id.contains("_mirror_"):
-				_spawn_boss_texture_variant("boss_mirror_lord", "split", now.get("foot_pos", Vector2.ZERO))
+				_play_boss_procedural("mirror_spawn", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO))
 			continue
 		var hp_delta := int(now.get("hp", 0)) - int(prev.get("hp", 0))
 		var shield_delta := int(now.get("shield", 0)) - int(prev.get("shield", 0))
@@ -46,34 +47,62 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 				"hit_pos": now.get("hit_pos", Vector2.ZERO),
 				"head_pos": now.get("head_pos", Vector2.ZERO),
 				"foot_pos": now.get("foot_pos", Vector2.ZERO),
+				"world_hit": now.get("world_hit", Vector3.ZERO),
+				"world_head": now.get("world_head", Vector3.ZERO),
+				"world_foot": now.get("world_foot", Vector3.ZERO),
+				"model_node": now.get("model_node"),
 				"team": str(now.get("team", "")),
+				"lane": int(now.get("lane", -1)),
 				"critical": critical,
 			})
 		elif hp_delta > 0:
-			_spawn_vfx("HOLY_HEAL", now.get("head_pos", Vector2.ZERO))
+			if sid_now == "blood_rage" and bool(now.get("blood_rage_active", false)):
+				var blood_source := _nearest_enemy_target(now, damage_events, current)
+				_play_boss_procedural("blood_lifesteal", now.get("world_foot", Vector3.ZERO), blood_source.get("world_hit", now.get("world_foot", Vector3.ZERO)), _boss_target_context(blood_source))
+			else:
+				_spawn_vfx("HOLY_HEAL", now.get("head_pos", Vector2.ZERO))
 		if shield_delta > 0:
 			_spawn_vfx("HOLY_SHIELD", now.get("head_pos", Vector2.ZERO))
 		if stack_delta > 0 and sid_now in ["rage_stack", "same_target_damage_stack"]:
 			if sid_now == "rage_stack":
-				_spawn_boss_texture_variant(str(now.get("unit_id", "")), "rage_stack", now.get("foot_pos", Vector2.ZERO))
+				var rage_stacks := int(now.get("skill_stacks", 0))
+				var rage_target := _nearest_enemy_target(now, damage_events, current)
+				if rage_stacks > 0 and rage_stacks % 5 == 0:
+					_play_boss_procedural("rage_milestone", now.get("world_foot", Vector3.ZERO), rage_target.get("world_foot", now.get("world_foot", Vector3.ZERO)), _boss_target_context(rage_target, {"stacks": rage_stacks}))
+				else:
+					_play_boss_procedural("rage_stack", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO), {"stacks": rage_stacks})
 			else:
 				_spawn_vfx("GROWTH_AURA", now.get("foot_pos", Vector2.ZERO))
-		if sid_now == "overload_counter" and stack_delta != 0:
+		if sid_now == "overload_counter" and stack_delta > 0:
+			_play_boss_procedural("overload_stack", now.get("world_cast", Vector3.ZERO), now.get("world_foot", Vector3.ZERO))
+		elif sid_now == "overload_counter" and stack_delta < 0:
 			var overload_target := _nearest_enemy_target(now, damage_events, current)
-			var overload_pos: Vector2 = overload_target.get("hit_pos", now.get("foot_pos", Vector2.ZERO))
-			_play_boss_procedural("lightning_ball", now.get("cast_pos", now.get("foot_pos", Vector2.ZERO)), overload_pos)
+			var overload_world: Vector3 = overload_target.get("world_foot", now.get("world_foot", Vector3.ZERO))
+			_play_boss_procedural("overload_counter", now.get("world_cast", Vector3.ZERO), overload_world, _boss_target_context(overload_target))
 		var prev_ratio := float(prev.get("hp", 0)) / float(maxi(1, int(prev.get("max_hp", 1))))
 		var now_ratio := float(now.get("hp", 0)) / float(maxi(1, int(now.get("max_hp", 1))))
 		if sid_now == "blood_rage" and prev_ratio > 0.35 and now_ratio <= 0.35:
-			_spawn_boss_texture_variant(str(now.get("unit_id", "")), "blood_rage", now.get("foot_pos", Vector2.ZERO))
+			_play_boss_procedural("blood_rage", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO))
 		if sid_now == "twin_revive" and not bool(prev.get("alive", true)) and bool(now.get("alive", false)):
-			_spawn_boss_texture_variant(str(now.get("unit_id", "")), "revive", now.get("foot_pos", Vector2.ZERO))
+			_play_boss_procedural("twin_revive", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO))
+		var prev_apocalypse := bool(prev.get("apocalypse_charging", false))
+		var now_apocalypse := bool(now.get("apocalypse_charging", false))
+		if sid_now == "apocalypse_charge" and not prev_apocalypse and now_apocalypse:
+			_play_boss_procedural("apocalypse_charge", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO))
+		elif sid_now == "apocalypse_charge" and prev_apocalypse and not now_apocalypse:
+			var apocalypse_result := now.duplicate(true)
+			apocalypse_result["charge_completed"] = float(state_snapshot.get("elapsed", 0.0)) + 0.05 >= float(prev.get("apocalypse_due", INF))
+			apocalypse_ended.append(apocalypse_result)
 		var prev_skill_ready := float(prev.get("skill_ready", 0.0))
 		var now_skill_ready := float(now.get("skill_ready", 0.0))
 		if now_skill_ready > prev_skill_ready + 0.1:
 			_play_skill_cast_vfx(now, damage_events, current)
 		if bool(prev.get("alive", true)) and not bool(now.get("alive", true)):
-			death_events.append({"pos": now.get("foot_pos", Vector2.ZERO), "killer_team": _opposite_team(str(now.get("team", "")))})
+			death_events.append({"pos": now.get("foot_pos", Vector2.ZERO), "world_foot": now.get("world_foot", Vector3.ZERO), "world_hit": now.get("world_hit", Vector3.ZERO), "killer_team": _opposite_team(str(now.get("team", ""))), "killer_uid": str(now.get("killer_uid", "")), "victim_id": id})
+			if sid_now == "twin_revive":
+				var partner := _living_twin_partner(now, current)
+				if not partner.is_empty():
+					_play_boss_procedural("twin_timer", now.get("world_foot", Vector3.ZERO), partner.get("world_foot", now.get("world_foot", Vector3.ZERO)), _boss_target_context(partner))
 			_spawn_vfx("DEATH_EXPLOSION", now.get("foot_pos", Vector2.ZERO))
 
 	for id: String in _vfx_prev_units.keys():
@@ -83,12 +112,22 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 		_spawn_vfx("DEATH_EXPLOSION", prev_missing.get("foot_pos", Vector2.ZERO))
 
 	_play_ranged_projectiles(_collect_attack_events(current, true), damage_events, current)
+	for apocalypse: Dictionary in apocalypse_ended:
+		var affected := _boss_damage_events_for_lane(apocalypse, damage_events)
+		if not bool(apocalypse.get("charge_completed", false)):
+			_play_boss_procedural("apocalypse_interrupt", apocalypse.get("world_foot", Vector3.ZERO), apocalypse.get("world_foot", Vector3.ZERO))
+		elif not affected.is_empty():
+			var impact_positions: Array = []
+			for event: Dictionary in affected:
+				impact_positions.append(event.get("world_foot", Vector3.ZERO))
+			_play_boss_procedural("apocalypse_complete", apocalypse.get("world_foot", Vector3.ZERO), impact_positions[0], {"targets": impact_positions})
 	if not death_events.is_empty():
 		for id: String in current.keys():
 			var boss_now: Dictionary = current[id]
 			if str(boss_now.get("skill_id", "")) == "soul_devour" and bool(boss_now.get("alive", false)):
 				for death_event: Dictionary in death_events:
-					_spawn_boss_texture_variant(str(boss_now.get("unit_id", "")), "devour", death_event.get("pos", boss_now.get("foot_pos", Vector2.ZERO)))
+					if str(death_event.get("killer_uid", "")) == str(boss_now.get("sim_uid", "")):
+						_play_boss_procedural("soul_devour", boss_now.get("world_foot", Vector3.ZERO), death_event.get("world_hit", boss_now.get("world_foot", Vector3.ZERO)))
 	_play_melee_slashes(_collect_attack_events(current, false), damage_events, current)
 	_vfx_prev_units = current
 
@@ -105,6 +144,7 @@ func _collect_vfx_units(state_snapshot: Dictionary) -> Dictionary:
 			var sim_pos := _visual_sim_pos_for_fighter(f)
 			var base_pos := _sim_to_arena(sim_pos)
 			var unit_node := _unit_node_for_id(id)
+			var model_node: Node3D = _battle_3d_models.get(id)
 			result[id] = {
 				"id": id,
 				"hp": int(f.get("hp", 0)),
@@ -112,10 +152,16 @@ func _collect_vfx_units(state_snapshot: Dictionary) -> Dictionary:
 				"shield": int(f.get("shield", 0)),
 				"alive": bool(f.get("alive", true)),
 				"pos": base_pos,
+				"sim_pos": sim_pos,
 				"foot_pos": _unit_anchor_global_position(unit_node, "FootAnchor", base_pos),
 				"cast_pos": _unit_anchor_global_position(unit_node, "CastAnchor", base_pos),
 				"hit_pos": _unit_anchor_global_position(unit_node, "HitAnchor", base_pos),
 				"head_pos": _unit_anchor_global_position(unit_node, "HeadAnchor", base_pos),
+				"world_foot": _unit_vfx_position(id, "FeetAnchor", sim_pos, 0.08),
+				"world_cast": _unit_vfx_position(id, "BodyAnchor", sim_pos, 0.82),
+				"world_hit": _unit_vfx_position(id, "BodyAnchor", sim_pos, 0.72),
+				"world_head": _unit_vfx_position(id, "HeadAnchor", sim_pos, 1.45),
+				"model_node": model_node,
 				"team": str(f.get("team", "")),
 				"attack_count": int(f.get("attack_count", 0)),
 				"range_px": float(f.get("range_px", 0.0)),
@@ -124,8 +170,36 @@ func _collect_vfx_units(state_snapshot: Dictionary) -> Dictionary:
 				"skill_every": int(f.get("def", {}).get("every", 0)),
 				"unit_id": str(f.get("id", "")),
 				"skill_stacks": int(f.get("skill_stacks", 0)),
+				"sim_uid": str(f.get("uid", "")),
+				"killer_uid": str(f.get("killer_uid", "")),
+				"attack_target_uid": str(f.get("vfx_attack_target_uid", "")),
+				"skill_target_uid": str(f.get("vfx_skill_target_uid", "")),
+				"lane": int(f.get("lane", -1)),
+				"blood_rage_active": bool(f.get("blood_rage_active", false)),
+				"apocalypse_charging": f.has("apocalypse_due"),
+				"apocalypse_due": float(f.get("apocalypse_due", -1.0)),
+				"twin_group_id": str(f.get("twin_group_id", "")),
+				"twin_member_index": int(f.get("twin_member_index", -1)),
 			}
 	return result
+
+func _unit_vfx_position(id: String, anchor_name: String, sim_pos: Vector2, fallback_y: float) -> Vector3:
+	var model_node: Node3D = _battle_3d_models.get(id)
+	if model_node != null and is_instance_valid(model_node):
+		var anchor := model_node.get_node_or_null(anchor_name)
+		if anchor is Node3D:
+			var anchor_global := (anchor as Node3D).global_position
+			if _battle_3d_vfx_root != null and is_instance_valid(_battle_3d_vfx_root):
+				return _battle_3d_vfx_root.to_local(anchor_global)
+			return anchor_global
+		var model_global := model_node.global_position
+		if _battle_3d_vfx_root != null and is_instance_valid(_battle_3d_vfx_root):
+			model_global = _battle_3d_vfx_root.to_local(model_global)
+		model_global.y += fallback_y
+		return model_global
+	var fallback := _sim_to_world_pos(sim_pos)
+	fallback.y = fallback_y
+	return fallback
 
 func _fighter_sim_pos(f: Dictionary) -> Vector2:
 	var raw = f.get("pos", Vector2.ZERO)
@@ -150,11 +224,13 @@ func _collect_attack_events(current: Dictionary, ranged: bool) -> Array[Dictiona
 		events.append({
 			"id": id,
 			"pos": now.get("cast_pos", Vector2.ZERO),
+			"world_cast": now.get("world_cast", Vector3.ZERO),
 			"team": str(now.get("team", "")),
 			"unit_id": str(now.get("unit_id", "")),
 			"skill_id": str(now.get("skill_id", "")),
 			"attack_count": int(now.get("attack_count", 0)),
 			"skill_every": int(now.get("skill_every", 0)),
+			"target_uid": str(now.get("attack_target_uid", "")),
 		})
 	return events
 
@@ -184,6 +260,9 @@ func _play_melee_slashes(attacks: Array[Dictionary], damage_events: Array[Dictio
 			continue
 		var angle := (target_pos - from_pos).angle()
 		_spawn_vfx("HIT_MELEE", target_pos, {"angle": angle})
+		if str(attack.get("skill_id", "")) == "mirror_clone" or str(attack.get("id", "")).contains("_mirror_"):
+			_play_boss_procedural("mirror_slash", attack.get("world_cast", Vector3.ZERO), target.get("world_foot", Vector3.ZERO), _boss_target_context(target))
+			continue
 		_play_attack_skill_texture(attack, target, true)
 
 func _nearest_enemy_damage_event(attack: Dictionary, damage_events: Array[Dictionary]) -> Dictionary:
@@ -202,6 +281,13 @@ func _nearest_enemy_damage_event(attack: Dictionary, damage_events: Array[Dictio
 	return best
 
 func _nearest_enemy_target(source: Dictionary, damage_events: Array[Dictionary], current: Dictionary) -> Dictionary:
+	for target_key in ["target_uid", "skill_target_uid", "attack_target_uid"]:
+		var exact_uid := str(source.get(target_key, ""))
+		if exact_uid.is_empty() or not current.has(exact_uid):
+			continue
+		var exact: Dictionary = current[exact_uid]
+		if str(exact.get("team", "")) != str(source.get("team", "")):
+			return exact
 	var damaged := _nearest_enemy_damage_event(source, damage_events)
 	if not damaged.is_empty():
 		return damaged
@@ -223,6 +309,10 @@ func _nearest_enemy_target(source: Dictionary, damage_events: Array[Dictionary],
 				"hit_pos": target.get("hit_pos", target_pos),
 				"head_pos": target.get("head_pos", target_pos),
 				"foot_pos": target.get("foot_pos", target_pos),
+				"world_hit": target.get("world_hit", Vector3.ZERO),
+				"world_head": target.get("world_head", Vector3.ZERO),
+				"world_foot": target.get("world_foot", Vector3.ZERO),
+				"model_node": target.get("model_node"),
 				"team": str(target.get("team", "")),
 			}
 	return best
@@ -248,27 +338,20 @@ func _play_skill_cast_vfx(unit: Dictionary, damage_events: Array[Dictionary], cu
 	var procedural_played := false
 	match sid:
 		"apocalypse_charge", "element_meteor", "mirror_clone", "holy_purify", "overload_counter", "twin_revive", "blood_rage", "soul_devour", "rage_stack":
-			# Boss VFX are driven by the skill cast snapshot. The texture config supplies staged delays,
-			# scale pulses, rotation and drift so the effect reads as an event, not a static sticker.
 			should_play_texture = false
 			if sid == "element_meteor":
 				var meteor_target := _nearest_enemy_target(unit, damage_events, current)
-				var meteor_pos: Vector2 = meteor_target.get("hit_pos", meteor_target.get("pos", texture_pos))
-				_play_boss_procedural("meteor_strike", texture_pos, meteor_pos)
+				var meteor_world: Vector3 = meteor_target.get("world_foot", unit.get("world_foot", Vector3.ZERO))
+				_play_boss_procedural("element_meteor", unit.get("world_cast", Vector3.ZERO), meteor_world, _boss_target_context(meteor_target))
 				procedural_played = true
-			elif sid == "overload_counter":
-				var lightning_target := _nearest_enemy_target(unit, damage_events, current)
-				if not lightning_target.is_empty():
-					var lightning_pos: Vector2 = lightning_target.get("hit_pos", lightning_target.get("pos", texture_pos))
-					_play_boss_procedural("lightning_ball", texture_pos, lightning_pos)
-					procedural_played = true
-			elif sid == "apocalypse_charge":
-				_spawn_boss_texture_variant(uid, "chargeup", unit.get("foot_pos", texture_pos))
-				_spawn_boss_texture_variant(uid, "shield", unit.get("foot_pos", texture_pos))
-				var apocalypse_target := _nearest_enemy_target(unit, damage_events, current)
-				_spawn_boss_texture_variant(uid, "blast", apocalypse_target.get("hit_pos", texture_pos))
-			else:
-				_spawn_skill_texture_for_unit_id(uid, unit.get("foot_pos", texture_pos))
+			elif sid == "holy_purify":
+				var ally_positions: Array = []
+				for ally_id: String in current.keys():
+					var ally: Dictionary = current[ally_id]
+					if bool(ally.get("alive", false)) and str(ally.get("team", "")) == str(unit.get("team", "")):
+						ally_positions.append(ally.get("world_foot", unit.get("world_foot", Vector3.ZERO)))
+				_play_boss_procedural("holy_purify", unit.get("world_foot", Vector3.ZERO), unit.get("world_foot", Vector3.ZERO), {"targets": ally_positions})
+				procedural_played = true
 		"random_attribute_bolt", "silence_bolt":
 			should_play_texture = false
 			var target_bolt := _nearest_enemy_target(unit, damage_events, current)
@@ -318,12 +401,56 @@ func _play_skill_cast_vfx(unit: Dictionary, damage_events: Array[Dictionary], cu
 		# The procedural sample owns its full staged animation; do not place a static Boss PNG on top.
 		pass
 
-func _play_boss_procedural(effect_id: String, origin_2d: Vector2, target_2d: Vector2) -> void:
+func _play_boss_procedural(effect_id: String, origin_value: Variant, target_value: Variant, context: Dictionary = {}) -> void:
 	if _battle_3d_vfx_root == null or not is_instance_valid(_battle_3d_vfx_root):
 		return
 	if not _battle_3d_vfx_root.has_method("play"):
 		return
-	_battle_3d_vfx_root.call("play", effect_id, _sim_to_world_pos(origin_2d), _sim_to_world_pos(target_2d))
+	var world_context := context.duplicate(false)
+	if world_context.has("targets"):
+		var world_targets: Array = []
+		for value in world_context["targets"]:
+			world_targets.append(_boss_world_position(value))
+		world_context["targets"] = world_targets
+	_battle_3d_vfx_root.call("play", effect_id, _boss_world_position(origin_value), _boss_world_position(target_value), world_context)
+
+func _boss_world_position(value: Variant) -> Vector3:
+	if value is Vector3:
+		return value
+	if value is Vector2:
+		# Legacy fallback only. Formal Boss effects now pass model/world anchors.
+		return _sim_to_world_pos(value)
+	return Vector3.ZERO
+
+func _boss_target_context(target: Dictionary, extra: Dictionary = {}) -> Dictionary:
+	var context := extra.duplicate(false)
+	var model_node = target.get("model_node")
+	if model_node is Node3D and is_instance_valid(model_node):
+		context["target_node"] = model_node
+	return context
+
+func _living_twin_partner(unit: Dictionary, current: Dictionary) -> Dictionary:
+	var group_id := str(unit.get("twin_group_id", ""))
+	var member_index := int(unit.get("twin_member_index", -1))
+	if group_id.is_empty() or member_index < 0:
+		return {}
+	for id: String in current.keys():
+		var candidate: Dictionary = current[id]
+		if bool(candidate.get("alive", false)) and str(candidate.get("team", "")) == str(unit.get("team", "")) and str(candidate.get("twin_group_id", "")) == group_id and int(candidate.get("twin_member_index", -1)) != member_index:
+			return candidate
+	return {}
+
+func _boss_damage_events_for_lane(unit: Dictionary, damage_events: Array[Dictionary]) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	var team := str(unit.get("team", ""))
+	var lane := int(unit.get("lane", -1))
+	for event: Dictionary in damage_events:
+		if str(event.get("team", "")) == team:
+			continue
+		if lane >= 0 and int(event.get("lane", -1)) >= 0 and int(event.get("lane", -1)) != lane:
+			continue
+		result.append(event)
+	return result
 
 func _play_skill_texture_vfx(unit: Dictionary, pos: Vector2) -> void:
 	var uid := str(unit.get("unit_id", ""))

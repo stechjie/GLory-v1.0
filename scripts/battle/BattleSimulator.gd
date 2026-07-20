@@ -255,6 +255,8 @@ static func _replay_capture_frame(state: Dictionary, frames: Array) -> void:
 			int(f.get("skill_stacks", 0)),
 			_replay_statuses(f),
 			int((frame_stats.get(str(f.get("uid", "")), {}) as Dictionary).get("damage_dealt", 0)),
+			str(f.get("vfx_attack_target_uid", "")),
+			str(f.get("vfx_skill_target_uid", "")),
 		])
 	frames.append(frame)
 
@@ -553,6 +555,9 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 			if dist > 0.001:
 				f.pos += delta.normalized() * step
 		elif elapsed >= float(f.next_attack):
+			# Render-only telemetry: preserve the simulator's exact chosen target so
+			# projectiles and hit VFX never have to guess from nearby damaged units.
+			f.vfx_attack_target_uid = str(target.get("uid", ""))
 			DamageService.begin_stat_context(state, f)
 			var was_alive := bool(target.get("alive", false))
 			var dealt := _perform_attack(f, target, state)

@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="VFXProfile3D" load_steps=2 format=3]
+[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="1"]
+[resource]
+script = ExtResource("1")
+profile_id = "barrier_shield_example"
+module_id = "barrier_shield"
+curve_name = "ease_out_back"
+dark_color = Color(0.045, 0.025, 0.11, 1)
+main_color = Color(0.18, 0.42, 1, 1)
+core_color = Color(0.72, 0.94, 1, 1)
+size = 1.12
+duration = 1.45
+particle_count = 12
+emission_energy = 3.2
+parameters = {"arc_layers": 4, "hit_time": 0.32, "break_time": 0.72}

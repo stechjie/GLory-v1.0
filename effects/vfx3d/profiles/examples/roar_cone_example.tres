@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="VFXProfile3D" load_steps=2 format=3]
+[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="1"]
+[resource]
+script = ExtResource("1")
+profile_id = "roar_cone_example"
+module_id = "roar_cone"
+curve_name = "explosive_out"
+dark_color = Color(0.08, 0.035, 0.012, 1)
+main_color = Color(0.92, 0.34, 0.055, 1)
+core_color = Color(1, 0.88, 0.42, 1)
+size = 1.12
+duration = 0.94
+particle_count = 16
+emission_energy = 3.7
+parameters = {"pressure_layers": 3, "dust_puffs": 5, "edge_sparks": 10}

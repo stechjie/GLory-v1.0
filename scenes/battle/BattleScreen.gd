@@ -207,6 +207,7 @@ func _load_replay_roster(replay: Dictionary) -> void:
 			"pos": Vector2.ZERO, "alive": false, "statuses": {}, "shield": 0,
 			"range_px": float(r.get("range_px", float(r.get("def", {}).get("range", 1)) * BattleSim.ATTACK_RANGE_SCALE)),
 			"attack_count": 0, "skill_ready": 0.0, "skill_stacks": 0,
+			"vfx_attack_target_uid": "", "vfx_skill_target_uid": "",
 		}
 		_replay_by_uid[uid] = f
 		if str(r.get("team", "")) == "player":
@@ -323,6 +324,10 @@ func _apply_replay_frame(i: int) -> void:
 			f.statuses = {}
 		if entry.size() > 10:
 			f.damage_dealt = int(entry[10])
+		if entry.size() > 11:
+			f.vfx_attack_target_uid = str(entry[11])
+		if entry.size() > 12:
+			f.vfx_skill_target_uid = str(entry[12])
 
 func _fail_team_replay(reason: String) -> void:
 	if _return_emitted:

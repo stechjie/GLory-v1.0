@@ -66,9 +66,10 @@ void fragment() {
 }
 """
 
-func play_ball(origin: Vector3, target: Vector3) -> void:
+func play_ball(origin: Vector3, target: Vector3, target_node: Node3D = null) -> void:
 	begin()
-	var direction := (target + Vector3(0.0, 0.30, 0.0) - (origin + Vector3(0.0, 1.05, 0.0))).normalized()
+	var tracked_target := _tracked_target_position(target, target_node)
+	var direction := (tracked_target + Vector3(0.0, 0.30, 0.0) - (origin + Vector3(0.0, 1.05, 0.0))).normalized()
 	var ball := Node3D.new()
 	ball.name = "BallMotion"
 	ball.position = origin + Vector3(0.0, 1.05, 0.0)
@@ -91,12 +92,6 @@ func play_ball(origin: Vector3, target: Vector3) -> void:
 	var library := AnimationLibrary.new()
 	var animation := Animation.new()
 	animation.length = 0.92
-	var move_track := animation.add_track(Animation.TYPE_VALUE)
-	animation.track_set_path(move_track, NodePath("BallMotion:position"))
-	animation.track_insert_key(move_track, 0.0, ball.position)
-	animation.track_insert_key(move_track, 0.18, ball.position.lerp(target + Vector3(0.0, 0.48, 0.0), 0.15))
-	animation.track_insert_key(move_track, 0.72, ball.position.lerp(target + Vector3(0.0, 0.34, 0.0), 0.90))
-	animation.track_insert_key(move_track, 0.92, target + Vector3(0.0, 0.30, 0.0))
 	var pulse_track := animation.add_track(Animation.TYPE_VALUE)
 	animation.track_set_path(pulse_track, NodePath("BallMotion/LightningBallShell:material_override:shader_parameter/pulse"))
 	animation.track_insert_key(pulse_track, 0.0, 0.2)
@@ -118,12 +113,31 @@ func play_ball(origin: Vector3, target: Vector3) -> void:
 	library.add_animation("play", animation)
 	player.add_animation_library("", library)
 	player.play("play")
-	await get_tree().create_timer(0.90).timeout
+	var start_position := ball.position
+	var travel_elapsed := 0.0
+	while travel_elapsed < 0.92:
+		await get_tree().process_frame
+		if _finished or not is_instance_valid(ball):
+			return
+		travel_elapsed += get_process_delta_time()
+		tracked_target = _tracked_target_position(tracked_target, target_node)
+		var ratio := clampf(travel_elapsed / 0.92, 0.0, 1.0)
+		var eased := ratio * ratio
+		ball.position = start_position.lerp(tracked_target + Vector3(0.0, 0.30, 0.0), eased)
 	if is_instance_valid(ball):
 		ball.queue_free()
-	_play_impact(target)
+	_play_impact(tracked_target)
 	await get_tree().create_timer(0.54).timeout
 	finish()
+
+func _tracked_target_position(fallback: Vector3, target_node: Node3D) -> Vector3:
+	if target_node == null or not is_instance_valid(target_node):
+		return fallback
+	var tracked := to_local(target_node.global_position)
+	# The supplied point owns the intended impact height; the model node supplies
+	# the live ground-plane position while it moves during the projectile flight.
+	tracked.y = fallback.y
+	return tracked
 
 func _play_impact(target: Vector3) -> void:
 	var impact := IMPACT.make(Color(0.42, 0.90, 1.0), 1.42)

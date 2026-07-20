@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="VFXProfile3D" load_steps=2 format=3]
+[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="1"]
+[resource]
+script = ExtResource("1")
+profile_id = "meteor_strike_example"
+module_id = "meteor_strike"
+curve_name = "explosive_out"
+dark_color = Color(0.13, 0.012, 0.006, 1)
+main_color = Color(0.92, 0.12, 0.018, 1)
+core_color = Color(1, 0.74, 0.18, 1)
+size = 1.18
+duration = 1.62
+particle_count = 22
+trail_length = 1.45
+emission_energy = 3.8
+ground_aligned = true
+parameters = {"warning_ratio": 0.42, "fall_ratio": 0.38, "debris_count": 12}
