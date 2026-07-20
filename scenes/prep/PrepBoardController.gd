@@ -170,8 +170,6 @@ func _set_standby_drop_hover(bench_index: int) -> void:
 
 func _set_shop_sell_mode(enabled: bool) -> void:
 	_shop_drag_sell_mode = enabled
-	if _shop_row != null:
-		_shop_row.visible = not enabled
 	if _shop_sell_overlay != null:
 		_shop_sell_overlay.visible = enabled
 

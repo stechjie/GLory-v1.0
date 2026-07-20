@@ -165,7 +165,7 @@ func after_battle(result: Dictionary) -> void:
 func current_text() -> String:
 	match step:
 		Step.BUY_3:
-			return _t("点击商店棋子，再点击采购按钮。买到的棋子会先进入待命区。已采购：%d/3" % mini(bought_units, 3), "Tap a shop unit, then tap Buy. Bought units go to standby first. Bought: %d/3" % mini(bought_units, 3))
+			return _t("点击下方「商店」按钮打开商店，点击商店棋子，再点击采购按钮。买到的棋子会先进入待命区。已采购：%d/3" % mini(bought_units, 3), "Tap the Shop button at the bottom to open the shop, tap a unit, then tap Buy. Bought units go to standby first. Bought: %d/3" % mini(bought_units, 3))
 		Step.PLACE_3:
 			return _t("从待命区把 3 个棋子拖到棋盘。棋盘上的棋子才会参战。", "Drag 3 units from standby onto the board. Only board units fight.")
 		Step.START_PVE_1:
@@ -720,6 +720,8 @@ func _cell_matches_upgrade(cell: Variant, id: String, star: int) -> bool:
 
 func _first_available_shop_control() -> Control:
 	var buttons := _prep.get("_shop_buttons") as Array
+	if buttons == null:
+		return null
 	for i in buttons.size():
 		if _shop_index_available(i):
 			var item = buttons[i]

@@ -346,6 +346,8 @@ var _bench_row: Control
 var _standby_frame: Control
 var _shop_row: HBoxContainer
 var _shop_panel: SellDropPanel
+var _shop_open_button: Button
+var _shop_picker_open := false
 var _shop_sell_overlay: PanelContainer
 var _buy_shop_button: Button
 var _refresh_shop_button: Button
@@ -378,6 +380,7 @@ var _bench_buttons: Array[BenchCellButton] = []
 var _bench_card_labels: Array[Label] = []
 var _shop_buttons: Array[DragButton] = []
 var _shop_portraits: Array[TextureRect] = []
+var _shop_card_frames: Array[TextureRect] = []
 var _shop_card_labels: Array[Label] = []
 var _shop_price_labels: Array[Label] = []
 var _shop_race_icons: Array[Control] = []
@@ -493,6 +496,15 @@ func _toggle_merc_picker() -> void:
 	pass
 
 func _close_merc_picker() -> void:
+	pass
+
+func _toggle_shop_picker() -> void:
+	pass
+
+func _close_shop_picker() -> void:
+	pass
+
+func _refresh_shop_picker() -> void:
 	pass
 
 func _refresh_treasure_panel() -> void:

@@ -132,6 +132,27 @@ func _input(event: InputEvent) -> void:
 		if team_should_check and not _team_mercs_overlay.get_global_rect().has_point(team_pointer):
 			_close_team_mercs_picker()
 		return
+	if _shop_picker_open and _shop_panel != null and _shop_panel.visible:
+		var shop_pointer := Vector2.ZERO
+		var shop_should_check := false
+		if event is InputEventMouseButton:
+			var shop_mouse := event as InputEventMouseButton
+			if shop_mouse.pressed and shop_mouse.button_index == MOUSE_BUTTON_LEFT:
+				shop_pointer = shop_mouse.position
+				shop_should_check = true
+		elif event is InputEventScreenTouch:
+			var shop_touch := event as InputEventScreenTouch
+			if shop_touch.pressed:
+				shop_pointer = shop_touch.position
+				shop_should_check = true
+		# 点弹窗和「商店」按钮之外才收起（按钮自己负责开关切换）。
+		# 弹窗非模态、不 return：这次点击继续往下传，可以直接点棋盘/拖单位。
+		if (
+			shop_should_check
+			and not _shop_panel.get_global_rect().has_point(shop_pointer)
+			and (_shop_open_button == null or not _shop_open_button.get_global_rect().has_point(shop_pointer))
+		):
+			_close_shop_picker()
 	if not _merc_picker_open or _merc_overlay == null or not _merc_overlay.visible:
 		return
 	var pointer_position := Vector2.ZERO

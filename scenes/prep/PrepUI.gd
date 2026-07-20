@@ -4,11 +4,20 @@ const PrepShopRaceIcon = preload("res://scenes/prep/PrepShopRaceIcon.gd")
 const PrepMoneyBagIcon = preload("res://scenes/prep/PrepMoneyBagIcon.gd")
 const SHOP_REFRESH_WIDTH := 112.0
 const SHOP_GOLD_WIDTH := 112.0
-const SHOP_CARD_INFO_HEIGHT := 42.0
-const SHOP_CARD_LOGO_RATIO := 1.0 / 3.0
-const SHOP_CARD_NAME_SPLIT := 0.5
 const SHOP_PANEL_BACKGROUND_PATH := "res://assets/ui/shop/btm_stone_frame_v4.png"
-const SHOP_BACKING_PATH := "res://assets/ui/shop/btm_stone_backing.png"    # 石框后面的深石灰垫底（挡住河流）
+const SHOP_POPUP_SIZE := Vector2(896, 230)   # 商店弹窗判定框：宽=屏宽70%(1280*0.7)、高=屏高40%(720*0.4)
+const SHOP_POPUP_OFFSET := Vector2(0, 7)     # 商店弹窗判定框中心的平移（正 x 右移、正 y 下移）
+const SHOP_BG_SIZE := Vector2(1000, 480)     # 背景卷轴显示尺寸（像素）：独立于判定框，改这里只变视觉不变判定
+const SHOP_BG_OFFSET := Vector2(0, 2)        # 背景相对弹窗中心的平移（正 x 右移、正 y 下移）
+const SHOP_BTN_SIZE := Vector2(200, 66)      # 底部「商店」按钮（木牌框）
+const SHOP_CARD_SIZE := Vector2(180, 180)    # 手牌卡尺寸（稀有度框比例 ~1:1）
+const SHOP_CARD_SEPARATION := 12             # 手牌卡间距
+const SHOP_CARD_FRAME_PATHS := {             # tier(1/2/3) → 普通/稀有/史诗框
+	1: "res://assets/ui/shop/card_frame_common.png",
+	2: "res://assets/ui/shop/card_frame_rare.png",
+	3: "res://assets/ui/shop/card_frame_epic.png",
+}
+const UNIT_PORTRAIT_DIR := "res://assets/ui/unit_portraits"   # 头像 = <dir>/<unit_id>.png
 const HP_FRAME_EMPTY_PATH := "res://assets/ui/buttons/btn_hp_empty.png"   # 血条石框（深色空槽）
 const HP_FRAME_RED_PATH := "res://assets/ui/buttons/btn_hp_red.png"       # 血条红条填充贴图
 const HP_FRAME_SIZE := Vector2(246, 82)                                   # 高清框 2172x724，比例 3.0
@@ -30,10 +39,6 @@ const TEAM_MERCS_AREA_HALF := Vector2(0.42, 0.24)
 const TEAM_MERCS_MIN_DIST := 0.15
 const TEAM_MERCS_PLATE_RADIUS := 0.055
 const TEAM_MERCS_PLATE_HEIGHT := 0.012
-const SHOP_BACKGROUND_OFFSET_LEFT := 0
-const SHOP_BACKGROUND_OFFSET_TOP := 0
-const SHOP_BACKGROUND_OFFSET_RIGHT := 0
-const SHOP_BACKGROUND_OFFSET_BOTTOM := 0
 const TREASURE_LOGO_DIRECTORY := "res://assets/ui/treasure_logos"
 const TREASURE_CARD_DIRECTORY := "res://assets/ui/treasure_cards"
 const TREASURE_LINKAGE_LOGOS := {
@@ -51,41 +56,6 @@ const TREASURE_LINKAGE_LOGOS := {
 }
 const PREP_SKY_BACKGROUND_PATH := "res://assets/board/prep_sky_cloud_background.png"
 const PVP_WARNING_FRAME_PATH := "res://assets/ui/pvp_warning_frame.png"
-
-const SHOP_PORTRAIT_PATHS := {
-	"god_priest": "res://assets/ui/unit_portraits/god_priest.png",
-	"god_priestess": "res://assets/ui/unit_portraits/god_priestess.png",
-	"god_guard": "res://assets/ui/unit_portraits/god_guard.png",
-	"god_aurora": "res://assets/ui/unit_portraits/god_aurora.png",
-	"god_angel": "res://assets/ui/unit_portraits/god_angel.png",
-	"god_arbiter": "res://assets/ui/unit_portraits/god_arbiter.png",
-	"god_archangel": "res://assets/ui/unit_portraits/god_archangel.png",
-	"god_king": "res://assets/ui/unit_portraits/god_king.png",
-	"dark_imp": "res://assets/ui/unit_portraits/dark_imp.png",
-	"dark_mage": "res://assets/ui/unit_portraits/dark_mage.png",
-	"dark_fear": "res://assets/ui/unit_portraits/dark_fear.png",
-	"dark_queen": "res://assets/ui/unit_portraits/dark_queen.png",
-	"dark_scythe": "res://assets/ui/unit_portraits/dark_scythe.png",
-	"dark_suc": "res://assets/ui/unit_portraits/dark_suc.png",
-	"dark_doom": "res://assets/ui/unit_portraits/dark_doom.png",
-	"dark_dragon": "res://assets/ui/unit_portraits/dark_dragon.png",
-	"undead_small": "res://assets/ui/unit_portraits/undead_small.png",
-	"undead_poison": "res://assets/ui/unit_portraits/undead_poison.png",
-	"undead_parasite": "res://assets/ui/unit_portraits/undead_parasite.png",
-	"undead_spike": "res://assets/ui/unit_portraits/undead_spike.png",
-	"undead_fly": "res://assets/ui/unit_portraits/undead_fly.png",
-	"undead_bomb": "res://assets/ui/unit_portraits/undead_bomb.png",
-	"undead_titan": "res://assets/ui/unit_portraits/undead_titan.png",
-	"undead_mother": "res://assets/ui/unit_portraits/undead_mother.png",
-	"human_militia": "res://assets/ui/unit_portraits/human_militia.png",
-	"human_merchant": "res://assets/ui/unit_portraits/human_merchant.png",
-	"human_archer": "res://assets/ui/unit_portraits/human_archer.png",
-	"human_swordsman": "res://assets/ui/unit_portraits/human_swordsman.png",
-	"human_mage": "res://assets/ui/unit_portraits/human_mage.png",
-	"human_cleric": "res://assets/ui/unit_portraits/human_cleric.png",
-	"human_death_servant": "res://assets/ui/unit_portraits/human_death_servant.png",
-	"human_king": "res://assets/ui/unit_portraits/human_king.png",
-}
 
 const MERCENARY_PORTRAIT_PATHS := {
 	"merc_pisces_bubble": "res://assets/ui/mercenary_portraits/merc_pisces_bubble.png",
@@ -382,39 +352,35 @@ func _build_rest(root: VBoxContainer) -> void:
 	board_bottom_reserve.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	center.add_child(board_bottom_reserve)
 
-	var logo_row := Control.new()
-	logo_row.anchor_left = 0.0
-	logo_row.anchor_top = 1.0
-	logo_row.anchor_right = 1.0
-	logo_row.anchor_bottom = 1.0
-	logo_row.offset_top = -260
-	logo_row.offset_bottom = -196
-	logo_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	logo_row.z_index = 5
-	center_host.add_child(logo_row)
-	var _logo_row_hbox := HBoxContainer.new()
-	_logo_row_hbox.anchor_left = 0.183
-	_logo_row_hbox.anchor_top = 0.0
-	_logo_row_hbox.anchor_right = 0.829
-	_logo_row_hbox.anchor_bottom = 1.0
-	_logo_row_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	_logo_row_hbox.add_theme_constant_override("separation", 27)
-	_logo_row_hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	logo_row.add_child(_logo_row_hbox)
+	# 底部「商店」按钮：点击打开/关闭商店弹窗（弹窗打开时被弹窗盖住）
+	var shop_open_btn := _make_framed_text_button(tr("ui_shop_btn"), START_BTN_PATH, SHOP_BTN_SIZE, 18, _toggle_shop_picker)
+	_shop_open_button = shop_open_btn
+	shop_open_btn.anchor_left = 0.5
+	shop_open_btn.anchor_top = 1.0
+	shop_open_btn.anchor_right = 0.5
+	shop_open_btn.anchor_bottom = 1.0
+	shop_open_btn.offset_left = -SHOP_BTN_SIZE.x * 0.5
+	shop_open_btn.offset_right = SHOP_BTN_SIZE.x * 0.5
+	shop_open_btn.offset_top = -SHOP_BTN_SIZE.y - 8
+	shop_open_btn.offset_bottom = -8
+	shop_open_btn.z_index = 6
+	center_host.add_child(shop_open_btn)
 
+	# 商店弹窗：卷轴背景，底部中央 896x288（SHOP_POPUP_SIZE），默认隐藏，点「商店」按钮打开
 	var shop_panel := SellDropPanel.new()
 	_shop_panel = shop_panel
 	shop_panel.screen = self
-	# 居中、缩小（保持框比例 3.0 不变形）。宽 700 → 高 233
+	shop_panel.visible = false
+	shop_panel.z_index = 40
 	shop_panel.anchor_left = 0.5
 	shop_panel.anchor_top = 1.0
 	shop_panel.anchor_right = 0.5
 	shop_panel.anchor_bottom = 1.0
-	shop_panel.offset_left = -470
-	shop_panel.offset_right = 470
-	shop_panel.offset_top = -267
-	shop_panel.offset_bottom = 46
-	shop_panel.custom_minimum_size = Vector2(940, 313)
+	shop_panel.offset_left = -SHOP_POPUP_SIZE.x * 0.5
+	shop_panel.offset_right = SHOP_POPUP_SIZE.x * 0.5
+	shop_panel.offset_top = -SHOP_POPUP_SIZE.y - 8
+	shop_panel.offset_bottom = -8
+	shop_panel.custom_minimum_size = SHOP_POPUP_SIZE
 	_apply_prep_transparent_panel_style(shop_panel)
 	shop_panel.clip_contents = false
 	center_host.add_child(shop_panel)
@@ -423,25 +389,21 @@ func _build_rest(root: VBoxContainer) -> void:
 	shop_background_host.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	shop_background_host.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	shop_panel.add_child(shop_background_host)
-	# 深石灰垫底：加在石框贴图之前（先 add = 画在后面），挡住石框镂空透出的河流
-	var shop_backing := TextureRect.new()
-	shop_backing.name = "ShopPanelBacking"
-	shop_backing.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	shop_backing.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	shop_backing.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	shop_backing.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	shop_backing.texture = _cached_texture(SHOP_BACKING_PATH)
-	shop_background_host.add_child(shop_backing)
 	var shop_background := TextureRect.new()
 	shop_background.name = "ShopPanelBackground"
 	shop_background.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	shop_background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	shop_background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	shop_background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	shop_background.offset_left = SHOP_BACKGROUND_OFFSET_LEFT
-	shop_background.offset_top = SHOP_BACKGROUND_OFFSET_TOP
-	shop_background.offset_right = SHOP_BACKGROUND_OFFSET_RIGHT
-	shop_background.offset_bottom = SHOP_BACKGROUND_OFFSET_BOTTOM
+	shop_background.stretch_mode = TextureRect.STRETCH_SCALE   # 卷轴图(1672x941)拉伸到 SHOP_BG_SIZE，接受轻微变形
+	# 居中于弹窗、独立尺寸：只由 SHOP_BG_SIZE / SHOP_BG_OFFSET 决定显示大小和位置，
+	# 与弹窗判定框(SHOP_POPUP_SIZE)解耦；背景层 IGNORE 输入，改大改小都不影响判定。
+	shop_background.anchor_left = 0.5
+	shop_background.anchor_top = 0.5
+	shop_background.anchor_right = 0.5
+	shop_background.anchor_bottom = 0.5
+	shop_background.offset_left = -SHOP_BG_SIZE.x * 0.5 + SHOP_BG_OFFSET.x
+	shop_background.offset_right = SHOP_BG_SIZE.x * 0.5 + SHOP_BG_OFFSET.x
+	shop_background.offset_top = -SHOP_BG_SIZE.y * 0.5 + SHOP_BG_OFFSET.y
+	shop_background.offset_bottom = SHOP_BG_SIZE.y * 0.5 + SHOP_BG_OFFSET.y
 	var shop_background_source := _cached_texture(SHOP_PANEL_BACKGROUND_PATH)
 	shop_background.texture = shop_background_source
 	shop_background_host.add_child(shop_background)
@@ -486,23 +448,25 @@ func _build_rest(root: VBoxContainer) -> void:
 	gold_info_btn.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	gold_area.add_child(gold_info_btn)
 	gold_info_btn.pressed.connect(_show_gold_interest_detail)
+	# 手牌区：4 张随机棋子卡，横排居中在卷轴空白区。
+	# 卡片层级（从底到顶）：头像 → 稀有度框（tier 换图） → 左上种族 logo → 右上价格（框自带金币） → 底部铭牌名字 → 灰色不可买覆盖层
 	var shop_card_area := Control.new()
-	shop_card_area.anchor_left = 0.204
-	shop_card_area.anchor_top = 0.297
-	shop_card_area.anchor_right = 0.797
-	shop_card_area.anchor_bottom = 0.648
+	shop_card_area.anchor_left = 0.0
+	shop_card_area.anchor_top = 0.10
+	shop_card_area.anchor_right = 1.0
+	shop_card_area.anchor_bottom = 0.92
 	shop_layout.add_child(shop_card_area)
 	_shop_row = HBoxContainer.new()
 	_shop_row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_shop_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	_shop_row.add_theme_constant_override("separation", 28)
+	_shop_row.add_theme_constant_override("separation", SHOP_CARD_SEPARATION)
 	shop_card_area.add_child(_shop_row)
 	for i in GameState.SHOP_UNIT_SLOTS:
 		var slot := DragButton.new()
 		slot.drag_owner = self
-		slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		slot.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		slot.size_flags_stretch_ratio = 1.0
+		slot.custom_minimum_size = SHOP_CARD_SIZE
+		slot.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		slot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		slot.clip_contents = false
 		slot.pressed.connect(_on_shop_card_pressed.bind(slot, i))
 		_attach_long_press(slot, func(): _show_shop_detail(i))
@@ -510,87 +474,68 @@ func _build_rest(root: VBoxContainer) -> void:
 		_shop_row.add_child(slot)
 		_shop_buttons.append(slot)
 
+		# 头像：先加（画在框下面），稍微伸进框梁内侧，由框盖住毛边
 		var portrait := TextureRect.new()
 		portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-		portrait.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		portrait.offset_left = 2
-		portrait.offset_top = 2
-		portrait.offset_right = -2
-		portrait.offset_bottom = -2
+		portrait.anchor_left = 0.09
+		portrait.anchor_top = 0.07
+		portrait.anchor_right = 0.91
+		portrait.anchor_bottom = 0.80
 		slot.add_child(portrait)
 		_shop_portraits.append(portrait)
 
-		var info_region := Control.new()
-		info_region.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		info_region.clip_contents = false
-		info_region.anchor_left = 0.07
-		info_region.anchor_top = 1.0
-		info_region.anchor_right = 0.93
-		info_region.anchor_bottom = 1.0
-		info_region.offset_left = 0
-		info_region.offset_top = 4         # 覆盖石框两层铭牌：上层名字 + 下层金钱
-		info_region.offset_right = 0
-		info_region.offset_bottom = 80
-		info_region.clip_contents = true   # 超出铭牌就裁掉，不外溢
-		slot.add_child(info_region)
+		# 稀有度框：刷新时按棋子 tier 换普通/稀有/史诗贴图
+		var card_frame := TextureRect.new()
+		card_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card_frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		card_frame.stretch_mode = TextureRect.STRETCH_SCALE
+		card_frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		slot.add_child(card_frame)
+		_shop_card_frames.append(card_frame)
 
-		var info_bg := ColorRect.new()
-		info_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		info_bg.color = Color(0.75, 0.75, 0.75, 0.0)
-		info_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		info_bg.z_index = -1
-		info_region.add_child(info_bg)
-
+		# 左上角种族 logo（复用详情弹窗的静态 logo 控件）
 		var race_icon: Control = PrepShopRaceIcon.new()
-		race_icon.custom_minimum_size = Vector2(52, 52)
-		race_icon.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		race_icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		race_icon.anchor_left = 0.02
+		race_icon.anchor_top = 0.02
+		race_icon.anchor_right = 0.26
+		race_icon.anchor_bottom = 0.26
 		race_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_logo_row_hbox.add_child(race_icon)
+		slot.add_child(race_icon)
 		_shop_race_icons.append(race_icon)
 
-		var card_label := Label.new()
-		card_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		card_label.anchor_left = 0.0
-		card_label.anchor_top = 0.0
-		card_label.anchor_right = 1.0
-		card_label.anchor_bottom = 0.46      # 名字在上层铭牌
-		card_label.offset_left = 0
-		card_label.offset_top = -1
-		card_label.offset_right = 0
-		card_label.offset_bottom = -1
-		card_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		card_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		card_label.clip_text = true
-		card_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		card_label.add_theme_font_size_override("font_size", 18)
-		card_label.add_theme_color_override("font_color", Color.WHITE)
-		card_label.add_theme_color_override("font_outline_color", Color.TRANSPARENT)
-		card_label.add_theme_constant_override("outline_size", 0)
-		info_region.add_child(card_label)
-		_shop_card_labels.append(card_label)
-
+		# 右上角价格：写在框自带的金币圆牌上（金币是亮金色，用深棕字不加描边）
 		var price_label := Label.new()
 		price_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		price_label.anchor_left = 0.0
-		price_label.anchor_top = 0.57        # 金钱收进下层小铭牌（teal 格子）
-		price_label.anchor_right = 1.0
-		price_label.anchor_bottom = 0.81
-		price_label.offset_left = 0
-		price_label.offset_top = 0
-		price_label.offset_right = 0
-		price_label.offset_bottom = 0
+		price_label.anchor_left = 0.75
+		price_label.anchor_top = 0.02
+		price_label.anchor_right = 0.98
+		price_label.anchor_bottom = 0.23
 		price_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		price_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		price_label.clip_text = true
-		price_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		price_label.add_theme_font_size_override("font_size", 12)
-		price_label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.95))
-		price_label.add_theme_constant_override("outline_size", 2)
-		info_region.add_child(price_label)
+		price_label.add_theme_font_size_override("font_size", 16)
+		price_label.add_theme_color_override("font_color", Color(0.28, 0.16, 0.02))
+		slot.add_child(price_label)
 		_shop_price_labels.append(price_label)
+
+		# 底部铭牌：棋子名字（切英文时自动显示英文名）
+		var name_label := Label.new()
+		name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		name_label.anchor_left = 0.14
+		name_label.anchor_top = 0.76
+		name_label.anchor_right = 0.86
+		name_label.anchor_bottom = 0.95
+		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		name_label.clip_text = true
+		name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		name_label.add_theme_font_size_override("font_size", 16)
+		name_label.add_theme_color_override("font_color", Color(0.94, 0.90, 0.80))
+		name_label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.9))
+		name_label.add_theme_constant_override("outline_size", 3)
+		slot.add_child(name_label)
+		_shop_card_labels.append(name_label)
 
 		var reason_label := _create_purchase_reason_overlay(slot)
 		_shop_reason_labels.append(reason_label)
@@ -598,27 +543,28 @@ func _build_rest(root: VBoxContainer) -> void:
 	# 出售区域覆盖层本身做成 SellDropPanel：放下去直接卖，不靠穿透传递
 	var sell_overlay := SellDropPanel.new()
 	sell_overlay.screen = self
-	sell_overlay.is_sell_zone = true  # 唯一的有效出售区：拖动时点亮的商店红色覆盖层
+	sell_overlay.is_sell_zone = true  # 唯一的有效出售区：拖动棋盘/待命单位时点亮的红色区域
 	_shop_sell_overlay = sell_overlay
 	_shop_sell_overlay.visible = false
 	_shop_sell_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
-	# (12) Sell zone covers the ENTIRE shop stone frame — drop a unit anywhere on
-	# the shop to sell it.
-	_shop_sell_overlay.anchor_left = 0.0
-	_shop_sell_overlay.anchor_right = 1.0
-	_shop_sell_overlay.anchor_top = 0.0
+	# 常驻底部中央（与商店弹窗同一位置），独立于商店弹窗：仅拖拽 board/bench 单位时显示。
+	# z_index 高于弹窗(40)：弹窗开着时红区盖在弹窗上，丢上来直接卖，不会误触购买。
+	_shop_sell_overlay.z_index = 50
+	_shop_sell_overlay.anchor_left = 0.5
+	_shop_sell_overlay.anchor_right = 0.5
+	_shop_sell_overlay.anchor_top = 1.0
 	_shop_sell_overlay.anchor_bottom = 1.0
-	_shop_sell_overlay.offset_left = 0
-	_shop_sell_overlay.offset_top = 0
-	_shop_sell_overlay.offset_right = 0
-	_shop_sell_overlay.offset_bottom = 0
+	_shop_sell_overlay.offset_left = -SHOP_POPUP_SIZE.x * 0.5
+	_shop_sell_overlay.offset_right = SHOP_POPUP_SIZE.x * 0.5
+	_shop_sell_overlay.offset_top = -SHOP_POPUP_SIZE.y - 8
+	_shop_sell_overlay.offset_bottom = -8
 	var sell_style := StyleBoxFlat.new()
 	sell_style.bg_color = Color(0.34, 0.07, 0.07, 0.94)
 	sell_style.border_color = Color(0.94, 0.35, 0.25, 0.92)
 	sell_style.set_border_width_all(2)
 	sell_style.set_corner_radius_all(4)
 	_shop_sell_overlay.add_theme_stylebox_override("panel", sell_style)
-	shop_card_area.add_child(_shop_sell_overlay)
+	center_host.add_child(_shop_sell_overlay)
 	var sell_label := Label.new()
 	sell_label.text = tr("ui_sell_zone")
 	sell_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1566,7 +1512,8 @@ func _refresh_shop() -> void:
 	for i in _shop_buttons.size():
 		var btn := _shop_buttons[i]
 		var portrait := _shop_portraits[i]
-		var card_label := _shop_card_labels[i]
+		var card_frame := _shop_card_frames[i]
+		var name_label := _shop_card_labels[i]
 		var price_label := _shop_price_labels[i]
 		var race_icon := _shop_race_icons[i]
 		var reason_label := _shop_reason_labels[i]
@@ -1578,7 +1525,8 @@ func _refresh_shop() -> void:
 			btn.drag_payload = {}
 			portrait.texture = null
 			portrait.visible = false
-			card_label.text = tr("ui_empty_slot")
+			card_frame.visible = false
+			name_label.text = tr("ui_empty_slot")
 			price_label.text = ""
 			race_icon.visible = false
 			_set_purchase_reason(reason_label, tr("ui_no_item"))
@@ -1588,14 +1536,15 @@ func _refresh_shop() -> void:
 		var cost := _shop_unit_cost(offer)
 		var can_purchase := not sold and GameState.gold >= cost
 		var unit_name := _ui_unit_name(offer)
-		var portrait_path := str(SHOP_PORTRAIT_PATHS.get(str(offer.get("id", "")), ""))
 		btn.disabled = false
 		btn.text = ""
 		btn.set_meta("drag_preview_text", "%s\n%s" % [unit_name, tr("ui_gold_format") % cost])
-		portrait.texture = _cached_texture(portrait_path)
+		portrait.texture = _cached_texture("%s/%s.png" % [UNIT_PORTRAIT_DIR, str(offer.get("id", ""))])
 		portrait.visible = portrait.texture != null
-		card_label.text = unit_name
-		price_label.text = tr("ui_gold_format") % cost
+		card_frame.visible = true
+		card_frame.texture = _cached_texture(str(SHOP_CARD_FRAME_PATHS.get(int(offer.get("tier", 1)), SHOP_CARD_FRAME_PATHS[1])))
+		name_label.text = unit_name
+		price_label.text = str(cost)   # 金币图案已画死在框右上角，只写数字
 		race_icon.visible = true
 		race_icon.call("set_race", str(offer.get("race", "")))
 		btn.drag_payload = {} if GameState.tutorial_mode else ({"kind": "shop", "index": i} if can_purchase else {})
@@ -1722,6 +1671,7 @@ func _toggle_merc_picker() -> void:
 	_merc_picker_open = not _merc_picker_open
 	if _merc_picker_open:
 		_close_team_mercs_picker()
+		_close_shop_picker()
 	_refresh_merc_panel()
 
 func _close_merc_picker() -> void:
@@ -1729,6 +1679,23 @@ func _close_merc_picker() -> void:
 		return
 	_merc_picker_open = false
 	_refresh_merc_panel()
+
+func _toggle_shop_picker() -> void:
+	_shop_picker_open = not _shop_picker_open
+	if _shop_picker_open:
+		_close_merc_picker()
+		_close_team_mercs_picker()
+	_refresh_shop_picker()
+
+func _close_shop_picker() -> void:
+	if not _shop_picker_open:
+		return
+	_shop_picker_open = false
+	_refresh_shop_picker()
+
+func _refresh_shop_picker() -> void:
+	if _shop_panel != null:
+		_shop_panel.visible = _shop_picker_open
 
 # ─── team mercs review stage ──────────────────────────────────────────────────
 
