@@ -48,7 +48,7 @@ func play(skill_id: String, origin: Vector3, target: Vector3, context: Dictionar
 			var ball := VFXLightningBall.new()
 			ball.name = "LightningBall"
 			add_child(ball)
-			ball.play_ball(origin, target, context.get("target_node") as Node3D)
+			ball.play_ball(origin, target, context.get("target_node"))
 		"meteor_strike":
 			_composer.play_skill("element_meteor", origin, target, context)
 		_:

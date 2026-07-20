@@ -49,7 +49,7 @@ func _overload_counter(origin: Vector3, target: Vector3, context: Dictionary) ->
 	_painted("boss_thunder_overload.png", {"position": origin + Vector3(0,.52,.02), "size": Vector2(1.28,1.05), "duration": .68, "body_tint": Color(.20,.48,1), "core_tint": Color(.78,.96,1), "seed": 8.2})
 	var ball := LIGHTNING_BALL.new()
 	add_child(ball)
-	var target_node := context.get("target_node") as Node3D
+	var target_node: Variant = context.get("target_node")
 	ball.play_ball(origin + Vector3(0,.62,0), target + Vector3(0,.38,0), target_node)
 	await get_tree().create_timer(.38).timeout
 	target = _tracked_target(target, context)
@@ -151,9 +151,9 @@ func _profile(dark: Color, main: Color, core: Color, size: float, duration: floa
 	return p
 
 func _tracked_target(fallback: Vector3, context: Dictionary) -> Vector3:
-	var target_node := context.get("target_node") as Node3D
-	if target_node == null or not is_instance_valid(target_node):
+	var target_node: Variant = context.get("target_node")
+	if not (target_node is Node3D) or not is_instance_valid(target_node):
 		return fallback
-	var tracked := to_local(target_node.global_position)
+	var tracked := to_local((target_node as Node3D).global_position)
 	tracked.y = fallback.y
 	return tracked

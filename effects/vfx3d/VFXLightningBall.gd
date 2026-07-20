@@ -66,9 +66,12 @@ void fragment() {
 }
 """
 
-func play_ball(origin: Vector3, target: Vector3, target_node: Node3D = null) -> void:
+func play_ball(origin: Vector3, target: Vector3, target_node: Variant = null) -> void:
 	begin()
-	var tracked_target := _tracked_target_position(target, target_node)
+	var target_ref: WeakRef = null
+	if target_node is Node3D and is_instance_valid(target_node):
+		target_ref = weakref(target_node)
+	var tracked_target := _tracked_target_position(target, target_ref)
 	var direction := (tracked_target + Vector3(0.0, 0.30, 0.0) - (origin + Vector3(0.0, 1.05, 0.0))).normalized()
 	var ball := Node3D.new()
 	ball.name = "BallMotion"
@@ -120,7 +123,7 @@ func play_ball(origin: Vector3, target: Vector3, target_node: Node3D = null) -> 
 		if _finished or not is_instance_valid(ball):
 			return
 		travel_elapsed += get_process_delta_time()
-		tracked_target = _tracked_target_position(tracked_target, target_node)
+		tracked_target = _tracked_target_position(tracked_target, target_ref)
 		var ratio := clampf(travel_elapsed / 0.92, 0.0, 1.0)
 		var eased := ratio * ratio
 		ball.position = start_position.lerp(tracked_target + Vector3(0.0, 0.30, 0.0), eased)
@@ -130,10 +133,13 @@ func play_ball(origin: Vector3, target: Vector3, target_node: Node3D = null) -> 
 	await get_tree().create_timer(0.54).timeout
 	finish()
 
-func _tracked_target_position(fallback: Vector3, target_node: Node3D) -> Vector3:
-	if target_node == null or not is_instance_valid(target_node):
+func _tracked_target_position(fallback: Vector3, target_ref: WeakRef) -> Vector3:
+	if target_ref == null:
 		return fallback
-	var tracked := to_local(target_node.global_position)
+	var target_node: Variant = target_ref.get_ref()
+	if not (target_node is Node3D) or not is_instance_valid(target_node):
+		return fallback
+	var tracked := to_local((target_node as Node3D).global_position)
 	# The supplied point owns the intended impact height; the model node supplies
 	# the live ground-plane position while it moves during the projectile flight.
 	tracked.y = fallback.y

@@ -2,6 +2,7 @@ extends "res://scenes/battle/BattleRenderer.gd"
 
 const RANGED_ATTACK_MIN_RANGE_PX := 135.0
 const _SkillVFXConfig := preload("res://effects/SkillVFXConfig.gd")
+const LEGACY_RANGED_PROJECTILE_UNITS := ["god_aurora", "human_archer", "dark_mage"]
 
 var _vfx_prev_units: Dictionary = {}
 var _vfx_seeded: bool = false
@@ -248,11 +249,12 @@ func _play_ranged_projectiles(attacks: Array[Dictionary], damage_events: Array[D
 		if target.is_empty():
 			target = _floor_target_for(attack)
 		var race:=_race_from_unit_id(str(attack.get("unit_id","")))
-		if not race.is_empty():
+		var unit_id := str(attack.get("unit_id", ""))
+		if not race.is_empty() and unit_id not in LEGACY_RANGED_PROJECTILE_UNITS:
 			_play_race_basic_attack(attack,target,"ranged",race,current)
 			_play_attack_unit_procedural(attack,target,current)
 			continue
-		var vfx_id := "PROJECTILE_MAGIC" if str(attack.get("unit_id", "")).contains("mage") else "PROJECTILE_ARROW"
+		var vfx_id := "PROJECTILE_MAGIC" if unit_id.contains("mage") else "PROJECTILE_ARROW"
 		var target_node := _unit_anchor_node_for_id(str(target.get("id", "")), "HitAnchor")
 		if _attack_skill_vfx_ready(attack):
 			_spawn_skill_projectile_or_default(str(attack.get("unit_id", "")), vfx_id, attack.get("pos", Vector2.ZERO), target_node, target.get("pos", Vector2.ZERO))

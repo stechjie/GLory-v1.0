@@ -3,6 +3,7 @@ class_name VFXRaceBasicAttack3D
 
 const SLASH_ARC := preload("res://effects/vfx3d/modules/VFXSlashArc3D.gd")
 const IMPACT_FLASH := preload("res://effects/vfx3d/modules/VFXImpactFlash3D.gd")
+const UPRIGHT_PROJECTILE_ROTATION := PI * 0.5
 
 func play_profile(profile: VFXProfile3D, context: Dictionary) -> void:
 	var mode := str(context.get("mode", "ranged"))
@@ -25,7 +26,7 @@ func _play_ranged(origin: Vector3, target: Vector3, race: String, profile: VFXPr
 	_spawn_shards(origin, direction, active, race, false)
 	var needle := _make_projectile_needle(active, race)
 	needle.position = origin + Vector3(0.0, 0.0, 0.10)
-	needle.rotation.z = atan2(direction.y, direction.x)
+	needle.rotation.z = UPRIGHT_PROJECTILE_ROTATION
 	add_child(needle)
 	var travel_duration := active.duration * 0.54
 	var travel_elapsed := 0.0
@@ -43,7 +44,7 @@ func _play_ranged(origin: Vector3, target: Vector3, race: String, profile: VFXPr
 		var ratio := clampf(travel_elapsed / travel_duration, 0.0, 1.0)
 		var attack_curve := 1.0 - pow(1.0 - ratio, 2.35)
 		needle.position = origin.lerp(tracked_target, attack_curve) + Vector3(0.0, 0.0, 0.10)
-		needle.rotation.z = atan2(direction.y, direction.x)
+		needle.rotation.z = UPRIGHT_PROJECTILE_ROTATION
 		if trail_elapsed >= 0.045:
 			trail_elapsed = 0.0
 			_spawn_needle_trail(needle.position, direction, active, race, trail_index)
@@ -111,7 +112,7 @@ func _spawn_needle_trail(at: Vector3, direction: Vector3, profile: VFXProfile3D,
 	var body := _lance_mesh(length, profile.size * 0.040, profile.main_color, profile.emission_energy * 0.58)
 	body.name = "StraightTrail_%s_%d" % [race, index]
 	body.position = at - direction * profile.size * 0.28 + Vector3(0.0, 0.0, 0.006)
-	body.rotation.z = atan2(direction.y, direction.x)
+	body.rotation.z = UPRIGHT_PROJECTILE_ROTATION
 	body.scale = Vector3(0.84, 0.72, 1.0)
 	body.transparency = 0.18
 	add_child(body)
