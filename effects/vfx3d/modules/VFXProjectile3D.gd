@@ -74,18 +74,22 @@ void fragment(){vec2 p=(UV-vec2(.5))*2.0;float r=length(p);float a=atan(p.y,p.x)
 var _materials:Array[ShaderMaterial]=[]
 
 func play_profile(profile:VFXProfile3D,context:Dictionary)->void:
-	play_projectile(context.get("origin",Vector3(-1.35,0.72,0.0)),context.get("target",Vector3.ZERO),profile,context.get("target_node") as Node3D)
+	play_projectile(context.get("origin",Vector3(-1.35,0.72,0.0)),context.get("target",Vector3.ZERO),profile,context.get("target_node"))
 
-func play_projectile(origin:Vector3,target:Vector3,profile:VFXProfile3D=null,target_node:Node3D=null)->void:
+func play_projectile(origin:Vector3,target:Vector3,profile:VFXProfile3D=null,target_node:Variant=null)->void:
 	begin()
 	var active:=profile if profile!=null else _fallback_profile()
+	var target_ref:WeakRef=null
+	if target_node is Node3D and is_instance_valid(target_node):target_ref=weakref(target_node)
 	position=origin
-	var tracked_target:=_tracked_target_position(target,target_node)
+	var tracked_target:=_tracked_target_position(target,target_ref)
 	var direction:Vector3=(tracked_target-origin).normalized()
 	var charge:=_make_billboard("ChargeCore",Vector2(active.size*.94,active.size*.78),PROJECTILE_SHADER,{"dark_color":active.dark_color,"main_color":active.main_color,"core_color":active.core_color,"seed":3.2,"halo":0.0})
 	charge.scale=Vector3.ONE*.12
-	CURVES.tween_method(self,func(v:float)->void:if is_instance_valid(charge):charge.scale=Vector3.ONE*v,.12,.82,active.duration*.16,"ease_out_back")
-	_tween_shader(charge.material_override as ShaderMaterial,"progress",0.0,.24,active.duration*.16)
+	# Finish the charge animation before the release phase frees the charge node.
+	# This prevents a captured charge reference from becoming null mid-tween.
+	CURVES.tween_method(self,func(v:float)->void:if is_instance_valid(charge):charge.scale=Vector3.ONE*v,.12,.82,active.duration*.12,"ease_out_back")
+	_tween_shader(charge.material_override as ShaderMaterial,"progress",0.0,.24,active.duration*.12)
 	await get_tree().create_timer(active.duration*.15).timeout
 	if _finished:return
 	_spawn_release_sparks(direction,active)
@@ -103,7 +107,7 @@ func play_projectile(origin:Vector3,target:Vector3,profile:VFXProfile3D=null,tar
 		await get_tree().process_frame
 		if _finished:return
 		travel_elapsed+=get_process_delta_time()
-		tracked_target=_tracked_target_position(tracked_target,target_node)
+		tracked_target=_tracked_target_position(tracked_target,target_ref)
 		var ratio:=clampf(travel_elapsed/travel_duration,0.0,1.0)
 		position=origin.lerp(tracked_target,ratio*ratio)
 		while puff_index<8 and travel_elapsed>=puff_interval*float(puff_index+1):
@@ -116,8 +120,11 @@ func play_projectile(origin:Vector3,target:Vector3,profile:VFXProfile3D=null,tar
 	await get_tree().create_timer(active.duration*.34).timeout
 	finish()
 
-func _tracked_target_position(fallback:Vector3,target_node:Node3D)->Vector3:
-	if target_node==null or not is_instance_valid(target_node):return fallback
+
+func _tracked_target_position(fallback:Vector3,target_ref:WeakRef)->Vector3:
+	if target_ref==null:return fallback
+	var target_node:Variant=target_ref.get_ref()
+	if not (target_node is Node3D) or not is_instance_valid(target_node):return fallback
 	var tracked:Vector3=target_node.global_position
 	if get_parent() is Node3D:
 		tracked=(get_parent() as Node3D).to_local(target_node.global_position)

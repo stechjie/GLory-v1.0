@@ -659,6 +659,15 @@ static func _apply_attack_statuses(attacker: Dictionary, target: Dictionary, sta
 		StatusEffectService.add_status(target, "heal_reduction", float(d.get("duration", 4.0)), {"pct": float(d.get("heal_reduction", 0.50))})
 	elif sid == "attack_interrupt" and RngService.rng.randf() < float(d.get("interrupt_chance", 0.12)):
 		StatusEffectService.interrupt(target)
+		var visual_events: Array = state.get("visual_events", [])
+		visual_events.append({
+			"type": "unit_skill_proc",
+			"skill_id": sid,
+			"source_uid": str(attacker.get("uid", "")),
+			"target_uid": str(target.get("uid", "")),
+			"time": float(state.get("elapsed", 0.0)),
+		})
+		state["visual_events"] = visual_events
 	elif sid == "random_attribute_attack":
 		_apply_attribute_effect(["fire", "ice", "thunder", "poison"][RngService.rng.randi() % 4], attacker, target)
 
@@ -684,6 +693,7 @@ static func _apply_opening_unit_skills(player: Array, enemy: Array, event_log: A
 				if not target.is_empty():
 					target.sacrifice_guardian = f
 					f.guard_target_uid = str(target.get("uid", ""))
+					f.vfx_skill_target_uid = str(target.get("uid", ""))
 			DamageService.clear_stat_context()
 	if _team_has_skill(player, "guardian_shield_taunt"):
 		event_log.append(TranslationServer.translate("log_light_guard"))
@@ -853,6 +863,7 @@ static func _skill_shared_hp_link(caster: Dictionary, opponents: Array, _d: Dict
 	_convert_link_target_to_caster_team(caster, target, opponents, state)
 	caster.shared_link_uid = str(target.uid)
 	target.shared_link_uid = str(caster.uid)
+	caster.vfx_skill_target_uid = str(target.uid)
 	caster.shared_link_last_hp = int(caster.hp)
 	target.shared_link_last_hp = int(target.hp)
 	caster.shared_link_spent = true

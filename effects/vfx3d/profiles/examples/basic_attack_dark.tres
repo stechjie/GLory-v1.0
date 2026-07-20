@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="VFXProfile3D" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+profile_id = "basic_attack_dark"
+module_id = "race_basic_attack"
+curve_name = "overshoot"
+dark_color = Color(0.018, 0.006, 0.045, 1)
+main_color = Color(0.48, 0.055, 0.70, 1)
+core_color = Color(0.94, 0.46, 1, 1)
+size = 0.72
+duration = 0.70
+particle_count = 8
+trail_length = 0.88
+emission_energy = 3.6
+parameters = {"race": "dark"}

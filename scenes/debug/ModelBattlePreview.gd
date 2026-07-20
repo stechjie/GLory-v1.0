@@ -33,6 +33,13 @@ const VFX_METEOR_STRIKE := preload("res://effects/vfx3d/modules/VFXMeteorStrike3
 const VFX_BARRIER_SHIELD := preload("res://effects/vfx3d/modules/VFXBarrierShield3D.gd")
 const VFX_FALLING_PILLAR := preload("res://effects/vfx3d/modules/VFXFallingPillar3D.gd")
 const VFX_ROAR_CONE := preload("res://effects/vfx3d/modules/VFXRoarCone3D.gd")
+const VFX_STATUS_EFFECT := preload("res://effects/vfx3d/modules/VFXStatusEffect3D.gd")
+const VFX_TRACKED_LINK := preload("res://effects/vfx3d/modules/VFXTrackedLink3D.gd")
+const VFX_VORTEX_FIELD := preload("res://effects/vfx3d/modules/VFXVortexField3D.gd")
+const VFX_SUMMON_SPAWN := preload("res://effects/vfx3d/modules/VFXSummonSpawn3D.gd")
+const VFX_AFTERIMAGE_DASH := preload("res://effects/vfx3d/modules/VFXAfterimageDash3D.gd")
+const VFX_RACE_BASIC_ATTACK := preload("res://effects/vfx3d/modules/VFXRaceBasicAttack3D.gd")
+const VFX_MOTHER_EXECUTE := preload("res://effects/vfx3d/modules/VFXMotherExecute3D.gd")
 const BOSS_SKILL_COMPOSER := preload("res://effects/vfx3d/boss/BossSkillVFXComposer3D.gd")
 const VFX_COMPOSITION := preload("res://effects/vfx3d/core/VFXComposition3D.gd")
 const VFX_PREVIEW_RECORDER := preload("res://effects/vfx3d/preview/VFXPreviewRecorder.gd")
@@ -56,6 +63,16 @@ const PROFILE_METEOR_STRIKE := preload("res://effects/vfx3d/profiles/examples/me
 const PROFILE_BARRIER_SHIELD := preload("res://effects/vfx3d/profiles/examples/barrier_shield_example.tres")
 const PROFILE_FALLING_PILLAR := preload("res://effects/vfx3d/profiles/examples/falling_pillar_example.tres")
 const PROFILE_ROAR_CONE := preload("res://effects/vfx3d/profiles/examples/roar_cone_example.tres")
+const PROFILE_STATUS_STUN := preload("res://effects/vfx3d/profiles/examples/status_stun_example.tres")
+const PROFILE_TRACKED_LINK := preload("res://effects/vfx3d/profiles/examples/tracked_link_example.tres")
+const PROFILE_VORTEX_SHADOW := preload("res://effects/vfx3d/profiles/examples/vortex_shadow_example.tres")
+const PROFILE_SUMMON_SPAWN := preload("res://effects/vfx3d/profiles/examples/summon_spawn_example.tres")
+const PROFILE_AFTERIMAGE_DASH := preload("res://effects/vfx3d/profiles/examples/afterimage_dash_example.tres")
+const PROFILE_BASIC_GOD := preload("res://effects/vfx3d/profiles/examples/basic_attack_god.tres")
+const PROFILE_BASIC_HUMAN := preload("res://effects/vfx3d/profiles/examples/basic_attack_human.tres")
+const PROFILE_BASIC_DARK := preload("res://effects/vfx3d/profiles/examples/basic_attack_dark.tres")
+const PROFILE_BASIC_UNDEAD := preload("res://effects/vfx3d/profiles/examples/basic_attack_undead.tres")
+const PROFILE_MOTHER_EXECUTE := preload("res://effects/vfx3d/profiles/examples/mother_execute_example.tres")
 const RECIPE_FULL_STAGES := preload("res://effects/vfx3d/recipes/examples/full_skill_stages_demo.tres")
 const TARGET_HEIGHT := 1.32
 const TARGET_WIDTH := 1.06
@@ -309,6 +326,20 @@ func _build_vfx_test_panel() -> void:
 	vfx_select.add_item("Boss: Soul Devour")
 	vfx_select.add_item("Boss: Twin Timer + Revive")
 	vfx_select.add_item("Validation: Moving Target Projectile")
+	vfx_select.add_item("Module: Status Effect")
+	vfx_select.add_item("Module: Tracked Link")
+	vfx_select.add_item("Module: Vortex Field")
+	vfx_select.add_item("Module: Summon Spawn")
+	vfx_select.add_item("Module: Afterimage Dash")
+	vfx_select.add_item("Unit Basic: God Ranged")
+	vfx_select.add_item("Unit Basic: God Melee")
+	vfx_select.add_item("Unit Basic: Human Ranged")
+	vfx_select.add_item("Unit Basic: Human Melee")
+	vfx_select.add_item("Unit Basic: Dark Ranged")
+	vfx_select.add_item("Unit Basic: Dark Melee")
+	vfx_select.add_item("Unit Basic: Undead Ranged")
+	vfx_select.add_item("Unit Basic: Undead Melee")
+	vfx_select.add_item("Unit Skill: Mother Execute")
 	select_row.add_child(vfx_select)
 	var action_row := HBoxContainer.new()
 	action_row.add_theme_constant_override("separation", 6)
@@ -593,6 +624,58 @@ func _on_vfx_play_pressed() -> void:
 			vfx_preview_effect = moving_ball
 			moving_ball.play_ball(left_slot.position, right_slot.position, right_slot)
 			vfx_status_label.text = "Playing: exact moving model target tracking"
+		40:
+			var status_fx := VFX_STATUS_EFFECT.new()
+			status_fx.name = "PreviewStatusEffect"
+			vfx_preview_root.add_child(status_fx)
+			vfx_preview_effect = status_fx
+			status_fx.play_profile(PROFILE_STATUS_STUN, {"target": left_slot.position, "target_node": left_slot})
+			vfx_status_label.text = "Playing: persistent upper-body Stun status profile"
+		41:
+			var link_fx := VFX_TRACKED_LINK.new()
+			link_fx.name = "PreviewTrackedLink"
+			vfx_preview_root.add_child(link_fx)
+			vfx_preview_effect = link_fx
+			link_fx.play_profile(PROFILE_TRACKED_LINK, {"origin": left_slot.position, "target": right_slot.position, "origin_node": left_slot, "target_node": right_slot})
+			vfx_status_label.text = "Playing: dynamic two-target Tracked Link profile"
+		42:
+			var vortex_fx := VFX_VORTEX_FIELD.new()
+			vortex_fx.name = "PreviewVortexField"
+			vfx_preview_root.add_child(vortex_fx)
+			vfx_preview_effect = vortex_fx
+			vortex_fx.play_profile(PROFILE_VORTEX_SHADOW, {"target": right_slot.position})
+			vfx_status_label.text = "Playing: layered Shadow Vortex Field profile"
+		43:
+			var summon_fx := VFX_SUMMON_SPAWN.new()
+			summon_fx.name = "PreviewSummonSpawn"
+			vfx_preview_root.add_child(summon_fx)
+			vfx_preview_effect = summon_fx
+			summon_fx.play_profile(PROFILE_SUMMON_SPAWN, {"target": target})
+			vfx_status_label.text = "Playing: staged Summon Spawn profile"
+		44:
+			var dash_fx := VFX_AFTERIMAGE_DASH.new()
+			dash_fx.name = "PreviewAfterimageDash"
+			vfx_preview_root.add_child(dash_fx)
+			vfx_preview_effect = dash_fx
+			dash_fx.play_profile(PROFILE_AFTERIMAGE_DASH, {"origin": left_slot.position + Vector3(0.0, 0.22, 0.0), "target": right_slot.position + Vector3(0.0, 0.22, 0.0)})
+			vfx_status_label.text = "Playing: directional Afterimage Dash profile"
+		45:_preview_race_basic(PROFILE_BASIC_GOD,"god","ranged")
+		46:_preview_race_basic(PROFILE_BASIC_GOD,"god","melee")
+		47:_preview_race_basic(PROFILE_BASIC_HUMAN,"human","ranged")
+		48:_preview_race_basic(PROFILE_BASIC_HUMAN,"human","melee")
+		49:_preview_race_basic(PROFILE_BASIC_DARK,"dark","ranged")
+		50:_preview_race_basic(PROFILE_BASIC_DARK,"dark","melee")
+		51:_preview_race_basic(PROFILE_BASIC_UNDEAD,"undead","ranged")
+		52:_preview_race_basic(PROFILE_BASIC_UNDEAD,"undead","melee")
+		53:
+			var mother_fx:=VFX_MOTHER_EXECUTE.new();mother_fx.name="PreviewMotherExecute";vfx_preview_root.add_child(mother_fx);vfx_preview_effect=mother_fx
+			mother_fx.play_profile(PROFILE_MOTHER_EXECUTE,{"origin":left_slot.position+Vector3(0.0,1.36,0.0),"target":right_slot.position})
+			vfx_status_label.text="Playing: Mother book and victim soul devour"
+
+func _preview_race_basic(profile:VFXProfile3D,race:String,mode:String)->void:
+	var fx:=VFX_RACE_BASIC_ATTACK.new();fx.name="PreviewBasic_%s_%s"%[race,mode];vfx_preview_root.add_child(fx);vfx_preview_effect=fx
+	fx.play_profile(profile,{"origin":left_slot.position+Vector3(0.0,.62,0.0),"target":right_slot.position+Vector3(0.0,.34,0.0),"target_node":right_slot,"race":race,"mode":mode})
+	vfx_status_label.text="Playing: %s %s basic attack"%[race,mode]
 
 func _boss_composer_preview() -> BossSkillVFXComposer3D:
 	var boss_fx := BOSS_SKILL_COMPOSER.new()

@@ -1,5 +1,8 @@
 extends Node3D
 
+const VFX_STATUS_EFFECT:=preload("res://effects/vfx3d/modules/VFXStatusEffect3D.gd")
+const PROCEDURAL_STATUS_ANCHORS:={"stun":"HeadAnchor","silence":"HeadAnchor","poison":"FeetAnchor"}
+
 const EFFECTS := {
 	"shield": {"anchor": "BodyAnchor", "path": "res://assets/vfx/status/status_shield_aura.png", "scale": Vector3(0.86, 0.86, 0.86), "alpha": 0.62, "rot": 0.0, "bob": 0.035, "pulse": 0.035},
 	"stun": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_stun_ring.png", "scale": Vector3(0.30, 0.30, 0.30), "alpha": 0.9, "rot": 1.4, "bob": 0.025, "pulse": 0.03},
@@ -23,17 +26,25 @@ const STATUS_TEXTURES := {
 }
 
 var _sprites := {}
+var _procedural_statuses:={}
 var _phase := randf() * TAU
 
 func update_from_fighter(fighter: Dictionary) -> void:
 	var active := {}
 	active["shield"] = int(fighter.get("shield", 0)) > 0
 	var statuses: Dictionary = fighter.get("statuses", {})
+	var remaining_by_kind:={}
 	for kind in ["stun", "poison", "burn", "silence", "slow", "bleed"]:
 		var status: Dictionary = statuses.get(kind, {})
-		active[kind] = float(status.get("remaining", 0.0)) > 0.0
+		var remaining:=float(status.get("remaining",0.0))
+		active[kind] = remaining > 0.0
+		remaining_by_kind[kind]=remaining
 	for kind in EFFECTS.keys():
-		_set_effect_visible(kind, bool(active.get(kind, false)))
+		if PROCEDURAL_STATUS_ANCHORS.has(kind):
+			_set_procedural_status(kind,bool(active.get(kind,false)),float(remaining_by_kind.get(kind,0.0)))
+			_set_effect_visible(kind,false)
+		else:
+			_set_effect_visible(kind, bool(active.get(kind, false)))
 
 func _process(_delta: float) -> void:
 	var t := float(Time.get_ticks_msec()) * 0.001 + _phase
@@ -56,6 +67,29 @@ func _set_effect_visible(kind: String, visible: bool) -> void:
 		sprite = _make_sprite(kind)
 		_sprites[kind] = sprite
 	sprite.visible = visible
+
+func _set_procedural_status(kind:String,active:bool,remaining:float)->void:
+	var current=_procedural_statuses.get(kind)
+	if current!=null and not is_instance_valid(current):
+		_procedural_statuses.erase(kind);current=null
+	if not active:
+		if current!=null:
+			current.stop_vfx(true)
+			_procedural_statuses.erase(kind)
+		return
+	if current!=null:return
+	var anchor:=_anchor(str(PROCEDURAL_STATUS_ANCHORS[kind]))
+	var effect:=VFX_STATUS_EFFECT.new()
+	effect.name="ProceduralStatus_%s"%kind
+	anchor.add_child(effect)
+	var profile:=VFXProfile3D.new()
+	profile.size=.52 if kind!="poison" else .62
+	profile.duration=maxf(.45,remaining)
+	profile.particle_count=7
+	profile.emission_energy=2.6
+	profile.parameters={"status_type":kind}
+	effect.play_profile(profile,{"target":Vector3.ZERO})
+	_procedural_statuses[kind]=effect
 
 func _make_sprite(kind: String) -> Sprite3D:
 	var cfg: Dictionary = EFFECTS[kind]

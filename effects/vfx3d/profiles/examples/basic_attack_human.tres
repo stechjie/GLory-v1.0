@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="VFXProfile3D" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+profile_id = "basic_attack_human"
+module_id = "race_basic_attack"
+curve_name = "snap"
+dark_color = Color(0.025, 0.08, 0.18, 1)
+main_color = Color(0.16, 0.58, 0.94, 1)
+core_color = Color(0.72, 0.95, 1, 1)
+size = 0.56
+duration = 0.52
+particle_count = 6
+trail_length = 0.62
+emission_energy = 3.1
+parameters = {"race": "human"}

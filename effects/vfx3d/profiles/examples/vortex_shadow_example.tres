@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="VFXProfile3D" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+profile_id = "vortex_shadow_example"
+module_id = "vortex_field"
+curve_name = "overshoot"
+dark_color = Color(0.015, 0.008, 0.035, 1)
+main_color = Color(0.25, 0.055, 0.48, 1)
+core_color = Color(0.74, 0.3, 1, 1)
+size = 1.05
+duration = 1.85
+particle_count = 12
+emission_energy = 3.2
+ground_aligned = true

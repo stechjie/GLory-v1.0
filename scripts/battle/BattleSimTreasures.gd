@@ -462,7 +462,7 @@ static func _maybe_mother_execute(state: Dictionary, enemies: Array) -> void:
 			if int(os.mother_count) < threshold:
 				continue
 			os.mother_count = 0
-			_mother_execute_target(state, int(mother.get("lane", -1)))
+			_mother_execute_target(state, int(mother.get("lane", -1)), mother)
 		return
 	var mothers := []
 	for f in state.get("player", []):
@@ -478,7 +478,7 @@ static func _maybe_mother_execute(state: Dictionary, enemies: Array) -> void:
 		if int(os.mother_count) < threshold:
 			continue
 		os.mother_count = 0
-		_mother_execute_on(state, _alive(enemies))
+		_mother_execute_on(state, _alive(enemies), mother)
 
 
 static func _maybe_enemy_mother_execute_1v1(state: Dictionary) -> void:
@@ -497,10 +497,10 @@ static func _maybe_enemy_mother_execute_1v1(state: Dictionary) -> void:
 		if int(os.mother_count) < threshold:
 			continue
 		os.mother_count = 0
-		_mother_execute_on(state, _alive(state.get("player", [])))
+		_mother_execute_on(state, _alive(state.get("player", [])), mother)
 
 
-static func _mother_execute_target(state: Dictionary, lane: int) -> void:
+static func _mother_execute_target(state: Dictionary, lane: int, mother: Dictionary) -> void:
 	var own_lane: Array = []
 	var all_alive: Array = []
 	for o in state.get("enemy", []):
@@ -508,10 +508,10 @@ static func _mother_execute_target(state: Dictionary, lane: int) -> void:
 			all_alive.append(o)
 			if int(o.get("lane", -1)) == lane:
 				own_lane.append(o)
-	_mother_execute_on(state, own_lane if not own_lane.is_empty() else all_alive)
+	_mother_execute_on(state, own_lane if not own_lane.is_empty() else all_alive, mother)
 
 
-static func _mother_execute_on(state: Dictionary, candidates: Array) -> void:
+static func _mother_execute_on(state: Dictionary, candidates: Array, mother: Dictionary) -> void:
 	if candidates.is_empty():
 		return
 	var target: Dictionary = candidates[RngService.rng.randi() % candidates.size()]
@@ -522,6 +522,9 @@ static func _mother_execute_on(state: Dictionary, candidates: Array) -> void:
 		DamageService.apply_damage(target, maxi(1, int(round(float(target.max_hp) * 0.20))), true)
 	elif roll < chance:
 		target.mother_execute_kill = true
+		if not state.has("visual_events") or typeof(state.visual_events) != TYPE_ARRAY:
+			state.visual_events = []
+		state.visual_events.append({"type":"mother_execute","source_uid":str(mother.get("uid","")),"target_uid":str(target.get("uid","")),"time":float(state.get("elapsed",0.0))})
 		DamageService.apply_damage(target, int(target.hp), true)
 
 
