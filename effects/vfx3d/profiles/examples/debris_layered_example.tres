@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="VFXProfile3D" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+profile_id = "debris_layered_example"
+module_id = "debris_burst"
+curve_name = "fast_attack_slow_decay"
+dark_color = Color(0.16, 0.045, 0.012, 1)
+main_color = Color(0.50, 0.15, 0.035, 1)
+core_color = Color(1, 0.68, 0.22, 1)
+size = 1.0
+duration = 0.86
+particle_count = 9
+parameters = {"shard_count": 9, "speed": 3.3, "dust_count": 5, "spark_count": 8, "flash_size": 0.9, "residue_size": 0.92}

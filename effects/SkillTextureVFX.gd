@@ -22,10 +22,16 @@ func play(config: Dictionary = {}) -> void:
 		var dur := float(tex_cfg.get("duration", base_dur))
 		var sc := float(tex_cfg.get("scale", 0.5)) * BATTLE_SKILL_TEXTURE_SCALE_MUL
 		var role := str(tex_cfg.get("role", "hit"))
-		var alpha := clampf(float(tex_cfg.get("alpha", 1.0)) * BATTLE_SKILL_TEXTURE_ALPHA_MUL, 0.0, 0.72)
+		var is_boss := bool(tex_cfg.get("boss", false))
+		var alpha_mul := 1.0 if is_boss else BATTLE_SKILL_TEXTURE_ALPHA_MUL
+		var alpha := clampf(float(tex_cfg.get("alpha", 1.0)) * alpha_mul, 0.0, 1.0)
 		var offset: Vector2 = tex_cfg.get("offset", Vector2.ZERO)
 		var drift: Vector2 = tex_cfg.get("drift", Vector2.ZERO)
 		var target_scale := _target_scale(sc, bool(tex_cfg.get("flatten", false)))
+		if is_boss:
+			target_scale *= 0.30
+		var stretch: Vector2 = tex_cfg.get("stretch", Vector2.ONE)
+		target_scale *= stretch
 
 		_spawn_layer(texture, tex_cfg, offset, target_scale, delay, dur, alpha, drift)
 		_spawn_particles(int(tex_cfg.get("particles", 0)), role, delay, dur)
@@ -35,6 +41,7 @@ func play(config: Dictionary = {}) -> void:
 
 func _spawn_layer(texture: Texture2D, tex_cfg: Dictionary, offset: Vector2, target_scale: Vector2, delay: float, dur: float, alpha: float, drift: Vector2) -> void:
 	var role := str(tex_cfg.get("role", "hit"))
+	var is_boss := bool(tex_cfg.get("boss", false))
 	var spin := float(tex_cfg.get("spin", 0.0))
 	var start_scale := target_scale * (0.35 if role == "hit" else 0.55)
 	var fade_in := minf(0.16, dur * 0.25)
@@ -52,7 +59,7 @@ func _spawn_layer(texture: Texture2D, tex_cfg: Dictionary, offset: Vector2, targ
 		add_child(glow)
 		var glow_tween := create_tween()
 		glow_tween.set_parallel(true)
-		glow_tween.tween_property(glow, "modulate:a", alpha * BATTLE_SKILL_GLOW_ALPHA_MUL, fade_in).set_delay(delay)
+		glow_tween.tween_property(glow, "modulate:a", alpha * (0.16 if is_boss else BATTLE_SKILL_GLOW_ALPHA_MUL), fade_in).set_delay(delay)
 		glow_tween.tween_property(glow, "scale", target_scale * 1.12, dur * 0.35).set_delay(delay)
 		glow_tween.tween_property(glow, "position", offset + drift, dur).set_delay(delay)
 		glow_tween.tween_property(glow, "modulate:a", 0.0, fade_out).set_delay(delay + hold_start)
@@ -63,7 +70,7 @@ func _spawn_layer(texture: Texture2D, tex_cfg: Dictionary, offset: Vector2, targ
 	sprite.scale = start_scale
 	sprite.modulate.a = 0.0
 	sprite.z_index = 25 if role != "foot" else 18
-	sprite.material = _add_material()
+	sprite.material = VFXManager.MAT_MIX if is_boss else _add_material()
 	add_child(sprite)
 
 	var tween := create_tween()
@@ -74,6 +81,13 @@ func _spawn_layer(texture: Texture2D, tex_cfg: Dictionary, offset: Vector2, targ
 	if absf(spin) > 0.001:
 		tween.tween_property(sprite, "rotation", sprite.rotation + spin * TAU, dur).set_delay(delay)
 	tween.tween_property(sprite, "modulate:a", 0.0, fade_out).set_delay(delay + hold_start)
+
+	# Boss layers get a short overshoot pulse after entering frame, preventing a rigid sticker read.
+	var pulse_amount := float(tex_cfg.get("pulse", 1.0))
+	if pulse_amount > 1.01:
+		var pulse_tween := create_tween()
+		pulse_tween.tween_property(sprite, "scale", target_scale * pulse_amount, 0.11).set_delay(delay + minf(0.24, dur * 0.34))
+		pulse_tween.tween_property(sprite, "scale", target_scale, 0.17)
 
 func _spawn_particles(count: int, role: String, delay: float, dur: float) -> void:
 	if count <= 0:

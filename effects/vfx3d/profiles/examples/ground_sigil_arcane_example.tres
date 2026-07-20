@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="VFXProfile3D" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="1_profile"]
+
+[resource]
+script = ExtResource("1_profile")
+profile_id = "ground_explosion_reference_example"
+module_id = "ground_sigil"
+curve_name = "explosive_out"
+dark_color = Color(0.12, 0.012, 0.008, 1)
+main_color = Color(0.92, 0.12, 0.018, 1)
+core_color = Color(1, 0.78, 0.26, 1)
+size = 1.08
+duration = 1.28
+particle_count = 9
+emission_energy = 3.6
+ground_aligned = true
+parameters = {"reference_time": "24.4-26.7", "style": "red_orange_ground_explosion"}

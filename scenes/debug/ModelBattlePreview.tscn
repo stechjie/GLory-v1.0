@@ -9,6 +9,12 @@ background_color = Color(0.018, 0.026, 0.022, 1)
 ambient_light_source = 2
 ambient_light_color = Color(0.42, 0.50, 0.43, 1)
 ambient_light_energy = 0.44
+glow_enabled = true
+glow_intensity = 0.62
+glow_strength = 1.0
+glow_bloom = 0.02
+glow_blend_mode = 1
+glow_hdr_threshold = 1.08
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_floor"]
 diffuse_mode = 3

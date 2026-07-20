@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="VFXProfile3D" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+profile_id = "flipbook_energy_example"
+module_id = "sprite_flipbook"
+curve_name = "fast_attack_slow_decay"
+main_color = Color(0.28, 0.76, 1, 1)
+core_color = Color(0.78, 0.98, 1, 1)
+size = 1.05
+duration = 0.95
+parameters = {"columns": 4, "rows": 4, "frame_count": 16, "loop": false, "random_start": false, "speed_min": 16.0, "speed_max": 19.0, "billboard": true}

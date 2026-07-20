@@ -172,7 +172,57 @@ static func get_textures(unit_id: String) -> Array[Dictionary]:
 				"human_king_royal_impact.png",
 				"king_final_contact.png",
 			], 0.55)
+		"boss_apocalypse":
+			return _boss_tex("res://assets/vfx/boss/", ["boss_apocalypse_chargeup.png", "boss_apocalypse_shield.png", "boss_apocalypse_blast.png"], [0.0, 0.18, 1.72], [0.68, 0.64, 0.78], [2.0, 1.45, 0.62])
+		"boss_meteor_caster":
+			return _boss_tex("res://assets/vfx/boss/", ["boss_meteor_warning.png", "boss_meteor_trail.png", "boss_meteor_explosion.png"], [0.0, 0.42, 1.18], [0.60, 0.48, 0.66], [1.35, 0.82, 0.62])
+		"boss_mirror_lord":
+			return _boss_tex("res://assets/vfx/boss/", ["boss_mirror_split.png", "boss_mirror_clone.png", "boss_mirror_slash.png"], [0.0, 0.16, 0.52], [0.64, 0.52, 0.58], [0.75, 1.25, 0.55])
+		"boss_holy_priest":
+			return _boss_tex("res://assets/vfx/boss/", ["boss_holy_purify.png", "boss_holy_heal.png", "boss_holy_shield.png"], [0.0, 0.18, 0.36], [0.64, 0.58, 0.62], [0.85, 1.0, 1.25])
+		"boss_thunder_core":
+			return _boss_tex("res://assets/vfx/boss/", ["boss_thunder_stack.png", "boss_thunder_counter.png", "boss_thunder_overload.png"], [0.0, 0.22, 0.58], [0.56, 0.60, 0.66], [1.4, 0.58, 0.7])
+		"boss_twin_gate":
+			return _boss_tex("res://assets/vfx/boss/", ["boss_twin_timer.png", "boss_twin_revive.png", "boss_twin_link.png"], [0.0, 0.42, 0.12], [0.52, 0.62, 0.58], [1.6, 0.8, 1.35])
+		"boss_blood_demon":
+			return _boss_tex("res://assets/vfx/boss/", ["boss_blood_rage.png", "boss_blood_lifesteal.png", "boss_blood_overflow.png"], [0.0, 0.18, 0.52], [0.60, 0.52, 0.66], [1.4, 0.58, 0.65])
+		"boss_soul_devourer":
+			return _boss_tex("res://assets/vfx/boss/", ["boss_soul_devour.png", "boss_soul_fragment.png", "boss_soul_growth.png"], [0.0, 0.22, 0.48], [0.64, 0.42, 0.58], [1.3, 0.6, 1.35])
+		"boss_rage_beast":
+			return _boss_tex("res://assets/vfx/boss/", ["boss_rage_stack.png", "boss_rage_aura.png", "boss_rage_burst.png"], [0.0, 0.20, 0.56], [0.54, 0.64, 0.66], [1.6, 1.35, 0.65])
 	return []
+
+static func _boss_tex(folder: String, names: Array, delays: Array, scales: Array, durations: Array) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for i in names.size():
+		var name := str(names[i])
+		var role := _boss_role_for_name(name)
+		result.append({
+			"path": folder + name,
+			"role": role,
+			"offset": Vector2.ZERO,
+			"delay": float(delays[i]),
+			"scale": float(scales[i]),
+			"duration": float(durations[i]),
+			"alpha": 0.82,
+			"boss": true,
+			"glow": true,
+			"particles": 5 if role == "hit" else 1,
+			"spin": 0.0,
+			"flatten": false,
+			"drift": Vector2(randf_range(-18.0, 18.0), randf_range(-12.0, 12.0)),
+			"stretch": Vector2(1.16, 0.88) if role == "hit" else Vector2(1.08, 0.94),
+			"pulse": 1.16 if role == "hit" else 1.09,
+		})
+	return result
+
+static func _boss_role_for_name(name: String) -> String:
+	var n := name.to_lower()
+	if n.contains("blast") or n.contains("explosion") or n.contains("burst") or n.contains("counter") or n.contains("slash") or n.contains("purify") or n.contains("overflow"):
+		return "hit"
+	if n.contains("trail") or n.contains("link"):
+		return "projectile"
+	return "cast"
 
 static func _tex(folder: String, names: Array, dur: float) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []

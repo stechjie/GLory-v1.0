@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="VFXProfile3D" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+profile_id = "camera_feedback_example"
+module_id = "camera_feedback"
+curve_name = "explosive_out"
+duration = 0.28
+parameters = {"shake": 0.052, "zoom_kick": 0.72}

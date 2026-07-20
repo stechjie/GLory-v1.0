@@ -78,6 +78,7 @@ var _battle_3d_viewport: SubViewport
 var _battle_3d_camera: Camera3D
 var _battle_3d_world: Node3D
 var _battle_3d_root: Node3D
+var _battle_3d_vfx_root: Node3D
 var _battle_arena_load_started := false
 var _battle_arena_ready := false
 var _battle_3d_models: Dictionary = {}

@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="VFXProfile3D" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="1_profile"]
+
+[resource]
+script = ExtResource("1_profile")
+profile_id = "slash_ring_boss_example"
+module_id = "slash_ring"
+curve_name = "overshoot"
+dark_color = Color(0.035, 0.008, 0.12, 1)
+main_color = Color(0.48, 0.08, 0.92, 1)
+core_color = Color(1, 0.56, 1, 1)
+size = 1.0
+duration = 0.56
+particle_count = 10
+emission_energy = 4.0
+ground_aligned = true
+parameters = {"radius": 1.28, "width": 0.34, "halo_width": 1.48, "spark_count": 0}

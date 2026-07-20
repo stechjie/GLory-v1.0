@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="VFXProfile3D" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+profile_id = "hit_stop_example"
+module_id = "hit_stop"
+curve_name = "snap"
+duration = 0.075
+parameters = {"time_scale": 0.08}

@@ -5,6 +5,47 @@ const MONSTER_DATA_PATH := "res://data/pve/pve_monsters.json"
 const MERCENARY_DATA_PATH := "res://data/mercenary/mercenaries.json"
 const BOSS_DATA_PATH := "res://data/boss/bosses.json"
 const FORMATION_BOSS_DATA_PATH := "res://data/formation/formation_allies.json"
+const VFX_LIGHTNING_ARC := preload("res://effects/vfx3d/VFXLightningArc.gd")
+const VFX_LIGHTNING_BALL := preload("res://effects/vfx3d/VFXLightningBall.gd")
+const VFX_TARGET_IMPACT := preload("res://effects/vfx3d/VFXTargetImpact.gd")
+const VFX_SHOCKWAVE := preload("res://effects/vfx3d/VFXShockwave.gd")
+const VFX_SMOKE_BURST := preload("res://effects/vfx3d/VFXSmokeBurst.gd")
+const VFX_MASKED_PARTICLE := preload("res://effects/vfx3d/modules/VFXMaskedParticle3D.gd")
+const VFX_RIBBON_TRAIL := preload("res://effects/vfx3d/modules/VFXRibbonTrail3D.gd")
+const VFX_IMPACT_FLASH := preload("res://effects/vfx3d/modules/VFXImpactFlash3D.gd")
+const VFX_DEBRIS_BURST := preload("res://effects/vfx3d/modules/VFXDebrisBurst3D.gd")
+const VFX_GROUND_RESIDUE := preload("res://effects/vfx3d/modules/VFXGroundResidue3D.gd")
+const VFX_LAYERED_SHOCKWAVE := preload("res://effects/vfx3d/modules/VFXShockwave3D.gd")
+const VFX_SPRITE_FLIPBOOK := preload("res://effects/vfx3d/modules/VFXSpriteFlipbook3D.gd")
+const VFX_SHAPE_DISTORTION := preload("res://effects/vfx3d/modules/VFXShapeDistortion3D.gd")
+const VFX_DIRECTIONAL_BURST := preload("res://effects/vfx3d/modules/VFXDirectionalBurst3D.gd")
+const VFX_LIGHT_PULSE := preload("res://effects/vfx3d/modules/VFXLightPulse3D.gd")
+const VFX_CAMERA_FEEDBACK := preload("res://effects/vfx3d/modules/VFXCameraFeedback3D.gd")
+const VFX_HIT_STOP := preload("res://effects/vfx3d/modules/VFXHitStopController.gd")
+const VFX_PATH_RIBBON := preload("res://effects/vfx3d/modules/VFXPathRibbon3D.gd")
+const VFX_SLASH_ARC := preload("res://effects/vfx3d/modules/VFXSlashArc3D.gd")
+const VFX_SLASH_RING := preload("res://effects/vfx3d/modules/VFXSlashRing3D.gd")
+const VFX_ENERGY_BURST := preload("res://effects/vfx3d/modules/VFXEnergyBurst3D.gd")
+const VFX_GROUND_SIGIL := preload("res://effects/vfx3d/modules/VFXGroundSigil3D.gd")
+const VFX_PORTAL := preload("res://effects/vfx3d/modules/VFXPortal3D.gd")
+const VFX_COMPOSITION := preload("res://effects/vfx3d/core/VFXComposition3D.gd")
+const VFX_PREVIEW_RECORDER := preload("res://effects/vfx3d/preview/VFXPreviewRecorder.gd")
+const VFX_VALIDATION := preload("res://effects/vfx3d/core/VFXValidationReport.gd")
+const PROFILE_SHOCKWAVE := preload("res://effects/vfx3d/profiles/examples/shockwave_layered_example.tres")
+const PROFILE_FLIPBOOK := preload("res://effects/vfx3d/profiles/examples/flipbook_energy_example.tres")
+const PROFILE_DISTORTION := preload("res://effects/vfx3d/profiles/examples/shape_distortion_example.tres")
+const PROFILE_DIRECTIONAL := preload("res://effects/vfx3d/profiles/examples/directional_burst_example.tres")
+const PROFILE_DEBRIS := preload("res://effects/vfx3d/profiles/examples/debris_layered_example.tres")
+const PROFILE_LIGHT := preload("res://effects/vfx3d/profiles/examples/light_pulse_example.tres")
+const PROFILE_CAMERA := preload("res://effects/vfx3d/profiles/examples/camera_feedback_example.tres")
+const PROFILE_HIT_STOP := preload("res://effects/vfx3d/profiles/examples/hit_stop_example.tres")
+const PROFILE_PATH_RIBBON := preload("res://effects/vfx3d/profiles/examples/path_ribbon_slash_example.tres")
+const PROFILE_SLASH_ARC := preload("res://effects/vfx3d/profiles/examples/slash_arc_heavy_example.tres")
+const PROFILE_SLASH_RING := preload("res://effects/vfx3d/profiles/examples/slash_ring_boss_example.tres")
+const PROFILE_ENERGY_BURST := preload("res://effects/vfx3d/profiles/examples/energy_burst_heavy_example.tres")
+const PROFILE_GROUND_SIGIL := preload("res://effects/vfx3d/profiles/examples/ground_sigil_arcane_example.tres")
+const PROFILE_PORTAL := preload("res://effects/vfx3d/profiles/examples/portal_verdant_example.tres")
+const RECIPE_FULL_STAGES := preload("res://effects/vfx3d/recipes/examples/full_skill_stages_demo.tres")
 const TARGET_HEIGHT := 1.32
 const TARGET_WIDTH := 1.06
 const ATTACK_PERIOD := 2.2
@@ -48,6 +89,11 @@ var camera_fov := 48.0
 var left_model_select: OptionButton
 var right_model_select: OptionButton
 var auto_button: Button
+var vfx_select: OptionButton
+var vfx_status_label: Label
+var vfx_preview_root: Node3D
+var vfx_preview_effect: Node3D
+var vfx_recorder: VFXPreviewRecorder
 
 func _ready() -> void:
 	rng.randomize()
@@ -59,6 +105,7 @@ func _ready() -> void:
 	camera.look_at(Vector3(0.0, 0.72, 0.0), Vector3.UP)
 	_setup_info_label()
 	_build_control_panel()
+	_build_vfx_test_panel()
 	model_entries = _load_model_entries()
 	_populate_model_selects()
 	_select_default_models()
@@ -183,6 +230,338 @@ func _build_control_panel() -> void:
 	_add_button(both_action_row, "双 Run", _on_both_run_pressed)
 	_add_button(both_action_row, "随机", _on_random_pressed)
 	auto_button = _add_button(both_action_row, "自动战斗 ON", _on_auto_fight_pressed)
+
+func _build_vfx_test_panel() -> void:
+	var panel := PanelContainer.new()
+	panel.name = "VFXTestPanel"
+	panel.anchor_left = 0.0
+	panel.anchor_top = 1.0
+	panel.anchor_right = 0.0
+	panel.anchor_bottom = 1.0
+	panel.offset_left = 16.0
+	panel.offset_top = -214.0
+	panel.offset_right = 516.0
+	panel.offset_bottom = -16.0
+	canvas_layer.add_child(panel)
+	var rows := VBoxContainer.new()
+	rows.add_theme_constant_override("separation", 5)
+	panel.add_child(rows)
+	var title := Label.new()
+	title.text = "VFX CHECK"
+	title.add_theme_font_size_override("font_size", 14)
+	rows.add_child(title)
+	var select_row := HBoxContainer.new()
+	select_row.add_theme_constant_override("separation", 6)
+	rows.add_child(select_row)
+	var label := Label.new()
+	label.text = "VFX"
+	select_row.add_child(label)
+	vfx_select = OptionButton.new()
+	vfx_select.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vfx_select.add_item("Lightning Arc")
+	vfx_select.add_item("Lightning Ball")
+	vfx_select.add_item("Target Impact Burst")
+	vfx_select.add_item("Shockwave")
+	vfx_select.add_item("Smoke Burst")
+	vfx_select.add_item("Module: Masked Particle")
+	vfx_select.add_item("Module: Ribbon Trail")
+	vfx_select.add_item("Module: Impact Flash")
+	vfx_select.add_item("Module: Debris Burst")
+	vfx_select.add_item("Module: Ground Residue")
+	vfx_select.add_item("Module: Layered Shockwave")
+	vfx_select.add_item("Module: Sprite Flipbook")
+	vfx_select.add_item("Module: Shape Distortion")
+	vfx_select.add_item("Module: Directional Burst")
+	vfx_select.add_item("Module: Light Pulse")
+	vfx_select.add_item("Module: Camera Feedback")
+	vfx_select.add_item("Module: Hit Stop")
+	vfx_select.add_item("Module: Path Ribbon")
+	vfx_select.add_item("Module: Slash Arc")
+	vfx_select.add_item("Module: Slash Ring")
+	vfx_select.add_item("Architecture: Timeline + Curves")
+	vfx_select.add_item("Recipe: Full Skill Stages")
+	vfx_select.add_item("Module: Energy Burst")
+	vfx_select.add_item("Module: Ground Sigil")
+	vfx_select.add_item("Module: Portal")
+	select_row.add_child(vfx_select)
+	var action_row := HBoxContainer.new()
+	action_row.add_theme_constant_override("separation", 6)
+	rows.add_child(action_row)
+	_add_button(action_row, "Play VFX", _on_vfx_play_pressed)
+	_add_button(action_row, "Clear", _on_vfx_clear_pressed)
+	_add_button(action_row, "Auto Fight", _on_vfx_auto_pressed)
+	var playback_row := HBoxContainer.new()
+	playback_row.add_theme_constant_override("separation", 5)
+	rows.add_child(playback_row)
+	_add_button(playback_row, "Pause", _on_vfx_pause_pressed)
+	_add_button(playback_row, "Step", _on_vfx_step_pressed)
+	_add_button(playback_row, "0.25x", _on_vfx_quarter_speed_pressed)
+	_add_button(playback_row, "0.5x", _on_vfx_half_speed_pressed)
+	_add_button(playback_row, "1x", _on_vfx_normal_speed_pressed)
+	var capture_row := HBoxContainer.new()
+	capture_row.add_theme_constant_override("separation", 5)
+	rows.add_child(capture_row)
+	_add_button(capture_row, "Screenshot", _on_vfx_screenshot_pressed)
+	_add_button(capture_row, "Shot @ 0.5s", _on_vfx_fixed_screenshot_pressed)
+	_add_button(capture_row, "Validate", _on_vfx_validate_pressed)
+	vfx_status_label = Label.new()
+	vfx_status_label.text = "Select an effect and press Play VFX"
+	vfx_status_label.add_theme_font_size_override("font_size", 11)
+	rows.add_child(vfx_status_label)
+	vfx_preview_root = Node3D.new()
+	vfx_preview_root.name = "VFXPreviewRoot"
+	$Stage.add_child(vfx_preview_root)
+	vfx_recorder = VFX_PREVIEW_RECORDER.new()
+	vfx_recorder.name = "VFXPreviewRecorder"
+	add_child(vfx_recorder)
+
+func _on_vfx_play_pressed() -> void:
+	_clear_vfx_preview()
+	if vfx_select == null:
+		return
+	var target := Vector3(0.0, 0.18, 0.0)
+	match vfx_select.get_selected_id():
+		0:
+			var lightning := VFX_LIGHTNING_ARC.new()
+			lightning.name = "PreviewLightningArc"
+			vfx_preview_root.add_child(lightning)
+			vfx_preview_effect = lightning
+			lightning.play_arc(Vector3(0.0, 4.25, 0.0), target)
+			vfx_status_label.text = "Playing: Lightning Arc"
+		1:
+			var ball := VFX_LIGHTNING_BALL.new()
+			ball.name = "PreviewLightningBall"
+			vfx_preview_root.add_child(ball)
+			vfx_preview_effect = ball
+			ball.play_ball(Vector3(-1.15, 0.0, 0.0), target)
+			vfx_status_label.text = "Playing: Lightning Ball"
+		2:
+			_play_preview_impact(target)
+		3:
+			var shockwave := VFX_SHOCKWAVE.new()
+			shockwave.name = "PreviewShockwave"
+			vfx_preview_root.add_child(shockwave)
+			vfx_preview_effect = shockwave
+			shockwave.play_shockwave(target, Color(1.0, 0.28, 0.06))
+			vfx_status_label.text = "Playing: Shockwave"
+		4:
+			var smoke := VFX_SMOKE_BURST.new()
+			smoke.name = "PreviewSmokeBurst"
+			vfx_preview_root.add_child(smoke)
+			vfx_preview_effect = smoke
+			smoke.play_smoke(target, Color(0.22, 0.26, 0.32))
+			vfx_status_label.text = "Playing: Smoke Burst"
+		5:
+			var particles := VFX_MASKED_PARTICLE.new()
+			particles.name = "PreviewMaskedParticle"
+			vfx_preview_root.add_child(particles)
+			vfx_preview_effect = particles
+			particles.play_burst(target, Color(0.30, 0.84, 1.0), 18, 3.0, 0.48)
+			vfx_status_label.text = "Playing: Module Masked Particle"
+		6:
+			var ribbon := VFX_RIBBON_TRAIL.new()
+			ribbon.name = "PreviewRibbonTrail"
+			vfx_preview_root.add_child(ribbon)
+			vfx_preview_effect = ribbon
+			ribbon.play_trail(target + Vector3(0.72, 0.44, 0.0), Vector3.RIGHT, Color(0.20, 0.72, 1.0), 1.25, 0.90)
+			vfx_status_label.text = "Playing: Module Ribbon Trail"
+		7:
+			var flash := VFX_IMPACT_FLASH.new()
+			flash.name = "PreviewImpactFlash"
+			vfx_preview_root.add_child(flash)
+			vfx_preview_effect = flash
+			flash.play_flash(target, Color(1.0, 0.44, 0.08), 1.25, 0.46)
+			vfx_status_label.text = "Playing: Module Impact Flash"
+		8:
+			var debris := VFX_DEBRIS_BURST.new()
+			debris.name = "PreviewDebrisBurst"
+			vfx_preview_root.add_child(debris)
+			vfx_preview_effect = debris
+			debris.play_profile(PROFILE_DEBRIS, {"target": target})
+			vfx_status_label.text = "Playing: Layered Debris Burst profile"
+		9:
+			var residue := VFX_GROUND_RESIDUE.new()
+			residue.name = "PreviewGroundResidue"
+			vfx_preview_root.add_child(residue)
+			vfx_preview_effect = residue
+			residue.play_residue(target, Color(0.20, 0.68, 1.0), 1.35, 1.25)
+			vfx_status_label.text = "Playing: Module Ground Residue"
+		10:
+			var layered_wave := VFX_LAYERED_SHOCKWAVE.new()
+			vfx_preview_root.add_child(layered_wave)
+			vfx_preview_effect = layered_wave
+			layered_wave.play_profile(PROFILE_SHOCKWAVE, {"target": target})
+			vfx_status_label.text = "Playing: Layered Shockwave profile"
+		11:
+			var flipbook := VFX_SPRITE_FLIPBOOK.new()
+			vfx_preview_root.add_child(flipbook)
+			vfx_preview_effect = flipbook
+			flipbook.play_profile(PROFILE_FLIPBOOK, {"target": target})
+			vfx_status_label.text = "Playing: Sprite Flipbook profile"
+		12:
+			var shape := VFX_SHAPE_DISTORTION.new()
+			vfx_preview_root.add_child(shape)
+			vfx_preview_effect = shape
+			shape.play_profile(PROFILE_DISTORTION, {"target": target, "direction": Vector3.RIGHT})
+			vfx_status_label.text = "Playing: Shape Distortion profile"
+		13:
+			var burst := VFX_DIRECTIONAL_BURST.new()
+			vfx_preview_root.add_child(burst)
+			vfx_preview_effect = burst
+			burst.play_profile(PROFILE_DIRECTIONAL, {"target": target, "direction": Vector3.RIGHT})
+			vfx_status_label.text = "Playing: Directional Burst profile"
+		14:
+			var pulse := VFX_LIGHT_PULSE.new()
+			vfx_preview_root.add_child(pulse)
+			vfx_preview_effect = pulse
+			pulse.play_profile(PROFILE_LIGHT, {"target": target})
+			vfx_status_label.text = "Playing: Light Pulse profile"
+		15:
+			var feedback := VFX_CAMERA_FEEDBACK.new()
+			vfx_preview_root.add_child(feedback)
+			vfx_preview_effect = feedback
+			feedback.play_profile(PROFILE_CAMERA, {"camera": camera})
+			vfx_status_label.text = "Playing: Camera Feedback profile"
+		16:
+			var hit_stop := VFX_HIT_STOP.new()
+			vfx_preview_root.add_child(hit_stop)
+			vfx_preview_effect = hit_stop
+			hit_stop.play_profile(PROFILE_HIT_STOP, {})
+			vfx_status_label.text = "Playing: Preview-only Hit Stop profile"
+		17:
+			var path_ribbon := VFX_PATH_RIBBON.new()
+			path_ribbon.name = "PreviewPathRibbon"
+			vfx_preview_root.add_child(path_ribbon)
+			vfx_preview_effect = path_ribbon
+			var path_points := PackedVector3Array()
+			for i in range(21):
+				var t := float(i) / 20.0
+				path_points.append(target + Vector3(lerpf(-1.2, 1.15, t), 0.42 + sin(t * PI) * 0.78 + sin(t * PI * 3.0) * 0.04, 0.0))
+			path_ribbon.play_path(path_points, Vector3.FORWARD, PROFILE_PATH_RIBBON)
+			vfx_status_label.text = "Playing: Path Ribbon profile"
+		18:
+			var slash_arc := VFX_SLASH_ARC.new()
+			slash_arc.name = "PreviewSlashArc"
+			vfx_preview_root.add_child(slash_arc)
+			vfx_preview_effect = slash_arc
+			slash_arc.play_profile(PROFILE_SLASH_ARC, {"target": target + Vector3(0.0, 0.32, 0.0), "direction": Vector3.RIGHT})
+			vfx_status_label.text = "Playing: Heavy Slash Arc profile"
+		19:
+			var slash_ring := VFX_SLASH_RING.new()
+			slash_ring.name = "PreviewSlashRing"
+			vfx_preview_root.add_child(slash_ring)
+			vfx_preview_effect = slash_ring
+			slash_ring.play_profile(PROFILE_SLASH_RING, {"target": target})
+			vfx_status_label.text = "Playing: Boss Slash Ring profile"
+		20, 21:
+			var composition := VFX_COMPOSITION.new()
+			composition.name = "PreviewFullStagesComposition"
+			vfx_preview_root.add_child(composition)
+			vfx_preview_effect = composition
+			composition.play_recipe(RECIPE_FULL_STAGES, {"target": target, "direction": Vector3.RIGHT, "camera": camera})
+			vfx_status_label.text = "Playing: staggered Timeline + Curve recipe" if vfx_select.get_selected_id() == 20 else "Playing: Full Skill Stages recipe"
+		22:
+			var energy_burst := VFX_ENERGY_BURST.new()
+			energy_burst.name = "PreviewEnergyBurst"
+			vfx_preview_root.add_child(energy_burst)
+			vfx_preview_effect = energy_burst
+			energy_burst.play_profile(PROFILE_ENERGY_BURST, {"target": target, "direction": Vector3.RIGHT})
+			vfx_status_label.text = "Playing: Heavy Energy Burst profile"
+		23:
+			var ground_sigil := VFX_GROUND_SIGIL.new()
+			ground_sigil.name = "PreviewGroundSigil"
+			vfx_preview_root.add_child(ground_sigil)
+			vfx_preview_effect = ground_sigil
+			ground_sigil.play_profile(PROFILE_GROUND_SIGIL, {"target": target})
+			vfx_status_label.text = "Playing: Arcane Ground Sigil profile"
+		24:
+			var portal := VFX_PORTAL.new()
+			portal.name = "PreviewPortal"
+			vfx_preview_root.add_child(portal)
+			vfx_preview_effect = portal
+			portal.play_profile(PROFILE_PORTAL, {"target": target})
+			vfx_status_label.text = "Playing: Verdant Portal profile"
+
+func _play_preview_impact(target: Vector3) -> void:
+	var root := Node3D.new()
+	root.name = "PreviewTargetImpact"
+	vfx_preview_root.add_child(root)
+	vfx_preview_effect = root
+	var core := VFX_TARGET_IMPACT.make(Color(1.0, 0.48, 0.10), 1.05)
+	core.position = target + Vector3(0.0, 0.035, 0.0)
+	core.scale = Vector3.ONE * 0.35
+	root.add_child(core)
+	var sparks := VFX_TARGET_IMPACT.burst(Color(1.0, 0.62, 0.16), 28, 3.5, 0.42)
+	sparks.position = target + Vector3(0.0, 0.12, 0.0)
+	root.add_child(sparks)
+	var tween := root.create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(core, "scale", Vector3.ONE * 1.55, 0.42)
+	tween.tween_property(core.material_override, "shader_parameter/progress", 1.0, 0.42)
+	tween.chain().tween_callback(root.queue_free)
+	vfx_status_label.text = "Playing: Target Impact Burst"
+
+func _on_vfx_clear_pressed() -> void:
+	_clear_vfx_preview()
+	if vfx_status_label != null:
+		vfx_status_label.text = "VFX cleared"
+
+func _on_vfx_auto_pressed() -> void:
+	auto_fight_enabled = not auto_fight_enabled
+	if vfx_status_label != null:
+		vfx_status_label.text = "Auto Fight: %s" % ("ON" if auto_fight_enabled else "OFF")
+
+func _on_vfx_pause_pressed() -> void:
+	if vfx_recorder != null:
+		var is_paused := vfx_recorder.toggle_pause()
+		vfx_status_label.text = "VFX preview paused" if is_paused else "VFX preview resumed"
+
+func _on_vfx_step_pressed() -> void:
+	if vfx_recorder != null:
+		vfx_recorder.step_frame()
+		vfx_status_label.text = "Advanced one rendered frame"
+
+func _on_vfx_quarter_speed_pressed() -> void:
+	_set_vfx_preview_speed(0.25)
+
+func _on_vfx_half_speed_pressed() -> void:
+	_set_vfx_preview_speed(0.5)
+
+func _on_vfx_normal_speed_pressed() -> void:
+	_set_vfx_preview_speed(1.0)
+
+func _set_vfx_preview_speed(speed: float) -> void:
+	if vfx_recorder != null:
+		vfx_recorder.set_playback_speed(speed)
+		vfx_status_label.text = "VFX preview speed: %.2fx" % speed
+
+func _on_vfx_screenshot_pressed() -> void:
+	if vfx_recorder == null:
+		return
+	var path := await vfx_recorder.capture_now(get_viewport(), "vfx_manual")
+	vfx_status_label.text = "Saved: %s" % ProjectSettings.globalize_path(path) if not path.is_empty() else "Screenshot failed"
+
+func _on_vfx_fixed_screenshot_pressed() -> void:
+	if vfx_recorder == null:
+		return
+	var path := await vfx_recorder.capture_at_time(get_viewport(), 0.5, "vfx_050")
+	vfx_status_label.text = "Saved fixed-time shot: %s" % ProjectSettings.globalize_path(path) if not path.is_empty() else "Screenshot failed"
+
+func _on_vfx_validate_pressed() -> void:
+	var recipe: Resource = RECIPE_FULL_STAGES if vfx_select != null and vfx_select.get_selected_id() >= 17 else null
+	var report := VFX_VALIDATION.validate(vfx_preview_effect, recipe)
+	var warnings: PackedStringArray = report.get("warnings", PackedStringArray())
+	if warnings.is_empty():
+		vfx_status_label.text = "Validation PASS | layers %d | particles %d" % [report.visual_layers, report.particles]
+	else:
+		vfx_status_label.text = "Validation: %s" % " | ".join(warnings)
+
+func _clear_vfx_preview() -> void:
+	if vfx_preview_effect != null and is_instance_valid(vfx_preview_effect):
+		vfx_preview_effect.queue_free()
+	vfx_preview_effect = null
+	if vfx_recorder != null:
+		vfx_recorder.restore_normal_speed()
 
 func _add_button(parent: Control, text: String, callable: Callable) -> Button:
 	var button := Button.new()

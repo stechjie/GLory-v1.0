@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="VFXProfile3D" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="1_profile"]
+
+[resource]
+script = ExtResource("1_profile")
+profile_id = "energy_burst_heavy_example"
+module_id = "energy_burst"
+curve_name = "explosive_out"
+dark_color = Color(0.075, 0.008, 0.16, 1)
+main_color = Color(0.50, 0.055, 0.94, 1)
+core_color = Color(0.96, 0.74, 1, 1)
+size = 1.08
+duration = 1.0
+particle_count = 10
+emission_energy = 3.8
+parameters = {"reference_time": "24.4-25.5", "style": "violet_layered_burst"}

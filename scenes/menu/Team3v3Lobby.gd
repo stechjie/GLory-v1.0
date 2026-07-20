@@ -4,20 +4,20 @@ signal start_requested
 signal back_requested
 signal selftest_requested
 
-const REF_SIZE := Vector2(1536.0, 1024.0)
+const REF_SIZE := Vector2(1672.0, 941.0)
 const SLOT_LABELS := ["A", "B", "C", "1", "2", "3"]
 const SLOT_POS := [
-	Vector2(320, 208), Vector2(610, 208), Vector2(900, 208),
-	Vector2(320, 504), Vector2(610, 504), Vector2(900, 504),
+	Vector2(447, 229), Vector2(739, 229), Vector2(1015, 229),
+	Vector2(447, 502), Vector2(739, 502), Vector2(1015, 502),
 ]
-const SLOT_SIZE := Vector2(190, 175)
-const TEX_BACKGROUND := preload("res://assets/ui/room/background.png")
-const TEX_BACK := preload("res://assets/ui/room/back.png")
-const TEX_TITLE := preload("res://assets/ui/room/title.png")
-const TEX_SLOT := preload("res://assets/ui/room/slot.png")
-const TEX_FRIENDS := preload("res://assets/ui/room/friends.png")
-const TEX_CHAT := preload("res://assets/ui/room/chat.png")
-const TEX_START := preload("res://assets/ui/room/start.png")
+const SLOT_SIZE := Vector2(184, 175)
+const TEX_BACKGROUND := preload("res://assets/ui/room_v2/background.png")
+const TEX_BACK := preload("res://assets/ui/room_v2/back.png")
+const TEX_TITLE := preload("res://assets/ui/room_v2/title.png")
+const TEX_SLOT := preload("res://assets/ui/room_v2/slot.png")
+const TEX_FRIENDS := preload("res://assets/ui/room_v2/friends.png")
+const TEX_CHAT := preload("res://assets/ui/room_v2/chat.png")
+const TEX_START := preload("res://assets/ui/room_v2/start.png")
 const TEX_VS := preload("res://assets/ui/room/vs.png")
 const MENU_MUSIC_PATH := "res://assets/audio/bgm/menu_music.mp3"
 
@@ -112,18 +112,16 @@ func _build() -> void:
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
-	_add_screen_band(Color(0, 0, 0, 0.10), 0.0, 98.0, false)
-	_add_screen_band(Color(0, 0, 0, 0.10), 0.0, 244.0, true)
-	_add_texture(TEX_BACK, Vector2(-42, -6), Vector2(150, 90))
-	_add_hit(Vector2(-42, -6), Vector2(150, 90), func(): back_requested.emit())
-	_add_texture(TEX_TITLE, Vector2(544, -4), Vector2(448, 115))
+	_add_cropped_texture(TEX_BACK, Rect2(60, 118, 280, 164), Vector2(80, 35), Vector2(143, 83))
+	_add_hit(Vector2(80, 35), Vector2(143, 83), func(): back_requested.emit())
+	_add_cropped_texture(TEX_TITLE, Rect2(158, 206, 964, 308), Vector2(599, 21), Vector2(475, 143))
 	_room_id_lbl = _add_label("", Vector2(646, 72), Vector2(244, 30), 20, Color(0.45, 0.27, 0.08))
 	_add_label(_room_text("自定义房间", "CUSTOM GAME"), Vector2(646, 31), Vector2(244, 42), 32)
-	_add_texture(TEX_FRIENDS, Vector2(1368, 150), Vector2(238, 371))
+	_add_cropped_texture(TEX_FRIENDS, Rect2(324, 124, 432, 832), Vector2(1391, 181), Vector2(218, 400))
 	_add_label(_room_text("朋友列表", "Friends"), Vector2(1292, 226), Vector2(156, 42), 28)
-	_add_texture(TEX_CHAT, Vector2(-72, 790), Vector2(512, 246))
+	_add_cropped_texture(TEX_CHAT, Rect2(312, 194, 656, 332), Vector2(147, 704), Vector2(432, 212))
 	_add_label(_room_text("目前暂无聊天功能", "Chat coming soon"), Vector2(150, 870), Vector2(270, 34), 22, Color(0.53, 0.40, 0.27))
-	_add_texture(TEX_VS, Vector2(650, 418), Vector2(185, 85))
+	_add_texture(TEX_VS, Vector2(746, 427), Vector2(180, 85))
 
 	_slot_name_lbls.resize(6)
 	_slot_status_lbls.resize(6)
@@ -132,20 +130,20 @@ func _build() -> void:
 	for i in 6:
 		_build_slot(i)
 
-	_add_texture(TEX_START, Vector2(1364, 900), Vector2(260, 73))
-	_start_lbl = _add_label("", Vector2(1392, 916), Vector2(205, 40), 30)
-	_start_btn = _add_hit(Vector2(1364, 900), Vector2(260, 73), _on_primary_pressed)
+	_add_cropped_texture(TEX_START, Rect2(412, 264, 456, 192), Vector2(1306, 789), Vector2(267, 96))
+	_start_lbl = _add_label("", Vector2(1340, 812), Vector2(200, 42), 28, Color(0.96, 0.87, 0.70))
+	_start_btn = _add_hit(Vector2(1306, 789), Vector2(267, 96), _on_primary_pressed)
 	# 离线自测专用入口(officetest):开始游戏上方,仅离线显示,纯追加不动原布局。
-	_selftest_btn = _add_ai_button(Vector2(1364, 826), Vector2(260, 60), func(): selftest_requested.emit())
+	_selftest_btn = _add_ai_button(Vector2(1310, 719), Vector2(255, 55), func(): selftest_requested.emit())
 	_selftest_btn.text = _room_text("自测开始", "Self-Test")
 	_selftest_btn.add_theme_font_size_override("font_size", 24)
 	_selftest_btn.visible = not _online()
 	_host_hint_lbl = _add_label(_room_text("等待其他玩家准备后可按", "Waiting for players"), Vector2(1218, 934), Vector2(320, 30), 20, Color(1.0, 0.94, 0.78))
-	_status_lbl = _add_label("", Vector2(560, 104), Vector2(420, 30), 18, Color(0.98, 0.94, 0.78))
+	_status_lbl = _add_label("", Vector2(626, 167), Vector2(420, 28), 17, Color(0.98, 0.94, 0.78))
 
 func _build_slot(index: int) -> void:
 	var pos: Vector2 = SLOT_POS[index]
-	_add_texture(TEX_SLOT, pos, SLOT_SIZE)
+	_add_cropped_texture(TEX_SLOT, Rect2(0, 24, 388, 356), pos, SLOT_SIZE)
 	_add_hit(pos + Vector2(25, 30), Vector2(140, 120), _on_slot_pressed.bind(index))
 	var name_pos := Vector2(pos.x - 10, pos.y - 46) if index < 3 else Vector2(pos.x - 10, pos.y + SLOT_SIZE.y + 4)
 	_slot_name_lbls[index] = _add_label("", name_pos, Vector2(SLOT_SIZE.x + 20, 36), 28)
@@ -365,6 +363,12 @@ func _add_texture(texture: Texture2D, pos: Vector2, size: Vector2, stretch := Te
 	_track(rect, pos, size)
 	return rect
 
+func _add_cropped_texture(texture: Texture2D, region: Rect2, pos: Vector2, size: Vector2) -> TextureRect:
+	var atlas := AtlasTexture.new()
+	atlas.atlas = texture
+	atlas.region = region
+	return _add_texture(atlas, pos, size)
+
 func _add_rect(color: Color, pos: Vector2, size: Vector2) -> ColorRect:
 	var rect := ColorRect.new()
 	rect.color = color
@@ -396,18 +400,28 @@ func _add_label(text: String, pos: Vector2, size: Vector2, font_size: int, color
 
 func _edge_label_pos(pos: Vector2) -> Vector2:
 	if pos == Vector2(646, 31):
-		return Vector2(544, 31)
+		return Vector2(650, 51)
+	if pos == Vector2(646, 72):
+		return Vector2(712, 103)
 	if pos == Vector2(1292, 226):
-		return Vector2(1403, 170)
+		return Vector2(1421, 199)
 	if pos == Vector2(150, 870):
-		return Vector2(56, 902)
+		return Vector2(186, 780)
 	if pos == Vector2(1218, 934):
-		return Vector2(1306, 974)
+		return Vector2(1285, 880)
 	return pos
 
 func _edge_label_size(pos: Vector2, size: Vector2) -> Vector2:
-	if pos == Vector2(544, 31):
-		return Vector2(448, 42)
+	if pos == Vector2(650, 51):
+		return Vector2(372, 48)
+	if pos == Vector2(712, 103):
+		return Vector2(250, 30)
+	if pos == Vector2(1421, 199):
+		return Vector2(158, 42)
+	if pos == Vector2(186, 780):
+		return Vector2(335, 36)
+	if pos == Vector2(1285, 880):
+		return Vector2(310, 28)
 	return size
 
 func _add_hit(pos: Vector2, size: Vector2, cb: Callable) -> Button:

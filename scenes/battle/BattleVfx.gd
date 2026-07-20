@@ -29,10 +29,15 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 		var now: Dictionary = current[id]
 		var prev: Dictionary = _vfx_prev_units.get(id, {})
 		if prev.is_empty():
+			if _vfx_seeded and str(now.get("skill_id", "")) == "twin_revive":
+				_spawn_boss_texture_variant(str(now.get("unit_id", "")), "revive", now.get("foot_pos", Vector2.ZERO))
+			if _vfx_seeded and id.contains("_mirror_"):
+				_spawn_boss_texture_variant("boss_mirror_lord", "split", now.get("foot_pos", Vector2.ZERO))
 			continue
 		var hp_delta := int(now.get("hp", 0)) - int(prev.get("hp", 0))
 		var shield_delta := int(now.get("shield", 0)) - int(prev.get("shield", 0))
 		var stack_delta := int(now.get("skill_stacks", 0)) - int(prev.get("skill_stacks", 0))
+		var sid_now := str(now.get("skill_id", ""))
 		if hp_delta < 0:
 			var critical := -hp_delta >= maxi(35, int(round(float(maxi(1, int(now.get("max_hp", 1)))) * 0.24)))
 			damage_events.append({
@@ -48,8 +53,21 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 			_spawn_vfx("HOLY_HEAL", now.get("head_pos", Vector2.ZERO))
 		if shield_delta > 0:
 			_spawn_vfx("HOLY_SHIELD", now.get("head_pos", Vector2.ZERO))
-		if stack_delta > 0 and str(now.get("skill_id", "")) in ["rage_stack", "same_target_damage_stack"]:
-			_spawn_vfx("GROWTH_AURA", now.get("foot_pos", Vector2.ZERO))
+		if stack_delta > 0 and sid_now in ["rage_stack", "same_target_damage_stack"]:
+			if sid_now == "rage_stack":
+				_spawn_boss_texture_variant(str(now.get("unit_id", "")), "rage_stack", now.get("foot_pos", Vector2.ZERO))
+			else:
+				_spawn_vfx("GROWTH_AURA", now.get("foot_pos", Vector2.ZERO))
+		if sid_now == "overload_counter" and stack_delta != 0:
+			var overload_target := _nearest_enemy_target(now, damage_events, current)
+			var overload_pos: Vector2 = overload_target.get("hit_pos", now.get("foot_pos", Vector2.ZERO))
+			_play_boss_procedural("lightning_ball", now.get("cast_pos", now.get("foot_pos", Vector2.ZERO)), overload_pos)
+		var prev_ratio := float(prev.get("hp", 0)) / float(maxi(1, int(prev.get("max_hp", 1))))
+		var now_ratio := float(now.get("hp", 0)) / float(maxi(1, int(now.get("max_hp", 1))))
+		if sid_now == "blood_rage" and prev_ratio > 0.35 and now_ratio <= 0.35:
+			_spawn_boss_texture_variant(str(now.get("unit_id", "")), "blood_rage", now.get("foot_pos", Vector2.ZERO))
+		if sid_now == "twin_revive" and not bool(prev.get("alive", true)) and bool(now.get("alive", false)):
+			_spawn_boss_texture_variant(str(now.get("unit_id", "")), "revive", now.get("foot_pos", Vector2.ZERO))
 		var prev_skill_ready := float(prev.get("skill_ready", 0.0))
 		var now_skill_ready := float(now.get("skill_ready", 0.0))
 		if now_skill_ready > prev_skill_ready + 0.1:
@@ -65,6 +83,12 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 		_spawn_vfx("DEATH_EXPLOSION", prev_missing.get("foot_pos", Vector2.ZERO))
 
 	_play_ranged_projectiles(_collect_attack_events(current, true), damage_events, current)
+	if not death_events.is_empty():
+		for id: String in current.keys():
+			var boss_now: Dictionary = current[id]
+			if str(boss_now.get("skill_id", "")) == "soul_devour" and bool(boss_now.get("alive", false)):
+				for death_event: Dictionary in death_events:
+					_spawn_boss_texture_variant(str(boss_now.get("unit_id", "")), "devour", death_event.get("pos", boss_now.get("foot_pos", Vector2.ZERO)))
 	_play_melee_slashes(_collect_attack_events(current, false), damage_events, current)
 	_vfx_prev_units = current
 
@@ -221,7 +245,30 @@ func _play_skill_cast_vfx(unit: Dictionary, damage_events: Array[Dictionary], cu
 	var uid := str(unit.get("unit_id", ""))
 	var texture_pos: Vector2 = unit.get("cast_pos", Vector2.ZERO)
 	var should_play_texture := true
+	var procedural_played := false
 	match sid:
+		"apocalypse_charge", "element_meteor", "mirror_clone", "holy_purify", "overload_counter", "twin_revive", "blood_rage", "soul_devour", "rage_stack":
+			# Boss VFX are driven by the skill cast snapshot. The texture config supplies staged delays,
+			# scale pulses, rotation and drift so the effect reads as an event, not a static sticker.
+			should_play_texture = false
+			if sid == "element_meteor":
+				var meteor_target := _nearest_enemy_target(unit, damage_events, current)
+				var meteor_pos: Vector2 = meteor_target.get("hit_pos", meteor_target.get("pos", texture_pos))
+				_play_boss_procedural("meteor_strike", texture_pos, meteor_pos)
+				procedural_played = true
+			elif sid == "overload_counter":
+				var lightning_target := _nearest_enemy_target(unit, damage_events, current)
+				if not lightning_target.is_empty():
+					var lightning_pos: Vector2 = lightning_target.get("hit_pos", lightning_target.get("pos", texture_pos))
+					_play_boss_procedural("lightning_ball", texture_pos, lightning_pos)
+					procedural_played = true
+			elif sid == "apocalypse_charge":
+				_spawn_boss_texture_variant(uid, "chargeup", unit.get("foot_pos", texture_pos))
+				_spawn_boss_texture_variant(uid, "shield", unit.get("foot_pos", texture_pos))
+				var apocalypse_target := _nearest_enemy_target(unit, damage_events, current)
+				_spawn_boss_texture_variant(uid, "blast", apocalypse_target.get("hit_pos", texture_pos))
+			else:
+				_spawn_skill_texture_for_unit_id(uid, unit.get("foot_pos", texture_pos))
 		"random_attribute_bolt", "silence_bolt":
 			should_play_texture = false
 			var target_bolt := _nearest_enemy_target(unit, damage_events, current)
@@ -267,6 +314,16 @@ func _play_skill_cast_vfx(unit: Dictionary, damage_events: Array[Dictionary], cu
 	# 叠加贴图特效（与程序效果同时显示）
 	if should_play_texture:
 		_play_skill_texture_vfx(unit, texture_pos)
+	elif procedural_played:
+		# The procedural sample owns its full staged animation; do not place a static Boss PNG on top.
+		pass
+
+func _play_boss_procedural(effect_id: String, origin_2d: Vector2, target_2d: Vector2) -> void:
+	if _battle_3d_vfx_root == null or not is_instance_valid(_battle_3d_vfx_root):
+		return
+	if not _battle_3d_vfx_root.has_method("play"):
+		return
+	_battle_3d_vfx_root.call("play", effect_id, _sim_to_world_pos(origin_2d), _sim_to_world_pos(target_2d))
 
 func _play_skill_texture_vfx(unit: Dictionary, pos: Vector2) -> void:
 	var uid := str(unit.get("unit_id", ""))
@@ -279,6 +336,15 @@ func _spawn_skill_texture_for_unit_id(uid: String, pos: Vector2) -> void:
 	if tex_configs.is_empty():
 		return
 	_spawn_vfx("SKILL_TEXTURE", pos, {"textures": tex_configs})
+
+func _spawn_boss_texture_variant(uid: String, variant: String, pos: Vector2) -> void:
+	var configs := SkillVFXConfig.get_textures(uid)
+	var selected: Array[Dictionary] = []
+	for cfg: Dictionary in configs:
+		if str(cfg.get("path", "")).to_lower().contains(variant.to_lower()):
+			selected.append(cfg)
+	if not selected.is_empty():
+		_spawn_vfx("SKILL_TEXTURE", pos, {"textures": selected})
 
 func _spawn_skill_hit_texture_for_unit_id(uid: String, pos: Vector2) -> void:
 	var tex_configs := _textures_for_role(uid, "hit")

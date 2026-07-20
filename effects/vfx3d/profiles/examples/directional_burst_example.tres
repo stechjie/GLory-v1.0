@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="VFXProfile3D" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+profile_id = "directional_burst_example"
+module_id = "directional_burst"
+curve_name = "fast_attack_slow_decay"
+main_color = Color(1, 0.36, 0.055, 1)
+core_color = Color(1, 0.9, 0.54, 1)
+duration = 0.52
+particle_count = 20
+parameters = {"spread": 25.0, "speed_min": 2.4, "speed_max": 4.6, "gravity": -2.2}

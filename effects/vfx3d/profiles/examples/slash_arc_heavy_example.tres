@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="VFXProfile3D" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="1_profile"]
+
+[resource]
+script = ExtResource("1_profile")
+profile_id = "slash_arc_heavy_example"
+module_id = "slash_arc"
+curve_name = "fast_attack_slow_decay"
+dark_color = Color(0.13, 0.018, 0.008, 1)
+main_color = Color(0.96, 0.19, 0.025, 1)
+core_color = Color(1, 0.84, 0.34, 1)
+size = 1.0
+duration = 0.48
+particle_count = 8
+emission_energy = 4.2
+parameters = {"radius": 1.34, "arc_degrees": 152.0, "tilt_degrees": 14.0, "width": 0.44, "halo_width": 1.55, "spark_count": 0}

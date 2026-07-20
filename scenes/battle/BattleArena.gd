@@ -1,5 +1,7 @@
 extends "res://scenes/battle/BattleUI.gd"
 
+const BossProceduralVFX3D := preload("res://effects/BossProceduralVFX3D.gd")
+
 const FIRE_GLOW_TEXTURE_PATH := "res://assets/vfx/battlefield/fire_glow_soft.png"
 const FIRE_SPARK_TEXTURE_PATH := "res://assets/vfx/battlefield/fire_spark_dot.png"
 const BATTLE_2_5D_BASE_PATH := "res://assets/board/2_5d/battlefield_jungle_pve.png"
@@ -489,6 +491,9 @@ func _setup_battle_3d_view(arena_wrap: Control) -> void:
 	_battle_3d_root = Node3D.new()
 	_battle_3d_root.name = "BattleModelRoot"
 	world.add_child(_battle_3d_root)
+	_battle_3d_vfx_root = BossProceduralVFX3D.new()
+	_battle_3d_vfx_root.name = "BossProceduralVFX3D"
+	_battle_3d_root.add_child(_battle_3d_vfx_root)
 
 	var light := DirectionalLight3D.new()
 	light.light_color = Color(1.0, 0.84, 0.62)

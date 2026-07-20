@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="VFXProfile3D" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="1_profile"]
+
+[resource]
+script = ExtResource("1_profile")
+profile_id = "path_ribbon_slash_example"
+module_id = "path_ribbon"
+curve_name = "explosive_out"
+dark_color = Color(0.055, 0.012, 0.14, 1)
+main_color = Color(0.48, 0.10, 0.92, 1)
+core_color = Color(0.98, 0.68, 1, 1)
+size = 1.0
+duration = 0.46
+emission_energy = 3.8
+parameters = {"width": 0.36, "taper_both_ends": false, "curve_bias": 0.42, "reveal_ratio": 0.2, "hold_ratio": 0.12, "spark_count": 0}

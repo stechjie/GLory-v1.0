@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="VFXProfile3D" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+profile_id = "shockwave_layered_example"
+module_id = "shockwave"
+curve_name = "explosive_out"
+dark_color = Color(0.12, 0.025, 0.005, 1)
+main_color = Color(1, 0.28, 0.035, 1)
+core_color = Color(1, 0.88, 0.52, 1)
+size = 1.8
+duration = 0.72
+ground_aligned = true
+parameters = {"secondary_delay": 0.22, "thickness": 0.09, "distortion": 0.11, "dissolve": 0.16}
