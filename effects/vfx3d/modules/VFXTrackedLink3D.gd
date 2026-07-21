@@ -19,8 +19,8 @@ void vertex(){MODELVIEW_MATRIX=VIEW_MATRIX*mat4(INV_VIEW_MATRIX[0],INV_VIEW_MATR
 void fragment(){float a=texture(dot_tex,UV).a;float f=sin(clamp(life,0.0,1.0)*3.14159);vec3 c=mix(main_color.rgb,core_color.rgb,a);ALBEDO=vec3(0.0);EMISSION=c*energy*a*f;ALPHA=a*f*opacity;}
 """
 
-var _origin_node:Node3D
-var _target_node:Node3D
+var _origin_ref:WeakRef
+var _target_ref:WeakRef
 var _origin_fallback:=Vector3.ZERO
 var _target_fallback:=Vector3.ZERO
 var _ribbons:Array[MeshInstance3D]=[]
@@ -30,10 +30,13 @@ var _elapsed:=0.0
 var _mesh_accum:=0.0
 
 func play_profile(profile:VFXProfile3D,context:Dictionary)->void:
-	play_link(context.get("origin",Vector3(-1.0,.8,0.0)),context.get("target",Vector3(1.0,.8,0.0)),profile,context.get("origin_node") as Node3D,context.get("target_node") as Node3D)
+	play_link(context.get("origin",Vector3(-1.0,.8,0.0)),context.get("target",Vector3(1.0,.8,0.0)),profile,context.get("origin_node"),context.get("target_node"))
 
-func play_link(origin:Vector3,target:Vector3,profile:VFXProfile3D=null,origin_node:Node3D=null,target_node:Node3D=null)->void:
-	begin();_profile=profile if profile!=null else _fallback_profile();_origin_fallback=origin;_target_fallback=target;_origin_node=origin_node;_target_node=target_node
+func play_link(origin:Vector3,target:Vector3,profile:VFXProfile3D=null,origin_node:Variant=null,target_node:Variant=null)->void:
+	begin();_profile=profile if profile!=null else _fallback_profile();_origin_fallback=origin;_target_fallback=target;_origin_ref=null;_target_ref=null
+	if origin_node is Node3D and is_instance_valid(origin_node):_origin_ref=weakref(origin_node)
+	if target_node is Node3D and is_instance_valid(target_node):_target_ref=weakref(target_node)
+	_update_endpoint_fallbacks()
 	for i in range(3):
 		var n:=MeshInstance3D.new();n.name="TrackedLinkLayer_%d"%i;n.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF;n.material_override=_make_material(i);add_child(n);_ribbons.append(n)
 	_update_ribbons()
@@ -44,14 +47,20 @@ func play_link(origin:Vector3,target:Vector3,profile:VFXProfile3D=null,origin_no
 func _process(delta:float)->void:
 	if _finished or _profile==null:return
 	_elapsed+=delta;_mesh_accum+=delta
-	if _mesh_accum>=.055:_mesh_accum=0.0;_update_ribbons()
+	if _mesh_accum>=.055:_mesh_accum=0.0;_update_endpoint_fallbacks();_update_ribbons()
 
-func _endpoint(node:Node3D,fallback:Vector3)->Vector3:
-	if node!=null and is_instance_valid(node):return to_local(node.global_position)+Vector3(0.0,.72,0.0)
+func _endpoint(ref:WeakRef,fallback:Vector3)->Vector3:
+	if ref==null:return fallback
+	var node:Variant=ref.get_ref()
+	if node is Node3D and is_instance_valid(node):return to_local((node as Node3D).global_position)+Vector3(0.0,.72,0.0)
 	return fallback
 
+func _update_endpoint_fallbacks()->void:
+	_origin_fallback=_endpoint(_origin_ref,_origin_fallback)
+	_target_fallback=_endpoint(_target_ref,_target_fallback)
+
 func _curve_point(t:float,layer:int)->Vector3:
-	var a:=_endpoint(_origin_node,_origin_fallback);var b:=_endpoint(_target_node,_target_fallback);var d:=b-a;var side:=Vector3(-d.y,d.x,0.0).normalized();var arch:=Vector3.UP*sin(t*PI)*_profile.size*(.28+.06*float(layer));var wave:=side*sin(t*PI*(3.0+float(layer))+_elapsed*(7.0+float(layer)*1.7)+float(layer)*2.1)*_profile.size*(.055+.018*float(layer));return a.lerp(b,t)+arch+wave
+	var a:=_origin_fallback;var b:=_target_fallback;var d:=b-a;var side:=Vector3(-d.y,d.x,0.0).normalized();var arch:=Vector3.UP*sin(t*PI)*_profile.size*(.28+.06*float(layer));var wave:=side*sin(t*PI*(3.0+float(layer))+_elapsed*(7.0+float(layer)*1.7)+float(layer)*2.1)*_profile.size*(.055+.018*float(layer));return a.lerp(b,t)+arch+wave
 
 func _update_ribbons()->void:
 	for layer in range(_ribbons.size()):

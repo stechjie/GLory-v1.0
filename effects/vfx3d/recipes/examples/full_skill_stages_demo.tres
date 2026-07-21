@@ -1,16 +1,16 @@
-[gd_resource type="Resource" script_class="VFXRecipe3D" load_steps=22 format=3]
+[gd_resource type="Resource" script_class="VFXRecipe3D" format=3 uid="uid://8yyqsyioffgw"]
 
-[ext_resource type="Script" path="res://effects/vfx3d/core/VFXRecipe3D.gd" id="1_recipe"]
-[ext_resource type="Script" path="res://effects/vfx3d/core/VFXTimelineTrack3D.gd" id="2_track"]
-[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="3_profile"]
-[ext_resource type="Script" path="res://effects/vfx3d/modules/VFXShapeDistortion3D.gd" id="4_shape"]
-[ext_resource type="Script" path="res://effects/vfx3d/modules/VFXSpriteFlipbook3D.gd" id="5_flip"]
-[ext_resource type="Script" path="res://effects/vfx3d/modules/VFXLightPulse3D.gd" id="6_light"]
-[ext_resource type="Script" path="res://effects/vfx3d/modules/VFXRibbonTrail3D.gd" id="7_trail"]
-[ext_resource type="Script" path="res://effects/vfx3d/modules/VFXImpactFlash3D.gd" id="8_impact"]
-[ext_resource type="Script" path="res://effects/vfx3d/modules/VFXShockwave3D.gd" id="9_wave"]
-[ext_resource type="Script" path="res://effects/vfx3d/modules/VFXDebrisBurst3D.gd" id="10_debris"]
-[ext_resource type="Script" path="res://effects/vfx3d/modules/VFXGroundResidue3D.gd" id="11_ground"]
+[ext_resource type="Script" uid="uid://dpbmcdiy71efb" path="res://effects/vfx3d/core/VFXRecipe3D.gd" id="1_recipe"]
+[ext_resource type="Script" uid="uid://02tuykfn6x2n" path="res://effects/vfx3d/core/VFXTimelineTrack3D.gd" id="2_track"]
+[ext_resource type="Script" uid="uid://bxswfadhtakjk" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="3_profile"]
+[ext_resource type="Script" uid="uid://c1te50odisnkv" path="res://effects/vfx3d/modules/VFXShapeDistortion3D.gd" id="4_shape"]
+[ext_resource type="Script" uid="uid://b7k5e0hu1ronb" path="res://effects/vfx3d/modules/VFXSpriteFlipbook3D.gd" id="5_flip"]
+[ext_resource type="Script" uid="uid://4oo00rwcue4f" path="res://effects/vfx3d/modules/VFXLightPulse3D.gd" id="6_light"]
+[ext_resource type="Script" uid="uid://ce2cf3cdqw4n2" path="res://effects/vfx3d/modules/VFXRibbonTrail3D.gd" id="7_trail"]
+[ext_resource type="Script" uid="uid://cxmalybplr34x" path="res://effects/vfx3d/modules/VFXImpactFlash3D.gd" id="8_impact"]
+[ext_resource type="Script" uid="uid://cxir6uekpmiwe" path="res://effects/vfx3d/modules/VFXShockwave3D.gd" id="9_wave"]
+[ext_resource type="Script" uid="uid://ont33s5e3pev" path="res://effects/vfx3d/modules/VFXDebrisBurst3D.gd" id="10_debris"]
+[ext_resource type="Script" uid="uid://ninf85bvodsx" path="res://effects/vfx3d/modules/VFXGroundResidue3D.gd" id="11_ground"]
 
 [sub_resource type="Resource" id="Profile_cast"]
 script = ExtResource("3_profile")
@@ -21,7 +21,20 @@ main_color = Color(0.08, 0.45, 1, 1)
 core_color = Color(0.55, 0.95, 1, 1)
 size = 0.72
 duration = 0.42
-parameters = {"distortion": 0.2, "stretch": 0.12}
+parameters = {
+"distortion": 0.2,
+"stretch": 0.12
+}
+
+[sub_resource type="Resource" id="Track_cast"]
+script = ExtResource("2_track")
+track_id = "cast"
+phase = "Cast"
+duration = 0.42
+fade_in = 0.04
+fade_out = 0.14
+module_script = ExtResource("4_shape")
+profile = SubResource("Profile_cast")
 
 [sub_resource type="Resource" id="Profile_charge"]
 script = ExtResource("3_profile")
@@ -30,83 +43,16 @@ module_id = "sprite_flipbook"
 main_color = Color(0.18, 0.68, 1, 1)
 size = 0.78
 duration = 0.72
-parameters = {"columns": 4, "rows": 4, "frame_count": 16, "loop": false, "random_start": false, "speed_min": 18.0, "speed_max": 18.0, "billboard": true}
-
-[sub_resource type="Resource" id="Profile_release"]
-script = ExtResource("3_profile")
-profile_id = "recipe_release"
-module_id = "light_pulse"
-core_color = Color(0.68, 0.96, 1, 1)
-size = 1.0
-duration = 0.3
-emission_energy = 4.0
-parameters = {"energy": 4.0, "range": 2.2}
-
-[sub_resource type="Resource" id="Profile_projectile"]
-script = ExtResource("3_profile")
-profile_id = "recipe_projectile"
-module_id = "shape_distortion"
-dark_color = Color(0.01, 0.04, 0.24, 1)
-core_color = Color(0.45, 0.9, 1, 1)
-size = 0.6
-duration = 0.66
-parameters = {"distortion": 0.17, "stretch": 0.42}
-
-[sub_resource type="Resource" id="Profile_trail"]
-script = ExtResource("3_profile")
-profile_id = "recipe_trail"
-module_id = "ribbon_trail"
-main_color = Color(0.12, 0.66, 1, 1)
-duration = 0.68
-trail_length = 1.25
-
-[sub_resource type="Resource" id="Profile_impact"]
-script = ExtResource("3_profile")
-profile_id = "recipe_impact"
-module_id = "impact_flash"
-main_color = Color(0.25, 0.8, 1, 1)
-size = 1.25
-duration = 0.42
-
-[sub_resource type="Resource" id="Profile_wave"]
-script = ExtResource("3_profile")
-profile_id = "recipe_wave"
-module_id = "shockwave"
-main_color = Color(0.08, 0.58, 1, 1)
-core_color = Color(0.66, 0.96, 1, 1)
-size = 1.75
-duration = 0.7
-ground_aligned = true
-parameters = {"secondary_delay": 0.2, "thickness": 0.085, "distortion": 0.1, "dissolve": 0.15}
-
-[sub_resource type="Resource" id="Profile_debris"]
-script = ExtResource("3_profile")
-profile_id = "recipe_debris"
-module_id = "debris"
-main_color = Color(0.12, 0.62, 1, 1)
-duration = 0.68
-particle_count = 12
-parameters = {"speed": 2.8}
-
-[sub_resource type="Resource" id="Profile_ground"]
-script = ExtResource("3_profile")
-profile_id = "recipe_ground"
-module_id = "ground_residue"
-main_color = Color(0.08, 0.48, 0.9, 1)
-size = 1.45
-duration = 1.05
-ground_aligned = true
-
-[sub_resource type="Resource" id="Track_cast"]
-script = ExtResource("2_track")
-track_id = "cast"
-phase = "Cast"
-start_time = 0.0
-duration = 0.42
-fade_in = 0.04
-fade_out = 0.14
-module_script = ExtResource("4_shape")
-profile = SubResource("Profile_cast")
+parameters = {
+"billboard": true,
+"columns": 4,
+"frame_count": 16,
+"loop": false,
+"random_start": false,
+"rows": 4,
+"speed_max": 18.0,
+"speed_min": 18.0
+}
 
 [sub_resource type="Resource" id="Track_charge"]
 script = ExtResource("2_track")
@@ -119,6 +65,18 @@ fade_out = 0.18
 module_script = ExtResource("5_flip")
 profile = SubResource("Profile_charge")
 
+[sub_resource type="Resource" id="Profile_release"]
+script = ExtResource("3_profile")
+profile_id = "recipe_release"
+module_id = "light_pulse"
+core_color = Color(0.68, 0.96, 1, 1)
+duration = 0.3
+emission_energy = 4.0
+parameters = {
+"energy": 4.0,
+"range": 2.2
+}
+
 [sub_resource type="Resource" id="Track_release"]
 script = ExtResource("2_track")
 track_id = "release"
@@ -129,6 +87,19 @@ fade_in = 0.02
 fade_out = 0.12
 module_script = ExtResource("6_light")
 profile = SubResource("Profile_release")
+
+[sub_resource type="Resource" id="Profile_projectile"]
+script = ExtResource("3_profile")
+profile_id = "recipe_projectile"
+module_id = "shape_distortion"
+dark_color = Color(0.01, 0.04, 0.24, 1)
+core_color = Color(0.45, 0.9, 1, 1)
+size = 0.6
+duration = 0.66
+parameters = {
+"distortion": 0.17,
+"stretch": 0.42
+}
 
 [sub_resource type="Resource" id="Track_projectile"]
 script = ExtResource("2_track")
@@ -141,6 +112,14 @@ fade_out = 0.12
 module_script = ExtResource("4_shape")
 profile = SubResource("Profile_projectile")
 
+[sub_resource type="Resource" id="Profile_trail"]
+script = ExtResource("3_profile")
+profile_id = "recipe_trail"
+module_id = "ribbon_trail"
+main_color = Color(0.12, 0.66, 1, 1)
+duration = 0.68
+trail_length = 1.25
+
 [sub_resource type="Resource" id="Track_trail"]
 script = ExtResource("2_track")
 track_id = "trail"
@@ -151,6 +130,14 @@ fade_in = 0.04
 fade_out = 0.18
 module_script = ExtResource("7_trail")
 profile = SubResource("Profile_trail")
+
+[sub_resource type="Resource" id="Profile_impact"]
+script = ExtResource("3_profile")
+profile_id = "recipe_impact"
+module_id = "impact_flash"
+main_color = Color(0.25, 0.8, 1, 1)
+size = 1.25
+duration = 0.42
 
 [sub_resource type="Resource" id="Track_impact"]
 script = ExtResource("2_track")
@@ -163,6 +150,22 @@ fade_out = 0.18
 module_script = ExtResource("8_impact")
 profile = SubResource("Profile_impact")
 
+[sub_resource type="Resource" id="Profile_wave"]
+script = ExtResource("3_profile")
+profile_id = "recipe_wave"
+module_id = "shockwave"
+main_color = Color(0.08, 0.58, 1, 1)
+core_color = Color(0.66, 0.96, 1, 1)
+size = 1.75
+duration = 0.7
+ground_aligned = true
+parameters = {
+"dissolve": 0.15,
+"distortion": 0.1,
+"secondary_delay": 0.2,
+"thickness": 0.085
+}
+
 [sub_resource type="Resource" id="Track_wave"]
 script = ExtResource("2_track")
 track_id = "shockwave"
@@ -174,6 +177,17 @@ fade_out = 0.2
 module_script = ExtResource("9_wave")
 profile = SubResource("Profile_wave")
 
+[sub_resource type="Resource" id="Profile_debris"]
+script = ExtResource("3_profile")
+profile_id = "recipe_debris"
+module_id = "debris"
+main_color = Color(0.12, 0.62, 1, 1)
+duration = 0.68
+particle_count = 12
+parameters = {
+"speed": 2.8
+}
+
 [sub_resource type="Resource" id="Track_debris"]
 script = ExtResource("2_track")
 track_id = "debris"
@@ -184,6 +198,15 @@ fade_in = 0.02
 fade_out = 0.24
 module_script = ExtResource("10_debris")
 profile = SubResource("Profile_debris")
+
+[sub_resource type="Resource" id="Profile_ground"]
+script = ExtResource("3_profile")
+profile_id = "recipe_ground"
+module_id = "ground_residue"
+main_color = Color(0.08, 0.48, 0.9, 1)
+size = 1.45
+duration = 1.05
+ground_aligned = true
 
 [sub_resource type="Resource" id="Track_ground"]
 script = ExtResource("2_track")
