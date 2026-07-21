@@ -15,10 +15,11 @@ uniform vec4 energy_tint:source_color=vec4(0.72,0.22,0.95,1.0);
 uniform float reveal=0.0;
 uniform float pulse=0.0;
 uniform float opacity=1.0;
+void vertex(){MODELVIEW_MATRIX=VIEW_MATRIX*mat4(INV_VIEW_MATRIX[0],INV_VIEW_MATRIX[1],INV_VIEW_MATRIX[2],MODEL_MATRIX[3]);}
 float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 void fragment(){
 	vec4 tex=texture(book_texture,UV);
-	float edge=smoothstep(0.02,0.34,tex.a);
+	float edge=smoothstep(0.005,0.18,tex.a);
 	float noise=hash(floor(UV*18.0));
 	float mask=smoothstep(reveal-0.16,reveal+0.08,UV.y+noise*0.08);
 	float hot=pow(max(tex.r,max(tex.g,tex.b)),5.0);

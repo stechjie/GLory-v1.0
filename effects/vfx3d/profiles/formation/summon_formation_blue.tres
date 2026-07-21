@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="VFXProfile3D" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+profile_id = "summon_formation_blue"
+module_id = "summon_spawn"
+curve_name = "ease_out_back"
+dark_color = Color(0.01, 0.03, 0.09, 1)
+main_color = Color(0.2, 0.6, 1, 1)
+core_color = Color(0.72, 0.95, 1, 1)
+size = 1.25
+duration = 2.0
+particle_count = 14
+emission_energy = 3.6
+parameters = {
+"converge_at": 0.25,
+"reveal_at": 0.5,
+"reveal_hold": 0.22,
+"settle_at": 0.7
+}

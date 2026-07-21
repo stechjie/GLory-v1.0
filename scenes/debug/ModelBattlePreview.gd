@@ -74,6 +74,13 @@ const PROFILE_BASIC_DARK := preload("res://effects/vfx3d/profiles/examples/basic
 const PROFILE_BASIC_UNDEAD := preload("res://effects/vfx3d/profiles/examples/basic_attack_undead.tres")
 const PROFILE_MOTHER_EXECUTE := preload("res://effects/vfx3d/profiles/examples/mother_execute_example.tres")
 const RECIPE_FULL_STAGES := preload("res://effects/vfx3d/recipes/examples/full_skill_stages_demo.tres")
+const PROFILE_SUMMON_TEAM_A := preload("res://effects/vfx3d/profiles/formation/summon_formation_red.tres")
+const PROFILE_SUMMON_TEAM_B := preload("res://effects/vfx3d/profiles/formation/summon_formation_blue.tres")
+const FINAL_ROUND_BOARD := preload("res://assets/board/2_5d/battlefield_final_round.png")
+const FORMATION_SOURCE_TAG := "法阵Boss"
+const BOSS_STAGE_SLOT_X := 1.75
+const BOSS_STAGE_RISE := 0.42
+const BOSS_STAGE_RISE_TIME := 0.40
 const TARGET_HEIGHT := 1.32
 const TARGET_WIDTH := 1.06
 const ATTACK_PERIOD := 2.2
@@ -122,6 +129,14 @@ var vfx_status_label: Label
 var vfx_preview_root: Node3D
 var vfx_preview_effect: Node3D
 var vfx_recorder: VFXPreviewRecorder
+var boss_stage_active := false
+var boss_stage_scale := 1.0
+# ally_1 ships without any textures, so start on ally_2 which is fully textured.
+var boss_stage_ally_index := 1
+var boss_stage_scale_button: Button
+var boss_stage_ally_button: Button
+var boss_stage_root: Node3D
+var board_default_texture: Texture2D
 
 func _ready() -> void:
 	rng.randomize()
@@ -142,7 +157,7 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	phase_time += delta
-	if auto_fight_enabled:
+	if auto_fight_enabled and not boss_stage_active:
 		var cycle := int(floor(phase_time / ATTACK_PERIOD))
 		var cycle_pos: float = fmod(phase_time, ATTACK_PERIOD)
 		if cycle != last_cycle:
@@ -189,6 +204,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				_play_action_for_side("run", SIDE_BOTH, true)
 			KEY_SPACE:
 				_play_action_for_side("attack", SIDE_BOTH, true)
+			KEY_B:
+				_on_boss_stage_pressed()
 			KEY_H:
 				_frame_preview_camera()
 				_update_label()
@@ -361,6 +378,13 @@ func _build_vfx_test_panel() -> void:
 	_add_button(capture_row, "Screenshot", _on_vfx_screenshot_pressed)
 	_add_button(capture_row, "Shot @ 0.5s", _on_vfx_fixed_screenshot_pressed)
 	_add_button(capture_row, "Validate", _on_vfx_validate_pressed)
+	var stage_row := HBoxContainer.new()
+	stage_row.add_theme_constant_override("separation", 5)
+	rows.add_child(stage_row)
+	_add_button(stage_row, "BossStage", _on_boss_stage_pressed)
+	boss_stage_scale_button = _add_button(stage_row, "体型 1x", _on_boss_stage_scale_pressed)
+	boss_stage_ally_button = _add_button(stage_row, "友军 2/5", _on_boss_stage_ally_pressed)
+	_add_button(stage_row, "还原战场", _on_boss_stage_reset_pressed)
 	vfx_status_label = Label.new()
 	vfx_status_label.text = "Select an effect and press Play VFX"
 	vfx_status_label.add_theme_font_size_override("font_size", 11)
@@ -765,6 +789,150 @@ func _clear_vfx_preview() -> void:
 	if vfx_recorder != null:
 		vfx_recorder.restore_normal_speed()
 
+func _on_boss_stage_pressed() -> void:
+	var entry := _find_formation_ally_entry()
+	if entry.is_empty():
+		if vfx_status_label != null:
+			vfx_status_label.text = "BossStage: formation_allies.json 里没有可用模型"
+		return
+	_clear_vfx_preview()
+	_clear_boss_stage()
+	_apply_board_texture(FINAL_ROUND_BOARD)
+	auto_fight_enabled = false
+	_update_auto_button()
+	boss_stage_active = true
+	_clear_slot(left_slot)
+	_clear_slot(right_slot)
+	units.clear()
+	phase_time = 0.0
+	last_cycle = -1
+	last_attack_cycle = -1
+	hit_flash.visible = false
+	boss_stage_root = Node3D.new()
+	boss_stage_root.name = "BossStageSummon"
+	$Stage.add_child(boss_stage_root)
+	# Place both slots before spawning so _spawn_unit's look_at faces them at each other.
+	left_slot.position = Vector3(float(SIDE_LEFT) * BOSS_STAGE_SLOT_X, 0.0, 0.0)
+	right_slot.position = Vector3(float(SIDE_RIGHT) * BOSS_STAGE_SLOT_X, 0.0, 0.0)
+	# Two circles side by side on the final-round board: A on the red half, B on the blue half.
+	_begin_formation_summon(left_slot, entry, SIDE_LEFT, PROFILE_SUMMON_TEAM_A)
+	_begin_formation_summon(right_slot, entry, SIDE_RIGHT, PROFILE_SUMMON_TEAM_B)
+	preview_names = "BossStage 法阵召唤：%s（体型 %.0fx）" % [str(entry.get("name", "法阵友军")), boss_stage_scale]
+	_frame_preview_camera()
+	_update_label()
+	if vfx_status_label != null:
+		vfx_status_label.text = "BossStage: A/B 双阵同时召唤，体型 %.0fx" % boss_stage_scale
+
+# Spawns the unit hidden below its resting spot; VFXSummonSpawn3D fires
+# reveal_requested at the moment the column and smoke are thickest.
+func _begin_formation_summon(slot: Node3D, entry: Dictionary, side: int, profile: VFXProfile3D) -> void:
+	var before := units.size()
+	_spawn_unit(slot, entry, side)
+	if units.size() <= before:
+		return
+	var unit: Dictionary = units[units.size() - 1]
+	unit["base_pos"] = Vector3(float(side) * BOSS_STAGE_SLOT_X, 0.0, 0.0)
+	slot.position = unit["base_pos"]
+	slot.scale = Vector3.ONE * boss_stage_scale
+	var runtime: VFXProfile3D = profile.duplicate_runtime()
+	var model := unit.get("model") as Node3D
+	if model != null:
+		runtime.size = _summon_size_for(model)
+		unit["boss_stage_rest_y"] = model.position.y
+		# Divide by slot scale so the visual rise stays constant in world units.
+		model.position.y -= BOSS_STAGE_RISE / maxf(boss_stage_scale, 0.01)
+		model.visible = false
+	var fx: Node3D = VFX_SUMMON_SPAWN.new()
+	fx.name = "FormationSummon_%s" % ("A" if side == SIDE_LEFT else "B")
+	boss_stage_root.add_child(fx)
+	fx.reveal_requested.connect(_on_formation_reveal.bind(unit))
+	fx.play_summon(slot.position, runtime)
+
+func _on_formation_reveal(unit: Dictionary) -> void:
+	var model := unit.get("model") as Node3D
+	if model == null or not is_instance_valid(model):
+		return
+	model.visible = true
+	_play_unit_action(unit, "idle", true)
+	# EASE_IN_OUT keeps the model low for the first half of the rise, so it stays buried
+	# in the core glow instead of shooting straight up into plain view.
+	var rise := create_tween()
+	rise.tween_property(model, "position:y", float(unit.get("boss_stage_rest_y", 0.0)), BOSS_STAGE_RISE_TIME).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+
+# The column has to be wider and taller than the unit, otherwise the model pops
+# into view outside the light and the whole occlusion trick falls apart.
+func _summon_size_for(model: Node3D) -> float:
+	var bounds: AABB = _node_bounds_relative(model, $Stage)
+	if bounds.size == Vector3.ZERO:
+		return 1.25
+	var width: float = maxf(bounds.size.x, bounds.size.z)
+	return maxf(maxf(width * 0.92, bounds.size.y * 0.98), 0.7)
+
+func _on_boss_stage_scale_pressed() -> void:
+	boss_stage_scale = 2.0 if is_equal_approx(boss_stage_scale, 1.0) else 1.0
+	if boss_stage_scale_button != null:
+		boss_stage_scale_button.text = "体型 %.0fx" % boss_stage_scale
+	if boss_stage_active:
+		_on_boss_stage_pressed()
+	elif vfx_status_label != null:
+		vfx_status_label.text = "BossStage 体型：%.0fx（按 BossStage 播放）" % boss_stage_scale
+
+func _on_boss_stage_reset_pressed() -> void:
+	_clear_boss_stage()
+	_apply_board_texture(board_default_texture)
+	auto_fight_enabled = true
+	_update_auto_button()
+	_load_selected_pair()
+	if vfx_status_label != null:
+		vfx_status_label.text = "已还原普通预览战场"
+
+func _clear_boss_stage() -> void:
+	boss_stage_active = false
+	if boss_stage_root != null and is_instance_valid(boss_stage_root):
+		boss_stage_root.queue_free()
+	boss_stage_root = null
+	left_slot.scale = Vector3.ONE
+	right_slot.scale = Vector3.ONE
+
+func _apply_board_texture(texture: Texture2D) -> void:
+	var floor_node := $Stage/Floor as MeshInstance3D
+	if floor_node == null:
+		return
+	var material := floor_node.material_override as StandardMaterial3D
+	if material == null:
+		return
+	if board_default_texture == null:
+		board_default_texture = material.albedo_texture
+	if texture != null:
+		material.albedo_texture = texture
+
+func _formation_ally_entries() -> Array:
+	var result: Array = []
+	for value in model_entries:
+		var entry: Dictionary = value
+		if str(entry.get("source", "")) == FORMATION_SOURCE_TAG and str(entry.get("model", "")).begins_with("res://"):
+			result.append(entry)
+	return result
+
+func _find_formation_ally_entry() -> Dictionary:
+	var allies := _formation_ally_entries()
+	if allies.is_empty():
+		return {}
+	return allies[boss_stage_ally_index % allies.size()]
+
+func _on_boss_stage_ally_pressed() -> void:
+	var allies := _formation_ally_entries()
+	if allies.is_empty():
+		return
+	boss_stage_ally_index = (boss_stage_ally_index + 1) % allies.size()
+	var entry: Dictionary = allies[boss_stage_ally_index]
+	if boss_stage_ally_button != null:
+		boss_stage_ally_button.text = "友军 %d/%d" % [boss_stage_ally_index + 1, allies.size()]
+	if boss_stage_active:
+		_on_boss_stage_pressed()
+	elif vfx_status_label != null:
+		vfx_status_label.text = "法阵友军：%s（按 BossStage 播放）" % str(entry.get("name", ""))
+
 func _add_button(parent: Control, text: String, callable: Callable) -> Button:
 	var button := Button.new()
 	button.text = text
@@ -870,6 +1038,7 @@ func _load_random_pair() -> void:
 	_load_selected_pair()
 
 func _load_selected_pair() -> void:
+	_clear_boss_stage()
 	_clear_slot(left_slot)
 	_clear_slot(right_slot)
 	units.clear()
@@ -1135,6 +1304,8 @@ func _clear_slot(slot: Node) -> void:
 		child.queue_free()
 
 func _animate_units() -> void:
+	if boss_stage_active:
+		return
 	var cycle_pos: float = fmod(phase_time, ATTACK_PERIOD)
 	var walk_t: float = clampf(cycle_pos / WALK_IN_TIME, 0.0, 1.0)
 	walk_t = walk_t * walk_t * (3.0 - 2.0 * walk_t)
@@ -1160,6 +1331,9 @@ func _animate_units() -> void:
 		slot.position = current_base + Vector3(0.0, bob, float(-side) * lunge)
 
 func _update_hit_flash() -> void:
+	if boss_stage_active:
+		hit_flash.visible = false
+		return
 	var show_flash := false
 	if auto_fight_enabled:
 		var cycle_pos: float = fmod(phase_time, ATTACK_PERIOD)

@@ -107,7 +107,7 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 		if now_skill_ready > prev_skill_ready + 0.1:
 			_play_skill_cast_vfx(now, prev, damage_events, current)
 		if bool(prev.get("alive", true)) and not bool(now.get("alive", true)):
-			death_events.append({"pos": now.get("foot_pos", Vector2.ZERO), "world_foot": now.get("world_foot", Vector3.ZERO), "world_hit": now.get("world_hit", Vector3.ZERO), "killer_team": _opposite_team(str(now.get("team", ""))), "killer_uid": str(now.get("killer_uid", "")), "victim_id": id})
+			death_events.append({"pos": now.get("foot_pos", Vector2.ZERO), "world_foot": now.get("world_foot", Vector3.ZERO), "world_hit": now.get("world_hit", Vector3.ZERO), "killer_team": _opposite_team(str(now.get("team", ""))), "killer_uid": str(now.get("killer_uid", "")), "mother_execute_kill": bool(now.get("mother_execute_kill", false)), "model_node": now.get("model_node"), "victim_id": id})
 			if sid_now == "twin_revive":
 				var partner := _living_twin_partner(now, current)
 				if not partner.is_empty():
@@ -121,6 +121,8 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 			continue
 		var prev_missing: Dictionary = _vfx_prev_units[id]
 		_spawn_vfx("DEATH_EXPLOSION", prev_missing.get("foot_pos", Vector2.ZERO))
+		if bool(prev_missing.get("mother_execute_kill", false)):
+			death_events.append({"pos": prev_missing.get("foot_pos", Vector2.ZERO), "world_foot": prev_missing.get("world_foot", Vector3.ZERO), "world_hit": prev_missing.get("world_hit", Vector3.ZERO), "killer_uid": str(prev_missing.get("killer_uid", "")), "mother_execute_kill": true, "model_node": prev_missing.get("model_node"), "victim_id": id})
 
 	_play_ranged_projectiles(_collect_attack_events(current, true), damage_events, current)
 	for apocalypse: Dictionary in apocalypse_ended:
@@ -139,6 +141,16 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 				for death_event: Dictionary in death_events:
 					if str(death_event.get("killer_uid", "")) == str(boss_now.get("sim_uid", "")):
 						_play_boss_procedural("soul_devour", boss_now.get("world_foot", Vector3.ZERO), death_event.get("world_hit", boss_now.get("world_foot", Vector3.ZERO)))
+		for death_event: Dictionary in death_events:
+			if not bool(death_event.get("mother_execute_kill", false)):
+				continue
+			var mother := _vfx_unit_by_sim_uid(current, str(death_event.get("killer_uid", "")))
+			if mother.is_empty():
+				mother = _vfx_unit_by_sim_uid(_vfx_prev_units, str(death_event.get("killer_uid", "")))
+			if mother.is_empty():
+				continue
+			var victim := {"world_foot": death_event.get("world_foot", Vector3.ZERO), "model_node": death_event.get("model_node")}
+			_play_unit_procedural("unique_death_execute", mother.get("world_head", mother.get("world_cast", Vector3.ZERO)), victim.get("world_foot", Vector3.ZERO), _unit_target_context(mother, victim))
 	_play_melee_slashes(_collect_attack_events(current, false), damage_events, current)
 	_vfx_prev_units = current
 
@@ -185,6 +197,7 @@ func _collect_vfx_units(state_snapshot: Dictionary) -> Dictionary:
 				"skill_stacks": int(f.get("skill_stacks", 0)),
 				"sim_uid": str(f.get("uid", "")),
 				"killer_uid": str(f.get("killer_uid", "")),
+				"mother_execute_kill": bool(f.get("mother_execute_kill", false)),
 				"attack_target_uid": str(f.get("vfx_attack_target_uid", "")),
 				"skill_target_uid": str(f.get("vfx_skill_target_uid", "")),
 				"lane": int(f.get("lane", -1)),
@@ -775,7 +788,10 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 		elif str(event.get("type",""))=="mother_execute":
 			var mother:=_vfx_unit_by_sim_uid(current,str(event.get("source_uid","")))
 			var victim:=_vfx_unit_by_sim_uid(current,str(event.get("target_uid","")))
-			if not mother.is_empty() and not victim.is_empty():
+			# A lethal execute is replayed from death_events below, where the
+			# victim's cached position is still available. This branch handles the
+			# non-lethal Boss-percent-damage variant only.
+			if not mother.is_empty() and not victim.is_empty() and bool(victim.get("alive", true)):
 				_play_unit_procedural("unique_death_execute",mother.get("world_head",mother.get("world_cast",Vector3.ZERO)),victim.get("world_foot",Vector3.ZERO),_unit_target_context(mother,victim))
 		elif str(event.get("type", "")) == "unit_skill_proc":
 			var source := _vfx_unit_by_sim_uid(current, str(event.get("source_uid", "")))
