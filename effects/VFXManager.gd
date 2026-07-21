@@ -31,6 +31,18 @@ func get_texture(path: String) -> Texture2D:
 	var cached: Texture2D = _texture_cache.get(path)
 	if cached != null:
 		return cached
+	# A background load may already be in flight for this path. Harvesting it is
+	# far cheaper than ResourceLoader.load(), which would kick off a SECOND, cold
+	# read of the same file while the worker thread is still reading it.
+	# Remove it from the pending list so _drain_pending_texture_loads() never
+	# calls load_threaded_get() on the same path twice.
+	var pending_index := _pending_texture_loads.find(path)
+	if pending_index >= 0:
+		_pending_texture_loads.remove_at(pending_index)
+		var pending_tex := ResourceLoader.load_threaded_get(path) as Texture2D
+		if pending_tex != null:
+			_texture_cache[path] = pending_tex
+		return pending_tex
 	var tex := ResourceLoader.load(path) as Texture2D
 	if tex != null:
 		_texture_cache[path] = tex

@@ -599,8 +599,7 @@ func _prefetch_battle_assets() -> void:
 		var unit_id := str(unit_def.get("id", f.get("id", "")))
 		for tex_cfg in SkillVFXConfig.get_textures(unit_id):
 			texture_paths.append(str(tex_cfg.get("path", "")))
-	if has_node("/root/VFXManager"):
-		VFXManager.preload_textures(texture_paths)
+	VFXManager.preload_textures(texture_paths)
 
 func _prefetch_animation_scene(scene_path: String) -> void:
 	if _model_animation_scene_cache.has(scene_path) or _animation_prefetch_started.has(scene_path):

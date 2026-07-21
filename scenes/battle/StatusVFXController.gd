@@ -28,6 +28,13 @@ const STATUS_TEXTURES := {
 var _sprites := {}
 var _procedural_statuses:={}
 var _phase := randf() * TAU
+# Kinds currently visible. Iterating this array allocates nothing, unlike
+# _sprites.keys() which built a fresh Array every frame, for every unit.
+var _active_kinds: Array[String] = []
+
+func _ready() -> void:
+	# Most units carry no status effect most of the time; stay idle until one shows.
+	set_process(false)
 
 func update_from_fighter(fighter: Dictionary) -> void:
 	var active := {}
@@ -46,17 +53,17 @@ func update_from_fighter(fighter: Dictionary) -> void:
 		else:
 			_set_effect_visible(kind, bool(active.get(kind, false)))
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	var t := float(Time.get_ticks_msec()) * 0.001 + _phase
-	for kind in _sprites.keys():
+	for kind in _active_kinds:
 		var sprite := _sprites[kind] as Sprite3D
-		if sprite == null or not sprite.visible:
+		if sprite == null:
 			continue
 		var cfg: Dictionary = EFFECTS[kind]
 		var pulse := 1.0 + sin(t * 2.1 + float(kind.length())) * float(cfg.pulse)
 		sprite.scale = (cfg.scale as Vector3) * pulse
 		sprite.position.y = sin(t * 1.6 + float(kind.length())) * float(cfg.bob)
-		sprite.rotation.z += float(cfg.rot) * _delta
+		sprite.rotation.z += float(cfg.rot) * delta
 		sprite.modulate.a = float(cfg.alpha) * (0.9 + 0.1 * sin(t * 2.7 + float(kind.length())))
 
 func _set_effect_visible(kind: String, visible: bool) -> void:
@@ -67,6 +74,13 @@ func _set_effect_visible(kind: String, visible: bool) -> void:
 		sprite = _make_sprite(kind)
 		_sprites[kind] = sprite
 	sprite.visible = visible
+	var index := _active_kinds.find(kind)
+	if visible and index < 0:
+		_active_kinds.append(kind)
+	elif not visible and index >= 0:
+		_active_kinds.remove_at(index)
+	# Only animate while something is actually on screen.
+	set_process(not _active_kinds.is_empty())
 
 func _set_procedural_status(kind:String,active:bool,remaining:float)->void:
 	var current=_procedural_statuses.get(kind)

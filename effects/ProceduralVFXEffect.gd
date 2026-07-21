@@ -313,7 +313,4 @@ func _release_self() -> void:
 	for child in get_children():
 		if child is CPUParticles2D:
 			(child as CPUParticles2D).emitting = false
-	if has_node("/root/VFXManager"):
-		VFXManager.release_effect(self)
-	else:
-		queue_free()
+	VFXManager.release_effect(self)

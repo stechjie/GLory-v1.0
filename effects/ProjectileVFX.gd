@@ -90,14 +90,15 @@ func _target_position() -> Vector2:
 	return target_position
 
 func _impact() -> void:
-	if has_node("/root/VFXManager"):
-		get_node("/root/VFXManager").spawn_vfx(impact_id, global_position)
-		if not impact_textures.is_empty():
-			get_node("/root/VFXManager").spawn_vfx("SKILL_TEXTURE", global_position, {"textures": impact_textures})
-		if not head_textures.is_empty():
-			get_node("/root/VFXManager").spawn_vfx("SKILL_TEXTURE", _target_anchor_position("HeadAnchor", global_position), {"textures": head_textures})
-		if not foot_textures.is_empty():
-			get_node("/root/VFXManager").spawn_vfx("SKILL_TEXTURE", _target_anchor_position("FootAnchor", global_position), {"textures": foot_textures})
+	# VFXManager is an autoload; the old has_node/get_node pair re-resolved a node
+	# path up to 4 times on every projectile impact.
+	VFXManager.spawn_vfx(impact_id, global_position)
+	if not impact_textures.is_empty():
+		VFXManager.spawn_vfx("SKILL_TEXTURE", global_position, {"textures": impact_textures})
+	if not head_textures.is_empty():
+		VFXManager.spawn_vfx("SKILL_TEXTURE", _target_anchor_position("HeadAnchor", global_position), {"textures": head_textures})
+	if not foot_textures.is_empty():
+		VFXManager.spawn_vfx("SKILL_TEXTURE", _target_anchor_position("FootAnchor", global_position), {"textures": foot_textures})
 	queue_free()
 
 func _target_anchor_position(anchor_name: String, fallback: Vector2) -> Vector2:

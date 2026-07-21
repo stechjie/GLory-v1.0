@@ -113,8 +113,9 @@ func _exit_tree() -> void:
 func _process(delta: float) -> void:
 	if not _battle_setup_ready:
 		return
-	if has_method("_update_vfx_camera_shake"):
-		_update_vfx_camera_shake()
+	# _update_vfx_camera_shake is defined in BattleVfx (a base class), so the old
+	# per-frame has_method() check was always true — pure overhead.
+	_update_vfx_camera_shake()
 	_model_facing_elapsed += delta
 	if _model_facing_elapsed >= MODEL_FACING_UPDATE_SEC:
 		_model_facing_elapsed = 0.0
@@ -145,7 +146,9 @@ func _process(delta: float) -> void:
 	# _start_replay 会把 _replay_mode 置真，走上面的播放分支。
 	if GameState.team_mode:
 		return
-	if (has_method("_vfx_hit_stop_active") and _vfx_hit_stop_active()) or (has_node("/root/VFXManager") and VFXManager.is_hitstop_active()):
+	# _vfx_hit_stop_active() already returns VFXManager.is_hitstop_active(); the old
+	# condition checked the same thing twice and resolved a node path every frame.
+	if _vfx_hit_stop_active():
 		_refresh_visuals()
 		return
 	_sim_accumulator += delta * PLAYBACK_SPEED

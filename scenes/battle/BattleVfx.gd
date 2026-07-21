@@ -141,7 +141,9 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 	_vfx_prev_units = current
 
 func _vfx_hit_stop_active() -> bool:
-	return has_node("/root/VFXManager") and get_node("/root/VFXManager").is_hitstop_active()
+	# VFXManager is an autoload: reference it directly. The old has_node/get_node
+	# pair resolved a node path twice every frame from _process.
+	return VFXManager.is_hitstop_active()
 
 func _collect_vfx_units(state_snapshot: Dictionary) -> Dictionary:
 	var result := {}
@@ -757,21 +759,17 @@ func _vfx_unit_by_sim_uid(current:Dictionary,sim_uid:String)->Dictionary:
 	return {}
 
 func _spawn_vfx(vfx_id: String, pos: Vector2, config: Dictionary = {}) -> void:
-	if has_node("/root/VFXManager"):
-		get_node("/root/VFXManager").spawn_vfx(vfx_id, pos, config)
+	VFXManager.spawn_vfx(vfx_id, pos, config)
 
 func _spawn_projectile(vfx_id: String, start_pos: Vector2, target_node: Node, target_pos: Vector2, config: Dictionary = {}) -> void:
-	if has_node("/root/VFXManager"):
-		config["target_position"] = target_pos
-		get_node("/root/VFXManager").spawn_projectile_vfx(vfx_id, start_pos, target_node, config)
+	config["target_position"] = target_pos
+	VFXManager.spawn_projectile_vfx(vfx_id, start_pos, target_node, config)
 
 func _hitstop(duration: float) -> void:
-	if has_node("/root/VFXManager"):
-		get_node("/root/VFXManager").play_hitstop(duration)
+	VFXManager.play_hitstop(duration)
 
 func _screen_shake(strength: float, duration: float) -> void:
-	if has_node("/root/VFXManager"):
-		get_node("/root/VFXManager").play_screen_shake(strength, duration)
+	VFXManager.play_screen_shake(strength, duration)
 
 func _unit_node_for_id(id: String) -> Node:
 	if _unit_nodes.has(id):
