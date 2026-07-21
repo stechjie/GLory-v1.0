@@ -6,6 +6,8 @@ const TEX_RING := preload("res://assets/vfx_textures/ragged_ring.png")
 const TEX_WISP := preload("res://assets/vfx_textures/smoke_wisp.png")
 const TEX_DOT := preload("res://assets/vfx_textures/soft_dot.png")
 const TEX_NOISE := preload("res://assets/vfx_textures/noise_tile.png")
+const TEX_STUN := preload("res://assets/vfx/status/status_stun_ring.png")
+const TEX_SILENCE := preload("res://assets/vfx/status/status_silence_seal.png")
 
 const STATUS_SHADER := """
 shader_type spatial;
@@ -39,7 +41,8 @@ var _target_node:Node3D
 var _fallback_target:=Vector3.ZERO
 
 func play_profile(profile:VFXProfile3D,context:Dictionary)->void:
-	play_status(context.get("target",Vector3.ZERO),str(profile.parameters.get("status_type","stun")),profile,context.get("target_node") as Node3D)
+	var target_value:Variant = context.get("target_node")
+	play_status(context.get("target",Vector3.ZERO),str(profile.parameters.get("status_type","stun")),profile,target_value if target_value is Node3D else null)
 
 func play_status(at:Vector3,status_type:String,profile:VFXProfile3D=null,target_node:Node3D=null)->void:
 	begin();_target_node=target_node;_fallback_target=at
@@ -47,7 +50,13 @@ func play_status(at:Vector3,status_type:String,profile:VFXProfile3D=null,target_
 	_apply_status_palette(active,status_type)
 	_update_anchor()
 	var d:=active.duration;var s:=active.size
-	var crown:=_make_card("StatusBrokenCrown",TEX_RING,Vector2(s*1.12,s*.54),active,0.3)
+	var icon_texture:Texture2D = TEX_RING
+	var icon_size:=Vector2(s*1.12,s*.54)
+	if status_type=="stun":
+		icon_texture=TEX_STUN;icon_size=Vector2(s*.92,s*.92)
+	elif status_type=="silence":
+		icon_texture=TEX_SILENCE;icon_size=Vector2(s*1.05,s*1.05)
+	var crown:=_make_card("StatusReadableIcon",icon_texture,icon_size,active,0.3)
 	crown.position.y=s*.58;crown.scale=Vector3.ONE*.16
 	var tw:=track_tween(create_tween());tw.tween_property(crown,"scale",Vector3.ONE,d*.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	_tween_life(crown,d,0.0)

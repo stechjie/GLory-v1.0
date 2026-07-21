@@ -39,11 +39,13 @@ func play_execute(book_at:Vector3,victim_at:Vector3,profile:VFXProfile3D)->void:
 	begin()
 	var book:=_make_book(profile)
 	book.position=book_at+Vector3(0.0,0.06,0.08)
-	book.scale=Vector3.ONE*0.08
+	book.scale=Vector3.ONE*0.06
 	add_child(book)
 	var appear:=track_tween(create_tween())
 	appear.set_parallel(true)
-	appear.tween_property(book,"scale",Vector3.ONE*0.76,profile.duration*0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	# The book is a deliberate gameplay emblem: about half the Mother model's
+	# height, held above the HeadAnchor long enough to read in the distant view.
+	appear.tween_property(book,"scale",Vector3.ONE*0.56,profile.duration*0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	appear.tween_property(_book_material,"shader_parameter/reveal",-0.08,profile.duration*0.16).from(1.10).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
 	appear.tween_property(_book_material,"shader_parameter/pulse",1.0,profile.duration*0.18).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	await get_tree().create_timer(profile.duration*0.16).timeout
@@ -55,7 +57,7 @@ func play_execute(book_at:Vector3,victim_at:Vector3,profile:VFXProfile3D)->void:
 	if _finished:return
 	var flash:=IMPACT.new();flash.name="DevourSnap";add_child(flash);flash.play_flash(victim_at,profile.core_color,profile.size*1.10,profile.duration*0.16)
 	var close:=track_tween(create_tween());close.set_parallel(true)
-	close.tween_property(book,"scale",Vector3(0.58,0.18,0.58),profile.duration*0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
+	close.tween_property(book,"scale",Vector3(0.42,0.12,0.42),profile.duration*0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
 	close.tween_property(_book_material,"shader_parameter/opacity",0.0,profile.duration*0.26).set_delay(profile.duration*0.08)
 	close.tween_property(_book_material,"shader_parameter/pulse",0.0,profile.duration*0.18)
 	await get_tree().create_timer(profile.duration*0.48).timeout

@@ -7,6 +7,7 @@ const LEGACY_RANGED_PROJECTILE_UNITS := ["god_aurora", "human_archer", "dark_mag
 var _vfx_prev_units: Dictionary = {}
 var _vfx_seeded: bool = false
 var _vfx_visual_event_index := 0
+var _persistent_unit_vfx: Dictionary = {}
 
 func _refresh_visuals() -> void:
 	super._refresh_visuals()
@@ -17,6 +18,7 @@ func _update_vfx_camera_shake() -> void:
 
 func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 	var current := _collect_vfx_units(state_snapshot)
+	_sync_persistent_unit_vfx(current)
 	_play_visual_events(state_snapshot,current)
 	if not _vfx_seeded:
 		_play_opening_unit_vfx(current)
@@ -441,21 +443,34 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 		# The procedural sample owns its full staged animation; do not place a static Boss PNG on top.
 		pass
 
-func _play_boss_procedural(effect_id: String, origin_value: Variant, target_value: Variant, context: Dictionary = {}) -> void:
+func _play_boss_procedural(effect_id: String, origin_value: Variant, target_value: Variant, context: Dictionary = {}) -> Node3D:
 	if _battle_3d_vfx_root == null or not is_instance_valid(_battle_3d_vfx_root):
-		return
+		return null
 	if not _battle_3d_vfx_root.has_method("play"):
-		return
+		return null
 	var world_context := context.duplicate(false)
 	if world_context.has("targets"):
 		var world_targets: Array = []
 		for value in world_context["targets"]:
 			world_targets.append(_boss_world_position(value))
 		world_context["targets"] = world_targets
-	_battle_3d_vfx_root.call("play", effect_id, _boss_world_position(origin_value), _boss_world_position(target_value), world_context)
+	return _battle_3d_vfx_root.call("play", effect_id, _boss_world_position(origin_value), _boss_world_position(target_value), world_context)
 
-func _play_unit_procedural(effect_id:String,origin:Vector3,target:Vector3,context:Dictionary={})->void:
-	_play_boss_procedural(effect_id,origin,target,context)
+func _play_unit_procedural(effect_id:String,origin:Vector3,target:Vector3,context:Dictionary={})->Node3D:
+	return _play_boss_procedural(effect_id,origin,target,context)
+
+func _sync_persistent_unit_vfx(current:Dictionary)->void:
+	for id:String in _persistent_unit_vfx.keys().duplicate():
+		var unit:Dictionary=current.get(id,{})
+		var record:Dictionary=_persistent_unit_vfx.get(id,{})
+		var node:Variant=record.get("node")
+		var uid:=str(unit.get("skill_target_uid",""))
+		var active:=not unit.is_empty() and bool(unit.get("alive",false)) and str(unit.get("skill_id",""))=="shared_hp_link" and not uid.is_empty()
+		if active and uid==str(record.get("target_uid","")):
+			continue
+		if node is Node3D and is_instance_valid(node) and node.has_method("release_link"):
+			node.release_link()
+		_persistent_unit_vfx.erase(id)
 
 func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictionary,damage_events:Array[Dictionary],current:Dictionary)->void:
 	const ACTIVE_UNIT_SKILLS := [
@@ -482,12 +497,22 @@ func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictio
 		var now_uid:=str(unit.get("skill_target_uid",""))
 		if now_uid.is_empty() or now_uid==str(previous.get("skill_target_uid","")):
 			return
+		var old_link:Dictionary=_persistent_unit_vfx.get(str(unit.get("id","")),{})
+		var old_node:Variant=old_link.get("node")
+		if old_node is Node3D and is_instance_valid(old_node) and old_node.has_method("release_link"):
+			old_node.release_link()
+		context["persistent"]=true
 	if sid=="nearby_ally_heal_buff":
 		context["targets"]=_living_team_world_positions(unit,current)
 		target_world=unit.get("world_foot",Vector3.ZERO)
 	elif sid=="global_divine_blast":
 		var enemy_targets:Array=[]
 		for event in _enemy_damage_events(unit,damage_events):enemy_targets.append(event.get("world_foot",Vector3.ZERO))
+		if enemy_targets.is_empty():
+			for candidate_id:String in current.keys():
+				var candidate:Dictionary=current[candidate_id]
+				if bool(candidate.get("alive",false)) and str(candidate.get("team",""))!=str(unit.get("team","")):
+					enemy_targets.append(candidate.get("world_foot",Vector3.ZERO))
 		context["targets"]=enemy_targets
 	elif sid=="black_hole":
 		target_world=unit.get("world_foot",Vector3.ZERO)
@@ -514,7 +539,9 @@ func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictio
 	elif sid=="time_slow":
 		context["targets"]=_living_enemy_world_positions(unit,current)
 		target_world=unit.get("world_foot",Vector3.ZERO)
-	_play_unit_procedural(sid,origin,target_world,context)
+	var spawned:=_play_unit_procedural(sid,origin,target_world,context)
+	if sid=="shared_hp_link" and spawned!=null:
+		_persistent_unit_vfx[str(unit.get("id",""))]={"node":spawned,"target_uid":str(unit.get("skill_target_uid",""))}
 
 func _exact_skill_target(unit:Dictionary,current:Dictionary)->Dictionary:
 	var uid:=str(unit.get("skill_target_uid",""))
@@ -561,9 +588,13 @@ func _nearest_living_team_positions(unit:Dictionary,current:Dictionary,count:int
 func _unit_target_context(source:Dictionary,target:Dictionary,extra:Dictionary={})->Dictionary:
 	var context:=extra.duplicate(false)
 	var source_node=source.get("model_node")
-	if source_node is Node3D and is_instance_valid(source_node):context["origin_node"]=source_node
+	if source_node is Node3D and is_instance_valid(source_node):
+		var cast_anchor:Variant=source_node.get_node_or_null("CastAnchor")
+		context["origin_node"]=cast_anchor if cast_anchor is Node3D else source_node
 	var target_node=target.get("model_node")
-	if target_node is Node3D and is_instance_valid(target_node):context["target_node"]=target_node
+	if target_node is Node3D and is_instance_valid(target_node):
+		var hit_anchor:Variant=target_node.get_node_or_null("HitAnchor")
+		context["target_node"]=hit_anchor if hit_anchor is Node3D else target_node
 	return context
 
 func _play_opening_unit_vfx(current:Dictionary)->void:
@@ -590,7 +621,8 @@ func _boss_target_context(target: Dictionary, extra: Dictionary = {}) -> Diction
 	var context := extra.duplicate(false)
 	var model_node = target.get("model_node")
 	if model_node is Node3D and is_instance_valid(model_node):
-		context["target_node"] = model_node
+		var hit_anchor:Variant=model_node.get_node_or_null("HitAnchor")
+		context["target_node"] = hit_anchor if hit_anchor is Node3D else model_node
 	return context
 
 func _living_twin_partner(unit: Dictionary, current: Dictionary) -> Dictionary:

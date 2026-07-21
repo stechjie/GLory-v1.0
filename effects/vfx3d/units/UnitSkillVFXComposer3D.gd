@@ -23,7 +23,10 @@ const BASIC_UNDEAD:=preload("res://effects/vfx3d/profiles/examples/basic_attack_
 const VFX_MOTHER_EXECUTE:=preload("res://effects/vfx3d/modules/VFXMotherExecute3D.gd")
 const MOTHER_EXECUTE_PROFILE:=preload("res://effects/vfx3d/profiles/examples/mother_execute_example.tres")
 
-func play_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary={})->void:
+var last_spawned:Node3D
+
+func play_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary={})->Node3D:
+	last_spawned=null
 	match skill_id:
 		"lowest_ally_heal":_holy_heal(target)
 		"nearest_ally_bless":_ally_bless(origin,target,context)
@@ -73,6 +76,7 @@ func play_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary
 		"basic_attack_ranged_undead":_basic_attack(origin,target,"undead","ranged",context)
 		"basic_attack_melee_undead":_basic_attack(origin,target,"undead","melee",context)
 		"unique_death_execute":_spawn(VFX_MOTHER_EXECUTE,MOTHER_EXECUTE_PROFILE,{"origin":origin,"target":target})
+	return last_spawned
 
 func _basic_attack(origin:Vector3,target:Vector3,race:String,mode:String,context:Dictionary)->void:
 	var profile:VFXProfile3D=BASIC_HUMAN
@@ -105,7 +109,10 @@ func _judgement(target:Vector3)->void:
 func _global_divine(target:Vector3,context:Dictionary)->void:
 	var targets:Array=context.get("targets",[])
 	if targets.is_empty():targets=[target]
-	for value in targets:_spawn(VFX_FALLING_PILLAR,_holy_profile(.72,1.02),{"target":value})
+	for i in range(targets.size()):
+		if i>0: await get_tree().create_timer(.075).timeout
+		var value:Variant=targets[i]
+		_spawn(VFX_FALLING_PILLAR,_holy_profile(.88,1.16),{"target":value})
 
 func _silence_bolt(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var p:=_shadow_profile(.64,.98);p.main_color=Color(.38,.10,.68);p.core_color=Color(.82,.50,1.0)
@@ -132,7 +139,7 @@ func _front_stun(origin:Vector3,target:Vector3,context:Dictionary)->void:
 func _barrier(target:Vector3,profile:VFXProfile3D)->void:_spawn(VFX_BARRIER,profile,{"target":target})
 
 func _tracked_link(origin:Vector3,target:Vector3,context:Dictionary,profile:VFXProfile3D)->void:
-	_spawn(VFX_TRACKED_LINK,profile,{"origin":origin,"target":target,"origin_node":context.get("origin_node"),"target_node":context.get("target_node")})
+	_spawn(VFX_TRACKED_LINK,profile,{"origin":origin,"target":target,"origin_node":context.get("origin_node"),"target_node":context.get("target_node"),"persistent":bool(context.get("persistent",false))})
 
 func _status_hit(target:Vector3,status_type:String,context:Dictionary)->void:
 	var p:=_shadow_profile(.54,1.18);p.parameters={"status_type":status_type};p.particle_count=7
@@ -232,7 +239,7 @@ func _death_hunt(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	_spawn(VFX_IMPACT_FLASH,p,{"target":target})
 
 func _spawn(script:Script,profile:VFXProfile3D,context:Dictionary)->Node3D:
-	var node:=script.new() as Node3D;add_child(node);node.call("play_profile",profile,context);return node
+	var node:=script.new() as Node3D;add_child(node);last_spawned=node;node.call("play_profile",profile,context);return node
 
 func _profile(dark:Color,main:Color,core:Color,size:float,duration:float,energy:float,count:int)->VFXProfile3D:
 	var p:=VFXProfile3D.new();p.dark_color=dark;p.main_color=main;p.core_color=core;p.size=size;p.duration=duration;p.emission_energy=energy;p.particle_count=count;return p

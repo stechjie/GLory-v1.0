@@ -34,10 +34,9 @@ func _ready() -> void:
 	_unit_composer.name = "UnitSkillVFXComposer3D"
 	add_child(_unit_composer)
 
-func play(skill_id: String, origin: Vector3, target: Vector3, context: Dictionary = {}) -> void:
+func play(skill_id: String, origin: Vector3, target: Vector3, context: Dictionary = {}) -> Node3D:
 	if skill_id in UNIT_SKILLS:
-		_unit_composer.play_skill(skill_id, origin, target, context)
-		return
+		return _unit_composer.play_skill(skill_id, origin, target, context)
 	match skill_id:
 		"lightning_strike":
 			var arc := VFXLightningArc.new()
@@ -53,3 +52,4 @@ func play(skill_id: String, origin: Vector3, target: Vector3, context: Dictionar
 			_composer.play_skill("element_meteor", origin, target, context)
 		_:
 			_composer.play_skill(skill_id, origin, target, context)
+	return null

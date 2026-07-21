@@ -1,14 +1,17 @@
 extends Node3D
 
 const VFX_STATUS_EFFECT:=preload("res://effects/vfx3d/modules/VFXStatusEffect3D.gd")
-const PROCEDURAL_STATUS_ANCHORS:={"stun":"HeadAnchor","silence":"HeadAnchor","poison":"FeetAnchor"}
+# Status icons are persistent gameplay state, not one-shot hit bursts.  Keep
+# them on the existing readable logo textures so players can identify them at
+# the current distant camera angle.
+const PROCEDURAL_STATUS_ANCHORS:={}
 
 const EFFECTS := {
 	"shield": {"anchor": "BodyAnchor", "path": "res://assets/vfx/status/status_shield_aura.png", "scale": Vector3(0.86, 0.86, 0.86), "alpha": 0.62, "rot": 0.0, "bob": 0.035, "pulse": 0.035},
-	"stun": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_stun_ring.png", "scale": Vector3(0.30, 0.30, 0.30), "alpha": 0.9, "rot": 1.4, "bob": 0.025, "pulse": 0.03},
+	"stun": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_stun_ring.png", "scale": Vector3(0.48, 0.48, 0.48), "alpha": 1.0, "rot": 1.4, "bob": 0.025, "pulse": 0.05},
 	"poison": {"anchor": "FeetAnchor", "path": "res://assets/vfx/status/status_poison_cloud.png", "scale": Vector3(0.58, 0.58, 0.58), "alpha": 0.48, "rot": 0.12, "bob": 0.018, "pulse": 0.045},
 	"burn": {"anchor": "FeetAnchor", "path": "res://assets/vfx/status/status_burn_ring.png", "scale": Vector3(0.48, 0.48, 0.48), "alpha": 0.7, "rot": 0.35, "bob": 0.012, "pulse": 0.055},
-	"silence": {"anchor": "BodyAnchor", "path": "res://assets/vfx/status/status_silence_seal.png", "scale": Vector3(0.42, 0.42, 0.42), "alpha": 0.78, "rot": -0.45, "bob": 0.03, "pulse": 0.025},
+	"silence": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_silence_seal.png", "scale": Vector3(0.62, 0.62, 0.62), "alpha": 1.0, "rot": -0.45, "bob": 0.03, "pulse": 0.04},
 	"slow": {"anchor": "FeetAnchor", "path": "res://assets/vfx/status/status_slow_frost_ring.png", "scale": Vector3(0.52, 0.52, 0.52), "alpha": 0.58, "rot": -0.25, "bob": 0.01, "pulse": 0.035},
 	"bleed": {"anchor": "BodyAnchor", "path": "res://assets/vfx/status/status_bleed_body.png", "scale": Vector3(0.46, 0.46, 0.46), "alpha": 0.62, "rot": 0.18, "bob": 0.028, "pulse": 0.04},
 }
@@ -47,11 +50,7 @@ func update_from_fighter(fighter: Dictionary) -> void:
 		active[kind] = remaining > 0.0
 		remaining_by_kind[kind]=remaining
 	for kind in EFFECTS.keys():
-		if PROCEDURAL_STATUS_ANCHORS.has(kind):
-			_set_procedural_status(kind,bool(active.get(kind,false)),float(remaining_by_kind.get(kind,0.0)))
-			_set_effect_visible(kind,false)
-		else:
-			_set_effect_visible(kind, bool(active.get(kind, false)))
+		_set_effect_visible(kind, bool(active.get(kind, false)))
 
 func _process(delta: float) -> void:
 	var t := float(Time.get_ticks_msec()) * 0.001 + _phase
