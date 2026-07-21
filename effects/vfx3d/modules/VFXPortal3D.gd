@@ -45,17 +45,42 @@ uniform float seed = 0.0;
 uniform float energy = 3.0;
 uniform float twist = 1.4;
 uniform float spin = 0.9;
+uniform float depth_amount = 0.5;
+uniform float depth_mult = 1.0;
+uniform float fade_amount = 1.0;
+uniform float fade_mult = 1.0;
+uniform float inward_motion = 0.2;
+uniform float base_motion = 0.2;
+uniform int layers = 4;
+uniform float open_amount = 1.0;
+uniform bool dither = false;
 """ + ROTATE_GLSL + BILLBOARD_GLSL + """
 void fragment() {
 	vec2 p = UV - vec2(0.5);
 	float r = length(p) * 2.0;
-	float arms = texture(swirl_tex, vfx_rotate(p, TIME * spin + seed + (1.0 - r) * twist * 0.5) + vec2(0.5)).a;
+	float depth_sum = 0.0;
+	float depth_weight = 0.0;
+	for (int i = 0; i < 8; i++) {
+		if (i >= layers) {
+			break;
+		}
+		float fi = float(i);
+		float layer_t = fi / max(float(layers), 1.0);
+		float layer_scale = 1.0 + layer_t * depth_amount * 0.45;
+		float layer_motion = TIME * (base_motion + inward_motion * (1.0 - r)) * (1.0 + fi * 0.10);
+		float layer_value = texture(swirl_tex, vfx_rotate(p * layer_scale, layer_motion + seed + (1.0 - r) * twist * 0.5) + vec2(0.5)).a;
+		float layer_weight = pow(max(1.0 - layer_t, 0.02), fade_amount * fade_mult);
+		depth_sum += layer_value * layer_weight;
+		depth_weight += layer_weight;
+	}
+	float arms = depth_sum / max(depth_weight, 0.001);
 	float arms2 = texture(swirl_tex, vfx_rotate(p * 1.22, -TIME * spin * 0.55 + seed * 1.7) + vec2(0.5)).a;
 	float n = texture(noise_tex, UV * 1.7 + vec2(TIME * 0.04 + seed, -TIME * 0.07)).r;
 	float edge = r + (n - 0.5) * 0.24;
-	float open_r = reveal * 1.1;
+	float open_r = max(reveal * 1.1, open_amount * 0.9);
 	float mask = smoothstep(open_r, open_r - 0.24, edge);
 	mask *= smoothstep(dissolve - 0.09, dissolve + 0.09, n * 0.85 + (1.0 - r) * 0.15);
+	mask *= smoothstep(0.0, 0.12, open_amount);
 	float core_band = smoothstep(0.30, 0.03, edge);
 	float arm_mix = clamp(max(arms, arms2 * 0.75), 0.0, 1.0);
 	float main_band = smoothstep(0.80, 0.22, edge) * arm_mix;
@@ -65,7 +90,14 @@ void fragment() {
 	col = mix(col, core_color.rgb, core_band);
 	ALBEDO = col;
 	EMISSION = col * energy * (0.10 + main_band * 0.50 + core_band * 1.45);
-	ALPHA = clamp((dark_body * 0.80 + main_band * 0.16 + core_band * 0.22) * mask * opacity, 0.0, 0.96);
+	float alpha = clamp((dark_body * 0.80 + main_band * 0.16 + core_band * 0.22) * mask * opacity, 0.0, 0.96);
+	if (dither) {
+		float threshold = fract(sin(dot(FRAGCOORD.xy, vec2(12.9898, 78.233))) * 43758.5453);
+		if (alpha < threshold * 0.32) {
+			discard;
+		}
+	}
+	ALPHA = alpha;
 }
 """
 
@@ -204,6 +236,13 @@ func play_portal(at: Vector3, profile: VFXProfile3D = null) -> void:
 	position = at
 	_face_battle_camera()
 	var active := profile if profile != null else _fallback_profile()
+	var portal_params: Dictionary = active.parameters
+	var depth_layers := clampi(int(portal_params.get("portal_depth_layers", 5)), 1, 8)
+	var depth_amount := clampf(float(portal_params.get("portal_depth_amount", 0.55)), 0.0, 1.5)
+	var depth_fade := maxf(float(portal_params.get("portal_depth_fade", 1.15)), 0.1)
+	var inward_motion := float(portal_params.get("portal_inward_motion", 0.24))
+	var base_motion := float(portal_params.get("portal_base_motion", 0.18))
+	var dither_edges := bool(portal_params.get("portal_dither", true))
 	var d := active.duration
 	var s := active.size
 	var center_y := s * 1.12
@@ -247,11 +286,16 @@ func play_portal(at: Vector3, profile: VFXProfile3D = null) -> void:
 	var vortex := _spawn_quad("PortalVortexDisc", Vector2(s * 2.35, s * 2.35), VORTEX_SHADER, {
 		"dark_color": active.dark_color, "main_color": active.main_color,
 		"core_color": active.core_color, "swirl_tex": TEX_SWIRL, "noise_tex": TEX_NOISE,
-		"seed": 2.2, "energy": active.emission_energy, "twist": 1.4, "spin": 0.9
+		"seed": 2.2, "energy": active.emission_energy, "twist": 1.4, "spin": 0.9,
+		"depth_amount": depth_amount, "depth_mult": 1.0, "fade_amount": depth_fade,
+		"fade_mult": 1.0, "inward_motion": inward_motion, "base_motion": base_motion,
+		"layers": depth_layers, "open_amount": 0.0, "dither": dither_edges
 	}, 0)
 	vortex.position.y = center_y
 	_tween_param(vortex, "reveal", 0.0, 1.0, d * 0.30, "explosive_out", d * 0.10)
+	_tween_param(vortex, "open_amount", 0.0, 1.0, d * 0.24, "explosive_out", d * 0.08)
 	_tween_param(vortex, "dissolve", 0.0, 1.0, d * 0.16, "ease_in", d * 0.78)
+	_tween_param(vortex, "open_amount", 1.0, 0.0, d * 0.14, "ease_in", d * 0.82)
 	var collapse_tw := track_tween(create_tween())
 	collapse_tw.tween_interval(d * 0.78)
 	collapse_tw.tween_property(vortex, "scale", Vector3.ONE * 0.14, d * 0.17).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
@@ -440,4 +484,12 @@ func _fallback_profile() -> VFXProfile3D:
 	profile.duration = 2.0
 	profile.particle_count = 12
 	profile.emission_energy = 3.4
+	profile.parameters = {
+		"portal_depth_layers": 5,
+		"portal_depth_amount": 0.55,
+		"portal_depth_fade": 1.15,
+		"portal_inward_motion": 0.24,
+		"portal_base_motion": 0.18,
+		"portal_dither": true
+	}
 	return profile

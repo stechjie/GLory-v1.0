@@ -14,4 +14,4 @@ size = 1.1
 duration = 2.0
 particle_count = 12
 emission_energy = 3.4
-parameters = {"reference": "HL_Studio Niagara Vol1 purple vortex 0:56 layering", "style": "vertical_swirl_gate"}
+parameters = {"portal_base_motion": 0.18, "portal_depth_amount": 0.55, "portal_depth_fade": 1.15, "portal_depth_layers": 5, "portal_dither": true, "portal_inward_motion": 0.24, "reference": "HL_Studio Niagara Vol1 purple vortex 0:56 layering", "style": "vertical_swirl_gate"}
