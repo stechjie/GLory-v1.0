@@ -813,7 +813,7 @@
                       "hp":  360,
                       "atk":  50,
                       "def":  7,
-                      "attack_speed":  0.5,
+                      "attack_speed":  0.6,
                       "range":  1.5,
                       "move_speed":  1.2,
                       "crit":  0.07,
