@@ -52,6 +52,18 @@ func play_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary
 		"parasite_on_kill":_summon(target)
 		"left_neighbor_sacrifice":_tracked_link(origin,target,context,_blood_profile(.76,2.0))
 		"attack_interrupt":_interrupt_hit(target)
+		"bubble_dream":_bubble_dream(origin,target,context)
+		"shell_guard":_shell_guard(origin)
+		"balance_judge":_balance_judge(origin,target)
+		"gold_charge":_gold_charge(origin,target,context)
+		"holy_song":_holy_song(origin,context)
+		"twin_strike":_twin_strike(origin)
+		"king_aura":_king_aura(origin,context)
+		"arrow_rain":_arrow_rain(origin,target,context)
+		"blood_rampage":_blood_rampage(origin)
+		"steel_order":_steel_order(origin,context)
+		"time_slow":_time_slow(origin,target,context)
+		"death_hunt":_death_hunt(origin,target,context)
 		"basic_attack_ranged_god":_basic_attack(origin,target,"god","ranged",context)
 		"basic_attack_melee_god":_basic_attack(origin,target,"god","melee",context)
 		"basic_attack_ranged_human":_basic_attack(origin,target,"human","ranged",context)
@@ -144,6 +156,80 @@ func _summon(target:Vector3)->void:
 
 func _interrupt_hit(target:Vector3)->void:
 	_spawn(VFX_IMPACT_FLASH,_profile(Color(.10,.025,.008),Color(.88,.18,.025),Color(1.0,.72,.18),.48,.36,3.3,7),{"target":target})
+
+func _bubble_dream(origin:Vector3,target:Vector3,context:Dictionary)->void:
+	var p:=_profile(Color(.015,.08,.16),Color(.06,.52,.86),Color(.72,1.0,1.0),.56,.82,3.0,9)
+	_spawn(VFX_PROJECTILE,p,{"origin":origin+Vector3(0,.34,0),"target":target+Vector3(0,.18,0)})
+	_spawn(VFX_IMPACT_FLASH,_profile(Color(.02,.10,.18),Color(.08,.62,.92),Color(.78,1.0,1.0),.70,.48,3.2,8),{"target":target})
+	_spawn(VFX_LIGHT_PULSE,_holy_profile(.44,.58),{"target":context.get("heal_target",origin)+Vector3(0,.32,0)})
+
+func _shell_guard(origin:Vector3)->void:
+	_spawn(VFX_BARRIER,_profile(Color(.025,.07,.10),Color(.08,.42,.58),Color(.62,.96,1.0),.88,1.40,3.0,10),{"target":origin})
+	_spawn(VFX_LIGHT_PULSE,_profile(Color(.02,.08,.12),Color(.10,.54,.72),Color(.70,1.0,1.0),.58,.72,2.8,8),{"target":origin+Vector3(0,.38,0)})
+
+func _balance_judge(origin:Vector3,target:Vector3)->void:
+	_spawn(VFX_FALLING_PILLAR,_holy_profile(.74,.88),{"target":target})
+	var p:=_holy_profile(.76,.62);p.dark_color=Color(.10,.035,.008);p.main_color=Color(.92,.30,.035);p.core_color=Color(1.0,.90,.42)
+	_spawn(VFX_SLASH_RING,p,{"target":target})
+
+func _gold_charge(origin:Vector3,target:Vector3,context:Dictionary)->void:
+	var p:=_holy_profile(.78,.72);p.main_color=Color(.82,.24,.025);p.core_color=Color(1.0,.78,.26)
+	_spawn(VFX_AFTERIMAGE,p,{"origin":origin,"target":target})
+	_spawn(VFX_SLASH_ARC,p,{"target":target+Vector3(0,.30,0),"direction":(target-origin).normalized()})
+	_spawn(VFX_IMPACT_FLASH,p,{"target":target})
+	var stun:=_profile(Color(.10,.025,.008),Color(.84,.20,.025),Color(1.0,.76,.24),.46,.78,2.8,7);stun.parameters["status_type"]="stun"
+	_spawn(VFX_STATUS,stun,{"target":target})
+
+func _holy_song(origin:Vector3,context:Dictionary)->void:
+	_spawn(VFX_LIGHT_PULSE,_holy_profile(.86,.92),{"target":origin+Vector3(0,.42,0)})
+	for value in context.get("targets",[]):
+		_spawn(VFX_FALLING_PILLAR,_holy_profile(.42,.78),{"target":value})
+		_spawn(VFX_LIGHT_PULSE,_holy_profile(.38,.58),{"target":value+Vector3(0,.34,0)})
+
+func _twin_strike(origin:Vector3)->void:
+	var p:=_shadow_profile(.86,1.10);p.main_color=Color(.18,.48,.72);p.core_color=Color(.72,.96,1.0)
+	_spawn(VFX_SUMMON,p,{"target":origin})
+	_spawn(VFX_IMPACT_FLASH,p,{"target":origin})
+
+func _king_aura(origin:Vector3,context:Dictionary)->void:
+	var p:=_holy_profile(1.02,1.12);p.main_color=Color(.86,.26,.035);p.core_color=Color(1.0,.82,.30)
+	_spawn(VFX_LIGHT_PULSE,p,{"target":origin+Vector3(0,.36,0)})
+	for value in context.get("targets",[]):
+		_spawn(VFX_LIGHT_PULSE,_holy_profile(.34,.54),{"target":value+Vector3(0,.30,0)})
+
+func _arrow_rain(origin:Vector3,target:Vector3,context:Dictionary)->void:
+	var p:=_holy_profile(.48,.72);p.main_color=Color(.22,.48,.92);p.core_color=Color(.78,.96,1.0)
+	var targets:Array=context.get("targets",[])
+	if targets.is_empty():targets=[target]
+	for value in targets:
+		_spawn(VFX_FALLING_PILLAR,p,{"target":value})
+		_spawn(VFX_IMPACT_FLASH,_profile(Color(.025,.06,.14),Color(.12,.42,.90),Color(.72,.96,1.0),.42,.34,3.0,6),{"target":value})
+
+func _blood_rampage(origin:Vector3)->void:
+	var p:=_blood_profile(1.02,1.05)
+	_spawn(VFX_ENERGY_BURST,p,{"target":origin,"direction":Vector3.UP})
+	_spawn(VFX_LIGHT_PULSE,p,{"target":origin+Vector3(0,.44,0)})
+
+func _steel_order(origin:Vector3,context:Dictionary)->void:
+	var p:=_profile(Color(.025,.035,.05),Color(.22,.34,.46),Color(.74,.92,1.0),.64,.92,2.8,8)
+	_spawn(VFX_LIGHT_PULSE,p,{"target":origin+Vector3(0,.34,0)})
+	for value in context.get("targets",[]):
+		_spawn(VFX_BARRIER,p,{"target":value})
+		_spawn(VFX_LIGHT_PULSE,p,{"target":value+Vector3(0,.30,0)})
+
+func _time_slow(origin:Vector3,target:Vector3,context:Dictionary)->void:
+	var p:=_shadow_profile(1.02,1.42);p.main_color=Color(.10,.34,.62);p.core_color=Color(.48,.86,1.0)
+	_spawn(VFX_VORTEX,p,{"target":origin})
+	for value in context.get("targets",[]):
+		var slow:=_profile(Color(.02,.04,.10),Color(.10,.38,.72),Color(.58,.90,1.0),.38,1.05,2.5,6);slow.parameters["status_type"]="slow"
+		_spawn(VFX_STATUS,slow,{"target":value})
+
+func _death_hunt(origin:Vector3,target:Vector3,context:Dictionary)->void:
+	var p:=_shadow_profile(.78,.72);p.main_color=Color(.34,.04,.20);p.core_color=Color(.98,.22,.42)
+	_spawn(VFX_SLASH_ARC,p,{"target":target+Vector3(0,.30,0),"direction":(target-origin).normalized()})
+	p.parameters["status_type"]="defense_down"
+	_spawn(VFX_STATUS,p,{"target":target})
+	_spawn(VFX_IMPACT_FLASH,p,{"target":target})
 
 func _spawn(script:Script,profile:VFXProfile3D,context:Dictionary)->Node3D:
 	var node:=script.new() as Node3D;add_child(node);node.call("play_profile",profile,context);return node

@@ -399,6 +399,8 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 			_spawn_skill_textures_for_role(uid, "cast", unit.get("cast_pos", Vector2.ZERO))
 			_spawn_skill_textures_for_role(uid, "hit", texture_pos)
 			should_play_texture = false
+		"bubble_dream", "balance_judge", "gold_charge", "twin_strike", "king_aura", "arrow_rain", "blood_rampage", "steel_order", "time_slow", "death_hunt":
+			should_play_texture = false
 		"judgement_strike":
 			should_play_texture = false
 			var target_judgement := _nearest_enemy_target(unit, damage_events, current)
@@ -418,9 +420,13 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 		"black_hole":
 			should_play_texture = false
 		"lowest_ally_heal", "nearby_ally_heal_buff", "holy_song", "holy_purify":
-			_spawn_vfx("HOLY_HEAL", unit.get("head_pos", Vector2.ZERO))
+			should_play_texture = false
+			if not uid.begins_with("merc_"):
+				_spawn_vfx("HOLY_HEAL", unit.get("head_pos", Vector2.ZERO))
 		"random_ally_damage_reduction", "shell_guard", "apocalypse_charge":
-			_spawn_vfx("HOLY_SHIELD", unit.get("head_pos", Vector2.ZERO))
+			should_play_texture = false
+			if not uid.begins_with("merc_"):
+				_spawn_vfx("HOLY_SHIELD", unit.get("head_pos", Vector2.ZERO))
 		"shared_hp_link":
 			should_play_texture = false
 		_:
@@ -455,6 +461,9 @@ func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictio
 		"random_attribute_bolt", "judgement_strike", "random_ally_damage_reduction",
 		"global_divine_blast", "silence_bolt", "fear", "stun", "black_hole",
 		"blink_low_def_backline", "shared_hp_link", "front_cone_stun",
+		"bubble_dream", "shell_guard", "balance_judge", "gold_charge", "holy_song",
+		"twin_strike", "king_aura", "arrow_rain", "blood_rampage", "steel_order",
+		"time_slow", "death_hunt",
 	]
 	if not sid in ACTIVE_UNIT_SKILLS:
 		return
@@ -480,6 +489,29 @@ func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictio
 		context["targets"]=enemy_targets
 	elif sid=="black_hole":
 		target_world=unit.get("world_foot",Vector3.ZERO)
+	elif sid=="bubble_dream":
+		var heal_target:=_lowest_living_team_target(unit,current)
+		context["heal_target"]=heal_target.get("world_foot",unit.get("world_foot",Vector3.ZERO))
+	elif sid=="holy_song":
+		context["targets"]=_living_team_world_positions(unit,current)
+		target_world=unit.get("world_foot",Vector3.ZERO)
+	elif sid=="twin_strike":
+		target_world=unit.get("world_foot",Vector3.ZERO)
+	elif sid=="king_aura":
+		context["targets"]=_living_team_world_positions(unit,current)
+		target_world=unit.get("world_foot",Vector3.ZERO)
+	elif sid=="arrow_rain":
+		var rain_targets:=_enemy_damage_events(unit,damage_events)
+		var rain_positions:Array=[]
+		for event:Dictionary in rain_targets:rain_positions.append(event.get("world_foot",Vector3.ZERO))
+		context["targets"]=rain_positions
+		target_world=unit.get("world_foot",Vector3.ZERO)
+	elif sid=="steel_order":
+		context["targets"]=_nearest_living_team_positions(unit,current,3)
+		target_world=unit.get("world_foot",Vector3.ZERO)
+	elif sid=="time_slow":
+		context["targets"]=_living_enemy_world_positions(unit,current)
+		target_world=unit.get("world_foot",Vector3.ZERO)
 	_play_unit_procedural(sid,origin,target_world,context)
 
 func _exact_skill_target(unit:Dictionary,current:Dictionary)->Dictionary:
@@ -494,6 +526,34 @@ func _living_team_world_positions(unit:Dictionary,current:Dictionary)->Array:
 		var candidate:Dictionary=current[id]
 		if bool(candidate.get("alive",false)) and str(candidate.get("team",""))==str(unit.get("team","")):
 			result.append(candidate.get("world_foot",Vector3.ZERO))
+	return result
+
+func _living_enemy_world_positions(unit:Dictionary,current:Dictionary)->Array:
+	var result:Array=[]
+	for id:String in current.keys():
+		var candidate:Dictionary=current[id]
+		if bool(candidate.get("alive",false)) and str(candidate.get("team",""))!=str(unit.get("team","")):
+			result.append(candidate.get("world_foot",Vector3.ZERO))
+	return result
+
+func _lowest_living_team_target(unit:Dictionary,current:Dictionary)->Dictionary:
+	var best:Dictionary={};var best_ratio:=INF
+	for id:String in current.keys():
+		var candidate:Dictionary=current[id]
+		if not bool(candidate.get("alive",false)) or str(candidate.get("team",""))!=str(unit.get("team","")):continue
+		var ratio:=float(candidate.get("hp",0))/float(maxi(1,int(candidate.get("max_hp",1))))
+		if ratio<best_ratio:best_ratio=ratio;best=candidate
+	return best
+
+func _nearest_living_team_positions(unit:Dictionary,current:Dictionary,count:int)->Array:
+	var candidates:Array=[];var source:Vector3=unit.get("world_foot",Vector3.ZERO)
+	for id:String in current.keys():
+		var candidate:Dictionary=current[id]
+		if bool(candidate.get("alive",false)) and str(candidate.get("team",""))==str(unit.get("team","")):
+			candidates.append({"distance":source.distance_squared_to(candidate.get("world_foot",source)),"position":candidate.get("world_foot",source)})
+	candidates.sort_custom(func(a:Dictionary,b:Dictionary)->bool:return float(a["distance"])<float(b["distance"]))
+	var result:Array=[]
+	for entry in candidates.slice(0,mini(count,candidates.size())):result.append(entry["position"])
 	return result
 
 func _unit_target_context(source:Dictionary,target:Dictionary,extra:Dictionary={})->Dictionary:
