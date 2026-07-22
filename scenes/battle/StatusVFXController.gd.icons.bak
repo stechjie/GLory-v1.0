@@ -8,40 +8,24 @@ const PROCEDURAL_STATUS_ANCHORS:={}
 
 const EFFECTS := {
 	"shield": {"anchor": "BodyAnchor", "path": "res://assets/vfx/status/status_shield_aura.png", "scale": Vector3(0.86, 0.86, 0.86), "alpha": 0.62, "rot": 0.0, "bob": 0.035, "pulse": 0.035},
-	"stun": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_stun_icon_v2.png", "scale": Vector3(0.58, 0.58, 0.58), "alpha": 1.0, "rot": 0.0, "bob": 0.025, "pulse": 0.07},
-	"poison": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_poison_icon_v2.png", "scale": Vector3(0.66, 0.66, 0.66), "alpha": 1.0, "rot": 0.0, "bob": 0.035, "pulse": 0.075},
-	"burn": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_burn_icon_v2.png", "scale": Vector3(0.58, 0.58, 0.58), "alpha": 1.0, "rot": 0.0, "bob": 0.025, "pulse": 0.07},
-	"silence": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_silence_icon_v2.png", "scale": Vector3(0.68, 0.68, 0.68), "alpha": 1.0, "rot": 0.0, "bob": 0.03, "pulse": 0.06},
-	"slow": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_slow_icon_v2.png", "scale": Vector3(0.58, 0.58, 0.58), "alpha": 1.0, "rot": 0.0, "bob": 0.025, "pulse": 0.06},
-	"bleed": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_bleed_icon_v2.png", "scale": Vector3(0.58, 0.58, 0.58), "alpha": 1.0, "rot": 0.0, "bob": 0.025, "pulse": 0.07},
-	"attack_down": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_attack_down_icon_v2.png", "scale": Vector3(0.56, 0.56, 0.56), "alpha": 1.0, "rot": 0.0, "bob": 0.025, "pulse": 0.06},
-	"interrupt": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_interrupt_icon_v2.png", "scale": Vector3(0.56, 0.56, 0.56), "alpha": 1.0, "rot": 0.0, "bob": 0.025, "pulse": 0.06},
-	"defense_down": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_defense_down_icon_v2.png", "scale": Vector3(0.60, 0.60, 0.60), "alpha": 1.0, "rot": 0.0, "bob": 0.025, "pulse": 0.06},
-	"defense_flat_down": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_defense_down_icon_v2.png", "scale": Vector3(0.52, 0.52, 0.52), "alpha": 0.92, "rot": 0.0, "bob": 0.025, "pulse": 0.055},
-	"heal_reduction": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_heal_reduction_icon_v2.png", "scale": Vector3(0.58, 0.58, 0.58), "alpha": 1.0, "rot": 0.0, "bob": 0.025, "pulse": 0.06},
-	"ice_vulnerable": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_ice_vulnerable_icon_v2.png", "scale": Vector3(0.56, 0.56, 0.56), "alpha": 1.0, "rot": 0.0, "bob": 0.025, "pulse": 0.06},
-	"ice_affected": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_ice_affected_icon_v2.png", "scale": Vector3(0.56, 0.56, 0.56), "alpha": 1.0, "rot": 0.0, "bob": 0.025, "pulse": 0.06},
-	"fear": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_fear_icon_v2.png", "scale": Vector3(0.62, 0.62, 0.62), "alpha": 1.0, "rot": 0.0, "bob": 0.025, "pulse": 0.08},
+	"stun": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_stun_ring.png", "scale": Vector3(0.48, 0.48, 0.48), "alpha": 1.0, "rot": 1.4, "bob": 0.025, "pulse": 0.05},
+	"poison": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_poison_emblem.png", "scale": Vector3(0.74, 0.74, 0.74), "alpha": 1.0, "rot": 0.0, "bob": 0.035, "pulse": 0.075},
+	"burn": {"anchor": "FeetAnchor", "path": "res://assets/vfx/status/status_burn_ring.png", "scale": Vector3(0.48, 0.48, 0.48), "alpha": 0.7, "rot": 0.35, "bob": 0.012, "pulse": 0.055},
+	"silence": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_silence_emblem.png", "scale": Vector3(0.82, 0.82, 0.82), "alpha": 1.0, "rot": 0.0, "bob": 0.03, "pulse": 0.06},
+	"slow": {"anchor": "FeetAnchor", "path": "res://assets/vfx/status/status_slow_frost_ring.png", "scale": Vector3(0.52, 0.52, 0.52), "alpha": 0.58, "rot": -0.25, "bob": 0.01, "pulse": 0.035},
+	"bleed": {"anchor": "BodyAnchor", "path": "res://assets/vfx/status/status_bleed_body.png", "scale": Vector3(0.46, 0.46, 0.46), "alpha": 0.62, "rot": 0.18, "bob": 0.028, "pulse": 0.04},
 }
 
 # 状态图标是固定小集合，preload 到常量里——中毒/燃烧首次触发时
 # 绝不能在战斗帧里同步读盘。
 const STATUS_TEXTURES := {
 	"shield": preload("res://assets/vfx/status/status_shield_aura.png"),
-	"stun": preload("res://assets/vfx/status/status_stun_icon_v2.png"),
-	"poison": preload("res://assets/vfx/status/status_poison_icon_v2.png"),
-	"burn": preload("res://assets/vfx/status/status_burn_icon_v2.png"),
-	"silence": preload("res://assets/vfx/status/status_silence_icon_v2.png"),
-	"slow": preload("res://assets/vfx/status/status_slow_icon_v2.png"),
-	"bleed": preload("res://assets/vfx/status/status_bleed_icon_v2.png"),
-	"attack_down": preload("res://assets/vfx/status/status_attack_down_icon_v2.png"),
-	"interrupt": preload("res://assets/vfx/status/status_interrupt_icon_v2.png"),
-	"defense_down": preload("res://assets/vfx/status/status_defense_down_icon_v2.png"),
-	"defense_flat_down": preload("res://assets/vfx/status/status_defense_down_icon_v2.png"),
-	"heal_reduction": preload("res://assets/vfx/status/status_heal_reduction_icon_v2.png"),
-	"ice_vulnerable": preload("res://assets/vfx/status/status_ice_vulnerable_icon_v2.png"),
-	"ice_affected": preload("res://assets/vfx/status/status_ice_affected_icon_v2.png"),
-	"fear": preload("res://assets/vfx/status/status_fear_icon_v2.png"),
+	"stun": preload("res://assets/vfx/status/status_stun_ring.png"),
+	"poison": preload("res://assets/vfx/status/status_poison_emblem.png"),
+	"burn": preload("res://assets/vfx/status/status_burn_ring.png"),
+	"silence": preload("res://assets/vfx/status/status_silence_emblem.png"),
+	"slow": preload("res://assets/vfx/status/status_slow_frost_ring.png"),
+	"bleed": preload("res://assets/vfx/status/status_bleed_body.png"),
 }
 
 var _sprites := {}
@@ -60,7 +44,7 @@ func update_from_fighter(fighter: Dictionary) -> void:
 	active["shield"] = int(fighter.get("shield", 0)) > 0
 	var statuses: Dictionary = fighter.get("statuses", {})
 	var remaining_by_kind:={}
-	for kind in ["stun", "poison", "burn", "silence", "slow", "bleed", "attack_down", "interrupt", "defense_down", "defense_flat_down", "heal_reduction", "ice_vulnerable", "ice_affected", "fear"]:
+	for kind in ["stun", "poison", "burn", "silence", "slow", "bleed"]:
 		var status: Dictionary = statuses.get(kind, {})
 		var remaining:=float(status.get("remaining",0.0))
 		active[kind] = remaining > 0.0
