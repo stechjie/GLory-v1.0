@@ -367,8 +367,6 @@ func _build_vfx_test_panel() -> void:
 	vfx_select.add_item("Unit Skill: Silence Bolt")
 	vfx_select.add_item("Unit Skill: Poison Dart")
 	vfx_select.add_item("Unit Skill: Mother Execute")
-	vfx_select.add_item("Unit Skill: Stun Hit")
-	vfx_select.add_item("Unit Skill: Attribute Bolt")
 	select_row.add_child(vfx_select)
 	var action_row := HBoxContainer.new()
 	action_row.add_theme_constant_override("separation", 6)
@@ -824,14 +822,6 @@ func _on_vfx_play_pressed() -> void:
 			var mother_fx:=VFX_MOTHER_EXECUTE.new();mother_fx.name="PreviewMotherExecute";vfx_preview_root.add_child(mother_fx);vfx_preview_effect=mother_fx
 			mother_fx.play_profile(PROFILE_MOTHER_EXECUTE,{"origin":left_slot.position+Vector3(0.0,1.36,0.0),"target":right_slot.position})
 			vfx_status_label.text="Playing: Mother book and victim soul devour"
-		58:
-			var stun_fx:=UNIT_SKILL_COMPOSER.new();stun_fx.name="PreviewStunHit";vfx_preview_root.add_child(stun_fx);vfx_preview_effect=stun_fx
-			stun_fx.play_skill("stun",left_slot.position+Vector3(0.0,.22,0.0),right_slot.position+Vector3(0.0,.22,0.0),{"target_node":right_slot})
-			vfx_status_label.text="Playing: readable Stun Hit + status emblem"
-		59:
-			var attribute_fx:=UNIT_SKILL_COMPOSER.new();attribute_fx.name="PreviewAttributeBolt";vfx_preview_root.add_child(attribute_fx);vfx_preview_effect=attribute_fx
-			attribute_fx.play_skill("random_attribute_bolt",left_slot.position+Vector3(0.0,.30,0.0),right_slot.position+Vector3(0.0,.30,0.0),{"target_node":right_slot,"attribute":"fire"})
-			vfx_status_label.text="Playing: authored Attribute Bolt"
 
 func _preview_race_basic(profile:VFXProfile3D,race:String,mode:String)->void:
 	var fx:=VFX_RACE_BASIC_ATTACK.new();fx.name="PreviewBasic_%s_%s"%[race,mode];vfx_preview_root.add_child(fx);vfx_preview_effect=fx

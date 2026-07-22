@@ -177,13 +177,8 @@ func _fear_hit(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	_spawn(VFX_ENERGY_BURST,p,{"target":target,"direction":(target-origin).normalized()});_status_hit(target,"fear",context)
 
 func _black_hole(origin:Vector3)->void:
-	var p:=_shadow_profile(1.34,2.35);p.main_color=Color(.20,.028,.42);p.core_color=Color(.74,.22,1.0);p.particle_count=12;p.emission_energy=3.8
+	var p:=_shadow_profile(1.18,2.05);p.main_color=Color(.22,.035,.42);p.core_color=Color(.70,.26,1.0);p.particle_count=14
 	_spawn(VFX_VORTEX,p,{"target":origin})
-	var collapse:=VFX_IMPACT_FLASH.new();add_child(collapse)
-	var cp:=_profile(Color(.015,.003,.035),Color(.20,.025,.46),Color(.78,.30,1.0),.66,.48,3.6,6)
-	var tw:=create_tween();tw.tween_interval(1.32);tw.tween_callback(func():
-		if is_instance_valid(collapse):collapse.play_profile(cp,{"target":origin+Vector3(0,.04,0)})
-	)
 
 func _blink_slash(origin:Vector3,target:Vector3)->void:
 	var dash:=_shadow_profile(.74,.72);dash.main_color=Color(.16,.50,.70);dash.core_color=Color(.70,.96,1.0)
