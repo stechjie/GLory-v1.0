@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="VFXRecipeV2" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/vfxv2/core/VFXRecipeV2.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+recipe_id = "portal_arrival_v2"
+stage_ids = PackedStringArray("binbun_portal", "external_orb", "external_smoke")
+stage_starts = PackedFloat32Array(0.0, 0.32, 0.46)
+stage_durations = PackedFloat32Array(1.6, 0.68, 0.86)
+quality_group = "gameplay"

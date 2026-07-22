@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="VFXRecipeV2" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/vfxv2/core/VFXRecipeV2.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+recipe_id = "silence_bolt_v2"
+stage_ids = PackedStringArray("external_muzzle", "painted_silence", "external_hit")
+stage_starts = PackedFloat32Array(0.0, 0.08, 0.66)
+stage_durations = PackedFloat32Array(0.24, 0.78, 0.62)
+quality_group = "gameplay"

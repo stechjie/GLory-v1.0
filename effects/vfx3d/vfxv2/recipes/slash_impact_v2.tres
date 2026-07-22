@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="VFXRecipeV2" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/vfxv2/core/VFXRecipeV2.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+recipe_id = "slash_impact_v2"
+stage_ids = PackedStringArray("binbun_slash", "external_hit", "external_smoke")
+stage_starts = PackedFloat32Array(0.0, 0.22, 0.34)
+stage_durations = PackedFloat32Array(0.62, 0.54, 0.72)
+quality_group = "gameplay"

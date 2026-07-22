@@ -9,9 +9,9 @@ const PROCEDURAL_STATUS_ANCHORS:={}
 const EFFECTS := {
 	"shield": {"anchor": "BodyAnchor", "path": "res://assets/vfx/status/status_shield_aura.png", "scale": Vector3(0.86, 0.86, 0.86), "alpha": 0.62, "rot": 0.0, "bob": 0.035, "pulse": 0.035},
 	"stun": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_stun_ring.png", "scale": Vector3(0.48, 0.48, 0.48), "alpha": 1.0, "rot": 1.4, "bob": 0.025, "pulse": 0.05},
-	"poison": {"anchor": "FeetAnchor", "path": "res://assets/vfx/status/status_poison_cloud.png", "scale": Vector3(0.58, 0.58, 0.58), "alpha": 0.48, "rot": 0.12, "bob": 0.018, "pulse": 0.045},
+	"poison": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_poison_emblem.png", "scale": Vector3(0.74, 0.74, 0.74), "alpha": 1.0, "rot": 0.0, "bob": 0.035, "pulse": 0.075},
 	"burn": {"anchor": "FeetAnchor", "path": "res://assets/vfx/status/status_burn_ring.png", "scale": Vector3(0.48, 0.48, 0.48), "alpha": 0.7, "rot": 0.35, "bob": 0.012, "pulse": 0.055},
-	"silence": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_silence_seal.png", "scale": Vector3(0.62, 0.62, 0.62), "alpha": 1.0, "rot": -0.45, "bob": 0.03, "pulse": 0.04},
+	"silence": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_silence_emblem.png", "scale": Vector3(0.82, 0.82, 0.82), "alpha": 1.0, "rot": 0.0, "bob": 0.03, "pulse": 0.06},
 	"slow": {"anchor": "FeetAnchor", "path": "res://assets/vfx/status/status_slow_frost_ring.png", "scale": Vector3(0.52, 0.52, 0.52), "alpha": 0.58, "rot": -0.25, "bob": 0.01, "pulse": 0.035},
 	"bleed": {"anchor": "BodyAnchor", "path": "res://assets/vfx/status/status_bleed_body.png", "scale": Vector3(0.46, 0.46, 0.46), "alpha": 0.62, "rot": 0.18, "bob": 0.028, "pulse": 0.04},
 }
@@ -21,9 +21,9 @@ const EFFECTS := {
 const STATUS_TEXTURES := {
 	"shield": preload("res://assets/vfx/status/status_shield_aura.png"),
 	"stun": preload("res://assets/vfx/status/status_stun_ring.png"),
-	"poison": preload("res://assets/vfx/status/status_poison_cloud.png"),
+	"poison": preload("res://assets/vfx/status/status_poison_emblem.png"),
 	"burn": preload("res://assets/vfx/status/status_burn_ring.png"),
-	"silence": preload("res://assets/vfx/status/status_silence_seal.png"),
+	"silence": preload("res://assets/vfx/status/status_silence_emblem.png"),
 	"slow": preload("res://assets/vfx/status/status_slow_frost_ring.png"),
 	"bleed": preload("res://assets/vfx/status/status_bleed_body.png"),
 }

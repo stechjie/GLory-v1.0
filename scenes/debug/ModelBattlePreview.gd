@@ -41,9 +41,11 @@ const VFX_AFTERIMAGE_DASH := preload("res://effects/vfx3d/modules/VFXAfterimageD
 const VFX_RACE_BASIC_ATTACK := preload("res://effects/vfx3d/modules/VFXRaceBasicAttack3D.gd")
 const VFX_MOTHER_EXECUTE := preload("res://effects/vfx3d/modules/VFXMotherExecute3D.gd")
 const BOSS_SKILL_COMPOSER := preload("res://effects/vfx3d/boss/BossSkillVFXComposer3D.gd")
+const UNIT_SKILL_COMPOSER := preload("res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd")
 const VFX_COMPOSITION := preload("res://effects/vfx3d/core/VFXComposition3D.gd")
 const VFX_PREVIEW_RECORDER := preload("res://effects/vfx3d/preview/VFXPreviewRecorder.gd")
 const VFX_VALIDATION := preload("res://effects/vfx3d/core/VFXValidationReport.gd")
+const VFX_V2_REGISTRY := preload("res://effects/vfx3d/vfxv2/VFXV2Registry.gd")
 const PROFILE_SHOCKWAVE := preload("res://effects/vfx3d/profiles/examples/shockwave_layered_example.tres")
 const PROFILE_FLIPBOOK := preload("res://effects/vfx3d/profiles/examples/flipbook_energy_example.tres")
 const PROFILE_DISTORTION := preload("res://effects/vfx3d/profiles/examples/shape_distortion_example.tres")
@@ -129,6 +131,9 @@ var vfx_status_label: Label
 var vfx_preview_root: Node3D
 var vfx_preview_effect: Node3D
 var vfx_recorder: VFXPreviewRecorder
+var vfx_v2_select: OptionButton
+var vfx_v2_status_label: Label
+var vfx_v2_preview_effect: Node3D
 var boss_stage_active := false
 var boss_stage_scale := 1.0
 # ally_1 ships without any textures, so start on ally_2 which is fully textured.
@@ -149,6 +154,7 @@ func _ready() -> void:
 	_setup_info_label()
 	_build_control_panel()
 	_build_vfx_test_panel()
+	_build_vfx_v2_test_panel()
 	model_entries = _load_model_entries()
 	_populate_model_selects()
 	_select_default_models()
@@ -344,6 +350,8 @@ func _build_vfx_test_panel() -> void:
 	vfx_select.add_item("Boss: Twin Timer + Revive")
 	vfx_select.add_item("Validation: Moving Target Projectile")
 	vfx_select.add_item("Module: Status Effect")
+	vfx_select.add_item("Unit Status: Silence Emblem")
+	vfx_select.add_item("Unit Status: Poison Emblem")
 	vfx_select.add_item("Module: Tracked Link")
 	vfx_select.add_item("Module: Vortex Field")
 	vfx_select.add_item("Module: Summon Spawn")
@@ -356,6 +364,8 @@ func _build_vfx_test_panel() -> void:
 	vfx_select.add_item("Unit Basic: Dark Melee")
 	vfx_select.add_item("Unit Basic: Undead Ranged")
 	vfx_select.add_item("Unit Basic: Undead Melee")
+	vfx_select.add_item("Unit Skill: Silence Bolt")
+	vfx_select.add_item("Unit Skill: Poison Dart")
 	vfx_select.add_item("Unit Skill: Mother Execute")
 	select_row.add_child(vfx_select)
 	var action_row := HBoxContainer.new()
@@ -395,6 +405,87 @@ func _build_vfx_test_panel() -> void:
 	vfx_recorder = VFX_PREVIEW_RECORDER.new()
 	vfx_recorder.name = "VFXPreviewRecorder"
 	add_child(vfx_recorder)
+
+func _build_vfx_v2_test_panel() -> void:
+	var panel := PanelContainer.new()
+	panel.name = "VFXV2TestPanel"
+	panel.anchor_left = 1.0
+	panel.anchor_top = 1.0
+	panel.anchor_right = 1.0
+	panel.anchor_bottom = 1.0
+	panel.offset_left = -430.0
+	panel.offset_top = -176.0
+	panel.offset_right = -16.0
+	panel.offset_bottom = -16.0
+	canvas_layer.add_child(panel)
+	var rows := VBoxContainer.new()
+	rows.add_theme_constant_override("separation", 5)
+	panel.add_child(rows)
+	var title := Label.new()
+	title.text = "VFX v2 · Binbun original isolated preview"
+	title.add_theme_font_size_override("font_size", 13)
+	rows.add_child(title)
+	var select_row := HBoxContainer.new()
+	rows.add_child(select_row)
+	var label := Label.new()
+	label.text = "VFX v2"
+	select_row.add_child(label)
+	vfx_v2_select = OptionButton.new()
+	vfx_v2_select.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for entry in VFX_V2_REGISTRY.names():
+		vfx_v2_select.add_item(entry)
+	select_row.add_child(vfx_v2_select)
+	var action_row := HBoxContainer.new()
+	rows.add_child(action_row)
+	_add_button(action_row, "Play VFX v2", _on_vfx_v2_play_pressed)
+	_add_button(action_row, "Clear v2", _on_vfx_v2_clear_pressed)
+	var hint := Label.new()
+	hint.text = "Binbun originals only · no battle skill replacement"
+	hint.add_theme_font_size_override("font_size", 10)
+	rows.add_child(hint)
+	vfx_v2_status_label = Label.new()
+	vfx_v2_status_label.text = "Select a V2 module and press Play"
+	vfx_v2_status_label.add_theme_font_size_override("font_size", 10)
+	rows.add_child(vfx_v2_status_label)
+
+func _on_vfx_v2_play_pressed() -> void:
+	_clear_vfx_v2_preview()
+	if vfx_v2_select == null:
+		return
+	var index := vfx_v2_select.get_selected_id()
+	var fx: Node3D = VFX_V2_REGISTRY.create(index)
+	fx.name = "PreviewVFXV2_%d" % index
+	vfx_preview_root.add_child(fx)
+	vfx_v2_preview_effect = fx
+	var profile: VFXProfile3D = VFX_V2_REGISTRY.profile(index)
+	var origin := left_slot.position + Vector3(0.0, 0.66, 0.0)
+	var target := right_slot.position + Vector3(0.0, 0.42, 0.0)
+	if index >= 18:
+		fx.call("play_recipe", VFX_V2_REGISTRY.recipe(index), {"origin": origin, "target": target, "profile": profile})
+		vfx_v2_status_label.text = "Playing: %s" % VFX_V2_REGISTRY.names()[index]
+		return
+	if index >= 7:
+		var external_kinds := ["starter_hit_01", "starter_hit_02", "starter_fire", "starter_explosion", "starter_smoke_01", "starter_smoke_02", "starter_muzzle", "starter_loot_01", "starter_loot_02", "demo_orb_03", "demo_orb_04"]
+		fx.call("play_external", external_kinds[index - 7], target, target, profile)
+		vfx_v2_status_label.text = "Playing: %s" % VFX_V2_REGISTRY.names()[index]
+		return
+	if index >= 5:
+		fx.call("play_recipe", VFX_V2_REGISTRY.recipe(index), {"origin": origin, "target": target, "profile": profile})
+		vfx_v2_status_label.text = "Playing: %s" % VFX_V2_REGISTRY.names()[index]
+		return
+	var kinds := ["projectile", "beam", "slash", "portal", "loot"]
+	fx.call("play_reference", kinds[index], origin, target, profile)
+	vfx_v2_status_label.text = "Playing: %s" % VFX_V2_REGISTRY.names()[index]
+
+func _on_vfx_v2_clear_pressed() -> void:
+	_clear_vfx_v2_preview()
+	if vfx_v2_status_label != null:
+		vfx_v2_status_label.text = "VFX v2 cleared"
+
+func _clear_vfx_v2_preview() -> void:
+	if vfx_v2_preview_effect != null and is_instance_valid(vfx_v2_preview_effect):
+		vfx_v2_preview_effect.queue_free()
+	vfx_v2_preview_effect = null
 
 func _on_vfx_play_pressed() -> void:
 	_clear_vfx_preview()
@@ -656,42 +747,78 @@ func _on_vfx_play_pressed() -> void:
 			status_fx.play_profile(PROFILE_STATUS_STUN, {"target": left_slot.position, "target_node": left_slot})
 			vfx_status_label.text = "Playing: persistent upper-body Stun status profile"
 		41:
+			var silence_status := VFX_STATUS_EFFECT.new()
+			silence_status.name = "PreviewSilenceStatus"
+			vfx_preview_root.add_child(silence_status)
+			vfx_preview_effect = silence_status
+			var silence_profile := PROFILE_STATUS_STUN.duplicate_runtime()
+			silence_profile.parameters = {"status_type":"silence"}
+			silence_profile.size = .82
+			silence_profile.duration = 3.0
+			silence_status.play_profile(silence_profile, {"target":right_slot.position, "target_node":right_slot})
+			vfx_status_label.text = "Playing: readable Silence emblem"
+		42:
+			var poison_status := VFX_STATUS_EFFECT.new()
+			poison_status.name = "PreviewPoisonStatus"
+			vfx_preview_root.add_child(poison_status)
+			vfx_preview_effect = poison_status
+			var poison_profile := PROFILE_STATUS_STUN.duplicate_runtime()
+			poison_profile.parameters = {"status_type":"poison"}
+			poison_profile.size = .82
+			poison_profile.duration = 3.0
+			poison_status.play_profile(poison_profile, {"target":right_slot.position, "target_node":right_slot})
+			vfx_status_label.text = "Playing: readable Poison emblem"
+		43:
 			var link_fx := VFX_TRACKED_LINK.new()
 			link_fx.name = "PreviewTrackedLink"
 			vfx_preview_root.add_child(link_fx)
 			vfx_preview_effect = link_fx
 			link_fx.play_profile(PROFILE_TRACKED_LINK, {"origin": left_slot.position, "target": right_slot.position, "origin_node": left_slot, "target_node": right_slot})
 			vfx_status_label.text = "Playing: dynamic two-target Tracked Link profile"
-		42:
+		44:
 			var vortex_fx := VFX_VORTEX_FIELD.new()
 			vortex_fx.name = "PreviewVortexField"
 			vfx_preview_root.add_child(vortex_fx)
 			vfx_preview_effect = vortex_fx
 			vortex_fx.play_profile(PROFILE_VORTEX_SHADOW, {"target": right_slot.position})
 			vfx_status_label.text = "Playing: layered Shadow Vortex Field profile"
-		43:
+		45:
 			var summon_fx := VFX_SUMMON_SPAWN.new()
 			summon_fx.name = "PreviewSummonSpawn"
 			vfx_preview_root.add_child(summon_fx)
 			vfx_preview_effect = summon_fx
 			summon_fx.play_profile(PROFILE_SUMMON_SPAWN, {"target": target})
 			vfx_status_label.text = "Playing: staged Summon Spawn profile"
-		44:
+		46:
 			var dash_fx := VFX_AFTERIMAGE_DASH.new()
 			dash_fx.name = "PreviewAfterimageDash"
 			vfx_preview_root.add_child(dash_fx)
 			vfx_preview_effect = dash_fx
 			dash_fx.play_profile(PROFILE_AFTERIMAGE_DASH, {"origin": left_slot.position + Vector3(0.0, 0.22, 0.0), "target": right_slot.position + Vector3(0.0, 0.22, 0.0)})
 			vfx_status_label.text = "Playing: directional Afterimage Dash profile"
-		45:_preview_race_basic(PROFILE_BASIC_GOD,"god","ranged")
-		46:_preview_race_basic(PROFILE_BASIC_GOD,"god","melee")
-		47:_preview_race_basic(PROFILE_BASIC_HUMAN,"human","ranged")
-		48:_preview_race_basic(PROFILE_BASIC_HUMAN,"human","melee")
-		49:_preview_race_basic(PROFILE_BASIC_DARK,"dark","ranged")
-		50:_preview_race_basic(PROFILE_BASIC_DARK,"dark","melee")
-		51:_preview_race_basic(PROFILE_BASIC_UNDEAD,"undead","ranged")
-		52:_preview_race_basic(PROFILE_BASIC_UNDEAD,"undead","melee")
-		53:
+		47:_preview_race_basic(PROFILE_BASIC_GOD,"god","ranged")
+		48:_preview_race_basic(PROFILE_BASIC_GOD,"god","melee")
+		49:_preview_race_basic(PROFILE_BASIC_HUMAN,"human","ranged")
+		50:_preview_race_basic(PROFILE_BASIC_HUMAN,"human","melee")
+		51:_preview_race_basic(PROFILE_BASIC_DARK,"dark","ranged")
+		52:_preview_race_basic(PROFILE_BASIC_DARK,"dark","melee")
+		53:_preview_race_basic(PROFILE_BASIC_UNDEAD,"undead","ranged")
+		54:_preview_race_basic(PROFILE_BASIC_UNDEAD,"undead","melee")
+		55:
+			var silence_fx:=UNIT_SKILL_COMPOSER.new()
+			silence_fx.name="PreviewSilenceBolt"
+			vfx_preview_root.add_child(silence_fx)
+			vfx_preview_effect=silence_fx
+			silence_fx.play_skill("silence_bolt",left_slot.position+Vector3(0.0,.18,0.0),right_slot.position+Vector3(0.0,.18,0.0),{"target_node":right_slot})
+			vfx_status_label.text="Playing: Shadow Mage Silence Bolt"
+		56:
+			var poison_fx:=UNIT_SKILL_COMPOSER.new()
+			poison_fx.name="PreviewPoisonDart"
+			vfx_preview_root.add_child(poison_fx)
+			vfx_preview_effect=poison_fx
+			poison_fx.play_skill("poison_attack",left_slot.position+Vector3(0.0,.18,0.0),right_slot.position+Vector3(0.0,.18,0.0),{"target_node":right_slot})
+			vfx_status_label.text="Playing: Undead Poison Dart"
+		57:
 			var mother_fx:=VFX_MOTHER_EXECUTE.new();mother_fx.name="PreviewMotherExecute";vfx_preview_root.add_child(mother_fx);vfx_preview_effect=mother_fx
 			mother_fx.play_profile(PROFILE_MOTHER_EXECUTE,{"origin":left_slot.position+Vector3(0.0,1.36,0.0),"target":right_slot.position})
 			vfx_status_label.text="Playing: Mother book and victim soul devour"

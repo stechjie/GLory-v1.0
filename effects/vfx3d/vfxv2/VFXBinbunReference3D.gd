@@ -1,0 +1,92 @@
+extends Node3D
+class_name VFXBinbunReference3D
+
+const ROOT := "res://effects/vfx3d/vfxv2/binbun_reference/assets/"
+const SCENES := {
+	"projectile": ROOT + "BinbunVFX_Vol2/ElementalMagicFX/effects/projectile/vfx_fire_projectile_01.tscn",
+	"area": ROOT + "BinbunVFX_Vol2/ElementalMagicFX/effects/area/vfx_fire_area_01.tscn",
+	"beam": ROOT + "BinbunVFX/beam_vfx/effects/base/base_beam_vfx.tscn",
+	"portal": ROOT + "BinbunVFX/portal_vfx/effects/simple/simple_portal_vfx.tscn",
+	"loot": ROOT + "BinbunVFX/loot_effects/effects/floating/loot_vfx_mythic.tscn",
+	"slash": ROOT + "BinbunVFX_Vol2/BattleFX/effects/slash/vfx_blank_slash.tscn"
+}
+
+var reference_instance: Node3D
+var endpoint: Node3D
+
+func play_reference(kind: String, origin: Vector3, target: Vector3, profile: VFXProfile3D) -> void:
+	var scene_path: String = SCENES.get(kind, "")
+	if scene_path.is_empty():
+		return
+	var packed := load(scene_path) as PackedScene
+	if packed == null:
+		push_error("Binbun reference scene failed to load: %s" % scene_path)
+		return
+	reference_instance = packed.instantiate() as Node3D
+	reference_instance.name = "BinbunOriginal_%s" % kind
+	add_child(reference_instance)
+	reference_instance.global_position = origin
+	_apply_palette(profile)
+	call_deferred("_force_visible", kind)
+	if kind == "beam":
+		endpoint = Node3D.new()
+		endpoint.name = "BinbunTargetEndpoint"
+		get_parent().add_child(endpoint)
+		endpoint.global_position = target
+		reference_instance.set("end_point", endpoint)
+		reference_instance.set("preview", true)
+	if reference_instance.has_method("open"):
+		reference_instance.call("open")
+	if reference_instance.get("emitting") != null:
+		reference_instance.set("emitting", true)
+	if kind == "projectile":
+		var travel := create_tween()
+		travel.tween_property(reference_instance, "global_position", target, 0.72).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		travel.tween_callback(func(): _trigger_close())
+	elif kind == "slash":
+		reference_instance.rotation_degrees.y = -18.0
+		var slash_tween := create_tween()
+		slash_tween.tween_property(reference_instance, "scale", Vector3.ONE * 1.22, 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		slash_tween.tween_callback(func(): _trigger_close())
+	_finish_after(2.4)
+
+func _force_visible(kind: String) -> void:
+	if reference_instance == null or not is_instance_valid(reference_instance):
+		return
+	if kind == "beam":
+		reference_instance.set("preview", true)
+		reference_instance.set("open_amount", 1.0)
+		reference_instance.set("start_emitting", true)
+		reference_instance.set("end_emitting", true)
+		reference_instance.set("beam_radius", 0.28)
+	if kind == "portal":
+		reference_instance.rotation_degrees.x = -90.0
+		reference_instance.set("portal_mode", 0)
+		reference_instance.set("open_amount", 1.0)
+		reference_instance.set("size", Vector2(1.8, 1.8))
+		reference_instance.set("emitting", true)
+	if kind == "area":
+		reference_instance.set("emitting", true)
+	if kind == "loot":
+		reference_instance.scale = Vector3.ONE * 1.8
+		reference_instance.set("emitting", true)
+		reference_instance.set("amount", 40)
+
+func _apply_palette(profile: VFXProfile3D) -> void:
+	if reference_instance == null:
+		return
+	var values := {"primary_color": profile.main_color, "secondary_color": profile.core_color, "tertiary_color": profile.dark_color, "emission": profile.emission_energy}
+	for key in values:
+		if reference_instance.get(key) != null:
+			reference_instance.set(key, values[key])
+
+func _trigger_close() -> void:
+	if reference_instance != null and is_instance_valid(reference_instance) and reference_instance.has_method("close"):
+		reference_instance.call("close")
+
+func _finish_after(seconds: float) -> void:
+	get_tree().create_timer(seconds).timeout.connect(queue_free)
+
+func _exit_tree() -> void:
+	if endpoint != null and is_instance_valid(endpoint):
+		endpoint.queue_free()

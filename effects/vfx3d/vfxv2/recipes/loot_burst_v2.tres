@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="VFXRecipeV2" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/vfxv2/core/VFXRecipeV2.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+recipe_id = "loot_burst_v2"
+stage_ids = PackedStringArray("binbun_loot", "binbun_loot_burst", "binbun_loot_burst")
+stage_starts = PackedFloat32Array(0.0, 0.22, 0.68)
+stage_durations = PackedFloat32Array(1.0, 0.52, 0.42)
+quality_group = "reward"

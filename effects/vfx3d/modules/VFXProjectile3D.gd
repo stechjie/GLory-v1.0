@@ -13,16 +13,20 @@ uniform float progress = 0.0;
 uniform float opacity = 1.0;
 uniform float seed = 0.0;
 uniform float halo = 0.0;
+uniform float wave_amount = 0.06;
+uniform float spiral_amount = 0.18;
+uniform float flow_speed = 7.0;
 void vertex(){ MODELVIEW_MATRIX=VIEW_MATRIX*mat4(INV_VIEW_MATRIX[0],INV_VIEW_MATRIX[1],INV_VIEW_MATRIX[2],MODEL_MATRIX[3]); }
 void fragment(){
 	vec2 p=(UV-vec2(0.5))*2.0;
 	float a=atan(p.y,p.x);
 	float r=length(p*vec2(0.86,1.08));
-	float jag=sin(a*7.0+seed)*0.10+sin(a*13.0-seed)*0.045;
+	float jag=sin(a*7.0+seed+TIME*flow_speed)*wave_amount+sin(a*13.0-seed-TIME*flow_speed*0.7)*wave_amount*0.45;
+	float spiral=sin((a + r*3.2)*6.0 - TIME*flow_speed + seed)*spiral_amount*(1.0-r);
 	float body=smoothstep(0.94+jag+halo*0.16,0.18+halo*0.08,r);
 	float forward=pow(max(0.0,UV.x),2.2);
 	float tail=smoothstep(0.46,0.02,abs(p.y))*smoothstep(0.88,-0.80,p.x)*(0.52+0.48*sin(p.x*11.0+seed));
-	float core=smoothstep(0.36,0.02,r)*smoothstep(-0.55,0.45,p.x);
+	float core=smoothstep(0.36+spiral,0.02,r)*smoothstep(-0.55,0.45,p.x);
 	float pulse=0.90+0.10*sin(TIME*20.0+seed);
 	float life=smoothstep(0.0,0.12,progress)*(1.0-smoothstep(0.82,1.0,progress));
 	float mask=clamp(body+tail*0.72+forward*body*0.18,0.0,1.0)*life;
@@ -63,6 +67,28 @@ void fragment(){
 }
 """
 
+const STREAK_SHADER := """
+shader_type spatial;
+render_mode unshaded,cull_disabled,depth_draw_never,blend_add;
+uniform vec4 dark_color:source_color; uniform vec4 main_color:source_color; uniform vec4 core_color:source_color;
+uniform float progress=0.0; uniform float opacity=1.0; uniform float seed=0.0; uniform float emission=2.0;
+void vertex(){ MODELVIEW_MATRIX=VIEW_MATRIX*mat4(INV_VIEW_MATRIX[0],INV_VIEW_MATRIX[1],INV_VIEW_MATRIX[2],MODEL_MATRIX[3]); }
+void fragment(){
+	vec2 p=UV-vec2(0.5);
+	float longitudinal=clamp((p.x+0.5),0.0,1.0);
+	float center=sin(longitudinal*18.0+TIME*10.0+seed)*0.035+sin(longitudinal*41.0-seed)*0.018;
+	float width=mix(0.035,0.22,longitudinal)*(0.8+0.2*sin(longitudinal*13.0+seed));
+	float band=smoothstep(width+0.02,width*0.28,abs(p.y-center));
+	float torn=0.72+0.28*smoothstep(-0.4,0.5,sin(longitudinal*32.0+UV.y*7.0+seed));
+	float leading=smoothstep(0.0,0.16,longitudinal);
+	float life=(1.0-smoothstep(0.76,1.0,progress))*smoothstep(0.0,0.08,progress);
+	vec3 c=mix(dark_color.rgb,main_color.rgb,band);
+	c=mix(c,core_color.rgb,smoothstep(0.72,0.98,band));
+	ALBEDO=c; EMISSION=c*emission*(0.8+band*2.6);
+	ALPHA=band*torn*leading*life*opacity*0.9;
+}
+"""
+
 const IMPACT_SHADER := """
 shader_type spatial;
 render_mode unshaded,cull_disabled,depth_draw_never,blend_add;
@@ -84,6 +110,8 @@ func play_projectile(origin:Vector3,target:Vector3,profile:VFXProfile3D=null,tar
 	position=origin
 	var tracked_target:=_tracked_target_position(target,target_ref)
 	var direction:Vector3=(tracked_target-origin).normalized()
+	var travel_ratio:=clampf(float(active.parameters.get("travel_ratio",0.54)),0.35,0.72)
+	var trail_puffs:=clampi(int(active.parameters.get("trail_puffs",8)),4,10)
 	var charge:=_make_billboard("ChargeCore",Vector2(active.size*.94,active.size*.78),PROJECTILE_SHADER,{"dark_color":active.dark_color,"main_color":active.main_color,"core_color":active.core_color,"seed":3.2,"halo":0.0})
 	charge.scale=Vector3.ONE*.12
 	# Finish the charge animation before the release phase frees the charge node.
@@ -96,13 +124,14 @@ func play_projectile(origin:Vector3,target:Vector3,profile:VFXProfile3D=null,tar
 	charge.queue_free()
 	var tail:=_make_tail(direction,active)
 	var halo:=_make_billboard("ProjectileDarkHalo",Vector2(active.size*1.38,active.size*1.08),PROJECTILE_SHADER,{"dark_color":active.dark_color.darkened(.18),"main_color":active.main_color.darkened(.25),"core_color":active.main_color,"seed":8.5,"halo":1.0})
-	var body:=_make_billboard("ProjectileBody",Vector2(active.size*1.08,active.size*.86),PROJECTILE_SHADER,{"dark_color":active.dark_color,"main_color":active.main_color,"core_color":active.core_color,"seed":5.4,"halo":0.0})
+	var body:=_make_billboard("ProjectileBody",Vector2(active.size*1.08,active.size*.86),PROJECTILE_SHADER,{"dark_color":active.dark_color,"main_color":active.main_color,"core_color":active.core_color,"seed":5.4,"halo":0.0,"wave_amount":0.07,"spiral_amount":0.20,"flow_speed":7.0})
+	var streak:=_make_streak(direction,active)
 	_tween_shader(halo.material_override as ShaderMaterial,"progress",.10,.80,active.duration*.62)
 	_tween_shader(body.material_override as ShaderMaterial,"progress",.10,.80,active.duration*.62)
-	var travel_duration:=active.duration*.54
+	var travel_duration:=active.duration*travel_ratio
 	var travel_elapsed:=0.0
 	var puff_index:=0
-	var puff_interval:=travel_duration/8.0
+	var puff_interval:=travel_duration/float(trail_puffs)
 	while travel_elapsed<travel_duration:
 		await get_tree().process_frame
 		if _finished:return
@@ -110,12 +139,12 @@ func play_projectile(origin:Vector3,target:Vector3,profile:VFXProfile3D=null,tar
 		tracked_target=_tracked_target_position(tracked_target,target_ref)
 		var ratio:=clampf(travel_elapsed/travel_duration,0.0,1.0)
 		position=origin.lerp(tracked_target,ratio*ratio)
-		while puff_index<8 and travel_elapsed>=puff_interval*float(puff_index+1):
+		while puff_index<trail_puffs and travel_elapsed>=puff_interval*float(puff_index+1):
 			_spawn_trail_puff(active,puff_index)
 			puff_index+=1
 	await get_tree().create_timer(active.duration*.04).timeout
 	if _finished:return
-	body.queue_free();halo.queue_free();tail.queue_free()
+	body.queue_free();halo.queue_free();tail.queue_free();streak.queue_free()
 	_spawn_impact(active)
 	await get_tree().create_timer(active.duration*.34).timeout
 	finish()
@@ -144,6 +173,13 @@ func _make_tail(direction:Vector3,profile:VFXProfile3D)->MeshInstance3D:
 	tail.position=-direction*profile.size*.58+Vector3(0.0,0.0,.025)
 	_tween_shader(tail.material_override as ShaderMaterial,"progress",0.0,.82,profile.duration*.64)
 	return tail
+
+func _make_streak(direction:Vector3,profile:VFXProfile3D)->MeshInstance3D:
+	var streak:=_make_billboard("ProjectileFlowStreak",Vector2(profile.size*1.75,profile.size*.44),STREAK_SHADER,{"dark_color":profile.dark_color.darkened(.08),"main_color":profile.main_color,"core_color":profile.core_color,"seed":4.7,"emission":profile.emission_energy})
+	streak.rotation.z=atan2(direction.y,direction.x)
+	streak.position=-direction*profile.size*.72+Vector3(0.0,0.0,.035)
+	_tween_shader(streak.material_override as ShaderMaterial,"progress",0.0,.86,profile.duration*.68)
+	return streak
 
 func _spawn_trail_puff(profile:VFXProfile3D,index:int)->void:
 	var n:=_make_billboard("TrailPuff_%d"%index,Vector2(profile.size*.68,profile.size*.46),PUFF_SHADER,{"color":profile.dark_color.lerp(profile.main_color,.34),"seed":float(index)*2.7})

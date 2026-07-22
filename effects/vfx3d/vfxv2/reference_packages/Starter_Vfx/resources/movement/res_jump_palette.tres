@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="VfxPalette" format=3 uid="uid://k22og18did8o"]
+
+[ext_resource type="Script" uid="uid://jpvjrps5g5va" path="res://effects/vfx3d/vfxv2/reference_packages/Starter_Vfx/scripts/vfx_palette.gd" id="1_l04vh"]
+
+[resource]
+script = ExtResource("1_l04vh")
+secondary_color = Color(0.78352344, 0.7835234, 0.7835234, 1)
+tertiary_color = Color(0.59919906, 0.599199, 0.59919894, 1)
+metadata/_custom_type_script = "uid://jpvjrps5g5va"

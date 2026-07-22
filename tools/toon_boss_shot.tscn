@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://tools/toon_boss_shot.gd" id="1"]
+
+[node name="ToonBossShot" type="Node"]
+script = ExtResource("1")

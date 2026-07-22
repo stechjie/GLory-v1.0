@@ -34,13 +34,13 @@ func play_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary
 		"lowest_ally_heal":_holy_heal(target)
 		"nearest_ally_bless":_ally_bless(origin,target,context)
 		"nearby_ally_heal_buff":_holy_group(origin,context)
-		"random_attribute_bolt":_attribute_bolt(origin,target,context)
+		"random_attribute_bolt":_arcane_bolt(origin,target,context)
 		"judgement_strike":_judgement(target)
 		"random_ally_damage_reduction":_barrier(target,_holy_profile(.72,1.25))
 		"global_divine_blast":_global_divine(target,context)
 		"silence_bolt":_silence_bolt(origin,target,context)
 		"fear":_fear_hit(origin,target,context)
-		"stun":_stun_hit(origin,target,context)
+		"stun":_status_hit(target,"stun",context)
 		"black_hole":_black_hole(origin)
 		"blink_low_def_backline":_blink_slash(origin,target)
 		"shared_hp_link":_tracked_link(origin,target,context,_shadow_profile(.78,1.7))
@@ -103,35 +103,6 @@ func _holy_group(origin:Vector3,context:Dictionary)->void:
 func _arcane_bolt(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var p:=_profile(Color(.04,.06,.16),Color(.24,.48,.94),Color(.72,.94,1.0),.62,.92,3.15,10)
 	_spawn(VFX_PROJECTILE,p,{"origin":origin,"target":target,"target_node":context.get("target_node")})
-
-func _attribute_bolt(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	# Attribute bolts use the authored mage orb silhouette, then tint by element.
-	var element := str(context.get("attribute", context.get("element", "arcane"))).to_lower()
-	var dark := Color(.025,.035,.10)
-	var body := Color(.18,.42,.92)
-	var core := Color(.72,.94,1.0)
-	match element:
-		"fire":
-			dark=Color(.12,.018,.004);body=Color(.86,.16,.018);core=Color(1.0,.78,.26)
-		"ice", "frost":
-			dark=Color(.015,.07,.14);body=Color(.08,.52,.92);core=Color(.72,1.0,1.0)
-		"shadow", "dark":
-			dark=Color(.05,.008,.10);body=Color(.42,.10,.72);core=Color(.92,.66,1.0)
-	var bolt:=VFX_PAINTED.new();add_child(bolt)
-	bolt.play_layer("res://assets/vfx/skills/human_mage/human_mage_element_orb.png",{"from":origin+Vector3(0,.34,0),"to":target+Vector3(0,.30,0),"size":Vector2(.64,.28),"duration":.72,"travel_ratio":.70,"dark_tint":dark,"body_tint":body,"core_tint":core,"seed":float(element.hash()%97),"flow_strength":.026,"opacity":1.0})
-	var impact:=VFX_IMPACT_FLASH.new();add_child(impact)
-	var hit_profile:=_profile(dark,body,core,.48,.42,3.2,7)
-	var tw:=create_tween();tw.tween_interval(.62);tw.tween_callback(func():
-		if is_instance_valid(impact):impact.play_profile(hit_profile,{"target":target+Vector3(0,.28,0)})
-	)
-
-func _stun_hit(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	var direction:Vector3=(target-origin).normalized()
-	var p:=_profile(Color(.10,.025,.008),Color(.86,.24,.025),Color(1.0,.82,.30),.58,.52,3.5,8)
-	_spawn(VFX_ENERGY_BURST,p,{"target":target+Vector3(0,.30,0),"direction":direction})
-	var flash:=VFX_IMPACT_FLASH.new();add_child(flash)
-	flash.play_profile(_profile(Color(.12,.035,.008),Color(.96,.34,.04),Color(1.0,.92,.52),.46,.34,3.8,6),{"target":target+Vector3(0,.34,0)})
-	_status_hit(target,"stun",context)
 
 func _judgement(target:Vector3)->void:
 	_spawn(VFX_FALLING_PILLAR,_holy_profile(.82,1.0),{"target":target})

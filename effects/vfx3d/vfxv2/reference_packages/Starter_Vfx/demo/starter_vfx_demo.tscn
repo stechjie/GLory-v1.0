@@ -1,0 +1,144 @@
+[gd_scene format=3 uid="uid://careqbo22yfg8"]
+
+[ext_resource type="PackedScene" uid="uid://dko42ilupldfe" path="res://effects/vfx3d/vfxv2/reference_packages/Starter_Vfx/scenes/hit_impact/vfx_hit_impact_01.tscn" id="1_6ep4u"]
+[ext_resource type="PackedScene" uid="uid://btqhp7ay6wmh7" path="res://effects/vfx3d/vfxv2/reference_packages/Starter_Vfx/scenes/fire/vfx_fire_01.tscn" id="1_ssvvf"]
+[ext_resource type="Environment" uid="uid://crdda7irfcijr" path="res://effects/vfx3d/vfxv2/reference_packages/Starter_Vfx/resources/Environment_00.tres" id="1_ucthl"]
+[ext_resource type="PackedScene" uid="uid://6qepty35bx4h" path="res://effects/vfx3d/vfxv2/reference_packages/Starter_Vfx/scenes/hit_impact/vfx_hit_impact_02.tscn" id="2_fhqt0"]
+[ext_resource type="PackedScene" uid="uid://x1ucm3wa1oyq" path="res://effects/vfx3d/vfxv2/reference_packages/Starter_Vfx/scenes/loot/vfx_loot_environment_01.tscn" id="3_2jkvv"]
+[ext_resource type="Script" uid="uid://bia2tsek6b0sw" path="res://effects/vfx3d/vfxv2/reference_packages/Starter_Vfx/scripts/camera_manager.gd" id="4_eh5g0"]
+[ext_resource type="PackedScene" uid="uid://3vxers32xll5" path="res://effects/vfx3d/vfxv2/reference_packages/Starter_Vfx/scenes/loot/vfx_loot_environment_02.tscn" id="4_ssvvf"]
+[ext_resource type="PackedScene" uid="uid://c3th0o8dg6a4m" path="res://effects/vfx3d/vfxv2/reference_packages/Starter_Vfx/scenes/explosion/vfx_air_explosion_01.tscn" id="6_eadmc"]
+[ext_resource type="PackedScene" uid="uid://dt52k4qettyjq" path="res://effects/vfx3d/vfxv2/reference_packages/Starter_Vfx/scenes/muzzle/vfx_muzzle_01.tscn" id="7_ucthl"]
+[ext_resource type="Texture2D" uid="uid://c4iy3lkdachwe" path="res://effects/vfx3d/vfxv2/reference_packages/Starter_Vfx/resources/texture_08.png" id="10_rhlnc"]
+[ext_resource type="PackedScene" uid="uid://b68bwy2pgbklf" path="res://effects/vfx3d/vfxv2/reference_packages/Starter_Vfx/scenes/movement/vfx_ground_smoke_01.tscn" id="11_eh5g0"]
+[ext_resource type="PackedScene" uid="uid://5w4l4jniokty" path="res://effects/vfx3d/vfxv2/reference_packages/Starter_Vfx/scenes/movement/vfx_ground_smoke_02.tscn" id="12_20hk7"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_eh5g0"]
+albedo_color = Color(0.69757736, 0.6975777, 0.69757754, 1)
+albedo_texture = ExtResource("10_rhlnc")
+uv1_triplanar = true
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_20hk7"]
+size = Vector2(1000, 1000)
+
+[sub_resource type="SystemFont" id="SystemFont_rhlnc"]
+
+[node name="StarterVfxDemo" type="Node3D" unique_id=1881302281]
+
+[node name="Environment" type="Node" parent="." unique_id=230803099]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="Environment" unique_id=973075130]
+environment = ExtResource("1_ucthl")
+
+[node name="Floor" type="MeshInstance3D" parent="Environment" unique_id=685648326]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0020902157, -0.106254555, 0.002599001)
+material_override = SubResource("StandardMaterial3D_eh5g0")
+mesh = SubResource("PlaneMesh_20hk7")
+
+[node name="CollisionParticles" type="GPUParticlesCollisionBox3D" parent="Environment/Floor" unique_id=281332602]
+size = Vector3(500, 0.1, 500)
+
+[node name="MainCamera" type="Camera3D" parent="Environment" unique_id=601651701]
+transform = Transform3D(1, 0, 0, 0, 0.8925858, 0.45087758, 0, -0.45087758, 0.8925858, -0.05617404, 2.745966, 3.841198)
+script = ExtResource("4_eh5g0")
+speed = 2.0
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="Environment" unique_id=1465155965]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0, 0, 0)
+light_color = Color(0.8927557, 0.8927558, 0.8927555, 1)
+light_energy = 1.1
+
+[node name="VFX" type="Node3D" parent="." unique_id=224989986]
+
+[node name="HitImpact01" parent="VFX" unique_id=1458947074 instance=ExtResource("1_6ep4u")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.275552, 0.8, 0)
+vfx_scale = 0.5
+preview_interval = 2.0
+
+[node name="Wave" parent="VFX/HitImpact01" index="1" unique_id=737282424]
+emitting = false
+
+[node name="Impact" parent="VFX/HitImpact01" index="2" unique_id=1123156854]
+emitting = false
+
+[node name="Flare" parent="VFX/HitImpact01" index="3" unique_id=1320046072]
+emitting = false
+
+[node name="HitImpact02" parent="VFX" unique_id=10138338 instance=ExtResource("2_fhqt0")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.601552, 0.8, 0)
+vfx_scale = 0.5
+preview_interval = 2.0
+
+[node name="VfxFire01" parent="VFX" unique_id=550641568 instance=ExtResource("1_ssvvf")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.3693376, 0, 0)
+
+[node name="VfxAirExplosion01" parent="VFX" unique_id=668058521 instance=ExtResource("6_eadmc")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.95421547, 0.6367509, 0)
+
+[node name="VfxMuzzle01" parent="VFX" unique_id=1022269918 instance=ExtResource("7_ucthl")]
+transform = Transform3D(-4.371139e-08, 1, 0, -1, -4.371139e-08, 0, 0, 0, 1, -0.1550774, 0.4373995, 0)
+
+[node name="LootEnvironment01" parent="VFX" unique_id=593622541 instance=ExtResource("3_2jkvv")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.3545669, 0, 0)
+vfx_scale = 0.7
+
+[node name="LootEnvironment02" parent="VFX" unique_id=1331134156 instance=ExtResource("4_ssvvf")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.916101, 0, 0)
+vfx_scale = 0.7
+
+[node name="VfxGroundSmoke01" parent="VFX" unique_id=999079205 instance=ExtResource("11_eh5g0")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4.92296, 0, 0)
+preview_interval = 2.0
+
+[node name="VfxGroundSmoke02" parent="VFX" unique_id=689583724 instance=ExtResource("12_20hk7")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.0005264, 0, 0)
+
+[node name="Node3D" type="Node3D" parent="." unique_id=1699888618]
+
+[node name="Label_Impacts" type="Label3D" parent="Node3D" unique_id=1304223459]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.9671364, 0, 0.84508765)
+billboard = 1
+modulate = Color(0.519893, 0.78154474, 0.9200896, 1)
+text = "Impacts"
+font = SubResource("SystemFont_rhlnc")
+font_size = 42
+outline_size = 10
+
+[node name="Label_Fire&Explosions" type="Label3D" parent="Node3D" unique_id=409932918]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.3190479, 0, 0.8470396)
+billboard = 1
+modulate = Color(0.519893, 0.78154474, 0.9200896, 1)
+text = "Fire & Explosions
+"
+font = SubResource("SystemFont_rhlnc")
+font_size = 42
+outline_size = 10
+
+[node name="Label_Movement" type="Label3D" parent="Node3D" unique_id=236026165]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.5462375, 0, 0.8633902)
+billboard = 1
+modulate = Color(0.519893, 0.78154474, 0.9200896, 1)
+text = "Jump & Movement"
+font = SubResource("SystemFont_rhlnc")
+font_size = 42
+outline_size = 10
+
+[node name="Label_Loot" type="Label3D" parent="Node3D" unique_id=875839611]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.9868553, 0, 0.87600946)
+billboard = 1
+modulate = Color(0.519893, 0.78154474, 0.9200896, 1)
+text = "Loot Items
+"
+font = SubResource("SystemFont_rhlnc")
+font_size = 42
+outline_size = 10
+
+[editable path="VFX/HitImpact01"]
+[editable path="VFX/HitImpact02"]
+[editable path="VFX/VfxFire01"]
+[editable path="VFX/VfxAirExplosion01"]
+[editable path="VFX/VfxMuzzle01"]
+[editable path="VFX/LootEnvironment01"]
+[editable path="VFX/LootEnvironment02"]
+[editable path="VFX/VfxGroundSmoke01"]
+[editable path="VFX/VfxGroundSmoke02"]

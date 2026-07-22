@@ -1,0 +1,33 @@
+[gd_resource type="ShaderMaterial" load_steps=4 format=3]
+
+[ext_resource type="Shader" path="res://effects/vfx3d/vfxv2/reference_packages/Demo_GodotVFX/GodotVFX/src/shader/glow_fresnel.gdshader" id="1"]
+[ext_resource type="Texture2D" path="res://effects/vfx3d/vfxv2/reference_packages/Demo_GodotVFX/GodotVFX/src/textures/noise/cell/cell_inverted_01.tres" id="2"]
+
+[sub_resource type="Gradient" id="Gradient_glow04"]
+offsets = PackedFloat32Array(0, 0.22, 0.68, 1)
+colors = PackedColorArray(0.01, 0.03, 0.16, 1, 0.04, 0.34, 0.9, 1, 0.65, 0.96, 1, 1, 0.01, 0.03, 0.16, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture_glow04"]
+gradient = SubResource("Gradient_glow04")
+
+[resource]
+shader = ExtResource("1")
+shader_parameter/fresnel_amount = 1.2
+shader_parameter/fresnel_exponent = 3.5
+shader_parameter/fresnel_gradient = SubResource("GradientTexture_glow04")
+shader_parameter/enable_mask = true
+shader_parameter/mask_texture = ExtResource("2")
+shader_parameter/mask_scroll = Vector2(0.02, 0.14)
+shader_parameter/mask_scale = Vector2(2.2, 2.2)
+shader_parameter/mask_blend_mode = 6
+shader_parameter/mask_blend = 0.85
+shader_parameter/emission_strength = 2.2
+shader_parameter/primary_color = Color(0.03, 0.09, 0.34, 1)
+shader_parameter/secondary_color = Color(0.03, 0.5, 1, 1)
+shader_parameter/tertiary_color = Color(0.65, 0.98, 1, 1)
+shader_parameter/proximity_fade = true
+shader_parameter/proximity_fade_distance = 1.0
+shader_parameter/alpha_multiplier = 0.9
+shader_parameter/alpha_mode = 0
+shader_parameter/alpha_cutoff = 0.2
+shader_parameter/dither_cutoff = 0.88

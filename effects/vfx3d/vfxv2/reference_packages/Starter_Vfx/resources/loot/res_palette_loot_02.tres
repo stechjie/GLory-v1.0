@@ -1,0 +1,34 @@
+[gd_resource type="Resource" script_class="VfxPalette" format=3 uid="uid://ca0uoqcxyoicl"]
+
+[ext_resource type="Script" uid="uid://jpvjrps5g5va" path="res://effects/vfx3d/vfxv2/reference_packages/Starter_Vfx/scripts/vfx_palette.gd" id="1_35l2o"]
+
+[sub_resource type="Gradient" id="Gradient_35l2o"]
+offsets = PackedFloat32Array(0, 0.11494253, 1)
+colors = PackedColorArray(0.67798406, 0.73033077, 0.88737077, 1, 0.6622801, 0.4895361, 0.92401344, 1, 5.1890964e-08, 0.061208673, 0.03696193, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_al0xf"]
+gradient = SubResource("Gradient_35l2o")
+
+[sub_resource type="Gradient" id="Gradient_i2b3i"]
+offsets = PackedFloat32Array(0, 0.1954023, 0.33524904, 1)
+colors = PackedColorArray(0.4745098, 1, 1, 1, 0.60784316, 0.63529414, 0.8392157, 1, 0.60784316, 0.38039216, 0.8392157, 1, 0.046902493, 0.011096872, 0.0891703, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_6ekiy"]
+gradient = SubResource("Gradient_i2b3i")
+
+[sub_resource type="Gradient" id="Gradient_rqvuy"]
+offsets = PackedFloat32Array(0, 0.18007663, 0.34291187, 1)
+colors = PackedColorArray(0.5389417, 1, 0.9210454, 1, 0.48516876, 0.65683055, 0.9213826, 1, 0.4679706, 0.42176816, 0.9343485, 1, 0.046902493, 0.011096872, 0.0891703, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_rncht"]
+gradient = SubResource("Gradient_rqvuy")
+
+[resource]
+script = ExtResource("1_35l2o")
+main_color = Color(0.5803922, 0.56078434, 1, 1)
+secondary_color = Color(0.4862745, 0.6509804, 1, 1)
+tertiary_color = Color(0.68235296, 0.49019608, 1, 0.078431375)
+color_ramp = SubResource("GradientTexture1D_al0xf")
+secondary_color_ramp = SubResource("GradientTexture1D_6ekiy")
+tertiary_color_ramp = SubResource("GradientTexture1D_rncht")
+metadata/_custom_type_script = "uid://jpvjrps5g5va"
