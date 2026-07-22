@@ -215,7 +215,19 @@ func _combo_hit(origin:Vector3,target:Vector3)->void:
 	_spawn(VFX_SLASH_ARC,_profile(Color(.08,.035,.012),Color(.90,.28,.035),Color(1.0,.82,.32),.72,.58,3.0,8),{"target":target+Vector3(0,.30,0),"direction":(target-origin).normalized()})
 
 func _poison_death(origin:Vector3)->void:
-	_spawn(VFX_ENERGY_BURST,_profile(Color(.035,.06,.015),Color(.30,.68,.06),Color(.80,1.0,.22),.92,1.05,3.1,13),{"target":origin,"direction":Vector3.UP})
+	# Death poison is a readable ground event: a tight toxic burst, a painted
+	# puddle that remains briefly, and a rising miasma cone.  Keep the layers
+	# staggered so it reads as an event instead of one opaque green blob.
+	var burst:=VFX_ENERGY_BURST.new();add_child(burst)
+	var bp:=_profile(Color(.018,.045,.008),Color(.20,.62,.035),Color(.74,1.0,.18),.86,.78,3.4,10)
+	burst.play_profile(bp,{"target":origin+Vector3(0,.10,0),"direction":Vector3.UP})
+	var puddle:=VFX_PAINTED.new();add_child(puddle)
+	puddle.play_layer("res://assets/vfx/skills/undead_poison/undead_poison_puddle.png",{"position":origin+Vector3(0,.035,0),"size":Vector2(1.25,.70),"duration":1.65,"start_scale":.18,"peak_scale":1.0,"dark_tint":Color(.015,.05,.008),"body_tint":Color(.20,.58,.025),"core_tint":Color(.68,1.0,.16),"seed":12.4,"flow_strength":.018,"opacity":.96})
+	var miasma:=VFX_PAINTED.new();add_child(miasma)
+	var tw:=create_tween();tw.tween_interval(.12);tw.tween_callback(func():
+		if is_instance_valid(miasma):
+			miasma.play_layer("res://assets/vfx/skills/undead_poison/undead_poison_miasma_cone.png",{"position":origin+Vector3(0,.44,0),"size":Vector2(.92,1.10),"duration":1.08,"start_scale":.10,"peak_scale":.78,"dark_tint":Color(.02,.06,.008),"body_tint":Color(.22,.66,.03),"core_tint":Color(.76,1.0,.20),"seed":14.8,"flow_strength":.026,"opacity":.92})
+	)
 
 func _summon(target:Vector3)->void:
 	var p:=_shadow_profile(.78,1.34);p.main_color=Color(.12,.58,.46);p.core_color=Color(.70,1.0,.78);_spawn(VFX_SUMMON,p,{"target":target})
@@ -264,12 +276,21 @@ func _king_aura(origin:Vector3,context:Dictionary)->void:
 		_spawn(VFX_LIGHT_PULSE,_holy_profile(.34,.54),{"target":value+Vector3(0,.30,0)})
 
 func _arrow_rain(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	var p:=_holy_profile(.48,.72);p.main_color=Color(.22,.48,.92);p.core_color=Color(.78,.96,1.0)
 	var targets:Array=context.get("targets",[])
 	if targets.is_empty():targets=[target]
-	for value in targets:
-		_spawn(VFX_FALLING_PILLAR,p,{"target":value})
-		_spawn(VFX_IMPACT_FLASH,_profile(Color(.025,.06,.14),Color(.12,.42,.90),Color(.72,.96,1.0),.42,.34,3.0,6),{"target":value})
+	for i in range(targets.size()):
+		var value:Vector3=targets[i]
+		var arrow:=VFX_PAINTED.new();add_child(arrow)
+		var delay:=float(i)*.06
+		var tw:=create_tween();tw.tween_interval(delay);tw.tween_callback(func():
+			if is_instance_valid(arrow):
+				arrow.play_layer("res://assets/vfx/skills/god_aurora/god_aurora_arrow_trail.png",{"from":value+Vector3(0,3.35,0),"to":value+Vector3(0,.16,0),"size":Vector2(.62,.16),"duration":.46,"travel_ratio":.88,"dark_tint":Color(.015,.06,.18),"body_tint":Color(.10,.42,.92),"core_tint":Color(.74,.96,1.0),"seed":20.0+float(i),"flow_strength":.02,"opacity":1.0})
+		)
+		var impact:=VFX_PAINTED.new();add_child(impact)
+		var hit_tw:=create_tween();hit_tw.tween_interval(delay+.40);hit_tw.tween_callback(func():
+			if is_instance_valid(impact):
+				impact.play_layer("res://assets/vfx/skills/human_militia/human_militia_hit_dust_pop.png",{"position":value+Vector3(0,.06,0),"size":Vector2(.72,.72),"duration":.48,"start_scale":.16,"peak_scale":.88,"dark_tint":Color(.03,.08,.16),"body_tint":Color(.10,.42,.86),"core_tint":Color(.78,.96,1.0),"seed":24.0+float(i),"flow_strength":.018,"opacity":.94})
+		)
 
 func _blood_rampage(origin:Vector3)->void:
 	var p:=_blood_profile(1.02,1.05)

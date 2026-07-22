@@ -126,7 +126,6 @@ var camera_fov := 48.0
 var left_model_select: OptionButton
 var right_model_select: OptionButton
 var auto_button: Button
-var skill_button: Button
 var vfx_select: OptionButton
 var vfx_status_label: Label
 var vfx_preview_root: Node3D
@@ -282,7 +281,6 @@ func _build_control_panel() -> void:
 	_add_button(both_action_row, "双 Run", _on_both_run_pressed)
 	_add_button(both_action_row, "随机", _on_random_pressed)
 	auto_button = _add_button(both_action_row, "自动战斗 ON", _on_auto_fight_pressed)
-	skill_button = _add_button(both_action_row, "Skill", _on_skill_pressed)
 
 func _build_vfx_test_panel() -> void:
 	var panel := PanelContainer.new()
@@ -1239,7 +1237,6 @@ func _spawn_unit(slot: Node3D, entry: Dictionary, side: int) -> void:
 		"name": str(entry.get("name", "模型")),
 		"id": str(entry.get("id", "")),
 		"source": str(entry.get("source", "")),
-		"skill_id": str(entry.get("skill_id", "none")),
 		"path": path,
 		"player": player,
 		"animations": animations,
@@ -1260,7 +1257,6 @@ func _make_missing_unit(slot: Node3D, entry: Dictionary, side: int, note: String
 		"name": str(entry.get("name", "模型")),
 		"id": str(entry.get("id", "")),
 		"source": str(entry.get("source", "")),
-		"skill_id": str(entry.get("skill_id", "none")),
 		"path": str(entry.get("model", "")),
 		"player": null,
 		"animations": [],
@@ -1657,33 +1653,3 @@ func _on_auto_fight_pressed() -> void:
 	else:
 		_play_action_for_side("idle", SIDE_BOTH, false)
 	_update_label()
-
-func _on_skill_pressed() -> void:
-	# Preview-only trigger: it does not alter simulation state or cooldowns.
-	# Fire each selected unit's authored skill at the opposing preview slot.
-	var fired:=[]
-	for unit in units:
-		var skill_id:=str(unit.get("skill_id", "none"))
-		if skill_id.is_empty() or skill_id=="none":
-			continue
-		var slot:=unit.get("slot") as Node3D
-		if slot==null:
-			continue
-		var side:=int(unit.get("side", SIDE_LEFT))
-		var target_slot:=right_slot if side==SIDE_LEFT else left_slot
-		if target_slot==null:
-			continue
-		var origin:=slot.global_position+Vector3(0.0,.24,0.0)
-		var target:=target_slot.global_position+Vector3(0.0,.24,0.0)
-		var context:={"target_node":target_slot,"origin_node":slot}
-		context["targets"]=[target]
-		context["heal_target"]=origin
-		var composer:=UNIT_SKILL_COMPOSER.new()
-		composer.name="PreviewSkill_%s_%s"%[skill_id,str(unit.get("id","unit"))]
-		vfx_preview_root.add_child(composer)
-		composer.play_skill(skill_id,origin,target,context)
-		fired.append(str(unit.get("name",skill_id))+" → "+skill_id)
-	if fired.is_empty():
-		vfx_status_label.text="Skill: 当前模型没有配置可预览技能"
-	else:
-		vfx_status_label.text="Skill Preview: "+" | ".join(fired)
