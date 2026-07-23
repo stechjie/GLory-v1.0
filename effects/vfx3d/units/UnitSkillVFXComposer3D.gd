@@ -222,8 +222,6 @@ func _black_hole(origin:Vector3)->void:
 func _blink_slash(origin:Vector3,target:Vector3)->void:
 	var dash:=_shadow_profile(.74,.72);dash.main_color=Color(.16,.50,.70);dash.core_color=Color(.70,.96,1.0)
 	_spawn(VFX_AFTERIMAGE,dash,{"origin":origin,"target":target})
-	var slash:=_shadow_profile(.72,.62);slash.main_color=Color(.48,.12,.66);slash.core_color=Color(.92,.58,1.0)
-	_binbun("slash",target+Vector3(0,.36,0),target+Vector3(0,.36,0),slash)
 
 func _front_stun(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	# The authored swordsman slash masks are owned by BattleVfx and placed on

@@ -525,7 +525,12 @@ static func _mother_execute_on(state: Dictionary, candidates: Array, mother: Dic
 		if not state.has("visual_events") or typeof(state.visual_events) != TYPE_ARRAY:
 			state.visual_events = []
 		state.visual_events.append({"type":"mother_execute","source_uid":str(mother.get("uid","")),"target_uid":str(target.get("uid","")),"time":float(state.get("elapsed",0.0))})
+		# Preserve the real Mother Wisp as the lethal damage source so the VFX
+		# dispatcher can resolve the caster after the victim is removed.
+		var previous_source_uid := DamageService.current_stat_source_uid()
+		DamageService.set_stat_source_uid(str(mother.get("uid", "")))
 		DamageService.apply_damage(target, int(target.hp), true)
+		DamageService.set_stat_source_uid(previous_source_uid)
 
 
 static func _apply_boss_attacker_passives(attacker: Dictionary) -> void:

@@ -37,8 +37,6 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 				_play_boss_procedural("twin_revive", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO))
 			if _vfx_seeded and id.contains("_mirror_"):
 				_play_boss_procedural("mirror_spawn", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO))
-			if _vfx_seeded and id.contains("_parasite_"):
-				_play_unit_procedural("parasite_on_kill", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO), _unit_target_context({}, now))
 			continue
 		var hp_delta := int(now.get("hp", 0)) - int(prev.get("hp", 0))
 		var shield_delta := int(now.get("shield", 0)) - int(prev.get("shield", 0))
@@ -516,7 +514,7 @@ func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictio
 		target=_nearest_enemy_target(unit,damage_events,current)
 	var target_world:Vector3=target.get("world_hit",target.get("world_foot",unit.get("world_foot",Vector3.ZERO)))
 	var context:=_unit_target_context(unit,target)
-	if sid=="black_hole" and str(unit.get("id",""))!="dark_dragon":
+	if sid=="black_hole" and str(unit.get("unit_id",""))!="dark_dragon":
 		return
 	if sid=="shared_hp_link":
 		var now_uid:=str(unit.get("skill_target_uid",""))
