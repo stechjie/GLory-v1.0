@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXAfterimageDash3D
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const CURVES:=preload("res://effects/vfx3d/core/VFXCurveLibrary3D.gd")
 const TEX_WISP:=preload("res://assets/vfx_textures/smoke_wisp.png")
@@ -53,10 +54,10 @@ func _make_streak(at:Vector3,direction:Vector3,profile:VFXProfile3D,index:int)->
 	var side:=Vector3(-direction.y,direction.x,0.0).normalized();var length:=profile.size*(.38+.06*float(index%3));var width:=profile.size*.026;var arrays:=[];arrays.resize(Mesh.ARRAY_MAX);arrays[Mesh.ARRAY_VERTEX]=PackedVector3Array([at-side*width,at+side*width,at+direction*length]);arrays[Mesh.ARRAY_TEX_UV]=PackedVector2Array([Vector2(0,0),Vector2(0,1),Vector2(1,.5)]);arrays[Mesh.ARRAY_INDEX]=PackedInt32Array([0,1,2]);var mesh:=ArrayMesh.new();mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays);var n:=MeshInstance3D.new();n.name="DashDepartureStreak_%d"%index;n.mesh=mesh;n.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF;var mat:=StandardMaterial3D.new();mat.shading_mode=BaseMaterial3D.SHADING_MODE_UNSHADED;mat.transparency=BaseMaterial3D.TRANSPARENCY_ALPHA;mat.albedo_color=profile.core_color;mat.emission_enabled=true;mat.emission=profile.core_color;mat.emission_energy_multiplier=minf(profile.emission_energy,4.0);n.material_override=mat;add_child(n);return n
 
 func _ribbon_material(profile:VFXProfile3D,layer:int)->ShaderMaterial:
-	var m:=ShaderMaterial.new();var sh:=Shader.new();sh.code=RIBBON_SHADER;m.shader=sh;m.set_shader_parameter("noise_tex",TEX_NOISE);m.set_shader_parameter("dark_color",profile.dark_color);m.set_shader_parameter("main_color",profile.main_color);m.set_shader_parameter("core_color",profile.core_color);m.set_shader_parameter("layer",float(layer)/2.0);m.set_shader_parameter("energy",profile.emission_energy);m.set_shader_parameter("opacity",vfx_alpha);_materials.append(m);return m
+	var m:=ShaderMaterial.new();m.shader = SHADER_CACHE.get_shader(RIBBON_SHADER);m.set_shader_parameter("noise_tex",TEX_NOISE);m.set_shader_parameter("dark_color",profile.dark_color);m.set_shader_parameter("main_color",profile.main_color);m.set_shader_parameter("core_color",profile.core_color);m.set_shader_parameter("layer",float(layer)/2.0);m.set_shader_parameter("energy",profile.emission_energy);m.set_shader_parameter("opacity",vfx_alpha);_materials.append(m);return m
 
 func _ghost_material(profile:VFXProfile3D,phase:float)->ShaderMaterial:
-	var m:=ShaderMaterial.new();var sh:=Shader.new();sh.code=GHOST_SHADER;m.shader=sh;m.set_shader_parameter("mask_tex",TEX_WISP);m.set_shader_parameter("noise_tex",TEX_NOISE);m.set_shader_parameter("dark_color",profile.dark_color);m.set_shader_parameter("main_color",profile.main_color);m.set_shader_parameter("phase",phase);m.set_shader_parameter("opacity",vfx_alpha);_materials.append(m);return m
+	var m:=ShaderMaterial.new();m.shader = SHADER_CACHE.get_shader(GHOST_SHADER);m.set_shader_parameter("mask_tex",TEX_WISP);m.set_shader_parameter("noise_tex",TEX_NOISE);m.set_shader_parameter("dark_color",profile.dark_color);m.set_shader_parameter("main_color",profile.main_color);m.set_shader_parameter("phase",phase);m.set_shader_parameter("opacity",vfx_alpha);_materials.append(m);return m
 
 func _life(node:MeshInstance3D,duration:float,delay:float)->void:
 	var m:=node.material_override as ShaderMaterial

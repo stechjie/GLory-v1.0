@@ -1,5 +1,6 @@
 extends Node3D
 class_name VFXTargetImpact
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const IMPACT_SHADER := """
 shader_type spatial;
@@ -43,9 +44,7 @@ static func make(color: Color, size := 0.9) -> MeshInstance3D:
 	quad.size = Vector2(size, size)
 	node.mesh = quad
 	var mat := ShaderMaterial.new()
-	var shader := Shader.new()
-	shader.code = IMPACT_SHADER
-	mat.shader = shader
+	mat.shader = SHADER_CACHE.get_shader(IMPACT_SHADER)
 	mat.set_shader_parameter("core_color", color)
 	mat.set_shader_parameter("progress", 0.0)
 	node.material_override = mat
@@ -72,9 +71,7 @@ static func burst(color: Color, amount := 18, speed := 2.2, lifetime := 0.28) ->
 	var draw := QuadMesh.new()
 	draw.size = Vector2(0.16, 0.055)
 	var glow := ShaderMaterial.new()
-	var spark_shader := Shader.new()
-	spark_shader.code = SPARK_SHADER
-	glow.shader = spark_shader
+	glow.shader = SHADER_CACHE.get_shader(SPARK_SHADER)
 	glow.set_shader_parameter("spark_color", color)
 	draw.material = glow
 	particles.draw_pass_1 = draw

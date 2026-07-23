@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXGroundDecalLayer3D
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const CURVES := preload("res://effects/vfx3d/core/VFXCurveLibrary3D.gd")
 
@@ -55,9 +56,7 @@ func play_decal(at: Vector3, profile: VFXProfile3D, seed := 0.0) -> void:
 	node.mesh = quad
 	node.rotation_degrees.x = -90.0
 	_material = ShaderMaterial.new()
-	var shader := Shader.new()
-	shader.code = DECAL_SHADER
-	_material.shader = shader
+	_material.shader = SHADER_CACHE.get_shader(DECAL_SHADER)
 	_material.set_shader_parameter("shadow_color", active.dark_color)
 	_material.set_shader_parameter("main_color", active.main_color)
 	_material.set_shader_parameter("core_color", active.core_color)

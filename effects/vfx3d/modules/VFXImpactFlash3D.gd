@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXImpactFlash3D
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const FLASH_SHADER := """
 shader_type spatial;
@@ -36,9 +37,7 @@ func play_flash(at: Vector3, color: Color, size := 1.1, duration := 0.42) -> voi
 	node.mesh = quad
 	node.rotation_degrees.x = -90.0
 	_material = ShaderMaterial.new()
-	var shader := Shader.new()
-	shader.code = FLASH_SHADER
-	_material.shader = shader
+	_material.shader = SHADER_CACHE.get_shader(FLASH_SHADER)
 	_material.set_shader_parameter("main_color", color)
 	_material.set_shader_parameter("progress", 0.0)
 	_material.set_shader_parameter("opacity", vfx_alpha)

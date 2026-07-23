@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXPortalRim3D
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const CURVES := preload("res://effects/vfx3d/core/VFXCurveLibrary3D.gd")
 
@@ -45,9 +46,7 @@ func play_rim(at: Vector3, profile: VFXProfile3D, radius_scale := 1.0, seed := 0
 	node.name = "ThickIrregularPortalRim"
 	node.mesh = mesh
 	_material = ShaderMaterial.new()
-	var shader := Shader.new()
-	shader.code = RIM_SHADER
-	_material.shader = shader
+	_material.shader = SHADER_CACHE.get_shader(RIM_SHADER)
 	_material.set_shader_parameter("shadow_color", active.dark_color)
 	_material.set_shader_parameter("main_color", active.main_color)
 	_material.set_shader_parameter("core_color", active.core_color)

@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXDirectionalBurst3D
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const QUALITY := preload("res://effects/vfx3d/core/VFXQualityBudget.gd")
 
@@ -48,9 +49,7 @@ func play_burst(at: Vector3, direction: Vector3, profile: VFXProfile3D = null) -
 	var quad := QuadMesh.new()
 	quad.size = Vector2(0.24, 0.075)
 	var material := ShaderMaterial.new()
-	var shader := Shader.new()
-	shader.code = STREAK_SHADER
-	material.shader = shader
+	material.shader = SHADER_CACHE.get_shader(STREAK_SHADER)
 	material.set_shader_parameter("main_color", profile.main_color if profile != null else Color(1.0, 0.5, 0.1))
 	quad.material = material
 	particles.draw_pass_1 = quad

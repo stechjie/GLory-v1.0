@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXMaskedParticle3D
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const QUALITY := preload("res://effects/vfx3d/core/VFXQualityBudget.gd")
 
@@ -47,9 +48,7 @@ func play_burst(at: Vector3, color: Color, amount := 16, speed := 2.6, lifetime 
 	var quad := QuadMesh.new()
 	quad.size = Vector2(0.13, 0.09)
 	var material := ShaderMaterial.new()
-	var shader := Shader.new()
-	shader.code = SPARK_SHADER
-	material.shader = shader
+	material.shader = SHADER_CACHE.get_shader(SPARK_SHADER)
 	material.set_shader_parameter("main_color", color)
 	quad.material = material
 	particles.draw_pass_1 = quad

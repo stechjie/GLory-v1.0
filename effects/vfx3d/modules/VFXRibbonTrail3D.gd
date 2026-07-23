@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXRibbonTrail3D
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const RIBBON_SHADER := """
 shader_type spatial;
@@ -74,9 +75,7 @@ func _make_ribbon(direction: Vector3, color: Color, length: float) -> MeshInstan
 	var node := MeshInstance3D.new()
 	node.mesh = mesh
 	_material = ShaderMaterial.new()
-	var shader := Shader.new()
-	shader.code = RIBBON_SHADER
-	_material.shader = shader
+	_material.shader = SHADER_CACHE.get_shader(RIBBON_SHADER)
 	_material.set_shader_parameter("head_color", color.lightened(0.35))
 	_material.set_shader_parameter("tail_color", color.darkened(0.36))
 	_material.set_shader_parameter("strength", 1.0)

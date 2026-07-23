@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXBossTextureLayer3D
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const CURVES := preload("res://effects/vfx3d/core/VFXCurveLibrary3D.gd")
 
@@ -60,7 +61,7 @@ var _material: ShaderMaterial
 
 func play_layer(texture_path: String, params: Dictionary = {}) -> void:
 	begin()
-	var texture := load(texture_path) as Texture2D
+	var texture := vfx_texture(texture_path)
 	if texture == null:
 		push_warning("Boss VFX texture missing: %s" % texture_path)
 		finish()
@@ -85,9 +86,7 @@ func play_layer(texture_path: String, params: Dictionary = {}) -> void:
 	art.rotation_degrees.x = -90.0 if ground else 0.0
 	art.rotation_degrees.z = float(params.get("rotation_z", 0.0))
 	_material = ShaderMaterial.new()
-	var shader := Shader.new()
-	shader.code = TEXTURE_SHADER
-	_material.shader = shader
+	_material.shader = SHADER_CACHE.get_shader(TEXTURE_SHADER)
 	_material.set_shader_parameter("art_texture", texture)
 	_material.set_shader_parameter("dark_tint", params.get("dark_tint", Color(0.12, 0.08, 0.16, 1.0)))
 	_material.set_shader_parameter("body_tint", params.get("body_tint", Color.WHITE))

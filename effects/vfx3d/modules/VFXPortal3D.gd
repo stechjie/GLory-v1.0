@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXPortal3D
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const CURVES := preload("res://effects/vfx3d/core/VFXCurveLibrary3D.gd")
 
@@ -426,9 +427,7 @@ func _spawn_quad(node_name: String, quad_size: Vector2, shader_code: String, par
 
 func _make_material(shader_code: String, params: Dictionary, priority: int) -> ShaderMaterial:
 	var material := ShaderMaterial.new()
-	var shader := Shader.new()
-	shader.code = shader_code
-	material.shader = shader
+	material.shader = SHADER_CACHE.get_shader(shader_code)
 	for key in params:
 		material.set_shader_parameter(key, params[key])
 	material.set_shader_parameter("opacity", vfx_alpha)

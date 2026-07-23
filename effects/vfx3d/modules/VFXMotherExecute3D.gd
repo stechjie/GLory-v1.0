@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXMotherExecute3D
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const BOOK_TEXTURE:=preload("res://assets/vfx/skills/undead_mother/undead_mother_execution_book.png")
 const PATH_RIBBON:=preload("res://effects/vfx3d/modules/VFXPathRibbon3D.gd")
@@ -82,7 +83,7 @@ func _process(_delta:float)->void:
 func _make_book(profile:VFXProfile3D)->MeshInstance3D:
 	var quad:=QuadMesh.new();quad.size=Vector2(profile.size*1.34,profile.size*1.34)
 	var node:=MeshInstance3D.new();node.name="MotherExecutionBook";node.mesh=quad;node.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_book_material=ShaderMaterial.new();var shader:=Shader.new();shader.code=BOOK_SHADER;_book_material.shader=shader
+	_book_material=ShaderMaterial.new();_book_material.shader = SHADER_CACHE.get_shader(BOOK_SHADER)
 	_book_material.set_shader_parameter("book_texture",BOOK_TEXTURE)
 	_book_material.set_shader_parameter("shadow_tint",profile.dark_color)
 	_book_material.set_shader_parameter("energy_tint",profile.main_color)

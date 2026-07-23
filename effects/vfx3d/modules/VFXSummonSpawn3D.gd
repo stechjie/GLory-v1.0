@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXSummonSpawn3D
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 signal reveal_requested
 
@@ -237,7 +238,7 @@ func _card(node_name:String,texture:Texture2D,size:Vector2,profile:VFXProfile3D,
 	n.material_override=m;add_child(n);return n
 
 func _material(code:String,profile:VFXProfile3D)->ShaderMaterial:
-	var m:=ShaderMaterial.new();var sh:=Shader.new();sh.code=code;m.shader=sh
+	var m:=ShaderMaterial.new();m.shader = SHADER_CACHE.get_shader(code)
 	m.set_shader_parameter("dark_color",profile.dark_color);m.set_shader_parameter("main_color",profile.main_color);m.set_shader_parameter("core_color",profile.core_color)
 	m.set_shader_parameter("energy",profile.emission_energy);m.set_shader_parameter("opacity",vfx_alpha)
 	_materials.append(m);return m

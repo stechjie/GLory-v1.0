@@ -17,6 +17,18 @@ static func distortion_layers(base_count: int) -> int:
 static func max_simultaneous_effects() -> int:
 	return 18 if tier == Tier.LOW else (30 if tier == Tier.MEDIUM else 48)
 
+# 群体技能的特效目标数上限。全场 8 个目标同时开花是最容易掉帧的场景，
+# 而且视觉上前几个目标就已经把"这是个群体技"讲清楚了。
+# 只影响表现，伤害/命中判定仍然作用于全部目标。
+static func max_aoe_targets(base_count: int) -> int:
+	match tier:
+		Tier.LOW:
+			return mini(base_count, 4)
+		Tier.HIGH:
+			return base_count
+		_:
+			return mini(base_count, 6)
+
 static func max_particles_per_effect() -> int:
 	return 48 if tier == Tier.LOW else (96 if tier == Tier.MEDIUM else 160)
 

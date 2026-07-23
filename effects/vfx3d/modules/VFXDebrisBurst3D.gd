@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXDebrisBurst3D
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const QUALITY := preload("res://effects/vfx3d/core/VFXQualityBudget.gd")
 const IMPACT_FLASH := preload("res://effects/vfx3d/modules/VFXImpactFlash3D.gd")
@@ -136,9 +137,7 @@ func _make_dust(color: Color, amount: int, lifetime: float) -> GPUParticles3D:
 	var quad := QuadMesh.new()
 	quad.size = Vector2(0.64, 0.36)
 	var material := ShaderMaterial.new()
-	var shader := Shader.new()
-	shader.code = DUST_SHADER
-	material.shader = shader
+	material.shader = SHADER_CACHE.get_shader(DUST_SHADER)
 	material.set_shader_parameter("dust_color", Color(color.r, color.g, color.b, 0.68))
 	quad.material = material
 	particles.draw_pass_1 = quad

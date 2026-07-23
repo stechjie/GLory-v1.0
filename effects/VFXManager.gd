@@ -1,6 +1,7 @@
 extends Node
 
 const EffectDatabase := preload("res://effects/EffectDatabase.gd")
+const QUALITY := preload("res://effects/vfx3d/core/VFXQualityBudget.gd")
 
 # 所有加法/普通混合的 VFX 精灵共用这两份材质，避免每个特效实例 new 一份。
 static var MAT_ADD: CanvasItemMaterial = _make_blend_material(CanvasItemMaterial.BLEND_MODE_ADD)
@@ -20,9 +21,29 @@ static func _make_blend_material(mode: int) -> CanvasItemMaterial:
 	mat.blend_mode = mode as CanvasItemMaterial.BlendMode
 	return mat
 
+func _ready() -> void:
+	_detect_quality_tier()
+
 func _process(_delta: float) -> void:
 	_update_screen_shake()
 	_drain_pending_texture_loads()
+
+# VFXQualityBudget.tier 以前永远停在编译期的 MEDIUM，没有任何机型判断，
+# 等于桌面和低端安卓跑同一套预算。这里在启动时定一次档。
+func _detect_quality_tier() -> void:
+	if not OS.has_feature("mobile"):
+		QUALITY.tier = QUALITY.Tier.HIGH
+		return
+	# 核心数是 Godot 里唯一能可靠拿到的粗粒度性能指标；
+	# 四核及以下的安卓机按低档走。
+	QUALITY.tier = QUALITY.Tier.LOW if OS.get_processor_count() <= 4 else QUALITY.Tier.MEDIUM
+
+# 调试/设置面板用：允许手动压档验证低端表现。
+func set_quality_tier(value: int) -> void:
+	QUALITY.tier = clampi(value, QUALITY.Tier.LOW, QUALITY.Tier.HIGH)
+
+func get_quality_tier() -> int:
+	return QUALITY.tier
 
 # 同步取贴图（带缓存）。预载过的路径这里是纯字典查找。
 func get_texture(path: String) -> Texture2D:

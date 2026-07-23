@@ -1,5 +1,6 @@
 extends RefCounted
 class_name VFXLightningBeam
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const SHADER_CODE := """
 shader_type spatial;
@@ -100,9 +101,7 @@ static func make_ribbon(from_pos: Vector3, to_pos: Vector3, width: float, color:
 
 static func make_material(color: Color, length := 1.0) -> ShaderMaterial:
 	var material := ShaderMaterial.new()
-	var shader := Shader.new()
-	shader.code = SHADER_CODE
-	material.shader = shader
+	material.shader = SHADER_CACHE.get_shader(SHADER_CODE)
 	material.set_shader_parameter("main_color", Color(0.78, 0.98, 1.0, 1.0))
 	material.set_shader_parameter("effect_color", color)
 	material.set_shader_parameter("speed", 3.8 + length * 0.8)

@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXSpriteFlipbook3D
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const FLIPBOOK_SHADER := """
 shader_type spatial;
@@ -42,7 +43,7 @@ func play_profile(profile: VFXProfile3D, context: Dictionary) -> void:
 	var texture: Texture2D
 	var texture_path := str(params.get("texture_path", ""))
 	if not texture_path.is_empty():
-		texture = load(texture_path) as Texture2D
+		texture = vfx_texture(texture_path)
 	play_flipbook(
 		context.get("target", Vector3.ZERO), texture,
 		int(params.get("columns", 4)), int(params.get("rows", 4)), int(params.get("frame_count", 16)),
@@ -65,9 +66,7 @@ func play_flipbook(at: Vector3, texture: Texture2D, columns: int, rows: int, fra
 	node.name = "FlipbookSprite"
 	node.mesh = quad
 	_material = ShaderMaterial.new()
-	var shader := Shader.new()
-	shader.code = FLIPBOOK_SHADER
-	_material.shader = shader
+	_material.shader = SHADER_CACHE.get_shader(FLIPBOOK_SHADER)
 	_material.set_shader_parameter("atlas_texture", texture if texture != null else _make_test_atlas(columns, rows))
 	_material.set_shader_parameter("atlas_grid", Vector2(columns, rows))
 	_material.set_shader_parameter("frame", 0.0)

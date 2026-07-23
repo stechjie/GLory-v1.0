@@ -1,4 +1,4 @@
-extends Node3D
+extends VFXBlockRoot
 class_name VFXV2ExternalReference3D
 
 const ROOT := "res://effects/vfx3d/vfxv2/reference_packages/"

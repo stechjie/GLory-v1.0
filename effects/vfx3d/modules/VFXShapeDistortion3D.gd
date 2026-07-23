@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXShapeDistortion3D
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const CURVES := preload("res://effects/vfx3d/core/VFXCurveLibrary3D.gd")
 
@@ -51,9 +52,7 @@ func play_distortion(at: Vector3, direction: Vector3, profile: VFXProfile3D = nu
 	node.name = "DistortedShape"
 	node.mesh = sphere
 	_material = ShaderMaterial.new()
-	var shader := Shader.new()
-	shader.code = DISTORTION_SHADER
-	_material.shader = shader
+	_material.shader = SHADER_CACHE.get_shader(DISTORTION_SHADER)
 	_material.set_shader_parameter("dark_color", profile.dark_color if profile != null else Color(0.02, 0.05, 0.25))
 	_material.set_shader_parameter("edge_color", profile.core_color if profile != null else Color(0.35, 0.9, 1.0))
 	_material.set_shader_parameter("distortion", float(params.get("distortion", 0.16)))

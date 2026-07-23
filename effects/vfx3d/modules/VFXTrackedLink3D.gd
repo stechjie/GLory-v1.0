@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXTrackedLink3D
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const TEX_DOT:=preload("res://assets/vfx_textures/soft_dot.png")
 const TEX_NOISE:=preload("res://assets/vfx_textures/noise_tile.png")
@@ -85,11 +86,11 @@ func _update_ribbons()->void:
 
 func _spawn_pulse(delay:float)->void:
 	var q:=QuadMesh.new();q.size=Vector2(_profile.size*.24,_profile.size*.24);var n:=MeshInstance3D.new();n.name="LinkTransferPulse";n.mesh=q;n.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	var m:=ShaderMaterial.new();var sh:=Shader.new();sh.code=PULSE_SHADER;m.shader=sh;m.set_shader_parameter("dot_tex",TEX_DOT);m.set_shader_parameter("main_color",_profile.main_color);m.set_shader_parameter("core_color",_profile.core_color);m.set_shader_parameter("energy",_profile.emission_energy);m.set_shader_parameter("opacity",vfx_alpha);n.material_override=m;add_child(n);_materials.append(m);n.visible=false
+	var m:=ShaderMaterial.new();m.shader = SHADER_CACHE.get_shader(PULSE_SHADER);m.set_shader_parameter("dot_tex",TEX_DOT);m.set_shader_parameter("main_color",_profile.main_color);m.set_shader_parameter("core_color",_profile.core_color);m.set_shader_parameter("energy",_profile.emission_energy);m.set_shader_parameter("opacity",vfx_alpha);n.material_override=m;add_child(n);_materials.append(m);n.visible=false
 	var travel:=_profile.duration*.46;var tw:=track_tween(create_tween());tw.tween_interval(delay);tw.tween_callback(func():if is_instance_valid(n):n.visible=true);tw.tween_method(func(t:float):if is_instance_valid(n):n.position=_curve_point(t,0);m.set_shader_parameter("life",t),0.0,1.0,travel).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT);tw.tween_callback(n.queue_free)
 
 func _make_material(layer:int)->ShaderMaterial:
-	var m:=ShaderMaterial.new();var sh:=Shader.new();sh.code=LINK_SHADER;m.shader=sh;m.set_shader_parameter("noise_tex",TEX_NOISE);m.set_shader_parameter("dark_color",_profile.dark_color);m.set_shader_parameter("main_color",_profile.main_color);m.set_shader_parameter("core_color",_profile.core_color);m.set_shader_parameter("phase",float(layer)*2.73);m.set_shader_parameter("layer",float(layer)/2.0);m.set_shader_parameter("energy",_profile.emission_energy);m.set_shader_parameter("opacity",vfx_alpha);_materials.append(m);return m
+	var m:=ShaderMaterial.new();m.shader = SHADER_CACHE.get_shader(LINK_SHADER);m.set_shader_parameter("noise_tex",TEX_NOISE);m.set_shader_parameter("dark_color",_profile.dark_color);m.set_shader_parameter("main_color",_profile.main_color);m.set_shader_parameter("core_color",_profile.core_color);m.set_shader_parameter("phase",float(layer)*2.73);m.set_shader_parameter("layer",float(layer)/2.0);m.set_shader_parameter("energy",_profile.emission_energy);m.set_shader_parameter("opacity",vfx_alpha);_materials.append(m);return m
 
 func set_vfx_alpha(value:float)->void:
 	super.set_vfx_alpha(value)

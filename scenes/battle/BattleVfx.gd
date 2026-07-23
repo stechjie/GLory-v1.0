@@ -502,6 +502,13 @@ func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictio
 		"bubble_dream", "shell_guard", "balance_judge", "gold_charge", "holy_song",
 		"twin_strike", "king_aura", "arrow_rain", "blood_rampage", "steel_order",
 		"time_slow", "death_hunt",
+		# PVE 怪物与阵型盟友的主动技（都带 skill_cd，走 skill_ready 这条路）。
+		# 这批以前不在名单里，所以施法时连 composer 都不会被调用到。
+		"chain_lightning", "dive_backline", "heal_allies", "holy_shield_burst",
+		"wind_bleed", "slow_aura", "stun_impact", "entangle", "burrow_ambush",
+		"lava_burst", "nature_heal", "earth_slam", "backstab", "curse",
+		"counter_slash", "burn_claw", "soul_chain", "devour_bite",
+		"hell_burst", "eternal_night",
 	]
 	if not sid in ACTIVE_UNIT_SKILLS:
 		return
@@ -560,6 +567,20 @@ func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictio
 	elif sid=="time_slow":
 		context["targets"]=_living_enemy_world_positions(unit,current)
 		target_world=unit.get("world_foot",Vector3.ZERO)
+	# PVE 怪物与阵型盟友里的群体技，目标集合的取法和上面同类技能一致。
+	elif sid in ["heal_allies","nature_heal"]:
+		context["targets"]=_living_team_world_positions(unit,current)
+		target_world=unit.get("world_foot",Vector3.ZERO)
+	elif sid=="holy_shield_burst":
+		target_world=unit.get("world_foot",Vector3.ZERO)
+	elif sid in ["slow_aura","eternal_night"]:
+		context["targets"]=_living_enemy_world_positions(unit,current)
+		target_world=unit.get("world_foot",Vector3.ZERO)
+	elif sid in ["chain_lightning","hell_burst"]:
+		var struck:Array=[]
+		for event:Dictionary in _enemy_damage_events(unit,damage_events):
+			struck.append(event.get("world_foot",Vector3.ZERO))
+		context["targets"]=struck
 	var spawned:=_play_unit_procedural(sid,origin,target_world,context)
 	if sid=="shared_hp_link" and spawned!=null:
 		_persistent_unit_vfx[str(unit.get("id",""))]={"node":spawned,"target_uid":str(unit.get("skill_target_uid",""))}

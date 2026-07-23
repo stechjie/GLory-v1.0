@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXPathRibbon3D
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const CURVES := preload("res://effects/vfx3d/core/VFXCurveLibrary3D.gd")
 const BLADE_MASK: Texture2D = preload("res://assets/vfx/textures/slash/slash_blade_mask.png")
@@ -143,9 +144,7 @@ func _make_path_mesh(points: PackedVector3Array, plane_normal: Vector3, width: f
 
 func _make_material(profile: VFXProfile3D, layer_alpha := 1.0, halo_layer := false) -> ShaderMaterial:
 	var material := ShaderMaterial.new()
-	var shader := Shader.new()
-	shader.code = PATH_SHADER
-	material.shader = shader
+	material.shader = SHADER_CACHE.get_shader(PATH_SHADER)
 	var main := profile.main_color if profile != null else Color(0.58, 0.16, 1.0)
 	var core := profile.core_color if profile != null else Color(1.0, 0.78, 1.0)
 	var dark := profile.dark_color if profile != null else Color(0.08, 0.015, 0.16)
@@ -186,9 +185,7 @@ func _spawn_sparks(points: PackedVector3Array, plane_normal: Vector3, profile: V
 		var spark := _make_spark_mesh(outward, normal, spark_length, spark_width)
 		spark.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		var material := ShaderMaterial.new()
-		var shader := Shader.new()
-		shader.code = SPARK_SHADER
-		material.shader = shader
+		material.shader = SHADER_CACHE.get_shader(SPARK_SHADER)
 		material.set_shader_parameter("spark_mask", SPARK_MASK)
 		material.set_shader_parameter("spark_color", profile.core_color)
 		material.set_shader_parameter("opacity", 0.0)

@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXLightningBall
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const IMPACT := preload("res://effects/vfx3d/VFXTargetImpact.gd")
 const BEAM := preload("res://effects/vfx3d/VFXLightningBeam.gd")
@@ -199,9 +200,7 @@ func _make_shell() -> MeshInstance3D:
 	sphere.rings = 6
 	shell.mesh = sphere
 	var material := ShaderMaterial.new()
-	var shader := Shader.new()
-	shader.code = BALL_SHADER
-	material.shader = shader
+	material.shader = SHADER_CACHE.get_shader(BALL_SHADER)
 	material.set_shader_parameter("core_color", Color(0.03, 0.35, 1.0, 1.0))
 	material.set_shader_parameter("pulse", 0.4)
 	shell.material_override = material
@@ -282,9 +281,7 @@ func _make_tapered_ribbon(direction: Vector3, length: float, head_width: float, 
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	node.mesh = mesh
 	var material := ShaderMaterial.new()
-	var shader := Shader.new()
-	shader.code = TAIL_SHADER
-	material.shader = shader
+	material.shader = SHADER_CACHE.get_shader(TAIL_SHADER)
 	material.set_shader_parameter("head_color", Color(0.62, 0.97, 1.0, 1.0))
 	material.set_shader_parameter("tail_color", Color(0.015, 0.18, 0.82, 1.0))
 	material.set_shader_parameter("strength", strength)
@@ -311,9 +308,7 @@ func _make_directional_trail(direction: Vector3) -> GPUParticles3D:
 	var quad := QuadMesh.new()
 	quad.size = Vector2(0.13, 0.085)
 	var material := ShaderMaterial.new()
-	var shader := Shader.new()
-	shader.code = SPARK_SHADER
-	material.shader = shader
+	material.shader = SHADER_CACHE.get_shader(SPARK_SHADER)
 	material.set_shader_parameter("spark_color", Color(0.18, 0.72, 1.0, 1.0))
 	quad.material = material
 	particles.draw_pass_1 = quad

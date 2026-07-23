@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXStatusEffect3D
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const CURVES := preload("res://effects/vfx3d/core/VFXCurveLibrary3D.gd")
 const TEX_WISP := preload("res://assets/vfx_textures/smoke_wisp.png")
@@ -103,7 +104,7 @@ func _animate_mote(node:MeshInstance3D,profile:VFXProfile3D,index:int)->void:
 func _make_card(node_name:String,texture:Texture2D,size:Vector2,profile:VFXProfile3D,phase:float)->MeshInstance3D:
 	var q:=QuadMesh.new();q.size=size
 	var n:=MeshInstance3D.new();n.name=node_name;n.mesh=q;n.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	var m:=ShaderMaterial.new();var sh:=Shader.new();sh.code=STATUS_SHADER;m.shader=sh
+	var m:=ShaderMaterial.new();m.shader = SHADER_CACHE.get_shader(STATUS_SHADER)
 	m.set_shader_parameter("mask_tex",texture);m.set_shader_parameter("noise_tex",TEX_NOISE);m.set_shader_parameter("dark_color",profile.dark_color);m.set_shader_parameter("main_color",profile.main_color);m.set_shader_parameter("core_color",profile.core_color);m.set_shader_parameter("phase",phase);m.set_shader_parameter("energy",profile.emission_energy);m.set_shader_parameter("opacity",vfx_alpha)
 	n.material_override=m;add_child(n);_materials.append(m);return n
 

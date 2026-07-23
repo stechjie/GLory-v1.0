@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXGroundSigil3D
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const CURVES := preload("res://effects/vfx3d/core/VFXCurveLibrary3D.gd")
 
@@ -127,9 +128,7 @@ func _spawn_ground_front(profile: VFXProfile3D) -> void:
 	node.position.y = 0.025
 	node.rotation_degrees.x = -90.0
 	var material := ShaderMaterial.new()
-	var shader := Shader.new()
-	shader.code = GROUND_SHADER
-	material.shader = shader
+	material.shader = SHADER_CACHE.get_shader(GROUND_SHADER)
 	material.set_shader_parameter("dark_color", profile.dark_color)
 	material.set_shader_parameter("main_color", profile.main_color)
 	material.set_shader_parameter("core_color", profile.core_color)
@@ -148,9 +147,7 @@ func _spawn_billboard(node_name: String, size: Vector2, shader_code: String, par
 	node.name = node_name
 	node.mesh = quad
 	var material := ShaderMaterial.new()
-	var shader := Shader.new()
-	shader.code = shader_code
-	material.shader = shader
+	material.shader = SHADER_CACHE.get_shader(shader_code)
 	for key in params:
 		material.set_shader_parameter(key, params[key])
 	material.set_shader_parameter("opacity", vfx_alpha)

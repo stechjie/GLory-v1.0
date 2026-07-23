@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXFallingPillar3D
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const CURVES:=preload("res://effects/vfx3d/core/VFXCurveLibrary3D.gd")
 
@@ -65,9 +66,7 @@ func _quad(name:String,size:Vector2,code:String,params:Dictionary)->MeshInstance
 	n.mesh=q
 	n.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var m:=ShaderMaterial.new()
-	var s:=Shader.new()
-	s.code=code
-	m.shader=s
+	m.shader = SHADER_CACHE.get_shader(code)
 	for key in params:
 		m.set_shader_parameter(key,params[key])
 	m.set_shader_parameter("opacity",vfx_alpha)

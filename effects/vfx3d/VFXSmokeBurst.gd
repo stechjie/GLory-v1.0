@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXSmokeBurst
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const SMOKE_SHADER := """
 shader_type spatial;
@@ -48,9 +49,7 @@ func play_smoke(target: Vector3, color := Color(0.24, 0.26, 0.30)) -> void:
 	var draw := QuadMesh.new()
 	draw.size = Vector2(0.48, 0.48)
 	var material := ShaderMaterial.new()
-	var shader := Shader.new()
-	shader.code = SMOKE_SHADER
-	material.shader = shader
+	material.shader = SHADER_CACHE.get_shader(SMOKE_SHADER)
 	material.set_shader_parameter("smoke_color", color)
 	material.set_shader_parameter("phase", 0.0)
 	draw.material = material

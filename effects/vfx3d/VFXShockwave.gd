@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXShockwave
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const IMPACT := preload("res://effects/vfx3d/VFXTargetImpact.gd")
 const DEBRIS_MODULE := preload("res://effects/vfx3d/modules/VFXDebrisBurst3D.gd")
@@ -80,9 +81,7 @@ func play_shockwave(target: Vector3, color := Color(1.0, 0.30, 0.08)) -> void:
 	var dust_mesh := QuadMesh.new()
 	dust_mesh.size = Vector2(0.34, 0.20)
 	var dust_mat := ShaderMaterial.new()
-	var dust_shader := Shader.new()
-	dust_shader.code = DUST_SHADER
-	dust_mat.shader = dust_shader
+	dust_mat.shader = SHADER_CACHE.get_shader(DUST_SHADER)
 	dust_mat.set_shader_parameter("dust_color", Color(0.30, 0.18, 0.12, 0.72))
 	dust_mesh.material = dust_mat
 	dust.draw_pass_1 = dust_mesh

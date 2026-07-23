@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXBroadEnergySheet3D
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const CURVES := preload("res://effects/vfx3d/core/VFXCurveLibrary3D.gd")
 
@@ -114,9 +115,7 @@ func _make_sheet_mesh(direction: Vector3, length: float, width: float, seed: flo
 
 func _make_material(profile: VFXProfile3D, seed: float, halo: bool) -> ShaderMaterial:
 	var material := ShaderMaterial.new()
-	var shader := Shader.new()
-	shader.code = SHEET_SHADER
-	material.shader = shader
+	material.shader = SHADER_CACHE.get_shader(SHEET_SHADER)
 	material.set_shader_parameter("shadow_color", profile.dark_color.darkened(0.24) if halo else profile.dark_color)
 	material.set_shader_parameter("main_color", profile.main_color.darkened(0.34) if halo else profile.main_color)
 	material.set_shader_parameter("core_color", profile.main_color if halo else profile.core_color)

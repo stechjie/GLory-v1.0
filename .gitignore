@@ -20,3 +20,7 @@ Desktop.ini
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# 截帧输出（体积大，可随时重新生成）
+captures/
+__pycache__/

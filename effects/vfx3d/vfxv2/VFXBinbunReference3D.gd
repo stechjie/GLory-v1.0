@@ -1,4 +1,4 @@
-extends Node3D
+extends VFXBlockRoot
 class_name VFXBinbunReference3D
 
 const ROOT := "res://effects/vfx3d/vfxv2/binbun_reference/assets/"
@@ -104,5 +104,7 @@ func _finish_after(seconds: float) -> void:
 	get_tree().create_timer(seconds).timeout.connect(queue_free)
 
 func _exit_tree() -> void:
+	# 基类在 _exit_tree 里维护全局并发计数，不能吞掉。
+	super._exit_tree()
 	if endpoint != null and is_instance_valid(endpoint):
 		endpoint.queue_free()

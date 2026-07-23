@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXBarrierShield3D
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const CURVES:=preload("res://effects/vfx3d/core/VFXCurveLibrary3D.gd")
 
@@ -59,15 +60,15 @@ func _make_arc(radius:float,thickness:float,start:float,end:float,segments:int)-
 	var arr:=[];arr.resize(Mesh.ARRAY_MAX);arr[Mesh.ARRAY_VERTEX]=vertices;arr[Mesh.ARRAY_TEX_UV]=uvs;arr[Mesh.ARRAY_INDEX]=indices;var mesh:=ArrayMesh.new();mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arr);var n:=MeshInstance3D.new();n.mesh=mesh;n.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF;return n
 
 func _arc_material(profile:VFXProfile3D,seed:float)->ShaderMaterial:
-	var m:=ShaderMaterial.new();var s:=Shader.new();s.code=ARC_SHADER;m.shader=s;m.set_shader_parameter("dark_color",profile.dark_color);m.set_shader_parameter("main_color",profile.main_color);m.set_shader_parameter("core_color",profile.core_color);m.set_shader_parameter("seed",seed);m.set_shader_parameter("progress",.18);m.set_shader_parameter("hit",0.0);m.set_shader_parameter("opacity",vfx_alpha);_materials.append(m);_tween_shader(m,"progress",.18,.70,profile.duration*.72);return m
+	var m:=ShaderMaterial.new();m.shader = SHADER_CACHE.get_shader(ARC_SHADER);m.set_shader_parameter("dark_color",profile.dark_color);m.set_shader_parameter("main_color",profile.main_color);m.set_shader_parameter("core_color",profile.core_color);m.set_shader_parameter("seed",seed);m.set_shader_parameter("progress",.18);m.set_shader_parameter("hit",0.0);m.set_shader_parameter("opacity",vfx_alpha);_materials.append(m);_tween_shader(m,"progress",.18,.70,profile.duration*.72);return m
 
 func _make_membrane(profile:VFXProfile3D)->MeshInstance3D:
 	var q:=QuadMesh.new();q.size=profile.size*Vector2(1.72,1.78)
 	var n:=MeshInstance3D.new();n.name="ShieldEnergyMembrane";n.mesh=q;n.position.z=.03;n.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	var m:=ShaderMaterial.new();var s:=Shader.new();s.code=MEMBRANE_SHADER;m.shader=s;m.set_shader_parameter("dark_color",profile.dark_color);m.set_shader_parameter("main_color",profile.main_color);m.set_shader_parameter("core_color",profile.core_color);m.set_shader_parameter("opacity",vfx_alpha);n.material_override=m;add_child(n);_materials.append(m);return n
+	var m:=ShaderMaterial.new();m.shader = SHADER_CACHE.get_shader(MEMBRANE_SHADER);m.set_shader_parameter("dark_color",profile.dark_color);m.set_shader_parameter("main_color",profile.main_color);m.set_shader_parameter("core_color",profile.core_color);m.set_shader_parameter("opacity",vfx_alpha);n.material_override=m;add_child(n);_materials.append(m);return n
 
 func _hit_ripple(profile:VFXProfile3D)->void:
-	var q:=QuadMesh.new();q.size=profile.size*Vector2(1.42,1.42);var n:=MeshInstance3D.new();n.name="ShieldHitRipple";n.mesh=q;n.position=Vector3(profile.size*.42,.05,-.04);n.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF;var m:=ShaderMaterial.new();var s:=Shader.new();s.code=RIPPLE_SHADER;m.shader=s;m.set_shader_parameter("main_color",profile.main_color);m.set_shader_parameter("core_color",profile.core_color);m.set_shader_parameter("opacity",vfx_alpha);n.material_override=m;add_child(n);_materials.append(m);_tween_shader(m,"progress",0.0,1.0,profile.duration*.24)
+	var q:=QuadMesh.new();q.size=profile.size*Vector2(1.42,1.42);var n:=MeshInstance3D.new();n.name="ShieldHitRipple";n.mesh=q;n.position=Vector3(profile.size*.42,.05,-.04);n.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF;var m:=ShaderMaterial.new();m.shader = SHADER_CACHE.get_shader(RIPPLE_SHADER);m.set_shader_parameter("main_color",profile.main_color);m.set_shader_parameter("core_color",profile.core_color);m.set_shader_parameter("opacity",vfx_alpha);n.material_override=m;add_child(n);_materials.append(m);_tween_shader(m,"progress",0.0,1.0,profile.duration*.24)
 
 func _spawn_crack_shards(profile:VFXProfile3D)->void:
 	for i in range(9):

@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXRoarCone3D
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const CURVES:=preload("res://effects/vfx3d/core/VFXCurveLibrary3D.gd")
 const PATH_RIBBON:=preload("res://effects/vfx3d/modules/VFXPathRibbon3D.gd")
@@ -90,7 +91,7 @@ func _spawn_pressure_arc(direction:Vector3,distance:float,profile:VFXProfile3D,i
 	ribbon.play_path(points,Vector3.FORWARD,arc_profile)
 
 func _cone_material(profile:VFXProfile3D,seed:float,halo:bool)->ShaderMaterial:
-	var m:=ShaderMaterial.new();var s:=Shader.new();s.code=CONE_SHADER;m.shader=s;m.set_shader_parameter("dark_color",profile.dark_color.darkened(.18) if halo else profile.dark_color);m.set_shader_parameter("main_color",profile.main_color.darkened(.20) if halo else profile.main_color);m.set_shader_parameter("core_color",profile.core_color);m.set_shader_parameter("seed",seed);m.set_shader_parameter("layer",1.0 if halo else 0.0);m.set_shader_parameter("reveal",0.0);m.set_shader_parameter("dissolve",0.0);m.set_shader_parameter("opacity",vfx_alpha);_materials.append(m);return m
+	var m:=ShaderMaterial.new();m.shader = SHADER_CACHE.get_shader(CONE_SHADER);m.set_shader_parameter("dark_color",profile.dark_color.darkened(.18) if halo else profile.dark_color);m.set_shader_parameter("main_color",profile.main_color.darkened(.20) if halo else profile.main_color);m.set_shader_parameter("core_color",profile.core_color);m.set_shader_parameter("seed",seed);m.set_shader_parameter("layer",1.0 if halo else 0.0);m.set_shader_parameter("reveal",0.0);m.set_shader_parameter("dissolve",0.0);m.set_shader_parameter("opacity",vfx_alpha);_materials.append(m);return m
 
 func _spawn_mouth_flash(profile:VFXProfile3D)->void:
 	var n:=_billboard("RoarCompression",profile.size*Vector2(.72,.62),HIT_SHADER,{"main_color":profile.main_color,"core_color":profile.core_color});n.scale=Vector3.ONE*.12;CURVES.tween_method(self,func(v:float)->void:if is_instance_valid(n):n.scale=Vector3.ONE*v,.12,.72,profile.duration*.12,"ease_out_back");_tween_shader(n.material_override as ShaderMaterial,"progress",0.0,1.0,profile.duration*.18);var cleanup:=track_tween(create_tween());cleanup.tween_interval(profile.duration*.20);cleanup.tween_callback(n.queue_free)
@@ -115,9 +116,7 @@ func _billboard(name:String,size:Vector2,code:String,params:Dictionary)->MeshIns
 	n.mesh=q
 	n.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var m:=ShaderMaterial.new()
-	var s:=Shader.new()
-	s.code=code
-	m.shader=s
+	m.shader = SHADER_CACHE.get_shader(code)
 	for key in params:
 		m.set_shader_parameter(key,params[key])
 	m.set_shader_parameter("opacity",vfx_alpha)

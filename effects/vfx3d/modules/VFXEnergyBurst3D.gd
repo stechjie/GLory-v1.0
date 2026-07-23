@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXEnergyBurst3D
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const CURVES := preload("res://effects/vfx3d/core/VFXCurveLibrary3D.gd")
 
@@ -122,9 +123,7 @@ func _spawn_billboard(node_name: String, size: Vector2, shader_code: String, par
 	node.name = node_name
 	node.mesh = quad
 	var material := ShaderMaterial.new()
-	var shader := Shader.new()
-	shader.code = shader_code
-	material.shader = shader
+	material.shader = SHADER_CACHE.get_shader(shader_code)
 	for key in params:
 		material.set_shader_parameter(key, params[key])
 	material.set_shader_parameter("opacity", vfx_alpha)
@@ -143,9 +142,7 @@ func _spawn_broken_ring(profile: VFXProfile3D) -> void:
 	node.position = Vector3(0.0, -0.325, 0.0)
 	node.rotation_degrees.x = -90.0
 	var material := ShaderMaterial.new()
-	var shader := Shader.new()
-	shader.code = RING_SHADER
-	material.shader = shader
+	material.shader = SHADER_CACHE.get_shader(RING_SHADER)
 	material.set_shader_parameter("dark_color", profile.dark_color)
 	material.set_shader_parameter("main_color", profile.main_color)
 	material.set_shader_parameter("core_color", profile.core_color)

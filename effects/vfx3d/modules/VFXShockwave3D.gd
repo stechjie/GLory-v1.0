@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXShockwave3D
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const CURVES := preload("res://effects/vfx3d/core/VFXCurveLibrary3D.gd")
 
@@ -56,9 +57,7 @@ func play_shockwave(at: Vector3, profile: VFXProfile3D = null) -> void:
 	node.mesh = quad
 	node.rotation_degrees.x = -90.0
 	_material = ShaderMaterial.new()
-	var shader := Shader.new()
-	shader.code = SHOCKWAVE_SHADER
-	_material.shader = shader
+	_material.shader = SHADER_CACHE.get_shader(SHOCKWAVE_SHADER)
 	_material.set_shader_parameter("main_color", color)
 	_material.set_shader_parameter("progress", 0.0)
 	_material.set_shader_parameter("secondary_delay", float(params.get("secondary_delay", 0.20)))

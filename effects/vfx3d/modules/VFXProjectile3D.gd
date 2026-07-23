@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXProjectile3D
+const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const CURVES := preload("res://effects/vfx3d/core/VFXCurveLibrary3D.gd")
 
@@ -163,7 +164,7 @@ func _tracked_target_position(fallback:Vector3,target_ref:WeakRef)->Vector3:
 func _make_billboard(node_name:String,size:Vector2,shader_code:String,params:Dictionary)->MeshInstance3D:
 	var q:=QuadMesh.new();q.size=size
 	var n:=MeshInstance3D.new();n.name=node_name;n.mesh=q;n.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	var m:=ShaderMaterial.new();var s:=Shader.new();s.code=shader_code;m.shader=s
+	var m:=ShaderMaterial.new();m.shader = SHADER_CACHE.get_shader(shader_code)
 	for key in params:m.set_shader_parameter(key,params[key])
 	m.set_shader_parameter("opacity",vfx_alpha);n.material_override=m;add_child(n);_materials.append(m);return n
 
