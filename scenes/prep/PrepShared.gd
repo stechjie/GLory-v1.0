@@ -29,25 +29,14 @@ signal battle_requested
 @export_range(-0.08, 0.20, 0.005) var unit_y_offset := 0.0
 
 @export_group("Standby Bench Layout")
-@export_range(4, 4, 1) var standby_rows := 4
-@export_range(2, 2, 1) var standby_cols := 2
-@export_range(8, 8, 1) var standby_slot_count := 8
-@export var standby_cell_size := Vector2(88.0, 80.0)
 @export var standby_origin := Vector3.ZERO
 @export var standby_rotation := Vector3.ZERO
 @export var standby_unit_scale := 0.46
 @export_range(-0.08, 0.20, 0.005) var standby_unit_y_offset := 0.0
 @export var standby_face_battlefield := false
 @export_range(-180.0, 180.0, 1.0) var standby_facing_yaw_offset := 0.0
-@export_group("Standby Uniform Skew Grid")
-@export var standby_grid_origin := Vector2(24.0, 0.0)
-@export var standby_column_step := Vector2(74.0, 4.0)
-@export var standby_row_step := Vector2(-15.0, 78.0)
-@export var standby_cell_width_vector := Vector2(70.0, 4.0)
-@export var standby_cell_height_vector := Vector2(-15.0, 74.0)
 @export var standby_idle_fill := Color(0.22, 0.74, 0.62, 0.0)
 @export var standby_idle_line := Color(0.42, 0.94, 0.78, 0.0)
-@export var standby_hover_fill := Color(0.12, 0.94, 0.78, 0.25)
 @export var standby_hover_line := Color(0.40, 1.0, 0.82, 0.92)
 
 class DragButton:
@@ -328,6 +317,112 @@ class SellDropPanel:
 		if screen != null and screen.has_method("_drop_to_sell"):
 			screen._drop_to_sell(data)
 
+# 调试：把所有按钮的点击判定区域用线条画出来（多边形格子按真实多边形，普通按钮按矩形）。
+# 满屏覆盖、不吃输入、z 极高，永远画在最上层。由 SHOW_HIT_AREAS 常量控制是否创建。
+class HitAreaDebugOverlay:
+	extends Control
+	var scan_root: Control
+
+	func _ready() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		z_index = 900
+
+	func _process(_delta: float) -> void:
+		# 格子跟随 3D 投影每帧移动，必须每帧重画。
+		queue_redraw()
+
+	func _draw() -> void:
+		if scan_root == null:
+			return
+		var inv := get_global_transform().affine_inverse()
+		_scan(scan_root, inv)
+
+	func _scan(node: Node, inv: Transform2D) -> void:
+		for child in node.get_children():
+			if not (child is Control):
+				continue
+			var c := child as Control
+			if not c.visible:
+				continue
+			if c is Button:
+				_draw_button(c as Button, inv)
+			_scan(c, inv)
+
+	func _draw_button(btn: Button, inv: Transform2D) -> void:
+		# IGNORE 的按钮不参与输入拾取，跳过。
+		if btn.mouse_filter == Control.MOUSE_FILTER_IGNORE:
+			return
+		var xf := inv * btn.get_global_transform()
+		var poly := PackedVector2Array()
+		if "cell_polygon" in btn:
+			poly = btn.get("cell_polygon")
+		if poly.size() >= 3:
+			# 多边形判定（棋盘圆/待命格）——绿色。
+			var pts := PackedVector2Array()
+			for p in poly:
+				pts.append(xf * p)
+			pts.append(pts[0])
+			draw_polyline(pts, Color(0.25, 1.0, 0.45, 0.95), 1.5)
+		else:
+			# 矩形判定（普通按钮）——品红。
+			var r := Rect2(Vector2.ZERO, btn.size)
+			var corners := PackedVector2Array([
+				xf * r.position,
+				xf * Vector2(r.end.x, r.position.y),
+				xf * r.end,
+				xf * Vector2(r.position.x, r.end.y),
+				xf * r.position,
+			])
+			draw_polyline(corners, Color(1.0, 0.35, 0.85, 0.95), 1.5)
+
+# 满屏覆盖、不吃输入、z 高，扫描整棵界面树，把每个可见控件的矩形（空间框）画成黑边。
+# 由 SHOW_SPACE_FRAMES 常量控制是否创建。判定框(z900)画在它上面。
+class SpaceFrameDebugOverlay:
+	extends Control
+	var scan_root: Control
+
+	func _ready() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		z_index = 899
+
+	func _process(_delta: float) -> void:
+		# 有些框跟随 3D 投影/布局每帧变化，直接每帧重画。
+		queue_redraw()
+
+	func _draw() -> void:
+		if scan_root == null:
+			return
+		var inv := get_global_transform().affine_inverse()
+		_scan(scan_root, inv)
+
+	func _scan(node: Node, inv: Transform2D) -> void:
+		for child in node.get_children():
+			if not (child is Control):
+				continue
+			var c := child as Control
+			if not c.visible:
+				continue
+			if c.name.ends_with("DebugOverlay"):
+				continue   # 跳过调试层自身
+			_draw_frame(c, inv)
+			_scan(c, inv)
+
+	func _draw_frame(c: Control, inv: Transform2D) -> void:
+		if c.size.x <= 0.0 or c.size.y <= 0.0:
+			return
+		var xf := inv * c.get_global_transform()
+		var r := Rect2(Vector2.ZERO, c.size)
+		var corners := PackedVector2Array([
+			xf * r.position,
+			xf * Vector2(r.end.x, r.position.y),
+			xf * r.end,
+			xf * Vector2(r.position.x, r.end.y),
+			xf * r.position,
+		])
+		draw_polyline(corners, Color(0.0, 0.0, 0.0, 0.9), 1.0)
+
 var _player_formation_art: FormationCrystal
 var _enemy_formation_art: FormationCrystal
 var _start_battle_label: Label
@@ -349,7 +444,8 @@ var _shop_panel: SellDropPanel
 var _shop_open_button: Button
 var _shop_picker_open := false
 var _shop_sell_overlay: PanelContainer
-var _buy_shop_button: Button
+var _closed_money_bag: Control    # 商店关闭时的钱袋按钮（商店按钮左边）
+var _closed_gold_label: Label
 var _refresh_shop_button: Button
 var _refresh_shop_icon: Label
 var _refresh_shop_cost_label: Label
@@ -438,27 +534,6 @@ func _board_cell_quad(index: int, board_size: Vector2) -> PackedVector2Array:
 		_board_perspective_point(u1, v0, board_size),
 		_board_perspective_point(u1, v1, board_size),
 		_board_perspective_point(u0, v1, board_size),
-	])
-
-func _standby_size() -> Vector2:
-	return Vector2(
-		standby_cell_size.x * float(standby_cols),
-		standby_cell_size.y * float(standby_rows)
-	)
-
-func _standby_cell_quad(index: int, _frame_size: Vector2) -> PackedVector2Array:
-	var column := index % standby_cols
-	var row := floori(float(index) / float(standby_cols))
-	var top_left := (
-		standby_grid_origin
-		+ standby_column_step * float(column)
-		+ standby_row_step * float(row)
-	)
-	return PackedVector2Array([
-		top_left,
-		top_left + standby_cell_width_vector,
-		top_left + standby_cell_width_vector + standby_cell_height_vector,
-		top_left + standby_cell_height_vector,
 	])
 
 # Cross-layer hooks keep the original single-instance method dispatch intact.

@@ -223,10 +223,18 @@ func _on_shop_pressed(index: int) -> void:
 	_refresh_all()
 
 func _on_buy_selected_shop() -> void:
-	if _selected_shop < 0:
+	if _selected_shop < 0 or _selected_shop >= GameState.shop_offers.size():
+		return
+	var offer: Dictionary = GameState.shop_offers[_selected_shop]
+	if offer.is_empty() or bool(GameState.shop_sold[_selected_shop]):
+		return
+	# 买不了时给提示（原推车按钮的 tooltip 逻辑搬过来）
+	if GameState.gold < _shop_unit_cost(offer):
+		show_message(tr("ui_not_enough_gold"))
 		return
 	var empty_bench := _first_empty_bench_slot()
 	if empty_bench < 0:
+		show_message(tr("ui_bench_full"))
 		return
 	_buy_or_merge_shop_to_bench(_selected_shop, empty_bench)
 

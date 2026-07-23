@@ -145,13 +145,14 @@ func _input(event: InputEvent) -> void:
 			if shop_touch.pressed:
 				shop_pointer = shop_touch.position
 				shop_should_check = true
-		# 点弹窗和「商店」按钮之外才收起（按钮自己负责开关切换）。
+		# 点「弹窗 / 商店按钮 / 商店子树里的任何控件」之外才收起。用悬停控件判断是否属于商店
+		# 子树，这样刷新、钱袋等就算被摆到面板矩形【外面】，点它们也不会被误判成关店。
 		# 弹窗非模态、不 return：这次点击继续往下传，可以直接点棋盘/拖单位。
-		if (
-			shop_should_check
-			and not _shop_panel.get_global_rect().has_point(shop_pointer)
-			and (_shop_open_button == null or not _shop_open_button.get_global_rect().has_point(shop_pointer))
-		):
+		var shop_hovered := get_viewport().gui_get_hovered_control()
+		var click_on_shop: bool = _shop_panel.get_global_rect().has_point(shop_pointer) \
+			or (shop_hovered != null and (shop_hovered == _shop_panel or _shop_panel.is_ancestor_of(shop_hovered)))
+		var click_on_shop_btn: bool = _shop_open_button != null and _shop_open_button.get_global_rect().has_point(shop_pointer)
+		if shop_should_check and not click_on_shop and not click_on_shop_btn:
 			_close_shop_picker()
 	if not _merc_picker_open or _merc_overlay == null or not _merc_overlay.visible:
 		return

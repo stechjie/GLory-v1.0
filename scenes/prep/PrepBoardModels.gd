@@ -6,40 +6,56 @@ const PREP_RIVER_ARENA_PATH := "res://assets/models/prep/river_arena/Meshy_AI_Ve
 const PREP_RIVER_MATERIAL_PATH := "res://assets/models/prep/river_arena/prep_river_arena_material.tres"
 # 2.5D 分层棋盘背景图（贴在 3D 平躺地面 quad 上，和棋子一起呈现 TFT 倾斜纵深）
 const PREP_BOARD_BASE_PATH := "res://assets/board/prep_2_5d/glory_prep_base_handdrawn_v6.png"
-const PREP_READY_ZONE_PATH := "res://assets/board/prep_2_5d/v4_ready_zone.png"      # 4×4 主战场圈框（透明）
+# 每个 4×4 格子上的站位图案（站位.png）——3D 地面 quad，模型在其上方不会被盖。
+const PREP_CELL_MARK_PATH := "res://assets/board/prep_2_5d/board_cell_mark.png"
+const PREP_CELL_MARK_SIZE := Vector2(0.6, 0.6)   # 每张站位图的世界尺寸（可调大小）
+const PREP_CELL_MARK_Y_LIFT := 0.005             # 抬离地面高度（河流之上、模型之下）
 const PREP_RIVER_TOP_PATH := "res://assets/board/prep_2_5d/prep20_river_top.png"        # 上河流（黑底，shader 键透明+流动）
 const PREP_RIVER_BOTTOM_PATH := "res://assets/board/prep_2_5d/prep20_river_bottom.png"  # 下河流：恢复原始窄带高度
-const PREP_WAITING_LIST_PATH := "res://assets/board/prep_2_5d/v4_waiting_list.png"  # 待命圈框（透明）
-# 地面 quad 的世界坐标尺寸/位置（放大到超出屏幕，森林边框盖住四周不露天空）
-const PREP_BOARD_GROUND_SIZE := Vector2(8.0, 4.5)        # 恢复原始大场地比例
-const PREP_BOARD_GROUND_CENTER := Vector3(0.3, 0.0, -0.6)  # 原始 Prep Screen 位置
+# ══════ 整块棋盘的「大小 / 位置」══════
+#  改这两个会连 石台+格子+棋子+待命区+河流 一起动（它们都贴在这块地面上，不是只动棋盘）。
+# 大小：x=宽、y=进深；调大 = 整个场地变大。
+const PREP_BOARD_GROUND_SIZE := Vector2(8.0, 4.5)
+# 位置：x=左右（负=左 / 正=右）、z=前后（负=远/靠上，正=近/靠下）、y=高度（一般不动）。
+const PREP_BOARD_GROUND_CENTER := Vector3(-0.0, -0.10, -0.6)
 const PREP_BOARD_GROUND_FLIP_V := false                  # 若图上下颠倒则改 true（翻转贴图 V）
 # 河流流动高光层（贴在棋盘上方、横向滚动的波光）
 const PREP_RIVER_FLOW_SHADER := "res://assets/shaders/prep_river_flow.gdshader"
 const PREP_RIVER_TOP_EF_PATH := "res://assets/board/prep_2_5d/prep20_river_top_ef.png"
 const PREP_RIVER_BOTTOM_EF_PATH := "res://assets/board/prep_2_5d/prep20_river_bottom_ef.png"
-const PREP_BAKED_WAITING_CIRCLES := false  # 圆圈由原始透明叠加层绘制，保持拖拽坐标一致
-# 各区域在棋盘图上的 UV 范围（贴图占比），棋子直接按这个落到 3D 平面上
-# 中石台贴图 x516..1035/1672, y216..690/941 → 略内缩留边
-const BOARD_STONE_U := Vector2(0.377, 0.725)             # 原始 4x4 主战区 UV 范围
-const BOARD_STONE_V := Vector2(0.210, 0.782)             # 原始 4x4 主战区 UV 范围
-const BOARD_CELL_RADIUS := 0.20                          # 格子圆的世界半径（地面上真圆，投影成椭圆）
+# ══════ 只调「4×4 格子」（发光圈 + 落子网格）在地面上的铺排 ══════
+# ⚠️ 只动格子，不动画死的石台图；挪多了格子会跑出石台、对不上。
+# UV 是贴图 0~1 占比：范围拉大 = 格子铺更开；两端同时加/减 = 格子整排平移。
+const BOARD_STONE_U := Vector2(0.3, 0.64)             # 4×4 格子横向范围/位置
+const BOARD_STONE_V := Vector2(0.26, 0.78)             # 4×4 格子纵向范围/位置
+const BOARD_CELL_RADIUS := 0.22                         # 每个格子圆的大小（世界半径；地面上真圆，投影成椭圆）
 const BOARD_CELL_SEGMENTS := 20                          # 圆的多边形段数
-# 待命 8 个落点（棋盘图 UV，左侧草地）——2列×4行规整网格，投影后自然随斜面倾斜
-const STANDBY_SPOTS := [
-	Vector2(0.166, 0.298), Vector2(0.238, 0.298),
-	Vector2(0.166, 0.424), Vector2(0.238, 0.424),
-	Vector2(0.166, 0.551), Vector2(0.238, 0.551),
-	Vector2(0.166, 0.677), Vector2(0.238, 0.677),
-]
-const STANDBY_SPOT_RADIUS := 0.15
+const BOARD_MODEL_SPREAD_U := 0.9  # 棋盘模型横向铺开缩放（不动圆圈）：1=和圆圈一样，<1=往中间收（治左右越偏），>1=更散
+const BOARD_MODEL_SPREAD_V := 0.9  # 棋盘模型纵向铺开缩放（不动圆圈）：1=和圆圈一样，<1=往中间收（治上下越偏），>1=更散
+# 待命区：横排 8 个，放在棋盘正下方（前景 v≈0.88，u 横跨 0.31~0.79）。
+# 待命区 8 个格子的地面 UV 落点，参数化：改下面几个数就能整排调位置/间距/大小，
+# 不用手编 8 个点。（格子和棋子模型都用这套值，改一处两个一起动。）
+const STANDBY_SLOT_COUNT := 8
+const STANDBY_ROW_V := 0.820        # 整排前后位置：0=远/靠上，1=近/靠下（越大越往屏幕下方）
+const STANDBY_CENTER_U := 0.49     # 整排水平中心：0=左，1=右（整体左右移动改这个）
+const STANDBY_STEP_U := 0.051      # 相邻两格的水平间距：越大越疏、越小越密
+const STANDBY_SPOT_RADIUS := 0.16   # 每个格子圆的世界半径：越大格子越大
+const STANDBY_MODEL_DX := 0.0   # 待命模型左右微调（不动圆圈）
+const STANDBY_MODEL_DZ := -0.05  # 待命模型前后微调（不动圆圈）
+const STANDBY_MODEL_SPREAD := 0.9  # 模型横向铺开缩放（不动圆圈）：1=和圆圈一样，<1=往中间收（治"越往两边越偏"），>1=更散
+# 待命区背景平台：做成 3D 地面 quad（不是 2D 贴图），模型是地面上方的 3D 物体，自然盖在它上面。
+const PREP_STANDBY_BG_PATH := "res://assets/board/prep_2_5d/standby_bg.png"
+const PREP_STANDBY_BG_CENTER_UV := Vector2(0.49, 0.820)  # 平台中心 UV（默认对齐待命格子中心/前后）
+const PREP_STANDBY_BG_WORLD_SIZE := Vector2(3.5, 0.37)     # 平台 quad 世界尺寸（宽 × 进深），可调
+const PREP_STANDBY_BG_Y_LIFT := 0.006                     # 抬离地面高度（河流之上、模型之下）
 const PREP_RIVER_VIEWPORT_SIZE := Vector2i(960, 540)
 const PREP_RIVER_RENDER_HZ := 30.0  # 备战 3D 视口的渲染采样率（动画推进不受影响）
 const PREP_RIVER_STAGE_SCALE := Vector3(3.5, 3.2, 3.2)
 const PREP_RIVER_STAGE_POSITION := Vector3(0.5, 0.0, -0.5)
-const PREP_RIVER_CAMERA_POSITION := Vector3(0.0, 3.8, 2.0)    # 恢复原始 Prep Screen 视距
-const PREP_RIVER_CAMERA_TARGET := Vector3(0.0, -0.07, -0.03)
-const PREP_RIVER_CAMERA_FOV := 44.0
+# ══════ 相机：整体拉近/拉远看（不改场地本身，只改观感）══════
+const PREP_RIVER_CAMERA_POSITION := Vector3(0.0, 3.8, 2.0)    # 相机位置：y=高低俯角、z=远近
+const PREP_RIVER_CAMERA_TARGET := Vector3(0.0, -0.07, -0.03)  # 相机看向的点（一般不动）
+const PREP_RIVER_CAMERA_FOV := 44.0                           # 视野：小=拉近/放大，大=拉远/缩小
 const PREP_MODEL_BASE_SCALE := 0.04
 
 var _prep_model_root: Node3D
@@ -75,8 +91,8 @@ func _setup_prep_river_background() -> void:
 
 	_prep_river_viewport = SubViewport.new()
 	_prep_river_viewport.size = PREP_RIVER_VIEWPORT_SIZE
-	# 不透明：用环境深色背景兜底，棋盘没盖到的地方是深色而不是天空
-	_prep_river_viewport.transparent_bg = false
+	# 透明：棋盘没盖到的角落露出后面的满屏 2D 背景（同一张 base 图，任何屏幕尺寸都铺满），不再露深色兜底
+	_prep_river_viewport.transparent_bg = true
 	# 手机上 UPDATE_ALWAYS 会让这块 3D 视口跟随主帧率全速重渲染（发热大户）。
 	# 改为每次 UPDATE_ONCE 恰好渲染一帧，由下面的 30Hz Timer 重触发：
 	# AnimationPlayer 照常每引擎帧推进，只是渲染采样降到 30Hz。
@@ -168,12 +184,68 @@ func _add_prep_art_layers(world: Node3D) -> void:
 	# 下河流：黑底贴图，flow shader 键透明 + 横向滚动流动
 	_add_prep_texture_plane(world, "PrepRiverBottomLayer", PREP_RIVER_BOTTOM_PATH, 0.002, 2)
 	_add_prep_river_flow(world)
-	# 主战场 4×4 圈框 + 待命圈框（透明 PNG，普通 alpha 叠加）
-	_add_prep_texture_plane(world, "PrepReadyZoneLayer", PREP_READY_ZONE_PATH, 0.005, 5)
-	if not PREP_BAKED_WAITING_CIRCLES:
-		_add_prep_texture_plane(world, "PrepWaitingListLayer", PREP_WAITING_LIST_PATH, 0.006, 6)
+	# 主战场 4×4：每格一张站位图（3D 地面 quad）。发光环仍由代码画在上层。
+	_add_prep_cell_marks(world)
+	# 待命区背景平台：3D 地面 quad，模型是地面上方 3D 物体，自然盖在它上面（修好被 2D 背景压掉的问题）
+	_add_prep_standby_bg_plane(world)
 	# 氛围层：萤火虫/河面星光粒子
 	_add_prep_ambient_particles(world)
+
+func _add_prep_cell_marks(world: Node3D) -> void:
+	# 16 个格子每格一张站位图，做成 3D 地面 quad（躺在地面上）。位置跟 BOARD_STONE_U/V 走，
+	# 模型是地面上方的 3D 物体、靠深度盖在它上面（和之前待命台一个道理，不会被压掉）。
+	var tex := ResourceLoader.load(PREP_CELL_MARK_PATH) as Texture2D
+	if tex == null:
+		push_warning("站位图加载失败：%s" % PREP_CELL_MARK_PATH)
+		return
+	var cols := GameConstants.BOARD_COLUMNS
+	var rows := GameConstants.BOARD_ROWS
+	for i in cols * rows:
+		var col := i % cols
+		var row := i / cols
+		var u := lerpf(BOARD_STONE_U.x, BOARD_STONE_U.y, (float(col) + 0.5) / float(cols))
+		var v := lerpf(BOARD_STONE_V.x, BOARD_STONE_V.y, (float(row) + 0.5) / float(rows))
+		var layer := MeshInstance3D.new()
+		layer.name = "PrepCellMark%d" % i
+		var plane := PlaneMesh.new()
+		plane.size = PREP_CELL_MARK_SIZE
+		layer.mesh = plane
+		var mat := StandardMaterial3D.new()
+		mat.albedo_texture = tex
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		mat.render_priority = 5
+		layer.material_override = mat
+		var pos := _board_plane_world_pos(u, v)
+		pos.y = PREP_BOARD_GROUND_CENTER.y + PREP_CELL_MARK_Y_LIFT
+		layer.position = pos
+		world.add_child(layer)
+
+func _add_prep_standby_bg_plane(world: Node3D) -> void:
+	# 待命区背景做成 3D 地面 quad：躺在待命格子位置，被模型自然遮挡（模型在地面上方，深度更近）。
+	var tex := ResourceLoader.load(PREP_STANDBY_BG_PATH) as Texture2D
+	if tex == null:
+		push_warning("待命区背景加载失败：%s" % PREP_STANDBY_BG_PATH)
+		return
+	var layer := MeshInstance3D.new()
+	layer.name = "PrepStandbyBgLayer"
+	var plane := PlaneMesh.new()
+	plane.size = PREP_STANDBY_BG_WORLD_SIZE
+	layer.mesh = plane
+	var mat := StandardMaterial3D.new()
+	mat.albedo_texture = tex
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	mat.render_priority = 7   # 在棋盘各贴图层(0-6)之上；模型是不透明 3D 物体，靠深度自然盖住它
+	layer.material_override = mat
+	var center := _board_plane_world_pos(PREP_STANDBY_BG_CENTER_UV.x, PREP_STANDBY_BG_CENTER_UV.y)
+	center.y = PREP_BOARD_GROUND_CENTER.y + PREP_STANDBY_BG_Y_LIFT
+	layer.position = center
+	world.add_child(layer)
 
 func _add_prep_texture_plane(world: Node3D, node_name: String, texture_path: String, y_lift: float, render_priority: int) -> void:
 	var tex := ResourceLoader.load(texture_path) as Texture2D
@@ -440,7 +512,7 @@ func _refresh_prep_standby_models() -> void:
 	if _prep_standby_model_root == null:
 		return
 	var active_slots: Dictionary = {}
-	for index in mini(GameState.bench_slots.size(), standby_slot_count):
+	for index in mini(GameState.bench_slots.size(), STANDBY_SLOT_COUNT):
 		var cell_value = GameState.bench_slots[index]
 		if typeof(cell_value) != TYPE_DICTIONARY:
 			continue
@@ -708,9 +780,9 @@ func _realign_prep_standby_cells() -> void:
 		if not (child.has_method("configure_polygon") and "bench_index" in child):
 			continue
 		var idx: int = int(child.bench_index)
-		if idx < 0 or idx >= STANDBY_SPOTS.size():
+		if idx < 0 or idx >= STANDBY_SLOT_COUNT:
 			continue
-		var spot: Vector2 = STANDBY_SPOTS[idx]
+		var spot: Vector2 = _standby_spot(idx)
 		_fit_cell_to_screen_polygon(child, _plane_circle_screen_pts(spot.x, spot.y, STANDBY_SPOT_RADIUS), origin)
 
 # ── 石台四周蓝光粒子 ─────────────────────────────────────────────
@@ -793,7 +865,12 @@ func _position_prep_board_model(model_node: Node3D, index: int, unit_def: Dictio
 	var column := index % GameConstants.BOARD_COLUMNS
 	var row := floori(float(index) / float(GameConstants.BOARD_COLUMNS))
 	var u := lerpf(BOARD_STONE_U.x, BOARD_STONE_U.y, (float(column) + 0.5) / float(GameConstants.BOARD_COLUMNS))
-	var v := lerpf(BOARD_STONE_V.x, BOARD_STONE_V.y, (float(row) + 0.5) / float(GameConstants.BOARD_ROWS))
+	var v := lerpf(BOARD_STONE_V.x, BOARD_STONE_V.y, (float(row) + 0.65) / float(GameConstants.BOARD_ROWS))
+	# 模型"离棋盘中心的横/纵距离"按 SPREAD 缩放（圆圈不受影响）：治"中间对齐、越往边越偏"。
+	var center_u := (BOARD_STONE_U.x + BOARD_STONE_U.y) * 0.5
+	var center_v := (BOARD_STONE_V.x + BOARD_STONE_V.y) * 0.5
+	u = center_u + (u - center_u) * BOARD_MODEL_SPREAD_U
+	v = center_v + (v - center_v) * BOARD_MODEL_SPREAD_V
 	var world_pos := _board_plane_world_pos(u, v)
 	if _prep_model_root != null and _prep_model_root.is_inside_tree():
 		model_node.position = _prep_model_root.to_local(world_pos)
@@ -834,11 +911,21 @@ func _prep_board_projected_ground_position(index: int) -> Variant:
 	local_hit.y = unit_y_offset
 	return local_hit
 
+func _standby_spot(index: int) -> Vector2:
+	# 按参数算第 index 个待命格子的地面 UV 落点（整排水平居中于 STANDBY_CENTER_U）。
+	var mid := float(STANDBY_SLOT_COUNT - 1) * 0.5
+	return Vector2(STANDBY_CENTER_U + (float(index) - mid) * STANDBY_STEP_U, STANDBY_ROW_V)
+
 func _position_prep_standby_model(model_node: Node3D, index: int, unit_def: Dictionary) -> void:
-	# 直接落到左草地 8 个固定散点上（和待命圆圈重合）
-	if index >= 0 and index < STANDBY_SPOTS.size() and _prep_standby_model_root != null and _prep_standby_model_root.is_inside_tree():
-		var spot: Vector2 = STANDBY_SPOTS[index]
+	# 落到待命区参数化落点上（和待命圆圈重合）
+	if index >= 0 and index < STANDBY_SLOT_COUNT and _prep_standby_model_root != null and _prep_standby_model_root.is_inside_tree():
+		var spot: Vector2 = _standby_spot(index)
 		var world_pos := _board_plane_world_pos(spot.x, spot.y)
+		# 模型"离整排中心的横向距离"按 SPREAD 缩放（圆圈不受影响）：治"中间对齐、越往两边越偏"。
+		var center_wx := _board_plane_world_pos(STANDBY_CENTER_U, spot.y).x
+		world_pos.x = center_wx + (world_pos.x - center_wx) * STANDBY_MODEL_SPREAD
+		world_pos.x += STANDBY_MODEL_DX   # 微调左右：正=右移
+		world_pos.z += STANDBY_MODEL_DZ   # 微调前后：正=近/下移，负=远/上移
 		model_node.position = _prep_standby_model_root.to_local(world_pos)
 		model_node.position.y = standby_unit_y_offset
 	if standby_face_battlefield and _prep_model_root != null:
@@ -853,35 +940,6 @@ func _position_prep_standby_model(model_node: Node3D, index: int, unit_def: Dict
 			float(unit_def.get("model_base_yaw", 180.0)) + standby_facing_yaw_offset,
 			0.0
 		)
-
-func _prep_standby_projected_ground_position(index: int) -> Variant:
-	if _standby_frame == null or _prep_river_camera == null or _prep_river_viewport == null or _prep_standby_model_root == null:
-		return null
-	if not _standby_frame.is_inside_tree() or not _prep_standby_model_root.is_inside_tree():
-		return null
-	var quad := _standby_cell_quad(index, _standby_frame.size)
-	if quad.size() != 4:
-		return null
-	var screen_center := (quad[0] + quad[1] + quad[2] + quad[3]) * 0.25
-	screen_center += _standby_frame.global_position
-	var main_viewport_size := get_viewport().get_visible_rect().size
-	if main_viewport_size.x <= 0.0 or main_viewport_size.y <= 0.0:
-		return null
-	var river_viewport_size := Vector2(_prep_river_viewport.size)
-	var river_point := Vector2(
-		screen_center.x / main_viewport_size.x * river_viewport_size.x,
-		screen_center.y / main_viewport_size.y * river_viewport_size.y
-	)
-	var ray_origin := _prep_river_camera.project_ray_origin(river_point)
-	var ray_direction := _prep_river_camera.project_ray_normal(river_point)
-	var plane_origin := _prep_standby_model_root.to_global(Vector3(0.0, standby_unit_y_offset, 0.0))
-	var plane_normal := _prep_standby_model_root.global_transform.basis.y.normalized()
-	var hit = Plane(plane_normal, plane_origin).intersects_ray(ray_origin, ray_direction)
-	if hit == null:
-		return null
-	var local_hit := _prep_standby_model_root.to_local(hit)
-	local_hit.y = standby_unit_y_offset
-	return local_hit
 
 func _prep_board_model_target_size() -> float:
 	return minf(board_cell_spacing.x, board_cell_spacing.y) * unit_visual_scale
