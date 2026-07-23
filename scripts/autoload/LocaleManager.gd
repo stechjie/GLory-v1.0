@@ -275,7 +275,7 @@ func _zh_strings() -> Dictionary:
 		# 宠物名 + 效果
 		"pet_name_pet_mushroom": "蘑菇",
 		"pet_name_pet_cat": "猫",
-		"pet_name_pet_duck": "鸭子",
+		"pet_name_pet_duck": "兔子",
 		"pet_effect_self_hp_pct": "自身棋子生命 +%d%%",
 		"pet_effect_self_atk_pct": "自身棋子攻击 +%d%%",
 		"pet_effect_interest_pct": "金币利息 +%d%%",
@@ -530,7 +530,7 @@ func _en_strings() -> Dictionary:
 		# Pet names + effects
 		"pet_name_pet_mushroom": "Mushroom",
 		"pet_name_pet_cat": "Cat",
-		"pet_name_pet_duck": "Duck",
+		"pet_name_pet_duck": "Rabbit",
 		"pet_effect_self_hp_pct": "Own pieces HP +%d%%",
 		"pet_effect_self_atk_pct": "Own pieces ATK +%d%%",
 		"pet_effect_interest_pct": "Gold interest +%d%%",

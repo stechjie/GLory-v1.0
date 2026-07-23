@@ -69,7 +69,7 @@ void fragment() {
 func play_ball(origin: Vector3, target: Vector3, target_node: Variant = null) -> void:
 	begin()
 	var target_ref: WeakRef = null
-	if is_instance_valid(target_node) and target_node is Node3D:
+	if target_node is Node3D and is_instance_valid(target_node):
 		target_ref = weakref(target_node)
 	var tracked_target := _tracked_target_position(target, target_ref)
 	var direction := (tracked_target + Vector3(0.0, 0.30, 0.0) - (origin + Vector3(0.0, 1.05, 0.0))).normalized()

@@ -8,7 +8,7 @@ const PROCEDURAL_STATUS_ANCHORS:={}
 
 const EFFECTS := {
 	"shield": {"anchor": "BodyAnchor", "path": "res://assets/vfx/status/status_shield_aura.png", "scale": Vector3(0.86, 0.86, 0.86), "alpha": 0.62, "rot": 0.0, "bob": 0.035, "pulse": 0.035},
-	"stun": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_stun_icon_v2.png", "scale": Vector3(0.50, 0.50, 0.50), "alpha": 1.0, "rot": 0.0, "bob": 0.018, "pulse": 0.045},
+	"stun": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_stun_icon_v2.png", "scale": Vector3(0.35, 0.35, 0.35), "alpha": 1.0, "rot": 0.0, "bob": 0.018, "pulse": 0.045},
 	"poison": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_poison_icon_v2.png", "scale": Vector3(0.66, 0.66, 0.66), "alpha": 1.0, "rot": 0.0, "bob": 0.035, "pulse": 0.075},
 	"burn": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_burn_icon_v2.png", "scale": Vector3(0.58, 0.58, 0.58), "alpha": 1.0, "rot": 0.0, "bob": 0.025, "pulse": 0.07},
 	"silence": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_silence_icon_v2.png", "scale": Vector3(0.68, 0.68, 0.68), "alpha": 1.0, "rot": 0.0, "bob": 0.03, "pulse": 0.06},
@@ -133,9 +133,7 @@ func _make_sprite(kind: String) -> Sprite3D:
 	sprite.name = "Status_%s" % kind
 	sprite.texture = STATUS_TEXTURES.get(kind)
 	sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	# Keep the icon head-mounted and readable in the 1280x720 distant camera;
-	# it is still much smaller than a unit and never becomes a world burst.
-	sprite.pixel_size = 0.00160 if kind == "stun" else 0.00145
+	sprite.pixel_size = 0.00145
 	sprite.modulate = Color(1, 1, 1, float(cfg.alpha))
 	sprite.scale = cfg.scale
 	sprite.transparent = true

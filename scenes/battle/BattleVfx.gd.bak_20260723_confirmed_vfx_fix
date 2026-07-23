@@ -269,9 +269,6 @@ func _play_ranged_projectiles(attacks: Array[Dictionary], damage_events: Array[D
 		if target.is_empty():
 			target = _floor_target_for(attack)
 		var race:=_visual_race_from_unit_id(str(attack.get("unit_id","")))
-		if str(attack.get("unit_id", "")) == "human_king":
-			_play_attack_unit_procedural(attack,target,current)
-			continue
 		_play_race_basic_attack(attack,target,"ranged",race,current)
 		_play_attack_unit_procedural(attack,target,current)
 
@@ -281,9 +278,6 @@ func _play_melee_slashes(attacks: Array[Dictionary], damage_events: Array[Dictio
 		if target.is_empty():
 			target = _floor_target_for(attack)
 		var race:=_visual_race_from_unit_id(str(attack.get("unit_id","")))
-		if str(attack.get("unit_id", "")) == "human_king":
-			_play_attack_unit_procedural(attack,target,current)
-			continue
 		if str(attack.get("skill_id", "")) == "mirror_clone" or str(attack.get("id", "")).contains("_mirror_"):
 			_play_boss_procedural("mirror_slash", attack.get("world_cast", Vector3.ZERO), target.get("world_foot", Vector3.ZERO), _boss_target_context(target))
 			continue
@@ -422,8 +416,12 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 		"bubble_dream", "balance_judge", "gold_charge", "twin_strike", "arrow_rain", "blood_rampage", "steel_order", "time_slow", "death_hunt":
 			should_play_texture = false
 		"king_aura":
-			# Visual-only procedural aura; never spawn the obsolete legacy PNG layer.
+			# Keep only the authored sword impact, placed on a confirmed enemy.
+			# The obsolete light-column texture is removed from SkillVFXConfig.
 			should_play_texture = false
+			var king_target := _nearest_enemy_target(unit, damage_events, current)
+			if not king_target.is_empty():
+				_spawn_skill_textures_for_role(uid, "hit", king_target.get("hit_pos", king_target.get("pos", texture_pos)))
 		"judgement_strike":
 			should_play_texture = false
 			var target_judgement := _nearest_enemy_target(unit, damage_events, current)
@@ -766,8 +764,6 @@ func _play_attack_skill_texture(attack: Dictionary, target: Dictionary, spawn_pr
 
 func _attack_skill_vfx_ready(attack: Dictionary) -> bool:
 	var sid := str(attack.get("skill_id", ""))
-	if str(attack.get("unit_id", attack.get("source_id", ""))) == "human_king":
-		return true
 	if sid == "every_fourth_combo":
 		var every := maxi(1, int(attack.get("skill_every", 4)))
 		return int(attack.get("attack_count", 0)) % every == 0
@@ -788,11 +784,6 @@ func _play_attack_unit_procedural(attack:Dictionary,target:Dictionary,current:Di
 	if sid=="every_fifth_group_heal":
 		context["targets"]=_living_team_world_positions(source,current)
 		target_world=origin
-	# Human King's actual attack uses the target-bound vertical heaven sword.
-	# This is visual-only and leaves damage, timing and target selection untouched.
-	if str(attack.get("unit_id", attack.get("source_id", ""))) == "human_king":
-		_play_unit_procedural("unique_king_growth", origin, target_world, context)
-		return
 	_play_unit_procedural(sid,origin,target_world,context)
 
 func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:

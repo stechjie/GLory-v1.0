@@ -2,6 +2,7 @@ extends "res://scenes/battle/BattleRenderer.gd"
 
 const RANGED_ATTACK_MIN_RANGE_PX := 135.0
 const _SkillVFXConfig := preload("res://effects/SkillVFXConfig.gd")
+const LEGACY_RANGED_PROJECTILE_UNITS := ["god_aurora", "human_archer", "dark_mage"]
 
 var _vfx_prev_units: Dictionary = {}
 var _vfx_seeded: bool = false
@@ -65,9 +66,7 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 				var blood_source := _nearest_enemy_target(now, damage_events, current)
 				_play_boss_procedural("blood_lifesteal", now.get("world_foot", Vector3.ZERO), blood_source.get("world_hit", now.get("world_foot", Vector3.ZERO)), _boss_target_context(blood_source))
 			else:
-				# Healing is rendered by the 3D unit composer. Do not layer the
-				# legacy 2D HOLY_HEAL ring on top of it.
-				pass
+				_spawn_vfx("HOLY_HEAL", now.get("head_pos", Vector2.ZERO))
 		if shield_delta > 0:
 			_spawn_vfx("HOLY_SHIELD", now.get("head_pos", Vector2.ZERO))
 		if stack_delta > 0 and sid_now in ["rage_stack", "same_target_damage_stack"]:
@@ -80,9 +79,7 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 					_play_boss_procedural("rage_stack", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO), {"stacks": rage_stacks})
 			else:
 				_spawn_vfx("GROWTH_AURA", now.get("foot_pos", Vector2.ZERO))
-				var linked_uid := str(now.get("linked_target_uid", ""))
-				var linked_target:Dictionary = current.get(linked_uid, now) if not linked_uid.is_empty() else now
-				_play_unit_procedural("same_target_damage_stack", now.get("world_foot", Vector3.ZERO), linked_target.get("world_hit", linked_target.get("world_foot", now.get("world_foot", Vector3.ZERO))), _unit_target_context(now, linked_target))
+				_play_unit_procedural("same_target_damage_stack", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO), _unit_target_context(now, now))
 		if stack_delta > 0 and sid_now == "poison_reflect_armor_stack":
 			_play_unit_procedural("poison_reflect_armor_stack", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO), _unit_target_context(now, now))
 		if sid_now == "overload_counter" and stack_delta > 0:
@@ -268,11 +265,20 @@ func _play_ranged_projectiles(attacks: Array[Dictionary], damage_events: Array[D
 		var target := _nearest_enemy_target(attack, damage_events, current)
 		if target.is_empty():
 			target = _floor_target_for(attack)
-		var race:=_visual_race_from_unit_id(str(attack.get("unit_id","")))
-		if str(attack.get("unit_id", "")) == "human_king":
+		var race:=_race_from_unit_id(str(attack.get("unit_id","")))
+		var unit_id := str(attack.get("unit_id", ""))
+		if not race.is_empty() and unit_id not in LEGACY_RANGED_PROJECTILE_UNITS:
+			_play_race_basic_attack(attack,target,"ranged",race,current)
 			_play_attack_unit_procedural(attack,target,current)
 			continue
-		_play_race_basic_attack(attack,target,"ranged",race,current)
+		var vfx_id := "PROJECTILE_MAGIC" if unit_id.contains("mage") else "PROJECTILE_ARROW"
+		var target_node := _unit_anchor_node_for_id(str(target.get("id", "")), "HitAnchor")
+		if _attack_skill_vfx_ready(attack):
+			_spawn_skill_projectile_or_default(str(attack.get("unit_id", "")), vfx_id, attack.get("pos", Vector2.ZERO), target_node, target.get("pos", Vector2.ZERO))
+		else:
+			var config := {"impact_id": "HIT_RANGED"}
+			_apply_projectile_race_color(str(attack.get("unit_id", "")), config)
+			_spawn_projectile(vfx_id, attack.get("pos", Vector2.ZERO), target_node, target.get("pos", Vector2.ZERO), config)
 		_play_attack_unit_procedural(attack,target,current)
 
 func _play_melee_slashes(attacks: Array[Dictionary], damage_events: Array[Dictionary], current: Dictionary) -> void:
@@ -280,18 +286,24 @@ func _play_melee_slashes(attacks: Array[Dictionary], damage_events: Array[Dictio
 		var target := _nearest_enemy_target(attack, damage_events, current)
 		if target.is_empty():
 			target = _floor_target_for(attack)
-		var race:=_visual_race_from_unit_id(str(attack.get("unit_id","")))
-		if str(attack.get("unit_id", "")) == "human_king":
+		var from_pos: Vector2 = attack.get("pos", Vector2.ZERO)
+		var target_pos: Vector2 = target.get("hit_pos", target.get("pos", Vector2.ZERO))
+		var race:=_race_from_unit_id(str(attack.get("unit_id","")))
+		if not race.is_empty():
+			_play_race_basic_attack(attack,target,"melee",race,current)
+			if str(attack.get("skill_id", "")) == "unique_king_growth":
+				_spawn_skill_textures_for_role(str(attack.get("unit_id", "")), "hit", target_pos)
 			_play_attack_unit_procedural(attack,target,current)
 			continue
+		if str(attack.get("skill_id", "")) == "unique_king_growth":
+			_spawn_skill_textures_for_role(str(attack.get("unit_id", "")), "hit", target_pos)
+			continue
+		var angle := (target_pos - from_pos).angle()
+		_spawn_vfx("HIT_MELEE", target_pos, {"angle": angle})
 		if str(attack.get("skill_id", "")) == "mirror_clone" or str(attack.get("id", "")).contains("_mirror_"):
 			_play_boss_procedural("mirror_slash", attack.get("world_cast", Vector3.ZERO), target.get("world_foot", Vector3.ZERO), _boss_target_context(target))
 			continue
-		if not race.is_empty():
-			_play_race_basic_attack(attack,target,"melee",race,current)
-			_play_attack_unit_procedural(attack,target,current)
-			continue
-		_play_race_basic_attack(attack,target,"melee",race,current)
+		_play_attack_skill_texture(attack, target, true)
 		_play_attack_unit_procedural(attack,target,current)
 
 func _race_from_unit_id(unit_id:String)->String:
@@ -299,21 +311,6 @@ func _race_from_unit_id(unit_id:String)->String:
 		if unit_id.begins_with(race+"_"):
 			return race
 	return ""
-
-func _visual_race_from_unit_id(unit_id:String)->String:
-	var race:=_race_from_unit_id(unit_id)
-	if not race.is_empty():
-		return race
-	var key:=unit_id.to_lower()
-	if key.contains("dark") or key.contains("shadow") or key.contains("demon"):
-		return "dark"
-	if key.contains("undead") or key.contains("wisp") or key.contains("poison") or key.contains("death"):
-		return "undead"
-	if key.contains("god") or key.contains("angel") or key.contains("divine"):
-		return "god"
-	# Mercenaries and unclassified neutral units use the restrained human
-	# projectile/strike palette instead of the legacy 2D hit effects.
-	return "human"
 
 func _play_race_basic_attack(attack:Dictionary,target:Dictionary,mode:String,race:String,current:Dictionary)->void:
 	var origin:Vector3=attack.get("world_cast",Vector3.ZERO)
@@ -419,10 +416,7 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 			_spawn_skill_textures_for_role(uid, "cast", unit.get("cast_pos", Vector2.ZERO))
 			_spawn_skill_textures_for_role(uid, "hit", texture_pos)
 			should_play_texture = false
-		"bubble_dream", "balance_judge", "gold_charge", "twin_strike", "arrow_rain", "blood_rampage", "steel_order", "time_slow", "death_hunt":
-			should_play_texture = false
-		"king_aura":
-			# Visual-only procedural aura; never spawn the obsolete legacy PNG layer.
+		"bubble_dream", "balance_judge", "gold_charge", "twin_strike", "king_aura", "arrow_rain", "blood_rampage", "steel_order", "time_slow", "death_hunt":
 			should_play_texture = false
 		"judgement_strike":
 			should_play_texture = false
@@ -437,20 +431,15 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 			should_play_texture = false
 			var target_control := _nearest_enemy_target(unit, damage_events, current)
 			if not target_control.is_empty():
-				if sid == "front_cone_stun":
-					# The swordsman uses only the two authored, compact slash masks
-					# at the confirmed hit target; no caster/ground fallback layers.
-					_spawn_skill_textures_for_role(uid, "hit", target_control.get("hit_pos", target_control.get("pos", texture_pos)))
-				else:
-					_spawn_skill_roles_at_target(uid, unit, target_control)
+				_spawn_skill_roles_at_target(uid, unit, target_control)
 				if sid == "blink_low_def_backline":
 					_spawn_skill_textures_for_role(uid, "hit", target_control.get("hit_pos", target_control.get("pos", Vector2.ZERO)))
 		"black_hole":
 			should_play_texture = false
 		"lowest_ally_heal", "nearby_ally_heal_buff", "holy_song", "holy_purify":
 			should_play_texture = false
-			# The 3D composer owns the heal presentation; the legacy 2D
-			# HOLY_HEAL effect is intentionally disabled.
+			if not uid.begins_with("merc_"):
+				_spawn_vfx("HOLY_HEAL", unit.get("head_pos", Vector2.ZERO))
 		"random_ally_damage_reduction", "shell_guard", "apocalypse_charge":
 			should_play_texture = false
 			if not uid.begins_with("merc_"):
@@ -458,7 +447,8 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 		"shared_hp_link":
 			should_play_texture = false
 		_:
-			pass
+			if sid.contains("poison"):
+				_spawn_vfx("POISON_CLOUD", unit.get("foot_pos", Vector2.ZERO))
 	# 叠加贴图特效（与程序效果同时显示）
 	if should_play_texture:
 		_play_skill_texture_vfx(unit, texture_pos)
@@ -491,7 +481,7 @@ func _sync_persistent_unit_vfx(current:Dictionary)->void:
 		var active:=not unit.is_empty() and bool(unit.get("alive",false)) and str(unit.get("skill_id",""))=="shared_hp_link" and not uid.is_empty()
 		if active and uid==str(record.get("target_uid","")):
 			continue
-		if is_instance_valid(node) and node is Node3D and node.has_method("release_link"):
+		if node is Node3D and is_instance_valid(node) and node.has_method("release_link"):
 			node.release_link()
 		_persistent_unit_vfx.erase(id)
 
@@ -516,15 +506,13 @@ func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictio
 		target=_nearest_enemy_target(unit,damage_events,current)
 	var target_world:Vector3=target.get("world_hit",target.get("world_foot",unit.get("world_foot",Vector3.ZERO)))
 	var context:=_unit_target_context(unit,target)
-	if sid=="black_hole" and str(unit.get("id",""))!="dark_dragon":
-		return
 	if sid=="shared_hp_link":
 		var now_uid:=str(unit.get("skill_target_uid",""))
 		if now_uid.is_empty() or now_uid==str(previous.get("skill_target_uid","")):
 			return
 		var old_link:Dictionary=_persistent_unit_vfx.get(str(unit.get("id","")),{})
 		var old_node:Variant=old_link.get("node")
-		if is_instance_valid(old_node) and old_node is Node3D and old_node.has_method("release_link"):
+		if old_node is Node3D and is_instance_valid(old_node) and old_node.has_method("release_link"):
 			old_node.release_link()
 		context["persistent"]=true
 	if sid=="nearby_ally_heal_buff":
@@ -610,16 +598,12 @@ func _nearest_living_team_positions(unit:Dictionary,current:Dictionary,count:int
 
 func _unit_target_context(source:Dictionary,target:Dictionary,extra:Dictionary={})->Dictionary:
 	var context:=extra.duplicate(false)
-	context["source_unit_id"] = str(source.get("unit_id", source.get("id", "")))
-	context["target_unit_id"] = str(target.get("unit_id", target.get("id", "")))
-	if source.has("stun_sec"):
-		context["status_duration"] = float(source.get("stun_sec",1.18))
 	var source_node=source.get("model_node")
-	if is_instance_valid(source_node) and source_node is Node3D:
+	if source_node is Node3D and is_instance_valid(source_node):
 		var cast_anchor:Variant=source_node.get_node_or_null("CastAnchor")
 		context["origin_node"]=cast_anchor if cast_anchor is Node3D else source_node
 	var target_node=target.get("model_node")
-	if is_instance_valid(target_node) and target_node is Node3D:
+	if target_node is Node3D and is_instance_valid(target_node):
 		var hit_anchor:Variant=target_node.get_node_or_null("HitAnchor")
 		context["target_node"]=hit_anchor if hit_anchor is Node3D else target_node
 	return context
@@ -647,7 +631,7 @@ func _boss_world_position(value: Variant) -> Vector3:
 func _boss_target_context(target: Dictionary, extra: Dictionary = {}) -> Dictionary:
 	var context := extra.duplicate(false)
 	var model_node = target.get("model_node")
-	if is_instance_valid(model_node) and model_node is Node3D:
+	if model_node is Node3D and is_instance_valid(model_node):
 		var hit_anchor:Variant=model_node.get_node_or_null("HitAnchor")
 		context["target_node"] = hit_anchor if hit_anchor is Node3D else model_node
 	return context
@@ -710,7 +694,7 @@ func _spawn_skill_textures_for_role(uid: String, role: String, pos: Vector2) -> 
 
 func _spawn_skill_projectile_or_default(uid: String, vfx_id: String, start_pos: Vector2, target_node: Node, target_pos: Vector2) -> void:
 	var tex_configs := _textures_for_role(uid, "projectile")
-	var config := {"impact_id": ""}
+	var config := {"impact_id": "HIT_RANGED"}
 	if not tex_configs.is_empty():
 		config["texture_path"] = str(tex_configs[0].get("path", ""))
 		config["texture_scale"] = float(tex_configs[0].get("scale", 0.5))
@@ -766,8 +750,6 @@ func _play_attack_skill_texture(attack: Dictionary, target: Dictionary, spawn_pr
 
 func _attack_skill_vfx_ready(attack: Dictionary) -> bool:
 	var sid := str(attack.get("skill_id", ""))
-	if str(attack.get("unit_id", attack.get("source_id", ""))) == "human_king":
-		return true
 	if sid == "every_fourth_combo":
 		var every := maxi(1, int(attack.get("skill_every", 4)))
 		return int(attack.get("attack_count", 0)) % every == 0
@@ -788,11 +770,6 @@ func _play_attack_unit_procedural(attack:Dictionary,target:Dictionary,current:Di
 	if sid=="every_fifth_group_heal":
 		context["targets"]=_living_team_world_positions(source,current)
 		target_world=origin
-	# Human King's actual attack uses the target-bound vertical heaven sword.
-	# This is visual-only and leaves damage, timing and target selection untouched.
-	if str(attack.get("unit_id", attack.get("source_id", ""))) == "human_king":
-		_play_unit_procedural("unique_king_growth", origin, target_world, context)
-		return
 	_play_unit_procedural(sid,origin,target_world,context)
 
 func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:

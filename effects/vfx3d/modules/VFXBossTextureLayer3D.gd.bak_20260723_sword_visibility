@@ -67,10 +67,8 @@ func play_layer(texture_path: String, params: Dictionary = {}) -> void:
 		return
 	var delay := maxf(0.0, float(params.get("delay", 0.0)))
 	if delay > 0.0:
-		if not is_inside_tree():
-			return
 		await get_tree().create_timer(delay).timeout
-		if _finished or not is_inside_tree():
+		if _finished:
 			return
 	var duration := maxf(0.18, float(params.get("duration", 0.9)))
 	var size: Vector2 = params.get("size", Vector2(1.4, 1.4))
@@ -110,21 +108,15 @@ func play_layer(texture_path: String, params: Dictionary = {}) -> void:
 	if params.has("to"):
 		var travel := track_tween(create_tween())
 		travel.tween_property(self, "position", params["to"], duration * float(params.get("travel_ratio", 0.62))).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	if not is_inside_tree():
-		return
 	await get_tree().create_timer(duration * 0.56).timeout
-	if _finished or not is_inside_tree():
+	if _finished:
 		return
 	_tween_shader("dissolve", 0.0, 1.0, duration * 0.40)
 	var breakup := track_tween(create_tween())
 	breakup.set_parallel(true)
 	breakup.tween_property(art, "scale", Vector3.ONE * peak_scale * float(params.get("end_scale", 1.12)), duration * 0.40).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	breakup.tween_property(art, "position:y", art.position.y + float(params.get("rise", 0.08)), duration * 0.40)
-	if not is_inside_tree():
-		return
 	await get_tree().create_timer(duration * 0.44).timeout
-	if _finished or not is_inside_tree():
-		return
 	finish()
 
 func _tween_shader(param: String, from: float, to: float, duration: float) -> void:

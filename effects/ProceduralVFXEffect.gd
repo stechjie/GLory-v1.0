@@ -1,7 +1,7 @@
 extends Node2D
 class_name ProceduralVFXEffect
 
-@export var effect_id: String = "HIT_MELEE"
+@export var effect_id: String = "DEATH_EXPLOSION"
 
 var _config: Dictionary = {}
 # 对象池复用支撑：代际计数让上一轮播放遗留的 await 回调失效；
@@ -12,11 +12,6 @@ var _tweens: Array[Tween] = []
 func play(config: Dictionary = {}) -> void:
 	_begin_play(config)
 	match effect_id:
-		"HIT_MELEE":
-			_play_hit(Color(1.0, 0.92, 0.68), 0.9)
-			_play_slash(Color(1.0, 0.96, 0.82), float(config.get("angle", 0.0)))
-		"HIT_RANGED":
-			_play_hit(Color(0.72, 0.9, 1.0), 0.75)
 		"DEATH_EXPLOSION":
 			_play_burst(Color(0.95, 0.95, 0.92), 44, 1.2)
 			_play_ring(Color(0.95, 0.95, 0.92, 0.85), 18.0, 78.0, 0.42, 5.0)
@@ -44,11 +39,6 @@ func play(config: Dictionary = {}) -> void:
 			_play_rise_particles(Color(0.42, 1.0, 0.42), 18)
 		"FEAR_SKULL":
 			_play_skull(Color(0.72, 0.25, 1.0, 0.92))
-		"POISON_CLOUD":
-			_play_poison_cloud()
-		"STUN_RING":
-			_play_ring(Color(0.75, 0.42, 1.0, 0.94), 24.0, 76.0, 0.42, 6.0)
-			_play_stun_marks(Color(0.75, 0.42, 1.0, 0.9))
 		_:
 			_play_hit(Color.WHITE, 0.6)
 
@@ -255,35 +245,6 @@ func _play_skull(color: Color) -> void:
 	tween.tween_property(skull, "position", skull.position + Vector2(0.0, -20.0), 0.42)
 	tween.tween_property(skull, "modulate:a", 0.0, 0.42).set_delay(0.12)
 	_free_after(0.62)
-
-func _play_poison_cloud() -> void:
-	var particles := _acquire_particles("PoisonCloud")
-	if particles.amount != 36:
-		particles.amount = 36
-	particles.lifetime = 0.95
-	particles.one_shot = true
-	particles.explosiveness = 0.35
-	particles.direction = Vector2.UP
-	particles.spread = 90.0
-	particles.gravity = Vector2(0.0, -12.0)
-	particles.initial_velocity_min = 18.0
-	particles.initial_velocity_max = 48.0
-	particles.scale_amount_min = 1.0
-	particles.scale_amount_max = 2.2
-	particles.color = Color(0.35, 0.9, 0.28, 0.7)
-	particles.restart()
-	_free_after(1.15)
-
-func _play_stun_marks(color: Color) -> void:
-	for i in 4:
-		var mark := _acquire_child("StunMark%d" % i, func(): return Line2D.new()) as Line2D
-		mark.width = 3.0
-		mark.default_color = color
-		mark.points = PackedVector2Array([Vector2(-8.0, 0.0), Vector2(8.0, 0.0)])
-		var angle := TAU * float(i) / 4.0
-		mark.position = Vector2(cos(angle), sin(angle)) * 34.0
-		mark.rotation = angle
-	_free_after(0.52)
 
 func _circle_points(radius: float, segments: int) -> PackedVector2Array:
 	var points := PackedVector2Array()

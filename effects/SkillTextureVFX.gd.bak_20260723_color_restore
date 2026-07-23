@@ -55,9 +55,7 @@ func _spawn_layer(texture: Texture2D, tex_cfg: Dictionary, offset: Vector2, targ
 		glow.scale = start_scale * 1.18
 		glow.modulate = Color(1.0, 0.94, 0.72, 0.0)
 		glow.z_index = 24
-		# Glow remains additive, but it is only a low-alpha edge layer. The
-		# authored texture body below must keep its source colors.
-		glow.material = VFXManager.MAT_ADD
+		glow.material = _add_material()
 		add_child(glow)
 		var glow_tween := create_tween()
 		glow_tween.set_parallel(true)
@@ -72,9 +70,7 @@ func _spawn_layer(texture: Texture2D, tex_cfg: Dictionary, offset: Vector2, targ
 	sprite.scale = start_scale
 	sprite.modulate.a = 0.0
 	sprite.z_index = 25 if role != "foot" else 18
-	# Keep the authored body color-preserving. Additive blending would clamp
-	# blue/purple PNGs toward white when hit layers overlap.
-	sprite.material = VFXManager.MAT_MIX
+	sprite.material = VFXManager.MAT_MIX if is_boss else _add_material()
 	add_child(sprite)
 
 	var tween := create_tween()

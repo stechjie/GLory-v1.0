@@ -79,8 +79,7 @@ func play_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary
 		"basic_attack_melee_dark":_basic_attack(origin,target,"dark","melee",context)
 		"basic_attack_ranged_undead":_basic_attack(origin,target,"undead","ranged",context)
 		"basic_attack_melee_undead":_basic_attack(origin,target,"undead","melee",context)
-		"unique_death_execute":_spawn(VFX_MOTHER_EXECUTE,MOTHER_EXECUTE_PROFILE,{"origin":origin,"target":target,"origin_node":context.get("origin_node"),"target_node":context.get("target_node")})
-		"unique_king_growth":_king_attack(origin,target,context)
+		"unique_death_execute":_spawn(VFX_MOTHER_EXECUTE,MOTHER_EXECUTE_PROFILE,{"origin":origin,"target":target})
 	return last_spawned
 
 func _basic_attack(origin:Vector3,target:Vector3,race:String,mode:String,context:Dictionary)->void:
@@ -97,34 +96,15 @@ func _holy_heal(target:Vector3)->void:
 	_spawn(VFX_LIGHT_PULSE,p,{"target":target+Vector3(0,.34,0)})
 
 func _ally_bless(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	# Blessing is a one-shot target heal, not a persistent source-to-target link.
-	var heal:=_holy_profile(.38,.62);heal.main_color=Color(.58,.32,.055);heal.core_color=Color(1.0,.78,.28);heal.emission_energy=1.35
-	var layer:=VFX_PAINTED.new();add_child(layer)
-	layer.play_layer("res://assets/vfx/skills/human_cleric/human_cleric_heal_ribbon.png",{
-		"position":target+Vector3(0,.34,0),"size":Vector2(.72,.72),"duration":.62,
-		"start_scale":.16,"peak_scale":.78,"dark_tint":Color(.20,.08,.01),
-		"body_tint":heal.main_color,"core_tint":heal.core_color,"seed":float(abs(int(target.x*31.0+target.z*17.0))%97),
-		"flow_strength":.018,"opacity":.92
-	})
-	_barrier(target,_holy_profile(.66,1.30),context)
+	_tracked_link(origin,target,context,_holy_profile(.58,1.15));_barrier(target,_holy_profile(.66,1.30))
 
 func _holy_group(origin:Vector3,context:Dictionary)->void:
-	# Group heal is target-readable and one-shot. Do not keep a source-to-target
-	# beam alive: several simultaneous beams become a yellow screen-covering link.
-	var p:=_holy_profile(.30,.46);p.main_color=Color(.48,.25,.035);p.core_color=Color(1.0,.72,.22);p.emission_energy=1.25
-	_spawn(VFX_LIGHT_PULSE,p,{"target":origin+Vector3(0,.34,0)})
+	var p:=_holy_profile(1.0,1.0);p.main_color=Color(.70,.46,.10);p.core_color=Color(1.0,.92,.48);p.emission_energy=3.8
+	_spawn(VFX_LIGHT_PULSE,p,{"target":origin+Vector3(0,.42,0)})
 	for value in context.get("targets",[]):
-		var ally:=_holy_profile(.34,.62)
-		ally.main_color=Color(.58,.32,.055);ally.core_color=Color(1.0,.78,.28);ally.emission_energy=1.35
-		var target_node_value:Variant=context.get("target_node")
-		var layer:=VFX_PAINTED.new();add_child(layer)
-		layer.play_layer("res://assets/vfx/skills/human_cleric/human_cleric_heal_ribbon.png",{
-			"position":value+Vector3(0,.34,0),"size":Vector2(.72,.72),"duration":.62,
-			"start_scale":.16,"peak_scale":.78,"dark_tint":Color(.20,.08,.01),
-			"body_tint":ally.main_color,"core_tint":ally.core_color,"seed":float(abs(int(value.x*31.0+value.z*17.0))%97),
-			"flow_strength":.018,"opacity":.92,"target_node":target_node_value
-		})
-		_spawn(VFX_LIGHT_PULSE,ally,{"target":value+Vector3(0,.24,0)})
+		var ally:=_holy_profile(.46,.72);ally.main_color=Color(.82,.58,.16);ally.core_color=Color(1.0,.96,.60)
+		_binbun("beam",origin+Vector3(0,.52,0),value+Vector3(0,.50,0),ally)
+		_spawn(VFX_LIGHT_PULSE,ally,{"target":value+Vector3(0,.28,0)})
 
 func _arcane_bolt(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var p:=_profile(Color(.04,.06,.16),Color(.24,.48,.94),Color(.72,.94,1.0),.62,.92,3.15,10)
@@ -259,18 +239,18 @@ func _tracked_link(origin:Vector3,target:Vector3,context:Dictionary,profile:VFXP
 	_spawn(VFX_TRACKED_LINK,profile,{"origin":origin,"target":target,"origin_node":context.get("origin_node"),"target_node":context.get("target_node"),"persistent":bool(context.get("persistent",false))})
 
 func _status_hit(target:Vector3,status_type:String,context:Dictionary)->void:
-	# Status icons must have a live target. Never fall back to a world position:
-	# that creates detached circles in empty lanes when a victim is already gone.
+	# Status bursts are target-bound only.  If the battle snapshot cannot
+	# provide a live target node, let the persistent status controller handle
+	# the icon and skip the world-space burst instead of falling back to origin.
 	var target_node_value:Variant=context.get("target_node")
-	if not (is_instance_valid(target_node_value) and target_node_value is Node3D):
+	if not (target_node_value is Node3D and is_instance_valid(target_node_value)):
 		return
-	var live_target:Node3D=target_node_value
 	var p:=_shadow_profile(.54,1.18);p.parameters={"status_type":status_type};p.particle_count=7
 	if context.has("status_duration"):
 		p.duration=maxf(.30,float(context.get("status_duration",p.duration)))
 	var status_slots:Dictionary={"stun":0,"silence":1,"poison":2,"fear":3,"defense_down":4,"slow":5}
 	p.parameters["status_slot"]=int(status_slots.get(status_type,0))
-	_spawn(VFX_STATUS,p,{"target":target,"target_node":live_target})
+	_spawn(VFX_STATUS,p,{"target":target,"target_node":target_node_value})
 
 func _curse_hit(target:Vector3,context:Dictionary)->void:
 	var p:=_profile(Color(.04,.008,.08),Color(.28,.06,.58),Color(.86,.42,1.0),.72,.76,3.8,8)
@@ -299,16 +279,8 @@ func _poison_reflect_stack(origin:Vector3)->void:
 	_spawn(VFX_LIGHT_PULSE,p,{"target":origin+Vector3(0,.42,0)})
 
 func _combo_hit(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	# The archer's fourth-hit skill is a straight, narrow authored arrow.
-	# Keep the projectile and its pierce flash target-bound; do not reuse the
-	# large generic slash sheet which obscures nearby units at the battle zoom.
-	var arrow:=VFX_PAINTED.new();add_child(arrow)
-	arrow.play_layer("res://assets/vfx/skills/human_archer/human_archer_arrow_trail.png",{"from":origin+Vector3(0,.34,0),"to":target+Vector3(0,.34,0),"size":Vector2(.86,.18),"duration":.56,"travel_ratio":.82,"start_scale":.24,"peak_scale":1.0,"dark_tint":Color(.015,.035,.10),"body_tint":Color(.16,.48,.92),"core_tint":Color(.82,.98,1.0),"seed":52.0,"flow_strength":.018,"opacity":.98})
-	var impact:=VFX_PAINTED.new();add_child(impact)
-	var hit_tw:=create_tween();hit_tw.tween_interval(.42);hit_tw.tween_callback(func():
-		if is_instance_valid(impact):
-			impact.play_layer("res://assets/vfx/skills/human_archer/human_archer_pierce_flash.png",{"position":target+Vector3(0,.34,0),"size":Vector2(.46,.46),"duration":.30,"start_scale":.12,"peak_scale":.72,"dark_tint":Color(.02,.04,.12),"body_tint":Color(.18,.52,.94),"core_tint":Color(.82,.98,1.0),"seed":56.0,"flow_strength":.012,"opacity":.82})
-	)
+	var layer:=VFX_PAINTED.new();add_child(layer)
+	layer.play_layer("res://assets/vfx/skills/distinct_v2/human_archer_combo_slash_v2.png",{"from":origin+Vector3(0,.34,0),"to":target+Vector3(0,.34,0),"size":Vector2(.72,.30),"duration":.62,"travel_ratio":.76,"dark_tint":Color(.015,.025,.08),"body_tint":Color(.12,.38,.82),"core_tint":Color(.84,.96,1.0),"seed":52.0,"flow_strength":.022,"opacity":1.0})
 
 func _poison_death(origin:Vector3)->void:
 	# Death poison is a readable ground event: a tight toxic burst, a painted
@@ -386,20 +358,19 @@ func _twin_strike(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	_spawn(VFX_IMPACT_FLASH,flash_profile,{"target":target+Vector3(0,.30,0)})
 
 func _king_aura(origin:Vector3,context:Dictionary)->void:
-	# Human King: a single vertical heaven-sword drop per affected target.
-	# It falls straight down, keeps its authored gold colour, then dissolves.
+	# Human King: short, vertical light wave on each affected target.  No
+	# caster-to-target sword/beam and no persistent field around the caster.
 	var targets:Array=context.get("targets",[])
 	if targets.is_empty():
 		targets=[origin]
 	for i in range(targets.size()):
 		var value:Vector3=targets[i]
-		var sword:=VFX_PAINTED.new();add_child(sword)
-		sword.play_layer("res://assets/vfx/skills/human_king/human_king_heaven_sword.png",{"from":value+Vector3(0,2.45,.08),"to":value+Vector3(0,.48,.08),"size":Vector2(.64,1.72),"duration":.58,"travel_ratio":.48,"start_scale":.20,"peak_scale":.86,"end_scale":.72,"dark_tint":Color(.08,.04,.012),"body_tint":Color(.98,.62,.12),"core_tint":Color(1.0,.92,.42),"seed":10.0+float(i),"flow_strength":.010,"opacity":.92})
-
-func _king_attack(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	# One straight, target-bound sword drop for Human King's normal attack.
-	var sword:=VFX_PAINTED.new();add_child(sword)
-	sword.play_layer("res://assets/vfx/skills/human_king/human_king_heaven_sword.png",{"from":target+Vector3(0,2.45,.08),"to":target+Vector3(0,.48,.08),"size":Vector2(.64,1.72),"duration":.58,"travel_ratio":.48,"start_scale":.20,"peak_scale":.86,"end_scale":.72,"dark_tint":Color(.08,.04,.012),"body_tint":Color(.98,.62,.12),"core_tint":Color(1.0,.92,.42),"seed":91.0,"flow_strength":.010,"opacity":.92})
+		var wave:=_holy_profile(.44,.48)
+		wave.main_color=Color(.82,.30,.045)
+		wave.core_color=Color(1.0,.90,.48)
+		wave.emission_energy=2.8
+		wave.parameters={"pillar_width":.30,"fall_height":1.85,"impact_flash":true}
+		_spawn(VFX_FALLING_PILLAR,wave,{"target":value+Vector3(0,.04,0)})
 
 func _arrow_rain(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var targets:Array=context.get("targets",[])

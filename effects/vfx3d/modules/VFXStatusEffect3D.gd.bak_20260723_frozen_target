@@ -2,6 +2,7 @@ extends VFXBlockRoot
 class_name VFXStatusEffect3D
 
 const CURVES := preload("res://effects/vfx3d/core/VFXCurveLibrary3D.gd")
+const TEX_RING := preload("res://assets/vfx_textures/ragged_ring.png")
 const TEX_WISP := preload("res://assets/vfx_textures/smoke_wisp.png")
 const TEX_DOT := preload("res://assets/vfx_textures/soft_dot.png")
 const TEX_NOISE := preload("res://assets/vfx_textures/noise_tile.png")
@@ -54,19 +55,22 @@ func play_status(at:Vector3,status_type:String,profile:VFXProfile3D=null,target_
 	_apply_status_palette(active,status_type)
 	_update_anchor()
 	var d:=active.duration;var s:=active.size
-	var icon_texture:Texture2D = null
-	var icon_size:=Vector2.ZERO
+	var icon_texture:Texture2D = TEX_RING
+	var icon_size:=Vector2(s*1.12,s*.54)
 	if status_type=="stun":
 		icon_texture=TEX_STUN;icon_size=Vector2(s*.46,s*.46)
 	elif status_type=="silence":
 		icon_texture=TEX_SILENCE;icon_size=Vector2(s*1.05,s*1.05)
 	elif status_type=="poison":
 		icon_texture=TEX_POISON;icon_size=Vector2(s*1.10,s*1.10)
-	if icon_texture != null:
-		var crown:=_make_card("StatusReadableIcon",icon_texture,icon_size,active,0.3)
-		crown.position.y=s*.84;crown.scale=Vector3.ONE*.16
-		var tw:=track_tween(create_tween());tw.tween_property(crown,"scale",Vector3.ONE,d*.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-		_tween_life(crown,d,0.0)
+	var crown:=_make_card("StatusReadableIcon",icon_texture,icon_size,active,0.3)
+	crown.position.y=s*.84;crown.scale=Vector3.ONE*.16
+	var tw:=track_tween(create_tween());tw.tween_property(crown,"scale",Vector3.ONE,d*.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_tween_life(crown,d,0.0)
+	for i in range(3):
+		var orbit:=_make_card("StatusOrbit_%d"%i,TEX_WISP,Vector2(s*.24,s*.64),active,float(i)*2.7)
+		orbit.position.y=s*(.50+.06*float(i%2));orbit.scale=Vector3.ONE*.09
+		_animate_orbit(orbit,active,i)
 	for i in range(clampi(active.particle_count,6,12)):
 		var mote:=_make_card("StatusMote_%d"%i,TEX_DOT,Vector2(s*.10,s*.16),active,float(i)*1.31)
 		_animate_mote(mote,active,i)

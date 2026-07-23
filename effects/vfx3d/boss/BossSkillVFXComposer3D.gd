@@ -170,8 +170,13 @@ func _profile(dark: Color, main: Color, core: Color, size: float, duration: floa
 
 func _tracked_target(fallback: Vector3, context: Dictionary) -> Vector3:
 	var target_node: Variant = context.get("target_node")
-	if not (target_node is Node3D) or not is_instance_valid(target_node):
+	# Check lifetime before any type query: a freed Object can throw while
+	# evaluating `is Node3D` even though is_instance_valid() is safe.
+	if not is_instance_valid(target_node):
 		return fallback
-	var tracked := to_local((target_node as Node3D).global_position)
+	var target_object := target_node as Node3D
+	if target_object == null:
+		return fallback
+	var tracked := to_local(target_object.global_position)
 	tracked.y = fallback.y
 	return tracked

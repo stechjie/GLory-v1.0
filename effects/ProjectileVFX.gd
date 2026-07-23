@@ -92,7 +92,8 @@ func _target_position() -> Vector2:
 func _impact() -> void:
 	# VFXManager is an autoload; the old has_node/get_node pair re-resolved a node
 	# path up to 4 times on every projectile impact.
-	VFXManager.spawn_vfx(impact_id, global_position)
+	if not impact_id.is_empty():
+		VFXManager.spawn_vfx(impact_id, global_position)
 	if not impact_textures.is_empty():
 		VFXManager.spawn_vfx("SKILL_TEXTURE", global_position, {"textures": impact_textures})
 	if not head_textures.is_empty():

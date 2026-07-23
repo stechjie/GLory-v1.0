@@ -80,7 +80,6 @@ func play_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary
 		"basic_attack_ranged_undead":_basic_attack(origin,target,"undead","ranged",context)
 		"basic_attack_melee_undead":_basic_attack(origin,target,"undead","melee",context)
 		"unique_death_execute":_spawn(VFX_MOTHER_EXECUTE,MOTHER_EXECUTE_PROFILE,{"origin":origin,"target":target,"origin_node":context.get("origin_node"),"target_node":context.get("target_node")})
-		"unique_king_growth":_king_attack(origin,target,context)
 	return last_spawned
 
 func _basic_attack(origin:Vector3,target:Vector3,race:String,mode:String,context:Dictionary)->void:
@@ -395,11 +394,6 @@ func _king_aura(origin:Vector3,context:Dictionary)->void:
 		var value:Vector3=targets[i]
 		var sword:=VFX_PAINTED.new();add_child(sword)
 		sword.play_layer("res://assets/vfx/skills/human_king/human_king_heaven_sword.png",{"from":value+Vector3(0,2.45,.08),"to":value+Vector3(0,.48,.08),"size":Vector2(.64,1.72),"duration":.58,"travel_ratio":.48,"start_scale":.20,"peak_scale":.86,"end_scale":.72,"dark_tint":Color(.08,.04,.012),"body_tint":Color(.98,.62,.12),"core_tint":Color(1.0,.92,.42),"seed":10.0+float(i),"flow_strength":.010,"opacity":.92})
-
-func _king_attack(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	# One straight, target-bound sword drop for Human King's normal attack.
-	var sword:=VFX_PAINTED.new();add_child(sword)
-	sword.play_layer("res://assets/vfx/skills/human_king/human_king_heaven_sword.png",{"from":target+Vector3(0,2.45,.08),"to":target+Vector3(0,.48,.08),"size":Vector2(.64,1.72),"duration":.58,"travel_ratio":.48,"start_scale":.20,"peak_scale":.86,"end_scale":.72,"dark_tint":Color(.08,.04,.012),"body_tint":Color(.98,.62,.12),"core_tint":Color(1.0,.92,.42),"seed":91.0,"flow_strength":.010,"opacity":.92})
 
 func _arrow_rain(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var targets:Array=context.get("targets",[])

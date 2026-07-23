@@ -32,26 +32,34 @@ void fragment(){
 """
 
 var _book_material:ShaderMaterial
+var _book_node:MeshInstance3D
+var _origin_ref:WeakRef
 
 func play_profile(profile:VFXProfile3D,context:Dictionary)->void:
-	play_execute(context.get("origin",Vector3(-0.6,1.4,0.0)),context.get("target",Vector3(0.8,0.25,0.0)),profile)
+	var origin_value:Variant=context.get("origin_node")
+	var origin_node:Node3D=null
+	if is_instance_valid(origin_value):
+		origin_node=origin_value as Node3D
+	play_execute(context.get("origin",Vector3(-0.6,1.4,0.0)),context.get("target",Vector3(0.8,0.25,0.0)),profile,origin_node)
 
-func play_execute(book_at:Vector3,victim_at:Vector3,profile:VFXProfile3D)->void:
+func play_execute(book_at:Vector3,victim_at:Vector3,profile:VFXProfile3D,origin_node:Node3D=null)->void:
 	begin()
 	var book:=_make_book(profile)
-	book.position=book_at+Vector3(0.0,0.06,0.08)
-	book.scale=Vector3.ONE*0.06
+	_book_node=book
+	_origin_ref=weakref(origin_node) if is_instance_valid(origin_node) else null
+	book.global_position=book_at+Vector3(0.0,0.86,0.08)
+	book.scale=Vector3.ONE*0.08
 	add_child(book)
 	var appear:=track_tween(create_tween())
 	appear.set_parallel(true)
 	# The book is a deliberate gameplay emblem: about half the Mother model's
 	# height, held above the HeadAnchor long enough to read in the distant view.
-	appear.tween_property(book,"scale",Vector3.ONE*0.56,profile.duration*0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	appear.tween_property(book,"scale",Vector3.ONE*0.82,profile.duration*0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	appear.tween_property(_book_material,"shader_parameter/reveal",-0.08,profile.duration*0.16).from(1.10).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
 	appear.tween_property(_book_material,"shader_parameter/pulse",1.0,profile.duration*0.18).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	await get_tree().create_timer(profile.duration*0.16).timeout
 	if _finished:return
-	_spawn_soul_streams(victim_at+Vector3(0.0,0.38,0.03),book.position,profile)
+	_spawn_soul_streams(victim_at+Vector3(0.0,0.38,0.03),book.global_position,profile)
 	var vortex_profile:=profile.duplicate_runtime();vortex_profile.size*=0.72;vortex_profile.duration=profile.duration*0.55;vortex_profile.particle_count=10
 	var vortex:=VORTEX.new();vortex.name="VictimSoulCollapse";add_child(vortex);vortex.play_profile(vortex_profile,{"target":victim_at})
 	await get_tree().create_timer(profile.duration*0.34).timeout
@@ -63,6 +71,13 @@ func play_execute(book_at:Vector3,victim_at:Vector3,profile:VFXProfile3D)->void:
 	close.tween_property(_book_material,"shader_parameter/pulse",0.0,profile.duration*0.18)
 	await get_tree().create_timer(profile.duration*0.48).timeout
 	finish()
+
+func _process(_delta:float)->void:
+	if _book_node==null or not is_instance_valid(_book_node) or _origin_ref==null:
+		return
+	var origin_node:Variant=_origin_ref.get_ref()
+	if is_instance_valid(origin_node) and origin_node is Node3D:
+		_book_node.global_position=(origin_node as Node3D).global_position+Vector3(0.0,0.86,0.08)
 
 func _make_book(profile:VFXProfile3D)->MeshInstance3D:
 	var quad:=QuadMesh.new();quad.size=Vector2(profile.size*1.34,profile.size*1.34)

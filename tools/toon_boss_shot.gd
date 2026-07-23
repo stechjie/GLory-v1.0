@@ -9,6 +9,11 @@ extends Node
 const OUTPUT_DIR := "C:/Users/Leno/AppData/Local/Temp/claude/C--Users-Leno-Desktop-Beta-0-04/eb0f58d6-75cc-4cea-8444-c8d77c710d9f/scratchpad/boss_toon_shots"
 
 const SHOT_SIZE := Vector2i(560, 700)
+# Codex portraits are square busts on a transparent background so they can sit on
+# the parchment page; the comparison shots stay full-body on a dark plate.
+const PORTRAIT_SIZE := Vector2i(512, 512)
+
+var portrait_mode := false
 
 # Folders under res://assets/models to sweep for *_animated.tscn. Override with
 # --shot-groups=allies,monsters on the command line.
@@ -19,12 +24,16 @@ var camera: Camera3D
 var stage: Node3D
 
 func _ready() -> void:
-	DirAccess.make_dir_recursive_absolute(OUTPUT_DIR)
+	portrait_mode = "--portraits" in OS.get_cmdline_user_args()
+	DirAccess.make_dir_recursive_absolute(_output_dir())
 	_build_stage()
 	for scene_path in _collect_scenes(_requested_groups()):
 		await _shoot(scene_path.get_file().get_basename(), scene_path)
-	print("TOON_SHOTS_DONE dir=%s" % OUTPUT_DIR)
+	print("TOON_SHOTS_DONE dir=%s" % _output_dir())
 	get_tree().quit()
+
+func _output_dir() -> String:
+	return OUTPUT_DIR + ("_portraits" if portrait_mode else "")
 
 func _requested_groups() -> PackedStringArray:
 	for argument in OS.get_cmdline_user_args():
@@ -52,16 +61,17 @@ func _collect_scenes(groups: PackedStringArray) -> PackedStringArray:
 
 func _build_stage() -> void:
 	viewport = SubViewport.new()
-	viewport.size = SHOT_SIZE
+	viewport.size = PORTRAIT_SIZE if portrait_mode else SHOT_SIZE
 	viewport.own_world_3d = true
-	viewport.transparent_bg = false
+	viewport.transparent_bg = portrait_mode
 	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	viewport.msaa_3d = Viewport.MSAA_4X
 	add_child(viewport)
 
 	var env_node := WorldEnvironment.new()
 	var env := Environment.new()
-	env.background_mode = Environment.BG_COLOR
+	# BG_CLEAR_COLOR is what lets transparent_bg actually produce alpha.
+	env.background_mode = Environment.BG_CLEAR_COLOR if portrait_mode else Environment.BG_COLOR
 	env.background_color = Color(0.07, 0.08, 0.10)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.34, 0.42, 0.34)
@@ -106,10 +116,18 @@ func _shoot(id: String, path: String) -> void:
 		return
 	_frame_camera(bounds)
 
-	await _capture("%s/%s_toon.png" % [OUTPUT_DIR, id])
+	if portrait_mode:
+		# Portraits are the shipping asset, so only the cel version is rendered.
+		await _capture("%s/%s.png" % [_output_dir(), id])
+		print("SHOT %s height=%.2f" % [id, bounds.size.y])
+		model.queue_free()
+		await get_tree().process_frame
+		return
+
+	await _capture("%s/%s_toon.png" % [_output_dir(), id])
 
 	var restore := _swap_to_standard(model)
-	await _capture("%s/%s_pbr.png" % [OUTPUT_DIR, id])
+	await _capture("%s/%s_pbr.png" % [_output_dir(), id])
 	_restore_materials(restore)
 
 	print("SHOT %s height=%.2f" % [id, bounds.size.y])
@@ -123,6 +141,23 @@ func _frame_camera(bounds: AABB) -> void:
 	var distance := span * 1.75 + 0.6
 	var yaw := deg_to_rad(28.0)
 	var pitch := deg_to_rad(14.0)
+	if portrait_mode:
+		# Frame the bust: raise the aim to chest/head height and move in close.
+		# Bone bounds stop at the skull, so tall crowns, horns and headdresses sit
+		# above them — hence the conservative aim and pull-back, or those get cropped.
+		#
+		# Beasts are wide and low rather than upright, and the same framing crops
+		# them to a snout, so the aim drops toward the body and the camera pulls
+		# back in proportion to how un-humanoid the silhouette is.
+		var footprint := maxf(bounds.size.x, bounds.size.z)
+		var stance := footprint / maxf(bounds.size.y, 0.001)
+		var beastly := clampf(inverse_lerp(0.55, 1.30, stance), 0.0, 1.0)
+		center = Vector3(
+			center.x,
+			bounds.position.y + bounds.size.y * lerpf(0.66, 0.50, beastly),
+			center.z)
+		distance = span * lerpf(0.80, 1.45, beastly) + 0.40
+		pitch = deg_to_rad(lerpf(5.0, 12.0, beastly))
 	var offset := Vector3(
 		sin(yaw) * cos(pitch),
 		sin(pitch),

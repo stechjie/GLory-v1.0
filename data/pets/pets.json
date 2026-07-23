@@ -21,8 +21,8 @@
 		},
 		{
 			"id": "pet_duck",
-			"name": "鸭子",
-			"name_en": "Duck",
+			"name": "兔子",
+			"name_en": "Rabbit",
 			"effect": "self_atk_pct",
 			"value": 0.01,
 			"model": "",

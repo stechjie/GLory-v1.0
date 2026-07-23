@@ -13,6 +13,7 @@ const SCENES := {
 
 var reference_instance: Node3D
 var endpoint: Node3D
+var _beam_parameters: Dictionary = {}
 
 func play_reference(kind: String, origin: Vector3, target: Vector3, profile: VFXProfile3D) -> void:
 	var scene_path: String = SCENES.get(kind, "")
@@ -35,6 +36,18 @@ func play_reference(kind: String, origin: Vector3, target: Vector3, profile: VFX
 		endpoint.global_position = target
 		reference_instance.set("end_point", endpoint)
 		reference_instance.set("preview", true)
+		# Allow a skill profile to opt out of the large endpoint burst without
+		# changing the authored Binbun scene or affecting other beam skills.
+		var beam_params:Dictionary = profile.parameters if profile != null else {}
+		_beam_parameters = beam_params.duplicate()
+		if beam_params.has("beam_radius"):
+			reference_instance.set("beam_radius", float(beam_params["beam_radius"]))
+		if beam_params.has("start_radius"):
+			reference_instance.set("start_radius", float(beam_params["start_radius"]))
+		if beam_params.has("enable_end"):
+			reference_instance.set("enable_end", bool(beam_params["enable_end"]))
+		if beam_params.has("end_emitting"):
+			reference_instance.set("end_emitting", bool(beam_params["end_emitting"]))
 	if reference_instance.has_method("open"):
 		reference_instance.call("open")
 	if reference_instance.get("emitting") != null:
@@ -57,8 +70,11 @@ func _force_visible(kind: String) -> void:
 		reference_instance.set("preview", true)
 		reference_instance.set("open_amount", 1.0)
 		reference_instance.set("start_emitting", true)
-		reference_instance.set("end_emitting", true)
-		reference_instance.set("beam_radius", 0.28)
+		reference_instance.set("end_emitting", bool(_beam_parameters.get("end_emitting", true)))
+		reference_instance.set("beam_radius", float(_beam_parameters.get("beam_radius", 0.28)))
+		reference_instance.set("start_radius", float(_beam_parameters.get("start_radius", 0.3)))
+	if _beam_parameters.has("enable_end"):
+		reference_instance.set("enable_end", bool(_beam_parameters["enable_end"]))
 	if kind == "portal":
 		reference_instance.rotation_degrees.x = -90.0
 		reference_instance.set("portal_mode", 0)

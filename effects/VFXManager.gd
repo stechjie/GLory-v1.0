@@ -75,8 +75,6 @@ func _drain_pending_texture_loads() -> void:
 # 每种特效的并发上限：AoE 密集回合的兜底，超限直接跳过生成
 # （玩家看不出少一两个命中闪光，但帧率保得住）。
 const EFFECT_CAPS := {
-	"HIT_MELEE": 10,
-	"HIT_RANGED": 10,
 	"DEATH_EXPLOSION": 8,
 	"SKILL_TEXTURE": 12,
 	"PROJECTILE_ARROW": 14,

@@ -1,4 +1,4 @@
-# Beta 0.04 数值总表
+﻿# Beta 0.04 数值总表
 
 更新时间：2026-06-05
 
@@ -258,7 +258,6 @@ PVE 每回合只会从同一种小怪模板生成一组敌人。
 | pve_land_mountain_giant | 山岳巨人 | land | land | 560 | 32 | 20 | 0.70 | 1 | 2.5 | earth_slam |
 | pve_ren_shadow_thief | 影行盗徒 | ren | ren | 240 | 34 | 4 | 1.20 | 1 | 3.6 | backstab |
 | pve_ren_voodoo_witch | 巫毒术士 | ren | ren | 280 | 28 | 5 | 1.00 | 4 | 3.2 | curse |
-| pve_ren_puppet_master | 傀儡匠 | ren | ren | 300 | 26 | 8 | 0.90 | 4 | 3.0 | summon_puppet |
 | pve_ren_wandering_swordsman | 流浪剑客 | ren | ren | 320 | 32 | 10 | 0.95 | 1 | 3.1 | counter_slash |
 | pve_ren_poison_doctor | 药毒医师 | ren | ren | 300 | 26 | 6 | 1.00 | 4 | 3.1 | poison_attack |
 
@@ -284,7 +283,6 @@ PVE 每回合只会从同一种小怪模板生成一组敌人。
 | pve_land_mountain_giant | skill_cd 8.0，skill_atk_pct 1.2，stun_sec 1.0 |
 | pve_ren_shadow_thief | skill_cd 8.0，skill_atk_pct 2.0 |
 | pve_ren_voodoo_witch | skill_cd 8.0，attack_down_pct 0.05，max_stacks 5，skill_damage 90 |
-| pve_ren_puppet_master | skill_cd 8.0，puppet_hp 180，puppet_atk 20，puppet_def 4 |
 | pve_ren_wandering_swordsman | skill_cd 8.0，counter_atk_pct 1.5 |
 | pve_ren_poison_doctor | 攻击附带中毒 |
 

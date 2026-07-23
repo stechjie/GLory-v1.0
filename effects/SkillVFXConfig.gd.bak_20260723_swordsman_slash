@@ -137,13 +137,10 @@ static func get_textures(unit_id: String) -> Array[Dictionary]:
 				"human_archer_leaf_spark.png",
 			], 0.40)
 		"human_swordsman":
-			# Keep only the two authored slash silhouettes. They are deliberately
-			# compact but readable at the distant battle camera; spawned at the
-			# actual hit target by front_cone_stun.
-			return [
-				{"path": b + "human_swordsman/human_swordsman_slash_a.png", "role": "hit", "offset": Vector2.ZERO, "delay": 0.0, "scale": 0.42, "duration": 0.54, "alpha": 0.88, "particles": 0, "spin": 0.0, "flatten": false, "drift": Vector2.ZERO, "stretch": Vector2(0.78, 0.78), "glow": false},
-				{"path": b + "human_swordsman/human_swordsman_slash_b.png", "role": "hit", "offset": Vector2.ZERO, "delay": 0.10, "scale": 0.34, "duration": 0.48, "alpha": 0.74, "particles": 0, "spin": 0.0, "flatten": false, "drift": Vector2.ZERO, "stretch": Vector2(0.78, 0.78), "glow": false},
-			]
+			# Sword skill is owned by the native 3D front_cone_stun path.
+			# Keep the legacy full-size PNGs in the project for rollback/reference,
+			# but do not expose them to the generic texture fallback.
+			return []
 		"human_mage":
 			return _tex(b + "human_mage/", [
 				"human_mage_element_orb.png",
@@ -166,23 +163,12 @@ static func get_textures(unit_id: String) -> Array[Dictionary]:
 				"human_death_servant_sacrifice_burst.png",
 			], 0.55)
 		"human_king":
-			# One readable target-bound sword only. The old light-column and
-			# contact overlays were overexposed and are intentionally excluded.
-			return [{
-				"path": b + "human_king/human_king_heaven_sword.png",
-				"role": "hit",
-				"offset": Vector2(0.0, -56.0),
-				"delay": 0.0,
-				"scale": 0.44,
-				"duration": 0.62,
-				"alpha": 0.78,
-				"glow": false,
-				"particles": 0,
-				"spin": 0.0,
-				"flatten": false,
-				"drift": Vector2(0.0, 42.0),
-				"stretch": Vector2(0.72, 0.72),
-			}]
+			return _tex(b + "human_king/", [
+				"human_king_heaven_sword.png",
+				"human_king_light_column.png",
+				"human_king_royal_impact.png",
+				"king_final_contact.png",
+			], 0.55)
 		"boss_apocalypse":
 			return _boss_tex("res://assets/vfx/boss/", ["boss_apocalypse_chargeup.png", "boss_apocalypse_shield.png", "boss_apocalypse_blast.png"], [0.0, 0.18, 1.72], [0.68, 0.64, 0.78], [2.0, 1.45, 0.62])
 		"boss_meteor_caster":

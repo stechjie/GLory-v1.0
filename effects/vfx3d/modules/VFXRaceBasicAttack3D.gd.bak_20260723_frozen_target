@@ -19,7 +19,7 @@ func _play_ranged(origin: Vector3, target: Vector3, race: String, profile: VFXPr
 	begin()
 	var active := _runtime_profile(profile, race, true)
 	var target_ref: WeakRef = null
-	if is_instance_valid(target_node) and target_node is Node3D:
+	if target_node is Node3D and is_instance_valid(target_node):
 		target_ref = weakref(target_node)
 	var tracked_target := _tracked_target_position(target, target_ref)
 	var direction := _safe_direction(origin, tracked_target)
@@ -79,7 +79,7 @@ func _tracked_target_position(fallback: Vector3, target_ref: WeakRef) -> Vector3
 	if target_ref == null:
 		return fallback
 	var target_node: Variant = target_ref.get_ref()
-	if not is_instance_valid(target_node) or not (target_node is Node3D):
+	if not (target_node is Node3D) or not is_instance_valid(target_node):
 		return fallback
 	var tracked := to_local((target_node as Node3D).global_position)
 	tracked.y = fallback.y

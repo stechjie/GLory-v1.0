@@ -65,9 +65,7 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 				var blood_source := _nearest_enemy_target(now, damage_events, current)
 				_play_boss_procedural("blood_lifesteal", now.get("world_foot", Vector3.ZERO), blood_source.get("world_hit", now.get("world_foot", Vector3.ZERO)), _boss_target_context(blood_source))
 			else:
-				# Healing is rendered by the 3D unit composer. Do not layer the
-				# legacy 2D HOLY_HEAL ring on top of it.
-				pass
+				_spawn_vfx("HOLY_HEAL", now.get("head_pos", Vector2.ZERO))
 		if shield_delta > 0:
 			_spawn_vfx("HOLY_SHIELD", now.get("head_pos", Vector2.ZERO))
 		if stack_delta > 0 and sid_now in ["rage_stack", "same_target_damage_stack"]:
@@ -269,9 +267,6 @@ func _play_ranged_projectiles(attacks: Array[Dictionary], damage_events: Array[D
 		if target.is_empty():
 			target = _floor_target_for(attack)
 		var race:=_visual_race_from_unit_id(str(attack.get("unit_id","")))
-		if str(attack.get("unit_id", "")) == "human_king":
-			_play_attack_unit_procedural(attack,target,current)
-			continue
 		_play_race_basic_attack(attack,target,"ranged",race,current)
 		_play_attack_unit_procedural(attack,target,current)
 
@@ -281,9 +276,6 @@ func _play_melee_slashes(attacks: Array[Dictionary], damage_events: Array[Dictio
 		if target.is_empty():
 			target = _floor_target_for(attack)
 		var race:=_visual_race_from_unit_id(str(attack.get("unit_id","")))
-		if str(attack.get("unit_id", "")) == "human_king":
-			_play_attack_unit_procedural(attack,target,current)
-			continue
 		if str(attack.get("skill_id", "")) == "mirror_clone" or str(attack.get("id", "")).contains("_mirror_"):
 			_play_boss_procedural("mirror_slash", attack.get("world_cast", Vector3.ZERO), target.get("world_foot", Vector3.ZERO), _boss_target_context(target))
 			continue
@@ -419,10 +411,7 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 			_spawn_skill_textures_for_role(uid, "cast", unit.get("cast_pos", Vector2.ZERO))
 			_spawn_skill_textures_for_role(uid, "hit", texture_pos)
 			should_play_texture = false
-		"bubble_dream", "balance_judge", "gold_charge", "twin_strike", "arrow_rain", "blood_rampage", "steel_order", "time_slow", "death_hunt":
-			should_play_texture = false
-		"king_aura":
-			# Visual-only procedural aura; never spawn the obsolete legacy PNG layer.
+		"bubble_dream", "balance_judge", "gold_charge", "twin_strike", "king_aura", "arrow_rain", "blood_rampage", "steel_order", "time_slow", "death_hunt":
 			should_play_texture = false
 		"judgement_strike":
 			should_play_texture = false
@@ -437,20 +426,15 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 			should_play_texture = false
 			var target_control := _nearest_enemy_target(unit, damage_events, current)
 			if not target_control.is_empty():
-				if sid == "front_cone_stun":
-					# The swordsman uses only the two authored, compact slash masks
-					# at the confirmed hit target; no caster/ground fallback layers.
-					_spawn_skill_textures_for_role(uid, "hit", target_control.get("hit_pos", target_control.get("pos", texture_pos)))
-				else:
-					_spawn_skill_roles_at_target(uid, unit, target_control)
+				_spawn_skill_roles_at_target(uid, unit, target_control)
 				if sid == "blink_low_def_backline":
 					_spawn_skill_textures_for_role(uid, "hit", target_control.get("hit_pos", target_control.get("pos", Vector2.ZERO)))
 		"black_hole":
 			should_play_texture = false
 		"lowest_ally_heal", "nearby_ally_heal_buff", "holy_song", "holy_purify":
 			should_play_texture = false
-			# The 3D composer owns the heal presentation; the legacy 2D
-			# HOLY_HEAL effect is intentionally disabled.
+			if not uid.begins_with("merc_"):
+				_spawn_vfx("HOLY_HEAL", unit.get("head_pos", Vector2.ZERO))
 		"random_ally_damage_reduction", "shell_guard", "apocalypse_charge":
 			should_play_texture = false
 			if not uid.begins_with("merc_"):
@@ -491,7 +475,7 @@ func _sync_persistent_unit_vfx(current:Dictionary)->void:
 		var active:=not unit.is_empty() and bool(unit.get("alive",false)) and str(unit.get("skill_id",""))=="shared_hp_link" and not uid.is_empty()
 		if active and uid==str(record.get("target_uid","")):
 			continue
-		if is_instance_valid(node) and node is Node3D and node.has_method("release_link"):
+		if node is Node3D and is_instance_valid(node) and node.has_method("release_link"):
 			node.release_link()
 		_persistent_unit_vfx.erase(id)
 
@@ -524,7 +508,7 @@ func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictio
 			return
 		var old_link:Dictionary=_persistent_unit_vfx.get(str(unit.get("id","")),{})
 		var old_node:Variant=old_link.get("node")
-		if is_instance_valid(old_node) and old_node is Node3D and old_node.has_method("release_link"):
+		if old_node is Node3D and is_instance_valid(old_node) and old_node.has_method("release_link"):
 			old_node.release_link()
 		context["persistent"]=true
 	if sid=="nearby_ally_heal_buff":
@@ -615,11 +599,11 @@ func _unit_target_context(source:Dictionary,target:Dictionary,extra:Dictionary={
 	if source.has("stun_sec"):
 		context["status_duration"] = float(source.get("stun_sec",1.18))
 	var source_node=source.get("model_node")
-	if is_instance_valid(source_node) and source_node is Node3D:
+	if source_node is Node3D and is_instance_valid(source_node):
 		var cast_anchor:Variant=source_node.get_node_or_null("CastAnchor")
 		context["origin_node"]=cast_anchor if cast_anchor is Node3D else source_node
 	var target_node=target.get("model_node")
-	if is_instance_valid(target_node) and target_node is Node3D:
+	if target_node is Node3D and is_instance_valid(target_node):
 		var hit_anchor:Variant=target_node.get_node_or_null("HitAnchor")
 		context["target_node"]=hit_anchor if hit_anchor is Node3D else target_node
 	return context
@@ -647,7 +631,7 @@ func _boss_world_position(value: Variant) -> Vector3:
 func _boss_target_context(target: Dictionary, extra: Dictionary = {}) -> Dictionary:
 	var context := extra.duplicate(false)
 	var model_node = target.get("model_node")
-	if is_instance_valid(model_node) and model_node is Node3D:
+	if model_node is Node3D and is_instance_valid(model_node):
 		var hit_anchor:Variant=model_node.get_node_or_null("HitAnchor")
 		context["target_node"] = hit_anchor if hit_anchor is Node3D else model_node
 	return context
@@ -766,8 +750,6 @@ func _play_attack_skill_texture(attack: Dictionary, target: Dictionary, spawn_pr
 
 func _attack_skill_vfx_ready(attack: Dictionary) -> bool:
 	var sid := str(attack.get("skill_id", ""))
-	if str(attack.get("unit_id", attack.get("source_id", ""))) == "human_king":
-		return true
 	if sid == "every_fourth_combo":
 		var every := maxi(1, int(attack.get("skill_every", 4)))
 		return int(attack.get("attack_count", 0)) % every == 0
@@ -788,11 +770,6 @@ func _play_attack_unit_procedural(attack:Dictionary,target:Dictionary,current:Di
 	if sid=="every_fifth_group_heal":
 		context["targets"]=_living_team_world_positions(source,current)
 		target_world=origin
-	# Human King's actual attack uses the target-bound vertical heaven sword.
-	# This is visual-only and leaves damage, timing and target selection untouched.
-	if str(attack.get("unit_id", attack.get("source_id", ""))) == "human_king":
-		_play_unit_procedural("unique_king_growth", origin, target_world, context)
-		return
 	_play_unit_procedural(sid,origin,target_world,context)
 
 func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:

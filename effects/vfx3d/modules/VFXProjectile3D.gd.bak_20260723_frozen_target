@@ -106,7 +106,7 @@ func play_projectile(origin:Vector3,target:Vector3,profile:VFXProfile3D=null,tar
 	begin()
 	var active:=profile if profile!=null else _fallback_profile()
 	var target_ref:WeakRef=null
-	if is_instance_valid(target_node) and target_node is Node3D:target_ref=weakref(target_node)
+	if target_node is Node3D and is_instance_valid(target_node):target_ref=weakref(target_node)
 	position=origin
 	var tracked_target:=_tracked_target_position(target,target_ref)
 	var direction:Vector3=(tracked_target-origin).normalized()

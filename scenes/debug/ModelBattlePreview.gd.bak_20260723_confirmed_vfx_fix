@@ -453,7 +453,7 @@ func _build_vfx_v2_test_panel() -> void:
 	rows.add_child(vfx_v2_status_label)
 
 func _on_vfx_v2_play_pressed() -> void:
-	_clear_all_preview_nodes()
+	_clear_vfx_v2_preview()
 	if vfx_v2_select == null:
 		return
 	var index := vfx_v2_select.get_selected_id()
@@ -487,20 +487,12 @@ func _on_vfx_v2_clear_pressed() -> void:
 		vfx_v2_status_label.text = "VFX v2 cleared"
 
 func _clear_vfx_v2_preview() -> void:
-	_clear_all_preview_nodes()
-
-func _clear_all_preview_nodes() -> void:
-	# Imported/reference effects may spawn children and outlive their root handle.
-	# Clear the actual preview container so no stale VFX can remain on the board.
-	if vfx_preview_root != null and is_instance_valid(vfx_preview_root):
-		for child in vfx_preview_root.get_children():
-			if is_instance_valid(child):
-				child.queue_free()
-	vfx_preview_effect = null
+	if vfx_v2_preview_effect != null and is_instance_valid(vfx_v2_preview_effect):
+		vfx_v2_preview_effect.queue_free()
 	vfx_v2_preview_effect = null
 
 func _on_vfx_play_pressed() -> void:
-	_clear_all_preview_nodes()
+	_clear_vfx_preview()
 	if vfx_select == null:
 		return
 	var target := Vector3(0.0, 0.18, 0.0)
@@ -930,7 +922,9 @@ func _on_vfx_validate_pressed() -> void:
 		vfx_status_label.text = "Validation: %s" % " | ".join(warnings)
 
 func _clear_vfx_preview() -> void:
-	_clear_all_preview_nodes()
+	if vfx_preview_effect != null and is_instance_valid(vfx_preview_effect):
+		vfx_preview_effect.queue_free()
+	vfx_preview_effect = null
 	if vfx_recorder != null:
 		vfx_recorder.restore_normal_speed()
 
@@ -1183,7 +1177,6 @@ func _load_random_pair() -> void:
 	_load_selected_pair()
 
 func _load_selected_pair() -> void:
-	_clear_all_preview_nodes()
 	_clear_boss_stage()
 	_clear_slot(left_slot)
 	_clear_slot(right_slot)
@@ -1655,7 +1648,6 @@ func _on_random_pressed() -> void:
 	_load_random_pair()
 
 func _on_auto_fight_pressed() -> void:
-	_clear_all_preview_nodes()
 	auto_fight_enabled = not auto_fight_enabled
 	_update_auto_button()
 	if auto_fight_enabled:
@@ -1669,7 +1661,6 @@ func _on_auto_fight_pressed() -> void:
 func _on_skill_pressed() -> void:
 	# Preview-only trigger: it does not alter simulation state or cooldowns.
 	# Fire each selected unit's authored skill at the opposing preview slot.
-	_clear_all_preview_nodes()
 	var fired:=[]
 	for unit in units:
 		var skill_id:=str(unit.get("skill_id", "none"))

@@ -20,7 +20,7 @@ const UNIT_SKILLS := [
 	"basic_attack_ranged_human", "basic_attack_melee_human",
 	"basic_attack_ranged_dark", "basic_attack_melee_dark",
 	"basic_attack_ranged_undead", "basic_attack_melee_undead",
-	"unique_death_execute",
+	"unique_death_execute", "unique_king_growth",
 ]
 
 var _composer: BossSkillVFXComposer3D
