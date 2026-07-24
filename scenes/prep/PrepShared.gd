@@ -444,6 +444,7 @@ var _shop_panel: SellDropPanel
 var _shop_open_button: Button
 var _shop_picker_open := false
 var _shop_sell_overlay: PanelContainer
+var _shop_side_controls: Control  # 商店"外挂"控件层（钱袋A购买键 + 刷新），挂屏幕上、不受商店面板矩形限制
 var _closed_money_bag: Control    # 商店关闭时的钱袋按钮（商店按钮左边）
 var _closed_gold_label: Label
 var _refresh_shop_button: Button

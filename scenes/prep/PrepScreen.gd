@@ -152,7 +152,11 @@ func _input(event: InputEvent) -> void:
 		var click_on_shop: bool = _shop_panel.get_global_rect().has_point(shop_pointer) \
 			or (shop_hovered != null and (shop_hovered == _shop_panel or _shop_panel.is_ancestor_of(shop_hovered)))
 		var click_on_shop_btn: bool = _shop_open_button != null and _shop_open_button.get_global_rect().has_point(shop_pointer)
-		if shop_should_check and not click_on_shop and not click_on_shop_btn:
+		# 外挂层（钱袋A购买键 / 刷新）虽然不在商店面板矩形内，但点它们也算"点商店"，不收起。
+		# 只认"悬停控件是它的子孙"——外挂层本身满屏且 IGNORE，不能用矩形判断（否则永远不关店）。
+		var click_on_shop_side: bool = _shop_side_controls != null and _shop_side_controls.visible \
+			and shop_hovered != null and _shop_side_controls.is_ancestor_of(shop_hovered)
+		if shop_should_check and not click_on_shop and not click_on_shop_btn and not click_on_shop_side:
 			_close_shop_picker()
 	if not _merc_picker_open or _merc_overlay == null or not _merc_overlay.visible:
 		return

@@ -428,6 +428,17 @@ func _build_rest(root: VBoxContainer) -> void:
 	# 长按看利息（短按不做事，纯金币显示）
 	_attach_long_press(closed_money_btn, func() -> void: _show_gold_interest_detail())
 
+	# 商店「外挂控件层」：钱袋A（购买键）和刷新按钮挂这里，不再是商店面板的子节点。
+	# 满屏 + IGNORE（空白处不吃点击），z=41 盖过宝藏(z-5)和商店面板(z40)；只在商店开时显示；
+	# 点它里面的控件不会被判成"点商店外面"而误关店（PrepScreen._input 里有白名单）。
+	_shop_side_controls = Control.new()
+	_shop_side_controls.name = "ShopSideControls"
+	_shop_side_controls.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_shop_side_controls.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_shop_side_controls.z_index = 41
+	_shop_side_controls.visible = false
+	add_child(_shop_side_controls)
+
 	# 商店弹窗：卷轴背景，底部中央 896x288（SHOP_POPUP_SIZE），默认隐藏，点「商店」按钮打开
 	var shop_panel := SellDropPanel.new()
 	_shop_panel = shop_panel
@@ -472,17 +483,18 @@ func _build_rest(root: VBoxContainer) -> void:
 	var shop_layout := Control.new()
 	shop_layout.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	shop_panel.add_child(shop_layout)
+	# 钱袋A（购买键）：挂在外挂层 = 【屏幕坐标】，锚左下角。改这 4 个 offset 就能自由摆，
+	# 不受商店面板范围限制，也不会被宝藏抢走点击（外挂层 z=41 在宝藏之上）。
 	var gold_area := Control.new()
-	# 例：钱袋钉在面板【顶部中央】，150×125 的小框
-	gold_area.anchor_left = -0.10
-	gold_area.anchor_right = -0.08      # 和 left 相等，不再摊开
-	gold_area.anchor_top = 0.25
-	gold_area.anchor_bottom = 0.25
-	gold_area.offset_left = -55
-	gold_area.offset_right = 55
-	gold_area.offset_top = 0
-	gold_area.offset_bottom = 125
-	shop_layout.add_child(gold_area)
+	gold_area.anchor_left = 0.0
+	gold_area.anchor_top = 1.0
+	gold_area.anchor_right = 0.0
+	gold_area.anchor_bottom = 1.0
+	gold_area.offset_left = 117
+	gold_area.offset_right = 255
+	gold_area.offset_top = -201
+	gold_area.offset_bottom = -60
+	_shop_side_controls.add_child(gold_area)
 	var money_bag: Control = PrepMoneyBagIcon.new()
 	money_bag.anchor_left = 0.5
 	money_bag.anchor_top = 0.5
@@ -647,29 +659,20 @@ func _build_rest(root: VBoxContainer) -> void:
 
 	# 只包住刷新按钮的小框（132×132）。锚在面板右侧中间，别再撑成巨框吃卡片点击。
 	# 要移动刷新：改下面 4 个 offset（框小才不会误吃点击）；锚点保持 left≤right、都在 0~1。
-	var shop_controls := Control.new()
-	shop_controls.anchor_left = 1.09
-	shop_controls.anchor_top = 0.21
-	shop_controls.anchor_right = 1.09
-	shop_controls.anchor_bottom = 0.21
-	shop_controls.offset_left = -66
-	shop_controls.offset_right = 66
-	shop_controls.offset_top = -66
-	shop_controls.offset_bottom = 66
-	shop_layout.add_child(shop_controls)
 	var refresh_shop := Button.new()
 	_refresh_shop_button = refresh_shop
 	refresh_shop.text = ""
 	refresh_shop.tooltip_text = tr("ui_refresh_shop_tooltip")
 	refresh_shop.flat = true                  # 去默认样式，只显示循环箭头框
-	refresh_shop.anchor_left = 0.5           
-	refresh_shop.anchor_top = 0.5
-	refresh_shop.anchor_right = 0.5
-	refresh_shop.anchor_bottom = 0.5
-	refresh_shop.offset_left = -66
-	refresh_shop.offset_top = -2
-	refresh_shop.offset_right = 66
-	refresh_shop.offset_bottom = 130
+	# 直接挂外挂层 =【屏幕坐标】，锚右下角。只剩这一套 offset，改它就能挪按钮。
+	refresh_shop.anchor_left = 1.0           
+	refresh_shop.anchor_top = 1.0
+	refresh_shop.anchor_right = 1.0
+	refresh_shop.anchor_bottom = 1.0
+	refresh_shop.offset_left = -105
+	refresh_shop.offset_top = -200
+	refresh_shop.offset_right = 25
+	refresh_shop.offset_bottom = -70
 	refresh_shop.focus_mode = Control.FOCUS_NONE
 	var refresh_frame := TextureRect.new()    # 循环箭头图标框（箭头已画死）
 	refresh_frame.texture = _cached_texture(REFRESH_BTN_PATH)
@@ -679,7 +682,7 @@ func _build_rest(root: VBoxContainer) -> void:
 	refresh_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	refresh_shop.add_child(refresh_frame)
 	refresh_shop.pressed.connect(_on_refresh_shop_control_pressed)
-	shop_controls.add_child(refresh_shop)
+	_shop_side_controls.add_child(refresh_shop)
 
 	var refresh_icon := Label.new()
 	_refresh_shop_icon = refresh_icon
@@ -1771,6 +1774,8 @@ func _close_shop_picker() -> void:
 func _refresh_shop_picker() -> void:
 	if _shop_panel != null:
 		_shop_panel.visible = _shop_picker_open
+	if _shop_side_controls != null:
+		_shop_side_controls.visible = _shop_picker_open     # 外挂层（钱袋A+刷新）跟商店一起显隐
 	if _closed_money_bag != null:
 		_closed_money_bag.visible = not _shop_picker_open   # 商店关时才显示钱袋 B
 	# 商店开着时待命格子被商店盖住，禁用它们的输入，别去抢商店区域的点击；关店恢复。
