@@ -36,9 +36,9 @@ const BOARD_MODEL_SPREAD_V := 0.9  # 棋盘模型纵向铺开缩放（不动圆�
 # 待命区 8 个格子的地面 UV 落点，参数化：改下面几个数就能整排调位置/间距/大小，
 # 不用手编 8 个点。（格子和棋子模型都用这套值，改一处两个一起动。）
 const STANDBY_SLOT_COUNT := 8
-const STANDBY_ROW_V := 0.820        # 整排前后位置：0=远/靠上，1=近/靠下（越大越往屏幕下方）
+const STANDBY_ROW_V := 0.815        # 整排前后位置：0=远/靠上，1=近/靠下（越大越往屏幕下方）
 const STANDBY_CENTER_U := 0.49     # 整排水平中心：0=左，1=右（整体左右移动改这个）
-const STANDBY_STEP_U := 0.051      # 相邻两格的水平间距：越大越疏、越小越密
+const STANDBY_STEP_U := 0.047      # 相邻两格的水平间距：越大越疏、越小越密
 const STANDBY_SPOT_RADIUS := 0.16   # 每个格子圆的世界半径：越大格子越大
 const STANDBY_MODEL_DX := 0.0   # 待命模型左右微调（不动圆圈）
 const STANDBY_MODEL_DZ := -0.05  # 待命模型前后微调（不动圆圈）
@@ -46,7 +46,7 @@ const STANDBY_MODEL_SPREAD := 0.9  # 模型横向铺开缩放（不动圆圈）�
 # 待命区背景平台：做成 3D 地面 quad（不是 2D 贴图），模型是地面上方的 3D 物体，自然盖在它上面。
 const PREP_STANDBY_BG_PATH := "res://assets/board/prep_2_5d/standby_bg.png"
 const PREP_STANDBY_BG_CENTER_UV := Vector2(0.49, 0.820)  # 平台中心 UV（默认对齐待命格子中心/前后）
-const PREP_STANDBY_BG_WORLD_SIZE := Vector2(3.5, 0.37)     # 平台 quad 世界尺寸（宽 × 进深），可调
+const PREP_STANDBY_BG_WORLD_SIZE := Vector2(3.5, 1.58)     # 平台 quad 世界尺寸（宽 × 进深），可调
 const PREP_STANDBY_BG_Y_LIFT := 0.006                     # 抬离地面高度（河流之上、模型之下）
 const PREP_RIVER_VIEWPORT_SIZE := Vector2i(960, 540)
 const PREP_RIVER_RENDER_HZ := 30.0  # 备战 3D 视口的渲染采样率（动画推进不受影响）
