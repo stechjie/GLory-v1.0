@@ -241,6 +241,9 @@ static func compute_test_replay_async(config: Dictionary, budget_usec: int = 800
 	var state := build_test_state(config)
 	var roster: Dictionary = {}
 	var frames: Array = []
+	# 和 BattleSimulator 的回放循环一样，捕获每帧的视觉事件（母灵处决 / 屏震 /
+	# 技能演出），否则 officetest 回放里这些只在 live sim 出现的事件会全部丢失。
+	var frame_events: Array = []
 	BattleSimulator._replay_capture_roster(state, roster)
 	var steps := 0
 	var tree := Engine.get_main_loop() as SceneTree
@@ -249,11 +252,11 @@ static func compute_test_replay_async(config: Dictionary, budget_usec: int = 800
 		BattleSimulator.step_state(state)
 		steps += 1
 		BattleSimulator._replay_capture_roster(state, roster)
-		BattleSimulator._replay_capture_frame(state, frames)
+		BattleSimulator._replay_capture_frame(state, frames, frame_events)
 		if tree != null and Time.get_ticks_usec() - slice_start > budget_usec:
 			await tree.process_frame
 			slice_start = Time.get_ticks_usec()
-	return BattleSimulator._team_replay_payload(state, roster, frames)
+	return BattleSimulator._team_replay_payload(state, roster, frames, frame_events)
 
 
 # 编辑器格点的模拟坐标 = BattleSimShared._place_in_lane 的同款公式

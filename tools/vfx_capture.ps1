@@ -27,6 +27,14 @@ if (-not (Test-Path $Godot)) {
 }
 
 $outPath = if ([System.IO.Path]::IsPathRooted($Out)) { $Out } else { Join-Path $project $Out }
+
+# 截图目录必须挡住 Godot 的资源扫描：否则 1690 张 PNG 会被当纹理导入，
+# 撑爆 .godot/imported，而且 export_filter="all_resources" 会把它们打进 APK。
+$captureRoot = Split-Path -Parent $outPath
+if (-not (Test-Path (Join-Path $captureRoot ".gdignore"))) {
+    New-Item -ItemType Directory -Force -Path $captureRoot | Out-Null
+    New-Item -ItemType File -Force -Path (Join-Path $captureRoot ".gdignore") | Out-Null
+}
 if (Test-Path $outPath) {
     # 帧序列必须从干净目录开始，否则上一次的残帧会混进比对。
     Remove-Item -Recurse -Force $outPath

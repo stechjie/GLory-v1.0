@@ -6,10 +6,14 @@ extends Node
 const PROFILE_PATH := "user://profile.json"
 
 signal pets_changed()
+signal codex_changed()
 
 var owned_pets: Array[String] = []
 var active_pet := ""
 var needs_starter_pick := false
+# Codex entries the player has encountered. Account-level and append-only: nothing
+# a player has seen is ever taken away.
+var codex_seen: Array[String] = []
 
 func _ready() -> void:
 	load_profile()
@@ -19,6 +23,7 @@ func load_profile() -> void:
 		# 全新账号：等待玩家三选一，先不发放任何宠物。
 		owned_pets.clear()
 		active_pet = ""
+		codex_seen.clear()
 		needs_starter_pick = true
 		save_profile()
 		return
@@ -26,28 +31,67 @@ func load_profile() -> void:
 	if typeof(parsed) != TYPE_DICTIONARY:
 		owned_pets.clear()
 		active_pet = ""
+		codex_seen.clear()
 		needs_starter_pick = true
 		return
+	# Migrate before reading: older profiles carry renamed pet ids and no codex.
+	var data: Dictionary = SaveSchema.migrate_profile(parsed as Dictionary)
 	owned_pets.clear()
-	for pid in parsed.get("owned_pets", []):
+	for pid in data.get("owned_pets", []):
 		var id := str(pid)
 		if not id.is_empty() and not owned_pets.has(id):
 			owned_pets.append(id)
-	active_pet = str(parsed.get("active_pet", ""))
-	needs_starter_pick = bool(parsed.get("needs_starter_pick", owned_pets.is_empty()))
+	active_pet = str(data.get("active_pet", ""))
+	codex_seen.clear()
+	for raw in data.get("codex_seen", []):
+		var entry := str(raw)
+		if not entry.is_empty() and not codex_seen.has(entry):
+			codex_seen.append(entry)
+	needs_starter_pick = bool(data.get("needs_starter_pick", owned_pets.is_empty()))
 	# 出战宠物必须是已拥有的；否则回落到第一只（或空）。
 	if not active_pet.is_empty() and not owned_pets.has(active_pet):
 		active_pet = owned_pets[0] if not owned_pets.is_empty() else ""
+	# Persist the migrated shape so the upgrade only ever runs once.
+	if int(parsed.get("version", 1)) < SaveSchema.PROFILE_VERSION:
+		save_profile()
 
 func save_profile() -> void:
 	var payload := {
+		"version": SaveSchema.PROFILE_VERSION,
 		"owned_pets": owned_pets,
 		"active_pet": active_pet,
 		"needs_starter_pick": needs_starter_pick,
+		"codex_seen": codex_seen,
 	}
 	var f := FileAccess.open(PROFILE_PATH, FileAccess.WRITE)
 	if f != null:
 		f.store_string(JSON.stringify(payload))
+
+# --- codex ---------------------------------------------------------------
+
+func has_seen(entry_id: String) -> bool:
+	return codex_seen.has(entry_id)
+
+# Called from gameplay whenever an entry is encountered. Writes at most once per
+# entry, so the common case is a cheap array lookup with no disk access.
+func mark_seen(entry_id: String) -> void:
+	if entry_id.is_empty() or codex_seen.has(entry_id):
+		return
+	codex_seen.append(entry_id)
+	save_profile()
+	codex_changed.emit()
+
+func mark_seen_many(entry_ids: Array) -> void:
+	var added := false
+	for raw in entry_ids:
+		var entry := str(raw)
+		if entry.is_empty() or codex_seen.has(entry):
+			continue
+		codex_seen.append(entry)
+		added = true
+	if added:
+		save_profile()
+		codex_changed.emit()
 
 func is_owned(pet_id: String) -> bool:
 	return owned_pets.has(pet_id)

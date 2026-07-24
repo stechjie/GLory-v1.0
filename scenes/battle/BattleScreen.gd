@@ -5,6 +5,8 @@ const BattleReplayUtil = preload("res://scripts/battle/BattleReplayUtil.gd")
 var _replay: Dictionary = {}
 var _replay_mode := false
 var _replay_frame := 0
+# 已灌入 visual_events 的最高回放帧号，避免重复播放同一帧的视觉事件。
+var _replay_events_applied := -1
 var _replay_by_uid: Dictionary = {}
 var _battle_setup_ready := false
 # 切镜头观战：_replay 永远是"正在播放"的那份；自己队伍的原始 replay 存在
@@ -177,6 +179,7 @@ func _start_replay(replay: Dictionary) -> void:
 	_watching_rival = false
 	_replay_mode = true
 	_replay_frame = 0
+	_replay_events_applied = -1
 	_load_replay_roster(replay)
 	_prefetch_battle_assets()
 	# (4) PvP canonical arrangement puts team A at the bottom. If I'm on team B, flip
@@ -262,6 +265,10 @@ func _set_watching_rival(watch_rival: bool) -> void:
 func _switch_active_replay(replay: Dictionary) -> void:
 	_clear_unit_visuals()
 	_replay = replay
+	# 切换到另一份 replay：视觉事件游标随之重置，从新时间线重新灌。
+	_replay_events_applied = -1
+	_state["visual_events"] = []
+	_vfx_visual_event_index = 0
 	_load_replay_roster(replay)
 	_prefetch_battle_assets()
 	var frames: Array = replay.get("frames", [])
@@ -300,6 +307,18 @@ func _apply_replay_frame(i: int) -> void:
 	var frames: Array = _replay.get("frames", [])
 	if i < 0 or i >= frames.size():
 		return
+	# 把本帧记录的视觉事件（母灵处决 / 屏震 / 技能演出）灌回 _state.visual_events，
+	# 前端 _play_visual_events 靠递增游标消费。用 _replay_events_applied 去重，
+	# 保证顺序播放每帧只灌一次、来回 seek 也不会重播。
+	if i > _replay_events_applied:
+		var frame_events: Array = _replay.get("frame_events", [])
+		var ve: Array = _state.get("visual_events", [])
+		for j in range(_replay_events_applied + 1, i + 1):
+			if j >= 0 and j < frame_events.size() and frame_events[j] is Array:
+				for ev in frame_events[j]:
+					ve.append(ev)
+		_state["visual_events"] = ve
+		_replay_events_applied = i
 	for f in _replay_by_uid.values():
 		f.alive = false
 	if typeof(frames[i]) != TYPE_ARRAY:

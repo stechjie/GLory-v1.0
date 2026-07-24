@@ -50,6 +50,12 @@ var _phase := randf() * TAU
 # Kinds currently visible. Iterating this array allocates nothing, unlike
 # _sprites.keys() which built a fresh Array every frame, for every unit.
 var _active_kinds: Array[String] = []
+# 同一时刻挂在头顶的图标以前全叠在 HeadAnchor 的同一点，第二个以后完全看不见。
+# 这里给每个头顶图标算一个水平槽位，以头顶为中心左右摊开。
+# kind -> 目标 x 偏移（世界单位），在 _process 里应用。
+var _slot_x := {}
+# 相邻图标的水平间距。图标本身约 0.5–0.7 宽，这个间距刚好不重叠又不散开。
+const STATUS_SLOT_SPACING := 0.42
 
 func _ready() -> void:
 	# Most units carry no status effect most of the time; stay idle until one shows.
@@ -77,6 +83,7 @@ func _process(delta: float) -> void:
 		var cfg: Dictionary = EFFECTS[kind]
 		var pulse := 1.0 + sin(t * 2.1 + float(kind.length())) * float(cfg.pulse)
 		sprite.scale = (cfg.scale as Vector3) * pulse
+		sprite.position.x = float(_slot_x.get(kind, 0.0))
 		sprite.position.y = sin(t * 1.6 + float(kind.length())) * float(cfg.bob)
 		sprite.rotation.z += float(cfg.rot) * delta
 		sprite.modulate.a = float(cfg.alpha) * (0.9 + 0.1 * sin(t * 2.7 + float(kind.length())))
@@ -92,12 +99,32 @@ func _set_effect_visible(kind: String, visible: bool) -> void:
 		_sprites[kind] = sprite
 	sprite.visible = visible
 	var index := _active_kinds.find(kind)
+	var changed := false
 	if visible and index < 0:
 		_active_kinds.append(kind)
+		changed = true
 	elif not visible and index >= 0:
 		_active_kinds.remove_at(index)
+		changed = true
+	if changed:
+		_relayout_slots()
 	# Only animate while something is actually on screen.
 	set_process(not _active_kinds.is_empty())
+
+# 头顶图标以头顶为中心横向排开：N 个图标时，第 i 个 x = (i - (N-1)/2) * 间距。
+# 只排头顶（HeadAnchor）图标；shield 挂在 BodyAnchor，是独立的，不参与。
+func _relayout_slots() -> void:
+	var head_kinds: Array[String] = []
+	for kind in _active_kinds:
+		if str((EFFECTS[kind] as Dictionary).anchor) == "HeadAnchor":
+			head_kinds.append(kind)
+	_slot_x.clear()
+	var count := head_kinds.size()
+	if count <= 1:
+		return
+	var center := float(count - 1) * 0.5
+	for i in range(count):
+		_slot_x[head_kinds[i]] = (float(i) - center) * STATUS_SLOT_SPACING
 
 func _set_procedural_status(kind:String,active:bool,remaining:float)->void:
 	if not PROCEDURAL_STATUS_ANCHORS.has(kind):

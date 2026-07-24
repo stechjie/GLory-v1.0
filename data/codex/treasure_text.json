@@ -1,0 +1,187 @@
+{
+ "_source": "Parsed from docs/宝藏效果总表.md. Regenerate with scratchpad/parse_treasure_text.py when the balance table changes.",
+ "treasures": {
+  "def_iron_wall": {
+   "name": "铁壁之护",
+   "effect": "我方普通棋子 DEF +10",
+   "trigger": "开战时"
+  },
+  "def_life_monument": {
+   "name": "生命丰碑",
+   "effect": "我方普通棋子最大生命 +20%，当前生命同步提高；胡牌手激活后为 +40%",
+   "trigger": "开战时"
+  },
+  "def_formation_heal": {
+   "name": "法阵回春",
+   "effect": "我方法阵 HP +1，不超过初始上限；胡牌手激活后为 +2",
+   "trigger": "每次战后"
+  },
+  "def_soul_counter": {
+   "name": "亡魂反击",
+   "effect": "我方普通棋子死亡时，对击杀者造成击杀者最大生命 35% 真实伤害",
+   "trigger": "我方普通棋子死亡时"
+  },
+  "def_lifesteal_emblem": {
+   "name": "吸血纹章",
+   "effect": "我方普通棋子造成伤害后，回复实际伤害 20% 的生命",
+   "trigger": "普通棋子造成伤害后"
+  },
+  "def_phantom_step": {
+   "name": "幻影步伐",
+   "effect": "我方普通棋子闪避 +20%",
+   "trigger": "开战时"
+  },
+  "ctrl_shockwave": {
+   "name": "震荡余波",
+   "effect": "当前目标眩晕 1 秒，冷却 5 秒；胡牌手激活后眩晕 2 秒",
+   "trigger": "我方普通棋子攻击时"
+  },
+  "ctrl_corrosive_needle": {
+   "name": "腐蚀毒针",
+   "effect": "每第 4 次攻击使目标失血 3 秒，冷却 5 秒",
+   "trigger": "我方普通棋子攻击时"
+  },
+  "ctrl_interrupt_chain": {
+   "name": "打断锁链",
+   "effect": "25% 概率打断目标，冷却 5 秒",
+   "trigger": "我方普通棋子攻击时"
+  },
+  "ctrl_time_compress": {
+   "name": "时空压缩",
+   "effect": "我方普通棋子技能冷却缩短 25%，首次与后续冷却均乘以 0.75",
+   "trigger": "持续生效"
+  },
+  "ctrl_binding_weight": {
+   "name": "束缚重压",
+   "effect": "当前目标移动 -25%、攻速 -20%，持续 2 秒，冷却 5 秒",
+   "trigger": "我方普通棋子攻击时"
+  },
+  "atk_blood_pact": {
+   "name": "血契之刃",
+   "effect": "我方普通棋子 ATK x1.25，同时自身永久获得失血状态；胡牌手激活后为 ATK x1.50",
+   "trigger": "开战时"
+  },
+  "atk_fury_roster": {
+   "name": "狂怒阵容",
+   "effect": "普通棋子上限从 7 提高到 8",
+   "trigger": "准备阶段持续生效"
+  },
+  "atk_burst_core": {
+   "name": "爆裂核心",
+   "effect": "我方普通棋子暴击率 +25%",
+   "trigger": "开战时"
+  },
+  "atk_wail_resonance": {
+   "name": "哀鸣共鸣",
+   "effect": "击杀敌人时，对死亡目标周围 180 范围内敌人造成其最大生命 10% 真实伤害",
+   "trigger": "我方普通棋子击杀敌人时"
+  },
+  "atk_frenzy_assault": {
+   "name": "狂暴进攻",
+   "effect": "攻击同一目标时自身攻速 x1.15，可叠；换目标重置",
+   "trigger": "攻击时"
+  },
+  "money_compound": {
+   "name": "复利之道",
+   "effect": "单件战后利息额外 +5% 当前金币",
+   "trigger": "每次战后"
+  },
+  "money_generous_fate": {
+   "name": "慷慨命运",
+   "effect": "准备阶段每回合可手动参与 1 次赌博：50% 概率金币翻倍，50% 概率损失当前金币 80%；与诡诈命运联动后变为 60% 翻倍、40% 损失当前金币 50%",
+   "trigger": "手动点击按钮"
+  },
+  "money_discount": {
+   "name": "折扣令牌",
+   "effect": "棋子商店价格 -20%，最低 1 金",
+   "trigger": "准备阶段购买棋子时"
+  },
+  "money_golden_altar": {
+   "name": "黄金祭坛",
+   "effect": "准备阶段出现黄金祭坛按钮：法阵 HP -1，金币 +50；胡牌手激活后金币 +100（未实现）；每回合最多 3 次，法阵 HP <=10 不可用",
+   "trigger": "手动点击按钮"
+  },
+  "money_lucky_envelope": {
+   "name": "幸运信封",
+   "effect": "战后随机 +10 / +20 / +30 金",
+   "trigger": "每次战后"
+  },
+  "elem_flame_shatter": {
+   "name": "炎焰碎裂",
+   "effect": "攻击有 25% 概率额外造成 ATK 40% 真实伤害",
+   "trigger": "我方普通棋子攻击时"
+  },
+  "elem_frost_blade": {
+   "name": "冰封霜刃",
+   "effect": "攻击有 25% 概率使目标移动 -35%、攻速 -35%，持续 1.5 秒",
+   "trigger": "我方普通棋子攻击时"
+  },
+  "elem_thunder_haste": {
+   "name": "雷霆加速",
+   "effect": "攻击有 25% 概率使自身攻速 +60%，持续 3 秒；重复触发只刷新时间，不叠加",
+   "trigger": "我方普通棋子攻击时"
+  },
+  "elem_toxic_spread": {
+   "name": "剧毒蔓延",
+   "effect": "攻击有 25% 概率使目标中毒",
+   "trigger": "我方普通棋子攻击时"
+  }
+ },
+ "linkages": {
+  "link_phoenix": {
+   "name": "凤凰涅槃",
+   "requires_text": "哀鸣共鸣 + 亡魂反击",
+   "effect": "我方普通棋子死亡后临时复活 3 秒，3 秒结束后强制死亡"
+  },
+  "link_money_magic": {
+   "name": "金钱魔法",
+   "requires_text": "幸运信封 + 时空压缩",
+   "effect": "战后额外随机 +50 / +60 / +70 金，10% 概率额外 +100 金"
+  },
+  "link_blood_covenant": {
+   "name": "血之契约",
+   "requires_text": "炎焰碎裂 + 吸血纹章",
+   "effect": "炎焰碎裂触发时，真实伤害从 ATK 40% 提高到 ATK 100%"
+  },
+  "link_paralysis_shackles": {
+   "name": "瘫痪枷锁",
+   "requires_text": "打断锁链 + 冰封霜刃",
+   "effect": "打断锁链成功打断后，额外触发冰属性效果，并使目标获得冰易伤：受伤 +15%，持续 3 秒"
+  },
+  "link_oppression_counter": {
+   "name": "压迫反击",
+   "requires_text": "束缚重压 + 狂暴进攻",
+   "effect": "我方普通棋子被攻击时，对攻击者施加减攻 20%，持续 2 秒；狂暴进攻会在被攻击时也对攻击者叠加"
+  },
+  "link_fraud_fate": {
+   "name": "诡诈命运",
+   "requires_text": "幻影步伐 + 慷慨命运",
+   "effect": "慷慨命运变为准备阶段每回合手动赌博 1 次：60% 金币翻倍，40% 损失当前金币 50%"
+  },
+  "link_iron_maiden": {
+   "name": "铁处女",
+   "requires_text": "铁壁之护 + 腐蚀毒针",
+   "effect": "我方普通棋子受击时，反施失血 3 秒，并使攻击者 DEF -6，持续 3 秒，冷却 5 秒"
+  },
+  "link_toxic_burst": {
+   "name": "剧毒爆发",
+   "requires_text": "爆裂核心 + 剧毒蔓延",
+   "effect": "普通棋子造成伤害时，中毒目标有 50% 概率立即结算剩余毒伤并清除中毒"
+  },
+  "link_rich_path": {
+   "name": "富裕之路",
+   "requires_text": "复利之道 + 雷霆加速",
+   "effect": "我方普通棋子造成伤害后 10% 概率 +10 金"
+  },
+  "link_clearance_sale": {
+   "name": "清仓特卖",
+   "requires_text": "狂怒阵容 + 折扣令牌",
+   "effect": "自动激活，棋子商店价格 -40%，最低 1 金"
+  },
+  "link_hu_pai_master": {
+   "name": "胡牌手",
+   "requires_text": "生命丰碑 + 法阵回春 + 震荡余波 + 血契之刃 + 黄金祭坛",
+   "effect": "五件全部拥有时激活：生命丰碑 +40%、法阵回春 +2、震荡余波眩晕 2 秒、血契之刃 ATK x1.50、黄金祭坛 +100 金（未实现）；冷却、概率、次数与负面代价不变"
+  }
+ }
+}

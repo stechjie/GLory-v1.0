@@ -8,6 +8,21 @@ var _vfx_seeded: bool = false
 var _vfx_visual_event_index := 0
 var _persistent_unit_vfx: Dictionary = {}
 
+# Floating damage/heal/shield numbers. A fixed pool of Labels is recycled round-
+# robin so fast fights never churn the scene tree (see vfx-mobile-pass).
+const _HIT_NUMBER_POOL_SIZE := 32
+var _hit_number_layer: Control = null
+var _hit_number_pool: Array[Label] = []
+var _hit_number_cursor := 0
+# 快照双缓冲：帧间 diff 需要 prev 和 current 两份，所以用两个缓冲区乒乓切换、
+# 原地改写字典键值，避免每帧每单位新建 34 键字典（20 个单位就是每帧 ~700 条堆分配）。
+# 安全前提：没有任何地方跨帧持有单帧的单位字典（已核实：apocalypse 走 duplicate，
+# death/damage 事件只拷字段）。
+var _vfx_snap_a: Dictionary = {}
+var _vfx_snap_b: Dictionary = {}
+var _vfx_snap_use_b := false
+var _vfx_seen_ids: Dictionary = {}
+
 func _refresh_visuals() -> void:
 	super._refresh_visuals()
 	_refresh_battle_vfx(_state)
@@ -68,6 +83,9 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 				pass
 		if shield_delta > 0:
 			_spawn_vfx("HOLY_SHIELD", now.get("head_pos", Vector2.ZERO))
+			# Shield gain is unambiguous from the HP-diff (shield only rises on grant),
+			# so its number comes straight off the delta rather than a sim event.
+			_spawn_hit_number(now.get("head_pos", Vector2.ZERO), shield_delta, "shield", false, false)
 		if stack_delta > 0 and sid_now in ["rage_stack", "same_target_damage_stack"]:
 			if sid_now == "rage_stack":
 				var rage_stacks := int(now.get("skill_stacks", 0))
@@ -142,16 +160,9 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 				for death_event: Dictionary in death_events:
 					if str(death_event.get("killer_uid", "")) == str(boss_now.get("sim_uid", "")):
 						_play_boss_procedural("soul_devour", boss_now.get("world_foot", Vector3.ZERO), death_event.get("world_hit", boss_now.get("world_foot", Vector3.ZERO)))
-		for death_event: Dictionary in death_events:
-			if not bool(death_event.get("mother_execute_kill", false)):
-				continue
-			var mother := _vfx_unit_by_sim_uid(current, str(death_event.get("killer_uid", "")))
-			if mother.is_empty():
-				mother = _vfx_unit_by_sim_uid(_vfx_prev_units, str(death_event.get("killer_uid", "")))
-			if mother.is_empty():
-				continue
-			var victim := {"world_foot": death_event.get("world_foot", Vector3.ZERO), "model_node": death_event.get("model_node")}
-			_play_unit_procedural("unique_death_execute", mother.get("world_head", mother.get("world_cast", Vector3.ZERO)), victim.get("world_foot", Vector3.ZERO), _unit_target_context(mother, victim))
+	# 母灵的书统一由 mother_execute 视觉事件驱动（见 _play_visual_events），
+	# 不再走这条依赖 mother_execute_kill 的死亡分支——那个标记在 team/回放模式
+	# 里不会被记录，导致回放时书永远不播。事件路径单人和回放都能工作。
 	_play_melee_slashes(_collect_attack_events(current, false), damage_events, current)
 	_vfx_prev_units = current
 
@@ -161,7 +172,11 @@ func _vfx_hit_stop_active() -> bool:
 	return VFXManager.is_hitstop_active()
 
 func _collect_vfx_units(state_snapshot: Dictionary) -> Dictionary:
-	var result := {}
+	# 取"当前不是上一帧快照"的那个缓冲区来填。prev 恒指向另一个缓冲区，
+	# 所以覆盖本缓冲区时绝不会动到 prev。
+	var result: Dictionary = _vfx_snap_b if _vfx_snap_use_b else _vfx_snap_a
+	_vfx_snap_use_b = not _vfx_snap_use_b
+	_vfx_seen_ids.clear()
 	for side in ["player", "enemy"]:
 		for f in state_snapshot.get(side, []):
 			if typeof(f) != TYPE_DICTIONARY:
@@ -171,43 +186,56 @@ func _collect_vfx_units(state_snapshot: Dictionary) -> Dictionary:
 			var base_pos := _sim_to_arena(sim_pos)
 			var unit_node := _unit_node_for_id(id)
 			var model_node: Node3D = _battle_3d_models.get(id)
-			result[id] = {
-				"id": id,
-				"hp": int(f.get("hp", 0)),
-				"max_hp": int(f.get("max_hp", 1)),
-				"shield": int(f.get("shield", 0)),
-				"alive": bool(f.get("alive", true)),
-				"pos": base_pos,
-				"sim_pos": sim_pos,
-				"foot_pos": _unit_anchor_global_position(unit_node, "FootAnchor", base_pos),
-				"cast_pos": _unit_anchor_global_position(unit_node, "CastAnchor", base_pos),
-				"hit_pos": _unit_anchor_global_position(unit_node, "HitAnchor", base_pos),
-				"head_pos": _unit_anchor_global_position(unit_node, "HeadAnchor", base_pos),
-				"world_foot": _unit_vfx_position(id, "FeetAnchor", sim_pos, 0.08),
-				"world_cast": _unit_vfx_position(id, "BodyAnchor", sim_pos, 0.82),
-				"world_hit": _unit_vfx_position(id, "BodyAnchor", sim_pos, 0.72),
-				"world_head": _unit_vfx_position(id, "HeadAnchor", sim_pos, 1.45),
-				"model_node": model_node,
-				"team": str(f.get("team", "")),
-				"attack_count": int(f.get("attack_count", 0)),
-				"range_px": float(f.get("range_px", 0.0)),
-				"skill_ready": float(f.get("skill_ready", 0.0)),
-				"skill_id": str(f.get("def", {}).get("skill_id", "")),
-				"skill_every": int(f.get("def", {}).get("every", 0)),
-				"unit_id": str(f.get("id", "")),
-				"skill_stacks": int(f.get("skill_stacks", 0)),
-				"sim_uid": str(f.get("uid", "")),
-				"killer_uid": str(f.get("killer_uid", "")),
-				"mother_execute_kill": bool(f.get("mother_execute_kill", false)),
-				"attack_target_uid": str(f.get("vfx_attack_target_uid", "")),
-				"skill_target_uid": str(f.get("vfx_skill_target_uid", "")),
-				"lane": int(f.get("lane", -1)),
-				"blood_rage_active": bool(f.get("blood_rage_active", false)),
-				"apocalypse_charging": f.has("apocalypse_due"),
-				"apocalypse_due": float(f.get("apocalypse_due", -1.0)),
-				"twin_group_id": str(f.get("twin_group_id", "")),
-				"twin_member_index": int(f.get("twin_member_index", -1)),
-			}
+			_vfx_seen_ids[id] = true
+			# 取回该 id 的字典原地改写；首见才建一次，之后帧一直复用同一个字典对象。
+			# 不用 result.get(id, {})——那个默认 {} 每次调用都会构造一个丢弃的空字典，
+			# 等于每帧每单位又白分配一次。
+			var u: Dictionary
+			if result.has(id):
+				u = result[id]
+			else:
+				u = {}
+				result[id] = u
+			u["id"] = id
+			u["hp"] = int(f.get("hp", 0))
+			u["max_hp"] = int(f.get("max_hp", 1))
+			u["shield"] = int(f.get("shield", 0))
+			u["alive"] = bool(f.get("alive", true))
+			u["pos"] = base_pos
+			u["sim_pos"] = sim_pos
+			u["foot_pos"] = _unit_anchor_global_position(unit_node, "FootAnchor", base_pos)
+			u["cast_pos"] = _unit_anchor_global_position(unit_node, "CastAnchor", base_pos)
+			u["hit_pos"] = _unit_anchor_global_position(unit_node, "HitAnchor", base_pos)
+			u["head_pos"] = _unit_anchor_global_position(unit_node, "HeadAnchor", base_pos)
+			u["world_foot"] = _unit_vfx_position(id, "FeetAnchor", sim_pos, 0.08)
+			u["world_cast"] = _unit_vfx_position(id, "BodyAnchor", sim_pos, 0.82)
+			u["world_hit"] = _unit_vfx_position(id, "BodyAnchor", sim_pos, 0.72)
+			u["world_head"] = _unit_vfx_position(id, "HeadAnchor", sim_pos, 1.45)
+			u["model_node"] = model_node
+			u["team"] = str(f.get("team", ""))
+			u["attack_count"] = int(f.get("attack_count", 0))
+			u["range_px"] = float(f.get("range_px", 0.0))
+			u["skill_ready"] = float(f.get("skill_ready", 0.0))
+			u["skill_id"] = str(f.get("def", {}).get("skill_id", ""))
+			u["skill_every"] = int(f.get("def", {}).get("every", 0))
+			u["unit_id"] = str(f.get("id", ""))
+			u["skill_stacks"] = int(f.get("skill_stacks", 0))
+			u["sim_uid"] = str(f.get("uid", ""))
+			u["killer_uid"] = str(f.get("killer_uid", ""))
+			u["mother_execute_kill"] = bool(f.get("mother_execute_kill", false))
+			u["attack_target_uid"] = str(f.get("vfx_attack_target_uid", ""))
+			u["skill_target_uid"] = str(f.get("vfx_skill_target_uid", ""))
+			u["lane"] = int(f.get("lane", -1))
+			u["blood_rage_active"] = bool(f.get("blood_rage_active", false))
+			u["apocalypse_charging"] = f.has("apocalypse_due")
+			u["apocalypse_due"] = float(f.get("apocalypse_due", -1.0))
+			u["twin_group_id"] = str(f.get("twin_group_id", ""))
+			u["twin_member_index"] = int(f.get("twin_member_index", -1))
+	# 剪掉本帧没出现的（已离场/被移除）单位的陈旧字典，否则 diff 会把它们当成还在。
+	if result.size() != _vfx_seen_ids.size():
+		for id in result.keys():
+			if not _vfx_seen_ids.has(id):
+				result.erase(id)
 	return result
 
 func _unit_vfx_position(id: String, anchor_name: String, sim_pos: Vector2, fallback_y: float) -> Vector3:
@@ -654,6 +682,17 @@ func _play_opening_unit_vfx(current:Dictionary)->void:
 			var target:=_exact_skill_target(unit,current)
 			if not target.is_empty():
 				_play_unit_procedural(sid,unit.get("world_foot",Vector3.ZERO),target.get("world_foot",Vector3.ZERO),_unit_target_context(unit,target))
+		elif sid=="shared_hp_link":
+			# 血契连线在开战首帧就建立（dark_doom 一上来就转化并绑定一个敌人），
+			# 而首帧是"播种帧"、正常 diff 被跳过，所以连线特效要在这里补建，
+			# 否则实时和回放都看不到。持久节点记入 _persistent_unit_vfx 由后续帧维护。
+			var link_target:=_exact_skill_target(unit,current)
+			if not link_target.is_empty():
+				var context:=_unit_target_context(unit,link_target)
+				context["persistent"]=true
+				var spawned:=_play_unit_procedural(sid,unit.get("world_cast",unit.get("world_foot",Vector3.ZERO)),link_target.get("world_hit",link_target.get("world_foot",Vector3.ZERO)),context)
+				if spawned!=null:
+					_persistent_unit_vfx[str(unit.get("id",""))]={"node":spawned,"target_uid":str(unit.get("skill_target_uid",""))}
 
 func _boss_world_position(value: Variant) -> Vector3:
 	if value is Vector3:
@@ -826,25 +865,130 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 		if str(event.get("type", "")) == "skill_shake":
 			_screen_shake(float(event.get("strength", 6.5)), float(event.get("duration", 0.2)))
 		elif str(event.get("type",""))=="mother_execute":
+			# 书本挂在母灵头上，不依赖目标死活。母灵还能定位就一定放书。
+			# 目标能解析就顺带把吸魂流指向它，解析不到（已死/清光/Boss）就只放书。
 			var mother:=_vfx_unit_by_sim_uid(current,str(event.get("source_uid","")))
-			var victim:=_vfx_unit_by_sim_uid(current,str(event.get("target_uid","")))
-			# A lethal execute is replayed from death_events below, where the
-			# victim's cached position is still available. This branch handles the
-			# non-lethal Boss-percent-damage variant only.
-			if not mother.is_empty() and not victim.is_empty() and bool(victim.get("alive", true)):
-				_play_unit_procedural("unique_death_execute",mother.get("world_head",mother.get("world_cast",Vector3.ZERO)),victim.get("world_foot",Vector3.ZERO),_unit_target_context(mother,victim))
+			if mother.is_empty():
+				mother=_vfx_unit_by_sim_uid(_vfx_prev_units,str(event.get("source_uid","")))
+			if not mother.is_empty():
+				var victim:=_vfx_unit_by_sim_uid(current,str(event.get("target_uid","")))
+				var has_victim:=not victim.is_empty()
+				var book_target:Vector3=victim.get("world_foot",mother.get("world_foot",Vector3.ZERO)) if has_victim else mother.get("world_foot",Vector3.ZERO)
+				var book_context:Dictionary=_unit_target_context(mother,victim) if has_victim else _unit_target_context(mother,mother)
+				_play_unit_procedural("unique_death_execute",mother.get("world_head",mother.get("world_cast",Vector3.ZERO)),book_target,book_context)
 		elif str(event.get("type", "")) == "unit_skill_proc":
 			var source := _vfx_unit_by_sim_uid(current, str(event.get("source_uid", "")))
 			var target := _vfx_unit_by_sim_uid(current, str(event.get("target_uid", "")))
 			var skill_id := str(event.get("skill_id", ""))
 			if not skill_id.is_empty() and not source.is_empty() and not target.is_empty():
 				_play_unit_procedural(skill_id, source.get("world_cast", Vector3.ZERO), target.get("world_hit", target.get("world_foot", Vector3.ZERO)), _unit_target_context(source, target))
+		elif str(event.get("type", "")) == "hit_number":
+			var hit_uid := str(event.get("target_uid", ""))
+			var hit_unit := _vfx_unit_by_sim_uid(current, hit_uid)
+			if hit_unit.is_empty():
+				hit_unit = _vfx_unit_by_sim_uid(_vfx_prev_units, hit_uid)
+			if not hit_unit.is_empty():
+				var hit_kind := "heal" if str(event.get("kind", "dmg")) == "heal" else "dmg"
+				_spawn_hit_number(hit_unit.get("head_pos", Vector2.ZERO), int(event.get("amount", 0)), hit_kind, bool(event.get("crit", false)), bool(event.get("skill", false)))
 
 func _vfx_unit_by_sim_uid(current:Dictionary,sim_uid:String)->Dictionary:
 	for id:String in current.keys():
 		var unit:Dictionary=current[id]
 		if str(unit.get("sim_uid",""))==sim_uid:return unit
 	return {}
+
+func _ensure_hit_number_layer() -> void:
+	if _hit_number_layer != null and is_instance_valid(_hit_number_layer):
+		return
+	if _arena == null:
+		return
+	_hit_number_layer = Control.new()
+	_hit_number_layer.name = "HitNumbers"
+	_hit_number_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hit_number_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# Above the 3D units layer (z 40), below the result overlay (z 200).
+	_hit_number_layer.z_index = 95
+	_arena.add_child(_hit_number_layer)
+	_hit_number_pool.clear()
+	for _i in _HIT_NUMBER_POOL_SIZE:
+		var lbl := Label.new()
+		lbl.visible = false
+		lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		lbl.add_theme_constant_override("outline_size", 5)
+		lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
+		_hit_number_layer.add_child(lbl)
+		_hit_number_pool.append(lbl)
+
+# Spawns one floating number at a screen-space head anchor. kind is
+# "dmg" | "heal" | "shield"; crit/skill only tweak the damage styling.
+func _spawn_hit_number(head_pos: Vector2, amount: int, kind: String, crit: bool, is_skill: bool) -> void:
+	if amount <= 0:
+		return
+	_ensure_hit_number_layer()
+	if _hit_number_pool.is_empty():
+		return
+	var lbl: Label = _hit_number_pool[_hit_number_cursor]
+	_hit_number_cursor = (_hit_number_cursor + 1) % _hit_number_pool.size()
+	if not is_instance_valid(lbl):
+		return
+	var prev_tween: Variant = lbl.get_meta("hit_tween", null)
+	if prev_tween is Tween and (prev_tween as Tween).is_valid():
+		(prev_tween as Tween).kill()
+
+	var color: Color
+	var font_size: int
+	var text: String
+	match kind:
+		"heal":
+			color = Color(0.36, 1.0, 0.46)
+			text = "+%d" % amount
+			font_size = 20
+		"shield":
+			color = Color(0.46, 0.82, 1.0)
+			text = "+%d" % amount
+			font_size = 18
+		_:
+			if crit:
+				color = Color(1.0, 0.56, 0.16)
+				text = "%d!" % amount
+				font_size = 30
+			elif is_skill:
+				color = Color(1.0, 0.98, 0.66)
+				text = str(amount)
+				font_size = 24
+			else:
+				color = Color(1.0, 0.94, 0.55)
+				text = str(amount)
+				font_size = 22
+	lbl.add_theme_font_size_override("font_size", font_size)
+	lbl.add_theme_color_override("font_color", color)
+	lbl.text = text
+	lbl.reset_size()
+	var sz := lbl.get_minimum_size()
+	lbl.size = sz
+	lbl.pivot_offset = sz * 0.5
+	lbl.modulate = Color(1, 1, 1, 1)
+	lbl.scale = Vector2.ONE
+	lbl.visible = true
+	# Small horizontal jitter so numbers stacking on one target don't perfectly overlap.
+	var jitter := randf_range(-16.0, 16.0)
+	lbl.global_position = head_pos + Vector2(jitter - sz.x * 0.5, -sz.y * 0.5)
+	var start := lbl.position
+	var rise := 60.0 if crit else 46.0
+	var dur := 0.72 if kind == "dmg" else 0.82
+
+	var tw := lbl.create_tween()
+	lbl.set_meta("hit_tween", tw)
+	tw.set_parallel(true)
+	tw.tween_property(lbl, "position", start + Vector2(0, -rise), dur).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_property(lbl, "modulate:a", 0.0, dur * 0.55).set_delay(dur * 0.45)
+	if crit or is_skill:
+		lbl.scale = Vector2(0.55, 0.55)
+		tw.tween_property(lbl, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.set_parallel(false)
+	tw.tween_callback(lbl.hide)
 
 func _spawn_vfx(vfx_id: String, pos: Vector2, config: Dictionary = {}) -> void:
 	VFXManager.spawn_vfx(vfx_id, pos, config)

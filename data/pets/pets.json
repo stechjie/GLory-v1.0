@@ -1,5 +1,5 @@
 {
-	"starter_ids": ["pet_mushroom", "pet_cat", "pet_duck"],
+	"starter_ids": ["pet_mushroom", "pet_cat", "pet_rabbit"],
 	"pets": [
 		{
 			"id": "pet_mushroom",
@@ -20,7 +20,7 @@
 			"icon": ""
 		},
 		{
-			"id": "pet_duck",
+			"id": "pet_rabbit",
 			"name": "兔子",
 			"name_en": "Rabbit",
 			"effect": "self_atk_pct",

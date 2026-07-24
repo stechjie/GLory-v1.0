@@ -98,6 +98,22 @@ static func add_owned(tid: String) -> void:
 	if tid.is_empty() or tid in GameState.owned_treasures or GameState.owned_treasures.size() >= MAX_OWNED:
 		return
 	GameState.owned_treasures.append(tid)
+	PlayerProfile.mark_seen(tid)
+	# A linkage has no pickup of its own: it activates the moment its two treasures
+	# are both owned, so that is when it enters the codex.
+	_mark_active_linkages()
+
+static func _mark_active_linkages() -> void:
+	var unlocked: Array = []
+	for raw in DataRegistry.get_table("treasures").get("linkages", []):
+		var d := raw as Dictionary
+		if d == null:
+			continue
+		var link_id := str(d.get("id", ""))
+		if not link_id.is_empty() and has_linkage(link_id):
+			unlocked.append(link_id)
+	if not unlocked.is_empty():
+		PlayerProfile.mark_seen_many(unlocked)
 
 static func _shuffle_strings(items: Array[String]) -> void:
 	var rng := RandomNumberGenerator.new()

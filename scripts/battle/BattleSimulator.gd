@@ -208,14 +208,15 @@ static func compute_team_replay(forced_team: int) -> Dictionary:
 	var state := prepare_team_state(forced_team)
 	var roster: Dictionary = {}
 	var frames: Array = []
+	var frame_events: Array = []
 	_replay_capture_roster(state, roster)
 	var steps := 0
 	while not bool(state.get("finished", false)) and steps < 4000:
 		step_state(state)
 		steps += 1
 		_replay_capture_roster(state, roster)
-		_replay_capture_frame(state, frames)
-	return _team_replay_payload(state, roster, frames)
+		_replay_capture_frame(state, frames, frame_events)
+	return _team_replay_payload(state, roster, frames, frame_events)
 
 # 分帧版：与上面同一循环，但超出每帧时间预算就 await 到下一帧再继续，
 # 避免整场战斗在一帧内算完导致开战冻屏。确定性依据：RngService.rng 只被
@@ -225,6 +226,7 @@ static func compute_team_replay_async(forced_team: int, budget_usec: int = 8000)
 	var state := prepare_team_state(forced_team)
 	var roster: Dictionary = {}
 	var frames: Array = []
+	var frame_events: Array = []
 	_replay_capture_roster(state, roster)
 	var steps := 0
 	var tree := Engine.get_main_loop() as SceneTree
@@ -233,13 +235,22 @@ static func compute_team_replay_async(forced_team: int, budget_usec: int = 8000)
 		step_state(state)
 		steps += 1
 		_replay_capture_roster(state, roster)
-		_replay_capture_frame(state, frames)
+		_replay_capture_frame(state, frames, frame_events)
 		if tree != null and Time.get_ticks_usec() - slice_start > budget_usec:
 			await tree.process_frame
 			slice_start = Time.get_ticks_usec()
-	return _team_replay_payload(state, roster, frames)
+	return _team_replay_payload(state, roster, frames, frame_events)
 
-static func _replay_capture_frame(state: Dictionary, frames: Array) -> void:
+static func _replay_capture_frame(state: Dictionary, frames: Array, frame_events: Array = []) -> void:
+	# 本帧内新产生的视觉事件（母灵处决 / 屏震 / 技能演出等）也要记进回放，
+	# 否则 team/回放模式下这些只在 live sim 里出现的事件全部丢失（母灵的书就是这么没的）。
+	var ve: Array = state.get("visual_events", [])
+	var cursor := int(state.get("_replay_ve_cursor", 0))
+	var new_events: Array = []
+	for i in range(cursor, ve.size()):
+		new_events.append((ve[i] as Dictionary).duplicate() if ve[i] is Dictionary else ve[i])
+	state["_replay_ve_cursor"] = ve.size()
+	frame_events.append(new_events)
 	var frame_stats: Dictionary = state.get("unit_stats", {})
 	var frame: Array = []
 	for f in (state.get("player", []) + state.get("enemy", [])):
@@ -260,11 +271,11 @@ static func _replay_capture_frame(state: Dictionary, frames: Array) -> void:
 		])
 	frames.append(frame)
 
-static func _team_replay_payload(state: Dictionary, roster: Dictionary, frames: Array) -> Dictionary:
+static func _team_replay_payload(state: Dictionary, roster: Dictionary, frames: Array, frame_events: Array = []) -> Dictionary:
 	var replay_result := result_from_state(state)
 	replay_result["team_heal_ally"] = int(state.get("team_heal_ally", 0))
 	replay_result["team_heal_rival"] = int(state.get("team_heal_rival", 0))
-	return {"kind": str(state.get("kind", "pve")), "roster": roster, "frames": frames, "result": replay_result}
+	return {"kind": str(state.get("kind", "pve")), "roster": roster, "frames": frames, "frame_events": frame_events, "result": replay_result}
 
 # (1/2) Compute how much HP each team loses this round and stamp it into BOTH
 # replays' results, so every client can drive team_hp and enemy_team_hp
@@ -611,7 +622,11 @@ static func _perform_attack(attacker: Dictionary, target: Dictionary, state: Dic
 	if is_crit:
 		base *= float(d.get("crit_dmg", 1.5)) + float(attacker.get("crit_dmg_bonus", 0.0))
 	var before_status_count := _status_count(target)
+	# Only the crit base hit surfaces a floating number; the true-damage rider,
+	# combo strikes and treasure reactions below stay silent.
+	DamageService.set_hit_context("basic", is_crit)
 	var dealt := DamageService.apply_damage(target, maxi(1, int(round(base))), false)
+	DamageService.clear_hit_context()
 	if str(d.get("skill_id", "")) == "true_damage_attack":
 		dealt += DamageService.apply_damage(target, maxi(1, int(round(float(attacker.atk) * float(d.get("true_damage_pct", 0.18))))), true)
 	_apply_attack_statuses(attacker, target, state)
@@ -715,6 +730,9 @@ static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) ->
 			continue
 		var old_ready := float(caster.get("skill_ready", 0.0))
 		DamageService.begin_stat_context(state, caster)
+		# Every apply_damage inside this dispatch is skill damage. clear_stat_context()
+		# at the end of this iteration resets the tag (see DamageService).
+		DamageService.set_hit_context("skill")
 		match sid:
 			"lowest_ally_heal":
 				BattleSimSkills._skill_lowest_ally_heal(caster, casters, d)
@@ -839,10 +857,8 @@ static func _on_unit_killed(killer: Dictionary, victim: Dictionary, state: Dicti
 		clone.alive = true
 		clone.statuses = {}
 		((state.player) if str(parasite_owner.team) == "player" else (state.enemy)).append(clone)
-	if str(victim.get("team", "")) == "enemy":
-		BattleSimTreasures._maybe_mother_execute(state, victim_team)
-	elif not state.has("owner_syn_by_key"):
-		BattleSimTreasures._maybe_enemy_mother_execute_1v1(state)
+	# 母灵计数已移到每 tick 的死亡清扫 _process_single_race_death 里，
+	# 那条路能捕获普攻/技能/AOE 所有致死方式（本入口只覆盖普攻），且天然排除处决。
 
 
 static func _skill_shared_hp_link(caster: Dictionary, opponents: Array, _d: Dictionary, state: Dictionary) -> void:

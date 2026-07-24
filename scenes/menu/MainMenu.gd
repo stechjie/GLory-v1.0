@@ -13,6 +13,7 @@ signal public_token_resume_requested(token_id: String)
 signal team_offline_requested   # 不联网，本地单人 vs AI 自测
 signal team_reconnect_requested # 手动重连回上一场对局
 signal prep_requested           # 「备战」按钮：进入备战界面（暂时只有宠物系统）
+signal codex_requested          # 「图鉴」按钮：进入图鉴界面
 
 const REF_SIZE := Vector2(1672.0, 941.0)
 const TEX_BACKGROUND := preload("res://assets/ui/main_menu_live/background.png")
@@ -130,7 +131,7 @@ func _build() -> void:
 	_add_hit(Vector2(426, 692), Vector2(208, 188), _show_coming_soon)
 	_add_hit(Vector2(650, 650), Vector2(370, 260), _show_coming_soon)
 	_add_hit(Vector2(1025, 681), Vector2(219, 206), _show_room_overlay)
-	_add_hit(Vector2(1274, 689), Vector2(222, 169), _show_coming_soon)
+	_add_hit(Vector2(1274, 689), Vector2(222, 169), _emit_codex)
 
 	_add_texture(TEX_GENERATE_TOKEN, Vector2(610, 594), Vector2(214, 59))
 	_add_label(_menu_text("生成令牌", "Generate Token"), Vector2(664, 606), Vector2(137, 34), 18)
@@ -394,6 +395,9 @@ func _emit_reconnect() -> void:
 
 func _emit_prep() -> void:
 	prep_requested.emit()
+
+func _emit_codex() -> void:
+	codex_requested.emit()
 
 func _show_coming_soon() -> void:
 	_coming_soon.popup_centered(Vector2(260, 120))

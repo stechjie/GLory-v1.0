@@ -6,6 +6,62 @@ const MIN_HP_DAMAGE := 1
 static var _stat_state: Dictionary = {}
 static var _stat_source_uid := ""
 
+# Floating hit-number context. Callers tag the current damage so the central
+# emit in apply_damage can decide whether it surfaces a number. Only crit basics
+# and skill hits are shown; normal basics, DoT ticks and every unclassified path
+# stay silent (default kind = "").
+static var _hit_kind := ""
+static var _hit_is_crit := false
+
+static func set_hit_context(kind: String, is_crit: bool = false) -> void:
+	_hit_kind = kind
+	_hit_is_crit = is_crit
+
+static func clear_hit_context() -> void:
+	_hit_kind = ""
+	_hit_is_crit = false
+
+# Central damage-number emit. Rides the same state.visual_events channel the
+# renderer already consumes (and that the replay records per frame), so numbers
+# work identically in live play and playback. Only crit basics and skill hits
+# surface — everything else is filtered out by the tag set at the call site.
+static func _maybe_emit_hit_number(target: Dictionary, hp_damage: int) -> void:
+	if hp_damage <= 0 or _stat_state.is_empty():
+		return
+	var show := _hit_kind == "skill" or (_hit_kind == "basic" and _hit_is_crit)
+	if not show:
+		return
+	_append_hit_event({
+		"type": "hit_number",
+		"kind": "dmg",
+		"crit": _hit_is_crit,
+		"skill": _hit_kind == "skill",
+		"target_uid": str(target.get("uid", "")),
+		"amount": hp_damage,
+	})
+
+# Heal numbers always surface (they are far rarer than attacks). Called from
+# _heal_unit with the real post-clamp amount.
+static func emit_heal_number(target: Dictionary, amount: int) -> void:
+	if amount <= 0 or _stat_state.is_empty():
+		return
+	_append_hit_event({
+		"type": "hit_number",
+		"kind": "heal",
+		"target_uid": str(target.get("uid", "")),
+		"amount": amount,
+	})
+
+static func _append_hit_event(event: Dictionary) -> void:
+	# Opening-phase (elapsed == 0) effects fire before the renderer seeds; skip them
+	# so battle start doesn't flash a burst of numbers.
+	if float(_stat_state.get("elapsed", 0.0)) <= 0.0:
+		return
+	if not _stat_state.has("visual_events") or typeof(_stat_state.visual_events) != TYPE_ARRAY:
+		_stat_state.visual_events = []
+	event["time"] = float(_stat_state.get("elapsed", 0.0))
+	_stat_state.visual_events.append(event)
+
 static func begin_stat_context(state: Dictionary, source: Dictionary) -> void:
 	_stat_state = state
 	_stat_source_uid = str(source.get("uid", ""))
@@ -22,6 +78,11 @@ static func set_stat_source_uid(source_uid: String) -> void:
 
 static func clear_stat_context() -> void:
 	_stat_source_uid = ""
+	# Reset the hit tag too: this is called at every attack/skill/status boundary,
+	# so it doubles as a safety net that keeps a "basic"/"skill" tag from leaking
+	# into later damage (treasure reactions, DoT ticks, etc.).
+	_hit_kind = ""
+	_hit_is_crit = false
 
 static func current_stat_source_uid() -> String:
 	return _stat_source_uid
@@ -122,6 +183,7 @@ static func apply_damage(target: Dictionary, amount: int, ignore_defense: bool =
 		# 这里会是空串——那类死亡不结算击杀金。
 		target["killer_uid"] = _stat_source_uid
 	_record_damage(target, mini(hp_before, remaining))
+	_maybe_emit_hit_number(target, mini(hp_before, remaining))
 	return remaining
 
 static func _record_damage(target: Dictionary, amount: int) -> void:

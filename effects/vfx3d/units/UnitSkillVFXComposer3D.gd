@@ -54,7 +54,7 @@ func play_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary
 		"curse_attack":_curse_hit(target,context)
 		"same_target_damage_stack":_stack_pulse(origin,target,context)
 		"poison_attack":_poison_attack(origin,target,context)
-		"defense_down_attack":_status_hit(target,"defense_down",context)
+		"defense_down_attack":_defense_down_hit(target,context)
 		"every_fourth_combo":_combo_hit(origin,target,context)
 		"every_fifth_group_heal":_holy_group(origin,context)
 		"death_poison_explosion":_poison_death(origin)
@@ -82,7 +82,9 @@ func play_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary
 		"basic_attack_melee_dark":_basic_attack(origin,target,"dark","melee",context)
 		"basic_attack_ranged_undead":_basic_attack(origin,target,"undead","ranged",context)
 		"basic_attack_melee_undead":_basic_attack(origin,target,"undead","melee",context)
-		"unique_death_execute":_spawn(VFX_MOTHER_EXECUTE,MOTHER_EXECUTE_PROFILE,{"origin":origin,"target":target,"origin_node":context.get("origin_node"),"target_node":context.get("target_node")})
+		"unique_death_execute":
+			# 强制生成：书是玩家必须读到的关键事件，跳过并发上限，不被特效密集回合饿死。
+			_spawn_forced(VFX_MOTHER_EXECUTE,MOTHER_EXECUTE_PROFILE,{"origin":origin,"target":target,"origin_node":context.get("origin_node"),"target_node":context.get("target_node")})
 		"unique_king_growth":_king_attack(origin,target,context)
 		# ── PVE 怪物 ──────────────────────────────────────
 		"chain_lightning":_chain_lightning(origin,target,context)
@@ -130,9 +132,10 @@ func _ally_bless(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var heal:=_holy_profile(.38,.62);heal.main_color=Color(.58,.32,.055);heal.core_color=Color(1.0,.78,.28);heal.emission_energy=1.35
 	var layer:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if layer!=null:
+		# 大祭司的祝福缎带原本 .72 见方 ≈ 0.56 世界单位，比单位还矮。放大到贴近身高。
 		layer.play_layer("res://assets/vfx/skills/human_cleric/human_cleric_heal_ribbon.png",{
-			"position":target+Vector3(0,.34,0),"size":Vector2(.72,.72),"duration":.62,
-			"start_scale":.16,"peak_scale":.78,"dark_tint":Color(.20,.08,.01),
+			"position":target+Vector3(0,.34,0),"size":Vector2(1.05,1.05),"duration":.62,
+			"start_scale":.16,"peak_scale":.92,"dark_tint":Color(.20,.08,.01),
 			"body_tint":heal.main_color,"core_tint":heal.core_color,"seed":float(abs(int(target.x*31.0+target.z*17.0))%97),
 			"flow_strength":.018,"opacity":.92
 		})
@@ -141,26 +144,22 @@ func _ally_bless(origin:Vector3,target:Vector3,context:Dictionary)->void:
 func _holy_group(origin:Vector3,context:Dictionary)->void:
 	# Group heal is target-readable and one-shot. Do not keep a source-to-target
 	# beam alive: several simultaneous beams become a yellow screen-covering link.
-	var p:=_holy_profile(.30,.46);p.main_color=Color(.48,.25,.035);p.core_color=Color(1.0,.72,.22);p.emission_energy=1.25
+	# 圣光整体放大 20%（尺寸 .30→.36），让群体治疗更醒目。
+	var p:=_holy_profile(.36,.46);p.main_color=Color(.48,.25,.035);p.core_color=Color(1.0,.72,.22);p.emission_energy=1.25
 	_spawn(VFX_LIGHT_PULSE,p,{"target":origin+Vector3(0,.34,0)})
 	for value in _capped_targets(context.get("targets",[])):
-		var ally:=_holy_profile(.34,.62)
+		var ally:=_holy_profile(.41,.62)
 		ally.main_color=Color(.58,.32,.055);ally.core_color=Color(1.0,.78,.28);ally.emission_energy=1.35
 		var target_node_value:Variant=context.get("target_node")
 		var layer:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 		if layer!=null:
 			layer.play_layer("res://assets/vfx/skills/human_cleric/human_cleric_heal_ribbon.png",{
-				"position":value+Vector3(0,.34,0),"size":Vector2(.72,.72),"duration":.62,
-				"start_scale":.16,"peak_scale":.78,"dark_tint":Color(.20,.08,.01),
+				"position":value+Vector3(0,.34,0),"size":Vector2(.86,.86),"duration":.62,
+				"start_scale":.16,"peak_scale":.94,"dark_tint":Color(.20,.08,.01),
 				"body_tint":ally.main_color,"core_tint":ally.core_color,"seed":float(abs(int(value.x*31.0+value.z*17.0))%97),
 				"flow_strength":.018,"opacity":.92,"target_node":target_node_value
 			})
 		_spawn(VFX_LIGHT_PULSE,ally,{"target":value+Vector3(0,.24,0)})
-
-func _arcane_bolt(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	var p:=_profile(Color(.04,.06,.16),Color(.24,.48,.94),Color(.72,.94,1.0),.62,.92,3.15,10)
-	_binbun("projectile",origin+Vector3(0,.28,0),target+Vector3(0,.30,0),p)
-	_spawn(VFX_IMPACT_FLASH,p,{"target":target+Vector3(0,.30,0)})
 
 func _attribute_bolt(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	# Attribute bolts use the authored mage orb silhouette, then tint by element.
@@ -267,7 +266,9 @@ func _front_stun(origin:Vector3,target:Vector3,context:Dictionary)->void:
 
 func _barrier(target:Vector3,profile:VFXProfile3D,context:Dictionary={})->void:
 	var source_id:=str(context.get("source_unit_id",""))
-	var full_barrier:=bool(context.get("legendary",false)) or bool(context.get("boss",false)) or source_id.contains("god_guard") or source_id.contains("merc_cancer_shell")
+	# god_archangel 的减伤护盾原本走退化分支，在战斗取景下只有 ~30px，几乎看不见。
+	# 50 费传奇单位理应走全尺寸护盾。
+	var full_barrier:=bool(context.get("legendary",false)) or bool(context.get("boss",false)) or source_id.contains("god_guard") or source_id.contains("merc_cancer_shell") or source_id.contains("god_archangel")
 	var barrier_profile:VFXProfile3D=profile
 	if not full_barrier:
 		barrier_profile=profile.duplicate() as VFXProfile3D
@@ -315,6 +316,14 @@ func _curse_hit(target:Vector3,context:Dictionary)->void:
 	var mark:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if mark!=null:
 		mark.play_layer("res://assets/vfx/skills/distinct_v2/fear_mask_impact_v2.png",{"position":target+Vector3(0,.70,0),"size":Vector2(.52,.52),"duration":.82,"start_scale":.12,"peak_scale":.78,"dark_tint":Color(.035,.004,.07),"body_tint":Color(.28,.06,.58),"core_tint":Color(.86,.42,1.0),"seed":37.0,"flow_strength":.022,"opacity":.96})
+
+# 刺灵的减防攻击。原本只挂一个头顶减防图标，看不出"这一下打中了"。
+# 补一次暗绿命中爆发，把"被打了"和"中了减防"分开表达（图标仍由 _status_hit 负责）。
+func _defense_down_hit(target:Vector3,context:Dictionary)->void:
+	var p:=_profile(Color(.02,.06,.03),Color(.16,.52,.20),Color(.66,1.0,.60),.58,.52,3.4,7)
+	_spawn(VFX_ENERGY_BURST,p,{"target":target+Vector3(0,.28,0),"direction":Vector3.UP})
+	_spawn(VFX_IMPACT_FLASH,p,{"target":target+Vector3(0,.30,0)})
+	_status_hit(target,"defense_down",context)
 
 func _true_damage_hit(target:Vector3)->void:
 	var p:=_holy_profile(.54,.42);p.main_color=Color(.28,.68,1.0);p.core_color=Color(.88,.98,1.0)
@@ -417,12 +426,17 @@ func _holy_song(origin:Vector3,context:Dictionary)->void:
 		_spawn(VFX_LIGHT_PULSE,note,{"target":value+Vector3(0,.26,0)})
 
 func _twin_strike(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	var first:=_profile(Color(.015,.025,.06),Color(.10,.30,.62),Color(.58,.86,1.0),.30,.28,1.55,3)
-	first.parameters={"width":.085,"arc_degrees":104.0,"tilt_degrees":14.0}
+	# 300 费佣兵。两道弧原本 width 只有 .085/.075，是全场最细的技能。
+	# 加宽到 .16/.14，并叠上早已画好的专属双斩贴图作为主体，程序弧退为衬底。
+	var first:=_profile(Color(.015,.025,.06),Color(.10,.30,.62),Color(.58,.86,1.0),.34,.30,1.55,3)
+	first.parameters={"width":.16,"arc_degrees":104.0,"tilt_degrees":14.0}
 	_spawn(VFX_SLASH_ARC,first,{"target":target+Vector3(0,.30,0),"direction":Vector3.RIGHT})
-	var second:=_profile(Color(.06,.012,.04),Color(.36,.05,.46),Color(.78,.38,.78),.28,.25,1.45,3)
-	second.parameters={"width":.075,"arc_degrees":100.0,"tilt_degrees":-14.0}
+	var second:=_profile(Color(.06,.012,.04),Color(.36,.05,.46),Color(.78,.38,.78),.32,.27,1.45,3)
+	second.parameters={"width":.14,"arc_degrees":100.0,"tilt_degrees":-14.0}
 	_spawn(VFX_SLASH_ARC,second,{"target":target+Vector3(0,.34,0),"direction":Vector3.LEFT})
+	var slash:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
+	if slash!=null:
+		slash.play_layer("res://assets/vfx/skills/distinct_v2/twin_assassin_double_slash_v2.png",{"position":target+Vector3(0,.34,0),"size":Vector2(1.02,.82),"duration":.44,"start_scale":.16,"peak_scale":.94,"dark_tint":Color(.03,.01,.06),"body_tint":Color(.30,.26,.62),"core_tint":Color(.80,.78,1.0),"seed":63.0,"flow_strength":.020,"opacity":.98})
 	var flash_profile:=_profile(Color(.04,.008,.06),Color(.34,.06,.46),Color(.78,.52,.90),.16,.12,1.15,2)
 	_spawn(VFX_IMPACT_FLASH,flash_profile,{"target":target+Vector3(0,.30,0)})
 
@@ -500,6 +514,15 @@ func _death_hunt(origin:Vector3,target:Vector3,context:Dictionary)->void:
 # 改造前的 `var x := VFX_PAINTED.new()` 本来就推断出具体类型，转换是为了保持等价。
 func _block(script:Script)->Node3D:
 	return VFXBlockRoot.spawn_block(script,self)
+
+# 关键事件专用：跳过并发上限，保证一定生成（母灵处决的书等）。
+func _block_forced(script:Script)->Node3D:
+	return VFXBlockRoot.spawn_block(script,self,true)
+
+func _spawn_forced(script:Script,profile:VFXProfile3D,context:Dictionary)->Node3D:
+	var node:=_block_forced(script)
+	if node==null:return null
+	last_spawned=node;node.call("play_profile",profile,context);return node
 
 # 群体技能的特效目标列表，按画质档位截断。纯表现层：
 # 伤害/治疗/命中判定仍然由战斗模拟作用于全部目标，这里只少画几个。

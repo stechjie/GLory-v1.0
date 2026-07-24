@@ -45,9 +45,9 @@ const CRYSTAL_WATER_PATHS := [                # 水队（slot 3-5 黄紫橙）�
 ]
 const TOP_ROW_BTN_SIZE := Vector2(96, 64)                                 # 右上角横排三键（战力/统计/静音）缩小尺寸
 # 调试：把所有按钮的点击判定区域用线条画出来。不需要时改成 false。
-const SHOW_HIT_AREAS := true
+const SHOW_HIT_AREAS := false
 # 调试：把所有布局控件的矩形（空间框）用黑边画出来，方便看排版。不需要时改成 false。
-const SHOW_SPACE_FRAMES := true
+const SHOW_SPACE_FRAMES := false
 # 「队伍佣兵」弹窗 3D 检阅台。缩放/相机抄备战河流视口的量级，取景不对就调这几个。
 # AREA_HALF / MIN_DIST 是 stage root 本地坐标（stage 再被 STAGE_SCALE 放大）。
 const TEAM_MERCS_STAGE_SCALE := 3.2

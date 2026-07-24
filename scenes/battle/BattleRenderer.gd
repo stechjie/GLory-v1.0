@@ -320,6 +320,10 @@ func _scene_for_model_path(model_path: String) -> PackedScene:
 
 func _make_shared_model_node(f: Dictionary) -> Node3D:
 	var unit_def := _display_unit_def_for_fighter(f)
+	# Every fighter that reaches the battlefield passes through here — allied and
+	# enemy, piece, mercenary, monster, boss and formation ally — so this single
+	# call covers the whole codex. mark_seen is a no-op after the first sighting.
+	PlayerProfile.mark_seen(str(f.get("id", unit_def.get("id", ""))))
 	var model_path := str(unit_def.get("model", ""))
 	if not _model_path_available(model_path):
 		return null

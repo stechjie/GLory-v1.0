@@ -24,8 +24,12 @@ static func can_spawn_block() -> bool:
 
 # 统一的生成入口：超限返回 null。调用方要么直接判空，
 # 要么依赖已有的 is_instance_valid() 守卫（对 null 返回 false）。
-static func spawn_block(script: Script, parent: Node) -> Node3D:
-	if not can_spawn_block() or parent == null or not is_instance_valid(parent):
+#
+# force=true 跳过并发上限：留给稀有的、玩家必须读到的关键事件（母灵处决的书、
+# Boss 大招等）。这些不该在 6v6 特效密集的回合里被当成普通命中闪光丢掉——
+# 上限是用来砍廉价高频特效的，不是砍招牌演出的。
+static func spawn_block(script: Script, parent: Node, force := false) -> Node3D:
+	if (not force and not can_spawn_block()) or parent == null or not is_instance_valid(parent):
 		return null
 	var block := script.new() as Node3D
 	if block == null:

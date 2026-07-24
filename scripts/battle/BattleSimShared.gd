@@ -889,5 +889,7 @@ static func _heal_unit(unit: Dictionary, amount: int) -> void:
 		final_amount = maxi(0, int(round(float(final_amount) * maxf(0.0, 1.0 - float(unit.statuses.heal_reduction.get("pct", 0.0))))))
 	var before := int(unit.hp)
 	unit.hp = mini(int(unit.max_hp), int(unit.hp) + final_amount)
-	DamageService.record_heal(unit, maxi(0, int(unit.hp) - before))
+	var healed := maxi(0, int(unit.hp) - before)
+	DamageService.record_heal(unit, healed)
+	DamageService.emit_heal_number(unit, healed)
 

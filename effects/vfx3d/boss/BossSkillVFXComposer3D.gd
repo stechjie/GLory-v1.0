@@ -44,14 +44,6 @@ func play_skill(effect_id: String, origin: Vector3, target: Vector3, context: Di
 				if flash != null:
 					flash.play_profile(_profile(Color(.04,.04,.05), Color(.52,.54,.60), Color(.94,.96,1.0), .48, .32, 2.6), {"target": target + Vector3(0,.30,0), "direction": (target-origin).normalized()})
 
-func _meteor(target: Vector3) -> void:
-	_painted("boss_meteor_warning.png", {"position": target + Vector3(0, .025, 0), "ground": true, "size": Vector2(1.7, 1.35), "duration": 1.25, "dark_tint": Color(.15,.035,.015), "core_tint": Color(1,.82,.34), "seed": 2.1})
-	_painted("boss_meteor_trail.png", {"from": target + Vector3(-.72, 3.35, .03), "to": target + Vector3(0,.34,.03), "size": Vector2(1.05, 2.35), "duration": 1.06, "delay": .20, "rotation_z": -12.0, "seed": 5.4})
-	var fx := _block(METEOR) as VFXMeteorStrike3D
-	if fx != null:
-		fx.play_strike(target, _profile(Color(.08,.025,.012), Color(.86,.19,.025), Color(1,.82,.30), 1.08, 1.55, 3.4))
-	_painted("boss_meteor_explosion.png", {"position": target + Vector3(0,.38,.04), "size": Vector2(2.15,1.75), "duration": .78, "delay": .82, "start_scale": .10, "peak_scale": 1.08, "dark_tint": Color(.18,.025,.01), "seed": 7.7})
-
 func _meteor_v2(target: Vector3) -> void:
 	var profile := _profile(Color(.10,.018,.006), Color(.92,.16,.018), Color(1.0,.82,.30), 1.15, 1.2, 4.2)
 	# Binbun area is the readable ground warning/residue; the projectile supplies direction.
@@ -107,7 +99,9 @@ func _holy_purify(origin: Vector3, targets: Array) -> void:
 			shield.play_barrier(at, _profile(Color(.10,.07,.02), Color(.78,.58,.15), Color(1,.94,.66), .70, .82, 2.7))
 
 func _rage_stack(origin: Vector3, stacks: int) -> void:
-	_painted("boss_rage_stack.png", {"position": origin + Vector3(0,.46,.02), "size": Vector2(.78,.82), "duration": .42, "peak_scale": .58 + minf(stacks,20)*.012, "body_tint": Color(.82,.16,.05), "core_tint": Color(1,.66,.20), "seed": float(stacks)})
+	# 狂战灾兽。原本基数 .58 + 每层 .012，5 层才 .64，几乎看不见。
+	# 提到基数 .95 + 每层 .03（20 层封顶 1.55），层数越高越猛，贴合"狂战"。
+	_painted("boss_rage_stack.png", {"position": origin + Vector3(0,.46,.02), "size": Vector2(.78,.82), "duration": .42, "peak_scale": .95 + minf(stacks,20)*.03, "body_tint": Color(.82,.16,.05), "core_tint": Color(1,.66,.20), "seed": float(stacks)})
 
 func _rage_milestone(origin: Vector3, target: Vector3, stacks: int) -> void:
 	_painted("boss_rage_aura.png", {"position": origin + Vector3(0,.48,.02), "size": Vector2(1.42,1.42), "duration": 1.05, "body_tint": Color(.72,.10,.025), "core_tint": Color(1,.54,.12), "seed": float(stacks)})

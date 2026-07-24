@@ -46,8 +46,13 @@ var _vfx_root: Node3D
 var _origin_unit: Node3D
 var _target_unit: Node3D
 var _skills: Array[String] = []
+# skill_id -> 拥有它的单位 id。有些特效会按 source_unit_id 分支
+# （god_guard 拿全尺寸金盾、merc_cancer_shell 拿青色甲壳、undead_fly 换毒羽），
+# 传一个假 id 会让这些技能全部按退化分支渲染，量出来的结果不是玩家看到的。
+var _skill_owner: Dictionary = {}
 var _output_dir := "user://vfx_capture"
 var _frame := 0
+var _current_skill := ""
 
 func _initialize() -> void:
 	# 特效模块里有 randf_range（火花方向、翻页速度等）。不定死种子的话
@@ -92,6 +97,7 @@ func _process(_delta: float) -> bool:
 	return false
 
 func _play(skill_id: String) -> void:
+	_current_skill = skill_id
 	# 并发计数应当在每个技能开播前回到 0。回不去说明有块没被释放，
 	# 上限会越收越紧，最后把后面的技能全部饿死 —— 这条日志就是用来盯这个的。
 	print("  [%04d] active=%d %s" % [_frame, VFXBlockRoot.active_block_count(), skill_id])
@@ -112,7 +118,7 @@ func _context() -> Dictionary:
 		"targets": GROUP_POS.duplicate(),
 		"origin_node": _origin_unit.get_node("CastAnchor"),
 		"target_node": _target_unit.get_node("HitAnchor"),
-		"source_unit_id": "capture_source",
+		"source_unit_id": str(_skill_owner.get(_current_skill, "capture_source")),
 		"target_unit_id": "capture_target",
 		"stacks": 5,
 		"heal_target": ORIGIN_POS,
@@ -196,14 +202,6 @@ func _make_marker(marker_name: String, at: Vector3, tint: Color) -> Node3D:
 # 技能清单直接从 data/ 里现读，避免和 Phase3ModuleCapture 一样把清单
 # 硬编码成下标、过两周就对不上。
 func _collect_skills() -> Array[String]:
-	var explicit := _argument_value("--skills")
-	if not explicit.is_empty():
-		var chosen: Array[String] = []
-		for part in explicit.split(",", false):
-			var trimmed := part.strip_edges()
-			if not trimmed.is_empty():
-				chosen.append(trimmed)
-		return chosen
 	var found := {}
 	for path in [
 		"res://data/units/race_units.json",
@@ -213,6 +211,16 @@ func _collect_skills() -> Array[String]:
 		"res://data/boss/bosses.json",
 	]:
 		_harvest_skill_ids(_read_json(path), found)
+	# --skills 也要先扫过一遍 data/，否则 _skill_owner 是空的，
+	# 按 source_unit_id 分支的技能又会退回到假 id。
+	var explicit := _argument_value("--skills")
+	if not explicit.is_empty():
+		var chosen: Array[String] = []
+		for part in explicit.split(",", false):
+			var trimmed := part.strip_edges()
+			if not trimmed.is_empty():
+				chosen.append(trimmed)
+		return chosen
 	var ids: Array[String] = []
 	for key in found:
 		ids.append(str(key))
@@ -225,6 +233,9 @@ func _harvest_skill_ids(value: Variant, found: Dictionary) -> void:
 		# post_battle_gold_by_star 是战后结算的经济技，本来就没有战斗表现。
 		if not skill_id.is_empty() and skill_id != "none" and skill_id != "post_battle_gold_by_star":
 			found[skill_id] = true
+			var owner_id := str((value as Dictionary).get("id", ""))
+			if not owner_id.is_empty() and not _skill_owner.has(skill_id):
+				_skill_owner[skill_id] = owner_id
 		for sub in (value as Dictionary).values():
 			_harvest_skill_ids(sub, found)
 	elif value is Array:

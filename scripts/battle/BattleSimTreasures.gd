@@ -26,6 +26,9 @@ static func _process_single_race_death(state: Dictionary, victim: Dictionary) ->
 		return
 	state.field_death_count = int(state.get("field_death_count", 0)) + 1
 	_record_death_history(state, victim)
+	# 母灵计数在这里进行：此路径覆盖普攻/技能/AOE 所有致死方式，
+	# 且上面的 mother_execute_kill 早退已把处决击杀排除在外。
+	_credit_mother_kill(state, victim)
 	if state.has("owner_syn_by_key"):
 		# 3v3: each effect uses the dead unit's / opponent's OWNER synergy.
 		_owner_god_cleanse(state, victim)
@@ -446,58 +449,59 @@ static func _apply_defender_reaction(attacker: Dictionary, target: Dictionary, d
 	DamageService.set_stat_source_uid(prev_source)
 
 
-static func _maybe_mother_execute(state: Dictionary, enemies: Array) -> void:
-	# (4) 亡灵·母体处决: per OWNER. Each mother counts its own deaths (threshold
-	# scaled by its owner's undead synergy) and executes a target, preferring its
-	# OWN lane's enemies first, then any enemy (incl. allies' enemies).
-	if state.has("owner_syn_by_key"):
-		for mother in state.get("player", []):
-			if not bool(mother.get("alive", false)) or str(mother.get("def", {}).get("skill_id", "")) != "unique_death_execute":
-				continue
-			# Each player's Mother Wisp counts independently in team battles.
-			var mkey := "mother_%s" % str(mother.get("uid", ""))
-			var threshold := maxi(1, int(ceil(5.0 * float(_owner_syn(state, _owner_key(mother)).get("undead_threshold_mul", 1.0)))))
-			var os := _owner_state(state, mkey)
-			os.mother_count = int(os.get("mother_count", 0)) + 1
-			if int(os.mother_count) < threshold:
-				continue
-			os.mother_count = 0
+# 亡灵·母体处决的计数（理解 B）。每次己方棋子杀死一个敌人就给母灵 +1——
+# 普攻/技能/AOE 都算，唯独母灵的处决技能杀死的不算（调用点已用 mother_execute_kill 拦掉）。
+# 归属规则：按"击杀者"归属。组队模式只算母灵自己那位玩家（同 owner_key）的棋子击杀，
+# 队友先不算；1v1 只有一个玩家，己方所有棋子的击杀都算。数满阈值就处决一个目标。
+# 中毒/失血/衰减这类无来源死亡（killer_uid 为空）无法归属，不计数。
+static func _credit_mother_kill(state: Dictionary, victim: Dictionary) -> void:
+	var killer_uid := str(victim.get("killer_uid", ""))
+	if killer_uid.is_empty():
+		return
+	var killer := _find_fighter_by_uid(state, killer_uid)
+	if killer.is_empty():
+		return
+	# 只算跨队击杀：击杀者和死者不同队，才是"己方杀了敌人"。自相残杀不喂母灵。
+	if str(killer.get("team", "")) == str(victim.get("team", "")):
+		return
+	var team_mode := state.has("owner_syn_by_key")
+	var killer_is_player := str(killer.get("team", "")) == "player"
+	var killer_owner := _owner_key(killer)
+	var side: Array = state.get("player", []) if killer_is_player else state.get("enemy", [])
+	for mother in side:
+		if not bool(mother.get("alive", false)) or str(mother.get("def", {}).get("skill_id", "")) != "unique_death_execute":
+			continue
+		# 组队：只有击杀者所属玩家（同 owner_key）的母灵计数，队友不算。
+		# 1v1：本方只有一个玩家，所有母灵都算。
+		if team_mode and _owner_key(mother) != killer_owner:
+			continue
+		var owner_syn: Dictionary
+		if team_mode:
+			owner_syn = _owner_syn(state, _owner_key(mother))
+		else:
+			owner_syn = state.get("player_syn", {}) if killer_is_player else state.get("enemy_syn", {})
+		var threshold := maxi(1, int(ceil(5.0 * float(owner_syn.get("undead_threshold_mul", 1.0)))))
+		var os := _owner_state(state, "mother_%s" % str(mother.get("uid", "")))
+		os.mother_count = int(os.get("mother_count", 0)) + 1
+		if int(os.mother_count) < threshold:
+			continue
+		os.mother_count = 0
+		if killer_is_player:
+			# 玩家母灵：优先处决自己路上的敌人，没有再退到全场敌人。
 			_mother_execute_target(state, int(mother.get("lane", -1)), mother)
-		return
-	var mothers := []
+		else:
+			# 敌方母灵（1v1 镜像）：处决玩家单位。
+			_mother_execute_on(state, _alive(state.get("player", [])), mother)
+
+
+static func _find_fighter_by_uid(state: Dictionary, uid: String) -> Dictionary:
 	for f in state.get("player", []):
-		if bool(f.get("alive", false)) and str(f.get("def", {}).get("skill_id", "")) == "unique_death_execute":
-			mothers.append(f)
-	if mothers.is_empty():
-		return
-	var syn: Dictionary = state.get("player_syn", {})
-	var threshold := maxi(1, int(ceil(5.0 * float(syn.get("undead_threshold_mul", 1.0)))))
-	for mother in mothers:
-		var os := _owner_state(state, "mother_%s" % str(mother.get("uid", "")))
-		os.mother_count = int(os.get("mother_count", 0)) + 1
-		if int(os.mother_count) < threshold:
-			continue
-		os.mother_count = 0
-		_mother_execute_on(state, _alive(enemies), mother)
-
-
-static func _maybe_enemy_mother_execute_1v1(state: Dictionary) -> void:
-	# 1v1 mirror: enemy mothers count player deaths and execute a player unit.
-	var mothers := []
+		if str(f.get("uid", "")) == uid:
+			return f
 	for f in state.get("enemy", []):
-		if bool(f.get("alive", false)) and str(f.get("def", {}).get("skill_id", "")) == "unique_death_execute":
-			mothers.append(f)
-	if mothers.is_empty():
-		return
-	var syn: Dictionary = state.get("enemy_syn", {})
-	var threshold := maxi(1, int(ceil(5.0 * float(syn.get("undead_threshold_mul", 1.0)))))
-	for mother in mothers:
-		var os := _owner_state(state, "mother_%s" % str(mother.get("uid", "")))
-		os.mother_count = int(os.get("mother_count", 0)) + 1
-		if int(os.mother_count) < threshold:
-			continue
-		os.mother_count = 0
-		_mother_execute_on(state, _alive(state.get("player", [])), mother)
+		if str(f.get("uid", "")) == uid:
+			return f
+	return {}
 
 
 static func _mother_execute_target(state: Dictionary, lane: int, mother: Dictionary) -> void:
@@ -512,25 +516,55 @@ static func _mother_execute_target(state: Dictionary, lane: int, mother: Diction
 
 
 static func _mother_execute_on(state: Dictionary, candidates: Array, mother: Dictionary) -> void:
-	if candidates.is_empty():
+	# 处决按星级掷骰：50% 拿一个 t1、35% 拿一个 t2、10% 拿一个 t3，抽中的星级没人
+	# 就退到相邻星级。触发次数（=规则）由调用方的计数决定，这里不改。
+	#
+	# 书本 VFX 只跟"处决触发了"绑定，跟"有没有活目标"解耦：只要达到触发次数，
+	# 母灵头上就一定放书。哪怕这一刻敌人已经被队友清光、或选中的目标先死了，
+	# 事件照发（target_uid 留空），前端就把书放在母灵头上。
+	if not state.has("visual_events") or typeof(state.visual_events) != TYPE_ARRAY:
+		state.visual_events = []
+	var target: Dictionary = {}
+	if not candidates.is_empty():
+		var roll := RngService.rng.randf()
+		var wanted_tier := 1 if roll < 0.50 else (2 if roll < 0.85 else 3)
+		target = _pick_execute_target(candidates, wanted_tier)
+	# 事件永远发。三条路互不重叠：普通处决（目标已死）走 death_events；Boss 扣血
+	# （目标存活）与无目标（target_uid 空）走前端的 mother_execute 分支。
+	state.visual_events.append({"type":"mother_execute","source_uid":str(mother.get("uid","")),"target_uid":str(target.get("uid","")),"time":float(state.get("elapsed",0.0))})
+	if target.is_empty():
 		return
-	var target: Dictionary = candidates[RngService.rng.randi() % candidates.size()]
-	var tier := int(target.get("def", {}).get("tier", 1))
-	var roll := RngService.rng.randf()
-	var chance := 0.50 if tier <= 1 or bool(target.get("is_mercenary", false)) else 0.35 if tier == 2 else 0.10
 	if bool(target.get("def", {}).get("is_boss", false)):
 		DamageService.apply_damage(target, maxi(1, int(round(float(target.max_hp) * 0.20))), true)
-	elif roll < chance:
-		target.mother_execute_kill = true
-		if not state.has("visual_events") or typeof(state.visual_events) != TYPE_ARRAY:
-			state.visual_events = []
-		state.visual_events.append({"type":"mother_execute","source_uid":str(mother.get("uid","")),"target_uid":str(target.get("uid","")),"time":float(state.get("elapsed",0.0))})
-		# Preserve the real Mother Wisp as the lethal damage source so the VFX
-		# dispatcher can resolve the caster after the victim is removed.
-		var previous_source_uid := DamageService.current_stat_source_uid()
-		DamageService.set_stat_source_uid(str(mother.get("uid", "")))
-		DamageService.apply_damage(target, int(target.hp), true)
-		DamageService.set_stat_source_uid(previous_source_uid)
+		return
+	target.mother_execute_kill = true
+	# Preserve the real Mother Wisp as the lethal damage source so the VFX
+	# dispatcher can resolve the caster after the victim is removed.
+	var previous_source_uid := DamageService.current_stat_source_uid()
+	DamageService.set_stat_source_uid(str(mother.get("uid", "")))
+	DamageService.apply_damage(target, int(target.hp), true)
+	DamageService.set_stat_source_uid(previous_source_uid)
+
+# 从候选里挑一个处决目标：先取抽中的星级，没有就往相邻星级退，
+# 保证只要场上还有存活单位就一定能挑到一个。Boss 也可被挑中（交给调用方按
+# is_boss 决定是处决还是扣血）。
+static func _pick_execute_target(candidates: Array, wanted_tier: int) -> Dictionary:
+	# 按到目标星级的距离排序：先同星级，再相邻，最后最远。同距离时保持随机。
+	var order: Array = [wanted_tier]
+	for distance in range(1, 3):
+		order.append(wanted_tier + distance)
+		order.append(wanted_tier - distance)
+	for tier in order:
+		if tier < 1 or tier > 3:
+			continue
+		var pool: Array = []
+		for candidate in candidates:
+			if int(candidate.get("def", {}).get("tier", 1)) == tier:
+				pool.append(candidate)
+		if not pool.is_empty():
+			return pool[RngService.rng.randi() % pool.size()]
+	# 星级数据缺失等异常情况的兜底：从全部候选里随便挑一个，仍然保证有人死。
+	return candidates[RngService.rng.randi() % candidates.size()]
 
 
 static func _apply_boss_attacker_passives(attacker: Dictionary) -> void:

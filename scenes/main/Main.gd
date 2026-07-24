@@ -200,6 +200,7 @@ func _show_menu() -> void:
 		_menu.team_reconnect_requested.connect(_on_team_reconnect_requested)
 	_menu.settings_requested.connect(_show_settings)
 	_menu.prep_requested.connect(_show_pet_screen)
+	_menu.codex_requested.connect(_show_codex_screen)
 	add_child(_menu)
 
 func _on_team_reconnect_requested() -> void:
@@ -230,6 +231,13 @@ func _show_pet_screen() -> void:
 	var pet_screen := preload("res://scenes/menu/PetScreen.tscn").instantiate()
 	pet_screen.back_requested.connect(_show_menu)
 	add_child(pet_screen)
+
+# 图鉴界面。从主菜单「图鉴」按钮进入，返回回主菜单。
+func _show_codex_screen() -> void:
+	_clear()
+	var codex := preload("res://scenes/menu/CodexScreen.tscn").instantiate()
+	codex.back_requested.connect(_show_menu)
+	add_child(codex)
 
 # 首次启动的初始宠物三选一关卡：无返回按钮，选完后再进主菜单。
 func _show_starter_pet_gate() -> void:
