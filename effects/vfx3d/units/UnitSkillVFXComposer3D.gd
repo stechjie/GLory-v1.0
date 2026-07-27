@@ -115,12 +115,83 @@ func play_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary
 	return last_spawned
 
 func _basic_attack(origin:Vector3,target:Vector3,race:String,mode:String,context:Dictionary)->void:
-	var profile:VFXProfile3D=BASIC_HUMAN
+	var uid:=str(context.get("source_unit_id",""))
+	var profile:=_basic_profile_for(uid,race)
+	# 有专属 PNG 箭矢的单位（弓箭手/极光射手），远程普攻用它自己的图当弹体；
+	# 走同一套弹道系统，所以会跟着飞行方向朝向目标（不再横着）。
+	var bolt_tex:=str(PROJECTILE_TEX_BY_UNIT.get(uid,"")) if mode=="ranged" else ""
+	_spawn(VFX_RACE_BASIC_ATTACK,profile,{"origin":origin,"target":target,"target_node":context.get("target_node"),"race":race,"mode":mode,"bolt_kind":_bolt_kind_for(uid),"melee_kind":_melee_kind_for(uid),"bolt_tex":bolt_tex})
+
+# 普攻用的着色 profile：怪物/Boss/佣兵统一灰色中性弹道，和玩家种族区分开；
+# 玩家种族按种族色。
+var _gray_basic_cache:VFXProfile3D=null
+func _basic_profile_for(uid:String,race:String)->VFXProfile3D:
+	if uid.begins_with("pve_") or uid.begins_with("boss_") or uid.begins_with("merc_"):
+		if _gray_basic_cache==null:
+			var g:=BASIC_HUMAN.duplicate_runtime()  # 借用尺寸/时长/参数，只改颜色
+			g.dark_color=Color(0.10,0.10,0.12)
+			g.main_color=Color(0.56,0.58,0.63)
+			g.core_color=Color(0.90,0.92,0.96)
+			_gray_basic_cache=g
+		return _gray_basic_cache
 	match race:
-		"god":profile=BASIC_GOD
-		"dark":profile=BASIC_DARK
-		"undead":profile=BASIC_UNDEAD
-	_spawn(VFX_RACE_BASIC_ATTACK,profile,{"origin":origin,"target":target,"target_node":context.get("target_node"),"race":race,"mode":mode})
+		"god":return BASIC_GOD
+		"dark":return BASIC_DARK
+		"undead":return BASIC_UNDEAD
+	return BASIC_HUMAN
+
+# 专属 PNG 弹道贴图（普攻用）。这些单位本就有画好的箭矢图。
+const PROJECTILE_TEX_BY_UNIT := {
+	"human_archer":"res://assets/vfx/skills/human_archer/human_archer_arrow_trail.png",
+	"god_aurora":"res://assets/vfx/skills/god_aurora/god_aurora_arrow_trail.png",
+}
+
+# 用一张贴图做一条直线飞行弹道 + 命中闪。
+func _painted_projectile(origin:Vector3,target:Vector3,tex:String,profile:VFXProfile3D)->void:
+	var arrow:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
+	if arrow!=null:
+		arrow.play_layer(tex,{"from":origin+Vector3(0,.34,0),"to":target+Vector3(0,.34,0),"size":Vector2(.86,.20),"duration":.52,"travel_ratio":.80,"start_scale":.30,"peak_scale":1.0,"dark_tint":profile.dark_color,"body_tint":profile.main_color,"core_tint":profile.core_color,"seed":52.0,"flow_strength":.016,"opacity":.98})
+	_spawn(VFX_IMPACT_FLASH,_profile(profile.dark_color,profile.main_color,profile.core_color,.42,.30,3.0,5),{"target":target+Vector3(0,.32,0)})
+
+# 远程普攻的弹道原型：按施法者 unit_id 归类到 6 种形状之一。
+# 近战单位不会走到这里（前端按 range_px 分流），所以只列远程单位。
+# 未列出的远程单位回落到默认 "lance"（针/矛）。
+const BOLT_KIND_BY_UNIT := {
+	# 🏹 箭矢
+	"human_archer":"arrow", "god_aurora":"arrow", "merc_sagittarius_rain":"arrow",
+	"pve_sky_wind_falcon":"arrow",
+	# 🔮 法球
+	"human_mage":"orb", "merc_pisces_bubble":"orb",
+	"merc_aquarius_time":"orb", "pve_ren_voodoo_witch":"orb", "boss_meteor_caster":"orb",
+	# 🌙 弯月镰（暗影法师，避开太圆的法球）
+	"dark_mage":"crescent",
+	# ☠️ 毒镖
+	"pve_ren_poison_doctor":"dart", "undead_spike":"dart", "undead_mother":"dart",
+	# ✨ 圣光弹
+	"god_priest":"holy", "god_priestess":"holy", "god_archangel":"holy",
+	"human_cleric":"holy", "boss_holy_priest":"holy", "merc_virgo_heal":"holy",
+	"pve_sky_hymn_spirit":"holy", "pve_sky_star_butterfly":"holy", "pve_land_ancient_tree":"holy",
+	# ✦ 四芒星光羽（天使，避开太圆的圣光弹）
+	"god_angel":"star",
+	# 🌑 暗能弹
+	"dark_queen":"dark", "ally_soul_chain":"dark", "ally_hell_inferno":"dark",
+	# ⚡ 雷弹
+	"boss_thunder_core":"thunder", "pve_sky_thunder_spirit":"thunder",
+}
+
+func _bolt_kind_for(unit_id:String)->String:
+	return str(BOLT_KIND_BY_UNIT.get(unit_id,"lance"))
+
+# 近战 T3 的专属斩击（保持近战、不飞弹道）。人王已有专属天堂剑走别的路，不在此列。
+# 其余近战单位回落空串 = 默认单斩。
+const MELEE_KIND_BY_UNIT := {
+	"dark_dragon":"claw",    # 黑龙·龙爪三连
+	"god_king":"cross",      # 神王·神圣交叉斩
+	"dark_doom":"scythe",    # 末日守卫·厄夜镰斩
+}
+
+func _melee_kind_for(unit_id:String)->String:
+	return str(MELEE_KIND_BY_UNIT.get(unit_id,""))
 
 func _holy_heal(target:Vector3)->void:
 	var p:=_holy_profile(.72,1.0);p.main_color=Color(.86,.62,.12);p.core_color=Color(1.0,.98,.62);p.emission_energy=4.0

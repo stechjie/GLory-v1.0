@@ -111,7 +111,10 @@ func play_projectile(origin:Vector3,target:Vector3,profile:VFXProfile3D=null,tar
 	position=origin
 	var tracked_target:=_tracked_target_position(target,target_ref)
 	var direction:Vector3=(tracked_target-origin).normalized()
-	var travel_ratio:=clampf(float(active.parameters.get("travel_ratio",0.54)),0.35,0.72)
+	# 厚重手感：飞行占总时长的比例调高（飞得更慢更沉），并给一道抛物线弧高。
+	# arc_height 走 profile 参数，个别技能可覆盖（箭矢压平、巨石抬高）。
+	var travel_ratio:=clampf(float(active.parameters.get("travel_ratio",0.66)),0.35,0.86)
+	var arc_height:=maxf(0.0,float(active.parameters.get("arc_height",0.42)))
 	var trail_puffs:=clampi(int(active.parameters.get("trail_puffs",8)),4,10)
 	var charge:=_make_billboard("ChargeCore",Vector2(active.size*.94,active.size*.78),PROJECTILE_SHADER,{"dark_color":active.dark_color,"main_color":active.main_color,"core_color":active.core_color,"seed":3.2,"halo":0.0})
 	charge.scale=Vector3.ONE*.12
@@ -139,7 +142,9 @@ func play_projectile(origin:Vector3,target:Vector3,profile:VFXProfile3D=null,tar
 		travel_elapsed+=get_process_delta_time()
 		tracked_target=_tracked_target_position(tracked_target,target_ref)
 		var ratio:=clampf(travel_elapsed/travel_duration,0.0,1.0)
-		position=origin.lerp(tracked_target,ratio*ratio)
+		# 水平匀速推进（不再用 ratio*ratio 的加速冲刺，那是"嗖一下"的轻飘感来源），
+		# 叠加一道 sin 抛物线弧——像有质量的重物被抛出、受重力下坠，落点带沉感。
+		position=origin.lerp(tracked_target,ratio)+Vector3(0.0,arc_height*sin(ratio*PI),0.0)
 		while puff_index<trail_puffs and travel_elapsed>=puff_interval*float(puff_index+1):
 			_spawn_trail_puff(active,puff_index)
 			puff_index+=1

@@ -716,6 +716,16 @@ static func _apply_opening_unit_skills(player: Array, enemy: Array, event_log: A
 		event_log.append(TranslationServer.translate("log_deadpool_bind"))
 
 
+# 施法前的距离判定：和普攻用同一套目标选择 + 有效射程。射程内有合法敌人才允许施法。
+# 辅助技（治疗/增益）也走这条：nearest 敌人进入自己射程 = 本路已交战，才开始起作用。
+static func _skill_target_in_range(caster: Dictionary, opponents: Array) -> bool:
+	var target := _select_target(caster, opponents)
+	if target.is_empty():
+		return false
+	var caster_pos: Vector2 = caster.get("pos", Vector2.ZERO)
+	var target_pos: Vector2 = target.get("pos", Vector2.ZERO)
+	return caster_pos.distance_to(target_pos) <= _effective_attack_distance(caster, target) + ATTACK_RANGE_EPS
+
 static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) -> void:
 	for caster in casters:
 		if not bool(caster.get("alive", false)):
@@ -727,6 +737,12 @@ static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) ->
 		if StatusEffectService.has_status(caster, "silence"):
 			continue
 		if float(state.elapsed) < float(caster.get("skill_ready", 0.0)):
+			continue
+		# 技能距离判定（方案 A）：自己射程内没有敌人就不放，冷却不消耗，
+		# 等敌人进入射程再放。复用普攻同一套 _select_target + _effective_attack_distance，
+		# 实现"用单位自己的射程"，堵住"开场冷却一到就隔着半张地图乱开"。
+		# 治疗/增益等辅助技也一并按此判定：等自己这一路真正交战了才开始起作用。
+		if not _skill_target_in_range(caster, opponents):
 			continue
 		var old_ready := float(caster.get("skill_ready", 0.0))
 		DamageService.begin_stat_context(state, caster)

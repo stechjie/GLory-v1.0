@@ -10,12 +10,16 @@ func play_profile(profile: VFXProfile3D, context: Dictionary) -> void:
 	var race := str(context.get("race", profile.parameters.get("race", "human")))
 	var origin: Vector3 = context.get("origin", Vector3(-0.7, 0.72, 0.0))
 	var target: Vector3 = context.get("target", Vector3(0.8, 0.48, 0.0))
+	# 弹道形状按兵种原型走：composer 依据施法者 unit_id 传入 bolt_kind。
+	# 缺省 "lance" = 原来的针/矛，保持向后兼容。bolt_tex 非空则用该 PNG 做弹道。
+	var bolt_kind := str(context.get("bolt_kind", "lance"))
+	var bolt_tex := str(context.get("bolt_tex", ""))
 	if mode == "melee":
-		_play_melee(origin, target, race, profile)
+		_play_melee(origin, target, race, profile, str(context.get("melee_kind", "")))
 	else:
-		_play_ranged(origin, target, race, profile, context.get("target_node"))
+		_play_ranged(origin, target, race, profile, context.get("target_node"), bolt_kind, bolt_tex)
 
-func _play_ranged(origin: Vector3, target: Vector3, race: String, profile: VFXProfile3D, target_node: Variant) -> void:
+func _play_ranged(origin: Vector3, target: Vector3, race: String, profile: VFXProfile3D, target_node: Variant, bolt_kind := "lance", bolt_tex := "") -> void:
 	begin()
 	var active := _runtime_profile(profile, race, true)
 	var target_ref: WeakRef = null
@@ -24,11 +28,15 @@ func _play_ranged(origin: Vector3, target: Vector3, race: String, profile: VFXPr
 	var tracked_target := _tracked_target_position(target, target_ref)
 	var direction := _safe_direction(origin, tracked_target)
 	_spawn_shards(origin, direction, active, race, false)
-	var needle := _make_projectile_needle(active, race)
+	var needle := _make_projectile_body(bolt_kind, active, race, bolt_tex)
 	needle.position = origin + Vector3(0.0, 0.0, 0.10)
-	needle.rotation.z = UPRIGHT_PROJECTILE_ROTATION
+	needle.rotation.z = _screen_facing(origin, tracked_target)
 	add_child(needle)
-	var travel_duration := active.duration * 0.54
+	# 厚重手感 = 慢 + 匀速 + 直线（不抛物线，避免"水滴/吊射"观感）。
+	# 飞行占比调高（0.54→0.68，飞得更慢更沉）。arc_height 默认 0=直线；
+	# 个别需要吊射的技能（比如投石）可单独传 arc_height 覆盖。
+	var travel_duration := active.duration * 0.68
+	var arc_height := maxf(0.0, float(active.parameters.get("arc_height", 0.0)))
 	var travel_elapsed := 0.0
 	var trail_elapsed := 0.0
 	var trail_index := 0
@@ -42,9 +50,9 @@ func _play_ranged(origin: Vector3, target: Vector3, race: String, profile: VFXPr
 		tracked_target = _tracked_target_position(tracked_target, target_ref)
 		direction = _safe_direction(origin, tracked_target)
 		var ratio := clampf(travel_elapsed / travel_duration, 0.0, 1.0)
-		var attack_curve := 1.0 - pow(1.0 - ratio, 2.35)
-		needle.position = origin.lerp(tracked_target, attack_curve) + Vector3(0.0, 0.0, 0.10)
-		needle.rotation.z = UPRIGHT_PROJECTILE_ROTATION
+		# 匀速推进（去掉 1-pow(...) 的快射-减速冲刺，那是轻飘"嗖一下"的来源）。
+		needle.position = origin.lerp(tracked_target, ratio) + Vector3(0.0, arc_height * sin(ratio * PI), 0.10)
+		needle.rotation.z = _screen_facing(origin, tracked_target)
 		if trail_elapsed >= 0.045:
 			trail_elapsed = 0.0
 			_spawn_needle_trail(needle.position, direction, active, race, trail_index)
@@ -54,16 +62,31 @@ func _play_ranged(origin: Vector3, target: Vector3, race: String, profile: VFXPr
 	await get_tree().create_timer(active.duration * 0.34).timeout
 	finish()
 
-func _play_melee(origin: Vector3, target: Vector3, race: String, profile: VFXProfile3D) -> void:
+func _play_melee(origin: Vector3, target: Vector3, race: String, profile: VFXProfile3D, melee_kind := "") -> void:
 	begin()
 	var active := _runtime_profile(profile, race, false)
 	var direction := (target - origin).normalized()
 	if direction.length_squared() < 0.001:
 		direction = Vector3.RIGHT
-	var slash := SLASH_ARC.new()
-	slash.name = "RaceSlash_%s" % race
-	add_child(slash)
-	slash.play_slash(target + Vector3(0.0, 0.22, 0.02), direction, active)
+	var hit_at := target + Vector3(0.0, 0.22, 0.02)
+	# 近战 T3 专属斩击（保持近战定位，只是斩击更派头）。其余单位走默认单斩。
+	match melee_kind:
+		"claw":
+			# 黑龙·龙爪三连：三道错开倾角的平行爪痕。
+			for i in range(3):
+				_spawn_slash(hit_at + Vector3(0.0, float(i - 1) * 0.11, 0.004 * float(i)), direction, active, {"tilt": -26.0 + float(i) * 26.0, "width_mul": 0.9, "radius_mul": 1.08})
+		"cross":
+			# 神王·神圣交叉：两道对角 X 斩。
+			_spawn_slash(hit_at, direction, active, {"tilt": 36.0, "width_mul": 1.2, "radius_mul": 1.18})
+			_spawn_slash(hit_at, direction, active, {"tilt": -36.0, "width_mul": 1.2, "radius_mul": 1.18})
+		"scythe":
+			# 末日守卫·厄夜镰斩：一道又宽又低的大横扫。
+			_spawn_slash(hit_at + Vector3(0.0, -0.06, 0.0), direction, active, {"arc": 172.0, "tilt": 6.0, "width_mul": 1.55, "radius_mul": 1.32})
+		_:
+			var slash := SLASH_ARC.new()
+			slash.name = "RaceSlash_%s" % race
+			add_child(slash)
+			slash.play_slash(hit_at, direction, active)
 	await get_tree().create_timer(active.duration * 0.16).timeout
 	if _finished:
 		return
@@ -71,9 +94,27 @@ func _play_melee(origin: Vector3, target: Vector3, race: String, profile: VFXPro
 	var flash := IMPACT_FLASH.new()
 	flash.name = "RaceMeleeImpact_%s" % race
 	add_child(flash)
-	flash.play_flash(target, active.core_color, active.size * 0.38, active.duration * 0.16)
+	# T3 专属斩击给更强的命中闪。
+	var flash_scale := active.size * (0.52 if melee_kind != "" else 0.38)
+	flash.play_flash(target, active.core_color, flash_scale, active.duration * 0.16)
 	await get_tree().create_timer(active.duration * 0.82).timeout
 	finish()
+
+# 生成一道斩击，用 overrides 覆盖弧度/倾角/粗细/半径。
+func _spawn_slash(at: Vector3, direction: Vector3, base: VFXProfile3D, overrides: Dictionary) -> void:
+	var p := base.duplicate_runtime()
+	p.parameters = p.parameters.duplicate()
+	if overrides.has("arc"):
+		p.parameters["arc_degrees"] = float(overrides["arc"])
+	if overrides.has("tilt"):
+		p.parameters["tilt_degrees"] = float(overrides["tilt"])
+	if overrides.has("width_mul"):
+		p.parameters["width"] = float(p.parameters.get("width", 0.16)) * float(overrides["width_mul"])
+	if overrides.has("radius_mul"):
+		p.parameters["radius"] = float(p.parameters.get("radius", 1.15)) * float(overrides["radius_mul"])
+	var slash := SLASH_ARC.new()
+	add_child(slash)
+	slash.play_slash(at, direction, p)
 
 func _tracked_target_position(fallback: Vector3, target_ref: WeakRef) -> Vector3:
 	if target_ref == null:
@@ -84,6 +125,17 @@ func _tracked_target_position(fallback: Vector3, target_ref: WeakRef) -> Vector3
 	var tracked := to_local((target_node as Node3D).global_position)
 	tracked.y = fallback.y
 	return tracked
+
+# 弹道朝向 = 飞行方向在屏幕上的角度。战斗相机 (0,7.4,7) 俯视：
+# 世界 X → 屏幕右；世界 Y/Z → 屏幕纵向（Y 抬升 0.688、Z 远近 -0.726 的俯角投影）。
+# 形状都沿 +X 建，rotation.z 设成这个角就把箭头对准目标。正对射击(纯 Z)时 = ±90°，
+# 和原来固定竖直一致，向后兼容。
+func _screen_facing(from: Vector3, to: Vector3) -> float:
+	var d := to - from
+	var screen_y := d.y * 0.688 - d.z * 0.726
+	if absf(d.x) < 0.0001 and absf(screen_y) < 0.0001:
+		return UPRIGHT_PROJECTILE_ROTATION
+	return atan2(screen_y, d.x)
 
 func _safe_direction(origin: Vector3, target: Vector3) -> Vector3:
 	var direction := target - origin
@@ -105,6 +157,147 @@ func _make_projectile_needle(profile: VFXProfile3D, race: String) -> Node3D:
 		lance.name = str(layer["name"])
 		lance.position.z = float(layer["z"])
 		root.add_child(lance)
+	return root
+
+# ── 弹道形状库（6 种兵种原型 + 默认矛）──────────────────────────────
+# 颜色仍取 profile（按种族），差异化的是形状。所有形状都是程序化几何体，
+# 零美术成本；将来要精致版再用贴图替换单个原型。
+func _make_projectile_body(kind: String, profile: VFXProfile3D, race: String, tex_path := "") -> Node3D:
+	if tex_path != "":
+		return _body_texture(tex_path, profile)
+	match kind:
+		"arrow": return _body_arrow(profile, race)
+		"orb": return _body_orb(profile, race, "magic")
+		"dart": return _body_dart(profile, race)
+		"holy": return _body_orb(profile, race, "holy")
+		"dark": return _body_orb(profile, race, "dark")
+		"thunder": return _body_thunder(profile, race)
+		"crescent": return _body_crescent(profile, race)
+		"star": return _body_star(profile, race)
+		_: return _make_projectile_needle(profile, race)
+
+# 🖼 PNG 弹道：用一张贴图做弹体。贴图里的箭头朝右(+X)，rotation.z 会把它对准目标。
+func _body_texture(tex_path: String, profile: VFXProfile3D) -> Node3D:
+	var tex := load(tex_path) as Texture2D
+	if tex == null:
+		return _make_projectile_needle(profile, "human")
+	var root := Node3D.new(); root.name = "BoltTexture"
+	var quad := QuadMesh.new()
+	quad.size = Vector2(profile.size * 1.5, profile.size * 0.5)
+	var mi := MeshInstance3D.new(); mi.mesh = quad
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.no_depth_test = true
+	mat.render_priority = 3
+	mat.albedo_texture = tex
+	mat.albedo_color = profile.main_color.lerp(Color.WHITE, 0.35)
+	mat.emission_enabled = true
+	mat.emission = profile.main_color
+	mat.emission_texture = tex
+	mat.emission_energy_multiplier = minf(profile.emission_energy, 3.6)
+	mi.material_override = mat
+	root.add_child(mi)
+	return root
+
+# 🌙 弯月镰：一段两端收尖、中段饱满的弧刃，比圆球灵动。给暗影法师。
+func _body_crescent(profile: VFXProfile3D, race: String) -> Node3D:
+	var root := Node3D.new(); root.name = "BoltCrescent"
+	var rc := profile.size * 0.5
+	for layer in [
+		{"w": profile.size * 0.20, "c": profile.dark_color.lerp(profile.main_color, 0.2), "e": profile.emission_energy * 0.5, "z": 0.0},
+		{"w": profile.size * 0.135, "c": profile.main_color, "e": profile.emission_energy * 0.9, "z": 0.008},
+		{"w": profile.size * 0.055, "c": profile.core_color, "e": profile.emission_energy, "z": 0.016},
+	]:
+		var m := _crescent_mesh(rc, float(layer["w"]), 150.0, layer["c"], float(layer["e"]))
+		m.position.z = float(layer["z"]); root.add_child(m)
+	return root
+
+# ✦ 四芒星光羽：四长尖交替短尖，尖锐飘逸。给天使。
+func _body_star(profile: VFXProfile3D, race: String) -> Node3D:
+	var root := Node3D.new(); root.name = "BoltStar"
+	var rl := profile.size * 0.52
+	root.add_child(_disc_mesh(rl * 0.42, profile.main_color, profile.emission_energy * 0.28, 16))  # 柔和光核底
+	for layer in [
+		{"rl": rl, "rs": rl * 0.30, "c": profile.dark_color.lerp(profile.main_color, 0.25), "e": profile.emission_energy * 0.5, "z": 0.002},
+		{"rl": rl * 0.82, "rs": rl * 0.24, "c": profile.main_color, "e": profile.emission_energy * 0.9, "z": 0.010},
+		{"rl": rl * 0.5, "rs": rl * 0.16, "c": profile.core_color, "e": profile.emission_energy, "z": 0.018},
+	]:
+		var m := _star_mesh(float(layer["rl"]), float(layer["rs"]), layer["c"], float(layer["e"]), 4)
+		m.position.z = float(layer["z"]); root.add_child(m)
+	return root
+
+# 🏹 箭矢：细长带箭羽，比默认矛更锐利。
+func _body_arrow(profile: VFXProfile3D, race: String) -> Node3D:
+	var root := Node3D.new(); root.name = "BoltArrow"
+	var length := profile.size * 1.28
+	for layer in [
+		{"l": length * 1.08, "w": profile.size * 0.052, "c": profile.dark_color.lerp(profile.main_color, 0.2), "e": profile.emission_energy * 0.5, "z": 0.0},
+		{"l": length, "w": profile.size * 0.034, "c": profile.main_color, "e": profile.emission_energy * 0.85, "z": 0.008},
+		{"l": length * 0.8, "w": profile.size * 0.014, "c": profile.core_color, "e": profile.emission_energy, "z": 0.016},
+	]:
+		var m := _lance_mesh(float(layer["l"]), float(layer["w"]), layer["c"], float(layer["e"]))
+		m.position.z = float(layer["z"]); root.add_child(m)
+	# 箭羽：尾端两片小三角
+	for s in [-1.0, 1.0]:
+		var fletch := _tri_mesh(profile.size * 0.22, profile.size * 0.10 * s, profile.main_color.lerp(profile.core_color, 0.3), profile.emission_energy * 0.7)
+		fletch.position = Vector3(-length * 0.5, 0.0, 0.004)
+		root.add_child(fletch)
+	return root
+
+# ☠️ 毒镖：短粗带倒刺，重心靠前。
+func _body_dart(profile: VFXProfile3D, race: String) -> Node3D:
+	var root := Node3D.new(); root.name = "BoltDart"
+	var length := profile.size * 0.78
+	for layer in [
+		{"l": length * 1.12, "w": profile.size * 0.14, "c": profile.dark_color.lerp(profile.main_color, 0.25), "e": profile.emission_energy * 0.55, "z": 0.0},
+		{"l": length, "w": profile.size * 0.095, "c": profile.main_color, "e": profile.emission_energy * 0.9, "z": 0.008},
+		{"l": length * 0.7, "w": profile.size * 0.04, "c": profile.core_color, "e": profile.emission_energy, "z": 0.016},
+	]:
+		var m := _lance_mesh(float(layer["l"]), float(layer["w"]), layer["c"], float(layer["e"]))
+		m.position.z = float(layer["z"]); root.add_child(m)
+	# 倒刺
+	for s in [-1.0, 1.0]:
+		var barb := _tri_mesh(profile.size * 0.20, profile.size * 0.13 * s, profile.dark_color.lerp(profile.main_color, 0.4), profile.emission_energy * 0.6)
+		barb.position = Vector3(-length * 0.28, 0.0, 0.004)
+		root.add_child(barb)
+	return root
+
+# 🔮✨🌑 球形弹（法球/圣光/暗能）：圆盘 + 光晕，按 style 加不同点缀。
+func _body_orb(profile: VFXProfile3D, race: String, style: String) -> Node3D:
+	var root := Node3D.new(); root.name = "BoltOrb_%s" % style
+	var r := profile.size * 0.34
+	root.add_child(_disc_mesh(r * 1.9, profile.dark_color.lerp(profile.main_color, 0.15), profile.emission_energy * 0.30, 20))  # halo
+	root.add_child(_disc_mesh(r, profile.main_color, profile.emission_energy * 0.9, 20))                                        # body
+	var core := _disc_mesh(r * 0.5, profile.core_color, profile.emission_energy * 1.25, 16); core.position.z = 0.012
+	root.add_child(core)
+	match style:
+		"holy":
+			# 十字光芒
+			for rot in [0.0, PI * 0.5]:
+				var ray := _lance_mesh(r * 3.0, r * 0.06, profile.core_color, profile.emission_energy)
+				ray.rotation.z = rot; ray.position.z = 0.014
+				root.add_child(ray)
+		"dark":
+			# 外圈锯齿扰动环
+			var ring := _ring_jag_mesh(r * 1.4, r * 0.22, 9, profile.main_color.lerp(profile.dark_color, 0.4), profile.emission_energy * 0.7)
+			ring.position.z = 0.006; root.add_child(ring)
+	return root
+
+# ⚡ 雷弹：锯齿折线，层叠。
+func _body_thunder(profile: VFXProfile3D, race: String) -> Node3D:
+	var root := Node3D.new(); root.name = "BoltThunder"
+	var length := profile.size * 1.2
+	for layer in [
+		{"w": profile.size * 0.07, "c": profile.dark_color.lerp(profile.main_color, 0.3), "e": profile.emission_energy * 0.55, "z": 0.0},
+		{"w": profile.size * 0.038, "c": profile.main_color, "e": profile.emission_energy * 0.9, "z": 0.008},
+		{"w": profile.size * 0.016, "c": profile.core_color, "e": profile.emission_energy, "z": 0.016},
+	]:
+		var m := _zigzag_mesh(length, float(layer["w"]), layer["c"], float(layer["e"]))
+		m.position.z = float(layer["z"]); root.add_child(m)
 	return root
 
 func _spawn_needle_trail(at: Vector3, direction: Vector3, profile: VFXProfile3D, race: String, index: int) -> void:
@@ -143,21 +336,8 @@ func _spawn_linear_hit(at: Vector3, direction: Vector3, profile: VFXProfile3D, r
 		tween.set_parallel(false)
 		tween.tween_callback(streak.queue_free)
 
-func _lance_mesh(length: float, width: float, color: Color, energy: float) -> MeshInstance3D:
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = PackedVector3Array([
-		Vector3(-length * 0.56, 0.0, 0.0),
-		Vector3(-length * 0.43, -width, 0.0),
-		Vector3(length * 0.56, 0.0, 0.0),
-		Vector3(-length * 0.43, width, 0.0),
-	])
-	arrays[Mesh.ARRAY_INDEX] = PackedInt32Array([0, 1, 2, 0, 2, 3])
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	var node := MeshInstance3D.new()
-	node.mesh = mesh
-	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+# 共享的加法/无光材质，弹道所有形状复用。
+func _bolt_material(color: Color, energy: float) -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -169,8 +349,113 @@ func _lance_mesh(length: float, width: float, color: Color, energy: float) -> Me
 	material.emission_enabled = true
 	material.emission = color
 	material.emission_energy_multiplier = minf(energy, 4.2)
-	node.material_override = material
+	return material
+
+# 从顶点+索引直接组网格，套共享材质。
+func _shape_mesh(verts: PackedVector3Array, indices: PackedInt32Array, color: Color, energy: float) -> MeshInstance3D:
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	var node := MeshInstance3D.new()
+	node.mesh = mesh
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	node.material_override = _bolt_material(color, energy)
 	return node
+
+func _lance_mesh(length: float, width: float, color: Color, energy: float) -> MeshInstance3D:
+	return _shape_mesh(PackedVector3Array([
+		Vector3(-length * 0.56, 0.0, 0.0),
+		Vector3(-length * 0.43, -width, 0.0),
+		Vector3(length * 0.56, 0.0, 0.0),
+		Vector3(-length * 0.43, width, 0.0),
+	]), PackedInt32Array([0, 1, 2, 0, 2, 3]), color, energy)
+
+# 小三角（箭羽 / 倒刺）。tip_y 的正负决定朝哪一侧。
+func _tri_mesh(base: float, tip_y: float, color: Color, energy: float) -> MeshInstance3D:
+	return _shape_mesh(PackedVector3Array([
+		Vector3(base * 0.5, 0.0, 0.0),
+		Vector3(-base * 0.5, 0.0, 0.0),
+		Vector3(-base * 0.1, tip_y, 0.0),
+	]), PackedInt32Array([0, 1, 2]), color, energy)
+
+# 圆盘（法球 / 圣光 / 暗能的球体）。
+func _disc_mesh(radius: float, color: Color, energy: float, segments: int) -> MeshInstance3D:
+	var verts := PackedVector3Array([Vector3.ZERO])
+	var indices := PackedInt32Array()
+	for i in range(segments + 1):
+		var a := TAU * float(i) / float(segments)
+		verts.append(Vector3(cos(a) * radius, sin(a) * radius, 0.0))
+	for i in range(segments):
+		indices.append_array([0, i + 1, i + 2])
+	return _shape_mesh(verts, indices, color, energy)
+
+# 锯齿扰动环（暗能弹外圈）。
+func _ring_jag_mesh(radius: float, jag: float, spikes: int, color: Color, energy: float) -> MeshInstance3D:
+	var verts := PackedVector3Array([Vector3.ZERO])
+	var indices := PackedInt32Array()
+	var pts := spikes * 2
+	for i in range(pts + 1):
+		var a := TAU * float(i) / float(pts)
+		var rr: float = radius + (jag if i % 2 == 0 else -jag * 0.5)
+		verts.append(Vector3(cos(a) * rr, sin(a) * rr, 0.0))
+	for i in range(pts):
+		indices.append_array([0, i + 1, i + 2])
+	return _shape_mesh(verts, indices, color, energy)
+
+# 弯月镰：沿一段圆弧的中心线，两端收尖、中段最粗（半宽随 sin 变化）。
+func _crescent_mesh(rc: float, half_w: float, span_deg: float, color: Color, energy: float) -> MeshInstance3D:
+	var verts := PackedVector3Array()
+	var indices := PackedInt32Array()
+	var segs := 16
+	var span := deg_to_rad(span_deg)
+	for i in range(segs + 1):
+		var t := float(i) / float(segs)
+		var ang := -span * 0.5 + t * span
+		var w := half_w * sin(t * PI)
+		verts.append(Vector3(cos(ang) * (rc + w), sin(ang) * (rc + w), 0.0))
+		verts.append(Vector3(cos(ang) * (rc - w), sin(ang) * (rc - w), 0.0))
+		if i > 0:
+			var o := (i - 1) * 2
+			indices.append_array([o, o + 1, o + 2, o + 1, o + 3, o + 2])
+	return _shape_mesh(verts, indices, color, energy)
+
+# 四芒星：长尖/短尖交替，三角扇。
+func _star_mesh(r_long: float, r_short: float, color: Color, energy: float, spikes: int) -> MeshInstance3D:
+	var verts := PackedVector3Array([Vector3.ZERO])
+	var indices := PackedInt32Array()
+	var pts := spikes * 2
+	for i in range(pts + 1):
+		var a := TAU * float(i) / float(pts) + PI * 0.5
+		var r: float = r_long if i % 2 == 0 else r_short
+		verts.append(Vector3(cos(a) * r, sin(a) * r, 0.0))
+	for i in range(pts):
+		indices.append_array([0, i + 1, i + 2])
+	return _shape_mesh(verts, indices, color, energy)
+
+# 锯齿折线（雷弹）。沿 X 前进，Y 方向来回抖。
+func _zigzag_mesh(length: float, width: float, color: Color, energy: float) -> MeshInstance3D:
+	var verts := PackedVector3Array()
+	var indices := PackedInt32Array()
+	var segs := 5
+	var amp := width * 3.2
+	var prev_top := 0
+	var prev_bot := 0
+	for i in range(segs + 1):
+		var t := float(i) / float(segs)
+		var x := lerpf(-length * 0.5, length * 0.5, t)
+		var y: float = (amp if i % 2 == 0 else -amp) * (1.0 - abs(t - 0.5) * 0.6)
+		verts.append(Vector3(x, y + width, 0.0))
+		verts.append(Vector3(x, y - width, 0.0))
+		var top := verts.size() - 2
+		var bot := verts.size() - 1
+		if i > 0:
+			indices.append_array([prev_top, prev_bot, top, prev_bot, bot, top])
+		prev_top = top
+		prev_bot = bot
+	return _shape_mesh(verts, indices, color, energy)
 
 func _runtime_profile(source: VFXProfile3D, race: String, ranged: bool) -> VFXProfile3D:
 	var p := source.duplicate_runtime()
