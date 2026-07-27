@@ -797,7 +797,7 @@ static func _lowest_hp_ratio(units: Array) -> Dictionary:
 static func _dark_duration(base: float, caster: Dictionary, state: Dictionary) -> float:
 	if str(caster.get("def", {}).get("race", "")) == "dark":
 		var syn: Dictionary = _resolve_syn(caster, state)
-		return base * (1.0 + float(syn.get("dark_debuff_duration", 0.0)))
+		return base * (1.0 + SynergyService.safe_factor(syn, "dark_debuff_duration"))
 	return base
 
 

@@ -4,54 +4,14 @@ func _finish_simulation() -> void:
 	if _return_emitted:
 		return
 	_finished = true
-	var calculated := BattleSim.result_from_state(_state)
-	if _uses_authoritative_online_result():
-		if NetworkService.is_host:
-			_result = calculated
-			NetworkService.send_pvp_result(_result)
-		elif not NetworkService.latest_pvp_result.is_empty():
-			_result = NetworkService.latest_pvp_result.duplicate(true)
-		else:
-			_waiting_authoritative_result = true
-			_pvp_result_request_elapsed = PVP_RESULT_REQUEST_INTERVAL_SEC
-			_result = {}
-			_state.log.append(tr("log_wait_authoritative"))
-			NetworkService.request_pvp_result()
-	else:
-		_result = calculated
+	# 本地模拟即结果。组队联机不走这里——那条路播的是服务器下发的权威 replay，
+	# 结算取 match_state（见 Main._on_network_match_state_received）。
+	_result = BattleSim.result_from_state(_state)
 	_refresh_summary()
-	if not _waiting_authoritative_result:
-		_emit_finished()
-
-func _on_pvp_result_received(result: Dictionary) -> void:
-	if not _uses_authoritative_online_result() or _return_emitted:
-		return
-	_waiting_authoritative_result = false
-	_pvp_result_request_elapsed = 0.0
-	_result = result.duplicate(true)
-	_finished = true
-	_refresh_summary()
-	_refresh_visuals()
 	_emit_finished()
-
-func _poll_authoritative_result(delta: float) -> void:
-	if not NetworkService.latest_pvp_result.is_empty():
-		_on_pvp_result_received(NetworkService.latest_pvp_result.duplicate(true))
-		return
-	_pvp_result_request_elapsed += delta
-	if _pvp_result_request_elapsed >= PVP_RESULT_REQUEST_INTERVAL_SEC:
-		_pvp_result_request_elapsed = 0.0
-		NetworkService.request_pvp_result()
-		_refresh_summary()
 
 func _emit_finished() -> void:
 	if _return_emitted:
-		return
-	if _uses_authoritative_online_result() and not NetworkService.is_host and _result.is_empty():
-		if not _waiting_authoritative_result:
-			_waiting_authoritative_result = true
-			_state.log.append(tr("log_wait_authoritative"))
-		_refresh_summary()
 		return
 	_return_emitted = true
 	_stop_battle_music()

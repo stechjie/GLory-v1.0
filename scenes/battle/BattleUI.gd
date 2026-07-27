@@ -14,7 +14,6 @@ const SIM_W := 1000.0
 const SIM_H := 520.0
 const UNIT_VISUAL_SIZE := Vector2(82, 104)
 const UNIT_VISUAL_OFFSET := Vector2(41, 66)
-const PVP_RESULT_REQUEST_INTERVAL_SEC := 1.0
 const RESULT_DISPLAY_SECONDS := 1.0
 const MODEL_FACING_UPDATE_SEC := 0.18
 const MODEL_FACING_LERP := 0.18
@@ -67,11 +66,9 @@ var _battle_state_lbl: Label
 var _result_overlay_lbl: Label
 var _unit_nodes: Dictionary = {}
 var _finished := false
-var _waiting_authoritative_result := false
 var _skip_fast_forward := false
 var _sim_accumulator := 0.0
 var _return_emitted := false
-var _pvp_result_request_elapsed := 0.0
 var _model_facing_elapsed := 0.0
 var _model_facing_due := true
 var _battle_3d_viewport: SubViewport
@@ -86,11 +83,6 @@ var _model_scene_cache: Dictionary = {}
 var _model_load_started: Dictionary = {}
 var _model_animation_scene_cache: Dictionary = {}
 var _battle_music_player: AudioStreamPlayer
-
-func _uses_authoritative_online_result() -> bool:
-	return not GameState.team_mode and NetworkService.is_online() and (_kind == "pvp" or _kind == "final")
-
-
 
 func _finish_simulation() -> void:
 	pass
@@ -152,8 +144,6 @@ func _refresh_summary() -> void:
 	var lines: Array[String] = []
 	lines.append(_encounter_summary())
 	lines.append(tr("battle_time") % [float(_state.get("elapsed", 0.0)), tr("battle_ended_suffix") if _finished else ""])
-	if _waiting_authoritative_result:
-		lines.append(tr("battle_wait_authoritative"))
 	lines.append(_live_count_summary())
 	if not _result.is_empty():
 		var self_alive := int(_result.get("player_alive", 0))

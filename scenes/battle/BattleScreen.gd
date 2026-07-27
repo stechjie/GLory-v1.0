@@ -92,10 +92,6 @@ func _ready() -> void:
 	if not is_inside_tree():
 		return
 	_prefetch_battle_assets()
-	if _uses_authoritative_online_result():
-		NetworkService.clear_pvp_result()
-		if not NetworkService.pvp_result_received.is_connected(_on_pvp_result_received):
-			NetworkService.pvp_result_received.connect(_on_pvp_result_received)
 	await get_tree().process_frame
 	if not is_inside_tree():
 		return
@@ -122,9 +118,6 @@ func _process(delta: float) -> void:
 	if _model_facing_elapsed >= MODEL_FACING_UPDATE_SEC:
 		_model_facing_elapsed = 0.0
 		_model_facing_due = true
-	if _waiting_authoritative_result:
-		_poll_authoritative_result(delta)
-		return
 	if _finished:
 		return
 	if _replay_mode:

@@ -4,6 +4,15 @@ extends RefCounted
 const SNAPSHOT_VERSION := 2
 const BOARD_SIZE := GameConstants.CELL_COUNT
 
+# --- 载荷硬上限 -------------------------------------------------------------
+# 来路是网络：任何容器都必须在常数级步数内被拒，不能「先遍历完再判断大小」。
+# 实测（tools/adversarial_client.tscn）：20 万 key 的 race_relations 曾让校验跑掉
+# 451ms，而服务器是同步主循环——一个包就能冻住全服所有房间。
+const MAX_SLOT_ENTRIES := 64          # board/mercenaries 提交条目数（正常 ≤ 16+8）
+const MAX_TREASURE_ENTRIES := 64      # 宝物条目数（正常 ≤ MAX_OWNED）
+const MAX_RELATION_KEYS := 16         # 单个单位的种族关系 key 数（规则表只有 4 种）
+const MAX_ID_LENGTH := 64             # 任何 id 字符串长度
+
 static func team_board_submission(board_slots: Array, mercenary_slots: Array = []) -> Dictionary:
 	return {
 		"version": SNAPSHOT_VERSION,
@@ -40,6 +49,7 @@ static func validate_team_snapshot(snapshot: Variant, expected_round: int) -> Di
 	var treasures_result := _validate_treasures(d.get("treasures", []))
 	if not bool(treasures_result.get("ok", false)):
 		return treasures_result
+	var clean_board: Array = board_result.get("slots", _empty_board())
 	return {
 		"ok": true,
 		"snapshot": {
@@ -47,13 +57,31 @@ static func validate_team_snapshot(snapshot: Variant, expected_round: int) -> Di
 			"protocol": NetworkConfig.NETWORK_PROTOCOL_VERSION,
 			"round": round_id,
 			"gold": clampi(int(d.get("gold", GameState.START_GOLD)), 0, 99999),
-			"board": board_result.get("slots", _empty_board()),
+			"board": clean_board,
 			"mercenaries": merc_result.get("slots", []),
 			"treasures": treasures_result.get("treasures", []),
-			"syn": d.get("syn", {}) if typeof(d.get("syn", {})) == TYPE_DICTIONARY else {},
+			# 客户端提交的 syn 一律丢弃，由服务端从已校验的棋盘重建。
+			# syn 是纯派生量（种族计数 -> 羁绊标记），服务端有全部输入，没有任何理由
+			# 信客户端。原先原样接受的后果实测可复现：提交
+			# {"god_invulnerable_opening":true,"god_lifesteal":1e9} 即得无敌+秒杀，
+			# 且服务器会把它算进权威 replay 广播给全房。
+			"syn": rebuild_syn_from_board(clean_board),
 			"pet": _sanitize_pet_id(d.get("pet", "")),
 		}
 	}
+
+# 服务端权威羁绊：只数棋盘、不含佣兵栏——口径必须和客户端
+# SynergyService.count_races_from_board 完全一致，否则服务端算出的战斗会和玩家
+# 界面显示的羁绊对不上。
+static func rebuild_syn_from_board(board_slots: Array) -> Dictionary:
+	var counts := {"god": 0, "dark": 0, "undead": 0, "human": 0}
+	for cell in board_slots:
+		if typeof(cell) != TYPE_DICTIONARY:
+			continue
+		var race := str(((cell as Dictionary).get("def", {}) as Dictionary).get("race", ""))
+		if counts.has(race):
+			counts[race] += 1
+	return SynergyService.flags_from_counts(counts)
 
 static func normalize_snapshot(snapshot: Variant) -> Dictionary:
 	if typeof(snapshot) == TYPE_DICTIONARY:
@@ -144,15 +172,22 @@ static func sanitize_cell(cell: Variant) -> Variant:
 static func _safe_race_relations(value: Variant) -> Dictionary:
 	if typeof(value) != TYPE_DICTIONARY:
 		return {}
+	var raw: Dictionary = value
+	# 先看总量再遍历：这里过去是无界的，20 万 key 会让服务器同步跑掉几百毫秒。
+	# 超限直接整个丢弃（关系数据是派生量，丢了不影响结算正确性）。
+	if raw.size() > MAX_RELATION_KEYS:
+		return {}
 	var out: Dictionary = {}
-	for key_value in (value as Dictionary).keys():
+	for key_value in raw.keys():
 		var key := str(key_value)
-		var state_value = (value as Dictionary).get(key_value, {})
+		if key.length() > MAX_ID_LENGTH:
+			continue
+		var state_value = raw.get(key_value, {})
 		if typeof(state_value) != TYPE_DICTIONARY:
 			continue
 		var state: Dictionary = state_value
 		out[key] = {
-			"kind": str(state.get("kind", "")),
+			"kind": str(state.get("kind", "")).substr(0, MAX_ID_LENGTH),
 			"progress": clampi(int(state.get("progress", 0)), 0, RaceRelationService.MAX_PROGRESS),
 			"active": bool(state.get("active", false)),
 		}
@@ -192,6 +227,8 @@ static func _validate_slots(value: Variant, mercenary: bool, max_slots: int) -> 
 	var out := [] if mercenary else _empty_board()
 	if typeof(value) != TYPE_ARRAY:
 		return {"ok": false, "reason": "malformed_slots"}
+	if (value as Array).size() > MAX_SLOT_ENTRIES:
+		return {"ok": false, "reason": "too_many_slots"}
 	var used := {}
 	for item in (value as Array):
 		if typeof(item) != TYPE_DICTIONARY:
@@ -237,6 +274,8 @@ static func _trusted_def(id: String, mercenary: bool) -> Dictionary:
 static func _validate_treasures(value: Variant) -> Dictionary:
 	if typeof(value) != TYPE_ARRAY:
 		return {"ok": false, "reason": "malformed_treasures"}
+	if (value as Array).size() > MAX_TREASURE_ENTRIES:
+		return {"ok": false, "reason": "too_many_treasures"}
 	var out := _sanitize_treasure_ids(value)
 	if out.size() != (value as Array).size():
 		return {"ok": false, "reason": "invalid_treasure_id"}
@@ -247,6 +286,8 @@ static func _validate_treasures(value: Variant) -> Dictionary:
 static func _sanitize_treasure_ids(value: Variant) -> Array:
 	var out := []
 	if typeof(value) != TYPE_ARRAY:
+		return out
+	if (value as Array).size() > MAX_TREASURE_ENTRIES:
 		return out
 	var known := {}
 	for t in DataRegistry.get_table("treasures").get("treasures", []):

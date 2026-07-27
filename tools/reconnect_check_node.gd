@@ -1,14 +1,14 @@
 extends Node
 
-# 断线重连链路校验（headless 下 NetworkService 自动启动专用服务器）：
+# 断线重连链路校验（显式进入测试服务器模式，不开监听端口）：
 # A. 掉线 -> 座位保留 + 宽限截止 + token 映射不丢
 # B. 宽限到期(备战) -> 自动 ready -> 开局 -> 自动补交空棋盘 -> 出结果
 # C. 房主掉线 -> 顺延给最小编号在线座位
 # 通过后可保留作回归工具。
 
 func _ready() -> void:
+	NetworkService.enter_test_server_mode()
 	await get_tree().process_frame
-	await get_tree().process_frame  # 等 dedicated server 启动完成
 	var ok := true
 
 	# --- A: 保留座位 ---

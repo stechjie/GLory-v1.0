@@ -1,7 +1,12 @@
 extends Node
 
-# 临时校验：compute_team_replay（同步）与 compute_team_replay_async（分帧）
-# 在相同种子下必须产出逐位一致的回放。验证通过后此文件可删除。
+# 校验：compute_team_replay（同步）与 compute_team_replay_async（分帧）
+# 在相同种子下必须产出逐位一致的回放。
+#
+# 验收范围有限，不要当成「确定性已验证」：本检查只覆盖同进程、同平台、4 种单位、
+# 单一 seed，比的是两个实现而非两个平台；_replay_hash 用的是 32 位 String.hash()，
+# 且不含 frame_events / roster。跨平台（Android ARM64 vs Linux x86_64）确定性另见
+# docs/联机审计与整改方案.md 的准入门槛，需 SHA-256 + 多 seed + 全单位技能语料。
 
 const BattleSim := preload("res://scripts/battle/BattleSimulator.gd")
 

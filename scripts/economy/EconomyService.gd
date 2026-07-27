@@ -1,6 +1,18 @@
 ﻿class_name EconomyService
 extends RefCounted
 
+# 经济结算专用随机流。过去这里直接用全局 randi()/randf()，而同一条全局 PCG32 流
+# 还在给会话 token、房间 id、shared_seed、宝物候选洗牌供数——带幸运信封的玩家
+# 每轮都在观测这条流的输出，等于持续泄漏其内部状态。独立实例把这条链切断。
+static var _econ_rng := RandomNumberGenerator.new()
+static var _econ_rng_seeded := false
+
+static func _rng() -> RandomNumberGenerator:
+	if not _econ_rng_seeded:
+		_econ_rng_seeded = true
+		_econ_rng.seed = int(Crypto.new().generate_random_bytes(8).decode_u64(0))
+	return _econ_rng
+
 # 金额一律以「进位后」的基数直接书写，不在公式外面套 ×10。
 # 比率（利息率、折扣倍率等）不是金额，不随之进位。
 const BASE_INTEREST_RATE := 0.10
@@ -119,11 +131,12 @@ static func settle_post_battle_gold(ctx: Dictionary) -> int:
 	# (6) 战斗额外金币（富裕之路等战斗内产出）
 	gold += maxi(0, int(ctx.get("bonus_gold", 0)))
 	# (7) 宝藏战后金币。随机档位之间相隔 10 金：幸运信封 10/20/30，金钱魔法 50/60/70。
+	var rng := _rng()
 	if treasures.has("money_lucky_envelope"):
-		gold += 10 + (randi() % 3) * 10
+		gold += 10 + (rng.randi() % 3) * 10
 	if TreasureService.has_linkage_in(treasures, "link_money_magic"):
-		gold += 50 + (randi() % 3) * 10
-		if randf() < 0.10:
+		gold += 50 + (rng.randi() % 3) * 10
+		if rng.randf() < 0.10:
 			gold += 100
 	# (8) 利息
 	var interest := base_interest(gold)

@@ -1119,8 +1119,6 @@ func _refresh_start_button_label() -> void:
 		var my := NetworkService.team_local_slot
 		var ready := my >= 0 and my < NetworkService.team_ready.size() and bool(NetworkService.team_ready[my])
 		_start_battle_label.text = tr("lobby_ready_done") if ready else tr("lobby_ready")
-	elif NetworkService.is_online():
-		_start_battle_label.text = tr("lobby_ready_done") if NetworkService.local_ready else tr("lobby_ready")
 	else:
 		_start_battle_label.text = tr("ui_start_battle_btn")
 
@@ -1688,7 +1686,7 @@ func _refresh_left_panel() -> void:
 		var altar := Button.new()
 		altar.text = tr("ui_altar") % [5, GameState.golden_altar_uses]
 		var altar_hp := GameState.team_hp if GameState.team_mode else GameState.player_formation_hp
-		altar.disabled = altar_hp <= 10 or GameState.golden_altar_uses >= 3
+		altar.disabled = altar_hp <= NetworkService.ALTAR_MIN_HP or GameState.golden_altar_uses >= NetworkService.ALTAR_MAX_USES_PER_ROUND
 		altar.pressed.connect(_on_golden_altar)
 		_left_panel.add_child(altar)
 

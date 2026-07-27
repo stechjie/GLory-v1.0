@@ -35,3 +35,13 @@ static func flags_from_counts(counts: Dictionary) -> Dictionary:
 static func current_player_flags() -> Dictionary:
 	return flags_from_counts(count_races_from_board())
 
+# 战斗代码读羁绊系数的唯一入口。inf/NaN 乘进伤害会污染整场状态（hp 被 int() 截断成
+# 垃圾值），而 clamp 挡不住 NaN——任何比较都返回 false。所以先判 is_finite。
+# 正常值域见 flags_from_counts：最大的也只是 1.0 量级。
+# fallback 是「字段缺失或不可用」时的中性值：加成类是 0.0，乘数类是 1.0。
+static func safe_factor(syn: Dictionary, key: String, max_value: float = 8.0, fallback: float = 0.0) -> float:
+	var raw := float(syn.get(key, fallback))
+	if not is_finite(raw):
+		return fallback
+	return clampf(raw, 0.0, max_value)
+

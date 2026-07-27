@@ -480,7 +480,7 @@ static func _credit_mother_kill(state: Dictionary, victim: Dictionary) -> void:
 			owner_syn = _owner_syn(state, _owner_key(mother))
 		else:
 			owner_syn = state.get("player_syn", {}) if killer_is_player else state.get("enemy_syn", {})
-		var threshold := maxi(1, int(ceil(5.0 * float(owner_syn.get("undead_threshold_mul", 1.0)))))
+		var threshold := maxi(1, int(ceil(5.0 * SynergyService.safe_factor(owner_syn, "undead_threshold_mul", 1.0, 1.0))))
 		var os := _owner_state(state, "mother_%s" % str(mother.get("uid", "")))
 		os.mother_count = int(os.get("mother_count", 0)) + 1
 		if int(os.mother_count) < threshold:

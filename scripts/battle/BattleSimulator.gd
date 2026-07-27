@@ -606,7 +606,7 @@ static func _perform_attack(attacker: Dictionary, target: Dictionary, state: Dic
 	base *= _element_multiplier(str(d.get("element", "")), str(target.get("def", {}).get("element", "")))
 	var syn: Dictionary = _resolve_syn(attacker, state)
 	if str(d.get("race", "")) == "dark":
-		base *= 1.0 + float(syn.get("dark_damage_bonus", 0.0)) + float(_attacker_dark_stacks(attacker, state)) * 0.06
+		base *= 1.0 + SynergyService.safe_factor(syn, "dark_damage_bonus") + float(_attacker_dark_stacks(attacker, state)) * 0.06
 	if str(d.get("skill_id", "")) == "balance_judge" and int(target.hp) > int(attacker.hp):
 		base *= 1.0 + float(d.get("bonus_vs_higher_hp", 0.40))
 	if str(d.get("skill_id", "")) == "blood_rampage":
@@ -644,8 +644,9 @@ static func _perform_attack(attacker: Dictionary, target: Dictionary, state: Dic
 		else:
 			attacker.linked_target_uid = str(target.get("uid", ""))
 			attacker.skill_stacks = 1
-	if float(syn.get("god_lifesteal", 0.0)) > 0.0:
-		_heal_unit(attacker, maxi(1, int(round(float(dealt) * float(syn.get("god_lifesteal", 0.0))))))
+	var lifesteal := SynergyService.safe_factor(syn, "god_lifesteal")
+	if lifesteal > 0.0:
+		_heal_unit(attacker, maxi(1, int(round(float(dealt) * lifesteal))))
 	return dealt
 
 
@@ -653,8 +654,8 @@ static func _apply_attack_statuses(attacker: Dictionary, target: Dictionary, sta
 	var d: Dictionary = attacker.get("def", {})
 	var sid := str(d.get("skill_id", ""))
 	var syn: Dictionary = _resolve_syn(attacker, state)
-	var strength := 1.0 + float(syn.get("dark_debuff_strength", 0.0))
-	var duration_bonus := 1.0 + float(syn.get("dark_debuff_duration", 0.0))
+	var strength := 1.0 + SynergyService.safe_factor(syn, "dark_debuff_strength")
+	var duration_bonus := 1.0 + SynergyService.safe_factor(syn, "dark_debuff_duration")
 	if sid == "curse_attack":
 		StatusEffectService.add_status(target, "attack_down", float(d.get("duration", 4.0)) * duration_bonus, {"pct": float(d.get("attack_down", 0.08)) * strength})
 		StatusEffectService.add_status(target, "slow", float(d.get("duration", 4.0)) * duration_bonus, {"attack_speed_pct": float(d.get("aspd_down", 0.08)) * strength, "move_pct": 0.0})
@@ -666,7 +667,7 @@ static func _apply_attack_statuses(attacker: Dictionary, target: Dictionary, sta
 	elif sid == "parasite_on_kill":
 		target.parasite_owner = attacker
 	elif sid == "poison_attack":
-		StatusEffectService.add_poison(target, 4.0 * duration_bonus, 0.03, float(syn.get("undead_poison_bonus", 0.0)))
+		StatusEffectService.add_poison(target, 4.0 * duration_bonus, 0.03, SynergyService.safe_factor(syn, "undead_poison_bonus"))
 	elif sid == "defense_down_attack":
 		StatusEffectService.add_status(target, "defense_down", float(d.get("duration", 5.0)) * duration_bonus, {"pct": float(d.get("def_down_pct", 0.10)) * strength})
 	elif sid == "death_hunt":

@@ -1,6 +1,5 @@
 extends Node
 
-signal pvp_result_received(result: Dictionary)
 signal match_state_received(state: Dictionary)
 signal session_changed
 signal team_lobby_changed
@@ -12,12 +11,13 @@ signal team_room_list_received(rooms: Array)
 signal team_room_action_failed(reason: String)
 signal public_token_changed(token_id: String)
 
-enum SessionState { OFFLINE, HOSTING, JOINING, READY, FAILED, RECONNECTING }
+# HOSTING 随 1v1 P2P 路径一并移除：组队专用服务器模式下客户端只会经历
+# JOINING -> READY，服务器进程自身不用这个枚举表状态。
+enum SessionState { OFFLINE, JOINING, READY, FAILED, RECONNECTING }
 
 const BattleSim := preload("res://scripts/battle/BattleSimulator.gd")
 const DEFAULT_PORT := NetworkConfig.SERVER_PORT
 const DEFAULT_HOST := NetworkConfig.SERVER_IP
-const MAX_CLIENTS := 1
 const TEAM_MAX_CLIENTS := 512
 const TEAM_SLOTS := 6
 const CLEANUP_INTERVAL_SEC := 5.0
@@ -49,13 +49,7 @@ const RESERVE_GRACE_SEC := 20.0
 
 var state: SessionState = SessionState.OFFLINE
 var is_host := false
-var local_board_snapshot: Dictionary = {}
 var opponent_board_snapshot: Dictionary = {}
-var local_ready := false
-var opponent_ready := false
-var local_ready_round := 0
-var opponent_ready_round := 0
-var latest_pvp_result: Dictionary = {}
 var latest_match_state: Dictionary = {}
 var remote_address := DEFAULT_HOST
 var remote_port := DEFAULT_PORT
@@ -87,12 +81,14 @@ var team_leader_slot := 0                 # 当前房主座位（服务器广播
 var _reconnect_retry_left := 0.0
 var _ping_accum := 0.0
 var _last_pong_at := 0.0
+var _ping_sent_at := 0                    # RTT 测量：本轮 ping 的发出时刻（ticks_msec）
 var _last_process_at := 0.0               # 冻结检测：上一帧的时间
 # --- 客户端排障日志（查"为什么突然掉线"：原因在手机侧，服务器只看得到结果） ---
 const NET_LOG_FILE := "user://net_log.txt"
 const NET_LOG_ROTATE_BYTES := 1000000
 const CLIENT_LOG_MAX_LINES := 80
 const PONG_GAP_WARN_SEC := 6.0            # 静默预警线：还没到超时，但网络已经不对劲
+const PING_RTT_LOG_MS := 400              # 心跳往返超过这个值才记，正常网络不刷日志
 var _client_log_buffer: Array = []        # 内存环形缓冲；重连成功后回传服务器进 journald
 var _client_log_sent := 0
 var _net_log_rotated := false
@@ -106,6 +102,32 @@ var _resync_resubmitted_round := 0        # 防重交循环：每回合只自动
 var _token_seat: Dictionary = {}          # token -> {"room_id": int, "slot": int}
 var _peer_last_ping: Dictionary = {}      # peer_id -> unix time
 var _reserve_tick_accum := 0.0
+# --- 限流（服务器） ---
+# 四个维度，严格程度递减：per-peer 最严 -> per-token -> per-IP（只记录不拦截）->
+# 全服熔断。per-IP 不拦截是刻意的：手机 4G/校园网走运营商级 NAT，一个公网 IP 后面
+# 可能是几千个正常玩家，用没有实测分布支撑的阈值去封，等于封掉整片区域。
+# 先记录，等埋点跑出真实分布再定阈值。
+const RATE_WINDOW_SEC := 10.0
+const RATE_LIMITS := {          # action -> 每 RATE_WINDOW_SEC 内允许次数
+	"create_room": 3,
+	"join_room": 6,
+	"room_list": 10,
+	"public_token": 3,
+	"public_resume": 5,
+	"client_log": 4,
+	"set_ready": 30,
+	"submit_board": 10,
+	"prep_mercs": 40,
+	"toggle_slot": 30,
+	"kick": 10,
+	"move": 30,
+	"altar": 12,          # 每回合上限 3 次，留足重试余量
+}
+const RATE_STRIKES_BEFORE_KICK := 3   # 连续超限这么多次就断开
+const MAX_ROOMS := 200                # 全服房间数熔断
+const MAX_CLIENT_LOG_BYTES := 4000    # 单次 client_log 总字节上限（不只限行数）
+var _rate_buckets: Dictionary = {}    # peer_id -> {action: [count, window_start]}
+var _rate_strikes: Dictionary = {}    # peer_id -> int
 
 func _ready() -> void:
 	multiplayer.peer_connected.connect(_on_peer_connected)
@@ -114,6 +136,11 @@ func _ready() -> void:
 	multiplayer.connection_failed.connect(_on_connection_failed)
 	multiplayer.server_disconnected.connect(_on_server_disconnected)
 	set_process(true)
+	# 切断 client→client 转发。Godot 默认允许客户端 rpc_id 到另一个客户端、由服务器
+	# 中转，于是任何玩家都能给别人塞伪造的 match_state（金币/血量/胜负全由他定）。
+	# team 模式下客户端只会 rpc_id(1,...)，关掉它不影响任何现存客户端。
+	# 必须在 create_server 之前、任何 peer 接入之前设置。
+	multiplayer.server_relay = false
 	if _should_boot_dedicated_server():
 		call_deferred("start_dedicated_server")
 
@@ -129,6 +156,7 @@ func _process(delta: float) -> void:
 			_last_pong_at = proc_now
 	_last_process_at = proc_now
 	if _dedicated_server:
+		ServerFlags.poll_reload(proc_now)
 		_cleanup_elapsed += delta
 		if _cleanup_elapsed >= CLEANUP_INTERVAL_SEC:
 			_cleanup_elapsed = 0.0
@@ -145,6 +173,7 @@ func _process(delta: float) -> void:
 		_ping_accum += delta
 		if _ping_accum >= HEARTBEAT_INTERVAL_SEC:
 			_ping_accum = 0.0
+			_ping_sent_at = Time.get_ticks_msec()
 			_rpc_ping.rpc_id(1)
 		if _last_pong_at > 0.0:
 			var silence := _now() - _last_pong_at
@@ -172,8 +201,23 @@ func _process(delta: float) -> void:
 	reset_peer_only()
 	session_changed.emit()
 
+# 只认显式命令行参数。曾经把「裸 headless」也当成启动信号，导致 tools/ 下每个
+# headless 工具节点跑起来时旁边都挂着一个真的监听服务器：与工具共用同一个
+# NetworkService 实例、占着 8080、还会让确定性验收在被污染的环境里得出结论。
+# 工具需要服务器逻辑时请显式调用 enter_test_server_mode()（不开监听 socket）。
 func _should_boot_dedicated_server() -> bool:
-	return "--server" in OS.get_cmdline_args() or "--dedicated-server" in OS.get_cmdline_args() or DisplayServer.get_name() == "headless"
+	return "--server" in OS.get_cmdline_args() or "--dedicated-server" in OS.get_cmdline_args()
+
+# 供 tools/ 下的 in-process 工具节点使用：只打开服务器侧逻辑（房间/座位/结算），
+# 不创建 ENet peer、不占端口。因此多个工具可以并行跑，也不会与真服务器抢 8080。
+func enter_test_server_mode() -> void:
+	_dedicated_server = true
+	team_active = true
+	is_host = true
+	if team_slot_states.is_empty():
+		team_slot_states = ["empty", "empty", "empty", "empty", "empty", "empty"]
+	if team_ready.is_empty():
+		team_ready = [false, false, false, false, false, false]
 
 func start_dedicated_server(port: int = DEFAULT_PORT) -> bool:
 	# Server-side entry point for Google Cloud VPS. The server owns room state,
@@ -185,52 +229,6 @@ func start_dedicated_server(port: int = DEFAULT_PORT) -> bool:
 	Engine.max_fps = 30
 	_net_log("server starting protocol=%d port=%d max_fps=%d" % [NetworkConfig.NETWORK_PROTOCOL_VERSION, port, Engine.max_fps])
 	return team_host(port, true)
-
-func start_host(port: int = DEFAULT_PORT) -> bool:
-	if not _local_host_allowed():
-		state = SessionState.FAILED
-		last_error = tr("net_err_no_local_host")
-		session_changed.emit()
-		return false
-	reset()
-	remote_port = port
-	var p := ENetMultiplayerPeer.new()
-	var err := p.create_server(port, MAX_CLIENTS)
-	if err != OK:
-		state = SessionState.FAILED
-		last_error = tr("net_err_host_failed") % str(err)
-		session_changed.emit()
-		return false
-	_peer = p
-	multiplayer.multiplayer_peer = _peer
-	state = SessionState.HOSTING
-	is_host = true
-	shared_seed = randi()
-	last_error = ""
-	capture_local_board()
-	session_changed.emit()
-	return true
-
-func join_host(address: String = DEFAULT_HOST, port: int = DEFAULT_PORT) -> bool:
-	reset()
-	remote_address = address.strip_edges()
-	remote_port = port
-	var p := ENetMultiplayerPeer.new()
-	var err := p.create_client(remote_address, remote_port)
-	if err != OK:
-		state = SessionState.FAILED
-		last_error = tr("net_err_join_failed") % str(err)
-		session_changed.emit()
-		return false
-	_peer = p
-	multiplayer.multiplayer_peer = _peer
-	state = SessionState.JOINING
-	_join_elapsed = 0.0
-	is_host = false
-	last_error = ""
-	capture_local_board()
-	session_changed.emit()
-	return true
 
 # --- 3v3 team lobby --------------------------------------------------------
 func team_host(port: int = DEFAULT_PORT, dedicated: bool = false) -> bool:
@@ -320,6 +318,38 @@ func _team_next_free_slot() -> int:
 func _now() -> float:
 	return Time.get_unix_time_from_system()
 
+# --- 限流 -------------------------------------------------------------------
+# 返回 true = 放行；false = 超限（调用方必须立即 return，不做任何业务处理）。
+# 注意能力边界：RPC 参数在进入本函数前已被引擎反序列化，所以这里挡不住「一个巨大
+# Variant 的解码开销」——那一层要靠 NetProtocol 的容器上限 + 第 3 批的字节协议。
+# 本函数挡的是「同一个动作被高频重复调用」。
+func _rate_ok(peer_id: int, action: String) -> bool:
+	if not _dedicated_server:
+		return true
+	var limit := int(RATE_LIMITS.get(action, 20))
+	var now := _now()
+	var buckets: Dictionary = _rate_buckets.get(peer_id, {})
+	var entry: Array = buckets.get(action, [0, now])
+	if now - float(entry[1]) >= RATE_WINDOW_SEC:
+		entry = [0, now]
+	entry[0] = int(entry[0]) + 1
+	buckets[action] = entry
+	_rate_buckets[peer_id] = buckets
+	if int(entry[0]) <= limit:
+		return true
+	var strikes := int(_rate_strikes.get(peer_id, 0)) + 1
+	_rate_strikes[peer_id] = strikes
+	_net_log("rate limit peer=%d action=%s count=%d/%d strike=%d" % [peer_id, action, int(entry[0]), limit, strikes])
+	if strikes >= RATE_STRIKES_BEFORE_KICK:
+		_net_log("rate limit exceeded -> disconnect peer=%d" % peer_id)
+		if multiplayer.multiplayer_peer != null:
+			multiplayer.multiplayer_peer.disconnect_peer(peer_id)
+	return false
+
+func _rate_forget(peer_id: int) -> void:
+	_rate_buckets.erase(peer_id)
+	_rate_strikes.erase(peer_id)
+
 func _net_log(message: String) -> void:
 	# print 在手机上每次都是一次系统调用，发布版必须静音。
 	if OS.is_debug_build():
@@ -366,8 +396,17 @@ func _rpc_client_log(lines: PackedStringArray) -> void:
 	if not _dedicated_server:
 		return
 	var sender := multiplayer.get_remote_sender_id()
+	if not _rate_ok(sender, "client_log"):
+		return
+	# 按总字节数封顶，不只按行数：200 字符 × 80 行仍可能被拿来刷爆 journald 和磁盘。
+	var budget := MAX_CLIENT_LOG_BYTES
 	for i in mini(lines.size(), CLIENT_LOG_MAX_LINES):
-		_net_log("clientlog peer=%d | %s" % [sender, str(lines[i]).substr(0, 200)])
+		var line := str(lines[i]).substr(0, 200)
+		budget -= line.length()
+		if budget <= 0:
+			_net_log("clientlog peer=%d | (truncated, byte budget exhausted)" % sender)
+			return
+		_net_log("clientlog peer=%d | %s" % [sender, line])
 
 # app 生命周期事件：锁屏/切后台是手机掉线的头号惯犯，记下来和断线时间对照。
 func _notification(what: int) -> void:
@@ -415,6 +454,7 @@ func _new_room() -> Dictionary:
 		"reserved": {},          # slot -> {"reserved_at": float}（掉线保留中）
 		"reserve_deadline": {},  # slot -> 宽限截止 unix time
 		"leader_slot": 0,        # 房主座位，掉线顺延
+		"altar_uses": {},        # slot -> 本回合黄金祭坛已用次数（服务端权威，每回合清零）
 	}
 	_rooms[id] = room
 	_net_log("room created id=%d protocol=%d" % [id, NetworkConfig.NETWORK_PROTOCOL_VERSION])
@@ -550,6 +590,7 @@ func _room_begin_next_prep(room: Dictionary) -> void:
 		return
 	room.boards = {}
 	room.prep_mercs = {}
+	room.altar_uses = {}   # 祭坛次数按回合重置，和客户端 reset_shop_refreshes 同步
 	# round_index 封顶到 FINAL_ROUND，和客户端一致（客户端从 match_state 拿的是 min(+1, 21)）
 	room.round_index = mini(int(room.get("round_index", 1)) + 1, GameState.FINAL_ROUND)
 	var ready: Array = room.get("ready", [])
@@ -1062,6 +1103,8 @@ func _has_any_team_player() -> bool:
 func _rpc_team_submit_board(slot: int, snapshot: Dictionary) -> void:
 	if _dedicated_server:
 		var sender := multiplayer.get_remote_sender_id()
+		if not _rate_ok(sender, "submit_board"):
+			return
 		var room := _room_for_peer(sender)
 		if room.is_empty() or int((room.get("peer_slot", {}) as Dictionary).get(sender, -1)) != slot:
 			_net_log("board rejected reason=bad_peer_or_slot peer=%d slot=%d" % [sender, slot])
@@ -1085,6 +1128,7 @@ func _rpc_team_submit_board(slot: int, snapshot: Dictionary) -> void:
 				# 拒收不能是静默的：告知客户端权威回合，它会校准后自动重交
 				_rpc_round_resync.rpc_id(sender, int(room.get("round_index", 1)), str(room.get("state", "")))
 			return
+		_shadow_audit_submission(room, slot, snapshot, validation.get("snapshot", {}))
 		boards[slot] = validation.get("snapshot", {})
 		room.boards = boards
 		# 跨回合缓存最后一次合法棋盘：该座位掉线时用它补交（room.boards 每轮清空）
@@ -1133,9 +1177,15 @@ func _room_try_finalize_boards(room: Dictionary) -> void:
 			return
 	_net_log("all boards ready room=%d round=%d" % [int(room.get("id", 0)), int(room.get("round_index", 1))])
 	_set_room_state(room, ROOM_RESULT)
-	for peer_id in (room.get("peer_slot", {}) as Dictionary).keys():
-		if _peer_connected(int(peer_id)):
-			_rpc_team_boards.rpc_id(int(peer_id), boards, int(room.get("shared_seed", 0)))
+	# 棋盘已全部锁定，现在才生成本回合战斗 seed：客户端无法提前预演。
+	# 看门狗/重连补交也走 _room_try_finalize_boards，所以「先替补齐、再摇 seed」这个
+	# 顺序在所有路径上都成立。
+	room.shared_seed = _roll_battle_seed()
+	# 不再向专服客户端广播 boards。它是全部 6 人的完整快照（每个单位带整份 def），
+	# 而专服路径的客户端不本地模拟——它等的是 team_replay，replay 自带 roster。
+	# 这份广播因此是纯浪费，还顺带把 shared_seed 提前交到客户端手里（可预演战斗）。
+	# _rpc_team_boards 方法保留：删方法会平移整套 RPC 的 wire ID，属破坏性变更。
+	# 本地房主调试路径仍走 _team_try_finalize_boards 里的广播，不受影响。
 	_room_compute_and_broadcast_replays(room)
 
 func _room_compute_and_broadcast_replays(room: Dictionary) -> void:
@@ -1168,14 +1218,103 @@ func _room_compute_and_broadcast_replays(room: Dictionary) -> void:
 	var match_states := _room_build_match_states(room, replay_a, replay_b)
 	room.last_match_state = match_states
 	_net_log("server replay/result generated room=%d round=%d" % [int(room.get("id", 0)), int(room.get("round_index", 1))])
+	_metrics_log_payloads(room, replay_a, replay_b, match_states)
 	for peer_id in (room.get("peer_slot", {}) as Dictionary).keys():
 		if not _peer_connected(int(peer_id)):
 			continue
 		var slot := int((room.get("peer_slot", {}) as Dictionary)[peer_id])
-		_rpc_team_replay.rpc_id(int(peer_id), replay_a if slot < 3 else replay_b, replay_b if slot < 3 else replay_a)
+		# 顺序要紧：match_state（几百字节，权威结算）必须排在 replay（可达数 MB）之前。
+		# 反过来时结算状态被压在大包后面，弱网重传期间玩家就卡在「战斗打完但结算不来」——
+		# 这正是 match_state 超时的直接成因。replay 只是播放素材，晚到无所谓。
 		_rpc_receive_match_state.rpc_id(int(peer_id), match_states.get(slot, {}))
-		_net_log("replay/result/match_state sent room=%d round=%d peer=%d slot=%d" % [int(room.get("id", 0)), int(room.get("round_index", 1)), int(peer_id), slot])
+		var own_replay: Dictionary = replay_a if slot < 3 else replay_b
+		var rival_replay: Dictionary = replay_b if slot < 3 else replay_a
+		if not ServerFlags.get_bool("send_rival_replay"):
+			rival_replay = {}
+		_rpc_team_replay.rpc_id(int(peer_id), own_replay, rival_replay)
+		_net_log("match_state/replay sent room=%d round=%d peer=%d slot=%d" % [int(room.get("id", 0)), int(room.get("round_index", 1)), int(peer_id), slot])
 	room.boards = {}
+
+# 影子审计：只记录、不拦截。上线前必须先知道自己的误判率——直接开拦截会把
+# 数据表不同步、存档迁移、重连边界上的诚实玩家一起判成作弊。
+# 跑够一周零差异，再把这些规则翻成硬拒收（见整改方案「影子模式」）。
+func _shadow_audit_submission(room: Dictionary, slot: int, raw_snapshot: Variant, clean: Dictionary) -> void:
+	if typeof(raw_snapshot) != TYPE_DICTIONARY:
+		return
+	var raw: Dictionary = raw_snapshot
+	var round_index := int(room.get("round_index", 1))
+
+	# (1) 宝物数量上界：宝物在宝物轮「战后」发放，所以提交第 N 回合棋盘时，
+	# 合法上限 = 严格小于 N 的宝物轮次数。用 <= N 会让玩家在第 4 回合开打前就多带一件。
+	# 注意这条隐含依赖服务端与客户端 round_schedule.json 一致 —— 数据表哈希握手
+	# （第 3 批）上线前，它只能停留在影子模式。
+	var max_treasures := 0
+	for r in range(1, round_index):
+		if RoundService.is_treasure_round(r):
+			max_treasures += 1
+	var owned: Array = clean.get("treasures", [])
+	if owned.size() > max_treasures:
+		_net_log("shadow treasure_overflow room=%d round=%d slot=%d owned=%d max=%d" % [
+			int(room.get("id", 0)), round_index, slot, owned.size(), max_treasures])
+
+	# (2) 金币差值：服务端只知道上一战结算后的值，不知道备战期的买/卖/刷新/祭坛/赌博。
+	# 所以这里绝不能拦截，只统计分布——赌博一次就能合法翻倍，任何「上界规则」都会误伤。
+	# 攒够真实分布后，才知道 P1 的备战账本要覆盖哪些路径。
+	var slot_gold: Array = room.get("slot_gold", [])
+	if slot < slot_gold.size() and slot_gold[slot] != null:
+		var reported := int(raw.get("gold", 0))
+		var expected := int(slot_gold[slot])
+		if reported != expected:
+			_net_log("shadow gold_delta room=%d round=%d slot=%d reported=%d last_settled=%d delta=%d" % [
+				int(room.get("id", 0)), round_index, slot, reported, expected, reported - expected])
+
+	# (3) syn 口径比对：服务端已经改为自己重建（见 NetProtocol.rebuild_syn_from_board）。
+	# 这里比的是「客户端派生的和服务端重建的一不一致」——不一致意味着两边对羁绊的
+	# 理解有分歧，玩家界面会和实际战斗对不上。
+	var client_syn = raw.get("syn", {})
+	if typeof(client_syn) == TYPE_DICTIONARY:
+		var server_syn: Dictionary = clean.get("syn", {})
+		for key in server_syn.keys():
+			if not (client_syn as Dictionary).has(key):
+				continue
+			if str(server_syn[key]) != str((client_syn as Dictionary)[key]):
+				_net_log("shadow syn_mismatch room=%d round=%d slot=%d key=%s server=%s client=%s" % [
+					int(room.get("id", 0)), round_index, slot, str(key),
+					str(server_syn[key]), str((client_syn as Dictionary)[key])])
+
+# 载荷埋点（默认关，见 ServerFlags）。量的是「决定要不要投资确定性客户端模拟」所需的
+# 事实：replay 原始/压缩后字节数、team_boards 与 match_state 的相对大小、序列化耗时。
+# 这些数字在 docs/联机审计与整改方案.md 里目前全是估算，测量周结束后要回填。
+#
+# 注意：var_to_bytes 一份大 replay 本身有 CPU 开销，而服务器是同步主循环——所以它
+# 挂在开关后面，并支持每 N 场采样一次，不允许长期裸跑。
+func _metrics_log_payloads(room: Dictionary, replay_a: Dictionary, replay_b: Dictionary, match_states: Dictionary) -> void:
+	if not ServerFlags.should_sample_battle():
+		return
+	var t0 := Time.get_ticks_usec()
+	var raw_a := var_to_bytes(replay_a)
+	var raw_b := var_to_bytes(replay_b)
+	var serialize_usec := Time.get_ticks_usec() - t0
+	var t1 := Time.get_ticks_usec()
+	var zst_a := raw_a.compress(FileAccess.COMPRESSION_ZSTD)
+	var compress_usec := Time.get_ticks_usec() - t1
+	var boards_bytes := var_to_bytes(room.get("boards", {})).size()
+	var ms_bytes := var_to_bytes(match_states).size()
+	var frames_a: Array = replay_a.get("frames", [])
+	_net_log("metrics room=%d round=%d kind=%s frames=%d replay_a_raw=%d replay_b_raw=%d replay_a_zstd=%d ratio=%.3f boards=%d match_state=%d ser_usec=%d zstd_usec=%d" % [
+		int(room.get("id", 0)),
+		int(room.get("round_index", 1)),
+		str(replay_a.get("kind", "")),
+		frames_a.size(),
+		raw_a.size(),
+		raw_b.size(),
+		zst_a.size(),
+		(float(zst_a.size()) / float(maxi(1, raw_a.size()))),
+		boards_bytes,
+		ms_bytes,
+		serialize_usec,
+		compress_usec,
+	])
 
 func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: Dictionary) -> Dictionary:
 	var completed_round := int(room.get("round_index", 1))
@@ -1307,8 +1446,10 @@ func _server_roll_treasure_candidates(owned: Array, count: int) -> Array:
 		var tid := str((t as Dictionary).get("id", ""))
 		if not tid.is_empty() and not owned.has(tid):
 			pool.append(tid)
+	# 洗牌用 Crypto，不消费全局 RNG：宝物候选是玩家每轮都能观测到的输出，
+	# 让它和 token/房间 id 共用一条 PCG32 流等于持续泄漏那条流的状态。
 	for i in range(pool.size() - 1, 0, -1):
-		var j := randi_range(0, i)
+		var j := int(_crypto.generate_random_bytes(4).decode_u32(0)) % (i + 1)
 		var tmp = pool[i]
 		pool[i] = pool[j]
 		pool[j] = tmp
@@ -1317,100 +1458,17 @@ func _server_roll_treasure_candidates(owned: Array, count: int) -> Array:
 func is_online() -> bool:
 	return state == SessionState.READY
 
-func has_opponent_snapshot() -> bool:
-	return not opponent_board_snapshot.is_empty()
-
-func has_current_opponent_snapshot() -> bool:
-	return has_opponent_snapshot() and NetProtocol.snapshot_round(opponent_board_snapshot) == GameState.round_index
-
-func both_ready() -> bool:
-	return local_ready and opponent_ready and local_ready_round == GameState.round_index and opponent_ready_round == GameState.round_index
-
-func has_online_opponent() -> bool:
-	return is_online() and has_current_opponent_snapshot() and both_ready()
-
-func capture_local_board() -> Dictionary:
-	local_board_snapshot = NetProtocol.board_snapshot(GameState.board_slots, GameState.mercenary_slots)
-	return local_board_snapshot
-
-func send_board_snapshot() -> void:
-	capture_local_board()
-	if is_online():
-		_rpc_receive_board_snapshot.rpc(local_board_snapshot)
-
-func set_ready(value: bool) -> void:
-	local_ready = value
-	local_ready_round = GameState.round_index if value else 0
-	if is_online():
-		send_board_snapshot()
-		_rpc_receive_ready.rpc(local_ready, local_ready_round)
-	session_changed.emit()
-
-func toggle_ready() -> void:
-	set_ready(not local_ready)
-
-func clear_pvp_result() -> void:
-	latest_pvp_result.clear()
-
-func send_pvp_result(result: Dictionary) -> void:
-	latest_pvp_result = result.duplicate(true)
-	if is_online():
-		_rpc_receive_pvp_result.rpc(latest_pvp_result)
-
-func request_pvp_result() -> void:
-	if is_online():
-		_rpc_request_pvp_result.rpc()
-
-func send_match_state(state_payload: Dictionary) -> void:
-	latest_match_state = state_payload.duplicate(true)
-	if is_online():
-		_rpc_receive_match_state.rpc(latest_match_state)
-
-func pvp_result_for_local_perspective(result: Dictionary) -> Dictionary:
-	if is_host:
-		return result.duplicate(true)
-	return _invert_pvp_result(result)
-
-func _invert_pvp_result(result: Dictionary) -> Dictionary:
-	var out := result.duplicate(true)
-	out.player_wins = not bool(result.get("player_wins", false))
-	out.player_alive = int(result.get("enemy_alive", 0))
-	out.enemy_alive = int(result.get("player_alive", 0))
-	out.player_power = float(result.get("enemy_power", 0.0))
-	out.enemy_power = float(result.get("player_power", 0.0))
-	out.player_kill_gold = int(result.get("enemy_kill_gold", 0))
-	out.enemy_kill_gold = int(result.get("player_kill_gold", 0))
-	out.player_kills = result.get("enemy_kills", [])
-	out.enemy_kills = result.get("player_kills", [])
-	var converted_log: Array = [tr("log_host_authoritative_converted")]
-	converted_log.append_array(result.get("log", []))
-	out.log = converted_log
-	return out
-
+# opponent_board_snapshot 是单机 PVP 回合的敌方棋盘来源（BattleSimulator
+# _build_pvp_fighters / _enemy_syn_for_kind）。它已不再有任何网络收发——
+# 1v1 P2P 联机路径（start_host/join_host 及其 RPC、ready/棋盘互传、权威结果回传）
+# 已整体删除，组队联机走的是 team_* 那一套。
 func receive_opponent_snapshot(snapshot: Variant) -> void:
 	opponent_board_snapshot = NetProtocol.normalize_snapshot(snapshot)
 	session_changed.emit()
 
 func clear_opponent_snapshot() -> void:
 	opponent_board_snapshot.clear()
-	opponent_ready = false
-	opponent_ready_round = 0
 	session_changed.emit()
-
-func session_label() -> String:
-	match state:
-		SessionState.HOSTING:
-			return "开房中:%d，等待对手" % remote_port
-		SessionState.JOINING:
-			return "加入中 %s:%d" % [remote_address, remote_port]
-		SessionState.READY:
-			return "已联机%s | 棋盘:%s | Ready:%s/%s" % ["(主机)" if is_host else "(客机)", "本回合已同步" if has_current_opponent_snapshot() else "未同步", "我方R%d" % local_ready_round if local_ready else "未准备", "对手R%d" % opponent_ready_round if opponent_ready else "对手未准备"]
-		SessionState.FAILED:
-			return "联机失败：%s" % last_error
-		SessionState.RECONNECTING:
-			return "连接中断，重连中…"
-		_:
-			return "离线"
 
 func disconnect_session() -> void:
 	_net_log("user quit session")
@@ -1431,13 +1489,7 @@ func reset() -> void:
 	state = SessionState.OFFLINE
 	_join_elapsed = 0.0
 	is_host = false
-	local_board_snapshot.clear()
 	opponent_board_snapshot.clear()
-	local_ready = false
-	opponent_ready = false
-	local_ready_round = 0
-	opponent_ready_round = 0
-	latest_pvp_result.clear()
 	latest_match_state.clear()
 	shared_seed = 0
 	last_error = ""
@@ -1503,34 +1555,86 @@ func begin_resume_from_disk(token: String, address: String) -> void:
 	_reconnect_retry_left = 0.0
 	session_changed.emit()
 
+# 会话 token / 战斗 seed / 短码 一律走 Crypto，不再消费全局 RNG。
+# 旧实现 "%d-%d-%d" % [ticks, randi(), randi()] 有两个问题：一是熵不足且可预测；
+# 二是把两个连续的原始 randi() 输出直接交到每个玩家手里——而同一条全局 PCG32 流
+# 还在给房间 id、shared_seed、宝物候选洗牌供数，拿到连续输出可做状态恢复。
+var _crypto := Crypto.new()
+
 func _make_token() -> String:
-	return "%d-%d-%d" % [Time.get_ticks_usec(), randi(), randi()]
+	return _crypto.generate_random_bytes(32).hex_encode()
+
+# 短码给玩家手输，所以不能太长；用 base32 去掉易混字符（0/O/1/I），
+# 10 位 × 32 符号 ≈ 2^50，配合限流与失败计数，在线枚举不再可行。
+const PUBLIC_TOKEN_ALPHABET := "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+const PUBLIC_TOKEN_LENGTH := 10
+const PUBLIC_TOKEN_MAX_TRIES := 8
 
 func _make_public_token() -> String:
-	var id := str(randi_range(100000, 999999))
-	while _public_token_seat.has(id):
-		id = str(randi_range(100000, 999999))
-	return id
+	# 原实现是 while 无界循环：短码空间被占满时服务器会在这里死循环卡住。
+	for _try in PUBLIC_TOKEN_MAX_TRIES:
+		var raw := _crypto.generate_random_bytes(PUBLIC_TOKEN_LENGTH)
+		var id := ""
+		for b in raw:
+			id += PUBLIC_TOKEN_ALPHABET[int(b) % PUBLIC_TOKEN_ALPHABET.length()]
+		if not _public_token_seat.has(id):
+			return id
+	_net_log("public token space exhausted after %d tries" % PUBLIC_TOKEN_MAX_TRIES)
+	return ""
+
+# 每回合战斗 seed：锁盘之后才生成，用后即弃。
+# 旧实现是房间创建时 randi() 一次、整局不变，且随 boards 广播和 resume 下发——
+# 客户端因此在提交棋盘前就知道 seed，可以本地把 PVE/Boss 回合暴力预演到最优解。
+func _roll_battle_seed() -> int:
+	var raw := _crypto.generate_random_bytes(8)
+	var v := 0
+	for b in raw:
+		v = (v << 8) | int(b)
+	return absi(v)
 
 @rpc("any_peer", "call_remote", "reliable")
 func _rpc_public_token_request() -> void:
 	if not _dedicated_server:
 		return
 	var sender := multiplayer.get_remote_sender_id()
+	if not _rate_ok(sender, "public_token"):
+		return
 	var id := _make_public_token()
+	if id.is_empty():
+		_rpc_team_action_failed.rpc_id(sender, "token_unavailable")
+		return
 	_public_token_seat[id] = ""
 	_rpc_public_token_created.rpc_id(sender, id)
 
 @rpc("any_peer", "call_remote", "reliable")
 func _rpc_team_room_list_request() -> void:
-	if _dedicated_server:
-		_rpc_team_room_list.rpc_id(multiplayer.get_remote_sender_id(), _public_room_list())
+	if not _dedicated_server:
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if not _rate_ok(sender, "room_list"):
+		return
+	_rpc_team_room_list.rpc_id(sender, _public_room_list())
 
 @rpc("any_peer", "call_remote", "reliable")
 func _rpc_team_create_room(public_id: String = "") -> void:
 	if not _dedicated_server:
 		return
 	var sender := multiplayer.get_remote_sender_id()
+	if not _rate_ok(sender, "create_room"):
+		return
+	# 一人一房不变量：不加这条时，循环调用会把 _rooms 撑爆，并在每个旧房间里留下
+	# 一个永不 ready 的幽灵座位（实测 25 次调用 = 25 个幽灵座位）。
+	var existing := _room_for_peer(sender)
+	if not existing.is_empty():
+		if str(existing.get("state", ROOM_LOBBY)) == ROOM_LOBBY:
+			_room_remove_peer(existing, sender)   # 还在大厅：释放旧座位后允许换房
+		else:
+			_rpc_team_action_failed.rpc_id(sender, "already_in_match")
+			return
+	if _rooms.size() >= MAX_ROOMS:
+		_net_log("room cap reached (%d) -> refusing create peer=%d" % [MAX_ROOMS, sender])
+		_rpc_team_action_failed.rpc_id(sender, "server_busy")
+		return
 	_assign_peer_to_room(sender, _new_room(), public_id.strip_edges().to_upper())
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -1538,6 +1642,17 @@ func _rpc_team_join_room(room_id: int, public_id: String = "") -> void:
 	if not _dedicated_server:
 		return
 	var sender := multiplayer.get_remote_sender_id()
+	if not _rate_ok(sender, "join_room"):
+		return
+	var existing := _room_for_peer(sender)
+	if not existing.is_empty():
+		if int(existing.get("id", 0)) == room_id:
+			return                                 # 已经在这个房间里，忽略重复请求
+		if str(existing.get("state", ROOM_LOBBY)) == ROOM_LOBBY:
+			_room_remove_peer(existing, sender)
+		else:
+			_rpc_team_action_failed.rpc_id(sender, "already_in_match")
+			return
 	var room: Dictionary = _rooms.get(room_id, {})
 	if room.is_empty():
 		_rpc_team_action_failed.rpc_id(sender, "room_not_found")
@@ -1554,10 +1669,15 @@ func _rpc_team_join_room(room_id: int, public_id: String = "") -> void:
 func _rpc_public_resume_request(public_id: String) -> void:
 	if not _dedicated_server:
 		return
+	var sender := multiplayer.get_remote_sender_id()
+	if not _rate_ok(sender, "public_resume"):
+		return
 	var id := public_id.strip_edges().to_upper()
 	var token := str(_public_token_seat.get(id, ""))
 	if token.is_empty():
-		_rpc_resume_failed.rpc_id(multiplayer.get_remote_sender_id(), "token_id_unknown")
+		# 猜错也计入 strike：短码枚举是可行的在线攻击面，失败次数必须有代价。
+		_rate_ok(sender, "public_resume")
+		_rpc_resume_failed.rpc_id(sender, "token_id_unknown")
 		return
 	public_token_id = id
 	_rpc_resume_request(token)
@@ -1576,6 +1696,13 @@ func _rpc_pong() -> void:
 		_pong_gap_logged = false
 		_net_log("pong recovered")
 	_last_pong_at = _now()
+	# RTT 实测值：排查掉线时「网络本来就慢」和「被大包堵住」是两回事，只有静默
+	# 告警区分不开。超过阈值才记，正常情况下不刷日志。
+	if _ping_sent_at > 0:
+		var rtt := Time.get_ticks_msec() - _ping_sent_at
+		_ping_sent_at = 0
+		if rtt > PING_RTT_LOG_MS:
+			_net_log("pong rtt=%dms" % rtt)
 
 # 服务器：心跳超时的 peer 主动断开，走正常掉线->座位保留流程。
 func _tick_heartbeat_timeouts() -> void:
@@ -1727,7 +1854,8 @@ func _rpc_resume_request(token: String) -> void:
 		"slot_states": (room.get("slot_states", []) as Array).duplicate(),
 		"ready": (room.get("ready", []) as Array).duplicate(),
 		"round_index": resume_round,
-		"shared_seed": int(room.get("shared_seed", 0)),
+		# 不再下发 shared_seed：重连恢复只需要回合与阶段，而提前拿到 seed 等于
+		# 恢复了「备战期就能预演本回合战斗」的能力。客户端不本地模拟，用不到它。
 		"team_hp": int(hp[own_team]),
 		"enemy_team_hp": int(hp[1 - own_team]),
 		"gold": gold,
@@ -1837,16 +1965,15 @@ func _on_peer_connected(id: int) -> void:
 				_rpc_team_assign_slot.rpc_id(id, slot, "")
 			_team_broadcast_lobby()
 			team_lobby_changed.emit()
-		return
-	if state == SessionState.HOSTING:
-		state = SessionState.READY
-		send_board_snapshot()
-		_rpc_receive_ready.rpc(local_ready, local_ready_round)
-		session_changed.emit()
 
 func _on_peer_disconnected(id: int) -> void:
 	_net_log("client disconnected peer=%d" % id)
 	_peer_last_ping.erase(id)
+	_rate_forget(id)
+	# 短 token 映射过去从不清理，peer 断开也不 erase —— 内存只涨不降。
+	var short_token := str(_peer_public_token.get(id, ""))
+	if not short_token.is_empty():
+		_peer_public_token.erase(id)
 	if team_active:
 		if _dedicated_server:
 			var room := _room_for_peer(id)
@@ -1867,9 +1994,7 @@ func _on_peer_disconnected(id: int) -> void:
 			team_lobby_changed.emit()
 		return
 	clear_opponent_snapshot()
-	local_ready = false
-	local_ready_round = 0
-	state = SessionState.HOSTING if is_host else SessionState.OFFLINE
+	state = SessionState.OFFLINE
 	session_changed.emit()
 
 func _assign_peer_to_room(peer_id: int, room: Dictionary = {}, public_id: String = "") -> void:
@@ -1909,6 +2034,76 @@ func _assign_peer_to_room(peer_id: int, room: Dictionary = {}, public_id: String
 	_maybe_promote_leader(room)
 	_rpc_team_leader.rpc_id(peer_id, int(room.get("leader_slot", 0)))
 	_broadcast_room_lobby(room)
+
+# --- 黄金祭坛（服务端权威 intent） ------------------------------------------
+# 祭坛拿「法阵 HP」换金币，而 HP 是服务端权威、金币目前还是客户端自报——两边分属
+# 不同权威源，客户端自己扣 HP 会在下一份 match_state 被覆盖掉，等于代价蒸发、
+# 每回合白拿 150 金。所以这一笔必须由服务端记账：服务端扣自己的 team_hp，
+# 客户端只在收到授权后才加金币。
+#
+# 说明：这里不校验「你是否真的拥有这件宝物」——服务端目前没有可信的宝物归属
+# （客户端选宝物、服务端不记账），伪造宝物归属和伪造金币是同一类问题，
+# 由 P1 的备战账本统一解决。本 RPC 修的是「代价能不能落地」，不是宝物归属。
+signal altar_result(granted: bool, team_hp: int, uses: int)
+
+const ALTAR_MAX_USES_PER_ROUND := 3
+const ALTAR_MIN_HP := 10
+const ALTAR_GOLD := 50
+
+func request_golden_altar() -> void:
+	if team_active and multiplayer.multiplayer_peer != null:
+		_rpc_altar_request.rpc_id(1)
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_altar_request() -> void:
+	if not _dedicated_server:
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if not _rate_ok(sender, "altar"):
+		return
+	var room := _room_for_peer(sender)
+	if room.is_empty():
+		return
+	var slot := int((room.get("peer_slot", {}) as Dictionary).get(sender, -1))
+	if slot < 0 or slot >= TEAM_SLOTS:
+		return
+	# 只在备战阶段可用：战斗/结算阶段改 HP 会和正在进行的结算打架。
+	if str(room.get("state", ROOM_LOBBY)) != ROOM_PREP:
+		_rpc_altar_result.rpc_id(sender, false, 0, 0)
+		return
+	var uses_map: Dictionary = room.get("altar_uses", {})
+	var used := int(uses_map.get(slot, 0))
+	var team := 0 if slot < 3 else 1
+	var hp_arr: Array = room.get("team_hp", [GameState.START_FORMATION_HP, GameState.START_FORMATION_HP])
+	var hp := int(hp_arr[team])
+	if used >= ALTAR_MAX_USES_PER_ROUND or hp <= ALTAR_MIN_HP:
+		_rpc_altar_result.rpc_id(sender, false, hp, used)
+		return
+	hp -= 1
+	hp_arr[team] = hp
+	room.team_hp = hp_arr
+	uses_map[slot] = used + 1
+	room.altar_uses = uses_map
+	_touch_room(room)
+	_net_log("altar granted room=%d slot=%d team=%d hp=%d uses=%d" % [int(room.get("id", 0)), slot, team, hp, used + 1])
+	_rpc_altar_result.rpc_id(sender, true, hp, used + 1)
+	# 同队其他人也要看到共享法阵 HP 的变化（祭坛扣的是全队 HP）。
+	for peer_id in (room.get("peer_slot", {}) as Dictionary).keys():
+		var other_slot := int((room.get("peer_slot", {}) as Dictionary)[peer_id])
+		if int(peer_id) == sender or not _peer_connected(int(peer_id)):
+			continue
+		if (0 if other_slot < 3 else 1) == team:
+			_rpc_altar_team_hp.rpc_id(int(peer_id), hp)
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_altar_result(granted: bool, team_hp: int, uses: int) -> void:
+	altar_result.emit(granted, team_hp, uses)
+
+# 队友用了祭坛：只同步共享 HP，不给金币。
+@rpc("authority", "call_remote", "reliable")
+func _rpc_altar_team_hp(team_hp: int) -> void:
+	GameState.team_hp = team_hp
+	altar_result.emit(false, team_hp, -1)
 
 @rpc("any_peer", "call_remote", "reliable")
 func _rpc_team_leave() -> void:
@@ -2057,11 +2252,6 @@ func _on_connected_to_server() -> void:
 		_rpc_abandon_seat.rpc_id(1, pending_abandon_token)
 		pending_abandon_token = ""
 	state = SessionState.READY
-	if team_active:
-		session_changed.emit()
-		return
-	send_board_snapshot()
-	_rpc_receive_ready.rpc(local_ready, local_ready_round)
 	session_changed.emit()
 
 func _on_connection_failed() -> void:
@@ -2089,8 +2279,6 @@ func _on_server_disconnected() -> void:
 		team_lobby_changed.emit()
 		return
 	clear_opponent_snapshot()
-	local_ready = false
-	local_ready_round = 0
 	state = SessionState.OFFLINE
 	last_error = tr("net_err_server_disconnected")
 	session_changed.emit()
@@ -2157,6 +2345,8 @@ func _rpc_team_room_closed(reason: String) -> void:
 func _rpc_team_set_ready(slot: int, value: bool) -> void:
 	if _dedicated_server:
 		var sender := multiplayer.get_remote_sender_id()
+		if not _rate_ok(sender, "set_ready"):
+			return
 		var room := _room_for_peer(sender)
 		if room.is_empty() or slot < 0 or slot >= TEAM_SLOTS:
 			return
@@ -2213,32 +2403,10 @@ func _rpc_team_start() -> void:
 	GameState.team_slot_states = team_slot_states.duplicate()
 	team_start_requested.emit()
 
-@rpc("any_peer", "call_remote", "reliable")
-func _rpc_receive_board_snapshot(snapshot: Dictionary) -> void:
-	receive_opponent_snapshot(snapshot)
-
-@rpc("any_peer", "call_remote", "reliable")
-func _rpc_receive_ready(value: bool, round_index: int = 0) -> void:
-	opponent_ready = value
-	opponent_ready_round = int(round_index) if value else 0
-	session_changed.emit()
-
-@rpc("any_peer", "call_remote", "reliable")
-func _rpc_receive_pvp_result(result: Dictionary) -> void:
-	if is_host:
-		return
-	latest_pvp_result = pvp_result_for_local_perspective(result)
-	pvp_result_received.emit(latest_pvp_result)
-
-@rpc("any_peer", "call_remote", "reliable")
-func _rpc_request_pvp_result() -> void:
-	if not is_host or latest_pvp_result.is_empty():
-		return
-	var sender_id := multiplayer.get_remote_sender_id()
-	if sender_id > 0:
-		_rpc_receive_pvp_result.rpc_id(sender_id, latest_pvp_result)
-
-@rpc("any_peer", "call_remote", "reliable")
+# 权威结算下行。必须是 authority：改成 any_peer 时任何客户端都能给别人塞一份
+# 伪造的 match_state（金币/血量/胜负/宝物候选全由他定）。
+# 配合 _ready() 里的 server_relay = false，客户端之间连转发通道都没有。
+@rpc("authority", "call_remote", "reliable")
 func _rpc_receive_match_state(state_payload: Dictionary) -> void:
 	if is_host:
 		return

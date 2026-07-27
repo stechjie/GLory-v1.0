@@ -637,12 +637,6 @@ func _on_start_battle() -> void:
 func _emit_battle_request_once() -> void:
 	pass
 
-func _online_can_start_round() -> bool:
-	return false
-
-func _online_waiting_text() -> String:
-	return ""
-
 func _has_any_board_unit() -> bool:
 	return false
 
@@ -740,9 +734,6 @@ func _on_golden_altar() -> void:
 	pass
 
 func _on_generous_fate_gamble() -> void:
-	pass
-
-func _on_toggle_ready() -> void:
 	pass
 
 func _on_refresh_shop() -> void:

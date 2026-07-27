@@ -56,13 +56,6 @@ func _on_start_battle() -> void:
 		NetworkService.team_set_ready(not is_ready)
 		_refresh_all()
 		return
-	NetworkService.send_board_snapshot()
-	if NetworkService.is_online():
-		NetworkService.set_ready(true)
-		NetworkService.send_board_snapshot()
-		if _online_can_start_round():
-			_emit_battle_request_once()
-		return
 	_emit_battle_request_once()
 
 func _emit_battle_request_once() -> void:
@@ -71,20 +64,6 @@ func _emit_battle_request_once() -> void:
 	RaceRelationService.finalize_for_battle(GameState.board_slots, GameState.bench_slots)
 	_battle_launch_emitted = true
 	battle_requested.emit()
-
-func _online_can_start_round() -> bool:
-	if not NetworkService.is_online() or not NetworkService.both_ready():
-		return false
-	if RoundService.is_pvp_schedule_round(GameState.round_index) and not NetworkService.has_current_opponent_snapshot():
-		return false
-	return true
-
-func _online_waiting_text() -> String:
-	if not NetworkService.both_ready():
-		return tr("prep_wait_ready_opponent")
-	if RoundService.is_pvp_schedule_round(GameState.round_index) and not NetworkService.has_current_opponent_snapshot():
-		return tr("prep_wait_board_sync")
-	return tr("prep_wait_sync")
 
 func _has_any_board_unit() -> bool:
 	for cell in GameState.board_slots:
@@ -102,33 +81,42 @@ func _mark_online_board_changed() -> void:
 		var my := NetworkService.team_local_slot
 		if my >= 0 and my < NetworkService.team_ready.size() and bool(NetworkService.team_ready[my]):
 			NetworkService.team_set_ready(false)
-		return
-	if not NetworkService.is_online():
-		return
-	if NetworkService.local_ready:
-		NetworkService.set_ready(false)
-	else:
-		NetworkService.send_board_snapshot()
 
 func _on_network_session_changed() -> void:
 	_refresh_formation_status()
 	_refresh_merc_panel()
-	if NetworkService.local_ready and _online_can_start_round():
-		_emit_battle_request_once()
 
 func _on_golden_altar() -> void:
 	if not GameState.owned_treasures.has("money_golden_altar"):
 		return
-	# Golden Altar acts on the formation HP — team HP in 3v3, personal HP in 1v1.
-	var current_hp := GameState.team_hp if GameState.team_mode else GameState.player_formation_hp
-	if current_hp <= 10 or GameState.golden_altar_uses >= 3:
+	# 联机局：祭坛拿服务端权威的法阵 HP 换金币，本地扣 HP 会被下一份 match_state
+	# 覆盖掉（代价蒸发、金币白拿）。所以只发意图，等服务端扣完 HP 授权后才加金币。
+	if NetworkService.team_active:
+		if not NetworkService.altar_result.is_connected(_on_altar_result):
+			NetworkService.altar_result.connect(_on_altar_result)
+		NetworkService.request_golden_altar()
 		return
-	if GameState.team_mode:
-		GameState.team_hp -= 1
-	else:
-		GameState.player_formation_hp -= 1
-	GameState.gold += 50
+	# 单机：本地就是权威，直接结算。
+	if GameState.player_formation_hp <= NetworkService.ALTAR_MIN_HP or GameState.golden_altar_uses >= NetworkService.ALTAR_MAX_USES_PER_ROUND:
+		return
+	GameState.player_formation_hp -= 1
+	GameState.gold += NetworkService.ALTAR_GOLD
 	GameState.golden_altar_uses += 1
+	SaveManager.save_run()
+	_refresh_all()
+
+# 服务端对祭坛请求的裁决。uses < 0 表示这是队友用祭坛导致的共享 HP 同步，
+# 本人不加金币、只刷新显示。
+func _on_altar_result(granted: bool, team_hp: int, uses: int) -> void:
+	if uses < 0:
+		_refresh_all()
+		return
+	if not granted:
+		_refresh_all()
+		return
+	GameState.team_hp = team_hp
+	GameState.golden_altar_uses = uses
+	GameState.gold += NetworkService.ALTAR_GOLD
 	SaveManager.save_run()
 	_refresh_all()
 
@@ -149,8 +137,5 @@ func _on_generous_fate_gamble() -> void:
 	SaveManager.save_run()
 	_refresh_all()
 
-func _on_toggle_ready() -> void:
-	NetworkService.toggle_ready()
-	_refresh_all()
 
 

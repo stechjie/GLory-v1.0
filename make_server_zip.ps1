@@ -8,8 +8,14 @@
 #  （journalctl -u glory-server）里 "server starting protocol=N" 必须和它一致。
 # ============================================================
 
-$src   = "C:\Users\Leno\Desktop\Github\GLory-v1.0"        # 游戏项目目录
-$out   = "D:\Glory android\glory_server_upload.zip"      # 输出的服务器包（固定名）
+# 项目目录：默认取本脚本所在目录，换机器/换用户名都不用再改这一行。
+# 需要打别处的项目时用： .\make_server_zip.ps1 -Src "D:\path\to\GLory-v1.0"
+param(
+    [string]$Src = $PSScriptRoot,
+    [string]$Out = (Join-Path $PSScriptRoot "glory_server_upload.zip")
+)
+$src   = $Src                                            # 游戏项目目录
+$out   = $Out                                            # 输出的服务器包（固定名）
 $stage = "$env:TEMP\glory_server_stage_$(Get-Date -Format 'HHmmss')"  # 临时目录
 
 try {
@@ -24,6 +30,10 @@ try {
         if (-not (Test-Path "$src\$d")) { throw "缺少文件夹: $src\$d" }
         Copy-Item -Recurse -Force "$src\$d" "$stage\$d"
     }
+    # 备份/临时文件不上服务器（BattleSimulator.gd.bak 一个就 112KB，且是过期实现，
+    # 混在包里会让人误读为现行代码）。
+    Get-ChildItem -Path $stage -Recurse -File -Include *.bak, *.tmp, *.orig, *~ |
+        ForEach-Object { Remove-Item -Force $_.FullName }
     Copy-Item -Force "$src\project.godot" "$stage\project.godot"
     New-Item -ItemType Directory -Force "$stage\.godot" | Out-Null
     if (Test-Path "$src\.godot\global_script_class_cache.cfg") {
