@@ -4,12 +4,13 @@ extends Node
 # 检查召唤/光带/收场这段编排。搭的是和 BattleArena._build() 同款的 3D 世界与相机。
 # Run with a real window (not --headless), the capture needs a rendering device.
 
-const BattleArenaScript := preload("res://scenes/battle/BattleArena.gd")
+const BattleArenaScript := preload("res://scenes/battle/BattleResult.gd")
 
 const OUTPUT_DIR := "C:/Users/Leno/AppData/Local/Temp/claude/C--Users-Leno-Desktop-Beta-0-04/7de75bf1-25b7-4c1d-a073-d44547060368/scratchpad/crystal_shots"
 const SHOT_SIZE := Vector2i(640, 480)
 # 覆盖召唤(0~0.85)、光带(0.85~1.7)、掉血(~2.0)、收场(~2.4) 的采样点
-const SHOT_TIMES := [0.30, 0.75, 1.05, 1.12, 1.20, 1.40, 1.75, 2.15]
+# 总时长 ≈ 0.22 起手 + 0.62 升起 + 0.18 + 2.0 齐射预算 + 0.73 收尾飞行 + 收场
+const SHOT_TIMES := [1.00, 1.45, 1.95, 2.35, 2.75, 3.05, 3.45, 3.90]
 
 var arena: Control
 var viewport: SubViewport
@@ -35,23 +36,45 @@ func _ready() -> void:
 			await get_tree().create_timer(wait).timeout
 		elapsed = float(SHOT_TIMES[i])
 		await _capture("%s/demo_%d_%03dms.png" % [OUTPUT_DIR, i, int(elapsed * 1000.0)])
-		var names: Array = []
+		var ribbons := 0
+		var units := 0
 		for child in (arena._battle_3d_world as Node3D).get_children():
-			var extra := ""
-			if child is MeshInstance3D and (child as MeshInstance3D).material_override is StandardMaterial3D:
-				var m := (child as MeshInstance3D).material_override as StandardMaterial3D
-				extra = "(a=%.2f scale=%s vis=%s)" % [m.albedo_color.a, str((child as Node3D).scale), str((child as Node3D).visible)]
-			names.append(child.name + extra)
-		print("shot t=%.2fs crystal=%s world=%s" % [elapsed, str(arena._demo_crystal != null), str(names)])
+			if child.name.begins_with("CrystalRibbon"):
+				ribbons += 1
+		units = (arena._battle_3d_models as Dictionary).size()
+		var hp_text := "-"
+		if arena._crystal_hp_label != null and is_instance_valid(arena._crystal_hp_label):
+			hp_text = str((arena._crystal_hp_label as Label).text)
+		print("t=%.2fs 水晶=%s 飘带=%d 棋子剩余=%d 血条=%s" % [
+			elapsed, str(arena._demo_crystal != null), ribbons, units, hp_text])
 	print("CRYSTAL_DEMO_SHOTS_DONE dir=%s" % OUTPUT_DIR)
 	get_tree().quit()
 
 func _build_world() -> void:
+	# 和真机同样的层次：3D 世界在 SubViewport 里，血量是叠在上面的 2D 控件。
+	# 截的是整个窗口而不是 SubViewport，否则血量根本不在画面里。
+	# 项目用的是固定基准分辨率的 canvas 拉伸，根视口尺寸不等于窗口尺寸，所以三层
+	# （arena 控件 / 容器 / SubViewport）全部对齐到根视口，_world_to_arena 才是 1:1。
+	var root_size := get_viewport().get_visible_rect().size
+	print("root viewport = %s" % str(root_size))
+	var arena_control := Control.new()
+	arena_control.position = Vector2.ZERO
+	arena_control.size = root_size
+	add_child(arena_control)
+	arena._arena = arena_control
+
+	var container := SubViewportContainer.new()
+	container.stretch = true
+	container.position = Vector2.ZERO
+	container.size = root_size
+	container.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	arena_control.add_child(container)
+
 	viewport = SubViewport.new()
-	viewport.size = SHOT_SIZE
+	viewport.size = Vector2i(root_size)
 	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	viewport.msaa_3d = Viewport.MSAA_4X
-	add_child(viewport)
+	container.add_child(viewport)
 
 	var world := Node3D.new()
 	world.name = "Battle3DWorld"
@@ -83,6 +106,8 @@ func _build_world() -> void:
 	camera.look_at_from_position(arena.BATTLE_CAMERA_POS, Vector3.ZERO, Vector3.UP)
 	camera.current = true
 	viewport.add_child(camera)
+	arena._battle_3d_camera = camera
+	arena._battle_3d_viewport = viewport
 
 	# 一块地面代理：真机没有 3D 地面，这里加一块只是为了让截图能看出地平线在哪。
 	var ground := MeshInstance3D.new()
@@ -112,4 +137,5 @@ func _seed_battle_state() -> void:
 func _capture(file_path: String) -> void:
 	for _i in 3:
 		await RenderingServer.frame_post_draw
-	viewport.get_texture().get_image().save_png(file_path)
+	# 整窗截图：SubViewport 里的 3D + 叠在上面的 2D 血量一起进来。
+	get_viewport().get_texture().get_image().save_png(file_path)

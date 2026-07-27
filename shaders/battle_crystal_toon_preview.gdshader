@@ -19,6 +19,8 @@ uniform float glint_strength : hint_range(0.0, 1.0) = 0.22;
 uniform float gradient_base_y = 0.0;
 uniform float gradient_height = 1.0;
 uniform float gradient_strength : hint_range(0.0, 1.0) = 0.22;
+// 被彩带命中时瞬间打亮，调用方拉到 1 再放回 0。
+uniform float hit_flash : hint_range(0.0, 1.0) = 0.0;
 
 varying vec3 world_position;
 
@@ -69,5 +71,6 @@ void fragment() {
 	color = mix(color * 0.42, color, damage_stage);
 	color += glint_color.rgb * glint * glint_strength;
 	color += rim_color.rgb * rim * rim_strength;
+	color = mix(color, mix(vec3(1.0), tip_color.rgb, 0.35), hit_flash * 0.6);
 	ALBEDO = color;
 }

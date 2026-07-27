@@ -3,7 +3,7 @@ extends Node
 # 结算水晶演出的决策表校验：_crystal_demo_losing_team 决定这一局演不演、演哪一队的
 # 水晶。PvP 的答案必须是绝对队伍（六个客户端一致），PvE 只有我方被打穿才演。
 
-const BattleArenaScript := preload("res://scenes/battle/BattleArena.gd")
+const BattleArenaScript := preload("res://scenes/battle/BattleResult.gd")
 
 var arena: Control
 
