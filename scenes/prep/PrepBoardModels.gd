@@ -581,11 +581,6 @@ func _update_prep_model_anchors(model_node: Node3D, attempt: int) -> void:
 		else:
 			model_node.set_meta("prep_anchor_update_pending", false)
 		return
-	_position_prep_foot_star(model_node)
-	# 名字放到头顶：居中后脚在 pivot 原点，头约在本地高度 bounds.size.y，再抬高一点。
-	var head_anchor := model_node.get_node_or_null("HeadNameAnchor3D") as Node3D
-	if head_anchor != null:
-		head_anchor.position = Vector3(0.0, bounds.size.y * 1.06, -0.56)
 	_configure_prep_contact_shadow(model_node)
 	model_node.set_meta("relation_waist_height", bounds.size.y * 0.52)
 	model_node.set_meta("prep_anchor_update_pending", false)
@@ -614,49 +609,7 @@ func _make_prep_board_model(cell: Dictionary, unit_def: Dictionary) -> Node3D:
 	pivot.set_meta("relation_waist_height", _prep_board_model_target_size() * 0.52)
 	# Prep models are enlarged 20%; epic (tier 3) units 40%.
 	_add_prep_contact_shadow(pivot)
-	var star_anchor := Node3D.new()
-	star_anchor.name = "FootStarAnchor3D"
-	pivot.add_child(star_anchor)
-	# 名字标签挂在独立的「头顶锚点」上（脚部星星仍在 FootStarAnchor3D），
-	# 位置按模型实际高度移到头顶上方。
-	var head_anchor := Node3D.new()
-	head_anchor.name = "HeadNameAnchor3D"
-	pivot.add_child(head_anchor)
-	var name_label := Label3D.new()
-	name_label.name = "NameLabel3D"
-	var display_name := str(unit_def.get("name", cell.get("id", "")))
-	if LocaleManager.get_locale() == "en":
-		var english_name := str(unit_def.get("name_en", ""))
-		if not english_name.is_empty():
-			display_name = english_name
-	name_label.text = display_name
-	name_label.font_size = 44
-	name_label.outline_size = 0
-	name_label.modulate = Color.WHITE
-	name_label.outline_modulate = Color.TRANSPARENT
-	name_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	name_label.fixed_size = true
-	name_label.no_depth_test = true
-	name_label.pixel_size = 0.0024
-	name_label.render_priority = 126
-	name_label.outline_render_priority = 127
-	name_label.offset = Vector2(0.0, -16.0)
-	head_anchor.add_child(name_label)
-	var star_label := Label3D.new()
-	star_label.name = "StarLabel3D"
-	star_label.text = "\u2605".repeat(clampi(int(cell.get("star", 1)), 1, GameState.MAX_UNIT_STAR))
-	star_label.font_size = 60
-	star_label.outline_size = 0
-	star_label.modulate = Color(1.0, 0.82, 0.20)
-	star_label.outline_modulate = Color.TRANSPARENT
-	star_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	star_label.fixed_size = true
-	star_label.no_depth_test = true
-	star_label.pixel_size = 0.0030
-	star_label.render_priority = 126
-	star_label.outline_render_priority = 127
-	star_label.offset = Vector2(0.0, 20.0)
-	star_anchor.add_child(star_label)
+	# 名字/星级改为 2D 格子下方标签（见 _make_cell_caption），不再用 3D Label3D 浮标+锚点。
 	_play_prep_model_idle(model, unit_def)
 	return pivot
 
@@ -683,22 +636,6 @@ void fragment() {
 	shadow.mesh = shadow_mesh
 	shadow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	pivot.add_child(shadow)
-
-func _position_prep_foot_star(model_node: Node3D) -> void:
-	var visual_path := NodePath(str(model_node.get_meta("prep_visual_root", "")))
-	var visual_root := model_node.get_node_or_null(visual_path) as Node3D
-	if visual_root == null:
-		return
-	var star_anchor := model_node.get_node_or_null("FootStarAnchor3D") as Node3D
-	if star_anchor == null:
-		star_anchor = visual_root.get_node_or_null("FootStarAnchor3D") as Node3D
-	if star_anchor == null:
-		return
-	var target_in_pivot := Vector3(0.0, 0.14, -0.56)
-	if star_anchor.get_parent() == model_node:
-		star_anchor.position = target_in_pivot
-	else:
-		star_anchor.position = visual_root.transform.affine_inverse() * target_in_pivot
 
 func _configure_prep_contact_shadow(model_node: Node3D) -> void:
 	var shadow := model_node.get_node_or_null("ContactShadow3D") as MeshInstance3D
@@ -746,6 +683,26 @@ func _fit_cell_to_screen_polygon(child: Object, screen_pts: PackedVector2Array, 
 	for p in pts:
 		local.append(p - bounds.position)
 	child.configure_polygon(local)
+	# caption 若标了「跟圆圈」：摆到椭圆【质心】(≈真正圆心) 而不是包围盒中心——补透视斜椭圆偏移，越靠边越准。
+	var cap := (child as Node).get_node_or_null("CellCaption") as Control
+	if cap != null and bool(cap.get_meta("caption_centroid", false)):
+		var ctr := Vector2.ZERO
+		for p in local:
+			ctr += p
+		ctr /= float(maxi(1, local.size()))
+		var cw: float = cap.get_meta("caption_w", 156.0)
+		var ch: float = cap.get_meta("caption_h", 37.0)
+		var cdx: float = cap.get_meta("caption_dx", 0.0)
+		var cdrop: float = cap.get_meta("caption_drop", 0.0)
+		cap.anchor_left = 0.0
+		cap.anchor_top = 0.0
+		cap.anchor_right = 0.0
+		cap.anchor_bottom = 0.0
+		cap.offset_left = ctr.x - cw * 0.5 + cdx
+		cap.offset_right = ctr.x + cw * 0.5 + cdx
+		var cy := ctr.y + bounds.size.y * cdrop
+		cap.offset_top = cy - ch * 0.5
+		cap.offset_bottom = cy + ch * 0.5
 
 # 把 16 个主战格子用 3D 投影对齐到石台上，画成跟着斜面的椭圆圆圈
 func _realign_prep_board_cells() -> void:

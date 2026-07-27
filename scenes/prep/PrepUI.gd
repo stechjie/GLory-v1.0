@@ -120,6 +120,45 @@ func _ui_unit_name(d: Dictionary) -> String:
 			return en
 	return str(d.get("name", str(d.get("id", "?"))))
 
+# 棋盘 caption 位置（待命的不受影响）：
+# DROP=相对格子底往下的【比例】（用格子高度比例、不是固定像素，才能补透视——不同排格子大小不同，
+#   固定像素会"越往上越偏"）。负=往上、正=往下；太高调大、太低调小。
+# DX =左右【像素】偏移：正=右移、负=左移。
+const BOARD_CAPTION_DROP := 0.5
+const BOARD_CAPTION_DX := 0
+
+func _make_cell_caption() -> Label:
+	# 格子正下方的一行「名字 ★星级」标签（棋盘 / 待命共用）。默认隐藏，有棋子时才显示。
+	# 竖直方向文字居中于框、框中心固定（改字号不会让位置跑）；位置微调改 offset。
+	var cap := Label.new()
+	cap.name = "CellCaption"
+	cap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cap.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	cap.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	cap.anchor_left = 0.5
+	cap.anchor_right = 0.5
+	cap.anchor_top = 1.0
+	cap.anchor_bottom = 1.0
+	cap.offset_left = -78
+	cap.offset_right = 78
+	cap.offset_top = -14      # 框中心 = 格子底 + 4.5（改字号不影响这个中心）
+	cap.offset_bottom = 23
+	cap.add_theme_font_size_override("font_size", 18)   # 字号（放大到接近模型上的）；两处共用
+	cap.add_theme_color_override("font_color", Color.WHITE)
+	cap.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	cap.add_theme_constant_override("outline_size", 3)
+	cap.z_index = 10
+	cap.visible = false
+	cap.set_meta("caption_w", 156.0)   # 框宽/高：棋盘按圆心质心定位时用（_fit_cell_to_screen_polygon）
+	cap.set_meta("caption_h", 37.0)
+	return cap
+
+func _cell_caption_text(cell: Dictionary) -> String:
+	# 一行：名字 + ★（星数）
+	var d := _prep_display_unit_def(cell)
+	var star := clampi(int(cell.get("star", 1)), 1, GameState.MAX_UNIT_STAR)
+	return "%s %s" % [_ui_unit_name(d), "★".repeat(star)]
+
 func _build() -> void:
 	var bg := ColorRect.new()
 	bg.color = Color(0.38, 0.70, 0.88)
@@ -354,6 +393,13 @@ func _build_rest(root: VBoxContainer) -> void:
 		relation_overlay.z_index = 8
 		cell.add_child(relation_overlay)
 		_board_relation_overlays.append(relation_overlay)
+		var caption := _make_cell_caption()
+		# 棋盘：跟「圆圈真正的中心」定位（在 _fit_cell_to_screen_polygon 里按椭圆质心摆），补透视。
+		caption.set_meta("caption_centroid", true)
+		caption.set_meta("caption_dx", BOARD_CAPTION_DX)      # 左右像素微调
+		caption.set_meta("caption_drop", BOARD_CAPTION_DROP)  # 相对格子高度往下的比例（负=往上，绕圆心）
+		cell.add_child(caption)
+		_board_cell_captions.append(caption)
 
 	var right_board_spacer := Control.new()
 	right_board_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1217,7 +1263,7 @@ func _create_bench_portrait_card(index: int) -> BenchCellButton:
 	card.screen = self
 	card.drag_owner = self
 	card.custom_minimum_size = Vector2(80, 72)   # 仅投影生效前的占位；真正大小由 _realign_prep_standby_cells 设定
-	card.clip_contents = true
+	card.clip_contents = false   # 关裁剪：格子下方的名字/星级标签才不会被裁掉
 	card.text = ""
 	card.tooltip_text = tr("ui_bench_slot")
 	card.pressed.connect(_on_bench_pressed.bind(index))
@@ -1225,25 +1271,7 @@ func _create_bench_portrait_card(index: int) -> BenchCellButton:
 	_configure_unframed_portrait_card(card)
 	_bench_buttons.append(card)
 
-	var name_label := Label.new()
-	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	name_label.anchor_left = 0.0
-	name_label.anchor_top = 1.0
-	name_label.anchor_right = 1.0
-	name_label.anchor_bottom = 1.0
-	name_label.offset_left = 2
-	name_label.offset_top = -18
-	name_label.offset_right = -2
-	name_label.offset_bottom = -2
-	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	name_label.clip_text = true
-	name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	name_label.add_theme_font_size_override("font_size", 18)
-	name_label.add_theme_color_override("font_color", Color.WHITE)
-	name_label.add_theme_color_override("font_outline_color", Color.TRANSPARENT)
-	name_label.add_theme_constant_override("outline_size", 0)
-	name_label.visible = false
+	var name_label := _make_cell_caption()   # 待命格子下方的「名字 ★星级」，和棋盘一致
 	card.add_child(name_label)
 	_bench_card_labels.append(name_label)
 	return card
@@ -1503,6 +1531,13 @@ func _refresh_board() -> void:
 		btn.modulate = Color(1, 0.92, 0.55) if i == _selected_board else Color.WHITE
 		if i < _board_relation_overlays.size():
 			_board_relation_overlays[i].set_relation_states(RaceRelationService.visual_states_for_cell(cell))
+		if i < _board_cell_captions.size():
+			var caption := _board_cell_captions[i]
+			if cell == null:
+				caption.visible = false
+			else:
+				caption.text = _cell_caption_text(cell)
+				caption.visible = true
 	_refresh_prep_board_models()
 
 func _setup_board_cell_styles() -> void:
@@ -1532,7 +1567,7 @@ func _refresh_bench() -> void:
 			btn.set_meta("drag_preview_text", "")
 			btn.drag_payload = {}
 			name_label.text = ""
-			name_label.modulate = Color.WHITE
+			name_label.visible = false
 			btn.modulate = Color.WHITE
 		else:
 			_apply_empty_button_styles(btn)
@@ -1541,8 +1576,8 @@ func _refresh_bench() -> void:
 			btn.tooltip_text = unit_name
 			btn.set_meta("drag_preview_text", "%s  %d★" % [unit_name, int(cell.get("star", 1))])
 			btn.drag_payload = {} if GameState.tutorial_mode and TutorialMode.step == TutorialMode.Step.BUY_3 else {"kind": "bench", "index": i}
-			name_label.text = unit_name
-			name_label.modulate = Color.WHITE
+			name_label.text = _cell_caption_text(cell)
+			name_label.visible = true
 		btn.set_standby_highlight(_standby_drop_highlight_active, i == _standby_drop_hover_index)
 		btn.modulate = Color(1, 0.92, 0.55) if i == _selected_bench else Color.WHITE
 	_refresh_prep_standby_models()
@@ -1963,12 +1998,7 @@ func _rebuild_team_mercs_stage() -> void:
 		var pivot := _make_prep_board_model(cell, def)
 		if pivot == null:
 			continue
-		var name_label := pivot.find_child("NameLabel3D", true, false) as Label3D
-		if name_label != null:
-			name_label.visible = false
-		var star_label := pivot.find_child("StarLabel3D", true, false) as Label3D
-		if star_label != null:
-			star_label.visible = false
+		# 模型已不带 3D 名字/星级浮标，队伍佣兵检阅台本就不需要显示，无需再隐藏。
 		pivot.position = pos
 		pivot.rotation_degrees = Vector3(0.0, float(def.get("model_base_yaw", 180.0)) + rng.randf_range(-20.0, 20.0), 0.0)
 		_team_mercs_stage_root.add_child(pivot)
