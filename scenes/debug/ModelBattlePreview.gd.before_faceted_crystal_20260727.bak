@@ -1280,7 +1280,6 @@ func _spawn_unit(slot: Node3D, entry: Dictionary, side: int) -> void:
 		"actions": actions,
 		"current_action": "idle",
 		"is_crystal": bool(entry.get("crystal_toon", false)),
-		"crystal_base_yaw": model.rotation.y,
 		"load_note": ""
 	}
 	units.append(unit)
@@ -1498,11 +1497,6 @@ func _animate_units() -> void:
 		var is_crystal := bool(unit.get("is_crystal", false))
 		var bob_phase := 0.0 if side < 0 else PI
 		var bob: float = sin(phase_time * TAU / 2.6 + bob_phase) * 0.14 if is_crystal else sin(phase_time * TAU * 0.9) * 0.035
-		var model := unit.get("model") as Node3D
-		if is_crystal and model != null:
-			var base_yaw: float = float(unit.get("crystal_base_yaw", model.rotation.y))
-			model.rotation.y = base_yaw + sin(phase_time * TAU / 5.2 + bob_phase) * deg_to_rad(4.0)
-			model.rotation.z = sin(phase_time * TAU / 4.1 + bob_phase) * deg_to_rad(1.6)
 		var engage_pos := Vector3(base_pos.x, base_pos.y, float(side) * ENGAGE_DEPTH)
 		var current_base := base_pos
 		if auto_fight_enabled and not is_crystal:
@@ -1610,11 +1604,10 @@ func _fit_model_to_slot(model: Node3D) -> void:
 
 func _apply_crystal_toon_preview(root: Node3D, color_name: String) -> void:
 	var is_red := color_name == "red"
-	var shade_color := Color(0.24, 0.012, 0.028) if is_red else Color(0.012, 0.10, 0.31)
-	var body_color := Color(0.76, 0.025, 0.055) if is_red else Color(0.018, 0.42, 0.82)
-	var light_color := Color(1.0, 0.16, 0.10) if is_red else Color(0.035, 0.82, 0.96)
-	var glint_color := Color(1.0, 0.80, 0.62) if is_red else Color(0.78, 0.98, 1.0)
-	var rim_color := Color(0.90, 0.06, 0.08) if is_red else Color(0.08, 0.64, 0.96)
+	var body_tint := Color(1.0, 0.54, 0.46) if is_red else Color(0.58, 0.82, 1.0)
+	var shadow_tint := Color(0.28, 0.055, 0.045) if is_red else Color(0.035, 0.11, 0.25)
+	var rim_color := Color(1.0, 0.24, 0.08) if is_red else Color(0.22, 0.82, 1.0)
+	var outline_color := Color(0.075, 0.012, 0.018) if is_red else Color(0.012, 0.025, 0.075)
 	var mesh_nodes := root.find_children("*", "MeshInstance3D", true, false)
 	for found in mesh_nodes:
 		var mesh_instance := found as MeshInstance3D
@@ -1628,14 +1621,15 @@ func _apply_crystal_toon_preview(root: Node3D, color_name: String) -> void:
 			var source := original_mesh.surface_get_material(surface_index) as BaseMaterial3D
 			var toon := ShaderMaterial.new()
 			toon.shader = CRYSTAL_TOON_SHADER
-			toon.set_shader_parameter("shade_color", shade_color)
-			toon.set_shader_parameter("body_color", body_color)
-			toon.set_shader_parameter("light_color", light_color)
-			toon.set_shader_parameter("glint_color", glint_color)
+			toon.set_shader_parameter("body_tint", body_tint)
+			toon.set_shader_parameter("shadow_tint", shadow_tint)
 			toon.set_shader_parameter("rim_color", rim_color)
 			if source != null and source.albedo_texture != null:
 				toon.set_shader_parameter("albedo_texture", source.albedo_texture)
 				toon.set_shader_parameter("has_albedo_texture", true)
+			if source != null and source.emission_texture != null:
+				toon.set_shader_parameter("emission_texture", source.emission_texture)
+				toon.set_shader_parameter("has_emission_texture", true)
 			toon_mesh.surface_set_material(surface_index, toon)
 		mesh_instance.mesh = toon_mesh
 		mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON

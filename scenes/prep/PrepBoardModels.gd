@@ -5,7 +5,7 @@ const PREP_RELATION_LINK_SCRIPT := preload("res://scenes/prep/PrepRelationLink3D
 const PREP_RIVER_ARENA_PATH := "res://assets/models/prep/river_arena/Meshy_AI_Verdant_River_Arena_0621085900_texture.fbx"
 const PREP_RIVER_MATERIAL_PATH := "res://assets/models/prep/river_arena/prep_river_arena_material.tres"
 # 2.5D 分层棋盘背景图（贴在 3D 平躺地面 quad 上，和棋子一起呈现 TFT 倾斜纵深）
-const PREP_BOARD_BASE_PATH := "res://assets/board/prep_2_5d/glory_prep_base_handdrawn_v6.png"
+const PREP_BOARD_BASE_PATH := "res://assets/board/prep_2_5d/glory_grass_base_2560x1440.png"
 # 每个 4×4 格子上的站位图案（站位.png）——3D 地面 quad，模型在其上方不会被盖。
 const PREP_CELL_MARK_PATH := "res://assets/board/prep_2_5d/board_cell_mark.png"
 const PREP_CELL_MARK_SIZE := Vector2(0.6, 0.6)   # 每张站位图的世界尺寸（可调大小）

@@ -140,18 +140,12 @@ func _basic_profile_for(uid:String,race:String)->VFXProfile3D:
 		"undead":return BASIC_UNDEAD
 	return BASIC_HUMAN
 
-# 专属 PNG 弹道贴图（普攻用）。这些单位本就有画好的箭矢图。
+# 专属 PNG 弹道贴图（普攻用）。这些单位本就有画好的箭矢图；走弹道系统的
+# 贴图弹体路径，会跟随飞行方向朝向目标。将来别的单位出了 PNG 也填这里。
 const PROJECTILE_TEX_BY_UNIT := {
 	"human_archer":"res://assets/vfx/skills/human_archer/human_archer_arrow_trail.png",
 	"god_aurora":"res://assets/vfx/skills/god_aurora/god_aurora_arrow_trail.png",
 }
-
-# 用一张贴图做一条直线飞行弹道 + 命中闪。
-func _painted_projectile(origin:Vector3,target:Vector3,tex:String,profile:VFXProfile3D)->void:
-	var arrow:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
-	if arrow!=null:
-		arrow.play_layer(tex,{"from":origin+Vector3(0,.34,0),"to":target+Vector3(0,.34,0),"size":Vector2(.86,.20),"duration":.52,"travel_ratio":.80,"start_scale":.30,"peak_scale":1.0,"dark_tint":profile.dark_color,"body_tint":profile.main_color,"core_tint":profile.core_color,"seed":52.0,"flow_strength":.016,"opacity":.98})
-	_spawn(VFX_IMPACT_FLASH,_profile(profile.dark_color,profile.main_color,profile.core_color,.42,.30,3.0,5),{"target":target+Vector3(0,.32,0)})
 
 # 远程普攻的弹道原型：按施法者 unit_id 归类到 6 种形状之一。
 # 近战单位不会走到这里（前端按 range_px 分流），所以只列远程单位。

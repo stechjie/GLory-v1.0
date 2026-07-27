@@ -1,0 +1,44 @@
+shader_type spatial;
+render_mode unshaded, cull_back;
+
+uniform sampler2D albedo_texture : source_color;
+uniform bool has_albedo_texture = false;
+uniform vec4 shade_color : source_color = vec4(0.015, 0.12, 0.34, 1.0);
+uniform vec4 body_color : source_color = vec4(0.02, 0.48, 0.84, 1.0);
+uniform vec4 light_color : source_color = vec4(0.08, 0.82, 0.96, 1.0);
+uniform vec4 glint_color : source_color = vec4(0.78, 0.98, 1.0, 1.0);
+uniform vec4 rim_color : source_color = vec4(0.10, 0.72, 0.94, 1.0);
+uniform float hp_ratio : hint_range(0.0, 1.0) = 1.0;
+uniform float texture_influence : hint_range(0.0, 1.0) = 0.22;
+uniform float rim_strength : hint_range(0.0, 1.0) = 0.16;
+
+void fragment() {
+	vec3 sampled_color = has_albedo_texture ? texture(albedo_texture, UV).rgb : vec3(1.0);
+	vec3 normal_dir = normalize(NORMAL);
+	vec3 view_dir = normalize(VIEW);
+	vec3 key_dir = normalize(vec3(-0.42, 0.68, 0.60));
+	float ndl = clamp(dot(normal_dir, key_dir), 0.0, 1.0);
+	float facing = clamp(dot(normal_dir, view_dir), 0.0, 1.0);
+	float rim = pow(1.0 - facing, 3.2);
+	float glint = smoothstep(0.955, 0.992, dot(normal_dir, normalize(key_dir + view_dir)));
+
+	vec3 palette = shade_color.rgb;
+	if (ndl > 0.30) {
+		palette = body_color.rgb;
+	}
+	if (ndl > 0.62) {
+		palette = light_color.rgb;
+	}
+	if (ndl > 0.90) {
+		palette = mix(light_color.rgb, glint_color.rgb, 0.32);
+	}
+
+	float source_value = dot(sampled_color, vec3(0.299, 0.587, 0.114));
+	float painted_detail = mix(1.0, mix(0.82, 1.10, source_value), texture_influence);
+	vec3 color = palette * painted_detail;
+	float damage_stage = smoothstep(0.0, 0.82, hp_ratio);
+	color = mix(color * 0.42, color, damage_stage);
+	color += glint_color.rgb * glint * 0.12;
+	color += rim_color.rgb * rim * rim_strength;
+	ALBEDO = color;
+}

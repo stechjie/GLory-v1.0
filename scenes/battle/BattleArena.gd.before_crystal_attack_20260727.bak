@@ -1,7 +1,6 @@
 extends "res://scenes/battle/BattleUI.gd"
 
 const BossProceduralVFX3D := preload("res://effects/BossProceduralVFX3D.gd")
-const CRYSTAL_TOON_SHADER := preload("res://shaders/battle_crystal_toon_preview.gdshader")
 
 const FIRE_GLOW_TEXTURE_PATH := "res://assets/vfx/battlefield/fire_glow_soft.png"
 const FIRE_SPARK_TEXTURE_PATH := "res://assets/vfx/battlefield/fire_spark_dot.png"
@@ -30,9 +29,6 @@ var _3v3_line_cores: Array[Line2D] = []
 var _battlefield_2_5d_root: Node2D
 var _battlefield_2_5d_size := Vector2(1672.0, 941.0)
 var _looping_tweens: Array[Tween] = []
-var _battle_crystal_blue: Node3D
-var _battle_crystal_red: Node3D
-var _crystal_attack_running := false
 
 func _exit_tree() -> void:
 	# Infinite set_loops() tweens must be killed explicitly so none survive
@@ -537,12 +533,7 @@ func _add_battle_crystal(world: Node3D, crystal_name: String, model_path: String
 		return
 	crystal.name = crystal_name
 	world.add_child(crystal)
-	if crystal_name == "BlueCrystal12OClock":
-		_battle_crystal_blue = crystal
-	else:
-		_battle_crystal_red = crystal
 	_clamp_crystal_material_emission(crystal)
-	_apply_battle_crystal_toon(crystal, crystal_name == "RedCrystal6OClock", _crystal_hp_ratio(crystal_name == "RedCrystal6OClock"))
 	var bounds := _node3d_bounds(crystal)
 	var scale_factor := 1.0
 	if bounds.size.y > 0.001:
@@ -573,114 +564,6 @@ func _clamp_crystal_material_emission(root: Node) -> void:
 				var safe_material := source_material.duplicate() as BaseMaterial3D
 				safe_material.emission_energy_multiplier = minf(safe_material.emission_energy_multiplier, 0.45)
 				safe_mesh.surface_set_material(surface_index, safe_material)
-
-func _crystal_hp_ratio(is_red: bool, result: Dictionary = {}) -> float:
-	var hp := float(GameState.team_hp if is_red else GameState.enemy_team_hp) if GameState.team_mode else float(GameState.player_formation_hp if is_red else GameState.enemy_formation_hp)
-	if not result.is_empty():
-		var damage_key := "team_damage_self" if is_red else "team_damage_rival"
-		if result.has(damage_key):
-			hp -= float(result.get(damage_key, 0))
-		elif not bool(result.get("player_wins", false)) and is_red:
-			hp -= float(result.get("enemy_alive", 1))
-		elif bool(result.get("player_wins", false)) and not is_red:
-			hp -= float(result.get("player_alive", 1))
-	return clampf(hp / maxf(1.0, float(GameState.START_FORMATION_HP)), 0.0, 1.0)
-
-func _apply_battle_crystal_toon(root: Node3D, is_red: bool, ratio: float) -> void:
-	var shade_color := Color(0.24, 0.012, 0.028) if is_red else Color(0.012, 0.10, 0.31)
-	var body_color := Color(0.76, 0.025, 0.055) if is_red else Color(0.018, 0.42, 0.82)
-	var light_color := Color(1.0, 0.16, 0.10) if is_red else Color(0.035, 0.82, 0.96)
-	var glint_color := Color(1.0, 0.80, 0.62) if is_red else Color(0.78, 0.98, 1.0)
-	var rim_color := Color(0.90, 0.06, 0.08) if is_red else Color(0.08, 0.64, 0.96)
-	for found in root.find_children("*", "MeshInstance3D", true, false):
-		var mesh_instance := found as MeshInstance3D
-		if mesh_instance == null or mesh_instance.mesh == null:
-			continue
-		var source_mesh := mesh_instance.mesh
-		var toon_mesh := source_mesh.duplicate() as Mesh
-		if toon_mesh == null:
-			continue
-		for surface_index in toon_mesh.get_surface_count():
-			var source := source_mesh.surface_get_material(surface_index) as BaseMaterial3D
-			var toon := ShaderMaterial.new()
-			toon.shader = CRYSTAL_TOON_SHADER
-			toon.set_shader_parameter("shade_color", shade_color)
-			toon.set_shader_parameter("body_color", body_color)
-			toon.set_shader_parameter("light_color", light_color)
-			toon.set_shader_parameter("glint_color", glint_color)
-			toon.set_shader_parameter("rim_color", rim_color)
-			toon.set_shader_parameter("hp_ratio", ratio)
-			if source != null and source.albedo_texture != null:
-				toon.set_shader_parameter("albedo_texture", source.albedo_texture)
-				toon.set_shader_parameter("has_albedo_texture", true)
-			toon_mesh.surface_set_material(surface_index, toon)
-		mesh_instance.mesh = toon_mesh
-
-func _make_crystal_attack_ribbon(start: Vector3, target: Vector3, width: float, color: Color) -> void:
-	var ribbon := MeshInstance3D.new()
-	var mesh := ImmediateMesh.new()
-	mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
-	mesh.surface_set_color(color)
-	mesh.surface_add_vertex(Vector3(-width, 0.0, 0.0))
-	mesh.surface_add_vertex(Vector3(width, 0.0, 0.0))
-	mesh.surface_add_vertex(Vector3(width * 0.28, 0.0, -1.0))
-	mesh.surface_add_vertex(Vector3(-width, 0.0, 0.0))
-	mesh.surface_add_vertex(Vector3(width * 0.28, 0.0, -1.0))
-	mesh.surface_add_vertex(Vector3(-width * 0.28, 0.0, -1.0))
-	mesh.surface_end()
-	ribbon.mesh = mesh
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.vertex_color_use_as_albedo = true
-	mat.albedo_color = Color(1.0, 1.0, 1.0, 0.0)
-	ribbon.material_override = mat
-	ribbon.position = start
-	var direction := target - start
-	var length := maxf(0.1, direction.length())
-	ribbon.basis = Basis.looking_at(direction.normalized(), Vector3.UP)
-	ribbon.scale = Vector3(1.0, 1.0, 0.0)
-	_battle_3d_world.add_child(ribbon)
-	var tween := create_tween()
-	tween.tween_property(ribbon, "scale:z", length, 0.46).set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
-	tween.parallel().tween_property(mat, "albedo_color:a", 0.92, 0.12)
-	tween.tween_interval(0.16)
-	tween.tween_property(mat, "albedo_color:a", 0.0, 0.22)
-	tween.tween_callback(ribbon.queue_free)
-
-func _play_crystal_attack_sequence(result: Dictionary) -> void:
-	if _crystal_attack_running or _battle_3d_world == null:
-		return
-	_crystal_attack_running = true
-	await get_tree().create_timer(0.22).timeout
-	var player_wins := bool(result.get("player_wins", false))
-	var target := _battle_crystal_blue if player_wins else _battle_crystal_red
-	if target == null:
-		_crystal_attack_running = false
-		return
-	var target_pos := target.global_position + Vector3(0.0, 0.35, 0.0)
-	var launched := 0
-	for model in _battle_3d_models.values():
-		var source := model as Node3D
-		if source == null or not is_instance_valid(source):
-			continue
-		var start := source.global_position + Vector3(0.0, 0.34, 0.0)
-		var color := Color(0.05, 0.58, 0.95, 1.0) if player_wins else Color(0.95, 0.16, 0.10, 1.0)
-		_make_crystal_attack_ribbon(start, target_pos, 0.075, color.darkened(0.55))
-		await get_tree().create_timer(0.035).timeout
-		_make_crystal_attack_ribbon(start + Vector3(0.0, 0.025, 0.0), target_pos, 0.035, color)
-		launched += 1
-	if launched > 0:
-		await get_tree().create_timer(0.66).timeout
-	var ratio := _crystal_hp_ratio(not player_wins, result)
-	_apply_battle_crystal_toon(target, not player_wins, ratio)
-	if ratio <= 0.001:
-		var shatter := create_tween()
-		shatter.tween_property(target, "scale", target.scale * 1.16, 0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-		shatter.tween_property(target, "scale", Vector3.ZERO, 0.28).set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_IN)
-		await shatter.finished
-		target.visible = false
-	_crystal_attack_running = false
 
 func _load_battle_background() -> Texture2D:
 	var texture := load(BATTLE_BG_PATH)

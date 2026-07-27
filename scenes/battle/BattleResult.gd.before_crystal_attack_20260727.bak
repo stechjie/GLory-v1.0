@@ -15,7 +15,6 @@ func _emit_finished() -> void:
 		return
 	_return_emitted = true
 	_stop_battle_music()
-	await _play_crystal_attack_sequence(_result)
 	_show_result_overlay()
 	await get_tree().create_timer(RESULT_DISPLAY_SECONDS).timeout
 	battle_finished.emit(_result if not _result.is_empty() else BattleSim.result_from_state(_state))

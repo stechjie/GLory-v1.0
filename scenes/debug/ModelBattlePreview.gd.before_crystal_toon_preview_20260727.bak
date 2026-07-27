@@ -5,9 +5,6 @@ const MONSTER_DATA_PATH := "res://data/pve/pve_monsters.json"
 const MERCENARY_DATA_PATH := "res://data/mercenary/mercenaries.json"
 const BOSS_DATA_PATH := "res://data/boss/bosses.json"
 const FORMATION_BOSS_DATA_PATH := "res://data/formation/formation_allies.json"
-const BLUE_CRYSTAL_MODEL_PATH := "res://assets/models/battle_crystals/blue/Meshy_AI_Blue_Crystal_Spire_0717152101_texture_fbx/Meshy_AI_Blue_Crystal_Spire_0717152101_texture.fbx"
-const RED_CRYSTAL_MODEL_PATH := "res://assets/models/battle_crystals/red/Meshy_AI_Crimson_Prism_0717152324_texture_fbx/Meshy_AI_Crimson_Prism_0717152324_texture.fbx"
-const CRYSTAL_TOON_SHADER := preload("res://shaders/battle_crystal_toon_preview.gdshader")
 const VFX_LIGHTNING_ARC := preload("res://effects/vfx3d/VFXLightningArc.gd")
 const VFX_LIGHTNING_BALL := preload("res://effects/vfx3d/VFXLightningBall.gd")
 const VFX_TARGET_IMPACT := preload("res://effects/vfx3d/VFXTargetImpact.gd")
@@ -162,8 +159,6 @@ func _ready() -> void:
 	model_entries = _load_model_entries()
 	_populate_model_selects()
 	_select_default_models()
-	auto_fight_enabled = false
-	_update_auto_button()
 	_ensure_preview_camera_current()
 	_load_selected_pair()
 
@@ -1098,26 +1093,6 @@ func _load_model_entries() -> Array:
 	_append_entries_from_json(result, MERCENARY_DATA_PATH, "mercenaries", "佣兵", true)
 	_append_entries_from_json(result, BOSS_DATA_PATH, "bosses", "Boss", true)
 	_append_entries_from_json(result, FORMATION_BOSS_DATA_PATH, "allies", "法阵Boss", true)
-	result.append({
-		"id": "battle_crystal_blue",
-		"name": "蓝水晶 Toon（敌方）",
-		"source": "战场水晶",
-		"model": BLUE_CRYSTAL_MODEL_PATH,
-		"model_base_yaw": 180.0,
-		"model_visual_scale": 1.0,
-		"crystal_toon": true,
-		"crystal_color": "blue",
-	})
-	result.append({
-		"id": "battle_crystal_red",
-		"name": "红水晶 Toon（我方）",
-		"source": "战场水晶",
-		"model": RED_CRYSTAL_MODEL_PATH,
-		"model_base_yaw": 0.0,
-		"model_visual_scale": 1.0,
-		"crystal_toon": true,
-		"crystal_color": "red",
-	})
 	if result.is_empty():
 		result = FALLBACK_MODELS.duplicate(true)
 	for i in range(result.size()):
@@ -1182,8 +1157,8 @@ func _populate_model_selects() -> void:
 		right_model_select.add_item(label, i)
 
 func _select_default_models() -> void:
-	selected_left_index = _find_entry_index("battle_crystal_blue", 0)
-	selected_right_index = _find_entry_index("battle_crystal_red", 1 if model_entries.size() > 1 else 0)
+	selected_left_index = _find_entry_index("god_guard", 0)
+	selected_right_index = _find_entry_index("dark_imp", 1 if model_entries.size() > 1 else 0)
 	if selected_left_index == selected_right_index and model_entries.size() > 1:
 		selected_right_index = 1 if selected_left_index != 1 else 0
 	left_model_select.select(selected_left_index)
@@ -1252,8 +1227,6 @@ func _spawn_unit(slot: Node3D, entry: Dictionary, side: int) -> void:
 	model.rotation_degrees = Vector3(0.0, float(entry.get("model_base_yaw", 180.0)), 0.0)
 	model.scale = Vector3.ONE * float(entry.get("model_visual_scale", 1.0))
 	_fit_model_to_slot(model)
-	if bool(entry.get("crystal_toon", false)):
-		_apply_crystal_toon_preview(model, str(entry.get("crystal_color", "blue")))
 
 	var target := right_slot.global_position if side < 0 else left_slot.global_position
 	slot.look_at(Vector3(target.x, slot.global_position.y, target.z), Vector3.UP)
@@ -1279,8 +1252,6 @@ func _spawn_unit(slot: Node3D, entry: Dictionary, side: int) -> void:
 		"animations": animations,
 		"actions": actions,
 		"current_action": "idle",
-		"is_crystal": bool(entry.get("crystal_toon", false)),
-		"crystal_base_yaw": model.rotation.y,
 		"load_note": ""
 	}
 	units.append(unit)
@@ -1495,22 +1466,15 @@ func _animate_units() -> void:
 		var base_pos: Vector3 = unit.get("base_pos", Vector3.ZERO)
 		var side: int = int(unit.get("side", 1))
 		var action := str(unit.get("current_action", "idle"))
-		var is_crystal := bool(unit.get("is_crystal", false))
-		var bob_phase := 0.0 if side < 0 else PI
-		var bob: float = sin(phase_time * TAU / 2.6 + bob_phase) * 0.14 if is_crystal else sin(phase_time * TAU * 0.9) * 0.035
-		var model := unit.get("model") as Node3D
-		if is_crystal and model != null:
-			var base_yaw: float = float(unit.get("crystal_base_yaw", model.rotation.y))
-			model.rotation.y = base_yaw + sin(phase_time * TAU / 5.2 + bob_phase) * deg_to_rad(4.0)
-			model.rotation.z = sin(phase_time * TAU / 4.1 + bob_phase) * deg_to_rad(1.6)
+		var bob: float = sin(phase_time * TAU * 0.9) * 0.035
 		var engage_pos := Vector3(base_pos.x, base_pos.y, float(side) * ENGAGE_DEPTH)
 		var current_base := base_pos
-		if auto_fight_enabled and not is_crystal:
+		if auto_fight_enabled:
 			current_base = base_pos.lerp(engage_pos, walk_t)
 		var lunge: float = 0.0
-		if not is_crystal and (in_attack or action == "attack"):
+		if in_attack or action == "attack":
 			lunge = sin(attack_t * PI) * 0.46
-		elif not is_crystal and action == "run":
+		elif action == "run":
 			lunge = sin(phase_time * TAU * 0.85) * 0.12
 		slot.position = current_base + Vector3(0.0, bob, float(-side) * lunge)
 
@@ -1607,38 +1571,6 @@ func _fit_model_to_slot(model: Node3D) -> void:
 	bounds = _node_bounds_relative(model, model)
 	var center: Vector3 = bounds.get_center()
 	model.position -= Vector3(center.x, bounds.position.y, center.z)
-
-func _apply_crystal_toon_preview(root: Node3D, color_name: String) -> void:
-	var is_red := color_name == "red"
-	var shade_color := Color(0.24, 0.012, 0.028) if is_red else Color(0.012, 0.10, 0.31)
-	var body_color := Color(0.76, 0.025, 0.055) if is_red else Color(0.018, 0.42, 0.82)
-	var light_color := Color(1.0, 0.16, 0.10) if is_red else Color(0.035, 0.82, 0.96)
-	var glint_color := Color(1.0, 0.80, 0.62) if is_red else Color(0.78, 0.98, 1.0)
-	var rim_color := Color(0.90, 0.06, 0.08) if is_red else Color(0.08, 0.64, 0.96)
-	var mesh_nodes := root.find_children("*", "MeshInstance3D", true, false)
-	for found in mesh_nodes:
-		var mesh_instance := found as MeshInstance3D
-		if mesh_instance == null or mesh_instance.mesh == null:
-			continue
-		var original_mesh := mesh_instance.mesh
-		var toon_mesh := original_mesh.duplicate() as Mesh
-		if toon_mesh == null:
-			continue
-		for surface_index in toon_mesh.get_surface_count():
-			var source := original_mesh.surface_get_material(surface_index) as BaseMaterial3D
-			var toon := ShaderMaterial.new()
-			toon.shader = CRYSTAL_TOON_SHADER
-			toon.set_shader_parameter("shade_color", shade_color)
-			toon.set_shader_parameter("body_color", body_color)
-			toon.set_shader_parameter("light_color", light_color)
-			toon.set_shader_parameter("glint_color", glint_color)
-			toon.set_shader_parameter("rim_color", rim_color)
-			if source != null and source.albedo_texture != null:
-				toon.set_shader_parameter("albedo_texture", source.albedo_texture)
-				toon.set_shader_parameter("has_albedo_texture", true)
-			toon_mesh.surface_set_material(surface_index, toon)
-		mesh_instance.mesh = toon_mesh
-		mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 
 func _node_bounds_relative(root: Node3D, relative_to: Node3D) -> AABB:
 	var has_bounds := false
