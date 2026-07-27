@@ -364,7 +364,7 @@ func _prepare_team_battle_package() -> bool:
 	NetworkService.team_replay_rival = {}
 	NetworkService.team_submit_board(NetProtocol.team_board_submission(GameState.board_slots, GameState.mercenary_slots))
 	_set_battle_data_progress(0.25)
-	var my_team := 0 if NetworkService.team_local_slot < 3 else 1
+	var my_team := GameConstants.team_of_slot(NetworkService.team_local_slot)
 	if NetworkService.is_host and not bool(NetworkService.get("_dedicated_server")):
 		if not await _wait_for_team_boards():
 			show_message("Battle sync timeout")

@@ -70,5 +70,36 @@ func _ready() -> void:
 	print("PROBE D dummy<->player: became_dummy=%s token_alive=%s restored=%s" % [str(became_dummy), str(NetworkService._token_seat.has("tok_d")), str(restored)])
 	ok = ok and became_dummy and restored
 
+	# --- E: 大厅换位后掉线重连，必须落回换位后的槽位（队伍/身份色由 slot 决定） ---
+	var room4: Dictionary = NetworkService._new_room()
+	room4.state = NetworkService.ROOM_LOBBY
+	room4.slot_states = ["player", "empty", "empty", "empty", "empty", "empty"]
+	room4.ready = [false, false, false, false, false, false]
+	room4.peer_slot = {21: 0}
+	NetworkService._peer_room[21] = int(room4.id)
+	room4.seat_tokens = {0: "tok_e"}
+	NetworkService._token_seat["tok_e"] = {"room_id": int(room4.id), "slot": 0}
+	# 槽位 0（红队）-> 槽位 3（蓝队）
+	NetworkService._room_do_move(room4, 21, 0, 3)
+	var moved_ok: bool = int((room4.peer_slot as Dictionary).get(21, -1)) == 3
+	var token_moved: bool = int((NetworkService._token_seat.get("tok_e", {}) as Dictionary).get("slot", -1)) == 3
+	var seat_tokens_moved: bool = (room4.seat_tokens as Dictionary).has(3) and not (room4.seat_tokens as Dictionary).has(0)
+	var team_after := GameConstants.team_of_slot(int((NetworkService._token_seat.get("tok_e", {}) as Dictionary).get("slot", -1)))
+	var team_ok: bool = team_after == GameConstants.TEAM_BLUE
+	print("PROBE E move+resume slot: moved=%s token_slot_synced=%s seat_tokens_synced=%s team=%d(blue:%s)" % [str(moved_ok), str(token_moved), str(seat_tokens_moved), team_after, str(team_ok)])
+	ok = ok and moved_ok and token_moved and seat_tokens_moved and team_ok
+
+	# --- F: 开赛后不允许换位（换位会把人换队） ---
+	var room5: Dictionary = NetworkService._new_room()
+	room5.state = NetworkService.ROOM_PREP
+	room5.slot_states = ["player", "empty", "empty", "empty", "empty", "empty"]
+	room5.ready = [false, false, false, false, false, false]
+	room5.peer_slot = {31: 0}
+	NetworkService._peer_room[31] = int(room5.id)
+	NetworkService._rpc_team_move(0, 3)   # 直发 RPC，绕开客户端 UI
+	var move_blocked: bool = int((room5.peer_slot as Dictionary).get(31, -1)) == 0 and str(room5.slot_states[0]) == "player"
+	print("PROBE F in-match move blocked: %s" % str(move_blocked))
+	ok = ok and move_blocked
+
 	print("PROBE RESULT: %s" % ("ALL PASS" if ok else "FAILED"))
 	get_tree().quit(0 if ok else 1)

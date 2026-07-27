@@ -699,6 +699,10 @@ func team_request_move(target_slot: int) -> void:
 func _team_do_move(from_slot: int, to_slot: int) -> void:
 	if not is_host:
 		return
+	# 换位只允许在开赛前。开赛后换位会改变队伍归属和身份色，而 slot 是这两者
+	# 唯一的真相来源——中途换掉等于把人换队。
+	if team_round_active:
+		return
 	if from_slot < 0 or from_slot >= TEAM_SLOTS or to_slot < 0 or to_slot >= TEAM_SLOTS or from_slot == to_slot:
 		return
 	if str(team_slot_states[from_slot]) != "player":
@@ -727,6 +731,10 @@ func _rpc_team_move(from_slot: int, to_slot: int) -> void:
 		var room := _room_for_peer(sender_id)
 		if room.is_empty() or int((room.get("peer_slot", {}) as Dictionary).get(sender_id, -1)) != from_slot:
 			return
+		# 同 _team_do_move：换位只在大厅阶段开放。客户端 UI 本来就只在大厅暴露入口，
+		# 但这个 RPC 任何 peer 都能发，所以门必须在服务器这边。
+		if str(room.get("state", ROOM_LOBBY)) != ROOM_LOBBY:
+			return
 		_room_do_move(room, sender_id, from_slot, to_slot)
 		return
 	if not is_host:
@@ -753,6 +761,19 @@ func _room_do_move(room: Dictionary, peer_id: int, from_slot: int, to_slot: int)
 	room.slot_states = states
 	room.ready = ready
 	room.peer_slot = peer_slot
+	# 会话凭证必须跟着人搬。_token_seat 记的是 slot，不搬的话这人重连会被放回旧
+	# 槽位（队伍和身份色一起变回去）；旧槽位要是已经有人坐了，resume 直接判
+	# seat_taken，他连不回来。
+	var seat_tokens: Dictionary = room.get("seat_tokens", {})
+	if seat_tokens.has(from_slot):
+		var token := str(seat_tokens[from_slot])
+		seat_tokens.erase(from_slot)
+		seat_tokens[to_slot] = token
+		room.seat_tokens = seat_tokens
+		var seat: Dictionary = _token_seat.get(token, {})
+		if not seat.is_empty():
+			seat["slot"] = to_slot
+			_token_seat[token] = seat
 	_touch_room(room)
 	_rpc_team_assign_slot.rpc_id(peer_id, to_slot)
 	_broadcast_room_lobby(room)
@@ -1381,7 +1402,7 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 		var replay := replay_a if slot < 3 else replay_b
 		var result: Dictionary = replay.get("result", {})
 		var snap: Dictionary = boards.get(slot, {})
-		var own_team := 0 if slot < 3 else 1
+		var own_team := GameConstants.team_of_slot(slot)
 		var gold_before := int(snap.get("gold", slot_gold[slot]))
 		var gold_after := _server_gold_after_battle(gold_before, result, slot, snap, {
 			"kind": kind,
@@ -1826,7 +1847,7 @@ func _rpc_resume_request(token: String) -> void:
 	_touch_room(room)
 	_net_log("resume ok room=%d slot=%d peer=%d state=%s" % [int(room.get("id", 0)), slot, sender, str(room.get("state", ""))])
 	var hp: Array = room.get("team_hp", [GameState.START_FORMATION_HP, GameState.START_FORMATION_HP])
-	var own_team := 0 if slot < 3 else 1
+	var own_team := GameConstants.team_of_slot(slot)
 	var slot_gold: Array = room.get("slot_gold", [])
 	var gold := GameState.START_GOLD
 	if slot < slot_gold.size() and slot_gold[slot] != null:

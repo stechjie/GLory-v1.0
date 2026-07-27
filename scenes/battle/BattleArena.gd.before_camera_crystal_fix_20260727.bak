@@ -2,8 +2,6 @@ extends "res://scenes/battle/BattleUI.gd"
 
 const BossProceduralVFX3D := preload("res://effects/BossProceduralVFX3D.gd")
 const CRYSTAL_TOON_SHADER := preload("res://shaders/battle_crystal_toon_preview.gdshader")
-const CRYSTAL_OUTLINE_SHADER := preload("res://shaders/battle_crystal_outline.gdshader")
-const CRYSTAL_OUTLINE_WIDTH := 0.008
 
 const FIRE_GLOW_TEXTURE_PATH := "res://assets/vfx/battlefield/fire_glow_soft.png"
 const FIRE_SPARK_TEXTURE_PATH := "res://assets/vfx/battlefield/fire_spark_dot.png"
@@ -20,12 +18,8 @@ const BATTLE_VISUAL_DOWN_SHIFT_RATIO := 0.1
 const BLUE_CRYSTAL_MODEL_PATH := "res://assets/models/battle_crystals/blue/Meshy_AI_Blue_Crystal_Spire_0717152101_texture_fbx/Meshy_AI_Blue_Crystal_Spire_0717152101_texture.fbx"
 const RED_CRYSTAL_MODEL_PATH := "res://assets/models/battle_crystals/red/Meshy_AI_Crimson_Prism_0717152324_texture_fbx/Meshy_AI_Crimson_Prism_0717152324_texture.fbx"
 const BATTLE_CRYSTAL_TARGET_HEIGHT := 1.55
-# 水晶不常驻战场：棋子分出胜负后才在场地正中央召唤一座，演完就收。
-const BATTLE_CRYSTAL_DEMO_POSITION := Vector3(0.0, 0.04, 0.0)
-const CRYSTAL_RISE_SEC := 0.62
-const CRYSTAL_FADE_SEC := 0.34
-const CRYSTAL_SHATTER_PUNCH_SEC := 0.12
-const CRYSTAL_SHATTER_SEC := 0.28
+const BATTLE_CRYSTAL_BLUE_POSITION := Vector3(0.0, -0.14, -5.55)
+const BATTLE_CRYSTAL_RED_POSITION := Vector3(0.0, -0.14, 5.55)
 const CRYSTAL_GLOW_POINTS := [
 	Vector3(165.0, 155.0, 1.0),
 	Vector3(1505.0, 155.0, 1.0),
@@ -36,12 +30,9 @@ var _3v3_line_cores: Array[Line2D] = []
 var _battlefield_2_5d_root: Node2D
 var _battlefield_2_5d_size := Vector2(1672.0, 941.0)
 var _looping_tweens: Array[Tween] = []
-var _demo_crystal: Node3D
-var _demo_crystal_base_position := Vector3.ZERO
-# 升起动画期间不要让漂浮逻辑抢 position，等落位后才开始飘。
-var _demo_crystal_floating := false
+var _battle_crystal_blue: Node3D
+var _battle_crystal_red: Node3D
 var _crystal_attack_running := false
-var _crystal_motion_time := 0.0
 
 func _exit_tree() -> void:
 	# Infinite set_loops() tweens must be killed explicitly so none survive
@@ -50,20 +41,6 @@ func _exit_tree() -> void:
 		if tween != null and tween.is_valid():
 			tween.kill()
 	_looping_tweens.clear()
-
-func _process(delta: float) -> void:
-	_crystal_motion_time += delta
-	_animate_battle_crystals()
-
-func _animate_battle_crystals() -> void:
-	if not _demo_crystal_floating:
-		return
-	var crystal := _demo_crystal
-	if crystal == null or not is_instance_valid(crystal):
-		return
-	crystal.position = _demo_crystal_base_position + Vector3(0.0, sin(_crystal_motion_time * TAU / 2.6) * 0.12, 0.0)
-	crystal.rotation_degrees.y = sin(_crystal_motion_time * TAU / 5.2) * 4.0
-	crystal.rotation_degrees.z = sin(_crystal_motion_time * TAU / 4.1) * 1.6
 
 func _build() -> void:
 	if _battle_arena_ready:
@@ -512,12 +489,9 @@ func _setup_battle_3d_view(arena_wrap: Control) -> void:
 	container.add_child(_battle_3d_viewport)
 
 	var world := Node3D.new()
-	world.name = "Battle3DWorld"
 	_battle_3d_viewport.add_child(world)
-	# 水晶演出（召唤 / 光带 / 光环）都往这个根上挂。以前这个引用一直是 null，
-	# 于是 _play_crystal_attack_sequence 每次都在开头的空值守卫里直接返回。
-	_battle_3d_world = world
 	_add_battle_3d_arena(world)
+	_add_battle_crystals(world)
 	_battle_3d_root = Node3D.new()
 	_battle_3d_root.name = "BattleModelRoot"
 	world.add_child(_battle_3d_root)
@@ -547,25 +521,28 @@ func _setup_battle_3d_view(arena_wrap: Control) -> void:
 	_battle_3d_viewport.add_child(camera)
 
 
-# 结算演出用的水晶：红队一座红晶、蓝队一座蓝晶，颜色是队伍的绝对属性，六个
-# 玩家看到的是同一个颜色（跟观看者是谁无关）。返回 null 表示模型加载失败。
-func _spawn_demo_crystal(losing_team: int, ratio: float) -> Node3D:
-	if _battle_3d_world == null:
-		return null
-	var is_red_team := losing_team == GameConstants.TEAM_RED
-	var model_path := RED_CRYSTAL_MODEL_PATH if is_red_team else BLUE_CRYSTAL_MODEL_PATH
+func _add_battle_crystals(world: Node3D) -> void:
+	_add_battle_crystal(world, "BlueCrystal12OClock", BLUE_CRYSTAL_MODEL_PATH, BATTLE_CRYSTAL_BLUE_POSITION, 180.0)
+	_add_battle_crystal(world, "RedCrystal6OClock", RED_CRYSTAL_MODEL_PATH, BATTLE_CRYSTAL_RED_POSITION, 0.0)
+
+
+func _add_battle_crystal(world: Node3D, crystal_name: String, model_path: String, target_position: Vector3, yaw: float) -> void:
 	var packed := load(model_path) as PackedScene
 	if packed == null:
 		push_warning("Battle crystal model failed to load: %s" % model_path)
-		return null
+		return
 	var crystal := packed.instantiate() as Node3D
 	if crystal == null:
 		push_warning("Battle crystal model is not a Node3D: %s" % model_path)
-		return null
-	crystal.name = "DemoCrystal"
-	_battle_3d_world.add_child(crystal)
+		return
+	crystal.name = crystal_name
+	world.add_child(crystal)
+	if crystal_name == "BlueCrystal12OClock":
+		_battle_crystal_blue = crystal
+	else:
+		_battle_crystal_red = crystal
 	_clamp_crystal_material_emission(crystal)
-	_apply_battle_crystal_toon(crystal, is_red_team, ratio)
+	_apply_battle_crystal_toon(crystal, crystal_name == "RedCrystal6OClock", _crystal_hp_ratio(crystal_name == "RedCrystal6OClock"))
 	var bounds := _node3d_bounds(crystal)
 	var scale_factor := 1.0
 	if bounds.size.y > 0.001:
@@ -576,34 +553,9 @@ func _spawn_demo_crystal(losing_team: int, ratio: float) -> Node3D:
 		bounds.position.z + bounds.size.z * 0.5
 	)
 	crystal.scale = Vector3.ONE * scale_factor
-	crystal.position = BATTLE_CRYSTAL_DEMO_POSITION - base_center * scale_factor
-	_demo_crystal = crystal
-	_demo_crystal_base_position = crystal.position
-	_add_crystal_cluster_parts(crystal, packed, is_red_team, ratio)
-	return crystal
-
-func _add_crystal_cluster_parts(cluster_root: Node3D, packed: PackedScene, is_red: bool, ratio: float) -> void:
-	var offsets := [
-		Vector3(-0.34, 0.05, 0.02),
-		Vector3(0.36, 0.10, -0.04),
-		Vector3(-0.18, 0.26, 0.18),
-		Vector3(0.20, 0.32, 0.14),
-		Vector3(-0.60, 0.72, 0.02),
-		Vector3(0.58, 0.82, -0.08)
-	]
-	var scales := [0.62, 0.54, 0.46, 0.39, 0.20, 0.16]
-	var yaws := [-24.0, 22.0, -14.0, 18.0, -30.0, 28.0]
-	for i in offsets.size():
-		var part := packed.instantiate() as Node3D
-		if part == null:
-			continue
-		part.name = "CrystalClusterPart_%d" % i
-		cluster_root.add_child(part)
-		part.position = offsets[i]
-		part.rotation_degrees = Vector3(0.0, yaws[i], 0.0)
-		part.scale = Vector3.ONE * float(scales[i])
-		_clamp_crystal_material_emission(part)
-		_apply_battle_crystal_toon(part, is_red, ratio)
+	crystal.rotation_degrees.y = yaw
+	var rotated_base_center := Basis(Vector3.UP, deg_to_rad(yaw)) * (base_center * scale_factor)
+	crystal.position = target_position - rotated_base_center
 
 
 func _clamp_crystal_material_emission(root: Node) -> void:
@@ -622,21 +574,16 @@ func _clamp_crystal_material_emission(root: Node) -> void:
 				safe_material.emission_energy_multiplier = minf(safe_material.emission_energy_multiplier, 0.45)
 				safe_mesh.surface_set_material(surface_index, safe_material)
 
-# losing_team 是绝对队伍（GameConstants.TEAM_RED / TEAM_BLUE），而 GameState 的血量
-# 是以本地玩家为中心存的（team_hp = 我队，enemy_team_hp = 对面），所以先把绝对队伍
-# 翻译成"是不是我这一队"再取数。
-func _crystal_hp_ratio(losing_team: int, result: Dictionary = {}) -> float:
-	var local_team := GameConstants.team_of_slot(NetworkService.team_local_slot)
-	var loser_is_local := losing_team == local_team
-	var hp := float(GameState.team_hp if loser_is_local else GameState.enemy_team_hp) if GameState.team_mode else float(GameState.player_formation_hp if loser_is_local else GameState.enemy_formation_hp)
+func _crystal_hp_ratio(is_red: bool, result: Dictionary = {}) -> float:
+	var hp := float(GameState.team_hp if is_red else GameState.enemy_team_hp) if GameState.team_mode else float(GameState.player_formation_hp if is_red else GameState.enemy_formation_hp)
 	if not result.is_empty():
-		var damage_key := "team_damage_self" if loser_is_local else "team_damage_rival"
+		var damage_key := "team_damage_self" if is_red else "team_damage_rival"
 		if result.has(damage_key):
 			hp -= float(result.get(damage_key, 0))
-		else:
-			# 没盖伤害戳时退回"赢家存活数"，跟 stamp_team_round_damages 的 PvP 口径一致。
-			var winner_alive_key := "player_alive" if bool(result.get("player_wins", false)) else "enemy_alive"
-			hp -= float(result.get(winner_alive_key, 1))
+		elif not bool(result.get("player_wins", false)) and is_red:
+			hp -= float(result.get("enemy_alive", 1))
+		elif bool(result.get("player_wins", false)) and not is_red:
+			hp -= float(result.get("player_alive", 1))
 	return clampf(hp / maxf(1.0, float(GameState.START_FORMATION_HP)), 0.0, 1.0)
 
 func _apply_battle_crystal_toon(root: Node3D, is_red: bool, ratio: float) -> void:
@@ -645,13 +592,6 @@ func _apply_battle_crystal_toon(root: Node3D, is_red: bool, ratio: float) -> voi
 	var light_color := Color(1.0, 0.16, 0.10) if is_red else Color(0.035, 0.82, 0.96)
 	var glint_color := Color(1.0, 0.80, 0.62) if is_red else Color(0.78, 0.98, 1.0)
 	var rim_color := Color(0.90, 0.06, 0.08) if is_red else Color(0.08, 0.64, 0.96)
-	var tip_color := Color(1.0, 0.45, 0.28) if is_red else Color(0.55, 0.95, 1.0)
-	var outline_color := Color(0.13, 0.012, 0.035) if is_red else Color(0.018, 0.045, 0.16)
-	# The gradient runs over the crystal's world-space height. Both crystals share
-	# the same base height, so the constants are enough and this stays correct even
-	# though the toon pass is applied before the crystal is moved into place.
-	var gradient_base_y := BATTLE_CRYSTAL_DEMO_POSITION.y
-	var gradient_height := BATTLE_CRYSTAL_TARGET_HEIGHT * 1.15
 	for found in root.find_children("*", "MeshInstance3D", true, false):
 		var mesh_instance := found as MeshInstance3D
 		if mesh_instance == null or mesh_instance.mesh == null:
@@ -660,10 +600,6 @@ func _apply_battle_crystal_toon(root: Node3D, is_red: bool, ratio: float) -> voi
 		var toon_mesh := source_mesh.duplicate() as Mesh
 		if toon_mesh == null:
 			continue
-		var outline := ShaderMaterial.new()
-		outline.shader = CRYSTAL_OUTLINE_SHADER
-		outline.set_shader_parameter("outline_color", outline_color)
-		outline.set_shader_parameter("outline_width", CRYSTAL_OUTLINE_WIDTH)
 		for surface_index in toon_mesh.get_surface_count():
 			var source := source_mesh.surface_get_material(surface_index) as BaseMaterial3D
 			var toon := ShaderMaterial.new()
@@ -673,15 +609,10 @@ func _apply_battle_crystal_toon(root: Node3D, is_red: bool, ratio: float) -> voi
 			toon.set_shader_parameter("light_color", light_color)
 			toon.set_shader_parameter("glint_color", glint_color)
 			toon.set_shader_parameter("rim_color", rim_color)
-			toon.set_shader_parameter("tip_color", tip_color)
 			toon.set_shader_parameter("hp_ratio", ratio)
-			toon.set_shader_parameter("texture_influence", 0.0)
-			toon.set_shader_parameter("gradient_base_y", gradient_base_y)
-			toon.set_shader_parameter("gradient_height", gradient_height)
 			if source != null and source.albedo_texture != null:
 				toon.set_shader_parameter("albedo_texture", source.albedo_texture)
 				toon.set_shader_parameter("has_albedo_texture", true)
-			toon.next_pass = outline
 			toon_mesh.surface_set_material(surface_index, toon)
 		mesh_instance.mesh = toon_mesh
 
@@ -702,8 +633,6 @@ func _make_crystal_attack_ribbon(start: Vector3, target: Vector3, width: float, 
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.vertex_color_use_as_albedo = true
-	# 光带是一片平的单面几何，朝向随攻击方向而变，背面剔除会让一半的光带整条消失。
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mat.albedo_color = Color(1.0, 1.0, 1.0, 0.0)
 	ribbon.material_override = mat
 	ribbon.position = start
@@ -719,123 +648,38 @@ func _make_crystal_attack_ribbon(start: Vector3, target: Vector3, width: float, 
 	tween.tween_property(mat, "albedo_color:a", 0.0, 0.22)
 	tween.tween_callback(ribbon.queue_free)
 
-# 返回挨打的那座水晶属于哪一队；-1 表示这一局不演出。
-func _crystal_demo_losing_team(result: Dictionary) -> int:
-	# 第 21 回合直接结算整场胜负，不做单回合的水晶演出。
-	if GameState.round_index >= GameState.FINAL_ROUND:
-		return -1
-	# 双方同归于尽：没有棋子活着去攻击，没得演。
-	if int(result.get("player_alive", 0)) <= 0 and int(result.get("enemy_alive", 0)) <= 0:
-		return -1
-	var player_wins := bool(result.get("player_wins", false))
-	if str(result.get("kind", _state.get("kind", ""))) == "pvp":
-		# PvP 的 replay 是 canonical 的："player" 恒指红队（槽位 0-2），跟观看者无关，
-		# 所以这里算出来的是绝对队伍，六个客户端得到同一个答案。
-		return GameConstants.TEAM_BLUE if player_wins else GameConstants.TEAM_RED
-	# PvE / Boss：敌方是怪物，没有水晶也不扣任何队伍血量，所以只有我方被打穿时才演。
-	if player_wins:
-		return -1
-	return GameConstants.team_of_slot(NetworkService.team_local_slot)
-
-func _crystal_attacker_positions(player_wins: bool) -> Array[Vector3]:
-	# 赢的那一方才发起攻击。战斗打到全灭为止，所以另一方必然没有存活单位。
-	var attacker_team := "player" if player_wins else "enemy"
-	var out: Array[Vector3] = []
-	for fighter in (_state.get(attacker_team, []) as Array):
-		if typeof(fighter) != TYPE_DICTIONARY or not bool(fighter.get("alive", false)):
-			continue
-		var world_pos := _sim_to_world_pos(fighter.get("pos", Vector2.ZERO) as Vector2)
-		out.append(Vector3(world_pos.x, battle_unit_y_offset + 0.34, world_pos.z))
-	return out
-
-# 召唤时地面扩散的一圈光环，纯演出，播完自己回收。
-func _make_crystal_summon_ring(color: Color) -> void:
-	var ring := MeshInstance3D.new()
-	ring.name = "CrystalSummonRing"
-	var mesh := TorusMesh.new()
-	mesh.inner_radius = 0.62
-	mesh.outer_radius = 0.78
-	ring.mesh = mesh
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.albedo_color = Color(color.r, color.g, color.b, 0.0)
-	ring.material_override = mat
-	ring.position = BATTLE_CRYSTAL_DEMO_POSITION + Vector3(0.0, 0.02, 0.0)
-	ring.scale = Vector3(0.35, 1.0, 0.35)
-	_battle_3d_world.add_child(ring)
-	var tween := create_tween()
-	tween.tween_property(mat, "albedo_color:a", 0.85, 0.14)
-	tween.parallel().tween_property(ring, "scale", Vector3(1.7, 1.0, 1.7), 0.62).set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
-	tween.tween_property(mat, "albedo_color:a", 0.0, 0.34)
-	tween.tween_callback(ring.queue_free)
-
 func _play_crystal_attack_sequence(result: Dictionary) -> void:
 	if _crystal_attack_running or _battle_3d_world == null:
 		return
-	var losing_team := _crystal_demo_losing_team(result)
-	if losing_team < 0:
-		return
-	var player_wins := bool(result.get("player_wins", false))
-	var attacker_positions := _crystal_attacker_positions(player_wins)
-	if attacker_positions.is_empty():
-		return
 	_crystal_attack_running = true
 	await get_tree().create_timer(0.22).timeout
-
-	# --- 召唤：从地面下方升起，落位时回弹一下 ---
-	var ratio := _crystal_hp_ratio(losing_team, result)
-	var target := _spawn_demo_crystal(losing_team, 1.0)
+	var player_wins := bool(result.get("player_wins", false))
+	var target := _battle_crystal_blue if player_wins else _battle_crystal_red
 	if target == null:
 		_crystal_attack_running = false
 		return
-	var team_color := GameConstants.team_color(losing_team)
-	var settled_position := _demo_crystal_base_position
-	var settled_scale := target.scale
-	# 战场没有 3D 地面（BATTLE_USE_3D_ARENA 为 false，地面是背后那张 2.5D 背景图），
-	# 所以"从地下升上来"不能靠往下挪 Y——挪下去也不会被遮住。改成从底部长出来：
-	# 缩放和位置用同一条曲线同步插值，底面就一直钉在地面那个点上。
-	target.scale = Vector3.ZERO
-	target.position = BATTLE_CRYSTAL_DEMO_POSITION
-	_make_crystal_summon_ring(team_color)
-	var rise := create_tween()
-	rise.tween_property(target, "scale", settled_scale, CRYSTAL_RISE_SEC).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	rise.parallel().tween_property(target, "position", settled_position, CRYSTAL_RISE_SEC).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	# 等计时器而不是等 tween.finished：tween 绑在本节点上，玩家中途退出战斗时会被
-	# 连带 kill，那样 await 永远不会返回，_finish_replay 就卡住不发 battle_finished。
-	await get_tree().create_timer(CRYSTAL_RISE_SEC).timeout
-	if not is_inside_tree():
-		return
-	_demo_crystal_floating = true
-	await get_tree().create_timer(0.18).timeout
-
-	# --- 攻击：角色留在原地，逐个射出光带 ---
 	var target_pos := target.global_position + Vector3(0.0, 0.35, 0.0)
-	var ribbon_color := Color(0.05, 0.58, 0.95, 1.0) if player_wins else Color(0.95, 0.16, 0.10, 1.0)
-	for start in attacker_positions:
-		_make_crystal_attack_ribbon(start, target_pos, 0.075, ribbon_color.darkened(0.55))
+	var launched := 0
+	for model in _battle_3d_models.values():
+		var source := model as Node3D
+		if source == null or not is_instance_valid(source):
+			continue
+		var start := source.global_position + Vector3(0.0, 0.34, 0.0)
+		var color := Color(0.05, 0.58, 0.95, 1.0) if player_wins else Color(0.95, 0.16, 0.10, 1.0)
+		_make_crystal_attack_ribbon(start, target_pos, 0.075, color.darkened(0.55))
 		await get_tree().create_timer(0.035).timeout
-		_make_crystal_attack_ribbon(start + Vector3(0.0, 0.025, 0.0), target_pos, 0.035, ribbon_color)
-	await get_tree().create_timer(0.66).timeout
-
-	# --- 结果：掉血变暗；打穿了碎裂，没打穿就淡出（水晶只为这段演出存在） ---
-	_apply_battle_crystal_toon(target, losing_team == GameConstants.TEAM_RED, ratio)
-	await get_tree().create_timer(0.30).timeout
-	_demo_crystal_floating = false
-	var outro := create_tween()
-	var outro_sec := CRYSTAL_FADE_SEC
+		_make_crystal_attack_ribbon(start + Vector3(0.0, 0.025, 0.0), target_pos, 0.035, color)
+		launched += 1
+	if launched > 0:
+		await get_tree().create_timer(0.66).timeout
+	var ratio := _crystal_hp_ratio(not player_wins, result)
+	_apply_battle_crystal_toon(target, not player_wins, ratio)
 	if ratio <= 0.001:
-		outro_sec = CRYSTAL_SHATTER_PUNCH_SEC + CRYSTAL_SHATTER_SEC
-		outro.tween_property(target, "scale", target.scale * 1.16, CRYSTAL_SHATTER_PUNCH_SEC).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-		outro.tween_property(target, "scale", Vector3.ZERO, CRYSTAL_SHATTER_SEC).set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_IN)
-	else:
-		outro.tween_property(target, "position", settled_position + Vector3(0.0, 0.35, 0.0), CRYSTAL_FADE_SEC).set_trans(Tween.TRANS_SINE)
-		outro.parallel().tween_property(target, "scale", Vector3.ZERO, CRYSTAL_FADE_SEC).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
-	await get_tree().create_timer(outro_sec).timeout
-	if not is_inside_tree():
-		return
-	target.queue_free()
-	_demo_crystal = null
+		var shatter := create_tween()
+		shatter.tween_property(target, "scale", target.scale * 1.16, 0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		shatter.tween_property(target, "scale", Vector3.ZERO, 0.28).set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_IN)
+		await shatter.finished
+		target.visible = false
 	_crystal_attack_running = false
 
 func _load_battle_background() -> Texture2D:

@@ -95,7 +95,8 @@ static func side_unit_count(config: Dictionary, team_a: bool) -> int:
 		if typeof(p) != TYPE_DICTIONARY:
 			continue
 		var slot := int(p.get("slot", -1))
-		if (team_a and slot >= 0 and slot < 3) or (not team_a and slot >= 3 and slot < 6):
+		var wanted := GameConstants.TEAM_RED if team_a else GameConstants.TEAM_BLUE
+		if slot >= 0 and slot < 6 and GameConstants.team_of_slot(slot) == wanted:
 			n += 1
 	return n
 
@@ -174,12 +175,13 @@ static func build_test_state(config: Dictionary, display_only := false) -> Dicti
 	var by_slot := placements_by_slot(config)
 	var ctx_list: Array = []
 	for slot in 6:
-		var team := "player" if slot < 3 else "enemy"
-		var lane := slot % 3
+		var is_red := GameConstants.team_of_slot(slot) == GameConstants.TEAM_RED
+		var team := "player" if is_red else "enemy"
+		var lane := slot % GameConstants.TEAM_SIDE_SIZE
 		var treasures := slot_treasures(config, slot)
 		var syn := _syn_for_slot(by_slot[slot])
 		ctx_list.append({"treasures": treasures, "syn": syn})
-		var out := player if slot < 3 else enemy
+		var out := player if is_red else enemy
 		for p in by_slot[slot]:
 			var f := _fighter_for_placement(p, team)
 			if f.is_empty():
@@ -262,8 +264,8 @@ static func compute_test_replay_async(config: Dictionary, budget_usec: int = 800
 # 编辑器格点的模拟坐标 = BattleSimShared._place_in_lane 的同款公式
 # (slot 的 4x4 棋盘格 -> lane 内战场坐标),保证测试站位与真实对局一致。
 static func grid_sim_pos(slot: int, cell: int) -> Vector2:
-	var team := "player" if slot < 3 else "enemy"
-	var lane := slot % 3
+	var team := "player" if GameConstants.team_of_slot(slot) == GameConstants.TEAM_RED else "enemy"
+	var lane := slot % GameConstants.TEAM_SIDE_SIZE
 	var col := cell % GameConstants.BOARD_COLUMNS
 	var row := floori(float(cell) / float(GameConstants.BOARD_COLUMNS))
 	var lane_x: float = BattleSimulator.TEAM_LANE_CENTERS[lane] + (float(col) - 1.5) * 24.0

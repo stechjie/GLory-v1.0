@@ -477,7 +477,7 @@ func _on_team_battle_finished(result: Dictionary) -> void:
 	# my team are team A's (the "player" side).
 	# 同款视角反转也在 BattleUI._local_player_wins（战斗字幕/总结显示用），
 	# 改这里的条件时必须同步那边。
-	if kind == "pvp" and NetworkService.team_active and NetworkService.team_local_slot >= 3:
+	if kind == "pvp" and NetworkService.team_active and GameConstants.team_of_slot(NetworkService.team_local_slot) == GameConstants.TEAM_BLUE:
 		player_wins = not player_wins
 		surviving_enemies = int(result.get("player_alive", 0))
 	# Host stamps BOTH teams' damage this round into the replay result so every

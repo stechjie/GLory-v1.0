@@ -133,7 +133,7 @@ func _result_is_team_b_pvp_perspective(result: Dictionary) -> bool:
 	return (
 		str(result.get("kind", _state.get("kind", ""))) == "pvp"
 		and NetworkService.team_active
-		and NetworkService.team_local_slot >= 3
+		and GameConstants.team_of_slot(NetworkService.team_local_slot) == GameConstants.TEAM_BLUE
 	)
 
 func _local_player_wins(result: Dictionary) -> bool:

@@ -51,7 +51,7 @@ func _ready() -> void:
 		NetworkService.team_replay = {}
 		NetworkService.team_replay_rival = {}
 		NetworkService.team_submit_board(NetProtocol.team_board_submission(GameState.board_slots, GameState.mercenary_slots))
-		var my_team := GameConstants.team_of_slot(NetworkService.team_local_slot)
+		var my_team := 0 if NetworkService.team_local_slot < 3 else 1
 		if NetworkService.is_host and not bool(NetworkService.get("_dedicated_server")):
 			# Host waits for everyone's board, computes BOTH teams' replays, sends
 			# each player their team's, and plays its own.
@@ -178,7 +178,7 @@ func _start_replay(replay: Dictionary) -> void:
 	# (4) PvP canonical arrangement puts team A at the bottom. If I'm on team B, flip
 	# the arena vertically so my own units are always the ones at the bottom.
 	var my_slot := NetworkService.team_local_slot if NetworkService.team_active else 0
-	var my_team := GameConstants.team_of_slot(my_slot)
+	var my_team := 0 if my_slot < 3 else 1
 	_arena_flip_y = str(replay.get("kind", "")) == "pvp" and my_team == 1
 	if not replay.get("frames", []).is_empty():
 		_apply_replay_frame(0)
@@ -368,7 +368,6 @@ func _finish_replay() -> void:
 	_result = _replay.get("result", {})
 	_return_emitted = true
 	_stop_battle_music()
-	await _play_crystal_attack_sequence(_result)
 	_show_result_overlay()
 	await get_tree().create_timer(RESULT_DISPLAY_SECONDS).timeout
 	battle_finished.emit(_result)

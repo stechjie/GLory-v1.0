@@ -70,7 +70,7 @@ static func prepare_team_state(forced_team: int = -1) -> Dictionary:
 	var my_slot: int = NetworkService.team_local_slot if NetworkService.team_active else 0
 	if my_slot < 0:
 		my_slot = 0
-	var my_team := 0 if my_slot < 3 else 1
+	var my_team := GameConstants.team_of_slot(my_slot)
 	if forced_team >= 0:
 		my_team = forced_team
 	# Canonical arrangement so every client watching this battle builds the exact

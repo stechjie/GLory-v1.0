@@ -8,9 +8,6 @@ const FORMATION_BOSS_DATA_PATH := "res://data/formation/formation_allies.json"
 const BLUE_CRYSTAL_MODEL_PATH := "res://assets/models/battle_crystals/blue/Meshy_AI_Blue_Crystal_Spire_0717152101_texture_fbx/Meshy_AI_Blue_Crystal_Spire_0717152101_texture.fbx"
 const RED_CRYSTAL_MODEL_PATH := "res://assets/models/battle_crystals/red/Meshy_AI_Crimson_Prism_0717152324_texture_fbx/Meshy_AI_Crimson_Prism_0717152324_texture.fbx"
 const CRYSTAL_TOON_SHADER := preload("res://shaders/battle_crystal_toon_preview.gdshader")
-const CRYSTAL_OUTLINE_SHADER := preload("res://shaders/battle_crystal_outline.gdshader")
-const CRYSTAL_OUTLINE_WIDTH := 0.008
-const CRYSTAL_GRADIENT_HEIGHT := 1.78
 const VFX_LIGHTNING_ARC := preload("res://effects/vfx3d/VFXLightningArc.gd")
 const VFX_LIGHTNING_BALL := preload("res://effects/vfx3d/VFXLightningBall.gd")
 const VFX_TARGET_IMPACT := preload("res://effects/vfx3d/VFXTargetImpact.gd")
@@ -928,7 +925,6 @@ func _on_vfx_fixed_screenshot_pressed() -> void:
 	var path := await vfx_recorder.capture_at_time(get_viewport(), 0.5, "vfx_050")
 	vfx_status_label.text = "Saved fixed-time shot: %s" % ProjectSettings.globalize_path(path) if not path.is_empty() else "Screenshot failed"
 
-
 func _on_vfx_validate_pressed() -> void:
 	var recipe: Resource = RECIPE_FULL_STAGES if vfx_select != null and vfx_select.get_selected_id() >= 17 else null
 	var report := VFX_VALIDATION.validate(vfx_preview_effect, recipe)
@@ -1258,7 +1254,6 @@ func _spawn_unit(slot: Node3D, entry: Dictionary, side: int) -> void:
 	_fit_model_to_slot(model)
 	if bool(entry.get("crystal_toon", false)):
 		_apply_crystal_toon_preview(model, str(entry.get("crystal_color", "blue")))
-		_add_crystal_cluster_preview(model, path, str(entry.get("crystal_color", "blue")))
 
 	var target := right_slot.global_position if side < 0 else left_slot.global_position
 	slot.look_at(Vector3(target.x, slot.global_position.y, target.z), Vector3.UP)
@@ -1620,8 +1615,6 @@ func _apply_crystal_toon_preview(root: Node3D, color_name: String) -> void:
 	var light_color := Color(1.0, 0.16, 0.10) if is_red else Color(0.035, 0.82, 0.96)
 	var glint_color := Color(1.0, 0.80, 0.62) if is_red else Color(0.78, 0.98, 1.0)
 	var rim_color := Color(0.90, 0.06, 0.08) if is_red else Color(0.08, 0.64, 0.96)
-	var tip_color := Color(1.0, 0.45, 0.28) if is_red else Color(0.55, 0.95, 1.0)
-	var outline_color := Color(0.13, 0.012, 0.035) if is_red else Color(0.018, 0.045, 0.16)
 	var mesh_nodes := root.find_children("*", "MeshInstance3D", true, false)
 	for found in mesh_nodes:
 		var mesh_instance := found as MeshInstance3D
@@ -1631,10 +1624,6 @@ func _apply_crystal_toon_preview(root: Node3D, color_name: String) -> void:
 		var toon_mesh := original_mesh.duplicate() as Mesh
 		if toon_mesh == null:
 			continue
-		var outline := ShaderMaterial.new()
-		outline.shader = CRYSTAL_OUTLINE_SHADER
-		outline.set_shader_parameter("outline_color", outline_color)
-		outline.set_shader_parameter("outline_width", CRYSTAL_OUTLINE_WIDTH)
 		for surface_index in toon_mesh.get_surface_count():
 			var source := original_mesh.surface_get_material(surface_index) as BaseMaterial3D
 			var toon := ShaderMaterial.new()
@@ -1644,40 +1633,12 @@ func _apply_crystal_toon_preview(root: Node3D, color_name: String) -> void:
 			toon.set_shader_parameter("light_color", light_color)
 			toon.set_shader_parameter("glint_color", glint_color)
 			toon.set_shader_parameter("rim_color", rim_color)
-			toon.set_shader_parameter("tip_color", tip_color)
-			toon.set_shader_parameter("texture_influence", 0.0)
-			# World-space gradient span; the preview stands its crystals on y = 0.
-			toon.set_shader_parameter("gradient_base_y", root.global_position.y)
-			toon.set_shader_parameter("gradient_height", CRYSTAL_GRADIENT_HEIGHT)
 			if source != null and source.albedo_texture != null:
 				toon.set_shader_parameter("albedo_texture", source.albedo_texture)
 				toon.set_shader_parameter("has_albedo_texture", true)
-			toon.next_pass = outline
 			toon_mesh.surface_set_material(surface_index, toon)
 		mesh_instance.mesh = toon_mesh
 		mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-
-func _add_crystal_cluster_preview(cluster_root: Node3D, model_path: String, color_name: String) -> void:
-	var packed := ResourceLoader.load(model_path) as PackedScene
-	if packed == null:
-		return
-	var offsets := [
-		Vector3(-0.34, 0.05, 0.02), Vector3(0.36, 0.10, -0.04),
-		Vector3(-0.18, 0.26, 0.18), Vector3(0.20, 0.32, 0.14),
-		Vector3(-0.60, 0.72, 0.02), Vector3(0.58, 0.82, -0.08)
-	]
-	var scales := [0.62, 0.54, 0.46, 0.39, 0.20, 0.16]
-	var yaws := [-24.0, 22.0, -14.0, 18.0, -30.0, 28.0]
-	for i in offsets.size():
-		var part := packed.instantiate() as Node3D
-		if part == null:
-			continue
-		part.name = "CrystalClusterPart_%d" % i
-		cluster_root.add_child(part)
-		part.position = offsets[i]
-		part.rotation_degrees = Vector3(0.0, yaws[i], 0.0)
-		part.scale = Vector3.ONE * float(scales[i])
-		_apply_crystal_toon_preview(part, color_name)
 
 func _node_bounds_relative(root: Node3D, relative_to: Node3D) -> AABB:
 	var has_bounds := false

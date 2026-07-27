@@ -1916,9 +1916,9 @@ func _team_mercs_entries() -> Array:
 	var my_slot := NetworkService.team_local_slot if NetworkService.team_active else 0
 	if my_slot < 0:
 		my_slot = 0
-	var first := 0 if my_slot < 3 else 3
+	var first := GameConstants.team_first_slot(GameConstants.team_of_slot(my_slot))
 	var out: Array = []
-	for slot in range(first, first + 3):
+	for slot in range(first, first + GameConstants.TEAM_SIDE_SIZE):
 		var ids: Array = []
 		if slot == my_slot:
 			for cell in GameState.mercenary_slots:
