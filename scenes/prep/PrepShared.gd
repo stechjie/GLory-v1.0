@@ -473,6 +473,7 @@ var _treasure_refresh_btn: Button
 var _owned_treasure_box: GridContainer
 var _board_buttons: Array[BoardCellButton] = []
 var _board_relation_overlays: Array[RelationProgressOverlay] = []
+var _board_cell_captions: Array[Label] = []   # 棋盘格子下方的「名字 ★星级」标签（有棋子才显示）
 var _bench_buttons: Array[BenchCellButton] = []
 var _bench_card_labels: Array[Label] = []
 var _shop_buttons: Array[DragButton] = []
