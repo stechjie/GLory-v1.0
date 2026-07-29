@@ -2,7 +2,6 @@ extends "res://scenes/prep/PrepBoardModels.gd"
 
 const PrepShopRaceIcon = preload("res://scenes/prep/PrepShopRaceIcon.gd")
 const PrepMoneyBagIcon = preload("res://scenes/prep/PrepMoneyBagIcon.gd")
-const PrepScrollIdleFlipbook = preload("res://scenes/prep/effects/PrepScrollIdleFlipbook.gd")
 const GOLD_NUMBER_FONT: Font = preload("res://assets/fonts/Knewave-Regular.ttf")
 const SHOP_REFRESH_WIDTH := 112.0
 const SHOP_GOLD_WIDTH := 112.0
@@ -32,7 +31,6 @@ const MERC_BTN_PATH := "res://assets/ui/buttons/btn_merc_lowpoly.png"
 const TEAM_MERCS_BTN_PATH := "res://assets/ui/buttons/btn_team_mercs_lowpoly.png"
 const MERC_BTN_SIZE := Vector2(132, 132)                                  # 方形
 const SHOP_CLOSED_BTN_PATH := "res://assets/ui/buttons/shop_closed.png"   # 底部商店按钮图（自带文字，无需再叠字）
-const SHOP_IDLE_ATLAS_PATH := "res://assets/vfx/prep/scroll_idle_shimmer_atlas.png"
 const CRYSTAL_FIRE_PATHS := [                 # 火队（slot 0-2 红蓝绿）红水晶：按血量段 0-10..40-50
 	"res://assets/ui/crystals/red_0_10.png",
 	"res://assets/ui/crystals/red_10_20.png",
@@ -95,7 +93,6 @@ const MERCENARY_PORTRAIT_PATHS := {
 }
 
 var _mute_button: Button
-var _shop_scroll_idle: PrepScrollIdleFlipbook
 # 强引用贴图缓存：load() 只在资源仍被引用时命中引擎缓存，
 # 这里持有引用保证商店头像/宝物图标等反复刷新的贴图零重复 I/O。
 # static：PrepScreen 每回合都被 Main 重建，缓存必须跨实例存活。
@@ -431,9 +428,6 @@ func _build_rest(root: VBoxContainer) -> void:
 	shop_open_btn.offset_bottom = -40
 	shop_open_btn.z_index = 6
 	center_host.add_child(shop_open_btn)
-	_shop_scroll_idle = PrepScrollIdleFlipbook.new()
-	_shop_scroll_idle.setup(shop_open_btn, _cached_texture(SHOP_IDLE_ATLAS_PATH))
-	shop_open_btn.add_child(_shop_scroll_idle)
 
 	# 钱袋 B（商店关闭时显示）：放在「商店」按钮左边，显示金币，长按看利息。商店打开时隐藏（那时看钱袋 A）。
 	var closed_money_btn := Button.new()
@@ -1890,8 +1884,6 @@ func _close_shop_picker() -> void:
 func _refresh_shop_picker() -> void:
 	if _shop_panel != null:
 		_shop_panel.visible = _shop_picker_open
-	if _shop_scroll_idle != null:
-		_shop_scroll_idle.set_effect_active(not _shop_picker_open)
 	if _shop_side_controls != null:
 		_shop_side_controls.visible = _shop_picker_open     # 外挂层（钱袋A+刷新）跟商店一起显隐
 	if _closed_money_bag != null:

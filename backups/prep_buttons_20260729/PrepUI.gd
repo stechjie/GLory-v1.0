@@ -2,8 +2,6 @@ extends "res://scenes/prep/PrepBoardModels.gd"
 
 const PrepShopRaceIcon = preload("res://scenes/prep/PrepShopRaceIcon.gd")
 const PrepMoneyBagIcon = preload("res://scenes/prep/PrepMoneyBagIcon.gd")
-const PrepScrollIdleFlipbook = preload("res://scenes/prep/effects/PrepScrollIdleFlipbook.gd")
-const GOLD_NUMBER_FONT: Font = preload("res://assets/fonts/Knewave-Regular.ttf")
 const SHOP_REFRESH_WIDTH := 112.0
 const SHOP_GOLD_WIDTH := 112.0
 const SHOP_PANEL_BACKGROUND_PATH := "res://assets/ui/shop/btm_stone_frame_v4.png"
@@ -27,12 +25,10 @@ const START_BTN_PATH := "res://assets/ui/buttons/btn_start.png"           # 开�
 const START_BTN_SIZE := Vector2(240, 80)                                  # 比例 3.0
 const STATS_BTN_PATH := "res://assets/ui/buttons/btn_stats.png"           # 统计/战力石板框（高清透明）
 const STATS_BTN_SIZE := Vector2(140, 94)                                  # 比例 1.5
-const REFRESH_BTN_PATH := "res://assets/ui/buttons/btn_refresh_fire_lowpoly.png"
-const MERC_BTN_PATH := "res://assets/ui/buttons/btn_merc_lowpoly.png"
-const TEAM_MERCS_BTN_PATH := "res://assets/ui/buttons/btn_team_mercs_lowpoly.png"
+const REFRESH_BTN_PATH := "res://assets/ui/buttons/btn_refresh.png"       # 刷新循环箭头方框（1254x1254）
+const MERC_BTN_PATH := "res://assets/ui/buttons/btn_merc.png"             # 佣兵盾牌圆框（1254x1254）
 const MERC_BTN_SIZE := Vector2(132, 132)                                  # 方形
 const SHOP_CLOSED_BTN_PATH := "res://assets/ui/buttons/shop_closed.png"   # 底部商店按钮图（自带文字，无需再叠字）
-const SHOP_IDLE_ATLAS_PATH := "res://assets/vfx/prep/scroll_idle_shimmer_atlas.png"
 const CRYSTAL_FIRE_PATHS := [                 # 火队（slot 0-2 红蓝绿）红水晶：按血量段 0-10..40-50
 	"res://assets/ui/crystals/red_0_10.png",
 	"res://assets/ui/crystals/red_10_20.png",
@@ -95,7 +91,6 @@ const MERCENARY_PORTRAIT_PATHS := {
 }
 
 var _mute_button: Button
-var _shop_scroll_idle: PrepScrollIdleFlipbook
 # 强引用贴图缓存：load() 只在资源仍被引用时命中引擎缓存，
 # 这里持有引用保证商店头像/宝物图标等反复刷新的贴图零重复 I/O。
 # static：PrepScreen 每回合都被 Main 重建，缓存必须跨实例存活。
@@ -431,9 +426,6 @@ func _build_rest(root: VBoxContainer) -> void:
 	shop_open_btn.offset_bottom = -40
 	shop_open_btn.z_index = 6
 	center_host.add_child(shop_open_btn)
-	_shop_scroll_idle = PrepScrollIdleFlipbook.new()
-	_shop_scroll_idle.setup(shop_open_btn, _cached_texture(SHOP_IDLE_ATLAS_PATH))
-	shop_open_btn.add_child(_shop_scroll_idle)
 
 	# 钱袋 B（商店关闭时显示）：放在「商店」按钮左边，显示金币，长按看利息。商店打开时隐藏（那时看钱袋 A）。
 	var closed_money_btn := Button.new()
@@ -550,53 +542,29 @@ func _build_rest(root: VBoxContainer) -> void:
 	gold_area.offset_bottom = -60
 	_shop_side_controls.add_child(gold_area)
 	var money_bag: Control = PrepMoneyBagIcon.new()
-	money_bag.set("use_lowpoly_texture", true)
 	money_bag.anchor_left = 0.5
 	money_bag.anchor_top = 0.5
 	money_bag.anchor_right = 0.5
 	money_bag.anchor_bottom = 0.5
-	money_bag.offset_left = -58
-	money_bag.offset_top = -64
-	money_bag.offset_right = 58
-	money_bag.offset_bottom = 52
+	money_bag.offset_left = -22
+	money_bag.offset_top = -31
+	money_bag.offset_right = 22
+	money_bag.offset_bottom = 13
 	gold_area.add_child(money_bag)
 	_gold_amount_label = Label.new()
 	_gold_amount_label.anchor_left = 0.5
 	_gold_amount_label.anchor_top = 0.5
 	_gold_amount_label.anchor_right = 0.5
 	_gold_amount_label.anchor_bottom = 0.5
-	_gold_amount_label.offset_left = -44
-	_gold_amount_label.offset_right = 44
-	_gold_amount_label.offset_top = 10
-	_gold_amount_label.offset_bottom = 38
+	_gold_amount_label.offset_left = -26
+	_gold_amount_label.offset_right = 26
+	_gold_amount_label.offset_top = 18
+	_gold_amount_label.offset_bottom = 46
 	_gold_amount_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_gold_amount_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_gold_amount_label.pivot_offset = Vector2(44, 14)
-	_gold_amount_label.rotation_degrees = -4.0
-	_gold_amount_label.add_theme_font_override("font", GOLD_NUMBER_FONT)
-	_gold_amount_label.add_theme_font_size_override("font_size", 24)
-	_gold_amount_label.add_theme_color_override("font_color", Color(1.0, 0.86, 0.30))
-	_gold_amount_label.add_theme_color_override("font_outline_color", Color(0.20, 0.08, 0.01, 0.98))
-	_gold_amount_label.add_theme_constant_override("outline_size", 3)
+	_gold_amount_label.add_theme_font_size_override("font_size", 15)
+	_gold_amount_label.add_theme_color_override("font_color", Color(1.0, 0.84, 0.34))
 	gold_area.add_child(_gold_amount_label)
-	var buy_action_label := Label.new()
-	buy_action_label.text = tr("ui_buy")
-	buy_action_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	buy_action_label.anchor_left = 0.5
-	buy_action_label.anchor_top = 0.5
-	buy_action_label.anchor_right = 0.5
-	buy_action_label.anchor_bottom = 0.5
-	buy_action_label.offset_left = -52
-	buy_action_label.offset_top = 49
-	buy_action_label.offset_right = 52
-	buy_action_label.offset_bottom = 75
-	buy_action_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	buy_action_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	buy_action_label.add_theme_font_size_override("font_size", 19)
-	buy_action_label.add_theme_color_override("font_color", Color(1.0, 0.94, 0.72))
-	buy_action_label.add_theme_color_override("font_outline_color", Color(0.12, 0.04, 0.01, 0.98))
-	buy_action_label.add_theme_constant_override("outline_size", 4)
-	gold_area.add_child(buy_action_label)
 	var gold_info_btn := Button.new()
 	gold_info_btn.flat = true
 	gold_info_btn.focus_mode = Control.FOCUS_NONE
@@ -676,13 +644,8 @@ func _build_rest(root: VBoxContainer) -> void:
 		price_label.anchor_bottom = 0.23
 		price_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		price_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		price_label.pivot_offset = Vector2(14, 11)
-		price_label.rotation_degrees = -5.0
-		price_label.add_theme_font_override("font", GOLD_NUMBER_FONT)
-		price_label.add_theme_font_size_override("font_size", 22)
+		price_label.add_theme_font_size_override("font_size", 16)
 		price_label.add_theme_color_override("font_color", Color(0.28, 0.16, 0.02))
-		price_label.add_theme_color_override("font_outline_color", Color(1.0, 0.77, 0.20, 0.55))
-		price_label.add_theme_constant_override("outline_size", 1)
 		slot.add_child(price_label)
 		_shop_price_labels.append(price_label)
 
@@ -800,29 +763,8 @@ func _build_rest(root: VBoxContainer) -> void:
 	refresh_cost_label.offset_bottom = 40
 	refresh_cost_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	refresh_cost_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	refresh_cost_label.pivot_offset = Vector2(28, 11)
-	refresh_cost_label.rotation_degrees = -4.0
-	refresh_cost_label.add_theme_font_size_override("font_size", 18)
-	refresh_cost_label.add_theme_color_override("font_color", Color(1.0, 0.86, 0.30))
-	refresh_cost_label.add_theme_color_override("font_outline_color", Color(0.20, 0.04, 0.01, 0.98))
-	refresh_cost_label.add_theme_constant_override("outline_size", 3)
+	refresh_cost_label.add_theme_font_size_override("font_size", 12)
 	refresh_shop.add_child(refresh_cost_label)
-	var refresh_action_label := Label.new()
-	refresh_action_label.text = tr("ui_refresh")
-	refresh_action_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	refresh_action_label.anchor_left = 0.0
-	refresh_action_label.anchor_top = 1.0
-	refresh_action_label.anchor_right = 1.0
-	refresh_action_label.anchor_bottom = 1.0
-	refresh_action_label.offset_top = 0
-	refresh_action_label.offset_bottom = 28
-	refresh_action_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	refresh_action_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	refresh_action_label.add_theme_font_size_override("font_size", 19)
-	refresh_action_label.add_theme_color_override("font_color", Color(1.0, 0.94, 0.72))
-	refresh_action_label.add_theme_color_override("font_outline_color", Color(0.12, 0.04, 0.01, 0.98))
-	refresh_action_label.add_theme_constant_override("outline_size", 4)
-	refresh_shop.add_child(refresh_action_label)
 
 	var right_drop := PanelContainer.new()
 	right_drop.custom_minimum_size = Vector2(110, 0)
@@ -946,21 +888,7 @@ func _build_top_actions() -> void:
 	merc_btn.add_child(merc_lbl)
 	side_col.add_child(merc_btn)
 	# 队伍佣兵检阅台：教学模式没有队友，直接藏
-	var team_mercs_btn := _make_framed_text_button("", TEAM_MERCS_BTN_PATH, MERC_BTN_SIZE, 16, _toggle_team_mercs_picker)
-	var team_mercs_lbl := Label.new()
-	team_mercs_lbl.text = tr("ui_team_mercs")
-	team_mercs_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	team_mercs_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	team_mercs_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	team_mercs_lbl.anchor_left = 0.15
-	team_mercs_lbl.anchor_right = 0.85
-	team_mercs_lbl.anchor_top = 0.72
-	team_mercs_lbl.anchor_bottom = 0.93
-	team_mercs_lbl.add_theme_font_size_override("font_size", 14)
-	team_mercs_lbl.add_theme_color_override("font_color", Color(0.96, 0.97, 1.0))
-	team_mercs_lbl.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.95))
-	team_mercs_lbl.add_theme_constant_override("outline_size", 3)
-	team_mercs_btn.add_child(team_mercs_lbl)
+	var team_mercs_btn := _make_menu_button(tr("ui_team_mercs"), STATS_BTN_SIZE, 16, _toggle_team_mercs_picker)
 	team_mercs_btn.visible = not GameState.tutorial_mode
 	side_col.add_child(team_mercs_btn)
 
@@ -1658,7 +1586,7 @@ func _refresh_bench() -> void:
 func _refresh_shop() -> void:
 	var gold_text := TutorialMode.GOLD_TEXT if GameState.tutorial_mode else tr("ui_gold_format") % GameState.gold
 	if _gold_amount_label != null:
-		_gold_amount_label.text = TutorialMode.GOLD_TEXT if GameState.tutorial_mode else str(GameState.gold)
+		_gold_amount_label.text = gold_text
 	if _closed_gold_label != null:
 		_closed_gold_label.text = gold_text
 	if _gold_interest_detail_open and _detail != null and _detail.visible:
@@ -1668,15 +1596,7 @@ func _refresh_shop() -> void:
 		var refresh_cost := EconomyService.shop_refresh_cost(GameState.shop_refresh_uses_this_round, all_free)
 		_refresh_shop_button.disabled = GameState.gold < refresh_cost
 		_refresh_shop_icon.modulate = Color(0.46, 0.46, 0.46) if _refresh_shop_button.disabled else Color.WHITE
-		_refresh_shop_cost_label.text = tr("ui_free") if refresh_cost == 0 else str(refresh_cost)
-		if refresh_cost == 0:
-			_refresh_shop_cost_label.remove_theme_font_override("font")
-			_refresh_shop_cost_label.add_theme_font_size_override("font_size", 14)
-			_refresh_shop_cost_label.rotation_degrees = 0.0
-		else:
-			_refresh_shop_cost_label.add_theme_font_override("font", GOLD_NUMBER_FONT)
-			_refresh_shop_cost_label.add_theme_font_size_override("font_size", 20)
-			_refresh_shop_cost_label.rotation_degrees = -4.0
+		_refresh_shop_cost_label.text = tr("ui_free") if refresh_cost == 0 else tr("ui_gold_format") % refresh_cost
 		_refresh_shop_cost_label.modulate = Color(0.46, 0.46, 0.46) if _refresh_shop_button.disabled else Color.WHITE
 	var selected_valid: bool = (
 		_selected_shop >= 0
@@ -1890,8 +1810,6 @@ func _close_shop_picker() -> void:
 func _refresh_shop_picker() -> void:
 	if _shop_panel != null:
 		_shop_panel.visible = _shop_picker_open
-	if _shop_scroll_idle != null:
-		_shop_scroll_idle.set_effect_active(not _shop_picker_open)
 	if _shop_side_controls != null:
 		_shop_side_controls.visible = _shop_picker_open     # 外挂层（钱袋A+刷新）跟商店一起显隐
 	if _closed_money_bag != null:

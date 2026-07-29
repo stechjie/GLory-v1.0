@@ -1,27 +1,12 @@
 extends Control
 
-const MONEY_BAG_TEXTURE_PATH := "res://assets/ui/buttons/btn_buy_lowpoly.png"
-
-var use_lowpoly_texture := false
-
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	if use_lowpoly_texture:
-		var image := TextureRect.new()
-		image.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		image.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		image.texture = load(MONEY_BAG_TEXTURE_PATH) as Texture2D
-		image.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		add_child(image)
 	queue_redraw()
 
 
 func _draw() -> void:
-	if use_lowpoly_texture:
-		return
 	var center := size * 0.5
 	var bag_color := Color(0.92, 0.68, 0.18, 1.0)
 	var bag_shadow := Color(0.38, 0.22, 0.04, 0.95)

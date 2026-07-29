@@ -12,14 +12,19 @@ static var _stat_source_uid := ""
 # stay silent (default kind = "").
 static var _hit_kind := ""
 static var _hit_is_crit := false
+# Attacker race ("god"/"dark"/"undead"/"human"/...), used to color normal-attack
+# numbers on the renderer side.
+static var _hit_source_race := ""
 
-static func set_hit_context(kind: String, is_crit: bool = false) -> void:
+static func set_hit_context(kind: String, is_crit: bool = false, source_race: String = "") -> void:
 	_hit_kind = kind
 	_hit_is_crit = is_crit
+	_hit_source_race = source_race
 
 static func clear_hit_context() -> void:
 	_hit_kind = ""
 	_hit_is_crit = false
+	_hit_source_race = ""
 
 # Central damage-number emit. Rides the same state.visual_events channel the
 # renderer already consumes (and that the replay records per frame), so numbers
@@ -28,7 +33,9 @@ static func clear_hit_context() -> void:
 static func _maybe_emit_hit_number(target: Dictionary, hp_damage: int) -> void:
 	if hp_damage <= 0 or _stat_state.is_empty():
 		return
-	var show := _hit_kind == "skill" or (_hit_kind == "basic" and _hit_is_crit)
+	# Basic attacks (crit or not) and skill hits surface; DoT ticks, treasure
+	# reactions and other unclassified paths stay silent (kind == "").
+	var show := _hit_kind == "skill" or _hit_kind == "basic"
 	if not show:
 		return
 	_append_hit_event({
@@ -36,6 +43,7 @@ static func _maybe_emit_hit_number(target: Dictionary, hp_damage: int) -> void:
 		"kind": "dmg",
 		"crit": _hit_is_crit,
 		"skill": _hit_kind == "skill",
+		"race": _hit_source_race,
 		"target_uid": str(target.get("uid", "")),
 		"amount": hp_damage,
 	})
@@ -83,6 +91,7 @@ static func clear_stat_context() -> void:
 	# into later damage (treasure reactions, DoT ticks, etc.).
 	_hit_kind = ""
 	_hit_is_crit = false
+	_hit_source_race = ""
 
 static func current_stat_source_uid() -> String:
 	return _stat_source_uid

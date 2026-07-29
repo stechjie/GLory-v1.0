@@ -634,7 +634,7 @@ static func _perform_attack(attacker: Dictionary, target: Dictionary, state: Dic
 	var before_status_count := _status_count(target)
 	# Only the crit base hit surfaces a floating number; the true-damage rider,
 	# combo strikes and treasure reactions below stay silent.
-	DamageService.set_hit_context("basic", is_crit)
+	DamageService.set_hit_context("basic", is_crit, str(d.get("race", "")))
 	var dealt := DamageService.apply_damage(target, maxi(1, int(round(base))), false)
 	DamageService.clear_hit_context()
 	if str(d.get("skill_id", "")) == "true_damage_attack":
@@ -759,7 +759,7 @@ static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) ->
 		DamageService.begin_stat_context(state, caster)
 		# Every apply_damage inside this dispatch is skill damage. clear_stat_context()
 		# at the end of this iteration resets the tag (see DamageService).
-		DamageService.set_hit_context("skill")
+		DamageService.set_hit_context("skill", false, str(d.get("race", "")))
 		match sid:
 			"lowest_ally_heal":
 				BattleSimSkills._skill_lowest_ally_heal(caster, casters, d)

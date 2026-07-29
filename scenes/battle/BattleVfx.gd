@@ -889,7 +889,7 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 				hit_unit = _vfx_unit_by_sim_uid(_vfx_prev_units, hit_uid)
 			if not hit_unit.is_empty():
 				var hit_kind := "heal" if str(event.get("kind", "dmg")) == "heal" else "dmg"
-				_spawn_hit_number(hit_unit.get("head_pos", Vector2.ZERO), int(event.get("amount", 0)), hit_kind, bool(event.get("crit", false)), bool(event.get("skill", false)))
+				_spawn_hit_number(hit_unit.get("head_pos", Vector2.ZERO), int(event.get("amount", 0)), hit_kind, bool(event.get("crit", false)), bool(event.get("skill", false)), str(event.get("race", "")))
 
 func _vfx_unit_by_sim_uid(current:Dictionary,sim_uid:String)->Dictionary:
 	for id:String in current.keys():
@@ -906,8 +906,10 @@ func _ensure_hit_number_layer() -> void:
 	_hit_number_layer.name = "HitNumbers"
 	_hit_number_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hit_number_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	# Above the 3D units layer (z 40), below the result overlay (z 200).
-	_hit_number_layer.z_index = 95
+	# Unit nodes use a position-based z_index (int(round(mapped.y)), up to ~arena
+	# height, i.e. ~1000+), so the numbers must sit near the top of the z range or
+	# they render behind the units. z_index max is 4096.
+	_hit_number_layer.z_index = 4096
 	_arena.add_child(_hit_number_layer)
 	_hit_number_pool.clear()
 	for _i in _HIT_NUMBER_POOL_SIZE:
@@ -921,9 +923,19 @@ func _ensure_hit_number_layer() -> void:
 		_hit_number_layer.add_child(lbl)
 		_hit_number_pool.append(lbl)
 
+# god / dark / undead / human get distinct normal-attack number colors so you can
+# read a unit's race off its hits. Unlisted races fall back to near-white.
+const _RACE_NUMBER_COLORS := {
+	"god": Color(1.0, 1.0, 1.0),      # 神 = white
+	"dark": Color(0.07, 0.07, 0.09),  # 暗 = black (uses a light outline below)
+	"undead": Color(0.30, 1.0, 0.90), # 灵 = cyan
+	"human": Color(0.36, 0.62, 1.0),  # 人 = blue
+}
+
 # Spawns one floating number at a screen-space head anchor. kind is
-# "dmg" | "heal" | "shield"; crit/skill only tweak the damage styling.
-func _spawn_hit_number(head_pos: Vector2, amount: int, kind: String, crit: bool, is_skill: bool) -> void:
+# "dmg" | "heal" | "shield"; crit/skill only tweak the damage styling. race colors
+# the normal-attack tier only.
+func _spawn_hit_number(head_pos: Vector2, amount: int, kind: String, crit: bool, is_skill: bool, race: String = "") -> void:
 	if amount <= 0:
 		return
 	_ensure_hit_number_layer()
@@ -941,6 +953,13 @@ func _spawn_hit_number(head_pos: Vector2, amount: int, kind: String, crit: bool,
 	var color: Color
 	var font_size: int
 	var text: String
+	# Per-tier motion/opacity. Normal basics are deliberately the quietest layer:
+	# small, faint and short-lived so they read as background chatter while crits
+	# and skills pop above them.
+	var base_alpha := 1.0
+	var rise := 46.0
+	var dur := 0.8
+	var pop := true
 	match kind:
 		"heal":
 			color = Color(0.36, 1.0, 0.46)
@@ -955,37 +974,47 @@ func _spawn_hit_number(head_pos: Vector2, amount: int, kind: String, crit: bool,
 				color = Color(1.0, 0.56, 0.16)
 				text = "%d!" % amount
 				font_size = 30
+				rise = 60.0
+				dur = 0.72
 			elif is_skill:
 				color = Color(1.0, 0.98, 0.66)
 				text = str(amount)
 				font_size = 24
+				dur = 0.7
 			else:
-				color = Color(1.0, 0.94, 0.55)
+				# Normal attack: the quiet background layer, but still clearly legible.
+				# Color by attacker race so hits are readable at a glance.
+				color = _RACE_NUMBER_COLORS.get(race, Color(0.94, 0.96, 1.0))
 				text = str(amount)
-				font_size = 22
+				font_size = 18
+				base_alpha = 0.88
+				rise = 34.0
+				dur = 0.5
+				pop = false
 	lbl.add_theme_font_size_override("font_size", font_size)
 	lbl.add_theme_color_override("font_color", color)
+	# Dark race numbers are near-black, so give them a light outline to stay legible;
+	# everything else keeps the default black outline.
+	lbl.add_theme_color_override("font_outline_color", Color(0.92, 0.94, 1.0, 0.95) if race == "dark" and kind == "dmg" and not crit and not is_skill else Color(0, 0, 0, 0.95))
 	lbl.text = text
 	lbl.reset_size()
 	var sz := lbl.get_minimum_size()
 	lbl.size = sz
 	lbl.pivot_offset = sz * 0.5
-	lbl.modulate = Color(1, 1, 1, 1)
+	lbl.modulate = Color(1, 1, 1, base_alpha)
 	lbl.scale = Vector2.ONE
 	lbl.visible = true
 	# Small horizontal jitter so numbers stacking on one target don't perfectly overlap.
 	var jitter := randf_range(-16.0, 16.0)
 	lbl.global_position = head_pos + Vector2(jitter - sz.x * 0.5, -sz.y * 0.5)
 	var start := lbl.position
-	var rise := 60.0 if crit else 46.0
-	var dur := 0.72 if kind == "dmg" else 0.82
 
 	var tw := lbl.create_tween()
 	lbl.set_meta("hit_tween", tw)
 	tw.set_parallel(true)
 	tw.tween_property(lbl, "position", start + Vector2(0, -rise), dur).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tw.tween_property(lbl, "modulate:a", 0.0, dur * 0.55).set_delay(dur * 0.45)
-	if crit or is_skill:
+	if pop:
 		lbl.scale = Vector2(0.55, 0.55)
 		tw.tween_property(lbl, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tw.set_parallel(false)
