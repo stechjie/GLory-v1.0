@@ -5,9 +5,7 @@ const PrepMoneyBagIcon = preload("res://scenes/prep/PrepMoneyBagIcon.gd")
 const PrepScrollIdleFlipbookScript = preload("res://scenes/prep/effects/PrepScrollIdleFlipbook.gd")
 const PrepShopRefreshBurnScript = preload("res://scenes/prep/effects/PrepShopRefreshBurn.gd")
 const PrepTeamMercAlertScript = preload("res://scenes/prep/effects/PrepTeamMercAlert.gd")
-const PrepMoneyBagAttentionGlowScript = preload("res://scenes/prep/effects/PrepMoneyBagAttentionGlow.gd")
 const SHOP_SCROLL_BURN_SHADER: Shader = preload("res://assets/shaders/prep_scroll_burn.gdshader")
-const MONEY_BAG_GLOW_SHADER: Shader = preload("res://assets/shaders/prep_money_bag_glow.gdshader")
 const GOLD_NUMBER_FONT: Font = preload("res://assets/fonts/Knewave-Regular.ttf")
 const SHOP_REFRESH_WIDTH := 112.0
 const SHOP_GOLD_WIDTH := 112.0
@@ -571,20 +569,6 @@ func _build_rest(root: VBoxContainer) -> void:
 	gold_area.offset_top = -201
 	gold_area.offset_bottom = -60
 	_shop_side_controls.add_child(gold_area)
-	var money_bag_glow := PrepMoneyBagAttentionGlowScript.new()
-	money_bag_glow.anchor_left = 0.5
-	money_bag_glow.anchor_top = 0.5
-	money_bag_glow.anchor_right = 0.5
-	money_bag_glow.anchor_bottom = 0.5
-	money_bag_glow.offset_left = -75
-	money_bag_glow.offset_top = -81
-	money_bag_glow.offset_right = 75
-	money_bag_glow.offset_bottom = 69
-	gold_area.add_child(money_bag_glow)
-	money_bag_glow.setup(
-		_cached_texture("res://assets/ui/buttons/btn_buy_lowpoly.png"),
-		MONEY_BAG_GLOW_SHADER
-	)
 	var money_bag: Control = PrepMoneyBagIcon.new()
 	money_bag.set("use_lowpoly_texture", true)
 	money_bag.anchor_left = 0.5

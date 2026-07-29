@@ -1083,11 +1083,11 @@ static func _apply_final_round_left_right_layout(player: Array, enemy: Array) ->
 		)
 	for fighter in player:
 		if bool(fighter.get("is_formation_ally", false)):
-			fighter.pos = Vector2(440.0, 195.0)
+			fighter.pos = Vector2(440.0, ARENA_H * 0.5)
 			fighter["lane"] = 1
 	for fighter in enemy:
 		if bool(fighter.get("is_formation_ally", false)):
-			fighter.pos = Vector2(560.0, 195.0)
+			fighter.pos = Vector2(560.0, ARENA_H * 0.5)
 			fighter["lane"] = 1
 
 

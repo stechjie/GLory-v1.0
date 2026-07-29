@@ -9,6 +9,8 @@ const BLUE_CRYSTAL_MODEL_PATH := "res://assets/models/battle_crystals/blue/Meshy
 const RED_CRYSTAL_MODEL_PATH := "res://assets/models/battle_crystals/red/Meshy_AI_Crimson_Prism_0717152324_texture_fbx/Meshy_AI_Crimson_Prism_0717152324_texture.fbx"
 const CRYSTAL_TOON_SHADER := preload("res://shaders/battle_crystal_toon_preview.gdshader")
 const CRYSTAL_OUTLINE_SHADER := preload("res://shaders/battle_crystal_outline.gdshader")
+const BATTLE_LANE_BARRIER_2D := preload("res://scenes/battle/BattleLaneBarrier2D.gd")
+const FINAL_LANE_LIGHT_WALL_2D := preload("res://scenes/battle/FinalLaneLightWall2D.gd")
 const CRYSTAL_OUTLINE_WIDTH := 0.008
 const CRYSTAL_GRADIENT_HEIGHT := 1.78
 const VFX_LIGHTNING_ARC := preload("res://effects/vfx3d/VFXLightningArc.gd")
@@ -137,6 +139,7 @@ var vfx_select: OptionButton
 var vfx_status_label: Label
 var vfx_preview_root: Node3D
 var vfx_preview_effect: Node3D
+var lane_barrier_preview_nodes: Array[Node2D] = []
 var vfx_recorder: VFXPreviewRecorder
 var vfx_v2_select: OptionButton
 var vfx_v2_status_label: Label
@@ -379,6 +382,9 @@ func _build_vfx_test_panel() -> void:
 	vfx_select.add_item("Unit Skill: Mother Execute")
 	vfx_select.add_item("Unit Skill: Stun Hit")
 	vfx_select.add_item("Unit Skill: Attribute Bolt")
+	vfx_select.add_item("Custom: Lane Barrier Static")
+	vfx_select.add_item("Custom: Lane Barrier Release")
+	vfx_select.add_item("Custom: Final Two Light Walls")
 	select_row.add_child(vfx_select)
 	var action_row := HBoxContainer.new()
 	action_row.add_theme_constant_override("separation", 6)
@@ -498,6 +504,10 @@ func _clear_vfx_v2_preview() -> void:
 	_clear_all_preview_nodes()
 
 func _clear_all_preview_nodes() -> void:
+	for barrier in lane_barrier_preview_nodes:
+		if barrier != null and is_instance_valid(barrier):
+			barrier.queue_free()
+	lane_barrier_preview_nodes.clear()
 	# Imported/reference effects may spawn children and outlive their root handle.
 	# Clear the actual preview container so no stale VFX can remain on the board.
 	if vfx_preview_root != null and is_instance_valid(vfx_preview_root):
@@ -850,6 +860,45 @@ func _on_vfx_play_pressed() -> void:
 			var attribute_fx:=UNIT_SKILL_COMPOSER.new();attribute_fx.name="PreviewAttributeBolt";vfx_preview_root.add_child(attribute_fx);vfx_preview_effect=attribute_fx
 			attribute_fx.play_skill("random_attribute_bolt",left_slot.position+Vector3(0.0,.30,0.0),right_slot.position+Vector3(0.0,.30,0.0),{"target_node":right_slot,"attribute":"fire"})
 			vfx_status_label.text="Playing: authored Attribute Bolt"
+		60:
+			_preview_lane_barriers(false)
+			vfx_status_label.text = "Showing: static low-poly lane barriers at battle-screen scale"
+		61:
+			_preview_lane_barriers(true)
+			vfx_status_label.text = "Playing: loop, then left lane barrier releases"
+		62:
+			_preview_final_lane_light_walls()
+			vfx_status_label.text = "Showing: Final round two horizontal light walls"
+
+
+func _preview_lane_barriers(play_release: bool) -> void:
+	for i in 2:
+		var barrier := BATTLE_LANE_BARRIER_2D.new()
+		barrier.name = "PreviewLaneBarrier%d" % i
+		barrier.position = Vector2(510.0 + float(i) * 260.0, 360.0)
+		barrier.scale = Vector2(0.42, 0.88)
+		canvas_layer.add_child(barrier)
+		barrier.play_loop(i * 7)
+		lane_barrier_preview_nodes.append(barrier)
+	if play_release:
+		await get_tree().create_timer(1.0).timeout
+		if not lane_barrier_preview_nodes.is_empty():
+			var left_barrier := lane_barrier_preview_nodes[0]
+			if left_barrier != null and is_instance_valid(left_barrier):
+				left_barrier.play_release()
+
+
+func _preview_final_lane_light_walls() -> void:
+	_apply_board_texture(FINAL_ROUND_BOARD)
+	for i in 2:
+		var wall := FINAL_LANE_LIGHT_WALL_2D.new()
+		wall.name = "PreviewFinalLaneLightWall%d" % i
+		wall.position = Vector2(640.0, 300.0 + float(i) * 155.0)
+		wall.scale = Vector2(0.76, 0.20)
+		wall.z_index = 40
+		canvas_layer.add_child(wall)
+		wall.play_loop()
+		lane_barrier_preview_nodes.append(wall)
 
 func _preview_race_basic(profile:VFXProfile3D,race:String,mode:String)->void:
 	var fx:=VFX_RACE_BASIC_ATTACK.new();fx.name="PreviewBasic_%s_%s"%[race,mode];vfx_preview_root.add_child(fx);vfx_preview_effect=fx

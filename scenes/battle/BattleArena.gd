@@ -4,6 +4,8 @@ const BossProceduralVFX3D := preload("res://effects/BossProceduralVFX3D.gd")
 const CrystalRibbon3D := preload("res://effects/CrystalRibbon3D.gd")
 const CRYSTAL_TOON_SHADER := preload("res://shaders/battle_crystal_toon_preview.gdshader")
 const CRYSTAL_OUTLINE_SHADER := preload("res://shaders/battle_crystal_outline.gdshader")
+const BattleLaneBarrier2D := preload("res://scenes/battle/BattleLaneBarrier2D.gd")
+const FinalLaneLightWall2D := preload("res://scenes/battle/FinalLaneLightWall2D.gd")
 const CRYSTAL_OUTLINE_WIDTH := 0.008
 
 const FIRE_GLOW_TEXTURE_PATH := "res://assets/vfx/battlefield/fire_glow_soft.png"
@@ -44,8 +46,8 @@ const CRYSTAL_GLOW_POINTS := [
 	Vector3(1505.0, 155.0, 1.0),
 ]
 
-var _3v3_lines: Array[CPUParticles2D] = []
-var _3v3_line_cores: Array[Line2D] = []
+var _3v3_barriers: Array[BattleLaneBarrier2D] = []
+var _final_lane_walls: Array[FinalLaneLightWall2D] = []
 var _battlefield_2_5d_root: Node2D
 var _battlefield_2_5d_size := Vector2(1672.0, 941.0)
 var _looping_tweens: Array[Tween] = []
@@ -366,87 +368,88 @@ func _add_front_copy(sprite_name: String, offset: Vector2, layer_z: int, color: 
 
 
 func _add_battle_3v3_dividers(arena_wrap: Control) -> void:
-	# Two particle streams split the standable field into 3 equal columns.
-	_3v3_lines.clear()
-	_3v3_line_cores.clear()
-	for _i in BATTLE_3V3_BOUNDS.size():
-		var core := Line2D.new()
-		core.name = "Battle3v3DividerCore"
-		core.width = 2
-		core.default_color = Color(0.72, 0.94, 1.0, 0.12)
-		core.z_index = 0
-		arena_wrap.add_child(core)
-		_3v3_line_cores.append(core)
-
-		var glow := CPUParticles2D.new()
-		glow.name = "Battle3v3DividerGlow"
-		glow.amount = 58
-		glow.lifetime = 2.0
-		glow.preprocess = 1.0
-		glow.texture = _make_battle_soft_dot_texture()
-		glow.emission_shape = CPUParticles2D.EMISSION_SHAPE_POINTS
-		glow.direction = Vector2(0.0, -1.0)
-		glow.spread = 28.0
-		glow.gravity = Vector2(0.0, -14.0)
-		glow.initial_velocity_min = 4.0
-		glow.initial_velocity_max = 13.0
-		glow.scale_amount_min = 0.20
-		glow.scale_amount_max = 0.58
-		glow.color = Color(0.62, 0.88, 1.0, 0.72)
-		var ramp := Gradient.new()
-		ramp.offsets = PackedFloat32Array([0.0, 0.36, 1.0])
-		ramp.colors = PackedColorArray([
-			Color(0.45, 0.72, 1.0, 0.0),
-			Color(0.78, 0.96, 1.0, 0.95),
-			Color(0.40, 0.66, 1.0, 0.0),
-		])
-		glow.color_ramp = ramp
-		var cmat := CanvasItemMaterial.new()
-		cmat.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
-		glow.material = cmat
-		glow.z_index = 40
-		arena_wrap.add_child(glow)
-		_3v3_lines.append(glow)
-
-func _make_battle_soft_dot_texture() -> ImageTexture:
-	var s := 32
-	var img := Image.create(s, s, false, Image.FORMAT_RGBA8)
-	var c := Vector2(float(s) * 0.5, float(s) * 0.5)
-	for y in s:
-		for x in s:
-			var d := Vector2(float(x) + 0.5, float(y) + 0.5).distance_to(c) / (float(s) * 0.5)
-			var a := clampf(1.0 - d, 0.0, 1.0)
-			img.set_pixel(x, y, Color(1.0, 1.0, 1.0, a * a))
-	return ImageTexture.create_from_image(img)
+	_3v3_barriers.clear()
+	_final_lane_walls.clear()
+	if _battlefield_kind() == "final" or GameState.round_index == GameState.FINAL_ROUND:
+		for i in BATTLE_3V3_BOUNDS.size():
+			var wall := FinalLaneLightWall2D.new()
+			wall.name = "FinalLaneLightWall%d" % i
+			wall.z_index = 40
+			arena_wrap.add_child(wall)
+			wall.play_loop()
+			_final_lane_walls.append(wall)
+		return
+	for i in BATTLE_3V3_BOUNDS.size():
+		var barrier := BattleLaneBarrier2D.new()
+		barrier.name = "Battle3v3LaneBarrier%d" % i
+		barrier.z_index = 40
+		arena_wrap.add_child(barrier)
+		barrier.play_loop(i * 7)
+		_3v3_barriers.append(barrier)
 
 func _update_3v3_dividers() -> void:
-	if _3v3_lines.is_empty() or _arena == null or _battle_3d_camera == null:
+	if _arena == null or _battle_3d_camera == null:
+		return
+	if _battlefield_kind() == "final" or GameState.round_index == GameState.FINAL_ROUND:
+		var visual_min := _battle_visual_min()
+		var visual_max := _battle_visual_max()
+		for i in _final_lane_walls.size():
+			var sy := lerpf(visual_min.y, visual_max.y, BATTLE_3V3_BOUNDS[i])
+			var p_left := _world_to_arena(_sim_to_world_pos(Vector2(visual_min.x, sy), false))
+			var p_right := _world_to_arena(_sim_to_world_pos(Vector2(visual_max.x, sy), false))
+			var wall := _final_lane_walls[i]
+			wall.position = (p_left + p_right) * 0.5
+			wall.rotation = (p_right - p_left).angle()
+			wall.scale = Vector2(maxf(0.1, p_left.distance_to(p_right) / 1024.0), 0.20)
+			if not wall.is_released() and _should_release_3v3_boundary(i):
+				wall.play_release()
+		return
+	if _3v3_barriers.is_empty():
 		return
 	var visual_min := _battle_visual_min()
 	var visual_max := _battle_visual_max()
 	var x0 := visual_min.x
 	var x1 := visual_max.x
-	for i in _3v3_lines.size():
+	for i in _3v3_barriers.size():
 		var sx := lerpf(x0, x1, BATTLE_3V3_BOUNDS[i])
 		var p_top := _world_to_arena(_sim_to_world_pos(Vector2(sx, visual_min.y), false))
 		var p_bot := _world_to_arena(_sim_to_world_pos(Vector2(sx, visual_max.y), false))
 		var top_y := minf(p_top.y, p_bot.y)
 		var bot_y := maxf(p_top.y, p_bot.y)
 		var mid_x := (p_top.x + p_bot.x) * 0.5
-		if i < _3v3_line_cores.size():
-			_3v3_line_cores[i].points = PackedVector2Array([
-				Vector2(mid_x, top_y),
-				Vector2(mid_x, bot_y),
-			])
-		var glow: CPUParticles2D = _3v3_lines[i]
-		glow.position = Vector2.ZERO
-		var pts := PackedVector2Array()
-		var n := 16
-		for j in n:
-			var t := float(j) / float(n - 1)
-			pts.append(Vector2(mid_x, lerpf(top_y, bot_y, t)))
-		glow.emission_points = pts
-		glow.emitting = true
+		var barrier := _3v3_barriers[i]
+		barrier.position = Vector2(mid_x, (top_y + bot_y) * 0.5)
+		barrier.scale = Vector2(0.42, maxf(0.1, (bot_y - top_y) / 512.0))
+		if not barrier.is_released() and _should_release_3v3_boundary(i):
+			barrier.play_release()
+
+
+func _should_release_3v3_boundary(boundary_index: int) -> bool:
+	var left_lane := boundary_index
+	var right_lane := boundary_index + 1
+	return (
+		_lane_cleared_by("player", left_lane)
+		or _lane_cleared_by("enemy", left_lane)
+		or _lane_cleared_by("player", right_lane)
+		or _lane_cleared_by("enemy", right_lane)
+	)
+
+
+func _lane_cleared_by(team: String, lane: int) -> bool:
+	var own_side: Array = _state.get(team, [])
+	var opposing_team := "enemy" if team == "player" else "player"
+	var opposing_side: Array = _state.get(opposing_team, [])
+	var own_survivor := false
+	for fighter in own_side:
+		if bool(fighter.get("alive", false)) and int(fighter.get("lane", -1)) == lane:
+			own_survivor = true
+			break
+	if not own_survivor:
+		return false
+	for fighter in opposing_side:
+		if bool(fighter.get("alive", false)) and int(fighter.get("lane", -1)) == lane:
+			return false
+	return true
 
 func _add_result_overlay(arena_wrap: Control) -> void:
 	_result_overlay_lbl = Label.new()
