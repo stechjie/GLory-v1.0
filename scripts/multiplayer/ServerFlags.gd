@@ -21,11 +21,24 @@ const DEFAULTS := {
 	"metrics_payload_sizes": false,
 	# 每 N 场战斗采样一次，1 = 每场都测。测量周先用 1，量到 P99 后调大或整个关掉。
 	"metrics_sample_every_n_battles": 1,
-	# 敌方队伍 replay（观战切镜头用）。默认 true = 保持现有行为。
-	# 关掉能立刻省下约一半 replay 出口流量，但老客户端的「观战敌方」会变空——
-	# 那是删功能，不是优化。真正的按需拉取要等第 3 批加客户端 replay_request 通道。
-	# 这个开关的用途是：测量周临时关掉，量出敌方 replay 到底占多少带宽，为第 3 批定优先级。
-	"send_rival_replay": true,
+	# P1 备战经济账本（EconomyLedger）。
+	#
+	# 两段式上线，这是 RFC 里"L4 必须和 L1–L3 一起发布"那条规矩的落地方式：
+	#   economy_ledger_enabled = true   服务端开始记账、随 room_state 下发、
+	#                                   在棋盘提交时与客户端自报值**影子比对**。
+	#                                   此时账本仍**不是**权威 —— 客户端照旧自己算钱。
+	#   economy_ledger_authoritative    账本成为唯一真相：战后结算不再读
+	#                                   snapshot.gold，客户端切成 receipt-only。
+	#
+	# **第二个开关必须等客户端改造完成后才能开。** 只开它而客户端还在自己预扣，
+	# 或者反过来，都会让两边账目分叉。默认全 false = 等于这批改动没上线。
+	"economy_ledger_enabled": false,
+	"economy_ledger_authoritative": false,
+	# 已移除：send_rival_replay
+	# 它和已确认的产品规则「两队 replay 一律全发（玩家要能随时切镜头看另一队）」
+	# 直接冲突 —— 一个生产开关能悄悄破坏产品不变量，本身就是缺陷。
+	# 而它当初的用途（测量周关掉省带宽）在 replay 压缩之后也不成立了：
+	# 实测压缩后一份才 61.8 KB，两份 124 KB，没有省的必要。
 }
 
 static var _values: Dictionary = {}
@@ -74,12 +87,14 @@ static func reload(force: bool) -> void:
 	var mtime := int(FileAccess.get_modified_time(path))
 	if not force and mtime == _last_mtime:
 		return
-	_last_mtime = mtime
 	var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
 	if typeof(parsed) != TYPE_DICTIONARY:
 		# 坏文件不能让开关集体失效（那等于悄悄回滚了一批改动）：保留上一次的好值。
+		# **不更新 _last_mtime**：否则这次坏内容会被记成"已处理"，运维把 JSON 修好
+		# 之后如果 mtime 不变（同秒内改回、或编辑器保留时间戳），就再也不会重读了。
 		push_warning("ServerFlags: invalid JSON at %s, keeping previous values" % path)
 		return
+	_last_mtime = mtime
 	_values = parsed
 	print("[NET] server flags loaded: %s" % JSON.stringify(_values))
 

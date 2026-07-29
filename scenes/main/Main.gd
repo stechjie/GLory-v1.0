@@ -88,10 +88,35 @@ func _on_resume_completed(payload: Dictionary) -> void:
 	if _team_run_state_is_fresh():
 		SaveManager.load_run()
 	# 服务器权威数值覆盖本地
-	GameState.round_index = int(payload.get("round_index", GameState.round_index))
+	# 键名跟着状态信封走（E2）：round_index -> round_id、enemy_team_hp -> rival_team_hp。
+	# 快照现在还多带了连败与 PVE/Boss 计数（C5 缺的那几项）。
+	GameState.round_index = int(payload.get("round_id", GameState.round_index))
 	GameState.team_hp = int(payload.get("team_hp", GameState.team_hp))
-	GameState.enemy_team_hp = int(payload.get("enemy_team_hp", GameState.enemy_team_hp))
+	GameState.enemy_team_hp = int(payload.get("rival_team_hp", GameState.enemy_team_hp))
 	GameState.gold = int(payload.get("gold", GameState.gold))
+	GameState.loss_streak = int(payload.get("loss_streak", GameState.loss_streak))
+	GameState.pve_completed = int(payload.get("pve_completed", GameState.pve_completed))
+	GameState.boss_completed = int(payload.get("boss_completed", GameState.boss_completed))
+	GameState.golden_altar_uses = int(payload.get("altar_uses", GameState.golden_altar_uses))
+	# 宝物以服务端记录为准。磁盘存档可能落后一轮（app 被杀重开），而服务端的
+	# owned_treasures 是 intent 授权出来的唯一真相；未领取的候选也一并接回来，
+	# 否则重连玩家会永远丢掉这一轮的三选一。
+	if payload.has("owned_treasures"):
+		# 走同步 helper 而不是直接赋值：直接赋值会绕过图鉴 mark_seen 与联动解锁。
+		TreasureService.sync_owned_from_server(payload.get("owned_treasures", []) as Array)
+	var resumed_offer: Dictionary = payload.get("treasure_offer", {}) as Dictionary
+	if resumed_offer.is_empty():
+		# 服务端说没有待领取的候选 —— 必须**主动清掉**本地旧的三选一界面。
+		# 只在有 offer 时才写，会让掉线前那次未领取的 UI 一直留在屏幕上：玩家点下去
+		# 服务端已经 erase 过 offer，只会拿到 no_offer，表现为「点了没反应」。
+		GameState.pending_treasure = {"active": false, "round": 0, "candidates": [], "refresh_index": 0}
+	else:
+		GameState.pending_treasure = {
+			"active": true,
+			"round": int(resumed_offer.get("round", 0)),
+			"candidates": (resumed_offer.get("candidates", []) as Array).duplicate(),
+			"refresh_index": int(resumed_offer.get("refresh_index", 0)),
+		}
 	# 商店按恢复后的当前回合重新滚：旧商店在重连/跨回合后无意义，磁盘存档也可能是空的。
 	# 清空后 PrepScreen._ready 会自动 _roll_shop() 出一批新的。
 	GameState.clear_shop()
@@ -211,7 +236,9 @@ func _on_team_reconnect_requested() -> void:
 	if rc_token.is_empty() or rc_address.is_empty():
 		return
 	GameState.team_mode = true
-	NetworkService.begin_resume_from_disk(rc_token, rc_address)
+	# 端口必须用存下来的那个：座位 token 是进程内的，多进程下连错端口 = 凭证失效。
+	# 老存档没有 port 字段，退化为默认端口（等价于单进程时的旧行为）。
+	NetworkService.begin_resume_from_disk(rc_token, rc_address, int(rc.get("port", NetworkService.DEFAULT_PORT)))
 
 func _on_team_offline_requested() -> void:
 	# 纯离线自测：断开任何联机会话，team_active 保持 false，进大厅走本地槽位。
@@ -277,7 +304,7 @@ func _on_lobby_back() -> void:
 func _show_prep() -> void:
 	# 保底：对局已结束（最终局打完）就不再进备战，直接游戏结束界面。
 	# 堵住任何"结束后又被导航回备战"的残留路径（配合服务器封顶/不再开回合）。
-	if GameState.team_mode and GameState.final_battle_complete:
+	if GameState.team_mode and GameState.final_round_played:
 		_show_game_over()
 		return
 	_clear()
@@ -385,14 +412,27 @@ func _on_public_token_resume_requested(token_id: String) -> void:
 	_pending_public_token = token_id
 	_start_team_menu_action("resume_public")
 
+# 这次动作该连哪个服务器进程（多进程分片）。
+# "join" 是唯一一个目标进程由数据决定的动作：房间号里编了分片号，必须连到那个
+# 分片，否则会在错误的进程上找不到房间。其余动作（建房/看列表/拿短码）连哪个
+# 都行 —— 现在按默认分片，以后接了「分配端点」由它来决定。
+func _target_port_for_action(action: String) -> int:
+	if action == "join":
+		return NetworkConfig.port_of_room(_pending_team_room_id)
+	return NetworkService.DEFAULT_PORT
+
 func _start_team_menu_action(action: String) -> void:
 	_pending_team_menu_action = action
-	if NetworkService.team_active and NetworkService.state == NetworkService.SessionState.READY and NetworkService.team_local_slot < 0:
+	var target_port := _target_port_for_action(action)
+	# 已连着、但连的是别的分片：必须先断开再连对的那个。
+	if NetworkService.team_active and NetworkService.remote_port != target_port:
+		NetworkService.disconnect_session()
+	elif NetworkService.team_active and NetworkService.state == NetworkService.SessionState.READY and NetworkService.team_local_slot < 0:
 		_run_pending_team_menu_action()
 		return
 	if NetworkService.team_active and NetworkService.team_local_slot >= 0:
 		NetworkService.disconnect_session()
-	if not NetworkService.team_join(NetworkService.DEFAULT_HOST, NetworkService.DEFAULT_PORT):
+	if not NetworkService.team_join(NetworkService.DEFAULT_HOST, target_port):
 		if is_instance_valid(_menu) and _menu.has_method("show_connection_error"):
 			_menu.show_connection_error(NetworkService.last_error)
 		return
@@ -470,15 +510,15 @@ func _on_team_battle_finished(result: Dictionary) -> void:
 		return
 	var completed_round := GameState.round_index
 	var kind := str(result.get("kind", "pve"))
-	var player_wins := bool(result.get("player_wins", false))
+	# PvP 是规范化棋局（A 队 = "player"）。本地在 B 队时结果要镜像。
+	# 视角反转走 TeamOutcome（C16），与服务端结算、BattleUI 字幕共用同一实现。
+	var local_team := TeamOutcome.TEAM_A
+	if NetworkService.team_active and GameConstants.team_of_slot(NetworkService.team_local_slot) == GameConstants.TEAM_BLUE:
+		local_team = TeamOutcome.TEAM_B
+	var player_wins := TeamOutcome.viewer_wins_battle(result, kind, local_team)
 	var surviving_enemies := int(result.get("enemy_alive", result.get("enemy_count", 1)))
-	# PvP uses a canonical arrangement (team A = "player"). If I'm on team B,
-	# the outcome is mirrored: their win is my loss, and the survivors that hurt
-	# my team are team A's (the "player" side).
-	# 同款视角反转也在 BattleUI._local_player_wins（战斗字幕/总结显示用），
-	# 改这里的条件时必须同步那边。
-	if kind == "pvp" and NetworkService.team_active and GameConstants.team_of_slot(NetworkService.team_local_slot) == GameConstants.TEAM_BLUE:
-		player_wins = not player_wins
+	# 伤到本队的存活者在 B 队视角下是 A 队（"player" 侧）那批。
+	if kind == "pvp" and local_team == TeamOutcome.TEAM_B:
 		surviving_enemies = int(result.get("player_alive", 0))
 	# Host stamps BOTH teams' damage this round into the replay result so every
 	# client can drive its own team HP and the rival team HP deterministically.
@@ -534,16 +574,24 @@ func _on_team_battle_finished(result: Dictionary) -> void:
 	var run_over := GameState.team_hp <= 0 or GameState.enemy_team_hp <= 0 or completed_round >= GameState.FINAL_ROUND
 	if run_over:
 		if completed_round >= GameState.FINAL_ROUND:
-			GameState.final_battle_complete = true
-		if GameState.team_hp <= 0 and GameState.enemy_team_hp <= 0:
-			GameState.team_run_won = player_wins if kind == "pvp" else GameState.team_hp >= GameState.enemy_team_hp
-		elif GameState.team_hp <= 0:
-			GameState.team_run_won = false
-		elif GameState.enemy_team_hp <= 0:
-			GameState.team_run_won = true
-		else:
-			# Reached round 21 with both alive: higher remaining HP wins.
-			GameState.team_run_won = GameState.team_hp >= GameState.enemy_team_hp
+			GameState.final_round_played = true
+		# 整局归属走 TeamOutcome（C16）。此前这里落进 else 分支按剩余水晶生命判，
+		# 而服务端第 21 回合按最终战结果判 —— 两条规则会给出不同答案。
+		# TeamOutcome 的入参是 A/B 绝对视角，所以本地的 team_hp/player_wins
+		# 要先换算回 A 队视角再传进去。
+		var hp_a := GameState.team_hp if local_team == TeamOutcome.TEAM_A else GameState.enemy_team_hp
+		var hp_b := GameState.enemy_team_hp if local_team == TeamOutcome.TEAM_A else GameState.team_hp
+		var a_wins := player_wins if local_team == TeamOutcome.TEAM_A else not player_wins
+		GameState.team_run_outcome = TeamOutcome.run_outcome({
+			"completed_round": completed_round,
+			"final_round": GameState.FINAL_ROUND,
+			"hp_a": hp_a,
+			"hp_b": hp_b,
+			"kind": kind,
+			"battle_a_wins": a_wins,
+			"battle_is_draw": bool(result.get("is_draw", false)),
+		})
+		GameState.team_run_won = TeamOutcome.team_won_run(GameState.team_run_outcome, local_team)
 		SaveManager.save_run()
 		_show_game_over()
 		return
@@ -553,9 +601,14 @@ func _on_team_battle_finished(result: Dictionary) -> void:
 
 func _finish_server_authoritative_team_battle(result: Dictionary) -> void:
 	if result.has("error"):
-		print("[NET] team battle failed reason=%s" % str(result.get("error", "")))
-		NetworkService.disconnect_session()
-		_show_menu()
+		# **技术失败，不是玩家退出**（B8/E3）：replay 没等到、解包失败之类。
+		# 此前这里调 disconnect_session()，等于清掉重连凭证 —— 而服务器那边
+		# 座位还好好留着。现在进可恢复状态，让重连流程去接。
+		var reason := str(result.get("error", "replay_timeout"))
+		print("[NET] team battle failed reason=%s class=%s" % [reason, NetError.class_name_of(reason)])
+		NetworkService.enter_recoverable_failure(reason)
+		if NetworkService.state != NetworkService.SessionState.RECONNECTING:
+			_show_menu()
 		return
 	var completed_round := GameState.round_index
 	var waited := 0.0
@@ -566,9 +619,11 @@ func _finish_server_authoritative_team_battle(result: Dictionary) -> void:
 		# 正在重连：不要拆会话回菜单，恢复流程会接管导航（resume 后落回备战）
 		if NetworkService.state == NetworkService.SessionState.RECONNECTING:
 			return
+		# 同上：结算没等到是传输问题，不是"玩家要退出"。
 		print("[NET] match_state timeout round=%d" % completed_round)
-		NetworkService.disconnect_session()
-		_show_menu()
+		NetworkService.enter_recoverable_failure("match_state_timeout")
+		if NetworkService.state != NetworkService.SessionState.RECONNECTING:
+			_show_menu()
 		return
 	var state_payload := NetworkService.latest_match_state.duplicate(true)
 	_apply_team_match_state_payload(state_payload, result)
@@ -592,13 +647,19 @@ func _apply_team_match_state_payload(state_payload: Dictionary, result: Dictiona
 	GameState.pve_completed = int(state_payload.get("pve_completed", GameState.pve_completed))
 	GameState.boss_completed = int(state_payload.get("boss_completed", GameState.boss_completed))
 	GameState.loss_streak = int(state_payload.get("loss_streak", GameState.loss_streak))
-	GameState.final_battle_complete = bool(state_payload.get("final_battle_complete", GameState.final_battle_complete))
+	GameState.final_round_played = bool(state_payload.get("final_round_played", GameState.final_round_played))
+	# run_outcome 是权威的绝对归属（TEAM_A/TEAM_B/DRAW）；team_run_won 只是本座位
+	# 视角的派生布尔，单看它分不出"输了"和"平局"。
+	GameState.team_run_outcome = int(state_payload.get("run_outcome", GameState.team_run_outcome))
 	GameState.team_run_won = bool(state_payload.get("team_run_won", GameState.team_run_won))
 	if not result.is_empty():
 		_apply_post_battle_unit_outcomes(result)
 		GameState.battle_history.append(result)
 	GameState.round_index = int(state_payload.get("round_index", GameState.round_index))
 	GameState.pending_treasure = (state_payload.get("pending_treasure", {"active": false, "round": 0, "candidates": [], "refresh_index": 0}) as Dictionary).duplicate(true)
+	# 结算已经落到本地状态上了，现在才回执（E3）。服务器要等所有在线真人都确认
+	# 才推进下一轮 —— 此前任意一个人按准备就能把还在看回放的人一起拽走（C7）。
+	NetworkService.send_result_ack(str(state_payload.get("battle_id", "")))
 	GameState.reset_shop_refreshes()
 	GameState.clear_shop()
 	GameState.clear_mercenaries()
@@ -640,12 +701,14 @@ func _on_battle_finished(result: Dictionary = {}) -> void:
 
 func _game_over_title() -> String:
 	if GameState.team_mode:
+		if TeamOutcome.is_draw(GameState.team_run_outcome):
+			return tr("gameover_final_draw")
 		return tr("gameover_final_win") if GameState.team_run_won else tr("gameover_final_lost")
 	if GameState.player_formation_hp <= 0:
 		return tr("gameover_lost")
 	if GameState.enemy_formation_hp <= 0:
 		return tr("gameover_win")
-	if GameState.final_battle_complete:
+	if GameState.final_round_played:
 		var last := _last_battle_result()
 		if bool(last.get("player_wins", false)):
 			return tr("gameover_final_win")
@@ -655,6 +718,8 @@ func _game_over_title() -> String:
 func _game_over_body() -> String:
 	if GameState.team_mode:
 		var team_result := tr("gameover_result_win") if GameState.team_run_won else tr("gameover_result_lose")
+		if TeamOutcome.is_draw(GameState.team_run_outcome):
+			team_result = tr("gameover_result_draw")
 		return tr("gameover_team_body") % [GameState.round_index, team_result, GameState.team_hp]
 	var last := _last_battle_result()
 	var result_text := tr("gameover_result_win") if bool(last.get("player_wins", false)) else tr("gameover_result_lose")

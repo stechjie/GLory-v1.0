@@ -1719,7 +1719,9 @@ func _refresh_left_panel() -> void:
 	# Owned-treasure logos now live next to the money bag (see _owned_treasure_box).
 	if GameState.owned_treasures.has("money_golden_altar"):
 		var altar := Button.new()
-		altar.text = tr("ui_altar") % [5, GameState.golden_altar_uses]
+		# 显示实际到账金额。此前硬编码了 5，而 ALTAR_GOLD = 50 —— 玩家看到的和
+		# 拿到的差了一个数量级。改成读常量，以后调数值不会再漏改这里。
+		altar.text = tr("ui_altar") % [NetworkService.ALTAR_GOLD, GameState.golden_altar_uses]
 		var altar_hp := GameState.team_hp if GameState.team_mode else GameState.player_formation_hp
 		altar.disabled = altar_hp <= NetworkService.ALTAR_MIN_HP or GameState.golden_altar_uses >= NetworkService.ALTAR_MAX_USES_PER_ROUND
 		altar.pressed.connect(_on_golden_altar)

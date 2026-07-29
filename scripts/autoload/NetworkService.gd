@@ -22,6 +22,11 @@ const TEAM_MAX_CLIENTS := 512
 const TEAM_SLOTS := 6
 const CLEANUP_INTERVAL_SEC := 5.0
 const LOBBY_EMPTY_TTL_SEC := 60.0
+# 全房零在线真人、但仍有有效 token 时的保留时长（B11，产品确认值）。
+# 期间房间转 suspended：不推进阶段、不启动新模拟、不进公开房间列表。
+# 任一有效 token 重连即取消；到期则关房并清理 token / 短码 / 缓存映射。
+# 依赖 C20 的单调时钟 —— 用墙钟的话一次 NTP 校时就能让它提前或永不到期。
+const ROOM_SUSPEND_GRACE_SEC := 300.0
 const PREP_TIMEOUT_SEC := 30.0 * 60.0
 const BATTLE_TIMEOUT_SEC := 5.0 * 60.0
 const RESULT_TIMEOUT_SEC := 10.0 * 60.0
@@ -30,7 +35,12 @@ const ROOM_PREP := "prep"
 const ROOM_BATTLE := "battle"
 const ROOM_RESULT := "result"
 const ROOM_CLOSED := "closed"
-const REPLAY_TIMEOUT_SEC := 20.0
+# 临时缓解（B7），不是修复。必须 > BOARD_SUBMIT_TIMEOUT_SEC(30) + 一次结算耗时 +
+# replay 传输时间，否则客户端会在服务器看门狗介入之前就先放弃——那样看门狗、座位
+# 宽限、僵尸清道夫三条补丁全部形同虚设。
+# 真正的修法是 board ACK / 服务端进度 + battle_id 驱动（归最终同步协议批）；
+# 60 秒只是让"客户端先于服务器放弃"这个窗口关掉，阈值最终由 P99 实测确定。
+const REPLAY_TIMEOUT_SEC := 60.0
 # --- 断线重连 ---
 const HEARTBEAT_INTERVAL_SEC := 3.0    # 客户端 ping 间隔
 const HEARTBEAT_TIMEOUT_SEC := 20.0    # 超过没消息判掉线（双端）。12s 时被服务器自身
@@ -122,7 +132,30 @@ const RATE_LIMITS := {          # action -> 每 RATE_WINDOW_SEC 内允许次数
 	"kick": 10,
 	"move": 30,
 	"altar": 12,          # 每回合上限 3 次，留足重试余量
+	"treasure_choice": 6, # 每个宝物轮只该选一次，留重试余量
+	"treasure_refresh": 12,
+	"result_ack": 8,      # 每回合一次，留重试余量
+	"leave_intent": 6,
+	# 经济 intent（P1）：备战期买卖合成刷新是玩家点得最快的一类操作，
+	# 额度必须宽（正常连点会撞上限），但仍要有上限 —— 每条 intent 都会写账本。
+	"economy": 60,
+	# 心跳：客户端 3 秒一次，10 秒窗口正常 3~4 次，给一倍余量。
+	# 注意它走 _rate_ok_soft（不计 strike）——心跳超频更可能是客户端 bug 或时钟
+	# 抖动，不是攻击；用累计 strike 去踢人等于拿自己人的连接赌。
+	"ping": 8,
+	# 重连：直连入口必须和短码入口共用同一个身份配额，否则客户端绕开
+	# _rpc_public_resume_request 直接打 _rpc_resume_request 就把 A6 的保护全跳过了。
+	"resume": 5,
 }
+
+# 宝物 id 长度硬上限。数据表里的 id 实际都远短于此；它挡的是「用一个超长字符串
+# 做比较 / 拼接 / 写日志」这条放大路径（A3/R4）。
+const MAX_TREASURE_ID_LEN := 64
+# 会话 token 长度硬上限。_make_token 产出 64 个 hex 字符；这里留一倍余量，
+# 挡的是「拿超长字符串当字典键」的分配放大面（A3/R4）。
+const MAX_TOKEN_LEN := 128
+# 玩家手输的短码。_make_public_token 固定 10 位，留余量给空格/大小写处理。
+const MAX_PUBLIC_ID_LEN := 24
 const RATE_STRIKES_BEFORE_KICK := 3   # 连续超限这么多次就断开
 const MAX_ROOMS := 200                # 全服房间数熔断
 const MAX_CLIENT_LOG_BYTES := 4000    # 单次 client_log 总字节上限（不只限行数）
@@ -141,8 +174,123 @@ func _ready() -> void:
 	# team 模式下客户端只会 rpc_id(1,...)，关掉它不影响任何现存客户端。
 	# 必须在 create_server 之前、任何 peer 接入之前设置。
 	multiplayer.server_relay = false
+	_setup_auth()
 	if _should_boot_dedicated_server():
-		call_deferred("start_dedicated_server")
+		_shard_index = _cmdline_int("--shard", 0)
+		# 端口默认按分片推导（SERVER_PORT + shard），也允许 --port 显式覆盖。
+		call_deferred("start_dedicated_server", _cmdline_int("--port", NetworkConfig.port_of_shard(_shard_index)))
+
+# --- 握手（E1，对应 C10）-----------------------------------------------------
+# 此前协议号唯一的实际拦截点是 `validate_team_snapshot` —— 也就是说版本不匹配的
+# 客户端能**连上、进房、组队、打完整个备战**，直到第一次提交棋盘才被踢，
+# 顺带把队友卡在等棋盘直到看门狗。握手把这道门提到连接建立之前。
+#
+# 三条实现约束（写下来，因为每条都能让整套认证形同虚设）：
+#   ① `auth_callback` 必须在给 `multiplayer_peer` 赋值**之前**配置，
+#      否则先连上来的 peer 直接绕过认证；
+#   ② 必须设 `auth_timeout`，否则半开的认证连接会一直挂着 —— 那本身就是 A13
+#      的连接槽面，而且是个不需要发任何包就能占住槽位的版本；
+#   ③ 认证中的 peer 要有数量上限和 payload 字节上限。
+#
+# 按已确认的决定，E1 **只校验 protocol_version**。data/sim manifest 的字段
+# 已经在协议里留好（允许为空、不参与校验），等打包流程能生成指纹了再启用 ——
+# 这样以后加的时候不用再升一次协议。
+const AUTH_TIMEOUT_SEC := 8.0
+const AUTH_MAX_PAYLOAD_BYTES := 512
+const AUTH_MAX_PENDING := 64
+
+var _auth_pending: Dictionary = {}   # peer_id -> 开始认证的时刻（单调）
+
+func _setup_auth() -> void:
+	var scene_mp := multiplayer as SceneMultiplayer
+	if scene_mp == null:
+		push_warning("[NET] MultiplayerAPI is not SceneMultiplayer; handshake disabled")
+		return
+	scene_mp.auth_timeout = AUTH_TIMEOUT_SEC
+	scene_mp.auth_callback = _on_auth_payload
+	if not scene_mp.peer_authenticating.is_connected(_on_peer_authenticating):
+		scene_mp.peer_authenticating.connect(_on_peer_authenticating)
+	if not scene_mp.peer_authentication_failed.is_connected(_on_peer_authentication_failed):
+		scene_mp.peer_authentication_failed.connect(_on_peer_authentication_failed)
+
+func _client_hello_bytes() -> PackedByteArray:
+	# manifest 字段现在恒为空串：协议里占好位置，E1 不参与校验。
+	return var_to_bytes({
+		"protocol": NetworkConfig.NETWORK_PROTOCOL_VERSION,
+		"build": "",
+		"data_manifest": "",
+		"sim_manifest": "",
+	})
+
+func _on_peer_authenticating(id: int) -> void:
+	if _dedicated_server:
+		# 服务端：只登记并做并发上限，等客户端把 hello 发过来
+		if _auth_pending.size() >= AUTH_MAX_PENDING:
+			_net_log("auth refused peer=%d reason=too_many_pending (%d)" % [id, _auth_pending.size()])
+			multiplayer.multiplayer_peer.disconnect_peer(id)
+			return
+		_auth_pending[id] = _now()
+		return
+	# 客户端：主动把 hello 发给服务器
+	var scene_mp := multiplayer as SceneMultiplayer
+	if scene_mp != null:
+		scene_mp.send_auth(id, _client_hello_bytes())
+
+func _on_auth_payload(id: int, data: PackedByteArray) -> void:
+	var scene_mp := multiplayer as SceneMultiplayer
+	if scene_mp == null:
+		return
+	if not _dedicated_server:
+		# 客户端收到服务端的裁决
+		var verdict := _decode_auth(data)
+		if bool(verdict.get("ok", false)):
+			scene_mp.complete_auth(id)
+			return
+		# 被拒：先把原因摆到 UI 上，再自己断开。
+		# 服务端故意不主动断，靠 auth_timeout 兜底 —— 那样"发拒绝"和"断连接"
+		# 之间没有竞态，客户端一定能读到原因。
+		var code := str(verdict.get("code", "protocol_mismatch"))
+		_net_log("handshake rejected by server: %s (%s)" % [code, NetError.class_name_of(code)])
+		last_error = tr("net_err_handshake") % code
+		state = SessionState.FAILED
+		reset_peer_only()
+		session_changed.emit()
+		return
+
+	# 服务端：校验 hello
+	_auth_pending.erase(id)
+	if data.size() > AUTH_MAX_PAYLOAD_BYTES:
+		_net_log("auth rejected peer=%d reason=payload_too_large bytes=%d" % [id, data.size()])
+		scene_mp.send_auth(id, _auth_reject("protocol_mismatch"))
+		return
+	var hello := _decode_auth(data)
+	var client_protocol := int(hello.get("protocol", -1))
+	if client_protocol != NetworkConfig.NETWORK_PROTOCOL_VERSION:
+		_net_log("auth rejected peer=%d reason=protocol_mismatch client=%d server=%d" % [
+			id, client_protocol, NetworkConfig.NETWORK_PROTOCOL_VERSION])
+		scene_mp.send_auth(id, _auth_reject("protocol_mismatch"))
+		return
+	scene_mp.send_auth(id, var_to_bytes({"ok": true}))
+	scene_mp.complete_auth(id)
+
+func _auth_reject(code: String) -> PackedByteArray:
+	return var_to_bytes({"ok": false, "code": code, "class": NetError.class_name_of(code)})
+
+func _decode_auth(data: PackedByteArray) -> Dictionary:
+	if data.is_empty() or data.size() > AUTH_MAX_PAYLOAD_BYTES:
+		return {}
+	# bytes_to_var（非 _with_objects）：认证阶段的数据来自未经验证的对端，
+	# 绝不能给它构造对象的机会。
+	var value = bytes_to_var(data)
+	return value if typeof(value) == TYPE_DICTIONARY else {}
+
+func _on_peer_authentication_failed(id: int) -> void:
+	_auth_pending.erase(id)
+	_net_log("auth timeout peer=%d" % id)
+	if not _dedicated_server:
+		last_error = tr("net_err_handshake") % "auth_timeout"
+		state = SessionState.FAILED
+		session_changed.emit()
 
 func _process(delta: float) -> void:
 	# 冻结宽恕（双端）：进程刚被卡住过（服务器 CPU 被限速时实测冻 10~22 秒），
@@ -156,11 +304,20 @@ func _process(delta: float) -> void:
 			_last_pong_at = proc_now
 	_last_process_at = proc_now
 	if _dedicated_server:
+		# 排在最前：本帧要算的战斗先算完，后面的心跳/清理才是基于最新状态的。
+		# 每帧最多一个房间（见 _drain_finalize_queue 的说明）。
+		_drain_finalize_queue()
 		ServerFlags.poll_reload(proc_now)
 		_cleanup_elapsed += delta
 		if _cleanup_elapsed >= CLEANUP_INTERVAL_SEC:
 			_cleanup_elapsed = 0.0
 			_cleanup_rooms()
+		# 房间快照（B5）：只在有变更时写，且限速。全量序列化跑在同步主循环上，
+		# 无脑每帧写就是给自己造一个新的冻结源（和 B4 同一类问题）。
+		_snapshot_accum += delta
+		if _rooms_dirty and _snapshot_accum >= ROOM_SNAPSHOT_INTERVAL_SEC:
+			_snapshot_accum = 0.0
+			_save_rooms_snapshot()
 		_reserve_tick_accum += delta
 		if _reserve_tick_accum >= 1.0:
 			_reserve_tick_accum = 0.0
@@ -168,6 +325,8 @@ func _process(delta: float) -> void:
 			_tick_heartbeat_timeouts()
 			_reap_zombie_peers()
 			_tick_board_watchdog()
+			_tick_idle_peers()
+			_tick_leave_tombstones()
 	# 客户端心跳：比干等 ENet 超时更快发现半开连接
 	if team_active and not is_host and state == SessionState.READY and multiplayer.multiplayer_peer != null:
 		_ping_accum += delta
@@ -185,11 +344,10 @@ func _process(delta: float) -> void:
 				# 预警：网络已静默数秒但还没到断线线——这行是"掉线前现场"的关键证据
 				_pong_gap_logged = true
 				_net_log("pong silence %.1fs (network degrading)" % silence)
+	_tick_pending_leave(delta)
+	_tick_tx_retry(delta)
 	if state == SessionState.RECONNECTING:
-		_reconnect_retry_left -= delta
-		if _reconnect_retry_left <= 0.0:
-			_reconnect_retry_left = RECONNECT_RETRY_SEC
-			_attempt_reconnect()
+		_tick_reconnect(delta)
 		return
 	if state != SessionState.JOINING:
 		return
@@ -207,6 +365,63 @@ func _process(delta: float) -> void:
 # 工具需要服务器逻辑时请显式调用 enter_test_server_mode()（不开监听 socket）。
 func _should_boot_dedicated_server() -> bool:
 	return "--server" in OS.get_cmdline_args() or "--dedicated-server" in OS.get_cmdline_args()
+
+# --- 房间持久化（B5）---------------------------------------------------------
+# `systemctl restart` 会杀掉进程内的全部房间和 token，所有在场对局一起没。
+# 这让"有人在线时永远不能更新"变成硬约束。最小版：把房间定期落盘，
+# 重启后读回来，让"部署 = 全场掉线"降级成"卡几秒 + 各自重连"。
+#
+# **只存"恢复对局必需"的字段**。`boards` 和 `last_board` 是缓存类字段
+# （每人一份含完整单位 def 的快照，一个房间就能到 MB 级），存它们会让快照
+# 大两个数量级，而丢了最坏也只是看门狗转 AI —— 不值得。
+#
+# 时间字段一律存**相对量**，不存单调时钟的绝对值：单调时钟跨进程重启就归零，
+# 存绝对值等于重启后所有 TTL 立刻到期或永不到期（见 C20 的说明）。
+const ROOM_SNAPSHOT_PATH := "user://server_rooms.bin"
+const ROOM_SNAPSHOT_VERSION := 1
+const ROOM_SNAPSHOT_INTERVAL_SEC := 5.0
+
+# 白名单：只有这些字段进快照。加字段时要显式想清楚它该不该持久化。
+const PERSISTED_ROOM_FIELDS := [
+	"id", "state", "slot_states", "ready",
+	"slot_gold", "team_hp", "pve_completed", "boss_completed", "team_loss_streak",
+	"run_over", "last_match_state", "shared_seed", "round_index",
+	"seat_tokens", "seat_public_id", "join_seq", "next_join_seq",
+	"leader_slot", "altar_uses", "treasure_offer", "owned_treasures",
+	"prep_mercs", "suspended",
+	# state_seq 必须一起存（信封 E2）：重启后从 0 重来的话，客户端手里
+	# 还留着重启前的号，会把新包当迟到包丢掉。epoch 变了是第二道防线，
+	# 但两条都在才稳。
+	"state_seq",
+	# tx_log 必须一起存（信封 E4）：重启后客户端会重发还没拿到回执的交易，
+	# 丢了回执日志就等于同一笔宝物/祭坛被执行两次。定长 16/座位，代价可忽略。
+	"tx_log",
+	# 账本必须持久化：它是"这个人还剩多少钱、买过什么"的唯一记录（P1）。
+	# 丢了就只能拿客户端自报值重建 —— 那正是这套东西要消灭的东西。
+	"prep",
+]
+# 存相对量的时间字段：保存时转成"已过去多久"，读回来用新的单调基准重建。
+const PERSISTED_ELAPSED_FIELDS := ["last_activity_at", "state_started_at", "created_at", "empty_since"]
+
+var _server_epoch := 0
+var _rooms_dirty := false
+var _snapshot_accum := 0.0
+
+# 本进程负责的分片号（多进程扩容用）。0 = 单进程/第一个分片。
+# 房间号会把它编进去，客户端据此知道该连哪个进程 —— 见 NetworkConfig 的说明。
+var _shard_index := 0
+
+# 解析 `--key=value` 形式的命令行参数。
+# 不用 OS.get_cmdline_user_args()：那个只认 `--` 之后的部分，而 systemd 单元里
+# 直接写 `--server --shard=2` 更顺手，也和现有的 `--server` / `--flags=` 写法一致。
+func _cmdline_int(key: String, fallback: int) -> int:
+	var prefix := key + "="
+	for arg in OS.get_cmdline_args():
+		if str(arg).begins_with(prefix):
+			var raw := str(arg).substr(prefix.length())
+			if raw.is_valid_int():
+				return int(raw)
+	return fallback
 
 # 供 tools/ 下的 in-process 工具节点使用：只打开服务器侧逻辑（房间/座位/结算），
 # 不创建 ENet peer、不占端口。因此多个工具可以并行跑，也不会与真服务器抢 8080。
@@ -227,7 +442,10 @@ func start_dedicated_server(port: int = DEFAULT_PORT) -> bool:
 	# 小机型(GCP 突发积分)积分耗尽后被限速到卡死、连 SSH 都进不去、只能 reset。
 	# 服务器只跑房间/心跳/清理，30 FPS 绰绰有余，限帧后 CPU 占用降到几乎为 0。
 	Engine.max_fps = 30
-	_net_log("server starting protocol=%d port=%d max_fps=%d" % [NetworkConfig.NETWORK_PROTOCOL_VERSION, port, Engine.max_fps])
+	_net_log("server starting protocol=%d shard=%d port=%d max_fps=%d room_id_range=[%d,%d]" % [
+		NetworkConfig.NETWORK_PROTOCOL_VERSION, _shard_index, port, Engine.max_fps,
+		_shard_index * NetworkConfig.SHARD_ID_STRIDE + 100000,
+		_shard_index * NetworkConfig.SHARD_ID_STRIDE + 999999])
 	return team_host(port, true)
 
 # --- 3v3 team lobby --------------------------------------------------------
@@ -242,6 +460,7 @@ func team_host(port: int = DEFAULT_PORT, dedicated: bool = false) -> bool:
 	team_active = true
 	remote_port = port
 	var p := ENetMultiplayerPeer.new()
+	# 不传 max_channels（B9）：默认就是 ENet 上限 255，传具体数字只会调低上限。
 	var err := p.create_server(port, TEAM_MAX_CLIENTS)
 	if err != OK:
 		state = SessionState.FAILED
@@ -260,7 +479,12 @@ func team_host(port: int = DEFAULT_PORT, dedicated: bool = false) -> bool:
 	_team_peer_slot.clear()
 	last_error = ""
 	if dedicated:
-		_net_log("server started protocol=%d port=%d" % [NetworkConfig.NETWORK_PROTOCOL_VERSION, port])
+		# server_epoch 用墙钟秒：单调时钟每次重启都从 0 开始，两次重启会撞，
+		# 而这个值的用途正是"识别出服务器重启过了"（见状态信封 RFC）。
+		_server_epoch = int(_wall_now())
+		_load_rooms_snapshot()
+		_net_log("server started protocol=%d port=%d epoch=%d rooms=%d" % [
+			NetworkConfig.NETWORK_PROTOCOL_VERSION, port, _server_epoch, _rooms.size()])
 	session_changed.emit()
 	team_lobby_changed.emit()
 	return true
@@ -315,7 +539,26 @@ func _team_next_free_slot() -> int:
 			return i
 	return -1
 
+# 所有**时长**语义一律走单调时钟（C20）。
+#
+# 旧实现返回 `Time.get_unix_time_from_system()`（系统墙钟），而它参与心跳超时、
+# 限流窗口、房间 TTL、座位宽限、重连 deadline —— 全是"两个时刻相减"的用法。
+# 墙钟会被 NTP 校时和手工改时间拽动：
+#   * 向前跳 → 所有计时瞬间"超时"，全场被误踢（和服务器冻结同款雪崩）；
+#   * 向后跳 → 清理与限流长期停滞，房间和限流桶都回收不了。
+# `Time.get_ticks_msec()` 是进程启动以来的毫秒数，不受校时影响。
+#
+# 边界（写进文档 C20）：
+#   * 日志时间继续用墙钟（`_net_log` 走 `get_datetime_string_from_system`），
+#     单调值对人不可读；
+#   * 这个值**跨进程重启就失效**，未来做房间持久化时不能直接存裸 deadline，
+#     必须存"剩余时长"或重启时重新基准化；
+#   * 已有房间不能热重载这个改动，必须重启服务器。
 func _now() -> float:
+	return float(Time.get_ticks_msec()) / 1000.0
+
+# 需要人类可读/跨进程可比的绝对时间时用这个（目前只有日志与将来的持久化）。
+func _wall_now() -> float:
 	return Time.get_unix_time_from_system()
 
 # --- 限流 -------------------------------------------------------------------
@@ -323,7 +566,13 @@ func _now() -> float:
 # 注意能力边界：RPC 参数在进入本函数前已被引擎反序列化，所以这里挡不住「一个巨大
 # Variant 的解码开销」——那一层要靠 NetProtocol 的容器上限 + 第 3 批的字节协议。
 # 本函数挡的是「同一个动作被高频重复调用」。
-func _rate_ok(peer_id: int, action: String) -> bool:
+# count_strike=false：超限只丢弃这一次调用，不累计 strike、不断开连接。
+# 用于心跳这类「超频更可能是客户端 bug 或时钟抖动而非攻击」的动作——拿累计 strike
+# 去踢心跳过快的人，等于用自己人的连接赌一个还没实测过的阈值。
+#
+# 能力边界（A8）：这只挡回包放大。恶意客户端仍可无限高频发包，反序列化与 handler
+# 调用的开销照旧，连接也一直占着。入包侧要靠连接准入（A13）和包级字节预算（R4）。
+func _rate_ok(peer_id: int, action: String, count_strike: bool = true) -> bool:
 	if not _dedicated_server:
 		return true
 	var limit := int(RATE_LIMITS.get(action, 20))
@@ -337,6 +586,11 @@ func _rate_ok(peer_id: int, action: String) -> bool:
 	_rate_buckets[peer_id] = buckets
 	if int(entry[0]) <= limit:
 		return true
+	if not count_strike:
+		# 只在窗口内第一次超限时记一行，否则高频动作超限本身就成了日志放大器。
+		if int(entry[0]) == limit + 1:
+			_net_log("rate limit (soft) peer=%d action=%s count=%d/%d" % [peer_id, action, int(entry[0]), limit])
+		return false
 	var strikes := int(_rate_strikes.get(peer_id, 0)) + 1
 	_rate_strikes[peer_id] = strikes
 	_net_log("rate limit peer=%d action=%s count=%d/%d strike=%d" % [peer_id, action, int(entry[0]), limit, strikes])
@@ -349,6 +603,27 @@ func _rate_ok(peer_id: int, action: String) -> bool:
 func _rate_forget(peer_id: int) -> void:
 	_rate_buckets.erase(peer_id)
 	_rate_strikes.erase(peer_id)
+
+# 不可信字符串进日志前必须过这里（A3/R4/R7）。
+# 三件事:① 截断——不给对方用一个超长 id 把 journald 和磁盘刷爆的机会;
+# ② 转义换行与控制字符——否则客户端可以伪造出看起来像服务器自己打的日志行;
+# ③ 只保留可打印 ASCII 之外的字节数统计，不原样回显。
+const LOG_UNTRUSTED_MAX := 32
+
+func _log_safe(value: Variant) -> String:
+	var raw := str(value)
+	var clipped := raw.substr(0, LOG_UNTRUSTED_MAX)
+	var out := ""
+	for i in clipped.length():
+		var c := clipped[i]
+		var code := c.unicode_at(0)
+		if code < 32 or code == 127:
+			out += "."          # 换行/回车/控制字符一律吃掉，防日志注入
+		else:
+			out += c
+	if raw.length() > LOG_UNTRUSTED_MAX:
+		out += "…(len=%d)" % raw.length()
+	return out
 
 func _net_log(message: String) -> void:
 	# print 在手机上每次都是一次系统调用，发布版必须静音。
@@ -391,7 +666,8 @@ func _client_send_pending_logs() -> void:
 	_client_log_sent = _client_log_buffer.size()
 	_rpc_client_log.rpc_id(1, lines)
 
-@rpc("any_peer", "call_remote", "reliable")
+# 诊断日志同样是"大且不急"，和 replay 共用 bulk 通道，别去挤控制流（B9）。
+@rpc("any_peer", "call_remote", "reliable", NetworkConfig.CH_BULK)
 func _rpc_client_log(lines: PackedStringArray) -> void:
 	if not _dedicated_server:
 		return
@@ -421,9 +697,13 @@ func _notification(what: int) -> void:
 			_net_log("app focus in")
 
 func _new_room() -> Dictionary:
-	var id := randi_range(100000, 999999)
+	# 房间号把分片号编进去（多进程）。两个进程各自摇六位随机数，早晚会撞 ——
+	# 撞了之后玩家输房间号加入，系统根本不知道该去哪个进程。
+	# 加了偏移之后，房间号本身就是路由信息：NetworkConfig.shard_of_room() 能反解。
+	var base := _shard_index * NetworkConfig.SHARD_ID_STRIDE
+	var id := base + randi_range(100000, 999999)
 	while _rooms.has(id):
-		id = randi_range(100000, 999999)
+		id = base + randi_range(100000, 999999)
 	var now := _now()
 	var slot_gold := []
 	slot_gold.resize(TEAM_SLOTS)
@@ -440,7 +720,7 @@ func _new_room() -> Dictionary:
 		"pve_completed": 0,
 		"boss_completed": 0,
 		"team_loss_streak": [0, 0],
-		"final_battle_complete": false,
+		"run_over": false,   # 服务端义：对局已结束（不再开新回合、不再可 resume）
 		"last_match_state": {},
 		"shared_seed": randi(),
 		"round_index": 1,
@@ -455,6 +735,31 @@ func _new_room() -> Dictionary:
 		"reserve_deadline": {},  # slot -> 宽限截止 unix time
 		"leader_slot": 0,        # 房主座位，掉线顺延
 		"altar_uses": {},        # slot -> 本回合黄金祭坛已用次数（服务端权威，每回合清零）
+		"tx_log": {},            # slot -> Array[交易回执]（E4 幂等，定长 TX_LOG_PER_SLOT）
+		"prep": {},              # slot -> EconomyLedger 座位账本（P1）
+		# --- 宝物归属（服务端权威）---
+		# 服务端本来就在 _server_pending_treasure 里摇候选并下发，只是从不记录玩家选了
+		# 哪个。记下来之后「这件宝物是不是服务器发给你的」就有了可信来源，不必等 P1
+		# 备战账本。注意这解决的是归属，不是代价：刷新的金币消耗仍是客户端自报。
+		"treasure_offer": {},    # slot -> {"round": int, "candidates": Array, "refresh_index": int}
+		"owned_treasures": {},   # slot -> Array[String]（服务端认可的持有列表）
+		# slot -> 该座位绑定的公开短码。存在房间里是为了让座位释放时能反查并清掉
+		# _public_token_seat —— 此前只有 peer_id -> 短码 的映射，peer 一断开就没了，
+		# 短码条目从此无人认领，只增不减（见 A12）。
+		"seat_public_id": {},
+		# leader 接任顺序（R5）。按「最早成功加入者」而不是最小 slot：
+		# slot 0–2 恒为 A 队，按最小 slot 顺延会让房主权系统性偏向 A 队。
+		# 换位与持 token 重连都保留原序号，所以「谁先进的房间」在整局内稳定。
+		"join_seq": {},          # slot -> int
+		"next_join_seq": 0,
+		# B11/R2：零在线真人但仍有有效 token 时进入 suspended。
+		# suspended 房间不推进阶段、不启动新模拟、不进公开列表。
+		"suspended": false,
+		# 状态信封（E2）：本房权威状态的版本号，每次变更 +1。
+		"state_seq": 0,
+		# 结算确认（E3）：本场战斗的唯一标识，以及各座位的确认状态。
+		"battle_id": "",
+		"result_acks": {},      # slot -> 已确认的 battle_id
 	}
 	_rooms[id] = room
 	_net_log("room created id=%d protocol=%d" % [id, NetworkConfig.NETWORK_PROTOCOL_VERSION])
@@ -478,6 +783,9 @@ func _public_room_list() -> Array:
 	for room in _rooms.values():
 		if str(room.get("state", "")) != ROOM_LOBBY or _room_next_free_slot(room) < 0:
 			continue
+		# suspended 的房间正在等原班人马回来，不该被路人加入（B11）
+		if bool(room.get("suspended", false)):
+			continue
 		out.append({
 			"id": int(room.get("id", 0)),
 			"players": _room_player_count(room),
@@ -500,12 +808,46 @@ func _room_for_peer(peer_id: int) -> Dictionary:
 
 func _touch_room(room: Dictionary) -> void:
 	room.last_activity_at = _now()
+	_rooms_dirty = true   # B5：这是房间变更的主要汇聚口
 
 func _set_room_state(room: Dictionary, next_state: String) -> void:
 	if str(room.get("state", "")) == next_state:
 		return
 	room.state = next_state
 	room.state_started_at = _now()
+	_rooms_dirty = true   # B5：阶段切换必须落盘，否则重启后房间停在旧阶段
+
+# --- 房间阶段权限矩阵（A11）--------------------------------------------------
+# 任何改变成员或阶段的 RPC 都必须先声明自己允许在哪些阶段执行。
+# 此前 start/toggle/kick/move 全程不检查 room.state：房主在 BATTLE/RESULT 再按一次
+# 「开始游戏」，_room_start_authoritative 会把进行中的房间 _set_room_state 回
+# ROOM_PREP 并向全房重发 team_start，客户端据此执行新局初始化——一个按钮就能毁掉
+# 正在进行的对局，且不需要改客户端。
+const PHASE_LOBBY_ONLY: Array = [ROOM_LOBBY]
+
+func _phase_allows(room: Dictionary, allowed: Array, action: String, peer_id: int) -> bool:
+	var phase := str(room.get("state", ROOM_LOBBY))
+	if allowed.has(phase):
+		return true
+	_net_log("phase denied room=%d peer=%d action=%s phase=%s" % [
+		int(room.get("id", 0)), peer_id, action, phase])
+	return false
+
+# 这个房间还有多少个**有效私有 session token**（B11 / R2）。
+# "有效"= 仍映射到本房本座位、未被撤销。公开短码不算 —— 它只是查询入口，
+# 真正的恢复凭证是私有 token。零有效 token 意味着没有任何人可能回来。
+func _room_live_token_count(room: Dictionary) -> int:
+	var count := 0
+	var seat_tokens: Dictionary = room.get("seat_tokens", {})
+	var room_id := int(room.get("id", 0))
+	for slot in seat_tokens.keys():
+		var token := str(seat_tokens[slot])
+		var seat: Dictionary = _token_seat.get(token, {})
+		if seat.is_empty():
+			continue
+		if int(seat.get("room_id", 0)) == room_id and int(seat.get("slot", -1)) == int(slot):
+			count += 1
+	return count
 
 func _room_online_count(room: Dictionary) -> int:
 	var count := 0
@@ -535,12 +877,90 @@ func _peer_connected(peer_id: int) -> bool:
 			return false
 	return true
 
+# --- 座位元数据的统一搬移与清理（C19/R5、A12）--------------------------------
+# 一个座位上挂着好几份东西：会话 token、公开短码绑定、加入顺序、保留态、以及该
+# 席位的对局进度（宝物 offer/持有、祭坛次数、缓存棋盘、金币）。此前它们散在四五个
+# 函数里各搬各的 —— 换位搬了 token 和 join_seq 却漏了 seat_public_id，硬移除清了
+# token 却没清 join_seq，于是「换位后离开短码释放不掉」「新人继承旧 join_seq」
+# 这类问题必然出现。
+#
+# 规则：**搬要一起搬，清要一起清**。临时掉线（`_room_reserve_peer`）两者都不调 ——
+# 那是"人还会回来"，座位上的东西必须原样留着。
+const SEAT_SLOT_MAPS := [
+	"seat_tokens", "seat_public_id", "join_seq",
+	"reserved", "reserve_deadline",
+	"treasure_offer", "owned_treasures", "altar_uses", "last_board", "boards",
+	"tx_log",   # E4：座位没了，这个座位的交易回执也没有意义了
+	"prep",     # P1：座位账本同理
+]
+
+func _move_seat_metadata(room: Dictionary, from_slot: int, to_slot: int) -> void:
+	for map_name in SEAT_SLOT_MAPS:
+		var m: Dictionary = room.get(map_name, {})
+		if not m.has(from_slot):
+			continue
+		m[to_slot] = m[from_slot]
+		m.erase(from_slot)
+		room[map_name] = m
+	# token -> seat 的反向索引也要改，否则这人重连会被放回旧槽位（队伍和身份色
+	# 一起变回去）；旧槽位要是已经有人坐了，resume 直接判 seat_taken 连不回来。
+	var seat_tokens: Dictionary = room.get("seat_tokens", {})
+	if seat_tokens.has(to_slot):
+		var token := str(seat_tokens[to_slot])
+		var seat: Dictionary = _token_seat.get(token, {})
+		if not seat.is_empty():
+			seat["slot"] = to_slot
+			_token_seat[token] = seat
+	# 每席位金币按数组索引存，不在 SEAT_SLOT_MAPS 里，单独搬。
+	# 换位目前只在 LOBBY 开放、各席位金币相同，但不能依赖这个巧合。
+	var slot_gold: Array = room.get("slot_gold", [])
+	if from_slot < slot_gold.size() and to_slot < slot_gold.size():
+		slot_gold[to_slot] = slot_gold[from_slot]
+		slot_gold[from_slot] = GameState.START_GOLD
+		room.slot_gold = slot_gold
+
+# 永久释放座位（主动离开 / 被踢 / 放弃 / 关房）。临时掉线绝不能调这个。
+func _clear_seat_metadata(room: Dictionary, slot: int) -> void:
+	var seat_tokens: Dictionary = room.get("seat_tokens", {})
+	if seat_tokens.has(slot):
+		_token_seat.erase(str(seat_tokens[slot]))
+	# 必须在清 seat_public_id 之前调 —— 它要靠这份映射反查短码。
+	_release_seat_public_id(room, slot)
+	for map_name in SEAT_SLOT_MAPS:
+		var m: Dictionary = room.get(map_name, {})
+		if m.has(slot):
+			m.erase(slot)
+			room[map_name] = m
+	var slot_gold: Array = room.get("slot_gold", [])
+	if slot < slot_gold.size():
+		slot_gold[slot] = GameState.START_GOLD
+		room.slot_gold = slot_gold
+
+# 释放一个座位绑定的公开短码。
+# compare-and-delete：只有当这条映射**仍指向本座位的 token** 时才删。
+# 无条件删会在短码碰撞（同一 id 被另一个座位重新绑定）时，让先离开的人把后来者的
+# 映射一起删掉 —— 那是拿一个泄漏换一个更难查的串号。
+# 注意这只缓解误删，不解决"客户端自报短码可覆盖别人映射"（A12 完整版要服务端签发）。
+func _release_seat_public_id(room: Dictionary, slot: int) -> void:
+	var seat_public: Dictionary = room.get("seat_public_id", {})
+	if not seat_public.has(slot):
+		return
+	var id := str(seat_public[slot])
+	var seat_tokens: Dictionary = room.get("seat_tokens", {})
+	var my_token := str(seat_tokens.get(slot, ""))
+	if not my_token.is_empty() and str(_public_token_seat.get(id, "")) == my_token:
+		_public_token_seat.erase(id)
+	seat_public.erase(slot)
+	room.seat_public_id = seat_public
+
 func _room_close(room: Dictionary, reason: String) -> void:
 	room.state = ROOM_CLOSED
 	room.finished_reason = reason
-	# 房间没了，所有座位 token 一并作废
-	for t in (room.get("seat_tokens", {}) as Dictionary).values():
-		_token_seat.erase(str(t))
+	# 房间没了：每个座位上挂的所有东西一并作废（token、短码绑定、加入顺序、进度）。
+	# 房间是这些全局映射条目的最后一个持有者，这里不清就永远没人清了。
+	for slot_i in TEAM_SLOTS:
+		_clear_seat_metadata(room, slot_i)
+	_rooms_dirty = true   # B5：关房也要落盘，否则重启后死房间会被读回来
 	_net_log("room cleanup id=%d reason=%s" % [int(room.get("id", 0)), reason])
 	for peer_id in (room.get("peer_slot", {}) as Dictionary).keys():
 		if _peer_connected(int(peer_id)):
@@ -554,19 +974,46 @@ func _cleanup_rooms() -> void:
 		var room: Dictionary = _rooms[room_id]
 		var state_name := str(room.get("state", ROOM_LOBBY))
 		var online_count := _room_online_count(room)
-		var match_over := bool(room.get("final_battle_complete", false))
+		var match_over := bool(room.get("run_over", false))
 		if online_count <= 0:
 			if float(room.get("empty_since", 0.0)) <= 0.0:
 				room.empty_since = now
-			# 打完的房间（final_battle_complete）没人在线就限时回收，token 一并作废。
-			# 不回收的话它会永远卡在 ROOM_RESULT：_room_begin_next_prep 对 final 房间
-			# 直接 return，原逻辑没有任何路径能删掉它 -> 服务器内存无限涨。
-			if match_over and now - float(room.empty_since) >= LOBBY_EMPTY_TTL_SEC:
+			var empty_for := now - float(room.empty_since)
+			# B11：零在线真人时的回收，依据是**还有没有有效 token**（= 还有没有人
+			# 可能回来），不是房间处于哪个阶段。
+			# 旧实现只回收 LOBBY 和已打完的房间，进了 PREP 的空房要等 PREP_TIMEOUT
+			# （30 分钟），而 RESULT 超时又会把它推回 PREP 重新计时 —— 最长约 40 分钟
+			# 占着 MAX_ROOMS 的名额。约 200 个这样的房间就能让全服 server_busy。
+			var live_tokens := _room_live_token_count(room)
+			if live_tokens <= 0:
+				# 没有任何人能回来了：立刻关，不必等任何 TTL。
+				_room_close(room, "empty_no_tokens")
+			elif match_over and empty_for >= LOBBY_EMPTY_TTL_SEC:
+				# 已打完的房间：没人在线就限时回收（不回收会永远卡在 ROOM_RESULT，
+				# _room_begin_next_prep 对 final 房间直接 return，内存只涨不降）。
 				_room_close(room, "match_over")
-			elif state_name == ROOM_LOBBY and now - float(room.empty_since) >= LOBBY_EMPTY_TTL_SEC:
-				_room_close(room, "empty_lobby")
+			elif empty_for >= ROOM_SUSPEND_GRACE_SEC:
+				# 有有效 token，但过了产品确认的 300 秒恢复窗口。
+				_room_close(room, "suspend_expired")
+			else:
+				# 恢复窗口内：转 suspended。**不推进阶段、不启动新模拟**，
+				# 否则一个空房还会继续跑 AI 对局烧 CPU（R2）。
+				if not bool(room.get("suspended", false)):
+					room.suspended = true
+					_net_log("room suspended id=%d tokens=%d grace=%ds" % [
+						int(room.get("id", 0)), live_tokens, int(ROOM_SUSPEND_GRACE_SEC)])
 		else:
 			room.empty_since = 0.0
+			if bool(room.get("suspended", false)):
+				room.suspended = false
+				_net_log("room resumed id=%d" % int(room.get("id", 0)))
+		if str(room.get("state", "")) == ROOM_CLOSED:
+			to_delete.append(room_id)
+			continue
+		# suspended 房间不参与任何阶段推进：既不超时关闭也不开新回合。
+		# 它的生死只由上面那段（token 数 + 300 秒窗口）决定。
+		if bool(room.get("suspended", false)):
+			continue
 		var age := now - float(room.get("state_started_at", now))
 		if state_name == ROOM_PREP and age >= PREP_TIMEOUT_SEC:
 			_room_close(room, "prep_timeout")
@@ -583,14 +1030,111 @@ func _cleanup_rooms() -> void:
 	for room_id in to_delete:
 		_rooms.erase(room_id)
 
+# --- 结算确认（E3，对应 C7 / B15）--------------------------------------------
+# 此前**任意一个玩家**按下准备就能把全房推进下一回合 —— 别人还在看回放就被拽走。
+# 现在改成：**所有仍在线的真人席位都确认收到并应用了本场结算**，才推进。
+#
+# 已确认的产品规则：**只等在线真人，掉线的不等**。掉线者重连时靠 room_state
+# 全量快照追上 —— 这和现有的"座位宽限 + AI 代打"是同一条逻辑：
+# 掉线的人不该拖住在线的人。
+#
+# AI 席位与空席由服务器自己算作已确认，**不伪造客户端 ACK**。
+const RESULT_ACK_TIMEOUT_SEC := 60.0
+
+func _room_result_acks_complete(room: Dictionary) -> bool:
+	var battle_id := str(room.get("battle_id", ""))
+	if battle_id.is_empty():
+		return true   # 没有待确认的战斗（例如刚建房），不阻塞
+	# 兜底：某个在线真人的客户端卡死时，不能让全房无限等。
+	# 这不是"正常同步机制"，只是保险 —— 正常路径应该在几秒内全部 ACK。
+	if _now() - float(room.get("state_started_at", 0.0)) >= RESULT_ACK_TIMEOUT_SEC:
+		_net_log("result ack timeout room=%d battle=%s -> advancing anyway" % [
+			int(room.get("id", 0)), battle_id])
+		return true
+	var acks: Dictionary = room.get("result_acks", {})
+	var peer_slot: Dictionary = room.get("peer_slot", {})
+	var online_slots := {}
+	for pid in peer_slot.keys():
+		online_slots[int(peer_slot[pid])] = true
+	var states: Array = room.get("slot_states", [])
+	for i in TEAM_SLOTS:
+		if i >= states.size() or str(states[i]) != "player":
+			continue          # AI / 空席：服务器代过
+		if not online_slots.has(i):
+			continue          # 掉线：不等（已确认的产品规则）
+		if str(acks.get(i, "")) != battle_id:
+			return false
+	return true
+
+func send_result_ack(battle_id: String) -> void:
+	if battle_id.is_empty() or is_host or not team_active or multiplayer.multiplayer_peer == null:
+		return
+	_rpc_result_ack.rpc_id(1, battle_id)
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_result_ack(battle_id: String) -> void:
+	if not _dedicated_server:
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if not _rate_ok(sender, "result_ack"):
+		return
+	if battle_id.length() > MAX_TREASURE_ID_LEN:
+		return
+	var room := _room_for_peer(sender)
+	if room.is_empty():
+		return
+	var slot := int((room.get("peer_slot", {}) as Dictionary).get(sender, -1))
+	if slot < 0 or slot >= TEAM_SLOTS:
+		return
+	# 只认当前这一场的确认。迟到的旧 ACK 直接丢 —— 否则上一场的确认会把
+	# 这一场当成"已经确认过了"，玩家还在看回放就被推进下一轮。
+	if battle_id != str(room.get("battle_id", "")):
+		_net_log("stale result_ack room=%d slot=%d got=%s want=%s" % [
+			int(room.get("id", 0)), slot, battle_id, str(room.get("battle_id", ""))])
+		return
+	var acks: Dictionary = room.get("result_acks", {})
+	if str(acks.get(slot, "")) == battle_id:
+		return   # 幂等：重复 ACK 不做任何事
+	acks[slot] = battle_id
+	room.result_acks = acks
+	_touch_room(room)
+	_net_log("result ack room=%d slot=%d battle=%s (%d acked)" % [
+		int(room.get("id", 0)), slot, battle_id, acks.size()])
+	# 全部在线真人确认完 -> 自动推进，不必再等谁按准备
+	if str(room.get("state", "")) == ROOM_RESULT and _room_result_acks_complete(room):
+		_room_begin_next_prep(room)
+
 func _room_begin_next_prep(room: Dictionary) -> void:
 	# 对局已结束（最终局打完）就不再开新回合，避免服务器把回合推过 FINAL_ROUND、
 	# 与封顶在 21 的客户端分叉，导致客户端等一个对不上号的 match_state 死循环。
-	if bool(room.get("final_battle_complete", false)):
+	if bool(room.get("run_over", false)):
 		return
+	# E3：所有在线真人确认收到结算之前不推进（C7）。
+	# 唯一的例外是 _cleanup_rooms 的 RESULT 超时兜底 —— 那条路径下
+	# _room_result_acks_complete 会因为超时返回 true。
+	if str(room.get("state", "")) == ROOM_RESULT and not _room_result_acks_complete(room):
+		return
+	room.battle_id = ""
+	room.result_acks = {}
 	room.boards = {}
 	room.prep_mercs = {}
 	room.altar_uses = {}   # 祭坛次数按回合重置，和客户端 reset_shop_refreshes 同步
+	# 账本的按回合部分同样重置，并给每个座位摇一份新商店（P1）。
+	# 金币与 roster **不重置** —— 那是跨回合累积的。
+	if economy_enabled():
+		var preps: Dictionary = room.get("prep", {})
+		for slot_key in preps.keys():
+			var prep: Dictionary = preps[slot_key]
+			EconomyLedger.reset_round(prep)
+			var shop: Dictionary = prep.get("shop", {})
+			shop["offers"] = _server_roll_shop_offers(GameState.SHOP_UNIT_SLOTS)
+			shop["offer_id"] = _make_offer_id()
+			var sold: Array = []
+			sold.resize(GameState.SHOP_UNIT_SLOTS)
+			sold.fill(false)
+			shop["sold"] = sold
+			prep["shop"] = shop
+		room["prep"] = preps
 	# round_index 封顶到 FINAL_ROUND，和客户端一致（客户端从 match_state 拿的是 min(+1, 21)）
 	room.round_index = mini(int(room.get("round_index", 1)) + 1, GameState.FINAL_ROUND)
 	var ready: Array = room.get("ready", [])
@@ -662,6 +1206,8 @@ func _rpc_team_toggle_slot(slot: int) -> void:
 		var room := _room_for_peer(sender)
 		if room.is_empty() or int((room.get("peer_slot", {}) as Dictionary).get(sender, -1)) != int(room.get("leader_slot", 0)):
 			return
+		if not _phase_allows(room, PHASE_LOBBY_ONLY, "toggle_slot", sender):
+			return
 		_room_toggle_slot(room, slot)
 		return
 	if not is_host or int(_team_peer_slot.get(multiplayer.get_remote_sender_id(), -1)) != 0:
@@ -680,6 +1226,11 @@ func _room_toggle_slot(room: Dictionary, slot: int) -> void:
 		"dummy":
 			states[slot] = "empty"
 			ready[slot] = false
+			# dummy 有两种来源：房主手动加的 AI（没有元数据），和真人掉线宽限到期后
+			# 被 _room_auto_complete_seat 顶上的 AI（token/短码/join_seq 全都还在）。
+			# 后者被切成 empty 就是「这个座位真的没了」——元数据必须一起清，
+			# 否则旧 token 仍指向本房本槽，而后来坐进来的人会继承旧 join_seq。
+			_clear_seat_metadata(room, slot)
 		_:
 			return
 	room.slot_states = states
@@ -761,21 +1312,21 @@ func _room_do_move(room: Dictionary, peer_id: int, from_slot: int, to_slot: int)
 	room.slot_states = states
 	room.ready = ready
 	room.peer_slot = peer_slot
-	# 会话凭证必须跟着人搬。_token_seat 记的是 slot，不搬的话这人重连会被放回旧
-	# 槽位（队伍和身份色一起变回去）；旧槽位要是已经有人坐了，resume 直接判
-	# seat_taken，他连不回来。
-	var seat_tokens: Dictionary = room.get("seat_tokens", {})
-	if seat_tokens.has(from_slot):
-		var token := str(seat_tokens[from_slot])
-		seat_tokens.erase(from_slot)
-		seat_tokens[to_slot] = token
-		room.seat_tokens = seat_tokens
-		var seat: Dictionary = _token_seat.get(token, {})
-		if not seat.is_empty():
-			seat["slot"] = to_slot
-			_token_seat[token] = seat
+	# 座位上挂着的所有东西一起搬（token / 短码绑定 / 加入顺序 / 对局进度）。
+	# 逐项手搬过一次，结果就是漏了 seat_public_id —— 换位后离开时短码释放不掉。
+	# 现在只有一个入口，加字段时只需改 SEAT_SLOT_MAPS。
+	_move_seat_metadata(room, from_slot, to_slot)
+	# 房主身份也必须跟着人搬（C19）。leader_slot 记的是槽位号，不搬的话房主换个位子
+	# 之后 leader_slot 指向刚空出来的槽，can_control_room() 对谁都不成立——全房
+	# 从此没人能开始游戏、加 AI 或踢人，只能解散重开。
+	# 注意不能靠 _maybe_promote_leader 兜底：它会把房主让给编号最小的在线玩家，
+	# 等于换位这个动作顺手把房主权交给了别人。
+	if int(room.get("leader_slot", 0)) == from_slot:
+		room.leader_slot = to_slot
+		_net_log("leader moved with player room=%d %d->%d" % [int(room.get("id", 0)), from_slot, to_slot])
 	_touch_room(room)
-	_rpc_team_assign_slot.rpc_id(peer_id, to_slot)
+	# 房主变更、座位变更、凭证都在 room_state 里，一次全量广播就够 —— 不再需要
+	# team_leader / team_assign_slot 两条各发各的（E2）。
 	_broadcast_room_lobby(room)
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -784,6 +1335,8 @@ func _rpc_team_kick_slot(slot: int) -> void:
 		var sender := multiplayer.get_remote_sender_id()
 		var room := _room_for_peer(sender)
 		if room.is_empty() or int((room.get("peer_slot", {}) as Dictionary).get(sender, -1)) != int(room.get("leader_slot", 0)):
+			return
+		if not _phase_allows(room, PHASE_LOBBY_ONLY, "kick", sender):
 			return
 		_room_kick_slot(room, slot)
 		return
@@ -804,6 +1357,24 @@ func _room_kick_slot(room: Dictionary, slot: int) -> void:
 			_room_remove_peer(room, int(peer_id))
 			return
 
+# 在途的 ready 请求（C24）。-1 = 没有在途请求；0/1 = 已发出但还没被服务器确认的目标值。
+#
+# 旧实现发完 RPC 就不管了，本地 team_ready 要等服务器 lobby 广播回来才更新。
+# 于是"按下准备 → 回包到达前继续挪棋子"这段窗口里，编辑动作读到的还是旧的
+# ready=false，**不会发取消**，而服务器那边已经按已准备锁盘 —— 玩家的棋盘还在改，
+# 服务器却可能已经开战。
+# 完整修法是 ready request/ACK + revision（归最终同步协议批）；这里先让本地
+# 判断以"意图"为准，把这段窗口关掉。
+var _pending_ready := -1
+
+# 本地认为自己现在是不是已准备：在途请求优先于服务器最后一次广播。
+func local_ready_intent() -> bool:
+	if _pending_ready >= 0:
+		return _pending_ready == 1
+	if team_local_slot >= 0 and team_local_slot < team_ready.size():
+		return bool(team_ready[team_local_slot])
+	return false
+
 func team_set_ready(value: bool) -> void:
 	if team_local_slot < 0:
 		return
@@ -813,6 +1384,7 @@ func team_set_ready(value: bool) -> void:
 		team_lobby_changed.emit()
 		_team_maybe_start_round()
 	else:
+		_pending_ready = 1 if value else 0
 		_rpc_team_set_ready.rpc_id(1, team_local_slot, value)
 
 func team_all_ready() -> bool:
@@ -881,6 +1453,13 @@ func _room_all_ready(room: Dictionary) -> bool:
 	return side_a > 0 and side_b > 0
 
 func _room_start_authoritative(room: Dictionary) -> void:
+	# 守卫收进函数内部（不只靠调用点）：这个函数会把房间 _set_room_state 回 ROOM_PREP
+	# 并向全房重发 team_start。在 BATTLE/RESULT 阶段执行等于把进行中的对局重置成新局，
+	# 是 A11 里危害最大的一条。调用点已各自判过，这里是第二道门。
+	if str(room.get("state", ROOM_LOBBY)) != ROOM_LOBBY:
+		_net_log("start refused room=%d phase=%s (already running)" % [
+			int(room.get("id", 0)), str(room.get("state", ""))])
+		return
 	if not _room_all_ready(room):
 		return
 	_touch_room(room)
@@ -910,16 +1489,107 @@ func _room_maybe_start_round(room: Dictionary) -> void:
 	# 否则会卡在 ROOM_BATTLE 等一个永远不来的提交。有真人时此调用直接返回（等提交）。
 	_room_try_finalize_boards(room)
 
+# --- 状态信封 E2：房间权威状态的唯一下行通道 --------------------------------
+# 此前房间状态被拆成四个各自为政的 RPC —— team_lobby（席位/ready/回合/阶段）、
+# team_leader（房主）、team_assign_slot（座位与凭证）、resume_state（重连恢复）。
+# 每个都能独立迟到、乱序、互相覆盖，由此派生出 B6（回合号双份真相）、
+# C17（旧包覆盖新状态）、C5（恢复用的和平时发的口径不一样）一整串问题。
+#
+# 现在四合一成**一份带序号的全量快照**。三条规则：
+#   ① `server_epoch` 认进程：服务器重启后 state_seq 从 0 重来，
+#      没有 epoch 的话客户端会把新的 seq=3 当成倒退丢掉，从此永不同步；
+#   ② `state_seq` 每次权威变更 +1，客户端拒收不前进的包；
+#   ③ **全量快照 ⇒ 漏包自愈**。客户端漏了 seq=5、收到 seq=7 直接应用就对了，
+#      不需要补差，服务器也不保留任何状态历史。这正是不做 delta 换来的简化。
+#
+# payload 是**按座位**生成的（金币、宝物、token 都是每人不同），所以逐 peer 发。
+func _bump_room_seq(room: Dictionary) -> int:
+	var next := int(room.get("state_seq", 0)) + 1
+	room.state_seq = next
+	return next
+
+func _build_room_state(room: Dictionary, slot: int) -> Dictionary:
+	var hp: Array = room.get("team_hp", [GameState.START_FORMATION_HP, GameState.START_FORMATION_HP])
+	var own_team := 0 if slot < 3 else 1
+	var slot_gold: Array = room.get("slot_gold", [])
+	var gold := GameState.START_GOLD
+	if slot >= 0 and slot < slot_gold.size() and slot_gold[slot] != null:
+		gold = int(slot_gold[slot])
+	# 结算阶段 round_index 还停在刚打完那一轮（惰性推进），客户端要进的是下一轮。
+	# 给旧值会让客户端从此落后一轮、之后提交全被 wrong_round 拒收（实测确认过）。
+	var round_id := int(room.get("round_index", 1))
+	if str(room.get("state", "")) == ROOM_RESULT:
+		round_id = mini(round_id + 1, GameState.FINAL_ROUND)
+	var streak: Array = room.get("team_loss_streak", [0, 0])
+	return {
+		# --- 房间 ---
+		"phase": str(room.get("state", ROOM_LOBBY)),
+		"round_id": round_id,
+		"leader_slot": int(room.get("leader_slot", 0)),
+		"slot_states": (room.get("slot_states", []) as Array).duplicate(),
+		"ready": (room.get("ready", []) as Array).duplicate(),
+		"suspended": bool(room.get("suspended", false)),
+		# --- 本座位身份 ---
+		"my_slot": slot,
+		"session_token": str((room.get("seat_tokens", {}) as Dictionary).get(slot, "")),
+		"public_id": str((room.get("seat_public_id", {}) as Dictionary).get(slot, "")),
+		# --- 队伍 ---
+		"team_hp": int(hp[own_team]),
+		"rival_team_hp": int(hp[1 - own_team]),
+		# --- 本座位的对局进度（C5 要求的那批）---
+		"gold": gold,
+		"loss_streak": int(streak[own_team]) if streak.size() > own_team else 0,
+		"pve_completed": int(room.get("pve_completed", 0)),
+		"boss_completed": int(room.get("boss_completed", 0)),
+		"owned_treasures": _room_owned_treasures(room, slot).duplicate(),
+		"treasure_offer": ((room.get("treasure_offer", {}) as Dictionary).get(slot, {}) as Dictionary).duplicate(true),
+		"altar_uses": int((room.get("altar_uses", {}) as Dictionary).get(slot, 0)),
+		"run_over": bool(room.get("run_over", false)),
+		# --- 经济账本（P1）---
+		# 影子期就下发：客户端可以拿它对账、也让重连的人立刻看到权威商店，
+		# 但在 economy_ledger_authoritative 打开之前，客户端仍以本地值为准。
+		"economy": _build_economy_state(room, slot),
+	}
+
+func _build_economy_state(room: Dictionary, slot: int) -> Dictionary:
+	if not economy_enabled():
+		return {}
+	var prep := _room_prep(room, slot)
+	var shop: Dictionary = prep.get("shop", {})
+	return {
+		"authoritative": economy_authoritative(),
+		"revision": int(prep.get("revision", 0)),
+		"gold": int(prep.get("gold", 0)),
+		"shop": {
+			"offer_id": str(shop.get("offer_id", "")),
+			"offers": (shop.get("offers", []) as Array).duplicate(true),
+			"sold": (shop.get("sold", []) as Array).duplicate(),
+			"refresh_uses": int(shop.get("refresh_uses", 0)),
+		},
+		"roster": (prep.get("roster", {}) as Dictionary).duplicate(true),
+		"gamble_used": bool(prep.get("gamble_used", false)),
+	}
+
+func _send_room_state(room: Dictionary, peer_id: int, seq: int) -> void:
+	var slot := int((room.get("peer_slot", {}) as Dictionary).get(peer_id, -1))
+	if slot < 0:
+		return
+	_rpc_room_state.rpc_id(peer_id, {
+		"protocol": NetworkConfig.NETWORK_PROTOCOL_VERSION,
+		"server_epoch": _server_epoch,
+		"room_id": int(room.get("id", 0)),
+		"state_seq": seq,
+		"message_type": "room_state",
+		"payload": _build_room_state(room, slot),
+	})
+
+# 名字保留不变：十几个调用点都在调它，改名等于把这次改动摊到整个文件。
+# 语义已经从"广播大厅"升级成"广播房间权威全量状态"。
 func _broadcast_room_lobby(room: Dictionary) -> void:
-	var states: Array = room.get("slot_states", [])
-	var ready: Array = room.get("ready", [])
-	# 回合号/阶段随大厅同步一起广播：客户端回合号从此有权威来源，不再只靠
-	# 自己那局的 match_state 推进（漏一次就永久落后 -> 提交被 wrong_round 拒 -> 卡死）
-	var round_i := int(room.get("round_index", 1))
-	var phase := str(room.get("state", ROOM_LOBBY))
+	var seq := _bump_room_seq(room)
 	for peer_id in (room.get("peer_slot", {}) as Dictionary).keys():
 		if _peer_connected(int(peer_id)):
-			_rpc_team_lobby.rpc_id(int(peer_id), states, ready, round_i, phase)
+			_send_room_state(room, int(peer_id), seq)
 
 # --- 3v3 prep mercenary sync ------------------------------------------------
 # 备战阶段实时同步每个玩家已雇的佣兵 id 列表，供「队伍佣兵」弹窗展示。
@@ -957,12 +1627,23 @@ func _store_team_prep_mercs(slot: int, round_index: int, ids: Array) -> void:
 
 func _sanitize_prep_merc_ids(ids: Array) -> Array:
 	# 来路是网络：只收佣兵表里存在的 id，数量封顶佣兵栏容量。
+	#
+	# A14：**进循环之前就拒**。旧实现会把整个输入遍历完（只是不再往 out 里塞），
+	# 所以一个 20 万元素的数组照样能让主循环转 20 万次 —— 而服务器是单线程同步的，
+	# 那期间全服所有房间的心跳都停。合法输入最多 MERCENARY_SLOTS 个，
+	# 超出这个数就没有任何"部分接受"的理由。
+	if ids.size() > GameState.MERCENARY_SLOTS:
+		_net_log("prep_mercs rejected: size=%d cap=%d" % [ids.size(), GameState.MERCENARY_SLOTS])
+		return []
 	var valid := {}
 	for row in (DataRegistry.get_table("mercenaries").get("mercenaries", []) as Array):
 		valid[str((row as Dictionary).get("id", ""))] = true
 	var out: Array = []
 	for id_value in ids:
+		# 单个 id 也要有长度门：不然可以塞 8 个超长字符串，字典查找和日志都会被放大。
 		var id := str(id_value)
+		if id.length() > MAX_TREASURE_ID_LEN:
+			continue
 		if valid.has(id) and out.size() < GameState.MERCENARY_SLOTS:
 			out.append(id)
 	return out
@@ -971,10 +1652,20 @@ func _sanitize_prep_merc_ids(ids: Array) -> Array:
 func _rpc_team_prep_mercs_submit(slot: int, round_index: int, ids: Array) -> void:
 	if _dedicated_server:
 		var sender := multiplayer.get_remote_sender_id()
+		# A14：这个 handler 此前既没限流、也没查阶段和回合 —— 配置表里明明有
+		# "prep_mercs": 40 这一项，只是从来没人调过 _rate_ok。
+		if not _rate_ok(sender, "prep_mercs"):
+			return
 		var room := _room_for_peer(sender)
 		if room.is_empty() or slot < 0 or slot >= TEAM_SLOTS:
 			return
 		if int((room.get("peer_slot", {}) as Dictionary).get(sender, -1)) != slot:
+			return
+		# 佣兵同步只在备战阶段有意义。战斗/结算阶段收到就是乱序或伪造，直接丢。
+		if str(room.get("state", ROOM_LOBBY)) != ROOM_PREP:
+			return
+		# 回合号对不上的是迟到包：应用它会让队友看到上一轮的佣兵列表。
+		if round_index != int(room.get("round_index", 1)):
 			return
 		var clean := _sanitize_prep_merc_ids(ids)
 		var prep_mercs: Dictionary = room.get("prep_mercs", {})
@@ -1055,15 +1746,72 @@ func _rpc_team_round_start() -> void:
 func team_broadcast_replays(replay_a: Dictionary, replay_b: Dictionary) -> void:
 	if not is_host:
 		return
+	# 打包一次、所有人复用（见 _pack_replay 的说明）
+	var packed_a := _pack_replay(replay_a)
+	var packed_b := _pack_replay(replay_b)
 	for peer_id in _team_peer_slot:
 		var slot: int = _team_peer_slot[peer_id]
-		_rpc_team_replay.rpc_id(peer_id, replay_a if slot < 3 else replay_b, replay_b if slot < 3 else replay_a)
+		_rpc_team_replay.rpc_id(peer_id, packed_a if slot < 3 else packed_b, packed_b if slot < 3 else packed_a)
 
-@rpc("authority", "call_remote", "reliable")
-func _rpc_team_replay(replay: Dictionary, rival_replay: Dictionary = {}) -> void:
-	team_replay = replay
-	team_replay_rival = rival_replay
-	_net_log("client received replay round=%d kind=%s" % [GameState.round_index, str(replay.get("kind", ""))])
+# --- replay 打包 -------------------------------------------------------------
+# 实测（tools/battle_perf_check.tscn，第 21 回合满配最坏一场）：
+#   原始 3639 KB -> zstd 61.8 KB   压缩率 0.017   压缩耗时 1.7 ms
+#   var_to_bytes 25.7 ms（比压缩贵 15 倍）  客户端解压 1.3 ms
+#
+# 改这里之前，replay 是把 Dictionary 直接塞进 RPC 发的，而且是 rpc_id 逐个 peer 发：
+#   * 不压缩 -> 每人收 2 × 3.6 MB = 7.3 MB，六人一轮 43 MB。这是弱网掉线可量化的直接原因
+#   * 逐个发 -> 同一份 replay 被序列化 6 次 = 154 ms 纯浪费在主循环上
+# 现在整局只做一次序列化 + 一次压缩，所有 peer 复用同一份 PackedByteArray
+# （PackedByteArray 进 RPC 只是 memcpy，不再走嵌套容器的递归序列化）。
+#
+# 压缩后最坏 61.8 KB，低于常见分块阈值（16–64 KB）的上沿 —— 所以**分块协议暂时不需要**，
+# 信封里保留 chunk 字段但可以先不实现（见文档 B2）。
+const MAX_REPLAY_UNCOMPRESSED_BYTES := 16 * 1024 * 1024
+
+# 包格式：[8 字节 小端 u64 原始长度][zstd 压缩数据]
+# 长度头是必需的：`decompress()` 要求预先知道输出大小，而 `decompress_dynamic()`
+# 只支持 brotli/gzip/deflate、**不支持 ZSTD**（实测踩过）。
+# 头同时充当防护门：解压前先看这个数，超限直接拒 —— 不解压、不分配。
+const REPLAY_PACK_HEADER_BYTES := 8
+
+func _pack_replay(replay: Dictionary) -> PackedByteArray:
+	if replay.is_empty():
+		return PackedByteArray()
+	var raw := var_to_bytes(replay)
+	var out := PackedByteArray()
+	out.resize(REPLAY_PACK_HEADER_BYTES)
+	out.encode_u64(0, raw.size())
+	out.append_array(raw.compress(FileAccess.COMPRESSION_ZSTD))
+	return out
+
+func _unpack_replay(packed: PackedByteArray) -> Dictionary:
+	if packed.size() <= REPLAY_PACK_HEADER_BYTES:
+		return {}
+	var declared := int(packed.decode_u64(0))
+	# 防解压炸弹：只看头 8 字节就能判掉「几 KB 压缩包声称解出几 GB」，
+	# 全程不解压、不分配。实测最坏原始 3.6 MB，16 MB 是 4 倍余量。
+	if declared <= 0 or declared > MAX_REPLAY_UNCOMPRESSED_BYTES:
+		_net_log("replay unpack rejected: declared=%d cap=%d packed=%d" % [
+			declared, MAX_REPLAY_UNCOMPRESSED_BYTES, packed.size()])
+		return {}
+	var raw := packed.slice(REPLAY_PACK_HEADER_BYTES).decompress(declared, FileAccess.COMPRESSION_ZSTD)
+	if raw.size() != declared:
+		# 头和实际内容对不上：损坏、截断、或者头被改过。安静失败，不崩。
+		_net_log("replay unpack failed: got=%d declared=%d" % [raw.size(), declared])
+		return {}
+	# 用 bytes_to_var 而不是 bytes_to_var_with_objects：后者能从字节流里构造对象，
+	# 在明文链路上（C14 未做）等于给中间人一个执行面。
+	var value = bytes_to_var(raw)
+	return value if typeof(value) == TYPE_DICTIONARY else {}
+
+# B9：replay 走独立可靠通道 CH_BULK。它内部仍然有序、仍然可靠，
+# 但**压不到控制流**——房间状态、结算、交易、握手都在 CH_CONTROL 上各走各的。
+@rpc("authority", "call_remote", "reliable", NetworkConfig.CH_BULK)
+func _rpc_team_replay(packed: PackedByteArray, packed_rival: PackedByteArray = PackedByteArray()) -> void:
+	team_replay = _unpack_replay(packed)
+	team_replay_rival = _unpack_replay(packed_rival)
+	_net_log("client received replay round=%d kind=%s bytes=%d/%d" % [
+		GameState.round_index, str(team_replay.get("kind", "")), packed.size(), packed_rival.size()])
 	team_replay_received.emit()
 
 func team_submit_board(snapshot: Dictionary) -> void:
@@ -1146,8 +1894,12 @@ func _rpc_team_submit_board(slot: int, snapshot: Dictionary) -> void:
 				if multiplayer.multiplayer_peer != null:
 					multiplayer.multiplayer_peer.disconnect_peer(sender)
 			elif reason.begins_with("wrong_round"):
-				# 拒收不能是静默的：告知客户端权威回合，它会校准后自动重交
-				_rpc_round_resync.rpc_id(sender, int(room.get("round_index", 1)), str(room.get("state", "")))
+				# 拒收不能是静默的。但**权威回合不再由这条消息携带**（E2）——
+				# 它只是"你交的那份被拒了"的通知；正确的回合号来自 room_state。
+				# 旧实现让这条也带状态，于是它和 team_lobby 成了两个能互相覆盖的
+				# 状态源（B6 回合号双份真相）。
+				_send_room_state(room, sender, _bump_room_seq(room))
+				_rpc_board_rejected.rpc_id(sender, reason)
 			return
 		_shadow_audit_submission(room, slot, snapshot, validation.get("snapshot", {}))
 		boards[slot] = validation.get("snapshot", {})
@@ -1167,30 +1919,60 @@ func _rpc_team_submit_board(slot: int, snapshot: Dictionary) -> void:
 	_team_boards_collecting[slot] = snapshot
 	_team_try_finalize_boards()
 
-@rpc("authority", "call_remote", "reliable")
+# 遗留大包（本地房主路径），同样归 bulk 通道（B9）。
+@rpc("authority", "call_remote", "reliable", NetworkConfig.CH_BULK)
 func _rpc_team_boards(boards: Dictionary, seed: int) -> void:
 	team_boards = boards
 	shared_seed = seed
 	team_boards_ready.emit()
 
-# 服务器 wrong_round 拒收后的校准通知：对齐权威回合，并把刚被拒的棋盘
-# 重盖戳补交一次（每回合最多一次，防循环）。修掉"落后一轮->提交永远被拒->
-# 心跳被卡->被踢->重连回来还是旧回合"的静默死循环（实测日志确认过该链路）。
+# 「你交的那份棋盘被拒了」。**不携带任何权威状态**（E2）——
+# 正确的回合号来自紧随其后的 room_state。旧实现让这条也带 round+phase，
+# 于是它和 team_lobby 成了两个能互相覆盖的状态源，正是 B6「回合号双份真相」。
+#
+# 收到之后按已经对齐好的权威回合重交一次（每回合最多一次，防循环）。
+# 这条链路修掉的是实测记录过的死循环："落后一轮 -> 提交永远被拒 ->
+# 心跳被卡 -> 被踢 -> 重连回来还是旧回合"。
 @rpc("authority", "call_remote", "reliable")
-func _rpc_round_resync(server_round: int, server_phase_name: String) -> void:
-	_net_log("round resync from server: round=%d phase=%s" % [server_round, server_phase_name])
-	server_round_index = server_round
-	server_phase = server_phase_name
-	if GameState.round_index < server_round:
-		GameState.round_index = server_round
-	if not _last_team_submission.is_empty() and _resync_resubmitted_round != server_round:
-		_resync_resubmitted_round = server_round
-		var snap: Dictionary = _last_team_submission.duplicate(true)
-		snap.round = server_round
-		team_submit_board(snap)
-	team_lobby_changed.emit()
+func _rpc_board_rejected(reason: String) -> void:
+	_net_log("board rejected by server: %s (authoritative round=%d)" % [reason, server_round_index])
+	if _last_team_submission.is_empty() or _resync_resubmitted_round == server_round_index:
+		return
+	_resync_resubmitted_round = server_round_index
+	var snap: Dictionary = _last_team_submission.duplicate(true)
+	snap.round = server_round_index
+	team_submit_board(snap)
+
+# 看门狗代交 / 重连补交时复用上一轮缓存棋盘（C6）。
+# 旧实现直接 `boards[i] = last_board[i]`：那份快照带的是**上一轮**的 round 与 gold，
+# 而且从没重新过一遍当前轮的 validate_team_snapshot。掉线玩家每被代打一轮，
+# 金币就按旧值回滚一次，回合戳也和本轮对不上。
+# 这里重新盖当前轮的戳并重新校验；校验不过就退回原样（宁可用一份旧的，
+# 也不能让房间因为拿不到棋盘而卡到超时）。
+# 经济部分的根治仍要等 P1 服务端账本 —— 这里只保证"不比上一轮更错"。
+func _restamp_cached_board(room: Dictionary, slot: int, cached: Variant) -> Dictionary:
+	if typeof(cached) != TYPE_DICTIONARY:
+		return {}
+	var round_index := int(room.get("round_index", 1))
+	var snap: Dictionary = (cached as Dictionary).duplicate(true)
+	snap["round"] = round_index
+	# 金币以服务端记录为准，不用快照里那份上一轮的。
+	var slot_gold: Array = room.get("slot_gold", [])
+	if slot >= 0 and slot < slot_gold.size() and slot_gold[slot] != null:
+		snap["gold"] = int(slot_gold[slot])
+	var validation := NetProtocol.validate_team_snapshot(snap, round_index)
+	if bool(validation.get("ok", false)):
+		return validation.get("snapshot", {})
+	_net_log("cached board restamp failed room=%d slot=%d reason=%s (using raw cache)" % [
+		int(room.get("id", 0)), slot, str(validation.get("reason", ""))])
+	return cached as Dictionary
 
 func _room_try_finalize_boards(room: Dictionary) -> void:
+	# 守卫收进函数内部。此前安全完全靠 5 个调用点各自先判 ROOM_BATTLE——漏一个就会
+	# 同一回合算两次战斗、扣两次 HP、重复发一次宝物 offer。
+	# 这只是状态门；跨包重复的幂等键（battle_id/round_id）归 R6/B6。
+	if str(room.get("state", "")) != ROOM_BATTLE:
+		return
 	var states: Array = room.get("slot_states", [])
 	var boards: Dictionary = room.get("boards", {})
 	for i in TEAM_SLOTS:
@@ -1202,12 +1984,49 @@ func _room_try_finalize_boards(room: Dictionary) -> void:
 	# 看门狗/重连补交也走 _room_try_finalize_boards，所以「先替补齐、再摇 seed」这个
 	# 顺序在所有路径上都成立。
 	room.shared_seed = _roll_battle_seed()
+	# 本场战斗的唯一标识（E3）。结算、replay、确认回执都靠它对齐 ——
+	# 没有它就没法区分"这个 ACK 是这一场的"还是"上一场迟到的"。
+	room.battle_id = "%d:%d:%d" % [int(room.get("id", 0)), int(room.get("round_index", 1)), int(room.get("state_seq", 0))]
+	room.result_acks = {}
 	# 不再向专服客户端广播 boards。它是全部 6 人的完整快照（每个单位带整份 def），
 	# 而专服路径的客户端不本地模拟——它等的是 team_replay，replay 自带 roster。
 	# 这份广播因此是纯浪费，还顺带把 shared_seed 提前交到客户端手里（可预演战斗）。
 	# _rpc_team_boards 方法保留：删方法会平移整套 RPC 的 wire ID，属破坏性变更。
 	# 本地房主调试路径仍走 _team_try_finalize_boards 里的广播，不受影响。
-	_room_compute_and_broadcast_replays(room)
+	_enqueue_finalize(room)
+
+# --- 结算并发闸（B4 前半）-----------------------------------------------------
+# 实测：一房一回合的两场战斗，最坏（第 21 回合满配）合计 1162 ms。
+# 而多个房间的最后一份棋盘可能落在同一帧里（RPC 批量到达、或看门狗一次扫出好几个），
+# 于是 N 个房间的战斗在**同一个调用栈里**连着算完 —— 20 个房间 = 23 秒，
+# 这段时间 _process 一次都不跑：心跳不回、pong 不发，全服客户端一起判超时。
+#
+# 这道闸把「N 个房间挤一帧」摊成「每帧一个房间」。
+#
+# ⚠️ 它买到的**不是**总耗时变短 —— 20 个房间还是 23 秒。
+# 买到的是**每两场战斗之间 _process 会跑一次**，心跳和 pong 挤得进去。
+# 「单场 581 ms 本身就阻塞 17 帧」这件事它解决不了，那只能靠
+# BattleContext 去全局化之后换 compute_team_replay_async（B4 后半）。
+const FINALIZE_PER_FRAME := 1
+
+var _finalize_queue: Array = []   # room_id，先进先出
+
+func _enqueue_finalize(room: Dictionary) -> void:
+	var rid := int(room.get("id", 0))
+	if _finalize_queue.has(rid):
+		return
+	_finalize_queue.append(rid)
+
+func _drain_finalize_queue() -> void:
+	var budget := FINALIZE_PER_FRAME
+	while budget > 0 and not _finalize_queue.is_empty():
+		var rid := int(_finalize_queue.pop_front())
+		var room: Dictionary = _rooms.get(rid, {})
+		# 排队期间房间可能已经被回收/关闭/推进了阶段 —— 静默跳过，不补算。
+		if room.is_empty() or str(room.get("state", "")) != ROOM_RESULT:
+			continue
+		budget -= 1
+		_room_compute_and_broadcast_replays(room)
 
 func _room_compute_and_broadcast_replays(room: Dictionary) -> void:
 	_net_log("server battle simulation started room=%d round=%d" % [int(room.get("id", 0)), int(room.get("round_index", 1))])
@@ -1218,7 +2037,13 @@ func _room_compute_and_broadcast_replays(room: Dictionary) -> void:
 	GameState.boss_completed = int(room.get("boss_completed", 0))
 	# 让 schedule_kind_for_round 在服务器算战斗时用 room 权威的 final 状态，
 	# 保证服务器和客户端对"第21回合是不是 final"判断一致（掐断 kind 不对称）。
-	GameState.final_battle_complete = bool(room.get("final_battle_complete", false))
+	# C8：这两个是**不同的东西**，此前共用 `final_battle_complete` 一个名字。
+	#   room.run_over            服务端义：对局已结束（不再开新回合、不再可 resume）
+	#   GameState.final_round_played  客户端义：第 21 战已经打过（RoundService 据此
+	#                                 决定第 21 回合还算不算 "final" 编队）
+	# 这里用 run_over 当保守代理：对局一旦结束就不会再算战斗，所以"不要再把第 21
+	# 回合当 final 重算"这个效果是对的。名字分开后，读的人不会再以为两者同义。
+	GameState.final_round_played = bool(room.get("run_over", false))
 	# 第21回合法阵友军按血量区间召唤（_add_team_final_formation_allies 读
 	# GameState.team_hp / enemy_team_hp）。服务器进程这两个全局从没人写过，
 	# 恒为初始 50，导致双方永远召出最后一档厄夜；必须从 room 权威血量同步。
@@ -1239,20 +2064,30 @@ func _room_compute_and_broadcast_replays(room: Dictionary) -> void:
 	var match_states := _room_build_match_states(room, replay_a, replay_b)
 	room.last_match_state = match_states
 	_net_log("server replay/result generated room=%d round=%d" % [int(room.get("id", 0)), int(room.get("round_index", 1))])
-	_metrics_log_payloads(room, replay_a, replay_b, match_states)
+	# 序列化 + 压缩各做一次，六个 peer 复用同一份字节。
+	# 此前是逐个 peer 发 Dictionary，同一份 replay 被序列化 6 次（实测 25.7 ms × 6
+	# ≈ 154 ms 白烧在主循环上），而且完全没压缩（每人 7.3 MB，六人一轮 43 MB）。
+	var pack_t0 := Time.get_ticks_usec()
+	var packed_a := _pack_replay(replay_a)
+	var packed_b := _pack_replay(replay_b)
+	var pack_us := Time.get_ticks_usec() - pack_t0
+	_net_log("replay packed room=%d round=%d a=%d B b=%d B pack_usec=%d" % [
+		int(room.get("id", 0)), int(room.get("round_index", 1)), packed_a.size(), packed_b.size(), pack_us])
+	_metrics_log_payloads(room, replay_a, packed_a.size(), packed_b.size(), match_states)
 	for peer_id in (room.get("peer_slot", {}) as Dictionary).keys():
 		if not _peer_connected(int(peer_id)):
 			continue
 		var slot := int((room.get("peer_slot", {}) as Dictionary)[peer_id])
-		# 顺序要紧：match_state（几百字节，权威结算）必须排在 replay（可达数 MB）之前。
+		# 顺序要紧：match_state（几百字节，权威结算）必须排在 replay 之前。
 		# 反过来时结算状态被压在大包后面，弱网重传期间玩家就卡在「战斗打完但结算不来」——
 		# 这正是 match_state 超时的直接成因。replay 只是播放素材，晚到无所谓。
 		_rpc_receive_match_state.rpc_id(int(peer_id), match_states.get(slot, {}))
-		var own_replay: Dictionary = replay_a if slot < 3 else replay_b
-		var rival_replay: Dictionary = replay_b if slot < 3 else replay_a
-		if not ServerFlags.get_bool("send_rival_replay"):
-			rival_replay = {}
-		_rpc_team_replay.rpc_id(int(peer_id), own_replay, rival_replay)
+		# 两队 replay 一律全发（已确认的产品规则：玩家要能随时切镜头看另一队）。
+		# 旧的 send_rival_replay 开关与这条规则冲突，已废除 —— 压缩后一份才 62 KB，
+		# 当初"关掉它省带宽"的理由也不再成立。
+		_rpc_team_replay.rpc_id(int(peer_id),
+			packed_a if slot < 3 else packed_b,
+			packed_b if slot < 3 else packed_a)
 		_net_log("match_state/replay sent room=%d round=%d peer=%d slot=%d" % [int(room.get("id", 0)), int(room.get("round_index", 1)), int(peer_id), slot])
 	room.boards = {}
 
@@ -1278,6 +2113,23 @@ func _shadow_audit_submission(room: Dictionary, slot: int, raw_snapshot: Variant
 		_net_log("shadow treasure_overflow room=%d round=%d slot=%d owned=%d max=%d" % [
 			int(room.get("id", 0)), round_index, slot, owned.size(), max_treasures])
 
+	# (1b) 归属比对：客户端上报的持有集 vs 服务端实际发放并被领取的集合。
+	# 这条比 (1) 的数量上界强——(1) 依赖两端 round_schedule.json 一致（C11），
+	# 这条只依赖「服务器自己发过什么」，没有外部数据依赖，可以先于数据哈希转硬拒收。
+	# 仍留在影子模式的原因：首批上线时房间里可能有本改动之前建立的座位，
+	# owned_treasures 为空会把所有人误判。跑满一个版本零 unexpected 才翻开关。
+	var server_owned := _room_owned_treasures(room, slot)
+	var server_set := {}
+	for t in server_owned:
+		server_set[str(t)] = true
+	var unexpected: Array = []
+	for t in owned:
+		if not server_set.has(str(t)):
+			unexpected.append(str(t))
+	if not unexpected.is_empty():
+		_net_log("shadow treasure_unowned room=%d round=%d slot=%d client=%d server=%d unexpected=%s" % [
+			int(room.get("id", 0)), round_index, slot, owned.size(), server_owned.size(), str(unexpected)])
+
 	# (2) 金币差值：服务端只知道上一战结算后的值，不知道备战期的买/卖/刷新/祭坛/赌博。
 	# 所以这里绝不能拦截，只统计分布——赌博一次就能合法翻倍，任何「上界规则」都会误伤。
 	# 攒够真实分布后，才知道 P1 的备战账本要覆盖哪些路径。
@@ -1288,6 +2140,10 @@ func _shadow_audit_submission(room: Dictionary, slot: int, raw_snapshot: Variant
 		if reported != expected:
 			_net_log("shadow gold_delta room=%d round=%d slot=%d reported=%d last_settled=%d delta=%d" % [
 				int(room.get("id", 0)), round_index, slot, reported, expected, reported - expected])
+	# (2b) P1 账本比对。上面那条比的是「和上次结算差多少」（备战期本来就会差，
+	# 只能看分布）；这一条比的是「和账本记的差多少」——账本**知道**备战期发生了什么，
+	# 所以这里的差值理论上应该恒为 0。**影子期零差异是翻 authoritative 开关的唯一依据。**
+	_shadow_audit_economy(room, slot, int(raw.get("gold", 0)))
 
 	# (3) syn 口径比对：服务端已经改为自己重建（见 NetProtocol.rebuild_syn_from_board）。
 	# 这里比的是「客户端派生的和服务端重建的一不一致」——不一致意味着两边对羁绊的
@@ -1309,32 +2165,30 @@ func _shadow_audit_submission(room: Dictionary, slot: int, raw_snapshot: Variant
 #
 # 注意：var_to_bytes 一份大 replay 本身有 CPU 开销，而服务器是同步主循环——所以它
 # 挂在开关后面，并支持每 N 场采样一次，不允许长期裸跑。
-func _metrics_log_payloads(room: Dictionary, replay_a: Dictionary, replay_b: Dictionary, match_states: Dictionary) -> void:
+func _metrics_log_payloads(room: Dictionary, replay_a: Dictionary, packed_a_size: int, packed_b_size: int, match_states: Dictionary) -> void:
 	if not ServerFlags.should_sample_battle():
 		return
+	# 压缩后的大小由发送路径直接给进来（packed_a/packed_b），这里**不再重复
+	# 序列化+压缩一遍** —— 那是真实开销，在同步主循环上白烧 25 ms 只为记一行日志。
+	# 仍要单独算的只有原始大小（用于算压缩率）和 boards / match_state 的体积。
 	var t0 := Time.get_ticks_usec()
 	var raw_a := var_to_bytes(replay_a)
-	var raw_b := var_to_bytes(replay_b)
 	var serialize_usec := Time.get_ticks_usec() - t0
-	var t1 := Time.get_ticks_usec()
-	var zst_a := raw_a.compress(FileAccess.COMPRESSION_ZSTD)
-	var compress_usec := Time.get_ticks_usec() - t1
 	var boards_bytes := var_to_bytes(room.get("boards", {})).size()
 	var ms_bytes := var_to_bytes(match_states).size()
 	var frames_a: Array = replay_a.get("frames", [])
-	_net_log("metrics room=%d round=%d kind=%s frames=%d replay_a_raw=%d replay_b_raw=%d replay_a_zstd=%d ratio=%.3f boards=%d match_state=%d ser_usec=%d zstd_usec=%d" % [
+	_net_log("metrics room=%d round=%d kind=%s frames=%d replay_a_raw=%d replay_a_zstd=%d replay_b_zstd=%d ratio=%.3f boards=%d match_state=%d ser_usec=%d" % [
 		int(room.get("id", 0)),
 		int(room.get("round_index", 1)),
 		str(replay_a.get("kind", "")),
 		frames_a.size(),
 		raw_a.size(),
-		raw_b.size(),
-		zst_a.size(),
-		(float(zst_a.size()) / float(maxi(1, raw_a.size()))),
+		packed_a_size,
+		packed_b_size,
+		(float(packed_a_size) / float(maxi(1, raw_a.size()))),
 		boards_bytes,
 		ms_bytes,
 		serialize_usec,
-		compress_usec,
 	])
 
 func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: Dictionary) -> Dictionary:
@@ -1346,11 +2200,12 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 	# 金币结算要按队伍的胜负给。PVE/Boss：两队各打各的怪，胜负互相独立；
 	# PVP：replay 是规范化棋局（A 队恒为 "player" 方），B 队胜负取反。
 	# 同款视角反转也在 Main._on_team_battle_finished 与 BattleUI._local_player_wins。
-	var team_wins := [bool(res_a.get("player_wins", false)), false]
-	if kind == "pvp":
-		team_wins[1] = not bool(res_a.get("player_wins", false))
-	else:
-		team_wins[1] = bool(res_b.get("player_wins", false))
+	# 单场胜负走 TeamOutcome（C16）：服务端结算、BattleUI 字幕、Main fallback 三处
+	# 共用同一份实现，不再各写各的。
+	var team_wins := [
+		TeamOutcome.team_wins_battle(res_a, res_b, kind, TeamOutcome.TEAM_A),
+		TeamOutcome.team_wins_battle(res_a, res_b, kind, TeamOutcome.TEAM_B),
+	]
 	# 连败计数按队维护：胜利清零、失败 +1。每回合只能走一次，不能放进座位循环。
 	var loss_streak: Array = room.get("team_loss_streak", [0, 0])
 	if loss_streak.size() < 2:
@@ -1373,22 +2228,18 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 	# 记入 room：对局结束后服务器不再开新回合、也不再把第21回合当 final 重算（见
 	# _room_begin_next_prep / _room_compute_and_broadcast_replays），掐断卡死循环。
 	if run_over:
-		room.final_battle_complete = true
-	var team_a_won: bool
-	if completed_round >= GameState.FINAL_ROUND:
-		# 最终局（设计意图）：只看这一战谁赢，无视之前的血量差。整场只有一个
-		# player_wins（A队视角），B队 team_run_won 取反 -> 两队必定相反、不会都赢，
-		# 且与战斗结束字幕（同样基于 player_wins）显示一致。
-		team_a_won = bool(res_a.get("player_wins", false))
-	else:
-		# 中途因某队血量归零而结束的普通局：存活方赢
-		team_a_won = hp_a >= hp_b
-		if hp_a <= 0 and hp_b > 0:
-			team_a_won = false
-		elif hp_b <= 0 and hp_a > 0:
-			team_a_won = true
-		elif kind == "pvp" and hp_a <= 0 and hp_b <= 0:
-			team_a_won = bool(res_a.get("player_wins", false))
+		room.run_over = true
+	# 整局归属同样走 TeamOutcome。规则见该文件：第 21 回合按最终战结果；
+	# 双杀且无正面胜负可依时记平局，不再用 `hp_a >= hp_b`（0 >= 0）默认判 A 胜。
+	var outcome := TeamOutcome.run_outcome({
+		"completed_round": completed_round,
+		"final_round": GameState.FINAL_ROUND,
+		"hp_a": hp_a,
+		"hp_b": hp_b,
+		"kind": kind,
+		"battle_a_wins": bool(res_a.get("player_wins", false)),
+		"battle_is_draw": bool(res_a.get("is_draw", false)),
+	})
 	var next_round := mini(completed_round + 1, GameState.FINAL_ROUND)
 	var out := {}
 	var slot_gold: Array = room.get("slot_gold", [])
@@ -1403,7 +2254,11 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 		var result: Dictionary = replay.get("result", {})
 		var snap: Dictionary = boards.get(slot, {})
 		var own_team := GameConstants.team_of_slot(slot)
+		# 结算的起点金币：账本权威时读账本，否则退回**客户端自报**（历史行为）。
+		# 后者正是 A5 的核心洞 —— 连"权威"的战后结算都是拿客户端给的数字当种子的。
 		var gold_before := int(snap.get("gold", slot_gold[slot]))
+		if economy_authoritative():
+			gold_before = int(_room_prep(room, slot).get("gold", slot_gold[slot]))
 		var gold_after := _server_gold_after_battle(gold_before, result, slot, snap, {
 			"kind": kind,
 			"player_wins": bool(team_wins[own_team]),
@@ -1411,8 +2266,14 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 			"loss_streak_after": int(loss_streak[own_team]),
 		})
 		slot_gold[slot] = gold_after
+		# 战后收益回写账本，让下一轮备战从正确的余额开始（P1）。
+		if economy_enabled():
+			_room_prep(room, slot)["gold"] = gold_after
 		out[slot] = {
 			"protocol": NetworkConfig.NETWORK_PROTOCOL_VERSION,
+			# 结算确认的锚点（E3）：客户端应用完这份结算后按它回 ACK，
+			# 服务器据此判断"所有在线真人都看到结果了"才推进下一轮。
+			"battle_id": str(room.get("battle_id", "")),
 			"completed_round": completed_round,
 			"round_index": next_round,
 			"kind": kind,
@@ -1424,12 +2285,17 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 			"boss_completed": int(room.get("boss_completed", 0)),
 			"loss_streak": int(loss_streak[own_team]),
 			"run_over": run_over,
-			"final_battle_complete": completed_round >= GameState.FINAL_ROUND,
-			"team_run_won": team_a_won if own_team == 0 else not team_a_won,
-			"pending_treasure": _server_pending_treasure(completed_round, snap),
+			"final_round_played": completed_round >= GameState.FINAL_ROUND,
+			# run_outcome 是权威值（TEAM_A / TEAM_B / DRAW）。
+			# team_run_won 保留为派生的本队视角布尔：平局时两队都不算赢。
+			"run_outcome": outcome,
+			"team_run_won": TeamOutcome.team_won_run(outcome, own_team),
+			"pending_treasure": _server_pending_treasure(room, slot, completed_round),
 		}
 	room.slot_gold = slot_gold
-	_net_log("official match_state generated room=%d round=%d hp=%s gold=%s run_over=%s" % [int(room.get("id", 0)), completed_round, str(room.team_hp), str(slot_gold), str(run_over)])
+	_net_log("official match_state generated room=%d round=%d hp=%s gold=%s run_over=%s outcome=%s" % [
+		int(room.get("id", 0)), completed_round, str(room.team_hp), str(slot_gold), str(run_over),
+		["team_a", "team_b", "draw"][outcome]])
 	return out
 
 # 专用服务器的权威结算：与本地/房主的 Main._on_team_battle_finished 共用
@@ -1452,13 +2318,32 @@ func _server_gold_after_battle(gold_before: int, result: Dictionary, slot: int, 
 		"pet_id": NetProtocol.extract_pet(snapshot),
 	})
 
-func _server_pending_treasure(completed_round: int, snapshot: Dictionary) -> Dictionary:
-	var owned: Array = snapshot.get("treasures", [])
+const TREASURE_OFFER_NONE := {"active": false, "round": 0, "candidates": [], "refresh_index": 0}
+
+# 服务端认可的持有列表。这是「宝物归属」的唯一真相，与客户端上报的 snapshot.treasures
+# 分开维护——后者仍然是客户端自报，只用于影子比对（见 _shadow_audit_submission）。
+func _room_owned_treasures(room: Dictionary, slot: int) -> Array:
+	var owned_map: Dictionary = room.get("owned_treasures", {})
+	var owned = owned_map.get(slot, [])
+	return (owned as Array) if typeof(owned) == TYPE_ARRAY else []
+
+# 发放本回合的宝物候选，并把这份 offer 记进房间。
+# 关键改动：`owned` 从「客户端上报的 treasures」换成「服务端记录的持有列表」——
+# 否则客户端只要少报几件，服务器就会一直给它发新候选，MAX_OWNED 形同虚设。
+func _server_pending_treasure(room: Dictionary, slot: int, completed_round: int) -> Dictionary:
+	var offers: Dictionary = room.get("treasure_offer", {})
+	var owned := _room_owned_treasures(room, slot)
 	if not RoundService.is_treasure_round(completed_round) or owned.size() >= TreasureService.MAX_OWNED:
-		return {"active": false, "round": 0, "candidates": [], "refresh_index": 0}
+		offers.erase(slot)
+		room.treasure_offer = offers
+		return TREASURE_OFFER_NONE.duplicate(true)
 	var candidates := _server_roll_treasure_candidates(owned, 3)
 	if candidates.is_empty():
-		return {"active": false, "round": 0, "candidates": [], "refresh_index": 0}
+		offers.erase(slot)
+		room.treasure_offer = offers
+		return TREASURE_OFFER_NONE.duplicate(true)
+	offers[slot] = {"round": completed_round, "candidates": candidates.duplicate(), "refresh_index": 0}
+	room.treasure_offer = offers
 	return {"active": true, "round": completed_round, "candidates": candidates, "refresh_index": 0}
 
 func _server_roll_treasure_candidates(owned: Array, count: int) -> Array:
@@ -1491,13 +2376,179 @@ func clear_opponent_snapshot() -> void:
 	opponent_board_snapshot.clear()
 	session_changed.emit()
 
-func disconnect_session() -> void:
-	_net_log("user quit session")
-	if team_active and not is_host and multiplayer.multiplayer_peer != null:
-		_rpc_team_leave.rpc_id(1)
-	# 主动退出 = 干净离场，作废重连凭证
+# --- 退出与失败的分流（E3 / R1，对应 B8）------------------------------------
+# 旧的 `disconnect_session()` 把两件完全不同的事混在一起：
+#   * 玩家点"返回主菜单" —— 明确退出，凭证该作废
+#   * replay 超时 / 结算没等到 —— **技术失败**，凭证还好好的
+# 而它对两者都是"发 leave + 立刻清 token + 关 peer"。于是一个几秒后能自愈的
+# 传输问题，被升级成"玩家永久回不去这一局"，服务器那边座位还留着等他。
+#
+# 现在分成两个入口，语义写在名字里。
+
+const LEAVE_RECEIPT_TIMEOUT_SEC := 8.0
+
+var _pending_leave_id := ""
+var _leave_deadline := 0.0
+# request_id -> 处理时刻。存在房间之外：最后一人退出会立刻关房，
+# 而他仍然需要能凭同一个 id 重取回执（否则重试会被当成新请求）。
+const LEAVE_TOMBSTONE_TTL_SEC := 600.0
+var _leave_tombstones: Dictionary = {}
+
+func _make_request_id() -> String:
+	return _crypto.generate_random_bytes(8).hex_encode()
+
+# --- 交易幂等：客户端侧（状态信封 E4）----------------------------------------
+# 服务端负责"同一个 request_id 不重复执行"，客户端负责另外两件事：
+#   1. **请求丢了要重发** —— 而且必须重发**同一个** request_id，否则服务端当新单子。
+#   2. **回复重复了要丢掉** —— 慢包和重发的回复都到了，不能加两次金币。
+const TX_RETRY_SEC := 3.0
+const TX_MAX_TRIES := 3
+const TX_DONE_CAP := 64
+
+var _tx_pending: Dictionary = {}   # rid -> {kind, args, deadline, tries}
+var _tx_done: Array = []           # 已消费的 rid，FIFO 定长
+
+func _tx_begin(kind: String, args: Array) -> String:
+	var rid := _make_request_id()
+	_tx_pending[rid] = {"kind": kind, "args": args, "deadline": _now() + TX_RETRY_SEC, "tries": 1}
+	return rid
+
+func _tx_send(rid: String) -> void:
+	var p: Dictionary = _tx_pending.get(rid, {})
+	if p.is_empty() or multiplayer.multiplayer_peer == null:
+		return
+	var args: Array = p.get("args", [])
+	match str(p.get("kind", "")):
+		"treasure_choice":
+			_rpc_treasure_choice.rpc_id(1, rid, str(args[0]))
+		"treasure_refresh":
+			_rpc_treasure_refresh.rpc_id(1, rid)
+		"altar":
+			_rpc_altar_request.rpc_id(1, rid)
+		"economy":
+			_rpc_economy_intent.rpc_id(1, rid, str(args[0]), args[1] as Dictionary)
+
+# 回复到达时调用。返回 false = 这份回复该丢掉（重复，或不是本机发的单子）。
+func _tx_consume(rid: String) -> bool:
+	if rid.is_empty():
+		return true   # 兼容：服务端主动下发（非交易回复）不带 rid
+	if _tx_done.has(rid):
+		return false
+	if not _tx_pending.has(rid):
+		return false  # 不是本机在等的单子（换会话后的迟到包）
+	_tx_pending.erase(rid)
+	_tx_done.append(rid)
+	while _tx_done.size() > TX_DONE_CAP:
+		_tx_done.pop_front()
+	return true
+
+func _tick_tx_retry(_delta: float) -> void:
+	if _tx_pending.is_empty():
+		return
+	if multiplayer.multiplayer_peer == null or state != SessionState.READY:
+		return   # 断线/重连期间不重发；连回来之后由 deadline 自然续上
+	var now := _now()
+	for rid in _tx_pending.keys():
+		var p: Dictionary = _tx_pending[rid]
+		if now < float(p.get("deadline", 0.0)):
+			continue
+		if int(p.get("tries", 0)) >= TX_MAX_TRIES:
+			# 放弃重发。**结果按"未知"处理，不是按"失败"**：服务端可能已经成功了。
+			# 这里只把 UI 解锁（否则宝物弹窗会永远转圈），权威值由下一份
+			# room_state 快照纠正 —— owned_treasures / altar_uses 都在里面。
+			_net_log("tx gave up rid=%s kind=%s (result unknown, awaiting room_state)" % [
+				rid, str(p.get("kind", ""))])
+			_tx_pending.erase(rid)
+			_tx_done.append(rid)
+			match str(p.get("kind", "")):
+				"altar":
+					altar_result.emit(false, GameState.team_hp, -1)
+				_:
+					treasure_denied.emit("timeout")
+			continue
+		p["tries"] = int(p.get("tries", 0)) + 1
+		p["deadline"] = now + TX_RETRY_SEC
+		_tx_pending[rid] = p
+		_net_log("tx retry rid=%s kind=%s try=%d" % [rid, str(p.get("kind", "")), int(p["tries"])])
+		_tx_send(rid)
+
+# 玩家**明确退出**。走 request_id + 幂等回执：**收到服务端确认才清凭证**。
+# 先把 pending_leave 落盘再发包 —— 进程这时候被杀，下次启动能凭它知道
+# "这局是主动退的，别再提示重连"。
+func request_user_leave() -> void:
+	if not (team_active and not is_host and multiplayer.multiplayer_peer != null and not session_token.is_empty()):
+		# 本地房主局 / 还没拿到凭证：没有需要服务端确认的东西，直接清场
+		SaveManager.clear_reconnect()
+		reset()
+		return
+	if _pending_leave_id.is_empty():
+		_pending_leave_id = _make_request_id()
+	SaveManager.mark_pending_leave(_pending_leave_id)
+	_leave_deadline = _now() + LEAVE_RECEIPT_TIMEOUT_SEC
+	_net_log("user leave intent id=%s" % _pending_leave_id)
+	_rpc_leave_intent.rpc_id(1, _pending_leave_id)
+	# **不在这里清 token、不关连接** —— 等回执。UI 那边已经导航走了，
+	# 这段等待对玩家不可见；超时兜底见 _tick_pending_leave。
+
+# **技术失败**：不发 leave、不清凭证，进可恢复状态。
+func enter_recoverable_failure(reason: String) -> void:
+	_net_log("recoverable failure: %s (class=%s)" % [reason, NetError.class_name_of(reason)])
+	if not session_token.is_empty() and not reconnect_address.is_empty():
+		_begin_reconnect(reason)
+		return
+	# 手里没有可恢复的凭证（本地房主局等）：只能回菜单，但**仍然不主动清凭证**
+	last_error = reason
+	state = SessionState.FAILED
+	reset_peer_only()
+	session_changed.emit()
+
+func _tick_pending_leave(_delta: float) -> void:
+	if _pending_leave_id.is_empty() or _leave_deadline <= 0.0:
+		return
+	if _now() < _leave_deadline:
+		return
+	# 回执没等到：清掉本地会话，但**磁盘上的 pending_leave 标记留着** ——
+	# 下次连上服务器时会用同一个 request_id 重发，服务端按幂等重放同一份回执。
+	_net_log("leave receipt timeout id=%s (marker kept for retry)" % _pending_leave_id)
+	_leave_deadline = 0.0
+	reset()
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_leave_intent(request_id: String) -> void:
+	if not _dedicated_server:
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if not _rate_ok(sender, "leave_intent"):
+		return
+	if request_id.length() > MAX_TOKEN_LEN:
+		return
+	# 幂等：同一个 request_id 重发（回执丢了、客户端重启后重试）必须拿回**同一份**
+	# 结果，而不是被当成新请求。tombstone 存在房间之外 —— 最后一人退出会立刻关房，
+	# 而他仍然需要能重取回执。
+	if _leave_tombstones.has(request_id):
+		_rpc_leave_receipt.rpc_id(sender, request_id)
+		return
+	var room := _room_for_peer(sender)
+	_leave_tombstones[request_id] = _now()
+	if not room.is_empty():
+		_apply_peer_leave(room, sender)
+	_net_log("leave applied id=%s peer=%d" % [request_id, sender])
+	_rpc_leave_receipt.rpc_id(sender, request_id)
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_leave_receipt(request_id: String) -> void:
+	if request_id != _pending_leave_id:
+		return
+	_net_log("leave receipt confirmed id=%s -> clearing credentials" % request_id)
+	_pending_leave_id = ""
+	_leave_deadline = 0.0
 	SaveManager.clear_reconnect()
 	reset()
+
+func disconnect_session() -> void:
+	# 兼容入口：语义等同"玩家明确退出"。
+	# 技术失败**不要**调这个，调 enter_recoverable_failure。
+	request_user_leave()
 
 func reset_peer_only() -> void:
 	if multiplayer.multiplayer_peer != null:
@@ -1532,6 +2583,12 @@ func reset() -> void:
 	server_phase = ""
 	_last_team_submission = {}
 	_resync_resubmitted_round = 0
+	_pending_ready = -1
+	_reconnect_phase = ReconnectPhase.BACKOFF
+	_reconnect_attempt = 0
+	# 交易上下文属于**这一局**：换局之后旧 rid 再也不会有回执，留着只会一直重发。
+	_tx_pending.clear()
+	_tx_done.clear()
 	session_changed.emit()
 
 # --- 断线重连 ---------------------------------------------------------------
@@ -1546,18 +2603,68 @@ func _begin_reconnect(reason: String) -> void:
 	_net_log("connection lost (%s) -> reconnecting to %s" % [reason, reconnect_address])
 	state = SessionState.RECONNECTING
 	last_error = tr("net_status_reconnecting")
+	# 第一次尝试立刻发起（瞬断要快速恢复），失败后才进指数退避。
+	_reconnect_phase = ReconnectPhase.BACKOFF
+	_reconnect_attempt = 0
 	_reconnect_retry_left = 0.0
 	_last_pong_at = 0.0
 	session_changed.emit()
 
-func _attempt_reconnect() -> void:
+# --- 重连状态机（B10）--------------------------------------------------------
+# 旧实现：RECONNECTING 期间每 3 秒无条件调一次 _attempt_reconnect，而它开头就
+# reset_peer_only()。于是「已经连上、正在等 resume 回包」的连接会被下一次 tick
+# 亲手拆掉 —— 服务器只要处理 resume 慢过 3 秒（同步算一场战斗就够了），客户端
+# 就永远连不上，表现为无限重连。单纯给 3 秒加随机抖动解决不了这个：问题不是
+# 间隔太整齐，是**等待期间不该重试**。
+#
+# 三个阶段：
+#   BACKOFF        没有 peer，在等下一次尝试
+#   CONNECTING     peer 已创建，等 ENet 握手
+#   WAITING_RESUME 已连上、resume 已发出，等服务器回 _rpc_resume_state
+# 只有 BACKOFF 会发起新连接；另外两个阶段只认「失败事件」或「整次尝试超时」。
+enum ReconnectPhase { BACKOFF, CONNECTING, WAITING_RESUME }
+
+const RECONNECT_ATTEMPT_TIMEOUT_SEC := 15.0   # 单次尝试（握手 + resume）的上限
+const RECONNECT_BACKOFF_BASE_SEC := 2.0
+const RECONNECT_BACKOFF_MAX_SEC := 30.0
+
+var _reconnect_phase: int = ReconnectPhase.BACKOFF
+var _reconnect_attempt := 0
+var _reconnect_deadline := 0.0
+
+func _tick_reconnect(delta: float) -> void:
+	match _reconnect_phase:
+		ReconnectPhase.BACKOFF:
+			_reconnect_retry_left -= delta
+			if _reconnect_retry_left <= 0.0:
+				_begin_reconnect_attempt()
+		_:
+			# 握手中 / 等 resume 中：**绝不能拆**。只有整次尝试超时才放弃重来。
+			if _now() >= _reconnect_deadline:
+				_net_log("reconnect attempt %d timed out (phase=%d)" % [_reconnect_attempt, _reconnect_phase])
+				_enter_reconnect_backoff()
+
+func _begin_reconnect_attempt() -> void:
 	reset_peer_only()
 	var p := ENetMultiplayerPeer.new()
 	if p.create_client(reconnect_address, remote_port) != OK:
-		return  # 下个周期再试
+		_enter_reconnect_backoff()
+		return
 	_peer = p
 	multiplayer.multiplayer_peer = _peer
-	# 保持 RECONNECTING；连上后 _on_connected_to_server 会带 token 请求恢复
+	_reconnect_phase = ReconnectPhase.CONNECTING
+	_reconnect_deadline = _now() + RECONNECT_ATTEMPT_TIMEOUT_SEC
+	_net_log("reconnect attempt %d -> connecting" % _reconnect_attempt)
+
+func _enter_reconnect_backoff() -> void:
+	reset_peer_only()
+	_reconnect_phase = ReconnectPhase.BACKOFF
+	_reconnect_attempt += 1
+	# capped exponential full jitter。固定间隔会让全服客户端同步重试，把刚解冻的
+	# 服务器再打垮一次（服务器冻结时所有人同时判超时，波峰完全叠加）。
+	var cap := minf(RECONNECT_BACKOFF_MAX_SEC, RECONNECT_BACKOFF_BASE_SEC * pow(2.0, float(mini(_reconnect_attempt, 5))))
+	_reconnect_retry_left = randf() * cap
+	_net_log("reconnect backoff attempt=%d wait=%.1fs (cap=%.1f)" % [_reconnect_attempt, _reconnect_retry_left, cap])
 
 # 玩家点"取消并返回主菜单"：放弃重连，彻底清场。
 func cancel_reconnect() -> void:
@@ -1565,14 +2672,17 @@ func cancel_reconnect() -> void:
 	reset()
 
 # app 重开后凭本地存的 token 恢复对局（Main 在启动时调用）。
-func begin_resume_from_disk(token: String, address: String) -> void:
+# port 必须由调用方传进来：座位 token 是**进程内**的，多进程下连错端口 = 凭证失效。
+func begin_resume_from_disk(token: String, address: String, port: int = DEFAULT_PORT) -> void:
 	reset()
 	team_active = true
 	session_token = token
 	reconnect_address = address
 	remote_address = address
-	remote_port = DEFAULT_PORT
+	remote_port = port
 	state = SessionState.RECONNECTING
+	_reconnect_phase = ReconnectPhase.BACKOFF
+	_reconnect_attempt = 0
 	_reconnect_retry_left = 0.0
 	session_changed.emit()
 
@@ -1587,6 +2697,24 @@ func _make_token() -> String:
 
 # 短码给玩家手输，所以不能太长；用 base32 去掉易混字符（0/O/1/I），
 # 10 位 × 32 符号 ≈ 2^50，配合限流与失败计数，在线枚举不再可行。
+# 客户端上报的短码必须先过这里（A12）。此前 create/join 直接把客户端自报的
+# public_id 当键写进 _public_token_seat，等于任何人都能：
+#   ① 用别人的短码覆盖那条映射，把对方的重连凭证指向自己的座位；
+#   ② 用一个超长字符串在服务器上留一条常驻内存条目。
+# 返回 "" 表示"没有有效短码"，调用方按无短码处理（不是报错，老客户端本来就可能不带）。
+# 注意：这只是格式与长度门。真正的修法是服务端签发 + 绑定（A12 完整版），
+# 但那要改协议，归最终同步协议批。
+func _sanitize_public_id(raw: String) -> String:
+	var id := raw.strip_edges().to_upper()
+	if id.is_empty():
+		return ""
+	if id.length() > MAX_PUBLIC_ID_LEN:
+		return ""
+	for i in id.length():
+		if not PUBLIC_TOKEN_ALPHABET.contains(id[i]):
+			return ""
+	return id
+
 const PUBLIC_TOKEN_ALPHABET := "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 const PUBLIC_TOKEN_LENGTH := 10
 const PUBLIC_TOKEN_MAX_TRIES := 8
@@ -1656,7 +2784,7 @@ func _rpc_team_create_room(public_id: String = "") -> void:
 		_net_log("room cap reached (%d) -> refusing create peer=%d" % [MAX_ROOMS, sender])
 		_rpc_team_action_failed.rpc_id(sender, "server_busy")
 		return
-	_assign_peer_to_room(sender, _new_room(), public_id.strip_edges().to_upper())
+	_assign_peer_to_room(sender, _new_room(), _sanitize_public_id(public_id))
 
 @rpc("any_peer", "call_remote", "reliable")
 func _rpc_team_join_room(room_id: int, public_id: String = "") -> void:
@@ -1684,7 +2812,7 @@ func _rpc_team_join_room(room_id: int, public_id: String = "") -> void:
 	if _room_next_free_slot(room) < 0:
 		_rpc_team_action_failed.rpc_id(sender, "room_full")
 		return
-	_assign_peer_to_room(sender, room, public_id.strip_edges().to_upper())
+	_assign_peer_to_room(sender, room, _sanitize_public_id(public_id))
 
 @rpc("any_peer", "call_remote", "reliable")
 func _rpc_public_resume_request(public_id: String) -> void:
@@ -1693,7 +2821,12 @@ func _rpc_public_resume_request(public_id: String) -> void:
 	var sender := multiplayer.get_remote_sender_id()
 	if not _rate_ok(sender, "public_resume"):
 		return
-	var id := public_id.strip_edges().to_upper()
+	var id := _sanitize_public_id(public_id)
+	if id.is_empty():
+		# 格式就不对，连查表都不必——但仍计一次 strike，短码枚举的失败必须有代价。
+		_rate_ok(sender, "public_resume")
+		_rpc_resume_failed.rpc_id(sender, "token_id_unknown")
+		return
 	var token := str(_public_token_seat.get(id, ""))
 	if token.is_empty():
 		# 猜错也计入 strike：短码枚举是可行的在线攻击面，失败次数必须有代价。
@@ -1701,17 +2834,24 @@ func _rpc_public_resume_request(public_id: String) -> void:
 		_rpc_resume_failed.rpc_id(sender, "token_id_unknown")
 		return
 	public_token_id = id
-	_rpc_resume_request(token)
+	_resume_seat(sender, token)
 
-@rpc("any_peer", "call_remote", "reliable")
+# B9：心跳走**不可靠**通道。它是周期性的，丢一发下一发几秒后就到；
+# 而"被一份 62 KB 的 replay 压在可靠队列后面"才是实际观测到的故障模式 ——
+# 客户端量到心跳超时 → 重连 → 再收一份 replay，正反馈。
+@rpc("any_peer", "call_remote", "unreliable")
 func _rpc_ping() -> void:
 	if not _dedicated_server:
 		return
 	var sender := multiplayer.get_remote_sender_id()
+	# 超频的 ping 直接丢弃，但仍然刷新 last_ping：对方确实在说话，只是说得太快。
+	# 不刷新的话，一个 ping 太快的客户端会被心跳超时判定为掉线——那是拿自己人开刀。
 	_peer_last_ping[sender] = _now()
+	if not _rate_ok(sender, "ping", false):
+		return
 	_rpc_pong.rpc_id(sender)
 
-@rpc("authority", "call_remote", "reliable")
+@rpc("authority", "call_remote", "unreliable")
 func _rpc_pong() -> void:
 	if _pong_gap_logged:
 		_pong_gap_logged = false
@@ -1724,6 +2864,148 @@ func _rpc_pong() -> void:
 		_ping_sent_at = 0
 		if rtt > PING_RTT_LOG_MS:
 			_net_log("pong rtt=%dms" % rtt)
+
+# --- 未入房连接的存活上限（A13）---------------------------------------------
+# 连上来但一直不进房间的 peer，只要持续发 ping 就能永久占着一个连接槽 ——
+# 心跳超时（20 秒）只踢"不说话"的，踢不掉"一直说话但什么也不干"的。
+# TEAM_MAX_CLIENTS = 512，也就是 512 个这样的连接就能让正常玩家连不进来，
+# 而这不需要任何账号、不需要进房间，成本极低。
+#
+# 正常玩家从连上到进房间只有几个 RPC 的往返（建房或加入），秒级完成。
+# 60 秒是很宽松的余量，够覆盖弱网下的重试。
+const UNJOINED_PEER_TTL_SEC := 60.0
+
+var _peer_connected_at: Dictionary = {}   # peer_id -> 连上的时刻（单调）
+
+func _tick_leave_tombstones() -> void:
+	var now := _now()
+	for key in _leave_tombstones.keys():
+		if now - float(_leave_tombstones[key]) >= LEAVE_TOMBSTONE_TTL_SEC:
+			_leave_tombstones.erase(key)
+
+func _tick_idle_peers() -> void:
+	var now := _now()
+	for peer_key in _peer_connected_at.keys():
+		var pid := int(peer_key)
+		# 已经进房间的不管：它由座位/心跳/僵尸清道夫那套负责。
+		if _peer_room.has(pid):
+			_peer_connected_at.erase(pid)
+			continue
+		if now - float(_peer_connected_at[pid]) < UNJOINED_PEER_TTL_SEC:
+			continue
+		_net_log("idle peer dropped peer=%d (no room after %ds)" % [pid, int(UNJOINED_PEER_TTL_SEC)])
+		_peer_connected_at.erase(pid)
+		# 同上：peer 可能已经自己断了，此时 disconnect_peer 会报 ERR_CONDITION 错误栈。
+		if _peer_connected(pid):
+			multiplayer.multiplayer_peer.disconnect_peer(pid)
+
+# --- 房间快照的存与读（B5）---------------------------------------------------
+
+func _snapshot_path() -> String:
+	# 多进程时每个分片一份，否则互相覆盖
+	return ROOM_SNAPSHOT_PATH if _shard_index == 0 else "%s.%d" % [ROOM_SNAPSHOT_PATH, _shard_index]
+
+func _save_rooms_snapshot() -> void:
+	var now := _now()
+	var out_rooms: Array = []
+	for room in _rooms.values():
+		if str(room.get("state", "")) == ROOM_CLOSED:
+			continue
+		var entry: Dictionary = {}
+		for key in PERSISTED_ROOM_FIELDS:
+			if room.has(key):
+				entry[key] = room[key]
+		# 时间转相对量
+		for key in PERSISTED_ELAPSED_FIELDS:
+			var t := float(room.get(key, 0.0))
+			entry["_elapsed_" + key] = (now - t) if t > 0.0 else -1.0
+		# 座位宽限：存"还剩多久"
+		var deadline: Dictionary = room.get("reserve_deadline", {})
+		var remain: Dictionary = {}
+		for slot in deadline.keys():
+			remain[slot] = maxf(0.0, float(deadline[slot]) - now)
+		entry["_reserve_remaining"] = remain
+		out_rooms.append(entry)
+	var payload := {
+		"version": ROOM_SNAPSHOT_VERSION,
+		"protocol": NetworkConfig.NETWORK_PROTOCOL_VERSION,
+		"shard": _shard_index,
+		"server_epoch": _server_epoch,
+		"saved_at_wall": _wall_now(),
+		"rooms": out_rooms,
+		"token_seat": _token_seat,
+		"public_token_seat": _public_token_seat,
+	}
+	if SaveManager.atomic_write_bytes(_snapshot_path(), var_to_bytes(payload)):
+		_rooms_dirty = false
+
+func _load_rooms_snapshot() -> void:
+	var raw := SaveManager.read_bytes_with_fallback(_snapshot_path())
+	if raw.is_empty():
+		return
+	var value = bytes_to_var(raw)
+	if typeof(value) != TYPE_DICTIONARY:
+		_net_log("room snapshot unreadable, starting empty")
+		return
+	var payload: Dictionary = value
+	# 版本或协议对不上就整份丢弃：宁可全场重开，也不能用一份语义可能已经变了的
+	# 快照去恢复对局（那会产生谁也查不出来的错乱）。
+	if int(payload.get("version", -1)) != ROOM_SNAPSHOT_VERSION \
+			or int(payload.get("protocol", -1)) != NetworkConfig.NETWORK_PROTOCOL_VERSION:
+		_net_log("room snapshot discarded: version=%s protocol=%s (want %d/%d)" % [
+			str(payload.get("version")), str(payload.get("protocol")),
+			ROOM_SNAPSHOT_VERSION, NetworkConfig.NETWORK_PROTOCOL_VERSION])
+		SaveManager.remove_all_variants(_snapshot_path())
+		return
+
+	var now := _now()
+	var restored := 0
+	var dropped := 0
+	for entry_value in (payload.get("rooms", []) as Array):
+		if typeof(entry_value) != TYPE_DICTIONARY:
+			continue
+		var entry: Dictionary = entry_value
+		var room := _new_room()
+		_rooms.erase(int(room.id))          # _new_room 摇了个新号，这里要用存档里的
+		for key in PERSISTED_ROOM_FIELDS:
+			if entry.has(key):
+				room[key] = entry[key]
+		# 时间基准重建：单调时钟重启后归零，所以用"已过去多久"倒推
+		for key in PERSISTED_ELAPSED_FIELDS:
+			var elapsed := float(entry.get("_elapsed_" + key, -1.0))
+			room[key] = (now - elapsed) if elapsed >= 0.0 else 0.0
+		# 崩在结算中途的房间无法重建（boards 不入快照），直接丢弃而不是留个死房间
+		if str(room.get("state", "")) == ROOM_RESULT and (room.get("last_match_state", {}) as Dictionary).is_empty():
+			dropped += 1
+			continue
+		# **所有 peer 状态一律清空**。存档里的 peer_id 重启后全部失效，
+		# 留着会让房间以为一堆不存在的 peer 还在线，永远判不空、永远不回收。
+		room.peer_slot = {}
+		room.boards = {}
+		room.last_board = {}
+		room.suspended = false
+		room.empty_since = now
+		# 每个占着的座位都当成"刚掉线"：给一份完整宽限，等原主人带 token 回来。
+		var reserved: Dictionary = {}
+		var deadline: Dictionary = {}
+		var states: Array = room.get("slot_states", [])
+		for i in TEAM_SLOTS:
+			if i < states.size() and str(states[i]) == "player":
+				reserved[i] = {"reserved_at": now}
+				deadline[i] = now + RESERVE_GRACE_SEC
+		room.reserved = reserved
+		room.reserve_deadline = deadline
+		_rooms[int(room.id)] = room
+		restored += 1
+
+	var saved_tokens = payload.get("token_seat", {})
+	if typeof(saved_tokens) == TYPE_DICTIONARY:
+		_token_seat = saved_tokens
+	var saved_public = payload.get("public_token_seat", {})
+	if typeof(saved_public) == TYPE_DICTIONARY:
+		_public_token_seat = saved_public
+	_net_log("room snapshot restored: rooms=%d dropped=%d tokens=%d prev_epoch=%d new_epoch=%d" % [
+		restored, dropped, _token_seat.size(), int(payload.get("server_epoch", 0)), _server_epoch])
 
 # 服务器：心跳超时的 peer 主动断开，走正常掉线->座位保留流程。
 func _tick_heartbeat_timeouts() -> void:
@@ -1746,6 +3028,11 @@ func _reap_zombie_peers() -> void:
 			continue
 		_net_log("zombie peer reaped peer=%d" % pid)
 		_peer_last_ping.erase(pid)
+		_peer_connected_at.erase(pid)
+		# 僵尸路径此前漏了这两条清理（_on_peer_disconnected 有做）：限流桶与 strike
+		# 计数会永久留存，短码的 peer 映射也不会释放。
+		_rate_forget(pid)
+		_peer_public_token.erase(pid)
 		var room := _room_for_peer(pid)
 		if room.is_empty():
 			_peer_room.erase(pid)
@@ -1762,6 +3049,9 @@ func _tick_board_watchdog() -> void:
 	for room in _rooms.values():
 		if str(room.get("state", "")) != ROOM_BATTLE:
 			continue
+		# 同上：suspended 房间不启动新模拟（B11/R2）
+		if bool(room.get("suspended", false)):
+			continue
 		if now - float(room.get("state_started_at", now)) < BOARD_SUBMIT_TIMEOUT_SEC:
 			continue
 		var states: Array = room.get("slot_states", [])
@@ -1772,7 +3062,7 @@ func _tick_board_watchdog() -> void:
 			if i >= states.size() or str(states[i]) != "player" or boards.has(i):
 				continue
 			if last_board.has(i):
-				boards[i] = last_board[i]
+				boards[i] = _restamp_cached_board(room, i, last_board[i])
 				_net_log("board watchdog auto-submit room=%d round=%d slot=%d" % [int(room.get("id", 0)), int(room.get("round_index", 1)), i])
 			else:
 				_net_log("board watchdog no cache room=%d slot=%d -> AI takeover" % [int(room.get("id", 0)), i])
@@ -1788,6 +3078,22 @@ func _rpc_resume_request(token: String) -> void:
 	if not _dedicated_server:
 		return
 	var sender := multiplayer.get_remote_sender_id()
+	# A9：直连入口自己限流。此前只有 _rpc_public_resume_request 有限流，客户端
+	# 直接 rpc 这个方法就把 A6 的短码保护整套绕开了（枚举不现实，但纯刷 CPU +
+	# journald 可行）。阈值与 public_resume 一致，给正常重连风暴留足余量。
+	if not _rate_ok(sender, "resume"):
+		return
+	# token 是不可信字符串且被当作字典键。签发值是 64 个 hex 字符，超长一律拒。
+	if token.length() > MAX_TOKEN_LEN:
+		_net_log("resume failed reason=token_too_long peer=%d len=%d" % [sender, token.length()])
+		_rpc_resume_failed.rpc_id(sender, "token_unknown")
+		return
+	_resume_seat(sender, token)
+
+# 直连 resume 与短码 resume 的共同实现。
+# 限流在两个 RPC 入口各做一次，这里不再重复计数（A9）——短码入口自己有
+# public_resume 配额用于抗短码枚举，两者语义不同，不能互相顶替。
+func _resume_seat(sender: int, token: String) -> void:
 	var seat: Dictionary = _token_seat.get(token, {})
 	if seat.is_empty():
 		_net_log("resume failed reason=token_unknown peer=%d" % sender)
@@ -1802,7 +3108,7 @@ func _rpc_resume_request(token: String) -> void:
 	# 对局已打完的房间不可恢复：按失败处理让客户端回主菜单。否则重连者会被
 	# resume 进一个永不开下一回合的死房间（客户端落备战界面干等）——实测日志里
 	# 出现过 "resume ok state=result" 后玩家卡死的案例。
-	if bool(room.get("final_battle_complete", false)):
+	if bool(room.get("run_over", false)):
 		_token_seat.erase(token)
 		_net_log("resume failed reason=match_over peer=%d" % sender)
 		_rpc_resume_failed.rpc_id(sender, "match_over")
@@ -1814,10 +3120,23 @@ func _rpc_resume_request(token: String) -> void:
 		return
 	var peer_slot: Dictionary = room.get("peer_slot", {})
 	for pid in peer_slot.keys():
-		if int(peer_slot[pid]) == slot and int(pid) != sender:
-			_net_log("resume failed reason=seat_taken room=%d slot=%d peer=%d" % [int(room.get("id", 0)), slot, sender])
-			_rpc_resume_failed.rpc_id(sender, "seat_taken")
-			return
+		if int(peer_slot[pid]) != slot or int(pid) == sender:
+			continue
+		# 座位被别的 peer 占着。绝大多数情况下那是**这个玩家自己的旧半开连接**：
+		# ENet 还没判死、清道夫还没跑到，新连接就已经带着同一个 token 回来了。
+		# 持有同一个 token 就是同一个人 —— 直接把旧 peer 顶掉，让他接回来。
+		if not _peer_connected(int(pid)):
+			_net_log("resume evicting stale peer=%d room=%d slot=%d" % [int(pid), int(room.get("id", 0)), slot])
+			peer_slot.erase(int(pid))
+			room.peer_slot = peer_slot
+			_peer_room.erase(int(pid))
+			_peer_last_ping.erase(int(pid))
+			break
+		# 旧 peer 真的还活着：这是**可重试**的竞态，不是凭证失效。
+		# 回 seat_busy（而不是 seat_taken），客户端据此保留 token 并退避重试。
+		_net_log("resume busy room=%d slot=%d peer=%d holder=%d" % [int(room.get("id", 0)), slot, sender, int(pid)])
+		_rpc_resume_failed.rpc_id(sender, "seat_busy")
+		return
 	# 连接握手时这个 peer 可能已被自动分进某个大厅房占了座——撤掉那个占位，
 	# 否则两个房间会同时把他算作成员、同时向他广播大厅状态（互相覆盖显示）。
 	var prev_room := _room_for_peer(sender)
@@ -1859,29 +3178,13 @@ func _rpc_resume_request(token: String) -> void:
 		var boards_now: Dictionary = room.get("boards", {})
 		var lb: Dictionary = room.get("last_board", {})
 		if not boards_now.has(slot) and lb.has(slot):
-			boards_now[slot] = lb[slot]
+			boards_now[slot] = _restamp_cached_board(room, slot, lb[slot])
 			room.boards = boards_now
 			_net_log("resume auto-submit cached board room=%d round=%d slot=%d" % [int(room.get("id", 0)), int(room.get("round_index", 1)), slot])
-	# 结算阶段 round_index 还停在刚打完的那一轮（惰性推进），客户端要进的是下一轮。
-	# 给旧值会让客户端从此落后一轮、之后提交全被 wrong_round 拒收（实测日志确认）。
-	var resume_round := int(room.get("round_index", 1))
-	if str(room.get("state", "")) == ROOM_RESULT:
-		resume_round = mini(resume_round + 1, GameState.FINAL_ROUND)
-	var payload := {
-		"phase": str(room.get("state", ROOM_PREP)),
-		"room_id": int(room.get("id", 0)),
-		"slot": slot,
-		"leader_slot": int(room.get("leader_slot", 0)),
-		"slot_states": (room.get("slot_states", []) as Array).duplicate(),
-		"ready": (room.get("ready", []) as Array).duplicate(),
-		"round_index": resume_round,
-		# 不再下发 shared_seed：重连恢复只需要回合与阶段，而提前拿到 seed 等于
-		# 恢复了「备战期就能预演本回合战斗」的能力。客户端不本地模拟，用不到它。
-		"team_hp": int(hp[own_team]),
-		"enemy_team_hp": int(hp[1 - own_team]),
-		"gold": gold,
-	}
-	_rpc_resume_state.rpc_id(sender, payload)
+	# E2：恢复用的和平时广播的**是同一份东西** —— room_state 全量快照。
+	# 此前 resume_state 和 team_lobby 是两套各自维护的字段集，
+	# "平时发一部分、重连发另一部分"正是 C5 那些缺字段的由来。
+	# 这里的一次广播同时把快照发给全房（含刚回来的这个 peer）。
 	_broadcast_room_lobby(room)
 	# 本回合结果已算出（结算阶段）：补发该座位的 match_state，客户端直接跳过战斗
 	if str(room.get("state", "")) == ROOM_RESULT:
@@ -1892,24 +3195,79 @@ func _rpc_resume_request(token: String) -> void:
 	elif str(room.get("state", "")) == ROOM_BATTLE:
 		_room_try_finalize_boards(room)
 
+# --- 状态信封 E2：房间权威状态的唯一入口 ------------------------------------
+# 取代了原来的 team_lobby / team_leader / team_assign_slot / resume_state 四条。
+#
+# 应用规则（RFC 第六节）：
+#   epoch 不同   -> 服务器重启过（或这是第一份），接受
+#   seq 未前进   -> 迟到包，丢弃
+#   否则         -> **整份替换**
+#
+# `else` 分支刻意不检查连号：全量快照跳号直接应用就是对的，
+# 这就是不做 delta 换来的"漏包自愈"。服务器因此不需要保留任何状态历史。
+var _applied_epoch := 0
+var _applied_seq := 0
+
 @rpc("authority", "call_remote", "reliable")
-func _rpc_resume_state(payload: Dictionary) -> void:
+func _rpc_room_state(envelope: Dictionary) -> void:
+	var epoch := int(envelope.get("server_epoch", 0))
+	var seq := int(envelope.get("state_seq", 0))
+	var payload: Dictionary = envelope.get("payload", {}) as Dictionary
+	if payload.is_empty():
+		return
+	if epoch == _applied_epoch and seq <= _applied_seq:
+		return   # 迟到包
+	var incoming_token := str(payload.get("session_token", ""))
+	# 重连握手期间，服务器可能先把我们当新玩家分进别的房间并签发新 token ——
+	# 绝不能让它覆盖手里真正的重连凭证（旧 token 的座位还在等我们）。
+	# 手里没 token 时（短码冷启动恢复）不设防，那条路径本来就是来拿 token 的。
+	if state == SessionState.RECONNECTING and not session_token.is_empty() \
+			and not incoming_token.is_empty() and incoming_token != session_token:
+		_net_log("room_state ignored during resume (foreign token)")
+		return
+
+	var was_reconnecting := state == SessionState.RECONNECTING
+	_applied_epoch = epoch
+	_applied_seq = seq
+
 	team_active = true
-	team_local_slot = int(payload.get("slot", -1))
-	team_room_id = int(payload.get("room_id", 0))
+	team_room_id = int(envelope.get("room_id", 0))
+	team_local_slot = int(payload.get("my_slot", -1))
 	team_leader_slot = int(payload.get("leader_slot", 0))
 	team_slot_states = (payload.get("slot_states", []) as Array).duplicate()
 	team_ready = (payload.get("ready", []) as Array).duplicate()
-	shared_seed = int(payload.get("shared_seed", shared_seed))
-	server_round_index = int(payload.get("round_index", 0))
+	server_round_index = int(payload.get("round_id", 0))
 	server_phase = str(payload.get("phase", ""))
-	state = SessionState.READY
-	last_error = ""
+	# 服务器确认了在途的 ready 请求 -> 撤销本地意图（C24）
+	if _pending_ready >= 0 and team_local_slot >= 0 and team_local_slot < team_ready.size():
+		if bool(team_ready[team_local_slot]) == (_pending_ready == 1):
+			_pending_ready = -1
+
+	# 凭证：token 与短码都在快照里，落地并原子写盘（B14 + C21）
+	if not incoming_token.is_empty() and incoming_token != session_token:
+		session_token = incoming_token
+		if reconnect_address.is_empty():
+			reconnect_address = remote_address
+		SaveManager.save_reconnect(session_token, reconnect_address, remote_port)
+	var incoming_public := str(payload.get("public_id", ""))
+	if not incoming_public.is_empty() and incoming_public != public_token_id:
+		public_token_id = incoming_public
+		SaveManager.save_public_token(public_token_id)
+		public_token_changed.emit(public_token_id)
+
+	if state != SessionState.READY:
+		state = SessionState.READY
+		last_error = ""
+	_reconnect_attempt = 0
+	_reconnect_phase = ReconnectPhase.BACKOFF
 	_last_pong_at = _now()
-	_net_log("resume state received slot=%d phase=%s round=%d" % [team_local_slot, str(payload.get("phase", "")), int(payload.get("round_index", 1))])
 	session_changed.emit()
 	team_lobby_changed.emit()
-	resume_completed.emit(payload)
+	# 只有"重连中收到的第一份"才算恢复完成 —— 否则每次广播都会让 Main 重新导航。
+	if was_reconnecting:
+		_net_log("resume completed via room_state: slot=%d phase=%s round=%d seq=%d" % [
+			team_local_slot, server_phase, server_round_index, seq])
+		resume_completed.emit(payload)
 
 # 玩家开新游戏时放弃旧座位：旧房间还有其他在线玩家 -> 该座位转 AI(dummy)；
 # 没人了就不管（空房间靠超时自清）。token 作废，之后连不回。
@@ -1925,11 +3283,7 @@ func _rpc_abandon_seat(token: String) -> void:
 	_token_seat.erase(token)
 	if room.is_empty() or slot < 0 or slot >= TEAM_SLOTS:
 		return
-	var seat_tokens: Dictionary = room.get("seat_tokens", {})
-	seat_tokens.erase(slot)
-	room.seat_tokens = seat_tokens
-	(room.get("reserved", {}) as Dictionary).erase(slot)
-	(room.get("reserve_deadline", {}) as Dictionary).erase(slot)
+	_clear_seat_metadata(room, slot)
 	if _room_online_count(room) <= 0:
 		# 房里没别人了：不转 AI，让空房间自然超时回收
 		_net_log("seat abandoned room=%d slot=%d (room empty, will time out)" % [int(room.get("id", 0)), slot])
@@ -1940,7 +3294,14 @@ func _rpc_abandon_seat(token: String) -> void:
 
 @rpc("authority", "call_remote", "reliable")
 func _rpc_resume_failed(reason: String) -> void:
-	_net_log("resume failed reason=%s" % reason)
+	# 分级表统一在 NetError（E1）。此前这里挂着一个两元素的硬编码数组，
+	# 而别处的失败路径各判各的 —— 同一个错误码在不同地方待遇不一样。
+	_net_log("resume failed reason=%s class=%s" % [reason, NetError.class_name_of(reason)])
+	if not NetError.should_clear_credentials(reason) and state == SessionState.RECONNECTING:
+		# 保留 token 与 team 上下文，退避后再来。
+		_enter_reconnect_backoff()
+		return
+	# 终局原因（token_unknown / room_gone / match_over / bad_slot …）：凭证确实没用了。
 	SaveManager.clear_reconnect()
 	session_token = ""
 	reconnect_address = ""
@@ -1977,6 +3338,7 @@ func _on_peer_connected(id: int) -> void:
 		if is_host:
 			if _dedicated_server:
 				_peer_last_ping[id] = _now()
+				_peer_connected_at[id] = _now()   # A13：未入房存活上限的起算点
 				return
 			var slot := _team_next_free_slot()
 			if slot >= 0:
@@ -1990,6 +3352,7 @@ func _on_peer_connected(id: int) -> void:
 func _on_peer_disconnected(id: int) -> void:
 	_net_log("client disconnected peer=%d" % id)
 	_peer_last_ping.erase(id)
+	_peer_connected_at.erase(id)
 	_rate_forget(id)
 	# 短 token 映射过去从不清理，peer 断开也不 erase —— 内存只涨不降。
 	var short_token := str(_peer_public_token.get(id, ""))
@@ -2037,6 +3400,13 @@ func _assign_peer_to_room(peer_id: int, room: Dictionary = {}, public_id: String
 	room.empty_since = 0.0
 	_peer_room[peer_id] = int(room.get("id", 0))
 	_peer_last_ping[peer_id] = _now()
+	# 记录加入顺序（R5 leader 接任依据）。只在首次占座时分配；换位会搬走这个序号，
+	# 持 token 重连沿用原座位因而自然保留 —— 「谁先进的房间」在整局内稳定。
+	var seq_map: Dictionary = room.get("join_seq", {})
+	if not seq_map.has(slot):
+		seq_map[slot] = int(room.get("next_join_seq", 0))
+		room.next_join_seq = int(room.get("next_join_seq", 0)) + 1
+		room.join_seq = seq_map
 	# 签发会话 token：断线重连的凭证（非账号，一局一换）
 	var token := _make_token()
 	var seat_tokens: Dictionary = room.get("seat_tokens", {})
@@ -2044,17 +3414,252 @@ func _assign_peer_to_room(peer_id: int, room: Dictionary = {}, public_id: String
 	room.seat_tokens = seat_tokens
 	_token_seat[token] = {"room_id": int(room.get("id", 0)), "slot": slot}
 	if not public_id.is_empty():
+		# 同一短码换座位时先清掉旧映射，避免 _public_token_seat 里留下指向已作废
+		# token 的孤儿条目（短码空间会被这些死条目占满，见 _make_public_token）。
 		_public_token_seat[public_id] = token
 		_peer_public_token[peer_id] = public_id
+		var seat_public: Dictionary = room.get("seat_public_id", {})
+		seat_public[slot] = public_id
+		room.seat_public_id = seat_public
 	_touch_room(room)
-	_rpc_team_assign_slot.rpc_id(peer_id, slot, token, int(room.get("id", 0)), public_id)
-	_rpc_team_lobby.rpc_id(peer_id, states, ready)
+	# 座位号、token、短码、房主全部走 room_state（E2），不再单独发 assign_slot。
+	# 保留的遗留通道，仍要判连接：peer 可能在入座和这一行之间就掉了，
+	# 对不存在的 peer 发包会刷 "unknown peer ID" 错误栈（真错误会被淹掉）。
+	if _peer_connected(peer_id):
+		_rpc_team_lobby.rpc_id(peer_id, states, ready)
 	_net_log("player joined room=%d peer=%d slot=%d" % [int(room.get("id", 0)), peer_id, slot])
 	# 若这个房间的房主已经走了（leader_slot 指向空/离线座位），让新加入的玩家接任，
 	# 并向全房广播正确的房主（含刚加入的这个 peer）。避免"房间没房主"。
 	_maybe_promote_leader(room)
-	_rpc_team_leader.rpc_id(peer_id, int(room.get("leader_slot", 0)))
+	# 房主在 room_state 里，下面这次广播就带上了 —— 不再单发一条 team_leader（E2）
 	_broadcast_room_lobby(room)
+
+# --- 交易幂等回执（状态信封 E4）----------------------------------------------
+# 宝物选择、宝物刷新、黄金祭坛这三笔都是**一次性、有副作用、不可重放**的操作。
+# 此前它们是「发出去就不管」：请求丢了玩家白点一次，**回复丢了后果更糟** ——
+#
+#   宝物选择：offer 用后即弃 -> 重试落到 no_offer。服务端已经记了归属，
+#             客户端却永远收不到，两边宝物列表从此不一致。
+#   宝物刷新：重试会**再摇一次**并再进一次 refresh_index —— 玩家为一次刷新付两次钱，
+#             而且第一次看到的候选再也拿不回来。
+#   黄金祭坛：重试再扣 1 点全队 HP、再消耗一次机会，而金币只按收到的回复加 ——
+#             等于付了两份代价拿一份收益。
+#
+# 解法和 leave receipt 同一套：**request_id + 存结果 + 重试重放同一份结果**。
+# 服务端不重做，只把上次的答案再念一遍；客户端按 request_id 去重，重复回复直接丢。
+#
+# 边界：这解决的是**同一笔交易不被重复执行**，不是**金币账目本身可信**。
+# 金币仍是客户端自报（A5/P1）。慷慨命运赌博现在完全在客户端，没有 RPC 可幂等化 ——
+# 它归 P1 账本，届时**出生就带 request_id**，走的是下面这同一套信封。
+const TX_LOG_PER_SLOT := 16
+
+# room.tx_log: slot -> Array[{rid, kind, result, at}]，FIFO 定长。
+# 用数组而不是嵌套字典：定长裁剪是一行，且 var_to_bytes 往返干净。
+func _tx_find(room: Dictionary, slot: int, rid: String) -> Dictionary:
+	var log_map: Dictionary = room.get("tx_log", {})
+	var entries: Array = log_map.get(slot, [])
+	for e in entries:
+		if typeof(e) == TYPE_DICTIONARY and str((e as Dictionary).get("rid", "")) == rid:
+			return e as Dictionary
+	return {}
+
+func _tx_record(room: Dictionary, slot: int, rid: String, kind: String, result: Dictionary) -> void:
+	var log_map: Dictionary = room.get("tx_log", {})
+	var entries: Array = log_map.get(slot, [])
+	entries.append({"rid": rid, "kind": kind, "result": result, "at": _now()})
+	while entries.size() > TX_LOG_PER_SLOT:
+		entries.pop_front()
+	log_map[slot] = entries
+	room.tx_log = log_map
+
+# 重放上一次的答案。**不重做任何副作用** —— 这正是幂等的全部含义。
+func _tx_replay(sender: int, rid: String, entry: Dictionary) -> void:
+	var result: Dictionary = entry.get("result", {})
+	var ok := bool(result.get("ok", false))
+	match str(entry.get("kind", "")):
+		"treasure_choice":
+			if ok:
+				_rpc_treasure_granted.rpc_id(sender, rid, str(result.get("tid", "")), result.get("owned", []))
+			else:
+				_rpc_treasure_denied.rpc_id(sender, rid, str(result.get("reason", "denied")))
+		"treasure_refresh":
+			if ok:
+				_rpc_treasure_offer.rpc_id(sender, rid, result.get("candidates", []), int(result.get("refresh_index", 0)))
+			else:
+				_rpc_treasure_denied.rpc_id(sender, rid, str(result.get("reason", "denied")))
+		"altar":
+			_rpc_altar_result.rpc_id(sender, rid, ok, int(result.get("team_hp", 0)), int(result.get("uses", 0)))
+		"economy":
+			# 经济回执整份存、整份重放。里面含随机结果（赌博开奖、刷新出的商品），
+			# 重放时绝不能重算 —— 那正是"断线重连刷好结果"的入口。
+			_rpc_economy_receipt.rpc_id(sender, rid, entry.get("result", {}))
+
+# 三个 RPC 的公共入口校验：限流、rid 合法性、房间与座位、以及**幂等命中**。
+# 返回 slot < 0 表示调用方应直接 return（要么已重放、要么已拒绝）。
+func _tx_context(sender: int, rid: String, limit_key: String) -> Dictionary:
+	if not _rate_ok(sender, limit_key):
+		return {"slot": -1}
+	if rid.is_empty() or rid.length() > MAX_TOKEN_LEN:
+		return {"slot": -1}
+	var room := _room_for_peer(sender)
+	if room.is_empty():
+		return {"slot": -1}
+	var slot := int((room.get("peer_slot", {}) as Dictionary).get(sender, -1))
+	if slot < 0 or slot >= TEAM_SLOTS:
+		return {"slot": -1}
+	var hit := _tx_find(room, slot, rid)
+	if not hit.is_empty():
+		_net_log("tx replay room=%d slot=%d rid=%s kind=%s" % [
+			int(room.get("id", 0)), slot, rid, str(hit.get("kind", ""))])
+		_tx_replay(sender, rid, hit)
+		return {"slot": -1}
+	return {"room": room, "slot": slot}
+
+# --- P1 备战经济账本（服务端权威） -------------------------------------------
+# 账本本体在 scripts/multiplayer/EconomyLedger.gd（纯函数、零全局，可单独测）。
+# 这里只做三件事：取/建座位账本、把随机数摇好、把 intent 接进 E4 的幂等机制。
+#
+# **两段式上线**（见 ServerFlags）：`economy_ledger_enabled` 先只记账+影子比对，
+# `economy_ledger_authoritative` 才让它成为唯一真相。后者必须等客户端改造完成。
+const ECONOMY_ACTIONS := [
+	"buy", "merge", "sell", "hire_merc", "shop_refresh", "gamble",
+]
+const MAX_MERGE_UIDS := 4
+
+func economy_enabled() -> bool:
+	return ServerFlags.get_bool("economy_ledger_enabled")
+
+func economy_authoritative() -> bool:
+	# 权威必须蕴含启用：只开后者是配置错误，按"没上线"处理，不是按"权威"处理。
+	return economy_enabled() and ServerFlags.get_bool("economy_ledger_authoritative")
+
+func _room_prep(room: Dictionary, slot: int) -> Dictionary:
+	var preps: Dictionary = room.get("prep", {})
+	if not preps.has(slot):
+		preps[slot] = EconomyLedger.new_prep(GameState.START_GOLD)
+		room["prep"] = preps
+	return preps[slot]
+
+func _room_owned_for_ledger(room: Dictionary, slot: int) -> Array:
+	# 账本按**服务端记录的**持有宝物算折扣，不按客户端自报 —— 否则伪造一件
+	# money_discount 就能让服务端跟着按折扣价扣钱。
+	return _room_owned_treasures(room, slot)
+
+# 商店重摇：随机在这里、不在账本里。用 Crypto 而不是 randi()，
+# 与 A4/A6 的其余随机源保持同一标准（客户端不能预测下一轮商品）。
+func _server_roll_shop_offers(count: int) -> Array:
+	var units: Array = DataRegistry.get_table("race_units").get("units", [])
+	var out: Array = []
+	if units.is_empty():
+		return out
+	for _i in count:
+		var pick := int(_crypto.generate_random_bytes(4).decode_u32(0)) % units.size()
+		out.append((units[pick] as Dictionary).duplicate(true))
+	return out
+
+func _make_offer_id() -> String:
+	return _crypto.generate_random_bytes(6).hex_encode()
+
+# 把这次 intent 需要的随机数与外部输入一次备齐。
+# 账本拿到的永远是**已经定好的**值 —— 重放回执时不会重摇（P1 / E4 的共同要求）。
+func _economy_ctx(room: Dictionary, slot: int, action: String) -> Dictionary:
+	var owned := _room_owned_for_ledger(room, slot)
+	var ctx := {
+		"owned_treasures": owned,
+		"merc_table": DataRegistry.get_table("mercenaries").get("mercenaries", []),
+		"roster_cap": GameConstants.CELL_COUNT + GameState.BENCH_SLOTS,
+		"merc_cap": GameState.MERCENARY_SLOTS,
+	}
+	match action:
+		"shop_refresh":
+			ctx["rolled_offers"] = _server_roll_shop_offers(GameState.SHOP_UNIT_SLOTS)
+			ctx["offer_id"] = _make_offer_id()
+		"gamble":
+			# 用 Crypto 取 [0,1)：randf() 的种子是可预测的，而这是钱。
+			ctx["roll"] = float(_crypto.generate_random_bytes(4).decode_u32(0)) / 4294967296.0
+			# 联动 id 必须和数据表逐字一致。写错不会报错，只会**永远判成没联动** ——
+			# 玩家花钱拿到的 60%/保留 50% 会静默退化成 50%/保留 20%。
+			# （初版我凭印象写了 `link_lucky_fortune`，数据表里根本没这个 id。）
+			ctx["gamble_linked"] = TreasureService.has_linkage_in(owned, "link_fraud_fate")
+			# 赌博是「慷慨命运」这件宝物的能力 —— 没有它根本不该开奖。
+			# 客户端有这道门（PrepFlowController:183），服务端此前没有。
+			ctx["gamble_entitled"] = owned.has("money_generous_fate")
+	return ctx
+
+func request_economy(action: String, payload: Dictionary) -> String:
+	if not (team_active and not is_host and multiplayer.multiplayer_peer != null):
+		return ""
+	var rid := _tx_begin("economy", [action, payload])
+	_tx_send(rid)
+	return rid
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_economy_intent(request_id: String, action: String, payload: Dictionary) -> void:
+	if not _dedicated_server or not economy_enabled():
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	# 幂等、限流、房间与座位校验全部复用 E4 那一套：
+	# **先查回执再执行**（RFC 里最容易写反的一处 —— 反过来的话"执行成功但回执丢了"
+	# 的重试会被 revision 判成 stale 而拒绝，玩家钱扣了东西没拿到）。
+	var ctx0 := _tx_context(sender, request_id, "economy")
+	var slot := int(ctx0.get("slot", -1))
+	if slot < 0:
+		return
+	var room: Dictionary = ctx0["room"]
+	var receipt := _room_apply_economy(room, slot, action, payload)
+	_tx_record(room, slot, request_id, "economy", receipt)
+	_rpc_economy_receipt.rpc_id(sender, request_id, receipt)
+	if bool(receipt.get("ok", false)):
+		_touch_room(room)
+
+func _room_apply_economy(room: Dictionary, slot: int, action: String, payload: Dictionary) -> Dictionary:
+	if not ECONOMY_ACTIONS.has(action):
+		return _economy_reject(room, slot, "unknown_action")
+	# 经济操作只在备战阶段有效。战斗/结算阶段还能买卖，等于让人在结算跑的同时改棋盘。
+	if str(room.get("state", ROOM_LOBBY)) != ROOM_PREP:
+		return _economy_reject(room, slot, "bad_phase")
+	if action == "merge" and (payload.get("uids", []) as Array).size() > MAX_MERGE_UIDS:
+		return _economy_reject(room, slot, "bad_request")
+	var prep := _room_prep(room, slot)
+	var receipt := EconomyLedger.apply(prep, action, payload, _economy_ctx(room, slot, action))
+	receipt["action"] = action
+	if bool(receipt.get("ok", false)):
+		_net_log("economy room=%d slot=%d %s delta=%d gold=%d rev=%d" % [
+			int(room.get("id", 0)), slot, action,
+			int(receipt.get("delta", 0)), int(receipt.get("gold_after", 0)),
+			int(receipt.get("revision", 0))])
+	else:
+		_net_log("economy rejected room=%d slot=%d %s reason=%s" % [
+			int(room.get("id", 0)), slot, action, str(receipt.get("error", ""))])
+	return receipt
+
+func _economy_reject(room: Dictionary, slot: int, reason: String) -> Dictionary:
+	var prep := _room_prep(room, slot)
+	var gold := int(prep.get("gold", 0))
+	return {"ok": false, "error": reason, "action": "",
+		"gold_before": gold, "delta": 0, "gold_after": gold,
+		"revision": int(prep.get("revision", 0)), "result": {}}
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_economy_receipt(request_id: String, receipt: Dictionary) -> void:
+	if not _tx_consume(request_id):
+		return
+	economy_receipt.emit(receipt)
+
+signal economy_receipt(receipt: Dictionary)
+
+# 影子比对：客户端自报的钱 vs 账本记的钱。
+# 这是 authoritative 开关能不能开的**唯一依据** —— 影子期零差异之前不许翻。
+func _shadow_audit_economy(room: Dictionary, slot: int, reported_gold: int) -> void:
+	if not economy_enabled():
+		return
+	var prep := _room_prep(room, slot)
+	var ledger_gold := int(prep.get("gold", 0))
+	if ledger_gold == reported_gold:
+		return
+	_net_log("shadow economy_gold room=%d round=%d slot=%d client=%d ledger=%d diff=%d rev=%d" % [
+		int(room.get("id", 0)), int(room.get("round_index", 1)), slot,
+		reported_gold, ledger_gold, reported_gold - ledger_gold, int(prep.get("revision", 0))])
 
 # --- 黄金祭坛（服务端权威 intent） ------------------------------------------
 # 祭坛拿「法阵 HP」换金币，而 HP 是服务端权威、金币目前还是客户端自报——两边分属
@@ -2073,42 +3678,27 @@ const ALTAR_GOLD := 50
 
 func request_golden_altar() -> void:
 	if team_active and multiplayer.multiplayer_peer != null:
-		_rpc_altar_request.rpc_id(1)
+		_tx_send(_tx_begin("altar", []))
 
 @rpc("any_peer", "call_remote", "reliable")
-func _rpc_altar_request() -> void:
+func _rpc_altar_request(request_id: String) -> void:
 	if not _dedicated_server:
 		return
 	var sender := multiplayer.get_remote_sender_id()
-	if not _rate_ok(sender, "altar"):
+	var ctx := _tx_context(sender, request_id, "altar")
+	var slot := int(ctx.get("slot", -1))
+	if slot < 0:
 		return
-	var room := _room_for_peer(sender)
-	if room.is_empty():
+	var room: Dictionary = ctx["room"]
+	var result := _room_apply_altar(room, slot)
+	_tx_record(room, slot, request_id, "altar", result)
+	_rpc_altar_result.rpc_id(sender, request_id,
+		bool(result.get("ok", false)), int(result.get("team_hp", 0)), int(result.get("uses", 0)))
+	if not bool(result.get("ok", false)):
 		return
-	var slot := int((room.get("peer_slot", {}) as Dictionary).get(sender, -1))
-	if slot < 0 or slot >= TEAM_SLOTS:
-		return
-	# 只在备战阶段可用：战斗/结算阶段改 HP 会和正在进行的结算打架。
-	if str(room.get("state", ROOM_LOBBY)) != ROOM_PREP:
-		_rpc_altar_result.rpc_id(sender, false, 0, 0)
-		return
-	var uses_map: Dictionary = room.get("altar_uses", {})
-	var used := int(uses_map.get(slot, 0))
-	var team := 0 if slot < 3 else 1
-	var hp_arr: Array = room.get("team_hp", [GameState.START_FORMATION_HP, GameState.START_FORMATION_HP])
-	var hp := int(hp_arr[team])
-	if used >= ALTAR_MAX_USES_PER_ROUND or hp <= ALTAR_MIN_HP:
-		_rpc_altar_result.rpc_id(sender, false, hp, used)
-		return
-	hp -= 1
-	hp_arr[team] = hp
-	room.team_hp = hp_arr
-	uses_map[slot] = used + 1
-	room.altar_uses = uses_map
-	_touch_room(room)
-	_net_log("altar granted room=%d slot=%d team=%d hp=%d uses=%d" % [int(room.get("id", 0)), slot, team, hp, used + 1])
-	_rpc_altar_result.rpc_id(sender, true, hp, used + 1)
 	# 同队其他人也要看到共享法阵 HP 的变化（祭坛扣的是全队 HP）。
+	var team := 0 if slot < 3 else 1
+	var hp := int(result.get("team_hp", 0))
 	for peer_id in (room.get("peer_slot", {}) as Dictionary).keys():
 		var other_slot := int((room.get("peer_slot", {}) as Dictionary)[peer_id])
 		if int(peer_id) == sender or not _peer_connected(int(peer_id)):
@@ -2116,8 +3706,37 @@ func _rpc_altar_request() -> void:
 		if (0 if other_slot < 3 else 1) == team:
 			_rpc_altar_team_hp.rpc_id(int(peer_id), hp)
 
+# 裁决与 RPC 分开（和本文件其余 _rpc_X → _room_X 的分层一致）：对抗台能直接驱动，
+# 且返回值就是要存进 tx_log 的那份结果 —— 重放时不必再走一遍判断。
+func _room_apply_altar(room: Dictionary, slot: int) -> Dictionary:
+	# 只在备战阶段可用：战斗/结算阶段改 HP 会和正在进行的结算打架。
+	if str(room.get("state", ROOM_LOBBY)) != ROOM_PREP:
+		return {"ok": false, "team_hp": 0, "uses": 0, "reason": "bad_phase"}
+	var uses_map: Dictionary = room.get("altar_uses", {})
+	var used := int(uses_map.get(slot, 0))
+	var team := 0 if slot < 3 else 1
+	var hp_arr: Array = room.get("team_hp", [GameState.START_FORMATION_HP, GameState.START_FORMATION_HP])
+	var hp := int(hp_arr[team])
+	if used >= ALTAR_MAX_USES_PER_ROUND or hp <= ALTAR_MIN_HP:
+		return {"ok": false, "team_hp": hp, "uses": used, "reason": "exhausted"}
+	hp -= 1
+	hp_arr[team] = hp
+	room.team_hp = hp_arr
+	uses_map[slot] = used + 1
+	room.altar_uses = uses_map
+	_touch_room(room)
+	# 金币记进账本（P1）。HP 和次数上限归房间管（那是共享状态），
+	# 账本只负责"这 50 金进了谁的口袋"。
+	if economy_enabled():
+		EconomyLedger.apply(_room_prep(room, slot), "altar_grant", {}, {"altar_gold": ALTAR_GOLD})
+	_net_log("altar granted room=%d slot=%d team=%d hp=%d uses=%d" % [
+		int(room.get("id", 0)), slot, team, hp, used + 1])
+	return {"ok": true, "team_hp": hp, "uses": used + 1, "reason": ""}
+
 @rpc("authority", "call_remote", "reliable")
-func _rpc_altar_result(granted: bool, team_hp: int, uses: int) -> void:
+func _rpc_altar_result(request_id: String, granted: bool, team_hp: int, uses: int) -> void:
+	if not _tx_consume(request_id):
+		return
 	altar_result.emit(granted, team_hp, uses)
 
 # 队友用了祭坛：只同步共享 HP，不给金币。
@@ -2125,6 +3744,163 @@ func _rpc_altar_result(granted: bool, team_hp: int, uses: int) -> void:
 func _rpc_altar_team_hp(team_hp: int) -> void:
 	GameState.team_hp = team_hp
 	altar_result.emit(false, team_hp, -1)
+
+# --- 宝物归属（服务端 intent，A5/A10 的一部分）--------------------------------
+# 服务端本来就在 _server_pending_treasure 里用 Crypto 摇候选并随 match_state 下发，
+# 只是从不记录玩家最终选了哪个——于是「你拥有哪些宝物」仍然 100% 是客户端自报。
+# 这一组 RPC 把闭环补上：只能选服务器发过的候选，选完记进 room.owned_treasures。
+#
+# 边界（不要高估这组改动买到了什么）：
+# - 它建立的是**归属**，不是**代价**。刷新要花的金币仍由客户端自己扣，因为金币本身
+#   还没有权威账本（A5/P1）。刷新次数服务端记，钱不记。
+# - room.owned_treasures 目前只用于「发候选时算 owned」和影子比对。战斗与经济结算
+#   仍读 snapshot.treasures（客户端自报）。切换成以服务端记录为准要等影子期零差异，
+#   否则一次口径不一致就会把诚实玩家的宝物吞掉。
+signal treasure_offer_changed(candidates: Array, refresh_index: int)
+signal treasure_granted(tid: String, owned: Array)
+signal treasure_denied(reason: String)
+
+func request_treasure_choice(tid: String) -> void:
+	if team_active and multiplayer.multiplayer_peer != null:
+		_tx_send(_tx_begin("treasure_choice", [tid]))
+
+func request_treasure_refresh() -> void:
+	if team_active and multiplayer.multiplayer_peer != null:
+		_tx_send(_tx_begin("treasure_refresh", []))
+
+# 服务端侧取「这个座位当前的 offer」。房间与座位已由 _tx_context 校验过，
+# 这里只管 offer 存不存在。返回 {} 表示调用方应直接 return。
+func _treasure_offer_of(room: Dictionary, slot: int, action: String) -> Dictionary:
+	var offers: Dictionary = room.get("treasure_offer", {})
+	var offer = offers.get(slot)
+	if typeof(offer) != TYPE_DICTIONARY:
+		_net_log("treasure %s rejected room=%d slot=%d reason=no_offer" % [
+			action, int(room.get("id", 0)), slot])
+		return {}
+	return {"offers": offers, "offer": offer as Dictionary}
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_treasure_choice(request_id: String, tid: String) -> void:
+	if not _dedicated_server:
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	var ctx := _tx_context(sender, request_id, "treasure_choice")
+	var slot := int(ctx.get("slot", -1))
+	if slot < 0:
+		return
+	var room: Dictionary = ctx["room"]
+	var outcome := _room_apply_treasure_choice(room, slot, tid)
+	# 成功要连 tid 和 owned 一起存 —— 重放时要还原的是**这一份**答案，
+	# 不是"再算一次现在的 owned"（那时 offer 已经没了，只会算出拒绝）。
+	if bool(outcome.get("ok", false)):
+		outcome["tid"] = tid
+	_tx_record(room, slot, request_id, "treasure_choice", outcome)
+	if not bool(outcome.get("ok", false)):
+		_rpc_treasure_denied.rpc_id(sender, request_id, str(outcome.get("reason", "denied")))
+		return
+	_rpc_treasure_granted.rpc_id(sender, request_id, tid, outcome.get("owned", []))
+
+# 选择裁决与 RPC 分开（和本文件其余 _rpc_X → _room_X 的分层一致），
+# 这样对抗测试台能直接驱动裁决逻辑，不必伪造 remote sender id。
+func _room_apply_treasure_choice(room: Dictionary, slot: int, tid: String) -> Dictionary:
+	# 长度门放在最前面：tid 是完全不可信的客户端字符串，在做任何比较、拼接或写日志
+	# 之前就要挡掉。宝物 id 来自数据表，实际长度都在 32 以内，这个上限不会误伤。
+	# 超限时连 _log_safe 都不调用完整值——只记长度。
+	if tid.length() > MAX_TREASURE_ID_LEN:
+		_net_log("treasure choice rejected room=%d slot=%d reason=tid_too_long len=%d" % [
+			int(room.get("id", 0)), slot, tid.length()])
+		return {"ok": false, "reason": "bad_request"}
+	var offers: Dictionary = room.get("treasure_offer", {})
+	var offer_value = offers.get(slot)
+	if typeof(offer_value) != TYPE_DICTIONARY:
+		return {"ok": false, "reason": "no_offer"}
+	var offer: Dictionary = offer_value
+	# 整条链的门：只能选服务器这一轮实际发给这个座位的候选。
+	if not (offer.get("candidates", []) as Array).has(tid):
+		_net_log("treasure choice rejected room=%d round=%d slot=%d tid=%s reason=not_offered" % [
+			int(room.get("id", 0)), int(offer.get("round", 0)), slot, _log_safe(tid)])
+		return {"ok": false, "reason": "not_offered"}
+	var owned := _room_owned_treasures(room, slot)
+	if owned.has(tid) or owned.size() >= TreasureService.MAX_OWNED:
+		return {"ok": false, "reason": "cannot_own"}
+	owned = owned.duplicate()
+	owned.append(tid)
+	var owned_map: Dictionary = room.get("owned_treasures", {})
+	owned_map[slot] = owned
+	room.owned_treasures = owned_map
+	# offer 用后即弃：同一轮不能再选第二件，重复请求会落到 no_offer。
+	offers.erase(slot)
+	room.treasure_offer = offers
+	_touch_room(room)
+	_net_log("treasure granted room=%d round=%d slot=%d tid=%s owned=%d" % [
+		int(room.get("id", 0)), int(offer.get("round", 0)), slot, tid, owned.size()])
+	return {"ok": true, "reason": "", "owned": owned}
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_treasure_refresh(request_id: String) -> void:
+	if not _dedicated_server:
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	var ctx := _tx_context(sender, request_id, "treasure_refresh")
+	var slot := int(ctx.get("slot", -1))
+	if slot < 0:
+		return
+	var room: Dictionary = ctx["room"]
+	var outcome := _room_apply_treasure_refresh(room, slot)
+	_tx_record(room, slot, request_id, "treasure_refresh", outcome)
+	if not bool(outcome.get("ok", false)):
+		_rpc_treasure_denied.rpc_id(sender, request_id, str(outcome.get("reason", "denied")))
+		return
+	_rpc_treasure_offer.rpc_id(sender, request_id,
+		outcome.get("candidates", []), int(outcome.get("refresh_index", 0)))
+
+func _room_apply_treasure_refresh(room: Dictionary, slot: int) -> Dictionary:
+	var oc := _treasure_offer_of(room, slot, "refresh")
+	if oc.is_empty():
+		return {"ok": false, "reason": "no_offer"}
+	var offer: Dictionary = oc["offer"]
+	var owned := _room_owned_treasures(room, slot)
+	var candidates := _server_roll_treasure_candidates(owned, 3)
+	if candidates.is_empty():
+		return {"ok": false, "reason": "pool_empty"}
+	var next_index := int(offer.get("refresh_index", 0)) + 1
+	# 刷新费用记进账本（P1）。**先扣钱再重摇** —— 钱不够就整笔不做，
+	# 否则会出现"候选换了但没收费"的免费刷新（正是 4.6 里保留着的那个洞）。
+	if economy_enabled():
+		var paid := EconomyLedger.apply(_room_prep(room, slot), "treasure_refresh_cost",
+			{"refresh_index": int(offer.get("refresh_index", 0))},
+			{"owned_treasures": owned})
+		if not bool(paid.get("ok", false)):
+			return {"ok": false, "reason": str(paid.get("error", "not_enough_gold"))}
+	var offers: Dictionary = oc["offers"]
+	offers[slot] = {
+		"round": int(offer.get("round", 0)),
+		"candidates": candidates.duplicate(),
+		"refresh_index": next_index,
+	}
+	room.treasure_offer = offers
+	_touch_room(room)
+	_net_log("treasure refreshed room=%d slot=%d index=%d" % [int(room.get("id", 0)), slot, next_index])
+	return {"ok": true, "reason": "", "candidates": candidates, "refresh_index": next_index}
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_treasure_offer(request_id: String, candidates: Array, refresh_index: int) -> void:
+	if not _tx_consume(request_id):
+		return
+	treasure_offer_changed.emit(candidates, refresh_index)
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_treasure_granted(request_id: String, tid: String, owned: Array) -> void:
+	if not _tx_consume(request_id):
+		return
+	treasure_granted.emit(tid, owned)
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_treasure_denied(request_id: String, reason: String) -> void:
+	if not _tx_consume(request_id):
+		return
+	_net_log("treasure denied reason=%s" % reason)
+	treasure_denied.emit(reason)
 
 @rpc("any_peer", "call_remote", "reliable")
 func _rpc_team_leave() -> void:
@@ -2134,7 +3910,32 @@ func _rpc_team_leave() -> void:
 	var room := _room_for_peer(peer_id)
 	if room.is_empty():
 		return
-	_room_remove_peer(room, peer_id)
+	_apply_peer_leave(room, peer_id)
+
+# 离场的实际处理，供 `_rpc_team_leave`（遗留）与 `_rpc_leave_intent`（E3）共用。
+func _apply_peer_leave(room: Dictionary, peer_id: int) -> void:
+	# 大厅阶段：硬移除，座位彻底释放。
+	# 开赛后：不能走硬移除——那会在别人正等这个座位交棋盘时把它变成 "empty"，
+	# 房间要死等到 30 秒看门狗才继续。改成与 _rpc_abandon_seat 相同的语义：
+	# 座位转 AI 顶上、token 作废、当前阶段立即推进，别人一秒都不用等。
+	if str(room.get("state", ROOM_LOBBY)) == ROOM_LOBBY:
+		_room_remove_peer(room, peer_id)
+		return
+	var peer_slot: Dictionary = room.get("peer_slot", {})
+	var slot := int(peer_slot.get(peer_id, -1))
+	if slot < 0 or slot >= TEAM_SLOTS:
+		return
+	_clear_seat_metadata(room, slot)
+	peer_slot.erase(peer_id)
+	room.peer_slot = peer_slot
+	_peer_room.erase(peer_id)
+	(room.get("reserved", {}) as Dictionary).erase(slot)
+	(room.get("reserve_deadline", {}) as Dictionary).erase(slot)
+	if _room_online_count(room) <= 0:
+		room.empty_since = _now()
+	_maybe_promote_leader(room)
+	_net_log("player left mid-match room=%d slot=%d -> AI takeover" % [int(room.get("id", 0)), slot])
+	_room_auto_complete_seat(room, slot)
 
 func _room_remove_peer(room: Dictionary, peer_id: int) -> void:
 	# 硬移除（大厅掉线/主动离开/被踢）：座位彻底释放，token 作废。
@@ -2145,13 +3946,9 @@ func _room_remove_peer(room: Dictionary, peer_id: int) -> void:
 	if slot >= 0 and slot < TEAM_SLOTS:
 		states[slot] = "empty"
 		ready[slot] = false
-		var seat_tokens: Dictionary = room.get("seat_tokens", {})
-		if seat_tokens.has(slot):
-			_token_seat.erase(str(seat_tokens[slot]))
-			seat_tokens.erase(slot)
-			room.seat_tokens = seat_tokens
-		(room.get("reserved", {}) as Dictionary).erase(slot)
-		(room.get("reserve_deadline", {}) as Dictionary).erase(slot)
+		# 座位彻底释放：token、短码绑定、加入顺序、对局进度一起清。
+		# 只清一部分就会让后来坐进这个位子的人继承前一个人的 join_seq 或宝物记录。
+		_clear_seat_metadata(room, slot)
 	peer_slot.erase(peer_id)
 	_peer_room.erase(peer_id)
 	room.slot_states = states
@@ -2199,15 +3996,27 @@ func _maybe_promote_leader(room: Dictionary) -> void:
 	# 房主仍是在线玩家 -> 不动；一个在线玩家都没有 -> 无人可顺延（房间会超时回收）
 	if online_slots.has(leader) or online_slots.is_empty():
 		return
-	var next_leader := TEAM_SLOTS
+	# R5：从在线真人中选 join_seq 最小者（最早加入），不是最小 slot。
+	# 旧实现按 slot 顺延，而 slot 0–2 恒为 A 队 —— 等于每次房主失效都优先把管理权
+	# 交给 A 队，是一条系统性的队伍偏置。缺 join_seq 的座位（旧房间/异常路径）
+	# 退化为按 slot 排在所有正常序号之后，保证任何情况下都能选出房主。
+	var seq_map: Dictionary = room.get("join_seq", {})
+	var next_leader := -1
+	var best_seq := 0
 	for s in online_slots.keys():
-		next_leader = mini(next_leader, int(s))
+		var slot_i := int(s)
+		var seq := int(seq_map.get(slot_i, 1000000 + slot_i))
+		if next_leader < 0 or seq < best_seq:
+			next_leader = slot_i
+			best_seq = seq
+	if next_leader < 0:
+		return
 	room.leader_slot = next_leader
-	_net_log("leader promoted room=%d slot=%d" % [int(room.get("id", 0)), next_leader])
-	for pid in peer_slot.keys():
-		if _peer_connected(int(pid)):
-			_rpc_team_leader.rpc_id(int(pid), next_leader)
+	_net_log("leader promoted room=%d slot=%d join_seq=%d" % [int(room.get("id", 0)), next_leader, best_seq])
+	_broadcast_room_lobby(room)
 
+# 遗留通道（同 _rpc_team_lobby）：专服路径的房主变更已经在 room_state 里。
+# 保留是因为删 @rpc 方法会平移整套 RPC 的 wire ID —— 而本地房主路径还需要它。
 @rpc("authority", "call_remote", "reliable")
 func _rpc_team_leader(leader_slot: int) -> void:
 	team_leader_slot = leader_slot
@@ -2218,6 +4027,10 @@ func _rpc_team_leader(leader_slot: int) -> void:
 func _tick_reserved_seats() -> void:
 	var now := _now()
 	for room in _rooms.values():
+		# suspended：房里一个真人都没有，此时把座位转 AI 只会启动一场纯 AI 战斗
+		# 烧 CPU，而这些座位的主人还在 300 秒窗口内可能回来（B11/R2）。
+		if bool(room.get("suspended", false)):
+			continue
 		var deadline: Dictionary = room.get("reserve_deadline", {})
 		if deadline.is_empty():
 			continue
@@ -2266,6 +4079,8 @@ func _on_connected_to_server() -> void:
 	# 重连场景：连上后不直接进 READY，先带 token 请求恢复座位
 	if state == SessionState.RECONNECTING and team_active and not session_token.is_empty():
 		_net_log("reconnected, requesting resume")
+		# 进入 WAITING_RESUME：这之后到 deadline 之前，_tick_reconnect 不会碰这个 peer。
+		_reconnect_phase = ReconnectPhase.WAITING_RESUME
 		_rpc_resume_request.rpc_id(1, session_token)
 		return
 	# 开新游戏时若有要放弃的旧座位：连上后立即通知服务器（旧座位转 AI 或自清）
@@ -2278,8 +4093,8 @@ func _on_connected_to_server() -> void:
 func _on_connection_failed() -> void:
 	_net_log("connection failed")
 	if state == SessionState.RECONNECTING:
-		# 重连尝试失败：保持 RECONNECTING，等下个周期再试
-		reset_peer_only()
+		# 握手失败是明确的失败事件：立刻进退避，不用干等 attempt deadline。
+		_enter_reconnect_backoff()
 		return
 	state = SessionState.FAILED
 	last_error = tr("net_err_connect_failed")
@@ -2287,6 +4102,12 @@ func _on_connection_failed() -> void:
 
 func _on_server_disconnected() -> void:
 	_net_log("server disconnected (enet-level)")
+	# 已经在重连流程里又断了（握手成功后立刻被踢、或等 resume 期间连接死掉）：
+	# _begin_reconnect 会因为 state 已是 RECONNECTING 而早退，所以这里要显式进退避，
+	# 否则会白等一整个 attempt deadline。
+	if state == SessionState.RECONNECTING:
+		_enter_reconnect_backoff()
+		return
 	if team_active:
 		# 有 token 就走自动重连，不再直接拆会话（否则玩家卡死）
 		if not session_token.is_empty() and not reconnect_address.is_empty():
@@ -2337,17 +4158,18 @@ func _rpc_team_assign_slot(slot: int, token: String = "", room_id: int = 0, shor
 		# 存下重连凭证（内存 + 磁盘），app 被杀重开也能凭它恢复对局
 		session_token = token
 		reconnect_address = remote_address
-		SaveManager.save_reconnect(session_token, reconnect_address)
+		SaveManager.save_reconnect(session_token, reconnect_address, remote_port)
 	team_lobby_changed.emit()
 
+# 遗留通道：**只有本地房主调试路径**还在用（`_team_broadcast_lobby`）。
+# 那条路径用的是扁平变量而不是 room 字典，没有 state_seq 可言。
+# 专服路径已全部改走 `_rpc_room_state`（E2）——两者不会同时出现在一个会话里：
+# 要么连的是专服（只收 room_state），要么是本地房主局（只收这条）。
+# C17 的"只升不降"补丁随之删除：seq 已经在信封层解决了迟到包的问题。
 @rpc("authority", "call_remote", "reliable")
-func _rpc_team_lobby(states: Array, ready: Array, server_round: int = 0, server_phase_name: String = "") -> void:
+func _rpc_team_lobby(states: Array, ready: Array, _server_round: int = 0, _server_phase_name: String = "") -> void:
 	team_slot_states = states.duplicate()
 	team_ready = ready.duplicate()
-	if server_round > 0:
-		server_round_index = server_round
-	if not server_phase_name.is_empty():
-		server_phase = server_phase_name
 	team_lobby_changed.emit()
 
 @rpc("authority", "call_remote", "reliable")
@@ -2380,7 +4202,10 @@ func _rpc_team_set_ready(slot: int, value: bool) -> void:
 			seat_states[slot] = "player"
 			room.slot_states = seat_states
 			_net_log("dummy seat restored to player room=%d slot=%d" % [int(room.get("id", 0)), slot])
-		if str(room.get("state", ROOM_LOBBY)) == ROOM_RESULT:
+		# 只有"按下准备"才推进结算阶段（C7）。此前不看 value：客户端发一个
+		# ready=false（取消准备）同样能把全房推进下一回合，别人还在看回放就被拽走。
+		# 完整修法是每座位独立的 result_applied_ack + 阶段函数幂等，归 R6。
+		if value and str(room.get("state", ROOM_LOBBY)) == ROOM_RESULT:
 			_room_begin_next_prep(room)
 		var ready: Array = room.get("ready", [])
 		ready[slot] = value
@@ -2406,6 +4231,8 @@ func _rpc_team_start_request() -> void:
 		var room := _room_for_peer(sender)
 		var slot := int((room.get("peer_slot", {}) as Dictionary).get(sender, -1))
 		if room.is_empty() or slot != int(room.get("leader_slot", 0)):
+			return
+		if not _phase_allows(room, PHASE_LOBBY_ONLY, "start", sender):
 			return
 		# 房主按"开始游戏"即自动提交自己的 ready，再做权威开局检查（房主不再免检）
 		var ready: Array = room.get("ready", [])

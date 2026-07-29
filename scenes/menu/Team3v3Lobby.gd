@@ -91,6 +91,11 @@ func _states() -> Array:
 		return ["empty", "empty", "empty", "empty", "empty", "empty"]
 	return _slot_states
 
+# 房主席位号。联机局以服务端广播的 team_leader_slot 为准（它会因掉线顺延、
+# 也会跟着换位搬走）；单机/本地调试没有服务端广播，退化为 0 号位。
+func _leader_slot() -> int:
+	return NetworkService.team_leader_slot if _online() else 0
+
 func _ready_arr() -> Array:
 	if _online() and NetworkService.team_ready.size() == 6:
 		return NetworkService.team_ready
@@ -228,7 +233,11 @@ func _refresh() -> void:
 		name_lbl.text = _slot_name(i, state, i == my_slot)
 		match state:
 			"player":
-				status_lbl.text = "" if i == 0 else (tr("lobby_ready_done") if bool(ready_arr[i]) else tr("lobby_ready"))
+				# 房主席位不显示准备状态（他用的是"开始游戏"按钮）。
+				# C25：此前写死 `i == 0`，而房主会因掉线顺延、也会因换位搬走
+				# （见 C19/R5）——迁移之后 slot 0 上的普通玩家准备状态被隐藏，
+				# 真正的房主又按普通玩家显示。改成认服务端广播的 leader_slot。
+				status_lbl.text = "" if i == _leader_slot() else (tr("lobby_ready_done") if bool(ready_arr[i]) else tr("lobby_ready"))
 			"dummy":
 				status_lbl.text = _room_text("假想敌", "AI")
 			_:

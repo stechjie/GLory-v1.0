@@ -1,6 +1,12 @@
 ﻿extends "res://scenes/prep/PrepUI.gd"
 
 func _maybe_start_pending_treasure() -> void:
+	# 联机局：候选完全由服务端发放（match_state.pending_treasure / resume payload）。
+	# 客户端既不能自己开抽奖，也不能在候选为空时本地补摇——这两条都是「自发宝物」，
+	# 会绕开服务端的归属记录：真去选时 _rpc_treasure_choice 会以 not_offered 拒收，
+	# 玩家看到的是一个点了没反应的界面。宁可不显示，也不显示一个假的。
+	if NetworkService.team_active:
+		return
 	if bool(GameState.pending_treasure.get("active", false)):
 		if GameState.pending_treasure.get("candidates", []).is_empty() and TreasureService.can_draw():
 			GameState.pending_treasure.candidates = TreasureService.roll_candidates(3)
@@ -17,6 +23,13 @@ func _maybe_start_pending_treasure() -> void:
 		}
 
 func _pick_treasure(tid: String) -> void:
+	# 联机局：只发意图，等服务端授权后才真正入袋（与黄金祭坛 _on_golden_altar 同一模式）。
+	# 本地不做乐观加入——宝物会立刻改变羁绊、经济和图鉴，抢跑后被服务端拒收就要回滚
+	# 一串副作用，回滚比等一个 RTT 贵得多。
+	if NetworkService.team_active:
+		_connect_treasure_signals()
+		NetworkService.request_treasure_choice(tid)
+		return
 	TreasureService.add_owned(tid)
 	_claim_pending_treasure_round()
 	GameState.pending_treasure.active = false
@@ -25,11 +38,55 @@ func _pick_treasure(tid: String) -> void:
 	if GameState.tutorial_mode:
 		TutorialMode.sync()
 
+func _connect_treasure_signals() -> void:
+	if not NetworkService.treasure_granted.is_connected(_on_treasure_granted):
+		NetworkService.treasure_granted.connect(_on_treasure_granted)
+	if not NetworkService.treasure_denied.is_connected(_on_treasure_denied):
+		NetworkService.treasure_denied.connect(_on_treasure_denied)
+	if not NetworkService.treasure_offer_changed.is_connected(_on_treasure_offer_changed):
+		NetworkService.treasure_offer_changed.connect(_on_treasure_offer_changed)
+
+# 服务端授权入袋。走 add_owned 而不是直接覆盖 owned_treasures：它还负责图鉴
+# mark_seen 与联动解锁，绕过去会让玩家少解锁东西。
+func _on_treasure_granted(tid: String, owned: Array) -> void:
+	# 以服务端列表为准同步（helper 内部走 add_owned，保留图鉴/联动副作用）。
+	# 不要只 add_owned(tid)：那样本地多出来的项永远裁不掉，两边会一直漂。
+	var before := GameState.owned_treasures.size()
+	TreasureService.sync_owned_from_server(owned)
+	if before + 1 != GameState.owned_treasures.size():
+		# 本地曾经存在一条没走 intent 的入袋路径（单机/教学代码漏进联机分支），
+		# 或者上一次同步漏了。必须能从日志看出来，不能静默被 helper 抹平。
+		push_warning("[NET] treasure owned resynced: local %d -> %d (server=%d, granted=%s)" % [
+			before, GameState.owned_treasures.size(), owned.size(), tid])
+	_claim_pending_treasure_round()
+	GameState.pending_treasure.active = false
+	SaveManager.save_run()
+	_refresh_all()
+
+func _on_treasure_denied(reason: String) -> void:
+	# 不静默：拒收后界面必须回到一个玩家能理解的状态，否则就是「点了没反应」。
+	show_message(tr("net_err_treasure_denied") % reason)
+	_refresh_all()
+
+func _on_treasure_offer_changed(candidates: Array, refresh_index: int) -> void:
+	GameState.pending_treasure.candidates = candidates.duplicate()
+	GameState.pending_treasure.refresh_index = refresh_index
+	SaveManager.save_run()
+	_refresh_all()
+
 func _refresh_treasure_candidates() -> void:
 	var cost := TreasureService.refresh_cost(int(GameState.pending_treasure.get("refresh_index", 0)), TreasureService.has_set("money"))
 	if GameState.gold < cost:
 		return
 	GameState.gold -= cost
+	# 联机局：钱仍在本地扣（金币还没有权威账本，见 A5/P1），但候选必须由服务端重摇——
+	# 本地摇出来的东西不在服务端 offer 里，选的时候会被 not_offered 拒收。
+	if NetworkService.team_active:
+		_connect_treasure_signals()
+		NetworkService.request_treasure_refresh()
+		SaveManager.save_run()
+		_refresh_all()
+		return
 	GameState.pending_treasure.refresh_index = int(GameState.pending_treasure.get("refresh_index", 0)) + 1
 	GameState.pending_treasure.candidates = TreasureService.roll_candidates(3)
 	SaveManager.save_run()
@@ -77,9 +134,11 @@ func _has_any_board_unit() -> bool:
 func _mark_online_board_changed() -> void:
 	RaceRelationService.reconcile_board(GameState.board_slots, GameState.bench_slots, false, true)
 	if NetworkService.team_active:
-		# 3v3: editing the board cancels your ready so you can't be locked mid-edit.
-		var my := NetworkService.team_local_slot
-		if my >= 0 and my < NetworkService.team_ready.size() and bool(NetworkService.team_ready[my]):
+		# 3v3：改棋盘就取消准备，免得被锁在编辑到一半的状态。
+		# 判断依据必须是 local_ready_intent()，不能直接读 team_ready（C24）——
+		# 后者要等服务器广播回来才更新，"按下准备 → 回包到达前挪棋子"这段窗口里
+		# 它还是 false，取消请求根本不会发出，而服务器已经按已准备锁盘了。
+		if NetworkService.local_ready_intent():
 			NetworkService.team_set_ready(false)
 
 func _on_network_session_changed() -> void:

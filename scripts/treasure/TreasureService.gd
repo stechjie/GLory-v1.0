@@ -19,6 +19,25 @@ static func refresh_cost(index: int, money_set_active: bool) -> int:
 static func can_draw() -> bool:
 	return GameState.owned_treasures.size() < MAX_OWNED
 
+# 用服务端权威持有列表覆盖本地（联机 resume / grant 用）。
+# 不能直接 `GameState.owned_treasures = server_owned`：那会绕过 add_owned 里的
+# PlayerProfile.mark_seen 与联动解锁，玩家重连一次就少解锁一批图鉴条目。
+# 这里先算差集、逐个走 add_owned 拿到副作用，再按服务端列表裁掉本地多出来的项
+# （服务端说没有就是没有——本地多出来的只可能来自过期存档或未走 intent 的路径）。
+static func sync_owned_from_server(server_owned: Array) -> void:
+	var authoritative: Array = []
+	for value in server_owned:
+		var tid := str(value)
+		if not tid.is_empty() and not authoritative.has(tid):
+			authoritative.append(tid)
+	for tid in authoritative:
+		if tid not in GameState.owned_treasures:
+			add_owned(tid)
+	# 裁掉服务端不认的条目。就地改数组而不是整体替换，避免别处持有的引用失效。
+	for i in range(GameState.owned_treasures.size() - 1, -1, -1):
+		if str(GameState.owned_treasures[i]) not in authoritative:
+			GameState.owned_treasures.remove_at(i)
+
 static func tag_counts() -> Dictionary:
 	var counts := {"defense": 0, "control": 0, "attack": 0, "money": 0, "element": 0}
 	var treasures: Array = DataRegistry.get_table("treasures").get("treasures", [])

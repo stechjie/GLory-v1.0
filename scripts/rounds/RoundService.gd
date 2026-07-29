@@ -14,7 +14,7 @@ static func schedule_kind_for_round(round_index: int) -> String:
 static func _is_final_round(round_index: int) -> bool:
 	# 血量归零的话对局早在到达 FINAL_ROUND 前就结束了，走不到这里，所以不再检查
 	# 血量（原先读的是单人 player/enemy_formation_hp，组队模式下是脱节的错误变量）。
-	return int(round_index) == GameState.FINAL_ROUND and not GameState.final_battle_complete
+	return int(round_index) == GameState.FINAL_ROUND and not GameState.final_round_played
 
 static func is_treasure_round(round_index: int) -> bool:
 	var schedule: Dictionary = DataRegistry.get_table("rounds")

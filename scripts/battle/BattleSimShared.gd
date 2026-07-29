@@ -218,7 +218,15 @@ static func _dummy_merc_slots(_rng: RandomNumberGenerator) -> Array:
 	if mercs.is_empty():
 		return []
 	var sorted_mercs := mercs.duplicate()
-	sorted_mercs.sort_custom(func(a, b): return int(a.get("cost", 1)) < int(b.get("cost", 1)))
+	# C23a：同价佣兵的次级键用 id。否则谁被优先召唤取决于数据表里的行序 ——
+	# 调整一次 mercenaries.json 的排列就会静默改变 AI 的召唤结果。
+	sorted_mercs.sort_custom(func(a, b):
+		var ca: int = int(a.get("cost", 1))
+		var cb: int = int(b.get("cost", 1))
+		if ca != cb:
+			return ca < cb
+		return str(a.get("id", "")) < str(b.get("id", ""))
+	)
 	var budget := int(floor(float(_dummy_total_gold(GameState.round_index)) * DUMMY_MERC_BUDGET_SHARE))
 	if budget < int(sorted_mercs[0].get("cost", 1)):
 		return []  # not enough gold to summon any mercenary yet
@@ -402,7 +410,17 @@ static func build_dummy_board(rng: RandomNumberGenerator) -> Array:
 			placed.append({"u": u, "star": 2})
 		for _i in ones:
 			placed.append({"u": u, "star": 1})
-	placed.sort_custom(func(a, b): return int(a.star) > int(b.star))  # keep strongest if over cap
+	# 超过上限时保留最强的。C23a：同星级的次级键用单位 id ——
+	# 这个排序决定"超员时谁被丢掉"，平手时顺序不定就是阵容不定。
+	placed.sort_custom(func(a, b):
+		var sa: int = int(a.star)
+		var sb: int = int(b.star)
+		if sa != sb:
+			return sa > sb
+		var ua: Dictionary = a.u
+		var ub: Dictionary = b.u
+		return str(ua.get("id", "")) < str(ub.get("id", ""))
+	)
 	# Place onto random board cells, capped at the normal unit limit.
 	var slots: Array = []
 	for i in GameConstants.CELL_COUNT:
@@ -877,7 +895,17 @@ static func _nearest_n(f: Dictionary, units: Array, count: int) -> Array:
 	for u in units:
 		if bool(u.get("alive", false)) and _can_target(f, u, units):
 			pool.append(u)
-	pool.sort_custom(func(a, b): return f.pos.distance_squared_to(a.pos) < f.pos.distance_squared_to(b.pos))
+	# C23a：距离相同时必须有稳定次级键。`sort_custom` 是**不稳定排序**，
+	# 平手元素的相对顺序由初始排列决定 —— 而这里选出来的是**攻击目标**，
+	# 顺序一变整场战斗就变。对称站位下距离完全相等是常见情况，不是边角。
+	pool.sort_custom(func(a, b):
+		# 显式标类型：f.pos 是 Variant，`:=` 推不出 distance_squared_to 的返回类型
+		var da: float = f.pos.distance_squared_to(a.pos)
+		var db: float = f.pos.distance_squared_to(b.pos)
+		if not is_equal_approx(da, db):
+			return da < db
+		return str(a.get("uid", "")) < str(b.get("uid", ""))
+	)
 	return pool.slice(0, mini(maxi(0, count), pool.size()))
 
 static func _heal_unit(unit: Dictionary, amount: int) -> void:

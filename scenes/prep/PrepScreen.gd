@@ -9,7 +9,11 @@ const PREP_PVP_MUSIC_PATH := "res://assets/audio/bgm/pvp_round_music.mp3"
 const SHOW_FPS_OVERLAY := true
 # BattleScreen path: loaded on Start Battle before entering battle.
 const BATTLE_SCREEN_PATH := "res://scenes/battle/BattleScreen.tscn"
-const TEAM_BATTLE_PREP_TIMEOUT_SEC := 20.0
+# 临时缓解（B7），不是修复。这是**主路径**的超时：原值 20 秒短于服务器的
+# BOARD_SUBMIT_TIMEOUT_SEC(30)，任何需要看门狗兜底的回合，客户端都会先一步取消
+# 战斗准备退回备战，而服务器随后才补交/转 AI —— 迟到的结算会跳过单位阵亡与成长，
+# 造成客户端与服务器分叉。最终修法是 board ACK/服务端进度驱动，见文档 1B-1。
+const TEAM_BATTLE_PREP_TIMEOUT_SEC := 60.0
 
 var _prep_music_player: AudioStreamPlayer
 var _fps_label: Label

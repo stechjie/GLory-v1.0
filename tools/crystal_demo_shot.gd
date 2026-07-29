@@ -15,6 +15,13 @@ const SHOT_TIMES := [1.00, 1.45, 1.95, 2.35, 2.75, 3.05, 3.45, 3.90]
 var arena: Control
 var viewport: SubViewport
 
+# 真机里逐帧更新是 BattleScreen._process 显式调 _update_crystal_demo 的（BattleArena
+# 自己不能用 _process，会被 BattleScreen 覆盖）。这里照抄同一条路径，否则 harness
+# 会掩盖掉"忘了接线"这类问题——之前血量数字卡在左上角就是这么漏掉的。
+func _process(delta: float) -> void:
+	if arena != null and is_instance_valid(arena):
+		arena._update_crystal_demo(delta)
+
 func _ready() -> void:
 	DirAccess.make_dir_recursive_absolute(OUTPUT_DIR)
 	arena = BattleArenaScript.new()

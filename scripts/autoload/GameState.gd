@@ -39,7 +39,7 @@ var loss_streak := 0
 var shop_refresh_uses_this_round := 0
 var golden_altar_uses := 0
 var gamble_used := false
-var final_battle_complete := false
+var final_round_played := false
 var battle_history: Array = []
 var pending_battle_package: Dictionary = {}
 # 3v3 team mode (prototype)
@@ -47,7 +47,10 @@ var team_mode := false
 var team_slot_states: Array = []
 var team_hp := START_FORMATION_HP
 var enemy_team_hp := START_FORMATION_HP    # rival team's shared HP mirror (host-authoritative)
-var team_run_won := false                 # result of the 3v3 run, for the game-over screen
+var team_run_won := false                 # 本队是否赢下整局（平局时为 false）
+# 整局归属的权威值：TeamOutcome.TEAM_A / TEAM_B / DRAW。
+# team_run_won 是它在本队视角下的派生布尔 —— 单独看那个布尔分不出"输了"和"平局"。
+var team_run_outcome: int = TeamOutcome.TEAM_A
 var tutorial_mode := false
 
 func _ready() -> void:
@@ -75,7 +78,7 @@ func reset_run() -> void:
 	shop_refresh_uses_this_round = 0
 	golden_altar_uses = 0
 	gamble_used = false
-	final_battle_complete = false
+	final_round_played = false
 	battle_history.clear()
 	pending_battle_package.clear()
 

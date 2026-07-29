@@ -35,6 +35,11 @@ static func validate_team_snapshot(snapshot: Variant, expected_round: int) -> Di
 	if typeof(snapshot) != TYPE_DICTIONARY:
 		return {"ok": false, "reason": "malformed_not_dictionary"}
 	var d: Dictionary = snapshot
+	# 快照 schema 版本必须校验（C22）。此前客户端发 version、服务端只发不验 ——
+	# 协议演进时旧结构会被按新语义解析（同一个 key 换了含义就静默算错），
+	# 而这类分歧不会报错，只会让战斗结果悄悄不对。
+	if int(d.get("version", -1)) != SNAPSHOT_VERSION:
+		return {"ok": false, "reason": "snapshot_version_mismatch"}
 	if int(d.get("protocol", -1)) != NetworkConfig.NETWORK_PROTOCOL_VERSION:
 		return {"ok": false, "reason": "protocol_mismatch"}
 	var round_id := int(d.get("round", -1))

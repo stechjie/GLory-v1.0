@@ -7,31 +7,131 @@ const SAVE_DEBOUNCE_SEC := 0.5
 
 var _save_pending := false
 
+# --- 原子写（C21）------------------------------------------------------------
+# `FileAccess.open(path, WRITE)` 会先把目标文件截断成 0 字节再写。进程在这中间被杀
+# （手机锁屏后被系统回收、崩溃、玩家强退）就留下空文件或半截 JSON，而读取方拿到坏
+# 内容只能当"没有存档"——一次本来可以恢复的断线因此升级成永久丢档。
+# 顺序：写临时文件 → flush → 回读校验 → 旧文件转 .bak → 临时文件转正。
+# 任何一步失败都保留原文件不动，绝不用半成品覆盖一份好的存档。
+const TMP_SUFFIX := ".tmp"
+const BAK_SUFFIX := ".bak"
+
+func _atomic_write(path: String, content: String) -> bool:
+	var tmp := path + TMP_SUFFIX
+	var f := FileAccess.open(tmp, FileAccess.WRITE)
+	if f == null:
+		push_warning("[SAVE] cannot open temp file: %s" % tmp)
+		return false
+	f.store_string(content)
+	f.flush()
+	f = null   # 句柄归零即关闭落盘
+	# 回读校验：确认完整落地后才碰正式文件
+	if FileAccess.get_file_as_string(tmp) != content:
+		push_warning("[SAVE] temp verify failed, keeping previous file: %s" % path)
+		DirAccess.remove_absolute(tmp)
+		return false
+	var bak := path + BAK_SUFFIX
+	if FileAccess.file_exists(path):
+		DirAccess.remove_absolute(bak)
+		DirAccess.rename_absolute(path, bak)
+	if DirAccess.rename_absolute(tmp, path) != OK:
+		# 转正失败：把上一份换回来，宁可回退一步也不留下空档
+		if FileAccess.file_exists(bak):
+			DirAccess.rename_absolute(bak, path)
+		push_warning("[SAVE] atomic rename failed: %s" % path)
+		return false
+	return true
+
+# 读取时先试正式文件，坏了再试 .bak。返回 "" 表示两份都不可用。
+func _read_with_fallback(path: String) -> String:
+	for candidate in [path, path + BAK_SUFFIX]:
+		if not FileAccess.file_exists(candidate):
+			continue
+		var text := FileAccess.get_file_as_string(candidate)
+		if not text.strip_edges().is_empty():
+			return text
+	return ""
+
+# 二进制版原子写（服务器房间快照用）。
+# 房间数据里有大量 int，走 JSON 会在 parse 时全变成 float，读回来每个字段都得手动
+# int() 一遍，漏一个就是静默的类型错误。`var_to_bytes` 保留类型，也更紧凑。
+func atomic_write_bytes(path: String, data: PackedByteArray) -> bool:
+	var tmp := path + TMP_SUFFIX
+	var f := FileAccess.open(tmp, FileAccess.WRITE)
+	if f == null:
+		push_warning("[SAVE] cannot open temp file: %s" % tmp)
+		return false
+	f.store_buffer(data)
+	f.flush()
+	f = null
+	if FileAccess.get_file_as_bytes(tmp) != data:
+		push_warning("[SAVE] temp verify failed: %s" % path)
+		DirAccess.remove_absolute(tmp)
+		return false
+	var bak := path + BAK_SUFFIX
+	if FileAccess.file_exists(path):
+		DirAccess.remove_absolute(bak)
+		DirAccess.rename_absolute(path, bak)
+	if DirAccess.rename_absolute(tmp, path) != OK:
+		if FileAccess.file_exists(bak):
+			DirAccess.rename_absolute(bak, path)
+		push_warning("[SAVE] atomic rename failed: %s" % path)
+		return false
+	return true
+
+func read_bytes_with_fallback(path: String) -> PackedByteArray:
+	for candidate in [path, path + BAK_SUFFIX]:
+		if not FileAccess.file_exists(candidate):
+			continue
+		var data := FileAccess.get_file_as_bytes(candidate)
+		if not data.is_empty():
+			return data
+	return PackedByteArray()
+
+func remove_all_variants(path: String) -> void:
+	_remove_all_variants(path)
+
+func _remove_all_variants(path: String) -> void:
+	for candidate in [path, path + BAK_SUFFIX, path + TMP_SUFFIX]:
+		if FileAccess.file_exists(candidate):
+			DirAccess.remove_absolute(candidate)
+
 # --- 断线重连凭证（token + 服务器地址），app 被杀重开后凭它恢复对局 ---
-func save_reconnect(token: String, address: String) -> void:
-	var f := FileAccess.open(RECONNECT_PATH, FileAccess.WRITE)
-	if f != null:
-		f.store_string(JSON.stringify({"token": token, "address": address}))
+# port 必须一起存（多进程）。座位 token 是**进程内**的字典，连错进程就等于凭证失效。
+# 此前只存 address，app 重开时端口被填成 DEFAULT_PORT —— 单进程时碰巧对，
+# 多进程时是 (N-1)/N 的概率连错。
+func save_reconnect(token: String, address: String, port: int = NetworkConfig.SERVER_PORT) -> void:
+	_atomic_write(RECONNECT_PATH, JSON.stringify({"token": token, "address": address, "port": port}))
+
+# 标记"这一局是玩家主动退的，还没拿到服务端回执"（状态信封 E3 / R1）。
+# 落盘的意义：进程在发出退出意图后被杀，下次启动能凭它知道**不要提示重连**，
+# 并用同一个 request_id 重发 —— 服务端按幂等重放同一份回执。
+func mark_pending_leave(request_id: String) -> void:
+	var rc := load_reconnect()
+	if rc.is_empty():
+		return
+	rc["pending_leave"] = request_id
+	_atomic_write(RECONNECT_PATH, JSON.stringify(rc))
+
+func has_pending_leave() -> bool:
+	return not str(load_reconnect().get("pending_leave", "")).is_empty()
 
 func load_reconnect() -> Dictionary:
-	if not FileAccess.file_exists(RECONNECT_PATH):
+	var text := _read_with_fallback(RECONNECT_PATH)
+	if text.is_empty():
 		return {}
-	var parsed = JSON.parse_string(FileAccess.get_file_as_string(RECONNECT_PATH))
+	var parsed = JSON.parse_string(text)
 	return parsed if typeof(parsed) == TYPE_DICTIONARY else {}
 
 func clear_reconnect() -> void:
-	if FileAccess.file_exists(RECONNECT_PATH):
-		DirAccess.remove_absolute(RECONNECT_PATH)
+	# 凭证作废必须连 .bak/.tmp 一起清，否则下次启动会从兜底文件里把死 token 读回来。
+	_remove_all_variants(RECONNECT_PATH)
 
 func save_public_token(token_id: String) -> void:
-	var f := FileAccess.open(PUBLIC_TOKEN_PATH, FileAccess.WRITE)
-	if f != null:
-		f.store_string(token_id.strip_edges().to_upper())
+	_atomic_write(PUBLIC_TOKEN_PATH, token_id.strip_edges().to_upper())
 
 func load_public_token() -> String:
-	if not FileAccess.file_exists(PUBLIC_TOKEN_PATH):
-		return ""
-	return FileAccess.get_file_as_string(PUBLIC_TOKEN_PATH).strip_edges().to_upper()
+	return _read_with_fallback(PUBLIC_TOKEN_PATH).strip_edges().to_upper()
 
 # 合并短时间内的多次存档请求（拖拽/连买会连续触发 save_run），
 # 真正的磁盘写入最多每 SAVE_DEBOUNCE_SEC 一次。
@@ -81,17 +181,16 @@ func _write_now() -> void:
 		"team_hp": GameState.team_hp,
 		"enemy_team_hp": GameState.enemy_team_hp,
 	}
-	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
-	if f != null:
-		f.store_string(JSON.stringify(payload))
+	_atomic_write(SAVE_PATH, JSON.stringify(payload))
 
 func has_save() -> bool:
-	return FileAccess.file_exists(SAVE_PATH)
+	return not _read_with_fallback(SAVE_PATH).is_empty()
 
 func load_run() -> bool:
-	if not FileAccess.file_exists(SAVE_PATH):
+	var text := _read_with_fallback(SAVE_PATH)
+	if text.is_empty():
 		return false
-	var parsed = JSON.parse_string(FileAccess.get_file_as_string(SAVE_PATH))
+	var parsed = JSON.parse_string(text)
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return false
 	GameState.round_index = int(parsed.get("round_index", 1))

@@ -14,7 +14,10 @@ var _battle_setup_ready := false
 var _replay_own: Dictionary = {}
 var _replay_rival: Dictionary = {}
 var _view_toggle_btn: Button
-const TEAM_REPLAY_WAIT_TIMEOUT_SEC := 20.0
+# 临时缓解（B7），与 PrepScreen.TEAM_BATTLE_PREP_TIMEOUT_SEC /
+# NetworkService.REPLAY_TIMEOUT_SEC 必须保持同量级：三处任何一处偏小，
+# 客户端就会先于服务器看门狗放弃。这是 fallback 路径，主路径在 PrepScreen。
+const TEAM_REPLAY_WAIT_TIMEOUT_SEC := 60.0
 
 func _ready() -> void:
 	if GameState.team_mode:
@@ -73,6 +76,14 @@ func _ready() -> void:
 			print("[NET] waiting for replay round=%d" % GameState.round_index)
 			while not _valid_team_replay(NetworkService.team_replay):
 				await get_tree().create_timer(0.1).timeout
+				# 本函数其余每个 await 点都有这道守卫，唯独这个循环漏了。
+				# 场景被 Main._clear() 移除后（例如重连成功落回备战），这个协程还在
+				# 计时，到点就 _fail_team_replay -> battle_finished(error)，把一个已经
+				# 好好待在备战界面的玩家踹回主菜单。
+				# 注意这只是止血：完整修法是整段流程用 cancel token / attempt
+				# generation，并校验 battle_id 与代次（B12，见文档 1B-5）。
+				if not is_inside_tree():
+					return
 				wait_elapsed += 0.1
 				if not NetworkService.team_replay.is_empty() and not _valid_team_replay(NetworkService.team_replay):
 					print("[NET] replay invalid round=%d" % GameState.round_index)
@@ -114,6 +125,9 @@ func _process(delta: float) -> void:
 	# _update_vfx_camera_shake is defined in BattleVfx (a base class), so the old
 	# per-frame has_method() check was always true — pure overhead.
 	_update_vfx_camera_shake()
+	# 水晶演出要在 _finished 之后才播（结算时才召唤），所以必须放在下面那个
+	# `if _finished: return` 之前，否则水晶不漂浮、血量数字也不会跟到水晶脚下。
+	_update_crystal_demo(delta)
 	_model_facing_elapsed += delta
 	if _model_facing_elapsed >= MODEL_FACING_UPDATE_SEC:
 		_model_facing_elapsed = 0.0

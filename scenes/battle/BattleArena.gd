@@ -69,7 +69,11 @@ func _exit_tree() -> void:
 			tween.kill()
 	_looping_tweens.clear()
 
-func _process(delta: float) -> void:
+# 千万不要把这段放回 _process。BattleScreen（继承链最末端，实际被实例化的那个类）
+# 自己定义了 _process，而 GDScript 不会自动往上调父类的同名回调——本类的 _process
+# 会被整个覆盖，一帧都不会执行。必须由 BattleScreen._process 显式调用，跟
+# _update_vfx_camera_shake 同一个套路。
+func _update_crystal_demo(delta: float) -> void:
 	_crystal_motion_time += delta
 	_crystal_shake = maxf(0.0, _crystal_shake - delta * CRYSTAL_SHAKE_DECAY)
 	_animate_battle_crystals()

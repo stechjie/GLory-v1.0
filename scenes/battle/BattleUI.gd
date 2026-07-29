@@ -137,8 +137,13 @@ func _result_is_team_b_pvp_perspective(result: Dictionary) -> bool:
 	)
 
 func _local_player_wins(result: Dictionary) -> bool:
-	var wins := bool(result.get("player_wins", false))
-	return not wins if _result_is_team_b_pvp_perspective(result) else wins
+	# 视角反转走 TeamOutcome（C16）：服务端结算、这里的字幕、Main 的 fallback
+	# 此前是三份独立实现，任何一处漂移都会让 B 队"画面显示胜利但按失败结算"。
+	var kind := str(result.get("kind", _state.get("kind", "")))
+	var viewer_team := TeamOutcome.TEAM_A
+	if NetworkService.team_active and GameConstants.team_of_slot(NetworkService.team_local_slot) == GameConstants.TEAM_BLUE:
+		viewer_team = TeamOutcome.TEAM_B
+	return TeamOutcome.viewer_wins_battle(result, kind, viewer_team)
 
 func _refresh_summary() -> void:
 	var lines: Array[String] = []

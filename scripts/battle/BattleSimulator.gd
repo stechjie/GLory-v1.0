@@ -423,9 +423,17 @@ static func result_from_state(state: Dictionary) -> Dictionary:
 	var e_end := _alive(enemy)
 	var player_wins := false
 	var reason := "wipeout"
+	# is_draw：这一场**真正打平**了（双方全灭，或超时且战力完全相等）。
+	# player_wins 保留原有回退值不动 —— 经济结算、伤害盖戳、UI 字幕都在读它，
+	# 改它会牵动整条链。真正需要区分平局的地方（第 21 回合 PVP 的整局归属）
+	# 单独读 is_draw，见 TeamOutcome.run_outcome。
+	# 注意这两处回退都偏向 "player" 侧，而 PVP 的规范化棋局里 "player" 恒为 A 队 ——
+	# 也就是说不看 is_draw 就等于默认判 A 队胜。
+	var is_draw := false
 	if p_end.is_empty() and e_end.is_empty():
 		player_wins = true
-		reason = "double_ko_player_fallback"
+		is_draw = true
+		reason = "double_ko"
 	elif e_end.is_empty():
 		player_wins = true
 	elif p_end.is_empty():
@@ -435,6 +443,7 @@ static func result_from_state(state: Dictionary) -> Dictionary:
 		var p_power := timeout_power(p_end)
 		var e_power := timeout_power(e_end)
 		if is_equal_approx(p_power, e_power):
+			is_draw = true
 			player_wins = GameState.player_formation_hp >= GameState.enemy_formation_hp
 		else:
 			player_wins = p_power > e_power
@@ -442,6 +451,7 @@ static func result_from_state(state: Dictionary) -> Dictionary:
 	return {
 		"kind": state.get("kind", "pve"),
 		"player_wins": player_wins,
+		"is_draw": is_draw,
 		"reason": reason,
 		"elapsed": float(state.get("elapsed", 0.0)),
 		"player_alive": p_end.size(),
@@ -949,7 +959,11 @@ static func _lowest_def_backline(caster: Dictionary, opponents: Array) -> Dictio
 			return ad < bd
 		var aback := float(a.pos.y) if str(caster.get("team", "")) == "player" else ARENA_H - float(a.pos.y)
 		var bback := float(b.pos.y) if str(caster.get("team", "")) == "player" else ARENA_H - float(b.pos.y)
-		return aback < bback
+		# C23a：防御和纵深都相同时的稳定次级键。同样是选目标的排序，
+		# 平手时顺序不定 = 战斗结果不定。
+		if not is_equal_approx(aback, bback):
+			return aback < bback
+		return str(a.get("uid", "")) < str(b.get("uid", ""))
 	)
 	return pool[0]
 
