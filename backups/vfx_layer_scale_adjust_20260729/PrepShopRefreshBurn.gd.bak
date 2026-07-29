@@ -1,0 +1,193 @@
+extends Control
+class_name PrepShopRefreshBurn
+
+const FRAME_SIZE := Vector2i(1024, 128)
+const FRAME_COLUMNS := 4
+const FRAME_COUNT := 8
+const FRAME_RATE := 20.0
+const TOTAL_DURATION := 0.50
+const COMMIT_TIME := 0.25
+
+var _shop_background: TextureRect
+var _refresh_button: BaseButton
+var _burn_material: ShaderMaterial
+var _fire_layers: Array[TextureRect] = []
+var _atlas_textures: Array[AtlasTexture] = []
+var _elapsed := 0.0
+var _busy := false
+var _visual_tweens: Array[Tween] = []
+
+
+func setup(
+	shop_background: TextureRect,
+	refresh_button: BaseButton,
+	atlas: Texture2D,
+	burn_shader: Shader
+) -> void:
+	_shop_background = shop_background
+	_refresh_button = refresh_button
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	z_index = 43
+	visible = false
+
+	_burn_material = ShaderMaterial.new()
+	_burn_material.shader = burn_shader
+	_burn_material.set_shader_parameter("burn_progress", 0.0)
+	_shop_background.material = _burn_material
+
+	var fire_host := _shop_background.get_parent() as Control
+	_fire_layers.append(_make_fire_layer(fire_host, atlas, false))
+	_fire_layers.append(_make_fire_layer(fire_host, atlas, false))
+	_fire_layers.append(_make_fire_layer(fire_host, atlas, true))
+	_fire_layers.append(_make_fire_layer(fire_host, atlas, true))
+	set_process(false)
+
+
+func is_playing() -> bool:
+	return _busy
+
+
+func play(commit_refresh: Callable) -> void:
+	if _busy or not commit_refresh.is_valid():
+		return
+	_busy = true
+	_elapsed = 0.0
+	visible = true
+	mouse_filter = Control.MOUSE_FILTER_STOP
+	set_process(true)
+	_burn_material.set_shader_parameter("burn_progress", 0.0)
+	_set_fire_visibility(true)
+	_update_flipbook(0, 0.0)
+	_start_visual_tweens()
+
+	await get_tree().create_timer(COMMIT_TIME).timeout
+	if not _busy:
+		return
+	commit_refresh.call()
+	_burn_material.set_shader_parameter("burn_progress", 0.0)
+	_shop_background.modulate = Color(1.0, 1.0, 1.0, 0.0)
+	var reveal := create_tween()
+	_visual_tweens.append(reveal)
+	reveal.tween_property(_shop_background, "modulate", Color.WHITE, 0.15).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
+	await get_tree().create_timer(TOTAL_DURATION - COMMIT_TIME).timeout
+	_finish()
+
+
+func _process(delta: float) -> void:
+	if not _busy:
+		return
+	_elapsed = minf(_elapsed + delta, TOTAL_DURATION)
+	var frame_value: float = fmod(_elapsed * FRAME_RATE, FRAME_COUNT)
+	var current_index := int(floor(frame_value))
+	var blend: float = frame_value - floor(frame_value)
+	_update_flipbook(current_index, blend)
+	var fire_alpha := 1.0
+	if _elapsed < 0.06:
+		fire_alpha = _elapsed / 0.06
+	elif _elapsed > 0.40:
+		fire_alpha = maxf(0.0, (TOTAL_DURATION - _elapsed) / 0.10)
+	for layer in _fire_layers:
+		layer.self_modulate.a = fire_alpha * (0.72 if layer.flip_v else 1.0)
+
+
+func _make_fire_layer(host: Control, atlas: Texture2D, flipped: bool) -> TextureRect:
+	var atlas_texture := AtlasTexture.new()
+	atlas_texture.atlas = atlas
+	_atlas_textures.append(atlas_texture)
+	var layer := TextureRect.new()
+	layer.name = "ScrollEdgeFireTop" if flipped else "ScrollEdgeFireBottom"
+	layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.texture = atlas_texture
+	layer.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	layer.stretch_mode = TextureRect.STRETCH_SCALE
+	layer.flip_v = flipped
+	layer.anchor_left = 0.5
+	layer.anchor_top = 0.5
+	layer.anchor_right = 0.5
+	layer.anchor_bottom = 0.5
+	layer.offset_left = -460
+	layer.offset_right = 460
+	if flipped:
+		layer.offset_top = -142
+		layer.offset_bottom = -18
+		layer.self_modulate = Color(1.0, 0.82, 0.58, 0.0)
+	else:
+		layer.offset_top = 18
+		layer.offset_bottom = 142
+		layer.self_modulate = Color(1.0, 1.0, 1.0, 0.0)
+	layer.visible = false
+	host.add_child(layer)
+	return layer
+
+
+func _update_flipbook(current_index: int, blend: float) -> void:
+	var next_index := (current_index + 1) % FRAME_COUNT
+	_set_atlas_frame(_atlas_textures[0], current_index)
+	_set_atlas_frame(_atlas_textures[1], next_index)
+	_set_atlas_frame(_atlas_textures[2], current_index)
+	_set_atlas_frame(_atlas_textures[3], next_index)
+	_fire_layers[0].modulate.a = 1.0 - blend
+	_fire_layers[1].modulate.a = blend
+	_fire_layers[2].modulate.a = 1.0 - blend
+	_fire_layers[3].modulate.a = blend
+
+
+func _set_atlas_frame(texture: AtlasTexture, index: int) -> void:
+	var column := index % FRAME_COLUMNS
+	var row := index / FRAME_COLUMNS
+	texture.region = Rect2(
+		Vector2(column * FRAME_SIZE.x, row * FRAME_SIZE.y),
+		FRAME_SIZE
+	)
+
+
+func _set_fire_visibility(value: bool) -> void:
+	for layer in _fire_layers:
+		if is_instance_valid(layer):
+			layer.visible = value
+
+
+func _start_visual_tweens() -> void:
+	if is_instance_valid(_refresh_button):
+		_refresh_button.pivot_offset = _refresh_button.size * 0.5
+		var button_tween := create_tween()
+		_visual_tweens.append(button_tween)
+		button_tween.tween_property(_refresh_button, "scale", Vector2(0.90, 0.90), 0.06).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
+		button_tween.parallel().tween_property(_refresh_button, "modulate", Color(1.0, 0.42, 0.12), 0.06)
+		button_tween.tween_property(_refresh_button, "scale", Vector2.ONE, 0.16).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		button_tween.parallel().tween_property(_refresh_button, "modulate", Color.WHITE, 0.16)
+	if is_instance_valid(_shop_background):
+		var burn_tween := create_tween()
+		_visual_tweens.append(burn_tween)
+		burn_tween.tween_interval(0.04)
+		burn_tween.tween_method(
+			func(value: float) -> void: _burn_material.set_shader_parameter("burn_progress", value),
+			0.0,
+			1.0,
+			0.21
+		).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+
+
+func _finish() -> void:
+	_busy = false
+	set_process(false)
+	visible = false
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_set_fire_visibility(false)
+	if is_instance_valid(_shop_background):
+		_shop_background.modulate = Color.WHITE
+	if _burn_material != null:
+		_burn_material.set_shader_parameter("burn_progress", 0.0)
+	if is_instance_valid(_refresh_button):
+		_refresh_button.scale = Vector2.ONE
+		_refresh_button.modulate = Color.WHITE
+	_visual_tweens.clear()
+
+
+func _exit_tree() -> void:
+	for tween in _visual_tweens:
+		if tween != null and tween.is_valid():
+			tween.kill()
+	_finish()

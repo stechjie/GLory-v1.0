@@ -1,10 +1,6 @@
 extends "res://scenes/battle/BattleResult.gd"
 
 const BattleReplayUtil = preload("res://scripts/battle/BattleReplayUtil.gd")
-const VFXSummonSpawn3D := preload("res://effects/vfx3d/modules/VFXSummonSpawn3D.gd")
-const FINAL_SUMMON_RED := preload("res://effects/vfx3d/profiles/formation/summon_formation_red.tres")
-const FINAL_SUMMON_BLUE := preload("res://effects/vfx3d/profiles/formation/summon_formation_blue.tres")
-const FINAL_ROUND_INTRO_SEC := 2.05
 
 var _replay: Dictionary = {}
 var _replay_mode := false
@@ -13,8 +9,6 @@ var _replay_frame := 0
 var _replay_events_applied := -1
 var _replay_by_uid: Dictionary = {}
 var _battle_setup_ready := false
-var _final_round_intro_active := false
-var _final_round_intro_started := false
 # 切镜头观战：_replay 永远是"正在播放"的那份；自己队伍的原始 replay 存在
 # _replay_own（结算/跳过必须用它），敌方队伍的存在 _replay_rival。
 var _replay_own: Dictionary = {}
@@ -122,7 +116,6 @@ func _ready() -> void:
 		return
 	_refresh_visuals()
 	_battle_setup_ready = true
-	_try_start_final_round_intro()
 func _exit_tree() -> void:
 	_stop_battle_music()
 
@@ -140,8 +133,6 @@ func _process(delta: float) -> void:
 		_model_facing_elapsed = 0.0
 		_model_facing_due = true
 	if _finished:
-		return
-	if _final_round_intro_active:
 		return
 	if _replay_mode:
 		_sim_accumulator += delta * PLAYBACK_SPEED
@@ -210,56 +201,6 @@ func _start_replay(replay: Dictionary) -> void:
 		_start_battle_music()
 		_refresh_visuals()
 		_battle_setup_ready = true
-		_try_start_final_round_intro()
-
-
-func _try_start_final_round_intro() -> void:
-	if _final_round_intro_started or GameState.round_index != GameState.FINAL_ROUND:
-		return
-	var formation_allies: Array = []
-	for fighter in _state.get("player", []) + _state.get("enemy", []):
-		if bool(fighter.get("alive", false)) and bool(fighter.get("is_formation_ally", false)):
-			formation_allies.append(fighter)
-	if formation_allies.is_empty() or _battle_3d_world == null:
-		return
-	_final_round_intro_started = true
-	_final_round_intro_active = true
-	_set_formation_allies_intro_hidden(true)
-	for fighter in formation_allies:
-		var fx := VFXSummonSpawn3D.new()
-		fx.name = "FinalRoundFormationSummon_%s" % str(fighter.get("team", "side"))
-		_battle_3d_world.add_child(fx)
-		var profile = FINAL_SUMMON_RED if str(fighter.get("team", "")) == "player" else FINAL_SUMMON_BLUE
-		fx.reveal_requested.connect(_reveal_final_formation_ally.bind(_visual_id(fighter)))
-		fx.play_summon(_sim_to_world_pos(Vector2(fighter.get("pos", Vector2.ZERO))), profile)
-	_finish_final_round_intro_after_delay()
-
-
-func _reveal_final_formation_ally(id: String) -> void:
-	var model_node: Node3D = _battle_3d_models.get(id)
-	var unit_node: Control = _unit_nodes.get(id)
-	if unit_node != null and is_instance_valid(unit_node):
-		unit_node.visible = true
-	if model_node == null or not is_instance_valid(model_node):
-		return
-	model_node.visible = true
-	var resting_y := model_node.position.y
-	model_node.position.y = resting_y - 0.75
-	model_node.scale *= 0.72
-	var target_scale := model_node.scale / 0.72
-	var tween := model_node.create_tween()
-	tween.set_parallel(true)
-	tween.tween_property(model_node, "position:y", resting_y, 0.38).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	tween.tween_property(model_node, "scale", target_scale, 0.38).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-
-
-func _finish_final_round_intro_after_delay() -> void:
-	await get_tree().create_timer(FINAL_ROUND_INTRO_SEC).timeout
-	if not is_inside_tree() or _finished:
-		return
-	_set_formation_allies_intro_hidden(false)
-	_final_round_intro_active = false
-
 
 func _load_replay_roster(replay: Dictionary) -> void:
 	_replay_by_uid = {}
@@ -274,7 +215,6 @@ func _load_replay_roster(replay: Dictionary) -> void:
 			"team": str(r.get("team", "")), "lane": int(r.get("lane", 0)),
 			"max_hp": int(r.get("max_hp", 1)), "hp": int(r.get("max_hp", 1)),
 			"is_mercenary": bool(r.get("is_mercenary", false)), "star": int(r.get("star", 1)),
-			"is_formation_ally": bool(r.get("is_formation_ally", false)),
 			"footprint_cells": int(r.get("footprint_cells", 1)), "def": r.get("def", {}),
 			"owner_slot": int(r.get("owner_slot", -1)),
 			"pos": Vector2.ZERO, "alive": false, "statuses": {}, "shield": 0,

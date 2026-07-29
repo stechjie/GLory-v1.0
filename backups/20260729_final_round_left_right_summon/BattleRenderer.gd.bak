@@ -12,7 +12,6 @@ var _status_vfx_by_id: Dictionary = {}
 # HpFill refs cached at node creation so the per-frame HP sync never walks the tree.
 var _hp_fill_by_id: Dictionary = {}
 var _top5_next_refresh_msec := 0
-var _formation_allies_hidden_for_intro := false
 
 func _fighter_display_name(f: Dictionary) -> String:
 	if LocaleManager.get_locale() == "en":
@@ -150,7 +149,6 @@ func _sync_unit_nodes(fighters: Array, living_ids: Dictionary) -> void:
 		_unit_nodes[id] = node
 		_hp_fill_by_id[id] = node.get_node("HpFill")
 		_arena.add_child(node)
-		_apply_formation_intro_visibility(id, f)
 	# O(N) cleanup: drop nodes whose unit is no longer alive (set lookup).
 	for key in _unit_nodes.keys():
 		if not living_ids.has(key):
@@ -274,7 +272,6 @@ func _sync_3d_model_nodes(living: Array, update_facing: bool) -> void:
 			_battle_3d_root.add_child(model_node)
 			_set_unit_fallback_visible(id, false)
 		_position_3d_model_node(model_node, f, update_facing)
-		_apply_formation_intro_visibility(id, f)
 		_update_model_animation_state(model_node, f)
 		var status_vfx: Node = _status_vfx_by_id.get(id)
 		if status_vfx == null or not is_instance_valid(status_vfx):
@@ -742,31 +739,11 @@ func _position_3d_model_node(model_node: Node3D, f: Dictionary, update_facing: b
 func _team_facing_yaw(model_node: Node3D, f: Dictionary) -> float:
 	var base_yaw := float(model_node.get_meta("base_yaw", 180.0))
 	var is_player := str(f.get("team", "")) == "player"
-	if GameState.round_index == GameState.FINAL_ROUND:
-		return base_yaw + (MODEL_FACING_PLAYER_YAW_OFFSET - 90.0 if is_player else MODEL_FACING_ENEMY_YAW_OFFSET + 90.0)
 	# (4) When the arena is flipped, top/bottom swap, so the facing must swap too.
 	if _arena_flip_y:
 		is_player = not is_player
 	var offset := MODEL_FACING_PLAYER_YAW_OFFSET if is_player else MODEL_FACING_ENEMY_YAW_OFFSET
 	return base_yaw + offset
-
-
-func _set_formation_allies_intro_hidden(hidden: bool) -> void:
-	_formation_allies_hidden_for_intro = hidden
-	for fighter in _state.get("player", []) + _state.get("enemy", []):
-		_apply_formation_intro_visibility(_visual_id(fighter), fighter)
-
-
-func _apply_formation_intro_visibility(id: String, fighter: Dictionary) -> void:
-	if not bool(fighter.get("is_formation_ally", false)):
-		return
-	var should_show := not _formation_allies_hidden_for_intro
-	var unit_node: Control = _unit_nodes.get(id)
-	if unit_node != null and is_instance_valid(unit_node):
-		unit_node.visible = should_show
-	var model_node: Node3D = _battle_3d_models.get(id)
-	if model_node != null and is_instance_valid(model_node):
-		model_node.visible = should_show
 
 # Rebuilds the per-frame snapshot of living units (ids + raw sim positions) and
 # clears the memoized visual positions. Display-only: never writes to _state.

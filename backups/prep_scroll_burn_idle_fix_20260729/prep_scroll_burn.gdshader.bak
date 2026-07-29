@@ -1,0 +1,27 @@
+shader_type canvas_item;
+
+uniform float burn_progress : hint_range(0.0, 1.0) = 0.0;
+uniform float edge_width : hint_range(0.01, 0.20) = 0.075;
+uniform vec4 char_color : source_color = vec4(0.10, 0.018, 0.004, 1.0);
+uniform vec4 ember_color : source_color = vec4(0.82, 0.09, 0.015, 1.0);
+uniform vec4 hot_color : source_color = vec4(1.0, 0.68, 0.10, 1.0);
+
+float burn_noise(vec2 uv) {
+	float broad = sin(uv.y * 23.0 + sin(uv.y * 7.0) * 2.4) * 0.018;
+	float detail = sin(uv.y * 61.0 + uv.x * 17.0) * 0.009;
+	return broad + detail;
+}
+
+void fragment() {
+	vec4 base = texture(TEXTURE, UV);
+	float front = 1.0 - burn_progress + burn_noise(UV);
+	float distance_to_front = front - UV.x;
+	float keep = smoothstep(-0.008, 0.012, distance_to_front);
+	float hot_band = 1.0 - smoothstep(0.0, edge_width * 0.32, distance_to_front);
+	float ember_band = 1.0 - smoothstep(0.0, edge_width * 0.68, distance_to_front);
+	float char_band = 1.0 - smoothstep(0.0, edge_width, distance_to_front);
+	vec3 burned = mix(base.rgb, char_color.rgb, char_band * 0.88);
+	burned = mix(burned, ember_color.rgb, ember_band * 0.82);
+	burned = mix(burned, hot_color.rgb, hot_band * 0.92);
+	COLOR = vec4(burned, base.a * keep);
+}

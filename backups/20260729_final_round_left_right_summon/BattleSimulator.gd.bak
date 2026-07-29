@@ -11,7 +11,6 @@ static func prepare_tutorial_state(kind: String) -> Dictionary:
 	var enemy := build_tutorial_enemy_fighters(kind)
 	if kind == "final":
 		_add_final_formation_allies(player, enemy)
-		_apply_final_round_left_right_layout(player, enemy)
 	var battle_log: Array[String] = []
 	var player_syn := SynergyService.current_player_flags()
 	var enemy_syn := _enemy_syn_for_kind(kind)
@@ -148,7 +147,6 @@ static func prepare_team_state(forced_team: int = -1) -> Dictionary:
 				_append_lane_mercenaries(enemy, _team_mercs_for_slot(rival_slots[lane], rng), "enemy", lane, rival_slots[lane])
 	if is_final_round:
 		_add_team_final_formation_allies(player, enemy)
-		_apply_final_round_left_right_layout(player, enemy)
 
 	var battle_log: Array[String] = []
 	battle_log.append(TranslationServer.translate("log_team_unit_counts") % [kind.to_upper(), player.size(), enemy.size()])
@@ -354,7 +352,6 @@ static func _replay_capture_roster(state: Dictionary, roster: Dictionary) -> voi
 			"lane": int(f.get("lane", 0)),
 			"max_hp": int(f.get("max_hp", 1)),
 			"is_mercenary": bool(f.get("is_mercenary", false)),
-			"is_formation_ally": bool(f.get("is_formation_ally", false)),
 			"star": int(f.get("star", 1)),
 			"footprint_cells": int(f.get("footprint_cells", 1)),
 			"owner_slot": int(f.get("owner_slot", -1)),
@@ -1066,29 +1063,6 @@ static func _add_final_formation_allies(player: Array, enemy: Array) -> void:
 	var ed := _formation_ally_def_for_hp(GameState.enemy_formation_hp)
 	if not ed.is_empty():
 		enemy.append(_fighter_from_def(ed, 2, "enemy", enemy.size(), 26, 1, false, true))
-
-
-# Final Round alone changes the real combat axis. Rotating simulation positions
-# keeps movement, targeting, projectiles, attack range and replay visuals aligned.
-static func _apply_final_round_left_right_layout(player: Array, enemy: Array) -> void:
-	for fighter in player + enemy:
-		var old_pos := Vector2(fighter.get("pos", Vector2(ARENA_W * 0.5, ARENA_H * 0.5)))
-		var rotated := Vector2(
-			(1.0 - old_pos.y / ARENA_H) * ARENA_W,
-			old_pos.x / ARENA_W * ARENA_H
-		)
-		fighter.pos = Vector2(
-			clampf(rotated.x, 80.0, ARENA_W - 80.0),
-			clampf(rotated.y, 60.0, ARENA_H - 60.0)
-		)
-	for fighter in player:
-		if bool(fighter.get("is_formation_ally", false)):
-			fighter.pos = Vector2(440.0, ARENA_H * 0.5)
-			fighter["lane"] = 1
-	for fighter in enemy:
-		if bool(fighter.get("is_formation_ally", false)):
-			fighter.pos = Vector2(560.0, ARENA_H * 0.5)
-			fighter["lane"] = 1
 
 
 # 击杀金补结算：普通攻击打死目标时 _handle_attack_kill 会即时结算，但技能 / AOE /

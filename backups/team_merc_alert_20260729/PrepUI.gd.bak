@@ -4,7 +4,6 @@ const PrepShopRaceIcon = preload("res://scenes/prep/PrepShopRaceIcon.gd")
 const PrepMoneyBagIcon = preload("res://scenes/prep/PrepMoneyBagIcon.gd")
 const PrepScrollIdleFlipbookScript = preload("res://scenes/prep/effects/PrepScrollIdleFlipbook.gd")
 const PrepShopRefreshBurnScript = preload("res://scenes/prep/effects/PrepShopRefreshBurn.gd")
-const PrepTeamMercAlertScript = preload("res://scenes/prep/effects/PrepTeamMercAlert.gd")
 const SHOP_SCROLL_BURN_SHADER: Shader = preload("res://assets/shaders/prep_scroll_burn.gdshader")
 const GOLD_NUMBER_FONT: Font = preload("res://assets/fonts/Knewave-Regular.ttf")
 const SHOP_REFRESH_WIDTH := 112.0
@@ -39,7 +38,6 @@ const SHOP_CLOSED_BTN_PATH := "res://assets/ui/buttons/shop_closed.png"   # 底�
 const SHOP_IDLE_ATLAS_PATH := "res://assets/vfx/prep/scroll_idle_shimmer_atlas.png"
 const SHOP_IDLE_HALO_PATH := "res://assets/vfx/prep/scroll_idle_halo.png"
 const SHOP_REFRESH_FIRE_ATLAS_PATH := "res://assets/vfx/prep/scroll_edge_fire_atlas.png"
-const TEAM_MERC_ALERT_ATLAS_PATH := "res://assets/vfx/prep/team_merc_crossed_swords_atlas.png"
 const CRYSTAL_FIRE_PATHS := [                 # 火队（slot 0-2 红蓝绿）红水晶：按血量段 0-10..40-50
 	"res://assets/ui/crystals/red_0_10.png",
 	"res://assets/ui/crystals/red_10_20.png",
@@ -85,12 +83,6 @@ const TREASURE_LINKAGE_LOGOS := {
 	"link_hu_pai_master": "胡牌手",
 }
 const PVP_WARNING_FRAME_PATH := "res://assets/ui/pvp_warning_frame.png"
-
-var _team_mercs_button: Button
-var _team_merc_alert
-var _team_merc_counts_snapshot: Dictionary = {}
-var _team_merc_snapshot_round := -1
-var _team_merc_snapshot_initialized := false
 
 const MERCENARY_PORTRAIT_PATHS := {
 	"merc_pisces_bubble": "res://assets/ui/mercenary_portraits/merc_pisces_bubble.png",
@@ -975,7 +967,6 @@ func _build_top_actions() -> void:
 	side_col.add_child(merc_btn)
 	# 队伍佣兵检阅台：教学模式没有队友，直接藏
 	var team_mercs_btn := _make_framed_text_button("", TEAM_MERCS_BTN_PATH, MERC_BTN_SIZE, 16, _toggle_team_mercs_picker)
-	_team_mercs_button = team_mercs_btn
 	var team_mercs_lbl := Label.new()
 	team_mercs_lbl.text = tr("ui_team_mercs")
 	team_mercs_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -990,9 +981,6 @@ func _build_top_actions() -> void:
 	team_mercs_lbl.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.95))
 	team_mercs_lbl.add_theme_constant_override("outline_size", 3)
 	team_mercs_btn.add_child(team_mercs_lbl)
-	_team_merc_alert = PrepTeamMercAlertScript.new()
-	team_mercs_btn.add_child(_team_merc_alert)
-	_team_merc_alert.setup(team_mercs_btn, load(TEAM_MERC_ALERT_ATLAS_PATH))
 	team_mercs_btn.visible = not GameState.tutorial_mode
 	side_col.add_child(team_mercs_btn)
 
@@ -1618,7 +1606,6 @@ func _refresh_all() -> void:
 	_refresh_owned_treasure_logos()
 	if GameState.tutorial_mode:
 		TutorialMode.update_overlay()
-	_check_team_merc_alert()
 
 func _refresh_board() -> void:
 	for i in _board_buttons.size():
@@ -2022,7 +2009,6 @@ func _on_team_mercs_render_tick() -> void:
 		_team_mercs_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 func _on_team_prep_mercs_changed() -> void:
-	_check_team_merc_alert()
 	if _team_mercs_open:
 		_refresh_team_mercs_overlay()
 
@@ -2030,63 +2016,7 @@ func _toggle_team_mercs_picker() -> void:
 	_team_mercs_open = not _team_mercs_open
 	if _team_mercs_open:
 		_close_merc_picker()
-		if _team_merc_alert != null:
-			_team_merc_alert.mark_seen()
-		# Opening the stage acknowledges everything already received.
-		_team_merc_counts_snapshot = _team_merc_counts()
-		_team_merc_snapshot_round = GameState.round_index
-		_team_merc_snapshot_initialized = true
 	_refresh_team_mercs_overlay()
-
-func _team_merc_counts() -> Dictionary:
-	var counts: Dictionary = {}
-	var my_slot := NetworkService.team_local_slot if NetworkService.team_active else 0
-	if my_slot < 0:
-		my_slot = 0
-	if not NetworkService.team_active:
-		var local_count := 0
-		for cell in GameState.mercenary_slots:
-			if typeof(cell) == TYPE_DICTIONARY:
-				local_count += 1
-		counts[my_slot] = local_count
-		return counts
-
-	var first := GameConstants.team_first_slot(GameConstants.team_of_slot(my_slot))
-	for slot in range(first, first + GameConstants.TEAM_SIDE_SIZE):
-		if slot == my_slot:
-			var local_count := 0
-			for cell in GameState.mercenary_slots:
-				if typeof(cell) == TYPE_DICTIONARY:
-					local_count += 1
-			counts[slot] = local_count
-		else:
-			counts[slot] = NetworkService.team_prep_merc_ids(slot, GameState.round_index).size()
-	return counts
-
-func _check_team_merc_alert() -> void:
-	if GameState.tutorial_mode or _team_merc_alert == null:
-		return
-	var current := _team_merc_counts()
-	if not _team_merc_snapshot_initialized or _team_merc_snapshot_round != GameState.round_index:
-		_team_merc_counts_snapshot = current
-		_team_merc_snapshot_round = GameState.round_index
-		_team_merc_snapshot_initialized = true
-		return
-
-	var increased := false
-	for slot_value in current:
-		var slot := int(slot_value)
-		if int(current.get(slot, 0)) > int(_team_merc_counts_snapshot.get(slot, 0)):
-			increased = true
-			break
-	_team_merc_counts_snapshot = current
-	if not increased:
-		return
-	if _team_mercs_open:
-		_team_merc_alert.mark_seen()
-		_refresh_team_mercs_overlay()
-	else:
-		_team_merc_alert.notify_summon()
 
 func _close_team_mercs_picker() -> void:
 	if not _team_mercs_open:

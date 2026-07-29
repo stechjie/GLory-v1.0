@@ -8,7 +8,7 @@ const FRAME_RATE := 16.0
 const FLOAT_DISTANCE := 3.0
 const SWAY_RADIANS := deg_to_rad(0.8)
 const HALF_CYCLE_SECONDS := 1.55
-const HALO_MARGIN := 22.0
+const HALO_MARGIN := 16.0
 
 var _target: Control
 var _halo: TextureRect
@@ -47,7 +47,7 @@ func setup(target: Control, atlas: Texture2D, halo_texture: Texture2D) -> void:
 	_halo.offset_top = -HALO_MARGIN
 	_halo.offset_right = HALO_MARGIN
 	_halo.offset_bottom = HALO_MARGIN
-	_halo.modulate = Color(1.0, 0.86, 0.38, 0.62)
+	_halo.modulate = Color(1.0, 0.82, 0.34, 0.42)
 	add_child(_halo)
 
 	_shine_current = _make_shine_layer(_atlas_current)
@@ -141,8 +141,8 @@ func _start_float() -> void:
 	)
 	_glow_tween = create_tween().set_loops()
 	_glow_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	_glow_tween.tween_property(_halo, "modulate:a", 0.88, 0.95)
-	_glow_tween.tween_property(_halo, "modulate:a", 0.48, 1.25)
+	_glow_tween.tween_property(_halo, "modulate:a", 0.70, 0.95)
+	_glow_tween.tween_property(_halo, "modulate:a", 0.30, 1.25)
 
 
 func _stop_float() -> void:
@@ -151,7 +151,7 @@ func _stop_float() -> void:
 		_target.position = _rest_position
 		_target.rotation = 0.0
 	if is_instance_valid(_halo):
-		_halo.modulate.a = 0.62
+		_halo.modulate.a = 0.42
 
 
 func _kill_tweens() -> void:

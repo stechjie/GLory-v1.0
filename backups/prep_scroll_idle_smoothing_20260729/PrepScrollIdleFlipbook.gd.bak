@@ -2,22 +2,20 @@ extends Control
 class_name PrepScrollIdleFlipbook
 
 const FRAME_SIZE := Vector2i(256, 128)
-const FRAME_COLUMNS := 8
-const FRAME_COUNT := 16
-const FRAME_RATE := 16.0
+const FRAME_COLUMNS := 6
+const FRAME_COUNT := 12
+const FRAME_RATE := 8.0
 const FLOAT_DISTANCE := 3.0
 const SWAY_RADIANS := deg_to_rad(0.8)
 const HALF_CYCLE_SECONDS := 1.55
-const HALO_MARGIN := 22.0
+const HALO_MARGIN := 16.0
 
 var _target: Control
 var _halo: TextureRect
-var _shine_current: TextureRect
-var _shine_next: TextureRect
-var _atlas_current: AtlasTexture
-var _atlas_next: AtlasTexture
-var _animation_time := 0.0
-var _frame_index := -1
+var _shine: TextureRect
+var _atlas_texture: AtlasTexture
+var _frame_accumulator := 0.0
+var _frame_index := 0
 var _float_tween: Tween
 var _glow_tween: Tween
 var _rest_position := Vector2.ZERO
@@ -25,20 +23,19 @@ var _rest_position_initialized := false
 var _active := true
 
 
-func setup(target: Control, atlas: Texture2D, halo_texture: Texture2D) -> void:
+func setup(target: Control, atlas: Texture2D) -> void:
 	_target = target
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	z_index = 2
 
-	_atlas_current = AtlasTexture.new()
-	_atlas_current.atlas = atlas
-	_atlas_next = AtlasTexture.new()
-	_atlas_next.atlas = atlas
+	_atlas_texture = AtlasTexture.new()
+	_atlas_texture.atlas = atlas
+	_atlas_texture.region = Rect2(Vector2.ZERO, FRAME_SIZE)
 
 	_halo = TextureRect.new()
 	_halo.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_halo.texture = halo_texture
+	_halo.texture = _atlas_texture
 	_halo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_halo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_halo.anchor_right = 1.0
@@ -47,12 +44,17 @@ func setup(target: Control, atlas: Texture2D, halo_texture: Texture2D) -> void:
 	_halo.offset_top = -HALO_MARGIN
 	_halo.offset_right = HALO_MARGIN
 	_halo.offset_bottom = HALO_MARGIN
-	_halo.modulate = Color(1.0, 0.86, 0.38, 0.62)
+	_halo.modulate = Color(1.0, 0.82, 0.34, 0.42)
 	add_child(_halo)
 
-	_shine_current = _make_shine_layer(_atlas_current)
-	_shine_next = _make_shine_layer(_atlas_next)
-	_update_flipbook_layers(0, 0.0)
+	_shine = TextureRect.new()
+	_shine.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_shine.texture = _atlas_texture
+	_shine.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_shine.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_shine.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_shine.modulate = Color(1.0, 1.0, 1.0, 0.88)
+	add_child(_shine)
 
 	call_deferred("_start_float")
 
@@ -68,41 +70,19 @@ func set_effect_active(value: bool) -> void:
 
 
 func _process(delta: float) -> void:
-	if not _active or _atlas_current == null or _atlas_next == null:
+	if not _active or _atlas_texture == null:
 		return
-	_animation_time = fmod(_animation_time + delta, float(FRAME_COUNT) / FRAME_RATE)
-	var frame_value: float = _animation_time * FRAME_RATE
-	var current_index := int(floor(frame_value)) % FRAME_COUNT
-	var blend: float = frame_value - floor(frame_value)
-	_update_flipbook_layers(current_index, blend)
-
-
-func _make_shine_layer(texture: Texture2D) -> TextureRect:
-	var layer := TextureRect.new()
-	layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	layer.texture = texture
-	layer.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	layer.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(layer)
-	return layer
-
-
-func _update_flipbook_layers(current_index: int, blend: float) -> void:
-	_frame_index = current_index
-	_set_atlas_frame(_atlas_current, current_index)
-	_set_atlas_frame(_atlas_next, (current_index + 1) % FRAME_COUNT)
-	_shine_current.modulate = Color(1.0, 1.0, 1.0, 0.88 * (1.0 - blend))
-	_shine_next.modulate = Color(1.0, 1.0, 1.0, 0.88 * blend)
-
-
-func _set_atlas_frame(texture: AtlasTexture, index: int) -> void:
-	var column := index % FRAME_COLUMNS
-	var row := index / FRAME_COLUMNS
-	texture.region = Rect2(
-		Vector2(column * FRAME_SIZE.x, row * FRAME_SIZE.y),
-		FRAME_SIZE
-	)
+	_frame_accumulator += delta
+	var frame_duration := 1.0 / FRAME_RATE
+	while _frame_accumulator >= frame_duration:
+		_frame_accumulator -= frame_duration
+		_frame_index = (_frame_index + 1) % FRAME_COUNT
+		var column := _frame_index % FRAME_COLUMNS
+		var row := _frame_index / FRAME_COLUMNS
+		_atlas_texture.region = Rect2(
+			Vector2(column * FRAME_SIZE.x, row * FRAME_SIZE.y),
+			FRAME_SIZE
+		)
 
 
 func _start_float() -> void:
@@ -141,8 +121,8 @@ func _start_float() -> void:
 	)
 	_glow_tween = create_tween().set_loops()
 	_glow_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	_glow_tween.tween_property(_halo, "modulate:a", 0.88, 0.95)
-	_glow_tween.tween_property(_halo, "modulate:a", 0.48, 1.25)
+	_glow_tween.tween_property(_halo, "modulate:a", 0.70, 0.95)
+	_glow_tween.tween_property(_halo, "modulate:a", 0.30, 1.25)
 
 
 func _stop_float() -> void:
@@ -151,7 +131,7 @@ func _stop_float() -> void:
 		_target.position = _rest_position
 		_target.rotation = 0.0
 	if is_instance_valid(_halo):
-		_halo.modulate.a = 0.62
+		_halo.modulate.a = 0.42
 
 
 func _kill_tweens() -> void:
