@@ -1363,9 +1363,10 @@ func _set_purchase_reason(label: Label, reason: String) -> void:
 	var overlay := label.get_parent() as Control
 	if overlay != null:
 		overlay.visible = not reason.is_empty()
-	var dimmer := label.get_meta("purchase_dimmer", null) as ColorRect
-	if dimmer != null:
-		dimmer.visible = not reason.is_empty()
+	if label.has_meta("purchase_dimmer"):
+		var dimmer := label.get_meta("purchase_dimmer") as ColorRect
+		if dimmer != null:
+			dimmer.visible = not reason.is_empty()
 
 func _shop_purchase_reason(index: int) -> String:
 	if index < 0 or index >= GameState.shop_offers.size():

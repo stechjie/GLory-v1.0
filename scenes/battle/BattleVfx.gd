@@ -933,9 +933,10 @@ func _spawn_hit_number(head_pos: Vector2, amount: int, kind: String, crit: bool,
 	_hit_number_cursor = (_hit_number_cursor + 1) % _hit_number_pool.size()
 	if not is_instance_valid(lbl):
 		return
-	var prev_tween: Variant = lbl.get_meta("hit_tween", null)
-	if prev_tween is Tween and (prev_tween as Tween).is_valid():
-		(prev_tween as Tween).kill()
+	if lbl.has_meta("hit_tween"):
+		var prev_tween: Variant = lbl.get_meta("hit_tween")
+		if prev_tween is Tween and (prev_tween as Tween).is_valid():
+			(prev_tween as Tween).kill()
 
 	var color: Color
 	var font_size: int
