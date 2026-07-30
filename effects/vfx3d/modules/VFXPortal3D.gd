@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXPortal3D
+const QUALITY := preload("res://effects/vfx3d/core/VFXQualityBudget.gd")
 const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const CURVES := preload("res://effects/vfx3d/core/VFXCurveLibrary3D.gd")
@@ -344,7 +345,7 @@ func _face_battle_camera() -> void:
 
 func _spawn_wisps(profile: VFXProfile3D, center_y: float) -> void:
 	var s := profile.size
-	for i in range(7):
+	for i in range(maxi(4, QUALITY.auxiliary_layers(7))):
 		var side := -1.0 if i % 2 == 0 else 1.0
 		var wisp := _spawn_quad("PortalWisp_%d" % i, Vector2(s * (0.16 + 0.05 * float(i % 3)), s * (0.55 + 0.16 * float(i % 3))), WISP_SHADER, {
 			"main_color": profile.main_color, "core_color": profile.core_color,

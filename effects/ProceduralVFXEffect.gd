@@ -1,6 +1,8 @@
 extends Node2D
 class_name ProceduralVFXEffect
 
+const QUALITY := preload("res://effects/vfx3d/core/VFXQualityBudget.gd")
+
 @export var effect_id: String = "DEATH_EXPLOSION"
 
 var _config: Dictionary = {}
@@ -84,7 +86,8 @@ func _play_hit(color: Color, scale_mul: float) -> void:
 	flash.polygon = _circle_polygon(22.0 * scale_mul, 18)
 
 	var particles := _acquire_particles("ImpactParticles")
-	var amount := int(_config.get("amount", 22))
+	# 命中闪光是全场最高频的一类，压到 12 并接质量档。
+	var amount := clampi(QUALITY.particle_count(int(_config.get("amount", 22))), 4, 12)
 	if particles.amount != amount:
 		particles.amount = amount
 	particles.lifetime = 0.24
@@ -149,7 +152,9 @@ func _play_disc(color: Color, radius: float, duration: float) -> void:
 
 func _play_burst(color: Color, amount: int, velocity_mul: float) -> void:
 	var particles := _acquire_particles("BurstParticles")
-	var clamped := clampi(amount, 8, 70)
+	# 上限 70 -> 28，并接质量档。CPU 粒子的模拟在主线程上，而实测瓶颈正是主线程；
+	# 俯视镜头 960x540 下，28 个较大的碎片比 70 个细碎噪点更清楚也更便宜。
+	var clamped := clampi(QUALITY.particle_count(amount), 6, 28)
 	if particles.amount != clamped:
 		particles.amount = clamped
 	particles.lifetime = 0.55
@@ -168,7 +173,8 @@ func _play_burst(color: Color, amount: int, velocity_mul: float) -> void:
 
 func _play_rise_particles(color: Color, amount: int) -> void:
 	var particles := _acquire_particles("RiseParticles")
-	var clamped := clampi(amount, 8, 44)
+	# 上限 44 -> 20，同样接质量档（上升粒子是持续型，比一次性爆炸更该省）。
+	var clamped := clampi(QUALITY.particle_count(amount), 6, 20)
 	if particles.amount != clamped:
 		particles.amount = clamped
 	particles.lifetime = 0.75

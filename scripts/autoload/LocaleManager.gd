@@ -49,6 +49,10 @@ func _zh_strings() -> Dictionary:
 		# 设置页
 		"settings_title": "设置",
 		"settings_language": "语言",
+		"settings_quality": "画质",
+		"settings_quality_low": "流畅",
+		"settings_quality_medium": "平衡",
+		"settings_quality_high": "高画质",
 		"settings_back": "返回",
 		# 游戏结束
 		"gameover_lost": "游戏结束",
@@ -384,6 +388,10 @@ func _en_strings() -> Dictionary:
 		# Settings
 		"settings_title": "Settings",
 		"settings_language": "Language",
+		"settings_quality": "Graphics",
+		"settings_quality_low": "Smooth",
+		"settings_quality_medium": "Balanced",
+		"settings_quality_high": "High",
 		"settings_back": "Back",
 		# Game Over
 		"gameover_lost": "Game Over",

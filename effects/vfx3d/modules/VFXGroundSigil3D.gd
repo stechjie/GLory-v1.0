@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXGroundSigil3D
+const QUALITY := preload("res://effects/vfx3d/core/VFXQualityBudget.gd")
 const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const CURVES := preload("res://effects/vfx3d/core/VFXCurveLibrary3D.gd")
@@ -158,7 +159,7 @@ func _spawn_billboard(node_name: String, size: Vector2, shader_code: String, par
 	return node
 
 func _spawn_smoke(profile: VFXProfile3D) -> void:
-	for i in range(4):
+	for i in range(maxi(2, QUALITY.auxiliary_layers(4))):
 		var node := _spawn_billboard("RedSmoke_%d" % i, Vector2(profile.size * (1.12 + i * 0.14), profile.size * (0.84 + i * 0.10)), SMOKE_SHADER, {
 			"smoke_color": profile.dark_color.darkened(0.30), "ember_color": profile.main_color.darkened(0.10)
 		})

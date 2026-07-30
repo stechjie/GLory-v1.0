@@ -1,6 +1,15 @@
 extends VFXBlockRoot
 class_name VFXSummonSpawn3D
 const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
+const QUALITY := preload("res://effects/vfx3d/core/VFXQualityBudget.gd")
+
+# 卡片用的 QuadMesh 进程级缓存。
+#
+# 一次召唤最多建 76 张卡，每张都 new 一个 QuadMesh + MeshInstance3D +
+# ShaderMaterial —— 最多 228 个对象挤在同一帧。而 QuadMesh 只依赖 size，
+# 尺寸是从 profile.size 乘几个固定系数算出来的，实际只有个位数种。
+# 共享之后 76 个 QuadMesh 变成个位数，视觉完全不变。
+static var _quad_cache: Dictionary = {}
 
 signal reveal_requested
 
@@ -167,7 +176,8 @@ func _spawn_column(profile:VFXProfile3D,t_reveal:float,t_end:float)->void:
 
 # Small bright sparks streaming inward during the charge-up.
 func _spawn_converging_motes(profile:VFXProfile3D,t_reveal:float)->void:
-	for i in range(clampi(profile.particle_count,10,22)):
+	# 汇聚 mote：原本 10–22 张，接质量档后由 particle_count() 统一缩放。
+	for i in range(clampi(QUALITY.particle_count(profile.particle_count),6,14)):
 		var n:=_card("SummonConvergeMote_%d"%i,TEX_DOT,Vector2(profile.size*.085,profile.size*.085),profile,float(i)*.77,true,.75)
 		var a:=float(i)*2.399+.4;var r:=profile.size*(1.25+.32*float(i%3))
 		n.position=Vector3(cos(a)*r,profile.size*(.05+.12*float(i%2)),sin(a)*r*.68)
@@ -179,7 +189,8 @@ func _spawn_converging_motes(profile:VFXProfile3D,t_reveal:float)->void:
 
 # Many small, faint, overlapping puffs read as smoke. A few big opaque cards do not.
 func _spawn_ground_smoke(profile:VFXProfile3D,t_reveal:float,t_settle:float,t_end:float)->void:
-	var count:=clampi(profile.particle_count*2,18,34)
+	# 烟雾卡：原本 particle_count*2（18–34 张），是单次召唤里最大的一笔。
+	var count:=clampi(QUALITY.particle_count(profile.particle_count),10,18)
 	for i in range(count):
 		var scale_v:=profile.size*(.30+.16*float(i%4))
 		var n:=_card("SummonSmoke_%d"%i,TEX_WISP,Vector2(scale_v,scale_v*.86),profile,float(i)*1.13,true,.18)
@@ -208,16 +219,16 @@ func _spawn_shockwave(profile:VFXProfile3D)->void:
 
 func _spawn_outward_push(profile:VFXProfile3D)->void:
 	var dur:=profile.duration*.24
-	for i in range(12):
-		var a:=float(i)*.524+.3
+	for i in range(QUALITY.auxiliary_layers(8)+5):
+		var a:=float(i)*.785+.3
 		var n:=_card("SummonBurstMote_%d"%i,TEX_DOT,Vector2(profile.size*.10,profile.size*.10),profile,float(i)*1.9,true,.80)
 		n.position=Vector3(cos(a)*profile.size*.14,profile.size*.09,sin(a)*profile.size*.10)
 		var tw:=track_tween(create_tween());tw.set_parallel(true)
 		tw.tween_property(n,"position",Vector3(cos(a)*profile.size*(1.25+.22*float(i%3)),profile.size*(.20+.20*float(i%2)),sin(a)*profile.size*(.85+.16*float(i%2))),dur).set_trans(Tween.TRANS_QUINT).set_ease(Tween.EASE_OUT)
 		tw.tween_property(n,"scale",Vector3.ONE*.35,dur).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 		_life(n,dur,0.0)
-	for i in range(8):
-		var a:=float(i)*.785+.9
+	for i in range(QUALITY.auxiliary_layers(5)+3):
+		var a:=float(i)*1.05+.9
 		var n:=_card("SummonBurstPuff_%d"%i,TEX_WISP,Vector2(profile.size*.52,profile.size*.42),profile,float(i)*3.1,true,.22)
 		n.position=Vector3(cos(a)*profile.size*.20,profile.size*.06,sin(a)*profile.size*.14)
 		var tw:=track_tween(create_tween());tw.set_parallel(true)
@@ -231,8 +242,14 @@ func _sigil(node_name:String,size:Vector2,profile:VFXProfile3D,ring_bias:float)-
 	var m:=_material(SIGIL_SHADER,profile);m.set_shader_parameter("sigil_tex",TEX_SIGIL);m.set_shader_parameter("ring_bias",ring_bias)
 	n.material_override=m;n.rotation_degrees.x=-90.0;add_child(n);return n
 
+func _shared_quad(size:Vector2)->QuadMesh:
+	var key:="%.4f|%.4f"%[size.x,size.y]
+	var cached:QuadMesh=_quad_cache.get(key)
+	if cached!=null:return cached
+	var q:=QuadMesh.new();q.size=size;_quad_cache[key]=q;return q
+
 func _card(node_name:String,texture:Texture2D,size:Vector2,profile:VFXProfile3D,phase:float,billboard:bool,tint_mix:float)->MeshInstance3D:
-	var q:=QuadMesh.new();q.size=size
+	var q:=_shared_quad(size)
 	var n:=MeshInstance3D.new();n.name=node_name;n.mesh=q;n.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var m:=_material(CARD_SHADER,profile);m.set_shader_parameter("mask_tex",texture);m.set_shader_parameter("noise_tex",TEX_NOISE);m.set_shader_parameter("phase",phase);m.set_shader_parameter("billboard",1.0 if billboard else 0.0);m.set_shader_parameter("tint_mix",tint_mix)
 	n.material_override=m;add_child(n);return n

@@ -30,7 +30,10 @@ func _process(delta: float) -> void:
 	var texture_mb := _mb(Performance.RENDER_TEXTURE_MEM_USED)
 	var buffer_mb := _mb(Performance.RENDER_BUFFER_MEM_USED)
 	var static_mb := _mb(Performance.MEMORY_STATIC)
-	print("[PERFLOG] fps=%d proc=%.1fms video=%.1f tex=%.1f buf=%.1f static=%.1f obj=%d res=%d node=%d orphan=%d draw=%d" % [
+	# tween= 是直接读 SceneTree 当前在处理的 Tween 数，不是从 obj-node-res 减出来的。
+	# 之前只能靠减法推断「其它对象占 Δobj 的 38%」，最高的几次甚至比节点数还多
+	# （877 vs 720），但那是推测。这一行把它变成读数。
+	print("[PERFLOG] fps=%d proc=%.1fms video=%.1f tex=%.1f buf=%.1f static=%.1f obj=%d res=%d node=%d orphan=%d draw=%d tween=%d" % [
 		Engine.get_frames_per_second(),
 		Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
 		video_mb, texture_mb, buffer_mb, static_mb,
@@ -39,6 +42,7 @@ func _process(delta: float) -> void:
 		int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT)),
 		int(Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)),
 		int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
+		get_tree().get_processed_tweens().size(),
 	])
 	if absf(video_mb - _last_video_mb) >= JUMP_MB:
 		print("[PERFLOG] !! VIDEO JUMP %+.1f MB -> %.1f (tex=%.1f)" % [

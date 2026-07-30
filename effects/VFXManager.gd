@@ -30,13 +30,61 @@ func _process(_delta: float) -> void:
 
 # VFXQualityBudget.tier 以前永远停在编译期的 MEDIUM，没有任何机型判断，
 # 等于桌面和低端安卓跑同一套预算。这里在启动时定一次档。
+# 玩家在设置里手动选的档位（-1 = 未选，走自动判定）。存盘，启动时应用。
+const QUALITY_PREF_PATH := "user://glory_quality_tier.txt"
+
 func _detect_quality_tier() -> void:
+	# 玩家手选的优先级最高，自动判定永远不覆盖它。
+	var saved := _load_quality_pref()
+	if saved >= 0:
+		QUALITY.tier = clampi(saved, QUALITY.Tier.LOW, QUALITY.Tier.HIGH)
+		return
 	if not OS.has_feature("mobile"):
 		QUALITY.tier = QUALITY.Tier.HIGH
 		return
-	# 核心数是 Godot 里唯一能可靠拿到的粗粒度性能指标；
-	# 四核及以下的安卓机按低档走。
-	QUALITY.tier = QUALITY.Tier.LOW if OS.get_processor_count() <= 4 else QUALITY.Tier.MEDIUM
+	# 按总内存分档，不再按核心数。
+	#
+	# 旧写法是 `OS.get_processor_count() <= 4 -> LOW`，但实测 Redmi A5 是 **8 核**
+	# 却是市面上最低端的一档（Unisoc T7250 / Mali-G57 单核 / 3.9 GB），于是被判成
+	# MEDIUM —— 而当时 MEDIUM 的 particle_count 系数是 1.0，等于一点没减。
+	# 核心数在低端安卓上根本不反映性能；内存和它的相关性好得多，也直接对应
+	# 实测到的硬约束（显存峰值 1180 MB / 整机 3.9 GB）。
+	var total_mb := _total_memory_mb()
+	if total_mb > 0:
+		QUALITY.tier = QUALITY.Tier.LOW if total_mb < 4096 else QUALITY.Tier.MEDIUM
+	else:
+		# 读不到内存信息时保守走 LOW：宁可画面简单也不要卡。
+		QUALITY.tier = QUALITY.Tier.LOW
+	# 把判定过程打出来：OS.get_memory_info() 在安卓上是否返回有效的 physical
+	# 无法在桌面验证（桌面走 HIGH 分支就返回了）。如果日志里 totalMB=0，
+	# 说明这条判据在安卓上失效、所有机型都会落到 LOW，需要换判据。
+	print("[QUALITY] 自动判定 tier=%d  totalMB=%d  cores=%d" % [
+		QUALITY.tier, total_mb, OS.get_processor_count()])
+
+func _total_memory_mb() -> int:
+	var info := OS.get_memory_info()
+	for key in ["physical", "total"]:
+		var v := int(info.get(key, 0))
+		if v > 0:
+			return v / 1048576
+	return 0
+
+func set_quality_pref(value: int) -> void:
+	QUALITY.tier = clampi(value, QUALITY.Tier.LOW, QUALITY.Tier.HIGH)
+	var f := FileAccess.open(QUALITY_PREF_PATH, FileAccess.WRITE)
+	if f != null:
+		f.store_string(str(QUALITY.tier))
+		f.close()
+
+func _load_quality_pref() -> int:
+	if not FileAccess.file_exists(QUALITY_PREF_PATH):
+		return -1
+	var f := FileAccess.open(QUALITY_PREF_PATH, FileAccess.READ)
+	if f == null:
+		return -1
+	var text := f.get_as_text().strip_edges()
+	f.close()
+	return int(text) if text.is_valid_int() else -1
 
 # 调试/设置面板用：允许手动压档验证低端表现。
 func set_quality_tier(value: int) -> void:

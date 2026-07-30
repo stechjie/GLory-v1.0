@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXProjectile3D
+const QUALITY := preload("res://effects/vfx3d/core/VFXQualityBudget.gd")
 const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const CURVES := preload("res://effects/vfx3d/core/VFXCurveLibrary3D.gd")
@@ -194,7 +195,7 @@ func _spawn_trail_puff(profile:VFXProfile3D,index:int)->void:
 	var t:=track_tween(create_tween());t.set_parallel(true);t.tween_property(n,"scale",Vector3.ONE*1.12,profile.duration*.28).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT);t.tween_property(n,"position:y",n.position.y+.16,profile.duration*.28);_tween_shader(m,"progress",0.0,1.0,profile.duration*.28);t.set_parallel(false);t.tween_callback(n.queue_free)
 
 func _spawn_release_sparks(direction:Vector3,profile:VFXProfile3D)->void:
-	for i in range(6):
+	for i in range(maxi(3, QUALITY.auxiliary_layers(6))):
 		var out:=direction.rotated(Vector3.FORWARD,-.85+float(i)*.34).normalized()
 		var spark:=_make_spark(out,profile.size*(.32+float(i%2)*.12),profile.size*.035,profile.core_color,profile.emission_energy)
 		add_child(spark)

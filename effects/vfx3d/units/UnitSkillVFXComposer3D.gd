@@ -403,10 +403,14 @@ func _stack_pulse(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	_spawn(VFX_LIGHT_PULSE,_profile(p.dark_color,p.main_color,p.core_color,.22,.24,2.0,3),{"target":target+Vector3(0,.42,0)})
 
 func _poison_reflect_stack(origin:Vector3)->void:
-	# Armor stacks read as a compact toxic shell burst. Loot geometry gives
-	# upward shards and a breakup silhouette without the generic large ring.
+	# 紧凑的毒性外壳爆发：向上的碎片 + 破碎轮廓，不要通用大圆环。
+	#
+	# 原本用的是 binbun 的 "loot" —— 但那个场景本体是**掉落物的垂直光柱**，
+	# 放进战斗就变成一根贯穿画面的巨大绿光柱，读起来完全不像"叠了一层毒甲"。
+	# 换成自制的 EnergyBurst：同样是向上的碎片形态，但紧凑、球状、有轮廓。
+	# 顺带省掉 loot 场景的 11 节点 / 25 子资源 / 6 个 ShaderMaterial / 97 粒子 / 1 盏灯。
 	var p:=_profile(Color(.015,.045,.008),Color(.20,.68,.06),Color(.76,1.0,.20),.44,.62,3.4,7)
-	_binbun("loot",origin+Vector3(0,.08,0),origin+Vector3(0,.72,0),p)
+	_spawn(VFX_ENERGY_BURST,p,{"target":origin+Vector3(0,.30,0),"direction":Vector3.UP})
 	_spawn(VFX_LIGHT_PULSE,p,{"target":origin+Vector3(0,.42,0)})
 
 func _combo_hit(origin:Vector3,target:Vector3,context:Dictionary)->void:
@@ -457,8 +461,10 @@ func _interrupt_hit(target:Vector3)->void:
 func _bubble_dream(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var p:=_profile(Color(.015,.08,.16),Color(.06,.52,.86),Color(.72,1.0,1.0),.56,.82,3.0,9)
 	_binbun("projectile",origin+Vector3(0,.34,0),target+Vector3(0,.18,0),p)
+	# 泡泡命中同样不该用 binbun 的 "loot"（掉落物垂直光柱）—— 那会在命中点
+	# 立起一根蓝色光柱，而泡泡破裂应该是往外炸开。换成自制 EnergyBurst。
 	var hit:=_profile(Color(.02,.10,.18),Color(.08,.62,.92),Color(.78,1.0,1.0),.70,.48,3.2,8)
-	_binbun("loot",target+Vector3(0,.05,0),target+Vector3(0,.42,0),hit)
+	_spawn(VFX_ENERGY_BURST,hit,{"target":target+Vector3(0,.22,0),"direction":Vector3.UP})
 	_spawn(VFX_LIGHT_PULSE,_holy_profile(.44,.58),{"target":context.get("heal_target",origin)+Vector3(0,.32,0)})
 
 func _shell_guard(origin:Vector3,context:Dictionary)->void:
@@ -487,7 +493,10 @@ func _holy_song(origin:Vector3,context:Dictionary)->void:
 	_spawn(VFX_LIGHT_PULSE,hymn,{"target":origin+Vector3(0,.42,0)})
 	for value in _capped_targets(context.get("targets",[])):
 		var note:=_profile(Color(.05,.10,.02),Color(.32,.66,.12),Color(.82,1.0,.46),.44,.72,3.4,8)
-		_binbun("beam",origin+Vector3(0,.48,0),value+Vector3(0,.48,0),note)
+		# 原本用 binbun "beam"（15 节点 / 28 子资源 / 7 个 ShaderMaterial / 132 粒子）。
+		# 这三处 beam 的形态都是「从施法者连到每个目标」，正是 TrackedLink 做的事，
+		# 而它是自制模块、已做过 mesh 复用优化，成本低一个数量级。
+		_spawn(VFX_TRACKED_LINK,note,{"origin":origin+Vector3(0,.48,0),"target":value+Vector3(0,.48,0),"persistent":false})
 		_spawn(VFX_LIGHT_PULSE,note,{"target":value+Vector3(0,.26,0)})
 
 func _twin_strike(origin:Vector3,target:Vector3,context:Dictionary)->void:
@@ -550,14 +559,14 @@ func _steel_order(origin:Vector3,context:Dictionary)->void:
 	_spawn(VFX_LIGHT_PULSE,p,{"target":origin+Vector3(0,.42,0)})
 	for value in _capped_targets(context.get("targets",[])):
 		_spawn(VFX_BARRIER,p,{"target":value})
-		_binbun("beam",origin+Vector3(0,.54,0),value+Vector3(0,.52,0),p)
+		_spawn(VFX_TRACKED_LINK,p,{"origin":origin+Vector3(0,.54,0),"target":value+Vector3(0,.52,0),"persistent":false})
 
 func _time_slow(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var p:=_profile(Color(.018,.025,.10),Color(.10,.28,.68),Color(.58,.90,1.0),1.12,1.48,3.8,12)
 	_spawn(VFX_ENERGY_BURST,p,{"target":origin+Vector3(0,.30,0),"direction":Vector3.UP})
 	for value in _capped_targets(context.get("targets",[])):
 		var slow:=_profile(Color(.02,.04,.10),Color(.10,.38,.72),Color(.58,.90,1.0),.38,1.05,2.5,6);slow.parameters["status_type"]="slow"
-		_binbun("beam",origin+Vector3(0,.50,0),value+Vector3(0,.58,0),p)
+		_spawn(VFX_TRACKED_LINK,p,{"origin":origin+Vector3(0,.50,0),"target":value+Vector3(0,.58,0),"persistent":false})
 		_spawn(VFX_STATUS,slow,{"target":value})
 
 func _death_hunt(origin:Vector3,target:Vector3,context:Dictionary)->void:

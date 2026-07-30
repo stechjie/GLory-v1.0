@@ -336,8 +336,26 @@ func _spawn_linear_hit(at: Vector3, direction: Vector3, profile: VFXProfile3D, r
 		tween.set_parallel(false)
 		tween.tween_callback(streak.queue_free)
 
+# 网格与材质的进程级缓存。
+#
+# 为什么安全共享：这个模块里所有动画都作用在**节点**属性上
+# （position / scale / transparency —— transparency 是 GeometryInstance3D 的
+# per-instance 字段），没有任何 tween 去改材质或 shader 参数。所以同一份
+# Mesh/Material 可以被任意多个 MeshInstance3D 复用。
+#
+# 为什么值得：_spawn_needle_trail 在弹体飞行期间**每 0.045 秒**调一次，
+# 每次都 new 一个 ArrayMesh + 一个 StandardMaterial。12 个单位持续攻击时
+# 这是稳定的分配热点（新 RID、新资源对象、等 GC）。
+static var _mesh_cache: Dictionary = {}
+static var _mat_cache: Dictionary = {}
+
 # 共享的加法/无光材质，弹道所有形状复用。
 func _bolt_material(color: Color, energy: float) -> StandardMaterial3D:
+	var clamped := minf(energy, 4.2)
+	var key := "%d|%d" % [color.to_rgba32(), int(round(clamped * 64.0))]
+	var cached: StandardMaterial3D = _mat_cache.get(key)
+	if cached != null:
+		return cached
 	var material := StandardMaterial3D.new()
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -348,17 +366,24 @@ func _bolt_material(color: Color, energy: float) -> StandardMaterial3D:
 	material.albedo_color = color
 	material.emission_enabled = true
 	material.emission = color
-	material.emission_energy_multiplier = minf(energy, 4.2)
+	material.emission_energy_multiplier = clamped
+	_mat_cache[key] = material
 	return material
 
 # 从顶点+索引直接组网格，套共享材质。
-func _shape_mesh(verts: PackedVector3Array, indices: PackedInt32Array, color: Color, energy: float) -> MeshInstance3D:
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = verts
-	arrays[Mesh.ARRAY_INDEX] = indices
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+# shape_key 让相同几何只建一次 ArrayMesh —— 顶点数组仍每次构造（很便宜），
+# 省掉的是 ArrayMesh 资源本身和它的 RID。
+func _shape_mesh(verts: PackedVector3Array, indices: PackedInt32Array, color: Color, energy: float, shape_key: String = "") -> MeshInstance3D:
+	var mesh: ArrayMesh = _mesh_cache.get(shape_key) if not shape_key.is_empty() else null
+	if mesh == null:
+		var arrays := []
+		arrays.resize(Mesh.ARRAY_MAX)
+		arrays[Mesh.ARRAY_VERTEX] = verts
+		arrays[Mesh.ARRAY_INDEX] = indices
+		mesh = ArrayMesh.new()
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		if not shape_key.is_empty():
+			_mesh_cache[shape_key] = mesh
 	var node := MeshInstance3D.new()
 	node.mesh = mesh
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -371,7 +396,7 @@ func _lance_mesh(length: float, width: float, color: Color, energy: float) -> Me
 		Vector3(-length * 0.43, -width, 0.0),
 		Vector3(length * 0.56, 0.0, 0.0),
 		Vector3(-length * 0.43, width, 0.0),
-	]), PackedInt32Array([0, 1, 2, 0, 2, 3]), color, energy)
+	]), PackedInt32Array([0, 1, 2, 0, 2, 3]), color, energy, "lance|%.4f|%.4f" % [length, width])
 
 # 小三角（箭羽 / 倒刺）。tip_y 的正负决定朝哪一侧。
 func _tri_mesh(base: float, tip_y: float, color: Color, energy: float) -> MeshInstance3D:
@@ -513,19 +538,17 @@ func _triangle_shard(length: float, width: float, color: Color, energy: float) -
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = PackedVector3Array([Vector3(-length * 0.45, -width, 0.0), Vector3(length * 0.55, 0.0, 0.0), Vector3(-length * 0.45, width, 0.0)])
 	arrays[Mesh.ARRAY_INDEX] = PackedInt32Array([0, 1, 2])
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	# 走共享缓存：碎片形状只依赖 length/width，材质只依赖 color/energy。
+	var shard_key := "shard|%.4f|%.4f" % [length, width]
+	var mesh: ArrayMesh = _mesh_cache.get(shard_key)
+	if mesh == null:
+		mesh = ArrayMesh.new()
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		_mesh_cache[shard_key] = mesh
 	var node := MeshInstance3D.new()
 	node.mesh = mesh
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	var material := StandardMaterial3D.new()
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.albedo_color = color
-	material.emission_enabled = true
-	material.emission = color
-	material.emission_energy_multiplier = minf(energy, 4.2)
-	node.material_override = material
+	node.material_override = _bolt_material(color, energy)
 	return node
 
 func _fan_width(race: String) -> float:

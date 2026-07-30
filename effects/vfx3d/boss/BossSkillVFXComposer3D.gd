@@ -12,6 +12,7 @@ const LIGHTNING_ARC := preload("res://effects/vfx3d/VFXLightningArc.gd")
 const LIGHTNING_BALL := preload("res://effects/vfx3d/VFXLightningBall.gd")
 const PATH_RIBBON := preload("res://effects/vfx3d/modules/VFXPathRibbon3D.gd")
 const SLASH_ARC := preload("res://effects/vfx3d/modules/VFXSlashArc3D.gd")
+const GROUND_SIGIL := preload("res://effects/vfx3d/modules/VFXGroundSigil3D.gd")
 const BINBUN := preload("res://effects/vfx3d/vfxv2/VFXBinbunReference3D.gd")
 const EXTERNAL := preload("res://effects/vfx3d/vfxv2/VFXV2ExternalReference3D.gd")
 
@@ -46,10 +47,13 @@ func play_skill(effect_id: String, origin: Vector3, target: Vector3, context: Di
 
 func _meteor_v2(target: Vector3) -> void:
 	var profile := _profile(Color(.10,.018,.006), Color(.92,.16,.018), Color(1.0,.82,.30), 1.15, 1.2, 4.2)
-	# Binbun area is the readable ground warning/residue; the projectile supplies direction.
-	var warning := _block(BINBUN) as VFXBinbunReference3D
+	# 地面预警圈用自制的 GroundSigil，不再走 binbun 的 "area"。
+	# binbun area 是 7 节点 / 24 子资源 / 3 个 shader / 66 粒子，还带 2 张
+	# 512x512 的无缝 cellular 噪声图（加载时 CPU 现算，实测 24.5 ms/张）；
+	# 而这里只需要"地上一个可读的红圈"，自制法阵就够，且成本低一个数量级。
+	var warning := _block(GROUND_SIGIL)
 	if warning != null:
-		warning.play_reference("area", target + Vector3(0,.02,0), target, profile)
+		warning.call("play_profile", profile, {"target": target + Vector3(0,.02,0)})
 	_painted("boss_meteor_trail.png", {"from": target + Vector3(-.55,3.25,.02), "to": target + Vector3(0,.34,0), "size": Vector2(.86,.38), "duration": .88, "delay": .12, "rotation_z": -12.0, "body_tint": Color(.92,.16,.018), "core_tint": Color(1.0,.82,.30), "seed": 7.1, "flow_strength": .024})
 	var impact := _block(EXTERNAL) as VFXV2ExternalReference3D
 	var impact_profile := _profile(Color(.12,.012,.004), Color(1.0,.22,.025), Color(1.0,.92,.52), 1.3, .72, 5.0)

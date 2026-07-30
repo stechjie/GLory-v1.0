@@ -32,14 +32,19 @@ static func max_aoe_targets(base_count: int) -> int:
 static func max_particles_per_effect() -> int:
 	return 48 if tier == Tier.LOW else (96 if tier == Tier.MEDIUM else 160)
 
+# 三档系数 0.45 / 0.75 / 1.0。
+#
+# 原本是 0.52 / 1.0 / 1.25 —— MEDIUM 等于"原样不减"、HIGH 反而加量，
+# 于是中档形同虚设：实测这台 8 核 Redmi A5 被判成 MEDIUM，37 个调用点全部空转。
+# 现在以 HIGH 为基准（美术给的原始数量），中低档往下减。
 static func particle_count(base_count: int) -> int:
 	match tier:
 		Tier.LOW:
-			return maxi(4, int(round(base_count * 0.52)))
+			return maxi(4, int(round(base_count * 0.45)))
 		Tier.HIGH:
-			return maxi(4, int(round(base_count * 1.25)))
-		_:
 			return maxi(4, base_count)
+		_:
+			return maxi(4, int(round(base_count * 0.75)))
 
 static func auxiliary_layers(base_count: int) -> int:
 	match tier:

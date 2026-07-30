@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXBarrierShield3D
+const QUALITY := preload("res://effects/vfx3d/core/VFXQualityBudget.gd")
 const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const CURVES:=preload("res://effects/vfx3d/core/VFXCurveLibrary3D.gd")
@@ -71,7 +72,7 @@ func _hit_ripple(profile:VFXProfile3D)->void:
 	var q:=QuadMesh.new();q.size=profile.size*Vector2(1.42,1.42);var n:=MeshInstance3D.new();n.name="ShieldHitRipple";n.mesh=q;n.position=Vector3(profile.size*.42,.05,-.04);n.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF;var m:=ShaderMaterial.new();m.shader = SHADER_CACHE.get_shader(RIPPLE_SHADER);m.set_shader_parameter("main_color",profile.main_color);m.set_shader_parameter("core_color",profile.core_color);m.set_shader_parameter("opacity",vfx_alpha);n.material_override=m;add_child(n);_materials.append(m);_tween_shader(m,"progress",0.0,1.0,profile.duration*.24)
 
 func _spawn_crack_shards(profile:VFXProfile3D)->void:
-	for i in range(9):
+	for i in range(maxi(5, QUALITY.auxiliary_layers(9))):
 		var a:=-1.1+float(i)*.28;var dir:=Vector3(cos(a),sin(a),0.0);var n:=_make_shard(dir,profile.size*(.18+float(i%3)*.05),profile.size*.035,profile.core_color,profile.emission_energy);n.position=Vector3(profile.size*.38,0.0,-.02);add_child(n);var t:=track_tween(create_tween());t.set_parallel(true);t.tween_property(n,"position",n.position+dir*profile.size*(.42+float(i%2)*.12),profile.duration*.25);t.tween_property(n,"scale",Vector3(.06,.08,1.0),profile.duration*.25);t.set_parallel(false);t.tween_callback(n.queue_free)
 
 func _make_shard(dir:Vector3,length:float,width:float,color:Color,energy:float)->MeshInstance3D:

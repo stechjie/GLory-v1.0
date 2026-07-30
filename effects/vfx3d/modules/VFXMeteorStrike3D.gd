@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXMeteorStrike3D
+const QUALITY := preload("res://effects/vfx3d/core/VFXQualityBudget.gd")
 const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const CURVES:=preload("res://effects/vfx3d/core/VFXCurveLibrary3D.gd")
@@ -58,7 +59,7 @@ func play_strike(target:Vector3,profile:VFXProfile3D=null)->void:
 	var fall:=track_tween(create_tween());fall.set_parallel(true);fall.tween_property(meteor,"position",Vector3(0.0,.18,0.0),fall_time).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN);fall.tween_property(trail_outer,"position",Vector3(0.0,active.size*1.55,.03),fall_time).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN);fall.tween_property(trail_core,"position",Vector3(0.0,active.size*1.18,.02),fall_time).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	_tween_shader(trail_outer.material_override as ShaderMaterial,"progress",0.0,.72,fall_time)
 	_tween_shader(trail_core.material_override as ShaderMaterial,"progress",0.0,.72,fall_time)
-	for i in range(5):
+	for i in range(maxi(3, QUALITY.auxiliary_layers(5))):
 		await get_tree().create_timer(fall_time/5.0).timeout
 		_spawn_falling_ember(meteor.position,active,i)
 	if _finished:return

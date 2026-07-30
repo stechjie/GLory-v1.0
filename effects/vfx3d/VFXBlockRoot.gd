@@ -63,6 +63,13 @@ func begin() -> void:
 	_finished = false
 	visible = true
 
+# queue_free() 一个根节点会在那一帧末释放整棵子树，所以要知道子树到底多大。
+static func _count_descendants(node: Node) -> int:
+	var n := 0
+	for child in node.get_children():
+		n += 1 + _count_descendants(child)
+	return n
+
 func track_tween(tween: Tween) -> Tween:
 	if tween != null:
 		_tweens.append(tween)
@@ -88,10 +95,21 @@ func finish(delay := 0.0) -> void:
 	if _finished:
 		return
 	_finished = true
+	# 埋点：实测有单帧 6043 ms 的冻结，期间节点数在**下降**、贴图完全不动 ——
+	# 特征指向销毁而不是创建。但那一帧里也可能有别的事，所以这里直接量
+	# 「kill 掉几个 Tween、释放多少子节点、花了多久」，把推测变成读数。
+	# 只在明显偏慢时打印，正常帧不刷屏。调试完连同 PerfLog 一起删。
+	var t0 := Time.get_ticks_usec()
+	var tween_count := _tweens.size()
 	for tween in _tweens:
 		if tween != null and tween.is_valid():
 			tween.kill()
 	_tweens.clear()
+	var kill_us := Time.get_ticks_usec() - t0
+	var child_total := _count_descendants(self)
+	if kill_us > 20000 or child_total > 120:
+		print("[VFXFREE] %s  killTween=%.0fms(%d个)  子节点=%d" % [
+			get_script().resource_path.get_file(), kill_us / 1000.0, tween_count, child_total])
 	if delay <= 0.0:
 		queue_free()
 	else:

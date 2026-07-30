@@ -4,6 +4,7 @@ signal back_requested
 
 var _btn_zh: Button
 var _btn_en: Button
+var _quality_btns: Array[Button] = []
 
 func _ready() -> void:
 	_build()
@@ -63,6 +64,40 @@ func _build() -> void:
 
 	_refresh_lang_buttons()
 
+	var sep_q := HSeparator.new()
+	panel.add_child(sep_q)
+
+	# 画质档。自动判定按总内存分（<4GB -> 流畅），但玩家选了就永远优先，
+	# 自动判定不再覆盖 —— 低端机上默认保守，愿意的人可以自己往上调。
+	var quality_label := Label.new()
+	quality_label.text = tr("settings_quality")
+	quality_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	quality_label.add_theme_color_override("font_color", Color(0.86, 0.9, 0.9))
+	panel.add_child(quality_label)
+
+	var quality_row := HBoxContainer.new()
+	quality_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	quality_row.add_theme_constant_override("separation", 10)
+	panel.add_child(quality_row)
+
+	_quality_btns.clear()
+	var options := [
+		[VFXQualityBudget.Tier.LOW, "settings_quality_low"],
+		[VFXQualityBudget.Tier.MEDIUM, "settings_quality_medium"],
+		[VFXQualityBudget.Tier.HIGH, "settings_quality_high"],
+	]
+	for opt in options:
+		var tier_value: int = opt[0]
+		var btn := Button.new()
+		btn.text = tr(str(opt[1]))
+		btn.custom_minimum_size = Vector2(96, 48)
+		btn.pressed.connect(func():
+			VFXManager.set_quality_pref(tier_value)
+			_refresh_quality_buttons())
+		quality_row.add_child(btn)
+		_quality_btns.append(btn)
+	_refresh_quality_buttons()
+
 	var sep2 := HSeparator.new()
 	panel.add_child(sep2)
 
@@ -72,6 +107,13 @@ func _build() -> void:
 	back_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	back_btn.pressed.connect(func(): back_requested.emit())
 	panel.add_child(back_btn)
+
+func _refresh_quality_buttons() -> void:
+	var current := VFXManager.get_quality_tier()
+	for i in _quality_btns.size():
+		var btn := _quality_btns[i]
+		if is_instance_valid(btn):
+			btn.modulate = Color(1.0, 0.85, 0.3) if i == current else Color(1, 1, 1)
 
 func _refresh_lang_buttons() -> void:
 	if not is_instance_valid(_btn_zh) or not is_instance_valid(_btn_en):
