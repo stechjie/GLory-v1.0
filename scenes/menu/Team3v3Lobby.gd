@@ -175,15 +175,17 @@ func _build() -> void:
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
-	_add_cropped_texture(TEX_BACK, Rect2(60, 118, 280, 164), Vector2(80, 35), Vector2(143, 83))
-	_add_hit(Vector2(80, 35), Vector2(143, 83), func(): back_requested.emit())
+	# 左上返回、左下聊天框：锚定屏幕左边（edge="left"）
+	_add_cropped_texture(TEX_BACK, Rect2(60, 118, 280, 164), Vector2(80, 35), Vector2(143, 83), "left")
+	_add_hit(Vector2(80, 35), Vector2(143, 83), func(): back_requested.emit(), "left")
 	_add_cropped_texture(TEX_TITLE, Rect2(158, 206, 964, 308), Vector2(599, 21), Vector2(475, 143))
 	_room_id_lbl = _add_label("", Vector2(646, 72), Vector2(244, 30), 20, Color(0.45, 0.27, 0.08))
 	_add_label(_room_text("自定义房间", "CUSTOM GAME"), Vector2(646, 31), Vector2(244, 42), 32)
-	_add_cropped_texture(TEX_FRIENDS, Rect2(324, 124, 432, 832), Vector2(1391, 181), Vector2(218, 400))
-	_add_label(_room_text("朋友列表", "Friends"), Vector2(1292, 226), Vector2(156, 42), 28)
-	_add_cropped_texture(TEX_CHAT, Rect2(312, 194, 656, 332), Vector2(147, 704), Vector2(432, 212))
-	_add_label(_room_text("目前暂无聊天功能", "Chat coming soon"), Vector2(150, 870), Vector2(270, 34), 22, Color(0.53, 0.40, 0.27))
+	# 右侧朋友列表：锚定屏幕右边（edge="right"）
+	_add_cropped_texture(TEX_FRIENDS, Rect2(324, 124, 432, 832), Vector2(1391, 181), Vector2(218, 400), "right")
+	_add_label(_room_text("朋友列表", "Friends"), Vector2(1292, 226), Vector2(156, 42), 28, Color(0.47, 0.28, 0.08), "right")
+	_add_cropped_texture(TEX_CHAT, Rect2(312, 194, 656, 332), Vector2(147, 704), Vector2(432, 212), "left")
+	_add_label(_room_text("目前暂无聊天功能", "Chat coming soon"), Vector2(150, 870), Vector2(270, 34), 22, Color(0.53, 0.40, 0.27), "left")
 	_add_texture(TEX_VS, Vector2(746, 427), Vector2(180, 85))
 
 	_slot_name_lbls.resize(6)
@@ -193,15 +195,16 @@ func _build() -> void:
 	for i in 6:
 		_build_slot(i)
 
-	_add_cropped_texture(TEX_START, Rect2(412, 264, 456, 192), Vector2(1306, 789), Vector2(267, 96))
-	_start_lbl = _add_label("", Vector2(1340, 812), Vector2(200, 42), 28, Color(0.96, 0.87, 0.70))
-	_start_btn = _add_hit(Vector2(1306, 789), Vector2(267, 96), _on_primary_pressed)
+	# 右下开始按钮组、自测、提示：锚定屏幕右边（edge="right"）
+	_add_cropped_texture(TEX_START, Rect2(412, 264, 456, 192), Vector2(1306, 789), Vector2(267, 96), "right")
+	_start_lbl = _add_label("", Vector2(1340, 812), Vector2(200, 42), 28, Color(0.96, 0.87, 0.70), "right")
+	_start_btn = _add_hit(Vector2(1306, 789), Vector2(267, 96), _on_primary_pressed, "right")
 	# 离线自测专用入口(officetest):开始游戏上方,仅离线显示,纯追加不动原布局。
-	_selftest_btn = _add_ai_button(Vector2(1310, 719), Vector2(255, 55), func(): selftest_requested.emit())
+	_selftest_btn = _add_ai_button(Vector2(1310, 719), Vector2(255, 55), func(): selftest_requested.emit(), "right")
 	_selftest_btn.text = _room_text("自测开始", "Self-Test")
 	_selftest_btn.add_theme_font_size_override("font_size", 24)
 	_selftest_btn.visible = not _online()
-	_host_hint_lbl = _add_label(_room_text("等待其他玩家准备后可按", "Waiting for players"), Vector2(1218, 934), Vector2(320, 30), 20, Color(1.0, 0.94, 0.78))
+	_host_hint_lbl = _add_label(_room_text("等待其他玩家准备后可按", "Waiting for players"), Vector2(1218, 934), Vector2(320, 30), 20, Color(1.0, 0.94, 0.78), "right")
 	_status_lbl = _add_label("", Vector2(626, 167), Vector2(420, 28), 17, Color(0.98, 0.94, 0.78))
 
 func _build_slot(index: int) -> void:
@@ -416,25 +419,35 @@ func _layout() -> void:
 		var node := item.node as Control
 		var pos := item.pos as Vector2
 		var size := item.size as Vector2
-		node.position = origin + pos * scale
+		# edge=left/right 的元素锚定到真实屏幕边（消除宽屏下的左右留白）；
+		# 其余保持 16:9 画布居中缩放。垂直方向一律跟随居中画布。
+		var x: float
+		match str(item.get("edge", "")):
+			"left":
+				x = pos.x * scale
+			"right":
+				x = viewport_size.x - (REF_SIZE.x - pos.x) * scale
+			_:
+				x = origin.x + pos.x * scale
+		node.position = Vector2(x, origin.y + pos.y * scale)
 		node.size = size * scale
 		if node is Label:
 			node.add_theme_font_size_override("font_size", maxi(10, int(item.font_size * scale)))
 
-func _add_texture(texture: Texture2D, pos: Vector2, size: Vector2, stretch := TextureRect.STRETCH_KEEP_ASPECT) -> TextureRect:
+func _add_texture(texture: Texture2D, pos: Vector2, size: Vector2, stretch := TextureRect.STRETCH_KEEP_ASPECT, edge: String = "") -> TextureRect:
 	var rect := TextureRect.new()
 	rect.texture = texture
 	rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	rect.stretch_mode = stretch
 	add_child(rect)
-	_track(rect, pos, size)
+	_track(rect, pos, size, 0, edge)
 	return rect
 
-func _add_cropped_texture(texture: Texture2D, region: Rect2, pos: Vector2, size: Vector2) -> TextureRect:
+func _add_cropped_texture(texture: Texture2D, region: Rect2, pos: Vector2, size: Vector2, edge: String = "") -> TextureRect:
 	var atlas := AtlasTexture.new()
 	atlas.atlas = texture
 	atlas.region = region
-	return _add_texture(atlas, pos, size)
+	return _add_texture(atlas, pos, size, TextureRect.STRETCH_KEEP_ASPECT, edge)
 
 func _add_rect(color: Color, pos: Vector2, size: Vector2) -> ColorRect:
 	var rect := ColorRect.new()
@@ -450,7 +463,7 @@ func _add_screen_band(color: Color, y: float, height: float, from_bottom: bool) 
 	_screen_bands.append({"node": rect, "y": y, "height": height, "from_bottom": from_bottom})
 	return rect
 
-func _add_label(text: String, pos: Vector2, size: Vector2, font_size: int, color := Color(0.47, 0.28, 0.08)) -> Label:
+func _add_label(text: String, pos: Vector2, size: Vector2, font_size: int, color := Color(0.47, 0.28, 0.08), edge: String = "") -> Label:
 	pos = _edge_label_pos(pos)
 	size = _edge_label_size(pos, size)
 	var label := Label.new()
@@ -462,7 +475,7 @@ func _add_label(text: String, pos: Vector2, size: Vector2, font_size: int, color
 	label.add_theme_constant_override("outline_size", 3)
 	label.add_theme_font_size_override("font_size", font_size)
 	add_child(label)
-	_track(label, pos, size, font_size)
+	_track(label, pos, size, font_size, edge)
 	return label
 
 func _edge_label_pos(pos: Vector2) -> Vector2:
@@ -491,7 +504,7 @@ func _edge_label_size(pos: Vector2, size: Vector2) -> Vector2:
 		return Vector2(310, 28)
 	return size
 
-func _add_hit(pos: Vector2, size: Vector2, cb: Callable) -> Button:
+func _add_hit(pos: Vector2, size: Vector2, cb: Callable, edge: String = "") -> Button:
 	var btn := Button.new()
 	btn.flat = true
 	btn.focus_mode = Control.FOCUS_NONE
@@ -499,10 +512,10 @@ func _add_hit(pos: Vector2, size: Vector2, cb: Callable) -> Button:
 	btn.modulate = Color(1, 1, 1, 0)
 	btn.pressed.connect(cb)
 	add_child(btn)
-	_track(btn, pos, size)
+	_track(btn, pos, size, 0, edge)
 	return btn
 
-func _add_ai_button(pos: Vector2, size: Vector2, cb: Callable) -> Button:
+func _add_ai_button(pos: Vector2, size: Vector2, cb: Callable, edge: String = "") -> Button:
 	var btn := Button.new()
 	btn.text = "+ AI"
 	btn.focus_mode = Control.FOCUS_NONE
@@ -520,7 +533,7 @@ func _add_ai_button(pos: Vector2, size: Vector2, cb: Callable) -> Button:
 		btn.add_theme_stylebox_override(s, sb)
 	btn.pressed.connect(cb)
 	add_child(btn)
-	_track(btn, pos, size, 15)
+	_track(btn, pos, size, 15, edge)
 	return btn
 
 func _add_x_button(pos: Vector2, size: Vector2, cb: Callable) -> Button:
@@ -544,8 +557,8 @@ func _add_x_button(pos: Vector2, size: Vector2, cb: Callable) -> Button:
 	_track(btn, pos, size)
 	return btn
 
-func _track(node: Control, pos: Vector2, size: Vector2, font_size: int = 0) -> void:
-	_placed.append({"node": node, "pos": pos, "size": size, "font_size": font_size})
+func _track(node: Control, pos: Vector2, size: Vector2, font_size: int = 0, edge: String = "") -> void:
+	_placed.append({"node": node, "pos": pos, "size": size, "font_size": font_size, "edge": edge})
 
 func _room_text(zh: String, en: String) -> String:
 	return en if TranslationServer.get_locale().begins_with("en") else zh

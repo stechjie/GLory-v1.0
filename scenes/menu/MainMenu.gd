@@ -37,6 +37,20 @@ const TEX_ENTER_TOKEN := preload("res://assets/ui/main_menu_live/enter_token.png
 const MAIN_MENU_AMBIENCE := preload("res://scenes/menu/MainMenuAmbience.gd")
 const MENU_MUSIC_PATH := "res://assets/audio/bgm/menu_music.mp3"
 
+# ── 布局调试overlay ────────────────────────────────────────────────
+# 打开后：黑线 = 空间划分（参考画布边界 / 功能分区 / 每个元素占位框）
+#         红线 = 所有按钮的点击判定区（_add_hit 与真实 Button）
+# 游戏里按 F3 开关。调完把 DEBUG_LAYOUT 改回 false 即可。
+const DEBUG_LAYOUT := true
+# 参考画布(1672x941)下的功能分区，只用于画黑色分区带
+const DEBUG_BANDS := [
+	{"name": "顶部 HUD", "y": 0.0, "h": 135.0},
+	{"name": "左侧社交栏", "y": 290.0, "h": 290.0},
+	{"name": "右侧商店/公告", "y": 130.0, "h": 580.0},
+	{"name": "令牌行", "y": 585.0, "h": 75.0},
+	{"name": "底部主按钮区", "y": 640.0, "h": 280.0},
+]
+
 var _menu_music_player: AudioStreamPlayer
 var _address_edit: LineEdit
 var _net_status: Label
@@ -49,6 +63,10 @@ var _token_id_edit: LineEdit
 var _token_label: Label
 var _placed: Array[Dictionary] = []
 var _screen_bands: Array[Dictionary] = []
+var _debug_layer: Control
+var _debug_on := DEBUG_LAYOUT
+var _layout_scale := 1.0
+var _layout_origin := Vector2.ZERO
 
 func _ready() -> void:
 	_build()
@@ -88,50 +106,52 @@ func _build() -> void:
 	var ambience := MAIN_MENU_AMBIENCE.new() as Control
 	add_child(ambience)
 
-	_add_texture(TEX_PROFILE, Vector2(18, 18), Vector2(390, 98))
-	_add_label("GloryMaster", Vector2(143, 39), Vector2(210, 29), 24)
-	_add_label(_menu_text("等级 45", "Lv. 45"), Vector2(143, 70), Vector2(105, 24), 18)
+	# 左上角个人信息、左侧朋友/聊天：锚定到屏幕左边（edge="left"）
+	_add_texture(TEX_PROFILE, Vector2(18, 18), Vector2(390, 98), "left")
+	_add_label("GloryMaster", Vector2(143, 39), Vector2(210, 29), 24, "left")
+	_add_label(_menu_text("等级 45", "Lv. 45"), Vector2(143, 70), Vector2(105, 24), 18, "left")
 	_add_texture(TEX_GOLD, Vector2(645, 35), Vector2(218, 55))
 	_add_label("89,450", Vector2(704, 48), Vector2(105, 30), 24)
 	_add_texture(TEX_DIAMOND, Vector2(886, 35), Vector2(218, 55))
 	_add_label("2,350", Vector2(947, 48), Vector2(102, 30), 24)
 
-	_add_texture(TEX_FRIENDS, Vector2(28, 307), Vector2(132, 132))
-	_add_label(_menu_text("朋友", "Friends"), Vector2(47, 390), Vector2(94, 30), 21)
-	_add_hit(Vector2(28, 307), Vector2(132, 132), _show_coming_soon)
-	_add_texture(TEX_CHAT, Vector2(28, 437), Vector2(132, 132))
-	_add_label(_menu_text("聊天", "Chat"), Vector2(47, 522), Vector2(94, 30), 21)
-	_add_hit(Vector2(28, 437), Vector2(132, 132), _show_coming_soon)
+	_add_texture(TEX_FRIENDS, Vector2(28, 307), Vector2(132, 132), "left")
+	_add_label(_menu_text("朋友", "Friends"), Vector2(47, 390), Vector2(94, 30), 21, "left")
+	_add_hit(Vector2(28, 307), Vector2(132, 132), _show_coming_soon, "left")
+	_add_texture(TEX_CHAT, Vector2(28, 437), Vector2(132, 132), "left")
+	_add_label(_menu_text("聊天", "Chat"), Vector2(47, 522), Vector2(94, 30), 21, "left")
+	_add_hit(Vector2(28, 437), Vector2(132, 132), _show_coming_soon, "left")
 
-	_add_texture(TEX_BAG, Vector2(1355, 25), Vector2(99, 100))
-	_add_hit(Vector2(1355, 25), Vector2(99, 100), _show_coming_soon)
-	_add_texture(TEX_MAIL, Vector2(1458, 25), Vector2(100, 100))
-	_add_hit(Vector2(1458, 25), Vector2(100, 100), _show_coming_soon)
-	_add_texture(TEX_SETTINGS, Vector2(1562, 25), Vector2(99, 99))
-	_add_hit(Vector2(1562, 25), Vector2(99, 99), _show_coming_soon)
+	# 右上角背包/邮件/设置、右侧商店/公告：锚定到屏幕右边（edge="right"）
+	_add_texture(TEX_BAG, Vector2(1355, 25), Vector2(99, 100), "right")
+	_add_hit(Vector2(1355, 25), Vector2(99, 100), _show_coming_soon, "right")
+	_add_texture(TEX_MAIL, Vector2(1458, 25), Vector2(100, 100), "right")
+	_add_hit(Vector2(1458, 25), Vector2(100, 100), _show_coming_soon, "right")
+	_add_texture(TEX_SETTINGS, Vector2(1562, 25), Vector2(99, 99), "right")
+	_add_hit(Vector2(1562, 25), Vector2(99, 99), _show_coming_soon, "right")
 
-	_add_texture(TEX_SHOP, Vector2(1383, 137), Vector2(267, 251))
-	_add_label(_menu_text("商店", "Shop"), Vector2(1450, 151), Vector2(130, 34), 24)
-	_add_hit(Vector2(1383, 137), Vector2(267, 251), _show_coming_soon)
-	_add_texture(TEX_NEWS, Vector2(1383, 371), Vector2(267, 330))
-	_add_label(_menu_text("公告 / 活动", "News / Events"), Vector2(1432, 383), Vector2(170, 34), 22)
-	_add_hit(Vector2(1383, 371), Vector2(267, 330), _show_coming_soon)
+	_add_texture(TEX_SHOP, Vector2(1383, 137), Vector2(267, 251), "right")
+	_add_label(_menu_text("商店", "Shop"), Vector2(1450, 151), Vector2(130, 34), 24, "right")
+	_add_hit(Vector2(1383, 137), Vector2(267, 251), _show_coming_soon, "right")
+	_add_texture(TEX_NEWS, Vector2(1383, 371), Vector2(267, 330), "right")
+	_add_label(_menu_text("公告 / 活动", "News / Events"), Vector2(1432, 383), Vector2(170, 34), 22, "right")
+	_add_hit(Vector2(1383, 371), Vector2(267, 330), _show_coming_soon, "right")
 
-	_add_texture(TEX_PREP, Vector2(179, 690), Vector2(222, 194))
-	_add_texture(TEX_CASUAL, Vector2(426, 692), Vector2(208, 188))
-	_add_texture(TEX_RANKED, Vector2(650, 650), Vector2(370, 260))
-	_add_texture(TEX_CUSTOM, Vector2(1025, 681), Vector2(219, 206))
-	_add_texture(TEX_GALLERY, Vector2(1274, 689), Vector2(222, 169))
-	_add_label(_menu_text("备战", "Prep"), Vector2(227, 807), Vector2(126, 36), 26)
-	_add_label(_menu_text("休闲", "Casual"), Vector2(469, 807), Vector2(120, 36), 26)
-	_add_label(_menu_text("排位", "Ranked"), Vector2(764, 836), Vector2(142, 43), 32)
-	_add_label(_menu_text("自定义", "Custom"), Vector2(1068, 808), Vector2(130, 36), 26)
-	_add_label(_menu_text("图鉴", "Gallery"), Vector2(1320, 808), Vector2(130, 36), 26)
-	_add_hit(Vector2(179, 690), Vector2(222, 194), _emit_prep)
-	_add_hit(Vector2(426, 692), Vector2(208, 188), _show_coming_soon)
-	_add_hit(Vector2(650, 650), Vector2(370, 260), _show_coming_soon)
-	_add_hit(Vector2(1025, 681), Vector2(219, 206), _show_room_overlay)
-	_add_hit(Vector2(1274, 689), Vector2(222, 169), _emit_codex)
+	_add_texture(TEX_PREP, Vector2(215, 690), Vector2(220, 190))
+	_add_texture(TEX_CASUAL, Vector2(455, 690), Vector2(220, 190))
+	_add_texture(TEX_RANKED, Vector2(685, 650), Vector2(310, 260))
+	_add_texture(TEX_CUSTOM, Vector2(1025, 690), Vector2(220, 190))
+	_add_texture(TEX_GALLERY, Vector2(1265, 690), Vector2(220, 190))
+	_add_label(_menu_text("备战", "Prep"), Vector2(200, 807), Vector2(220, 36), 26)
+	_add_label(_menu_text("休闲", "Casual"), Vector2(440, 808), Vector2(220, 36), 26)
+	_add_label(_menu_text("排位", "Ranked"), Vector2(680, 820), Vector2(310, 43), 32)
+	_add_label(_menu_text("自定义", "Custom"), Vector2(1010, 809), Vector2(220, 36), 26)
+	_add_label(_menu_text("图鉴", "Gallery"), Vector2(1250, 807), Vector2(220, 36), 26)
+	_add_hit(Vector2(200, 690), Vector2(220, 190), _emit_prep)
+	_add_hit(Vector2(440, 690), Vector2(220, 190), _show_coming_soon)
+	_add_hit(Vector2(680, 650), Vector2(310, 260), _show_coming_soon)
+	_add_hit(Vector2(1010, 690), Vector2(220, 190), _show_room_overlay)
+	_add_hit(Vector2(1250, 690), Vector2(220, 190), _emit_codex)
 
 	_add_texture(TEX_GENERATE_TOKEN, Vector2(610, 594), Vector2(214, 59))
 	_add_label(_menu_text("生成令牌", "Generate Token"), Vector2(664, 606), Vector2(137, 34), 18)
@@ -156,7 +176,7 @@ func _build() -> void:
 	offline_btn.add_theme_font_size_override("font_size", 22)
 	offline_btn.pressed.connect(_emit_offline)
 	add_child(offline_btn)
-	_track(offline_btn, Vector2(40, 876), Vector2(210, 54))
+	_track(offline_btn, Vector2(40, 876), Vector2(210, 54), 0, "left")
 
 	# 游戏重连：放在"开始游戏（自定房间 970,724）"正上方，仅在本地存在重连凭证时显示。
 	# 按它才连回上一场；按开始游戏则放弃旧局开新的一场。
@@ -193,6 +213,7 @@ func _build() -> void:
 	_coming_soon.dialog_text = _menu_text("敬请期待", "Coming Soon")
 	add_child(_coming_soon)
 	_build_room_overlay()
+	_build_debug_layer()
 
 func _build_room_overlay() -> void:
 	_room_overlay = Control.new()
@@ -411,6 +432,10 @@ func _layout() -> void:
 		return
 	var scale := minf(viewport_size.x / REF_SIZE.x, viewport_size.y / REF_SIZE.y)
 	var origin := (viewport_size - REF_SIZE * scale) * 0.5
+	_layout_scale = scale
+	_layout_origin = origin
+	if _debug_layer != null:
+		_debug_layer.queue_redraw()
 	for band in _screen_bands:
 		var rect := band.node as Control
 		var height := float(band.height) * scale
@@ -420,18 +445,28 @@ func _layout() -> void:
 		var node := item.node as Control
 		var pos := item.pos as Vector2
 		var size := item.size as Vector2
-		node.position = origin + pos * scale
+		# edge=left/right 的元素锚定到真实屏幕边（消除宽屏下的左右留白）；
+		# 其余保持 16:9 画布居中缩放。垂直方向一律跟随居中画布。
+		var x: float
+		match str(item.get("edge", "")):
+			"left":
+				x = pos.x * scale
+			"right":
+				x = viewport_size.x - (REF_SIZE.x - pos.x) * scale
+			_:
+				x = origin.x + pos.x * scale
+		node.position = Vector2(x, origin.y + pos.y * scale)
 		node.size = size * scale
 		if node is Label:
 			node.add_theme_font_size_override("font_size", maxi(10, int(item.font_size * scale)))
 
-func _add_texture(texture: Texture2D, pos: Vector2, size: Vector2) -> TextureRect:
+func _add_texture(texture: Texture2D, pos: Vector2, size: Vector2, edge: String = "") -> TextureRect:
 	var rect := TextureRect.new()
 	rect.texture = texture
 	rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT
 	add_child(rect)
-	_track(rect, pos, size)
+	_track(rect, pos, size, 0, edge)
 	return rect
 
 func _add_rect(color: Color, pos: Vector2, size: Vector2) -> ColorRect:
@@ -448,7 +483,7 @@ func _add_screen_band(color: Color, y: float, height: float, from_bottom: bool) 
 	_screen_bands.append({"node": rect, "y": y, "height": height, "from_bottom": from_bottom})
 	return rect
 
-func _add_label(text: String, pos: Vector2, size: Vector2, font_size: int) -> Label:
+func _add_label(text: String, pos: Vector2, size: Vector2, font_size: int, edge: String = "") -> Label:
 	var label := Label.new()
 	label.text = text
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -458,7 +493,7 @@ func _add_label(text: String, pos: Vector2, size: Vector2, font_size: int) -> La
 	label.add_theme_constant_override("outline_size", 5)
 	label.add_theme_font_size_override("font_size", font_size)
 	add_child(label)
-	_track(label, pos, size, font_size)
+	_track(label, pos, size, font_size, edge)
 	return label
 
 func _add_pill(text: String, pos: Vector2, size: Vector2) -> void:
@@ -476,15 +511,16 @@ func _add_pill(text: String, pos: Vector2, size: Vector2) -> void:
 	_track(panel, pos, size)
 	_add_label(text, pos, size, 22)
 
-func _add_hit(pos: Vector2, size: Vector2, cb: Callable) -> Button:
+func _add_hit(pos: Vector2, size: Vector2, cb: Callable, edge: String = "") -> Button:
 	var btn := Button.new()
 	btn.flat = true
 	btn.focus_mode = Control.FOCUS_NONE
 	btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	btn.modulate = Color(1, 1, 1, 0)
 	btn.pressed.connect(cb)
+	btn.name = "hit_%s" % cb.get_method()
 	add_child(btn)
-	_track(btn, pos, size)
+	_track(btn, pos, size, 0, edge)
 	return btn
 
 func _add_text_button(text: String, pos: Vector2, size: Vector2, cb: Callable) -> Button:
@@ -513,5 +549,88 @@ func _dialog_button(text: String, cb: Callable) -> Button:
 	btn.pressed.connect(cb)
 	return btn
 
-func _track(node: Control, pos: Vector2, size: Vector2, font_size: int = 0) -> void:
-	_placed.append({"node": node, "pos": pos, "size": size, "font_size": font_size})
+func _track(node: Control, pos: Vector2, size: Vector2, font_size: int = 0, edge: String = "") -> void:
+	_placed.append({"node": node, "pos": pos, "size": size, "font_size": font_size, "edge": edge})
+
+# ── 布局调试overlay ────────────────────────────────────────────────
+func _build_debug_layer() -> void:
+	_debug_layer = Control.new()
+	_debug_layer.name = "DebugLayoutOverlay"
+	_debug_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_debug_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_debug_layer.z_index = 4096
+	_debug_layer.visible = _debug_on
+	_debug_layer.draw.connect(_draw_debug_layout)
+	add_child(_debug_layer)
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	var key := event as InputEventKey
+	if key == null or not key.pressed or key.echo or key.keycode != KEY_F3:
+		return
+	_debug_on = not _debug_on
+	if _debug_layer != null:
+		_debug_layer.visible = _debug_on
+		_debug_layer.queue_redraw()
+	get_viewport().set_input_as_handled()
+
+func _draw_debug_layout() -> void:
+	if _debug_layer == null:
+		return
+	var viewport_size := get_viewport_rect().size
+	var scale := _layout_scale
+	var origin := _layout_origin
+	var font := ThemeDB.fallback_font
+	var black := Color(0.0, 0.0, 0.0, 0.95)
+	var black_soft := Color(0.0, 0.0, 0.0, 0.45)
+	var red := Color(1.0, 0.10, 0.10, 0.95)
+
+	# 1) 参考画布 1672x941 的外框（居中缩放的那块 16:9 区域）
+	var canvas := Rect2(origin, REF_SIZE * scale)
+	_debug_layer.draw_rect(canvas, black, false, 3.0)
+	_debug_layer.draw_string(font, origin + Vector2(6.0, -6.0),
+		"参考画布 %dx%d  scale=%.3f  视口 %dx%d" % [int(REF_SIZE.x), int(REF_SIZE.y), scale,
+		int(viewport_size.x), int(viewport_size.y)],
+		HORIZONTAL_ALIGNMENT_LEFT, -1, 14, black)
+
+	# 2) 画布中线 + 四等分竖线（摆按钮时用来对齐）
+	for i in range(1, 4):
+		var gx := origin.x + REF_SIZE.x * scale * float(i) / 4.0
+		_debug_layer.draw_line(Vector2(gx, canvas.position.y), Vector2(gx, canvas.end.y),
+			black if i == 2 else black_soft, 2.0 if i == 2 else 1.0)
+
+	# 3) 功能分区带（横向黑带，标注参考坐标 y 范围）
+	for band in DEBUG_BANDS:
+		var by := origin.y + float(band.y) * scale
+		var bh := float(band.h) * scale
+		_debug_layer.draw_rect(Rect2(canvas.position.x, by, canvas.size.x, bh), black, false, 2.0)
+		_debug_layer.draw_string(font, Vector2(canvas.position.x + 8.0, by + 18.0),
+			"%s  y=%d~%d" % [band.name, int(band.y), int(band.y) + int(band.h)],
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, black)
+
+	# 4) edge=left / edge=right 锚定边（这两列贴真实屏幕边，不跟画布走）
+	var left_edge_x := 176.0 * scale
+	var right_edge_x := viewport_size.x - (REF_SIZE.x - 1355.0) * scale
+	_debug_layer.draw_line(Vector2(left_edge_x, 0.0), Vector2(left_edge_x, viewport_size.y), black, 2.0)
+	_debug_layer.draw_line(Vector2(right_edge_x, 0.0), Vector2(right_edge_x, viewport_size.y), black, 2.0)
+	_debug_layer.draw_string(font, Vector2(6.0, viewport_size.y - 26.0),
+		"edge=left 贴屏幕左", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, black)
+	_debug_layer.draw_string(font, Vector2(right_edge_x + 6.0, viewport_size.y - 26.0),
+		"edge=right 贴屏幕右", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, black)
+
+	# 5) 每个元素的占位框：按钮判定区红色，其余（图片/文字）黑色细框
+	for item in _placed:
+		var node := item.node as Control
+		if node == null or not node.is_visible_in_tree():
+			continue
+		var rect := Rect2(node.position, node.size)
+		var pos := item.pos as Vector2
+		var size := item.size as Vector2
+		if node is Button:
+			_debug_layer.draw_rect(rect, red, false, 2.0)
+			var edge_tag := str(item.get("edge", ""))
+			var tag := "%s  (%d,%d) %dx%d%s" % [node.name, int(pos.x), int(pos.y),
+				int(size.x), int(size.y), "" if edge_tag.is_empty() else "  edge=" + edge_tag]
+			_debug_layer.draw_string(font, rect.position + Vector2(2.0, -4.0), tag,
+				HORIZONTAL_ALIGNMENT_LEFT, -1, 13, red)
+		else:
+			_debug_layer.draw_rect(rect, black_soft, false, 1.0)
