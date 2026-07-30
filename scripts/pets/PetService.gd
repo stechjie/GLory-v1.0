@@ -4,7 +4,7 @@ extends RefCounted
 # 全程数据驱动：只认 effect 枚举字符串 + value，宠物数量随 pets.json 增减，无需改此文件。
 # 现有效果枚举：
 #   self_hp_pct   —— 己方棋子开局最大生命 ×(1+value)   （蘑菇）
-#   self_atk_pct  —— 己方棋子开局攻击   ×(1+value)     （鸭子）
+#   self_atk_pct  —— 己方棋子开局攻击   ×(1+value)     （兔子）
 #   interest_pct  —— 金币利息率 +value                  （猫）
 # 新增效果类型时：在此加一个对应查询助手 + 在其挂钩点接入即可，宠物本身不用碰代码。
 
@@ -31,6 +31,17 @@ static func effect_of(pet_id: String) -> Dictionary:
 	if p.is_empty():
 		return {"effect": "", "value": 0.0}
 	return {"effect": str(p.get("effect", "")), "value": float(p.get("value", 0.0))}
+
+# ---- 模型助手（主菜单草地 / 宠物界面展示用）----
+
+static func model_path(pet_id: String) -> String:
+	return str(pet_by_id(pet_id).get("model", ""))
+
+static func model_scale(pet_id: String) -> float:
+	return float(pet_by_id(pet_id).get("model_scale", 1.0))
+
+static func model_y(pet_id: String) -> float:
+	return float(pet_by_id(pet_id).get("model_y", 0.0))
 
 # ---- 显示助手（UI 用，走本地化）----
 

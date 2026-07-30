@@ -8,7 +8,9 @@ export_presets.cfg
 android/
 
 # Art/audio assets (4.9GB — too large for GitHub; shared separately via cloud drive)
-assets/
+# 必须带前导斜杠：只忽略根目录美术。不带斜杠会匹配任意层级的 assets 目录，
+# 曾误伤 scripts/assets（BattleAssetManifest/Service）导致代码文件从未进 git。
+/assets/
 
 # Runtime logs
 logs/

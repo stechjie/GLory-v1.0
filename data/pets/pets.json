@@ -7,7 +7,9 @@
 			"name_en": "Mushroom",
 			"effect": "self_hp_pct",
 			"value": 0.01,
-			"model": "",
+			"model": "res://assets/models/pets/pet_mushroom/pet_mushroom_animated.tscn",
+			"model_scale": 1.0,
+			"model_y": 0.0,
 			"icon": ""
 		},
 		{
@@ -16,7 +18,9 @@
 			"name_en": "Cat",
 			"effect": "interest_pct",
 			"value": 0.01,
-			"model": "",
+			"model": "res://assets/models/pets/pet_cat/pet_cat_animated.tscn",
+			"model_scale": 1.0,
+			"model_y": 0.0,
 			"icon": ""
 		},
 		{
@@ -25,7 +29,9 @@
 			"name_en": "Rabbit",
 			"effect": "self_atk_pct",
 			"value": 0.01,
-			"model": "",
+			"model": "res://assets/models/pets/pet_rabbit/pet_rabbit_animated.tscn",
+			"model_scale": 1.0,
+			"model_y": 0.0,
 			"icon": ""
 		}
 	]

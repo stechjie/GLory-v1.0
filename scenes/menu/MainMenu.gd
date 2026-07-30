@@ -17,7 +17,8 @@ signal codex_requested          # 「图鉴」按钮：进入图鉴界面
 
 const REF_SIZE := Vector2(1672.0, 941.0)
 const TEX_BACKGROUND := preload("res://assets/ui/main_menu_live/background.png")
-const TEX_PROFILE := preload("res://assets/ui/main_menu_live/profile.png")
+const TEX_PROFILE_PANEL := preload("res://assets/ui/main_menu_live/profile_panel.png")
+const TEX_PROFILE_AVATAR := preload("res://assets/ui/main_menu_live/profile_avatar.png")
 const TEX_GOLD := preload("res://assets/ui/main_menu_live/gold.png")
 const TEX_DIAMOND := preload("res://assets/ui/main_menu_live/diamond.png")
 const TEX_MAIL := preload("res://assets/ui/main_menu_live/mail.png")
@@ -32,16 +33,15 @@ const TEX_CASUAL := preload("res://assets/ui/main_menu_live/casual.png")
 const TEX_RANKED := preload("res://assets/ui/main_menu_live/ranked.png")
 const TEX_CUSTOM := preload("res://assets/ui/main_menu_live/custom.png")
 const TEX_GALLERY := preload("res://assets/ui/main_menu_live/gallery.png")
-const TEX_GENERATE_TOKEN := preload("res://assets/ui/main_menu_live/generate_token.png")
-const TEX_ENTER_TOKEN := preload("res://assets/ui/main_menu_live/enter_token.png")
 const MAIN_MENU_AMBIENCE := preload("res://scenes/menu/MainMenuAmbience.gd")
+const MAIN_MENU_PET := preload("res://scenes/menu/MainMenuPet.gd")
 const MENU_MUSIC_PATH := "res://assets/audio/bgm/menu_music.mp3"
 
 # ── 布局调试overlay ────────────────────────────────────────────────
 # 打开后：黑线 = 空间划分（参考画布边界 / 功能分区 / 每个元素占位框）
 #         红线 = 所有按钮的点击判定区（_add_hit 与真实 Button）
 # 游戏里按 F3 开关。调完把 DEBUG_LAYOUT 改回 false 即可。
-const DEBUG_LAYOUT := true
+const DEBUG_LAYOUT := false
 # 参考画布(1672x941)下的功能分区，只用于画黑色分区带
 const DEBUG_BANDS := [
 	{"name": "顶部 HUD", "y": 0.0, "h": 135.0},
@@ -106,36 +106,50 @@ func _build() -> void:
 	var ambience := MAIN_MENU_AMBIENCE.new() as Control
 	add_child(ambience)
 
-	# 左上角个人信息、左侧朋友/聊天：锚定到屏幕左边（edge="left"）
-	_add_texture(TEX_PROFILE, Vector2(18, 18), Vector2(390, 98), "left")
-	_add_label("GloryMaster", Vector2(143, 39), Vector2(210, 29), 24, "left")
-	_add_label(_menu_text("等级 45", "Lv. 45"), Vector2(143, 70), Vector2(105, 24), 18, "left")
-	_add_texture(TEX_GOLD, Vector2(645, 35), Vector2(218, 55))
-	_add_label("89,450", Vector2(704, 48), Vector2(105, 30), 24)
-	_add_texture(TEX_DIAMOND, Vector2(886, 35), Vector2(218, 55))
-	_add_label("2,350", Vector2(947, 48), Vector2(102, 30), 24)
+	# 中心草地上的宠物（拥有几只出几只）。加在这里 = 在背景之上、所有 UI 之下。
+	add_child(MAIN_MENU_PET.new() as Control)
 
-	_add_texture(TEX_FRIENDS, Vector2(28, 307), Vector2(132, 132), "left")
-	_add_label(_menu_text("朋友", "Friends"), Vector2(47, 390), Vector2(94, 30), 21, "left")
-	_add_hit(Vector2(28, 307), Vector2(132, 132), _show_coming_soon, "left")
-	_add_texture(TEX_CHAT, Vector2(28, 437), Vector2(132, 132), "left")
-	_add_label(_menu_text("聊天", "Chat"), Vector2(47, 522), Vector2(94, 30), 21, "left")
-	_add_hit(Vector2(28, 437), Vector2(132, 132), _show_coming_soon, "left")
+	# 左上角个人信息、左侧朋友/聊天：锚定到屏幕左边（edge="left"）
+	# 个人信息按钮 = 资料框 + 头像框两张图叠出来，整组一个判定区。
+	# 头像框压在资料框左边 1/3，因为是正方形所以上下各凸出约 33。
+	# 素材原始比例：资料框 1325x267 (4.96:1)、头像框 850x825 (1.03:1)，
+	# 改尺寸时按比例改，不然 STRETCH_KEEP_ASPECT 会在框里留边错位。
+	# 顺序 = 绘制层级，hit 必须放最后（TextureRect 默认会吃掉点击）。
+	# TODO 以后往头像框里放玩家立绘：要一张圆心透明的头像框，立绘那行插在头像框之前垫底。
+	_add_texture(TEX_PROFILE_PANEL, Vector2(18, 46), Vector2(550, 110), "left")
+	_add_texture(TEX_PROFILE_AVATAR, Vector2(18, 12), Vector2(180, 175), "left")
+	_add_label("GloryMaster", Vector2(200, 70), Vector2(330, 35), 24, "left")
+	_add_label(_menu_text("等级 45", "Lv. 45"), Vector2(200, 104), Vector2(330, 24), 18, "left")
+	_add_hit(Vector2(18, 12), Vector2(550, 178), _show_coming_soon, "left")
+	_add_texture(TEX_GOLD, Vector2(645, 35), Vector2(220, 55))
+	_add_label("89,450", Vector2(645, 35), Vector2(220, 55), 24)
+	_add_texture(TEX_DIAMOND, Vector2(885, 35), Vector2(220, 55))
+	_add_label("2,350", Vector2(885, 35), Vector2(220, 55), 24)
+
+	_add_texture(TEX_FRIENDS, Vector2(28, 300), Vector2(132, 132), "left")
+	_add_label(_menu_text("朋友", "Friends"), Vector2(47, 380), Vector2(94, 30), 21, "left")
+	_add_hit(Vector2(28, 300), Vector2(132, 132), _show_coming_soon, "left")
+	_add_texture(TEX_CHAT, Vector2(28, 440), Vector2(132, 132), "left")
+	_add_label(_menu_text("聊天", "Chat"), Vector2(47, 520), Vector2(94, 30), 21, "left")
+	_add_hit(Vector2(28, 440), Vector2(132, 132), _show_coming_soon, "left")
 
 	# 右上角背包/邮件/设置、右侧商店/公告：锚定到屏幕右边（edge="right"）
-	_add_texture(TEX_BAG, Vector2(1355, 25), Vector2(99, 100), "right")
-	_add_hit(Vector2(1355, 25), Vector2(99, 100), _show_coming_soon, "right")
-	_add_texture(TEX_MAIL, Vector2(1458, 25), Vector2(100, 100), "right")
-	_add_hit(Vector2(1458, 25), Vector2(100, 100), _show_coming_soon, "right")
-	_add_texture(TEX_SETTINGS, Vector2(1562, 25), Vector2(99, 99), "right")
-	_add_hit(Vector2(1562, 25), Vector2(99, 99), _show_coming_soon, "right")
+	_add_texture(TEX_BAG, Vector2(1340, 25), Vector2(100, 100), "right")
+	_add_label(_menu_text("背包", "Bag"), Vector2(1340, 95), Vector2(100, 7), 7, "right")
+	_add_hit(Vector2(1340, 25), Vector2(100, 100), _show_coming_soon, "right")
+	_add_texture(TEX_MAIL, Vector2(1450, 25), Vector2(100, 100), "right")
+	_add_label(_menu_text("邮件", "Mail"), Vector2(1450, 95), Vector2(100, 7), 7, "right")
+	_add_hit(Vector2(1450, 25), Vector2(100, 100), _show_coming_soon, "right")
+	_add_texture(TEX_SETTINGS, Vector2(1560, 25), Vector2(100, 100), "right")
+	_add_label(_menu_text("设定", "Setting"), Vector2(1560, 95), Vector2(100, 7), 7, "right")
+	_add_hit(Vector2(1560, 25), Vector2(100, 100), _show_coming_soon, "right")
 
-	_add_texture(TEX_SHOP, Vector2(1383, 137), Vector2(267, 251), "right")
-	_add_label(_menu_text("商店", "Shop"), Vector2(1450, 151), Vector2(130, 34), 24, "right")
-	_add_hit(Vector2(1383, 137), Vector2(267, 251), _show_coming_soon, "right")
-	_add_texture(TEX_NEWS, Vector2(1383, 371), Vector2(267, 330), "right")
-	_add_label(_menu_text("公告 / 活动", "News / Events"), Vector2(1432, 383), Vector2(170, 34), 22, "right")
-	_add_hit(Vector2(1383, 371), Vector2(267, 330), _show_coming_soon, "right")
+	_add_texture(TEX_SHOP, Vector2(1380, 140), Vector2(270, 250), "right")
+	_add_label(_menu_text("商店", "Shop"), Vector2(1380, 150), Vector2(270, 34), 24, "right")
+	_add_hit(Vector2(1380, 140), Vector2(270, 250), _show_coming_soon, "right")
+	_add_texture(TEX_NEWS, Vector2(1380, 400), Vector2(270, 250), "right")
+	_add_label(_menu_text("公告 / 活动", "News / Events"), Vector2(1380, 407), Vector2(270, 34), 22, "right")
+	_add_hit(Vector2(1380, 400), Vector2(270, 250), _show_coming_soon, "right")
 
 	_add_texture(TEX_PREP, Vector2(215, 690), Vector2(220, 190))
 	_add_texture(TEX_CASUAL, Vector2(455, 690), Vector2(220, 190))
@@ -152,13 +166,6 @@ func _build() -> void:
 	_add_hit(Vector2(680, 650), Vector2(310, 260), _show_coming_soon)
 	_add_hit(Vector2(1010, 690), Vector2(220, 190), _show_room_overlay)
 	_add_hit(Vector2(1250, 690), Vector2(220, 190), _emit_codex)
-
-	_add_texture(TEX_GENERATE_TOKEN, Vector2(610, 594), Vector2(214, 59))
-	_add_label(_menu_text("生成令牌", "Generate Token"), Vector2(664, 606), Vector2(137, 34), 18)
-	_add_hit(Vector2(610, 594), Vector2(214, 59), _emit_generate_token)
-	_add_texture(TEX_ENTER_TOKEN, Vector2(850, 594), Vector2(214, 59))
-	_add_label(_menu_text("输入令牌", "Enter Token"), Vector2(905, 606), Vector2(137, 34), 18)
-	_add_hit(Vector2(850, 594), Vector2(214, 59), _show_token_prompt)
 
 	var offline_btn := Button.new()
 	offline_btn.text = _menu_text("离线自测", "Offline")
@@ -379,11 +386,6 @@ func _show_room_overlay() -> void:
 	_room_overlay.visible = true
 	_room_status.text = ""
 	team_room_list_requested.emit()
-
-func _show_token_prompt() -> void:
-	_room_overlay.visible = true
-	_room_status.text = _menu_text("输入 Token ID 后点恢复", "Enter Token ID, then Resume")
-	_token_id_edit.grab_focus()
 
 func _emit_generate_token() -> void:
 	public_token_generate_requested.emit()
@@ -606,6 +608,14 @@ func _draw_debug_layout() -> void:
 		_debug_layer.draw_string(font, Vector2(canvas.position.x + 8.0, by + 18.0),
 			"%s  y=%d~%d" % [band.name, int(band.y), int(band.y) + int(band.h)],
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, black)
+
+	# 3.5) 宠物活动区域（中心草地）
+	var pet_rect := Rect2(origin + MAIN_MENU_PET.AREA_POS * scale, MAIN_MENU_PET.AREA_SIZE * scale)
+	_debug_layer.draw_rect(pet_rect, black, false, 2.0)
+	_debug_layer.draw_string(font, pet_rect.position + Vector2(8.0, 18.0),
+		"宠物活动区 (%d,%d) %dx%d" % [int(MAIN_MENU_PET.AREA_POS.x), int(MAIN_MENU_PET.AREA_POS.y),
+		int(MAIN_MENU_PET.AREA_SIZE.x), int(MAIN_MENU_PET.AREA_SIZE.y)],
+		HORIZONTAL_ALIGNMENT_LEFT, -1, 14, black)
 
 	# 4) edge=left / edge=right 锚定边（这两列贴真实屏幕边，不跟画布走）
 	var left_edge_x := 176.0 * scale
