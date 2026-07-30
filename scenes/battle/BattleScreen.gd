@@ -254,6 +254,12 @@ func _prepare_battle_models() -> void:
 	if bar != null and is_instance_valid(bar):
 		bar.queue_free()
 	_refresh_visuals()
+	# 分帧建造是在 _refresh_visuals() 之前跑的，而 2D 单位节点（含 BodyFallback
+	# 占位圆）是 _refresh_visuals() 里才创建的 —— 所以建模型时那次
+	# _set_unit_fallback_visible(id,false) 是空操作，占位圆会一直显示、
+	# 以一红一蓝的圆形叠在模型身上。这里补一次隐藏。
+	for id in _battle_3d_models.keys():
+		_set_unit_fallback_visible(str(id), false)
 	_battle_setup_ready = true
 	_try_start_final_round_intro()
 
