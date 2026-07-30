@@ -296,30 +296,9 @@ func _set_unit_fallback_visible(id: String, should_show: bool) -> void:
 	if marker is CanvasItem:
 		(marker as CanvasItem).visible = should_show
 
+# 和备战棋盘共用 BattleAssetService 的缓存 —— 备战期加载过的模型，进战斗直接命中。
 func _scene_for_model_path(model_path: String) -> PackedScene:
-	if _model_scene_cache.has(model_path):
-		return _model_scene_cache[model_path] as PackedScene
-	if not _model_load_started.has(model_path):
-		var err := ResourceLoader.load_threaded_request(model_path)
-		if err != OK and err != ERR_BUSY:
-			push_warning("模型异步加载请求失败：%s err=%d" % [model_path, err])
-			_model_load_started[model_path] = false
-			return null
-		_model_load_started[model_path] = true
-		return null
-	if not bool(_model_load_started.get(model_path, false)):
-		return null
-	var status := ResourceLoader.load_threaded_get_status(model_path)
-	if status == ResourceLoader.THREAD_LOAD_LOADED:
-		var loaded := ResourceLoader.load_threaded_get(model_path)
-		if loaded is PackedScene:
-			_model_scene_cache[model_path] = loaded
-			return loaded as PackedScene
-		_model_load_started[model_path] = false
-	elif status == ResourceLoader.THREAD_LOAD_FAILED or status == ResourceLoader.THREAD_LOAD_INVALID_RESOURCE:
-		push_warning("模型异步加载失败：%s status=%d" % [model_path, status])
-		_model_load_started[model_path] = false
-	return null
+	return BattleAssetService.get_scene(model_path)
 
 func _make_shared_model_node(f: Dictionary) -> Node3D:
 	var unit_def := _display_unit_def_for_fighter(f)
@@ -412,7 +391,11 @@ func _material_without_emission(material: Material) -> Material:
 	var cached: Material = _clean_material_cache.get(key)
 	if cached != null:
 		return cached
-	var clean := material.duplicate(true) as Material
+	# duplicate(false) 而不是 (true)：这里只要改 emission 两个属性，那是材质自身的
+	# 字段。深拷贝会连子资源一起复制——**包括贴图**，等于同一张贴图在显存里存两份。
+	# 实测 video 峰值 1206 MB / tex 峰值 889 MB，这条是其中一份重复。
+	# 浅拷贝后贴图与原材质共享，改 emission 不会影响原材质。
+	var clean := material.duplicate(false) as Material
 	if clean is BaseMaterial3D:
 		var base := clean as BaseMaterial3D
 		base.emission_enabled = false
@@ -595,41 +578,80 @@ var _animation_prefetch_started: Dictionary = {}
 # 全部丢给后台线程加载，避免战斗中首次出场/首次施法时同步读盘顿挫。
 func _prefetch_battle_assets() -> void:
 	var texture_paths: Array = []
-	for f in (_state.get("player", []) + _state.get("enemy", [])):
-		var unit_def := _display_unit_def_for_fighter(f)
-		var model_path := str(unit_def.get("model", ""))
-		if _model_path_available(model_path):
-			_scene_for_model_path(model_path)  # 首次调用即发起线程加载
-		var idle_path := str(unit_def.get("model_idle_animation", ""))
-		if not idle_path.is_empty() and _model_path_available(idle_path):
-			_prefetch_animation_scene(idle_path)
-		var unit_id := str(unit_def.get("id", f.get("id", "")))
-		for tex_cfg in SkillVFXConfig.get_textures(unit_id):
-			texture_paths.append(str(tex_cfg.get("path", "")))
+	# 玩家阵容整局都在，敌人每回合都换 —— 分开预取，好让回合结束只放后者。
+	for f in _state.get("player", []):
+		_prefetch_one_fighter(f, texture_paths, true)
+	for f in _state.get("enemy", []):
+		_prefetch_one_fighter(f, texture_paths, false)
 	VFXManager.preload_textures(texture_paths)
 
+func _prefetch_one_fighter(f: Dictionary, texture_paths: Array, persistent: bool) -> void:
+	var unit_def := _display_unit_def_for_fighter(f)
+	# 玩家阵容整局持有；本回合的怪 / Boss / 对手回合末释放。
+	var owner := BattleAssetService.OWNER_PLAYER if persistent else BattleAssetService.OWNER_BATTLE
+	var model_path := str(unit_def.get("model", ""))
+	if _model_path_available(model_path):
+		BattleAssetService.acquire(model_path, owner)
+	var idle_path := str(unit_def.get("model_idle_animation", ""))
+	if not idle_path.is_empty() and _model_path_available(idle_path):
+		BattleAssetService.acquire(idle_path, owner)
+	var unit_id := str(unit_def.get("id", f.get("id", "")))
+	for tex_cfg in SkillVFXConfig.get_textures(unit_id):
+		texture_paths.append(str(tex_cfg.get("path", "")))
+
+# 回合结束调用：放掉本回合的怪 / Boss / PVP 对手，保留玩家阵容。
+#
+# 为什么需要：这几个缓存是 static（否则玩家自己的棋子每回合都要重新加载），
+# 而 static 只增不减的话，一局里遇到过的每个敌人都会被永久钉在显存里 ——
+# 实测 6 个回合 video 峰值从 688 MB 涨到 1206 MB，约 +90 MB/轮，
+# 第 20 回合外推约 1.9 GB，而整机只有 3.9 GB。
+#
+# 材质缓存整份清掉：它的 key 是源材质路径，映射不回具体单位，没法分级。
+# 清掉的代价只是下回合重新 duplicate(false)（浅拷贝，很便宜）；着色器变体由
+# 引擎按 shader+变体缓存、不按材质实例，所以不会重新编译。
+# 共享 Shader 缓存（VFXShaderCache）不动 —— 那个清了才会真的重新编译。
+# 备战期调用：把接下来几个回合的敌方模型丢给后台线程。
+#
+# 为什么能提前知道：怪物 / Boss 的选择只依赖 shared_seed + 回合号
+# （BattleSimShared._round_pick_index），开局那一刻整局名单就定了。
+#
+# 为什么不是"开局全载 20 轮"：实测每轮新内容约 +104 MB，20 轮外推 2.5 GB 以上，
+# 而测试机（3.9 GB 整机）可用约 2 GB —— 那正是原本第 20 回合加载不出来的成因。
+# 提前量取 3 轮是内存与保险的折中。
+#
+# 这里**只发请求、不收割**：Godot 会把加载好的资源留着，直到有人调
+# load_threaded_get()。等开打时 _scene_for_model_path 走到状态检查那一步就是
+# THREAD_LOAD_LOADED，直接取走，没有磁盘 I/O，也不需要备战期每帧轮询。
+static func prefetch_upcoming_rounds(current_round: int) -> void:
+	var by_round := BattleAssetManifest.rounds_enemy_paths(
+		current_round + 1, BattleAssetManifest.LOOKAHEAD_ROUNDS)
+	for n in by_round:
+		BattleAssetService.acquire_many(by_round[n], BattleAssetService.owner_future(int(n)))
+
+# 回合结束：摘掉 battle/current 这个 owner。
+#
+# 关键在于**只摘一个 owner，不是按「是不是玩家阵容」清表**。旧写法会把备战期为
+# 未来 3 轮预取的资源一并删掉（它们同样不属于玩家阵容），于是每回合结束丢弃一次
+# 预取成果、下回合重新加载 —— 实测每轮战斗中仍现加载 96–426 MB 贴图。
+# 现在只要还有 run/player 或 future/round/N 持有，资源就留着。
+static func release_round_assets() -> void:
+	# 本回合资源取用统计：走了几次同步路径、总共堵了主线程多久。
+	# 「hit / harvest」是便宜的，「wait / cold」才是卡顿来源。
+	print("[ASSET] 回合结束 %s" % BattleAssetService.stats_line())
+	BattleAssetService.reset_stats()
+	BattleAssetService.release_owner(BattleAssetService.OWNER_BATTLE)
+	# 材质缓存的 key 是源材质路径，映射不回单位，没法分级 —— 整份清掉。
+	# 代价只是下回合重新 duplicate(false)（浅拷贝，很便宜）；着色器变体由引擎
+	# 按 shader+变体缓存、不按材质实例，所以不会重新编译。
+	_clean_material_cache.clear()
+
 func _prefetch_animation_scene(scene_path: String) -> void:
-	if _model_animation_scene_cache.has(scene_path) or _animation_prefetch_started.has(scene_path):
-		return
-	if ResourceLoader.load_threaded_request(scene_path) == OK:
-		_animation_prefetch_started[scene_path] = true
+	BattleAssetService.acquire(scene_path, BattleAssetService.OWNER_BATTLE)
 
 func _animation_scene_for_path(scene_path: String) -> PackedScene:
-	if _model_animation_scene_cache.has(scene_path):
-		return _model_animation_scene_cache[scene_path] as PackedScene
 	if not _model_path_available(scene_path):
 		return null
-	var loaded: Resource
-	if _animation_prefetch_started.has(scene_path):
-		# 预取过：通常已就绪，未就绪也只需等剩余部分而不是整段读盘。
-		loaded = ResourceLoader.load_threaded_get(scene_path)
-		_animation_prefetch_started.erase(scene_path)
-	else:
-		loaded = ResourceLoader.load(scene_path)
-	if loaded is PackedScene:
-		_model_animation_scene_cache[scene_path] = loaded
-		return loaded as PackedScene
-	return null
+	return BattleAssetService.get_scene(scene_path)
 
 func _select_model_animation_player(players: Array[AnimationPlayer], unit_def: Dictionary) -> AnimationPlayer:
 	if players.is_empty():

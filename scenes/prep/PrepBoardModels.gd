@@ -72,8 +72,7 @@ var _prep_river_background_ready := false
 var _prep_board_model_nodes: Dictionary = {}
 var _prep_board_model_signatures: Dictionary = {}
 var _prep_relation_link_nodes: Dictionary = {}
-var _prep_model_scene_cache: Dictionary = {}
-var _prep_animation_scene_cache: Dictionary = {}
+# 模型/动画缓存已移到 BattleAssetService（备战棋盘与战斗共用一份，且跨场景存活）。
 var _prep_layout_refresh_version := 0
 
 func _on_prep_river_refresh_tick() -> void:
@@ -1109,25 +1108,18 @@ func _first_prep_animation_name(player: AnimationPlayer) -> String:
 			return str(animation_name)
 	return ""
 
+# 备战棋盘和战斗共用 BattleAssetService 的缓存。
+#
+# 以前这里有自己的 _prep_model_scene_cache，和 BattleUI._model_scene_cache 互不知情，
+# 同一个模型要加载两遍；而且它是实例变量，每回合随备战场景销毁。
+# 实测放下第一个棋子冻结 3.3 秒（tex +11.1 MB），就是在这里现加载。
 func _prep_model_scene_for_path(model_path: String) -> PackedScene:
-	if _prep_model_scene_cache.has(model_path):
-		return _prep_model_scene_cache[model_path] as PackedScene
-	var loaded := ResourceLoader.load(model_path)
-	if loaded is PackedScene:
-		_prep_model_scene_cache[model_path] = loaded
-		return loaded as PackedScene
-	return null
+	return BattleAssetService.get_scene(model_path)
 
 func _prep_animation_scene_for_path(scene_path: String) -> PackedScene:
-	if _prep_animation_scene_cache.has(scene_path):
-		return _prep_animation_scene_cache[scene_path] as PackedScene
 	if not _prep_model_path_available(scene_path):
 		return null
-	var loaded := ResourceLoader.load(scene_path)
-	if loaded is PackedScene:
-		_prep_animation_scene_cache[scene_path] = loaded
-		return loaded as PackedScene
-	return null
+	return BattleAssetService.get_scene(scene_path)
 
 func _prep_display_unit_def(cell: Dictionary) -> Dictionary:
 	var raw_value = cell.get("def", {})

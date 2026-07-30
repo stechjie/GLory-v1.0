@@ -22,7 +22,12 @@ func play_external(kind: String, origin: Vector3, _target: Vector3, profile: VFX
 	var path: String = SCENES.get(kind, "")
 	if path.is_empty():
 		return
-	var packed := load(path) as PackedScene
+	# 同 VFXBinbunReference3D：改走共享缓存，不在施法帧同步读盘。
+	var t0 := Time.get_ticks_usec()
+	var packed := VFXExternalCache.get_scene(path)
+	var load_us := Time.get_ticks_usec() - t0
+	if load_us > 30000:
+		print("[EXTVFX] starter/%s  取场景=%.0fms" % [kind, load_us / 1000.0])
 	if packed == null:
 		push_error("External VFX reference failed to load: %s" % path)
 		return

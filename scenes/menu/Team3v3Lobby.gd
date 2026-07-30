@@ -49,8 +49,66 @@ func _ready() -> void:
 		NetworkService.team_start_requested.connect(_on_team_start_requested)
 	_build()
 	_refresh()
+	# 必须在 _layout() 之前：_add_label 只是把控件登记进 _placed，
+	# 真正定位是 _layout() 干的。放在它后面创建的标签会停在默认位置、看不见。
+	_setup_asset_loader()
 	_layout()
 	_start_menu_music()
+
+# --- 开局资源预载 --------------------------------------------------------------
+#
+# 大厅是整个流程里唯一真正空闲的窗口：玩家在等人进房，画面基本静止。
+# 备战期不行 —— 那时玩家在拖棋子、看羁绊，3D 棋盘和 UI 都在跑，往里塞几百 MB
+# 会直接卡到操作。战斗开始前更不行，那是玩家已经在等的时刻。
+#
+# 分两段，因为 shared_seed 到达有先后：
+#   A 段（进大厅立刻）：与 seed 无关 —— 外部 VFX 8 类、商店池全部候选
+#   B 段（收到 seed 后）：本局怪物 / Boss 名单，预载前 3 轮
+#
+# 只发请求 + 逐帧收割，不阻塞。玩家随时可以按开始 —— 没加载完的部分由
+# PrepScreen 的读条兜底。
+const ASSET_LOAD_TICK := 0.25
+
+var _asset_total := 0
+var _asset_seed_stage_done := false
+var _asset_tick := 0.0
+var _asset_lbl: Label
+
+func _setup_asset_loader() -> void:
+	var vfx := BattleAssetManifest.seed_independent_paths()
+	var shop := BattleAssetManifest.shop_pool_paths()
+	BattleAssetService.acquire_many(vfx, BattleAssetService.OWNER_PLAYER)
+	BattleAssetService.acquire_many(shop, BattleAssetService.OWNER_PLAYER)
+	_asset_total = BattleAssetService.pending_count()
+	print("[ASSET] 大厅预载启动：外部VFX %d 个、商店池 %d 个 -> 待加载 %d 个"
+		% [vfx.size(), shop.size(), _asset_total])
+	_asset_lbl = _add_label("", Vector2(626, 197), Vector2(420, 24), 14, Color(0.62, 0.86, 0.98))
+	set_process(true)
+
+func _process(delta: float) -> void:
+	_asset_tick += delta
+	if _asset_tick < ASSET_LOAD_TICK:
+		return
+	_asset_tick = 0.0
+	# seed 是服务器在开打时下发的；一旦拿到就把本局名单也排进来。
+	if not _asset_seed_stage_done and BattleAssetManifest.has_seed():
+		_asset_seed_stage_done = true
+		var by_round := BattleAssetManifest.rounds_enemy_paths(
+			GameState.round_index, BattleAssetManifest.LOOKAHEAD_ROUNDS)
+		for n in by_round:
+			BattleAssetService.acquire_many(
+				by_round[n], BattleAssetService.owner_future(int(n)))
+		_asset_total = maxi(_asset_total, BattleAssetService.pending_count())
+	var pending := BattleAssetService.harvest()
+	if _asset_lbl == null:
+		return
+	if pending == 0:
+		print("[ASSET] 大厅预载完成：缓存 %d 个场景" % BattleAssetService.cached_count())
+		_asset_lbl.text = "资源已就绪"
+		set_process(false)
+		return
+	var done := maxi(0, _asset_total - pending)
+	_asset_lbl.text = "资源载入 %d%%" % int(round(100.0 * float(done) / maxf(1.0, float(_asset_total))))
 
 func _start_menu_music() -> void:
 	if _menu_music_player != null:

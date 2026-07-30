@@ -19,11 +19,22 @@ func play_reference(kind: String, origin: Vector3, target: Vector3, profile: VFX
 	var scene_path: String = SCENES.get(kind, "")
 	if scene_path.is_empty():
 		return
-	var packed := load(scene_path) as PackedScene
+	# 走共享缓存：原本这里是裸 load()，在施法帧同步读盘 + 反序列化，
+	# 真机实测 Boss 大圈那一下主线程冻结 5.9 秒；而且播完引用归零就卸载，下次再来一遍。
+	var t0 := Time.get_ticks_usec()
+	var packed := VFXExternalCache.get_scene(scene_path)
+	var load_us := Time.get_ticks_usec() - t0
 	if packed == null:
 		push_error("Binbun reference scene failed to load: %s" % scene_path)
 		return
+	var t1 := Time.get_ticks_usec()
 	reference_instance = packed.instantiate() as Node3D
+	var inst_us := Time.get_ticks_usec() - t1
+	# 埋点：5.9 秒到底落在取场景、实例化还是首帧绘制（shader 编译），
+	# 光靠计数猜过两次都猜错了。只在明显偏慢时打，正常帧不刷屏。
+	if load_us + inst_us > 30000:
+		print("[EXTVFX] binbun/%s  取场景=%.0fms 实例化=%.0fms" % [
+			kind, load_us / 1000.0, inst_us / 1000.0])
 	reference_instance.name = "BinbunOriginal_%s" % kind
 	add_child(reference_instance)
 	reference_instance.global_position = origin

@@ -597,7 +597,6 @@ func _spawn_demo_crystal(losing_team: int, ratio: float) -> Node3D:
 		return null
 	crystal.name = "DemoCrystal"
 	_battle_3d_world.add_child(crystal)
-	_clamp_crystal_material_emission(crystal)
 	_apply_battle_crystal_toon(crystal, is_red_team, ratio)
 	var bounds := _node3d_bounds(crystal)
 	var scale_factor := 1.0
@@ -635,25 +634,12 @@ func _add_crystal_cluster_parts(cluster_root: Node3D, packed: PackedScene, is_re
 		part.position = offsets[i]
 		part.rotation_degrees = Vector3(0.0, yaws[i], 0.0)
 		part.scale = Vector3.ONE * float(scales[i])
-		_clamp_crystal_material_emission(part)
 		_apply_battle_crystal_toon(part, is_red, ratio)
 
-
-func _clamp_crystal_material_emission(root: Node) -> void:
-	for child in root.find_children("*", "MeshInstance3D", true, false):
-		var mesh_instance := child as MeshInstance3D
-		if mesh_instance == null or mesh_instance.mesh == null:
-			continue
-		var safe_mesh := mesh_instance.mesh.duplicate() as Mesh
-		if safe_mesh == null:
-			continue
-		mesh_instance.mesh = safe_mesh
-		for surface_index in safe_mesh.get_surface_count():
-			var source_material := safe_mesh.surface_get_material(surface_index)
-			if source_material is BaseMaterial3D:
-				var safe_material := source_material.duplicate() as BaseMaterial3D
-				safe_material.emission_energy_multiplier = minf(safe_material.emission_energy_multiplier, 0.45)
-				safe_mesh.surface_set_material(surface_index, safe_material)
+# 这里以前还有个 _clamp_crystal_material_emission()：复制网格、复制材质、压低
+# emission。它压的是 FBX 自带的 BaseMaterial3D，而 _apply_battle_crystal_toon
+# 会给**每一个** surface 挂上覆盖材质，被压过的那些材质一帧都不会被渲染 ——
+# 纯白做工，还顺带每个部件复制一份网格。已删除。
 
 # losing_team 是绝对队伍（GameConstants.TEAM_RED / TEAM_BLUE），而 GameState 的血量
 # 是以本地玩家为中心存的（team_hp = 我队，enemy_team_hp = 对面），所以先把绝对队伍
@@ -690,14 +676,17 @@ func _apply_battle_crystal_toon(root: Node3D, is_red: bool, ratio: float) -> voi
 		if mesh_instance == null or mesh_instance.mesh == null:
 			continue
 		var source_mesh := mesh_instance.mesh
-		var toon_mesh := source_mesh.duplicate() as Mesh
-		if toon_mesh == null:
-			continue
+		# 走 set_surface_override_material 而不是复制网格再 surface_set_material：
+		# 覆盖材质是 per-instance 的，共享网格不会被污染，所以不需要 duplicate()。
+		# 旧写法每次调用都复制一份网格，而这个函数在**每次水晶被击中时都会重跑**
+		# （见 _crystal_hit_flash 的 tween_callback），晶簇又有 7 个部件 ——
+		# 等于每次挨打复制 7 份网格。单位模型那边（_apply_material_override）
+		# 一直用的就是覆盖材质这套。
 		var outline := ShaderMaterial.new()
 		outline.shader = CRYSTAL_OUTLINE_SHADER
 		outline.set_shader_parameter("outline_color", outline_color)
 		outline.set_shader_parameter("outline_width", CRYSTAL_OUTLINE_WIDTH)
-		for surface_index in toon_mesh.get_surface_count():
+		for surface_index in source_mesh.get_surface_count():
 			var source := source_mesh.surface_get_material(surface_index) as BaseMaterial3D
 			var toon := ShaderMaterial.new()
 			toon.shader = CRYSTAL_TOON_SHADER
@@ -715,8 +704,7 @@ func _apply_battle_crystal_toon(root: Node3D, is_red: bool, ratio: float) -> voi
 				toon.set_shader_parameter("albedo_texture", source.albedo_texture)
 				toon.set_shader_parameter("has_albedo_texture", true)
 			toon.next_pass = outline
-			toon_mesh.surface_set_material(surface_index, toon)
-		mesh_instance.mesh = toon_mesh
+			mesh_instance.set_surface_override_material(surface_index, toon)
 
 # 发射一条飘带。命中时回调 on_hit（扣血 / 闪光 / 抖动都挂在那里）。
 func _make_crystal_attack_ribbon(start: Vector3, target: Vector3, color: Color, on_hit: Callable) -> void:
@@ -811,8 +799,10 @@ func _set_crystal_flash(root: Node3D, amount: float) -> void:
 		var mesh_instance := found as MeshInstance3D
 		if mesh_instance == null or mesh_instance.mesh == null:
 			continue
+		# 卡通材质现在挂在实例的覆盖槽上（见 _apply_battle_crystal_toon），
+		# 不再写回网格，所以这里也要从覆盖槽读。
 		for surface_index in mesh_instance.mesh.get_surface_count():
-			var mat := mesh_instance.mesh.surface_get_material(surface_index) as ShaderMaterial
+			var mat := mesh_instance.get_surface_override_material(surface_index) as ShaderMaterial
 			if mat != null:
 				mat.set_shader_parameter("hit_flash", amount)
 

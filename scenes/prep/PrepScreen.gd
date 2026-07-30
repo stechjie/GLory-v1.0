@@ -2,6 +2,9 @@ extends "res://scenes/prep/PrepDetails.gd"
 
 const BattleReplayUtil = preload("res://scripts/battle/BattleReplayUtil.gd")
 const BattleSim = preload("res://scripts/battle/BattleSimulator.gd")
+# 只为拿它的 static 资源缓存（BattleRenderer.gd 没有 class_name）。战斗资源在这里
+# 就绪之后，BattleScreen 那边 _scene_for_model_path 直接命中缓存、不再同步读盘。
+const BattleRendererScript = preload("res://scenes/battle/BattleRenderer.gd")
 
 const PREP_MUSIC_PATH := "res://assets/audio/bgm/prep_music.mp3"
 const PREP_PVP_MUSIC_PATH := "res://assets/audio/bgm/pvp_round_music.mp3"
@@ -14,6 +17,9 @@ const BATTLE_SCREEN_PATH := "res://scenes/battle/BattleScreen.tscn"
 # 战斗准备退回备战，而服务器随后才补交/转 AI —— 迟到的结算会跳过单位阵亡与成长，
 # 造成客户端与服务器分叉。最终修法是 board ACK/服务端进度驱动，见文档 1B-1。
 const TEAM_BATTLE_PREP_TIMEOUT_SEC := 60.0
+# 战斗资源预加载的上限。到点还没齐就照旧进战斗（退回按需加载），
+# 宁可卡一下，也不要读条停在那里让玩家以为死机。
+const ASSET_PRELOAD_TIMEOUT_MSEC := 15000
 
 var _prep_music_player: AudioStreamPlayer
 var _fps_label: Label
@@ -40,6 +46,10 @@ func _ready() -> void:
 		_roll_shop()
 	_build()
 	_setup_battle_load_visual()
+	# 备战期只做**增量**：把后几轮的怪排进后台队列。
+	# 大批量加载在大厅完成（Team3v3Lobby._setup_asset_loader）—— 备战期玩家在拖
+	# 棋子、看羁绊，3D 棋盘和 UI 都在跑，往这里塞几百 MB 会直接卡到操作。
+	BattleRendererScript.prefetch_upcoming_rounds(GameState.round_index)
 	_start_prep_music()
 	_setup_fps_overlay()
 	_maybe_start_pending_treasure()
@@ -306,10 +316,52 @@ func _emit_battle_request_once() -> void:
 		_cancel_battle_prepare()
 		return
 	await _finish_battle_thread_load()
+	# 单位模型/贴图必须在这里等完，不能等进了战斗再同步加载 —— 那正是实测里
+	# 首回合 14.8 秒、后续每回合 2.3–5.1 秒主线程冻结的来源。
+	await _preload_battle_assets()
 	_set_battle_data_progress(1.0)
 	_hide_battle_load_visual()
 	_battle_transition_running = false
 	battle_requested.emit()
+
+# 本场会用到的模型/待机动画/技能贴图，全部等到就绪再进战斗。
+# 清单直接来自 replay 的 roster（uid -> def），不是按阵容猜 —— 服务器已经把整场
+# 算完发过来了，谁会出场是确定的。
+func _preload_battle_assets() -> void:
+	# 兜底，不是主力。资源本该在大厅（seed 无关的公共资源 + 本局怪物名单）和
+	# 备战期（增量）就绪；这里只补还没齐的部分 —— 玩家手速极快、第一回合、
+	# 或 PVP 对手 replay 刚到的情况。
+	#
+	# 清单来自 replay 的 roster：服务器已经把整场算完发过来了，出场名单是确定的。
+	var model_paths: Array[String] = []
+	var texture_paths: Array = []
+	for replay in [NetworkService.team_replay, NetworkService.team_replay_rival]:
+		for p in BattleAssetManifest.replay_paths(replay):
+			if not model_paths.has(p):
+				model_paths.append(p)
+		texture_paths.append_array(BattleAssetManifest.replay_texture_paths(replay))
+	VFXManager.preload_textures(texture_paths)
+	BattleAssetService.acquire_many(model_paths, BattleAssetService.OWNER_BATTLE)
+	# 本回合真打到了：把大厅/备战期为这一轮预取的 owner 转成 battle/current，
+	# 资源全程不落地。
+	BattleAssetService.promote_future_to_battle(GameState.round_index)
+
+	var total := BattleAssetService.pending_count() + VFXManager.pending_texture_count()
+	if total == 0:
+		return
+	# 逐帧等待。绝不调用阻塞版 load_threaded_get() —— 那会让进度条自己卡住不动，
+	# 玩家看到的是"假死"，比原来的卡顿更糟。
+	var deadline := Time.get_ticks_msec() + ASSET_PRELOAD_TIMEOUT_MSEC
+	while Time.get_ticks_msec() < deadline:
+		var remaining := BattleAssetService.harvest() + VFXManager.pending_texture_count()
+		_set_battle_data_progress(0.65 + 0.35 * (1.0 - float(remaining) / maxf(1.0, float(total))))
+		if remaining == 0:
+			return
+		await get_tree().process_frame
+		if not is_inside_tree():
+			return
+	# 超时兜底：不无限等。没就绪的退回战斗中按需加载（即旧行为）。
+	push_warning("战斗资源预加载超时，剩余项退回战斗内加载")
 
 # True from the moment this round commits to launching its battle until the
 # battle scene is actually created — i.e. the async replay-packaging window.

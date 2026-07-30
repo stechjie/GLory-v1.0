@@ -79,6 +79,11 @@ func preload_textures(paths: Array) -> void:
 		if ResourceLoader.load_threaded_request(path) == OK:
 			_pending_texture_loads.append(path)
 
+# 还有多少张贴图在后台加载中。备战期的读条用它判断"资源齐了没"，
+# 这样等待是逐帧轮询、进度条能一直走，而不是阻塞在 load_threaded_get() 上。
+func pending_texture_count() -> int:
+	return _pending_texture_loads.size()
+
 func _drain_pending_texture_loads() -> void:
 	if _pending_texture_loads.is_empty():
 		return

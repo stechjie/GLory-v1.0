@@ -125,6 +125,8 @@ func _ready() -> void:
 	_try_start_final_round_intro()
 func _exit_tree() -> void:
 	_stop_battle_music()
+	# 本回合的敌人资源到此为止；玩家阵容留着，下回合还要用。
+	release_round_assets()
 
 func _process(delta: float) -> void:
 	if not _battle_setup_ready:
@@ -144,7 +146,14 @@ func _process(delta: float) -> void:
 	if _final_round_intro_active:
 		return
 	if _replay_mode:
-		_sim_accumulator += delta * PLAYBACK_SPEED
+		# 累加器必须封顶，否则慢帧会自我放大成死亡螺旋：一帧慢 -> delta 变大 ->
+		# 下一帧要补更多回放帧（每帧还要把 visual_events 灌进 _state 生成特效）
+		# -> 更慢 -> 补更多。实测一次发作是 683ms -> 冻结 5s -> 单帧 4655ms，
+		# 全程 draw call 反而从 274 掉到 24（画面越空越卡），直到回放播完才恢复。
+		# 封顶后追不上就丢时间，宁可回放比实时略慢，也不攒出无限积压。
+		# 下面本地模拟那条分支一直有 MAX_STEPS_PER_FRAME，只有这里漏了。
+		_sim_accumulator = minf(_sim_accumulator + delta * PLAYBACK_SPEED,
+			SIM_TICK_SEC * MAX_STEPS_PER_FRAME)
 		var frames: Array = _replay.get("frames", [])
 		# 时间线终点：看自己时就是己方 replay 的长度；观战敌方时取两边较长者，
 		# 敌方打得久也能看完，且己方结果照常在时间线走完后结算。

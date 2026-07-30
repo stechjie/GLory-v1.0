@@ -79,9 +79,10 @@ var _battle_3d_vfx_root: Node3D
 var _battle_arena_load_started := false
 var _battle_arena_ready := false
 var _battle_3d_models: Dictionary = {}
-var _model_scene_cache: Dictionary = {}
-var _model_load_started: Dictionary = {}
-var _model_animation_scene_cache: Dictionary = {}
+# 模型/动画缓存已移到 BattleAssetService：
+#   * 跨场景存活（Main._show_battle() 每回合重建 BattleScreen，实例变量会跟着没）
+#   * 与备战棋盘共用一份（以前两边各一套，同一个模型加载两遍）
+#   * 按 owner/lease 释放，未来回合的预取不会被回合末清理误删
 var _battle_music_player: AudioStreamPlayer
 
 func _finish_simulation() -> void:

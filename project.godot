@@ -28,6 +28,7 @@ NetworkService="*res://scripts/autoload/NetworkService.gd"
 RngService="*res://scripts/autoload/RngService.gd"
 VFXManager="*res://effects/VFXManager.gd"
 TutorialMode="*res://scripts/tutorial/TutorialMode.gd"
+PerfLog="*res://tools/PerfLog.gd"
 
 [display]
 

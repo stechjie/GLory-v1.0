@@ -150,27 +150,51 @@ static func _team_owner_ctx_for_slot(slot_idx: int) -> Dictionary:
 	return {"treasures": [], "syn": {}, "pet": ""}
 
 
-static func _round_pick_index(size: int, salt: String) -> int:
+static func _round_pick_index(size: int, salt: String, round_index: int = -1) -> int:
 	# Deterministic per-match pick so all lanes/players agree, but new rooms vary.
+	# round_index < 0 表示"当前回合"；显式传值是为了让备战期能预摇未来回合的内容
+	# （见 round_enemy_model_paths）——这一步只依赖 shared_seed + 回合号，
+	# 所以未来回合会出什么怪在开局那一刻就已经确定了。
 	if size <= 0:
 		return 0
+	var rn := round_index if round_index >= 0 else GameState.round_index
 	var r := RandomNumberGenerator.new()
-	r.seed = hash([NetworkService.shared_seed, GameState.round_index, salt])
+	r.seed = hash([NetworkService.shared_seed, rn, salt])
 	return r.randi_range(0, size - 1)
 
 
-static func _round_monster_template() -> Dictionary:
+static func _round_monster_template(round_index: int = -1) -> Dictionary:
 	var monsters: Array = DataRegistry.get_table("pve_monsters").get("monsters", [])
 	if monsters.is_empty():
 		return {}
-	return monsters[_round_pick_index(monsters.size(), "monster")]
+	return monsters[_round_pick_index(monsters.size(), "monster", round_index)]
 
 
-static func _round_boss_template() -> Dictionary:
+static func _round_boss_template(round_index: int = -1) -> Dictionary:
 	var bosses: Array = DataRegistry.get_table("bosses").get("bosses", [])
 	if bosses.is_empty():
 		return {}
-	return bosses[_round_pick_index(bosses.size(), "boss")]
+	return bosses[_round_pick_index(bosses.size(), "boss", round_index)]
+
+
+# 某个未来回合会出现的敌方模型路径。备战期拿它来提前加载，避免开打那一帧同步读盘。
+#
+# PVP / final 回合返回空：对手棋盘取决于他买了什么，开局无法预知。
+# 这不影响价值 —— 大多数回合是 PVE / Boss。
+static func round_enemy_model_paths(round_index: int) -> Array[String]:
+	var out: Array[String] = []
+	var kind := RoundService.schedule_kind_for_round(round_index)
+	if kind == "pvp" or kind == "final":
+		return out
+	var templates: Array[Dictionary] = [_round_monster_template(round_index)]
+	if kind == "boss":
+		templates.append(_round_boss_template(round_index))
+	for t in templates:
+		for key in ["model", "model_idle_animation"]:
+			var p := str(t.get(key, ""))
+			if not p.is_empty() and not out.has(p):
+				out.append(p)
+	return out
 
 
 static func _append_lane_monsters(out: Array, lane: int, count: int, template: Dictionary) -> void:
