@@ -518,33 +518,10 @@ func _on_team3v3_start() -> void:
 	GameState.team_mode = true
 	GameState.team_hp = GameState.START_FORMATION_HP
 	GameState.enemy_team_hp = GameState.START_FORMATION_HP
-	_debug_apply_start_round_override()
 	if NetworkService.shared_seed == 0:
 		NetworkService.shared_seed = randi()
 	NetworkService.team_begin_round()
 	_show_prep()
-
-# TEMP / 仅用于真机性能测量，量完就删。
-# adb push 一个 user://debug_start_round.txt（内容是回合号）即可从该回合开局，
-# 并自动铺满双方棋盘 + 六个座位全满，构造该回合的最重负载。
-func _debug_apply_start_round_override() -> void:
-	if not FileAccess.file_exists("user://debug_start_round.txt"):
-		return
-	var f := FileAccess.open("user://debug_start_round.txt", FileAccess.READ)
-	if f == null:
-		return
-	var wanted := int(f.get_as_text().strip_edges())
-	f.close()
-	if wanted <= 0:
-		return
-	GameState.round_index = clampi(wanted, 1, GameState.FINAL_ROUND)
-	GameState.gold = 999
-	GameState.team_slot_states = ["player", "dummy", "dummy", "dummy", "dummy", "dummy"]
-	var rng := RandomNumberGenerator.new()
-	rng.randomize()
-	GameState.board_slots = BattleSimulator.build_dummy_board(rng)
-	print("[DEBUG] start round override -> %d, board=%d cells" % [
-		GameState.round_index, GameState.board_slots.size()])
 
 func _on_team_battle_finished(result: Dictionary) -> void:
 	if NetworkService.team_active and not NetworkService.is_host:
