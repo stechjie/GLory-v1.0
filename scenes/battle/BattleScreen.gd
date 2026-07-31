@@ -120,8 +120,7 @@ func _ready() -> void:
 	await get_tree().process_frame
 	if not is_inside_tree():
 		return
-	# 单人本地模拟路径同样分帧建，理由见 _prepare_battle_models。
-	await _prepare_battle_models()
+	_prepare_battle_models()
 func _exit_tree() -> void:
 	_stop_battle_music()
 	# 本回合的敌人资源到此为止；玩家阵容留着，下回合还要用。
@@ -216,68 +215,27 @@ func _start_replay(replay: Dictionary) -> void:
 		_build()
 		_setup_view_toggle()
 		_start_battle_music()
-		# 单位模型分帧建，建完才开打。
-		#
-		# 以前这里直接 _refresh_visuals() + _battle_setup_ready = true，于是一帧内
-		# 要实例化 300–700 个节点（实测最高 Δnode +1881），主线程冻结 1.6–5.6 秒，
-		# 期间连心跳都发不出去（实测 process freeze 6.3s + pong silence，
-		# 差一点就被服务器判掉线）。
-		#
-		# 分帧本身不减少总耗时，收益是：主线程不断流、心跳照常、玩家看到进度在走。
-		# 必须"建完才开打"——否则 _apply_replay_frame 会去定位还不存在的单位。
 		_prepare_battle_models()
 
 
-# 每帧最多建几个单位模型。3 个是折中：太小则读条拖长，太大则单帧又开始卡。
-# 实测单个单位模型的实例化 + bounds + 动画绑定在这台机器上约 20–60 ms。
-const MODELS_PER_FRAME := 3
-
+# 一帧内把本回合所有单位模型建完，建完才开打。
+#
+# 这里一度改成分帧建造（每帧 3 个 + 顶部读条）：当时一帧要实例化 300–700 个节点
+# （实测最高 Δnode +1881），主线程冻结 1.6–5.6 秒，心跳都发不出去
+# （process freeze 6.3s + pong silence，差点被服务器判掉线）。
+#
+# 现在改回一次性建造，因为那个前提没了：单位材质从 942 MB 降到 19 MB
+# （摘掉从不采样的法线 + size_limit 512），落子/进场的贴图上传实测
+# 从 +42.7 MB/棋子 降到 +0.3~1.4 MB，热缓存下整局最慢单帧 1221 ms。
+# 分帧的代价是棋子一个一个冒出来，观感上不值这个价。
+#
+# 必须"建完才开打"——否则 _apply_replay_frame 会去定位还不存在的单位。
+# _refresh_visuals() 内部先 _sync_unit_nodes（建 2D 节点含 BodyFallback 占位圆）
+# 再 _sync_3d_model_nodes（建模型并隐藏占位圆），顺序本来就是对的。
 func _prepare_battle_models() -> void:
-	var living: Array = []
-	for f in (_state.get("player", []) + _state.get("enemy", [])):
-		if typeof(f) == TYPE_DICTIONARY and bool(f.get("alive", false)):
-			living.append(f)
-	var total := living.size()
-	var bar := _make_battle_prepare_bar() if total > MODELS_PER_FRAME else null
-	var done := 0
-	for f in living:
-		# 只建不删（prune=false）：_sync_3d_model_nodes 的收尾会清掉"不在传入列表里"
-		# 的模型，而这里一次只喂一个单位，照常清理的话每建一个就会毁掉前面全部。
-		_sync_3d_model_nodes([f], false, false)
-		done += 1
-		if done % MODELS_PER_FRAME == 0:
-			if bar != null:
-				bar.value = 100.0 * float(done) / float(maxi(1, total))
-			await get_tree().process_frame
-			if not is_inside_tree() or _finished:
-				return
-	if bar != null and is_instance_valid(bar):
-		bar.queue_free()
 	_refresh_visuals()
 	_battle_setup_ready = true
 	_try_start_final_round_intro()
-
-# 顶部一条细进度条，接着备战界面那条继续走，避免"画面停住"的观感。
-func _make_battle_prepare_bar() -> ProgressBar:
-	var bar := ProgressBar.new()
-	bar.name = "BattlePrepareBar"
-	bar.show_percentage = false
-	bar.min_value = 0.0
-	bar.max_value = 100.0
-	bar.value = 0.0
-	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	bar.custom_minimum_size = Vector2(0.0, 5.0)
-	bar.size.y = 5.0
-	bar.z_index = 200
-	var bg := StyleBoxFlat.new()
-	bg.bg_color = Color(0.02, 0.13, 0.16, 0.55)
-	var fill := StyleBoxFlat.new()
-	fill.bg_color = Color(0.35, 0.78, 0.95, 0.95)
-	bar.add_theme_stylebox_override("background", bg)
-	bar.add_theme_stylebox_override("fill", fill)
-	add_child(bar)
-	return bar
 
 func _try_start_final_round_intro() -> void:
 	if _final_round_intro_started or GameState.round_index != GameState.FINAL_ROUND:
