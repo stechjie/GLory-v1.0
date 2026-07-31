@@ -120,7 +120,7 @@ func _ready() -> void:
 	await get_tree().process_frame
 	if not is_inside_tree():
 		return
-	_prepare_battle_models()
+	await _prepare_battle_models()
 func _exit_tree() -> void:
 	_stop_battle_music()
 	# 本回合的敌人资源到此为止；玩家阵容留着，下回合还要用。
@@ -209,33 +209,95 @@ func _start_replay(replay: Dictionary) -> void:
 	# the arena vertically so my own units are always the ones at the bottom.
 	var my_slot := NetworkService.team_local_slot if NetworkService.team_active else 0
 	var my_team := GameConstants.team_of_slot(my_slot)
-	_arena_flip_y = str(replay.get("kind", "")) == "pvp" and my_team == 1
+	# 决赛除外：那一局的战斗轴是左右（_apply_final_round_left_right_layout），翻 Y
+	# 换不到"自己在下方"，只会把 B 队玩家的画面上下镜像。决赛 replay 的 kind 同样是
+	# "pvp"（被 prepare_team_state 改写过），所以必须按回合号单独排除。
+	_arena_flip_y = str(replay.get("kind", "")) == "pvp" and my_team == 1 \
+		and GameState.round_index != GameState.FINAL_ROUND
 	if not replay.get("frames", []).is_empty():
 		_apply_replay_frame(0)
 		_build()
 		_setup_view_toggle()
 		_start_battle_music()
-		_prepare_battle_models()
+		await _prepare_battle_models()
 
 
-# 一帧内把本回合所有单位模型建完，建完才开打。
+# 每帧最多建几个单位模型。3 个是折中：太小则读条拖长，太大则单帧又开始卡。
+# 实测单个单位模型的实例化 + bounds + 动画绑定在这台机器上约 20–60 ms。
+const MODELS_PER_FRAME := 3
+
+# 分帧建单位模型，全程隐藏，建完一次性显形，建完才开打。
 #
-# 这里一度改成分帧建造（每帧 3 个 + 顶部读条）：当时一帧要实例化 300–700 个节点
-# （实测最高 Δnode +1881），主线程冻结 1.6–5.6 秒，心跳都发不出去
-# （process freeze 6.3s + pong silence，差点被服务器判掉线）。
+# 三件事各自的理由：
+#   分帧：一帧建 491 个节点实测 proc=1104ms，整帧堵死，心跳都发不出去
+#         （实测 process freeze 6.3s + pong silence，差点被服务器判掉线）。
+#         分帧不减少总耗时，收益是主线程不断流。
+#   隐藏：上一版分帧是「建一个显一个」，玩家看到棋子一个一个冒出来。
+#         整个建造期把 3D 根藏起来，最后一次性打开，观感上就是「一起出现」。
+#   读条：顶部细线接住备战界面那条蓝线，空棋盘期不至于像「画面卡住」。
 #
-# 现在改回一次性建造，因为那个前提没了：单位材质从 942 MB 降到 19 MB
-# （摘掉从不采样的法线 + size_limit 512），落子/进场的贴图上传实测
-# 从 +42.7 MB/棋子 降到 +0.3~1.4 MB，热缓存下整局最慢单帧 1221 ms。
-# 分帧的代价是棋子一个一个冒出来，观感上不值这个价。
-#
-# 必须"建完才开打"——否则 _apply_replay_frame 会去定位还不存在的单位。
-# _refresh_visuals() 内部先 _sync_unit_nodes（建 2D 节点含 BodyFallback 占位圆）
-# 再 _sync_3d_model_nodes（建模型并隐藏占位圆），顺序本来就是对的。
+# 必须「建完才开打」——否则 _apply_replay_frame 会去定位还不存在的单位。
 func _prepare_battle_models() -> void:
+	var living: Array = []
+	for f in (_state.get("player", []) + _state.get("enemy", [])):
+		if typeof(f) == TYPE_DICTIONARY and bool(f.get("alive", false)):
+			living.append(f)
+	var total := living.size()
+	if _battle_3d_root != null:
+		_battle_3d_root.visible = false
+	var bar := _make_battle_prepare_bar() if total > MODELS_PER_FRAME else null
+	var done := 0
+	for f in living:
+		# 只建不删（prune=false）：_sync_3d_model_nodes 的收尾会清掉「不在传入列表里」
+		# 的模型，而这里一次只喂一个单位，照常清理的话每建一个就会毁掉前面全部。
+		_sync_3d_model_nodes([f], false, false)
+		done += 1
+		if done % MODELS_PER_FRAME == 0:
+			if bar != null:
+				bar.value = 100.0 * float(done) / float(maxi(1, total))
+			await get_tree().process_frame
+			if not is_inside_tree() or _finished:
+				# 中途退出也要把根恢复可见，否则这个节点被复用时棋盘是空的。
+				if _battle_3d_root != null:
+					_battle_3d_root.visible = true
+				return
+	if bar != null and is_instance_valid(bar):
+		bar.queue_free()
 	_refresh_visuals()
+	# 分帧建造跑在 _refresh_visuals() 之前，而 2D 单位节点（含 BodyFallback 占位圆）
+	# 是 _refresh_visuals() 里才建的 —— 建模型那次 _set_unit_fallback_visible 是空
+	# 操作；而 _refresh_visuals 内部只对「新建的」模型隐藏占位圆，已存在的会跳过。
+	# 两头都漏，所以这里补一次，否则棋子身上会叠一红一蓝的圆。
+	for id in _battle_3d_models.keys():
+		_set_unit_fallback_visible(str(id), false)
+	if _battle_3d_root != null:
+		_battle_3d_root.visible = true
 	_battle_setup_ready = true
 	_try_start_final_round_intro()
+
+# 顶部一条细进度条，接着备战界面那条蓝线继续走，避免「画面停住」的观感。
+func _make_battle_prepare_bar() -> ProgressBar:
+	var bar := ProgressBar.new()
+	bar.name = "BattlePrepareBar"
+	bar.show_percentage = false
+	bar.min_value = 0.0
+	bar.max_value = 100.0
+	bar.value = 0.0
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	# 只设 custom_minimum_size，不要再写 bar.size.y —— PRESET_TOP_WIDE 左右锚点
+	# 不相等，直接写 size 会被 _ready() 后的布局覆盖并刷一条警告。
+	bar.custom_minimum_size = Vector2(0.0, 5.0)
+	bar.z_index = 200
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.02, 0.13, 0.16, 0.55)
+	var fill := StyleBoxFlat.new()
+	# 和备战界面 RiverLaneProgressBar 的填充色一致，视觉上是同一条读条接力。
+	fill.bg_color = Color(0.20, 0.95, 0.92, 0.82)
+	bar.add_theme_stylebox_override("background", bg)
+	bar.add_theme_stylebox_override("fill", fill)
+	add_child(bar)
+	return bar
 
 func _try_start_final_round_intro() -> void:
 	if _final_round_intro_started or GameState.round_index != GameState.FINAL_ROUND:

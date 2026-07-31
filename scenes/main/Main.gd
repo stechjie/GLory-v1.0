@@ -1,5 +1,7 @@
 extends Control
 
+const VFX_WARMUP := preload("res://effects/vfx3d/VFXWarmup.gd")
+
 var _menu: Control
 var _prep: Control
 var _battle: Control
@@ -28,7 +30,24 @@ func _ready() -> void:
 		NetworkService.public_token_changed.connect(_on_public_token_changed)
 	if not TutorialMode.skip_requested.is_connected(_on_tutorial_skip):
 		TutorialMode.skip_requested.connect(_on_tutorial_skip)
+	_start_vfx_warmup()
 	_show_language_select()
+
+# VFX shader 预热。挂在这里是因为从引擎就绪到连上服务器有约 44 秒的菜单导航时间，
+# 而且这段时间还没有心跳需要维持 —— 详见 VFXWarmup.gd 顶部。
+func _start_vfx_warmup() -> void:
+	if NetworkService.state != NetworkService.SessionState.OFFLINE:
+		return
+	var warm := VFX_WARMUP.new()
+	warm.name = "VFXWarmup"
+	# 挂在 root 而不是 Main：Main._clear() 每次切界面都会把自己的子节点全部
+	# queue_free，而 _show_language_select() 第一行就是 _clear()。预热要跨越
+	# 「语言选择 → 教程 → 宠物 → 主菜单」这几屏才跑得完，挂在 Main 下会立刻被杀。
+	# 同 _show_reconnect_overlay 的做法。
+	get_tree().root.add_child.call_deferred(warm)
+	warm.finished.connect(func(_report: Dictionary): warm.queue_free())
+	# 延后到入树之后再启动：start() 里要 add_child 建离屏视口。
+	warm.start.call_deferred()
 
 # --- 断线重连 UI 与恢复落地 --------------------------------------------------
 

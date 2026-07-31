@@ -1,9 +1,9 @@
 [gd_scene format=3 uid="uid://dyyycu6ys3vo3"]
 
-[ext_resource type="Script" uid="uid://b1mk31o8hb6gn" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/ElementalMagicFX/script/VFXElementalAreaBB.gd" id="1_a7h4e"]
-[ext_resource type="Shader" uid="uid://dd4xq8ihr6bls" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/ElementalMagicFX/shader/area_ground.gdshader" id="1_mgayr"]
-[ext_resource type="Shader" uid="uid://bufysgv2qswbq" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/ElementalMagicFX/shader/area_glow.gdshader" id="2_a7h4e"]
-[ext_resource type="Shader" uid="uid://pbpcjxgcjbh0" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/ElementalMagicFX/shader/projectile_particles.gdshader" id="3_rst71"]
+[ext_resource type="Script" uid="uid://cxjqrfku811if" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/ElementalMagicFX/script/VFXElementalAreaBB.gd" id="1_a7h4e"]
+[ext_resource type="Shader" uid="uid://dhcmnwa6jm5he" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/ElementalMagicFX/shader/area_ground.gdshader" id="1_mgayr"]
+[ext_resource type="Shader" uid="uid://cedcqe1o4nvxr" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/ElementalMagicFX/shader/area_glow.gdshader" id="2_a7h4e"]
+[ext_resource type="Shader" uid="uid://cvy1n6wojxw82" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/ElementalMagicFX/shader/projectile_particles.gdshader" id="3_rst71"]
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_gkq0k"]
 seed = 3

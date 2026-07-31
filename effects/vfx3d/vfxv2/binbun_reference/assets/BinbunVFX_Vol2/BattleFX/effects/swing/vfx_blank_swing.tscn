@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://brji7ckctpjtk"]
 
-[ext_resource type="Script" uid="uid://suk3mt3k1k4o" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/script/VFXBattleSwingBB.gd" id="1_gvyho"]
-[ext_resource type="Shader" uid="uid://byjvx1ou3adqr" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/shader/swing.gdshader" id="2_aobbs"]
+[ext_resource type="Script" uid="uid://o3yi13o43asn" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/script/VFXBattleSwingBB.gd" id="1_gvyho"]
+[ext_resource type="Shader" uid="uid://b2h0fuqnpy2hm" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/shader/swing.gdshader" id="2_aobbs"]
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_epw6m"]
 
