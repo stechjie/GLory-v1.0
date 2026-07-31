@@ -217,6 +217,13 @@ func _add_layered_battle_background(arena_wrap: Control) -> void:
 
 
 func _battlefield_kind() -> String:
+	# 决赛必须先判回合号：prepare_team_state 会把 kind 从 "final" 改写成 "pvp"
+	# （战斗规则复用 PVP），而 replay 存的正是改写后的值。备战界面预先算好 replay
+	# 之后，_build() 时 _state.kind 已经是 "pvp"，下面那条 "team" 兜底根本进不去，
+	# 决赛因此一直拿普通 PVP 雪地战场。回合号是唯一不会被改写的依据，
+	# 与 _add_battle_3v3_dividers / _update_3v3_dividers 的判据保持一致。
+	if GameState.round_index == GameState.FINAL_ROUND:
+		return "final"
 	var kind := str(_state.get("kind", _kind))
 	# 3v3 组队：首次 _build() 时服务器 replay 还没到，_state 为空、_kind 只是 "team"，
 	# 拿不到真实回合类型。_build() 只建一次（有 _battle_arena_ready 守卫），所以必须在
@@ -370,7 +377,7 @@ func _add_front_copy(sprite_name: String, offset: Vector2, layer_z: int, color: 
 func _add_battle_3v3_dividers(arena_wrap: Control) -> void:
 	_3v3_barriers.clear()
 	_final_lane_walls.clear()
-	if _battlefield_kind() == "final" or GameState.round_index == GameState.FINAL_ROUND:
+	if _battlefield_kind() == "final":
 		for i in BATTLE_3V3_BOUNDS.size():
 			var wall := FinalLaneLightWall2D.new()
 			wall.name = "FinalLaneLightWall%d" % i
@@ -390,7 +397,7 @@ func _add_battle_3v3_dividers(arena_wrap: Control) -> void:
 func _update_3v3_dividers() -> void:
 	if _arena == null or _battle_3d_camera == null:
 		return
-	if _battlefield_kind() == "final" or GameState.round_index == GameState.FINAL_ROUND:
+	if _battlefield_kind() == "final":
 		var visual_min := _battle_visual_min()
 		var visual_max := _battle_visual_max()
 		for i in _final_lane_walls.size():

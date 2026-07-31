@@ -142,7 +142,7 @@ func _build() -> void:
 	_add_hit(Vector2(1450, 25), Vector2(100, 100), _show_coming_soon, "right")
 	_add_texture(TEX_SETTINGS, Vector2(1560, 25), Vector2(100, 100), "right")
 	_add_label(_menu_text("设定", "Setting"), Vector2(1560, 95), Vector2(100, 7), 7, "right")
-	_add_hit(Vector2(1560, 25), Vector2(100, 100), _show_coming_soon, "right")
+	_add_hit(Vector2(1560, 25), Vector2(100, 100), _emit_settings, "right")
 
 	_add_texture(TEX_SHOP, Vector2(1380, 140), Vector2(270, 250), "right")
 	_add_label(_menu_text("商店", "Shop"), Vector2(1380, 150), Vector2(270, 34), 24, "right")
@@ -421,6 +421,9 @@ func _emit_prep() -> void:
 
 func _emit_codex() -> void:
 	codex_requested.emit()
+
+func _emit_settings() -> void:
+	settings_requested.emit()
 
 func _show_coming_soon() -> void:
 	_coming_soon.popup_centered(Vector2(260, 120))

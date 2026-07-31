@@ -1,8 +1,8 @@
 [gd_scene format=3 uid="uid://c8ye3cot4x8ul"]
 
-[ext_resource type="Shader" uid="uid://byjvx1ou3adqr" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/shader/swing.gdshader" id="1_7br8d"]
-[ext_resource type="Script" uid="uid://suk3mt3k1k4o" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/script/VFXBattleSwingBB.gd" id="1_ge86n"]
-[ext_resource type="Shader" uid="uid://ca3c5pjcbqvqb" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/shader/claw.gdshader" id="2_ge86n"]
+[ext_resource type="Shader" uid="uid://b2h0fuqnpy2hm" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/shader/swing.gdshader" id="1_7br8d"]
+[ext_resource type="Script" uid="uid://o3yi13o43asn" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/script/VFXBattleSwingBB.gd" id="1_ge86n"]
+[ext_resource type="Shader" uid="uid://cy8uj6s1te8et" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/shader/claw.gdshader" id="2_ge86n"]
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_epw6m"]
 

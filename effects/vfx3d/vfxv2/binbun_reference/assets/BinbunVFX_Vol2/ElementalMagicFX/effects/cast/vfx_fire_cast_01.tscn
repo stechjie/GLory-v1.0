@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://daq2m77vylo0o"]
 
-[ext_resource type="Script" uid="uid://bxx82xuiejdht" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/ElementalMagicFX/script/VFXElementalCastBB.gd" id="1_5dgfd"]
-[ext_resource type="Shader" uid="uid://bbdlyf51rwx2i" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/ElementalMagicFX/shader/cast_flare.gdshader" id="1_psmsj"]
+[ext_resource type="Script" uid="uid://beu7ps02texcx" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/ElementalMagicFX/script/VFXElementalCastBB.gd" id="1_5dgfd"]
+[ext_resource type="Shader" uid="uid://bs87f4tmhn1s1" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/ElementalMagicFX/shader/cast_flare.gdshader" id="1_psmsj"]
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_26njc"]
 seed = 3

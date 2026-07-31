@@ -96,6 +96,10 @@ func _skip_animation() -> void:
 # 再退回赛程表——与 BattleArena._uses_pvp_battlefield() 同理。
 # 结算面板、遭遇文案、法阵伤害、BGM 都得走这里：直接读 _kind 会按错误的类型算。
 func _effective_kind() -> String:
+	# 决赛先判回合号，理由同 BattleArena._battlefield_kind()：replay 里的 kind 已被
+	# prepare_team_state 改写成 "pvp"，只信它的话 _final_summary() 永远是死代码。
+	if GameState.round_index == GameState.FINAL_ROUND:
+		return "final"
 	var kind := str(_state.get("kind", _kind))
 	if kind == "team" or kind == "":
 		kind = RoundService.schedule_kind_for_round(GameState.round_index)

@@ -1,8 +1,8 @@
 [gd_scene format=3 uid="uid://dx6gyig48g23b"]
 
-[ext_resource type="Script" uid="uid://skjeqp2xi15j" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/script/VFXBattleSlash.gd" id="1_2abg5"]
-[ext_resource type="Shader" uid="uid://cmtqdmo1ws1kp" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/shader/slash.gdshader" id="2_4n718"]
-[ext_resource type="Shader" uid="uid://4q44chonwcdf" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/shader/attack_particles.gdshader" id="3_pvdul"]
+[ext_resource type="Script" uid="uid://qgu1nfqchmmw" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/script/VFXBattleSlash.gd" id="1_2abg5"]
+[ext_resource type="Shader" uid="uid://7lkrgvpegaey" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/shader/slash.gdshader" id="2_4n718"]
+[ext_resource type="Shader" uid="uid://bxws5lahv77pd" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/shader/attack_particles.gdshader" id="3_pvdul"]
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_epw6m"]
 fractal_octaves = 3

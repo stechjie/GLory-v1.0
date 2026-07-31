@@ -48,9 +48,12 @@ func play_execute(book_at:Vector3,victim_at:Vector3,profile:VFXProfile3D,origin_
 	var book:=_make_book(profile)
 	_book_node=book
 	_origin_ref=weakref(origin_node) if is_instance_valid(origin_node) else null
+	# 必须先 add_child 再设 global_position：global_position 的 setter 要读父节点的
+	# 全局变换，节点没入树时 Godot 直接报 !is_inside_tree() 并返回单位矩阵，
+	# 书就会落在世界原点而不是施法者头顶。
+	add_child(book)
 	book.global_position=book_at+Vector3(0.0,0.86,0.08)
 	book.scale=Vector3.ONE*0.08
-	add_child(book)
 	var appear:=track_tween(create_tween())
 	appear.set_parallel(true)
 	# The book is a deliberate gameplay emblem: about half the Mother model's

@@ -1,10 +1,10 @@
 [gd_scene format=3 uid="uid://b43hdstkltshd"]
 
-[ext_resource type="Script" uid="uid://8osc0nd6m8n7" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/script/VFXBattleShieldBB.gd" id="1_epw6m"]
-[ext_resource type="Shader" uid="uid://jc8qo48jsar1" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/shader/shield_surface.gdshader" id="2_x1kf4"]
-[ext_resource type="Shader" uid="uid://cs3pushk8s5es" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/shader/shield_aura.gdshader" id="3_aejyp"]
-[ext_resource type="Shader" uid="uid://4sali0d7rugj" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/shader/shield_orbit.gdshader" id="4_6jehu"]
-[ext_resource type="Shader" uid="uid://bgx3u5wl4xom0" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/shader/shards.gdshader" id="5_0fbpg"]
+[ext_resource type="Script" uid="uid://d1aeqeaet6xaa" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/script/VFXBattleShieldBB.gd" id="1_epw6m"]
+[ext_resource type="Shader" uid="uid://0vxdrneyegoc" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/shader/shield_surface.gdshader" id="2_x1kf4"]
+[ext_resource type="Shader" uid="uid://brh3l3qddb0b3" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/shader/shield_aura.gdshader" id="3_aejyp"]
+[ext_resource type="Shader" uid="uid://06miylsar23x" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/shader/shield_orbit.gdshader" id="4_6jehu"]
+[ext_resource type="Shader" uid="uid://s67qnlqwxkex" path="res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/shader/shards.gdshader" id="5_0fbpg"]
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_epw6m"]
 fractal_octaves = 3

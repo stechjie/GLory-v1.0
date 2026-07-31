@@ -1,7 +1,7 @@
 extends Node
 class_name VFXWarmup
 
-# 启动时的 shader 预热（最小验证版）。
+# 启动时的 shader 预热。
 #
 # 为什么要预热：VFX 的材质是运行时用 GDScript 里的 shader 源码建的，第一次被
 # 光栅化时才编译成管线。实测装完第一次打第 1 回合，主线程被这件事堵了 6.2 秒
@@ -16,23 +16,44 @@ class_name VFXWarmup
 #   3. 从引擎就绪到连上服务器实测有 44 秒（语言选择 / 教程 / 宠物 / 主菜单），
 #      预热藏在这段里，玩家零感知
 #
-# ⚠️ 未验证的前提：Vulkan 管线按 framebuffer 格式索引。这里的离屏视口必须和
-#    BattleArena._battle_3d_viewport 逐项对齐（尤其 transparent_bg），否则预热
-#    出来的管线在战斗里用不上，等于白做。这个最小版本就是用来验证这一点的 ——
-#    判读方式见 warmup_report()。
+# 离屏视口必须和 BattleArena._battle_3d_viewport 逐项对齐（尤其 transparent_bg）：
+# Vulkan 管线按 framebuffer 格式索引，格式不一致的话预热出来的管线在战斗里用不上。
+# 真机 8 项验证版实测：预热窗口精确写入 7 个 SceneForwardMobileShaderRD，
+# 第 1 回合的新编译量随之从 21 降到 13 —— 格式是对上的。
 
-const UNIT_SKILL_COMPOSER := preload("res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd")
+const PROCEDURAL_VFX := preload("res://effects/BossProceduralVFX3D.gd")
 
-# 最小验证版只热 8 个普攻组合。选它们的理由：
-#   - 一定会在第 1 回合出现（每个单位每次攻击都放）
-#   - 走的是和战斗完全相同的入口 UnitSkillVFXComposer3D.play_skill()，
-#     直接 new 模块会绕过 composer 的分支，热到的可能不是同一个材质
-const WARM_SKILLS := [
+# 普攻组合。这几个不在数据表里（种族 × 近战/远程是代码推出来的），要手写。
+const BASIC_ATTACKS := [
 	"basic_attack_melee_god", "basic_attack_ranged_god",
 	"basic_attack_melee_human", "basic_attack_ranged_human",
 	"basic_attack_melee_dark", "basic_attack_ranged_dark",
 	"basic_attack_melee_undead", "basic_attack_ranged_undead",
 ]
+
+# 技能从数据表现场收集，不手写清单 —— 手写的话加一个新单位就漏热一个，
+# 而漏掉的那个会在战斗中途现编译，正是要消除的东西。
+const SKILL_TABLES := {
+	"race_units": "units",
+	"mercenaries": "mercenaries",
+	"bosses": "bosses",
+	"formation_allies": "allies",
+	"pve_monsters": "monsters",
+}
+
+# 战斗里会播、但不是任何单位的 skill_id 的 effect_id。
+# 来源：grep BattleVfx 里 _play_*_procedural("字面量") + BossProceduralVFX3D 的特例分支。
+# 光靠数据表收集会全部漏掉这些 —— 比如 mirror_clone 这个技能在战斗里实际播的是
+# mirror_slash（BattleVfx 做了重映射），按 skill_id 喂等于喂了个不存在的分支。
+const EXTRA_EFFECTS := [
+	"mirror_slash", "mirror_spawn",
+	"apocalypse_complete", "apocalypse_interrupt",
+	"blood_lifesteal", "overload_stack", "rage_milestone", "twin_timer",
+	"lightning_strike", "lightning_ball", "meteor_strike",
+]
+
+# 纯数值/经济技能，没有任何 VFX 分支。喂进去只会 push_warning 并白占一帧。
+const NO_VFX_SKILLS := ["post_battle_gold_by_star", "mirror_clone"]
 
 # 每个特效播完等几帧再销毁。1 帧只保证提交，2 帧比较稳。
 const FRAMES_PER_ITEM := 2
@@ -57,16 +78,62 @@ func start() -> void:
 	if _running:
 		return
 	_running = true
-	_queue = []
-	for s in WARM_SKILLS:
-		_queue.append(str(s))
+	_queue = _collect_ids()
 	_total = _queue.size()
 	_done = 0
 	_t_start_us = Time.get_ticks_usec()
 	_build_viewport()
 	_build_label()
 	set_process(true)
-	print("[WARMUP] 启动预热：%d 项" % _total)
+	var scenes := 0
+	for q in _queue:
+		if q.begins_with("res://"):
+			scenes += 1
+	print("[WARMUP] 启动预热：%d 项（普攻 %d + 技能 %d + 外部场景 %d）"
+		% [_total, BASIC_ATTACKS.size(), _total - BASIC_ATTACKS.size() - scenes, scenes])
+	print("[WARMUP] 清单：%s" % ", ".join(_queue))
+
+# 普攻 + 数据表里出现过的全部 skill_id。去重后按原顺序排，普攻在前 ——
+# 它们每回合每个单位都放，最该先热到。
+func _collect_ids() -> Array[String]:
+	var out: Array[String] = []
+	for s in BASIC_ATTACKS:
+		out.append(str(s))
+	var seen := {}
+	for s in out:
+		seen[s] = true
+	for table_name in SKILL_TABLES:
+		var table: Variant = DataRegistry.get_table(str(table_name))
+		if typeof(table) != TYPE_DICTIONARY:
+			continue
+		var rows: Variant = (table as Dictionary).get(str(SKILL_TABLES[table_name]), [])
+		if typeof(rows) != TYPE_ARRAY:
+			continue
+		for row in rows:
+			if typeof(row) != TYPE_DICTIONARY:
+				continue
+			var sid := str((row as Dictionary).get("skill_id", ""))
+			if sid.is_empty() or sid == "none" or seen.has(sid) or NO_VFX_SKILLS.has(sid):
+				continue
+			seen[sid] = true
+			out.append(sid)
+	for e in EXTRA_EFFECTS:
+		var eid := str(e)
+		if not seen.has(eid):
+			seen[eid] = true
+			out.append(eid)
+	# 外部 VFX 场景（binbun / starter）。以 res:// 开头，_spawn_one 据此分支。
+	#
+	# 为什么单列一段：大厅预载只把它们读进内存（Resource Ready），场景里的
+	# GPUParticles3D 要真的被光栅化一次才编译 shader。实测第 1 回合
+	# cold=3、编译 4 个 ParticlesShaderRD，就是这批漏掉的。
+	# 按 skill_id 播只有少数技能会走到外部分支，热不全，所以直接实例化整个场景。
+	for p in BattleAssetManifest.seed_independent_paths():
+		var path := str(p)
+		if not seen.has(path):
+			seen[path] = true
+			out.append(path)
+	return out
 
 func abort(reason: String) -> void:
 	if not _running:
@@ -75,9 +142,9 @@ func abort(reason: String) -> void:
 	print("[WARMUP] 中止（%s）：完成 %d/%d" % [reason, _done, _total])
 	_finish()
 
-# 判读用。最小验证版看的不是这里的耗时，而是设备上
-#   files/shader_cache/SceneForwardMobileShaderRD/ 的文件数：
-#   走到主菜单时应从基线 7 涨到 12 左右 = 格式对上了；还是 7 = 白做。
+# 判读用。真正要看的不是这里的耗时，而是设备上
+#   files/shader_cache/SceneForwardMobileShaderRD/ 的文件数按写入时间戳归因：
+#   落在预热窗口内的就是预热的产出，之后第 1 回合的新增量应随之下降。
 func warmup_report() -> Dictionary:
 	return {
 		"total": _total, "done": _done, "aborted": _aborted,
@@ -166,20 +233,50 @@ func _process(_delta: float) -> void:
 	if float(Time.get_ticks_usec() - frame_start) / 1000.0 > FRAME_BUDGET_MS:
 		return
 
-func _spawn_one(skill_id: String) -> void:
-	var composer := UNIT_SKILL_COMPOSER.new()
-	composer.name = "Warm_%s" % skill_id
-	_world_root.add_child(composer)
+func _spawn_one(item: String) -> void:
+	if item.begins_with("res://"):
+		_spawn_scene(item)
+		return
+	_spawn_skill(item)
+
+# 直接实例化外部 VFX 场景并入树，让它自己播一帧。
+func _spawn_scene(path: String) -> void:
+	var holder := Node3D.new()
+	holder.name = "WarmScene_%s" % path.get_file().get_basename()
+	_world_root.add_child(holder)
+	var ps := ResourceLoader.load(path) as PackedScene
+	if ps != null:
+		var inst := ps.instantiate()
+		if inst is Node3D:
+			(inst as Node3D).position = Vector3.ZERO
+		holder.add_child(inst)
+	_active = holder
+	_active_started_us = Time.get_ticks_usec()
+
+func _spawn_skill(skill_id: String) -> void:
+	# 整项挂在一个容器下，销毁时连锚点一起回收 —— 锚点单独 add_child 到
+	# _world_root 的话会一直堆着，88 项下来就是上百个游离节点。
+	var holder := Node3D.new()
+	holder.name = "Warm_%s" % skill_id
+	_world_root.add_child(holder)
+
 	var origin := Vector3(-0.6, 0.3, 0.0)
 	var target := Vector3(0.6, 0.3, 0.0)
-	# 有些分支会读 target_node / origin_node 去挂锚点，给它们真实节点免得报空。
+	# 有些分支会读 target_node / origin_node 去挂锚点，给真实节点免得报空。
 	var origin_node := Node3D.new()
 	origin_node.position = origin
-	_world_root.add_child(origin_node)
+	holder.add_child(origin_node)
 	var target_node := Node3D.new()
 	target_node.position = target
-	_world_root.add_child(target_node)
-	composer.set_meta("warm_anchors", [origin_node, target_node])
+	holder.add_child(target_node)
+
+	# 走 BossProceduralVFX3D.play()：它就是战斗里 BattleVfx._play_boss_procedural /
+	# _play_unit_procedural 唯一的落点，内部按 UNIT_SKILLS 分派到单位 composer
+	# 还是 Boss composer。直接调某一个 composer 会漏掉另一半技能。
+	var vfx := PROCEDURAL_VFX.new()
+	vfx.name = "ProceduralVFX"
+	holder.add_child(vfx)
+
 	var context := {
 		"origin_node": origin_node,
 		"target_node": target_node,
@@ -187,9 +284,10 @@ func _spawn_one(skill_id: String) -> void:
 		"target_unit_id": "warmup_target",
 		"targets": [target],
 		"heal_target": origin,
+		"status_duration": 1.0,
 	}
-	composer.play_skill(skill_id, origin, target, context)
-	_active = composer
+	vfx.play(skill_id, origin, target, context)
+	_active = holder
 	_active_started_us = Time.get_ticks_usec()
 
 func _update_label() -> void:
