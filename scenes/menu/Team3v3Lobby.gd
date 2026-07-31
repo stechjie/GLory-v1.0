@@ -21,6 +21,21 @@ const TEX_START := preload("res://assets/ui/room_v2/start.png")
 const TEX_VS := preload("res://assets/ui/room/vs.png")
 const MENU_MUSIC_PATH := "res://assets/audio/bgm/menu_music.mp3"
 
+# ── 布局调试overlay ────────────────────────────────────────────────
+# 与主界面同款：黑线 = 空间划分（参考画布边界 / 功能分区 / 席位格 / 每个元素占位框）
+#               红线 = 所有按钮的点击判定区（返回 / 入座 / X / ±AI / 自测 / 开始）
+# 游戏里按 F3 开关。调完把 DEBUG_LAYOUT 改回 false 即可。
+const DEBUG_LAYOUT := false
+# 参考画布(1672x941)下的功能分区，只用于画黑色分区带；首尾相接，覆盖整块画布
+const DEBUG_BANDS := [
+	{"name": "顶部标题区", "y": 0.0, "h": 164.0},
+	{"name": "状态/资源行 + 我方名牌", "y": 164.0, "h": 60.0},
+	{"name": "我方席位 A/B/C", "y": 224.0, "h": 186.0},
+	{"name": "VS 分隔带", "y": 410.0, "h": 92.0},
+	{"name": "敌方席位 1/2/3", "y": 502.0, "h": 175.0},
+	{"name": "底部：敌方名牌 / 聊天 / 开始", "y": 677.0, "h": 264.0},
+]
+
 var _slot_states: Array = ["empty", "empty", "empty", "empty", "empty", "empty"]
 var _slot_ready: Array = [false, false, false, false, false, false]
 var _local_slot := 0
@@ -38,6 +53,10 @@ var _host_hint_lbl: Label
 var _selftest_btn: Button
 var _screen_bands: Array[Dictionary] = []
 var _menu_music_player: AudioStreamPlayer
+var _debug_layer: Control
+var _debug_on := DEBUG_LAYOUT
+var _layout_scale := 1.0
+var _layout_origin := Vector2.ZERO
 
 func _ready() -> void:
 	_slot_states[_local_slot] = "player"
@@ -176,16 +195,16 @@ func _build() -> void:
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
 	# 左上返回、左下聊天框：锚定屏幕左边（edge="left"）
-	_add_cropped_texture(TEX_BACK, Rect2(60, 118, 280, 164), Vector2(80, 35), Vector2(143, 83), "left")
-	_add_hit(Vector2(80, 35), Vector2(143, 83), func(): back_requested.emit(), "left")
-	_add_cropped_texture(TEX_TITLE, Rect2(158, 206, 964, 308), Vector2(599, 21), Vector2(475, 143))
-	_room_id_lbl = _add_label("", Vector2(646, 72), Vector2(244, 30), 20, Color(0.45, 0.27, 0.08))
-	_add_label(_room_text("自定义房间", "CUSTOM GAME"), Vector2(646, 31), Vector2(244, 42), 32)
+	_add_texture(TEX_BACK, Vector2(80, 35), Vector2(143, 83), "left")
+	_add_hit(Vector2(80, 35), Vector2(143, 83), func(): back_requested.emit(), "left", "hit_back")
+	_add_texture(TEX_TITLE, Vector2(599, 21), Vector2(475, 143))
+	_room_id_lbl = _add_label("", Vector2(712, 103), Vector2(250, 30), 20, Color(0.45, 0.27, 0.08))
+	_add_label(_room_text("自定义房间", "CUSTOM GAME"), Vector2(650, 51), Vector2(372, 48), 32)
 	# 右侧朋友列表：锚定屏幕右边（edge="right"）
-	_add_cropped_texture(TEX_FRIENDS, Rect2(324, 124, 432, 832), Vector2(1391, 181), Vector2(218, 400), "right")
-	_add_label(_room_text("朋友列表", "Friends"), Vector2(1292, 226), Vector2(156, 42), 28, Color(0.47, 0.28, 0.08), "right")
-	_add_cropped_texture(TEX_CHAT, Rect2(312, 194, 656, 332), Vector2(147, 704), Vector2(432, 212), "left")
-	_add_label(_room_text("目前暂无聊天功能", "Chat coming soon"), Vector2(150, 870), Vector2(270, 34), 22, Color(0.53, 0.40, 0.27), "left")
+	_add_texture(TEX_FRIENDS, Vector2(1340, 180), Vector2(230, 400), "right")
+	_add_label(_room_text("朋友列表", "Friends"), Vector2(1340, 215), Vector2(230, 42), 28, Color(0.47, 0.28, 0.08), "right")
+	_add_texture(TEX_CHAT, Vector2(80, 704), Vector2(430, 210), "left")
+	_add_label(_room_text("目前暂无聊天功能", "Chat coming soon"), Vector2(80, 780), Vector2(430, 36), 22, Color(0.53, 0.40, 0.27), "left")
 	_add_texture(TEX_VS, Vector2(746, 427), Vector2(180, 85))
 
 	_slot_name_lbls.resize(6)
@@ -196,27 +215,30 @@ func _build() -> void:
 		_build_slot(i)
 
 	# 右下开始按钮组、自测、提示：锚定屏幕右边（edge="right"）
-	_add_cropped_texture(TEX_START, Rect2(412, 264, 456, 192), Vector2(1306, 789), Vector2(267, 96), "right")
-	_start_lbl = _add_label("", Vector2(1340, 812), Vector2(200, 42), 28, Color(0.96, 0.87, 0.70), "right")
-	_start_btn = _add_hit(Vector2(1306, 789), Vector2(267, 96), _on_primary_pressed, "right")
+	_add_texture(TEX_START, Vector2(1300, 760), Vector2(270, 130), "right")
+	_start_lbl = _add_label("", Vector2(1300, 790), Vector2(270, 95), 28, Color(0.96, 0.87, 0.70), "right")
+	_start_btn = _add_hit(Vector2(1300, 790), Vector2(270, 95), _on_primary_pressed, "right", "hit_start")
 	# 离线自测专用入口(officetest):开始游戏上方,仅离线显示,纯追加不动原布局。
-	_selftest_btn = _add_ai_button(Vector2(1310, 719), Vector2(255, 55), func(): selftest_requested.emit(), "right")
+	_selftest_btn = _add_ai_button(Vector2(1310, 719), Vector2(255, 55), func(): selftest_requested.emit(), "right", "btn_selftest", 24)
 	_selftest_btn.text = _room_text("自测开始", "Self-Test")
-	_selftest_btn.add_theme_font_size_override("font_size", 24)
 	_selftest_btn.visible = not _online()
-	_host_hint_lbl = _add_label(_room_text("等待其他玩家准备后可按", "Waiting for players"), Vector2(1218, 934), Vector2(320, 30), 20, Color(1.0, 0.94, 0.78), "right")
+	_host_hint_lbl = _add_label(_room_text("等待其他玩家准备后可按", "Waiting for players"), Vector2(1285, 880), Vector2(310, 28), 20, Color(1.0, 0.94, 0.78), "right")
 	_status_lbl = _add_label("", Vector2(626, 167), Vector2(420, 28), 17, Color(0.98, 0.94, 0.78))
+	_build_debug_layer()
 
 func _build_slot(index: int) -> void:
 	var pos: Vector2 = SLOT_POS[index]
-	_add_cropped_texture(TEX_SLOT, Rect2(0, 24, 388, 356), pos, SLOT_SIZE)
-	_add_hit(pos + Vector2(25, 30), Vector2(140, 120), _on_slot_pressed.bind(index))
+	_add_texture(TEX_SLOT, pos, SLOT_SIZE)
+	_add_hit(pos + Vector2(0, 0), Vector2(182, 125), _on_slot_pressed.bind(index),
+		"", "hit_slot_%s" % SLOT_LABELS[index])
 	var name_pos := Vector2(pos.x - 10, pos.y - 46) if index < 3 else Vector2(pos.x - 10, pos.y + SLOT_SIZE.y + 4)
 	_slot_name_lbls[index] = _add_label("", name_pos, Vector2(SLOT_SIZE.x + 20, 36), 28)
 	_slot_status_lbls[index] = _add_label("", pos + Vector2(34, 72), Vector2(122, 42), 20, Color(0.42, 0.28, 0.12))
-	var x_btn := _add_x_button(pos + Vector2(138, 30), Vector2(38, 38), _on_slot_x.bind(index))
+	var x_btn := _add_x_button(pos + Vector2(138, 30), Vector2(38, 38), _on_slot_x.bind(index),
+		"btn_kick_%s" % SLOT_LABELS[index])
 	_slot_x_btns[index] = x_btn
-	var ai_btn := _add_ai_button(pos + Vector2(58, 132), Vector2(74, 34), _on_slot_ai.bind(index))
+	var ai_btn := _add_ai_button(pos + Vector2(51, 133), Vector2(80, 40), _on_slot_ai.bind(index),
+		"", "btn_ai_%s" % SLOT_LABELS[index])
 	_slot_ai_btns[index] = ai_btn
 
 func _on_slot_pressed(index: int) -> void:
@@ -410,6 +432,8 @@ func _layout() -> void:
 		return
 	var scale := minf(viewport_size.x / REF_SIZE.x, viewport_size.y / REF_SIZE.y)
 	var origin := (viewport_size - REF_SIZE * scale) * 0.5
+	_layout_scale = scale
+	_layout_origin = origin
 	for band in _screen_bands:
 		var rect := band.node as Control
 		var height := float(band.height) * scale
@@ -431,23 +455,24 @@ func _layout() -> void:
 				x = origin.x + pos.x * scale
 		node.position = Vector2(x, origin.y + pos.y * scale)
 		node.size = size * scale
-		if node is Label:
+		# 字号也要跟着缩放，否则窗口一小文字就撑破按钮框、窗口一大文字又显得过小。
+		# font_size=0 的（纯判定区 _add_hit）没有文字，跳过。
+		if int(item.font_size) > 0 and (node is Label or node is Button):
 			node.add_theme_font_size_override("font_size", maxi(10, int(item.font_size * scale)))
+	if _debug_layer != null:
+		_debug_layer.queue_redraw()
 
-func _add_texture(texture: Texture2D, pos: Vector2, size: Vector2, stretch := TextureRect.STRETCH_KEEP_ASPECT, edge: String = "") -> TextureRect:
+# 素材都是裁好的成品图（一张 PNG = 一个元素），所以整张画、不再做图集裁切。
+# STRETCH_SCALE = 拉满给定的框，不保持原始宽高比：框写多大就画多大，
+# 不会像 KEEP_ASPECT 那样在框里居中留边。想要不变形就把框调成图的比例。
+func _add_texture(texture: Texture2D, pos: Vector2, size: Vector2, edge: String = "") -> TextureRect:
 	var rect := TextureRect.new()
 	rect.texture = texture
 	rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	rect.stretch_mode = stretch
+	rect.stretch_mode = TextureRect.STRETCH_SCALE
 	add_child(rect)
 	_track(rect, pos, size, 0, edge)
 	return rect
-
-func _add_cropped_texture(texture: Texture2D, region: Rect2, pos: Vector2, size: Vector2, edge: String = "") -> TextureRect:
-	var atlas := AtlasTexture.new()
-	atlas.atlas = texture
-	atlas.region = region
-	return _add_texture(atlas, pos, size, TextureRect.STRETCH_KEEP_ASPECT, edge)
 
 func _add_rect(color: Color, pos: Vector2, size: Vector2) -> ColorRect:
 	var rect := ColorRect.new()
@@ -464,8 +489,6 @@ func _add_screen_band(color: Color, y: float, height: float, from_bottom: bool) 
 	return rect
 
 func _add_label(text: String, pos: Vector2, size: Vector2, font_size: int, color := Color(0.47, 0.28, 0.08), edge: String = "") -> Label:
-	pos = _edge_label_pos(pos)
-	size = _edge_label_size(pos, size)
 	var label := Label.new()
 	label.text = text
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -478,49 +501,25 @@ func _add_label(text: String, pos: Vector2, size: Vector2, font_size: int, color
 	_track(label, pos, size, font_size, edge)
 	return label
 
-func _edge_label_pos(pos: Vector2) -> Vector2:
-	if pos == Vector2(646, 31):
-		return Vector2(650, 51)
-	if pos == Vector2(646, 72):
-		return Vector2(712, 103)
-	if pos == Vector2(1292, 226):
-		return Vector2(1421, 199)
-	if pos == Vector2(150, 870):
-		return Vector2(186, 780)
-	if pos == Vector2(1218, 934):
-		return Vector2(1285, 880)
-	return pos
-
-func _edge_label_size(pos: Vector2, size: Vector2) -> Vector2:
-	if pos == Vector2(650, 51):
-		return Vector2(372, 48)
-	if pos == Vector2(712, 103):
-		return Vector2(250, 30)
-	if pos == Vector2(1421, 199):
-		return Vector2(158, 42)
-	if pos == Vector2(186, 780):
-		return Vector2(335, 36)
-	if pos == Vector2(1285, 880):
-		return Vector2(310, 28)
-	return size
-
-func _add_hit(pos: Vector2, size: Vector2, cb: Callable, edge: String = "") -> Button:
+func _add_hit(pos: Vector2, size: Vector2, cb: Callable, edge: String = "", dbg_name: String = "") -> Button:
 	var btn := Button.new()
 	btn.flat = true
 	btn.focus_mode = Control.FOCUS_NONE
 	btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	btn.modulate = Color(1, 1, 1, 0)
 	btn.pressed.connect(cb)
+	if not dbg_name.is_empty():
+		btn.name = dbg_name
 	add_child(btn)
 	_track(btn, pos, size, 0, edge)
 	return btn
 
-func _add_ai_button(pos: Vector2, size: Vector2, cb: Callable, edge: String = "") -> Button:
+func _add_ai_button(pos: Vector2, size: Vector2, cb: Callable, edge: String = "", dbg_name: String = "", font_size: int = 15) -> Button:
 	var btn := Button.new()
 	btn.text = "+ AI"
 	btn.focus_mode = Control.FOCUS_NONE
 	btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	btn.add_theme_font_size_override("font_size", 15)
+	btn.add_theme_font_size_override("font_size", font_size)
 	btn.add_theme_color_override("font_color", Color(0.43, 0.26, 0.08))
 	btn.add_theme_color_override("font_outline_color", Color(1.0, 0.94, 0.78))
 	btn.add_theme_constant_override("outline_size", 2)
@@ -532,11 +531,13 @@ func _add_ai_button(pos: Vector2, size: Vector2, cb: Callable, edge: String = ""
 	for s in ["normal", "hover", "pressed", "focus", "disabled"]:
 		btn.add_theme_stylebox_override(s, sb)
 	btn.pressed.connect(cb)
+	if not dbg_name.is_empty():
+		btn.name = dbg_name
 	add_child(btn)
-	_track(btn, pos, size, 15, edge)
+	_track(btn, pos, size, font_size, edge)
 	return btn
 
-func _add_x_button(pos: Vector2, size: Vector2, cb: Callable) -> Button:
+func _add_x_button(pos: Vector2, size: Vector2, cb: Callable, dbg_name: String = "") -> Button:
 	var btn := Button.new()
 	btn.text = "X"
 	btn.focus_mode = Control.FOCUS_NONE
@@ -553,8 +554,10 @@ func _add_x_button(pos: Vector2, size: Vector2, cb: Callable) -> Button:
 	for s in ["normal", "hover", "pressed", "focus", "disabled"]:
 		btn.add_theme_stylebox_override(s, sb)
 	btn.pressed.connect(cb)
+	if not dbg_name.is_empty():
+		btn.name = dbg_name
 	add_child(btn)
-	_track(btn, pos, size)
+	_track(btn, pos, size, 18)
 	return btn
 
 func _track(node: Control, pos: Vector2, size: Vector2, font_size: int = 0, edge: String = "") -> void:
@@ -562,3 +565,97 @@ func _track(node: Control, pos: Vector2, size: Vector2, font_size: int = 0, edge
 
 func _room_text(zh: String, en: String) -> String:
 	return en if TranslationServer.get_locale().begins_with("en") else zh
+
+# ── 布局调试overlay ────────────────────────────────────────────────
+func _build_debug_layer() -> void:
+	_debug_layer = Control.new()
+	_debug_layer.name = "DebugLayoutOverlay"
+	_debug_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_debug_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_debug_layer.z_index = 4096
+	_debug_layer.visible = _debug_on
+	_debug_layer.draw.connect(_draw_debug_layout)
+	add_child(_debug_layer)
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	var key := event as InputEventKey
+	if key == null or not key.pressed or key.echo or key.keycode != KEY_F3:
+		return
+	_debug_on = not _debug_on
+	if _debug_layer != null:
+		_debug_layer.visible = _debug_on
+		_debug_layer.queue_redraw()
+	get_viewport().set_input_as_handled()
+
+func _draw_debug_layout() -> void:
+	if _debug_layer == null:
+		return
+	var viewport_size := get_viewport_rect().size
+	var scale := _layout_scale
+	var origin := _layout_origin
+	var font := ThemeDB.fallback_font
+	var black := Color(0.0, 0.0, 0.0, 0.95)
+	var black_soft := Color(0.0, 0.0, 0.0, 0.45)
+	var red := Color(1.0, 0.10, 0.10, 0.95)
+
+	# 1) 参考画布 1672x941 的外框（居中缩放的那块 16:9 区域）
+	var canvas := Rect2(origin, REF_SIZE * scale)
+	_debug_layer.draw_rect(canvas, black, false, 3.0)
+	_debug_layer.draw_string(font, origin + Vector2(6.0, -6.0),
+		"参考画布 %dx%d  scale=%.3f  视口 %dx%d" % [int(REF_SIZE.x), int(REF_SIZE.y), scale,
+		int(viewport_size.x), int(viewport_size.y)],
+		HORIZONTAL_ALIGNMENT_LEFT, -1, 14, black)
+
+	# 2) 画布中线 + 四等分竖线（摆按钮时用来对齐）
+	for i in range(1, 4):
+		var gx := origin.x + REF_SIZE.x * scale * float(i) / 4.0
+		_debug_layer.draw_line(Vector2(gx, canvas.position.y), Vector2(gx, canvas.end.y),
+			black if i == 2 else black_soft, 2.0 if i == 2 else 1.0)
+
+	# 3) 功能分区带（横向黑带，标注参考坐标 y 范围）
+	for band in DEBUG_BANDS:
+		var by := origin.y + float(band.y) * scale
+		var bh := float(band.h) * scale
+		_debug_layer.draw_rect(Rect2(canvas.position.x, by, canvas.size.x, bh), black, false, 2.0)
+		_debug_layer.draw_string(font, Vector2(canvas.position.x + 8.0, by + 18.0),
+			"%s  y=%d~%d" % [band.name, int(band.y), int(band.y) + int(band.h)],
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, black)
+
+	# 3.5) 六个席位格：底板范围 + 席位号（入座判定比底板小一圈，看红框对比）
+	for i in 6:
+		var sp: Vector2 = SLOT_POS[i]
+		var slot_rect := Rect2(origin + sp * scale, SLOT_SIZE * scale)
+		_debug_layer.draw_rect(slot_rect, black, false, 2.0)
+		_debug_layer.draw_string(font, slot_rect.position + Vector2(6.0, -4.0),
+			"席位%s (%d,%d) %dx%d" % [SLOT_LABELS[i], int(sp.x), int(sp.y),
+			int(SLOT_SIZE.x), int(SLOT_SIZE.y)],
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 13, black)
+
+	# 4) edge=left / edge=right 锚定边（这两列贴真实屏幕边，不跟画布走）
+	#    左列最宽的是聊天框(147+432)、右列最靠左的是房主提示(1285)
+	var left_edge_x := 579.0 * scale
+	var right_edge_x := viewport_size.x - (REF_SIZE.x - 1285.0) * scale
+	_debug_layer.draw_line(Vector2(left_edge_x, 0.0), Vector2(left_edge_x, viewport_size.y), black, 2.0)
+	_debug_layer.draw_line(Vector2(right_edge_x, 0.0), Vector2(right_edge_x, viewport_size.y), black, 2.0)
+	_debug_layer.draw_string(font, Vector2(6.0, viewport_size.y - 26.0),
+		"edge=left 贴屏幕左", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, black)
+	_debug_layer.draw_string(font, Vector2(right_edge_x + 6.0, viewport_size.y - 26.0),
+		"edge=right 贴屏幕右", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, black)
+
+	# 5) 每个元素的占位框：按钮判定区红色，其余（图片/文字）黑色细框
+	for item in _placed:
+		var node := item.node as Control
+		if node == null or not node.is_visible_in_tree():
+			continue
+		var rect := Rect2(node.position, node.size)
+		var pos := item.pos as Vector2
+		var size := item.size as Vector2
+		if node is Button:
+			_debug_layer.draw_rect(rect, red, false, 2.0)
+			var edge_tag := str(item.get("edge", ""))
+			var tag := "%s  (%d,%d) %dx%d%s" % [node.name, int(pos.x), int(pos.y),
+				int(size.x), int(size.y), "" if edge_tag.is_empty() else "  edge=" + edge_tag]
+			_debug_layer.draw_string(font, rect.position + Vector2(2.0, -4.0), tag,
+				HORIZONTAL_ALIGNMENT_LEFT, -1, 13, red)
+		else:
+			_debug_layer.draw_rect(rect, black_soft, false, 1.0)

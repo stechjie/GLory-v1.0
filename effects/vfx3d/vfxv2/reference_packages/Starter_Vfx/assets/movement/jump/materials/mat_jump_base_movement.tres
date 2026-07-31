@@ -1,0 +1,17 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://b4amc6d17jync"]
+
+[ext_resource type="Shader" uid="uid://cv7yyjgnvqr8o" path="res://effects/vfx3d/vfxv2/reference_packages/Starter_Vfx/assets/movement/jump/materials/sh_tex_movement.tres" id="1_vm2pg"]
+[ext_resource type="Texture2D" uid="uid://snbeksfj7m07" path="res://effects/vfx3d/vfxv2/reference_packages/Starter_Vfx/assets/movement/jump/textures/tex_jump_wind_02.png" id="2_s5cp1"]
+[ext_resource type="Texture2D" uid="uid://cfvyowc8rgs80" path="res://effects/vfx3d/vfxv2/reference_packages/Starter_Vfx/assets/movement/jump/textures/tex_jump_wind_dissolve_1.png" id="2_tn85o"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_vm2pg")
+shader_parameter/Scale_Texture = Vector2(1, 2)
+shader_parameter/Speed_Panning = 0.9
+shader_parameter/Vector_Panning = Vector2(1, 1)
+shader_parameter/Main_Texture = ExtResource("2_s5cp1")
+shader_parameter/Power_Mask = 4.21
+shader_parameter/Intensity_Mask = 2.9
+shader_parameter/USE_DISSOLVE = true
+shader_parameter/Dissolve_Texture = ExtResource("2_tn85o")

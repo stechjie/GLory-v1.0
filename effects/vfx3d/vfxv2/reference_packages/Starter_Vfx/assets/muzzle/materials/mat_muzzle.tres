@@ -1,0 +1,15 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://cokpwmls3cpt2"]
+
+[ext_resource type="Shader" uid="uid://bmj53ybk0wi2f" path="res://effects/vfx3d/vfxv2/reference_packages/Starter_Vfx/assets/muzzle/materials/particle_billboard.tres" id="1_1f0wt"]
+[ext_resource type="Texture2D" uid="uid://bdtcxlbyewsm3" path="res://effects/vfx3d/vfxv2/reference_packages/Starter_Vfx/assets/muzzle/textures/T_VFX_MuzzleCannon_Spritesheet_01.png" id="2_k5jgl"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_1f0wt")
+shader_parameter/Intensity = 5.0
+shader_parameter/USE_PARTICLE_ANIM = true
+shader_parameter/USE_STATIC_FRAME = false
+shader_parameter/Frame_Index = 0.0
+shader_parameter/Particle_H = 2.0
+shader_parameter/Particle_V = 2.0
+shader_parameter/Main_Texture = ExtResource("2_k5jgl")
