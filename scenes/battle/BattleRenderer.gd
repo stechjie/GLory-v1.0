@@ -255,9 +255,7 @@ func _add_unit_shadow(root: Control) -> void:
 	shadow.polygon = points
 	root.add_child(shadow)
 
-# prune=false：只建不删。分帧建造（_prepare_battle_models）会一次喂一个单位进来，
-# 若照常执行收尾的清理，每建一个就会把前面建好的全部 queue_free —— 最后只剩最后一个。
-func _sync_3d_model_nodes(living: Array, update_facing: bool, prune := true) -> void:
+func _sync_3d_model_nodes(living: Array, update_facing: bool) -> void:
 	if _battle_3d_root == null:
 		return
 	var seen := {}
@@ -283,8 +281,6 @@ func _sync_3d_model_nodes(living: Array, update_facing: bool, prune := true) -> 
 			status_vfx = _ensure_status_vfx_controller(model_node)
 			_status_vfx_by_id[id] = status_vfx
 		status_vfx.update_from_fighter(f)
-	if not prune:
-		return
 	for key in _battle_3d_models.keys():
 		if not seen.has(key):
 			var node: Node = _battle_3d_models[key]

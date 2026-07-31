@@ -293,7 +293,12 @@ func _build_control_panel() -> void:
 	_add_button(both_action_row, "双 Run", _on_both_run_pressed)
 	_add_button(both_action_row, "随机", _on_random_pressed)
 	auto_button = _add_button(both_action_row, "自动战斗 ON", _on_auto_fight_pressed)
-	skill_button = _add_button(both_action_row, "Skill", _on_skill_pressed)
+
+	var unit_vfx_row := HBoxContainer.new()
+	unit_vfx_row.add_theme_constant_override("separation", 6)
+	rows.add_child(unit_vfx_row)
+	_add_button(unit_vfx_row, "本单位普攻", _on_unit_basic_pressed)
+	skill_button = _add_button(unit_vfx_row, "本单位技能", _on_skill_pressed)
 
 func _build_vfx_test_panel() -> void:
 	var panel := PanelContainer.new()
@@ -1328,6 +1333,9 @@ func _spawn_unit(slot: Node3D, entry: Dictionary, side: int) -> void:
 		"id": str(entry.get("id", "")),
 		"source": str(entry.get("source", "")),
 		"skill_id": str(entry.get("skill_id", "none")),
+		# 普攻预览要用：race 决定特效调色板，range<=1 走近战砍击、否则走弹道。
+		"race": str(entry.get("race", "")),
+		"range": int(entry.get("range", 1)),
 		"path": path,
 		"player": player,
 		"animations": animations,
@@ -1821,6 +1829,62 @@ func _on_auto_fight_pressed() -> void:
 	else:
 		_play_action_for_side("idle", SIDE_BOTH, false)
 	_update_label()
+
+# 选中单位的普攻。
+#
+# 走的是和正式战斗完全相同的入口：BattleVfx._play_race_basic_attack() 最终调
+# UnitSkillVFXComposer3D.play_skill("basic_attack_<mode>_<race>", ...)。
+# 这里刻意不直接 new VFXRaceBasicAttack3D —— 那样绕过了 composer 里的分支，
+# 预览到的就不是战斗里真正跑的那条路径了。
+func _on_unit_basic_pressed() -> void:
+	_clear_all_preview_nodes()
+	var fired := []
+	for unit in units:
+		var slot := unit.get("slot") as Node3D
+		if slot == null:
+			continue
+		var side := int(unit.get("side", SIDE_LEFT))
+		var target_slot := right_slot if side == SIDE_LEFT else left_slot
+		if target_slot == null:
+			continue
+		var unit_id := str(unit.get("id", ""))
+		var race := _preview_visual_race(unit_id)
+		var mode := "melee" if int(unit.get("range", 1)) <= 1 else "ranged"
+		var origin := slot.global_position + Vector3(0.0, 0.24, 0.0)
+		var target := target_slot.global_position + Vector3(0.0, 0.24, 0.0)
+		var context := {
+			"origin_node": slot,
+			"target_node": target_slot,
+			"source_unit_id": unit_id,
+			"target_unit_id": str(target_slot.name),
+			"targets": [target],
+		}
+		var composer := UNIT_SKILL_COMPOSER.new()
+		composer.name = "PreviewBasic_%s" % (unit_id if not unit_id.is_empty() else "unit")
+		vfx_preview_root.add_child(composer)
+		composer.play_skill("basic_attack_%s_%s" % [mode, race], origin, target, context)
+		_play_unit_action(unit, "attack", true)
+		fired.append("%s → %s/%s" % [str(unit.get("name", unit_id)), race, mode])
+	if fired.is_empty():
+		vfx_status_label.text = "普攻: 当前没有可预览的单位"
+	else:
+		vfx_status_label.text = "普攻预览: " + " | ".join(fired)
+
+# 与 BattleVfx._visual_race_from_unit_id 保持一致的副本。
+# 改那边的话这里也要跟着改，否则预览和实战会对不上。
+func _preview_visual_race(unit_id: String) -> String:
+	for race in ["god", "human", "dark", "undead"]:
+		if unit_id.begins_with(race + "_"):
+			return race
+	var key := unit_id.to_lower()
+	if key.contains("dark") or key.contains("shadow") or key.contains("demon"):
+		return "dark"
+	if key.contains("undead") or key.contains("wisp") or key.contains("poison") or key.contains("death"):
+		return "undead"
+	if key.contains("god") or key.contains("angel") or key.contains("divine"):
+		return "god"
+	# 佣兵和未归类中立单位统一用 human 那套克制的弹道/劈砍配色。
+	return "human"
 
 func _on_skill_pressed() -> void:
 	# Preview-only trigger: it does not alter simulation state or cooldowns.

@@ -19,9 +19,22 @@ const VIEWPORT_SIZE := Vector2i(960, 540)
 const BATTLE_CAMERA_SIZE := 7.2
 const BATTLE_UNIT_VISUAL_SCALE := 0.42
 
+# 覆盖各个族 + 佣兵 + Boss + 那个结构不同的 crystalbound（贴图挂在场景里而不是
+# 材质常量里），确保验证不是只测到一种材质形态。
 const UNITS := {
 	"undead_titan": "res://assets/models/units/undead_titan_animated/undead_titan_animated.tscn",
 	"human_archer": "res://assets/models/units/human_archer_animated/human_archer_animated.tscn",
+	"dark_dragon": "res://assets/models/units/dark_dragon_animated/dark_dragon_animated.tscn",
+	"dark_fear": "res://assets/models/units/dark_fear_animated/dark_fear_animated.tscn",
+	"god_priest": "res://assets/models/units/god_priest_halo_animated/god_priest_animated.tscn",
+	"god_arbiter": "res://assets/models/units/god_arbiter_animated/god_arbiter_animated.tscn",
+	"god_guard_crystalbound": "res://assets/models/units/god_guard_crystalbound/god_guard_crystalbound_animated.tscn",
+	"human_swordsman": "res://assets/models/units/human_swordsman_animated/human_swordsman_animated.tscn",
+	"human_king": "res://assets/models/units/human_king_animated/human_king_animated.tscn",
+	"merc_leo_sun": "res://assets/models/mercenaries/merc_leo_sun_animated/merc_leo_sun_animated.tscn",
+	"merc_cancer_shell": "res://assets/models/mercenaries/merc_cancer_shell_animated/merc_cancer_shell_animated.tscn",
+	"boss_apocalypse": "res://assets/models/bosses/boss_apocalypse_animated/boss_apocalypse_animated.tscn",
+	"boss_meteor_caster": "res://assets/models/bosses/boss_meteor_caster_animated/boss_meteor_caster_animated.tscn",
 }
 
 var _out_dir := ""
@@ -91,6 +104,11 @@ func _shoot(id: String, path: String) -> void:
 	# 蒙皮网格要等 idle pose 落下来才有可用的 AABB。
 	for _i in 30:
 		await get_tree().process_frame
+	# 冻结姿势。不冻的话两次运行的动画相位不同，对比出来的 RMSE 全是动画差异 ——
+	# 实测未改动的对照组都能差出 RMSE 8，比要测的改动本身还大。
+	_freeze_pose(model)
+	for _i in 4:
+		await get_tree().process_frame
 
 	var bounds := _bounds(model)
 	if bounds.size.length() <= 0.001:
@@ -124,6 +142,19 @@ func _shoot(id: String, path: String) -> void:
 	print("SHOT %s tag=%s 世界高度=%.2f 战斗中像素高度=%.0f px" % [id, _tag, bounds.size.y, on_screen_px])
 	model.queue_free()
 	await get_tree().process_frame
+
+# 把模型钉在动画第 0 帧：先停掉 *Animated 包装脚本的 _process（它每帧都会
+# 重新 play），再把所有 AnimationPlayer seek 到 0 并暂停。
+func _freeze_pose(model: Node) -> void:
+	for n in _all_descendants(model):
+		n.set_process(false)
+		n.set_physics_process(false)
+		var player := n as AnimationPlayer
+		if player != null:
+			player.speed_scale = 0.0
+			if not player.current_animation.is_empty():
+				player.seek(0.0, true)
+			player.pause()
 
 func _place_camera(center: Vector3, distance: float) -> void:
 	var yaw := deg_to_rad(28.0)
