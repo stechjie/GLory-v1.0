@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://assets/models/units/human_swordsman_animated/human_swordsman_skill_preview.gd" id="1_script"]
+
+[node name="HumanSwordsmanSkillPreview" type="Node3D"]
+script = ExtResource("1_script")

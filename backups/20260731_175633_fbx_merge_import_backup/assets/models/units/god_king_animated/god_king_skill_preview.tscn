@@ -1,0 +1,131 @@
+[gd_scene load_steps=12 format=3]
+
+[ext_resource type="Script" path="res://assets/models/units/god_king_animated/god_king_skill_preview.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://assets/models/units/god_king_animated/god_king_judgement_line.png" id="2_line"]
+[ext_resource type="Texture2D" path="res://assets/models/units/god_king_animated/god_king_royal_impact.png" id="3_impact"]
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_floor"]
+size = Vector2(7, 5)
+
+[sub_resource type="StandardMaterial3D" id="Mat_floor"]
+albedo_color = Color(0.12549, 0.156863, 0.231373, 1)
+
+[sub_resource type="Environment" id="Environment_preview"]
+background_mode = 1
+background_color = Color(0.0627451, 0.0784314, 0.129412, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.776471, 0.827451, 0.909804, 1)
+ambient_light_energy = 0.78
+glow_enabled = true
+
+[sub_resource type="QuadMesh" id="QuadMesh_line"]
+size = Vector2(3.4, 0.42)
+
+[sub_resource type="StandardMaterial3D" id="Mat_line"]
+transparency = 1
+shading_mode = 0
+albedo_texture = ExtResource("2_line")
+albedo_color = Color(1, 0.992157, 0.94902, 0.86)
+emission_enabled = true
+emission = Color(1, 0.86, 0.58, 1)
+emission_energy_multiplier = 2.0
+
+[sub_resource type="QuadMesh" id="QuadMesh_impact"]
+size = Vector2(0.78, 0.78)
+
+[sub_resource type="StandardMaterial3D" id="Mat_impact"]
+transparency = 1
+shading_mode = 0
+albedo_texture = ExtResource("3_impact")
+albedo_color = Color(1, 0.992157, 0.94902, 0.94)
+emission_enabled = true
+emission = Color(1, 0.86, 0.58, 1)
+emission_energy_multiplier = 2.0
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_enemy"]
+radius = 0.23
+height = 1.0
+
+[sub_resource type="StandardMaterial3D" id="Mat_enemy"]
+albedo_color = Color(0.345098, 0.380392, 0.454902, 1)
+
+[node name="GodKingSkillPreview" type="Node3D"]
+script = ExtResource("1_script")
+
+[node name="PreviewFloor" type="MeshInstance3D" parent="."]
+mesh = SubResource("PlaneMesh_floor")
+material_override = SubResource("Mat_floor")
+
+[node name="PreviewWorld" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_preview")
+
+[node name="PreviewLight" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866025, -0.353553, 0.353553, 0, 0.707107, 0.707107, -0.5, -0.612372, 0.612372, 0, 4, 2)
+light_energy = 1.8
+
+[node name="PreviewCamera" type="Camera3D" parent="."]
+transform = Transform3D(0.751587, -0.260918, 0.605508, 0, 0.918344, 0.395783, -0.659635, -0.297469, 0.690217, 5.8, 3.7, 6.4)
+current = true
+fov = 42.0
+
+[node name="EditorPreviewNote" type="Node3D" parent="."]
+
+[node name="JudgementLine0" type="MeshInstance3D" parent="EditorPreviewNote"]
+transform = Transform3D(0.994522, 0, -0.104528, -0.104528, -4.37114e-08, -0.994522, -4.3472e-09, 1, -4.3472e-08, 0.35, 0.035, -1.2)
+mesh = SubResource("QuadMesh_line")
+material_override = SubResource("Mat_line")
+
+[node name="JudgementLine1" type="MeshInstance3D" parent="EditorPreviewNote"]
+transform = Transform3D(0.997564, 0, 0.0697565, 0.0697565, -4.37114e-08, -0.997564, -3.04932e-09, 1, -4.3605e-08, 0.35, 0.035, -0.42)
+mesh = SubResource("QuadMesh_line")
+material_override = SubResource("Mat_line")
+
+[node name="JudgementLine2" type="MeshInstance3D" parent="EditorPreviewNote"]
+transform = Transform3D(0.999391, 0, -0.0348995, -0.0348995, -4.37114e-08, -0.999391, -1.52588e-09, 1, -4.36848e-08, 0.35, 0.035, 0.36)
+mesh = SubResource("QuadMesh_line")
+material_override = SubResource("Mat_line")
+
+[node name="JudgementLine3" type="MeshInstance3D" parent="EditorPreviewNote"]
+transform = Transform3D(0.992546, 0, 0.121869, 0.121869, -4.37114e-08, -0.992546, -5.32702e-09, 1, -4.33856e-08, 0.35, 0.035, 1.14)
+mesh = SubResource("QuadMesh_line")
+material_override = SubResource("Mat_line")
+
+[node name="Enemy0" type="MeshInstance3D" parent="EditorPreviewNote"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.15, 0.5, -0.95)
+mesh = SubResource("CapsuleMesh_enemy")
+material_override = SubResource("Mat_enemy")
+
+[node name="Enemy1" type="MeshInstance3D" parent="EditorPreviewNote"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.05, 0.5, -0.3)
+mesh = SubResource("CapsuleMesh_enemy")
+material_override = SubResource("Mat_enemy")
+
+[node name="Enemy2" type="MeshInstance3D" parent="EditorPreviewNote"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.55, 0.5, 0.52)
+mesh = SubResource("CapsuleMesh_enemy")
+material_override = SubResource("Mat_enemy")
+
+[node name="Enemy3" type="MeshInstance3D" parent="EditorPreviewNote"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.45, 0.5, 1.05)
+mesh = SubResource("CapsuleMesh_enemy")
+material_override = SubResource("Mat_enemy")
+
+[node name="RoyalImpact0" type="MeshInstance3D" parent="EditorPreviewNote"]
+transform = Transform3D(1, 0, 0, 0, -4.37114e-08, -1, 0, 1, -4.37114e-08, 1.15, 0.055, -0.95)
+mesh = SubResource("QuadMesh_impact")
+material_override = SubResource("Mat_impact")
+
+[node name="RoyalImpact1" type="MeshInstance3D" parent="EditorPreviewNote"]
+transform = Transform3D(1, 0, 0, 0, -4.37114e-08, -1, 0, 1, -4.37114e-08, 2.05, 0.055, -0.3)
+mesh = SubResource("QuadMesh_impact")
+material_override = SubResource("Mat_impact")
+
+[node name="RoyalImpact2" type="MeshInstance3D" parent="EditorPreviewNote"]
+transform = Transform3D(1, 0, 0, 0, -4.37114e-08, -1, 0, 1, -4.37114e-08, 1.55, 0.055, 0.52)
+mesh = SubResource("QuadMesh_impact")
+material_override = SubResource("Mat_impact")
+
+[node name="RoyalImpact3" type="MeshInstance3D" parent="EditorPreviewNote"]
+transform = Transform3D(1, 0, 0, 0, -4.37114e-08, -1, 0, 1, -4.37114e-08, 2.45, 0.055, 1.05)
+mesh = SubResource("QuadMesh_impact")
+material_override = SubResource("Mat_impact")
