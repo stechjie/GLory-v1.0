@@ -438,7 +438,7 @@ static func _apply_defender_reaction(attacker: Dictionary, target: Dictionary, d
 		target.skill_stacks = int(target.get("skill_stacks", 0)) + 1
 		if int(target.skill_stacks) >= int(d.get("hit_threshold", 8)):
 			target.skill_stacks = 0
-			DamageService.apply_damage(attacker, maxi(1, int(d.get("skill_damage", 150))), true)
+			DamageService.apply_damage(attacker, maxi(1, int(d.get("skill_damage", 300))), true)
 			if RngService.rng.randf() < float(d.get("interrupt_chance", 0.25)):
 				StatusEffectService.interrupt(attacker)
 	if str(d.get("skill_id", "")) == "poison_reflect_armor_stack" and dealt > 0 and bool(target.get("alive", false)):

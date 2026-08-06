@@ -257,12 +257,11 @@ func _melee_kind_for(unit_id:String)->String:
 	return str(MELEE_KIND_BY_UNIT.get(unit_id,""))
 
 func _guardian_shield_taunt(origin:Vector3,context:Dictionary)->void:
-	var oh := _uh(context,"origin_height")
 	# The guardian skill is self-centered: shield and taunt radius belong to the caster.
 	var sigil:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if sigil!=null:
 		sigil.play_layer(GUARDIAN_SHIELD_SIGIL_TEXTURE,{
-			"name":"GuardianShield_Sigil","position":_lvl(origin,oh,LEVEL_FOOT,0.0),
+			"name":"GuardianShield_Sigil","position":origin+VFXBlockRoot.vfx_offset(Vector3(0,.025,0)),
 			"size":Vector2(1.30,1.30),"ground":true,"duration":1.12,
 			"start_scale":.08,"peak_scale":.78,"end_scale":1.02,
 			"dark_tint":Color(.055,.065,.10),"body_tint":Color(1.0,.97,.88),
@@ -271,7 +270,7 @@ func _guardian_shield_taunt(origin:Vector3,context:Dictionary)->void:
 	var ring:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if ring!=null:
 		ring.play_layer(GUARDIAN_TAUNT_RING_TEXTURE,{
-			"name":"GuardianTaunt_Ring","position":_lvl(origin,oh,LEVEL_FOOT,0.0),
+			"name":"GuardianTaunt_Ring","position":origin+VFXBlockRoot.vfx_offset(Vector3(0,.045,0)),
 			"size":Vector2(1.78,1.78),"ground":true,"duration":1.02,
 			"start_scale":.08,"peak_scale":.68,"end_scale":1.0,
 			"dark_tint":Color(.055,.065,.10),"body_tint":Color(1.0,.96,.84),
@@ -280,7 +279,7 @@ func _guardian_shield_taunt(origin:Vector3,context:Dictionary)->void:
 	var shell:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if shell!=null:
 		shell.play_layer(GUARDIAN_SHIELD_SHELL_TEXTURE,{
-			"name":"GuardianShield_Shell","position":_lvl(origin,oh,LEVEL_BODY),
+			"name":"GuardianShield_Shell","position":origin+VFXBlockRoot.vfx_offset(Vector3(0,.68,0)),
 			"size":Vector2(.96,1.56),"duration":1.24,
 			"start_scale":.12,"peak_scale":.72,"end_scale":.88,
 			"dark_tint":Color(.055,.065,.10),"body_tint":Color(1.0,.97,.88),
@@ -289,7 +288,7 @@ func _guardian_shield_taunt(origin:Vector3,context:Dictionary)->void:
 	var shards:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if shards!=null:
 		shards.play_layer(GUARDIAN_CRYSTAL_SHARDS_TEXTURE,{
-			"name":"GuardianShield_Shards","position":_lvl(origin,oh,LEVEL_BODY),
+			"name":"GuardianShield_Shards","position":origin+VFXBlockRoot.vfx_offset(Vector3(0,.62,0)),
 			"size":Vector2(1.22,1.22),"duration":1.02,
 			"start_scale":.08,"peak_scale":.54,"end_scale":.90,
 			"dark_tint":Color(.055,.065,.10),"body_tint":Color(1.0,.96,.84),
@@ -299,14 +298,13 @@ func _guardian_shield_taunt(origin:Vector3,context:Dictionary)->void:
 	# Do not add the legacy generic barrier or its old gold shield texture here.
 
 func _holy_heal(target:Vector3,context:Dictionary={})->void:
-	var th := _uh(context)
 	# Star Prayer uses a new ComfyUI-authored white/gold language. Each layer has
 	# its own timing so the skill reads as a blessing, not a rotating PNG card.
 	var sigil:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if sigil!=null:
 		sigil.play_layer(STAR_PRAYER_SIGIL_TEXTURE,{
 			"name":"StarPrayer_Sigil",
-			"position":_lvl(target,th,LEVEL_FOOT,0.0),"size":Vector2(1.18,1.18),"ground":true,
+			"position":target+VFXBlockRoot.vfx_offset(Vector3(0,.025,0)),"size":Vector2(1.18,1.18),"ground":true,
 			"duration":1.16,"start_scale":.10,"peak_scale":.88,"end_scale":1.05,
 			"dark_tint":Color(.055,.065,.10),"body_tint":Color(1.0,.97,.86),
 			"core_tint":Color(1.0,.98,.88),"flow_strength":.006,"opacity":.86,
@@ -316,7 +314,7 @@ func _holy_heal(target:Vector3,context:Dictionary={})->void:
 	if descent!=null:
 		descent.play_layer(STAR_PRAYER_DESCENT_TEXTURE,{
 			"name":"StarPrayer_Descent",
-			"from":_lvl(target,th,LEVEL_SKY),"to":_lvl(target,th,LEVEL_BODY),"track_node":context.get("target_node"),
+			"from":target+VFXBlockRoot.vfx_offset(Vector3(0,1.12,0)),"to":target+VFXBlockRoot.vfx_offset(Vector3(0,.38,0)),"track_node":context.get("target_node"),
 			"size":Vector2(.78,1.62),"duration":.72,"travel_ratio":.48,
 			"start_scale":.12,"peak_scale":.82,"end_scale":1.02,
 			"dark_tint":Color(.045,.055,.085),"body_tint":Color(1.0,.96,.84),
@@ -327,7 +325,7 @@ func _holy_heal(target:Vector3,context:Dictionary={})->void:
 	if fragments!=null:
 		fragments.play_layer(STAR_PRAYER_FRAGMENTS_TEXTURE,{
 			"name":"StarPrayer_Fragments",
-			"position":_lvl(target,th,LEVEL_BODY),"size":Vector2(1.12,1.12),
+			"position":target+VFXBlockRoot.vfx_offset(Vector3(0,.44,0)),"size":Vector2(1.12,1.12),
 			"duration":.92,"start_scale":.08,"peak_scale":.58,"end_scale":.92,
 			"dark_tint":Color(.055,.065,.10),"body_tint":Color(1.0,.95,.78),
 			"core_tint":Color(1.0,.98,.86),"flow_strength":.022,"opacity":.84,
@@ -337,7 +335,7 @@ func _holy_heal(target:Vector3,context:Dictionary={})->void:
 	if impact!=null:
 		impact.play_layer(STAR_PRAYER_IMPACT_TEXTURE,{
 			"name":"StarPrayer_Impact",
-			"position":_lvl(target,th,LEVEL_BODY),"size":Vector2(.92,.92),
+			"position":target+VFXBlockRoot.vfx_offset(Vector3(0,.34,0)),"size":Vector2(.92,.92),
 			"duration":.54,"start_scale":.08,"peak_scale":.72,"end_scale":.98,
 			"dark_tint":Color(.06,.07,.11),"body_tint":Color(1.0,.97,.88),
 			"core_tint":Color(1.0,1.0,.92),"flow_strength":.014,"opacity":.96,
@@ -348,7 +346,7 @@ func _holy_heal(target:Vector3,context:Dictionary={})->void:
 		if cleanse!=null:
 			cleanse.play_layer(STAR_PRAYER_CLEANSE_TEXTURE,{
 				"name":"StarPrayer_Cleanse",
-				"position":_lvl(target,th,LEVEL_HEAD),"size":Vector2(.74,.74),
+				"position":target+VFXBlockRoot.vfx_offset(Vector3(0,.58,0)),"size":Vector2(1.02,1.02),
 				"duration":.78,"start_scale":.10,"peak_scale":.70,"end_scale":1.02,
 				"dark_tint":Color(.06,.07,.11),"body_tint":Color(1.0,.96,.84),
 				"core_tint":Color(1.0,1.0,.94),"flow_strength":.018,"opacity":.92,
@@ -356,8 +354,6 @@ func _holy_heal(target:Vector3,context:Dictionary={})->void:
 			})
 
 func _ally_bless(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
-	var oh := _uh(context,"origin_height")
 	# Priestess Blessing reads as a short source-to-ally connection, then resolves
 	# into a target-bound protective seal and a soft restorative burst.
 	var seed:=float(abs(int(target.x*31.0+target.z*17.0))%97)
@@ -365,7 +361,7 @@ func _ally_bless(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	if ribbon!=null:
 		ribbon.play_layer(PRIESTESS_BLESSING_RIBBON_TEXTURE,{
 			"name":"PriestessBlessing_Ribbon",
-			"from":_lvl(origin,oh,LEVEL_BODY),"to":_lvl(target,th,LEVEL_BODY),"track_node":context.get("target_node"),
+			"from":origin+VFXBlockRoot.vfx_offset(Vector3(0,.40,0)),"to":target+VFXBlockRoot.vfx_offset(Vector3(0,.52,0)),"track_node":context.get("target_node"),
 			"size":Vector2(1.24,.62),"duration":.74,"travel_ratio":.68,
 			"start_scale":.10,"peak_scale":.78,"end_scale":.92,
 			"dark_tint":Color(.055,.065,.10),"body_tint":Color(1.0,.96,.84),
@@ -374,7 +370,7 @@ func _ally_bless(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var sigil:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if sigil!=null:
 		sigil.play_layer(PRIESTESS_BLESSING_SIGIL_TEXTURE,{
-			"name":"PriestessBlessing_Sigil","position":_lvl(target,th,LEVEL_FOOT,0.0),
+			"name":"PriestessBlessing_Sigil","position":target+VFXBlockRoot.vfx_offset(Vector3(0,.025,0)),
 			"size":Vector2(1.02,1.02),"ground":true,"duration":1.02,
 			"start_scale":.10,"peak_scale":.72,"end_scale":.94,
 			"dark_tint":Color(.055,.065,.10),"body_tint":Color(1.0,.97,.86),
@@ -383,7 +379,7 @@ func _ally_bless(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var burst:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if burst!=null:
 		burst.play_layer(PRIESTESS_BLESSING_BURST_TEXTURE,{
-			"name":"PriestessBlessing_Burst","position":_lvl(target,th,LEVEL_BODY),
+			"name":"PriestessBlessing_Burst","position":target+VFXBlockRoot.vfx_offset(Vector3(0,.48,0)),
 			"size":Vector2(.92,.92),"duration":.58,"start_scale":.08,
 			"peak_scale":.66,"end_scale":.98,"dark_tint":Color(.06,.07,.11),
 			"body_tint":Color(1.0,.97,.88),"core_tint":Color(1.0,1.0,1.0),
@@ -392,8 +388,8 @@ func _ally_bless(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var particles:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if particles!=null:
 		particles.play_layer(PRIESTESS_BLESSING_PARTICLES_TEXTURE,{
-			"name":"PriestessBlessing_Particles","position":_lvl(target,th,LEVEL_SHOULDER),
-			"size":Vector2(.84,.84),"duration":1.02,"start_scale":.08,
+			"name":"PriestessBlessing_Particles","position":target+VFXBlockRoot.vfx_offset(Vector3(0,.58,0)),
+			"size":Vector2(1.18,1.18),"duration":1.02,"start_scale":.08,
 			"peak_scale":.58,"end_scale":.86,"dark_tint":Color(.055,.065,.10),
 			"body_tint":Color(1.0,.96,.84),"core_tint":Color(1.0,1.0,.96),
 			"flow_strength":.024,"opacity":.82,"delay":.38,"seed":seed+3.0
@@ -401,13 +397,11 @@ func _ally_bless(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	_barrier(target,_holy_profile(.66,1.30),context)
 
 func _holy_group(origin:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
-	var oh := _uh(context,"origin_height")
 	# Group heal is target-readable and one-shot. Do not keep a source-to-target
 	# beam alive: several simultaneous beams become a yellow screen-covering link.
 	# 圣光整体放大 20%（尺寸 .30→.36），让群体治疗更醒目。
 	var p:=_holy_profile(.36,.46);p.main_color=Color(.48,.25,.035);p.core_color=Color(1.0,.72,.22);p.emission_energy=1.25
-	_spawn(VFX_LIGHT_PULSE,p,{"target":_lvl(origin,oh,LEVEL_BODY)})
+	_spawn(VFX_LIGHT_PULSE,p,{"target":origin+VFXBlockRoot.vfx_offset(Vector3(0,.34,0))})
 	for value in _capped_targets(context.get("targets",[])):
 		var ally:=_holy_profile(.41,.62)
 		ally.main_color=Color(.58,.32,.055);ally.core_color=Color(1.0,.78,.28);ally.emission_energy=1.35
@@ -415,47 +409,43 @@ func _holy_group(origin:Vector3,context:Dictionary)->void:
 		var layer:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 		if layer!=null:
 			layer.play_layer("res://assets/vfx/skills/human_cleric/human_cleric_heal_ribbon.png",{
-				"position":_lvl_foot(value,th,LEVEL_BODY),"size":Vector2(.86,.86),"duration":.62,
+				"position":value+VFXBlockRoot.vfx_offset(Vector3(0,.34,0)),"size":Vector2(.86,.86),"duration":.62,
 				"start_scale":.16,"peak_scale":.94,"dark_tint":Color(.20,.08,.01),
 				"body_tint":ally.main_color,"core_tint":ally.core_color,"seed":float(abs(int(value.x*31.0+value.z*17.0))%97),
 				"flow_strength":.018,"opacity":.92,"target_node":target_node_value
 			})
-		_spawn(VFX_LIGHT_PULSE,ally,{"target":_lvl_foot(value,th,LEVEL_BODY)})
+		_spawn(VFX_LIGHT_PULSE,ally,{"target":value+VFXBlockRoot.vfx_offset(Vector3(0,.24,0))})
 
 func _holy_group_v2(origin:Vector3,context:Dictionary)->void:
-	var oh := _uh(context,"origin_height")
 	var wing:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if wing!=null:
-		wing.play_layer(ANGEL_CAST_WINGS_TEXTURE,{"position":_lvl(origin,oh,LEVEL_HEAD),"size":Vector2(1.24,.86),"duration":.72,"start_scale":.10,"peak_scale":.92,"end_scale":.68,"dark_tint":Color(.035,.028,.020),"body_tint":Color(1.0,.72,.16),"core_tint":Color(1.0,.99,.84),"flow_strength":.020,"opacity":1.0,"seed":211.0})
+		wing.play_layer(ANGEL_CAST_WINGS_TEXTURE,{"position":origin+VFXBlockRoot.vfx_offset(Vector3(0,.62,0)),"size":Vector2(1.24,.86),"duration":.72,"start_scale":.10,"peak_scale":.92,"end_scale":.68,"dark_tint":Color(.035,.028,.020),"body_tint":Color(1.0,.72,.16),"core_tint":Color(1.0,.99,.84),"flow_strength":.020,"opacity":1.0,"seed":211.0})
 	var values:=_capped_targets(context.get("targets",[])).slice(0,4)
 	for i in range(values.size()):
 		_angel_target_heal_fx(values[i],i)
 
 func _angel_target_heal_fx(value:Vector3,index:int)->void:
-	var th := UNIT_HEIGHT_FALLBACK
 	var seed:=float((abs(int(value.x*31.0+value.z*17.0))+index*19)%97)
 	var mark:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if mark!=null:
-		mark.play_layer(ANGEL_HEAL_STROKES_TEXTURE,{"position":_lvl_foot(value,th,LEVEL_BODY),"size":Vector2(1.02,.50),"duration":.62,"start_scale":.10,"peak_scale":.88,"end_scale":.74,"rotation_z":-.10,"dark_tint":Color(.035,.028,.020),"body_tint":Color(.98,.70,.14),"core_tint":Color(1.0,.98,.78),"flow_strength":.016,"opacity":1.0,"seed":seed})
+		mark.play_layer(ANGEL_HEAL_STROKES_TEXTURE,{"position":value+VFXBlockRoot.vfx_offset(Vector3(0,.22,0)),"size":Vector2(1.02,.50),"duration":.62,"start_scale":.10,"peak_scale":.88,"end_scale":.74,"rotation_z":-.10,"dark_tint":Color(.035,.028,.020),"body_tint":Color(.98,.70,.14),"core_tint":Color(1.0,.98,.78),"flow_strength":.016,"opacity":1.0,"seed":seed})
 	var pulse:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	var fragments:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	var residue:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	var tw:=create_tween();tw.tween_interval(.10+float(index)*.035);tw.tween_callback(func():
 		if is_instance_valid(pulse):
-			pulse.play_layer(ANGEL_HEAL_PULSE_TEXTURE,{"position":_lvl_foot(value,th,LEVEL_BODY),"size":Vector2(.68,.76),"duration":.42,"start_scale":.12,"peak_scale":.80,"end_scale":.96,"dark_tint":Color(.035,.028,.020),"body_tint":Color(1.0,.76,.16),"core_tint":Color(1.0,.99,.86),"flow_strength":.018,"opacity":1.0,"seed":seed+3.0})
+			pulse.play_layer(ANGEL_HEAL_PULSE_TEXTURE,{"position":value+VFXBlockRoot.vfx_offset(Vector3(0,.46,0)),"size":Vector2(.68,.76),"duration":.42,"start_scale":.12,"peak_scale":.80,"end_scale":.96,"dark_tint":Color(.035,.028,.020),"body_tint":Color(1.0,.76,.16),"core_tint":Color(1.0,.99,.86),"flow_strength":.018,"opacity":1.0,"seed":seed+3.0})
 	)
 	var tw2:=create_tween();tw2.tween_interval(.22+float(index)*.035);tw2.tween_callback(func():
 		if is_instance_valid(fragments):
-			fragments.play_layer(ANGEL_BUFF_FRAGMENTS_TEXTURE,{"position":_lvl_foot(value,th,LEVEL_BODY),"size":Vector2(.68,.68),"duration":.66,"start_scale":.12,"peak_scale":.74,"end_scale":.86,"dark_tint":Color(.035,.028,.020),"body_tint":Color(.98,.72,.16),"core_tint":Color(1.0,.99,.82),"flow_strength":.020,"opacity":.98,"seed":seed+7.0})
+			fragments.play_layer(ANGEL_BUFF_FRAGMENTS_TEXTURE,{"position":value+VFXBlockRoot.vfx_offset(Vector3(0,.58,0)),"size":Vector2(.68,.68),"duration":.66,"start_scale":.12,"peak_scale":.74,"end_scale":.86,"dark_tint":Color(.035,.028,.020),"body_tint":Color(.98,.72,.16),"core_tint":Color(1.0,.99,.82),"flow_strength":.020,"opacity":.98,"seed":seed+7.0})
 	)
 	var tw3:=create_tween();tw3.tween_interval(.34+float(index)*.035);tw3.tween_callback(func():
 		if is_instance_valid(residue):
-			residue.play_layer(ANGEL_BUFF_RESIDUE_TEXTURE,{"position":_lvl_foot(value,th,LEVEL_HEAD),"size":Vector2(.50,.84),"duration":1.02,"start_scale":.10,"peak_scale":.66,"end_scale":.82,"dark_tint":Color(.035,.028,.020),"body_tint":Color(.94,.68,.14),"core_tint":Color(1.0,.96,.72),"flow_strength":.014,"opacity":.96,"seed":seed+11.0})
+			residue.play_layer(ANGEL_BUFF_RESIDUE_TEXTURE,{"position":value+VFXBlockRoot.vfx_offset(Vector3(0,.64,0)),"size":Vector2(.50,.84),"duration":1.02,"start_scale":.10,"peak_scale":.66,"end_scale":.82,"dark_tint":Color(.035,.028,.020),"body_tint":Color(.94,.68,.14),"core_tint":Color(1.0,.96,.72),"flow_strength":.014,"opacity":.96,"seed":seed+11.0})
 	)
 
 func _attribute_bolt(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
-	var oh := _uh(context,"origin_height")
 	# Attribute bolts use the authored mage orb silhouette, then tint by element.
 	var element := str(context.get("attribute", context.get("element", "arcane"))).to_lower()
 	var dark := Color(.025,.035,.10)
@@ -470,15 +460,14 @@ func _attribute_bolt(origin:Vector3,target:Vector3,context:Dictionary)->void:
 			dark=Color(.05,.008,.10);body=Color(.42,.10,.72);core=Color(.92,.66,1.0)
 	var bolt:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if bolt!=null:
-		bolt.play_layer("res://assets/vfx/skills/human_mage/human_mage_element_orb.png",{"from":_lvl(origin,oh,LEVEL_BODY),"to":_lvl(target,th,LEVEL_BODY),"track_node":context.get("target_node"),"size":Vector2(.64,.28),"duration":.72,"travel_ratio":.70,"dark_tint":dark,"body_tint":body,"core_tint":core,"seed":float(element.hash()%97),"flow_strength":.026,"opacity":1.0})
+		bolt.play_layer("res://assets/vfx/skills/human_mage/human_mage_element_orb.png",{"from":origin+VFXBlockRoot.vfx_offset(Vector3(0,.34,0)),"to":target+VFXBlockRoot.vfx_offset(Vector3(0,.30,0)),"track_node":context.get("target_node"),"size":Vector2(.64,.28),"duration":.72,"travel_ratio":.70,"dark_tint":dark,"body_tint":body,"core_tint":core,"seed":float(element.hash()%97),"flow_strength":.026,"opacity":1.0})
 	var impact:=_block(VFX_IMPACT_FLASH) as VFXImpactFlash3D
 	var hit_profile:=_profile(dark,body,core,.48,.42,3.2,7)
 	var tw:=create_tween();tw.tween_interval(.62);tw.tween_callback(func():
-		if is_instance_valid(impact):impact.play_profile(hit_profile,{"target":_lvl(target,th,LEVEL_BODY)})
+		if is_instance_valid(impact):impact.play_profile(hit_profile,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.28,0))})
 	)
 
 func _stun_hit(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
 	# Succubus stun: a hooked slash, the hook tip gathering above the head, then
 	# an incomplete thorn knot left there.  This used to be an orange EnergyBurst
 	# plus a white flash - a fire palette the dark race should never wear.
@@ -488,7 +477,7 @@ func _stun_hit(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var slash:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if slash!=null:
 		slash.play_layer(SUC_HOOK_SLASH_TEXTURE,{
-			"name":"SucStun_Hook","position":_lvl(target,th,LEVEL_BODY),
+			"name":"SucStun_Hook","position":target+VFXBlockRoot.vfx_offset(Vector3(0,.42,.32)),
 			"size":Vector2(1.52,1.14),"duration":.40,
 			"start_scale":.14,"peak_scale":.94,"end_scale":1.06,
 			"rotation_z":PI if flip else 0.0,
@@ -498,7 +487,7 @@ func _stun_hit(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var impact:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if impact!=null:
 		impact.play_layer(SUC_HOOK_IMPACT_TEXTURE,{
-			"name":"SucStun_Impact","position":_lvl(target,th,LEVEL_BODY),
+			"name":"SucStun_Impact","position":target+VFXBlockRoot.vfx_offset(Vector3(0,.54,.30)),
 			"size":Vector2(1.16,.82),"duration":.38,
 			"start_scale":.10,"peak_scale":.78,"end_scale":.92,
 			"rotation_z":-.42,
@@ -510,8 +499,8 @@ func _stun_hit(origin:Vector3,target:Vector3,context:Dictionary)->void:
 		# The head-top stun icon still belongs to StatusVFXController; this only
 		# adds a thorn knot that follows the target.
 		knot.play_layer(SUC_BIND_KNOT_TEXTURE,{
-			"name":"SucStun_Knot","position":_lvl(target,th,LEVEL_HEAD),
-			"size":Vector2(.62,.63),
+			"name":"SucStun_Knot","position":target+VFXBlockRoot.vfx_offset(Vector3(0,.96,.32)),
+			"size":Vector2(1.02,1.04),
 			"duration":clampf(float(context.get("status_duration",1.0)),.80,2.0),
 			# Peak capped at .68: any larger covers the head and the HP bar (4.3).
 			"start_scale":.16,"peak_scale":.68,"end_scale":.86,
@@ -521,8 +510,6 @@ func _stun_hit(origin:Vector3,target:Vector3,context:Dictionary)->void:
 		})
 
 func _judgement(origin:Vector3,target:Vector3)->void:
-	var th := UNIT_HEIGHT_FALLBACK
-	var oh := UNIT_HEIGHT_FALLBACK
 	# Arbiter: one new ground brush anchors the action, then the new slash and impact overlap it.
 	var mark:=_block(VFX_ARBITER_GROUND) as VFXArbiterGroundBrush3D
 	if mark!=null:
@@ -530,17 +517,17 @@ func _judgement(origin:Vector3,target:Vector3)->void:
 	var slash:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if slash!=null:
 		var tw:=create_tween();tw.tween_interval(.10);tw.tween_callback(func():
-			if is_instance_valid(slash):slash.play_layer(ARBITER_VERDICT_SLASH_TEXTURE,{"position":_lvl(target,th,LEVEL_BODY),"size":Vector2(1.42,1.02),"duration":.42,"start_scale":.10,"peak_scale":1.0,"dark_tint":Color(.045,.022,.006),"body_tint":Color(.64,.38,.08),"core_tint":Color(1.0,.98,.86),"seed":89.0,"flow_strength":.012,"opacity":1.0})
+			if is_instance_valid(slash):slash.play_layer(ARBITER_VERDICT_SLASH_TEXTURE,{"position":target+VFXBlockRoot.vfx_offset(Vector3(0,.48,0)),"size":Vector2(1.42,1.02),"duration":.42,"start_scale":.10,"peak_scale":1.0,"dark_tint":Color(.045,.022,.006),"body_tint":Color(.64,.38,.08),"core_tint":Color(1.0,.98,.86),"seed":89.0,"flow_strength":.012,"opacity":1.0})
 		)
 	var impact:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if impact!=null:
 		var hit_tw:=create_tween();hit_tw.tween_interval(.24);hit_tw.tween_callback(func():
-			if is_instance_valid(impact):impact.play_layer(ARBITER_VERDICT_IMPACT_TEXTURE,{"position":_lvl(target,th,LEVEL_BODY),"size":Vector2(1.08,1.02),"duration":.56,"start_scale":.08,"peak_scale":.92,"dark_tint":Color(.045,.022,.006),"body_tint":Color(.62,.34,.06),"core_tint":Color(1.0,.98,.86),"seed":97.0,"flow_strength":.012,"opacity":1.0})
+			if is_instance_valid(impact):impact.play_layer(ARBITER_VERDICT_IMPACT_TEXTURE,{"position":target+VFXBlockRoot.vfx_offset(Vector3(0,.40,0)),"size":Vector2(1.08,1.02),"duration":.56,"start_scale":.08,"peak_scale":.92,"dark_tint":Color(.045,.022,.006),"body_tint":Color(.62,.34,.06),"core_tint":Color(1.0,.98,.86),"seed":97.0,"flow_strength":.012,"opacity":1.0})
 		)
 	var guard_fx:=_block(VFX_ARBITER_GUARD)
 	if guard_fx!=null:
 		var guard_tw:=create_tween();guard_tw.tween_interval(.18);guard_tw.tween_callback(func():
-			if is_instance_valid(guard_fx):guard_fx.call("play_guard",_lvl(origin,oh,LEVEL_BODY))
+			if is_instance_valid(guard_fx):guard_fx.call("play_guard",origin+VFXBlockRoot.vfx_offset(Vector3(0,.58,.02)))
 		)
 
 func _global_divine(target:Vector3,context:Dictionary)->void:
@@ -569,7 +556,6 @@ const DARK_INK_BODY:=Color(.62,.38,.54)
 const DARK_INK_CORE:=Color(.88,.44,.72)
 
 func _imp_curse(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
 	# Imp's curse claw: a hooked claw mark lands on the target, then a low ink
 	# stain settles at its feet.
 	#
@@ -586,7 +572,7 @@ func _imp_curse(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var hook:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if hook!=null:
 		hook.play_layer(IMP_CLAW_HOOK_TEXTURE,{
-			"name":"ImpCurse_Claw","position":_lvl(target,th,LEVEL_BODY),
+			"name":"ImpCurse_Claw","position":target+VFXBlockRoot.vfx_offset(Vector3(0,.44,.32)),
 			"size":Vector2(1.72,1.30),"duration":.52,
 			"start_scale":.14,"peak_scale":.92,"end_scale":1.06,
 			"rotation_z":PI if flip else 0.0,
@@ -596,7 +582,7 @@ func _imp_curse(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var ink:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if ink!=null:
 		ink.play_layer(IMP_CURSE_INK_TEXTURE,{
-			"name":"ImpCurse_Ink","position":_lvl(target,th,LEVEL_FOOT,0.0),"ground":true,
+			"name":"ImpCurse_Ink","position":target+VFXBlockRoot.vfx_offset(Vector3(0,.022,0)),"ground":true,
 			"size":Vector2(1.16,1.16) if deep else Vector2(.96,.96),
 			"duration":2.1 if deep else 1.7,
 			"start_scale":.10,"peak_scale":.86 if deep else .70,"end_scale":.98,
@@ -609,8 +595,6 @@ func _imp_curse(origin:Vector3,target:Vector3,context:Dictionary)->void:
 		})
 
 func _silence_bolt(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
-	var oh := _uh(context,"origin_height")
 	# Shadow Mage's silence spike: an ink mass contracts into a spike, the spike
 	# flies, an angular band folds shut at the target's head, and a gathered ink
 	# wrap stays on its shoulder for the silence duration.
@@ -621,7 +605,7 @@ func _silence_bolt(origin:Vector3,target:Vector3,context:Dictionary)->void:
 		# start > peak > end so the whole curve contracts - that is what reads as
 		# "gathering into a spike" rather than another expanding puff.
 		gather.play_layer(MAGE_INK_GATHER_TEXTURE,{
-			"name":"Silence_Gather","position":_lvl(origin,oh,LEVEL_BODY),
+			"name":"Silence_Gather","position":origin+VFXBlockRoot.vfx_offset(Vector3(0,.50,.30)),
 			"size":Vector2(.88,1.20),"duration":.34,
 			"start_scale":.76,"peak_scale":.46,"end_scale":.26,
 			"dark_tint":DARK_EDGE,"body_tint":DARK_BODY,"core_tint":DARK_CORE,
@@ -630,7 +614,7 @@ func _silence_bolt(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var spike:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if spike!=null:
 		spike.play_layer(MAGE_INK_SPIKE_TEXTURE,{
-			"name":"Silence_Spike","from":_lvl(origin,oh,LEVEL_BODY),"to":_lvl(target,th,LEVEL_BODY),"track_node":target_node_value,
+			"name":"Silence_Spike","from":origin+VFXBlockRoot.vfx_offset(Vector3(0,.38,.26)),"to":target+VFXBlockRoot.vfx_offset(Vector3(0,.42,.26)),"track_node":target_node_value,
 			"size":Vector2(1.16,.34),"duration":.74,"travel_ratio":.70,
 			"start_scale":.30,"peak_scale":1.0,"end_scale":.86,
 			"dark_tint":DARK_EDGE,"body_tint":DARK_BODY,"core_tint":DARK_CORE,
@@ -639,8 +623,8 @@ func _silence_bolt(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var seal:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if seal!=null:
 		seal.play_layer(MAGE_SILENCE_SEAL_TEXTURE,{
-			"name":"Silence_Seal","position":_lvl(target,th,LEVEL_HEAD),
-			"size":Vector2(.54,.66),"duration":.46,
+			"name":"Silence_Seal","position":target+VFXBlockRoot.vfx_offset(Vector3(0,.74,.32)),
+			"size":Vector2(.80,.98),"duration":.46,
 			"start_scale":.10,"peak_scale":.80,"end_scale":.94,
 			"dark_tint":DARK_EDGE,"body_tint":DARK_BODY,"core_tint":DARK_CORE,
 			"flow_strength":.024,"opacity":.96,"delay":.70,"seed":seed+7.0
@@ -650,7 +634,7 @@ func _silence_bolt(origin:Vector3,target:Vector3,context:Dictionary)->void:
 		# The status layer follows the target.  The head-top silence icon still
 		# belongs to StatusVFXController; this layer only adds texture.
 		wrap.play_layer(MAGE_SILENCE_WRAP_TEXTURE,{
-			"name":"Silence_Wrap","position":_lvl(target,th,LEVEL_SHOULDER),
+			"name":"Silence_Wrap","position":target+VFXBlockRoot.vfx_offset(Vector3(.20,.72,.30)),
 			"size":Vector2(.50,.64),
 			"duration":clampf(float(context.get("status_duration",1.9)),1.2,3.2),
 			"start_scale":.12,"peak_scale":.60,"end_scale":.72,
@@ -660,8 +644,6 @@ func _silence_bolt(origin:Vector3,target:Vector3,context:Dictionary)->void:
 		})
 
 func _poison_attack(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
-	var oh := _uh(context,"origin_height")
 	# Poison is deliberately a narrow authored dart, not another generic orb projectile.
 	var dart:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	var dart_profile:=_profile(Color(.025,.07,.012),Color(.26,.72,.08),Color(.78,1.0,.24),.52,.86,3.8,8)
@@ -672,17 +654,15 @@ func _poison_attack(origin:Vector3,target:Vector3,context:Dictionary)->void:
 		dart_texture="res://assets/vfx/skills/distinct_v2/undead_fly_poison_feather_v2.png"
 		dart_size=Vector2(.86,.42)
 	if dart!=null:
-		dart.play_layer(dart_texture,{"from":_lvl(origin,oh,LEVEL_BODY),"to":_lvl(target,th,LEVEL_BODY),"track_node":context.get("target_node"),"size":dart_size,"duration":.78,"travel_ratio":.68,"dark_tint":dart_profile.dark_color,"body_tint":dart_profile.main_color,"core_tint":dart_profile.core_color,"seed":4.6,"flow_strength":.022})
+		dart.play_layer(dart_texture,{"from":origin+VFXBlockRoot.vfx_offset(Vector3(0,.30,0)),"to":target+VFXBlockRoot.vfx_offset(Vector3(0,.34,0)),"track_node":context.get("target_node"),"size":dart_size,"duration":.78,"travel_ratio":.68,"dark_tint":dart_profile.dark_color,"body_tint":dart_profile.main_color,"core_tint":dart_profile.core_color,"seed":4.6,"flow_strength":.022})
 	var impact:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	var tw:=create_tween();tw.tween_interval(.54);tw.tween_callback(func():
 		if is_instance_valid(impact):
-			impact.play_layer("res://assets/vfx/skills/undead_poison/undead_poison_spore_orb.png",{"position":_lvl(target,th,LEVEL_BODY),"size":Vector2(.82,.82),"duration":.72,"start_scale":.10,"peak_scale":.78,"dark_tint":Color(.03,.10,.012),"body_tint":Color(.28,.74,.06),"core_tint":Color(.82,1.0,.24),"seed":8.3})
+			impact.play_layer("res://assets/vfx/skills/undead_poison/undead_poison_spore_orb.png",{"position":target+VFXBlockRoot.vfx_offset(Vector3(0,.42,.03)),"size":Vector2(.82,.82),"duration":.72,"start_scale":.10,"peak_scale":.78,"dark_tint":Color(.03,.10,.012),"body_tint":Color(.28,.74,.06),"core_tint":Color(.82,1.0,.24),"seed":8.3})
 		_status_hit(target,"poison",context)
 	)
 
 func _fear_hit(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
-	var oh := _uh(context,"origin_height")
 	# Fear Demon: a low bank of black haze is pushed toward the target, then one
 	# wide short tear, then strokes fleeing outward behind the target.
 	# The old version shared distinct_v2/fear_mask_impact_v2.png with the Imp,
@@ -699,7 +679,7 @@ func _fear_hit(origin:Vector3,target:Vector3,context:Dictionary)->void:
 		# haze being pushed across rather than smoke rising in place.
 		smoke.play_layer(FEAR_LOW_SMOKE_TEXTURE,{
 			"name":"Fear_LowSmoke","ground":true,
-			"from":_lvl(origin,oh,LEVEL_FOOT,0.0),"to":_lvl(target,th,LEVEL_FOOT,0.0),
+			"from":origin+VFXBlockRoot.vfx_offset(Vector3(0,.020,0)),"to":target+VFXBlockRoot.vfx_offset(Vector3(0,.020,0)),
 			"size":Vector2(1.72,1.30),"duration":.72,"travel_ratio":.56,
 			"start_scale":.16,"peak_scale":.92,"end_scale":1.08,
 			"dark_tint":DARK_INK_EDGE,"body_tint":Color(.74,.48,.68),"core_tint":Color(.90,.48,.74),
@@ -708,7 +688,7 @@ func _fear_hit(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var tear:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if tear!=null:
 		tear.play_layer(FEAR_CLAW_TEAR_TEXTURE,{
-			"name":"Fear_ClawTear","position":_lvl(target,th,LEVEL_BODY),
+			"name":"Fear_ClawTear","position":target+VFXBlockRoot.vfx_offset(Vector3(0,.40,.32)),
 			"size":Vector2(1.64,.92),"duration":.42,
 			"start_scale":.16,"peak_scale":.96,"end_scale":1.10,
 			"rotation_z":PI if flip else 0.0,
@@ -720,7 +700,7 @@ func _fear_hit(origin:Vector3,target:Vector3,context:Dictionary)->void:
 		# The fleeing strokes sit on the far side of the target (away from the
 		# caster) and travel with it.
 		flee.play_layer(FEAR_FLEE_STROKES_TEXTURE,{
-			"name":"Fear_Flee","position":_lvl(target,th,LEVEL_BODY)+flee_dir*th*.30,
+			"name":"Fear_Flee","position":target+flee_dir*.30+Vector3(0,.52,.26),
 			"size":Vector2(1.42,1.06),
 			"duration":clampf(float(context.get("status_duration",1.5)),1.0,2.4),
 			"start_scale":.12,"peak_scale":.72,"end_scale":.88,
@@ -742,8 +722,6 @@ func _doom_blood_link(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	})
 
 func _black_hole(origin:Vector3,context:Dictionary={})->void:
-	var th := _uh(context)
-	var oh := _uh(context,"origin_height")
 	# Black Dragon's black hole: ground strokes bending inward, then an irregular
 	# dark mass, then shards dragged toward the centre, then a stretched smear at
 	# each pulled target's feet.  The old version was one generic purple vortex,
@@ -753,10 +731,8 @@ func _black_hole(origin:Vector3,context:Dictionary={})->void:
 	var curl:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if curl!=null:
 		curl.play_layer(DRAGON_GROUND_CURL_TEXTURE,{
-			"name":"BlackHole_GroundCurl","position":_lvl(origin,oh,LEVEL_FOOT,0.0),"ground":true,
-			# A T3 signature AoE that drags a whole lane inward needs to read as an
-			# area, not a puff on the caster: about two tiles across.
-			"size":Vector2(4.30,4.30),"duration":1.34,
+			"name":"BlackHole_GroundCurl","position":origin+VFXBlockRoot.vfx_offset(Vector3(0,.022,0)),"ground":true,
+			"size":Vector2(2.05,2.05),"duration":1.34,
 			"start_scale":.12,"peak_scale":.92,"end_scale":1.06,
 			"dark_tint":DARK_INK_EDGE,"body_tint":Color(.78,.50,.72),"core_tint":Color(.92,.52,.80),
 			"flow_strength":.020,"opacity":.90,"seed":seed
@@ -764,10 +740,8 @@ func _black_hole(origin:Vector3,context:Dictionary={})->void:
 	var mass:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if mass!=null:
 		mass.play_layer(DRAGON_DARK_MASS_TEXTURE,{
-			# Keep the mass low and wide so the dragon casting it stays visible; a
-			# billboard centred on its chest just hides the unit (bible 4.3).
-			"name":"BlackHole_Mass","position":_lvl(origin,oh,LEVEL_LOW,0.4),
-			"size":Vector2(2.40,1.70),"duration":1.10,
+			"name":"BlackHole_Mass","position":origin+VFXBlockRoot.vfx_offset(Vector3(0,.46,.26)),
+			"size":Vector2(1.44,1.28),"duration":1.10,
 			"start_scale":.10,"peak_scale":.88,"end_scale":.72,
 			"dark_tint":DARK_EDGE,"body_tint":DARK_BODY,"core_tint":DARK_CORE,
 			"flow_strength":.026,"opacity":.94,"delay":.22,"seed":seed+5.0
@@ -776,8 +750,8 @@ func _black_hole(origin:Vector3,context:Dictionary={})->void:
 	if shards!=null:
 		# Shards start large and shrink: sucked in, not blown out.
 		shards.play_layer(DRAGON_PULL_SHARDS_TEXTURE,{
-			"name":"BlackHole_Shards","position":_lvl(origin,oh,LEVEL_LOW,0.6),
-			"size":Vector2(2.30,1.90),"duration":.86,
+			"name":"BlackHole_Shards","position":origin+VFXBlockRoot.vfx_offset(Vector3(0,.52,.30)),
+			"size":Vector2(1.30,1.24),"duration":.86,
 			"start_scale":1.02,"peak_scale":.60,"end_scale":.24,
 			"dark_tint":DARK_EDGE,"body_tint":DARK_BODY,"core_tint":DARK_CORE,
 			"flow_strength":.030,"opacity":.92,"delay":.34,"seed":seed+9.0
@@ -791,8 +765,8 @@ func _black_hole(origin:Vector3,context:Dictionary={})->void:
 		var to_center:=origin-pulled
 		var facing:=atan2(to_center.z,to_center.x) if to_center.length_squared()>.0001 else 0.0
 		drag.play_layer(DRAGON_TARGET_DRAG_TEXTURE,{
-			"name":"BlackHole_Drag","position":_lvl_foot(pulled,th,LEVEL_FOOT,0.0),"ground":true,
-			"size":Vector2(1.70,1.20),"duration":.92,
+			"name":"BlackHole_Drag","position":pulled+VFXBlockRoot.vfx_offset(Vector3(0,.024,0)),"ground":true,
+			"size":Vector2(1.02,.72),"duration":.92,
 			"start_scale":.14,"peak_scale":.82,"end_scale":.96,
 			"rotation_z":facing,
 			"dark_tint":DARK_INK_EDGE,"body_tint":Color(.72,.44,.66),"core_tint":Color(.88,.46,.74),
@@ -801,8 +775,6 @@ func _black_hole(origin:Vector3,context:Dictionary={})->void:
 		})
 
 func _blink_slash(origin:Vector3,target:Vector3,context:Dictionary={})->void:
-	var th := _uh(context)
-	var oh := _uh(context,"origin_height")
 	# Ambusher: an ink rip opens where it stood, then the blink afterimage, then
 	# one long and one short crossing cut behind the target.  The old version was
 	# a single cyan afterimage - wrong faction colour, and no double strike.
@@ -810,7 +782,7 @@ func _blink_slash(origin:Vector3,target:Vector3,context:Dictionary={})->void:
 	var tear:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if tear!=null:
 		tear.play_layer(SCYTHE_INK_TEAR_TEXTURE,{
-			"name":"Blink_InkTear","position":_lvl(origin,oh,LEVEL_BODY),
+			"name":"Blink_InkTear","position":origin+VFXBlockRoot.vfx_offset(Vector3(0,.46,.30)),
 			"size":Vector2(.62,1.24),"duration":.40,
 			"start_scale":.10,"peak_scale":.88,"end_scale":1.04,
 			"dark_tint":DARK_EDGE,"body_tint":DARK_BODY,"core_tint":DARK_CORE,
@@ -823,7 +795,7 @@ func _blink_slash(origin:Vector3,target:Vector3,context:Dictionary={})->void:
 	var cross:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if cross!=null:
 		cross.play_layer(SCYTHE_CROSS_SLASH_TEXTURE,{
-			"name":"Blink_CrossSlash","position":_lvl(target,th,LEVEL_BODY),
+			"name":"Blink_CrossSlash","position":target+VFXBlockRoot.vfx_offset(Vector3(0,.44,.32)),
 			"size":Vector2(1.52,1.52),"duration":.60,
 			"start_scale":.12,"peak_scale":.94,"end_scale":1.08,
 			"dark_tint":DARK_EDGE,"body_tint":DARK_BODY,"core_tint":DARK_CORE,
@@ -836,7 +808,7 @@ func _blink_slash(origin:Vector3,target:Vector3,context:Dictionary={})->void:
 		var recall:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 		if recall!=null:
 			recall.play_layer(SCYTHE_RECALL_TEXTURE,{
-				"name":"Blink_Recall","position":_lvl(target,th,LEVEL_BODY),
+				"name":"Blink_Recall","position":target+VFXBlockRoot.vfx_offset(Vector3(0,.50,.26)),
 				"size":Vector2(1.24,.94),"duration":.52,
 				"start_scale":.88,"peak_scale":.52,"end_scale":.28,
 				"dark_tint":DARK_INK_EDGE,"body_tint":Color(.80,.52,.74),"core_tint":Color(.94,.56,.84),
@@ -849,7 +821,6 @@ func _front_stun(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	_status_hit(target,"stun",context)
 
 func _barrier(target:Vector3,profile:VFXProfile3D,context:Dictionary={})->void:
-	var th := _uh(context)
 	var source_id:=str(context.get("source_unit_id",""))
 	# god_archangel 的减伤护盾原本走退化分支，在战斗取景下只有 ~30px，几乎看不见。
 	# 50 费传奇单位理应走全尺寸护盾。
@@ -872,7 +843,7 @@ func _barrier(target:Vector3,profile:VFXProfile3D,context:Dictionary={})->void:
 	if not texture_path.is_empty():
 		var layer:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 		if layer!=null:
-			layer.play_layer(texture_path,{"position":_lvl(target,th,LEVEL_BODY),"size":Vector2(.94,.94),"duration":1.42,"start_scale":.22,"peak_scale":.92,"dark_tint":tint.darkened(.78),"body_tint":tint,"core_tint":core,"seed":41.0,"flow_strength":.018,"opacity":.98})
+			layer.play_layer(texture_path,{"position":target+VFXBlockRoot.vfx_offset(Vector3(0,.52,0)),"size":Vector2(.94,.94),"duration":1.42,"start_scale":.22,"peak_scale":.92,"dark_tint":tint.darkened(.78),"body_tint":tint,"core_tint":core,"seed":41.0,"flow_strength":.018,"opacity":.98})
 
 func _tracked_link(origin:Vector3,target:Vector3,context:Dictionary,profile:VFXProfile3D)->void:
 	_spawn(VFX_TRACKED_LINK,profile,{"origin":origin,"target":target,"origin_node":context.get("origin_node"),"target_node":context.get("target_node"),"persistent":bool(context.get("persistent",false))})
@@ -884,7 +855,7 @@ func _status_hit(target:Vector3,status_type:String,context:Dictionary)->void:
 	if not (is_instance_valid(target_node_value) and target_node_value is Node3D):
 		return
 	var live_target:Node3D=target_node_value
-	var p:=_shadow_profile(.62,1.18);p.parameters={"status_type":status_type};p.particle_count=7
+	var p:=_shadow_profile(.92,1.18);p.parameters={"status_type":status_type};p.particle_count=7
 	if context.has("status_duration"):
 		p.duration=maxf(.30,float(context.get("status_duration",p.duration)))
 	var status_slots:Dictionary={"stun":0,"silence":1,"poison":2,"fear":3,"defense_down":4,"slow":5}
@@ -892,31 +863,28 @@ func _status_hit(target:Vector3,status_type:String,context:Dictionary)->void:
 	_spawn(VFX_STATUS,p,{"target":target,"target_node":live_target})
 
 func _curse_hit(target:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
 	var p:=_profile(Color(.04,.008,.08),Color(.28,.06,.58),Color(.86,.42,1.0),.72,.76,3.8,8)
-	_spawn(VFX_ENERGY_BURST,p,{"target":_lvl(target,th,LEVEL_BODY),"direction":Vector3.UP})
+	_spawn(VFX_ENERGY_BURST,p,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.26,0)),"direction":Vector3.UP})
 	_status_hit(target,"fear",context)
 	var mark:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if mark!=null:
-		mark.play_layer("res://assets/vfx/skills/distinct_v2/fear_mask_impact_v2.png",{"position":_lvl(target,th,LEVEL_HEAD),"size":Vector2(.52,.52),"duration":.82,"start_scale":.12,"peak_scale":.78,"dark_tint":Color(.035,.004,.07),"body_tint":Color(.28,.06,.58),"core_tint":Color(.86,.42,1.0),"seed":37.0,"flow_strength":.022,"opacity":.96})
+		mark.play_layer("res://assets/vfx/skills/distinct_v2/fear_mask_impact_v2.png",{"position":target+VFXBlockRoot.vfx_offset(Vector3(0,.70,0)),"size":Vector2(.52,.52),"duration":.82,"start_scale":.12,"peak_scale":.78,"dark_tint":Color(.035,.004,.07),"body_tint":Color(.28,.06,.58),"core_tint":Color(.86,.42,1.0),"seed":37.0,"flow_strength":.022,"opacity":.96})
 
 # 刺灵的减防攻击。原本只挂一个头顶减防图标，看不出"这一下打中了"。
 # 补一次暗绿命中爆发，把"被打了"和"中了减防"分开表达（图标仍由 _status_hit 负责）。
 func _defense_down_hit(target:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
 	var p:=_profile(Color(.02,.06,.03),Color(.16,.52,.20),Color(.66,1.0,.60),.58,.52,3.4,7)
-	_spawn(VFX_ENERGY_BURST,p,{"target":_lvl(target,th,LEVEL_BODY),"direction":Vector3.UP})
-	_spawn(VFX_IMPACT_FLASH,p,{"target":_lvl(target,th,LEVEL_BODY)})
+	_spawn(VFX_ENERGY_BURST,p,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.28,0)),"direction":Vector3.UP})
+	_spawn(VFX_IMPACT_FLASH,p,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.30,0))})
 	_status_hit(target,"defense_down",context)
 
 func _true_damage_hit(target:Vector3)->void:
-	var th := UNIT_HEIGHT_FALLBACK
 	# Aurora Archer's proc is target-bound: a painted piercing mark lands first,
 	# then a compact aurora fracture confirms the true-damage hit.
 	var pierce:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if pierce!=null:
 		pierce.play_layer(AURORA_TRUE_PIERCE_TEXTURE,{
-			"position":_lvl(target,th,LEVEL_BODY),"size":Vector2(1.92,1.20),"duration":.48,
+			"position":target+VFXBlockRoot.vfx_offset(Vector3(0,.34,.04)),"size":Vector2(1.92,1.20),"duration":.48,
 			"start_scale":.10,"peak_scale":.86,"end_scale":.94,
 			"rotation_z":-0.34,"dark_tint":Color(.025,.035,.14),
 			"body_tint":Color(.12,.56,.94),"core_tint":Color(.86,.98,1.0),
@@ -926,7 +894,7 @@ func _true_damage_hit(target:Vector3)->void:
 	var tw:=create_tween();tw.tween_interval(.16);tw.tween_callback(func():
 		if is_instance_valid(hit):
 			hit.play_layer(AURORA_TRUE_HIT_TEXTURE,{
-				"position":_lvl(target,th,LEVEL_BODY),"size":Vector2(1.36,1.36),"duration":.42,
+				"position":target+VFXBlockRoot.vfx_offset(Vector3(0,.32,.06)),"size":Vector2(1.36,1.36),"duration":.42,
 				"start_scale":.10,"peak_scale":.68,"end_scale":.98,
 				"dark_tint":Color(.025,.035,.14),"body_tint":Color(.10,.62,.94),
 				"core_tint":Color(.90,.99,1.0),"flow_strength":.018,"opacity":.94,"seed":156.0
@@ -934,8 +902,6 @@ func _true_damage_hit(target:Vector3)->void:
 	)
 
 func _stack_pulse(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
-	var oh := _uh(context,"origin_height")
 	# Pain Queen: an elastic barbed lash strikes the same target, and the fissure
 	# deepens with the real stack count (skill_stacks, handed over by BattleVfx).
 	# The fourth stack adds a wine-red rupture.  Three tiers, never a pile of icons.
@@ -946,7 +912,7 @@ func _stack_pulse(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var whip:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if whip!=null:
 		whip.play_layer(QUEEN_PAIN_WHIP_TEXTURE,{
-			"name":"Pain_Whip","from":_lvl_foot(origin,oh,LEVEL_BODY),"to":_lvl(target,th,LEVEL_BODY),"track_node":target_node_value,
+			"name":"Pain_Whip","from":origin+VFXBlockRoot.vfx_offset(Vector3(0,.44,.24)),"to":target+VFXBlockRoot.vfx_offset(Vector3(0,.44,.24)),"track_node":target_node_value,
 			"size":Vector2(1.30,.42),"duration":.52,"travel_ratio":.62,
 			"start_scale":.28,"peak_scale":1.0,"end_scale":.88,
 			"dark_tint":DARK_EDGE,"body_tint":DARK_BODY,"core_tint":DARK_CORE,
@@ -955,7 +921,7 @@ func _stack_pulse(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var crack:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if crack!=null:
 		crack.play_layer(QUEEN_PAIN_CRACK_TEXTURE,{
-			"name":"Pain_Crack","position":_lvl(target,th,LEVEL_BODY),
+			"name":"Pain_Crack","position":target+VFXBlockRoot.vfx_offset(Vector3(0,.44,.30)),
 			"size":Vector2(.62+.22*depth,.86+.30*depth),
 			"duration":1.10+.50*depth,
 			"start_scale":.12,"peak_scale":.66+.22*depth,"end_scale":.86,
@@ -969,7 +935,7 @@ func _stack_pulse(origin:Vector3,target:Vector3,context:Dictionary)->void:
 		var brk:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 		if brk!=null:
 			brk.play_layer(QUEEN_PAIN_BREAK_TEXTURE,{
-				"name":"Pain_Break","position":_lvl(target,th,LEVEL_BODY),
+				"name":"Pain_Break","position":target+VFXBlockRoot.vfx_offset(Vector3(0,.46,.34)),
 				"size":Vector2(1.16,1.10),"duration":.44,
 				"start_scale":.10,"peak_scale":.90,"end_scale":1.06,
 				"dark_tint":DARK_EDGE,"body_tint":DARK_BODY,"core_tint":DARK_CORE,
@@ -977,7 +943,6 @@ func _stack_pulse(origin:Vector3,target:Vector3,context:Dictionary)->void:
 			})
 
 func _poison_reflect_stack(origin:Vector3)->void:
-	var oh := UNIT_HEIGHT_FALLBACK
 	# 紧凑的毒性外壳爆发：向上的碎片 + 破碎轮廓，不要通用大圆环。
 	#
 	# 原本用的是 binbun 的 "loot" —— 但那个场景本体是**掉落物的垂直光柱**，
@@ -985,26 +950,23 @@ func _poison_reflect_stack(origin:Vector3)->void:
 	# 换成自制的 EnergyBurst：同样是向上的碎片形态，但紧凑、球状、有轮廓。
 	# 顺带省掉 loot 场景的 11 节点 / 25 子资源 / 6 个 ShaderMaterial / 97 粒子 / 1 盏灯。
 	var p:=_profile(Color(.015,.045,.008),Color(.20,.68,.06),Color(.76,1.0,.20),.44,.62,3.4,7)
-	_spawn(VFX_ENERGY_BURST,p,{"target":_lvl(origin,oh,LEVEL_BODY),"direction":Vector3.UP})
-	_spawn(VFX_LIGHT_PULSE,p,{"target":_lvl(origin,oh,LEVEL_BODY)})
+	_spawn(VFX_ENERGY_BURST,p,{"target":origin+VFXBlockRoot.vfx_offset(Vector3(0,.30,0)),"direction":Vector3.UP})
+	_spawn(VFX_LIGHT_PULSE,p,{"target":origin+VFXBlockRoot.vfx_offset(Vector3(0,.42,0))})
 
 func _combo_hit(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
-	var oh := _uh(context,"origin_height")
 	# The archer's fourth-hit skill is a straight, narrow authored arrow.
 	# Keep the projectile and its pierce flash target-bound; do not reuse the
 	# large generic slash sheet which obscures nearby units at the battle zoom.
 	var arrow:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if arrow!=null:
-		arrow.play_layer("res://assets/vfx/skills/human_archer/human_archer_arrow_trail.png",{"from":_lvl(origin,oh,LEVEL_BODY),"to":_lvl(target,th,LEVEL_BODY),"track_node":context.get("target_node"),"size":Vector2(1.42,.30),"duration":.56,"travel_ratio":.82,"start_scale":.24,"peak_scale":1.0,"dark_tint":Color(.015,.035,.10),"body_tint":Color(.16,.48,.92),"core_tint":Color(.82,.98,1.0),"seed":52.0,"flow_strength":.018,"opacity":.98})
+		arrow.play_layer("res://assets/vfx/skills/human_archer/human_archer_arrow_trail.png",{"from":origin+VFXBlockRoot.vfx_offset(Vector3(0,.34,0)),"to":target+VFXBlockRoot.vfx_offset(Vector3(0,.34,0)),"track_node":context.get("target_node"),"size":Vector2(1.42,.30),"duration":.56,"travel_ratio":.82,"start_scale":.24,"peak_scale":1.0,"dark_tint":Color(.015,.035,.10),"body_tint":Color(.16,.48,.92),"core_tint":Color(.82,.98,1.0),"seed":52.0,"flow_strength":.018,"opacity":.98})
 	var impact:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	var hit_tw:=create_tween();hit_tw.tween_interval(.42);hit_tw.tween_callback(func():
 		if is_instance_valid(impact):
-			impact.play_layer("res://assets/vfx/skills/human_archer/human_archer_pierce_flash.png",{"position":_lvl(target,th,LEVEL_BODY),"size":Vector2(.78,.78),"duration":.30,"start_scale":.12,"peak_scale":.72,"dark_tint":Color(.02,.04,.12),"body_tint":Color(.18,.52,.94),"core_tint":Color(.82,.98,1.0),"seed":56.0,"flow_strength":.012,"opacity":.82})
+			impact.play_layer("res://assets/vfx/skills/human_archer/human_archer_pierce_flash.png",{"position":target+VFXBlockRoot.vfx_offset(Vector3(0,.34,0)),"size":Vector2(.78,.78),"duration":.30,"start_scale":.12,"peak_scale":.72,"dark_tint":Color(.02,.04,.12),"body_tint":Color(.18,.52,.94),"core_tint":Color(.82,.98,1.0),"seed":56.0,"flow_strength":.012,"opacity":.82})
 	)
 
 func _poison_death(origin:Vector3)->void:
-	var oh := UNIT_HEIGHT_FALLBACK
 	# Death poison is a readable ground event: a tight toxic burst, a painted
 	# puddle that remains briefly, and a rising miasma cone.  Keep the layers
 	# staggered so it reads as an event instead of one opaque green blob.
@@ -1016,62 +978,25 @@ func _poison_death(origin:Vector3)->void:
 	var burst:=_block(VFX_ENERGY_BURST) as VFXEnergyBurst3D
 	var bp:=_profile(Color(.018,.045,.008),Color(.20,.62,.035),Color(.74,1.0,.18),.86,.78,3.4,10)
 	if burst!=null:
-		burst.play_profile(bp,{"target":_lvl(origin,oh,LEVEL_LOW),"direction":Vector3.UP})
+		burst.play_profile(bp,{"target":origin+VFXBlockRoot.vfx_offset(Vector3(0,.10,0)),"direction":Vector3.UP})
 	var puddle:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	_poison_residue_nodes[residue_key+":puddle"]=puddle
 	if puddle!=null:
-		puddle.play_layer("res://assets/vfx/skills/undead_poison/undead_poison_puddle.png",{"position":_lvl(origin,oh,LEVEL_FOOT,0.0),"size":Vector2(1.25,.70),"duration":1.65,"start_scale":.18,"peak_scale":1.0,"dark_tint":Color(.015,.05,.008),"body_tint":Color(.20,.58,.025),"core_tint":Color(.68,1.0,.16),"seed":12.4,"flow_strength":.018,"opacity":.96})
+		puddle.play_layer("res://assets/vfx/skills/undead_poison/undead_poison_puddle.png",{"position":origin+VFXBlockRoot.vfx_offset(Vector3(0,.035,0)),"size":Vector2(1.25,.70),"duration":1.65,"start_scale":.18,"peak_scale":1.0,"dark_tint":Color(.015,.05,.008),"body_tint":Color(.20,.58,.025),"core_tint":Color(.68,1.0,.16),"seed":12.4,"flow_strength":.018,"opacity":.96})
 	var miasma:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	_poison_residue_nodes[residue_key+":miasma"]=miasma
 	var tw:=create_tween();tw.tween_interval(.12);tw.tween_callback(func():
 		if is_instance_valid(miasma):
-			miasma.play_layer("res://assets/vfx/skills/undead_poison/undead_poison_miasma_cone.png",{"position":_lvl(origin,oh,LEVEL_BODY),"size":Vector2(.92,1.10),"duration":1.08,"start_scale":.10,"peak_scale":.78,"dark_tint":Color(.02,.06,.008),"body_tint":Color(.22,.66,.03),"core_tint":Color(.76,1.0,.20),"seed":14.8,"flow_strength":.026,"opacity":.92})
+			miasma.play_layer("res://assets/vfx/skills/undead_poison/undead_poison_miasma_cone.png",{"position":origin+VFXBlockRoot.vfx_offset(Vector3(0,.44,0)),"size":Vector2(.92,1.10),"duration":1.08,"start_scale":.10,"peak_scale":.78,"dark_tint":Color(.02,.06,.008),"body_tint":Color(.22,.66,.03),"core_tint":Color(.76,1.0,.20),"seed":14.8,"flow_strength":.026,"opacity":.92})
 	)
 
 func _summon(target:Vector3)->void:
-	var th := UNIT_HEIGHT_FALLBACK
 	var p:=_shadow_profile(.86,1.34);p.main_color=Color(.08,.48,.38);p.core_color=Color(.64,1.0,.82);p.emission_energy=3.8
 	_spawn(VFX_SUMMON,p,{"target":target})
-	_spawn(VFX_LIGHT_PULSE,p,{"target":_lvl(target,th,LEVEL_BODY)})
+	_spawn(VFX_LIGHT_PULSE,p,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.30,0))})
 
 func _interrupt_hit(target:Vector3)->void:
-	# Militia's interrupt was a single flat ground flash 0.29 units across, which
-	# measured as literally zero changed pixels at the battle camera. It reads as
-	# a short shield-bash: a compact burst on the body plus a brighter flash.
-	var th := UNIT_HEIGHT_FALLBACK
-	var p:=_profile(Color(.10,.025,.008),Color(.88,.18,.025),Color(1.0,.72,.18),.94,.42,3.3,7)
-	_spawn(VFX_ENERGY_BURST,p,{"target":_lvl(target,th,LEVEL_BODY),"direction":Vector3.UP})
-	_spawn(VFX_IMPACT_FLASH,_profile(Color(.10,.025,.008),Color(.92,.24,.03),Color(1.0,.80,.26),1.15,.38,3.6,6),{"target":_lvl(target,th,LEVEL_BODY)})
-
-# ── Anatomical placement ──────────────────────────────────────────────
-# Levels are fractions of the unit's own rendered height, measured from the
-# BODY anchor (world_hit / world_cast, which sits at 0.55 * height above the
-# feet). CAMERA_PUSH moves a layer toward the camera so the model stops
-# occluding it; it scales with the unit too.
-const LEVEL_FOOT := -0.55
-const LEVEL_LOW := -0.30
-# Slightly below the anchor: painted plates are taller than they are wide and
-# extend upward, so centring them exactly on the chest anchor pushes their mass
-# up to the shoulders. -0.10 lands the visible mass on the torso.
-const LEVEL_BODY := -0.10
-const LEVEL_SHOULDER := 0.26
-const LEVEL_HEAD := 0.52
-const LEVEL_SKY := 1.05
-const CAMERA_PUSH := 0.62
-const UNIT_HEIGHT_FALLBACK := 0.98
-
-# Rendered height of the unit this effect belongs to. BattleVfx reads it off the
-# model pivot; the fallback is the measured median so preview tools still work.
-func _uh(context: Dictionary, key := "target_height") -> float:
-	return maxf(0.12, float(context.get(key, UNIT_HEIGHT_FALLBACK)))
-
-# base is a BODY anchor (world_hit / world_cast).
-func _lvl(base: Vector3, h: float, level: float, push := 1.0) -> Vector3:
-	return base + Vector3(0.0, h * level, 0.0) + VFXBlockRoot.vfx_toward_camera(h * CAMERA_PUSH * push)
-
-# base is a FOOT position (world_foot, or an entry of a targets array).
-func _lvl_foot(base: Vector3, h: float, level: float, push := 1.0) -> Vector3:
-	return base + Vector3(0.0, h * (level + 0.55), 0.0) + VFXBlockRoot.vfx_toward_camera(h * CAMERA_PUSH * push)
+	_spawn(VFX_IMPACT_FLASH,_profile(Color(.10,.025,.008),Color(.88,.18,.025),Color(1.0,.72,.18),.48,.36,3.3,7),{"target":target})
 
 # ── Mercenaries ───────────────────────────────────────────────────────
 # Each mercenary keeps its own colour set (bible section 10) but shares the dark
@@ -1091,8 +1016,6 @@ const CHARGE_BODY:=Color(1.0,.94,.84)
 const CHARGE_CORE:=Color(1.0,.98,.92)
 
 func _bubble_dream(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
-	var oh := _uh(context,"origin_height")
 	# Bubble Dream: one slow authored bubble flies out, then the outcome decides
 	# which of three distinct silhouettes resolves - a burst, a sticky puddle or
 	# an upward splash.  The bible is explicit that these three must not be one
@@ -1105,8 +1028,8 @@ func _bubble_dream(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var body:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if body!=null:
 		body.play_layer(BUBBLE_BODY_TEXTURE,{
-			"name":"Bubble_Body","from":_lvl(origin,oh,LEVEL_BODY),
-			"to":_lvl(target,th,LEVEL_BODY),
+			"name":"Bubble_Body","from":origin+VFXBlockRoot.vfx_offset(Vector3(0,.40,.26)),
+			"to":target+VFXBlockRoot.vfx_offset(Vector3(0,.36,.26)),
 			"track_node":target_node_value,
 			"size":Vector2(1.06,1.06),"duration":.92,"travel_ratio":.72,
 			"start_scale":.24,"peak_scale":1.0,"end_scale":.86,
@@ -1116,7 +1039,7 @@ func _bubble_dream(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var burst:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if burst!=null:
 		burst.play_layer(BUBBLE_BURST_TEXTURE,{
-			"name":"Bubble_Burst","position":_lvl(target,th,LEVEL_BODY),
+			"name":"Bubble_Burst","position":target+VFXBlockRoot.vfx_offset(Vector3(0,.36,.30)),
 			"size":Vector2(1.14,1.14),"duration":.44,
 			"start_scale":.16,"peak_scale":.94,"end_scale":1.12,
 			"dark_tint":BUBBLE_EDGE,"body_tint":BUBBLE_BODY,"core_tint":BUBBLE_CORE,
@@ -1125,7 +1048,7 @@ func _bubble_dream(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var sticky:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if sticky!=null:
 		sticky.play_layer(BUBBLE_STICKY_TEXTURE,{
-			"name":"Bubble_Sticky","position":_lvl(target,th,LEVEL_FOOT,0.0),"ground":true,
+			"name":"Bubble_Sticky","position":target+VFXBlockRoot.vfx_offset(Vector3(0,.06,0)),"ground":true,
 			"size":Vector2(1.02,1.02),"duration":1.55,
 			"start_scale":.14,"peak_scale":.82,"end_scale":.96,
 			"dark_tint":BUBBLE_EDGE,"body_tint":Color(.84,.94,.96),"core_tint":Color(.92,1.0,1.0),
@@ -1138,7 +1061,7 @@ func _bubble_dream(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var splash:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if splash!=null:
 		splash.play_layer(BUBBLE_SPLASH_TEXTURE,{
-			"name":"Bubble_HealSplash","position":_lvl_foot(heal_at,th,LEVEL_BODY),
+			"name":"Bubble_HealSplash","position":heal_at+VFXBlockRoot.vfx_offset(Vector3(0,.24,.26)),
 			"size":Vector2(.86,1.06),"duration":.72,
 			"start_scale":.14,"peak_scale":.88,"end_scale":1.02,
 			"dark_tint":BUBBLE_EDGE,"body_tint":BUBBLE_BODY,"core_tint":BUBBLE_CORE,
@@ -1146,16 +1069,14 @@ func _bubble_dream(origin:Vector3,target:Vector3,context:Dictionary)->void:
 		})
 
 func _shell_guard(origin:Vector3,context:Dictionary)->void:
-	var oh := _uh(context,"origin_height")
 	var shell_profile:=_profile(Color(.025,.07,.10),Color(.08,.42,.58),Color(.62,.96,1.0),.88,1.40,3.0,10)
 	_spawn(VFX_BARRIER,shell_profile,{"target":origin})
 	var layer:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if layer!=null:
-		layer.play_layer("res://assets/vfx/skills/distinct_v2/shell_cyan_carapace_v2.png",{"position":_lvl(origin,oh,LEVEL_BODY),"size":Vector2(.94,.94),"duration":1.42,"start_scale":.18,"peak_scale":.88,"dark_tint":Color(.01,.08,.14),"body_tint":Color(.05,.52,.66),"core_tint":Color(.60,1.0,1.0),"seed":45.0,"flow_strength":.018,"opacity":.98})
-	_spawn(VFX_LIGHT_PULSE,_profile(Color(.02,.08,.12),Color(.10,.54,.72),Color(.70,1.0,1.0),.58,.72,2.8,8),{"target":_lvl(origin,oh,LEVEL_BODY)})
+		layer.play_layer("res://assets/vfx/skills/distinct_v2/shell_cyan_carapace_v2.png",{"position":origin+VFXBlockRoot.vfx_offset(Vector3(0,.52,0)),"size":Vector2(.94,.94),"duration":1.42,"start_scale":.18,"peak_scale":.88,"dark_tint":Color(.01,.08,.14),"body_tint":Color(.05,.52,.66),"core_tint":Color(.60,1.0,1.0),"seed":45.0,"flow_strength":.018,"opacity":.98})
+	_spawn(VFX_LIGHT_PULSE,_profile(Color(.02,.08,.12),Color(.10,.54,.72),Color(.70,1.0,1.0),.58,.72,2.8,8),{"target":origin+VFXBlockRoot.vfx_offset(Vector3(0,.38,0))})
 
 func _balance_judge(origin:Vector3,target:Vector3,context:Dictionary={})->void:
-	var th := _uh(context)
 	# Balance Judge: a tilted measuring mark appears on the target just before the
 	# cut, then one heavy asymmetric strike with a tight core.  Deliberately
 	# shorter than the Arbiter's verdict so the two do not read as the same skill,
@@ -1165,7 +1086,7 @@ func _balance_judge(origin:Vector3,target:Vector3,context:Dictionary={})->void:
 	var mark:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if mark!=null:
 		mark.play_layer(JUDGE_SCALE_MARK_TEXTURE,{
-			"name":"Judge_ScaleMark","position":_lvl(target,th,LEVEL_BODY),
+			"name":"Judge_ScaleMark","position":target+VFXBlockRoot.vfx_offset(Vector3(0,.52,.28)),
 			"size":Vector2(.72,.94),"duration":.34,
 			"start_scale":.16,"peak_scale":.78,"end_scale":.62,
 			"dark_tint":JUDGE_EDGE,"body_tint":JUDGE_BODY,"core_tint":JUDGE_CORE,
@@ -1174,7 +1095,7 @@ func _balance_judge(origin:Vector3,target:Vector3,context:Dictionary={})->void:
 	var slash:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if slash!=null:
 		slash.play_layer(JUDGE_SLASH_TEXTURE,{
-			"name":"Judge_Slash","position":_lvl(target,th,LEVEL_BODY),
+			"name":"Judge_Slash","position":target+VFXBlockRoot.vfx_offset(Vector3(0,.40,.32)),
 			"size":Vector2(1.48,1.10),"duration":.38,
 			"start_scale":.14,"peak_scale":.94,"end_scale":1.06,
 			"rotation_z":PI if flip else 0.0,
@@ -1184,7 +1105,7 @@ func _balance_judge(origin:Vector3,target:Vector3,context:Dictionary={})->void:
 	var impact:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if impact!=null:
 		impact.play_layer(JUDGE_IMPACT_TEXTURE,{
-			"name":"Judge_Impact","position":_lvl(target,th,LEVEL_BODY),
+			"name":"Judge_Impact","position":target+VFXBlockRoot.vfx_offset(Vector3(0,.38,.30)),
 			"size":Vector2(.92,.92),"duration":.36,
 			"start_scale":.10,"peak_scale":.74,"end_scale":.92,
 			"dark_tint":JUDGE_EDGE,"body_tint":JUDGE_BODY,"core_tint":JUDGE_CORE,
@@ -1192,8 +1113,6 @@ func _balance_judge(origin:Vector3,target:Vector3,context:Dictionary={})->void:
 		})
 
 func _gold_charge(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
-	var oh := _uh(context,"origin_height")
 	# Gold Charge in the four stages the bible asks for: wind-up dust at the
 	# start, the charge trail along the path, the collision, and stun debris over
 	# the victim.  The charge path IS the projectile here, so the trail travels.
@@ -1202,7 +1121,7 @@ func _gold_charge(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var dust:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if dust!=null:
 		dust.play_layer(CHARGE_DUST_TEXTURE,{
-			"name":"Charge_Dust","position":_lvl(origin,oh,LEVEL_FOOT,0.0),"ground":true,
+			"name":"Charge_Dust","position":origin+VFXBlockRoot.vfx_offset(Vector3(0,.10,0)),"ground":true,
 			"size":Vector2(1.22,.86),"duration":.66,
 			"start_scale":.14,"peak_scale":.90,"end_scale":1.10,
 			"dark_tint":CHARGE_EDGE,"body_tint":CHARGE_BODY,"core_tint":CHARGE_CORE,
@@ -1214,8 +1133,8 @@ func _gold_charge(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var trail:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if trail!=null:
 		trail.play_layer(CHARGE_TRAIL_TEXTURE,{
-			"name":"Charge_Trail","from":_lvl(origin,oh,LEVEL_BODY),
-			"to":_lvl(target,th,LEVEL_BODY),
+			"name":"Charge_Trail","from":origin+VFXBlockRoot.vfx_offset(Vector3(0,.34,.24)),
+			"to":target+VFXBlockRoot.vfx_offset(Vector3(0,.34,.24)),
 			"track_node":target_node_value,
 			"size":Vector2(1.62,.66),"duration":.56,"travel_ratio":.68,
 			"start_scale":.30,"peak_scale":1.0,"end_scale":.84,
@@ -1225,7 +1144,7 @@ func _gold_charge(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var impact:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if impact!=null:
 		impact.play_layer(CHARGE_IMPACT_TEXTURE,{
-			"name":"Charge_Impact","position":_lvl(target,th,LEVEL_BODY),
+			"name":"Charge_Impact","position":target+VFXBlockRoot.vfx_offset(Vector3(0,.36,.32)),
 			"size":Vector2(1.32,.94),"duration":.40,
 			"start_scale":.14,"peak_scale":.92,"end_scale":1.08,
 			"dark_tint":CHARGE_EDGE,"body_tint":CHARGE_BODY,"core_tint":CHARGE_CORE,
@@ -1237,8 +1156,8 @@ func _gold_charge(origin:Vector3,target:Vector3,context:Dictionary)->void:
 		# short "you got rammed" debris the bible asks for, and it follows the
 		# victim for the stun duration.
 		debris.play_layer(CHARGE_STUN_DEBRIS_TEXTURE,{
-			"name":"Charge_StunDebris","position":_lvl(target,th,LEVEL_HEAD),
-			"size":Vector2(.60,.48),
+			"name":"Charge_StunDebris","position":target+VFXBlockRoot.vfx_offset(Vector3(0,.92,.28)),
+			"size":Vector2(.92,.74),
 			"duration":clampf(float(context.get("status_duration",1.2)),.80,2.0),
 			"start_scale":.16,"peak_scale":.72,"end_scale":.88,
 			"dark_tint":CHARGE_EDGE,"body_tint":CHARGE_BODY,"core_tint":CHARGE_CORE,
@@ -1247,36 +1166,32 @@ func _gold_charge(origin:Vector3,target:Vector3,context:Dictionary)->void:
 		})
 
 func _holy_song(origin:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
-	var oh := _uh(context,"origin_height")
 	var hymn:=_holy_profile(.88,1.05);hymn.main_color=Color(.42,.72,.22);hymn.core_color=Color(.86,1.0,.52);hymn.emission_energy=3.8
-	_spawn(VFX_LIGHT_PULSE,hymn,{"target":_lvl(origin,oh,LEVEL_BODY)})
+	_spawn(VFX_LIGHT_PULSE,hymn,{"target":origin+VFXBlockRoot.vfx_offset(Vector3(0,.42,0))})
 	for value in _capped_targets(context.get("targets",[])):
 		var note:=_profile(Color(.05,.10,.02),Color(.32,.66,.12),Color(.82,1.0,.46),.44,.72,3.4,8)
 		# 原本用 binbun "beam"（15 节点 / 28 子资源 / 7 个 ShaderMaterial / 132 粒子）。
 		# 这三处 beam 的形态都是「从施法者连到每个目标」，正是 TrackedLink 做的事，
 		# 而它是自制模块、已做过 mesh 复用优化，成本低一个数量级。
-		_spawn(VFX_TRACKED_LINK,note,{"origin":_lvl(origin,oh,LEVEL_BODY),"target":_lvl_foot(value,th,LEVEL_BODY),"persistent":false})
-		_spawn(VFX_LIGHT_PULSE,note,{"target":_lvl_foot(value,th,LEVEL_BODY)})
+		_spawn(VFX_TRACKED_LINK,note,{"origin":origin+VFXBlockRoot.vfx_offset(Vector3(0,.48,0)),"target":value+VFXBlockRoot.vfx_offset(Vector3(0,.48,0)),"persistent":false})
+		_spawn(VFX_LIGHT_PULSE,note,{"target":value+VFXBlockRoot.vfx_offset(Vector3(0,.26,0))})
 
 func _twin_strike(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
 	# 300 费佣兵。两道弧原本 width 只有 .085/.075，是全场最细的技能。
 	# 加宽到 .16/.14，并叠上早已画好的专属双斩贴图作为主体，程序弧退为衬底。
 	var first:=_profile(Color(.015,.025,.06),Color(.10,.30,.62),Color(.58,.86,1.0),.34,.30,1.55,3)
 	first.parameters={"width":.16,"arc_degrees":104.0,"tilt_degrees":14.0}
-	_spawn(VFX_SLASH_ARC,first,{"target":_lvl(target,th,LEVEL_BODY),"direction":Vector3.RIGHT})
+	_spawn(VFX_SLASH_ARC,first,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.30,0)),"direction":Vector3.RIGHT})
 	var second:=_profile(Color(.06,.012,.04),Color(.36,.05,.46),Color(.78,.38,.78),.32,.27,1.45,3)
 	second.parameters={"width":.14,"arc_degrees":100.0,"tilt_degrees":-14.0}
-	_spawn(VFX_SLASH_ARC,second,{"target":_lvl(target,th,LEVEL_BODY),"direction":Vector3.LEFT})
+	_spawn(VFX_SLASH_ARC,second,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.34,0)),"direction":Vector3.LEFT})
 	var slash:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if slash!=null:
-		slash.play_layer("res://assets/vfx/skills/distinct_v2/twin_assassin_double_slash_v2.png",{"position":_lvl(target,th,LEVEL_BODY),"size":Vector2(1.02,.82),"duration":.44,"start_scale":.16,"peak_scale":.94,"dark_tint":Color(.03,.01,.06),"body_tint":Color(.30,.26,.62),"core_tint":Color(.80,.78,1.0),"seed":63.0,"flow_strength":.020,"opacity":.98})
+		slash.play_layer("res://assets/vfx/skills/distinct_v2/twin_assassin_double_slash_v2.png",{"position":target+VFXBlockRoot.vfx_offset(Vector3(0,.34,0)),"size":Vector2(1.02,.82),"duration":.44,"start_scale":.16,"peak_scale":.94,"dark_tint":Color(.03,.01,.06),"body_tint":Color(.30,.26,.62),"core_tint":Color(.80,.78,1.0),"seed":63.0,"flow_strength":.020,"opacity":.98})
 	var flash_profile:=_profile(Color(.04,.008,.06),Color(.34,.06,.46),Color(.78,.52,.90),.16,.12,1.15,2)
-	_spawn(VFX_IMPACT_FLASH,flash_profile,{"target":_lvl(target,th,LEVEL_BODY)})
+	_spawn(VFX_IMPACT_FLASH,flash_profile,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.30,0))})
 
 func _king_aura(origin:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
 	# Human King: a single vertical heaven-sword drop per affected target.
 	# It falls straight down, keeps its authored gold colour, then dissolves.
 	var targets:Array=_capped_targets(context.get("targets",[]))
@@ -1286,17 +1201,15 @@ func _king_aura(origin:Vector3,context:Dictionary)->void:
 		var value:Vector3=targets[i]
 		var sword:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 		if sword!=null:
-			sword.play_layer("res://assets/vfx/skills/human_king/human_king_heaven_sword.png",{"from":_lvl_foot(value,th,LEVEL_SKY),"to":_lvl_foot(value,th,LEVEL_BODY),"size":Vector2(.64,1.72),"duration":.58,"travel_ratio":.48,"start_scale":.20,"peak_scale":.86,"end_scale":.72,"dark_tint":Color(.08,.04,.012),"body_tint":Color(.98,.62,.12),"core_tint":Color(1.0,.92,.42),"seed":10.0+float(i),"flow_strength":.010,"opacity":.92})
+			sword.play_layer("res://assets/vfx/skills/human_king/human_king_heaven_sword.png",{"from":value+VFXBlockRoot.vfx_offset(Vector3(0,2.45,.08)),"to":value+VFXBlockRoot.vfx_offset(Vector3(0,.48,.08)),"size":Vector2(.64,1.72),"duration":.58,"travel_ratio":.48,"start_scale":.20,"peak_scale":.86,"end_scale":.72,"dark_tint":Color(.08,.04,.012),"body_tint":Color(.98,.62,.12),"core_tint":Color(1.0,.92,.42),"seed":10.0+float(i),"flow_strength":.010,"opacity":.92})
 
 func _king_attack(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
 	# One straight, target-bound sword drop for Human King's normal attack.
 	var sword:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if sword!=null:
-		sword.play_layer("res://assets/vfx/skills/human_king/human_king_heaven_sword.png",{"from":_lvl(target,th,LEVEL_SKY),"to":_lvl(target,th,LEVEL_BODY),"size":Vector2(.64,1.72),"duration":.58,"travel_ratio":.48,"start_scale":.20,"peak_scale":.86,"end_scale":.72,"dark_tint":Color(.08,.04,.012),"body_tint":Color(.98,.62,.12),"core_tint":Color(1.0,.92,.42),"seed":91.0,"flow_strength":.010,"opacity":.92})
+		sword.play_layer("res://assets/vfx/skills/human_king/human_king_heaven_sword.png",{"from":target+VFXBlockRoot.vfx_offset(Vector3(0,2.45,.08)),"to":target+VFXBlockRoot.vfx_offset(Vector3(0,.48,.08)),"size":Vector2(.64,1.72),"duration":.58,"travel_ratio":.48,"start_scale":.20,"peak_scale":.86,"end_scale":.72,"dark_tint":Color(.08,.04,.012),"body_tint":Color(.98,.62,.12),"core_tint":Color(1.0,.92,.42),"seed":91.0,"flow_strength":.010,"opacity":.92})
 
 func _arrow_rain(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
 	var targets:Array=_capped_targets(context.get("targets",[]))
 	if targets.is_empty():targets=[target]
 	for i in range(targets.size()):
@@ -1305,41 +1218,35 @@ func _arrow_rain(origin:Vector3,target:Vector3,context:Dictionary)->void:
 		var delay:=float(i)*.06
 		var tw:=create_tween();tw.tween_interval(delay);tw.tween_callback(func():
 			if is_instance_valid(arrow):
-				arrow.play_layer("res://assets/vfx/skills/god_aurora/god_aurora_arrow_trail.png",{"from":_lvl_foot(value,th,LEVEL_SKY),"to":_lvl_foot(value,th,LEVEL_LOW),"size":Vector2(.62,.16),"duration":.46,"travel_ratio":.88,"dark_tint":Color(.015,.06,.18),"body_tint":Color(.10,.42,.92),"core_tint":Color(.74,.96,1.0),"seed":20.0+float(i),"flow_strength":.02,"opacity":1.0})
+				arrow.play_layer("res://assets/vfx/skills/god_aurora/god_aurora_arrow_trail.png",{"from":value+VFXBlockRoot.vfx_offset(Vector3(0,3.35,0)),"to":value+VFXBlockRoot.vfx_offset(Vector3(0,.16,0)),"size":Vector2(.62,.16),"duration":.46,"travel_ratio":.88,"dark_tint":Color(.015,.06,.18),"body_tint":Color(.10,.42,.92),"core_tint":Color(.74,.96,1.0),"seed":20.0+float(i),"flow_strength":.02,"opacity":1.0})
 		)
 		var impact:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 		var hit_tw:=create_tween();hit_tw.tween_interval(delay+.40);hit_tw.tween_callback(func():
 			if is_instance_valid(impact):
-				impact.play_layer("res://assets/vfx/skills/human_militia/human_militia_hit_dust_pop.png",{"position":_lvl_foot(value,th,LEVEL_FOOT,0.0),"size":Vector2(.72,.72),"duration":.48,"start_scale":.16,"peak_scale":.88,"dark_tint":Color(.03,.08,.16),"body_tint":Color(.10,.42,.86),"core_tint":Color(.78,.96,1.0),"seed":24.0+float(i),"flow_strength":.018,"opacity":.94})
+				impact.play_layer("res://assets/vfx/skills/human_militia/human_militia_hit_dust_pop.png",{"position":value+VFXBlockRoot.vfx_offset(Vector3(0,.06,0)),"size":Vector2(.72,.72),"duration":.48,"start_scale":.16,"peak_scale":.88,"dark_tint":Color(.03,.08,.16),"body_tint":Color(.10,.42,.86),"core_tint":Color(.78,.96,1.0),"seed":24.0+float(i),"flow_strength":.018,"opacity":.94})
 		)
 
 func _blood_rampage(origin:Vector3)->void:
-	var oh := UNIT_HEIGHT_FALLBACK
 	var p:=_blood_profile(1.02,1.05)
 	_spawn(VFX_ENERGY_BURST,p,{"target":origin,"direction":Vector3.UP})
-	_spawn(VFX_LIGHT_PULSE,p,{"target":_lvl(origin,oh,LEVEL_BODY)})
+	_spawn(VFX_LIGHT_PULSE,p,{"target":origin+VFXBlockRoot.vfx_offset(Vector3(0,.36,0))})
 
 func _steel_order(origin:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
-	var oh := _uh(context,"origin_height")
 	var p:=_profile(Color(.025,.035,.05),Color(.22,.34,.46),Color(.74,.92,1.0),.64,.92,2.8,8)
-	_spawn(VFX_LIGHT_PULSE,p,{"target":_lvl(origin,oh,LEVEL_BODY)})
+	_spawn(VFX_LIGHT_PULSE,p,{"target":origin+VFXBlockRoot.vfx_offset(Vector3(0,.42,0))})
 	for value in _capped_targets(context.get("targets",[])):
 		_spawn(VFX_BARRIER,p,{"target":value})
-		_spawn(VFX_TRACKED_LINK,p,{"origin":_lvl(origin,oh,LEVEL_BODY),"target":_lvl_foot(value,th,LEVEL_BODY),"persistent":false})
+		_spawn(VFX_TRACKED_LINK,p,{"origin":origin+VFXBlockRoot.vfx_offset(Vector3(0,.54,0)),"target":value+VFXBlockRoot.vfx_offset(Vector3(0,.52,0)),"persistent":false})
 
 func _time_slow(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
-	var oh := _uh(context,"origin_height")
 	var p:=_profile(Color(.018,.025,.10),Color(.10,.28,.68),Color(.58,.90,1.0),1.12,1.48,3.8,12)
-	_spawn(VFX_ENERGY_BURST,p,{"target":_lvl(origin,oh,LEVEL_BODY),"direction":Vector3.UP})
+	_spawn(VFX_ENERGY_BURST,p,{"target":origin+VFXBlockRoot.vfx_offset(Vector3(0,.30,0)),"direction":Vector3.UP})
 	for value in _capped_targets(context.get("targets",[])):
 		var slow:=_profile(Color(.02,.04,.10),Color(.10,.38,.72),Color(.58,.90,1.0),.38,1.05,2.5,6);slow.parameters["status_type"]="slow"
-		_spawn(VFX_TRACKED_LINK,p,{"origin":_lvl(origin,oh,LEVEL_BODY),"target":_lvl_foot(value,th,LEVEL_BODY),"persistent":false})
+		_spawn(VFX_TRACKED_LINK,p,{"origin":origin+VFXBlockRoot.vfx_offset(Vector3(0,.50,0)),"target":value+VFXBlockRoot.vfx_offset(Vector3(0,.58,0)),"persistent":false})
 		_spawn(VFX_STATUS,slow,{"target":value})
 
 func _death_hunt(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
 	# Death Hunt: blink in, one reaping cut, then an underworld rift that closes
 	# inward on the target, and a crimson crack for the armour break / heal cut.
 	# The old distinct_v2 plate was a complete scythe, which the bible bans; this
@@ -1352,7 +1259,7 @@ func _death_hunt(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var cut:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if cut!=null:
 		cut.play_layer(HUNT_SCYTHE_CUT_TEXTURE,{
-			"name":"Hunt_Cut","position":_lvl(target,th,LEVEL_BODY),
+			"name":"Hunt_Cut","position":target+VFXBlockRoot.vfx_offset(Vector3(0,.42,.32)),
 			"size":Vector2(1.58,1.16),"duration":.40,
 			"start_scale":.14,"peak_scale":.96,"end_scale":1.08,
 			"rotation_z":PI if flip else 0.0,
@@ -1363,7 +1270,7 @@ func _death_hunt(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	if rift!=null:
 		# Ends smaller than it starts: the rift closes in, it does not explode.
 		rift.play_layer(HUNT_RIFT_TEXTURE,{
-			"name":"Hunt_Rift","position":_lvl(target,th,LEVEL_BODY),
+			"name":"Hunt_Rift","position":target+VFXBlockRoot.vfx_offset(Vector3(0,.40,.30)),
 			"size":Vector2(1.12,1.12),"duration":.52,
 			"start_scale":.96,"peak_scale":.78,"end_scale":.42,
 			"dark_tint":HUNT_EDGE,"body_tint":HUNT_BODY,"core_tint":HUNT_CORE,
@@ -1372,7 +1279,7 @@ func _death_hunt(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var crack:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if crack!=null:
 		crack.play_layer(HUNT_ARMOR_CRACK_TEXTURE,{
-			"name":"Hunt_ArmorCrack","position":_lvl(target,th,LEVEL_BODY),
+			"name":"Hunt_ArmorCrack","position":target+VFXBlockRoot.vfx_offset(Vector3(0,.44,.28)),
 			"size":Vector2(.84,.88),
 			"duration":clampf(float(context.get("status_duration",1.8)),1.2,2.6),
 			"start_scale":.14,"peak_scale":.70,"end_scale":.86,
@@ -1413,55 +1320,48 @@ func _capped_targets(targets:Array)->Array:
 
 # 天空系：青白 + 金，走电/风/光。
 func _chain_lightning(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
 	var arc:=_block(VFX_LIGHTNING_ARC) as VFXLightningArc
-	if arc!=null:arc.play_arc(_lvl(target,th,LEVEL_SKY),target)
+	if arc!=null:arc.play_arc(target+VFXBlockRoot.vfx_offset(Vector3(0,2.60,0)),target)
 	var p:=_profile(Color(.02,.05,.12),Color(.22,.54,.96),Color(.84,.97,1.0),.50,.42,3.8,7)
-	_spawn(VFX_IMPACT_FLASH,p,{"target":_lvl(target,th,LEVEL_BODY)})
+	_spawn(VFX_IMPACT_FLASH,p,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.32,0))})
 	# 有群体目标时把电弧串下去，没有就只打单体。
 	for value in _capped_targets(context.get("targets",[])):
 		var link:=_profile(Color(.02,.05,.12),Color(.26,.60,1.0),Color(.88,.98,1.0),.18,.30,2.4,3)
-		_spawn(VFX_TRACKED_LINK,link,{"origin":_lvl(target,th,LEVEL_BODY),"target":_lvl_foot(value,th,LEVEL_BODY),"persistent":false})
+		_spawn(VFX_TRACKED_LINK,link,{"origin":target+VFXBlockRoot.vfx_offset(Vector3(0,.44,0)),"target":value+VFXBlockRoot.vfx_offset(Vector3(0,.44,0)),"persistent":false})
 
 func _dive_backline(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
 	var dash:=_profile(Color(.05,.08,.12),Color(.52,.78,.94),Color(.94,1.0,1.0),.70,.62,3.0,8)
 	_spawn(VFX_AFTERIMAGE,dash,{"origin":origin,"target":target})
 	var hit:=_profile(Color(.04,.07,.11),Color(.58,.84,.98),Color(1.0,1.0,1.0),.46,.34,3.2,6)
 	hit.parameters={"width":.075,"arc_degrees":96.0,"tilt_degrees":18.0}
-	_spawn(VFX_SLASH_ARC,hit,{"target":_lvl(target,th,LEVEL_BODY),"direction":(target-origin).normalized()})
-	_spawn(VFX_IMPACT_FLASH,hit,{"target":_lvl(target,th,LEVEL_BODY)})
+	_spawn(VFX_SLASH_ARC,hit,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.32,0)),"direction":(target-origin).normalized()})
+	_spawn(VFX_IMPACT_FLASH,hit,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.32,0))})
 
 func _sky_heal(origin:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
-	var oh := _uh(context,"origin_height")
 	var p:=_profile(Color(.06,.10,.14),Color(.42,.76,.92),Color(.92,1.0,1.0),.34,.52,2.8,7)
-	_spawn(VFX_LIGHT_PULSE,p,{"target":_lvl(origin,oh,LEVEL_BODY)})
+	_spawn(VFX_LIGHT_PULSE,p,{"target":origin+VFXBlockRoot.vfx_offset(Vector3(0,.36,0))})
 	for value in _capped_targets(context.get("targets",[])):
-		_spawn(VFX_LIGHT_PULSE,p,{"target":_lvl_foot(value,th,LEVEL_BODY)})
+		_spawn(VFX_LIGHT_PULSE,p,{"target":value+VFXBlockRoot.vfx_offset(Vector3(0,.28,0))})
 
 func _dome_shield(origin:Vector3,context:Dictionary)->void:
-	var oh := _uh(context,"origin_height")
 	var p:=_profile(Color(.10,.08,.03),Color(.74,.62,.22),Color(1.0,.96,.68),.80,1.05,3.0,8)
 	_barrier(origin,p,context)
-	_spawn(VFX_LIGHT_PULSE,p,{"target":_lvl(origin,oh,LEVEL_BODY)})
+	_spawn(VFX_LIGHT_PULSE,p,{"target":origin+VFXBlockRoot.vfx_offset(Vector3(0,.40,0))})
 
 func _wind_bleed(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
 	# 两道细风刃，错开角度，读起来是"割"而不是"砸"。
 	var direction:=(target-origin).normalized()
 	var first:=_profile(Color(.04,.08,.08),Color(.48,.86,.82),Color(.94,1.0,1.0),.62,.26,1.8,3)
 	first.parameters={"width":.105,"arc_degrees":112.0,"tilt_degrees":22.0}
-	_spawn(VFX_SLASH_ARC,first,{"target":_lvl(target,th,LEVEL_BODY),"direction":direction})
+	_spawn(VFX_SLASH_ARC,first,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.34,0)),"direction":direction})
 	var second:=_profile(Color(.04,.08,.08),Color(.40,.78,.76),Color(.88,1.0,1.0),.56,.24,1.6,3)
 	second.parameters={"width":.092,"arc_degrees":106.0,"tilt_degrees":-20.0}
-	_spawn(VFX_SLASH_ARC,second,{"target":_lvl(target,th,LEVEL_BODY),"direction":direction})
-	_spawn(VFX_IMPACT_FLASH,first,{"target":_lvl(target,th,LEVEL_BODY)})
+	_spawn(VFX_SLASH_ARC,second,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.28,0)),"direction":direction})
+	_spawn(VFX_IMPACT_FLASH,first,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.30,0))})
 
 func _slow_aura(origin:Vector3,context:Dictionary)->void:
-	var oh := _uh(context,"origin_height")
 	var p:=_profile(Color(.03,.05,.12),Color(.24,.44,.86),Color(.78,.94,1.0),.86,1.15,2.8,9)
-	_spawn(VFX_ENERGY_BURST,p,{"target":_lvl(origin,oh,LEVEL_BODY),"direction":Vector3.UP})
+	_spawn(VFX_ENERGY_BURST,p,{"target":origin+VFXBlockRoot.vfx_offset(Vector3(0,.28,0)),"direction":Vector3.UP})
 	for value in _capped_targets(context.get("targets",[])):
 		var slow:=_profile(p.dark_color,p.main_color,p.core_color,.34,.95,2.2,5)
 		slow.parameters={"status_type":"slow","status_slot":5}
@@ -1469,118 +1369,101 @@ func _slow_aura(origin:Vector3,context:Dictionary)->void:
 
 # 大地系：土黄 / 苔绿 / 熔岩橙。
 func _stun_impact(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
 	var p:=_profile(Color(.08,.06,.03),Color(.62,.44,.18),Color(1.0,.86,.50),.62,.48,3.0,8)
-	_spawn(VFX_ENERGY_BURST,p,{"target":_lvl(target,th,LEVEL_BODY),"direction":(target-origin).normalized()})
-	_spawn(VFX_IMPACT_FLASH,p,{"target":_lvl(target,th,LEVEL_BODY)})
+	_spawn(VFX_ENERGY_BURST,p,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.26,0)),"direction":(target-origin).normalized()})
+	_spawn(VFX_IMPACT_FLASH,p,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.32,0))})
 	_status_hit(target,"stun",context)
 
 func _entangle(target:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
 	var p:=_profile(Color(.02,.06,.015),Color(.24,.58,.14),Color(.74,1.0,.42),.72,1.05,2.6,8)
-	_spawn(VFX_GROUND_SIGIL,p,{"target":_lvl(target,th,LEVEL_FOOT,0.0)})
+	_spawn(VFX_GROUND_SIGIL,p,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.02,0))})
 	_status_hit(target,"slow",context)
 
 func _burrow_ambush(origin:Vector3,target:Vector3)->void:
-	var th := UNIT_HEIGHT_FALLBACK
-	var oh := UNIT_HEIGHT_FALLBACK
 	# 先在出发点炸开土，再窜到目标脚下。
 	var dirt:=_profile(Color(.07,.055,.03),Color(.50,.38,.16),Color(.92,.80,.46),.58,.52,2.4,8)
-	_spawn(VFX_ENERGY_BURST,dirt,{"target":_lvl(origin,oh,LEVEL_LOW),"direction":Vector3.UP})
+	_spawn(VFX_ENERGY_BURST,dirt,{"target":origin+VFXBlockRoot.vfx_offset(Vector3(0,.08,0)),"direction":Vector3.UP})
 	_spawn(VFX_AFTERIMAGE,dirt,{"origin":origin,"target":target})
-	_spawn(VFX_ENERGY_BURST,dirt,{"target":_lvl(target,th,LEVEL_LOW),"direction":Vector3.UP})
-	_spawn(VFX_IMPACT_FLASH,dirt,{"target":_lvl(target,th,LEVEL_BODY)})
+	_spawn(VFX_ENERGY_BURST,dirt,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.10,0)),"direction":Vector3.UP})
+	_spawn(VFX_IMPACT_FLASH,dirt,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.28,0))})
 
 func _lava_burst(target:Vector3)->void:
-	var th := UNIT_HEIGHT_FALLBACK
 	var p:=_profile(Color(.10,.02,.004),Color(.88,.26,.03),Color(1.0,.82,.32),.84,.72,4.2,10)
-	_spawn(VFX_ENERGY_BURST,p,{"target":_lvl(target,th,LEVEL_LOW),"direction":Vector3.UP})
-	_spawn(VFX_LIGHT_PULSE,p,{"target":_lvl(target,th,LEVEL_BODY)})
+	_spawn(VFX_ENERGY_BURST,p,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.18,0)),"direction":Vector3.UP})
+	_spawn(VFX_LIGHT_PULSE,p,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.40,0))})
 
 func _nature_heal(origin:Vector3,context:Dictionary)->void:
-	var oh := _uh(context,"origin_height")
 	var p:=_profile(Color(.03,.08,.02),Color(.34,.68,.20),Color(.84,1.0,.56),.44,.68,2.8,8)
-	_spawn(VFX_LIGHT_PULSE,p,{"target":_lvl(origin,oh,LEVEL_BODY)})
+	_spawn(VFX_LIGHT_PULSE,p,{"target":origin+VFXBlockRoot.vfx_offset(Vector3(0,.38,0))})
 	for value in _capped_targets(context.get("targets",[])):
 		_spawn(VFX_FALLING_PILLAR,p,{"target":value})
 
 func _earth_slam(origin:Vector3,target:Vector3)->void:
-	var th := UNIT_HEIGHT_FALLBACK
 	var p:=_profile(Color(.07,.055,.03),Color(.56,.40,.16),Color(.96,.84,.48),.96,.68,3.0,10)
-	_spawn(VFX_SHOCKWAVE,p,{"target":_lvl(target,th,LEVEL_FOOT,0.0)})
-	_spawn(VFX_ENERGY_BURST,p,{"target":_lvl(target,th,LEVEL_LOW),"direction":Vector3.UP})
-	_spawn(VFX_IMPACT_FLASH,p,{"target":_lvl(target,th,LEVEL_BODY)})
+	_spawn(VFX_SHOCKWAVE,p,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.02,0))})
+	_spawn(VFX_ENERGY_BURST,p,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.14,0)),"direction":Vector3.UP})
+	_spawn(VFX_IMPACT_FLASH,p,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.30,0))})
 
 # 人系。
 func _backstab(origin:Vector3,target:Vector3)->void:
-	var th := UNIT_HEIGHT_FALLBACK
 	var dash:=_profile(Color(.03,.02,.05),Color(.24,.18,.34),Color(.76,.68,.92),.62,.52,2.4,7)
 	_spawn(VFX_AFTERIMAGE,dash,{"origin":origin,"target":target})
 	var cut:=_profile(Color(.05,.02,.05),Color(.42,.16,.44),Color(.94,.72,.96),.44,.30,3.0,5)
 	cut.parameters={"width":.070,"arc_degrees":98.0,"tilt_degrees":-24.0}
-	_spawn(VFX_SLASH_ARC,cut,{"target":_lvl(target,th,LEVEL_BODY),"direction":(target-origin).normalized()})
-	_spawn(VFX_IMPACT_FLASH,cut,{"target":_lvl(target,th,LEVEL_BODY)})
+	_spawn(VFX_SLASH_ARC,cut,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.34,0)),"direction":(target-origin).normalized()})
+	_spawn(VFX_IMPACT_FLASH,cut,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.32,0))})
 
 func _counter_slash(target:Vector3)->void:
-	var th := UNIT_HEIGHT_FALLBACK
 	# 反击：一正一反两刀，比普通斩击更短促。
 	var first:=_profile(Color(.03,.035,.05),Color(.34,.42,.56),Color(.88,.94,1.0),.66,.24,1.8,3)
 	first.parameters={"width":.140,"arc_degrees":108.0,"tilt_degrees":16.0}
-	_spawn(VFX_SLASH_ARC,first,{"target":_lvl(target,th,LEVEL_BODY),"direction":Vector3.RIGHT})
+	_spawn(VFX_SLASH_ARC,first,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.32,0)),"direction":Vector3.RIGHT})
 	var second:=_profile(first.dark_color,first.main_color,first.core_color,.58,.22,1.6,3)
 	second.parameters={"width":.126,"arc_degrees":102.0,"tilt_degrees":-16.0}
-	_spawn(VFX_SLASH_ARC,second,{"target":_lvl(target,th,LEVEL_BODY),"direction":Vector3.LEFT})
-	_spawn(VFX_IMPACT_FLASH,first,{"target":_lvl(target,th,LEVEL_BODY)})
+	_spawn(VFX_SLASH_ARC,second,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.28,0)),"direction":Vector3.LEFT})
+	_spawn(VFX_IMPACT_FLASH,first,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.30,0))})
 
 # 阵型盟友：深渊/炼狱配色，比 PVE 怪更重一档。
 func _burn_claw(target:Vector3)->void:
-	var th := UNIT_HEIGHT_FALLBACK
 	var p:=_profile(Color(.10,.02,.005),Color(.84,.24,.03),Color(1.0,.78,.28),.52,.40,3.6,6)
 	for i in 3:
 		var claw:=_profile(p.dark_color,p.main_color,p.core_color,.46,.30,3.2,4)
 		claw.parameters={"width":.052,"arc_degrees":88.0,"tilt_degrees":-18.0+float(i)*18.0}
-		_spawn(VFX_SLASH_ARC,claw,{"target":_lvl(target,th,LEVEL_BODY)+Vector3(0,th*.06*float(i),0),"direction":Vector3.RIGHT})
-	_spawn(VFX_IMPACT_FLASH,p,{"target":_lvl(target,th,LEVEL_BODY)})
+		_spawn(VFX_SLASH_ARC,claw,{"target":target+Vector3(0,.30+float(i)*.05,0),"direction":Vector3.RIGHT})
+	_spawn(VFX_IMPACT_FLASH,p,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.32,0))})
 
 func _soul_chain(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
-	var oh := _uh(context,"origin_height")
 	var p:=_shadow_profile(.42,1.20);p.main_color=Color(.30,.10,.52);p.core_color=Color(.82,.56,1.0)
-	_spawn(VFX_TRACKED_LINK,p,{"origin":_lvl(origin,oh,LEVEL_BODY),"target":_lvl(target,th,LEVEL_BODY),"origin_node":context.get("origin_node"),"target_node":context.get("target_node"),"persistent":false})
+	_spawn(VFX_TRACKED_LINK,p,{"origin":origin+VFXBlockRoot.vfx_offset(Vector3(0,.46,0)),"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.46,0)),"origin_node":context.get("origin_node"),"target_node":context.get("target_node"),"persistent":false})
 	_status_hit(target,"slow",context)
 
 func _devour_bite(target:Vector3)->void:
-	var th := UNIT_HEIGHT_FALLBACK
 	var p:=_blood_profile(.72,.56);p.main_color=Color(.46,.03,.10);p.core_color=Color(1.0,.28,.30)
-	_spawn(VFX_ENERGY_BURST,p,{"target":_lvl(target,th,LEVEL_BODY),"direction":Vector3.UP})
+	_spawn(VFX_ENERGY_BURST,p,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.28,0)),"direction":Vector3.UP})
 	var bite:=_profile(p.dark_color,p.main_color,p.core_color,.50,.30,3.4,5)
 	bite.parameters={"width":.095,"arc_degrees":124.0,"tilt_degrees":8.0}
-	_spawn(VFX_SLASH_ARC,bite,{"target":_lvl(target,th,LEVEL_BODY),"direction":Vector3.RIGHT})
-	_spawn(VFX_IMPACT_FLASH,p,{"target":_lvl(target,th,LEVEL_BODY)})
+	_spawn(VFX_SLASH_ARC,bite,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.30,0)),"direction":Vector3.RIGHT})
+	_spawn(VFX_IMPACT_FLASH,p,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.30,0))})
 
 func _hell_burst(target:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
 	var p:=_profile(Color(.11,.02,.006),Color(.90,.20,.03),Color(1.0,.76,.30),.92,.80,4.4,11)
-	_spawn(VFX_ENERGY_BURST,p,{"target":_lvl(target,th,LEVEL_BODY),"direction":Vector3.UP})
+	_spawn(VFX_ENERGY_BURST,p,{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.22,0)),"direction":Vector3.UP})
 	_spawn(VFX_FALLING_PILLAR,p,{"target":target})
 	for value in _capped_targets(context.get("targets",[])):
-		_spawn(VFX_LIGHT_PULSE,p,{"target":_lvl_foot(value,th,LEVEL_BODY)})
+		_spawn(VFX_LIGHT_PULSE,p,{"target":value+VFXBlockRoot.vfx_offset(Vector3(0,.34,0))})
 
 func _eternal_night(origin:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
-	var oh := _uh(context,"origin_height")
 	# 魔君的场面技：地面漩涡 + 上冲暗能，比普通盟友技重一档。
 	var p:=_shadow_profile(.92,1.55);p.main_color=Color(.16,.03,.32);p.core_color=Color(.60,.20,.92);p.emission_energy=3.0
-	_spawn(VFX_VORTEX,p,{"target":_lvl(origin,oh,LEVEL_FOOT,0.0)})
-	_spawn(VFX_ENERGY_BURST,p,{"target":_lvl(origin,oh,LEVEL_BODY),"direction":Vector3.UP})
+	_spawn(VFX_VORTEX,p,{"target":origin+VFXBlockRoot.vfx_offset(Vector3(0,.015,0))})
+	_spawn(VFX_ENERGY_BURST,p,{"target":origin+VFXBlockRoot.vfx_offset(Vector3(0,.30,0)),"direction":Vector3.UP})
 	for value in _capped_targets(context.get("targets",[])):
 		var mark:=_shadow_profile(.36,.86);mark.main_color=p.main_color;mark.core_color=p.core_color
-		_spawn(VFX_LIGHT_PULSE,mark,{"target":_lvl_foot(value,th,LEVEL_BODY)})
+		_spawn(VFX_LIGHT_PULSE,mark,{"target":value+VFXBlockRoot.vfx_offset(Vector3(0,.32,0))})
 
 # match 的兜底分支用：一次中性的命中反馈。
 func _generic_hit(target:Vector3)->void:
-	var th := UNIT_HEIGHT_FALLBACK
-	_spawn(VFX_IMPACT_FLASH,_profile(Color(.04,.04,.05),Color(.52,.54,.60),Color(.94,.96,1.0),.44,.32,2.6,5),{"target":_lvl(target,th,LEVEL_BODY)})
+	_spawn(VFX_IMPACT_FLASH,_profile(Color(.04,.04,.05),Color(.52,.54,.60),Color(.94,.96,1.0),.44,.32,2.6,5),{"target":target+VFXBlockRoot.vfx_offset(Vector3(0,.30,0))})
 
 func _spawn(script:Script,profile:VFXProfile3D,context:Dictionary)->Node3D:
 	var node:=_block(script)

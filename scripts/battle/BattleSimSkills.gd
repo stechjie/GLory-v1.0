@@ -142,7 +142,7 @@ static func _skill_element_meteor(caster: Dictionary, opponents: Array, d: Dicti
 	_mark_vfx_target(caster, target)
 	for o in opponents:
 		if bool(o.get("alive", false)) and _can_target(caster, o, opponents) and target.pos.distance_to(o.pos) <= 180.0:
-			DamageService.apply_damage(o, maxi(1, int(d.get("skill_damage", 120))), true)
+			DamageService.apply_damage(o, maxi(1, int(d.get("skill_damage", 240))), true)
 			_apply_attribute_effect(str(d.get("element", "fire")), caster, o)
 
 
@@ -192,11 +192,11 @@ static func _skill_mirror_clone(caster: Dictionary, state: Dictionary, d: Dictio
 static func _skill_bubble_dream(caster: Dictionary, allies: Array, opponents: Array, d: Dictionary) -> void:
 	var ally := _lowest_hp_ratio(allies)
 	if not ally.is_empty():
-		_heal_unit(ally, int(d.get("heal", 80)))
+		_heal_unit(ally, int(d.get("heal", 160)))
 	var target := _nearest(caster, opponents)
 	if not target.is_empty():
 		StatusEffectService.add_status(target, "slow", 3.0, {"move_pct": float(d.get("slow_pct", 0.30)), "attack_speed_pct": float(d.get("slow_pct", 0.30))})
-		DamageService.apply_damage(target, int(d.get("burst_damage", 70)), true)
+		DamageService.apply_damage(target, int(d.get("burst_damage", 140)), true)
 
 
 static func _skill_holy_song(_caster: Dictionary, allies: Array, d: Dictionary) -> void:
@@ -249,7 +249,7 @@ static func _skill_gold_charge(caster: Dictionary, opponents: Array, d: Dictiona
 	var target := _nearest(caster, opponents)
 	if target.is_empty(): return
 	caster.pos = target.pos + Vector2(-24, 0) if str(caster.team) == "player" else target.pos + Vector2(24, 0)
-	DamageService.apply_damage(target, int(d.get("skill_damage", 120)), true)
+	DamageService.apply_damage(target, int(d.get("skill_damage", 240)), true)
 	StatusEffectService.add_status(target, "stun", float(d.get("stun_sec", 1.2)), {})
 
 
@@ -263,3 +263,80 @@ static func _skill_king_aura(caster: Dictionary, allies: Array, d: Dictionary) -
 
 static func _skill_shell_guard(caster: Dictionary, d: Dictionary) -> void:
 	StatusEffectService.add_status(caster, "damage_reduction", float(d.get("duration", 5.0)), {"pct": float(d.get("reduction", 0.50))})
+
+
+# --- 法阵友军（终局守护者）---------------------------------------------------
+# 五档按玩家自己的法阵血量发放（FormationAllyService.ally_id_for_hp），每边一只。
+# 除焰爪外全是全场技，靠 skill_global 跳过 _skill_target_in_range 的射程判定 ——
+# 近战体型也能从后排放全场大招；首发时间由 opening_cd 控制。
+# 每只只活 10~20 秒，所以首发时间比冷却更决定它能不能放出来。
+
+# 全场技的目标集合。空数组 = 场上没有可打的敌人，调用方据此不消耗冷却。
+static func _living_targets(caster: Dictionary, opponents: Array) -> Array:
+	var out := []
+	for o in opponents:
+		if bool(o.get("alive", false)) and _can_target(caster, o, opponents):
+			out.append(o)
+	return out
+
+
+# 焰爪魔灵（1-10 血）：唯一的自保型守护者，只回自己。护盾不会自然衰减、只被伤害
+# 吃掉，所以必须封顶，否则打满一场能叠出十几层。
+static func _skill_ally_self_sustain(caster: Dictionary, d: Dictionary) -> void:
+	_heal_unit(caster, maxi(0, int(d.get("self_heal", 200))))
+	var cap := maxi(0, int(d.get("shield_cap", 300)))
+	var gain := maxi(0, int(d.get("self_shield", 100)))
+	caster.shield = mini(cap, int(caster.get("shield", 0)) + gain)
+
+
+# 暗狱锁魂者（11-20 血）：全体眩晕 + 减攻速。只降攻速不降移速——移速降了会让敌人
+# 卡在半路上，视觉上像卡顿而不像被控。
+static func _skill_ally_mass_stun(caster: Dictionary, opponents: Array, d: Dictionary) -> bool:
+	var targets := _living_targets(caster, opponents)
+	if targets.is_empty():
+		return false
+	for o in targets:
+		StatusEffectService.add_status(o, "stun", float(d.get("stun_sec", 1.5)), {})
+		StatusEffectService.add_status(o, "slow", float(d.get("aspd_down_duration", 3.0)), {
+			"attack_speed_pct": float(d.get("aspd_down_pct", 0.50)), "move_pct": 0.0,
+		})
+	return true
+
+
+# 深渊噬兽（21-30 血）：全体沉默。silence 在 _tick_skills 开头直接 continue，是全游戏
+# 最硬的 debuff——对面所有奶妈和核弹在这几秒里一个都放不出来。Boss 时长减半。
+static func _skill_ally_mass_silence(caster: Dictionary, opponents: Array, d: Dictionary) -> bool:
+	var targets := _living_targets(caster, opponents)
+	if targets.is_empty():
+		return false
+	for o in targets:
+		StatusEffectService.add_status(o, "silence", float(d.get("silence_sec", 3.5)), {})
+	return true
+
+
+# 炼狱焚界者（31-40 血）：全场灼烧 + 减攻。价值在减攻，伤害是附赠。
+# burn 是每秒结算的固定 dps（不同于按最大生命百分比的中毒），所以血量基准一变
+# 就必须跟着调——见 data/formation/formation_allies.json 的 burn_dps。
+static func _skill_ally_inferno(caster: Dictionary, opponents: Array, d: Dictionary) -> bool:
+	var targets := _living_targets(caster, opponents)
+	if targets.is_empty():
+		return false
+	var dur := float(d.get("burn_duration", 5.0))
+	for o in targets:
+		StatusEffectService.add_status(o, "burn", dur, {"dps": float(d.get("burn_dps", 100.0)), "tick_left": 0.0})
+		StatusEffectService.add_status(o, "attack_down", float(d.get("attack_down_duration", 5.0)), {
+			"pct": float(d.get("attack_down_pct", 0.25)),
+		})
+	return true
+
+
+# 深渊魔君·厄夜（41-50 血）：全场流星雨，无视防御。终局的一锤子买卖——它大概只活得
+# 到放一到两发，所以 opening_cd 比 skill_cd 更决定这个技能存不存在。
+static func _skill_ally_meteor(caster: Dictionary, opponents: Array, d: Dictionary) -> bool:
+	var targets := _living_targets(caster, opponents)
+	if targets.is_empty():
+		return false
+	var dmg := maxi(1, int(d.get("meteor_damage", 800)))
+	for o in targets:
+		DamageService.apply_damage(o, dmg, true)
+	return true

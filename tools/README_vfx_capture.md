@@ -73,3 +73,29 @@ python tools/vfx_diff.py captures/baseline
 
 Movie Maker 从 `frame00000000.png` 开始编号，所以 `manifest.json` 里的帧号是 0 基的。
 `empty_frame` 是最后一帧预热，此时还没有任何技能开播，空表现检查拿它当参照。
+
+## 用真模型截帧 + 量挂位
+
+替身默认还是胶囊，但可以换成真实战斗模型：
+
+```bash
+powershell -File tools/vfx_capture.ps1 -Out captures/x -Skills "stun,poison_attack" `
+  -Owners "basic_attack_ranged_god=god_priest"
+# 或直接调 godot，带 --unit / --target-unit
+```
+
+`--unit <id>` / `--target-unit <id>` 会按 BattleRenderer 的同一套缩放链摆上真模型，
+并**冻结动画**（不冻的话 idle 动作会污染像素 diff，量出来的全是模型自己）。
+
+manifest 里会写一份屏幕标尺（每个替身的脚/头像素坐标）。配合：
+
+```bash
+python tools/vfx_where.py captures/x
+```
+
+输出每个技能的特效**在目标身高的百分之多少**：0% = 脚底，100% = 头顶，>100% = 飘在头上。
+这是判断"斩击到底挂在身上还是头上"的唯一可靠办法——肉眼看截图判断不了。
+
+⚠️ 单位高度**不能**用 mesh AABB 量。这些是蒙皮模型，`get_aabb()` 只框住一部分躯干，
+实测低估 1.15×–3.5× 且每个模型倍数不同。真实高度用上面的轮廓法量，实测集中在
+0.71–1.08，所以代码里用名义常量 `BattleRenderer.NOMINAL_UNIT_HEIGHT = 0.98`。

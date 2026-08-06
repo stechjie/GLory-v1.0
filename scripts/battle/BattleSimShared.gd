@@ -14,6 +14,19 @@ const ATTACK_RANGE_SCALE := 72.0
 # error in distance_to (which would freeze it just outside range).
 const ATTACK_RANGE_EPS := 1.0
 const TEAM_LANE_CENTERS := [230.0, 500.0, 770.0]
+# Both sides spawn pushed back from the centre line by this much, so the opening
+# reads as two armies closing rather than an instant melee. Front rows end up
+# 80 + 2*PUSH apart; minus 72px melee range at ~165px/s that is a 0.75s approach.
+#
+# Do not raise this without also shrinking the row spacing in _place_in_lane.
+# Usable y is [60, 460] and each side is 4 rows deep at 40px, so the back row
+# (300 + 3*40 + PUSH) hits the clamp at PUSH = 40 -- past that, rows stack onto
+# one y and units spawn inside each other. At 58 only row 3 is nudged (438 vs
+# 460); at 120 rows 1/2/3 all collapse onto 460. Widening the arena does not
+# help: BattleArena._sim_to_world_pos normalises sim y by SIM_H onto a fixed
+# field depth, so a taller arena just scales the same layout back down.
+# Trading row spacing for gap is the only lever (24px rows allow PUSH 88 -> a
+# 1.12s approach).
 const OPENING_DISTANCE_PUSH := 58.0
 
 

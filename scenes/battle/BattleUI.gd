@@ -15,10 +15,19 @@ const SIM_H := 520.0
 const UNIT_VISUAL_SIZE := Vector2(82, 104)
 const UNIT_VISUAL_OFFSET := Vector2(41, 66)
 const RESULT_DISPLAY_SECONDS := 1.0
-const MODEL_FACING_UPDATE_SEC := 0.18
-const MODEL_FACING_LERP := 0.18
-const MODEL_FACING_PLAYER_YAW_OFFSET := 0.0
-const MODEL_FACING_ENEMY_YAW_OFFSET := 180.0
+# Free-look facing: models turn toward what they are actually doing (running
+# somewhere, hitting someone) instead of holding a fixed per-team yaw.
+# 360 deg/s reads as a deliberate, weighty turn rather than a snap.
+const MODEL_FACING_TURN_SPEED_DEG := 360.0
+# Simulation-space travel required before movement counts as a heading. Matches
+# the run animation's own threshold so the two agree on "this unit is moving".
+const MODEL_FACING_MOVE_EPS_SIM := 1.0
+# Facing advances on wall-clock time, so clamp the step: a frame hitch (or a
+# one-off _refresh_visuals outside _process) must not snap everyone at once.
+const MODEL_FACING_MAX_DELTA := 0.1
+# Spawn pose only, before the first real facing update snaps the model onto its
+# aim direction: stand the two sides facing each other.
+const MODEL_FACING_SPAWN_ENEMY_YAW := 180.0
 const BATTLE_BG_PATH := "res://assets/board/battle_toon_autochess_arena.png"
 const BATTLE_USE_3D_ARENA := false
 const BATTLE_ARENA_MODEL_PATH := "res://assets/models/arena/battle_scene.glb"
@@ -69,8 +78,7 @@ var _finished := false
 var _skip_fast_forward := false
 var _sim_accumulator := 0.0
 var _return_emitted := false
-var _model_facing_elapsed := 0.0
-var _model_facing_due := true
+var _model_facing_last_msec := 0
 var _battle_3d_viewport: SubViewport
 var _battle_3d_camera: Camera3D
 var _battle_3d_world: Node3D

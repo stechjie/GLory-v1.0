@@ -37,13 +37,6 @@ func play_reference(kind: String, origin: Vector3, target: Vector3, profile: VFX
 			kind, load_us / 1000.0, inst_us / 1000.0])
 	reference_instance.name = "BinbunOriginal_%s" % kind
 	add_child(reference_instance)
-	# NOTE: these reference scenes cannot be brought into the project's world-scale
-	# calibration from here. Scaling this node only shrinks the mesh parts - their
-	# particles emit in world space and ignore it - so the effect comes out half
-	# scaled, which reads worse than being uniformly oversized. They are currently
-	# ~10x a unit's height (bubble_dream covers 20% of the screen). Fixing them
-	# means editing the scenes or replacing them with in-house modules, the way
-	# holy_song / poison_reflect_armor_stack / bubble impact already were.
 	reference_instance.global_position = origin
 	_apply_palette(profile)
 	call_deferred("_force_visible", kind)

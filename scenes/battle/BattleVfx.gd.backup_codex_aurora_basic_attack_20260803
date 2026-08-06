@@ -98,9 +98,7 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 				_spawn_vfx("GROWTH_AURA", now.get("foot_pos", Vector2.ZERO))
 				var linked_uid := str(now.get("linked_target_uid", ""))
 				var linked_target:Dictionary = current.get(linked_uid, now) if not linked_uid.is_empty() else now
-				# The queen's stacks are real data (skill_stacks); the visuals use
-				# them to pick the fissure tier and the fourth-stack rupture.
-				_play_unit_procedural("same_target_damage_stack", now.get("world_foot", Vector3.ZERO), linked_target.get("world_hit", linked_target.get("world_foot", now.get("world_foot", Vector3.ZERO))), _unit_target_context(now, linked_target, {"stacks": int(now.get("skill_stacks", 0))}))
+				_play_unit_procedural("same_target_damage_stack", now.get("world_foot", Vector3.ZERO), linked_target.get("world_hit", linked_target.get("world_foot", now.get("world_foot", Vector3.ZERO))), _unit_target_context(now, linked_target))
 		if stack_delta > 0 and sid_now == "poison_reflect_armor_stack":
 			_play_unit_procedural("poison_reflect_armor_stack", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO), _unit_target_context(now, now))
 		if sid_now == "overload_counter" and stack_delta > 0:
@@ -347,15 +345,7 @@ func _play_race_basic_attack(attack:Dictionary,target:Dictionary,mode:String,rac
 	var origin:Vector3=attack.get("world_cast",Vector3.ZERO)
 	var target_world:Vector3=target.get("world_hit",target.get("world_foot",Vector3.ZERO))
 	var source:Dictionary=current.get(str(attack.get("id","")),{})
-	# The attack event is authoritative for the firing unit.  The live-unit
-	# snapshot can be keyed by a different simulation id, so preserve the
-	# event's unit_id here or authored per-unit projectiles silently fall back
-	# to the generic race bolt.
-	var context:=_unit_target_context(source,target)
-	var attack_unit_id:=str(attack.get("unit_id",""))
-	if not attack_unit_id.is_empty():
-		context["source_unit_id"] = attack_unit_id
-	_play_unit_procedural("basic_attack_%s_%s"%[mode,race],origin,target_world,context)
+	_play_unit_procedural("basic_attack_%s_%s"%[mode,race],origin,target_world,_unit_target_context(source,target))
 
 func _nearest_enemy_damage_event(attack: Dictionary, damage_events: Array[Dictionary]) -> Dictionary:
 	var best: Dictionary = {}
@@ -447,16 +437,14 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 				procedural_played = true
 		"random_attribute_bolt", "silence_bolt":
 			should_play_texture = false
-			if sid == "random_attribute_bolt":
-				var target_bolt := _nearest_enemy_target(unit, damage_events, current)
-				if target_bolt.is_empty():
-					target_bolt = _floor_target_for(unit)
-				texture_pos = target_bolt.get("hit_pos", target_bolt.get("pos", texture_pos))
-				_spawn_skill_textures_for_role(uid, "cast", unit.get("cast_pos", Vector2.ZERO))
-				_spawn_skill_textures_for_role(uid, "hit", texture_pos)
-			# The composer's four authored layers (gather / spike / seal / wrap)
-			# are the whole silence presentation now; the old
-			# dark_mage_magic_bolt and silence_mark plates no longer stack on top.
+			var target_bolt := _nearest_enemy_target(unit, damage_events, current)
+			if target_bolt.is_empty():
+				target_bolt = _floor_target_for(unit)
+			texture_pos = target_bolt.get("hit_pos", target_bolt.get("pos", texture_pos))
+			var target_node := _unit_anchor_node_for_id(str(target_bolt.get("id", "")), "HitAnchor")
+			_spawn_skill_textures_for_role(uid, "cast", unit.get("cast_pos", Vector2.ZERO))
+			_spawn_skill_textures_for_role(uid, "hit", texture_pos)
+			should_play_texture = false
 		"bubble_dream", "balance_judge", "gold_charge", "twin_strike", "arrow_rain", "blood_rampage", "steel_order", "time_slow", "death_hunt":
 			should_play_texture = false
 		"king_aura":
@@ -471,17 +459,18 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 			should_play_texture = false
 			for event: Dictionary in _enemy_damage_events(unit, damage_events):
 				_spawn_skill_roles_at_target(uid, unit, event)
-		"front_cone_stun":
+		"fear", "stun", "front_cone_stun", "blink_low_def_backline":
 			should_play_texture = false
 			var target_control := _nearest_enemy_target(unit, damage_events, current)
 			if not target_control.is_empty():
-				# The swordsman uses only the two authored, compact slash masks
-				# at the confirmed hit target; no caster/ground fallback layers.
-				_spawn_skill_textures_for_role(uid, "hit", target_control.get("hit_pos", target_control.get("pos", texture_pos)))
-		"fear", "stun", "blink_low_def_backline":
-			# Fear Demon, Succubus and Ambusher moved to authored layers; the
-			# composer owns them and no legacy plate is added.
-			should_play_texture = false
+				if sid == "front_cone_stun":
+					# The swordsman uses only the two authored, compact slash masks
+					# at the confirmed hit target; no caster/ground fallback layers.
+					_spawn_skill_textures_for_role(uid, "hit", target_control.get("hit_pos", target_control.get("pos", texture_pos)))
+				else:
+					_spawn_skill_roles_at_target(uid, unit, target_control)
+				if sid == "blink_low_def_backline":
+					_spawn_skill_textures_for_role(uid, "hit", target_control.get("hit_pos", target_control.get("pos", Vector2.ZERO)))
 		"black_hole":
 			should_play_texture = false
 		"lowest_ally_heal", "nearby_ally_heal_buff", "holy_song", "holy_purify":
@@ -585,12 +574,6 @@ func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictio
 		context["targets"]=enemy_targets
 	elif sid=="black_hole":
 		target_world=unit.get("world_foot",Vector3.ZERO)
-		# Each pulled target needs a smear pointing at the centre (bible 8), so
-		# hand the visuals the positions of the enemies actually affected.
-		var pulled_positions:Array=[]
-		for event:Dictionary in _enemy_damage_events(unit,damage_events):
-			pulled_positions.append(event.get("world_foot",Vector3.ZERO))
-		context["targets"]=pulled_positions
 	elif sid=="bubble_dream":
 		var heal_target:=_lowest_living_team_target(unit,current)
 		context["heal_target"]=heal_target.get("world_foot",unit.get("world_foot",Vector3.ZERO))
@@ -621,13 +604,7 @@ func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictio
 	elif sid in ["slow_aura","eternal_night"]:
 		context["targets"]=_living_enemy_world_positions(unit,current)
 		target_world=unit.get("world_foot",Vector3.ZERO)
-	# 法阵友军的全场技（锁魂/噬兽/焚界者）：命中集合按"当场活着的敌人"取，不能走
-	# damage_events。这三个当帧要么只挂状态（眩晕/沉默），要么只挂 DoT（灼烧首跳在
-	# 下一 tick 才结算），施法当帧一个伤害事件都不产生——用 damage_events 会拿到空数组，
-	# 逐目标的特效直接不出。origin 保持在施法者脚下，落点仍指向最近的敌人。
-	elif sid in ["soul_chain","devour_bite","hell_burst"]:
-		context["targets"]=_living_enemy_world_positions(unit,current)
-	elif sid=="chain_lightning":
+	elif sid in ["chain_lightning","hell_burst"]:
 		var struck:Array=[]
 		for event:Dictionary in _enemy_damage_events(unit,damage_events):
 			struck.append(event.get("world_foot",Vector3.ZERO))
@@ -688,26 +665,11 @@ func _unit_target_context(source:Dictionary,target:Dictionary,extra:Dictionary={
 	if is_instance_valid(source_node) and source_node is Node3D:
 		var cast_anchor:Variant=source_node.get_node_or_null("CastAnchor")
 		context["origin_node"]=cast_anchor if cast_anchor is Node3D else source_node
-		context["origin_height"]=_model_height_of(source_node)
 	var target_node=target.get("model_node")
 	if is_instance_valid(target_node) and target_node is Node3D:
 		var hit_anchor:Variant=target_node.get_node_or_null("HitAnchor")
 		context["target_node"]=hit_anchor if hit_anchor is Node3D else target_node
-		context["target_height"]=_model_height_of(target_node)
 	return context
-
-# Rendered height of a unit, stashed on the model pivot by BattleRenderer.
-# The composer places layers at a fraction of it, so a 0.30 tall sprite and a
-# 0.93 tall one both get their feet, chest and head in the right places.
-func _model_height_of(node:Variant)->float:
-	if not (is_instance_valid(node) and node is Node3D):
-		return 0.0
-	var current:Node=node
-	while current!=null:
-		if current.has_meta("model_height"):
-			return float(current.get_meta("model_height"))
-		current=current.get_parent()
-	return 0.0
 
 func _play_opening_unit_vfx(current:Dictionary)->void:
 	for id:String in current.keys():

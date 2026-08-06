@@ -11,141 +11,6 @@ const GOD_PRIEST_STAR_IMPACT := "res://assets/vfx/skills/god_basic_projectiles/g
 const GOD_PRIESTESS_RING_PROJECTILE := "res://assets/vfx/skills/god_basic_projectiles/god_priestess_ring_projectile.png"
 const GOD_PRIESTESS_RING_TRAIL := "res://assets/vfx/skills/god_basic_projectiles/god_priestess_ring_trail.png"
 const GOD_PRIESTESS_RING_IMPACT := "res://assets/vfx/skills/god_basic_projectiles/god_priestess_ring_impact.png"
-const GUARDIAN_CRYSTAL_SLASH := "res://assets/vfx/skills/god_guardian/guardian_crystal_slash.png"
-const GUARDIAN_CRYSTAL_HIT := "res://assets/vfx/skills/god_guardian/guardian_crystal_hit.png"
-const AURORA_TRUE_HIT := "res://assets/vfx/skills/god_aurora/god_aurora_true_hit.png"
-const DARK_MAGE_BOLT_PROJECTILE := "res://assets/vfx/skills/dark_basic_projectiles/dark_mage_bolt_projectile.png"
-const DARK_MAGE_BOLT_TRAIL := "res://assets/vfx/skills/dark_basic_projectiles/dark_mage_bolt_trail.png"
-const DARK_MAGE_BOLT_IMPACT := "res://assets/vfx/skills/dark_basic_projectiles/dark_mage_bolt_impact.png"
-const DARK_IMP_CLAW_SWIPE := "res://assets/vfx/skills/dark_basic_melee/dark_imp_claw_swipe.png"
-const DARK_FEAR_CLAW_SWIPE := "res://assets/vfx/skills/dark_basic_melee/dark_fear_claw_swipe.png"
-const DARK_SCYTHE_SLASH := "res://assets/vfx/skills/dark_basic_melee/dark_scythe_slash.png"
-const DARK_SUC_SWIPE := "res://assets/vfx/skills/dark_basic_melee/dark_suc_swipe.png"
-const DARK_DOOM_SCYTHE_ARC := "res://assets/vfx/skills/dark_basic_melee/dark_doom_scythe_arc.png"
-const DARK_DRAGON_CLAW_ARC := "res://assets/vfx/skills/dark_basic_melee/dark_dragon_claw_arc.png"
-const DARK_QUEEN_BOLT_PROJECTILE := "res://assets/vfx/skills/dark_basic_projectiles/dark_queen_bolt_projectile.png"
-const DARK_QUEEN_BOLT_TRAIL := "res://assets/vfx/skills/dark_basic_projectiles/dark_queen_bolt_trail.png"
-const DARK_QUEEN_BOLT_IMPACT := "res://assets/vfx/skills/dark_basic_projectiles/dark_queen_bolt_impact.png"
-const DARK_MELEE_BREAK := "res://assets/vfx/skills/dark_basic_melee/dark_melee_break.png"
-
-# Authored basic-attack projectiles.  Each entry carries its own body / trail /
-# impact plates plus its three-value colour set, so adding a race is one more
-# row instead of another branch.  The two god entries hold the exact values the
-# hardcoded branch used, so their look is unchanged.
-const AUTHORED_BOLTS := {
-	"star_prayer": {
-		"projectile": GOD_PRIEST_STAR_PROJECTILE,
-		"trail": GOD_PRIEST_STAR_TRAIL,
-		"impact": GOD_PRIEST_STAR_IMPACT,
-		"dark": Color(.055, .065, .10), "body": Color(1.0, .97, .88), "core": Color(1.0, 1.0, .98),
-		"size": .68, "duration": .88,
-		"trail_size": Vector2(.95, .42), "trail_emission": Color(1.0, .94, .78),
-		"impact_size": .86, "impact_flow": .012,
-		"impact_dark": Color(.06, .07, .11), "impact_body": Color(1.0, .97, .86), "impact_core": Color(1.0, 1.0, .98),
-	},
-	"priestess_ring": {
-		"projectile": GOD_PRIESTESS_RING_PROJECTILE,
-		"trail": GOD_PRIESTESS_RING_TRAIL,
-		"impact": GOD_PRIESTESS_RING_IMPACT,
-		"dark": Color(.055, .065, .10), "body": Color(1.0, .97, .88), "core": Color(1.0, 1.0, .98),
-		"size": .68, "duration": .88,
-		"trail_size": Vector2(1.02, .52), "trail_emission": Color(1.0, .94, .78),
-		"impact_size": .94, "impact_flow": .012,
-		"impact_dark": Color(.06, .07, .11), "impact_body": Color(1.0, .97, .86), "impact_core": Color(1.0, 1.0, .98),
-	},
-	# Shadow Mage's ink sickle.  A dark bolt reads as mass first and magenta rim
-	# second, so its trail is thinner and more broken than the god bolts and its
-	# impact collapses inward instead of bursting outward.
-	# "dark/body/core" are profile colours feeding an additive material, hence the
-	# brighter magenta; "impact_*" are play_layer tints, which MULTIPLY into the
-	# plate, so the body value has to stay near 1.0 or the art goes black.
-	"shadow_sickle": {
-		"projectile": DARK_MAGE_BOLT_PROJECTILE,
-		"trail": DARK_MAGE_BOLT_TRAIL,
-		"impact": DARK_MAGE_BOLT_IMPACT,
-		"dark": Color(.10, .03, .12), "body": Color(.88, .28, .60), "core": Color(1.0, .82, .95),
-		"size": .92, "duration": .92,
-		"trail_size": Vector2(1.12, .34), "trail_emission": Color(.86, .30, .64),
-		"impact_size": 1.02, "impact_flow": .020, "impact_z": .30, "impact_duration": .46,
-		"impact_dark": Color(.14, .06, .16), "impact_body": Color(1.0, .90, .98), "impact_core": Color(1.0, .86, .96),
-	},
-	"thorn_lash": {
-		"projectile": DARK_QUEEN_BOLT_PROJECTILE,
-		"trail": DARK_QUEEN_BOLT_TRAIL,
-		"impact": DARK_QUEEN_BOLT_IMPACT,
-		"dark": Color(.10, .03, .10), "body": Color(.92, .24, .48), "core": Color(1.0, .78, .90),
-		"size": .82, "duration": .84,
-		"trail_size": Vector2(1.04, .26), "trail_emission": Color(.90, .26, .52),
-		"impact_size": .94, "impact_flow": .022, "impact_z": .30, "impact_duration": .42,
-		"impact_dark": Color(.14, .06, .15), "impact_body": Color(1.0, .90, .96), "impact_core": Color(1.0, .84, .92),
-	},
-}
-
-# Authored melee trails: one slash plate plus one break plate, replacing the
-# procedural arc and the generic shard burst.
-const PAINTED_MELEE := {
-	"imp_claw": {
-		"slash": DARK_IMP_CLAW_SWIPE, "hit": DARK_MELEE_BREAK,
-		"slash_size": Vector2(1.68, 1.02), "hit_size": Vector2(1.16, 1.16),
-		"dark": Color(.14, .06, .16), "body": Color(1.0, .90, .98), "core": Color(1.0, .86, .96),
-		"seed": 131.0,
-	},
-	"fear_claw": {
-		"slash": DARK_FEAR_CLAW_SWIPE, "hit": DARK_MELEE_BREAK,
-		"slash_size": Vector2(1.54, 1.16), "hit_size": Vector2(1.22, 1.22),
-		"dark": Color(.14, .06, .16), "body": Color(1.0, .90, .98), "core": Color(1.0, .86, .96),
-		"seed": 137.0,
-	},
-	"scythe_cut": {
-		"slash": DARK_SCYTHE_SLASH, "hit": DARK_MELEE_BREAK,
-		"slash_size": Vector2(1.72, 1.04), "hit_size": Vector2(.96, .96),
-		"dark": Color(.14, .06, .16), "body": Color(1.0, .90, .98), "core": Color(1.0, .86, .96),
-		"seed": 139.0,
-	},
-	"suc_hook": {
-		"slash": DARK_SUC_SWIPE, "hit": DARK_MELEE_BREAK,
-		"slash_size": Vector2(1.46, 1.10), "hit_size": Vector2(1.04, 1.04),
-		"dark": Color(.14, .06, .16), "body": Color(1.0, .90, .98), "core": Color(1.0, .86, .96),
-		"seed": 149.0,
-	},
-	# The two T3 heavy weapons: wider, heavier trails than T1/T2 and a bigger
-	# break on impact.
-	"doom_scythe": {
-		"slash": DARK_DOOM_SCYTHE_ARC, "hit": DARK_MELEE_BREAK,
-		"slash_size": Vector2(2.05, 1.12), "hit_size": Vector2(1.34, 1.34),
-		"dark": Color(.14, .06, .16), "body": Color(1.0, .90, .98), "core": Color(1.0, .86, .96),
-		"seed": 151.0,
-	},
-	"dragon_claw": {
-		"slash": DARK_DRAGON_CLAW_ARC, "hit": DARK_MELEE_BREAK,
-		"slash_size": Vector2(1.86, 1.40), "hit_size": Vector2(1.30, 1.30),
-		"dark": Color(.14, .06, .16), "body": Color(1.0, .90, .98), "core": Color(1.0, .86, .96),
-		"seed": 157.0,
-	},
-}
-
-# Projectile speed in world units per second, keyed by bolt_kind.  A battle tile
-# is ~0.92 world units across the lane and ~1.22 along it, so a range-4 shooter
-# fires from roughly 3.7-4.9 units away.
-const DEFAULT_BOLT_SPEED := 7.2
-# Bible 3.2: a projectile should be legible for 0.25-0.80s.
-const MIN_TRAVEL_TIME := 0.28
-const MAX_TRAVEL_TIME := 0.80
-const BOLT_SPEED := {
-	"arrow": 10.0,          # arrows are the fastest thing on the field
-	"dart": 8.8,
-	"lance": 7.6,
-	"orb": 6.4,             # spellcasters read slower and heavier
-	"holy": 6.4,
-	"dark": 6.8,
-	"star": 7.2,
-	"thunder": 11.0,        # lightning should feel near-instant
-	"crescent": 7.2,
-	"star_prayer": 5.8,     # the two authored god bolts stay ceremonial...
-	"priestess_ring": 5.8,  # ...but no longer 2x slower than their own race
-	"shadow_sickle": 6.8,
-	"thorn_lash": 8.0,
-}
 
 func play_profile(profile: VFXProfile3D, context: Dictionary) -> void:
 	var mode := str(context.get("mode", "ranged"))
@@ -164,22 +29,7 @@ func play_profile(profile: VFXProfile3D, context: Dictionary) -> void:
 func _play_ranged(origin: Vector3, target: Vector3, race: String, profile: VFXProfile3D, target_node: Variant, bolt_kind := "lance", bolt_tex := "") -> void:
 	begin()
 	var active := _runtime_profile(profile, race, true)
-	# A non-empty bolt texture is a fully authored projectile.  It must not be
-	# mixed with the legacy procedural shards/needle trail, otherwise the new
-	# hand-painted projectile is visually buried under the old generic VFX.
-	var bolt_spec: Dictionary = AUTHORED_BOLTS.get(bolt_kind, {})
-	var authored_projectile := not bolt_spec.is_empty() or bolt_tex != ""
-	if not bolt_spec.is_empty():
-		# Do not inherit the generic race profile colours for an authored shot:
-		# the painted plate already carries its own three-value colour structure.
-		active.dark_color = bolt_spec["dark"]
-		active.main_color = bolt_spec["body"]
-		active.core_color = bolt_spec["core"]
-		# vfx_size again: _runtime_profile already scaled the .tres size, and this
-		# line replaces it, so the authored value has to go through the same
-		# calibration or authored bolts stay 2x oversized.
-		active.size = vfx_size(float(bolt_spec["size"]))
-		active.duration = float(bolt_spec["duration"])
+	var authored_projectile := bolt_kind == "star_prayer" or bolt_kind == "priestess_ring"
 	var target_ref: WeakRef = null
 	if is_instance_valid(target_node) and target_node is Node3D:
 		target_ref = weakref(target_node)
@@ -191,13 +41,10 @@ func _play_ranged(origin: Vector3, target: Vector3, race: String, profile: VFXPr
 	needle.position = origin + Vector3(0.0, 0.0, 0.10)
 	needle.rotation.z = _screen_facing(origin, tracked_target)
 	add_child(needle)
-	# Travel time comes from distance / speed, not from a fixed duration.
-	# With a fixed duration a unit that has closed from 4 tiles to 1 fires the
-	# same bolt 4x slower, and two shooters of the same race read as having
-	# different weapons.  Speed is in world units per second; see BOLT_SPEED.
-	var travel_distance := origin.distance_to(tracked_target)
-	var bolt_speed := float(bolt_spec.get("speed", BOLT_SPEED.get(bolt_kind, DEFAULT_BOLT_SPEED)))
-	var travel_duration := clampf(travel_distance / maxf(0.5, bolt_speed), MIN_TRAVEL_TIME, MAX_TRAVEL_TIME)
+	# 厚重手感 = 慢 + 匀速 + 直线（不抛物线，避免"水滴/吊射"观感）。
+	# 飞行占比调高（0.54→0.68，飞得更慢更沉）。arc_height 默认 0=直线；
+	# 个别需要吊射的技能（比如投石）可单独传 arc_height 覆盖。
+	var travel_duration := active.duration * 0.68
 	var arc_height := maxf(0.0, float(active.parameters.get("arc_height", 0.0)))
 	var travel_elapsed := 0.0
 	var trail_elapsed := 0.0
@@ -217,22 +64,14 @@ func _play_ranged(origin: Vector3, target: Vector3, race: String, profile: VFXPr
 		needle.rotation.z = _screen_facing(origin, tracked_target)
 		if trail_elapsed >= (0.075 if authored_projectile else 0.045):
 			trail_elapsed = 0.0
-			if bolt_tex != "":
-				_spawn_textured_trail(needle.position, direction, active, bolt_tex, trail_index)
-			elif authored_projectile:
-				_spawn_authored_trail(needle.position, direction, active, bolt_kind, bolt_spec, trail_index)
+			if authored_projectile:
+				_spawn_authored_trail(needle.position, direction, active, bolt_kind, trail_index)
 			else:
 				_spawn_needle_trail(needle.position, direction, active, race, trail_index)
 			trail_index += 1
 	needle.queue_free()
-	if bolt_tex != "":
-		_spawn_textured_impact(tracked_target + Vector3(0.0, 0.04, 0.04), active, AURORA_TRUE_HIT)
-	elif authored_projectile:
-		# impact_z pushes the impact layer toward the camera.  God bolts keep the
-		# original 0.04 so nothing changes for them; dark impacts are dark-on-dark
-		# and vanish completely behind the model unless they sit in front of it.
-		var impact_z := float(bolt_spec.get("impact_z", 0.04)) * VFX_OFFSET_SCALE
-		_spawn_authored_impact(tracked_target + Vector3(0.0, 0.04, 0.0) + vfx_toward_camera(impact_z), active, bolt_kind, bolt_spec)
+	if authored_projectile:
+		_spawn_authored_impact(tracked_target + Vector3(0.0, 0.04, 0.04), active, bolt_kind)
 	else:
 		_spawn_linear_hit(tracked_target + Vector3(0.0, 0.04, 0.04), direction, active, race)
 	await get_tree().create_timer(active.duration * 0.34).timeout
@@ -244,20 +83,7 @@ func _play_melee(origin: Vector3, target: Vector3, race: String, profile: VFXPro
 	var direction := (target - origin).normalized()
 	if direction.length_squared() < 0.001:
 		direction = Vector3.RIGHT
-	var hit_at := target + vfx_offset(Vector3(0.0, 0.22, 0.02))
-	# Units with an authored trail use the painted slash and skip both the
-	# procedural arc and the generic shards: stacking the two only buries the
-	# silhouette that was just painted (design bible 14.2).
-	var painted: Dictionary = PAINTED_MELEE.get(melee_kind, {})
-	if not painted.is_empty():
-		_spawn_painted_melee_slash(hit_at, direction, active, painted)
-		await get_tree().create_timer(active.duration * 0.16).timeout
-		if _finished:
-			return
-		_spawn_painted_melee_hit(target + vfx_offset(Vector3(0.0, 0.26, 0.04)), active, painted)
-		await get_tree().create_timer(active.duration * 0.82).timeout
-		finish()
-		return
+	var hit_at := target + Vector3(0.0, 0.22, 0.02)
 	# 近战 T3 专属斩击（保持近战定位，只是斩击更派头）。其余单位走默认单斩。
 	match melee_kind:
 		"claw":
@@ -268,8 +94,6 @@ func _play_melee(origin: Vector3, target: Vector3, race: String, profile: VFXPro
 			# 神王·神圣交叉：两道对角 X 斩。
 			_spawn_slash(hit_at, direction, active, {"tilt": 36.0, "width_mul": 1.2, "radius_mul": 1.18})
 			_spawn_slash(hit_at, direction, active, {"tilt": -36.0, "width_mul": 1.2, "radius_mul": 1.18})
-		"guardian_crystal":
-			_spawn_guardian_crystal_slash(hit_at, direction, active)
 		"scythe":
 			# 末日守卫·厄夜镰斩：一道又宽又低的大横扫。
 			_spawn_slash(hit_at + Vector3(0.0, -0.06, 0.0), direction, active, {"arc": 172.0, "tilt": 6.0, "width_mul": 1.55, "radius_mul": 1.32})
@@ -281,10 +105,7 @@ func _play_melee(origin: Vector3, target: Vector3, race: String, profile: VFXPro
 	await get_tree().create_timer(active.duration * 0.16).timeout
 	if _finished:
 		return
-	if melee_kind == "guardian_crystal":
-		_spawn_guardian_crystal_hit(target + Vector3(0.0, 0.28, 0.04), active)
-	else:
-		_spawn_shards(target + Vector3(0.0, 0.24, 0.04), direction, active, race, true)
+	_spawn_shards(target + Vector3(0.0, 0.24, 0.04), direction, active, race, true)
 	var flash := IMPACT_FLASH.new()
 	flash.name = "RaceMeleeImpact_%s" % race
 	add_child(flash)
@@ -293,85 +114,6 @@ func _play_melee(origin: Vector3, target: Vector3, race: String, profile: VFXPro
 	flash.play_flash(target, active.core_color, flash_scale, active.duration * 0.16)
 	await get_tree().create_timer(active.duration * 0.82).timeout
 	finish()
-
-func _spawn_painted_melee_slash(at: Vector3, direction: Vector3, profile: VFXProfile3D, spec: Dictionary) -> void:
-	var slash := PAINTED_LAYER.new()
-	slash.name = "PaintedMeleeSlash"
-	add_child(slash)
-	var slash_size: Vector2 = spec.get("slash_size", Vector2(1.0, .60))
-	slash.play_layer(str(spec.get("slash", "")), {
-		"position":at + vfx_offset(Vector3(0.0, .10, 0.0)) + vfx_toward_camera(.22),
-		"size":slash_size,
-		"duration":.38,
-		"start_scale":.12,
-		"peak_scale":.88,
-		"end_scale":1.04,
-		"rotation_z":_screen_facing(at - direction, at),
-		"dark_tint":spec.get("dark", Color(.14,.06,.16)),
-		"body_tint":spec.get("body", Color(1.0,.90,.98)),
-		"core_tint":spec.get("core", Color(1.0,.86,.96)),
-		"flow_strength":.020,
-		"opacity":.94,
-		"seed":float(spec.get("seed", 131.0))
-	})
-
-func _spawn_painted_melee_hit(at: Vector3, profile: VFXProfile3D, spec: Dictionary) -> void:
-	var hit := PAINTED_LAYER.new()
-	hit.name = "PaintedMeleeHit"
-	add_child(hit)
-	hit.play_layer(str(spec.get("hit", "")), {
-		"position":at + vfx_toward_camera(.20),
-		"size":spec.get("hit_size", Vector2(.74,.74)),
-		"duration":.34,
-		"start_scale":.08,
-		"peak_scale":.66,
-		"end_scale":.94,
-		"dark_tint":spec.get("dark", Color(.14,.06,.16)),
-		"body_tint":spec.get("body", Color(1.0,.90,.98)),
-		"core_tint":spec.get("core", Color(1.0,.86,.96)),
-		"flow_strength":.018,
-		"opacity":.92,
-		"seed":float(spec.get("seed", 131.0)) + 7.0
-	})
-
-func _spawn_guardian_crystal_slash(at: Vector3, direction: Vector3, profile: VFXProfile3D) -> void:
-	var slash := PAINTED_LAYER.new()
-	slash.name = "GuardianCrystalSlash"
-	add_child(slash)
-	slash.play_layer(GUARDIAN_CRYSTAL_SLASH, {
-		"position":at + Vector3(0.0, .10, .02),
-		"size":Vector2(1.18, .72),
-		"duration":.46,
-		"start_scale":.10,
-		"peak_scale":.86,
-		"end_scale":1.06,
-		"rotation_z":_screen_facing(at - direction, at),
-		"dark_tint":Color(.055,.065,.10),
-		"body_tint":Color(1.0,.97,.88),
-		"core_tint":Color(1.0,1.0,.98),
-		"flow_strength":.018,
-		"opacity":.94,
-		"seed":87.0
-	})
-
-func _spawn_guardian_crystal_hit(at: Vector3, profile: VFXProfile3D) -> void:
-	var hit := PAINTED_LAYER.new()
-	hit.name = "GuardianCrystalHit"
-	add_child(hit)
-	hit.play_layer(GUARDIAN_CRYSTAL_HIT, {
-		"position":at,
-		"size":Vector2(.82,.82),
-		"duration":.42,
-		"start_scale":.08,
-		"peak_scale":.72,
-		"end_scale":1.04,
-		"dark_tint":Color(.055,.065,.10),
-		"body_tint":Color(1.0,.97,.88),
-		"core_tint":Color(1.0,1.0,.98),
-		"flow_strength":.016,
-		"opacity":.94,
-		"seed":89.0
-	})
 
 # 生成一道斩击，用 overrides 覆盖弧度/倾角/粗细/半径。
 func _spawn_slash(at: Vector3, direction: Vector3, base: VFXProfile3D, overrides: Dictionary) -> void:
@@ -447,10 +189,9 @@ func _make_projectile_body(kind: String, profile: VFXProfile3D, race: String, te
 		"thunder": return _body_thunder(profile, race)
 		"crescent": return _body_crescent(profile, race)
 		"star": return _body_star(profile, race)
-		_:
-			if AUTHORED_BOLTS.has(kind):
-				return _body_texture(str(AUTHORED_BOLTS[kind]["projectile"]), profile)
-			return _make_projectile_needle(profile, race)
+		"star_prayer": return _body_texture(GOD_PRIEST_STAR_PROJECTILE, profile)
+		"priestess_ring": return _body_texture(GOD_PRIESTESS_RING_PROJECTILE, profile)
+		_: return _make_projectile_needle(profile, race)
 
 # 🖼 PNG 弹道：用一张贴图做弹体。贴图里的箭头朝右(+X)，rotation.z 会把它对准目标。
 func _body_texture(tex_path: String, profile: VFXProfile3D) -> Node3D:
@@ -459,13 +200,7 @@ func _body_texture(tex_path: String, profile: VFXProfile3D) -> Node3D:
 		return _make_projectile_needle(profile, "human")
 	var root := Node3D.new(); root.name = "BoltTexture"
 	var quad := QuadMesh.new()
-	# Respect the plate's own aspect ratio.  This used to be a hardcoded 3:1 quad,
-	# which squashed every square projectile plate (the god, aurora and undead
-	# bolts are all 1:1) to a third of its height.  profile.size now drives the
-	# long side and the short side follows the art.
-	var tex_aspect := float(tex.get_width()) / maxf(1.0, float(tex.get_height()))
-	var long_side := profile.size * 1.5
-	quad.size = Vector2(long_side, long_side / tex_aspect) if tex_aspect >= 1.0 else Vector2(long_side * tex_aspect, long_side)
+	quad.size = Vector2(profile.size * 1.5, profile.size * 0.5)
 	var mi := MeshInstance3D.new(); mi.mesh = quad
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var mat := StandardMaterial3D.new()
@@ -618,13 +353,13 @@ func _spawn_linear_hit(at: Vector3, direction: Vector3, profile: VFXProfile3D, r
 		tween.set_parallel(false)
 		tween.tween_callback(streak.queue_free)
 
-func _spawn_authored_trail(at: Vector3, direction: Vector3, profile: VFXProfile3D, bolt_kind: String, spec: Dictionary, index: int) -> void:
-	var texture := load(str(spec.get("trail", ""))) as Texture2D
+func _spawn_authored_trail(at: Vector3, direction: Vector3, profile: VFXProfile3D, bolt_kind: String, index: int) -> void:
+	var texture_path := GOD_PRIEST_STAR_TRAIL if bolt_kind == "star_prayer" else GOD_PRIESTESS_RING_TRAIL
+	var texture := load(texture_path) as Texture2D
 	if texture == null:
 		return
-	var trail_size: Vector2 = spec.get("trail_size", Vector2(1.0, .48))
 	var quad := QuadMesh.new()
-	quad.size = Vector2(profile.size * trail_size.x, profile.size * trail_size.y)
+	quad.size = Vector2(profile.size * (0.68 if bolt_kind == "star_prayer" else 0.78), profile.size * (0.32 if bolt_kind == "star_prayer" else 0.42))
 	var mi := MeshInstance3D.new()
 	mi.name = "AuthoredTrail_%s_%d" % [bolt_kind, index]
 	mi.mesh = quad
@@ -641,7 +376,7 @@ func _spawn_authored_trail(at: Vector3, direction: Vector3, profile: VFXProfile3
 	mat.albedo_texture = texture
 	mat.albedo_color = Color(1.0, 1.0, 1.0, 0.72)
 	mat.emission_enabled = true
-	mat.emission = spec.get("trail_emission", Color(1.0, 0.94, 0.78))
+	mat.emission = Color(1.0, 0.94, 0.78)
 	mat.emission_texture = texture
 	mat.emission_energy_multiplier = minf(profile.emission_energy, 3.2)
 	mi.material_override = mat
@@ -655,77 +390,22 @@ func _spawn_authored_trail(at: Vector3, direction: Vector3, profile: VFXProfile3
 	tween.set_parallel(false)
 	tween.tween_callback(mi.queue_free)
 
-func _spawn_textured_trail(at: Vector3, direction: Vector3, profile: VFXProfile3D, texture_path: String, index: int) -> void:
-	var texture := load(texture_path) as Texture2D
-	if texture == null:
-		return
-	var quad := QuadMesh.new()
-	quad.size = Vector2(profile.size * 0.86, profile.size * 0.34)
-	var mi := MeshInstance3D.new()
-	mi.name = "TexturedTrail_%d" % index
-	mi.mesh = quad
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mi.position = at - direction * profile.size * 0.22 + Vector3(0.0, 0.0, 0.006)
-	mi.rotation.z = _screen_facing(at - direction, at)
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mat.no_depth_test = true
-	mat.render_priority = 3
-	mat.albedo_texture = texture
-	mat.albedo_color = Color(1.0, 1.0, 1.0, 0.76)
-	mat.emission_enabled = true
-	mat.emission = Color(.38, .72, 1.0)
-	mat.emission_texture = texture
-	mat.emission_energy_multiplier = minf(profile.emission_energy, 2.8)
-	mi.material_override = mat
-	mi.scale = Vector3(0.72 + 0.06 * float(index % 2), 0.72 + 0.06 * float(index % 2), 1.0)
-	add_child(mi)
-	var tween := track_tween(create_tween())
-	tween.set_parallel(true)
-	tween.tween_property(mi, "position", mi.position - direction * profile.size * 0.16, profile.duration * 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tween.tween_property(mi, "scale", Vector3(0.22, 0.12, 1.0), profile.duration * 0.22).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_IN)
-	tween.tween_property(mi, "transparency", 1.0, profile.duration * 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	tween.set_parallel(false)
-	tween.tween_callback(mi.queue_free)
-
-func _spawn_textured_impact(at: Vector3, profile: VFXProfile3D, texture_path: String) -> void:
-	var impact := PAINTED_LAYER.new()
-	impact.name = "TexturedProjectileImpact"
-	add_child(impact)
-	impact.play_layer(texture_path, {
-		"position":at,
-		"size":Vector2(.72,.72),
-		"duration":.34,
-		"start_scale":.08,
-		"peak_scale":.58,
-		"end_scale":.86,
-		"dark_tint":Color(.025,.035,.14),
-		"body_tint":Color(.10,.62,.94),
-		"core_tint":Color(.90,.99,1.0),
-		"flow_strength":.018,
-		"opacity":.92,
-		"seed":float(abs(int(at.x * 23.0 + at.y * 17.0)) % 97)
-	})
-
-func _spawn_authored_impact(at: Vector3, profile: VFXProfile3D, bolt_kind: String, spec: Dictionary) -> void:
+func _spawn_authored_impact(at: Vector3, profile: VFXProfile3D, bolt_kind: String) -> void:
+	var texture_path := GOD_PRIEST_STAR_IMPACT if bolt_kind == "star_prayer" else GOD_PRIESTESS_RING_IMPACT
 	var impact := PAINTED_LAYER.new()
 	impact.name = "AuthoredImpact_%s" % bolt_kind
 	add_child(impact)
-	var impact_size := float(spec.get("impact_size", .90))
-	impact.play_layer(str(spec.get("impact", "")), {
+	impact.play_layer(texture_path, {
 		"position":at,
-		"size":Vector2(impact_size, impact_size),
-		"duration":float(spec.get("impact_duration", 0.38)),
+		"size":Vector2(0.62 if bolt_kind == "star_prayer" else 0.72, 0.62 if bolt_kind == "star_prayer" else 0.72),
+		"duration":0.38,
 		"start_scale":0.08,
 		"peak_scale":0.70,
 		"end_scale":0.96,
-		"dark_tint":spec.get("impact_dark", Color(.06,.07,.11)),
-		"body_tint":spec.get("impact_body", Color(1.0,.97,.86)),
-		"core_tint":spec.get("impact_core", Color(1.0,1.0,.98)),
-		"flow_strength":float(spec.get("impact_flow", .012)),
+		"dark_tint":Color(.06,.07,.11),
+		"body_tint":Color(1.0,.97,.86),
+		"core_tint":Color(1.0,1.0,.98),
+		"flow_strength":.012,
 		"opacity":.92,
 		"seed":float(abs(int(at.x * 23.0 + at.y * 17.0)) % 97)
 	})
@@ -880,31 +560,27 @@ func _runtime_profile(source: VFXProfile3D, race: String, ranged: bool) -> VFXPr
 	var p := source.duplicate_runtime()
 	p.parameters = p.parameters.duplicate()
 	p.parameters["race"] = race
-	# Same world-scale calibration as the painted layers: the authored numbers
-	# assume a ~1.7 unit tall fighter, the real ones are ~0.45.
-	p.size = vfx_size(p.size)
-	var s := VFX_SIZE_SCALE
 	match race:
 		"god":
-			p.parameters["radius"] = 0.62 * s if ranged else 0.78 * s
+			p.parameters["radius"] = 0.62 if ranged else 0.78
 			p.parameters["arc_degrees"] = 112.0
 			p.parameters["tilt_degrees"] = 24.0
-			p.parameters["width"] = 0.18 * s
+			p.parameters["width"] = 0.18
 		"dark":
-			p.parameters["radius"] = 0.78 * s if ranged else 0.94 * s
+			p.parameters["radius"] = 0.78 if ranged else 0.94
 			p.parameters["arc_degrees"] = 148.0
 			p.parameters["tilt_degrees"] = -14.0
-			p.parameters["width"] = 0.25 * s
+			p.parameters["width"] = 0.25
 		"undead":
-			p.parameters["radius"] = 0.70 * s if ranged else 0.86 * s
+			p.parameters["radius"] = 0.70 if ranged else 0.86
 			p.parameters["arc_degrees"] = 126.0
 			p.parameters["tilt_degrees"] = 8.0
-			p.parameters["width"] = 0.23 * s
+			p.parameters["width"] = 0.23
 		_:
-			p.parameters["radius"] = 0.58 * s if ranged else 0.74 * s
+			p.parameters["radius"] = 0.58 if ranged else 0.74
 			p.parameters["arc_degrees"] = 94.0
 			p.parameters["tilt_degrees"] = 18.0
-			p.parameters["width"] = 0.16 * s
+			p.parameters["width"] = 0.16
 	return p
 
 func _spawn_shards(at: Vector3, direction: Vector3, profile: VFXProfile3D, race: String, impact: bool) -> void:

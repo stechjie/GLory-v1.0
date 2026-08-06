@@ -13,6 +13,7 @@
 param(
     [string]$Out = "captures/run",
     [string]$Skills = "",
+    [string]$Owners = "",
     [string]$Tier = "",
     [int]$Fps = 12,
     [int]$MaxFrames = 4000,
@@ -43,6 +44,7 @@ New-Item -ItemType Directory -Force -Path $outPath | Out-Null
 
 $userArgs = @("--out", $outPath)
 if ($Skills) { $userArgs += @("--skills", $Skills) }
+if ($Owners) { $userArgs += @("--owners", $Owners) }
 if ($Tier)   { $userArgs += @("--tier", $Tier) }
 
 $godotArgs = @(

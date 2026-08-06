@@ -58,53 +58,6 @@ void fragment() {
 """
 
 var _material: ShaderMaterial
-var _follow_ref: WeakRef = null
-var _follow_offset: Vector3 = Vector3.ZERO
-var _travel_ref: WeakRef = null
-var _travel_offset: Vector3 = Vector3.ZERO
-var _travel_from: Vector3 = Vector3.ZERO
-var _travel_to: Vector3 = Vector3.ZERO
-var _travel_time: float = 0.0
-var _travel_elapsed: float = 0.0
-
-# Status layers have to travel with their unit (design bible 4.3).  Passing
-# "follow_node" re-anchors this layer to that node every frame, keeping the
-# offset it had at play time; without it the layer stays static as before.
-func _process(delta: float) -> void:
-	if _travel_time > 0.0:
-		_advance_travel(delta)
-		return
-	if _follow_ref == null:
-		# Godot turns _process on for any script that defines it; a layer with no
-		# follow target switches itself back off on the first tick.
-		set_process(false)
-		return
-	var node: Variant = _follow_ref.get_ref()
-	var parent := get_parent() as Node3D
-	if not (is_instance_valid(node) and node is Node3D) or parent == null:
-		set_process(false)
-		return
-	position = parent.to_local((node as Node3D).global_position) + _follow_offset
-
-# Travel toward a live target.  A tween to a fixed "to" point lands where the
-# target stood at cast time, which is why skill projectiles used to sail past a
-# unit that kept walking.  Basic attacks already re-aimed every frame; this gives
-# the painted skill layers the same behaviour.  Easing matches the tween it
-# replaces (TRANS_QUAD / EASE_IN).
-func _advance_travel(delta: float) -> void:
-	_travel_elapsed += delta
-	var ratio := clampf(_travel_elapsed / _travel_time, 0.0, 1.0)
-	var destination := _travel_to
-	if _travel_ref != null:
-		var node: Variant = _travel_ref.get_ref()
-		var parent := get_parent() as Node3D
-		if is_instance_valid(node) and node is Node3D and parent != null:
-			destination = parent.to_local((node as Node3D).global_position) + _travel_offset
-	position = _travel_from.lerp(destination, ratio * ratio)
-	if ratio >= 1.0:
-		_travel_time = 0.0
-		if _follow_ref == null:
-			set_process(false)
 
 func play_layer(texture_path: String, params: Dictionary = {}) -> void:
 	begin()
@@ -121,12 +74,9 @@ func play_layer(texture_path: String, params: Dictionary = {}) -> void:
 		if _finished or not is_inside_tree():
 			return
 	var duration := maxf(0.18, float(params.get("duration", 0.9)))
-	# Artwork size is scaled centrally so the whole VFX set can be re-calibrated
-	# from one constant instead of 200 hand-edited literals.
-	var size: Vector2 = vfx_size2(params.get("size", Vector2(1.4, 1.4)))
+	var size: Vector2 = params.get("size", Vector2(1.4, 1.4))
 	var ground := bool(params.get("ground", false))
 	position = params.get("from", params.get("position", Vector3.ZERO))
-	_bind_follow(params.get("follow_node"))
 	var quad := QuadMesh.new()
 	quad.size = size
 	var art := MeshInstance3D.new()
@@ -157,12 +107,8 @@ func play_layer(texture_path: String, params: Dictionary = {}) -> void:
 		float(params.get("start_scale", 0.18)), peak_scale, duration * 0.28, str(params.get("curve", "ease_out_back")))
 	_tween_shader("reveal", 0.0, 1.0, duration * 0.26)
 	if params.has("to"):
-		_travel_from = position
-		_travel_to = params["to"]
-		_travel_time = maxf(0.02, duration * float(params.get("travel_ratio", 0.62)))
-		_travel_elapsed = 0.0
-		_bind_travel_target(params.get("track_node"))
-		set_process(true)
+		var travel := track_tween(create_tween())
+		travel.tween_property(self, "position", params["to"], duration * float(params.get("travel_ratio", 0.62))).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	if not is_inside_tree():
 		return
 	await get_tree().create_timer(duration * 0.56).timeout
@@ -179,31 +125,6 @@ func play_layer(texture_path: String, params: Dictionary = {}) -> void:
 	if _finished or not is_inside_tree():
 		return
 	finish()
-
-# Bind the follow target.  The offset is sampled at play time, so callers keep
-# passing world positions exactly as before.  Following and a "to" travel are
-# mutually exclusive: a layer that flies should not also be pinned to a unit.
-func _bind_follow(node_value: Variant) -> void:
-	if not (is_instance_valid(node_value) and node_value is Node3D):
-		return
-	var parent := get_parent() as Node3D
-	if parent == null:
-		return
-	_follow_ref = weakref(node_value)
-	_follow_offset = position - parent.to_local((node_value as Node3D).global_position)
-	set_process(true)
-
-# Re-aim the travel destination at a live node.  The offset is sampled at play
-# time so callers keep passing the aim point they intended (chest height etc).
-func _bind_travel_target(node_value: Variant) -> void:
-	_travel_ref = null
-	if not (is_instance_valid(node_value) and node_value is Node3D):
-		return
-	var parent := get_parent() as Node3D
-	if parent == null:
-		return
-	_travel_ref = weakref(node_value)
-	_travel_offset = _travel_to - parent.to_local((node_value as Node3D).global_position)
 
 func _tween_shader(param: String, from: float, to: float, duration: float) -> void:
 	var tween := track_tween(create_tween())

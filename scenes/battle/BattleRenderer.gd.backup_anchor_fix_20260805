@@ -332,40 +332,13 @@ func _make_shared_model_node(f: Dictionary) -> Node3D:
 	model.scale = Vector3(visual_scale, visual_scale, visual_scale)
 	model.rotation_degrees = Vector3.ZERO
 	pivot.add_child(model)
+	_ensure_status_vfx_controller(pivot)
 	_center_model_for_full_body_view(model)
-	# Anchors must be derived from the model that was just scaled, not hardcoded.
-	# The pivot is unscaled while the model inside it is scaled to ~0.42, so a
-	# fixed 0.85 "body" height sat 1.5x-3x above the head of every unit and every
-	# projectile aimed at empty air. Measured with tools/measure_unit_anchors.gd.
-	# Do NOT derive this from the mesh AABB. These are skinned models and their
-	# stored AABB covers only part of the rig: measured against the rendered
-	# silhouette it underestimates by 1.15x to 3.5x, inconsistently per model.
-	# The rendered heights actually cluster tightly (0.71-1.08 world units over
-	# ten sampled units, median ~0.95) because every unit shares the same visual
-	# scale, so a nominal height is both simpler and more accurate than a bad
-	# measurement. Re-measure with tools/vfx_capture.gd --unit <id> if the model
-	# scale ever changes.
-	var model_height := NOMINAL_UNIT_HEIGHT
-	if int(unit_def.get("tier", 1)) == 3:
-		model_height *= 1.12
-	pivot.set_meta("model_height", model_height)
-	_ensure_status_vfx_controller(pivot, model_height)
 	_setup_model_animation_state(pivot, model, unit_def, f)
 	_add_3d_unit_readability(pivot, f)
 	return pivot
 
-# model_height is the rendered height of this unit in world units. Pass 0 when
-# it is unknown (the late-repair path below) and the legacy 1.7 stand-in is used,
-# which reproduces the old fixed anchor heights exactly.
-# Measured from rendered silhouettes, not from mesh AABBs (see _build_3d_unit).
-const NOMINAL_UNIT_HEIGHT := 0.98
-const ANCHOR_HEAD_RATIO := 1.02   # just above the crown, where a status icon sits
-const ANCHOR_BODY_RATIO := 0.55   # chest: what every projectile aims at
-const ANCHOR_FEET_RATIO := 0.05
-const ANCHOR_FALLBACK_HEIGHT := NOMINAL_UNIT_HEIGHT
-
-func _ensure_status_vfx_controller(pivot: Node3D, model_height: float = 0.0) -> Node:
-	var height := model_height if model_height > 0.05 else ANCHOR_FALLBACK_HEIGHT
+func _ensure_status_vfx_controller(pivot: Node3D) -> Node:
 	for anchor_name in ["HeadAnchor", "BodyAnchor", "FeetAnchor"]:
 		if pivot.get_node_or_null(anchor_name) != null:
 			continue
@@ -373,11 +346,11 @@ func _ensure_status_vfx_controller(pivot: Node3D, model_height: float = 0.0) -> 
 		anchor.name = anchor_name
 		match anchor_name:
 			"HeadAnchor":
-				anchor.position = Vector3(0.0, height * ANCHOR_HEAD_RATIO, 0.0)
+				anchor.position = Vector3(0.0, 1.55, 0.0)
 			"BodyAnchor":
-				anchor.position = Vector3(0.0, height * ANCHOR_BODY_RATIO, -0.06)
+				anchor.position = Vector3(0.0, 0.85, -0.06)
 			_:
-				anchor.position = Vector3(0.0, height * ANCHOR_FEET_RATIO, 0.0)
+				anchor.position = Vector3(0.0, 0.08, 0.0)
 		pivot.add_child(anchor)
 	var controller := pivot.get_node_or_null("StatusVFXController")
 	if controller == null:

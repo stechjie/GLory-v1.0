@@ -47,10 +47,31 @@ static func get_textures(unit_id: String) -> Array[Dictionary]:
 				"god_king_royal_impact.png",
 			], 0.50)
 		# ── 暗族 ──────────────────────────────────────────
-		# Every dark-race piece now owns a hand-painted layer set under
-		# UnitSkillVFXComposer3D (dark_imp_curse, dark_mage_silence, ...).
-		# Their old two-texture entries are gone so the new and old styles can
-		# never play on top of each other.
+		"dark_imp":
+			return _tex(b + "dark_imp/", [
+				"motong_curse_crack_ring.png",
+				"motong_curse_mark.png",
+			], 0.45)
+		"dark_mage":
+			return _tex(b + "dark_mage/", [
+				"dark_mage_magic_bolt.png",
+				"dark_mage_silence_mark.png",
+			], 0.42)
+		"dark_fear":
+			return _tex(b + "dark_fear/", [
+				"dark_fear_ghost_face.png",
+				"dark_fear_backstep_arrow.png",
+			], 0.50)
+		"dark_queen":
+			return _tex(b + "dark_queen/", [
+				"dark_queen_pain_heart_spike.png",
+				"dark_queen_stun_stars.png",
+			], 0.45)
+		"dark_scythe":
+			return _tex(b + "dark_scythe/", [
+				"dark_scythe_crescent_slash.png",
+				"dark_scythe_shadow_blink.png",
+			], 0.38)
 		# ── 亡灵 ──────────────────────────────────────────
 		"undead_poison":
 			return _tex(b + "undead_poison/", [

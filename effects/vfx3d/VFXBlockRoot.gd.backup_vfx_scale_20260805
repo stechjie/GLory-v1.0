@@ -5,37 +5,6 @@ class_name VFXBlockRoot
 # 父类再占用这个名字会撞 "member already exists in parent class"。
 const QUALITY_BUDGET := preload("res://effects/vfx3d/core/VFXQualityBudget.gd")
 
-# ── World scale calibration ───────────────────────────────────────────
-# Every VFX in this project was authored against an assumed ~1.7 world-unit tall
-# unit (the old hardcoded anchors said Head=1.55 / Body=0.85).  Units actually
-# render ~0.98 units tall - measured off rendered silhouettes, not mesh AABBs,
-# which lie badly for these skinned rigs - so effects came out ~1.7x oversized.
-#
-# SIZE scales the artwork itself; OFFSET scales the local nudges composers add on
-# top of a unit anchor (+0.34 up the chest, +0.30 toward camera, ...).  Offsets
-# need the harder squeeze because the anchor they start from is now already at
-# chest height instead of at the feet.
-# Toward the battle camera, which sits at (0, 7.4, 7) looking at the origin.
-# This is the view axis, so moving a layer along it changes only its depth - it
-# does NOT slide on screen. Pushing along +Z instead (what this used to do)
-# drags effects visibly downward under a 45-degree camera.
-const CAMERA_DIR := Vector3(0.0, 0.727, 0.687)
-
-static func vfx_toward_camera(distance: float) -> Vector3:
-	return CAMERA_DIR * distance
-
-const VFX_SIZE_SCALE := 0.60
-const VFX_OFFSET_SCALE := 0.60
-
-static func vfx_size(value: float) -> float:
-	return value * VFX_SIZE_SCALE
-
-static func vfx_size2(value: Vector2) -> Vector2:
-	return value * VFX_SIZE_SCALE
-
-static func vfx_offset(value: Vector3) -> Vector3:
-	return value * VFX_OFFSET_SCALE
-
 var _tweens: Array[Tween] = []
 var _finished := false
 var vfx_alpha := 1.0

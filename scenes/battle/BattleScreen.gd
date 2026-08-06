@@ -135,10 +135,6 @@ func _process(delta: float) -> void:
 	# 水晶演出要在 _finished 之后才播（结算时才召唤），所以必须放在下面那个
 	# `if _finished: return` 之前，否则水晶不漂浮、血量数字也不会跟到水晶脚下。
 	_update_crystal_demo(delta)
-	_model_facing_elapsed += delta
-	if _model_facing_elapsed >= MODEL_FACING_UPDATE_SEC:
-		_model_facing_elapsed = 0.0
-		_model_facing_due = true
 	if _finished:
 		return
 	if _final_round_intro_active:
@@ -250,7 +246,9 @@ func _prepare_battle_models() -> void:
 	for f in living:
 		# 只建不删（prune=false）：_sync_3d_model_nodes 的收尾会清掉「不在传入列表里」
 		# 的模型，而这里一次只喂一个单位，照常清理的话每建一个就会毁掉前面全部。
-		_sync_3d_model_nodes([f], false, false)
+		# facing_delta=0：此处没跑过 _begin_visual_frame，帧内单位表是空的，
+		# 转向要等第一次 _refresh_visuals 再算（那次会直接吸附到位）。
+		_sync_3d_model_nodes([f], 0.0, false)
 		done += 1
 		if done % MODELS_PER_FRAME == 0:
 			if bar != null:

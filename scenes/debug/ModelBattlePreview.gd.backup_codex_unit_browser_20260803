@@ -50,7 +50,6 @@ const VFX_RACE_BASIC_ATTACK := preload("res://effects/vfx3d/modules/VFXRaceBasic
 const VFX_MOTHER_EXECUTE := preload("res://effects/vfx3d/modules/VFXMotherExecute3D.gd")
 const BOSS_SKILL_COMPOSER := preload("res://effects/vfx3d/boss/BossSkillVFXComposer3D.gd")
 const UNIT_SKILL_COMPOSER := preload("res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd")
-const VFX_ARCHANGEL_COVENANT := preload("res://effects/vfx3d/units/VFXArchangelCovenant3D.gd")
 const VFX_COMPOSITION := preload("res://effects/vfx3d/core/VFXComposition3D.gd")
 const VFX_PREVIEW_RECORDER := preload("res://effects/vfx3d/preview/VFXPreviewRecorder.gd")
 const VFX_VALIDATION := preload("res://effects/vfx3d/core/VFXValidationReport.gd")
@@ -153,13 +152,6 @@ var boss_stage_scale_button: Button
 var boss_stage_ally_button: Button
 var boss_stage_root: Node3D
 var board_default_texture: Texture2D
-var unit_browser_race_select: OptionButton
-var unit_browser_piece_select: OptionButton
-var unit_browser_skill_button: Button
-var unit_browser_attack_button: Button
-var unit_browser_info_label: Label
-var unit_browser_race := "god"
-var unit_browser_piece_index := 0
 
 func _ready() -> void:
 	rng.randomize()
@@ -175,8 +167,6 @@ func _ready() -> void:
 	_build_vfx_v2_test_panel()
 	model_entries = _load_model_entries()
 	_populate_model_selects()
-	_build_unit_browser_panel()
-	_populate_unit_browser_races()
 	_select_default_models()
 	auto_fight_enabled = false
 	_update_auto_button()
@@ -309,145 +299,6 @@ func _build_control_panel() -> void:
 	rows.add_child(unit_vfx_row)
 	_add_button(unit_vfx_row, "本单位普攻", _on_unit_basic_pressed)
 	skill_button = _add_button(unit_vfx_row, "本单位技能", _on_skill_pressed)
-
-func _build_unit_browser_panel() -> void:
-	var panel := PanelContainer.new()
-	panel.name = "UnitBrowserPanel"
-	panel.anchor_left = 0.0
-	panel.anchor_top = 0.0
-	panel.anchor_right = 0.0
-	panel.anchor_bottom = 0.0
-	panel.offset_left = 16.0
-	panel.offset_top = 232.0
-	panel.offset_right = 356.0
-	panel.offset_bottom = 382.0
-	canvas_layer.add_child(panel)
-
-	var rows := VBoxContainer.new()
-	rows.add_theme_constant_override("separation", 5)
-	panel.add_child(rows)
-
-	var title := Label.new()
-	title.text = "UNIT PREVIEW"
-	title.add_theme_font_size_override("font_size", 14)
-	rows.add_child(title)
-
-	var race_row := HBoxContainer.new()
-	race_row.add_theme_constant_override("separation", 6)
-	rows.add_child(race_row)
-	var race_label := Label.new()
-	race_label.text = "Race"
-	race_row.add_child(race_label)
-	unit_browser_race_select = OptionButton.new()
-	unit_browser_race_select.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	unit_browser_race_select.item_selected.connect(_on_unit_browser_race_selected)
-	race_row.add_child(unit_browser_race_select)
-
-	var piece_row := HBoxContainer.new()
-	piece_row.add_theme_constant_override("separation", 6)
-	rows.add_child(piece_row)
-	var piece_label := Label.new()
-	piece_label.text = "Piece"
-	piece_row.add_child(piece_label)
-	unit_browser_piece_select = OptionButton.new()
-	unit_browser_piece_select.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	unit_browser_piece_select.item_selected.connect(_on_unit_browser_piece_selected)
-	piece_row.add_child(unit_browser_piece_select)
-
-	var action_row := HBoxContainer.new()
-	action_row.add_theme_constant_override("separation", 6)
-	rows.add_child(action_row)
-	unit_browser_skill_button = _add_button(action_row, "Skill / VFX", _on_unit_browser_skill_pressed)
-	unit_browser_attack_button = _add_button(action_row, "Attack / Projectile", _on_unit_browser_attack_pressed)
-
-	unit_browser_info_label = Label.new()
-	unit_browser_info_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	unit_browser_info_label.add_theme_font_size_override("font_size", 11)
-	rows.add_child(unit_browser_info_label)
-
-func _populate_unit_browser_races() -> void:
-	if unit_browser_race_select == null:
-		return
-	unit_browser_race_select.clear()
-	var races := [
-		{"id": "god", "name": "God"},
-		{"id": "human", "name": "Human"},
-		{"id": "dark", "name": "Dark"},
-		{"id": "undead", "name": "Undead"}
-	]
-	var selected := 0
-	for i in races.size():
-		unit_browser_race_select.add_item(str(races[i].get("name", "Race")))
-		unit_browser_race_select.set_item_metadata(i, str(races[i].get("id", "")))
-		if str(races[i].get("id", "")) == unit_browser_race:
-			selected = i
-	unit_browser_race_select.select(selected)
-	_populate_unit_browser_pieces()
-
-func _populate_unit_browser_pieces() -> void:
-	if unit_browser_piece_select == null:
-		return
-	unit_browser_piece_select.clear()
-	var entries := _unit_browser_entries_for_race(unit_browser_race)
-	for i in entries.size():
-		var entry: Dictionary = entries[i]
-		unit_browser_piece_select.add_item(str(entry.get("name_en", entry.get("name", entry.get("id", "Piece")))))
-		unit_browser_piece_select.set_item_metadata(i, str(entry.get("id", "")))
-	if entries.is_empty():
-		unit_browser_info_label.text = "No pieces for this race"
-		return
-	var preferred := 0
-	for i in entries.size():
-		if str(entries[i].get("id", "")) == "god_priest":
-			preferred = i
-			break
-	unit_browser_piece_index = clampi(preferred, 0, entries.size() - 1)
-	unit_browser_piece_select.select(unit_browser_piece_index)
-	_load_unit_browser_piece()
-
-func _unit_browser_entries_for_race(race: String) -> Array:
-	var result: Array = []
-	for value in model_entries:
-		var entry: Dictionary = value
-		if str(entry.get("source", "")) != "棋子":
-			continue
-		if str(entry.get("race", "")) == race and str(entry.get("model", "")).begins_with("res://"):
-			result.append(entry)
-	return result
-
-func _on_unit_browser_race_selected(index: int) -> void:
-	if unit_browser_race_select == null:
-		return
-	unit_browser_race = str(unit_browser_race_select.get_item_metadata(index))
-	_populate_unit_browser_pieces()
-
-func _on_unit_browser_piece_selected(index: int) -> void:
-	unit_browser_piece_index = index
-	_load_unit_browser_piece()
-
-func _load_unit_browser_piece() -> void:
-	var entries := _unit_browser_entries_for_race(unit_browser_race)
-	if entries.is_empty():
-		return
-	unit_browser_piece_index = clampi(unit_browser_piece_index, 0, entries.size() - 1)
-	var entry: Dictionary = entries[unit_browser_piece_index]
-	selected_left_index = _find_entry_index(str(entry.get("id", "")), selected_left_index)
-	selected_right_index = _find_entry_index("battle_crystal_red", selected_right_index)
-	if left_model_select != null:
-		left_model_select.select(selected_left_index)
-	if right_model_select != null:
-		right_model_select.select(selected_right_index)
-	auto_fight_enabled = false
-	_update_auto_button()
-	_load_selected_pair()
-	_update_unit_browser_info(entry)
-
-func _update_unit_browser_info(entry: Dictionary) -> void:
-	if unit_browser_info_label == null:
-		return
-	var skill_id := str(entry.get("skill_id", "none"))
-	var piece_name := str(entry.get("name_en", entry.get("name", entry.get("id", "Piece"))))
-	unit_browser_info_label.text = "%s\nSkill: %s\nTarget: fixed dummy" % [piece_name, skill_id]
 
 func _build_vfx_test_panel() -> void:
 	var panel := PanelContainer.new()
@@ -2067,87 +1918,3 @@ func _on_skill_pressed() -> void:
 		vfx_status_label.text="Skill: 当前模型没有配置可预览技能"
 	else:
 		vfx_status_label.text="Skill Preview: "+" | ".join(fired)
-
-func _unit_browser_left_unit() -> Dictionary:
-	for unit in units:
-		if int(unit.get("side", 0)) == SIDE_LEFT:
-			return unit
-	return {}
-
-func _on_unit_browser_attack_pressed() -> void:
-	_clear_all_preview_nodes()
-	auto_fight_enabled = false
-	_update_auto_button()
-	var unit := _unit_browser_left_unit()
-	if unit.is_empty():
-		if unit_browser_info_label != null:
-			unit_browser_info_label.text = "Attack: no piece loaded"
-		return
-	var slot := unit.get("slot") as Node3D
-	if slot == null or right_slot == null:
-		return
-	var unit_id := str(unit.get("id", ""))
-	var race := _preview_visual_race(unit_id)
-	var mode := "melee" if int(unit.get("range", 1)) <= 1 else "ranged"
-	var origin := slot.global_position + Vector3(0.0, 0.24, 0.0)
-	var target := right_slot.global_position + Vector3(0.0, 0.24, 0.0)
-	var context := {
-		"origin_node": slot,
-		"target_node": right_slot,
-		"source_unit_id": unit_id,
-		"target_unit_id": str(right_slot.name),
-		"targets": [target],
-	}
-	var composer := UNIT_SKILL_COMPOSER.new()
-	composer.name = "UnitBrowserAttack_%s" % (unit_id if not unit_id.is_empty() else "unit")
-	vfx_preview_root.add_child(composer)
-	composer.play_skill("basic_attack_%s_%s" % [mode, race], origin, target, context)
-	_play_unit_action(unit, "attack", true)
-	if unit_browser_info_label != null:
-		unit_browser_info_label.text = "%s\nAttack: %s %s\nTarget: fixed dummy" % [str(unit.get("name", unit_id)), race, mode]
-
-func _on_unit_browser_skill_pressed() -> void:
-	_clear_all_preview_nodes()
-	auto_fight_enabled = false
-	_update_auto_button()
-	var unit := _unit_browser_left_unit()
-	if unit.is_empty():
-		if unit_browser_info_label != null:
-			unit_browser_info_label.text = "Skill: no piece loaded"
-		return
-	var skill_id := str(unit.get("skill_id", "none"))
-	if skill_id.is_empty() or skill_id == "none":
-		if unit_browser_info_label != null:
-			unit_browser_info_label.text = "%s\nSkill: none" % str(unit.get("name", unit.get("id", "Piece")))
-		return
-	var slot := unit.get("slot") as Node3D
-	if slot == null or right_slot == null:
-		return
-	var origin := slot.global_position + Vector3(0.0, 0.24, 0.0)
-	var target := right_slot.global_position + Vector3(0.0, 0.24, 0.0)
-	var context := {
-		"target_node": right_slot,
-		"origin_node": slot,
-		"source_unit_id": str(unit.get("id", "")),
-		"target_unit_id": str(right_slot.name),
-		"targets": [target],
-		"heal_target": target,
-	}
-	if skill_id == "lowest_ally_heal":
-		# Preview mode shows the full Star Prayer package, including its
-		# cleanse branch, so the new ComfyUI-authored residue can be judged.
-		context["cleanse_triggered"] = true
-	if skill_id == "random_ally_damage_reduction":
-		var covenant: Node3D = VFX_ARCHANGEL_COVENANT.new() as Node3D
-		vfx_preview_root.add_child(covenant)
-		vfx_preview_effect = covenant
-		covenant.call("play_covenant", origin, target, right_slot, true)
-		if unit_browser_info_label != null:
-			unit_browser_info_label.text = "%s\nSkill: %s\nTarget: fixed dummy (target-bound guard)" % [str(unit.get("name", unit.get("id", "Piece"))), skill_id]
-		return
-	var composer := UNIT_SKILL_COMPOSER.new()
-	composer.name = "UnitBrowserSkill_%s" % skill_id
-	vfx_preview_root.add_child(composer)
-	composer.play_skill(skill_id, origin, target, context)
-	if unit_browser_info_label != null:
-		unit_browser_info_label.text = "%s\nSkill: %s\nTarget: fixed dummy (status follows target)" % [str(unit.get("name", unit.get("id", "Piece"))), skill_id]

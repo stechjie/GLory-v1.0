@@ -674,7 +674,7 @@ static func _apply_attack_statuses(attacker: Dictionary, target: Dictionary, sta
 		StatusEffectService.add_status(target, "slow", float(d.get("duration", 4.0)) * duration_bonus, {"attack_speed_pct": float(d.get("aspd_down", 0.08)) * strength, "move_pct": 0.0})
 	elif sid == "burn_claw":
 		StatusEffectService.add_poison(target, float(d.get("burn_duration", 3.0)), 0.0, 0.0)
-		StatusEffectService.add_status(target, "burn", float(d.get("burn_duration", 3.0)), {"dps": float(d.get("burn_dps", 18.0)), "tick_left": 0.0})
+		StatusEffectService.add_status(target, "burn", float(d.get("burn_duration", 3.0)), {"dps": float(d.get("burn_dps", 36.0)), "tick_left": 0.0})
 	elif sid == "devour_bite":
 		_heal_unit(attacker, maxi(1, int(round(float(attacker.atk) * float(d.get("lifesteal", 0.18))))))
 	elif sid == "parasite_on_kill":
@@ -756,7 +756,11 @@ static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) ->
 		# 等敌人进入射程再放。复用普攻同一套 _select_target + _effective_attack_distance，
 		# 实现"用单位自己的射程"，堵住"开场冷却一到就隔着半张地图乱开"。
 		# 治疗/增益等辅助技也一并按此判定：等自己这一路真正交战了才开始起作用。
-		if not _skill_target_in_range(caster, opponents):
+		#
+		# 例外 skill_global：全场技不吃射程判定。法阵友军里的近战体型（噬兽、厄夜）
+		# 否则要贴到脸上才能放"全场"大招，多半没走到就死了。这批的开场时机改由
+		# opening_cd 把关，不会一到 0 秒就隔着半张地图开。
+		if not bool(d.get("skill_global", false)) and not _skill_target_in_range(caster, opponents):
 			continue
 		var old_ready := float(caster.get("skill_ready", 0.0))
 		DamageService.begin_stat_context(state, caster)
@@ -846,6 +850,23 @@ static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) ->
 			"king_aura":
 				BattleSimSkills._skill_king_aura(caster, casters, d)
 				caster.skill_ready = float(state.elapsed) + 2.0
+			# 法阵友军。全场技在场上没有可打目标时返回 false，此时不进冷却，留到真正
+			# 有敌人时再放——一只只活十几秒的守护者，空放掉一发就等于没有这个技能。
+			"burn_claw":
+				BattleSimSkills._skill_ally_self_sustain(caster, d)
+				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 5.0))
+			"soul_chain":
+				if BattleSimSkills._skill_ally_mass_stun(caster, opponents, d):
+					caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 9.0))
+			"devour_bite":
+				if BattleSimSkills._skill_ally_mass_silence(caster, opponents, d):
+					caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 12.0))
+			"hell_burst":
+				if BattleSimSkills._skill_ally_inferno(caster, opponents, d):
+					caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 9.0))
+			"eternal_night":
+				if BattleSimSkills._skill_ally_meteor(caster, opponents, d):
+					caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 12.0))
 		var new_ready := float(caster.get("skill_ready", old_ready))
 		if new_ready > float(state.elapsed) and float(caster.get("skill_cd_multiplier", 1.0)) < 1.0:
 			caster.skill_ready = float(state.elapsed) + (new_ready - float(state.elapsed)) * float(caster.skill_cd_multiplier)
