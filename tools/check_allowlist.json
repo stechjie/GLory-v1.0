@@ -1,0 +1,76 @@
+{
+  "_doc": [
+    "已知且暂时不修的检查失败登记在这里。规则：",
+    "1. 每条必须带 expires（YYYY-MM-DD）。缺 expires 的条目不予豁免，并直接报 allowlist_no_expiry。",
+    "2. 到期后条目自动失效，并额外产生一条 allowlist_expired 失败 —— 登记一次不会永远绿。",
+    "3. 不在本列表里的失败一律硬失败。列表为空 = 全部硬失败。",
+    "4. 某条本次没命中会打印 STALE，说明问题可能已修好，应当删除该条。",
+    "字段：check=检查名(或*) / code=失败码(或*) / match=消息子串(空=全匹配) / expires=到期日 / why=为什么暂时豁免、谁负责修",
+    "初始条目登记于 2026-08-18，全部来自本机首次运行 asset_manifest_check 的真实结果。"
+  ],
+  "entries": [
+    {
+      "check": "asset_manifest",
+      "code": "missing_asset",
+      "match": "prep_river_arena_material.tres",
+      "expires": "2026-09-15",
+      "why": "真实运行时失败：PrepBoardModels.gd:392 无条件 ResourceLoader.load() 这个材质，失败只 push_warning。目录 assets/models/prep/river_arena/ 整个不存在。属于 E1（准备界面展示链）范围，到期前必须补资源或删掉这段加载。到期日比其他条目短，因为它每次进准备界面都会真的执行。"
+    },
+    {
+      "check": "asset_manifest",
+      "code": "missing_asset",
+      "match": "Meshy_AI_Verdant_River_Arena",
+      "expires": "2026-09-30",
+      "why": "死常量：PrepBoardModels.gd:5 定义了 PREP_RIVER_ARENA_PATH，但全仓找不到任何使用点。随上一条一起在 E1 清理时删除。"
+    },
+    {
+      "check": "asset_manifest",
+      "code": "missing_asset",
+      "match": "assets/models/arena/battle_scene.glb",
+      "expires": "2026-09-30",
+      "why": "死分支：BattleUI.gd:32 的 BATTLE_USE_3D_ARENA 为 false，BattleArena.gd:481 会提前 return，所以这个 load() 运行时永不执行。要么补上 3D 竞技场模型，要么连同常量一起删。属于 E1 范围。"
+    },
+    {
+      "check": "asset_manifest",
+      "code": "missing_asset",
+      "match": "battle_crystal_toon_before.gdshader",
+      "expires": "2026-09-30",
+      "why": "只被 tools/crystal_toon_shot.gd（水晶风格对照截图工具）引用，不进发布包。该工具的 before/after 对照功能目前是坏的。低优先级，随 A5 清理工具脚本时一并处理。"
+    },
+    {
+      "check": "asset_manifest",
+      "code": "missing_asset",
+      "match": "vfx_blank_shield_02.tscn",
+      "expires": "2026-09-30",
+      "why": "第三方 Binbun BattleFX 包内部损坏：battle_fx_scene_free.tscn 引用了包里不存在的 shield 场景。README 已记录过这条。属于 A5/C1（第三方资源治理）范围 —— 要么补包、要么把这个演示场景排除出资源根。"
+    },
+    {
+      "check": "*",
+      "code": "dependency_query_failed",
+      "match": "vfx_blank_shield_02.tscn",
+      "expires": "2026-09-30",
+      "why": "与上一条同源：文件不存在，get_dependencies 自然查不动。asset_manifest 和 dep_scan 都会报，所以 check 用 *。修好上一条这条会一起消失。"
+    },
+    {
+      "check": "skel_check",
+      "code": "skeleton_mismatch",
+      "match": "god_arbiter_animated",
+      "expires": "2026-09-30",
+      "why": "idle 83 根骨骼 vs attack 118 根。三个动作 FBX 不是同一套骨架，走不了 Godot 的 Import As: Animation Library，必须 Blender 重导出或 retarget。属于 E2（模型与贴图预算）范围。"
+    },
+    {
+      "check": "skel_check",
+      "code": "skeleton_mismatch",
+      "match": "dark_doom_animated",
+      "expires": "2026-09-30",
+      "why": "idle 65 根骨骼 vs run 83 根，同上。E2 范围。"
+    },
+    {
+      "check": "skel_check",
+      "code": "skeleton_mismatch",
+      "match": "abyss_beast_animated",
+      "expires": "2026-09-30",
+      "why": "骨骼名单与层级一致但 rest pose 不同，动画套上去会变形，需要 retarget。E2 范围。"
+    }
+  ]
+}

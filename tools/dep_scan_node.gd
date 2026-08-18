@@ -35,6 +35,11 @@ const RESOURCE_EXT := ["tscn", "scn", "tres", "res", "material", "mesh",
 	"fbx", "glb", "gltf", "obj", "gdshader"]
 const OUT_PATH := "user://dep_scan_report.txt"
 
+const CheckHarness := preload("res://tools/CheckHarness.gd")
+const CHECK_NAME := "dep_scan"
+
+var _h: CheckHarness
+
 var _all_png: Array[String] = []
 var _referenced: Dictionary = {}      # res:// 路径 -> 第一个引用者
 var _visited: Dictionary = {}
@@ -43,9 +48,13 @@ var _lines: Array[String] = []
 var _failed: Array[String] = []
 
 func _ready() -> void:
+	_h = CheckHarness.new(CHECK_NAME)
 	_say("=== Glory 依赖扫描 ===")
 	_collect_png("res://assets")
 	_say("assets/ 下 PNG 总数: %d" % _all_png.size())
+	# 一张都没扫到 = 什么都没验证。留给 harness 判成 SKIP（非零退出），
+	# 而不是让"0 张未引用"读起来像全过。
+	_h.item(_all_png.size())
 
 	var roots := _collect_resource_files("res://")
 	_say("待问依赖的资源文件: %d" % roots.size())
@@ -58,7 +67,7 @@ func _ready() -> void:
 
 	_report()
 	_flush()
-	get_tree().quit()
+	_h.finish(get_tree())
 
 # --- 收集 ---------------------------------------------------------------------
 
@@ -214,7 +223,11 @@ func _report() -> void:
 			_say("  ❌ 漏掉 %s —— 这套方法不能用来删文件" % p)
 	if must_find.is_empty():
 		_say("  ⚠️ 没找到基准文件，自检无效")
-	elif ok:
+		# 自检失效时整份报告都不该被信任，更不能拿它去删文件。
+		_h.fail("selfcheck_no_baseline", "没找到 battle_crystals 基准贴图，依赖解析方法未经验证")
+	elif not ok:
+		_h.fail("selfcheck_failed", "基准贴图未被认出，依赖解析方法不可用于删除判定")
+	else:
 		_say("  → 方法有效：FBX 的贴图依赖能被正确解析")
 
 	if not _failed.is_empty():
@@ -223,6 +236,9 @@ func _report() -> void:
 			% _failed.size())
 		for p in _failed:
 			_say("  %s" % p)
+			# 原来这里只打印。少算的依赖会把在用的文件判成没用 ——
+			# 上次正是这样把水晶在用的 46 MB 贴图搬走导致模型加载失败。
+			_h.fail("dependency_query_failed", "%s 依赖查询失败，其依赖未计入清单" % str(p))
 
 func _in_dynamic_dir(p: String) -> bool:
 	for d in DYNAMIC_DIRS:

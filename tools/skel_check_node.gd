@@ -9,26 +9,39 @@ extends Node
 #   4. Skeleton3D 在场景里的相对路径一致（轨道 NodePath 要对得上）
 # 任何一条不满足，就只能走 Blender 重导出。
 
+const CheckHarness := preload("res://tools/CheckHarness.gd")
+const CHECK_NAME := "skel_check"
+
+var _h: CheckHarness
+
 func _ready() -> void:
+	_h = CheckHarness.new(CHECK_NAME)
 	var units := _collect_units()
 	print("[SKEL] 待检查单位 %d 个" % units.size())
 	var ok := 0
 	var bad := 0
+	var inconclusive := 0
 	var detail: Array[String] = []
 	for id in units:
 		var actions: Dictionary = units[id]
 		var res := _check_unit(str(id), actions)
 		if res.is_empty():
+			# 可比较的动作不足 2 个 —— 原来这里直接 continue，既不计 ok 也不计 bad，
+			# 于是"不一致 0 个"看起来像全过。现在显式记成 inconclusive。
+			inconclusive += 1
+			_h.note("%s 可比较的动作不足 2 个，无法判定骨骼一致性" % str(id))
 			continue
 		if bool(res.get("ok", false)):
+			_h.item()
 			ok += 1
 		else:
 			bad += 1
 			detail.append("%s: %s" % [id, str(res.get("why", ""))])
-	print("[SKEL] ===== 骨骼一致 %d 个，不一致 %d 个 =====" % [ok, bad])
+			_h.fail("skeleton_mismatch", "%s: %s" % [str(id), str(res.get("why", ""))])
+	print("[SKEL] ===== 骨骼一致 %d 个，不一致 %d 个，无法判定 %d 个 =====" % [ok, bad, inconclusive])
 	for d in detail:
 		print("[SKEL]   x %s" % d)
-	get_tree().quit()
+	_h.finish(get_tree())
 
 
 # 从 42 个空壳脚本里读出 ACTION_SCENES

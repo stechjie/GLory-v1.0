@@ -1,30 +1,45 @@
 extends Node
 
+const CheckHarness := preload("res://tools/CheckHarness.gd")
+const CHECK_NAME := "model_bounds"
+
+# 低于这个尺寸视为"能 load 但实际没有可见网格"。缺贴图/缺子资源的 FBX 在
+# headless 下只往 stderr 吐 ERROR，load() 仍返回非 null，span 却是 0 ——
+# 这种"假可加载"以前只体现在打印出来的表格里，没人会去逐行看。
+const MIN_VALID_SPAN := 0.001
+
 const TABLES := [
 	{"kind": "unit", "path": "res://data/units/race_units.json", "key": "units"},
 	{"kind": "merc", "path": "res://data/mercenary/mercenaries.json", "key": "mercenaries"},
 ]
 
+var _h: CheckHarness
+
 func _ready() -> void:
+	_h = CheckHarness.new(CHECK_NAME)
 	var rows: Array[Dictionary] = []
 	var broken: Array[String] = []
 	for table in TABLES:
 		var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(str(table.path)))
 		if not (parsed is Dictionary):
 			broken.append("%s: JSON parse failed" % str(table.path))
+			_h.fail("table_parse_failed", "%s JSON 解析失败" % str(table.path))
 			continue
 		for item in (parsed as Dictionary).get(str(table.key), []):
 			var def := item as Dictionary
 			var model_path := str(def.get("model", ""))
 			if model_path.is_empty():
 				continue
+			_h.item()
 			var scene := load(model_path) as PackedScene
 			if scene == null:
 				broken.append("%s missing scene %s" % [str(def.get("id", "")), model_path])
+				_h.fail("broken_scene", "%s 场景无法加载：%s" % [str(def.get("id", "")), model_path])
 				continue
 			var node := scene.instantiate()
 			if not (node is Node3D):
 				broken.append("%s scene is not Node3D %s" % [str(def.get("id", "")), model_path])
+				_h.fail("not_node3d", "%s 根节点不是 Node3D：%s" % [str(def.get("id", "")), model_path])
 				node.queue_free()
 				continue
 			var model := node as Node3D
@@ -34,6 +49,9 @@ func _ready() -> void:
 				await get_tree().process_frame
 			var bounds := _node3d_bounds(model)
 			var span := maxf(bounds.size.x, maxf(bounds.size.y, bounds.size.z))
+			if span <= MIN_VALID_SPAN:
+				_h.fail("span_zero", "%s 加载成功但没有可见网格（span=%.4f）：%s" % [
+					str(def.get("id", "")), span, model_path])
 			var scale := float(def.get("model_visual_scale", 1.0))
 			rows.append({
 				"kind": str(table.kind),
@@ -63,7 +81,7 @@ func _ready() -> void:
 	print("MODEL_BOUNDS_BROKEN count=%d" % broken.size())
 	for item in broken:
 		print(item)
-	get_tree().quit()
+	_h.finish(get_tree())
 
 func _sort_by_final_desc(a: Dictionary, b: Dictionary) -> bool:
 	return float(a.final) > float(b.final)
