@@ -12,20 +12,6 @@
     {
       "check": "asset_manifest",
       "code": "missing_asset",
-      "match": "prep_river_arena_material.tres",
-      "expires": "2026-09-15",
-      "why": "真实运行时失败：PrepBoardModels.gd:392 无条件 ResourceLoader.load() 这个材质，失败只 push_warning。目录 assets/models/prep/river_arena/ 整个不存在。属于 E1（准备界面展示链）范围，到期前必须补资源或删掉这段加载。到期日比其他条目短，因为它每次进准备界面都会真的执行。"
-    },
-    {
-      "check": "asset_manifest",
-      "code": "missing_asset",
-      "match": "Meshy_AI_Verdant_River_Arena",
-      "expires": "2026-09-30",
-      "why": "死常量：PrepBoardModels.gd:5 定义了 PREP_RIVER_ARENA_PATH，但全仓找不到任何使用点。随上一条一起在 E1 清理时删除。"
-    },
-    {
-      "check": "asset_manifest",
-      "code": "missing_asset",
       "match": "assets/models/arena/battle_scene.glb",
       "expires": "2026-09-30",
       "why": "死分支：BattleUI.gd:32 的 BATTLE_USE_3D_ARENA 为 false，BattleArena.gd:481 会提前 return，所以这个 load() 运行时永不执行。要么补上 3D 竞技场模型，要么连同常量一起删。属于 E1 范围。"

@@ -83,7 +83,7 @@ Windows 10 / Godot 4.7.stable / `assets/` 2205 个文件。
 
 | 检查 | checked | failures | allowed | 说明 |
 | --- | ---: | ---: | ---: | --- |
-| `asset_manifest` | 2507 | 0 | 6 | 盘点 2501 个文件、2990.8 MiB；解析出 1188 条引用 |
+| `asset_manifest` | 2505 | 0 | 4 | 盘点 2501 个文件、2990.8 MiB；解析出 1188 条引用 |
 | `model_bounds` | 44 | 0 | 0 | **broken=0、span=0 的模型 0 个** |
 | `skel_check` | 3 | 0 | 3 | 只有 3 个单位有 ≥2 个可比动作，且 3 个全不一致 |
 | `board_4x4_smoke` | 62 | 0 | 0 | 含 25→16 迁移与"未知 id 必须被丢弃"两组用例 |
@@ -97,14 +97,15 @@ Windows 10 / Godot 4.7.stable / `assets/` 2205 个文件。
 `skel_check` 的覆盖率是真实短板：44 个模型里只有 3 个进入了骨架比对，
 其余单位的 `ACTION_SCENES` 不足 2 个动作。这属于 E2 范围，A3 不处理。
 
-## 6. 已登记的 9 条豁免
+## 6. 已登记的 7 条豁免
 
-全部登记于 2026-08-18，来自本机首次运行的真实结果。
+登记于 2026-08-18，来自本机首次运行的真实结果。
+
+首批登记的 9 条里有 2 条当天就修掉并删除了（见第 8 节），
+删除前先跑了一次确认它们被自动标为 `STALE` —— 这条链路是允许列表不会烂掉的保证。
 
 | 失败 | 到期 | 归属 |
 | --- | --- | --- |
-| `prep_river_arena_material.tres` 缺失 | 2026-09-15 | E1。**真实运行时失败**：`PrepBoardModels.gd:392` 每次进准备界面都会无条件 `load()` 它并失败 |
-| `Meshy_AI_Verdant_River_Arena...fbx` 缺失 | 2026-09-30 | E1。死常量，全仓无使用点 |
 | `assets/models/arena/battle_scene.glb` 缺失 | 2026-09-30 | E1。死分支，`BATTLE_USE_3D_ARENA` 为 false |
 | `battle_crystal_toon_before.gdshader` 缺失 | 2026-09-30 | A5。只被调试工具引用 |
 | Binbun `vfx_blank_shield_02.tscn` 缺失 + 依赖查询失败 | 2026-09-30 | A5/C1。第三方包内部损坏 |
@@ -133,3 +134,24 @@ Windows 10 / Godot 4.7.stable / `assets/` 2205 个文件。
 | `unreferenced` | 任何静态引用都查不到，可评估删除 |
 
 所有条目的 `license_id` 当前均为 `unknown`，留给 A5/C1 补齐。
+
+## 8. 已随本次清理掉的死代码
+
+`scenes/prep/PrepBoardModels.gd` 里 3D 河流场地（river arena）的残留。该方案早已被
+「贴在平躺 quad 上的 2D 分层棋盘」取代（见同文件 `_add_prep_art_layers()` 上方注释），
+但留下了指向已不存在目录 `assets/models/prep/river_arena/` 的常量和函数：
+
+| 删除项 | 为什么是死的 |
+| --- | --- |
+| `PREP_RIVER_ARENA_PATH` | 全仓无使用点 |
+| `PREP_RIVER_MATERIAL_PATH` | 只被下面这个函数用 |
+| `_apply_prep_river_material()` | 全仓无调用点（含 `PrepUI` 这条继承链） |
+| `_has_prep_river_background()` | 全仓无调用点 |
+| `_prep_river_background_ready` | 唯一读者是上面那个函数，删后成为只写变量 |
+
+注意：这段**不是**运行时失败。`_apply_prep_river_material()` 里那句
+`ResourceLoader.load()` 因为函数没人调用而从不执行，所以玩家看不到任何警告。
+它的价值在于：A1 的清单把"引用了不存在的资源"暴露出来，顺藤摸瓜才发现整块是死的。
+
+回归：`board_4x4_smoke` 会实例化 `PrepScreen`（→ `PrepUI` → `PrepBoardModels`），
+删除后该检查 62 项仍全过、无脚本错误。

@@ -1,6 +1,6 @@
 # 资产清单（自动生成，勿手改）
 
-生成者：`tools/asset_manifest_check.gd`　生成时间：2026-08-18T10:39:55　Godot：4.7-stable (official)
+生成者：`tools/asset_manifest_check.gd`　生成时间：2026-08-18T10:46:47　Godot：4.7-stable (official)
 
 机读版本在 `assets.manifest.json`，A2 用它在新机器上校验资源恢复结果。
 
@@ -17,15 +17,13 @@
 
 ## 判定结果
 
-- 被引用但不存在的文件：**5**
+- 被引用但不存在的文件：**3**
 - 依赖查询失败的资源：**1**
 
 ### 缺失明细
 
 - `res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/effects/shield/vfx_blank_shield_02.tscn` ← res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/battle_fx_scene_free.tscn
 - `res://assets/models/arena/battle_scene.glb` ← res://scenes/battle/BattleUI.gd
-- `res://assets/models/prep/river_arena/Meshy_AI_Verdant_River_Arena_0621085900_texture.fbx` ← res://scenes/prep/PrepBoardModels.gd
-- `res://assets/models/prep/river_arena/prep_river_arena_material.tres` ← res://scenes/prep/PrepBoardModels.gd
 - `res://shaders/battle_crystal_toon_before.gdshader` ← res://tools/crystal_toon_shot.gd
 
 ### 依赖查询失败明细

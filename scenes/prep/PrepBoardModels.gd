@@ -2,8 +2,10 @@ extends "res://scenes/prep/PrepShared.gd"
 
 const PREP_RELATION_PARTICLES_SCRIPT := preload("res://scenes/prep/PrepRelationParticles3D.gd")
 const PREP_RELATION_LINK_SCRIPT := preload("res://scenes/prep/PrepRelationLink3D.gd")
-const PREP_RIVER_ARENA_PATH := "res://assets/models/prep/river_arena/Meshy_AI_Verdant_River_Arena_0621085900_texture.fbx"
-const PREP_RIVER_MATERIAL_PATH := "res://assets/models/prep/river_arena/prep_river_arena_material.tres"
+# 3D 河流场地（river_arena FBX + 其材质）已弃用，改为贴在平躺 quad 上的 2D 分层棋盘，
+# 见下方 _add_prep_art_layers()。原来的两个路径常量与 _apply_prep_river_material()
+# 指向的 assets/models/prep/river_arena/ 目录早已不存在，且全仓无调用点，
+# 于 2026-08-18 随 A1 资产清单一并清理。
 # 2.5D 分层棋盘背景图（贴在 3D 平躺地面 quad 上，和棋子一起呈现 TFT 倾斜纵深）
 const PREP_BOARD_BASE_PATH := "res://assets/board/prep_2_5d/glory_grass_base_2560x1440.png"
 # 每个 4×4 格子上的站位图案（站位.png）——3D 地面 quad，模型在其上方不会被盖。
@@ -68,7 +70,6 @@ var _prep_board_frame: Control
 var _prep_board_glow: CPUParticles2D
 var _prep_standby_model_nodes: Dictionary = {}
 var _prep_standby_model_signatures: Dictionary = {}
-var _prep_river_background_ready := false
 var _prep_board_model_nodes: Dictionary = {}
 var _prep_board_model_signatures: Dictionary = {}
 var _prep_relation_link_nodes: Dictionary = {}
@@ -174,8 +175,6 @@ func _setup_prep_river_background() -> void:
 	camera.current = true
 	world.add_child(camera)
 	_prep_river_camera = camera
-
-	_prep_river_background_ready = true
 
 func _add_prep_art_layers(world: Node3D) -> void:
 	# v4 横向竞技场，一层一层贴在平躺 3D 平面上（保留 2.5D 倾斜）
@@ -384,25 +383,6 @@ func _add_prep_river_layer(world: Node3D, node_name: String, texture_path: Strin
 		layer.scale = Vector3(1.0, 1.0, -1.0)
 	layer.position = PREP_BOARD_GROUND_CENTER + Vector3(0.0, y_lift, 0.0)
 	world.add_child(layer)
-
-func _has_prep_river_background() -> bool:
-	return _prep_river_background_ready
-
-func _apply_prep_river_material(root: Node) -> void:
-	var material := ResourceLoader.load(PREP_RIVER_MATERIAL_PATH) as Material
-	if material == null:
-		push_warning("准备界面河流材质加载失败：%s" % PREP_RIVER_MATERIAL_PATH)
-		return
-	var stack: Array[Node] = [root]
-	while not stack.is_empty():
-		var node: Node = stack.pop_back()
-		if node is MeshInstance3D:
-			var mesh_node := node as MeshInstance3D
-			var surface_count := mesh_node.mesh.get_surface_count() if mesh_node.mesh != null else 0
-			for surface_index in surface_count:
-				mesh_node.set_surface_override_material(surface_index, material)
-		for child in node.get_children():
-			stack.append(child)
 
 func _setup_prep_board_model_view(board_frame: Control) -> void:
 	# Board models now share the river arena viewport, camera, lights and depth.

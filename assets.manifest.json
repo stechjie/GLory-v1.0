@@ -11787,8 +11787,8 @@
       "path": "res://assets/ui/buttons/ready_magic_circle.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "13604332c851048e37bdded0b218fe9d6afcdbed3b394cc83afbc78a93c8bb97",
-      "size": 1016,
+      "sha256": "aefd677c92eabe72e24d36316db24913b7766fea4da2ba76d05c5be4928798e2",
+      "size": 976,
       "type": "import"
     },
     {
@@ -16527,8 +16527,8 @@
       "path": "res://assets/vfx/battlefield/final_lane_light_wall.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "e558a885b1eb6d149a010e411e36434a5ecf930316f8119dacc9406070ed7626",
-      "size": 1029,
+      "sha256": "68f3d781d9d4a955fe41f4eabf2847bc27799a0001197e39817a8e472a4232b2",
+      "size": 989,
       "type": "import"
     },
     {
@@ -16547,8 +16547,8 @@
       "path": "res://assets/vfx/battlefield/fire_glow_soft.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "ef32e4843b5a9f7764d35cdea0f105476b96ccf13fe4e81919c14a654a0d6f18",
-      "size": 1255,
+      "sha256": "c37bdc6530cc2ab287eaadb388d2d2180576c73d533ae44cc61674da922f2ae5",
+      "size": 1213,
       "type": "import"
     },
     {
@@ -16567,8 +16567,8 @@
       "path": "res://assets/vfx/battlefield/fire_spark_dot.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "458fe731ed8d23e3308ef110976f55e58a6f96ea3f2ee18744e881876ac07206",
-      "size": 1255,
+      "sha256": "4ca269b71c7fece0db85efda8a35249bfbd46f1f3930ff8f58007a6a5ff136a6",
+      "size": 1213,
       "type": "import"
     },
     {
@@ -16587,8 +16587,8 @@
       "path": "res://assets/vfx/battlefield/lane_barrier_lowpoly_loop.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "a6b0801ec38f06aa6e345fc8baea313f25ce7918cafbab50d12395f7dcefe16e",
-      "size": 1041,
+      "sha256": "edc18142ef999f490f081b027fa4d69cfd3fcbbbe713d14963f774e578f7a783",
+      "size": 1001,
       "type": "import"
     },
     {
@@ -16607,8 +16607,8 @@
       "path": "res://assets/vfx/battlefield/lane_barrier_lowpoly_release.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "063c1d6e3540a841b29c7ff90c11bc633b0a5ec984ff45eb2e48e3612c4714a3",
-      "size": 1051,
+      "sha256": "e86c7c6001363d1ade30db8bb3876a7dc43558d5c2d58aa4e0d9fb2eca97f07f",
+      "size": 1011,
       "type": "import"
     },
     {
@@ -16627,8 +16627,8 @@
       "path": "res://assets/vfx/boss/boss_apocalypse_blast.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "dbcf311281098ef7ba52061645ab97d71ced34ee6c97c64d3aa3e858c46d6a56",
-      "size": 1282,
+      "sha256": "d15a3971d02dab01fa571272f060e717127c2ef982e1b4284bd68faee662f095",
+      "size": 1240,
       "type": "import"
     },
     {
@@ -16647,8 +16647,8 @@
       "path": "res://assets/vfx/boss/boss_apocalypse_chargeup.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "e6ba18174593030dfc924177e0e4e8a4a810a713c15ef2f376659e891b9d6c44",
-      "size": 1298,
+      "sha256": "b2646ab64c734e3f62b2662f7b3f952909015688ca3de2af265ce43f9191ba55",
+      "size": 1256,
       "type": "import"
     },
     {
@@ -16667,8 +16667,8 @@
       "path": "res://assets/vfx/boss/boss_apocalypse_shield.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "66b3e9cb3f68e272565d18c6fe7b4f8c2c42d5bb89807d4e9794596ac6a427a9",
-      "size": 1288,
+      "sha256": "0cca74083462d67edb777af3f2caaaedad646095a05d687b0ac6fe8c0513a1c2",
+      "size": 1246,
       "type": "import"
     },
     {
@@ -16687,8 +16687,8 @@
       "path": "res://assets/vfx/boss/boss_blood_lifesteal.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "d19b75fb7809420c0e5965e7a5665bab7356524e0ab352fb564b24348cfaeffa",
-      "size": 1278,
+      "sha256": "6095a241682f4717d6440997b26a3dae1e355180a0c25f55e0264dad50355e7b",
+      "size": 1236,
       "type": "import"
     },
     {
@@ -16707,8 +16707,8 @@
       "path": "res://assets/vfx/boss/boss_blood_overflow.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "163ae334c2a5825cd4cc9f06b401d0908bb145ff979a4f48ae5cde5d94308662",
-      "size": 1272,
+      "sha256": "e7fcf66d9ed4a60ea9833696af98bebc25501e3612799cff9da051aecce77d57",
+      "size": 1230,
       "type": "import"
     },
     {
@@ -16727,8 +16727,8 @@
       "path": "res://assets/vfx/boss/boss_blood_rage.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "73d98eb7791eec908d52fe21537ae887448f8d5bf8edb01d4b6de7331e34b0d8",
-      "size": 1253,
+      "sha256": "e0223ef49aba1fc1e890234dfd0d21bd6b82f5a27b1d4a8e6508b9b0868f9ed2",
+      "size": 1211,
       "type": "import"
     },
     {
@@ -16747,8 +16747,8 @@
       "path": "res://assets/vfx/boss/boss_holy_heal.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "c94cd2e731e7f83ffe583029ea056c2266e782c68fba5ab41411b61b26647197",
-      "size": 1248,
+      "sha256": "a8b36da1906332a49a390b995746bea9b5b33eacff5e50fd151b67d9901bf943",
+      "size": 1206,
       "type": "import"
     },
     {
@@ -16767,8 +16767,8 @@
       "path": "res://assets/vfx/boss/boss_holy_purify.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "594a8dada298a521eb14c9f720aaa691d196d7e005aa9223aca190228917c4df",
-      "size": 1258,
+      "sha256": "ee0d19385491ff5314fb6c3f025e26f6240efa9ce9d8b0f0d7b7471d2ed8c1e2",
+      "size": 1216,
       "type": "import"
     },
     {
@@ -16787,8 +16787,8 @@
       "path": "res://assets/vfx/boss/boss_holy_shield.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "327698bb0fc4e428e51e32b8e24cd2fb8c8ba4228be2ac67be2de29fbf170d4e",
-      "size": 1257,
+      "sha256": "05c7a6e9eb2e54e9dda935dacad6ba71c31cbbe6194ecf35f9e0209aea03592b",
+      "size": 1215,
       "type": "import"
     },
     {
@@ -16807,8 +16807,8 @@
       "path": "res://assets/vfx/boss/boss_meteor_explosion.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "651bd71e2de9fe7c8a42985085c39d6daf228098fdc1186b0e11fb7d527a9498",
-      "size": 1282,
+      "sha256": "a47ec0d80669b49004bb489716762fb1b74bba294666d1176880bec83aa3452c",
+      "size": 1240,
       "type": "import"
     },
     {
@@ -16827,8 +16827,8 @@
       "path": "res://assets/vfx/boss/boss_meteor_trail.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "d562da7ce53b1aa2568f3cdbaaeab977ce0bfb14f8a07e37abf3fdff1edc957e",
-      "size": 1263,
+      "sha256": "3b3b6bb4db18c39deaa57767107bf7ae8977e71858cfcb3e1f2e68a61bb5a953",
+      "size": 1221,
       "type": "import"
     },
     {
@@ -16847,8 +16847,8 @@
       "path": "res://assets/vfx/boss/boss_meteor_warning.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "d0e2d867680dc75c036af9892de9d246f117d5cd5c08371ac081807c9016d0d7",
-      "size": 1273,
+      "sha256": "1ee64d0f91d380fb3549202516d21750bd849b0c802d84e6ffb89178dd4ff7af",
+      "size": 1231,
       "type": "import"
     },
     {
@@ -16867,8 +16867,8 @@
       "path": "res://assets/vfx/boss/boss_mirror_clone.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "ce7b4a992eb89bd208ff5a02fcb22425926f93d1cf231b5fa939fb0fcb26f3c3",
-      "size": 1262,
+      "sha256": "c9592dcec823cdccc03e9e97e9f0e8d9c48fe32e8247a29d01d79095086bd794",
+      "size": 1220,
       "type": "import"
     },
     {
@@ -16887,8 +16887,8 @@
       "path": "res://assets/vfx/boss/boss_mirror_slash.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "cd496fe83515022456afce904d256d3021826261af3dd7f015f9c8322efe285a",
-      "size": 1263,
+      "sha256": "07cb06d579dd296a80496e48c537bff1a953b6e4044d680ed08ce392f5ea6789",
+      "size": 1221,
       "type": "import"
     },
     {
@@ -16907,8 +16907,8 @@
       "path": "res://assets/vfx/boss/boss_mirror_split.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "cea4cf11d9fe4db8487ef8f32a102c343a4ce86bc9a966b49e436caa5d2b07b8",
-      "size": 1262,
+      "sha256": "a154f04b2dea245e69709a8e8601d91b78c459bfc12d7d515c338f905eecbbf0",
+      "size": 1220,
       "type": "import"
     },
     {
@@ -16927,8 +16927,8 @@
       "path": "res://assets/vfx/boss/boss_rage_aura.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "a4f764c84a0db175b8b9113bf77074dd500b98fb9df0ddc3daef19e834bea991",
-      "size": 1248,
+      "sha256": "86f3f6bced02244c649079d08c915d5794c7074c7a9da3d330992ae2bf553faa",
+      "size": 1206,
       "type": "import"
     },
     {
@@ -16947,8 +16947,8 @@
       "path": "res://assets/vfx/boss/boss_rage_burst.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "cc1c639f184f4f6096c3fb34970b5ec8553ccb5aa6de3b8841d0f89fd2233c6a",
-      "size": 1253,
+      "sha256": "76a5570cfddf48a286a5e4a4d3daa01c6e1a76eb68e8d3ad8b6758dfe0eae81f",
+      "size": 1211,
       "type": "import"
     },
     {
@@ -16967,8 +16967,8 @@
       "path": "res://assets/vfx/boss/boss_rage_stack.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "993865de8bf4116fcdbfae84a127ed05553a6538ed797f6950e894579f34bf4d",
-      "size": 1253,
+      "sha256": "4068c7149f069da1ee0de255e4e4306416cf062114ab23cc0d043b154104c690",
+      "size": 1211,
       "type": "import"
     },
     {
@@ -16987,8 +16987,8 @@
       "path": "res://assets/vfx/boss/boss_soul_devour.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "b4f11f332b65f31ed540dea2023d1c20535e1f9ccb6b02633c2f8e5800aa4c43",
-      "size": 1258,
+      "sha256": "c778fe9fb51760bde38c6ae4b9cdb6d3df75a0a28efc3f6a5fa8c6677d7d7e49",
+      "size": 1216,
       "type": "import"
     },
     {
@@ -17007,8 +17007,8 @@
       "path": "res://assets/vfx/boss/boss_soul_fragment.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "ba2160b2fc3a6cf514d9bdafb1952c4e16a0d2300f59cda90b8a6eebee6084db",
-      "size": 1268,
+      "sha256": "19616dc04a1c2954e8946528b27b435de4bea571d1d4e63936e394dff4fa4bd4",
+      "size": 1226,
       "type": "import"
     },
     {
@@ -17027,8 +17027,8 @@
       "path": "res://assets/vfx/boss/boss_soul_growth.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "f32354956ca8610eb79f1066cb093c1276cfeb9e120ffdf2b2ad80f3ca923a11",
-      "size": 1258,
+      "sha256": "dfea449fa8177cec08af8526f0cbead22a203da46baebd71e4fffc2337465ff0",
+      "size": 1216,
       "type": "import"
     },
     {
@@ -17047,8 +17047,8 @@
       "path": "res://assets/vfx/boss/boss_thunder_counter.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "682fbeb50d0f0ff40241e3fc9116b8db7c172223d2d8351a5cd6e68ee98e2406",
-      "size": 1278,
+      "sha256": "ed621d8010f4f98c4a0af2d1530504f6b7d2126d3b84074a2fb1aacc2998235d",
+      "size": 1236,
       "type": "import"
     },
     {
@@ -17067,8 +17067,8 @@
       "path": "res://assets/vfx/boss/boss_thunder_overload.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "823621ca515880d008d8debfc1e4bae8e4ac47a6ab291ee1d54472c746953b16",
-      "size": 1282,
+      "sha256": "ee2cdcae0560ba29e02c1c072ca759f2ee08a03ad6d48527aca8891c160184c9",
+      "size": 1240,
       "type": "import"
     },
     {
@@ -17087,8 +17087,8 @@
       "path": "res://assets/vfx/boss/boss_thunder_stack.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "d76535c42290d305c6a759acb99a4eb0ccf6d83168a5095814723d47f6489a96",
-      "size": 1268,
+      "sha256": "8b8027e6aba3b30123a34bd1fb78202d5f987e17778ef0c148f23a5e0f3ab831",
+      "size": 1226,
       "type": "import"
     },
     {
@@ -17107,8 +17107,8 @@
       "path": "res://assets/vfx/boss/boss_twin_link.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "db4df8a382c67ef0f2a86e0a1b65a193ea0f65ea1d47b92a61ed6bbf036c35f0",
-      "size": 1248,
+      "sha256": "80c5d5a3b28e5d697ad637e44a7820bc6b36b8d8425fd02c3a50509926f1b401",
+      "size": 1206,
       "type": "import"
     },
     {
@@ -17127,8 +17127,8 @@
       "path": "res://assets/vfx/boss/boss_twin_revive.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "d7622a35e606f500ba56519946262707ad96091be8526e07536c74afc17dc11d",
-      "size": 1258,
+      "sha256": "b93492c602e70165c126973565a7dc563f1fc300729863f96ca12c68a7616bab",
+      "size": 1216,
       "type": "import"
     },
     {
@@ -17147,8 +17147,8 @@
       "path": "res://assets/vfx/boss/boss_twin_timer.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "aea049e47d36ff0952659940d380985576b47af376bfb3008cf4706d5a975399",
-      "size": 1253,
+      "sha256": "15c2e5e33e3e7dd54fb1f0ec2ecc7b6d2ed6fb59a928e126d4757dd9d1435954",
+      "size": 1211,
       "type": "import"
     },
     {
@@ -17167,8 +17167,8 @@
       "path": "res://assets/vfx/prep/scroll_edge_fire_atlas.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "caad9fc575319d765953c9478e0a75dd18030e27278620a4676a138ac0aa0229",
-      "size": 1026,
+      "sha256": "9adab004c148345bdda35e75ea358260f4af1d377b609c194c8f622afae1e9ad",
+      "size": 986,
       "type": "import"
     },
     {
@@ -17187,8 +17187,8 @@
       "path": "res://assets/vfx/prep/scroll_idle_halo.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "9235b781972e2418e130bd0396a7757bed65673d804aded62452f1a4268f4664",
-      "size": 1008,
+      "sha256": "4808d24a0940a0a049f66c7cc77f74c0ac07551307475eadbf0d345c1f15dee4",
+      "size": 968,
       "type": "import"
     },
     {
@@ -17207,8 +17207,8 @@
       "path": "res://assets/vfx/prep/scroll_idle_shimmer_atlas.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "51ca81fb882f3634ee51a76005e3a4c38b9a4deb6738ef516938039e5305411c",
-      "size": 1035,
+      "sha256": "917934ae836a2811d5b359d46286026493455458f5b8f9fcf9adfebd7e3229b6",
+      "size": 995,
       "type": "import"
     },
     {
@@ -17227,8 +17227,8 @@
       "path": "res://assets/vfx/prep/team_merc_crossed_swords_atlas.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "1de00034174d74402cf003732c5193257b83248e8b07cd61adf1e9118c3819de",
-      "size": 1050,
+      "sha256": "fd27d2d193aee1ab934240a320f69e5748075be8587fafd454de1bf669688655",
+      "size": 1010,
       "type": "import"
     },
     {
@@ -17247,8 +17247,8 @@
       "path": "res://assets/vfx/skills/dark_basic_melee/dark_doom_scythe_arc.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "854475c2f6a405bc9e3316208885c647c0a4aa8978ebd90a43db0cd72cfd786a",
-      "size": 1038,
+      "sha256": "631bfaf87a0c10e78454c35bcabf2f6f8c0f7169682b12627da0b73a6b2510fe",
+      "size": 998,
       "type": "import"
     },
     {
@@ -17267,8 +17267,8 @@
       "path": "res://assets/vfx/skills/dark_basic_melee/dark_dragon_claw_arc.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "6f7d34cbd33ede0471510dd548398a1321a14afb4b4da1bce9679d598e15e9f4",
-      "size": 1039,
+      "sha256": "62a99c45b208e0fe7f491b6f92e448e3d34c741ae8768b338898d8f3422a7f7c",
+      "size": 999,
       "type": "import"
     },
     {
@@ -17287,8 +17287,8 @@
       "path": "res://assets/vfx/skills/dark_basic_melee/dark_fear_claw_swipe.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "2c4f650fc4334d2723d6e4e4f01a16a9b3843f6095c45ea2258d21fc6d4945f6",
-      "size": 1038,
+      "sha256": "caf6037a24308e2894aeb8608e509cc6a69e1653226cac93d51d74c051270229",
+      "size": 998,
       "type": "import"
     },
     {
@@ -17307,8 +17307,8 @@
       "path": "res://assets/vfx/skills/dark_basic_melee/dark_imp_claw_swipe.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "b6e422d4cdb7ee27a87cb93ecdb25fbdfabc0f176647138af526d171e1ce6f05",
-      "size": 1036,
+      "sha256": "d4d95fbab6e7b6e07a128616bc02a2107388a9f91f2ee1c31ec28d646859eb5c",
+      "size": 996,
       "type": "import"
     },
     {
@@ -17327,8 +17327,8 @@
       "path": "res://assets/vfx/skills/dark_basic_melee/dark_melee_break.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "b473d26b20d7a289e2aed42907c62f0ffd497789f9cc947b1c664e282d161b55",
-      "size": 1027,
+      "sha256": "683aba35766cb1712070b4ede755171ba8baaf93e51c0abfe22d71bee4814637",
+      "size": 987,
       "type": "import"
     },
     {
@@ -17347,8 +17347,8 @@
       "path": "res://assets/vfx/skills/dark_basic_melee/dark_scythe_slash.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "d7648f2cb8134dfd05a4f426a851dbba5ad3296dceeb90edb5a62134b3654430",
-      "size": 1030,
+      "sha256": "47d9a413efe7598d471fdeb105c2c0ca3da365b8cca73da3d6d8b25165c46791",
+      "size": 990,
       "type": "import"
     },
     {
@@ -17367,8 +17367,8 @@
       "path": "res://assets/vfx/skills/dark_basic_melee/dark_suc_swipe.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "80f20990fef7fd47fafc2ac74ad486efde996a3a65a2c4f0568d31c345ea1d12",
-      "size": 1021,
+      "sha256": "2d208e1c7323b6b79fa496c164e3ee04262195454b4ad8d9108406cc3cb036e0",
+      "size": 981,
       "type": "import"
     },
     {
@@ -17387,8 +17387,8 @@
       "path": "res://assets/vfx/skills/dark_basic_projectiles/dark_mage_bolt_impact.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "24b8a4e027d93642404cc286790a85de47d594b54e178b1c14a8501d8f36fd58",
-      "size": 1048,
+      "sha256": "8a8d6976133f8cc7488d44a4706606cbb647652a3d2c969985b9df6f5992e753",
+      "size": 1008,
       "type": "import"
     },
     {
@@ -17407,8 +17407,8 @@
       "path": "res://assets/vfx/skills/dark_basic_projectiles/dark_mage_bolt_projectile.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "c691506323479e868463fc32f91fd86c70a7727aa5ff00bc63eaea18cf275145",
-      "size": 1059,
+      "sha256": "4eb90a307860416d4ea56833b7e691d27b05deac3f721acb458a05205345ae2b",
+      "size": 1019,
       "type": "import"
     },
     {
@@ -17427,8 +17427,8 @@
       "path": "res://assets/vfx/skills/dark_basic_projectiles/dark_mage_bolt_trail.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "90ab968616067e15ce43d0bc38ff347985904d1ac96f2e42cb63b72a39e5697c",
-      "size": 1044,
+      "sha256": "b19bc2ef9cba9fd89bffc268279dc9bb612661fde25f9be05b7e3f01720c9595",
+      "size": 1004,
       "type": "import"
     },
     {
@@ -17447,8 +17447,8 @@
       "path": "res://assets/vfx/skills/dark_basic_projectiles/dark_queen_bolt_impact.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "469f056bad37a2a72d310582abe1a4406262a67f584328d47e4f9d305ffdcdb2",
-      "size": 1051,
+      "sha256": "1936415bc6c8e32ad788bbadad543193463bdc6801daf0822cfc0b3c39a20acc",
+      "size": 1011,
       "type": "import"
     },
     {
@@ -17467,8 +17467,8 @@
       "path": "res://assets/vfx/skills/dark_basic_projectiles/dark_queen_bolt_projectile.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "a7d3c3a6c30a1043a547b9be6065cfc569c772ebc736a09a0a3b55293ba47583",
-      "size": 1062,
+      "sha256": "17eac890c90672141f236b5f1aa22a140922115c9a5d3ef9d573a5870fe80511",
+      "size": 1022,
       "type": "import"
     },
     {
@@ -17487,8 +17487,8 @@
       "path": "res://assets/vfx/skills/dark_basic_projectiles/dark_queen_bolt_trail.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "5fdfd847464de01152b4a221a966bc334a3e7dd74956569edd748a2c0e1c8472",
-      "size": 1048,
+      "sha256": "9019ec1ff29bc617f3a0267a9ed594437b43fe1031b37b3e4920b24f8b2f3295",
+      "size": 1008,
       "type": "import"
     },
     {
@@ -17507,8 +17507,8 @@
       "path": "res://assets/vfx/skills/dark_doom_link/doom_link_chain.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "e9c32741074b2f71417d0cb83accb4caf41f917ec818ae3144a0e072084f9af8",
-      "size": 1022,
+      "sha256": "c80850f735654c985d46398f90e701efdc02a13ba2218e7adc67d646391d661f",
+      "size": 982,
       "type": "import"
     },
     {
@@ -17527,8 +17527,8 @@
       "path": "res://assets/vfx/skills/dark_doom_link/doom_link_knot.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "f41eae7986ddaf8c8d08638edd46fb52df4ae1f1f6eb7e861a810b9b0744293b",
-      "size": 1019,
+      "sha256": "0e150b5292c5e8a040ca1e61002dc12d58ce31d085292e9a97698d832a7cd244",
+      "size": 979,
       "type": "import"
     },
     {
@@ -17547,8 +17547,8 @@
       "path": "res://assets/vfx/skills/dark_doom_link/doom_link_tear.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "3d831fba6cce32169a414a3c6ebbbc8ad4922bc716bfc0e861463c98bf2a24b1",
-      "size": 1019,
+      "sha256": "befb563b78986c14deb43e0370b62d8e2a2681fccd0e0d43f79be97590d5493d",
+      "size": 979,
       "type": "import"
     },
     {
@@ -17567,8 +17567,8 @@
       "path": "res://assets/vfx/skills/dark_dragon_hole/dragon_dark_mass.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "57d3ba64e2dc9399ad9a4229f1429fb71d4257279bebab48e0535c53c1257415",
-      "size": 1027,
+      "sha256": "fe5e89133dc51b5b6023078ddb0df2cca37fba0c1607410a98605a9a8dd1b053",
+      "size": 987,
       "type": "import"
     },
     {
@@ -17587,8 +17587,8 @@
       "path": "res://assets/vfx/skills/dark_dragon_hole/dragon_ground_curl.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "49a8a10be23eaf28d7c826ae26f34999cd3cc0807dbedbde1449d362bdf4e076",
-      "size": 1033,
+      "sha256": "6f4cddcd2b3c81baa7c17a4693d438494bc85079115d797f0430a0e7d5b9c9f9",
+      "size": 993,
       "type": "import"
     },
     {
@@ -17607,8 +17607,8 @@
       "path": "res://assets/vfx/skills/dark_dragon_hole/dragon_pull_shards.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "cee36802f08d787670272a3eb3e24f1809e9a607b6f923deec0a9e365fe3d6bf",
-      "size": 1033,
+      "sha256": "79fec438937e1ec8daed63e13389344644b4670a93e314f3533644c591f3380a",
+      "size": 993,
       "type": "import"
     },
     {
@@ -17627,8 +17627,8 @@
       "path": "res://assets/vfx/skills/dark_dragon_hole/dragon_target_drag.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "45867bb439a9713d1f42e5da3e6fbcbf8bbb565f5339aa3b6783f5cc20cd8fb8",
-      "size": 1033,
+      "sha256": "fbb4459e662d20048466d9207a2d08b421166f0da7069acfc1a205ea8b691212",
+      "size": 993,
       "type": "import"
     },
     {
@@ -17647,8 +17647,8 @@
       "path": "res://assets/vfx/skills/dark_fear/dark_fear_backstep_arrow.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "a5366a7ff605e76148e76c7a567fc73fde0104e92b7f10a1e3f844b0ff09f0b2",
-      "size": 1309,
+      "sha256": "c1fa7f4ed875c5fcde599b74900d7a3c00fda07ab0c7007cff3d58d0020c99b1",
+      "size": 1267,
       "type": "import"
     },
     {
@@ -17667,8 +17667,8 @@
       "path": "res://assets/vfx/skills/dark_fear/dark_fear_ghost_face.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "69eab4e54e786108fe1279e2391889693a197cee7e2cdc79b07d0224062cbc52",
-      "size": 1290,
+      "sha256": "4ef808bdc70fb75dbdfba6c886f9f4cfe103eb2636a81c05b0d1cf87544f0747",
+      "size": 1248,
       "type": "import"
     },
     {
@@ -17687,8 +17687,8 @@
       "path": "res://assets/vfx/skills/dark_fear_skill/fear_claw_tear.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "6936df4f2e00794d7cc274818317bd676c751a421fdc2f15da00ae0195e16718",
-      "size": 1020,
+      "sha256": "72e1ebb288ee217205f1c5a1e2b8135b2459c55586da34b99d7c0be57b735db2",
+      "size": 980,
       "type": "import"
     },
     {
@@ -17707,8 +17707,8 @@
       "path": "res://assets/vfx/skills/dark_fear_skill/fear_flee_strokes.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "604fdbabad827d5a5e6ea9fed7854f1c9dc215caa31e4cba45d0da9dbf0adfcd",
-      "size": 1029,
+      "sha256": "6057bf691d3cb094e5d2f5330d4fee7d5b07bbb32b6b21bb04d2ea867b2445e2",
+      "size": 989,
       "type": "import"
     },
     {
@@ -17727,8 +17727,8 @@
       "path": "res://assets/vfx/skills/dark_fear_skill/fear_low_smoke.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "d76e60615e118f0ae86f8f04f687a4739f518ad983e451f749b3d432b837f6e6",
-      "size": 1019,
+      "sha256": "f2611afeb5865899e51f8c7bcfee1022c11a1c020779edfa924159e341c794ff",
+      "size": 979,
       "type": "import"
     },
     {
@@ -17747,8 +17747,8 @@
       "path": "res://assets/vfx/skills/dark_imp/motong_curse_crack_ring.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "4aaf8f78eb6fb6722686db12e6328a6096c0f7004029d709be10aa72c653ed06",
-      "size": 1304,
+      "sha256": "2fde62112fc75ab1e6616267a94ed1bfcb13e194bbeabbc798793f72dc7e7c4d",
+      "size": 1262,
       "type": "import"
     },
     {
@@ -17767,8 +17767,8 @@
       "path": "res://assets/vfx/skills/dark_imp/motong_curse_mark.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "a55bf1b41faec702d728721f64871073fbe27241fd9f25840ec778903cd1bf08",
-      "size": 1274,
+      "sha256": "c3018325f9bd127f39575e7aba5d2237b7e8ccba8e55ec619d8409bd15ac7845",
+      "size": 1232,
       "type": "import"
     },
     {
@@ -17787,8 +17787,8 @@
       "path": "res://assets/vfx/skills/dark_imp_curse/imp_claw_hook.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "03abf81067476262de44621fb9dc3dc22d1f1f729c8ecbd9a8dd75fc7d59f434",
-      "size": 1015,
+      "sha256": "372e69d0fd91ed3e7c765f2e3236bb90e464ed4760f8edfbd49f6b3e030c8246",
+      "size": 975,
       "type": "import"
     },
     {
@@ -17807,8 +17807,8 @@
       "path": "res://assets/vfx/skills/dark_imp_curse/imp_curse_ink.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "02f3ddc56c4c85ac69d2a762b6c5b296e35d7f7e25d28462755fb314ab29a2e0",
-      "size": 1016,
+      "sha256": "bdc9ccf9dcb5a0ad1b814f26256c1454da2364283e285b880689457a7422f47b",
+      "size": 976,
       "type": "import"
     },
     {
@@ -17827,8 +17827,8 @@
       "path": "res://assets/vfx/skills/dark_mage/dark_mage_magic_bolt.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "f2df2ef9fa39068f66208e518988a2ed9c27130a2bda30c89948975b593f50e6",
-      "size": 1290,
+      "sha256": "9618ff03b43719e2a5345a11e888049aeb3dcb20baec58f8766cd07ce4313fcf",
+      "size": 1248,
       "type": "import"
     },
     {
@@ -17847,8 +17847,8 @@
       "path": "res://assets/vfx/skills/dark_mage/dark_mage_silence_mark.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "9646fecf6a9db023ec30743263edf6c7a802b043cf4c3b2f9aba25a17a557450",
-      "size": 1300,
+      "sha256": "d7602c66c7ca91a6621b9dafa4511710e2d05615da07a11257acdd7086ad9efe",
+      "size": 1258,
       "type": "import"
     },
     {
@@ -17867,8 +17867,8 @@
       "path": "res://assets/vfx/skills/dark_mage_silence/mage_ink_gather.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "c20a777578a36917b427d0a1c1a6c6e57d22646b3bd8e24909668dfb6d60d3fb",
-      "size": 1025,
+      "sha256": "0e7970a1f3367bd70b795202690e4fcf327a90e00a4b850556355ac6e9e70ae7",
+      "size": 985,
       "type": "import"
     },
     {
@@ -17887,8 +17887,8 @@
       "path": "res://assets/vfx/skills/dark_mage_silence/mage_ink_spike.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "e04e15355f13e8abd2290830947ba4405845aea0f55a5a8e4e2c466a4638cc06",
-      "size": 1022,
+      "sha256": "388b01f73a68b80b08b1a21acb5bba031a2dda08129959f7bf5bf4e84c2c113b",
+      "size": 982,
       "type": "import"
     },
     {
@@ -17907,8 +17907,8 @@
       "path": "res://assets/vfx/skills/dark_mage_silence/mage_silence_seal.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "8229e6fbd09b1b6f67c071259ee155bb1a14248b0495ce559f71b9008cf28927",
-      "size": 1031,
+      "sha256": "98e3e56bc91960f924656a914ee36c00de16f5ae0bc992f68345d8dfbf7d6e04",
+      "size": 991,
       "type": "import"
     },
     {
@@ -17927,8 +17927,8 @@
       "path": "res://assets/vfx/skills/dark_mage_silence/mage_silence_wrap.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "7341896a2999102b2a83474be3929c18ea0924e2465ef354cd75696b7caeb0d2",
-      "size": 1031,
+      "sha256": "8a1cbaebe35d18a70cf66e144cb3df5cf5f5f3be17fd45aeb64c27d64729dadc",
+      "size": 991,
       "type": "import"
     },
     {
@@ -17947,8 +17947,8 @@
       "path": "res://assets/vfx/skills/dark_queen/dark_queen_pain_heart_spike.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "30b9dd71657c4c171d6a11a03ec1f1c9acbd966fff7682726edb8384c999a3d5",
-      "size": 1326,
+      "sha256": "7d7a28a6c6553d648ca07833d764cf2d2e897fb10e54b6768e246999a48e5ce8",
+      "size": 1284,
       "type": "import"
     },
     {
@@ -17967,8 +17967,8 @@
       "path": "res://assets/vfx/skills/dark_queen/dark_queen_stun_stars.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "561fc470e9ff213cc4c18d2ad5fe9bf1a5121a9208dd9794a422834452118097",
-      "size": 1296,
+      "sha256": "6f85538122ab30c0b8b789e564268d751dcc4202816e69cb40c97bf16625d6be",
+      "size": 1254,
       "type": "import"
     },
     {
@@ -17987,8 +17987,8 @@
       "path": "res://assets/vfx/skills/dark_queen_pain/queen_pain_break.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "1636dfc5c7d87d527c7a46a38b870cf2ede1fcebb7ad7a72f7a17bda72e873ab",
-      "size": 1026,
+      "sha256": "734404deddbbea846a7fde6cd424bdb741c2dc8fd16275af8d83d3dc2b9d17ad",
+      "size": 986,
       "type": "import"
     },
     {
@@ -18007,8 +18007,8 @@
       "path": "res://assets/vfx/skills/dark_queen_pain/queen_pain_crack.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "f0f91e673cedc1a753f7dd852d4f5a35ab45fa30945638df2cec875d9e1b5e19",
-      "size": 1026,
+      "sha256": "66fea80cc62278026b8998c7651f87b48c5c15049bfb5211b8411f785b753c0a",
+      "size": 986,
       "type": "import"
     },
     {
@@ -18027,8 +18027,8 @@
       "path": "res://assets/vfx/skills/dark_queen_pain/queen_pain_whip.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "2ffff1ca1e1eae9590682dce2f6153e5d51d33780ecd2ade6cd733800344e02b",
-      "size": 1023,
+      "sha256": "2759f78d5e9232b5e2f0626660fdb967c57681f5902ad5832e4e9b154805f4d9",
+      "size": 983,
       "type": "import"
     },
     {
@@ -18047,8 +18047,8 @@
       "path": "res://assets/vfx/skills/dark_scythe/dark_scythe_crescent_slash.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "094e25dcb1d275e183a9aa68945de79bba5f73a6c664d088cfebb2e2558979f4",
-      "size": 1322,
+      "sha256": "5bec08519a15d346b6908d88ed2f9193e92f85b54ed87bf936a8980166344e13",
+      "size": 1280,
       "type": "import"
     },
     {
@@ -18067,8 +18067,8 @@
       "path": "res://assets/vfx/skills/dark_scythe/dark_scythe_shadow_blink.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "3657131aba90003201ca8630bf157a7c2491ed8f2b76342729e010ca3dc4d8d9",
-      "size": 1311,
+      "sha256": "18b6ae5aa85fe2391630482217d2bf16ea2059b6dafff620531e8853908f1553",
+      "size": 1269,
       "type": "import"
     },
     {
@@ -18087,8 +18087,8 @@
       "path": "res://assets/vfx/skills/dark_scythe_blink/scythe_cross_slash.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "bdac8cc95637599351be645f351b255d1d9f2ad29fcf4d49a8638b2cd818fe72",
-      "size": 1034,
+      "sha256": "4a937a1b17aa2229705a2420faae44f47b643517234aa95feeb6d065fd8d7d6f",
+      "size": 994,
       "type": "import"
     },
     {
@@ -18107,8 +18107,8 @@
       "path": "res://assets/vfx/skills/dark_scythe_blink/scythe_ink_tear.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "4bf085b5dbd1ec8f508ca8c595379a1c0833d8481288b24cde60ab95848214ea",
-      "size": 1023,
+      "sha256": "6ebb18b826880ca9617a593de8f90560247990e1d64c65d327f82dbb2cf71a53",
+      "size": 983,
       "type": "import"
     },
     {
@@ -18127,8 +18127,8 @@
       "path": "res://assets/vfx/skills/dark_scythe_blink/scythe_recall_afterimage.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "111670c3334721aaf6e4952394eb0aa845ebb09c3c2e23e164eb1a2a87c1ba63",
-      "size": 1052,
+      "sha256": "cff49e5223f58a607df19f144dbf6f3910437f18f371f5b3f7322c1e7b76b65f",
+      "size": 1012,
       "type": "import"
     },
     {
@@ -18147,8 +18147,8 @@
       "path": "res://assets/vfx/skills/dark_suc_stun/suc_bind_knot.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "880545f80e22d72d00c4e7626e6292493c07a387c89a9acb8d38e0998d0186cc",
-      "size": 1015,
+      "sha256": "2b11ffe4e2d8ed3772765eeec9554e565fd7c3dfcfc1b6cad291e1094c82a328",
+      "size": 975,
       "type": "import"
     },
     {
@@ -18167,8 +18167,8 @@
       "path": "res://assets/vfx/skills/dark_suc_stun/suc_hook_impact.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "6ce79e85a77bf9783b2cb225508946131a0cbaa8e216d325b5b154c472bda2a9",
-      "size": 1020,
+      "sha256": "5752eb1f032c49423d5787dcc4e0000a82492eb975c1f6e5db8f5f5ac819a01f",
+      "size": 980,
       "type": "import"
     },
     {
@@ -18187,8 +18187,8 @@
       "path": "res://assets/vfx/skills/dark_suc_stun/suc_hook_slash.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "1804cd28c62169021acc223de064a3d22bf46b0861d2f67566999d26b376f6db",
-      "size": 1017,
+      "sha256": "7145cde0b7d104da28195fb4e01782d1e972442c6265e2f183b7e4d213c07ec3",
+      "size": 977,
       "type": "import"
     },
     {
@@ -18207,8 +18207,8 @@
       "path": "res://assets/vfx/skills/distinct_v2/death_hunt_crimson_scythe_v2.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "bf2b7eb45437fa9bb60d2e7a35072536a84c0937bd55add626f2fb3222b7cd8b",
-      "size": 1331,
+      "sha256": "149740c2df7c6f0720b7372737550e7b101ef16b139fad98c4f0da2eb5ec9e2d",
+      "size": 1289,
       "type": "import"
     },
     {
@@ -18227,8 +18227,8 @@
       "path": "res://assets/vfx/skills/distinct_v2/fear_mask_impact_v2.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "457f46054f20cabf81fabbaf173b7e861c0039254cea43d77f4c0391258cdb1a",
-      "size": 1287,
+      "sha256": "048146d5d0ae30023ff02e457c571de1a09ec4178cb18b05da1ec8eee06583e2",
+      "size": 1245,
       "type": "import"
     },
     {
@@ -18247,8 +18247,8 @@
       "path": "res://assets/vfx/skills/distinct_v2/guardian_gold_shield_v2.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "db07c2bd73dd0220876b859cff18f6fcf06aa27f0323b1aae4af929d0ba321f0",
-      "size": 1307,
+      "sha256": "f2d18f3d732632e5dc7d26f8ff2ed1411e2ce325006f78033d7630733fb1e4ea",
+      "size": 1265,
       "type": "import"
     },
     {
@@ -18267,8 +18267,8 @@
       "path": "res://assets/vfx/skills/distinct_v2/human_archer_combo_slash_v2.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "46c5f94a9fcd1f74e2b9e9af46042f10b681117c523af402f72a34c992df486e",
-      "size": 1327,
+      "sha256": "879fcde6fe033ca4e4f035faf57a2a91e15aa54b42f1e05c214190a48f49f2a9",
+      "size": 1285,
       "type": "import"
     },
     {
@@ -18287,8 +18287,8 @@
       "path": "res://assets/vfx/skills/distinct_v2/shell_cyan_carapace_v2.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "3d88e34f0bd72e31b2f1ab0a4891610efe0807a27d9c204ca7200b5362f744b5",
-      "size": 1302,
+      "sha256": "7d6405eda3ea7d15151791769f17d797fbdc1613c4d505cf304f87451107fe5c",
+      "size": 1260,
       "type": "import"
     },
     {
@@ -18307,8 +18307,8 @@
       "path": "res://assets/vfx/skills/distinct_v2/stun_star_mark_v2.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "49318ba27f78ad95c2a246120936352279d35dd0f579d0e9b0833bb21890b8d7",
-      "size": 1277,
+      "sha256": "03984f81d2a65934e630f57ce70cd93c8f338ca4e00410d901954afe74f4d3e3",
+      "size": 1235,
       "type": "import"
     },
     {
@@ -18327,8 +18327,8 @@
       "path": "res://assets/vfx/skills/distinct_v2/twin_assassin_double_slash_v2.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "62210556953af6b7316e762db350d3a3dbbf9730aecc3a6220f6ea2b04555913",
-      "size": 1337,
+      "sha256": "e32a4d886b9cd486cd6a35aa464a2bbdce087902124e379f251797c6128828a8",
+      "size": 1295,
       "type": "import"
     },
     {
@@ -18347,8 +18347,8 @@
       "path": "res://assets/vfx/skills/distinct_v2/undead_fly_poison_feather_v2.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "d42560601c5934bd19eeaddc074b16c018fe265a4b92f6b2a3ef7d33ef36b10a",
-      "size": 1332,
+      "sha256": "eaad097152411580d19cdcd0236c0509385a4a22d44436914a6c9d9cf263f72d",
+      "size": 1290,
       "type": "import"
     },
     {
@@ -18367,8 +18367,8 @@
       "path": "res://assets/vfx/skills/god_angel/god_angel_buff_fragments.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "dc4df713708da2dfd2c67c3fd29a769380e5d2d290b90425220bde33d66fa358",
-      "size": 1044,
+      "sha256": "b13ed576edffa4252f8d14c1bc67a5225fda9119ebcf5ea900ad8d8ac030c68c",
+      "size": 1004,
       "type": "import"
     },
     {
@@ -18387,8 +18387,8 @@
       "path": "res://assets/vfx/skills/god_angel/god_angel_buff_residue.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "fe7f4bde911d139ef704ea6038573788c68d88e33df045d0b636dc6a1aeeea0d",
-      "size": 1037,
+      "sha256": "228bfdd8127cd48539b9b74a86681912c5bd35700423720e7feeab1d00452b5a",
+      "size": 997,
       "type": "import"
     },
     {
@@ -18407,8 +18407,8 @@
       "path": "res://assets/vfx/skills/god_angel/god_angel_cast_wings.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "0cb90b2e6e466cd8d80f9b9bca3152df519b07b107c681f0fda2fc40f883676c",
-      "size": 1032,
+      "sha256": "d64d33389d2644329fde94599be37024d43cd21845e071f6b145e852388f6c16",
+      "size": 992,
       "type": "import"
     },
     {
@@ -18427,8 +18427,8 @@
       "path": "res://assets/vfx/skills/god_angel/god_angel_heal_pulse.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "7c25dcaddcf63d750e3f115c3a7637f5bb98235f026b5a7fc375df63f459435b",
-      "size": 1031,
+      "sha256": "caa8f0833a0981934aeaa3fe6ec0729640c828d7739d7037f5292622d6a6edf1",
+      "size": 991,
       "type": "import"
     },
     {
@@ -18447,8 +18447,8 @@
       "path": "res://assets/vfx/skills/god_angel/god_angel_heal_strokes.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "4ea9afe7a76452b4007472e658fa79c2bbcd2cc23a353a0452cc0166bca8d668",
-      "size": 1037,
+      "sha256": "54aadbcd53f6fcae03f01aa4eab4f1462c54663bc6b350bf98ab3daa9a374aaa",
+      "size": 997,
       "type": "import"
     },
     {
@@ -18467,8 +18467,8 @@
       "path": "res://assets/vfx/skills/god_angel/god_angel_immunity_feathers.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "fce3d16134a6bc2caef424c9e62bc9adbe782d819504f93a220a9d95a7fbc0e1",
-      "size": 1325,
+      "sha256": "f1fb1895e55afc0cb4938a12de343fb904ddf8098dda0bb1c44e1a705c606cdc",
+      "size": 1283,
       "type": "import"
     },
     {
@@ -18487,8 +18487,8 @@
       "path": "res://assets/vfx/skills/god_angel/god_angel_shelter_wing.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "8171b51795a491bd6f9fd1c0b6278d32e6896604d53610f55b37acc6f6e720ae",
-      "size": 1300,
+      "sha256": "da4ccb30cc1b3271a5d297b2314c6918b6501a983458969ea942977f1e9b4305",
+      "size": 1258,
       "type": "import"
     },
     {
@@ -18507,8 +18507,8 @@
       "path": "res://assets/vfx/skills/god_arbiter/god_arbiter_armor_plate.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "fa498970eca8c899c699088ba0d4da8abccffb45ca9b696d5cf0961a5d2b40bf",
-      "size": 1307,
+      "sha256": "74be6a08e8971291612c7a9fa3769e749e9455fb84184e437bfd1e2b1d94ae90",
+      "size": 1265,
       "type": "import"
     },
     {
@@ -18527,8 +18527,8 @@
       "path": "res://assets/vfx/skills/god_arbiter/god_arbiter_defense_fragment.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "ed5dc24f085d0de28c05f7f4437d9451abb7992717db1e75cbad67a356c118f8",
-      "size": 1058,
+      "sha256": "2ee1031d34dffa1f1e340a90e39998dce1ccfe8b4f094d61869a61acb3e756c1",
+      "size": 1018,
       "type": "import"
     },
     {
@@ -18547,8 +18547,8 @@
       "path": "res://assets/vfx/skills/god_arbiter/god_arbiter_defense_shards_v1.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "3d80fb44c6ca58ed871bccaa3735ac03972dc9c7bf974b3351ec8de0829e36ad",
-      "size": 1061,
+      "sha256": "ad7eb5809cbf4eecfcd4b1bc87d48328dba00c43e9e710dc906d36142d5f10b0",
+      "size": 1021,
       "type": "import"
     },
     {
@@ -18567,8 +18567,8 @@
       "path": "res://assets/vfx/skills/god_arbiter/god_arbiter_defense_shards_v1_ivory.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "6b4a236e6e5b550d2a479e404f7553d643cff4ae9536d36c08100e243da6e082",
-      "size": 1078,
+      "sha256": "b1218c7bdfcbd3a87586cad04c07580fbe2e6f15f08987b702c4078e11376295",
+      "size": 1038,
       "type": "import"
     },
     {
@@ -18587,8 +18587,8 @@
       "path": "res://assets/vfx/skills/god_arbiter/god_arbiter_judgment_mark.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "c58e73d89435b9d437faedcb5daa9c6ec5ba636e75f4bb9100ae348d9aeb7728",
-      "size": 1049,
+      "sha256": "e1d17406811bae81b657e2be07813bf23bcd80d132a9c2107988f5fbb4796342",
+      "size": 1009,
       "type": "import"
     },
     {
@@ -18607,8 +18607,8 @@
       "path": "res://assets/vfx/skills/god_arbiter/god_arbiter_judgment_mark_v1_ivory.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "c6569dd6d5f348e3bc66f13765cf74a45e11c84fd53e5d6cf79044afac9d6b71",
-      "size": 1076,
+      "sha256": "04423aee95b29cb5c213ca2d039a1b9d41befbbb5f044b33c73db08c2f46c031",
+      "size": 1036,
       "type": "import"
     },
     {
@@ -18627,8 +18627,8 @@
       "path": "res://assets/vfx/skills/god_arbiter/god_arbiter_verdict_impact.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "562109322539b5c923e84b370cba2da82ecf48b37df035d9d174bf31d76c4fa0",
-      "size": 1052,
+      "sha256": "a3cdaa3d69339547ca94a5bda0b0e0094245117d63eab03f6cf79ae47a855aca",
+      "size": 1012,
       "type": "import"
     },
     {
@@ -18647,8 +18647,8 @@
       "path": "res://assets/vfx/skills/god_arbiter/god_arbiter_verdict_impact_v1_ivory.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "792724a925eab657f309e0cf4dc5218a6c72a3c01e36afbc8ccf19d3fa583378",
-      "size": 1079,
+      "sha256": "e0e3c93d248c9697dca41f285ace5b4743249b323739ba62b91e7dd4145fb26a",
+      "size": 1039,
       "type": "import"
     },
     {
@@ -18667,8 +18667,8 @@
       "path": "res://assets/vfx/skills/god_arbiter/god_arbiter_verdict_impact_v7.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "e96169b73ce43e9fb9dccd8a1f65577862ff6da5b63417810f98bbccdf718094",
-      "size": 1061,
+      "sha256": "e82059d0c9612fd4f0bffbccea8be0bd333e3a14b9481e3db79891f6b763cbe8",
+      "size": 1021,
       "type": "import"
     },
     {
@@ -18687,8 +18687,8 @@
       "path": "res://assets/vfx/skills/god_arbiter/god_arbiter_verdict_slash.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "51e03d50217291946816a9b1749d0607e8c86c8b62956ca6f370a5bc192895ce",
-      "size": 1317,
+      "sha256": "60f308787ac96152245443fa28327d8fdee636e0fb568ead57eaa64bc1989b40",
+      "size": 1275,
       "type": "import"
     },
     {
@@ -18707,8 +18707,8 @@
       "path": "res://assets/vfx/skills/god_arbiter/god_arbiter_verdict_slash_new.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "0de889bc0285f5099d78bb4566dfe777efc1fd592f0a9502e8330352aff7cf47",
-      "size": 1061,
+      "sha256": "3288b0b9162078ca9adfa079ac9d1c563b9025bff652ae649d70eaf312a5cb97",
+      "size": 1021,
       "type": "import"
     },
     {
@@ -18727,8 +18727,8 @@
       "path": "res://assets/vfx/skills/god_arbiter/god_arbiter_verdict_slash_v1_ivory.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "cce388986dfa83fe7de1532423dfa4e5b8345ee6dd877298f01cfe3fc4734f3c",
-      "size": 1076,
+      "sha256": "2bdadd6e41df81250c2d9f616efb93c50e97473a142570abb4134fa39921729b",
+      "size": 1036,
       "type": "import"
     },
     {
@@ -18747,8 +18747,8 @@
       "path": "res://assets/vfx/skills/god_arbiter/god_arbiter_verdict_slash_v7.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "72b5239ef9dfa86a03120333cc7d00bb7079c9de3a359e028f9a5d93a63af829",
-      "size": 1058,
+      "sha256": "385b78aed8fbba73118226fbf03973f0c92af478f5ae94d5f4e79cafebb69fae",
+      "size": 1018,
       "type": "import"
     },
     {
@@ -18767,8 +18767,8 @@
       "path": "res://assets/vfx/skills/god_archangel/god_archangel_covenant_mark_v2.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "e6561969dedee4892b34396f504e4c90e729ce1c5e0267ecb8fb579209b40bdc",
-      "size": 1066,
+      "sha256": "f25768f776ce2c9e6b0d7b42255d1d05b04c9572198510eff34e0b5bf3d35c21",
+      "size": 1026,
       "type": "import"
     },
     {
@@ -18787,8 +18787,8 @@
       "path": "res://assets/vfx/skills/god_archangel/god_archangel_covenant_release_v2.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "2969ef50048575d30156a720d772cf3c7b3f0a665b2f50b28d80ffc7237c64dc",
-      "size": 1075,
+      "sha256": "a180123f4a8c1470fd7559f2f6b4fe54daff22e5d91b54efe76a21174cbf5bb8",
+      "size": 1035,
       "type": "import"
     },
     {
@@ -18807,8 +18807,8 @@
       "path": "res://assets/vfx/skills/god_archangel/god_archangel_covenant_residue_v2.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "27fd5ad2706439b53c398f9eeee407d81b59772a74fcecf2e2f0dd7f848277cc",
-      "size": 1075,
+      "sha256": "ceb99eb11398aedd42e64d52e0bcd0a13f2d65eb2ede95a793be3469776d4bbb",
+      "size": 1035,
       "type": "import"
     },
     {
@@ -18827,8 +18827,8 @@
       "path": "res://assets/vfx/skills/god_archangel/god_archangel_covenant_sigla.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "5023dc11a4d02318f0a2dbf1f57ebfc1cb4c199725c04a8a59efd5f6ade279db",
-      "size": 1334,
+      "sha256": "75ecebabda3f2bcb3198661fc3c49445c42fa36e11f3a24045fb59e7d57aa327",
+      "size": 1292,
       "type": "import"
     },
     {
@@ -18847,8 +18847,8 @@
       "path": "res://assets/vfx/skills/god_archangel/god_archangel_drop_imagegen_alpha.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "008ef900f2bb3394f2179d02d9e161467eb91e7401a0933ba39fd772f9cee7c9",
-      "size": 1075,
+      "sha256": "74ff97af1cbe1486e6225f82cbe732a74b78c3cfd9f5aa7de1fd53181e3be644",
+      "size": 1035,
       "type": "import"
     },
     {
@@ -18867,8 +18867,8 @@
       "path": "res://assets/vfx/skills/god_archangel/god_archangel_drop_v4.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "6c544baa9fecca43ccb30fabcec8aab4d85c478a00e36f880e062b607ce88df4",
-      "size": 1039,
+      "sha256": "082101de634c19f2e88d19fb5a8a3ac4cae9eead2f84b1d98463b39c00af8564",
+      "size": 999,
       "type": "import"
     },
     {
@@ -18887,8 +18887,8 @@
       "path": "res://assets/vfx/skills/god_archangel/god_archangel_hit_v4.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "0a2b1cccf6e939bbd769a22661f76271609891cc11eb8d3cdc5bfe53da912278",
-      "size": 1036,
+      "sha256": "588ba3c65ebc8c88047f9dadec9164922553c334117343bf7d23d9e6f2ee6904",
+      "size": 996,
       "type": "import"
     },
     {
@@ -18907,8 +18907,8 @@
       "path": "res://assets/vfx/skills/god_archangel/god_archangel_mercy_ribbon.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "5ec40c7d0d30f324ebf9770df346815adcfdc490aa56532c8bd7543b85456a8c",
-      "size": 1324,
+      "sha256": "75693a6b723ef5f415efdf23c50d4363b0dd57564769ecff3b0f3ce9821f63ac",
+      "size": 1282,
       "type": "import"
     },
     {
@@ -18927,8 +18927,8 @@
       "path": "res://assets/vfx/skills/god_archangel/god_archangel_side_left_v4.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "e09b834dc84a62eb2d9296f039d66e8b817d8a8d86b9d87f002eec3374ef20d2",
-      "size": 1053,
+      "sha256": "3bf57a79e9cf03d19cb05280da95a4e0b7390f6e5c425630f5b14dfd004e4aa9",
+      "size": 1013,
       "type": "import"
     },
     {
@@ -18947,8 +18947,8 @@
       "path": "res://assets/vfx/skills/god_archangel/god_archangel_side_right_v4.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "87b4016bffecad31865b29976a288a5cfe6b83c49ee787ffc36607db96109386",
-      "size": 1056,
+      "sha256": "645b24fbdc5590398ba018593a1a3cdac2f25f926b89b8071b721c7f44108242",
+      "size": 1016,
       "type": "import"
     },
     {
@@ -18967,8 +18967,8 @@
       "path": "res://assets/vfx/skills/god_aurora/backup_codex_aurora_v2_20260803/god_aurora_arrow_trail.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "4eab50a92a4e0d53534c7d11f0d06c4926c2c02be1d0b61360057d0f407df7d7",
-      "size": 1071,
+      "sha256": "af15a95d8e421353b058a311be10ce005964dd258a7f1376dbc06637bf6ff7a8",
+      "size": 1031,
       "type": "import"
     },
     {
@@ -18987,8 +18987,8 @@
       "path": "res://assets/vfx/skills/god_aurora/backup_codex_aurora_v2_20260803/god_aurora_true_hit.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "eced3dc55c55016ebca7aed9693be5ba0f1859594bb1ada50a89e6f05edb58a4",
-      "size": 1062,
+      "sha256": "45ceef829c300eab7234aab17d17393eea86ebdf0ea841691813552dd2f3cede",
+      "size": 1022,
       "type": "import"
     },
     {
@@ -19007,8 +19007,8 @@
       "path": "res://assets/vfx/skills/god_aurora/god_aurora_arrow_trail.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "fdfa0ae7f031d6ff474b2e493c2cd779ef5795af4b654b50fbfaebb1e6dd238a",
-      "size": 1300,
+      "sha256": "dd2f553e4c99bc0943e90add2e481927b813afc1da6ddc6d00d2c0126f57e3b3",
+      "size": 1258,
       "type": "import"
     },
     {
@@ -19027,8 +19027,8 @@
       "path": "res://assets/vfx/skills/god_aurora/god_aurora_true_hit.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "81cbc12367a120d27f00c27bf09f5fb617af07cb7052b925b2bc362a1bce9e06",
-      "size": 1286,
+      "sha256": "bdd1a871d70b9f386f3658dd90a8d96142318d5c5f611d3ff04d5076da29322a",
+      "size": 1244,
       "type": "import"
     },
     {
@@ -19047,8 +19047,8 @@
       "path": "res://assets/vfx/skills/god_aurora/god_aurora_true_pierce.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "b044ba5c71a46b3913bc6b73e1f90a6b7c4c0b2b380e85fa9d198aa2609cca38",
-      "size": 1039,
+      "sha256": "dc8d55f23da36164169aaf9256586c3b189a2b831ead7fcd16587a69b57750b8",
+      "size": 999,
       "type": "import"
     },
     {
@@ -19067,8 +19067,8 @@
       "path": "res://assets/vfx/skills/god_basic_projectiles/god_priest_star_impact.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "c037f77412164cb56a2ac2d7ff95919aa89c0b73433397ca906162209f8a49a9",
-      "size": 1050,
+      "sha256": "0d763e165c7b68ea1297954d9ed2023a377b354f31662fd1d31327c8b02d95b1",
+      "size": 1010,
       "type": "import"
     },
     {
@@ -19087,8 +19087,8 @@
       "path": "res://assets/vfx/skills/god_basic_projectiles/god_priest_star_projectile.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "1fae8bf8f44de2e5934d344a0439cb72cba07b849da22693a8d196d3ddddd9f1",
-      "size": 1062,
+      "sha256": "16456ef560dc0d3a4aef59d156104f36f487cc0fe9d75e62477affe6ecce21e7",
+      "size": 1022,
       "type": "import"
     },
     {
@@ -19107,8 +19107,8 @@
       "path": "res://assets/vfx/skills/god_basic_projectiles/god_priest_star_trail.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "f77365e2b9f1acd1c34eb02cc53344198a542f4b0eb88e6c14f6cc0ef3f0f74d",
-      "size": 1046,
+      "sha256": "2d56cacdb325d13f5d34d6ab4e5a073cb358eab71ee288be2d98b98a1b5919d4",
+      "size": 1006,
       "type": "import"
     },
     {
@@ -19127,8 +19127,8 @@
       "path": "res://assets/vfx/skills/god_basic_projectiles/god_priestess_ring_impact.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "f5c8ca83d544ac76e75d55aa859cd9affda11b9618f96257c1187e7ec42750be",
-      "size": 1059,
+      "sha256": "fcb7b3fd63712f652afbfa1b5e8de55ddb577997b905b84068a789f45b1396e9",
+      "size": 1019,
       "type": "import"
     },
     {
@@ -19147,8 +19147,8 @@
       "path": "res://assets/vfx/skills/god_basic_projectiles/god_priestess_ring_projectile.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "cae565c6dad060f618aa51423f322c4864494bdcc99babcec44fb88986285733",
-      "size": 1071,
+      "sha256": "9b75c384aec33a293501db1933e7ff4276ebe85779c51d23ed8b8e34a1c6491a",
+      "size": 1031,
       "type": "import"
     },
     {
@@ -19167,8 +19167,8 @@
       "path": "res://assets/vfx/skills/god_basic_projectiles/god_priestess_ring_trail.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "fa3529168b72d6d5f6376ce8fdabbb7ebf6fd7b3039ff0e010d0ef6ba86221e2",
-      "size": 1056,
+      "sha256": "d365af4e5731adc72c8485c35d0be9f7799da20c885b87cf071667e56abb3c41",
+      "size": 1016,
       "type": "import"
     },
     {
@@ -19187,8 +19187,8 @@
       "path": "res://assets/vfx/skills/god_guard/god_guard_crystal_panel.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "a6c665ce583f8f7710c8179b094c4f0a0bf1f9a0912e1f6a38bd32cceed3b3ba",
-      "size": 1305,
+      "sha256": "6c7219422e62c95fede7baac40f978ed33c10da05d98b7ce02b3fb6d3606ae8c",
+      "size": 1263,
       "type": "import"
     },
     {
@@ -19207,8 +19207,8 @@
       "path": "res://assets/vfx/skills/god_guard/god_guard_taunt_rune.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "5a525780b9fff775e2e211a8d6e3995c367d444b9c9611ce83846ae8bc678dc0",
-      "size": 1290,
+      "sha256": "887a4ee165cbedc06e75c50610b2c82d25b7ffc42a1c9007a37bfb4e5af0e176",
+      "size": 1248,
       "type": "import"
     },
     {
@@ -19227,8 +19227,8 @@
       "path": "res://assets/vfx/skills/god_guardian/backup_codex_guardian_pre_v2_20260803/guardian_crystal_shards.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "19857739aeb7d5a79ff94433c54985b3d365d528681c40b91b43793d63f1c37d",
-      "size": 1082,
+      "sha256": "2215e0b63c0ee40a1601ad3546d0bfe54b100e126cc7aca570a0752c1ef7e8c2",
+      "size": 1042,
       "type": "import"
     },
     {
@@ -19247,8 +19247,8 @@
       "path": "res://assets/vfx/skills/god_guardian/backup_codex_guardian_pre_v2_20260803/guardian_shield_shell.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "7e0634d2d9e67bddb1f8f2745f514ebbc4021bdde4862911a985aeb92c1551d3",
-      "size": 1075,
+      "sha256": "f0a93e1152fe72571e81facf1865e6eeb7ab503dc99328bc4d4a5ae2f2a6893d",
+      "size": 1035,
       "type": "import"
     },
     {
@@ -19267,8 +19267,8 @@
       "path": "res://assets/vfx/skills/god_guardian/backup_codex_guardian_pre_v2_20260803/guardian_shield_sigil.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "2e7506bd1a792e865e5989539c7e18f33851da1292edbd9039913bec911da556",
-      "size": 1076,
+      "sha256": "00e8e1e92fb58375cdafd72e3664120c1d94ba5531143d1ce03b8c600a8e86eb",
+      "size": 1036,
       "type": "import"
     },
     {
@@ -19287,8 +19287,8 @@
       "path": "res://assets/vfx/skills/god_guardian/backup_codex_guardian_pre_v2_20260803/guardian_taunt_ring.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "b327bfb9cf6816fcde517d8b2ea750e29931840e02124a50dc0d4e442ab216e1",
-      "size": 1070,
+      "sha256": "84f48f91eb633c56e302cd6af9bfa1fd1739744f7090f4847ccd3a059ae43748",
+      "size": 1030,
       "type": "import"
     },
     {
@@ -19307,8 +19307,8 @@
       "path": "res://assets/vfx/skills/god_guardian/guardian_crystal_hit.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "9f99db3fb464477ee01ce871a3856c26df12ee0e28a1484f1862873836c74725",
-      "size": 1035,
+      "sha256": "1e8e752e501b8ff7da658a0a85684177cf16b92f935dfdff4b5d9a62685695e3",
+      "size": 995,
       "type": "import"
     },
     {
@@ -19327,8 +19327,8 @@
       "path": "res://assets/vfx/skills/god_guardian/guardian_crystal_shards.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "40c5cf6d6b9a26b2b5514e8d16a14eb4c2cc83df0938b9ca4da1461d0d08277a",
-      "size": 1044,
+      "sha256": "56b836923ebf9a2dfbac558734a485888f942bcc9280c26eb9f911f67ef31995",
+      "size": 1004,
       "type": "import"
     },
     {
@@ -19347,8 +19347,8 @@
       "path": "res://assets/vfx/skills/god_guardian/guardian_crystal_slash.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "592bf1b4adba01626c0ddda30169a6cf55ff83b69ff521f5f28294f8e896e363",
-      "size": 1041,
+      "sha256": "20b8f41d2dcd50377f6272795748b695c20484feab3e5cf7ec4adb09b194ce96",
+      "size": 1001,
       "type": "import"
     },
     {
@@ -19367,8 +19367,8 @@
       "path": "res://assets/vfx/skills/god_guardian/guardian_shield_shell.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "c68c74b002c14b3f3955cf79b31ae109a147dca994f42010b53029f6cff7bf42",
-      "size": 1038,
+      "sha256": "3276b5e2d37ceb432c0c9aad1af8f98e8e282f753c78dbfcee94d1db13964901",
+      "size": 998,
       "type": "import"
     },
     {
@@ -19387,8 +19387,8 @@
       "path": "res://assets/vfx/skills/god_guardian/guardian_shield_sigil.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "6f4ed72278ecee9b25440c496ea1d753e001628b8021d8571c9e89860d37624b",
-      "size": 1038,
+      "sha256": "01d51400819dcbc95c36b7c836bcf3a2cc48b02995bf744561534dbec73551ef",
+      "size": 998,
       "type": "import"
     },
     {
@@ -19407,8 +19407,8 @@
       "path": "res://assets/vfx/skills/god_guardian/guardian_taunt_ring.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "dde0fdf16546d4123873ef695367e797e63818b5f8c393953fbc367f3d89a476",
-      "size": 1032,
+      "sha256": "8019aeda575bc8ff613001da6a2e5f94503d26d233ad1fff2aeb08db033c9361",
+      "size": 992,
       "type": "import"
     },
     {
@@ -19427,8 +19427,8 @@
       "path": "res://assets/vfx/skills/god_king/god_king_judgement_line.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "219380f8cfa4e6d9f6566dcfe761a72e349f28ae61b46a844e46010669ae6749",
-      "size": 1304,
+      "sha256": "d57a068afb43ddf447c89ce53a27b186e89fb2edd1e2f6d35b53467a1a02423c",
+      "size": 1262,
       "type": "import"
     },
     {
@@ -19447,8 +19447,8 @@
       "path": "res://assets/vfx/skills/god_king/god_king_royal_impact.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "226366e715108f3ef23404d7cf635a614e199e8cb240ee2baebdfb57b3eb2b71",
-      "size": 1294,
+      "sha256": "9a72644559573f0fe9d1af5a0b1510292e157a2a298e01ee86e4938127d34428",
+      "size": 1252,
       "type": "import"
     },
     {
@@ -19467,8 +19467,8 @@
       "path": "res://assets/vfx/skills/god_priest/god_priest_holy_ring.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "a8938361bcbf860f2225460957f4923e9b742b635a38999627c28c86c5f24e78",
-      "size": 1291,
+      "sha256": "a5a1bafa3438ecf6beadc1a0436a41ee29d75160f640676d4177dc080a6f5511",
+      "size": 1249,
       "type": "import"
     },
     {
@@ -19487,8 +19487,8 @@
       "path": "res://assets/vfx/skills/god_priest/god_priest_soft_spark.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "8a19fea00bf57b0104cde6f42c9fafa6737e743655d435a58a56bf34b3d52945",
-      "size": 1296,
+      "sha256": "a4061dac13cd269dab0f504ee0f3fb89853cbc8e4511cbaf0a718da08732af63",
+      "size": 1254,
       "type": "import"
     },
     {
@@ -19507,8 +19507,8 @@
       "path": "res://assets/vfx/skills/god_priest_star_prayer/20260803_purified_before_replace/starlight_prayer_descent.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "b385c4c69b3ea8c097e8b8fb2706609f64f745bf5cb8b2800ee32e8878da4b80",
-      "size": 1089,
+      "sha256": "96c8aa1aa7e909ce4e5d27928023b3c8201833d861f0fe21ec713b369d4fdeaa",
+      "size": 1049,
       "type": "import"
     },
     {
@@ -19527,8 +19527,8 @@
       "path": "res://assets/vfx/skills/god_priest_star_prayer/20260803_purified_before_replace/starlight_prayer_impact.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "c8a04fa0b3b75e94d43882d7870938a8e488c5f63ee112c9745bf32042d50c3d",
-      "size": 1087,
+      "sha256": "8cfd0c9275b5a4173c4401fe052a8b67188af91c77b0287b905ec6342fe897f6",
+      "size": 1047,
       "type": "import"
     },
     {
@@ -19547,8 +19547,8 @@
       "path": "res://assets/vfx/skills/god_priest_star_prayer/20260803_purified_before_replace/starlight_prayer_sigil.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "f9231879f97372832b4c64e5321fe123f5277f1313e1c2d400c51652a48a31e3",
-      "size": 1083,
+      "sha256": "e13da319865dc2705efb348505b40efdeb1740902d971bbc16aa4d296f509f9c",
+      "size": 1043,
       "type": "import"
     },
     {
@@ -19567,8 +19567,8 @@
       "path": "res://assets/vfx/skills/god_priest_star_prayer/starlight_prayer_cleanse.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "71964339c54210907f7d5c20d76f7b14010a69b5c09e74b8ed25692bb26f4e0f",
-      "size": 1057,
+      "sha256": "1827437f2027f48324c35592f1c186bd32d8496491af8c33aeea41ea2dda0d77",
+      "size": 1017,
       "type": "import"
     },
     {
@@ -19587,8 +19587,8 @@
       "path": "res://assets/vfx/skills/god_priest_star_prayer/starlight_prayer_descent.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "23f756a91a3f8575f2f6b550af5d14a4854e2bd75c155d7898a165da273cff06",
-      "size": 1056,
+      "sha256": "378c7ef85501cee7ac4429034b7bf8d68914f5e875f165e20aa1561d820c8300",
+      "size": 1016,
       "type": "import"
     },
     {
@@ -19607,8 +19607,8 @@
       "path": "res://assets/vfx/skills/god_priest_star_prayer/starlight_prayer_fragments.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "0cebf90704581ed0aeb43ef806ba55a522fa8a458753ea0470acae17723586d2",
-      "size": 1063,
+      "sha256": "854137ff44ca748e7f4b9be9a23a42704cf02001ee1bffa0d917d405d3c8544f",
+      "size": 1023,
       "type": "import"
     },
     {
@@ -19627,8 +19627,8 @@
       "path": "res://assets/vfx/skills/god_priest_star_prayer/starlight_prayer_impact.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "afbb18a05ab23f80339f8555e1b9225f5133760a685fab0a5a74bf4037562c8a",
-      "size": 1053,
+      "sha256": "dfd023f375d97ad3813c2c2199e65c9d88802a7db1a6ab004459d99bbfc28271",
+      "size": 1013,
       "type": "import"
     },
     {
@@ -19647,8 +19647,8 @@
       "path": "res://assets/vfx/skills/god_priest_star_prayer/starlight_prayer_sigil.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "ffae8a740a3adb1c8b64b3be94874eff347e2c57c285e6834f5ea7181353e03a",
-      "size": 1051,
+      "sha256": "d33e3a3fb7f938fd1fbe2f07202269c9c3992da28c269deeb7999ae7aea3232f",
+      "size": 1011,
       "type": "import"
     },
     {
@@ -19667,8 +19667,8 @@
       "path": "res://assets/vfx/skills/god_priestess/god_priestess_decree.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "8976731cb6c0f57c4911a665287f28ea15af4adeb166c6ec0a6afd2e33f8a632",
-      "size": 1294,
+      "sha256": "41fdf792c9a4e7a98fa94cea06627bf86e3aeda2a060f26569b8f43566cc7e23",
+      "size": 1252,
       "type": "import"
     },
     {
@@ -19687,8 +19687,8 @@
       "path": "res://assets/vfx/skills/god_priestess/god_priestess_decree_mark.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "905ff33fc57cc7e413ade2aa3723439d1fc206665356d00cbf4811f3d0a4d58d",
-      "size": 1318,
+      "sha256": "f6a310b2d4a2a666a99a5b60fa186959665b308167e7dabada22b5b9034a16fb",
+      "size": 1276,
       "type": "import"
     },
     {
@@ -19707,8 +19707,8 @@
       "path": "res://assets/vfx/skills/god_priestess_blessing/priestess_blessing_burst.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "1282487f7658cbc12ae7d82ca781d97a9e3070ef60764cd9ca22c0d36eb65425",
-      "size": 1057,
+      "sha256": "332f7c27869eab562924cfb220273fe55687ba310dd96b1d5684277360acae29",
+      "size": 1017,
       "type": "import"
     },
     {
@@ -19727,8 +19727,8 @@
       "path": "res://assets/vfx/skills/god_priestess_blessing/priestess_blessing_particles.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "849edae15f74a7b7a607320a94464c671733622eecf38de530dcd172ba701e91",
-      "size": 1069,
+      "sha256": "7aec3c2dbc9c6a6c31a5d00c63611732ec7f30e225223e49d222f2d5a9e1612f",
+      "size": 1029,
       "type": "import"
     },
     {
@@ -19747,8 +19747,8 @@
       "path": "res://assets/vfx/skills/god_priestess_blessing/priestess_blessing_ribbon.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "2d2f6f0674ca997c0f631e6ec2fcdfcc314ac8fb11ed988bf1873505e12af870",
-      "size": 1060,
+      "sha256": "a10d5fa5ef603985083b4e2fa9b790bfebe55ee6ece91ae032780ba08230197f",
+      "size": 1020,
       "type": "import"
     },
     {
@@ -19767,8 +19767,8 @@
       "path": "res://assets/vfx/skills/god_priestess_blessing/priestess_blessing_sigil.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "3c9dd025dd1e2b37e82c168fea106b15bd6da90da22c7a58f5e2ad6156b09676",
-      "size": 1057,
+      "sha256": "cc7fceb398b2b05569bafdd12be5ce1424be8ba9629a7042c49dcd21b09b2861",
+      "size": 1017,
       "type": "import"
     },
     {
@@ -19787,8 +19787,8 @@
       "path": "res://assets/vfx/skills/human_archer/human_archer_arrow_trail.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "32a8ea3ec7849e13ae9443aa6e042cf51483de8c8b3b0d642d907b39450aff79",
-      "size": 1313,
+      "sha256": "50cb63d0b6830f4e5d17a35ac93521d608a7d4e06ccf742e41b4aa82d72f62ef",
+      "size": 1271,
       "type": "import"
     },
     {
@@ -19807,8 +19807,8 @@
       "path": "res://assets/vfx/skills/human_archer/human_archer_charge_wind.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "a389c518b19d8bbfb3b607ee25fc6ce6fe7f97f8bf798182b91f11035f567bf8",
-      "size": 1313,
+      "sha256": "4734e61f0ca3618f43fe447739e0df2e2f619955c9ce8ced30b18726bd3448e8",
+      "size": 1271,
       "type": "import"
     },
     {
@@ -19827,8 +19827,8 @@
       "path": "res://assets/vfx/skills/human_archer/human_archer_leaf_spark.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "08f311b043e6e2479b3c13f5cc2432177847604c6605a7a6a0987a53d7a5d8a2",
-      "size": 1308,
+      "sha256": "1c5ee4662eb2531099f13dbfa2a4eb17f14ceecd3bc230d53378ad59a6e7ec9f",
+      "size": 1266,
       "type": "import"
     },
     {
@@ -19847,8 +19847,8 @@
       "path": "res://assets/vfx/skills/human_archer/human_archer_pierce_flash.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "814e84d770dabe59b6e672b05faf0e34a80e2c16d9ec701ad23ed7e612b02882",
-      "size": 1318,
+      "sha256": "1578ddd5fb6d25d215855d4627f7354ac6a207875d0650b659850e64e097b763",
+      "size": 1276,
       "type": "import"
     },
     {
@@ -19867,8 +19867,8 @@
       "path": "res://assets/vfx/skills/human_archer/human_archer_star_crack.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "4ef7415af137de5ef42def96d0563f86de3b7c8cd59cd5fee9b260887eb0fd33",
-      "size": 1308,
+      "sha256": "2dc2bce2931f31b0110ea64ffcd095c5a9f114601a005c644a63aaee60a44cf9",
+      "size": 1266,
       "type": "import"
     },
     {
@@ -19887,8 +19887,8 @@
       "path": "res://assets/vfx/skills/human_cleric/cleric_final_contact.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "f0a2259529172d8cf1314bb42ad9af5f580c6662cf27cb097907d402ff04a554",
-      "size": 1292,
+      "sha256": "d0c0da741553dfb6e75f034b6ec5fb277a6caa69d7151451fc6ba35b3566955f",
+      "size": 1250,
       "type": "import"
     },
     {
@@ -19907,8 +19907,8 @@
       "path": "res://assets/vfx/skills/human_cleric/human_cleric_heal_ribbon.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "9acfa3afd37821d9ff083dc9193342c44be7f903aabeb895110b810c11121e2a",
-      "size": 1312,
+      "sha256": "5426a8841e3b5690279d8ecffb8ecb0e1303025db981d06232842b070033bff8",
+      "size": 1270,
       "type": "import"
     },
     {
@@ -19927,8 +19927,8 @@
       "path": "res://assets/vfx/skills/human_cleric/human_cleric_life_mark.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "38598a4bc728b33d4dc8e6683fb77322e50d22731706ca4d6ea46b5459bcb5b8",
-      "size": 1303,
+      "sha256": "07fa36dd8cd1a181fc1aa02d8725e58ce36652f8ceeec1baa4f470fc5d5d9c72",
+      "size": 1261,
       "type": "import"
     },
     {
@@ -19947,8 +19947,8 @@
       "path": "res://assets/vfx/skills/human_cleric/human_cleric_prayer_wisp.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "ef1d0aefb7eca726903356e7ebeb48d0b031e2c1ba648256ea2b6f0f31e6dc65",
-      "size": 1313,
+      "sha256": "99460d6243509725ff15221c395da947b70060b802aa0327c725bdece37c99d3",
+      "size": 1271,
       "type": "import"
     },
     {
@@ -19967,8 +19967,8 @@
       "path": "res://assets/vfx/skills/human_death_servant/death_servant_final_contact.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "af44389af78bd6f281f587c2a649bac8e5cccb651ede59983ae1d76342c2cbab",
-      "size": 1335,
+      "sha256": "5ae035c1068fd6b32d3e04bcff43133a6715961348aec94f4be386aeab6f53b1",
+      "size": 1293,
       "type": "import"
     },
     {
@@ -19987,8 +19987,8 @@
       "path": "res://assets/vfx/skills/human_death_servant/human_death_servant_blood_chain.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "f32db671141427552d07ecb22de7b4f24a8b2b5486ef79cd65f368015a97c195",
-      "size": 1354,
+      "sha256": "4e0773691592a40219620c7c322ce86d3d4a3618242f6143ddd610ac2955ffb1",
+      "size": 1312,
       "type": "import"
     },
     {
@@ -20007,8 +20007,8 @@
       "path": "res://assets/vfx/skills/human_death_servant/human_death_servant_guard_sigils.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "9f6036fd133611cb92e534b4bd0b2168d89ac7e0cd673edf392e008f47916134",
-      "size": 1359,
+      "sha256": "aa51608f72de774fc1d4b44a1f5a0e11ad2447aaa04cb4cdc05b833b618716bb",
+      "size": 1317,
       "type": "import"
     },
     {
@@ -20027,8 +20027,8 @@
       "path": "res://assets/vfx/skills/human_death_servant/human_death_servant_oath_crack.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "487bb4019cb4ab4e5d5e6ef47fd771473e0a3c70e8f36d49ff1080d0e29aff86",
-      "size": 1349,
+      "sha256": "1ff3541c70178067f8b6657bec902cb715401d22aa89c011b3f1ceaaa89f2344",
+      "size": 1307,
       "type": "import"
     },
     {
@@ -20047,8 +20047,8 @@
       "path": "res://assets/vfx/skills/human_death_servant/human_death_servant_sacrifice_burst.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "70eeb6cfb9cac86642dbab6caa98536548fc93265d1f70480532de408099d1a6",
-      "size": 1374,
+      "sha256": "3d7473cf65e7f5c02e42f01a6cb2d4f83e62de22ac08016549ca95451ad66588",
+      "size": 1332,
       "type": "import"
     },
     {
@@ -20067,8 +20067,8 @@
       "path": "res://assets/vfx/skills/human_king/human_king_heaven_sword.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "a5ccafeab307d2c11141961d0239eda9e9fde1772a7d0b88598edd968fdb0b2e",
-      "size": 1305,
+      "sha256": "6264eb54d42e6d1c0c75b822661986bb7b46a23cb3f40e5dfa3d34a8c01e04ed",
+      "size": 1263,
       "type": "import"
     },
     {
@@ -20087,8 +20087,8 @@
       "path": "res://assets/vfx/skills/human_king/human_king_light_column.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "a5772073c88684b9ff14326afde6593caa63118f4b8a649fa4dcca9b3f80b61d",
-      "size": 1306,
+      "sha256": "c96a6148cd01d23b76c8424dae564f11b676f99e245c9e9ac83de88d04c02ed2",
+      "size": 1264,
       "type": "import"
     },
     {
@@ -20107,8 +20107,8 @@
       "path": "res://assets/vfx/skills/human_king/human_king_royal_impact.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "82cfe778fb2cc455a4fe459f67fc4f763a9992aec1ebac0a4652b14cbe3c2cdd",
-      "size": 1305,
+      "sha256": "0037212414d1eb5ee56d92f6fb3475ec97c275cbd018e33133250f89112b30ee",
+      "size": 1263,
       "type": "import"
     },
     {
@@ -20127,8 +20127,8 @@
       "path": "res://assets/vfx/skills/human_king/king_final_contact.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "6b07ba124b724ea9b9415ca439b7abf4cd4ef1480d23a57f780472d2f7a8e77e",
-      "size": 1281,
+      "sha256": "fbb530145c1edbb005db7660c23ab5cb9de9dd110a113ff04f8638118d5d76e1",
+      "size": 1239,
       "type": "import"
     },
     {
@@ -20147,8 +20147,8 @@
       "path": "res://assets/vfx/skills/human_mage/human_mage_element_burst.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "1d0ee02a09632c5492d921547d10d03dba9e9362710671ef77a47509f7c6f834",
-      "size": 1311,
+      "sha256": "a4cfa81c4298cec86bf1ab4c5bc8b538511c402c90129df8f8b50115a4ec69f0",
+      "size": 1269,
       "type": "import"
     },
     {
@@ -20167,8 +20167,8 @@
       "path": "res://assets/vfx/skills/human_mage/human_mage_element_orb.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "342119a22e1011d9695ab7764d1930feca8c1159b987c825a0ba7f49a43bdcfe",
-      "size": 1300,
+      "sha256": "9d3895880390add6e30d48472590330b793ceb40ccd4d33b60d544ccdf9fc25d",
+      "size": 1258,
       "type": "import"
     },
     {
@@ -20187,8 +20187,8 @@
       "path": "res://assets/vfx/skills/human_mage/human_mage_element_residue.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "a03b7222e6feaad3503f63ad192fde753d1a661ecdc60548b2152ad59d763cb9",
-      "size": 1320,
+      "sha256": "26ba06490d9ab56ebf61cfb912986c728d7c321a2fdd1bd0e62f1785a24de0f6",
+      "size": 1278,
       "type": "import"
     },
     {
@@ -20207,8 +20207,8 @@
       "path": "res://assets/vfx/skills/human_mage/human_mage_element_trail.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "21a0165de872e5a7461d39c909baa754d037ed53e8930dcf8f7d5d478bf8cfeb",
-      "size": 1311,
+      "sha256": "3b3970fc8b2392adb5cb8bcfda610152baaa9fb2d963073840f830f2ed403c10",
+      "size": 1269,
       "type": "import"
     },
     {
@@ -20227,8 +20227,8 @@
       "path": "res://assets/vfx/skills/human_mage/mage_final_contact.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "1457a3124e329e5e8cfca4ac720c45e86bf000aa76aec7c190a58d61904e042b",
-      "size": 1281,
+      "sha256": "ed72cdd582f565856326d3a3b58c1bcbcdd92eea3f3348a8cc102a7c7e084e79",
+      "size": 1239,
       "type": "import"
     },
     {
@@ -20247,8 +20247,8 @@
       "path": "res://assets/vfx/skills/human_merchant/human_merchant_bounty_mark.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "1228602f6eeb45f42dc101eda4ac04fb694cca4437cfa296a41724da496f9101",
-      "size": 1324,
+      "sha256": "319a8cfcc054fb0b83f8201d42aeaa071a142c035f0aa7f69e1f18e24a2c892c",
+      "size": 1282,
       "type": "import"
     },
     {
@@ -20267,8 +20267,8 @@
       "path": "res://assets/vfx/skills/human_merchant/human_merchant_coin_spark.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "b1a540b46100dce52df2550e9acd20df013f7229aad1e213d62ade49e22de105",
-      "size": 1320,
+      "sha256": "1b042607ec3b392e0ce3a195068b1dec6858eda77210a23961f56caeb5df6f7f",
+      "size": 1278,
       "type": "import"
     },
     {
@@ -20287,8 +20287,8 @@
       "path": "res://assets/vfx/skills/human_merchant/human_merchant_coin_trail.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "16cac3d00c2b0c92a713f2dd36c65fadd53cc9f65a9967589ef0a1352dda7845",
-      "size": 1320,
+      "sha256": "5ba1e31b51dc38e79ce9eff2a5d92dd9b62a257e2a44748589afe2ea0542140d",
+      "size": 1278,
       "type": "import"
     },
     {
@@ -20307,8 +20307,8 @@
       "path": "res://assets/vfx/skills/human_merchant/human_merchant_contract_slip.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "e8c55fdeb17f8555747c4968dea7c5c461b62e76b1d13b60132192d82ed10af5",
-      "size": 1335,
+      "sha256": "2e68fc799d305ea1904f6f3790b416d84758a3c948253394fde228f855ce9ed0",
+      "size": 1293,
       "type": "import"
     },
     {
@@ -20327,8 +20327,8 @@
       "path": "res://assets/vfx/skills/human_merchant/human_merchant_purse_puff.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "0d4b2424a54fd3398d4afaaf28347ce8ec5c7aae6ee63dd5d2baa19f4743f7f3",
-      "size": 1320,
+      "sha256": "190229dd68663a3aca9f6c6bcb2b7b4e1522eedcbc0debacb12431c59c26763e",
+      "size": 1278,
       "type": "import"
     },
     {
@@ -20347,8 +20347,8 @@
       "path": "res://assets/vfx/skills/human_militia/human_militia_charge_dust_start.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "9936b130dcfdbb286bb6ae3563bd633f758e916807b0560aae1bbb2c6d7ac78f",
-      "size": 1349,
+      "sha256": "484974c9207217978a31f30d4e905522177d0a3d9a448bc327fc3daec6cbe697",
+      "size": 1307,
       "type": "import"
     },
     {
@@ -20367,8 +20367,8 @@
       "path": "res://assets/vfx/skills/human_militia/human_militia_dust_puff.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "65f805f99ab902f631b21398c4aca684555b83510fc25c05e72909932df994db",
-      "size": 1309,
+      "sha256": "ccec3281803570f924fc6fb84fc2e7560c7f182a10440846a0302ea7ed1daefd",
+      "size": 1267,
       "type": "import"
     },
     {
@@ -20387,8 +20387,8 @@
       "path": "res://assets/vfx/skills/human_militia/human_militia_hit_dust_pop.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "c67c41356289eec2a58ff5a9c190507884635ec7eb5b15449a061661cc080759",
-      "size": 1323,
+      "sha256": "c2ee92a738c531d6873273700adb6477d4f932046405f8d5001cf3f618e7bf1e",
+      "size": 1281,
       "type": "import"
     },
     {
@@ -20407,8 +20407,8 @@
       "path": "res://assets/vfx/skills/human_militia/human_militia_impact_ring.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "98bd561b3fa0568e323db379db0a7748bdbbf2b9b531c3ff68b599bad010234c",
-      "size": 1318,
+      "sha256": "4d3566da2886a488d47da35e77a05b2a23000668b783e6def56a017e87fb73d1",
+      "size": 1276,
       "type": "import"
     },
     {
@@ -20427,8 +20427,8 @@
       "path": "res://assets/vfx/skills/human_militia/human_militia_shield_air_streak.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "03434f9e1742e194c454ebaf3eae511f7f2558eed367571a0375f063327897de",
-      "size": 1349,
+      "sha256": "57007c8fd16fe2442275a7f7862ced4dea6e3509b8cb7c970ed34ffd4f49e8d9",
+      "size": 1307,
       "type": "import"
     },
     {
@@ -20447,8 +20447,8 @@
       "path": "res://assets/vfx/skills/human_militia/human_militia_shield_bash.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "f2e48f93f66f0ae65c24871fb5ac9c4caec368c3dcc0734b16c951f34f121435",
-      "size": 1319,
+      "sha256": "c009ea14fecd932c560c093bb12b6bbbfe23950d1e1138fab50d5716cf138725",
+      "size": 1277,
       "type": "import"
     },
     {
@@ -20467,8 +20467,8 @@
       "path": "res://assets/vfx/skills/human_swordsman/human_swordsman_after_shards.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "51bb9401ee34a5373fa13f25d6906bcbf6d56e14e8d22312f4caccb72f1335d7",
-      "size": 1336,
+      "sha256": "2f9c9e69bfcf5e920a6074bbd79286841f1abc373bf660bb36bcbe27e8f8bc51",
+      "size": 1294,
       "type": "import"
     },
     {
@@ -20487,8 +20487,8 @@
       "path": "res://assets/vfx/skills/human_swordsman/human_swordsman_arc_180.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "fdff891a93f31060562d8ebc909b37faedcdbcfe8bb35d6da88b2e19c0a820cd",
-      "size": 1311,
+      "sha256": "990744d5bbdee8d90ef669adc1e0232630510033b555e070031906dab3535bc1",
+      "size": 1269,
       "type": "import"
     },
     {
@@ -20507,8 +20507,8 @@
       "path": "res://assets/vfx/skills/human_swordsman/human_swordsman_blade_charge.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "24cc8e398c070585de8c494c0841ae2a2fd9d4ed69992271e776d47138c66ce3",
-      "size": 1335,
+      "sha256": "191658021c6350c0651fe90d58330ff6b75a936f31f4db4c7ac7609e4e71d984",
+      "size": 1293,
       "type": "import"
     },
     {
@@ -20527,8 +20527,8 @@
       "path": "res://assets/vfx/skills/human_swordsman/human_swordsman_front_impact.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "6af184f0ee66a50519a89f03ec770a8ce10ca2753f3386658c7bcdb7346f9ec1",
-      "size": 1335,
+      "sha256": "9bea8a0f86b123555672d56ea676fa58435630a4d044fc78a5a8a5da9567306e",
+      "size": 1293,
       "type": "import"
     },
     {
@@ -20547,8 +20547,8 @@
       "path": "res://assets/vfx/skills/human_swordsman/human_swordsman_impact_star.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "9f2e3fe01589bc8d82e6d26167618cc3d38c4dd7a088792ce6b8af04656d4c6c",
-      "size": 1331,
+      "sha256": "fe48b0aa3b5f7cc5dd01e99a3f4dc10dee5776a2b6c910af98395e6fb4b5807f",
+      "size": 1289,
       "type": "import"
     },
     {
@@ -20567,8 +20567,8 @@
       "path": "res://assets/vfx/skills/human_swordsman/human_swordsman_slash_a.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "ada6fc5f993e2d57ed760481e7ec1977f50d32edd272e4899d1f14d03b7137df",
-      "size": 1311,
+      "sha256": "588ae074a166fc00566e74cc8929dc899a3f3eb4f07374f37495930e7d944924",
+      "size": 1269,
       "type": "import"
     },
     {
@@ -20587,8 +20587,8 @@
       "path": "res://assets/vfx/skills/human_swordsman/human_swordsman_slash_b.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "c844a5c1559360e68f49e85ac85101fd74cd20edd2dc50ad3fe50f2ab020a859",
-      "size": 1310,
+      "sha256": "fad979503643d798098745e05914753ed3182e4a556c181b1e09e6c0f345d48a",
+      "size": 1268,
       "type": "import"
     },
     {
@@ -20607,8 +20607,8 @@
       "path": "res://assets/vfx/skills/human_swordsman/human_swordsman_spark_shards.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "0dfc75f188e77cc1f47cf9f918e904bf7ce87cc1775981aabd159a44c82442ef",
-      "size": 1336,
+      "sha256": "f74bca22c69725b4dbfb2612c8af28b7c0f45582aaf03d21e73ea2747b0e2f61",
+      "size": 1294,
       "type": "import"
     },
     {
@@ -20627,8 +20627,8 @@
       "path": "res://assets/vfx/skills/human_swordsman/human_swordsman_stun_ring.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "0eb872f6d42db0d22d7c9d7353f7ca37f8ed43a17589f3cdc4dfb6d78ed0d1d1",
-      "size": 1321,
+      "sha256": "ac01c0b9fca13c8c4fa0d50d9bf9af48865466c0935147bf52697222ebbc5859",
+      "size": 1279,
       "type": "import"
     },
     {
@@ -20647,8 +20647,8 @@
       "path": "res://assets/vfx/skills/merc_libra_judge/judge_impact.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "06f78cc7ad60cd2c7d6ddc34739d9db78d69ca7a61cf4d4b474ce5cef19cec73",
-      "size": 1014,
+      "sha256": "e95f645048e1dec8eb0824344219f204a9b9b926cae9bd50920dbc2b2a99dc72",
+      "size": 974,
       "type": "import"
     },
     {
@@ -20667,8 +20667,8 @@
       "path": "res://assets/vfx/skills/merc_libra_judge/judge_scale_mark.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "ecb4856d316f5c104d618b27a4ee74c5089a6ea122cc280316ad427ab65d8cfb",
-      "size": 1027,
+      "sha256": "7e804a481a78063a1a45157ff8af945433d962c9be21f9a8c4f054cb18de3c8f",
+      "size": 987,
       "type": "import"
     },
     {
@@ -20687,8 +20687,8 @@
       "path": "res://assets/vfx/skills/merc_libra_judge/judge_slash.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "a3a0ebd7e51f9b28b623c644c16edd741209ce6a9f1981fefbe2b1ba5ec9077b",
-      "size": 1012,
+      "sha256": "be8ad60a29a9ec32342797ca68158874cbad69c12ba1bb72afab273f58bde66a",
+      "size": 972,
       "type": "import"
     },
     {
@@ -20707,8 +20707,8 @@
       "path": "res://assets/vfx/skills/merc_pisces_bubble/bubble_body.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "7b9140c6d022a4321e6c84b4b673d1b09a673a9ac67dc78f568ca539ae53d711",
-      "size": 1014,
+      "sha256": "c745de5816ff806c407fa3d314c187beda34a2e7845ad50f0764fa02615b0193",
+      "size": 974,
       "type": "import"
     },
     {
@@ -20727,8 +20727,8 @@
       "path": "res://assets/vfx/skills/merc_pisces_bubble/bubble_burst_damage.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "c59910664a3a86c86bb241dcfa0f73393023a77c99b9bc30745629667b3ac5be",
-      "size": 1038,
+      "sha256": "c96c6349531a0c2e2a8207c26ab6ec3a771c3e1ef8f66c864af5aac342b0f515",
+      "size": 998,
       "type": "import"
     },
     {
@@ -20747,8 +20747,8 @@
       "path": "res://assets/vfx/skills/merc_pisces_bubble/bubble_heal_splash.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "79786b2e341625608c286723d5110e66b6471de5d76e7e5058856a9b6a4c48b9",
-      "size": 1035,
+      "sha256": "fb16b8f53e73a37d35ed699be88cd4bfeb239738135204adb6941d94fe46f2b3",
+      "size": 995,
       "type": "import"
     },
     {
@@ -20767,8 +20767,8 @@
       "path": "res://assets/vfx/skills/merc_pisces_bubble/bubble_slow_sticky.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "27e22c1f92ac3bc0e2854d832ca2beeef25cbbf5ee95a389a1f1ed5daaf56756",
-      "size": 1035,
+      "sha256": "d2dbc631827c6fb44c54d3d6671ba6399976bf1c5cff7e1d2e43cdd3b78c36c6",
+      "size": 995,
       "type": "import"
     },
     {
@@ -20787,8 +20787,8 @@
       "path": "res://assets/vfx/skills/merc_scorpio_death/hunt_armor_crack.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "3b90f6b83522bf00f23fed1af3eb35fffa20a3833894c2c29fdcf301d4739dc2",
-      "size": 1028,
+      "sha256": "11db4869aa3061f51c810183b0e4f0c023174a667070b09a4ba392959526cdcd",
+      "size": 988,
       "type": "import"
     },
     {
@@ -20807,8 +20807,8 @@
       "path": "res://assets/vfx/skills/merc_scorpio_death/hunt_rift.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "5ccc5e691951cc6b1855425ff02eb46aff245bc7bead987bc22759684ee96f7b",
-      "size": 1007,
+      "sha256": "7bd1a58bc25d4e853c1d0512684ee2d7ea8f8e0c302d7e6f5d95a846dca92e86",
+      "size": 967,
       "type": "import"
     },
     {
@@ -20827,8 +20827,8 @@
       "path": "res://assets/vfx/skills/merc_scorpio_death/hunt_scythe_cut.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "6617919c7dc1aa339a75719179e03b66cf2c0b7d452331d2d0080e75e5f2c4e7",
-      "size": 1026,
+      "sha256": "6065a10d21570dfe50904ce57ecbea957aee56cb7b89b7c4b4b08b96efee0098",
+      "size": 986,
       "type": "import"
     },
     {
@@ -20847,8 +20847,8 @@
       "path": "res://assets/vfx/skills/merc_taurus_charge/charge_dust.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "262d0cadbdc340bb200713b9644d35a0645cd9153a8971f2e0b66a2768f05d6b",
-      "size": 1014,
+      "sha256": "54c38d2a2c3f2d51daf0daf98174c9e9a20b7385aa756a6a7e84ee5031cf6c6a",
+      "size": 974,
       "type": "import"
     },
     {
@@ -20867,8 +20867,8 @@
       "path": "res://assets/vfx/skills/merc_taurus_charge/charge_impact.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "440881e90fbaa5260b1edc4ec695415bd16345f36265e58ef1576e9c4f48b67a",
-      "size": 1020,
+      "sha256": "0364a8f3a76d6ac4900ff1ce2f86623c0a5e847054d7c10faca4f3edd95b0f5a",
+      "size": 980,
       "type": "import"
     },
     {
@@ -20887,8 +20887,8 @@
       "path": "res://assets/vfx/skills/merc_taurus_charge/charge_stun_debris.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "bcc4cf8fdc98e9533840cd4959b4bc1df929742469c67a5039b3b9ff63769ac9",
-      "size": 1035,
+      "sha256": "2dd1d7c852413a02b86fa16f2b58b4bc234f8c1b95723d4fd5dd12276df68226",
+      "size": 995,
       "type": "import"
     },
     {
@@ -20907,8 +20907,8 @@
       "path": "res://assets/vfx/skills/merc_taurus_charge/charge_trail.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "95363f6f23d326aab23bf8e977ccb833f15d8225373d44532da6e5933c385d6f",
-      "size": 1017,
+      "sha256": "72971dbd53d45efe287c9a12dfd60a6579fdda3d68307aa6e749b833b3eeb802",
+      "size": 977,
       "type": "import"
     },
     {
@@ -20927,8 +20927,8 @@
       "path": "res://assets/vfx/skills/undead_bomb/undead_bomb_core_pop.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "6d915c8e98ad0e1c5b1cbf1932fe0dfa15bdeef3353417c022f3d8aa95802f73",
-      "size": 1292,
+      "sha256": "141448bb2e6357eadb9e8e3e281cfc4e8795881426faa86e4630f712db175448",
+      "size": 1250,
       "type": "import"
     },
     {
@@ -20947,8 +20947,8 @@
       "path": "res://assets/vfx/skills/undead_bomb/undead_bomb_poison_ring.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "598db44f8c333de62c6e1d1d641b9bfd0ad185a4d96a1d2f26e6f3914d11a472",
-      "size": 1307,
+      "sha256": "ad5872c1342ab5e8d6abff5afbb805d0b8d565094e1a8481588637694f60d532",
+      "size": 1265,
       "type": "import"
     },
     {
@@ -20967,8 +20967,8 @@
       "path": "res://assets/vfx/skills/undead_bomb/undead_bomb_soul_fragment.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "b3297dbbeeea40f68d5063f4f854cfaf93a4a1528602cee8d272327c3e2679f9",
-      "size": 1316,
+      "sha256": "ea2c0193d72993295b3f1f5da0678fcc004588ac9d775641b3c2b014f3750deb",
+      "size": 1274,
       "type": "import"
     },
     {
@@ -20987,8 +20987,8 @@
       "path": "res://assets/vfx/skills/undead_fly/undead_fly_dodge_afterimage.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "0ca842979eb03a24fef10f5f67f131089223e288df65cbb811e8a96972a6d770",
-      "size": 1325,
+      "sha256": "c7945f2fa2b442b344e2c72052bb2b4457280ce3c0c11d13635f6dd5ef1de560",
+      "size": 1283,
       "type": "import"
     },
     {
@@ -21007,8 +21007,8 @@
       "path": "res://assets/vfx/skills/undead_fly/undead_fly_evasion_spark.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "bdce1804bb56be63ad45f679b5ff563aff49dbe3b53ec2c62f450b42d5bcf69e",
-      "size": 1311,
+      "sha256": "8c3347b6bdb245d6646d63023e40b891176c3253f79d5ca4775ce206d8fc2c4f",
+      "size": 1269,
       "type": "import"
     },
     {
@@ -21027,8 +21027,8 @@
       "path": "res://assets/vfx/skills/undead_fly/undead_fly_poison_feather.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "08e2b0e919952ba08fc5778d3cec870adbc07d403ab37baff42b036b37bbdd60",
-      "size": 1315,
+      "sha256": "9957b76ceadd61d484128258f4c6d463f9f4e9f2f3768428b797cef862cbd875",
+      "size": 1273,
       "type": "import"
     },
     {
@@ -21047,8 +21047,8 @@
       "path": "res://assets/vfx/skills/undead_mother/undead_mother_dark_book.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "550ba8749bf85594473ebae89fc069ad37d8cfad58745713e9f1057d6af30ebd",
-      "size": 1309,
+      "sha256": "6ba5973bf657edbdcc8fb445c2367cfe469316686bbc9d3e2f699775b6621435",
+      "size": 1267,
       "type": "import"
     },
     {
@@ -21067,8 +21067,8 @@
       "path": "res://assets/vfx/skills/undead_mother/undead_mother_dark_orb.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "44d7af29884c652a86804b813bfc02dd7ccbdb7141a3a5b32373186f7875b96c",
-      "size": 1304,
+      "sha256": "690750ca33af8e551218ae96a231ff107a1996e8ad0936404f5bc24d04144ad4",
+      "size": 1262,
       "type": "import"
     },
     {
@@ -21087,8 +21087,8 @@
       "path": "res://assets/vfx/skills/undead_mother/undead_mother_death_mark.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "36f64026c7301139f1d90b1de7d7429fa8e906d37abd52a17a41fedbc7d555da",
-      "size": 1313,
+      "sha256": "5ed596752aa0878ec6990c7afa5bd0a36c991f6e2ac9af7ef3b287f4641998f8",
+      "size": 1271,
       "type": "import"
     },
     {
@@ -21107,8 +21107,8 @@
       "path": "res://assets/vfx/skills/undead_mother/undead_mother_execution_book.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "625e611b5a645e294ced86ef26e0639493319f4c5f3c2de2856689445c916193",
-      "size": 1334,
+      "sha256": "1d0737aefff5c2f5b4a260f078baa1617751b1c742cb92f1fc8ae3994198e27f",
+      "size": 1292,
       "type": "import"
     },
     {
@@ -21127,8 +21127,8 @@
       "path": "res://assets/vfx/skills/undead_parasite/undead_parasite_cute_mark.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "bc59c78b1cb3522b931170a74f918f1645c10fe43587dd61b3967eaedee00bb3",
-      "size": 1321,
+      "sha256": "5db10fc6e72357a404b9b89cdba00ad79e453eafc10fcc5b4141a2e517ffc7a6",
+      "size": 1279,
       "type": "import"
     },
     {
@@ -21147,8 +21147,8 @@
       "path": "res://assets/vfx/skills/undead_parasite/undead_parasite_cute_pod.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "5258a8f39bce174ee3c5cd91681b7c4b484af4923d0dc31bebce6d66c440657e",
-      "size": 1316,
+      "sha256": "b917b70229e0d62fa1501a2b2d111a77f6ebfdf367e41c51feb691770138a2e1",
+      "size": 1274,
       "type": "import"
     },
     {
@@ -21167,8 +21167,8 @@
       "path": "res://assets/vfx/skills/undead_parasite/undead_parasite_cute_thread.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "85f1842356e24187802cbbcf734bfc42461202a5e50711a614649e985b4cf118",
-      "size": 1331,
+      "sha256": "37c1f44bd4a34ad73f0f1f4fad39759a36efdce8544517ee5493278c8e5ab189",
+      "size": 1289,
       "type": "import"
     },
     {
@@ -21187,8 +21187,8 @@
       "path": "res://assets/vfx/skills/undead_poison/undead_poison_miasma_cone.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "55123194a56ae581c57bb3bbd56e7c0187e7a46ae69118d2466893f1b3c66a04",
-      "size": 1319,
+      "sha256": "5668fb4500d1969953b0e1714ea475a021bd6e323184d37b6fe81800e6479c70",
+      "size": 1277,
       "type": "import"
     },
     {
@@ -21207,8 +21207,8 @@
       "path": "res://assets/vfx/skills/undead_poison/undead_poison_puddle.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "80cad8d6212ad8c353dba95577d02a1914e7e2dada5db31bf7f0fe032b6a2216",
-      "size": 1293,
+      "sha256": "dc2dab97a41109413c9e31c9251903ade97ebcc1d91134513a6d4f5700baaa76",
+      "size": 1251,
       "type": "import"
     },
     {
@@ -21227,8 +21227,8 @@
       "path": "res://assets/vfx/skills/undead_poison/undead_poison_spore_orb.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "3fd3d3d0b2ecee93dd88b0fa1dc052db98baa33ee965bf479f9b418d58aafd0c",
-      "size": 1309,
+      "sha256": "c0b851eb85aa3580aa9f64d9d3a8e78e9e06cd63c3d000ddfda458e1364ec3e3",
+      "size": 1267,
       "type": "import"
     },
     {
@@ -21247,8 +21247,8 @@
       "path": "res://assets/vfx/skills/undead_small/undead_small_crack_mark.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "392c9b7e62638099533b3db039f6449164839dd5e289ead3cf80efdf91f8d06b",
-      "size": 1307,
+      "sha256": "8e513300b96b7432b77e4c65903aa15db2f572c7c654d38a6012781c0ff382e8",
+      "size": 1265,
       "type": "import"
     },
     {
@@ -21267,8 +21267,8 @@
       "path": "res://assets/vfx/skills/undead_small/undead_small_soul_dot.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "9fb49050bdae0a7aa4e7e5b7866d2cdff500361b38b730f220252df3d3d3b9cc",
-      "size": 1297,
+      "sha256": "bb8bea0c4dda510061233afaf011b55c30c3616c63fa8cf14078334fba6ce22e",
+      "size": 1255,
       "type": "import"
     },
     {
@@ -21287,8 +21287,8 @@
       "path": "res://assets/vfx/skills/undead_small/undead_small_soul_slash.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "60a0144ec65334a188060e5d755fbb21717313a0f57703cc6476a45e5058761d",
-      "size": 1308,
+      "sha256": "fead628456508bc215ffc9fbd4982483c01c73ace8ee4290b7250ef995299cc7",
+      "size": 1266,
       "type": "import"
     },
     {
@@ -21307,8 +21307,8 @@
       "path": "res://assets/vfx/skills/undead_spike/undead_spike_armor_break.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "8c7db888a3fb9e0dcbf08d8b4cc132f274d7397d2820090053b36007a3dc2b34",
-      "size": 1313,
+      "sha256": "69f45b715958b53dd74e1f74d5ca7ab7a58f5d72565c25c9b1d5455e88246c3b",
+      "size": 1271,
       "type": "import"
     },
     {
@@ -21327,8 +21327,8 @@
       "path": "res://assets/vfx/skills/undead_spike/undead_spike_bone_dart.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "2da1fd05fba52f5df5cd0cc73b2114b5350728de4e11cf08896c4890dc4fe72f",
-      "size": 1303,
+      "sha256": "4a1e0c4de054f44cf7711c03eb4e5731a69dedfec5d3b9930ddc66758fa43949",
+      "size": 1261,
       "type": "import"
     },
     {
@@ -21347,8 +21347,8 @@
       "path": "res://assets/vfx/skills/undead_spike/undead_spike_stack_pin.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "8ec01d51768c2ead26060a25996b96bfe3da389d2f61b47096e03a708ab7c5e9",
-      "size": 1303,
+      "sha256": "e6ad3b8f026f9af1949061bcad7cd46959aebfb02c9395345eb49775d5a3fefa",
+      "size": 1261,
       "type": "import"
     },
     {
@@ -21367,8 +21367,8 @@
       "path": "res://assets/vfx/skills/undead_titan/undead_titan_armor_plate.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "bdc3f45970d2db34f6a61eb4956325ddc861acb63d9a2283fc37e9ee418b18e8",
-      "size": 1313,
+      "sha256": "83746ec2884fd1c9aea6b55d07342a200090a568a64bbd193bbfb4bc066ca06c",
+      "size": 1271,
       "type": "import"
     },
     {
@@ -21387,8 +21387,8 @@
       "path": "res://assets/vfx/skills/undead_titan/undead_titan_reflect_spike.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "d8b793788d9ebe59a53503bd6cee3b320eaeafe2ddb072ed4376f61112327c4f",
-      "size": 1323,
+      "sha256": "4df1b4761764b10e173c0e97f8be8afa9303e16255c77664926fa0b882571f31",
+      "size": 1281,
       "type": "import"
     },
     {
@@ -21407,8 +21407,8 @@
       "path": "res://assets/vfx/skills/undead_titan/undead_titan_stack_badge.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "79e5d893b2dc65a16caa112da54e1222919adf33d1a74bff10682cf8004b3da9",
-      "size": 1313,
+      "sha256": "79bbea995966b4a245658ac37d7c83fd8302dd2c13bd0d4a485273c12bf0afea",
+      "size": 1271,
       "type": "import"
     },
     {
@@ -21427,8 +21427,8 @@
       "path": "res://assets/vfx/status/status_attack_down_icon_v2.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "021dacb26cd0e48d945f632283b9ddd3d4bd66564c9794ecf294a54b8702bd26",
-      "size": 1310,
+      "sha256": "0aa8bc8fb0671b6b0773e4fe9db56b39f091993f607ea96acb9f79c16c4bb27e",
+      "size": 1268,
       "type": "import"
     },
     {
@@ -21447,8 +21447,8 @@
       "path": "res://assets/vfx/status/status_bleed_body.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "d9aaa950a47ef7b29b48131d7e70b3bd68e65f5d97be4724b4ed2a5aa2f584cc",
-      "size": 1264,
+      "sha256": "d071fa9cf351a2a3fd157c63c47fe77c832885d329c42c4f982f389644eb562b",
+      "size": 1222,
       "type": "import"
     },
     {
@@ -21467,8 +21467,8 @@
       "path": "res://assets/vfx/status/status_bleed_icon_v2.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "23dcd08a3212d3d3a022a1d4dc70b2730e9fc4ac27376d6fdf4ef2880bb14ce4",
-      "size": 1279,
+      "sha256": "5c831c8b543618605720ca41328efb0a63e67b2bc308161bac1efdf4bb4362bb",
+      "size": 1237,
       "type": "import"
     },
     {
@@ -21487,8 +21487,8 @@
       "path": "res://assets/vfx/status/status_burn_icon_v2.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "0e13dc762ea9c95032b25228afc8a69fb07d66cc02c2c06498d11e502916cd0d",
-      "size": 1274,
+      "sha256": "de6658eef07fc73fd6b1802ad6e186dd406ec96371f5363505137357ac61e736",
+      "size": 1232,
       "type": "import"
     },
     {
@@ -21507,8 +21507,8 @@
       "path": "res://assets/vfx/status/status_burn_ring.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "a210014fceaa2e46f3c2e9fe06005882874be02d647d7ce2be609968d958a892",
-      "size": 1259,
+      "sha256": "2be322eeabb2b42db091f5a13c65e5920db5c3036ce3bfaf85b123dccc9fb9df",
+      "size": 1217,
       "type": "import"
     },
     {
@@ -21527,8 +21527,8 @@
       "path": "res://assets/vfx/status/status_defense_down_icon_v2.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "d20e96ef39766dbc2e61ff82ea5317b0c2d4ddcd7332904bc30f84290815b034",
-      "size": 1315,
+      "sha256": "a22c1808893e325b69b37ef4547317f02e89d2761aa438c3a7b96c0c261a6df2",
+      "size": 1273,
       "type": "import"
     },
     {
@@ -21547,8 +21547,8 @@
       "path": "res://assets/vfx/status/status_fear_icon_v2.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "7223376be2ff2df9204e0318c17df7befea41f4534638eab8c0f8ff1bf06e7a3",
-      "size": 1275,
+      "sha256": "151692ebf7fe7b39514c91cdf15ac1639b0f0a8826d154cfeb520b9bfcf7e7c4",
+      "size": 1233,
       "type": "import"
     },
     {
@@ -21567,8 +21567,8 @@
       "path": "res://assets/vfx/status/status_heal_reduction_icon_v2.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "e65c79d5dd9f65fff5f530cce0e58d1342754757bccfe9600b81ac9db9130851",
-      "size": 1325,
+      "sha256": "3ce0f716fe17a4f00a25e151e4863072c18b9043df93c2cf59df62fe9440372c",
+      "size": 1283,
       "type": "import"
     },
     {
@@ -21587,8 +21587,8 @@
       "path": "res://assets/vfx/status/status_ice_affected_icon_v2.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "218dced347a413672203ed536b3b1fde64c2e9fa4636f7517aa343f7a80d2299",
-      "size": 1315,
+      "sha256": "cb1ff8b60cd8628258c1434ae3ca82c1715796690d3a28ec7df81d72944b43de",
+      "size": 1273,
       "type": "import"
     },
     {
@@ -21607,8 +21607,8 @@
       "path": "res://assets/vfx/status/status_ice_vulnerable_icon_v2.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "22ec7d89a542472bc3f18d75de0d2ace59e914554cc9520217c2917dc30304e5",
-      "size": 1324,
+      "sha256": "a6f811addd876f2d9538069ff0f1f06274431f85172d3f748f5f4f668fa8ecab",
+      "size": 1282,
       "type": "import"
     },
     {
@@ -21627,8 +21627,8 @@
       "path": "res://assets/vfx/status/status_interrupt_icon_v2.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "34d4969731e6980a0894fec87f5c86a4fcbb8de3f02c1193b54c9b81c7b38f62",
-      "size": 1300,
+      "sha256": "1523d58cccb5d16d0cb8349569aa1385105cd00650a603b999074069f9d9c3a8",
+      "size": 1258,
       "type": "import"
     },
     {
@@ -21647,8 +21647,8 @@
       "path": "res://assets/vfx/status/status_poison_cloud.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "a332ea6eeb3f9b63c62538885977bc05d9dbda39ffe9f7016df157ac77d5c0d1",
-      "size": 1275,
+      "sha256": "90c267ff0a5ac33fed38c5f80be6302b402ec4499101999463e29ae5a8dc55b3",
+      "size": 1233,
       "type": "import"
     },
     {
@@ -21667,8 +21667,8 @@
       "path": "res://assets/vfx/status/status_poison_emblem.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "e9d784233a7dd97fbe2faa16d2acb11a67aa859c8716c5cfa7a43c7d8b7a6491",
-      "size": 1280,
+      "sha256": "0b6a3882b213b71a14581ddd52c4045a586d2443e4afacb7100fd76512ce2cad",
+      "size": 1238,
       "type": "import"
     },
     {
@@ -21687,8 +21687,8 @@
       "path": "res://assets/vfx/status/status_poison_icon_v2.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "ae083b29a2de2ef18133e31a823e28eff4c01d7d2c8a660649f8b7f24a43161d",
-      "size": 1285,
+      "sha256": "ee4201d1e569702288822b587ebaecbc13612ea7daf06da5e72fe8e98b05dea4",
+      "size": 1243,
       "type": "import"
     },
     {
@@ -21707,8 +21707,8 @@
       "path": "res://assets/vfx/status/status_shield_aura.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "56a8761c84722f7a82cb91125bd55714e78772d14e740f65ebcc760f2e94d730",
-      "size": 1270,
+      "sha256": "88f47ee98715007812ba28d80a4bd894abc50e704b2d2c846b52a673ca1e531e",
+      "size": 1228,
       "type": "import"
     },
     {
@@ -21727,8 +21727,8 @@
       "path": "res://assets/vfx/status/status_silence_emblem.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "2662716a5303158cf4bebee1395ef83d61835d4d7696ed3efe9d28a9d764c193",
-      "size": 1285,
+      "sha256": "50f7211ff1ee19cd4fd569ac41fd4a57727cd26d4bd5f7084595952c00d4f10f",
+      "size": 1243,
       "type": "import"
     },
     {
@@ -21747,8 +21747,8 @@
       "path": "res://assets/vfx/status/status_silence_icon_v2.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "d7eaa18be716fe557361aa5ad563e935e1de45726cb74aca58f2cf278acc7629",
-      "size": 1289,
+      "sha256": "6ee185c1ec45c75abe7fafb673a0ec431cd73fd392ac6ae4fa9c3c693cedbc45",
+      "size": 1247,
       "type": "import"
     },
     {
@@ -21767,8 +21767,8 @@
       "path": "res://assets/vfx/status/status_silence_seal.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "741323dd398c500fe3446aeaa2b905e3747c6e8503c21b398455de344a5dab82",
-      "size": 1274,
+      "sha256": "dc06184b3ba445bc29889bd86ff9dbdabacfe47bbfc61500d9f3d9b0ceedaaaa",
+      "size": 1232,
       "type": "import"
     },
     {
@@ -21787,8 +21787,8 @@
       "path": "res://assets/vfx/status/status_slow_frost_ring.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "065a6033572e1085a5ec7794dc54c3c8a754e8c81bb5c4b6f74986fcc7c6bed2",
-      "size": 1289,
+      "sha256": "996b8615a31cf1747f1b2fecfe336532141d207aeea0304547b6f5295ca222a6",
+      "size": 1247,
       "type": "import"
     },
     {
@@ -21807,8 +21807,8 @@
       "path": "res://assets/vfx/status/status_slow_icon_v2.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "6fcf0c1ff91c6570901ee5d448fdeb72f4198fe317f49090543fa36990e03fdf",
-      "size": 1274,
+      "sha256": "a53b60eafaaeea3ea33549de22a7c34c82955fcb99ca9e08b8b1d8e0bb523cef",
+      "size": 1232,
       "type": "import"
     },
     {
@@ -21827,8 +21827,8 @@
       "path": "res://assets/vfx/status/status_stun_icon_v2.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "c6bf8abcb4567a9af944f976cd700df24074f12e65b94029ba66f553f054a30a",
-      "size": 1274,
+      "sha256": "8321e305646d575b4e6f0dd9b308f9f5add498fbfe60c129465825d146ccbac3",
+      "size": 1232,
       "type": "import"
     },
     {
@@ -21847,8 +21847,8 @@
       "path": "res://assets/vfx/status/status_stun_ring.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "0a56510a20afd5f5c783d147b46b3222e228ba12af1fb9bc3a75a118b198b205",
-      "size": 1260,
+      "sha256": "8dcaed194e8c6de68fefd0ae89ac03da88c19c859657c44b33cd1e7d71d77af5",
+      "size": 1218,
       "type": "import"
     },
     {
@@ -21867,8 +21867,8 @@
       "path": "res://assets/vfx/textures/slash/slash_blade_mask.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "ffdb799752371ce891010536f3730f79140f61e7b0ade3406444a225fc17fa50",
-      "size": 1268,
+      "sha256": "44aca14f2ac86daa13825846b4295f3e40a40318017011b06e93b723d5cc0b47",
+      "size": 1226,
       "type": "import"
     },
     {
@@ -21887,8 +21887,8 @@
       "path": "res://assets/vfx/textures/slash/slash_erosion_mask.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "aa507a5addd247bf796693473c8abb4190842a9d0803398e19ff8d549ab32513",
-      "size": 1278,
+      "sha256": "c3200eed04fd3a658ddb78bc6b3fa2dde7436a30f252004d95c94fb04806d9c5",
+      "size": 1236,
       "type": "import"
     },
     {
@@ -21907,8 +21907,8 @@
       "path": "res://assets/vfx/textures/slash/slash_spark_mask.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "239d152bf00de5ccc711335ccc14331f395cc64750f99dac537ce9899e421f5e",
-      "size": 1268,
+      "sha256": "b88bb60d0ebfddedd137d52a3cdcd5fe0fe2f7290c009dfae46d52047bdf9f93",
+      "size": 1226,
       "type": "import"
     },
     {
@@ -21927,8 +21927,8 @@
       "path": "res://assets/vfx_textures/flare_star.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "5719d2ad19ebfcbcf123be73c593524526f84971979dcb2b6dfd479763f769f0",
-      "size": 994,
+      "sha256": "9c79fbb9874498e82c1f0d82f8f5812c60c0b2b6d317d65c7a4a2ceb06b7e9a2",
+      "size": 954,
       "type": "import"
     },
     {
@@ -21947,8 +21947,8 @@
       "path": "res://assets/vfx_textures/noise_tile.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "5a1935597511b61629cf1de5b58a6bcd56e94f7123ebf4e35e48ef03c3e31201",
-      "size": 994,
+      "sha256": "393291c8ae2ab9e8466cc57656dfd52b6657b18cabacceaa9fa2b3b88085c61a",
+      "size": 954,
       "type": "import"
     },
     {
@@ -21967,8 +21967,8 @@
       "path": "res://assets/vfx_textures/ragged_ring.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "2f11c47d01fe20e090e89cd3e7fffee336e52d52fe02487e19c25c83777cc96c",
-      "size": 997,
+      "sha256": "1a1c1a08750b2544a79baf32f0c7ff9054002b6027041800449f60d5078130bf",
+      "size": 957,
       "type": "import"
     },
     {
@@ -21987,8 +21987,8 @@
       "path": "res://assets/vfx_textures/smoke_puff.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "01db1012d16af293b3f66c191e99e31447804f1240d3adc2c4475e94a459cd1b",
-      "size": 994,
+      "sha256": "5e474a6699f7172a79349780c97e2a8fec543ea825286550fbb168e515a9244f",
+      "size": 954,
       "type": "import"
     },
     {
@@ -22007,8 +22007,8 @@
       "path": "res://assets/vfx_textures/smoke_wisp.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "4172d1b1144652ece621f2987b2a0491dca0d1ce6d5bc76bc543c80af42a771f",
-      "size": 994,
+      "sha256": "b2db49de0d9843874ea7ad5b69671d998c764d8c5cd0982869bd5a3ea89fb4e5",
+      "size": 954,
       "type": "import"
     },
     {
@@ -22027,8 +22027,8 @@
       "path": "res://assets/vfx_textures/soft_dot.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "4ed4917f1bb4dc6c50c8b4d0ab37a5db9eaa4e51b6da597d546879efb31d8f76",
-      "size": 988,
+      "sha256": "5f83aa6bcb994d4a7a1d68748765eefb41bd3375a5811beb4a19b26ff342f8c2",
+      "size": 948,
       "type": "import"
     },
     {
@@ -22047,8 +22047,8 @@
       "path": "res://assets/vfx_textures/swirl_arms.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "1b4c7e392f68c37c4732a5b6ece78ed9eee4667fbe714dc723d645b7817ba960",
-      "size": 994,
+      "sha256": "08ed454421a3a451d4dc6b476ef5cd7078c4847de1b2637f94f1c707b796c055",
+      "size": 954,
       "type": "import"
     },
     {
@@ -25023,13 +25023,13 @@
     }
   ],
   "file_count": 2501,
-  "generated_at": "2026-08-18T10:39:55",
+  "generated_at": "2026-08-18T10:46:47",
   "generated_by": "tools/asset_manifest_check.gd",
   "godot_version": "4.7-stable (official)",
-  "missing_count": 5,
+  "missing_count": 3,
   "roots": [
     "res://assets",
     "res://effects/vfx3d/vfxv2"
   ],
-  "total_bytes": 3136079366
+  "total_bytes": 3136067934
 }
