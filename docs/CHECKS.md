@@ -28,6 +28,8 @@ Godot 不在 PATH 上，用 console 版才能把日志打到 stdout：
 | `tools/board_readability_check.tscn` | E1-E：16格/三路双半场契约、样式预算、设置迁移、评审场景 |
 | `tools/dep_scan.tscn` | assets/ 下 PNG 的引用情况 |
 | `tools/determinism_check.tscn` | 回放确定性：14 个用例的种子矩阵、SHA-256、首差异定位（D3） |
+| `tools/rate_limit_check.tscn` | RPC 限流服务的行为用例（D1 PR1，注入假时钟） |
+| `tools/client_log_check.tscn` | 客户端日志服务的行为用例（D1 PR3，注入临时文件路径） |
 
 改动过任何 `class_name` 脚本后，先跑一次编辑器导入重建全局类缓存，
 否则会看到 `Parse Error: Could not find type "XXX"`：
@@ -179,6 +181,179 @@ FAIL [sync_not_repeatable] race_human：同步两次结果不同，首差异 $.f
 
 **跨平台（桌面 vs Android ARM64）。** README D3 要求"生成桌面与 Android 的 digest 逐项比较"，
 Android 按当前决定暂停，只完成了桌面侧。检查运行时会显式打印这一行提醒。
+
+## 4.6 NetworkService 拆分（代码 D1，PR1 于 2026-08-20）
+
+> 注意编号撞车：README 的 **代码 D1/D2/D3**（NetworkService 拆分 / PrepUI 拆分 / 回放哈希）
+> 与 Checklist 的 **Director D0–D6** 同名。提交信息 `readme all D done` 指的是后者。
+> 说"D1 做完了"之前先说清是哪一个。
+
+### 先量耦合，再定顺序
+
+动手前对 4264 行做了一次静态耦合分析（每个函数引用了哪些成员变量）：
+
+```
+函数 217 个，成员变量 71 个
+
+被最多函数触碰的成员变量：
+  50  state          37  is_host        36  _dedicated_server
+  28  team_active    23  team_slot_states
+```
+
+按 README 的六个服务分组，各自的耦合度（own=本组变量，fns=触碰它们的函数数，
+foreign=这些函数还额外碰了多少组外变量）：
+
+| 候选服务 | own | fns | foreign |
+| --- | ---: | ---: | ---: |
+| RateLimit（不在 README 六个里） | 2 | 2 | **1** |
+| ReplayTransfer | 2 | 4 | 12 |
+| ClientLog（不在 README 六个里） | 4 | 5 | 18 |
+| Room | 6 | 32 | 23 |
+| Reconnect | 6 | 24 | 38 |
+| Transport | 8 | 19 | 47 |
+| DedicatedServer | 5 | **46** | **37** |
+
+**这份数据推翻了两个原有假设：**
+
+1. **DedicatedServerService 不是最容易的第一刀，而是最难的之一。** `_dedicated_server`
+   不是某个模块的私有状态，而是散布在 36 个函数里的**模式开关**（全文件第三热的变量）。
+   它的持久化部分实际上是 RoomService 的持久化（直接操作 `_rooms` / `_token_seat` /
+   `_public_token_seat`），启动部分又要调 `team_host()`。
+2. **README 的"六个平级服务"不完全成立。** `state` / `is_host` / `team_active` /
+   `team_slot_states` / `team_ready` / `team_local_slot` / `last_error` 构成一个
+   **会话核心**，几乎每个服务都要读，搬不走，只能留在门面上。
+
+修正后的顺序（按实测耦合升序）：
+`RateLimit → ReplayTransfer → ClientLog → Room → Reconnect → Transport → DedicatedServer`。
+
+### PR1：RateLimit
+
+`scripts/multiplayer/RateLimitService.gd`。依赖全部注入（`now` / `log` / `kick` 三个 Callable），
+本类不认识 `NetworkService`、不碰 `multiplayer`、不读全局状态。
+"是否启用"（原来的 `if not _dedicated_server`）留在门面上判断。
+
+- `NetworkService` 4264 → 4223 行
+- `_rate_ok` / `_rate_forget` 保留为门面薄包装，**内部 18 个调用点一个都没改**
+- 门面 API 面不变：外部 475 处引用、33 个文件，一字未动（实测比对）
+- **不用 `class_name`**：`make_server_zip.ps1` 会打包 `.godot/global_script_class_cache.cfg`，
+  新增全局类若未先重建缓存就打包，服务器会在解析阶段直接挂
+
+### 抽之前它是零覆盖的
+
+`handshake` / `persist` / `reconnect` / `channel` / `adversarial` 五个探针里，
+只有 `adversarial_client_node.gd:307` 一句**注释**提到 `_rate_ok`，没有任何用例真正驱动过限流。
+也就是说那五个探针全绿，对"限流有没有被抽坏"零信息量 —— 拿它们当验收就是假绿。
+
+所以新写了 `tools/rate_limit_check.tscn`（45 项），用**注入的假时钟**确定性地覆盖：
+配额内放行 / 超限拒绝 / 窗口滚动重置 / strike 累计到阈值踢人且踢对 peer /
+`count_strike=false` 不累计不踢人且软日志只记一行 / `forget()` 重置 /
+peer 之间隔离 / action 之间隔离 / 未知 action 默认配额 20 / 时钟确实来自注入。
+
+证伪测试：把 `allow()` 改成无条件 `return true`，检查报出 12 条失败并精确指出
+"超出配额仍被放行""连续超限没有触发断开""软限流日志应只记 1 行，实际 0 行"。验证后探针已移除。
+
+### PR2：ReplayTransfer
+
+`scripts/multiplayer/ReplayTransferService.gd`：回放的存放（`team_replay` /
+`team_replay_rival`）与 zstd 编解码（`pack` / `unpack`、防解压炸弹的长度头校验）。
+
+**动手前先解决了属性转发这个坑。** 这两个是**公开变量**，外部 60 处直接引用，
+而且既读又写（整体赋值 `= {}`、也有原地改）。GDScript 里若用"门面存一份、服务存一份"
+就会出双份状态，症状是"偶尔看到上一局的回放"，极难查。
+
+正确写法是 Godot 4 的属性访问器：
+
+```gdscript
+var team_replay: Dictionary:
+	get:
+		return _replay_transfer.team_replay
+	set(value):
+		_replay_transfer.team_replay = value
+```
+
+动手前用一次性探针实测过五件事，全部通过：整体赋值写进服务、读得回来、
+**原地改共享同一份引用**（getter 返回的不是副本 —— 这是关键，返回副本就会静默丢改动）、
+服务侧改动外部可见、清空生效。验完探针即删。
+
+留在门面上的：`_rpc_team_replay`（`@rpc` 必须挂在 autoload 的 Node 上）、
+`team_replay_received` 信号、`team_begin_round()`（回合生命周期），
+以及 `_pack_replay` / `_unpack_replay` 两个薄包装 ——
+`tools/adversarial_client_node.gd` 与 `tools/channel_check_node.gd` 共 7 处直接调用它们
+（往返、空包、损坏包、解压炸弹、假长度头），这块**本来就有覆盖**，与限流不同。
+
+`NetworkService` 4223 → 4215 行。
+
+### PR3：ClientLog
+
+`scripts/multiplayer/ClientLogService.gd`：客户端诊断日志的三件事 ——
+调试构建下 print、进内存环形缓冲（重连后回传服务器进 journald）、落盘并按大小轮转。
+专服不走这里（有 journald，不双写）。
+
+- `_net_log()` 有 **115 个内部调用点**，保留为门面薄包装，一个都没改；外部零引用
+- 专服开关按调用**逐次传入**（`write(message, _dedicated_server)`），不在服务里存镜像：
+  `_dedicated_server` 在三处被写，存镜像迟早不同步
+- 服务端接收侧的行数上限与单行截断长度改为直接引用 `ClientLogService.MAX_LINES` /
+  `SEND_LINE_MAX_CHARS` —— 客户端发多少、服务端收多少必须同源
+- `_client_send_pending_logs()` 留在门面（要 `.rpc_id()`），取增量的逻辑进服务
+
+`NetworkService` 4215 → 4194 行。三刀合计 **4264 → 4194**。
+
+**这块抽之前同样是零覆盖**，新写 `tools/client_log_check.tscn`（22 项），
+落盘路径注入到临时文件，不污染正式的 `user://net_log.txt`。
+
+重点覆盖**环形缓冲与已发游标的联动**：缓冲满时 `pop_front` 的同时，
+已发游标必须跟着退一格，否则会把还没回传过的行当成已发的跳过去。
+证伪测试把那一格回退删掉，检查立刻报出：
+
+```
+FAIL [cursor_not_rewound]   挤掉 3 行后游标应退到 77，实际 80
+FAIL [eviction_lost_lines]  应恰好取到 3 行新内容，实际 0 行（游标错位会漏发或重发）
+```
+
+**取到 0 行** —— 也就是那 3 行新内容永远发不出去。在真实链路上的表现是
+"重连后少了几行崩溃现场"，靠人工几乎不可能发现。验证后探针已移除。
+
+### 一个反复踩到的 GDScript 坑
+
+服务实例声明为 `var _x: RefCounted`，于是 `var y := _x.some_method()` 会报
+`Cannot infer the type of "y" variable`。而**解析失败会让 headless 进程静默挂死**
+（实测 exit=124 超时），不是干脆报错退出。调用抽出去的服务方法时，
+返回值一律显式标类型：`var lines: PackedStringArray = _client_log.take_pending_lines()`。
+
+## 4.7 ⚠️ 备份目录里的重复 class_name 会毒化类缓存
+
+**这是 PR2 期间撞出来的既有地雷，不是被谁改坏的，但后果很重。**
+
+`D3~D6_prechange_backup_20260819/` 四个备份目录里有 10 个带 `class_name` 的 `.gd`，
+与活代码重名（`BattlePresentationDirector` 5 份、`LegacyBattleVfxAdapter` 3 份，
+还有 `BattleSimulator` / `DamageService` / `VFXQualityBudget`）。
+
+重建类缓存时，全局类名可能被绑到**备份里的旧版本**上。实测抓到的状态：
+
+```
+"DamageService"    -> res://D4_prechange_backup_20260819/scripts/battle/DamageService.gd
+"BattleSimulator"  -> res://D4_prechange_backup_20260819/scripts/battle/BattleSimulator.gd
+"VFXQualityBudget" -> res://D5_prechange_backup_20260819/effects/vfx3d/core/VFXQualityBudget.gd
+```
+
+于是 D4 新增的 `DamageService.emit_attack_start()` 在活代码里"找不到"，整个战斗栈报错：
+
+```
+Parse Error: Static function "emit_attack_start()" not found in base "DamageService"
+Invalid call. Nonexistent function 'compute_team_replay' in base 'GDScript'
+```
+
+**症状有多隐蔽**：`battle_presentation_director_check` 并没有崩，只是从 **82 项掉到 15 项**
+——大部分断言根本没跑到，而摘要行仍然是 `status=PASS`。`reconnect_check` 则直接 exit=1。
+如果只看"退出码 0"就放行，等于用一份跑了 15 项的检查冒充跑了 82 项。
+
+**修法**：给四个备份目录各加一个 `.gdignore`。Godot 会整个跳过该目录，
+文件仍留在 git 里作为证据，但不参与导入、不注册 class_name。修后重建缓存，
+三个类名都指回活代码，全部检查恢复正常。
+
+**这颗地雷会打到服务器包**：`make_server_zip.ps1` 把
+`.godot/global_script_class_cache.cfg` 一起打包。如果在缓存被毒化的状态下打包，
+服务器会在解析阶段直接挂。这也是新增服务一律**不用 `class_name`、只用 `preload`** 的原因。
 
 ## 5. 本机基线（2026-08-19）
 

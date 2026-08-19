@@ -94,15 +94,12 @@ var _last_pong_at := 0.0
 var _ping_sent_at := 0                    # RTT 测量：本轮 ping 的发出时刻（ticks_msec）
 var _last_process_at := 0.0               # 冻结检测：上一帧的时间
 # --- 客户端排障日志（查"为什么突然掉线"：原因在手机侧，服务器只看得到结果） ---
-const NET_LOG_FILE := "user://net_log.txt"
-const NET_LOG_ROTATE_BYTES := 1000000
-const CLIENT_LOG_MAX_LINES := 80
+# 日志文件路径、轮转阈值、缓冲行数上限都在 ClientLogService
+# （LOG_FILE / ROTATE_BYTES / MAX_LINES / SEND_LINE_MAX_CHARS）。
 const PONG_GAP_WARN_SEC := 6.0            # 静默预警线：还没到超时，但网络已经不对劲
 const PING_RTT_LOG_MS := 400              # 心跳往返超过这个值才记，正常网络不刷日志
-var _client_log_buffer: Array = []        # 内存环形缓冲；重连成功后回传服务器进 journald
-var _client_log_sent := 0
-var _net_log_rotated := false
-var _pong_gap_logged := false
+# 客户端日志缓冲/游标/轮转标记已随实现搬到 ClientLogService。
+var _pong_gap_logged := false             # 心跳静默告警去重（属于 Transport，不是日志）
 # --- 服务器权威回合同步（客户端） ---
 var server_round_index := 0               # 服务器广播的权威回合号（0=未知）
 var server_phase := ""                    # 服务器广播的房间阶段
@@ -117,36 +114,9 @@ var _reserve_tick_accum := 0.0
 # 全服熔断。per-IP 不拦截是刻意的：手机 4G/校园网走运营商级 NAT，一个公网 IP 后面
 # 可能是几千个正常玩家，用没有实测分布支撑的阈值去封，等于封掉整片区域。
 # 先记录，等埋点跑出真实分布再定阈值。
-const RATE_WINDOW_SEC := 10.0
-const RATE_LIMITS := {          # action -> 每 RATE_WINDOW_SEC 内允许次数
-	"create_room": 3,
-	"join_room": 6,
-	"room_list": 10,
-	"public_token": 3,
-	"public_resume": 5,
-	"client_log": 4,
-	"set_ready": 30,
-	"submit_board": 10,
-	"prep_mercs": 40,
-	"toggle_slot": 30,
-	"kick": 10,
-	"move": 30,
-	"altar": 12,          # 每回合上限 3 次，留足重试余量
-	"treasure_choice": 6, # 每个宝物轮只该选一次，留重试余量
-	"treasure_refresh": 12,
-	"result_ack": 8,      # 每回合一次，留重试余量
-	"leave_intent": 6,
-	# 经济 intent（P1）：备战期买卖合成刷新是玩家点得最快的一类操作，
-	# 额度必须宽（正常连点会撞上限），但仍要有上限 —— 每条 intent 都会写账本。
-	"economy": 60,
-	# 心跳：客户端 3 秒一次，10 秒窗口正常 3~4 次，给一倍余量。
-	# 注意它走 _rate_ok_soft（不计 strike）——心跳超频更可能是客户端 bug 或时钟
-	# 抖动，不是攻击；用累计 strike 去踢人等于拿自己人的连接赌。
-	"ping": 8,
-	# 重连：直连入口必须和短码入口共用同一个身份配额，否则客户端绕开
-	# _rpc_public_resume_request 直接打 _rpc_resume_request 就把 A6 的保护全跳过了。
-	"resume": 5,
-}
+# 限流的窗口、每动作配额与 strike 阈值已随实现搬到
+# scripts/multiplayer/RateLimitService.gd（WINDOW_SEC / LIMITS / STRIKES_BEFORE_KICK）。
+# 这三个常量在本文件内只被 _rate_ok 用过，外部无任何引用，所以整体搬走。
 
 # 宝物 id 长度硬上限。数据表里的 id 实际都远短于此；它挡的是「用一个超长字符串
 # 做比较 / 拼接 / 写日志」这条放大路径（A3/R4）。
@@ -156,13 +126,22 @@ const MAX_TREASURE_ID_LEN := 64
 const MAX_TOKEN_LEN := 128
 # 玩家手输的短码。_make_public_token 固定 10 位，留余量给空格/大小写处理。
 const MAX_PUBLIC_ID_LEN := 24
-const RATE_STRIKES_BEFORE_KICK := 3   # 连续超限这么多次就断开
 const MAX_ROOMS := 200                # 全服房间数熔断
 const MAX_CLIENT_LOG_BYTES := 4000    # 单次 client_log 总字节上限（不只限行数）
-var _rate_buckets: Dictionary = {}    # peer_id -> {action: [count, window_start]}
-var _rate_strikes: Dictionary = {}    # peer_id -> int
+
+const RateLimitService := preload("res://scripts/multiplayer/RateLimitService.gd")
+var _rate_limiter: RefCounted = RateLimitService.new()
+
+const ReplayTransferService := preload("res://scripts/multiplayer/ReplayTransferService.gd")
+var _replay_transfer: RefCounted = ReplayTransferService.new()
+
+const ClientLogService := preload("res://scripts/multiplayer/ClientLogService.gd")
+var _client_log: RefCounted = ClientLogService.new()
 
 func _ready() -> void:
+	# 依赖注入：抽出的服务都不认识 NetworkService，也不碰 multiplayer。
+	_rate_limiter.configure(_now, _net_log, _disconnect_peer)
+	_replay_transfer.configure(_net_log)
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
@@ -572,37 +551,21 @@ func _wall_now() -> float:
 #
 # 能力边界（A8）：这只挡回包放大。恶意客户端仍可无限高频发包，反序列化与 handler
 # 调用的开销照旧，连接也一直占着。入包侧要靠连接准入（A13）和包级字节预算（R4）。
+# 限流实现已抽到 scripts/multiplayer/RateLimitService.gd（D1 第 1 刀）。
+# 这两个函数保留为门面：内部 18 个调用点一个都不用改，外部也没有任何引用。
+# "是否启用"留在这里判断，服务本身不需要知道专服模式这个概念。
 func _rate_ok(peer_id: int, action: String, count_strike: bool = true) -> bool:
 	if not _dedicated_server:
 		return true
-	var limit := int(RATE_LIMITS.get(action, 20))
-	var now := _now()
-	var buckets: Dictionary = _rate_buckets.get(peer_id, {})
-	var entry: Array = buckets.get(action, [0, now])
-	if now - float(entry[1]) >= RATE_WINDOW_SEC:
-		entry = [0, now]
-	entry[0] = int(entry[0]) + 1
-	buckets[action] = entry
-	_rate_buckets[peer_id] = buckets
-	if int(entry[0]) <= limit:
-		return true
-	if not count_strike:
-		# 只在窗口内第一次超限时记一行，否则高频动作超限本身就成了日志放大器。
-		if int(entry[0]) == limit + 1:
-			_net_log("rate limit (soft) peer=%d action=%s count=%d/%d" % [peer_id, action, int(entry[0]), limit])
-		return false
-	var strikes := int(_rate_strikes.get(peer_id, 0)) + 1
-	_rate_strikes[peer_id] = strikes
-	_net_log("rate limit peer=%d action=%s count=%d/%d strike=%d" % [peer_id, action, int(entry[0]), limit, strikes])
-	if strikes >= RATE_STRIKES_BEFORE_KICK:
-		_net_log("rate limit exceeded -> disconnect peer=%d" % peer_id)
-		if multiplayer.multiplayer_peer != null:
-			multiplayer.multiplayer_peer.disconnect_peer(peer_id)
-	return false
+	return _rate_limiter.allow(peer_id, action, count_strike)
 
 func _rate_forget(peer_id: int) -> void:
-	_rate_buckets.erase(peer_id)
-	_rate_strikes.erase(peer_id)
+	_rate_limiter.forget(peer_id)
+
+# 服务不碰 multiplayer，踢人这一步由门面代劳。
+func _disconnect_peer(peer_id: int) -> void:
+	if multiplayer.multiplayer_peer != null:
+		multiplayer.multiplayer_peer.disconnect_peer(peer_id)
 
 # 不可信字符串进日志前必须过这里（A3/R4/R7）。
 # 三件事:① 截断——不给对方用一个超长 id 把 journald 和磁盘刷爆的机会;
@@ -625,45 +588,23 @@ func _log_safe(value: Variant) -> String:
 		out += "…(len=%d)" % raw.length()
 	return out
 
+# 客户端日志的缓冲、轮转与落盘已抽到 scripts/multiplayer/ClientLogService.gd（D1 第 3 刀）。
+# 这里保留为门面：115 个内部调用点一个都不用改，外部也没有任何引用。
+# 专服开关（原来的 `if _dedicated_server: return`）按调用逐次传入，
+# 不在服务里存一份镜像 —— `_dedicated_server` 在三处被写，镜像迟早会不同步。
 func _net_log(message: String) -> void:
-	# print 在手机上每次都是一次系统调用，发布版必须静音。
-	if OS.is_debug_build():
-		print("[NET] %s" % message)
-	if _dedicated_server:
-		return  # 服务器有 journald，不用双写
-	# 客户端：进内存缓冲（重连后回传服务器）+ 落盘（app 被杀也留得住现场）
-	var line := "%s | %s" % [Time.get_datetime_string_from_system(), message]
-	_client_log_buffer.append(line)
-	if _client_log_buffer.size() > CLIENT_LOG_MAX_LINES:
-		_client_log_buffer.pop_front()
-		if _client_log_sent > 0:
-			_client_log_sent -= 1
-	_client_file_log(line)
-
-func _client_file_log(line: String) -> void:
-	if not _net_log_rotated:
-		_net_log_rotated = true
-		var probe := FileAccess.open(NET_LOG_FILE, FileAccess.READ)
-		if probe != null and probe.get_length() > NET_LOG_ROTATE_BYTES:
-			probe = null
-			DirAccess.remove_absolute(ProjectSettings.globalize_path(NET_LOG_FILE))
-	var f := FileAccess.open(NET_LOG_FILE, FileAccess.READ_WRITE)
-	if f == null:
-		f = FileAccess.open(NET_LOG_FILE, FileAccess.WRITE)
-	if f == null:
-		return
-	f.seek_end()
-	f.store_line(line)
+	_client_log.write(message, _dedicated_server)
 
 # 重连/连接成功后，把断线前后的客户端现场回传服务器（落进 journald，和服务器
 # 事件对着看）。只发增量，单行截断，服务器侧也再限量——不给弱网添堵。
+# 取增量的逻辑在服务里；RPC 只能从 Node 发，所以这一层留在门面。
 func _client_send_pending_logs() -> void:
-	if is_host or _client_log_buffer.size() <= _client_log_sent:
+	if is_host:
 		return
-	var lines := PackedStringArray()
-	for i in range(_client_log_sent, _client_log_buffer.size()):
-		lines.append(str(_client_log_buffer[i]).substr(0, 200))
-	_client_log_sent = _client_log_buffer.size()
+	# 显式标类型：_client_log 声明为 RefCounted，返回值类型推不出来。
+	var lines: PackedStringArray = _client_log.take_pending_lines()
+	if lines.is_empty():
+		return
 	_rpc_client_log.rpc_id(1, lines)
 
 # 诊断日志同样是"大且不急"，和 replay 共用 bulk 通道，别去挤控制流（B9）。
@@ -675,9 +616,11 @@ func _rpc_client_log(lines: PackedStringArray) -> void:
 	if not _rate_ok(sender, "client_log"):
 		return
 	# 按总字节数封顶，不只按行数：200 字符 × 80 行仍可能被拿来刷爆 journald 和磁盘。
+	# 行数上限与单行截断长度都取服务里的常量：客户端发多少、服务端收多少必须同源，
+	# 两边各写一份迟早会不一致。
 	var budget := MAX_CLIENT_LOG_BYTES
-	for i in mini(lines.size(), CLIENT_LOG_MAX_LINES):
-		var line := str(lines[i]).substr(0, 200)
+	for i in mini(lines.size(), ClientLogService.MAX_LINES):
+		var line := str(lines[i]).substr(0, ClientLogService.SEND_LINE_MAX_CHARS)
 		budget -= line.length()
 		if budget <= 0:
 			_net_log("clientlog peer=%d | (truncated, byte budget exhausted)" % sender)
@@ -1697,8 +1640,23 @@ signal team_replay_received
 
 var team_boards: Dictionary = {}          # slot(int) -> snapshot Dictionary (after broadcast)
 var _team_boards_collecting: Dictionary = {}
-var team_replay: Dictionary = {}          # this client's team replay (B3, host-authoritative)
-var team_replay_rival: Dictionary = {}    # 敌方队伍同回合的 replay（战斗中切镜头观战用）
+
+# 回放的存放与编解码已抽到 scripts/multiplayer/ReplayTransferService.gd（D1 第 2 刀）。
+# 这两个属性用 get/set 访问器转发过去：外部 60 处引用（读、整体赋值、原地改）
+# 一个都不用改，而且**共享同一份字典引用** —— 不会出现门面与服务各存一份的双份状态。
+# （这一点在动手前用一次性探针实测过：整体赋值、读回、原地改、服务侧改动外部可见、
+#  清空，五项全通过。）
+var team_replay: Dictionary:            # this client's team replay (B3, host-authoritative)
+	get:
+		return _replay_transfer.team_replay
+	set(value):
+		_replay_transfer.team_replay = value
+
+var team_replay_rival: Dictionary:      # 敌方队伍同回合的 replay（战斗中切镜头观战用）
+	get:
+		return _replay_transfer.team_replay_rival
+	set(value):
+		_replay_transfer.team_replay_rival = value
 
 func team_begin_round() -> void:
 	team_boards = {}
@@ -1766,43 +1724,16 @@ func team_broadcast_replays(replay_a: Dictionary, replay_b: Dictionary) -> void:
 #
 # 压缩后最坏 61.8 KB，低于常见分块阈值（16–64 KB）的上沿 —— 所以**分块协议暂时不需要**，
 # 信封里保留 chunk 字段但可以先不实现（见文档 B2）。
-const MAX_REPLAY_UNCOMPRESSED_BYTES := 16 * 1024 * 1024
-
-# 包格式：[8 字节 小端 u64 原始长度][zstd 压缩数据]
-# 长度头是必需的：`decompress()` 要求预先知道输出大小，而 `decompress_dynamic()`
-# 只支持 brotli/gzip/deflate、**不支持 ZSTD**（实测踩过）。
-# 头同时充当防护门：解压前先看这个数，超限直接拒 —— 不解压、不分配。
-const REPLAY_PACK_HEADER_BYTES := 8
-
+# 上限与包格式的实现都在 ReplayTransferService（MAX_UNCOMPRESSED_BYTES / PACK_HEADER_BYTES）。
+# 编解码实现已随 team_replay 一起搬到 ReplayTransferService（PACK_HEADER_BYTES /
+# MAX_UNCOMPRESSED_BYTES / pack / unpack）。这两个函数保留为门面薄包装：
+# tools/adversarial_client_node.gd 与 tools/channel_check_node.gd 共 7 处直接调用它们
+# （往返、空包、损坏包、解压炸弹、假长度头），保住包装就保住了这些用例。
 func _pack_replay(replay: Dictionary) -> PackedByteArray:
-	if replay.is_empty():
-		return PackedByteArray()
-	var raw := var_to_bytes(replay)
-	var out := PackedByteArray()
-	out.resize(REPLAY_PACK_HEADER_BYTES)
-	out.encode_u64(0, raw.size())
-	out.append_array(raw.compress(FileAccess.COMPRESSION_ZSTD))
-	return out
+	return _replay_transfer.pack(replay)
 
 func _unpack_replay(packed: PackedByteArray) -> Dictionary:
-	if packed.size() <= REPLAY_PACK_HEADER_BYTES:
-		return {}
-	var declared := int(packed.decode_u64(0))
-	# 防解压炸弹：只看头 8 字节就能判掉「几 KB 压缩包声称解出几 GB」，
-	# 全程不解压、不分配。实测最坏原始 3.6 MB，16 MB 是 4 倍余量。
-	if declared <= 0 or declared > MAX_REPLAY_UNCOMPRESSED_BYTES:
-		_net_log("replay unpack rejected: declared=%d cap=%d packed=%d" % [
-			declared, MAX_REPLAY_UNCOMPRESSED_BYTES, packed.size()])
-		return {}
-	var raw := packed.slice(REPLAY_PACK_HEADER_BYTES).decompress(declared, FileAccess.COMPRESSION_ZSTD)
-	if raw.size() != declared:
-		# 头和实际内容对不上：损坏、截断、或者头被改过。安静失败，不崩。
-		_net_log("replay unpack failed: got=%d declared=%d" % [raw.size(), declared])
-		return {}
-	# 用 bytes_to_var 而不是 bytes_to_var_with_objects：后者能从字节流里构造对象，
-	# 在明文链路上（C14 未做）等于给中间人一个执行面。
-	var value = bytes_to_var(raw)
-	return value if typeof(value) == TYPE_DICTIONARY else {}
+	return _replay_transfer.unpack(packed)
 
 # B9：replay 走独立可靠通道 CH_BULK。它内部仍然有序、仍然可靠，
 # 但**压不到控制流**——房间状态、结算、交易、握手都在 CH_CONTROL 上各走各的。
