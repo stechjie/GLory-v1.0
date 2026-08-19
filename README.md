@@ -1,8 +1,8 @@
 # Glory Beta 0.04
 
-Godot 4.7 的 3v3 布阵自动战斗项目。本 README 同时是项目说明、资源盘点、当前代码审查记录和后续可由 AI 逐项执行的改进路线。它依据 2026-08-15 至 2026-08-16 的当前工作区、Godot 4.7.0 导入/运行结果、Android 实机试玩和工程内检查场景编写。
+Godot 4.7 的 3v3 布阵自动战斗项目。本 README 同时是项目说明、资源盘点、代码审查记录和后续可由 AI 逐项执行的改进路线。原始审计依据 2026-08-15 至 2026-08-16 的工作区、Godot 4.7.0 导入/运行结果、Android 实机试玩和工程内检查场景编写；2026-08-19 的最新门禁结果优先于下文历史观察。
 
-> 当前结论：**完整资源已无覆盖地叠加到本机 Godot 工程，当前源码可启动、可导出 Android Debug APK，且已在 vivo V2527A（Android 16）完成教学主链试玩。** 但该资源叠加层和 Debug 导出预设均被 Git 忽略，尚不是可在新机器复现的正式交付；模型场景仍有 35 项不可加载，棋盘迁移烟测仍失败，战斗角色也仍使用胶囊占位体。`../BetaV9.apk` 依旧不能作为本次源码构建证据。
+> 当前结论（2026-08-19）：**A1、A2 本地交付闭环和 A3 已完成验证。** 资产清单覆盖 2643 个文件、3115.5 MiB，稳定库存指纹为 `5dabb3f546ee6ec0dd8491441ab32872afda3c4e2da46360e752e75e91fc508e`；冷克隆缺包时门禁精确失败，恢复 1790 个 Git 外置资源并完成首次 Godot 导入后，资源、模型边界、骨骼、4x4 棋盘和依赖检查均通过。A4/Android 导出与设备回归按用户要求暂停，未改导出预设、未安装 APK。下文提到的“35 个模型坏场景”和棋盘假绿是历史审计，不代表当前 Windows 基线。
 
 ## 目录与运行前置条件
 
@@ -25,13 +25,14 @@ GLory/
 
 ### 当前本机闭环与团队交付闭环
 
-本次已用 `rsync --ignore-existing ../assets/ assets/` 将外层完整资源无覆盖叠加到工程内：新增 930 个文件、约 1.3 GiB，保留了工程中已有的 VFX 文件。Godot 已重新导入这些资源，并由此构建出新的 Debug APK。该操作是本机运行时恢复，**不是**资源版本管理方案：`assets/` 仍受 `.gitignore` 管理，新机器克隆仓库后仍不会自动拥有完整资源。
+资源运行时唯一位置仍是工程内的 `assets/`。大资源继续受 `.gitignore` 管理，但 A2 已不再依赖人工叠加：`assets.manifest.json` 给全部资源建立稳定 SHA-256 身份，`assets.bundle.json` 指向本地内容寻址 ZIP，`tools/restore_assets.ps1` 在复制前验证归档、路径表和每个文件。完整操作见 `docs/ASSET_DELIVERY.md`。
 
-团队应继续完成以下闭环：
+当前本地交付闭环：
 
-1. 将经审批且版本一致的完整资源包恢复到 `GLory-v1.0/assets/`，而不是仅保留外层 `../assets/`；以 manifest + SHA-256 证明其版本，而不是依赖人工复制。
-2. 为开发/QA 保留不含任何密钥的 `Android Debug` 预设；发布预设由持有签名权限的人在私有安全钥匙串或 CI secret 中配置。不要提交、复制或打印任何 keystore 路径、用户名或口令。
-3. 每次资源或导出配置更新后，都重新导入、运行资源/模型检查、构建并安装 APK；旧 APK 的安装成功不能证明当前源代码可用。
+1. Git 克隆代码后，把与 `assets.bundle.json` 同版本的 ZIP 放在描述文件旁，或显式传给 `tools/restore_assets.ps1 -ArchivePath ...`。
+2. 恢复脚本只补缺失文件；遇到目标文件内容不一致时默认拒绝覆盖。恢复后自动运行 2643 项全量 SHA-256 与额外文件门禁。
+3. 当前 ZIP 只保存在本机 `../build/assets/`，`storage_uri` 为空：尚未上传对象存储，也未提交 Git。团队共享地址和正式提交是后续外部动作。
+4. A4 暂停期间不更新 Android 预设、不构建或安装 APK；旧 APK 的安装成功不能证明当前源码可用。
 
 ### `export_presets.cfg` 是什么
 
@@ -213,9 +214,11 @@ adb exec-out screencap -p > /tmp/glory-launch.png
 
 #### A2 — 将资源交付与 Git 解耦但可追溯（P0）
 
-- **实施：** 在仓库提交 `assets.manifest.json`（不提交大资源），为完整包建立带版本号和 SHA-256 的受控下载/对象存储工件；导入前脚本验证 manifest。
-- **规则：** `GLory-v1.0/assets/` 是唯一运行时位置；外层 `../assets/` 只允许作为待导入工件，不能被 Godot 当作资源根。
-- **验收：** 新机器按 manifest 恢复后，主菜单、准备、战斗和模型检查都可启动；manifest 哈希不一致时拒绝导出。
+- **状态（2026-08-19）：本地闭环完成。** `assets.manifest.json` 使用 schema 2 和稳定库存指纹；`.gitattributes` 固定清单覆盖文本资源为 LF；`assets.bundle.json` 记录归档 SHA-256 与 1790 个外置路径。
+- **实施：** `tools/package_assets.ps1` 校验 2643 项后生成内容寻址 ZIP；`tools/restore_assets.ps1` 先在临时目录安全解压、逐项校验，再补入工程；`tools/asset_delivery_check.tscn` 是只读硬门禁。
+- **规则：** 工程内 `assets/` 是唯一运行时位置；ZIP 是待恢复工件，不是 Godot 资源根。大资源不进 Git，manifest、bundle 描述、脚本和 `.gitattributes` 应进 Git。
+- **验收结果：** 冷克隆缺包时退出码 1 并精确报告 1790 个缺失；恢复、首次完整导入后 2643 项全部匹配、0 extras；单文件篡改被非零退出码拦截；模型、骨骼、棋盘与依赖门禁复跑通过。
+- **未完成的外部动作：** ZIP 尚未上传对象存储，`storage_uri` 仍为空；当前工作区也尚未由用户批准提交。
 
 #### A3 — 让检查真正失败（P0）
 
@@ -224,6 +227,8 @@ adb exec-out screencap -p > /tmp/glory-launch.png
 - **验收：** 资源被临时移走时 CI 红；恢复后全绿；日志含失败文件、消费者和修复建议。
 
 #### A4 — Android 出包与设备回归门禁（P0）
+
+> **状态：按用户要求暂停。** 本轮没有修改 `export_presets.cfg`、构建 APK、连接设备或运行 ADB。
 
 - **实施：** 保留无密钥 `Android Debug` 预设用于 QA，用私有 CI secret/本地安全钥匙串提供 Release 预设；新增 `tools/android_smoke.sh`，记录 Git commit、manifest hash、Godot 版本、APK SHA-256、包名、安装结果、冷启动 logcat 和截图。设备出现增量安装悬挂时，脚本应自动回退为 `adb push` + `pm install`，并清楚记录会话 ID 与失败信息。
 - **验收：** 每一份 QA APK 都能反查到源码 commit 和资源 manifest；安装、启动、语言页、商店、首场战斗截图、无 `FATAL EXCEPTION` 均为必经门。基线样本为 `com.glory.game`、609 MiB、V2527A / Android 16；不得把它误写成 Release 验收。
@@ -389,7 +394,7 @@ BattleSimShared（确定性规则，只产出语义事件）
 ## 推荐实施顺序
 
 1. A1 → A3：先冻结完整资源 manifest，修复 35 个模型坏引用和测试假绿。
-2. A2、A4：使资源与 Debug/Release 导出在新机器可复现；保留已跑通的单设备冒烟路径。
+2. A2 本地闭环已完成；A4/Android 导出与设备回归按用户要求暂停。
 3. E1 → E2：先替换战斗胶囊占位体、建立单位展示锚点，再补齐模型质量和移动端预算。
 4. B1 → B3：在可读角色之上做 6 类高频战斗事件的纵向演出切片；在评审场景批准后再扩面。
 5. B4、E3：先把 96 项启动预热拆分并降低显存/包体，再在低端 Android 真机上验证。

@@ -131,6 +131,7 @@ func _build() -> void:
 	_add_battle_grid_overlay(arena_wrap)
 
 	_setup_battle_3d_view(arena_wrap)
+	_sync_battle_readability_static_geometry.call_deferred()
 	_add_battle_3v3_dividers(arena_wrap)
 	_add_result_overlay(arena_wrap)
 
@@ -474,8 +475,75 @@ func _add_result_overlay(arena_wrap: Control) -> void:
 	arena_wrap.add_child(_result_overlay_lbl)
 
 func _add_battle_grid_overlay(arena_wrap: Control) -> void:
-	# Placement remains grid-based, but the combat arena no longer draws debug lines.
-	pass
+	# Combat is continuous, so this layer draws the real three lanes and two
+	# opposing halves instead of the obsolete 5x5/debug grid described by the old
+	# README. It sits below units and barriers and never receives gameplay input.
+	_board_readability_layer = BoardReadabilityLayerScene.instantiate() as BoardReadabilityLayer
+	_board_readability_layer.name = "BattleBoardReadabilityLayer"
+	_board_readability_layer.configure_battle()
+	_board_readability_layer.set_guides_enabled(PlayerProfile.board_readability_enabled)
+	_board_readability_layer.set_low_quality(VFXManager.get_quality_tier() == VFXQualityBudget.Tier.LOW)
+	_board_readability_layer.set_direction_texts("", "", tr("board_friendly_half"), tr("board_enemy_half"))
+	_board_readability_layer.z_index = 30
+	arena_wrap.add_child(_board_readability_layer)
+	if not arena_wrap.resized.is_connected(_sync_battle_readability_static_geometry):
+		arena_wrap.resized.connect(_sync_battle_readability_static_geometry)
+
+
+func _sync_battle_readability_static_geometry() -> void:
+	if _board_readability_layer == null or not is_instance_valid(_board_readability_layer):
+		return
+	if _arena == null or _battle_3d_camera == null or _battle_3d_viewport == null:
+		return
+	var arena_size := _arena.size
+	var signature := "%0.2f|%0.2f|%s|%s" % [arena_size.x, arena_size.y, str(_arena_flip_y), str(_watching_rival)]
+	if signature == _board_readability_static_signature:
+		return
+	_board_readability_static_signature = signature
+	_board_readability_layer.set_guides_enabled(PlayerProfile.board_readability_enabled)
+	_board_readability_layer.set_low_quality(VFXManager.get_quality_tier() == VFXQualityBudget.Tier.LOW)
+	_board_readability_layer.set_direction_texts("", "", tr("board_friendly_half"), tr("board_enemy_half"))
+	var visual_min := _battle_visual_min()
+	var visual_max := _battle_visual_max()
+	var split_y := clampf(SIM_H * 0.5, visual_min.y, visual_max.y)
+	var x_bounds := PackedFloat32Array([
+		visual_min.x,
+		lerpf(visual_min.x, visual_max.x, 1.0 / 3.0),
+		lerpf(visual_min.x, visual_max.x, 2.0 / 3.0),
+		visual_max.x,
+	])
+	var zones: Array[Dictionary] = []
+	for lane in 3:
+		for side in 2:
+			var canonical_player := side == 1
+			var display_friendly := canonical_player
+			if _arena_flip_y or _watching_rival:
+				display_friendly = not display_friendly
+			var y0 := split_y if canonical_player else visual_min.y
+			var y1 := visual_max.y if canonical_player else split_y
+			zones.append({
+				"polygon": _battle_readability_quad(x_bounds[lane], y0, x_bounds[lane + 1], y1),
+				"friendly": display_friendly,
+			})
+	var center_line := PackedVector2Array([
+		_battle_readability_point(Vector2(visual_min.x, split_y)),
+		_battle_readability_point(Vector2(visual_max.x, split_y)),
+	])
+	_board_readability_layer.set_battle_geometry(zones, center_line)
+
+
+func _battle_readability_quad(x0: float, y0: float, x1: float, y1: float) -> PackedVector2Array:
+	return PackedVector2Array([
+		_battle_readability_point(Vector2(x0, y0)),
+		_battle_readability_point(Vector2(x1, y0)),
+		_battle_readability_point(Vector2(x1, y1)),
+		_battle_readability_point(Vector2(x0, y1)),
+	])
+
+
+func _battle_readability_point(sim_pos: Vector2) -> Vector2:
+	var world_pos := _sim_to_world_pos(sim_pos, false)
+	return _world_to_arena(Vector3(world_pos.x, 0.02, world_pos.z))
 
 func _add_battle_3d_arena(world: Node3D) -> void:
 	if not BATTLE_USE_3D_ARENA:

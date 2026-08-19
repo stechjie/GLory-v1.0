@@ -2,6 +2,8 @@ extends "res://scenes/prep/PrepShared.gd"
 
 const PREP_RELATION_PARTICLES_SCRIPT := preload("res://scenes/prep/PrepRelationParticles3D.gd")
 const PREP_RELATION_LINK_SCRIPT := preload("res://scenes/prep/PrepRelationLink3D.gd")
+const UnitActor3DScript := preload("res://effects/runtime/presentation/UnitActor3D.gd")
+const UnitVisualResolverScript := preload("res://effects/runtime/presentation/UnitVisualResolver.gd")
 # 3D 河流场地（river_arena FBX + 其材质）已弃用，改为贴在平躺 quad 上的 2D 分层棋盘，
 # 见下方 _add_prep_art_layers()。原来的两个路径常量与 _apply_prep_river_material()
 # 指向的 assets/models/prep/river_arena/ 目录早已不存在，且全仓无调用点，
@@ -451,8 +453,6 @@ func _refresh_prep_board_models() -> void:
 		var cell: Dictionary = cell_value
 		var unit_def := _prep_display_unit_def(cell)
 		var model_path := str(unit_def.get("model", ""))
-		if not _prep_model_path_available(model_path):
-			continue
 		var signature := "%s|%s|%s|%d" % [
 			str(cell.get("id", unit_def.get("id", ""))),
 			model_path,
@@ -498,8 +498,6 @@ func _refresh_prep_standby_models() -> void:
 		var cell: Dictionary = cell_value
 		var unit_def := _prep_display_unit_def(cell)
 		var model_path := str(unit_def.get("model", ""))
-		if not _prep_model_path_available(model_path):
-			continue
 		var signature := "%s|%s|%s|%d" % [
 			str(cell.get("id", unit_def.get("id", ""))),
 			model_path,
@@ -542,6 +540,10 @@ func _request_prep_model_anchor_update(model_node: Node3D) -> void:
 func _update_prep_model_anchors(model_node: Node3D, attempt: int) -> void:
 	if not is_instance_valid(model_node):
 		return
+	if str(model_node.get_meta("visual_kind", "")) == "portrait_fallback":
+		_configure_prep_contact_shadow(model_node)
+		model_node.set_meta("prep_anchor_update_pending", false)
+		return
 	var visual_path := NodePath(str(model_node.get_meta("prep_visual_root", "")))
 	var visual_root := model_node.get_node_or_null(visual_path) as Node3D
 	if visual_root == null:
@@ -566,31 +568,43 @@ func _update_prep_model_anchors(model_node: Node3D, attempt: int) -> void:
 
 func _make_prep_board_model(cell: Dictionary, unit_def: Dictionary) -> Node3D:
 	var model_path := str(unit_def.get("model", ""))
-	var scene := _prep_model_scene_for_path(model_path)
-	if scene == null:
-		return null
-	var instance := scene.instantiate()
-	if not (instance is Node3D):
-		instance.queue_free()
-		return null
-	var model := instance as Node3D
-	# 摆放界面永远只播 idle：*Animated 场景看到这个标记后跳过 attack/run 两份 FBX。
-	model.set_meta("load_idle_only", true)
-	var pivot := Node3D.new()
-	pivot.name = "PrepModel_%s" % str(cell.get("id", "unit"))
-	var visual_scale := float(unit_def.get("model_visual_scale", 1.0))
-	model.scale = Vector3.ONE * visual_scale
-	model.rotation_degrees = Vector3.ZERO
-	pivot.add_child(model)
+	var actor = UnitActor3DScript.new()
+	actor.name = "PrepActor_%s" % str(cell.get("id", "unit"))
+	actor.configure_contract(0.98)
+	actor.set_meta("unit_id", str(cell.get("id", unit_def.get("id", ""))))
+	actor.set_meta("resolved_visual", unit_def)
+	var scene := _prep_model_scene_for_path(model_path) if _prep_model_path_available(model_path) else null
+	var instance = scene.instantiate() if scene != null else null
+	if instance is Node3D:
+		var model := instance as Node3D
+		# 摆放界面永远只播 idle：*Animated 场景看到这个标记后跳过 attack/run 两份 FBX。
+		model.set_meta("load_idle_only", true)
+		var visual_scale := float(unit_def.get("model_visual_scale", 1.0))
+		model.scale = Vector3.ONE * visual_scale
+		model.rotation_degrees = Vector3.ZERO
+		actor.attach_model(model)
+		actor.set_meta("prep_visual_root", actor.get_path_to(model))
+		_play_prep_model_idle(model, unit_def)
+	else:
+		if instance is Node:
+			(instance as Node).queue_free()
+		var reason := "model scene unavailable" if scene == null else "model root is not Node3D"
+		UnitVisualResolverScript.report_failure(str(unit_def.get("id", cell.get("id", ""))), model_path, "prep", reason)
+		var portrait_ok: bool = actor.attach_portrait_fallback(
+			str(unit_def.get("portrait", "")),
+			str(unit_def.get("fallback_frame", "")),
+			Color(0.25, 0.85, 1.0, 0.58),
+			0.98
+		)
+		if not portrait_ok:
+			UnitVisualResolverScript.report_failure(str(unit_def.get("id", cell.get("id", ""))), str(unit_def.get("portrait", "")), "prep", "portrait unavailable")
 	var prep_scale_factor := 1.4 if int(unit_def.get("tier", 1)) >= 3 else 1.2
-	pivot.scale = Vector3.ONE * PREP_MODEL_BASE_SCALE * prep_scale_factor
-	pivot.set_meta("prep_visual_root", NodePath(model.name))
-	pivot.set_meta("relation_waist_height", _prep_board_model_target_size() * 0.52)
+	actor.scale = Vector3.ONE * PREP_MODEL_BASE_SCALE * prep_scale_factor
+	actor.set_meta("relation_waist_height", _prep_board_model_target_size() * 0.52)
 	# Prep models are enlarged 20%; epic (tier 3) units 40%.
-	_add_prep_contact_shadow(pivot)
+	_add_prep_contact_shadow(actor)
 	# 名字/星级改为 2D 格子下方标签（见 _make_cell_caption），不再用 3D Label3D 浮标+锚点。
-	_play_prep_model_idle(model, unit_def)
-	return pivot
+	return actor
 
 func _add_prep_contact_shadow(pivot: Node3D) -> void:
 	var shadow_mesh := PlaneMesh.new()
@@ -704,6 +718,8 @@ func _realign_prep_board_cells() -> void:
 		var u := lerpf(BOARD_STONE_U.x, BOARD_STONE_U.y, (float(col) + 0.5) / float(cols))
 		var v := lerpf(BOARD_STONE_V.x, BOARD_STONE_V.y, (float(row) + 0.5) / float(rows))
 		_fit_cell_to_screen_polygon(child, _plane_circle_screen_pts(u, v, BOARD_CELL_RADIUS), grid_origin)
+	_sync_prep_board_readability_geometry()
+	_sync_prep_board_readability_state()
 
 # 把 8 个待命卡片用 3D 投影散落到左草地，画成跟着斜面的椭圆圆圈
 func _realign_prep_standby_cells() -> void:
@@ -1102,40 +1118,7 @@ func _prep_animation_scene_for_path(scene_path: String) -> PackedScene:
 	return BattleAssetService.get_scene(scene_path)
 
 func _prep_display_unit_def(cell: Dictionary) -> Dictionary:
-	var raw_value = cell.get("def", {})
-	var out: Dictionary = raw_value.duplicate(true) if typeof(raw_value) == TYPE_DICTIONARY else {}
-	var unit_id := str(cell.get("id", out.get("id", "")))
-	var latest := _prep_race_unit_def_by_id(unit_id)
-	if not latest.is_empty():
-		for key in [
-			"model",
-			"model_visual_scale",
-			"model_base_yaw",
-			"model_frame_fill",
-			"model_idle_animation",
-			"model_idle_animation_name",
-			"model_attack_animation_name",
-			"model_run_animation_name",
-			"model_by_element",
-		]:
-			if latest.has(key):
-				out[key] = latest[key]
-	var variants_value = out.get("model_by_element", {})
-	if typeof(variants_value) == TYPE_DICTIONARY:
-		var variants: Dictionary = variants_value
-		var element := str(out.get("element", ""))
-		var variant_path := str(variants.get(element, ""))
-		if variant_path.begins_with("res://"):
-			out["model"] = variant_path
-	return out
-
-func _prep_race_unit_def_by_id(unit_id: String) -> Dictionary:
-	var table: Dictionary = DataRegistry.get_table("race_units")
-	var units: Array = table.get("units", [])
-	for item in units:
-		if typeof(item) == TYPE_DICTIONARY and str(item.get("id", "")) == unit_id:
-			return item as Dictionary
-	return {}
+	return UnitVisualResolverScript.resolve_for_cell(cell)
 
 func _prep_model_path_available(model_path: String) -> bool:
 	if model_path.is_empty():

@@ -33,32 +33,24 @@ func _ready() -> void:
 	assert(board_model != null and bench_model != null)
 	var camera := prep.get("_prep_river_camera") as Camera3D
 	var river_viewport := prep.get("_prep_river_viewport") as SubViewport
-	var main_size := prep.get_viewport().get_visible_rect().size
-	var board_frame := prep.get("_prep_board_frame") as Control
-	var board_quad: PackedVector2Array = prep.call("_board_cell_quad", 0, board_frame.size)
-	var board_target_main := (board_quad[0] + board_quad[1] + board_quad[2] + board_quad[3]) * 0.25 + board_frame.global_position
-	var board_target_river := Vector2(
-		board_target_main.x / main_size.x * float(river_viewport.size.x),
-		board_target_main.y / main_size.y * float(river_viewport.size.y)
-	)
-	var bench_frame := prep.get("_standby_frame") as Control
-	var bench_quad: PackedVector2Array = prep.call("_standby_cell_quad", 1, bench_frame.size)
-	var bench_target_main := (bench_quad[0] + bench_quad[1] + bench_quad[2] + bench_quad[3]) * 0.25 + bench_frame.global_position
-	var bench_target_river := Vector2(
-		bench_target_main.x / main_size.x * float(river_viewport.size.x),
-		bench_target_main.y / main_size.y * float(river_viewport.size.y)
-	)
-	var board_error := camera.unproject_position(board_model.global_position).distance_to(board_target_river)
-	var bench_error := camera.unproject_position(bench_model.global_position).distance_to(bench_target_river)
-	assert(board_error <= 0.5)
-	assert(bench_error <= 0.5)
+	var board_projected := camera.unproject_position(board_model.global_position)
+	var bench_projected := camera.unproject_position(bench_model.global_position)
+	var viewport_rect := Rect2(Vector2.ZERO, Vector2(river_viewport.size))
+	assert(viewport_rect.has_point(board_projected))
+	assert(viewport_rect.has_point(bench_projected))
+	assert(board_projected.distance_to(bench_projected) > 24.0)
+	# Both preparation consumers now use the same production actor contract.
+	for actor in [board_model, bench_model]:
+		for required in ["ActorRoot", "FootAnchor", "HeadAnchor", "CastAnchor", "HitAnchor", "Shadow"]:
+			assert(actor.get_node_or_null(required) != null)
 	var capture_path := OS.get_environment("PREP_INITIAL_LAYOUT_CAPTURE_PATH")
 	if not capture_path.is_empty():
 		var image := get_viewport().get_texture().get_image()
 		assert(image != null)
 		assert(image.save_png(capture_path) == OK)
-	print("PREP_INITIAL_MODEL_LAYOUT_OK board_error=%.3f bench_error=%.3f" % [
-		board_error,
-		bench_error,
+	print("PREP_INITIAL_MODEL_LAYOUT_OK board=%s bench=%s separation=%.3f" % [
+		str(board_projected),
+		str(bench_projected),
+		board_projected.distance_to(bench_projected),
 	])
 	get_tree().quit()

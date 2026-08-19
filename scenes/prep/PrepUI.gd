@@ -379,6 +379,13 @@ func _build_rest(root: VBoxContainer) -> void:
 	_board_grid.position = board_grid_offset
 	_board_grid.mouse_filter = Control.MOUSE_FILTER_IGNORE   # 同上：格子自己接输入
 	board_frame.add_child(_board_grid)
+	_board_readability_layer = BoardReadabilityLayerScene.instantiate() as BoardReadabilityLayer
+	_board_readability_layer.name = "PrepBoardReadabilityLayer"
+	_board_readability_layer.configure_prep()
+	_board_readability_layer.set_guides_enabled(PlayerProfile.board_readability_enabled)
+	_board_readability_layer.set_low_quality(VFXManager.get_quality_tier() == VFXQualityBudget.Tier.LOW)
+	_board_readability_layer.set_direction_texts(tr("board_frontline"), tr("board_backline"))
+	_board_grid.add_child(_board_readability_layer)
 	for i in GameConstants.CELL_COUNT:
 		var cell := BoardCellButton.new()
 		cell.board_index = i
@@ -422,6 +429,8 @@ func _build_rest(root: VBoxContainer) -> void:
 		caption.set_meta("caption_drop", BOARD_CAPTION_DROP)  # 相对格子高度往下的比例（负=往上，绕圆心）
 		cell.add_child(caption)
 		_board_cell_captions.append(caption)
+	_sync_prep_board_readability_geometry()
+	_sync_prep_board_readability_state()
 
 	var right_board_spacer := Control.new()
 	right_board_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1652,7 +1661,7 @@ func _refresh_board() -> void:
 		btn.add_theme_stylebox_override("hover", _board_occupied_style if cell != null else _board_empty_style)
 		btn.add_theme_stylebox_override("pressed", _board_occupied_style if cell != null else _board_empty_style)
 		btn.add_theme_stylebox_override("focus", _board_occupied_style if cell != null else _board_empty_style)
-		btn.modulate = Color(1, 0.92, 0.55) if i == _selected_board else Color.WHITE
+		btn.modulate = Color.WHITE
 		if i < _board_relation_overlays.size():
 			_board_relation_overlays[i].set_relation_states(RaceRelationService.visual_states_for_cell(cell))
 		if i < _board_cell_captions.size():
@@ -1663,6 +1672,51 @@ func _refresh_board() -> void:
 				caption.text = _cell_caption_text(cell)
 				caption.visible = true
 	_refresh_prep_board_models()
+	_sync_prep_board_readability_state()
+
+func _sync_prep_board_readability_geometry() -> void:
+	if _board_readability_layer == null or not is_instance_valid(_board_readability_layer):
+		return
+	var polygons: Array[PackedVector2Array] = []
+	for button in _board_buttons:
+		var polygon := PackedVector2Array()
+		for point in button.cell_polygon:
+			polygon.append(button.position + point)
+		polygons.append(polygon)
+	_board_readability_layer.set_prep_cells(polygons)
+
+func _sync_prep_board_readability_state() -> void:
+	if _board_readability_layer == null or not is_instance_valid(_board_readability_layer):
+		return
+	_board_readability_layer.set_guides_enabled(PlayerProfile.board_readability_enabled)
+	_board_readability_layer.set_low_quality(VFXManager.get_quality_tier() == VFXQualityBudget.Tier.LOW)
+	_board_readability_layer.set_direction_texts(tr("board_frontline"), tr("board_backline"))
+	_board_readability_layer.set_prep_state(
+		_selected_board,
+		_prep_attack_range_indices(_selected_board),
+		_board_drop_highlight_active,
+		_board_drop_hover_index,
+		_board_player_color()
+	)
+
+func _prep_attack_range_indices(selected_index: int) -> PackedInt32Array:
+	var result := PackedInt32Array()
+	if selected_index < 0 or selected_index >= GameState.board_slots.size():
+		return result
+	var cell_value = GameState.board_slots[selected_index]
+	if typeof(cell_value) != TYPE_DICTIONARY:
+		return result
+	var definition := _prep_display_unit_def(cell_value as Dictionary)
+	var range_cells := maxf(0.0, float(definition.get("range", 1.0)))
+	var selected_col := selected_index % GameConstants.BOARD_COLUMNS
+	var selected_row := floori(float(selected_index) / float(GameConstants.BOARD_COLUMNS))
+	for index in GameConstants.CELL_COUNT:
+		var col := index % GameConstants.BOARD_COLUMNS
+		var row := floori(float(index) / float(GameConstants.BOARD_COLUMNS))
+		var delta := Vector2(float(col - selected_col), float(row - selected_row))
+		if delta.length() <= range_cells + 0.001:
+			result.append(index)
+	return result
 
 func _setup_board_cell_styles() -> void:
 	_board_empty_style = StyleBoxFlat.new()

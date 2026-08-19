@@ -207,6 +207,12 @@ static func round_enemy_model_paths(round_index: int) -> Array[String]:
 			var p := str(t.get(key, ""))
 			if not p.is_empty() and not out.has(p):
 				out.append(p)
+		var variants_value = t.get("model_by_element", {})
+		if typeof(variants_value) == TYPE_DICTIONARY:
+			for value in (variants_value as Dictionary).values():
+				var variant_path := str(value)
+				if not variant_path.is_empty() and not out.has(variant_path):
+					out.append(variant_path)
 	return out
 
 

@@ -4,11 +4,12 @@ extends RefCounted
 # Version history:
 #   1 - original run save; account profile had no version field at all
 #   2 - profile gains codex_seen; pet_duck renamed to pet_rabbit
+#   3 - profile gains the persistent BoardReadabilityLayer visibility setting
 const VERSION := 2
 
 # Account-level profile (user://profile.json) is versioned separately from the run
 # save: it survives across runs and is the only place collection progress lives.
-const PROFILE_VERSION := 2
+const PROFILE_VERSION := 3
 
 # Pets renamed after the art came in. Old profiles still hold the old id, so it is
 # rewritten on load rather than orphaning a pet the player already owns.
@@ -30,6 +31,8 @@ static func migrate_profile(payload: Dictionary) -> Dictionary:
 		out["active_pet"] = _rename_id(str(out.get("active_pet", "")))
 		if not out.has("codex_seen"):
 			out["codex_seen"] = []
+	if from < 3 and not out.has("board_readability_enabled"):
+		out["board_readability_enabled"] = true
 
 	out["version"] = PROFILE_VERSION
 	return out

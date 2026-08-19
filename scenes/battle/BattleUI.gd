@@ -5,6 +5,8 @@ extends Control
 signal battle_finished(result: Dictionary)
 
 const BattleSim := preload("res://scripts/battle/BattleSimulator.gd")
+const UnitActorRegistryScript := preload("res://effects/runtime/presentation/UnitActorRegistry.gd")
+const BoardReadabilityLayerScene := preload("res://effects/runtime/presentation/BoardReadabilityLayer.tscn")
 const SIM_TICK_SEC := 0.1
 const PLAYBACK_SPEED := 1.0
 const MAX_STEPS_PER_FRAME := 3
@@ -74,6 +76,9 @@ var _title_lbl: Label
 var _battle_state_lbl: Label
 var _result_overlay_lbl: Label
 var _unit_nodes: Dictionary = {}
+var _board_readability_layer: BoardReadabilityLayer
+var _selected_battle_unit_id := ""
+var _board_readability_static_signature := ""
 var _finished := false
 var _skip_fast_forward := false
 var _sim_accumulator := 0.0
@@ -87,6 +92,7 @@ var _battle_3d_vfx_root: Node3D
 var _battle_arena_load_started := false
 var _battle_arena_ready := false
 var _battle_3d_models: Dictionary = {}
+var _unit_actor_registry = UnitActorRegistryScript.new()
 # 模型/动画缓存已移到 BattleAssetService：
 #   * 跨场景存活（Main._show_battle() 每回合重建 BattleScreen，实例变量会跟着没）
 #   * 与备战棋盘共用一份（以前两边各一套，同一个模型加载两遍）

@@ -187,7 +187,7 @@ func _collect_vfx_units(state_snapshot: Dictionary) -> Dictionary:
 			var sim_pos := _visual_sim_pos_for_fighter(f)
 			var base_pos := _sim_to_arena(sim_pos)
 			var unit_node := _unit_node_for_id(id)
-			var model_node: Node3D = _battle_3d_models.get(id)
+			var model_node: Node3D = _unit_actor_registry.get_actor(id)
 			_vfx_seen_ids[id] = true
 			# 取回该 id 的字典原地改写；首见才建一次，之后帧一直复用同一个字典对象。
 			# 不用 result.get(id, {})——那个默认 {} 每次调用都会构造一个丢弃的空字典，
@@ -209,9 +209,9 @@ func _collect_vfx_units(state_snapshot: Dictionary) -> Dictionary:
 			u["cast_pos"] = _unit_anchor_global_position(unit_node, "CastAnchor", base_pos)
 			u["hit_pos"] = _unit_anchor_global_position(unit_node, "HitAnchor", base_pos)
 			u["head_pos"] = _unit_anchor_global_position(unit_node, "HeadAnchor", base_pos)
-			u["world_foot"] = _unit_vfx_position(id, "FeetAnchor", sim_pos, 0.08)
-			u["world_cast"] = _unit_vfx_position(id, "BodyAnchor", sim_pos, 0.82)
-			u["world_hit"] = _unit_vfx_position(id, "BodyAnchor", sim_pos, 0.72)
+			u["world_foot"] = _unit_vfx_position(id, "FootAnchor", sim_pos, 0.08)
+			u["world_cast"] = _unit_vfx_position(id, "CastAnchor", sim_pos, 0.82)
+			u["world_hit"] = _unit_vfx_position(id, "HitAnchor", sim_pos, 0.72)
 			u["world_head"] = _unit_vfx_position(id, "HeadAnchor", sim_pos, 1.45)
 			u["model_node"] = model_node
 			u["team"] = str(f.get("team", ""))
@@ -241,9 +241,9 @@ func _collect_vfx_units(state_snapshot: Dictionary) -> Dictionary:
 	return result
 
 func _unit_vfx_position(id: String, anchor_name: String, sim_pos: Vector2, fallback_y: float) -> Vector3:
-	var model_node: Node3D = _battle_3d_models.get(id)
+	var model_node: Node3D = _unit_actor_registry.get_actor(id)
 	if model_node != null and is_instance_valid(model_node):
-		var anchor := model_node.get_node_or_null(anchor_name)
+		var anchor := _unit_actor_registry.get_anchor(id, anchor_name)
 		if anchor is Node3D:
 			var anchor_global := (anchor as Node3D).global_position
 			if _battle_3d_vfx_root != null and is_instance_valid(_battle_3d_vfx_root):

@@ -2,6 +2,8 @@ extends Control
 
 signal battle_requested
 
+const BoardReadabilityLayerScene := preload("res://effects/runtime/presentation/BoardReadabilityLayer.tscn")
+
 @export_group("4x4 Board Layout")
 @export var cell_size := Vector2(149.5, 84.0)
 @export var board_grid_offset := Vector2.ZERO
@@ -121,51 +123,10 @@ class BoardCellButton:
 			screen._set_board_drop_hover(-1)
 
 	func _draw() -> void:
-		if cell_polygon.size() < 3 or screen == null:
-			return
-		var outline := cell_polygon.duplicate()
-		outline.append(cell_polygon[0])
-		var player_color: Color = screen.board_cell_rest_line
-		if screen.has_method("_board_player_color"):
-			var color_value = screen.call("_board_player_color")
-			if typeof(color_value) == TYPE_COLOR:
-				player_color = color_value
-		var rest_fill := Color(player_color.r, player_color.g, player_color.b, 0.06)
-		var rest_line := Color(player_color.r, player_color.g, player_color.b, 0.55)
-		draw_colored_polygon(cell_polygon, rest_fill)
-		draw_polyline(outline, Color(player_color.r, player_color.g, player_color.b, 0.24), 9.0, true)
-		draw_polyline(outline, rest_line, 2.0, true)
-		if not deployment_visible or not deployment_hovered:
-			return
-		var bounds := Rect2(cell_polygon[0], Vector2.ZERO)
-		for p in cell_polygon:
-			bounds = bounds.expand(p)
-		var center := bounds.get_center()
-		var source_y := bounds.position.y + bounds.size.y * 0.46
-		var beam_top_y := bounds.position.y - maxf(18.0, bounds.size.y * 0.95)
-		var source_half := bounds.size.x * 0.12
-		var top_half := bounds.size.x * 0.42
-		var beam := PackedVector2Array([
-			Vector2(center.x - source_half, source_y),
-			Vector2(center.x - top_half, beam_top_y),
-			Vector2(center.x + top_half, beam_top_y),
-			Vector2(center.x + source_half, source_y),
-		])
-		var beam_core := PackedVector2Array([
-			Vector2(center.x - source_half * 0.45, source_y),
-			Vector2(center.x - top_half * 0.36, beam_top_y),
-			Vector2(center.x + top_half * 0.36, beam_top_y),
-			Vector2(center.x + source_half * 0.45, source_y),
-		])
-		draw_colored_polygon(beam, Color(player_color.r, player_color.g, player_color.b, 0.10))
-		draw_colored_polygon(beam_core, Color(player_color.r, player_color.g, player_color.b, 0.18))
-		draw_line(Vector2(center.x, source_y), Vector2(center.x, beam_top_y), Color(player_color.r, player_color.g, player_color.b, 0.26), 2.5, true)
-		var hover_fill := Color(player_color.r, player_color.g, player_color.b, 0.36)
-		var hover_line := Color(player_color.r, player_color.g, player_color.b, 1.0)
-		draw_colored_polygon(cell_polygon, hover_fill)
-		draw_polyline(outline, Color(player_color.r, player_color.g, player_color.b, 0.48), 12.0, true)
-		draw_polyline(outline, Color(player_color.r, player_color.g, player_color.b, 0.24), 20.0, true)
-		draw_polyline(outline, hover_line, 3.0, true)
+		# BoardReadabilityLayer owns all board guide rendering in one CanvasItem.
+		# This button keeps only touch/drag hit testing, so the 16 cells no longer
+		# duplicate guide draw calls or drift away from the shared style resource.
+		pass
 
 class RelationProgressOverlay:
 	extends Control
@@ -472,6 +433,7 @@ var _treasure_choice_row: HBoxContainer
 var _treasure_refresh_btn: Button
 var _owned_treasure_box: GridContainer
 var _board_buttons: Array[BoardCellButton] = []
+var _board_readability_layer: BoardReadabilityLayer
 var _board_relation_overlays: Array[RelationProgressOverlay] = []
 var _board_cell_captions: Array[Label] = []   # 棋盘格子下方的「名字 ★星级」标签（有棋子才显示）
 var _bench_buttons: Array[BenchCellButton] = []
@@ -552,6 +514,12 @@ func _refresh_board() -> void:
 	pass
 
 func _setup_board_cell_styles() -> void:
+	pass
+
+func _sync_prep_board_readability_geometry() -> void:
+	pass
+
+func _sync_prep_board_readability_state() -> void:
 	pass
 
 func _load_board_art_texture() -> Texture2D:

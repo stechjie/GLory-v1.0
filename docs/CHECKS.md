@@ -11,7 +11,7 @@
 Godot 不在 PATH 上，用 console 版才能把日志打到 stdout：
 
 ```bash
-"C:/Users/Leno/Desktop/godot/Godot_v4.7-stable_win64_console.exe" --headless --path . tools/asset_manifest_check.tscn
+"C:/Users/Leno/Desktop/Godot_v4.7-stable_win64.exe/Godot_v4.7-stable_win64_console.exe" --headless --path . tools/asset_manifest_check.tscn
 ```
 
 **不要加 `--quit-after`。** 它会在脚本还没跑到 `finish()` 时强杀进程，退出码被强制成 `0` ——
@@ -31,7 +31,7 @@ Godot 不在 PATH 上，用 console 版才能把日志打到 stdout：
 否则会看到 `Parse Error: Could not find type "XXX"`：
 
 ```bash
-"C:/Users/Leno/Desktop/godot/Godot_v4.7-stable_win64_console.exe" --headless --path . --editor --quit-after 400
+"C:/Users/Leno/Desktop/Godot_v4.7-stable_win64.exe/Godot_v4.7-stable_win64_console.exe" --headless --path . --editor --quit-after 400
 ```
 
 ## 2. 退出码
@@ -47,7 +47,7 @@ Godot 不在 PATH 上，用 console 版才能把日志打到 stdout：
 每次运行末尾有一行机器可读结果，CI 直接 grep 它：
 
 ```
-CHECK_RESULT name=asset_manifest status=PASS checked=2507 failures=0 allowed=6 stale=0
+CHECK_RESULT name=asset_manifest status=PASS checked=2639 failures=0 allowed=4 stale=0
 ```
 
 ## 3. 允许列表
@@ -77,29 +77,37 @@ CHECK_RESULT name=asset_manifest status=PASS checked=2507 failures=0 allowed=6 s
 | 删掉一条允许列表的 `expires` | `allowlist_no_expiry`，退出码 1 |
 | 把两张数据表清空造出空检查集 | `status=SKIP checked=0`，退出码 1 |
 
-## 5. 本机基线（2026-08-18）
+## 5. 本机基线（2026-08-19）
 
-Windows 10 / Godot 4.7.stable / `assets/` 2205 个文件。
+Windows / Godot 4.7.stable / 两个盘点根目录合计 2643 个文件。2026-08-19 的
+A2 冷克隆恢复与首次完整导入也使用同一份稳定库存指纹
+`5dabb3f546ee6ec0dd8491441ab32872afda3c4e2da46360e752e75e91fc508e`。
 
 | 检查 | checked | failures | allowed | 说明 |
 | --- | ---: | ---: | ---: | --- |
-| `asset_manifest` | 2505 | 0 | 4 | 盘点 2501 个文件、2990.8 MiB；解析出 1188 条引用 |
+| `asset_manifest` | 2647 | 0 | 4 | 盘点 2643 个文件、3115.5 MiB；3 个已知缺失和 1 个依赖查询失败均有精确、限期豁免 |
+| `asset_delivery` | 2643 | 0 | 0 | 冷恢复并首次完整导入后：missing/size/hash/extras 均为 0 |
 | `model_bounds` | 44 | 0 | 0 | **broken=0、span=0 的模型 0 个** |
-| `skel_check` | 3 | 0 | 3 | 只有 3 个单位有 ≥2 个可比动作，且 3 个全不一致 |
+| `skel_check` | 68 | 0 | 7 | 61 个单位骨骼一致；7 个已知不一致均归属 E2，并有精确、限期豁免 |
 | `board_4x4_smoke` | 62 | 0 | 0 | 含 25→16 迁移与"未知 id 必须被丢弃"两组用例 |
-| `dep_scan` | 722 | 0 | 1 | — |
+| `dep_scan` | 726 | 0 | 1 | 新纳入 4 张 Godot 从战场水晶 FBX 提取的贴图；已由 A2 manifest 管理 |
 
 **README 里「35 个 broken scene」在本机复现不出来。** README 的审计是在 macOS 上、
 带一个外层 `../assets/` 叠加包做的（其 Godot 路径为 `/Volumes/repository/...`），
 本机没有那个外层目录，数据表引用的 45 个模型路径**全部存在**。
 后续任何"修复了多少个坏场景"的说法都必须以本表为基线，不能沿用 README 的数字。
 
-`skel_check` 的覆盖率是真实短板：44 个模型里只有 3 个进入了骨架比对，
-其余单位的 `ACTION_SCENES` 不足 2 个动作。这属于 E2 范围，A3 不处理。
+相较 2026-08-18 的 2501 条旧清单，资源侧补入 68 个动作脚本及对应 68 个 `.uid`，
+并移除 2 个旧 `UnitActionModel` 文件，净增 134 条。旧清单因此不再代表当前工程，本次已重新生成。
 
-## 6. 已登记的 7 条豁免
+`skel_check` 现在覆盖 68 个具有 ≥2 个可比动作的单位：61 个一致，7 个不一致。
+这 7 个问题需要 Blender 重导出或 retarget，属于 E2；A3 只负责保证它们被准确报告、
+未知问题继续硬失败，不能以静默跳过制造假绿。
 
-登记于 2026-08-18，来自本机首次运行的真实结果。
+## 6. 已登记的 11 条豁免
+
+前 7 条登记于 2026-08-18，来自本机首次运行的真实结果；后 4 条登记于
+2026-08-19，是扩大 `ACTION_SCENES` 覆盖后首次暴露的 rest pose 不一致。
 
 首批登记的 9 条里有 2 条当天就修掉并删除了（见第 8 节），
 删除前先跑了一次确认它们被自动标为 `STALE` —— 这条链路是允许列表不会烂掉的保证。
@@ -112,6 +120,10 @@ Windows 10 / Godot 4.7.stable / `assets/` 2205 个文件。
 | `god_arbiter_animated` 骨骼数 83 vs 118 | 2026-09-30 | E2 |
 | `dark_doom_animated` 骨骼数 65 vs 83 | 2026-09-30 | E2 |
 | `abyss_beast_animated` rest pose 不同 | 2026-09-30 | E2 |
+| `human_king_animated` rest pose 不同 | 2026-09-30 | E2 |
+| `human_cleric_animated` rest pose 不同 | 2026-09-30 | E2 |
+| `human_archer_animated` rest pose 不同 | 2026-09-30 | E2 |
+| `dark_suc_animated` rest pose 不同 | 2026-09-30 | E2 |
 
 ## 7. 产出物
 

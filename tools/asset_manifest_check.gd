@@ -55,6 +55,7 @@ const SKIP_DIR_NAMES := ["backups", "android", "captures", "__pycache__"]
 const MANIFEST_PATH := "res://assets.manifest.json"
 const DOC_PATH := "res://docs/ASSET_MANIFEST.md"
 const CACHE_PATH := "user://asset_manifest_hash_cache.json"
+const MANIFEST_SCHEMA_VERSION := 2
 
 const HASH_CHUNK := 1048576  # 1 MiB
 
@@ -401,12 +402,15 @@ func _save_cache() -> void:
 func _write_manifest(entries: Array) -> void:
 	var by_class: Dictionary = {}
 	var total_size := 0
+	var inventory_sha256 := _inventory_digest(entries)
 	for e in entries:
 		var c := str((e as Dictionary)["class"])
 		by_class[c] = int(by_class.get(c, 0)) + 1
 		total_size += int((e as Dictionary)["size"])
 
 	var doc := {
+		"schema_version": MANIFEST_SCHEMA_VERSION,
+		"inventory_sha256": inventory_sha256,
 		"generated_by": "tools/asset_manifest_check.gd",
 		"generated_at": Time.get_datetime_string_from_system(true),
 		"godot_version": Engine.get_version_info().get("string", ""),
@@ -424,13 +428,14 @@ func _write_manifest(entries: Array) -> void:
 		return
 	f.store_string(JSON.stringify(doc, "  "))
 	f.close()
-	print("[%s] 已写出 %s（%d 条，%.1f MiB）" % [
-		CHECK_NAME, MANIFEST_PATH, entries.size(), total_size / 1048576.0])
+	print("[%s] 已写出 %s（%d 条，%.1f MiB，inventory=%s）" % [
+		CHECK_NAME, MANIFEST_PATH, entries.size(), total_size / 1048576.0, inventory_sha256])
 
 
 func _write_doc(entries: Array) -> void:
 	var by_class: Dictionary = {}
 	var size_by_class: Dictionary = {}
+	var inventory_sha256 := _inventory_digest(entries)
 	for e in entries:
 		var c := str((e as Dictionary)["class"])
 		by_class[c] = int(by_class.get(c, 0)) + 1
@@ -441,6 +446,9 @@ func _write_doc(entries: Array) -> void:
 	lines.append("")
 	lines.append("生成者：`tools/asset_manifest_check.gd`　生成时间：%s　Godot：%s"
 		% [Time.get_datetime_string_from_system(true), Engine.get_version_info().get("string", "")])
+	lines.append("")
+	lines.append("清单协议：`schema_version=%d`　稳定库存指纹：`%s`" % [
+		MANIFEST_SCHEMA_VERSION, inventory_sha256])
 	lines.append("")
 	lines.append("机读版本在 `assets.manifest.json`，A2 用它在新机器上校验资源恢复结果。")
 	lines.append("")
@@ -505,6 +513,26 @@ func _write_doc(entries: Array) -> void:
 	f.store_string("\n".join(lines))
 	f.close()
 	print("[%s] 已写出 %s" % [CHECK_NAME, DOC_PATH])
+
+
+# A2 的稳定库存身份。generated_at、Godot 版本、引用说明等报告元数据不参与，
+# 所以相同 path/size/content/class 在不同机器和不同时间生成相同指纹。
+# entries 在 _build_entries() 已按 path 排序；这里再次排序，避免将来调用方改动顺序。
+func _inventory_digest(entries: Array) -> String:
+	var ordered := entries.duplicate()
+	ordered.sort_custom(func(a, b): return str(a.get("path", "")) < str(b.get("path", "")))
+	var ctx := HashingContext.new()
+	ctx.start(HashingContext.HASH_SHA256)
+	for value in ordered:
+		var entry: Dictionary = value
+		var line := "%s\t%d\t%s\t%s\n" % [
+			str(entry.get("path", "")),
+			int(entry.get("size", 0)),
+			str(entry.get("sha256", "")).to_lower(),
+			str(entry.get("class", "")),
+		]
+		ctx.update(line.to_utf8_buffer())
+	return ctx.finish().hex_encode()
 
 
 func _join_head(values: Array, limit: int) -> String:

@@ -6,7 +6,8 @@
     "3. 不在本列表里的失败一律硬失败。列表为空 = 全部硬失败。",
     "4. 某条本次没命中会打印 STALE，说明问题可能已修好，应当删除该条。",
     "字段：check=检查名(或*) / code=失败码(或*) / match=消息子串(空=全匹配) / expires=到期日 / why=为什么暂时豁免、谁负责修",
-    "初始条目登记于 2026-08-18，全部来自本机首次运行 asset_manifest_check 的真实结果。"
+    "初始条目登记于 2026-08-18，全部来自本机首次运行 asset_manifest_check 的真实结果。",
+    "2026-08-19 资源侧补齐 ACTION_SCENES 后，skel_check 新发现 4 个 rest pose 不一致；均显式归属 E2 并设置到期日。"
   ],
   "entries": [
     {
@@ -57,6 +58,34 @@
       "match": "abyss_beast_animated",
       "expires": "2026-09-30",
       "why": "骨骼名单与层级一致但 rest pose 不同，动画套上去会变形，需要 retarget。E2 范围。"
+    },
+    {
+      "check": "skel_check",
+      "code": "skeleton_mismatch",
+      "match": "human_king_animated",
+      "expires": "2026-09-30",
+      "why": "idle 与 run 的 rest pose 不同，动画直接复用会变形，需要 retarget。2026-08-19 扩大 ACTION_SCENES 覆盖后首次被门禁发现，归属 E2。"
+    },
+    {
+      "check": "skel_check",
+      "code": "skeleton_mismatch",
+      "match": "human_cleric_animated",
+      "expires": "2026-09-30",
+      "why": "idle 与 attack 的 rest pose 不同，动画直接复用会变形，需要 retarget。2026-08-19 扩大 ACTION_SCENES 覆盖后首次被门禁发现，归属 E2。"
+    },
+    {
+      "check": "skel_check",
+      "code": "skeleton_mismatch",
+      "match": "human_archer_animated",
+      "expires": "2026-09-30",
+      "why": "idle 与 attack 的 rest pose 不同，动画直接复用会变形，需要 retarget。2026-08-19 扩大 ACTION_SCENES 覆盖后首次被门禁发现，归属 E2。"
+    },
+    {
+      "check": "skel_check",
+      "code": "skeleton_mismatch",
+      "match": "dark_suc_animated",
+      "expires": "2026-09-30",
+      "why": "idle 与 run 的 rest pose 不同，动画直接复用会变形，需要 retarget。2026-08-19 扩大 ACTION_SCENES 覆盖后首次被门禁发现，归属 E2。"
     }
   ]
 }

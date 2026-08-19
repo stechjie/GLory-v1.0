@@ -1,0 +1,44 @@
+# A2 manifests hash exact on-disk bytes. These resource roots contain generated
+# text metadata beside binary assets; core.autocrlf must not rewrite either one.
+assets/** -text
+effects/vfx3d/vfxv2/** -text
+
+# Text sidecars and Godot/source formats must stay LF on every OS. This keeps
+# their manifest SHA-256 stable while leaving binary payloads untouched.
+[attr]glory-asset-text text eol=lf
+assets/**/*.import glory-asset-text
+assets/**/*.uid glory-asset-text
+assets/**/*.gd glory-asset-text
+assets/**/*.gdshader glory-asset-text
+assets/**/*.gdshaderinc glory-asset-text
+assets/**/*.tscn glory-asset-text
+assets/**/*.tres glory-asset-text
+assets/**/*.godot glory-asset-text
+assets/**/*.json glory-asset-text
+assets/**/*.cfg glory-asset-text
+assets/**/*.txt glory-asset-text
+assets/**/*.md glory-asset-text
+assets/**/*.svg glory-asset-text
+assets/**/*.obj glory-asset-text
+assets/**/*.mtl glory-asset-text
+assets/**/*.ptex glory-asset-text
+assets/**/*.bak glory-asset-text
+assets/**/*.backup_vfx_scale_* glory-asset-text
+effects/vfx3d/vfxv2/**/*.import glory-asset-text
+effects/vfx3d/vfxv2/**/*.uid glory-asset-text
+effects/vfx3d/vfxv2/**/*.gd glory-asset-text
+effects/vfx3d/vfxv2/**/*.gdshader glory-asset-text
+effects/vfx3d/vfxv2/**/*.gdshaderinc glory-asset-text
+effects/vfx3d/vfxv2/**/*.tscn glory-asset-text
+effects/vfx3d/vfxv2/**/*.tres glory-asset-text
+effects/vfx3d/vfxv2/**/*.godot glory-asset-text
+effects/vfx3d/vfxv2/**/*.json glory-asset-text
+effects/vfx3d/vfxv2/**/*.cfg glory-asset-text
+effects/vfx3d/vfxv2/**/*.txt glory-asset-text
+effects/vfx3d/vfxv2/**/*.md glory-asset-text
+effects/vfx3d/vfxv2/**/*.svg glory-asset-text
+effects/vfx3d/vfxv2/**/*.obj glory-asset-text
+effects/vfx3d/vfxv2/**/*.mtl glory-asset-text
+effects/vfx3d/vfxv2/**/*.ptex glory-asset-text
+effects/vfx3d/vfxv2/**/*.bak glory-asset-text
+effects/vfx3d/vfxv2/**/*.backup_vfx_scale_* glory-asset-text

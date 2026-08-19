@@ -1,6 +1,8 @@
 ﻿extends "res://scenes/battle/BattleArena.gd"
 
 const StatusVFXController := preload("res://scenes/battle/StatusVFXController.gd")
+const UnitActor3DScript := preload("res://effects/runtime/presentation/UnitActor3D.gd")
+const UnitVisualResolverScript := preload("res://effects/runtime/presentation/UnitVisualResolver.gd")
 
 # Per-frame visual caches: the separation pass is O(N) per unit over the living
 # set, and several call sites ask for the same unit's position within one frame.
@@ -53,6 +55,8 @@ func _refresh_visuals() -> void:
 			player_alive += 1
 		else:
 			enemy_alive += 1
+	if not _selected_battle_unit_id.is_empty() and not living_ids.has(_selected_battle_unit_id):
+		_selected_battle_unit_id = ""
 	_sync_unit_nodes(_state.get("player", []), living_ids)
 	_sync_unit_nodes(_state.get("enemy", []), living_ids)
 	_sync_3d_model_nodes(living, facing_delta)
@@ -69,6 +73,8 @@ func _refresh_visuals() -> void:
 		if hp_bar != null and is_instance_valid(hp_bar):
 			hp_bar.scale.x = clampf(float(f.hp) / float(maxi(1, f.max_hp)), 0.0, 1.0)
 	_update_3v3_dividers()
+	_sync_battle_readability_static_geometry()
+	_update_battle_readability_focus()
 	_refresh_top5_atk(living)
 	if _summary_lbl != null and _summary_lbl.visible:
 		_refresh_summary()
@@ -177,21 +183,26 @@ func _display_team(f: Dictionary) -> String:
 
 func _make_unit_node(f: Dictionary) -> Control:
 	var root := Control.new()
+	var visual_id := _visual_id(f)
+	root.name = "UnitHit_%s" % visual_id.validate_node_name()
 	root.custom_minimum_size = UNIT_VISUAL_SIZE
 	root.size = UNIT_VISUAL_SIZE
+	root.mouse_filter = Control.MOUSE_FILTER_STOP
+	root.focus_mode = Control.FOCUS_NONE
+	root.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	root.tooltip_text = _fighter_display_name(f)
+	root.gui_input.connect(_on_battle_unit_gui_input.bind(visual_id))
 	# Prevent the parent layout from touching this node
 	root.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
 	_add_unit_anchors(root)
 	_add_unit_shadow(root)
-	var unit_def := _display_unit_def_for_fighter(f)
-	var model_path := str(unit_def.get("model", ""))
-	_add_unit_fallback(root, f, _model_path_available(model_path))
 	var hp_bg := ColorRect.new()
 	hp_bg.name = "HpBg"
 	hp_bg.color = Color(0.05, 0.05, 0.05)
 	hp_bg.position = Vector2(5, 8)
 	hp_bg.size = Vector2(72, 9)
 	hp_bg.z_index = 20
+	hp_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(hp_bg)
 	var hp := ColorRect.new()
 	hp.name = "HpFill"
@@ -199,6 +210,7 @@ func _make_unit_node(f: Dictionary) -> Control:
 	hp.position = Vector2(8, 11)
 	hp.size = Vector2(66, 4)
 	hp.z_index = 21
+	hp.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(hp)
 	var label := Label.new()
 	label.name = "Name"
@@ -209,11 +221,72 @@ func _make_unit_node(f: Dictionary) -> Control:
 	label.add_theme_color_override("font_color", Color(0.94, 0.98, 1.0))
 	label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.92))
 	label.add_theme_constant_override("outline_size", 3)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	# Names don't change mid-battle: set once here instead of every frame.
 	var dn := _fighter_display_name(f)
 	label.text = dn.substr(0, 8) if LocaleManager.get_locale() == "en" else dn.substr(0, 4)
 	root.add_child(label)
 	return root
+
+
+func _on_battle_unit_gui_input(event: InputEvent, unit_id: String) -> void:
+	var pressed := false
+	if event is InputEventMouseButton:
+		var mouse_event := event as InputEventMouseButton
+		pressed = mouse_event.button_index == MOUSE_BUTTON_LEFT and mouse_event.pressed
+	elif event is InputEventScreenTouch:
+		pressed = (event as InputEventScreenTouch).pressed
+	if not pressed:
+		return
+	_selected_battle_unit_id = "" if _selected_battle_unit_id == unit_id else unit_id
+	_update_battle_readability_focus()
+	accept_event()
+
+
+func _update_battle_readability_focus() -> void:
+	if _board_readability_layer == null or not is_instance_valid(_board_readability_layer):
+		return
+	_board_readability_layer.set_guides_enabled(PlayerProfile.board_readability_enabled)
+	_board_readability_layer.set_low_quality(VFXManager.get_quality_tier() == VFXQualityBudget.Tier.LOW)
+	if _selected_battle_unit_id.is_empty():
+		_board_readability_layer.clear_battle_focus()
+		return
+	var fighter_value = _frame_fighter_by_id.get(_selected_battle_unit_id)
+	if typeof(fighter_value) != TYPE_DICTIONARY:
+		_board_readability_layer.clear_battle_focus()
+		return
+	var fighter: Dictionary = fighter_value
+	var source_sim := _visual_sim_pos_for_fighter(fighter)
+	var source := _battle_focus_screen_point(source_sim)
+	var range_polygon := PackedVector2Array()
+	var attack_range := maxf(1.0, float(fighter.get("range_px", BattleSimShared.ATTACK_RANGE_SCALE)))
+	for segment in 40:
+		var angle := TAU * float(segment) / 40.0
+		range_polygon.append(_battle_focus_screen_point(source_sim + Vector2(cos(angle), sin(angle)) * attack_range))
+	var target_id := str(fighter.get("vfx_skill_target_uid", ""))
+	if target_id.is_empty():
+		target_id = str(fighter.get("vfx_attack_target_uid", ""))
+	var target := Vector2.ZERO
+	var has_target := false
+	var target_value = _frame_fighter_by_id.get(target_id)
+	if typeof(target_value) == TYPE_DICTIONARY:
+		target = _battle_focus_screen_point(_visual_sim_pos_for_fighter(target_value as Dictionary))
+		has_target = true
+	var focus_color := _actor_team_color(fighter)
+	focus_color.a = 1.0
+	_board_readability_layer.set_battle_focus(
+		_selected_battle_unit_id,
+		source,
+		range_polygon,
+		target,
+		has_target,
+		focus_color
+	)
+
+
+func _battle_focus_screen_point(sim_pos: Vector2) -> Vector2:
+	var world_pos := _sim_to_world_pos(sim_pos)
+	return _world_to_arena(Vector3(world_pos.x, battle_unit_y_offset, world_pos.z))
 
 func _add_unit_anchors(root: Control) -> void:
 	var anchors := {
@@ -228,21 +301,6 @@ func _add_unit_anchors(root: Control) -> void:
 		marker.position = anchors[anchor_name]
 		marker.visible = false
 		root.add_child(marker)
-
-func _add_unit_fallback(root: Control, f: Dictionary, has_model_path: bool) -> void:
-	var marker := Polygon2D.new()
-	marker.name = "BodyFallback"
-	var team_color := Color(0.42, 0.72, 1.0, 0.30) if _display_team(f) == "player" else Color(1.0, 0.38, 0.32, 0.30)
-	if not has_model_path:
-		team_color.a = 0.78
-	marker.color = team_color
-	marker.position = Vector2(41, 50)
-	var points: PackedVector2Array = []
-	for i in 20:
-		var angle := TAU * float(i) / 20.0
-		points.append(Vector2(cos(angle) * 20.0, sin(angle) * 25.0))
-	marker.polygon = points
-	root.add_child(marker)
 
 func _add_unit_shadow(root: Control) -> void:
 	var shadow := Polygon2D.new()
@@ -272,11 +330,11 @@ func _sync_3d_model_nodes(living: Array, facing_delta: float, prune := true) -> 
 		if model_node == null:
 			model_node = _make_shared_model_node(f)
 			if model_node == null:
-				_set_unit_fallback_visible(id, true)
 				continue
 			_battle_3d_models[id] = model_node
 			_battle_3d_root.add_child(model_node)
-			_set_unit_fallback_visible(id, false)
+			if not _unit_actor_registry.register_actor(id, model_node):
+				UnitVisualResolverScript.report_failure(str(f.get("id", id)), str(f.get("def", {}).get("model", "")), "battle", "actor contract registration failed")
 		_position_3d_model_node(model_node, f, facing_delta)
 		_apply_formation_intro_visibility(id, f)
 		_update_model_animation_state(model_node, f)
@@ -292,15 +350,8 @@ func _sync_3d_model_nodes(living: Array, facing_delta: float, prune := true) -> 
 			var node: Node = _battle_3d_models[key]
 			node.queue_free()
 			_battle_3d_models.erase(key)
+			_unit_actor_registry.unregister_actor(str(key))
 			_status_vfx_by_id.erase(key)
-
-func _set_unit_fallback_visible(id: String, should_show: bool) -> void:
-	var unit_node: Control = _unit_nodes.get(id)
-	if unit_node == null or not unit_node.has_node("BodyFallback"):
-		return
-	var marker := unit_node.get_node("BodyFallback")
-	if marker is CanvasItem:
-		(marker as CanvasItem).visible = should_show
 
 # 和备战棋盘共用 BattleAssetService 的缓存 —— 备战期加载过的模型，进战斗直接命中。
 func _scene_for_model_path(model_path: String) -> PackedScene:
@@ -312,27 +363,45 @@ func _make_shared_model_node(f: Dictionary) -> Node3D:
 	# enemy, piece, mercenary, monster, boss and formation ally — so this single
 	# call covers the whole codex. mark_seen is a no-op after the first sighting.
 	PlayerProfile.mark_seen(str(f.get("id", unit_def.get("id", ""))))
-	var model_path := str(unit_def.get("model", ""))
-	if not _model_path_available(model_path):
-		return null
-	var scene := _scene_for_model_path(model_path)
-	if scene == null:
-		return null
-	var pivot := Node3D.new()
-	pivot.name = "BattleModel_%s" % str(f.get("id", "unit"))
-	var base_yaw := float(unit_def.get("model_base_yaw", 180.0))
-	pivot.set_meta("base_yaw", base_yaw)
-	pivot.rotation_degrees.y = _spawn_facing_yaw(f, base_yaw)
-	var model: Node3D = scene.instantiate()
-	if model_path == "res://assets/models/units/dark_imp_motong/dark_imp_motong_attack_punching.fbx":
-		cleanup_imported_model_visuals(model)
-	var visual_scale := float(unit_def.get("model_visual_scale", 1.0)) * battle_unit_visual_scale
+	var actor: Node3D = UnitActor3DScript.new()
+	actor.name = "UnitActor_%s" % str(f.get("id", "unit"))
+	var model_height := NOMINAL_UNIT_HEIGHT
 	if int(unit_def.get("tier", 1)) == 3:
-		visual_scale *= 1.2
-	model.scale = Vector3(visual_scale, visual_scale, visual_scale)
-	model.rotation_degrees = Vector3.ZERO
-	pivot.add_child(model)
-	_center_model_for_full_body_view(model)
+		model_height *= 1.12
+	actor.configure_contract(model_height)
+	actor.set_meta("unit_id", str(f.get("id", unit_def.get("id", ""))))
+	actor.set_meta("resolved_visual", unit_def)
+	var base_yaw := float(unit_def.get("model_base_yaw", 180.0))
+	actor.set_meta("base_yaw", base_yaw)
+	actor.rotation_degrees.y = _spawn_facing_yaw(f, base_yaw)
+	var model_path := str(unit_def.get("model", ""))
+	var scene := _scene_for_model_path(model_path) if _model_path_available(model_path) else null
+	var instance = scene.instantiate() if scene != null else null
+	if instance is Node3D:
+		var model := instance as Node3D
+		if model_path == "res://assets/models/units/dark_imp_motong/dark_imp_motong_attack_punching.fbx":
+			cleanup_imported_model_visuals(model)
+		var visual_scale := float(unit_def.get("model_visual_scale", 1.0)) * battle_unit_visual_scale
+		if int(unit_def.get("tier", 1)) == 3:
+			visual_scale *= 1.2
+		model.scale = Vector3(visual_scale, visual_scale, visual_scale)
+		model.rotation_degrees = Vector3.ZERO
+		actor.attach_model(model)
+		_center_model_for_full_body_view(model)
+		_setup_model_animation_state(actor, model, unit_def, f)
+	else:
+		if instance is Node:
+			(instance as Node).queue_free()
+		var reason := "model scene unavailable" if scene == null else "model root is not Node3D"
+		UnitVisualResolverScript.report_failure(str(unit_def.get("id", f.get("id", ""))), model_path, "battle", reason)
+		var portrait_ok: bool = actor.attach_portrait_fallback(
+			str(unit_def.get("portrait", "")),
+			str(unit_def.get("fallback_frame", "")),
+			_actor_team_color(f),
+			model_height
+		)
+		if not portrait_ok:
+			UnitVisualResolverScript.report_failure(str(unit_def.get("id", f.get("id", ""))), str(unit_def.get("portrait", "")), "battle", "portrait unavailable")
 	# Anchors must be derived from the model that was just scaled, not hardcoded.
 	# The pivot is unscaled while the model inside it is scaled to ~0.42, so a
 	# fixed 0.85 "body" height sat 1.5x-3x above the head of every unit and every
@@ -345,14 +414,9 @@ func _make_shared_model_node(f: Dictionary) -> Node3D:
 	# scale, so a nominal height is both simpler and more accurate than a bad
 	# measurement. Re-measure with tools/vfx_capture.gd --unit <id> if the model
 	# scale ever changes.
-	var model_height := NOMINAL_UNIT_HEIGHT
-	if int(unit_def.get("tier", 1)) == 3:
-		model_height *= 1.12
-	pivot.set_meta("model_height", model_height)
-	_ensure_status_vfx_controller(pivot, model_height)
-	_setup_model_animation_state(pivot, model, unit_def, f)
-	_add_3d_unit_readability(pivot, f)
-	return pivot
+	_ensure_status_vfx_controller(actor, model_height)
+	_add_3d_unit_readability(actor, f)
+	return actor
 
 # model_height is the rendered height of this unit in world units. Pass 0 when
 # it is unknown (the late-repair path below) and the legacy 1.7 stand-in is used,
@@ -439,7 +503,7 @@ func _material_without_emission(material: Material) -> Material:
 	return clean
 func _setup_model_animation_state(pivot: Node3D, model: Node3D, unit_def: Dictionary, f: Dictionary) -> void:
 	if _supports_model_action_methods(model):
-		pivot.set_meta("model_action_node_path", NodePath(model.name))
+		pivot.set_meta("model_action_node_path", pivot.get_path_to(model))
 		pivot.set_meta("current_model_action", "")
 		_setup_animation_tracking_meta(pivot, unit_def, f)
 		return
@@ -734,23 +798,7 @@ func _find_animation_players(root: Node) -> Array[AnimationPlayer]:
 	return out
 
 func _add_3d_unit_readability(pivot: Node3D, f: Dictionary) -> void:
-	# 3v3: ring uses the owning player's slot color. Otherwise team blue/red.
-	var owner_slot := int(f.get("owner_slot", -1))
-	var fid := str(f.get("id", ""))
-	if fid.is_empty():
-		fid = str(f.get("def", {}).get("id", ""))
-	var is_boss := bool(f.get("def", {}).get("is_boss", false)) or fid.begins_with("boss_")
-	var is_monster := fid.begins_with("pve_")
-	var team_color: Color
-	if is_boss:
-		team_color = Color(0.82, 0.22, 0.85, 0.55)        # boss = magenta (not red)
-	elif is_monster:
-		team_color = Color(0.58, 0.62, 0.70, 0.52)        # monsters = slate grey (not red)
-	elif owner_slot >= 0:
-		team_color = GameConstants.team_slot_color(owner_slot)
-		team_color.a = 0.55
-	else:
-		team_color = Color(0.25, 0.85, 1.0, 0.48) if _display_team(f) == "player" else Color(1.0, 0.34, 0.18, 0.52)
+	var team_color := _actor_team_color(f)
 	var shadow := MeshInstance3D.new()
 	shadow.name = "GroundShadow3D"
 	var shadow_mesh := CylinderMesh.new()
@@ -766,7 +814,11 @@ func _add_3d_unit_readability(pivot: Node3D, f: Dictionary) -> void:
 	shadow.material_override = shadow_mat
 	shadow.position = Vector3(0.0, 0.012, 0.0)
 	shadow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	pivot.add_child(shadow)
+	var shadow_root := pivot.get_node_or_null("Shadow") as Node3D
+	if shadow_root != null:
+		shadow_root.add_child(shadow)
+	else:
+		pivot.add_child(shadow)
 
 	var glow := MeshInstance3D.new()
 	glow.name = "TeamGlow3D"
@@ -787,6 +839,27 @@ func _add_3d_unit_readability(pivot: Node3D, f: Dictionary) -> void:
 	glow.position = Vector3(0.0, 0.022, 0.0)
 	glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	pivot.add_child(glow)
+
+
+func _actor_team_color(f: Dictionary) -> Color:
+	# 3v3: ring uses the owning player's slot color. Otherwise team blue/red.
+	var owner_slot := int(f.get("owner_slot", -1))
+	var fid := str(f.get("id", ""))
+	var def_value = f.get("def", {})
+	var definition: Dictionary = def_value if typeof(def_value) == TYPE_DICTIONARY else {}
+	if fid.is_empty():
+		fid = str(definition.get("id", ""))
+	var is_boss := bool(definition.get("is_boss", false)) or fid.begins_with("boss_")
+	var is_monster := fid.begins_with("pve_")
+	if is_boss:
+		return Color(0.82, 0.22, 0.85, 0.55)
+	if is_monster:
+		return Color(0.58, 0.62, 0.70, 0.52)
+	if owner_slot >= 0:
+		var slot_color := GameConstants.team_slot_color(owner_slot)
+		slot_color.a = 0.55
+		return slot_color
+	return Color(0.25, 0.85, 1.0, 0.48) if _display_team(f) == "player" else Color(1.0, 0.34, 0.18, 0.52)
 
 func _position_3d_model_node(model_node: Node3D, f: Dictionary, facing_delta: float) -> void:
 	var pos := _sim_to_world_pos(_visual_sim_pos_for_fighter(f))
@@ -971,46 +1044,20 @@ func _stable_unit_spread_dir(f: Dictionary) -> Vector2:
 	return Vector2(cos(angle), sin(angle))
 
 func _display_unit_def_for_fighter(f: Dictionary) -> Dictionary:
-	var raw_def: Dictionary = f.get("def", {})
-	var out := raw_def.duplicate(true)
-	var unit_id := str(f.get("id", raw_def.get("id", "")))
-	if unit_id.is_empty():
-		return out
-	var latest := _race_unit_def_by_id(unit_id)
-	if not latest.is_empty():
-		for key in ["model", "model_visual_scale", "model_base_yaw", "model_frame_fill", "model_idle_animation", "model_idle_animation_name", "model_attack_animation_name", "model_attack_sync_seek", "model_attack_lock_time", "model_run_animation_name"]:
-			if latest.has(key):
-				out[key] = latest[key]
-	var variants_value: Variant = out.get("model_by_element", {})
-	if typeof(variants_value) == TYPE_DICTIONARY:
-		var variants: Dictionary = variants_value
-		var element := str(raw_def.get("element", out.get("element", "")))
-		var variant_path := str(variants.get(element, ""))
-		if variant_path.begins_with("res://"):
-			out["model"] = variant_path
-	return out
-
-func _race_unit_def_by_id(unit_id: String) -> Dictionary:
-	var table: Dictionary = DataRegistry.get_table("race_units")
-	var units: Array = table.get("units", [])
-	for item in units:
-		if typeof(item) == TYPE_DICTIONARY and str(item.get("id", "")) == unit_id:
-			return (item as Dictionary)
-	return {}
+	return UnitVisualResolverScript.resolve_for_fighter(f)
 
 func _model_path_available(model_path: String) -> bool:
-	if model_path.is_empty():
-		return false
-	if ResourceLoader.exists(model_path):
-		return true
-	return FileAccess.file_exists(model_path)
+	return UnitVisualResolverScript.resource_exists(model_path)
 
 func _center_model_for_full_body_view(model: Node3D) -> void:
 	var bounds := _node3d_bounds(model)
 	if bounds.size == Vector3.ZERO:
 		return
 	var center := bounds.get_center()
-	model.position -= Vector3(center.x, bounds.position.y, center.z)
+	# _node3d_bounds is measured in the model's unscaled local space. Apply the
+	# model basis so the centering offset stays correct after model_visual_scale;
+	# subtracting the raw AABB values made 0.42-scale actors float above FootAnchor.
+	model.position -= model.transform.basis * Vector3(center.x, bounds.position.y, center.z)
 
 func _camera_distance_for_bounds(bounds: AABB, frame_fill: float, fov_deg: float) -> float:
 	if bounds.size == Vector3.ZERO:

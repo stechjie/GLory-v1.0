@@ -262,12 +262,6 @@ func _prepare_battle_models() -> void:
 	if bar != null and is_instance_valid(bar):
 		bar.queue_free()
 	_refresh_visuals()
-	# 分帧建造跑在 _refresh_visuals() 之前，而 2D 单位节点（含 BodyFallback 占位圆）
-	# 是 _refresh_visuals() 里才建的 —— 建模型那次 _set_unit_fallback_visible 是空
-	# 操作；而 _refresh_visuals 内部只对「新建的」模型隐藏占位圆，已存在的会跳过。
-	# 两头都漏，所以这里补一次，否则棋子身上会叠一红一蓝的圆。
-	for id in _battle_3d_models.keys():
-		_set_unit_fallback_visible(str(id), false)
 	if _battle_3d_root != null:
 		_battle_3d_root.visible = true
 	_battle_setup_ready = true
@@ -440,6 +434,7 @@ func _clear_unit_visuals() -> void:
 		if node != null and is_instance_valid(node):
 			node.queue_free()
 	_battle_3d_models.clear()
+	_unit_actor_registry.clear()
 	_status_vfx_by_id.clear()
 	# VFX 差分缓存也按 uid 记上一帧血量/存活，不清会在切换瞬间放出假伤害/死亡特效。
 	_vfx_prev_units = {}

@@ -156,6 +156,7 @@ func _set_board_drop_hover(board_index: int) -> void:
 			_board_drop_highlight_active,
 			index == _board_drop_hover_index
 		)
+	_sync_prep_board_readability_state()
 
 func _set_standby_drop_hover(bench_index: int) -> void:
 	var next_index := bench_index if _standby_drop_highlight_active else -1

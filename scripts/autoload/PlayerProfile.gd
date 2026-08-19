@@ -7,6 +7,7 @@ const PROFILE_PATH := "user://profile.json"
 
 signal pets_changed()
 signal codex_changed()
+signal presentation_settings_changed()
 
 var owned_pets: Array[String] = []
 var active_pet := ""
@@ -14,6 +15,7 @@ var needs_starter_pick := false
 # Codex entries the player has encountered. Account-level and append-only: nothing
 # a player has seen is ever taken away.
 var codex_seen: Array[String] = []
+var board_readability_enabled := true
 
 func _ready() -> void:
 	load_profile()
@@ -24,6 +26,7 @@ func load_profile() -> void:
 		owned_pets.clear()
 		active_pet = ""
 		codex_seen.clear()
+		board_readability_enabled = true
 		needs_starter_pick = true
 		save_profile()
 		return
@@ -32,6 +35,7 @@ func load_profile() -> void:
 		owned_pets.clear()
 		active_pet = ""
 		codex_seen.clear()
+		board_readability_enabled = true
 		needs_starter_pick = true
 		return
 	# Migrate before reading: older profiles carry renamed pet ids and no codex.
@@ -47,6 +51,7 @@ func load_profile() -> void:
 		var entry := str(raw)
 		if not entry.is_empty() and not codex_seen.has(entry):
 			codex_seen.append(entry)
+	board_readability_enabled = bool(data.get("board_readability_enabled", true))
 	needs_starter_pick = bool(data.get("needs_starter_pick", owned_pets.is_empty()))
 	# 出战宠物必须是已拥有的；否则回落到第一只（或空）。
 	if not active_pet.is_empty() and not owned_pets.has(active_pet):
@@ -62,10 +67,20 @@ func save_profile() -> void:
 		"active_pet": active_pet,
 		"needs_starter_pick": needs_starter_pick,
 		"codex_seen": codex_seen,
+		"board_readability_enabled": board_readability_enabled,
 	}
 	var f := FileAccess.open(PROFILE_PATH, FileAccess.WRITE)
 	if f != null:
 		f.store_string(JSON.stringify(payload))
+
+# --- presentation settings -----------------------------------------------
+
+func set_board_readability_enabled(enabled: bool) -> void:
+	if board_readability_enabled == enabled:
+		return
+	board_readability_enabled = enabled
+	save_profile()
+	presentation_settings_changed.emit()
 
 # --- codex ---------------------------------------------------------------
 

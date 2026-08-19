@@ -5,6 +5,7 @@ signal back_requested
 var _btn_zh: Button
 var _btn_en: Button
 var _quality_btns: Array[Button] = []
+var _board_guides_btn: CheckButton
 
 func _ready() -> void:
 	_build()
@@ -98,6 +99,20 @@ func _build() -> void:
 		_quality_btns.append(btn)
 	_refresh_quality_buttons()
 
+	var sep_guides := HSeparator.new()
+	panel.add_child(sep_guides)
+
+	_board_guides_btn = CheckButton.new()
+	_board_guides_btn.text = tr("settings_board_guides")
+	_board_guides_btn.custom_minimum_size = Vector2(280, 46)
+	_board_guides_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_board_guides_btn.button_pressed = PlayerProfile.board_readability_enabled
+	_board_guides_btn.toggled.connect(func(enabled: bool):
+		PlayerProfile.set_board_readability_enabled(enabled)
+		_refresh_board_guides_button())
+	panel.add_child(_board_guides_btn)
+	_refresh_board_guides_button()
+
 	var sep2 := HSeparator.new()
 	panel.add_child(sep2)
 
@@ -114,6 +129,12 @@ func _refresh_quality_buttons() -> void:
 		var btn := _quality_btns[i]
 		if is_instance_valid(btn):
 			btn.modulate = Color(1.0, 0.85, 0.3) if i == current else Color(1, 1, 1)
+
+func _refresh_board_guides_button() -> void:
+	if not is_instance_valid(_board_guides_btn):
+		return
+	_board_guides_btn.button_pressed = PlayerProfile.board_readability_enabled
+	_board_guides_btn.modulate = Color(1.0, 0.88, 0.48) if PlayerProfile.board_readability_enabled else Color(0.76, 0.78, 0.78)
 
 func _refresh_lang_buttons() -> void:
 	if not is_instance_valid(_btn_zh) or not is_instance_valid(_btn_en):

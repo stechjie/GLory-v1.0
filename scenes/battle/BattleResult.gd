@@ -79,7 +79,10 @@ func _crystal_attackers(player_wins: bool) -> Array:
 
 func _crystal_attacker_muzzle(fighter: Dictionary) -> Vector3:
 	var id := _visual_id(fighter)
-	var model: Node3D = _battle_3d_models.get(id)
+	var cast_anchor: Node3D = _unit_actor_registry.get_anchor(id, "CastAnchor")
+	if cast_anchor != null:
+		return cast_anchor.global_position
+	var model: Node3D = _unit_actor_registry.get_actor(id)
 	if model != null and is_instance_valid(model):
 		return model.global_position + Vector3(0.0, 0.34, 0.0)
 	var world_pos := _sim_to_world_pos(fighter.get("pos", Vector2.ZERO) as Vector2)
@@ -92,6 +95,7 @@ func _vanish_crystal_attacker(fighter: Dictionary) -> void:
 	var model: Node3D = _battle_3d_models.get(id)
 	if model != null and is_instance_valid(model):
 		_battle_3d_models.erase(id)
+		_unit_actor_registry.unregister_actor(id)
 		var lift := create_tween()
 		lift.tween_property(model, "position:y", model.position.y + 0.45, CRYSTAL_UNIT_VANISH_SEC)
 		lift.parallel().tween_property(model, "scale", model.scale * 0.05, CRYSTAL_UNIT_VANISH_SEC).set_ease(Tween.EASE_IN)
