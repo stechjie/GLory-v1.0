@@ -102,9 +102,16 @@ try {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         [System.IO.Compression.ZipFile]::ExtractToDirectory($tmpZip, $smokeDir)
         $so = "$env:TEMP\glory_smoke_out_$stamp.txt"
+        # --port=N 必须是等号形式：NetworkService._cmdline_int() 只认 "--port=" 前缀，
+        # 空格形式会被静默忽略然后回落到 SERVER_PORT+shard=8080。之前这里写的是空格
+        # 形式，于是冒烟测试名义上用 8199、实际去抢 8080 —— 本机只要有别的东西占着
+        # 8080，打包就会以"冷启动失败"告终，而报错里一个字都不会提到端口。
+        #
+        # 注意：下面那行以反引号续行，中间不能插注释行 —— 一插 -ArgumentList 就断成
+        # 独立语句，Godot 变成无参启动、弹出项目管理器 GUI，然后永远挂在那里。
         $proc = Start-Process -FilePath $Godot -PassThru -NoNewWindow -RedirectStandardOutput $so `
             -ArgumentList @("--headless", "--path", $smokeDir, "res://scenes/server/ServerMain.tscn",
-                            "--server", "--port", "$smokePort")
+                            "--server", "--port=$smokePort")
         Start-Sleep -Seconds 15
         if (-not $proc.HasExited) { $proc.Kill(); $proc.WaitForExit() }
         $log = ""
@@ -152,7 +159,8 @@ try {
     Write-Host "      ^ 看到 server starting protocol=$protocol 才算部署成功" -ForegroundColor Yellow
     Write-Host ""
     Write-Host " !! systemd 的 ExecStart 必须带上入口场景，否则会去加载 UI 主场景然后静默挂住：" -ForegroundColor Yellow
-    Write-Host "    godot --headless --path <目录> res://scenes/server/ServerMain.tscn --server --port 8080" -ForegroundColor Yellow
+    Write-Host "    godot --headless --path <目录> res://scenes/server/ServerMain.tscn --server --port=8080" -ForegroundColor Yellow
+    Write-Host "    ^ --port 必须用等号形式；写成 '--port 8080' 会被静默忽略并回落到 8080（多分片时就会撞车）" -ForegroundColor Yellow
 }
 catch {
     Remove-Item -Force $tmpZip -ErrorAction SilentlyContinue

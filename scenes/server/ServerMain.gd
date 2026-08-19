@@ -13,7 +13,11 @@ extends Node
 # 真正的启动逻辑在 `NetworkService._ready()` 里（看到 `--server` 就自己开）。
 #
 # 用法：
-#   godot --headless --path <目录> res://scenes/server/ServerMain.tscn --server [--port N] [--shard N]
+#   godot --headless --path <目录> res://scenes/server/ServerMain.tscn --server [--port=N] [--shard=N]
+#
+# 等号不能省：NetworkService._cmdline_int() 只匹配 `--port=` 前缀，写成 `--port N`
+# 会被静默忽略，端口回落到 SERVER_PORT+shard。单分片时看不出来（值一样），
+# 一开多分片就是几个进程一起去抢同一个端口。
 
 func _ready() -> void:
 	if not ("--server" in OS.get_cmdline_args() or "--dedicated-server" in OS.get_cmdline_args()):

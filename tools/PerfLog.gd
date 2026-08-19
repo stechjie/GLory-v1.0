@@ -19,6 +19,17 @@ var _last_video_mb := 0.0
 var _last_static_mb := 0.0
 
 func _ready() -> void:
+	# 专服上这个采样一分钱价值都没有，代价却是实打实的：每 0.5 秒两行，一天约 34 万行
+	# 灌进 journald，把 `server started protocol=N` 这类只出现一次的启动日志冲到几千行
+	# 以外（实测查不到）。而 _print_skinning_census() 每次还要遍历整棵场景树找
+	# Skeleton3D / MeshInstance3D —— headless 下一个都没有，纯白跑。
+	#
+	# 判定条件跟 NetworkService._should_boot_dedicated_server() 保持一致：**只认显式
+	# 命令行参数**。不能用「裸 headless」来判——tools/ 下的采集工具都是 headless 跑的，
+	# 而它们正是要看这些数的那批人。
+	if "--server" in OS.get_cmdline_args() or "--dedicated-server" in OS.get_cmdline_args():
+		queue_free()
+		return
 	print("[PERFLOG] started interval=%.1fs" % SAMPLE_INTERVAL)
 
 func _process(delta: float) -> void:
