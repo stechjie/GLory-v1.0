@@ -6,6 +6,7 @@
     {
       "id": "boss_meteor_caster",
       "name": "天罚投星者",
+      "name_en": "Starfall Caster",
       "element": "sky",
       "hp": 2200,
       "atk": 75,
@@ -30,6 +31,7 @@
     {
       "id": "boss_thunder_core",
       "name": "雷怒核心",
+      "name_en": "Thunder Wrath Core",
       "element": "sky",
       "hp": 2500,
       "atk": 61,
@@ -55,6 +57,7 @@
     {
       "id": "boss_mirror_lord",
       "name": "镜像魔君",
+      "name_en": "Mirror Lord",
       "element": "ren",
       "hp": 1800,
       "atk": 77,
@@ -81,6 +84,7 @@
     {
       "id": "boss_holy_priest",
       "name": "圣愈祭司",
+      "name_en": "Sacred Mender",
       "element": "ren",
       "hp": 2000,
       "atk": 50,
@@ -106,6 +110,7 @@
     {
       "id": "boss_rage_beast",
       "name": "狂战灾兽",
+      "name_en": "Rampage Beast",
       "element": "land",
       "hp": 1900,
       "atk": 55,
@@ -131,6 +136,7 @@
     {
       "id": "boss_blood_demon",
       "name": "血怒魔王",
+      "name_en": "Bloodrage Demon",
       "element": "ren",
       "hp": 2000,
       "atk": 61,
@@ -157,6 +163,7 @@
     {
       "id": "boss_soul_devourer",
       "name": "噬魂领主",
+      "name_en": "Soul Devourer",
       "element": "ren",
       "hp": 2100,
       "atk": 79,
@@ -181,6 +188,7 @@
     {
       "id": "boss_twin_gate",
       "name": "双生守门人",
+      "name_en": "Twin Gatekeepers",
       "element": "land",
       "hp": 1400,
       "atk": 64,
@@ -212,6 +220,7 @@
     {
       "id": "boss_apocalypse",
       "name": "灭世裁决者",
+      "name_en": "Apocalypse Arbiter",
       "element": "sky",
       "hp": 2800,
       "atk": 66,
