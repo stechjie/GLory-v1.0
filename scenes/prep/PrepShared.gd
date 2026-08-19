@@ -403,6 +403,7 @@ var _standby_frame: Control
 var _shop_row: HBoxContainer
 var _shop_panel: SellDropPanel
 var _shop_open_button: Button
+var _buy_shop_button: Button      # 钱袋 A 上的透明「采购」热区，教学箭头要指它
 var _shop_picker_open := false
 var _shop_sell_overlay: PanelContainer
 var _shop_side_controls: Control  # 商店"外挂"控件层（钱袋A购买键 + 刷新），挂屏幕上、不受商店面板矩形限制

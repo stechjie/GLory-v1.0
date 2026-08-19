@@ -27,12 +27,55 @@ enum Step {
 	DONE,
 }
 
+# 进度显示用的「实际到访顺序」，不是枚举顺序。FORMATION_HP 会被走两次
+# （VIEW_TREASURE 之后讲一次、FILL_7 之后 PVP 前再讲一次），所以它在表里出现两回；
+# 配合 _progress_index 只向前走，步数就不会倒退。增删步骤时这张表要同步改。
+const STEP_SEQUENCE: Array = [
+	Step.BUY_3,
+	Step.PLACE_3,
+	Step.START_PVE_1,
+	Step.UPGRADE_2,
+	Step.START_PVE_2,
+	Step.TAKE_TREASURE_1,
+	Step.UPGRADE_3,
+	Step.UPGRADE_OTHERS,
+	Step.BOND_HINT,
+	Step.VIEW_TREASURE,
+	Step.FORMATION_HP,
+	Step.START_BOSS,
+	Step.TAKE_TREASURE_2,
+	Step.HIRE_MERC,
+	Step.FILL_7,
+	Step.FORMATION_HP,
+	Step.START_PVP,
+]
+
+enum ArrowDir { DOWN, UP, LEFT }
+
 # 放大2倍后的向下箭头（字号84）比原来高，往上多抬一些，箭尖仍指向目标顶部。
 const ARROW_DOWN_Y_OFFSET := -100.0
+# 向上箭头贴在目标底边下方的间隙。
+const ARROW_UP_GAP := 6.0
+# 箭头 Label（字号 84）的大致高度/宽度，用来把气泡排在箭尾之后、不跟箭头叠上。
+const ARROW_HEIGHT := 104.0
+const ARROW_WIDTH := 76.0
+# 向左箭头跟目标右边缘的间隙。
+const ARROW_LEFT_GAP := 8.0
+
+# 气泡尺寸。气泡是浮在 overlay 上的自由控件，没有父容器约束它，
+# 所以宽高必须显式钉死：autowrap 的 Label 在宽度未定时，最小高度会按
+# 「每行一个词」算成巨值，把气泡撑到半屏、盖掉商店和按钮。
+const BUBBLE_WIDTH := 400.0
+const BUBBLE_MARGIN_X := 14.0
+const BUBBLE_TEXT_WIDTH := BUBBLE_WIDTH - BUBBLE_MARGIN_X * 2.0
+const BUBBLE_MIN_HEIGHT := 72.0
+const BUBBLE_MAX_HEIGHT := 200.0
 
 var active := false
 var step: int = Step.BUY_3
 var bought_units := 0
+# 进度条指针，指向 STEP_SEQUENCE 的下标；只增不减。
+var _progress_index := 0
 # 教学 PVP 步的伪造对手棋盘（原先借用 NetworkService.opponent_board_snapshot，
 # 1v1 联机删除后由教学模式自持，BattleSimulator 的教学 PVP 路径从这里读）。
 var opponent_snapshot: Dictionary = {}
@@ -41,6 +84,9 @@ var _overlay: Control
 var _arrow: Label
 var _bubble: PanelContainer
 var _text: Label
+var _progress_label: Label
+var _step_key_label: Label
+var _progress_bar: ProgressBar
 var _continue_btn: Button
 var _hotspot: Button
 var _skip_btn: Button
@@ -59,6 +105,7 @@ func start() -> void:
 	active = true
 	step = Step.BUY_3
 	bought_units = 0
+	_progress_index = 0
 	GameState.reset_run()
 	GameState.tutorial_mode = true
 	GameState.player_formation_hp = TUTORIAL_HP
@@ -71,6 +118,8 @@ func finish() -> void:
 	GameState.tutorial_mode = false
 	opponent_snapshot = {}
 	_detach()
+	# 打完和「跳过教学」都走这里，标记在这一个出口清，不会漏。
+	PlayerProfile.complete_tutorial()
 	completed.emit()
 
 func attach(prep: Control) -> void:
@@ -85,14 +134,18 @@ func sync() -> void:
 	if not active:
 		return
 	GameState.gold = TUTORIAL_GOLD
-	if step == Step.BUY_3 and bought_units >= 3:
+	# 按「实际拥有 3 个」推进，不按采购次数：自动合成下重复买同名会融合，
+	# 买满 3 次也可能只剩 2 个棋子，那样 PLACE_3 的 3 个上阵条件永远达不到。
+	if step == Step.BUY_3 and _owned_normal_count() >= 3:
 		step = Step.PLACE_3
 	if step == Step.PLACE_3 and GameState.normal_unit_count() >= 3:
 		step = Step.START_PVE_1
 	if step == Step.UPGRADE_2 and _unit_star("human_militia") >= 2:
 		step = Step.START_PVE_2
 	if step == Step.TAKE_TREASURE_1 and GameState.owned_treasures.size() >= 1:
-		_grant_units("human_militia", 2, 2)
+		# 只送 1 个 2 星（送 2 个会和场上那个凑满 3 个、当场自动合成到 3 星，
+		# UPGRADE_3 就被跳过了）。剩下 1 个 2 星让玩家自己买 2 个 1 星凑。
+		_grant_units("human_militia", 1, 2)
 		step = Step.UPGRADE_3
 		_refresh_prep()
 	if step == Step.UPGRADE_3 and _unit_star("human_militia") >= 3:
@@ -165,21 +218,21 @@ func after_battle(result: Dictionary) -> void:
 func current_text() -> String:
 	match step:
 		Step.BUY_3:
-			return _t("点击下方「商店」按钮打开商店，点击商店棋子，再点击采购按钮。买到的棋子会先进入待命区。已采购：%d/3" % mini(bought_units, 3), "Tap the Shop button at the bottom to open the shop, tap a unit, then tap Buy. Bought units go to standby first. Bought: %d/3" % mini(bought_units, 3))
+			return _t("点击下方「商店」按钮打开商店，点击商店棋子，再点击采购按钮。买到的棋子会先进入待命区。已拥有：%d/3" % mini(_owned_normal_count(), 3), "Tap the Shop button at the bottom to open the shop, tap a unit, then tap Buy. Bought units go to standby first. Owned: %d/3" % mini(_owned_normal_count(), 3))
 		Step.PLACE_3:
 			return _t("从待命区把 3 个棋子拖到棋盘。棋盘上的棋子才会参战。", "Drag 3 units from standby onto the board. Only board units fight.")
 		Step.START_PVE_1:
 			return _t("已经上阵 3 个棋子，点击开始战斗，打 3 个小怪。", "You placed 3 units. Start battle to fight 3 monsters.")
 		Step.UPGRADE_2:
-			return _t("在商店买 1 个「民兵」（不够就点刷新），拖到场上的民兵身上，升到 2 星。", "Buy 1 Militia from the shop (refresh if needed), then drag it onto your board Militia to reach 2-star.")
+			return _t("在商店买 1 个「民兵」（不够就点刷新）。凑够 2 个相同棋子会自动合成，民兵就升到 2 星。", "Buy 1 Militia from the shop (refresh if needed). Two matching units merge automatically, taking your Militia to 2-star.")
 		Step.START_PVE_2:
 			return _t("主力已经 2 星了。再开始战斗，这次打 4 个小怪。", "Your main unit is 2-star. Start battle again against 4 monsters.")
 		Step.TAKE_TREASURE_1:
 			return _t("选择一个宝藏。拿到的宝藏会显示在左下角。", "Choose a treasure. Owned treasures appear at the bottom-left.")
 		Step.UPGRADE_3:
-			return _t("现在给你 2 个 2 星材料。拖 1 个材料到主力身上，升到 3 星。", "You now have two 2-star copies. Drag one copy onto your main unit to make it 3-star.")
+			return _t("已经送你 1 个 2 星民兵。再去商店买 2 个民兵（不够就刷新），它们会先合成 2 星，凑够 3 个 2 星就自动升到 3 星。", "You received one 2-star Militia. Buy 2 more Militia from the shop (refresh if needed) — they merge into a 2-star, and three 2-stars merge into a 3-star.")
 		Step.UPGRADE_OTHERS:
-			return _t("在商店买弓手和商人各 1 个（不够就刷新），分别拖到场上的同名棋子上，升到 2 星。", "Buy 1 Archer and 1 Merchant from the shop (refresh if needed), then drag each onto its matching board unit to reach 2-star.")
+			return _t("在商店买弓手和商人各 1 个（不够就刷新），会各自和场上的同名棋子自动合成到 2 星。", "Buy 1 Archer and 1 Merchant from the shop (refresh if needed). Each merges automatically with its matching board unit to reach 2-star.")
 		Step.BOND_HINT:
 			return _t("同族数量够了会激活羁绊。看看左侧的羁绊效果，点一下继续。", "Matching races activate bonds. Check the bond effects on the left, then tap to continue.")
 		Step.VIEW_TREASURE:
@@ -206,21 +259,85 @@ func update_overlay() -> void:
 	var rect := Rect2(Vector2(540, 290), Vector2(200, 80))
 	if target is Control and target.is_inside_tree():
 		rect = (target as Control).get_global_rect()
-	_apply_arrow(rect)
-	_bubble.position = _bubble_position(rect)
+	var dir := _arrow_dir()
+	_apply_arrow(rect, dir)
+	# 先填内容再定位：气泡高度随文案和进度条变化，定位要用刷新后的尺寸。
 	_text.text = current_text()
+	_update_progress()
+	_fit_bubble()
+	_bubble.position = _bubble_position(rect, dir)
 	_continue_btn.visible = false
 	_bubble.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_position_hotspot(rect)
 
-func _apply_arrow(rect: Rect2) -> void:
-	# BOND_HINT：箭头 ◀ 放在羁绊面板右侧、指向左边的面板；其余步用向下 ▼。
-	if step == Step.BOND_HINT:
-		_arrow.text = "◀"
-		_arrow.position = Vector2(rect.position.x + rect.size.x + 8.0, rect.position.y + rect.size.y * 0.5 - 48.0)
-	else:
-		_arrow.text = "▼"
-		_arrow.position = rect.position + Vector2(rect.size.x * 0.5 - 36.0, ARROW_DOWN_Y_OFFSET)
+func total_steps() -> int:
+	return STEP_SEQUENCE.size()
+
+# 步骤序号从 1 开始。指针只向前找下一个匹配项，所以同一个 Step 被重复走到时
+# 拿到的是后一个位置，不会出现「15 跳回 11」。
+func _sync_progress_index() -> void:
+	if step == Step.DONE:
+		_progress_index = STEP_SEQUENCE.size() - 1
+		return
+	if _progress_index < STEP_SEQUENCE.size() and STEP_SEQUENCE[_progress_index] == step:
+		return
+	for i in range(_progress_index + 1, STEP_SEQUENCE.size()):
+		if STEP_SEQUENCE[i] == step:
+			_progress_index = i
+			return
+	# 前面找不到（理论上只有回退流程才会），退回全表首次匹配。
+	var first := STEP_SEQUENCE.find(step)
+	if first >= 0:
+		_progress_index = first
+
+func step_number() -> int:
+	return _progress_index + 1
+
+# 步骤代号（枚举名，如 UPGRADE_2）。
+func step_key() -> String:
+	var keys: Array = Step.keys()
+	if step >= 0 and step < keys.size():
+		return str(keys[step])
+	return "?"
+
+func progress_text() -> String:
+	var total := total_steps()
+	if step == Step.DONE:
+		return _t("教学完成 %d/%d" % [total, total], "Complete %d/%d" % [total, total])
+	return _t("步骤 %d/%d" % [step_number(), total], "Step %d/%d" % [step_number(), total])
+
+func _update_progress() -> void:
+	if _progress_label == null or not is_instance_valid(_progress_label):
+		return
+	_sync_progress_index()
+	_progress_label.text = progress_text()
+	_step_key_label.text = step_key()
+	_progress_bar.value = float(step_number())
+
+# 箭头朝向：目标在屏幕上方（开始战斗按钮、法阵水晶）要从下往上指，
+# 左侧面板（羁绊、已获宝藏）从右往左指，其余目标（商店、棋盘、待命区）从上往下指。
+func _arrow_dir() -> int:
+	match step:
+		Step.BOND_HINT, Step.VIEW_TREASURE:
+			return ArrowDir.LEFT
+		# HIRE_MERC 的两个目标（右上角佣兵按钮、面板里的佣兵手牌）都在上半屏，
+		# 箭头压在它们下面朝上指，气泡再排到箭尾下方，才不会盖住要点的东西。
+		Step.START_PVE_1, Step.START_PVE_2, Step.START_BOSS, Step.START_PVP, Step.FORMATION_HP, Step.HIRE_MERC:
+			return ArrowDir.UP
+	return ArrowDir.DOWN
+
+func _apply_arrow(rect: Rect2, dir: int) -> void:
+	match dir:
+		ArrowDir.LEFT:
+			_arrow.text = "◀"
+			_arrow.position = Vector2(rect.position.x + rect.size.x + ARROW_LEFT_GAP, rect.position.y + rect.size.y * 0.5 - 48.0)
+		ArrowDir.UP:
+			# 箭尖贴目标底边，箭身朝下延伸，气泡再排在箭尾下方。
+			_arrow.text = "▲"
+			_arrow.position = Vector2(rect.position.x + rect.size.x * 0.5 - 36.0, rect.position.y + rect.size.y + ARROW_UP_GAP)
+		_:
+			_arrow.text = "▼"
+			_arrow.position = rect.position + Vector2(rect.size.x * 0.5 - 36.0, ARROW_DOWN_Y_OFFSET)
 
 func _position_hotspot(rect: Rect2) -> void:
 	# 点击推进的步用透明热区拦截点击（不再依赖会被子节点吞掉的 gui_input）。
@@ -331,30 +448,48 @@ func record_shop_purchase() -> void:
 		bought_units += 1
 		sync()
 
-func _bubble_position(target_rect: Rect2) -> Vector2:
+# 按当前文案把气泡收到内容高度，并限死在 BUBBLE_MAX_HEIGHT 内，
+# 避免任何一步的长文案再次把气泡撑成半屏。
+func _fit_bubble() -> void:
+	if _bubble == null or not is_instance_valid(_bubble):
+		return
+	_bubble.reset_size()
+	_bubble.size = Vector2(BUBBLE_WIDTH, clampf(_bubble.size.y, BUBBLE_MIN_HEIGHT, BUBBLE_MAX_HEIGHT))
+
+func _bubble_position(target_rect: Rect2, dir: int) -> Vector2:
 	var margin := 18.0
-	var bubble_size := Vector2(420.0, 126.0)
+	# 宽度已钉死，高度取 _fit_bubble() 收完的实际值。
+	var bubble_size := Vector2(BUBBLE_WIDTH, maxf(_bubble.size.y, BUBBLE_MIN_HEIGHT))
 	var max_x := maxf(margin, _overlay.size.x - bubble_size.x - margin)
 	var max_y := maxf(margin, _overlay.size.y - bubble_size.y - margin)
-	if step == Step.BOND_HINT:
-		# 箭头 ◀ 指向左侧面板，解释文字放在箭头右侧。
-		var bx := target_rect.position.x + target_rect.size.x + 46.0
-		var by := target_rect.position.y + target_rect.size.y * 0.5 - bubble_size.y * 0.5
-		return Vector2(clampf(bx, margin, max_x), clampf(by, margin, max_y))
+	var center_x := clampf(target_rect.position.x + target_rect.size.x * 0.5 - bubble_size.x * 0.5, margin, max_x)
+	match dir:
+		ArrowDir.LEFT:
+			# 箭头 ◀ 指向左侧面板/宝藏图标，气泡整体让到箭头右边（原来的 46 比箭头还窄，会叠上）。
+			var bx := target_rect.position.x + target_rect.size.x + ARROW_LEFT_GAP + ARROW_WIDTH + 12.0
+			var by := target_rect.position.y + target_rect.size.y * 0.5 - bubble_size.y * 0.5
+			return Vector2(clampf(bx, margin, max_x), clampf(by, margin, max_y))
+		ArrowDir.UP:
+			# 目标在屏幕顶部：箭头在气泡上方指向目标，气泡排在箭尾下面。
+			var uy := target_rect.position.y + target_rect.size.y + ARROW_UP_GAP + ARROW_HEIGHT
+			return Vector2(center_x, clampf(uy, margin, max_y))
 	# 向下箭头的步：气泡放在箭头「上方」，整体不压住箭头和目标（修复升星箭头被黑字挡）。
-	var x := clampf(target_rect.position.x + target_rect.size.x * 0.5 - bubble_size.x * 0.5, margin, max_x)
 	var arrow_top := target_rect.position.y + ARROW_DOWN_Y_OFFSET - 8.0
 	var y := arrow_top - bubble_size.y
 	if y < margin:
 		# 上方放不下就落到目标下方，仍然不与箭头重叠。
 		y = target_rect.position.y + target_rect.size.y + 18.0
-	return Vector2(x, clampf(y, margin, max_y))
+	return Vector2(center_x, clampf(y, margin, max_y))
 
 func _target_control() -> Control:
 	if _prep == null:
 		return null
 	match step:
 		Step.BUY_3:
+			# 商店还关着：先指底部的卷轴按钮，玩家点开后才轮到卡片/采购键。
+			var closed_shop := _shop_entry_control()
+			if closed_shop != null:
+				return closed_shop
 			var selected := int(_prep.get("_selected_shop"))
 			if _shop_index_available(selected):
 				return _prep.get("_buy_shop_button") as Control
@@ -362,19 +497,14 @@ func _target_control() -> Control:
 		Step.PLACE_3:
 			return _first_empty_board_control_middle() if _placing_from_bench() else _first_occupied_bench_control()
 		Step.UPGRADE_2, Step.UPGRADE_3, Step.UPGRADE_OTHERS:
-			# UPGRADE_3 用自动发的 2 星材料（一进来场上1+待命2=3个），直接教拖拽。
-			if step == Step.UPGRADE_3:
-				return _upgrade_target_control() if _holding_upgrade_piece() else _upgrade_material_control()
-			# 2-star steps (player buys from shop): only point at the standby area to
-			# teach dragging once enough copies are gathered (board + standby); until
-			# then keep pointing at the shop to buy the next copy.
-			if _upgrade_total_copies() >= GameState.copies_to_upgrade(_upgrade_star()):
-				return _upgrade_target_control() if _holding_upgrade_piece() else _upgrade_material_control()
+			# 自动合成接管升星后玩家不用再拖材料，三步都只需要在商店买够同名棋子，
+			# 箭头一路指商店（关着就先指卷轴）。
 			return _upgrade_shop_control()
 		Step.START_PVE_1, Step.START_PVE_2, Step.START_BOSS, Step.START_PVP:
 			return _prep.get("_start_battle_button") as Control
 		Step.FORMATION_HP:
-			return _prep.get("_enemy_formation_bar") as Control
+			# _enemy_formation_bar 早已被置 null（红条删了只留数字），指水晶本体。
+			return _prep.get("_enemy_formation_art") as Control
 		Step.TAKE_TREASURE_1, Step.TAKE_TREASURE_2:
 			var row := _prep.get("_treasure_choice_row") as Control
 			return row.get_child(0) as Control if row != null and row.get_child_count() > 0 else row
@@ -388,15 +518,29 @@ func _target_control() -> Control:
 		Step.FILL_7:
 			if _owned_normal_count() > GameState.normal_unit_count():
 				return _first_empty_board_control() if _placing_from_bench() else _first_occupied_bench_control()
+			var closed_shop := _shop_entry_control()
+			if closed_shop != null:
+				return closed_shop
 			var selected := int(_prep.get("_selected_shop"))
 			if _shop_index_available(selected):
 				return _prep.get("_buy_shop_button") as Control
 			return _first_available_shop_control()
 		Step.BOND_HINT:
-			return _prep.get("_left_panel") as Control
+			return _first_bond_row_control()
 		Step.VIEW_TREASURE:
 			return _treasure_logo_control()
 	return null
+
+# 第一条羁绊行（_add_current_synergy_widgets 往 _left_panel 塞的 HBoxContainer，
+# 标题之后的第一个）。指整个 _left_panel 会落到面板中部、离羁绊图标很远。
+func _first_bond_row_control() -> Control:
+	var panel := _prep.get("_left_panel") as Control
+	if panel == null:
+		return null
+	for child in panel.get_children():
+		if child is HBoxContainer and (child as Control).visible:
+			return child as Control
+	return panel
 
 func _treasure_logo_control() -> Control:
 	var box := _prep.get("_owned_treasure_box") as Control
@@ -404,7 +548,16 @@ func _treasure_logo_control() -> Control:
 		return box.get_child(0) as Control
 	return box
 
+# 商店关着时返回底部卷轴按钮（先让玩家开店），已经开着返回 null 交给后续分支。
+func _shop_entry_control() -> Control:
+	if _prep == null or bool(_prep.get("_shop_picker_open")):
+		return null
+	return _prep.get("_shop_open_button") as Control
+
 func _upgrade_shop_control() -> Control:
+	var closed_shop := _shop_entry_control()
+	if closed_shop != null:
+		return closed_shop
 	var selected := int(_prep.get("_selected_shop"))
 	if _shop_index_available(selected):
 		return _prep.get("_buy_shop_button") as Control
@@ -455,7 +608,8 @@ func _ensure_overlay() -> void:
 
 	_bubble = PanelContainer.new()
 	_bubble.mouse_filter = Control.MOUSE_FILTER_STOP
-	_bubble.custom_minimum_size = Vector2(400, 96)
+	# 只定宽不定高，高度由 _fit_bubble() 按内容算完再钉死。
+	_bubble.custom_minimum_size = Vector2(BUBBLE_WIDTH, 0)
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.04, 0.05, 0.06, 0.88)
 	style.border_color = Color(1.0, 0.86, 0.28, 0.95)
@@ -473,8 +627,42 @@ func _ensure_overlay() -> void:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 8)
 	margin.add_child(box)
+
+	# 进度指示：左边「步骤 n/16」，右边步骤代号（如 UPGRADE_2）。
+	# 代号是枚举名，改流程时按代号沟通，不受插入/删除步骤导致的编号漂移影响。
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 8)
+	box.add_child(header)
+	_progress_label = Label.new()
+	_progress_label.add_theme_font_size_override("font_size", 14)
+	_progress_label.add_theme_color_override("font_color", Color(1.0, 0.86, 0.28))
+	header.add_child(_progress_label)
+	_step_key_label = Label.new()
+	_step_key_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_step_key_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_step_key_label.add_theme_font_size_override("font_size", 12)
+	_step_key_label.add_theme_color_override("font_color", Color(0.60, 0.65, 0.72))
+	header.add_child(_step_key_label)
+
+	_progress_bar = ProgressBar.new()
+	_progress_bar.custom_minimum_size = Vector2(0, 6)
+	_progress_bar.min_value = 0.0
+	_progress_bar.max_value = float(total_steps())
+	_progress_bar.show_percentage = false
+	var bar_bg := StyleBoxFlat.new()
+	bar_bg.bg_color = Color(0.16, 0.17, 0.20, 0.9)
+	bar_bg.set_corner_radius_all(3)
+	var bar_fill := StyleBoxFlat.new()
+	bar_fill.bg_color = Color(1.0, 0.86, 0.28, 0.95)
+	bar_fill.set_corner_radius_all(3)
+	_progress_bar.add_theme_stylebox_override("background", bar_bg)
+	_progress_bar.add_theme_stylebox_override("fill", bar_fill)
+	box.add_child(_progress_bar)
+
 	_text = Label.new()
 	_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	# 定宽后 autowrap 才能算出正确的最小高度（否则气泡会被撑爆）。
+	_text.custom_minimum_size = Vector2(BUBBLE_TEXT_WIDTH, 0)
 	_text.add_theme_font_size_override("font_size", 18)
 	_text.add_theme_color_override("font_color", Color(0.98, 0.96, 0.86))
 	box.add_child(_text)
