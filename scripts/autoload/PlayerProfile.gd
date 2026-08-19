@@ -12,6 +12,9 @@ signal presentation_settings_changed()
 var owned_pets: Array[String] = []
 var active_pet := ""
 var needs_starter_pick := false
+# 新手教学同样只跑一次：新账号标记 true，打完或跳过后由 complete_tutorial() 清掉。
+# 老档缺这个键时默认 false —— 那是本功能之前就在玩的账号，不该被拽回教学。
+var needs_tutorial := false
 # Codex entries the player has encountered. Account-level and append-only: nothing
 # a player has seen is ever taken away.
 var codex_seen: Array[String] = []
@@ -28,6 +31,7 @@ func load_profile() -> void:
 		codex_seen.clear()
 		board_readability_enabled = true
 		needs_starter_pick = true
+		needs_tutorial = true
 		save_profile()
 		return
 	var parsed = JSON.parse_string(FileAccess.get_file_as_string(PROFILE_PATH))
@@ -37,6 +41,7 @@ func load_profile() -> void:
 		codex_seen.clear()
 		board_readability_enabled = true
 		needs_starter_pick = true
+		needs_tutorial = true
 		return
 	# Migrate before reading: older profiles carry renamed pet ids and no codex.
 	var data: Dictionary = SaveSchema.migrate_profile(parsed as Dictionary)
@@ -53,6 +58,7 @@ func load_profile() -> void:
 			codex_seen.append(entry)
 	board_readability_enabled = bool(data.get("board_readability_enabled", true))
 	needs_starter_pick = bool(data.get("needs_starter_pick", owned_pets.is_empty()))
+	needs_tutorial = bool(data.get("needs_tutorial", false))
 	# 出战宠物必须是已拥有的；否则回落到第一只（或空）。
 	if not active_pet.is_empty() and not owned_pets.has(active_pet):
 		active_pet = owned_pets[0] if not owned_pets.is_empty() else ""
@@ -66,6 +72,7 @@ func save_profile() -> void:
 		"owned_pets": owned_pets,
 		"active_pet": active_pet,
 		"needs_starter_pick": needs_starter_pick,
+		"needs_tutorial": needs_tutorial,
 		"codex_seen": codex_seen,
 		"board_readability_enabled": board_readability_enabled,
 	}
@@ -144,3 +151,10 @@ func pick_starter(pet_id: String) -> bool:
 	save_profile()
 	pets_changed.emit()
 	return true
+
+# 新手教学走完或被跳过：清标记并落盘，以后启动不再进教学。
+func complete_tutorial() -> void:
+	if not needs_tutorial:
+		return
+	needs_tutorial = false
+	save_profile()

@@ -643,6 +643,7 @@ func _build_rest(root: VBoxContainer) -> void:
 	buy_action_label.add_theme_constant_override("outline_size", 4)
 	gold_area.add_child(buy_action_label)
 	var gold_info_btn := Button.new()
+	_buy_shop_button = gold_info_btn
 	gold_info_btn.flat = true
 	gold_info_btn.focus_mode = Control.FOCUS_NONE
 	gold_info_btn.modulate = Color(1, 1, 1, 0)
@@ -1628,8 +1629,8 @@ func _on_mercenary_purchase_card_pressed(card: BaseButton, index: int) -> void:
 	_on_hire_mercenary(index)
 
 func _refresh_all() -> void:
-	if not GameState.tutorial_mode:
-		_auto_combine_all()
+	# 教学局也走自动合成：正式局就是这个规则，教学不能教一套正式局用不上的操作。
+	_auto_combine_all()
 	if GameState.tutorial_mode:
 		TutorialMode.sync()
 	RaceRelationService.reconcile_board(GameState.board_slots, GameState.bench_slots, false, true)
