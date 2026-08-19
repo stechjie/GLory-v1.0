@@ -647,7 +647,8 @@ func _check_integration_loads() -> void:
 			"diff_branch_left", "D6 应删除的快照 diff 分支仍在：%s" % removed)
 	_h.expect(not vfx_source.contains("PresentationSlice"),
 		"slice_left", "迁移期白名单仍被 BattleVfx 引用")
-	_h.expect(not ResourceLoader.exists("res://effects/runtime/presentation/BattlePresentationSlice.gd"),
+	# 反向断言：这个路径必须**不**存在，因此不是资产引用。
+	_h.expect(not ResourceLoader.exists("res://effects/runtime/presentation/BattlePresentationSlice.gd"),  # asset-manifest-ignore
 		"slice_file_left", "BattlePresentationSlice.gd 应在 D6 删除")
 	# The cue route that replaced it must still be there.
 	for kept in ["cue_play_basic_attack", "cue_spawn_hit_number", "cue_play_death"]:

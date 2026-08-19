@@ -135,7 +135,8 @@ func _check_portrait_fallback_chain(entries: Array[Dictionary]) -> void:
 
 func _check_failure_aggregation() -> void:
 	UnitVisualResolverScript.reset_failure_report()
-	UnitVisualResolverScript.report_failure("human_militia", "res://missing_model.tscn", "check", "forced failure")
-	UnitVisualResolverScript.report_failure("human_militia", "res://missing_model.tscn", "check", "forced failure")
+	# 这条路径是**故意**不存在的夹具，用来验证同一坏资源只上报一次。
+	UnitVisualResolverScript.report_failure("human_militia", "res://missing_model.tscn", "check", "forced failure")  # asset-manifest-ignore
+	UnitVisualResolverScript.report_failure("human_militia", "res://missing_model.tscn", "check", "forced failure")  # asset-manifest-ignore
 	_h.expect(UnitVisualResolverScript.failure_rows().size() == 1, "failure_aggregation", "同一资源失败没有聚合为一次")
 	UnitVisualResolverScript.reset_failure_report()

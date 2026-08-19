@@ -27,6 +27,7 @@ Godot 不在 PATH 上，用 console 版才能把日志打到 stdout：
 | `tools/board_4x4_smoke.tscn` | 准备界面棋盘、拖拽、25→16 旧存档迁移 |
 | `tools/board_readability_check.tscn` | E1-E：16格/三路双半场契约、样式预算、设置迁移、评审场景 |
 | `tools/dep_scan.tscn` | assets/ 下 PNG 的引用情况 |
+| `tools/determinism_check.tscn` | 回放确定性：14 个用例的种子矩阵、SHA-256、首差异定位（D3） |
 
 改动过任何 `class_name` 脚本后，先跑一次编辑器导入重建全局类缓存，
 否则会看到 `Parse Error: Could not find type "XXX"`：
@@ -62,6 +63,40 @@ CHECK_RESULT name=asset_manifest status=PASS checked=2639 failures=0 allowed=4 s
 
 字段：`check`（检查名或 `*`）/ `code`（失败码或 `*`）/ `match`（消息子串，空=全匹配）/ `expires` / `why`（为什么豁免、归属哪个工作单）。
 
+### 3.1 不该进允许列表的两类东西
+
+允许列表是给「**真问题，但暂时不修**」用的，每条都要到期。有两类失败不属于这个范畴，
+硬塞进去只会年年到期、年年续期，最后没人再认真看这份列表。
+
+**归档与证据目录** —— `D3_prechange_backup_20260819/`、`D6_battle_presentation_cleanup_20260819/`
+这类目录也在 `res://` 下，但里面是某次改动**当时**的旧副本。它们引用的是那一刻存在的文件：
+D6 删掉 `BattlePresentationSlice.gd` 之后，D5/D6 的备份副本仍在引用它，清单就会报出一个
+按定义永远修不好的 `missing_asset`。`asset_manifest_check.gd` 的 `SKIP_DIR_PATTERNS`
+用通配符匹配目录名把它们排除在扫描之外（`*_prechange_backup_*`、`D?_*_20*` 等）。
+
+跳过的目录会在日志里逐个列出：
+
+```
+[asset_manifest] 跳过的归档/证据目录 9 个：D3_battle_presentation_actors_20260819, ... , backups
+```
+
+**这一行必须看。** 悄悄少扫一个目录等于悄悄放宽判定 —— 如果哪天某个真实源码目录出现在这行里，
+就是模式写得太宽。
+
+**故意写出的不存在路径** —— 在需要抑制的**那一行**行尾加 `# asset-manifest-ignore`：
+
+```gdscript
+# 这条路径是**故意**不存在的夹具，用来验证同一坏资源只上报一次。
+UnitVisualResolverScript.report_failure("human_militia", "res://missing_model.tscn", "check", "forced failure")  # asset-manifest-ignore
+
+# 反向断言：这个路径必须**不**存在，因此不是资产引用。
+_h.expect(not ResourceLoader.exists("res://effects/runtime/presentation/BattlePresentationSlice.gd"),  # asset-manifest-ignore
+	"slice_file_left", "BattlePresentationSlice.gd 应在 D6 删除")
+```
+
+标记**只作用于所在行**，不是整个文件 —— 同一文件里其他未标记的坏路径照样硬失败。
+这一点有专门的实测用例守着（见第 4 节表格）。忽略的行数也会打进日志。
+
 ## 4. 加新用例的纪律
 
 沿用 `docs/联机审计与整改方案.md` 已定的规矩：
@@ -78,6 +113,73 @@ CHECK_RESULT name=asset_manifest status=PASS checked=2639 failures=0 allowed=4 s
 | 删掉一条允许列表的 `expires` | `allowlist_no_expiry`，退出码 1 |
 | 把两张数据表清空造出空检查集 | `status=SKIP checked=0`，退出码 1 |
 
+3.1 的两条抑制机制加入时同样先证伪过（这是重点：抑制误报最容易顺手把真问题一起抑制掉）：
+
+| 验收测试 | 结果 |
+| --- | --- |
+| 归档目录排除后，再移走一个真资源 | 仍 `status=FAIL failures=1`，退出码 1 —— 排除的只是归档，检出能力没变 |
+| 在**已有标记行的同一文件**里追加一条无标记的坏路径 | `FAIL [missing_asset] res://definitely_not_here_probe.tscn`，退出码 1 —— 证明标记是行级而非文件级 |
+
+## 4.5 回放确定性（D3，2026-08-19）
+
+`tools/determinism_check.tscn` 从"单 seed + 32 位哈希"升级为"种子矩阵 + SHA-256 + 首差异定位"。
+
+**改造前为什么不够**（这些是该文件自己的注释承认的）：
+
+- 用 32 位 `String.hash()` —— 碰撞概率对"证明两份回放逐位相同"来说太高
+- 只哈希 `frames` + `result` —— **`frame_events` 和 `roster` 完全没进哈希**，演出事件流和出场名单变了也发现不了
+- 单一 seed、单一回合、4 种单位
+- 不一致时只说"哈希不等"，不指出差在哪
+- 用 `assert()`，失败会中断脚本，后面的用例一个都不跑
+
+**现在**：整份 replay（含 `frames` / `frame_events` / `roster` / `result`）走 SHA-256，
+且与 `tools/battle_presentation_baseline.gd` **共用** `tools/ReplayDigest.gd` 的规范化与哈希。
+两份实现会漂移，跨平台比对就失去意义 —— 所以抽成一处。
+
+`ReplayDigest.gd` 提供 `json_safe` / `canonical_json` / `sha256_text` / `sha256_variant` /
+`sha256_file` / `first_difference`。**改动它会让 Director 的四个冻结哈希漂移**，
+所以改完必须重跑 baseline 验证那四个值一字不变（本次抽取即如此验证，两个 round 的
+`hashes.json` 逐字节一致）。
+
+### 覆盖是断言出来的，不是声称的
+
+每个用例都要用 `expect` 断言它那一维真的出现在 roster/帧里，另外**所有**用例都断言
+"我摆的阵容真的出现在 player 队 roster 里"。这两条不是形式主义，它们当场抓到了两个真问题：
+
+| 抓到的问题 | 表现 |
+| --- | --- |
+| 四种族只覆盖了两种 | round 3 是 PVE 回合、对手是怪物而非 b 方，改 b 方阵容对结果毫无影响 —— 四个"不同种族"用例里两对哈希**完全相同** |
+| 复活用例根本没触发复活 | phoenix 要求**我方**阵亡，而 PVE/Boss 回合里 3 星阵容全胜不掉人，死的全是怪物、怪物没有宝物 |
+
+第二条因此把死亡按阵营拆成 `death_player` / `death_enemy`。实测全矩阵只有
+`pvp_round_06` 与 `final_round_21` 出现 `death_player`，复活用例只能放在 PVP 回合。
+
+### 当前矩阵（14 个用例，约 15 秒）
+
+四种族各一（哈希互不相同）、PVP 回合、Boss 回合 ×4（5/10/15/20）、最终战、佣兵、宝物、复活、打断。
+
+覆盖汇总实测：`boss×4  death×14  death_enemy×14  death_player×3  formation_ally×1  interrupt×5  mercenary×1  revive×1`
+
+### 证伪测试
+
+按纪律先让它失败一次：临时把 `sync_2` 的 `frames[3][0][3]`（帧 3、单位 0 的 hp）改成 999999，
+检查报出
+
+```
+FAIL [sync_not_repeatable] race_human：同步两次结果不同，首差异 $.frames[3][0][3](2160 != 999999)
+```
+
+路径与两侧的值都精确 —— 满足 README D3「给出首个不同的 tick、事件和字段，
+不允许只输出总哈希不一致」。验证后探针已移除。
+
+> 注入探针那次曾用 latin1 写文件把中文注释写坏，结果**脚本解析失败、进程静默挂死 10 分钟**。
+> 这正是 `docs/联机审计与整改方案.md` 记过的假绿类型之一。给检查场景加超时保护是有必要的。
+
+### 仍未覆盖，不得写成通过
+
+**跨平台（桌面 vs Android ARM64）。** README D3 要求"生成桌面与 Android 的 digest 逐项比较"，
+Android 按当前决定暂停，只完成了桌面侧。检查运行时会显式打印这一行提醒。
+
 ## 5. 本机基线（2026-08-19）
 
 Windows / Godot 4.7.stable / 两个盘点根目录合计 2643 个文件。2026-08-19 的
@@ -93,6 +195,20 @@ A2 冷克隆恢复与首次完整导入也使用同一份稳定库存指纹
 | `board_4x4_smoke` | 62 | 0 | 0 | 含 25→16 迁移与"未知 id 必须被丢弃"两组用例 |
 | `board_readability` | 5 组 | 0 | 0 | 16个准备格、6个战术区域、40点射程、真实目标标记、profile v2→v3 迁移全部通过 |
 | `dep_scan` | 726 | 0 | 1 | 新纳入 4 张 Godot 从战场水晶 FBX 提取的贴图；已由 A2 manifest 管理 |
+| `determinism` | 111 | 0 | 0 | D3 的 14 个用例矩阵，约 15 秒；跨平台未覆盖 |
+
+> ⚠️ **本表上半部分的数字已经对不上当前工作树。** 2026-08-19 D3 落地时实测：
+> `asset_manifest` checked=2505（表里写 2647）、`skel_check` checked=3 且有 4 条 STALE
+> 豁免（表里写 68 / 7 条）、`model_bounds` checked=75（表里写 44）。
+>
+> 其中 `skel_check` 是**真实的覆盖退化**：`_collect_units()` 靠"找到带 `ACTION_SCENES`
+> 脚本常量的 .gd"来收集单位，而多数 wrapper 已重构为共用
+> `assets/models/UnitActionModel.gd`，全仓只剩 3 个单位还是老写法
+> （`AbyssBeastAnimated.gd` / `DarkdoomAnimated.gd` / `GodarbiterAnimated.gd`）。
+> 也就是 75 个模型里只有 3 个进了骨架比对。这一退化是被允许列表的 STALE 机制发现的。
+>
+> 数字未在此更新，是因为它与第 7 节那条待办（清单指纹重新冻结）是同一件事，
+> 需要先确认文件数变化全部有意，再一次性重冻并同步本表。
 
 **README 里「35 个 broken scene」在本机复现不出来。** README 的审计是在 macOS 上、
 带一个外层 `../assets/` 叠加包做的（其 Godot 路径为 `/Volumes/repository/...`），
@@ -134,6 +250,28 @@ A2 冷克隆恢复与首次完整导入也使用同一份稳定库存指纹
 | `assets.manifest.json` | 机读清单。每条含 `path / type / size / sha256 / required_by / class / license_id`。**A2 用它在新机器上校验资源恢复结果** |
 | `docs/ASSET_MANIFEST.md` | 人读汇总：分类计数、缺失明细、未引用文件清单 |
 | `user://asset_manifest_hash_cache.json` | sha256 增量缓存（按 path+size+mtime）。首次全量 35.2 秒，命中缓存后 2.4 秒 |
+
+### ⚠️ 待办：清单指纹重新冻结（2026-08-19 起未决）
+
+**跑 `asset_manifest_check` 会重写 `assets.manifest.json` 和 `docs/ASSET_MANIFEST.md`。**
+在下面这件事定案之前，跑完请用 `git checkout -- assets.manifest.json docs/ASSET_MANIFEST.md`
+还原，不要顺手把新指纹提交上去。
+
+已提交的清单是 `file_count=2643`、`inventory_sha256=5dabb3f5…`（2026-08-19 04:33 生成），
+但当前工作树只有 2501 个文件。拿已提交的清单跑 A2 的交付校验会失败：
+
+```
+ASSET_DELIVERY_RESULT status=FAIL entries=2643 missing=144 size_mismatch=215
+FAIL 大小不匹配：.../formation_ally_4_animated/attack.fbx expected=37035932 actual=2195132
+```
+
+差异对得上 E2-2B 的 FBX 瘦身（ally4/ally5 从 233 MB 降到 19.7 MB）——**瘦身做了，清单没重新生成**。
+142 个文件的消失是否全部有意尚未逐条确认，确认后才重新冻结指纹并同步 README 里引用的值。
+
+**顺带暴露的 A2 结构漏洞**：`asset_manifest_check` 重写清单，而 `asset_delivery_check` 读的就是
+这个文件。按「先跑 manifest、再跑 delivery」的顺序，delivery 永远是拿刚生成的清单校验刚扫过的树，
+**结构上不可能失败**。交付校验必须以受信任的、不在同一次运行里被重写的清单为基准
+（例如显式传 `--manifest=` 指向 git 中的版本）。这条属于 A2，尚未修。
 
 `class` 的取值与含义：
 

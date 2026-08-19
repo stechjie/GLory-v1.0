@@ -52,6 +52,25 @@ const EDITOR_ONLY_PREFIXES := ["res://tools/", "res://scenes/debug/"]
 
 const SKIP_DIR_NAMES := ["backups", "android", "captures", "__pycache__"]
 
+# 归档/证据目录也在 res:// 下，但里面是**某次改动当时**的旧副本。
+# 它们引用的是那一刻存在的文件，不代表当前工程状态：D6 删掉
+# BattlePresentationSlice.gd 之后，D5_/D6_prechange_backup_* 里的副本仍在引用它，
+# 于是清单会报出一个永远修不好的 missing_asset。用通配符匹配目录名，
+# 避免每加一个证据目录就要改一次常量。匹配到的目录会在日志里逐个列出 ——
+# 静默跳过目录本身就是一种假绿。
+const SKIP_DIR_PATTERNS := [
+	"*_prechange_backup_*",
+	"*_backup_2*",
+	"D?_*_20*",
+	"E?_*_20*",
+]
+
+# 源码里"故意写出的不存在路径"的抑制标记。加在该行行尾即可。
+# 两种真实场景：测试夹具（喂一个坏路径验证 fallback），以及
+# 反向断言（D6 断言 BattlePresentationSlice.gd 必须不存在）。
+# 这类路径永远不该存在，登记进允许列表会年年到期，用标记表达意图更准确。
+const IGNORE_MARKER := "asset-manifest-ignore"
+
 const MANIFEST_PATH := "res://assets.manifest.json"
 const DOC_PATH := "res://docs/ASSET_MANIFEST.md"
 const CACHE_PATH := "user://asset_manifest_hash_cache.json"
@@ -68,6 +87,22 @@ var _dep_failed: Array[String] = []
 var _missing: Dictionary = {}               # 被引用但不存在 -> Array[String] 引用者
 var _cache: Dictionary = {}
 var _cache_hits := 0
+var _skipped_dirs: Array[String] = []       # 被跳过的归档/证据目录，收尾时列出
+var _ignored_literal_lines := 0             # 带 asset-manifest-ignore 标记的行数
+
+
+# 归档/证据目录不参与扫描。名字命中 SKIP_DIR_NAMES 或 SKIP_DIR_PATTERNS 即跳过，
+# 并记下来在日志里列出 —— 悄悄少扫一个目录，等于悄悄放宽判定。
+func _should_skip_dir(dir_name: String) -> bool:
+	var skip := SKIP_DIR_NAMES.has(dir_name)
+	if not skip:
+		for pattern in SKIP_DIR_PATTERNS:
+			if dir_name.match(pattern):
+				skip = true
+				break
+	if skip and not _skipped_dirs.has(dir_name):
+		_skipped_dirs.append(dir_name)
+	return skip
 
 
 func _ready() -> void:
@@ -93,6 +128,10 @@ func _ready() -> void:
 	print("[%s] data/*.json 字段额外命中 %d 条" % [CHECK_NAME, data_hits])
 
 	print("[%s] 被引用到的路径 %d 条" % [CHECK_NAME, _refs.size()])
+	_skipped_dirs.sort()
+	print("[%s] 跳过的归档/证据目录 %d 个：%s" % [
+		CHECK_NAME, _skipped_dirs.size(), ", ".join(_skipped_dirs)])
+	print("[%s] 带 %s 标记而被忽略的行 %d 行" % [CHECK_NAME, IGNORE_MARKER, _ignored_literal_lines])
 
 	# --- 判定 ---
 	_check_missing()
@@ -123,7 +162,7 @@ func _collect_files(dir_path: String) -> void:
 			continue
 		var full := dir_path.path_join(entry)
 		if d.current_is_dir():
-			if not SKIP_DIR_NAMES.has(entry):
+			if not _should_skip_dir(entry):
 				_collect_files(full)
 		else:
 			_files.append(full)
@@ -145,7 +184,7 @@ func _collect_resource_files(dir_path: String) -> Array[String]:
 		var full := dir_path.path_join(entry)
 		if d.current_is_dir():
 			# backups/ 里的旧副本引用了什么不代表当前还在用。
-			if not SKIP_DIR_NAMES.has(entry):
+			if not _should_skip_dir(entry):
 				out.append_array(_collect_resource_files(full))
 		else:
 			if RESOURCE_EXT.has(entry.get_extension().to_lower()):
@@ -188,6 +227,7 @@ func _scan_text_literals() -> int:
 	if re == null or not re.is_valid():
 		_h.fail("regex_compile_failed", "文本字面量扫描的正则编译失败，这一路引用全部漏算")
 		return 0
+	# 逐行扫而不是整段扫：这样才能看到该行有没有 asset-manifest-ignore 标记。
 	for ext in ["gd", "tscn", "tres"]:
 		for file_path in _collect_by_ext("res://", ext):
 			var f := FileAccess.open(file_path, FileAccess.READ)
@@ -195,12 +235,16 @@ func _scan_text_literals() -> int:
 				continue
 			var text := f.get_as_text()
 			f.close()
-			for m in re.search_all(text):
-				var p := m.get_string()
-				if p == file_path or not _looks_like_path(p):
+			for line in text.split("\n"):
+				if line.contains(IGNORE_MARKER):
+					_ignored_literal_lines += 1
 					continue
-				if _add_ref(p, file_path):
-					hits += 1
+				for m in re.search_all(line):
+					var p := m.get_string()
+					if p == file_path or not _looks_like_path(p):
+						continue
+					if _add_ref(p, file_path):
+						hits += 1
 	return hits
 
 
@@ -269,7 +313,7 @@ func _collect_by_ext(dir_path: String, ext: String) -> Array[String]:
 			continue
 		var full := dir_path.path_join(entry)
 		if d.current_is_dir():
-			if not SKIP_DIR_NAMES.has(entry):
+			if not _should_skip_dir(entry):
 				out.append_array(_collect_by_ext(full, ext))
 		elif entry.get_extension().to_lower() == ext:
 			out.append(full)

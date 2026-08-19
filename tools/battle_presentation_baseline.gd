@@ -10,6 +10,7 @@ extends Node
 
 const BattleSim := preload("res://scripts/battle/BattleSimulator.gd")
 const BattleReplay := preload("res://scripts/battle/BattleReplayUtil.gd")
+const ReplayDigest := preload("res://tools/ReplayDigest.gd")
 const BattleScreenScene := preload("res://scenes/battle/BattleScreen.tscn")
 const UnitVisualResolverScript := preload("res://effects/runtime/presentation/UnitVisualResolver.gd")
 
@@ -722,102 +723,34 @@ func _monitor_mb(monitor: int) -> float:
 	return float(Performance.get_monitor(monitor)) / 1048576.0
 
 
+# 以下四个改为委托 tools/ReplayDigest.gd —— determinism_check 要用同一套规范化与哈希，
+# 两份实现会漂移，跨平台比对就失去意义。行为逐字不变：Director 的四个冻结哈希依赖它们。
 func _canonical_json(value: Variant) -> String:
-	return JSON.stringify(_json_safe(value), "", true, true)
+	return ReplayDigest.canonical_json(value)
 
 
 func _sha256_variant(value: Variant) -> String:
-	return _sha256_text(_canonical_json(value))
+	return ReplayDigest.sha256_variant(value)
 
 
 func _sha256_text(value: String) -> String:
-	var context := HashingContext.new()
-	var error := context.start(HashingContext.HASH_SHA256)
-	if error != OK:
-		_record_failure("hash_start_failed", "HashingContext error=%d" % error)
-		return ""
-	context.update(value.to_utf8_buffer())
-	return context.finish().hex_encode()
+	var digest := ReplayDigest.sha256_text(value)
+	if digest.is_empty():
+		# 保留原有的失败记账：共享实现只返回空串，由调用方决定怎么记。
+		_record_failure("hash_start_failed", "HashingContext start failed")
+	return digest
 
 
 func _sha256_file(path: String) -> String:
-	var file := FileAccess.open(path, FileAccess.READ)
-	if file == null:
-		return ""
-	var context := HashingContext.new()
-	if context.start(HashingContext.HASH_SHA256) != OK:
-		file.close()
-		return ""
-	while file.get_position() < file.get_length():
-		context.update(file.get_buffer(mini(1024 * 1024, file.get_length() - file.get_position())))
-	file.close()
-	return context.finish().hex_encode()
+	return ReplayDigest.sha256_file(path)
 
 
 func _json_safe(value: Variant) -> Variant:
-	match typeof(value):
-		TYPE_DICTIONARY:
-			var output: Dictionary = {}
-			for key in (value as Dictionary).keys():
-				output[str(key)] = _json_safe((value as Dictionary)[key])
-			return output
-		TYPE_ARRAY:
-			var output: Array = []
-			for item in value as Array:
-				output.append(_json_safe(item))
-			return output
-		TYPE_STRING_NAME, TYPE_NODE_PATH:
-			return str(value)
-		TYPE_VECTOR2, TYPE_VECTOR2I:
-			return [value.x, value.y]
-		TYPE_VECTOR3, TYPE_VECTOR3I:
-			return [value.x, value.y, value.z]
-		TYPE_VECTOR4, TYPE_VECTOR4I:
-			return [value.x, value.y, value.z, value.w]
-		TYPE_COLOR:
-			return [value.r, value.g, value.b, value.a]
-		TYPE_PACKED_BYTE_ARRAY, TYPE_PACKED_INT32_ARRAY, TYPE_PACKED_INT64_ARRAY, TYPE_PACKED_FLOAT32_ARRAY, TYPE_PACKED_FLOAT64_ARRAY, TYPE_PACKED_STRING_ARRAY, TYPE_PACKED_VECTOR2_ARRAY, TYPE_PACKED_VECTOR3_ARRAY, TYPE_PACKED_COLOR_ARRAY, TYPE_PACKED_VECTOR4_ARRAY:
-			var output: Array = []
-			for item in value:
-				output.append(_json_safe(item))
-			return output
-		TYPE_OBJECT:
-			if value is Resource:
-				return (value as Resource).resource_path
-			return str(value)
-		_:
-			return value
+	return ReplayDigest.json_safe(value)
 
 
 func _first_difference(a: Variant, b: Variant, path: String = "$") -> String:
-	if typeof(a) != typeof(b):
-		return "%s(type %d != %d)" % [path, typeof(a), typeof(b)]
-	if a is Dictionary:
-		var da := a as Dictionary
-		var db := b as Dictionary
-		var keys: Array = da.keys()
-		keys.sort_custom(Callable(self, "_key_less"))
-		for key in keys:
-			if not db.has(key):
-				return "%s.%s(missing in repeat)" % [path, str(key)]
-			var nested := _first_difference(da[key], db[key], "%s.%s" % [path, str(key)])
-			if not nested.is_empty():
-				return nested
-		for key in db.keys():
-			if not da.has(key):
-				return "%s.%s(extra in repeat)" % [path, str(key)]
-		return ""
-	if a is Array:
-		var aa := a as Array
-		var ab := b as Array
-		if aa.size() != ab.size():
-			return "%s(size %d != %d)" % [path, aa.size(), ab.size()]
-		for index in aa.size():
-			var nested := _first_difference(aa[index], ab[index], "%s[%d]" % [path, index])
-			if not nested.is_empty():
-				return nested
-		return ""
-	return "" if a == b else "%s(%s != %s)" % [path, str(a), str(b)]
+	return ReplayDigest.first_difference(a, b, path)
 
 
 func _write_json(path: String, value: Variant) -> void:
