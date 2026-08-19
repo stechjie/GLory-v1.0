@@ -313,6 +313,169 @@ FAIL [eviction_lost_lines]  应恰好取到 3 行新内容，实际 0 行（游�
 **取到 0 行** —— 也就是那 3 行新内容永远发不出去。在真实链路上的表现是
 "重连后少了几行崩溃现场"，靠人工几乎不可能发现。验证后探针已移除。
 
+### PR4：Room（进行中，分四步）
+
+Room 比前三刀大一个量级：**37 个函数、约 1065 行，占整个文件的 25%**。
+一次性搬完、只有函数级探针兜底风险不可控，因此分四步、每步跑完整回归。
+
+勘测阶段的两个订正：
+
+1. **`_resume_seat`（115 行，Room 里最大的单个函数）其实是重连逻辑**——按 token 找席位、
+   失败发 `resume_failed`。它属于 ReconnectService（PR5），不属于 Room。原分组划混了。
+2. **`_next_room_id` 是死变量**——房间号早已改成
+   `_shard_index * SHARD_ID_STRIDE + randi_range(100000, 999999)`，那个自增计数器
+   全仓只剩声明。已删除。
+
+**4-1 状态搬迁（已完成）**：7 个状态变量（`rooms` / `peer_room` / `token_seat` /
+`public_token_seat` / `peer_public_token` / `rooms_dirty` / `server_epoch`）进 RoomService，
+门面保留**原来的下划线名**作为转发属性。这样 NetworkService 内部 60 多处引用、
+以及 `adversarial_client` / `persist_check` / `reconnect_check` 三个探针的 **98 处直接访问**
+（读 + 原地写）一处都不用改。
+
+> 诚实记账：这一步让 NetworkService 从 **4194 涨到 4237 行** —— 7 个转发属性比
+> 7 行声明长。它的价值是架构接缝，不是行数。
+
+**4-2 持久化 + 房间创建（已完成）**：`new_room` / `snapshot_path` / `save_snapshot` /
+`load_snapshot` 进服务，门面留薄包装。NetworkService **4237 → 4059 行**。
+
+两处机制在动手前都用一次性探针验证过（验完即删）：
+
+| 机制 | 用途 | 验证结果 |
+| --- | --- | --- |
+| 属性 `get`/`set` 转发 | 150+ 处 `_rooms` 等引用零改动 | 整体赋值、读回、**原地改共享同一份引用**、服务侧改动外部可见、清空，五项全过 |
+| `const X := RoomService.X` 重新导出 | 常量搬进服务而调用点零改动 | 成立 |
+
+只注入**行为**（`now` / `wall_now` / `log` / `shard_index`）。
+`TEAM_SLOTS` / `ROOM_LOBBY` / `ROOM_RESULT` / `RESERVE_GRACE_SEC` 在门面内部有
+43/24/11/5 处引用、外部也有引用，留在门面、按配置字典传入更省事。
+
+**4-3 席位元数据 + token 生成（已完成）**：`room_for_peer` / `room_online_count` /
+`room_live_token_count` / `move_seat_metadata` / `clear_seat_metadata` /
+`release_seat_public_id` / `make_token` / `make_public_token` 进服务，
+`SEAT_SLOT_MAPS` 与 `PUBLIC_TOKEN_*` 随实现搬走并重新导出。**4059 → 3987 行**。
+
+**4-4 房间查询与阶段（已完成）**：`room_next_free_slot` / `room_player_count` /
+`find_or_create_room` / `touch_room` / `set_room_state` / `public_room_list`
+进服务。**3987 → 3951 行**。
+
+### 哪些**故意**留在门面，以及为什么
+
+剩下的 Room 相关函数不是"没搬完"，是**搬进服务会让设计更差**：
+
+| 留下的 | 原因 |
+| --- | --- |
+| 5 个 `@rpc` 入口（`_rpc_team_create_room` 等，105 行） | RPC 必须挂在 autoload 的 Node 上，服务对象没有节点路径 |
+| `_room_close` / `_room_remove_peer` / `_room_reserve_peer`（61 行） | 主体是 RPC 派发与大厅广播：`_rpc_team_room_closed.rpc_id()`、`_broadcast_room_lobby()`、`_maybe_promote_leader()` |
+| `_process` / `_cleanup_rooms` / `_assign_peer_to_room` / `_on_peer_disconnected` / `_tick_*`（约 480 行） | 生命周期编排：读 `multiplayer` 连接状态、发广播、驱动看门狗 |
+| `_resume_seat`（115 行） | 是重连逻辑，归 PR5 的 ReconnectService |
+
+把这些搬进服务，服务就得为每次发包回调门面——那不是解耦，只是把同一份耦合
+换个地方写，还多一层间接。**最终形态是：服务持有房间数据与纯操作，
+门面持有网络编排。**这正是门面该有的样子。
+
+### D1 累计
+
+| 刀 | NetworkService |
+| --- | --- |
+| 起点 | 4264 |
+| PR1 RateLimit | 4223 |
+| PR2 ReplayTransfer | 4215 |
+| PR3 ClientLog | 4194 |
+| PR4-1 房间状态搬迁 | 4237（转发属性比声明长，见上） |
+| PR4-2 持久化 + 房间创建 | 4059 |
+| PR4-3 席位元数据 + token | 3987 |
+| PR4-4 房间查询与阶段 | **3951** |
+
+净减 **313 行**，新增四个服务共约 800 行（含从门面搬来的实现与新写的注释）。
+门面对外 API 面全程不变：**475 处引用、33 个文件**，一处未改。
+
+### PR5：ReconnectBackoff（只抽算法，不抽状态机）
+
+勘测：触碰重连变量的 **24 个函数、509 行**里，绝大多数是**会话状态机编排** ——
+`_begin_reconnect` 写 `state` / `last_error` / 发 `session_changed`、
+`_tick_reconnect` 调发包、5 个 `@rpc` 入口必须挂 Node。与 PR4 剩余部分同理，
+搬进服务只会变成"为每次状态变更回调门面"。
+
+**另一处订正**：先前说 `_resume_seat`（115 行）归 PR5 —— 不对。它是**服务端**
+按 token 恢复席位、操作房间数据、并发 RPC；而 `session_token` / `reconnect_address` /
+退避重试那组是**客户端**侧。两件事，`_resume_seat` 留在门面。
+
+真正抽出来的是**退避算法本身**：`scripts/multiplayer/ReconnectBackoff.gd`，
+capped exponential backoff + full jitter，随机源可注入。
+
+**抽出来之前它零测试覆盖**——`tools/` 下搜不到一处 backoff 用例。
+而它写错的症状是「服务器刚恢复就被全服同步重试再打垮一次」：
+服务器冻结时所有客户端同时判超时，若间隔固定，波峰完全叠加。
+这类故障本地几乎复现不出来，只在真实事故里暴露。
+
+`tools/reconnect_backoff_check.tscn`（20 项）覆盖：指数增长、上限封顶、
+**尝试次数钳制**（`pow(2, 大数)` 溢出成 inf 会让重连彻底卡死）、
+full jitter 区间、**"是 full jitter 而非 cap 附近小幅抖动"**、负 attempt 不炸、
+超时截止、随机源确实来自注入。
+
+证伪测试把 full jitter 改成"cap 的 0.9~1.0 抖动"，检查报出：
+
+```
+FAIL [jitter_not_full_low]     rand=0 应给出 0 等待，实际 14.400（说明不是 full jitter）
+FAIL [jitter_span_too_narrow]  抖动跨度只有 1.600，不足 cap 的九成——全服重试仍会叠加
+```
+
+NetworkService **3951 → 3954 行**（多出的 3 行是服务实例与注释；这一刀的价值是
+把一段零覆盖的关键算法变成有 20 项用例守着的独立单元，不是减行）。
+
+### PR6：ConnectionHealth（只抽判定，不抽传输层）
+
+勘测：触碰传输变量的 **20 个函数、669 行**里，**525 行是编排**。这符合预期 ——
+传输层的本职就是操作 `multiplayer` 和 ENet peer，它没有多少"数据"可搬。
+纯函数只有 1 个。
+
+可抽的是三个 tick 函数（心跳超时 / 僵尸回收 / 空闲回收）共同的那一半：
+
+```
+遍历 peer 映射 → 按时间判定谁该处理 → 执行断开/回收
+                 ↑ 纯的，抽走          ↑ 必须留门面
+```
+
+`scripts/multiplayer/ConnectionHealth.gd` 只做判定：`timed_out_peers` /
+`partition_unjoined` / `should_warn_silence` / `should_log_rtt` / `should_send_ping`。
+
+覆盖现状（抽出来的动机）：`adversarial_client` 只覆盖了空闲回收的**一个**用例，
+**心跳超时与僵尸回收零覆盖**。阈值判错的后果都很实在 —— 判太松则掉线的人一直占座位，
+判太紧则网络抖一下就踢正常玩家。
+
+`tools/connection_health_check.tscn`（19 项）里最有价值的两组：
+
+**① 阈值之间的相对关系。** 单看任何一个常量都发现不了的错误：
+
+- 静默预警线必须严格早于超时线，否则预警永远不会触发
+- 心跳间隔必须早于预警线，否则正常心跳就会触发预警
+- 超时线必须大于心跳间隔的两倍，否则丢一个包就判掉线
+
+**② `partition_unjoined` 的两组语义不能混。** 已进房间的 peer 只应从
+`connected_at` 摘除（交给座位/心跳那套管），**绝不能断开**；混在一起写就会
+把正在打的人踢下线。用例里专门放了"连了极久但都在房间里的 5 个 peer"，
+断言它们一个都不被 drop。
+
+证伪测试把预警线从 6s 改到 25s（超过 20s 的超时线）：
+
+```
+FAIL [warn_not_before_timeout] 静默预警线 25.0s 不早于超时线 20.0s —— 预警永远不会触发
+```
+
+NetworkService **3954 → 3958 行**。同 PR5，价值在于把零覆盖的判定变成有用例守着的纯单元。
+
+未做：PR7 DedicatedServer。**建议不要做成服务对象** ——
+`_dedicated_server` 是一个 bool，被 43 处引用、36 个函数读，全是
+`if _dedicated_server:` 这样的分支判断。它是横切的**身份**，不是模块的私有状态；
+搬进服务只会让 36 个分支的访问路径变长，耦合一点不降。
+更值得做的是把它换成 `ServerRole` 枚举 —— 顺便修掉一个真实缺陷：
+`enter_test_server_mode()`（工具进程内跑服务端逻辑、不开 socket）与真专服
+**共用同一个 bool**，任何一处 `if _dedicated_server` 都分不清"我该发包吗"。
+但换枚举要改 43 处、且部分语义需要重判（`!= CLIENT` 还是 `== DEDICATED`），
+**这属于改行为而非搬运**，在没有双设备 QA 之前风险高于前六刀。
+`_dedicated_server` 是散在 36 个函数里的模式开关而非模块状态，
+PR7 更可能该做成门面上的 `ServerRole` 枚举，而不是服务对象。
+
 ### 一个反复踩到的 GDScript 坑
 
 服务实例声明为 `var _x: RefCounted`，于是 `var y := _x.some_method()` 会报
