@@ -18,7 +18,7 @@ param(
     [string]$Src = $PSScriptRoot,
     [string]$Out = (Join-Path $PSScriptRoot "glory_server_upload.zip"),
     # 冷启动冒烟测试用的 Godot。找不到就跳过测试并**降级为失败**（不能默默放过）。
-    [string]$Godot = "C:\Users\Leno\Desktop\Godot_v4.7-stable_win64.exe\Godot_v4.7-stable_win64_console.exe",
+    [string]$Godot = "C:\Users\Leno\Desktop\godot\Godot_v4.7-stable_win64_console.exe",
     [switch]$SkipSmoke,
     [switch]$NoPause
 )

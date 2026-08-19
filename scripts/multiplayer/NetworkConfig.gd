@@ -44,7 +44,14 @@ const USE_DEDICATED_SERVER := true
 #      `room.prep[slot]` 座位账本（金币 / 商店 / roster+cost_basis / 赌博标记），
 #      room_state payload 新增 `economy` 段。**默认关闭**（ServerFlags 两个开关都是
 #      false），开启后先只影子比对，客户端改造完成前不得翻 authoritative。
-const NETWORK_PROTOCOL_VERSION := 15
+# v16: 确定性屏障（无线格变更）。协议 15 的服务器包（2026-07-28）之后，战斗模拟
+#      与数值表被大改：BattleSimulator / BattleSimShared / BattleSimSkills /
+#      BattleSimTreasures / DamageService，以及 race_units / bosses / mercenaries /
+#      pve_monsters / formation_allies / pets 六张 JSON。RPC 签名和通道一个没动，
+#      所以旧服务器**不会**拒绝新客户端，只会两边各算各的、结算对不上——这种
+#      静默分歧比明确报错难查得多。顶这一格就是为了让版本校验把它拦下来。
+#      规则：模拟逻辑或数值表改动到会影响战斗结果时，即使没有线格变更也必须顶号。
+const NETWORK_PROTOCOL_VERSION := 16
 
 # Local phone hosting is debug-only.
 const ALLOW_LOCAL_HOST_DEBUG := false
