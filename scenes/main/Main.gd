@@ -219,11 +219,6 @@ func _show_language_select() -> void:
 
 func _select_language(locale: String) -> void:
 	LocaleManager.set_locale(locale)
-	# 教学和「首次三选一宠物」同一个性质：只有新账号要跑。
-	# 老账号选完语言直接进主菜单，不再被强塞一遍教学。
-	if not PlayerProfile.needs_tutorial:
-		_show_menu()
-		return
 	TutorialMode.start()
 	_show_prep()
 

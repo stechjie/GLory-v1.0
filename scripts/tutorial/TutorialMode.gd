@@ -118,8 +118,6 @@ func finish() -> void:
 	GameState.tutorial_mode = false
 	opponent_snapshot = {}
 	_detach()
-	# 打完和「跳过教学」都走这里，标记在这一个出口清，不会漏。
-	PlayerProfile.complete_tutorial()
 	completed.emit()
 
 func attach(prep: Control) -> void:
