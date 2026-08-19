@@ -11,11 +11,13 @@ extends Node
 const BattleSim := preload("res://scripts/battle/BattleSimulator.gd")
 const BattleReplay := preload("res://scripts/battle/BattleReplayUtil.gd")
 const BattleScreenScene := preload("res://scenes/battle/BattleScreen.tscn")
+const UnitVisualResolverScript := preload("res://effects/runtime/presentation/UnitVisualResolver.gd")
 
 const TOOL_VERSION := 1
 const DEFAULT_SEED := 20260807
 const DEFAULT_ROUNDS: Array[int] = [1, 2]
 const DEFAULT_LOCALE := "en"
+const FIXED_PET_ID := ""
 const MIN_PERF_SAMPLES := 30
 const ROUND_TIMEOUT_SEC := 180.0
 const SCREENSHOT_LABELS: Array[String] = ["start", "mid", "end"]
@@ -71,6 +73,9 @@ var _current_summary: Dictionary = {}
 
 var _round_summaries: Array[Dictionary] = []
 var _failures: Array[Dictionary] = []
+# D3: every cue the Director refused during the round, tallied by reason.
+var _director_drops: Dictionary = {}
+var _director_missing_actor_drops := 0
 
 
 func _ready() -> void:
@@ -105,6 +110,8 @@ func _process(delta: float) -> void:
 			_setup_seen = true
 			_render_frame = 0
 			_actor_audit = _audit_actors()
+			if int(_actor_audit.get("blank_uid_count", 0)) > 0:
+				_record_failure("blank_roster_uid", "%d roster entries have an empty uid" % int(_actor_audit.get("blank_uid_count", 0)))
 			print("[D0BASELINE] round=%d render-ready actors=%d visible_fallbacks=%d" % [
 				_current_round(),
 				int(_actor_audit.get("actor_present_count", 0)),
@@ -235,6 +242,10 @@ func _start_next_round() -> void:
 		_abort_current_round()
 		return
 	_screen.connect("battle_finished", Callable(self, "_on_battle_finished"), CONNECT_ONE_SHOT)
+	# D3: subscribe before the screen enters the tree so the very first tick is
+	# observed. A cue lost to a missing actor is exactly the failure mode this
+	# stage has to prove absent on real replay data.
+	_hook_presentation_director()
 	add_child(_screen)
 	_round_started_msec = Time.get_ticks_msec()
 	print("[D0BASELINE] round=%d roster=%d frames=%d events=%d replay_sha=%s" % [
@@ -271,11 +282,18 @@ func _finish_current_round() -> void:
 	if int(performance.get("sample_count", 0)) < MIN_PERF_SAMPLES:
 		_record_failure("insufficient_perf_samples", "Only %d usable frame samples" % int(performance.get("sample_count", 0)))
 	_current_summary["actor_audit"] = _actor_audit
+	var director_audit := _director_audit()
+	_current_summary["director_audit"] = director_audit
+	var resolution: Dictionary = director_audit.get("resolution", {})
+	if int(resolution.get("resolved_cues", 0)) <= 0:
+		_record_failure("director_resolved_nothing",
+			"Director resolved 0 cues; an empty result is a wiring break, not a pass")
 	_current_summary["performance"] = performance
 	_current_summary["screenshots"] = _screenshots.duplicate(true)
 	_current_summary["viewport"] = _viewport_metadata()
 	_write_perf_csv(_round_dir.path_join("frame_performance.csv"))
 	_write_json(_round_dir.path_join("actor_audit.json"), _actor_audit)
+	_write_json(_round_dir.path_join("director_audit.json"), director_audit)
 	_write_json(_round_dir.path_join("summary.json"), _current_summary)
 	_round_summaries.append(_current_summary.duplicate(true))
 	print("[D0BASELINE] round=%d avg_fps=%.2f one_pct_low=%.2f samples=%d" % [
@@ -363,9 +381,17 @@ func _setup_match_state(round_index: int) -> void:
 	NetworkService.team_slot_states = ["player", "player", "player", "player", "player", "player"]
 	var boards: Dictionary = {}
 	for lane in 3:
-		boards[lane] = NetProtocol.team_board_submission(_board_from_ids((LINEUP["a"] as Array)[lane]), _empty_mercenary_slots())
-		boards[lane + 3] = NetProtocol.team_board_submission(_board_from_ids((LINEUP["b"] as Array)[lane]), _empty_mercenary_slots())
+		boards[lane] = _fixed_board_submission(_board_from_ids((LINEUP["a"] as Array)[lane]), _empty_mercenary_slots())
+		boards[lane + 3] = _fixed_board_submission(_board_from_ids((LINEUP["b"] as Array)[lane]), _empty_mercenary_slots())
 	NetworkService.team_boards = boards
+
+
+func _fixed_board_submission(board: Array, mercenaries: Array) -> Dictionary:
+	# A reproducible baseline cannot inherit the account's currently selected pet.
+	# D0 was recorded with no pet; pin that fixture without changing PlayerProfile.
+	var snapshot: Dictionary = NetProtocol.team_board_submission(board, mercenaries)
+	snapshot["pet"] = FIXED_PET_ID
+	return snapshot
 
 
 func _board_from_ids(unit_ids: Array) -> Array:
@@ -445,6 +471,7 @@ func _audit_actors() -> Dictionary:
 	var visible_fallback_count := 0
 	var portrait_fallback_count := 0
 	var missing_model_path_count := 0
+	var blank_uid_count := 0
 	var live_uids: Dictionary = {}
 	var state_value = _screen.get("_state")
 	if state_value is Dictionary:
@@ -456,6 +483,10 @@ func _audit_actors() -> Dictionary:
 	roster_keys.sort_custom(Callable(self, "_key_less"))
 	for key_value in roster_keys:
 		var uid := str(key_value)
+		# BattleRenderer._visual_id() falls back to "team_id" when a fighter has no
+		# uid, which would register the actor under a key no event can ever name.
+		if uid.is_empty():
+			blank_uid_count += 1
 		var roster_entry: Dictionary = roster.get(key_value, {})
 		var unit_def: Dictionary = roster_entry.get("def", {})
 		var model_path := str(unit_def.get("model", ""))
@@ -531,6 +562,7 @@ func _audit_actors() -> Dictionary:
 		"visible_body_fallback_count": visible_fallback_count,
 		"visible_portrait_fallback_count": portrait_fallback_count,
 		"missing_model_path_count": missing_model_path_count,
+		"blank_uid_count": blank_uid_count,
 		"entries": entries,
 	}
 
@@ -793,6 +825,55 @@ func _ensure_dir(path: String) -> bool:
 		_record_failure("directory_create_failed", "%s error=%d" % [path, error])
 		return false
 	return true
+
+
+func _hook_presentation_director() -> void:
+	_director_drops = {}
+	_director_missing_actor_drops = 0
+	UnitVisualResolverScript.reset_failure_report()
+	var director_value = _screen.get("_presentation_director")
+	if director_value == null:
+		_record_failure("presentation_director_missing", "BattleScreen exposed no _presentation_director")
+		return
+	(director_value as Object).connect("cue_dropped", Callable(self, "_on_cue_dropped"))
+
+
+func _on_cue_dropped(event_key: String, reason: String) -> void:
+	_director_drops[reason] = int(_director_drops.get(reason, 0)) + 1
+	if not reason.begins_with("missing_actor"):
+		return
+	_director_missing_actor_drops += 1
+	# Cap the recorded detail so one systemic wiring break cannot flood the report;
+	# the counter below still carries the true total.
+	if _director_missing_actor_drops <= 5:
+		_record_failure("director_missing_actor", "%s dropped: %s" % [event_key, reason])
+
+
+func _director_audit() -> Dictionary:
+	var stats: Dictionary = {}
+	if _screen != null and is_instance_valid(_screen):
+		var director_value = _screen.get("_presentation_director")
+		if director_value != null and (director_value as Object).has_method("resolution_stats"):
+			stats = (director_value as Object).call("resolution_stats")
+	var anchor_rows: Array[Dictionary] = []
+	for row in UnitVisualResolverScript.failure_rows():
+		if str(row.get("consumer", "")) == "director":
+			anchor_rows.append(row)
+	return {
+		"drops_by_reason": _director_drops.duplicate(true),
+		"drop_count": _director_drop_total(),
+		"missing_actor_drop_count": _director_missing_actor_drops,
+		"anchor_degradation_rows": anchor_rows,
+		"anchor_degradation_count": anchor_rows.size(),
+		"resolution": stats,
+	}
+
+
+func _director_drop_total() -> int:
+	var total := 0
+	for value in _director_drops.values():
+		total += int(value)
+	return total
 
 
 func _record_failure(code: String, detail: String) -> void:

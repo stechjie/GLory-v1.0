@@ -15,16 +15,19 @@ static var _hit_is_crit := false
 # Attacker race ("god"/"dark"/"undead"/"human"/...), used to color normal-attack
 # numbers on the renderer side.
 static var _hit_source_race := ""
+static var _hit_skill_id := ""
 
-static func set_hit_context(kind: String, is_crit: bool = false, source_race: String = "") -> void:
+static func set_hit_context(kind: String, is_crit: bool = false, source_race: String = "", skill_id: String = "") -> void:
 	_hit_kind = kind
 	_hit_is_crit = is_crit
 	_hit_source_race = source_race
+	_hit_skill_id = skill_id
 
 static func clear_hit_context() -> void:
 	_hit_kind = ""
 	_hit_is_crit = false
 	_hit_source_race = ""
+	_hit_skill_id = ""
 
 # Central damage-number emit. Rides the same state.visual_events channel the
 # renderer already consumes (and that the replay records per frame), so numbers
@@ -44,8 +47,13 @@ static func _maybe_emit_hit_number(target: Dictionary, hp_damage: int) -> void:
 		"crit": _hit_is_crit,
 		"skill": _hit_kind == "skill",
 		"race": _hit_source_race,
+		"source_uid": _stat_source_uid,
 		"target_uid": str(target.get("uid", "")),
+		"target_uids": [str(target.get("uid", ""))],
+		"skill_id": _hit_skill_id,
 		"amount": hp_damage,
+		"is_crit": _hit_is_crit,
+		"is_lethal": not bool(target.get("alive", true)),
 	})
 
 # Heal numbers always surface (they are far rarer than attacks). Called from
@@ -56,8 +64,13 @@ static func emit_heal_number(target: Dictionary, amount: int) -> void:
 	_append_hit_event({
 		"type": "hit_number",
 		"kind": "heal",
+		"source_uid": _stat_source_uid if not _stat_source_uid.is_empty() else str(target.get("uid", "")),
 		"target_uid": str(target.get("uid", "")),
+		"target_uids": [str(target.get("uid", ""))],
+		"skill_id": _hit_skill_id if not _hit_skill_id.is_empty() else "heal",
 		"amount": amount,
+		"is_crit": false,
+		"is_lethal": false,
 	})
 
 static func _append_hit_event(event: Dictionary) -> void:
@@ -92,6 +105,7 @@ static func clear_stat_context() -> void:
 	_hit_kind = ""
 	_hit_is_crit = false
 	_hit_source_race = ""
+	_hit_skill_id = ""
 
 static func current_stat_source_uid() -> String:
 	return _stat_source_uid
@@ -232,5 +246,4 @@ static func _try_sacrifice_revive(target: Dictionary) -> bool:
 	guard.alive = false
 	guard.erase("guard_target_uid")
 	return true
-
 

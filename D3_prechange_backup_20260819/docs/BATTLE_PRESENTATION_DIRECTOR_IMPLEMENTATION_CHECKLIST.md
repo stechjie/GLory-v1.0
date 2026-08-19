@@ -1,35 +1,7 @@
 # BattlePresentationDirector：AI 实施参考清单
 
-> 状态（2026-08-19）：D0-D3 Windows/桌面闭环已完成，Android 部分按用户要求暂停；D4-D6 尚未完成。下方未勾选项仍是正式验收门槛，不能因已有基础设施而视为通过。
-> 目标：在**不改变战斗规则、随机数、回放战斗帧、旧事件语义或胜负结果**的前提下，把既有回放事件转成可读、可跳过、可降级且可测试的战斗演出。
-
-## 当前实施状态（2026-08-19）
-
-| 阶段 | 状态 | 已有证据与剩余边界 |
-| --- | --- | --- |
-| D0 — 基线与确定性证据 | ✅ 桌面完成 / Android 暂停 | 提交 `931771c69e3f585b19e49f3bc1b846b04aa6f55d` 已生成固定 seed round 1/2 的完整 roster、`frame_events`、result/final-state JSON、SHA-256、actor/fallback/anchor 审计、1280×720 截图和逐帧 CSV；19/19 JSON 可解析、两场 repeatable、0 live actor 缺失、0 fallback。Android 证据仍为 `DEFERRED_BY_USER`。 |
-| D1 — 冻结语义事件 schema | ✅ 桌面完成 / Android 暂停 | `BattlePresentationEvent` v1 已冻结 15 个核心字段、稳定键、视觉 seed、优先级和 timing hint；Round 1/2 新事件 SHA-256 已冻结，D0 final-state/roster 完全不变，2738 项 schema 检查和 28/28 联机回归通过。 |
-| D2 — Director 最小排程核心 | ✅ 桌面完成 / Android 暂停 | 已实现 `IDLE/RUNNING/DRAINING/FINISHED` 与 `SEEKING/SKIPPED/DISPOSED`、逐 tick 入队、每 `source_uid` 动作轨、去重、暂停/seek/skip/drain/dispose；`BattleScreen` 已双路入队并保留 Legacy VFX。36/36 Director（含跨局清理）、2738/2738 schema、固定两回合哈希与 28/28 联机回归通过，本阶段不产生真实 VFX。 |
-| D3 — 单位演员 | ✅ 桌面完成 / Android 暂停 | 事实订正：`UnitVisualResolver`、`UnitActorRegistry`、`UnitActor3D` 六节点合同与立绘 fallback 早在 E1 已落地并在战斗中运行，D3 补的是 Director 接线与全量锚点测试。Director 现在只经 `UnitActorRegistry.get_anchor()` 取坐标，播放时现解析、不持有 `Node`/`NodePath`；缺 actor 分类 drop 且不阻塞同 tick 其他事件，缺锚点降级到 `ActorRoot` 并进 `report_failure()` 的一次性汇总。锚点检查覆盖全部 74 个可战斗单位（1067/1067），Director 检查 49/49（原 36 项 D2 断言保留），固定两回合 0 drop、0 降级、0 live actor 缺失、0 fallback，四个冻结哈希不变。 |
-| D4 — 四段普攻 | ⬜ 未开始 | `attack_start → impact → hit_number → death` 及远程 projectile 链路尚未接入 Director。 |
-| D5 — 手感与运行时预算 | ⬜ 未开始 | E2-2A/E2-2B 的桌面模型门禁已通过，但五个 profile、`VFXQualityBudget`、移动端评审场景与可选 Juicee adapter 尚未实现。 |
-| D6 — 清理旧路由 | ⬜ 未开始 | `BattleVfx` 旧分支尚未按已迁移事件类型清理；Legacy adapter 仍需保留到覆盖完成并验证无重复播放、跨局残留或持续增长。 |
-
-### 下一执行门
-
-1. 进入 D4 四段普攻：补 `attack_start → impact → hit_number → death` 与远程 projectile 链路。D3 已经为这些类型预置了 source/target 锚点契约，D4 只需产出事件并接 adapter，不得改伤害公式、单位顺序或 replay payload。
-2. D1 新语义事件哈希已经冻结，D2 与 D3 均已验证保持不变；D4-D6 不得无记录地改变：Round 1 `44e47d20451f007448022526c3dbccd652f2e5db21f04e54e6e6aa4290d71f93`；Round 2 `4f134f2b06295953e1ac07227793e6e106c172670306e6ea1ad1dcce28181ec5`。
-3. D0 final-state 哈希继续作为严格不回归门禁：Round 1 `6ff92454570b6123b2f6b077d413356f27c4a5e03e041465e19ccefee5af8606`；Round 2 `8ce66a5178f288cc45eb424c92dcebb9854844dd1e047b160d3d596ef184c29e`。
-4. D2 与 D3 的完整回放都保持上述 D1 event 哈希和 D0 final-state 哈希，两场 repeatable、0 live actor 缺失、0 fallback；D2 证据在 `D2_battle_presentation_director_20260819/D2_VERIFICATION.json` 与 `baseline/`，D3 证据在 `D3_battle_presentation_actors_20260819/D3_VERIFICATION.json` 与 `baseline/`（另含每回合 `director_audit.json`：Round 1 解析 46 cue / 46 锚点，Round 2 解析 36 cue / 36 锚点，两场 0 drop、0 降级）。D1 相对 D0 的首差异记录仍保留在 `D1_battle_presentation_schema_20260819/verified/D1_VERIFICATION.json`。
-5. D0 Round 1 的 1% low 9.34 FPS、最大帧 132.27 ms 仍作为 D5/E3 风险保留；D1 验证运行不能覆盖或删除这条历史风险。
-6. Android/实机部分继续保持暂停；恢复时再补跨平台哈希、APK、ASTC 与低端机最终战门禁。
-
-### Director D0-D6 全部完成后
-
-1. 回到 README 的 B4 / E3：拆分启动预热并降低首屏时间、峰值显存和包体。
-2. 处理 README 的代码/联机 D1、D3：`NetworkService` 拆分、服务器权威回放、重连与确定性加强。
-3. 完成 A5 资源清理、第三方来源与许可证总账。
-4. 用户恢复移动端工作后，统一补齐所有 Android、APK、ASTC、低端机和双设备 QA 门禁。
+> 状态：设计/实施清单，不是已完成代码。
+> 目标：在**不改变战斗规则、随机数、回放 payload 或胜负结果**的前提下，把既有回放事件转成可读、可跳过、可降级且可测试的战斗演出。
 
 ## 0. AI 的工作边界
 
@@ -88,12 +60,11 @@ data/vfx/battle_cues/
 `BattlePresentationDirector.gd` 的最小公开接口应保持小而明确：
 
 ```gdscript
-func configure(registry: UnitActorRegistry, resolver: VfxProfileResolver, budget: VFXQualityBudget, adapter: Variant = null) -> void
+func configure(registry: UnitActorRegistry, resolver: VfxProfileResolver, budget: VFXQualityBudget) -> void
 func begin_battle(context: Dictionary) -> void
 func enqueue_tick(tick: int, raw_events: Array) -> void
 func set_playback_speed(speed: float) -> void
 func seek_to_tick(tick: int) -> void
-func begin_draining() -> void
 func skip_to_result() -> void
 func has_blocking_cues() -> bool
 func dispose() -> void
@@ -169,25 +140,24 @@ func dispose() -> void
 
 | 提交 | 可交付物 | 不可回归条件 |
 | --- | --- | --- |
-| D0：基线（桌面 ✅ / Android ⏸） | 固定 seed 的 PVE replay、事件 JSON、最终状态 digest、Android 截图/指标。 | 桌面基线已冻结；Android 恢复前不得把 `DEFERRED_BY_USER` 写成通过。 |
-| D1：schema（桌面 ✅ / Android ⏸） | 事件 schema、`event_key`、`source_uid`、`tick`、未知事件一次性告警与 headless 测试已完成。 | 事件类型/顺序/旧字段投影及 D0 最终状态不变；Android 跨平台哈希待恢复。 |
-| D2：Director 空壳（桌面 ✅ / Android ⏸） | 生命周期、队列、假 Registry/假 Adapter 单测与 `BattleScreen` 逐 tick 双路入队已完成；空 Adapter 同步完成 cue。 | 固定两回合可完整打完，暂停/seek/skip/drain/dispose 测试通过，D1/D0 哈希不变；未产生真实 VFX。 |
-| D3：单位演员（桌面 ✅ / Android ⏸） | Resolver、Registry、五锚点与立绘 fallback 已正式接入 Director；74 个可战斗单位全量锚点测试；固定两回合 0 胶囊。 | 已验证：坏资源与缺锚点都进同一份带 `unit_id`/资源路径/消费者的一次性汇总，缺 actor 只分类 drop，全程无胶囊；四个冻结哈希不变。 |
+| D0：基线 | 固定 seed 的 PVE replay、事件 JSON、最终状态 digest、Android 截图/指标。 | 未记录基线，不做表现重构。 |
+| D1：schema | 事件 schema、`event_key`、`source_uid`、`tick`、未知事件日志与 headless 测试。 | 同 replay 的语义事件和最终状态 digest 不变。 |
+| D2：Director 空壳 | 生命周期、队列、假 Registry/假 Adapter 单测；`BattleScreen` 能入队。 | 不产生真实 VFX 时也能完整打完/跳过/seek。 |
+| D3：单位演员 | Resolver、Registry、五锚点、立绘 fallback；首场 PVE 0 胶囊。 | 坏资源被明确报错，不得默默换胶囊。 |
 | D4：四段普攻 | `attack_start → impact → hit_number → death`；远程再加 projectile。 | 伤害公式、单位顺序、回放结果完全不变。 |
 | D5：手感与预算 | 五个 profile、VFXQualityBudget、Mobile 评审场景；可选 Juicee adapter。 | 预算溢出只降级，Boss/死亡/控制 cue 不消失。 |
 | D6：清理旧路由 | 每迁移一种 type 删除对应 `BattleVfx` 分支，保留 Legacy adapter 直到覆盖完成。 | 无重复播放、无跨局残留、无节点/内存持续增长。 |
 
 ## 8. 必做测试清单
 
-- [x] **纯数据测试（桌面）：** 相同 replay 的 `event_key`、字段顺序、`presentation_seed`、同步/异步事件 SHA-256 完全一致；normalizer 不消费 `RngService`，D0 最终战斗 digest 不变。
-- [x] **D2 队列核心测试（桌面）：** 同一 uid 连续三次攻击串行；两个不同 uid 并行；死亡取消未开始攻击；重复键与未知事件均只 drop 一次且不崩溃。未知 profile 的真实 fallback 仍属于 D5。
-- [x] **D2 seek/skip 核心测试（桌面）：** 暂停、0–4× 速度约束、向后/current seek、跳过、drain 与 dispose 均通过；空 Adapter 无 Tween、池节点或跨局回调残留。
-- [ ] **D5-D6 真实效果 seek/skip 测试：** 接入 profile、Tween 与池后，快进/慢放/向后 seek/跳过/结果页不得重复数字或屏震，不残留 Tween 或池节点。
-- [x] **锚点测试（桌面）：** 全部 74 个可战斗单位解析五锚点与六节点合同，含 `FeetAnchor`/`BodyAnchor` 兼容别名与跨局 `clear()` 后整体失效；坏模型路径进入立绘 fallback 且资源路径恰好上报一次；Director 侧缺 actor 分类 drop、缺锚点降级并上报。固定两回合回放另有 0 drop / 0 降级的实测审计。
-- [ ] **回放测试（桌面半项已通过 / Android 暂停）：** Windows 两回合事件序列、首差异与最终状态 SHA-256 已记录；desktop/Android 跨平台一致性待用户恢复移动端工作后完成。
+- [ ] **纯数据测试：** 输入相同 replay，normalizer 输出的 `event_key`、字段顺序、`presentation_seed` 完全一致；profile 改动不会改变最终战斗 digest。
+- [ ] **队列测试：** 同一 uid 连续三次攻击串行；两个不同 uid 可并行；死亡取消未开始攻击；未知 profile 有一次性 fallback/告警。
+- [ ] **seek/skip 测试：** 快进、慢放、向后 seek、跳过、战斗结束进入结果页均不重复数字/屏震，不残留 Tween 或池节点。
+- [ ] **锚点测试：** 全部首发单位能解析五锚点；坏模型进入立绘 fallback 且报告资源路径。
+- [ ] **回放测试：** desktop 与 Android 的事件序列 SHA-256 和最终状态 SHA-256 一致；报告第一个差异 tick/字段。
 - [ ] **视觉评审：** `BattleVfxReview.tscn` 能固定 seed、切换 `0.25×/1×/2×` 与质量档，保存截图和 VFX 指标。
 - [ ] **真机测试：** 第一场、20+ 回合、Boss 三个真实 APK 样本；无 `SCRIPT ERROR`、无结果页抢跑、无持续节点增长，并记录平均/1% low FPS、显存、draw call、粒子和 dropped cue 数。
 
 ## 9. 给后续 AI 的执行提示
 
-每次只完成上表中的一个 D 阶段。先读本文件第 0–4 节和涉及文件的现有实现；提交前运行对应 headless/replay 测试，并在需要视觉验收的阶段启动 `BattleVfxReview`。Android Debug APK、ASTC 与实机测试按用户当前决定暂停，只有用户明确恢复后才执行。若发现事件字段或模型资源缺失，应停止扩展新效果，先补 schema/资源映射和失败测试；不得以临时胶囊、全局减速或忽略日志作为“战斗效果已改善”的证据。
+每次只完成上表中的一个 D 阶段。先读本文件第 0–4 节和涉及文件的现有实现；提交前运行对应 headless/replay 测试、启动 `BattleVfxReview`、再构建并安装 Android Debug APK。若发现事件字段或模型资源缺失，应停止扩展新效果，先补 schema/资源映射和失败测试；不得以临时胶囊、全局减速或忽略日志作为“战斗效果已改善”的证据。

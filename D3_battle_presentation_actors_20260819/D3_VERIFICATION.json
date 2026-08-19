@@ -1,0 +1,215 @@
+{
+  "stage": "D3",
+  "title": "Unit actors wired into BattlePresentationDirector",
+  "generated_utc": "2026-08-19T10:20:30",
+  "baseline_commit": "931771c69e3f585b19e49f3bc1b846b04aa6f55d",
+  "godot": {
+    "build": "official",
+    "hash": "5b4e0cb0fd279832bbdd69fed5354d4e5ad26f88",
+    "hex": 263936,
+    "major": 4,
+    "minor": 7,
+    "patch": 0,
+    "status": "stable",
+    "string": "4.7-stable (official)",
+    "timestamp": 0
+  },
+  "prechange_backup": "D3_prechange_backup_20260819/",
+  "platform_scope": {
+    "desktop": "verified",
+    "android_apk_astc_device": "DEFERRED_BY_USER"
+  },
+  "what_was_missing_before": "UnitVisualResolver, UnitActorRegistry, the UnitActor3D six-node contract and the portrait fallback already existed from E1 and were live in battle. The only real gap was that BattlePresentationDirector stored the registry in configure() and never read it, so no cue ever resolved an anchor.",
+  "decisions": [
+    {
+      "question": "Create BattleCueRequest.gd now?",
+      "answer": "No. Deferred to D4/D5.",
+      "clause": "Checklist 2 defines it as event + profile + resolved anchors; profile comes from VfxProfileResolver, a D5 deliverable per section 7. Section 9 allows one D stage at a time."
+    },
+    {
+      "question": "Coverage for 'all starting units can resolve five anchors' (checklist 8)",
+      "answer": "Both gates: full 74-entry headless contract check plus the fixed two-round replay actor audit.",
+      "clause": "Checklist 8 says 'all'; README E2 precedent is 'covers all combat-capable units'; README A3 forbids passing on a sampled check set."
+    },
+    {
+      "question": "Missing actor or anchor: drop or degrade?",
+      "answer": "Tiered. Missing actor -> cue_dropped with a classified reason. Actor present but anchor missing -> fall back to ActorRoot and report through the existing aggregate, no drop.",
+      "clause": "Checklist 4.1 validates anchors and requires invalid events not to block others; 4.2 degrades a missing profile with an aggregated warning; 5.3 records unit_id/resource_path/consumer once; section 7 D3 requires bad resources to be reported explicitly."
+    }
+  ],
+  "files_changed": {
+    "effects/runtime/presentation/BattlePresentationDirector.gd": "Per-type anchor contract; _resolve_cue() runs at play time inside _pump_track before cue_started; positions are read as Vector3 and no Node or NodePath is retained (checklist 5.4); anchor failures route into UnitVisualResolver.report_failure with consumer 'director'; adapter copy carries a presentation-only _resolved_anchors key that is never written back to replay; read-only resolution_stats() for evidence.",
+    "scenes/battle/BattleScreen.gd": "Director now starts paused and resumes only after _prepare_battle_models() has registered every actor, and again after the spectate switch rebuilds the roster. Preventive: _start_replay() enqueues tick 0 before the frame-sliced model build finishes, so resolving there would drop tick-0 cues.",
+    "tools/unit_visual_resolver_check.gd": "Actor contract widened from 3 samples to all 74 combat entries; compatibility alias assertions (FeetAnchor/BodyAnchor); cross-battle registry clear; new bad-model-to-portrait-fallback chain asserting the broken resource path is reported exactly once.",
+    "tools/battle_presentation_director_check.gd": "FakeRegistry is now anchor-aware and permissive by default so the 36 D2 assertions keep their meaning while exercising the real resolution path; added strict fixtures for missing actor, actorless skill_shake, partial and total AoE target loss, anchor degradation reporting, and the no-caching rule.",
+    "tools/battle_presentation_baseline.gd": "Subscribes to cue_dropped before the screen enters the tree and tallies drops by reason; publishes director_audit.json with resolution counters; blank roster uids and a round that resolves zero cues are now hard failures."
+  },
+  "files_deliberately_untouched": {
+    "scripts/battle/BattleSimShared.gd, DamageService.gd, BattleSimulator.gd": "D4",
+    "scenes/battle/BattleVfx.gd": "D6; checklist 0 requires the legacy bridge to stay",
+    "scenes/battle/BattleRenderer.gd": "actor registration already complete from E1",
+    "data/vfx/battle_cues/": "D5"
+  },
+  "checks": {
+    "unit_visual_resolver_check": {
+      "status": "PASS",
+      "checked": 1067,
+      "failures": 0,
+      "note": "was 328 before D3; 74 combat entries, 75 unique model scenes"
+    },
+    "battle_presentation_director_check": {
+      "status": "PASS",
+      "checked": 49,
+      "failures": 0,
+      "note": "36 D2 assertions unchanged plus 13 new D3 assertions"
+    },
+    "battle_presentation_event_check": {
+      "status": "PASS",
+      "checked": 2738,
+      "failures": 0
+    },
+    "determinism_check": {
+      "status": "PASS",
+      "frames": 203,
+      "sync1": 3459303470,
+      "sync2": 3459303470,
+      "async": 3459303470,
+      "sync_repeatable": true,
+      "sync_vs_async": true
+    },
+    "handshake_check": {
+      "status": "PASS",
+      "note": "case=ok"
+    },
+    "persist_check": {
+      "status": "PASS",
+      "note": "6 rooms, 6 tokens, snapshot restored"
+    },
+    "reconnect_check": {
+      "status": "PASS",
+      "note": "PROBE RESULT: ALL PASS"
+    },
+    "channel_check": {
+      "status": "PASS"
+    },
+    "battle_presentation_baseline": {
+      "status": "PASS",
+      "rounds": 2,
+      "failures": 0,
+      "viewport": "1280x720",
+      "rendering_method": "mobile"
+    }
+  },
+  "frozen_hash_gate": {
+    "all_unchanged": true,
+    "note": "The Director only reads replay data, so these are structurally invariant; re-recorded to prove it."
+  },
+  "rounds": {
+    "round_01": {
+      "round": 1,
+      "roster_count": 21,
+      "frame_count": 46,
+      "event_count": 48,
+      "event_types": {
+        "hit_number": 45,
+        "skill_shake": 2,
+        "unit_skill_proc": 1
+      },
+      "frozen_hashes": {
+        "expected": {
+          "d1_frame_events_sha256": "44e47d20451f007448022526c3dbccd652f2e5db21f04e54e6e6aa4290d71f93",
+          "d0_final_state_sha256": "6ff92454570b6123b2f6b077d413356f27c4a5e03e041465e19ccefee5af8606"
+        },
+        "observed": {
+          "d1_frame_events_sha256": "44e47d20451f007448022526c3dbccd652f2e5db21f04e54e6e6aa4290d71f93",
+          "d0_final_state_sha256": "6ff92454570b6123b2f6b077d413356f27c4a5e03e041465e19ccefee5af8606"
+        },
+        "unchanged": true
+      },
+      "repeatable": true,
+      "actor_audit": {
+        "live_visual_expected_count": 21,
+        "actor_present_count": 21,
+        "missing_live_actor_count": 0,
+        "complete_actor_contract_count": 21,
+        "visible_body_fallback_count": 0,
+        "visible_portrait_fallback_count": 0,
+        "missing_model_path_count": 0,
+        "blank_uid_count": 0
+      },
+      "director_audit": {
+        "anchor_degradation_count": 0,
+        "anchor_degradation_rows": [],
+        "drop_count": 0,
+        "drops_by_reason": {},
+        "missing_actor_drop_count": 0,
+        "resolution": {
+          "degraded_anchors": 0,
+          "resolved_anchors": 46,
+          "resolved_cues": 46
+        }
+      },
+      "performance": {
+        "average_fps": 101.8995583264092,
+        "one_percent_low_fps": 18.68656971319289,
+        "sample_count": 428
+      }
+    },
+    "round_02": {
+      "round": 2,
+      "roster_count": 24,
+      "frame_count": 35,
+      "event_count": 38,
+      "event_types": {
+        "hit_number": 35,
+        "skill_shake": 2,
+        "unit_skill_proc": 1
+      },
+      "frozen_hashes": {
+        "expected": {
+          "d1_frame_events_sha256": "4f134f2b06295953e1ac07227793e6e106c172670306e6ea1ad1dcce28181ec5",
+          "d0_final_state_sha256": "8ce66a5178f288cc45eb424c92dcebb9854844dd1e047b160d3d596ef184c29e"
+        },
+        "observed": {
+          "d1_frame_events_sha256": "4f134f2b06295953e1ac07227793e6e106c172670306e6ea1ad1dcce28181ec5",
+          "d0_final_state_sha256": "8ce66a5178f288cc45eb424c92dcebb9854844dd1e047b160d3d596ef184c29e"
+        },
+        "unchanged": true
+      },
+      "repeatable": true,
+      "actor_audit": {
+        "live_visual_expected_count": 23,
+        "actor_present_count": 23,
+        "missing_live_actor_count": 0,
+        "complete_actor_contract_count": 23,
+        "visible_body_fallback_count": 0,
+        "visible_portrait_fallback_count": 0,
+        "missing_model_path_count": 0,
+        "blank_uid_count": 0
+      },
+      "director_audit": {
+        "anchor_degradation_count": 0,
+        "anchor_degradation_rows": [],
+        "drop_count": 0,
+        "drops_by_reason": {},
+        "missing_actor_drop_count": 0,
+        "resolution": {
+          "degraded_anchors": 0,
+          "resolved_anchors": 36,
+          "resolved_cues": 36
+        }
+      },
+      "performance": {
+        "average_fps": 91.98585972922938,
+        "one_percent_low_fps": 20.86564610473158,
+        "sample_count": 288
+      }
+    }
+  },
+  "known_limitations": [
+    "The tick-0 ordering fix in BattleScreen is preventive and is NOT exercised by this fixture: tick 0 carries only skill_shake in both rounds, and the first anchored event is at tick 8 (round 1) and tick 5 (round 2), long after the model build finishes. The missing-actor path is covered synthetically in battle_presentation_director_check.",
+    "No real VFX, profile, pool, tween or audio is produced by D3. Adapter stays null, so every cue still completes inline exactly as in D2.",
+    "The '28/28 isolated multiplayer regression' figure quoted in earlier stages could not be reproduced as a single tally: handshake/persist/reconnect/channel do not use CheckHarness and print no CHECK_RESULT line. All four ran clean with exit code 0.",
+    "Android export, ASTC, APK and on-device runs remain DEFERRED_BY_USER."
+  ]
+}

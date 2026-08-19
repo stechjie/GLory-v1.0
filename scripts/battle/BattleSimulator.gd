@@ -1,6 +1,8 @@
 class_name BattleSimulator
 extends BattleSimShared
 
+const BattlePresentationEventSchema := preload("res://scripts/battle/BattlePresentationEvent.gd")
+
 # 教学专用战斗。唯一入口是 BattleScreen 的 `team_mode == false` 分支，而 team_mode
 # 只有 Main._select_language() → TutorialMode.start() 这一条路会留成 false，
 # 所以这里恒为教学模式（联机 3v3 与离线自测都走 prepare_team_state）。
@@ -206,8 +208,9 @@ static func prepare_team_state(forced_team: int = -1) -> Dictionary:
 # arrays of [uid, x, y, hp, alive, attack_count, skill_ready, shield, skill_stacks, statuses].
 # Clients play this back instead of simulating.
 
-static func compute_team_replay(forced_team: int) -> Dictionary:
+static func compute_team_replay(forced_team: int, battle_id: String = "") -> Dictionary:
 	var state := prepare_team_state(forced_team)
+	state["_presentation_battle_id"] = _presentation_battle_id(state, forced_team, battle_id)
 	var roster: Dictionary = {}
 	var frames: Array = []
 	var frame_events: Array = []
@@ -224,8 +227,9 @@ static func compute_team_replay(forced_team: int) -> Dictionary:
 # 避免整场战斗在一帧内算完导致开战冻屏。确定性依据：RngService.rng 只被
 # 模拟代码消费（见 RngService.gd），await 期间穿插的帧逻辑不会扰动 RNG 流，
 # 因此 pvp 下先后计算的 replay_a / replay_b 仍然一致。
-static func compute_team_replay_async(forced_team: int, budget_usec: int = 8000) -> Dictionary:
+static func compute_team_replay_async(forced_team: int, budget_usec: int = 8000, battle_id: String = "") -> Dictionary:
 	var state := prepare_team_state(forced_team)
+	state["_presentation_battle_id"] = _presentation_battle_id(state, forced_team, battle_id)
 	var roster: Dictionary = {}
 	var frames: Array = []
 	var frame_events: Array = []
@@ -243,14 +247,38 @@ static func compute_team_replay_async(forced_team: int, budget_usec: int = 8000)
 			slice_start = Time.get_ticks_usec()
 	return _team_replay_payload(state, roster, frames, frame_events)
 
+
+static func _presentation_battle_id(state: Dictionary, forced_team: int, requested_id: String) -> String:
+	var base_id := requested_id.strip_edges()
+	if base_id.is_empty():
+		# Local/review paths do not own a server room id. The authoritative battle
+		# inputs form a rebuildable identity, while fixed-seed tests intentionally
+		# reproduce the same keys on repeated runs.
+		base_id = "local:%d:%d:%s" % [
+			int(NetworkService.shared_seed),
+			int(GameState.round_index),
+			str(state.get("kind", "unknown")),
+		]
+	return "%s:team%d" % [base_id, forced_team]
+
+
 static func _replay_capture_frame(state: Dictionary, frames: Array, frame_events: Array = []) -> void:
 	# 本帧内新产生的视觉事件（母灵处决 / 屏震 / 技能演出等）也要记进回放，
 	# 否则 team/回放模式下这些只在 live sim 里出现的事件全部丢失（母灵的书就是这么没的）。
 	var ve: Array = state.get("visual_events", [])
 	var cursor := int(state.get("_replay_ve_cursor", 0))
 	var new_events: Array = []
+	var tick := frames.size()
+	var battle_id := str(state.get("_presentation_battle_id", ""))
+	var ordinal := 0
 	for i in range(cursor, ve.size()):
-		new_events.append((ve[i] as Dictionary).duplicate() if ve[i] is Dictionary else ve[i])
+		if ve[i] is Dictionary:
+			new_events.append(BattlePresentationEventSchema.normalize(ve[i] as Dictionary, battle_id, tick, ordinal))
+		else:
+			# Preserve malformed legacy values so the schema/Director can reject them
+			# explicitly instead of hiding corruption during capture.
+			new_events.append(ve[i])
+		ordinal += 1
 	state["_replay_ve_cursor"] = ve.size()
 	frame_events.append(new_events)
 	var frame_stats: Dictionary = state.get("unit_stats", {})
@@ -637,7 +665,8 @@ static func _perform_attack(attacker: Dictionary, target: Dictionary, state: Dic
 	var before_status_count := _status_count(target)
 	# Only the crit base hit surfaces a floating number; the true-damage rider,
 	# combo strikes and treasure reactions below stay silent.
-	DamageService.set_hit_context("basic", is_crit, str(d.get("race", "")))
+	var basic_skill_id := "basic_ranged" if float(d.get("range", 1.0)) > 1.0 else "basic_melee"
+	DamageService.set_hit_context("basic", is_crit, str(d.get("race", "")), basic_skill_id)
 	var dealt := DamageService.apply_damage(target, maxi(1, int(round(base))), false)
 	DamageService.clear_hit_context()
 	if str(d.get("skill_id", "")) == "true_damage_attack":
@@ -766,7 +795,7 @@ static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) ->
 		DamageService.begin_stat_context(state, caster)
 		# Every apply_damage inside this dispatch is skill damage. clear_stat_context()
 		# at the end of this iteration resets the tag (see DamageService).
-		DamageService.set_hit_context("skill", false, str(d.get("race", "")))
+		DamageService.set_hit_context("skill", false, str(d.get("race", "")), sid)
 		match sid:
 			"lowest_ally_heal":
 				BattleSimSkills._skill_lowest_ally_heal(caster, casters, d)

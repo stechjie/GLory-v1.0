@@ -1,89 +1,8 @@
 # Glory Beta 0.04
 
-Godot 4.7 的 3v3 布阵自动战斗项目。本 README 同时是项目说明、资源盘点、代码审查记录和后续可由 AI 逐项执行的改进路线。原始审查依据 2026-08-15 至 2026-08-16 的工作区、Godot 4.7.0 导入/运行结果、Android 实机试玩和工程内检查场景编写；下方 2026-08-19 实施进度为当前状态，优先于后续保留的历史基线描述。
+Godot 4.7 的 3v3 布阵自动战斗项目。本 README 同时是项目说明、资源盘点、代码审查记录和后续可由 AI 逐项执行的改进路线。原始审计依据 2026-08-15 至 2026-08-16 的工作区、Godot 4.7.0 导入/运行结果、Android 实机试玩和工程内检查场景编写；2026-08-19 的最新门禁结果优先于下文历史观察。
 
-> 当前结论（2026-08-19）：**A1、A2、A3、E1、E2-2A/E2-2B 与 BattlePresentationDirector D0-D3 的 Windows/桌面闭环已完成。** A4 及各项 Android/实机部分按当前决定暂停；Director 下一项是 D4 四段普攻，D4-D6 尚未完成。后文关于“35 项不可加载”和“胶囊占位体”的文字是改造前历史基线，不再代表当前桌面结果。
-
-## 2026-08-19 实施进度
-
-> 状态口径：`已完成` 表示本轮约定的桌面验收已闭环；`部分完成` 表示已有可运行基础但尚未达到该项完整验收；Android 导出与实机验证保持暂停，不计入桌面项的完成判断。
-
-| 工作单 | 状态 | 已完成内容与剩余边界 |
-| --- | --- | --- |
-| A1 — 建立可复现资产清单 | ✅ 已完成 | 清单共 2,643 个文件、3,115.5 MiB；稳定 inventory fingerprint 为 `5dabb3f546ee6ec0dd8491441ab32872afda3c4e2da46360e752e75e91fc508e`。 |
-| A2 — 资源交付与 Git 解耦、可追溯 | ✅ 已完成 | 冷克隆缺包时会正确失败；恢复 1,790 个 Git 外资源并完成首次 Godot 导入后，资源、模型、4×4 与依赖检查通过。 |
-| A3 — 让检查真正失败 | ✅ 已完成 | 缺资源失败路径与恢复后通过路径均已验证，检查不会再以空检查集或加载失败报假绿。 |
-| A4 — Android 出包与设备回归门禁 | ⏸ 暂停 | 按当前决定暂不处理 Android preset、APK、ADB 与设备回归。 |
-| E1 — 战场空间可读性 | ✅ 桌面完成 | Windows Forward Mobile 纵向切片完成；所有战斗单位经 `UnitVisualResolver → UnitActor3D`，固定两回合回放为 0 胶囊、0 可见 fallback；`BoardReadabilityLayer` 已接入准备/战斗并可持久化开关。人工盲测与 Android 验收仍待后续。 |
-| E2-2A / E2-2B — 模型与贴图预算 | ✅ 桌面完成 | 75/75 模型边界检查为 0 broken、0 anomaly；241/241 FBX 加载错误为 0；78/78 wrapper 合并通过；模型预算 75 项、0 hard failure。Android ASTC、APK 排除源 FBX 及低端机满编最终战仍待后续。 |
-| Director D0 — 基线与确定性证据 | ✅ 桌面完成 / Android 暂停 | 当前提交 `931771c69e3f585b19e49f3bc1b846b04aa6f55d` 已完成固定 seed 的 round 1/2：完整 roster、事件/result/final-state JSON、SHA-256、actor/fallback/anchor 审计、1280×720 截图及逐帧 CSV 均已生成并独立校验；Android 证据保持暂停。 |
-| Director D1 — 语义事件 schema | ✅ 桌面完成 / Android 暂停 | `BattlePresentationEvent` v1 已冻结 15 个核心字段、稳定 `event_key`、独立 `presentation_seed` 与一次性未知类型告警；2738 项 schema 检查、同步/异步确定性、两回合 D0 final-state 门禁和 28/28 联机回归通过。 |
-| Director D2 — 最小排程核心 | ✅ 桌面完成 / Android 暂停 | 已实现 Director 生命周期、逐 tick 入队、每 `source_uid` 动作轨、去重、暂停/seek/skip/drain/dispose 和假 Registry/Adapter 测试；`BattleScreen` 已双路入队并保留 Legacy VFX。D2 不产生真实 VFX。 |
-| Director D3 — 单位演员 | ✅ 桌面完成 / Android 暂停 | Director 现在只经 `UnitActorRegistry.get_anchor()` 取坐标，每次播放现解析、不缓存节点；缺 actor 分类 drop，缺锚点降级到 `ActorRoot` 并进同一份一次性汇总。锚点检查由 3 抽样扩到全部 74 个可战斗单位（1067 项）、Director 检查 49/49、固定两回合 0 drop / 0 降级、四个冻结哈希不变。 |
-| Director D4-D6 | ⬜ 下一阶段 | 下一项是 D4 四段普攻；之后依次完成手感与运行时预算、旧路由清理。 |
-
-### E2-2B 本轮落地记录
-
-- `ally4`/`ally5` 共 5 个 FBX 从 233.3 MB 降至 19.7 MB，约减少 91.6%；可见顶点分别为 57,567 与 55,951，骨骼及动画长度保持。
-- 修复 rabbit run wrapper；`dark_doom` 统一为 `nodes/root_scale=100.0`、数据 `model_visual_scale=1`，最终 span 1.909；`merc_virgo` 由 0.01 调整为 1.0，最终 span 1.888。
-- 非阻塞残留：`dark_doom_run.fbx` 重导入日志仍带陈旧的内嵌 `.fbm` 贴图引用，但 wrapper 使用外部材质，运行时审计加载错误为 0。
-- `tools/crystal_toon_shot.gd` 的 parse error 按当前决定暂缓，不纳入本轮范围。
-
-### Director D0 桌面闭环记录
-
-- 证据目录：`E1_D0_desktop_baseline_20260819/verified_931771c/`；共 28 个文件，两个 round 的 19 个 JSON 全部可解析，工具 `passed=true`、`failures=0`。
-- Round 1：21 roster、46 frames、48 events；event SHA-256 `b3c5c576278b59e84569ad40d3448d32150d110b505907971f6cd2055099446a`；final-state SHA-256 `6ff92454570b6123b2f6b077d413356f27c4a5e03e041465e19ccefee5af8606`。
-- Round 2：24 roster、35 frames、38 events；event SHA-256 `1239abb60f220944a79422ff8deac96579a7e5a39c66f2686edbdf069d823a82`；final-state SHA-256 `8ce66a5178f288cc45eb424c92dcebb9854844dd1e047b160d3d596ef184c29e`。
-- Actor 审计：Round 1 为 21/21 完整合同；Round 2 审计时 23 个存活 actor 为 23/23 完整合同，另 1 个已死亡；两场均为 0 live actor 缺失、0 可见胶囊、0 立绘 fallback、0 缺失模型路径。
-- 1280×720 Forward Mobile 逐帧数据：Round 1 平均 94.13 FPS、1% low 9.34 FPS、最大帧 132.27 ms；Round 2 平均 99.95 FPS、1% low 42.29 FPS、最大帧 29.39 ms。Round 1 的低帧尖峰是已记录的后续性能风险，不从基线报告中删除。
-
-### Director D1 桌面闭环记录
-
-- 证据目录：`D1_battle_presentation_schema_20260819/verified/`；`D1_VERIFICATION.json` 汇总 schema、D0 首差异、回放哈希、桌面截图/性能与测试结果，19/19 JSON 可解析。
-- 冻结字段顺序：`schema_version → event_key → battle_id → tick → ordinal → type → source_uid → target_uids → skill_id → amount → is_crit → is_lethal → presentation_seed → visibility_priority → timing_hint`；旧 `uid/target_uid/crit/skill/race/kind/time` 字段继续保留给 Legacy 路由。
-- `event_key = battle_id + tick + ordinal`；`presentation_seed` 从 `SHA-256(event_key)` 派生，不消费 `RngService`。专服使用权威 `room.battle_id`；固定/本地回放使用可重建的 seed/round/kind/team 身份。
-- Round 1：48 个事件、48 个唯一键；D1 event SHA-256 `44e47d20451f007448022526c3dbccd652f2e5db21f04e54e6e6aa4290d71f93`。D0 final-state SHA-256 仍为 `6ff92454570b6123b2f6b077d413356f27c4a5e03e041465e19ccefee5af8606`。
-- Round 2：38 个事件、38 个唯一键；D1 event SHA-256 `4f134f2b06295953e1ac07227793e6e106c172670306e6ea1ad1dcce28181ec5`。D0 final-state SHA-256 仍为 `8ce66a5178f288cc45eb424c92dcebb9854844dd1e047b160d3d596ef184c29e`。
-- 两回合首差异都在 `frame_events[0][0]`：只新增 D1 核心 schema 字段，0 个旧字段被删除；按 D0 字段投影后事件值与顺序完全一致。Roster 哈希也与 D0 相同。
-- 测试：`battle_presentation_event_check` 2738/2738、现有同步/异步确定性检查、28/28 隔离联机回归均通过；Forward Mobile 回放仍为 0 live actor 缺失、0 可见胶囊、0 立绘 fallback。
-- 修复了基线工具读取当前玩家宠物而污染固定样本的问题：测试快照固定为空宠物，不修改 `PlayerProfile` 或实际游戏规则。
-
-### Director D2 桌面闭环记录
-
-- 新建 `BattlePresentationDirector.gd` 与 `BattleActionTrack.gd`：生命周期为 `IDLE → RUNNING → DRAINING → FINISHED`，并支持 `SEEKING / SKIPPED / DISPOSED`；同一 `source_uid` 串行、不同 uid 并行，死亡取消同轨尚未开始的普通攻击。
-- `BattleScreen.gd` 已在每个新 replay tick 调用 `enqueue_tick()`，并把观战切换、失败、结束、跳过和退出转发给 Director；原 `_state.visual_events → BattleVfx` 路径继续作为兼容桥，D2 没有删除现有屏震、技能或伤害数字分支。
-- 默认空 Adapter 会同步完成 cue，因此 D2 不新增真实 VFX、贴图、模型、音频、Tween 或池节点，也不会改变现有结果页时序；真实 Registry 锚点、profile、预算和效果分别留给 D3-D5。
-- 测试：`battle_presentation_director_check` 36/36（含跨局清理）、D1 schema 2738/2738、确定性 203 帧三份哈希一致、28/28 隔离联机回归通过。
-- 固定两回合完整 `BattleScreen` 回放通过：Round 1/2 的 D1 event SHA-256 与 D0 final-state SHA-256 均完全不变，两场 repeatable，0 live actor 缺失、0 可见 fallback。
-- 证据：`D2_battle_presentation_director_20260819/D2_VERIFICATION.json` 与其 `baseline/` 目录；修改前备份在 `D2_prechange_backup_20260819/`。Android、APK、ASTC 和实机验证继续保持暂停。
-
-### Director D3 桌面闭环记录
-
-- 改动前状态核对：`UnitVisualResolver`、`UnitActorRegistry`、`UnitActor3D` 六节点合同和立绘 fallback 早在 E1 就已落地并在战斗中运行（`BattleRenderer.gd` 建模时注册 actor）。D3 唯一的实质缺口是 `BattlePresentationDirector` 把 registry 存进 `configure()` 后从未读取过，因此没有任何 cue 解析过锚点。
-- Director 新增按事件类型的锚点契约：`attack_start` / `projectile_spawn` / `skill_cast` / `unit_skill_proc` / `mother_execute` 取 source `CastAnchor`，`death` / `summon` 取 source `FootAnchor`；`impact` / `projectile_spawn` / `shield` / `buff_apply` 取 target `HitAnchor`，`hit_number` / `heal` 取 target `HeadAnchor`；`skill_shake` 按清单第 3 节只交镜头，不需要 actor。
-- `hit_number` 刻意不要求 source 锚点：清单第 3 节写明「不得独立假定攻击者」，且持续伤害/治疗的施法者可能已死亡注销。
-- 分级处理：缺 actor → `cue_dropped(event_key, "missing_actor:source|target")`，同键同因只报一次，不阻塞同 tick 其他事件；有 actor 但缺锚点 → 回退 `ActorRoot` 并写入 `UnitVisualResolver.report_failure()` 的同一份一次性汇总（consumer 为 `director`），不 drop。AoE 只丢失部分目标时保留 cue，全部目标失效才 drop。
-- 清单 §5.4 合规：解析在播放时进行，读出 `Vector3` 后立即丢弃节点引用；Director 不持有任何 `Node` 或 `NodePath`。解析结果以 `_resolved_anchors` 附在传给 adapter 的副本上，不写回 replay，因此不影响事件哈希。
-- `BattleScreen` 现在让 Director 以暂停状态开始，等 `_prepare_battle_models()` 注册完全部 actor 后再恢复播放；观战切换在 `_refresh_visuals()` 重建阵容后同样恢复。这是预防性修正：`_start_replay()` 会在分帧建模完成前就入队 tick 0。
-- 测试：`unit_visual_resolver_check` 由 328 项扩到 **1067/1067**（74 个可战斗单位全量六节点合同、五锚点、`FeetAnchor`/`BodyAnchor` 兼容别名、跨局 `clear()` 后整体失效、坏模型路径 → 立绘 fallback 且资源路径恰好上报一次）；`battle_presentation_director_check` **49/49**（原 36 项 D2 断言全部保留且改为真实解析路径，新增 13 项 D3 断言）；`battle_presentation_event_check` 2738/2738；`determinism_check` 203 帧三份哈希一致；handshake / persist / reconnect / channel 四项联机检查全部 exit 0。
-- 固定两回合完整回放（1280×720、Forward Mobile）：Round 1 解析 46 个 cue、46 个锚点，Round 2 解析 36 个 cue、36 个锚点；两场均为 **0 drop、0 锚点降级、0 live actor 缺失、0 可见 fallback、0 空 uid**。48 与 46 的差额是 2 个 `skill_shake`（按契约不需要 actor），38 与 36 同理。解析数为 0 现在会直接判失败，避免空结果被当成通过。
-- 四个冻结哈希逐字不变：Round 1 event `44e47d20451f007448022526c3dbccd652f2e5db21f04e54e6e6aa4290d71f93`、final-state `6ff92454570b6123b2f6b077d413356f27c4a5e03e041465e19ccefee5af8606`；Round 2 event `4f134f2b06295953e1ac07227793e6e106c172670306e6ea1ad1dcce28181ec5`、final-state `8ce66a5178f288cc45eb424c92dcebb9854844dd1e047b160d3d596ef184c29e`。两场 repeatable。
-- 已知边界：`BattleScreen` 的 tick 0 顺序修正在本样本中**没有被触发**——两回合 tick 0 都只有 `skill_shake`，首个需要锚点的事件在 Round 1 的 tick 8、Round 2 的 tick 5，远晚于建模完成。缺 actor 路径由 Director 检查用合成夹具覆盖。
-- 本阶段不产生任何真实 VFX、profile、池、Tween 或音频；adapter 仍为 null，cue 与 D2 一样内联完成。`BattleCueRequest` 按清单 §2/§7 的归属推迟到 D4-D5（它的 profile 字段来自 D5 的 `VfxProfileResolver`）。
-- 证据：`D3_battle_presentation_actors_20260819/D3_VERIFICATION.json` 与其 `baseline/`；修改前备份在 `D3_prechange_backup_20260819/`。Android、APK、ASTC 与实机验证继续保持暂停。
-
-### 当前下一步：Director D4-D6
-
-1. D4：完成 `attack_start → impact → hit_number → death`，远程攻击增加 projectile；战斗结果必须与 D0 基线一致。
-2. D5：加入五个 profile、`VFXQualityBudget`、质量降级和评审场景；Android 评审仍保持暂停。
-3. D6：逐类型清理 `BattleVfx` 旧路由，验证无重复播放、跨局残留及节点/内存持续增长。
-
-### Director D0-D6 全部完成后
-
-1. B4 / E3：拆分 96 项启动预热，降低首屏时间、峰值显存和包体；先做 Windows 数据，Android 部分继续暂停。
-2. README 的代码/联机 D1、D3：拆分 `NetworkService`，加强服务器权威回放、重连和确定性；双设备/Android QA 待恢复移动端工作后进行。
-3. A5：清理运行资源与历史备份，完成第三方来源和许可证总账。
-4. 用户恢复 Android 工作后，再统一补 A4、E1/E2/E3、Director D0/D5/D6 的 APK、ASTC、低端机和实机门禁。
+> 当前结论（2026-08-19）：**A1、A2 本地交付闭环和 A3 已完成验证。** 资产清单覆盖 2643 个文件、3115.5 MiB，稳定库存指纹为 `5dabb3f546ee6ec0dd8491441ab32872afda3c4e2da46360e752e75e91fc508e`；冷克隆缺包时门禁精确失败，恢复 1790 个 Git 外置资源并完成首次 Godot 导入后，资源、模型边界、骨骼、4x4 棋盘和依赖检查均通过。A4/Android 导出与设备回归按用户要求暂停，未改导出预设、未安装 APK。下文提到的“35 个模型坏场景”和棋盘假绿是历史审计，不代表当前 Windows 基线。
 
 ## 目录与运行前置条件
 
@@ -309,6 +228,8 @@ adb exec-out screencap -p > /tmp/glory-launch.png
 
 #### A4 — Android 出包与设备回归门禁（P0）
 
+> **状态：按用户要求暂停。** 本轮没有修改 `export_presets.cfg`、构建 APK、连接设备或运行 ADB。
+
 - **实施：** 保留无密钥 `Android Debug` 预设用于 QA，用私有 CI secret/本地安全钥匙串提供 Release 预设；新增 `tools/android_smoke.sh`，记录 Git commit、manifest hash、Godot 版本、APK SHA-256、包名、安装结果、冷启动 logcat 和截图。设备出现增量安装悬挂时，脚本应自动回退为 `adb push` + `pm install`，并清楚记录会话 ID 与失败信息。
 - **验收：** 每一份 QA APK 都能反查到源码 commit 和资源 manifest；安装、启动、语言页、商店、首场战斗截图、无 `FATAL EXCEPTION` 均为必经门。基线样本为 `com.glory.game`、609 MiB、V2527A / Android 16；不得把它误写成 Release 验收。
 
@@ -323,13 +244,12 @@ adb exec-out screencap -p > /tmp/glory-launch.png
 
 - **目标：** 保留当前模拟与回放分离的优势，禁止渲染资源反向进入战斗规则。
 - **现有挂接点：** `DamageService.gd` 已写入伤害数字事件；`BattleSimShared.gd` 产生 `skill_shake`；`BattleScreen.gd` 把 `frame_events` 回灌；`BattleVfx.gd::_play_visual_events()` 消费事件。
-- **实施状态（2026-08-19，桌面已完成）：** 已新建 `scripts/battle/BattlePresentationEvent.gd`，在代码和本 README/Director 清单这两份主 MD 内冻结 schema，不另建重复进度 MD。每项固定包含 `event_key`、`battle_id`、`tick`、`ordinal`、`type`、`source_uid`、`target_uids`、`skill_id`、`amount`、`is_crit`、`is_lethal`、`presentation_seed`、`visibility_priority`、`timing_hint`。
-- **验收：** Windows/桌面同一 replay 的事件 SHA-256、字段顺序、唯一键和 seed 已通过；VFX schema 改动没有改变 D0 final-state。Android 跨平台 SHA-256 仍按用户要求暂停，不能写成通过。
+- **实施：** 新建 `scripts/battle/BattlePresentationEvent.gd`（或严格 schema 的 JSON）和 `docs/BATTLE_EVENT_SCHEMA.md`。每项固定包含 `event_id`、`tick`、`type`、`source_uid`、`target_uids`、`skill_id`、`amount`、`element/race`、`criticality`、`seed`、`visibility_priority`。
+- **验收：** `BattleSimulator` 只产出语义事件；同一 replay 在桌面和 Android 的事件序列 SHA-256 一致；VFX 配置改动不改变战斗结果哈希。
 
 #### B2 — 新建 `BattlePresentationDirector`，替代 `BattleVfx` 的硬编码路由
 
 - **新文件：** `effects/runtime/presentation/BattlePresentationDirector.gd`、`BattleActionTrack.gd`、`UnitActorRegistry.gd`、`VfxProfileResolver.gd`、`VfxPool3D.gd`、`data/vfx/battle_cues/*.tres`。
-- **D2 实施状态（2026-08-19，桌面已完成）：** 已落地 `BattlePresentationDirector.gd`、`BattleActionTrack.gd` 与独立 headless 检查；`BattleScreen` 已逐 tick 入队。Registry 锚点、profile resolver、pool 与 `.tres` cue 仍分别属于 D3-D5，不能误记为完成。
 - **职责：** Director 订阅 `BattlePresentationEvent`，根据 `skill_id + race + quality_tier + priority` 解析 profile，再向 2D/3D pool 下发“预备、飞行/动作、命中、余烬”四段；`BattleVfx` 只保留迁移期的 legacy adapter，逐步退出硬编码事件路由。
 - **迁移顺序：** 先迁移普通近战、普通远程、暴击、治疗、护盾、死亡六种高频事件；再迁移一个 Boss 和一个种族标志技能；最后迁移全角色技能。每次只删对应旧分支。
 - **验收：** 同一事件只由一个 profile 播放；seek/暂停/重播不重放已消费事件；缺 profile 时播放低成本 fallback，并输出一次可聚合告警。
@@ -406,9 +326,8 @@ BattleSimShared（确定性规则，只产出语义事件）
 #### C3 — 可交给 AI 逐项落实的战斗纵向切片清单
 
 - [ ] **冻结基线。** 录制固定 seed 的第一、第二场 PVE：单位表、事件序列、最终状态 SHA-256、Android 截图、平均/1% low FPS、峰值显存。修复并启用模型检查的非零失败；35 个 broken scene 未清零前，不准把胶囊当作成功 fallback。
-- [x] **实现事件 schema（桌面完成 / Android 暂停）。** `BattlePresentationEvent.gd` 已用 `battle_id + tick + ordinal` 生成稳定键，类型表覆盖当前事件与 `attack_start`、`projectile_spawn`、`impact`、`heal`、`shield`、`death`、`buff_apply`、`summon`、`skill_cast` 等后续事件；桌面 SHA-256 与 final-state 门禁通过，Android 断言待恢复移动端工作后补齐。
-- [x] **实现 Director 最小排程核心（桌面完成 / Android 暂停）。** `BattleScreen` 已逐 tick 入队；Director 提供生命周期、每单位 action track、去重、暂停/seek/skip/drain/dispose 与假 Registry/Adapter 测试。本项不产生真实 VFX，Legacy 路由继续保留。
-- [x] **实现角色展示链（桌面完成 / Android 暂停）。** 新建数据驱动的 `UnitVisualResolver`：`unit_id → 已验证 .tscn/.glb → UnitActor3D`。`UnitActor3D` 必须有 `ActorRoot`、`HeadAnchor`、`CastAnchor`、`HitAnchor`、`Shadow`；资源失效时显示已有角色卡立绘/名字/阵营框，并在开发构建告警。首场 PVE 的所有双方单位必须不再出现胶囊。
+- [ ] **实现事件 schema。** 新建 `scripts/battle/BattlePresentationEvent.gd` 与 `docs/BATTLE_EVENT_SCHEMA.md`，用 `battle_id + tick + ordinal` 生成稳定键；覆盖 `attack_start`、`projectile_spawn`、`impact`、`crit`、`heal`、`buff_apply`、`death`、`summon`、`skill_cast`。为同一 replay 在 desktop/Android 的字段序列加 SHA-256 断言。
+- [ ] **实现角色展示链。** 新建数据驱动的 `UnitVisualResolver`：`unit_id → 已验证 .tscn/.glb → UnitActor3D`。`UnitActor3D` 必须有 `ActorRoot`、`HeadAnchor`、`CastAnchor`、`HitAnchor`、`Shadow`；资源失效时显示已有角色卡立绘/名字/阵营框，并在开发构建告警。首场 PVE 的所有双方单位必须不再出现胶囊。
 - [ ] **按 Horror Battler 的分层思想、用 Sparta 的可回放边界实现 Director。** `BattleScreen` 仅入队 tick；Director 把事件排入每单位 action track，保证同一单位不能被两个 tween 同时占用。先只支持 `attack_start → impact → damage number → death`，不得改任何伤害公式、随机数或服务器/replay payload。
 - [ ] **接入有限手感。** 仅为 `basic_melee`、`basic_ranged`、`crit`、`heal`、`death` 做 profile：朝向、起手、命中闪白、受击位移/缩放、一次性音效和伤害数字。若引入 Juicee，先封装为 adapter 并在 Mobile 评审场景中验证；暴击 hit-stop 只影响本地演出，线上/PVP 默认关闭全局 time scale。
 - [ ] **制作可评审场景。** 新建 `scenes/debug/BattleVfxReview.tscn`：可选择单位、技能、种族、质量档、0.25×/1×/2×、固定 seed 和旧/新 profile 对照；保存截图、draw call、粒子/透明层、节点存活数，作为美术验收附件。
@@ -453,7 +372,7 @@ BattleSimShared（确定性规则，只产出语义事件）
 
 #### E1 — 战场空间可读性（P1）
 
-- **状态（2026-08-19）：Windows/桌面纵向切片已完成；人工盲测与 Android 验收待后续。** 当前固定两回合回放为 0 胶囊、0 可见 fallback，且 `BoardReadabilityLayer` 已接入准备与战斗场景。
+- **状态（2026-08-19）：E1-B/C/D 与 E1-E 的 Windows Forward Mobile 纵向切片已完成；Android 仍按用户要求暂停。** 全部可战斗单位通过统一 `UnitVisualResolver → UnitActor3D`，桌面两回合固定回放 0 胶囊/0 可见兜底；`BoardReadabilityLayer` 已接入准备与战斗场景并有持久开关。人工盲测和 Android 首战仍待恢复 A4 后完成。
 - 准备阶段按真实 **4×4** 落子盘显示16格、前/后排、选中格、按 `range` 计算的射程格和拖放目标；战斗阶段按真实连续坐标显示“三路 × 双方半场”，点击单位只改变视觉焦点，并显示该单位射程与 replay 中的真实攻击/技能目标线。不得再画误导玩法的5×5假网格。
 - 不改原背景主图；叠层使用独立 `BoardReadabilityStyle` Resource 与单个 `CanvasItem` 程序化绘制，低画质关闭区域填色，设置页可完全关闭。该方案不增加纹理、粒子、视口或全屏 shader。
 - 修复 `unit definition → model scene/prefab → BattleRenderer anchor` 的绑定：每个可战斗单位必须有经过加载验证的 3D/2.5D 展示体；加载失败时回退为同风格的角色卡牌立绘，而不是蓝/红胶囊。血条、名字、伤害数字必须锚定在该展示体上。
@@ -461,7 +380,6 @@ BattleSimShared（确定性规则，只产出语义事件）
 
 #### E2 — 模型与贴图预算（P1）
 
-- **状态（2026-08-19）：E2-2A/E2-2B 桌面门禁已完成；移动端验收未完成。** 桌面结果为 75/75 模型边界 0 broken/0 anomaly、241/241 FBX 0 load error、78/78 wrapper 合并通过、75 项预算检查 0 hard failure。
 - 输出每个单位的三角面数、骨骼数、材质数、动画数、贴图分辨率/内存；为 hero、普通棋子、佣兵、Boss 设不同预算与 LOD。
 - 原始 FBX 不进入发布包；转换为验证过的 `.glb/.tscn`，生成 Android ASTC 贴图，保留原始源文件在 DCC 工件库。
 - 先补齐当前缺失脚本、`.tres` 与 `.tscn`，修复 `span=0` 的假可加载模型；将导出日志中的 `dark_scythe`、`dark_doom`、`god_angel`、`god_aurora` 等失败资产纳入允许列表为零的门禁。
@@ -476,10 +394,10 @@ BattleSimShared（确定性规则，只产出语义事件）
 
 ## 推荐实施顺序
 
-1. A1 → A3：**已完成。** 完整资源 manifest、冷克隆恢复与失败门禁均已验证。
-2. A2：**已完成。** A4 的 Android 出包与设备回归按当前决定暂停。
-3. E1 → E2：**Windows/桌面闭环已完成。** 人工盲测、ASTC、APK 源 FBX 排除和低端 Android 真机预算验收待后续。
-4. Director D0-D3 桌面闭环：**已完成。** 当前进入 D4 四段普攻；之后依次完成 D5-D6 与 B2/B3 演出纵向切片。
+1. A1 → A3：先冻结完整资源 manifest，修复 35 个模型坏引用和测试假绿。
+2. A2 本地闭环已完成；A4/Android 导出与设备回归按用户要求暂停。
+3. E1 → E2：先替换战斗胶囊占位体、建立单位展示锚点，再补齐模型质量和移动端预算。
+4. B1 → B3：在可读角色之上做 6 类高频战斗事件的纵向演出切片；在评审场景批准后再扩面。
 5. B4、E3：先把 96 项启动预热拆分并降低显存/包体，再在低端 Android 真机上验证。
 6. D1、D3：将服务器权威回放、重连、NAT/relay 和双设备 QA 推至生产门槛。
 7. A5：发布前完成资源清理、来源与许可证总账。

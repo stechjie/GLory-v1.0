@@ -220,8 +220,6 @@ func _start_replay(replay: Dictionary) -> void:
 		_setup_view_toggle()
 		_start_battle_music()
 		await _prepare_battle_models()
-		# Actors are registered now, so queued cues may resolve their anchors.
-		_presentation_director.set_playback_speed(PLAYBACK_SPEED)
 
 
 # 每帧最多建几个单位模型。3 个是折中：太小则读条拖长，太大则单帧又开始卡。
@@ -431,8 +429,6 @@ func _switch_active_replay(replay: Dictionary) -> void:
 		_presentation_director.seek_to_tick(target_tick)
 		_apply_replay_frame(target_tick)
 	_refresh_visuals()
-	# _refresh_visuals() re-registered the new roster, so cues can resolve again.
-	_presentation_director.set_playback_speed(PLAYBACK_SPEED)
 
 func _clear_unit_visuals() -> void:
 	# 两份 replay 的 uid 命名会撞车（都是 player_L0_0 这类），
@@ -572,11 +568,7 @@ func _begin_presentation_replay(replay: Dictionary) -> void:
 		"battle_id": _presentation_battle_id(replay),
 		"kind": str(replay.get("kind", "team")),
 	})
-	# D3: stay paused until every actor is registered. Ticks still enqueue and
-	# de-duplicate while paused (_pump_track early-returns at speed 0), so no
-	# event is lost; playing them before _prepare_battle_models() finishes would
-	# resolve anchors against an empty registry and drop the whole first tick.
-	_presentation_director.set_playback_speed(0.0)
+	_presentation_director.set_playback_speed(PLAYBACK_SPEED)
 
 
 func _presentation_battle_id(replay: Dictionary) -> String:

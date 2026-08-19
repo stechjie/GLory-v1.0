@@ -2058,8 +2058,8 @@ func _room_compute_and_broadcast_replays(room: Dictionary) -> void:
 	shared_seed = int(room.get("shared_seed", 0))
 	# 故意用同步版：房间路径在计算前直接改 team_boards/shared_seed 等全局，
 	# 分帧 await 会让其他房间的收尾插进来污染这份上下文。服务器冻结无所谓。
-	var replay_a := BattleSim.compute_team_replay(0)
-	var replay_b := BattleSim.compute_team_replay(1)
+	var replay_a := BattleSim.compute_team_replay(0, str(room.get("battle_id", "")))
+	var replay_b := BattleSim.compute_team_replay(1, str(room.get("battle_id", "")))
 	BattleSim.stamp_team_round_damages(replay_a, replay_b)
 	var match_states := _room_build_match_states(room, replay_a, replay_b)
 	room.last_match_state = match_states

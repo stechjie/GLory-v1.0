@@ -40,37 +40,98 @@ func _ready() -> void:
 		_h.expect(replay_paths.any(func(path: String) -> bool: return path.contains("/sky/")), "variant_prefetch_sky", "双生守门人 sky 变体未进入预取清单")
 
 	_check_actor_contract(entries)
+	_check_portrait_fallback_chain(entries)
 	_check_failure_aggregation()
 	_h.note("combat_entries=%d unique_model_scenes=%d portraits=%d" % [entries.size(), unique_model_paths.size(), entries.size()])
 	_h.finish(get_tree())
 
 
 func _check_actor_contract(entries: Array[Dictionary]) -> void:
+	# 清单 §8 要求「全部首发单位」而不是抽样：演员合同由 UnitActor3D._ensure_contract()
+	# 在构造期建立，不加载任何模型场景，所以全量覆盖依然很快。
 	var registry = UnitActorRegistryScript.new()
-	for sample_id in ["human_militia", "pve_sky_cloud_eagle", "boss_meteor_caster"]:
+	var actors: Array[Node3D] = []
+	for definition in entries:
+		var unit_id := str(definition.get("id", ""))
+		var actor = UnitActor3DScript.new()
+		actor.name = "CheckActor_%s" % unit_id
+		actor.configure_contract(0.98)
+		add_child(actor)
+		actors.append(actor)
+		_h.expect(UnitActorRegistryScript.has_complete_contract(actor),
+			"actor_contract", "%s 演员契约不完整" % unit_id)
+		_h.expect(registry.register_actor(unit_id, actor),
+			"registry_register", "%s 无法注册演员" % unit_id)
+		for anchor_name in ["FootAnchor", "HeadAnchor", "CastAnchor", "HitAnchor"]:
+			_h.expect(registry.get_anchor(unit_id, anchor_name) != null,
+				"anchor_missing", "%s 缺锚点 %s" % [unit_id, anchor_name])
+		# 兼容别名：已验收的状态特效和旧截帧工具仍按这两个名字取锚点。
+		_h.expect(registry.get_anchor(unit_id, "FeetAnchor") == registry.get_anchor(unit_id, "FootAnchor"),
+			"anchor_alias", "%s 的 FeetAnchor 未对齐 FootAnchor" % unit_id)
+		_h.expect(registry.get_anchor(unit_id, "BodyAnchor") == registry.get_anchor(unit_id, "HitAnchor"),
+			"anchor_alias", "%s 的 BodyAnchor 未对齐 HitAnchor" % unit_id)
+	_h.expect(registry.size() == entries.size(),
+		"registry_size", "注册表应收录 %d 个演员，实际 %d" % [entries.size(), registry.size()])
+
+	# 清单 §5.4：下一局不得继承上一局的演员。clear() 之后解析必须整体落空。
+	registry.clear()
+	_h.expect(registry.size() == 0 and registry.ids().is_empty(),
+		"registry_clear", "clear() 之后注册表仍有残留演员")
+	for definition in entries:
+		var unit_id := str(definition.get("id", ""))
+		_h.expect(registry.get_actor(unit_id) == null,
+			"registry_clear_actor", "%s 在 clear() 之后仍能解析到演员" % unit_id)
+		_h.expect(registry.get_anchor(unit_id, "CastAnchor") == null,
+			"registry_clear_anchor", "%s 在 clear() 之后仍能解析到锚点" % unit_id)
+	for actor in actors:
+		actor.queue_free()
+
+
+# 清单 §8 的后半句：坏模型必须进入立绘 fallback，并把资源路径报进一次性汇总。
+func _check_portrait_fallback_chain(entries: Array[Dictionary]) -> void:
+	UnitVisualResolverScript.reset_failure_report()
+	var samples := ["human_militia", "pve_sky_cloud_eagle", "boss_meteor_caster"]
+	for sample_id in samples:
 		var matches := entries.filter(func(d: Dictionary) -> bool: return str(d.get("id", "")) == sample_id)
 		_h.expect(matches.size() == 1, "sample_missing", "演员检查样本缺失：%s" % sample_id)
 		if matches.size() != 1:
 			continue
-		var definition: Dictionary = matches[0]
+		var definition: Dictionary = (matches[0] as Dictionary).duplicate(true)
+		# 把模型指向一个不存在的路径，模拟坏资源/缺场景。
+		var broken_path := "res://assets/models/units/__missing__/%s.tscn" % sample_id
+		definition["model"] = broken_path
+		definition.erase("model_by_element")
+		var resolved_path := UnitVisualResolverScript.effective_model_path(definition)
+		_h.expect(resolved_path == broken_path,
+			"broken_path_resolution", "%s 未解析到被破坏的模型路径" % sample_id)
+		_h.expect(not UnitVisualResolverScript.resource_exists(resolved_path),
+			"broken_path_exists", "%s 的坏模型路径意外存在，用例失效" % sample_id)
+		# 消费者在加载失败时必须报告路径并改用立绘，而不是静默生成胶囊（§0 第 4 条）。
+		UnitVisualResolverScript.report_failure(sample_id, resolved_path, "check", "model scene missing")
 		var actor = UnitActor3DScript.new()
-		actor.name = "CheckActor_%s" % sample_id
+		actor.name = "FallbackActor_%s" % sample_id
 		actor.configure_contract(0.98)
+		add_child(actor)
 		var portrait_ok: bool = actor.attach_portrait_fallback(
 			str(definition.get("portrait", "")),
 			str(definition.get("fallback_frame", "")),
 			Color(0.25, 0.85, 1.0, 0.58),
 			0.98
 		)
-		add_child(actor)
 		_h.expect(portrait_ok, "fallback_portrait", "%s 无法建立立绘 fallback" % sample_id)
-		_h.expect(UnitActorRegistryScript.has_complete_contract(actor), "actor_contract", "%s 演员契约不完整" % sample_id)
-		_h.expect(registry.register_actor(sample_id, actor), "registry_register", "%s 无法注册演员" % sample_id)
-		for anchor_name in ["FootAnchor", "HeadAnchor", "CastAnchor", "HitAnchor"]:
-			_h.expect(registry.get_anchor(sample_id, anchor_name) != null, "anchor_missing", "%s 缺锚点 %s" % [sample_id, anchor_name])
+		_h.expect(actor.is_portrait_fallback(),
+			"fallback_kind", "%s 的 fallback 演员没有标记为立绘" % sample_id)
+		_h.expect(UnitActorRegistryScript.has_complete_contract(actor),
+			"fallback_contract", "%s 的立绘 fallback 丢失了演员契约" % sample_id)
 		actor.queue_free()
-	registry.clear()
-
+	var rows := UnitVisualResolverScript.failure_rows()
+	for sample_id in samples:
+		var reported := rows.filter(func(row: Dictionary) -> bool:
+			return str(row.get("unit_id", "")) == sample_id \
+				and str(row.get("resource_path", "")).contains("__missing__"))
+		_h.expect(reported.size() == 1,
+			"fallback_path_reported", "%s 的坏资源路径没有被恰好报告一次" % sample_id)
+	UnitVisualResolverScript.reset_failure_report()
 
 func _check_failure_aggregation() -> void:
 	UnitVisualResolverScript.reset_failure_report()

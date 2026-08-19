@@ -821,9 +821,14 @@ static func _skill_cast_should_shake(caster: Dictionary) -> bool:
 static func _add_visual_event(state: Dictionary, event_type: String, caster: Dictionary, strength: float, duration: float) -> void:
 	if not state.has("visual_events") or typeof(state.visual_events) != TYPE_ARRAY:
 		state.visual_events = []
+	var source_uid := str(caster.get("uid", ""))
 	state.visual_events.append({
 		"type": event_type,
-		"uid": str(caster.get("uid", "")),
+		"source_uid": source_uid,
+		"target_uids": [],
+		"skill_id": str(caster.get("def", {}).get("skill_id", event_type)),
+		# Legacy alias kept until D6 removes the old BattleVfx branch.
+		"uid": source_uid,
 		"pos": caster.get("pos", Vector2.ZERO),
 		"strength": strength,
 		"duration": duration,
