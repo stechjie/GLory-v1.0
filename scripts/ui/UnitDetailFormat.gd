@@ -217,6 +217,41 @@ static func format_skill_detail(d: Dictionary) -> String:
 			return "时空迟缓%s：自身短暂闪避提高，并使全体敌人减速%s，持续%.1f秒。" % [cd, pct(float(d.get("slow_pct", 0.35))), float(d.get("duration", 5.0))]
 		"death_hunt":
 			return "冥界处决：优先攻击低血目标；击杀回复最大生命%s。普攻破甲%d并降低治疗%s，持续%.1f秒。" % [pct(float(d.get("kill_heal_pct", 0.15))), int(d.get("armor_break", 8)), pct(float(d.get("heal_reduction", 0.50))), float(d.get("duration", 4.0))]
+		# --- Boss ---
+		"element_meteor":
+			return "陨星轰击%s：召唤陨星砸向最近的敌人，对其与周围敌人造成 %d 点真实伤害，并附加自身属性效果。" % [cd, int(d.get("skill_damage", 240))]
+		"overload_counter":
+			return "过载反击：每承受 %d 次攻击后释放一次过载，对攻击者造成 %d 点真实伤害，并有 %s 概率打断其攻击。" % [int(d.get("hit_threshold", 8)), int(d.get("skill_damage", 300)), pct(float(d.get("interrupt_chance", 0.25)))]
+		"mirror_clone":
+			return "镜像分裂：自身每损失 %s 最大生命就分裂出一个镜像；镜像生命为本体最大生命 %s、攻击为本体 %s，且不会释放技能。" % [pct(float(d.get("clone_per_missing_hp_pct", 0.25))), pct(float(d.get("clone_hp_pct", 0.30))), pct(float(d.get("clone_atk_pct", 0.40)))]
+		"holy_purify":
+			return "圣愈净化%s：清除全体友军身上的所有状态，治疗其最大生命 %s，并给予最大生命 %s 的护盾。" % [cd, pct(float(d.get("heal_pct", 0.12))), pct(float(d.get("shield_pct", 0.10)))]
+		"rage_stack":
+			return "狂怒叠加：每次普通攻击命中后攻击 +%s、攻速 +%.2f，最多叠加 %d 层。" % [pct(float(d.get("atk_per_hit", 0.03))), float(d.get("aspd_per_hit", 0.03)), int(d.get("max_stacks", 20))]
+		"blood_rage":
+			return "血怒暴走：生命降至 %s 以下时永久进入暴走，攻击 +%s、攻速 +%.2f，并获得 %s 吸血。" % [pct(float(d.get("trigger_hp_pct", 0.35))), pct(float(d.get("atk_bonus", 0.40))), float(d.get("aspd_bonus", 0.30)), pct(float(d.get("lifesteal", 0.10)))]
+		"soul_devour":
+			return "噬魂：每击杀一个目标，回复自身最大生命 %s，并永久提升攻击 %s。" % [pct(float(d.get("kill_heal_pct", 0.15))), pct(float(d.get("atk_stack", 0.10)))]
+		"twin_revive":
+			return "双生复活：双子同时登场。任一方死亡后 %.1f 秒以 %s 生命复活，每只最多复活 %d 次；若同伴已全部阵亡则不再复活。" % [float(d.get("revive_delay", 5.0)), pct(float(d.get("revive_hp_pct", 0.30))), int(d.get("revives_per_twin", 1))]
+		"apocalypse_charge":
+			return "灭世蓄力%s：先获得最大生命 %s 的护盾并蓄力 %.1f 秒，随后对全场敌人造成自身攻击 %s 的伤害%s；蓄力期间护盾被打破则中断。" % [cd, pct(float(d.get("charge_shield_pct", 0.10))), float(d.get("charge_sec", 2.0)), pct(float(d.get("damage_atk_pct", 2.5))), "（无视防御）" if bool(d.get("ignore_def", true)) else ""]
+		# --- 法阵守护者 ---
+		"burn_claw":
+			return "焰爪%s：回复自身 %d 点生命并叠加 %d 点护盾（上限 %d）；普通攻击附带中毒与灼烧，每秒 %d 点伤害，持续 %.1f 秒。" % [cd, int(d.get("self_heal", 200)), int(d.get("self_shield", 100)), int(d.get("shield_cap", 300)), int(d.get("burn_dps", 36)), float(d.get("burn_duration", 3.0))]
+		"soul_chain":
+			return "锁魂%s：眩晕全场敌人 %.1f 秒，并使其攻速降低 %s，持续 %.1f 秒。" % [cd, float(d.get("stun_sec", 1.5)), pct(float(d.get("aspd_down_pct", 0.50))), float(d.get("aspd_down_duration", 3.0))]
+		"devour_bite":
+			return "噬咬%s：沉默全场敌人 %.1f 秒，期间无法释放技能；普通攻击回复自身攻击 %s 的生命。" % [cd, float(d.get("silence_sec", 3.5)), pct(float(d.get("lifesteal", 0.18)))]
+		"hell_burst":
+			return "炼狱焚界%s：使全场敌人灼烧，每秒 %d 点伤害持续 %.1f 秒，并降低攻击 %s，持续 %.1f 秒。" % [cd, int(d.get("burn_dps", 100)), float(d.get("burn_duration", 5.0)), pct(float(d.get("attack_down_pct", 0.25))), float(d.get("attack_down_duration", 5.0))]
+		"eternal_night":
+			return "厄夜流星%s：召唤流星雨覆盖全场，对每个敌人造成 %d 点真实伤害（无视防御）。" % [cd, int(d.get("meteor_damage", 800))]
+		# 野怪技能目前只有数据与特效，战斗结算里没有对应分支（BattleSimulator 的技能
+		# match 查不到这些 id），所以这里不写效果说明。图鉴宁可写「无」，也不该承诺一个
+		# 打不出来的技能。实现补上后，把对应 id 从这一行挪出去写正式文案即可。
+		"dive_backline", "chain_lightning", "heal_allies", "holy_shield_burst", "wind_bleed", "slow_aura", "stun_impact", "entangle", "burrow_ambush", "lava_burst", "nature_heal", "earth_slam", "backstab", "curse", "counter_slash":
+			return "无主动技能。"
 	return "该技能暂未写入详细说明。"
 
 static func format_skill_detail_en(d: Dictionary) -> String:
@@ -311,6 +346,41 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 			return "Time Warp%s: Briefly boost own dodge; slow all enemies by %s for %.1fs." % [cd, pct(float(d.get("slow_pct", 0.35))), float(d.get("duration", 5.0))]
 		"death_hunt":
 			return "Death Hunt: Prioritizes low-HP targets; kills restore %s max HP. Normal attacks break %d armor and reduce healing by %s for %.1fs." % [pct(float(d.get("kill_heal_pct", 0.15))), int(d.get("armor_break", 8)), pct(float(d.get("heal_reduction", 0.50))), float(d.get("duration", 4.0))]
+		# --- Boss ---
+		"element_meteor":
+			return "Meteor Strike%s: Call a meteor down on the nearest enemy, dealing %d true damage to it and nearby enemies plus this unit's element effect." % [cd, int(d.get("skill_damage", 240))]
+		"overload_counter":
+			return "Overload Counter: After taking %d hits, discharge for %d true damage to the attacker with a %s chance to interrupt them." % [int(d.get("hit_threshold", 8)), int(d.get("skill_damage", 300)), pct(float(d.get("interrupt_chance", 0.25)))]
+		"mirror_clone":
+			return "Mirror Split: For every %s of max HP lost, split off a mirror image with %s of max HP and %s ATK. Clones cannot cast skills." % [pct(float(d.get("clone_per_missing_hp_pct", 0.25))), pct(float(d.get("clone_hp_pct", 0.30))), pct(float(d.get("clone_atk_pct", 0.40)))]
+		"holy_purify":
+			return "Holy Purify%s: Cleanse all statuses from every ally, heal them for %s max HP and grant a shield worth %s max HP." % [cd, pct(float(d.get("heal_pct", 0.12))), pct(float(d.get("shield_pct", 0.10)))]
+		"rage_stack":
+			return "Rage Stacks: Each landed normal attack grants ATK +%s and AS +%.2f, up to %d stacks." % [pct(float(d.get("atk_per_hit", 0.03))), float(d.get("aspd_per_hit", 0.03)), int(d.get("max_stacks", 20))]
+		"blood_rage":
+			return "Blood Frenzy: Below %s HP, permanently enrage — ATK +%s, AS +%.2f, and %s lifesteal." % [pct(float(d.get("trigger_hp_pct", 0.35))), pct(float(d.get("atk_bonus", 0.40))), float(d.get("aspd_bonus", 0.30)), pct(float(d.get("lifesteal", 0.10)))]
+		"soul_devour":
+			return "Soul Devour: Each kill restores %s max HP and permanently raises ATK by %s." % [pct(float(d.get("kill_heal_pct", 0.15))), pct(float(d.get("atk_stack", 0.10)))]
+		"twin_revive":
+			return "Twin Revival: The twins enter together. When one dies it revives after %.1fs at %s HP, up to %d time(s); no revival happens once every twin is dead." % [float(d.get("revive_delay", 5.0)), pct(float(d.get("revive_hp_pct", 0.30))), int(d.get("revives_per_twin", 1))]
+		"apocalypse_charge":
+			return "Apocalypse Charge%s: Gain a shield worth %s max HP and charge for %.1fs, then hit all enemies for %s ATK%s. Breaking the shield before it lands interrupts the cast." % [cd, pct(float(d.get("charge_shield_pct", 0.10))), float(d.get("charge_sec", 2.0)), pct(float(d.get("damage_atk_pct", 2.5))), " (ignores DEF)" if bool(d.get("ignore_def", true)) else ""]
+		# --- Formation guardians ---
+		"burn_claw":
+			return "Flame Claw%s: Heal self for %d HP and stack %d shield (cap %d). Normal attacks apply poison and burn for %d damage per second over %.1fs." % [cd, int(d.get("self_heal", 200)), int(d.get("self_shield", 100)), int(d.get("shield_cap", 300)), int(d.get("burn_dps", 36)), float(d.get("burn_duration", 3.0))]
+		"soul_chain":
+			return "Soul Chain%s: Stun every enemy for %.1fs and cut their attack speed by %s for %.1fs." % [cd, float(d.get("stun_sec", 1.5)), pct(float(d.get("aspd_down_pct", 0.50))), float(d.get("aspd_down_duration", 3.0))]
+		"devour_bite":
+			return "Devour Bite%s: Silence every enemy for %.1fs, blocking all their skills. Normal attacks heal this unit for %s of its ATK." % [cd, float(d.get("silence_sec", 3.5)), pct(float(d.get("lifesteal", 0.18)))]
+		"hell_burst":
+			return "Hell Burst%s: Burn every enemy for %d damage per second over %.1fs and reduce their ATK by %s for %.1fs." % [cd, int(d.get("burn_dps", 100)), float(d.get("burn_duration", 5.0)), pct(float(d.get("attack_down_pct", 0.25))), float(d.get("attack_down_duration", 5.0))]
+		"eternal_night":
+			return "Eternal Night%s: Rain meteors across the field, dealing %d true damage to every enemy (ignores DEF)." % [cd, int(d.get("meteor_damage", 800))]
+		# Monster skills: data and VFX only — the simulator has no branch for these
+		# ids, so the codex says nothing rather than promising an effect that never
+		# fires. Move an id out of this line once it is actually implemented.
+		"dive_backline", "chain_lightning", "heal_allies", "holy_shield_burst", "wind_bleed", "slow_aura", "stun_impact", "entangle", "burrow_ambush", "lava_burst", "nature_heal", "earth_slam", "backstab", "curse", "counter_slash":
+			return "No active skill."
 	return "Skill description not yet available."
 
 

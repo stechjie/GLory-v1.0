@@ -25,7 +25,7 @@
 | Boss 成长 | 每完成 1 次 Boss 后：HP x 1.45，ATK x 1.35，DEF x 1.30，skill_damage x 1.45 |
 | PVE 小怪成长 | 每完成 1 次 PVE 后：HP x 1.10，ATK x 1.08，DEF x 1.05，skill_damage x 1.08 |
 | PVP 回合 | 第 6 / 12 / 18 / 21 回合为玩家对战回合。组队（联机 3v3 与离线自测）按固定排程进入 PVP；对面无人时敌方为空 |
-| 法阵友军 | 第 21 回合最终战根据法阵 HP 召唤，不占普通棋子上限 |
+| 法阵友军 | 第 21 回合最终战根据法阵 HP 召唤，不占普通棋子上限；不吃宝藏，被击杀不给对方金币；进攻不受分路限制 |
 
 ## Boss 数值
 
@@ -177,25 +177,35 @@ Boss 战斗实际值 = 基础值 x Boss 整体倍率 x Boss 成长。
 
 ## 法阵友军数值
 
-最终战根据当前法阵 HP 区间召唤对应法阵友军。法阵友军不占普通棋子 7 人上限。
+最终战根据当前法阵 HP 区间召唤对应法阵友军。法阵友军不占普通棋子 7 人上限，不受宝藏影响，被击杀不给对方金币。
 
-| ID | 名称 | 法阵 HP 区间 | HP | ATK | DEF | 攻速 | 射程 | 移速 | 技能 |
-|---|---|---|---:|---:|---:|---:|---:|---:|---|
-| ally_flame_claw | 焰爪魔灵 | 1-10 | 700 | 70 | 10 | 1.05 | 1 | 3.2 | burn_claw |
-| ally_soul_chain | 暗狱锁魂者 | 11-20 | 900 | 78 | 14 | 0.95 | 4 | 3.0 | soul_chain |
-| ally_abyss_beast | 深渊噬兽 | 21-30 | 1250 | 95 | 18 | 0.90 | 1 | 3.0 | devour_bite |
-| ally_hell_inferno | 炼狱焚界者 | 31-40 | 1500 | 115 | 20 | 0.92 | 4 | 2.8 | hell_burst |
-| ally_eternal_night | 深渊魔君·厄夜 | 41-50 | 1900 | 145 | 24 | 0.90 | 1 | 3.0 | eternal_night |
+数据源：`data/formation/formation_allies.json`；区间判定见 `scripts/formation/FormationAllyService.gd`。
+
+| ID | 名称 | 法阵 HP 区间 | HP | ATK | DEF | 攻速 | 射程 | 移速 | 技能 | 首发 CD | 技能 CD |
+|---|---|---|---:|---:|---:|---:|---:|---:|---|---:|---:|
+| ally_flame_claw | 焰爪魔灵 | 1-10 | 1400 | 77 | 10 | 1.05 | 1 | 3.2 | burn_claw | — | 5.0 |
+| ally_soul_chain | 暗狱锁魂者 | 11-20 | 2400 | 86 | 14 | 0.95 | 4 | 3.0 | soul_chain | 2.5 | 9.0 |
+| ally_abyss_beast | 深渊噬兽 | 21-30 | 3200 | 105 | 18 | 0.90 | 1 | 3.0 | devour_bite | 3.0 | 12.0 |
+| ally_hell_inferno | 炼狱焚界者 | 31-40 | 4000 | 127 | 24 | 0.90 | 5 | 2.8 | hell_burst | 3.0 | 9.0 |
+| ally_eternal_night | 深渊魔君·厄夜 | 41-50 | 5200 | 160 | 30 | 0.85 | 1 | 3.0 | eternal_night | 3.5 | 12.0 |
 
 ### 法阵友军技能参数
 
-| ID | 技能参数 |
-|---|---|
-| ally_flame_claw | burn_dps 18，burn_duration 3.0 |
-| ally_soul_chain | skill_cd 6.0，root_sec 2.0，attack_down_pct 0.15，attack_down_duration 4.0 |
-| ally_abyss_beast | lifesteal 0.18 |
-| ally_hell_inferno | skill_cd 8.0，aoe_damage 180，burn_dps 20，burn_duration 3.0 |
-| ally_eternal_night | enemy_attack_down_pct 0.20，enemy_attack_down_duration 6.0，start_aoe_damage 240，clone_count 2，clone_hp_pct 0.30，clone_atk_pct 0.40，clone_attacks 3 |
+| ID | 技能 | 效果 | 参数 |
+|---|---|---|---|
+| ally_flame_claw | burn_claw | 主动：回复自身并叠护盾；普攻附带灼烧 | self_heal 200，self_shield 100，shield_cap 300，burn_dps 36，burn_duration 3.0 |
+| ally_soul_chain | soul_chain | 全场眩晕 + 降攻速（不降移速） | stun_sec 1.5，aspd_down_pct 0.50，aspd_down_duration 3.0 |
+| ally_abyss_beast | devour_bite | 全场沉默；普攻附带吸血 | silence_sec 3.5，lifesteal 0.18 |
+| ally_hell_inferno | hell_burst | 全场灼烧 + 降攻 | burn_dps 100，burn_duration 5.0，attack_down_pct 0.25，attack_down_duration 5.0 |
+| ally_eternal_night | eternal_night | 全场流星雨，无视防御 | meteor_damage 800（真实伤害） |
+
+### 机制说明
+
+- **射程豁免**：后四位带 `skill_global`，技能不做射程判定，开场时机改由 `opening_cd` 把关。焰爪的 burn_claw 是自身增益，仍走正常射程判定。
+- **分路豁免**：3v3 组队模式下普通棋子只能打自己那一路，法阵友军不受此限（见 `BattleSimShared._can_target`）。仅进攻侧豁免——敌方仍按自己那一路找目标，不会三路同时扑向友军。
+- **空放保护**：四个全场技在场上没有可打目标时不进冷却，留到真有敌人再放。焰爪的自保技不受此约束。
+- **Boss 减抗**：沉默 / 眩晕对 Boss 时长减半；灼烧 / 减攻等数值型 debuff 对 Boss 数值减半（`StatusEffectService`）。厄夜的流星雨走真实伤害，不吃这两项削减。
+- **实测参考**（3v3，敌方 25 只，分路豁免生效后）：友军存活 4.5-18 秒，全场技覆盖全部存活敌人；厄夜通常只放得出 1 发，其强度几乎完全由 `opening_cd` 决定，`skill_cd` 基本不生效。
 
 ## PVE 小怪数值
 

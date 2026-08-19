@@ -122,6 +122,9 @@ static func _units(race: String) -> Array[Dictionary]:
 			"cost": int(d.get("cost", 0)),
 			"stats": _stats(d),
 			"skill_id": str(d.get("skill_id", "")),
+			# The source row, kept so the codex can render the same skill copy the
+			# prep screen shows (UnitDetailFormat) instead of a bare skill id.
+			"raw": d,
 			"collectible": true,
 		})
 	return out
@@ -140,6 +143,9 @@ static func _mercs() -> Array[Dictionary]:
 			"cost": int(d.get("cost", 0)),
 			"stats": _stats(d),
 			"skill_id": str(d.get("skill_id", "")),
+			# The source row, kept so the codex can render the same skill copy the
+			# prep screen shows (UnitDetailFormat) instead of a bare skill id.
+			"raw": d,
 			"collectible": true,
 		})
 	return out
@@ -157,7 +163,11 @@ static func _monsters() -> Array[Dictionary]:
 			"portrait": PORTRAIT_DIR + str(d.get("name", "")) + ".png",
 			"series": str(d.get("series", "")),
 			"stats": _stats(d),
+			"growth_note": true,
 			"skill_id": str(d.get("skill_id", "")),
+			# The source row, kept so the codex can render the same skill copy the
+			# prep screen shows (UnitDetailFormat) instead of a bare skill id.
+			"raw": d,
 			"collectible": true,
 		})
 	return out
@@ -177,7 +187,15 @@ static func _bosses() -> Array[Dictionary]:
 			"portrait": PORTRAIT_DIR + str(d.get("name", "")) + ".png",
 			"element": str(d.get("element", "")),
 			"skill_id": str(d.get("skill_id", "")),
-			"hide_stats": true,
+			# The source row, kept so the codex can render the same skill copy the
+			# prep screen shows (UnitDetailFormat) instead of a bare skill id.
+			"raw": d,
+			# What the first boss round actually fields, not the raw table row:
+			# BattleSimShared multiplies every boss by BossService's global factor
+			# before the fight, so the bare numbers here would understate all of
+			# them. Attack speed, range and move speed are not scaled.
+			"stats": _boss_stats(d),
+			"growth_note": true,
 			"collectible": true,
 		})
 	return out
@@ -195,6 +213,9 @@ static func _allies() -> Array[Dictionary]:
 			"portrait": PORTRAIT_DIR + str(d.get("name", "")) + ".png",
 			"stats": _stats(d),
 			"skill_id": str(d.get("skill_id", "")),
+			# The source row, kept so the codex can render the same skill copy the
+			# prep screen shows (UnitDetailFormat) instead of a bare skill id.
+			"raw": d,
 			"collectible": true,
 		})
 	return out
@@ -215,8 +236,8 @@ static func _treasures() -> Array[Dictionary]:
 			"portrait": TREASURE_ICON_DIR + str(d.get("name", "")) + ".png",
 			"icon_art": true,
 			"category": str(d.get("category", "")),
-			"effect": str(entry.get("effect", "")),
-			"trigger": str(entry.get("trigger", "")),
+			"effect": _localised(entry, "effect"),
+			"trigger": _localised(entry, "trigger"),
 			"collectible": true,
 		})
 	return out
@@ -234,10 +255,11 @@ static func _linkages() -> Array[Dictionary]:
 		out.append({
 			"id": id,
 			"name": str(entry.get("name", art)),
+			"name_en": str(entry.get("name_en", "")),
 			"portrait": TREASURE_ICON_DIR + art + ".png",
 			"icon_art": true,
-			"effect": str(entry.get("effect", "")),
-			"requires_text": str(entry.get("requires_text", "")),
+			"effect": _localised(entry, "effect"),
+			"requires_text": _localised(entry, "requires_text"),
 			"collectible": true,
 		})
 	return out
@@ -277,6 +299,26 @@ static func _statuses() -> Array[Dictionary]:
 			"collectible": false,
 		})
 	return out
+
+# Bosses carry a flat multiplier on top of the table before the first fight; only
+# the three combat stats are affected.
+static func _boss_stats(d: Dictionary) -> Dictionary:
+	var out := _stats(d)
+	var mul := BossService.GLOBAL_STAT_MULTIPLIER
+	out.hp = maxi(1, int(round(float(out.hp) * mul)))
+	out.atk = maxi(1, int(round(float(out.atk) * mul)))
+	out.def = maxi(0, int(round(float(out.def) * mul)))
+	return out
+
+# The treasure text table carries both languages per field (effect, trigger,
+# requires_text). English builds take the "_en" twin where it exists; anything not
+# translated yet falls back to the Chinese rather than going blank.
+static func _localised(entry: Dictionary, field: String) -> String:
+	if UnitDetailFormat.is_en():
+		var en := str(entry.get(field + "_en", ""))
+		if not en.is_empty():
+			return en
+	return str(entry.get(field, ""))
 
 static func _stats(d: Dictionary) -> Dictionary:
 	return {

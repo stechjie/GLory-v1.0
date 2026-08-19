@@ -530,8 +530,17 @@ static func _enemy_syn_for_kind(kind: String) -> Dictionary:
 	# PvP/final: the opponent's race synergies come from their board snapshot.
 	# PvE/Boss enemies are monsters with no synergies.
 	if kind == "pvp" or kind == "final":
-		return NetProtocol.extract_syn(NetworkService.opponent_board_snapshot)
+		return NetProtocol.extract_syn(_pvp_opponent_snapshot())
 	return {}
+
+# 教学 PVP 的对手棋盘由 TutorialMode.begin_battle() 自己伪造。
+# 这里原先读 NetworkService.opponent_board_snapshot，但 1v1 P2P 联机整体删除后
+# receive_opponent_snapshot() 已没有任何调用方，那个字典恒为 {} —— 敌方数组为空，
+# prepare_tutorial_state 就走 no_enemy_units 提前返回，最后一场 PVP 演示看不到敌人。
+static func _pvp_opponent_snapshot() -> Dictionary:
+	if not TutorialMode.opponent_snapshot.is_empty():
+		return TutorialMode.opponent_snapshot
+	return NetworkService.opponent_board_snapshot
 
 
 static func living_units(state: Dictionary) -> Array:
@@ -539,7 +548,8 @@ static func living_units(state: Dictionary) -> Array:
 
 
 static func _build_pvp_fighters() -> Array:
-	var board := NetProtocol.extract_board(NetworkService.opponent_board_snapshot)
+	var snapshot := _pvp_opponent_snapshot()
+	var board := NetProtocol.extract_board(snapshot)
 	var out: Array = []
 	var unique_ids := {}
 	for i in board.size():
@@ -547,7 +557,7 @@ static func _build_pvp_fighters() -> Array:
 		if cell == null or typeof(cell) != TYPE_DICTIONARY or _is_duplicate_unique_cell(cell, unique_ids):
 			continue
 		out.append(_fighter_from_cell(cell, i, "enemy", true))
-	_add_mercenary_fighters(out, NetProtocol.extract_mercenaries(NetworkService.opponent_board_snapshot), "enemy", true)
+	_add_mercenary_fighters(out, NetProtocol.extract_mercenaries(snapshot), "enemy", true)
 	return out
 
 static func _build_tutorial_pve_fighters() -> Array:

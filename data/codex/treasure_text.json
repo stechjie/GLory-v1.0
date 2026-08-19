@@ -1,187 +1,295 @@
 {
- "_source": "Parsed from docs/宝藏效果总表.md. Regenerate with scratchpad/parse_treasure_text.py when the balance table changes.",
+ "_source": "Chinese fields parsed from docs/宝藏效果总表.md. The *_en fields are hand-written for the codex and are NOT produced by the parser — regenerating this file from the balance table will drop them, so merge instead of overwrite.",
  "treasures": {
   "def_iron_wall": {
    "name": "铁壁之护",
+   "name_en": "Iron Wall",
    "effect": "我方普通棋子 DEF +10",
-   "trigger": "开战时"
+   "effect_en": "Allied normal pieces gain DEF +10",
+   "trigger": "开战时",
+   "trigger_en": "Battle start"
   },
   "def_life_monument": {
    "name": "生命丰碑",
+   "name_en": "Life Monument",
    "effect": "我方普通棋子最大生命 +20%，当前生命同步提高；胡牌手激活后为 +40%",
-   "trigger": "开战时"
+   "effect_en": "Allied normal pieces gain +20% max HP, current HP raised to match; +40% once Winning Hand is active",
+   "trigger": "开战时",
+   "trigger_en": "Battle start"
   },
   "def_formation_heal": {
    "name": "法阵回春",
+   "name_en": "Formation Heal",
    "effect": "我方法阵 HP +1，不超过初始上限；胡牌手激活后为 +2",
-   "trigger": "每次战后"
+   "effect_en": "Your formation gains +1 HP, never above its starting cap; +2 once Winning Hand is active",
+   "trigger": "每次战后",
+   "trigger_en": "After each battle"
   },
   "def_soul_counter": {
    "name": "亡魂反击",
+   "name_en": "Soul Counter",
    "effect": "我方普通棋子死亡时，对击杀者造成击杀者最大生命 35% 真实伤害",
-   "trigger": "我方普通棋子死亡时"
+   "effect_en": "When an allied normal piece dies, deal 35% of the killer's max HP to the killer as true damage",
+   "trigger": "我方普通棋子死亡时",
+   "trigger_en": "When an allied normal piece dies"
   },
   "def_lifesteal_emblem": {
    "name": "吸血纹章",
+   "name_en": "Lifesteal Emblem",
    "effect": "我方普通棋子造成伤害后，回复实际伤害 20% 的生命",
-   "trigger": "普通棋子造成伤害后"
+   "effect_en": "Allied normal pieces heal for 20% of the damage they actually deal",
+   "trigger": "普通棋子造成伤害后",
+   "trigger_en": "After a normal piece deals damage"
   },
   "def_phantom_step": {
    "name": "幻影步伐",
+   "name_en": "Phantom Step",
    "effect": "我方普通棋子闪避 +20%",
-   "trigger": "开战时"
+   "effect_en": "Allied normal pieces gain +20% dodge",
+   "trigger": "开战时",
+   "trigger_en": "Battle start"
   },
   "ctrl_shockwave": {
    "name": "震荡余波",
+   "name_en": "Shockwave",
    "effect": "当前目标眩晕 1 秒，冷却 5 秒；胡牌手激活后眩晕 2 秒",
-   "trigger": "我方普通棋子攻击时"
+   "effect_en": "Stun the current target for 1s, 5s cooldown; 2s once Winning Hand is active",
+   "trigger": "我方普通棋子攻击时",
+   "trigger_en": "When an allied normal piece attacks"
   },
   "ctrl_corrosive_needle": {
    "name": "腐蚀毒针",
+   "name_en": "Corrosive Needle",
    "effect": "每第 4 次攻击使目标失血 3 秒，冷却 5 秒",
-   "trigger": "我方普通棋子攻击时"
+   "effect_en": "Every 4th attack bleeds the target for 3s, 5s cooldown",
+   "trigger": "我方普通棋子攻击时",
+   "trigger_en": "When an allied normal piece attacks"
   },
   "ctrl_interrupt_chain": {
    "name": "打断锁链",
+   "name_en": "Interrupt Chain",
    "effect": "25% 概率打断目标，冷却 5 秒",
-   "trigger": "我方普通棋子攻击时"
+   "effect_en": "25% chance to interrupt the target, 5s cooldown",
+   "trigger": "我方普通棋子攻击时",
+   "trigger_en": "When an allied normal piece attacks"
   },
   "ctrl_time_compress": {
    "name": "时空压缩",
+   "name_en": "Time Compress",
    "effect": "我方普通棋子技能冷却缩短 25%，首次与后续冷却均乘以 0.75",
-   "trigger": "持续生效"
+   "effect_en": "Allied normal pieces' skill cooldowns are cut by 25% — opening and later cooldowns both ×0.75",
+   "trigger": "持续生效",
+   "trigger_en": "Always active"
   },
   "ctrl_binding_weight": {
    "name": "束缚重压",
+   "name_en": "Binding Weight",
    "effect": "当前目标移动 -25%、攻速 -20%，持续 2 秒，冷却 5 秒",
-   "trigger": "我方普通棋子攻击时"
+   "effect_en": "Current target moves 25% slower and attacks 20% slower for 2s, 5s cooldown",
+   "trigger": "我方普通棋子攻击时",
+   "trigger_en": "When an allied normal piece attacks"
   },
   "atk_blood_pact": {
    "name": "血契之刃",
+   "name_en": "Blood Pact",
    "effect": "我方普通棋子 ATK x1.25，同时自身永久获得失血状态；胡牌手激活后为 ATK x1.50",
-   "trigger": "开战时"
+   "effect_en": "Allied normal pieces gain ATK ×1.25 and bleed permanently themselves; ATK ×1.50 once Winning Hand is active",
+   "trigger": "开战时",
+   "trigger_en": "Battle start"
   },
   "atk_fury_roster": {
    "name": "狂怒阵容",
+   "name_en": "Fury Roster",
    "effect": "普通棋子上限从 7 提高到 8",
-   "trigger": "准备阶段持续生效"
+   "effect_en": "Raises the normal piece limit from 7 to 8",
+   "trigger": "准备阶段持续生效",
+   "trigger_en": "Always active in the prep phase"
   },
   "atk_burst_core": {
    "name": "爆裂核心",
+   "name_en": "Burst Core",
    "effect": "我方普通棋子暴击率 +25%",
-   "trigger": "开战时"
+   "effect_en": "Allied normal pieces gain +25% crit chance",
+   "trigger": "开战时",
+   "trigger_en": "Battle start"
   },
   "atk_wail_resonance": {
    "name": "哀鸣共鸣",
+   "name_en": "Wail Resonance",
    "effect": "击杀敌人时，对死亡目标周围 180 范围内敌人造成其最大生命 10% 真实伤害",
-   "trigger": "我方普通棋子击杀敌人时"
+   "effect_en": "On a kill, enemies within 180 of the corpse take 10% of their own max HP as true damage",
+   "trigger": "我方普通棋子击杀敌人时",
+   "trigger_en": "When an allied normal piece kills an enemy"
   },
   "atk_frenzy_assault": {
    "name": "狂暴进攻",
+   "name_en": "Frenzy Assault",
    "effect": "攻击同一目标时自身攻速 x1.15，可叠；换目标重置",
-   "trigger": "攻击时"
+   "effect_en": "Attacking the same target stacks attack speed ×1.15; resets on target switch",
+   "trigger": "攻击时",
+   "trigger_en": "On attack"
   },
   "money_compound": {
    "name": "复利之道",
+   "name_en": "Compound Interest",
    "effect": "单件战后利息额外 +5% 当前金币",
-   "trigger": "每次战后"
+   "effect_en": "Each copy adds +5% of your current gold to post-battle interest",
+   "trigger": "每次战后",
+   "trigger_en": "After each battle"
   },
   "money_generous_fate": {
    "name": "慷慨命运",
+   "name_en": "Generous Fate",
    "effect": "准备阶段每回合可手动参与 1 次赌博：50% 概率金币翻倍，50% 概率损失当前金币 80%；与诡诈命运联动后变为 60% 翻倍、40% 损失当前金币 50%",
-   "trigger": "手动点击按钮"
+   "effect_en": "One manual gamble per prep round: 50% to double your gold, 50% to lose 80% of it; with Trickster's Fate it becomes 60% double / 40% lose half",
+   "trigger": "手动点击按钮",
+   "trigger_en": "Manual button"
   },
   "money_discount": {
    "name": "折扣令牌",
+   "name_en": "Discount Token",
    "effect": "棋子商店价格 -20%，最低 1 金",
-   "trigger": "准备阶段购买棋子时"
+   "effect_en": "Piece shop prices -20%, minimum 1 gold",
+   "trigger": "准备阶段购买棋子时",
+   "trigger_en": "When buying pieces in the prep phase"
   },
   "money_golden_altar": {
    "name": "黄金祭坛",
+   "name_en": "Golden Altar",
    "effect": "准备阶段出现黄金祭坛按钮：法阵 HP -1，金币 +50；胡牌手激活后金币 +100（未实现）；每回合最多 3 次，法阵 HP <=10 不可用",
-   "trigger": "手动点击按钮"
+   "effect_en": "A Golden Altar button appears in the prep phase: formation HP -1 for +50 gold; +100 once Winning Hand is active (not implemented). Up to 3 times per round, unavailable at formation HP <= 10",
+   "trigger": "手动点击按钮",
+   "trigger_en": "Manual button"
   },
   "money_lucky_envelope": {
    "name": "幸运信封",
+   "name_en": "Lucky Envelope",
    "effect": "战后随机 +10 / +20 / +30 金",
-   "trigger": "每次战后"
+   "effect_en": "Gain +10 / +20 / +30 gold at random after a battle",
+   "trigger": "每次战后",
+   "trigger_en": "After each battle"
   },
   "elem_flame_shatter": {
    "name": "炎焰碎裂",
+   "name_en": "Flame Shatter",
    "effect": "攻击有 25% 概率额外造成 ATK 40% 真实伤害",
-   "trigger": "我方普通棋子攻击时"
+   "effect_en": "Attacks have a 25% chance to deal an extra 40% ATK as true damage",
+   "trigger": "我方普通棋子攻击时",
+   "trigger_en": "When an allied normal piece attacks"
   },
   "elem_frost_blade": {
    "name": "冰封霜刃",
+   "name_en": "Frost Blade",
    "effect": "攻击有 25% 概率使目标移动 -35%、攻速 -35%，持续 1.5 秒",
-   "trigger": "我方普通棋子攻击时"
+   "effect_en": "Attacks have a 25% chance to cut the target's movement and attack speed by 35% for 1.5s",
+   "trigger": "我方普通棋子攻击时",
+   "trigger_en": "When an allied normal piece attacks"
   },
   "elem_thunder_haste": {
    "name": "雷霆加速",
+   "name_en": "Thunder Haste",
    "effect": "攻击有 25% 概率使自身攻速 +60%，持续 3 秒；重复触发只刷新时间，不叠加",
-   "trigger": "我方普通棋子攻击时"
+   "effect_en": "Attacks have a 25% chance to grant +60% attack speed for 3s; retriggering refreshes the duration instead of stacking",
+   "trigger": "我方普通棋子攻击时",
+   "trigger_en": "When an allied normal piece attacks"
   },
   "elem_toxic_spread": {
    "name": "剧毒蔓延",
+   "name_en": "Toxic Spread",
    "effect": "攻击有 25% 概率使目标中毒",
-   "trigger": "我方普通棋子攻击时"
+   "effect_en": "Attacks have a 25% chance to poison the target",
+   "trigger": "我方普通棋子攻击时",
+   "trigger_en": "When an allied normal piece attacks"
   }
  },
  "linkages": {
   "link_phoenix": {
    "name": "凤凰涅槃",
+   "name_en": "Phoenix Rebirth",
    "requires_text": "哀鸣共鸣 + 亡魂反击",
-   "effect": "我方普通棋子死亡后临时复活 3 秒，3 秒结束后强制死亡"
+   "requires_text_en": "Wail Resonance + Soul Counter",
+   "effect": "我方普通棋子死亡后临时复活 3 秒，3 秒结束后强制死亡",
+   "effect_en": "Allied normal pieces revive for 3s after dying, then die for good when the 3s run out"
   },
   "link_money_magic": {
    "name": "金钱魔法",
+   "name_en": "Money Magic",
    "requires_text": "幸运信封 + 时空压缩",
-   "effect": "战后额外随机 +50 / +60 / +70 金，10% 概率额外 +100 金"
+   "requires_text_en": "Lucky Envelope + Time Compress",
+   "effect": "战后额外随机 +50 / +60 / +70 金，10% 概率额外 +100 金",
+   "effect_en": "Gain an extra +50 / +60 / +70 gold after a battle, with a 10% chance of +100 more"
   },
   "link_blood_covenant": {
    "name": "血之契约",
+   "name_en": "Blood Covenant",
    "requires_text": "炎焰碎裂 + 吸血纹章",
-   "effect": "炎焰碎裂触发时，真实伤害从 ATK 40% 提高到 ATK 100%"
+   "requires_text_en": "Flame Shatter + Lifesteal Emblem",
+   "effect": "炎焰碎裂触发时，真实伤害从 ATK 40% 提高到 ATK 100%",
+   "effect_en": "Flame Shatter's true damage rises from 40% ATK to 100% ATK"
   },
   "link_paralysis_shackles": {
    "name": "瘫痪枷锁",
+   "name_en": "Paralysis Shackles",
    "requires_text": "打断锁链 + 冰封霜刃",
-   "effect": "打断锁链成功打断后，额外触发冰属性效果，并使目标获得冰易伤：受伤 +15%，持续 3 秒"
+   "requires_text_en": "Interrupt Chain + Frost Blade",
+   "effect": "打断锁链成功打断后，额外触发冰属性效果，并使目标获得冰易伤：受伤 +15%，持续 3 秒",
+   "effect_en": "A successful Interrupt Chain also fires the ice effect and leaves the target ice-vulnerable: +15% damage taken for 3s"
   },
   "link_oppression_counter": {
    "name": "压迫反击",
+   "name_en": "Oppression Counter",
    "requires_text": "束缚重压 + 狂暴进攻",
-   "effect": "我方普通棋子被攻击时，对攻击者施加减攻 20%，持续 2 秒；狂暴进攻会在被攻击时也对攻击者叠加"
+   "requires_text_en": "Binding Weight + Frenzy Assault",
+   "effect": "我方普通棋子被攻击时，对攻击者施加减攻 20%，持续 2 秒；狂暴进攻会在被攻击时也对攻击者叠加",
+   "effect_en": "When an allied normal piece is attacked, the attacker takes -20% ATK for 2s; Frenzy Assault also stacks onto the attacker when struck"
   },
   "link_fraud_fate": {
    "name": "诡诈命运",
+   "name_en": "Trickster's Fate",
    "requires_text": "幻影步伐 + 慷慨命运",
-   "effect": "慷慨命运变为准备阶段每回合手动赌博 1 次：60% 金币翻倍，40% 损失当前金币 50%"
+   "requires_text_en": "Phantom Step + Generous Fate",
+   "effect": "慷慨命运变为准备阶段每回合手动赌博 1 次：60% 金币翻倍，40% 损失当前金币 50%",
+   "effect_en": "Generous Fate becomes one manual gamble per prep round: 60% to double your gold, 40% to lose half of it"
   },
   "link_iron_maiden": {
    "name": "铁处女",
+   "name_en": "Iron Maiden",
    "requires_text": "铁壁之护 + 腐蚀毒针",
-   "effect": "我方普通棋子受击时，反施失血 3 秒，并使攻击者 DEF -6，持续 3 秒，冷却 5 秒"
+   "requires_text_en": "Iron Wall + Corrosive Needle",
+   "effect": "我方普通棋子受击时，反施失血 3 秒，并使攻击者 DEF -6，持续 3 秒，冷却 5 秒",
+   "effect_en": "When an allied normal piece is hit, bleed the attacker for 3s and cut their DEF by 6 for 3s, 5s cooldown"
   },
   "link_toxic_burst": {
    "name": "剧毒爆发",
+   "name_en": "Toxic Burst",
    "requires_text": "爆裂核心 + 剧毒蔓延",
-   "effect": "普通棋子造成伤害时，中毒目标有 50% 概率立即结算剩余毒伤并清除中毒"
+   "requires_text_en": "Burst Core + Toxic Spread",
+   "effect": "普通棋子造成伤害时，中毒目标有 50% 概率立即结算剩余毒伤并清除中毒",
+   "effect_en": "When a normal piece deals damage, a poisoned target has a 50% chance to take all remaining poison damage at once and lose the poison"
   },
   "link_rich_path": {
    "name": "富裕之路",
+   "name_en": "Path of Riches",
    "requires_text": "复利之道 + 雷霆加速",
-   "effect": "我方普通棋子造成伤害后 10% 概率 +10 金"
+   "requires_text_en": "Compound Interest + Thunder Haste",
+   "effect": "我方普通棋子造成伤害后 10% 概率 +10 金",
+   "effect_en": "Allied normal pieces have a 10% chance to grant +10 gold after dealing damage"
   },
   "link_clearance_sale": {
    "name": "清仓特卖",
+   "name_en": "Clearance Sale",
    "requires_text": "狂怒阵容 + 折扣令牌",
-   "effect": "自动激活，棋子商店价格 -40%，最低 1 金"
+   "requires_text_en": "Fury Roster + Discount Token",
+   "effect": "自动激活，棋子商店价格 -40%，最低 1 金",
+   "effect_en": "Activates automatically: piece shop prices -40%, minimum 1 gold"
   },
   "link_hu_pai_master": {
    "name": "胡牌手",
+   "name_en": "Winning Hand",
    "requires_text": "生命丰碑 + 法阵回春 + 震荡余波 + 血契之刃 + 黄金祭坛",
-   "effect": "五件全部拥有时激活：生命丰碑 +40%、法阵回春 +2、震荡余波眩晕 2 秒、血契之刃 ATK x1.50、黄金祭坛 +100 金（未实现）；冷却、概率、次数与负面代价不变"
+   "requires_text_en": "Life Monument + Formation Heal + Shockwave + Blood Pact + Golden Altar",
+   "effect": "五件全部拥有时激活：生命丰碑 +40%、法阵回春 +2、震荡余波眩晕 2 秒、血契之刃 ATK x1.50、黄金祭坛 +100 金（未实现）；冷却、概率、次数与负面代价不变",
+   "effect_en": "Active while all five are held: Life Monument +40%, Formation Heal +2, Shockwave stuns 2s, Blood Pact ATK ×1.50, Golden Altar +100 gold (not implemented). Cooldowns, chances, use counts and drawbacks are unchanged"
   }
  }
 }

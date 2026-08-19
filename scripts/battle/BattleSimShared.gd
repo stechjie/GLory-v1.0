@@ -674,6 +674,12 @@ static func _nearest(f: Dictionary, opponents: Array) -> Dictionary:
 static func _can_target(attacker: Dictionary, target: Dictionary, opponents: Array = []) -> bool:
 	if not GameState.team_mode or str(attacker.get("team", "")) == str(target.get("team", "")):
 		return true
+	# 法阵友军不吃分路限制：它是第 21 回合按法阵血量召唤的守护者，不属于任何一路的
+	# 棋子，技能文案写的也是「全场」。此前它被塞在 lane 1，_living_targets 走同一套
+	# 判定，于是「全场」大招实测只打到 1 路的 6-8 只（全场存活 21-23），覆盖率约 1/3。
+	# 只放开进攻侧：友军选谁打不受限，但敌方仍按自己那一路找目标，不会三路一起扑过来。
+	if bool(attacker.get("is_formation_ally", false)):
+		return true
 	var lane := int(attacker.get("lane", -1))
 	if lane < 0 or int(target.get("lane", -1)) == lane:
 		return true
