@@ -42,7 +42,7 @@ func _build_prep_panel(rect: Rect2) -> void:
 	layer.position = rect.position
 	layer.size = rect.size
 	layer.configure_prep()
-	layer.set_direction_texts("前排  FRONTLINE", "后排  BACKLINE")
+	layer.set_direction_texts("前排", "后排")
 	add_child(layer)
 	var cells: Array[PackedVector2Array] = []
 	for index in 16:

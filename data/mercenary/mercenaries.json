@@ -129,7 +129,7 @@
                             "crit":  0.05,
                             "crit_dmg":  1.5,
                             "model":  "res://assets/models/mercenaries/merc_virgo_heal_animated/merc_virgo_heal_animated.tscn",
-                            "model_visual_scale":  0.01,
+                            "model_visual_scale":  1.0,
                             "model_base_yaw":  180.0,
                             "model_frame_fill":  0.96,
                             "model_idle_animation_name":  "idle",

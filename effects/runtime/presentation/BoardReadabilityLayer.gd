@@ -211,10 +211,12 @@ func _draw_prep_direction_labels() -> void:
 	var bounds := _all_prep_bounds()
 	if bounds.size == Vector2.ZERO:
 		return
+	var label_x := bounds.position.x - 10.0
+	var label_width := 118.0
 	if not _front_text.is_empty():
-		_draw_centered_label("↑  %s" % _front_text, Vector2(bounds.get_center().x, bounds.position.y + 18.0), minf(190.0, bounds.size.x * 0.6))
+		_draw_centered_label("↑  %s" % _front_text, Vector2(label_x, bounds.position.y + 12.0), label_width)
 	if not _back_text.is_empty():
-		_draw_centered_label("↓  %s" % _back_text, Vector2(bounds.get_center().x, bounds.end.y - 8.0), minf(190.0, bounds.size.x * 0.6))
+		_draw_centered_label("↓  %s" % _back_text, Vector2(label_x, bounds.end.y - 6.0), label_width)
 
 
 func _draw_battle() -> void:
@@ -262,7 +264,7 @@ func _draw_target_line() -> void:
 	if delta.length() < 8.0:
 		return
 	draw_line(_battle_source, _battle_target, _alpha(style.guide_shadow_color, 0.72), style.target_line_width + 3.0, true)
-	draw_dashed_line(_battle_source, _battle_target, _alpha(_battle_focus_color, 0.82 * _focus_strength), style.target_line_width, 9.0, true, true)
+	draw_dashed_line(_battle_source, _battle_target, _alpha(_battle_focus_color, 0.70 * _focus_strength), style.target_line_width, 9.0, true, true)
 	var direction := delta.normalized()
 	var normal := Vector2(-direction.y, direction.x)
 	var tip := _battle_target - direction * 13.0

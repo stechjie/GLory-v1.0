@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "status": "desktop_provisional_android_pending",
+  "measurement": {
+    "battle_viewport": [960, 540],
+    "orthographic_size": 7.2,
+    "battle_unit_visual_scale": 0.42,
+    "nominal_actor_height": 0.98,
+    "nominal_actor_screen_pixels": 70,
+    "resident_geometry_counts_hidden_action_models": true
+  },
+  "defaults": {
+    "visible_vertices_soft": 8000,
+    "visible_vertices_hard": 20000,
+    "resident_vertices_soft": 24000,
+    "resident_vertices_hard": 60000,
+    "resident_triangles_soft": 48000,
+    "resident_triangles_hard": 120000,
+    "surfaces_hard": 6,
+    "materials_hard": 4,
+    "skeletons_hard": 3,
+    "bones_per_skeleton_hard": 142,
+    "texture_edge_soft": 512,
+    "texture_edge_hard": 1024
+  },
+  "roles": {
+    "unit": {},
+    "monster": {},
+    "hero": {
+      "visible_vertices_soft": 12000,
+      "visible_vertices_hard": 30000,
+      "resident_vertices_soft": 36000,
+      "resident_vertices_hard": 90000,
+      "resident_triangles_soft": 72000,
+      "resident_triangles_hard": 180000
+    },
+    "merc": {
+      "visible_vertices_soft": 12000,
+      "visible_vertices_hard": 30000,
+      "resident_vertices_soft": 36000,
+      "resident_vertices_hard": 90000,
+      "resident_triangles_soft": 72000,
+      "resident_triangles_hard": 180000
+    },
+    "boss": {
+      "visible_vertices_soft": 25000,
+      "visible_vertices_hard": 60000,
+      "resident_vertices_soft": 75000,
+      "resident_vertices_hard": 180000,
+      "resident_triangles_soft": 150000,
+      "resident_triangles_hard": 360000
+    },
+    "ally": {
+      "visible_vertices_soft": 20000,
+      "visible_vertices_hard": 60000,
+      "resident_vertices_soft": 60000,
+      "resident_vertices_hard": 180000,
+      "resident_triangles_soft": 120000,
+      "resident_triangles_hard": 360000
+    }
+  }
+}

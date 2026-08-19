@@ -22,9 +22,9 @@ extends Resource
 
 @export_group("Battlefield")
 @export_range(0.0, 0.20, 0.002) var battle_zone_fill_alpha := 0.026
-@export_range(0.0, 0.50, 0.005) var battle_zone_line_alpha := 0.12
+@export_range(0.0, 0.50, 0.005) var battle_zone_line_alpha := 0.07
 @export_range(0.0, 0.30, 0.005) var battle_range_fill_alpha := 0.045
 @export_range(0.0, 1.0, 0.01) var battle_range_line_alpha := 0.42
 @export_range(1.0, 8.0, 0.25) var battle_line_width := 2.0
-@export_range(1.0, 8.0, 0.25) var target_line_width := 2.5
+@export_range(1.0, 8.0, 0.25) var target_line_width := 2.25
 @export var low_quality_zone_fills := false

@@ -17,7 +17,7 @@ Godot 不在 PATH 上，用 console 版才能把日志打到 stdout：
 **不要加 `--quit-after`。** 它会在脚本还没跑到 `finish()` 时强杀进程，退出码被强制成 `0` ——
 那正是这次要消灭的假绿。历史上棋盘烟测就是靠它才"通过"的。
 
-全部五个检查：
+核心六个检查：
 
 | 场景 | 覆盖什么 |
 | --- | --- |
@@ -25,6 +25,7 @@ Godot 不在 PATH 上，用 console 版才能把日志打到 stdout：
 | `tools/model_bounds_check.tscn` | 单位/佣兵模型能否加载、有没有可见网格 |
 | `tools/skel_check.tscn` | 多动作 FBX 的骨架是否一致（能否走 Animation Library） |
 | `tools/board_4x4_smoke.tscn` | 准备界面棋盘、拖拽、25→16 旧存档迁移 |
+| `tools/board_readability_check.tscn` | E1-E：16格/三路双半场契约、样式预算、设置迁移、评审场景 |
 | `tools/dep_scan.tscn` | assets/ 下 PNG 的引用情况 |
 
 改动过任何 `class_name` 脚本后，先跑一次编辑器导入重建全局类缓存，
@@ -90,6 +91,7 @@ A2 冷克隆恢复与首次完整导入也使用同一份稳定库存指纹
 | `model_bounds` | 44 | 0 | 0 | **broken=0、span=0 的模型 0 个** |
 | `skel_check` | 68 | 0 | 7 | 61 个单位骨骼一致；7 个已知不一致均归属 E2，并有精确、限期豁免 |
 | `board_4x4_smoke` | 62 | 0 | 0 | 含 25→16 迁移与"未知 id 必须被丢弃"两组用例 |
+| `board_readability` | 5 组 | 0 | 0 | 16个准备格、6个战术区域、40点射程、真实目标标记、profile v2→v3 迁移全部通过 |
 | `dep_scan` | 726 | 0 | 1 | 新纳入 4 张 Godot 从战场水晶 FBX 提取的贴图；已由 A2 manifest 管理 |
 
 **README 里「35 个 broken scene」在本机复现不出来。** README 的审计是在 macOS 上、

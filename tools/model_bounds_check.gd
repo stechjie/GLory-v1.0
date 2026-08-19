@@ -8,6 +8,14 @@ const CHECK_NAME := "model_bounds"
 # 这种"假可加载"以前只体现在打印出来的表格里，没人会去逐行看。
 const MIN_VALID_SPAN := 0.001
 
+# These are presentation diagnostics, not automatic model edits. Values outside
+# the range are still loaded and reported so an artist can distinguish a true
+# asset-scale problem from an intentional data-table compensation.
+const MIN_PLAUSIBLE_VISUAL_SCALE := 0.05
+const MAX_PLAUSIBLE_VISUAL_SCALE := 3.0
+const MIN_PLAUSIBLE_FINAL_SPAN := 0.35
+const MAX_PLAUSIBLE_FINAL_SPAN := 4.5
+
 const TABLES := [
 	{"kind": "unit", "path": "res://data/units/race_units.json", "key": "units"},
 	{"kind": "merc", "path": "res://data/mercenary/mercenaries.json", "key": "mercenaries"},
@@ -22,6 +30,7 @@ func _ready() -> void:
 	_h = CheckHarness.new(CHECK_NAME)
 	var rows: Array[Dictionary] = []
 	var broken: Array[String] = []
+	var anomalies: Array[String] = []
 	for table in TABLES:
 		var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(str(table.path)))
 		if not (parsed is Dictionary):
@@ -56,6 +65,16 @@ func _ready() -> void:
 					_h.fail("span_zero", "%s 加载成功但没有可见网格（span=%.4f）：%s" % [
 						display_id, span, model_path])
 				var scale := float(def.get("model_visual_scale", 1.0))
+				var final_span := span * scale
+				var reasons: Array[String] = []
+				if scale < MIN_PLAUSIBLE_VISUAL_SCALE or scale > MAX_PLAUSIBLE_VISUAL_SCALE:
+					reasons.append("model_visual_scale=%.4f" % scale)
+				if span > MIN_VALID_SPAN and (final_span < MIN_PLAUSIBLE_FINAL_SPAN or final_span > MAX_PLAUSIBLE_FINAL_SPAN):
+					reasons.append("final_span=%.4f" % final_span)
+				if not reasons.is_empty():
+					var anomaly := "%s [%s] %s" % [display_id, ", ".join(reasons), model_path]
+					anomalies.append(anomaly)
+					_h.note("尺寸异常候选：%s" % anomaly)
 				rows.append({
 					"kind": str(table.kind),
 					"id": display_id,
@@ -64,7 +83,7 @@ func _ready() -> void:
 					"path": model_path,
 					"span": span,
 					"scale": scale,
-					"final": span * scale,
+					"final": final_span,
 				})
 				model.queue_free()
 				await get_tree().process_frame
@@ -83,6 +102,9 @@ func _ready() -> void:
 		])
 	print("MODEL_BOUNDS_BROKEN count=%d" % broken.size())
 	for item in broken:
+		print(item)
+	print("MODEL_BOUNDS_ANOMALIES count=%d" % anomalies.size())
+	for item in anomalies:
 		print(item)
 	_h.finish(get_tree())
 
