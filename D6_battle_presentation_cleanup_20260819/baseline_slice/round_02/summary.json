@@ -1,0 +1,750 @@
+{
+  "actor_audit": {
+    "actor_present_count": 24,
+    "blank_uid_count": 0,
+    "body_fallback_defined_count": 0,
+    "complete_actor_contract_count": 24,
+    "entries": [
+      {
+        "actor_node_name": "UnitActor_pve_land_ancient_tree",
+        "actor_present": true,
+        "alive_at_audit": true,
+        "anchors": {
+          "ActorRoot": true,
+          "CastAnchor": true,
+          "FeetAnchor_legacy": true,
+          "FootAnchor": true,
+          "HeadAnchor": true,
+          "HitAnchor": true,
+          "Shadow": true
+        },
+        "body_fallback_defined": false,
+        "body_fallback_visible": false,
+        "complete_actor_contract": true,
+        "model_path": "res://assets/models/monsters/land/pve_land_ancient_tree_animated/pve_land_ancient_tree_animated.tscn",
+        "model_resource_exists": true,
+        "portrait_fallback_visible": false,
+        "team": "enemy",
+        "uid": "enemy_L0_m0",
+        "unit_id": "pve_land_ancient_tree",
+        "visual_kind": "model"
+      },
+      {
+        "actor_node_name": "@Node3D@376",
+        "actor_present": true,
+        "alive_at_audit": true,
+        "anchors": {
+          "ActorRoot": true,
+          "CastAnchor": true,
+          "FeetAnchor_legacy": true,
+          "FootAnchor": true,
+          "HeadAnchor": true,
+          "HitAnchor": true,
+          "Shadow": true
+        },
+        "body_fallback_defined": false,
+        "body_fallback_visible": false,
+        "complete_actor_contract": true,
+        "model_path": "res://assets/models/monsters/land/pve_land_ancient_tree_animated/pve_land_ancient_tree_animated.tscn",
+        "model_resource_exists": true,
+        "portrait_fallback_visible": false,
+        "team": "enemy",
+        "uid": "enemy_L0_m1",
+        "unit_id": "pve_land_ancient_tree",
+        "visual_kind": "model"
+      },
+      {
+        "actor_node_name": "@Node3D@380",
+        "actor_present": true,
+        "alive_at_audit": true,
+        "anchors": {
+          "ActorRoot": true,
+          "CastAnchor": true,
+          "FeetAnchor_legacy": true,
+          "FootAnchor": true,
+          "HeadAnchor": true,
+          "HitAnchor": true,
+          "Shadow": true
+        },
+        "body_fallback_defined": false,
+        "body_fallback_visible": false,
+        "complete_actor_contract": true,
+        "model_path": "res://assets/models/monsters/land/pve_land_ancient_tree_animated/pve_land_ancient_tree_animated.tscn",
+        "model_resource_exists": true,
+        "portrait_fallback_visible": false,
+        "team": "enemy",
+        "uid": "enemy_L0_m2",
+        "unit_id": "pve_land_ancient_tree",
+        "visual_kind": "model"
+      },
+      {
+        "actor_node_name": "@Node3D@384",
+        "actor_present": true,
+        "alive_at_audit": true,
+        "anchors": {
+          "ActorRoot": true,
+          "CastAnchor": true,
+          "FeetAnchor_legacy": true,
+          "FootAnchor": true,
+          "HeadAnchor": true,
+          "HitAnchor": true,
+          "Shadow": true
+        },
+        "body_fallback_defined": false,
+        "body_fallback_visible": false,
+        "complete_actor_contract": true,
+        "model_path": "res://assets/models/monsters/land/pve_land_ancient_tree_animated/pve_land_ancient_tree_animated.tscn",
+        "model_resource_exists": true,
+        "portrait_fallback_visible": false,
+        "team": "enemy",
+        "uid": "enemy_L0_m3",
+        "unit_id": "pve_land_ancient_tree",
+        "visual_kind": "model"
+      },
+      {
+        "actor_node_name": "@Node3D@388",
+        "actor_present": true,
+        "alive_at_audit": true,
+        "anchors": {
+          "ActorRoot": true,
+          "CastAnchor": true,
+          "FeetAnchor_legacy": true,
+          "FootAnchor": true,
+          "HeadAnchor": true,
+          "HitAnchor": true,
+          "Shadow": true
+        },
+        "body_fallback_defined": false,
+        "body_fallback_visible": false,
+        "complete_actor_contract": true,
+        "model_path": "res://assets/models/monsters/land/pve_land_ancient_tree_animated/pve_land_ancient_tree_animated.tscn",
+        "model_resource_exists": true,
+        "portrait_fallback_visible": false,
+        "team": "enemy",
+        "uid": "enemy_L1_m0",
+        "unit_id": "pve_land_ancient_tree",
+        "visual_kind": "model"
+      },
+      {
+        "actor_node_name": "@Node3D@392",
+        "actor_present": true,
+        "alive_at_audit": true,
+        "anchors": {
+          "ActorRoot": true,
+          "CastAnchor": true,
+          "FeetAnchor_legacy": true,
+          "FootAnchor": true,
+          "HeadAnchor": true,
+          "HitAnchor": true,
+          "Shadow": true
+        },
+        "body_fallback_defined": false,
+        "body_fallback_visible": false,
+        "complete_actor_contract": true,
+        "model_path": "res://assets/models/monsters/land/pve_land_ancient_tree_animated/pve_land_ancient_tree_animated.tscn",
+        "model_resource_exists": true,
+        "portrait_fallback_visible": false,
+        "team": "enemy",
+        "uid": "enemy_L1_m1",
+        "unit_id": "pve_land_ancient_tree",
+        "visual_kind": "model"
+      },
+      {
+        "actor_node_name": "@Node3D@396",
+        "actor_present": true,
+        "alive_at_audit": true,
+        "anchors": {
+          "ActorRoot": true,
+          "CastAnchor": true,
+          "FeetAnchor_legacy": true,
+          "FootAnchor": true,
+          "HeadAnchor": true,
+          "HitAnchor": true,
+          "Shadow": true
+        },
+        "body_fallback_defined": false,
+        "body_fallback_visible": false,
+        "complete_actor_contract": true,
+        "model_path": "res://assets/models/monsters/land/pve_land_ancient_tree_animated/pve_land_ancient_tree_animated.tscn",
+        "model_resource_exists": true,
+        "portrait_fallback_visible": false,
+        "team": "enemy",
+        "uid": "enemy_L1_m2",
+        "unit_id": "pve_land_ancient_tree",
+        "visual_kind": "model"
+      },
+      {
+        "actor_node_name": "@Node3D@400",
+        "actor_present": true,
+        "alive_at_audit": true,
+        "anchors": {
+          "ActorRoot": true,
+          "CastAnchor": true,
+          "FeetAnchor_legacy": true,
+          "FootAnchor": true,
+          "HeadAnchor": true,
+          "HitAnchor": true,
+          "Shadow": true
+        },
+        "body_fallback_defined": false,
+        "body_fallback_visible": false,
+        "complete_actor_contract": true,
+        "model_path": "res://assets/models/monsters/land/pve_land_ancient_tree_animated/pve_land_ancient_tree_animated.tscn",
+        "model_resource_exists": true,
+        "portrait_fallback_visible": false,
+        "team": "enemy",
+        "uid": "enemy_L1_m3",
+        "unit_id": "pve_land_ancient_tree",
+        "visual_kind": "model"
+      },
+      {
+        "actor_node_name": "@Node3D@404",
+        "actor_present": true,
+        "alive_at_audit": true,
+        "anchors": {
+          "ActorRoot": true,
+          "CastAnchor": true,
+          "FeetAnchor_legacy": true,
+          "FootAnchor": true,
+          "HeadAnchor": true,
+          "HitAnchor": true,
+          "Shadow": true
+        },
+        "body_fallback_defined": false,
+        "body_fallback_visible": false,
+        "complete_actor_contract": true,
+        "model_path": "res://assets/models/monsters/land/pve_land_ancient_tree_animated/pve_land_ancient_tree_animated.tscn",
+        "model_resource_exists": true,
+        "portrait_fallback_visible": false,
+        "team": "enemy",
+        "uid": "enemy_L2_m0",
+        "unit_id": "pve_land_ancient_tree",
+        "visual_kind": "model"
+      },
+      {
+        "actor_node_name": "@Node3D@408",
+        "actor_present": true,
+        "alive_at_audit": true,
+        "anchors": {
+          "ActorRoot": true,
+          "CastAnchor": true,
+          "FeetAnchor_legacy": true,
+          "FootAnchor": true,
+          "HeadAnchor": true,
+          "HitAnchor": true,
+          "Shadow": true
+        },
+        "body_fallback_defined": false,
+        "body_fallback_visible": false,
+        "complete_actor_contract": true,
+        "model_path": "res://assets/models/monsters/land/pve_land_ancient_tree_animated/pve_land_ancient_tree_animated.tscn",
+        "model_resource_exists": true,
+        "portrait_fallback_visible": false,
+        "team": "enemy",
+        "uid": "enemy_L2_m1",
+        "unit_id": "pve_land_ancient_tree",
+        "visual_kind": "model"
+      },
+      {
+        "actor_node_name": "@Node3D@412",
+        "actor_present": true,
+        "alive_at_audit": true,
+        "anchors": {
+          "ActorRoot": true,
+          "CastAnchor": true,
+          "FeetAnchor_legacy": true,
+          "FootAnchor": true,
+          "HeadAnchor": true,
+          "HitAnchor": true,
+          "Shadow": true
+        },
+        "body_fallback_defined": false,
+        "body_fallback_visible": false,
+        "complete_actor_contract": true,
+        "model_path": "res://assets/models/monsters/land/pve_land_ancient_tree_animated/pve_land_ancient_tree_animated.tscn",
+        "model_resource_exists": true,
+        "portrait_fallback_visible": false,
+        "team": "enemy",
+        "uid": "enemy_L2_m2",
+        "unit_id": "pve_land_ancient_tree",
+        "visual_kind": "model"
+      },
+      {
+        "actor_node_name": "@Node3D@416",
+        "actor_present": true,
+        "alive_at_audit": true,
+        "anchors": {
+          "ActorRoot": true,
+          "CastAnchor": true,
+          "FeetAnchor_legacy": true,
+          "FootAnchor": true,
+          "HeadAnchor": true,
+          "HitAnchor": true,
+          "Shadow": true
+        },
+        "body_fallback_defined": false,
+        "body_fallback_visible": false,
+        "complete_actor_contract": true,
+        "model_path": "res://assets/models/monsters/land/pve_land_ancient_tree_animated/pve_land_ancient_tree_animated.tscn",
+        "model_resource_exists": true,
+        "portrait_fallback_visible": false,
+        "team": "enemy",
+        "uid": "enemy_L2_m3",
+        "unit_id": "pve_land_ancient_tree",
+        "visual_kind": "model"
+      },
+      {
+        "actor_node_name": "UnitActor_human_king",
+        "actor_present": true,
+        "alive_at_audit": true,
+        "anchors": {
+          "ActorRoot": true,
+          "CastAnchor": true,
+          "FeetAnchor_legacy": true,
+          "FootAnchor": true,
+          "HeadAnchor": true,
+          "HitAnchor": true,
+          "Shadow": true
+        },
+        "body_fallback_defined": false,
+        "body_fallback_visible": false,
+        "complete_actor_contract": true,
+        "model_path": "res://assets/models/units/human_king_animated/human_king_animated.tscn",
+        "model_resource_exists": true,
+        "portrait_fallback_visible": false,
+        "team": "player",
+        "uid": "player_L0_0",
+        "unit_id": "human_king",
+        "visual_kind": "model"
+      },
+      {
+        "actor_node_name": "UnitActor_human_swordsman",
+        "actor_present": true,
+        "alive_at_audit": true,
+        "anchors": {
+          "ActorRoot": true,
+          "CastAnchor": true,
+          "FeetAnchor_legacy": true,
+          "FootAnchor": true,
+          "HeadAnchor": true,
+          "HitAnchor": true,
+          "Shadow": true
+        },
+        "body_fallback_defined": false,
+        "body_fallback_visible": false,
+        "complete_actor_contract": true,
+        "model_path": "res://assets/models/units/human_swordsman_animated/human_swordsman_animated.tscn",
+        "model_resource_exists": true,
+        "portrait_fallback_visible": false,
+        "team": "player",
+        "uid": "player_L0_1",
+        "unit_id": "human_swordsman",
+        "visual_kind": "model"
+      },
+      {
+        "actor_node_name": "UnitActor_human_archer",
+        "actor_present": true,
+        "alive_at_audit": true,
+        "anchors": {
+          "ActorRoot": true,
+          "CastAnchor": true,
+          "FeetAnchor_legacy": true,
+          "FootAnchor": true,
+          "HeadAnchor": true,
+          "HitAnchor": true,
+          "Shadow": true
+        },
+        "body_fallback_defined": false,
+        "body_fallback_visible": false,
+        "complete_actor_contract": true,
+        "model_path": "res://assets/models/units/human_archer_animated/human_archer_animated.tscn",
+        "model_resource_exists": true,
+        "portrait_fallback_visible": false,
+        "team": "player",
+        "uid": "player_L0_2",
+        "unit_id": "human_archer",
+        "visual_kind": "model"
+      },
+      {
+        "actor_node_name": "UnitActor_human_mage",
+        "actor_present": true,
+        "alive_at_audit": true,
+        "anchors": {
+          "ActorRoot": true,
+          "CastAnchor": true,
+          "FeetAnchor_legacy": true,
+          "FootAnchor": true,
+          "HeadAnchor": true,
+          "HitAnchor": true,
+          "Shadow": true
+        },
+        "body_fallback_defined": false,
+        "body_fallback_visible": false,
+        "complete_actor_contract": true,
+        "model_path": "res://assets/models/units/human_mage_animated/human_mage_animated.tscn",
+        "model_resource_exists": true,
+        "portrait_fallback_visible": false,
+        "team": "player",
+        "uid": "player_L0_3",
+        "unit_id": "human_mage",
+        "visual_kind": "model"
+      },
+      {
+        "actor_node_name": "UnitActor_god_king",
+        "actor_present": true,
+        "alive_at_audit": true,
+        "anchors": {
+          "ActorRoot": true,
+          "CastAnchor": true,
+          "FeetAnchor_legacy": true,
+          "FootAnchor": true,
+          "HeadAnchor": true,
+          "HitAnchor": true,
+          "Shadow": true
+        },
+        "body_fallback_defined": false,
+        "body_fallback_visible": false,
+        "complete_actor_contract": true,
+        "model_path": "res://assets/models/units/god_king_animated/god_king_animated.tscn",
+        "model_resource_exists": true,
+        "portrait_fallback_visible": false,
+        "team": "player",
+        "uid": "player_L1_0",
+        "unit_id": "god_king",
+        "visual_kind": "model"
+      },
+      {
+        "actor_node_name": "UnitActor_god_guard",
+        "actor_present": true,
+        "alive_at_audit": true,
+        "anchors": {
+          "ActorRoot": true,
+          "CastAnchor": true,
+          "FeetAnchor_legacy": true,
+          "FootAnchor": true,
+          "HeadAnchor": true,
+          "HitAnchor": true,
+          "Shadow": true
+        },
+        "body_fallback_defined": false,
+        "body_fallback_visible": false,
+        "complete_actor_contract": true,
+        "model_path": "res://assets/models/units/god_guard_crystalbound/god_guard_crystalbound_animated.tscn",
+        "model_resource_exists": true,
+        "portrait_fallback_visible": false,
+        "team": "player",
+        "uid": "player_L1_1",
+        "unit_id": "god_guard",
+        "visual_kind": "model"
+      },
+      {
+        "actor_node_name": "UnitActor_god_arbiter",
+        "actor_present": true,
+        "alive_at_audit": true,
+        "anchors": {
+          "ActorRoot": true,
+          "CastAnchor": true,
+          "FeetAnchor_legacy": true,
+          "FootAnchor": true,
+          "HeadAnchor": true,
+          "HitAnchor": true,
+          "Shadow": true
+        },
+        "body_fallback_defined": false,
+        "body_fallback_visible": false,
+        "complete_actor_contract": true,
+        "model_path": "res://assets/models/units/god_arbiter_animated/god_arbiter_animated.tscn",
+        "model_resource_exists": true,
+        "portrait_fallback_visible": false,
+        "team": "player",
+        "uid": "player_L1_2",
+        "unit_id": "god_arbiter",
+        "visual_kind": "model"
+      },
+      {
+        "actor_node_name": "UnitActor_god_priestess",
+        "actor_present": true,
+        "alive_at_audit": true,
+        "anchors": {
+          "ActorRoot": true,
+          "CastAnchor": true,
+          "FeetAnchor_legacy": true,
+          "FootAnchor": true,
+          "HeadAnchor": true,
+          "HitAnchor": true,
+          "Shadow": true
+        },
+        "body_fallback_defined": false,
+        "body_fallback_visible": false,
+        "complete_actor_contract": true,
+        "model_path": "res://assets/models/units/god_priestess_animated/god_priestess_animated.tscn",
+        "model_resource_exists": true,
+        "portrait_fallback_visible": false,
+        "team": "player",
+        "uid": "player_L1_3",
+        "unit_id": "god_priestess",
+        "visual_kind": "model"
+      },
+      {
+        "actor_node_name": "UnitActor_god_archangel",
+        "actor_present": true,
+        "alive_at_audit": true,
+        "anchors": {
+          "ActorRoot": true,
+          "CastAnchor": true,
+          "FeetAnchor_legacy": true,
+          "FootAnchor": true,
+          "HeadAnchor": true,
+          "HitAnchor": true,
+          "Shadow": true
+        },
+        "body_fallback_defined": false,
+        "body_fallback_visible": false,
+        "complete_actor_contract": true,
+        "model_path": "res://assets/models/units/god_archangel_animated/god_archangel_animated.tscn",
+        "model_resource_exists": true,
+        "portrait_fallback_visible": false,
+        "team": "player",
+        "uid": "player_L2_0",
+        "unit_id": "god_archangel",
+        "visual_kind": "model"
+      },
+      {
+        "actor_node_name": "UnitActor_human_militia",
+        "actor_present": true,
+        "alive_at_audit": true,
+        "anchors": {
+          "ActorRoot": true,
+          "CastAnchor": true,
+          "FeetAnchor_legacy": true,
+          "FootAnchor": true,
+          "HeadAnchor": true,
+          "HitAnchor": true,
+          "Shadow": true
+        },
+        "body_fallback_defined": false,
+        "body_fallback_visible": false,
+        "complete_actor_contract": true,
+        "model_path": "res://assets/models/units/human_militia_little_knight/human_militia_animated.tscn",
+        "model_resource_exists": true,
+        "portrait_fallback_visible": false,
+        "team": "player",
+        "uid": "player_L2_1",
+        "unit_id": "human_militia",
+        "visual_kind": "model"
+      },
+      {
+        "actor_node_name": "UnitActor_god_aurora",
+        "actor_present": true,
+        "alive_at_audit": true,
+        "anchors": {
+          "ActorRoot": true,
+          "CastAnchor": true,
+          "FeetAnchor_legacy": true,
+          "FootAnchor": true,
+          "HeadAnchor": true,
+          "HitAnchor": true,
+          "Shadow": true
+        },
+        "body_fallback_defined": false,
+        "body_fallback_visible": false,
+        "complete_actor_contract": true,
+        "model_path": "res://assets/models/units/god_aurora_animated/god_aurora_animated.tscn",
+        "model_resource_exists": true,
+        "portrait_fallback_visible": false,
+        "team": "player",
+        "uid": "player_L2_2",
+        "unit_id": "god_aurora",
+        "visual_kind": "model"
+      },
+      {
+        "actor_node_name": "UnitActor_human_cleric",
+        "actor_present": true,
+        "alive_at_audit": true,
+        "anchors": {
+          "ActorRoot": true,
+          "CastAnchor": true,
+          "FeetAnchor_legacy": true,
+          "FootAnchor": true,
+          "HeadAnchor": true,
+          "HitAnchor": true,
+          "Shadow": true
+        },
+        "body_fallback_defined": false,
+        "body_fallback_visible": false,
+        "complete_actor_contract": true,
+        "model_path": "res://assets/models/units/human_cleric_animated/human_cleric_animated.tscn",
+        "model_resource_exists": true,
+        "portrait_fallback_visible": false,
+        "team": "player",
+        "uid": "player_L2_3",
+        "unit_id": "human_cleric",
+        "visual_kind": "model"
+      }
+    ],
+    "live_visual_expected_count": 24,
+    "missing_actor_count_raw": 0,
+    "missing_live_actor_count": 0,
+    "missing_model_path_count": 0,
+    "not_live_at_audit_count": 0,
+    "roster_count": 24,
+    "visible_body_fallback_count": 0,
+    "visible_portrait_fallback_count": 0
+  },
+  "compute_first_ms": 52.351,
+  "compute_repeat_ms": 51.132,
+  "director_audit": {
+    "anchor_degradation_count": 3,
+    "anchor_degradation_rows": [
+      {
+        "consumer": "director",
+        "reason": "missing target actor for hit_number",
+        "resource_path": "",
+        "unit_id": "enemy_L0_m2"
+      },
+      {
+        "consumer": "director",
+        "reason": "missing target actor for hit_number",
+        "resource_path": "",
+        "unit_id": "enemy_L0_m0"
+      },
+      {
+        "consumer": "director",
+        "reason": "missing target actor for hit_number",
+        "resource_path": "",
+        "unit_id": "enemy_L0_m3"
+      }
+    ],
+    "budget": {
+      "degraded": 2,
+      "merged": 0,
+      "over_budget_by_priority": {
+        "important": 2
+      }
+    },
+    "drop_count": 3,
+    "drops_by_reason": {
+      "drain_nonblocking": 3
+    },
+    "legacy_adapter": {
+      "pending_timers": 0,
+      "played_by_type": {
+        "attack_start": 19,
+        "death": 12,
+        "hit_number": 58,
+        "projectile_spawn": 43
+      },
+      "profiles_seen": [
+        "basic_melee",
+        "basic_ranged",
+        "crit",
+        "death",
+        "fallback_minimal",
+        "heal"
+      ]
+    },
+    "missing_actor_drop_count": 0,
+    "profiles": {
+      "loaded_ids": [
+        "basic_melee",
+        "basic_ranged",
+        "crit",
+        "death",
+        "heal"
+      ],
+      "missing_rows": [],
+      "resolved_counts": {
+        "basic_melee": 51,
+        "basic_ranged": 150,
+        "crit": 14,
+        "death": 12,
+        "heal": 1
+      }
+    },
+    "resolution": {
+      "degraded_anchors": 0,
+      "resolved_anchors": 276,
+      "resolved_cues": 233
+    }
+  },
+  "event_count": 243,
+  "event_types": {
+    "attack_start": 62,
+    "death": 12,
+    "hit_number": 61,
+    "impact": 62,
+    "projectile_spawn": 43,
+    "skill_shake": 2,
+    "unit_skill_proc": 1
+  },
+  "frame_count": 53,
+  "frame_event_bucket_count": 53,
+  "hashes": {
+    "final_state_sha256": "aac469ed236416a2047e127bf047b2b5199bf2857e9435bd4f08891f922f943f",
+    "first_difference": "",
+    "frame_events_sha256": "6df1733cf465108e23852ed1d00efc2077e8438d51571599d102c3e9a9cf97c5",
+    "repeat_replay_sha256": "5bf9c58b12bb1ba7508e43c9fb1d8675643bd59412706ca29d365e4ace1a1478",
+    "repeatable": true,
+    "replay_sha256": "5bf9c58b12bb1ba7508e43c9fb1d8675643bd59412706ca29d365e4ace1a1478",
+    "roster_sha256": "5a75a2c9a9dfef8cc357b2c654f9524ea1d1f453618d6583e8faa5199338540a"
+  },
+  "kind": "pve",
+  "locale": "en",
+  "performance": {
+    "average_fps": 92.32287680612528,
+    "max_frame_time_ms": 72.71333333333334,
+    "measurement_window_sec": 4.928355958355627,
+    "one_percent_low_fps": 17.619076840104352,
+    "p95_frame_time_ms": 16.666666666666668,
+    "peak_buffer_mb": 26.680030822753906,
+    "peak_draw_calls": 412,
+    "peak_nodes": 1231,
+    "peak_objects": 4874,
+    "peak_orphans": 0,
+    "peak_static_mb": 110.12410163879395,
+    "peak_texture_mb": 109.3125,
+    "peak_tweens": 159,
+    "peak_video_mb": 301.5,
+    "sample_count": 455,
+    "screenshots_excluded_from_timing": true
+  },
+  "player_wins": true,
+  "result_reason": "wipeout",
+  "roster_count": 24,
+  "round": 2,
+  "screenshots": [
+    {
+      "height": 720,
+      "label": "start",
+      "path": "C:/Users/Leno/Desktop/Beta 0.04/D6_battle_presentation_cleanup_20260819/baseline_slice/round_02/start.png",
+      "replay_frame": 0,
+      "sha256": "5abcba871392988377ee1696f53ac21fc1a9ae23d0d2d59019ff125a255a0d57",
+      "width": 1280
+    },
+    {
+      "height": 720,
+      "label": "mid",
+      "path": "C:/Users/Leno/Desktop/Beta 0.04/D6_battle_presentation_cleanup_20260819/baseline_slice/round_02/mid.png",
+      "replay_frame": 26,
+      "sha256": "b8b067abb85898b8a4753bfaa8b451e9acae4f9b8c1a8184643eaa4177148733",
+      "width": 1280
+    },
+    {
+      "height": 720,
+      "label": "end",
+      "path": "C:/Users/Leno/Desktop/Beta 0.04/D6_battle_presentation_cleanup_20260819/baseline_slice/round_02/end.png",
+      "replay_frame": 52,
+      "sha256": "379f5bcd00101565f0d78d9402b6a4018b853a3b285b03d40478bc69f86df8ba",
+      "width": 1280
+    }
+  ],
+  "seed": 20260823,
+  "sim_elapsed_sec": 5.1999999999999975,
+  "tool_version": 1,
+  "viewport": {
+    "viewport_height": 900,
+    "viewport_width": 1600,
+    "window_height": 720,
+    "window_width": 1280
+  }
+}

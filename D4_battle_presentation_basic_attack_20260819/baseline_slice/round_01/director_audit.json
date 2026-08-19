@@ -1,0 +1,24 @@
+{
+  "anchor_degradation_count": 0,
+  "anchor_degradation_rows": [],
+  "drop_count": 1,
+  "drops_by_reason": {
+    "source_dead": 1
+  },
+  "legacy_adapter": {
+    "pending_timers": 0,
+    "played_by_type": {
+      "attack_start": 2,
+      "death": 8,
+      "hit_number": 4,
+      "projectile_spawn": 4
+    },
+    "skipped_unmigrated": 37
+  },
+  "missing_actor_drop_count": 0,
+  "resolution": {
+    "degraded_anchors": 0,
+    "resolved_anchors": 72,
+    "resolved_cues": 62
+  }
+}

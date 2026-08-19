@@ -1,0 +1,72 @@
+{
+  "anchor_degradation_count": 3,
+  "anchor_degradation_rows": [
+    {
+      "consumer": "director",
+      "reason": "missing target actor for hit_number",
+      "resource_path": "",
+      "unit_id": "enemy_L0_m1"
+    },
+    {
+      "consumer": "director",
+      "reason": "missing target actor for hit_number",
+      "resource_path": "",
+      "unit_id": "enemy_L1_m0"
+    },
+    {
+      "consumer": "director",
+      "reason": "missing target actor for hit_number",
+      "resource_path": "",
+      "unit_id": "enemy_L0_m2"
+    }
+  ],
+  "budget": {
+    "degraded": 0,
+    "merged": 0,
+    "over_budget_by_priority": {}
+  },
+  "drop_count": 2,
+  "drops_by_reason": {
+    "drain_nonblocking": 1,
+    "source_dead": 1
+  },
+  "legacy_adapter": {
+    "pending_timers": 0,
+    "played_by_type": {
+      "attack_start": 4,
+      "death": 8,
+      "hit_number": 16,
+      "projectile_spawn": 10
+    },
+    "profiles_seen": [
+      "basic_melee",
+      "basic_ranged",
+      "crit",
+      "death",
+      "fallback_minimal"
+    ],
+    "skipped_unmigrated": 0
+  },
+  "missing_actor_drop_count": 0,
+  "profiles": {
+    "loaded_ids": [
+      "basic_melee",
+      "basic_ranged",
+      "crit",
+      "death",
+      "heal"
+    ],
+    "missing_rows": [],
+    "resolved_counts": {
+      "basic_melee": 12,
+      "basic_ranged": 34,
+      "crit": 2,
+      "death": 8
+    }
+  },
+  "resolution": {
+    "degraded_anchors": 0,
+    "resolved_anchors": 68,
+    "resolved_cues": 58
+  }
+}

@@ -2,6 +2,11 @@ extends "res://scenes/battle/BattleResult.gd"
 
 const BattleReplayUtil = preload("res://scripts/battle/BattleReplayUtil.gd")
 const BattlePresentationDirectorScript := preload("res://effects/runtime/presentation/BattlePresentationDirector.gd")
+const LegacyBattleVfxAdapterScript := preload("res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd")
+const VfxProfileResolverScript := preload("res://effects/runtime/presentation/VfxProfileResolver.gd")
+
+# Upper bound on how long the result page may wait for presentation cues.
+const PRESENTATION_DRAIN_TIMEOUT_SEC := 3.0
 const VFXSummonSpawn3D := preload("res://effects/vfx3d/modules/VFXSummonSpawn3D.gd")
 const FINAL_SUMMON_RED := preload("res://effects/vfx3d/profiles/formation/summon_formation_red.tres")
 const FINAL_SUMMON_BLUE := preload("res://effects/vfx3d/profiles/formation/summon_formation_blue.tres")
@@ -22,6 +27,14 @@ var _replay_own: Dictionary = {}
 var _replay_rival: Dictionary = {}
 var _view_toggle_btn: Button
 var _presentation_director: RefCounted = BattlePresentationDirectorScript.new()
+# D4: migration-period adapter. It only plays cues for units in
+# BattlePresentationSlice; everything else is completed immediately and keeps
+# being drawn by the legacy snapshot-diff path in BattleVfx.
+var _legacy_vfx_adapter: RefCounted = LegacyBattleVfxAdapterScript.new()
+# D5: resolves the .tres cue profile for each event. Loaded on the first battle
+# so the profiles are not read during scene instantiation.
+var _vfx_profile_resolver: RefCounted = VfxProfileResolverScript.new()
+var _vfx_profiles_loaded := false
 # 临时缓解（B7），与 PrepScreen.TEAM_BATTLE_PREP_TIMEOUT_SEC /
 # NetworkService.REPLAY_TIMEOUT_SEC 必须保持同量级：三处任何一处偏小，
 # 客户端就会先于服务器看门狗放弃。这是 fallback 路径，主路径在 PrepScreen。
@@ -446,6 +459,7 @@ func _clear_unit_visuals() -> void:
 		if node != null and is_instance_valid(node):
 			node.queue_free()
 	_battle_3d_models.clear()
+	cue_release_corpses()
 	_unit_actor_registry.clear()
 	_status_vfx_by_id.clear()
 	# VFX 差分缓存也按 uid 记上一帧血量/存活，不清会在切换瞬间放出假伤害/死亡特效。
@@ -476,6 +490,9 @@ func _apply_replay_frame(i: int) -> void:
 				var tick_events: Array = frame_events[j]
 				# D2 dual route: Director becomes the bounded scheduler while the old
 				# BattleVfx array remains a compatibility bridge until D6 migration.
+				# Claim dying bodies before the Director queues the tick: the next
+				# _refresh_visuals() would otherwise free them before the death cue runs.
+				cue_claim_corpses(tick_events)
 				_presentation_director.enqueue_tick(j, tick_events)
 				for ev in tick_events:
 					ve.append(ev)
@@ -534,13 +551,15 @@ func _finish_replay() -> void:
 		_set_watching_rival(false)
 	if _view_toggle_btn != null:
 		_view_toggle_btn.visible = false
-	# D2 uses the null adapter, so all cues are already complete and this call
-	# drains immediately. Later visual slices can wait on the same explicit gate.
+	# D4: with a real adapter the cues are asynchronous, so DRAINING actually has
+	# something to wait for. Checklist 4.6: hold the result page for the
+	# critical/important cues, but never past the cap.
 	_presentation_director.begin_draining()
 	_finished = true
 	_result = _replay.get("result", {})
 	_return_emitted = true
 	_stop_battle_music()
+	await _await_presentation_drained()
 	await _play_crystal_attack_sequence(_result)
 	_show_result_overlay()
 	await get_tree().create_timer(RESULT_DISPLAY_SECONDS).timeout
@@ -563,11 +582,29 @@ func _skip_animation() -> void:
 	super._skip_animation()
 
 
+# Skipping calls skip_to_result() first, which clears every queued cue, so this
+# returns on the first check instead of stalling the result page.
+func _await_presentation_drained() -> void:
+	var deadline := Time.get_ticks_msec() + int(PRESENTATION_DRAIN_TIMEOUT_SEC * 1000.0)
+	while _presentation_director.has_blocking_cues() and Time.get_ticks_msec() < deadline:
+		await get_tree().process_frame
+		if not is_inside_tree():
+			return
+
+
 func _begin_presentation_replay(replay: Dictionary) -> void:
 	# Resolver/budget/real adapters intentionally remain null in D2. The existing
 	# UnitActorRegistry is passed now so D3 can add anchors without changing the
 	# BattleScreen ownership boundary.
-	_presentation_director.configure(_unit_actor_registry, null, null)
+	_legacy_vfx_adapter.configure_host(self)
+	_legacy_vfx_adapter.reset_stats()
+	if not _vfx_profiles_loaded:
+		var loaded := int(_vfx_profile_resolver.load_profiles())
+		_vfx_profiles_loaded = loaded > 0
+		if loaded == 0:
+			push_warning("[VFX_PROFILE] no cue profile loaded; every cue runs on the built-in fallback")
+	_vfx_profile_resolver.reset_reports()
+	_presentation_director.configure(_unit_actor_registry, _vfx_profile_resolver, null, _legacy_vfx_adapter)
 	_presentation_director.begin_battle({
 		"battle_id": _presentation_battle_id(replay),
 		"kind": str(replay.get("kind", "team")),

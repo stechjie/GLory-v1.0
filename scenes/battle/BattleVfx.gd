@@ -7,6 +7,12 @@ var _vfx_prev_units: Dictionary = {}
 var _vfx_seeded: bool = false
 var _vfx_visual_event_index := 0
 var _persistent_unit_vfx: Dictionary = {}
+# D4: bodies of slice units whose death cue has been enqueued but not played yet.
+# The renderer prunes a dead model on the next refresh, which is faster than the
+# death cue can be reached when the victim was mid-swing (checklist 4.3 keeps the
+# in-flight action). Claiming the actor at enqueue time is what gives the death
+# animation something to play on.
+var _cue_corpses: Dictionary = {}
 
 # Floating damage/heal/shield numbers. A fixed pool of Labels is recycled round-
 # robin so fast fights never churn the scene tree (see vfx-mobile-pass).
@@ -145,7 +151,6 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 		if bool(prev_missing.get("mother_execute_kill", false)):
 			death_events.append({"pos": prev_missing.get("foot_pos", Vector2.ZERO), "world_foot": prev_missing.get("world_foot", Vector3.ZERO), "world_hit": prev_missing.get("world_hit", Vector3.ZERO), "killer_uid": str(prev_missing.get("killer_uid", "")), "mother_execute_kill": true, "model_node": prev_missing.get("model_node"), "victim_id": id})
 
-	_play_ranged_projectiles(_collect_attack_events(current, true), damage_events, current)
 	for apocalypse: Dictionary in apocalypse_ended:
 		var affected := _boss_damage_events_for_lane(apocalypse, damage_events)
 		if not bool(apocalypse.get("charge_completed", false)):
@@ -165,7 +170,10 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 	# 母灵的书统一由 mother_execute 视觉事件驱动（见 _play_visual_events），
 	# 不再走这条依赖 mother_execute_kill 的死亡分支——那个标记在 team/回放模式
 	# 里不会被记录，导致回放时书永远不播。事件路径单人和回放都能工作。
-	_play_melee_slashes(_collect_attack_events(current, false), damage_events, current)
+	#
+	# D6: 普攻的起手/投射物/命中/伤害数字/死亡已全部由 BattlePresentationDirector
+	# 的 cue 驱动，原先在这里按 attack_count 增量重建攻击的两条 diff 路径已删除。
+	# 保留在本函数里的仍是尚未迁移的部分：护盾、层数、治疗、Boss 与种族技能演出。
 	_vfx_prev_units = current
 
 func _vfx_hit_stop_active() -> bool:
@@ -265,62 +273,6 @@ func _fighter_sim_pos(f: Dictionary) -> Vector2:
 	if typeof(raw) == TYPE_DICTIONARY:
 		return Vector2(float(raw.get("x", 0.0)), float(raw.get("y", 0.0)))
 	return Vector2.ZERO
-
-func _collect_attack_events(current: Dictionary, ranged: bool) -> Array[Dictionary]:
-	var events: Array[Dictionary] = []
-	for id: String in current.keys():
-		var now: Dictionary = current[id]
-		var prev: Dictionary = _vfx_prev_units.get(id, {})
-		if prev.is_empty() or not bool(now.get("alive", true)):
-			continue
-		if int(now.get("attack_count", 0)) <= int(prev.get("attack_count", 0)):
-			continue
-		var is_ranged := float(now.get("range_px", 0.0)) >= RANGED_ATTACK_MIN_RANGE_PX
-		if is_ranged != ranged:
-			continue
-		events.append({
-			"id": id,
-			"pos": now.get("cast_pos", Vector2.ZERO),
-			"world_cast": now.get("world_cast", Vector3.ZERO),
-			"team": str(now.get("team", "")),
-			"unit_id": str(now.get("unit_id", "")),
-			"skill_id": str(now.get("skill_id", "")),
-			"attack_count": int(now.get("attack_count", 0)),
-			"skill_every": int(now.get("skill_every", 0)),
-			"target_uid": str(now.get("attack_target_uid", "")),
-		})
-	return events
-
-func _play_ranged_projectiles(attacks: Array[Dictionary], damage_events: Array[Dictionary], current: Dictionary) -> void:
-	for attack: Dictionary in attacks:
-		var target := _nearest_enemy_target(attack, damage_events, current)
-		if target.is_empty():
-			target = _floor_target_for(attack)
-		var race:=_visual_race_from_unit_id(str(attack.get("unit_id","")))
-		if str(attack.get("unit_id", "")) == "human_king":
-			_play_attack_unit_procedural(attack,target,current)
-			continue
-		_play_race_basic_attack(attack,target,"ranged",race,current)
-		_play_attack_unit_procedural(attack,target,current)
-
-func _play_melee_slashes(attacks: Array[Dictionary], damage_events: Array[Dictionary], current: Dictionary) -> void:
-	for attack: Dictionary in attacks:
-		var target := _nearest_enemy_target(attack, damage_events, current)
-		if target.is_empty():
-			target = _floor_target_for(attack)
-		var race:=_visual_race_from_unit_id(str(attack.get("unit_id","")))
-		if str(attack.get("unit_id", "")) == "human_king":
-			_play_attack_unit_procedural(attack,target,current)
-			continue
-		if str(attack.get("skill_id", "")) == "mirror_clone" or str(attack.get("id", "")).contains("_mirror_"):
-			_play_boss_procedural("mirror_slash", attack.get("world_cast", Vector3.ZERO), target.get("world_foot", Vector3.ZERO), _boss_target_context(target))
-			continue
-		if not race.is_empty():
-			_play_race_basic_attack(attack,target,"melee",race,current)
-			_play_attack_unit_procedural(attack,target,current)
-			continue
-		_play_race_basic_attack(attack,target,"melee",race,current)
-		_play_attack_unit_procedural(attack,target,current)
 
 func _race_from_unit_id(unit_id:String)->String:
 	for race in ["god","human","dark","undead"]:
@@ -920,14 +872,113 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 			var skill_id := str(event.get("skill_id", ""))
 			if not skill_id.is_empty() and not source.is_empty() and not target.is_empty():
 				_play_unit_procedural(skill_id, source.get("world_cast", Vector3.ZERO), target.get("world_hit", target.get("world_foot", Vector3.ZERO)), _unit_target_context(source, target))
-		elif str(event.get("type", "")) == "hit_number":
-			var hit_uid := str(event.get("target_uid", ""))
-			var hit_unit := _vfx_unit_by_sim_uid(current, hit_uid)
-			if hit_unit.is_empty():
-				hit_unit = _vfx_unit_by_sim_uid(_vfx_prev_units, hit_uid)
-			if not hit_unit.is_empty():
-				var hit_kind := "heal" if str(event.get("kind", "dmg")) == "heal" else "dmg"
-				_spawn_hit_number(hit_unit.get("head_pos", Vector2.ZERO), int(event.get("amount", 0)), hit_kind, bool(event.get("crit", false)), bool(event.get("skill", false)), str(event.get("race", "")))
+		# D6: hit_number is drawn by the Director's adapter, on its timing. The old
+		# branch here would have been a second, untimed copy of the same number.
+
+# --- Director cue entry points ------------------------------------------------
+# Every basic attack, damage number and death is drawn through these, driven by
+# BattlePresentationDirector cues. The snapshot-diff versions they replaced were
+# deleted in D6. _vfx_prev_units is reused deliberately: it already holds the most
+# recent snapshot after each refresh, and the ping-pong buffer comment above
+# forbids a second cross-frame holder of the same dictionaries.
+
+func cue_play_basic_attack(source_uid: String, target_uid: String, ranged: bool) -> bool:
+	var source: Dictionary = _cue_unit_snapshot(source_uid)
+	if source.is_empty():
+		return false
+	var attack := {
+		"id": source_uid,
+		"pos": source.get("cast_pos", Vector2.ZERO),
+		"world_cast": source.get("world_cast", Vector3.ZERO),
+		"team": str(source.get("team", "")),
+		"unit_id": str(source.get("unit_id", "")),
+		"skill_id": str(source.get("skill_id", "")),
+		"target_uid": target_uid,
+	}
+	# The event carries the simulator's real target, so unlike the diff path this
+	# never has to guess the victim from nearby damaged units.
+	var target: Dictionary = _cue_unit_snapshot(target_uid)
+	if target.is_empty():
+		target = _floor_target_for(attack)
+	var unit_id := str(attack.get("unit_id", ""))
+	# The two special cases the batched diff helpers carry must be mirrored here
+	# exactly, or a migrated unit would gain an extra swing the legacy path
+	# deliberately omits.
+	if unit_id == "human_king":
+		_play_attack_unit_procedural(attack, target, _vfx_prev_units)
+		return true
+	if not ranged and (str(attack.get("skill_id", "")) == "mirror_clone" or source_uid.contains("_mirror_")):
+		_play_boss_procedural("mirror_slash", attack.get("world_cast", Vector3.ZERO),
+			target.get("world_foot", Vector3.ZERO), _boss_target_context(target))
+		return true
+	var race := _visual_race_from_unit_id(unit_id)
+	_play_race_basic_attack(attack, target, "ranged" if ranged else "melee", race, _vfx_prev_units)
+	_play_attack_unit_procedural(attack, target, _vfx_prev_units)
+	return true
+
+
+func cue_spawn_hit_number(target_uid: String, amount: int, kind: String, crit: bool, is_skill: bool, race: String) -> bool:
+	var target: Dictionary = _cue_unit_snapshot(target_uid)
+	if target.is_empty():
+		return false
+	_spawn_hit_number(target.get("head_pos", Vector2.ZERO), amount, kind, crit, is_skill, race)
+	return true
+
+
+# Death had no visual at all before D4: the renderer simply freed the model on the
+# next refresh. Taking ownership of the actor lets it sink and fade instead of
+# blinking out (checklist section 6: never just disappear).
+func cue_claim_corpses(events: Array) -> void:
+	for event_value in events:
+		if not (event_value is Dictionary):
+			continue
+		var event: Dictionary = event_value
+		if str(event.get("type", "")) != "death":
+			continue
+		var uid := str(event.get("source_uid", ""))
+		if uid.is_empty() or _cue_corpses.has(uid):
+			continue
+		var claimed: Node3D = detach_actor_for_death(uid)
+		if claimed != null:
+			_cue_corpses[uid] = claimed
+
+
+func cue_release_corpses() -> void:
+	for uid in _cue_corpses.keys():
+		var actor = _cue_corpses[uid]
+		if actor != null and is_instance_valid(actor):
+			release_death_actor(str(uid), actor as Node3D)
+	_cue_corpses.clear()
+
+
+func cue_play_death(victim_uid: String, duration_sec: float = 0.35) -> bool:
+	var actor: Node3D = _cue_corpses.get(victim_uid)
+	_cue_corpses.erase(victim_uid)
+	if actor == null or not is_instance_valid(actor):
+		actor = detach_actor_for_death(victim_uid)
+	if actor == null or not is_instance_valid(actor):
+		return false
+	# The profile owns the length so a low quality tier can shorten the fade
+	# without ever removing it (checklist 6: death must never just disappear).
+	var fade := maxf(0.08, duration_sec * 0.92)
+	var tween := create_tween()
+	tween.set_parallel(true)
+	var sink := actor.position + Vector3(0.0, -0.35, 0.0)
+	tween.tween_property(actor, "position", sink, fade).set_ease(Tween.EASE_IN)
+	tween.tween_property(actor, "scale", actor.scale * 0.72, fade).set_ease(Tween.EASE_IN)
+	for child in actor.get_children():
+		if child is GeometryInstance3D:
+			tween.tween_property(child, "transparency", 1.0, fade * 0.94)
+	tween.chain().tween_callback(func() -> void: release_death_actor(victim_uid, actor))
+	return true
+
+
+func _cue_unit_snapshot(sim_uid: String) -> Dictionary:
+	if sim_uid.is_empty():
+		return {}
+	var snapshot: Dictionary = _vfx_prev_units.get(sim_uid, {})
+	return snapshot
+
 
 func _vfx_unit_by_sim_uid(current:Dictionary,sim_uid:String)->Dictionary:
 	for id:String in current.keys():

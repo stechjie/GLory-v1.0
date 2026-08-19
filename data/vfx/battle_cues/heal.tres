@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="BattleCueProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/runtime/presentation/BattleCueProfile.gd" id="1_cue_profile"]
+
+[resource]
+script = ExtResource("1_cue_profile")
+id = "heal"
+event_types = PackedStringArray("heal")
+priority = "important"
+anchors = {
+"source": "CastAnchor",
+"target": "HeadAnchor"
+}
+windup_ms = 80
+impact_ms = 100
+recovery_ms = 200
+camera_mode = "none"
+audio_cue = "heal_soft"
+vfx_scene = ""
+max_concurrent = 6
+quality_overrides = {
+"LOW": {
+"max_concurrent": 3,
+"recovery_ms": 120
+}
+}
+fallback_profile = ""

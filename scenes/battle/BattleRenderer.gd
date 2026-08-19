@@ -353,6 +353,34 @@ func _sync_3d_model_nodes(living: Array, facing_delta: float, prune := true) -> 
 			_unit_actor_registry.unregister_actor(str(key))
 			_status_vfx_by_id.erase(key)
 
+# D4: hand a dead unit's actor over to the presentation layer so a death cue can
+# play it out. Normally _sync_3d_model_nodes frees the model the instant the unit
+# leaves the living set, which is why death has no visual at all before D4.
+# Erasing it from _battle_3d_models keeps the prune from freeing it mid-cue, and
+# unregistering satisfies the D3 contract that a dead uid stops resolving anchors.
+func detach_actor_for_death(uid: String) -> Node3D:
+	var node_value = _battle_3d_models.get(uid)
+	if not (node_value is Node3D) or not is_instance_valid(node_value):
+		return null
+	# Only detach from the prune list here. The actor stays registered for the
+	# whole death cue: it is still on screen, and the killer's impact/number cues
+	# run on a different action track that may still be resolving its anchors.
+	# Checklist section 3 is explicit that the actor is unregistered *after* the
+	# death animation, which release_death_actor() below does.
+	_battle_3d_models.erase(uid)
+	var status_vfx = _status_vfx_by_id.get(uid)
+	if status_vfx != null and is_instance_valid(status_vfx):
+		(status_vfx as Node).queue_free()
+	_status_vfx_by_id.erase(uid)
+	return node_value as Node3D
+
+
+func release_death_actor(uid: String, actor: Node3D) -> void:
+	_unit_actor_registry.unregister_actor(uid)
+	if actor != null and is_instance_valid(actor):
+		actor.queue_free()
+
+
 # 和备战棋盘共用 BattleAssetService 的缓存 —— 备战期加载过的模型，进战斗直接命中。
 func _scene_for_model_path(model_path: String) -> PackedScene:
 	return BattleAssetService.get_scene(model_path)

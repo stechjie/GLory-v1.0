@@ -2,7 +2,7 @@
 
 Godot 4.7 的 3v3 布阵自动战斗项目。本 README 同时是项目说明、资源盘点、代码审查记录和后续可由 AI 逐项执行的改进路线。原始审查依据 2026-08-15 至 2026-08-16 的工作区、Godot 4.7.0 导入/运行结果、Android 实机试玩和工程内检查场景编写；下方 2026-08-19 实施进度为当前状态，优先于后续保留的历史基线描述。
 
-> 当前结论（2026-08-19）：**A1、A2、A3、E1、E2-2A/E2-2B 与 BattlePresentationDirector D0-D3 的 Windows/桌面闭环已完成。** A4 及各项 Android/实机部分按当前决定暂停；Director 下一项是 D4 四段普攻，D4-D6 尚未完成。后文关于“35 项不可加载”和“胶囊占位体”的文字是改造前历史基线，不再代表当前桌面结果。
+> 当前结论（2026-08-19）：**A1、A2、A3、E1、E2-2A/E2-2B 与 BattlePresentationDirector D0-D6 的 Windows/桌面闭环已全部完成。** A4 及各项 Android/实机部分按当前决定暂停；下一步转入 B4/E3 启动预热拆分与代码/联机 D1、D3。后文关于“35 项不可加载”和“胶囊占位体”的文字是改造前历史基线，不再代表当前桌面结果。
 
 ## 2026-08-19 实施进度
 
@@ -20,7 +20,9 @@ Godot 4.7 的 3v3 布阵自动战斗项目。本 README 同时是项目说明、
 | Director D1 — 语义事件 schema | ✅ 桌面完成 / Android 暂停 | `BattlePresentationEvent` v1 已冻结 15 个核心字段、稳定 `event_key`、独立 `presentation_seed` 与一次性未知类型告警；2738 项 schema 检查、同步/异步确定性、两回合 D0 final-state 门禁和 28/28 联机回归通过。 |
 | Director D2 — 最小排程核心 | ✅ 桌面完成 / Android 暂停 | 已实现 Director 生命周期、逐 tick 入队、每 `source_uid` 动作轨、去重、暂停/seek/skip/drain/dispose 和假 Registry/Adapter 测试；`BattleScreen` 已双路入队并保留 Legacy VFX。D2 不产生真实 VFX。 |
 | Director D3 — 单位演员 | ✅ 桌面完成 / Android 暂停 | Director 现在只经 `UnitActorRegistry.get_anchor()` 取坐标，每次播放现解析、不缓存节点；缺 actor 分类 drop，缺锚点降级到 `ActorRoot` 并进同一份一次性汇总。锚点检查由 3 抽样扩到全部 74 个可战斗单位（1067 项）、Director 检查 49/49、固定两回合 0 drop / 0 降级、四个冻结哈希不变。 |
-| Director D4-D6 | ⬜ 下一阶段 | 下一项是 D4 四段普攻；之后依次完成手感与运行时预算、旧路由清理。 |
+| Director D4 — 四段普攻 | ✅ 桌面完成 / Android 暂停 | 模拟层为全部单位产出 `attack_start → [projectile_spawn] → impact → hit_number → death`（`death` 此前完全不存在）；视觉按 C4 纵向切片迁移 `human_militia` / `human_archer` / `pve_sky_thunder_spirit`，其余仍走快照 diff。两个固定样本 0 `missing_actor` 掉落，切片样本播出 8 次死亡动画；D4 前后 final-state 哈希完全一致。 |
+| Director D5 — 手感与运行时预算 | ✅ 桌面完成 / Android 暂停 | 五个 `.tres` cue profile + `VfxProfileResolver`；**扩展**现有 `VFXQualityBudget.gd` 加三档优先级预算；`BattleVfxReview.tscn` 评审场景；切片扩面到全部单位。133/133 profile 检查、70/70 Director 通过，固定样本 0 合并、20 次降级。 |
+| Director D6 — 清理旧路由 | ✅ 桌面完成 / Android 暂停 | 删除三个快照 diff 函数、hit_number 旧分支与迁移期白名单；未迁移路由保留。删除前后播放计数逐项相同，回合间 orphan/tween 恒为 0。82/82 通过。 |
 
 ### E2-2B 本轮落地记录
 
@@ -72,11 +74,53 @@ Godot 4.7 的 3v3 布阵自动战斗项目。本 README 同时是项目说明、
 - 本阶段不产生任何真实 VFX、profile、池、Tween 或音频；adapter 仍为 null，cue 与 D2 一样内联完成。`BattleCueRequest` 按清单 §2/§7 的归属推迟到 D4-D5（它的 profile 字段来自 D5 的 `VfxProfileResolver`）。
 - 证据：`D3_battle_presentation_actors_20260819/D3_VERIFICATION.json` 与其 `baseline/`；修改前备份在 `D3_prechange_backup_20260819/`。Android、APK、ASTC 与实机验证继续保持暂停。
 
-### 当前下一步：Director D4-D6
+### Director D4 桌面闭环记录
 
-1. D4：完成 `attack_start → impact → hit_number → death`，远程攻击增加 projectile；战斗结果必须与 D0 基线一致。
-2. D5：加入五个 profile、`VFXQualityBudget`、质量降级和评审场景；Android 评审仍保持暂停。
-3. D6：逐类型清理 `BattleVfx` 旧路由，验证无重复播放、跨局残留及节点/内存持续增长。
+- **改动前的真相**：起手/命中/死亡并非"没有"，而是由 `BattleVfx._refresh_battle_vfx()` 的**快照 diff** 驱动（普攻看 `attack_count` 增量、受击看 `hp` 增量、死亡看 `alive` 翻转），只有 4 个类型走 `_play_visual_events`。所以 D4 的价值是把它们迁到事件、让 Director 拿到时序控制权，而不是从零造效果。唯一真正缺失的是死亡视觉——`_sync_3d_model_nodes` 在单位离开 living 集合时直接 `queue_free()`，模型是瞬间消失的。
+- **迁移必须原子**：每迁一个视觉，产出事件、接 Director、关掉对应 diff 分支必须在同一步完成。只加事件不关 diff 会让每个效果播两遍。靠 `BattlePresentationSlice.gd` 一份白名单被 adapter 与 `BattleVfx` 共读来结构性保证，路由规则是「事件 `source_uid` 指名的单位说了算」。
+- **C4 切片**：`human_militia`（近战）+ `human_archer`（远程）+ `pve_sky_thunder_spirit`（雷鸣灵）。雷鸣灵在 `data/pve/pve_monsters.json` 里存在，但怪物由 `hash(shared_seed, 回合, "monster")` 确定性挑选，冻结 seed 20260807 下 21 个回合一个都不刷。探针（`tools/pve_round_monster_probe.gd`）找到 seed 20260823 的第 1 回合会刷出它，因此**新增第二个固定样本**承载字面 C4 组合，完全不动作为回归门禁的冻结样本。
+- **模拟层**：`DamageService` 新增 `emit_attack_start` / `emit_impact` / `emit_death`，走 `hit_number` 已有的 `state.visual_events` 通道，不消费 `RngService`、不读写战斗状态；三处真实死亡点全部接上。事件对**全部单位**产出（按 unit_id 过滤会把演出关注点塞进确定性层，且每次扩面都要重冻一次哈希）。
+- **表现层**：`LegacyBattleVfxAdapter` 把 cue 翻译成既有能力，不新增任何美术；`BattleVfx` 新增单体入口（批量 diff 路径原样保留给未迁移单位）；死亡是新写的下沉+淡出 tween，满足清单 §6「不能直接消失」。事件带模拟器的真实目标，所以切片单位的攻击不再靠 `_nearest_enemy_target()` 猜。
+- **结果页门禁**：adapter 使 cue 变异步后 `has_blocking_cues()` 才有意义，`_finish_replay` 现在真正等待关键 cue，上限 3 秒；跳过会先清空队列因此立即返回。
+- **两处被证据推翻的设计**：① 缺 **target** actor 改为降级而非 drop——渲染器会在击杀者的 impact/数字 cue 还排在 0.12s 起手后面时就 prune 掉尸体，原规则正好吞掉最该看见的致命一击（修前 Round 1 掉 8 条、Round 2 掉 7 条，修后 0）。缺 **source** actor 仍然 drop。② 死者的尸体改为在**事件入队时**认领：清单 §4.3 明确保留进行中的动作，所以死亡 cue 会排在它后面，而渲染器更快。曾尝试中断进行中的动作，因与 §4.3 和 D2 的 `death_cancel_queue` 断言冲突而撤回——接管尸体生命周期才是正确解法。
+- **测试**：Director 50/50、锚点 1067/1067、schema **9787/9787**（新事件类型使覆盖从 2738 自动扩大）、确定性 203 帧三份哈希一致、handshake/persist/reconnect/channel 四项 exit 0、两个固定样本 `passed=true failures=0`。
+- **哈希重新冻结**：事件哈希 Round 1 `310426f76d73a80fb1d691bad711b61f1415fe4f2e7844776138f4beffacef1f`、Round 2 `7d2e60fcd4523fca8785d10cefb0e780a5b2b7a1217b241a11eedbdc9ea0f365`（D4 新增事件所致，按 D1 流程重冻）。final-state Round 1 `186f158728e2fdac189d2aac832e1da760af9644635e997b3bb3bb74a1cef505`、Round 2 `443d17206fd1edfe3e36e7ddfbd9c02a909c0d0b99feafe3b3ee0e584b7ea026`——**这两个不是 D4 改的**，是本会话进行中的上游合并 `e50022b` 改了 `name_en`（`Ancient Tree` → `Elder Treant`），战斗帧逐行零差异；隔离实验（同一提交、撤回 D4）复现了同样的值。**D4 前后 final-state 完全一致**，即 D4 只改事件流不改战斗。
+- **边界**：只迁移 3 个单位；未新增美术；C4 验收第 3 条（桌面/Android digest 一致）与第 5 条（真机 APK）仍被 Android 暂停挡住，因此 C4 只是部分关闭。
+- 证据：`D4_battle_presentation_basic_attack_20260819/D4_VERIFICATION.json` 与其 `baseline_regression/`、`baseline_slice/`；修改前备份在 `D4_prechange_backup_20260819/`。
+
+### Director D5 桌面闭环记录
+
+- **五个 profile**：`data/vfx/battle_cues/` 下的 `basic_melee` / `basic_ranged` / `crit` / `heal` / `death`，由 `BattleCueProfile.gd`（`Resource`）承载清单 §6 要求的全部十三个字段。新增 `battle_cue_profile_check` 逐项校验：字段齐全、时长非零、锚点必须落在 D3 六节点合同内、`fallback_profile` 不得悬空、低档覆盖只能让 cue 更便宜。
+- **`VfxProfileResolver`**：按 `type + skill_id + race + quality_tier` 选择（race 限定 id 先查、目前无对应文件，是留给逐种族美术的扩展点）。缺 profile 时退回内建的最廉价 cue，并按 `type/profile` 聚合成一条告警，符合 §4.2。
+- **预算是扩展而非新建**：`effects/vfx3d/core/VFXQualityBudget.gd` 原有的 8 个静态限流函数管的是单个特效；D5 在同一文件追加管**排程**的部分——每 tick 起播上限、存活上限、合并窗口、降级系数。记账单位刻意选 replay tick 而不是渲染帧，因为它是实时与回放唯一一致的时钟。
+- **优先级规则**：critical 不设上限、永不合并、收招不缩短；important 超预算先让出收招尾巴；ambient 仅在**溢出且同目标重复**时合并。固定样本实测 0 合并、20 次降级——即没有任何 cue 被吞掉。
+- **评审场景**：`scenes/debug/BattleVfxReview.tscn` 可固定 seed、选回合、切 `LOW/MEDIUM/HIGH` 与 `0.25×/0.5×/1×/2×`，一键保存截图与指标 json。
+- **补上 §8 的真实 seek/skip 测试**：D2 那批跑在会内联完成的空 adapter 上，结构上不可能留下待触发计时器，因此证明不了任何事。新用例通过真实 `SceneTreeTimer` 完成 cue，断言 seek 与 skip 之后都不留下能回调的计时器，且旧计时器不会迟到地补完 cue。
+- **修掉的五个缺陷**（都是实测发现，不是推测）：
+  1. `attack_start` / `projectile_spawn` / `impact` 被判成 **ambient**——`_default_visibility()` 是 D1 写的，没有这几个类型的分支。后果是它们被卷进 ambient 合并、不被 `has_blocking_cues()` 当作阻塞、DRAINING 时会被当非关键丢弃。按 §3 修正后，切片样本 Round 2 从「39 条被合并」变成「0 合并、20 次降级」。
+  2. 合并被无条件执行——§4.4 的合并是**溢出时**的手段，预算充足时合并等于白丢伤害数字。
+  3. 合并窗口把 cue 和它自己比对——key 在判定前就写了，导致每条 ambient 都像是重复。改为只记录**真正开播**的 cue。
+  4. 存活计数只增不减——内联完成与 adapter 拒绝两条路径绕过了递减，计数最终会让一切都显得超预算。
+  5. `cue_play_basic_attack` 缺少批量 diff 路径里的 `human_king` 与 `mirror_clone` 特例——扩面到全部单位时会给这些单位多画一次挥砍。
+- **边界**：五个 profile 的 `vfx_scene` 全部为空。D5 交付的是排程、时序与预算，不是新美术；画面仍是既有资源加 D4 那个代码写的死亡淡出。`camera_mode` 已进 profile 并被校验，但还没有 `CameraFeelAdapter` 消费它；清单里可选的 Juicee adapter 未引入。
+- 证据：`D5_battle_presentation_feel_20260819/D5_VERIFICATION.json`；备份在 `D5_prechange_backup_20260819/`。
+
+### Director D6 桌面闭环记录
+
+- **删除**：`BattleVfx` 的 `_collect_attack_events`、`_play_melee_slashes`、`_play_ranged_projectiles`、`_refresh_battle_vfx` 里的两处调用点、`_play_visual_events` 的 hit_number 分支，以及 `BattlePresentationSlice.gd` 与全部 `is_migrated` 闸门。adapter 里的未迁移早退、`_unit_id_for` 与 `skipped_unmigrated` 一并移除。`slice_*` 更名为 `cue_*`——「切片」这个概念已经不存在，留着名字会误导。
+- **保留**（清单要求兼容桥留到各自阶段迁移）：`mother_execute`、`unit_skill_proc`、`skill_shake`、Boss 与种族技能演出、护盾/层数/治疗/复活的 diff 分支，以及 `_play_race_basic_attack`、`_play_attack_unit_procedural`、`_spawn_hit_number` 三个仍被 cue 路径调用的辅助函数。
+- **三条不可回归条件各有证据**：
+  - *无重复播放*：删除前后 adapter 的分类播放计数**逐项完全相同**（回归样本 13/33/45/9，切片样本 4/10/16/8），证明删掉的确实已是死代码；另加源码级断言，一旦这三个函数、白名单引用或白名单文件复活就直接失败。
+  - *无跨局残留*：在上一场 `BattleScreen` 释放之后、下一场创建之前采样，回合间 orphan 恒为 0、tween 恒为 0。
+  - *无节点/内存增长*：同一组采样显示节点数 12 → 31 → 31（首战预热后不再上涨）。节点增长超 200、任何 orphan 增长或回合间仍有 tween 都已是基线工具的硬失败。
+- **边界**：`BattleVfx` 仍是个大类，承载技能、Boss 与状态演出——D6 只移除了 Director 已接管的普攻、伤害数字与死亡三条路由。adapter 仍叫 `LegacyBattleVfxAdapter` 且仍回调 `BattleVfx`；用真正 `.tres` 驱动的场景取代它是 D6 之后的事。
+- 证据：`D6_battle_presentation_cleanup_20260819/D6_VERIFICATION.json`；备份在 `D6_prechange_backup_20260819/`。
+
+### 当前下一步：Director 之后
+
+1. B4 / E3：拆分 96 项启动预热，降低首屏时间、峰值显存和包体。
+2. README 的代码/联机 D1、D3：`NetworkService` 拆分、服务器权威回放、重连与确定性加强。
+3. A5：资源清理、第三方来源与许可证总账。
 
 ### Director D0-D6 全部完成后
 
@@ -409,9 +453,9 @@ BattleSimShared（确定性规则，只产出语义事件）
 - [x] **实现事件 schema（桌面完成 / Android 暂停）。** `BattlePresentationEvent.gd` 已用 `battle_id + tick + ordinal` 生成稳定键，类型表覆盖当前事件与 `attack_start`、`projectile_spawn`、`impact`、`heal`、`shield`、`death`、`buff_apply`、`summon`、`skill_cast` 等后续事件；桌面 SHA-256 与 final-state 门禁通过，Android 断言待恢复移动端工作后补齐。
 - [x] **实现 Director 最小排程核心（桌面完成 / Android 暂停）。** `BattleScreen` 已逐 tick 入队；Director 提供生命周期、每单位 action track、去重、暂停/seek/skip/drain/dispose 与假 Registry/Adapter 测试。本项不产生真实 VFX，Legacy 路由继续保留。
 - [x] **实现角色展示链（桌面完成 / Android 暂停）。** 新建数据驱动的 `UnitVisualResolver`：`unit_id → 已验证 .tscn/.glb → UnitActor3D`。`UnitActor3D` 必须有 `ActorRoot`、`HeadAnchor`、`CastAnchor`、`HitAnchor`、`Shadow`；资源失效时显示已有角色卡立绘/名字/阵营框，并在开发构建告警。首场 PVE 的所有双方单位必须不再出现胶囊。
-- [ ] **按 Horror Battler 的分层思想、用 Sparta 的可回放边界实现 Director。** `BattleScreen` 仅入队 tick；Director 把事件排入每单位 action track，保证同一单位不能被两个 tween 同时占用。先只支持 `attack_start → impact → damage number → death`，不得改任何伤害公式、随机数或服务器/replay payload。
-- [ ] **接入有限手感。** 仅为 `basic_melee`、`basic_ranged`、`crit`、`heal`、`death` 做 profile：朝向、起手、命中闪白、受击位移/缩放、一次性音效和伤害数字。若引入 Juicee，先封装为 adapter 并在 Mobile 评审场景中验证；暴击 hit-stop 只影响本地演出，线上/PVP 默认关闭全局 time scale。
-- [ ] **制作可评审场景。** 新建 `scenes/debug/BattleVfxReview.tscn`：可选择单位、技能、种族、质量档、0.25×/1×/2×、固定 seed 和旧/新 profile 对照；保存截图、draw call、粒子/透明层、节点存活数，作为美术验收附件。
+- [x] **按 Horror Battler 的分层思想、用 Sparta 的可回放边界实现 Director（桌面完成 / Android 暂停，C4 切片范围）。** `BattleScreen` 仅入队 tick；Director 把事件排入每单位 action track，保证同一单位不能被两个 tween 同时占用。先只支持 `attack_start → impact → damage number → death`，不得改任何伤害公式、随机数或服务器/replay payload。
+- [x] **接入有限手感（桌面完成 / Android 暂停）。** 仅为 `basic_melee`、`basic_ranged`、`crit`、`heal`、`death` 做 profile：朝向、起手、命中闪白、受击位移/缩放、一次性音效和伤害数字。若引入 Juicee，先封装为 adapter 并在 Mobile 评审场景中验证；暴击 hit-stop 只影响本地演出，线上/PVP 默认关闭全局 time scale。
+- [x] **制作可评审场景（工具已具备，人工美术评审待进行）。** 新建 `scenes/debug/BattleVfxReview.tscn`：可选择单位、技能、种族、质量档、0.25×/1×/2×、固定 seed 和旧/新 profile 对照；保存截图、draw call、粒子/透明层、节点存活数，作为美术验收附件。
 - [ ] **Android 回归与退化。** 将 `critical / important / ambient` 预算接入 `VFXQualityBudget.gd`；低档机超预算时合并普通伤害数、减粒子、改图标，绝不丢 Boss/死亡/控制提示。首场、20+ 回合、Boss 各跑一次真实 APK；确认无 `SCRIPT ERROR`、无节点泄漏、无结果页抢跑。
 - [ ] **许可与归档。** 任何从 MIT 项目逐行改写/移植的文件在文件头保留归属，并写入 `THIRD_PARTY_NOTICES.md`；Horror Battler 永远只保留链接和人工设计笔记。每次更新外部依赖都在评审场景和 Android APK 重跑。
 
@@ -479,7 +523,7 @@ BattleSimShared（确定性规则，只产出语义事件）
 1. A1 → A3：**已完成。** 完整资源 manifest、冷克隆恢复与失败门禁均已验证。
 2. A2：**已完成。** A4 的 Android 出包与设备回归按当前决定暂停。
 3. E1 → E2：**Windows/桌面闭环已完成。** 人工盲测、ASTC、APK 源 FBX 排除和低端 Android 真机预算验收待后续。
-4. Director D0-D3 桌面闭环：**已完成。** 当前进入 D4 四段普攻；之后依次完成 D5-D6 与 B2/B3 演出纵向切片。
+4. Director D0-D6 桌面闭环：**已全部完成。** 演出层的普攻、伤害数字与死亡已由 Director 接管，旧快照 diff 路由已删除。
 5. B4、E3：先把 96 项启动预热拆分并降低显存/包体，再在低端 Android 真机上验证。
 6. D1、D3：将服务器权威回放、重连、NAT/relay 和双设备 QA 推至生产门槛。
 7. A5：发布前完成资源清理、来源与许可证总账。

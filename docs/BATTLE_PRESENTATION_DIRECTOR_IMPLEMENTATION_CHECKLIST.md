@@ -1,6 +1,6 @@
 # BattlePresentationDirector：AI 实施参考清单
 
-> 状态（2026-08-19）：D0-D3 Windows/桌面闭环已完成，Android 部分按用户要求暂停；D4-D6 尚未完成。下方未勾选项仍是正式验收门槛，不能因已有基础设施而视为通过。
+> 状态（2026-08-19）：**D0-D6 Windows/桌面闭环全部完成**，Android 部分按用户要求暂停。下方未勾选项仍是正式验收门槛，不能因已有基础设施而视为通过。
 > 目标：在**不改变战斗规则、随机数、回放战斗帧、旧事件语义或胜负结果**的前提下，把既有回放事件转成可读、可跳过、可降级且可测试的战斗演出。
 
 ## 当前实施状态（2026-08-19）
@@ -11,15 +11,15 @@
 | D1 — 冻结语义事件 schema | ✅ 桌面完成 / Android 暂停 | `BattlePresentationEvent` v1 已冻结 15 个核心字段、稳定键、视觉 seed、优先级和 timing hint；Round 1/2 新事件 SHA-256 已冻结，D0 final-state/roster 完全不变，2738 项 schema 检查和 28/28 联机回归通过。 |
 | D2 — Director 最小排程核心 | ✅ 桌面完成 / Android 暂停 | 已实现 `IDLE/RUNNING/DRAINING/FINISHED` 与 `SEEKING/SKIPPED/DISPOSED`、逐 tick 入队、每 `source_uid` 动作轨、去重、暂停/seek/skip/drain/dispose；`BattleScreen` 已双路入队并保留 Legacy VFX。36/36 Director（含跨局清理）、2738/2738 schema、固定两回合哈希与 28/28 联机回归通过，本阶段不产生真实 VFX。 |
 | D3 — 单位演员 | ✅ 桌面完成 / Android 暂停 | 事实订正：`UnitVisualResolver`、`UnitActorRegistry`、`UnitActor3D` 六节点合同与立绘 fallback 早在 E1 已落地并在战斗中运行，D3 补的是 Director 接线与全量锚点测试。Director 现在只经 `UnitActorRegistry.get_anchor()` 取坐标，播放时现解析、不持有 `Node`/`NodePath`；缺 actor 分类 drop 且不阻塞同 tick 其他事件，缺锚点降级到 `ActorRoot` 并进 `report_failure()` 的一次性汇总。锚点检查覆盖全部 74 个可战斗单位（1067/1067），Director 检查 49/49（原 36 项 D2 断言保留），固定两回合 0 drop、0 降级、0 live actor 缺失、0 fallback，四个冻结哈希不变。 |
-| D4 — 四段普攻 | ⬜ 未开始 | `attack_start → impact → hit_number → death` 及远程 projectile 链路尚未接入 Director。 |
-| D5 — 手感与运行时预算 | ⬜ 未开始 | E2-2A/E2-2B 的桌面模型门禁已通过，但五个 profile、`VFXQualityBudget`、移动端评审场景与可选 Juicee adapter 尚未实现。 |
-| D6 — 清理旧路由 | ⬜ 未开始 | `BattleVfx` 旧分支尚未按已迁移事件类型清理；Legacy adapter 仍需保留到覆盖完成并验证无重复播放、跨局残留或持续增长。 |
+| D4 — 四段普攻 | ✅ 桌面完成 / Android 暂停 | 模拟层为**全部单位**产出 `attack_start → [projectile_spawn] → impact → hit_number → death`（`death` 此前完全不存在）；视觉按 C4 纵向切片只迁移 `human_militia` / `human_archer` / `pve_sky_thunder_spirit` 三个单位，其余仍走 `BattleVfx` 快照 diff。**迁移必须原子**：产出事件、接 Director、关掉对应 diff 分支必须在同一步完成，否则每个效果播两遍；本阶段靠 `BattlePresentationSlice.gd` 这一份白名单被两侧共读来结构性保证。两个固定样本 0 `missing_actor` 掉落，切片样本实测播出 2 次近战起手、4 次投射物、4 个伤害数字、8 次死亡动画。50/50 Director、1067/1067 锚点、9787/9787 schema 通过；**D4 前后 final-state 哈希完全一致**，证明只改事件流不改战斗。 |
+| D5 — 手感与运行时预算 | ✅ 桌面完成 / Android 暂停 | `data/vfx/battle_cues/` 五个 `.tres` profile（§6 十三个字段逐项校验）+ `VfxProfileResolver`（按 `type + skill_id + race + quality_tier` 选择，缺失时降级到内建廉价 cue 并按 type/profile 聚合告警）；**扩展**现有 `VFXQualityBudget.gd` 加 `critical/important/ambient` 的每 tick / 存活上限与降级系数，记账单位是 replay tick；`scenes/debug/BattleVfxReview.tscn` 可切 seed / 回合 / 质量档 / 0.25×–2× 并保存截图与指标；切片扩面到全部单位。133/133 profile 检查、70/70 Director（含真实计时器 seek/skip）通过。修掉 5 个缺陷，其中最要紧的是 `attack_start`/`impact` 被 D1 遗留逻辑判成 ambient。 |
+| D6 — 清理旧路由 | ✅ 桌面完成 / Android 暂停 | 已删除 `BattleVfx` 的 `_collect_attack_events`、`_play_melee_slashes`、`_play_ranged_projectiles`、两处调用点、`_play_visual_events` 的 hit_number 分支，以及 `BattlePresentationSlice.gd` 与全部 `is_migrated` 闸门；`slice_*` 更名为 `cue_*`。保留 `mother_execute`、`unit_skill_proc`、`skill_shake`、Boss/种族技能与护盾/层数/治疗分支。三条不可回归条件均有证据：删除前后 adapter 分类播放计数逐项相同（证明删的是死代码）、新增源码级断言防止分支复活、回合间 orphan 与 tween 恒为 0 且节点数稳定不涨。82/82 通过。 |
 
 ### 下一执行门
 
-1. 进入 D4 四段普攻：补 `attack_start → impact → hit_number → death` 与远程 projectile 链路。D3 已经为这些类型预置了 source/target 锚点契约，D4 只需产出事件并接 adapter，不得改伤害公式、单位顺序或 replay payload。
-2. D1 新语义事件哈希已经冻结，D2 与 D3 均已验证保持不变；D4-D6 不得无记录地改变：Round 1 `44e47d20451f007448022526c3dbccd652f2e5db21f04e54e6e6aa4290d71f93`；Round 2 `4f134f2b06295953e1ac07227793e6e106c172670306e6ea1ad1dcce28181ec5`。
-3. D0 final-state 哈希继续作为严格不回归门禁：Round 1 `6ff92454570b6123b2f6b077d413356f27c4a5e03e041465e19ccefee5af8606`；Round 2 `8ce66a5178f288cc45eb424c92dcebb9854844dd1e047b160d3d596ef184c29e`。
+1. Director D0-D6 桌面闭环已全部完成，转入本文件末尾「Director D0-D6 全部完成后」一节：先做 README 的 B4 / E3 启动预热拆分，再做代码/联机 D1、D3，最后 A5。Android 相关全部继续暂停。
+2. 事件哈希当前值（D4 新增四段事件、D5 修正 `attack_start`/`impact` 的 priority，两次都按流程重冻）：Round 1 `6d3dd1f7b2e3e105298cbce11e1cc55fff7ea22cc21d8ff5136c7e54bb279110`；Round 2 `16afab6b41a0f5100c1369d2f938399668ab8511f3b2c5fabf89ce3ba73ac27c`。历史值：D1 的 `44e47d20…` / `4f134f2b…`（D2、D3 在其上验证过不变）、D4 的 `310426f7…` / `7d2e60fc…`。后续阶段不得无记录地改变当前值。
+3. final-state 哈希继续作为严格不回归门禁，当前值：Round 1 `186f158728e2fdac189d2aac832e1da760af9644635e997b3bb3bb74a1cef505`；Round 2 `443d17206fd1edfe3e36e7ddfbd9c02a909c0d0b99feafe3b3ee0e584b7ea026`。**D4、D5、D6 三个阶段都没有改变它们**，即演出层自始至终只读不写战斗。这两个值也不是被 Director 改掉的：本会话进行中的上游合并 `e50022b` 改了 `data/pve/pve_monsters.json` 的 `name_en`（如 `Ancient Tree` → `Elder Treant`），战斗帧逐行零差异，隔离实验（同一提交、撤回 D4）复现了同样的新值。D0 旧值 `6ff92454…` / `8ce66a51…` 作为历史保留。
 4. D2 与 D3 的完整回放都保持上述 D1 event 哈希和 D0 final-state 哈希，两场 repeatable、0 live actor 缺失、0 fallback；D2 证据在 `D2_battle_presentation_director_20260819/D2_VERIFICATION.json` 与 `baseline/`，D3 证据在 `D3_battle_presentation_actors_20260819/D3_VERIFICATION.json` 与 `baseline/`（另含每回合 `director_audit.json`：Round 1 解析 46 cue / 46 锚点，Round 2 解析 36 cue / 36 锚点，两场 0 drop、0 降级）。D1 相对 D0 的首差异记录仍保留在 `D1_battle_presentation_schema_20260819/verified/D1_VERIFICATION.json`。
 5. D0 Round 1 的 1% low 9.34 FPS、最大帧 132.27 ms 仍作为 D5/E3 风险保留；D1 验证运行不能覆盖或删除这条历史风险。
 6. Android/实机部分继续保持暂停；恢复时再补跨平台哈希、APK、ASTC 与低端机最终战门禁。
@@ -173,19 +173,19 @@ func dispose() -> void
 | D1：schema（桌面 ✅ / Android ⏸） | 事件 schema、`event_key`、`source_uid`、`tick`、未知事件一次性告警与 headless 测试已完成。 | 事件类型/顺序/旧字段投影及 D0 最终状态不变；Android 跨平台哈希待恢复。 |
 | D2：Director 空壳（桌面 ✅ / Android ⏸） | 生命周期、队列、假 Registry/假 Adapter 单测与 `BattleScreen` 逐 tick 双路入队已完成；空 Adapter 同步完成 cue。 | 固定两回合可完整打完，暂停/seek/skip/drain/dispose 测试通过，D1/D0 哈希不变；未产生真实 VFX。 |
 | D3：单位演员（桌面 ✅ / Android ⏸） | Resolver、Registry、五锚点与立绘 fallback 已正式接入 Director；74 个可战斗单位全量锚点测试；固定两回合 0 胶囊。 | 已验证：坏资源与缺锚点都进同一份带 `unit_id`/资源路径/消费者的一次性汇总，缺 actor 只分类 drop，全程无胶囊；四个冻结哈希不变。 |
-| D4：四段普攻 | `attack_start → impact → hit_number → death`；远程再加 projectile。 | 伤害公式、单位顺序、回放结果完全不变。 |
-| D5：手感与预算 | 五个 profile、VFXQualityBudget、Mobile 评审场景；可选 Juicee adapter。 | 预算溢出只降级，Boss/死亡/控制 cue 不消失。 |
-| D6：清理旧路由 | 每迁移一种 type 删除对应 `BattleVfx` 分支，保留 Legacy adapter 直到覆盖完成。 | 无重复播放、无跨局残留、无节点/内存持续增长。 |
+| D4：四段普攻（桌面 ✅ / Android ⏸） | 全单位产出四段事件 + 远程 projectile；视觉按 C4 切片迁移 3 个单位；`LegacyBattleVfxAdapter` 复用既有表现，不新增美术。 | 已验证：同一提交下 D4 前后 final-state 哈希逐字相同，伤害公式、单位顺序、战斗结果不变；两个固定样本 0 `missing_actor` 掉落。 |
+| D5：手感与预算（桌面 ✅ / Android ⏸） | 五个 profile、扩展后的 VFXQualityBudget、`BattleVfxReview.tscn`；未引入 Juicee。 | 已验证：critical 不设上限、不合并、不缩短；important 超预算只让出收招；ambient 仅在溢出且同目标重复时合并。固定样本实测 0 合并、20 次降级。 |
+| D6：清理旧路由（桌面 ✅ / Android ⏸） | 已删除三个 diff 函数、两处调用点、hit_number 旧分支与 `BattlePresentationSlice.gd`；未迁移路由保留。 | 已验证：删除前后播放计数逐项相同、源码级断言防复活、回合间 orphan/tween 恒为 0、节点数稳定。 |
 
 ## 8. 必做测试清单
 
 - [x] **纯数据测试（桌面）：** 相同 replay 的 `event_key`、字段顺序、`presentation_seed`、同步/异步事件 SHA-256 完全一致；normalizer 不消费 `RngService`，D0 最终战斗 digest 不变。
 - [x] **D2 队列核心测试（桌面）：** 同一 uid 连续三次攻击串行；两个不同 uid 并行；死亡取消未开始攻击；重复键与未知事件均只 drop 一次且不崩溃。未知 profile 的真实 fallback 仍属于 D5。
 - [x] **D2 seek/skip 核心测试（桌面）：** 暂停、0–4× 速度约束、向后/current seek、跳过、drain 与 dispose 均通过；空 Adapter 无 Tween、池节点或跨局回调残留。
-- [ ] **D5-D6 真实效果 seek/skip 测试：** 接入 profile、Tween 与池后，快进/慢放/向后 seek/跳过/结果页不得重复数字或屏震，不残留 Tween 或池节点。
+- [x] **D5-D6 真实效果 seek/skip 测试（桌面）：** 新增用例通过真实 `SceneTreeTimer` 完成 cue，断言 seek 与 skip 之后都不留下任何还能回调的计时器、且旧计时器不会迟到地补完 cue；结果页等待有 3 秒上限，跳过时立即返回。D2 那批是空 adapter 跑的，无法证明这一点。
 - [x] **锚点测试（桌面）：** 全部 74 个可战斗单位解析五锚点与六节点合同，含 `FeetAnchor`/`BodyAnchor` 兼容别名与跨局 `clear()` 后整体失效；坏模型路径进入立绘 fallback 且资源路径恰好上报一次；Director 侧缺 actor 分类 drop、缺锚点降级并上报。固定两回合回放另有 0 drop / 0 降级的实测审计。
 - [ ] **回放测试（桌面半项已通过 / Android 暂停）：** Windows 两回合事件序列、首差异与最终状态 SHA-256 已记录；desktop/Android 跨平台一致性待用户恢复移动端工作后完成。
-- [ ] **视觉评审：** `BattleVfxReview.tscn` 能固定 seed、切换 `0.25×/1×/2×` 与质量档，保存截图和 VFX 指标。
+- [x] **视觉评审场景（桌面）：** `scenes/debug/BattleVfxReview.tscn` 可固定 seed、选回合、切 `LOW/MEDIUM/HIGH` 与 `0.25×/0.5×/1×/2×`，保存截图与指标 json（fps、draw call、节点、orphan、tween、显存、解析统计、预算统计、profile 计数）。**注意：工具已具备，但人工美术评审本身尚未进行。**
 - [ ] **真机测试：** 第一场、20+ 回合、Boss 三个真实 APK 样本；无 `SCRIPT ERROR`、无结果页抢跑、无持续节点增长，并记录平均/1% low FPS、显存、draw call、粒子和 dropped cue 数。
 
 ## 9. 给后续 AI 的执行提示

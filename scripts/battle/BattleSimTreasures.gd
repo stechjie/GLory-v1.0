@@ -411,6 +411,7 @@ static func _process_temporary_deaths(state: Dictionary) -> void:
 					DamageService.record_forced_hp_loss(f, -1, false)
 					f.hp = 0
 					f.alive = false
+					DamageService.emit_death(f)
 		else:
 			keep.append(item)
 	state.temporary_deaths = keep

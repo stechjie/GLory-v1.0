@@ -1,0 +1,538 @@
+{
+  "stage": "D5",
+  "title": "Cue profiles, quality budget and the review scene",
+  "generated_utc": "2026-08-19T12:25:54",
+  "base_commit": "e50022b",
+  "prechange_backup": "D5_prechange_backup_20260819/",
+  "platform_scope": {
+    "desktop": "verified",
+    "android_apk_astc_device": "DEFERRED_BY_USER"
+  },
+  "delivered": {
+    "profiles": {
+      "location": "data/vfx/battle_cues/*.tres",
+      "class": "effects/runtime/presentation/BattleCueProfile.gd",
+      "ids": [
+        "basic_melee",
+        "basic_ranged",
+        "crit",
+        "heal",
+        "death"
+      ],
+      "fields": "all thirteen fields listed in checklist section 6, verified per profile"
+    },
+    "resolver": {
+      "file": "effects/runtime/presentation/VfxProfileResolver.gd",
+      "selection": "type + skill_id + race + quality_tier, per checklist 4.2",
+      "missing_profile": "cheap built-in fallback plus one aggregated warning per type/profile pair"
+    },
+    "budget": {
+      "file": "effects/vfx3d/core/VFXQualityBudget.gd (extended, not replaced)",
+      "added": [
+        "max_cues_per_tick(priority)",
+        "max_live_cues(priority)",
+        "ambient_merge_window_ms()",
+        "may_merge(priority)",
+        "recovery_scale_when_over_budget(priority)"
+      ],
+      "rule": "critical is uncapped and never merged or shortened; important gives up its recovery tail first; ambient may merge a repeat on the same target",
+      "accounting_unit": "replay tick, not render frame - the only clock identical between live play and playback"
+    },
+    "review_scene": {
+      "file": "scenes/debug/BattleVfxReview.tscn",
+      "controls": "seed, round, quality tier (LOW/MEDIUM/HIGH), speed 0.25/0.5/1/2",
+      "outputs": "screenshot plus a metrics json per run (fps, draw calls, nodes, orphans, tweens, video memory, resolution stats, budget stats, profile counts)"
+    },
+    "slice_widened": "BattlePresentationSlice.MIGRATE_ALL flipped to true, so every unit is driven by Director cues; D6 then deletes the file entirely"
+  },
+  "defects_found_and_fixed": [
+    {
+      "what": "attack_start / projectile_spawn / impact defaulted to ambient priority.",
+      "why_it_mattered": "BattlePresentationEvent._default_visibility() was written in D1, before those types existed, so they fell through to ambient. They were therefore exposed to ambient merging, were not treated as blocking by has_blocking_cues(), and would be dropped during DRAINING. Checklist section 3 lists them as important, with a crit impact being critical.",
+      "effect": "Round 2 of the slice sample went from 39 merged cues to 0 merged, 20 degraded."
+    },
+    {
+      "what": "Ambient merging ran unconditionally instead of only on overflow.",
+      "why_it_mattered": "Checklist 4.4 allows merging when events overflow. Merging while there is budget left hides damage numbers for no reason."
+    },
+    {
+      "what": "The ambient merge window matched a cue against itself.",
+      "why_it_mattered": "The key was recorded before the redundancy test, so the first cue for a target always looked like a repeat. Now only a cue that actually started is recorded."
+    },
+    {
+      "what": "Live cue counts never decremented on the inline-completion and adapter-rejected paths.",
+      "why_it_mattered": "The counter could only grow, which would eventually make every cue look over budget."
+    },
+    {
+      "what": "cue_play_basic_attack did not carry the human_king and mirror_clone special cases the batched diff helpers had.",
+      "why_it_mattered": "Widening the slice to every unit would have given those units an extra swing the legacy path deliberately omits."
+    }
+  ],
+  "checks": {
+    "battle_cue_profile_check": {
+      "status": "PASS",
+      "checked": 133,
+      "failures": 0,
+      "new_in": "D5"
+    },
+    "battle_presentation_director_check": {
+      "status": "PASS",
+      "checked": 70,
+      "failures": 0,
+      "note": "20 new D5 assertions on budget priorities and on seek/skip driven by real SceneTreeTimers"
+    },
+    "unit_visual_resolver_check": {
+      "status": "PASS",
+      "checked": 1067,
+      "failures": 0
+    },
+    "battle_presentation_event_check": {
+      "status": "PASS",
+      "checked": 9787,
+      "failures": 0
+    },
+    "determinism_check": {
+      "status": "PASS",
+      "frames": 203,
+      "sync_repeatable": true,
+      "sync_vs_async": true
+    },
+    "handshake_check": {
+      "status": "PASS"
+    },
+    "persist_check": {
+      "status": "PASS"
+    },
+    "reconnect_check": {
+      "status": "PASS"
+    },
+    "channel_check": {
+      "status": "PASS"
+    }
+  },
+  "closes_checklist_item": "section 8 'D5-D6 真实效果 seek/skip 测试' - the D2 pass ran on an adapter that finished inline and so could never leave a pending timer; the new case completes through a real SceneTreeTimer and asserts that neither seek nor skip leaves a timer able to fire afterwards.",
+  "samples": {
+    "regression": {
+      "label": "regression gate (frozen fixture)",
+      "seed": 20260807,
+      "rounds": {
+        "round_01": {
+          "event_count": 182,
+          "event_types": {
+            "attack_start": 46,
+            "death": 9,
+            "hit_number": 45,
+            "impact": 46,
+            "projectile_spawn": 33,
+            "skill_shake": 2,
+            "unit_skill_proc": 1
+          },
+          "hashes": {
+            "frame_events_sha256": "6d3dd1f7b2e3e105298cbce11e1cc55fff7ea22cc21d8ff5136c7e54bb279110",
+            "final_state_sha256": "186f158728e2fdac189d2aac832e1da760af9644635e997b3bb3bb74a1cef505"
+          },
+          "repeatable": true,
+          "director_audit": {
+            "anchor_degradation_count": 4,
+            "anchor_degradation_rows": [
+              {
+                "consumer": "director",
+                "reason": "missing target actor for hit_number",
+                "resource_path": "",
+                "unit_id": "enemy_L0_m1"
+              },
+              {
+                "consumer": "director",
+                "reason": "missing target actor for hit_number",
+                "resource_path": "",
+                "unit_id": "enemy_L2_m1"
+              },
+              {
+                "consumer": "director",
+                "reason": "missing target actor for hit_number",
+                "resource_path": "",
+                "unit_id": "enemy_L0_m2"
+              },
+              {
+                "consumer": "director",
+                "reason": "missing target actor for hit_number",
+                "resource_path": "",
+                "unit_id": "enemy_L2_m2"
+              }
+            ],
+            "budget": {
+              "degraded": 0,
+              "merged": 0,
+              "over_budget_by_priority": {}
+            },
+            "drop_count": 0,
+            "drops_by_reason": {},
+            "legacy_adapter": {
+              "pending_timers": 0,
+              "played_by_type": {
+                "attack_start": 13,
+                "death": 9,
+                "hit_number": 45,
+                "projectile_spawn": 33
+              },
+              "profiles_seen": [
+                "basic_melee",
+                "basic_ranged",
+                "crit",
+                "death",
+                "fallback_minimal",
+                "heal"
+              ],
+              "skipped_unmigrated": 0
+            },
+            "missing_actor_drop_count": 0,
+            "profiles": {
+              "loaded_ids": [
+                "basic_melee",
+                "basic_ranged",
+                "crit",
+                "death",
+                "heal"
+              ],
+              "missing_rows": [],
+              "resolved_counts": {
+                "basic_melee": 37,
+                "basic_ranged": 113,
+                "crit": 12,
+                "death": 9,
+                "heal": 1
+              }
+            },
+            "resolution": {
+              "degraded_anchors": 0,
+              "resolved_anchors": 209,
+              "resolved_cues": 176
+            }
+          },
+          "actor_audit": {
+            "missing_live_actor_count": 0,
+            "visible_body_fallback_count": 0,
+            "blank_uid_count": 0
+          },
+          "performance": {
+            "average_fps": 97.906016861509,
+            "one_percent_low_fps": 18.553311704294856
+          }
+        },
+        "round_02": {
+          "event_count": 134,
+          "event_types": {
+            "attack_start": 36,
+            "death": 11,
+            "hit_number": 35,
+            "impact": 36,
+            "projectile_spawn": 13,
+            "skill_shake": 2,
+            "unit_skill_proc": 1
+          },
+          "hashes": {
+            "frame_events_sha256": "16afab6b41a0f5100c1369d2f938399668ab8511f3b2c5fabf89ce3ba73ac27c",
+            "final_state_sha256": "443d17206fd1edfe3e36e7ddfbd9c02a909c0d0b99feafe3b3ee0e584b7ea026"
+          },
+          "repeatable": true,
+          "director_audit": {
+            "anchor_degradation_count": 4,
+            "anchor_degradation_rows": [
+              {
+                "consumer": "director",
+                "reason": "missing target actor for hit_number",
+                "resource_path": "",
+                "unit_id": "enemy_L1_m1"
+              },
+              {
+                "consumer": "director",
+                "reason": "missing target actor for hit_number",
+                "resource_path": "",
+                "unit_id": "enemy_L1_m3"
+              },
+              {
+                "consumer": "director",
+                "reason": "missing target actor for hit_number",
+                "resource_path": "",
+                "unit_id": "enemy_L0_m2"
+              },
+              {
+                "consumer": "director",
+                "reason": "missing target actor for hit_number",
+                "resource_path": "",
+                "unit_id": "enemy_L0_m3"
+              }
+            ],
+            "budget": {
+              "degraded": 0,
+              "merged": 0,
+              "over_budget_by_priority": {}
+            },
+            "drop_count": 2,
+            "drops_by_reason": {
+              "source_dead": 2
+            },
+            "legacy_adapter": {
+              "pending_timers": 0,
+              "played_by_type": {
+                "attack_start": 23,
+                "death": 11,
+                "hit_number": 35,
+                "projectile_spawn": 13
+              },
+              "profiles_seen": [
+                "basic_melee",
+                "basic_ranged",
+                "crit",
+                "death",
+                "fallback_minimal"
+              ],
+              "skipped_unmigrated": 0
+            },
+            "missing_actor_drop_count": 0,
+            "profiles": {
+              "loaded_ids": [
+                "basic_melee",
+                "basic_ranged",
+                "crit",
+                "death",
+                "heal"
+              ],
+              "missing_rows": [],
+              "resolved_counts": {
+                "basic_melee": 55,
+                "basic_ranged": 46,
+                "crit": 10,
+                "death": 11
+              }
+            },
+            "resolution": {
+              "degraded_anchors": 0,
+              "resolved_anchors": 139,
+              "resolved_cues": 126
+            }
+          },
+          "actor_audit": {
+            "missing_live_actor_count": 0,
+            "visible_body_fallback_count": 0,
+            "blank_uid_count": 0
+          },
+          "performance": {
+            "average_fps": 87.375595151332,
+            "one_percent_low_fps": 14.303832473514053
+          }
+        }
+      },
+      "residue_samples": [],
+      "tool_passed": true,
+      "tool_failures": []
+    },
+    "slice": {
+      "label": "C4 vertical slice sample",
+      "seed": 20260823,
+      "rounds": {
+        "round_01": {
+          "event_count": 65,
+          "event_types": {
+            "attack_start": 14,
+            "death": 8,
+            "hit_number": 17,
+            "impact": 14,
+            "projectile_spawn": 10,
+            "skill_shake": 2
+          },
+          "hashes": {
+            "frame_events_sha256": "7d0a7b5191bb810986684554560a995c7cb5b75ef9879493b3f2ef1c00f2c1d6",
+            "final_state_sha256": "93c97b4c5f6629b92cbdd73e6e41c4ac02e5d5e2d97f2ac4d60c8751a78fd57d"
+          },
+          "repeatable": true,
+          "director_audit": {
+            "anchor_degradation_count": 3,
+            "anchor_degradation_rows": [
+              {
+                "consumer": "director",
+                "reason": "missing target actor for hit_number",
+                "resource_path": "",
+                "unit_id": "enemy_L0_m1"
+              },
+              {
+                "consumer": "director",
+                "reason": "missing target actor for hit_number",
+                "resource_path": "",
+                "unit_id": "enemy_L1_m0"
+              },
+              {
+                "consumer": "director",
+                "reason": "missing target actor for hit_number",
+                "resource_path": "",
+                "unit_id": "enemy_L0_m2"
+              }
+            ],
+            "budget": {
+              "degraded": 0,
+              "merged": 0,
+              "over_budget_by_priority": {}
+            },
+            "drop_count": 2,
+            "drops_by_reason": {
+              "drain_nonblocking": 1,
+              "source_dead": 1
+            },
+            "legacy_adapter": {
+              "pending_timers": 0,
+              "played_by_type": {
+                "attack_start": 4,
+                "death": 8,
+                "hit_number": 16,
+                "projectile_spawn": 10
+              },
+              "profiles_seen": [
+                "basic_melee",
+                "basic_ranged",
+                "crit",
+                "death",
+                "fallback_minimal"
+              ],
+              "skipped_unmigrated": 0
+            },
+            "missing_actor_drop_count": 0,
+            "profiles": {
+              "loaded_ids": [
+                "basic_melee",
+                "basic_ranged",
+                "crit",
+                "death",
+                "heal"
+              ],
+              "missing_rows": [],
+              "resolved_counts": {
+                "basic_melee": 12,
+                "basic_ranged": 34,
+                "crit": 2,
+                "death": 8
+              }
+            },
+            "resolution": {
+              "degraded_anchors": 0,
+              "resolved_anchors": 68,
+              "resolved_cues": 58
+            }
+          },
+          "actor_audit": {
+            "missing_live_actor_count": 0,
+            "visible_body_fallback_count": 0,
+            "blank_uid_count": 0
+          },
+          "performance": {
+            "average_fps": 88.84128342239438,
+            "one_percent_low_fps": 10.277193024526522
+          }
+        },
+        "round_02": {
+          "event_count": 243,
+          "event_types": {
+            "attack_start": 62,
+            "death": 12,
+            "hit_number": 61,
+            "impact": 62,
+            "projectile_spawn": 43,
+            "skill_shake": 2,
+            "unit_skill_proc": 1
+          },
+          "hashes": {
+            "frame_events_sha256": "6df1733cf465108e23852ed1d00efc2077e8438d51571599d102c3e9a9cf97c5",
+            "final_state_sha256": "aac469ed236416a2047e127bf047b2b5199bf2857e9435bd4f08891f922f943f"
+          },
+          "repeatable": true,
+          "director_audit": {
+            "anchor_degradation_count": 2,
+            "anchor_degradation_rows": [
+              {
+                "consumer": "director",
+                "reason": "missing target actor for hit_number",
+                "resource_path": "",
+                "unit_id": "enemy_L0_m2"
+              },
+              {
+                "consumer": "director",
+                "reason": "missing target actor for hit_number",
+                "resource_path": "",
+                "unit_id": "enemy_L0_m3"
+              }
+            ],
+            "budget": {
+              "degraded": 2,
+              "merged": 0,
+              "over_budget_by_priority": {
+                "important": 2
+              }
+            },
+            "drop_count": 3,
+            "drops_by_reason": {
+              "drain_nonblocking": 3
+            },
+            "legacy_adapter": {
+              "pending_timers": 0,
+              "played_by_type": {
+                "attack_start": 19,
+                "death": 12,
+                "hit_number": 58,
+                "projectile_spawn": 43
+              },
+              "profiles_seen": [
+                "basic_melee",
+                "basic_ranged",
+                "crit",
+                "death",
+                "fallback_minimal",
+                "heal"
+              ],
+              "skipped_unmigrated": 0
+            },
+            "missing_actor_drop_count": 0,
+            "profiles": {
+              "loaded_ids": [
+                "basic_melee",
+                "basic_ranged",
+                "crit",
+                "death",
+                "heal"
+              ],
+              "missing_rows": [],
+              "resolved_counts": {
+                "basic_melee": 51,
+                "basic_ranged": 150,
+                "crit": 14,
+                "death": 12,
+                "heal": 1
+              }
+            },
+            "resolution": {
+              "degraded_anchors": 0,
+              "resolved_anchors": 279,
+              "resolved_cues": 236
+            }
+          },
+          "actor_audit": {
+            "missing_live_actor_count": 0,
+            "visible_body_fallback_count": 0,
+            "blank_uid_count": 0
+          },
+          "performance": {
+            "average_fps": 92.84828326970573,
+            "one_percent_low_fps": 19.248257177247368
+          }
+        }
+      },
+      "residue_samples": [],
+      "tool_passed": true,
+      "tool_failures": []
+    }
+  },
+  "known_limitations": [
+    "vfx_scene is empty on all five profiles: D5 adds scheduling, timing and budget, not new art. The visuals are still the ones the legacy adapter already draws, plus the code-driven death fade introduced in D4.",
+    "camera_mode is carried in the profile and validated, but no CameraFeelAdapter consumes it yet; crit currently differentiates through the existing number styling only.",
+    "The optional Juicee adapter listed in checklist section 2 was not added.",
+    "Mobile review and any on-device measurement remain DEFERRED_BY_USER."
+  ]
+}

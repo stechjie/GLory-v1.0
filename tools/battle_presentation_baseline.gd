@@ -76,6 +76,10 @@ var _failures: Array[Dictionary] = []
 # D3: every cue the Director refused during the round, tallied by reason.
 var _director_drops: Dictionary = {}
 var _director_missing_actor_drops := 0
+# D6: node/orphan counts taken between rounds, after the previous BattleScreen was
+# freed. A presentation layer that leaks pooled nodes, tweens or corpses across
+# battles shows up here as a rising floor.
+var _residue_samples: Array[Dictionary] = []
 
 
 func _ready() -> void:
@@ -236,6 +240,7 @@ func _start_next_round() -> void:
 		"round_index": round_index,
 		"replay": _replay,
 	})
+	_sample_residue()
 	_screen = BattleScreenScene.instantiate()
 	if _screen == null:
 		_record_failure("battle_screen_instantiate_failed", "Could not instantiate BattleScreen")
@@ -288,6 +293,14 @@ func _finish_current_round() -> void:
 	if int(resolution.get("resolved_cues", 0)) <= 0:
 		_record_failure("director_resolved_nothing",
 			"Director resolved 0 cues; an empty result is a wiring break, not a pass")
+	var played: Dictionary = (director_audit.get("legacy_adapter", {}) as Dictionary).get("played_by_type", {})
+	var loaded_ids: Array = (director_audit.get("profiles", {}) as Dictionary).get("loaded_ids", [])
+	if loaded_ids.size() < 5:
+		_record_failure("cue_profiles_missing",
+			"expected 5 cue profiles, loaded %d" % loaded_ids.size())
+	if played.is_empty():
+		_record_failure("slice_played_nothing",
+			"The D4 slice adapter played no cue at all; an empty slice cannot be read as a pass")
 	_current_summary["performance"] = performance
 	_current_summary["screenshots"] = _screenshots.duplicate(true)
 	_current_summary["viewport"] = _viewport_metadata()
@@ -305,6 +318,8 @@ func _finish_current_round() -> void:
 
 
 func _finish_all() -> void:
+	_sample_residue()
+	_check_cross_battle_residue()
 	var manifest := {
 		"tool": "battle_presentation_baseline",
 		"tool_version": TOOL_VERSION,
@@ -323,6 +338,7 @@ func _finish_all() -> void:
 		"lineup": LINEUP,
 		"viewport": _viewport_metadata(),
 		"rounds": _round_summaries,
+		"residue_samples": _residue_samples.duplicate(true),
 		"failures": _failures,
 		"passed": _failures.is_empty() and _round_summaries.size() == _rounds.size(),
 		"android": "DEFERRED_BY_USER",
@@ -827,6 +843,36 @@ func _ensure_dir(path: String) -> bool:
 	return true
 
 
+func _sample_residue() -> void:
+	_residue_samples.append({
+		"before_round": _current_round(),
+		"nodes": int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT)),
+		"orphans": int(Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)),
+		"objects": int(Performance.get_monitor(Performance.OBJECT_COUNT)),
+		"tweens": get_tree().get_processed_tweens().size(),
+	})
+
+
+func _check_cross_battle_residue() -> void:
+	if _residue_samples.size() < 2:
+		return
+	var first: Dictionary = _residue_samples[0]
+	var last: Dictionary = _residue_samples[_residue_samples.size() - 1]
+	# A small drift is normal (autoloads warm caches on the first battle); a
+	# presentation leak looks like tens or hundreds of nodes surviving each round.
+	var node_growth := int(last.get("nodes", 0)) - int(first.get("nodes", 0))
+	var orphan_growth := int(last.get("orphans", 0)) - int(first.get("orphans", 0))
+	if node_growth > 200:
+		_record_failure("cross_battle_node_growth",
+			"node count between rounds grew by %d" % node_growth)
+	if orphan_growth > 0:
+		_record_failure("cross_battle_orphan_growth",
+			"orphan node count between rounds grew by %d" % orphan_growth)
+	if int(last.get("tweens", 0)) > 0:
+		_record_failure("cross_battle_tween_residue",
+			"%d tween(s) were still running between rounds" % int(last.get("tweens", 0)))
+
+
 func _hook_presentation_director() -> void:
 	_director_drops = {}
 	_director_missing_actor_drops = 0
@@ -855,6 +901,24 @@ func _director_audit() -> Dictionary:
 		var director_value = _screen.get("_presentation_director")
 		if director_value != null and (director_value as Object).has_method("resolution_stats"):
 			stats = (director_value as Object).call("resolution_stats")
+	var adapter_stats: Dictionary = {}
+	if _screen != null and is_instance_valid(_screen):
+		var adapter_value = _screen.get("_legacy_vfx_adapter")
+		if adapter_value != null and (adapter_value as Object).has_method("stats"):
+			adapter_stats = (adapter_value as Object).call("stats")
+	var budget_stats: Dictionary = {}
+	var profile_report: Dictionary = {}
+	if _screen != null and is_instance_valid(_screen):
+		var director_obj = _screen.get("_presentation_director")
+		if director_obj != null and (director_obj as Object).has_method("budget_stats"):
+			budget_stats = (director_obj as Object).call("budget_stats")
+		var resolver_obj = _screen.get("_vfx_profile_resolver")
+		if resolver_obj != null and (resolver_obj as Object).has_method("resolved_counts"):
+			profile_report = {
+				"loaded_ids": (resolver_obj as Object).call("profile_ids"),
+				"resolved_counts": (resolver_obj as Object).call("resolved_counts"),
+				"missing_rows": (resolver_obj as Object).call("missing_rows"),
+			}
 	var anchor_rows: Array[Dictionary] = []
 	for row in UnitVisualResolverScript.failure_rows():
 		if str(row.get("consumer", "")) == "director":
@@ -866,6 +930,9 @@ func _director_audit() -> Dictionary:
 		"anchor_degradation_rows": anchor_rows,
 		"anchor_degradation_count": anchor_rows.size(),
 		"resolution": stats,
+		"legacy_adapter": adapter_stats,
+		"budget": budget_stats,
+		"profiles": profile_report,
 	}
 
 

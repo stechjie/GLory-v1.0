@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="BattleCueProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/runtime/presentation/BattleCueProfile.gd" id="1_cue_profile"]
+
+[resource]
+script = ExtResource("1_cue_profile")
+id = "basic_ranged"
+event_types = PackedStringArray("attack_start", "projectile_spawn", "impact")
+priority = "important"
+anchors = {
+"source": "CastAnchor",
+"target": "HitAnchor"
+}
+windup_ms = 120
+impact_ms = 80
+recovery_ms = 100
+camera_mode = "none"
+audio_cue = "bow_release"
+vfx_scene = ""
+max_concurrent = 6
+quality_overrides = {
+"LOW": {
+"max_concurrent": 3,
+"recovery_ms": 60
+}
+}
+fallback_profile = "basic_melee"

@@ -676,6 +676,12 @@ static func _perform_attack(attacker: Dictionary, target: Dictionary, state: Dic
 	# Only the crit base hit surfaces a floating number; the true-damage rider,
 	# combo strikes and treasure reactions below stay silent.
 	var basic_skill_id := "basic_ranged" if float(d.get("range", 1.0)) > 1.0 else "basic_melee"
+	# D4: windup and contact beats are emitted before the damage call so the tick
+	# reads attack_start -> [projectile_spawn] -> impact -> hit_number -> death.
+	# Nothing here touches RNG, so the crit roll above keeps its exact position in
+	# the deterministic stream.
+	DamageService.emit_attack_start(attacker, target, basic_skill_id, basic_skill_id == "basic_ranged")
+	DamageService.emit_impact(attacker, target, basic_skill_id, is_crit)
 	DamageService.set_hit_context("basic", is_crit, str(d.get("race", "")), basic_skill_id)
 	var dealt := DamageService.apply_damage(target, maxi(1, int(round(base))), false)
 	DamageService.clear_hit_context()

@@ -1,0 +1,64 @@
+{
+  "anchor_degradation_count": 7,
+  "anchor_degradation_rows": [
+    {
+      "consumer": "director",
+      "reason": "missing target actor for impact",
+      "resource_path": "",
+      "unit_id": "enemy_L0_m2"
+    },
+    {
+      "consumer": "director",
+      "reason": "missing target actor for hit_number",
+      "resource_path": "",
+      "unit_id": "enemy_L0_m2"
+    },
+    {
+      "consumer": "director",
+      "reason": "missing target actor for impact",
+      "resource_path": "",
+      "unit_id": "enemy_L2_m0"
+    },
+    {
+      "consumer": "director",
+      "reason": "missing target actor for hit_number",
+      "resource_path": "",
+      "unit_id": "enemy_L2_m0"
+    },
+    {
+      "consumer": "director",
+      "reason": "missing target actor for projectile_spawn",
+      "resource_path": "",
+      "unit_id": "enemy_L0_m3"
+    },
+    {
+      "consumer": "director",
+      "reason": "missing target actor for impact",
+      "resource_path": "",
+      "unit_id": "enemy_L0_m3"
+    },
+    {
+      "consumer": "director",
+      "reason": "missing target actor for hit_number",
+      "resource_path": "",
+      "unit_id": "enemy_L0_m3"
+    }
+  ],
+  "drop_count": 0,
+  "drops_by_reason": {},
+  "legacy_adapter": {
+    "pending_timers": 0,
+    "played_by_type": {
+      "attack_start": 3,
+      "hit_number": 5,
+      "projectile_spawn": 2
+    },
+    "skipped_unmigrated": 116
+  },
+  "missing_actor_drop_count": 0,
+  "resolution": {
+    "degraded_anchors": 0,
+    "resolved_anchors": 138,
+    "resolved_cues": 126
+  }
+}

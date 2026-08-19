@@ -41,7 +41,7 @@ static func _maybe_emit_hit_number(target: Dictionary, hp_damage: int) -> void:
 	var show := _hit_kind == "skill" or _hit_kind == "basic"
 	if not show:
 		return
-	_append_hit_event({
+	_append_presentation_event({
 		"type": "hit_number",
 		"kind": "dmg",
 		"crit": _hit_is_crit,
@@ -61,7 +61,7 @@ static func _maybe_emit_hit_number(target: Dictionary, hp_damage: int) -> void:
 static func emit_heal_number(target: Dictionary, amount: int) -> void:
 	if amount <= 0 or _stat_state.is_empty():
 		return
-	_append_hit_event({
+	_append_presentation_event({
 		"type": "hit_number",
 		"kind": "heal",
 		"source_uid": _stat_source_uid if not _stat_source_uid.is_empty() else str(target.get("uid", "")),
@@ -73,7 +73,81 @@ static func emit_heal_number(target: Dictionary, amount: int) -> void:
 		"is_lethal": false,
 	})
 
-static func _append_hit_event(event: Dictionary) -> void:
+# --- D4: four-beat basic attack chain -----------------------------------------
+# Emission order per attack is attack_start -> [projectile_spawn] -> impact ->
+# hit_number -> death, which is also the order the Director plays them back on
+# the attacker's action track. These are pure-data appends on the same
+# state.visual_events channel hit_number already rides, so replay capture records
+# them unchanged. None of them read or write combat state or consume RngService.
+
+static func emit_attack_start(attacker: Dictionary, target: Dictionary, skill_id: String, ranged: bool) -> void:
+	var attacker_uid := str(attacker.get("uid", ""))
+	if attacker_uid.is_empty():
+		return
+	var target_uid := str(target.get("uid", ""))
+	var target_uids: Array = [target_uid] if not target_uid.is_empty() else []
+	_append_presentation_event({
+		"type": "attack_start",
+		"source_uid": attacker_uid,
+		"target_uid": target_uid,
+		"target_uids": target_uids,
+		"skill_id": skill_id,
+		"amount": 0,
+		"is_crit": false,
+		"is_lethal": false,
+	})
+	if not ranged:
+		return
+	_append_presentation_event({
+		"type": "projectile_spawn",
+		"source_uid": attacker_uid,
+		"target_uid": target_uid,
+		"target_uids": target_uids,
+		"skill_id": skill_id,
+		"amount": 0,
+		"is_crit": false,
+		"is_lethal": false,
+	})
+
+
+# Contact beat. The damage number is a separate event, so this one deliberately
+# carries no amount: it only has to say "this body was struck, and how hard".
+static func emit_impact(attacker: Dictionary, target: Dictionary, skill_id: String, is_crit: bool) -> void:
+	var attacker_uid := str(attacker.get("uid", ""))
+	var target_uid := str(target.get("uid", ""))
+	if attacker_uid.is_empty() or target_uid.is_empty():
+		return
+	_append_presentation_event({
+		"type": "impact",
+		"source_uid": attacker_uid,
+		"target_uid": target_uid,
+		"target_uids": [target_uid],
+		"skill_id": skill_id,
+		"amount": 0,
+		"is_crit": is_crit,
+		"is_lethal": false,
+	})
+
+
+# source_uid is the unit that dies, not the killer: the Director cancels the
+# remaining actions on that uid's own track when it sees this event.
+static func emit_death(victim: Dictionary) -> void:
+	var uid := str(victim.get("uid", ""))
+	if uid.is_empty():
+		return
+	_append_presentation_event({
+		"type": "death",
+		"source_uid": uid,
+		"target_uids": [],
+		"skill_id": "death",
+		"amount": 0,
+		"is_crit": false,
+		"is_lethal": true,
+		"killer_uid": str(victim.get("killer_uid", "")),
+	})
+
+
+static func _append_presentation_event(event: Dictionary) -> void:
 	# Opening-phase (elapsed == 0) effects fire before the renderer seeds; skip them
 	# so battle start doesn't flash a burst of numbers.
 	if float(_stat_state.get("elapsed", 0.0)) <= 0.0:
@@ -198,8 +272,10 @@ static func apply_damage(target: Dictionary, amount: int, ignore_defense: bool =
 		_record_damage(target, hp_before)
 		return hp_before
 	target.hp = maxi(0, hp_before - remaining)
+	var died_now := false
 	if int(target.hp) <= 0:
 		target.alive = false
+		died_now = true
 		# 记下致死来源，供 BattleSimulator._process_pending_kill_rewards 补结算击杀金：
 		# 普攻走 _handle_attack_kill 即时结算，技能/AOE 等路径不走那条线。
 		# 中毒/失血/衰减没有来源上下文（_tick_statuses 会 clear_stat_context），
@@ -207,6 +283,8 @@ static func apply_damage(target: Dictionary, amount: int, ignore_defense: bool =
 		target["killer_uid"] = _stat_source_uid
 	_record_damage(target, mini(hp_before, remaining))
 	_maybe_emit_hit_number(target, mini(hp_before, remaining))
+	if died_now:
+		emit_death(target)
 	return remaining
 
 static func _record_damage(target: Dictionary, amount: int) -> void:
@@ -244,6 +322,7 @@ static func _try_sacrifice_revive(target: Dictionary) -> bool:
 	record_forced_hp_loss(guard)
 	guard.hp = 0
 	guard.alive = false
+	emit_death(guard)
 	guard.erase("guard_target_uid")
 	return true
 

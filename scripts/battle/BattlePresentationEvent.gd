@@ -172,6 +172,14 @@ static func _skill_id(raw_event: Dictionary, event_type: String) -> String:
 static func _default_visibility(event_type: String, is_crit: bool, is_lethal: bool, raw_event: Dictionary) -> String:
 	if event_type == "mother_execute" or event_type == "death" or is_lethal:
 		return VISIBILITY_CRITICAL
+	# Checklist section 3: the basic-attack chain is important, and a crit impact is
+	# critical. Added in D5 — D4 introduced these types while this function still
+	# had no rule for them, so they fell through to ambient and were wrongly
+	# exposed to ambient merging and to being dropped during DRAINING.
+	if event_type == "impact":
+		return VISIBILITY_CRITICAL if is_crit else VISIBILITY_IMPORTANT
+	if event_type == "attack_start" or event_type == "projectile_spawn":
+		return VISIBILITY_IMPORTANT
 	if event_type == "skill_shake" or event_type == "unit_skill_proc" or event_type == "skill_cast":
 		return VISIBILITY_IMPORTANT
 	if event_type == "heal" or event_type == "shield" or str(raw_event.get("kind", "")) == "heal" or is_crit:

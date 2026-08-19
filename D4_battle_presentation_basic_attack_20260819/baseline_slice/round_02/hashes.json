@@ -1,0 +1,9 @@
+{
+  "final_state_sha256": "aac469ed236416a2047e127bf047b2b5199bf2857e9435bd4f08891f922f943f",
+  "first_difference": "",
+  "frame_events_sha256": "083c0be5189f80db26728187dcfb40b4dc830a5765c28178bda5049814109e6d",
+  "repeat_replay_sha256": "bea1b76a7700aabdc983b8f1b508bfaa52a3793c4dfbf1e9008a6455bd515b43",
+  "repeatable": true,
+  "replay_sha256": "bea1b76a7700aabdc983b8f1b508bfaa52a3793c4dfbf1e9008a6455bd515b43",
+  "roster_sha256": "5a75a2c9a9dfef8cc357b2c654f9524ea1d1f453618d6583e8faa5199338540a"
+}
