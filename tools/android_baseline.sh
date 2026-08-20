@@ -181,6 +181,28 @@ else
             tar xf "$OUT_DIR/device_files.tar" -C "$OUT_DIR/device" --strip-components=2 2>/dev/null \
                 || fail "device_extract_failed: tar 解不开"
             rm -f "$OUT_DIR/device_files.tar"
+
+            # 设备侧记录器自己的判定也要读。原来只判桌面那一份，结果 2026-08-20 出过
+            # 一次假绿：设备 manifest 写着 passed=false、两条 director_missing_actor，
+            # 脚本却报了 PASS —— digest 一致不代表设备上演出没问题，这是两件事。
+            DEV_MANIFEST="$OUT_DIR/device/manifest.json"
+            if [ -f "$DEV_MANIFEST" ]; then
+                DEV_VERDICT="$(DEV_MANIFEST="$DEV_MANIFEST" PYTHONIOENCODING=utf-8 python -c '
+import io, json, os
+d = json.load(io.open(os.environ["DEV_MANIFEST"], encoding="utf-8"))
+fails = d.get("failures", [])
+if d.get("passed") and not fails:
+    print("ok")
+else:
+    print("%d|%s" % (len(fails), "; ".join(
+        "round %s %s" % (f.get("round"), f.get("code")) for f in fails[:4])))
+' 2>/dev/null)"
+                if [ "$DEV_VERDICT" != "ok" ]; then
+                    fail "device_recorder_reported_defects: 设备侧记录器判定不通过（${DEV_VERDICT:-读不出 manifest}），见 device/manifest.json"
+                fi
+            else
+                fail "device_manifest_missing: 取回的产物里没有 manifest.json，无法判定设备侧结果"
+            fi
         else
             fail "device_pull_failed: 取回的 tar 是空的"
         fi
