@@ -1,30 +1,15 @@
 extends "res://scenes/prep/PrepBoardModels.gd"
 
+# PrepDetails 的宝物说明里也要画种族 logo，所以这个 preload 留在链上；
+# 商店面板自己也 preload 了一份 —— 两个文件各自声明依赖，指向同一个脚本，不是重复逻辑。
 const PrepShopRaceIcon = preload("res://scenes/prep/PrepShopRaceIcon.gd")
-const PrepMoneyBagIcon = preload("res://scenes/prep/PrepMoneyBagIcon.gd")
-const PrepScrollIdleFlipbookScript = preload("res://scenes/prep/effects/PrepScrollIdleFlipbook.gd")
+
 const PrepShopRefreshBurnScript = preload("res://scenes/prep/effects/PrepShopRefreshBurn.gd")
 const PrepTeamMercAlertScript = preload("res://scenes/prep/effects/PrepTeamMercAlert.gd")
-const PrepMoneyBagAttentionGlowScript = preload("res://scenes/prep/effects/PrepMoneyBagAttentionGlow.gd")
 const SHOP_SCROLL_BURN_SHADER: Shader = preload("res://assets/shaders/prep_scroll_burn.gdshader")
-const MONEY_BAG_GLOW_SHADER: Shader = preload("res://assets/shaders/prep_money_bag_glow.gdshader")
-const GOLD_NUMBER_FONT: Font = preload("res://assets/fonts/Knewave-Regular.ttf")
 const SHOP_REFRESH_WIDTH := 112.0
 const SHOP_GOLD_WIDTH := 112.0
-const SHOP_PANEL_BACKGROUND_PATH := "res://assets/ui/shop/btm_stone_frame_v4.png"
-const SHOP_POPUP_SIZE := Vector2(896, 230)   # 商店弹窗判定框：宽=屏宽70%(1280*0.7)、高=屏高40%(720*0.4)
 const SHOP_POPUP_OFFSET := Vector2(0, 7)     # 商店弹窗判定框中心的平移（正 x 右移、正 y 下移）
-const SHOP_BG_SIZE := Vector2(920, 280)     # 背景卷轴显示尺寸（像素）：独立于判定框，改这里只变视觉不变判定
-const SHOP_BG_OFFSET := Vector2(0, -2)        # 背景相对弹窗中心的平移（正 x 右移、正 y 下移）
-const SHOP_BTN_SIZE := Vector2(200, 66)      # 底部「商店」按钮（木牌框）
-const SHOP_CARD_SIZE := Vector2(180, 180)    # 手牌卡尺寸（稀有度框比例 ~1:1）
-const SHOP_CARD_SEPARATION := 12             # 手牌卡间距
-const SHOP_CARD_FRAME_PATHS := {             # tier(1/2/3) → 普通/稀有/史诗框
-	1: "res://assets/ui/shop/card_frame_common.png",
-	2: "res://assets/ui/shop/card_frame_rare.png",
-	3: "res://assets/ui/shop/card_frame_epic.png",
-}
-const UNIT_PORTRAIT_DIR := "res://assets/ui/unit_portraits"   # 头像 = <dir>/<unit_id>.png
 const HP_FRAME_EMPTY_PATH := "res://assets/ui/buttons/btn_hp_empty.png"   # 血条石框（深色空槽）
 const HP_FRAME_RED_PATH := "res://assets/ui/buttons/btn_hp_red.png"       # 血条红条填充贴图
 const HP_FRAME_SIZE := Vector2(246, 82)                                   # 高清框 2172x724，比例 3.0
@@ -37,9 +22,6 @@ const MERC_BTN_PATH := "res://assets/ui/buttons/btn_merc_lowpoly.png"
 const TEAM_MERCS_BTN_PATH := "res://assets/ui/buttons/btn_team_mercs_lowpoly.png"
 const TEAM_MERCS_STAGE_BACKGROUND_PATH := "res://assets/ui/prep/team_mercs_stage.png"
 const MERC_BTN_SIZE := Vector2(132, 132)                                  # 方形
-const SHOP_CLOSED_BTN_PATH := "res://assets/ui/buttons/shop_closed.png"   # 底部商店按钮图（自带文字，无需再叠字）
-const SHOP_IDLE_ATLAS_PATH := "res://assets/vfx/prep/scroll_idle_shimmer_atlas.png"
-const SHOP_IDLE_HALO_PATH := "res://assets/vfx/prep/scroll_idle_halo.png"
 const SHOP_REFRESH_FIRE_ATLAS_PATH := "res://assets/vfx/prep/scroll_edge_fire_atlas.png"
 const TEAM_MERC_ALERT_ATLAS_PATH := "res://assets/vfx/prep/team_merc_crossed_swords_atlas.png"
 const CRYSTAL_FIRE_PATHS := [                 # 火队（slot 0-2 红蓝绿）红水晶：按血量段 0-10..40-50
@@ -72,7 +54,6 @@ const TEAM_MERCS_MIN_DIST := 0.15
 const TEAM_MERCS_PLATE_RADIUS := 0.055
 const TEAM_MERCS_PLATE_HEIGHT := 0.012
 const TREASURE_LOGO_DIRECTORY := "res://assets/ui/treasure_logos"
-const TREASURE_CARD_DIRECTORY := "res://assets/ui/treasure_cards"
 const TREASURE_LINKAGE_LOGOS := {
 	"link_phoenix": "凤凰涅槃",
 	"link_money_magic": "金钱魔法",
@@ -110,78 +91,49 @@ const MERCENARY_PORTRAIT_PATHS := {
 }
 
 var _mute_button: Button
-var _shop_scroll_idle: PrepScrollIdleFlipbook
 var _shop_refresh_burn: PrepShopRefreshBurn
-var _shop_background: TextureRect
 # 强引用贴图缓存：load() 只在资源仍被引用时命中引擎缓存，
 # 这里持有引用保证商店头像/宝物图标等反复刷新的贴图零重复 I/O。
 # static：PrepScreen 每回合都被 Main 重建，缓存必须跨实例存活。
-static var _texture_cache: Dictionary = {}
 # 增量刷新签名：_refresh_all 每次操作都会全量调用各分区刷新，
 # 签名没变的分区直接跳过重建。签名必须覆盖该分区渲染的全部数据，漏字段 = UI 不刷新。
-var _left_panel_signature := "unset"
 var _owned_logos_signature := "unset"
-var _shop_cards_signature := "unset"
 var _merc_overlay_signature := "unset"
-
-func _cached_texture(path: String) -> Texture2D:
-	if path.is_empty():
-		return null
-	var cached: Texture2D = _texture_cache.get(path)
-	if cached != null:
-		return cached
-	var tex := load(path) as Texture2D
-	if tex != null:
-		_texture_cache[path] = tex
-	return tex
-
-func _ui_unit_name(d: Dictionary) -> String:
-	if LocaleManager.get_locale() == "en":
-		var en := str(d.get("name_en", ""))
-		if not en.is_empty():
-			return en
-	return str(d.get("name", str(d.get("id", "?"))))
-
 # 棋盘 caption 位置（待命的不受影响）：
 # DROP=相对格子底往下的【比例】（用格子高度比例、不是固定像素，才能补透视——不同排格子大小不同，
 #   固定像素会"越往上越偏"）。负=往上、正=往下；太高调大、太低调小。
 # DX =左右【像素】偏移：正=右移、负=左移。
 const BOARD_CAPTION_DROP := 0.5
 const BOARD_CAPTION_DX := 0
-
-func _make_cell_caption() -> Label:
-	# 格子正下方的一行「名字 ★星级」标签（棋盘 / 待命共用）。默认隐藏，有棋子时才显示。
-	# 竖直方向文字居中于框、框中心固定（改字号不会让位置跑）；位置微调改 offset。
-	var cap := Label.new()
-	cap.name = "CellCaption"
-	cap.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	cap.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	cap.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	cap.anchor_left = 0.5
-	cap.anchor_right = 0.5
-	cap.anchor_top = 1.0
-	cap.anchor_bottom = 1.0
-	cap.offset_left = -78
-	cap.offset_right = 78
-	cap.offset_top = -14      # 框中心 = 格子底 + 4.5（改字号不影响这个中心）
-	cap.offset_bottom = 23
-	cap.add_theme_font_size_override("font_size", 18)   # 字号（放大到接近模型上的）；两处共用
-	cap.add_theme_color_override("font_color", Color.WHITE)
-	cap.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
-	cap.add_theme_constant_override("outline_size", 3)
-	cap.z_index = 10
-	cap.visible = false
-	cap.set_meta("caption_w", 156.0)   # 框宽/高：棋盘按圆心质心定位时用（_fit_cell_to_screen_polygon）
-	cap.set_meta("caption_h", 37.0)
-	return cap
-
-func _cell_caption_text(cell: Dictionary) -> String:
-	# 一行：名字 + ★（星数）
-	var d := _prep_display_unit_def(cell)
-	var star := clampi(int(cell.get("star", 1)), 1, GameState.MAX_UNIT_STAR)
-	return "%s %s" % [_ui_unit_name(d), "★".repeat(star)]
-
 func _build() -> void:
+	# 面板的依赖与信号必须在**构建之前**接好：build_* 里会用到 overlay 与 host，
+	# 也会把按钮的 pressed 连到面板自己的方法上。放到末尾接的话，
+	# 构建期 overlay 还是 null —— 表现是长按详情静默失效，不报错。
+	_shop.setup(self, _overlay, _on_portrait_card_hover)
+	_synergy.setup(_overlay)
+	_stats.setup(_overlay)
+	_treasure.setup(self, _overlay, _on_portrait_card_hover)
+	_board_hud.setup(_prep_display_unit_def, _board_cell_quad, cell_size, board_cell_rest_line)
+	if not _board_hud.state_changed.is_connected(_refresh_all):
+		_board_hud.state_changed.connect(_refresh_all)
+		_board_hud.visuals_dirty.connect(_on_board_visuals_dirty)
+	if not _treasure.pick_requested.is_connected(_pick_treasure):
+		_treasure.pick_requested.connect(_pick_treasure)
+		_treasure.claim_requested.connect(_claim_pending_treasure_round)
+		_treasure.state_changed.connect(_refresh_all)
+	if not _synergy.altar_requested.is_connected(_on_golden_altar):
+		_synergy.altar_requested.connect(_on_golden_altar)
+		_synergy.gamble_requested.connect(_on_generous_fate_gamble)
+		_synergy.treasure_detail_requested.connect(_treasure.show_detail)
+	if not _shop.card_selected.is_connected(_on_shop_card_selected):
+		_shop.card_selected.connect(_on_shop_card_selected)
+		_shop.buy_requested.connect(_on_shop_buy_requested)
+		_shop.detail_requested.connect(_show_shop_detail)
+		_shop.picker_toggled.connect(_on_shop_picker_toggled)
+		_shop.refresh_requested.connect(_on_refresh_shop)
+		_shop.message_requested.connect(show_message)
+		_shop.state_changed.connect(_refresh_all)
+
 	var bg := ColorRect.new()
 	bg.color = Color(0.38, 0.70, 0.88)
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -192,7 +144,7 @@ func _build() -> void:
 	# 3D 视口已设透明，棋盘没盖到的角落就露出这张图的草地，不再有黑角。
 	var sky_background := TextureRect.new()
 	sky_background.name = "PrepFullscreenBackground"
-	sky_background.texture = _cached_texture(PREP_BOARD_BASE_PATH)
+	sky_background.texture = PrepWidgets.cached_texture(PREP_BOARD_BASE_PATH)
 	sky_background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	sky_background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	sky_background.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -227,11 +179,42 @@ func _build() -> void:
 		hit_overlay.scan_root = self
 		add_child(hit_overlay)
 
+	# 面板节点**最后**才进树：加在前面会把所有兄弟节点的次序整体后移，
+	# 而 PrepUI 的注释明确记着树顺序影响输入拾取。加在末尾则原有次序一字不动。
+	# 零尺寸 + IGNORE：它只是逻辑宿主，不参与布局也不吃输入 ——
+	# 商店的可见控件仍在原位（顶层 ShopSideControls 与主布局里的弹窗）。
+	if _shop.get_parent() == null:
+		_shop.name = "ShopPanel"
+		_shop.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_shop.custom_minimum_size = Vector2.ZERO
+		add_child(_shop)
+	if _synergy.get_parent() == null:
+		_synergy.name = "SynergyPanel"
+		_synergy.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_synergy.custom_minimum_size = Vector2.ZERO
+		add_child(_synergy)
+	if _stats.get_parent() == null:
+		_stats.name = "BattleStatsPanel"
+		_stats.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_stats.custom_minimum_size = Vector2.ZERO
+		add_child(_stats)
+	if _treasure.get_parent() == null:
+		_treasure.name = "TreasureChoicePanel"
+		_treasure.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_treasure.custom_minimum_size = Vector2.ZERO
+		add_child(_treasure)
+	if _board_hud.get_parent() == null:
+		_board_hud.name = "BoardHud"
+		_board_hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_board_hud.custom_minimum_size = Vector2.ZERO
+		add_child(_board_hud)
+
+
 func _build_top_bar(root: VBoxContainer) -> void:
 	var top := SellDropPanel.new()
 	top.screen = self
 	top.custom_minimum_size = Vector2(0, 68)
-	_apply_prep_transparent_panel_style(top)
+	PrepWidgets.apply_transparent_panel_style(top)
 	root.add_child(top)
 	var top_content := Control.new()
 	top_content.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -250,7 +233,7 @@ func _build_top_bar(root: VBoxContainer) -> void:
 	formation_row.add_theme_constant_override("separation", 8)
 	top_content.add_child(formation_row)
 
-	var player_bar_stack := _create_formation_health_bar(false)
+	var player_bar_stack := PrepWidgets.create_formation_health_bar(false)
 	formation_row.add_child(player_bar_stack)
 	_player_formation_bar = null   # 血条红条已删，只留数字
 	_player_formation_hp_label = player_bar_stack.get_child(0) as Label
@@ -263,7 +246,7 @@ func _build_top_bar(root: VBoxContainer) -> void:
 	battle.custom_minimum_size = START_BTN_SIZE
 	battle.focus_mode = Control.FOCUS_NONE
 	battle.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	var battle_style := _menu_button_style()          # 统一「离线自测」样式
+	var battle_style := PrepWidgets.menu_button_style()          # 统一「离线自测」样式
 	battle.add_theme_stylebox_override("normal", battle_style)
 	battle.add_theme_stylebox_override("hover", battle_style)
 	battle.add_theme_stylebox_override("pressed", battle_style)
@@ -300,7 +283,7 @@ func _build_top_bar(root: VBoxContainer) -> void:
 	_enemy_formation_art = _create_formation_crystal(true)
 	formation_row.add_child(_enemy_formation_art)
 
-	var enemy_bar_stack := _create_formation_health_bar(true)
+	var enemy_bar_stack := PrepWidgets.create_formation_health_bar(true)
 	formation_row.add_child(enemy_bar_stack)
 	_enemy_formation_bar = null   # 血条红条已删，只留数字
 	_enemy_formation_hp_label = enemy_bar_stack.get_child(0) as Label
@@ -316,13 +299,13 @@ func _build_rest(root: VBoxContainer) -> void:
 	var left_drop := SellDropPanel.new()
 	left_drop.screen = self
 	left_drop.custom_minimum_size = Vector2(260, 0)
-	_apply_prep_transparent_panel_style(left_drop)
+	PrepWidgets.apply_transparent_panel_style(left_drop)
 	body.add_child(left_drop)
 	# 种族羁绊面板：不滚动，直接把 VBox 放进面板（内容确定放得下）。
-	_left_panel = VBoxContainer.new()
-	_left_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_left_panel.add_theme_constant_override("separation", 8)
-	left_drop.add_child(_left_panel)
+	_synergy._left_panel = VBoxContainer.new()
+	_synergy._left_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_synergy._left_panel.add_theme_constant_override("separation", 8)
+	left_drop.add_child(_synergy._left_panel)
 
 	var center_host := Control.new()
 	center_host.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -338,9 +321,9 @@ func _build_rest(root: VBoxContainer) -> void:
 	center.add_theme_constant_override("separation", 6)
 	center_host.add_child(center)
 
-	_build_treasure_overlay()
+	_treasure.build_overlay()
 
-	_build_treasure_logos_panel()
+	_treasure.build_logos_panel()
 
 	var board_and_bench := HBoxContainer.new()
 	board_and_bench.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -353,8 +336,8 @@ func _build_rest(root: VBoxContainer) -> void:
 	# 摆哪都不影响格子出现的位置（格子由 STANDBY_SPOTS 的 3D 投影定位），所以保持最简。
 	var left_bench := Control.new()
 	left_bench.name = "StandbyFrame"
-	_bench_row = left_bench
-	_standby_frame = left_bench
+	_board_hud.bench_row = left_bench
+	_board_hud.standby_frame = left_bench
 	left_bench.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	center_host.add_child(left_bench)
 	for i in mini(GameState.BENCH_SLOTS, STANDBY_SLOT_COUNT):
@@ -363,7 +346,7 @@ func _build_rest(root: VBoxContainer) -> void:
 		left_bench.add_child(standby_slot)
 
 	var board_frame := Control.new()
-	var board_size := _board_grid_size()
+	var board_size := _board_hud.grid_size()
 	board_frame.custom_minimum_size = board_size
 	board_frame.size = board_size
 	board_frame.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN   # 棋盘框靠左（C 需求）
@@ -373,23 +356,24 @@ func _build_rest(root: VBoxContainer) -> void:
 
 	_setup_prep_board_model_view(board_frame)
 
-	_board_grid = Control.new()
-	_board_grid.custom_minimum_size = board_size
-	_board_grid.size = board_size
-	_board_grid.position = board_grid_offset
-	_board_grid.mouse_filter = Control.MOUSE_FILTER_IGNORE   # 同上：格子自己接输入
-	board_frame.add_child(_board_grid)
-	_board_readability_layer = BoardReadabilityLayerScene.instantiate() as BoardReadabilityLayer
-	_board_readability_layer.name = "PrepBoardReadabilityLayer"
-	_board_readability_layer.configure_prep()
-	_board_readability_layer.set_guides_enabled(PlayerProfile.board_readability_enabled)
-	_board_readability_layer.set_low_quality(VFXManager.get_quality_tier() == VFXQualityBudget.Tier.LOW)
-	_board_readability_layer.set_direction_texts(tr("board_frontline"), tr("board_backline"))
-	_board_grid.add_child(_board_readability_layer)
+	_board_hud.grid = Control.new()
+	_board_hud.grid.custom_minimum_size = board_size
+	_board_hud.grid.size = board_size
+	_board_hud.grid.position = board_grid_offset
+	_board_hud.grid.mouse_filter = Control.MOUSE_FILTER_IGNORE   # 同上：格子自己接输入
+	board_frame.add_child(_board_hud.grid)
+	_board_hud.readability_layer = BoardReadabilityLayerScene.instantiate() as BoardReadabilityLayer
+	_board_hud.readability_layer.name = "PrepBoardReadabilityLayer"
+	_board_hud.readability_layer.configure_prep()
+	_board_hud.readability_layer.set_guides_enabled(PlayerProfile.board_readability_enabled)
+	_board_hud.readability_layer.set_low_quality(VFXManager.get_quality_tier() == VFXQualityBudget.Tier.LOW)
+	_board_hud.readability_layer.set_direction_texts(tr("board_frontline"), tr("board_backline"))
+	_board_hud.grid.add_child(_board_hud.readability_layer)
 	for i in GameConstants.CELL_COUNT:
 		var cell := BoardCellButton.new()
 		cell.board_index = i
 		cell.screen = self
+		cell.hud = _board_hud
 		cell.drag_owner = self
 		var quad := _board_cell_quad(i, board_size)
 		var bounds := Rect2(quad[0], Vector2.ZERO)
@@ -409,26 +393,26 @@ func _build_rest(root: VBoxContainer) -> void:
 		cell.add_theme_font_size_override("font_size", 11)
 		cell.add_theme_color_override("font_outline_color", Color(0.01, 0.01, 0.01, 0.96))
 		cell.add_theme_constant_override("outline_size", 2)
-		cell.add_theme_stylebox_override("normal", _board_empty_style)
-		cell.add_theme_stylebox_override("hover", _board_hover_style)
-		cell.add_theme_stylebox_override("pressed", _board_hover_style)
-		cell.add_theme_stylebox_override("focus", _board_hover_style)
+		cell.add_theme_stylebox_override("normal", _board_hud.empty_style)
+		cell.add_theme_stylebox_override("hover", _board_hud.hover_style)
+		cell.add_theme_stylebox_override("pressed", _board_hud.hover_style)
+		cell.add_theme_stylebox_override("focus", _board_hud.hover_style)
 		cell.pressed.connect(_on_board_pressed.bind(i))
-		_attach_long_press(cell, func(): _show_board_detail(i))
-		_board_grid.add_child(cell)
-		_board_buttons.append(cell)
+		_overlay.attach_long_press(cell, func(): _show_board_detail(i))
+		_board_hud.grid.add_child(cell)
+		_board_hud.buttons.append(cell)
 		var relation_overlay := RelationProgressOverlay.new()
 		relation_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		relation_overlay.z_index = 8
 		cell.add_child(relation_overlay)
-		_board_relation_overlays.append(relation_overlay)
-		var caption := _make_cell_caption()
+		_board_hud.relation_overlays.append(relation_overlay)
+		var caption := PrepWidgets.make_cell_caption()
 		# 棋盘：跟「圆圈真正的中心」定位（在 _fit_cell_to_screen_polygon 里按椭圆质心摆），补透视。
 		caption.set_meta("caption_centroid", true)
 		caption.set_meta("caption_dx", BOARD_CAPTION_DX)      # 左右像素微调
 		caption.set_meta("caption_drop", BOARD_CAPTION_DROP)  # 相对格子高度往下的比例（负=往上，绕圆心）
 		cell.add_child(caption)
-		_board_cell_captions.append(caption)
+		_board_hud.cell_captions.append(caption)
 	_sync_prep_board_readability_geometry()
 	_sync_prep_board_readability_state()
 
@@ -439,357 +423,57 @@ func _build_rest(root: VBoxContainer) -> void:
 	right_board_spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	board_and_bench.add_child(right_board_spacer)
 
-	var board_bottom_reserve := Control.new()
-	board_bottom_reserve.custom_minimum_size = Vector2(0, 248)
-	board_bottom_reserve.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	center.add_child(board_bottom_reserve)
-
-	# 底部「商店」按钮：点击打开/关闭商店弹窗（弹窗打开时被弹窗盖住）。保留 shop_closed.png 贴图框、图自带文字。
-	var shop_open_btn := _make_framed_text_button("", SHOP_CLOSED_BTN_PATH, SHOP_BTN_SIZE, 18, _toggle_shop_picker)
-	_shop_open_button = shop_open_btn
-	shop_open_btn.anchor_left = 0.5
-	shop_open_btn.anchor_top = 1.0
-	shop_open_btn.anchor_right = 0.5
-	shop_open_btn.anchor_bottom = 1.0
-	shop_open_btn.offset_left = -SHOP_BTN_SIZE.x * 0.5
-	shop_open_btn.offset_right = SHOP_BTN_SIZE.x * 0.5
-	shop_open_btn.offset_top = -SHOP_BTN_SIZE.y - 40
-	shop_open_btn.offset_bottom = -40
-	shop_open_btn.z_index = 6
-	center_host.add_child(shop_open_btn)
-	_shop_scroll_idle = PrepScrollIdleFlipbookScript.new()
-	_shop_scroll_idle.setup(
-		shop_open_btn,
-		_cached_texture(SHOP_IDLE_ATLAS_PATH),
-		_cached_texture(SHOP_IDLE_HALO_PATH)
-	)
-	shop_open_btn.add_child(_shop_scroll_idle)
-
-	# 钱袋 B（商店关闭时显示）：放在「商店」按钮左边，显示金币，长按看利息。商店打开时隐藏（那时看钱袋 A）。
-	var closed_money_btn := Button.new()
-	_closed_money_bag = closed_money_btn
-	closed_money_btn.flat = true
-	closed_money_btn.focus_mode = Control.FOCUS_NONE
-	closed_money_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	closed_money_btn.anchor_left = 0.5
-	closed_money_btn.anchor_top = 1.0
-	closed_money_btn.anchor_right = 0.5
-	closed_money_btn.anchor_bottom = 1.0
-	closed_money_btn.offset_left = -SHOP_BTN_SIZE.x * 0.5 - 8 - 60   # 商店按钮左边 8px 间隙，宽 60
-	closed_money_btn.offset_right = -SHOP_BTN_SIZE.x * 0.5 - 8
-	closed_money_btn.offset_top = -SHOP_BTN_SIZE.y - 40
-	closed_money_btn.offset_bottom = -40
-	closed_money_btn.z_index = 6
-	center_host.add_child(closed_money_btn)
-	var closed_bag_icon: Control = PrepMoneyBagIcon.new()
-	closed_bag_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	closed_bag_icon.anchor_left = 0.5
-	closed_bag_icon.anchor_top = 0.5
-	closed_bag_icon.anchor_right = 0.5
-	closed_bag_icon.anchor_bottom = 0.5
-	closed_bag_icon.offset_left = -22
-	closed_bag_icon.offset_top = -34
-	closed_bag_icon.offset_right = 22
-	closed_bag_icon.offset_bottom = 10
-	closed_money_btn.add_child(closed_bag_icon)
-	_closed_gold_label = Label.new()
-	_closed_gold_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_closed_gold_label.anchor_left = 0.5
-	_closed_gold_label.anchor_top = 0.5
-	_closed_gold_label.anchor_right = 0.5
-	_closed_gold_label.anchor_bottom = 0.5
-	_closed_gold_label.offset_left = -30
-	_closed_gold_label.offset_right = 30
-	_closed_gold_label.offset_top = 12
-	_closed_gold_label.offset_bottom = 40
-	_closed_gold_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_closed_gold_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_closed_gold_label.add_theme_font_size_override("font_size", 15)
-	_closed_gold_label.add_theme_color_override("font_color", Color(1.0, 0.84, 0.34))
-	_closed_gold_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
-	_closed_gold_label.add_theme_constant_override("outline_size", 3)
-	closed_money_btn.add_child(_closed_gold_label)
-	# 长按看利息（短按不做事，纯金币显示）
-	_attach_long_press(closed_money_btn, func() -> void: _show_gold_interest_detail())
-
-	# 商店「外挂控件层」：钱袋A（购买键）和刷新按钮挂这里，不再是商店面板的子节点。
-	# 满屏 + IGNORE（空白处不吃点击），z=41 盖过宝藏(z-5)和商店面板(z40)；只在商店开时显示；
-	# 点它里面的控件不会被判成"点商店外面"而误关店（PrepScreen._input 里有白名单）。
-	_shop_side_controls = Control.new()
-	_shop_side_controls.name = "ShopSideControls"
-	_shop_side_controls.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_shop_side_controls.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_shop_side_controls.z_index = 41
-	_shop_side_controls.visible = false
-	add_child(_shop_side_controls)
-
-	# 商店弹窗：卷轴背景，底部中央 896x288（SHOP_POPUP_SIZE），默认隐藏，点「商店」按钮打开
-	var shop_panel := SellDropPanel.new()
-	_shop_panel = shop_panel
-	shop_panel.screen = self
-	shop_panel.visible = false
-	shop_panel.z_index = 40
-	shop_panel.anchor_left = 0.5
-	shop_panel.anchor_top = 1.0
-	shop_panel.anchor_right = 0.5
-	shop_panel.anchor_bottom = 1.0
-	shop_panel.offset_left = -SHOP_POPUP_SIZE.x * 0.5
-	shop_panel.offset_right = SHOP_POPUP_SIZE.x * 0.5
-	shop_panel.offset_top = -SHOP_POPUP_SIZE.y - 8
-	shop_panel.offset_bottom = -8
-	shop_panel.custom_minimum_size = SHOP_POPUP_SIZE
-	_apply_prep_transparent_panel_style(shop_panel)
-	shop_panel.clip_contents = false
-	center_host.add_child(shop_panel)
-	var shop_background_host := Control.new()
-	shop_background_host.name = "ShopBackgroundHost"
-	shop_background_host.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	shop_background_host.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	shop_panel.add_child(shop_background_host)
-	var shop_background := TextureRect.new()
-	_shop_background = shop_background
-	shop_background.name = "ShopPanelBackground"
-	shop_background.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	shop_background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	shop_background.stretch_mode = TextureRect.STRETCH_SCALE   # 卷轴图(1672x941)拉伸到 SHOP_BG_SIZE，接受轻微变形
-	# 居中于弹窗、独立尺寸：只由 SHOP_BG_SIZE / SHOP_BG_OFFSET 决定显示大小和位置，
-	# 与弹窗判定框(SHOP_POPUP_SIZE)解耦；背景层 IGNORE 输入，改大改小都不影响判定。
-	shop_background.anchor_left = 0.5
-	shop_background.anchor_top = 0.5
-	shop_background.anchor_right = 0.5
-	shop_background.anchor_bottom = 0.5
-	shop_background.offset_left = -SHOP_BG_SIZE.x * 0.5 + SHOP_BG_OFFSET.x
-	shop_background.offset_right = SHOP_BG_SIZE.x * 0.5 + SHOP_BG_OFFSET.x
-	shop_background.offset_top = -SHOP_BG_SIZE.y * 0.5 + SHOP_BG_OFFSET.y
-	shop_background.offset_bottom = SHOP_BG_SIZE.y * 0.5 + SHOP_BG_OFFSET.y
-	var shop_background_source := _cached_texture(SHOP_PANEL_BACKGROUND_PATH)
-	shop_background.texture = shop_background_source
-	shop_background_host.add_child(shop_background)
-	var shop_layout := Control.new()
-	shop_layout.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	shop_panel.add_child(shop_layout)
-	# 钱袋A（购买键）：挂在外挂层 = 【屏幕坐标】，锚左下角。改这 4 个 offset 就能自由摆，
-	# 不受商店面板范围限制，也不会被宝藏抢走点击（外挂层 z=41 在宝藏之上）。
-	var gold_area := Control.new()
-	gold_area.anchor_left = 0.0
-	gold_area.anchor_top = 1.0
-	gold_area.anchor_right = 0.0
-	gold_area.anchor_bottom = 1.0
-	gold_area.offset_left = 117
-	gold_area.offset_right = 255
-	gold_area.offset_top = -201
-	gold_area.offset_bottom = -60
-	_shop_side_controls.add_child(gold_area)
-	var money_bag_glow := PrepMoneyBagAttentionGlowScript.new()
-	money_bag_glow.anchor_left = 0.5
-	money_bag_glow.anchor_top = 0.5
-	money_bag_glow.anchor_right = 0.5
-	money_bag_glow.anchor_bottom = 0.5
-	money_bag_glow.offset_left = -75
-	money_bag_glow.offset_top = -81
-	money_bag_glow.offset_right = 75
-	money_bag_glow.offset_bottom = 69
-	gold_area.add_child(money_bag_glow)
-	money_bag_glow.setup(
-		_cached_texture("res://assets/ui/buttons/btn_buy_lowpoly.png"),
-		MONEY_BAG_GLOW_SHADER
-	)
-	var money_bag: Control = PrepMoneyBagIcon.new()
-	money_bag.set("use_lowpoly_texture", true)
-	money_bag.anchor_left = 0.5
-	money_bag.anchor_top = 0.5
-	money_bag.anchor_right = 0.5
-	money_bag.anchor_bottom = 0.5
-	money_bag.offset_left = -58
-	money_bag.offset_top = -64
-	money_bag.offset_right = 58
-	money_bag.offset_bottom = 52
-	gold_area.add_child(money_bag)
-	_gold_amount_label = Label.new()
-	_gold_amount_label.anchor_left = 0.5
-	_gold_amount_label.anchor_top = 0.5
-	_gold_amount_label.anchor_right = 0.5
-	_gold_amount_label.anchor_bottom = 0.5
-	_gold_amount_label.offset_left = -44
-	_gold_amount_label.offset_right = 44
-	_gold_amount_label.offset_top = 10
-	_gold_amount_label.offset_bottom = 38
-	_gold_amount_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_gold_amount_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_gold_amount_label.pivot_offset = Vector2(44, 14)
-	_gold_amount_label.rotation_degrees = -4.0
-	_gold_amount_label.add_theme_font_override("font", GOLD_NUMBER_FONT)
-	_gold_amount_label.add_theme_font_size_override("font_size", 24)
-	_gold_amount_label.add_theme_color_override("font_color", Color(1.0, 0.86, 0.30))
-	_gold_amount_label.add_theme_color_override("font_outline_color", Color(0.20, 0.08, 0.01, 0.98))
-	_gold_amount_label.add_theme_constant_override("outline_size", 3)
-	gold_area.add_child(_gold_amount_label)
-	var buy_action_label := Label.new()
-	buy_action_label.text = tr("ui_buy")
-	buy_action_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	buy_action_label.anchor_left = 0.5
-	buy_action_label.anchor_top = 0.5
-	buy_action_label.anchor_right = 0.5
-	buy_action_label.anchor_bottom = 0.5
-	buy_action_label.offset_left = -52
-	buy_action_label.offset_top = 49
-	buy_action_label.offset_right = 52
-	buy_action_label.offset_bottom = 75
-	buy_action_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	buy_action_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	buy_action_label.add_theme_font_size_override("font_size", 19)
-	buy_action_label.add_theme_color_override("font_color", Color(1.0, 0.94, 0.72))
-	buy_action_label.add_theme_color_override("font_outline_color", Color(0.12, 0.04, 0.01, 0.98))
-	buy_action_label.add_theme_constant_override("outline_size", 4)
-	gold_area.add_child(buy_action_label)
-	var gold_info_btn := Button.new()
-	_buy_shop_button = gold_info_btn
-	gold_info_btn.flat = true
-	gold_info_btn.focus_mode = Control.FOCUS_NONE
-	gold_info_btn.modulate = Color(1, 1, 1, 0)
-	gold_info_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	gold_info_btn.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	gold_area.add_child(gold_info_btn)
-	# 钱袋 A（商店内）：短按=购买选中的卡（没选卡时 _on_buy_selected_shop 直接返回）；长按=看利息
-	gold_info_btn.pressed.connect(func() -> void:
-		if bool(gold_info_btn.get_meta("long_press_triggered", false)):
-			return
-		_on_buy_selected_shop())
-	_attach_long_press(gold_info_btn, func() -> void: _show_gold_interest_detail())
-	# 手牌区：4 张随机棋子卡，横排居中在卷轴空白区。
-	# 卡片层级（从底到顶）：头像 → 稀有度框（tier 换图） → 左上种族 logo → 右上价格（框自带金币） → 底部铭牌名字 → 灰色不可买覆盖层
-	var shop_card_area := Control.new()
-	shop_card_area.anchor_left = 0.0
-	shop_card_area.anchor_top = 0.10
-	shop_card_area.anchor_right = 1.0
-	shop_card_area.anchor_bottom = 0.92
-	shop_layout.add_child(shop_card_area)
-	_shop_row = HBoxContainer.new()
-	_shop_row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_shop_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	_shop_row.add_theme_constant_override("separation", SHOP_CARD_SEPARATION)
-	shop_card_area.add_child(_shop_row)
-	for i in GameState.SHOP_UNIT_SLOTS:
-		var slot := DragButton.new()
-		slot.drag_owner = self
-		slot.custom_minimum_size = SHOP_CARD_SIZE
-		slot.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-		slot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		slot.clip_contents = false
-		slot.pressed.connect(_on_shop_card_pressed.bind(slot, i))
-		_attach_long_press(slot, func(): _show_shop_detail(i))
-		_configure_unframed_portrait_card(slot)
-		_shop_row.add_child(slot)
-		_shop_buttons.append(slot)
-
-		# 头像：先加（画在框下面），稍微伸进框梁内侧，由框盖住毛边
-		var portrait := TextureRect.new()
-		portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-		portrait.anchor_left = 0.09
-		portrait.anchor_top = 0.07
-		portrait.anchor_right = 0.91
-		portrait.anchor_bottom = 0.80
-		slot.add_child(portrait)
-		_shop_portraits.append(portrait)
-
-		# 稀有度框：刷新时按棋子 tier 换普通/稀有/史诗贴图
-		var card_frame := TextureRect.new()
-		card_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		card_frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		card_frame.stretch_mode = TextureRect.STRETCH_SCALE
-		card_frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		slot.add_child(card_frame)
-		_shop_card_frames.append(card_frame)
-
-		# 左上角种族 logo（复用详情弹窗的静态 logo 控件）
-		var race_icon: Control = PrepShopRaceIcon.new()
-		race_icon.anchor_left = 0.02
-		race_icon.anchor_top = 0.02
-		race_icon.anchor_right = 0.26
-		race_icon.anchor_bottom = 0.26
-		race_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		slot.add_child(race_icon)
-		_shop_race_icons.append(race_icon)
-
-		# 右上角价格：写在框自带的金币圆牌上（金币是亮金色，用深棕字不加描边）
-		var price_label := Label.new()
-		price_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		price_label.anchor_left = 0.75
-		price_label.anchor_top = 0.02
-		price_label.anchor_right = 0.98
-		price_label.anchor_bottom = 0.23
-		price_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		price_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		price_label.pivot_offset = Vector2(14, 11)
-		price_label.rotation_degrees = -5.0
-		price_label.add_theme_font_override("font", GOLD_NUMBER_FONT)
-		price_label.add_theme_font_size_override("font_size", 22)
-		price_label.add_theme_color_override("font_color", Color(0.28, 0.16, 0.02))
-		price_label.add_theme_color_override("font_outline_color", Color(1.0, 0.77, 0.20, 0.55))
-		price_label.add_theme_constant_override("outline_size", 1)
-		slot.add_child(price_label)
-		_shop_price_labels.append(price_label)
-
-		# 底部铭牌：棋子名字（切英文时自动显示英文名）
-		var name_label := Label.new()
-		name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		name_label.anchor_left = 0.14
-		name_label.anchor_top = 0.76
-		name_label.anchor_right = 0.86
-		name_label.anchor_bottom = 0.95
-		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		name_label.clip_text = true
-		name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		name_label.add_theme_font_size_override("font_size", 16)
-		name_label.add_theme_color_override("font_color", Color(0.94, 0.90, 0.80))
-		name_label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.9))
-		name_label.add_theme_constant_override("outline_size", 3)
-		slot.add_child(name_label)
-		_shop_card_labels.append(name_label)
-
-		var reason_label := _create_purchase_reason_overlay(slot)
-		_shop_reason_labels.append(reason_label)
-
+	# 以下按原顺序逐段构建。**顺序不能动**：树顺序决定输入拾取优先级，
+	# 换先后会让右列棋格被后面的控件吃掉点击（见段内注释）。
+	# 拆分前后用 tools/prep_tree_snapshot.tscn 比对过完整节点树（303 个节点），
+	# 路径、类名、次序、z_index、visible、mouse_filter 全部逐字节一致。
+	_shop.build_button_and_purse(body, center_host, center)
+	_shop.build_popup(body, center_host)
+	_shop.build_hand_cards(body, center_host)
+	_build_sell_zone_and_refresh(body, center_host)
+	_build_merc_panels(body, center_host)
+# 出售区与商店刷新按钮。由 _build_rest 拆出（D2）。
+# 原函数 638 行，全函数只有 2 处完全干净的切点 —— body 与 center_host
+# 两个局部量跨越几乎整段。所以切点取在「除它们之外没有其它局部量跨越」处，
+# 这些容器以参数传入（段内只读，不重新赋值）。
+func _build_sell_zone_and_refresh(body: HBoxContainer, center_host: Control) -> void:
 	# 出售区域覆盖层本身做成 SellDropPanel：放下去直接卖，不靠穿透传递
 	var sell_overlay := SellDropPanel.new()
 	sell_overlay.screen = self
 	sell_overlay.is_sell_zone = true  # 唯一的有效出售区：拖动棋盘/待命单位时点亮的红色区域
-	_shop_sell_overlay = sell_overlay
-	_shop_sell_overlay.visible = false
-	_shop_sell_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	_shop.sell_overlay = sell_overlay
+	_shop.sell_overlay.visible = false
+	_shop.sell_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
 	# 常驻底部中央（与商店弹窗同一位置），独立于商店弹窗：仅拖拽 board/bench 单位时显示。
 	# z_index 高于弹窗(40)：弹窗开着时红区盖在弹窗上，丢上来直接卖，不会误触购买。
-	_shop_sell_overlay.z_index = 50
-	_shop_sell_overlay.anchor_left = 0.5
-	_shop_sell_overlay.anchor_right = 0.5
-	_shop_sell_overlay.anchor_top = 1.025
-	_shop_sell_overlay.anchor_bottom = 1.025
-	_shop_sell_overlay.offset_left = -SHOP_POPUP_SIZE.x * 0.5
-	_shop_sell_overlay.offset_right = SHOP_POPUP_SIZE.x * 0.5
-	_shop_sell_overlay.offset_top = -SHOP_POPUP_SIZE.y + 80
-	_shop_sell_overlay.offset_bottom = 0
+	_shop.sell_overlay.z_index = 50
+	_shop.sell_overlay.anchor_left = 0.5
+	_shop.sell_overlay.anchor_right = 0.5
+	_shop.sell_overlay.anchor_top = 1.025
+	_shop.sell_overlay.anchor_bottom = 1.025
+	_shop.sell_overlay.offset_left = -_shop.SHOP_POPUP_SIZE.x * 0.5
+	_shop.sell_overlay.offset_right = _shop.SHOP_POPUP_SIZE.x * 0.5
+	_shop.sell_overlay.offset_top = -_shop.SHOP_POPUP_SIZE.y + 80
+	_shop.sell_overlay.offset_bottom = 0
 	var sell_style := StyleBoxFlat.new()
 	sell_style.bg_color = Color(0.34, 0.07, 0.07, 0.94)
 	sell_style.border_color = Color(0.94, 0.35, 0.25, 0.92)
 	sell_style.set_border_width_all(2)
 	sell_style.set_corner_radius_all(4)
-	_shop_sell_overlay.add_theme_stylebox_override("panel", sell_style)
-	center_host.add_child(_shop_sell_overlay)
+	_shop.sell_overlay.add_theme_stylebox_override("panel", sell_style)
+	center_host.add_child(_shop.sell_overlay)
 	var sell_label := Label.new()
 	sell_label.text = tr("ui_sell_zone")
 	sell_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	sell_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	sell_label.add_theme_font_size_override("font_size", 24)
 	sell_label.add_theme_color_override("font_color", Color(1.0, 0.86, 0.72))
-	_shop_sell_overlay.add_child(sell_label)
+	_shop.sell_overlay.add_child(sell_label)
 
 	# 只包住刷新按钮的小框（132×132）。锚在面板右侧中间，别再撑成巨框吃卡片点击。
 	# 要移动刷新：改下面 4 个 offset（框小才不会误吃点击）；锚点保持 left≤right、都在 0~1。
 	var refresh_shop := Button.new()
-	_refresh_shop_button = refresh_shop
+	_shop.refresh_button = refresh_shop
 	refresh_shop.text = ""
 	refresh_shop.tooltip_text = tr("ui_refresh_shop_tooltip")
 	refresh_shop.flat = true                  # 去默认样式，只显示循环箭头框
@@ -804,17 +488,17 @@ func _build_rest(root: VBoxContainer) -> void:
 	refresh_shop.offset_bottom = -70
 	refresh_shop.focus_mode = Control.FOCUS_NONE
 	var refresh_frame := TextureRect.new()    # 循环箭头图标框（箭头已画死）
-	refresh_frame.texture = _cached_texture(REFRESH_BTN_PATH)
+	refresh_frame.texture = PrepWidgets.cached_texture(REFRESH_BTN_PATH)
 	refresh_frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	refresh_frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	refresh_frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	refresh_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	refresh_shop.add_child(refresh_frame)
 	refresh_shop.pressed.connect(_on_refresh_shop_control_pressed)
-	_shop_side_controls.add_child(refresh_shop)
+	_shop.side_controls.add_child(refresh_shop)
 
 	var refresh_icon := Label.new()
-	_refresh_shop_icon = refresh_icon
+	_shop.refresh_icon = refresh_icon
 	refresh_icon.text = "↻"
 	refresh_icon.visible = false              # 框已自带循环箭头，隐藏文字图标（旋转动画无害）
 	refresh_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -833,7 +517,7 @@ func _build_rest(root: VBoxContainer) -> void:
 	refresh_shop.add_child(refresh_icon)
 
 	var refresh_cost_label := Label.new()
-	_refresh_shop_cost_label = refresh_cost_label
+	_shop.refresh_cost_label = refresh_cost_label
 	refresh_cost_label.text = tr("ui_free")
 	refresh_cost_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	refresh_cost_label.anchor_left = 0.5
@@ -869,19 +553,26 @@ func _build_rest(root: VBoxContainer) -> void:
 	refresh_action_label.add_theme_color_override("font_outline_color", Color(0.12, 0.04, 0.01, 0.98))
 	refresh_action_label.add_theme_constant_override("outline_size", 4)
 	refresh_shop.add_child(refresh_action_label)
+
+
+# 佣兵面板与雇佣浮层。由 _build_rest 拆出（D2）。
+# 原函数 638 行，全函数只有 2 处完全干净的切点 —— body 与 center_host
+# 两个局部量跨越几乎整段。所以切点取在「除它们之外没有其它局部量跨越」处，
+# 这些容器以参数传入（段内只读，不重新赋值）。
+func _build_merc_panels(body: HBoxContainer, center_host: Control) -> void:
 	_shop_refresh_burn = PrepShopRefreshBurnScript.new()
 	add_child(_shop_refresh_burn)
 	_shop_refresh_burn.setup(
-		_shop_background,
-		_refresh_shop_button,
-		_cached_texture(SHOP_REFRESH_FIRE_ATLAS_PATH),
+		_shop._shop_background,
+		_shop.refresh_button,
+		PrepWidgets.cached_texture(SHOP_REFRESH_FIRE_ATLAS_PATH),
 		SHOP_SCROLL_BURN_SHADER
 	)
 
 	var right_drop := PanelContainer.new()
 	right_drop.custom_minimum_size = Vector2(110, 0)
 	right_drop.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_apply_prep_transparent_panel_style(right_drop)
+	PrepWidgets.apply_transparent_panel_style(right_drop)
 	body.add_child(right_drop)
 	_merc_scroll = ScrollContainer.new()
 	_merc_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -943,7 +634,6 @@ func _build_rest(root: VBoxContainer) -> void:
 	_build_team_mercs_overlay(center_host)
 
 	_build_detail_popups()
-
 func _build_top_actions() -> void:
 	# 右上角横排：战力推荐 | 统计 | 静音（缩小，A 需求）。加到 self 顶层（z 高，不被 body 拦点击）。
 	var top_row := HBoxContainer.new()
@@ -960,10 +650,10 @@ func _build_top_actions() -> void:
 	top_row.add_theme_constant_override("separation", 6)
 	top_row.z_index = 20
 	add_child(top_row)
-	top_row.add_child(_make_menu_button(tr("ui_power"), TOP_ROW_BTN_SIZE, 13, _show_power_recommendation))
-	top_row.add_child(_make_menu_button(tr("ui_stats"), TOP_ROW_BTN_SIZE, 13, _show_last_battle_stats))
+	top_row.add_child(PrepWidgets.make_menu_button(tr("ui_power"), TOP_ROW_BTN_SIZE, 13, _stats.show_power_recommendation))
+	top_row.add_child(PrepWidgets.make_menu_button(tr("ui_stats"), TOP_ROW_BTN_SIZE, 13, _stats.show_last_battle))
 	# 静音按钮：切换全局 Master 总线静音
-	var mute_btn := _make_menu_button(_mute_label_text(), TOP_ROW_BTN_SIZE, 13, _toggle_mute)
+	var mute_btn := PrepWidgets.make_menu_button(_mute_label_text(), TOP_ROW_BTN_SIZE, 13, _toggle_mute)
 	_mute_button = mute_btn
 	top_row.add_child(mute_btn)
 
@@ -982,7 +672,7 @@ func _build_top_actions() -> void:
 	side_col.z_index = 20
 	add_child(side_col)
 	# 佣兵按钮：盾牌框 + 下方写「佣兵」（保留原贴图框，不改）
-	var merc_btn := _make_framed_text_button("", MERC_BTN_PATH, MERC_BTN_SIZE, 16, _toggle_merc_picker)
+	var merc_btn := PrepWidgets.make_framed_text_button("", MERC_BTN_PATH, MERC_BTN_SIZE, 16, _toggle_merc_picker)
 	_merc_button = merc_btn
 	var merc_lbl := Label.new()
 	merc_lbl.text = tr("ui_mercenary")
@@ -1000,7 +690,7 @@ func _build_top_actions() -> void:
 	merc_btn.add_child(merc_lbl)
 	side_col.add_child(merc_btn)
 	# 队伍佣兵检阅台：教学模式没有队友，直接藏
-	var team_mercs_btn := _make_framed_text_button("", TEAM_MERCS_BTN_PATH, MERC_BTN_SIZE, 16, _toggle_team_mercs_picker)
+	var team_mercs_btn := PrepWidgets.make_framed_text_button("", TEAM_MERCS_BTN_PATH, MERC_BTN_SIZE, 16, _toggle_team_mercs_picker)
 	_team_mercs_button = team_mercs_btn
 	var team_mercs_lbl := Label.new()
 	team_mercs_lbl.text = tr("ui_team_mercs")
@@ -1034,82 +724,6 @@ func _mute_label_text() -> String:
 	if LocaleManager.get_locale() == "en":
 		return "Muted" if muted else "Mute"
 	return "已静音" if muted else "静音"
-
-func _build_treasure_overlay() -> void:
-	# Treasure draw: full-screen modal overlay (dim background + 3 big cards,
-	# forced pick) centered over the prep screen. z_index keeps it above the board.
-	_treasure_overlay = ColorRect.new()
-	_treasure_overlay.color = Color(0.0, 0.0, 0.0, 0.66)
-	_treasure_overlay.visible = false
-	_treasure_overlay.z_index = 60
-	_treasure_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
-	_treasure_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	# Added to the screen root (self) so the dim + cards cover the ENTIRE screen,
-	# not just the center column.
-	add_child(_treasure_overlay)
-	var treasure_box := VBoxContainer.new()
-	treasure_box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	treasure_box.alignment = BoxContainer.ALIGNMENT_CENTER
-	treasure_box.add_theme_constant_override("separation", 16)
-	_treasure_overlay.add_child(treasure_box)
-	_treasure_timer_lbl = Label.new()
-	_treasure_timer_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_treasure_timer_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_treasure_timer_lbl.add_theme_font_size_override("font_size", 24)
-	_treasure_timer_lbl.add_theme_color_override("font_color", Color(1.0, 0.92, 0.66))
-	_treasure_timer_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
-	_treasure_timer_lbl.add_theme_constant_override("outline_size", 3)
-	treasure_box.add_child(_treasure_timer_lbl)
-	_treasure_choice_row = HBoxContainer.new()
-	_treasure_choice_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	_treasure_choice_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_treasure_choice_row.add_theme_constant_override("separation", 28)
-	treasure_box.add_child(_treasure_choice_row)
-	var treasure_refresh_holder := HBoxContainer.new()
-	treasure_refresh_holder.alignment = BoxContainer.ALIGNMENT_CENTER
-	treasure_refresh_holder.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	treasure_box.add_child(treasure_refresh_holder)
-	_treasure_refresh_btn = Button.new()
-	_treasure_refresh_btn.custom_minimum_size = Vector2(220, 46)
-	_treasure_refresh_btn.focus_mode = Control.FOCUS_NONE
-	_apply_refresh_button_styles(_treasure_refresh_btn)
-	_treasure_refresh_btn.pressed.connect(_refresh_treasure_candidates)
-	treasure_refresh_holder.add_child(_treasure_refresh_btn)
-
-func _build_treasure_logos_panel() -> void:
-	# Active treasure/linkage logos, pinned to the bottom-left corner of the screen.
-	# Grows up-right so it can hold 8-9 icons (owned treasures + active linkages).
-	# 宝藏 logo：只保留图标，不再加左下灰色底框。
-	var tp_w := 303.0
-	var tp_h := 161.0
-	var treasure_panel := Control.new()
-	treasure_panel.name = "TreasurePanel"
-	treasure_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	treasure_panel.anchor_left = 0.0
-	treasure_panel.anchor_top = 1.0
-	treasure_panel.anchor_right = 0.0
-	treasure_panel.anchor_bottom = 1.0
-	treasure_panel.offset_left = 6
-	treasure_panel.offset_right = 6 + tp_w
-	treasure_panel.offset_top = -10 - tp_h
-	treasure_panel.offset_bottom = -10
-	treasure_panel.z_index = -5            # 河流(z-19)之上、石框(z0)之下：石框画在灰框上面，不被挡
-	add_child(treasure_panel)
-	# 宝藏 grid 左对齐（4 列 × 2 行横排，66px）。
-	_owned_treasure_box = GridContainer.new()
-	_owned_treasure_box.columns = 4
-	_owned_treasure_box.anchor_left = 0.0
-	_owned_treasure_box.anchor_top = 0.0
-	_owned_treasure_box.anchor_right = 0.0
-	_owned_treasure_box.anchor_bottom = 0.0
-	_owned_treasure_box.offset_left = 0
-	_owned_treasure_box.offset_top = 0
-	_owned_treasure_box.grow_horizontal = Control.GROW_DIRECTION_END
-	_owned_treasure_box.grow_vertical = Control.GROW_DIRECTION_END
-	_owned_treasure_box.add_theme_constant_override("h_separation", 5)
-	_owned_treasure_box.add_theme_constant_override("v_separation", 5)
-	treasure_panel.add_child(_owned_treasure_box)
-
 func _build_detail_popups() -> void:
 	_detail = PopupPanel.new()
 	add_child(_detail)
@@ -1124,15 +738,17 @@ func _build_detail_popups() -> void:
 	_detail_text.fit_content = true
 	_detail_text.custom_minimum_size = Vector2(500, 360)
 	detail_margin.add_child(_detail_text)
+	# 节点造好了，交给详情浮层组件接管（它持有关闭时序等状态）。
+	_overlay.bind(_detail, _detail_text)
 
-	_stats_popup = PopupPanel.new()
-	add_child(_stats_popup)
+	_stats._stats_popup = PopupPanel.new()
+	add_child(_stats._stats_popup)
 	var stats_margin := MarginContainer.new()
 	stats_margin.add_theme_constant_override("margin_left", 12)
 	stats_margin.add_theme_constant_override("margin_top", 12)
 	stats_margin.add_theme_constant_override("margin_right", 12)
 	stats_margin.add_theme_constant_override("margin_bottom", 12)
-	_stats_popup.add_child(stats_margin)
+	_stats._stats_popup.add_child(stats_margin)
 	var stats_box := VBoxContainer.new()
 	stats_box.add_theme_constant_override("separation", 8)
 	stats_margin.add_child(stats_box)
@@ -1145,11 +761,11 @@ func _build_detail_popups() -> void:
 		tab.custom_minimum_size = Vector2(96, 34)
 		tab.pressed.connect(_set_stats_group.bind(str(item[0])))
 		stats_tabs.add_child(tab)
-	_stats_text = RichTextLabel.new()
-	_stats_text.bbcode_enabled = true
-	_stats_text.scroll_active = true
-	_stats_text.custom_minimum_size = Vector2(920, 420)
-	stats_box.add_child(_stats_text)
+	_stats._stats_text = RichTextLabel.new()
+	_stats._stats_text.bbcode_enabled = true
+	_stats._stats_text.scroll_active = true
+	_stats._stats_text.custom_minimum_size = Vector2(920, 420)
+	stats_box.add_child(_stats._stats_text)
 
 func _create_formation_crystal(_is_enemy: bool) -> FormationCrystal:
 	# 图片式水晶：贴图（火队红/水队蓝，按血量段）在 _refresh_formation_status 里按队伍指定。
@@ -1162,84 +778,8 @@ func _crystal_textures_for_element(is_fire: bool) -> Array:
 	var paths: Array = CRYSTAL_FIRE_PATHS if is_fire else CRYSTAL_WATER_PATHS
 	var texs: Array = []
 	for p in paths:
-		texs.append(_cached_texture(str(p)))
+		texs.append(PrepWidgets.cached_texture(str(p)))
 	return texs
-
-func _create_formation_health_bar(_mirrored: bool) -> Control:
-	# 需求 #1：去掉石框和红条，只留血量数字（50/50）。唯一子节点就是数字 Label（get_child(0)）。
-	var stack := Control.new()
-	stack.custom_minimum_size = Vector2(96, 56)
-	stack.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	stack.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	var hp_label := Label.new()
-	hp_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	hp_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	hp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	hp_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	hp_label.add_theme_font_size_override("font_size", 22)
-	hp_label.add_theme_color_override("font_color", Color.WHITE)
-	hp_label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.96))
-	hp_label.add_theme_constant_override("outline_size", 3)
-	stack.add_child(hp_label)
-	return stack
-
-func _menu_button_style() -> StyleBoxFlat:
-	# 仿主界面「离线自测」按钮：深棕底 + 古铜边框 + 大圆角。所有备战按钮统一用它。
-	var s := StyleBoxFlat.new()
-	s.bg_color = Color(0.11, 0.075, 0.035, 0.95)
-	s.border_color = Color(0.78, 0.56, 0.24)
-	s.set_border_width_all(2)
-	s.set_corner_radius_all(16)
-	return s
-
-func _make_menu_button(label_text: String, size: Vector2, font_size: int, on_press: Callable) -> Button:
-	# 仿主界面「离线自测」样式按钮（深棕底 + 古铜圆角边框 + 浅金字）。战力/统计/静音/队伍佣兵用它。
-	var btn := Button.new()
-	btn.text = label_text
-	btn.custom_minimum_size = size
-	btn.focus_mode = Control.FOCUS_NONE
-	btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	btn.clip_text = true
-	var style := _menu_button_style()
-	btn.add_theme_stylebox_override("normal", style)
-	btn.add_theme_stylebox_override("hover", style)
-	btn.add_theme_stylebox_override("pressed", style)
-	btn.add_theme_color_override("font_color", Color(1.0, 0.90, 0.60))
-	btn.add_theme_font_size_override("font_size", font_size)
-	if on_press.is_valid():
-		btn.pressed.connect(on_press)
-	return btn
-
-func _make_framed_text_button(label_text: String, frame_path: String, size: Vector2, font_size: int, on_press: Callable) -> Button:
-	# 「带贴图框文字按钮」：高清框背景 + 居中文字。商店/佣兵仍用它（保留原贴图框）。
-	var btn := Button.new()
-	btn.flat = true
-	btn.custom_minimum_size = size
-	if on_press.is_valid():
-		btn.pressed.connect(on_press)
-	var frame := TextureRect.new()
-	frame.texture = _cached_texture(frame_path)
-	frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	btn.add_child(frame)
-	var lbl := Label.new()
-	lbl.text = label_text
-	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	lbl.anchor_left = 0.14
-	lbl.anchor_right = 0.86
-	lbl.anchor_top = 0.30
-	lbl.anchor_bottom = 0.66
-	lbl.add_theme_font_size_override("font_size", font_size)
-	lbl.add_theme_color_override("font_color", Color(0.96, 0.97, 1.0))
-	lbl.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.95))
-	lbl.add_theme_constant_override("outline_size", 3)
-	btn.add_child(lbl)
-	return btn
-
 func _refresh_formation_status() -> void:
 	# (1) 3v3 uses the shared team HP, not the 1v1 formation HP fields.
 	var player_hp: int
@@ -1389,6 +929,7 @@ func _refresh_ready_indicator() -> void:
 
 func _create_bench_portrait_card(index: int) -> BenchCellButton:
 	var card := BenchCellButton.new()
+	card.hud = _board_hud
 	card.bench_index = index
 	card.screen = self
 	card.drag_owner = self
@@ -1397,126 +938,19 @@ func _create_bench_portrait_card(index: int) -> BenchCellButton:
 	card.text = ""
 	card.tooltip_text = tr("ui_bench_slot")
 	card.pressed.connect(_on_bench_pressed.bind(index))
-	_attach_long_press(card, func(): _show_bench_detail(index))
-	_configure_unframed_portrait_card(card)
-	_bench_buttons.append(card)
+	_overlay.attach_long_press(card, func(): _show_bench_detail(index))
+	PrepWidgets.configure_unframed_portrait_card(card, _on_portrait_card_hover)
+	_board_hud.bench_buttons.append(card)
 
-	var name_label := _make_cell_caption()   # 待命格子下方的「名字 ★星级」，和棋盘一致
+	var name_label := PrepWidgets.make_cell_caption()   # 待命格子下方的「名字 ★星级」，和棋盘一致
 	card.add_child(name_label)
-	_bench_card_labels.append(name_label)
+	_board_hud.bench_card_labels.append(name_label)
 	return card
-
-func _apply_prep_transparent_panel_style(panel: PanelContainer) -> void:
-	panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
-
-func _apply_empty_button_styles(button: Button) -> void:
-	var empty_style := StyleBoxEmpty.new()
-	for state in ["normal", "hover", "pressed", "focus", "disabled"]:
-		button.add_theme_stylebox_override(state, empty_style)
-
-func _apply_refresh_button_styles(button: Button) -> void:
-	var normal_style := StyleBoxFlat.new()
-	normal_style.bg_color = Color(0.025, 0.075, 0.055, 0.78)
-	normal_style.border_color = Color(0.34, 0.52, 0.24, 0.82)
-	normal_style.set_border_width_all(1)
-	normal_style.set_corner_radius_all(4)
-	var hover_style := normal_style.duplicate() as StyleBoxFlat
-	hover_style.bg_color = Color(0.075, 0.19, 0.105, 0.92)
-	hover_style.border_color = Color(0.72, 0.84, 0.36, 0.96)
-	var pressed_style := hover_style.duplicate() as StyleBoxFlat
-	pressed_style.bg_color = Color(0.04, 0.13, 0.075, 0.96)
-	button.add_theme_stylebox_override("normal", normal_style)
-	button.add_theme_stylebox_override("hover", hover_style)
-	button.add_theme_stylebox_override("pressed", pressed_style)
-	button.add_theme_stylebox_override("focus", hover_style)
-	button.add_theme_stylebox_override("disabled", normal_style)
-
-func _apply_empty_bench_slot_styles(button: Button) -> void:
-	var normal_style := StyleBoxFlat.new()
-	normal_style.bg_color = Color(0.04, 0.09, 0.065, 0.18)
-	normal_style.border_color = Color(0.52, 0.68, 0.54, 0.38)
-	normal_style.set_border_width_all(1)
-	normal_style.set_corner_radius_all(4)
-	var hover_style := normal_style.duplicate() as StyleBoxFlat
-	hover_style.bg_color = Color(0.10, 0.18, 0.12, 0.36)
-	hover_style.border_color = Color(0.72, 0.86, 0.70, 0.72)
-	button.add_theme_stylebox_override("normal", normal_style)
-	button.add_theme_stylebox_override("hover", hover_style)
-	button.add_theme_stylebox_override("pressed", hover_style)
-	button.add_theme_stylebox_override("focus", normal_style)
-	button.add_theme_stylebox_override("disabled", normal_style)
-
-func _configure_unframed_portrait_card(card: Button) -> void:
-	card.focus_mode = Control.FOCUS_NONE
-	card.pivot_offset = card.custom_minimum_size * 0.5
-	_apply_empty_button_styles(card)
-	card.mouse_entered.connect(_on_portrait_card_hover.bind(card, true))
-	card.mouse_exited.connect(_on_portrait_card_hover.bind(card, false))
-
-func _create_purchase_reason_overlay(card: Control) -> Label:
-	var dimmer := ColorRect.new()
-	dimmer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	dimmer.visible = false
-	dimmer.color = Color(0.015, 0.02, 0.025, 0.64)
-	dimmer.z_index = 29
-	dimmer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	card.add_child(dimmer)
-	var overlay := PanelContainer.new()
-	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	overlay.visible = false
-	overlay.z_index = 30
-	overlay.anchor_left = 0.08
-	overlay.anchor_top = 0.35
-	overlay.anchor_right = 0.92
-	overlay.anchor_bottom = 0.65
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.08, 0.015, 0.018, 0.92)
-	style.border_color = Color(1.0, 0.34, 0.24, 0.96)
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(4)
-	overlay.add_theme_stylebox_override("panel", style)
-	card.add_child(overlay)
-	var label := Label.new()
-	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.add_theme_font_size_override("font_size", 16)
-	label.add_theme_color_override("font_color", Color(1.0, 0.88, 0.72))
-	label.add_theme_color_override("font_outline_color", Color(0.05, 0.0, 0.0, 1.0))
-	label.add_theme_constant_override("outline_size", 4)
-	overlay.add_child(label)
-	label.set_meta("purchase_dimmer", dimmer)
-	return label
-
-func _set_purchase_reason(label: Label, reason: String) -> void:
-	label.text = reason
-	var overlay := label.get_parent() as Control
-	if overlay != null:
-		overlay.visible = not reason.is_empty()
-	if label.has_meta("purchase_dimmer"):
-		var dimmer := label.get_meta("purchase_dimmer") as ColorRect
-		if dimmer != null:
-			dimmer.visible = not reason.is_empty()
-
-func _shop_purchase_reason(index: int) -> String:
-	if index < 0 or index >= GameState.shop_offers.size():
-		return tr("ui_cannot_buy")
-	var offer: Dictionary = GameState.shop_offers[index]
-	if offer.is_empty():
-		return tr("ui_no_item")
-	if bool(GameState.shop_sold[index]):
-		return tr("ui_sold")
-	if GameState.gold < _shop_unit_cost(offer):
-		return tr("ui_not_enough_gold")
-	if _first_empty_bench_slot() < 0:
-		return tr("ui_bench_full")
-	return ""
-
 func _mercenary_purchase_reason(index: int) -> String:
 	var mercenaries: Array = DataRegistry.get_table("mercenaries").get("mercenaries", [])
 	if index < 0 or index >= mercenaries.size():
 		return tr("ui_cannot_buy")
-	if _first_empty_mercenary_slot() < 0:
+	if PrepRules.first_empty_mercenary_slot() < 0:
 		return tr("ui_merc_full")
 	var mercenary: Dictionary = mercenaries[index]
 	if GameState.gold < int(mercenary.get("cost", 0)):
@@ -1543,12 +977,6 @@ func _on_refresh_shop_control_pressed() -> void:
 	if GameState.gold < refresh_cost:
 		return
 	_shop_refresh_burn.play(Callable(self, "_on_refresh_shop"))
-
-func _on_shop_card_pressed(card: BaseButton, index: int) -> void:
-	if bool(card.get_meta("long_press_triggered", false)):
-		return
-	_on_shop_pressed(index)
-
 func _create_mercenary_purchase_card(mercenary: Dictionary, index: int) -> DragButton:
 	var card := DragButton.new()
 	card.drag_owner = self
@@ -1564,8 +992,8 @@ func _create_mercenary_purchase_card(mercenary: Dictionary, index: int) -> DragB
 	card.set_meta("can_purchase", can_purchase)
 	card.drag_payload = {}
 	card.pressed.connect(_on_mercenary_purchase_card_pressed.bind(card, index))
-	_attach_long_press(card, func(): _show_text_detail(_format_unit_def(mercenary)))
-	_configure_unframed_portrait_card(card)
+	_overlay.attach_long_press(card, func(): _overlay.show_text(UnitDetailFormat.format_unit_def(mercenary)))
+	PrepWidgets.configure_unframed_portrait_card(card, _on_portrait_card_hover)
 	card.modulate = Color.WHITE
 
 	var portrait := TextureRect.new()
@@ -1578,7 +1006,7 @@ func _create_mercenary_purchase_card(mercenary: Dictionary, index: int) -> DragB
 	portrait.offset_right = -4
 	portrait.offset_bottom = -38
 	var portrait_path := str(MERCENARY_PORTRAIT_PATHS.get(str(mercenary.get("id", "")), ""))
-	portrait.texture = _cached_texture(portrait_path)
+	portrait.texture = PrepWidgets.cached_texture(portrait_path)
 	card.add_child(portrait)
 
 	var name_label := Label.new()
@@ -1591,7 +1019,7 @@ func _create_mercenary_purchase_card(mercenary: Dictionary, index: int) -> DragB
 	name_label.offset_top = -38
 	name_label.offset_right = -1
 	name_label.offset_bottom = -19
-	name_label.text = _ui_unit_name(mercenary)
+	name_label.text = PrepWidgets.unit_name(mercenary)
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	name_label.add_theme_font_size_override("font_size", 20)
@@ -1617,8 +1045,8 @@ func _create_mercenary_purchase_card(mercenary: Dictionary, index: int) -> DragB
 	price_label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.95))
 	price_label.add_theme_constant_override("outline_size", 2)
 	card.add_child(price_label)
-	var reason_label := _create_purchase_reason_overlay(card)
-	_set_purchase_reason(reason_label, purchase_reason)
+	var reason_label := _shop._create_purchase_reason_overlay(card)
+	_shop._set_purchase_reason(reason_label, purchase_reason)
 	return card
 
 func _on_mercenary_purchase_card_pressed(card: BaseButton, index: int) -> void:
@@ -1635,69 +1063,39 @@ func _refresh_all() -> void:
 		TutorialMode.sync()
 	RaceRelationService.reconcile_board(GameState.board_slots, GameState.bench_slots, false, true)
 	_refresh_formation_status()
-	_refresh_board()
-	_refresh_bench()
-	_refresh_shop()
-	_refresh_left_panel()
+	_board_hud.refresh_board()
+	_board_hud.refresh_bench()
+	_shop.refresh()
+	_synergy.refresh()
 	_refresh_merc_panel()
-	_refresh_treasure_panel()
+	_treasure.refresh()
 	_refresh_owned_treasure_logos()
 	if GameState.tutorial_mode:
 		TutorialMode.update_overlay()
 	_check_team_merc_alert()
-
-func _refresh_board() -> void:
-	for i in _board_buttons.size():
-		var btn := _board_buttons[i]
-		var cell = GameState.board_slots[i]
-		if cell == null:
-			btn.text = ""
-			btn.drag_payload = {}
-			btn.add_theme_stylebox_override("normal", _board_empty_style)
-		else:
-			btn.text = ""
-			btn.drag_payload = {"kind": "board", "index": i}
-			btn.add_theme_stylebox_override("normal", _board_occupied_style)
-		btn.set_deployment_highlight(_board_drop_highlight_active, i == _board_drop_hover_index)
-		btn.add_theme_stylebox_override("hover", _board_occupied_style if cell != null else _board_empty_style)
-		btn.add_theme_stylebox_override("pressed", _board_occupied_style if cell != null else _board_empty_style)
-		btn.add_theme_stylebox_override("focus", _board_occupied_style if cell != null else _board_empty_style)
-		btn.modulate = Color.WHITE
-		if i < _board_relation_overlays.size():
-			_board_relation_overlays[i].set_relation_states(RaceRelationService.visual_states_for_cell(cell))
-		if i < _board_cell_captions.size():
-			var caption := _board_cell_captions[i]
-			if cell == null:
-				caption.visible = false
-			else:
-				caption.text = _cell_caption_text(cell)
-				caption.visible = true
-	_refresh_prep_board_models()
-	_sync_prep_board_readability_state()
-
 func _sync_prep_board_readability_geometry() -> void:
-	if _board_readability_layer == null or not is_instance_valid(_board_readability_layer):
+	if _board_hud.readability_layer == null or not is_instance_valid(_board_hud.readability_layer):
 		return
 	var polygons: Array[PackedVector2Array] = []
-	for button in _board_buttons:
+	for button in _board_hud.buttons:
 		var polygon := PackedVector2Array()
 		for point in button.cell_polygon:
 			polygon.append(button.position + point)
 		polygons.append(polygon)
-	_board_readability_layer.set_prep_cells(polygons)
+	_board_hud.readability_layer.set_prep_cells(polygons)
 
 func _sync_prep_board_readability_state() -> void:
-	if _board_readability_layer == null or not is_instance_valid(_board_readability_layer):
+	if _board_hud.readability_layer == null or not is_instance_valid(_board_hud.readability_layer):
 		return
-	_board_readability_layer.set_guides_enabled(PlayerProfile.board_readability_enabled)
-	_board_readability_layer.set_low_quality(VFXManager.get_quality_tier() == VFXQualityBudget.Tier.LOW)
-	_board_readability_layer.set_direction_texts(tr("board_frontline"), tr("board_backline"))
-	_board_readability_layer.set_prep_state(
-		_selected_board,
-		_prep_attack_range_indices(_selected_board),
-		_board_drop_highlight_active,
-		_board_drop_hover_index,
-		_board_player_color()
+	_board_hud.readability_layer.set_guides_enabled(PlayerProfile.board_readability_enabled)
+	_board_hud.readability_layer.set_low_quality(VFXManager.get_quality_tier() == VFXQualityBudget.Tier.LOW)
+	_board_hud.readability_layer.set_direction_texts(tr("board_frontline"), tr("board_backline"))
+	_board_hud.readability_layer.set_prep_state(
+		_board_hud._selected_board,
+		_prep_attack_range_indices(_board_hud._selected_board),
+		_board_hud.drop_highlight_active,
+		_board_hud.drop_hover_index,
+		_board_hud.player_color()
 	)
 
 func _prep_attack_range_indices(selected_index: int) -> PackedInt32Array:
@@ -1718,210 +1116,10 @@ func _prep_attack_range_indices(selected_index: int) -> PackedInt32Array:
 		if delta.length() <= range_cells + 0.001:
 			result.append(index)
 	return result
-
-func _setup_board_cell_styles() -> void:
-	_board_empty_style = StyleBoxFlat.new()
-	_board_hover_style = StyleBoxFlat.new()
-	_board_occupied_style = StyleBoxFlat.new()
-	_board_drop_style = StyleBoxFlat.new()
-	_board_empty_style.bg_color = Color.TRANSPARENT
-	_board_hover_style.bg_color = Color.TRANSPARENT
-	_board_occupied_style.bg_color = Color.TRANSPARENT
-	_board_drop_style.bg_color = Color(0.38, 0.86, 0.78, 0.085)
-
 func _load_board_art_texture() -> Texture2D:
 	return null
-
-func _refresh_bench() -> void:
-	for i in _bench_buttons.size():
-		var btn := _bench_buttons[i]
-		var name_label := _bench_card_labels[i]
-		var cell = GameState.bench_slots[i]
-		btn.disabled = false
-		btn.text = ""
-		if cell == null:
-			_apply_empty_button_styles(btn)
-			btn.text = ""
-			btn.tooltip_text = tr("ui_bench_slot")
-			btn.set_meta("drag_preview_text", "")
-			btn.drag_payload = {}
-			name_label.text = ""
-			name_label.visible = false
-			btn.modulate = Color.WHITE
-		else:
-			_apply_empty_button_styles(btn)
-			var d: Dictionary = cell.def
-			var unit_name := _ui_unit_name(d)
-			btn.tooltip_text = unit_name
-			btn.set_meta("drag_preview_text", "%s  %d★" % [unit_name, int(cell.get("star", 1))])
-			btn.drag_payload = {} if GameState.tutorial_mode and TutorialMode.step == TutorialMode.Step.BUY_3 else {"kind": "bench", "index": i}
-			name_label.text = _cell_caption_text(cell)
-			name_label.visible = true
-		btn.set_standby_highlight(_standby_drop_highlight_active, i == _standby_drop_hover_index)
-		btn.modulate = Color(1, 0.92, 0.55) if i == _selected_bench else Color.WHITE
-	_refresh_prep_standby_models()
-
-func _refresh_shop() -> void:
-	var gold_text := TutorialMode.GOLD_TEXT if GameState.tutorial_mode else tr("ui_gold_format") % GameState.gold
-	if _gold_amount_label != null:
-		_gold_amount_label.text = TutorialMode.GOLD_TEXT if GameState.tutorial_mode else str(GameState.gold)
-	if _closed_gold_label != null:
-		_closed_gold_label.text = gold_text
-	if _gold_interest_detail_open and _detail != null and _detail.visible:
-		_detail_text.text = _format_gold_interest_detail()
-	if _refresh_shop_button != null:
-		var all_free := TreasureService.has_set("money")
-		var refresh_cost := EconomyService.shop_refresh_cost(GameState.shop_refresh_uses_this_round, all_free)
-		_refresh_shop_button.disabled = GameState.gold < refresh_cost
-		_refresh_shop_icon.modulate = Color(0.46, 0.46, 0.46) if _refresh_shop_button.disabled else Color.WHITE
-		_refresh_shop_cost_label.text = tr("ui_free") if refresh_cost == 0 else str(refresh_cost)
-		if refresh_cost == 0:
-			_refresh_shop_cost_label.remove_theme_font_override("font")
-			_refresh_shop_cost_label.add_theme_font_size_override("font_size", 14)
-			_refresh_shop_cost_label.rotation_degrees = 0.0
-		else:
-			_refresh_shop_cost_label.add_theme_font_override("font", GOLD_NUMBER_FONT)
-			_refresh_shop_cost_label.add_theme_font_size_override("font_size", 20)
-			_refresh_shop_cost_label.rotation_degrees = -4.0
-		_refresh_shop_cost_label.modulate = Color(0.46, 0.46, 0.46) if _refresh_shop_button.disabled else Color.WHITE
-	var selected_valid: bool = (
-		_selected_shop >= 0
-		and _selected_shop < GameState.shop_offers.size()
-		and not GameState.shop_offers[_selected_shop].is_empty()
-		and not bool(GameState.shop_sold[_selected_shop])
-	)
-	if not selected_valid:
-		_selected_shop = -1
-	var offer_ids: Array = []
-	for offer_entry in GameState.shop_offers:
-		offer_ids.append(str((offer_entry as Dictionary).get("id", "")))
-	var cards_sig := JSON.stringify([
-		offer_ids,
-		GameState.shop_sold,
-		GameState.gold,
-		_selected_shop,
-		_first_empty_bench_slot() < 0,
-		GameState.tutorial_mode,
-		LocaleManager.get_locale(),
-	])
-	if cards_sig == _shop_cards_signature:
-		return
-	_shop_cards_signature = cards_sig
-	for i in _shop_buttons.size():
-		var btn := _shop_buttons[i]
-		var portrait := _shop_portraits[i]
-		var card_frame := _shop_card_frames[i]
-		var name_label := _shop_card_labels[i]
-		var price_label := _shop_price_labels[i]
-		var race_icon := _shop_race_icons[i]
-		var reason_label := _shop_reason_labels[i]
-		var offer: Dictionary = GameState.shop_offers[i]
-		if offer.is_empty():
-			btn.text = ""
-			btn.set_meta("drag_preview_text", "")
-			btn.disabled = true
-			btn.drag_payload = {}
-			portrait.texture = null
-			portrait.visible = false
-			card_frame.visible = false
-			name_label.text = tr("ui_empty_slot")
-			price_label.text = ""
-			race_icon.visible = false
-			_set_purchase_reason(reason_label, tr("ui_no_item"))
-			btn.modulate = Color.WHITE
-			continue
-		var sold := bool(GameState.shop_sold[i])
-		var cost := _shop_unit_cost(offer)
-		var can_purchase := not sold and GameState.gold >= cost
-		var unit_name := _ui_unit_name(offer)
-		btn.disabled = false
-		btn.text = ""
-		btn.set_meta("drag_preview_text", "%s\n%s" % [unit_name, tr("ui_gold_format") % cost])
-		portrait.texture = _cached_texture("%s/%s.png" % [UNIT_PORTRAIT_DIR, str(offer.get("id", ""))])
-		portrait.visible = portrait.texture != null
-		card_frame.visible = true
-		card_frame.texture = _cached_texture(str(SHOP_CARD_FRAME_PATHS.get(int(offer.get("tier", 1)), SHOP_CARD_FRAME_PATHS[1])))
-		name_label.text = unit_name
-		price_label.text = str(cost)   # 金币图案已画死在框右上角，只写数字
-		race_icon.visible = true
-		race_icon.call("set_race", str(offer.get("race", "")))
-		btn.drag_payload = {} if GameState.tutorial_mode else ({"kind": "shop", "index": i} if can_purchase else {})
-		var purchase_reason := _shop_purchase_reason(i)
-		_set_purchase_reason(reason_label, purchase_reason)
-		btn.modulate = Color(0.52, 0.64, 0.72, 0.92) if purchase_reason.is_empty() and i == _selected_shop else Color.WHITE
-
 func _show_gold_interest_detail() -> void:
-	_gold_interest_detail_open = true
-	_detail_text.custom_minimum_size = Vector2(180, 72)
-	_detail_text.text = _format_gold_interest_detail()
-	_detail_waiting_for_release = false
-	_detail_release_seen_press = false
-	_detail.popup_centered(Vector2i(220, 104))
-
-func _format_gold_interest_detail() -> String:
-	var gold := maxi(0, GameState.gold)
-	var base_interest := EconomyService.base_interest(gold)
-	var money_compound_bonus := 0
-	if GameState.owned_treasures.has("money_compound"):
-		money_compound_bonus = int(floor(float(gold) * 0.05))
-	var pet_interest_bonus := EconomyService.pet_interest_bonus(gold, PlayerProfile.get_active())
-	var total_interest := base_interest + money_compound_bonus + pet_interest_bonus
-	var is_en := TranslationServer.get_locale().begins_with("en")
-	var lines: Array[String] = []
-	if is_en:
-		lines.append("Current gold: %d" % gold)
-		lines.append("Interest: +%d" % total_interest)
-	else:
-		lines.append("当前金币：%d" % gold)
-		lines.append("利息：+%d" % total_interest)
-	return "\n".join(lines)
-
-func _refresh_left_panel() -> void:
-	var sig_altar_hp := GameState.team_hp if GameState.team_mode else GameState.player_formation_hp
-	var sig := JSON.stringify([
-		SynergyService.count_races_from_board(),
-		GameState.owned_treasures,
-		GameState.golden_altar_uses,
-		GameState.gamble_used,
-		sig_altar_hp <= 10,
-		LocaleManager.get_locale(),
-	])
-	if sig == _left_panel_signature:
-		return
-	_left_panel_signature = sig
-	for child in _left_panel.get_children():
-		child.queue_free()
-	var title := Label.new()
-	title.text = tr("ui_bond_treasure")
-	title.add_theme_font_size_override("font_size", 16)
-	_left_panel.add_child(title)
-
-	_add_current_synergy_widgets()
-
-	var sell_hint := Label.new()
-	sell_hint.text = tr("ui_sell_hint")
-	sell_hint.modulate = Color(0.9, 0.82, 0.55)
-	_left_panel.add_child(sell_hint)
-
-	# Owned-treasure logos now live next to the money bag (see _owned_treasure_box).
-	if GameState.owned_treasures.has("money_golden_altar"):
-		var altar := Button.new()
-		# 显示实际到账金额。此前硬编码了 5，而 ALTAR_GOLD = 50 —— 玩家看到的和
-		# 拿到的差了一个数量级。改成读常量，以后调数值不会再漏改这里。
-		altar.text = tr("ui_altar") % [NetworkService.ALTAR_GOLD, GameState.golden_altar_uses]
-		var altar_hp := GameState.team_hp if GameState.team_mode else GameState.player_formation_hp
-		altar.disabled = altar_hp <= NetworkService.ALTAR_MIN_HP or GameState.golden_altar_uses >= NetworkService.ALTAR_MAX_USES_PER_ROUND
-		altar.pressed.connect(_on_golden_altar)
-		_left_panel.add_child(altar)
-
-	if GameState.owned_treasures.has("money_generous_fate"):
-		var gamble := Button.new()
-		gamble.text = tr("ui_gamble_used") if GameState.gamble_used else tr("ui_gamble")
-		gamble.disabled = GameState.gamble_used
-		gamble.pressed.connect(_on_generous_fate_gamble)
-		_attach_long_press(gamble, _show_treasure_detail.bind("money_generous_fate"))
-		_left_panel.add_child(gamble)
-
+	_overlay.show_gold_interest(_shop.format_gold_interest_detail())
 func _refresh_merc_panel() -> void:
 	if _merc_scroll != null:
 		_merc_scroll.visible = true
@@ -1971,7 +1169,7 @@ func _toggle_merc_picker() -> void:
 	_merc_picker_open = not _merc_picker_open
 	if _merc_picker_open:
 		_close_team_mercs_picker()
-		_close_shop_picker()
+		_shop.close_picker()
 	_refresh_merc_panel()
 
 func _close_merc_picker() -> void:
@@ -1979,35 +1177,6 @@ func _close_merc_picker() -> void:
 		return
 	_merc_picker_open = false
 	_refresh_merc_panel()
-
-func _toggle_shop_picker() -> void:
-	_shop_picker_open = not _shop_picker_open
-	if _shop_picker_open:
-		_close_merc_picker()
-		_close_team_mercs_picker()
-	_refresh_shop_picker()
-
-func _close_shop_picker() -> void:
-	if not _shop_picker_open:
-		return
-	_shop_picker_open = false
-	_refresh_shop_picker()
-
-func _refresh_shop_picker() -> void:
-	if _shop_panel != null:
-		_shop_panel.visible = _shop_picker_open
-	if _shop_scroll_idle != null:
-		_shop_scroll_idle.set_effect_active(not _shop_picker_open)
-	if _shop_side_controls != null:
-		_shop_side_controls.visible = _shop_picker_open     # 外挂层（钱袋A+刷新）跟商店一起显隐
-	if _closed_money_bag != null:
-		_closed_money_bag.visible = not _shop_picker_open   # 商店关时才显示钱袋 B
-	# 商店开着时待命格子被商店盖住，禁用它们的输入，别去抢商店区域的点击；关店恢复。
-	var bench_filter := Control.MOUSE_FILTER_IGNORE if _shop_picker_open else Control.MOUSE_FILTER_STOP
-	for btn in _bench_buttons:
-		if btn != null:
-			btn.mouse_filter = bench_filter
-
 # ─── team mercs review stage ──────────────────────────────────────────────────
 
 func _build_team_mercs_overlay(center_host: Control) -> void:
@@ -2023,7 +1192,7 @@ func _build_team_mercs_overlay(center_host: Control) -> void:
 	stage_holder.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_team_mercs_overlay.add_child(stage_holder)
 	var stage_background := TextureRect.new()
-	stage_background.texture = _cached_texture(TEAM_MERCS_STAGE_BACKGROUND_PATH)
+	stage_background.texture = PrepWidgets.cached_texture(TEAM_MERCS_STAGE_BACKGROUND_PATH)
 	stage_background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	stage_background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	stage_background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -2275,77 +1444,21 @@ func _make_team_mercs_plate(slot: int, pos: Vector3) -> MeshInstance3D:
 	plate.material_override = plate_material
 	plate.position = Vector3(pos.x, TEAM_MERCS_PLATE_HEIGHT * 0.5, pos.z)
 	return plate
-
-func _refresh_treasure_panel() -> void:
-	if _treasure_overlay == null:
-		return
-	var active := bool(GameState.pending_treasure.get("active", false))
-	_treasure_overlay.visible = active
-	if not active:
-		return
-	_treasure_timer_lbl.text = tr("ui_treasure_pick")
-	for child in _treasure_choice_row.get_children():
-		child.queue_free()
-	var cands: Array = GameState.pending_treasure.get("candidates", [])
-	for i in cands.size():
-		var tid := str(cands[i])
-		var t := TreasureService.treasure_by_id(tid)
-		var tname := str(t.get("name", tid))
-		var card := Button.new()
-		# 三选一抽宝藏卡整体放大 30%（336×448 → 437×582）。
-		card.custom_minimum_size = Vector2(437, 582)
-		card.focus_mode = Control.FOCUS_NONE
-		_apply_empty_button_styles(card)
-		_configure_unframed_portrait_card(card)
-		card.pressed.connect(_pick_treasure.bind(tid))
-		_attach_long_press(card, _show_treasure_detail.bind(tid))
-		var tex := TextureRect.new()
-		tex.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		tex.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		tex.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		var _card_suffix := "_en" if LocaleManager.get_locale() == "en" else ""
-		var _tex_path := "%s/%s%s.png" % [TREASURE_CARD_DIRECTORY, tname, _card_suffix]
-		var _loaded_tex := _cached_texture(_tex_path)
-		if _loaded_tex == null:
-			_loaded_tex = _cached_texture("%s/%s.png" % [TREASURE_CARD_DIRECTORY, tname])
-		tex.texture = _loaded_tex
-		card.add_child(tex)
-		# Safety net: if the card art is missing, never leave the card invisible —
-		# show the treasure name so it stays selectable.
-		if _loaded_tex == null:
-			var fallback := Label.new()
-			fallback.text = _ui_unit_name(t)
-			fallback.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			fallback.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			fallback.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-			fallback.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			fallback.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-			fallback.add_theme_font_size_override("font_size", 28)
-			fallback.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
-			fallback.add_theme_constant_override("outline_size", 4)
-			card.add_child(fallback)
-		_treasure_choice_row.add_child(card)
-	var cost := TreasureService.refresh_cost(int(GameState.pending_treasure.get("refresh_index", 0)), TreasureService.has_set("money"))
-	_treasure_refresh_btn.text = tr("ui_treasure_refresh_free") if cost == 0 else tr("ui_treasure_refresh_cost") % cost
-	_treasure_refresh_btn.disabled = GameState.gold < cost
-
 func _refresh_owned_treasure_logos() -> void:
-	if _owned_treasure_box == null:
+	if _treasure._owned_treasure_box == null:
 		return
 	# 联动 logo 完全由已拥有宝物推导，所以签名只需 owned_treasures。
 	var sig := JSON.stringify(GameState.owned_treasures)
 	if sig == _owned_logos_signature:
 		return
 	_owned_logos_signature = sig
-	for child in _owned_treasure_box.get_children():
+	for child in _treasure._owned_treasure_box.get_children():
 		child.queue_free()
 	# Owned treasures.
 	for tid in GameState.owned_treasures:
 		var tid_str := str(tid)
 		var t := TreasureService.treasure_by_id(tid)
-		_add_owned_treasure_logo(str(t.get("name", tid_str)), _show_treasure_detail.bind(tid_str))
+		_add_owned_treasure_logo(str(t.get("name", tid_str)), _treasure.show_detail.bind(tid_str))
 	# Active linkages (their required treasures are all owned) get their own logo too.
 	var links: Array = DataRegistry.get_table("treasures").get("linkages", [])
 	for link in links:
@@ -2359,18 +1472,18 @@ func _add_owned_treasure_logo(logo_name: String, detail: Callable) -> void:
 	b.tooltip_text = logo_name
 	b.custom_minimum_size = Vector2(66, 66)
 	b.focus_mode = Control.FOCUS_NONE
-	_apply_empty_button_styles(b)
+	PrepWidgets.apply_empty_button_styles(b)
 	var logo := TextureRect.new()
 	logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	logo.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	logo.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	logo.texture = _cached_texture("%s/%s.png" % [TREASURE_LOGO_DIRECTORY, logo_name])
+	logo.texture = PrepWidgets.cached_texture("%s/%s.png" % [TREASURE_LOGO_DIRECTORY, logo_name])
 	b.add_child(logo)
 	if detail.is_valid():
 		b.pressed.connect(detail)
-	_owned_treasure_box.add_child(b)
+	_treasure._owned_treasure_box.add_child(b)
 
 func _maybe_show_pvp_warning(kind: String) -> void:
 	if kind != "pvp" and kind != "final":
@@ -2378,7 +1491,7 @@ func _maybe_show_pvp_warning(kind: String) -> void:
 	_show_pvp_warning_overlay()
 
 func _show_pvp_warning_overlay() -> void:
-	var tex := _cached_texture(PVP_WARNING_FRAME_PATH)
+	var tex := PrepWidgets.cached_texture(PVP_WARNING_FRAME_PATH)
 	if tex == null:
 		return
 	var overlay := Control.new()
@@ -2459,3 +1572,43 @@ func _show_pvp_warning_overlay() -> void:
 	out.tween_property(center, "scale", Vector2(0.96, 0.96), 0.18)
 	await out.finished
 	overlay.queue_free()
+
+
+# --- 商店面板信号的宿主侧处理（D2 步骤 3′b）---------------------------------
+
+# 商店选中了一张卡：棋盘与待命的选中态归宿主管，清掉它们再整屏刷新。
+func _on_shop_card_selected(_index: int) -> void:
+	_board_hud._selected_board = -1
+	_board_hud._selected_bench = -1
+	_refresh_all()
+
+
+# 商店请求买入：找空位、扣钱、合成都在宿主这边（它们要动棋盘与联机同步）。
+func _on_shop_buy_requested(index: int) -> void:
+	var empty_bench := PrepRules.first_empty_bench_slot()
+	if empty_bench < 0:
+		show_message(tr("ui_bench_full"))
+		return
+	_buy_or_merge_shop_to_bench(index, empty_bench)
+
+
+# 商店开合：关掉别的弹窗，并调整待命格的输入 ——
+# 商店开着时待命格被商店盖住，不禁用的话它们会抢走商店区域的点击。
+func _on_shop_picker_toggled(is_open: bool) -> void:
+	if is_open:
+		_close_merc_picker()
+		_close_team_mercs_picker()
+	var bench_filter := Control.MOUSE_FILTER_IGNORE if is_open else Control.MOUSE_FILTER_STOP
+	for btn in _board_hud.bench_buttons:
+		if btn != null:
+			btn.mouse_filter = bench_filter
+
+
+
+# 棋盘面板要求刷新 3D 层 / 可读性层。这三样都在 PrepBoardModels 那一层，
+# 面板不该直接伸手 —— 它只说「哪块脏了」。
+func _on_board_visuals_dirty(what: String) -> void:
+	match what:
+		"board":       _refresh_prep_board_models()
+		"standby":     _refresh_prep_standby_models()
+		"readability": _sync_prep_board_readability_state()

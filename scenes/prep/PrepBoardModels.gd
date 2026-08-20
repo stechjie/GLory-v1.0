@@ -391,8 +391,8 @@ func _setup_prep_board_model_view(board_frame: Control) -> void:
 	_prep_board_frame = board_frame
 	if not board_frame.resized.is_connected(_queue_prep_model_layout_refresh):
 		board_frame.resized.connect(_queue_prep_model_layout_refresh)
-	if _standby_frame != null and not _standby_frame.resized.is_connected(_queue_prep_model_layout_refresh):
-		_standby_frame.resized.connect(_queue_prep_model_layout_refresh)
+	if _board_hud.standby_frame != null and not _board_hud.standby_frame.resized.is_connected(_queue_prep_model_layout_refresh):
+		_board_hud.standby_frame.resized.connect(_queue_prep_model_layout_refresh)
 	if not resized.is_connected(_queue_prep_model_layout_refresh):
 		resized.connect(_queue_prep_model_layout_refresh)
 	_queue_prep_model_layout_refresh()
@@ -699,14 +699,14 @@ func _fit_cell_to_screen_polygon(child: Object, screen_pts: PackedVector2Array, 
 
 # 把 16 个主战格子用 3D 投影对齐到石台上，画成跟着斜面的椭圆圆圈
 func _realign_prep_board_cells() -> void:
-	if _board_grid == null or _prep_river_camera == null or _prep_river_viewport == null:
+	if _board_hud.grid == null or _prep_river_camera == null or _prep_river_viewport == null:
 		return
-	if not _board_grid.is_inside_tree():
+	if not _board_hud.grid.is_inside_tree():
 		return
-	var grid_origin := _board_grid.global_position
+	var grid_origin := _board_hud.grid.global_position
 	var cols := GameConstants.BOARD_COLUMNS
 	var rows := GameConstants.BOARD_ROWS
-	for child in _board_grid.get_children():
+	for child in _board_hud.grid.get_children():
 		if not (child.has_method("configure_polygon") and "board_index" in child):
 			continue
 		var idx: int = int(child.board_index)
@@ -723,12 +723,12 @@ func _realign_prep_board_cells() -> void:
 
 # 把 8 个待命卡片用 3D 投影散落到左草地，画成跟着斜面的椭圆圆圈
 func _realign_prep_standby_cells() -> void:
-	if _standby_frame == null or _prep_river_camera == null or _prep_river_viewport == null:
+	if _board_hud.standby_frame == null or _prep_river_camera == null or _prep_river_viewport == null:
 		return
-	if not _standby_frame.is_inside_tree():
+	if not _board_hud.standby_frame.is_inside_tree():
 		return
-	var origin := _standby_frame.global_position
-	for child in _standby_frame.get_children():
+	var origin := _board_hud.standby_frame.global_position
+	for child in _board_hud.standby_frame.get_children():
 		if not (child.has_method("configure_polygon") and "bench_index" in child):
 			continue
 		var idx: int = int(child.bench_index)

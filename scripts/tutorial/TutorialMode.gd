@@ -488,9 +488,9 @@ func _target_control() -> Control:
 			var closed_shop := _shop_entry_control()
 			if closed_shop != null:
 				return closed_shop
-			var selected := int(_prep.get("_selected_shop"))
+			var selected := int(_prep_shop_field("selected"))
 			if _shop_index_available(selected):
-				return _prep.get("_buy_shop_button") as Control
+				return _prep_shop_field("buy_button") as Control
 			return _first_available_shop_control()
 		Step.PLACE_3:
 			return _first_empty_board_control_middle() if _placing_from_bench() else _first_occupied_bench_control()
@@ -504,7 +504,7 @@ func _target_control() -> Control:
 			# _enemy_formation_bar 早已被置 null（红条删了只留数字），指水晶本体。
 			return _prep.get("_enemy_formation_art") as Control
 		Step.TAKE_TREASURE_1, Step.TAKE_TREASURE_2:
-			var row := _prep.get("_treasure_choice_row") as Control
+			var row := _treasure_field("_treasure_choice_row") as Control
 			return row.get_child(0) as Control if row != null and row.get_child_count() > 0 else row
 		Step.HIRE_MERC:
 			if not bool(_prep.get("_merc_picker_open")):
@@ -519,9 +519,9 @@ func _target_control() -> Control:
 			var closed_shop := _shop_entry_control()
 			if closed_shop != null:
 				return closed_shop
-			var selected := int(_prep.get("_selected_shop"))
+			var selected := int(_prep_shop_field("selected"))
 			if _shop_index_available(selected):
-				return _prep.get("_buy_shop_button") as Control
+				return _prep_shop_field("buy_button") as Control
 			return _first_available_shop_control()
 		Step.BOND_HINT:
 			return _first_bond_row_control()
@@ -532,7 +532,9 @@ func _target_control() -> Control:
 # 第一条羁绊行（_add_current_synergy_widgets 往 _left_panel 塞的 HBoxContainer，
 # 标题之后的第一个）。指整个 _left_panel 会落到面板中部、离羁绊图标很远。
 func _first_bond_row_control() -> Control:
-	var panel := _prep.get("_left_panel") as Control
+	# 左面板已随 D2 搬进 SynergyPanel 节点（scenes/prep/panels/SynergyPanel.gd）。
+	var synergy: Variant = _prep.get("_synergy")
+	var panel: Control = null if synergy == null else synergy.get("_left_panel") as Control
 	if panel == null:
 		return null
 	for child in panel.get_children():
@@ -541,24 +543,40 @@ func _first_bond_row_control() -> Control:
 	return panel
 
 func _treasure_logo_control() -> Control:
-	var box := _prep.get("_owned_treasure_box") as Control
+	var box := _treasure_field("_owned_treasure_box") as Control
 	if box != null and box.get_child_count() > 0 and box.get_child(0) is Control:
 		return box.get_child(0) as Control
 	return box
 
 # 商店关着时返回底部卷轴按钮（先让玩家开店），已经开着返回 null 交给后续分支。
-func _shop_entry_control() -> Control:
-	if _prep == null or bool(_prep.get("_shop_picker_open")):
+# 备战界面的商店/棋盘成员在 D2 里收进了 PrepShared 的 ShopPanel / BoardPanel 内部类，
+# 不能再用 _prep.get("_shop_open_button") 这种旧名字 —— Object.get() 取不到就返回 null，
+# 而 null 会一路传下去（bool(null) 直接报 "Nonexistent bool constructor"，实测踩到过）。
+# 这两个辅助函数统一走「先取簇、再取字段」。
+func _prep_shop_field(name: String) -> Variant:
+	if _prep == null:
 		return null
-	return _prep.get("_shop_open_button") as Control
+	var shop: Variant = _prep.get("_shop")
+	return null if shop == null else shop.get(name)
+
+func _prep_board_field(name: String) -> Variant:
+	if _prep == null:
+		return null
+	var board: Variant = _prep.get("_board_hud")
+	return null if board == null else board.get(name)
+
+func _shop_entry_control() -> Control:
+	if _prep == null or bool(_prep_shop_field("picker_open")):
+		return null
+	return _prep_shop_field("open_button") as Control
 
 func _upgrade_shop_control() -> Control:
 	var closed_shop := _shop_entry_control()
 	if closed_shop != null:
 		return closed_shop
-	var selected := int(_prep.get("_selected_shop"))
+	var selected := int(_prep_shop_field("selected"))
 	if _shop_index_available(selected):
-		return _prep.get("_buy_shop_button") as Control
+		return _prep_shop_field("buy_button") as Control
 	return _first_available_shop_control()
 
 # Total copies of the target unit at the target star across board + standby.
@@ -575,7 +593,7 @@ func _upgrade_total_copies() -> int:
 
 func _first_empty_board_control_middle() -> Control:
 	# 引导摆放到中间排：优先第 2 排（中间偏前），再第 1 排，最后任意空位。
-	var buttons := _prep.get("_board_buttons") as Array
+	var buttons := _prep_board_field("buttons") as Array
 	for pref_row in [2, 1]:
 		for col in GameConstants.BOARD_COLUMNS:
 			var i: int = int(pref_row) * GameConstants.BOARD_COLUMNS + col
@@ -821,7 +839,7 @@ func _first_live_control(items: Array) -> Control:
 	return null
 
 func _first_occupied_bench_control() -> Control:
-	var buttons := _prep.get("_bench_buttons") as Array
+	var buttons := _prep_board_field("bench_buttons") as Array
 	for i in buttons.size():
 		if i < GameState.bench_slots.size() and GameState.bench_slots[i] != null:
 			var item = buttons[i]
@@ -830,7 +848,7 @@ func _first_occupied_bench_control() -> Control:
 	return null
 
 func _first_empty_board_control() -> Control:
-	var buttons := _prep.get("_board_buttons") as Array
+	var buttons := _prep_board_field("buttons") as Array
 	for i in buttons.size():
 		if i < GameState.board_slots.size() and GameState.board_slots[i] == null:
 			var item = buttons[i]
@@ -841,7 +859,7 @@ func _first_empty_board_control() -> Control:
 func _placing_from_bench() -> bool:
 	if _prep == null:
 		return false
-	if int(_prep.get("_selected_bench")) >= 0:
+	if int(_board_hud_field("_selected_bench")) >= 0:
 		return true
 	var payload = _prep.get("_active_drag_payload")
 	return typeof(payload) == TYPE_DICTIONARY and str((payload as Dictionary).get("kind", "")) == "bench"
@@ -849,7 +867,7 @@ func _placing_from_bench() -> bool:
 func _upgrade_material_control() -> Control:
 	var id := _upgrade_id()
 	var star := _upgrade_star()
-	var buttons := _prep.get("_bench_buttons") as Array
+	var buttons := _prep_board_field("bench_buttons") as Array
 	for i in buttons.size():
 		if i < GameState.bench_slots.size() and _cell_matches_upgrade(GameState.bench_slots[i], id, star):
 			var item = buttons[i]
@@ -861,13 +879,13 @@ func _upgrade_target_control() -> Control:
 	var id := _upgrade_id()
 	var star := _upgrade_star()
 	var material_index := _held_upgrade_bench_index()
-	var board_buttons := _prep.get("_board_buttons") as Array
+	var board_buttons := _prep_board_field("buttons") as Array
 	for i in board_buttons.size():
 		if i < GameState.board_slots.size() and _cell_matches_upgrade(GameState.board_slots[i], id, star):
 			var item = board_buttons[i]
 			if item is Control and (item as Control).visible:
 				return item as Control
-	var bench_buttons := _prep.get("_bench_buttons") as Array
+	var bench_buttons := _prep_board_field("bench_buttons") as Array
 	for i in bench_buttons.size():
 		if i == material_index:
 			continue
@@ -883,7 +901,7 @@ func _holding_upgrade_piece() -> bool:
 func _held_upgrade_bench_index() -> int:
 	var id := _upgrade_id()
 	var star := _upgrade_star()
-	var selected := int(_prep.get("_selected_bench"))
+	var selected := int(_board_hud_field("_selected_bench"))
 	if selected >= 0 and selected < GameState.bench_slots.size() and _cell_matches_upgrade(GameState.bench_slots[selected], id, star):
 		return selected
 	var payload = _prep.get("_active_drag_payload")
@@ -905,7 +923,7 @@ func _cell_matches_upgrade(cell: Variant, id: String, star: int) -> bool:
 	return typeof(cell) == TYPE_DICTIONARY and str((cell as Dictionary).get("id", "")) == id and int((cell as Dictionary).get("star", 1)) == star
 
 func _first_available_shop_control() -> Control:
-	var buttons := _prep.get("_shop_buttons") as Array
+	var buttons := _prep_shop_field("buttons") as Array
 	if buttons == null:
 		return null
 	for i in buttons.size():
@@ -925,3 +943,20 @@ func _shop_index_available(index: int) -> bool:
 
 func _t(zh: String, en: String) -> String:
 	return en if LocaleManager.get_locale() == "en" else zh
+
+
+# 宝物面板的控件已随 D2 搬进 TreasureChoicePanel 节点。
+# 和 _prep_shop_field 同样的形状：面板取不到就返回 null，不让空指针往下走。
+func _treasure_field(name: String) -> Variant:
+	if _prep == null:
+		return null
+	var panel: Variant = _prep.get("_treasure")
+	return null if panel == null else panel.get(name)
+
+
+# 棋盘选中态已随 D2 搬进 BoardHud 节点。形状同 _prep_shop_field / _treasure_field。
+func _board_hud_field(name: String) -> Variant:
+	if _prep == null:
+		return null
+	var panel: Variant = _prep.get("_board_hud")
+	return null if panel == null else panel.get(name)

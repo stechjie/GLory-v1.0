@@ -1,4 +1,4 @@
-extends "res://scenes/prep/PrepDetails.gd"
+extends "res://scenes/prep/PrepBoardController.gd"
 
 const BattleReplayUtil = preload("res://scripts/battle/BattleReplayUtil.gd")
 const BattleSim = preload("res://scripts/battle/BattleSimulator.gd")
@@ -35,7 +35,7 @@ var _battle_load_bar: ProgressBar
 var _battle_load_particles: CPUParticles2D
 
 func _ready() -> void:
-	_setup_board_cell_styles()
+	_board_hud.setup_cell_styles()
 	if not NetworkService.session_changed.is_connected(_on_network_session_changed):
 		NetworkService.session_changed.connect(_on_network_session_changed)
 	if not NetworkService.team_lobby_changed.is_connected(_on_network_session_changed):
@@ -45,6 +45,10 @@ func _ready() -> void:
 	if GameState.shop_offers.is_empty() or GameState.shop_offers[0].is_empty():
 		_roll_shop()
 	_build()
+	# 这条连接必须放在最派生的类里：_connect_treasure_signals 定义在 PrepFlowController，
+	# 而面板的接线在 PrepUI._build() 里 —— 父类看不见子类的方法。
+	if not _treasure.net_signals_needed.is_connected(_connect_treasure_signals):
+		_treasure.net_signals_needed.connect(_connect_treasure_signals)
 	_setup_battle_load_visual()
 	# 备战期只做**增量**：把后几轮的怪排进后台队列。
 	# 大批量加载在大厅完成（Team3v3Lobby._setup_asset_loader）—— 备战期玩家在拖
@@ -56,13 +60,13 @@ func _ready() -> void:
 	_refresh_all()
 	if GameState.tutorial_mode:
 		TutorialMode.attach(self)
-	_maybe_show_pvp_warning.call_deferred(_next_round_kind())
+	_maybe_show_pvp_warning.call_deferred(PrepRules.next_round_kind())
 
 func _start_prep_music() -> void:
 	if _prep_music_player != null:
 		return
 	# 下一回合是 PVP（含最终 PVP）时放专属音乐，否则放普通摆放音乐。
-	var next_kind := _next_round_kind()
+	var next_kind := PrepRules.next_round_kind()
 	var music_path := PREP_PVP_MUSIC_PATH if next_kind == "pvp" or next_kind == "final" else PREP_MUSIC_PATH
 	# 必须用 load() 走资源系统：Android 导出包只含 mp3 的导入产物、不含原始文件，
 	# FileAccess.get_file_as_bytes 在真机上读到空字节（编辑器里却正常，因为原始
@@ -110,7 +114,7 @@ func _on_team_round_start() -> void:
 	_emit_battle_request_once()
 
 func _process(delta: float) -> void:
-	_update_detail_release_state()
+	_overlay.update_release_state()
 	if GameState.tutorial_mode:
 		TutorialMode.update_overlay()
 	if _fps_label != null:
@@ -124,11 +128,11 @@ func _input(event: InputEvent) -> void:
 		if event is InputEventMouseButton:
 			var detail_mouse_event := event as InputEventMouseButton
 			if detail_mouse_event.pressed:
-				_hide_detail()
+				_overlay.hide_detail()
 		elif event is InputEventScreenTouch:
 			var detail_touch_event := event as InputEventScreenTouch
 			if detail_touch_event.pressed:
-				_hide_detail()
+				_overlay.hide_detail()
 		return
 	if _team_mercs_open and _team_mercs_overlay != null and _team_mercs_overlay.visible:
 		var team_pointer := Vector2.ZERO
@@ -146,7 +150,7 @@ func _input(event: InputEvent) -> void:
 		if team_should_check and not _team_mercs_overlay.get_global_rect().has_point(team_pointer):
 			_close_team_mercs_picker()
 		return
-	if _shop_picker_open and _shop_panel != null and _shop_panel.visible:
+	if _shop.picker_open and _shop.panel != null and _shop.panel.visible:
 		var shop_pointer := Vector2.ZERO
 		var shop_should_check := false
 		if event is InputEventMouseButton:
@@ -163,15 +167,15 @@ func _input(event: InputEvent) -> void:
 		# 子树，这样刷新、钱袋等就算被摆到面板矩形【外面】，点它们也不会被误判成关店。
 		# 弹窗非模态、不 return：这次点击继续往下传，可以直接点棋盘/拖单位。
 		var shop_hovered := get_viewport().gui_get_hovered_control()
-		var click_on_shop: bool = _shop_panel.get_global_rect().has_point(shop_pointer) \
-			or (shop_hovered != null and (shop_hovered == _shop_panel or _shop_panel.is_ancestor_of(shop_hovered)))
-		var click_on_shop_btn: bool = _shop_open_button != null and _shop_open_button.get_global_rect().has_point(shop_pointer)
+		var click_on_shop: bool = _shop.panel.get_global_rect().has_point(shop_pointer) \
+			or (shop_hovered != null and (shop_hovered == _shop.panel or _shop.panel.is_ancestor_of(shop_hovered)))
+		var click_on_shop_btn: bool = _shop.open_button != null and _shop.open_button.get_global_rect().has_point(shop_pointer)
 		# 外挂层（钱袋A购买键 / 刷新）虽然不在商店面板矩形内，但点它们也算"点商店"，不收起。
 		# 只认"悬停控件是它的子孙"——外挂层本身满屏且 IGNORE，不能用矩形判断（否则永远不关店）。
-		var click_on_shop_side: bool = _shop_side_controls != null and _shop_side_controls.visible \
-			and shop_hovered != null and _shop_side_controls.is_ancestor_of(shop_hovered)
+		var click_on_shop_side: bool = _shop.side_controls != null and _shop.side_controls.visible \
+			and shop_hovered != null and _shop.side_controls.is_ancestor_of(shop_hovered)
 		if shop_should_check and not click_on_shop and not click_on_shop_btn and not click_on_shop_side:
-			_close_shop_picker()
+			_shop.close_picker()
 	if not _merc_picker_open or _merc_overlay == null or not _merc_overlay.visible:
 		return
 	var pointer_position := Vector2.ZERO

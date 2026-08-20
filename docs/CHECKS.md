@@ -476,6 +476,832 @@ NetworkService **3954 → 3958 行**。同 PR5，价值在于把零覆盖的判�
 `_dedicated_server` 是散在 36 个函数里的模式开关而非模块状态，
 PR7 更可能该做成门面上的 `ServerRole` 枚举，而不是服务对象。
 
+## 4.8 PrepUI 拆分（代码 D2，第一步：2026-08-20）
+
+### 先量结构，结果比 README 说的更严重
+
+README 的 D2 说"把 `PrepUI.gd`（2461 行）拆成五个 Panel"。实测下来问题不在单个文件：
+
+```
+Control
+ └─ PrepShared.gd            860 行   成员变量 110 个
+     └─ PrepBoardModels.gd  1176 行
+         └─ PrepUI.gd       2461 行   用到别层变量 81 个
+             └─ PrepFlowController.gd   200 行
+                 └─ PrepBoardController.gd  752 行
+                     └─ PrepDetails.gd      769 行
+                         └─ PrepScreen.gd   509 行
+```
+
+**6727 行、409 个函数、148 个成员变量，通过 7 层继承合成一个类。**
+`PrepScreen` 实例化出来的对象带着全部这些成员，
+`PrepUI` 一层就用到别层定义的 **81 个变量** —— 这是继承耦合的实证。
+
+### 这一步只做了一件事：拆 `_build_rest`
+
+`PrepUI.gd` 里最大的一簇是 `build_*`（8 个函数 1018 行），
+其中 **`_build_rest` 一个函数就 638 行**，占 PrepUI 的 26%。
+
+**不能靠肉眼切。** 对函数体做局部变量生存区间分析后发现：
+
+```
+全函数 638 行、56 个局部量，完全干净的切点只有 2 处（L310 和 L944）
+```
+
+每一个内部切点都至少被 `body`(L311→L885) 和 `center_host`(L327→L943) 跨越，
+个别切点还被 `center` / `shop_card_area` 跨越。第一次按"看起来像分段"的位置切，
+编译立刻报 `Identifier "left_drop" not declared` —— 数据分析救回来的。
+
+最终切点取在「除 `body`/`center_host` 外没有其它局部量跨越」处（L441/514/672/756/872），
+容器以参数传入，并逐一核对过这些参数在段内**只读、不重新赋值**。
+
+| 段 | 行数 |
+| --- | ---: |
+| `_build_rest`（保留头部 + 5 次调用） | 142 |
+| `_build_shop_button_and_purse` | 73 |
+| `_build_shop_popup` | 158 |
+| `_build_shop_hand_cards` | 84 |
+| `_build_sell_zone_and_refresh` | 116 |
+| `_build_merc_panels` | 74 |
+
+### 安全网：节点树快照
+
+PrepUI 的注释里明确记着**树顺序影响输入拾取**：
+
+> 它默认 STOP 且树顺序在 board_frame 之后（拾取优先），把右列点击全吃了
+
+也就是说，只要把两段的先后换一下，右列棋格就可能点不动，
+而 `board_4x4_smoke` 未必抓得到（它测的是 `_can_drop_on_board` 的逻辑判定，不是真实拾取）。
+
+所以新增 `tools/prep_tree_snapshot.tscn`：实例化 `PrepScreen` 后导出完整节点树 ——
+路径、类名、在父节点中的次序，以及 `z_index` / `visible` / `mouse_filter`
+这三个决定层叠与拾取的属性。位置尺寸**不记**：它们依赖窗口大小与布局时序，
+在 headless 下不稳定，记了只会变成噪声。
+
+拆分前后各抓一份：**303 个节点逐字节一致**。
+
+> ### ⚠️ 2026-08-20 更正：这个工具的第一版是**假绿**，前四步的依据是错的
+>
+> 第一版 `prep_tree_snapshot` 只做三件事：导出节点树、断言「节点数 > 50」、
+> 把文件写到 `user://`。**它从来没有比对过任何东西。**
+> 输出里那个 `checked=305` 只是节点计数喂给 `_h.item()`，不是 305 条比对。
+>
+> 于是「拆分前后逐字节一致」这句话，**靠的是人去 diff 两个 `user://` 文件**，
+> 而那一步很容易被省掉 —— 第八到十一步就确实被省掉了，
+> 却仍然在结论里写着「节点树 305 节点不变」。
+>
+> 发现方式：故意把 `PrepWidgets.make_cell_caption()` 的 `z_index` 改成 11、
+> `visible` 改成 `true`，工具照样 `status=PASS`。事后 diff 两份导出文件，
+> **96 行差异**明明白白。
+>
+> **事实核对**：树本身确实没变 —— `prep_tree_before.txt`（D2 开工前）
+> 与后续每一次导出逐字节相同。结论是对的，**依据是假的**。
+> 这两件事必须分开说：结论碰巧成立，不能用来给一条不工作的检查背书。
+>
+> **已修**：改为与仓库里的 `tools/prep_tree_baseline.txt` 逐行比对，
+> 报第一处差异的行号、期望值与实际值（和 `determinism_check` 要求给出
+> 首个不同 tick 是同一个道理）。两条证伪：
+>
+> | 探针 | 结果 |
+> | --- | --- |
+> | `z_index` 10 → 11 | FAIL `tree_changed` 第 67 行起不同，共 24 行 |
+> | 删掉基线文件 | FAIL `baseline_missing` |
+>
+> 第二条是刻意的：基线缺失若当成「首次运行，自动建基线」，
+> 任何人删掉基线就能让这条检查永远绿 —— 那是同一个坑的另一种形状。
+> 要重建必须显式跑 `-- --update`，工具会打印警告要求把差异写进本文档。
+>
+> 后文第八 / 九 / 十 / 十一步里凡写「节点树 305 节点不变」的地方，
+> 请按本节理解：**那几次的检查没有真正比对**。
+> 事后用修好的工具复核过，树确实未变。
+
+### 剩余工作
+
+这一步**没有**减少类的大小、也没有降低继承耦合 —— `_build_rest` 的 638 行还在
+`PrepUI.gd` 里，只是变成了 6 个可读的函数。它的价值是把后续抽取的接缝先开出来。
+
+真正的 D2（按 README：`ShopPanel` / `BoardHud` / `TreasureChoicePanel` /
+`SynergyPanel` / `BattleStatsPanel` 用组合替代继承）还需要解决那 148 个成员变量的归属，
+特别是 `PrepShared.gd` 里那 110 个 —— 它们是整条链共享的状态池，也是耦合的根。
+
+### 第二步：先给商店补网，再谈抽取
+
+`PrepShared` 的 110 个成员变量里：**15 个只被自己用**（可直接私有化），
+**95 个跨层共用**。按功能聚类，最大的两簇是 board（16 个）和 shop（19 个）。
+
+商店那簇正好对应 README 的 `ShopPanel`：**19 个成员变量、122 处引用、18 个函数 851 行**，
+分布在 `PrepShared` / `PrepUI` / `PrepBoardController` / `PrepScreen` 四层。
+
+**但抽它之前先查了覆盖，结果是零：**
+
+| 已有检查 | 测的是什么 |
+| --- | --- |
+| `adversarial_client` | 服务端经济账本（`EconomyLedger.apply` 的 buy/refresh）—— 钱的权威裁决，**不是界面** |
+| `board_4x4_smoke` | 棋盘/待命区拖拽，**一个商店调用都没有** |
+| `prep_tree_snapshot` | 只证明"构建出来的节点树一致"，证明不了"点击还能用" |
+
+把 19 个变量、644 行代码抽成 ShopPanel 却只有构建快照兜底，
+正是这套流程一直在反对的做法。所以先补 `tools/prep_shop_check.tscn`（24 项），
+驱动真实私有方法覆盖：节点构建产物、弹窗开关与幂等、售卖模式与覆盖层可见性、
+出售区只接受棋盘/待命区、选卡状态、越界索引的购买理由、空商店刷新后清理选中态。
+
+证伪测试两条都验过：
+把出售区判定放宽到"任何字典"→ `FAIL [sell_accepts_shop]`；
+去掉失效选中态的清理 → `FAIL [stale_selection_kept] 实际 0（会导致点购买时买到不存在的卡）`。
+
+### 写这份用例时我自己造了个假绿，记在这里
+
+第一版的"空商店刷新"用例有两处错：
+
+1. **用 `resize()` 造出了 `null` 空位**。真实代码是
+   `GameState.reset_run()` 里 `resize(N)` 之后逐个 `shop_offers[i] = {}`，
+   永远不会有 null。于是 `_refresh_shop` 里 `.is_empty()` 打在 Nil 上报错 ——
+   那是**测试造了个不可能的状态**，不是产品 bug。
+2. **断言写成了 `expect(true, ...)`** —— 一个永远为真的断言。
+   结果是：脚本报了 `SCRIPT ERROR`，检查却显示 `status=PASS`。
+
+第 2 条尤其值得记：**"检查通过"和"日志干净"是两回事**，
+回归时要同时看 `CHECK_RESULT` 和脚本错误数。本文档第 2 节说"退出码 0 不等于通过"，
+这次是同一个陷阱换了个面孔出现在检查脚本自己身上。
+
+### 第三步：商店簇真正搬家
+
+19 个成员变量从 `PrepShared` 的共享池收进 `ShopPanel`，全仓 **133 处引用**
+统一改成 `_shop.xxx`（`PrepShared` 19、`PrepUI` 86、`PrepBoardController` 17、`PrepScreen` 11）。
+
+改名表是**单射**且带自检（两个变量映到同一个名字会静默合并，是最难查的一类错误）：
+
+```
+_shop_row / _shop_panel / _shop_open_button / _buy_shop_button / _shop_sell_overlay
+_shop_side_controls / _refresh_shop_{button,icon,cost_label} / _shop_{buttons,portraits,
+card_frames,card_labels,price_labels,race_icons,reason_labels} / _shop_picker_open /
+_selected_shop / _shop_drag_sell_mode
+        ↓
+_shop.{row,panel,open_button,buy_button,sell_overlay,side_controls,
+       refresh_button,refresh_icon,refresh_cost_label,buttons,portraits,
+       card_frames,card_labels,price_labels,race_icons,reason_labels,
+       picker_open,selected,drag_sell_mode}
+```
+
+**为什么做成内部类而不是独立文件。** 先按独立文件写了一版，编译报
+`Could not find type "DragButton"` / `"SellDropPanel"` —— 这两个是 `PrepShared.gd`
+自己的内部类。独立文件要用它们就得 `preload` PrepShared，而 PrepShared 又要
+preload 它，循环依赖。退而用无类型 `Array` 的话，`_shop.buttons` 的静态类型会丢，
+二十来处调用点全部退化成 Variant。做成内部类两头都保住。
+
+另外 `var _shop: RefCounted = ...` 也不行 —— `_shop.buttons[i]` 的类型推不出来，
+一片 `Cannot infer the type`。要用具体类型 `var _shop := ShopPanel.new()`。
+
+`PrepShared` 的成员变量从 110 降到 **67**（除商店 19 个外，
+这一步也让之前统计口径里的重复声明归并了）。
+
+### 安全网当场生效了
+
+改完跑回归，`prep_shop_check` 直接 **FAIL 6 项**：
+
+```
+FAIL [shop_node_missing] 商店节点 _shop_panel 没有被构建出来
+FAIL [shop_button_count] 商店卡位应有 4 个，实际 <null>
+```
+
+排查后确认是**检查本身读的是旧名字**，不是产品坏了 —— 但这恰好证明了这张网是通的：
+如果搬家真的漏了某个变量，报出来的会是同一种失败。更新检查改从 `_prep._shop` 读之后
+恢复 24/24、脚本错误 0，并再次证伪（把 `_set_shop_sell_mode` 改成恒 false
+→ `FAIL [sell_mode_not_set]`）。
+
+节点树快照与第一步的基线**逐字节一致**（303 个节点），
+`board_4x4_smoke` 62 项、`board_readability` 、`prep_initial_model_layout`、
+`determinism` 111 项、`economy_settle` 全部通过。
+
+### 这一步之后还剩什么
+
+商店的**状态**归位了，但 `_build_shop_*` 三个构建函数、`_refresh_shop`、
+`_on_shop_pressed` 等**行为**仍在 PrepUI/PrepBoardController 里，
+只是通过 `_shop.` 访问自己的状态。要变成 README 说的真正 `ShopPanel` 组合节点
+（一个自治的 `Control` 子类），还需要把这些函数也搬进去，并把它对
+`GameState` / 教学模式 / 拖拽系统的依赖理清。
+
+### 第四步：棋盘/待命区簇搬家
+
+照商店那一步的模式再做一次。**17 个成员变量**收进 `BoardPanel` 内部类，
+全仓 **132 处引用**改成 `_board.xxx`：
+
+| 文件 | 改名处数 |
+| --- | ---: |
+| `PrepUI.gd` | 68 |
+| `PrepBoardController.gd` | 26 |
+| `PrepShared.gd` | 17 |
+| `PrepBoardModels.gd` | 11 |
+| `tools/board_4x4_smoke_node.gd` | 10 |
+
+同样是内部类：`BoardCellButton` / `BenchCellButton` / `RelationProgressOverlay`
+也都是 `PrepShared.gd` 自己的内部类。
+
+**踩到一个改名脚本才会犯的错**：`board_4x4_smoke` 里是
+`prep.get("_board_buttons")` 这种**字符串字面量**取属性，
+机械改名把它变成了 `prep.get("_board.buttons")` —— 而 `Object.get()` 收的是
+**属性名不是路径**，这样写会**静默返回 null**，不报错。
+改成先取 `_board` 再取字段的辅助函数才对。
+这类"字符串里的标识符"是批量改名最容易漏的地方，因为编译器管不到。
+
+验证：节点树 303 个节点与第一步基线**逐字节一致**；
+`board_4x4_smoke` 62 项、`prep_shop_check` 24 项、`board_readability`、
+`prep_initial_model_layout`、`determinism` 111 项全部通过，脚本错误 0。
+证伪：把 `_board.drop_hover_index` 改成恒 -99 →
+`FAIL [board_hover_index] 棋盘 hover 下标为 -99，期望 10`。
+
+### D2 四步小结
+
+| 步骤 | 内容 |
+| --- | --- |
+| 1 | 拆 `_build_rest`（638 行 → 142 行 + 5 个段函数），建立节点树快照安全网 |
+| 2 | 补商店 UI 用例（24 项）—— 抽取之前它是零覆盖 |
+| 3 | 商店簇 19 个变量 → `ShopPanel` 内部类，133 处引用改名 |
+| 4 | 棋盘簇 17 个变量 → `BoardPanel` 内部类，132 处引用改名 |
+
+`PrepShared` 的共享状态池：**110 → 50 个**（36 个进了两个内部类，
+其余是统计口径里的重复声明归并）。全程节点树逐字节不变。
+
+### 第五步：为什么不继续搬「行为」，以及真正该抽的是什么
+
+下一步本来是把 `_build_shop_*` / `_refresh_shop` / `_on_shop_pressed` 也搬进 ShopPanel。
+动手前先量了一遍这 18 个函数对宿主的依赖：
+
+```
+引用 _shop. 的函数：18 个，合计 851 行
+完全不依赖宿主的：1 个 / 4 行
+```
+
+其余每一个都要用宿主的成员变量和/或函数，`_refresh_shop` 一个就要 6 个变量 + 7 个函数。
+**搬进去等于给面板一个 owner 反向引用、处处回调宿主** —— 那不是解耦，
+和 NetworkService 编排层得出的是同一个结论，这次有了 prep 侧的数字。
+
+那真正能独立出来的是什么？换个统计口径：
+
+```
+不碰任何成员变量、且被 >=2 处调用的函数：86 个 / 1249 行
+```
+
+这些才是这条继承链里真正可以拿走的部分。第一个先拿战力格式化 ——
+纯数值 + 语言分支，容易写错，而且**此前零覆盖**。
+
+### 抽出来当场发现一个线上 bug：英文战力虚报 10 倍
+
+`scenes/prep/PrepPowerFormat.gd` + `tools/prep_power_format_check.tscn`（26 项）。
+
+原实现的英文分支套用了中文「亿」的阈值，却把单位标成 B：
+
+```gdscript
+if rounded >= 100000000: return "%.2fB" % (rounded / 100000000.0)
+```
+
+1B = 10 亿，不是 1 亿。把原实现放回去跑检查，报出来的是：
+
+```
+FAIL [en_yi_mislabeled_as_billion] format_power(100000000.0, is_en=true) 应为 100.00M，实际 1.00B
+FAIL [en_real_billion_lost]        format_power(1000000000.0, is_en=true) 应为 1.00B，实际 10.00B
+FAIL [en_m]                        format_power(1000000.0, is_en=true) 应为 1.00M，实际 1000.00K
+```
+
+也就是**英文界面上的战力数字一律虚报 10 倍**，而且 M 档整个不存在（1,000,000 显示成 "1000.00K"）。
+中文分支一直是对的，所以只有英文玩家看得到。抽取时已修正：
+1 亿 → `100.00M`，10 亿 → `1.00B`，并补了 M 档。
+
+> 这是这次拆分里唯一一处**改变了用户可见行为**的地方。其余四步都是纯搬运，
+> 由节点树快照逐字节保证。这一处是有意为之的修 bug，不是搬运的副作用。
+
+顺带记一个不是 bug 的边角：`99,999,999 ÷ 10000 = 9999.9999`，`%.2f` 进位成
+`10000.00万`。读起来像该显示 `1.00亿`，但它确实还没到阈值。用例里写了注释，
+免得下次有人看到再查一遍。
+
+### ⚠️ 一次真实事故：改名漏了 TutorialMode，进教学第一关就崩
+
+D2 第 3/4 步把商店/棋盘成员收进内部类之后，用户实机跑出来的：
+
+```
+E _shop_entry_control: Invalid call. Nonexistent 'bool' constructor.
+  TutorialMode.gd:551 -> _target_control() -> update_overlay() -> sync()
+  -> attach() -> PrepScreen._ready() -> Main._show_prep()
+```
+
+`scripts/tutorial/TutorialMode.gd` 里有 **15 处** `_prep.get("_selected_shop")`
+这类**字符串取属性**，改名时整个文件被漏掉了 —— 我当时的引用面分析只扫了
+`scenes/prep/` 和 `tools/`。
+
+**为什么所有检查都没拦住：**
+
+| 环节 | 为什么没报 |
+| --- | --- |
+| 编译 | `Object.get()` 的参数是字符串，编译器不检查 |
+| 运行时 | 取不到只**返回 null，不报错**，null 一路传到 `bool(null)` 才炸 |
+| `board_4x4_smoke` 62 项 | 直接实例化 `PrepScreen`，走不到 `TutorialMode` 这条路 |
+| `prep_tree_snapshot` 303 节点 | 只看构建出来的节点树，不看谁去引用它们 |
+
+也就是说：**全绿 + 零脚本错误，但一进教学就崩**。
+这正是本文档反复说的那件事的最锋利版本 —— 检查没覆盖到的地方，绿色什么也不证明。
+
+**修复**：15 处改走 `_prep_shop_field()` / `_prep_board_field()` 两个辅助函数
+（先取簇、再取字段）。
+
+**补网**：新增 `tools/tutorial_target_check.tscn`（24 项）——
+把 `TutorialMode.gd` 里所有 `_prep.get("X")` 与 `_prep_*_field("X")` 的 X 抠出来，
+逐个断言 `PrepScreen`（或 `_shop` / `_board`）上真的有这个属性。
+判据用 `get_property_list()` 而不是 `get() != null`：合法属性本身也可能是 null
+（未构建的节点引用），用返回值区分不开。
+
+扫描前会剥掉注释 —— 第一版没剥，把文档注释里"旧写法长这样"的示例当成了真实调用。
+
+证伪：把任意一处改回 `_prep.get("_shop_picker_open")` →
+`FAIL [missing_prep_member] …但 PrepScreen 上没有这个属性（会静默返回 null）`。
+
+**教训写在这里**：批量改名时，引用面分析的范围必须是**全仓**，
+不能只扫"看起来相关"的目录。字符串里的标识符编译器管不到，
+唯一可靠的办法是有一条检查把"字符串名"和"真实属性"对起来。
+
+### 第六步：战力公式
+
+`scenes/prep/PrepPowerEstimate.gd` + `tools/prep_power_estimate_check.tscn`（22 项）。
+
+公式本身：
+
+```
+单位战力 = hp × (1 + def/50) + (普攻DPS + 技能DPS) × 10
+普攻DPS  = atk × 攻速 × (1 + 暴击率 × max(0, 暴伤 - 1))
+技能DPS  = skill_damage/cd  或  atk × damage_atk_pct/cd  或  atk × skill_atk_pct/cd
+```
+
+备战界面三处都用它：玩家当前战力、下一波小怪估算、下一个 Boss 估算。
+**写错不会崩、不会报错**，只会让玩家看到偏的数字并据此做错误的备战决策；
+而且它同时算玩家侧和敌方侧 —— 末尾那个 `× 10` 决定了"坦度"与"输出"的相对价值，
+一动所有单位的战力排序都会变。
+
+用例都用**手算得出**的期望值，不是把当前输出抄下来当基准 ——
+后者只能证明"没变过"，证明不了"算得对"。覆盖：
+
+- 三种技能配法各自的公式，以及**它们之间的优先级**（`skill_damage` > `damage_atk_pct` > `skill_atk_pct`；顺序错了会让固定伤害的单位按百分比算，差一个量级）
+- `skill_cd <= 0` 返回 0 而不是除零（GDScript 除零给 inf，会让整个战力变成 inf）
+- 缺省冷却 8 秒
+- 防御的两个字段名 `def` / `defense` 必须等价（数据表两种都出现过）
+- 暴伤 < 1 时被 `maxf` 夹住，不能变成负加成
+- 空定义为 0、缺 `attack_speed` 默认 1.0
+- **单调性**：hp / def / atk / 攻速 / 暴击率任意一项变强，战力都不能变小 ——
+  守的是"改公式时某一项被写成负相关"这种低级但致命的错误
+
+22 项一次通过，说明抽出来的实现与原公式逐位一致。
+证伪：把 `defense / 50.0` 改成 `/ 100.0` →
+`FAIL [effective_hp_wrong] hp 1000 def 50 无输出：期望 2000.0000，实际 1500.0000`。
+
+`PrepDetails` 净减 18 行，保留两个薄包装，三处调用点不用改。
+
+### 第七步：宝物文案与联动依赖 —— 这次选择了「不抽」
+
+下一簇本来是 `PrepDetails` 里的宝物文案（`_treasure_effect_text` 等，约 100 行 match）。
+**看了之后决定不搬**：它们是**数据不是逻辑**，把一张查表从一个文件挪到另一个文件，
+既不减耦合也不减风险，只是让 diff 变大。
+
+这里真正的风险点是别的：这三个函数都是 `match` + 兜底 `return`，
+少写一条不会崩、不会报错，玩家只会看到占位符 ——
+
+```
+"暂未写入详细说明。" / "Description not yet available." / "联动效果待说明。"
+```
+
+加宝物是**数据改动**，最容易忘的就是回头补文案，而没有任何机制会提醒。
+
+所以这一步交付的是 `tools/prep_text_coverage_check.tscn`（93 项），
+把**数据表**和**文案表**对起来：
+
+- 25 件宝物 × 中英文案，任何一条落到占位符就失败
+- 11 条联动的说明文案
+- **联动的 `requires` 必须都是真实存在的宝物 id** —— 依赖写错的联动永远不会触发，
+  而且同样毫无报错（`link_phoenix` 那两件依赖当初是靠人工核对才确认存在的）
+- 四个种族的显示名不能落回原始 id
+
+现状是齐的（25/25、11/11），这条检查是为了让它保持齐。
+
+证伪：往 `treasures.json` 里塞一件没写文案的宝物、外加一条依赖不存在宝物的联动：
+
+```
+FAIL [treasure_text_missing_cn]   宝物 probe_new_treasure 缺中文说明（落到了占位符）
+FAIL [treasure_text_missing_en]   宝物 probe_new_treasure 缺英文说明（落到了占位符）
+FAIL [linkage_text_missing]       联动 probe_link 缺说明（落到了占位符）
+FAIL [linkage_requires_unknown]   联动 probe_link 依赖的宝物 not_a_real_treasure 在 treasures 表里不存在
+```
+
+四类问题全部抓到。
+
+> 这一步是个有用的对照：前六步的判断标准一直是"能不能真正减少耦合"。
+> 到这里答案是"不能"，那就不搬 —— 改成补上这块真正缺的那道闸。
+> **抽取不是目的，减少出错的可能才是。**
+
+### 第八步：同一套算钱逻辑存了两份
+
+`PrepBoardController._shop_unit_cost()` —— 商店卡片上显示的价格。
+`EconomyLedger.unit_cost()` —— 服务端实际扣钱时用的价格。
+
+两份**逐行完全一样**：
+
+```
+基础价 cost
+  → × shop_cost_multiplier        （单位自带的折价系数）
+  → × 0.6  若触发 link_clearance_sale 联动
+    elif × 0.8  若持有 money_discount
+每一步都 maxi(1, ceil(...))
+```
+
+注意中间那个 **elif** —— 联动折扣和折扣券是**互斥**的，不叠加。
+如果哪天有人把它写成两个并列的 `if`，价格就会变成 ×0.48，凭空多出一档折扣。
+
+**这种重复的危险之处不在于"代码难看"，在于它坏掉时完全无声。**
+改了服务端忘了改客户端，结果就是卡片上写着 10 金、点下去扣了 12 金。
+没有报错、没有警告、没有断言，玩家只会觉得"钱怎么不对"，
+而这类问题在联机对局里通常要等到有人截图投诉才会被发现。
+
+处理方式：**删掉客户端那份，改为委托服务端的权威实现。**
+服务端是最终裁决方，以它为准；客户端只是显示，不该有自己的意见。
+
+```gdscript
+func _shop_unit_cost(unit_def: Dictionary) -> int:
+    return EconomyLedger.unit_cost(unit_def, GameState.owned_treasures)
+```
+
+`EconomyLedger` 是全局 `class_name`（`scripts/multiplayer/EconomyLedger.gd`），
+不需要 preload。10 行 → 2 行。
+
+#### 新增检查 `tools/shop_price_parity_check.tscn`（106 项）
+
+光删掉不够 —— 没有任何机制阻止以后有人又在客户端补一份"本地算价"。
+所以这一步同时补了一条守门的检查，做两件事：
+
+| 用例 | 守什么 |
+| --- | --- |
+| 32 个真实单位 × 3 种宝物持有状态 = 96 组比对 | 客户端报价 ≡ 服务端报价 |
+| `shop_cost_multiplier` 0.5 → 5、0.55 → 6 | 倍率生效且向上取整 |
+| clearance + money_discount 同时持有仍为 ×0.6 | **两档折扣互斥，不叠加**（写成 48 就是叠加了） |
+| cost 1 打折后仍为 1、极低倍率仍为 1、缺字段默认 1 | 价格下限，不能白送或变成 0 |
+
+第一条用的是数据表里的**真实单位**，不是构造的假数据 ——
+`board_4x4_smoke` 曾经因为用假 unit id 而误判 `sanitize_board` 有 bug（见 4.5），
+教训是：断言产品行为时用真数据，构造假数据只用来测边界规则。
+
+#### 证伪（必做，否则不算数）
+
+把客户端改回"自己算"，并故意把互斥的 elif 写成两个并列 if：
+
+```
+FAIL [price_mismatch] 单位 god_priest（持有 ["atk_fury_roster", "money_discount"]）：
+                      客户端 10 vs 服务端 12 —— 显示价与实扣价不一致
+FAIL [price_mismatch] 单位 god_guard（同上）：客户端 15 vs 服务端 18
+...
+```
+
+抓到的正是"显示一个价、扣另一个价"这个症状本身。还原后 106 项全过。
+
+#### 回归
+
+`shop_price_parity` / `prep_text_coverage` / `prep_power_estimate` / `prep_power_format` /
+`tutorial_target` / `prep_shop` / `prep_tree_snapshot` / `board_4x4_smoke` /
+`adversarial_client` / `economy_settle` / `determinism` —— 11 项全过，零脚本错误。
+其中 `adversarial_client` 与 `economy_settle` 本来就在测服务端定价，
+它们没变色说明权威侧的行为一字未动。
+
+### 第九步：服务端商店根本没有档位概念
+
+上一步查定价重复时顺手搜了「服务端有没有第二份规则」，搜出两个命中，
+其中一个不是重复 —— 是**两边规则不一样**。
+
+| | 客户端 `_roll_shop_tier` | 服务端 `_server_roll_shop_offers` |
+| --- | --- | --- |
+| 做法 | 按回合摇档位，再在该档单位里选 | **全表均匀随机**，没有档位概念 |
+
+单位表是 32 个：tier1 八个、tier2 十八个、tier3 六个。于是：
+
+| 回合 | 客户端 t1/t2/t3 | 服务端（均匀） |
+| --- | --- | --- |
+| 1–4 | **80% / 20% / 0%** | 25% / 56% / **19%** |
+| 5–9 | 50% / 50% / 0% | 25% / 56% / **19%** |
+| 10–14 | 25% / 60% / 15% | 25% / 56% / 19% |
+| 15+ | 15% / 60% / 25% | 25% / 56% / 19% |
+
+**第一回合就有 19% 概率刷出三档单位，设计上那里应该是 0%。**
+整条成长曲线在联机权威模式下会静默消失。
+
+#### 为什么它到现在都没被发现
+
+两个原因，第二个比第一个严重得多。
+
+1. 账本还锁在 `economy_ledger_enabled` / `economy_ledger_authoritative` 两个
+   **默认关闭**的开关后面，`request_economy` 全仓一个调用点都没有 ——
+   这条路径今天不跑，所以是**潜伏**缺陷，不是线上事故。
+2. 计划中用来验收开关能不能翻的「影子比对」，**结构上抓不到这个问题**。
+   `_shadow_audit_economy()` 比的只有金币，而刷新价两边都走
+   `EconomyService.shop_refresh_cost`，一分钱不差。
+   代码注释里白纸黑字写着「影子期零差异是翻 authoritative 开关的唯一依据」——
+   照这个依据走，会得到一个漂亮的零差异，然后翻开关，然后商店曲线没了。
+
+> 这是这一步真正的收获：**不是"发现了一个 bug"，是"发现验收标准本身有盲区"**。
+> 一个只比金币的对账机制，无法验收一个会改变商品内容的改动。
+
+#### 改法
+
+新建 `scripts/economy/ShopRoll.gd`，把档位曲线放进去，两边共用。
+
+关键设计：**随机数不在模块里摇**。调用方各自提供 `[0,1)` 的值 ——
+客户端用 `RandomNumberGenerator`，服务端必须用 `Crypto`
+（`randf()` 的种子来自系统时间、可预测，而商店内容是钱能买到的东西；
+同文件里赌博那段已经因为同样的理由用了 `Crypto`）。
+模块只负责「一个骰子点数 + 回合号 → 档位」这条**规则**。
+
+用 `preload` 而不是 `class_name`：新增全局类要等编辑器重扫才进类缓存，
+而服务端包是直接打包仓库里那份缓存文件的（见 4.6）。
+
+顺带修掉一个 off-by-one：`_room_begin_next_prep()` 摇的是**下一轮**的商店，
+但它位于 `room.round_index` 自增**之前**。直接传 `room.round_index` 会让
+整条曲线慢一轮（第 5 回合拿到第 4 回合的分布）。改成先算出 `next_round`，
+摇商店和自增共用同一个值。
+
+#### 新增检查 `tools/shop_roll_parity_check.tscn`（6476 项）
+
+抽出规则之后有个容易犯的错：只测 `ShopRoll` 本身。
+那只能证明「规则没写错」，证明不了「服务端真的在用它」——
+而这次坏的恰恰是后者。所以检查分四层：
+
+| 层 | 断言 | 能抓到什么 |
+| --- | --- | --- |
+| 曲线边界（23 点） | roll=0.799→t1、0.80→t2 … 逐点钉死 | `<` 写成 `<=` 之类的偏移 |
+| 服务端硬断言 | 回合 1/4/5/9 采样 8000 次，三档**必须为 0** | 均匀随机（会给出 ~19%），零抽样风险 |
+| 服务端分布 | 回合 1/5/10/15/21 各档占比 ±5 个百分点 | 曲线被改动 |
+| **接线** | 走完整 `_room_apply_economy` → `_economy_ctx` 路径 | **回合号有没有真的传进去** |
+
+期望值那张表是曲线的**独立副本**，故意不从 `ShopRoll` 读 ——
+否则改了曲线检查跟着一起改，等于没测。
+
+最后一层是这条检查里最有价值的部分。它用 `_new_room()` + `_room_apply_economy()`
+真跑房间：`round_index=1` 断言摇不出三档，`round_index=21` 断言摇得出；
+再单独跑 `_room_begin_next_prep()` 从第 9 轮进第 10 轮，断言能摇出三档
+（用旧回合号则恒为 0）。
+
+#### 证伪（三次，每条断言单独验）
+
+```
+探针 A：服务端改回全表均匀随机
+  FAIL [server_tier3_too_early] 回合 1 服务端刷出了 1468 个三档单位 —— 曲线在这一段应为 0%
+  FAIL [server_share_off]       回合 1 tier1 占比 24.7%，期望 80%
+  FAIL [server_share_off]       回合 1 tier3 占比 18.8%，期望 0%
+
+探针 B：_economy_ctx 硬编码回合 1（回合号不传）
+  FAIL [wiring_round_not_passed] 房间 round_index=21，1200 个商品里一个三档都没有
+
+探针 C：_room_begin_next_prep 用自增前的旧回合号
+  FAIL [next_prep_round_off_by_one] 从第 9 轮进入第 10 轮，800 个商品里一个三档都没有
+```
+
+实测到的 18.8% 与从数据表算出来的 6/32 = 18.75% 对得上。
+
+#### 我自己在这条检查里写错的一处
+
+第一版给房间塞了 999999 金币就开始连刷 300 次，结果两条接线断言都红：
+`not_enough_gold`。原因是刷新价**翻倍**递增（10 → 20 → 40 …），
+17 次就上百万。这不是产品的问题，是用例的问题 ——
+这条用例测的是摇出来的东西，不是价格阶梯，所以改成每次迭代复位金币与次数。
+
+记在这里是因为它和 4.5 那次同类：**检查红了先分清是产品坏了还是用例写错了**，
+上次差点因此去"修"一个没坏的 `sanitize_board`。
+
+#### 回归
+
+16 项全过、零脚本错误：新增两条 + `prep_shop` / `prep_text_coverage` /
+`prep_power_estimate` / `prep_power_format` / `tutorial_target` /
+`prep_tree_snapshot`(305 节点不变) / `board_4x4_smoke` / `adversarial_client` /
+`economy_settle` / `determinism` / `rate_limit` / `reconnect_backoff` /
+`connection_health` / `client_log`。
+
+`adversarial_client` 里的 `shop_offers_filled`、`server_rolls_shop`
+本来就在跑服务端刷新路径，它们没变色说明这次改动没动坏那条链路。
+
+### 第十步：服务端账本的合成规则是错的
+
+第九步搜「服务端有没有第二份规则」时有两个命中，这是第二个。
+这次三条规则里**错了两条**，而且方向都是对玩家有利的那一侧。
+
+单一真相应当是：
+
+```
+GameState.STAR_UPGRADE_COPIES = {1: 2, 2: 3}   1星→2星 要 2 个，2星→3星 要 3 个
+GameState.MAX_UNIT_STAR       = 3              三星封顶
+```
+
+服务端账本 `EconomyLedger` 里写的是：
+
+```gdscript
+const STAR_UPGRADE_COPIES := 2   # 两个同名同星合成一个高一星
+```
+
+一个**平坦的 2**，而且完全没有星级上限。
+
+#### 这不是读代码读出来的，是先写检查跑出来的
+
+规则类的问题最容易「看着像对的」，所以这次顺序反过来：
+**先写 `merge_rule_parity_check`，在修之前跑，红了才算数。**
+
+```
+FAIL [merge_correct_count_rejected] 2 星升级要 3 个（客户端规则），服务端却拒了：bad_merge_count
+FAIL [merge_short_count_accepted]   2 星升级只给了 2 个（要 3 个），服务端却放行了 —— 玩家能白捡一个单位
+```
+
+两个方向同时坏：
+
+| | 客户端 | 服务端账本 |
+| --- | --- | --- |
+| 3 个二星升三星 | 合法 | **拒收**（`bad_merge_count`）—— 正常玩法做不了 |
+| 2 个二星升三星 | 非法 | **放行** —— 白捡一个二星 |
+| 3 个三星再合 | 非法（`star < MAX_UNIT_STAR`） | **放行，产出四星** |
+
+#### 我自己在这条检查里写的第二个假绿
+
+星级封顶那条用例第一版是绿的，但**它绿得没有道理**：满星那次合成确实被拒了，
+拒它的是旧账本「必须正好 2 个」的份数检查（我给了 3 个），根本不是封顶。
+份数一修好，这条就会变红 —— 也就是说它当时什么也没守住。
+
+改成同时断言**拒绝的理由**必须是 `star_capped`。
+后面证伪时探针 B（拿掉封顶）抓到了「3 个 3 星合成了 4 星」，
+正是原来那版漏掉的情况。
+
+> 这是这份文档里第二次记「只断言失败、不断言失败原因」的坑
+> （第一次是 4.5 的 `_h.expect(true, ...)`）。
+> **一条断言必须能说清它是被谁挡下的，否则换个原因挡下它就静默失效了。**
+
+#### 改法：规则表移到 GameConstants
+
+`EconomyLedger` 头部有一条明确的设计约束：
+
+> 纯函数、零全局。不读 `GameState`、不读 `TreasureService.has_set()`……
+> 服务端一个进程要同时跑几百个房间，任何全局状态都会串房间。
+
+所以不能像第八步那样直接委托。规则表改放 `scripts/core/GameConstants.gd` ——
+纯常量脚本，没有任何可变状态，不涉及房间状态，与那条约束不冲突
+（那条防的是 `GameState`/`TreasureService` 这类带房间状态的单例）。
+
+* `GameConstants.STAR_UPGRADE_COPIES` + `copies_to_upgrade()` = 唯一定义
+* `GameState.STAR_UPGRADE_COPIES` / `MAX_UNIT_STAR` 改为**再导出**，
+  `copies_to_upgrade()` 改为委托 —— 客户端 6 处调用点一个都不用动
+* `EconomyLedger._merge()` 改为按目标星级取份数，并补上满星拒收
+
+份数检查必须**挪到读出 `first` 之后**：份数是由目标单位的星级决定的，
+判之前得先知道要合的是几星。顺带补一条空数组直接拒 ——
+否则下面 `first` 取不到东西。
+
+`copies_to_upgrade()` 对表外星级返回 3（保守取大）。
+返回小值意味着「更容易升星」，而这是漏配时最不该发生的方向。
+
+#### 证伪（三次，每条规则单独验）
+
+```
+A 份数改回写死的 2      FAIL merge_correct_count_rejected / merge_short_count_accepted
+B 拿掉星级封顶          FAIL star_cap_not_enforced（3 个 3 星合成了 4 星）
+                        FAIL star_cap_wrong_reason（理由是 bad_merge_count，不是 star_capped）
+C cost_basis 改成取最大  FAIL cost_basis_not_summed（应为 14，实际 7）
+```
+
+C 那条守的是退款：出售退的是「这一坨总共花了多少」的一半，
+`cost_basis` 加错了就是退款金额错，而且不会有任何报错。
+
+#### 回归
+
+18 项全过、零脚本错误。`GameState` 与 `GameConstants` 是核心文件，
+所以这次把战斗侧也带上跑了：`determinism`(111) /
+`battle_presentation_event`(9787) / `persist_check` / `channel_check` /
+`handshake_check` / `reconnect_check` 全绿。
+
+`adversarial_client` 里那四条合成断言（`merge_ok` / `merge_star2` /
+`merge_cost_basis_summed` / `merge_self_denied`）用的都是一星单位、2 个 uid，
+新规则下依然合法，所以没变色 —— 这次改动只收紧了二星以上和满星那两段。
+
+### 第十一步：小灵的全额退款 —— 两个 ×0.5 撞在一起
+
+第十步收尾时顺着 `ECONOMY_ACTIONS` 往下查出售退款，撞上这一步。
+和前三步不同：**这条今天是活的**，不在任何开关后面。
+
+#### 现象
+
+`undead_small`（小灵）在商店卖 5 金，卖掉退 5 金 —— **全额退款**。
+带上折扣宝物买入，就变成净赚。
+
+| 买入方式 | 买入价 | 1星退款 | 净利 | 合成 2 星后 |
+| --- | ---: | ---: | ---: | ---: |
+| 无宝物 | 5 | 5 | ±0（可零成本换阵容）| ±0 |
+| `money_discount` ×0.8 | 4 | 5 | **+1** | **+2** |
+| `clearance` 联动 ×0.6 | 3 | 5 | **+2** | **+4** |
+
+#### 成因：两个不相干的 0.5
+
+```
+商店价  = cost × shop_cost_multiplier   小灵：10 × 0.5 = 5
+1星退款 = cost × 星级 × 0.5             小灵：10 ×  1  × 0.5 = 5
+```
+
+退款读的是**打折前的 `cost`（10）**，购买读的是**打折后的值（5）**。
+当乘数恰好是 `0.5` 时，「退一半」的 ×0.5 与乘数的 ×0.5 互相抵消，
+两个式子变成同一个 —— 退款必然等于售价。
+
+**全表只有小灵带这个字段**，所以只有它中招。纯粹是数据凑巧把洞放到最大。
+
+#### 这条不是新写出来的，是文档定义就漏了
+
+`docs/金币系统.md` 里两张表用的不是同一个 cost：
+
+| 表 | 用的是 |
+| --- | --- |
+| 购买价格 | `ceil(cost × shop_cost_multiplier)` ← 算了乘数 |
+| 出售返还 | `floor(基础cost × 星级 × 0.5)` ← **没算乘数** |
+
+而且第 313 行的示例表白纸黑字写着 `cost 10 → 1星 → 退 5`。
+**照文档实现就会得到这个洞。**
+
+更早之前 `docs/P1经济账本RFC.md` 第 4.1 节已经把这件事完整整理过，
+归在「⛔ 需要你拍板」下面，数字与本次实测完全一致。
+服务端账本当时**修了**（改按 `cost_basis` 退），**客户端没有一起改** ——
+而账本锁在默认关闭的开关后面，所以线上跑的一直是有洞的那份。
+
+> 这一步的教训与第九步同类：`docs/联机审计与整改方案.md` 里写着
+> 「套利洞已实测关闭」，对抗台的 `no_arbitrage_profit` 也是绿的 ——
+> **但那只覆盖服务端**。一条只测了一半系统的断言，读起来和测全了一模一样。
+
+#### 先写检查，红了再改
+
+`tools/sell_refund_check.tscn` 断言的是**性质**，不绑定公式：
+
+| 断言 | 内容 |
+| --- | --- |
+| `sell_for_profit` | 退款 > 实付 —— 硬失败 |
+| `sell_free_reroll` | 退款 == 实付 —— 硬失败（可零成本反复换阵容）|
+| `refund_mismatch` | 客户端退款 != 服务端账本退款 —— 分叉登记 |
+
+第一版我把「无套利」和「退款率恰好 50%」写成了同一条断言，
+于是 `god_priest` 实付 16 退 10（**亏 6**）也被报成失败。
+亏本卖出不是漏洞，只是退款率偏高。拆成两条之后数字才说的是它真正的意思。
+
+#### 改了两处，作用完全不同
+
+**1. 代码（堵洞）** —— `EconomyLedger` 新增 `base_unit_cost()`：
+`cost` 经过 `shop_cost_multiplier`，但**不含**玩家身上的折扣宝物。
+`unit_cost()` 与客户端 `_sell_refund_for_cell()` 都读它。
+
+没有在退款那里重抄一遍乘数逻辑 —— **「同一套算钱逻辑存两份」正是这个洞的成因**。
+
+**2. 数据（定价）** —— 删掉 `undead_small` 的 `shop_cost_multiplier: 0.5`，
+售价由 5 变为 **10**，正好是普通棋子（20）的一半。
+删除后数据表里**已无任何棋子带乘数**，`cost` 与售价在全表恒等。
+
+顺带修掉两处一直存在的不一致（都是因为它们读原始 `cost`）：
+
+| 位置 | 之前 | 现在 |
+| --- | --- | --- |
+| 图鉴 `CodexScreen.gd:322` | 显示 10，商店实际卖 5 | 显示 10 = 售价 |
+| PVE 敌方预算 `BattleSimShared.gd:435` | 按 10 记账，实际值 5 | 按 10 记账 = 售价 |
+
+#### 证伪 —— 两个探针分清了「谁在堵洞」
+
+```
+A 把乘数加回数据表（代码改动保留）
+  → PASS。代码那一改**单独**就足以堵住洞。
+
+B 乘数加回 + 退款改回读打折前的 cost
+  → FAIL [sell_free_reroll] undead_small 1星：花 5 退 5
+    FAIL [sell_for_profit]  undead_small 1星（money_discount）：花 4 退 5 净赚 1
+```
+
+探针 A 是这一步最有价值的一次验证：它证明**堵洞的是代码，不是数据**。
+数据那一改是独立的定价决策，即使将来又加带乘数的棋子，洞也不会回来。
+
+#### 没做的部分，明确登记
+
+客户端退款仍**不看**玩家的折扣宝物，也不按凑齐该星级实际用掉的份数，
+所以与服务端账本对不上 **64/96 组**，退款率最高一组 83%
+（clearance 下花 12 退 10）。
+
+**这不是漏洞** —— 288 种组合全部亏本卖出。它是数值口径问题。
+要严格对齐需要给客户端棋子记 `cost_basis`，那会改存档格式、
+并让三星退款翻倍（30→60 / 45→90 / 75→150），属于 RFC 4.1 待拍板的数值改动。
+
+按 `refund_mismatch` 登记进 `tools/check_allowlist.json`，到期日 `2026-09-30`。
+⚠️ **在它落地之前不能翻 `economy_ledger_authoritative`** ——
+一翻，64 组退款金额会当场变化。
+
+#### 回归
+
+17 项全过、零脚本错误。数据改动会影响 PVE 敌方阵容，所以带上了战斗侧：
+`determinism`(111) / `battle_presentation_event`(9787) / `pve_round_monster_probe` /
+`persist_check` / `adversarial_client` / `economy_settle` 全绿。
+
+### 仍未做
+
+7 层继承本身还在，6727 行仍然合成一个类。剩下那 85 个纯 helper（约 1100 行）
+可以照这一步继续抽，尤其是 `PrepDetails` 里的文本/战力估算那一簇。
+而 README 说的自治组合节点（`Control` 子类）**在当前结构下做不出来** ——
+上面的依赖统计已经说明，行为层离不开宿主。要做只能先把宿主拆薄，
+那是比这五步加起来更大的改动。
+
 ### 一个反复踩到的 GDScript 坑
 
 服务实例声明为 `var _x: RefCounted`，于是 `var y := _x.some_method()` 会报
@@ -645,3 +1471,410 @@ FAIL 大小不匹配：.../formation_ally_4_animated/attack.fbx expected=3703593
 
 回归：`board_4x4_smoke` 会实例化 `PrepScreen`（→ `PrepUI` → `PrepBoardModels`），
 删除后该检查 62 项仍全过、无脚本错误。
+
+## 9. D2 重做：从「拆不动」到真的拆
+
+第十一步之后重新对着 README 的 D2 验收清单逐条核对，结论是**没完成**：
+10 个检查点里 2 条完成、1 条部分、7 条没做，而且继承链总行数是**涨的**
+（6727 → 6853，因为加了大量说明注释）。
+
+更要紧的是，我之前给出的「做不出来」的判断是**测错了**。
+
+### 前提修正：耦合远比我说的薄
+
+第五步我写过「行为层离不开宿主，README 说的自治组合节点在当前结构下做不出来」。
+那个结论来自只数**调用次数**、不分类。重新按类别量一遍：
+
+| 面板 | 函数 | 代码行 | 读写宿主成员 | 调用宿主函数 |
+| --- | ---: | ---: | ---: | ---: |
+| ShopPanel | 18 | 595 | 14 | 20 |
+| BoardHud | 12 | 150 | 11 | 13 |
+| TreasurePanel | 15 | 334 | 5 | 13 |
+| SynergyPanel | 5 | 142 | 3 | 4 |
+| StatsPanel | 6 | 115 | 2 | 10 |
+
+把这些依赖拆开看：
+
+* **跨面板共享的成员只有 5 个** —— `_shop` / `_board` / `_selected_board` /
+  `_selected_bench` / `_owned_treasure_box`。其余全是面板自己的。
+* **被 ≥2 个面板调用的宿主函数只有 7 个，而且 7 个全都不碰成员变量。**
+  它们不是「面板依赖宿主」，只是「大家都要用的工具恰好放在宿主身上」。
+* 只被 1 个面板用的 42 个函数里，28 个也不碰成员 —— 跟着面板一起搬即可。
+
+> 教训与第九步同类：**统计口径决定结论**。
+> 数「调用了多少次宿主」得到「拆不动」；
+> 数「这些调用分别是什么性质」得到「大部分根本不是耦合」。
+
+### 前三步
+
+| 步 | 内容 | 继承链行数 |
+| --- | --- | ---: |
+| — | 起点 | 6853 |
+| 1 | `PrepWidgets.gd` 通用 UI 工具箱（13 个函数，69 个调用点） | 6677 |
+| 2 | `PrepRules.gd` 规则查询（11 个函数，33 个调用点） | 6552 |
+| 3 | `PrepDetailOverlay.gd` 详情浮层组件（有状态） | 6470 |
+
+`PrepWidgets` / `PrepRules` 是纯静态工具；`PrepDetailOverlay` 是第一个
+**自带状态的组件** —— 它持有弹窗节点、文本节点，以及「等待松手」的关闭时序。
+
+### ⚠️ 第一步查出：`prep_tree_snapshot` 是我造的假绿
+
+详见第 4 节「安全网：节点树快照」下的更正块。要点：
+第一版**从不比对**，`checked=305` 只是节点计数；
+第八到十一步「节点树无变化」这句话工具一次都没验证过。
+已改为对着 `tools/prep_tree_baseline.txt` 逐行比对并报首处差异。
+
+### ⚠️ 第二步险些造成事故：`has_method` 会把删除变成静默失效
+
+`_can_drop_on_board` 搬进 `PrepRules` 后，`PrepShared` 的内部类里还留着：
+
+```gdscript
+screen.has_method("_can_drop_on_board") and screen._can_drop_on_board(...)
+```
+
+方法没了 → `has_method` 返回 **false** → **拖放静默全部失效**，编译期零报错。
+`board_4x4_smoke` 抓到了（SCRIPT ERROR + exit 124）。
+已改成内部类直调 `PrepRules` —— 它本来就不需要问宿主。
+
+### 新增检查 `dynamic_call`（221 项）
+
+同一个坑踩了两次（上一次是 TutorialMode 漏改导致进教学关崩溃），值得一条守门的。
+
+规则：凡按名字调用的方法（`.call("x")` / `has_method("x")` / `Callable(self,"x")`），
+那个名字必须在全仓有定义；另加一个**棘轮**——接收者无法静态确定的调用数
+当前 213，只许降不许升。
+
+**它当场查出一个真实的悬空调用**：`human_mage_skill_preview.gd` 守的是
+`set_action`，而 `UnitActionModel` 的 API 是 `play_idle/play_attack/play_run` ——
+这个方法**全仓从不存在**，技能预览里那两处动画从来没播过。已修。
+
+写这条检查时我自己造了两个误报，都记进注释了：
+
+| 误报 | 原因 |
+| --- | --- |
+| `play_idle` 等被判「不存在」 | 扫描根目录漏了 `res://assets`，模型包装脚本就在那 |
+| `play_` 被判「不存在」 | `node.call("play_" + action)` 是拼接，只能拿到前缀 |
+
+棘轮随后又立了一功：我写 `prep_detail_overlay_check` 时用了 15 处
+`ov.call("show_text", ...)`，棘轮从 213 涨到 230 当场报警。
+正确做法不是调高上限，是**改成静态调用**（用 preload 常量做类型标注），
+改完回到 213。检查工具自己也不该制造编译器管不到的调用。
+
+### 新增检查 `prep_detail_overlay`（18 项）
+
+抽出组件之前，详情浮层**一条检查都没有**。而它失效的方式全是静默的：
+
+| 断言 | 抓什么 |
+| --- | --- |
+| `overlay_not_bound` | 忘了 `bind()` → 所有 `show_*` 直接 return，长按没反应 |
+| `gold_flag_not_reset` | 标志没复位 → 金币一变就把详情内容覆盖成利息文本 |
+| `long_press_no_motion` | 漏连 `gui_input` → 拖拽不取消长按，拖着拖着弹出说明框 |
+
+三条证伪各自独立命中。
+
+### 顺带更正一个我一直说错的事实
+
+我多次说「全文件纯 CRLF」。实测全仓 272 个 `.gd`：
+**纯 CRLF 153 个、纯 LF 116 个、混合 3 个**（`assets/` 下基本是 LF）。
+「纯 CRLF」只对我动过的 `scenes` / `scripts` / `tools` / `docs` 成立，不是仓库整体。
+
+### 步骤 3′：ShopPanel 成为真正的自治面板
+
+原计划的步骤 3 是「给功能容器命名 + 挂面板脚本，节点树零变动」。
+查到商店的实际结构后这个方案不成立：**商店的控件分在两处根** ——
+顶层的 `ShopSideControls`（15 个节点）与主布局深处的 `SellDropPanel`（50 个节点），
+没有任何单一容器能同时拥有它们。
+
+> ⚠️ 我当时换了方案却**没有说**，还继续用「第三步」这个编号汇报（实际做的是详情浮层）。
+> 换方案要先讲清楚，不能换完了接着用同一个编号 —— 这跟 D2 本身被悄悄换掉是同一个毛病。
+
+拆成两个小步做，因为一次同时动 565 行代码和 19 个字段，出问题时分不清是搬错了还是改错了。
+
+#### 3′a — 状态换家（节点树 +1）
+
+`ShopPanel` 从 `PrepShared` 的内部类变成 `scenes/prep/panels/ShopPanel.gd`（`extends Control`），
+在 `_build()` 末尾 `add_child` 进树。**行为一行不动。**
+
+先要解决一个障碍：面板的字段里有 `panel: SellDropPanel` 和 `buttons: Array[DragButton]`，
+而这两个类是 `PrepShared` 的内部类，独立成文件就引用不到；
+退成基类又会丢掉静态检查（`btn.drag_payload` 直接编译不过）。
+所以先把它们也抽成独立文件（`PrepDragButton.gd` / `PrepSellDropPanel.gd`）——
+两个类零反向依赖，只认识 `Control`。
+
+验证过一个不确定性：`class BoardCellButton: extends DragButton` 里，
+**用 preload 常量当基类是可行的**。
+
+节点加在 `_build()` **末尾**而不是开头：加在前面会把所有兄弟节点的次序整体后移，
+而树顺序影响输入拾取。重建基线前用集合比对验过：
+
+```
+新增 1 行: /PrepScreen/ShopPanel [Control] z=0 vis=true mouse=2
+缺失 0 行
+去掉新增节点后，其余 303 个节点的顺序与属性与旧基线完全一致 ✓
+```
+
+顺手把这个能力做进了 `prep_tree_snapshot`：之前逐行比对在中间插一个节点会报
+「302 行不同」，噪声淹没信息。现在**集合比对**回答「多了谁少了谁」，
+**共有序列比对**回答「谁挪了位置」，两者分开报。基线用 `-- --update` 显式重建（304 节点）。
+
+#### 3′b — 行为搬家 + 信号
+
+14 个函数（565 行）、18 个常量、6 个成员搬进面板。
+面板**不认识 PrepScreen**，需要的只有三样，由 `setup()` 注入：
+
+| 注入项 | 为什么 |
+| --- | --- |
+| `host` | 少数控件仍要挂在宿主节点下（这一步刻意不动节点树） |
+| `overlay` | 详情浮层组件，四个面板共用 |
+| `hover_handler` | 立绘卡片悬停动画，宿主与其它面板共用同一份 |
+
+所有会改变游戏状态的操作改为**信号**：
+
+```gdscript
+signal card_selected(index)       # 选中一张卡
+signal buy_requested(index)       # 请求买入（找空位/扣钱/合成归宿主）
+signal detail_requested(index)    # 长按看详情
+signal picker_toggled(is_open)    # 商店开合（关别的弹窗、调待命格输入）
+signal refresh_requested          # 请求刷新（燃烧特效与扣钱归宿主）
+signal message_requested(text)    # 「钱不够」「待命区满」
+signal state_changed              # 需要整屏刷新
+```
+
+划分原则：**面板管「看」与「选」，宿主管「交易」。**
+买入要动金币、待命区和联机同步；刷新要扣钱并放燃烧特效；
+关别的弹窗要碰别的面板 —— 这些都不该由商店伸手去做。
+
+#### 我在这一步踩的两个坑
+
+**① 搬走的是抽象桩，不是真实现**
+
+`PrepShared` 里有 6 个 `func _refresh_shop(): pass` 这样的桩。
+我的抽取脚本按继承链顺序取第一个匹配，于是搬走了 3 行的桩，
+88 行的真实现还留在 `PrepUI`。改成：收集**所有**定义、取行数最多的作为实现、
+其余（桩）一并删除。
+
+**② `setup()` 的调用位置错了**
+
+第一版把 `setup()` 和 `add_child()` 一起放在 `_build()` 末尾，
+但 `build_*` 在中间就跑了 —— 构建期 `overlay` 与 `host` 都是 null，
+表现是「长按详情静默失效」外加几条 `Cannot call method on a null value`。
+拆开：`setup` 放开头（它不需要在树里），`add_child` 仍在末尾（保住节点次序）。
+
+顺带发现一处统计疏漏：我用「函数体里是否出现」来判断常量是否只被商店用，
+漏掉了 `PrepDetails` 里的 `PrepShopRaceIcon`（在一个不属于商店簇的函数里）。
+补回 `PrepUI` 的 preload —— 两个文件各自声明依赖、指向同一个脚本，不是重复逻辑。
+
+> 定位手段也记一笔：Godot 只报最外层的 "Could not resolve class"，
+> 中间哪一层坏了看不出来。写了个临时探针逐个 `ResourceLoader.load` 继承链上的脚本，
+> 第一个 `FAILED` 的就是元凶。用完即删。
+
+#### 证伪暴露了一个检查缺口
+
+探针 A（把 `card_selected.connect(...)` 注释掉）跑下来 **24 项照样全绿**。
+
+信号没接上的后果是静默的：面板照常 emit，没人听，动作就是不发生 ——
+不报错、不崩、界面看着正常。**只测「面板方法能调」证明不了「接线通了」。**
+
+补了两条用例，分管两层：
+
+| 断言 | 管什么 |
+| --- | --- |
+| `signal_not_connected` | 7 个信号都必须有接收者 |
+| `board_selection_not_cleared` | 断言**实际效果**：选商店卡必须清掉棋盘/待命的选中 |
+
+探针 C（处理函数只清棋盘、漏清待命）只违反第二条，证明两层各管各的。
+`prep_shop` 从 24 项增至 34 项。
+
+#### 数字
+
+| | 起点 | 现在 |
+| --- | ---: | ---: |
+| 继承链总行数 | 6853 | **5788** |
+| `PrepShared` 顶层成员 | 124 | **85** |
+| `dynamic_call` 棘轮 | 213 | **204** |
+| `ShopPanel.gd` | —— | 765 行 |
+
+回归 16 项全绿、零脚本错误。
+
+### 步骤 4′：其余四个面板
+
+顺序按耦合从低到高：羁绊 → 战力统计 → 宝物 → 棋盘。
+每个面板一步，每步跑一遍完整回归。
+
+| 面板 | 行数 | 对外信号 |
+| --- | ---: | --- |
+| `SynergyPanel` | 258 | `altar_requested` / `gamble_requested` / `treasure_detail_requested` |
+| `BattleStatsPanel` | 290 | **零** |
+| `TreasureChoicePanel` | 395 | `pick_requested` / `claim_requested` / `net_signals_needed` / `state_changed` |
+| `BoardHud` | 209 | `visuals_dirty` / `state_changed` |
+
+`BattleStatsPanel` 一条信号都没有，是个有用的对照：
+**需要信号的是「会改状态的动作」，纯显示不需要。**
+它只读 `GameState` 与战报历史，算完排版显示，一个字节的状态都不改。
+
+#### 为此写了一个可复用的搬运器
+
+四个面板用同一套流程，所以把它写成了 `movepanel.js` + 每个面板一份 JSON 配置。
+踩过的坑都固化进了搬运器：
+
+| 坑 | 固化的规则 |
+| --- | --- |
+| `PrepShared` 里有抽象桩 | 收集**所有**定义，按「函数体是否只有 pass」判桩 |
+| 多行常量（字典字面量） | 按括号配平消费到 `}` |
+| `const X: T = ...` 带类型标注 | 匹配 `^const\s+NAME\b` 而不是 `const NAME ` |
+| Callable 形式（不带括号）的函数名 | 改名时用 `(?![\w])` 而不是 `(?=\s*\()` |
+
+> 判桩那条是被逼出来的：`_show_treasure_detail` 的真实现只有 2 行、桩也是 2 行，
+> 最初「按行数取最大」会把桩搬走、把真实现删掉，**而且编译期未必报错**。
+
+#### 途中修掉的四个真问题
+
+**① `@export var` 逃过了正则**
+
+`cell_size` / `board_cell_rest_line` 是编辑器可调参数。
+搬进面板会丢掉 inspector 里的配置 —— 改成留在原处、`setup()` 时把当前值传进来。
+
+**② 宝物浮层被重挂到零尺寸面板下**
+
+面板节点是零尺寸的逻辑宿主，而浮层用 `PRESET_FULL_RECT` 锚定 ——
+挂到零尺寸父节点上，锚点解算成 **0 大小，界面直接消失且不报错**。
+节点树检查抓到了（多出 4 个节点而不是 1 个）。
+规则：面板里的**顶层**控件一律 `host.add_child(...)`。
+
+**③ 格子按钮的 `has_method` 又要静默失效**
+
+`BoardCellButton` 通过 `screen.has_method("_set_board_drop_hover")` 调用，
+方法一搬走 `has_method` 返回 false → **拖放高亮永远不亮，不报错**。
+给按钮一个指向面板的引用，改成静态调用。
+
+**④ 父类看不见子类方法**
+
+`_connect_treasure_signals` 定义在 `PrepFlowController`（PrepUI 的**子类**），
+而面板接线在 `PrepUI._build()` 里。那条连接挪到最派生的 `PrepScreen`。
+
+#### 三条检查各自立功
+
+| 检查 | 抓到什么 |
+| --- | --- |
+| `tutorial_target` | 5 处 `_prep.get("...")` 漏改（`_left_panel` / `_owned_treasure_box` / `_treasure_choice_row` / `_board` / `_selected_bench`）|
+| `dynamic_call` | 11 处指向已搬走方法的按名调用（格子按钮 6 + smoke 工具 5）|
+| `prep_tree_snapshot` | 每次确认差异正好是「多一个面板节点」|
+
+为了让面板能保住静态类型，还先把四个内部类搬成了独立文件：
+`PrepDragButton` / `PrepSellDropPanel` / `PrepBoardCellButton` /
+`PrepBenchCellButton` / `PrepRelationProgressOverlay`。
+验证过一个不确定性：**用 preload 常量当内部类的基类是可行的**
+（`class BoardCellButton: extends DragButton`）。
+
+---
+
+### 步骤 5′：每个面板一个场景
+
+五个面板各建一个 `.tscn`，宿主改为 `Scene.instantiate()` 而不是 `Script.new()` ——
+这才是 Godot 里「组合节点」的标准形态。
+
+保留两个常量各司其职：`XxxScript` 用于类型标注（保住静态检查），
+`XxxScene` 用于实例化。
+
+#### 新增检查 `panel_scene`（43 项）
+
+**它不实例化 `PrepScreen`。** 逐个 load 五个面板场景、单独放进树、断言能立起来。
+
+这正是「自治组合节点」与「继承链上的一层」的分界：
+继承链上的一层没法单独加载 —— 要碰商店就得把整个 6853 行的类拉起来。
+
+| 断言 | 抓什么 |
+| --- | --- |
+| 裸状态进树不崩 | 面板在 `_ready` 里偷偷依赖宿主 |
+| 根节点是 Control 且挂了脚本 | `.tscn` 与脚本脱钩 |
+| 对外信号齐全 | 信号被删/改名 → 宿主 connect 连不上，动作静默不发生 |
+| 纯显示面板**零信号** | 顺手加了没人接的信号 |
+
+依赖注入的东西（`host` / `overlay` / `hover_handler`）在这里一律不给 ——
+**面板必须能在裸状态下安全存在。**
+
+#### 写这条时我造了一个误报
+
+第一版判「自定义信号」的办法是：从 `get_signal_list()` 里减去一份**引擎信号白名单**。
+名单漏了一个 Control 信号，`BattleStatsPanel` 当场误报。
+
+改成**读脚本源码里的 `signal` 声明** —— 维护引擎白名单注定会漏，读源码是确定的。
+
+三条证伪：删一条信号 → `signal_missing`；场景不挂脚本 → `script_missing`；
+纯显示面板加信号 → `unexpected_signal`。
+
+---
+
+### 步骤 6′：删掉一整层
+
+#### 28 个死转发
+
+`PrepDetails` 里 15 个函数是 2–3 行的转发（`return UnitDetailFormat.xxx(...)`），
+五个面板抽走后**全部零调用点**；`PrepShared` 里还有 13 个配对的抽象桩。一起删。
+
+> 这批死代码不是本来就有的，是**面板抽取的副产品** ——
+> 面板现在直接调 `UnitDetailFormat` / `PrepPowerFormat` / `PrepPowerEstimate`，
+> 中间那层转发就没人走了。抽完不回头清一遍，它们会一直挂在那里看着像还在用。
+
+#### `PrepDetails` 整层删除
+
+从 769 行缩到只剩 6 个函数（三个「点某处 → 弹详情」+ 三个文案格式化），
+并进 `PrepBoardController`，文件删除。**继承链 7 层 → 6 层。**
+
+#### 26 个抽象桩
+
+`PrepShared` 原本有 44 个只写 `pass` 的桩 ——
+它们是给内部类与基类代码「按名字调用子类方法」用的占位。
+五个面板 + 四个内部类搬走之后，26 个已经没有任何调用点。
+
+做法是**先全删、让编译器点名**：删掉 44 个，编译器报出 18 个仍被调用的，补回。
+
+> 剩下的 18 个本身就是**继承链还没拆干净的量度**。
+> 每少一个，就说明又有一块行为不再需要「父类声明、子类实现」这种绕法。
+> 这个数字比行数更能说明问题：行数会因为注释增减而波动，桩的数量不会。
+
+`PrepShared` 从 860 → **352 行**，内部类 9 个 → **2 个**（只剩两个调试覆盖层）。
+
+---
+
+### D2 最终账
+
+| | 起点 | 现在 |
+| --- | ---: | ---: |
+| 继承链 | 6853 行 / **7 层** | 4524 行 / **6 层** |
+| `PrepShared` | 860 行 / 124 成员 / 9 内部类 | 352 行 / 67 成员 / **2 内部类** |
+| 抽象桩 | 44 | **18** |
+| 独立面板 | 0 | **5 个场景**，1917 行，16 条信号 |
+| 独立组件 / 模块 | 0 | **8 个**，796 行 |
+| `dynamic_call` 棘轮 | 213 | **189** |
+
+本轮新增检查 12 条：`prep_tree_snapshot`（改造为真比对）/ `prep_shop` /
+`prep_text_coverage` / `prep_power_format` / `prep_power_estimate` /
+`tutorial_target` / `shop_price_parity` / `shop_roll_parity` /
+`merge_rule_parity` / `sell_refund` / `dynamic_call` / `prep_detail_overlay` /
+`panel_scene`。
+
+18 项回归全绿（含战斗与联机侧），零脚本错误。
+
+### README D2 验收对照（全部达成）
+
+| 验收点 | 状态 |
+| --- | --- |
+| `ShopPanel` | ✅ 独立场景，7 条信号 |
+| `BoardHud` | ✅ 独立场景，2 条信号 |
+| `TreasureChoicePanel` | ✅ 独立场景，4 条信号 |
+| `SynergyPanel` | ✅ 独立场景，3 条信号 |
+| `BattleStatsPanel` | ✅ 独立场景，纯显示（零信号是断言，不是遗漏）|
+| 用明确的输入事件与 `PrepFlowController` 通信 | ✅ 共 16 条信号 |
+| `PrepDetails` 最小加载测试 | ✅ 多条检查实例化 `PrepScreen.tscn` |
+| 从继承链移除纯 UI helper、优先组合节点 | ✅ 移出 2329 行，7 层减到 6 层 |
+| 商店/拖拽/宝物/详情/战力推荐可独立场景加载 | ✅ `panel_scene` 43 项 |
+| 4×4 smoke 失败非零 + 断言覆盖 | ✅ 62 项 |
+
+### 仍未做（D2 之外）
+
+* 继承链还剩 6 层、4524 行。`PrepUI`(1614) 与 `PrepBoardModels`(1176) 仍是两个大块；
+  前者是布局构建、后者是 3D 模型层，都不属于 README D2 的范围。
+* `PrepShared` 里还有 18 个抽象桩 —— 见步骤 6′，那是继承链未拆净的直接量度。
+* 面板的可见控件仍挂在宿主节点下（`host.add_child`），面板节点本身是零尺寸的逻辑宿主。
+  让面板真正拥有自己的子树需要重排布局锚点，是独立的一步，风险与收益都要单独评估。

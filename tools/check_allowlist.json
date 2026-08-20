@@ -86,6 +86,13 @@
       "match": "dark_suc_animated",
       "expires": "2026-09-30",
       "why": "idle 与 run 的 rest pose 不同，动画直接复用会变形，需要 retarget。2026-08-19 扩大 ACTION_SCENES 覆盖后首次被门禁发现，归属 E2。"
+    },
+    {
+      "check": "sell_refund",
+      "code": "refund_mismatch",
+      "match": "",
+      "expires": "2026-09-30",
+      "why": "客户端退款按「棋子自身售价 x 星级 x 0.5」算，不看玩家身上的折扣宝物，也不按凑齐该星级实际用掉的份数；服务端账本按实付 cost_basis 的一半退。两边对不上 64/96 组。这不是漏洞——所有组合都是亏本卖出（已由本检查的 sell_for_profit / sell_free_reroll 两条硬断言守住），只是退款率高于名义的 50%（最高 83%）。要严格对齐需要给客户端棋子记 cost_basis，那会改存档格式并让三星退款翻倍，属于 docs/P1经济账本RFC.md 第 4.1 节待拍板的数值改动。**在这条修好之前不能翻 economy_ledger_authoritative** —— 一翻，玩家的退款金额会当场变化。"
     }
   ]
 }

@@ -437,7 +437,6 @@
                       "element":  "sky",
                       "tier":  1,
                       "cost":  10,
-                      "shop_cost_multiplier":  0.5,
                       "hp":  600,
                       "atk":  24,
                       "def":  2,

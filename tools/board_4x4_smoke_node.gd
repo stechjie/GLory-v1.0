@@ -1,10 +1,19 @@
 extends Node
 
+const PrepRules := preload("res://scenes/prep/PrepRules.gd")
+
 const BattleSim := preload("res://scripts/battle/BattleSimulator.gd")
 const CheckHarness := preload("res://tools/CheckHarness.gd")
 const CHECK_NAME := "board_4x4_smoke"
 
 var _h: CheckHarness
+
+# 取棋盘簇的字段。D2 之后这些成员搬进了 PrepShared.BoardPanel 内部类，
+# 不能再用 prep.get("BoardHud.buttons") —— Object.get() 收的是属性名不是路径，
+# 那样会静默返回 null。
+func _board_field(prep: Node, name: String) -> Variant:
+	var board: Variant = prep.get("_board_hud")
+	return null if board == null else board.get(name)
 
 func _ready() -> void:
 	# 原本全篇用 assert()。assert 失败会中断脚本执行：后面的检查一条都不跑，
@@ -27,22 +36,22 @@ func _ready() -> void:
 		"BOARD_ROWS=%d，期望 4" % GameConstants.BOARD_ROWS)
 	_h.expect(GameConstants.BOARD_COLUMNS == 4, "board_columns",
 		"BOARD_COLUMNS=%d，期望 4" % GameConstants.BOARD_COLUMNS)
-	var buttons: Array = prep.get("_board_buttons")
+	var buttons: Array = _board_field(prep, "buttons")
 	_h.expect(buttons.size() == GameConstants.CELL_COUNT, "board_button_count",
-		"_board_buttons 有 %d 个，期望 %d" % [buttons.size(), GameConstants.CELL_COUNT])
-	var standby_buttons: Array = prep.get("_bench_buttons")
+		"BoardHud.buttons 有 %d 个，期望 %d" % [buttons.size(), GameConstants.CELL_COUNT])
+	var standby_buttons: Array = _board_field(prep, "bench_buttons")
 	_h.expect(standby_buttons.size() == GameState.BENCH_SLOTS, "bench_button_count",
-		"_bench_buttons 有 %d 个，期望 %d" % [standby_buttons.size(), GameState.BENCH_SLOTS])
+		"BoardHud.bench_buttons 有 %d 个，期望 %d" % [standby_buttons.size(), GameState.BENCH_SLOTS])
 	for i in standby_buttons.size():
 		_h.expect((standby_buttons[i] as Control).has_method("_has_point"),
 			"bench_button_no_has_point", "待命区按钮 %d 缺 _has_point()" % i)
-	_h.expect(not prep.call("_can_drop_on_board", -1, {"kind": "bench", "index": 0}),
-		"drop_accepts_negative_index", "_can_drop_on_board(-1) 应当拒绝")
-	_h.expect(not prep.call("_can_drop_on_board", GameConstants.CELL_COUNT, {"kind": "bench", "index": 0}),
-		"drop_accepts_overflow_index", "_can_drop_on_board(%d) 应当拒绝" % GameConstants.CELL_COUNT)
+	_h.expect(not PrepRules.can_drop_on_board(-1, {"kind": "bench", "index": 0}),
+		"drop_accepts_negative_index", "PrepRules.can_drop_on_board(-1) 应当拒绝")
+	_h.expect(not PrepRules.can_drop_on_board(GameConstants.CELL_COUNT, {"kind": "bench", "index": 0}),
+		"drop_accepts_overflow_index", "PrepRules.can_drop_on_board(%d) 应当拒绝" % GameConstants.CELL_COUNT)
 	for index in GameConstants.CELL_COUNT:
-		_h.expect(prep.call("_can_drop_on_board", index, {"kind": "bench", "index": 0}),
-			"drop_rejects_valid_index", "_can_drop_on_board(%d) 应当接受" % index)
+		_h.expect(PrepRules.can_drop_on_board(index, {"kind": "bench", "index": 0}),
+			"drop_rejects_valid_index", "PrepRules.can_drop_on_board(%d) 应当接受" % index)
 
 	var units: Array = DataRegistry.get_table("race_units").get("units", [])
 	if not _h.expect(not units.is_empty(), "race_units_empty", "race_units 表为空，后续用例无法构造"):
@@ -97,8 +106,8 @@ func _ready() -> void:
 			"star": 1,
 			"def": first_def.duplicate(true),
 		}
-	prep.call("_refresh_board")
-	prep.call("_refresh_bench")
+	_hud(prep).refresh_board()
+	_hud(prep).refresh_bench()
 	await get_tree().process_frame
 	var fighters := BattleSim.build_tutorial_player_fighters("pve")
 	_h.expect(fighters.size() == GameConstants.CELL_COUNT, "fighter_count",
@@ -116,22 +125,22 @@ func _ready() -> void:
 		_h.expect(last_button.size.x > 0.0 and last_button.size.y > 0.0,
 			"board_button_zero_size", "末格按钮尺寸为 %s" % str(last_button.size))
 	GameState.board_slots.fill(null)
-	prep.call("_refresh_board")
+	_hud(prep).refresh_board()
 	prep.call("_on_drag_started", {"kind": "board", "index": 0})
-	prep.call("_set_standby_drop_hover", 5)
-	_h.expect(bool(prep.get("_standby_drop_highlight_active")),
+	_hud(prep).set_standby_drop_hover(5)
+	_h.expect(bool(_board_field(prep, "standby_drop_highlight_active")),
 		"standby_highlight_inactive", "拖拽中待命区高亮未激活")
-	_h.expect(int(prep.get("_standby_drop_hover_index")) == 5,
-		"standby_hover_index", "待命区 hover 下标为 %d，期望 5" % int(prep.get("_standby_drop_hover_index")))
+	_h.expect(int(_board_field(prep, "standby_drop_hover_index")) == 5,
+		"standby_hover_index", "待命区 hover 下标为 %d，期望 5" % int(_board_field(prep, "standby_drop_hover_index")))
 	for i in buttons.size():
 		_h.expect((buttons[i] as Control).has_method("_has_point"),
 			"board_button_no_has_point", "棋盘按钮 %d 缺 _has_point()" % i)
 	prep.call("_on_drag_started", {"kind": "bench", "index": 0})
-	prep.call("_set_board_drop_hover", 10)
-	_h.expect(bool(prep.get("_board_drop_highlight_active")),
+	_hud(prep).set_board_drop_hover(10)
+	_h.expect(bool(_board_field(prep, "drop_highlight_active")),
 		"board_highlight_inactive", "拖拽中棋盘高亮未激活")
-	_h.expect(int(prep.get("_board_drop_hover_index")) == 10,
-		"board_hover_index", "棋盘 hover 下标为 %d，期望 10" % int(prep.get("_board_drop_hover_index")))
+	_h.expect(int(_board_field(prep, "drop_hover_index")) == 10,
+		"board_hover_index", "棋盘 hover 下标为 %d，期望 10" % int(_board_field(prep, "drop_hover_index")))
 	var capture_path := OS.get_environment("BOARD_4X4_CAPTURE_PATH")
 	if not capture_path.is_empty():
 		for _frame in 20:
@@ -146,3 +155,9 @@ func _ready() -> void:
 		str(fighters[GameConstants.CELL_COUNT - 1].pos) if fighters.size() >= GameConstants.CELL_COUNT else "-",
 	])
 	_h.finish(get_tree())
+
+
+# 棋盘刷新与拖放高亮已随 D2 搬进 BoardHud 节点。
+# 用节点引用直接调，不再按名字调 —— 按名字的调用会被 dynamic_call 的棘轮记账。
+func _hud(prep: Node) -> Node:
+	return prep.get("_board_hud") as Node
