@@ -273,6 +273,8 @@ const ReconnectService := preload("res://scripts/multiplayer/ReconnectService.gd
 var _reconnect_service: RefCounted = ReconnectService.new()
 const DedicatedServerService := preload("res://scripts/multiplayer/DedicatedServerService.gd")
 var _server_service: RefCounted = DedicatedServerService.new()
+const NetworkTransport := preload("res://scripts/multiplayer/NetworkTransport.gd")
+var _transport: RefCounted = NetworkTransport.new()
 
 func _ready() -> void:
 	# 依赖注入：抽出的服务都不认识 NetworkService，也不碰 multiplayer。
@@ -281,6 +283,7 @@ func _ready() -> void:
 	# 房间服务只注入**行为**（时钟/日志/分片号）；房间域常量在服务里、门面重新导出。
 	# TEAM_SLOTS / ROOM_LOBBY / ROOM_RESULT / RESERVE_GRACE_SEC 留在门面
 	# （内部 43/24/11/5 处引用、外部还有引用），按配置传进去。
+	_transport.configure(_net_log)
 	# 先配 ReconnectService：它持有 token 索引，RoomService 要注入它才能读写。
 	_reconnect_service.configure(_now, _net_log, {
 		"reserve_grace_sec": RESERVE_GRACE_SEC,
@@ -339,9 +342,11 @@ func _ready() -> void:
 # 按已确认的决定，E1 **只校验 protocol_version**。data/sim manifest 的字段
 # 已经在协议里留好（允许为空、不参与校验），等打包流程能生成指纹了再启用 ——
 # 这样以后加的时候不用再升一次协议。
-const AUTH_TIMEOUT_SEC := 8.0
-const AUTH_MAX_PAYLOAD_BYTES := 512
-const AUTH_MAX_PENDING := 64
+# 握手相关常量随实现搬到 NetworkTransport；这里重新导出，门面内部与 tools/ 里的
+# 既有引用一处都不用改。两处各存一份就是给自己造第二个真相源。
+const AUTH_TIMEOUT_SEC := NetworkTransport.AUTH_TIMEOUT_SEC
+const AUTH_MAX_PAYLOAD_BYTES := NetworkTransport.AUTH_MAX_PAYLOAD_BYTES
+const AUTH_MAX_PENDING := NetworkTransport.AUTH_MAX_PENDING
 
 var _auth_pending: Dictionary = {}   # peer_id -> 开始认证的时刻（单调）
 
@@ -358,13 +363,7 @@ func _setup_auth() -> void:
 		scene_mp.peer_authentication_failed.connect(_on_peer_authentication_failed)
 
 func _client_hello_bytes() -> PackedByteArray:
-	# manifest 字段现在恒为空串：协议里占好位置，E1 不参与校验。
-	return var_to_bytes({
-		"protocol": NetworkConfig.NETWORK_PROTOCOL_VERSION,
-		"build": "",
-		"data_manifest": "",
-		"sim_manifest": "",
-	})
+	return NetworkTransport.client_hello_bytes()
 
 func _on_peer_authenticating(id: int) -> void:
 	if _dedicated_server:
@@ -386,15 +385,14 @@ func _on_auth_payload(id: int, data: PackedByteArray) -> void:
 		return
 	if not _dedicated_server:
 		# 客户端收到服务端的裁决
-		var verdict := _decode_auth(data)
-		if bool(verdict.get("ok", false)):
+		var verdict: Dictionary = _transport.client_verdict(data)
+		if bool(verdict.get("accept", false)):
 			scene_mp.complete_auth(id)
 			return
 		# 被拒：先把原因摆到 UI 上，再自己断开。
 		# 服务端故意不主动断，靠 auth_timeout 兜底 —— 那样"发拒绝"和"断连接"
 		# 之间没有竞态，客户端一定能读到原因。
 		var code := str(verdict.get("code", "protocol_mismatch"))
-		_net_log("handshake rejected by server: %s (%s)" % [code, NetError.class_name_of(code)])
 		last_error = tr("net_err_handshake") % code
 		state = SessionState.FAILED
 		reset_peer_only()
@@ -403,30 +401,19 @@ func _on_auth_payload(id: int, data: PackedByteArray) -> void:
 
 	# 服务端：校验 hello
 	_auth_pending.erase(id)
-	if data.size() > AUTH_MAX_PAYLOAD_BYTES:
-		_net_log("auth rejected peer=%d reason=payload_too_large bytes=%d" % [id, data.size()])
-		scene_mp.send_auth(id, _auth_reject("protocol_mismatch"))
+	# 判定在 NetworkTransport，发包留这里 —— 发包要 SceneMultiplayer。
+	var srv: Dictionary = _transport.server_verdict(data, id)
+	if not bool(srv.get("accept", false)):
+		scene_mp.send_auth(id, NetworkTransport.auth_reject_bytes(str(srv.get("code", "protocol_mismatch"))))
 		return
-	var hello := _decode_auth(data)
-	var client_protocol := int(hello.get("protocol", -1))
-	if client_protocol != NetworkConfig.NETWORK_PROTOCOL_VERSION:
-		_net_log("auth rejected peer=%d reason=protocol_mismatch client=%d server=%d" % [
-			id, client_protocol, NetworkConfig.NETWORK_PROTOCOL_VERSION])
-		scene_mp.send_auth(id, _auth_reject("protocol_mismatch"))
-		return
-	scene_mp.send_auth(id, var_to_bytes({"ok": true}))
+	scene_mp.send_auth(id, NetworkTransport.auth_accept_bytes())
 	scene_mp.complete_auth(id)
 
 func _auth_reject(code: String) -> PackedByteArray:
-	return var_to_bytes({"ok": false, "code": code, "class": NetError.class_name_of(code)})
+	return NetworkTransport.auth_reject_bytes(code)
 
 func _decode_auth(data: PackedByteArray) -> Dictionary:
-	if data.is_empty() or data.size() > AUTH_MAX_PAYLOAD_BYTES:
-		return {}
-	# bytes_to_var（非 _with_objects）：认证阶段的数据来自未经验证的对端，
-	# 绝不能给它构造对象的机会。
-	var value = bytes_to_var(data)
-	return value if typeof(value) == TYPE_DICTIONARY else {}
+	return NetworkTransport.decode_auth(data)
 
 func _on_peer_authentication_failed(id: int) -> void:
 	_auth_pending.erase(id)
