@@ -13,7 +13,7 @@ Godot 4.7 的 3v3 布阵自动战斗项目。本 README 同时是项目说明、
 | A1 — 建立可复现资产清单 | ✅ 已完成（指纹已于 A5 更新） | 当前清单 2632 个文件，inventory fingerprint 为 `a0751fdc580e78dfe6e4023c3f55501471510d0db00d27ae5732a853faafb3fc`。历史值 `5dabb3f5…`（2,643 项）是 E2-2B 之前的状态——E2-2B 重导出了 5 个 FBX 却没重新生成清单，A5 才发现并订正。 |
 | A2 — 资源交付与 Git 解耦、可追溯 | ✅ 已完成（2026-08-20 重打包并首次真正验证往返） | 当前归档 `glory-assets-a0751fdc580e78df-2fd696d1d4f2dcfc.zip`，1782 个 Git 外资源、850 个已跟踪。`restore_assets.ps1` → `ASSET_RESTORE_RESULT status=PASS copied=0 already_present=1782`，接着 `ASSET_DELIVERY_RESULT status=PASS entries=2632 missing=0 hash_mismatch=0 extras=0`。**此前从未真正跑通过**：打包脚本有三个只在 Windows PowerShell 5.1 / 非 ASCII 文件名下发作的缺陷，见 A5 一节。 |
 | A3 — 让检查真正失败 | ✅ 已完成 | 缺资源失败路径与恢复后通过路径均已验证，检查不会再以空检查集或加载失败报假绿。 |
-| A4 — Android 出包与设备回归门禁 | 🟡 门禁跑通 / Release 未做 | `tools/android_smoke.sh` 产出可追溯证据包（commit、manifest 指纹、APK SHA-256、安装方式、冷启动 logcat、截图）。694 MiB Debug 包在 25028RN03A / Android 15 上通过：`FATAL EXCEPTION` 0、`SCRIPT ERROR` 0、PSS 362 MB。抓掉三类假结果（假绿的旧版本启动、假红的通道掉线、读不出来的证据 JSON）。Release keystore、商店/首战截图、低端机与双设备验收未做。 |
+| A4 — Android 出包与设备回归门禁 | 🟡 门禁跑通 / Release 未做 | `tools/android_smoke.sh` 产出可追溯证据包（commit、manifest 指纹、APK SHA-256、安装方式、冷启动 logcat、截图）。694 MiB Debug 包在 25028RN03A / Android 15 上通过：`FATAL EXCEPTION` 0、`SCRIPT ERROR` 0、PSS 362 MB。抓掉四类假结果（假绿的旧版本启动、假红的通道掉线、读不出来的证据 JSON、空过滤器导出的静默胖包）。Release keystore、商店/首战截图、低端机与双设备验收未做。 |
 | E1 — 战场空间可读性 | ✅ 桌面完成 | Windows Forward Mobile 纵向切片完成；所有战斗单位经 `UnitVisualResolver → UnitActor3D`，固定两回合回放为 0 胶囊、0 可见 fallback；`BoardReadabilityLayer` 已接入准备/战斗并可持久化开关。人工盲测与 Android 验收仍待后续。 |
 | E2-2A / E2-2B — 模型与贴图预算 | ✅ 桌面完成 | 75/75 模型边界检查为 0 broken、0 anomaly；241/241 FBX 加载错误为 0；78/78 wrapper 合并通过；模型预算 75 项、0 hard failure。Android ASTC、APK 排除源 FBX 及低端机满编最终战仍待后续。 |
 | Director D0 — 基线与确定性证据 | ✅ 桌面完成 / Android 暂停 | 当前提交 `931771c69e3f585b19e49f3bc1b846b04aa6f55d` 已完成固定 seed 的 round 1/2：完整 roster、事件/result/final-state JSON、SHA-256、actor/fallback/anchor 审计、1280×720 截图及逐帧 CSV 均已生成并独立校验；Android 证据保持暂停。 |
@@ -375,11 +375,12 @@ adb exec-out screencap -p > /tmp/glory-launch.png
   2. **即便改成 push，推完 694 MiB 后通道仍有很高概率掉线**（USB 和无线各中过一次）。安装本身是成功的——`pm install` 打了 `Success`、`dumpsys` 里 `lastUpdateTime` 也确实更新了——掉的只是随后的校验。
   - 另外 Git Bash 的 MSYS 路径转换会把设备侧的 `/data/local/tmp/...` 改写成 Windows 路径，所有带设备路径的 adb 调用现在都加了 `MSYS_NO_PATHCONV=1`。
 
-- **这一项真正的产出是三次"假结果"被抓住并堵死，值得单独记：**
+- **这一项真正的产出是四类"假结果"被抓住并堵死，值得单独记：**
   1. **假绿：** 安装失败后脚本照样报出 pid/内存/零错误——因为 monkey 把设备上**原有的旧版本**拉起来了。现在只要安装步骤留下任何一条失败，就立刻写一份 `stopped_before=launch` 的证据并停住。**一个漂亮的旧版本启动报告，比没有结果更坏。**
   2. **假红：** 有一次报 `not_installed`，但包其实装上了，只是通道在推包后断了。现在 `_wait_transport()` 会先轮询 `adb get-state` 最多 60 秒（其间尝试 `adb reconnect`），仍然连不上就报 `device_lost_after_install` 而不是 `not_installed`。**假的失败会让下一个人去查一个并不存在的安装问题。**
   3. **证据读不出来：** `smoke.json` 一度不是合法 JSON。三个原因叠在一起：`set -o pipefail` 下 `grep -v` 无匹配时返回非零，导致 `|| echo '[]'` 兜底**也**执行了，写出两行 `[]`；Windows 上 Python 的文本 stdout 把 `\n` 翻成 `\r\n`，CR 混进了值里；Python 又用系统 ANSI 码页解 stdin，把 bash 传来的 UTF-8 中文失败原因解成乱码。现在失败列表由单次 Python 调用生成，二进制读入、显式 UTF-8 解码、`ensure_ascii=False` 二进制写出；**脚本最后会解析自己写出的 `smoke.json`，读不出来就报 `evidence_unparseable`**。损坏的那份留在 `A4_android_smoke_20260820/broken_evidence_before_fix/` 作对照。
-  4. 顺带修掉一个误导性兜底：编码器万一挂掉，原来会写 `failures: []`——在一次失败的运行上宣称"零条失败"。现在兜底是 `["failure_list_encoding_error"]`，空列表只在真的没有失败时才出现。
+  4. **静默变胖的导出：** `export_presets.cfg` 在 `.gitignore` 里且从未进过 git，新克隆一份代码出包时 `exclude_filter` 是空的，`backups/` 会被打进 APK——导出照样报成功。脚本现在在**导出之前**就检查，空过滤器直接停在 `stopped_before=export`。配套的模板与漂移门禁见 A5。
+  5. 顺带修掉一个误导性兜底：编码器万一挂掉，原来会写 `failures: []`——在一次失败的运行上宣称"零条失败"。现在兜底是 `["failure_list_encoding_error"]`，空列表只在真的没有失败时才出现。
 
 - **`--skip-install` 的边界写死在代码里：** 它存在的唯一理由是重推大包会拖挂 adbd，不是为了图快跳过验证。用它时脚本会算机上 `base.apk` 的 SHA-256 与本地逐位比对，不一致就报 `skip_install_hash_mismatch`。**跳过安装可以，跳过"机上跑的确实是这一份"不行。**
 
@@ -404,7 +405,13 @@ adb exec-out screencap -p > /tmp/glory-launch.png
 - **三个缺陷都已加门禁锁住：** 新增 `tools/asset_tooling_check.tscn`（14 项），对两个 `.ps1` 做源码级断言——`Get-Content` 必须带 `-Encoding UTF8`、用 `ZipArchive` 就必须 `Add-Type` 两个程序集、`entryNameEncoding` 必须是 `$null`、`Dispose()` 必须有空值守卫。**逐条把 bug 塞回去验证过它真会红**（分别产生 1/1/2/1 条失败），还原后回绿。之所以做成源码断言而不是行为断言：真跑一次脚本要重打 2.4 GB，太重了当不了门禁。
 - **两个旧归档已删**（`37e7f6e7…`、`5dabb3f5…`，各 2.6 GB，释放 5 GB）。它们都早于条目名修复，中文条目名是乱码，本来就永远恢复不出那 252 个资源，属于已知损坏而非仅仅过期。
 - **验证：** `asset_manifest_check` 2636/2636、`asset_delivery_check` 2632/2632、`model_bounds_check` 75/75；演出侧 Director 82/82、profile 162/162、预热 220/220、锚点 1067/1067 全部保持通过——确认删掉 110 个 `.bak` 没弄坏任何东西。新的 `exclude_filter` 已在 2026-08-20 用真实 APK 验过（3548 个条目全扫）：`*.bak`/`*.backup`、`backups/`、`Demo_GodotVFX`、`New folder`、`desktop.ini`、`Thumbs.db` **一条都没漏进去**。
-- **⚠ `exclude_filter` 不随仓库走，这是个真实的交接缺口。** `export_presets.cfg` 在 [.gitignore](.gitignore) 第 5 行被排除（合理：将来的 Release 预设会带 keystore 口令），而且根目录那份**从来没进过 git**。所以同事新克隆一份代码出包，`exclude_filter` 是空的，`backups/`、`*.bak`、`Demo_GodotVFX` 会被静默打进 APK——导出照样"成功"，只是包大几百 MB。`tools/android_smoke.sh` 现在会在导出**之前**检查这一点，空过滤器直接停并写 `stopped_before=export`，不去出那个坏包。需要手动补的值就是上面「after」那一行。
+- **`exclude_filter` 原本不随仓库走，这是个真实的交接缺口，现已用「模板 + 漂移门禁」补上。** `export_presets.cfg` 在 [.gitignore](.gitignore) 第 5 行被排除（合理：Release 预设会把 keystore 口令明文存在里面），而且根目录那份**从来没进过 git**。所以同事新克隆一份代码出包，`exclude_filter` 是空的，`backups/`、`*.bak`、`Demo_GodotVFX` 会被静默打进 APK——导出照样"成功"，只是包大几百 MB。
+  - **`export_presets.template.cfg` 已提交**，是去掉密钥字段后的完整副本。新克隆直接 `cp export_presets.template.cfg export_presets.cfg` 就有了正确的过滤器，keystore 各自在编辑器里设。
+  - **往 git 里放一份实文件的副本，副本一定会漂——所以不靠纪律，靠门禁。** 新增 [tools/export_presets_check.tscn](tools/export_presets_check.gd)：只要本机预设改了而模板没重新生成，检查就红，并**点名是哪个字段**（例如 `[preset.0] exclude_filter 值不同`）；结构性差异则报到具体行号。重新生成用 [tools/export_presets_template.tscn](tools/export_presets_template.gd)，一条命令。
+  - **「哪些字段算密钥」只写一遍。** 生成器和检查器共用 [tools/ExportPresetsTemplate.gd](tools/ExportPresetsTemplate.gd) 里的 `SECRET_KEYS`，所以两者不可能对密钥范围产生分歧，也不可能出现「检查通过但生成器不会产出这份模板」。
+  - **刻意不失败的一种情况：** 本机没有 `export_presets.cfg` 时（新克隆的正常状态）检查**通过**，只给一条提示。在那里报红只会训练大家无视这个检查；真正要拦的出包动作已由 `android_smoke.sh` 在导出前拦住了。
+  - **门禁另外锁死两件事：** 模板里的密钥字段必须是空值（否则口令会随模板进 git），以及 `.gitignore` 里必须仍然忽略 `export_presets.cfg`。
+  - **六种故障逐条塞回去验证过它真会红**：本机改了没同步模板、模板过滤器为空、模板混进 keystore 口令、模板文件丢失、`.gitignore` 被削弱、以及新克隆无实文件（这条应当通过——确认它通过）。还原后回绿。
 
 - **「FBX 分仓」这条要重新定性（2026-08-20 实测）：** APK 里**一个原始 `.fbx` 都没有**——Godot 导出只打包 `.godot/imported/` 下的导入产物，源文件从来就不进包（FBX 导入产物 242 个、96.4 MiB，那是模型本身，分仓省不掉）。所以 README 原文把分仓当作**体积**手段是错的，它的收益是仓库卫生与许可可追溯，不是包体。真正的体积大头见 E3 的实测表。
 - **仍未完成：** FBX 分仓（需先转格式，但目标应改成仓库卫生而非体积）；`assets/models`、`assets/ui`、`assets/audio`、`assets/board` 仍然完全没有来源与许可记录——这是许可总账最大的缺口，已写进 `THIRD_PARTY_NOTICES.md` 第 5 节。

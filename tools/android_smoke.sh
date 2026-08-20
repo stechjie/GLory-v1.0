@@ -120,7 +120,8 @@ if [ "$SKIP_EXPORT" -eq 0 ]; then
     # 这正是本脚本要防的那类假绿，所以宁可在导出前就停。
     if ! grep -q 'exclude_filter="[^"]' "$PROJECT_ROOT/export_presets.cfg" 2>/dev/null; then
         note "FAIL empty_exclude_filter: export_presets.cfg 的 exclude_filter 是空的"
-        note "它不在 git 里（见 .gitignore），需要照 README A5 手动补上，否则会把 backups/ 打进包"
+        note "它不在 git 里（见 .gitignore）。修法：cp export_presets.template.cfg export_presets.cfg"
+        note "模板由 tools/export_presets_template.tscn 生成，漂移由 tools/export_presets_check.tscn 盯着"
         cat > "$RUN_DIR/smoke.json" <<GUARD
 {
   "passed": false,
