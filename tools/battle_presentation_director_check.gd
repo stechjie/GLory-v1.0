@@ -642,6 +642,8 @@ func _check_integration_loads() -> void:
 
 	# D6: the snapshot-diff route for basic attacks and damage numbers must be gone,
 	# not merely bypassed. A bypassed branch is one flag away from double playback.
+	_check_renderer_ready_before_enqueue()
+
 	var vfx_source := FileAccess.get_file_as_string("res://scenes/battle/BattleVfx.gd")
 	_h.expect(not vfx_source.is_empty(), "vfx_source_read", "无法读取 BattleVfx.gd 源码做 D6 断言")
 	for removed in ["_collect_attack_events", "_play_melee_slashes", "_play_ranged_projectiles"]:
@@ -720,3 +722,32 @@ func _contract_actor() -> Node3D:
 		child.name = str(node_name)
 		root.add_child(child)
 	return root
+
+
+# 渲染层必须在 Director 排这一 tick **之前**就绪，两个方向都要。
+#
+# 慢设备上回放会追帧：一次 _apply_replay_frame() 可能跨好几个回放帧（实测真机第 20
+# 回合步长出现 2 和 3，桌面恒为 1），于是那一批 tick 会在 _refresh_visuals() 建模之前
+# 全部入队。所以入队前要做两件事：
+#   cue_claim_corpses()      把要死的身体扣下来，免得被 _refresh_visuals() 先释放
+#   _spawn_actors_for_tick() 把刚出生的身体建出来，免得它还不存在
+# 少任何一个，对应的 cue 都会被 Director 判成 missing_actor:source 丢掉 —— 第 20 回合
+# 镜像领主的镜像两种都中过。
+#
+# 做成源码顺序断言而不是行为断言：这个 bug 只在回放追帧时出现，而桌面永远不追帧，
+# 真跑一遍在桌面上必然是绿的，测不出东西。
+func _check_renderer_ready_before_enqueue() -> void:
+	var source := FileAccess.get_file_as_string("res://scenes/battle/BattleScreen.gd")
+	if not _h.expect(not source.is_empty(), "battle_screen_source_read", "无法读取 BattleScreen.gd 源码"):
+		return
+	var enqueue_at := source.find("_presentation_director.enqueue_tick(")
+	_h.expect(enqueue_at >= 0, "enqueue_tick_missing", "找不到 enqueue_tick 调用点，断言可能已失效")
+	if enqueue_at < 0:
+		return
+	# 匹配**调用**而不是名字：只写 "_spawn_actors_for_tick(" 的话，find() 会命中
+	# 函数定义（它在文件靠前处），于是把调用挪到 enqueue 之后这个断言照样是绿的。
+	# 第一版就是这么写的，验证"塞回 bug"时没变红才发现 —— 断言自己成了假绿。
+	for required in ["cue_claim_corpses(tick_events)", "_spawn_actors_for_tick(j, tick_events)"]:
+		var at := source.find(str(required))
+		_h.expect(at >= 0 and at < enqueue_at, "renderer_not_ready_before_enqueue",
+			"%s 必须在 enqueue_tick() 之前调用 —— 否则回放追帧时，这一 tick 里刚出生或正要死的单位没有 actor，cue 会被丢掉" % str(required))

@@ -475,6 +475,56 @@ func _show_team_waiting() -> void:
 	_result_overlay_lbl.add_theme_color_override("font_color", Color(0.92, 0.96, 1.0))
 	_result_overlay_lbl.visible = true
 
+
+# 入队前把这一 tick 会用到、却还没建出来的身体补上。
+#
+# 慢设备上回放要追帧：一次 _apply_replay_frame() 可能跨好几个回放帧，于是 j 从
+# _replay_events_applied+1 到 i 的 tick 会**一次性全部入队**，而建模要等循环之后的
+# _refresh_visuals()。这批 tick 里刚被召唤出来的单位那时还没有 actor，它的第一条
+# cue 会被 Director 判成 missing_actor:source 丢掉。
+#
+# 2026-08-20 实测：桌面每渲染帧恒定推进 1 个回放帧，所以从来不触发；真机第 20 回合
+# 只有 8.9 FPS，步长出现 2（26 次）和 3（2 次），镜像领主的镜像因此在 tick 15 丢了
+# 两条 attack_start —— 设备 2 条、桌面 0 条。
+#
+# 这和上面 cue_claim_corpses() 是对称的：那条在入队前把**要死的**身体扣下来，
+# 免得 _refresh_visuals() 先把它释放掉；这条在入队前把**刚出生的**身体建出来，
+# 免得它还不存在。两条都是同一句话：让渲染层在 Director 排这一 tick 之前就绪。
+func _spawn_actors_for_tick(tick_index: int, tick_events: Array) -> void:
+	var frames: Array = _replay.get("frames", [])
+	if tick_index < 0 or tick_index >= frames.size() or typeof(frames[tick_index]) != TYPE_ARRAY:
+		return
+	var wanted: Dictionary = {}
+	for event_value in tick_events:
+		if not (event_value is Dictionary):
+			continue
+		var uid := str((event_value as Dictionary).get("source_uid", ""))
+		if uid.is_empty() or wanted.has(uid):
+			continue
+		if _unit_actor_registry.get_actor(uid) == null:
+			wanted[uid] = true
+	if wanted.is_empty():
+		return
+	for entry in frames[tick_index]:
+		if typeof(entry) != TYPE_ARRAY or (entry as Array).size() < 5:
+			continue
+		var uid := str(entry[0])
+		if not wanted.has(uid):
+			continue
+		# 只给这一帧确实活着的单位建体。已经死掉的不该在这里复活，
+		# 它的 cue 本来就该按 source_dead 走。
+		if not bool(entry[4]):
+			continue
+		var f = _replay_by_uid.get(uid)
+		if f == null:
+			continue
+		f.pos = Vector2(float(entry[1]), float(entry[2]))
+		f.hp = int(entry[3])
+		f.alive = true
+		# prune=false：这里一次只喂一个单位，照常清理会把其余模型全毁掉
+		# （理由同 _prepare_battle_models 里的那段注释）。
+		_sync_3d_model_nodes([f], 0.0, false)
+
 func _apply_replay_frame(i: int) -> void:
 	var frames: Array = _replay.get("frames", [])
 	if i < 0 or i >= frames.size():
@@ -493,6 +543,7 @@ func _apply_replay_frame(i: int) -> void:
 				# Claim dying bodies before the Director queues the tick: the next
 				# _refresh_visuals() would otherwise free them before the death cue runs.
 				cue_claim_corpses(tick_events)
+				_spawn_actors_for_tick(j, tick_events)
 				_presentation_director.enqueue_tick(j, tick_events)
 				for ev in tick_events:
 					ve.append(ev)
