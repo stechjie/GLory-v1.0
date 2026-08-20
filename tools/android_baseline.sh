@@ -13,6 +13,7 @@
 # 用法：
 #   bash tools/android_baseline.sh --serial <serial> [--rounds 1] [--skip-desktop]
 #   bash tools/android_baseline.sh --serial <serial> --rounds 5,20,21   # Boss 与满配样本
+#   bash tools/android_baseline.sh --serial <serial> --cold-cache        # 先清着色器缓存，量首启
 
 set -uo pipefail
 
@@ -25,6 +26,7 @@ GODOT_BIN=""
 ROUNDS="1"
 OUT_DIR=""
 SKIP_DESKTOP=0
+COLD_CACHE=0
 DEVICE_TIMEOUT_SEC=2400   # 多回合样本（第 21 回合满配 18 个敌人）在真机上要跑很久
 
 FAILURES=()
@@ -40,6 +42,7 @@ while [ $# -gt 0 ]; do
         --rounds) ROUNDS="$2"; shift 2 ;;
         --out) OUT_DIR="$2"; shift 2 ;;
         --skip-desktop) SKIP_DESKTOP=1; shift ;;
+        --cold-cache) COLD_CACHE=1; shift ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
 done
@@ -109,6 +112,15 @@ else
     # 上一轮的产物必须先删干净。留着的话，本轮如果根本没跑起来，拉回来的会是
     # 上一次的结果 —— 一份看起来完整、其实来自别的构建的证据。
     "$ADB_BIN" shell run-as "$PACKAGE" rm -rf files/battle_presentation_baseline >/dev/null 2>&1
+
+    # 冷缓存：着色器缓存留在 files/shader_cache 里，跨安装存活。不清掉的话量到的
+    # 永远是"暖缓存"，代表不了玩家首次安装后的体验 —— 而首启正是最慢、最该量的那次。
+    if [ "$COLD_CACHE" -eq 1 ]; then
+        note "清空设备着色器缓存（冷缓存测量）"
+        "$ADB_BIN" shell run-as "$PACKAGE" rm -rf files/shader_cache >/dev/null 2>&1
+        REMAIN="$("$ADB_BIN" shell run-as "$PACKAGE" ls files 2>/dev/null | tr -d '\r' | grep -c shader_cache)"
+        [ "${REMAIN:-0}" -eq 0 ] || fail "cold_cache_not_cleared: shader_cache 没删掉，量到的仍是暖缓存"
+    fi
 
     "$ADB_BIN" shell am force-stop "$PACKAGE" >/dev/null 2>&1
     "$ADB_BIN" logcat -c >/dev/null 2>&1
