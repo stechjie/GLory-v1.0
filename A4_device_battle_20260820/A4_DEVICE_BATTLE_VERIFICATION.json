@@ -1,6 +1,6 @@
 {
   "stage": "A4 / C4-3",
-  "title": "Same-commit desktop vs on-device replay digest, and the first real battle measured on hardware",
+  "title": "Same-commit desktop vs on-device replay digest across four rounds, including both boss samples and the full-board round",
   "generated_utc": "2026-08-20T10:17:38",
   "commit": "eee8268",
   "uncommitted_tracked_files": 0,
@@ -9,7 +9,7 @@
     "A4 acceptance - a screenshot of an actual battle, not just the language page.",
     "Director D0/D5/D6 - the on-device presentation metrics those rows list as pending."
   ],
-  "verdict": "PASS - all five digest fields identical between desktop and device at the same commit.",
+  "verdict": "PASS on digest parity for all four rounds (1, 5, 20, 21) - every field identical between desktop and device at the same commit. Round 20 additionally surfaced a presentation defect that is NOT platform-specific; see defect_found.",
   "digest_comparison": {
     "commit": "eee8268",
     "rounds": {
@@ -139,9 +139,212 @@
   ],
   "screenshot_check": "The blue bubbles around most units are the shield effect, confirmed by the project owner. The desktop capture of the same replay frame (D6_battle_presentation_cleanup_20260819/baseline_regression/round_01/mid.png) shows them identically, so nothing about them is Android-specific.",
   "not_done": [
-    "Rounds 20+ and a Boss sample on device - only round 1 was run.",
+    "The summoned-unit death defect above.",
     "Store and prep-screen screenshots: those need the prep UI driven, which is exactly the D2 territory a colleague is working in.",
     "Low-end device and two-device online acceptance.",
     "A first-install (cold shader cache) measurement."
-  ]
+  ],
+  "rounds_covered": {
+    "1": "first battle (the original sample)",
+    "5": "first boss round (boss_rounds are 5/10/15/20)",
+    "20": "boss round at full board - 18 enemies, the heaviest case, and the one with summons",
+    "21": "full board, no boss - matches the round B4 used for its tier stress run"
+  },
+  "digest_comparison_rounds_5_20_21": {
+    "commit": "00ebe3b",
+    "rounds": {
+      "5": {
+        "desktop_present": true,
+        "device_present": true,
+        "fields": {
+          "roster_sha256": {
+            "desktop": "afca008913d2661b881a194771c5353c3fc7c4ee6ef6aa0f0570e067462b698d",
+            "device": "afca008913d2661b881a194771c5353c3fc7c4ee6ef6aa0f0570e067462b698d",
+            "equal": true
+          },
+          "replay_sha256": {
+            "desktop": "c241d10a28d6c0887ae28fbae5fba25513b80bfe9bf3ad404684b9a882164510",
+            "device": "c241d10a28d6c0887ae28fbae5fba25513b80bfe9bf3ad404684b9a882164510",
+            "equal": true
+          },
+          "frame_events_sha256": {
+            "desktop": "c6563bb137731cc4ab718dd97d65978e6be3804ac9e780d1b5cc49601785df18",
+            "device": "c6563bb137731cc4ab718dd97d65978e6be3804ac9e780d1b5cc49601785df18",
+            "equal": true
+          },
+          "final_state_sha256": {
+            "desktop": "689d1501587c13dd2e73091443904b4819e345f66d992431b235bced8e9cee82",
+            "device": "689d1501587c13dd2e73091443904b4819e345f66d992431b235bced8e9cee82",
+            "equal": true
+          },
+          "repeatable": {
+            "desktop": true,
+            "device": true,
+            "equal": true
+          }
+        },
+        "verdict": "identical"
+      },
+      "20": {
+        "desktop_present": true,
+        "device_present": true,
+        "fields": {
+          "roster_sha256": {
+            "desktop": "a86772776095a4ff9505d524da01e600d0a7198ab3145e469c6dbea48dedf169",
+            "device": "a86772776095a4ff9505d524da01e600d0a7198ab3145e469c6dbea48dedf169",
+            "equal": true
+          },
+          "replay_sha256": {
+            "desktop": "794993e2be79edc820c9f3268b78c24634ec1f3385108194b37afdbcb73e6275",
+            "device": "794993e2be79edc820c9f3268b78c24634ec1f3385108194b37afdbcb73e6275",
+            "equal": true
+          },
+          "frame_events_sha256": {
+            "desktop": "ce2f1dd6cfb1ebf52b117f857fb2912ba2734062b3c3c8ae304a82e1058a9a64",
+            "device": "ce2f1dd6cfb1ebf52b117f857fb2912ba2734062b3c3c8ae304a82e1058a9a64",
+            "equal": true
+          },
+          "final_state_sha256": {
+            "desktop": "ccc09fb6c8fdae8474c5ee9a562b7d225cc97153eae8bd45aee4ec8de2525913",
+            "device": "ccc09fb6c8fdae8474c5ee9a562b7d225cc97153eae8bd45aee4ec8de2525913",
+            "equal": true
+          },
+          "repeatable": {
+            "desktop": true,
+            "device": true,
+            "equal": true
+          }
+        },
+        "verdict": "identical"
+      },
+      "21": {
+        "desktop_present": true,
+        "device_present": true,
+        "fields": {
+          "roster_sha256": {
+            "desktop": "8f3b40fac83ab816c1152d10c8af8751e26552c0912caf0cc26b8ee088332bd2",
+            "device": "8f3b40fac83ab816c1152d10c8af8751e26552c0912caf0cc26b8ee088332bd2",
+            "equal": true
+          },
+          "replay_sha256": {
+            "desktop": "2574ec8e624e3189b037441fd86032b50a6198f668db72e87491339d934d5031",
+            "device": "2574ec8e624e3189b037441fd86032b50a6198f668db72e87491339d934d5031",
+            "equal": true
+          },
+          "frame_events_sha256": {
+            "desktop": "09a26d2d8484d78bdbf035ec81e9fc2ac54c98d2371bb4e7cb5c3d8e3e4bb37a",
+            "device": "09a26d2d8484d78bdbf035ec81e9fc2ac54c98d2371bb4e7cb5c3d8e3e4bb37a",
+            "equal": true
+          },
+          "final_state_sha256": {
+            "desktop": "607f343075f1d544377ad753d7e7f9add915edf1714c7368955722bd42e43228",
+            "device": "607f343075f1d544377ad753d7e7f9add915edf1714c7368955722bd42e43228",
+            "equal": true
+          },
+          "repeatable": {
+            "desktop": true,
+            "device": true,
+            "equal": true
+          }
+        },
+        "verdict": "identical"
+      }
+    },
+    "match": true,
+    "notes": []
+  },
+  "defect_found": {
+    "what": "Round 20 drops 3 death cues with reason missing_actor:source. The recorder therefore reports passed=false for that round.",
+    "event_keys": [
+      "local:20260807:20:boss:team0:40:11",
+      "local:20260807:20:boss:team0:55:1",
+      "local:20260807:20:boss:team0:96:14"
+    ],
+    "who": "enemy_mirror_1 / enemy_mirror_2 / enemy_mirror_3 - the copies boss_mirror_lord summons during the fight.",
+    "not_a_boss_round_problem": "Round 5 (a different boss) and round 21 (no boss) both drop zero. The common factor is a summoned unit that respawns under the same uid, not the presence of a boss.",
+    "not_android_specific": "missing_actor_drop_count is exactly 3 on BOTH desktop and device for round 20. The drop is deterministic and reproduces identically on each platform.",
+    "scope_is_narrow": "Only death is affected. The mirrors' other cues play fine: of 77 events sourced from a mirror, attack_start 25, impact 25 and hit_number 19 all played; 3 of 8 mirror deaths were dropped.",
+    "mechanism_candidate": "BattleRenderer.detach_actor_for_death() removes the actor from the prune list but deliberately keeps it registered, which is why an ordinary death plays. BattleVfx.cue_claim_corpses() skips a uid it already holds (`_cue_corpses.has(uid)`), and a mirror dies repeatedly under one uid, so a re-claim can be skipped; if the prune loop then reaches that uid first it calls unregister_actor(), and the Director's _resolve_cue() finds no source actor and drops. Confirming the exact ordering needs instrumentation, not more static reading.",
+    "not_fixed_and_why": "Deliberately left alone. An earlier attempt in this project to make death cues interrupt an in-flight cue broke D2's death_cancel_queue assertion and had to be reverted wholesale. The claim/prune ordering contract needs to be settled first; that is its own piece of work, not a fix to bolt onto a measurement run.",
+    "impact": "The three mirrors vanish instead of playing a death animation - checklist section 6 says a unit must never just disappear."
+  },
+  "per_round": {
+    "5": {
+      "digest": "identical",
+      "desktop": {
+        "average_fps": 138.14162333198732,
+        "one_percent_low_fps": 44.19946070705147,
+        "p95_frame_time_ms": 7.575757575757575
+      },
+      "device": {
+        "average_fps": 22.364794359738305,
+        "one_percent_low_fps": 6.749197765811041,
+        "p95_frame_time_ms": 64.868,
+        "peak_video_mb": 242.88150024414062,
+        "peak_orphans": 0
+      },
+      "roster_count": 24,
+      "event_count": 297,
+      "director_missing_actor_drops": {
+        "desktop": 0,
+        "device": 0
+      },
+      "ambient_merges": {
+        "desktop": 0,
+        "device": 4
+      }
+    },
+    "20": {
+      "digest": "identical",
+      "desktop": {
+        "average_fps": 50.468142838942,
+        "one_percent_low_fps": 32.490679714865315,
+        "p95_frame_time_ms": 23.164000000000005
+      },
+      "device": {
+        "average_fps": 9.114914076815985,
+        "one_percent_low_fps": 6.96853859679963,
+        "p95_frame_time_ms": 136.77866666666665,
+        "peak_video_mb": 271.1711883544922,
+        "peak_orphans": 0
+      },
+      "roster_count": 72,
+      "event_count": 3076,
+      "director_missing_actor_drops": {
+        "desktop": 3,
+        "device": 3
+      },
+      "ambient_merges": {
+        "desktop": 126,
+        "device": 295
+      }
+    },
+    "21": {
+      "digest": "identical",
+      "desktop": {
+        "average_fps": 125.01916954609106,
+        "one_percent_low_fps": 68.5122723190379,
+        "p95_frame_time_ms": 9.087666666666667
+      },
+      "device": {
+        "average_fps": 23.105641645666612,
+        "one_percent_low_fps": 8.503747993183055,
+        "p95_frame_time_ms": 55.55555555555556,
+        "peak_video_mb": 369.4501190185547,
+        "peak_orphans": 0
+      },
+      "roster_count": 26,
+      "event_count": 1059,
+      "director_missing_actor_drops": {
+        "desktop": 0,
+        "device": 0
+      },
+      "ambient_merges": {
+        "desktop": 2,
+        "device": 10
+      }
+    }
+  },
+  "ambient_merge_note": "budget_merged_ambient and anchor degradation counts legitimately differ between platforms (round 20: 126 desktop vs 295 device) - that is the priority budget shedding more ambient work on the slower device, which is what it exists to do. Digests are unaffected.",
+  "evidence_layout": "round_01 keeps the full start/mid/end screenshot set; rounds 5/20/21 keep mid.png only, to hold the directory near the size of the existing D5/D6 evidence dirs. The complete sets stay under build/."
 }

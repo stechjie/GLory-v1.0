@@ -1,0 +1,148 @@
+{
+  "anchor_degradation_count": 15,
+  "anchor_degradation_rows": [
+    {
+      "consumer": "director",
+      "reason": "missing target actor for hit_number",
+      "resource_path": "",
+      "unit_id": "player_L0_3"
+    },
+    {
+      "consumer": "director",
+      "reason": "missing target actor for hit_number",
+      "resource_path": "",
+      "unit_id": "enemy_L1_3"
+    },
+    {
+      "consumer": "director",
+      "reason": "missing target actor for hit_number",
+      "resource_path": "",
+      "unit_id": "player_L0_1"
+    },
+    {
+      "consumer": "director",
+      "reason": "missing target actor for impact",
+      "resource_path": "",
+      "unit_id": "player_L0_1"
+    },
+    {
+      "consumer": "director",
+      "reason": "missing target actor for hit_number",
+      "resource_path": "",
+      "unit_id": "enemy_L0_2"
+    },
+    {
+      "consumer": "director",
+      "reason": "missing target actor for hit_number",
+      "resource_path": "",
+      "unit_id": "player_L0_0"
+    },
+    {
+      "consumer": "director",
+      "reason": "missing target actor for hit_number",
+      "resource_path": "",
+      "unit_id": "player_L2_2"
+    },
+    {
+      "consumer": "director",
+      "reason": "missing target actor for hit_number",
+      "resource_path": "",
+      "unit_id": "player_L0_2"
+    },
+    {
+      "consumer": "director",
+      "reason": "missing target actor for hit_number",
+      "resource_path": "",
+      "unit_id": "player_L1_1"
+    },
+    {
+      "consumer": "director",
+      "reason": "missing target actor for hit_number",
+      "resource_path": "",
+      "unit_id": "enemy_L2_3"
+    },
+    {
+      "consumer": "director",
+      "reason": "missing target actor for hit_number",
+      "resource_path": "",
+      "unit_id": "enemy_L1_1"
+    },
+    {
+      "consumer": "director",
+      "reason": "missing target actor for hit_number",
+      "resource_path": "",
+      "unit_id": "player_team_final_ally"
+    },
+    {
+      "consumer": "director",
+      "reason": "missing target actor for hit_number",
+      "resource_path": "",
+      "unit_id": "enemy_L2_0"
+    },
+    {
+      "consumer": "director",
+      "reason": "missing target actor for hit_number",
+      "resource_path": "",
+      "unit_id": "enemy_L0_1"
+    },
+    {
+      "consumer": "director",
+      "reason": "missing target actor for hit_number",
+      "resource_path": "",
+      "unit_id": "player_L2_3"
+    }
+  ],
+  "budget": {
+    "degraded": 201,
+    "merged": 10,
+    "over_budget_by_priority": {
+      "ambient": 41,
+      "important": 160
+    }
+  },
+  "drop_count": 15,
+  "drops_by_reason": {
+    "budget_merged_ambient": 10,
+    "source_dead": 5
+  },
+  "legacy_adapter": {
+    "pending_timers": 0,
+    "played_by_type": {
+      "attack_start": 167,
+      "death": 24,
+      "hit_number": 327,
+      "projectile_spawn": 111
+    },
+    "profiles_seen": [
+      "basic_melee",
+      "basic_ranged",
+      "crit",
+      "death",
+      "fallback_minimal",
+      "heal"
+    ]
+  },
+  "missing_actor_drop_count": 0,
+  "profiles": {
+    "loaded_ids": [
+      "basic_melee",
+      "basic_ranged",
+      "crit",
+      "death",
+      "heal"
+    ],
+    "missing_rows": [],
+    "resolved_counts": {
+      "basic_melee": 449,
+      "basic_ranged": 401,
+      "crit": 80,
+      "death": 24,
+      "heal": 7
+    }
+  },
+  "resolution": {
+    "degraded_anchors": 0,
+    "resolved_anchors": 1111,
+    "resolved_cues": 1000
+  }
+}

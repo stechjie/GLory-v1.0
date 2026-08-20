@@ -6,11 +6,13 @@
 # 结果去比对证据目录里的旧哈希：那些哈希是历史提交的产物，对不上时你分不清是
 # 跨平台不一致，还是这中间有人改了战斗——而这两件事的处理方式完全相反。
 #
-# 设备侧入口见 tools/DeviceHarness.gd：出包后无法用位置参数覆盖主场景，但 Godot
-# 的 Android 版认 command_line intent extra，所以靠 --device-baseline 这个 flag 接管。
+# 设备侧入口见 tools/DeviceHarness.gd：出包后既不能用位置参数覆盖主场景，也不能靠
+# `am start --esa command_line` 传参（导出入口是 GodotAppLauncher，转发时丢 extras），
+# 所以改成用 run-as 往 user://device_harness.json 写标记文件来触发。
 #
 # 用法：
 #   bash tools/android_baseline.sh --serial <serial> [--rounds 1] [--skip-desktop]
+#   bash tools/android_baseline.sh --serial <serial> --rounds 5,20,21   # Boss 与满配样本
 
 set -uo pipefail
 
@@ -23,7 +25,7 @@ GODOT_BIN=""
 ROUNDS="1"
 OUT_DIR=""
 SKIP_DESKTOP=0
-DEVICE_TIMEOUT_SEC=900
+DEVICE_TIMEOUT_SEC=2400   # 多回合样本（第 21 回合满配 18 个敌人）在真机上要跑很久
 
 FAILURES=()
 
@@ -82,8 +84,16 @@ if [ "$SKIP_DESKTOP" -eq 0 ]; then
             res://tools/battle_presentation_baseline.tscn -- \
             --out "$OUT_DIR_WIN/desktop" --rounds "$ROUNDS" --no-screenshots \
             > "$OUT_DIR/desktop_run.log" 2>&1
-        grep -q 'complete passed=true' "$OUT_DIR/desktop_run.log" \
-            || fail "desktop_baseline_failed: 见 desktop_run.log"
+        # "跑完了但报了缺陷"和"根本没跑完"要分开。前者的摘要依然有效、依然可比对，
+        # 只是记录到了演出层的问题；后者根本没有可比的东西。混成一条的话，一个已知
+        # 缺陷会让人以为跨平台比对本身失败了。
+        if grep -q 'complete passed=true' "$OUT_DIR/desktop_run.log"; then
+            :
+        elif grep -q 'D0BASELINE. complete' "$OUT_DIR/desktop_run.log"; then
+            fail "desktop_recorder_reported_defects: 桌面基线跑完且摘要有效，但记录器报告了缺陷（见 desktop_run.log）"
+        else
+            fail "desktop_baseline_incomplete: 桌面基线没跑完（见 desktop_run.log）"
+        fi
     fi
 fi
 

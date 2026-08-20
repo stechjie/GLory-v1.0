@@ -1,0 +1,103 @@
+{
+  "commit": "00ebe3b",
+  "rounds": {
+    "5": {
+      "desktop_present": true,
+      "device_present": true,
+      "fields": {
+        "roster_sha256": {
+          "desktop": "afca008913d2661b881a194771c5353c3fc7c4ee6ef6aa0f0570e067462b698d",
+          "device": "afca008913d2661b881a194771c5353c3fc7c4ee6ef6aa0f0570e067462b698d",
+          "equal": true
+        },
+        "replay_sha256": {
+          "desktop": "c241d10a28d6c0887ae28fbae5fba25513b80bfe9bf3ad404684b9a882164510",
+          "device": "c241d10a28d6c0887ae28fbae5fba25513b80bfe9bf3ad404684b9a882164510",
+          "equal": true
+        },
+        "frame_events_sha256": {
+          "desktop": "c6563bb137731cc4ab718dd97d65978e6be3804ac9e780d1b5cc49601785df18",
+          "device": "c6563bb137731cc4ab718dd97d65978e6be3804ac9e780d1b5cc49601785df18",
+          "equal": true
+        },
+        "final_state_sha256": {
+          "desktop": "689d1501587c13dd2e73091443904b4819e345f66d992431b235bced8e9cee82",
+          "device": "689d1501587c13dd2e73091443904b4819e345f66d992431b235bced8e9cee82",
+          "equal": true
+        },
+        "repeatable": {
+          "desktop": true,
+          "device": true,
+          "equal": true
+        }
+      },
+      "verdict": "identical"
+    },
+    "20": {
+      "desktop_present": true,
+      "device_present": true,
+      "fields": {
+        "roster_sha256": {
+          "desktop": "a86772776095a4ff9505d524da01e600d0a7198ab3145e469c6dbea48dedf169",
+          "device": "a86772776095a4ff9505d524da01e600d0a7198ab3145e469c6dbea48dedf169",
+          "equal": true
+        },
+        "replay_sha256": {
+          "desktop": "794993e2be79edc820c9f3268b78c24634ec1f3385108194b37afdbcb73e6275",
+          "device": "794993e2be79edc820c9f3268b78c24634ec1f3385108194b37afdbcb73e6275",
+          "equal": true
+        },
+        "frame_events_sha256": {
+          "desktop": "ce2f1dd6cfb1ebf52b117f857fb2912ba2734062b3c3c8ae304a82e1058a9a64",
+          "device": "ce2f1dd6cfb1ebf52b117f857fb2912ba2734062b3c3c8ae304a82e1058a9a64",
+          "equal": true
+        },
+        "final_state_sha256": {
+          "desktop": "ccc09fb6c8fdae8474c5ee9a562b7d225cc97153eae8bd45aee4ec8de2525913",
+          "device": "ccc09fb6c8fdae8474c5ee9a562b7d225cc97153eae8bd45aee4ec8de2525913",
+          "equal": true
+        },
+        "repeatable": {
+          "desktop": true,
+          "device": true,
+          "equal": true
+        }
+      },
+      "verdict": "identical"
+    },
+    "21": {
+      "desktop_present": true,
+      "device_present": true,
+      "fields": {
+        "roster_sha256": {
+          "desktop": "8f3b40fac83ab816c1152d10c8af8751e26552c0912caf0cc26b8ee088332bd2",
+          "device": "8f3b40fac83ab816c1152d10c8af8751e26552c0912caf0cc26b8ee088332bd2",
+          "equal": true
+        },
+        "replay_sha256": {
+          "desktop": "2574ec8e624e3189b037441fd86032b50a6198f668db72e87491339d934d5031",
+          "device": "2574ec8e624e3189b037441fd86032b50a6198f668db72e87491339d934d5031",
+          "equal": true
+        },
+        "frame_events_sha256": {
+          "desktop": "09a26d2d8484d78bdbf035ec81e9fc2ac54c98d2371bb4e7cb5c3d8e3e4bb37a",
+          "device": "09a26d2d8484d78bdbf035ec81e9fc2ac54c98d2371bb4e7cb5c3d8e3e4bb37a",
+          "equal": true
+        },
+        "final_state_sha256": {
+          "desktop": "607f343075f1d544377ad753d7e7f9add915edf1714c7368955722bd42e43228",
+          "device": "607f343075f1d544377ad753d7e7f9add915edf1714c7368955722bd42e43228",
+          "equal": true
+        },
+        "repeatable": {
+          "desktop": true,
+          "device": true,
+          "equal": true
+        }
+      },
+      "verdict": "identical"
+    }
+  },
+  "match": true,
+  "notes": []
+}
