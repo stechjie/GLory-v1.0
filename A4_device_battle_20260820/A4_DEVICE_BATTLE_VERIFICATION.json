@@ -1,0 +1,147 @@
+{
+  "stage": "A4 / C4-3",
+  "title": "Same-commit desktop vs on-device replay digest, and the first real battle measured on hardware",
+  "generated_utc": "2026-08-20T10:17:38",
+  "commit": "eee8268",
+  "uncommitted_tracked_files": 0,
+  "closes": [
+    "README C4 acceptance item 3 - desktop/Android digest parity.",
+    "A4 acceptance - a screenshot of an actual battle, not just the language page.",
+    "Director D0/D5/D6 - the on-device presentation metrics those rows list as pending."
+  ],
+  "verdict": "PASS - all five digest fields identical between desktop and device at the same commit.",
+  "digest_comparison": {
+    "commit": "eee8268",
+    "rounds": {
+      "1": {
+        "desktop_present": true,
+        "device_present": true,
+        "fields": {
+          "roster_sha256": {
+            "desktop": "42e00a5b23b0e99c1cf668c723e3fdbd733f56a28328829b2a7ea705e521ed1c",
+            "device": "42e00a5b23b0e99c1cf668c723e3fdbd733f56a28328829b2a7ea705e521ed1c",
+            "equal": true
+          },
+          "replay_sha256": {
+            "desktop": "7a6667c5ad7c737ef99ec1246cac95c5537e939b6429c9ab0e5b49e9a9d634fd",
+            "device": "7a6667c5ad7c737ef99ec1246cac95c5537e939b6429c9ab0e5b49e9a9d634fd",
+            "equal": true
+          },
+          "frame_events_sha256": {
+            "desktop": "6d3dd1f7b2e3e105298cbce11e1cc55fff7ea22cc21d8ff5136c7e54bb279110",
+            "device": "6d3dd1f7b2e3e105298cbce11e1cc55fff7ea22cc21d8ff5136c7e54bb279110",
+            "equal": true
+          },
+          "final_state_sha256": {
+            "desktop": "186f158728e2fdac189d2aac832e1da760af9644635e997b3bb3bb74a1cef505",
+            "device": "186f158728e2fdac189d2aac832e1da760af9644635e997b3bb3bb74a1cef505",
+            "equal": true
+          },
+          "repeatable": {
+            "desktop": true,
+            "device": true,
+            "equal": true
+          }
+        },
+        "verdict": "identical"
+      }
+    },
+    "match": true,
+    "notes": []
+  },
+  "how_the_device_entry_point_was_found": {
+    "probe_1_scene_override": "FAILED - passing res://tools/battle_presentation_baseline.tscn as a positional argument is ignored in an exported build; the game booted normally.",
+    "probe_2_intent_extra": "FAILED - `am start --esa command_line` never reaches Godot. Same APK: 53 godot log lines with no arguments, 52 with --verbose. The exported entry point is GodotAppLauncher; the real GodotApp is not exported (am start on it raises SecurityException) and the launcher drops the extras.",
+    "probe_2_was_first_measured_wrong": "An earlier probe counted `grep -c 'godot'` over unfiltered logcat and saw 250 -> 1035 lines with --verbose, and concluded the extra worked. Most of those lines were the framework logging the package name com.godot.game. Filtering by tag (logcat -s godot) showed 53 vs 52. One APK export was wasted on that mistake. Counting occurrences of a word that appears everywhere is not a measurement.",
+    "probe_3_cl_asset": "assets/_cl_ does ship in the APK, but it is baked at export time and changing it would require re-signing.",
+    "chosen": "A trigger file. `adb shell run-as <pkg>` writes user://device_harness.json, then the app is launched normally. run-as is available on the Debug build.",
+    "trigger_is_one_shot": "DeviceHarness deletes the trigger before running, not after. A crash mid-run would otherwise hijack every subsequent normal launch, and the player would find the game replaced by a diagnostic scene that never finishes."
+  },
+  "why_an_autoload_instead_of_editing_main": "scenes/main/Main.gd is a colleague's active file (D2, the PrepScreen split). A diagnostic entry point is not worth a merge conflict there. The cost is that Main._ready() still runs once before the scene swap, which starts the VFX warmup - and the warmup is parented to root, so it survives the swap. Left running it would compile shaders and stream from flash while the baseline measures exactly those two things, so VFXWarmup.start() now returns early when the harness has claimed the launch.",
+  "completion_signal": {
+    "was": "polling logcat for the recorder's completion line",
+    "problem": "this device emits a CompositionEngine line every ~16 ms; the ring buffer overflows within minutes. On the first run every Godot log line had been evicted, which made 'never started' and 'ran but invisible' indistinguishable.",
+    "now": "poll for files/battle_presentation_baseline/manifest.json via run-as. It is the last thing the recorder writes and nothing can evict it. logcat is still archived, but filtered with -s godot."
+  },
+  "device": {
+    "model": "25028RN03A",
+    "android": "15",
+    "api": 35,
+    "abi": "arm64-v8a",
+    "viewport": {
+      "viewport_height": 720,
+      "viewport_width": 1639,
+      "window_height": 720,
+      "window_width": 1640
+    },
+    "quality_tier": "MEDIUM"
+  },
+  "measured": {
+    "note": "Digests are compared; performance is not. Frame rate and memory legitimately differ between platforms - that is not an inconsistency. Both sides ran quality tier MEDIUM.",
+    "shader_cache_caveat": "The device had a populated files/shader_cache from earlier launches, so these are warm-cache numbers, not first-install numbers.",
+    "desktop": {
+      "average_fps": 143.56424490066888,
+      "one_percent_low_fps": 67.25222359336097,
+      "p95_frame_time_ms": 7.142857142857142,
+      "max_frame_time_ms": 42.333333333333336,
+      "sample_count": 645,
+      "peak_static_mb": 165.26475524902344,
+      "peak_nodes": 1093,
+      "peak_orphans": 0,
+      "peak_tweens": 152
+    },
+    "device": {
+      "average_fps": 25.600897443147247,
+      "one_percent_low_fps": 7.188547206590461,
+      "p95_frame_time_ms": 69.98133333333355,
+      "max_frame_time_ms": 144.88700000000003,
+      "sample_count": 108,
+      "peak_video_mb": 227.45741271972656,
+      "peak_texture_mb": 144.79180908203125,
+      "peak_static_mb": 126.92241382598877,
+      "peak_nodes": 983,
+      "peak_orphans": 0,
+      "peak_tweens": 60,
+      "peak_draw_calls": 275
+    },
+    "simulation": {
+      "sim_elapsed_sec_both": 4.5,
+      "compute_first_ms_desktop": 40.647,
+      "compute_first_ms_device": 183.049
+    },
+    "leaks": "peak_orphans is 0 on both sides - the presentation layer frees everything it pools, on device as well."
+  },
+  "screenshots": [
+    {
+      "height": 720,
+      "label": "start",
+      "path": "/data/data/glory.beta001/files/battle_presentation_baseline/round_01/start.png",
+      "replay_frame": 3,
+      "sha256": "2ed3ca7c8714ed11a8d081dc47372a874c388f1e0f701b7671586b9b2d6a4246",
+      "width": 1640
+    },
+    {
+      "height": 720,
+      "label": "mid",
+      "path": "/data/data/glory.beta001/files/battle_presentation_baseline/round_01/mid.png",
+      "replay_frame": 23,
+      "sha256": "c93a7d18024180392f82ee53d27f8134773b417852bac803429053082c8a3a14",
+      "width": 1640
+    },
+    {
+      "height": 720,
+      "label": "end",
+      "path": "/data/data/glory.beta001/files/battle_presentation_baseline/round_01/end.png",
+      "replay_frame": 45,
+      "sha256": "2a1b4ef1733008963f969953500f43bd5b4a0c35a0afce0b1fc819b2eb9a120a",
+      "width": 1640
+    }
+  ],
+  "screenshot_check": "The blue bubbles around most units are the shield effect, confirmed by the project owner. The desktop capture of the same replay frame (D6_battle_presentation_cleanup_20260819/baseline_regression/round_01/mid.png) shows them identically, so nothing about them is Android-specific.",
+  "not_done": [
+    "Rounds 20+ and a Boss sample on device - only round 1 was run.",
+    "Store and prep-screen screenshots: those need the prep UI driven, which is exactly the D2 territory a colleague is working in.",
+    "Low-end device and two-device online acceptance.",
+    "A first-install (cold shader cache) measurement."
+  ]
+}

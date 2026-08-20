@@ -1,0 +1,107 @@
+--------- beginning of main
+08-20 18:14:51.544  6304  6364 I godot   : 
+08-20 18:14:57.983  6304  6364 I godot   : [QUALITY] 自动判定 tier=0  totalMB=0  cores=8
+08-20 18:14:57.983  6304  6364 I godot   : [PERFLOG] started interval=0.5s
+08-20 18:14:57.987  6304  6364 I godot   : [DEVICE_HARNESS] 已接管本次启动，参数=["--rounds", "1"]
+08-20 18:14:59.116  6304  6364 I godot   : [DEVICE_HARNESS] 已切到 res://tools/battle_presentation_baseline.tscn
+08-20 18:14:59.116  6304  6364 I godot   : [WARMUP] 设备侧诊断已接管本次启动，跳过预热以免污染实机指标
+08-20 18:14:59.132  6304  6364 I godot   : [D0BASELINE] output=/data/data/glory.beta001/files/battle_presentation_baseline seed=20260807 rounds=[1] locale=en
+08-20 18:15:00.804  6304  6364 I godot   : [D0BASELINE] round=1 roster=21 frames=46 events=182 replay_sha=7a6667c5ad7c737ef99ec1246cac95c5537e939b6429c9ab0e5b49e9a9d634fd
+08-20 18:15:01.255  6304  6364 I godot   : [PERFLOG] fps=1 proc=82.8ms phys=0.6ms video=180.3 tex=119.3 buf=20.6 static=118.1 obj=2688 res=589 node=499 orphan=0 draw=33 tween=0
+08-20 18:15:01.258  6304  6364 I godot   : [PERFLOG] skin skel=43 bones=3460 play=29/57 hidden_play=29 vis_vert=0 hid_vert=201766
+08-20 18:15:01.258  6304  6364 I godot   : [PERFLOG] !! VIDEO JUMP +180.3 MB -> 180.3 (tex=119.3)
+08-20 18:15:01.258  6304  6364 I godot   : [PERFLOG] !! STATIC JUMP +118.1 MB -> 118.1
+08-20 18:15:01.607  6304  6364 I godot   : [D0BASELINE] round=1 render-ready actors=21 visible_fallbacks=0
+08-20 18:15:03.020  6304  6364 I godot   : [PERFLOG] fps=1 proc=82.8ms phys=0.6ms video=221.8 tex=136.9 buf=25.6 static=124.0 obj=3233 res=593 node=875 orphan=0 draw=191 tween=6
+08-20 18:15:03.025  6304  6364 I godot   : [PERFLOG] skin skel=61 bones=4738 play=58/81 hidden_play=17 vis_vert=99844 hid_vert=194352
+08-20 18:15:03.025  6304  6364 I godot   : [PERFLOG] !! VIDEO JUMP +41.5 MB -> 221.8 (tex=136.9)
+08-20 18:15:03.562  6304  6364 I godot   : [PERFLOG] fps=10 proc=1195.3ms phys=0.1ms video=221.8 tex=136.9 buf=25.6 static=124.6 obj=3316 res=593 node=888 orphan=0 draw=197 tween=17
+08-20 18:15:03.566  6304  6364 I godot   : [PERFLOG] skin skel=61 bones=4738 play=62/81 hidden_play=21 vis_vert=99844 hid_vert=194352
+08-20 18:15:04.071  6304  6364 I godot   : [PERFLOG] fps=22 proc=79.6ms phys=0.1ms video=224.1 tex=139.5 buf=25.3 static=126.3 obj=3696 res=595 node=978 orphan=0 draw=274 tween=47
+08-20 18:15:04.076  6304  6364 I godot   : [PERFLOG] skin skel=58 bones=4525 play=75/77 hidden_play=36 vis_vert=98191 hid_vert=180600
+08-20 18:15:04.345  6304  6364 I godot   : [人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+08-20 18:15:04.345  6304  6364 I godot   : [人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+08-20 18:15:04.346  6304  6364 I godot   : [人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+08-20 18:15:04.346  6304  6364 I godot   : [人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+08-20 18:15:04.877  6304  6364 I godot   : [PERFLOG] fps=22 proc=79.6ms phys=0.1ms video=225.3 tex=140.7 buf=25.3 static=126.9 obj=3652 res=595 node=903 orphan=0 draw=209 tween=43
+08-20 18:15:04.881  6304  6364 I godot   : [PERFLOG] skin skel=58 bones=4525 play=76/77 hidden_play=37 vis_vert=94709 hid_vert=184082
+08-20 18:15:06.275  6304  6364 E godot   : WARNING: [UNIT_VISUAL] enemy_L0_m1 (director) missing target actor for hit_number -> portrait fallback: 
+08-20 18:15:06.275  6304  6364 E godot   :    at: push_warning (core/variant/variant_utility.cpp:1033)
+08-20 18:15:06.275  6304  6364 E godot   :    GDScript backtrace (most recent call first):
+08-20 18:15:06.275  6304  6364 E godot   :        [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+08-20 18:15:06.275  6304  6364 E godot   :        [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+08-20 18:15:06.275  6304  6364 E godot   :        [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+08-20 18:15:06.275  6304  6364 E godot   :        [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+08-20 18:15:06.275  6304  6364 E godot   :        [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+08-20 18:15:06.275  6304  6364 E godot   :        [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+08-20 18:15:06.389  6304  6364 I godot   : [PERFLOG] fps=5 proc=1151.1ms phys=0.1ms video=223.0 tex=138.7 buf=25.0 static=125.8 obj=3445 res=594 node=799 orphan=0 draw=188 tween=27
+08-20 18:15:06.393  6304  6364 I godot   : [PERFLOG] skin skel=52 bones=4099 play=69/69 hidden_play=34 vis_vert=84439 hid_vert=163542
+08-20 18:15:06.904  6304  6364 I godot   : [PERFLOG] fps=17 proc=52.1ms phys=0.1ms video=222.0 tex=138.7 buf=24.0 static=125.2 obj=3462 res=594 node=734 orphan=0 draw=179 tween=31
+08-20 18:15:06.908  6304  6364 I godot   : [PERFLOG] skin skel=46 bones=3673 play=61/61 hidden_play=30 vis_vert=74169 hid_vert=143002
+08-20 18:15:06.931  6304  6364 E godot   : WARNING: [UNIT_VISUAL] enemy_L2_m1 (director) missing target actor for hit_number -> portrait fallback: 
+08-20 18:15:06.931  6304  6364 E godot   :    at: push_warning (core/variant/variant_utility.cpp:1033)
+08-20 18:15:06.931  6304  6364 E godot   :    GDScript backtrace (most recent call first):
+08-20 18:15:06.931  6304  6364 E godot   :        [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+08-20 18:15:06.931  6304  6364 E godot   :        [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+08-20 18:15:06.931  6304  6364 E godot   :        [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+08-20 18:15:06.931  6304  6364 E godot   :        [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+08-20 18:15:06.931  6304  6364 E godot   :        [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+08-20 18:15:06.931  6304  6364 E godot   :        [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+08-20 18:15:07.072  6304  6364 E godot   : WARNING: [UNIT_VISUAL] enemy_L0_m2 (director) missing target actor for impact -> portrait fallback: 
+08-20 18:15:07.072  6304  6364 E godot   :    at: push_warning (core/variant/variant_utility.cpp:1033)
+08-20 18:15:07.072  6304  6364 E godot   :    GDScript backtrace (most recent call first):
+08-20 18:15:07.072  6304  6364 E godot   :        [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+08-20 18:15:07.072  6304  6364 E godot   :        [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+08-20 18:15:07.072  6304  6364 E godot   :        [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+08-20 18:15:07.072  6304  6364 E godot   :        [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+08-20 18:15:07.072  6304  6364 E godot   :        [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+08-20 18:15:07.072  6304  6364 E godot   :        [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+08-20 18:15:07.168  6304  6364 E godot   : WARNING: [UNIT_VISUAL] enemy_L1_m2 (director) missing target actor for hit_number -> portrait fallback: 
+08-20 18:15:07.169  6304  6364 E godot   :    at: push_warning (core/variant/variant_utility.cpp:1033)
+08-20 18:15:07.169  6304  6364 E godot   :    GDScript backtrace (most recent call first):
+08-20 18:15:07.169  6304  6364 E godot   :        [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+08-20 18:15:07.169  6304  6364 E godot   :        [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+08-20 18:15:07.169  6304  6364 E godot   :        [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+08-20 18:15:07.169  6304  6364 E godot   :        [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+08-20 18:15:07.169  6304  6364 E godot   :        [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+08-20 18:15:07.169  6304  6364 E godot   :        [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+08-20 18:15:07.230  6304  6364 E godot   : WARNING: [UNIT_VISUAL] enemy_L0_m2 (director) missing target actor for hit_number -> portrait fallback: 
+08-20 18:15:07.230  6304  6364 E godot   :    at: push_warning (core/variant/variant_utility.cpp:1033)
+08-20 18:15:07.231  6304  6364 E godot   :    GDScript backtrace (most recent call first):
+08-20 18:15:07.231  6304  6364 E godot   :        [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+08-20 18:15:07.231  6304  6364 E godot   :        [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+08-20 18:15:07.231  6304  6364 E godot   :        [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+08-20 18:15:07.231  6304  6364 E godot   :        [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+08-20 18:15:07.231  6304  6364 E godot   :        [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+08-20 18:15:07.231  6304  6364 E godot   :        [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+08-20 18:15:07.430  6304  6364 I godot   : [PERFLOG] fps=17 proc=52.1ms phys=0.1ms video=221.4 tex=138.7 buf=23.4 static=124.3 obj=3254 res=594 node=657 orphan=0 draw=170 tween=11
+08-20 18:15:07.433  6304  6364 I godot   : [PERFLOG] skin skel=40 bones=3247 play=52/53 hidden_play=25 vis_vert=63899 hid_vert=122462
+08-20 18:15:07.952  6304  6364 I godot   : [PERFLOG] fps=30 proc=40.7ms phys=0.1ms video=223.4 tex=140.7 buf=23.4 static=124.6 obj=3321 res=596 node=673 orphan=0 draw=176 tween=15
+08-20 18:15:07.955  6304  6364 I godot   : [PERFLOG] skin skel=40 bones=3247 play=52/53 hidden_play=25 vis_vert=63899 hid_vert=122462
+08-20 18:15:09.530  6304  6364 I godot   : [PERFLOG] fps=12 proc=1211.6ms phys=0.1ms video=226.4 tex=143.8 buf=23.4 static=123.5 obj=3370 res=576 node=606 orphan=0 draw=170 tween=54
+08-20 18:15:09.533  6304  6364 I godot   : [PERFLOG] skin skel=34 bones=2821 play=42/45 hidden_play=19 vis_vert=53629 hid_vert=101922
+08-20 18:15:09.583  6304  6364 E godot   : WARNING: [UNIT_VISUAL] enemy_L2_m2 (director) missing target actor for impact -> portrait fallback: 
+08-20 18:15:09.583  6304  6364 E godot   :    at: push_warning (core/variant/variant_utility.cpp:1033)
+08-20 18:15:09.583  6304  6364 E godot   :    GDScript backtrace (most recent call first):
+08-20 18:15:09.583  6304  6364 E godot   :        [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+08-20 18:15:09.583  6304  6364 E godot   :        [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+08-20 18:15:09.583  6304  6364 E godot   :        [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+08-20 18:15:09.583  6304  6364 E godot   :        [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+08-20 18:15:09.583  6304  6364 E godot   :        [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+08-20 18:15:09.583  6304  6364 E godot   :        [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+08-20 18:15:09.676  6304  6364 E godot   : WARNING: [UNIT_VISUAL] enemy_L2_m2 (director) missing target actor for hit_number -> portrait fallback: 
+08-20 18:15:09.676  6304  6364 E godot   :    at: push_warning (core/variant/variant_utility.cpp:1033)
+08-20 18:15:09.676  6304  6364 E godot   :    GDScript backtrace (most recent call first):
+08-20 18:15:09.676  6304  6364 E godot   :        [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+08-20 18:15:09.676  6304  6364 E godot   :        [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+08-20 18:15:09.676  6304  6364 E godot   :        [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+08-20 18:15:09.676  6304  6364 E godot   :        [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+08-20 18:15:09.676  6304  6364 E godot   :        [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+08-20 18:15:09.676  6304  6364 E godot   :        [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+08-20 18:15:10.045  6304  6364 I godot   : [PERFLOG] fps=13 proc=46.5ms phys=0.1ms video=224.1 tex=143.4 buf=21.5 static=124.4 obj=3142 res=576 node=578 orphan=0 draw=151 tween=12
+08-20 18:15:10.047  6304  6364 I godot   : [PERFLOG] skin skel=34 bones=2821 play=41/45 hidden_play=18 vis_vert=53629 hid_vert=101922
+08-20 18:15:10.560  6304  6364 I godot   : [PERFLOG] fps=13 proc=46.5ms phys=0.1ms video=224.1 tex=143.4 buf=21.5 static=124.0 obj=3040 res=576 node=559 orphan=0 draw=137 tween=0
+08-20 18:15:10.563  6304  6364 I godot   : [PERFLOG] skin skel=34 bones=2821 play=39/45 hidden_play=16 vis_vert=53629 hid_vert=101922
+08-20 18:15:10.728  6304  6364 I godot   : [D0BASELINE] round=1 avg_fps=25.60 one_pct_low=7.19 samples=108
+08-20 18:15:10.731  6304  6364 I godot   : [ASSET] 回合结束 hit=8 harvest=13 wait=0 cold=0 阻塞合计=0ms
+08-20 18:15:10.810  6304  6364 I godot   : [D0BASELINE] complete passed=true rounds=1 failures=0

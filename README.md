@@ -13,7 +13,7 @@ Godot 4.7 的 3v3 布阵自动战斗项目。本 README 同时是项目说明、
 | A1 — 建立可复现资产清单 | ✅ 已完成（指纹已于 A5 更新） | 当前清单 2632 个文件，inventory fingerprint 为 `a0751fdc580e78dfe6e4023c3f55501471510d0db00d27ae5732a853faafb3fc`。历史值 `5dabb3f5…`（2,643 项）是 E2-2B 之前的状态——E2-2B 重导出了 5 个 FBX 却没重新生成清单，A5 才发现并订正。 |
 | A2 — 资源交付与 Git 解耦、可追溯 | ✅ 已完成（2026-08-20 重打包并首次真正验证往返） | 当前归档 `glory-assets-a0751fdc580e78df-2fd696d1d4f2dcfc.zip`，1782 个 Git 外资源、850 个已跟踪。`restore_assets.ps1` → `ASSET_RESTORE_RESULT status=PASS copied=0 already_present=1782`，接着 `ASSET_DELIVERY_RESULT status=PASS entries=2632 missing=0 hash_mismatch=0 extras=0`。**此前从未真正跑通过**：打包脚本有三个只在 Windows PowerShell 5.1 / 非 ASCII 文件名下发作的缺陷，见 A5 一节。 |
 | A3 — 让检查真正失败 | ✅ 已完成 | 缺资源失败路径与恢复后通过路径均已验证，检查不会再以空检查集或加载失败报假绿。 |
-| A4 — Android 出包与设备回归门禁 | 🟡 门禁跑通 / Release 未做 | `tools/android_smoke.sh` 产出可追溯证据包（commit、manifest 指纹、APK SHA-256、安装方式、冷启动 logcat、截图）。694 MiB Debug 包在 25028RN03A / Android 15 上通过：`FATAL EXCEPTION` 0、`SCRIPT ERROR` 0、PSS 362 MB。抓掉四类假结果（假绿的旧版本启动、假红的通道掉线、读不出来的证据 JSON、空过滤器导出的静默胖包）。Release keystore、商店/首战截图、低端机与双设备验收未做。 |
+| A4 — Android 出包、实机战斗与回归门禁 | 🟡 门禁+实机跑通 / Release 未做 | `tools/android_smoke.sh` 产出可追溯证据包（commit、manifest 指纹、APK SHA-256、安装方式、冷启动 logcat、截图）。694 MiB Debug 包在 25028RN03A / Android 15 上通过：`FATAL EXCEPTION` 0、`SCRIPT ERROR` 0、PSS 362 MB。抓掉四类假结果（假绿的旧版本启动、假红的通道掉线、读不出来的证据 JSON、空过滤器导出的静默胖包）。`tools/android_baseline.sh` 已在真机跑完一场固定战斗：**桌面/设备回放摘要五字段逐字一致（C4 第 3 条）**，孤儿节点两侧皆 0，并拿到战斗截图。Release keystore、20+ 回合与 Boss 样本、商店页截图、低端机与双设备验收未做。 |
 | E1 — 战场空间可读性 | ✅ 桌面完成 | Windows Forward Mobile 纵向切片完成；所有战斗单位经 `UnitVisualResolver → UnitActor3D`，固定两回合回放为 0 胶囊、0 可见 fallback；`BoardReadabilityLayer` 已接入准备/战斗并可持久化开关。人工盲测与 Android 验收仍待后续。 |
 | E2-2A / E2-2B — 模型与贴图预算 | ✅ 桌面完成 | 75/75 模型边界检查为 0 broken、0 anomaly；241/241 FBX 加载错误为 0；78/78 wrapper 合并通过；模型预算 75 项、0 hard failure。Android ASTC、APK 排除源 FBX 及低端机满编最终战仍待后续。 |
 | Director D0 — 基线与确定性证据 | ✅ 桌面完成 / Android 暂停 | 当前提交 `931771c69e3f585b19e49f3bc1b846b04aa6f55d` 已完成固定 seed 的 round 1/2：完整 roster、事件/result/final-state JSON、SHA-256、actor/fallback/anchor 审计、1280×720 截图及逐帧 CSV 均已生成并独立校验；Android 证据保持暂停。 |
@@ -87,7 +87,7 @@ Godot 4.7 的 3v3 布阵自动战斗项目。本 README 同时是项目说明、
 - **两处被证据推翻的设计**：① 缺 **target** actor 改为降级而非 drop——渲染器会在击杀者的 impact/数字 cue 还排在 0.12s 起手后面时就 prune 掉尸体，原规则正好吞掉最该看见的致命一击（修前 Round 1 掉 8 条、Round 2 掉 7 条，修后 0）。缺 **source** actor 仍然 drop。② 死者的尸体改为在**事件入队时**认领：清单 §4.3 明确保留进行中的动作，所以死亡 cue 会排在它后面，而渲染器更快。曾尝试中断进行中的动作，因与 §4.3 和 D2 的 `death_cancel_queue` 断言冲突而撤回——接管尸体生命周期才是正确解法。
 - **测试**：Director 50/50、锚点 1067/1067、schema **9787/9787**（新事件类型使覆盖从 2738 自动扩大）、确定性 203 帧三份哈希一致、handshake/persist/reconnect/channel 四项 exit 0、两个固定样本 `passed=true failures=0`。
 - **哈希重新冻结**：事件哈希 Round 1 `310426f76d73a80fb1d691bad711b61f1415fe4f2e7844776138f4beffacef1f`、Round 2 `7d2e60fcd4523fca8785d10cefb0e780a5b2b7a1217b241a11eedbdc9ea0f365`（D4 新增事件所致，按 D1 流程重冻）。final-state Round 1 `186f158728e2fdac189d2aac832e1da760af9644635e997b3bb3bb74a1cef505`、Round 2 `443d17206fd1edfe3e36e7ddfbd9c02a909c0d0b99feafe3b3ee0e584b7ea026`——**这两个不是 D4 改的**，是本会话进行中的上游合并 `e50022b` 改了 `name_en`（`Ancient Tree` → `Elder Treant`），战斗帧逐行零差异；隔离实验（同一提交、撤回 D4）复现了同样的值。**D4 前后 final-state 完全一致**，即 D4 只改事件流不改战斗。
-- **边界**：只迁移 3 个单位；未新增美术；C4 验收第 5 条（真机 APK）已随 A4 解除阻塞——APK 能出、能装、能冷启动；但第 3 条（桌面/Android digest 一致）仍未验，因为它要求在设备上跑完整回放并比对哈希，而目前脚本只做到冷启动。C4 仍是部分关闭。
+- **边界**：只迁移 3 个单位；未新增美术；**C4 验收第 3 条与第 5 条都已关闭**：APK 能出、能装、能冷启动，且同一 commit 下桌面与真机的回放摘要五个字段逐字一致（见 A4 的实机小节）。C4 就切片范围而言已完整关闭。
 - 证据：`D4_battle_presentation_basic_attack_20260819/D4_VERIFICATION.json` 与其 `baseline_regression/`、`baseline_slice/`；修改前备份在 `D4_prechange_backup_20260819/`。
 
 ### Director D5 桌面闭环记录
@@ -396,6 +396,35 @@ adb exec-out screencap -p > /tmp/glory-launch.png
   - **比对只比 digest，不比性能。** 帧率和内存两个平台本来就不同，那不叫不一致；要证明的是「同一份回放在两边算出同一个结果」。
   - **退出码分三种，不合并：** 一致（0）、比过了但不一样（1）、有一侧根本没结果（2）。合并成一个的话，设备侧没跑起来会被读成跨平台不一致，然后有人去查一个并不存在的确定性问题——和前面 `not_installed` 那个假红是同一类错误。
   - **三条路径都在桌面上验过**：两侧一致 → `identical` 五个字段全 OK；篡改设备侧 `final_state_sha256` → `differs` 并点名该字段；设备侧缺结果 → `digest_incomparable` 而不是 `digest_mismatch`。
+  - **实机结果（2026-08-20，commit `eee8268`、`dirty_tracked=0`）：桌面与真机的回放摘要五个字段逐字一致。**
+
+    | 字段 | 桌面 | 设备 |
+    | --- | --- | --- |
+    | `roster_sha256` | `42e00a5b…` | 相同 |
+    | `replay_sha256` | `7a6667c5…` | 相同 |
+    | `frame_events_sha256` | `6d3dd1f7…` | 相同 |
+    | `final_state_sha256` | `186f1587…` | 相同 |
+    | `repeatable` | `true` | 相同 |
+
+    **这就是 C4 验收第 3 条。** 设备 25028RN03A / Android 15 / arm64-v8a，两侧同为 MEDIUM 档，`sim_elapsed_sec` 都是 4.500。
+  - **同一场战斗的实机演出指标（截图不计入计时）：**
+
+    | 指标 | 桌面 | 设备 |
+    | --- | ---: | ---: |
+    | 平均 FPS | 143.56 | 25.60 |
+    | 1% low FPS | 67.25 | 7.19 |
+    | p95 帧时间 | 7.14 ms | 69.98 ms |
+    | 最差单帧 | 42.33 ms | 144.89 ms |
+    | 峰值显存 | — | 227.5 MB |
+    | 峰值贴图 | — | 144.8 MB |
+    | **孤儿节点** | **0** | **0** |
+    | 模拟首算耗时 | 40.6 ms | 183.0 ms |
+
+    **孤儿节点两侧都是 0** ——演出层在真机上同样把池化的东西全部释放了，没有跨回合泄漏。
+  - **⚠ 这是暖着色器缓存的数字。** 设备上 `files/shader_cache` 从更早的启动就存在，所以它不代表玩家首次安装后的体验；冷缓存首启仍未测。
+  - **战斗截图已拿到**（`start/mid/end`，1640×720，各带 SHA-256），而且**没有经过备战 UI**——记录器直接渲染 `BattleScreen`，所以这半不碰同事的 D2。截图里单位身上的蓝色泡泡是**护盾特效**（已与项目负责人确认），桌面同一回放帧的截图一模一样，不是 Android 侧的问题。
+  - **仍未做：** 20+ 回合与 Boss 样本（本次只跑了第 1 回合）；商店与备战页截图（那需要驱动备战 UI，正是 D2 的地盘）；低端机与双设备联机；冷缓存首启测量。
+  - 证据：`A4_device_battle_20260820/A4_DEVICE_BATTLE_VERIFICATION.json`、`digest_comparison.json`，以及两侧的 `round_01/`（`hashes.json`、`summary.json`、`frame_performance.csv`、审计与截图）。
   - **加 autoload 没有改变任何行为**：重跑桌面基线，`hashes.json` 与 `D6_battle_presentation_cleanup_20260819/baseline_regression/round_01/` **逐字节相同**；经 harness 接管跑出来的哈希与直接跑也完全一致。
 
 - **验收：** 每一份 QA APK 都能反查到源码 commit 和资源 manifest；安装、启动、语言页截图、无 `FATAL EXCEPTION` 已是必经门并已通过。**商店与首场战斗截图仍未接入**——它们需要脚本驱动 UI，目前只做到冷启动。
@@ -623,7 +652,8 @@ BattleSimShared（确定性规则，只产出语义事件）
   总量与拆分前一致（96 项、约 2.78 秒），提前 abort 时丢掉的是最靠后、玩家最晚才会遇到的那批。
 - **顺带修掉一个真实的排序错误：** 旧的扁平 `SKILL_TABLES` 顺序是 `{race_units, mercenaries, bosses, formation_allies, pve_monsters}`，`pve_monsters` 排在最后——**第 1 回合就会遇到的小怪技能，反而热在第 5 回合才出现的 Boss 后面**。现在它在第 2 阶段。
 - **修掉正式版泄漏开发文字：** `_build_label()` 原本无条件构建进度条，正式版会在语言选择页画出预热进度文字，正是本项「不得在语言页暴露开发文字」禁止的。现已用 `OS.is_debug_build()` 守卫，并有源码级断言防止守卫被去掉。
-- **实机验证了阶段拆分的收益是真的（2026-08-20，25028RN03A / Android 15 / arm64-v8a）：** 桌面上 96 项总共 2.78 秒，实机上光是前两个阶段就要 **11.4 秒**。也就是说桌面看不出差别的这次拆分，在手机上决定了玩家要不要多等 9 秒——这正是 E3 当初写「大头仍在 Android」的那个大头。
+- **实机验证了阶段拆分的收益是真的（2026-08-20，25028RN03A / Android 15 / arm64-v8a）。** 桌面上 96 项总共 2.78 秒；实机上同样 96 项要 **8.13 秒**，是桌面的近 3 倍。分阶段耗时：`menu_minimal` 531 ms → `first_battle` 累计 3965 ms → `deferred` 累计 8115 ms，最慢单项 144 ms（`Warm_basic_attack_melee_god`），96/96 全部完成、未中止。也就是说桌面看不出差别的这次拆分，在手机上决定了玩家要不要多等好几秒——这正是 E3 当初写「大头仍在 Android」的那个大头。
+- **⚠ 同一台机上这个数字会随着色器缓存状态大幅变化，别只记一个值。** 本轮 8.13 秒是**暖缓存**（`files/shader_cache` 从更早的启动就在）。本文档早先写的「前两个阶段 11.4 秒」是**冷缓存**下的观测，两者不矛盾但也不能混用——引用时必须带上缓存状态，否则下一个人会以为数字漂了。
 
 - **APK 体积第一次量到真实构成**（`glory-29df28f-20260820_134112.apk`、694.0 MiB、3548 个条目，按压缩后计）：
 
