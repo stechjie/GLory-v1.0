@@ -271,6 +271,8 @@ const RoomService := preload("res://scripts/multiplayer/RoomService.gd")
 var _room_service: RefCounted = RoomService.new()
 const ReconnectService := preload("res://scripts/multiplayer/ReconnectService.gd")
 var _reconnect_service: RefCounted = ReconnectService.new()
+const DedicatedServerService := preload("res://scripts/multiplayer/DedicatedServerService.gd")
+var _server_service: RefCounted = DedicatedServerService.new()
 
 func _ready() -> void:
 	# 依赖注入：抽出的服务都不认识 NetworkService，也不碰 multiplayer。
@@ -299,6 +301,12 @@ func _ready() -> void:
 		"battle_timeout_sec": BATTLE_TIMEOUT_SEC,
 		"result_timeout_sec": RESULT_TIMEOUT_SEC,
 	}, _reconnect_service)
+	_server_service.configure(_room_service, _reconnect_service, _now, _wall_now, _net_log, {
+		"team_slots": TEAM_SLOTS,
+		"room_result": ROOM_RESULT,
+		"room_closed": ROOM_CLOSED,
+		"reserve_grace_sec": RESERVE_GRACE_SEC,
+	})
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
@@ -450,10 +458,8 @@ func _process(delta: float) -> void:
 			_cleanup_rooms()
 		# 房间快照（B5）：只在有变更时写，且限速。全量序列化跑在同步主循环上，
 		# 无脑每帧写就是给自己造一个新的冻结源（和 B4 同一类问题）。
-		_snapshot_accum += delta
-		if _rooms_dirty and _snapshot_accum >= ROOM_SNAPSHOT_INTERVAL_SEC:
-			_snapshot_accum = 0.0
-			_save_rooms_snapshot()
+		# 落盘节奏（只在有变更时写、且限速）已搬到 DedicatedServerService.tick_snapshot()。
+		_server_service.tick_snapshot(delta)
 		_reserve_tick_accum += delta
 		if _reserve_tick_accum >= 1.0:
 			_reserve_tick_accum = 0.0
@@ -500,7 +506,7 @@ func _process(delta: float) -> void:
 # NetworkService 实例、占着 8080、还会让确定性验收在被污染的环境里得出结论。
 # 工具需要服务器逻辑时请显式调用 enter_test_server_mode()（不开监听 socket）。
 func _should_boot_dedicated_server() -> bool:
-	return "--server" in OS.get_cmdline_args() or "--dedicated-server" in OS.get_cmdline_args()
+	return DedicatedServerService.should_boot(PackedStringArray(OS.get_cmdline_args()))
 
 # --- 房间持久化（B5）---------------------------------------------------------
 # `systemctl restart` 会杀掉进程内的全部房间和 token，所有在场对局一起没。
@@ -513,19 +519,19 @@ func _should_boot_dedicated_server() -> bool:
 #
 # 时间字段一律存**相对量**，不存单调时钟的绝对值：单调时钟跨进程重启就归零，
 # 存绝对值等于重启后所有 TTL 立刻到期或永不到期（见 C20 的说明）。
-# 持久化的常量随实现搬到 RoomService；这里重新导出，
-# 让门面内部与 docs/tools 里的既有引用一处都不用改。
-const ROOM_SNAPSHOT_PATH := RoomService.SNAPSHOT_PATH
-const ROOM_SNAPSHOT_VERSION := RoomService.SNAPSHOT_VERSION
-const ROOM_SNAPSHOT_INTERVAL_SEC := RoomService.SNAPSHOT_INTERVAL_SEC
-const PERSISTED_ROOM_FIELDS := RoomService.PERSISTED_ROOM_FIELDS
-const PERSISTED_ELAPSED_FIELDS := RoomService.PERSISTED_ELAPSED_FIELDS
+# 持久化的常量随实现搬到 DedicatedServerService（原始 README：端口/持久化）；
+# 这里重新导出，让门面内部与 docs/tools 里的既有引用一处都不用改。
+const ROOM_SNAPSHOT_PATH := DedicatedServerService.SNAPSHOT_PATH
+const ROOM_SNAPSHOT_VERSION := DedicatedServerService.SNAPSHOT_VERSION
+const ROOM_SNAPSHOT_INTERVAL_SEC := DedicatedServerService.SNAPSHOT_INTERVAL_SEC
+const PERSISTED_ROOM_FIELDS := DedicatedServerService.PERSISTED_ROOM_FIELDS
+const PERSISTED_ELAPSED_FIELDS := DedicatedServerService.PERSISTED_ELAPSED_FIELDS
 
 var _server_epoch: int:
 	get:
-		return _room_service.server_epoch
+		return _server_service.server_epoch
 	set(value):
-		_room_service.server_epoch = value
+		_server_service.server_epoch = value
 
 var _rooms_dirty: bool:
 	get:
@@ -536,7 +542,12 @@ var _snapshot_accum := 0.0
 
 # 本进程负责的分片号（多进程扩容用）。0 = 单进程/第一个分片。
 # 房间号会把它编进去，客户端据此知道该连哪个进程 —— 见 NetworkConfig 的说明。
-var _shard_index := 0
+# 实际持有者是 DedicatedServerService，这里保留原名转发。
+var _shard_index: int:
+	get:
+		return _server_service.shard_index
+	set(value):
+		_server_service.shard_index = value
 
 # 解析 `--key=value` 形式的命令行参数。
 # 不用 OS.get_cmdline_user_args()：那个只认 `--` 之后的部分，而 systemd 单元里
@@ -2738,13 +2749,13 @@ func _tick_idle_peers() -> void:
 # 房间落盘/读回已搬到 RoomService（save_snapshot / load_snapshot / snapshot_path）。
 # 这三个保留为门面薄包装：内部调用点与 tools/persist_check_node.gd 都不用改。
 func _snapshot_path() -> String:
-	return _room_service.snapshot_path()
+	return _server_service.snapshot_path()
 
 func _save_rooms_snapshot() -> void:
-	_room_service.save_snapshot()
+	_server_service.save_snapshot()
 
 func _load_rooms_snapshot() -> void:
-	_room_service.load_snapshot()
+	_server_service.load_snapshot()
 
 func _tick_heartbeat_timeouts() -> void:
 	# 判定在 ConnectionHealth（纯函数、有用例）；断开留在这里（要碰 multiplayer）。

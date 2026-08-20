@@ -26,42 +26,7 @@ extends RefCounted
 # `TEAM_SLOTS` 之类在门面内部有 43 处引用、外部还有若干，重新导出后一处都不用改。
 # （该写法也用一次性探针验证过。）
 
-# --- 房间持久化（B5）---------------------------------------------------------
-# `systemctl restart` 会杀掉进程内的全部房间和 token，所有在场对局一起没。
-# 这让"有人在线时永远不能更新"变成硬约束。最小版：把房间定期落盘，
-# 重启后读回来，让"部署 = 全场掉线"降级成"卡几秒 + 各自重连"。
-#
-# **只存"恢复对局必需"的字段**。`boards` 和 `last_board` 是缓存类字段
-# （每人一份含完整单位 def 的快照，一个房间就能到 MB 级），存它们会让快照
-# 大两个数量级，而丢了最坏也只是看门狗转 AI —— 不值得。
-#
-# 时间字段一律存**相对量**，不存单调时钟的绝对值：单调时钟跨进程重启就归零，
-# 存绝对值等于重启后所有 TTL 立刻到期或永不到期（见 C20 的说明）。
-const SNAPSHOT_PATH := "user://server_rooms.bin"
-const SNAPSHOT_VERSION := 1
-const SNAPSHOT_INTERVAL_SEC := 5.0
-
-# 白名单：只有这些字段进快照。加字段时要显式想清楚它该不该持久化。
-const PERSISTED_ROOM_FIELDS := [
-	"id", "state", "slot_states", "ready",
-	"slot_gold", "team_hp", "pve_completed", "boss_completed", "team_loss_streak",
-	"run_over", "last_match_state", "shared_seed", "round_index",
-	"seat_tokens", "seat_public_id", "join_seq", "next_join_seq",
-	"leader_slot", "altar_uses", "treasure_offer", "owned_treasures",
-	"prep_mercs", "suspended",
-	# state_seq 必须一起存（信封 E2）：重启后从 0 重来的话，客户端手里
-	# 还留着重启前的号，会把新包当迟到包丢掉。epoch 变了是第二道防线，
-	# 但两条都在才稳。
-	"state_seq",
-	# tx_log 必须一起存（信封 E4）：重启后客户端会重发还没拿到回执的交易，
-	# 丢了回执日志就等于同一笔宝物/祭坛被执行两次。定长 16/座位，代价可忽略。
-	"tx_log",
-	# 账本必须持久化：它是"这个人还剩多少钱、买过什么"的唯一记录（P1）。
-	# 丢了就只能拿客户端自报值重建 —— 那正是这套东西要消灭的东西。
-	"prep",
-]
-# 存相对量的时间字段：保存时转成"已过去多久"，读回来用新的单调基准重建。
-const PERSISTED_ELAPSED_FIELDS := ["last_activity_at", "state_started_at", "created_at", "empty_since"]
+# 房间持久化的常量与实现随 DedicatedServerService 搬走（见下方"持久化"分节）。
 
 # --- 状态 ---------------------------------------------------------------------
 
@@ -203,119 +168,11 @@ func new_room() -> Dictionary:
 
 
 # --- 持久化 -------------------------------------------------------------------
-
-func snapshot_path() -> String:
-	# 多进程时每个分片一份，否则互相覆盖
-	var shard := _shard_index()
-	return SNAPSHOT_PATH if shard == 0 else "%s.%d" % [SNAPSHOT_PATH, shard]
-
-
-func save_snapshot() -> void:
-	var now := _time()
-	var out_rooms: Array = []
-	var room_closed := str(_cfg.get("room_closed", "closed"))
-	for room in rooms.values():
-		if str(room.get("state", "")) == room_closed:
-			continue
-		var entry: Dictionary = {}
-		for key in PERSISTED_ROOM_FIELDS:
-			if room.has(key):
-				entry[key] = room[key]
-		# 时间转相对量
-		for key in PERSISTED_ELAPSED_FIELDS:
-			var t := float(room.get(key, 0.0))
-			entry["_elapsed_" + key] = (now - t) if t > 0.0 else -1.0
-		# 座位宽限：存"还剩多久"
-		var deadline: Dictionary = room.get("reserve_deadline", {})
-		var remain: Dictionary = {}
-		for slot in deadline.keys():
-			remain[slot] = maxf(0.0, float(deadline[slot]) - now)
-		entry["_reserve_remaining"] = remain
-		out_rooms.append(entry)
-	var payload := {
-		"version": SNAPSHOT_VERSION,
-		"protocol": NetworkConfig.NETWORK_PROTOCOL_VERSION,
-		"shard": _shard_index(),
-		"server_epoch": server_epoch,
-		"saved_at_wall": _wall_time(),
-		"rooms": out_rooms,
-		"token_seat": token_seat,
-		"public_token_seat": public_token_seat,
-	}
-	if SaveManager.atomic_write_bytes(snapshot_path(), var_to_bytes(payload)):
-		rooms_dirty = false
-
-
-func load_snapshot() -> void:
-	var raw := SaveManager.read_bytes_with_fallback(snapshot_path())
-	if raw.is_empty():
-		return
-	var value = bytes_to_var(raw)
-	if typeof(value) != TYPE_DICTIONARY:
-		_log("room snapshot unreadable, starting empty")
-		return
-	var payload: Dictionary = value
-	# 版本或协议对不上就整份丢弃：宁可全场重开，也不能用一份语义可能已经变了的
-	# 快照去恢复对局（那会产生谁也查不出来的错乱）。
-	if int(payload.get("version", -1)) != SNAPSHOT_VERSION \
-			or int(payload.get("protocol", -1)) != NetworkConfig.NETWORK_PROTOCOL_VERSION:
-		_log("room snapshot discarded: version=%s protocol=%s (want %d/%d)" % [
-			str(payload.get("version")), str(payload.get("protocol")),
-			SNAPSHOT_VERSION, NetworkConfig.NETWORK_PROTOCOL_VERSION])
-		SaveManager.remove_all_variants(snapshot_path())
-		return
-
-	var now := _time()
-	var team_slots := int(_cfg.get("team_slots", 6))
-	var room_result := str(_cfg.get("room_result", "result"))
-	var reserve_grace := float(_cfg.get("reserve_grace_sec", 60.0))
-	var restored := 0
-	var dropped := 0
-	for entry_value in (payload.get("rooms", []) as Array):
-		if typeof(entry_value) != TYPE_DICTIONARY:
-			continue
-		var entry: Dictionary = entry_value
-		var room := new_room()
-		rooms.erase(int(room.id))           # new_room 摇了个新号，这里要用存档里的
-		for key in PERSISTED_ROOM_FIELDS:
-			if entry.has(key):
-				room[key] = entry[key]
-		# 时间基准重建：单调时钟重启后归零，所以用"已过去多久"倒推
-		for key in PERSISTED_ELAPSED_FIELDS:
-			var elapsed := float(entry.get("_elapsed_" + key, -1.0))
-			room[key] = (now - elapsed) if elapsed >= 0.0 else 0.0
-		# 崩在结算中途的房间无法重建（boards 不入快照），直接丢弃而不是留个死房间
-		if str(room.get("state", "")) == room_result and (room.get("last_match_state", {}) as Dictionary).is_empty():
-			dropped += 1
-			continue
-		# **所有 peer 状态一律清空**。存档里的 peer_id 重启后全部失效，
-		# 留着会让房间以为一堆不存在的 peer 还在线，永远判不空、永远不回收。
-		room.peer_slot = {}
-		room.boards = {}
-		room.last_board = {}
-		room.suspended = false
-		room.empty_since = now
-		# 每个占着的座位都当成"刚掉线"：给一份完整宽限，等原主人带 token 回来。
-		var reserved: Dictionary = {}
-		var deadline: Dictionary = {}
-		var states: Array = room.get("slot_states", [])
-		for i in team_slots:
-			if i < states.size() and str(states[i]) == "player":
-				reserved[i] = {"reserved_at": now}
-				deadline[i] = now + reserve_grace
-		room.reserved = reserved
-		room.reserve_deadline = deadline
-		rooms[int(room.id)] = room
-		restored += 1
-
-	var saved_tokens = payload.get("token_seat", {})
-	if typeof(saved_tokens) == TYPE_DICTIONARY:
-		token_seat = saved_tokens
-	var saved_public = payload.get("public_token_seat", {})
-	if typeof(saved_public) == TYPE_DICTIONARY:
-		public_token_seat = saved_public
-	_log("room snapshot restored: rooms=%d dropped=%d tokens=%d prev_epoch=%d new_epoch=%d" % [
-		restored, dropped, token_seat.size(), int(payload.get("server_epoch", 0)), server_epoch])
+# 快照的读写与落盘节奏已按原始 README 字面搬到 DedicatedServerService
+#（"DedicatedServerService（端口/持久化）"）。持久化的理由是让进程重启不等于全场
+# 掉线 —— 那是部署问题，不是房间问题。
+#
+# 本服务只保留 rooms_dirty 这个"有没有变更"的信号，由那边决定何时真的写盘。
 
 
 # --- 注入依赖的取值 -----------------------------------------------------------

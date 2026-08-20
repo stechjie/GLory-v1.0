@@ -18,8 +18,8 @@ extends Node
 #
 # 时钟走注入的假时钟，不用真时间：断言"宽限窗口按新基准重建"需要能控制 now。
 #
-# 分片号用 11，且跑完删干净。判定依赖磁盘状态的检查必须自己管好磁盘，否则它是
-# 顺序相关的 —— tools/multiplayer_regression.sh 里对 persist_check 有同样的处理。
+# 快照往返与版本拒收的用例已随实现搬到 tools/dedicated_server_check.tscn ——
+# 持久化按原始 README 归 DedicatedServerService（端口/持久化）。
 
 const CheckHarness := preload("res://tools/CheckHarness.gd")
 const RoomServiceScript := preload("res://scripts/multiplayer/RoomService.gd")
@@ -52,12 +52,9 @@ func _run() -> void:
 	_check_public_room_list_filters()
 	_check_counts()
 	_check_injected_clock_is_used()
-	_check_snapshot_round_trip()
-	_check_snapshot_rejects_foreign_version()
 	_check_cleanup_policy()
 	_check_reserved_seat_expiry()
 
-	_cleanup_snapshot()
 	_h.finish(get_tree())
 
 
@@ -88,12 +85,6 @@ func _make_service() -> RefCounted:
 			"result_timeout_sec": 600.0,
 		}, tokens)
 	return svc
-
-
-func _cleanup_snapshot() -> void:
-	var svc := _make_service()
-	SaveManager.remove_all_variants(svc.snapshot_path())
-
 
 # --- 房间号 -------------------------------------------------------------------
 
@@ -350,93 +341,6 @@ func _check_injected_clock_is_used() -> void:
 	_h.expect(is_equal_approx(float(room.get("created_at", 0.0)), 4242.0),
 		"clock_not_injected", "时钟没走注入的 now_fn —— 这会让所有时间相关断言无法确定性验证")
 	_now = 1000.0
-
-
-# --- 快照往返 -----------------------------------------------------------------
-
-func _check_snapshot_round_trip() -> void:
-	var svc := _make_service()
-	SaveManager.remove_all_variants(svc.snapshot_path())
-
-	var room: Dictionary = svc.new_room()
-	var rid := int(room.id)
-	room.state = "prep"
-	room.round_index = 7
-	room.team_hp = [33, 29]
-	room.slot_states = ["player", "player", "empty", "empty", "empty", "empty"]
-	room.state_seq = 12
-	room.tx_log = {0: ["r1"]}
-	room.peer_slot = {555: 0}
-	room.boards = {0: {"heavy": "cache"}}
-	svc.token_seat["tok_snap"] = {"room_id": rid, "slot": 0}
-	svc.public_token_seat["PUB1234567"] = "tok_snap"
-	svc.rooms_dirty = true
-	svc.save_snapshot()
-	_h.expect(not svc.rooms_dirty, "snapshot_still_dirty", "落盘成功后应清掉脏标记")
-
-	# 换一个进程该有的样子：新服务实例、时钟往前跳。
-	_now += 500.0
-	var restored := _make_service()
-	restored.load_snapshot()
-
-	var back: Dictionary = restored.rooms.get(rid, {})
-	if not _h.expect(not back.is_empty(), "snapshot_room_missing", "快照没把房间读回来"):
-		return
-	_h.expect(int(back.get("round_index", 0)) == 7, "snapshot_round", "round_index 没恢复")
-	_h.expect(str(back.get("team_hp", [])) == str([33, 29]), "snapshot_hp", "team_hp 没恢复")
-	_h.expect(int(back.get("state_seq", -1)) == 12, "snapshot_state_seq",
-		"state_seq 没恢复 —— 重启后从 0 重来，客户端会把新包当迟到包丢掉")
-	_h.expect(str((back.get("tx_log", {}) as Dictionary).get(0, [])) == str(["r1"]),
-		"snapshot_tx_log", "tx_log 没恢复 —— 客户端重发未回执交易会被执行两次")
-
-	# peer 状态一律清空：留着会让房间以为不存在的 peer 还在线，永远判不空、永远不回收。
-	_h.expect((back.get("peer_slot", {}) as Dictionary).is_empty(),
-		"snapshot_peer_kept", "恢复后 peer_slot 必须清空")
-	_h.expect((back.get("boards", {}) as Dictionary).is_empty(),
-		"snapshot_boards_kept", "boards 是缓存类字段，不入快照也不该恢复")
-
-	# 时间基准重建：存的是相对量，读回来要用新的单调基准。
-	var created := float(back.get("created_at", -1.0))
-	_h.expect(created > 0.0 and created <= _now,
-		"snapshot_time_rebase", "时间字段没按新基准重建（created_at=%f now=%f）" % [created, _now])
-
-	# 每个占着的座位都当成刚掉线，给一份完整宽限。
-	var deadline: Dictionary = back.get("reserve_deadline", {})
-	_h.expect(deadline.size() == 2, "snapshot_grace_count",
-		"两个 player 座位都该进宽限，实际 %d 个" % deadline.size())
-	for slot in deadline.keys():
-		var remain := float(deadline[slot]) - _now
-		_h.expect(remain > 0.0 and remain <= 60.0 + 1.0,
-			"snapshot_grace_window", "宽限窗口没按新基准重建（还剩 %.1f 秒）" % remain)
-
-	_h.expect(restored.token_seat.has("tok_snap"), "snapshot_tokens", "token_seat 没恢复")
-	_h.expect(restored.public_token_seat.has("PUB1234567"), "snapshot_public_tokens",
-		"public_token_seat 没恢复")
-
-
-# 版本或协议对不上就整份丢弃：宁可全场重开，也不能用语义可能已变的存档恢复对局。
-func _check_snapshot_rejects_foreign_version() -> void:
-	var svc := _make_service()
-	SaveManager.remove_all_variants(svc.snapshot_path())
-	var payload := {
-		"version": RoomServiceScript.SNAPSHOT_VERSION + 99,
-		"protocol": NetworkConfig.NETWORK_PROTOCOL_VERSION,
-		"shard": TEST_SHARD,
-		"rooms": [{"id": 1234, "state": "prep"}],
-		"token_seat": {"ghost": {"room_id": 1234, "slot": 0}},
-	}
-	SaveManager.atomic_write_bytes(svc.snapshot_path(), var_to_bytes(payload))
-
-	var loader := _make_service()
-	loader.load_snapshot()
-	_h.expect(loader.rooms.is_empty(),
-		"snapshot_foreign_version_loaded", "版本对不上的快照必须整份丢弃，不得恢复出房间")
-	_h.expect(loader.token_seat.is_empty(),
-		"snapshot_foreign_tokens_loaded", "版本对不上的快照里的 token 也不得恢复")
-	_h.expect(not FileAccess.file_exists(svc.snapshot_path()),
-		"snapshot_foreign_kept", "被丢弃的快照应当删除，否则每次启动都要重新发现一遍")
-
-
 # --- 生命周期（第 4 步搬进来的策略）------------------------------------------
 
 # cleanup_rooms 是 62 行策略，搬进来时回归网里没有一个用例驱动过它。
