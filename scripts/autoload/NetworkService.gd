@@ -127,15 +127,15 @@ var _peer_room: Dictionary:
 
 var _public_token_seat: Dictionary:      # short player token -> session token
 	get:
-		return _room_service.public_token_seat
+		return _reconnect_service.public_token_seat
 	set(value):
-		_room_service.public_token_seat = value
+		_reconnect_service.public_token_seat = value
 
 var _peer_public_token: Dictionary:      # peer_id -> short player token used for this seat
 	get:
-		return _room_service.peer_public_token
+		return _reconnect_service.peer_public_token
 	set(value):
-		_room_service.peer_public_token = value
+		_reconnect_service.peer_public_token = value
 # --- 3v3 team lobby ---
 var team_active: bool:
 	get:
@@ -227,9 +227,9 @@ var _resync_resubmitted_round := 0        # 防重交循环：每回合只自动
 # --- 断线重连（服务器） ---
 var _token_seat: Dictionary:              # token -> {"room_id": int, "slot": int}
 	get:
-		return _room_service.token_seat
+		return _reconnect_service.token_seat
 	set(value):
-		_room_service.token_seat = value
+		_reconnect_service.token_seat = value
 var _peer_last_ping: Dictionary = {}      # peer_id -> unix time
 var _reserve_tick_accum := 0.0
 # --- 限流（服务器） ---
@@ -279,6 +279,10 @@ func _ready() -> void:
 	# 房间服务只注入**行为**（时钟/日志/分片号）；房间域常量在服务里、门面重新导出。
 	# TEAM_SLOTS / ROOM_LOBBY / ROOM_RESULT / RESERVE_GRACE_SEC 留在门面
 	# （内部 43/24/11/5 处引用、外部还有引用），按配置传进去。
+	# 先配 ReconnectService：它持有 token 索引，RoomService 要注入它才能读写。
+	_reconnect_service.configure(_now, _net_log, {
+		"reserve_grace_sec": RESERVE_GRACE_SEC,
+	})
 	_room_service.configure(_now, _wall_now, _net_log, func(): return _shard_index, {
 		"team_slots": TEAM_SLOTS,
 		"room_lobby": ROOM_LOBBY,
@@ -294,10 +298,7 @@ func _ready() -> void:
 		"prep_timeout_sec": PREP_TIMEOUT_SEC,
 		"battle_timeout_sec": BATTLE_TIMEOUT_SEC,
 		"result_timeout_sec": RESULT_TIMEOUT_SEC,
-	})
-	_reconnect_service.configure(_now, _net_log, {
-		"reserve_grace_sec": RESERVE_GRACE_SEC,
-	})
+	}, _reconnect_service)
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
@@ -2563,10 +2564,7 @@ const PUBLIC_TOKEN_LENGTH := RoomService.PUBLIC_TOKEN_LENGTH
 const PUBLIC_TOKEN_MAX_TRIES := RoomService.PUBLIC_TOKEN_MAX_TRIES
 
 func _make_public_token() -> String:
-	# 查重要读 RoomService 手里的索引，所以把这一步传进去（见 ReconnectService 顶部
-	# 关于两个服务分界的说明）。
-	return _reconnect_service.make_public_token(func(id: String) -> bool:
-		return _public_token_seat.has(id))
+	return _reconnect_service.make_public_token()
 # 每回合战斗 seed：锁盘之后才生成，用后即弃。
 # 旧实现是房间创建时 randi() 一次、整局不变，且随 boards 广播和 resume 下发——
 # 客户端因此在提交棋盘前就知道 seed，可以本地把 PVE/Boss 回合暴力预演到最优解。

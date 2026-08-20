@@ -36,6 +36,7 @@ func _run() -> void:
 	_check_expiry_and_takeover()
 	_check_suspended_room_is_skipped()
 	_check_takeover_state()
+	_check_token_index()
 	_h.finish(get_tree())
 
 
@@ -210,3 +211,40 @@ func _check_takeover_state() -> void:
 		if line.contains("AI takeover"):
 			hit = true
 	_h.expect(hit, "takeover_not_logged", "接管应留一条日志 —— 线上排查掉线纠纷时这是唯一线索")
+
+
+# --- token 索引 ---------------------------------------------------------------
+
+# 三份索引按原始 README 字面归本服务（"ReconnectService（token/宽限/AI 接管）"）。
+# 它们决定"带着 token 回来的人能不能认回自己的座位"，写坏的症状是重连落到别人的
+# 座位、或者永远认不回来 —— 两种都只在线上出现。
+func _check_token_index() -> void:
+	var svc := _make()
+	_h.expect(svc.token_seat.is_empty() and svc.public_token_seat.is_empty()
+			and svc.peer_public_token.is_empty(),
+		"token_index_not_empty", "新建服务时三份索引都应为空")
+
+	# 查重要用**固定**随机源才测得到：随机源下每次生成的 id 本来就不同，
+	# 断言"两次结果不一样"无论查重是否生效都成立 —— 那是空断言，第一版就是这么写的。
+	# 这里把随机源钉死成同一串字节，于是两次生成的 id 必然相同，查重是唯一的差别。
+	var fixed: RefCounted = ReconnectServiceScript.new()
+	fixed.configure(func() -> float: return _now, func(_m: String) -> void: pass, {})
+	var seq := [7]
+	fixed.set_random_source(func(n: int) -> PackedByteArray:
+		var out := PackedByteArray()
+		for i in n:
+			out.append(int(seq[0]))
+		return out)
+	var id := str(fixed.make_public_token())
+	_h.expect(not id.is_empty(), "fixed_token_empty", "固定随机源下应能签发短码")
+	fixed.public_token_seat[id] = "tok_a"
+	var again := str(fixed.make_public_token())
+	_h.expect(again.is_empty(), "public_token_reissued_taken",
+		"固定随机源下必然撞上已占用的短码，应重试到上限后放弃返回空串，实际返回 '%s'" % again)
+
+	svc.token_seat["tok_a"] = {"room_id": 7, "slot": 2}
+	svc.peer_public_token[900] = id
+	svc.clear_tokens()
+	_h.expect(svc.token_seat.is_empty(), "clear_token_seat", "clear_tokens 应清空 token_seat")
+	_h.expect(svc.public_token_seat.is_empty(), "clear_public_token_seat", "clear_tokens 应清空 public_token_seat")
+	_h.expect(svc.peer_public_token.is_empty(), "clear_peer_public_token", "clear_tokens 应清空 peer_public_token")

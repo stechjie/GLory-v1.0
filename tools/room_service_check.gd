@@ -23,6 +23,7 @@ extends Node
 
 const CheckHarness := preload("res://tools/CheckHarness.gd")
 const RoomServiceScript := preload("res://scripts/multiplayer/RoomService.gd")
+const ReconnectServiceScript := preload("res://scripts/multiplayer/ReconnectService.gd")
 const CHECK_NAME := "room_service"
 
 const TEST_SHARD := 11
@@ -63,6 +64,9 @@ func _run() -> void:
 # --- 夹具 ---------------------------------------------------------------------
 
 func _make_service() -> RefCounted:
+	# token 索引已按 README 字面搬到 ReconnectService，RoomService 经注入读写它。
+	var tokens: RefCounted = ReconnectServiceScript.new()
+	tokens.configure(func() -> float: return _now, func(_m: String) -> void: pass, {})
 	var svc: RefCounted = RoomServiceScript.new()
 	svc.configure(
 		func() -> float: return _now,
@@ -82,7 +86,7 @@ func _make_service() -> RefCounted:
 			"prep_timeout_sec": 1800.0,
 			"battle_timeout_sec": 300.0,
 			"result_timeout_sec": 600.0,
-		})
+		}, tokens)
 	return svc
 
 

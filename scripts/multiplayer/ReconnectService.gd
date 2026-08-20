@@ -10,11 +10,16 @@ extends RefCounted
 #   宽限       掉线座位保留多久、到期怎么判
 #   AI 接管    宽限到期后把座位转 dummy，让本回合不被一个掉线的人卡住
 #
-# 与 RoomService 的分界（这条是刻意的，和 README 字面略有出入）：
-# **token ↔ 座位的索引留在 RoomService**，因为它随房间快照持久化、且
-# room_live_token_count / move_seat_metadata / clear_seat_metadata /
-# save_snapshot / load_snapshot 都要用它。硬搬过来会让两个服务互相依赖。
-# 这里拿走的是**行为**：签发、清洗校验、宽限记账、到期判定、接管时的状态变更。
+# 与 RoomService 的分界：**token ↔ 座位的三份索引在这里**，按 README 字面
+# （"ReconnectService（token/宽限/AI 接管）"）。
+#
+# 依赖方向是**单向的** Room -> Reconnect，不成环：RoomService 有 6 处要读写索引
+# （room_live_token_count / move_seat_metadata / clear_seat_metadata /
+# release_seat_public_id / save_snapshot / load_snapshot），所以门面把本服务注入
+# 给它；本服务不认识 RoomService —— tick_reserved_seats 的 rooms 是参数传进来的。
+#
+# 索引仍随房间快照一起持久化：重启后必须能靠 token 认回座位，否则"部署 = 全场
+# 掉线且回不来"。存取由 RoomService 的快照代码经本服务读写。
 #
 # 与门面的分界（和 RoomService 一致）：本类是 RefCounted，够不着 multiplayer，
 # 也不该够得着。所以"广播大厅""推进阶段"这类动作按 Callable 注入。
@@ -31,10 +36,36 @@ const PUBLIC_TOKEN_MAX_TRIES := 8
 # 但仍要有上限：不设限等于让对端决定这个字符串多长。
 const MAX_PUBLIC_ID_LEN := 24
 
+# --- token ↔ 座位索引 ---------------------------------------------------------
+# 会话 token -> {"room_id": int, "slot": int}
+var token_seat: Dictionary = {}
+# 玩家手输的短码 -> 会话 token
+var public_token_seat: Dictionary = {}
+# peer_id -> 该席位用的短码
+var peer_public_token: Dictionary = {}
+
 var _now_fn: Callable = Callable()
 var _log_fn: Callable = Callable()
 var _cfg: Dictionary = {}
 var _crypto := Crypto.new()
+# 随机源可注入，沿用 ReconnectBackoff 的做法（"随机源注入，用固定值验证边界，
+# 不靠跑几次看起来差不多"）。不注入时用 Crypto。
+#
+# 没有这个seam，"短码查重"就没法测：make_public_token 每次生成随机 id，
+# 标记一个已占用后下一次自然是另一个，断言 `again != id` 无论查重是否生效都成立 ——
+# 那是个空断言。要测查重，必须能强制造出碰撞。
+var _random_bytes_fn: Callable = Callable()
+
+
+func _random_bytes(n: int) -> PackedByteArray:
+	if _random_bytes_fn.is_valid():
+		return _random_bytes_fn.call(n)
+	return _crypto.generate_random_bytes(n)
+
+
+# 仅供测试注入固定随机源。生产路径不调用它。
+func set_random_source(fn: Callable) -> void:
+	_random_bytes_fn = fn
 
 
 func configure(now_fn: Callable, log_fn: Callable, cfg: Dictionary) -> void:
@@ -57,20 +88,17 @@ func _log(message: String) -> void:
 # --- token 签发与校验 ---------------------------------------------------------
 
 func make_token() -> String:
-	return _crypto.generate_random_bytes(32).hex_encode()
+	return _random_bytes(32).hex_encode()
 
 
-# taken_fn(id) -> bool：这个短码是不是已经被占了。索引在 RoomService 手里，
-# 所以由调用方把"查重"这一步传进来。
-#
 # 有界重试：原实现是 while 无界循环，短码空间被占满时服务器会在这里死循环卡住。
-func make_public_token(taken_fn: Callable) -> String:
+func make_public_token() -> String:
 	for _try in PUBLIC_TOKEN_MAX_TRIES:
-		var raw := _crypto.generate_random_bytes(PUBLIC_TOKEN_LENGTH)
+		var raw := _random_bytes(PUBLIC_TOKEN_LENGTH)
 		var id := ""
 		for b in raw:
 			id += PUBLIC_TOKEN_ALPHABET[int(b) % PUBLIC_TOKEN_ALPHABET.length()]
-		if not bool(taken_fn.call(id)):
+		if not public_token_seat.has(id):
 			return id
 	_log("public token space exhausted after %d tries" % PUBLIC_TOKEN_MAX_TRIES)
 	return ""
@@ -155,3 +183,10 @@ func apply_ai_takeover(room: Dictionary, slot: int) -> void:
 		room.ready = ready
 	(room.get("reserved", {}) as Dictionary).erase(slot)
 	_log("reserve grace expired room=%d slot=%d -> AI takeover" % [int(room.get("id", 0)), slot])
+
+
+# 清空全部索引。对应门面 reset 路径里原本逐个清的那几行。
+func clear_tokens() -> void:
+	token_seat.clear()
+	public_token_seat.clear()
+	peer_public_token.clear()

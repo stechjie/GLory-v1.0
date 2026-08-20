@@ -69,12 +69,26 @@ const PERSISTED_ELAPSED_FIELDS := ["last_activity_at", "state_started_at", "crea
 var rooms: Dictionary = {}
 # peer_id -> room_id
 var peer_room: Dictionary = {}
-# 会话 token -> {"room_id": int, "slot": int}
-var token_seat: Dictionary = {}
-# 玩家手输的短码 -> 会话 token
-var public_token_seat: Dictionary = {}
-# peer_id -> 该席位用的短码
-var peer_public_token: Dictionary = {}
+# token ↔ 座位的三份索引已按 README 字面搬到 ReconnectService（token/宽限/AI 接管）。
+# 这里通过注入的服务读写，依赖方向单向 Room -> Reconnect，不成环。
+# 用属性转发而不是逐处改调用：本文件有 12 处引用，转发之后一处都不用改，
+# 且和门面对外的做法一致。
+var _tokens: RefCounted = null
+var token_seat: Dictionary:
+	get:
+		return _tokens.token_seat
+	set(value):
+		_tokens.token_seat = value
+var public_token_seat: Dictionary:
+	get:
+		return _tokens.public_token_seat
+	set(value):
+		_tokens.public_token_seat = value
+var peer_public_token: Dictionary:
+	get:
+		return _tokens.peer_public_token
+	set(value):
+		_tokens.peer_public_token = value
 # 房间有改动、待落盘
 var rooms_dirty := false
 # 服务器代数：进程重启后 +1，客户端据此判断"服务器换过一轮了"
@@ -92,7 +106,8 @@ var _cfg: Dictionary = {}
 
 
 func configure(now_fn: Callable, wall_now_fn: Callable, log_fn: Callable,
-		shard_index_fn: Callable, cfg: Dictionary) -> void:
+		shard_index_fn: Callable, cfg: Dictionary, tokens: RefCounted = null) -> void:
+	_tokens = tokens
 	_now_fn = now_fn
 	_wall_now_fn = wall_now_fn
 	_log_fn = log_fn
@@ -100,13 +115,17 @@ func configure(now_fn: Callable, wall_now_fn: Callable, log_fn: Callable,
 	_cfg = cfg
 
 
-# 清空全部房间状态。对应 NetworkService.reset() 里原本逐个赋空字典的那几行。
+# 清空全部房间状态。
+#
+# 注意：**当前仓库里没有任何地方调用它**（2026-08-21 全仓搜索确认）。注释说它
+# 对应 NetworkService.reset() 里那几行，但 reset() 是**客户端会话重置**，
+# 不该把服务端的房间一起抹掉，所以没接上大概率是对的。留着但标明现状，
+# 免得下一个人以为 reset 会清房间。
 func clear() -> void:
 	rooms.clear()
 	peer_room.clear()
-	token_seat.clear()
-	public_token_seat.clear()
-	peer_public_token.clear()
+	# token 索引归 ReconnectService，由门面在同一处调它的 clear_tokens()。
+	# 这里不再顺手清：清别人的状态是"两处都要记得"的开始。
 	rooms_dirty = false
 
 
