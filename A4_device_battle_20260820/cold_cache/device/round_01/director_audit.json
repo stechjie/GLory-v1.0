@@ -1,0 +1,93 @@
+{
+  "anchor_degradation_count": 6,
+  "anchor_degradation_rows": [
+    {
+      "consumer": "director",
+      "reason": "missing target actor for hit_number",
+      "resource_path": "",
+      "unit_id": "enemy_L0_m1"
+    },
+    {
+      "consumer": "director",
+      "reason": "missing target actor for hit_number",
+      "resource_path": "",
+      "unit_id": "enemy_L1_m0"
+    },
+    {
+      "consumer": "director",
+      "reason": "missing target actor for hit_number",
+      "resource_path": "",
+      "unit_id": "enemy_L2_m1"
+    },
+    {
+      "consumer": "director",
+      "reason": "missing target actor for hit_number",
+      "resource_path": "",
+      "unit_id": "enemy_L1_m2"
+    },
+    {
+      "consumer": "director",
+      "reason": "missing target actor for hit_number",
+      "resource_path": "",
+      "unit_id": "enemy_L0_m2"
+    },
+    {
+      "consumer": "director",
+      "reason": "missing target actor for hit_number",
+      "resource_path": "",
+      "unit_id": "enemy_L2_m2"
+    }
+  ],
+  "budget": {
+    "degraded": 50,
+    "merged": 2,
+    "over_budget_by_priority": {
+      "ambient": 1,
+      "important": 49
+    }
+  },
+  "drop_count": 2,
+  "drops_by_reason": {
+    "budget_merged_ambient": 2
+  },
+  "legacy_adapter": {
+    "pending_timers": 0,
+    "played_by_type": {
+      "attack_start": 13,
+      "death": 9,
+      "hit_number": 43,
+      "projectile_spawn": 33
+    },
+    "profiles_seen": [
+      "basic_melee",
+      "basic_ranged",
+      "crit",
+      "death",
+      "fallback_minimal",
+      "heal"
+    ]
+  },
+  "missing_actor_drop_count": 0,
+  "profiles": {
+    "loaded_ids": [
+      "basic_melee",
+      "basic_ranged",
+      "crit",
+      "death",
+      "heal"
+    ],
+    "missing_rows": [],
+    "resolved_counts": {
+      "basic_melee": 37,
+      "basic_ranged": 113,
+      "crit": 12,
+      "death": 9,
+      "heal": 1
+    }
+  },
+  "resolution": {
+    "degraded_anchors": 0,
+    "resolved_anchors": 205,
+    "resolved_cues": 172
+  }
+}

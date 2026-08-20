@@ -4,6 +4,7 @@ const CheckHarness := preload("res://tools/CheckHarness.gd")
 const DirectorScript := preload("res://effects/runtime/presentation/BattlePresentationDirector.gd")
 const EventSchema := preload("res://scripts/battle/BattlePresentationEvent.gd")
 const VisualResolver := preload("res://effects/runtime/presentation/UnitVisualResolver.gd")
+const RealRegistry := preload("res://effects/runtime/presentation/UnitActorRegistry.gd")
 
 
 # Anchor-aware stand-in for UnitActorRegistry. It is permissive by default so the
@@ -192,6 +193,7 @@ func _run() -> void:
 	_check_pause_seek_skip_and_drain()
 	_check_battle_restart_cleanup()
 	_check_actor_resolution()
+	_check_respawned_uid_keeps_its_actor()
 	_check_budget_priorities()
 	await _check_real_timer_seek_and_skip()
 	_check_anchor_degradation_and_no_caching()
@@ -640,6 +642,8 @@ func _check_integration_loads() -> void:
 
 	# D6: the snapshot-diff route for basic attacks and damage numbers must be gone,
 	# not merely bypassed. A bypassed branch is one flag away from double playback.
+	_check_renderer_ready_before_enqueue()
+
 	var vfx_source := FileAccess.get_file_as_string("res://scenes/battle/BattleVfx.gd")
 	_h.expect(not vfx_source.is_empty(), "vfx_source_read", "无法读取 BattleVfx.gd 源码做 D6 断言")
 	for removed in ["_collect_attack_events", "_play_melee_slashes", "_play_ranged_projectiles"]:
@@ -673,3 +677,77 @@ func _event(
 		"target_uids": target_uids,
 		"visibility_priority": priority,
 	}, battle_id, tick, ordinal)
+
+
+# 召唤物用同一个 uid 反复重生，所以"交还尸体"和"注销 uid"不是一回事。
+#
+# 真实的失败长这样（固定第 20 回合，镜像领主）：mirror_1 死了，死亡动画开始播；动画
+# 还没播完，mirror_1 已被重新召唤，新 actor 注册到同一个 uid 上；这时旧尸体播完调
+# unregister_actor(uid)，抹掉的是**活着的那一个**。它随后的死亡就被 Director 判成
+# missing_actor:source 丢弃 —— 玩家看到镜像凭空消失，而清单第 6 节禁止单位就这么不见。
+#
+# 直接测 UnitActorRegistry 而不是绕 Director：规则就在注册表里，测它才测到根。
+func _check_respawned_uid_keeps_its_actor() -> void:
+	var registry := RealRegistry.new()
+	var old_actor := _contract_actor()
+	var new_actor := _contract_actor()
+	add_child(old_actor)
+	add_child(new_actor)
+
+	_h.expect(registry.register_actor("summon_1", old_actor), "respawn_register_old", "第一具 actor 没能注册")
+	# 单位重生：同一个 uid 换成新 actor。
+	_h.expect(registry.register_actor("summon_1", new_actor), "respawn_register_new", "重生后的 actor 没能注册")
+
+	# 旧尸体播完才来交还 —— 它已经不是注册表里那一个，不能动。
+	_h.expect(not registry.unregister_if_holds("summon_1", old_actor),
+		"respawn_release_stale", "交还旧尸体时不应注销 uid：注册表里存的已经是重生后的 actor")
+	_h.expect(registry.get_actor("summon_1") == new_actor,
+		"respawn_actor_evicted", "重生后的 actor 被旧尸体的交还挤掉了 —— 它随后的死亡会被丢弃")
+
+	# 交还当前这一具则必须真的注销，否则死掉的单位会一直留在注册表里。
+	_h.expect(registry.unregister_if_holds("summon_1", new_actor),
+		"respawn_release_current", "交还当前 actor 时应当注销")
+	_h.expect(registry.get_actor("summon_1") == null, "respawn_not_cleared", "注销后仍能取到 actor")
+	_h.expect(not registry.unregister_if_holds("summon_1", null), "respawn_null_guard", "传 null 不应算作注销成功")
+
+	old_actor.queue_free()
+	new_actor.queue_free()
+
+
+# 满足 UnitActorRegistry 六节点契约的最小 actor。
+func _contract_actor() -> Node3D:
+	var root := Node3D.new()
+	for node_name in RealRegistry.REQUIRED_NODES:
+		var child := Node3D.new()
+		child.name = str(node_name)
+		root.add_child(child)
+	return root
+
+
+# 渲染层必须在 Director 排这一 tick **之前**就绪，两个方向都要。
+#
+# 慢设备上回放会追帧：一次 _apply_replay_frame() 可能跨好几个回放帧（实测真机第 20
+# 回合步长出现 2 和 3，桌面恒为 1），于是那一批 tick 会在 _refresh_visuals() 建模之前
+# 全部入队。所以入队前要做两件事：
+#   cue_claim_corpses()      把要死的身体扣下来，免得被 _refresh_visuals() 先释放
+#   _spawn_actors_for_tick() 把刚出生的身体建出来，免得它还不存在
+# 少任何一个，对应的 cue 都会被 Director 判成 missing_actor:source 丢掉 —— 第 20 回合
+# 镜像领主的镜像两种都中过。
+#
+# 做成源码顺序断言而不是行为断言：这个 bug 只在回放追帧时出现，而桌面永远不追帧，
+# 真跑一遍在桌面上必然是绿的，测不出东西。
+func _check_renderer_ready_before_enqueue() -> void:
+	var source := FileAccess.get_file_as_string("res://scenes/battle/BattleScreen.gd")
+	if not _h.expect(not source.is_empty(), "battle_screen_source_read", "无法读取 BattleScreen.gd 源码"):
+		return
+	var enqueue_at := source.find("_presentation_director.enqueue_tick(")
+	_h.expect(enqueue_at >= 0, "enqueue_tick_missing", "找不到 enqueue_tick 调用点，断言可能已失效")
+	if enqueue_at < 0:
+		return
+	# 匹配**调用**而不是名字：只写 "_spawn_actors_for_tick(" 的话，find() 会命中
+	# 函数定义（它在文件靠前处），于是把调用挪到 enqueue 之后这个断言照样是绿的。
+	# 第一版就是这么写的，验证"塞回 bug"时没变红才发现 —— 断言自己成了假绿。
+	for required in ["cue_claim_corpses(tick_events)", "_spawn_actors_for_tick(j, tick_events)"]:
+		var at := source.find(str(required))
+		_h.expect(at >= 0 and at < enqueue_at, "renderer_not_ready_before_enqueue",
+			"%s 必须在 enqueue_tick() 之前调用 —— 否则回放追帧时，这一 tick 里刚出生或正要死的单位没有 actor，cue 会被丢掉" % str(required))

@@ -1,0 +1,642 @@
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+[PERFLOG] started interval=0.5s
+[DEVICE_HARNESS] 未接管：命令行无 --device-baseline，且 user://device_harness.json 不存在
+[D0BASELINE] output=C:/Users/Leno/Desktop/build/android/baseline_20260820_182508_00ebe3b/desktop seed=20260807 rounds=[5, 20, 21] locale=en
+[D0BASELINE] round=5 roster=24 frames=66 events=297 replay_sha=c241d10a28d6c0887ae28fbae5fba25513b80bfe9bf3ad404684b9a882164510
+[ASSET] 阻塞等待 63ms  god_guard_crystalbound_animated.tscn
+[D0BASELINE] round=5 render-ready actors=24 visible_fallbacks=0
+[PERFLOG] fps=1 proc=44.9ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=160.6 obj=3476 res=547 node=981 orphan=0 draw=0 tween=2
+[PERFLOG] skin skel=70 bones=5377 play=70/93 hidden_play=23 vis_vert=114196 hid_vert=223056
+[PERFLOG] !! STATIC JUMP +160.6 MB -> 160.6
+[PERFLOG] fps=41 proc=64.1ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=160.7 obj=3485 res=547 node=984 orphan=0 draw=0 tween=0
+[PERFLOG] skin skel=70 bones=5377 play=70/93 hidden_play=23 vis_vert=114196 hid_vert=223056
+[PERFLOG] fps=41 proc=64.1ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=162.8 obj=4191 res=547 node=1095 orphan=0 draw=0 tween=97
+[PERFLOG] skin skel=70 bones=5377 play=73/93 hidden_play=26 vis_vert=114196 hid_vert=223056
+[PERFLOG] fps=143 proc=17.9ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=166.5 obj=4259 res=551 node=1004 orphan=0 draw=0 tween=99
+[PERFLOG] skin skel=58 bones=4525 play=75/77 hidden_play=36 vis_vert=93728 hid_vert=182120
+WARNING: [UNIT_VISUAL] enemy_L0_m2 (director) missing target actor for hit_number -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+[PERFLOG] fps=143 proc=17.9ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=166.2 obj=3835 res=551 node=870 orphan=0 draw=0 tween=34
+[PERFLOG] skin skel=55 bones=4312 play=71/73 hidden_play=34 vis_vert=88611 hid_vert=171886
+[PERFLOG] fps=140 proc=13.4ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=168.9 obj=3876 res=551 node=825 orphan=0 draw=0 tween=67
+[PERFLOG] skin skel=49 bones=3886 play=65/65 hidden_play=32 vis_vert=81859 hid_vert=147936
+[PERFLOG] fps=140 proc=13.4ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=170.2 obj=3608 res=553 node=749 orphan=0 draw=0 tween=29
+[PERFLOG] skin skel=46 bones=3673 play=61/61 hidden_play=30 vis_vert=73260 hid_vert=141184
+WARNING: [UNIT_VISUAL] enemy_L2_m2 (director) missing target actor for hit_number -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+[PERFLOG] fps=132 proc=22.2ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=166.3 obj=3693 res=533 node=752 orphan=0 draw=0 tween=43
+[PERFLOG] skin skel=43 bones=3460 play=56/57 hidden_play=27 vis_vert=71625 hid_vert=127468
+[PERFLOG] fps=132 proc=22.2ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=168.7 obj=3954 res=535 node=786 orphan=0 draw=0 tween=72
+[PERFLOG] skin skel=43 bones=3460 play=57/57 hidden_play=28 vis_vert=68143 hid_vert=130950
+[PERFLOG] fps=140 proc=12.6ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=167.7 obj=3788 res=534 node=762 orphan=0 draw=0 tween=59
+[PERFLOG] skin skel=43 bones=3460 play=56/57 hidden_play=27 vis_vert=71625 hid_vert=127468
+WARNING: [UNIT_VISUAL] enemy_L1_boss (director) missing target actor for hit_number -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+[PERFLOG] fps=140 proc=12.6ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=167.6 obj=3689 res=534 node=702 orphan=0 draw=0 tween=48
+[PERFLOG] skin skel=40 bones=3247 play=53/53 hidden_play=26 vis_vert=63305 hid_vert=121274
+WARNING: [UNIT_VISUAL] enemy_L0_boss (director) missing target actor for hit_number -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+[PERFLOG] fps=142 proc=9.8ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=168.6 obj=3550 res=535 node=631 orphan=0 draw=0 tween=35
+[PERFLOG] skin skel=37 bones=3034 play=49/49 hidden_play=24 vis_vert=58467 hid_vert=111598
+[PERFLOG] fps=142 proc=9.8ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=166.9 obj=3647 res=533 node=666 orphan=0 draw=0 tween=52
+[PERFLOG] skin skel=37 bones=3034 play=48/49 hidden_play=23 vis_vert=58467 hid_vert=111598
+[PERFLOG] fps=137 proc=36.7ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=184.8 obj=3635 res=539 node=638 orphan=0 draw=0 tween=55
+[PERFLOG] skin skel=37 bones=3034 play=47/49 hidden_play=22 vis_vert=58467 hid_vert=111598
+WARNING: [UNIT_VISUAL] enemy_L2_boss (director) missing target actor for hit_number -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+[PERFLOG] fps=137 proc=36.7ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=180.9 obj=3409 res=520 node=602 orphan=0 draw=0 tween=18
+[PERFLOG] skin skel=34 bones=2821 play=42/45 hidden_play=19 vis_vert=53629 hid_vert=101922
+[PERFLOG] fps=142 proc=10.3ms phys=0.1ms video=0.0 tex=0.0 buf=0.0 static=179.6 obj=3235 res=519 node=559 orphan=0 draw=0 tween=1
+[PERFLOG] skin skel=34 bones=2821 play=41/45 hidden_play=18 vis_vert=53629 hid_vert=101922
+[D0BASELINE] round=5 avg_fps=138.14 one_pct_low=44.20 samples=897
+[ASSET] 回合结束 hit=10 harvest=13 wait=1 cold=0 阻塞合计=63ms
+[D0BASELINE] round=20 roster=72 frames=232 events=3076 replay_sha=794993e2be79edc820c9f3268b78c24634ec1f3385108194b37afdbcb73e6275
+[PERFLOG] fps=98 proc=4259.9ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=207.5 obj=2825 res=470 node=333 orphan=0 draw=0 tween=0
+[PERFLOG] skin skel=25 bones=2074 play=17/33 hidden_play=17 vis_vert=0 hid_vert=116047
+[PERFLOG] !! STATIC JUMP +27.9 MB -> 207.5
+[D0BASELINE] round=20 render-ready actors=69 visible_fallbacks=0
+[PERFLOG] fps=2 proc=51.9ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=244.4 obj=6058 res=561 node=2762 orphan=0 draw=0 tween=2
+[PERFLOG] skin skel=205 bones=14962 play=205/273 hidden_play=68 vis_vert=344980 hid_vert=684624
+[PERFLOG] !! STATIC JUMP +36.9 MB -> 244.4
+[PERFLOG] fps=2 proc=51.9ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=246.1 obj=6835 res=561 node=2908 orphan=0 draw=0 tween=104
+[PERFLOG] skin skel=205 bones=14962 play=211/273 hidden_play=74 vis_vert=348462 hid_vert=681142
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+[PERFLOG] fps=58 proc=48.9ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=245.8 obj=6545 res=561 node=2851 orphan=0 draw=0 tween=67
+[PERFLOG] skin skel=205 bones=14962 play=215/273 hidden_play=78 vis_vert=344980 hid_vert=684624
+[PERFLOG] fps=63 proc=33.7ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=248.6 obj=7272 res=561 node=3011 orphan=0 draw=0 tween=87
+[PERFLOG] skin skel=211 bones=15388 play=278/281 hidden_play=137 vis_vert=357836 hid_vert=699890
+[PERFLOG] fps=63 proc=33.7ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=247.6 obj=6791 res=561 node=2895 orphan=0 draw=0 tween=35
+[PERFLOG] skin skel=211 bones=15388 play=278/281 hidden_play=137 vis_vert=354354 hid_vert=703372
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+[PERFLOG] fps=58 proc=24.8ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=248.0 obj=7262 res=561 node=2968 orphan=0 draw=0 tween=97
+[PERFLOG] skin skel=208 bones=15175 play=276/277 hidden_play=137 vis_vert=349667 hid_vert=693998
+[PERFLOG] fps=58 proc=24.8ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=247.9 obj=7080 res=561 node=2902 orphan=0 draw=0 tween=48
+[PERFLOG] skin skel=208 bones=15175 play=275/277 hidden_play=136 vis_vert=353149 hid_vert=690516
+[PERFLOG] fps=57 proc=35.0ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=248.9 obj=7571 res=561 node=3014 orphan=0 draw=0 tween=118
+[PERFLOG] skin skel=211 bones=15388 play=277/281 hidden_play=136 vis_vert=354354 hid_vert=703372
+ERROR: [D0BASELINE] director_missing_actor: local:20260807:20:boss:team0:40:11 dropped: missing_actor:source
+   at: push_error (core/variant/variant_utility.cpp:1023)
+   GDScript backtrace (most recent call first):
+       [0] _record_failure (res://tools/battle_presentation_baseline.gd:833)
+       [1] _on_cue_dropped (res://tools/battle_presentation_baseline.gd:779)
+       [2] _emit_drop_once (res://effects/runtime/presentation/BattlePresentationDirector.gd:628)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:320)
+       [4] _enqueue_event (res://effects/runtime/presentation/BattlePresentationDirector.gd:282)
+       [5] enqueue_tick (res://effects/runtime/presentation/BattlePresentationDirector.gd:160)
+       [6] _apply_replay_frame (res://scenes/battle/BattleScreen.gd:496)
+       [7] _process (res://scenes/battle/BattleScreen.gd:175)
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+[PERFLOG] fps=57 proc=35.0ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=251.9 obj=7929 res=563 node=3082 orphan=0 draw=0 tween=165
+[PERFLOG] skin skel=211 bones=15388 play=277/281 hidden_play=136 vis_vert=357836 hid_vert=699890
+WARNING: [UNIT_VISUAL] enemy_L0_boss (director) missing target actor for hit_number -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+WARNING: [UNIT_VISUAL] enemy_mirror_2 (director) missing target actor for hit_number -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+[PERFLOG] fps=53 proc=36.3ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=246.7 obj=7602 res=543 node=2944 orphan=0 draw=0 tween=94
+[PERFLOG] skin skel=208 bones=15139 play=274/277 hidden_play=135 vis_vert=350055 hid_vert=694774
+WARNING: [UNIT_VISUAL] enemy_mirror_2 (director) missing target actor for projectile_spawn -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+WARNING: [UNIT_VISUAL] enemy_mirror_2 (director) missing target actor for impact -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+[PERFLOG] fps=53 proc=36.3ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=248.9 obj=7667 res=545 node=2948 orphan=0 draw=0 tween=90
+[PERFLOG] skin skel=208 bones=15139 play=277/277 hidden_play=138 vis_vert=353537 hid_vert=691292
+WARNING: [UNIT_VISUAL] enemy_L2_boss (director) missing target actor for hit_number -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+ERROR: [D0BASELINE] director_missing_actor: local:20260807:20:boss:team0:55:1 dropped: missing_actor:source
+   at: push_error (core/variant/variant_utility.cpp:1023)
+   GDScript backtrace (most recent call first):
+       [0] _record_failure (res://tools/battle_presentation_baseline.gd:833)
+       [1] _on_cue_dropped (res://tools/battle_presentation_baseline.gd:779)
+       [2] _emit_drop_once (res://effects/runtime/presentation/BattlePresentationDirector.gd:628)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:320)
+       [4] _enqueue_event (res://effects/runtime/presentation/BattlePresentationDirector.gd:282)
+       [5] enqueue_tick (res://effects/runtime/presentation/BattlePresentationDirector.gd:160)
+       [6] _apply_replay_frame (res://scenes/battle/BattleScreen.gd:496)
+       [7] _process (res://scenes/battle/BattleScreen.gd:175)
+[PERFLOG] fps=54 proc=31.0ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=247.6 obj=8091 res=543 node=3026 orphan=0 draw=0 tween=109
+[PERFLOG] skin skel=208 bones=15139 play=273/277 hidden_play=134 vis_vert=350055 hid_vert=694774
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+WARNING: [UNIT_VISUAL] enemy_mirror_1 (director) missing target actor for projectile_spawn -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+[PERFLOG] fps=54 proc=31.0ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=247.7 obj=7616 res=544 node=2892 orphan=0 draw=0 tween=81
+[PERFLOG] skin skel=205 bones=14926 play=271/273 hidden_play=134 vis_vert=348850 hid_vert=681918
+WARNING: [UNIT_VISUAL] enemy_mirror_1 (director) missing target actor for impact -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+WARNING: [UNIT_VISUAL] enemy_mirror_1 (director) missing target actor for hit_number -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+[PERFLOG] fps=54 proc=33.1ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=248.4 obj=8136 res=544 node=2964 orphan=0 draw=0 tween=177
+[PERFLOG] skin skel=202 bones=14713 play=265/269 hidden_play=130 vis_vert=340233 hid_vert=675130
+WARNING: [UNIT_VISUAL] enemy_mirror_3 (director) missing target actor for hit_number -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+[PERFLOG] fps=54 proc=33.1ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=245.4 obj=7707 res=543 node=2729 orphan=0 draw=0 tween=90
+[PERFLOG] skin skel=193 bones=14074 play=253/257 hidden_play=124 vis_vert=328758 hid_vert=641734
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+[PERFLOG] fps=54 proc=30.2ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=246.7 obj=7222 res=545 node=2631 orphan=0 draw=0 tween=30
+[PERFLOG] skin skel=190 bones=13861 play=250/253 hidden_play=123 vis_vert=320141 hid_vert=634946
+[PERFLOG] fps=54 proc=30.2ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=245.0 obj=7581 res=543 node=2654 orphan=0 draw=0 tween=61
+[PERFLOG] skin skel=187 bones=13648 play=247/249 hidden_play=122 vis_vert=318936 hid_vert=622090
+WARNING: [UNIT_VISUAL] enemy_mirror_3 (director) missing target actor for projectile_spawn -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+WARNING: [UNIT_VISUAL] enemy_mirror_3 (director) missing target actor for impact -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+[PERFLOG] fps=54 proc=30.9ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=246.2 obj=7289 res=545 node=2513 orphan=0 draw=0 tween=47
+[PERFLOG] skin skel=184 bones=13435 play=245/245 hidden_play=122 vis_vert=310767 hid_vert=616198
+WARNING: [UNIT_VISUAL] enemy_L0_m2 (director) missing target actor for hit_number -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+[PERFLOG] fps=54 proc=30.9ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=246.0 obj=7811 res=544 node=2479 orphan=0 draw=0 tween=149
+[PERFLOG] skin skel=172 bones=12583 play=228/229 hidden_play=113 vis_vert=290227 hid_vert=575118
+ERROR: [D0BASELINE] director_missing_actor: local:20260807:20:boss:team0:96:14 dropped: missing_actor:source
+   at: push_error (core/variant/variant_utility.cpp:1023)
+   GDScript backtrace (most recent call first):
+       [0] _record_failure (res://tools/battle_presentation_baseline.gd:833)
+       [1] _on_cue_dropped (res://tools/battle_presentation_baseline.gd:779)
+       [2] _emit_drop_once (res://effects/runtime/presentation/BattlePresentationDirector.gd:628)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:320)
+       [4] _enqueue_event (res://effects/runtime/presentation/BattlePresentationDirector.gd:282)
+       [5] enqueue_tick (res://effects/runtime/presentation/BattlePresentationDirector.gd:160)
+       [6] _apply_replay_frame (res://scenes/battle/BattleScreen.gd:496)
+       [7] _process (res://scenes/battle/BattleScreen.gd:175)
+[PERFLOG] fps=49 proc=30.4ms phys=0.1ms video=0.0 tex=0.0 buf=0.0 static=242.5 obj=7168 res=543 node=2232 orphan=0 draw=0 tween=69
+[PERFLOG] skin skel=160 bones=11731 play=213/213 hidden_play=106 vis_vert=273169 hid_vert=530556
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+[PERFLOG] fps=49 proc=30.4ms phys=0.1ms video=0.0 tex=0.0 buf=0.0 static=245.0 obj=7569 res=545 node=2309 orphan=0 draw=0 tween=97
+[PERFLOG] skin skel=157 bones=11518 play=209/209 hidden_play=104 vis_vert=264552 hid_vert=523768
+[PERFLOG] fps=50 proc=29.2ms phys=0.1ms video=0.0 tex=0.0 buf=0.0 static=241.7 obj=7417 res=543 node=2161 orphan=0 draw=0 tween=91
+[PERFLOG] skin skel=148 bones=10879 play=196/197 hidden_play=97 vis_vert=252629 hid_vert=489476
+WARNING: [UNIT_VISUAL] enemy_L1_m9 (director) missing target actor for hit_number -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+[PERFLOG] fps=50 proc=29.2ms phys=0.1ms video=0.0 tex=0.0 buf=0.0 static=243.4 obj=7590 res=545 node=2105 orphan=0 draw=0 tween=137
+[PERFLOG] skin skel=142 bones=10453 play=188/189 hidden_play=93 vis_vert=238877 hid_vert=472418
+WARNING: [UNIT_VISUAL] enemy_L0_m5 (director) missing target actor for hit_number -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+WARNING: [UNIT_VISUAL] enemy_L0_m4 (director) missing target actor for hit_number -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+[PERFLOG] fps=48 proc=27.0ms phys=0.1ms video=0.0 tex=0.0 buf=0.0 static=238.5 obj=7049 res=526 node=1916 orphan=0 draw=0 tween=65
+[PERFLOG] skin skel=133 bones=9778 play=175/177 hidden_play=86 vis_vert=227756 hid_vert=439730
+[PERFLOG] fps=48 proc=27.0ms phys=0.1ms video=0.0 tex=0.0 buf=0.0 static=238.1 obj=7931 res=525 node=2042 orphan=0 draw=0 tween=136
+[PERFLOG] skin skel=127 bones=9352 play=168/169 hidden_play=83 vis_vert=214004 hid_vert=422672
+[PERFLOG] fps=48 proc=31.6ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=236.6 obj=7181 res=525 node=1793 orphan=0 draw=0 tween=70
+[PERFLOG] skin skel=124 bones=9139 play=164/165 hidden_play=81 vis_vert=208869 hid_vert=412402
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+[PERFLOG] fps=48 proc=31.6ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=237.3 obj=7448 res=525 node=1972 orphan=0 draw=0 tween=93
+[PERFLOG] skin skel=121 bones=8926 play=160/161 hidden_play=79 vis_vert=203734 hid_vert=402132
+[PERFLOG] fps=49 proc=27.0ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=236.6 obj=7444 res=525 node=1824 orphan=0 draw=0 tween=110
+[PERFLOG] skin skel=118 bones=8713 play=156/157 hidden_play=77 vis_vert=202081 hid_vert=388380
+[PERFLOG] fps=49 proc=27.0ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=235.2 obj=6571 res=525 node=1638 orphan=0 draw=0 tween=16
+[PERFLOG] skin skel=115 bones=8500 play=151/153 hidden_play=74 vis_vert=193464 hid_vert=381592
+[PERFLOG] fps=46 proc=28.7ms phys=0.1ms video=0.0 tex=0.0 buf=0.0 static=235.1 obj=7024 res=525 node=1628 orphan=0 draw=0 tween=76
+[PERFLOG] skin skel=109 bones=8074 play=143/145 hidden_play=71 vis_vert=183194 hid_vert=361052
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+WARNING: [UNIT_VISUAL] enemy_L0_m11 (director) missing target actor for hit_number -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+[PERFLOG] fps=46 proc=28.7ms phys=0.1ms video=0.0 tex=0.0 buf=0.0 static=234.4 obj=6569 res=525 node=1517 orphan=0 draw=0 tween=21
+[PERFLOG] skin skel=106 bones=7861 play=139/141 hidden_play=68 vis_vert=178059 hid_vert=350782
+[PERFLOG] fps=48 proc=28.0ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=238.9 obj=7125 res=527 node=1616 orphan=0 draw=0 tween=94
+[PERFLOG] skin skel=103 bones=7648 play=136/137 hidden_play=67 vis_vert=172924 hid_vert=340512
+[PERFLOG] fps=48 proc=28.0ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=237.7 obj=6724 res=527 node=1448 orphan=0 draw=0 tween=52
+[PERFLOG] skin skel=100 bones=7435 play=132/133 hidden_play=65 vis_vert=171271 hid_vert=326760
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+[PERFLOG] fps=47 proc=28.0ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=236.1 obj=6896 res=525 node=1469 orphan=0 draw=0 tween=76
+[PERFLOG] skin skel=100 bones=7435 play=132/133 hidden_play=65 vis_vert=167789 hid_vert=330242
+[PERFLOG] fps=47 proc=28.0ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=236.5 obj=6833 res=527 node=1304 orphan=0 draw=0 tween=83
+[PERFLOG] skin skel=85 bones=6370 play=112/113 hidden_play=55 vis_vert=145596 hid_vert=275410
+WARNING: [UNIT_VISUAL] enemy_L2_m5 (director) missing target actor for hit_number -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+[PERFLOG] fps=46 proc=31.0ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=233.9 obj=6834 res=525 node=1267 orphan=0 draw=0 tween=109
+[PERFLOG] skin skel=79 bones=5944 play=103/105 hidden_play=50 vis_vert=131844 hid_vert=258352
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+[PERFLOG] fps=46 proc=31.0ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=233.6 obj=7012 res=525 node=1217 orphan=0 draw=0 tween=134
+[PERFLOG] skin skel=73 bones=5518 play=96/97 hidden_play=47 vis_vert=125056 hid_vert=234330
+WARNING: [UNIT_VISUAL] enemy_L0_m13 (director) missing target actor for hit_number -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+[PERFLOG] fps=45 proc=28.1ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=232.5 obj=6741 res=525 node=1158 orphan=0 draw=0 tween=76
+[PERFLOG] skin skel=67 bones=5092 play=87/89 hidden_play=42 vis_vert=111304 hid_vert=217272
+[PERFLOG] fps=45 proc=28.1ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=232.6 obj=6290 res=526 node=1015 orphan=0 draw=0 tween=39
+[PERFLOG] skin skel=64 bones=4879 play=84/85 hidden_play=41 vis_vert=106169 hid_vert=207002
+[PERFLOG] fps=46 proc=25.4ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=232.9 obj=6357 res=526 node=1049 orphan=0 draw=0 tween=24
+[PERFLOG] skin skel=64 bones=4879 play=84/85 hidden_play=41 vis_vert=106169 hid_vert=207002
+[PERFLOG] fps=46 proc=25.4ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=232.3 obj=6862 res=525 node=1095 orphan=0 draw=0 tween=90
+[PERFLOG] skin skel=64 bones=4879 play=83/85 hidden_play=40 vis_vert=106169 hid_vert=207002
+[PERFLOG] fps=46 proc=28.1ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=232.7 obj=6235 res=527 node=886 orphan=0 draw=0 tween=47
+[PERFLOG] skin skel=55 bones=4240 play=71/73 hidden_play=34 vis_vert=94246 hid_vert=172710
+[PERFLOG] fps=46 proc=28.1ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=229.6 obj=6111 res=525 node=753 orphan=0 draw=0 tween=56
+[PERFLOG] skin skel=46 bones=3601 play=59/61 hidden_play=28 vis_vert=75359 hid_vert=145382
+WARNING: [UNIT_VISUAL] enemy_L2_m13 (director) missing target actor for hit_number -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+WARNING: [UNIT_VISUAL] enemy_L2_m16 (director) missing target actor for hit_number -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+[PERFLOG] fps=45 proc=30.0ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=230.6 obj=5835 res=527 node=659 orphan=0 draw=0 tween=15
+[PERFLOG] skin skel=40 bones=3175 play=51/53 hidden_play=24 vis_vert=68571 hid_vert=121360
+[PERFLOG] fps=45 proc=30.0ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=229.7 obj=6069 res=526 node=682 orphan=0 draw=0 tween=41
+[PERFLOG] skin skel=37 bones=2962 play=46/49 hidden_play=21 vis_vert=59954 hid_vert=114572
+[PERFLOG] fps=45 proc=24.9ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=228.9 obj=5690 res=526 node=572 orphan=0 draw=0 tween=12
+[PERFLOG] skin skel=34 bones=2749 play=43/45 hidden_play=20 vis_vert=58301 hid_vert=100820
+[PERFLOG] fps=45 proc=24.9ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=226.8 obj=5573 res=508 node=541 orphan=0 draw=0 tween=13
+[PERFLOG] skin skel=31 bones=2536 play=39/41 hidden_play=18 vis_vert=53166 hid_vert=90550
+[PERFLOG] fps=85 proc=23.6ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=224.7 obj=5476 res=506 node=521 orphan=0 draw=0 tween=1
+[PERFLOG] skin skel=31 bones=2536 play=39/41 hidden_play=18 vis_vert=53166 hid_vert=90550
+[D0BASELINE] round=20 avg_fps=50.47 one_pct_low=32.49 samples=1167
+[ASSET] 回合结束 hit=75 harvest=2 wait=0 cold=0 阻塞合计=0ms
+[D0BASELINE] round=21 roster=26 frames=259 events=1059 replay_sha=2574ec8e624e3189b037441fd86032b50a6198f668db72e87491339d934d5031
+[PERFLOG] fps=85 proc=23.6ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=222.7 obj=5076 res=499 node=242 orphan=0 draw=0 tween=0
+[PERFLOG] skin skel=16 bones=1292 play=11/21 hidden_play=11 vis_vert=0 hid_vert=70898
+[D0BASELINE] round=21 render-ready actors=26 visible_fallbacks=0
+[PERFLOG] fps=125 proc=1488.3ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=293.3 obj=7251 res=851 node=1175 orphan=0 draw=0 tween=142
+[PERFLOG] skin skel=76 bones=5855 play=74/101 hidden_play=27 vis_vert=113801 hid_vert=557972
+[PERFLOG] !! STATIC JUMP +70.6 MB -> 293.3
+[PERFLOG] fps=50 proc=58.4ms phys=0.1ms video=0.0 tex=0.0 buf=0.0 static=293.4 obj=7141 res=851 node=1176 orphan=0 draw=0 tween=96
+[PERFLOG] skin skel=76 bones=5855 play=74/101 hidden_play=27 vis_vert=113801 hid_vert=557972
+[PERFLOG] fps=50 proc=58.4ms phys=0.1ms video=0.0 tex=0.0 buf=0.0 static=293.9 obj=7368 res=851 node=1220 orphan=0 draw=0 tween=148
+[PERFLOG] skin skel=76 bones=5855 play=74/101 hidden_play=23 vis_vert=225703 hid_vert=446070
+[PERFLOG] fps=145 proc=6.1ms phys=0.1ms video=0.0 tex=0.0 buf=0.0 static=293.8 obj=7212 res=851 node=1212 orphan=0 draw=0 tween=76
+[PERFLOG] skin skel=76 bones=5855 play=74/101 hidden_play=23 vis_vert=225703 hid_vert=446070
+[PERFLOG] fps=145 proc=6.1ms phys=0.1ms video=0.0 tex=0.0 buf=0.0 static=293.2 obj=6584 res=851 node=1107 orphan=0 draw=0 tween=3
+[PERFLOG] skin skel=76 bones=5855 play=76/101 hidden_play=25 vis_vert=225703 hid_vert=446070
+[PERFLOG] fps=145 proc=11.9ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=299.9 obj=7112 res=855 node=1235 orphan=0 draw=0 tween=54
+[PERFLOG] skin skel=76 bones=5855 play=84/101 hidden_play=33 vis_vert=225703 hid_vert=446070
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+[PERFLOG] fps=145 proc=11.9ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=309.8 obj=7138 res=860 node=1205 orphan=0 draw=0 tween=69
+[PERFLOG] skin skel=76 bones=5855 play=92/101 hidden_play=41 vis_vert=229185 hid_vert=442588
+[PERFLOG] fps=138 proc=30.7ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=320.9 obj=7749 res=867 node=1300 orphan=0 draw=0 tween=118
+[PERFLOG] skin skel=76 bones=5855 play=98/101 hidden_play=47 vis_vert=225703 hid_vert=446070
+[PERFLOG] fps=138 proc=30.7ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=318.7 obj=7517 res=865 node=1258 orphan=0 draw=0 tween=86
+[PERFLOG] skin skel=76 bones=5855 play=99/101 hidden_play=48 vis_vert=229185 hid_vert=442588
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+[PERFLOG] fps=137 proc=19.6ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=320.8 obj=7517 res=867 node=1255 orphan=0 draw=0 tween=79
+[PERFLOG] skin skel=76 bones=5855 play=101/101 hidden_play=50 vis_vert=225703 hid_vert=446070
+[PERFLOG] fps=137 proc=19.6ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=322.8 obj=7669 res=868 node=1279 orphan=0 draw=0 tween=97
+[PERFLOG] skin skel=76 bones=5855 play=100/101 hidden_play=49 vis_vert=229185 hid_vert=442588
+WARNING: [UNIT_VISUAL] player_L0_3 (director) missing target actor for hit_number -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+[PERFLOG] fps=136 proc=14.3ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=320.7 obj=7817 res=850 node=1222 orphan=0 draw=0 tween=150
+[PERFLOG] skin skel=73 bones=5606 play=97/97 hidden_play=48 vis_vert=221739 hid_vert=438142
+[PERFLOG] fps=136 proc=14.3ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=315.7 obj=7775 res=799 node=1157 orphan=0 draw=0 tween=162
+[PERFLOG] skin skel=64 bones=4895 play=85/85 hidden_play=42 vis_vert=210903 hid_vert=406024
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+[人王 DEBUG] attack.fbx 里的所有动画 track：["dual_gun_draw_gun_behind_back_279371"]
+[人王 DEBUG] 选中的 track：dual_gun_draw_gun_behind_back_279371（长度 3.35s）
+WARNING: [UNIT_VISUAL] player_L0_1 (director) missing target actor for hit_number -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+[PERFLOG] fps=123 proc=18.8ms phys=0.1ms video=0.0 tex=0.0 buf=0.0 static=307.2 obj=7097 res=760 node=983 orphan=0 draw=0 tween=62
+[PERFLOG] skin skel=58 bones=4433 play=76/77 hidden_play=37 vis_vert=198146 hid_vert=390956
+WARNING: [UNIT_VISUAL] enemy_L0_2 (director) missing target actor for hit_number -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+[PERFLOG] fps=123 proc=18.8ms phys=0.1ms video=0.0 tex=0.0 buf=0.0 static=313.3 obj=7208 res=762 node=1025 orphan=0 draw=0 tween=63
+[PERFLOG] skin skel=58 bones=4433 play=77/77 hidden_play=38 vis_vert=198146 hid_vert=390956
+[PERFLOG] fps=122 proc=13.2ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=311.0 obj=7007 res=760 node=969 orphan=0 draw=0 tween=47
+[PERFLOG] skin skel=58 bones=4433 play=76/77 hidden_play=37 vis_vert=198146 hid_vert=390956
+[PERFLOG] fps=122 proc=13.2ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=315.6 obj=7113 res=763 node=1009 orphan=0 draw=0 tween=58
+[PERFLOG] skin skel=58 bones=4433 play=77/77 hidden_play=38 vis_vert=198146 hid_vert=390956
+[PERFLOG] fps=130 proc=22.2ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=312.4 obj=6833 res=745 node=882 orphan=0 draw=0 tween=42
+[PERFLOG] skin skel=52 bones=4053 play=69/69 hidden_play=34 vis_vert=137908 hid_vert=270480
+[PERFLOG] fps=130 proc=22.2ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=314.0 obj=7054 res=730 node=896 orphan=0 draw=0 tween=91
+[PERFLOG] skin skel=49 bones=3804 play=64/65 hidden_play=31 vis_vert=133350 hid_vert=261364
+[PERFLOG] fps=119 proc=22.1ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=314.6 obj=6915 res=715 node=833 orphan=0 draw=0 tween=57
+[PERFLOG] skin skel=46 bones=3591 play=61/61 hidden_play=30 vis_vert=131642 hid_vert=247502
+[PERFLOG] fps=119 proc=22.1ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=311.2 obj=6959 res=712 node=843 orphan=0 draw=0 tween=74
+[PERFLOG] skin skel=46 bones=3591 play=60/61 hidden_play=29 vis_vert=128160 hid_vert=250984
+[PERFLOG] fps=123 proc=10.9ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=313.5 obj=7045 res=714 node=853 orphan=0 draw=0 tween=85
+[PERFLOG] skin skel=46 bones=3591 play=61/61 hidden_play=30 vis_vert=131642 hid_vert=247502
+[PERFLOG] fps=124 proc=15.6ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=314.7 obj=7233 res=714 node=867 orphan=0 draw=0 tween=117
+[PERFLOG] skin skel=46 bones=3591 play=60/61 hidden_play=29 vis_vert=128160 hid_vert=250984
+[PERFLOG] fps=124 proc=15.6ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=313.9 obj=7298 res=713 node=871 orphan=0 draw=0 tween=102
+[PERFLOG] skin skel=46 bones=3591 play=60/61 hidden_play=29 vis_vert=128160 hid_vert=250984
+[PERFLOG] fps=126 proc=11.4ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=315.6 obj=7105 res=715 node=843 orphan=0 draw=0 tween=79
+[PERFLOG] skin skel=46 bones=3591 play=60/61 hidden_play=29 vis_vert=128160 hid_vert=250984
+[PERFLOG] fps=126 proc=11.4ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=315.7 obj=7109 res=715 node=820 orphan=0 draw=0 tween=84
+[PERFLOG] skin skel=45 bones=3508 play=60/60 hidden_play=30 vis_vert=127233 hid_vert=247502
+[PERFLOG] fps=122 proc=12.2ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=315.1 obj=6963 res=714 node=812 orphan=0 draw=0 tween=52
+[PERFLOG] skin skel=45 bones=3508 play=59/60 hidden_play=29 vis_vert=123751 hid_vert=250984
+[PERFLOG] fps=122 proc=12.2ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=315.8 obj=7023 res=715 node=796 orphan=0 draw=0 tween=68
+[PERFLOG] skin skel=45 bones=3508 play=59/60 hidden_play=29 vis_vert=127233 hid_vert=247502
+[PERFLOG] fps=116 proc=12.6ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=308.7 obj=7094 res=677 node=755 orphan=0 draw=0 tween=93
+[PERFLOG] skin skel=39 bones=3046 play=50/52 hidden_play=24 vis_vert=113410 hid_vert=230302
+[PERFLOG] fps=116 proc=12.6ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=310.0 obj=6950 res=679 node=717 orphan=0 draw=0 tween=87
+[PERFLOG] skin skel=39 bones=3046 play=52/52 hidden_play=26 vis_vert=116892 hid_vert=226820
+WARNING: [UNIT_VISUAL] enemy_L1_1 (director) missing target actor for hit_number -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+[PERFLOG] fps=119 proc=11.9ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=305.8 obj=6849 res=659 node=701 orphan=0 draw=0 tween=59
+[PERFLOG] skin skel=36 bones=2833 play=48/48 hidden_play=24 vis_vert=108127 hid_vert=219736
+[PERFLOG] fps=119 proc=11.9ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=307.4 obj=6666 res=661 node=649 orphan=0 draw=0 tween=50
+[PERFLOG] skin skel=36 bones=2833 play=47/48 hidden_play=23 vis_vert=111609 hid_vert=216254
+[PERFLOG] fps=120 proc=13.0ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=293.1 obj=6610 res=642 node=637 orphan=0 draw=0 tween=35
+[PERFLOG] skin skel=33 bones=2702 play=44/44 hidden_play=22 vis_vert=52176 hid_vert=107834
+[PERFLOG] fps=120 proc=13.0ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=291.9 obj=6423 res=641 node=586 orphan=0 draw=0 tween=15
+[PERFLOG] skin skel=33 bones=2702 play=43/44 hidden_play=21 vis_vert=52176 hid_vert=107834
+[PERFLOG] fps=125 proc=11.7ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=294.8 obj=6668 res=644 node=633 orphan=0 draw=0 tween=43
+[PERFLOG] skin skel=33 bones=2702 play=44/44 hidden_play=22 vis_vert=55658 hid_vert=104352
+[PERFLOG] fps=125 proc=11.7ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=292.0 obj=6444 res=641 node=579 orphan=0 draw=0 tween=22
+[PERFLOG] skin skel=33 bones=2702 play=43/44 hidden_play=21 vis_vert=52176 hid_vert=107834
+[PERFLOG] fps=125 proc=11.0ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=294.2 obj=6556 res=643 node=595 orphan=0 draw=0 tween=25
+[PERFLOG] skin skel=33 bones=2702 play=44/44 hidden_play=22 vis_vert=55658 hid_vert=104352
+[PERFLOG] fps=125 proc=11.0ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=292.5 obj=6660 res=641 node=614 orphan=0 draw=0 tween=50
+[PERFLOG] skin skel=33 bones=2702 play=44/44 hidden_play=22 vis_vert=52176 hid_vert=107834
+[PERFLOG] fps=122 proc=11.1ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=287.2 obj=6662 res=605 node=559 orphan=0 draw=0 tween=65
+[PERFLOG] skin skel=27 bones=2240 play=34/36 hidden_play=16 vis_vert=45588 hid_vert=84212
+[PERFLOG] fps=122 proc=11.1ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=288.6 obj=6566 res=606 node=527 orphan=0 draw=0 tween=36
+[PERFLOG] skin skel=27 bones=2240 play=34/36 hidden_play=16 vis_vert=42106 hid_vert=87694
+WARNING: [UNIT_VISUAL] enemy_L2_0 (director) missing target actor for hit_number -> portrait fallback: 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] report_failure (res://effects/runtime/presentation/UnitVisualResolver.gd:175)
+       [1] _report_actor_failure (res://effects/runtime/presentation/BattlePresentationDirector.gd:543)
+       [2] _resolve_cue (res://effects/runtime/presentation/BattlePresentationDirector.gd:402)
+       [3] _pump_track (res://effects/runtime/presentation/BattlePresentationDirector.gd:317)
+       [4] _on_cue_completed (res://effects/runtime/presentation/BattlePresentationDirector.gd:585)
+       [5] <anonymous lambda> (res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd:188)
+[PERFLOG] fps=122 proc=14.5ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=279.6 obj=6386 res=579 node=479 orphan=0 draw=0 tween=40
+[PERFLOG] skin skel=24 bones=2027 play=30/32 hidden_play=14 vis_vert=40832 hid_vert=74700
+[PERFLOG] fps=122 proc=14.5ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=281.1 obj=6605 res=580 node=522 orphan=0 draw=0 tween=66
+[PERFLOG] skin skel=24 bones=2027 play=32/32 hidden_play=16 vis_vert=37350 hid_vert=78182
+[PERFLOG] fps=117 proc=26.3ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=279.9 obj=6453 res=579 node=491 orphan=0 draw=0 tween=38
+[PERFLOG] skin skel=24 bones=2027 play=31/32 hidden_play=15 vis_vert=40832 hid_vert=74700
+[PERFLOG] fps=117 proc=26.3ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=282.4 obj=6743 res=581 node=538 orphan=0 draw=0 tween=81
+[PERFLOG] skin skel=24 bones=2027 play=32/32 hidden_play=16 vis_vert=37350 hid_vert=78182
+[PERFLOG] fps=114 proc=16.4ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=276.0 obj=6296 res=561 node=432 orphan=0 draw=0 tween=24
+[PERFLOG] skin skel=21 bones=1778 play=27/28 hidden_play=13 vis_vert=35840 hid_vert=64716
+[PERFLOG] fps=114 proc=16.4ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=271.7 obj=6336 res=542 node=412 orphan=0 draw=0 tween=50
+[PERFLOG] skin skel=18 bones=1529 play=24/24 hidden_play=12 vis_vert=27575 hid_vert=58632
+[PERFLOG] fps=119 proc=11.6ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=270.8 obj=6170 res=526 node=346 orphan=0 draw=0 tween=24
+[PERFLOG] skin skel=15 bones=1280 play=20/20 hidden_play=10 vis_vert=23264 hid_vert=50010
+[PERFLOG] fps=119 proc=11.6ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=268.8 obj=6074 res=524 node=327 orphan=0 draw=0 tween=14
+[PERFLOG] skin skel=15 bones=1280 play=18/20 hidden_play=8 vis_vert=23264 hid_vert=50010
+[PERFLOG] fps=123 proc=10.0ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=269.0 obj=6188 res=524 node=343 orphan=0 draw=0 tween=20
+[PERFLOG] skin skel=15 bones=1280 play=20/20 hidden_play=10 vis_vert=26746 hid_vert=46528
+[PERFLOG] fps=123 proc=10.0ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=266.5 obj=6084 res=506 node=305 orphan=0 draw=0 tween=29
+[PERFLOG] skin skel=12 bones=1031 play=16/16 hidden_play=8 vis_vert=18945 hid_vert=41372
+[PERFLOG] fps=118 proc=12.0ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=266.5 obj=6004 res=506 node=291 orphan=0 draw=0 tween=12
+[PERFLOG] skin skel=12 bones=1031 play=16/16 hidden_play=8 vis_vert=22427 hid_vert=37890
+[PERFLOG] fps=118 proc=12.0ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=263.7 obj=5878 res=488 node=238 orphan=0 draw=0 tween=5
+[PERFLOG] skin skel=9 bones=782 play=12/12 hidden_play=6 vis_vert=14556 hid_vert=32594
+[PERFLOG] fps=123 proc=10.3ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=263.7 obj=5859 res=488 node=229 orphan=0 draw=0 tween=2
+[PERFLOG] skin skel=9 bones=782 play=12/12 hidden_play=6 vis_vert=18038 hid_vert=29112
+[PERFLOG] fps=123 proc=10.3ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=264.0 obj=5964 res=488 node=252 orphan=0 draw=0 tween=18
+[PERFLOG] skin skel=9 bones=782 play=12/12 hidden_play=6 vis_vert=14556 hid_vert=32594
+[PERFLOG] fps=122 proc=15.5ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=271.5 obj=5971 res=488 node=244 orphan=0 draw=0 tween=18
+[PERFLOG] skin skel=9 bones=782 play=12/12 hidden_play=6 vis_vert=18038 hid_vert=29112
+[PERFLOG] fps=122 proc=15.5ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=271.6 obj=5994 res=488 node=242 orphan=0 draw=0 tween=26
+[PERFLOG] skin skel=9 bones=782 play=12/12 hidden_play=6 vis_vert=14556 hid_vert=32594
+[PERFLOG] fps=129 proc=11.4ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=268.4 obj=5816 res=470 node=212 orphan=0 draw=0 tween=5
+[PERFLOG] skin skel=6 bones=533 play=8/8 hidden_play=4 vis_vert=9570 hid_vert=22622
+[PERFLOG] fps=129 proc=11.4ms phys=0.0ms video=0.0 tex=0.0 buf=0.0 static=268.3 obj=5758 res=470 node=188 orphan=0 draw=0 tween=0
+[PERFLOG] skin skel=6 bones=533 play=7/8 hidden_play=3 vis_vert=9570 hid_vert=22622
+[D0BASELINE] round=21 avg_fps=125.02 one_pct_low=68.51 samples=3478
+[ASSET] 回合结束 hit=13 harvest=13 wait=0 cold=0 阻塞合计=0ms
+[D0BASELINE] complete passed=false rounds=3 failures=3
+WARNING: 3192 ObjectDB instances were leaked at exit (run with `--verbose` for details).
+   at: cleanup (core/object/object.cpp:2535)
+ERROR: 1 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:822)

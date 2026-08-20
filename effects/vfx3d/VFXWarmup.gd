@@ -102,6 +102,12 @@ var _phase_first_done_ms: Dictionary = {}
 func start() -> void:
 	if _running:
 		return
+	# 设备侧基线要测的正是着色器编译和贴图读盘。预热挂在 root 上、跨场景存活，
+	# 所以 Main._ready() 起的这一份会一直跑到测量中间去，把它自己的 GPU 占用和
+	# 缺页算进被测数字里。见 tools/DeviceHarness.gd。
+	if DeviceHarness.harness_active():
+		print("[WARMUP] 设备侧诊断已接管本次启动，跳过预热以免污染实机指标")
+		return
 	_running = true
 	_queue = _collect_ids()
 	_total = _queue.size()

@@ -1,0 +1,71 @@
+{
+  "commit": "44a560d",
+  "rounds": {
+    "1": {
+      "desktop_present": true,
+      "device_present": true,
+      "fields": {
+        "roster_sha256": {
+          "desktop": "42e00a5b23b0e99c1cf668c723e3fdbd733f56a28328829b2a7ea705e521ed1c",
+          "device": "42e00a5b23b0e99c1cf668c723e3fdbd733f56a28328829b2a7ea705e521ed1c",
+          "equal": true
+        },
+        "replay_sha256": {
+          "desktop": "7a6667c5ad7c737ef99ec1246cac95c5537e939b6429c9ab0e5b49e9a9d634fd",
+          "device": "7a6667c5ad7c737ef99ec1246cac95c5537e939b6429c9ab0e5b49e9a9d634fd",
+          "equal": true
+        },
+        "frame_events_sha256": {
+          "desktop": "6d3dd1f7b2e3e105298cbce11e1cc55fff7ea22cc21d8ff5136c7e54bb279110",
+          "device": "6d3dd1f7b2e3e105298cbce11e1cc55fff7ea22cc21d8ff5136c7e54bb279110",
+          "equal": true
+        },
+        "final_state_sha256": {
+          "desktop": "186f158728e2fdac189d2aac832e1da760af9644635e997b3bb3bb74a1cef505",
+          "device": "186f158728e2fdac189d2aac832e1da760af9644635e997b3bb3bb74a1cef505",
+          "equal": true
+        },
+        "repeatable": {
+          "desktop": true,
+          "device": true,
+          "equal": true
+        }
+      },
+      "verdict": "identical"
+    },
+    "20": {
+      "desktop_present": true,
+      "device_present": true,
+      "fields": {
+        "roster_sha256": {
+          "desktop": "a86772776095a4ff9505d524da01e600d0a7198ab3145e469c6dbea48dedf169",
+          "device": "a86772776095a4ff9505d524da01e600d0a7198ab3145e469c6dbea48dedf169",
+          "equal": true
+        },
+        "replay_sha256": {
+          "desktop": "794993e2be79edc820c9f3268b78c24634ec1f3385108194b37afdbcb73e6275",
+          "device": "794993e2be79edc820c9f3268b78c24634ec1f3385108194b37afdbcb73e6275",
+          "equal": true
+        },
+        "frame_events_sha256": {
+          "desktop": "ce2f1dd6cfb1ebf52b117f857fb2912ba2734062b3c3c8ae304a82e1058a9a64",
+          "device": "ce2f1dd6cfb1ebf52b117f857fb2912ba2734062b3c3c8ae304a82e1058a9a64",
+          "equal": true
+        },
+        "final_state_sha256": {
+          "desktop": "ccc09fb6c8fdae8474c5ee9a562b7d225cc97153eae8bd45aee4ec8de2525913",
+          "device": "ccc09fb6c8fdae8474c5ee9a562b7d225cc97153eae8bd45aee4ec8de2525913",
+          "equal": true
+        },
+        "repeatable": {
+          "desktop": true,
+          "device": true,
+          "equal": true
+        }
+      },
+      "verdict": "identical"
+    }
+  },
+  "match": true,
+  "notes": []
+}

@@ -1,0 +1,18 @@
+round 20: identical
+  OK  roster_sha256        desktop=a86772776095a4ff9505
+  OK  replay_sha256        desktop=794993e2be79edc820c9
+  OK  frame_events_sha256  desktop=ce2f1dd6cfb1ebf52b11
+  OK  final_state_sha256   desktop=ccc09fb6c8fdae8474c5
+  OK  repeatable           desktop=True
+round 21: identical
+  OK  roster_sha256        desktop=8f3b40fac83ab816c115
+  OK  replay_sha256        desktop=2574ec8e624e3189b037
+  OK  frame_events_sha256  desktop=09a26d2d8484d78bdbf0
+  OK  final_state_sha256   desktop=607f343075f1d544377a
+  OK  repeatable           desktop=True
+round 5: identical
+  OK  roster_sha256        desktop=afca008913d2661b881a
+  OK  replay_sha256        desktop=c241d10a28d6c0887ae2
+  OK  frame_events_sha256  desktop=c6563bb137731cc4ab71
+  OK  final_state_sha256   desktop=689d1501587c13dd2e73
+  OK  repeatable           desktop=True

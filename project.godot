@@ -29,6 +29,7 @@ RngService="*res://scripts/autoload/RngService.gd"
 VFXManager="*res://effects/VFXManager.gd"
 TutorialMode="*res://scripts/tutorial/TutorialMode.gd"
 PerfLog="*res://tools/PerfLog.gd"
+DeviceHarness="*res://tools/DeviceHarness.gd"
 
 [display]
 

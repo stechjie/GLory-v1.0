@@ -1,0 +1,6 @@
+round 1: identical
+  OK  roster_sha256        desktop=42e00a5b23b0e99c1cf6
+  OK  replay_sha256        desktop=7a6667c5ad7c737ef99e
+  OK  frame_events_sha256  desktop=6d3dd1f7b2e3e105298c
+  OK  final_state_sha256   desktop=186f158728e2fdac189d
+  OK  repeatable           desktop=True

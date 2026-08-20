@@ -1,0 +1,43 @@
+{
+  "passed": true,
+  "failures": []
+[],
+  "generated": "20260820_140906",
+  "source": {
+    "commit": "29df28ff93f37d1c0da49b0fdbd098c045d00b39",
+    "commit_short": "29df28f",
+    "uncommitted_tracked_files": 0,
+    "assets_manifest_inventory_sha256": "a0751fdc580e78dfe6e4023c3f55501471510d0db00d27ae5732a853faafb3fc",
+    "godot": "4.7.stable.official.5b4e0cb0f"
+  },
+  "apk": {
+    "file": "glory-29df28f-20260820_134112.apk",
+    "bytes": 727736845,
+    "mib": 694.0,
+    "sha256": "562f82014282222e86ae6c0062cd11dc92c2312f1d568944ea48786dacff7869",
+    "package": "glory.beta001",
+    "export_log_error_lines": 0
+  },
+  "device": {
+    "serial": "192.168.68.54:41497",
+    "model": "25028RN03A",
+    "android": "15",
+    "api": 35,
+    "abi": "arm64-v8a"
+  },
+  "install": {
+    "method": "push_pm_install",
+    "installed_path": "package:/data/app/~~qchDQ39yb93mN_pGLCh55g==/glory.beta001-wtYdfgaCfM5SbzRaLp7qVw==/base.apk",
+    "version_name": "1.0.0"
+  },
+  "launch": {
+    "wait_sec": 25,
+    "elapsed_ms": 94103,
+    "pid": "17885",
+    "fatal_exception_count": 0,
+    "script_error_count": 0,
+    "total_pss_kb": 429435,
+    "screenshot_bytes": 31767
+  },
+  "note": "Debug 构建，仅用于 QA。不得当作 Release 验收：没有私有 keystore 签名、没有体积门槛、没有低端机与双设备联机验收。"
+}

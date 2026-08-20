@@ -1,6 +1,12 @@
 extends Node
 
-# Desktop-only D0 baseline recorder for the first two fixed-seed PVE rounds.
+# D0 baseline recorder for the first two fixed-seed PVE rounds.
+#
+# Runs on desktop and, since 2026-08-20, on an Android device: tools/DeviceHarness.gd
+# swaps to this scene when the app is launched with --device-baseline, and the output
+# lands under user:// where `adb shell run-as` can read it. Both sides must stay this
+# same script — a separate device recorder would compute its digests differently and
+# the cross-platform comparison would prove nothing.
 #
 # This tool is intentionally read-only with respect to combat state: it calls the
 # same BattleSimulator replay entry point used by the game, serializes its output,
@@ -57,6 +63,13 @@ var _peak_objects := 0
 var _peak_orphans := 0
 var _peak_draw_calls := 0
 var _peak_tweens := 0
+# 粒子：Godot 没有内置监视器，只能走场景树数。见 _sample_particles()。
+var _peak_particle_nodes := 0
+var _peak_particles := 0
+var _particle_sample_countdown := 0
+# 结果页抢跑：结果页出现时 Director 不该还有阻塞 cue。见 _watch_result_overlay()。
+var _result_overlay_seen := false
+var _result_jumped_the_gun := false
 var _screenshots: Array[Dictionary] = []
 var _actor_audit: Dictionary = {}
 var _current_summary: Dictionary = {}
@@ -124,6 +137,9 @@ func _process(delta: float) -> void:
 			])
 		return
 	if _playback_complete_seen:
+		# 播放完了不代表这一轮看完了：结果页在排空之后才弹，而"抢跑"正是发生在
+		# 这一段窗口里，所以这里不能直接 return。
+		_watch_result_overlay()
 		return
 
 	_render_frame += 1
@@ -144,6 +160,72 @@ func _process(delta: float) -> void:
 		_playback_complete_seen = true
 		if _capture_screenshots and not _has_screenshot("end"):
 			_capture_screenshot("end", replay_frame)
+
+
+
+# 粒子数：Godot 4 没有内置监视器，只能走场景树数。
+#
+# 每帧走一遍会让测量本身变成开销 —— 在 25 FPS 的真机上尤其明显，测出来的就不再是
+# 战斗的耗时。所以每 PARTICLE_SAMPLE_EVERY 帧采一次并只记峰值：预算关心的是"最多同时
+# 有多少"，不是逐帧曲线。遍历也只走战斗场景子树，不走整棵树。
+#
+# 记两个数：正在发射的粒子节点数，以及它们 amount 之和（真正的粒子上限）。
+# B4 的 particle_count_for() 缩放的是后者，所以后者才是能和预算对上的那个。
+const PARTICLE_SAMPLE_EVERY := 6
+
+func _sample_particles() -> void:
+	if _particle_sample_countdown > 0:
+		_particle_sample_countdown -= 1
+		return
+	_particle_sample_countdown = PARTICLE_SAMPLE_EVERY - 1
+	if _screen == null or not is_instance_valid(_screen):
+		return
+	# 从 current_scene 走，不是从 _screen 走。VFXManager._get_parent() 把特效挂到
+	# get_tree().current_scene —— 在本工具里那是工具场景根，也就是 _screen 的**兄弟**。
+	# 一开始从 _screen 往下数，结果恒为 0：一个永远读 0 的指标比没有指标更坏。
+	var root: Node = get_tree().current_scene
+	if root == null or not is_instance_valid(root):
+		root = get_tree().root
+	if root == null:
+		return
+	var emitting_nodes := 0
+	var particles := 0
+	var stack: Array[Node] = [root]
+	while not stack.is_empty():
+		var node: Node = stack.pop_back()
+		if node is GPUParticles3D or node is CPUParticles3D or node is GPUParticles2D or node is CPUParticles2D:
+			if bool(node.get("emitting")):
+				emitting_nodes += 1
+				particles += int(node.get("amount"))
+		for child in node.get_children():
+			stack.append(child)
+	_peak_particle_nodes = maxi(_peak_particle_nodes, emitting_nodes)
+	_peak_particles = maxi(_peak_particles, particles)
+
+
+# 结果页抢跑：结果页弹出时，Director 不该还有阻塞 cue。
+#
+# BattleScreen._finish_replay() 会先 begin_draining()、再等 has_blocking_cues() 排空，
+# 但那个等待有 PRESENTATION_DRAIN_TIMEOUT_SEC = 3 秒的上限（清单 4.6 要求"扣住结果页，
+# 但绝不超过上限"）。上限到了照弹 —— 那一刻还没播完的 critical/important cue 就被结果
+# 页盖住了，玩家看不到自己是怎么赢的。这正是"抢跑"。
+#
+# 只在第一次看见结果页时判一次：之后 cue 自然会陆续播完，再采样只会把真相冲淡。
+func _watch_result_overlay() -> void:
+	if _result_overlay_seen or _screen == null or not is_instance_valid(_screen):
+		return
+	var overlay = _screen.get("_result_overlay_lbl")
+	if not (overlay is CanvasItem) or not bool((overlay as CanvasItem).visible):
+		return
+	_result_overlay_seen = true
+	var director = _screen.get("_presentation_director")
+	if director == null or not is_instance_valid(director):
+		return
+	if not bool(director.call("has_blocking_cues")):
+		return
+	_result_jumped_the_gun = true
+	_record_failure("result_page_jumped_the_gun",
+		"结果页已显示，但 Director 仍有阻塞 cue —— 排空撞上了 PRESENTATION_DRAIN_TIMEOUT_SEC 上限，未播完的演出被结果页盖住")
 
 
 func _start_next_round() -> void:
@@ -379,6 +461,11 @@ func _reset_round_metrics() -> void:
 	_peak_orphans = 0
 	_peak_draw_calls = 0
 	_peak_tweens = 0
+	_peak_particle_nodes = 0
+	_peak_particles = 0
+	_particle_sample_countdown = 0
+	_result_overlay_seen = false
+	_result_jumped_the_gun = false
 	_screenshots.clear()
 	_actor_audit = {}
 	_current_summary = {}
@@ -551,6 +638,7 @@ func _record_performance_sample(delta: float, replay_frame: int) -> void:
 	_peak_orphans = maxi(_peak_orphans, orphans)
 	_peak_draw_calls = maxi(_peak_draw_calls, draw_calls)
 	_peak_tweens = maxi(_peak_tweens, tweens)
+	_sample_particles()
 	_perf_deltas_ms.append(delta_ms)
 	_perf_samples.append({
 		"render_frame": _render_frame,
@@ -606,6 +694,13 @@ func _performance_summary() -> Dictionary:
 		"peak_orphans": _peak_orphans,
 		"peak_draw_calls": _peak_draw_calls,
 		"peak_tweens": _peak_tweens,
+		# 粒子按 PARTICLE_SAMPLE_EVERY 帧抽样，所以是"抽样峰值"而不是绝对峰值。
+		# 说清楚这一点，免得有人拿它跟逐帧统计的数字直接比。
+		"peak_particle_nodes": _peak_particle_nodes,
+		"peak_particles": _peak_particles,
+		"particle_sample_every_frames": PARTICLE_SAMPLE_EVERY,
+		"result_overlay_seen": _result_overlay_seen,
+		"result_page_jumped_the_gun": _result_jumped_the_gun,
 		"screenshots_excluded_from_timing": _capture_screenshots,
 	}
 
@@ -889,7 +984,12 @@ func _current_round() -> int:
 
 
 func _parse_arguments() -> void:
+	# 桌面上参数走 `--` 之后；Android 上它们从 intent extra 进来，没有 `--` 这个
+	# 约定，OS.get_cmdline_user_args() 会返回空。两种来源在这里合流，工具本身
+	# 不需要知道自己跑在哪一侧。
 	var args := OS.get_cmdline_user_args()
+	if args.is_empty() and DeviceHarness.harness_active():
+		args = DeviceHarness.tool_args
 	var index := 0
 	while index < args.size():
 		var key := str(args[index])
