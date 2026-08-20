@@ -452,9 +452,21 @@ adb exec-out screencap -p > /tmp/glory-launch.png
   - **加 autoload 没有改变任何行为**：重跑桌面基线，`hashes.json` 与 `D6_battle_presentation_cleanup_20260819/baseline_regression/round_01/` **逐字节相同**；经 harness 接管跑出来的哈希与直接跑也完全一致。
 
 - **验收：** 每一份 QA APK 都能反查到源码 commit 和资源 manifest；安装、启动、语言页截图、无 `FATAL EXCEPTION` 已是必经门并已通过。**商店与首场战斗截图仍未接入**——它们需要脚本驱动 UI，目前只做到冷启动。
-- **清单第 8 节的两项已随之关闭或收窄（2026-08-20）：**
-  - **回放测试 —— 已打勾。** 「desktop/Android 跨平台一致性」原本挂着等移动端恢复，现已验：同一 commit 下回合 1/5/20/21 的五个摘要字段逐字一致。
-  - **真机测试 —— 大部分完成，但没打勾，因为还有两项没验。** 三个样本都跑了（第一场=回合 1、20+ 回合=回合 21、Boss=回合 5 与 20）；无 `SCRIPT ERROR`（设备日志 0 条）、无持续节点增长（跨回合残留 14→33→36→36 趋于平稳，orphan 与 tween 全程为 0）、平均/1% low FPS、显存、draw call、dropped cue 数均已记录。**未验的是粒子数（基线工具根本不采集这项）和结果页抢跑（没有对应断言）**——两项都没做就不能打勾。
+- **清单第 8 节现在一项未打勾都没有了（2026-08-20）。**
+  - **回放测试** —— 「desktop/Android 跨平台一致性」已验：同一 commit 下回合 1/5/20/21 的五个摘要字段逐字一致。
+  - **真机测试** —— 三个样本跑完（第一场、20+ 回合、Boss），无 `SCRIPT ERROR`、无结果页抢跑、无持续节点增长（跨回合残留 14→24→36，orphan 与 tween 全程 0），FPS/显存/draw call/**粒子数**/dropped cue 全部记录在案。补齐过程中新增了两项原本根本没采集的指标：粒子数（Godot 4 没有内置监视器，只能每 6 帧走一次场景树取峰值）和结果页抢跑断言。
+  - **粒子那项差点做成假指标**：最初从 `_screen` 往下遍历，三个回合全读 0——`VFXManager._get_parent()` 把特效挂到 `get_tree().current_scene`，那是 `_screen` 的**兄弟节点**。改从 `current_scene` 走才读到真实数字，且随负载递增。**一个永远读 0 的指标比没有指标更坏。**
+
+- **⚠ 收尾时在真机上抓出并修掉第二个缺陷，而且它推翻了我上一条结论。** 修完召唤物重生那个 bug 后我写过「逻辑与平台无关，真机上应该也归 0」——**实测是 3 → 2，没归 0**。剩下的 2 条是另一回事：tick 15 的 `attack_start`，source 是 `enemy_mirror_1/2`，正是镜像被召唤出来的那一刻；**桌面 0 条、设备 2 条**。
+  - **机制用已有数据就证明了，不必打点**：`frame_performance.csv` 里每渲染帧推进的回放帧数，桌面恒为 1（916 次 0、231 次 1），设备出现 2（26 次）和 3（2 次）——第 20 回合在设备上只有 9.0 FPS，**回放要追帧**。追帧时 `_apply_replay_frame()` 会把跳过的 tick 一次性全部入队，而建模要等循环之后的 `_refresh_visuals()`；那批 tick 里刚被召唤的单位还没有 actor。
+  - **修法与死亡那条对称**：原来只有 `cue_claim_corpses()`（把**要死的**身体扣下来，免得被先释放），现在补上 `_spawn_actors_for_tick()`（把**刚出生的**身体建出来，免得它还不存在）。两条是同一句话：让渲染层在 Director 排这一 tick 之前就绪。
+  - **真机复验**：设备侧记录器 `passed=true`、failures 空，第 20 回合掉落桌面 0 / 设备 0。**这个 bug 只在真机上现形，所以只有真机跑过才算数**——桌面从不追帧，桌面的绿替不了它。
+  - **门禁 89 → 93 项**，断言两个调用都必须出现在 `enqueue_tick()` 之前。做成源码顺序断言而非行为断言：桌面永远不追帧，行为测试怎么跑都是绿的。
+  - **这条断言第一版自己就是假绿**：写成 `find("_spawn_actors_for_tick(")` 会命中函数定义（在文件靠前处），把调用挪到 `enqueue_tick` 之后照样通过。是在做「把 bug 塞回去」验证时**没变红**才发现的。改成匹配完整调用式后确认会红。**这说明「塞回去验证」这一步不能省，否则交付的是一个永远不会响的警报。**
+
+- **⚠ 顺带修掉 `android_baseline.sh` 自己的一个假绿。** 冷缓存那轮设备 manifest 写着 `passed=false`、两条 `director_missing_actor`，**脚本却报了 PASS**——它只判桌面记录器那一份。「两边算出同一个结果」和「设备上演出没问题」是两件事。现在取回产物后会读 `device/manifest.json`，`passed` 为假或 `failures` 非空都报 `device_recorder_reported_defects`；manifest 缺失单独报错而不是当作通过。
+
+- **冷缓存首启已测（`--cold-cache`）。** 此前所有设备数字都是暖着色器缓存下取的，不代表玩家装完游戏第一次打开。清掉 `files/shader_cache` 后回合 1 平均 **20.7 FPS**，暖缓存是 **25.6 FPS**——首启确实更慢。**引用设备帧率必须带上缓存状态**，否则下一个人会以为数字漂了。
 
 - **仍未完成：** Release 预设与私有 keystore（本次是 Debug 构建，**不得当作 Release 验收**）；教学主链的实机驱动与商店页截图（需驱动备战 UI，D2 地盘）；体积预算与最大增量阈值；低端机与双设备联机验收；冷缓存首启测量。（20+ 回合与 Boss 样本已完成，见上面的实机小节。）
 - 证据：`A4_android_smoke_20260820/A4_VERIFICATION.json` 与 `pass_run/`（`smoke.json`、`install.log`、`launch.log`、`logcat_full.log`、`logcat_errors.log`、`launch.png`）；备份在 `A4_prechange_backup_20260820/`。

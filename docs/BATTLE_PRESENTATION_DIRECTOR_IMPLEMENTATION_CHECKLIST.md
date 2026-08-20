@@ -186,7 +186,7 @@ func dispose() -> void
 - [x] **锚点测试（桌面）：** 全部 74 个可战斗单位解析五锚点与六节点合同，含 `FeetAnchor`/`BodyAnchor` 兼容别名与跨局 `clear()` 后整体失效；坏模型路径进入立绘 fallback 且资源路径恰好上报一次；Director 侧缺 actor 分类 drop、缺锚点降级并上报。固定两回合回放另有 0 drop / 0 降级的实测审计。
 - [x] **回放测试（2026-08-20 完成）：** Windows 两回合事件序列、首差异与最终状态 SHA-256 已记录；**desktop/Android 跨平台一致性已验**——同一 commit 下固定回合 1/5/20/21 的 `roster_sha256`/`replay_sha256`/`frame_events_sha256`/`final_state_sha256`/`repeatable` 五个字段逐字一致。工具 `tools/android_baseline.sh`，证据 `A4_device_battle_20260820/`。
 - [x] **视觉评审场景（桌面）：** `scenes/debug/BattleVfxReview.tscn` 可固定 seed、选回合、切 `LOW/MEDIUM/HIGH` 与 `0.25×/0.5×/1×/2×`，保存截图与指标 json（fps、draw call、节点、orphan、tween、显存、解析统计、预算统计、profile 计数）。**注意：工具已具备，但人工美术评审本身尚未进行。**
-- [ ] **真机测试（2026-08-20 大部分完成，两项未验）：** 三个样本已在真实 APK 上跑完——第一场（回合 1）、20+ 回合（回合 21）、Boss（回合 5 与 20）。**已验**：无 `SCRIPT ERROR`（设备日志 0 条）；无持续节点增长（跨回合残留 14→33→36→36 趋于平稳，orphan 与 tween 全程为 0）；已记录平均/1% low FPS、显存（video/texture/static）、draw call 与 dropped cue 数（按原因分类）。**未验**：① 粒子数——基线工具根本不采集这项；② 无结果页抢跑——没有对应断言。另注：这批实机指标取自修复召唤物死亡缺陷**之前**的构建，指标本身不受该缺陷影响，但复验尚未做。
+- [x] **真机测试（2026-08-20 完成）：** 三个样本已在真实 APK 上跑完——第一场（回合 1）、20+ 回合（回合 21）、Boss（回合 5 与 20）。无 `SCRIPT ERROR`（设备日志 0 条）；无结果页抢跑（断言：结果页首次可见时 Director 不得还有阻塞 cue，所有回合均为 0 次）；无持续节点增长（跨回合残留 14→24→36，orphan 与 tween 全程为 0）；平均/1% low FPS、显存、draw call、**粒子数**（每 6 帧抽样峰值，记发射节点数与 amount 之和）与 dropped cue 数（按原因分类）均已记录。**收尾时在真机上抓出并修掉两个只在设备上现形的缺陷**（召唤物重生与召唤物首帧，均为 `missing_actor:source`），修后设备侧记录器 `passed=true`、掉落归 0。证据 `A4_device_battle_20260820/verified_after_fix/`。
 
 ## 9. 给后续 AI 的执行提示
 

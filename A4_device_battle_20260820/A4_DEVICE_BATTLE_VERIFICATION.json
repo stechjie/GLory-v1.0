@@ -140,8 +140,7 @@
   "screenshot_check": "The blue bubbles around most units are the shield effect, confirmed by the project owner. The desktop capture of the same replay frame (D6_battle_presentation_cleanup_20260819/baseline_regression/round_01/mid.png) shows them identically, so nothing about them is Android-specific.",
   "not_done": [
     "Store and prep-screen screenshots: those need the prep UI driven, which is exactly the D2 territory a colleague is working in.",
-    "Low-end device and two-device online acceptance.",
-    "A first-install (cold shader cache) measurement."
+    "Low-end device and two-device online acceptance."
   ],
   "rounds_covered": {
     "1": "first battle (the original sample)",
@@ -349,5 +348,51 @@
     }
   },
   "ambient_merge_note": "budget_merged_ambient and anchor degradation counts legitimately differ between platforms (round 20: 126 desktop vs 295 device) - that is the priority budget shedding more ambient work on the slower device, which is what it exists to do. Digests are unaffected.",
-  "evidence_layout": "round_01 keeps the full start/mid/end screenshot set; rounds 5/20/21 keep mid.png only, to hold the directory near the size of the existing D5/D6 evidence dirs. The complete sets stay under build/."
+  "evidence_layout": "round_01 keeps the full start/mid/end screenshot set; rounds 5/20/21 keep mid.png only, to hold the directory near the size of the existing D5/D6 evidence dirs. The complete sets stay under build/.",
+  "device_verified_after_fixes": {
+    "commit": "44a560d",
+    "verdict": "PASS - device recorder passed=true with zero failures; round 20 missing_actor drops 0 on both sides.",
+    "why_this_run_matters": "The summoned-unit defects only reproduce when replay playback has to catch up, which never happens on desktop (replay_frame advances by at most 1 per rendered frame there). A green desktop run proves nothing about them, so the device run is the only real evidence.",
+    "rounds": {
+      "1": {
+        "missing_actor_drop_desktop": 0,
+        "missing_actor_drop_device": 0,
+        "device_average_fps": 26.387538108729334,
+        "device_peak_particles": 60,
+        "device_peak_orphans": 0,
+        "result_page_jumped_the_gun": false
+      },
+      "20": {
+        "missing_actor_drop_desktop": 0,
+        "missing_actor_drop_device": 0,
+        "device_average_fps": 9.041567799897203,
+        "device_peak_particles": 60,
+        "device_peak_orphans": 0,
+        "result_page_jumped_the_gun": false
+      }
+    },
+    "device_residue_across_rounds": "nodes 14 -> 24 -> 36, orphans 0 and tweens 0 throughout"
+  },
+  "second_defect_found_and_fixed": {
+    "what": "Round 20 still dropped 2 cues on device after the first fix - attack_start from enemy_mirror_1/2 at tick 15, the tick the mirrors are summoned. Desktop dropped 0.",
+    "my_earlier_claim_was_wrong": "I had said the first fix was platform-independent and would surely be 0 on device. It went 3 -> 2, not to 0. An inference is not a measurement.",
+    "mechanism_proven_from_existing_data": "frame_performance.csv already held the answer, so no instrumentation was needed: replay_frame advances by at most 1 per rendered frame on desktop (916 zeros, 231 ones) but by 2 (26x) and 3 (2x) on device, where round 20 runs at 9 fps. When playback catches up, _apply_replay_frame() enqueues every skipped tick before _refresh_visuals() builds any models, so a unit summoned inside that batch has no actor when its first cue resolves.",
+    "fix": "_spawn_actors_for_tick() now runs before enqueue_tick(), symmetric with the existing cue_claim_corpses(): one holds back the bodies that are about to die so _refresh_visuals() cannot free them first, the other builds the bodies that were just born so they exist at all. Both say the same thing - the renderer must be ready before the Director schedules the tick.",
+    "regression_gate": "battle_presentation_director_check 89 -> 93 checks, asserting both calls appear before enqueue_tick in BattleScreen.gd. Source-order rather than behavioural, because the bug only appears when playback catches up and desktop never does - a behavioural test would be green either way.",
+    "the_gate_was_itself_a_false_green_at_first": "The first version searched for \"_spawn_actors_for_tick(\", which matches the function definition earlier in the file, so moving the call after enqueue_tick still passed. Caught only by putting the bug back and seeing no red. Matching the full call expression fixed it, verified red then green."
+  },
+  "cold_cache_measurement": {
+    "why": "Every earlier device number was taken with a populated files/shader_cache, which is not what a player sees after installing.",
+    "how": "tools/android_baseline.sh --cold-cache clears files/shader_cache via run-as and verifies it is gone before launching.",
+    "round_1_average_fps": {
+      "cold": 20.694869436147112,
+      "warm_earlier_run": 25.6
+    },
+    "round_20_average_fps_cold": 8.93289119734164,
+    "conclusion": "First launch is measurably slower. Quote device frame rates with the cache state attached or the numbers look like drift."
+  },
+  "new_metrics": {
+    "particles": "Godot 4 has no particle monitor, so the recorder walks the scene tree every 6 frames and keeps the peak: emitting particle nodes, and the sum of their amount (what B4's particle_count_for scales). First version walked from _screen and read 0 for every round - VFXManager parents effects to get_tree().current_scene, a sibling of _screen. A metric that always reads zero is worse than no metric.",
+    "result_page": "Asserts the Director has no blocking cues the first time the result overlay becomes visible. The drain has a 3 s cap, and past the cap the overlay appears anyway, covering cues that had not finished. Zero occurrences across every round measured."
+  }
 }
