@@ -13,30 +13,19 @@ const BattleReplay := preload("res://scripts/battle/BattleReplayUtil.gd")
 const ReplayDigest := preload("res://tools/ReplayDigest.gd")
 const BattleScreenScene := preload("res://scenes/battle/BattleScreen.tscn")
 const UnitVisualResolverScript := preload("res://effects/runtime/presentation/UnitVisualResolver.gd")
+const QualityBudgetScript := preload("res://effects/vfx3d/core/VFXQualityBudget.gd")
+const Fixture := preload("res://tools/FixedBattleFixture.gd")
 
 const TOOL_VERSION := 1
 const DEFAULT_SEED := 20260807
 const DEFAULT_ROUNDS: Array[int] = [1, 2]
 const DEFAULT_LOCALE := "en"
-const FIXED_PET_ID := ""
 const MIN_PERF_SAMPLES := 30
 const ROUND_TIMEOUT_SEC := 180.0
 const SCREENSHOT_LABELS: Array[String] = ["start", "mid", "end"]
 
-# Keep this identical to tools/promo_capture.gd and the existing D0 evidence.
-const FILL_ORDER: Array[int] = [1, 2, 0, 3, 5, 6, 4, 7]
-const LINEUP := {
-	"a": [
-		["human_swordsman", "human_archer", "human_king", "human_mage"],
-		["god_guard", "god_arbiter", "god_king", "god_priestess"],
-		["human_militia", "god_aurora", "god_archangel", "human_cleric"],
-	],
-	"b": [
-		["dark_suc", "dark_scythe", "dark_dragon", "dark_mage"],
-		["undead_spike", "undead_bomb", "undead_mother", "undead_poison"],
-		["dark_fear", "undead_titan", "dark_doom", "undead_fly"],
-	],
-}
+# The lineup and match-state setup live in tools/FixedBattleFixture.gd so the
+# baseline, the promo capture and the review scene cannot drift apart.
 
 var _out_dir := ""
 var _seed := DEFAULT_SEED
@@ -81,6 +70,8 @@ var _director_missing_actor_drops := 0
 # freed. A presentation layer that leaks pooled nodes, tweens or corpses across
 # battles shows up here as a rising floor.
 var _residue_samples: Array[Dictionary] = []
+# B4: the stress run needs to force a device tier rather than inherit MEDIUM.
+var _quality_tier := ""
 
 
 func _ready() -> void:
@@ -92,6 +83,15 @@ func _ready() -> void:
 		return
 	DataRegistry.load_all()
 	LocaleManager.set_locale(_locale)
+	if not _quality_tier.is_empty():
+		match _quality_tier:
+			"LOW":
+				QualityBudgetScript.tier = QualityBudgetScript.Tier.LOW
+			"HIGH":
+				QualityBudgetScript.tier = QualityBudgetScript.Tier.HIGH
+			_:
+				QualityBudgetScript.tier = QualityBudgetScript.Tier.MEDIUM
+		print("[D0BASELINE] quality tier forced to %s" % _quality_tier)
 	print("[D0BASELINE] output=%s seed=%d rounds=%s locale=%s" % [
 		_out_dir, _seed, str(_rounds), _locale])
 	call_deferred("_start_next_round")
@@ -210,6 +210,7 @@ func _start_next_round() -> void:
 		"tool_version": TOOL_VERSION,
 		"round": round_index,
 		"seed": _seed,
+		"quality_tier": _quality_tier if not _quality_tier.is_empty() else "MEDIUM",
 		"locale": _locale,
 		"kind": str(_replay.get("kind", "")),
 		"roster_count": roster.size(),
@@ -336,7 +337,7 @@ func _finish_all() -> void:
 		"seed": _seed,
 		"rounds_requested": _rounds,
 		"locale": _locale,
-		"lineup": LINEUP,
+		"lineup": Fixture.LINEUP,
 		"viewport": _viewport_metadata(),
 		"rounds": _round_summaries,
 		"residue_samples": _residue_samples.duplicate(true),
@@ -384,65 +385,9 @@ func _reset_round_metrics() -> void:
 
 
 func _setup_match_state(round_index: int) -> void:
-	GameState.reset_run()
-	GameState.team_mode = true
-	GameState.round_index = round_index
-	GameState.team_hp = GameState.START_FORMATION_HP
-	GameState.enemy_team_hp = GameState.START_FORMATION_HP
-	GameState.board_slots = _board_from_ids((LINEUP["a"] as Array)[0])
-	GameState.mercenary_slots = _empty_mercenary_slots()
-
-	NetworkService.team_active = true
-	NetworkService.team_local_slot = 0
-	NetworkService.shared_seed = _seed
-	NetworkService.team_slot_states = ["player", "player", "player", "player", "player", "player"]
-	var boards: Dictionary = {}
-	for lane in 3:
-		boards[lane] = _fixed_board_submission(_board_from_ids((LINEUP["a"] as Array)[lane]), _empty_mercenary_slots())
-		boards[lane + 3] = _fixed_board_submission(_board_from_ids((LINEUP["b"] as Array)[lane]), _empty_mercenary_slots())
-	NetworkService.team_boards = boards
-
-
-func _fixed_board_submission(board: Array, mercenaries: Array) -> Dictionary:
-	# A reproducible baseline cannot inherit the account's currently selected pet.
-	# D0 was recorded with no pet; pin that fixture without changing PlayerProfile.
-	var snapshot: Dictionary = NetProtocol.team_board_submission(board, mercenaries)
-	snapshot["pet"] = FIXED_PET_ID
-	return snapshot
-
-
-func _board_from_ids(unit_ids: Array) -> Array:
-	var board: Array = []
-	board.resize(GameConstants.CELL_COUNT)
-	var defs := _unit_defs()
-	var placed := 0
-	for value in unit_ids:
-		if placed >= FILL_ORDER.size() or placed >= GameState.MAX_NORMAL_UNITS:
-			break
-		var unit_id := str(value)
-		if not defs.has(unit_id):
-			_record_failure("unknown_unit", "Lineup references missing unit '%s'" % unit_id)
-			continue
-		var unit_def: Dictionary = (defs[unit_id] as Dictionary).duplicate(true)
-		board[FILL_ORDER[placed]] = {"id": unit_id, "star": 3, "def": unit_def}
-		placed += 1
-	return board
-
-
-func _empty_mercenary_slots() -> Array:
-	var slots: Array = []
-	slots.resize(GameState.MERCENARY_SLOTS)
-	return slots
-
-
-func _unit_defs() -> Dictionary:
-	var defs: Dictionary = {}
-	var units: Array = DataRegistry.get_table("race_units").get("units", [])
-	for value in units:
-		if value is Dictionary:
-			var unit_def := value as Dictionary
-			defs[str(unit_def.get("id", ""))] = unit_def
-	return defs
+	Fixture.setup_match_state(round_index, _seed,
+		func(unit_id: String) -> void:
+			_record_failure("unknown_unit", "Lineup references missing unit '%s'" % unit_id))
 
 
 func _indexed_events(frame_events: Array) -> Array[Dictionary]:
@@ -956,6 +901,16 @@ func _parse_arguments() -> void:
 				_seed = int(value)
 			"--locale":
 				_locale = value
+			"--rounds":
+				# Comma separated, e.g. --rounds 21 for the full-board final round.
+				var parsed: Array[int] = []
+				for part in value.split(",", false):
+					if part.strip_edges().is_valid_int():
+						parsed.append(int(part.strip_edges()))
+				if not parsed.is_empty():
+					_rounds = parsed
+			"--tier":
+				_quality_tier = value.to_upper()
 			"--git-commit":
 				_git_commit = value
 			"--no-screenshots":

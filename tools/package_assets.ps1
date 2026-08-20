@@ -80,7 +80,7 @@ $output = [IO.Path]::GetFullPath($OutputDirectory)
 $manifestFile = [IO.Path]::GetFullPath((Resolve-ManifestFile $project $ManifestPath))
 if (-not (Test-Path -LiteralPath $manifestFile -PathType Leaf)) { throw "Manifest not found: $manifestFile" }
 
-$manifest = Get-Content -Raw -LiteralPath $manifestFile | ConvertFrom-Json
+$manifest = Get-Content -Raw -Encoding UTF8 -LiteralPath $manifestFile | ConvertFrom-Json
 if ([int]$manifest.schema_version -ne 2) { throw "Unsupported manifest schema_version: $($manifest.schema_version)" }
 $entries = @($manifest.entries)
 if ($entries.Count -eq 0) { throw "Manifest has no entries" }
@@ -139,10 +139,22 @@ $listFile = Join-Path $work "files.txt"
 $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 [IO.File]::WriteAllLines($listFile, $sortedPaths, $utf8NoBom)
 
+# Windows PowerShell 5.1 does not load these by default. ZipFile lives in
+# System.IO.Compression.FileSystem but ZipArchive lives in System.IO.Compression,
+# and omitting the second one made line 145 fail with "Unable to find type"
+# under 5.1 while working under PowerShell 7.
+Add-Type -AssemblyName System.IO.Compression
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$zipStream = $null
+$zip = $null
 try {
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zipStream = [IO.File]::Open($tempZip, [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
-    $zip = [IO.Compression.ZipArchive]::new($zipStream, [IO.Compression.ZipArchiveMode]::Create, $false, $utf8NoBom)
+    # entryNameEncoding must be $null, not UTF8. Passing an explicit encoding makes
+    # .NET write the names in it WITHOUT setting the zip language-encoding (EFS)
+    # flag, so a reader with no explicit encoding falls back to CP437 and the 252
+    # Chinese asset names come back as mojibake. With $null, .NET sets the flag for
+    # non-ASCII names and the round trip is symmetric with ZipFile::OpenRead below.
+    $zip = [IO.Compression.ZipArchive]::new($zipStream, [IO.Compression.ZipArchiveMode]::Create, $false, $null)
     try {
         $zipIndex = 0
         foreach ($relative in $sortedPaths) {
@@ -157,7 +169,10 @@ try {
             if ($zipIndex % 250 -eq 0) { Write-Host "[package_assets] archive $zipIndex/$($sortedPaths.Count)" }
         }
     }
-    finally { $zip.Dispose(); $zipStream.Dispose() }
+    finally {
+        if ($null -ne $zip) { $zip.Dispose() }
+        if ($null -ne $zipStream) { $zipStream.Dispose() }
+    }
     $archiveSha = (Get-FileHash -LiteralPath $tempZip -Algorithm SHA256).Hash.ToLowerInvariant()
     $archiveName = "glory-assets-{0}-{1}.zip" -f $inventorySha.Substring(0, 16), $archiveSha.Substring(0, 16)
     $archiveFile = Join-Path $output $archiveName

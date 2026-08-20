@@ -2,9 +2,6 @@ ls -la ~/Glory*
 
 rm -f ~/Glory_server_upload_v3*
 
-unzip -o ~/Glory_server_upload_v3.zip -d "/home/nins17121/Glory/Beta 0.04"
-grep -c "_rpc_abandon_seat" "/home/nins17121/Glory/Beta 0.04/scripts/autoload/NetworkService.gd"
-
-pkill -f godot
-nohup "/home/nins17121/Glory/godot/Godot_v4.7-stable_linux.x86_64" --headless --path "/home/nins17121/Glory/Beta 0.04" --server > ~/glory_server.log 2>&1 &
-grep "server started" ~/glory_server.log
+unzip -o ~/glory_server_upload.zip -d ~/Glory/"Beta 0.04"
+sudo systemctl restart glory-server 
+journalctl -u glory-server -n 5 --no-pager

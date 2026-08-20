@@ -2,7 +2,7 @@
 
 Godot 4.7 的 3v3 布阵自动战斗项目。本 README 同时是项目说明、资源盘点、代码审查记录和后续可由 AI 逐项执行的改进路线。原始审查依据 2026-08-15 至 2026-08-16 的工作区、Godot 4.7.0 导入/运行结果、Android 实机试玩和工程内检查场景编写；下方 2026-08-19 实施进度为当前状态，优先于后续保留的历史基线描述。
 
-> 当前结论（2026-08-19）：**A1、A2、A3、E1、E2-2A/E2-2B 与 BattlePresentationDirector D0-D6 的 Windows/桌面闭环已全部完成。** A4 及各项 Android/实机部分按当前决定暂停；下一步转入 B4/E3 启动预热拆分与代码/联机 D1、D3。后文关于“35 项不可加载”和“胶囊占位体”的文字是改造前历史基线，不再代表当前桌面结果。
+> 当前结论（2026-08-19）：**A1、A2、A3、E1、E2-2A/E2-2B、BattlePresentationDirector D0-D6 以及 B4/E3 的 Windows/桌面闭环已全部完成。** A4 及各项 Android/实机部分按当前决定暂停；下一步转入代码/联机 D1、D3 与 A5。后文关于“35 项不可加载”和“胶囊占位体”的文字是改造前历史基线，不再代表当前桌面结果。
 
 ## 2026-08-19 实施进度
 
@@ -10,8 +10,8 @@ Godot 4.7 的 3v3 布阵自动战斗项目。本 README 同时是项目说明、
 
 | 工作单 | 状态 | 已完成内容与剩余边界 |
 | --- | --- | --- |
-| A1 — 建立可复现资产清单 | ✅ 已完成 | 清单共 2,643 个文件、3,115.5 MiB；稳定 inventory fingerprint 为 `5dabb3f546ee6ec0dd8491441ab32872afda3c4e2da46360e752e75e91fc508e`。 |
-| A2 — 资源交付与 Git 解耦、可追溯 | ✅ 已完成 | 冷克隆缺包时会正确失败；恢复 1,790 个 Git 外资源并完成首次 Godot 导入后，资源、模型、4×4 与依赖检查通过。 |
+| A1 — 建立可复现资产清单 | ✅ 已完成（指纹已于 A5 更新） | 当前清单 2632 个文件，inventory fingerprint 为 `a0751fdc580e78dfe6e4023c3f55501471510d0db00d27ae5732a853faafb3fc`。历史值 `5dabb3f5…`（2,643 项）是 E2-2B 之前的状态——E2-2B 重导出了 5 个 FBX 却没重新生成清单，A5 才发现并订正。 |
+| A2 — 资源交付与 Git 解耦、可追溯 | ✅ 已完成（2026-08-20 重打包并首次真正验证往返） | 当前归档 `glory-assets-a0751fdc580e78df-2fd696d1d4f2dcfc.zip`，1782 个 Git 外资源、850 个已跟踪。`restore_assets.ps1` → `ASSET_RESTORE_RESULT status=PASS copied=0 already_present=1782`，接着 `ASSET_DELIVERY_RESULT status=PASS entries=2632 missing=0 hash_mismatch=0 extras=0`。**此前从未真正跑通过**：打包脚本有三个只在 Windows PowerShell 5.1 / 非 ASCII 文件名下发作的缺陷，见 A5 一节。 |
 | A3 — 让检查真正失败 | ✅ 已完成 | 缺资源失败路径与恢复后通过路径均已验证，检查不会再以空检查集或加载失败报假绿。 |
 | A4 — Android 出包与设备回归门禁 | ⏸ 暂停 | 按当前决定暂不处理 Android preset、APK、ADB 与设备回归。 |
 | E1 — 战场空间可读性 | ✅ 桌面完成 | Windows Forward Mobile 纵向切片完成；所有战斗单位经 `UnitVisualResolver → UnitActor3D`，固定两回合回放为 0 胶囊、0 可见 fallback；`BoardReadabilityLayer` 已接入准备/战斗并可持久化开关。人工盲测与 Android 验收仍待后续。 |
@@ -23,6 +23,8 @@ Godot 4.7 的 3v3 布阵自动战斗项目。本 README 同时是项目说明、
 | Director D4 — 四段普攻 | ✅ 桌面完成 / Android 暂停 | 模拟层为全部单位产出 `attack_start → [projectile_spawn] → impact → hit_number → death`（`death` 此前完全不存在）；视觉按 C4 纵向切片迁移 `human_militia` / `human_archer` / `pve_sky_thunder_spirit`，其余仍走快照 diff。两个固定样本 0 `missing_actor` 掉落，切片样本播出 8 次死亡动画；D4 前后 final-state 哈希完全一致。 |
 | Director D5 — 手感与运行时预算 | ✅ 桌面完成 / Android 暂停 | 五个 `.tres` cue profile + `VfxProfileResolver`；**扩展**现有 `VFXQualityBudget.gd` 加三档优先级预算；`BattleVfxReview.tscn` 评审场景；切片扩面到全部单位。133/133 profile 检查、70/70 Director 通过，固定样本 0 合并、20 次降级。 |
 | Director D6 — 清理旧路由 | ✅ 桌面完成 / Android 暂停 | 删除三个快照 diff 函数、hit_number 旧分支与迁移期白名单；未迁移路由保留。删除前后播放计数逐项相同，回合间 orphan/tween 恒为 0。82/82 通过。 |
+| B4 — 特效预算 | ✅ 桌面完成 / Android 暂停 | 优先级预算补上「单条 cue 有多贵」的一半（粒子 / 附加层 / 透明叠层 / 动态光 / 并发按优先级缩放）；满配第 21 回合三档实测 orphan 全 0、无节点增长，24 次死亡在低档也全部播出。162/162 通过。 |
+| E3 — 启动预热拆分 | ✅ 桌面完成 / Android 暂停 | 96 项拆成 `menu_minimal`(8) → `first_battle`(44) → `deferred`(44)，总量不变、顺序按需要排；修掉正式版在语言页画开发文字；修掉小怪技能热在 Boss 之后的排序错误。220/220 通过。APK 体积部分随 Android 暂停。 |
 
 ### E2-2B 本轮落地记录
 
@@ -118,9 +120,9 @@ Godot 4.7 的 3v3 布阵自动战斗项目。本 README 同时是项目说明、
 
 ### 当前下一步：Director 之后
 
-1. B4 / E3：拆分 96 项启动预热，降低首屏时间、峰值显存和包体。
+1. ~~B4 / E3~~：桌面部分已完成（预算分档 + 预热分阶段）。剩余的 APK 体积、ASTC、低端机实测全部随 Android 暂停。
 2. README 的代码/联机 D1、D3：`NetworkService` 拆分、服务器权威回放、重连与确定性加强。
-3. A5：资源清理、第三方来源与许可证总账。
+3. ~~A5~~：桌面部分已完成（许可总账、打包排除、备份与残留清理）。剩 FBX 分仓与 APK 体积验收。
 
 ### Director D0-D6 全部完成后
 
@@ -312,7 +314,7 @@ adb exec-out screencap -p > /tmp/glory-launch.png
 ### P1：上线前处理
 
 1. **单体脚本。** `NetworkService.gd` 约 4264 行，`PrepUI.gd` 约 2406 行，`UnitSkillVFXComposer3D.gd` 约 1597 行；当前修改极易产生跨功能回归。
-2. **战斗呈现耦合且主角缺席。** 视觉事件已由模拟器写入 replay，但 `BattleVfx.gd` 同时做事件路由、快照 diff、技能逻辑、2D/3D 特效、数字、屏震和池管理；深继承链使每个阶段难以独立测试。更优先的是修复 `unit id → 可加载 prefab → 正确锚点`，消灭实机胶囊占位体后才有资格堆叠 VFX。
+2. **战斗呈现耦合（已部分解除）。** ~~主角缺席~~：`unit id → 可加载 prefab → 正确锚点` 已在 E1/D3 修好，桌面固定回放 0 胶囊；普攻、伤害数字与死亡已由 `BattlePresentationDirector` 接管，`BattleVfx.gd` 里对应的快照 diff 分支已在 D6 删除。**仍然成立的部分**：`BattleVfx.gd` 依旧承担技能逻辑、Boss/种族 2D/3D 特效、屏震与池管理，五层深继承链（`BattleScreen → BattleResult → BattleVfx → BattleRenderer → BattleArena`）也没有拆，每一层仍难以独立测试。
 3. **资源治理缺失。** 282 MiB 备份、重复变体、非资源文件和未量化的外部许可会污染发布包；`dep_scan` 对动态路径只能保守保留 83.8 MiB。
 4. **网络生产就绪度不足。** 文档仍列出 relay/NAT、回放传输恢复、两端人工网络 QA、leader 公平规则等未完成项。不要把本地 ENet 测试等同公网联机。
 5. **启动与战斗预算过重。** 96 项预热实际约 11.8 秒、峰值纹理显存约 549 MiB；即便测试机预热后 90 FPS，也不能接受把这个负担留给所有设备。
@@ -358,8 +360,23 @@ adb exec-out screencap -p > /tmp/glory-launch.png
 
 #### A5 — 资源瘦身与许可总账（P1）
 
-- **实施：** 将 `backups/` 迁出运行仓库或放入带保留策略的工件库；从资源根移除 `desktop.ini`、`New folder`、历史变体；把 FBX 源文件与运行时 `.tscn/.glb` 分仓；建立 `THIRD_PARTY_NOTICES.md`。
-- **验收：** 发布包排除备份、源 FBX、编辑器样例与未引用参考包；每项第三方资源都有许可证和来源。Binbun 两个已确认 CC0 包可保留，其他包在许可证确认前不得发布。
+- **状态（2026-08-20）：桌面部分完成；FBX 分仓与 APK 体积验收未做。**
+- **最重要的发现是许可，不是体积：** 启动预热真正实例化的 8 个外部 VFX 场景里，**有 5 个来自完全没有许可证文件的包**——Binbun Vol 1 的 `beam_vfx` / `loot_effects`，以及整个 `Starter_Vfx`（5.5 MB）。它们不是可有可无的参考素材，是战斗里真会播的效果。已确认可再分发的只有 Binbun Vol 2 的两个 CC0 包和 Knewave 字体（OFL）。详见新建的 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+- **`export_presets.cfg` 原本 `exclude_filter=""`，两个预设都一个字都没排除**——这就是 609 MB APK 的直接原因。现已排除 `*.bak`、`backups/`、`Demo_GodotVFX`、`New folder`、`desktop.ini`、`Thumbs.db`。
+- **刻意没有排除 `*.fbx`：** 21 个 FBX 是**运行时依赖**，被 5 个阵营援军 wrapper 和 2 个双生守门人 wrapper 通过 `idle_scene_path` / `attack_scene_path` / `run_scene_path` 直接引用。排除它们等于让这 7 个单位没有模型。README 原文把「FBX 源文件与运行时分仓」写成简单挪目录，**按字面做会弄坏游戏**；真要分仓得先把这些单位转成 `.glb/.tscn`，那是 E2 的活。
+- **清理成果：** 删除 110 个已跟踪的 `.bak`/`.backup` 源码残留（`effects/vfx3d/units` 27 个、`scenes/battle` 17 个最多）；删除 `desktop.ini` 与 `race_logos/New folder`（8 个重复种族 logo）；`backups/` 282 MB、550 个文件迁出 git 跟踪并加入 `.gitignore`（本地磁盘副本保留）。
+- **删 `backups/` 前先验证过一件事：** 7 个 wrapper 引用的 21 个 FBX 全部在 `assets/` 内，不是只存在于备份里。确认无误才动手。
+- **顺带发现 A1 的指纹早就过时了。** 三代指纹：`5dabb3f5…`（已提交，E2-2B 之前）→ `4608939d…`（同样 2643 条，但 9 个文件哈希不同：E2-2B 重导出的 5 个 `formation_ally_4/5` FBX、3 个 `.import` 和 `PetRabbitAnimated.gd`）→ `a0751fdc580e78dfe6e4023c3f55501471510d0db00d27ae5732a853faafb3fc`（A5 删除 11 项后）。**E2-2B 改了资源却没重新生成清单**，这次一并订正。
+- **A2 交付包已重打并首次真正验证往返（2026-08-20）。** 新归档 `glory-assets-a0751fdc580e78df-2fd696d1d4f2dcfc.zip`（2.24 GB、1782 个 Git 外资源），`inventory_sha256` 与清单一致，`stale` 标记已随脚本整体重写消失。`restore_assets.ps1` 报 `copied=0 already_present=1782`，随后的 `asset_delivery_check` 2632/2632 全通过。
+- **重打过程中挖出打包工具的三个缺陷，全部只在 Windows PowerShell 5.1 或非 ASCII 文件名下发作**——脚本显然是在 PowerShell 7 下写的，那边每个默认值恰好都是对的。而清单里有 **252 个中文路径**（`assets/ui/codex_portraits/*.png`），所以三个都是真实存在的故障：
+  1. `Get-Content -Raw` **没写 `-Encoding UTF8`**（两个脚本共 3 处）。5.1 对无 BOM 文件按 ANSI（1252）解码，`云羽鹰.png` 变成 `äº‘ç¾½é¹°.png`，重算的指纹对不上清单，打包直接拒绝启动。
+  2. **只 `Add-Type` 了 `System.IO.Compression.FileSystem`**，而 `ZipArchive` 在 `System.IO.Compression` 里，5.1 下第 145 行报 `Unable to find type`。又因为 `finally` 里无守卫地调 `$zip.Dispose()`，严格模式下先抛异常导致 `$zipStream` 从未释放，留下一个被占用的 0 字节文件，其清理失败又把真正的错误盖住了。
+  3. **`ZipArchive` 的 `entryNameEncoding` 传了 UTF-8 而不是 `$null`**。显式传编码会让 .NET 用它写条目名却**不设 EFS 语言编码标志位**，读取方退回 CP437，252 个中文条目名全成乱码，`restore_assets.ps1` 报 `Archive file list does not match bundle descriptor`。**这意味着 A2 的冷克隆恢复对这批资源从来就没成功过。**
+- **三个缺陷都已加门禁锁住：** 新增 `tools/asset_tooling_check.tscn`（14 项），对两个 `.ps1` 做源码级断言——`Get-Content` 必须带 `-Encoding UTF8`、用 `ZipArchive` 就必须 `Add-Type` 两个程序集、`entryNameEncoding` 必须是 `$null`、`Dispose()` 必须有空值守卫。**逐条把 bug 塞回去验证过它真会红**（分别产生 1/1/2/1 条失败），还原后回绿。之所以做成源码断言而不是行为断言：真跑一次脚本要重打 2.4 GB，太重了当不了门禁。
+- **两个旧归档已删**（`37e7f6e7…`、`5dabb3f5…`，各 2.6 GB，释放 5 GB）。它们都早于条目名修复，中文条目名是乱码，本来就永远恢复不出那 252 个资源，属于已知损坏而非仅仅过期。
+- **验证：** `asset_manifest_check` 2636/2636、`asset_delivery_check` 2632/2632、`model_bounds_check` 75/75；演出侧 Director 82/82、profile 162/162、预热 220/220、锚点 1067/1067 全部保持通过——确认删掉 110 个 `.bak` 没弄坏任何东西。新的 `exclude_filter` 无法验证，因为验证它需要真的导出 APK（Android 暂停）。
+- **仍未完成：** FBX 分仓（需先转格式）；APK 体积收益无法衡量；`assets/models`、`assets/ui`、`assets/audio`、`assets/board` 仍然完全没有来源与许可记录——这是许可总账最大的缺口，已写进 `THIRD_PARTY_NOTICES.md` 第 5 节。
+- 证据：`A5_asset_and_license_20260820/A5_VERIFICATION.json`；备份在 `A5_prechange_backup_20260820/`。
 
 ### B. 战斗表现重构（P1，先做纵向切片）
 
@@ -373,24 +390,50 @@ adb exec-out screencap -p > /tmp/glory-launch.png
 #### B2 — 新建 `BattlePresentationDirector`，替代 `BattleVfx` 的硬编码路由
 
 - **新文件：** `effects/runtime/presentation/BattlePresentationDirector.gd`、`BattleActionTrack.gd`、`UnitActorRegistry.gd`、`VfxProfileResolver.gd`、`VfxPool3D.gd`、`data/vfx/battle_cues/*.tres`。
-- **D2 实施状态（2026-08-19，桌面已完成）：** 已落地 `BattlePresentationDirector.gd`、`BattleActionTrack.gd` 与独立 headless 检查；`BattleScreen` 已逐 tick 入队。Registry 锚点、profile resolver、pool 与 `.tres` cue 仍分别属于 D3-D5，不能误记为完成。
+- **实施状态（2026-08-19，桌面 D0-D6 已闭环）：** `BattlePresentationDirector.gd`、`BattleActionTrack.gd`、`UnitActorRegistry.gd`、`VfxProfileResolver.gd`、`BattleCueProfile.gd`、`adapters/LegacyBattleVfxAdapter.gd` 与 `data/vfx/battle_cues/*.tres`（五个）均已落地；`BattleScreen` 逐 tick 入队，普攻/伤害数字/死亡的旧快照 diff 路由已在 D6 删除。
+- **`VfxPool3D.gd` 未新建，且这是有意的：** 伤害数字复用 `BattleVfx` 已有的 32 个 Label 轮转池，3D 特效复用 `VFXManager` 与 `VFXBlockRoot` 的既有池与并发控制。再造一个池只会多一份要维护的生命周期。若将来 `.tres` 引入真正独立的特效场景，再按需补。
 - **职责：** Director 订阅 `BattlePresentationEvent`，根据 `skill_id + race + quality_tier + priority` 解析 profile，再向 2D/3D pool 下发“预备、飞行/动作、命中、余烬”四段；`BattleVfx` 只保留迁移期的 legacy adapter，逐步退出硬编码事件路由。
 - **迁移顺序：** 先迁移普通近战、普通远程、暴击、治疗、护盾、死亡六种高频事件；再迁移一个 Boss 和一个种族标志技能；最后迁移全角色技能。每次只删对应旧分支。
 - **验收：** 同一事件只由一个 profile 播放；seek/暂停/重播不重放已消费事件；缺 profile 时播放低成本 fallback，并输出一次可聚合告警。
 
 #### B3 — 用“读秒—动作—命中—结果”建立可读性
 
+- **状态（2026-08-19）：节奏已落地，人工评分未做。** 下列时长已写进 `data/vfx/battle_cues/*.tres` 并由 Director 排程执行（近战 120/80/150 ms，远程 120/80/100 ms，暴击 160/120/250 ms，死亡 350 ms 淡出）。空间规则也已满足：所有 cue 只经 `UnitActorRegistry.get_anchor()` 取世界坐标，没有任何屏幕绝对坐标。**尚未完成的是验收本身**——「不看日志区分七类效果」的盲测、以及 10 个固定种子 15 秒关键帧的人工评分都还没进行；`BattleVfxReview.tscn` 是为此准备的工具。
 - **每个攻击的最小节奏：** `0.08–0.16s` 蓄势（朝向、武器/手部亮起）→ 动作/投射物 → 命中闪白/受击后退/伤害数 → `0.15–0.45s` 残留。Boss 技能另加危险范围和可打断读条。
 - **空间规则：** 所有特效从 `BattleRenderer` 已建立的 `world_cast`、`world_hit`、`world_head`、`world_foot` 锚点取位；禁止用屏幕绝对坐标。友方使用冷色、敌方暖/红色，控制效果使用独立轮廓与图标。
 - **验收：** 在 60 FPS 和低画质下，观察者能不看日志区分普攻、暴击、治疗、护盾、控制、死亡和 Boss 大招；录制 10 个固定种子的 15 秒关键帧进行人工评分。
 
 #### B4 — 控制特效预算，而非只堆素材
 
+- **状态（2026-08-19）：桌面完成 / Android 暂停。** D5 落地了预算的「排程」一半（每 tick 起播上限、存活上限、合并窗口、降级系数），B4 补上了「单条 cue 有多贵」的另一半：`particle_count_for` / `auxiliary_layers_for` / `distortion_layers_for` / `allow_dynamic_light_for` / `max_simultaneous_effects_for` 按**可见性优先级**在档位允许值之上再缩放，`VFXBlockRoot.can_spawn_block(priority)` 的 3D 闸门也随之分档（critical 不设限，理由同它原有的 `force=true`）。优先级以环境上下文传给生成路径（`begin_cue_priority` / `clear_cue_priority`），与 `DamageService.set_hit_context()` 同一形状——因为中间隔着几层 composer，没有理由让它们知道演出优先级。
+- **满配压力实测（第 21 回合最终战，26 单位 / 259 帧 / 1059 事件，1280×720 Forward Mobile）：**
+
+  | 质量档 | 平均 FPS | 1% low | 降级次数 | 合并次数 | 峰值节点 | 峰值 orphan |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+  | LOW | 89.3 | 23.8 | 179 | 8 | 1217 | 0 |
+  | MEDIUM | 86.8 | 24.0 | 25 | 2 | 1246 | 0 |
+  | HIGH | 85.6 | 23.1 | 14 | 1 | 1304 | 0 |
+
+  档位越低降级越多，正是预算该有的方向；三档 **orphan 全为 0、回合间无节点增长**，满足「低档满配无持续节点增长」。24 次死亡在三档全部播出——critical 从不被合并或丢弃。基线工具为此新增 `--rounds` 与 `--tier`。
+- **仍未完成：** 只有已迁移的 cue 路径带优先级；技能、Boss 与状态特效仍走旧 diff 路由，用的是不带优先级缩放的档位配额，要等它们各自迁移。丢弃事件数记在 `director_audit.json` 而不是 README 原文说的 CSV 里。移动端无法验证（Android 暂停）。
+- 证据：`B4_vfx_budget_20260819/B4_VERIFICATION.json`；备份在 `B4_prechange_backup_20260819/`。
 - **实施：** 扩展现有 `VFXQualityBudget.gd`，为 `critical / important / ambient` 设每帧 spawn、存活节点、粒子、透明叠层、动态光源上限；事件溢出时依优先级合并伤害数字、缩短余烬、退化为图标/颜色，而不是随机丢技能。
 - **挂接点：** 复用 `VFXManager` 的 2D 缓存/池和 `VFXBlockRoot` 的 3D 并发控制；统一统计到 `PerfLog.gd`。
 - **验收：** 低档、满配第 21 回合无持续节点增长；内存、draw call、粒子、平均/1% low FPS、丢弃事件数写入 CSV；超过预算时有可见但简化的反馈。
 
 #### B5 — 建立独立 VFX 评审场景
+
+- **状态（2026-08-20）：桌面完成；人工美术评审本身仍未进行。** `scenes/debug/BattleVfxReview.tscn` 可固定 seed、选回合、切 `LOW/MEDIUM/HIGH` 与 `0.25×/0.5×/1×/2×`，保存截图与指标 json，并支持 **A/B 并排对照**。
+- **「旧/新 profile 对照」这个说法本身要改。** 它写在 D6 之前——D6 已经把旧的快照 diff 路由整个删了，**不存在「旧 profile」可比**。现在真正有对照价值的是两件事，都已实现：
+  - **候选 profile 目录**：A 侧读 `data/vfx/battle_cues/`，B 侧读 `data/vfx/battle_cues_candidate/`（已建，默认与线上一致，评审自行改动）。实测把候选的 `basic_melee` 起手 120→240ms、收招 150→300ms，报告里 `cues_pending` 在同一帧 +1——正是更长起手该有的信号。
+  - **另一质量档**：同 profile 比两档。实测 HIGH vs LOW：draw call 292→279、节点 771→762。
+- **两侧在同一帧截图**，不是「各自跑完再截」——否则两张图是战斗的不同时刻，没法比。两侧都走 `_start_run(tier, profile_dir)`，也就是手动 Run 按钮走的同一条路，保证配置不会分叉。
+- **fps 不可比，报告里明写了。** A 侧总是先跑，会吃掉 shader 编译和资源加载的一次性开销；实测在完全相同的两侧之间也有约 +26 fps 的漂移。所以状态行和 json 都点明该看的是 draw call、节点、tween、待播 cue、预算、adapter 计数和那两张截图。
+- **加了命令行入口** `--review-compare`（配 `--seed` / `--round` / `--capture-frame` / `--tier`，以及 `--compare-tier` 或 `--compare-dir`）。否则这个对照只能靠人点按钮，而那正是下面这个 bug 能活过 D5 的原因。
+- **修掉我自己在 D5 留下的一个 bug：** 这个评审场景的「Run」按钮**从来没真正跑起来过**——它只设了 seed 和回合号，没填棋盘也没开 `team_active`，`compute_team_replay` 每次都返回空。D5 当时只验证了场景能解析，没验证它能跑出一场战斗。
+- **顺带抽出共享 fixture** `tools/FixedBattleFixture.gd`：`battle_presentation_baseline.gd` 和 `promo_capture.gd` 各自带着一份阵容副本，靠注释叮嘱后人「保持一致」，而评审场景干脆一份都没有——就是上面那个 bug。现在基线工具和评审场景共用同一份；抽完重跑基线，**四个冻结哈希逐字未变**，证明重构没改变行为。（`promo_capture.gd` 仍是自己那份，属你的宣传工具，本轮未动。）
+- **仍未完成：** 人工美术评审本身要人来做，工具只是把它变得可行。
+- 证据：`B5_review_compare_20260820/B5_VERIFICATION.json` 与四张对照截图；备份在 `B5_prechange_backup_20260820/`。
 
 - **实施：** 扩展 `scenes/debug/ModelBattlePreview.tscn` 或新增 `scenes/debug/BattleVfxReview.tscn`：选择单位/技能/质量档/慢放倍率/背景，固定 seed 截帧，并能并排比较“旧 profile / 新 profile”。
 - **验收：** 不进入完整对局也能验证每个 profile、锚点、遮挡、循环清理和低档 fallback；截图和指标可作为美术评审附件。
@@ -449,15 +492,15 @@ BattleSimShared（确定性规则，只产出语义事件）
 
 #### C3 — 可交给 AI 逐项落实的战斗纵向切片清单
 
-- [ ] **冻结基线。** 录制固定 seed 的第一、第二场 PVE：单位表、事件序列、最终状态 SHA-256、Android 截图、平均/1% low FPS、峰值显存。修复并启用模型检查的非零失败；35 个 broken scene 未清零前，不准把胶囊当作成功 fallback。
+- [x] **冻结基线（桌面完成 / Android 暂停）。** 固定 seed 两回合的单位表、事件序列、final-state SHA-256、逐帧 FPS 与显存均已录制（`E1_D0_desktop_baseline_20260819/`，其后各阶段续录）。模型检查已能非零失败，35 个 broken scene 已在 E2 清零（75/75、0 broken）。Android 截图与实机指标仍为 `DEFERRED_BY_USER`。
 - [x] **实现事件 schema（桌面完成 / Android 暂停）。** `BattlePresentationEvent.gd` 已用 `battle_id + tick + ordinal` 生成稳定键，类型表覆盖当前事件与 `attack_start`、`projectile_spawn`、`impact`、`heal`、`shield`、`death`、`buff_apply`、`summon`、`skill_cast` 等后续事件；桌面 SHA-256 与 final-state 门禁通过，Android 断言待恢复移动端工作后补齐。
 - [x] **实现 Director 最小排程核心（桌面完成 / Android 暂停）。** `BattleScreen` 已逐 tick 入队；Director 提供生命周期、每单位 action track、去重、暂停/seek/skip/drain/dispose 与假 Registry/Adapter 测试。本项不产生真实 VFX，Legacy 路由继续保留。
 - [x] **实现角色展示链（桌面完成 / Android 暂停）。** 新建数据驱动的 `UnitVisualResolver`：`unit_id → 已验证 .tscn/.glb → UnitActor3D`。`UnitActor3D` 必须有 `ActorRoot`、`HeadAnchor`、`CastAnchor`、`HitAnchor`、`Shadow`；资源失效时显示已有角色卡立绘/名字/阵营框，并在开发构建告警。首场 PVE 的所有双方单位必须不再出现胶囊。
 - [x] **按 Horror Battler 的分层思想、用 Sparta 的可回放边界实现 Director（桌面完成 / Android 暂停，C4 切片范围）。** `BattleScreen` 仅入队 tick；Director 把事件排入每单位 action track，保证同一单位不能被两个 tween 同时占用。先只支持 `attack_start → impact → damage number → death`，不得改任何伤害公式、随机数或服务器/replay payload。
 - [x] **接入有限手感（桌面完成 / Android 暂停）。** 仅为 `basic_melee`、`basic_ranged`、`crit`、`heal`、`death` 做 profile：朝向、起手、命中闪白、受击位移/缩放、一次性音效和伤害数字。若引入 Juicee，先封装为 adapter 并在 Mobile 评审场景中验证；暴击 hit-stop 只影响本地演出，线上/PVP 默认关闭全局 time scale。
-- [x] **制作可评审场景（工具已具备，人工美术评审待进行）。** 新建 `scenes/debug/BattleVfxReview.tscn`：可选择单位、技能、种族、质量档、0.25×/1×/2×、固定 seed 和旧/新 profile 对照；保存截图、draw call、粒子/透明层、节点存活数，作为美术验收附件。
-- [ ] **Android 回归与退化。** 将 `critical / important / ambient` 预算接入 `VFXQualityBudget.gd`；低档机超预算时合并普通伤害数、减粒子、改图标，绝不丢 Boss/死亡/控制提示。首场、20+ 回合、Boss 各跑一次真实 APK；确认无 `SCRIPT ERROR`、无节点泄漏、无结果页抢跑。
-- [ ] **许可与归档。** 任何从 MIT 项目逐行改写/移植的文件在文件头保留归属，并写入 `THIRD_PARTY_NOTICES.md`；Horror Battler 永远只保留链接和人工设计笔记。每次更新外部依赖都在评审场景和 Android APK 重跑。
+- [x] **制作可评审场景（含 A/B 并排对照；人工美术评审待进行）。** 新建 `scenes/debug/BattleVfxReview.tscn`：可选择单位、技能、种族、质量档、0.25×/1×/2×、固定 seed 和旧/新 profile 对照；保存截图、draw call、粒子/透明层、节点存活数，作为美术验收附件。
+- [ ] **Android 回归与退化（预算部分已完成，实机部分暂停）。** `critical / important / ambient` 预算已于 D5 接入 `VFXQualityBudget.gd`；本项剩下的全部是 Android 实机部分。原文：将 `critical / important / ambient` 预算接入 `VFXQualityBudget.gd`；低档机超预算时合并普通伤害数、减粒子、改图标，绝不丢 Boss/死亡/控制提示。首场、20+ 回合、Boss 各跑一次真实 APK；确认无 `SCRIPT ERROR`、无节点泄漏、无结果页抢跑。
+- [ ] **许可与归档（D0-D6 未产生新的归属债务）。** Director 全部代码按本文件与 Director 清单的条款自行编写，没有从 Horror Battler / Sparta / Juicee 逐行移植任何代码，因此这一轮无需新增归属；本项仍为未完成，是因为 `THIRD_PARTY_NOTICES.md` 与既有第三方 VFX 包的总账尚未建立（见 A5）。原文：任何从 MIT 项目逐行改写/移植的文件在文件头保留归属，并写入 `THIRD_PARTY_NOTICES.md`；Horror Battler 永远只保留链接和人工设计笔记。每次更新外部依赖都在评审场景和 Android APK 重跑。
 
 #### C4 — 首个纵向切片的验收门
 
@@ -513,10 +556,23 @@ BattleSimShared（确定性规则，只产出语义事件）
 
 #### E3 — APK 体积与加载控制（P1）
 
-- 导出后用 `aapt/apkanalyzer` 分析 APK；按场景拆出主菜单、准备、战斗、Boss、图鉴资源表，优先延迟加载未参与本局的模型和 VFX。
-- BGM 转换和导入设置按质量档验证；大纹理优先压缩，禁止靠删除运行时资源掩盖问题。
-- 将当前“启动预热 96 项”的单次 11.8 秒工作拆为主菜单最小集、整备预热、首战按需预热、后台空闲预热；可取消且不得在语言页暴露开发文字。先以模型资产 manifest 精确裁剪，而不是删掉仍会被战斗加载的文件。
-- 验收：给出每次构建的 APK 体积预算、最大增量阈值、首屏时间、准备进战斗峰值内存。以本次 609 MiB APK、约 549 MiB 纹理峰值、11.8 秒预热作为反向基线；优化后仍通过 A1-A4。
+- **状态（2026-08-19）：启动预热部分已完成（桌面）；APK 体积部分随 Android 暂停。**
+- **实测把这一项的前提改了：** 桌面上 96 项预热是 **2.75–2.78 秒、最慢单项 64 ms**，不是本文档别处写的 11.8 秒——那是 Android 数字。而且 `_start_vfx_warmup()` 是分帧异步的（`FRAME_BUDGET_MS=12`、每项 2 帧），紧接着就 `_show_language_select()`，**首屏从来没有被预热挡住**。所以 E3 的首屏收益在桌面上是 0，大头仍在 Android。
+- **README 原本要的拆分方式与代码里的安全约束冲突。** [VFXWarmup.gd](effects/vfx3d/VFXWarmup.gd) 文件头记录着：在已联网时做这件事曾造成 28.3 秒冻结并被判掉线；`_process()` 因此一旦 `NetworkService.state != OFFLINE` 就立刻 `abort()`。**联机下"推迟到备战/首战"的阶段根本不会执行——推迟等于取消**，shader 成本会原样回到第一场战斗。
+- **因此拆分限定在离线菜单窗口内，买到的是顺序而不是推迟：**
+
+  | 阶段 | 项数 | 内容 | 累计完成 |
+  | --- | ---: | --- | ---: |
+  | `menu_minimal` | 8 | 8 种普攻组合，每回合每个单位都放 | ~245 ms |
+  | `first_battle` | 44 | 可购买棋子 + PVE 小怪的技能，即第一场战斗真会出现的 | ~1460 ms |
+  | `deferred` | 44 | 佣兵、Boss、阵营援军、写死的 EXTRA_EFFECTS、8 个外部 VFX 场景 | ~2755 ms |
+
+  总量与拆分前一致（96 项、约 2.78 秒），提前 abort 时丢掉的是最靠后、玩家最晚才会遇到的那批。
+- **顺带修掉一个真实的排序错误：** 旧的扁平 `SKILL_TABLES` 顺序是 `{race_units, mercenaries, bosses, formation_allies, pve_monsters}`，`pve_monsters` 排在最后——**第 1 回合就会遇到的小怪技能，反而热在第 5 回合才出现的 Boss 后面**。现在它在第 2 阶段。
+- **修掉正式版泄漏开发文字：** `_build_label()` 原本无条件构建进度条，正式版会在语言选择页画出预热进度文字，正是本项「不得在语言页暴露开发文字」禁止的。现已用 `OS.is_debug_build()` 守卫，并有源码级断言防止守卫被去掉。
+- **未做（全部属 Android）：** `aapt`/`apkanalyzer` 体积分析、ASTC 贴图、BGM 按质量档转换、APK 体积预算与最大增量阈值；按场景拆分资源表也没做——它的收益是包体，Android 暂停期间无法衡量。
+- 新增门禁 `tools/vfx_warmup_check.tscn`（220 项）：断言三阶段的并集与拆分前完全一致、无重复、无未分配、队列按阶段分段排列、普攻在最前、小怪技能早于 Boss、外部场景在最后，以及开发文字守卫存在。
+- 证据：`E3_startup_warmup_20260819/E3_VERIFICATION.json` 与两份 `warmup_run*.log`；备份在 `E3_prechange_backup_20260819/`。
 
 ## 推荐实施顺序
 

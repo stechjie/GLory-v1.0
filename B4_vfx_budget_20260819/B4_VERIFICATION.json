@@ -1,0 +1,526 @@
+{
+  "stage": "B4",
+  "title": "Priority-aware VFX cost budget and the full-board stress run",
+  "generated_utc": "2026-08-19T15:44:59",
+  "base_commit": "458f8b2",
+  "prechange_backup": "B4_prechange_backup_20260819/",
+  "platform_scope": {
+    "desktop": "verified",
+    "android_device": "DEFERRED_BY_USER"
+  },
+  "what_d5_already_did": "the scheduler half: how many cues may start per replay tick and live at once",
+  "what_b4_adds": {
+    "file": "effects/vfx3d/core/VFXQualityBudget.gd (extended again)",
+    "functions": [
+      "particle_count_for",
+      "auxiliary_layers_for",
+      "distortion_layers_for",
+      "allow_dynamic_light_for",
+      "max_simultaneous_effects_for",
+      "priority_cost_scale",
+      "begin_cue_priority",
+      "clear_cue_priority",
+      "current_cue_priority"
+    ],
+    "idea": "how expensive each cue may be, scaled by visibility priority as well as device tier",
+    "gate": "VFXBlockRoot.can_spawn_block(priority) is now priority-aware; critical returns an uncapped gate for the same reason force=true exists",
+    "plumbing": "LegacyBattleVfxAdapter installs the cue priority as ambient context around the spawn call and always clears it, mirroring DamageService.set_hit_context()"
+  },
+  "invariants_asserted": [
+    "a critical cue keeps the full tier allowance for particles, layers and concurrency on every tier",
+    "ambient <= important <= critical for particle count, distortion layers and concurrency",
+    "no priority may buy more than the device tier allows",
+    "LOW tier still leaves a critical cue with visible particles: degrading is not disappearing",
+    "the ambient priority context never leaks, and an invalid value falls back to important"
+  ],
+  "stress_run": {
+    "what": "round 21, the final full-board battle, at all three quality tiers",
+    "how": "tools/battle_presentation_baseline.gd gained --rounds and --tier",
+    "scale": "26 units, 259 frames, 1059 events (round 1 has 182)",
+    "result": "passed=true, 0 failures on every tier"
+  },
+  "tiers": {
+    "LOW": {
+      "event_count": 1059,
+      "event_types": {
+        "attack_start": 279,
+        "death": 24,
+        "hit_number": 337,
+        "impact": 279,
+        "projectile_spawn": 112,
+        "skill_shake": 28
+      },
+      "director_audit": {
+        "anchor_degradation_count": 17,
+        "anchor_degradation_rows": [
+          {
+            "consumer": "director",
+            "reason": "missing target actor for hit_number",
+            "resource_path": "",
+            "unit_id": "player_L0_3"
+          },
+          {
+            "consumer": "director",
+            "reason": "missing target actor for impact",
+            "resource_path": "",
+            "unit_id": "enemy_L1_3"
+          },
+          {
+            "consumer": "director",
+            "reason": "missing target actor for hit_number",
+            "resource_path": "",
+            "unit_id": "enemy_L1_3"
+          },
+          {
+            "consumer": "director",
+            "reason": "missing target actor for impact",
+            "resource_path": "",
+            "unit_id": "player_L0_1"
+          },
+          {
+            "consumer": "director",
+            "reason": "missing target actor for hit_number",
+            "resource_path": "",
+            "unit_id": "player_L0_1"
+          },
+          {
+            "consumer": "director",
+            "reason": "missing target actor for impact",
+            "resource_path": "",
+            "unit_id": "enemy_L0_2"
+          },
+          {
+            "consumer": "director",
+            "reason": "missing target actor for hit_number",
+            "resource_path": "",
+            "unit_id": "enemy_L0_2"
+          },
+          {
+            "consumer": "director",
+            "reason": "missing target actor for hit_number",
+            "resource_path": "",
+            "unit_id": "player_L0_0"
+          },
+          {
+            "consumer": "director",
+            "reason": "missing target actor for hit_number",
+            "resource_path": "",
+            "unit_id": "player_L2_2"
+          },
+          {
+            "consumer": "director",
+            "reason": "missing target actor for hit_number",
+            "resource_path": "",
+            "unit_id": "player_L1_1"
+          },
+          {
+            "consumer": "director",
+            "reason": "missing target actor for hit_number",
+            "resource_path": "",
+            "unit_id": "enemy_L1_0"
+          },
+          {
+            "consumer": "director",
+            "reason": "missing target actor for hit_number",
+            "resource_path": "",
+            "unit_id": "enemy_L2_3"
+          },
+          {
+            "consumer": "director",
+            "reason": "missing target actor for hit_number",
+            "resource_path": "",
+            "unit_id": "enemy_L1_1"
+          },
+          {
+            "consumer": "director",
+            "reason": "missing target actor for hit_number",
+            "resource_path": "",
+            "unit_id": "player_team_final_ally"
+          },
+          {
+            "consumer": "director",
+            "reason": "missing target actor for hit_number",
+            "resource_path": "",
+            "unit_id": "enemy_L2_0"
+          },
+          {
+            "consumer": "director",
+            "reason": "missing target actor for hit_number",
+            "resource_path": "",
+            "unit_id": "enemy_L0_1"
+          },
+          {
+            "consumer": "director",
+            "reason": "missing target actor for hit_number",
+            "resource_path": "",
+            "unit_id": "player_L2_3"
+          }
+        ],
+        "budget": {
+          "degraded": 179,
+          "merged": 8,
+          "over_budget_by_priority": {
+            "ambient": 38,
+            "important": 141
+          }
+        },
+        "drop_count": 16,
+        "drops_by_reason": {
+          "budget_merged_ambient": 8,
+          "source_dead": 8
+        },
+        "legacy_adapter": {
+          "pending_timers": 0,
+          "played_by_type": {
+            "attack_start": 167,
+            "death": 24,
+            "hit_number": 329,
+            "projectile_spawn": 110
+          },
+          "profiles_seen": [
+            "basic_melee",
+            "basic_ranged",
+            "crit",
+            "death",
+            "fallback_minimal",
+            "heal"
+          ]
+        },
+        "missing_actor_drop_count": 0,
+        "profiles": {
+          "loaded_ids": [
+            "basic_melee",
+            "basic_ranged",
+            "crit",
+            "death",
+            "heal"
+          ],
+          "missing_rows": [],
+          "resolved_counts": {
+            "basic_melee": 448,
+            "basic_ranged": 400,
+            "crit": 79,
+            "death": 24,
+            "heal": 7
+          }
+        },
+        "resolution": {
+          "degraded_anchors": 0,
+          "resolved_anchors": 1107,
+          "resolved_cues": 997
+        }
+      },
+      "performance": {
+        "average_fps": 89.28585234205727,
+        "one_percent_low_fps": 23.797129548889288,
+        "peak_buffer_mb": 58.298343658447266,
+        "peak_draw_calls": 331,
+        "peak_nodes": 1217,
+        "peak_objects": 4617,
+        "peak_orphans": 0,
+        "peak_static_mb": 142.16281032562256,
+        "peak_texture_mb": 203.1875,
+        "peak_tweens": 116,
+        "peak_video_mb": 457.6875,
+        "sample_count": 2483
+      },
+      "residue_samples": [
+        {
+          "before_round": 21,
+          "nodes": 12,
+          "objects": 1683,
+          "orphans": 0,
+          "tweens": 0
+        },
+        {
+          "before_round": -1,
+          "nodes": 28,
+          "objects": 2701,
+          "orphans": 0,
+          "tweens": 0
+        }
+      ],
+      "tool_passed": true,
+      "tool_failures": []
+    },
+    "MEDIUM": {
+      "event_count": 1059,
+      "event_types": {
+        "attack_start": 279,
+        "death": 24,
+        "hit_number": 337,
+        "impact": 279,
+        "projectile_spawn": 112,
+        "skill_shake": 28
+      },
+      "director_audit": {
+        "anchor_degradation_count": 5,
+        "anchor_degradation_rows": [
+          {
+            "consumer": "director",
+            "reason": "missing target actor for hit_number",
+            "resource_path": "",
+            "unit_id": "player_L0_3"
+          },
+          {
+            "consumer": "director",
+            "reason": "missing target actor for hit_number",
+            "resource_path": "",
+            "unit_id": "player_L0_1"
+          },
+          {
+            "consumer": "director",
+            "reason": "missing target actor for hit_number",
+            "resource_path": "",
+            "unit_id": "enemy_L0_2"
+          },
+          {
+            "consumer": "director",
+            "reason": "missing target actor for hit_number",
+            "resource_path": "",
+            "unit_id": "enemy_L1_1"
+          },
+          {
+            "consumer": "director",
+            "reason": "missing target actor for hit_number",
+            "resource_path": "",
+            "unit_id": "enemy_L2_0"
+          }
+        ],
+        "budget": {
+          "degraded": 25,
+          "merged": 2,
+          "over_budget_by_priority": {
+            "ambient": 19,
+            "important": 6
+          }
+        },
+        "drop_count": 10,
+        "drops_by_reason": {
+          "budget_merged_ambient": 2,
+          "source_dead": 8
+        },
+        "legacy_adapter": {
+          "pending_timers": 0,
+          "played_by_type": {
+            "attack_start": 167,
+            "death": 24,
+            "hit_number": 335,
+            "projectile_spawn": 110
+          },
+          "profiles_seen": [
+            "basic_melee",
+            "basic_ranged",
+            "crit",
+            "death",
+            "fallback_minimal",
+            "heal"
+          ]
+        },
+        "missing_actor_drop_count": 0,
+        "profiles": {
+          "loaded_ids": [
+            "basic_melee",
+            "basic_ranged",
+            "crit",
+            "death",
+            "heal"
+          ],
+          "missing_rows": [],
+          "resolved_counts": {
+            "basic_melee": 448,
+            "basic_ranged": 400,
+            "crit": 79,
+            "death": 24,
+            "heal": 7
+          }
+        },
+        "resolution": {
+          "degraded_anchors": 0,
+          "resolved_anchors": 1126,
+          "resolved_cues": 1016
+        }
+      },
+      "performance": {
+        "average_fps": 86.77157283362884,
+        "one_percent_low_fps": 23.97517664595326,
+        "peak_buffer_mb": 58.322269439697266,
+        "peak_draw_calls": 371,
+        "peak_nodes": 1246,
+        "peak_objects": 5014,
+        "peak_orphans": 0,
+        "peak_static_mb": 144.9337501525879,
+        "peak_texture_mb": 206.875,
+        "peak_tweens": 151,
+        "peak_video_mb": 484.4375,
+        "sample_count": 2413
+      },
+      "residue_samples": [
+        {
+          "before_round": 21,
+          "nodes": 12,
+          "objects": 1683,
+          "orphans": 0,
+          "tweens": 0
+        },
+        {
+          "before_round": -1,
+          "nodes": 28,
+          "objects": 2708,
+          "orphans": 0,
+          "tweens": 0
+        }
+      ],
+      "tool_passed": true,
+      "tool_failures": []
+    },
+    "HIGH": {
+      "event_count": 1059,
+      "event_types": {
+        "attack_start": 279,
+        "death": 24,
+        "hit_number": 337,
+        "impact": 279,
+        "projectile_spawn": 112,
+        "skill_shake": 28
+      },
+      "director_audit": {
+        "anchor_degradation_count": 5,
+        "anchor_degradation_rows": [
+          {
+            "consumer": "director",
+            "reason": "missing target actor for hit_number",
+            "resource_path": "",
+            "unit_id": "player_L0_3"
+          },
+          {
+            "consumer": "director",
+            "reason": "missing target actor for hit_number",
+            "resource_path": "",
+            "unit_id": "player_L0_1"
+          },
+          {
+            "consumer": "director",
+            "reason": "missing target actor for hit_number",
+            "resource_path": "",
+            "unit_id": "enemy_L0_2"
+          },
+          {
+            "consumer": "director",
+            "reason": "missing target actor for hit_number",
+            "resource_path": "",
+            "unit_id": "enemy_L1_1"
+          },
+          {
+            "consumer": "director",
+            "reason": "missing target actor for hit_number",
+            "resource_path": "",
+            "unit_id": "enemy_L2_0"
+          }
+        ],
+        "budget": {
+          "degraded": 14,
+          "merged": 1,
+          "over_budget_by_priority": {
+            "ambient": 14
+          }
+        },
+        "drop_count": 9,
+        "drops_by_reason": {
+          "budget_merged_ambient": 1,
+          "source_dead": 8
+        },
+        "legacy_adapter": {
+          "pending_timers": 0,
+          "played_by_type": {
+            "attack_start": 167,
+            "death": 24,
+            "hit_number": 336,
+            "projectile_spawn": 110
+          },
+          "profiles_seen": [
+            "basic_melee",
+            "basic_ranged",
+            "crit",
+            "death",
+            "fallback_minimal",
+            "heal"
+          ]
+        },
+        "missing_actor_drop_count": 0,
+        "profiles": {
+          "loaded_ids": [
+            "basic_melee",
+            "basic_ranged",
+            "crit",
+            "death",
+            "heal"
+          ],
+          "missing_rows": [],
+          "resolved_counts": {
+            "basic_melee": 448,
+            "basic_ranged": 400,
+            "crit": 79,
+            "death": 24,
+            "heal": 7
+          }
+        },
+        "resolution": {
+          "degraded_anchors": 0,
+          "resolved_anchors": 1127,
+          "resolved_cues": 1017
+        }
+      },
+      "performance": {
+        "average_fps": 85.63461044138775,
+        "one_percent_low_fps": 23.140925626896028,
+        "peak_buffer_mb": 58.33090591430664,
+        "peak_draw_calls": 394,
+        "peak_nodes": 1304,
+        "peak_objects": 5281,
+        "peak_orphans": 0,
+        "peak_static_mb": 145.62022018432617,
+        "peak_texture_mb": 215.875,
+        "peak_tweens": 183,
+        "peak_video_mb": 494.125,
+        "sample_count": 2378
+      },
+      "residue_samples": [
+        {
+          "before_round": 21,
+          "nodes": 12,
+          "objects": 1683,
+          "orphans": 0,
+          "tweens": 0
+        },
+        {
+          "before_round": -1,
+          "nodes": 28,
+          "objects": 2708,
+          "orphans": 0,
+          "tweens": 0
+        }
+      ],
+      "tool_passed": true,
+      "tool_failures": []
+    }
+  },
+  "checks": {
+    "battle_cue_profile_check": {
+      "status": "PASS",
+      "checked": 162,
+      "failures": 0,
+      "note": "was 133 before B4"
+    },
+    "battle_presentation_director_check": {
+      "status": "PASS",
+      "checked": 82,
+      "failures": 0
+    }
+  },
+  "known_limitations": [
+    "Only the migrated cue path carries a priority. Skill, Boss and status VFX still spawn through the legacy diff route and therefore use the tier allowance without a priority scale; they pick it up when they migrate.",
+    "Dropped-event counts live in director_audit.json, not in frame_performance.csv as README B4 words it.",
+    "Desktop only. The tier differences barely show on this machine (85-89 fps across all three); the budget exists for mobile, where it cannot be measured while Android is paused."
+  ]
+}

@@ -1,10 +1,10 @@
 {
   "by_class": {
-    "dynamic_dir": 306,
+    "dynamic_dir": 302,
     "editor_only": 1,
-    "import_meta": 1027,
+    "import_meta": 1023,
     "runtime_required": 917,
-    "third_party": 260,
+    "third_party": 257,
     "unreferenced": 132
   },
   "dependency_query_failed": [
@@ -175,8 +175,8 @@
       "class": "runtime_required",
       "license_id": "unknown",
       "path": "res://assets/board/2_5d/battlefield_jungle_pve.png",
-      "required_by": "res://scenes/battle/BattleArena.gd",
-      "required_by_count": 1,
+      "required_by": "res://scenes/battle/BattleArena.gd, res://scenes/debug/BoardReadabilityReview.gd",
+      "required_by_count": 2,
       "sha256": "30c113b667b4a29ef3ac3eeb03597af302857ea2d74d9b128e4f14a4e86c6a19",
       "size": 2349680,
       "type": "png"
@@ -295,8 +295,8 @@
       "class": "runtime_required",
       "license_id": "unknown",
       "path": "res://assets/board/prep_2_5d/glory_grass_base_2560x1440.png",
-      "required_by": "res://scenes/prep/PrepBoardModels.gd",
-      "required_by_count": 1,
+      "required_by": "res://scenes/debug/BoardReadabilityReview.gd, res://scenes/prep/PrepBoardModels.gd",
+      "required_by_count": 2,
       "sha256": "90887756252da700306d2212618e4df3ad76fd22d0cb841a095165c6673d6d29",
       "size": 6306072,
       "type": "png"
@@ -937,8 +937,8 @@
       "path": "res://assets/models/allies/formation_ally_4_animated/attack.fbx",
       "required_by": "res://assets/models/allies/formation_ally_4_animated/formation_ally_4_animated.tscn",
       "required_by_count": 1,
-      "sha256": "742ed0ea9dd9007378b9966c205435d03b098a77da764bae4ba9cb73fe281e98",
-      "size": 37035932,
+      "sha256": "020828c5aec6bbe46fad318453af68e422962ad97958f94232235bc361e23a62",
+      "size": 4324940,
       "type": "fbx"
     },
     {
@@ -997,8 +997,8 @@
       "path": "res://assets/models/allies/formation_ally_4_animated/idle.fbx",
       "required_by": "res://assets/models/allies/formation_ally_4_animated/formation_ally_4_animated.tscn",
       "required_by_count": 1,
-      "sha256": "2b8ce8c8bcb58d5a640dd8afdcea3b2f004e809ec09d7112849009104d535b84",
-      "size": 37005388,
+      "sha256": "26303a824b3fd7b9b76c8b26e41c8f4c594198ead38001153d5fdbd8f31942bd",
+      "size": 4258380,
       "type": "fbx"
     },
     {
@@ -1077,8 +1077,8 @@
       "path": "res://assets/models/allies/formation_ally_5_animated/attack.fbx",
       "required_by": "res://assets/models/allies/formation_ally_5_animated/formation_ally_5_animated.tscn",
       "required_by_count": 1,
-      "sha256": "87c27d95cdd1018a6e2e141b99c56a02506d0ad27e0e80bd6f6b63470f2cbd74",
-      "size": 53038252,
+      "sha256": "a49ff2f4e5fc4c7cd2d08e8ac66e776f675a086093541e1ea4fae84b0bb1c9a5",
+      "size": 3682076,
       "type": "fbx"
     },
     {
@@ -1137,8 +1137,8 @@
       "path": "res://assets/models/allies/formation_ally_5_animated/idle.fbx",
       "required_by": "res://assets/models/allies/formation_ally_5_animated/formation_ally_5_animated.tscn",
       "required_by_count": 1,
-      "sha256": "7f5d1a719b7613dbf625cdf27ac6fb73e5190b21c8652ca31c353a962b809042",
-      "size": 53016252,
+      "sha256": "c8fcbb80c07a73f50ea8919041bde24dd47c182905b90fb2de5ac9ea5cf7e2b5",
+      "size": 3674060,
       "type": "fbx"
     },
     {
@@ -1157,8 +1157,8 @@
       "path": "res://assets/models/allies/formation_ally_5_animated/run.fbx",
       "required_by": "res://assets/models/allies/formation_ally_5_animated/formation_ally_5_animated.tscn",
       "required_by_count": 1,
-      "sha256": "68b360f2f10e95f08a9253005d5b51457a2f4a64932ded53b423f5c7ff55a236",
-      "size": 53212620,
+      "sha256": "4e4579f2323b81108fae966c1e96c0054c3b647990820d398f0a8349633846a2",
+      "size": 3766332,
       "type": "fbx"
     },
     {
@@ -6757,8 +6757,8 @@
       "path": "res://assets/models/pets/pet_rabbit/PetRabbitAnimated.gd",
       "required_by": "res://assets/models/pets/pet_rabbit/pet_rabbit_animated.tscn",
       "required_by_count": 1,
-      "sha256": "1abcf0f49d9c54a59de20c8fcf2c6129bb936bd638a23ed2e1d88b75a8f33cad",
-      "size": 7717,
+      "sha256": "b7c43f9ae05fe6fdf0e346a236bd8d95829aa8a8c6c004e3d225347d6b1ca43d",
+      "size": 9895,
       "type": "gd"
     },
     {
@@ -6917,8 +6917,8 @@
       "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack.fbx.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "61a36b213540616884565ec3f2ae433213b32ab99bc2d6a4c8db3e9c5fb645ef",
-      "size": 1228,
+      "sha256": "fd5793eda3400d5ce88a2c16c9b0ca843d6b008844cc1977ec4ac1ba374dcf06",
+      "size": 1230,
       "type": "import"
     },
     {
@@ -7007,8 +7007,8 @@
       "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle.fbx.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "33cc5df02bad4d1879a8066c2a5c8cc6c9a55e13b140caad4a22684db852eeac",
-      "size": 1222,
+      "sha256": "6f106470039f9a5cc4adb9b074e3d2ac3141deae8a019f76818b8309cbcb4230",
+      "size": 1224,
       "type": "import"
     },
     {
@@ -7087,8 +7087,8 @@
       "path": "res://assets/models/units/dark_doom_animated/dark_doom_run.fbx.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "0373cd173633d268194d59b8a6bdc05d38c9c6845e9d1ddba467969774fa54f4",
-      "size": 1219,
+      "sha256": "3ad661b18ccea7b6508c45d5a103e54bd8a34884e7ae159cff34064ed3f29bf2",
+      "size": 1221,
       "type": "import"
     },
     {
@@ -14992,86 +14992,6 @@
       "type": "import"
     },
     {
-      "class": "dynamic_dir",
-      "license_id": "unknown",
-      "path": "res://assets/ui/race_logos/New folder/dark.png",
-      "required_by": "",
-      "required_by_count": 0,
-      "sha256": "2a4130d6f3d9890d8fbd7223803e99b8b94c1a8a7b774027fc736c86f1549208",
-      "size": 265094,
-      "type": "png"
-    },
-    {
-      "class": "import_meta",
-      "license_id": "unknown",
-      "path": "res://assets/ui/race_logos/New folder/dark.png.import",
-      "required_by": "",
-      "required_by_count": 0,
-      "sha256": "a68efb70564d32aad632db3491e17a048ef1febcc34f850b638f9c56aba98f84",
-      "size": 948,
-      "type": "import"
-    },
-    {
-      "class": "dynamic_dir",
-      "license_id": "unknown",
-      "path": "res://assets/ui/race_logos/New folder/god.png",
-      "required_by": "",
-      "required_by_count": 0,
-      "sha256": "b216b111372a6f9d75080de78338987bfc8d91d2b6d1082d4944b39ccc4768a5",
-      "size": 251070,
-      "type": "png"
-    },
-    {
-      "class": "import_meta",
-      "license_id": "unknown",
-      "path": "res://assets/ui/race_logos/New folder/god.png.import",
-      "required_by": "",
-      "required_by_count": 0,
-      "sha256": "e150e1f62fd547f789eb8897f17b4ee15da080b5ae2345ff33b6cb2a61ef18c2",
-      "size": 944,
-      "type": "import"
-    },
-    {
-      "class": "dynamic_dir",
-      "license_id": "unknown",
-      "path": "res://assets/ui/race_logos/New folder/human.png",
-      "required_by": "",
-      "required_by_count": 0,
-      "sha256": "1197210890b8ee9614580db6b917e1e49388575543d2061dd92191dd34f6f95a",
-      "size": 226943,
-      "type": "png"
-    },
-    {
-      "class": "import_meta",
-      "license_id": "unknown",
-      "path": "res://assets/ui/race_logos/New folder/human.png.import",
-      "required_by": "",
-      "required_by_count": 0,
-      "sha256": "6c7faa1359bd4ad14d863572c9041f8225610df511e0225e60e5c4fd4914ece6",
-      "size": 951,
-      "type": "import"
-    },
-    {
-      "class": "dynamic_dir",
-      "license_id": "unknown",
-      "path": "res://assets/ui/race_logos/New folder/undead.png",
-      "required_by": "",
-      "required_by_count": 0,
-      "sha256": "8cd30e61d483e7af2be55936a0a9a16622c200042037e1d7cc9ac5f53e01161d",
-      "size": 213594,
-      "type": "png"
-    },
-    {
-      "class": "import_meta",
-      "license_id": "unknown",
-      "path": "res://assets/ui/race_logos/New folder/undead.png.import",
-      "required_by": "",
-      "required_by_count": 0,
-      "sha256": "6301c8e8c5f772b9c40842fd8c06e989f3ab70e39468136d1e4da16c363dde51",
-      "size": 954,
-      "type": "import"
-    },
-    {
       "class": "runtime_required",
       "license_id": "unknown",
       "path": "res://assets/ui/race_logos/dark.png",
@@ -15415,8 +15335,8 @@
       "class": "runtime_required",
       "license_id": "unknown",
       "path": "res://assets/ui/shop/card_frame_common.png",
-      "required_by": "res://scenes/prep/PrepUI.gd",
-      "required_by_count": 1,
+      "required_by": "res://effects/runtime/presentation/UnitVisualResolver.gd, res://scenes/prep/PrepUI.gd",
+      "required_by_count": 2,
       "sha256": "224268702f9ccf807f69076e222ddd4979930a1df4a302599e78e7bf201ab148",
       "size": 306637,
       "type": "png"
@@ -15435,8 +15355,8 @@
       "class": "runtime_required",
       "license_id": "unknown",
       "path": "res://assets/ui/shop/card_frame_epic.png",
-      "required_by": "res://scenes/prep/PrepUI.gd",
-      "required_by_count": 1,
+      "required_by": "res://effects/runtime/presentation/UnitVisualResolver.gd, res://scenes/prep/PrepUI.gd",
+      "required_by_count": 2,
       "sha256": "5443a885acdcfdabeb9d4331921f9e4b1a1ecd39c4add8961b1476f9cde96ff2",
       "size": 412591,
       "type": "png"
@@ -15455,8 +15375,8 @@
       "class": "runtime_required",
       "license_id": "unknown",
       "path": "res://assets/ui/shop/card_frame_rare.png",
-      "required_by": "res://scenes/prep/PrepUI.gd",
-      "required_by_count": 1,
+      "required_by": "res://effects/runtime/presentation/UnitVisualResolver.gd, res://scenes/prep/PrepUI.gd",
+      "required_by_count": 2,
       "sha256": "8125f909b3f7a4a0f5078eb22e4f36c3796c4d079b0a43025b7b9d538f18e9d4",
       "size": 326416,
       "type": "png"
@@ -23494,16 +23414,6 @@
     {
       "class": "third_party",
       "license_id": "unknown",
-      "path": "res://effects/vfx3d/vfxv2/VFXBinbunReference3D.gd.backup_vfx_scale_20260805",
-      "required_by": "",
-      "required_by_count": 0,
-      "sha256": "085593060e9c962057402526303cd9a677626a48e5880567462ef871d4c26d0a",
-      "size": 5692,
-      "type": "backup_vfx_scale_20260805"
-    },
-    {
-      "class": "third_party",
-      "license_id": "unknown",
       "path": "res://effects/vfx3d/vfxv2/VFXBinbunReference3D.gd.uid",
       "required_by": "",
       "required_by_count": 0,
@@ -23560,16 +23470,6 @@
       "sha256": "e09c492a871bb084ab2e08a0cc6de7d169b9e8378f759b3632d31b1c988bd878",
       "size": 3829,
       "type": "gd"
-    },
-    {
-      "class": "third_party",
-      "license_id": "unknown",
-      "path": "res://effects/vfx3d/vfxv2/VFXV2Registry.gd.bak",
-      "required_by": "",
-      "required_by_count": 0,
-      "sha256": "e09c492a871bb084ab2e08a0cc6de7d169b9e8378f759b3632d31b1c988bd878",
-      "size": 3829,
-      "type": "bak"
     },
     {
       "class": "third_party",
@@ -25084,16 +24984,6 @@
     {
       "class": "third_party",
       "license_id": "unknown",
-      "path": "res://effects/vfx3d/vfxv2/core/VFXStageComposerV2.gd.bak",
-      "required_by": "",
-      "required_by_count": 0,
-      "sha256": "4eb8152ef62bbddbc6c0e85c0033add2b1a33d37c1a6d67c586419d7a7d80aaf",
-      "size": 3120,
-      "type": "bak"
-    },
-    {
-      "class": "third_party",
-      "license_id": "unknown",
       "path": "res://effects/vfx3d/vfxv2/core/VFXStageComposerV2.gd.uid",
       "required_by": "",
       "required_by_count": 0,
@@ -26442,16 +26332,16 @@
       "type": "uid"
     }
   ],
-  "file_count": 2643,
-  "generated_at": "2026-08-19T04:33:39",
+  "file_count": 2632,
+  "generated_at": "2026-08-20T05:09:37",
   "generated_by": "tools/asset_manifest_check.gd",
   "godot_version": "4.7-stable (official)",
-  "inventory_sha256": "5dabb3f546ee6ec0dd8491441ab32872afda3c4e2da46360e752e75e91fc508e",
+  "inventory_sha256": "a0751fdc580e78dfe6e4023c3f55501471510d0db00d27ae5732a853faafb3fc",
   "missing_count": 3,
   "roots": [
     "res://assets",
     "res://effects/vfx3d/vfxv2"
   ],
   "schema_version": 2,
-  "total_bytes": 3266848991
+  "total_bytes": 3052275380
 }

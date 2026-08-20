@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="BattleCueProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/runtime/presentation/BattleCueProfile.gd" id="1_cue_profile"]
+
+[resource]
+script = ExtResource("1_cue_profile")
+id = "crit"
+event_types = PackedStringArray("impact")
+priority = "critical"
+anchors = {
+"source": "CastAnchor",
+"target": "HitAnchor"
+}
+windup_ms = 160
+impact_ms = 120
+recovery_ms = 250
+camera_mode = "local_kick"
+audio_cue = "crit_hit"
+vfx_scene = ""
+max_concurrent = 4
+quality_overrides = {
+"LOW": {
+"max_concurrent": 2,
+"camera_mode": "none",
+"recovery_ms": 150
+}
+}
+fallback_profile = "basic_melee"

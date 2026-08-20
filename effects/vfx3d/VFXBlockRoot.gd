@@ -50,8 +50,15 @@ static func active_block_count() -> int:
 
 # 生成前的闸门。超限直接不生成——密集回合里少一两个命中闪光玩家看不出来，
 # 但帧率保得住。这和 VFXManager 对 2D 特效的做法是同一个策略。
-static func can_spawn_block() -> bool:
-	return _active_blocks < QUALITY_BUDGET.max_simultaneous_effects()
+#
+# B4：闸门现在按当前 cue 的可见性优先级分档。critical 返回 -1（不设限），
+# 因为 Boss / 死亡 / 控制这类玩家必须读到的提示不该在密集回合里被当成普通
+# 命中闪光丢掉——这和下面 force=true 的存在理由是同一条。
+static func can_spawn_block(priority: String = "") -> bool:
+	var cap: int = QUALITY_BUDGET.max_simultaneous_effects_for(priority)
+	if cap < 0:
+		return true
+	return _active_blocks < cap
 
 # 统一的生成入口：超限返回 null。调用方要么直接判空，
 # 要么依赖已有的 is_instance_valid() 守卫（对 null 返回 false）。

@@ -1,0 +1,115 @@
+{
+  "stage": "E3 (desktop-doable portion)",
+  "title": "Startup shader warmup: phase ordering and the release-build readout leak",
+  "generated_utc": "2026-08-19T15:58:17",
+  "base_commit": "458f8b2",
+  "prechange_backup": "E3_prechange_backup_20260819/",
+  "platform_scope": {
+    "desktop": "verified",
+    "android_apk_astc_device": "DEFERRED_BY_USER"
+  },
+  "measurement_that_reframed_this_stage": {
+    "readme_says": "96 items, about 11.8 s, 6-7 FPS during warmup, 549 MiB texture peak",
+    "measured_on_desktop": "96 items, 2.75-2.78 s total, slowest single item 64-65 ms",
+    "why_they_differ": "the README figure is an Android device measurement; this machine is far faster",
+    "first_screen_is_not_blocked": "_start_vfx_warmup() is deferred and frame-budgeted (FRAME_BUDGET_MS=12, 2 frames per item), and _show_language_select() runs immediately after it, so the language page appears without waiting for the warmup"
+  },
+  "conflict_found_and_how_it_was_resolved": {
+    "readme_asks": "split the 96 items into menu-minimal / prep / first-battle-on-demand / background-idle phases",
+    "code_forbids": "VFXWarmup.gd documents a 28.3 s freeze and a disconnect caused by doing this work while connected, and _process() aborts the moment NetworkService.state != OFFLINE",
+    "consequence": "any phase deferred past the menu would never run in an online match, so deferring equals cancelling and the shader cost returns to the first battle",
+    "resolution": "phases were kept entirely inside the offline menu window. The split reorders work instead of deferring it: an early abort now loses the items the player meets last."
+  },
+  "phases": {
+    "menu_minimal": {
+      "items": 8,
+      "content": "the 8 basic attack combinations, played by every unit every round"
+    },
+    "first_battle": {
+      "items": 44,
+      "content": "skills of buyable race_units and of pve_monsters, i.e. what a first battle actually contains"
+    },
+    "deferred": {
+      "items": 44,
+      "content": "mercenaries, bosses, formation allies, the hardcoded EXTRA_EFFECTS and the 8 external VFX scenes"
+    }
+  },
+  "ordering_bug_the_split_fixed": "the old flat SKILL_TABLES was ordered {race_units, mercenaries, bosses, formation_allies, pve_monsters}, so pve_monsters came last. Round-1 enemy skills were therefore warmed after boss skills the player cannot meet before round 5. They are now in phase 2.",
+  "measurements": {
+    "runs": 2,
+    "viewport": "1280x720",
+    "rendering_method": "mobile",
+    "run_1": {
+      "menu_minimal_done_ms": 246,
+      "first_battle_done_ms": 1454,
+      "deferred_done_ms": 2747,
+      "total_ms": 2755,
+      "slowest_item_ms": 64,
+      "slowest_item": "Warm_guardian_shield_taunt",
+      "completed": "96/96",
+      "aborted": false
+    },
+    "run_2": {
+      "menu_minimal_done_ms": 241,
+      "first_battle_done_ms": 1466,
+      "deferred_done_ms": 2765,
+      "total_ms": 2780,
+      "slowest_item_ms": 65,
+      "slowest_item": "Warm_guardian_shield_taunt",
+      "completed": "96/96",
+      "aborted": false
+    },
+    "pre_change_baseline": {
+      "total_ms": 2780,
+      "slowest_item_ms": 54,
+      "completed": "96/96",
+      "note": "same item count and same total; the split reorders, it does not add or remove work"
+    },
+    "logs": [
+      "warmup_run1.log",
+      "warmup_run2.log"
+    ]
+  },
+  "release_readout_leak_fixed": {
+    "what": "_build_label() built its progress readout unconditionally, so a release build drew the warmup progress text over the language-select screen",
+    "readme_clause": "E3: 可取消且不得在语言页暴露开发文字",
+    "fix": "guarded with OS.is_debug_build(); a source-level assertion now fails if the guard is removed"
+  },
+  "checks": {
+    "vfx_warmup_check": {
+      "status": "PASS",
+      "checked": 220,
+      "failures": 0,
+      "new_in": "E3"
+    },
+    "battle_cue_profile_check": {
+      "status": "PASS",
+      "checked": 162,
+      "failures": 0
+    },
+    "battle_presentation_director_check": {
+      "status": "PASS",
+      "checked": 82,
+      "failures": 0
+    },
+    "unit_visual_resolver_check": {
+      "status": "PASS",
+      "checked": 1067,
+      "failures": 0
+    },
+    "battle_presentation_event_check": {
+      "status": "PASS",
+      "checked": 9787,
+      "failures": 0
+    },
+    "determinism_check": {
+      "status": "PASS",
+      "frames": 203
+    }
+  },
+  "not_done_and_why": [
+    "APK size analysis with aapt/apkanalyzer, ASTC textures, BGM re-encoding per quality tier and the APK size budget are all Android work and remain DEFERRED_BY_USER.",
+    "Per-scene resource tables (main menu / prep / battle / boss / codex) were not split out. That is a packaging change whose payoff is APK size, which cannot be measured while Android is paused.",
+    "No first-screen time improvement is claimed: the warmup never blocked the first screen on desktop. The headline benefit of E3 remains Android-bound."
+  ]
+}

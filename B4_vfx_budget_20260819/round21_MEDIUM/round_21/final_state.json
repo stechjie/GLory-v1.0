@@ -1,0 +1,1060 @@
+{
+  "final_frame": [
+    [
+      "player_L0_0",
+      443.3404235839844,
+      108.03233337402344,
+      0,
+      false,
+      3,
+      0.0,
+      0,
+      0,
+      {
+        "stun": {
+          "remaining": 0.7000000000000001
+        }
+      },
+      355,
+      "enemy_L0_2",
+      ""
+    ],
+    [
+      "player_L0_1",
+      492.64923095703125,
+      115.28579711914063,
+      0,
+      false,
+      2,
+      8.3,
+      0,
+      0,
+      {},
+      433,
+      "enemy_L0_0",
+      "enemy_L0_0"
+    ],
+    [
+      "player_L0_2",
+      438.2025146484375,
+      119.34258270263672,
+      0,
+      false,
+      7,
+      0.0,
+      0,
+      0,
+      {
+        "silence": {
+          "remaining": 2.1999999999999993
+        }
+      },
+      1436,
+      "enemy_L0_1",
+      ""
+    ],
+    [
+      "player_L0_3",
+      438.3232421875,
+      125.52513122558594,
+      0,
+      false,
+      4,
+      5.300000000000001,
+      0,
+      0,
+      {},
+      867,
+      "enemy_L0_2",
+      "enemy_L0_3"
+    ],
+    [
+      "player_L1_0",
+      387.6596374511719,
+      367.7969055175781,
+      0,
+      false,
+      15,
+      24.89999999999997,
+      0,
+      0,
+      {
+        "poison": {
+          "pct_max_hp": 0.03,
+          "remaining": 2.799999999999999,
+          "tick_left": 1.0
+        }
+      },
+      8900,
+      "enemy_L2_2",
+      ""
+    ],
+    [
+      "player_L1_1",
+      595.4462890625,
+      212.45814514160156,
+      0,
+      false,
+      6,
+      0.0,
+      0,
+      0,
+      {
+        "defense_down": {
+          "pct": 0.3,
+          "remaining": 4.100000000000003
+        },
+        "stun": {
+          "remaining": 0.20000000000000015
+        }
+      },
+      608,
+      "enemy_L1_0",
+      ""
+    ],
+    [
+      "player_L1_2",
+      387.746826171875,
+      367.92279052734375,
+      278,
+      true,
+      21,
+      28.700000000000095,
+      0,
+      5,
+      {
+        "poison": {
+          "pct_max_hp": 0.03,
+          "remaining": 3.1999999999999993,
+          "tick_left": 0.30000000000000016
+        }
+      },
+      5990,
+      "enemy_L2_2",
+      "enemy_L2_2"
+    ],
+    [
+      "player_L1_3",
+      518.6301879882813,
+      209.7783203125,
+      1,
+      false,
+      18,
+      24.19999999999999,
+      0,
+      0,
+      {
+        "damage_reduction": {
+          "pct": 0.5,
+          "remaining": 2.5000000000000058
+        },
+        "poison": {
+          "pct_max_hp": 0.03,
+          "remaining": 3.9,
+          "tick_left": 1.0
+        }
+      },
+      1022,
+      "enemy_L2_2",
+      "player_L1_2"
+    ],
+    [
+      "player_L2_0",
+      275.15850830078125,
+      360.5287170410156,
+      568,
+      true,
+      23,
+      30.500000000000078,
+      0,
+      0,
+      {
+        "damage_reduction": {
+          "pct": 0.5,
+          "remaining": 4.800000000000004
+        },
+        "poison": {
+          "pct_max_hp": 0.03,
+          "remaining": 2.999999999999999,
+          "tick_left": 0.10000000000000014
+        }
+      },
+      3766,
+      "enemy_L2_2",
+      "player_L2_0"
+    ],
+    [
+      "player_L2_2",
+      361.6340026855469,
+      407.79815673828125,
+      0,
+      false,
+      7,
+      0.0,
+      0,
+      0,
+      {
+        "poison": {
+          "pct_max_hp": 0.03,
+          "remaining": 3.3999999999999995,
+          "tick_left": 0.5000000000000001
+        }
+      },
+      1758,
+      "enemy_L2_0",
+      ""
+    ],
+    [
+      "player_L2_3",
+      273.038330078125,
+      435.7923889160156,
+      0,
+      false,
+      19,
+      0.0,
+      0,
+      0,
+      {
+        "poison": {
+          "pct_max_hp": 0.03,
+          "remaining": 3.6999999999999997,
+          "tick_left": 0.8
+        }
+      },
+      1676,
+      "enemy_L2_2",
+      ""
+    ],
+    [
+      "player_team_final_ally",
+      625.69189453125,
+      218.4900665283203,
+      0,
+      false,
+      11,
+      15.500000000000002,
+      0,
+      0,
+      {
+        "silence": {
+          "remaining": 1.9999999999999991
+        }
+      },
+      11358,
+      "enemy_L0_0",
+      ""
+    ],
+    [
+      "enemy_L0_0",
+      569.6060180664063,
+      182.45079040527344,
+      0,
+      false,
+      15,
+      25.199999999999974,
+      0,
+      0,
+      {},
+      9913,
+      "player_L1_0",
+      ""
+    ],
+    [
+      "enemy_L0_1",
+      568.4066772460938,
+      182.50958251953125,
+      0,
+      false,
+      19,
+      21.19999999999996,
+      0,
+      0,
+      {},
+      2237,
+      "player_L1_0",
+      "player_L1_0"
+    ],
+    [
+      "enemy_L0_2",
+      389.6309814453125,
+      137.08099365234375,
+      0,
+      false,
+      5,
+      5.9,
+      0,
+      0,
+      {},
+      1969,
+      "player_L0_2",
+      "player_L0_3"
+    ],
+    [
+      "enemy_L0_3",
+      649.8095703125,
+      136.81805419921875,
+      0,
+      false,
+      14,
+      18.49999999999997,
+      0,
+      0,
+      {},
+      1605,
+      "player_L1_0",
+      "player_team_final_ally"
+    ],
+    [
+      "enemy_L1_0",
+      688.4615478515625,
+      241.27999877929688,
+      0,
+      false,
+      9,
+      0.0,
+      0,
+      0,
+      {},
+      2613,
+      "player_L1_2",
+      ""
+    ],
+    [
+      "enemy_L1_1",
+      688.4615478515625,
+      253.75999450683594,
+      0,
+      false,
+      13,
+      0.0,
+      0,
+      0,
+      {},
+      2157,
+      "player_L1_0",
+      ""
+    ],
+    [
+      "enemy_L1_2",
+      495.5140380859375,
+      229.75389099121094,
+      0,
+      false,
+      2,
+      0.0,
+      0,
+      0,
+      {},
+      0,
+      "player_L1_1",
+      ""
+    ],
+    [
+      "enemy_L1_3",
+      495.2651062011719,
+      231.77499389648438,
+      0,
+      false,
+      3,
+      0.0,
+      0,
+      0,
+      {},
+      0,
+      "player_L1_1",
+      ""
+    ],
+    [
+      "enemy_L2_0",
+      343.6235656738281,
+      421.5894775390625,
+      0,
+      false,
+      13,
+      17.89999999999997,
+      0,
+      0,
+      {},
+      2235,
+      "player_L2_3",
+      "player_L2_1"
+    ],
+    [
+      "enemy_L2_1",
+      343.728271484375,
+      422.1200866699219,
+      0,
+      false,
+      14,
+      19.09999999999997,
+      0,
+      0,
+      {},
+      1303,
+      "player_L2_3",
+      "player_L2_0"
+    ],
+    [
+      "enemy_L2_2",
+      328.5210266113281,
+      408.865478515625,
+      0,
+      false,
+      20,
+      0.0,
+      0,
+      10,
+      {},
+      2056,
+      "player_L2_0",
+      ""
+    ],
+    [
+      "enemy_L2_3",
+      429.93170166015625,
+      408.24761962890625,
+      0,
+      false,
+      13,
+      0.0,
+      0,
+      0,
+      {},
+      1470,
+      "player_L2_0",
+      ""
+    ],
+    [
+      "enemy_team_final_ally",
+      493.31024169921875,
+      207.77676391601563,
+      0,
+      false,
+      6,
+      15.500000000000002,
+      0,
+      0,
+      {},
+      7351,
+      "player_L1_1",
+      ""
+    ],
+    [
+      "player_L2_1",
+      371.05084228515625,
+      410.19183349609375,
+      0,
+      false,
+      2,
+      0.0,
+      0,
+      0,
+      {
+        "poison": {
+          "pct_max_hp": 0.03,
+          "remaining": 1.2999999999999976,
+          "tick_left": 0.6000000000000001
+        }
+      },
+      80,
+      "player_L2_2",
+      ""
+    ]
+  ],
+  "final_frame_index": 258,
+  "result": {
+    "bonus_gold": 0,
+    "elapsed": 25.800000000000097,
+    "enemy_alive": 0,
+    "enemy_hp_current": 0,
+    "enemy_hp_max": 33873,
+    "enemy_kill_gold": 360,
+    "enemy_kills": [
+      {
+        "killer": "dark_scythe",
+        "reward": 50,
+        "victim": "human_mage"
+      },
+      {
+        "killer": "dark_mage",
+        "reward": 50,
+        "victim": "human_swordsman"
+      },
+      {
+        "killer": "dark_mage",
+        "reward": 60,
+        "victim": "human_king"
+      },
+      {
+        "killer": "dark_doom",
+        "reward": 50,
+        "victim": "god_aurora"
+      },
+      {
+        "killer": "dark_suc",
+        "reward": 50,
+        "victim": "human_archer"
+      },
+      {
+        "killer": "dark_mage",
+        "reward": 50,
+        "victim": "god_guard"
+      },
+      {
+        "killer": "dark_mage",
+        "reward": 0,
+        "victim": "ally_eternal_night"
+      },
+      {
+        "killer": "undead_titan",
+        "reward": 50,
+        "victim": "human_cleric"
+      }
+    ],
+    "enemy_power": 0.0,
+    "enemy_survivor_slots": [],
+    "is_draw": false,
+    "kill_gold_by_slot": {
+      "0": 125,
+      "1": 325,
+      "2": 160,
+      "3": 235,
+      "4": 25,
+      "5": 100
+    },
+    "kind": "pvp",
+    "log": [
+      "3v3 PVP: Allies 13 units, Enemies 13 units.",
+      "Light Guardian: opening shield and area taunt applied.",
+      "末日守卫 links and converts 民兵.",
+      "Kill: 偷袭者 > 法师, reward 50 G.",
+      "Kill: 深渊魔君·厄夜 > 民兵, reward 40 G.",
+      "Kill: 大祭司 > 毒灵, reward 40 G.",
+      "Kill: 裁决者 > 自爆灵, reward 50 G.",
+      "Kill: 暗影法师 > 剑士, reward 50 G.",
+      "Kill: 人王 > 偷袭者, reward 50 G.",
+      "Kill: 深渊魔君·厄夜 > 深渊魔君·厄夜, reward 0 G.",
+      "Kill: 暗影法师 > 人王, reward 60 G.",
+      "Kill: 末日守卫 > 极光射手, reward 50 G.",
+      "Kill: 魅魔 > 弓箭手, reward 50 G.",
+      "Kill: 暗影法师 > 光之卫士, reward 50 G.",
+      "10s battle decay triggered.",
+      "Kill: 神王 > 母灵, reward 60 G.",
+      "Kill: 牧师 > 飞灵, reward 50 G.",
+      "Kill: 裁决者 > 刺灵, reward 50 G.",
+      "Kill: 暗影法师 > 深渊魔君·厄夜, reward 0 G.",
+      "16s battle decay triggered.",
+      "Kill: 神王 > 暗影法师, reward 40 G.",
+      "Kill: 神王 > 恐惧魔, reward 50 G.",
+      "Kill: 大天使 > 末日守卫, reward 60 G.",
+      "Kill: 裁决者 > 黑龙, reward 60 G.",
+      "Kill: 裁决者 > 魅魔, reward 50 G.",
+      "Kill: 巨甲灵 > 牧师, reward 50 G.",
+      "22s battle decay triggered.",
+      "Kill: 裁决者 > 巨甲灵, reward 50 G."
+    ],
+    "player_alive": 2,
+    "player_hp_current": 846,
+    "player_hp_max": 31036,
+    "player_kill_gold": 650,
+    "player_kills": [
+      {
+        "killer": "ally_eternal_night",
+        "reward": 40,
+        "victim": "human_militia"
+      },
+      {
+        "killer": "god_priestess",
+        "reward": 40,
+        "victim": "undead_poison"
+      },
+      {
+        "killer": "god_arbiter",
+        "reward": 50,
+        "victim": "undead_bomb"
+      },
+      {
+        "killer": "human_king",
+        "reward": 50,
+        "victim": "dark_scythe"
+      },
+      {
+        "killer": "ally_eternal_night",
+        "reward": 0,
+        "victim": "ally_eternal_night"
+      },
+      {
+        "killer": "god_king",
+        "reward": 60,
+        "victim": "undead_mother"
+      },
+      {
+        "killer": "human_cleric",
+        "reward": 50,
+        "victim": "undead_fly"
+      },
+      {
+        "killer": "god_arbiter",
+        "reward": 50,
+        "victim": "undead_spike"
+      },
+      {
+        "killer": "god_king",
+        "reward": 40,
+        "victim": "dark_mage"
+      },
+      {
+        "killer": "god_king",
+        "reward": 50,
+        "victim": "dark_fear"
+      },
+      {
+        "killer": "god_archangel",
+        "reward": 60,
+        "victim": "dark_doom"
+      },
+      {
+        "killer": "god_arbiter",
+        "reward": 60,
+        "victim": "dark_dragon"
+      },
+      {
+        "killer": "god_arbiter",
+        "reward": 50,
+        "victim": "dark_suc"
+      },
+      {
+        "killer": "god_arbiter",
+        "reward": 50,
+        "victim": "undead_titan"
+      }
+    ],
+    "player_power": 1601.0,
+    "player_survivor_slots": [
+      2,
+      0
+    ],
+    "player_wins": true,
+    "reason": "wipeout",
+    "team_heal_ally": 0,
+    "team_heal_rival": 0,
+    "unit_stats": {
+      "enemy_L0_0": {
+        "buffs": {},
+        "damage_dealt": 9913,
+        "damage_taken": 4196,
+        "debuffs": {},
+        "group": "enemy",
+        "healing_done": 0,
+        "is_mercenary": false,
+        "lane": 0,
+        "name": "黑龙",
+        "name_en": "Black Dragon",
+        "owner_slot": 3,
+        "position": "Board 1",
+        "slot": 0,
+        "team": "enemy"
+      },
+      "enemy_L0_1": {
+        "buffs": {},
+        "damage_dealt": 2237,
+        "damage_taken": 2121,
+        "debuffs": {},
+        "group": "enemy",
+        "healing_done": 0,
+        "is_mercenary": false,
+        "lane": 0,
+        "name": "魅魔",
+        "name_en": "Succubus",
+        "owner_slot": 3,
+        "position": "Board 2",
+        "slot": 1,
+        "team": "enemy"
+      },
+      "enemy_L0_2": {
+        "buffs": {},
+        "damage_dealt": 1969,
+        "damage_taken": 2340,
+        "debuffs": {},
+        "group": "enemy",
+        "healing_done": 0,
+        "is_mercenary": false,
+        "lane": 0,
+        "name": "偷袭者",
+        "name_en": "Ambusher",
+        "owner_slot": 3,
+        "position": "Board 3",
+        "slot": 2,
+        "team": "enemy"
+      },
+      "enemy_L0_3": {
+        "buffs": {},
+        "damage_dealt": 1605,
+        "damage_taken": 1455,
+        "debuffs": {},
+        "group": "enemy",
+        "healing_done": 0,
+        "is_mercenary": false,
+        "lane": 0,
+        "name": "暗影法师",
+        "name_en": "Shadow Mage",
+        "owner_slot": 3,
+        "position": "Board 4",
+        "slot": 3,
+        "team": "enemy"
+      },
+      "enemy_L1_0": {
+        "buffs": {},
+        "damage_dealt": 2613,
+        "damage_taken": 4484,
+        "debuffs": {},
+        "group": "enemy",
+        "healing_done": 0,
+        "is_mercenary": false,
+        "lane": 1,
+        "name": "母灵",
+        "name_en": "Mother Wisp",
+        "owner_slot": 4,
+        "position": "Board 1",
+        "slot": 0,
+        "team": "enemy"
+      },
+      "enemy_L1_1": {
+        "buffs": {},
+        "damage_dealt": 2157,
+        "damage_taken": 2311,
+        "debuffs": {},
+        "group": "enemy",
+        "healing_done": 0,
+        "is_mercenary": false,
+        "lane": 1,
+        "name": "刺灵",
+        "name_en": "Spike Wisp",
+        "owner_slot": 4,
+        "position": "Board 2",
+        "slot": 1,
+        "team": "enemy"
+      },
+      "enemy_L1_2": {
+        "buffs": {},
+        "damage_dealt": 0,
+        "damage_taken": 1800,
+        "debuffs": {},
+        "group": "enemy",
+        "healing_done": 0,
+        "is_mercenary": false,
+        "lane": 1,
+        "name": "自爆灵",
+        "name_en": "Bomb Wisp",
+        "owner_slot": 4,
+        "position": "Board 3",
+        "slot": 2,
+        "team": "enemy"
+      },
+      "enemy_L1_3": {
+        "buffs": {},
+        "damage_dealt": 0,
+        "damage_taken": 1980,
+        "debuffs": {},
+        "group": "enemy",
+        "healing_done": 0,
+        "is_mercenary": false,
+        "lane": 1,
+        "name": "毒灵",
+        "name_en": "Poison Wisp",
+        "owner_slot": 4,
+        "position": "Board 4",
+        "slot": 3,
+        "team": "enemy"
+      },
+      "enemy_L2_0": {
+        "buffs": {},
+        "damage_dealt": 2235,
+        "damage_taken": 4321,
+        "debuffs": {},
+        "group": "enemy",
+        "healing_done": 0,
+        "is_mercenary": false,
+        "lane": 2,
+        "name": "末日守卫",
+        "name_en": "Doom Guard",
+        "owner_slot": 5,
+        "position": "Board 1",
+        "slot": 0,
+        "team": "enemy"
+      },
+      "enemy_L2_1": {
+        "buffs": {},
+        "damage_dealt": 1303,
+        "damage_taken": 2251,
+        "debuffs": {},
+        "group": "enemy",
+        "healing_done": 0,
+        "is_mercenary": false,
+        "lane": 2,
+        "name": "恐惧魔",
+        "name_en": "Fear Demon",
+        "owner_slot": 5,
+        "position": "Board 2",
+        "slot": 1,
+        "team": "enemy"
+      },
+      "enemy_L2_2": {
+        "buffs": {},
+        "damage_dealt": 2056,
+        "damage_taken": 2820,
+        "debuffs": {},
+        "group": "enemy",
+        "healing_done": 0,
+        "is_mercenary": false,
+        "lane": 2,
+        "name": "巨甲灵",
+        "name_en": "Titan Wisp",
+        "owner_slot": 5,
+        "position": "Board 3",
+        "slot": 2,
+        "team": "enemy"
+      },
+      "enemy_L2_3": {
+        "buffs": {},
+        "damage_dealt": 1470,
+        "damage_taken": 2223,
+        "debuffs": {},
+        "group": "enemy",
+        "healing_done": 0,
+        "is_mercenary": false,
+        "lane": 2,
+        "name": "飞灵",
+        "name_en": "Fly Wisp",
+        "owner_slot": 5,
+        "position": "Board 4",
+        "slot": 3,
+        "team": "enemy"
+      },
+      "enemy_team_final_ally": {
+        "buffs": {},
+        "damage_dealt": 7351,
+        "damage_taken": 5200,
+        "debuffs": {},
+        "group": "enemy",
+        "healing_done": 0,
+        "is_mercenary": false,
+        "lane": 1,
+        "name": "深渊魔君·厄夜",
+        "name_en": "Abyss Lord · Eternal Night",
+        "owner_slot": -1,
+        "position": "Board 3",
+        "slot": 2,
+        "team": "enemy"
+      },
+      "player_L0_0": {
+        "buffs": {},
+        "damage_dealt": 355,
+        "damage_taken": 2160,
+        "debuffs": {},
+        "group": "player",
+        "healing_done": 0,
+        "is_mercenary": false,
+        "lane": 0,
+        "name": "人王",
+        "name_en": "Human King",
+        "owner_slot": 0,
+        "position": "Board 1",
+        "slot": 0,
+        "team": "player"
+      },
+      "player_L0_1": {
+        "buffs": {},
+        "damage_dealt": 433,
+        "damage_taken": 3360,
+        "debuffs": {},
+        "group": "player",
+        "healing_done": 0,
+        "is_mercenary": false,
+        "lane": 0,
+        "name": "剑士",
+        "name_en": "Swordsman",
+        "owner_slot": 0,
+        "position": "Board 2",
+        "slot": 1,
+        "team": "player"
+      },
+      "player_L0_2": {
+        "buffs": {},
+        "damage_dealt": 1436,
+        "damage_taken": 2280,
+        "debuffs": {},
+        "group": "player",
+        "healing_done": 0,
+        "is_mercenary": false,
+        "lane": 0,
+        "name": "弓箭手",
+        "name_en": "Archer",
+        "owner_slot": 0,
+        "position": "Board 3",
+        "slot": 2,
+        "team": "player"
+      },
+      "player_L0_3": {
+        "buffs": {},
+        "damage_dealt": 867,
+        "damage_taken": 2160,
+        "debuffs": {},
+        "group": "player",
+        "healing_done": 0,
+        "is_mercenary": false,
+        "lane": 0,
+        "name": "法师",
+        "name_en": "Mage",
+        "owner_slot": 0,
+        "position": "Board 4",
+        "slot": 3,
+        "team": "player"
+      },
+      "player_L1_0": {
+        "buffs": {},
+        "damage_dealt": 8900,
+        "damage_taken": 4015,
+        "debuffs": {},
+        "group": "player",
+        "healing_done": 0,
+        "is_mercenary": false,
+        "lane": 1,
+        "name": "神王",
+        "name_en": "God King",
+        "owner_slot": 1,
+        "position": "Board 1",
+        "slot": 0,
+        "team": "player"
+      },
+      "player_L1_1": {
+        "buffs": {},
+        "damage_dealt": 608,
+        "damage_taken": 4560,
+        "debuffs": {},
+        "group": "player",
+        "healing_done": 0,
+        "is_mercenary": false,
+        "lane": 1,
+        "name": "光之卫士",
+        "name_en": "Light Guardian",
+        "owner_slot": 1,
+        "position": "Board 2",
+        "slot": 1,
+        "team": "player"
+      },
+      "player_L1_2": {
+        "buffs": {},
+        "damage_dealt": 5990,
+        "damage_taken": 2168,
+        "debuffs": {},
+        "group": "player",
+        "healing_done": 0,
+        "is_mercenary": false,
+        "lane": 1,
+        "name": "裁决者",
+        "name_en": "Arbiter",
+        "owner_slot": 1,
+        "position": "Board 3",
+        "slot": 2,
+        "team": "player"
+      },
+      "player_L1_3": {
+        "buffs": {},
+        "damage_dealt": 1022,
+        "damage_taken": 1794,
+        "debuffs": {},
+        "group": "player",
+        "healing_done": 0,
+        "is_mercenary": false,
+        "lane": 1,
+        "name": "大祭司",
+        "name_en": "High Priestess",
+        "owner_slot": 1,
+        "position": "Board 4",
+        "slot": 3,
+        "team": "player"
+      },
+      "player_L2_0": {
+        "buffs": {},
+        "damage_dealt": 3766,
+        "damage_taken": 4893,
+        "debuffs": {},
+        "group": "player",
+        "healing_done": 0,
+        "is_mercenary": false,
+        "lane": 2,
+        "name": "大天使",
+        "name_en": "Archangel",
+        "owner_slot": 2,
+        "position": "Board 1",
+        "slot": 0,
+        "team": "player"
+      },
+      "player_L2_1": {
+        "buffs": {},
+        "damage_dealt": 80,
+        "damage_taken": 1800,
+        "debuffs": {},
+        "group": "player",
+        "healing_done": 0,
+        "is_mercenary": false,
+        "lane": 2,
+        "name": "民兵",
+        "name_en": "Militia",
+        "owner_slot": 2,
+        "position": "Board 2",
+        "slot": 1,
+        "team": "player"
+      },
+      "player_L2_2": {
+        "buffs": {},
+        "damage_dealt": 1758,
+        "damage_taken": 2484,
+        "debuffs": {},
+        "group": "player",
+        "healing_done": 0,
+        "is_mercenary": false,
+        "lane": 2,
+        "name": "极光射手",
+        "name_en": "Aurora Archer",
+        "owner_slot": 2,
+        "position": "Board 3",
+        "slot": 2,
+        "team": "player"
+      },
+      "player_L2_3": {
+        "buffs": {},
+        "damage_dealt": 1676,
+        "damage_taken": 3458,
+        "debuffs": {},
+        "group": "player",
+        "healing_done": 2946,
+        "is_mercenary": false,
+        "lane": 2,
+        "name": "牧师",
+        "name_en": "Cleric",
+        "owner_slot": 2,
+        "position": "Board 4",
+        "slot": 3,
+        "team": "player"
+      },
+      "player_team_final_ally": {
+        "buffs": {},
+        "damage_dealt": 11358,
+        "damage_taken": 4957,
+        "debuffs": {},
+        "group": "player",
+        "healing_done": 0,
+        "is_mercenary": false,
+        "lane": 1,
+        "name": "深渊魔君·厄夜",
+        "name_en": "Abyss Lord · Eternal Night",
+        "owner_slot": -1,
+        "position": "Our 23",
+        "slot": 22,
+        "team": "player"
+      }
+    }
+  }
+}

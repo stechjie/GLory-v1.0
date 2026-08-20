@@ -27,6 +27,11 @@ const DEATH_SEC := 0.35
 # tests that drive the adapter without a resolver.
 const CUE_PROFILE_KEY := "_cue_profile"
 
+# B4: the spawn path below runs through several composer layers that have no
+# reason to know about presentation priority, so it is handed over as ambient
+# context around the call, the same shape DamageService.set_hit_context() uses.
+const QualityBudget := preload("res://effects/vfx3d/core/VFXQualityBudget.gd")
+
 # Which profile field drives each beat of the four-beat chain.
 const BEAT_FIELD := {
 	"attack_start": "windup_ms",
@@ -106,13 +111,15 @@ func _play_attack_start(event: Dictionary, source_uid: String, completion: Calla
 	if not ranged:
 		# Melee draws its slash on the windup beat; ranged waits for the projectile
 		# event so the bolt and the swing never both fire for one attack.
-		_host.call("cue_play_basic_attack", source_uid, _first_target(event), false)
+		_with_cue_priority(event, func() -> void:
+			_host.call("cue_play_basic_attack", source_uid, _first_target(event), false))
 		_count("attack_start")
 	return _finish_after(_beat_seconds(event, WINDUP_SEC) / speed, completion, "attack_start")
 
 
 func _play_projectile(event: Dictionary, source_uid: String, completion: Callable, speed: float) -> bool:
-	_host.call("cue_play_basic_attack", source_uid, _first_target(event), true)
+	_with_cue_priority(event, func() -> void:
+		_host.call("cue_play_basic_attack", source_uid, _first_target(event), true))
 	_count("projectile_spawn")
 	return _finish_after(_beat_seconds(event, PROJECTILE_SEC) / speed, completion, "projectile_spawn")
 
@@ -180,6 +187,14 @@ func _finish_after(seconds: float, completion: Callable, label: String) -> bool:
 		_pending_timers.erase(timer)
 		completion.call())
 	return true
+
+
+# Runs `body` with this cue's priority installed, and always clears it again:
+# a leaked priority would starve or over-spend the next, unrelated cue.
+func _with_cue_priority(event: Dictionary, body: Callable) -> void:
+	QualityBudget.begin_cue_priority(str(event.get("visibility_priority", "important")))
+	body.call()
+	QualityBudget.clear_cue_priority()
 
 
 func _first_target(event: Dictionary) -> String:

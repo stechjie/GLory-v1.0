@@ -44,6 +44,8 @@ func _run() -> void:
 	_check_routing(resolver)
 	_check_missing_profile_fallback()
 	_check_tier_overrides(resolver)
+	_check_priority_cost_budget()
+	_check_review_comparability()
 	_h.note("loaded=%s" % str(resolver.profile_ids()))
 	_h.finish(get_tree())
 
@@ -152,6 +154,83 @@ func _check_tier_overrides(resolver) -> void:
 		"important_degrades", "important 超预算时应缩短收招")
 	_h.expect(not BudgetScript.may_merge("critical") and not BudgetScript.may_merge("important"),
 		"merge_scope", "只有 ambient 允许合并")
+
+
+# B4: the other half of the budget. D5 capped how many cues may run; this caps how
+# expensive each one may be. The invariant is the same everywhere: an overflow may
+# only make a cue cheaper, and a critical cue is never made cheaper at all.
+func _check_priority_cost_budget() -> void:
+	var previous = BudgetScript.tier
+	for tier_value in [BudgetScript.Tier.LOW, BudgetScript.Tier.MEDIUM, BudgetScript.Tier.HIGH]:
+		BudgetScript.tier = tier_value
+		var label := str(tier_value)
+		# critical keeps the full tier allowance, on every tier.
+		_h.expect(BudgetScript.particle_count_for(100, "critical") == BudgetScript.particle_count(100),
+			"critical_particles", "tier %s：critical 的粒子数被削减了" % label)
+		_h.expect(BudgetScript.auxiliary_layers_for(3, "critical") == BudgetScript.auxiliary_layers(3),
+			"critical_layers", "tier %s：critical 的附加层被削减了" % label)
+		_h.expect(BudgetScript.max_simultaneous_effects_for("critical") < 0,
+			"critical_concurrency", "tier %s：critical 的并发必须不设限" % label)
+		# ambient is never more expensive than important, which is never more than critical.
+		var amb := BudgetScript.particle_count_for(100, "ambient")
+		var imp := BudgetScript.particle_count_for(100, "important")
+		var crit := BudgetScript.particle_count_for(100, "critical")
+		_h.expect(amb <= imp and imp <= crit,
+			"particle_ordering", "tier %s：粒子预算未按 ambient <= important <= critical 排序（%d/%d/%d）" % [label, amb, imp, crit])
+		_h.expect(BudgetScript.distortion_layers_for(3, "ambient") <= BudgetScript.distortion_layers_for(3, "important"),
+			"distortion_ordering", "tier %s：ambient 的透明叠层多于 important" % label)
+		_h.expect(BudgetScript.max_simultaneous_effects_for("ambient") <= BudgetScript.max_simultaneous_effects_for("important"),
+			"concurrency_ordering", "tier %s：ambient 的并发上限高于 important" % label)
+		# a priority may never buy more than the tier itself allows.
+		_h.expect(imp <= BudgetScript.particle_count(100),
+			"priority_over_tier", "tier %s：important 的粒子数超过了档位允许值" % label)
+		_h.expect(not BudgetScript.allow_dynamic_light_for("ambient") or BudgetScript.allow_dynamic_light(),
+			"light_over_tier", "tier %s：ambient 在档位禁用动态光时仍然放行" % label)
+	BudgetScript.tier = BudgetScript.Tier.LOW
+	_h.expect(not BudgetScript.allow_dynamic_light_for("ambient"),
+		"low_ambient_light", "LOW 档的 ambient cue 不应有动态光")
+	_h.expect(BudgetScript.particle_count_for(100, "critical") > 0,
+		"low_critical_visible", "LOW 档的 critical cue 仍必须有粒子——降级不等于消失")
+	BudgetScript.tier = previous
+
+	# The ambient context must not leak: a cue that forgets to clear would silently
+	# starve or over-spend the next, unrelated one.
+	BudgetScript.begin_cue_priority("ambient")
+	_h.expect(BudgetScript.current_cue_priority() == "ambient",
+		"cue_context_set", "begin_cue_priority() 没有生效")
+	BudgetScript.clear_cue_priority()
+	_h.expect(BudgetScript.current_cue_priority() == "important",
+		"cue_context_cleared", "clear_cue_priority() 应回到 important 默认值")
+	BudgetScript.begin_cue_priority("nonsense")
+	_h.expect(BudgetScript.current_cue_priority() == "important",
+		"cue_context_invalid", "非法优先级应退回 important，而不是被原样接受")
+	BudgetScript.clear_cue_priority()
+
+
+# B5: the review scene compares a candidate profile set against the live one on the
+# same fixed battle. Two things have to hold for that comparison to mean anything.
+func _check_review_comparability() -> void:
+	# 1. The candidate directory must load the same five profiles, or side B would be
+	#    silently running on the built-in fallback and the comparison would be a lie.
+	var candidate = ResolverScript.new()
+	var loaded := int(candidate.load_profiles_from("res://data/vfx/battle_cues_candidate/"))
+	_h.expect(loaded == 5,
+		"candidate_profiles", "候选 profile 目录应加载 5 个，实际 %d —— 少了的话对照的 B 侧会悄悄跑内建 fallback" % loaded)
+	_h.expect(candidate.profile_dir() == "res://data/vfx/battle_cues_candidate/",
+		"candidate_dir", "load_profiles_from() 没有记住实际加载的目录")
+
+	# 2. The override seam must default to empty. If it ever leaked a value, every
+	#    normal battle would quietly load whatever the last review run pointed at.
+	_h.expect(ResolverScript.review_profile_dir_override.is_empty(),
+		"override_leaked", "review_profile_dir_override 不为空 —— 正式流程会被评审场景的残留值劫持")
+
+	# 3. The fixed battle fixture must be shared, not copy-pasted. The review scene
+	#    originally set only the seed and the round, so its replay was always empty.
+	for path in ["res://tools/battle_presentation_baseline.gd", "res://scenes/debug/BattleVfxReview.gd"]:
+		var source := FileAccess.get_file_as_string(path)
+		_h.expect(not source.is_empty(), "source_missing", "读不到 %s" % path)
+		_h.expect(source.contains("FixedBattleFixture"),
+			"fixture_not_shared", "%s 必须使用共享的 FixedBattleFixture，否则固定战斗会各跑各的" % path)
 
 
 func _profile_of(resolver, profile_id: String) -> Resource:

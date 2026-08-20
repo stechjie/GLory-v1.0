@@ -33,13 +33,33 @@ const BASIC_ATTACKS := [
 
 # 技能从数据表现场收集，不手写清单 —— 手写的话加一个新单位就漏热一个，
 # 而漏掉的那个会在战斗中途现编译，正是要消除的东西。
-const SKILL_TABLES := {
+#
+# E3：分成两张表是为了排序，不是为了推迟。
+#
+# 说明一下为什么不能"推迟到备战/首战再热"（README E3 的字面写法）：本预热的
+# 全部安全性建立在"此刻还没连服务器、没有心跳会超时"之上（见文件头那次 28.3 秒
+# 冻结掉线）。_process() 第一件事就是一旦 state != OFFLINE 立刻 abort，所以
+# 联机下推后的阶段根本不会执行 —— 推迟等于取消，shader 编译成本会原样回到
+# 第一场战斗。
+#
+# 分阶段真正买到的是**顺序**：离线菜单窗口有限，玩家点得快就会提前 abort，
+# 那时候应该先热到的是每回合每个单位都放的普攻，最后才是 Boss 与最终战援军。
+const FIRST_BATTLE_TABLES := {
 	"race_units": "units",
+	"pve_monsters": "monsters",
+}
+
+const DEFERRED_TABLES := {
 	"mercenaries": "mercenaries",
 	"bosses": "bosses",
 	"formation_allies": "allies",
-	"pve_monsters": "monsters",
 }
+
+const PHASE_MENU_MINIMAL := "menu_minimal"
+const PHASE_FIRST_BATTLE := "first_battle"
+const PHASE_DEFERRED := "deferred"
+
+const PHASES := [PHASE_MENU_MINIMAL, PHASE_FIRST_BATTLE, PHASE_DEFERRED]
 
 # 战斗里会播、但不是任何单位的 skill_id 的 effect_id。
 # 来源：grep BattleVfx 里 _play_*_procedural("字面量") + BossProceduralVFX3D 的特例分支。
@@ -73,6 +93,11 @@ var _t_start_us := 0
 var _slowest_ms := 0.0
 var _slowest_id := ""
 var _label: Label
+# E3: which phase each queued id belongs to, and how many of each finished.
+var _phase_by_id: Dictionary = {}
+var _phase_total: Dictionary = {}
+var _phase_done: Dictionary = {}
+var _phase_first_done_ms: Dictionary = {}
 
 func start() -> void:
 	if _running:
@@ -91,55 +116,96 @@ func start() -> void:
 			scenes += 1
 	print("[WARMUP] 启动预热：%d 项（普攻 %d + 技能 %d + 外部场景 %d）"
 		% [_total, BASIC_ATTACKS.size(), _total - BASIC_ATTACKS.size() - scenes, scenes])
+	var phase_parts: Array[String] = []
+	for phase_name in PHASES:
+		phase_parts.append("%s %d" % [phase_name, int(_phase_total.get(phase_name, 0))])
+	print("[WARMUP] 阶段顺序：%s（按需要得越早排越前；提前中止时丢的是最靠后的）"
+		% " → ".join(phase_parts))
 	print("[WARMUP] 清单：%s" % ", ".join(_queue))
 
-# 普攻 + 数据表里出现过的全部 skill_id。去重后按原顺序排，普攻在前 ——
-# 它们每回合每个单位都放，最该先热到。
+# 普攻 + 数据表里出现过的全部 skill_id，按阶段排序后拉平成一条队列。
+# 普攻永远在最前 —— 它们每回合每个单位都放，最该先热到。
+#
+# 阶段划分只影响顺序与提前中止时的取舍，不影响总量：三个阶段的并集与分阶段
+# 之前完全一致（有 tools/vfx_warmup_check 守着这一点）。
 func _collect_ids() -> Array[String]:
+	_phase_by_id.clear()
+	_phase_total.clear()
+	_phase_done.clear()
+	_phase_first_done_ms.clear()
 	var out: Array[String] = []
-	for s in BASIC_ATTACKS:
-		out.append(str(s))
 	var seen := {}
-	for s in out:
-		seen[s] = true
-	for table_name in SKILL_TABLES:
-		var table: Variant = DataRegistry.get_table(str(table_name))
-		if typeof(table) != TYPE_DICTIONARY:
-			continue
-		var rows: Variant = (table as Dictionary).get(str(SKILL_TABLES[table_name]), [])
-		if typeof(rows) != TYPE_ARRAY:
-			continue
-		for row in rows:
-			if typeof(row) != TYPE_DICTIONARY:
-				continue
-			var sid := str((row as Dictionary).get("skill_id", ""))
-			if sid.is_empty() or sid == "none" or seen.has(sid) or NO_VFX_SKILLS.has(sid):
-				continue
-			seen[sid] = true
-			out.append(sid)
+
+	# 阶段 1：普攻。8 项，最快热完，也是玩家一定会看到的。
+	for s_value in BASIC_ATTACKS:
+		_append_phase_id(out, seen, str(s_value), PHASE_MENU_MINIMAL)
+
+	# 阶段 2：第一场战斗真的会出现的东西 —— 可购买棋子与 PVE 小怪的技能。
+	for table_name in FIRST_BATTLE_TABLES:
+		for sid in _skill_ids_of(str(table_name), str(FIRST_BATTLE_TABLES[table_name])):
+			_append_phase_id(out, seen, sid, PHASE_FIRST_BATTLE)
+
+	# 阶段 3：更晚才出现的。Boss 在第 5 回合、佣兵要买、阵营援军只在最终战。
+	for table_name in DEFERRED_TABLES:
+		for sid in _skill_ids_of(str(table_name), str(DEFERRED_TABLES[table_name])):
+			_append_phase_id(out, seen, sid, PHASE_DEFERRED)
 	for e in EXTRA_EFFECTS:
-		var eid := str(e)
-		if not seen.has(eid):
-			seen[eid] = true
-			out.append(eid)
+		_append_phase_id(out, seen, str(e), PHASE_DEFERRED)
 	# 外部 VFX 场景（binbun / starter）。以 res:// 开头，_spawn_one 据此分支。
 	#
 	# 为什么单列一段：大厅预载只把它们读进内存（Resource Ready），场景里的
 	# GPUParticles3D 要真的被光栅化一次才编译 shader。实测第 1 回合
 	# cold=3、编译 4 个 ParticlesShaderRD，就是这批漏掉的。
 	# 按 skill_id 播只有少数技能会走到外部分支，热不全，所以直接实例化整个场景。
-	for p in BattleAssetManifest.seed_independent_paths():
-		var path := str(p)
-		if not seen.has(path):
-			seen[path] = true
-			out.append(path)
+	for p_value in BattleAssetManifest.seed_independent_paths():
+		_append_phase_id(out, seen, str(p_value), PHASE_DEFERRED)
 	return out
+
+
+func _skill_ids_of(table_name: String, rows_key: String) -> Array[String]:
+	var out: Array[String] = []
+	var table: Variant = DataRegistry.get_table(table_name)
+	if typeof(table) != TYPE_DICTIONARY:
+		return out
+	var rows: Variant = (table as Dictionary).get(rows_key, [])
+	if typeof(rows) != TYPE_ARRAY:
+		return out
+	for row in rows:
+		if typeof(row) != TYPE_DICTIONARY:
+			continue
+		var sid := str((row as Dictionary).get("skill_id", ""))
+		if sid.is_empty() or sid == "none" or NO_VFX_SKILLS.has(sid):
+			continue
+		out.append(sid)
+	return out
+
+
+func _append_phase_id(out: Array[String], seen: Dictionary, id_value: String, phase: String) -> void:
+	if id_value.is_empty() or seen.has(id_value):
+		return
+	seen[id_value] = true
+	out.append(id_value)
+	_phase_by_id[id_value] = phase
+	_phase_total[phase] = int(_phase_total.get(phase, 0)) + 1
+
+
+func phase_totals() -> Dictionary:
+	return _phase_total.duplicate(true)
+
+
+func phase_of(id_value: String) -> String:
+	return str(_phase_by_id.get(id_value, ""))
+
 
 func abort(reason: String) -> void:
 	if not _running:
 		return
 	_aborted = true
-	print("[WARMUP] 中止（%s）：完成 %d/%d" % [reason, _done, _total])
+	var lost: Dictionary = {}
+	for pending in _queue:
+		var phase := str(_phase_by_id.get(str(pending), "?"))
+		lost[phase] = int(lost.get(phase, 0)) + 1
+	print("[WARMUP] 中止（%s）：完成 %d/%d，未热到 %s" % [reason, _done, _total, str(lost)])
 	_finish()
 
 # 判读用。真正要看的不是这里的耗时，而是设备上
@@ -150,6 +216,9 @@ func warmup_report() -> Dictionary:
 		"total": _total, "done": _done, "aborted": _aborted,
 		"elapsed_ms": float(Time.get_ticks_usec() - _t_start_us) / 1000.0,
 		"slowest_ms": _slowest_ms, "slowest_id": _slowest_id,
+		"phase_total": _phase_total.duplicate(true),
+		"phase_done": _phase_done.duplicate(true),
+		"phase_first_done_ms": _phase_first_done_ms.duplicate(true),
 	}
 
 func _build_viewport() -> void:
@@ -179,7 +248,12 @@ func _build_viewport() -> void:
 	light.rotation_degrees = Vector3(-55.0, 35.0, 0.0)
 	_viewport.add_child(light)
 
+# E3: this is a developer readout. It used to be built unconditionally, so a
+# release build drew "预热 96/96 最慢 54 ms (…)" over the language-select screen —
+# exactly the "不得在语言页暴露开发文字" the README calls out.
 func _build_label() -> void:
+	if not OS.is_debug_build():
+		return
 	var layer := CanvasLayer.new()
 	layer.name = "VFXWarmupHUD"
 	layer.layer = 128
@@ -195,6 +269,7 @@ func _build_label() -> void:
 
 var _wait_frames := 0
 var _active: Node = null
+var _active_id := ""
 var _active_started_us := 0
 
 func _process(_delta: float) -> void:
@@ -217,6 +292,7 @@ func _process(_delta: float) -> void:
 			_active.queue_free()
 		_active = null
 		_done += 1
+		_note_phase_progress()
 		_update_label()
 		return
 
@@ -226,6 +302,7 @@ func _process(_delta: float) -> void:
 
 	var frame_start := Time.get_ticks_usec()
 	var skill_id: String = _queue.pop_front()
+	_active_id = skill_id
 	_spawn_one(skill_id)
 	_wait_frames = FRAMES_PER_ITEM
 	# 单帧预算只用于「本帧还要不要再喂一个」，这里一帧本来就只喂一个，
@@ -289,6 +366,22 @@ func _spawn_skill(skill_id: String) -> void:
 	vfx.play(skill_id, origin, target, context)
 	_active = holder
 	_active_started_us = Time.get_ticks_usec()
+
+# Records which phase the item that just finished belonged to, and stamps the
+# moment each phase completed so an early abort can be attributed.
+func _note_phase_progress() -> void:
+	if _active_id.is_empty():
+		return
+	var phase := str(_phase_by_id.get(_active_id, ""))
+	_active_id = ""
+	if phase.is_empty():
+		return
+	_phase_done[phase] = int(_phase_done.get(phase, 0)) + 1
+	if int(_phase_done[phase]) >= int(_phase_total.get(phase, 0)) and not _phase_first_done_ms.has(phase):
+		var ms := float(Time.get_ticks_usec() - _t_start_us) / 1000.0
+		_phase_first_done_ms[phase] = ms
+		print("[WARMUP] 阶段完成：%s %d 项，累计 %.0f ms" % [phase, int(_phase_total.get(phase, 0)), ms])
+
 
 func _update_label() -> void:
 	if _label == null or not is_instance_valid(_label):

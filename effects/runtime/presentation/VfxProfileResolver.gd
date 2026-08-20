@@ -12,6 +12,17 @@ extends RefCounted
 const ProfileScript := preload("res://effects/runtime/presentation/BattleCueProfile.gd")
 const PROFILE_DIR := "res://data/vfx/battle_cues/"
 
+# The directory actually loaded. Production always uses PROFILE_DIR; the review
+# scene points a second resolver at a candidate directory so two profile sets can
+# be compared on the same fixed battle (README B5, 旧/新 profile 对照).
+var _profile_dir := PROFILE_DIR
+
+# Review-only seam. BattleVfxReview sets this before starting a run so the very
+# same BattleScreen path loads a candidate profile set instead of the live one,
+# then clears it. Production code never writes it, and load_profiles_from() is
+# unaffected, so nothing outside the review scene can be steered by accident.
+static var review_profile_dir_override := ""
+
 const KNOWN_PROFILE_IDS := [
 	"basic_melee",
 	"basic_ranged",
@@ -34,9 +45,18 @@ func _init() -> void:
 # Returns how many profiles loaded. A caller that gets 0 must treat it as a
 # failure, not as "nothing to do" (README A3: an empty check set is not a pass).
 func load_profiles() -> int:
+	if not review_profile_dir_override.is_empty():
+		return load_profiles_from(review_profile_dir_override)
+	return load_profiles_from(PROFILE_DIR)
+
+
+# Same contract as load_profiles(), against an arbitrary directory. A caller that
+# gets 0 must treat it as a failure, not as "nothing to do".
+func load_profiles_from(directory: String) -> int:
+	_profile_dir = directory if directory.ends_with("/") else directory + "/"
 	_profiles.clear()
 	for profile_id in KNOWN_PROFILE_IDS:
-		var path := "%s%s.tres" % [PROFILE_DIR, profile_id]
+		var path := "%s%s.tres" % [_profile_dir, profile_id]
 		if not ResourceLoader.exists(path):
 			_report_missing("<load>", profile_id, "profile resource not found: %s" % path)
 			continue
@@ -53,6 +73,10 @@ func load_profiles() -> int:
 
 func has_profile(profile_id: String) -> bool:
 	return _profiles.has(profile_id)
+
+
+func profile_dir() -> String:
+	return _profile_dir
 
 
 func profile_ids() -> Array:

@@ -52,3 +52,6 @@ __pycache__/
 # Written and removed by tools/promo_capture.ps1 to force the movie-recording
 # viewport size. If a crash leaves one behind, deleting it is always safe.
 override.cfg
+
+# A5：283 MB 的历史备份不进运行仓库。需要时从工件库取回，不要提交。
+backups/

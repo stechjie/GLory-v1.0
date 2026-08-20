@@ -1,0 +1,6 @@
+[WARMUP] 启动预热：96 项（普攻 8 + 技能 80 + 外部场景 8）
+[WARMUP] 阶段顺序：menu_minimal 8 → first_battle 44 → deferred 44（按需要得越早排越前；提前中止时丢的是最靠后的）
+[WARMUP] 阶段完成：menu_minimal 8 项，累计 241 ms
+[WARMUP] 阶段完成：first_battle 44 项，累计 1466 ms
+[WARMUP] 阶段完成：deferred 44 项，累计 2765 ms
+[WARMUP] 结束：完成 96/96 耗时 2780 ms 最慢单项 65 ms (Warm_guardian_shield_taunt) 中止=false

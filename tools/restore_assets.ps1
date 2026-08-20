@@ -77,8 +77,8 @@ if (-not (Test-Path -LiteralPath $bundleFile -PathType Leaf)) { throw "Bundle de
 $manifestFile = Join-Path $project "assets.manifest.json"
 if (-not (Test-Path -LiteralPath $manifestFile -PathType Leaf)) { throw "Manifest not found: $manifestFile" }
 
-$manifest = Get-Content -Raw -LiteralPath $manifestFile | ConvertFrom-Json
-$bundle = Get-Content -Raw -LiteralPath $bundleFile | ConvertFrom-Json
+$manifest = Get-Content -Raw -Encoding UTF8 -LiteralPath $manifestFile | ConvertFrom-Json
+$bundle = Get-Content -Raw -Encoding UTF8 -LiteralPath $bundleFile | ConvertFrom-Json
 if ([int]$manifest.schema_version -ne 2) { throw "Unsupported manifest schema_version: $($manifest.schema_version)" }
 if ([int]$bundle.schema_version -ne 1) { throw "Unsupported bundle schema_version: $($bundle.schema_version)" }
 $entries = @($manifest.entries)

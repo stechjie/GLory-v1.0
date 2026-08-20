@@ -115,3 +115,95 @@ static func recovery_scale_when_over_budget(priority: String) -> float:
 	if priority == PRIORITY_IMPORTANT:
 		return 0.35
 	return 0.0
+
+
+# --- B4: priority-aware effect cost -------------------------------------------
+#
+# D5 added the scheduler budget (how many cues may start and live). This block
+# adds the other half B4 asks for: how expensive each cue is allowed to be.
+# Particles, auxiliary layers and dynamic lights now scale with the cue's
+# visibility priority, not just with the device tier.
+#
+# The same rule holds as everywhere else: an overflow may only make a cue cheaper.
+# A critical cue keeps the full tier allowance, so a Boss, death or control cue
+# never quietly loses its particles (checklist 7 D5).
+#
+# The current priority is ambient context rather than a parameter because the
+# spawn path runs through several composer layers that have no reason to know
+# about presentation priority. This mirrors DamageService.set_hit_context(),
+# which the codebase already uses for exactly this shape of problem.
+
+static var _cue_priority := PRIORITY_IMPORTANT
+
+
+static func begin_cue_priority(priority: String) -> void:
+	_cue_priority = priority if priority in [PRIORITY_CRITICAL, PRIORITY_IMPORTANT, PRIORITY_AMBIENT] else PRIORITY_IMPORTANT
+
+
+# Callers must clear, or a cheap ambient cue would silently starve the next one.
+static func clear_cue_priority() -> void:
+	_cue_priority = PRIORITY_IMPORTANT
+
+
+static func current_cue_priority() -> String:
+	return _cue_priority
+
+
+# How much of the tier allowance this priority may spend. Critical spends all.
+static func priority_cost_scale(priority: String) -> float:
+	if priority == PRIORITY_CRITICAL:
+		return 1.0
+	if priority == PRIORITY_IMPORTANT:
+		return 1.0 if tier == Tier.HIGH else 0.8
+	return 0.6 if tier == Tier.HIGH else 0.45
+
+
+static func particle_count_for(base_count: int, priority: String = "") -> int:
+	var resolved := priority if not priority.is_empty() else _cue_priority
+	var tier_allowance := particle_count(base_count)
+	if resolved == PRIORITY_CRITICAL:
+		return tier_allowance
+	return maxi(4, int(round(float(tier_allowance) * priority_cost_scale(resolved))))
+
+
+static func auxiliary_layers_for(base_count: int, priority: String = "") -> int:
+	var resolved := priority if not priority.is_empty() else _cue_priority
+	var tier_allowance := auxiliary_layers(base_count)
+	if resolved == PRIORITY_CRITICAL:
+		return tier_allowance
+	if resolved == PRIORITY_AMBIENT:
+		return mini(tier_allowance, 1)
+	return tier_allowance
+
+
+# Transparent overlays are the most expensive thing per pixel on a mobile GPU, so
+# ambient cues lose them first.
+static func distortion_layers_for(base_count: int, priority: String = "") -> int:
+	var resolved := priority if not priority.is_empty() else _cue_priority
+	var tier_allowance := distortion_layers(base_count)
+	if resolved == PRIORITY_AMBIENT:
+		return mini(tier_allowance, 1 if tier == Tier.HIGH else 0)
+	return tier_allowance
+
+
+static func allow_dynamic_light_for(priority: String = "") -> bool:
+	var resolved := priority if not priority.is_empty() else _cue_priority
+	if not allow_dynamic_light():
+		return false
+	if resolved == PRIORITY_CRITICAL:
+		return true
+	if resolved == PRIORITY_AMBIENT:
+		return false
+	return tier != Tier.LOW
+
+
+# Concurrency share of the global 3D block cap. Critical is uncapped for the same
+# reason force=true exists in VFXBlockRoot: the player must read those cues.
+static func max_simultaneous_effects_for(priority: String = "") -> int:
+	var resolved := priority if not priority.is_empty() else _cue_priority
+	if resolved == PRIORITY_CRITICAL:
+		return -1
+	var cap := max_simultaneous_effects()
+	if resolved == PRIORITY_AMBIENT:
+		return maxi(1, int(round(float(cap) * 0.5)))
+	return maxi(1, int(round(float(cap) * 0.8)))

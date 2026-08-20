@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="BattleCueProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/runtime/presentation/BattleCueProfile.gd" id="1_cue_profile"]
+
+[resource]
+script = ExtResource("1_cue_profile")
+id = "death"
+event_types = PackedStringArray("death")
+priority = "critical"
+anchors = {
+"source": "FootAnchor"
+}
+windup_ms = 0
+impact_ms = 0
+recovery_ms = 350
+camera_mode = "none"
+audio_cue = "death_thud"
+vfx_scene = ""
+max_concurrent = 6
+quality_overrides = {
+"LOW": {
+"max_concurrent": 4,
+"recovery_ms": 220
+}
+}
+fallback_profile = ""
