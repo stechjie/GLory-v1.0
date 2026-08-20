@@ -376,7 +376,15 @@ func detach_actor_for_death(uid: String) -> Node3D:
 
 
 func release_death_actor(uid: String, actor: Node3D) -> void:
-	_unit_actor_registry.unregister_actor(uid)
+	# 只在注册表里存的还是自己这一份时才注销。召唤物会用**同一个 uid 反复重生**
+	# —— 镜像领主的 enemy_mirror_1/2/3 就是这样：上一具尸体的死亡动画还在播，
+	# 单位已经重新召唤出来并把新 actor 注册到了同一个 uid 上。这时无条件
+	# unregister_actor(uid) 会把**活着的新单位**从注册表里抹掉，它随后的死亡就会被
+	# Director 判成 missing_actor:source 丢弃，玩家看到的是镜像凭空消失。
+	#
+	# 2026-08-20 打点实测：第 20 回合 release 时 held_null=false、held_is_mine=false
+	# —— 注册表里确实已经换成了另一份 actor。固定第 20 回合因此丢 3 条死亡演出。
+	_unit_actor_registry.unregister_if_holds(uid, actor)
 	if actor != null and is_instance_valid(actor):
 		actor.queue_free()
 

@@ -4,6 +4,7 @@ const CheckHarness := preload("res://tools/CheckHarness.gd")
 const DirectorScript := preload("res://effects/runtime/presentation/BattlePresentationDirector.gd")
 const EventSchema := preload("res://scripts/battle/BattlePresentationEvent.gd")
 const VisualResolver := preload("res://effects/runtime/presentation/UnitVisualResolver.gd")
+const RealRegistry := preload("res://effects/runtime/presentation/UnitActorRegistry.gd")
 
 
 # Anchor-aware stand-in for UnitActorRegistry. It is permissive by default so the
@@ -192,6 +193,7 @@ func _run() -> void:
 	_check_pause_seek_skip_and_drain()
 	_check_battle_restart_cleanup()
 	_check_actor_resolution()
+	_check_respawned_uid_keeps_its_actor()
 	_check_budget_priorities()
 	await _check_real_timer_seek_and_skip()
 	_check_anchor_degradation_and_no_caching()
@@ -673,3 +675,48 @@ func _event(
 		"target_uids": target_uids,
 		"visibility_priority": priority,
 	}, battle_id, tick, ordinal)
+
+
+# 召唤物用同一个 uid 反复重生，所以"交还尸体"和"注销 uid"不是一回事。
+#
+# 真实的失败长这样（固定第 20 回合，镜像领主）：mirror_1 死了，死亡动画开始播；动画
+# 还没播完，mirror_1 已被重新召唤，新 actor 注册到同一个 uid 上；这时旧尸体播完调
+# unregister_actor(uid)，抹掉的是**活着的那一个**。它随后的死亡就被 Director 判成
+# missing_actor:source 丢弃 —— 玩家看到镜像凭空消失，而清单第 6 节禁止单位就这么不见。
+#
+# 直接测 UnitActorRegistry 而不是绕 Director：规则就在注册表里，测它才测到根。
+func _check_respawned_uid_keeps_its_actor() -> void:
+	var registry := RealRegistry.new()
+	var old_actor := _contract_actor()
+	var new_actor := _contract_actor()
+	add_child(old_actor)
+	add_child(new_actor)
+
+	_h.expect(registry.register_actor("summon_1", old_actor), "respawn_register_old", "第一具 actor 没能注册")
+	# 单位重生：同一个 uid 换成新 actor。
+	_h.expect(registry.register_actor("summon_1", new_actor), "respawn_register_new", "重生后的 actor 没能注册")
+
+	# 旧尸体播完才来交还 —— 它已经不是注册表里那一个，不能动。
+	_h.expect(not registry.unregister_if_holds("summon_1", old_actor),
+		"respawn_release_stale", "交还旧尸体时不应注销 uid：注册表里存的已经是重生后的 actor")
+	_h.expect(registry.get_actor("summon_1") == new_actor,
+		"respawn_actor_evicted", "重生后的 actor 被旧尸体的交还挤掉了 —— 它随后的死亡会被丢弃")
+
+	# 交还当前这一具则必须真的注销，否则死掉的单位会一直留在注册表里。
+	_h.expect(registry.unregister_if_holds("summon_1", new_actor),
+		"respawn_release_current", "交还当前 actor 时应当注销")
+	_h.expect(registry.get_actor("summon_1") == null, "respawn_not_cleared", "注销后仍能取到 actor")
+	_h.expect(not registry.unregister_if_holds("summon_1", null), "respawn_null_guard", "传 null 不应算作注销成功")
+
+	old_actor.queue_free()
+	new_actor.queue_free()
+
+
+# 满足 UnitActorRegistry 六节点契约的最小 actor。
+func _contract_actor() -> Node3D:
+	var root := Node3D.new()
+	for node_name in RealRegistry.REQUIRED_NODES:
+		var child := Node3D.new()
+		child.name = str(node_name)
+		root.add_child(child)
+	return root

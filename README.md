@@ -13,7 +13,7 @@ Godot 4.7 的 3v3 布阵自动战斗项目。本 README 同时是项目说明、
 | A1 — 建立可复现资产清单 | ✅ 已完成（指纹已于 A5 更新） | 当前清单 2632 个文件，inventory fingerprint 为 `a0751fdc580e78dfe6e4023c3f55501471510d0db00d27ae5732a853faafb3fc`。历史值 `5dabb3f5…`（2,643 项）是 E2-2B 之前的状态——E2-2B 重导出了 5 个 FBX 却没重新生成清单，A5 才发现并订正。 |
 | A2 — 资源交付与 Git 解耦、可追溯 | ✅ 已完成（2026-08-20 重打包并首次真正验证往返） | 当前归档 `glory-assets-a0751fdc580e78df-2fd696d1d4f2dcfc.zip`，1782 个 Git 外资源、850 个已跟踪。`restore_assets.ps1` → `ASSET_RESTORE_RESULT status=PASS copied=0 already_present=1782`，接着 `ASSET_DELIVERY_RESULT status=PASS entries=2632 missing=0 hash_mismatch=0 extras=0`。**此前从未真正跑通过**：打包脚本有三个只在 Windows PowerShell 5.1 / 非 ASCII 文件名下发作的缺陷，见 A5 一节。 |
 | A3 — 让检查真正失败 | ✅ 已完成 | 缺资源失败路径与恢复后通过路径均已验证，检查不会再以空检查集或加载失败报假绿。 |
-| A4 — Android 出包、实机战斗与回归门禁 | 🟡 门禁+实机跑通 / Release 未做 | `tools/android_smoke.sh` 产出可追溯证据包（commit、manifest 指纹、APK SHA-256、安装方式、冷启动 logcat、截图）。694 MiB Debug 包在 25028RN03A / Android 15 上通过：`FATAL EXCEPTION` 0、`SCRIPT ERROR` 0、PSS 362 MB。抓掉四类假结果（假绿的旧版本启动、假红的通道掉线、读不出来的证据 JSON、空过滤器导出的静默胖包）。`tools/android_baseline.sh` 已在真机跑完**四个回合**（1/5/20/21，含两个 Boss 与满配 18 敌）：**桌面/设备回放摘要每回合五字段逐字一致（C4 第 3 条）**，孤儿节点两侧皆 0，并拿到战斗截图。第 20 回合顺带暴露一个真缺陷：镜像领主的召唤物死亡演出被丢弃（桌面/设备同为 3 条，非 Android 问题，未修）。Release keystore、商店页截图、低端机与双设备验收未做。 |
+| A4 — Android 出包、实机战斗与回归门禁 | 🟡 门禁+实机跑通 / Release 未做 | `tools/android_smoke.sh` 产出可追溯证据包（commit、manifest 指纹、APK SHA-256、安装方式、冷启动 logcat、截图）。694 MiB Debug 包在 25028RN03A / Android 15 上通过：`FATAL EXCEPTION` 0、`SCRIPT ERROR` 0、PSS 362 MB。抓掉四类假结果（假绿的旧版本启动、假红的通道掉线、读不出来的证据 JSON、空过滤器导出的静默胖包）。`tools/android_baseline.sh` 已在真机跑完**四个回合**（1/5/20/21，含两个 Boss 与满配 18 敌）：**桌面/设备回放摘要每回合五字段逐字一致（C4 第 3 条）**，孤儿节点两侧皆 0，并拿到战斗截图。第 20 回合顺带暴露并修掉一个真缺陷：召唤物用同一 uid 重生时，旧尸体交还会把活着的新 actor 从注册表里抹掉，死亡演出因此被丢弃（桌面/设备同为 3 条，非 Android 问题）；已修，掉落归 0，冻结哈希不变，门禁扩到 89 项。Release keystore、商店页截图、低端机与双设备验收未做。 |
 | E1 — 战场空间可读性 | ✅ 桌面完成 | Windows Forward Mobile 纵向切片完成；所有战斗单位经 `UnitVisualResolver → UnitActor3D`，固定两回合回放为 0 胶囊、0 可见 fallback；`BoardReadabilityLayer` 已接入准备/战斗并可持久化开关。人工盲测与 Android 验收仍待后续。 |
 | E2-2A / E2-2B — 模型与贴图预算 | ✅ 桌面完成 | 75/75 模型边界检查为 0 broken、0 anomaly；241/241 FBX 加载错误为 0；78/78 wrapper 合并通过；模型预算 75 项、0 hard failure。Android ASTC、APK 排除源 FBX 及低端机满编最终战仍待后续。 |
 | Director D0 — 基线与确定性证据 | ✅ 桌面完成 / Android 暂停 | 当前提交 `931771c69e3f585b19e49f3bc1b846b04aa6f55d` 已完成固定 seed 的 round 1/2：完整 roster、事件/result/final-state JSON、SHA-256、actor/fallback/anchor 审计、1280×720 截图及逐帧 CSV 均已生成并独立校验；Android 证据保持暂停。 |
@@ -432,15 +432,20 @@ adb exec-out screencap -p > /tmp/glory-launch.png
     | 20 | Boss + 满配 18 敌 | identical | **3 / 3** |
     | 21 | 满配无 Boss | identical | 0 / 0 |
 
-  - **⚠ 第 20 回合暴露了一个真缺陷：镜像领主召唤出的 3 个镜像，死亡演出被丢弃。** 事件是
-    `local:20260807:20:boss:team0:{40:11, 55:1, 96:14}`，全部 `missing_actor:source`，受害者是
-    `enemy_mirror_1/2/3`。
-    - **不是 Boss 回合的问题**：第 5 回合（另一个 Boss）和第 21 回合（无 Boss）掉落都是 0。共同因素是**会重复召唤、复用同一 uid 的召唤物**。
-    - **不是 Android 的问题**：桌面与设备的 `missing_actor_drop_count` 都是 **3**，确定性地一致。
-    - **范围很窄**：只影响 `death`。以镜像为 source 的 77 条事件里，`attack_start` 25、`impact` 25、`hit_number` 19 全部播出；8 次镜像死亡里丢了 3 次。
-    - **机制候选**：`BattleRenderer.detach_actor_for_death()` 把 actor 移出剪枝名单但**刻意保留注册**，所以普通死亡能播；而 `BattleVfx.cue_claim_corpses()` 对已持有的 uid 会跳过认领（`_cue_corpses.has(uid)`），镜像同一 uid 反复死亡时重复认领会被跳过，若剪枝循环先到就会 `unregister_actor()`，Director 的 `_resolve_cue()` 便找不到 source actor 而丢弃。**确认确切时序需要打点，不是再读一遍代码能定的。**
-    - **刻意没有顺手改**：本项目早先试过让死亡 cue 打断进行中的 cue，结果弄坏了 D2 的 `death_cancel_queue` 断言、整个回退。认领与剪枝的先后契约得先定下来，那是一件独立的活，不该挂在一次测量运行上。
-    - **影响**：这 3 个镜像是直接消失而不是播死亡动画——清单第 6 节明确要求单位不得就这么凭空不见。
+  - **⚠ 第 20 回合暴露了一个真缺陷，已修：镜像领主召唤出的 3 个镜像，死亡演出被丢弃。** 事件是 `local:20260807:20:boss:team0:{40:11, 55:1, 96:14}`，全部 `missing_actor:source`，受害者是 `enemy_mirror_1/2/3`。桌面与设备的掉落数都是 3，确定性一致——不是 Android 的问题；第 5 回合（另一个 Boss）和第 21 回合（无 Boss）都是 0，所以也不是 Boss 回合的问题。共同因素是**会重复召唤、复用同一 uid 的召唤物**。
+  - **根因不是我一开始猜的那个，是打点测出来的。** 我先怀疑 `cue_claim_corpses()` 里的 `_cue_corpses.has(uid)` 跳过了重复认领，但打点显示第 20 回合 tick 40 的认领**是成功的**（`claim OK`），却仍被丢弃。决定性的一行是 release 时的 `held_null=false held_is_mine=false`：
+
+    ```
+    [PROBE] claim OK      uid=enemy_mirror_1 tick=32
+    [PROBE] release       uid=enemy_mirror_1 held_null=false held_is_mine=false
+    [PROBE] claim OK      uid=enemy_mirror_1 tick=40
+    [PROBE] director DROP uid=enemy_mirror_1 type=death tick=40
+    ```
+
+    **真正的原因**：`release_death_actor()` 按 uid **无条件**注销。镜像在上一具尸体的死亡动画还没播完时就被重新召唤，新 actor 已经注册到同一个 uid 上；旧尸体播完时的注销抹掉的是**活着的那一个**，于是它随后的死亡被 Director 判成 `missing_actor:source`。
+  - **修法：把规则放进注册表，而不是叮嘱调用方。** 新增 `UnitActorRegistry.unregister_if_holds(uid, actor)`，只在注册表里存的还是自己那一份时才注销；`release_death_actor()` 改用它。放在注册表里是因为调用方拿不到「注册表现在存的是谁」这个信息，只能想当然按 uid 删——而注册表拿得到。
+  - **验证**：第 20 回合 `missing_actor_drop_count` 3 → **0**，`passed=true`；1/2/5/20/21 五个回合掉落全为 0；**两个冻结哈希逐字节不变**（`replay_sha` 修复前后完全相同，说明只动了演出、没碰模拟）；D2 的 `death_cancel_queue` 断言仍然通过——上次我在这一块猜着改，就是把它弄坏了。
+  - **加了门禁**：`battle_presentation_director_check` 从 82 项扩到 **89 项**，直接对 `UnitActorRegistry` 断言「交还旧尸体不得注销已被重生占用的 uid」。**把 bug 塞回去验证过它真会红**（`respawn_release_stale` + `respawn_actor_evicted` 两条），还原后回绿。
   - **两侧本来就该不同的东西**：`budget_merged_ambient`（第 20 回合桌面 126 / 设备 295）和锚点降级数（20 / 65）差异很大，那正是优先级预算在慢设备上多丢环境层特效——它就是干这个的，digest 不受影响。
   - **仍未做：** 上面那个召唤物死亡缺陷；商店与备战页截图（需驱动备战 UI，正是 D2 的地盘）；低端机与双设备联机；冷缓存首启测量。
   - 证据：`A4_device_battle_20260820/A4_DEVICE_BATTLE_VERIFICATION.json`、`digest_comparison.json` 与 `digest_comparison_rounds_5_20_21.json`，以及两侧的 `round_01/05/20/21`（`hashes.json`、`summary.json`、`frame_performance.csv`、审计与截图）。`round_01` 保留 start/mid/end 全套截图，其余各回合只留 `mid.png` 以控制目录体积，完整套在 `build/` 下。

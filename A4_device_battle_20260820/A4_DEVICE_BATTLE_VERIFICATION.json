@@ -9,7 +9,7 @@
     "A4 acceptance - a screenshot of an actual battle, not just the language page.",
     "Director D0/D5/D6 - the on-device presentation metrics those rows list as pending."
   ],
-  "verdict": "PASS on digest parity for all four rounds (1, 5, 20, 21) - every field identical between desktop and device at the same commit. Round 20 additionally surfaced a presentation defect that is NOT platform-specific; see defect_found.",
+  "verdict": "PASS on digest parity for all four rounds (1, 5, 20, 21) - every field identical between desktop and device at the same commit. Round 20 additionally surfaced a presentation defect that is NOT platform-specific; it has since been fixed and gated - see defect_found.",
   "digest_comparison": {
     "commit": "eee8268",
     "rounds": {
@@ -139,7 +139,6 @@
   ],
   "screenshot_check": "The blue bubbles around most units are the shield effect, confirmed by the project owner. The desktop capture of the same replay frame (D6_battle_presentation_cleanup_20260819/baseline_regression/round_01/mid.png) shows them identically, so nothing about them is Android-specific.",
   "not_done": [
-    "The summoned-unit death defect above.",
     "Store and prep-screen screenshots: those need the prep UI driven, which is exactly the D2 territory a colleague is working in.",
     "Low-end device and two-device online acceptance.",
     "A first-install (cold shader cache) measurement."
@@ -265,8 +264,12 @@
     "not_android_specific": "missing_actor_drop_count is exactly 3 on BOTH desktop and device for round 20. The drop is deterministic and reproduces identically on each platform.",
     "scope_is_narrow": "Only death is affected. The mirrors' other cues play fine: of 77 events sourced from a mirror, attack_start 25, impact 25 and hit_number 19 all played; 3 of 8 mirror deaths were dropped.",
     "mechanism_candidate": "BattleRenderer.detach_actor_for_death() removes the actor from the prune list but deliberately keeps it registered, which is why an ordinary death plays. BattleVfx.cue_claim_corpses() skips a uid it already holds (`_cue_corpses.has(uid)`), and a mirror dies repeatedly under one uid, so a re-claim can be skipped; if the prune loop then reaches that uid first it calls unregister_actor(), and the Director's _resolve_cue() finds no source actor and drops. Confirming the exact ordering needs instrumentation, not more static reading.",
-    "not_fixed_and_why": "Deliberately left alone. An earlier attempt in this project to make death cues interrupt an in-flight cue broke D2's death_cancel_queue assertion and had to be reverted wholesale. The claim/prune ordering contract needs to be settled first; that is its own piece of work, not a fix to bolt onto a measurement run.",
-    "impact": "The three mirrors vanish instead of playing a death animation - checklist section 6 says a unit must never just disappear."
+    "impact": "The three mirrors vanish instead of playing a death animation - checklist section 6 says a unit must never just disappear.",
+    "status": "FIXED 2026-08-20",
+    "root_cause_found_by_instrumentation": "The first hypothesis (cue_claim_corpses skipping a re-claim) was wrong: probes showed the claim at tick 40 SUCCEEDED and the cue was still dropped. The decisive probe line was at release time - held_null=false, held_is_mine=false - the registry already held a DIFFERENT actor for that uid. release_death_actor() unregistered by uid unconditionally, so finishing the old corpse evicted the freshly respawned mirror from the registry, and that mirror's own later death then resolved to no source actor.",
+    "fix": "Added UnitActorRegistry.unregister_if_holds(uid, actor), which erases only when the registry still holds that exact actor; release_death_actor() now uses it. The rule lives in the registry rather than in the caller because a caller cannot see who the registry currently holds and can only guess by uid - the registry can see it.",
+    "verification": "Round 20 missing_actor_drop_count 3 -> 0 and passed=true; rounds 1/2/5/20/21 all zero drops; the two frozen D0 hashes are byte-identical to the D6 evidence and replay_sha is unchanged, so only presentation moved; D2's death_cancel_queue assertion still passes - that is the assertion an earlier guess-driven change in this area broke and had to be reverted wholesale.",
+    "regression_gate": "battle_presentation_director_check grew from 82 to 89 checks, asserting directly on UnitActorRegistry that releasing a stale corpse must not unregister a uid a respawn has taken over. Verified red by putting the bug back - respawn_release_stale and respawn_actor_evicted - and green again after restoring."
   },
   "per_round": {
     "5": {
