@@ -1,6 +1,12 @@
 extends Node
 
-# Desktop-only D0 baseline recorder for the first two fixed-seed PVE rounds.
+# D0 baseline recorder for the first two fixed-seed PVE rounds.
+#
+# Runs on desktop and, since 2026-08-20, on an Android device: tools/DeviceHarness.gd
+# swaps to this scene when the app is launched with --device-baseline, and the output
+# lands under user:// where `adb shell run-as` can read it. Both sides must stay this
+# same script — a separate device recorder would compute its digests differently and
+# the cross-platform comparison would prove nothing.
 #
 # This tool is intentionally read-only with respect to combat state: it calls the
 # same BattleSimulator replay entry point used by the game, serializes its output,
@@ -889,7 +895,12 @@ func _current_round() -> int:
 
 
 func _parse_arguments() -> void:
+	# 桌面上参数走 `--` 之后；Android 上它们从 intent extra 进来，没有 `--` 这个
+	# 约定，OS.get_cmdline_user_args() 会返回空。两种来源在这里合流，工具本身
+	# 不需要知道自己跑在哪一侧。
 	var args := OS.get_cmdline_user_args()
+	if args.is_empty() and DeviceHarness.harness_active():
+		args = DeviceHarness.tool_args
 	var index := 0
 	while index < args.size():
 		var key := str(args[index])

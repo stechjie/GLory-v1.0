@@ -384,6 +384,20 @@ adb exec-out screencap -p > /tmp/glory-launch.png
 
 - **`--skip-install` 的边界写死在代码里：** 它存在的唯一理由是重推大包会拖挂 adbd，不是为了图快跳过验证。用它时脚本会算机上 `base.apk` 的 SHA-256 与本地逐位比对，不一致就报 `skip_install_hash_mismatch`。**跳过安装可以，跳过"机上跑的确实是这一份"不行。**
 
+- **实机跑完整一场战斗（2026-08-20 新增）。** 冷启动只证明进程活着，A4 验收里的「首场战斗截图」和 C4 验收第 3 条（桌面/Android digest 一致）都要求真的在设备上跑一场。新增 [tools/android_baseline.sh](tools/android_baseline.sh)：同一 commit 下先跑桌面基线、再驱动设备跑同一场固定战斗，然后逐字段比对回放摘要。
+  - **为什么必须是同一 commit 的两次运行，而不是拿设备结果去比证据目录里的旧哈希：** 那些哈希是历史提交的产物。对不上时你分不清「跨平台不一致」还是「这中间有人改了战斗」——而这两件事的处理方式完全相反。
+  - **三条入口逐条在真机上验过，前两条都不通：** ① 位置参数覆盖主场景——**无效**，传 `res://tools/battle_presentation_baseline.tscn` 跑起来的还是正常游戏（导出包的主场景来自 pack）。② `am start --esa command_line ...`——**参数根本到不了 Godot**。同一个包，无参数 53 行 godot 日志、加 `--verbose` 52 行，没有差别；原因是导出的入口是 `GodotAppLauncher`，真正的 `GodotApp` 没有 exported（直接 `am start` 它会 `SecurityException`），launcher 转发时把 extras 丢了。③ `assets/_cl_` 确实在包里，但那是导出时烘进去的，改它要重签名。**所以最后用文件触发**：`adb shell run-as` 往 `user://device_harness.json` 写标记，然后正常启动。
+  - **⚠ 我第一次把 ② 测成了「生效」，为此白出了一次包。** 当时用 `grep -c 'godot'` 数 logcat 行数，`--verbose` 让数字从 250 涨到 1035，看着像是生效了——其实那些行大多是框架日志里的**包名** `com.godot.game` 被匹配到。改用 `logcat -s godot` 按 tag 过滤才看清是 53 vs 52。**教训：数一个到处都出现的词的出现次数，不是测量。**
+  - **入口做成 autoload 而不是改 `Main.gd`：** `Main.gd` 是同事 D2（PrepScreen 拆分）正在动的文件，一个诊断入口不值得在那里制造冲突。[tools/DeviceHarness.gd](tools/DeviceHarness.gd) 注册为 autoload，看到命令行 `--device-baseline`（桌面）或 `user://device_harness.json`（设备）就切到 D0 记录器场景；两者都没有时只在 debug 构建打一行「未接管」。**标记文件读完立刻删**——跑到一半崩了的话，留着它会让之后每一次正常启动都被诊断劫持，玩家会发现游戏变成了一个跑不完的测试场景。
+  - **autoload 这条路的代价我先兑掉了：** `Main._ready()` 仍会先跑一次并启动 VFX 预热，而预热挂在 `root` 上、跨场景存活——它会一边编译着色器一边读闪存，正好污染要测的那两件事。所以 `VFXWarmup.start()` 加了一道守卫，harness 接管时直接跳过预热。
+  - **复用 D0 记录器，不另写设备版：** 两侧跑的是同一个 `battle_presentation_baseline.gd`、同一份 `ReplayDigest` 和 `FixedBattleFixture`。另写一个设备版意味着两套规范化，那样比出来的「一致」什么都不能证明。设备侧唯一的差别是参数来源——Android 上参数来自标记文件而不是命令行，所以 `OS.get_cmdline_user_args()` 是空的，工具在那时改读 `DeviceHarness.tool_args`。
+  - **设备侧刻意保留截图。** 记录器会截战斗的 start/mid/end，那正是 A4 要的首场战斗截图，而且它直接渲染 `BattleScreen`，**完全不经过备战 UI**——所以这半不碰 D2。桌面那边关掉截图纯粹是为了跑得快，截图不参与哈希。
+  - **完成信号取磁盘产物，不取 logcat。** 这台设备每 16 ms 刷一条 `CompositionEngine`，几分钟就把 logcat 环形缓冲挤爆——第一次跑时引擎日志被**全部驱逐**，导致分不清「没跑起来」和「跑了但看不到」。现在轮询 `manifest.json`（记录器最后写的东西），它不会被任何东西驱逐；logcat 仍然存档，但按 `-s godot` 过滤后再存。
+  - **比对只比 digest，不比性能。** 帧率和内存两个平台本来就不同，那不叫不一致；要证明的是「同一份回放在两边算出同一个结果」。
+  - **退出码分三种，不合并：** 一致（0）、比过了但不一样（1）、有一侧根本没结果（2）。合并成一个的话，设备侧没跑起来会被读成跨平台不一致，然后有人去查一个并不存在的确定性问题——和前面 `not_installed` 那个假红是同一类错误。
+  - **三条路径都在桌面上验过**：两侧一致 → `identical` 五个字段全 OK；篡改设备侧 `final_state_sha256` → `differs` 并点名该字段；设备侧缺结果 → `digest_incomparable` 而不是 `digest_mismatch`。
+  - **加 autoload 没有改变任何行为**：重跑桌面基线，`hashes.json` 与 `D6_battle_presentation_cleanup_20260819/baseline_regression/round_01/` **逐字节相同**；经 harness 接管跑出来的哈希与直接跑也完全一致。
+
 - **验收：** 每一份 QA APK 都能反查到源码 commit 和资源 manifest；安装、启动、语言页截图、无 `FATAL EXCEPTION` 已是必经门并已通过。**商店与首场战斗截图仍未接入**——它们需要脚本驱动 UI，目前只做到冷启动。
 - **仍未完成：** Release 预设与私有 keystore（本次是 Debug 构建，**不得当作 Release 验收**）；教学主链、20+ 回合与 Boss 样本的实机驱动；体积预算与最大增量阈值；低端机与双设备联机验收。
 - 证据：`A4_android_smoke_20260820/A4_VERIFICATION.json` 与 `pass_run/`（`smoke.json`、`install.log`、`launch.log`、`logcat_full.log`、`logcat_errors.log`、`launch.png`）；备份在 `A4_prechange_backup_20260820/`。
