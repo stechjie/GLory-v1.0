@@ -53,6 +53,8 @@ func _run() -> void:
 	_check_injected_clock_is_used()
 	_check_snapshot_round_trip()
 	_check_snapshot_rejects_foreign_version()
+	_check_cleanup_policy()
+	_check_reserved_seat_expiry()
 
 	_cleanup_snapshot()
 	_h.finish(get_tree())
@@ -73,6 +75,13 @@ func _make_service() -> RefCounted:
 			"room_result": "result",
 			"room_closed": "closed",
 			"reserve_grace_sec": 60.0,
+			"room_prep": "prep",
+			"room_battle": "battle",
+			"lobby_empty_ttl_sec": 60.0,
+			"room_suspend_grace_sec": 300.0,
+			"prep_timeout_sec": 1800.0,
+			"battle_timeout_sec": 300.0,
+			"result_timeout_sec": 600.0,
 		})
 	return svc
 
@@ -422,3 +431,131 @@ func _check_snapshot_rejects_foreign_version() -> void:
 		"snapshot_foreign_tokens_loaded", "版本对不上的快照里的 token 也不得恢复")
 	_h.expect(not FileAccess.file_exists(svc.snapshot_path()),
 		"snapshot_foreign_kept", "被丢弃的快照应当删除，否则每次启动都要重新发现一遍")
+
+
+# --- 生命周期（第 4 步搬进来的策略）------------------------------------------
+
+# cleanup_rooms 是 62 行策略，搬进来时回归网里没有一个用例驱动过它。
+# 这里按"零在线真人时依据还有没有有效 token 决定去留"（B11）逐条钉住。
+func _check_cleanup_policy() -> void:
+	var closed: Array[Dictionary] = []
+	var next_prep: Array[int] = []
+	var close_fn := func(room: Dictionary, reason: String) -> void:
+		closed.append({"id": int(room.get("id", 0)), "reason": reason})
+		room.state = "closed"
+	var prep_fn := func(room: Dictionary) -> void:
+		next_prep.append(int(room.get("id", 0)))
+
+	# ① 零在线、零有效 token -> 立刻关，不等任何 TTL
+	var svc := _make_service()
+	var a: Dictionary = svc.new_room()
+	a.slot_states = ["player", "empty", "empty", "empty", "empty", "empty"]
+	a.empty_since = _now
+	svc.cleanup_rooms(close_fn, prep_fn)
+	_h.expect(closed.size() == 1 and str(closed[0].reason) == "empty_no_tokens",
+		"cleanup_no_tokens", "零在线且无有效 token 时应立刻关房，实际 %s" % str(closed))
+	_h.expect(not svc.rooms.has(int(a.id)), "cleanup_not_deleted", "关掉的房间应从 rooms 里删除")
+
+	# ② 零在线但仍有有效 token、且在 300 秒窗口内 -> 转 suspended，不关
+	closed.clear()
+	var svc2 := _make_service()
+	var b: Dictionary = svc2.new_room()
+	b.slot_states = ["player", "empty", "empty", "empty", "empty", "empty"]
+	b.seat_tokens = {0: "live_tok"}
+	svc2.token_seat["live_tok"] = {"room_id": int(b.id), "slot": 0}
+	b.empty_since = _now
+	svc2.cleanup_rooms(close_fn, prep_fn)
+	_h.expect(closed.is_empty(), "cleanup_closed_recoverable",
+		"恢复窗口内且仍有有效 token 的房间不该关，实际 %s" % str(closed))
+	_h.expect(bool(b.get("suspended", false)), "cleanup_not_suspended",
+		"恢复窗口内应转 suspended —— 否则空房会继续推进阶段、跑 AI 对局烧 CPU（R2）")
+
+	# ③ 超过 300 秒窗口 -> 即使还有 token 也关
+	closed.clear()
+	_now += 400.0
+	svc2.cleanup_rooms(close_fn, prep_fn)
+	_h.expect(closed.size() == 1 and str(closed[0].reason) == "suspend_expired",
+		"cleanup_suspend_expired", "过了恢复窗口应以 suspend_expired 关房，实际 %s" % str(closed))
+	_now -= 400.0
+
+	# ④ suspended 房间不参与阶段推进：结算超时也不该推进下一备战
+	closed.clear()
+	next_prep.clear()
+	var svc3 := _make_service()
+	var c: Dictionary = svc3.new_room()
+	c.state = "result"
+	c.suspended = true
+	c.slot_states = ["player", "empty", "empty", "empty", "empty", "empty"]
+	c.seat_tokens = {0: "tok_c"}
+	svc3.token_seat["tok_c"] = {"room_id": int(c.id), "slot": 0}
+	c.empty_since = _now
+	c.state_started_at = _now - 9999.0
+	svc3.cleanup_rooms(close_fn, prep_fn)
+	_h.expect(next_prep.is_empty(), "cleanup_suspended_advanced",
+		"suspended 房间不得推进阶段，实际推进了 %s" % str(next_prep))
+
+	# ⑤ 有人在线时：清掉 empty_since 并解除 suspended
+	var svc4 := _make_service()
+	var d: Dictionary = svc4.new_room()
+	var rid := int(d.id)
+	d.peer_slot = {900: 0}
+	svc4.peer_room[900] = rid
+	d.suspended = true
+	d.empty_since = _now - 10.0
+	svc4.cleanup_rooms(close_fn, prep_fn)
+	_h.expect(not bool(d.get("suspended", false)), "cleanup_not_resumed", "有人在线时应解除 suspended")
+	_h.expect(is_equal_approx(float(d.get("empty_since", -1.0)), 0.0),
+		"cleanup_empty_since", "有人在线时应清掉 empty_since")
+
+	# ⑥ 备战超时 -> 关房
+	closed.clear()
+	var svc5 := _make_service()
+	var e: Dictionary = svc5.new_room()
+	e.state = "prep"
+	e.peer_slot = {901: 0}
+	svc5.peer_room[901] = int(e.id)
+	e.state_started_at = _now - 1801.0
+	svc5.cleanup_rooms(close_fn, prep_fn)
+	_h.expect(closed.size() == 1 and str(closed[0].reason) == "prep_timeout",
+		"cleanup_prep_timeout", "备战超时应关房，实际 %s" % str(closed))
+
+	# ⑦ 结算超时且对局未结束 -> 推进下一备战而不是关房
+	closed.clear()
+	next_prep.clear()
+	var svc6 := _make_service()
+	var f: Dictionary = svc6.new_room()
+	f.state = "result"
+	f.peer_slot = {902: 0}
+	svc6.peer_room[902] = int(f.id)
+	f.state_started_at = _now - 601.0
+	svc6.cleanup_rooms(close_fn, prep_fn)
+	_h.expect(next_prep.size() == 1 and closed.is_empty(),
+		"cleanup_result_next_prep", "对局未结束时结算超时应推进下一备战，实际 closed=%s prep=%s" % [str(closed), str(next_prep)])
+
+
+func _check_reserved_seat_expiry() -> void:
+	var taken: Array[Dictionary] = []
+	var auto_fn := func(room: Dictionary, slot: int) -> void:
+		taken.append({"id": int(room.get("id", 0)), "slot": slot})
+
+	var svc := _make_service()
+	var room: Dictionary = svc.new_room()
+	room.reserve_deadline = {0: _now - 1.0, 1: _now + 100.0}
+	svc.tick_reserved_seats(auto_fn)
+	_h.expect(taken.size() == 1 and int(taken[0].slot) == 0,
+		"reserve_expiry_wrong", "只有到期的座位该转 AI，实际 %s" % str(taken))
+	_h.expect(not (room.get("reserve_deadline", {}) as Dictionary).has(0),
+		"reserve_expiry_kept", "到期座位应从 reserve_deadline 里移除")
+	_h.expect((room.get("reserve_deadline", {}) as Dictionary).has(1),
+		"reserve_expiry_early", "未到期的座位不得被移除")
+
+	# suspended 房间不转 AI：房里一个真人都没有，转了只会启动纯 AI 战斗烧 CPU，
+	# 而座位主人还在恢复窗口内可能回来（B11/R2）。
+	taken.clear()
+	var svc2 := _make_service()
+	var s: Dictionary = svc2.new_room()
+	s.suspended = true
+	s.reserve_deadline = {0: _now - 1.0}
+	svc2.tick_reserved_seats(auto_fn)
+	_h.expect(taken.is_empty(), "reserve_suspended_taken",
+		"suspended 房间的到期座位不得转 AI，实际 %s" % str(taken))

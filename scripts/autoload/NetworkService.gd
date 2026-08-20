@@ -283,6 +283,15 @@ func _ready() -> void:
 		"room_result": ROOM_RESULT,
 		"room_closed": ROOM_CLOSED,
 		"reserve_grace_sec": RESERVE_GRACE_SEC,
+		# 生命周期用到的阶段名与各档 TTL（第 4 步）。常量留在门面：
+		# ROOM_PREP 之类在门面内外都有引用，按配置传进去比搬走省事。
+		"room_prep": ROOM_PREP,
+		"room_battle": ROOM_BATTLE,
+		"lobby_empty_ttl_sec": LOBBY_EMPTY_TTL_SEC,
+		"room_suspend_grace_sec": ROOM_SUSPEND_GRACE_SEC,
+		"prep_timeout_sec": PREP_TIMEOUT_SEC,
+		"battle_timeout_sec": BATTLE_TIMEOUT_SEC,
+		"result_timeout_sec": RESULT_TIMEOUT_SEC,
 	})
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
@@ -871,68 +880,11 @@ func _room_close(room: Dictionary, reason: String) -> void:
 			_rpc_team_room_closed.rpc_id(int(peer_id), reason)
 		_peer_room.erase(int(peer_id))
 
+# 策略已搬到 RoomService.cleanup_rooms()（D1 第 4 刀第 4 步）。
+# 留在这里的只有"发消息"：_room_close 要给还连着的 peer 发 room_closed，
+# _room_begin_next_prep 要广播新回合 —— RoomService 是 RefCounted，够不着 multiplayer。
 func _cleanup_rooms() -> void:
-	var now := _now()
-	var to_delete: Array = []
-	for room_id in _rooms.keys():
-		var room: Dictionary = _rooms[room_id]
-		var state_name := str(room.get("state", ROOM_LOBBY))
-		var online_count := _room_online_count(room)
-		var match_over := bool(room.get("run_over", false))
-		if online_count <= 0:
-			if float(room.get("empty_since", 0.0)) <= 0.0:
-				room.empty_since = now
-			var empty_for := now - float(room.empty_since)
-			# B11：零在线真人时的回收，依据是**还有没有有效 token**（= 还有没有人
-			# 可能回来），不是房间处于哪个阶段。
-			# 旧实现只回收 LOBBY 和已打完的房间，进了 PREP 的空房要等 PREP_TIMEOUT
-			# （30 分钟），而 RESULT 超时又会把它推回 PREP 重新计时 —— 最长约 40 分钟
-			# 占着 MAX_ROOMS 的名额。约 200 个这样的房间就能让全服 server_busy。
-			var live_tokens := _room_live_token_count(room)
-			if live_tokens <= 0:
-				# 没有任何人能回来了：立刻关，不必等任何 TTL。
-				_room_close(room, "empty_no_tokens")
-			elif match_over and empty_for >= LOBBY_EMPTY_TTL_SEC:
-				# 已打完的房间：没人在线就限时回收（不回收会永远卡在 ROOM_RESULT，
-				# _room_begin_next_prep 对 final 房间直接 return，内存只涨不降）。
-				_room_close(room, "match_over")
-			elif empty_for >= ROOM_SUSPEND_GRACE_SEC:
-				# 有有效 token，但过了产品确认的 300 秒恢复窗口。
-				_room_close(room, "suspend_expired")
-			else:
-				# 恢复窗口内：转 suspended。**不推进阶段、不启动新模拟**，
-				# 否则一个空房还会继续跑 AI 对局烧 CPU（R2）。
-				if not bool(room.get("suspended", false)):
-					room.suspended = true
-					_net_log("room suspended id=%d tokens=%d grace=%ds" % [
-						int(room.get("id", 0)), live_tokens, int(ROOM_SUSPEND_GRACE_SEC)])
-		else:
-			room.empty_since = 0.0
-			if bool(room.get("suspended", false)):
-				room.suspended = false
-				_net_log("room resumed id=%d" % int(room.get("id", 0)))
-		if str(room.get("state", "")) == ROOM_CLOSED:
-			to_delete.append(room_id)
-			continue
-		# suspended 房间不参与任何阶段推进：既不超时关闭也不开新回合。
-		# 它的生死只由上面那段（token 数 + 300 秒窗口）决定。
-		if bool(room.get("suspended", false)):
-			continue
-		var age := now - float(room.get("state_started_at", now))
-		if state_name == ROOM_PREP and age >= PREP_TIMEOUT_SEC:
-			_room_close(room, "prep_timeout")
-		elif state_name == ROOM_BATTLE and age >= BATTLE_TIMEOUT_SEC:
-			_room_close(room, "battle_timeout")
-		elif state_name == ROOM_RESULT and age >= RESULT_TIMEOUT_SEC:
-			# final 房间超时兜底：就算还有 peer 挂着（看完结算不退），也强制关闭
-			if match_over:
-				_room_close(room, "match_over")
-			else:
-				_room_begin_next_prep(room)
-		if str(room.get("state", "")) == ROOM_CLOSED:
-			to_delete.append(room_id)
-	for room_id in to_delete:
-		_rooms.erase(room_id)
+	_room_service.cleanup_rooms(_room_close, _room_begin_next_prep)
 
 # --- 结算确认（E3，对应 C7 / B15）--------------------------------------------
 # 此前**任意一个玩家**按下准备就能把全房推进下一回合 —— 别人还在看回放就被拽走。
@@ -3822,24 +3774,10 @@ func _rpc_team_leader(leader_slot: int) -> void:
 
 # 每秒扫描：宽限到期的保留座位 -> 替它完成当前阶段动作，回合不被卡住。
 # 座位与 token 依旧保留——整局期间随时可重连回来（届时落到当前阶段）。
+# 扫描策略已搬到 RoomService.tick_reserved_seats()（D1 第 4 刀第 4 步）。
+# _room_auto_complete_seat 留在门面：它要改席位状态并广播出去。
 func _tick_reserved_seats() -> void:
-	var now := _now()
-	for room in _rooms.values():
-		# suspended：房里一个真人都没有，此时把座位转 AI 只会启动一场纯 AI 战斗
-		# 烧 CPU，而这些座位的主人还在 300 秒窗口内可能回来（B11/R2）。
-		if bool(room.get("suspended", false)):
-			continue
-		var deadline: Dictionary = room.get("reserve_deadline", {})
-		if deadline.is_empty():
-			continue
-		var expired: Array = []
-		for slot in deadline.keys():
-			if now >= float(deadline[slot]):
-				expired.append(int(slot))
-		for slot in expired:
-			deadline.erase(slot)
-			_room_auto_complete_seat(room, slot)
-		room.reserve_deadline = deadline
+	_room_service.tick_reserved_seats(_room_auto_complete_seat)
 
 # 方案乙：宽限到期 -> 座位转 AI(dummy)，其他玩家立刻面对真 AI、本回合不再卡。
 # token 仍有效：A 之后按"游戏重连"回来，resume 会把 dummy 变回 player、A 从存档恢复棋盘。

@@ -513,3 +513,114 @@ func public_room_list() -> Array:
 		})
 	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a.get("id", 0)) < int(b.get("id", 0)))
 	return out
+
+
+# --- 生命周期（D1 第 4 刀第 4 步）---------------------------------------------
+#
+# 这两个原本在门面里，是文件头计划里的"生命周期乱麻"。搬进来的是**策略**——
+# 什么时候该关、什么时候该转 suspended、各档 TTL 怎么算；留在门面的是**发消息**。
+# 分界线很实在：RoomService 是 RefCounted，够不着 multiplayer，也不该够得着。
+#
+# 于是 close_fn / begin_next_prep_fn / auto_complete_fn 按 Callable 注入，
+# 和已有的 now_fn / log_fn 是同一套写法。
+
+
+# 每秒扫描一次房间：回收空房、进出 suspended、各阶段超时。
+#
+# close_fn(room, reason)         关房（门面那边会给还连着的 peer 发 room_closed）
+# begin_next_prep_fn(room)       结算超时且对局未结束时推进到下一备战
+func cleanup_rooms(close_fn: Callable, begin_next_prep_fn: Callable) -> void:
+	var now := _time()
+	var room_lobby := str(_cfg.get("room_lobby", "lobby"))
+	var room_closed := str(_cfg.get("room_closed", "closed"))
+	var room_prep := str(_cfg.get("room_prep", "prep"))
+	var room_battle := str(_cfg.get("room_battle", "battle"))
+	var room_result := str(_cfg.get("room_result", "result"))
+	var lobby_empty_ttl := float(_cfg.get("lobby_empty_ttl_sec", 60.0))
+	var suspend_grace := float(_cfg.get("room_suspend_grace_sec", 300.0))
+	var prep_timeout := float(_cfg.get("prep_timeout_sec", 1800.0))
+	var battle_timeout := float(_cfg.get("battle_timeout_sec", 300.0))
+	var result_timeout := float(_cfg.get("result_timeout_sec", 600.0))
+
+	var to_delete: Array = []
+	for room_id in rooms.keys():
+		var room: Dictionary = rooms[room_id]
+		var state_name := str(room.get("state", room_lobby))
+		var online_count := room_online_count(room)
+		var match_over := bool(room.get("run_over", false))
+		if online_count <= 0:
+			if float(room.get("empty_since", 0.0)) <= 0.0:
+				room.empty_since = now
+			var empty_for := now - float(room.empty_since)
+			# B11：零在线真人时的回收，依据是**还有没有有效 token**（= 还有没有人
+			# 可能回来），不是房间处于哪个阶段。
+			# 旧实现只回收 LOBBY 和已打完的房间，进了 PREP 的空房要等 PREP_TIMEOUT
+			# （30 分钟），而 RESULT 超时又会把它推回 PREP 重新计时 —— 最长约 40 分钟
+			# 占着 MAX_ROOMS 的名额。约 200 个这样的房间就能让全服 server_busy。
+			var live_tokens := room_live_token_count(room)
+			if live_tokens <= 0:
+				# 没有任何人能回来了：立刻关，不必等任何 TTL。
+				close_fn.call(room, "empty_no_tokens")
+			elif match_over and empty_for >= lobby_empty_ttl:
+				# 已打完的房间：没人在线就限时回收（不回收会永远卡在 ROOM_RESULT，
+				# _room_begin_next_prep 对 final 房间直接 return，内存只涨不降）。
+				close_fn.call(room, "match_over")
+			elif empty_for >= suspend_grace:
+				# 有有效 token，但过了产品确认的 300 秒恢复窗口。
+				close_fn.call(room, "suspend_expired")
+			else:
+				# 恢复窗口内：转 suspended。**不推进阶段、不启动新模拟**，
+				# 否则一个空房还会继续跑 AI 对局烧 CPU（R2）。
+				if not bool(room.get("suspended", false)):
+					room.suspended = true
+					_log("room suspended id=%d tokens=%d grace=%ds" % [
+						int(room.get("id", 0)), live_tokens, int(suspend_grace)])
+		else:
+			room.empty_since = 0.0
+			if bool(room.get("suspended", false)):
+				room.suspended = false
+				_log("room resumed id=%d" % int(room.get("id", 0)))
+		if str(room.get("state", "")) == room_closed:
+			to_delete.append(room_id)
+			continue
+		# suspended 房间不参与任何阶段推进：既不超时关闭也不开新回合。
+		# 它的生死只由上面那段（token 数 + 300 秒窗口）决定。
+		if bool(room.get("suspended", false)):
+			continue
+		var age := now - float(room.get("state_started_at", now))
+		if state_name == room_prep and age >= prep_timeout:
+			close_fn.call(room, "prep_timeout")
+		elif state_name == room_battle and age >= battle_timeout:
+			close_fn.call(room, "battle_timeout")
+		elif state_name == room_result and age >= result_timeout:
+			# final 房间超时兜底：就算还有 peer 挂着（看完结算不退），也强制关闭
+			if match_over:
+				close_fn.call(room, "match_over")
+			else:
+				begin_next_prep_fn.call(room)
+		if str(room.get("state", "")) == room_closed:
+			to_delete.append(room_id)
+	for room_id in to_delete:
+		rooms.erase(room_id)
+
+
+# 每秒扫描：宽限到期的保留座位 -> 交给 auto_complete_fn 替它完成当前阶段动作，
+# 回合不被卡住。座位与 token 依旧保留——整局期间随时可重连回来（届时落到当前阶段）。
+func tick_reserved_seats(auto_complete_fn: Callable) -> void:
+	var now := _time()
+	for room in rooms.values():
+		# suspended：房里一个真人都没有，此时把座位转 AI 只会启动一场纯 AI 战斗
+		# 烧 CPU，而这些座位的主人还在 300 秒窗口内可能回来（B11/R2）。
+		if bool(room.get("suspended", false)):
+			continue
+		var deadline: Dictionary = room.get("reserve_deadline", {})
+		if deadline.is_empty():
+			continue
+		var expired: Array = []
+		for slot in deadline.keys():
+			if now >= float(deadline[slot]):
+				expired.append(int(slot))
+		for slot in expired:
+			deadline.erase(slot)
+			auto_complete_fn.call(room, slot)
+		room.reserve_deadline = deadline
