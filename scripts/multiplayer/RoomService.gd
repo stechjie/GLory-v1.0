@@ -604,23 +604,5 @@ func cleanup_rooms(close_fn: Callable, begin_next_prep_fn: Callable) -> void:
 		rooms.erase(room_id)
 
 
-# 每秒扫描：宽限到期的保留座位 -> 交给 auto_complete_fn 替它完成当前阶段动作，
-# 回合不被卡住。座位与 token 依旧保留——整局期间随时可重连回来（届时落到当前阶段）。
-func tick_reserved_seats(auto_complete_fn: Callable) -> void:
-	var now := _time()
-	for room in rooms.values():
-		# suspended：房里一个真人都没有，此时把座位转 AI 只会启动一场纯 AI 战斗
-		# 烧 CPU，而这些座位的主人还在 300 秒窗口内可能回来（B11/R2）。
-		if bool(room.get("suspended", false)):
-			continue
-		var deadline: Dictionary = room.get("reserve_deadline", {})
-		if deadline.is_empty():
-			continue
-		var expired: Array = []
-		for slot in deadline.keys():
-			if now >= float(deadline[slot]):
-				expired.append(int(slot))
-		for slot in expired:
-			deadline.erase(slot)
-			auto_complete_fn.call(room, slot)
-		room.reserve_deadline = deadline
+# 宽限到期扫描曾短暂放在这里（D1 步骤 2），后按原始 README 的目标结构挪到
+# ReconnectService —— 那份 README 把它归在 ReconnectService（token/宽限/AI 接管）。

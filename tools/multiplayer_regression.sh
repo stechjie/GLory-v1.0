@@ -76,7 +76,7 @@ echo
 echo "单模式探针："
 for s in reconnect_check reconnect_backoff_check connection_health_check \
          rate_limit_check client_log_check merge_rule_parity_check \
-         room_service_check determinism_check; do
+         room_service_check reconnect_service_check determinism_check; do
     _skip "$s" && continue
     run_mode "$s" "res://tools/$s.tscn"
 done

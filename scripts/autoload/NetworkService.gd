@@ -269,6 +269,8 @@ var _reconnect_backoff: RefCounted = ReconnectBackoff.new()
 
 const RoomService := preload("res://scripts/multiplayer/RoomService.gd")
 var _room_service: RefCounted = RoomService.new()
+const ReconnectService := preload("res://scripts/multiplayer/ReconnectService.gd")
+var _reconnect_service: RefCounted = ReconnectService.new()
 
 func _ready() -> void:
 	# 依赖注入：抽出的服务都不认识 NetworkService，也不碰 multiplayer。
@@ -292,6 +294,9 @@ func _ready() -> void:
 		"prep_timeout_sec": PREP_TIMEOUT_SEC,
 		"battle_timeout_sec": BATTLE_TIMEOUT_SEC,
 		"result_timeout_sec": RESULT_TIMEOUT_SEC,
+	})
+	_reconnect_service.configure(_now, _net_log, {
+		"reserve_grace_sec": RESERVE_GRACE_SEC,
 	})
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
@@ -2541,7 +2546,7 @@ func begin_resume_from_disk(token: String, address: String, port: int = DEFAULT_
 var _crypto := Crypto.new()
 
 func _make_token() -> String:
-	return _room_service.make_token()
+	return _reconnect_service.make_token()
 # 短码给玩家手输，所以不能太长；用 base32 去掉易混字符（0/O/1/I），
 # 10 位 × 32 符号 ≈ 2^50，配合限流与失败计数，在线枚举不再可行。
 # 客户端上报的短码必须先过这里（A12）。此前 create/join 直接把客户端自报的
@@ -2552,22 +2557,16 @@ func _make_token() -> String:
 # 注意：这只是格式与长度门。真正的修法是服务端签发 + 绑定（A12 完整版），
 # 但那要改协议，归最终同步协议批。
 func _sanitize_public_id(raw: String) -> String:
-	var id := raw.strip_edges().to_upper()
-	if id.is_empty():
-		return ""
-	if id.length() > MAX_PUBLIC_ID_LEN:
-		return ""
-	for i in id.length():
-		if not PUBLIC_TOKEN_ALPHABET.contains(id[i]):
-			return ""
-	return id
-
+	return _reconnect_service.sanitize_public_id(raw)
 const PUBLIC_TOKEN_ALPHABET := RoomService.PUBLIC_TOKEN_ALPHABET
 const PUBLIC_TOKEN_LENGTH := RoomService.PUBLIC_TOKEN_LENGTH
 const PUBLIC_TOKEN_MAX_TRIES := RoomService.PUBLIC_TOKEN_MAX_TRIES
 
 func _make_public_token() -> String:
-	return _room_service.make_public_token()
+	# 查重要读 RoomService 手里的索引，所以把这一步传进去（见 ReconnectService 顶部
+	# 关于两个服务分界的说明）。
+	return _reconnect_service.make_public_token(func(id: String) -> bool:
+		return _public_token_seat.has(id))
 # 每回合战斗 seed：锁盘之后才生成，用后即弃。
 # 旧实现是房间创建时 randi() 一次、整局不变，且随 boards 广播和 resume 下发——
 # 客户端因此在提交棋盘前就知道 seed，可以本地把 PVE/Boss 回合暴力预演到最优解。
@@ -2897,8 +2896,7 @@ func _resume_seat(sender: int, token: String) -> void:
 	if slot < ready_arr.size():
 		ready_arr[slot] = false
 		room.ready = ready_arr
-	(room.get("reserved", {}) as Dictionary).erase(slot)
-	(room.get("reserve_deadline", {}) as Dictionary).erase(slot)
+	_reconnect_service.release_reservation(room, slot)
 	room.empty_since = 0.0
 	_peer_last_ping[sender] = _now()
 	# 全员掉线后有人重连时，原房主可能还没回来 -> 把房主顺延给这个在线玩家，
@@ -3679,8 +3677,7 @@ func _apply_peer_leave(room: Dictionary, peer_id: int) -> void:
 	peer_slot.erase(peer_id)
 	room.peer_slot = peer_slot
 	_peer_room.erase(peer_id)
-	(room.get("reserved", {}) as Dictionary).erase(slot)
-	(room.get("reserve_deadline", {}) as Dictionary).erase(slot)
+	_reconnect_service.release_reservation(room, slot)
 	if _room_online_count(room) <= 0:
 		room.empty_since = _now()
 	_maybe_promote_leader(room)
@@ -3720,12 +3717,8 @@ func _room_reserve_peer(room: Dictionary, peer_id: int) -> void:
 	peer_slot.erase(peer_id)
 	_peer_room.erase(peer_id)
 	room.peer_slot = peer_slot
-	var reserved: Dictionary = room.get("reserved", {})
-	reserved[slot] = {"reserved_at": _now()}
-	room.reserved = reserved
-	var deadline: Dictionary = room.get("reserve_deadline", {})
-	deadline[slot] = _now() + RESERVE_GRACE_SEC
-	room.reserve_deadline = deadline
+	# 宽限记账已搬到 ReconnectService.reserve_seat()。
+	_reconnect_service.reserve_seat(room, slot)
 	if _room_online_count(room) <= 0:
 		room.empty_since = _now()
 	_maybe_promote_leader(room)
@@ -3777,21 +3770,14 @@ func _rpc_team_leader(leader_slot: int) -> void:
 # 扫描策略已搬到 RoomService.tick_reserved_seats()（D1 第 4 刀第 4 步）。
 # _room_auto_complete_seat 留在门面：它要改席位状态并广播出去。
 func _tick_reserved_seats() -> void:
-	_room_service.tick_reserved_seats(_room_auto_complete_seat)
+	_reconnect_service.tick_reserved_seats(_rooms, _room_auto_complete_seat)
 
 # 方案乙：宽限到期 -> 座位转 AI(dummy)，其他玩家立刻面对真 AI、本回合不再卡。
 # token 仍有效：A 之后按"游戏重连"回来，resume 会把 dummy 变回 player、A 从存档恢复棋盘。
 func _room_auto_complete_seat(room: Dictionary, slot: int) -> void:
-	var states: Array = room.get("slot_states", [])
-	var ready: Array = room.get("ready", [])
-	if slot < states.size():
-		states[slot] = "dummy"
-		room.slot_states = states
-	if slot < ready.size():
-		ready[slot] = true
-		room.ready = ready
-	(room.get("reserved", {}) as Dictionary).erase(slot)
-	_net_log("reserve grace expired room=%d slot=%d -> AI takeover" % [int(room.get("id", 0)), slot])
+	# 状态变更已搬到 ReconnectService.apply_ai_takeover()。留在这里的是发消息与
+	# 阶段推进：广播大厅、按当前阶段决定接下来做什么 —— 那些都要发 RPC。
+	_reconnect_service.apply_ai_takeover(room, slot)
 	_broadcast_room_lobby(room)
 	# 转 dummy 后推进当前阶段：备战->可开局；战斗->dummy 由模拟自动出兵、不再被等待
 	match str(room.get("state", ROOM_LOBBY)):
