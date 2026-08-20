@@ -23,7 +23,12 @@ extends RefCounted
 # 合成时新单位的 `cost_basis` = 被合成单位 `cost_basis` 之和。
 
 const SELL_REFUND_RATE := 0.5
-const STAR_UPGRADE_COPIES := 2   # 两个同名同星合成一个高一星
+# 升星份数与星级上限都在 GameConstants —— 客户端读的是同一份。
+# GameConstants 是纯常量脚本，没有任何可变状态，不违反上面「零全局」那条
+# （那条防的是 GameState/TreasureService 这类带房间状态的单例）。
+#
+# 这里原本是 `const STAR_UPGRADE_COPIES := 2`，一个平坦的 2，
+# 与客户端的 {1: 2, 2: 3} 对不上，而且完全没有星级上限。
 
 # --- 座位账本的初始状态 -------------------------------------------------------
 static func new_prep(start_gold: int) -> Dictionary:
@@ -48,10 +53,23 @@ static func reset_round(prep: Dictionary) -> void:
 # --- 价格：从显式 owned 列表算，不碰 GameState -------------------------------
 # 与 `PrepBoardController._shop_unit_cost` 必须逐字一致，否则客户端预览价和
 # 服务端实扣价对不上，玩家会看到"钱少了一块"。
-static func unit_cost(unit_def: Dictionary, owned: Array) -> int:
+# 棋子**自身**的售价：定价表 cost 经过它自带的 shop_cost_multiplier，
+# 但**不含**玩家身上的折扣宝物。
+#
+# 单独抽出来是因为出售退款也要用它。此前退款直接读 `def.cost`（打折前的原值），
+# 而商店价是 `cost x shop_cost_multiplier` —— 当乘数正好是 0.5 时，
+# 「退一半」的 x0.5 与乘数的 x0.5 互相抵消，退款 = 售价 = **全额退款**。
+# 数据表里只有 undead_small 带这个字段（cost 10、乘数 0.5、实际售价 5），
+# 于是它买 5 退 5 打平，配上折扣宝物就变成净赚。
+# 让两边读同一个函数，以后再加带乘数的棋子也不会重新长出这个洞。
+static func base_unit_cost(unit_def: Dictionary) -> int:
 	var cost := int(unit_def.get("cost", 1))
 	if unit_def.has("shop_cost_multiplier"):
 		cost = maxi(1, int(ceil(float(cost) * float(unit_def.shop_cost_multiplier))))
+	return maxi(1, cost)
+
+static func unit_cost(unit_def: Dictionary, owned: Array) -> int:
+	var cost := base_unit_cost(unit_def)
 	if TreasureService.has_linkage_in(owned, "link_clearance_sale"):
 		cost = maxi(1, int(ceil(float(cost) * 0.6)))
 	elif owned.has("money_discount"):
@@ -63,6 +81,8 @@ static func unit_cost(unit_def: Dictionary, owned: Array) -> int:
 # 旧规则是 `floor(定价表 cost × star × 0.5)` —— 按**定价表**算，不按你实际花了多少。
 # 折扣宝物买入 3 金、退款按原价 5 金算一半 = 2… 低星时看不出来，合成之后就明显了：
 # `clearance` 买两个 undead_small = 6 金 → 合成 2 星 → 旧规则退 10 金，净 +4。
+# （2026-08-20：客户端那份也已改为读 base_unit_cost()，并把 undead_small 的
+#  shop_cost_multiplier 删除、售价定为 10。这段举例保留为**历史成因**记录。）
 # 换成实付基数之后，买贵买便宜退的都是自己那一份的一半，**折扣再叠也刷不出钱**。
 static func sell_refund(cost_basis: int) -> int:
 	return int(floor(float(maxi(0, cost_basis)) * SELL_REFUND_RATE))
@@ -152,7 +172,9 @@ static func _hire_merc(prep: Dictionary, payload: Dictionary, ctx: Dictionary) -
 # 不管中间经过几次合成、用了几次折扣。
 static func _merge(prep: Dictionary, payload: Dictionary, _ctx: Dictionary) -> Dictionary:
 	var uids: Array = payload.get("uids", [])
-	if uids.size() != STAR_UPGRADE_COPIES:
+	# 份数按**目标单位的星级**决定，所以要先看一眼再判 —— 不能像以前那样
+	# 用一个写死的数字。空数组直接拒，否则下面 first 取不到东西。
+	if uids.is_empty():
 		return {"ok": false, "error": "bad_merge_count"}
 	var roster: Dictionary = prep.get("roster", {})
 	var seen := {}
@@ -174,12 +196,19 @@ static func _merge(prep: Dictionary, payload: Dictionary, _ctx: Dictionary) -> D
 		if str(u.get("kind", "")) != "unit":
 			return {"ok": false, "error": "not_mergeable"}
 		basis += int(u.get("cost_basis", 0))
+	var star := int(first.get("star", 1))
+	# 满星不能再合。不拦的话服务端能凭空造出四星、五星 ——
+	# 客户端根本没有这个概念（_can_merge_cells 要求 star < MAX_UNIT_STAR）。
+	if star >= GameConstants.MAX_STAR:
+		return {"ok": false, "error": "star_capped"}
+	if uids.size() != GameConstants.copies_to_upgrade(star):
+		return {"ok": false, "error": "bad_merge_count"}
 	for raw in uids:
 		roster.erase(str(raw))
 	prep["roster"] = roster
-	var uid_new := _add_unit(prep, str(first.get("unit_id", "")), int(first.get("star", 1)) + 1, basis, "unit")
+	var uid_new := _add_unit(prep, str(first.get("unit_id", "")), star + 1, basis, "unit")
 	return {"ok": true, "result": {"uid": uid_new, "unit_id": str(first.get("unit_id", "")),
-		"star": int(first.get("star", 1)) + 1, "cost_basis": basis}}
+		"star": star + 1, "cost_basis": basis}}
 
 static func _sell(prep: Dictionary, payload: Dictionary, _ctx: Dictionary) -> Dictionary:
 	var uid := str(payload.get("uid", ""))

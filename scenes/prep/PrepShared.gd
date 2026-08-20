@@ -2,6 +2,40 @@ extends Control
 
 signal battle_requested
 
+# D2 第一步：通用 UI 工具箱。放在继承链最底层，五个面板与宿主共用同一份。
+# 用 preload 而非 class_name：新增全局类要等编辑器重扫才进类缓存。
+const PrepWidgets := preload("res://scenes/prep/PrepWidgets.gd")
+
+# D2 第二步：规则查询。面板要先知道「这步能不能做」才决定要不要发事件，
+# 把这层留在宿主身上会一直把面板拴住。
+const PrepRules := preload("res://scenes/prep/PrepRules.gd")
+
+# D2 第三步：详情浮层。四个面板共用，自带状态（弹窗节点 + 关闭时序），
+# 所以是实例不是静态工具。
+const PrepDetailOverlay := preload("res://scenes/prep/PrepDetailOverlay.gd")
+
+# D2 第三步：可拖拽按钮与出售放置面板搬成独立文件。
+# 起因是商店面板要独立成文件，而它的字段需要这两个类型；
+# 类型留在本文件里，独立出去的面板就引用不到（退成基类会丢掉 drag_payload 的静态检查）。
+const DragButton := preload("res://scenes/prep/PrepDragButton.gd")
+const SellDropPanel := preload("res://scenes/prep/PrepSellDropPanel.gd")
+const BoardCellButton := preload("res://scenes/prep/PrepBoardCellButton.gd")
+const BenchCellButton := preload("res://scenes/prep/PrepBenchCellButton.gd")
+const RelationProgressOverlay := preload("res://scenes/prep/PrepRelationProgressOverlay.gd")
+# 五个面板都以**场景**形式存在，可以脱离备战界面单独 load 起来跑测试
+# （tools/panel_scene_check.tscn 就是这么做的）—— 这是 README D2 的验收之一。
+# 两个常量各有用处：Script 用于类型标注（保住静态检查），Scene 用于实例化。
+const ShopPanelScript := preload("res://scenes/prep/panels/ShopPanel.gd")
+const ShopPanelScene := preload("res://scenes/prep/panels/ShopPanel.tscn")
+const SynergyPanelScript := preload("res://scenes/prep/panels/SynergyPanel.gd")
+const SynergyPanelScene := preload("res://scenes/prep/panels/SynergyPanel.tscn")
+const BattleStatsPanelScript := preload("res://scenes/prep/panels/BattleStatsPanel.gd")
+const BattleStatsPanelScene := preload("res://scenes/prep/panels/BattleStatsPanel.tscn")
+const TreasureChoicePanelScript := preload("res://scenes/prep/panels/TreasureChoicePanel.gd")
+const TreasureChoicePanelScene := preload("res://scenes/prep/panels/TreasureChoicePanel.tscn")
+const BoardHudScript := preload("res://scenes/prep/panels/BoardHud.gd")
+const BoardHudScene := preload("res://scenes/prep/panels/BoardHud.tscn")
+
 const BoardReadabilityLayerScene := preload("res://effects/runtime/presentation/BoardReadabilityLayer.tscn")
 
 @export_group("4x4 Board Layout")
@@ -40,244 +74,6 @@ const BoardReadabilityLayerScene := preload("res://effects/runtime/presentation/
 @export var standby_idle_fill := Color(0.22, 0.74, 0.62, 0.0)
 @export var standby_idle_line := Color(0.42, 0.94, 0.78, 0.0)
 @export var standby_hover_line := Color(0.40, 1.0, 0.82, 0.92)
-
-class DragButton:
-	extends Button
-	var drag_payload: Dictionary = {}
-	var drag_enabled := true
-	var drag_owner: Control
-
-	func _get_drag_data(_at_position: Vector2) -> Variant:
-		if disabled or not drag_enabled or drag_payload.is_empty():
-			return null
-		if has_meta("long_press_timer"):
-			var timer = get_meta("long_press_timer")
-			if timer is Timer:
-				timer.stop()
-		set_meta("long_press_cancelled", true)
-		set_meta("dragging", true)
-		if drag_owner != null and drag_owner.has_method("_on_drag_started"):
-			drag_owner._on_drag_started(drag_payload)
-		var preview := Label.new()
-		preview.text = str(get_meta("drag_preview_text", text))
-		preview.modulate = Color(1.0, 0.95, 0.65)
-		preview.add_theme_font_size_override("font_size", 14)
-		set_drag_preview(preview)
-		return drag_payload.duplicate(true)
-
-	func _notification(what: int) -> void:
-		if what == NOTIFICATION_DRAG_END and drag_owner != null and drag_owner.has_method("_on_drag_ended"):
-			drag_owner._on_drag_ended()
-
-class BoardCellButton:
-	extends DragButton
-	var board_index := -1
-	var screen: Control
-	var cell_polygon := PackedVector2Array()
-	var deployment_visible := false
-	var deployment_hovered := false
-
-	func _ready() -> void:
-		mouse_exited.connect(_on_mouse_exited)
-
-	func configure_polygon(points: PackedVector2Array) -> void:
-		cell_polygon = points
-		queue_redraw()
-
-	func set_deployment_highlight(enabled: bool, hovered: bool = false) -> void:
-		deployment_visible = enabled
-		deployment_hovered = enabled and hovered
-		queue_redraw()
-
-	func _has_point(point: Vector2) -> bool:
-		if cell_polygon.size() < 3:
-			return false
-		if Geometry2D.is_point_in_polygon(point, cell_polygon):
-			return true
-		# (10) The perspective-tilted board makes edge columns (esp. the far right)
-		# a thin sliver — hard to tap on Android. Enlarge the hit rect so every
-		# cell, including the rightmost column, is reliably touchable.
-		var minx := cell_polygon[0].x
-		var miny := cell_polygon[0].y
-		var maxx := minx
-		var maxy := miny
-		for p in cell_polygon:
-			minx = minf(minx, p.x)
-			miny = minf(miny, p.y)
-			maxx = maxf(maxx, p.x)
-			maxy = maxf(maxy, p.y)
-		return Rect2(minx, miny, maxx - minx, maxy - miny).grow(16.0).has_point(point)
-
-	func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:
-		var can_drop: bool = screen != null and screen.has_method("_can_drop_on_board") and screen._can_drop_on_board(board_index, data)
-		if screen != null and screen.has_method("_set_board_drop_hover"):
-			screen._set_board_drop_hover(board_index if can_drop else -1)
-		return can_drop
-
-	func _drop_data(_at_position: Vector2, data: Variant) -> void:
-		if screen != null and screen.has_method("_drop_on_board"):
-			screen._drop_on_board(board_index, data)
-
-	func _on_mouse_exited() -> void:
-		if deployment_visible and screen != null and screen.has_method("_set_board_drop_hover"):
-			screen._set_board_drop_hover(-1)
-
-	func _draw() -> void:
-		# BoardReadabilityLayer owns all board guide rendering in one CanvasItem.
-		# This button keeps only touch/drag hit testing, so the 16 cells no longer
-		# duplicate guide draw calls or drift away from the shared style resource.
-		pass
-
-class RelationProgressOverlay:
-	extends Control
-	var relation_states: Array = []
-
-	func _ready() -> void:
-		mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-	func set_relation_states(next_states: Array) -> void:
-		relation_states = next_states.duplicate(true)
-		queue_redraw()
-
-	func _draw() -> void:
-		var visible_count := mini(3, relation_states.size())
-		for row in visible_count:
-			var state_value = relation_states[row]
-			if typeof(state_value) != TYPE_DICTIONARY:
-				continue
-			var state: Dictionary = state_value
-			var progress := clampi(int(state.get("progress", 0)), 0, RaceRelationService.MAX_PROGRESS)
-			if bool(state.get("active", false)) or progress >= RaceRelationService.MAX_PROGRESS:
-				continue
-			var color := Color(1.0, 0.78, 0.18, 0.96) if str(state.get("kind", "")) == "friendly" else Color(0.66, 0.72, 0.80, 0.96)
-			var y := size.y - 5.0 - float(row) * 6.0
-			var gap := 2.0
-			var total_width := size.x - 8.0
-			var segment_width := (total_width - gap * 2.0) / 3.0
-			for segment in 3:
-				var segment_rect := Rect2(
-					4.0 + float(segment) * (segment_width + gap),
-					y,
-					segment_width,
-					4.0
-				)
-				draw_rect(segment_rect, Color(0.02, 0.03, 0.04, 0.82), true)
-				if segment < progress:
-					draw_rect(segment_rect, color, true)
-
-class BenchCellButton:
-	extends DragButton
-	var bench_index := -1
-	var screen: Control
-	var cell_polygon := PackedVector2Array()
-	var standby_visible := false
-	var standby_hovered := false
-
-	func _ready() -> void:
-		mouse_exited.connect(_on_mouse_exited)
-
-	func configure_polygon(points: PackedVector2Array) -> void:
-		cell_polygon = points
-		queue_redraw()
-
-	func set_standby_highlight(enabled: bool, hovered: bool = false) -> void:
-		standby_visible = enabled
-		standby_hovered = enabled and hovered
-		queue_redraw()
-
-	func _has_point(point: Vector2) -> bool:
-		if cell_polygon.size() < 3:
-			return false
-		if Geometry2D.is_point_in_polygon(point, cell_polygon):
-			return true
-		# Square touch area centered on the circle: the projected ellipses get very
-		# flat near the top rows, so use max(width, height) as the side length to
-		# keep every bench spot reliably tappable on Android.
-		var minx := cell_polygon[0].x
-		var miny := cell_polygon[0].y
-		var maxx := minx
-		var maxy := miny
-		for p in cell_polygon:
-			minx = minf(minx, p.x)
-			miny = minf(miny, p.y)
-			maxx = maxf(maxx, p.x)
-			maxy = maxf(maxy, p.y)
-		var center := Vector2((minx + maxx) * 0.5, (miny + maxy) * 0.5)
-		var side := maxf(maxx - minx, maxy - miny) + 16.0
-		return Rect2(center - Vector2(side, side) * 0.5, Vector2(side, side)).has_point(point)
-
-	func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:
-		if screen != null and screen.has_method("_set_standby_drop_hover"):
-			screen._set_standby_drop_hover(bench_index)
-		return screen != null and screen.has_method("_can_drop_on_bench") and screen._can_drop_on_bench(bench_index, data)
-
-	func _drop_data(_at_position: Vector2, data: Variant) -> void:
-		if screen != null and screen.has_method("_drop_on_bench"):
-			screen._drop_on_bench(bench_index, data)
-
-	func _on_mouse_exited() -> void:
-		if standby_visible and screen != null and screen.has_method("_set_standby_drop_hover"):
-			screen._set_standby_drop_hover(-1)
-
-	func _draw() -> void:
-		if not standby_visible or cell_polygon.size() < 3 or screen == null:
-			return
-		var player_color: Color = screen.standby_hover_line
-		if screen.has_method("_board_player_color"):
-			var color_value = screen.call("_board_player_color")
-			if typeof(color_value) == TYPE_COLOR:
-				player_color = color_value
-		var fill: Color = Color(player_color.r, player_color.g, player_color.b, 0.25) if standby_hovered else screen.standby_idle_fill
-		var line: Color = Color(player_color.r, player_color.g, player_color.b, 0.92) if standby_hovered else screen.standby_idle_line
-		var outline := cell_polygon.duplicate()
-		outline.append(cell_polygon[0])
-		if standby_hovered:
-			var bounds := Rect2(cell_polygon[0], Vector2.ZERO)
-			for p in cell_polygon:
-				bounds = bounds.expand(p)
-			var center := bounds.get_center()
-			var source_y := bounds.position.y + bounds.size.y * 0.46
-			var beam_top_y := bounds.position.y - maxf(18.0, bounds.size.y * 0.95)
-			var source_half := bounds.size.x * 0.12
-			var top_half := bounds.size.x * 0.42
-			var beam := PackedVector2Array([
-				Vector2(center.x - source_half, source_y),
-				Vector2(center.x - top_half, beam_top_y),
-				Vector2(center.x + top_half, beam_top_y),
-				Vector2(center.x + source_half, source_y),
-			])
-			var beam_core := PackedVector2Array([
-				Vector2(center.x - source_half * 0.45, source_y),
-				Vector2(center.x - top_half * 0.36, beam_top_y),
-				Vector2(center.x + top_half * 0.36, beam_top_y),
-				Vector2(center.x + source_half * 0.45, source_y),
-			])
-			draw_colored_polygon(beam, Color(line.r, line.g, line.b, 0.10))
-			draw_colored_polygon(beam_core, Color(line.r, line.g, line.b, 0.18))
-			draw_line(Vector2(center.x, source_y), Vector2(center.x, beam_top_y), Color(line.r, line.g, line.b, 0.26), 2.5, true)
-		draw_colored_polygon(cell_polygon, fill)
-		draw_polyline(outline, line, 2.5 if standby_hovered else 1.25, true)
-		if standby_hovered:
-			draw_polyline(outline, Color(line.r, line.g, line.b, 0.26), 7.0, true)
-
-class SellDropPanel:
-	extends PanelContainer
-	var screen: Control
-	# 仅显式标记的面板才接受卖出放置（当前只有商店红色覆盖层）。顶栏/左面板/商店底板
-	# 也用此类做布局面板，但不应作为隐性出售区，避免空白处松手误卖。
-	var is_sell_zone := false
-
-	func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:
-		if not is_sell_zone:
-			return false
-		return screen != null and screen.has_method("_can_drop_to_sell") and screen._can_drop_to_sell(data)
-
-	func _drop_data(_at_position: Vector2, data: Variant) -> void:
-		if not is_sell_zone:
-			return
-		if screen != null and screen.has_method("_drop_to_sell"):
-			screen._drop_to_sell(data)
-
 # 调试：把所有按钮的点击判定区域用线条画出来（多边形格子按真实多边形，普通按钮按矩形）。
 # 满屏覆盖、不吃输入、z 极高，永远画在最上层。由 SHOW_HIT_AREAS 常量控制是否创建。
 class HitAreaDebugOverlay:
@@ -397,23 +193,34 @@ var _player_formation_bar: TextureProgressBar
 var _enemy_formation_bar: TextureProgressBar
 var _player_formation_hp_label: Label
 var _enemy_formation_hp_label: Label
-var _board_grid: Control
-var _bench_row: Control
-var _standby_frame: Control
-var _shop_row: HBoxContainer
-var _shop_panel: SellDropPanel
-var _shop_open_button: Button
-var _buy_shop_button: Button      # 钱袋 A 上的透明「采购」热区，教学箭头要指它
-var _shop_picker_open := false
-var _shop_sell_overlay: PanelContainer
-var _shop_side_controls: Control  # 商店"外挂"控件层（钱袋A购买键 + 刷新），挂屏幕上、不受商店面板矩形限制
-var _closed_money_bag: Control    # 商店关闭时的钱袋按钮（商店按钮左边）
-var _closed_gold_label: Label
-var _refresh_shop_button: Button
-var _refresh_shop_icon: Label
-var _refresh_shop_cost_label: Label
-var _gold_amount_label: Label
-var _left_panel: VBoxContainer
+# 棋盘/待命区这一簇的 17 个成员变量已收进下方的 BoardPanel 内部类（D2 第四步）。
+# 全仓 132 处引用统一改成 _board_hud.xxx（含 tools/board_4x4_smoke_node.gd 的 10 处）。
+# 商店这一簇的 19 个成员变量已收进下方的 ShopPanel 内部类（D2 第三步）。
+# PrepShared 的共享状态池因此从 110 个降到 91 个，商店状态的归属一眼可见。
+# 引用统一改成 _shop.xxx（全仓 133 处，映射表见 ShopPanel 类末尾的注释）。
+# 商店面板现在是独立文件里的 Control 节点（scenes/prep/panels/ShopPanel.gd）。
+# 它在 _enter_tree 时被 add_child 进来 —— 见本文件的 _ready/_enter_tree。
+var _shop: ShopPanelScript = ShopPanelScene.instantiate()
+
+# 左侧羁绊面板（含黄金祭坛/慷慨命运两个按钮）。与 _shop 同一套结构。
+var _synergy: SynergyPanelScript = SynergyPanelScene.instantiate()
+
+# 战力推荐与上一场战报。纯显示，不发信号。
+var _stats: BattleStatsPanelScript = BattleStatsPanelScene.instantiate()
+
+# 宝物三选一浮层与已持有 logo 栏。
+var _treasure: TreasureChoicePanelScript = TreasureChoicePanelScene.instantiate()
+
+# 棋盘与待命区。原 class BoardPanel 的 17 个字段已并入这个节点。
+var _board_hud: BoardHudScript = BoardHudScene.instantiate()
+
+# ---------------------------------------------------------------------------
+# 商店这一簇的状态与节点引用（D2 第三步）。
+#
+# 做成**内部类**而不是独立文件：DragButton / SellDropPanel 都是本文件的内部类，
+# 独立文件要引用它们就得 preload PrepShared，而 PrepShared 又要 preload 它 ——
+# 循环依赖。退而用无类型 Array 的话，_shop.buttons 的静态类型会丢，
+# 二十来处调用点全部退化成 Variant。内部类两头都保住。
 var _merc_scroll: ScrollContainer
 var _merc_panel: VBoxContainer
 var _merc_overlay: PanelContainer
@@ -428,58 +235,14 @@ var _team_mercs_empty_label: Label
 var _team_mercs_render_timer: Timer
 var _team_mercs_open := false
 var _team_mercs_stage_signature := "unset"
-var _treasure_overlay: ColorRect
-var _treasure_timer_lbl: Label
-var _treasure_choice_row: HBoxContainer
-var _treasure_refresh_btn: Button
-var _owned_treasure_box: GridContainer
-var _board_buttons: Array[BoardCellButton] = []
-var _board_readability_layer: BoardReadabilityLayer
-var _board_relation_overlays: Array[RelationProgressOverlay] = []
-var _board_cell_captions: Array[Label] = []   # 棋盘格子下方的「名字 ★星级」标签（有棋子才显示）
-var _bench_buttons: Array[BenchCellButton] = []
-var _bench_card_labels: Array[Label] = []
-var _shop_buttons: Array[DragButton] = []
-var _shop_portraits: Array[TextureRect] = []
-var _shop_card_frames: Array[TextureRect] = []
-var _shop_card_labels: Array[Label] = []
-var _shop_price_labels: Array[Label] = []
-var _shop_race_icons: Array[Control] = []
-var _shop_reason_labels: Array[Label] = []
-var _selected_shop := -1
-var _selected_board := -1
-var _selected_bench := -1
+# 详情浮层的节点与状态都归 _overlay 管；这两个 var 保留是因为构建代码要先造节点，
+# 造完再 bind 给它。
 var _detail: PopupPanel
 var _detail_text: RichTextLabel
-var _stats_popup: PopupPanel
-var _stats_text: RichTextLabel
-var _stats_group := "player"
-var _detail_waiting_for_release := false
-var _detail_release_seen_press := false
-var _gold_interest_detail_open := false
-var _shop_drag_sell_mode := false
+var _overlay := PrepDetailOverlay.new()
 var _active_drag_payload: Dictionary = {}   # for snap-to-nearest-cell on release
 var _drop_consumed := false
 var _battle_launch_emitted := false
-var _board_empty_style: StyleBoxFlat
-var _board_hover_style: StyleBoxFlat
-var _board_occupied_style: StyleBoxFlat
-var _board_drop_style: StyleBoxFlat
-var _board_drop_highlight_active := false
-var _board_drop_hover_index := -1
-var _standby_drop_highlight_active := false
-var _standby_drop_hover_index := -1
-
-func _board_player_color() -> Color:
-	if NetworkService.team_active and NetworkService.team_local_slot >= 0:
-		return GameConstants.team_slot_color(NetworkService.team_local_slot)
-	return board_cell_rest_line
-func _board_grid_size() -> Vector2:
-	return Vector2(
-		cell_size.x * float(GameConstants.BOARD_COLUMNS),
-		cell_size.y * float(GameConstants.BOARD_ROWS)
-	)
-
 func _board_perspective_point(u: float, v: float, board_size: Vector2) -> Vector2:
 	var v_fore := v / (1.0 + board_foreshorten * (1.0 - v))
 	var top := board_top_left.lerp(board_top_right, u)
@@ -502,359 +265,88 @@ func _board_cell_quad(index: int, board_size: Vector2) -> PackedVector2Array:
 	])
 
 # Cross-layer hooks keep the original single-instance method dispatch intact.
-func _build() -> void:
-	pass
-
-func _refresh_all() -> void:
-	pass
-
-func _auto_combine_all() -> void:
-	pass
-
-func _refresh_board() -> void:
-	pass
-
-func _setup_board_cell_styles() -> void:
-	pass
-
-func _sync_prep_board_readability_geometry() -> void:
-	pass
-
-func _sync_prep_board_readability_state() -> void:
-	pass
-
 func _load_board_art_texture() -> Texture2D:
 	return null
-
-func _refresh_bench() -> void:
-	pass
-
-func _refresh_shop() -> void:
-	pass
-
-func _refresh_left_panel() -> void:
-	pass
-
-func _refresh_merc_panel() -> void:
-	pass
-
-func _toggle_merc_picker() -> void:
-	pass
-
-func _close_merc_picker() -> void:
-	pass
-
-func _toggle_shop_picker() -> void:
-	pass
-
-func _close_shop_picker() -> void:
-	pass
-
-func _refresh_shop_picker() -> void:
-	pass
-
-func _refresh_treasure_panel() -> void:
-	pass
-
-func _maybe_start_pending_treasure() -> void:
-	pass
-
-func _pick_treasure(tid: String) -> void:
-	pass
-
-func _refresh_treasure_candidates() -> void:
-	pass
-
-func _claim_pending_treasure_round() -> void:
-	pass
-
-func _can_drop_on_board(board_index: int, data: Variant) -> bool:
-	return false
-
-func _drop_on_board(board_index: int, data: Variant) -> void:
-	pass
-
-func _can_drop_on_bench(bench_index: int, data: Variant) -> bool:
-	return false
-
-func _drop_on_bench(bench_index: int, data: Variant) -> void:
-	pass
-
 func _can_drop_to_sell(data: Variant) -> bool:
 	return false
-
-func _drop_to_sell(data: Variant) -> void:
-	pass
-
-func _on_drag_started(payload: Dictionary) -> void:
-	pass
-
-func _on_drag_ended() -> void:
-	pass
-
-func _set_board_drop_hover(board_index: int) -> void:
-	pass
-
-func _set_standby_drop_hover(bench_index: int) -> void:
-	pass
-
-func _set_shop_sell_mode(enabled: bool) -> void:
-	pass
-
-func _on_start_battle() -> void:
-	pass
-
-func _emit_battle_request_once() -> void:
-	pass
 
 func _has_any_board_unit() -> bool:
 	return false
 
-func _mark_online_board_changed() -> void:
-	pass
-
-func _on_network_session_changed() -> void:
-	pass
-
-func _on_hire_mercenary(index: int) -> void:
-	pass
-
-func _can_hire_mercenary(index: int) -> bool:
-	return false
-
-func _hire_mercenary_to_slot(index: int, mercenary_index: int) -> void:
-	pass
-
-func _on_shop_pressed(index: int) -> void:
-	pass
-
-func _on_buy_selected_shop() -> void:
-	pass
-
-func _on_board_pressed(index: int) -> void:
-	pass
-
-func _on_bench_pressed(index: int) -> void:
-	pass
-
-func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
-	pass
-
-func _buy_or_merge_shop_to_bench(shop_index: int, bench_index: int) -> void:
-	pass
-
-func _has_unique_board_unit(unit_id: String) -> bool:
-	return false
-
-func _move_or_merge_board(from_index: int, to_index: int) -> void:
-	pass
-
-func _move_or_merge_board_to_bench(from_index: int, bench_index: int) -> void:
-	pass
-
-func _move_or_merge_bench_to_board(from_index: int, board_index: int) -> void:
-	pass
-
-func _move_or_merge_bench(from_index: int, to_index: int) -> void:
-	pass
-
-func _on_sell_selected() -> void:
-	pass
-
-func _sell_board_index(index: int) -> void:
-	pass
-
-func _sell_bench_index(index: int) -> void:
-	pass
-
 func _first_empty_board_slot() -> int:
 	return 0
-
-func _first_empty_bench_slot() -> int:
-	return 0
-
-func _first_empty_mercenary_slot() -> int:
-	return 0
-
-func _bench_count() -> int:
-	return 0
-
-func _can_merge_cells(target: Dictionary, incoming: Dictionary) -> bool:
-	return false
-
 func _merge_three_into_cell(target: Dictionary, incoming: Dictionary, excluded_board: Array = [], excluded_bench: Array = []) -> bool:
 	return false
 
 func _take_extra_merge_piece(id: String, star: int, excluded_board: Array, excluded_bench: Array) -> Dictionary:
 	return {}
 
-func _preserve_unique_king_growth_on_merge(target: Dictionary, incoming: Dictionary, extra: Dictionary) -> void:
-	pass
-
 func _unique_king_growth_score(d: Dictionary) -> float:
 	return 0.0
-
-func _is_merge_piece(cell: Variant, id: String, star: int) -> bool:
-	return false
-
 func _sell_refund_for_cell(cell: Dictionary) -> int:
 	return 0
-
-func _on_golden_altar() -> void:
-	pass
-
-func _on_generous_fate_gamble() -> void:
-	pass
-
-func _on_refresh_shop() -> void:
-	pass
-
-func _roll_shop() -> void:
-	pass
 
 func _roll_shop_tier(rng: RandomNumberGenerator) -> int:
 	return 0
 
 func _shop_unit_cost(unit_def: Dictionary) -> int:
 	return 0
+func _format_treasure_detail(t: Dictionary) -> String:
+	return ""
 
-func _add_current_synergy_widgets() -> void:
+
+# ─── 抽象桩 ─────────────────────────────────────────────────────────────────
+#
+# D2 步骤 6′：这一层原本有 44 个只写 pass 的桩 —— 它们是给内部类和基类代码
+# 「按名字调用子类方法」用的占位。五个面板与四个内部类搬走之后，
+# 其中 26 个已经没有任何调用点，删掉了。
+#
+# 剩下这 18 个是编译器点名要留的：本层或 PrepBoardModels/PrepUI 里仍有直接调用，
+# 而实现在更派生的层。它们是继承链还没拆干净的直接证据 ——
+# 每少一个，就说明又有一块行为不再需要「父类声明、子类实现」这种绕法。
+func _auto_combine_all() -> void:
+	pass
+func _buy_or_merge_shop_to_bench(shop_index: int, bench_index: int) -> void:
+	pass
+func _claim_pending_treasure_round() -> void:
+	pass
+func _on_bench_pressed(index: int) -> void:
 	pass
 
-func _add_power_recommendation_widgets() -> void:
+func _on_board_pressed(index: int) -> void:
 	pass
 
-func _show_last_battle_stats() -> void:
+func _on_generous_fate_gamble() -> void:
 	pass
 
-func _show_power_recommendation() -> void:
+func _on_golden_altar() -> void:
 	pass
 
+func _on_hire_mercenary(index: int) -> void:
+	pass
+func _on_refresh_shop() -> void:
+	pass
+
+func _on_start_battle() -> void:
+	pass
+
+func _pick_treasure(tid: String) -> void:
+	pass
 func _set_stats_group(group: String) -> void:
 	pass
-
-func _refresh_stats_popup() -> void:
-	pass
-
-func _last_battle_result_for_stats() -> Dictionary:
-	return {}
-
-func _stats_group_label(group: String) -> String:
-	return ""
-
-func _entry_stats_group(entry: Dictionary) -> String:
-	return ""
-
-func _sanitize_stats_cell(text: String) -> String:
-	return ""
-
-func _format_status_bucket(value: Variant) -> String:
-	return ""
-
-func _format_seconds(seconds: float) -> String:
-	return ""
-
-func _status_display_name(kind: String) -> String:
-	return ""
-
-func _current_player_power() -> float:
-	return 0.0
-
-func _next_enemy_power_text() -> String:
-	return ""
-
-func _estimated_pve_power(count: int) -> float:
-	return 0.0
-
-func _estimated_boss_power() -> float:
-	return 0.0
-
-func _unit_power_from_def(d: Dictionary) -> float:
-	return 0.0
-
-func _skill_dps_from_def(d: Dictionary, atk: float) -> float:
-	return 0.0
-
-func _format_power(value: float) -> String:
-	return ""
-
-func _race_name(race: String) -> String:
-	return ""
-
-func _race_synergy_entries(race: String) -> Array:
-	return []
-
-func _format_synergy_detail(race: String, count: int) -> String:
-	return ""
-
-func _show_shop_detail(index: int) -> void:
-	pass
-
-func _show_board_detail(index: int) -> void:
-	pass
-
 func _show_bench_detail(index: int) -> void:
 	pass
-
-func _format_unit_def(d: Dictionary, star: int = 1) -> String:
-	return ""
-
-func _unit_race_name(race: String) -> String:
-	return ""
-
-func _unit_element_name(element: String) -> String:
-	return ""
-
-func _strip_bbcode(text: String) -> String:
-	return ""
-
-func _format_skill_detail(d: Dictionary) -> String:
-	return ""
-
-func _skill_cd_text(d: Dictionary) -> String:
-	return ""
-
-func _pct(value: float) -> String:
-	return ""
-
-func _show_treasure_detail(tid: String) -> void:
+func _show_board_detail(index: int) -> void:
 	pass
 
 func _show_linkage_detail(link_id: String) -> void:
 	pass
 
-func _format_treasure_detail(t: Dictionary) -> String:
-	return ""
-
-func _treasure_category_name(category: String) -> String:
-	return ""
-
-func _treasure_set_status(category: String) -> String:
-	return ""
-
-func _treasure_linkage_status(tid: String) -> Array[String]:
-	return []
-
-func _treasure_set_effect_text(category: String) -> String:
-	return ""
-
-func _treasure_effect_text(tid: String) -> String:
-	return ""
-
-func _treasure_link_effect_text(link_id: String) -> String:
-	return ""
-
-func _format_dict_detail(d: Dictionary) -> String:
-	return ""
-
-func _show_text_detail(text: String) -> void:
+func _show_shop_detail(index: int) -> void:
 	pass
 
-func _hide_detail() -> void:
+func _sync_prep_board_readability_geometry() -> void:
 	pass
 
-func _update_detail_release_state() -> void:
-	pass
-
-func _attach_long_press(btn: BaseButton, cb: Callable) -> void:
+func _sync_prep_board_readability_state() -> void:
 	pass

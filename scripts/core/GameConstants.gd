@@ -7,6 +7,23 @@ const CELL_COUNT := BOARD_ROWS * BOARD_COLUMNS
 const NORMAL_UNIT_CAP := 7
 const MAX_STAR := 3
 
+# 升星所需份数：1 星要 2 个同名同星，2 星要 3 个。
+#
+# 放在这里而不是 GameState，是因为**服务端账本也要用**。
+# EconomyLedger 的设计原则明确写着「不读 GameState」——
+# 那条原则防的是全局可变状态串房间，而这里是纯常量，不涉及任何房间状态。
+#
+# 之前这张表只有客户端有（GameState），服务端账本写的是一个平坦的
+# `STAR_UPGRADE_COPIES := 2`，于是：
+#   * 2 个二星在服务端就能换一个三星（客户端要 3 个）—— 白捡一个单位
+#   * 客户端合法的「3 个二星升三星」在服务端反而被拒（bad_merge_count）
+const STAR_UPGRADE_COPIES := {1: 2, 2: 3}
+
+# 星级不在表里时返回 3 —— 保守取大值。返回小值意味着"更容易升星"，
+# 而这是漏配时最不该发生的方向。
+static func copies_to_upgrade(star: int) -> int:
+	return int(STAR_UPGRADE_COPIES.get(star, 3))
+
 # Per-slot player identity colors for 3v3 (slots A,B,C,1,2,3 = 0..5).
 # Used in the lobby, the prep ready indicator, and the battle foot rings.
 # Blue sits on slot 3 rather than slot 1 so no identity color collides with the

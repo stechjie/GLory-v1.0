@@ -1274,7 +1274,9 @@ func _case_economy_ledger() -> void:
 	_arm_watchdog()
 	var checks: Array = []
 
-	# 造两个单位定义：一个普通、一个带 shop_cost_multiplier（数据表里唯一那个套利源）
+	# 造两个单位定义：一个普通、一个带 shop_cost_multiplier。
+	# 2026-08-20 起数据表里**已没有**带乘数的棋子（undead_small 的乘数已删除），
+	# 这里保留合成定义是刻意的 —— 账本必须对「以后又加了带乘数的棋子」也成立。
 	var plain := {"id": "plain", "cost": 10}
 	var cheap := {"id": "undead_small", "cost": 10, "shop_cost_multiplier": 0.5}
 

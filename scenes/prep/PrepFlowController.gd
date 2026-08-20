@@ -73,25 +73,6 @@ func _on_treasure_offer_changed(candidates: Array, refresh_index: int) -> void:
 	GameState.pending_treasure.refresh_index = refresh_index
 	SaveManager.save_run()
 	_refresh_all()
-
-func _refresh_treasure_candidates() -> void:
-	var cost := TreasureService.refresh_cost(int(GameState.pending_treasure.get("refresh_index", 0)), TreasureService.has_set("money"))
-	if GameState.gold < cost:
-		return
-	GameState.gold -= cost
-	# 联机局：钱仍在本地扣（金币还没有权威账本，见 A5/P1），但候选必须由服务端重摇——
-	# 本地摇出来的东西不在服务端 offer 里，选的时候会被 not_offered 拒收。
-	if NetworkService.team_active:
-		_connect_treasure_signals()
-		NetworkService.request_treasure_refresh()
-		SaveManager.save_run()
-		_refresh_all()
-		return
-	GameState.pending_treasure.refresh_index = int(GameState.pending_treasure.get("refresh_index", 0)) + 1
-	GameState.pending_treasure.candidates = TreasureService.roll_candidates(3)
-	SaveManager.save_run()
-	_refresh_all()
-
 func _claim_pending_treasure_round() -> void:
 	var completed_round := int(GameState.pending_treasure.get("round", 0))
 	if completed_round > 0 and completed_round not in GameState.claimed_treasure_rounds:

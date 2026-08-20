@@ -68,6 +68,22 @@
 
 ### 4.1 出售退款按什么算？
 
+> **2026-08-20 部分拍板。** 已做的是「堵洞」，没做的是「口径统一」，两者分开了：
+>
+> | | 状态 |
+> |---|---|
+> | 客户端退款读打折**前**的 `cost`（乘数被无视） | ✅ 已修，改读 `EconomyLedger.base_unit_cost()` |
+> | `undead_small` 的 `shop_cost_multiplier: 0.5` | ✅ 已删除，售价 5 → **10**（普通棋子 20 的一半）|
+> | 退款不看玩家的折扣宝物（本节选项 A：按 `cost_basis` 退）| ⬜ **仍待拍板** |
+>
+> 现在已**不存在任何可获利的买卖组合**（288 种组合全部亏本卖出，由
+> `tools/sell_refund_check.tscn` 的 `sell_for_profit` / `sell_free_reroll` 两条硬断言守住）。
+> 剩下的是退款率高于名义 50%（最高 83%），属于数值问题而非漏洞，
+> 已按 `refund_mismatch` 登记进 `tools/check_allowlist.json`，到期日 2026-09-30。
+>
+> ⚠️ **在选项 A 落地之前不能翻 `economy_ledger_authoritative`** ——
+> 一翻，96 组里有 64 组的退款金额会当场变化，玩家会直接感觉到。
+
 现在是 `floor(def.cost × star × 0.5)` —— 按**当前定价表**算，不是按你实际花了多少。
 
 **实测有正收益，但很小。** 数据表里只有一个单位带 `shop_cost_multiplier`：

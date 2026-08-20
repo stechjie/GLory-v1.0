@@ -3,11 +3,13 @@ extends Node
 const START_FORMATION_HP := 50
 const START_GOLD := 100
 const MAX_NORMAL_UNITS := 7
-const MAX_UNIT_STAR := 3
+const MAX_UNIT_STAR := GameConstants.MAX_STAR
 # Copies of a unit at a given star required to fuse into the next star.
-# 1-star fuses from 2 copies; 2-star fuses from 3. Single source of truth for
-# both the prep-board merge/auto-combine and the tutorial's guidance/arrows.
-const STAR_UPGRADE_COPIES := {1: 2, 2: 3}
+# 1-star fuses from 2 copies; 2-star fuses from 3.
+#
+# 真正的定义在 GameConstants —— 服务端账本（EconomyLedger）也要读同一份，
+# 而它按设计不能读 GameState。这里保留同名常量只是为了不动那些调用点。
+const STAR_UPGRADE_COPIES := GameConstants.STAR_UPGRADE_COPIES
 const FINAL_ROUND := 21
 const BATTLE_DECAY_START_SEC := 10.0
 const BATTLE_DECAY_INTERVAL_SEC := 6.0
@@ -89,7 +91,7 @@ func normal_unit_cap() -> int:
 	return 9 if TreasureService.has_linkage("link_hu_pai_master") else 8
 
 func copies_to_upgrade(star: int) -> int:
-	return int(STAR_UPGRADE_COPIES.get(star, 3))
+	return GameConstants.copies_to_upgrade(star)
 
 func star_stat_multiplier(star: int) -> float:
 	match clampi(star, 1, MAX_UNIT_STAR):

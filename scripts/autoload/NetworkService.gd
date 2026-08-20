@@ -16,6 +16,7 @@ signal public_token_changed(token_id: String)
 enum SessionState { OFFLINE, JOINING, READY, FAILED, RECONNECTING }
 
 const BattleSim := preload("res://scripts/battle/BattleSimulator.gd")
+const ShopRoll := preload("res://scripts/economy/ShopRoll.gd")
 const DEFAULT_PORT := NetworkConfig.SERVER_PORT
 const DEFAULT_HOST := NetworkConfig.SERVER_IP
 const TEAM_MAX_CLIENTS := 512
@@ -931,6 +932,10 @@ func _room_begin_next_prep(room: Dictionary) -> void:
 	room.boards = {}
 	room.prep_mercs = {}
 	room.altar_uses = {}   # 祭坛次数按回合重置，和客户端 reset_shop_refreshes 同步
+	# round_index 封顶到 FINAL_ROUND，和客户端一致（客户端从 match_state 拿的是 min(+1, 21)）。
+	# 提前算出来：下面摇的商店属于**即将开始的那一轮**，而档位曲线是按回合走的，
+	# 用自增前的旧值会让整条曲线慢一轮（第 5 回合才拿到第 4 回合的档位分布）。
+	var next_round := mini(int(room.get("round_index", 1)) + 1, GameState.FINAL_ROUND)
 	# 账本的按回合部分同样重置，并给每个座位摇一份新商店（P1）。
 	# 金币与 roster **不重置** —— 那是跨回合累积的。
 	if economy_enabled():
@@ -939,7 +944,7 @@ func _room_begin_next_prep(room: Dictionary) -> void:
 			var prep: Dictionary = preps[slot_key]
 			EconomyLedger.reset_round(prep)
 			var shop: Dictionary = prep.get("shop", {})
-			shop["offers"] = _server_roll_shop_offers(GameState.SHOP_UNIT_SLOTS)
+			shop["offers"] = _server_roll_shop_offers(GameState.SHOP_UNIT_SLOTS, next_round)
 			shop["offer_id"] = _make_offer_id()
 			var sold: Array = []
 			sold.resize(GameState.SHOP_UNIT_SLOTS)
@@ -947,8 +952,7 @@ func _room_begin_next_prep(room: Dictionary) -> void:
 			shop["sold"] = sold
 			prep["shop"] = shop
 		room["prep"] = preps
-	# round_index 封顶到 FINAL_ROUND，和客户端一致（客户端从 match_state 拿的是 min(+1, 21)）
-	room.round_index = mini(int(room.get("round_index", 1)) + 1, GameState.FINAL_ROUND)
+	room.round_index = next_round
 	var ready: Array = room.get("ready", [])
 	var states: Array = room.get("slot_states", [])
 	for i in TEAM_SLOTS:
@@ -3241,14 +3245,22 @@ func _room_owned_for_ledger(room: Dictionary, slot: int) -> Array:
 
 # 商店重摇：随机在这里、不在账本里。用 Crypto 而不是 randi()，
 # 与 A4/A6 的其余随机源保持同一标准（客户端不能预测下一轮商品）。
-func _server_roll_shop_offers(count: int) -> Array:
+# 取一个密码学安全的 [0,1)。商店内容是钱能买到的东西，
+# 用 randf() 等于把刷新结果做成可预测的（种子来自系统时间）。
+func _crypto_unit_float() -> float:
+	return float(_crypto.generate_random_bytes(4).decode_u32(0)) / 4294967296.0
+
+# 档位曲线与客户端共用 ShopRoll —— 这里原本是**全表均匀随机**，
+# 没有任何档位概念，等于把成长曲线整条抹掉（第一回合 19% 刷三档单位）。
+# 随机源仍然是 Crypto，只是「怎么摇」这条规则不再各写一份。
+func _server_roll_shop_offers(count: int, round_index: int) -> Array:
 	var units: Array = DataRegistry.get_table("race_units").get("units", [])
 	var out: Array = []
 	if units.is_empty():
 		return out
 	for _i in count:
-		var pick := int(_crypto.generate_random_bytes(4).decode_u32(0)) % units.size()
-		out.append((units[pick] as Dictionary).duplicate(true))
+		out.append(ShopRoll.pick_offer(units, round_index,
+			_crypto_unit_float(), _crypto_unit_float()))
 	return out
 
 func _make_offer_id() -> String:
@@ -3266,11 +3278,12 @@ func _economy_ctx(room: Dictionary, slot: int, action: String) -> Dictionary:
 	}
 	match action:
 		"shop_refresh":
-			ctx["rolled_offers"] = _server_roll_shop_offers(GameState.SHOP_UNIT_SLOTS)
+			ctx["rolled_offers"] = _server_roll_shop_offers(GameState.SHOP_UNIT_SLOTS,
+				int(room.get("round_index", 1)))
 			ctx["offer_id"] = _make_offer_id()
 		"gamble":
 			# 用 Crypto 取 [0,1)：randf() 的种子是可预测的，而这是钱。
-			ctx["roll"] = float(_crypto.generate_random_bytes(4).decode_u32(0)) / 4294967296.0
+			ctx["roll"] = _crypto_unit_float()
 			# 联动 id 必须和数据表逐字一致。写错不会报错，只会**永远判成没联动** ——
 			# 玩家花钱拿到的 60%/保留 50% 会静默退化成 50%/保留 20%。
 			# （初版我凭印象写了 `link_lucky_fortune`，数据表里根本没这个 id。）
