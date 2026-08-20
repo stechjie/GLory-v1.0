@@ -6,7 +6,7 @@ Godot 4.7 的 3v3 布阵自动战斗项目。本 README 同时是项目说明、
 
 ## 2026-08-19 实施进度
 
-> 状态口径：`已完成` 表示本轮约定的桌面验收已闭环；`部分完成` 表示已有可运行基础但尚未达到该项完整验收；Android 导出与冷启动门禁自 2026-08-20 起已跑通（见 A4），但**实机上只验到冷启动**：各项的实机演出指标、跨平台 digest 一致性、低端机与双设备联机仍未验，标着「Android 暂停」的行指的就是这部分。
+> 状态口径：`已完成` 表示本轮约定的桌面验收已闭环；`部分完成` 表示已有可运行基础但尚未达到该项完整验收；Android 侧自 2026-08-20 起已跑通出包、安装、冷启动**以及在真机上跑完整战斗**：固定回合 1/5/20/21 的跨平台 digest 逐字段一致，实机演出指标（帧时间、显存、孤儿节点）也已录得。**仍未验的是：低端机、双设备联机、冷缓存首启，以及需要驱动备战 UI 的那部分（商店页、教学主链）**——最后一项要等同事的 D2 落地。标着「实机 digest 已验」的行指的就是前者已验、后者未验。
 
 | 工作单 | 状态 | 已完成内容与剩余边界 |
 | --- | --- | --- |
@@ -16,14 +16,14 @@ Godot 4.7 的 3v3 布阵自动战斗项目。本 README 同时是项目说明、
 | A4 — Android 出包、实机战斗与回归门禁 | 🟡 门禁+实机跑通 / Release 未做 | `tools/android_smoke.sh` 产出可追溯证据包（commit、manifest 指纹、APK SHA-256、安装方式、冷启动 logcat、截图）。694 MiB Debug 包在 25028RN03A / Android 15 上通过：`FATAL EXCEPTION` 0、`SCRIPT ERROR` 0、PSS 362 MB。抓掉四类假结果（假绿的旧版本启动、假红的通道掉线、读不出来的证据 JSON、空过滤器导出的静默胖包）。`tools/android_baseline.sh` 已在真机跑完**四个回合**（1/5/20/21，含两个 Boss 与满配 18 敌）：**桌面/设备回放摘要每回合五字段逐字一致（C4 第 3 条）**，孤儿节点两侧皆 0，并拿到战斗截图。第 20 回合顺带暴露并修掉一个真缺陷：召唤物用同一 uid 重生时，旧尸体交还会把活着的新 actor 从注册表里抹掉，死亡演出因此被丢弃（桌面/设备同为 3 条，非 Android 问题）；已修，掉落归 0，冻结哈希不变，门禁扩到 89 项。Release keystore、商店页截图、低端机与双设备验收未做。 |
 | E1 — 战场空间可读性 | ✅ 桌面完成 | Windows Forward Mobile 纵向切片完成；所有战斗单位经 `UnitVisualResolver → UnitActor3D`，固定两回合回放为 0 胶囊、0 可见 fallback；`BoardReadabilityLayer` 已接入准备/战斗并可持久化开关。人工盲测与 Android 验收仍待后续。 |
 | E2-2A / E2-2B — 模型与贴图预算 | ✅ 桌面完成 | 75/75 模型边界检查为 0 broken、0 anomaly；241/241 FBX 加载错误为 0；78/78 wrapper 合并通过；模型预算 75 项、0 hard failure。Android ASTC、APK 排除源 FBX 及低端机满编最终战仍待后续。 |
-| Director D0 — 基线与确定性证据 | ✅ 桌面完成 / Android 暂停 | 当前提交 `931771c69e3f585b19e49f3bc1b846b04aa6f55d` 已完成固定 seed 的 round 1/2：完整 roster、事件/result/final-state JSON、SHA-256、actor/fallback/anchor 审计、1280×720 截图及逐帧 CSV 均已生成并独立校验；Android 证据保持暂停。 |
-| Director D1 — 语义事件 schema | ✅ 桌面完成 / Android 暂停 | `BattlePresentationEvent` v1 已冻结 15 个核心字段、稳定 `event_key`、独立 `presentation_seed` 与一次性未知类型告警；2738 项 schema 检查、同步/异步确定性、两回合 D0 final-state 门禁和 28/28 联机回归通过。 |
-| Director D2 — 最小排程核心 | ✅ 桌面完成 / Android 暂停 | 已实现 Director 生命周期、逐 tick 入队、每 `source_uid` 动作轨、去重、暂停/seek/skip/drain/dispose 和假 Registry/Adapter 测试；`BattleScreen` 已双路入队并保留 Legacy VFX。D2 不产生真实 VFX。 |
-| Director D3 — 单位演员 | ✅ 桌面完成 / Android 暂停 | Director 现在只经 `UnitActorRegistry.get_anchor()` 取坐标，每次播放现解析、不缓存节点；缺 actor 分类 drop，缺锚点降级到 `ActorRoot` 并进同一份一次性汇总。锚点检查由 3 抽样扩到全部 74 个可战斗单位（1067 项）、Director 检查 49/49、固定两回合 0 drop / 0 降级、四个冻结哈希不变。 |
-| Director D4 — 四段普攻 | ✅ 桌面完成 / Android 暂停 | 模拟层为全部单位产出 `attack_start → [projectile_spawn] → impact → hit_number → death`（`death` 此前完全不存在）；视觉按 C4 纵向切片迁移 `human_militia` / `human_archer` / `pve_sky_thunder_spirit`，其余仍走快照 diff。两个固定样本 0 `missing_actor` 掉落，切片样本播出 8 次死亡动画；D4 前后 final-state 哈希完全一致。 |
-| Director D5 — 手感与运行时预算 | ✅ 桌面完成 / Android 暂停 | 五个 `.tres` cue profile + `VfxProfileResolver`；**扩展**现有 `VFXQualityBudget.gd` 加三档优先级预算；`BattleVfxReview.tscn` 评审场景；切片扩面到全部单位。133/133 profile 检查、70/70 Director 通过，固定样本 0 合并、20 次降级。 |
-| Director D6 — 清理旧路由 | ✅ 桌面完成 / Android 暂停 | 删除三个快照 diff 函数、hit_number 旧分支与迁移期白名单；未迁移路由保留。删除前后播放计数逐项相同，回合间 orphan/tween 恒为 0。82/82 通过。 |
-| B4 — 特效预算 | ✅ 桌面完成 / Android 暂停 | 优先级预算补上「单条 cue 有多贵」的一半（粒子 / 附加层 / 透明叠层 / 动态光 / 并发按优先级缩放）；满配第 21 回合三档实测 orphan 全 0、无节点增长，24 次死亡在低档也全部播出。162/162 通过。 |
+| Director D0 — 基线与确定性证据 | ✅ 桌面完成 / 实机 digest 已验 | 当前提交 `931771c69e3f585b19e49f3bc1b846b04aa6f55d` 已完成固定 seed 的 round 1/2：完整 roster、事件/result/final-state JSON、SHA-256、actor/fallback/anchor 审计、1280×720 截图及逐帧 CSV 均已生成并独立校验；Android 证据保持暂停。 |
+| Director D1 — 语义事件 schema | ✅ 桌面完成 / 实机 digest 已验 | `BattlePresentationEvent` v1 已冻结 15 个核心字段、稳定 `event_key`、独立 `presentation_seed` 与一次性未知类型告警；2738 项 schema 检查、同步/异步确定性、两回合 D0 final-state 门禁和 28/28 联机回归通过。 |
+| Director D2 — 最小排程核心 | ✅ 桌面完成 / 实机 digest 已验 | 已实现 Director 生命周期、逐 tick 入队、每 `source_uid` 动作轨、去重、暂停/seek/skip/drain/dispose 和假 Registry/Adapter 测试；`BattleScreen` 已双路入队并保留 Legacy VFX。D2 不产生真实 VFX。 |
+| Director D3 — 单位演员 | ✅ 桌面完成 / 实机 digest 已验 | Director 现在只经 `UnitActorRegistry.get_anchor()` 取坐标，每次播放现解析、不缓存节点；缺 actor 分类 drop，缺锚点降级到 `ActorRoot` 并进同一份一次性汇总。锚点检查由 3 抽样扩到全部 74 个可战斗单位（1067 项）、Director 检查 49/49、固定两回合 0 drop / 0 降级、四个冻结哈希不变。 |
+| Director D4 — 四段普攻 | ✅ 桌面完成 / 实机 digest 已验 | 模拟层为全部单位产出 `attack_start → [projectile_spawn] → impact → hit_number → death`（`death` 此前完全不存在）；视觉按 C4 纵向切片迁移 `human_militia` / `human_archer` / `pve_sky_thunder_spirit`，其余仍走快照 diff。两个固定样本 0 `missing_actor` 掉落，切片样本播出 8 次死亡动画；D4 前后 final-state 哈希完全一致。 |
+| Director D5 — 手感与运行时预算 | ✅ 桌面完成 / 实机 digest 已验 | 五个 `.tres` cue profile + `VfxProfileResolver`；**扩展**现有 `VFXQualityBudget.gd` 加三档优先级预算；`BattleVfxReview.tscn` 评审场景；切片扩面到全部单位。133/133 profile 检查、70/70 Director 通过，固定样本 0 合并、20 次降级。 |
+| Director D6 — 清理旧路由 | ✅ 桌面完成 / 实机 digest 已验 | 删除三个快照 diff 函数、hit_number 旧分支与迁移期白名单；未迁移路由保留。删除前后播放计数逐项相同，回合间 orphan/tween 恒为 0。82/82 通过。 |
+| B4 — 特效预算 | ✅ 桌面完成 / 实机 digest 已验 | 优先级预算补上「单条 cue 有多贵」的一半（粒子 / 附加层 / 透明叠层 / 动态光 / 并发按优先级缩放）；满配第 21 回合三档实测 orphan 全 0、无节点增长，24 次死亡在低档也全部播出。162/162 通过。 |
 | E3 — 启动预热拆分与包体 | ✅ 拆分完成（含实机） / 减重未做 | 96 项拆成 `menu_minimal`(8) → `first_battle`(44) → `deferred`(44)，总量不变、顺序按需要排；修掉正式版在语言页画开发文字；修掉小怪技能热在 Boss 之后的排序错误。220/220 通过。实机上光前两阶段就 11.4 秒（桌面全量才 2.78 秒），拆分收益成立。包体构成已量出：`assets/` 占 92.0%，去掉 armeabi-v7a 只省 4.0%；减重本身未做。 |
 
 ### E2-2B 本轮落地记录
@@ -126,7 +126,7 @@ Godot 4.7 的 3v3 布阵自动战斗项目。本 README 同时是项目说明、
 
 ### Director D0-D6 全部完成后
 
-1. ~~B4 / E3~~：已完成拆分并在真机验证——实机上光前两个阶段就要 11.4 秒，而桌面全量才 2.78 秒，拆分的收益只有在手机上才看得见。包体减重仍未做。
+1. ~~B4 / E3~~：已完成拆分并在真机验证——暖着色器缓存下实机 96/96 要 8.13 秒，而桌面全量才 2.78 秒（冷缓存更慢，引用时务必带上缓存状态）；拆分的收益只有在手机上才看得见。包体减重仍未做。
 2. README 的代码/联机 D1、D3：拆分 `NetworkService`，加强服务器权威回放、重连和确定性；双设备/Android QA 待恢复移动端工作后进行。
 3. A5：清理运行资源与历史备份，完成第三方来源和许可证总账。
 4. A4 的出包/安装/冷启动门禁已补上。仍缺的实机项：E1/E2/E3 与 Director D0/D5/D6 的**实机演出指标与跨平台 digest**、ASTC、低端机与双设备联机——它们都需要脚本在设备上驱动 UI 跑完一场战斗，而不只是冷启动。
@@ -447,12 +447,12 @@ adb exec-out screencap -p > /tmp/glory-launch.png
   - **验证**：第 20 回合 `missing_actor_drop_count` 3 → **0**，`passed=true`；1/2/5/20/21 五个回合掉落全为 0；**两个冻结哈希逐字节不变**（`replay_sha` 修复前后完全相同，说明只动了演出、没碰模拟）；D2 的 `death_cancel_queue` 断言仍然通过——上次我在这一块猜着改，就是把它弄坏了。
   - **加了门禁**：`battle_presentation_director_check` 从 82 项扩到 **89 项**，直接对 `UnitActorRegistry` 断言「交还旧尸体不得注销已被重生占用的 uid」。**把 bug 塞回去验证过它真会红**（`respawn_release_stale` + `respawn_actor_evicted` 两条），还原后回绿。
   - **两侧本来就该不同的东西**：`budget_merged_ambient`（第 20 回合桌面 126 / 设备 295）和锚点降级数（20 / 65）差异很大，那正是优先级预算在慢设备上多丢环境层特效——它就是干这个的，digest 不受影响。
-  - **仍未做：** 上面那个召唤物死亡缺陷；商店与备战页截图（需驱动备战 UI，正是 D2 的地盘）；低端机与双设备联机；冷缓存首启测量。
+  - **仍未做：** 商店与备战页截图（需驱动备战 UI，正是 D2 的地盘）；低端机与双设备联机；冷缓存首启测量；**上面这个修复本身还没在真机上复验**——设备上装的是修复前的包，逻辑与平台无关（两侧掉落数一模一样），但那是推论不是实测。
   - 证据：`A4_device_battle_20260820/A4_DEVICE_BATTLE_VERIFICATION.json`、`digest_comparison.json` 与 `digest_comparison_rounds_5_20_21.json`，以及两侧的 `round_01/05/20/21`（`hashes.json`、`summary.json`、`frame_performance.csv`、审计与截图）。`round_01` 保留 start/mid/end 全套截图，其余各回合只留 `mid.png` 以控制目录体积，完整套在 `build/` 下。
   - **加 autoload 没有改变任何行为**：重跑桌面基线，`hashes.json` 与 `D6_battle_presentation_cleanup_20260819/baseline_regression/round_01/` **逐字节相同**；经 harness 接管跑出来的哈希与直接跑也完全一致。
 
 - **验收：** 每一份 QA APK 都能反查到源码 commit 和资源 manifest；安装、启动、语言页截图、无 `FATAL EXCEPTION` 已是必经门并已通过。**商店与首场战斗截图仍未接入**——它们需要脚本驱动 UI，目前只做到冷启动。
-- **仍未完成：** Release 预设与私有 keystore（本次是 Debug 构建，**不得当作 Release 验收**）；教学主链、20+ 回合与 Boss 样本的实机驱动；体积预算与最大增量阈值；低端机与双设备联机验收。
+- **仍未完成：** Release 预设与私有 keystore（本次是 Debug 构建，**不得当作 Release 验收**）；教学主链的实机驱动与商店页截图（需驱动备战 UI，D2 地盘）；体积预算与最大增量阈值；低端机与双设备联机验收；冷缓存首启测量。（20+ 回合与 Boss 样本已完成，见上面的实机小节。）
 - 证据：`A4_android_smoke_20260820/A4_VERIFICATION.json` 与 `pass_run/`（`smoke.json`、`install.log`、`launch.log`、`logcat_full.log`、`logcat_errors.log`、`launch.png`）；备份在 `A4_prechange_backup_20260820/`。
 
 #### A5 — 资源瘦身与许可总账（P1）
