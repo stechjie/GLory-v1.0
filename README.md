@@ -452,6 +452,10 @@ adb exec-out screencap -p > /tmp/glory-launch.png
   - **加 autoload 没有改变任何行为**：重跑桌面基线，`hashes.json` 与 `D6_battle_presentation_cleanup_20260819/baseline_regression/round_01/` **逐字节相同**；经 harness 接管跑出来的哈希与直接跑也完全一致。
 
 - **验收：** 每一份 QA APK 都能反查到源码 commit 和资源 manifest；安装、启动、语言页截图、无 `FATAL EXCEPTION` 已是必经门并已通过。**商店与首场战斗截图仍未接入**——它们需要脚本驱动 UI，目前只做到冷启动。
+- **清单第 8 节的两项已随之关闭或收窄（2026-08-20）：**
+  - **回放测试 —— 已打勾。** 「desktop/Android 跨平台一致性」原本挂着等移动端恢复，现已验：同一 commit 下回合 1/5/20/21 的五个摘要字段逐字一致。
+  - **真机测试 —— 大部分完成，但没打勾，因为还有两项没验。** 三个样本都跑了（第一场=回合 1、20+ 回合=回合 21、Boss=回合 5 与 20）；无 `SCRIPT ERROR`（设备日志 0 条）、无持续节点增长（跨回合残留 14→33→36→36 趋于平稳，orphan 与 tween 全程为 0）、平均/1% low FPS、显存、draw call、dropped cue 数均已记录。**未验的是粒子数（基线工具根本不采集这项）和结果页抢跑（没有对应断言）**——两项都没做就不能打勾。
+
 - **仍未完成：** Release 预设与私有 keystore（本次是 Debug 构建，**不得当作 Release 验收**）；教学主链的实机驱动与商店页截图（需驱动备战 UI，D2 地盘）；体积预算与最大增量阈值；低端机与双设备联机验收；冷缓存首启测量。（20+ 回合与 Boss 样本已完成，见上面的实机小节。）
 - 证据：`A4_android_smoke_20260820/A4_VERIFICATION.json` 与 `pass_run/`（`smoke.json`、`install.log`、`launch.log`、`logcat_full.log`、`logcat_errors.log`、`launch.png`）；备份在 `A4_prechange_backup_20260820/`。
 
