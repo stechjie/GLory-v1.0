@@ -59,17 +59,51 @@ const BOARD_SUBMIT_TIMEOUT_SEC := 30.0
 # 迟到者重连后落到服务器当前回合）。
 const RESERVE_GRACE_SEC := 20.0
 
-var state: SessionState = SessionState.OFFLINE
-var is_host := false
+# --- 会话状态（D1 步骤 1.5）---------------------------------------------------
+# 下面这一批曾是门面自己的字段，现已搬到 scripts/multiplayer/SessionContext.gd。
+# 保留**原来的名字**作为转发属性：门面内部 417 处、仓库其它文件 189 处，合计 606 处
+# 引用因此一处都不用改，且共享同一份引用、不会出双份状态。
+# 声明放在这批属性**之前**：成员变量按声明顺序初始化，_session 必须先存在。
+const SessionContext := preload("res://scripts/multiplayer/SessionContext.gd")
+var _session: RefCounted = SessionContext.new()
+
+# state 在这里保留枚举类型签名，SessionContext 里存 int ——
+# SessionState 枚举有 33 处外部引用，搬它超出这一刀的范围。
+var state: SessionState:
+	get:
+		return _session.state as SessionState
+	set(value):
+		_session.state = int(value)
+var is_host: bool:
+	get:
+		return _session.is_host
+	set(value):
+		_session.is_host = value
 var opponent_board_snapshot: Dictionary = {}
 var latest_match_state: Dictionary = {}
-var remote_address := DEFAULT_HOST
-var remote_port := DEFAULT_PORT
+var remote_address: String:
+	get:
+		return _session.remote_address
+	set(value):
+		_session.remote_address = value
+var remote_port: int:
+	get:
+		return _session.remote_port
+	set(value):
+		_session.remote_port = value
 var shared_seed := 0
-var last_error := ""
+var last_error: String:
+	get:
+		return _session.last_error
+	set(value):
+		_session.last_error = value
 var _peer: ENetMultiplayerPeer
 var _join_elapsed := 0.0
-var _dedicated_server := false
+var _dedicated_server: bool:
+	get:
+		return _session.dedicated_server
+	set(value):
+		_session.dedicated_server = value
 var _cleanup_elapsed := 0.0
 # 房间状态已搬到 scripts/multiplayer/RoomService.gd（D1 第 4 刀）。
 # 这里保留**原来的下划线名**作为转发属性：NetworkService 内部 60 多处引用、
@@ -103,19 +137,76 @@ var _peer_public_token: Dictionary:      # peer_id -> short player token used fo
 	set(value):
 		_room_service.peer_public_token = value
 # --- 3v3 team lobby ---
-var team_active := false
-var team_local_slot := -1
-var team_slot_states: Array = []          # 6 x "empty"/"player"/"dummy" (host-authoritative)
-var team_ready: Array = []                # 6 x bool
-var _team_peer_slot: Dictionary = {}      # peer_id -> slot (host only)
-var team_round_active := false            # true during per-round prep (vs the pre-match lobby)
-var team_room_id := 0
+var team_active: bool:
+	get:
+		return _session.team_active
+	set(value):
+		_session.team_active = value
+var team_local_slot: int:
+	get:
+		return _session.team_local_slot
+	set(value):
+		_session.team_local_slot = value
+# 6 x "empty"/"player"/"dummy"（host 权威）
+var team_slot_states: Array:
+	get:
+		return _session.team_slot_states
+	set(value):
+		_session.team_slot_states = value
+# 6 x bool
+var team_ready: Array:
+	get:
+		return _session.team_ready
+	set(value):
+		_session.team_ready = value
+# peer_id -> slot（仅 host）
+var _team_peer_slot: Dictionary:
+	get:
+		return _session.team_peer_slot
+	set(value):
+		_session.team_peer_slot = value
+# 在每回合备战中（区别于开局前的大厅）
+var team_round_active: bool:
+	get:
+		return _session.team_round_active
+	set(value):
+		_session.team_round_active = value
+var team_room_id: int:
+	get:
+		return _session.team_room_id
+	set(value):
+		_session.team_room_id = value
 # --- 断线重连（客户端） ---
-var session_token := ""                   # 服务器签发的会话 token（重连凭证，非账号）
-var public_token_id := ""                 # 玩家看得到的短 Token ID
-var reconnect_address := ""               # 重连目标地址
-var pending_abandon_token := ""           # 开新游戏时要放弃的旧座位 token（连上后发给服务器）
-var team_leader_slot := 0                 # 当前房主座位（服务器广播；房主掉线会顺延）
+# 服务器签发的会话 token（重连凭证，非账号）
+var session_token: String:
+	get:
+		return _session.session_token
+	set(value):
+		_session.session_token = value
+# 玩家看得到的短 Token ID
+var public_token_id: String:
+	get:
+		return _session.public_token_id
+	set(value):
+		_session.public_token_id = value
+# 重连目标地址
+var reconnect_address: String:
+	get:
+		return _session.reconnect_address
+	set(value):
+		_session.reconnect_address = value
+# 开新游戏时要放弃的旧座位 token（连上后发给服务器）
+var pending_abandon_token: String:
+	get:
+		return _session.pending_abandon_token
+	set(value):
+		_session.pending_abandon_token = value
+# 当前房主座位（服务器广播；房主掉线会顺延）
+var team_leader_slot: int:
+	get:
+		return _session.team_leader_slot
+	set(value):
+		_session.team_leader_slot = value
 var _reconnect_retry_left := 0.0
 var _ping_accum := 0.0
 var _last_pong_at := 0.0
