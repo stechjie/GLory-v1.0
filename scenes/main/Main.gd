@@ -443,6 +443,11 @@ func _target_port_for_action(action: String) -> int:
 func _start_team_menu_action(action: String) -> void:
 	_pending_team_menu_action = action
 	var target_port := _target_port_for_action(action)
+	# 这四个值决定下面走哪条分支。不记的话，一旦卡在 connecting，
+	# 现场日志里只能看到“连上了然后没下文”，分不出是哪一步断的。
+	NetworkService._net_log("team menu action=%s port=%d active=%s state=%d slot=%d" % [
+		action, target_port, str(NetworkService.team_active),
+		int(NetworkService.state), int(NetworkService.team_local_slot)])
 	# 已连着、但连的是别的分片：必须先断开再连对的那个。
 	if NetworkService.team_active and NetworkService.remote_port != target_port:
 		NetworkService.disconnect_session()
@@ -486,6 +491,11 @@ func _run_pending_team_menu_action() -> void:
 			NetworkService.team_request_public_token()
 		"resume_public":
 			NetworkService.team_request_public_resume(_pending_public_token)
+		_:
+			# 没有兜底分支的话，一个认不出的 action 会让本函数安静地什么都不做，
+			# 而 UI 那边已经进了 connecting 状态在等回包 —— 就是永远卡住。
+			NetworkService._net_log("team menu action unknown: '%s'（UI 会卡在 connecting）"
+				% str(_pending_team_menu_action))
 
 func _wait_for_room_join() -> void:
 	if not NetworkService.team_lobby_changed.is_connected(_on_pending_room_joined):

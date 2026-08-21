@@ -2,7 +2,7 @@
 
 Godot 4.7 的 3v3 布阵自动战斗项目。本 README 同时是项目说明、资源盘点、代码审查记录和后续可由 AI 逐项执行的改进路线。原始审查依据 2026-08-15 至 2026-08-16 的工作区、Godot 4.7.0 导入/运行结果、Android 实机试玩和工程内检查场景编写；下方 2026-08-19 实施进度为当前状态，优先于后续保留的历史基线描述。
 
-> 当前结论（2026-08-20）：**A1、A2、A3、A5、B4、B5、E1、E2-2A/E2-2B 与 BattlePresentationDirector D0-D6 的桌面闭环已全部完成；A4 的出包/安装/冷启动门禁已在真机跑通（Debug）。** 剩下的大块是 A4 的 Release 预设与 UI 驱动样本，以及 E3 量出来但还没动手的包体减重。**D2（PrepUI 拆分）已由同事完成；D1（NetworkService 拆分）已完成 —— 六个服务全部建成、ReplayTransferService 的压缩/分块/确认/重试四件齐了、重连补看回放已接入，协议号升到 17（需重新部署服务器），联机回归 21/21 通过；详见 D1 节。**D3 仍由同事负责。后文关于“35 项不可加载”和“胶囊占位体”的文字是改造前历史基线，不再代表当前桌面结果。
+> 当前结论（2026-08-20）：**A1、A2、A3、A5、B4、B5、E1、E2-2A/E2-2B 与 BattlePresentationDirector D0-D6 的桌面闭环已全部完成；A4 的出包/安装/冷启动门禁已在真机跑通（Debug）。** 剩下的大块是 A4 的 Release 预设与 UI 驱动样本，以及 E3 量出来但还没动手的包体减重。**D2（PrepUI 拆分）已由同事完成；D1（NetworkService 拆分）已完成 —— 六个服务全部建成、ReplayTransferService 的压缩/分块/确认/重试四件齐了、重连补看回放已接入，协议号升到 17 且服务器已重新部署，联机回归 21/21 通过，**双设备公网实测已完成 21 回合完整对局**；详见 D1 节。**D3 仍由同事负责。后文关于“35 项不可加载”和“胶囊占位体”的文字是改造前历史基线，不再代表当前桌面结果。
 
 ## 2026-08-19 实施进度
 
@@ -13,7 +13,7 @@ Godot 4.7 的 3v3 布阵自动战斗项目。本 README 同时是项目说明、
 | A1 — 建立可复现资产清单 | ✅ 已完成（指纹已于 A5 更新） | 当前清单 2632 个文件，inventory fingerprint 为 `a0751fdc580e78dfe6e4023c3f55501471510d0db00d27ae5732a853faafb3fc`。历史值 `5dabb3f5…`（2,643 项）是 E2-2B 之前的状态——E2-2B 重导出了 5 个 FBX 却没重新生成清单，A5 才发现并订正。 |
 | A2 — 资源交付与 Git 解耦、可追溯 | ✅ 已完成（2026-08-20 重打包并首次真正验证往返） | 当前归档 `glory-assets-a0751fdc580e78df-2fd696d1d4f2dcfc.zip`，1782 个 Git 外资源、850 个已跟踪。`restore_assets.ps1` → `ASSET_RESTORE_RESULT status=PASS copied=0 already_present=1782`，接着 `ASSET_DELIVERY_RESULT status=PASS entries=2632 missing=0 hash_mismatch=0 extras=0`。**此前从未真正跑通过**：打包脚本有三个只在 Windows PowerShell 5.1 / 非 ASCII 文件名下发作的缺陷，见 A5 一节。 |
 | A3 — 让检查真正失败 | ✅ 已完成 | 缺资源失败路径与恢复后通过路径均已验证，检查不会再以空检查集或加载失败报假绿。 |
-| A4 — Android 出包、实机战斗与回归门禁 | 🟡 门禁+实机跑通 / Release 未做 | `tools/android_smoke.sh` 产出可追溯证据包（commit、manifest 指纹、APK SHA-256、安装方式、冷启动 logcat、截图）。694 MiB Debug 包在 25028RN03A / Android 15 上通过：`FATAL EXCEPTION` 0、`SCRIPT ERROR` 0、PSS 362 MB。抓掉四类假结果（假绿的旧版本启动、假红的通道掉线、读不出来的证据 JSON、空过滤器导出的静默胖包）。`tools/android_baseline.sh` 已在真机跑完**四个回合**（1/5/20/21，含两个 Boss 与满配 18 敌）：**桌面/设备回放摘要每回合五字段逐字一致（C4 第 3 条）**，孤儿节点两侧皆 0，并拿到战斗截图。第 20 回合顺带暴露并修掉一个真缺陷：召唤物用同一 uid 重生时，旧尸体交还会把活着的新 actor 从注册表里抹掉，死亡演出因此被丢弃（桌面/设备同为 3 条，非 Android 问题）；已修，掉落归 0，冻结哈希不变，门禁扩到 89 项。Release keystore、商店页截图、低端机与双设备验收未做。 |
+| A4 — Android 出包、实机战斗与回归门禁 | 🟡 门禁+实机跑通 / Release 未做 | `tools/android_smoke.sh` 产出可追溯证据包（commit、manifest 指纹、APK SHA-256、安装方式、冷启动 logcat、截图）。694 MiB Debug 包在 25028RN03A / Android 15 上通过：`FATAL EXCEPTION` 0、`SCRIPT ERROR` 0、PSS 362 MB。抓掉四类假结果（假绿的旧版本启动、假红的通道掉线、读不出来的证据 JSON、空过滤器导出的静默胖包）。`tools/android_baseline.sh` 已在真机跑完**四个回合**（1/5/20/21，含两个 Boss 与满配 18 敌）：**桌面/设备回放摘要每回合五字段逐字一致（C4 第 3 条）**，孤儿节点两侧皆 0，并拿到战斗截图。第 20 回合顺带暴露并修掉一个真缺陷：召唤物用同一 uid 重生时，旧尸体交还会把活着的新 actor 从注册表里抹掉，死亡演出因此被丢弃（桌面/设备同为 3 条，非 Android 问题）；已修，掉落归 0，冻结哈希不变，门禁扩到 89 项。**双设备联机验收已于 2026-08-21 完成**：服务器升到 protocol 17、手机重装新包后，电脑 + 手机同连 `34.142.168.170:8080` 跑完 **21 回合完整对局**，两端各 21 份回放、0 错误，且回放字节数互为镜像（证明本方/敌方分发正确）；详见 D1 节。实测顺带抓到并修掉一个回环从未暴露的真缺陷（离开房间后再建房永远卡在 connecting）。装机要走无线 adb：本机 USB 推大文件会把 adbd 拖挂（1 MB 推送 0.002 秒、4 MB 卡 5 分钟后connection reset）。Release keystore、商店页截图、低端机验收仍未做。 |
 | E1 — 战场空间可读性 | ✅ 桌面完成 | Windows Forward Mobile 纵向切片完成；所有战斗单位经 `UnitVisualResolver → UnitActor3D`，固定两回合回放为 0 胶囊、0 可见 fallback；`BoardReadabilityLayer` 已接入准备/战斗并可持久化开关。人工盲测与 Android 验收仍待后续。 |
 | E2-2A / E2-2B — 模型与贴图预算 | ✅ 桌面完成 | 75/75 模型边界检查为 0 broken、0 anomaly；241/241 FBX 加载错误为 0；78/78 wrapper 合并通过；模型预算 75 项、0 hard failure。Android ASTC、APK 排除源 FBX 及低端机满编最终战仍待后续。 |
 | Director D0 — 基线与确定性证据 | ✅ 桌面完成 / 实机 digest 已验 | 当前提交 `931771c69e3f585b19e49f3bc1b846b04aa6f55d` 已完成固定 seed 的 round 1/2：完整 roster、事件/result/final-state JSON、SHA-256、actor/fallback/anchor 审计、1280×720 截图及逐帧 CSV 均已生成并独立校验；Android 证据保持暂停。 |
@@ -718,10 +718,28 @@ BattleSimShared（确定性规则，只产出语义事件）
 [LIVE] FAILED last_error=无法连接服务器：protocol_mismatch（版本可能不一致，请更新）
 ```
 
-这正是设计的效果，不是回归。**但它意味着线上服务器必须重新部署，在那之前双设备
-公网实测过不去。**（升号前已实测过：同一份重构后的客户端能和未改动的线上服务器
-握手成功并拿到房间列表——那是 D1「不改 RPC 名称和 payload」这条约束的实证，
-回环测试给不了。）
+这正是设计的效果，不是回归。
+
+**服务器已于 2026-08-21 重新部署完成**，两端现均为 protocol 17：
+
+```
+[NET] server starting protocol=17 shard=0 port=8080
+[NET] room snapshot discarded: version=1 protocol=16 (want 1/17)   <- 旧快照自动丢弃
+[NET] server started protocol=17 port=8080 rooms=0
+```
+
+那中间一行是 `DedicatedServerService` 的快照校验：协议号对不上就**整份丢弃并删文件**，
+不需要手动清。代价是旧服上正在进行的对局全断——协议升号本来就必然如此。
+
+（升号前已实测过：同一份重构后的客户端能和**未改动的**线上服务器握手成功并拿到
+房间列表——那是 D1「不改 RPC 名称和 payload」这条约束的实证，回环测试给不了。）
+
+部署方式也跟着改了一处：`make_server_zip.ps1` 的输出文件名从固定的
+`glory_server_upload.zip` 改成**从源码实读协议号生成**的 `glory_server_p<N>.zip`。
+原先固定名字的理由是“杜绝传了 v4 解压了 v5”，但实战里它造出了相反的事故：
+服务器家目录里躺着一个同名的昨天的包，人看不出区别，差点把 protocol 16 的旧包
+当成新包解压。名字里带上协议号后 p16 与 p17 一眼就能分开。名字不得手写：
+手写的版本号会和内容漂移，自动生成的不会。
 
 ###### 顺带查出来的三件事
 
@@ -733,13 +751,127 @@ BattleSimShared（确定性规则，只产出语义事件）
   实测把握手拒绝原因改坏，裸跑照样退出 0。`tools/multiplayer_regression.sh` 就是为此
   写的，现在驱动 **21 项**（含新增的分块两项），全部通过。
 
+###### 双设备公网实测（2026-08-21，已完成）
+
+服务器已重新部署到 protocol 17，手机重装新包，**电脑 + 手机同连
+`34.142.168.170:8080` 打完整一局**。这是 D1 验收里「不以本机回环代替」那一条的关闭证据。
+
+环境：`glory-server-2` / `asia-southeast1-a`；手机 `25028RN03A` / Android 15 /
+arm64-v8a；包名 `glory.beta001`，APK 694.3 MiB。
+
+**跑通的：**
+
+- **21 回合完整对局**（含 3 个 Boss 回合与 4 个 pvp 回合），两端各收到 21 份回放，
+  `SCRIPT ERROR` 0、`FATAL EXCEPTION` 0
+- 两端回放字节数**互为镜像**——电脑 slot 0 收到 `8540/6633`，手机 slot 3 收到
+  `6633/8540`。这证明 `_send_replay_to_peer` 里按 `slot < 3` 分发本方/敌方回放在
+  真机上是对的，回环测不出这一层（两端同进程时看不出镜像关系）
+- 冷启动预热 **96/96 仅 2600 ms**（menu_minimal 186 ms → first_battle 1336 ms →
+  deferred 2593 ms）。原始 README 的反向基线是「96 项预热实际约 11.8 秒」，
+  E3 的分阶段拆分确实把它压下来了。手机端同样 96/96，8243 ms
+
+**分块一次都没触发。** 全程最大一份回放 **59,542 字节（58 KiB）**，阈值 192 KiB。
+此前「生产里走不到分块」是从一条 61.8 KB 的旧测量推断的，现在有 21 个回合的实战
+数据坐实。分块/确认/重试在真实 ENet 上的验证仍然只由
+`multiplayer_regression.sh` 的 `--ch-chunked=1` 强制模式承担。
+
+**重连补回放：服务端链路已证实，客户端视觉验收未成立。**
+
+战斗中把手机切飞行模式 5 秒再切回，服务端日志：
+
+```
+seat reserved room=537943 slot=3 grace=20s
+resume ok room=537943 slot=3 peer=1514774027 state=result
+resume replay resent room=537943 round=2 slot=3 bytes=9926/16410
+```
+
+`9926/16410` 与手机掉线**前**收到的第 2 回合回放逐字节一致，对局随后正常进入第 3 回合。
+但**玩家实际有没有看到那段回放没验成**：那一场战斗太短，重连回来时已经播完了。
+这一条按「服务端已证实、客户端未验证」记，不得写成已验收。要验它需要一场足够长的
+战斗（例如满配的第 20 回合 Boss 局）。
+
+一个操作教训：手机端 logcat 抓取在切飞行模式时一起断了——**无线 adb 走的正是被飞行
+模式关掉的那个 WiFi**。下次测断网要用 USB 抓日志。
+
+（这台机器的 USB 推大文件不可用：1 MB 推送 0.002 秒、64 MB 卡 5 分 23 秒后
+`connection reset`，之后 adbd 卡死到只能拔插。装机最终走无线完成，694 MiB / 80.5 秒 /
+8.6 MB/s，推完在设备上校验 SHA-256 一致再 `pm install`。`tools/android_smoke.sh`
+的 `_wait_transport()` 兜不住这种「push 本身中途断」的情况。）
+
+###### 实测抓到的真缺陷：离开房间后再建房，UI 永远卡在 connecting
+
+**这是回环从未暴露、只有双设备真机流程才走得到的路径**，电脑端与手机端同时复现
+（同一份 `Main.gd`）。
+
+服务端**正常收到请求并建了房**（用户反复点击，一秒建一个建了 5 个），没有限流、
+没有 `already_in_match`。问题在客户端收到状态之后：
+
+```gdscript
+// NetworkService.gd
+if not _match_state.should_apply(epoch, seq):
+    return   // 迟到包 —— 卡死在这，且原本不留任何日志
+...
+team_local_slot = int(payload.get("my_slot", -1))   // 永远到不了
+```
+
+根因是 `applied_seq` **离开房间时没有被重置**：新房间的 `state_seq` 从 0 重新开始
+（`RoomService.gd:160`），而 `server_epoch` 是进程级的、客户端重连不改变它
+（`NetworkService.gd:616`）。于是打完一局 `applied_seq` 涨到 N 之后，新房广播的
+`seq=1` 被当成迟到包整份丢弃，`team_local_slot` 永远是 -1。第一次建房总是正常，
+因为那时 `applied_seq` 还是 0。
+
+**不是 D1 的回归**：抽 `MatchStateService` 之前的版本同样从未重置过
+（`git show eda59da^` 里只有声明、判断、赋值三处）。
+
+修复是在 `NetworkService.reset()` 里补一行 `_match_state.reset_applied()`——
+它已经在清 `team_local_slot`、`team_room_id`、`session_token` 等同类的每会话状态，
+信封位置属于完全相同的那一类。放在 `reset()` 覆盖全部 8 个调用点（含 `team_join()`
+与 `_rpc_leave_receipt`），而 `_begin_reconnect` **故意不调 `reset()`**，所以中途重连
+仍保留 seq 位置、真正的迟到包照样挡得住。已线上复现验证通过。
+
+**这条最该记住的部分是门禁为什么没抓到它。**
+`tools/match_state_check.gd` 里早就有一条测这件事的用例，断言文字一字不差：
+
+```gdscript
+_h.expect(svc.should_apply(9, 1), "reset_still_stale",
+    "重置后新一轮的第一份必须能进来 —— 留着旧号会把它当迟到包")
+```
+
+**它一直是绿的。** 因为它测的是「`reset_applied()` 这个函数好不好用」，而生产挂掉的
+原因是「**没有任何人调用它**」——该函数当时零调用方。单测绿、生产挂，差的是接线那一层。
+更难堪的是那个函数是我抽取时自己加的，注释里写明了正是这个失败模式，然后漏了接线。
+
+因此新增的门禁不测服务对象，直接验 `NetworkService.reset()` 的实际效果
+（`NetworkService` 是 autoload，检查场景可直接访问）。证伪时它精确报出线上症状：
+
+```
+FAIL [reset_not_wired] NetworkService.reset() 必须重置信封位置（实际 epoch=7 seq=30）
+```
+
+**推论，对后续所有门禁都适用**：给一个新函数写单测只证明了它自己是对的。
+凡是「必须有人在某处调用它」才成立的行为，门禁要验**调用点**，不是验函数。
+
+顺带修掉的静默失败（它们是本次定位耗时的直接原因）：
+
+- `_rpc_room_state` 丢弃迟到包时不留任何日志。现在会记，但**只在
+  `team_local_slot < 0` 时**——那是唯一可疑的情形；正常对局中的迟到包不记，
+  否则 room_state 的频率会把日志刷爆
+- `team_request_room_list/create_room/join_room` 三个入口原本是「条件不满足就静默
+  return」，调用方以为包发出去了就一直等。现在统一走 `_can_send_room_request()`，
+  并分开记录是 `team_active=false` 还是 `multiplayer_peer=null`——两者成因完全不同
+- `Main.gd` 的 `_run_pending_team_menu_action()` 没有兜底分支，未识别的 action
+  会安静地什么都不做而 UI 已进入 connecting。现在补了 `_:` 分支
+
 ###### 还没做的
 
-- **双设备公网实测**（电脑 + 手机同连 `34.142.168.170:8080`）：**阻塞在服务器重新部署上**。
-  手机上那个包也早于全部 D1 改动，需要重新导出安装。
-- 重连补回放的真机验证（战斗中断网再连回，确认补看到回放而不是直接跳结算）——
-  同样等双设备环境。
+- **重连补回放的客户端视觉验收**：需要一场足够长的战斗（满配 Boss 局），
+  确认玩家真的补看到回放而不是直接跳结算。服务端补发已证实。
 - 公网 NAT/relay：未开始，状态不变。
+- 线上 `systemd` 的 `ExecStart` 没带入口场景，靠 autoload
+  （`NetworkService.gd:328` 的 `_should_boot_dedicated_server()`）起服，主场景仍是
+  UI 场景，因此**隐式依赖部署目录里那份不在服务器包内的 `assets/`**。
+  打包脚本的冷启动冒烟测试跑的是「空目录 + 显式入口场景」，**线上这套配置从没被测过**。
+  要单独修（把入口场景写进 `ExecStart`），一次改一个变量。
 
 
 #### D2 — 拆分准备 UI 与控制器（P1）

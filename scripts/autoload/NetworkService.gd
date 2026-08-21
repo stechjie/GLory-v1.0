@@ -643,17 +643,41 @@ func team_join(address: String = DEFAULT_HOST, port: int = DEFAULT_PORT) -> bool
 	session_changed.emit()
 	return true
 
+# 下面三个入口原本都是「条件不满足就静默 return」。
+#
+# 2026-08-21 双设备实测撞上了它：打完一局离开房间后再点「创建房间」，
+# UI 永远卡在 connecting。网络层其实已经连上（日志有 client connected
+# peer=1 protocol=17），但请求包没发出去 —— 而这一步**不报错、不留日志**，
+# 从现场日志里看到的只是“连上了然后什么都没发生”，根本无法定位。
+#
+# 静默失败本身就是缺陷的成因：调用方（Main.gd 的 _run_pending_team_menu_action）
+# 以为请求发出去了，就去等服务器回包，于是永远等下去。
 func team_request_room_list() -> void:
-	if team_active and multiplayer.multiplayer_peer != null:
-		_rpc_team_room_list_request.rpc_id(1)
+	if not _can_send_room_request("room_list"):
+		return
+	_rpc_team_room_list_request.rpc_id(1)
 
 func team_request_create_room() -> void:
-	if team_active and multiplayer.multiplayer_peer != null:
-		_rpc_team_create_room.rpc_id(1, public_token_id)
+	if not _can_send_room_request("create_room"):
+		return
+	_rpc_team_create_room.rpc_id(1, public_token_id)
 
 func team_request_join_room(room_id: int) -> void:
-	if team_active and multiplayer.multiplayer_peer != null:
-		_rpc_team_join_room.rpc_id(1, room_id, public_token_id)
+	if not _can_send_room_request("join_room"):
+		return
+	_rpc_team_join_room.rpc_id(1, room_id, public_token_id)
+
+# 能不能发房间请求。不能发时**必须留下原因**：
+# 这条路径上唯一会出错的地方就是“以为连着其实没连”，而那两个条件分别
+# 对应两种完全不同的成因，不分开记就白记了。
+func _can_send_room_request(what: String) -> bool:
+	if not team_active:
+		_net_log("%s request dropped: team_active=false（会话已重置，需重新 team_join）" % what)
+		return false
+	if multiplayer.multiplayer_peer == null:
+		_net_log("%s request dropped: multiplayer_peer=null（连接已关闭）" % what)
+		return false
+	return true
 
 func team_request_public_token() -> void:
 	if team_active and multiplayer.multiplayer_peer != null:
@@ -2649,6 +2673,17 @@ func reset() -> void:
 	team_active = false
 	team_local_slot = -1
 	team_room_id = 0
+	# 信封位置和上面这几个是**同一类**的每会话状态，必须一起清。
+	#
+	# 2026-08-21 双设备实测撞出的真缺陷：建房 -> 离开 -> 再建房，UI 永远卡在
+	# connecting。新房间的 state_seq 从 0 重新开始（RoomService.gd:160），而
+	# server_epoch 是进程级的、客户端重连不会改变它；于是打完一局后
+	# applied_seq 已经涨到 N，新房广播的 seq=1 就被 should_apply 当成迟到包丢掉，
+	# 整份房间状态不被应用，team_local_slot 永远是 -1。
+	#
+	# 不能放到 _begin_reconnect 里：那条路径**故意不调 reset()**，因为中途重连
+	# 需要保留 seq 位置来挡真正的迟到包。
+	_match_state.reset_applied()
 	team_slot_states = []
 	team_ready = []
 	team_round_active = false
@@ -3210,6 +3245,13 @@ func _rpc_room_state(envelope: Dictionary) -> void:
 	# 判定在 MatchStateService。它刻意与"提交"分开：下面还有别的检查
 	# （重连期间不许覆盖手里的 token），那些失败时不能把已应用位置往前推。
 	if not _match_state.should_apply(epoch, seq):
+		# 正常对局中的迟到包不记 —— room_state 来得很频，无脑记会把日志刷爆。
+		# 只记「还没进任何房间却在丢状态」这一种：那是唯一可疑的情形，
+		# 也正是上面那个卡死缺陷的现场特征。本次排查花掉大量时间，
+		# 直接原因就是这里一行日志都没有。
+		if team_local_slot < 0:
+			_net_log("room_state 丢弃：epoch=%d seq=%d（已应用 %d/%d）且尚未入房 —— 信封位置可能没重置" % [
+				epoch, seq, _match_state.applied_epoch, _match_state.applied_seq])
 		return   # 迟到包
 	var incoming_token := str(payload.get("session_token", ""))
 	# 重连握手期间，服务器可能先把我们当新玩家分进别的房间并签发新 token ——

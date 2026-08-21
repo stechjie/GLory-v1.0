@@ -33,6 +33,7 @@ func _run() -> void:
 	_check_epoch_change_resets_comparison()
 	_check_judgement_does_not_commit()
 	_check_reset_applied()
+	_check_reset_is_wired_into_session_reset()
 	_check_receipt_roundtrip()
 	_check_receipt_ring_is_bounded()
 	_h.finish(get_tree())
@@ -115,6 +116,30 @@ func _check_reset_applied() -> void:
 		"reset_incomplete", "重置后应回到未应用过任何一份的状态")
 	_h.expect(svc.should_apply(9, 1), "reset_still_stale",
 		"重置后新一轮的第一份必须能进来 —— 留着旧号会把它当迟到包")
+
+
+# 接线门禁：**函数好用不等于有人调用它**。
+#
+# 上面那条 _check_reset_applied 一直是绿的，连断言文字都写明了失败模式；
+# 而 2026-08-21 双设备实测里玩家真的卡死了：建房 -> 离开 -> 再建房，
+# UI 永远停在 connecting。原因是 reset_applied() **零调用方** ——
+# 单测绿、生产挂，差的就是接线这一层。
+#
+# 所以这条不测服务对象，直接验 NetworkService.reset() 的实际效果。
+# 它是 autoload，检查场景里直接可达。
+func _check_reset_is_wired_into_session_reset() -> void:
+	var ms: RefCounted = NetworkService._match_state
+	ms.mark_applied(7, 30)
+	NetworkService.reset()
+	_h.expect(int(ms.applied_seq) == 0 and int(ms.applied_epoch) == 0,
+		"reset_not_wired",
+		"NetworkService.reset() 必须重置信封位置（实际 epoch=%d seq=%d）" % [
+			int(ms.applied_epoch), int(ms.applied_seq)])
+	# 新房间的 state_seq 从 0 重新开始（RoomService.gd:160），而 server_epoch 是进程级的、
+	# 客户端重连不会改变它。所以「同 epoch + seq=1」就是新房间第一份状态的真实形状，
+	# 它进不来 = team_local_slot 永远是 -1 = UI 卡在 connecting。
+	_h.expect(ms.should_apply(7, 1), "reset_wired_but_stale",
+		"重置后新房间的 seq=1 必须能进来 —— 这正是线上卡在 connecting 的那一步")
 
 
 # --- 交易幂等 -----------------------------------------------------------------
