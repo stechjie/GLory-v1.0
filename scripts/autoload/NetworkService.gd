@@ -275,6 +275,8 @@ const DedicatedServerService := preload("res://scripts/multiplayer/DedicatedServ
 var _server_service: RefCounted = DedicatedServerService.new()
 const NetworkTransport := preload("res://scripts/multiplayer/NetworkTransport.gd")
 var _transport: RefCounted = NetworkTransport.new()
+const MatchStateService := preload("res://scripts/multiplayer/MatchStateService.gd")
+var _match_state: RefCounted = MatchStateService.new()
 
 func _ready() -> void:
 	# 依赖注入：抽出的服务都不认识 NetworkService，也不碰 multiplayer。
@@ -284,6 +286,7 @@ func _ready() -> void:
 	# TEAM_SLOTS / ROOM_LOBBY / ROOM_RESULT / RESERVE_GRACE_SEC 留在门面
 	# （内部 43/24/11/5 处引用、外部还有引用），按配置传进去。
 	_transport.configure(_net_log)
+	_match_state.configure(_now)
 	# 先配 ReconnectService：它持有 token 索引，RoomService 要注入它才能读写。
 	_reconnect_service.configure(_now, _net_log, {
 		"reserve_grace_sec": RESERVE_GRACE_SEC,
@@ -1367,9 +1370,7 @@ func _room_maybe_start_round(room: Dictionary) -> void:
 #
 # payload 是**按座位**生成的（金币、宝物、token 都是每人不同），所以逐 peer 发。
 func _bump_room_seq(room: Dictionary) -> int:
-	var next := int(room.get("state_seq", 0)) + 1
-	room.state_seq = next
-	return next
+	return _match_state.bump_seq(room)
 
 func _build_room_state(room: Dictionary, slot: int) -> Dictionary:
 	var hp: Array = room.get("team_hp", [GameState.START_FORMATION_HP, GameState.START_FORMATION_HP])
@@ -2940,8 +2941,17 @@ func _resume_seat(sender: int, token: String) -> void:
 #
 # `else` 分支刻意不检查连号：全量快照跳号直接应用就是对的，
 # 这就是不做 delta 换来的"漏包自愈"。服务器因此不需要保留任何状态历史。
-var _applied_epoch := 0
-var _applied_seq := 0
+# 实际持有者是 MatchStateService，这里保留原名转发。
+var _applied_epoch: int:
+	get:
+		return _match_state.applied_epoch
+	set(value):
+		_match_state.applied_epoch = value
+var _applied_seq: int:
+	get:
+		return _match_state.applied_seq
+	set(value):
+		_match_state.applied_seq = value
 
 @rpc("authority", "call_remote", "reliable")
 func _rpc_room_state(envelope: Dictionary) -> void:
@@ -2950,7 +2960,9 @@ func _rpc_room_state(envelope: Dictionary) -> void:
 	var payload: Dictionary = envelope.get("payload", {}) as Dictionary
 	if payload.is_empty():
 		return
-	if epoch == _applied_epoch and seq <= _applied_seq:
+	# 判定在 MatchStateService。它刻意与"提交"分开：下面还有别的检查
+	# （重连期间不许覆盖手里的 token），那些失败时不能把已应用位置往前推。
+	if not _match_state.should_apply(epoch, seq):
 		return   # 迟到包
 	var incoming_token := str(payload.get("session_token", ""))
 	# 重连握手期间，服务器可能先把我们当新玩家分进别的房间并签发新 token ——
@@ -2962,8 +2974,7 @@ func _rpc_room_state(envelope: Dictionary) -> void:
 		return
 
 	var was_reconnecting := state == SessionState.RECONNECTING
-	_applied_epoch = epoch
-	_applied_seq = seq
+	_match_state.mark_applied(epoch, seq)
 
 	team_active = true
 	team_room_id = int(envelope.get("room_id", 0))
@@ -3186,26 +3197,16 @@ func _assign_peer_to_room(peer_id: int, room: Dictionary = {}, public_id: String
 # 边界：这解决的是**同一笔交易不被重复执行**，不是**金币账目本身可信**。
 # 金币仍是客户端自报（A5/P1）。慷慨命运赌博现在完全在客户端，没有 RPC 可幂等化 ——
 # 它归 P1 账本，届时**出生就带 request_id**，走的是下面这同一套信封。
-const TX_LOG_PER_SLOT := 16
+# 随实现搬到 MatchStateService；这里重新导出，既有引用一处不用改。
+const TX_LOG_PER_SLOT := MatchStateService.TX_LOG_PER_SLOT
 
 # room.tx_log: slot -> Array[{rid, kind, result, at}]，FIFO 定长。
 # 用数组而不是嵌套字典：定长裁剪是一行，且 var_to_bytes 往返干净。
 func _tx_find(room: Dictionary, slot: int, rid: String) -> Dictionary:
-	var log_map: Dictionary = room.get("tx_log", {})
-	var entries: Array = log_map.get(slot, [])
-	for e in entries:
-		if typeof(e) == TYPE_DICTIONARY and str((e as Dictionary).get("rid", "")) == rid:
-			return e as Dictionary
-	return {}
+	return _match_state.find_receipt(room, slot, rid)
 
 func _tx_record(room: Dictionary, slot: int, rid: String, kind: String, result: Dictionary) -> void:
-	var log_map: Dictionary = room.get("tx_log", {})
-	var entries: Array = log_map.get(slot, [])
-	entries.append({"rid": rid, "kind": kind, "result": result, "at": _now()})
-	while entries.size() > TX_LOG_PER_SLOT:
-		entries.pop_front()
-	log_map[slot] = entries
-	room.tx_log = log_map
+	_match_state.record_receipt(room, slot, rid, kind, result)
 
 # 重放上一次的答案。**不重做任何副作用** —— 这正是幂等的全部含义。
 func _tx_replay(sender: int, rid: String, entry: Dictionary) -> void:
