@@ -2,7 +2,7 @@
 
 Godot 4.7 的 3v3 布阵自动战斗项目。本 README 同时是项目说明、资源盘点、代码审查记录和后续可由 AI 逐项执行的改进路线。原始审查依据 2026-08-15 至 2026-08-16 的工作区、Godot 4.7.0 导入/运行结果、Android 实机试玩和工程内检查场景编写；下方 2026-08-19 实施进度为当前状态，优先于后续保留的历史基线描述。
 
-> 当前结论（2026-08-20）：**A1、A2、A3、A5、B4、B5、E1、E2-2A/E2-2B 与 BattlePresentationDirector D0-D6 的桌面闭环已全部完成；A4 的出包/安装/冷启动门禁已在真机跑通（Debug）。** 剩下的大块是 D2（PrepUI 拆分，同事在做）、A4 的 Release 预设与 UI 驱动样本，以及 E3 量出来但还没动手的包体减重。联机 D1、D3 由同事负责。后文关于“35 项不可加载”和“胶囊占位体”的文字是改造前历史基线，不再代表当前桌面结果。
+> 当前结论（2026-08-20）：**A1、A2、A3、A5、B4、B5、E1、E2-2A/E2-2B 与 BattlePresentationDirector D0-D6 的桌面闭环已全部完成；A4 的出包/安装/冷启动门禁已在真机跑通（Debug）。** 剩下的大块是 A4 的 Release 预设与 UI 驱动样本，以及 E3 量出来但还没动手的包体减重。**D2（PrepUI 拆分）已由同事完成；D1（NetworkService 拆分）已完成 —— 六个服务全部建成、ReplayTransferService 的压缩/分块/确认/重试四件齐了、重连补看回放已接入，协议号升到 17（需重新部署服务器），联机回归 21/21 通过；详见 D1 节。**D3 仍由同事负责。后文关于“35 项不可加载”和“胶囊占位体”的文字是改造前历史基线，不再代表当前桌面结果。
 
 ## 2026-08-19 实施进度
 
@@ -645,6 +645,102 @@ BattleSimShared（确定性规则，只产出语义事件）
 - **目标结构：** `NetworkTransport`（ENet/RPC/通道）、`RoomService`（创建/席位/leader）、`MatchStateService`（状态信封/epoch/seq）、`ReplayTransferService`（压缩、分块、确认、重试）、`ReconnectService`（token/宽限/AI 接管）、`DedicatedServerService`（端口/持久化）。
 - **迁移办法：** 先保持 `NetworkService` 作为 facade，按一个服务一个 PR 抽出；不改 RPC 名称和 payload；每次以现有 `handshake/persist/reconnect/channel` 场景回归。
 - **验收：** facade API 不变；每个子服务有独立 headless 测试；公网 NAT/relay、掉线回放重传和双设备测试另有明确状态，不以本机回环代替。
+
+##### D1 完成状态（2026-08-21）
+
+**六个服务全部建成，各有独立 headless 门禁。**目标结构里的六项一项不缺：
+
+| 服务 | 文件 | 行数 | 门禁 |
+|---|---|---|---|
+| NetworkTransport（ENet/RPC/通道） | `scripts/multiplayer/NetworkTransport.gd` | 113 | `tools/network_transport_check` |
+| RoomService（创建/席位/leader） | `scripts/multiplayer/RoomService.gd` | 484 | `tools/room_service_check` |
+| MatchStateService（状态信封/epoch/seq） | `scripts/multiplayer/MatchStateService.gd` | 108 | `tools/match_state_check` |
+| ReplayTransferService（压缩/分块/确认/重试） | `scripts/multiplayer/ReplayTransferService.gd` | 293 | `tools/replay_transfer_check`（111 项） |
+| ReconnectService（token/宽限/AI 接管） | `scripts/multiplayer/ReconnectService.gd` | 192 | `tools/reconnect_service_check` |
+| DedicatedServerService（端口/持久化） | `scripts/multiplayer/DedicatedServerService.gd` | 254 | `tools/dedicated_server_check`（38 项） |
+
+`SessionContext.gd`（86 行）另收 18 个跨切面变量。
+
+**facade API 不变**：`NetworkService` 的 50 个 `@rpc` 与 18 个 `signal` 全程逐字节未动，
+原有属性名以 get/set 转发到服务，外部数百处引用一处未改（且共享同一份字典引用，
+原地写能穿透）。
+
+**`NetworkService` 仍有 4231 行，这不是没做完。** 剩下的是编排函数，它们天然横跨
+3–4 个域：`_resume_seat` 一个函数就同时碰 Transport、Room、MatchState、Reconnect。
+把它再切开只会把一次调用摊成四次跨服务往返，可读性更差。服务持有状态与纯策略，
+门面持有 RPC 入口与编排——这条分界是清楚的，行数不是衡量它的指标。
+
+###### ReplayTransferService：四件事现在都在了
+
+此前**只实现了压缩**（分块只有一句「可以先不实现」的注释，全仓搜不到 replay ack
+或重传）。现在：
+
+- **压缩** — zstd + 8 字节长度头 + 解压炸弹防护（`decompress_dynamic()` 不支持 ZSTD，
+  所以长度头是必需的，实测踩过）
+- **分块** — `split()` / `accept_chunk()` / `missing_chunks()`，重组缓冲有条数、单条、
+  总量三道上限加 TTL 过期回收
+- **确认** — `_rpc_replay_ack`（`any_peer`，限流 20/窗口），形状照抄既有的 `result_acks`
+- **重试** — `_tick_replay_retry`，形状照抄 `_tick_tx_retry`：到期才动、上限 3 次、
+  放弃时如实记一笔（回放只是播放素材，收不到不阻塞结算）
+
+**要说清楚的代价：分块在生产里走不到。** 实测最坏一场压缩后 61.8 KB，而阈值是
+192 KiB（低于 `channel_check` 实证过的 200 KB）。低于阈值一律走原来的单包路径，
+一个字节的行为都没变。这是有意的——不愿为一个当前不存在的问题，把重组缓冲
+（= 一个新的内存攻击面）放到典型路径上。代价是分块成了一条生产里没人走的代码路，
+所以它必须带强制开关：`tools/multiplayer_regression.sh` 的 `--ch-chunked=1` 会真的
+起两个进程、过一遍 ENet。实测该模式下 packed 164,492 字节 → **4 块**，
+客户端 `content_ok=true frames=6272`（顺序完整），服务端 `ack_ok=true`（确认回来了）。
+
+###### 重连补看回放
+
+已确认的产品规则：**重连回来的人应该补看那一场的回放**。
+
+在这之前 `_resume_seat` 只补发 `last_match_state`，注释写的是「客户端直接跳过战斗」——
+那是有意的，但产品上不对：掉线重连的人直接看到结果，中间那场战斗没了。
+现在服务端把打包好的回放留在 `room.replay_packed`，`_resume_seat` 在结算阶段补发
+（顺序仍是 match_state 先、replay 后：几百字节的权威结算不该被大包压住）。
+
+**只留内存，不进快照。** 快照每 5 秒全量序列化写盘，两份回放约 196 KB，塞进去就是
+给自己造一个新的冻结源（白名单对 `boards`/`last_board` 写的是同一件事）。
+**代价如实记：服务器重启后那一场的回放没了，重连者仍只能看到结算结果。**
+
+###### 协议号 16 → 17（破坏性，需要重新部署服务器）
+
+分块与确认要新增两个 RPC，而**加/删 `@rpc` 方法会平移整套 RPC 的 wire ID**
+（代码里两处注释早就写明）。不升号的话，旧服务器与新客户端的方法编号整体错位，
+症状是随机调错方法——静默错位比任何报错都难查。
+
+升号把它变成握手阶段一次干净的拒绝。实测（`tools/live_server_probe.tscn`
+对 `34.142.168.170:8080`）：
+
+```
+[LIVE] target=34.142.168.170:8080 protocol=17
+[LIVE] FAILED last_error=无法连接服务器：protocol_mismatch（版本可能不一致，请更新）
+```
+
+这正是设计的效果，不是回归。**但它意味着线上服务器必须重新部署，在那之前双设备
+公网实测过不去。**（升号前已实测过：同一份重构后的客户端能和未改动的线上服务器
+握手成功并拿到房间列表——那是 D1「不改 RPC 名称和 payload」这条约束的实证，
+回环测试给不了。）
+
+###### 顺带查出来的三件事
+
+- `RoomService.clear()` 是死代码，全仓没有任何调用方。已加注释说明，未删。
+- `ReplayTransferService` 此前只做了四件事里的一件，而门禁叫「全绿」——
+  已在当时补上显式的未覆盖声明，现在四件都做完后移除。
+- **联机回归网有一半模式从没被驱动过。** `handshake_check` 的 `bad`/`silent`、
+  `persist_check` 的 `load`、`channel_check` 的 `client` 都要显式传参，裸跑只跑默认那个。
+  实测把握手拒绝原因改坏，裸跑照样退出 0。`tools/multiplayer_regression.sh` 就是为此
+  写的，现在驱动 **21 项**（含新增的分块两项），全部通过。
+
+###### 还没做的
+
+- **双设备公网实测**（电脑 + 手机同连 `34.142.168.170:8080`）：**阻塞在服务器重新部署上**。
+  手机上那个包也早于全部 D1 改动，需要重新导出安装。
+- 重连补回放的真机验证（战斗中断网再连回，确认补看到回放而不是直接跳结算）——
+  同样等双设备环境。
+- 公网 NAT/relay：未开始，状态不变。
+
 
 #### D2 — 拆分准备 UI 与控制器（P1）
 

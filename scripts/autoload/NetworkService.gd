@@ -459,6 +459,7 @@ func _process(delta: float) -> void:
 			_tick_board_watchdog()
 			_tick_idle_peers()
 			_tick_leave_tombstones()
+			_tick_replay_retry(delta)
 	# 客户端心跳：比干等 ENet 超时更快发现半开连接
 	if team_active and not is_host and state == SessionState.READY and multiplayer.multiplayer_peer != null:
 		_ping_accum += delta
@@ -478,6 +479,9 @@ func _process(delta: float) -> void:
 				_net_log("pong silence %.1fs (network degrading)" % silence)
 	_tick_pending_leave(delta)
 	_tick_tx_retry(delta)
+	# 重组缓冲的过期回收。跑在收包侧：不回收的话，一个发一半就断的下发会把
+	# 那几十 KB 一直钉在内存里（服务器重启/换局都不会碰它）。
+	_replay_transfer.tick(delta)
 	if state == SessionState.RECONNECTING:
 		_tick_reconnect(delta)
 		return
@@ -980,6 +984,9 @@ func _room_begin_next_prep(room: Dictionary) -> void:
 	room.battle_id = ""
 	room.result_acks = {}
 	room.boards = {}
+	# 上一场的回放不再需要：补看只在结算阶段有意义（_resume_seat 只在
+	# ROOM_RESULT 下补发）。不清的话每个房间会带着约 196 KB 熝到下一场。
+	room.replay_packed = {}
 	room.prep_mercs = {}
 	room.altar_uses = {}   # 祭坛次数按回合重置，和客户端 reset_shop_refreshes 同步
 	# round_index 封顶到 FINAL_ROUND，和客户端一致（客户端从 match_state 拿的是 min(+1, 21)）。
@@ -1630,7 +1637,10 @@ func team_broadcast_replays(replay_a: Dictionary, replay_b: Dictionary) -> void:
 	var packed_b := _pack_replay(replay_b)
 	for peer_id in _team_peer_slot:
 		var slot: int = _team_peer_slot[peer_id]
-		_rpc_team_replay.rpc_id(peer_id, packed_a if slot < 3 else packed_b, packed_b if slot < 3 else packed_a)
+		# 本地房主模式没有 room 字典，用回合号当 battle_id —— 分块只需要它能
+		# 区分"这一场"和"上一场"，不需要它有别的含义。
+		_send_replay_to_peer(int(peer_id), "host:%d" % GameState.round_index,
+			packed_a if slot < 3 else packed_b, packed_b if slot < 3 else packed_a)
 
 # --- replay 打包 -------------------------------------------------------------
 # 实测（tools/battle_perf_check.tscn，第 21 回合满配最坏一场）：
@@ -1643,8 +1653,10 @@ func team_broadcast_replays(replay_a: Dictionary, replay_b: Dictionary) -> void:
 # 现在整局只做一次序列化 + 一次压缩，所有 peer 复用同一份 PackedByteArray
 # （PackedByteArray 进 RPC 只是 memcpy，不再走嵌套容器的递归序列化）。
 #
-# 压缩后最坏 61.8 KB，低于常见分块阈值（16–64 KB）的上沿 —— 所以**分块协议暂时不需要**，
-# 信封里保留 chunk 字段但可以先不实现（见文档 B2）。
+# 压缩后最坏 61.8 KB。分块/确认/重试现已实现（见下面“回放分块下发”一节），
+# 但**阈值是 192 KiB，所以这个 61.8 KB 的最坏局仍然走单包路径** ——
+# 分块只对离群大局和强制模式生效。这不是把它做成摆设，而是不愿意为一个
+# 当前不存在的问题把重组缓冲（= 一个新的内存攻击面）放到典型路径上。
 # 上限与包格式的实现都在 ReplayTransferService（MAX_UNCOMPRESSED_BYTES / PACK_HEADER_BYTES）。
 # 编解码实现已随 team_replay 一起搬到 ReplayTransferService（PACK_HEADER_BYTES /
 # MAX_UNCOMPRESSED_BYTES / pack / unpack）。这两个函数保留为门面薄包装：
@@ -1655,6 +1667,217 @@ func _pack_replay(replay: Dictionary) -> PackedByteArray:
 
 func _unpack_replay(packed: PackedByteArray) -> Dictionary:
 	return _replay_transfer.unpack(packed)
+
+# =============================================================================
+# 回放分块下发 / 确认 / 重试（原始 README 给 ReplayTransferService 定的后三件事）
+# =============================================================================
+#
+# 分界：切块、重组、缺块查询是**纯策略**，在 ReplayTransferService 里；
+# 这里只负责发包、收包、计时——那三件都要 multiplayer，而服务是 RefCounted，够不着。
+#
+# 为什么要有阈值：实测最坏一场压缩后 61.8 KB（见上面 _pack_replay 的实测记录），
+# 而 tools/channel_check 已经证明 200 KB 能过 CH_BULK。也就是说**生产里根本不会触发
+# 分块**。这不是把分块做成摆设的理由，而是它必须带一个强制开关的理由：
+# 一条永远走不到的代码路等于没写。门禁与真机双设备测试都走 force。
+#
+# 混合情况（本方大、敌方小）**一律两边都分块**：客户端因此只有两条路径而不是三条，
+# "单包收到一半、分块收到另一半"那种状态机不值得为省几 KB 去维护。
+
+# 没等到确认就重发的间隔。回放走 CH_BULK 可靠有序通道，正常情况不该丢；
+# 这个超时兜的是"整条 ENet 连接抖了一下"，不是常规传输手段。
+const REPLAY_ACK_TIMEOUT_SEC := 6.0
+# 放弃前的重发次数。无限重试对一个卡死的客户端就是自造放大器：
+# 每次重发都是几十 KB，而对面根本没在收。
+const REPLAY_MAX_RETRIES := 3
+
+# 服务端：peer_id -> {battle_id, kinds, payloads:{kind:PackedByteArray}, done:{kind:true},
+#                    deadline: float, tries: int}
+var _replay_out: Dictionary = {}
+# 客户端：battle_id -> {kinds:int, done:{kind:PackedByteArray}}
+# 重组本身在 ReplayTransferService 里，这里只记"哪几种收齐了"。
+var _replay_in: Dictionary = {}
+# 只给门禁与真机测试用：把生产里走不到的分块路径强制走一遍。
+var _force_replay_chunking := false
+
+
+func set_force_replay_chunking(on: bool) -> void:
+	_force_replay_chunking = on
+	_net_log("replay chunking forced=%s" % str(on))
+
+
+# 给一个 peer 发一份回放。低于阈值走原来的单包 _rpc_team_replay（一个字节都不变），
+# 超过阈值才走分块。两个发送点和重连补发都从这里过。
+func _send_replay_to_peer(peer_id: int, battle_id: String, own: PackedByteArray, rival: PackedByteArray) -> void:
+	if not (_replay_transfer.should_chunk(own, _force_replay_chunking)
+			or _replay_transfer.should_chunk(rival, _force_replay_chunking)):
+		_rpc_team_replay.rpc_id(peer_id, own, rival)
+		return
+
+	var payloads := {}
+	payloads[ReplayTransferService.CHUNK_KIND_OWN] = own
+	# 敌方回放可能是空的（例如只有一队时）。空的就不列入 kinds，
+	# 否则客户端会永远差一种、凑不齐。
+	if rival.size() > ReplayTransferService.PACK_HEADER_BYTES:
+		payloads[ReplayTransferService.CHUNK_KIND_RIVAL] = rival
+
+	_replay_out[peer_id] = {
+		"battle_id": battle_id,
+		"kinds": payloads.size(),
+		"payloads": payloads,
+		"done": {},
+		"deadline": _now() + REPLAY_ACK_TIMEOUT_SEC,
+		"tries": 0,
+	}
+	_net_log("replay chunked send peer=%d battle=%s kinds=%d bytes=%d/%d" % [
+		peer_id, battle_id, payloads.size(), own.size(), rival.size()])
+	_send_replay_chunks(peer_id, PackedInt32Array(), "")
+
+
+# 发块。missing 为空 = 全发；否则只补这一 kind 缺的那几块（重试路径）。
+func _send_replay_chunks(peer_id: int, missing: PackedInt32Array, only_kind: String) -> void:
+	var pending: Dictionary = _replay_out.get(peer_id, {})
+	if pending.is_empty():
+		return
+	var battle_id := str(pending.get("battle_id", ""))
+	var kinds := int(pending.get("kinds", 0))
+	var payloads: Dictionary = pending.get("payloads", {})
+	var done: Dictionary = pending.get("done", {})
+	for kind in payloads.keys():
+		if not only_kind.is_empty() and str(kind) != only_kind:
+			continue
+		if done.has(kind):
+			continue          # 这一种对方已经确认收齐，别再发
+		var chunks: Array = _replay_transfer.split(payloads[kind], battle_id, str(kind))
+		if chunks.is_empty():
+			# split 拒绝了（超过单次传输上限）。这一份发不出去，如实记下来 ——
+			# 静默丢弃的话玩家只会看到"回放不来"，日志里什么都没有。
+			_net_log("replay chunk send aborted peer=%d kind=%s bytes=%d (split refused)" % [
+				peer_id, str(kind), (payloads[kind] as PackedByteArray).size()])
+			continue
+		for env in chunks:
+			var idx := int((env as Dictionary).get("idx", 0))
+			if missing.size() > 0 and not missing.has(idx):
+				continue
+			_rpc_team_replay_chunk.rpc_id(peer_id, battle_id, str(kind), idx,
+				int((env as Dictionary).get("total", 0)), kinds,
+				(env as Dictionary).get("data", PackedByteArray()))
+
+
+# 服务端下发的分块。authority：只有服务器能发，客户端这边照收。
+#
+# 校验全部在 ReplayTransferService.accept_chunk 里（重组缓冲有条数、单条、总量三道
+# 上限加过期回收）—— 这里只做"收齐了就应用"。
+@rpc("authority", "call_remote", "reliable", NetworkConfig.CH_BULK)
+func _rpc_team_replay_chunk(battle_id: String, kind: String, idx: int, total: int,
+		kinds: int, data: PackedByteArray) -> void:
+	if battle_id.length() > MAX_TREASURE_ID_LEN:
+		return
+	if kinds <= 0 or kinds > 2:
+		return
+	var out: Dictionary = _replay_transfer.accept_chunk({
+		"battle_id": battle_id, "kind": kind, "idx": idx, "total": total, "data": data,
+	})
+	if not str(out.get("error", "")).is_empty():
+		return
+	if not bool(out.get("complete", false)):
+		return
+
+	# 这一种收齐了：记下来并向服务端确认（missing 为空 = 收齐）。
+	var slot_in: Dictionary = _replay_in.get(battle_id, {"kinds": kinds, "done": {}})
+	(slot_in["done"] as Dictionary)[kind] = out.get("packed", PackedByteArray())
+	slot_in["kinds"] = kinds
+	_replay_in[battle_id] = slot_in
+	_rpc_replay_ack.rpc_id(1, battle_id, kind, PackedInt32Array())
+
+	if (slot_in["done"] as Dictionary).size() < kinds:
+		return
+
+	# 全部收齐：走和单包路径**完全一样**的落地动作，否则两条路径会有行为差。
+	var done_map: Dictionary = slot_in["done"]
+	team_replay = _unpack_replay(done_map.get(ReplayTransferService.CHUNK_KIND_OWN, PackedByteArray()))
+	team_replay_rival = _unpack_replay(done_map.get(ReplayTransferService.CHUNK_KIND_RIVAL, PackedByteArray()))
+	_replay_in.erase(battle_id)
+	_net_log("client received chunked replay battle=%s kinds=%d" % [battle_id, kinds])
+	team_replay_received.emit()
+
+
+# 客户端 -> 服务端的确认 / 缺块上报。
+#   missing 空     = 这一种收齐了，别再发
+#   missing 非空   = 还缺这几块，只补这几块
+#
+# any_peer + 未经验证的输入：必须限流（和 _rpc_result_ack 同样处理）。
+@rpc("any_peer", "call_remote", "reliable", NetworkConfig.CH_CONTROL)
+func _rpc_replay_ack(battle_id: String, kind: String, missing: PackedInt32Array) -> void:
+	var sender := multiplayer.get_remote_sender_id()
+	if not _rate_ok(sender, "replay_ack"):
+		return
+	if battle_id.length() > MAX_TREASURE_ID_LEN:
+		return
+	var pending: Dictionary = _replay_out.get(sender, {})
+	if pending.is_empty():
+		return
+	# 只认当前这一场。迟到的旧确认会把这一场的下发误判成已完成 ——
+	# 这和 _rpc_result_ack 用 battle_id 挡旧 ACK 是同一个理由。
+	if str(pending.get("battle_id", "")) != battle_id:
+		return
+	var payloads: Dictionary = pending.get("payloads", {})
+	if not payloads.has(kind):
+		return
+
+	if missing.is_empty():
+		(pending["done"] as Dictionary)[kind] = true
+		if (pending["done"] as Dictionary).size() >= int(pending.get("kinds", 0)):
+			_replay_out.erase(sender)
+			_net_log("replay delivery complete peer=%d battle=%s" % [sender, battle_id])
+			return
+		_replay_out[sender] = pending
+		return
+
+	# 缺块上报：只补缺的那几块，并把超时往后推——对方在动，不该被当成卡死。
+	if missing.size() > ReplayTransferService.MAX_CHUNKS:
+		return
+	pending["deadline"] = _now() + REPLAY_ACK_TIMEOUT_SEC
+	_replay_out[sender] = pending
+	_net_log("replay nack peer=%d battle=%s kind=%s missing=%d" % [
+		sender, battle_id, kind, missing.size()])
+	_send_replay_chunks(sender, missing, kind)
+
+
+# 重试。形状照抄 _tick_tx_retry：到期才动、有次数上限、放弃时如实记一笔。
+#
+# 为什么服务端要有超时重发而不是只等客户端上报缺块：客户端**一块都没收到**时
+# 它根本不知道有这么一次下发，也就报不出缺块。那种情况只有服务端能发现。
+func _tick_replay_retry(_delta: float) -> void:
+	if _replay_out.is_empty():
+		return
+	var now := _now()
+	for peer_id in _replay_out.keys():
+		var pending: Dictionary = _replay_out[peer_id]
+		if now < float(pending.get("deadline", 0.0)):
+			continue
+		if not _peer_connected(int(peer_id)):
+			# 人已经掉了。留着只是占内存 —— 他重连回来时走 _resume_seat 补发。
+			_replay_out.erase(peer_id)
+			continue
+		if int(pending.get("tries", 0)) >= REPLAY_MAX_RETRIES:
+			# 放弃。回放只是播放素材，收不到不该阻塞任何东西：权威结算走的是
+			# match_state / room_state，那两条都不经过这里。
+			_net_log("replay give up peer=%d battle=%s tries=%d (replay only, settlement unaffected)" % [
+				int(peer_id), str(pending.get("battle_id", "")), int(pending.get("tries", 0))])
+			_replay_out.erase(peer_id)
+			continue
+		pending["tries"] = int(pending.get("tries", 0)) + 1
+		pending["deadline"] = now + REPLAY_ACK_TIMEOUT_SEC
+		_replay_out[peer_id] = pending
+		_net_log("replay retry peer=%d battle=%s try=%d" % [
+			int(peer_id), str(pending.get("battle_id", "")), int(pending["tries"])])
+		_send_replay_chunks(int(peer_id), PackedInt32Array(), "")
+
+
+# 断线时把这个 peer 的下发状态丢掉。不清的话每个掉线的人都留一份几十 KB 的
+# payloads 在 _replay_out 里，而他重连回来走的是 _resume_seat 补发那条路。
+func _replay_forget_peer(peer_id: int) -> void:
+	_replay_out.erase(peer_id)
 
 # B9：replay 走独立可靠通道 CH_BULK。它内部仍然有序、仍然可靠，
 # 但**压不到控制流**——房间状态、结算、交易、握手都在 CH_CONTROL 上各走各的。
@@ -1937,10 +2160,16 @@ func _room_compute_and_broadcast_replays(room: Dictionary) -> void:
 		# 两队 replay 一律全发（已确认的产品规则：玩家要能随时切镜头看另一队）。
 		# 旧的 send_rival_replay 开关与这条规则冲突，已废除 —— 压缩后一份才 62 KB，
 		# 当初"关掉它省带宽"的理由也不再成立。
-		_rpc_team_replay.rpc_id(int(peer_id),
+		_send_replay_to_peer(int(peer_id), str(room.get("battle_id", "")),
 			packed_a if slot < 3 else packed_b,
 			packed_b if slot < 3 else packed_a)
 		_net_log("match_state/replay sent room=%d round=%d peer=%d slot=%d" % [int(room.get("id", 0)), int(room.get("round_index", 1)), int(peer_id), slot])
+	# 留一份给重连的人补看（已确认的产品规则：重连回来的人应该补看那一场的回放）。
+	# **只留内存，不进快照** —— DedicatedServerService.PERSISTED_ROOM_FIELDS 白名单
+	# 刻意排除了 boards/last_board 这类缓存大字段，回放（两份约 196 KB）同理：
+	# 快照是每 5 秒全量序列化写盘的，无脑塞进去就是给自己造一个新的冻结源。
+	# 代价如实记：服务器重启后这一场的回放没了，重连者仍只能看到结算结果。
+	room.replay_packed = {"a": packed_a, "b": packed_b}
 	room.boards = {}
 
 # 影子审计：只记录、不拦截。上线前必须先知道自己的误判率——直接开拦截会把
@@ -2922,11 +3151,29 @@ func _resume_seat(sender: int, token: String) -> void:
 	# "平时发一部分、重连发另一部分"正是 C5 那些缺字段的由来。
 	# 这里的一次广播同时把快照发给全房（含刚回来的这个 peer）。
 	_broadcast_room_lobby(room)
-	# 本回合结果已算出（结算阶段）：补发该座位的 match_state，客户端直接跳过战斗
+	# 本回合结果已算出（结算阶段）：补发该座位的 match_state 与回放。
+	#
+	# 已确认的产品规则：**重连回来的人应该补看那一场的回放**。
+	# 改这里之前只发 match_state，注释写的是“客户端直接跳过战斗”——
+	# 那是有意的，但产品上不对：掉线重连的人会直接看到结果，中间那场战斗没了。
+	#
+	# 顺序跟广播路径一致：match_state（几百字节、权威结算）必须排在 replay 之前，
+	# 否则结算状态被压在大包后面，玩家卡在“战斗打完但结算不来”。
 	if str(room.get("state", "")) == ROOM_RESULT:
 		var ms: Dictionary = (room.get("last_match_state", {}) as Dictionary).get(slot, {})
 		if not ms.is_empty():
 			_rpc_receive_match_state.rpc_id(sender, ms)
+		# 回放只存内存（不进快照），所以服务器重启过的话这里是空的，
+		# 重连者仍只能看到结算结果——这是已知且接受的代价。
+		var kept: Dictionary = room.get("replay_packed", {})
+		if not kept.is_empty():
+			var own: PackedByteArray = kept.get("a" if slot < 3 else "b", PackedByteArray())
+			var rival: PackedByteArray = kept.get("b" if slot < 3 else "a", PackedByteArray())
+			if own.size() > 0:
+				_send_replay_to_peer(sender, str(room.get("battle_id", "")), own, rival)
+				_net_log("resume replay resent room=%d round=%d slot=%d bytes=%d/%d" % [
+					int(room.get("id", 0)), int(room.get("round_index", 1)), slot,
+					own.size(), rival.size()])
 	# 战斗阶段：上面可能刚替它补交了棋盘，凑齐就立即结算，别等下一个提交者
 	elif str(room.get("state", "")) == ROOM_BATTLE:
 		_room_try_finalize_boards(room)
@@ -3100,6 +3347,7 @@ func _on_peer_disconnected(id: int) -> void:
 	_peer_last_ping.erase(id)
 	_peer_connected_at.erase(id)
 	_rate_forget(id)
+	_replay_forget_peer(id)
 	# 短 token 映射过去从不清理，peer 断开也不 erase —— 内存只涨不降。
 	var short_token := str(_peer_public_token.get(id, ""))
 	if not short_token.is_empty():

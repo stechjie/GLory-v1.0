@@ -42,6 +42,8 @@ func _run() -> void:
 	_check_snapshot_round_trip()
 	_check_snapshot_rejects_foreign_version()
 	_check_snapshot_cadence()
+	_check_replay_not_persisted()
+	_check_resume_resends_replay()
 	_cleanup()
 	_h.finish(get_tree())
 
@@ -231,3 +233,71 @@ func _check_snapshot_cadence() -> void:
 		"cadence_never_wrote", "有变更且攒够间隔后必须落盘")
 	_h.expect(not bool(kit["rooms"].rooms_dirty),
 		"cadence_still_dirty", "落盘后应清掉脏标记，否则下次又会白写一遍")
+
+
+# --- 接线：重连补回放 ---------------------------------------------------------
+#
+# 已确认的产品规则：**重连回来的人应该补看那一场的回放**。
+# 在这之前 _resume_seat 只补发 match_state，注释写的是"客户端直接跳过战斗"——
+# 那是有意的，但产品上不对：掉线重连的人会直接看到结果，中间那场战斗没了。
+#
+# 这一条只能做成源码级断言：_resume_seat 要 multiplayer（真 peer、真房间），
+# RefCounted 的检查进程里够不着。真正的行为验证是双设备实测（战斗中断网再连回）。
+# 所以这里的目标不是"证明它работает"，而是**挡住它被人顺手删掉**。
+#
+# 关键：断言必须限定在 _resume_seat 的函数体内。直接全文 contains
+# "_send_replay_to_peer" 会命中它自己的定义，那样即使 resume 里根本没调用也照样绿——
+# 这个坑在 BattleScreen 的 _spawn_actors_for_tick 上踩过一次，代价是一次假绿。
+func _check_resume_resends_replay() -> void:
+	var body := _function_body("res://scripts/autoload/NetworkService.gd", "func _resume_seat")
+	_h.expect(not body.is_empty(), "resume_body_missing",
+		"读不到 _resume_seat 的函数体 —— 断言可能已失效（函数被改名？）")
+	_h.expect(body.contains("_send_replay_to_peer("),
+		"resume_no_replay", "_resume_seat 必须补发回放，否则重连回来的人会直接跳到结算")
+	_h.expect(body.contains("replay_packed"),
+		"resume_no_kept_replay", "_resume_seat 应从 room.replay_packed 取那一场留存的回放")
+	# 顺序：match_state 必须排在 replay 之前。反过来时权威结算被压在大包后面，
+	# 玩家卡在"战斗打完但结算不来"——这正是广播路径上那条注释记的教训。
+	var i_ms := body.find("_rpc_receive_match_state")
+	var i_rp := body.find("_send_replay_to_peer(")
+	_h.expect(i_ms >= 0 and i_rp > i_ms,
+		"resume_order", "match_state 必须排在 replay 之前（几百字节的权威结算不该被大包压住）")
+
+
+# 服务端留存的回放**不得进快照**。
+#
+# 快照是每 5 秒全量序列化写盘的，而回放两份约 196 KB —— 塞进去就是给自己造一个新的
+# 冻结源（DedicatedServerService 的白名单注释里对 boards/last_board 写的是同一件事）。
+# 代价已知且接受：服务器重启后那一场的回放没了，重连者只能看到结算结果。
+func _check_replay_not_persisted() -> void:
+	var fields: Array = ServerScript.PERSISTED_ROOM_FIELDS
+	_h.expect(not fields.has("replay_packed"),
+		"replay_persisted", "replay_packed 不得进快照白名单 —— 每 5 秒全量写盘 196 KB 是新的冻结源")
+	# 顺带钉住既有的两个缓存字段，理由完全一样。它们此前只有注释在说，没有断言在管。
+	_h.expect(not fields.has("boards") and not fields.has("last_board"),
+		"cache_persisted", "boards/last_board 是缓存类字段，同样不得进快照")
+
+
+# 取一个函数的函数体：从 `func 名字` 那行开始，到**下一个顶格非空行**为止。
+#
+# 边界用"顶格非空行"而不是"下一个 func/@rpc"：后者会把函数末尾的注释和紧跟的
+# const 一起吃进来（在 NetworkService 上实测踩过，body_range 多吃了一个 const）。
+func _function_body(path: String, signature: String) -> String:
+	var source := FileAccess.get_file_as_string(path)
+	if source.is_empty():
+		return ""
+	var lines := source.split("\n")
+	var out: Array[String] = []
+	var inside := false
+	for raw in lines:
+		var line := str(raw)
+		if not inside:
+			if line.begins_with(signature):
+				inside = true
+				out.append(line)
+			continue
+		# 顶格且非空 = 函数体结束（GDScript 的函数体一定是缩进的）
+		if not line.is_empty() and not line.begins_with("\t") and not line.begins_with(" "):
+			break
+		out.append(line)
+	return "\n".join(out)

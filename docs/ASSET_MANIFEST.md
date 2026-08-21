@@ -1,6 +1,6 @@
 # 资产清单（自动生成，勿手改）
 
-生成者：`tools/asset_manifest_check.gd`　生成时间：2026-08-20T05:09:37　Godot：4.7-stable (official)
+生成者：`tools/asset_manifest_check.gd`　生成时间：2026-08-21T03:33:17　Godot：4.7-stable (official)
 
 清单协议：`schema_version=2`　稳定库存指纹：`a0751fdc580e78dfe6e4023c3f55501471510d0db00d27ae5732a853faafb3fc`
 

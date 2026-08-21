@@ -125,6 +125,34 @@ if ! _skip channel_check; then
     run_mode "channel_check --ch-role=client" "res://tools/channel_check.tscn" -- "--ch-role=client"
     kill "$CH_SERVER_PID" 2>/dev/null
     wait "$CH_SERVER_PID" 2>/dev/null
+
+    # --- 分块模式：同样两个进程，但回放走 _send_replay_to_peer 的分块路径 -------
+    # 为什么必须单独跑一遍：实测最坏一场压缩后 61.8 KB，低于 192 KiB 阈值，
+    # 也就是**生产里永远走不到分块**。不强制跑一遍的话，分块/确认/重试三件事
+    # 在真实网络上等于没验过 —— 同进程单测测不到"包过不过得了 ENet"。
+    "$GODOT_BIN" --headless --path "$PROJECT_ROOT_WIN" res://tools/channel_check.tscn -- --ch-role=server --ch-chunked=1 > "$LOG_DIR/channel_server_chunked.log" 2>&1 &
+    CH_CHUNK_PID=$!
+    sleep 5
+    run_mode "channel_check --ch-chunked=1 (client)" "res://tools/channel_check.tscn" --         "--ch-role=client" "--ch-chunked=1"
+    # 服务端在收到确认时会自己退出并打印 ack_ok=true。等它一会儿再收。
+    for _i in 1 2 3 4 5 6 7 8 9 10; do
+        kill -0 "$CH_CHUNK_PID" 2>/dev/null || break
+        sleep 1
+    done
+    kill "$CH_CHUNK_PID" 2>/dev/null
+    wait "$CH_CHUNK_PID" 2>/dev/null
+    # 确认链路：客户端收齐后回 _rpc_replay_ack，服务端据此清掉下发条目。
+    # 这是唯一能在真实网络上证明"确认"跑通的观测点。
+    if grep -q 'ack_ok=true' "$LOG_DIR/channel_server_chunked.log" 2>/dev/null; then
+        PASSED+=("channel_check chunked ack")
+        printf '  %-40s PASS
+' "channel_check chunked ack"
+    else
+        FAILED+=("channel_check chunked ack (服务端没收到确认)")
+        printf '  %-40s FAIL
+' "channel_check chunked ack"
+        grep -iE 'CH\]' "$LOG_DIR/channel_server_chunked.log" 2>/dev/null | tail -3 | sed 's/^/        /'
+    fi
 fi
 
 # --- 收尾 ---------------------------------------------------------------------

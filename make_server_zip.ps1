@@ -3,9 +3,16 @@
 #  推荐用法：双击同目录的 make_server_zip.bat（最稳）
 #  也可在 PowerShell 里执行： .\make_server_zip.ps1
 #
-#  输出文件名固定不带版本号（每次覆盖），杜绝"传了 v4 解压了 v5"的事故。
-#  版本核对一律看协议号和打包时间：本脚本结尾会打印，服务器启动日志
-#  （journalctl -u glory-server）里 "server starting protocol=N" 必须和它一致。
+#  输出文件名带协议号：glory_server_p<N>.zip，N 由本脚本**从 NetworkConfig.gd 实读**。
+#
+#  2026-08-21 改：此前固定叫 glory_server_upload.zip，理由是"杜绝传了 v4 解压了 v5"。
+#  实战里它造出了相反的事故：服务器家目录里躺着一个同名的昨天的包，名字一模一样，
+#  人看不出区别，差点就把 protocol 16 的旧包当成新包解压了。名字里带上协议号之后，
+#  p16 和 p17 一眼就能分开，上传后也不会静默覆盖掉另一个版本。
+#
+#  名字是从源码自动生成的，**不要手写**：手写的版本号会和内容漂移，
+#  而自动生成的名字永远不会擒谎。最终以服务器启动日志
+#  （journalctl -u glory-server）里 "server starting protocol=N" 为准。
 #
 #  2026-07-28 修：此前脚本"打包成功"只代表**文件复制完了**，不代表包能跑。
 #  实测上一个包在空目录里根本起不来（没有 assets/，UI 主场景 preload 失败 ->
@@ -16,7 +23,8 @@
 
 param(
     [string]$Src = $PSScriptRoot,
-    [string]$Out = (Join-Path $PSScriptRoot "glory_server_upload.zip"),
+    # 留空 = 自动命名为 glory_server_p<协议号>.zip（协议号从源码实读）
+    [string]$Out = "",
     # 冷启动冒烟测试用的 Godot。找不到就跳过测试并**降级为失败**（不能默默放过）。
     [string]$Godot = "C:\Users\Leno\Desktop\godot\Godot_v4.7-stable_win64_console.exe",
     [switch]$SkipSmoke,
@@ -81,6 +89,8 @@ try {
     $protoMatch = Select-String -Path "$stage\scripts\multiplayer\NetworkConfig.gd" -Pattern 'NETWORK_PROTOCOL_VERSION := (\d+)'
     if (-not $protoMatch) { throw "读不到 NETWORK_PROTOCOL_VERSION —— 不能写成 '?' 然后当作成功继续" }
     $protocol = $protoMatch.Matches[0].Groups[1].Value
+    # 名字跟着实读到的协议号走，不接受手写 —— 手写会和内容漂移。
+    if (-not $out) { $out = Join-Path $PSScriptRoot "glory_server_p$protocol.zip" }
     $buildTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $gitSha = ""
     try { $gitSha = (& git -C $src rev-parse HEAD 2>$null) } catch {}
@@ -152,8 +162,9 @@ try {
     Write-Host "==================================================" -ForegroundColor Green
     Write-Host ""
     Write-Host " 接下来在服务器 SSH 里执行：" -ForegroundColor Cyan
-    Write-Host "   1. UPLOAD FILE 上传 glory_server_upload.zip"
-    Write-Host '   2. unzip -o ~/glory_server_upload.zip -d ~/Glory/"Beta 0.04"'
+    $zipName = Split-Path $out -Leaf
+    Write-Host "   1. UPLOAD FILE 上传 $zipName"
+    Write-Host "   2. unzip -q ~/$zipName -d ~/Glory/`"Beta 0.04`""
     Write-Host "   3. sudo systemctl restart glory-server"
     Write-Host "   4. journalctl -u glory-server -n 5 --no-pager"
     Write-Host "      ^ 看到 server starting protocol=$protocol 才算部署成功" -ForegroundColor Yellow

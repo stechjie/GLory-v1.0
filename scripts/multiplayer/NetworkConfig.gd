@@ -51,7 +51,13 @@ const USE_DEDICATED_SERVER := true
 #      所以旧服务器**不会**拒绝新客户端，只会两边各算各的、结算对不上——这种
 #      静默分歧比明确报错难查得多。顶这一格就是为了让版本校验把它拦下来。
 #      规则：模拟逻辑或数值表改动到会影响战斗结果时，即使没有线格变更也必须顶号。
-const NETWORK_PROTOCOL_VERSION := 16
+# v17: 回放传输补齐分块/确认/重试，新增两个 RPC（_rpc_team_replay_chunk、
+#      _rpc_replay_ack）。**加 @rpc 方法会平移整套 RPC 的 wire ID**（同 :1846 与
+#      :3759 两处注释），旧服务器与新客户端的方法编号会整体错位——那是静默错位，
+#      症状是随机调错方法，比任何报错都难查。顶号把它变成握手阶段一次干净的
+#      protocol_mismatch 拒绝，玩家看到的是可读原因。
+#      代价：线上服务器必须同步重新部署，否则两端都连不上。这是有意的，不是回归。
+const NETWORK_PROTOCOL_VERSION := 17
 
 # Local phone hosting is debug-only.
 const ALLOW_LOCAL_HOST_DEBUG := false

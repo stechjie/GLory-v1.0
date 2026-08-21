@@ -34,6 +34,9 @@ func configure(log_fn: Callable) -> void:
 func clear() -> void:
 	team_replay = {}
 	team_replay_rival = {}
+	# 重组中的分块一并丢掉。换局/重连时留着旧槽有两个后果：占着 MAX_INFLIGHT_TRANSFERS
+	# 的名额，以及上一场的块可能和新一场拼在一起（battle_id 不同挡得住，但不该依赖它）。
+	_inflight.clear()
 
 
 # 包格式：[8 字节 小端 u64 原始长度][zstd 压缩数据]
@@ -75,3 +78,216 @@ func unpack(packed: PackedByteArray) -> Dictionary:
 func _log(message: String) -> void:
 	if _log_fn.is_valid():
 		_log_fn.call(message)
+
+
+# =============================================================================
+# 分块 / 确认 / 重试（原始 README 给本服务定的四件事里的后三件）
+# =============================================================================
+#
+# 分界和其余五个服务一致：本类是 RefCounted，**够不着 multiplayer**。
+# 这里只回答三个问题 —— 该不该切、这块收下了没、还缺哪几块。
+# 发包、收包、重试计时全部留在门面 NetworkService 上。
+#
+# 为什么要有阈值而不是一律分块：实测压缩后典型一场约 98 KiB，而 tools/channel_check
+# 已经证明 200 KB 能过 CH_BULK。一律分块等于为了一个当前不存在的问题，
+# 给自己换来一个重组缓冲（= 一个新的内存攻击面）。所以**低于阈值走原来的单包路径，
+# 一个字节的行为都不变**，分块只对离群的大局生效（最坏一场原始 5.32 MiB）。
+#
+# 这个决定的代价必须写明：分块路径在生产里几乎不会被走到，等于养一条没人验的代码路。
+# 对策是 should_chunk() 带一个 force 参数，门禁和真机双设备测试都走强制模式 ——
+# 「实现了」和「验过了」是两回事。
+
+# 超过它才分块。192 KiB：低于 channel_check 实证过的 200 KB，高于典型局的 98 KiB。
+const CHUNK_THRESHOLD_BYTES := 192 * 1024
+# 每块净荷。留在 ENet 可靠包舒适区内，且 4 MiB 的传输上限对应 88 块，远低于 MAX_CHUNKS。
+const CHUNK_PAYLOAD_BYTES := 48 * 1024
+# 单次传输的压缩后字节上限。unpack() 那道 16 MiB 是解压**后**的上限，
+# 挡不住「声称有一万块」这种在重组阶段就该被拒的输入，所以这里要单独设一道。
+const MAX_TRANSFER_BYTES := 4 * 1024 * 1024
+# 所有重组中传输的字节总和上限。单条限死了、总量不限，等于允许开很多条把内存吃光。
+const MAX_REASSEMBLY_BYTES := 8 * 1024 * 1024
+# 同时重组中的传输条数上限。
+const MAX_INFLIGHT_TRANSFERS := 4
+# 单次传输允许的最大块数。先用它判掉离谱的 total，再决定要不要分配任何东西。
+const MAX_CHUNKS := 256
+# 多久没有新块就回收。重组缓冲不带过期 = 一个发一半就跑的对端能把内存钉死。
+const REASSEMBLY_TTL_SEC := 30.0
+
+# 回放的两个方向。kind 必须是白名单里的值：不校验就等于让对端拿它当任意字典键，
+# 每来一个新 kind 就多占一条重组槽。
+const CHUNK_KIND_OWN := "own"
+const CHUNK_KIND_RIVAL := "rival"
+
+# key（"battle_id|kind"）-> {total:int, chunks:{idx:PackedByteArray}, bytes:int, age:float}
+var _inflight: Dictionary = {}
+
+
+# 低于阈值返回 false —— 调用方据此走原来的单包 _rpc_team_replay。
+# force 只给门禁和真机测试用，理由见本节开头。
+func should_chunk(packed: PackedByteArray, force: bool = false) -> bool:
+	if packed.size() <= PACK_HEADER_BYTES:
+		return false          # 空包/只有头：没有可分的东西
+	if force:
+		return true
+	return packed.size() > CHUNK_THRESHOLD_BYTES
+
+
+# 切块。返回 Array[Dictionary]，每块 {battle_id, kind, idx, total, data}。
+# 切不了（空包、超过单次传输上限）返回空数组 —— 调用方必须处理这个情况，
+# 不能默认「切出来一定非空」。
+func split(packed: PackedByteArray, battle_id: String, kind: String) -> Array:
+	if packed.size() <= PACK_HEADER_BYTES:
+		return []
+	if not _kind_ok(kind):
+		_log("replay split rejected: bad kind=%s" % kind)
+		return []
+	if packed.size() > MAX_TRANSFER_BYTES:
+		_log("replay split rejected: bytes=%d cap=%d" % [packed.size(), MAX_TRANSFER_BYTES])
+		return []
+	var total := int(ceil(float(packed.size()) / float(CHUNK_PAYLOAD_BYTES)))
+	if total <= 0 or total > MAX_CHUNKS:
+		_log("replay split rejected: total=%d cap=%d" % [total, MAX_CHUNKS])
+		return []
+	var out: Array = []
+	for i in total:
+		var from := i * CHUNK_PAYLOAD_BYTES
+		var to: int = min(from + CHUNK_PAYLOAD_BYTES, packed.size())
+		out.append({
+			"battle_id": battle_id,
+			"kind": kind,
+			"idx": i,
+			"total": total,
+			"data": packed.slice(from, to),
+		})
+	return out
+
+
+# 收一块。返回 {"complete": bool, "packed": PackedByteArray, "error": String}。
+#
+# 这个函数的输入**完全由对端控制**，所以每一条校验都对应一种具体的滥用：
+#   total 离谱      -> 一个包就能让重组表按一万块去记账
+#   idx 越界        -> 写到别的槽里
+#   data 超长       -> 绕过按块数算出来的上限
+#   total 中途变化  -> 用第二个 total 把已有的记账搅乱
+#   条数/总量超限   -> 开很多条把内存吃光
+# 任何一条不过都**安静拒收**（返回 error，不抛、不崩）—— 和 unpack() 对损坏包的
+# 处理方式保持一致。
+func accept_chunk(env: Dictionary) -> Dictionary:
+	var battle_id := str(env.get("battle_id", ""))
+	var kind := str(env.get("kind", ""))
+	var idx := int(env.get("idx", -1))
+	var total := int(env.get("total", 0))
+	var data: PackedByteArray = env.get("data", PackedByteArray())
+
+	if battle_id.is_empty():
+		return _chunk_error("missing_battle_id")
+	if not _kind_ok(kind):
+		return _chunk_error("bad_kind")
+	if total <= 0 or total > MAX_CHUNKS:
+		return _chunk_error("bad_total=%d" % total)
+	if idx < 0 or idx >= total:
+		return _chunk_error("bad_idx=%d/%d" % [idx, total])
+	if data.size() > CHUNK_PAYLOAD_BYTES:
+		return _chunk_error("chunk_too_large=%d" % data.size())
+
+	var key := _chunk_key(battle_id, kind)
+	var entry: Dictionary = _inflight.get(key, {})
+	if entry.is_empty():
+		if _inflight.size() >= MAX_INFLIGHT_TRANSFERS:
+			return _chunk_error("too_many_inflight")
+		# 按声称的 total 先算一遍最坏体积，超限的话一块都不收 ——
+		# 「先收着再说」正是解压炸弹那类问题的成因。
+		if total * CHUNK_PAYLOAD_BYTES > MAX_TRANSFER_BYTES:
+			return _chunk_error("declared_too_large=%d" % total)
+		entry = {"total": total, "chunks": {}, "bytes": 0, "age": 0.0}
+		_inflight[key] = entry
+	elif int(entry.get("total", 0)) != total:
+		# 同一次传输里 total 变了：要么是 bug，要么是有人在搅记账。整条丢掉重来。
+		_inflight.erase(key)
+		return _chunk_error("total_changed")
+
+	var chunks: Dictionary = entry.get("chunks", {})
+	if chunks.has(idx):
+		# 重复块（重试会造成）：幂等收下，但**不重复计字节**，否则总量记账会虚高。
+		return {"complete": false, "packed": PackedByteArray(), "error": ""}
+	if _total_bytes() + data.size() > MAX_REASSEMBLY_BYTES:
+		return _chunk_error("reassembly_budget")
+
+	chunks[idx] = data
+	entry["chunks"] = chunks
+	entry["bytes"] = int(entry.get("bytes", 0)) + data.size()
+	entry["age"] = 0.0
+	_inflight[key] = entry
+
+	if chunks.size() < total:
+		return {"complete": false, "packed": PackedByteArray(), "error": ""}
+
+	# 齐了：**按 idx 顺序**拼回去。字典键序不保证，靠索引循环而不是 keys()。
+	var out := PackedByteArray()
+	for i in total:
+		out.append_array(chunks[i])
+	_inflight.erase(key)
+	return {"complete": true, "packed": out, "error": ""}
+
+
+# 还缺哪几块。供确认（收齐了报空）和重试（只补缺的那几块）用。
+# 完全没见过这次传输时返回空 —— 调用方要能区分「不缺」和「没开始」，
+# 那由 has_inflight() 回答。
+func missing_chunks(battle_id: String, kind: String) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	var entry: Dictionary = _inflight.get(_chunk_key(battle_id, kind), {})
+	if entry.is_empty():
+		return out
+	var chunks: Dictionary = entry.get("chunks", {})
+	for i in int(entry.get("total", 0)):
+		if not chunks.has(i):
+			out.append(i)
+	return out
+
+
+func has_inflight(battle_id: String, kind: String) -> bool:
+	return _inflight.has(_chunk_key(battle_id, kind))
+
+
+# 过期回收。用 tick 累加的年龄而不是墙钟：本类因此不需要时间源注入，
+# 且门禁可以直接 tick(31.0) 把过期跑出来，不用等真实时间。
+func tick(delta: float) -> void:
+	if _inflight.is_empty():
+		return
+	var dead: Array = []
+	for key in _inflight.keys():
+		var entry: Dictionary = _inflight[key]
+		entry["age"] = float(entry.get("age", 0.0)) + delta
+		_inflight[key] = entry
+		if float(entry["age"]) >= REASSEMBLY_TTL_SEC:
+			dead.append(key)
+	for key in dead:
+		var entry2: Dictionary = _inflight[key]
+		_log("replay reassembly expired: key=%s have=%d/%d bytes=%d" % [
+			str(key), (entry2.get("chunks", {}) as Dictionary).size(),
+			int(entry2.get("total", 0)), int(entry2.get("bytes", 0))])
+		_inflight.erase(key)
+
+
+func inflight_count() -> int:
+	return _inflight.size()
+
+
+func _chunk_key(battle_id: String, kind: String) -> String:
+	return "%s|%s" % [battle_id, kind]
+
+
+func _kind_ok(kind: String) -> bool:
+	return kind == CHUNK_KIND_OWN or kind == CHUNK_KIND_RIVAL
+
+
+func _total_bytes() -> int:
+	var sum := 0
+	for key in _inflight.keys():
+		sum += int((_inflight[key] as Dictionary).get("bytes", 0))
+	return sum
+
+
+func _chunk_error(reason: String) -> Dictionary:
+	_log("replay chunk rejected: %s" % reason)
+	return {"complete": false, "packed": PackedByteArray(), "error": reason}
