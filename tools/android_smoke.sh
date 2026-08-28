@@ -419,6 +419,11 @@ sleep "$LAUNCH_WAIT_SEC"
 LAUNCH_MS="$(( $(date +%s%3N) - LAUNCH_MS_START ))"
 
 "$ADB_BIN" logcat -d -v brief > "$RUN_DIR/logcat_full.log" 2>&1
+# 第二路按 tag 过滤。实测这台设备（25028RN03A）的 main 环形缓冲默认只有 64 KiB，
+# 而框架每 16 ms 刷一条 CompositionEngine —— 引擎日志会在几十秒内被整体驱逐，
+# 于是 GLORY_STARTUP 标记连同证据一起消失，白出一次 694 MiB 的包。
+# 出包前建议先 `adb logcat -G 16M`；这一路是即使没调也还能捞到标记的兜底。
+"$ADB_BIN" logcat -d -s godot:V > "$RUN_DIR/logcat_godot.log" 2>&1 || true
 grep -aE 'FATAL EXCEPTION|E Godot|SCRIPT ERROR|ANR in' "$RUN_DIR/logcat_full.log" > "$RUN_DIR/logcat_errors.log" 2>/dev/null
 FATAL_COUNT="$(grep -ac 'FATAL EXCEPTION' "$RUN_DIR/logcat_errors.log" || true)"
 SCRIPT_ERR_COUNT="$(grep -ac 'SCRIPT ERROR' "$RUN_DIR/logcat_errors.log" || true)"
@@ -456,7 +461,9 @@ if [ -n "$DISPLAYED_TOKEN" ]; then
     DISPLAYED_MS=$(( d_sec * 1000 + d_ms ))
 fi
 
-grep -aoE 'GLORY_STARTUP \{.*\}' "$RUN_DIR/logcat_full.log" > "$RUN_DIR/startup_trace.jsonl" 2>/dev/null || true
+grep -haoE 'GLORY_(STARTUP|BUILD|ISSUE) \{.*\}' \
+    "$RUN_DIR/logcat_full.log" "$RUN_DIR/logcat_godot.log" 2>/dev/null \
+    | awk '!seen[$0]++' > "$RUN_DIR/startup_trace.jsonl" || true
 STARTUP_MARK_COUNT="$(grep -ac . "$RUN_DIR/startup_trace.jsonl" 2>/dev/null || echo 0)"
 
 # 用 python 解 JSON 而不是 sed：载荷是结构化的，字段顺序不保证，正则迟早看走眼。
