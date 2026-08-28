@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" uid="uid://dwwopi34oxafn" path="res://scenes/debug/ModelBattlePreview.gd" id="1_preview"]
 [ext_resource type="Texture2D" path="res://assets/board/battle_forest_arena_2_5d.png" id="2_board_texture"]
+[ext_resource type="Script" path="res://scenes/debug/ModelVisualMatrixLauncher.gd" id="3_matrix_launcher"]
 
 [sub_resource type="Environment" id="Environment_battle_preview"]
 background_mode = 1
@@ -96,3 +97,6 @@ mesh = SubResource("SphereMesh_hit")
 [node name="InfoLabel" type="Label" parent="CanvasLayer" unique_id=1566760169]
 theme_override_font_sizes/font_size = 18
 text = "Model Battle Preview"
+
+[node name="ModelVisualMatrixLauncher" type="Node" parent="."]
+script = ExtResource("3_matrix_launcher")

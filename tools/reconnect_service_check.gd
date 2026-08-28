@@ -73,10 +73,19 @@ func _check_session_token() -> void:
 		_h.expect("0123456789abcdef".contains(ch), "session_token_hex", "会话 token 含非 hex 字符 '%s'" % ch)
 
 
+# 这段此前一直没有真正执行过：它按 make_public_token(查重回调) 写，而服务的签名是
+# 无参的 —— 查重走内部的 public_token_seat，可注入的 seam 是 set_random_source()
+# （见 ReconnectService.gd 顶部那段注释）。GDScript 的参数不符只中止当前函数，_run()
+# 继续往下走，检查最后照样打印 status=PASS checked=100。2026-08-28 由
+# tools/run_check.ps1 的引擎级错误检测首次发现。
+#
+# 重写时保留了原来三条断言的意图，换成真实 API：
+#   长度 / 字母表   直接调无参版本即可
+#   占满时放弃      随机源钉死 -> 每次生成同一个 id -> 预先占用它，必然次次撞上
+#   正好试 N 次     数随机源被调用的次数 —— 每试一次取一次随机字节，是等价的观测点
 func _check_public_token_generation() -> void:
 	var svc := _make()
-	var free := func(_id: String) -> bool: return false
-	var id := str(svc.make_public_token(free))
+	var id := str(svc.make_public_token())
 	_h.expect(id.length() == ReconnectServiceScript.PUBLIC_TOKEN_LENGTH,
 		"public_token_length", "短码长度应为 %d，实际 %d" % [ReconnectServiceScript.PUBLIC_TOKEN_LENGTH, id.length()])
 	for ch in id:
@@ -84,25 +93,29 @@ func _check_public_token_generation() -> void:
 			"public_token_alphabet", "短码含字母表外的字符 '%s'（0/O/1/I 易混，已刻意排除）" % ch)
 
 	# 空间占满：必须放弃并返回空串，而不是转不出来。
-	# 这里能确定性地造出来 —— 查重函数由调用方注入，让它一律说"已占用"即可。
-	var taken := func(_id: String) -> bool: return true
 	# 计数器用数组而不是 int：GDScript 的 lambda **按值捕获**局部整数，
 	# 写成 `var tries := 0` 再在闭包里 `tries += 1`，改的是副本，外面永远读到 0。
-	# 第一版就是这么写的，断言报"实际 0 次"才发现。
+	var exhausted_svc := _make()
 	var tries := [0]
-	var counting := func(_id: String) -> bool:
+	exhausted_svc.set_random_source(func(n: int) -> PackedByteArray:
 		tries[0] += 1
-		return true
-	var exhausted := str(svc.make_public_token(counting))
+		var out := PackedByteArray()
+		for _i in n:
+			out.append(7)
+		return out)
+	# 先把那个必然生成的 id 占掉，之后每一次重试都会撞上它。
+	var collide := str(exhausted_svc.make_public_token())
+	_h.expect(not collide.is_empty(), "public_token_fixed_source",
+		"固定随机源下第一次应能签发短码")
+	exhausted_svc.public_token_seat[collide] = "tok_taken"
+
+	tries[0] = 0
+	var exhausted := str(exhausted_svc.make_public_token())
 	_h.expect(exhausted.is_empty(),
 		"public_token_unbounded", "短码空间占满时应返回空串放弃，实际返回 '%s'" % exhausted)
 	_h.expect(int(tries[0]) == ReconnectServiceScript.PUBLIC_TOKEN_MAX_TRIES,
 		"public_token_try_count", "应正好试 %d 次就放弃，实际 %d 次 —— 无界循环会把服务器卡死"
 			% [ReconnectServiceScript.PUBLIC_TOKEN_MAX_TRIES, int(tries[0])])
-	# 写成 `not X.is_empty() == false` 是双重否定，等价于 `X.is_empty()`，
-	# 看着像在测"不得返回"其实什么都没测。第一版就是这么写的。
-	_h.expect(str(svc.make_public_token(taken)).is_empty(),
-		"public_token_taken", "查重说已占用时应放弃并返回空串")
 
 
 # 客户端上报的短码必须先过清洗（A12）：此前任意字符串都能当映射键，

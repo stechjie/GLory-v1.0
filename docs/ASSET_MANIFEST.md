@@ -1,8 +1,8 @@
 # 资产清单（自动生成，勿手改）
 
-生成者：`tools/asset_manifest_check.gd`　生成时间：2026-08-21T03:33:17　Godot：4.7-stable (official)
+生成者：`tools/asset_manifest_check.gd`　生成时间：2026-08-28T06:33:59　Godot：4.7-stable (official)
 
-清单协议：`schema_version=2`　稳定库存指纹：`a0751fdc580e78dfe6e4023c3f55501471510d0db00d27ae5732a853faafb3fc`
+清单协议：`schema_version=2`　稳定库存指纹：`084b5a8c59f48bfa43e1643ef16ff374b0464f124f03de823a986971c582dfa9`
 
 机读版本在 `assets.manifest.json`，A2 用它在新机器上校验资源恢复结果。
 
@@ -10,12 +10,12 @@
 
 | 分类 | 文件数 | 体积 | 含义 |
 | --- | ---: | ---: | --- |
-| `runtime_required` | 917 | 2366.9 MiB | 正式运行会加载，必须进发布包 |
+| `runtime_required` | 924 | 2391.8 MiB | 正式运行会加载，必须进发布包 |
 | `dynamic_dir` | 302 | 258.0 MiB | 代码运行时按目录拼路径，静态查不到引用，一律保留 |
 | `editor_only` | 1 | 2.4 MiB | 只被 tools/ 或 scenes/debug/ 引用，不必进发布包 |
 | `third_party` | 257 | 7.3 MiB | 外部参考包，发布前必须有许可证（C1/A5） |
-| `import_meta` | 1023 | 1.1 MiB | Godot 导入元数据，由引擎生成 |
-| `unreferenced` | 132 | 275.2 MiB | 任何静态引用都查不到，可评估删除 |
+| `import_meta` | 1036 | 1.1 MiB | Godot 导入元数据，由引擎生成 |
+| `unreferenced` | 138 | 306.5 MiB | 任何静态引用都查不到，可评估删除 |
 
 ## 判定结果
 
@@ -66,6 +66,9 @@
 - `res://assets/models/mercenaries/merc_sagittarius_rain_animated/mercsagittariusrainAnimated.gd.uid`
 - `res://assets/models/mercenaries/merc_scorpio_death_animated/mercscorpiodeathAnimated.gd.uid`
 - `res://assets/models/mercenaries/merc_taurus_charge_animated/merctauruschargeAnimated.gd.uid`
+- `res://assets/models/mercenaries/merc_virgo_heal_animated/merc_virgo_heal_Idle.fbx`
+- `res://assets/models/mercenaries/merc_virgo_heal_animated/merc_virgo_heal_Walking.fbx`
+- `res://assets/models/mercenaries/merc_virgo_heal_animated/merc_virgo_heal_attack.fbx`
 - `res://assets/models/mercenaries/merc_virgo_heal_animated/mercvirgohealAnimated.gd.uid`
 - `res://assets/models/monsters/land/pve_land_ancient_tree_animated/PveLandAncientTreeAnimated.gd.uid`
 - `res://assets/models/monsters/land/pve_land_lava_golem_animated/pvelandlavagolemAnimated.gd.uid`
@@ -89,6 +92,9 @@
 - `res://assets/models/pets/pet_mushroom/PetMushroomAnimated.gd.uid`
 - `res://assets/models/pets/pet_rabbit/PetRabbitAnimated.gd.uid`
 - `res://assets/models/units/dark_doom_animated/DarkdoomAnimated.gd.uid`
+- `res://assets/models/units/dark_doom_animated/dark_doom_attack.fbx`
+- `res://assets/models/units/dark_doom_animated/dark_doom_idle.fbx`
+- `res://assets/models/units/dark_doom_animated/dark_doom_run.fbx`
 - `res://assets/models/units/dark_dragon.glb`
 - `res://assets/models/units/dark_dragon_animated/DarkDragonAnimated.gd.uid`
 - `res://assets/models/units/dark_fear.glb`

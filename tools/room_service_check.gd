@@ -53,7 +53,7 @@ func _run() -> void:
 	_check_counts()
 	_check_injected_clock_is_used()
 	_check_cleanup_policy()
-	_check_reserved_seat_expiry()
+	# _check_reserved_seat_expiry() 已删除 —— 见文件下方的说明。
 
 	_h.finish(get_tree())
 
@@ -441,29 +441,19 @@ func _check_cleanup_policy() -> void:
 		"cleanup_result_next_prep", "对局未结束时结算超时应推进下一备战，实际 closed=%s prep=%s" % [str(closed), str(next_prep)])
 
 
-func _check_reserved_seat_expiry() -> void:
-	var taken: Array[Dictionary] = []
-	var auto_fn := func(room: Dictionary, slot: int) -> void:
-		taken.append({"id": int(room.get("id", 0)), "slot": slot})
-
-	var svc := _make_service()
-	var room: Dictionary = svc.new_room()
-	room.reserve_deadline = {0: _now - 1.0, 1: _now + 100.0}
-	svc.tick_reserved_seats(auto_fn)
-	_h.expect(taken.size() == 1 and int(taken[0].slot) == 0,
-		"reserve_expiry_wrong", "只有到期的座位该转 AI，实际 %s" % str(taken))
-	_h.expect(not (room.get("reserve_deadline", {}) as Dictionary).has(0),
-		"reserve_expiry_kept", "到期座位应从 reserve_deadline 里移除")
-	_h.expect((room.get("reserve_deadline", {}) as Dictionary).has(1),
-		"reserve_expiry_early", "未到期的座位不得被移除")
-
-	# suspended 房间不转 AI：房里一个真人都没有，转了只会启动纯 AI 战斗烧 CPU，
-	# 而座位主人还在恢复窗口内可能回来（B11/R2）。
-	taken.clear()
-	var svc2 := _make_service()
-	var s: Dictionary = svc2.new_room()
-	s.suspended = true
-	s.reserve_deadline = {0: _now - 1.0}
-	svc2.tick_reserved_seats(auto_fn)
-	_h.expect(taken.is_empty(), "reserve_suspended_taken",
-		"suspended 房间的到期座位不得转 AI，实际 %s" % str(taken))
+# 预留座位到期的覆盖不在这里 —— 见 tools/reconnect_service_check.gd 的
+# _check_expiry_and_takeover / _check_suspended_room_is_skipped。
+#
+# 这里原本有一份同名测试，调用 RoomService.tick_reserved_seats(auto_fn)。那个方法
+# 在 RoomService 上从来不存在：D1 第 4 刀把扫描策略搬到了 ReconnectService，签名也
+# 变成 tick_reserved_seats(rooms, takeover_fn) 两个参数。于是那段测试每次都在
+# "Nonexistent function" 上中止 —— 而 GDScript 的报错只中止当前函数，_run() 照常
+# 往下走，CheckHarness 最后照样打印 status=PASS checked=132。也就是说它一直是绿的，
+# 一次都没执行过。2026-08-28 由 tools/run_check.ps1 的引擎级错误检测首次发现。
+#
+# 删掉而不是搬过去，是因为 reconnect_service_check 已经把这四条（到期转 AI、
+# 截止清除、未到期保留、suspended 跳过）测全了，还多测了"时间推进后第二个座位到期"。
+#
+# 附带一条线索：NetworkService.gd 里那句注释写着"扫描策略已搬到
+# RoomService.tick_reserved_seats()"，但下一行调用的是 _reconnect_service。
+# 注释指错了类，多半就是这段测试当初写错接收者的原因。那是产品代码，本轮未改。

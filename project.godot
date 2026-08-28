@@ -19,6 +19,7 @@ config/icon="res://icon.svg"
 
 [autoload]
 
+StartupTrace="*res://scripts/autoload/StartupTrace.gd"
 LocaleManager="*res://scripts/autoload/LocaleManager.gd"
 GameState="*res://scripts/autoload/GameState.gd"
 DataRegistry="*res://scripts/autoload/DataRegistry.gd"
@@ -30,6 +31,7 @@ VFXManager="*res://effects/VFXManager.gd"
 TutorialMode="*res://scripts/tutorial/TutorialMode.gd"
 PerfLog="*res://tools/PerfLog.gd"
 DeviceHarness="*res://tools/DeviceHarness.gd"
+IssueReport="*res://scripts/autoload/IssueReport.gd"
 
 [display]
 

@@ -521,6 +521,10 @@ func _audit_actors() -> Dictionary:
 	var portrait_fallback_count := 0
 	var missing_model_path_count := 0
 	var blank_uid_count := 0
+	var material_audit_count := 0
+	var textured_surface_count := 0
+	var suspect_white_count := 0
+	var cleanup_changed_actor_count := 0
 	var live_uids: Dictionary = {}
 	var state_value = _screen.get("_state")
 	if state_value is Dictionary:
@@ -583,6 +587,17 @@ func _audit_actors() -> Dictionary:
 		var portrait_fallback := actor_present and str(model.get_meta("visual_kind", "")) == "portrait_fallback"
 		if portrait_fallback:
 			portrait_fallback_count += 1
+		var material_audit: Dictionary = {}
+		if actor_present:
+			var audit_value: Variant = model.get_meta("material_audit", {})
+			if audit_value is Dictionary:
+				material_audit = (audit_value as Dictionary).duplicate(true)
+		if not material_audit.is_empty():
+			material_audit_count += 1
+			textured_surface_count += int(material_audit.get("textured_surface_count", 0))
+			suspect_white_count += int(material_audit.get("suspect_white_count", 0))
+			if not (material_audit.get("cleanup_changed_fields", []) as Array).is_empty():
+				cleanup_changed_actor_count += 1
 		entries.append({
 			"uid": uid,
 			"unit_id": str(roster_entry.get("id", "")),
@@ -598,6 +613,7 @@ func _audit_actors() -> Dictionary:
 			"body_fallback_defined": fallback_defined,
 			"body_fallback_visible": fallback_visible,
 			"portrait_fallback_visible": portrait_fallback,
+			"material_audit": material_audit,
 		})
 	return {
 		"roster_count": roster.size(),
@@ -612,6 +628,10 @@ func _audit_actors() -> Dictionary:
 		"visible_portrait_fallback_count": portrait_fallback_count,
 		"missing_model_path_count": missing_model_path_count,
 		"blank_uid_count": blank_uid_count,
+		"material_audit_count": material_audit_count,
+		"textured_surface_count": textured_surface_count,
+		"suspect_white_count": suspect_white_count,
+		"cleanup_changed_actor_count": cleanup_changed_actor_count,
 		"entries": entries,
 	}
 

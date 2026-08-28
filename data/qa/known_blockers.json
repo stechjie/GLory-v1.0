@@ -1,0 +1,106 @@
+{
+  "_doc": [
+    "Known blockers, kept as data so README / V2 / V3 can be regenerated from one",
+    "source instead of drifting apart. tools/current_health.ps1 reads this file.",
+    "",
+    "Rules:",
+    "1. owner=external means nobody in this repo can close it alone (missing source",
+    "   art, a decision, a device). Say so rather than leaving a checkbox unticked.",
+    "2. evidence must point at a file someone can open, not at a claim.",
+    "3. Delete an entry when it is genuinely resolved. Do not mark it done here to",
+    "   make a document look green -- the gates are the source of truth."
+  ],
+  "schema_version": 1,
+  "blockers": [
+    {
+      "id": "flame-claw-source-textures",
+      "title": "Flame Claw 缺少源贴图，12 张截图仍是白模",
+      "state": "blocked",
+      "owner": "external",
+      "area": "V2 P0-03 / P0-04",
+      "detail": "formation_ally_1_animated 的 FBX 引用旧 Meshy 路径下的 Baked_BaseColor.png / Baked_Emit.png / normal.png，磁盘上已搜索不到。model_material_integrity 因此有 3 条 white_material_suspect。不得用纯色占位图冒充完成，也不得加入 allowlist。",
+      "evidence": "reports/model_material_integrity.json",
+      "blocks": ["V2 P0-03", "V2 P0-04"]
+    },
+    {
+      "id": "asset-bundle-inventory-stale",
+      "title": "资源交付包指纹已过期，restore_assets.ps1 会拒绝运行",
+      "state": "blocked",
+      "owner": "codex",
+      "area": "V2 A2 / 资源交付",
+      "detail": "Doom/Virgo 换成 GLB 并自动提取贴图后，资源树变了。2026-08-28 跑 asset_manifest_check 重新生成清单：inventory_sha256 从 a0751fdc… 变为 084b5a8c…，file_count 从 2632 变为 2658。但 assets.bundle.json 仍写着旧的 a0751fdc…，而 restore_assets.ps1 会断言两者相等，因此现在会直接 throw「Bundle belongs to a different inventory」。需要用 tools/package_assets.ps1 重新打包并更新 bundle 描述符。README、V2 清单与本交接文档里引用旧指纹的地方也一并过期。",
+      "evidence": "assets.manifest.json / assets.bundle.json",
+      "blocks": ["V2 P0-01", "资源恢复流程"]
+    },
+    {
+      "id": "virgo-outline-alpha",
+      "title": "Virgo 自动矩阵通过，但人工可见黑色三角/透明轮廓错误",
+      "state": "in_progress",
+      "owner": "codex",
+      "area": "V2 P0-04 人工验收",
+      "detail": "merc_virgo_heal_body_material.tres 的 next_pass 使用不读取贴图 alpha 的 outline shader，透明区域被画成不透明黑边。自动门禁看不出来，商业美术验收未通过。",
+      "evidence": "reports/model_visual_matrix_virgo_glb_rig_normalized/model_visual_matrix.json",
+      "blocks": ["V2 P0-04"]
+    },
+    {
+      "id": "android-battle-regression",
+      "title": "Android 战斗回归未完成",
+      "state": "not_started",
+      "owner": "unassigned",
+      "area": "README A4",
+      "detail": "冷启动与安装门禁已跑通，但完整战斗回归、低端机与冷缓存首启仍未做。",
+      "evidence": "",
+      "blocks": ["README A4"]
+    },
+    {
+      "id": "third-party-license-ledger",
+      "title": "第三方许可总账未完成",
+      "state": "not_started",
+      "owner": "unassigned",
+      "area": "README A5",
+      "detail": "THIRD_PARTY_NOTICES 未覆盖全部引入的第三方 VFX / 模型包。",
+      "evidence": "",
+      "blocks": ["README A5"]
+    },
+    {
+      "id": "device-evidence-missing",
+      "title": "启动 T1–T4 没有真机基线",
+      "state": "blocked",
+      "owner": "external",
+      "area": "V3 P0-01",
+      "detail": "StartupTrace 埋点与 android_smoke.sh 解析已就绪，但本轮没有接设备，因此启动阈值只报告不断言（--assert-startup 才启用）。接上 vivo V2527A 跑一次 smoke 即可解除。",
+      "evidence": "",
+      "blocks": ["V3 P0-01", "V3 完成定义"]
+    },
+    {
+      "id": "human-mage-set-action-dead-guard",
+      "title": "法师技能预览的动作调用恒为死分支：全仓没有 set_action",
+      "state": "not_started",
+      "owner": "codex",
+      "area": "dynamic_call 衍生",
+      "detail": "assets/models/units/human_mage_animated/human_mage_skill_preview.gd:51 与 :65 写 `if unit and unit.has_method(\"set_action\")` 后调 unit.set_action(...)，但全仓没有任何脚本定义 func set_action。守卫恒为 false，攻击与 idle 两处动作一直被静默跳过——技能预览从未驱动过单位动画。正是 dynamic_call_check 文件头警告的那类事故。文件在 assets/ 下（gitignore + Codex 领域），Claude 未改。修法多半是换成 wrapper 上真实存在的方法名。",
+      "evidence": "reports/checks/dynamic_call_check.stdout.log",
+      "blocks": []
+    },
+    {
+      "id": "dynamic-call-ratchet-breached",
+      "title": "dynamic_call 棘轮已被突破且注释自相矛盾",
+      "state": "not_started",
+      "owner": "unassigned",
+      "area": "既有",
+      "detail": "MAX_UNRESOLVED 常量为 189，实测 200，且同文件注释写着「当前实测 213」，自相矛盾。把 Claude 的改动 stash 掉重测是 196，确认非其引入。另外 9 条失败已逐条读过源码：6 条（RoomService 439/443/446/468/470/474）是误报——close_fn.call(room, \"原因串\") 是调用 Callable，第二个参数不是方法名，而 _names_in 会取 .call( 之后任意位置的字符串；1 条（battle_presentation_baseline.gd:224）也是误报，has_blocking_cues 真实存在于 BattlePresentationDirector.gd:209，是 _receiver_is_self 在嵌套写法上判错；只有 human_mage_skill_preview.gd 的 set_action 是真 bug（另立一条）。把 _names_in 限制到第一个参数是更正确而非更宽松的修法，但会让红灯变少，方向敏感，未擅自改。",
+      "evidence": "reports/checks/dynamic_call_check.stdout.log",
+      "blocks": []
+    },
+    {
+      "id": "tools-dir-ships-in-apk",
+      "title": "tools/ 与 officetest/ 进了发布包",
+      "state": "not_started",
+      "owner": "unassigned",
+      "area": "V2 P2-01 衍生",
+      "detail": "APK 内含 tools/ 194 条、officetest/ 8 条。不能直接排除：tools/PerfLog.gd 与 tools/DeviceHarness.gd 是 autoload，整个排除会让包起不来，需先把这两个移出 tools/。备份/证据目录本身不进包（各自带 .gdignore），这一条与备份无关。",
+      "evidence": "reports/apk_content_scan.json",
+      "blocks": []
+    }
+  ]
+}

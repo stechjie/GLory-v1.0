@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "seed": 20260822,
+  "resolution": [1280, 720],
+  "quality_tiers": ["LOW", "MEDIUM", "HIGH"],
+  "states": ["idle", "attack", "hit", "death"],
+  "manual_sample_count": 10,
+  "contact_sheet_rows": 4,
+  "label_height_px": 72,
+  "analysis_sample_stride": 4,
+  "foreground_color_distance": 0.055,
+  "foreground_ratio_min": 0.008,
+  "foreground_ratio_max": 0.62,
+  "safe_frame_margins_px": [32, 24, 32, 20],
+  "near_white_luminance": 0.94,
+  "near_black_luminance": 0.035,
+  "mostly_white_ratio_max": 0.88,
+  "mostly_black_ratio_max": 0.96,
+  "opaque_ratio_min": 0.99
+}

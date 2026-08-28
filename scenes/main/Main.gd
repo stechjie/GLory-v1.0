@@ -13,7 +13,11 @@ var _pending_public_token := ""
 var _selftest_prev_team_mode := false
 
 func _ready() -> void:
-	DataRegistry.load_all()
+	# Idempotent on purpose: the DataRegistry autoload has already loaded by now, and
+	# this used to be a second full synchronous re-read of all eight JSON files on
+	# the way to the first frame. Kept as a call rather than deleted so the ordering
+	# dependency stays visible if autoload order ever changes.
+	DataRegistry.ensure_loaded()
 	if not NetworkService.match_state_received.is_connected(_on_network_match_state_received):
 		NetworkService.match_state_received.connect(_on_network_match_state_received)
 	if not NetworkService.session_changed.is_connected(_on_global_session_changed):
@@ -32,6 +36,7 @@ func _ready() -> void:
 		TutorialMode.skip_requested.connect(_on_tutorial_skip)
 	_start_vfx_warmup()
 	_show_language_select()
+	StartupTrace.mark(StartupTrace.T2_MAIN_READY)
 
 # VFX shader 预热。挂在这里是因为从引擎就绪到连上服务器有约 44 秒的菜单导航时间，
 # 而且这段时间还没有心跳需要维持 —— 详见 VFXWarmup.gd 顶部。
@@ -217,8 +222,14 @@ func _show_language_select() -> void:
 	en_btn.pressed.connect(_select_language.bind("en"))
 	row.add_child(en_btn)
 
+	# Deferred by one frame on purpose: the buttons exist now, but T3 is meant to be
+	# "the player could have pressed one", which is only true once this frame has
+	# been laid out and drawn.
+	StartupTrace.mark_input_ready.call_deferred("language_select")
+
 func _select_language(locale: String) -> void:
 	LocaleManager.set_locale(locale)
+	StartupTrace.mark_first_action("select_language", locale)
 	TutorialMode.start()
 	_show_prep()
 

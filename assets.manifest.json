@@ -2,10 +2,10 @@
   "by_class": {
     "dynamic_dir": 302,
     "editor_only": 1,
-    "import_meta": 1023,
-    "runtime_required": 917,
+    "import_meta": 1036,
+    "runtime_required": 924,
     "third_party": 257,
-    "unreferenced": 132
+    "unreferenced": 138
   },
   "dependency_query_failed": [
     "res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/effects/shield/vfx_blank_shield_02.tscn"
@@ -4092,11 +4092,11 @@
       "type": "uid"
     },
     {
-      "class": "runtime_required",
+      "class": "unreferenced",
       "license_id": "unknown",
       "path": "res://assets/models/mercenaries/merc_virgo_heal_animated/merc_virgo_heal_Idle.fbx",
-      "required_by": "res://assets/models/mercenaries/merc_virgo_heal_animated/mercvirgohealAnimated.gd",
-      "required_by_count": 1,
+      "required_by": "",
+      "required_by_count": 0,
       "sha256": "86d857a6ad6223e3aa561467b360f550980081c3f19b6ff3052dfb7c3608d202",
       "size": 403936,
       "type": "fbx"
@@ -4112,11 +4112,11 @@
       "type": "import"
     },
     {
-      "class": "runtime_required",
+      "class": "unreferenced",
       "license_id": "unknown",
       "path": "res://assets/models/mercenaries/merc_virgo_heal_animated/merc_virgo_heal_Walking.fbx",
-      "required_by": "res://assets/models/mercenaries/merc_virgo_heal_animated/mercvirgohealAnimated.gd",
-      "required_by_count": 1,
+      "required_by": "",
+      "required_by_count": 0,
       "sha256": "ece3555c6ffef7fe1f503d47a213031bf4169846dd0d52c87f42c1b0ce9f6304",
       "size": 371456,
       "type": "fbx"
@@ -4142,11 +4142,11 @@
       "type": "tscn"
     },
     {
-      "class": "runtime_required",
+      "class": "unreferenced",
       "license_id": "unknown",
       "path": "res://assets/models/mercenaries/merc_virgo_heal_animated/merc_virgo_heal_attack.fbx",
-      "required_by": "res://assets/models/mercenaries/merc_virgo_heal_animated/mercvirgohealAnimated.gd",
-      "required_by_count": 1,
+      "required_by": "",
+      "required_by_count": 0,
       "sha256": "b3a5e3b101ddfe5e9a9ba9afcd619d1f3f8d7622424e9f6e15a6a1bb4dc9a140",
       "size": 408352,
       "type": "fbx"
@@ -4159,6 +4159,26 @@
       "required_by_count": 0,
       "sha256": "4ca9a859681821628adcea5c002d251a9d9e5c9d1234d6a7b742e55710479e16",
       "size": 1258,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/models/mercenaries/merc_virgo_heal_animated/merc_virgo_heal_attack.glb",
+      "required_by": "res://assets/models/mercenaries/merc_virgo_heal_animated/mercvirgohealAnimated.gd",
+      "required_by_count": 1,
+      "sha256": "5a75c08192aff9404a4d68bfc24e3abb08b1019392b7316913acd3161510e0ff",
+      "size": 296432,
+      "type": "glb"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/models/mercenaries/merc_virgo_heal_animated/merc_virgo_heal_attack.glb.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "0dbcb21a3a60d6e5525b817fd285f69847fa43addaeb937b678a715363401d11",
+      "size": 1230,
       "type": "import"
     },
     {
@@ -4194,6 +4214,46 @@
     {
       "class": "runtime_required",
       "license_id": "unknown",
+      "path": "res://assets/models/mercenaries/merc_virgo_heal_animated/merc_virgo_heal_idle.glb",
+      "required_by": "res://assets/models/mercenaries/merc_virgo_heal_animated/mercvirgohealAnimated.gd",
+      "required_by_count": 1,
+      "sha256": "7c10c47db6361e895eaf53ab8942a2b7251b206cdda475f9a92b6e54f249f895",
+      "size": 295704,
+      "type": "glb"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/models/mercenaries/merc_virgo_heal_animated/merc_virgo_heal_idle.glb.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "ebe1543a240d13904022d51bb5c7fed9eb279039aad442a4cad4bdbacf2f7f1a",
+      "size": 1225,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/models/mercenaries/merc_virgo_heal_animated/merc_virgo_heal_run.glb",
+      "required_by": "res://assets/models/mercenaries/merc_virgo_heal_animated/mercvirgohealAnimated.gd",
+      "required_by_count": 1,
+      "sha256": "37215c0257c98383aa22e10ae30cf355778b64db1f170f80f5962b2b3073bb58",
+      "size": 288328,
+      "type": "glb"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/models/mercenaries/merc_virgo_heal_animated/merc_virgo_heal_run.glb.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "5e25103c81c83a404d8f029fa9a6c4df0b690ff8b26bfd43537be87ac7eadd08",
+      "size": 1222,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
       "path": "res://assets/models/mercenaries/merc_virgo_heal_animated/merc_virgo_heal_texture.png",
       "required_by": "res://assets/models/mercenaries/merc_virgo_heal_animated/merc_virgo_heal_body_material.tres",
       "required_by_count": 1,
@@ -4217,8 +4277,8 @@
       "path": "res://assets/models/mercenaries/merc_virgo_heal_animated/mercvirgohealAnimated.gd",
       "required_by": "res://assets/models/mercenaries/merc_virgo_heal_animated/merc_virgo_heal_animated.tscn",
       "required_by_count": 1,
-      "sha256": "1095712ec1f8329b331e94db94f866f3503d6c74939ca31ac474aa268e9b01db",
-      "size": 6475,
+      "sha256": "c8f7c8a20200ca751e3c7ad2269012a4b43ef444504d965b7dfbb7896e9cf812",
+      "size": 6402,
       "type": "gd"
     },
     {
@@ -6857,8 +6917,8 @@
       "path": "res://assets/models/units/dark_doom_animated/DarkdoomAnimated.gd",
       "required_by": "res://assets/models/units/dark_doom_animated/dark_doom_animated.tscn",
       "required_by_count": 1,
-      "sha256": "573d822e77afbca64615a18e9e319d4e2fcafcfff288fbcdf643849f44c5b435",
-      "size": 6587,
+      "sha256": "d2dca4d234d369f819b81496060640e81cb802c525ae82145881b6b9f8d6b234",
+      "size": 6586,
       "type": "gd"
     },
     {
@@ -6902,11 +6962,11 @@
       "type": "tscn"
     },
     {
-      "class": "runtime_required",
+      "class": "unreferenced",
       "license_id": "unknown",
       "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack.fbx",
-      "required_by": "res://assets/models/units/dark_doom_animated/DarkdoomAnimated.gd",
-      "required_by_count": 1,
+      "required_by": "",
+      "required_by_count": 0,
       "sha256": "58d6e23ef56ec9eaeaf2e38aba451411cfbcceaf197c1f21e36f3b21d8bc52f4",
       "size": 15034128,
       "type": "fbx"
@@ -6919,6 +6979,26 @@
       "required_by_count": 0,
       "sha256": "fd5793eda3400d5ce88a2c16c9b0ca843d6b008844cc1977ec4ac1ba374dcf06",
       "size": 1230,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack.glb",
+      "required_by": "res://assets/models/units/dark_doom_animated/DarkdoomAnimated.gd",
+      "required_by_count": 1,
+      "sha256": "fb8490f4f037ab7a907ccbdce140ed64368fb13141bf8f0bbad14a328d046ecc",
+      "size": 14587596,
+      "type": "glb"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack.glb.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "c8591f4db2813d394b7d6d79b1dc8834d067f5f5f1717a11b3de8cf0cc3b7fb6",
+      "size": 1201,
       "type": "import"
     },
     {
@@ -6984,6 +7064,66 @@
     {
       "class": "runtime_required",
       "license_id": "unknown",
+      "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack_Baked_BaseColor.png",
+      "required_by": "res://assets/models/units/dark_doom_animated/dark_doom_attack.glb",
+      "required_by_count": 1,
+      "sha256": "25b7aa8077c6a281bb91cb7a382c82cdb8d2f4379d325e5565400dc8e3fd2a37",
+      "size": 7539736,
+      "type": "png"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack_Baked_BaseColor.png.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "0d6b4a2d2ee6fa8ecbe90e27fe555f5434d4a9666acf7f5b2f399090e0c2548a",
+      "size": 1105,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack_Baked_Emit.png",
+      "required_by": "res://assets/models/units/dark_doom_animated/dark_doom_attack.glb",
+      "required_by_count": 1,
+      "sha256": "f8a491a859149895d865d926e426a2c4e0da259825b40ede85d05dcc6ba24ce1",
+      "size": 84914,
+      "type": "png"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack_Baked_Emit.png.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "c70cc9bbc54e56b57604cc33c569af69ade293caa241060be42c43dee38413c6",
+      "size": 1089,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack_normal.png",
+      "required_by": "res://assets/models/units/dark_doom_animated/dark_doom_attack.glb",
+      "required_by_count": 1,
+      "sha256": "23711baac3b49c98bb5bb809fc03085391c305ba1679be7a917b78661acf2da2",
+      "size": 6580485,
+      "type": "png"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack_normal.png.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "7b5b8d144f7e5b409ceee36b68b59ba0adc097f5865289b2f66139442273fd9e",
+      "size": 1078,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
       "path": "res://assets/models/units/dark_doom_animated/dark_doom_body_material.tres",
       "required_by": "res://assets/models/units/dark_doom_animated/DarkdoomAnimated.gd",
       "required_by_count": 1,
@@ -6992,11 +7132,11 @@
       "type": "tres"
     },
     {
-      "class": "runtime_required",
+      "class": "unreferenced",
       "license_id": "unknown",
       "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle.fbx",
-      "required_by": "res://assets/models/units/dark_doom_animated/DarkdoomAnimated.gd",
-      "required_by_count": 1,
+      "required_by": "",
+      "required_by_count": 0,
       "sha256": "b46d802421ac2b3f6f87fda4e4a9b7e139eb5f956969f809c60b11467984d971",
       "size": 15078432,
       "type": "fbx"
@@ -7009,6 +7149,26 @@
       "required_by_count": 0,
       "sha256": "6f106470039f9a5cc4adb9b074e3d2ac3141deae8a019f76818b8309cbcb4230",
       "size": 1224,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle.glb",
+      "required_by": "res://assets/models/units/dark_doom_animated/DarkdoomAnimated.gd",
+      "required_by_count": 1,
+      "sha256": "c50db37647d8b4494935ac76ea05fe1fbf5a0db81293581f6df39497a7df9f2d",
+      "size": 14622144,
+      "type": "glb"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle.glb.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "cb3357092ff9e097c2925ac9949f84415a75ebb0e6a0068be0dc5ee5b35a0d01",
+      "size": 1196,
       "type": "import"
     },
     {
@@ -7074,9 +7234,69 @@
     {
       "class": "runtime_required",
       "license_id": "unknown",
-      "path": "res://assets/models/units/dark_doom_animated/dark_doom_run.fbx",
-      "required_by": "res://assets/models/units/dark_doom_animated/DarkdoomAnimated.gd",
+      "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle_Baked_BaseColor.png",
+      "required_by": "res://assets/models/units/dark_doom_animated/dark_doom_idle.glb",
       "required_by_count": 1,
+      "sha256": "25b7aa8077c6a281bb91cb7a382c82cdb8d2f4379d325e5565400dc8e3fd2a37",
+      "size": 7539736,
+      "type": "png"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle_Baked_BaseColor.png.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "90b61a69e0a7c56042231b7f9e0a1180c73547b59bacb552e361c1dd885ff25c",
+      "size": 1099,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle_Baked_Emit.png",
+      "required_by": "res://assets/models/units/dark_doom_animated/dark_doom_idle.glb",
+      "required_by_count": 1,
+      "sha256": "f8a491a859149895d865d926e426a2c4e0da259825b40ede85d05dcc6ba24ce1",
+      "size": 84914,
+      "type": "png"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle_Baked_Emit.png.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "a51aebd84f84abc38e2bdd577a63b40dd07ec37e4baf2ecb4e614be4dbafc026",
+      "size": 1084,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle_normal.png",
+      "required_by": "res://assets/models/units/dark_doom_animated/dark_doom_idle.glb",
+      "required_by_count": 1,
+      "sha256": "23711baac3b49c98bb5bb809fc03085391c305ba1679be7a917b78661acf2da2",
+      "size": 6580485,
+      "type": "png"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle_normal.png.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "19d3f960b78f54add1b42aae1682ad10f917f2d027b96688a4840bde51775316",
+      "size": 1071,
+      "type": "import"
+    },
+    {
+      "class": "unreferenced",
+      "license_id": "unknown",
+      "path": "res://assets/models/units/dark_doom_animated/dark_doom_run.fbx",
+      "required_by": "",
+      "required_by_count": 0,
       "sha256": "d03a7596c122d3a07c391ad89954a6db7cada3e04ead13338efef64e2cc0b249",
       "size": 1516096,
       "type": "fbx"
@@ -7089,6 +7309,46 @@
       "required_by_count": 0,
       "sha256": "3ad661b18ccea7b6508c45d5a103e54bd8a34884e7ae159cff34064ed3f29bf2",
       "size": 1221,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/models/units/dark_doom_animated/dark_doom_run.glb",
+      "required_by": "res://assets/models/units/dark_doom_animated/DarkdoomAnimated.gd",
+      "required_by_count": 1,
+      "sha256": "71527f460eac1d6200fc4cf772a5133a39c9d4e87690941a1a420e5c3dedd8a9",
+      "size": 428168,
+      "type": "glb"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/models/units/dark_doom_animated/dark_doom_run.glb.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "74b60e25b63fb3f5aa0338d7dbf6a5eee9d1bc5999686e251457198ee249b819",
+      "size": 1193,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/models/units/dark_doom_animated/dark_doom_run_Image.png",
+      "required_by": "res://assets/models/units/dark_doom_animated/dark_doom_run.glb",
+      "required_by_count": 1,
+      "sha256": "3f5e2ffbb1843629c0d3836a89efd4e691cd0fec83d18bc28c368bf32595f044",
+      "size": 250,
+      "type": "png"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/models/units/dark_doom_animated/dark_doom_run_Image.png.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "ab7ccb1504c78281d2aba56059c02073bb44939527838a21ec462c351c9ddb97",
+      "size": 1066,
       "type": "import"
     },
     {
@@ -26332,16 +26592,16 @@
       "type": "uid"
     }
   ],
-  "file_count": 2632,
-  "generated_at": "2026-08-21T03:33:17",
+  "file_count": 2658,
+  "generated_at": "2026-08-28T06:33:59",
   "generated_by": "tools/asset_manifest_check.gd",
   "godot_version": "4.7-stable (official)",
-  "inventory_sha256": "a0751fdc580e78dfe6e4023c3f55501471510d0db00d27ae5732a853faafb3fc",
+  "inventory_sha256": "084b5a8c59f48bfa43e1643ef16ff374b0464f124f03de823a986971c582dfa9",
   "missing_count": 3,
   "roots": [
     "res://assets",
     "res://effects/vfx3d/vfxv2"
   ],
   "schema_version": 2,
-  "total_bytes": 3052275380
+  "total_bytes": 3111219057
 }

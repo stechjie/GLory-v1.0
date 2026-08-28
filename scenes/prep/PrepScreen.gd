@@ -8,8 +8,17 @@ const BattleRendererScript = preload("res://scenes/battle/BattleRenderer.gd")
 
 const PREP_MUSIC_PATH := "res://assets/audio/bgm/prep_music.mp3"
 const PREP_PVP_MUSIC_PATH := "res://assets/audio/bgm/pvp_round_music.mp3"
-# 左上角 FPS 角标（安卓性能对比用）。不需要时改成 false。
-const SHOW_FPS_OVERLAY := true
+# 左上角 QA 角标：FPS + 本次构建身份（commit / 包名 / versionCode / 资源指纹）。
+#
+# 以前这里硬写 true，于是发布包也在左上角常驻 "FPS 110-121"（V2 P1-11 / V3 P1-07）。
+# 改成跟着构建走：Debug 显示，Release 不显示。要在 Release 上临时看，用命令行
+# --qa-overlay，不必改代码重出包。
+#
+# 只显示 FPS 是不够的：真机报告里最常缺的不是帧率，而是"这一份到底是哪个包"。
+# 身份取 StartupTrace.build_info_label()，与 build_info.json、smoke 报告同源。
+const QA_OVERLAY_CMDLINE_FLAG := "--qa-overlay"
+static func _qa_overlay_enabled() -> bool:
+	return OS.is_debug_build() or QA_OVERLAY_CMDLINE_FLAG in OS.get_cmdline_args()
 # BattleScreen path: loaded on Start Battle before entering battle.
 const BATTLE_SCREEN_PATH := "res://scenes/battle/BattleScreen.tscn"
 # 临时缓解（B7），不是修复。这是**主路径**的超时：原值 20 秒短于服务器的
@@ -85,7 +94,7 @@ func _start_prep_music() -> void:
 	_prep_music_player.play()
 
 func _setup_fps_overlay() -> void:
-	if not SHOW_FPS_OVERLAY:
+	if not _qa_overlay_enabled():
 		return
 	_fps_label = Label.new()
 	_fps_label.name = "FpsOverlay"
@@ -121,7 +130,8 @@ func _process(delta: float) -> void:
 		_fps_accum += delta
 		if _fps_accum >= 0.25:
 			_fps_accum = 0.0
-			_fps_label.text = "FPS %d" % int(Engine.get_frames_per_second())
+			_fps_label.text = "FPS %d   %s" % [
+				int(Engine.get_frames_per_second()), StartupTrace.build_info_label()]
 
 func _input(event: InputEvent) -> void:
 	if _detail != null and _detail.visible:

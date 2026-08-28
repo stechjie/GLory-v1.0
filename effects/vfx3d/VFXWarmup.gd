@@ -16,6 +16,25 @@ class_name VFXWarmup
 #   3. 从引擎就绪到连上服务器实测有 44 秒（语言选择 / 教程 / 宠物 / 主菜单），
 #      预热藏在这段里，玩家零感知
 #
+# Sharing the window with the player (added for V3 P0-04):
+#
+# The offline window is not idle time -- it is the language screen, the tutorial and
+# the menu, i.e. exactly where the V3 review measured 40-105 ms main-thread frames.
+# The review's own remedy was "pause the warmup on those screens", which cannot be
+# done here: those screens *are* the window, and _process() aborts the moment the
+# session leaves OFFLINE, so pausing there is cancelling (see above). Two things are
+# done instead, neither of which shortens the window:
+#
+#   1. _should_yield_to_input() declines to *start* an item within INPUT_QUIET_MS of
+#      a touch, with a starvation cap so continuous input cannot hold the queue off.
+#   2. An item that overruns FRAME_BUDGET_MS buys extra settle frames before the
+#      next one starts, so spikes do not stack up back to back.
+#
+# Per-item cost is now measured across _spawn_one() itself. It previously timed from
+# the *end* of the spawn to the end of the settle frames, so the "slowest 54 ms"
+# figure in the old logs was really FRAMES_PER_ITEM of wall clock and told you
+# nothing about which item was expensive.
+#
 # 离屏视口必须和 BattleArena._battle_3d_viewport 逐项对齐（尤其 transparent_bg）：
 # Vulkan 管线按 framebuffer 格式索引，格式不一致的话预热出来的管线在战斗里用不上。
 # 真机 8 项验证版实测：预热窗口精确写入 7 个 SceneForwardMobileShaderRD，
@@ -80,6 +99,31 @@ const FRAMES_PER_ITEM := 2
 # 单帧预算。超了就直接让出，宁可多花几帧也不要在启动时造成可感知的顿挫。
 const FRAME_BUDGET_MS := 12.0
 
+# Cumulative buckets for per-item cost. An item over 50 ms is also counted in the
+# 33 and 16.7 buckets -- what matters when reading the report is how far into the
+# tail the worst items sit, not which single band they land in.
+const SPIKE_WARN_MS := 16.7
+const SPIKE_BAD_MS := 33.0
+const SPIKE_SEVERE_MS := 50.0
+# Ceiling on the backoff below. Without it a single pathological item could push
+# the rest of the queue past the end of the offline window.
+const MAX_BACKOFF_FRAMES := 8
+
+# Do not start a new item within this long of the last input event.
+#
+# Note what this is NOT: pausing the warmup on the language / tutorial / shop
+# screens. Those screens *are* the offline window this whole thing depends on (see
+# the header), so pausing there would not defer the work, it would cancel it and
+# hand the shader compilation back to the first battle. This only declines to start
+# an item in the same handful of frames the player is actually touching.
+const INPUT_QUIET_MS := 500.0
+# Starvation guard. Someone drumming on the screen must not be able to hold the
+# queue off indefinitely; after this long yielding, take one item anyway.
+const INPUT_YIELD_MAX_MS := 3000.0
+# How many of the slowest items the report names. Ten is enough to see a pattern
+# without printing the whole queue into logcat.
+const SLOWEST_REPORTED := 10
+
 signal finished(report: Dictionary)
 
 var _viewport: SubViewport
@@ -98,6 +142,15 @@ var _phase_by_id: Dictionary = {}
 var _phase_total: Dictionary = {}
 var _phase_done: Dictionary = {}
 var _phase_first_done_ms: Dictionary = {}
+# Per-item spawn cost. This is the number that was missing: the old _slowest_ms
+# timed from the end of _spawn_one() to the end of the settle frames, so it was
+# measuring FRAMES_PER_ITEM of wall clock, not the main-thread work. The 40-105 ms
+# frames the V3 review recorded happen *inside* _spawn_one().
+var _item_costs: Array[Dictionary] = []
+var _spike_counts: Dictionary = {"over_16_7ms": 0, "over_33ms": 0, "over_50ms": 0}
+var _last_input_us := 0
+var _yield_started_us := 0
+var _yielded_frames := 0
 
 func start() -> void:
 	if _running:
@@ -221,7 +274,11 @@ func warmup_report() -> Dictionary:
 	return {
 		"total": _total, "done": _done, "aborted": _aborted,
 		"elapsed_ms": float(Time.get_ticks_usec() - _t_start_us) / 1000.0,
+		# Spawn cost, not settle time -- see _item_costs.
 		"slowest_ms": _slowest_ms, "slowest_id": _slowest_id,
+		"slowest_items": _slowest_items(),
+		"spike_counts": _spike_counts.duplicate(true),
+		"yielded_frames": _yielded_frames,
 		"phase_total": _phase_total.duplicate(true),
 		"phase_done": _phase_done.duplicate(true),
 		"phase_first_done_ms": _phase_first_done_ms.duplicate(true),
@@ -276,7 +333,72 @@ func _build_label() -> void:
 var _wait_frames := 0
 var _active: Node = null
 var _active_id := ""
-var _active_started_us := 0
+
+
+# Observation only. This node lives on the scene tree root, so consuming an event
+# here would eat the player's taps before any UI sees them -- never call
+# set_input_as_handled() from this function.
+#
+# Plain mouse motion is deliberately not counted: a cursor drifting across a menu
+# is not a frame anyone is waiting on, and treating it as input would keep the
+# warmup yielding for the entire desktop session.
+func _input(event: InputEvent) -> void:
+	if event is InputEventMouseButton or event is InputEventScreenTouch \
+			or event is InputEventScreenDrag or event is InputEventKey:
+		_last_input_us = Time.get_ticks_usec()
+
+
+func _should_yield_to_input() -> bool:
+	if _last_input_us == 0:
+		return false
+	var now := Time.get_ticks_usec()
+	if float(now - _last_input_us) / 1000.0 >= INPUT_QUIET_MS:
+		_yield_started_us = 0
+		return false
+	if _yield_started_us == 0:
+		_yield_started_us = now
+		return true
+	if float(now - _yield_started_us) / 1000.0 >= INPUT_YIELD_MAX_MS:
+		# Held off long enough. Take one item so continuous input cannot starve the
+		# queue past the end of the offline window.
+		_yield_started_us = 0
+		return false
+	return true
+
+
+# Frames of extra settle for an item that overran the budget, one per budget's
+# worth of overshoot.
+func _backoff_frames_for(spawn_ms: float) -> int:
+	if spawn_ms <= FRAME_BUDGET_MS:
+		return 0
+	var over := (spawn_ms - FRAME_BUDGET_MS) / FRAME_BUDGET_MS
+	return clampi(int(ceil(over)), 1, MAX_BACKOFF_FRAMES)
+
+
+func _note_item_cost(item_id: String, ms: float) -> void:
+	_item_costs.append({
+		"id": item_id,
+		"phase": str(_phase_by_id.get(item_id, "")),
+		"ms": snappedf(ms, 0.1),
+	})
+	if ms > _slowest_ms:
+		_slowest_ms = ms
+		_slowest_id = item_id
+	# Cumulative on purpose -- see the bucket constants.
+	if ms > SPIKE_WARN_MS:
+		_spike_counts["over_16_7ms"] = int(_spike_counts["over_16_7ms"]) + 1
+	if ms > SPIKE_BAD_MS:
+		_spike_counts["over_33ms"] = int(_spike_counts["over_33ms"]) + 1
+	if ms > SPIKE_SEVERE_MS:
+		_spike_counts["over_50ms"] = int(_spike_counts["over_50ms"]) + 1
+
+
+# The worst offenders, most expensive first. This is what makes the report
+# actionable: "96 items took 3548 ms" says nothing about which ones to attack.
+func _slowest_items() -> Array:
+	var sorted := _item_costs.duplicate(true)
+	sorted.sort_custom(func(a, b): return float(a["ms"]) > float(b["ms"]))
+	return sorted.slice(0, mini(SLOWEST_REPORTED, sorted.size()))
 
 func _process(_delta: float) -> void:
 	if not _running:
@@ -290,10 +412,6 @@ func _process(_delta: float) -> void:
 		_wait_frames -= 1
 		if _wait_frames > 0:
 			return
-		var ms := float(Time.get_ticks_usec() - _active_started_us) / 1000.0
-		if ms > _slowest_ms:
-			_slowest_ms = ms
-			_slowest_id = _active.name
 		if is_instance_valid(_active):
 			_active.queue_free()
 		_active = null
@@ -306,15 +424,23 @@ func _process(_delta: float) -> void:
 		_finish()
 		return
 
-	var frame_start := Time.get_ticks_usec()
+	# Yield the frame rather than the window: this defers one item by a few frames,
+	# it does not stop the queue. See INPUT_QUIET_MS.
+	if _should_yield_to_input():
+		_yielded_frames += 1
+		return
+
 	var skill_id: String = _queue.pop_front()
 	_active_id = skill_id
+	var spawn_started := Time.get_ticks_usec()
 	_spawn_one(skill_id)
-	_wait_frames = FRAMES_PER_ITEM
-	# 单帧预算只用于「本帧还要不要再喂一个」，这里一帧本来就只喂一个，
-	# 留着是为了以后扩到 34 个模块时能一帧喂多个而不超预算。
-	if float(Time.get_ticks_usec() - frame_start) / 1000.0 > FRAME_BUDGET_MS:
-		return
+	var spawn_ms := float(Time.get_ticks_usec() - spawn_started) / 1000.0
+	_note_item_cost(skill_id, spawn_ms)
+	# The old budget check sat *after* _spawn_one() and only did `return`, which is
+	# what the frame did anyway -- so it never limited anything. Cost is now paid
+	# forward instead: an item that overran the budget buys extra settle frames, so
+	# the next one does not land in the same stretch the player already felt.
+	_wait_frames = FRAMES_PER_ITEM + _backoff_frames_for(spawn_ms)
 
 func _spawn_one(item: String) -> void:
 	if item.begins_with("res://"):
@@ -334,7 +460,6 @@ func _spawn_scene(path: String) -> void:
 			(inst as Node3D).position = Vector3.ZERO
 		holder.add_child(inst)
 	_active = holder
-	_active_started_us = Time.get_ticks_usec()
 
 func _spawn_skill(skill_id: String) -> void:
 	# 整项挂在一个容器下，销毁时连锚点一起回收 —— 锚点单独 add_child 到
@@ -371,7 +496,6 @@ func _spawn_skill(skill_id: String) -> void:
 	}
 	vfx.play(skill_id, origin, target, context)
 	_active = holder
-	_active_started_us = Time.get_ticks_usec()
 
 # Records which phase the item that just finished belonged to, and stamps the
 # moment each phase completed so an early abort can be attributed.
@@ -387,6 +511,10 @@ func _note_phase_progress() -> void:
 		var ms := float(Time.get_ticks_usec() - _t_start_us) / 1000.0
 		_phase_first_done_ms[phase] = ms
 		print("[WARMUP] 阶段完成：%s %d 项，累计 %.0f ms" % [phase, int(_phase_total.get(phase, 0)), ms])
+		StartupTrace.mark("warmup_phase_%s" % phase, {
+			"items": int(_phase_total.get(phase, 0)),
+			"since_warmup_start_ms": snappedf(ms, 0.1),
+		})
 
 
 func _update_label() -> void:
@@ -401,6 +529,23 @@ func _finish() -> void:
 	print("[WARMUP] 结束：完成 %d/%d 耗时 %.0f ms 最慢单项 %.0f ms (%s) 中止=%s"
 		% [report["done"], report["total"], report["elapsed_ms"],
 			report["slowest_ms"], report["slowest_id"], str(report["aborted"])])
+	print("[WARMUP] 单项耗时分级：>16.7ms %d / >33ms %d / >50ms %d；因输入让路 %d 帧"
+		% [int(_spike_counts["over_16_7ms"]), int(_spike_counts["over_33ms"]),
+			int(_spike_counts["over_50ms"]), _yielded_frames])
+	for entry in _slowest_items():
+		print("[WARMUP]   慢项 %.1f ms  %s  (%s)"
+			% [float(entry["ms"]), str(entry["id"]), str(entry["phase"])])
+	StartupTrace.mark("warmup_finished", {
+		"done": int(report["done"]),
+		"total": int(report["total"]),
+		"aborted": bool(report["aborted"]),
+		"elapsed_ms": snappedf(float(report["elapsed_ms"]), 0.1),
+		"slowest_ms": snappedf(float(report["slowest_ms"]), 0.1),
+		"over_16_7ms": int(_spike_counts["over_16_7ms"]),
+		"over_33ms": int(_spike_counts["over_33ms"]),
+		"over_50ms": int(_spike_counts["over_50ms"]),
+		"yielded_frames": _yielded_frames,
+	})
 	if _label != null and is_instance_valid(_label):
 		_label.text = "预热完成 %d/%d  %.0f ms" % [_done, _total, report["elapsed_ms"]]
 		var tw := create_tween()

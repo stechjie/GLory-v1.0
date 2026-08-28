@@ -15,8 +15,9 @@ class_name ExportPresetsTemplate
 # are secret, and the check cannot be satisfied by a template the generator would
 # not have produced.
 
-# Values blanked in the template. These are the only differences the drift check
-# tolerates; everything else must match byte for byte.
+# Values blanked in the template. Together with LOCAL_KEYS below, these are the
+# only differences the drift check tolerates; everything else must match byte for
+# byte.
 #
 # Godot writes these keys only once they have been set in the editor, so a
 # keystore-free project simply has none of them — that is expected, not an error.
@@ -29,6 +30,18 @@ const SECRET_KEYS: PackedStringArray = [
 	"keystore/release_password",
 	"encryption_key",
 	"script_encryption_key",
+]
+
+# Blanked for a different reason: not secret, just specific to one machine.
+#
+# export_path is whatever folder that developer happens to export into. It plays
+# no part in a reproducible build -- tools/android_smoke.sh passes the output path
+# on the command line (`--export-debug <preset> <path>`), so the preset field only
+# ever affects a manual export from the editor. Comparing it made the drift check
+# red on every machine except the one that last regenerated the template, which
+# is exactly the kind of permanent red that teaches people to ignore a gate.
+const LOCAL_KEYS: PackedStringArray = [
+	"export_path",
 ]
 
 const LIVE_PATH := "res://export_presets.cfg"
@@ -44,9 +57,13 @@ const HEADER: PackedStringArray = [
 	"; still export a correctly filtered APK: copy it to export_presets.cfg, then set",
 	"; your own keystore fields in the editor.",
 	";",
+	"; export_path is blank here for a different reason: it is per-machine, and no",
+	"; automated build reads it -- tools/android_smoke.sh passes the output path on",
+	"; the command line. Set it if you export by hand from the editor.",
+	";",
 	"; tools/export_presets_check.tscn fails if this file and the live one have drifted",
-	"; in any field other than the blanked secrets, so regenerate it whenever you change",
-	"; a preset.",
+	"; in any field other than the blanked ones above, so regenerate it whenever you",
+	"; change a preset.",
 ]
 
 
@@ -57,7 +74,7 @@ static func render(source: String) -> String:
 		out.append(line)
 	out.append("")
 	for raw_line in source.split("\n"):
-		out.append(_blank_if_secret(str(raw_line)))
+		out.append(_blank_if_unshareable(str(raw_line)))
 	return "\n".join(out)
 
 
@@ -70,7 +87,7 @@ static func normalize(text: String) -> PackedStringArray:
 		var line := str(raw_line)
 		if line.begins_with(";"):
 			continue
-		out.append(_blank_if_secret(line).strip_edges(false, true))
+		out.append(_blank_if_unshareable(line).strip_edges(false, true))
 	# Blank padding around the content is not drift: the template's comment header
 	# is followed by a separator line the live file has no reason to carry, and
 	# either file may or may not end with a newline.
@@ -89,8 +106,12 @@ static func key_of(line: String) -> String:
 	return line.substr(0, at)
 
 
-static func _blank_if_secret(line: String) -> String:
+# Both render() and normalize() go through here, which is what keeps the generator
+# and the drift check from disagreeing about which fields travel with the repo.
+static func _blank_if_unshareable(line: String) -> String:
 	var key := key_of(line)
-	if key.is_empty() or not SECRET_KEYS.has(key):
+	if key.is_empty():
+		return line
+	if not SECRET_KEYS.has(key) and not LOCAL_KEYS.has(key):
 		return line
 	return "%s=\"\"" % key

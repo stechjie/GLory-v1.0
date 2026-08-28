@@ -2,6 +2,7 @@ class_name UnitPortraitFallback3D
 extends Node3D
 
 const DEFAULT_HEIGHT := 0.98
+const UnitVisualResolverScript := preload("res://effects/runtime/presentation/UnitVisualResolver.gd")
 
 var _portrait: Sprite3D
 var _frame: Sprite3D
@@ -16,7 +17,7 @@ func configure(portrait_path: String, frame_path: String, team_color: Color, tar
 	_team_plate.position = Vector3(0.0, height * 0.51, -0.006)
 	add_child(_team_plate)
 
-	var portrait_texture := load(portrait_path) as Texture2D if UnitVisualResolver.resource_exists(portrait_path) else null
+	var portrait_texture := load(portrait_path) as Texture2D if UnitVisualResolverScript.resource_exists(portrait_path) else null
 	if portrait_texture != null:
 		_portrait = _make_sprite("Portrait")
 		_portrait.texture = portrait_texture
@@ -24,7 +25,7 @@ func configure(portrait_path: String, frame_path: String, team_color: Color, tar
 		_portrait.position = Vector3(0.0, height * 0.56, 0.0)
 		add_child(_portrait)
 
-	var frame_texture := load(frame_path) as Texture2D if UnitVisualResolver.resource_exists(frame_path) else null
+	var frame_texture := load(frame_path) as Texture2D if UnitVisualResolverScript.resource_exists(frame_path) else null
 	if frame_texture != null:
 		_frame = _make_sprite("Frame")
 		_frame.texture = frame_texture

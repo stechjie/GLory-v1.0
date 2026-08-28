@@ -28,10 +28,15 @@ func _run() -> void:
 		return
 
 	var blanked: PackedStringArray = []
+	var localized: PackedStringArray = []
 	for raw_line in source.split("\n"):
 		var key := Template.key_of(str(raw_line))
-		if not key.is_empty() and Template.SECRET_KEYS.has(key):
+		if key.is_empty():
+			continue
+		if Template.SECRET_KEYS.has(key):
 			blanked.append(key)
+		elif Template.LOCAL_KEYS.has(key):
+			localized.append(key)
 
 	var out := FileAccess.open(Template.TEMPLATE_PATH, FileAccess.WRITE)
 	if out == null:
@@ -46,4 +51,7 @@ func _run() -> void:
 		print("[export_presets_template] 本次没有密钥字段需要清空（项目还没设过 keystore）。")
 	else:
 		print("[export_presets_template] 已清空 %d 个密钥字段：%s" % [blanked.size(), ", ".join(blanked)])
+	if not localized.is_empty():
+		print("[export_presets_template] 已清空 %d 个本机字段（不参与漂移比对）：%s"
+			% [localized.size(), ", ".join(localized)])
 	get_tree().quit(0)

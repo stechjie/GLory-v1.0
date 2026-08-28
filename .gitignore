@@ -47,6 +47,13 @@ Desktop.ini
 
 # 截帧输出（体积大，可随时重新生成）
 captures/
+
+# tools/run_check.ps1 的原始日志与结构化结果。每次运行都会重写，是证据不是源码。
+reports/
+
+# 出包时由 tools/android_smoke.sh 生成并打进 APK 的构建身份。生成物，不是源码；
+# 桌面/编辑器运行时它不存在是正常的（StartupTrace 会如实报 available=false）。
+build_info.json
 __pycache__/
 
 # Written and removed by tools/promo_capture.ps1 to force the movie-recording

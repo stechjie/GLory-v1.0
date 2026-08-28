@@ -6,9 +6,10 @@ enum LayerMode {
 	BATTLE,
 }
 
-const DEFAULT_STYLE := preload("res://data/presentation/board_readability_default.tres")
+const BoardReadabilityStyleScript := preload("res://effects/runtime/presentation/BoardReadabilityStyle.gd")
+const DEFAULT_STYLE: BoardReadabilityStyleScript = preload("res://data/presentation/board_readability_default.tres")
 
-@export var style: BoardReadabilityStyle = DEFAULT_STYLE
+@export var style: BoardReadabilityStyleScript = DEFAULT_STYLE
 
 var _mode := LayerMode.PREP
 var _guides_enabled := true
@@ -165,8 +166,8 @@ func _draw_prep() -> void:
 		var polygon := _prep_cells[index]
 		if polygon.size() < 3:
 			continue
-		var fill_alpha := style.prep_drag_fill_alpha if _prep_drop_active else style.prep_rest_fill_alpha
-		var line_alpha := style.prep_drag_line_alpha if _prep_drop_active else style.prep_rest_line_alpha
+		var fill_alpha: float = style.prep_drag_fill_alpha if _prep_drop_active else style.prep_rest_fill_alpha
+		var line_alpha: float = style.prep_drag_line_alpha if _prep_drop_active else style.prep_rest_line_alpha
 		var fill_color := _alpha(_prep_player_color, fill_alpha)
 		var line_color := _alpha(_prep_player_color, line_alpha)
 		if _prep_range_indices.has(index):
@@ -229,7 +230,7 @@ func _draw_battle() -> void:
 		if polygon.size() < 3:
 			continue
 		var friendly := bool(entry.get("friendly", false))
-		var base_color := style.friendly_color if friendly else style.enemy_color
+		var base_color: Color = style.friendly_color if friendly else style.enemy_color
 		if not _low_quality or style.low_quality_zone_fills:
 			draw_colored_polygon(polygon, _alpha(base_color, style.battle_zone_fill_alpha))
 		draw_polyline(_closed(polygon), _alpha(base_color, style.battle_zone_line_alpha), style.battle_line_width, true)

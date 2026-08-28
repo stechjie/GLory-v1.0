@@ -35,6 +35,10 @@ func _run() -> void:
 	_check_phase_order(warmup, queue)
 	_check_phase_membership(warmup)
 	_check_release_build_has_no_readout()
+	_check_offline_only_guard_survives()
+	_check_input_is_observed_not_consumed()
+	_check_budget_backoff(warmup)
+	_check_input_yield_behaviour(warmup)
 
 	_h.note("queue=%d phases=%s" % [queue.size(), str(totals)])
 	warmup.queue_free()
@@ -122,6 +126,120 @@ func _check_release_build_has_no_readout() -> void:
 	var body := source.substr(guard_at, 200)
 	_h.expect(body.contains("OS.is_debug_build()"),
 		"readout_ungated", "_build_label() 必须以 OS.is_debug_build() 守卫，否则正式版会在语言页画开发文字")
+
+
+# The load-bearing invariant of the whole design: warm only while nothing is
+# connected, because there is no heartbeat to time out then. Lose this guard and the
+# 28.3 s mid-match freeze at the top of VFXWarmup.gd comes back.
+func _check_offline_only_guard_survives() -> void:
+	var source := _code_only(FileAccess.get_file_as_string("res://effects/vfx3d/VFXWarmup.gd"))
+	if not _h.expect(not source.is_empty(), "source_read", "无法读取 VFXWarmup.gd 源码"):
+		return
+	var process_at := source.find("func _process(")
+	if not _h.expect(process_at >= 0, "process_missing", "找不到 _process()"):
+		return
+	# Only the head of _process matters: the abort has to happen before any work.
+	var head := source.substr(process_at, 400)
+	_h.expect(head.contains("NetworkService.SessionState.OFFLINE"),
+		"offline_guard_missing",
+		"_process() 开头不再检查 SessionState.OFFLINE —— 预热会带着心跳跑进对局")
+	_h.expect(head.contains("abort("),
+		"offline_abort_missing", "_process() 开头没有 abort() —— 离线守卫没有出口")
+
+
+# This node sits on the scene tree root, so _input() sees every event before the UI
+# does. Consuming one here would swallow the player's taps -- which is the exact
+# symptom ("clicked and nothing happened") the V3 list is trying to remove.
+func _check_input_is_observed_not_consumed() -> void:
+	var source := _code_only(FileAccess.get_file_as_string("res://effects/vfx3d/VFXWarmup.gd"))
+	if source.is_empty():
+		return
+	_h.expect(source.contains("func _input(event: InputEvent) -> void:"),
+		"input_hook_missing", "没有 _input() —— 输入让路无从判断最近是否有触摸")
+	_h.expect(not source.contains("set_input_as_handled"),
+		"input_consumed",
+		"VFXWarmup 调用了 set_input_as_handled() —— 挂在 root 上会吞掉玩家的点击")
+	# The starvation cap is asserted behaviourally instead of by name, in
+	# _check_input_yield_behaviour().
+
+
+# The budget used to be checked after the spawn had already happened, so it limited
+# nothing. Assert the replacement actually converts overshoot into wait frames.
+func _check_budget_backoff(warmup) -> void:
+	_h.expect(warmup._backoff_frames_for(WarmupScript.FRAME_BUDGET_MS - 1.0) == 0,
+		"backoff_on_cheap_item", "预算内的项目也被追加了等待帧")
+	# Explicitly typed, not inferred: `warmup` is an untyped local (the script is
+	# preloaded, not a global class), so := has nothing to infer from and the whole
+	# check script fails to parse.
+	var one_over: int = warmup._backoff_frames_for(WarmupScript.FRAME_BUDGET_MS * 2.0)
+	_h.expect(one_over >= 1, "backoff_absent", "超预算一倍的项目没有追加等待帧")
+	var huge: int = warmup._backoff_frames_for(WarmupScript.FRAME_BUDGET_MS * 1000.0)
+	_h.expect(huge <= WarmupScript.MAX_BACKOFF_FRAMES,
+		"backoff_unbounded",
+		"退避帧数没有上限（%d > %d）—— 单个坏项目能把队列推出离线窗口"
+			% [huge, WarmupScript.MAX_BACKOFF_FRAMES])
+
+
+# Drives _should_yield_to_input() directly. Nothing else exercises it: an
+# unattended launch never touches the screen, so a real run reports
+# "yielded_frames 0" whether the logic works or is broken outright.
+#
+# The clock fields are set by hand rather than by faking input events, because what
+# has to hold is the decision, not the plumbing that records the timestamp.
+func _check_input_yield_behaviour(warmup) -> void:
+	var now := Time.get_ticks_usec()
+
+	# Nothing has been touched yet: never yield, or the queue would never start.
+	warmup._last_input_us = 0
+	warmup._yield_started_us = 0
+	_h.expect(not warmup._should_yield_to_input(),
+		"yield_without_input", "还没有任何输入就开始让路，预热永远起不来")
+
+	# Touched just now: hold off.
+	warmup._last_input_us = Time.get_ticks_usec()
+	warmup._yield_started_us = 0
+	_h.expect(warmup._should_yield_to_input(),
+		"no_yield_after_input", "刚有输入却仍然启动新项 —— 输入让路没生效")
+
+	# Quiet for longer than the window: resume.
+	warmup._last_input_us = now - int((WarmupScript.INPUT_QUIET_MS + 50.0) * 1000.0)
+	warmup._yield_started_us = 0
+	_h.expect(not warmup._should_yield_to_input(),
+		"yield_after_quiet", "安静超过 %.0f ms 之后仍在让路" % WarmupScript.INPUT_QUIET_MS)
+
+	# Still being touched, but held off past the cap: take one item anyway. Without
+	# this, someone drumming on the language screen pushes the whole queue past the
+	# offline window, and the shader cost lands in the first battle instead.
+	warmup._last_input_us = Time.get_ticks_usec()
+	warmup._yield_started_us = now - int((WarmupScript.INPUT_YIELD_MAX_MS + 50.0) * 1000.0)
+	_h.expect(not warmup._should_yield_to_input(),
+		"starvation_cap_ineffective",
+		"连续输入让路超过 %.0f ms 后仍不放行 —— 预热可被饿死" % WarmupScript.INPUT_YIELD_MAX_MS)
+
+	warmup._last_input_us = 0
+	warmup._yield_started_us = 0
+
+
+# Source text with comments removed.
+#
+# Needed because these assertions cannot otherwise tell code from prose, and it cuts
+# both ways: a comment saying "never call set_input_as_handled()" tripped the
+# forbidden-call assertion, and — worse — a comment merely *mentioning*
+# SessionState.OFFLINE would satisfy the guard-still-present assertion after the
+# real guard had been deleted.
+#
+# Deliberately simple: cut each line at its first '#'. GDScript string literals may
+# contain '#', so this can truncate a line early; that only ever removes text from
+# the haystack, which cannot turn a real failure into a pass.
+func _code_only(source: String) -> String:
+	var out: PackedStringArray = []
+	for raw_line in source.split("\n"):
+		var line := str(raw_line)
+		var hash_at := line.find("#")
+		if hash_at >= 0:
+			line = line.substr(0, hash_at)
+		out.append(line)
+	return "\n".join(out)
 
 
 func _first_skill_of(table_name: String, rows_key: String) -> String:

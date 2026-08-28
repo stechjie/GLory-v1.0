@@ -2,6 +2,7 @@ class_name UnitActor3D
 extends Node3D
 
 const PortraitFallbackScene := preload("res://effects/runtime/presentation/UnitPortraitFallback3D.tscn")
+const PortraitFallbackScript := preload("res://effects/runtime/presentation/UnitPortraitFallback3D.gd")
 
 const DEFAULT_HEIGHT := 0.98
 const HEAD_RATIO := 1.02
@@ -11,7 +12,7 @@ const FOOT_RATIO := 0.05
 
 var actor_root: Node3D
 var visual_root: Node3D
-var portrait_fallback: UnitPortraitFallback3D
+var portrait_fallback: PortraitFallbackScript
 
 
 func _init() -> void:
@@ -34,7 +35,7 @@ func attach_model(model: Node3D) -> void:
 
 func attach_portrait_fallback(portrait_path: String, frame_path: String, team_color: Color, height: float) -> bool:
 	_ensure_contract(height)
-	portrait_fallback = PortraitFallbackScene.instantiate() as UnitPortraitFallback3D
+	portrait_fallback = PortraitFallbackScene.instantiate() as PortraitFallbackScript
 	actor_root.add_child(portrait_fallback)
 	visual_root = portrait_fallback
 	set_meta("visual_kind", "portrait_fallback")

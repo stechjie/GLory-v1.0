@@ -333,6 +333,7 @@ func _sync_3d_model_nodes(living: Array, facing_delta: float, prune := true) -> 
 				continue
 			_battle_3d_models[id] = model_node
 			_battle_3d_root.add_child(model_node)
+			_refresh_actor_material_audit(model_node)
 			if not _unit_actor_registry.register_actor(id, model_node):
 				UnitVisualResolverScript.report_failure(str(f.get("id", id)), str(f.get("def", {}).get("model", "")), "battle", "actor contract registration failed")
 		_position_3d_model_node(model_node, f, facing_delta)
@@ -407,6 +408,7 @@ func _make_shared_model_node(f: Dictionary) -> Node3D:
 	actor.configure_contract(model_height)
 	actor.set_meta("unit_id", str(f.get("id", unit_def.get("id", ""))))
 	actor.set_meta("resolved_visual", unit_def)
+	actor.set_meta("material_audit", _empty_material_audit())
 	var base_yaw := float(unit_def.get("model_base_yaw", 180.0))
 	actor.set_meta("base_yaw", base_yaw)
 	actor.rotation_degrees.y = _spawn_facing_yaw(f, base_yaw)
@@ -416,7 +418,7 @@ func _make_shared_model_node(f: Dictionary) -> Node3D:
 	if instance is Node3D:
 		var model := instance as Node3D
 		if model_path == "res://assets/models/units/dark_imp_motong/dark_imp_motong_attack_punching.fbx":
-			cleanup_imported_model_visuals(model)
+			actor.set_meta("material_audit", cleanup_imported_model_visuals(model))
 		var visual_scale := float(unit_def.get("model_visual_scale", 1.0)) * battle_unit_visual_scale
 		if int(unit_def.get("tier", 1)) == 3:
 			visual_scale *= 1.2
@@ -486,7 +488,8 @@ func _ensure_status_vfx_controller(pivot: Node3D, model_height: float = 0.0) -> 
 		pivot.add_child(controller)
 	return controller
 
-func cleanup_imported_model_visuals(root: Node) -> void:
+func cleanup_imported_model_visuals(root: Node) -> Dictionary:
+	var changed_fields: Dictionary = {}
 	var stack: Array[Node] = [root]
 	while not stack.is_empty():
 		var node: Node = stack.pop_back()
@@ -499,30 +502,53 @@ func cleanup_imported_model_visuals(root: Node) -> void:
 			node.queue_free()
 			continue
 		if node is MeshInstance3D:
-			_disable_mesh_emission(node as MeshInstance3D)
+			for field in _disable_mesh_emission(node as MeshInstance3D):
+				changed_fields[field] = true
+	var audit := _audit_model_materials(root)
+	var changed: Array[String] = []
+	for field in changed_fields.keys():
+		changed.append(str(field))
+	changed.sort()
+	audit["cleanup_changed_fields"] = changed
+	root.set_meta("material_audit", audit)
+	return audit
 
-func _disable_mesh_emission(mesh_instance: MeshInstance3D) -> void:
+func _disable_mesh_emission(mesh_instance: MeshInstance3D) -> Array[String]:
+	var changed_fields: Dictionary = {}
 	var override := mesh_instance.material_override
 	if override != null:
-		mesh_instance.material_override = _material_without_emission(override)
+		var clean_override := _material_without_emission(override)
+		_collect_material_changed_fields(override, clean_override, changed_fields)
+		mesh_instance.material_override = clean_override
 	var mesh := mesh_instance.mesh
 	if mesh == null:
-		return
+		return _sorted_string_keys(changed_fields)
 	for surface in range(mesh.get_surface_count()):
 		var material := mesh_instance.get_surface_override_material(surface)
 		if material == null:
 			material = mesh.surface_get_material(surface)
 		if material != null:
-			mesh_instance.set_surface_override_material(surface, _material_without_emission(material))
+			var clean_surface := _material_without_emission(material)
+			_collect_material_changed_fields(material, clean_surface, changed_fields)
+			mesh_instance.set_surface_override_material(surface, clean_surface)
+	return _sorted_string_keys(changed_fields)
 
 # 去自发光材质缓存：duplicate(true) 会触发着色器变体编译（手机上 50~200ms 顿挫），
 # 同一份源材质整局只复制/编译一次。static：跨战斗场景复用。
 static var _clean_material_cache: Dictionary = {}
+const MATERIAL_TEXTURE_SLOTS: Array[int] = [
+	BaseMaterial3D.TEXTURE_ALBEDO,
+	BaseMaterial3D.TEXTURE_NORMAL,
+	BaseMaterial3D.TEXTURE_EMISSION,
+	BaseMaterial3D.TEXTURE_ORM,
+	BaseMaterial3D.TEXTURE_METALLIC,
+	BaseMaterial3D.TEXTURE_ROUGHNESS,
+]
 
 func _material_without_emission(material: Material) -> Material:
-	var key := material.resource_path
-	if key.is_empty():
-		key = str(material.get_rid())
+	# resource_path 不能代表运行时状态：同一路径的局部 override 或同一资源被
+	# 改写后仍会命中旧副本。RID 区分源实例，状态哈希区分该实例的当前属性。
+	var key := "%s|%d" % [str(material.get_rid()), _material_state_hash(material)]
 	var cached: Material = _clean_material_cache.get(key)
 	if cached != null:
 		return cached
@@ -537,6 +563,205 @@ func _material_without_emission(material: Material) -> Material:
 		base.emission_energy_multiplier = 0.0
 	_clean_material_cache[key] = clean
 	return clean
+
+static func clear_for_test() -> void:
+	_clean_material_cache.clear()
+
+static func material_cache_count_for_test() -> int:
+	return _clean_material_cache.size()
+
+func _empty_material_audit() -> Dictionary:
+	return {
+		"surface_count": 0,
+		"textured_surface_count": 0,
+		"suspect_white_count": 0,
+		"cleanup_changed_fields": [],
+	}
+
+func _refresh_actor_material_audit(actor: Node) -> Dictionary:
+	var previous_value: Variant = actor.get_meta("material_audit", {})
+	var previous: Dictionary = previous_value as Dictionary if previous_value is Dictionary else {}
+	# Model wrapper scripts create their MeshInstance3D children in _ready(). This
+	# refresh runs immediately after the actor enters the live battle tree, so the
+	# audit observes the real runtime surfaces without polling or per-frame work.
+	var visual_value: Variant = actor.get("visual_root")
+	var visual_root: Node = visual_value as Node if visual_value is Node else null
+	var audit := _audit_model_materials(visual_root) if visual_root != null \
+		and str(actor.get_meta("visual_kind", "")) == "model" else _empty_material_audit()
+	audit["cleanup_changed_fields"] = (previous.get("cleanup_changed_fields", []) as Array).duplicate()
+	actor.set_meta("material_audit", audit)
+	return audit
+
+func _audit_model_materials(root: Node) -> Dictionary:
+	var audit := _empty_material_audit()
+	var stack: Array[Node] = [root]
+	while not stack.is_empty():
+		var node: Node = stack.pop_back()
+		for child in node.get_children():
+			stack.append(child)
+		if not (node is MeshInstance3D):
+			continue
+		var mesh_instance := node as MeshInstance3D
+		var mesh := mesh_instance.mesh
+		if mesh == null:
+			continue
+		for surface in range(mesh.get_surface_count()):
+			audit["surface_count"] = int(audit["surface_count"]) + 1
+			var material := _effective_surface_material(mesh_instance, surface)
+			if material == null:
+				continue
+			if _material_has_texture(material):
+				audit["textured_surface_count"] = int(audit["textured_surface_count"]) + 1
+			if _material_is_suspect_white(material):
+				audit["suspect_white_count"] = int(audit["suspect_white_count"]) + 1
+	return audit
+
+func _effective_surface_material(mesh_instance: MeshInstance3D, surface: int) -> Material:
+	if mesh_instance.material_override != null:
+		return mesh_instance.material_override
+	var surface_override := mesh_instance.get_surface_override_material(surface)
+	if surface_override != null:
+		return surface_override
+	return mesh_instance.mesh.surface_get_material(surface) if mesh_instance.mesh != null else null
+
+func _material_has_texture(material: Material) -> bool:
+	var current: Material = material
+	var seen: Dictionary = {}
+	while current != null and not seen.has(current.get_instance_id()):
+		seen[current.get_instance_id()] = true
+		if current is BaseMaterial3D:
+			var base := current as BaseMaterial3D
+			for slot in MATERIAL_TEXTURE_SLOTS:
+				if base.get_texture(slot) != null:
+					return true
+		elif current is ShaderMaterial:
+			for property_info in current.get_property_list():
+				var property_name := str(property_info.get("name", ""))
+				if property_name.begins_with("shader_parameter/") and current.get(property_name) is Texture2D:
+					return true
+		current = current.next_pass
+	return false
+
+func _material_is_suspect_white(material: Material) -> bool:
+	var has_color_texture := false
+	var has_nonwhite_color := false
+	var current: Material = material
+	var seen: Dictionary = {}
+	while current != null and not seen.has(current.get_instance_id()):
+		seen[current.get_instance_id()] = true
+		if current is BaseMaterial3D:
+			var base := current as BaseMaterial3D
+			has_color_texture = has_color_texture or base.albedo_texture != null
+			has_nonwhite_color = has_nonwhite_color or not _color_is_near_white(base.albedo_color)
+		elif current is ShaderMaterial:
+			for property_info in current.get_property_list():
+				var property_name := str(property_info.get("name", ""))
+				if not property_name.begins_with("shader_parameter/"):
+					continue
+				var value: Variant = current.get(property_name)
+				if value is Texture2D and _is_color_texture_slot(property_name):
+					has_color_texture = true
+				elif value is Color and _is_color_value_slot(property_name) and not _color_is_near_white(value):
+					has_nonwhite_color = true
+		current = current.next_pass
+	return not has_color_texture and not has_nonwhite_color
+
+func _is_color_texture_slot(property_name: String) -> bool:
+	var lowered := property_name.to_lower()
+	for excluded in ["normal", "rough", "metal", "orm", "emission", "mask", "height", "depth", "ao"]:
+		if lowered.contains(excluded):
+			return false
+	return lowered.contains("albedo") or lowered.contains("diffuse") or lowered.contains("base") \
+		or lowered.contains("color") or lowered.contains("texture") or lowered.contains("tex")
+
+func _is_color_value_slot(property_name: String) -> bool:
+	var lowered := property_name.to_lower().trim_prefix("shader_parameter/")
+	for excluded in ["emission", "outline", "rim", "shadow", "specular", "highlight", "glow", "mask"]:
+		if lowered.contains(excluded):
+			return false
+	return lowered.contains("albedo") or lowered.contains("diffuse") or lowered.contains("base") \
+		or lowered.contains("body") or lowered.contains("main") or lowered.contains("color") or lowered.contains("tint")
+
+func _color_is_near_white(color: Color) -> bool:
+	return color.a > 0.05 and color.r >= 0.9 and color.g >= 0.9 and color.b >= 0.9
+
+func _material_state_hash(material: Material) -> int:
+	var state := _material_visual_state(material)
+	var names: Array = state.keys()
+	names.sort()
+	var tokens: Array[String] = []
+	for property_name in names:
+		tokens.append(str(property_name))
+		tokens.append(_material_state_token(state[property_name]))
+	return hash(tokens)
+
+func _material_visual_state(material: Material) -> Dictionary:
+	var state: Dictionary = {}
+	for property_info in material.get_property_list():
+		if (int(property_info.get("usage", 0)) & PROPERTY_USAGE_STORAGE) == 0:
+			continue
+		var property_name := str(property_info.get("name", ""))
+		if property_name.is_empty() or property_name == "script" or property_name.begins_with("resource_"):
+			continue
+		state[property_name] = material.get(property_name)
+	# Imported textures and dynamic shader parameters are not guaranteed to carry
+	# PROPERTY_USAGE_STORAGE, but they are part of the runtime visual state and the
+	# cache must split when any of them changes.
+	if material is BaseMaterial3D:
+		var base := material as BaseMaterial3D
+		for slot in MATERIAL_TEXTURE_SLOTS:
+			state["texture_slot/%d" % slot] = base.get_texture(slot)
+	elif material is ShaderMaterial:
+		for property_info in material.get_property_list():
+			var property_name := str(property_info.get("name", ""))
+			if property_name.begins_with("shader_parameter/"):
+				state[property_name] = material.get(property_name)
+	return state
+
+func _material_state_token(value: Variant) -> String:
+	if value is Resource:
+		var resource := value as Resource
+		return "resource:%s:%d:%s" % [resource.get_class(), resource.get_instance_id(), resource.resource_path]
+	if value is Array:
+		var array_tokens: Array[String] = []
+		for item in value:
+			array_tokens.append(_material_state_token(item))
+		return "array:[%s]" % "|".join(array_tokens)
+	if value is Dictionary:
+		var keys: Array = value.keys()
+		keys.sort_custom(func(a: Variant, b: Variant) -> bool: return str(a) < str(b))
+		var dictionary_tokens: Array[String] = []
+		for key_value in keys:
+			dictionary_tokens.append("%s=%s" % [str(key_value), _material_state_token(value[key_value])])
+		return "dictionary:{%s}" % "|".join(dictionary_tokens)
+	return var_to_str(value)
+
+func _collect_material_changed_fields(source: Material, cleaned: Material, into: Dictionary) -> void:
+	var before := _material_visual_state(source)
+	var after := _material_visual_state(cleaned)
+	var names: Dictionary = {}
+	for property_name in before.keys():
+		names[property_name] = true
+	for property_name in after.keys():
+		names[property_name] = true
+	for property_name in names.keys():
+		if not before.has(property_name) or not after.has(property_name) \
+			or not _material_values_equal(before.get(property_name), after.get(property_name)):
+			into[str(property_name)] = true
+
+func _material_values_equal(a: Variant, b: Variant) -> bool:
+	if typeof(a) != typeof(b):
+		return false
+	if a is Resource:
+		return is_same(a, b)
+	return a == b
+
+func _sorted_string_keys(values: Dictionary) -> Array[String]:
+	var result: Array[String] = []
+	for key in values.keys():
+		result.append(str(key))
+	result.sort()
+	return result
 func _setup_model_animation_state(pivot: Node3D, model: Node3D, unit_def: Dictionary, f: Dictionary) -> void:
 	if _supports_model_action_methods(model):
 		pivot.set_meta("model_action_node_path", pivot.get_path_to(model))
@@ -775,7 +1000,7 @@ static func release_round_assets() -> void:
 	print("[ASSET] 回合结束 %s" % BattleAssetService.stats_line())
 	BattleAssetService.reset_stats()
 	BattleAssetService.release_owner(BattleAssetService.OWNER_BATTLE)
-	# 材质缓存的 key 是源材质路径，映射不回单位，没法分级 —— 整份清掉。
+	# 材质缓存按源 RID + 当前状态哈希索引，仍映射不回具体单位 —— 整份清掉。
 	# 代价只是下回合重新 duplicate(false)（浅拷贝，很便宜）；着色器变体由引擎
 	# 按 shader+变体缓存、不按材质实例，所以不会重新编译。
 	_clean_material_cache.clear()

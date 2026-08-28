@@ -13,6 +13,7 @@
 # 用法：
 #   tools/android_smoke.sh [--out DIR] [--godot PATH] [--adb PATH]
 #                          [--preset NAME] [--skip-export] [--keep N]
+#                          [--assert-startup]
 #
 # 退出码：0 通过；1 有失败项。绝不因为"进程退出了"就算通过 —— 见 README A3。
 
@@ -29,6 +30,18 @@ SKIP_INSTALL=0
 KEEP=5
 LAUNCH_WAIT_SEC=25
 INSTALL_TIMEOUT_SEC=180
+ASSERT_STARTUP=0
+
+# Startup budgets from the V3 review. Reported by default, enforced only with
+# --assert-startup.
+#
+# Why not enforced yet: these numbers were written before anything measured the
+# phases they describe, and there is still no branded Bootstrap scene, so T1 is
+# "whenever the renderer first presented", not "the Glory splash appeared". Turning
+# them into a gate before a baseline exists just produces a red nobody believes.
+# Take a baseline first, then flip this on in its own commit.
+T1_MAX_MS=800
+T3_MAX_MS=3000
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -39,6 +52,7 @@ while [ $# -gt 0 ]; do
         --serial) SERIAL="$2"; shift 2 ;;
         --skip-export) SKIP_EXPORT=1; shift ;;
         --skip-install) SKIP_INSTALL=1; shift ;;
+        --assert-startup) ASSERT_STARTUP=1; shift ;;
         --keep) KEEP="$2"; shift 2 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
@@ -111,6 +125,46 @@ PACKAGE="$(grep -m1 'package/unique_name=' "$PROJECT_ROOT/export_presets.cfg" | 
 [ -n "$PACKAGE" ] || { fail "no_package_name: 从 export_presets.cfg 读不到 package/unique_name"; PACKAGE="unknown"; }
 note "package=$PACKAGE"
 
+# 版本号在这里读一次，install 段复用。以前只在 install 段读，导出时写不进 build_info。
+PRESET_VERSION_CODE="$(grep -m1 'version/code=' "$PROJECT_ROOT/export_presets.cfg" | sed 's/.*=\([0-9]*\).*/\1/')"
+PRESET_VERSION_NAME="$(grep -m1 'version/name=' "$PROJECT_ROOT/export_presets.cfg" | sed 's/.*="\(.*\)"/\1/')"
+[ -n "$PRESET_VERSION_CODE" ] || PRESET_VERSION_CODE=0
+
+# --- 构建身份 -----------------------------------------------------------------
+# res://build_info.json 在导出**之前**写，才会被打进包里。这一份是"所测即所构建"
+# 的锚点：装机之后再从 APK 里读回来比对，不一致就说明测的不是刚出的那个包。
+#
+# 写在这里而不是用 GDScript 现算：commit / dirty / manifest 指纹 / 包身份这些值
+# 本脚本上面已经全算过了，在引擎里再实现一遍只会多一份会各自漂移的逻辑。
+#
+# preset_template_sha256 取**已提交的模板**，不取本机 export_presets.cfg —— 后者带
+# 机器本地路径、将来还会带 keystore 口令，既不可复现也不能进证据链。
+BUILD_INFO_PATH="$PROJECT_ROOT/build_info.json"
+TEMPLATE_SHA="$(sha256sum "$PROJECT_ROOT/export_presets.template.cfg" 2>/dev/null | cut -d' ' -f1)"
+[ -n "$TEMPLATE_SHA" ] || TEMPLATE_SHA="unknown"
+BUILD_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+cat > "$BUILD_INFO_PATH" <<BUILDINFO
+{
+  "schema_version": 1,
+  "git_commit": "$COMMIT_FULL",
+  "git_commit_short": "$COMMIT",
+  "dirty_tracked_files": $DIRTY,
+  "build_utc": "$BUILD_UTC",
+  "asset_inventory_sha256": "$MANIFEST_SHA",
+  "preset_template_sha256": "$TEMPLATE_SHA",
+  "preset": "$PRESET",
+  "package_id": "$PACKAGE",
+  "version_code": $PRESET_VERSION_CODE,
+  "version_name": "$PRESET_VERSION_NAME",
+  "godot_version": "$GODOT_VERSION"
+}
+BUILDINFO
+if ! BUILD_INFO_PATH="$BUILD_INFO_PATH" python -c 'import json,io,os;json.load(io.open(os.environ["BUILD_INFO_PATH"],encoding="utf-8"))' 2>/dev/null; then
+    fail "build_info_unparseable: 生成的 build_info.json 不是合法 JSON"
+fi
+cp "$BUILD_INFO_PATH" "$RUN_DIR/build_info.json" 2>/dev/null || true
+note "build_info commit=$COMMIT dirty=$DIRTY template_sha=${TEMPLATE_SHA:0:16} version_code=$PRESET_VERSION_CODE"
+
 # --- 导出 ---------------------------------------------------------------------
 EXPORT_LOG="$RUN_DIR/export.log"
 if [ "$SKIP_EXPORT" -eq 0 ]; then
@@ -156,6 +210,57 @@ APK_BYTES="$(stat -c %s "$APK" 2>/dev/null || echo 0)"
 APK_MIB="$(python -c "print('%.1f' % ($APK_BYTES/1048576.0))" 2>/dev/null || echo 0)"
 APK_SHA="$(sha256sum "$APK" | cut -d' ' -f1)"
 note "apk=$(basename "$APK") size=${APK_MIB} MiB sha256=$APK_SHA"
+
+# --- 包内构建身份回读 ---------------------------------------------------------
+# 把刚写的 build_info.json 从 APK 里读回来比对。这一步才是"所测即所构建"真正的
+# 闭环：前面写的那份只证明脚本算对了值，读回来的这份才证明它进了这个包。
+# --skip-export 时两者本就可能不同（复用的是旧包），所以只报告不判失败。
+APK_BUILD_INFO="$RUN_DIR/build_info_in_apk.json"
+APK_BUILD_COMMIT="unknown"
+APK_BUILD_MATCH="unknown"
+if APK_PATH="$APK" OUT_PATH="$APK_BUILD_INFO" python -c '
+import zipfile, os, sys
+z = zipfile.ZipFile(os.environ["APK_PATH"])
+# Godot keeps res:// paths under a leading assets/ segment.
+for name in ("assets/build_info.json", "build_info.json"):
+    if name in z.namelist():
+        data = z.read(name)
+        with open(os.environ["OUT_PATH"], "wb") as handle:
+            handle.write(data)
+        sys.exit(0)
+sys.exit(3)
+' 2>/dev/null; then
+    APK_BUILD_COMMIT="$(BI="$APK_BUILD_INFO" python -c 'import json,io,os;print(json.load(io.open(os.environ["BI"],encoding="utf-8")).get("git_commit","unknown"))' 2>/dev/null || echo unknown)"
+    if [ "$SKIP_EXPORT" -eq 1 ]; then
+        APK_BUILD_MATCH="skipped_reused_apk"
+        note "build_info 包内 commit=${APK_BUILD_COMMIT:0:12}（--skip-export，复用旧包，不判失败）"
+    elif [ "$APK_BUILD_COMMIT" = "$COMMIT_FULL" ]; then
+        APK_BUILD_MATCH="match"
+        note "build_info 包内 commit 与本次一致（${APK_BUILD_COMMIT:0:12}）"
+    else
+        APK_BUILD_MATCH="mismatch"
+        fail "build_info_mismatch: 包内 commit=${APK_BUILD_COMMIT:0:12}，本次构建 commit=${COMMIT_FULL:0:12} —— 这个 APK 不是本次源码出的"
+    fi
+else
+    APK_BUILD_MATCH="absent"
+    if [ "$SKIP_EXPORT" -eq 1 ]; then
+        note "包内没有 build_info.json（--skip-export，复用的是加入该文件之前出的包）"
+    else
+        fail "build_info_absent: 刚导出的 APK 里没有 build_info.json —— 导出没把它带上，构建身份无法追溯"
+    fi
+fi
+
+# --- APK 内容扫描 -------------------------------------------------------------
+APK_SCAN_JSON="$RUN_DIR/apk_content_scan.json"
+APK_SCAN_STATUS="unknown"
+if python "$PROJECT_ROOT/tools/apk_content_scan.py" "$APK" --json "$APK_SCAN_JSON" > "$RUN_DIR/apk_content_scan.log" 2>&1; then
+    APK_SCAN_STATUS="pass"
+    note "apk 内容扫描通过"
+else
+    APK_SCAN_STATUS="fail"
+    fail "apk_content_scan: APK 里有不该发布的内容，见 apk_content_scan.log"
+    tail -20 "$RUN_DIR/apk_content_scan.log" >&2
+fi
 
 # --- 安装（增量挂起时回退）----------------------------------------------------
 # vivo 上实测过 adb install 在增量会话里停滞。先直连装，超时就推到设备本地再让
@@ -245,10 +350,40 @@ _wait_transport() {
     return 1
 }
 
+# Defaulted before the branch because the script runs under `set -u`: on the
+# device-lost path these stay unset, and referencing an unset variable would abort
+# the script outright instead of letting it report the failure it just recorded.
+INSTALLED_VERSION=""
+INSTALLED_PATH=""
+INSTALLED_VERSION_CODE=0
+EXPECTED_VERSION_CODE=0
+RIVAL_PACKAGES=""
+
 if _wait_transport; then
     INSTALLED_VERSION="$("$ADB_BIN" shell dumpsys package "$PACKAGE" 2>/dev/null | tr -d '\r' | grep -m1 'versionName' | sed 's/.*versionName=//')"
     INSTALLED_PATH="$("$ADB_BIN" shell pm path "$PACKAGE" 2>/dev/null | tr -d '\r' | head -1)"
     [ -n "$INSTALLED_PATH" ] || fail "not_installed: pm path 查不到 $PACKAGE"
+
+    # versionCode, not just versionName: versionName is "" in this project's presets,
+    # so it can never disagree with anything. The code is what actually distinguishes
+    # the build that was just pushed from one already on the device.
+    INSTALLED_VERSION_CODE="$("$ADB_BIN" shell dumpsys package "$PACKAGE" 2>/dev/null | tr -d '\r' | grep -m1 'versionCode=' | sed 's/.*versionCode=\([0-9]*\).*/\1/')"
+    EXPECTED_VERSION_CODE="$PRESET_VERSION_CODE"
+    [ -n "$INSTALLED_VERSION_CODE" ] || INSTALLED_VERSION_CODE=0
+    [ -n "$EXPECTED_VERSION_CODE" ] || EXPECTED_VERSION_CODE=0
+    if [ "$SKIP_INSTALL" -eq 0 ] && [ "$INSTALLED_VERSION_CODE" != "$EXPECTED_VERSION_CODE" ]; then
+        fail "version_code_mismatch: 设备上是 versionCode=$INSTALLED_VERSION_CODE，预设是 $EXPECTED_VERSION_CODE —— 测的不是刚推上去的那个包"
+    fi
+    note "version   code=$INSTALLED_VERSION_CODE (preset $EXPECTED_VERSION_CODE) name=${INSTALLED_VERSION:-<empty>}"
+
+    # 同机多包防混淆。设备上同时躺着 com.glory.game 与 glory.beta001，桌面图标还长得
+    # 一样 —— 人肉复测最容易在这里测错对象。脚本自己按包名启动不会认错，但报告必须
+    # 把这件事说出来，否则下一份"真机实测"截图可能来自另一个包。
+    RIVAL_PACKAGES="$("$ADB_BIN" shell pm list packages 2>/dev/null | tr -d '\r' | sed 's/^package://' | grep -iE '(^|\.)glory' | grep -vx "$PACKAGE" | tr '\n' ' ' | sed 's/ *$//')"
+    if [ -n "$RIVAL_PACKAGES" ]; then
+        note "!! 设备上还装着其它 Glory 包：$RIVAL_PACKAGES"
+        note "!! 本次只针对 $PACKAGE。人工复测请照包名确认，不要照桌面图标。"
+    fi
 else
     fail "device_lost_after_install: 推包后 60 秒内 adb 通道没恢复，无法确认安装结果（这不等于没装上）"
 fi
@@ -268,6 +403,7 @@ if [ ${#FAILURES[@]} -gt 0 ]; then
   "reason": "install did not succeed; launching would have measured the previously installed build",
   "source": {"commit": "$COMMIT_FULL", "assets_manifest_inventory_sha256": "$MANIFEST_SHA", "godot": "$GODOT_VERSION"},
   "apk": {"file": "$(basename "$APK")", "bytes": $APK_BYTES, "mib": $APK_MIB, "sha256": "$APK_SHA", "package": "$PACKAGE"},
+  "identity": {"build_info_in_apk": "$APK_BUILD_MATCH", "build_info_apk_commit": "$APK_BUILD_COMMIT", "apk_content_scan": "$APK_SCAN_STATUS", "preset_template_sha256": "$TEMPLATE_SHA"},
   "device": {"model": "$DEVICE_MODEL", "android": "$DEVICE_RELEASE", "api": $DEVICE_SDK, "abi": "$DEVICE_ABI"}
 }
 EARLY
@@ -298,6 +434,97 @@ SHOT_BYTES="$(stat -c %s "$RUN_DIR/launch.png" 2>/dev/null || echo 0)"
 
 MEM_KB="$("$ADB_BIN" shell dumpsys meminfo "$PACKAGE" 2>/dev/null | tr -d '\r' | grep -m1 'TOTAL PSS' | awk '{print $3}')"
 [ -n "$MEM_KB" ] || MEM_KB=0
+
+# --- 启动时间线 ---------------------------------------------------------------
+# 两个来源，因为没有任何一个能单独回答"玩家什么时候能点"：
+#
+#   Displayed   系统 server 记的，Android 把窗口放上屏幕的时刻。它是唯一能锚到真正
+#               进程启动的数字，但窗口出现 ≠ 游戏能操作 —— 本项目实测这一步约 250 ms，
+#               而语言页要再等几秒。
+#   GLORY_STARTUP  进程内 StartupTrace 打的单行 JSON。它知道"第一个按钮可以按了"，
+#               但时钟从引擎初始化起算，看不见引擎之前的那段（见该文件顶部）。
+#
+# 所以两个都记、都不换算成对方，报告里各自标明基准。
+DISPLAYED_LINE="$(grep -a -m1 "Displayed $PACKAGE/" "$RUN_DIR/logcat_full.log" 2>/dev/null | tr -d '\r' || true)"
+DISPLAYED_MS=-1
+DISPLAYED_TOKEN="$(printf '%s' "$DISPLAYED_LINE" | grep -oE '\+([0-9]+s)?[0-9]+ms' | head -1 || true)"
+if [ -n "$DISPLAYED_TOKEN" ]; then
+    d_sec="$(printf '%s' "$DISPLAYED_TOKEN" | grep -oE '[0-9]+s' | tr -d 's' || true)"
+    d_ms="$(printf '%s' "$DISPLAYED_TOKEN" | sed 's/.*[s+]\([0-9]*\)ms/\1/')"
+    [ -n "$d_sec" ] || d_sec=0
+    [ -n "$d_ms" ] || d_ms=0
+    DISPLAYED_MS=$(( d_sec * 1000 + d_ms ))
+fi
+
+grep -aoE 'GLORY_STARTUP \{.*\}' "$RUN_DIR/logcat_full.log" > "$RUN_DIR/startup_trace.jsonl" 2>/dev/null || true
+STARTUP_MARK_COUNT="$(grep -ac . "$RUN_DIR/startup_trace.jsonl" 2>/dev/null || echo 0)"
+
+# 用 python 解 JSON 而不是 sed：载荷是结构化的，字段顺序不保证，正则迟早看走眼。
+# stdout 走 buffer.write 是因为 Windows 上文本管道会补 CR，混进 shell 变量里。
+STARTUP_KV="$(STARTUP_JSONL="$RUN_DIR/startup_trace.jsonl" python -c '
+import json, io, os, sys
+marks = {}
+try:
+    with io.open(os.environ["STARTUP_JSONL"], encoding="utf-8", newline="") as handle:
+        for raw in handle:
+            line = raw.strip()
+            prefix = "GLORY_STARTUP "
+            if not line.startswith(prefix):
+                continue
+            try:
+                payload = json.loads(line[len(prefix):])
+            except ValueError:
+                continue
+            name = payload.get("mark", "")
+            # First occurrence wins, matching StartupTrace: a duplicate line is a
+            # re-mark, not a correction.
+            if name and name not in marks:
+                marks[name] = int(payload.get("ms", -1))
+except (IOError, OSError):
+    pass
+wanted = ("t1_first_frame", "t2_godot_main_ready",
+          "t3_first_input_ready", "t4_first_action_complete")
+out = ["%s=%d" % (key, marks.get(key, -1)) for key in wanted]
+sys.stdout.buffer.write(("\n".join(out)).encode("utf-8"))
+' 2>/dev/null || true)"
+
+T1_MS=-1; T2_MS=-1; T3_MS=-1; T4_MS=-1
+if [ -n "$STARTUP_KV" ]; then
+    while IFS='=' read -r mark_key mark_value; do
+        case "$mark_key" in
+            t1_first_frame) T1_MS="$mark_value" ;;
+            t2_godot_main_ready) T2_MS="$mark_value" ;;
+            t3_first_input_ready) T3_MS="$mark_value" ;;
+            t4_first_action_complete) T4_MS="$mark_value" ;;
+        esac
+    done <<EOF
+$STARTUP_KV
+EOF
+fi
+
+MISSING_MARKS=""
+[ "$T1_MS" -ge 0 ] || MISSING_MARKS="$MISSING_MARKS t1_first_frame"
+[ "$T2_MS" -ge 0 ] || MISSING_MARKS="$MISSING_MARKS t2_godot_main_ready"
+[ "$T3_MS" -ge 0 ] || MISSING_MARKS="$MISSING_MARKS t3_first_input_ready"
+MISSING_MARKS="$(printf '%s' "$MISSING_MARKS" | sed 's/^ *//')"
+
+# t4 只在玩家做出第一个动作后才有，而本脚本不点屏幕，所以它缺席是正常的，不列入缺失。
+if [ -n "$MISSING_MARKS" ]; then
+    note "!! 启动标记缺失：$MISSING_MARKS（logcat 里只有 $STARTUP_MARK_COUNT 条 GLORY_STARTUP）"
+    note "!! 缺标记通常意味着装的包比 StartupTrace 早，或进程在到达该阶段前就死了"
+fi
+
+STARTUP_VERDICT="reported_only"
+if [ "$ASSERT_STARTUP" -eq 1 ]; then
+    STARTUP_VERDICT="asserted"
+    [ -n "$MISSING_MARKS" ] && fail "startup_marks_missing: $MISSING_MARKS"
+    if [ "$T3_MS" -ge 0 ] && [ "$T3_MS" -gt "$T3_MAX_MS" ]; then
+        fail "startup_t3_over_budget: 首个可交互界面 ${T3_MS}ms > ${T3_MAX_MS}ms（引擎初始化起算）"
+    fi
+    if [ "$T1_MS" -ge 0 ] && [ "$T1_MS" -gt "$T1_MAX_MS" ]; then
+        fail "startup_t1_over_budget: 首帧 ${T1_MS}ms > ${T1_MAX_MS}ms（引擎初始化起算）"
+    fi
+fi
 
 # --- 结果 ---------------------------------------------------------------------
 PASSED=true
@@ -335,7 +562,10 @@ cat > "$RUN_DIR/smoke.json" <<JSON
   "install": {
     "method": "$INSTALL_METHOD",
     "installed_path": "$INSTALLED_PATH",
-    "version_name": "$INSTALLED_VERSION"
+    "version_name": "$INSTALLED_VERSION",
+    "version_code": $INSTALLED_VERSION_CODE,
+    "expected_version_code": $EXPECTED_VERSION_CODE,
+    "other_glory_packages_on_device": "$RIVAL_PACKAGES"
   },
   "launch": {
     "wait_sec": $LAUNCH_WAIT_SEC,
@@ -345,6 +575,33 @@ cat > "$RUN_DIR/smoke.json" <<JSON
     "script_error_count": $SCRIPT_ERR_COUNT,
     "total_pss_kb": $MEM_KB,
     "screenshot_bytes": $SHOT_BYTES
+  },
+  "identity": {
+    "build_info_written": "build_info.json",
+    "build_info_in_apk": "$APK_BUILD_MATCH",
+    "build_info_apk_commit": "$APK_BUILD_COMMIT",
+    "preset_template_sha256": "$TEMPLATE_SHA",
+    "preset_version_code": $PRESET_VERSION_CODE,
+    "preset_version_name": "$PRESET_VERSION_NAME",
+    "apk_content_scan": "$APK_SCAN_STATUS",
+    "note": "build_info_in_apk=match 才表示所测即所构建；skipped_reused_apk / absent 只在 --skip-export 下可接受。"
+  },
+  "startup": {
+    "verdict": "$STARTUP_VERDICT",
+    "budgets_ms": {"t1_first_frame": $T1_MAX_MS, "t3_first_input_ready": $T3_MAX_MS},
+    "activity_displayed_ms": $DISPLAYED_MS,
+    "activity_displayed_base": "android_process_start",
+    "marks_base": "godot_engine_init",
+    "marks_ms": {
+      "t1_first_frame": $T1_MS,
+      "t2_godot_main_ready": $T2_MS,
+      "t3_first_input_ready": $T3_MS,
+      "t4_first_action_complete": $T4_MS
+    },
+    "mark_lines_in_logcat": $STARTUP_MARK_COUNT,
+    "missing_marks": "$MISSING_MARKS",
+    "trace_file": "startup_trace.jsonl",
+    "note": "activity_displayed_ms 从 Android 进程启动起算；marks_ms 从 Godot 引擎初始化起算。两者基准不同，不可相减。t4 需要玩家动作，本脚本不点屏幕，缺席属正常。"
   },
   "note": "Debug 构建，仅用于 QA。不得当作 Release 验收：没有私有 keystore 签名、没有体积门槛、没有低端机与双设备联机验收。"
 }
@@ -359,6 +616,9 @@ note "apk       ${APK_MIB} MiB  sha256=${APK_SHA:0:16}"
 note "device    $DEVICE_MODEL  Android $DEVICE_RELEASE (api $DEVICE_SDK, $DEVICE_ABI)"
 note "install   $INSTALL_METHOD  path=$INSTALLED_PATH"
 note "launch    pid=$PID  fatal=$FATAL_COUNT  script_error=$SCRIPT_ERR_COUNT  pss=${MEM_KB}KB"
+note "startup   displayed=${DISPLAYED_MS}ms (自进程启动)  t1=${T1_MS}ms t2=${T2_MS}ms t3=${T3_MS}ms t4=${T4_MS}ms (自引擎初始化，-1=没抓到)"
+note "          判定=$STARTUP_VERDICT  预算 t1<=${T1_MAX_MS}ms t3<=${T3_MAX_MS}ms"
+note "identity  build_info_in_apk=$APK_BUILD_MATCH  apk_scan=$APK_SCAN_STATUS  template_sha=${TEMPLATE_SHA:0:16}"
 note "evidence  $RUN_DIR"
 
 # 旧构建清理，只留最近 N 份。
