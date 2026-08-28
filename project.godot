@@ -32,6 +32,8 @@ TutorialMode="*res://scripts/tutorial/TutorialMode.gd"
 PerfLog="*res://tools/PerfLog.gd"
 DeviceHarness="*res://tools/DeviceHarness.gd"
 IssueReport="*res://scripts/autoload/IssueReport.gd"
+ModalStack="*res://ui/services/ModalStack.gd"
+DialogService="*res://ui/services/DialogService.gd"
 
 [display]
 

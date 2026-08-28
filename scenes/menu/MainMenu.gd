@@ -54,7 +54,7 @@ const DEBUG_BANDS := [
 var _menu_music_player: AudioStreamPlayer
 var _address_edit: LineEdit
 var _net_status: Label
-var _coming_soon: AcceptDialog
+# 「敬请期待」不再持有 AcceptDialog 节点：见 _show_coming_soon()。
 var _room_overlay: Control
 var _room_list_box: VBoxContainer
 var _room_id_edit: LineEdit
@@ -215,10 +215,6 @@ func _build() -> void:
 	_address_edit.visible = false
 	add_child(_address_edit)
 
-	_coming_soon = AcceptDialog.new()
-	_coming_soon.title = ""
-	_coming_soon.dialog_text = _menu_text("敬请期待", "Coming Soon")
-	add_child(_coming_soon)
 	_build_room_overlay()
 	_build_debug_layer()
 
@@ -425,8 +421,17 @@ func _emit_codex() -> void:
 func _emit_settings() -> void:
 	settings_requested.emit()
 
+# 原来是 Godot 默认 AcceptDialog：系统标题栏、默认灰按钮，和游戏其余部分完全两种风格。
+# 主菜单上有 9 个热区都指向它，所以它是玩家最常看到的弹窗（V3 P1-03 迁移清单第 2 项）。
+# 固定 request_id 让连点多个热区只出一个框。
 func _show_coming_soon() -> void:
-	_coming_soon.popup_centered(Vector2(260, 120))
+	DialogService.info({
+		"request_id": "main_menu_coming_soon",
+		"owner": self,
+		"title": _menu_text("敬请期待", "Coming Soon"),
+		"body": _menu_text("这个功能还在开发中。", "This feature is still in development."),
+		"confirm_text": _menu_text("知道了", "Got it"),
+	})
 
 func _menu_text(zh: String, en: String) -> String:
 	return en if TranslationServer.get_locale().begins_with("en") else zh

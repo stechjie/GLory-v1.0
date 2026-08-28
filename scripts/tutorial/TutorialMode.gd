@@ -90,7 +90,7 @@ var _progress_bar: ProgressBar
 var _continue_btn: Button
 var _hotspot: Button
 var _skip_btn: Button
-var _skip_confirm: ColorRect
+# 跳过确认框不再由本文件持有节点：见 _show_skip_confirm()。
 
 const START_SHOP := ["human_militia", "human_archer", "human_merchant", "human_swordsman"]
 const FILL_SHOP := ["human_swordsman", "human_mage", "human_cleric", "human_death_servant"]
@@ -360,71 +360,35 @@ func _on_skip_pressed() -> void:
 		return
 	_show_skip_confirm()
 
+# 跳过确认改走 DialogService（V3 P1-02 / P1-03）。
+#
+# 原来这里现场 new 出 ColorRect + PanelContainer + 两个 140×40 的默认 Button：
+#   - 40 的按钮高度低于手机 48 dp 触控下限，且两个按钮长得一模一样，没有主次；
+#   - 遮罩 add_child 到教程自己的 _overlay 上，教程销毁时机不对就会留在树上吃输入；
+#   - 没有按压态，玩家点下去没有任何反馈。
+# 现在遮罩归 ModalStack、外观归 GloryTheme、防连点归组件的 resolved-once 合同。
+const SkipDialog := preload("res://ui/components/GloryConfirmDialog.gd")
+const SKIP_DIALOG_REQUEST := "tutorial_skip"
+
+
 func _show_skip_confirm() -> void:
-	if _overlay == null or not is_instance_valid(_overlay):
+	# request_id 固定：连点「跳过」只会有一个框（DialogService 按 id 合并）。
+	DialogService.confirm({
+		"request_id": SKIP_DIALOG_REQUEST,
+		"owner": self,
+		"intent": SkipDialog.Intent.DANGER,
+		"title": _t("跳过新手教学", "Skip Tutorial"),
+		"body": _t("确定跳过整段新手教学吗？将直接回到主菜单。",
+			"Skip the whole tutorial and return to the main menu?"),
+		"confirm_text": _t("跳过", "Skip"),
+		"cancel_text": _t("继续教学", "Keep Playing"),
+		"on_result": _on_skip_dialog_result,
+	})
+
+
+func _on_skip_dialog_result(result: String, _request_id: String) -> void:
+	if result != SkipDialog.RESULT_CONFIRMED:
 		return
-	if _skip_confirm != null and is_instance_valid(_skip_confirm):
-		return
-	# 半透明遮罩 + 居中确认框（防手滑）。
-	_skip_confirm = ColorRect.new()
-	_skip_confirm.name = "TutorialSkipConfirm"
-	_skip_confirm.color = Color(0.0, 0.0, 0.0, 0.6)
-	_skip_confirm.mouse_filter = Control.MOUSE_FILTER_STOP
-	_skip_confirm.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_overlay.add_child(_skip_confirm)
-
-	var panel := PanelContainer.new()
-	panel.anchor_left = 0.5
-	panel.anchor_top = 0.5
-	panel.anchor_right = 0.5
-	panel.anchor_bottom = 0.5
-	panel.custom_minimum_size = Vector2(420, 0)
-	panel.offset_left = -210
-	panel.offset_top = -90
-	panel.offset_right = 210
-	var panel_style := StyleBoxFlat.new()
-	panel_style.bg_color = Color(0.05, 0.06, 0.08, 0.96)
-	panel_style.border_color = Color(1.0, 0.86, 0.28, 0.95)
-	panel_style.set_border_width_all(2)
-	panel_style.set_corner_radius_all(10)
-	panel_style.set_content_margin_all(18)
-	panel.add_theme_stylebox_override("panel", panel_style)
-	_skip_confirm.add_child(panel)
-
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 16)
-	panel.add_child(box)
-	var msg := Label.new()
-	msg.text = _t("确定跳过整段新手教学吗？将直接回到主菜单。", "Skip the whole tutorial and return to the main menu?")
-	msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	msg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	msg.add_theme_font_size_override("font_size", 18)
-	msg.add_theme_color_override("font_color", Color(0.98, 0.96, 0.86))
-	box.add_child(msg)
-	var row := HBoxContainer.new()
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 20)
-	box.add_child(row)
-	var cancel_btn := Button.new()
-	cancel_btn.text = _t("取消", "Cancel")
-	cancel_btn.focus_mode = Control.FOCUS_NONE
-	cancel_btn.custom_minimum_size = Vector2(140, 40)
-	cancel_btn.pressed.connect(_close_skip_confirm)
-	row.add_child(cancel_btn)
-	var confirm_btn := Button.new()
-	confirm_btn.text = _t("跳过", "Skip")
-	confirm_btn.focus_mode = Control.FOCUS_NONE
-	confirm_btn.custom_minimum_size = Vector2(140, 40)
-	confirm_btn.pressed.connect(_on_skip_confirmed)
-	row.add_child(confirm_btn)
-
-func _close_skip_confirm() -> void:
-	if _skip_confirm != null and is_instance_valid(_skip_confirm):
-		_skip_confirm.queue_free()
-	_skip_confirm = null
-
-func _on_skip_confirmed() -> void:
-	_close_skip_confirm()
 	if not active:
 		return
 	skip_requested.emit()
