@@ -1,8 +1,8 @@
 # 资产清单（自动生成，勿手改）
 
-生成者：`tools/asset_manifest_check.gd`　生成时间：2026-08-28T06:33:59　Godot：4.7-stable (official)
+生成者：`tools/asset_manifest_check.gd`　生成时间：2026-08-28T13:33:01　Godot：4.7-stable (official)
 
-清单协议：`schema_version=2`　稳定库存指纹：`084b5a8c59f48bfa43e1643ef16ff374b0464f124f03de823a986971c582dfa9`
+清单协议：`schema_version=2`　稳定库存指纹：`766575cb4b2a70195c6184e6eb6496576dfad0eb9f70547710ce80e595b74012`
 
 机读版本在 `assets.manifest.json`，A2 用它在新机器上校验资源恢复结果。
 
@@ -10,12 +10,12 @@
 
 | 分类 | 文件数 | 体积 | 含义 |
 | --- | ---: | ---: | --- |
-| `runtime_required` | 924 | 2391.8 MiB | 正式运行会加载，必须进发布包 |
+| `runtime_required` | 917 | 2337.6 MiB | 正式运行会加载，必须进发布包 |
 | `dynamic_dir` | 302 | 258.0 MiB | 代码运行时按目录拼路径，静态查不到引用，一律保留 |
 | `editor_only` | 1 | 2.4 MiB | 只被 tools/ 或 scenes/debug/ 引用，不必进发布包 |
 | `third_party` | 257 | 7.3 MiB | 外部参考包，发布前必须有许可证（C1/A5） |
 | `import_meta` | 1036 | 1.1 MiB | Godot 导入元数据，由引擎生成 |
-| `unreferenced` | 138 | 306.5 MiB | 任何静态引用都查不到，可评估删除 |
+| `unreferenced` | 145 | 333.6 MiB | 任何静态引用都查不到，可评估删除 |
 
 ## 判定结果
 
@@ -93,8 +93,15 @@
 - `res://assets/models/pets/pet_rabbit/PetRabbitAnimated.gd.uid`
 - `res://assets/models/units/dark_doom_animated/DarkdoomAnimated.gd.uid`
 - `res://assets/models/units/dark_doom_animated/dark_doom_attack.fbx`
+- `res://assets/models/units/dark_doom_animated/dark_doom_attack_Baked_BaseColor.png`
+- `res://assets/models/units/dark_doom_animated/dark_doom_attack_Baked_Emit.png`
+- `res://assets/models/units/dark_doom_animated/dark_doom_attack_normal.png`
 - `res://assets/models/units/dark_doom_animated/dark_doom_idle.fbx`
+- `res://assets/models/units/dark_doom_animated/dark_doom_idle_Baked_BaseColor.png`
+- `res://assets/models/units/dark_doom_animated/dark_doom_idle_Baked_Emit.png`
+- `res://assets/models/units/dark_doom_animated/dark_doom_idle_normal.png`
 - `res://assets/models/units/dark_doom_animated/dark_doom_run.fbx`
+- `res://assets/models/units/dark_doom_animated/dark_doom_run_Image.png`
 - `res://assets/models/units/dark_dragon.glb`
 - `res://assets/models/units/dark_dragon_animated/DarkDragonAnimated.gd.uid`
 - `res://assets/models/units/dark_fear.glb`

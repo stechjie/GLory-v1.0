@@ -3,9 +3,9 @@
     "dynamic_dir": 302,
     "editor_only": 1,
     "import_meta": 1036,
-    "runtime_required": 924,
+    "runtime_required": 917,
     "third_party": 257,
-    "unreferenced": 138
+    "unreferenced": 145
   },
   "dependency_query_failed": [
     "res://effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/effects/shield/vfx_blank_shield_02.tscn"
@@ -4187,8 +4187,8 @@
       "path": "res://assets/models/mercenaries/merc_virgo_heal_animated/merc_virgo_heal_body_material.tres",
       "required_by": "res://assets/models/mercenaries/merc_virgo_heal_animated/mercvirgohealAnimated.gd",
       "required_by_count": 1,
-      "sha256": "4b99c142216128e5997ef141754d0b3fca8f04cd551b0613b3ddea731ad1581e",
-      "size": 1852,
+      "sha256": "74df53a748325acc2cf08d2328067ce893492007548aa766cafc5a7c678c9a89",
+      "size": 1489,
       "type": "tres"
     },
     {
@@ -6987,8 +6987,8 @@
       "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack.glb",
       "required_by": "res://assets/models/units/dark_doom_animated/DarkdoomAnimated.gd",
       "required_by_count": 1,
-      "sha256": "fb8490f4f037ab7a907ccbdce140ed64368fb13141bf8f0bbad14a328d046ecc",
-      "size": 14587596,
+      "sha256": "13dbf52c7c84502594a5dd4916007be9fa291a42e5a71f9ee45f187d9e7727f6",
+      "size": 381292,
       "type": "glb"
     },
     {
@@ -7062,11 +7062,11 @@
       "type": "import"
     },
     {
-      "class": "runtime_required",
+      "class": "unreferenced",
       "license_id": "unknown",
       "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack_Baked_BaseColor.png",
-      "required_by": "res://assets/models/units/dark_doom_animated/dark_doom_attack.glb",
-      "required_by_count": 1,
+      "required_by": "",
+      "required_by_count": 0,
       "sha256": "25b7aa8077c6a281bb91cb7a382c82cdb8d2f4379d325e5565400dc8e3fd2a37",
       "size": 7539736,
       "type": "png"
@@ -7082,11 +7082,11 @@
       "type": "import"
     },
     {
-      "class": "runtime_required",
+      "class": "unreferenced",
       "license_id": "unknown",
       "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack_Baked_Emit.png",
-      "required_by": "res://assets/models/units/dark_doom_animated/dark_doom_attack.glb",
-      "required_by_count": 1,
+      "required_by": "",
+      "required_by_count": 0,
       "sha256": "f8a491a859149895d865d926e426a2c4e0da259825b40ede85d05dcc6ba24ce1",
       "size": 84914,
       "type": "png"
@@ -7102,11 +7102,11 @@
       "type": "import"
     },
     {
-      "class": "runtime_required",
+      "class": "unreferenced",
       "license_id": "unknown",
       "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack_normal.png",
-      "required_by": "res://assets/models/units/dark_doom_animated/dark_doom_attack.glb",
-      "required_by_count": 1,
+      "required_by": "",
+      "required_by_count": 0,
       "sha256": "23711baac3b49c98bb5bb809fc03085391c305ba1679be7a917b78661acf2da2",
       "size": 6580485,
       "type": "png"
@@ -7157,8 +7157,8 @@
       "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle.glb",
       "required_by": "res://assets/models/units/dark_doom_animated/DarkdoomAnimated.gd",
       "required_by_count": 1,
-      "sha256": "c50db37647d8b4494935ac76ea05fe1fbf5a0db81293581f6df39497a7df9f2d",
-      "size": 14622144,
+      "sha256": "0ccd2e0788b161aee65af66fe7e8eabfc2fb2931a40ca026e677766d522587a0",
+      "size": 415840,
       "type": "glb"
     },
     {
@@ -7232,11 +7232,11 @@
       "type": "import"
     },
     {
-      "class": "runtime_required",
+      "class": "unreferenced",
       "license_id": "unknown",
       "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle_Baked_BaseColor.png",
-      "required_by": "res://assets/models/units/dark_doom_animated/dark_doom_idle.glb",
-      "required_by_count": 1,
+      "required_by": "",
+      "required_by_count": 0,
       "sha256": "25b7aa8077c6a281bb91cb7a382c82cdb8d2f4379d325e5565400dc8e3fd2a37",
       "size": 7539736,
       "type": "png"
@@ -7252,11 +7252,11 @@
       "type": "import"
     },
     {
-      "class": "runtime_required",
+      "class": "unreferenced",
       "license_id": "unknown",
       "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle_Baked_Emit.png",
-      "required_by": "res://assets/models/units/dark_doom_animated/dark_doom_idle.glb",
-      "required_by_count": 1,
+      "required_by": "",
+      "required_by_count": 0,
       "sha256": "f8a491a859149895d865d926e426a2c4e0da259825b40ede85d05dcc6ba24ce1",
       "size": 84914,
       "type": "png"
@@ -7272,11 +7272,11 @@
       "type": "import"
     },
     {
-      "class": "runtime_required",
+      "class": "unreferenced",
       "license_id": "unknown",
       "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle_normal.png",
-      "required_by": "res://assets/models/units/dark_doom_animated/dark_doom_idle.glb",
-      "required_by_count": 1,
+      "required_by": "",
+      "required_by_count": 0,
       "sha256": "23711baac3b49c98bb5bb809fc03085391c305ba1679be7a917b78661acf2da2",
       "size": 6580485,
       "type": "png"
@@ -7317,8 +7317,8 @@
       "path": "res://assets/models/units/dark_doom_animated/dark_doom_run.glb",
       "required_by": "res://assets/models/units/dark_doom_animated/DarkdoomAnimated.gd",
       "required_by_count": 1,
-      "sha256": "71527f460eac1d6200fc4cf772a5133a39c9d4e87690941a1a420e5c3dedd8a9",
-      "size": 428168,
+      "sha256": "570f5af6ef0fab5dc8394593d5e67638a49de9a376ded1c5fb682bc3fc925623",
+      "size": 427464,
       "type": "glb"
     },
     {
@@ -7332,11 +7332,11 @@
       "type": "import"
     },
     {
-      "class": "runtime_required",
+      "class": "unreferenced",
       "license_id": "unknown",
       "path": "res://assets/models/units/dark_doom_animated/dark_doom_run_Image.png",
-      "required_by": "res://assets/models/units/dark_doom_animated/dark_doom_run.glb",
-      "required_by_count": 1,
+      "required_by": "",
+      "required_by_count": 0,
       "sha256": "3f5e2ffbb1843629c0d3836a89efd4e691cd0fec83d18bc28c368bf32595f044",
       "size": 250,
       "type": "png"
@@ -11305,8 +11305,8 @@
       "class": "runtime_required",
       "license_id": "unknown",
       "path": "res://assets/models/units/human_mage_animated/HumanmageAnimated.gd",
-      "required_by": "res://assets/models/units/human_mage_animated/human_mage_animated.tscn",
-      "required_by_count": 1,
+      "required_by": "res://assets/models/units/human_mage_animated/human_mage_animated.tscn, res://assets/models/units/human_mage_animated/human_mage_skill_preview.gd",
+      "required_by_count": 2,
       "sha256": "de8aacc7c486fa1e4b6140d70db3b9fdd08d3d9cb8b26136f863c6dba091df21",
       "size": 6612,
       "type": "gd"
@@ -11487,8 +11487,8 @@
       "path": "res://assets/models/units/human_mage_animated/human_mage_skill_preview.gd",
       "required_by": "res://assets/models/units/human_mage_animated/human_mage_skill_preview.tscn",
       "required_by_count": 1,
-      "sha256": "60cae4df15b0181ea6524fa8c3221ab4327f94bcfcdb15270a950d5f7a90901e",
-      "size": 5571,
+      "sha256": "0c7484b8a83df648b12ff771f79df080cfcd293089f9ecd522c99d9c9f83aae8",
+      "size": 5732,
       "type": "gd"
     },
     {
@@ -26593,15 +26593,15 @@
     }
   ],
   "file_count": 2658,
-  "generated_at": "2026-08-28T06:33:59",
+  "generated_at": "2026-08-28T13:33:01",
   "generated_by": "tools/asset_manifest_check.gd",
   "godot_version": "4.7-stable (official)",
-  "inventory_sha256": "084b5a8c59f48bfa43e1643ef16ff374b0464f124f03de823a986971c582dfa9",
+  "inventory_sha256": "766575cb4b2a70195c6184e6eb6496576dfad0eb9f70547710ce80e595b74012",
   "missing_count": 3,
   "roots": [
     "res://assets",
     "res://effects/vfx3d/vfxv2"
   ],
   "schema_version": 2,
-  "total_bytes": 3111219057
+  "total_bytes": 3082805543
 }

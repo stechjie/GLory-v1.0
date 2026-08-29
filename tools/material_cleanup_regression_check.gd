@@ -10,7 +10,7 @@ const ALLOWED_CHANGED_FIELDS := {
 }
 
 var _h: CheckHarness
-var _renderer: Node
+var _renderer: BattleRendererScript
 
 
 func _ready() -> void:
@@ -130,7 +130,7 @@ func _test_surface_and_material_overrides() -> void:
 	instance.mesh = mesh
 	var local_override := _make_base_material(Color(0.82, 0.31, 0.12, 0.8))
 	instance.set_surface_override_material(0, local_override)
-	var changed: Array = _renderer.call("_disable_mesh_emission", instance)
+	var changed: Array = _renderer._disable_mesh_emission(instance)
 	var cleaned_surface := instance.get_surface_override_material(0) as BaseMaterial3D
 	_h.expect(cleaned_surface != null and cleaned_surface != local_override,
 		"surface_override_not_cleaned", "surface override 必须获得独立清理副本")
@@ -141,7 +141,7 @@ func _test_surface_and_material_overrides() -> void:
 
 	var global_override := _make_base_material(Color(0.42, 0.13, 0.74, 0.66))
 	instance.material_override = global_override
-	changed = _renderer.call("_disable_mesh_emission", instance)
+	changed = _renderer._disable_mesh_emission(instance)
 	var cleaned_override := instance.material_override as BaseMaterial3D
 	_h.expect(cleaned_override != null and cleaned_override != global_override,
 		"material_override_not_cleaned", "material_override 必须获得独立清理副本")
@@ -162,7 +162,7 @@ func _test_cleanup_audit() -> void:
 	var source := _make_base_material(Color(0.95, 0.96, 0.97, 1.0))
 	instance.mesh.surface_set_material(0, source)
 	root.add_child(instance)
-	var audit: Dictionary = _renderer.call("cleanup_imported_model_visuals", root)
+	var audit: Dictionary = _renderer.cleanup_imported_model_visuals(root)
 	_h.expect(light.get_parent() == null, "embedded_light_not_removed", "导入模型内嵌 Light3D 必须从模型树移除")
 	_h.expect(int(audit.get("surface_count", 0)) == 1, "audit_surface_count", "material_audit surface_count 应为 1")
 	_h.expect(int(audit.get("textured_surface_count", 0)) == 1,
@@ -218,7 +218,7 @@ func _triangle_mesh() -> ArrayMesh:
 
 
 func _clean(material: Material) -> Material:
-	return _renderer.call("_material_without_emission", material) as Material
+	return _renderer._material_without_emission(material)
 
 
 func _assert_material_equal_except_emission(source: Material, cleaned: Material, label: String) -> void:

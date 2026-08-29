@@ -39,7 +39,7 @@ const CHECK_NAME := "dynamic_call"
 const ROOTS := ["res://scenes", "res://scripts", "res://tools", "res://effects", "res://assets"]
 const SKIP_DIR_PATTERNS := ["*_prechange_backup_*", "*_backup_2*", "D?_*_20*", "E?_*_20*"]
 
-# 无法静态确定接收者的调用处数**棘轮**：当前实测 213，只许降不许升。
+# 无法静态确定接收者的调用处数**棘轮**：上限固定为 189，只许降不许升。
 # 这类调用编译器一概管不到 —— 方法搬走 / 改名时它们不会报错，
 # 用 has_method 保护的还会**静默走 false 分支**（拖放整个失效就是这么来的）。
 # 调高这个数字等于承认又多了一处这种调用，改之前先想清楚能不能写成静态调用。
@@ -55,6 +55,7 @@ var _all_methods := {}      # 全仓任何脚本定义过的方法名
 
 func _ready() -> void:
 	_h = CheckHarness.new(CHECK_NAME)
+	_check_parser_contract()
 	for root in ROOTS:
 		_collect(root)
 	if not _h.expect(_files.size() > 50, "too_few_files",
@@ -144,38 +145,89 @@ func _methods_including_parents(path: String, depth: int = 0) -> Dictionary:
 	return out
 
 
-# 从一行里提取所有 "字面量方法名"（第一个参数是字符串字面量的那几种写法）。
-func _names_in(line: String, marker: String) -> Array:
+# 先自测本检查器最容易出错的两个边界：只读第一个参数，以及 receiver 必须按
+# 完整标识符判断。否则 `Callable.call(room, "reason")` 会把 reason 当方法名，
+# `director.call(...)` 又会因为 director 以 "or" 结尾而被误判为 self。
+func _check_parser_contract() -> void:
+	var calls := _literal_calls_in('close_fn.call(room, "reason")', ".call(")
+	_h.expect(calls.is_empty(), "parser_nonliteral_first_argument",
+		"动态调用检查器错误读取了非字面量第一个参数之后的字符串")
+	calls = _literal_calls_in('unit.call("play_attack")', ".call(")
+	_h.expect(calls.size() == 1 and str((calls[0] as Dictionary).get("name", "")) == "play_attack",
+		"parser_literal_first_argument", "动态调用检查器没有读到字面量第一个参数")
+	calls = _literal_calls_in('unit.call("play_" + action)', ".call(")
+	_h.expect(calls.is_empty(), "parser_concatenated_name",
+		"动态调用检查器不应把拼接中的方法名前缀当成完整方法名")
+	var director_line := 'if not bool(director.call("has_blocking_cues")):'
+	var director_calls := _literal_calls_in(director_line, ".call(")
+	_h.expect(director_calls.size() == 1 and not _receiver_is_self(
+		director_line, ".call(", int((director_calls[0] as Dictionary).get("at", -1))),
+		"parser_receiver_suffix", "director 不能因为以 or 结尾而被误判为 self")
+	var self_line := 'self.call("local_method")'
+	var self_calls := _literal_calls_in(self_line, ".call(")
+	_h.expect(self_calls.size() == 1 and _receiver_is_self(
+		self_line, ".call(", int((self_calls[0] as Dictionary).get("at", -1))),
+		"parser_explicit_self", "self.call 必须识别为本类调用")
+	var implicit_line := 'if has_method("local_method"):'
+	var implicit_calls := _literal_calls_in(implicit_line, "has_method(")
+	_h.expect(implicit_calls.size() == 1 and _receiver_is_self(
+		implicit_line, "has_method(", int((implicit_calls[0] as Dictionary).get("at", -1))),
+		"parser_implicit_self", "无 receiver 的 has_method 必须识别为本类调用")
+
+
+# 从一行里提取所有“第一个参数就是字符串字面量”的按名调用，同时保留 marker
+# 位置，供 receiver 判断使用。第一个参数不是字面量时，后续字符串一律不能冒充方法名。
+func _literal_calls_in(line: String, marker: String) -> Array:
 	var out: Array = []
 	var from := 0
 	while true:
 		var at := line.find(marker, from)
 		if at < 0:
 			break
-		var q1 := line.find("\"", at)
-		if q1 < 0:
-			break
+		var q1 := at + marker.length()
+		while q1 < line.length() and line.substr(q1, 1) in [" ", "\t"]:
+			q1 += 1
+		if q1 >= line.length() or line.substr(q1, 1) != "\"":
+			from = at + marker.length()
+			continue
 		var q2 := line.find("\"", q1 + 1)
 		if q2 < 0:
 			break
 		# 拼接出来的方法名（node.call("play_" + action)）只能拿到前缀，
 		# 拿它去断言「全仓没这个方法」必然误报 —— 第一版就是这么误报的。
-		var after_quote := line.substr(q2 + 1).strip_edges()
-		if not after_quote.begins_with("+"):
-			out.append(line.substr(q1 + 1, q2 - q1 - 1))
+		var tail := q2 + 1
+		while tail < line.length() and line.substr(tail, 1) in [" ", "\t"]:
+			tail += 1
+		if tail >= line.length() or line.substr(tail, 1) != "+":
+			out.append({"name": line.substr(q1 + 1, q2 - q1 - 1), "at": at})
 		from = q2 + 1
 	return out
 
 
-# 接收者是不是 self（或省略）。只有这种情况才能可靠地静态判定。
-func _receiver_is_self(line: String, marker: String) -> bool:
-	var at := line.find(marker)
+# 返回指定位置之前紧邻的完整标识符，避免用 ends_with("or") 之类的文本后缀
+# 把 director / controller 等变量误判为关键字。
+func _identifier_before(line: String, end_exclusive: int) -> String:
+	const IDENTIFIER_CHARS := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
+	var end := end_exclusive
+	while end > 0 and line.substr(end - 1, 1) in [" ", "\t"]:
+		end -= 1
+	var start := end
+	while start > 0 and IDENTIFIER_CHARS.contains(line.substr(start - 1, 1)):
+		start -= 1
+	return line.substr(start, end - start)
+
+
+# 接收者是不是 self（或 has_method 的省略 receiver 写法）。只有这种情况才能
+# 可靠地按当前文件（含继承链）判定方法是否存在。
+func _receiver_is_self(line: String, marker: String, at: int) -> bool:
 	if at < 0:
 		return false
+	if marker.begins_with("."):
+		return _identifier_before(line, at) == "self"
 	var before := line.substr(0, at).strip_edges()
-	return before.is_empty() or before.ends_with("self") or before.ends_with("(") \
-		or before.ends_with(",") or before.ends_with("and") or before.ends_with("or") \
-		or before.ends_with("not") or before.ends_with("=") or before.ends_with("return")
+	if before.ends_with("."):
+		return _identifier_before(before, before.length() - 1) == "self"
+	return true
 
 
 func _scan_calls(path: String) -> void:
@@ -192,10 +244,12 @@ func _scan_calls(path: String) -> void:
 		if path.ends_with("tools/dynamic_call_check.gd"):
 			return
 		for marker in [".call(", "has_method(", ".callv("]:
-			for name in _names_in(line, marker):
+			for call_info in _literal_calls_in(line, marker):
+				var name := str((call_info as Dictionary).get("name", ""))
+				var at := int((call_info as Dictionary).get("at", -1))
 				if name.is_empty() or name.begins_with("_on_"):
 					continue   # 信号回调名由连接方决定，不在这条检查范围内
-				if _receiver_is_self(line, marker):
+				if _receiver_is_self(line, marker, at):
 					_h.expect(own.has(name), "self_method_missing",
 						"%s:%d 按名字调用了本类不存在的方法 %s()" % [path, line_no, name])
 				else:
@@ -207,6 +261,7 @@ func _scan_calls(path: String) -> void:
 						"%s:%d 按名字调用 %s()，但全仓没有任何脚本定义这个方法" % [path, line_no, name])
 		# Callable(self, "x")
 		if line.contains("Callable(self,"):
-			for name in _names_in(line, "Callable(self,"):
+			for call_info in _literal_calls_in(line, "Callable(self,"):
+				var name := str((call_info as Dictionary).get("name", ""))
 				_h.expect(own.has(name), "callable_method_missing",
 					"%s:%d Callable(self, \"%s\") 指向不存在的方法" % [path, line_no, name])
