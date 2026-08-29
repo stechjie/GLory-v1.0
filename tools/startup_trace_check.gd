@@ -35,6 +35,7 @@ func _run() -> void:
 	trace.name = "StartupTraceUnderTest"
 	add_child(trace)
 
+	_check_engine_boot_mark(trace)
 	_check_marks_are_write_once(trace)
 	_check_ordering(trace)
 	_check_metadata_is_sanitized(trace)
@@ -72,6 +73,31 @@ func _check_marks_are_write_once(trace) -> void:
 	var order: Array = timeline.get("order", [])
 	_h.expect(order.count("probe_alpha") == 1,
 		"duplicate_in_order", "重复 mark() 在 order 里出现了 %d 次" % order.count("probe_alpha"))
+
+
+# t0 is the whole point of the mark: it must be recorded by StartupTrace._ready()
+# itself, before that autoload does anything else, or it stops meaning "engine boot".
+func _check_engine_boot_mark(trace) -> void:
+	_h.expect(trace.has_mark(TraceScript.T0_TRACE_READY),
+		"t0_not_marked",
+		"StartupTrace._ready() 没有标记 %s —— 引擎启动那段又变回没有测量的黑区"
+			% TraceScript.T0_TRACE_READY)
+	_h.expect(int(trace.ms_of(TraceScript.T0_TRACE_READY)) >= 0,
+		"t0_negative", "t0 时间戳无效")
+	_h.expect(str(TraceScript.ORDERED_MARKS[0]) == TraceScript.T0_TRACE_READY,
+		"t0_not_first_in_spine", "t0 必须排在 ORDERED_MARKS 首位")
+
+	var source := FileAccess.get_file_as_string("res://scripts/autoload/StartupTrace.gd")
+	if not _h.expect(not source.is_empty(), "source_unreadable", "读不到 StartupTrace.gd"):
+		return
+	var ready_at := source.find("func _ready() -> void:")
+	var mark_at := source.find("mark(T0_TRACE_READY", ready_at)
+	var build_at := source.find("_load_build_info()", ready_at)
+	_h.expect(ready_at >= 0 and mark_at > ready_at,
+		"t0_not_in_ready", "t0 不是在 _ready() 里标记的")
+	_h.expect(build_at < 0 or mark_at < build_at,
+		"t0_after_work",
+		"t0 排在 _load_build_info() 之后 —— 读文件的耗时会被算进引擎启动")
 
 
 func _check_ordering(trace) -> void:
