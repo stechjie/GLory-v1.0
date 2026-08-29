@@ -489,16 +489,17 @@ try:
                 marks[name] = int(payload.get("ms", -1))
 except (IOError, OSError):
     pass
-wanted = ("t1_first_frame", "t2_godot_main_ready",
+wanted = ("t0_trace_ready", "t1_first_frame", "t2_godot_main_ready",
           "t3_first_input_ready", "t4_first_action_complete")
 out = ["%s=%d" % (key, marks.get(key, -1)) for key in wanted]
 sys.stdout.buffer.write(("\n".join(out)).encode("utf-8"))
 ' 2>/dev/null || true)"
 
-T1_MS=-1; T2_MS=-1; T3_MS=-1; T4_MS=-1
+T0_MS=-1; T1_MS=-1; T2_MS=-1; T3_MS=-1; T4_MS=-1
 if [ -n "$STARTUP_KV" ]; then
     while IFS='=' read -r mark_key mark_value; do
         case "$mark_key" in
+            t0_trace_ready) T0_MS="$mark_value" ;;
             t1_first_frame) T1_MS="$mark_value" ;;
             t2_godot_main_ready) T2_MS="$mark_value" ;;
             t3_first_input_ready) T3_MS="$mark_value" ;;
@@ -600,6 +601,7 @@ cat > "$RUN_DIR/smoke.json" <<JSON
     "activity_displayed_base": "android_process_start",
     "marks_base": "godot_engine_init",
     "marks_ms": {
+      "t0_trace_ready": $T0_MS,
       "t1_first_frame": $T1_MS,
       "t2_godot_main_ready": $T2_MS,
       "t3_first_input_ready": $T3_MS,
@@ -623,7 +625,8 @@ note "apk       ${APK_MIB} MiB  sha256=${APK_SHA:0:16}"
 note "device    $DEVICE_MODEL  Android $DEVICE_RELEASE (api $DEVICE_SDK, $DEVICE_ABI)"
 note "install   $INSTALL_METHOD  path=$INSTALLED_PATH"
 note "launch    pid=$PID  fatal=$FATAL_COUNT  script_error=$SCRIPT_ERR_COUNT  pss=${MEM_KB}KB"
-note "startup   displayed=${DISPLAYED_MS}ms (自进程启动)  t1=${T1_MS}ms t2=${T2_MS}ms t3=${T3_MS}ms t4=${T4_MS}ms (自引擎初始化，-1=没抓到)"
+note "startup   displayed=${DISPLAYED_MS}ms (自进程启动)  t0=${T0_MS}ms t1=${T1_MS}ms t2=${T2_MS}ms t3=${T3_MS}ms t4=${T4_MS}ms (自引擎初始化，-1=没抓到)"
+note "          t0 = 引擎自身启动开销（此前无任何游戏代码运行）；t0->t2 = autoload 构造 + 主场景"
 note "          判定=$STARTUP_VERDICT  预算 t1<=${T1_MAX_MS}ms t3<=${T3_MAX_MS}ms"
 note "identity  build_info_in_apk=$APK_BUILD_MATCH  apk_scan=$APK_SCAN_STATUS  template_sha=${TEMPLATE_SHA:0:16}"
 note "evidence  $RUN_DIR"

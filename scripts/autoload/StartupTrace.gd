@@ -37,6 +37,19 @@ const BUILD_LOG_PREFIX := "GLORY_BUILD"
 # missing_asset that could never be fixed.
 const BUILD_INFO_PATH := "res://build_info.json"  # asset-manifest-ignore
 
+# The earliest instant any GDScript in this project can observe. StartupTrace is the
+# first autoload, so Time.get_ticks_msec() here *is* the engine's own boot cost:
+# everything before it is Godot starting up, loading the .pck, building the import
+# and UID tables -- no game code has run yet.
+#
+# Added after the first real device run measured t3_first_input_ready at 8949 ms with
+# data_registry_loaded already at 7972 ms, and DataRegistry's own parse taking 7.8 ms.
+# That meant ~8 s was disappearing somewhere with no instrumentation at all, and the
+# obvious suspects (duplicate data load, warmup ordering) were provably milliseconds.
+# This mark splits that dark region into "engine boot" and "autoload construction",
+# which is the difference between optimizing the right thing and guessing.
+const T0_TRACE_READY := "t0_trace_ready"
+
 const T1_FIRST_FRAME := "t1_first_frame"
 const T2_MAIN_READY := "t2_godot_main_ready"
 const T3_INPUT_READY := "t3_first_input_ready"
@@ -51,7 +64,7 @@ const T4_FIRST_ACTION := "t4_first_action_complete"
 # perfectly healthy boot. Once a branded Bootstrap scene exists (V3 P0-02) the first
 # frame genuinely precedes Main and T1 can join this list.
 const ORDERED_MARKS: PackedStringArray = [
-	T2_MAIN_READY, T3_INPUT_READY, T4_FIRST_ACTION,
+	T0_TRACE_READY, T2_MAIN_READY, T3_INPUT_READY, T4_FIRST_ACTION,
 ]
 
 const TRACE_PATH := "user://startup_trace.jsonl"
@@ -89,8 +102,10 @@ func _ready() -> void:
 		_enabled = false
 		return
 	_rotate_trace_if_large()
-	# First line of the run, before any timing: a trace nobody can attribute to a
-	# build is not evidence. V3 P0-01.3 asks for exactly this.
+	# Marked before anything else this autoload does, including reading build_info:
+	# the value only means "engine boot cost" if nothing of ours has run yet.
+	mark(T0_TRACE_READY, {"note": "engine boot; no game code has run before this"})
+	# A trace nobody can attribute to a build is not evidence. V3 P0-01.3 asks for it.
 	_load_build_info()
 	if not RenderingServer.frame_post_draw.is_connected(_on_first_frame):
 		RenderingServer.frame_post_draw.connect(_on_first_frame)

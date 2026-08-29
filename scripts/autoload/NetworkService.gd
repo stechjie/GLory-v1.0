@@ -4054,7 +4054,7 @@ func _rpc_team_leader(leader_slot: int) -> void:
 
 # 每秒扫描：宽限到期的保留座位 -> 替它完成当前阶段动作，回合不被卡住。
 # 座位与 token 依旧保留——整局期间随时可重连回来（届时落到当前阶段）。
-# 扫描策略已搬到 RoomService.tick_reserved_seats()（D1 第 4 刀第 4 步）。
+# 扫描策略已搬到 ReconnectService.tick_reserved_seats()（D1 第 4 刀第 4 步）。
 # _room_auto_complete_seat 留在门面：它要改席位状态并广播出去。
 func _tick_reserved_seats() -> void:
 	_reconnect_service.tick_reserved_seats(_rooms, _room_auto_complete_seat)
