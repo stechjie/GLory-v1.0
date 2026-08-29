@@ -133,11 +133,7 @@ func capture(reason: String) -> Dictionary:
 		"slow_frames": _slow_frames.duplicate(true),
 		"slow_frame_threshold_ms": SLOW_FRAME_MS,
 		"network": _network_section(),
-		"modal_stack": {
-			"available": false,
-			"reason": "ModalStack service does not exist yet (V3 P0-07)",
-			"substitute": "see input_blockers, derived from the live scene tree",
-		},
+		"modal_stack": _modal_stack_section(),
 		"action_state": {
 			"available": false,
 			"reason": "AsyncActionController does not exist yet (V3 P0-05)",
@@ -237,6 +233,37 @@ func _screen_section() -> Dictionary:
 		"visible_children": children,
 		"root_child_count": tree.root.get_child_count(),
 	}
+
+
+# The registry's own view of what is open.
+#
+# This section used to be a {"available": false} placeholder because ModalStack did
+# not exist. It does now (ui/services/ModalStack.gd), so the report asks it directly
+# rather than guessing. Kept alongside input_blockers rather than replacing it: the
+# registry knows what it was *told* about, the tree scan below finds what is actually
+# eating input. When those two disagree, that disagreement is the bug.
+func _modal_stack_section() -> Dictionary:
+	if not is_instance_valid(ModalStack):
+		return {"available": false, "reason": "ModalStack autoload missing"}
+	var entries: Array = ModalStack.dump_modal_stack()
+	var out := {
+		"available": true,
+		"depth": int(ModalStack.depth()),
+		"top_id": str(ModalStack.top_id()),
+		"entries": entries,
+	}
+	# ModalStack's own leak scan. A Control that is invisible yet still MOUSE_FILTER_STOP
+	# is the worst variant of "I tapped it and nothing happened": nothing looks wrong.
+	var invisible: Array = ModalStack.find_invisible_stop_controls()
+	out["invisible_stop_controls"] = invisible
+	out["invisible_stop_count"] = invisible.size()
+	# A modal recorded on the stack but not in the tree was never actually shown.
+	var not_in_tree: Array = []
+	for entry in entries:
+		if typeof(entry) == TYPE_DICTIONARY and not bool((entry as Dictionary).get("in_tree", true)):
+			not_in_tree.append(str((entry as Dictionary).get("id", "")))
+	out["registered_but_not_in_tree"] = not_in_tree
+	return out
 
 
 # The answer to "why did my tap do nothing". Walks the tree for visible Controls
@@ -357,9 +384,13 @@ func _emit(report: Dictionary) -> void:
 	# The full report is far too big for logcat, so the line is a summary and the
 	# detail goes to a file. The line alone still says whether input was blocked.
 	var blockers: Dictionary = report.get("input_blockers", {})
+	var modal: Dictionary = report.get("modal_stack", {})
 	var summary := {
 		"reason": str(report.get("reason", "")),
 		"screen": str((report.get("screen", {}) as Dictionary).get("current_scene", "?")),
+		"modal_depth": int(modal.get("depth", -1)),
+		"modal_top": str(modal.get("top_id", "")),
+		"invisible_stop": int(modal.get("invisible_stop_count", -1)),
 		"input_blockers": int(blockers.get("count", -1)),
 		"input_blocker_suspects": int(blockers.get("suspect_count", -1)),
 		"slow_frames_kept": (report.get("slow_frames", []) as Array).size(),

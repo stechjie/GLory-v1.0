@@ -35,6 +35,7 @@ func _run() -> void:
 	add_child(reporter)
 
 	_check_unavailable_sections_are_honest(reporter)
+	_check_modal_stack_is_wired(reporter)
 	_check_blocker_scan_finds_a_real_blocker(reporter)
 	_check_small_controls_are_not_blockers(reporter)
 	_check_slow_frames_are_bounded(reporter)
@@ -53,7 +54,9 @@ func _run() -> void:
 # truth is that nobody looked.
 func _check_unavailable_sections_are_honest(reporter) -> void:
 	var report: Dictionary = reporter.capture("check_probe")
-	for section_name in ["modal_stack", "action_state", "input_breadcrumbs"]:
+	# modal_stack 已经不在这一组了：ModalStack 服务已由同事落地（ui/services/ModalStack.gd），
+	# 报告改成直接问它，断言见 _check_modal_stack_is_wired()。
+	for section_name in ["action_state", "input_breadcrumbs"]:
 		var section: Dictionary = report.get(section_name, {})
 		if not _h.expect(not section.is_empty(), "section_missing",
 				"报告里没有 %s 段" % section_name):
@@ -68,6 +71,28 @@ func _check_unavailable_sections_are_honest(reporter) -> void:
 	for section_name in ["build", "startup", "warmup", "screen", "input_blockers", "network"]:
 		_h.expect(report.has(section_name), "answered_section_missing",
 			"报告里缺 %s 段" % section_name)
+
+
+# modal_stack 曾经是一段 {"available": false} 占位，因为那时 ModalStack 还不存在。
+# 它现在存在了，报告必须真的去问它 —— 一个永远说"服务不存在"的段，在服务落地之后
+# 就从"诚实"变成了"过时的谎"。
+func _check_modal_stack_is_wired(reporter) -> void:
+	var section: Dictionary = reporter.capture("check_modal_probe").get("modal_stack", {})
+	if not _h.expect(bool(section.get("available", false)),
+			"modal_stack_still_stubbed",
+			"modal_stack 仍报 available=false，但 ui/services/ModalStack.gd 已经存在（原因：%s）"
+				% str(section.get("reason", ""))):
+		return
+	for key in ["depth", "top_id", "entries", "invisible_stop_count", "registered_but_not_in_tree"]:
+		_h.expect(section.has(key), "modal_stack_field_missing",
+			"modal_stack 段缺 %s" % key)
+	_h.expect(int(section.get("depth", -1)) >= 0,
+		"modal_stack_depth_invalid", "depth 应 >= 0，实际 %s" % str(section.get("depth")))
+
+	# 空栈时不该凭空报出条目，否则排障时会追一个不存在的弹窗。
+	if int(section.get("depth", -1)) == 0:
+		_h.expect((section.get("entries", []) as Array).is_empty(),
+			"modal_stack_phantom_entries", "depth 为 0 却列出了条目")
 
 
 # The point of the whole file: a full-screen STOP control is exactly what eats the
