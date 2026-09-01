@@ -1,6 +1,12 @@
 extends Control
 
+signal public_token_request_check_requested(request_id: String)
+
 const VFX_WARMUP := preload("res://effects/vfx3d/VFXWarmup.gd")
+
+const PUBLIC_TOKEN_ACTION := "team_public_token"
+const PUBLIC_TOKEN_CONTROL_ID := "main_menu/public_token_generate"
+const PUBLIC_TOKEN_TIMEOUT_MSEC := 15000
 
 var _menu: Control
 var _prep: Control
@@ -9,6 +15,9 @@ var _reconnect_overlay: CanvasLayer
 var _pending_team_menu_action := ""
 var _pending_team_room_id := 0
 var _pending_public_token := ""
+var _public_token_request_id := ""
+var _public_token_waiting_for_session := false
+var _public_token_request_check_hook := Callable()
 # 离线自测·单位测试模式(officetest):进入前的 team_mode 快照,退出时还原。
 var _selftest_prev_team_mode := false
 
@@ -32,6 +41,8 @@ func _ready() -> void:
 		NetworkService.team_room_action_failed.connect(_on_team_room_action_failed)
 	if not NetworkService.public_token_changed.is_connected(_on_public_token_changed):
 		NetworkService.public_token_changed.connect(_on_public_token_changed)
+	if not AsyncActionController.action_state_changed.is_connected(_on_async_action_state_changed):
+		AsyncActionController.action_state_changed.connect(_on_async_action_state_changed)
 	if not TutorialMode.skip_requested.is_connected(_on_tutorial_skip):
 		TutorialMode.skip_requested.connect(_on_tutorial_skip)
 	_start_vfx_warmup()
@@ -210,6 +221,10 @@ func _instantiate_screen(path: String) -> Control:
 
 
 func _clear() -> void:
+	# Menu-owned async work must stop before its controls leave the tree. This also
+	# makes a later public-token response stale instead of painting the next screen.
+	if _menu != null and is_instance_valid(_menu):
+		AsyncActionController.clear_for_owner(_menu, "menu_replaced")
 	for child in get_children():
 		remove_child(child)
 		child.queue_free()
@@ -469,11 +484,147 @@ func _on_team_room_join_requested(room_id: int) -> void:
 	_start_team_menu_action("join")
 
 func _on_public_token_generate_requested() -> void:
-	_start_team_menu_action("token")
+	AsyncActionController.record_input_received(PUBLIC_TOKEN_ACTION, PUBLIC_TOKEN_CONTROL_ID)
+	_start_public_token_action()
 
 func _on_public_token_resume_requested(token_id: String) -> void:
 	_pending_public_token = token_id
 	_start_team_menu_action("resume_public")
+
+
+# First C-10 migration: public-token generation owns a request identity instead
+# of sharing the legacy string-valued pending slot with four unrelated actions.
+# The wire protocol is unchanged; only client-side lifecycle/late-result handling
+# moves under AsyncActionController.
+func _start_public_token_action() -> void:
+	var owner: Object = _menu if _menu != null and is_instance_valid(_menu) else self
+	var request_id := AsyncActionController.begin(PUBLIC_TOKEN_ACTION, {
+		"owner": owner,
+		"control_id": PUBLIC_TOKEN_CONTROL_ID,
+		"timeout_msec": PUBLIC_TOKEN_TIMEOUT_MSEC,
+		"cancellable": true,
+		"stage": "connect",
+	})
+	if request_id.is_empty():
+		return
+	# begin() deliberately returns the current id for duplicate presses. Do not
+	# turn that accepted action into another network request.
+	if request_id == _public_token_request_id \
+			and AsyncActionController.is_current(request_id):
+		return
+	_public_token_request_id = request_id
+	_public_token_waiting_for_session = false
+	_disconnect_public_token_session_handler()
+	AsyncActionController.mark_pending(request_id)
+	if is_instance_valid(_menu):
+		_menu.show_connecting()
+
+	var target_port := NetworkService.DEFAULT_PORT
+	NetworkService._net_log("public token action request=%s port=%d active=%s state=%d slot=%d" % [
+		request_id, target_port, str(NetworkService.team_active),
+		int(NetworkService.state), int(NetworkService.team_local_slot)])
+	if NetworkService.team_active and NetworkService.remote_port != target_port:
+		NetworkService.disconnect_session()
+	elif NetworkService.team_active \
+			and NetworkService.state == NetworkService.SessionState.READY \
+			and NetworkService.team_local_slot < 0:
+		_dispatch_public_token_request(request_id)
+		return
+	if NetworkService.team_active and NetworkService.team_local_slot >= 0:
+		NetworkService.disconnect_session()
+	if not NetworkService.team_join(NetworkService.DEFAULT_HOST, target_port):
+		AsyncActionController.fail(request_id, "TOKEN_CONNECT_START_FAILED", true)
+		if is_instance_valid(_menu):
+			_menu.show_connection_error(NetworkService.last_error)
+		return
+	_public_token_waiting_for_session = true
+	if not NetworkService.session_changed.is_connected(_on_public_token_session_changed):
+		NetworkService.session_changed.connect(_on_public_token_session_changed)
+
+
+func _on_public_token_session_changed() -> void:
+	var request_id := _public_token_request_id
+	if request_id.is_empty() or not AsyncActionController.is_current(request_id):
+		_disconnect_public_token_session_handler()
+		return
+	match NetworkService.state:
+		NetworkService.SessionState.READY:
+			_dispatch_public_token_request(request_id)
+		NetworkService.SessionState.FAILED, NetworkService.SessionState.OFFLINE:
+			_disconnect_public_token_session_handler()
+			AsyncActionController.fail(request_id, "TOKEN_CONNECT_FAILED", true)
+			if is_instance_valid(_menu):
+				var message := NetworkService.last_error if NetworkService.last_error != "" else tr("net_err_connect_generic")
+				_menu.show_connection_error(message)
+
+
+func _dispatch_public_token_request(request_id: String) -> void:
+	if request_id != _public_token_request_id \
+			or not AsyncActionController.is_current(request_id):
+		return
+	_disconnect_public_token_session_handler()
+	AsyncActionController.update_context(request_id, {"stage": "request_token"})
+	if OS.is_debug_build() and _public_token_request_check_hook.is_valid():
+		public_token_request_check_requested.emit(request_id)
+		return
+	NetworkService.team_request_public_token()
+
+
+func _disconnect_public_token_session_handler() -> void:
+	_public_token_waiting_for_session = false
+	if NetworkService.session_changed.is_connected(_on_public_token_session_changed):
+		NetworkService.session_changed.disconnect(_on_public_token_session_changed)
+
+
+func _on_async_action_state_changed(
+	action: String,
+	request_id: String,
+	state: String,
+	_snapshot: Dictionary
+) -> void:
+	if action != PUBLIC_TOKEN_ACTION or request_id != _public_token_request_id:
+		return
+	match state:
+		AsyncActionController.STATE_SUCCEEDED, AsyncActionController.STATE_FAILED:
+			_disconnect_public_token_session_handler()
+		AsyncActionController.STATE_TIMED_OUT:
+			var was_connecting := _public_token_waiting_for_session
+			_disconnect_public_token_session_handler()
+			if was_connecting:
+				NetworkService.disconnect_session()
+			if is_instance_valid(_menu):
+				_menu.show_connection_error(tr("net_err_timeout") % [
+					NetworkService.DEFAULT_HOST, NetworkService.DEFAULT_PORT])
+		AsyncActionController.STATE_CANCELLED:
+			var was_connecting := _public_token_waiting_for_session
+			_disconnect_public_token_session_handler()
+			if was_connecting:
+				NetworkService.disconnect_session()
+
+
+# Debug-only seams let the production wiring gate drive all terminal paths
+# without opening a socket or exposing a fake endpoint in release builds.
+func set_public_token_request_check_hook(hook: Callable) -> bool:
+	if not OS.is_debug_build():
+		return false
+	if _public_token_request_check_hook.is_valid() \
+			and public_token_request_check_requested.is_connected(_public_token_request_check_hook):
+		public_token_request_check_requested.disconnect(_public_token_request_check_hook)
+	_public_token_request_check_hook = hook
+	if _public_token_request_check_hook.is_valid():
+		public_token_request_check_requested.connect(_public_token_request_check_hook)
+	return true
+
+
+func set_public_token_menu_for_check(menu: Control) -> bool:
+	if not OS.is_debug_build():
+		return false
+	_menu = menu
+	return true
+
+
+func public_token_request_id_for_check() -> String:
+	return _public_token_request_id if OS.is_debug_build() else ""
 
 # 这次动作该连哪个服务器进程（多进程分片）。
 # "join" 是唯一一个目标进程由数据决定的动作：房间号里编了分片号，必须连到那个
@@ -531,8 +682,6 @@ func _run_pending_team_menu_action() -> void:
 		"join":
 			_wait_for_room_join()
 			NetworkService.team_request_join_room(_pending_team_room_id)
-		"token":
-			NetworkService.team_request_public_token()
 		"resume_public":
 			NetworkService.team_request_public_resume(_pending_public_token)
 		_:
@@ -560,10 +709,24 @@ func _on_team_room_list_received(rooms: Array) -> void:
 func _on_team_room_action_failed(reason: String) -> void:
 	if NetworkService.team_lobby_changed.is_connected(_on_pending_room_joined):
 		NetworkService.team_lobby_changed.disconnect(_on_pending_room_joined)
+	if not _public_token_request_id.is_empty() \
+			and AsyncActionController.is_current(_public_token_request_id):
+		AsyncActionController.fail(_public_token_request_id, "TOKEN_REQUEST_FAILED", true)
 	if is_instance_valid(_menu) and _menu.has_method("show_room_error"):
 		_menu.show_room_error(reason)
 
 func _on_public_token_changed(token_id: String) -> void:
+	# succeed() is the stale-result gate: a timeout/cancelled request cannot update
+	# the UI. resume_public stays on the legacy path until its own C-10 migration.
+	if not _public_token_request_id.is_empty():
+		if AsyncActionController.succeed(_public_token_request_id):
+			_show_public_token_in_menu(token_id)
+			return
+	if _pending_team_menu_action == "resume_public":
+		_show_public_token_in_menu(token_id)
+
+
+func _show_public_token_in_menu(token_id: String) -> void:
 	if is_instance_valid(_menu) and _menu.has_method("show_public_token"):
 		_menu.show_public_token(token_id)
 
