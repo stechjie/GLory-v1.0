@@ -76,12 +76,19 @@ const PVP_WARNING_MODAL_ID := "pvp_warning"
 # 警告是纯播报、没有任何决策；加载层带阶段/重试/返回，确认框要玩家选边。
 # 两者同时在栈上时，能操作的那个必须在上面，所以警告取最低的 60。
 const PVP_WARNING_MODAL_PRIORITY := 60
+# 组队佣兵检阅台（C-11 的 C4）。priority 40：低于 pvp_warning 60 < 战斗加载 80
+# < 确认框 100 —— 检阅台是纯展示，任何带决策的层都该压在它上面。
+const TEAM_MERCS_MODAL_ID := "team_mercs_review"
+const TEAM_MERCS_MODAL_PRIORITY := 40
 const PVP_WARNING_DWELL_SEC := 2.0
 const PVP_WARNING_FADE_SEC := 0.18
 
 var _team_mercs_button: Button
 var _team_merc_alert
 var _team_merc_counts_snapshot: Dictionary = {}
+# 迁进 ModalStack 后 content 不再是 center_host 的子节点，失去了自动跟随布局的能力。
+# 记住宿主，开合与尺寸变化时把 content 钉回它的屏幕矩形，视觉才和迁移前一致。
+var _team_mercs_host: Control
 var _team_merc_snapshot_round := -1
 var _team_merc_snapshot_initialized := false
 var _tutorial_target_provider: TutorialTargetProviderScript
@@ -1377,17 +1384,43 @@ func _close_merc_picker() -> void:
 # ─── team mercs review stage ──────────────────────────────────────────────────
 
 func _build_team_mercs_overlay(center_host: Control) -> void:
-	_team_mercs_overlay = PanelContainer.new()
-	_team_mercs_overlay.visible = false
-	_team_mercs_overlay.z_index = 40
-	_team_mercs_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
-	_team_mercs_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_team_mercs_overlay.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
-	center_host.add_child(_team_mercs_overlay)
+	# 迁进 ModalStack 之后这里**不再建 content**。ModalStack.push() 接管 content、
+	# pop() 会销毁它，所以常驻一份再靠 visible 开关的老做法在这里行不通：
+	# 任何一次 close_all / owner 释放都会让常驻引用变成死指针。
+	#
+	# 这里只保留三样必须跨开合存活的东西：宿主引用、30Hz 渲染节流计时器、
+	# 以及网络刷新的信号连接。content 每次打开现建、关闭即弃（见 §3.3 的第一条）。
+	# 代价比看上去小：舞台模型**本来就是每次打开重建**的（关闭时清空、
+	# 打开时 _rebuild_team_mercs_stage()），新增的只有 SubViewport + 环境 + 两盏灯 + 相机。
+	_team_mercs_host = center_host
+	if not center_host.item_rect_changed.is_connected(_sync_team_mercs_content_rect):
+		center_host.item_rect_changed.connect(_sync_team_mercs_content_rect)
+	# 30Hz 渲染节流：和河流视口同一采样率，动画推进不受影响。
+	# 挂在 self 上而不是 content 里 —— 它要跨开合存活，且 pop() 不该带走它。
+	_team_mercs_render_timer = Timer.new()
+	_team_mercs_render_timer.wait_time = 1.0 / PREP_RIVER_RENDER_HZ
+	_team_mercs_render_timer.timeout.connect(_on_team_mercs_render_tick)
+	add_child(_team_mercs_render_timer)
+	if not NetworkService.team_prep_mercs_changed.is_connected(_on_team_prep_mercs_changed):
+		NetworkService.team_prep_mercs_changed.connect(_on_team_prep_mercs_changed)
+	# backdrop / close_all / owner 释放都能绕过本页面直接关掉模态，
+	# 统一在这里把业务状态同步回来，避免 _team_mercs_open 与栈不一致。
+	if not ModalStack.modal_closed.is_connected(_on_team_mercs_modal_closed):
+		ModalStack.modal_closed.connect(_on_team_mercs_modal_closed)
+
+
+# 每次打开现建一份 content。节点结构、尺寸、背景、灯光、相机、缩放与迁移前逐项一致，
+# 唯一的差别是全链 MOUSE_FILTER_IGNORE：输入拦截交给 ModalStack 的 backdrop。
+func _create_team_mercs_content() -> Control:
+	var overlay := PanelContainer.new()
+	overlay.name = "TeamMercsReviewOverlay"
+	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	overlay.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	var stage_holder := Control.new()
 	stage_holder.clip_contents = true
+	stage_holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	stage_holder.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_team_mercs_overlay.add_child(stage_holder)
+	overlay.add_child(stage_holder)
 	var stage_background := TextureRect.new()
 	stage_background.texture = PrepWidgets.cached_texture(TEAM_MERCS_STAGE_BACKGROUND_PATH)
 	stage_background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -1446,16 +1479,54 @@ func _build_team_mercs_overlay(center_host: Control) -> void:
 	_team_mercs_empty_label.add_theme_font_size_override("font_size", 18)
 	_team_mercs_empty_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	stage_holder.add_child(_team_mercs_empty_label)
-	# 30Hz 渲染节流：和河流视口同一采样率，动画推进不受影响
-	_team_mercs_render_timer = Timer.new()
-	_team_mercs_render_timer.wait_time = 1.0 / PREP_RIVER_RENDER_HZ
-	_team_mercs_render_timer.timeout.connect(_on_team_mercs_render_tick)
-	add_child(_team_mercs_render_timer)
-	if not NetworkService.team_prep_mercs_changed.is_connected(_on_team_prep_mercs_changed):
-		NetworkService.team_prep_mercs_changed.connect(_on_team_prep_mercs_changed)
+	return overlay
+
+
+# content 挂在 ModalStack 的全屏 root 下，不再自动跟随 center_host 的布局，
+# 所以开合与尺寸变化时都要把它钉回宿主的屏幕矩形 —— 否则舞台会铺满整屏，
+# 那就是改视觉了。
+func _sync_team_mercs_content_rect() -> void:
+	if _team_mercs_overlay == null or not is_instance_valid(_team_mercs_overlay):
+		return
+	if _team_mercs_host == null or not is_instance_valid(_team_mercs_host):
+		return
+	if not _team_mercs_host.is_inside_tree():
+		return
+	var host_rect := _team_mercs_host.get_global_rect()
+	_team_mercs_overlay.set_anchors_preset(Control.PRESET_TOP_LEFT, true)
+	_team_mercs_overlay.global_position = host_rect.position
+	_team_mercs_overlay.size = host_rect.size
+
+
+# 模态被任何一条路关掉时（点外面、close_all、owner 释放、程序化 pop）都会走到这里。
+# 业务状态、计时器、SubViewport、舞台引用统一在这里收口，避免出现
+# 「栈里没了但 _team_mercs_open 还是 true」这种两边不一致。
+func _on_team_mercs_modal_closed(id: String, _reason: String) -> void:
+	if id != TEAM_MERCS_MODAL_ID:
+		return
+	_team_mercs_open = false
+	_team_mercs_teardown_state()
+
+
+# content 已由 ModalStack 销毁（或即将销毁），这里只负责把本页面持有的引用清干净。
+# 不 free 任何节点 —— 所有权在 push 时就交出去了。
+func _team_mercs_teardown_state() -> void:
+	_team_mercs_stage_signature = "unset"
+	if _team_mercs_render_timer != null and is_instance_valid(_team_mercs_render_timer):
+		_team_mercs_render_timer.stop()
+	if _team_mercs_viewport != null and is_instance_valid(_team_mercs_viewport):
+		_team_mercs_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	_team_mercs_overlay = null
+	_team_mercs_viewport = null
+	_team_mercs_stage_root = null
+	_team_mercs_empty_label = null
+
 
 func _on_team_mercs_render_tick() -> void:
-	if _team_mercs_open and _team_mercs_viewport != null and is_visible_in_tree():
+	# content 现在每次开合都会被 ModalStack 销毁重建，所以除了 null 还要判有效性。
+	if not _team_mercs_open or not is_visible_in_tree():
+		return
+	if _team_mercs_viewport != null and is_instance_valid(_team_mercs_viewport):
 		_team_mercs_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 func _on_team_prep_mercs_changed() -> void:
@@ -1532,20 +1603,38 @@ func _close_team_mercs_picker() -> void:
 	_refresh_team_mercs_overlay()
 
 func _refresh_team_mercs_overlay() -> void:
-	if _team_mercs_overlay == null:
-		return
-	_team_mercs_overlay.visible = _team_mercs_open
 	if not _team_mercs_open:
-		# 关闭即清场：模型的 AnimationPlayer 不渲染也吃 CPU，不能留在树里空转
-		_team_mercs_stage_signature = "unset"
-		if _team_mercs_render_timer != null:
-			_team_mercs_render_timer.stop()
-		if _team_mercs_viewport != null:
-			_team_mercs_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
-		if _team_mercs_stage_root != null:
-			for child in _team_mercs_stage_root.get_children():
-				child.queue_free()
+		# 关：交给 ModalStack。content 连同 SubViewport、舞台模型和它们的
+		# AnimationPlayer 一起被销毁 —— 迁移前是「留在树里但不渲染」，
+		# 靠手动清空子节点防止空转；现在整棵子树都不在了，那个隐患从根上消失。
+		# 业务状态由 modal_closed 统一收口（见 _on_team_mercs_modal_closed）。
+		if ModalStack.has(TEAM_MERCS_MODAL_ID):
+			ModalStack.pop(TEAM_MERCS_MODAL_ID, ModalStack.REASON_PROGRAMMATIC)
+		else:
+			_team_mercs_teardown_state()
 		return
+
+	if not ModalStack.has(TEAM_MERCS_MODAL_ID):
+		var content := _create_team_mercs_content()
+		var modal_id := ModalStack.push(content, {
+			"id": TEAM_MERCS_MODAL_ID,
+			"owner": self,
+			"priority": TEAM_MERCS_MODAL_PRIORITY,
+			# 点内容矩形之外即关。迁移前玩家就是靠侧栏那个按钮再点一下关掉的，
+			# 而 backdrop 现在会吃掉那一下 —— 对玩家而言仍是「点它就关」。
+			"dismiss_on_backdrop": true,
+			# 迁移前 overlay 之外没有任何变暗，backdrop 再上色就是改视觉。
+			"backdrop_color": Color.TRANSPARENT,
+		})
+		if modal_id.is_empty():
+			# 上面已用 has() 挡过重复，走到这里说明 push 真的失败了。
+			# content 已由 push 收走，不能再 free；把刚写进成员的引用清掉。
+			_team_mercs_open = false
+			_team_mercs_teardown_state()
+			return
+		_team_mercs_overlay = content
+		_sync_team_mercs_content_rect()
+
 	_rebuild_team_mercs_stage()
 	if _team_mercs_render_timer != null and _team_mercs_render_timer.is_stopped():
 		_team_mercs_render_timer.start()

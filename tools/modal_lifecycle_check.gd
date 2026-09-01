@@ -38,6 +38,7 @@ const PrepScript := preload("res://scenes/prep/PrepScreen.gd")
 
 # PvP 警告层的时间常量，与 PrepUI 里的保持一致；改那边这里要同步。
 const PVP_WARNING_ID := "pvp_warning"
+const TEAM_MERCS_ID := "team_mercs_review"
 const PVP_WARNING_DWELL_SEC := 2.0
 const PVP_WARNING_FADE_SEC := 0.18
 
@@ -67,6 +68,7 @@ func _ready() -> void:
 	await _check_dialog_dismissed_outside_can_reopen()
 	await _check_stale_request_cannot_clobber_new_one()
 	await _check_pvp_warning_modal()
+	await _check_team_mercs_modal()
 	await _check_page_cycles_leave_nothing()
 	await _check_final_state_is_clean()
 
@@ -505,6 +507,245 @@ func _check_pvp_warning_modal() -> void:
 			orphan_hosts += 1
 	_h.expect(orphan_hosts == 0, "pvp_warning_orphan_host",
 		"root 下还挂着 %d 个 Modal_%s CanvasLayer" % [orphan_hosts, PVP_WARNING_ID])
+
+
+# --- 3c. 组队佣兵检阅层（C-11 的 C4，V3 P0-07 / P1-03）--------------------------
+#
+# 这一层迁移前只盖 center_host，三条关闭路径（侧栏按钮、普通佣兵按钮、商店按钮）
+# 全在它外面。迁进全屏 backdrop 的 ModalStack 之后那三条都会被挡住，所以关闭语义
+# 改由 dismiss_on_backdrop 承担 —— 下面第 3 组就是钉住「玩家真的出得来」。
+
+func _tm_entries() -> int:
+	var n := 0
+	for row in ModalStack.dump_modal_stack():
+		if str(row.get("id", "")) == TEAM_MERCS_ID:
+			n += 1
+	return n
+
+
+func _tm_row() -> Dictionary:
+	for row in ModalStack.dump_modal_stack():
+		if str(row.get("id", "")) == TEAM_MERCS_ID:
+			return row
+	return {}
+
+
+func _tm_host() -> Node:
+	return get_tree().root.get_node_or_null(NodePath("Modal_%s" % TEAM_MERCS_ID))
+
+
+# content 子树里的 STOP 数。输入拦截应当只由 ModalStack 的 backdrop 负责。
+func _tm_content_stop_count() -> int:
+	var host := _tm_host()
+	if host == null:
+		return 0
+	var content := host.get_node_or_null(NodePath("ModalRoot/TeamMercsReviewOverlay"))
+	if content == null:
+		return 0
+	var counts := {"canvas_layers": 0, "stop_controls": 0, "timers": 0}
+	_walk(content, counts)
+	return int(counts["stop_controls"])
+
+
+# 舞台内的 SubViewport / 3D 模型数，用来证明关闭后资源真的没了。
+func _tm_stage_counts() -> Dictionary:
+	var out := {"subviewports": 0, "node3d": 0, "anim_players": 0}
+	var host := _tm_host()
+	if host == null:
+		return out
+	_tm_walk3d(host, out)
+	return out
+
+
+func _tm_walk3d(node: Node, out: Dictionary) -> void:
+	if node is SubViewport:
+		out["subviewports"] = int(out["subviewports"]) + 1
+	elif node is Node3D:
+		out["node3d"] = int(out["node3d"]) + 1
+	elif node is AnimationPlayer:
+		out["anim_players"] = int(out["anim_players"]) + 1
+	for child in node.get_children():
+		_tm_walk3d(child, out)
+
+
+# 模拟玩家「点内容矩形之外」：直接把主键释放事件送进栈顶 backdrop 的 gui_input，
+# 走的是 ModalStack._on_backdrop_input 的真实路径，不是伪造状态。
+func _tm_tap_backdrop() -> void:
+	var host := _tm_host()
+	if host == null:
+		return
+	var backdrop := host.get_node_or_null(NodePath("ModalRoot/Backdrop")) as Control
+	if backdrop == null:
+		return
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	backdrop.gui_input.emit(press)
+	var release := InputEventMouseButton.new()
+	release.button_index = MOUSE_BUTTON_LEFT
+	release.pressed = false
+	backdrop.gui_input.emit(release)
+
+
+func _check_team_mercs_modal() -> void:
+	ModalStack.close_all()
+	await _settle(4)
+
+	var prep := _new_prep()
+	if prep == null:
+		return
+	await _settle(3)
+	var page_baseline := _snapshot()
+	var base_depth := int(page_baseline["modal_depth"])
+
+	# --- 1. 打开：栈里恰好一条，owner 有效且 in-tree ---------------------------
+	prep._toggle_team_mercs_picker()
+	await _settle(3)
+
+	if not _h.expect(_tm_entries() == 1, "tm_not_opened_once",
+			"打开后栈里有 %d 条 %s，应为 1" % [_tm_entries(), TEAM_MERCS_ID]):
+		prep.queue_free()
+		await _settle(4)
+		return
+
+	var row := _tm_row()
+	_h.expect(bool(row.get("in_tree", false)), "tm_not_in_tree",
+		"%s 记在栈上却不在树里" % TEAM_MERCS_ID)
+	_h.expect(bool(row.get("owner_valid", false)), "tm_owner_invalid",
+		"%s 的 owner 无效 —— owner 兜底会失效" % TEAM_MERCS_ID)
+	_h.expect(prep._team_mercs_open, "tm_business_state_desync_open",
+		"模态开着但 _team_mercs_open 是 false")
+
+	# --- 2. backdrop 是唯一的全屏 STOP，content 子树 STOP 数为 0 ---------------
+	_h.expect(str(row.get("backdrop_filter", "")) == "STOP", "tm_backdrop_not_stop",
+		"栈顶 backdrop 不是 STOP，点击会漏到下面的备战页")
+	var content_stops := _tm_content_stop_count()
+	_h.expect(content_stops == 0, "tm_content_still_stops",
+		"content 子树里还有 %d 个 STOP 控件 —— 拦截应当只由 backdrop 负责" % content_stops)
+	_h.expect(int(_snapshot()["invisible_stop"]) <= int(page_baseline["invisible_stop"]),
+		"tm_invisible_stop_grew",
+		"打开检阅台之后多出了不可见 STOP 控件")
+
+	# 舞台资源确实建起来了，否则下面「关闭后归零」是空过。
+	var open_counts := _tm_stage_counts()
+	_h.expect(int(open_counts["subviewports"]) == 1, "tm_subviewport_missing",
+		"打开后 content 里有 %d 个 SubViewport，应为 1" % int(open_counts["subviewports"]))
+
+	# --- 3. 玩家的关闭路径：点内容矩形之外 -------------------------------------
+	_tm_tap_backdrop()
+	await _settle(4)
+	_h.expect(_tm_entries() == 0, "tm_backdrop_tap_did_not_close",
+		"点 backdrop 之后模态还在 —— 玩家被困在这一层里出不来")
+	_h.expect(not prep._team_mercs_open, "tm_business_state_desync_close",
+		"模态已关但 _team_mercs_open 仍是 true")
+	_h.expect(int(_tm_stage_counts()["subviewports"]) == 0, "tm_subviewport_survived",
+		"关闭后 SubViewport 仍在")
+	_h.expect(prep._team_mercs_render_timer != null
+			and prep._team_mercs_render_timer.is_stopped(),
+		"tm_timer_still_running", "关闭后 30Hz 渲染计时器仍在跑")
+
+	# --- 4. 外部 close_all 也要同步业务状态 ------------------------------------
+	prep._toggle_team_mercs_picker()
+	await _settle(3)
+	_h.expect(_tm_entries() == 1, "tm_reopen_failed", "关闭后重新打开失败")
+	ModalStack.close_all()
+	await _settle(4)
+	_h.expect(_tm_entries() == 0, "tm_close_all_left_entry", "close_all 之后栈里还有它")
+	_h.expect(not prep._team_mercs_open, "tm_close_all_state_desync",
+		"close_all 关掉了模态，_team_mercs_open 却还是 true")
+	_h.expect(prep._team_mercs_render_timer != null
+			and prep._team_mercs_render_timer.is_stopped(),
+		"tm_close_all_timer_running", "close_all 之后计时器仍在跑")
+
+	# --- 6. 网络刷新：开着时照常刷新，关着时不得复活模态或重启计时器 -----------
+	prep._on_team_prep_mercs_changed()
+	await _settle(3)
+	_h.expect(_tm_entries() == 0, "tm_network_refresh_resurrected",
+		"关闭状态下收到网络刷新，模态被重新拉起来了")
+	_h.expect(prep._team_mercs_render_timer.is_stopped(),
+		"tm_network_refresh_restarted_timer",
+		"关闭状态下收到网络刷新，计时器被重新启动")
+
+	prep._toggle_team_mercs_picker()
+	await _settle(3)
+	prep._on_team_prep_mercs_changed()
+	await _settle(3)
+	_h.expect(_tm_entries() == 1, "tm_network_refresh_closed_modal",
+		"打开状态下收到网络刷新，模态反而没了")
+	_h.expect(not prep._team_mercs_render_timer.is_stopped(),
+		"tm_network_refresh_stopped_timer",
+		"打开状态下收到网络刷新，计时器被停掉了")
+
+	# --- 8. 与 pvp_warning 的优先级顺序 ----------------------------------------
+	prep._show_pvp_warning_overlay()
+	await _settle(3)
+	if _pvp_entries() == 1:
+		_h.expect(ModalStack.top_id() == PVP_WARNING_ID, "tm_priority_order_wrong",
+			("检阅台(40) 与 pvp_warning(60) 同时在栈上时，栈顶是 %s，"
+			+ "应为 %s —— 优先级阶梯反了") % [ModalStack.top_id(), PVP_WARNING_ID])
+		ModalStack.pop(PVP_WARNING_ID, ModalStack.REASON_PROGRAMMATIC)
+		await _settle(3)
+		_h.expect(_tm_entries() == 1, "tm_broken_by_sibling_pop",
+			"关掉 pvp_warning 把检阅台也带走了")
+		_h.expect(prep._team_mercs_open, "tm_state_broken_by_sibling_pop",
+			"关掉 pvp_warning 之后检阅台的业务状态被改坏了")
+	else:
+		_h.note("pvp_warning 未能弹出（多半缺贴图），优先级顺序这一组跳过")
+
+	prep._close_team_mercs_picker()
+	await _settle(4)
+
+	# --- 7. 连续 20 次开关，零增长 --------------------------------------------
+	# 先热身一轮吸收首次走这条路径的一次性懒初始化，与本文件既有方法论一致。
+	prep._toggle_team_mercs_picker()
+	await _settle(3)
+	prep._close_team_mercs_picker()
+	await _settle(4)
+	var cycle_baseline := _snapshot()
+
+	for i in 20:
+		prep._toggle_team_mercs_picker()
+		await _settle(2)
+		prep._close_team_mercs_picker()
+		await _settle(2)
+		if i == 0 or i == 19:
+			_h.expect(_tm_entries() == 0, "tm_cycle_left_modal",
+				"第 %d 轮关闭后栈里还有 %s" % [i + 1, TEAM_MERCS_ID])
+	await _settle(6)
+
+	var after_cycles := _snapshot()
+	_h.expect(int(after_cycles["modal_depth"]) == base_depth, "tm_cycle_depth_drift",
+		"20 轮开关后 depth=%d，应回到 %d" % [int(after_cycles["modal_depth"]), base_depth])
+	var grew := _growth(cycle_baseline, after_cycles)
+	_h.expect(grew.is_empty(), "tm_cycle_left_residue",
+		"20 轮开关之后相对热身基线仍有残留：%s" % _describe(grew))
+	_h.expect(int(_tm_stage_counts()["subviewports"]) == 0, "tm_cycle_subviewport_leak",
+		"20 轮之后仍有 SubViewport 残留")
+
+	# --- 5. owner 在打开期间被释放 --------------------------------------------
+	prep._toggle_team_mercs_picker()
+	await _settle(3)
+	if not _h.expect(_tm_entries() == 1, "tm_owner_case_setup_failed",
+			"owner 用例前置：检阅台没打开"):
+		prep.queue_free()
+		await _settle(4)
+		return
+	prep.queue_free()
+	await _settle(8)
+
+	_h.expect(_tm_entries() == 0, "tm_survived_owner",
+		"owner 已释放，栈里仍有 %s" % TEAM_MERCS_ID)
+	_h.expect(ModalStack.depth() == base_depth, "tm_depth_after_owner_freed",
+		"owner 释放后 depth=%d，应回到 %d" % [ModalStack.depth(), base_depth])
+	var orphan := 0
+	for child in get_tree().root.get_children():
+		if str(child.name) == "Modal_%s" % TEAM_MERCS_ID:
+			orphan += 1
+	_h.expect(orphan == 0, "tm_orphan_host",
+		"root 下还挂着 %d 个 Modal_%s CanvasLayer" % [orphan, TEAM_MERCS_ID])
+	_h.expect(int(_snapshot()["invisible_stop"]) <= int(page_baseline["invisible_stop"]),
+		"tm_owner_freed_stop_residue",
+		"owner 释放路径留下了不可见 STOP 控件")
 
 
 # --- 4. the cycle ---------------------------------------------------------------
