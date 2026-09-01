@@ -85,7 +85,8 @@ var _arrow: Label
 var _bubble: PanelContainer
 var _text: Label
 var _progress_label: Label
-var _step_key_label: Label
+# Shows the localized step NAME. Never the enum key — see step_display_name().
+var _step_name_label: Label
 var _progress_bar: ProgressBar
 var _continue_btn: Button
 var _hotspot: Button
@@ -291,12 +292,62 @@ func _sync_progress_index() -> void:
 func step_number() -> int:
 	return _progress_index + 1
 
-# 步骤代号（枚举名，如 UPGRADE_2）。
+# 步骤代号（枚举名，如 UPGRADE_2）。**内部标识，不得直接显示给玩家。**
+# 玩家可见的名字走 step_display_name()。V2 R-09 记的正是这个键漏到界面上：
+# 教学气泡右上角原本直接打 BUY_3 / FORMATION_HP / START_BOSS / FILL_7。
 func step_key() -> String:
 	var keys: Array = Step.keys()
 	if step >= 0 and step < keys.size():
 		return str(keys[step])
 	return "?"
+
+
+# 玩家可见的步骤名。
+#
+# 三条硬要求（V2 P1-06）：
+#   1. 任何分支都不能返回枚举名或其它内部标识；
+#   2. 缺文案时的兜底也必须是玩家看得懂的话，不能是 "?" 或步骤代号；
+#   3. 中英都要有 —— 沿用本文件通用的 _t() 惯例，它读 LocaleManager.get_locale()。
+# 由 tools/tutorial_text_leak_check 逐值守住。
+func step_display_name() -> String:
+	match step:
+		Step.BUY_3:
+			return _t("购买棋子", "Buy Units")
+		Step.PLACE_3:
+			return _t("上阵布阵", "Place Units")
+		Step.START_PVE_1:
+			return _t("首场战斗", "First Battle")
+		Step.UPGRADE_2:
+			return _t("升到 2 星", "Reach 2-Star")
+		Step.START_PVE_2:
+			return _t("第二场战斗", "Second Battle")
+		Step.TAKE_TREASURE_1:
+			return _t("选择宝藏", "Choose Treasure")
+		Step.UPGRADE_3:
+			return _t("升到 3 星", "Reach 3-Star")
+		Step.UPGRADE_OTHERS:
+			return _t("继续升星", "Upgrade More")
+		Step.BOND_HINT:
+			return _t("查看羁绊", "Check Synergies")
+		Step.VIEW_TREASURE:
+			return _t("查看宝藏", "View Treasures")
+		Step.START_BOSS:
+			return _t("挑战首领", "Boss Battle")
+		Step.TAKE_TREASURE_2:
+			return _t("再选宝藏", "Choose Again")
+		Step.HIRE_MERC:
+			return _t("召唤佣兵", "Hire Mercenaries")
+		Step.FILL_7:
+			return _t("补满七人", "Fill Seven Slots")
+		Step.FORMATION_HP:
+			return _t("了解法阵", "Formation HP")
+		Step.START_PVP:
+			return _t("玩家对战", "Player Battle")
+		Step.DONE:
+			return _t("教学完成", "Tutorial Complete")
+	# 兜底：新增步骤但忘了在上面补一行时走到这里。玩家看到的是一句通用的话，
+	# 不是 "?" 也不是枚举名 —— 漏文案是我们的问题，不该由玩家来读代号。
+	return _t("教学步骤", "Tutorial Step")
 
 func progress_text() -> String:
 	var total := total_steps()
@@ -309,7 +360,7 @@ func _update_progress() -> void:
 		return
 	_sync_progress_index()
 	_progress_label.text = progress_text()
-	_step_key_label.text = step_key()
+	_step_name_label.text = step_display_name()
 	_progress_bar.value = float(step_number())
 
 # 箭头朝向：目标在屏幕上方（开始战斗按钮、法阵水晶）要从下往上指，
@@ -617,12 +668,12 @@ func _ensure_overlay() -> void:
 	_progress_label.add_theme_font_size_override("font_size", 14)
 	_progress_label.add_theme_color_override("font_color", Color(1.0, 0.86, 0.28))
 	header.add_child(_progress_label)
-	_step_key_label = Label.new()
-	_step_key_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_step_key_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_step_key_label.add_theme_font_size_override("font_size", 12)
-	_step_key_label.add_theme_color_override("font_color", Color(0.60, 0.65, 0.72))
-	header.add_child(_step_key_label)
+	_step_name_label = Label.new()
+	_step_name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_step_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_step_name_label.add_theme_font_size_override("font_size", 12)
+	_step_name_label.add_theme_color_override("font_color", Color(0.60, 0.65, 0.72))
+	header.add_child(_step_name_label)
 
 	_progress_bar = ProgressBar.new()
 	_progress_bar.custom_minimum_size = Vector2(0, 6)
