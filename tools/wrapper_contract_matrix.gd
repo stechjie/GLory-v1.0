@@ -30,12 +30,12 @@ const OUT_CSV := "res://reports/animated_wrapper_contracts.csv"   # asset-manife
 const OUT_JSON := "res://reports/animated_wrapper_contracts.json" # asset-manifest-ignore
 
 const COLUMNS: PackedStringArray = [
-	"wrapper", "unit", "category", "script",
+	"wrapper", "unit", "category", "script", "shared_script", "action_binding", "architecture",
 	"proxy_player", "proxy_animations", "proxy_animation_names", "proxy_trackless",
 	"action_scene_keys", "action_scene_count", "foreign_action_refs",
 	"has_process", "process_polls_current_animation", "process_polls_is_playing",
 	"attack_to_idle", "repeat_attack_restarts",
-	"internal_players", "skeletons", "bones", "mesh_instances",
+	"animation_players_total", "internal_players", "skeletons", "bones", "mesh_instances",
 	"particles", "audio_players", "scripted_child_nodes",
 	"internal_players_idle_only", "anomalies",
 ]
@@ -92,6 +92,8 @@ func _static_pass(path: String) -> Dictionary:
 		"unit": unit,
 		"category": _category_of(path),
 		"script": "",
+		"shared_script": false,
+		"action_binding": "",
 		"proxy_player": scene_text.contains("type=\"AnimationPlayer\""),
 		"proxy_animations": 0,
 		"proxy_animation_names": "",
@@ -104,6 +106,8 @@ func _static_pass(path: String) -> Dictionary:
 		"process_polls_is_playing": false,
 		"attack_to_idle": "",
 		"repeat_attack_restarts": "",
+		"architecture": "",
+		"animation_players_total": -1,
 		"internal_players": -1,
 		"skeletons": -1,
 		"bones": -1,
@@ -115,27 +119,49 @@ func _static_pass(path: String) -> Dictionary:
 		"anomalies": [],
 	}
 
-	# Proxy animation library: names come from resource_name, and an Animation
-	# sub-resource with no tracks/N/ lines is a pure timing shell that drives the
-	# real FBX players rather than animating anything itself.
+	# Animation names come from the AnimationLibrary's _data keys, which is what
+	# play("idle") actually looks up. An earlier version scraped `resource_name =`
+	# instead and reported the two baked-model wrappers as having animations called
+	# "Material_001" and "Mesh1_0" — those are material and mesh resource names,
+	# not animations. Both wrappers do have real `idle` and `attack` keys.
+	#
+	# An Animation sub-resource with no tracks/N/ lines is a pure timing shell that
+	# drives the real FBX players rather than animating anything itself.
 	var anim_names: Array[String] = []
-	for m in RegEx.create_from_string("resource_name = \"([a-zA-Z0-9_]+)\"").search_all(scene_text):
-		anim_names.append(m.get_string(1))
+	var lib := RegEx.create_from_string("_data = \\{([\\s\\S]*?)\\n\\}").search(scene_text)
+	if lib != null:
+		for m in RegEx.create_from_string("&\"([^\"]+)\"\\s*:").search_all(lib.get_string(1)):
+			anim_names.append(m.get_string(1))
 	row["proxy_animations"] = anim_names.size()
 	anim_names.sort()
 	row["proxy_animation_names"] = ";".join(anim_names)
 	row["proxy_trackless"] = not scene_text.contains("tracks/0/type")
 
-	# Sibling script. Its name does not follow the directory name, so scan.
-	var script_path := _sibling_script(dir)
+	# Read the script straight out of the scene's ext_resource. An earlier version
+	# scanned the wrapper's own directory instead and reported seven wrappers as
+	# "no script", which was wrong: five formation_ally_* share
+	# allies/FormationAllyAnimated.gd and the two twin_gate variants share
+	# boss_twin_gate_animated/BossTwinGateVariantAnimated.gd, both one level up.
+	# The .tscn is the authoritative binding; the directory never was.
+	var script_path := _script_of_scene(scene_text)
 	if script_path.is_empty():
-		row["anomalies"].append("no_sibling_script")
+		row["anomalies"].append("no_script_binding")
 		return row
 	row["script"] = script_path
+	row["shared_script"] = script_path.get_base_dir() != dir
+	if not FileAccess.file_exists(script_path):
+		row["anomalies"].append("script_missing_on_disk")
+		return row
 
 	var src := FileAccess.get_file_as_string(script_path)
 	var keys: Array[String] = []
 	var refs: Array[String] = []
+
+	# Two ways a wrapper names its action FBXs, both mainstream:
+	#   const ACTION_SCENES := { "idle": "res://...", ... }   (71 wrappers)
+	#   @export var idle_scene_path, set per instance in the .tscn  (7 wrappers)
+	# Reading only the first form is what made the seven @export wrappers look
+	# contract-less in the first version of this matrix.
 	var block := RegEx.create_from_string(
 		"const ACTION_SCENES\\s*:=\\s*\\{([\\s\\S]*?)\\n\\}").search(src)
 	if block != null:
@@ -143,9 +169,24 @@ func _static_pass(path: String) -> Dictionary:
 				"\"([a-z_]+)\"\\s*:\\s*\"(res://[^\"]+)\"").search_all(block.get_string(1)):
 			keys.append(m.get_string(1))
 			refs.append(m.get_string(2))
+		row["action_binding"] = "const_dict"
+	else:
+		# Not anchored with ^: Godot's RegEx is PCRE2 without multiline by default,
+		# so ^ would only ever match the very start of the file.
+		for m in RegEx.create_from_string(
+				"\\n([a-z_]+)_scene_path = \"(res://[^\"]+)\"").search_all(scene_text):
+			keys.append(m.get_string(1))
+			refs.append(m.get_string(2))
+		if not keys.is_empty():
+			row["action_binding"] = "exported_per_instance"
 	keys.sort()
 	row["action_scene_keys"] = ";".join(keys)
 	row["action_scene_count"] = refs.size()
+	# No ACTION_SCENES and no exported paths is not a defect by itself: the baked
+	# architecture has its model in the wrapper scene and nothing to lazy-load.
+	# Flagging it as an anomaly was measuring one architecture with the other
+	# architecture's ruler.
+	row["baked"] = refs.is_empty()
 
 	# A wrapper pointing at another unit's FBX is either deliberate rig sharing or
 	# a copy-paste that nobody noticed. Reporting it is the point; deciding which
@@ -172,6 +213,10 @@ func _static_pass(path: String) -> Dictionary:
 
 	if src.contains("_activate_action(\"attack\", true)"):
 		row["repeat_attack_restarts"] = "yes"
+	elif bool(row.get("baked", false)) and src.contains("func play_attack"):
+		# play("attack") on the one baked player restarts by definition — there is
+		# no branch to re-activate, so the const_dict idiom simply does not apply.
+		row["repeat_attack_restarts"] = "yes_by_replay"
 	elif src.contains("func play_attack"):
 		row["repeat_attack_restarts"] = "unclear"
 		row["anomalies"].append("attack_restart_unclear")
@@ -179,23 +224,18 @@ func _static_pass(path: String) -> Dictionary:
 		row["repeat_attack_restarts"] = "no_play_attack"
 		row["anomalies"].append("no_play_attack")
 
+	# Whatever the architecture, the two names the battle actually calls must exist.
+	for required in ["idle", "attack"]:
+		if not anim_names.has(required):
+			row["anomalies"].append("missing_animation_" + required)
+
 	return row
 
 
-func _sibling_script(dir: String) -> String:
-	var d := DirAccess.open(dir)
-	if d == null:
-		return ""
-	d.list_dir_begin()
-	var name := d.get_next()
-	var found := ""
-	while name != "":
-		if not d.current_is_dir() and name.ends_with(".gd"):
-			found = dir.path_join(name)
-			break
-		name = d.get_next()
-	d.list_dir_end()
-	return found
+func _script_of_scene(scene_text: String) -> String:
+	var m := RegEx.create_from_string(
+		"\\[ext_resource type=\"Script\" path=\"(res://[^\"]+\\.gd)\"").search(scene_text)
+	return "" if m == null else m.get_string(1)
 
 
 func _category_of(path: String) -> String:
@@ -219,7 +259,19 @@ func _runtime_pass(path: String, row: Dictionary) -> void:
 	if full.is_empty():
 		row["anomalies"].append("instantiate_failed")
 		return
-	row["internal_players"] = int(full["players"])
+	# Two architectures, and the arithmetic differs:
+	#   proxy_plus_lazy_fbx  — a trackless proxy AnimationPlayer on the wrapper
+	#                          drives players loaded from FBX at _ready(). The
+	#                          proxy is not a per-unit cost, so subtract it.
+	#   baked_single_scene   — the model lives in the wrapper scene and its one
+	#                          AnimationPlayer is the real one. Subtracting here
+	#                          reported these as "0 players", which read as broken
+	#                          when they are simply built differently.
+	row["architecture"] = ("proxy_plus_lazy_fbx" if not str(row["action_binding"]).is_empty()
+		else "baked_single_scene")
+	row["animation_players_total"] = int(full["players"])
+	row["internal_players"] = (maxi(0, int(full["players"]) - 1)
+		if row["architecture"] == "proxy_plus_lazy_fbx" else int(full["players"]))
 	row["skeletons"] = int(full["skeletons"])
 	row["bones"] = int(full["bones"])
 	row["mesh_instances"] = int(full["meshes"])
@@ -230,13 +282,14 @@ func _runtime_pass(path: String, row: Dictionary) -> void:
 	# load_idle_only is the meta the wrapper honours to load one action instead of
 	# three; the delta is what a lazy-load strategy would actually save.
 	var idle := await _measure(packed, true)
-	row["internal_players_idle_only"] = int(idle.get("players", -1))
+	row["internal_players_idle_only"] = (maxi(0, int(idle.get("players", 0)) - 1)
+		if row["architecture"] == "proxy_plus_lazy_fbx" else int(idle.get("players", -1)))
 
 	if int(full["particles"]) > 0 or int(full["audio"]) > 0:
 		# Pausing an AnimationPlayer does not stop a particle emitter or a sound.
 		row["anomalies"].append("non_animation_nodes_in_actions")
-	if int(full["players"]) == 0:
-		row["anomalies"].append("no_internal_player")
+	if int(row["internal_players"]) == 0:
+		row["anomalies"].append("no_animation_player")
 
 
 func _measure(packed: PackedScene, idle_only: bool) -> Dictionary:
@@ -251,10 +304,6 @@ func _measure(packed: PackedScene, idle_only: bool) -> Dictionary:
 	var counts := {"players": 0, "skeletons": 0, "bones": 0, "meshes": 0,
 		"particles": 0, "audio": 0, "scripted": 0}
 	_count(node, counts, node)
-
-	# The proxy AnimationPlayer is the wrapper's own; only the ones inside the
-	# loaded FBX branches are the per-unit cost this matrix is about.
-	counts["players"] = maxi(0, int(counts["players"]) - 1)
 
 	remove_child(node)
 	node.queue_free()

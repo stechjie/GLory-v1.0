@@ -18,6 +18,7 @@ import argparse
 import collections
 import datetime
 import glob
+import hashlib
 import json
 import os
 import re
@@ -121,6 +122,44 @@ def parse_log(path):
             "harness_took_over": harness}
 
 
+def run_fingerprint(marks):
+    """Identity of a launch, from its mark timestamps.
+
+    android_smoke.sh saves the same capture twice — logcat_full.log and
+    logcat_godot.log, the second being the first filtered — so a naive glob
+    counts every smoke launch twice and reports a sample twice as strong as it
+    is. Marks carry millisecond timestamps, so an identical set across two files
+    means one launch written down twice, never two launches that happened to
+    agree.
+    """
+    return hashlib.sha256(json.dumps(marks, sort_keys=True).encode()).hexdigest()
+
+
+def dedupe(runs):
+    """Collapse logs that describe the same launch. Returns (kept, dropped)."""
+    seen = {}
+    kept = []
+    dropped = []
+    for r in runs:
+        fp = run_fingerprint(r["marks"])
+        if fp in seen:
+            first = seen[fp]
+            dropped.append({
+                "log": r["log"],
+                "duplicate_of": first["log"],
+                "fingerprint": fp[:16],
+                # Same directory means the smoke script's two captures. Different
+                # directories means an evidence folder was copied, which is worth
+                # knowing about rather than silently merging.
+                "same_directory": os.path.dirname(r["log"]) == os.path.dirname(first["log"]),
+            })
+            continue
+        seen[fp] = r
+        r["fingerprint"] = fp[:16]
+        kept.append(r)
+    return kept, dropped
+
+
 def platform_of(path):
     low = path.replace("\\", "/").lower()
     if "desktop" in low:
@@ -171,6 +210,9 @@ def main():
             "reached_input_ready": T3 in marks,
         })
 
+    all_logs = len(runs)
+    runs, duplicate_logs = dedupe(runs)
+
     device = [r for r in runs if r["platform"] == "device" and r["reached_input_ready"]]
     # The only population that describes what a player experiences.
     player = [r for r in device if r["harness_took_over"] is False]
@@ -178,11 +220,18 @@ def main():
     desktop = [r for r in runs if r["platform"] == "desktop"]
 
     def stat(rows, seg_id):
-        vals = [s["duration_ms"] for r in rows for s in r["segments"] if s["id"] == seg_id]
+        vals = sorted(s["duration_ms"] for r in rows for s in r["segments"]
+                      if s["id"] == seg_id)
         if not vals:
             return None
-        return {"n": len(vals), "min_ms": min(vals), "max_ms": max(vals),
-                "median_ms": sorted(vals)[len(vals) // 2]}
+        n = len(vals)
+        median = vals[n // 2] if n % 2 else (vals[n // 2 - 1] + vals[n // 2]) // 2
+        out = {"n": n, "min_ms": vals[0], "max_ms": vals[-1], "median_ms": median}
+        # With a handful of launches a median hides more than it shows, so carry
+        # the raw values too and let the reader see the spread.
+        if n <= 4:
+            out["values_ms"] = vals
+        return out
 
     summary = {}
     for _src, _dst, seg_id, what in SEGMENTS:
@@ -213,7 +262,9 @@ def main():
         "generator": "tools/startup_cost_breakdown.py",
         "read_only": True,
         "evidence_root": args.evidence,
+        "logs_parsed": all_logs,
         "runs_parsed": len(runs),
+        "duplicate_logs_dropped": duplicate_logs,
         "device_runs_with_input_ready": len(device),
         "player_launch_runs": len(player),
         "harness_runs": len(harness),
@@ -231,16 +282,25 @@ def main():
         json.dump(doc, fh, ensure_ascii=False, indent=2)
         fh.write("\n")
 
-    print("STARTUP_BREAKDOWN runs=%d device_with_t3=%d player=%d harness=%d"
-          % (len(runs), len(device), len(player), len(harness)))
+    print("STARTUP_BREAKDOWN logs=%d runs=%d (dropped %d duplicate log(s)) "
+          "device_with_t3=%d player=%d harness=%d"
+          % (all_logs, len(runs), len(duplicate_logs), len(device),
+             len(player), len(harness)))
+    for d in duplicate_logs:
+        print("  dup: %s  == %s%s" % (d["log"], d["duplicate_of"],
+              "" if d["same_directory"] else "   [!] 不同目录，可能是证据目录被复制过"))
     for _src, _dst, seg_id, _what in SEGMENTS:
         p = summary[seg_id]["player_launch"]
         h = summary[seg_id]["harness_run"]
         if p:
-            print("  %-22s player median=%6d ms (n=%d, %d..%d)  share_of_T3=%5s%%   harness median=%s"
-                  % (seg_id, p["median_ms"], p["n"], p["min_ms"], p["max_ms"],
-                     share_of_t3.get(seg_id, "-"),
+            shown = ("/".join(str(v) for v in p["values_ms"])
+                     if "values_ms" in p else "%d" % p["median_ms"])
+            print("  %-22s player n=%d %14s ms  share_of_T3=%5s%%   harness median=%s"
+                  % (seg_id, p["n"], shown, share_of_t3.get(seg_id, "-"),
                      ("%d ms" % h["median_ms"]) if h else "n/a"))
+    print("  player launches:")
+    for r in player:
+        print("    %s  T3=%d ms" % (r["log"], r["marks"].get(T3, -1)))
     print("  -> %s" % os.path.relpath(args.json, ROOT))
     return 0
 
