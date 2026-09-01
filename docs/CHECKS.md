@@ -1905,3 +1905,30 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/run_check.ps1 battle_a
 `C:\Users\Leno\Documents\Glory prep screen\android_qa_20260831_hidden_animation`：Round 20
 战斗就绪后的 46/46 个皮肤采样均为 `hidden_play=0`，平均 FPS 从 13.96 提升到 16.20；
 回合 1/5/20/21 的六项 digest 均与桌面逐字段一致，设备日志 0 Godot ERROR。
+
+---
+
+## 2026-09-01：输入压力与 Modal 生命周期门禁
+
+`input_stress` 与 `modal_lifecycle` 分别负责两层不同的合同：前者检查输入如何到达控件、
+一次物理点击是否只处理一次、所有拒绝是否有 reason；后者实例化真实 MainMenu / PrepScreen，
+检查页面与弹窗重复进入退出后有没有节点、信号、Timer、Tween 或透明 STOP 层残留。
+
+本轮修复了两条由门禁直接复现的生产缺陷：
+
+- `ModalStack` 不再保存 owner 的 Object 引用，只保存 `owner_id`；owner 被释放后按实例 id
+  自动关闭模态，避免给强类型 Object 赋失效引用时抛错、中断 `_process()`。
+- `DialogService` 监听 `ModalStack.modal_closed`；backdrop、Back、owner 释放和 `close_all`
+  都会清掉 `_pending`，返回 `dismissed`，且与 confirmed/cancelled 路径互斥、只结算一次。
+
+命令：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/run_check.ps1 -Name input_stress,modal_lifecycle,ui_component,prep_battle_loading,issue_report
+```
+
+未污染的直接回归结果：`input_stress` 410/410、`modal_lifecycle` 235/235、
+`ui_component` 95/95、`prep_battle_loading` 50/50、`issue_report` 47/47，合计 837 项断言、
+0 failure、0 stale、0 运行中源文件修改。完整套件仍只有既有 Flame Claw 源资产阻塞：
+三个动作槽复用同一个无内部动画、无贴图的 FBX，导致 `model_material_integrity` 对三个
+动作分支各报 1 项白模失败；该美术阻塞与本轮 UI 服务修复无关。

@@ -21,10 +21,9 @@ extends Node
 # as +20; a one-time cache does not show up at all. No metric is exempted, and
 # no failure is suppressed — the baseline is taken later, not made looser.
 #
-# Deliberately NOT covered here: the implicit "owner was freed without closing
-# its modal" backstop. That path is broken in ModalStack._process (see
-# input_stress_check's orphan_modal_survived_owner) and one defect should produce
-# one red, not two. This gate closes its modals the way correct app code does.
+# The lower-level owner-freed backstop is covered once in input_stress_check;
+# this gate exercises the real DialogService -> ModalStack path and page cycles,
+# so the two checks stay complementary rather than counting one contract twice.
 
 const CheckHarness := preload("res://tools/CheckHarness.gd")
 
@@ -236,9 +235,12 @@ func _check_dialog_dismissed_outside_can_reopen() -> void:
 	add_child(owner_node)
 
 	const RID := "reopen_probe"
+	var dismissals: Array[Dictionary] = []
+	var on_result := func(result: String, request_id: String) -> void:
+		dismissals.append({"result": result, "request_id": request_id})
 	DialogService.confirm({
 		"title": "t", "body": "b", "owner": owner_node,
-		"request_id": RID, "intent": 2,
+		"request_id": RID, "intent": 2, "on_result": on_result,
 	})
 	await _settle(2)
 	_h.expect(DialogService.is_open(RID), "reopen_setup_failed",
@@ -253,14 +255,21 @@ func _check_dialog_dismissed_outside_can_reopen() -> void:
 		"用例前置：模态没有被弹出")
 	_h.expect(not DialogService.is_open(RID), "dialog_pending_survived_modal_close",
 		("对话框已经被 ModalStack 关掉，DialogService._pending 里却还留着 %s。"
-		+ "根因：DialogService 从不监听 ModalStack.modal_closed，_pending 只在 close() "
-		+ "或对话框自己发 resolved 时才清。凡是绕过这两条路的关闭 —— 点框外、返回键、"
-		+ "owner 释放、close_all —— 都会留下一条永久条目。") % RID)
+		+ "DialogService 必须同步 modal_closed；点框外、返回键、owner 释放和 close_all "
+		+ "都必须清掉 pending，并且只结算一次 dismissed。") % RID)
+	_h.expect(dismissals.size() == 1, "external_close_callback_count_wrong",
+		"外部关窗后 on_result 调用了 %d 次，应为 1" % dismissals.size())
+	if dismissals.size() == 1:
+		_h.expect(str(dismissals[0].get("result", "")) == "dismissed",
+			"external_close_result_wrong", "外部关窗应返回 dismissed，实际 %s"
+				% str(dismissals[0].get("result", "")))
+		_h.expect(str(dismissals[0].get("request_id", "")) == RID,
+			"external_close_request_id_lost", "外部关窗回调丢失 request_id")
 
 	# The consequence that a player actually feels.
 	DialogService.confirm({
 		"title": "t", "body": "b", "owner": owner_node,
-		"request_id": RID, "intent": 2,
+		"request_id": RID, "intent": 2, "on_result": on_result,
 	})
 	await _settle(2)
 	_h.expect(ModalStack.depth() == 1, "dialog_never_reopens_after_outside_tap",
@@ -337,11 +346,8 @@ func _run_one_cycle(index: int) -> void:
 		DialogService.close(pid)
 		await get_tree().process_frame
 
-		# Back is exercised on a bare ModalStack modal rather than on a
-		# DialogService dialog: closing a dialog through ModalStack leaks a
-		# _pending entry (see dialog_pending_survived_modal_close above), and
-		# routing the cycle through that known defect would bury every other
-		# leak this loop is supposed to find under +1 dialog_open per round.
+		# Back is exercised on a bare ModalStack modal here so the cycle covers both
+		# service-managed dialogs and the lower-level ModalStack contract.
 		var content := Control.new()
 		content.name = "CycleModal_%d" % index
 		ModalStack.push(content, {"id": "cycle_modal_%d" % index, "owner": prep})

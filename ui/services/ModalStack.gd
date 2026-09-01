@@ -63,7 +63,13 @@ func push(content: Control, opts: Dictionary = {}) -> String:
 		return ""
 	_next_serial += 1
 
-	var owner_obj: Object = opts.get("owner", null)
+	# 只保留 instance id，不把 Object 引用放进 Dictionary。Node 被 free 后，
+	# Dictionary 里的旧引用会变成 invalid instance；再把它赋给强类型 Object
+	# 变量会在 is_instance_valid() 之前直接抛错，使自动清理永远到不了。
+	var owner_obj = opts.get("owner", null)
+	var owner_id := 0
+	if owner_obj != null and is_instance_valid(owner_obj):
+		owner_id = owner_obj.get_instance_id()
 	var host := CanvasLayer.new()
 	host.name = "Modal_%s" % id
 
@@ -84,8 +90,7 @@ func push(content: Control, opts: Dictionary = {}) -> String:
 
 	var entry := {
 		"id": id,
-		"owner": owner_obj,
-		"owner_id": 0 if owner_obj == null else owner_obj.get_instance_id(),
+		"owner_id": owner_id,
 		"priority": int(opts.get("priority", 0)),
 		"serial": _next_serial,
 		"host": host,
@@ -139,7 +144,7 @@ func replace(id: String, content: Control, opts: Dictionary = {}) -> String:
 
 
 func close_all_for_owner(owner_obj: Object, reason: String = REASON_OWNER_FREED) -> int:
-	if owner_obj == null:
+	if owner_obj == null or not is_instance_valid(owner_obj):
 		return 0
 	var want := owner_obj.get_instance_id()
 	var closed := 0
@@ -191,7 +196,7 @@ func dump_modal_stack() -> Array:
 	for i in _entries.size():
 		var e: Dictionary = _entries[i]
 		var content: Object = e.get("content", null)
-		var owner_obj: Object = e.get("owner", null)
+		var owner_id := int(e.get("owner_id", 0))
 		var host: CanvasLayer = e.get("host", null)
 		out.append({
 			"index": i,
@@ -200,7 +205,7 @@ func dump_modal_stack() -> Array:
 			"is_top": i == _entries.size() - 1,
 			# 记在栈上但没进树 = 弹窗其实没显示出来。排障时先看这一列。
 			"in_tree": host != null and is_instance_valid(host) and host.is_inside_tree(),
-			"owner_valid": owner_obj != null and is_instance_valid(owner_obj),
+			"owner_valid": owner_id != 0 and is_instance_id_valid(owner_id),
 			"backdrop_filter": _filter_name(e.get("backdrop", null)),
 			"content": "" if content == null or not is_instance_valid(content) else str(content.name),
 		})
@@ -225,8 +230,8 @@ func _process(_delta: float) -> void:
 	if _entries.is_empty():
 		return
 	for entry in _entries.duplicate():
-		var owner_obj: Object = entry.get("owner", null)
-		if owner_obj != null and not is_instance_valid(owner_obj):
+		var owner_id := int(entry.get("owner_id", 0))
+		if owner_id != 0 and not is_instance_id_valid(owner_id):
 			pop(str(entry.get("id", "")), REASON_OWNER_FREED)
 
 

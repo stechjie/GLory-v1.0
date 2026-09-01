@@ -22,6 +22,13 @@ var _pending: Dictionary = {}
 var _serial := 0
 
 
+func _ready() -> void:
+	# backdrop、Back、owner 释放和 close_all 都可以绕过本服务直接关掉模态。
+	# 统一监听唯一出口，避免 ModalStack 已经空了而 _pending 永久残留。
+	if not ModalStack.modal_closed.is_connected(_on_modal_closed):
+		ModalStack.modal_closed.connect(_on_modal_closed)
+
+
 # spec:
 #   title / body     已本地化的最终文案
 #   intent           GloryConfirmDialog.Intent，默认 NORMAL
@@ -90,25 +97,52 @@ func open_count() -> int:
 func close(request_id: String) -> bool:
 	if not _pending.has(request_id):
 		return false
-	var modal_id := str(_pending[request_id].get("modal_id", ""))
-	_finish(request_id, Dialog.RESULT_DISMISSED)
+	# 先移出 pending，ModalStack.pop 发 modal_closed 时就不会重复结算。
+	var entry := _take_pending(request_id)
+	var modal_id := str(entry.get("modal_id", ""))
 	ModalStack.pop(modal_id, ModalStack.REASON_PROGRAMMATIC)
+	_emit_result(request_id, Dialog.RESULT_DISMISSED, entry)
 	return true
 
 
 func _on_dialog_resolved(result: String, request_id: String) -> void:
 	if not _pending.has(request_id):
 		return
-	var modal_id := str(_pending[request_id].get("modal_id", ""))
+	# resolved 与 modal_closed 会在同一调用栈里先后出现。先移出 pending，
+	# 保证 modal_closed 监听器不会把 confirmed/cancelled 改成 dismissed。
+	var entry := _take_pending(request_id)
+	var modal_id := str(entry.get("modal_id", ""))
 	# 先摘框再回调：回调里可能立刻开下一个框或切场景，
 	# 那时这一个必须已经离开栈顶，否则新框会被压在下面。
 	ModalStack.pop(modal_id, result)
-	_finish(request_id, result)
+	_emit_result(request_id, result, entry)
+
+
+func _on_modal_closed(modal_id: String, _reason: String) -> void:
+	var request_id := ""
+	for key in _pending.keys():
+		var entry: Dictionary = _pending.get(key, {})
+		if str(entry.get("modal_id", "")) == modal_id:
+			request_id = str(key)
+			break
+	if not request_id.is_empty():
+		_finish(request_id, Dialog.RESULT_DISMISSED)
 
 
 func _finish(request_id: String, result: String) -> void:
+	if not _pending.has(request_id):
+		return
+	var entry := _take_pending(request_id)
+	_emit_result(request_id, result, entry)
+
+
+func _take_pending(request_id: String) -> Dictionary:
 	var entry: Dictionary = _pending.get(request_id, {})
 	_pending.erase(request_id)
+	return entry
+
+
+func _emit_result(request_id: String, result: String, entry: Dictionary) -> void:
 	var cb: Callable = entry.get("on_result", Callable())
 	if cb.is_valid():
 		cb.call(result, request_id)

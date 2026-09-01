@@ -365,13 +365,9 @@ func _check_owner_lifecycle() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	_h.expect(_stack.depth() == 0, "orphan_modal_survived_owner",
-		("owner 被 free 之后模态还在，depth=%d。根因在 ModalStack.gd:228："
-		+ "`var owner_obj: Object = entry.get(\"owner\", null)` —— 给**带类型**的 Object "
-		+ "变量赋一个已释放的引用，Godot 4 会抛 Trying to assign invalid previously freed "
-		+ "instance，_process 当帧中断，下一行的 is_instance_valid 兜底永远执行不到。"
-		+ "类注释里的规则 3「owner 被 free 时自动关掉它的模态」因此是死代码。"
-		+ "改法是去掉类型标注（`var owner_obj = ...`）或改用 owner_id + instance_from_id。"
-		+ "该文件属 UI 代码，不在本工作包范围内，故留红不修。") % _stack.depth())
+		("owner 被 free 之后模态还在，depth=%d。ModalStack 必须只用 owner_id "
+		+ "检查实例存活，不能重新读取已经失效的 Object 引用；否则页面切走后会留下"
+		+ "全屏输入层。") % _stack.depth())
 	_h.expect(_new_stop_controls().is_empty(), "stop_leak_after_owner_freed",
 		"owner 被 free 后残留不可见 STOP 控件：%s" % ", ".join(_new_stop_controls()))
 

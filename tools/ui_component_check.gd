@@ -329,6 +329,12 @@ func _check_dialog_service() -> void:
 	await get_tree().process_frame
 	_h.expect(calls.size() == 1, "service_callback_count_wrong",
 		"on_result 被调用 %d 次，应为 1" % calls.size())
+	if calls.size() == 1:
+		_h.expect(str(calls[0].get("result", "")) == Dialog.RESULT_DISMISSED,
+			"service_close_result_wrong", "主动关闭应返回 dismissed，实际 %s"
+				% str(calls[0].get("result", "")))
+		_h.expect(str(calls[0].get("rid", "")) == "svc_1",
+			"service_close_request_id_lost", "主动关闭回调丢失 request_id")
 	_h.expect(DialogService.open_count() == 0, "service_not_cleared",
 		"关闭后 open_count=%d" % DialogService.open_count())
 	_h.expect(ModalStack.depth() == 0, "service_modal_left",
