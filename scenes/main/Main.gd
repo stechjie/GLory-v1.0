@@ -2,6 +2,8 @@ extends Control
 
 signal public_token_request_check_requested(request_id: String)
 signal room_list_request_check_requested(request_id: String)
+signal create_room_request_check_requested(request_id: String)
+signal create_room_navigation_check_requested(request_id: String)
 
 const VFX_WARMUP := preload("res://effects/vfx3d/VFXWarmup.gd")
 
@@ -11,6 +13,9 @@ const PUBLIC_TOKEN_TIMEOUT_MSEC := 15000
 const ROOM_LIST_ACTION := "team_room_list"
 const ROOM_LIST_CONTROL_ID := "main_menu/team_room_list"
 const ROOM_LIST_TIMEOUT_MSEC := 15000
+const CREATE_ROOM_ACTION := "team_create_room"
+const CREATE_ROOM_CONTROL_ID := "main_menu/team_room_create"
+const CREATE_ROOM_TIMEOUT_MSEC := 15000
 
 var _menu: Control
 var _prep: Control
@@ -25,6 +30,11 @@ var _public_token_request_check_hook := Callable()
 var _room_list_request_id := ""
 var _room_list_waiting_for_session := false
 var _room_list_request_check_hook := Callable()
+var _create_room_request_id := ""
+var _create_room_waiting_for_session := false
+var _create_room_request_dispatched := false
+var _create_room_request_check_hook := Callable()
+var _create_room_navigation_check_hook := Callable()
 # 离线自测·单位测试模式(officetest):进入前的 team_mode 快照,退出时还原。
 var _selftest_prev_team_mode := false
 
@@ -485,7 +495,8 @@ func _on_team_room_list_requested() -> void:
 	_start_room_list_action()
 
 func _on_team_room_create_requested() -> void:
-	_start_team_menu_action("create")
+	AsyncActionController.record_input_received(CREATE_ROOM_ACTION, CREATE_ROOM_CONTROL_ID)
+	_start_create_room_action()
 
 func _on_team_room_join_requested(room_id: int) -> void:
 	_pending_team_room_id = room_id
@@ -505,7 +516,7 @@ func _on_public_token_resume_requested(token_id: String) -> void:
 # The wire protocol is unchanged; only client-side lifecycle/late-result handling
 # moves under AsyncActionController.
 func _start_public_token_action() -> void:
-	_supersede_other_team_read_action(PUBLIC_TOKEN_ACTION)
+	_supersede_other_team_action(PUBLIC_TOKEN_ACTION)
 	var owner: Object = _menu if _menu != null and is_instance_valid(_menu) else self
 	var request_id := AsyncActionController.begin(PUBLIC_TOKEN_ACTION, {
 		"owner": owner,
@@ -591,6 +602,9 @@ func _on_async_action_state_changed(
 	state: String,
 	_snapshot: Dictionary
 ) -> void:
+	if action == CREATE_ROOM_ACTION:
+		_on_create_room_action_state_changed(request_id, state)
+		return
 	if action == ROOM_LIST_ACTION:
 		_on_room_list_action_state_changed(request_id, state)
 		return
@@ -642,7 +656,7 @@ func public_token_request_id_for_check() -> String:
 # Second C-10 migration. Room-list refresh has its own request identity so a
 # closed/replaced menu cannot be updated by a late server list.
 func _start_room_list_action() -> void:
-	_supersede_other_team_read_action(ROOM_LIST_ACTION)
+	_supersede_other_team_action(ROOM_LIST_ACTION)
 	var owner: Object = _menu if _menu != null and is_instance_valid(_menu) else self
 	var request_id := AsyncActionController.begin(ROOM_LIST_ACTION, {
 		"owner": owner,
@@ -764,11 +778,184 @@ func room_list_request_id_for_check() -> String:
 	return _room_list_request_id if OS.is_debug_build() else ""
 
 
-# The server's room-action failure signal has no request id. Keeping token and
-# list active together would let one failure settle both. The old string pending
-# slot also behaved as latest-intent-wins while connecting, so preserve that
-# contract explicitly for the two migrated read-only actions.
-func _supersede_other_team_read_action(next_action: String) -> void:
+# Third C-10 migration. Creating a room is state-changing, so cancellation or a
+# deadline also tears down the transport after dispatch; that prevents a late
+# slot assignment from leaving the player inside a room after the UI abandoned
+# the request. The server protocol and create-room RPC remain unchanged.
+func _start_create_room_action() -> void:
+	_supersede_other_team_action(CREATE_ROOM_ACTION)
+	var owner: Object = _menu if _menu != null and is_instance_valid(_menu) else self
+	var request_id := AsyncActionController.begin(CREATE_ROOM_ACTION, {
+		"owner": owner,
+		"control_id": CREATE_ROOM_CONTROL_ID,
+		"timeout_msec": CREATE_ROOM_TIMEOUT_MSEC,
+		"cancellable": true,
+		"stage": "connect",
+	})
+	if request_id.is_empty():
+		return
+	if request_id == _create_room_request_id \
+			and AsyncActionController.is_current(request_id):
+		return
+	_create_room_request_id = request_id
+	_create_room_waiting_for_session = false
+	_create_room_request_dispatched = false
+	_disconnect_create_room_handlers()
+	AsyncActionController.mark_pending(request_id)
+	if is_instance_valid(_menu):
+		_menu.show_connecting()
+
+	var target_port := NetworkService.DEFAULT_PORT
+	NetworkService._net_log("create room action request=%s port=%d active=%s state=%d slot=%d" % [
+		request_id, target_port, str(NetworkService.team_active),
+		int(NetworkService.state), int(NetworkService.team_local_slot)])
+	if NetworkService.team_active and NetworkService.remote_port != target_port:
+		NetworkService.disconnect_session()
+	elif NetworkService.team_active \
+			and NetworkService.state == NetworkService.SessionState.READY \
+			and NetworkService.team_local_slot < 0:
+		_dispatch_create_room_request(request_id)
+		return
+	if NetworkService.team_active and NetworkService.team_local_slot >= 0:
+		NetworkService.disconnect_session()
+	if not NetworkService.team_join(NetworkService.DEFAULT_HOST, target_port):
+		AsyncActionController.fail(request_id, "CREATE_ROOM_CONNECT_START_FAILED", true)
+		if is_instance_valid(_menu):
+			_menu.show_connection_error(NetworkService.last_error)
+		return
+	_create_room_waiting_for_session = true
+	if not NetworkService.session_changed.is_connected(_on_create_room_session_changed):
+		NetworkService.session_changed.connect(_on_create_room_session_changed)
+
+
+func _on_create_room_session_changed() -> void:
+	var request_id := _create_room_request_id
+	if request_id.is_empty() or not AsyncActionController.is_current(request_id):
+		_disconnect_create_room_handlers()
+		return
+	match NetworkService.state:
+		NetworkService.SessionState.READY:
+			_dispatch_create_room_request(request_id)
+		NetworkService.SessionState.FAILED, NetworkService.SessionState.OFFLINE:
+			_disconnect_create_room_handlers()
+			AsyncActionController.fail(request_id, "CREATE_ROOM_CONNECT_FAILED", true)
+			if is_instance_valid(_menu):
+				var message := NetworkService.last_error if NetworkService.last_error != "" else tr("net_err_connect_generic")
+				_menu.show_connection_error(message)
+
+
+func _dispatch_create_room_request(request_id: String) -> void:
+	if request_id != _create_room_request_id \
+			or not AsyncActionController.is_current(request_id):
+		return
+	_disconnect_create_room_session_handler()
+	_create_room_request_dispatched = true
+	AsyncActionController.update_context(request_id, {"stage": "request_create_room"})
+	if not NetworkService.team_lobby_changed.is_connected(_on_create_room_lobby_changed):
+		NetworkService.team_lobby_changed.connect(_on_create_room_lobby_changed)
+	if OS.is_debug_build() and _create_room_request_check_hook.is_valid():
+		create_room_request_check_requested.emit(request_id)
+		return
+	NetworkService.team_request_create_room()
+
+
+func _on_create_room_lobby_changed() -> void:
+	if NetworkService.team_local_slot < 0:
+		return
+	var request_id := _create_room_request_id
+	if request_id.is_empty() or not AsyncActionController.is_current(request_id):
+		_disconnect_create_room_handlers()
+		return
+	if not AsyncActionController.succeed(request_id):
+		return
+	if OS.is_debug_build() and _create_room_navigation_check_hook.is_valid():
+		create_room_navigation_check_requested.emit(request_id)
+		return
+	_show_team3v3_lobby()
+
+
+func _disconnect_create_room_session_handler() -> void:
+	_create_room_waiting_for_session = false
+	if NetworkService.session_changed.is_connected(_on_create_room_session_changed):
+		NetworkService.session_changed.disconnect(_on_create_room_session_changed)
+
+
+func _disconnect_create_room_handlers() -> void:
+	_disconnect_create_room_session_handler()
+	if NetworkService.team_lobby_changed.is_connected(_on_create_room_lobby_changed):
+		NetworkService.team_lobby_changed.disconnect(_on_create_room_lobby_changed)
+
+
+func _on_create_room_action_state_changed(request_id: String, state: String) -> void:
+	if request_id != _create_room_request_id:
+		return
+	match state:
+		AsyncActionController.STATE_SUCCEEDED, AsyncActionController.STATE_FAILED:
+			_disconnect_create_room_handlers()
+			_create_room_request_dispatched = false
+		AsyncActionController.STATE_TIMED_OUT:
+			var must_disconnect := _create_room_waiting_for_session \
+				or _create_room_request_dispatched
+			_disconnect_create_room_handlers()
+			_create_room_request_dispatched = false
+			if must_disconnect:
+				NetworkService.disconnect_session()
+			if is_instance_valid(_menu):
+				_menu.show_connection_error(tr("net_err_timeout") % [
+					NetworkService.DEFAULT_HOST, NetworkService.DEFAULT_PORT])
+		AsyncActionController.STATE_CANCELLED:
+			var must_disconnect := _create_room_waiting_for_session \
+				or _create_room_request_dispatched
+			_disconnect_create_room_handlers()
+			_create_room_request_dispatched = false
+			if must_disconnect:
+				NetworkService.disconnect_session()
+
+
+func set_create_room_request_check_hook(hook: Callable) -> bool:
+	if not OS.is_debug_build():
+		return false
+	if _create_room_request_check_hook.is_valid() \
+			and create_room_request_check_requested.is_connected(_create_room_request_check_hook):
+		create_room_request_check_requested.disconnect(_create_room_request_check_hook)
+	_create_room_request_check_hook = hook
+	if _create_room_request_check_hook.is_valid():
+		create_room_request_check_requested.connect(_create_room_request_check_hook)
+	return true
+
+
+func set_create_room_navigation_check_hook(hook: Callable) -> bool:
+	if not OS.is_debug_build():
+		return false
+	if _create_room_navigation_check_hook.is_valid() \
+			and create_room_navigation_check_requested.is_connected(_create_room_navigation_check_hook):
+		create_room_navigation_check_requested.disconnect(_create_room_navigation_check_hook)
+	_create_room_navigation_check_hook = hook
+	if _create_room_navigation_check_hook.is_valid():
+		create_room_navigation_check_requested.connect(_create_room_navigation_check_hook)
+	return true
+
+
+func create_room_request_id_for_check() -> String:
+	return _create_room_request_id if OS.is_debug_build() else ""
+
+
+# The server's room-action failure signal has no request id. Keeping migrated
+# actions active together would let one failure settle several requests. The old
+# string pending slot was latest-intent-wins while connecting, so make that
+# contract explicit while the remaining join/resume actions are migrated.
+func _supersede_other_team_action(next_action: String) -> void:
+	# Legacy join/resume still use the shared string slot. Detach them before a
+	# newer intent starts so their unnumbered lobby/failure callbacks cannot settle
+	# or navigate the new action. With no request id to reject a late server-side
+	# mutation, closing this transport is the only safe cancellation boundary.
+	if not _pending_team_menu_action.is_empty():
+		if NetworkService.session_changed.is_connected(_on_pending_team_menu_session_changed):
+			NetworkService.session_changed.disconnect(_on_pending_team_menu_session_changed)
+		if NetworkService.team_lobby_changed.is_connected(_on_pending_room_joined):
+			NetworkService.team_lobby_changed.disconnect(_on_pending_room_joined)
+		_pending_team_menu_action = ""
+		NetworkService.disconnect_session()
 	if next_action != PUBLIC_TOKEN_ACTION \
 			and not _public_token_request_id.is_empty() \
 			and AsyncActionController.is_current(_public_token_request_id):
@@ -778,6 +965,11 @@ func _supersede_other_team_read_action(next_action: String) -> void:
 			and not _room_list_request_id.is_empty() \
 			and AsyncActionController.is_current(_room_list_request_id):
 		AsyncActionController.cancel(_room_list_request_id,
+			"superseded_by_%s" % next_action)
+	if next_action != CREATE_ROOM_ACTION \
+			and not _create_room_request_id.is_empty() \
+			and AsyncActionController.is_current(_create_room_request_id):
+		AsyncActionController.cancel(_create_room_request_id,
 			"superseded_by_%s" % next_action)
 
 # 这次动作该连哪个服务器进程（多进程分片）。
@@ -790,6 +982,7 @@ func _target_port_for_action(action: String) -> int:
 	return NetworkService.DEFAULT_PORT
 
 func _start_team_menu_action(action: String) -> void:
+	_supersede_other_team_action(action)
 	_pending_team_menu_action = action
 	var target_port := _target_port_for_action(action)
 	# 这四个值决定下面走哪条分支。不记的话，一旦卡在 connecting，
@@ -828,9 +1021,6 @@ func _on_pending_team_menu_session_changed() -> void:
 
 func _run_pending_team_menu_action() -> void:
 	match _pending_team_menu_action:
-		"create":
-			_wait_for_room_join()
-			NetworkService.team_request_create_room()
 		"join":
 			_wait_for_room_join()
 			NetworkService.team_request_join_room(_pending_team_room_id)
@@ -869,6 +1059,9 @@ func _on_team_room_action_failed(reason: String) -> void:
 	if not _room_list_request_id.is_empty() \
 			and AsyncActionController.is_current(_room_list_request_id):
 		AsyncActionController.fail(_room_list_request_id, "ROOM_LIST_REQUEST_FAILED", true)
+	if not _create_room_request_id.is_empty() \
+			and AsyncActionController.is_current(_create_room_request_id):
+		AsyncActionController.fail(_create_room_request_id, "CREATE_ROOM_REQUEST_FAILED", true)
 	if is_instance_valid(_menu) and _menu.has_method("show_room_error"):
 		_menu.show_room_error(reason)
 
