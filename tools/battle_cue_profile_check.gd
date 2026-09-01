@@ -226,7 +226,7 @@ func _check_review_comparability() -> void:
 
 	# 3. The fixed battle fixture must be shared, not copy-pasted. The review scene
 	#    originally set only the seed and the round, so its replay was always empty.
-	for path in ["res://tools/battle_presentation_baseline.gd", "res://scenes/debug/BattleVfxReview.gd"]:
+	for path in ["res://scripts/qa/battle_presentation_baseline.gd", "res://scenes/debug/BattleVfxReview.gd"]:
 		var source := FileAccess.get_file_as_string(path)
 		_h.expect(not source.is_empty(), "source_missing", "读不到 %s" % path)
 		_h.expect(source.contains("FixedBattleFixture"),

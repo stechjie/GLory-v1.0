@@ -14,6 +14,7 @@
 # Usage:
 #   powershell -File tools/current_health.ps1
 #   powershell -File tools/current_health.ps1 -NoReadme
+#   powershell -File tools/current_health.ps1 -AndroidEvidenceRoot <dir>
 #
 # This file is intentionally ASCII-only. Non-ASCII text comes from the data files
 # it reads (UTF-8, read explicitly), so the script itself cannot be broken by
@@ -22,6 +23,7 @@
 [CmdletBinding()]
 param(
     [string]$ProjectRoot = "",
+    [string]$AndroidEvidenceRoot = "",
     [switch]$NoReadme
 )
 
@@ -161,6 +163,12 @@ if (Test-Path -LiteralPath $checksDir) {
         if ($seenNames.ContainsKey($bare)) { continue }
         $record = Read-JsonFile $file.FullName
         if ($null -eq $record) { continue }
+        # A persisted missing_scene verdict records a bad historical invocation,
+        # not a gate that exists in the current project. Keep the JSON evidence on
+        # disk, but do not let that invocation remain a permanent README red light.
+        # If missing_scene occurs in summary.json it is still part of the latest run
+        # above and remains visible, as it should.
+        if ([string]$record.result.verdict -eq "missing_scene") { continue }
         $seenNames[$bare] = $true
         $checks += New-CheckRecord -Name $name -Passed ([bool]$record.result.passed) `
             -Verdict ([string]$record.result.verdict) `
@@ -205,9 +213,14 @@ if ($null -ne $scan) {
 }
 
 # --- latest android smoke -----------------------------------------------------
-# Lives outside the repo (../build/android) so evidence never lands in the APK.
+# Lives outside the repo so evidence never lands in the APK. The optional root is
+# useful when QA evidence must be kept in a separate writable workspace.
 $smokeBlock = $null
-$smokeRoot = [IO.Path]::GetFullPath((Join-Path $root "../build/android"))
+$smokeRoot = if ([string]::IsNullOrWhiteSpace($AndroidEvidenceRoot)) {
+    [IO.Path]::GetFullPath((Join-Path $root "../build/android"))
+} else {
+    [IO.Path]::GetFullPath($AndroidEvidenceRoot)
+}
 if (Test-Path -LiteralPath $smokeRoot) {
     $smokeDirs = @(Get-ChildItem -LiteralPath $smokeRoot -Directory -Filter "smoke_*" |
         Sort-Object LastWriteTimeUtc -Descending)
@@ -216,11 +229,17 @@ if (Test-Path -LiteralPath $smokeRoot) {
         if ($null -ne $smokeJson) {
             $deviceModel = ""
             $apkSha = ""
+            $apkName = ""
             $pkg = ""
+            $identityVerified = $false
             if ($smokeJson.PSObject.Properties.Name -contains "device") { $deviceModel = [string]$smokeJson.device.model }
             if ($smokeJson.PSObject.Properties.Name -contains "apk") {
                 $apkSha = [string]$smokeJson.apk.sha256
+                $apkName = [string]$smokeJson.apk.file
                 $pkg = [string]$smokeJson.apk.package
+            }
+            if ($smokeJson.PSObject.Properties.Name -contains "install") {
+                $identityVerified = [bool]$smokeJson.install.identity_verified
             }
             $smokeBlock = [pscustomobject]@{
                 run_dir = $smokeDirs[0].Name
@@ -228,7 +247,9 @@ if (Test-Path -LiteralPath $smokeRoot) {
                 passed = [bool]$smokeJson.passed
                 device_model = $deviceModel
                 package = $pkg
+                apk = $apkName
                 apk_sha256 = $apkSha
+                identity_verified = $identityVerified
             }
         }
     }
@@ -252,6 +273,8 @@ if ($null -ne $blockersDoc) {
 
 # --- assemble -----------------------------------------------------------------
 $failedChecks = @($checks | Where-Object { -not $_.passed })
+$lastRunChecks = @($checks | Where-Object { $_.from_last_run })
+$lastRunFailedChecks = @($lastRunChecks | Where-Object { -not $_.passed })
 $health = [pscustomobject]@{
     generated_utc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
     generated_by = "tools/current_health.ps1"
@@ -271,9 +294,11 @@ $health = [pscustomobject]@{
     checks = [pscustomobject]@{
         source = "reports/checks/summary.json"
         generated_utc = $checksGeneratedUtc
+        last_run_covered = $lastRunChecks.Count
+        last_run_failed = $lastRunFailedChecks.Count
         covered = $checks.Count
         failed = $failedChecks.Count
-        caveat = "from_last_run=true came from the run named in generated_utc; false means the result was read from that check's persisted log and carries its own observed_utc. A check that has never been run appears nowhere -- absence is unknown, not passing."
+        caveat = "last_run_* is the exact latest run_check.ps1 invocation. covered/failed is the de-duplicated persisted union, which can also contain targeted or server-backed checks from older runs. from_last_run=true came from the run named in generated_utc; false carries its own observed_utc. A check that has never been run appears nowhere -- absence is unknown, not passing."
         results = $checks
     }
     model_material_integrity = $integrityBlock
@@ -304,7 +329,8 @@ $md.Add("| Commit | ``" + $commitShort + "`` on ``" + $branch + "`` (" + $dirtyT
 $md.Add("| Asset inventory | ``" + $assetHash.Substring(0, [Math]::Min(16, $assetHash.Length)) + "`` / " + $assetCount + " files |")
 if ($checks.Count -gt 0) {
     $fromLastRun = @($checks | Where-Object { $_.from_last_run }).Count
-    $md.Add("| Gates | " + $checks.Count + " known, " + $failedChecks.Count + " failing (" + $fromLastRun + " from the run at " + $checksGeneratedUtc + ", rest from earlier runs) |")
+    $olderPersisted = $checks.Count - $fromLastRun
+    $md.Add("| Gates | latest run: " + $fromLastRun + " total / " + $lastRunFailedChecks.Count + " failing at " + $checksGeneratedUtc + "; persisted union: " + $checks.Count + " known / " + $failedChecks.Count + " failing (" + $olderPersisted + " older targeted/server result(s)) |")
 } else {
     $md.Add("| Gates | no run_check.ps1 results found |")
 }
@@ -319,7 +345,15 @@ if ($null -ne $scanBlock) {
 if ($null -ne $smokeBlock) {
     $smokeWord = "passed"
     if (-not $smokeBlock.passed) { $smokeWord = "FAILED" }
-    $md.Add("| Last device run | " + $smokeBlock.run_utc + " on " + $smokeBlock.device_model + " (" + $smokeWord + ") |")
+    $deviceDetail = $smokeWord
+    if (-not [string]::IsNullOrWhiteSpace($smokeBlock.apk)) {
+        $deviceDetail += "; ``" + $smokeBlock.apk + "``"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($smokeBlock.apk_sha256)) {
+        $deviceDetail += "; SHA-256 ``" + $smokeBlock.apk_sha256.Substring(0, [Math]::Min(16, $smokeBlock.apk_sha256.Length)) + "``"
+    }
+    if ($smokeBlock.identity_verified) { $deviceDetail += "; device hash verified" }
+    $md.Add("| Last device run | " + $smokeBlock.run_utc + " on " + $smokeBlock.device_model + " (" + $deviceDetail + ") |")
 } else {
     $md.Add("| Last device run | none recorded |")
 }

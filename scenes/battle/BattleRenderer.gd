@@ -16,6 +16,10 @@ var _visual_pos_cache: Dictionary = {}
 var _status_vfx_by_id: Dictionary = {}
 # HpFill refs cached at node creation so the per-frame HP sync never walks the tree.
 var _hp_fill_by_id: Dictionary = {}
+# V2 P1-05：已被死亡演出接管的 2D 层（名字 + 血条），uid -> Control。
+# 从 _unit_nodes 里搬出来才不会被 _sync_unit_nodes 的剪枝当场释放 ——
+# 和 3D 侧的 _cue_corpses 是同一个套路。
+var _dying_unit_nodes: Dictionary = {}
 var _top5_next_refresh_msec := 0
 var _formation_allies_hidden_for_intro := false
 
@@ -151,6 +155,13 @@ func _position_unit_node(node: Control, f: Dictionary) -> void:
 func _sync_unit_nodes(fighters: Array, living_ids: Dictionary) -> void:
 	for f in fighters:
 		var id := _visual_id(f)
+		# Replay/state arrays retain dead fighters. Without this guard a dead
+		# fighter whose 2D node was pruned below is rebuilt on the next visual
+		# refresh, then immediately queued for deletion again. Round 20 keeps 67
+		# dead entries, so that churn recreated labels, HP bars, anchors and shadows
+		# every frame even after the battlefield had mostly emptied.
+		if not living_ids.has(id):
+			continue
 		if _unit_nodes.has(id):
 			continue
 		var node := _make_unit_node(f)
@@ -160,12 +171,59 @@ func _sync_unit_nodes(fighters: Array, living_ids: Dictionary) -> void:
 		_arena.add_child(node)
 		_apply_formation_intro_visibility(id, f)
 	# O(N) cleanup: drop nodes whose unit is no longer alive (set lookup).
+	#
+	# 被死亡演出接管的那些已经从 _unit_nodes 搬进 _dying_unit_nodes 了，
+	# 所以这里看不到它们，也就不会在尸体还在淡出时把血条当场释放。
+	# 走到这条分支的是非死亡的移除（重开、seek、战斗结束清场）。
 	for key in _unit_nodes.keys():
 		if not living_ids.has(key):
 			var n: Node = _unit_nodes[key]
 			n.queue_free()
 			_unit_nodes.erase(key)
 			_hp_fill_by_id.erase(key)
+
+
+# V2 P1-05 第 2 条："血条和状态图标同步，不突然消失"。
+#
+# 把 2D 层（名字 + 血条）从剪枝路径里扣下来，交给死亡演出。和 3D 侧的
+# cue_claim_corpses() 对称：都必须在 _refresh_visuals() 之前抢下来。
+func claim_unit_node_for_death(uid: String) -> Control:
+	if _dying_unit_nodes.has(uid):
+		return _dying_unit_nodes[uid] as Control
+	var node_value = _unit_nodes.get(uid)
+	if not (node_value is Control) or not is_instance_valid(node_value):
+		return null
+	_unit_nodes.erase(uid)
+	_hp_fill_by_id.erase(uid)
+	_dying_unit_nodes[uid] = node_value
+	return node_value as Control
+
+
+# 让扣下来的 2D 层与身体同时淡出。seconds 由 cue_play_death 传的同一个 fade
+# 决定 —— 两边共用一个数，就不会各自漂移。
+func _play_unit_node_death_fade(uid: String, seconds: float) -> void:
+	var node := claim_unit_node_for_death(uid)
+	if node == null:
+		return
+	var tween := create_tween()
+	tween.tween_property(node, "modulate:a", 0.0, maxf(0.05, seconds))
+	tween.tween_callback(func() -> void: _release_dying_unit_node(uid))
+
+
+func _release_dying_unit_node(uid: String) -> void:
+	var node_value = _dying_unit_nodes.get(uid)
+	_dying_unit_nodes.erase(uid)
+	if node_value is Node and is_instance_valid(node_value):
+		(node_value as Node).queue_free()
+
+
+# 与 cue_release_corpses() 对称：seek / 重开 / 结束时把还在淡的 2D 层收干净。
+func release_dying_unit_nodes() -> void:
+	for uid in _dying_unit_nodes.keys():
+		var node_value = _dying_unit_nodes[uid]
+		if node_value is Node and is_instance_valid(node_value):
+			(node_value as Node).queue_free()
+	_dying_unit_nodes.clear()
 
 func _hp_color_for_team(team: String) -> Color:
 	return Color(1.0, 0.18, 0.12) if team == "enemy" else Color(0.2, 0.9, 0.25)
@@ -371,7 +429,17 @@ func detach_actor_for_death(uid: String) -> Node3D:
 	_battle_3d_models.erase(uid)
 	var status_vfx = _status_vfx_by_id.get(uid)
 	if status_vfx != null and is_instance_valid(status_vfx):
-		(status_vfx as Node).queue_free()
+		# V2 P1-05 第 2 条："血条和状态图标同步，不突然消失"。
+		#
+		# 改前这里直接 queue_free() 掉控制器。但状态图标的 Sprite3D 并不是控制器的
+		# 子节点 —— StatusVFXController._anchor() 把锚点挂在**父节点**（也就是 actor）
+		# 上，图标再挂在锚点下。所以释放控制器根本收不掉图标：它们会以满不透明度
+		# 骑在正在下沉淡出的尸体上，直到 actor 被整个释放才一起消失。
+		#
+		# 改成只停掉控制器的每帧刷新，图标留在原地由 cue_play_death 的
+		# transparency tween 跟着身体一起淡。不停 _process 的话，它每帧都会把
+		# modulate.a 写回去，和 tween 逐帧打架（和 P1-03 同一个约束）。
+		(status_vfx as Node).set_process(false)
 	_status_vfx_by_id.erase(uid)
 	return node_value as Node3D
 
@@ -402,10 +470,8 @@ func _make_shared_model_node(f: Dictionary) -> Node3D:
 	PlayerProfile.mark_seen(str(f.get("id", unit_def.get("id", ""))))
 	var actor: Node3D = UnitActor3DScript.new()
 	actor.name = "UnitActor_%s" % str(f.get("id", "unit"))
-	var model_height := NOMINAL_UNIT_HEIGHT
-	if int(unit_def.get("tier", 1)) == 3:
-		model_height *= 1.12
-	actor.configure_contract(model_height)
+	var model_height := anchor_height_for(unit_def)
+	actor.configure_contract(model_height, UnitVisualResolverScript.archetype_for(unit_def))
 	actor.set_meta("unit_id", str(f.get("id", unit_def.get("id", ""))))
 	actor.set_meta("resolved_visual", unit_def)
 	actor.set_meta("material_audit", _empty_material_audit())
@@ -421,7 +487,7 @@ func _make_shared_model_node(f: Dictionary) -> Node3D:
 			actor.set_meta("material_audit", cleanup_imported_model_visuals(model))
 		var visual_scale := float(unit_def.get("model_visual_scale", 1.0)) * battle_unit_visual_scale
 		if int(unit_def.get("tier", 1)) == 3:
-			visual_scale *= 1.2
+			visual_scale *= TIER3_VISUAL_BOOST
 		model.scale = Vector3(visual_scale, visual_scale, visual_scale)
 		model.rotation_degrees = Vector3.ZERO
 		actor.attach_model(model)
@@ -465,6 +531,26 @@ const ANCHOR_HEAD_RATIO := 1.02   # just above the crown, where a status icon si
 const ANCHOR_BODY_RATIO := 0.55   # chest: what every projectile aims at
 const ANCHOR_FEET_RATIO := 0.05
 const ANCHOR_FALLBACK_HEIGHT := NOMINAL_UNIT_HEIGHT
+
+# T3 单位在模型缩放和锚点高度上必须用**同一个**系数。
+# 改前模型乘 1.2、高度乘 1.12，两边差 7%，锚点会略微偏低。
+const TIER3_VISUAL_BOOST := 1.2
+
+
+# V2 P1-04 第 4 条：锚点高度不能是所有角色共用的一个常量。
+#
+# NOMINAL_UNIT_HEIGHT(0.98) 是在 model_visual_scale = 1.0 下从渲染剪影量出来的。
+# 但 registry 里各类单位的缩放并不相同 —— 实测：普通单位 1.0（32 个全是）、
+# 援军 1.15、Boss **2.0**、佣兵 11 个 1.0 加 1 个 2.0。改前这个函数不看
+# model_visual_scale，于是 Boss 渲染高约 1.9 却按 1.098 算锚点：
+# 头顶状态图标挂在它胸口，投射物也瞄在半腰。
+#
+# 缩放乘进去之后，锚点跟着实际体型走，Boss 和援军才对得上。
+static func anchor_height_for(unit_def: Dictionary) -> float:
+	var height := NOMINAL_UNIT_HEIGHT * maxf(0.05, float(unit_def.get("model_visual_scale", 1.0)))
+	if int(unit_def.get("tier", 1)) == 3:
+		height *= TIER3_VISUAL_BOOST
+	return height
 
 func _ensure_status_vfx_controller(pivot: Node3D, model_height: float = 0.0) -> Node:
 	var height := model_height if model_height > 0.05 else ANCHOR_FALLBACK_HEIGHT
@@ -821,6 +907,62 @@ func _setup_animation_tracking_meta(pivot: Node3D, unit_def: Dictionary, f: Dict
 	pivot.set_meta("run_lock_until", 0.0)
 	pivot.set_meta("last_attack_count", int(f.get("attack_count", 0)))
 	pivot.set_meta("last_next_attack", float(f.get("next_attack", 0.0)))
+# --- V2 P1-05 第 3 条：胜利收尾 ------------------------------------------------
+#
+# 「镜头轻收束、幸存者定格、胜利字样和短音效/震动；至少保持 0.8 秒后进入奖励」。
+#
+# 保持时长已经够了（BattleUI.RESULT_DISPLAY_SECONDS = 1.0）。这里补的是收束和定格。
+#
+# **短音效没做**：assets/audio 下只有 BGM 和一个 start_game.mp3，没有胜利音效资源。
+# 编一个出来不如把缺口说清楚。震动用的是同一套无障碍开关，玩家关了就不震。
+
+# 正交相机的 size 越小越近。0.94 是"轻"收束：看得出镜头往里收了一点，
+# 又不会把边上的幸存者挤出画面。
+const VICTORY_CAMERA_TIGHTEN := 0.94
+const VICTORY_CAMERA_SEC := 0.45
+const VICTORY_SHAKE_STRENGTH := 2.2
+const VICTORY_SHAKE_SEC := 0.16
+
+
+func play_victory_finish() -> void:
+	_freeze_surviving_actors()
+	_tighten_battle_camera()
+	VFXManager.play_screen_shake(VICTORY_SHAKE_STRENGTH, VICTORY_SHAKE_SEC)
+
+
+# 幸存者定格：停在当前姿势，不再继续 idle 循环。
+# 只停动画、不动位置 —— 位置每帧仍由 _position_3d_model_node 写，动它会打架。
+func _freeze_surviving_actors() -> void:
+	for key in _battle_3d_models.keys():
+		var actor_value = _battle_3d_models[key]
+		if not (actor_value is Node3D) or not is_instance_valid(actor_value):
+			continue
+		var actor := actor_value as Node3D
+		if not actor.has_meta("animation_player_path"):
+			continue
+		var player := actor.get_node_or_null(actor.get_meta("animation_player_path")) as AnimationPlayer
+		if player != null and player.is_playing():
+			player.pause()
+
+
+func _tighten_battle_camera() -> void:
+	if _battle_3d_camera == null or not is_instance_valid(_battle_3d_camera):
+		return
+	# 从当前 size 起收，而不是从常量起 —— 重复调用（skip 之后又走正常结算）
+	# 不该把镜头一路收下去。
+	var target := BATTLE_CAMERA_SIZE * VICTORY_CAMERA_TIGHTEN
+	if _battle_3d_camera.size <= target + 0.001:
+		return
+	var tween := create_tween()
+	tween.tween_property(_battle_3d_camera, "size", target, VICTORY_CAMERA_SEC) 		.set_ease(Tween.EASE_OUT)
+
+
+# 下一场战斗必须从原始取景开始，否则收束会一场比一场紧。
+func reset_battle_camera_framing() -> void:
+	if _battle_3d_camera != null and is_instance_valid(_battle_3d_camera):
+		_battle_3d_camera.size = BATTLE_CAMERA_SIZE
+
+
 func _update_model_animation_state(model_node: Node3D, f: Dictionary) -> void:
 	var has_action_methods := model_node.has_meta("model_action_node_path")
 	var player: AnimationPlayer = null
@@ -894,8 +1036,45 @@ func _play_model_action_method(model_node: Node3D, action: String, force_restart
 	if not force_restart and str(model_node.get_meta("current_model_action", "")) == action:
 		return true
 	action_node.call(method_name)
+	_pause_hidden_model_animation_players(action_node)
 	model_node.set_meta("current_model_action", action)
 	return true
+
+
+# Most animated wrappers keep three imported FBX submodels alive (idle / attack /
+# run) and switch them with `visible`.  The imported AnimationPlayers do not stop
+# when their branch is hidden, so every unit can keep evaluating three skeletons.
+# Round 20 measured up to 137 hidden players, 205 Skeleton3D nodes and 15,175 bones.
+#
+# Run this only after an action switch (not every frame).  The active branch and the
+# wrapper's proxy player keep playing; only players whose whole parent subtree has
+# no visible mesh are paused.  Calling play_* on that branch later resumes it, while
+# attacks still restart because their wrappers already stop() before play().
+func _pause_hidden_model_animation_players(root: Node) -> int:
+	var paused := 0
+	for player in _find_animation_players(root):
+		if player == null or not player.is_playing():
+			continue
+		if _animation_player_subtree_has_visible_mesh(player):
+			continue
+		player.pause()
+		paused += 1
+	return paused
+
+
+func _animation_player_subtree_has_visible_mesh(player: AnimationPlayer) -> bool:
+	var subtree_root := player.get_parent()
+	if subtree_root == null:
+		return false
+	var stack: Array[Node] = [subtree_root]
+	while not stack.is_empty():
+		var node: Node = stack.pop_back()
+		if node is MeshInstance3D and (node as MeshInstance3D).is_visible_in_tree():
+			return true
+		for child in node.get_children():
+			stack.append(child)
+	return false
+
 
 func _model_action_method_name(action: String) -> String:
 	match action:

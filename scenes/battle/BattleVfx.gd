@@ -928,6 +928,85 @@ func cue_spawn_hit_number(target_uid: String, amount: int, kind: String, crit: b
 # Death had no visual at all before D4: the renderer simply freed the model on the
 # next refresh. Taking ownership of the actor lets it sink and fade instead of
 # blinking out (checklist section 6: never just disappear).
+# --- V2 P1-05 第 1 条：普攻的前冲/后坐 + 命中的单次小屏震 ----------------------
+#
+# 位移打在 **ActorRoot** 上而不是 actor 本身：_position_3d_model_node() 每帧都会
+# 用模拟位置重写 actor.position，动它一定会被覆盖掉。ActorRoot 是它的子节点，
+# 没有别的地方写，所以前冲能活过每帧重定位。
+const ATTACK_LUNGE_DISTANCE := 0.085
+const ATTACK_LUNGE_OUT_SEC := 0.07
+const ATTACK_LUNGE_BACK_SEC := 0.13
+# 远程是后坐不是前冲：出手方向相反、幅度更小。
+const RANGED_RECOIL_FACTOR := -0.55
+
+# 命中的小屏震。"小"是认真的：一场战斗里普攻的数量远多于技能，
+# 这个值和 skill_shake 默认的 6.5 差一个量级。
+const IMPACT_SHAKE_STRENGTH := 1.6
+const IMPACT_SHAKE_SEC := 0.09
+
+# V2 原话："暴击只放大 20%-35%，不堆全屏闪白"。
+# 所以暴击的强调就是把同一套演出乘上这个系数，而不是另加一层全屏效果。
+const CRIT_EMPHASIS_SCALE := 1.28
+
+
+func cue_play_attack_lunge(source_uid: String, target_uid: String, ranged: bool) -> bool:
+	var actor_value = _battle_3d_models.get(source_uid)
+	if not (actor_value is Node3D) or not is_instance_valid(actor_value):
+		return false
+	var actor := actor_value as Node3D
+	var root := actor.get_node_or_null("ActorRoot") as Node3D
+	if root == null:
+		return false
+	var direction := _lunge_direction(actor, target_uid)
+	if direction == Vector3.ZERO:
+		return false
+	var distance := ATTACK_LUNGE_DISTANCE * (RANGED_RECOIL_FACTOR if ranged else 1.0)
+
+	# 连续攻击时上一发还没收回来就再来一发，会把 ActorRoot 越推越远。
+	# 每次开始前先杀掉上一条，并从原点重新起步。
+	#
+	# 必须先 has_meta 再 get_meta，不能用 get_meta(key, default) 的两参数形式：
+	# Godot 4.7 里那个形式**照样会为缺失 key 打一条引擎 ERROR**（默认值确实返回了，
+	# 但错误也确实打了）。第一次攻击时这个 key 根本没设过，于是每个单位的第一拳都
+	# 刷一条 —— 2026-08-30 的真机 logcat 里 135 次，本地 round 1 一场 18 次。
+	#
+	# 这条当初能溜过桌面全套门禁，是因为它是普通的 `ERROR:` 而不是 `SCRIPT ERROR:`，
+	# 而 run_check.ps1 的 EngineErrorPatterns 里没有这个模式。
+	if actor.has_meta("lunge_tween"):
+		var previous = actor.get_meta("lunge_tween")
+		if previous is Tween and (previous as Tween).is_valid():
+			(previous as Tween).kill()
+	root.position = Vector3.ZERO
+
+	var tween := create_tween()
+	tween.tween_property(root, "position", direction * distance, ATTACK_LUNGE_OUT_SEC) 		.set_ease(Tween.EASE_OUT)
+	tween.tween_property(root, "position", Vector3.ZERO, ATTACK_LUNGE_BACK_SEC) 		.set_ease(Tween.EASE_IN_OUT)
+	actor.set_meta("lunge_tween", tween)
+	return true
+
+
+# 攻击者指向目标的水平方向。取不到目标就返回零向量，让调用方跳过这次前冲 ——
+# 猜一个方向会让单位朝着空处冲。
+func _lunge_direction(actor: Node3D, target_uid: String) -> Vector3:
+	var target_value = _battle_3d_models.get(target_uid)
+	if not (target_value is Node3D) or not is_instance_valid(target_value):
+		return Vector3.ZERO
+	var delta: Vector3 = (target_value as Node3D).global_position - actor.global_position
+	delta.y = 0.0
+	if delta.length() < 0.001:
+		return Vector3.ZERO
+	return delta.normalized()
+
+
+# 命中反馈：一次小屏震。暴击不另加东西，只把同一次震动乘 CRIT_EMPHASIS_SCALE。
+#
+# 不需要在这里做"只震一次"的去重：VFXManager.play_screen_shake 用 maxf 取强度，
+# 同一帧里多个命中不会叠加成一次大震。
+func cue_play_impact_feedback(_target_uid: String, crit: bool) -> void:
+	var strength := IMPACT_SHAKE_STRENGTH * (CRIT_EMPHASIS_SCALE if crit else 1.0)
+	_screen_shake(strength, IMPACT_SHAKE_SEC)
+
+
 func cue_claim_corpses(events: Array) -> void:
 	for event_value in events:
 		if not (event_value is Dictionary):
@@ -941,6 +1020,10 @@ func cue_claim_corpses(events: Array) -> void:
 		var claimed: Node3D = detach_actor_for_death(uid)
 		if claimed != null:
 			_cue_corpses[uid] = claimed
+		# 2D 层（名字 + 血条）也要在这里扣下来，理由和身体完全一样：
+		# 从入队到 cue_play_death 真正开播之间会经过 _refresh_visuals()，
+		# 那一趟剪枝会把血条当场释放，于是尸体还在淡、血条已经没了。
+		claim_unit_node_for_death(uid)
 
 
 func cue_release_corpses() -> void:
@@ -949,6 +1032,7 @@ func cue_release_corpses() -> void:
 		if actor != null and is_instance_valid(actor):
 			release_death_actor(str(uid), actor as Node3D)
 	_cue_corpses.clear()
+	release_dying_unit_nodes()
 
 
 func cue_play_death(victim_uid: String, duration_sec: float = 0.35) -> bool:
@@ -966,11 +1050,36 @@ func cue_play_death(victim_uid: String, duration_sec: float = 0.35) -> bool:
 	var sink := actor.position + Vector3(0.0, -0.35, 0.0)
 	tween.tween_property(actor, "position", sink, fade).set_ease(Tween.EASE_IN)
 	tween.tween_property(actor, "scale", actor.scale * 0.72, fade).set_ease(Tween.EASE_IN)
-	for child in actor.get_children():
-		if child is GeometryInstance3D:
-			tween.tween_property(child, "transparency", 1.0, fade * 0.94)
+	# V2 P1-05：淡出必须**真的**淡出。
+	#
+	# 改前这里只遍历 actor.get_children()，而 actor 的直接子节点是 ActorRoot 和
+	# 六个锚点 —— 一个 GeometryInstance3D 都没有（模型是 attach_model() 挂到
+	# actor_root 下面的）。也就是说这个循环一次都不匹配，死亡只有下沉和缩小、
+	# 没有淡出。改成遍历整棵子树。
+	for geometry in _death_fade_targets(actor):
+		tween.tween_property(geometry, "transparency", 1.0, fade * 0.94)
+	# 2D 的血条/名字层必须**跟着一起淡**，不能在尸体还在的时候就消失。
+	# V2 第 2 条原话："血条和状态图标同步，不突然消失"。
+	_play_unit_node_death_fade(victim_uid, fade)
 	tween.chain().tween_callback(func() -> void: release_death_actor(victim_uid, actor))
 	return true
+
+
+# 整棵子树里所有能调 transparency 的节点。
+#
+# 状态图标（Sprite3D）也在里面：它们挂在 HeadAnchor/BodyAnchor 下面，是 actor 的
+# 孙节点。detach_actor_for_death() 已经把 StatusVFXController 停掉了，所以这里
+# 改 transparency 不会被它的 _process 每帧覆写回去。
+func _death_fade_targets(root: Node) -> Array[GeometryInstance3D]:
+	var out: Array[GeometryInstance3D] = []
+	var pending: Array[Node] = [root]
+	while not pending.is_empty():
+		var node: Node = pending.pop_back()
+		if node is GeometryInstance3D:
+			out.append(node as GeometryInstance3D)
+		for child in node.get_children():
+			pending.append(child)
+	return out
 
 
 func _cue_unit_snapshot(sim_uid: String) -> Dictionary:

@@ -1,8 +1,8 @@
 # 资产清单（自动生成，勿手改）
 
-生成者：`tools/asset_manifest_check.gd`　生成时间：2026-08-28T13:33:01　Godot：4.7-stable (official)
+生成者：`tools/asset_manifest_check.gd`　生成时间：2026-08-31T10:36:51　Godot：4.7-stable (official)
 
-清单协议：`schema_version=2`　稳定库存指纹：`766575cb4b2a70195c6184e6eb6496576dfad0eb9f70547710ce80e595b74012`
+清单协议：`schema_version=2`　稳定库存指纹：`f029df50b2892028aad2796439eac0b12bac490de7f377d948ba2bbd28edecf8`
 
 机读版本在 `assets.manifest.json`，A2 用它在新机器上校验资源恢复结果。
 
@@ -10,9 +10,9 @@
 
 | 分类 | 文件数 | 体积 | 含义 |
 | --- | ---: | ---: | --- |
-| `runtime_required` | 917 | 2337.6 MiB | 正式运行会加载，必须进发布包 |
-| `dynamic_dir` | 302 | 258.0 MiB | 代码运行时按目录拼路径，静态查不到引用，一律保留 |
-| `editor_only` | 1 | 2.4 MiB | 只被 tools/ 或 scenes/debug/ 引用，不必进发布包 |
+| `runtime_required` | 918 | 2337.8 MiB | 正式运行会加载，必须进发布包 |
+| `dynamic_dir` | 300 | 257.5 MiB | 代码运行时按目录拼路径，静态查不到引用，一律保留 |
+| `editor_only` | 2 | 2.7 MiB | 只被 tools/ 或 scenes/debug/ 引用，不必进发布包 |
 | `third_party` | 257 | 7.3 MiB | 外部参考包，发布前必须有许可证（C1/A5） |
 | `import_meta` | 1036 | 1.1 MiB | Godot 导入元数据，由引擎生成 |
 | `unreferenced` | 145 | 333.6 MiB | 任何静态引用都查不到，可评估删除 |

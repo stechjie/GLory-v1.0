@@ -6,7 +6,7 @@
 # 结果去比对证据目录里的旧哈希：那些哈希是历史提交的产物，对不上时你分不清是
 # 跨平台不一致，还是这中间有人改了战斗——而这两件事的处理方式完全相反。
 #
-# 设备侧入口见 tools/DeviceHarness.gd：出包后既不能用位置参数覆盖主场景，也不能靠
+# 设备侧入口见 scripts/autoload/DeviceHarness.gd：出包后既不能用位置参数覆盖主场景，也不能靠
 # `am start --esa command_line` 传参（导出入口是 GodotAppLauncher，转发时丢 extras），
 # 所以改成用 run-as 往 user://device_harness.json 写标记文件来触发。
 #
@@ -84,7 +84,7 @@ if [ "$SKIP_DESKTOP" -eq 0 ]; then
         # 这里不能加 MSYS_NO_PATHCONV：Godot 是 Windows 程序，读不懂 /c/Users/...
         # 这种 MSYS 路径。设备侧路径要禁止转换，本机路径要转换——方向正好相反。
         "$GODOT_BIN" --headless --path "$PROJECT_ROOT_WIN" \
-            res://tools/battle_presentation_baseline.tscn -- \
+            res://scripts/qa/battle_presentation_baseline.tscn -- \
             --out "$OUT_DIR_WIN/desktop" --rounds "$ROUNDS" --no-screenshots \
             > "$OUT_DIR/desktop_run.log" 2>&1
         # "跑完了但报了缺陷"和"根本没跑完"要分开。前者的摘要依然有效、依然可比对，
@@ -127,7 +127,7 @@ else
 
     # 用标记文件而不是 am start 的 command_line extra：后者在这个包上到不了 Godot
     # （导出入口是 GodotAppLauncher，真正的 GodotApp 没 exported，转发时丢了 extras）。
-    # 详见 tools/DeviceHarness.gd 顶部记录的三次验证。
+    # 详见 scripts/autoload/DeviceHarness.gd 顶部记录的三次验证。
     #
     # 设备侧刻意**不**加 --no-screenshots。记录器会截战斗的 start/mid/end，那正是
     # A4 验收要的「首场战斗截图」，而且它直接渲染 BattleScreen，完全不经过备战 UI ——
@@ -164,6 +164,24 @@ else
     # logcat 按 tag 过滤后再存：不过滤的话正事全被刷屏埋掉。
     "$ADB_BIN" logcat -d -s godot > "$OUT_DIR/device_logcat.log" 2>/dev/null
 
+    # 设备运行时的 Godot ERROR 必须自己判红。
+    #
+    # 2026-08-30 的教训：那一轮 manifest 写着 passed=true、五个 SHA 也全一致，
+    # 脚本报 PASS —— 而 logcat 里躺着 135 条
+    # `ERROR: The object does not have any 'meta' values with the key 'lunge_tween'`。
+    # digest 一致只说明"两边算出同一个结果"，跟"运行时有没有报错"是两件事，
+    # 不能互相顶替。
+    if [ -f "$OUT_DIR/device_logcat.log" ]; then
+        LOGCAT_VERDICT="$(LOGCAT="$OUT_DIR/device_logcat.log" OUT_JSON="$OUT_DIR/device_log_errors.json" \
+            PYTHONIOENCODING=utf-8 python "$PROJECT_ROOT/tools/android_logcat_errors.py" 2>/dev/null)"
+        LOGCAT_RC=$?
+        if [ "$LOGCAT_RC" -ne 0 ]; then
+            fail "device_runtime_errors: ${LOGCAT_VERDICT:-设备日志里有 Godot 运行时错误}（见 device_logcat.log / device_log_errors.json）"
+        else
+            note "设备日志：${LOGCAT_VERDICT:-无 Godot ERROR}"
+        fi
+    fi
+
     if [ "$DEVICE_DONE" -ne 1 ]; then
         if grep -q 'DEVICE_HARNESS. 已接管' "$OUT_DIR/device_logcat.log" 2>/dev/null; then
             fail "device_run_incomplete: harness 接管了但没跑完（见 device_logcat.log）"
@@ -178,10 +196,46 @@ else
         "$ADB_BIN" exec-out run-as "$PACKAGE" tar cf - files/battle_presentation_baseline \
             > "$OUT_DIR/device_files.tar" 2>/dev/null
         if [ -s "$OUT_DIR/device_files.tar" ]; then
-            tar xf "$OUT_DIR/device_files.tar" -C "$OUT_DIR/device" --strip-components=2 2>/dev/null \
-                || fail "device_extract_failed: tar 解不开"
-            rm -f "$OUT_DIR/device_files.tar"
+            # 解包走 tools/android_baseline_extract.py，不用 `tar xf`。
+            #
+            # 2026-08-30 在 Windows/Git Bash 上踩过：`tar xf` 失败，而 fail() 只往数组里
+            # 追加、**不退出**，于是执行继续往下走，`rm -f` 把唯一的证据删了；接着
+            # manifest 不存在又追加一条 device_manifest_missing，最后比对没数据再追加
+            # digest_incomparable —— 一个根因级联成三条误分类，真正的原因反而看不见了。
+            #
+            # 现在：先解到 staging 并在那里验完整性，验过才换进 device/，
+            # 失败就地停住且**保留原始 tar**。三个分类因此互斥。
+            EXTRACT_STAGING="$OUT_DIR/device_staging"
+            if PYTHONIOENCODING=utf-8 python "$PROJECT_ROOT/tools/android_baseline_extract.py" \
+                    --tar "$OUT_DIR/device_files.tar" \
+                    --staging "$EXTRACT_STAGING" \
+                    --rounds "$ROUNDS" \
+                    --json "$OUT_DIR/device_extract.json" > "$OUT_DIR/device_extract.log" 2>&1; then
+                rm -rf "$OUT_DIR/device"
+                mv "$EXTRACT_STAGING" "$OUT_DIR/device"
+                # 只有解包并验证成功才删 tar；失败时它是唯一能复现的证据。
+                rm -f "$OUT_DIR/device_files.tar"
+                DEVICE_EXTRACT_OK=1
+            else
+                DEVICE_EXTRACT_OK=0
+                EXTRACT_CODE="$(EXTRACT_JSON="$OUT_DIR/device_extract.json"                     PYTHONIOENCODING=utf-8 python -c '
+import io, json, os
+try:
+    d = json.load(io.open(os.environ["EXTRACT_JSON"], encoding="utf-8"))
+    print("%s: %s" % (d.get("code", "device_extract_failed"), d.get("detail", "")))
+except Exception:
+    print("device_extract_failed: 解包器没有产出可读的结果")
+' 2>/dev/null)"
+                fail "${EXTRACT_CODE:-device_extract_failed: 解包失败}（原始 tar 已保留：$OUT_DIR/device_files.tar）"
+            fi
+        else
+            DEVICE_EXTRACT_OK=0
+            fail "device_pull_failed: 取回的 tar 是空的"
+        fi
 
+        # 解包成功才有必要判设备侧 manifest。失败时上面已经报过确切原因，
+        # 这里不再追加第二、第三条 —— 级联误分类就是这么来的。
+        if [ "${DEVICE_EXTRACT_OK:-0}" = "1" ]; then
             # 设备侧记录器自己的判定也要读。原来只判桌面那一份，结果 2026-08-20 出过
             # 一次假绿：设备 manifest 写着 passed=false、两条 director_missing_actor，
             # 脚本却报了 PASS —— digest 一致不代表设备上演出没问题，这是两件事。
@@ -203,8 +257,6 @@ else:
             else
                 fail "device_manifest_missing: 取回的产物里没有 manifest.json，无法判定设备侧结果"
             fi
-        else
-            fail "device_pull_failed: 取回的 tar 是空的"
         fi
     fi
 fi
@@ -218,7 +270,11 @@ import io, json, os, sys
 desktop, device = os.environ["DESKTOP_DIR"], os.environ["DEVICE_DIR"]
 # 只比 digest，不比性能：帧率和内存在两个平台上本来就不同，那不是不一致。
 # 要证明的是"同一份回放在两边算出同一个结果"。
-KEYS = ["roster_sha256", "replay_sha256", "frame_events_sha256", "final_state_sha256", "repeatable"]
+# 六项。2026-08-30 之前漏了 repeat_replay_sha256 —— 只比了 `repeatable` 这个布尔，
+# 于是「同一份回放跑两遍结果一样」只验到了设备自己的自洽，没验到两边的重放摘要相同。
+# 那一轮是人工补比对才确认五个 SHA 全一致的。
+KEYS = ["roster_sha256", "replay_sha256", "frame_events_sha256",
+        "final_state_sha256", "repeat_replay_sha256", "repeatable"]
 
 def load(root, rnd):
     p = os.path.join(root, "round_%02d" % rnd, "hashes.json")
@@ -241,20 +297,27 @@ for rnd in rounds:
         same = True
         for k in KEYS:
             av, bv = a.get(k), b.get(k)
-            entry["fields"][k] = {"desktop": av, "device": bv, "equal": av == bv}
-            if av != bv:
+            # 缺字段一律判不等：两边都没有这个 key 时 None == None 会静静地「相等」，
+            # 那等于把「没验到」记成「验过了」。
+            present = (k in a) and (k in b)
+            equal = present and av == bv
+            entry["fields"][k] = {"desktop": av, "device": bv,
+                                  "equal": equal, "present_both": present}
+            if not equal:
                 same = False
+                if not present:
+                    out["notes"].append("round %d: 字段 %s 至少一侧缺失" % (rnd, k))
         entry["verdict"] = "identical" if same else "differs"
         if not same:
             out["match"] = False
     out["rounds"][str(rnd)] = entry
 
 io.open(os.environ["OUT_JSON"], "w", encoding="utf-8", newline="\n").write(
-    json.dumps(out, ensure_ascii=False, indent=2) + "\n")
+    json.dumps(out, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
 
 for rnd, entry in sorted(out["rounds"].items()):
     print("round %s: %s" % (rnd, entry["verdict"]))
-    for k, v in entry.get("fields", {}).items():
+    for k, v in sorted(entry.get("fields", {}).items()):
         mark = "OK " if v["equal"] else "DIFF"
         print("  %s %-20s desktop=%s" % (mark, k, str(v["desktop"])[:20]))
         if not v["equal"]:

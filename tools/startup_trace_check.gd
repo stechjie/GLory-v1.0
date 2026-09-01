@@ -45,6 +45,7 @@ func _run() -> void:
 	_check_build_info_absence_is_honest(trace)
 	_check_build_info_line(trace)
 	_check_overlay_is_build_gated()
+	_check_android_install_identity_contract()
 
 	trace.queue_free()
 	_h.finish(get_tree())
@@ -254,6 +255,44 @@ func _check_overlay_is_build_gated() -> void:
 	_h.expect(source.contains("StartupTrace.build_info_label()"),
 		"overlay_missing_identity",
 		"QA 角标只显示 FPS —— 真机报告最缺的是「这是哪个包」，不是帧率")
+
+
+# `pm install` can print Success immediately before the adb transport drops. A
+# previous revision logged `install ok` at that point and then discovered that the
+# old package was still installed. versionCode is not enough because QA builds
+# intentionally reuse it, so the device's base.apk must match the local APK hash.
+func _check_android_install_identity_contract() -> void:
+	var source := FileAccess.get_file_as_string("res://tools/android_smoke.sh")
+	if not _h.expect(not source.is_empty(), "android_smoke_unreadable", "读不到 android_smoke.sh"):
+		return
+
+	var transport_at := source.find("if _wait_transport; then")
+	var verified_note_at := source.find("install verified via on-device APK sha256")
+	_h.expect(transport_at >= 0, "install_transport_gate_missing",
+		"android_smoke.sh 没有等待安装后的 adb 通道恢复")
+	_h.expect(verified_note_at > transport_at, "install_verified_too_early",
+		"安装成功仍在设备通道恢复与身份核验之前宣布")
+	_h.expect(not source.contains("note \"install ok via $INSTALL_METHOD\""),
+		"install_ok_from_pm_output",
+		"脚本又把 pm install 的 Success 直接写成 install ok，可能测到旧包")
+	_h.expect(source.contains("^Success([[:space:](]|$)"),
+		"install_success_match_not_anchored",
+		"安装日志成功匹配没有锚定 PackageManager 的 Success 行")
+	_h.expect(not source.contains("grep -qi 'Success'"),
+		"install_success_match_too_broad",
+		"宽泛 Success 匹配会把 adb 的 daemon started successfully 当成安装成功")
+	_h.expect(source.contains("INSTALLED_APK_SHA") and source.contains("= \"$APK_SHA\""),
+		"installed_apk_hash_not_compared",
+		"设备 base.apk SHA-256 没有与本地 APK_SHA 比较")
+	_h.expect(source.contains("installed_apk_hash_mismatch"),
+		"installed_apk_hash_mismatch_not_fatal",
+		"设备与本地 APK 哈希不一致时没有明确失败码")
+	_h.expect(source.contains("\"installed_apk_sha256\""),
+		"installed_apk_hash_missing_from_evidence",
+		"smoke.json 没保存设备 APK 哈希，事后无法审计")
+	_h.expect(source.contains("\"identity_verified\""),
+		"install_identity_verdict_missing",
+		"smoke.json 没有安装身份核验结论")
 
 
 # Returns the line the tracer actually emitted for this mark, not a reconstruction:

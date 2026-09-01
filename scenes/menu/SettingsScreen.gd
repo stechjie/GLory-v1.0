@@ -6,6 +6,7 @@ var _btn_zh: Button
 var _btn_en: Button
 var _quality_btns: Array[Button] = []
 var _board_guides_btn: CheckButton
+var _presentation_btns: Dictionary = {}
 
 func _ready() -> void:
 	_build()
@@ -113,6 +114,29 @@ func _build() -> void:
 	panel.add_child(_board_guides_btn)
 	_refresh_board_guides_button()
 
+	# V2 P1-05 第 4 条：屏震 / 闪光 / hit-stop 三个无障碍开关。
+	# 三项默认开启 —— 它们是演出效果，默认关掉等于让绝大多数玩家看到更差的版本。
+	var sep_access := HSeparator.new()
+	panel.add_child(sep_access)
+	for spec in [
+		{"key": "screen_shake", "label": "settings_screen_shake"},
+		{"key": "flash_effects", "label": "settings_flash_effects"},
+		{"key": "hit_stop", "label": "settings_hit_stop"},
+	]:
+		var spec_dict: Dictionary = spec
+		var key := str(spec_dict["key"])
+		var btn := CheckButton.new()
+		btn.text = tr(str(spec_dict["label"]))
+		btn.custom_minimum_size = Vector2(280, 46)
+		btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		btn.button_pressed = PlayerProfile.get_presentation_toggle(key)
+		btn.toggled.connect(func(enabled: bool):
+			PlayerProfile.set_presentation_toggle(key, enabled)
+			_refresh_presentation_button(key))
+		panel.add_child(btn)
+		_presentation_btns[key] = btn
+		_refresh_presentation_button(key)
+
 	var sep2 := HSeparator.new()
 	panel.add_child(sep2)
 
@@ -129,6 +153,16 @@ func _refresh_quality_buttons() -> void:
 		var btn := _quality_btns[i]
 		if is_instance_valid(btn):
 			btn.modulate = Color(1.0, 0.85, 0.3) if i == current else Color(1, 1, 1)
+
+func _refresh_presentation_button(key: String) -> void:
+	var btn_value = _presentation_btns.get(key)
+	if not (btn_value is CheckButton) or not is_instance_valid(btn_value):
+		return
+	var btn := btn_value as CheckButton
+	var on: bool = PlayerProfile.get_presentation_toggle(key)
+	btn.button_pressed = on
+	btn.modulate = Color(1.0, 0.88, 0.48) if on else Color(0.76, 0.78, 0.78)
+
 
 func _refresh_board_guides_button() -> void:
 	if not is_instance_valid(_board_guides_btn):

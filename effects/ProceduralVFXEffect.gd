@@ -1,5 +1,6 @@
 extends Node2D
 class_name ProceduralVFXEffect
+const PresentationSettings := preload("res://effects/runtime/presentation/PresentationSettings.gd")
 
 const QUALITY := preload("res://effects/vfx3d/core/VFXQualityBudget.gd")
 
@@ -84,6 +85,10 @@ func _play_hit(color: Color, scale_mul: float) -> void:
 	var flash := _acquire_child("Flash", func(): return Polygon2D.new()) as Polygon2D
 	flash.color = Color(color.r, color.g, color.b, 0.42)
 	flash.polygon = _circle_polygon(22.0 * scale_mul, 18)
+	# V2 P1-05 第 4 条：闪光可关。_acquire_child 会复用节点，所以只能隐藏、
+	# 不能跳过创建 —— 上一次留下的那个否则会一直亮在场上。
+	# 关掉的只是这层加色闪，下面的冲击粒子照旧，命中本身仍然读得出来。
+	flash.visible = PresentationSettings.flash_allowed()
 
 	var particles := _acquire_particles("ImpactParticles")
 	# 命中闪光是全场最高频的一类，压到 12 并接质量档。

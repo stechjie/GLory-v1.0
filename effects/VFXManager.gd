@@ -2,6 +2,7 @@ extends Node
 
 const EffectDatabase := preload("res://effects/EffectDatabase.gd")
 const QUALITY := preload("res://effects/vfx3d/core/VFXQualityBudget.gd")
+const PresentationSettings := preload("res://effects/runtime/presentation/PresentationSettings.gd")
 
 # 所有加法/普通混合的 VFX 精灵共用这两份材质，避免每个特效实例 new 一份。
 static var MAT_ADD: CanvasItemMaterial = _make_blend_material(CanvasItemMaterial.BLEND_MODE_ADD)
@@ -132,6 +133,15 @@ func preload_textures(paths: Array) -> void:
 func pending_texture_count() -> int:
 	return _pending_texture_loads.size()
 
+# Read-only per-operation progress. PrepScreen passes only the textures for the
+# battle being entered, so unrelated deferred warmup work cannot inflate its UI.
+func ready_texture_count(paths: Array) -> int:
+	var ready := 0
+	for raw_path in paths:
+		if _texture_cache.has(str(raw_path)):
+			ready += 1
+	return ready
+
 func _drain_pending_texture_loads() -> void:
 	if _pending_texture_loads.is_empty():
 		return
@@ -256,14 +266,23 @@ func spawn_projectile_vfx(vfx_id: String, start_position: Vector2, target_node: 
 		projectile.play(config)
 	return projectile
 
+# V2 P1-05 第 4 条的无障碍开关在**入口**生效，不在各个调用点。
+# 全项目有几十处触发屏震/hit-stop，逐个去判迟早会漏掉一个，
+# 而"关掉了还偶尔震一下"比没做还糟。
 func play_hitstop(duration: float) -> void:
+	if not PresentationSettings.hit_stop_allowed():
+		return
 	_hitstop_until_msec = maxi(_hitstop_until_msec, Time.get_ticks_msec() + int(round(duration * 1000.0)))
 
 func is_hitstop_active() -> bool:
 	return Time.get_ticks_msec() < _hitstop_until_msec
 
 func play_screen_shake(strength: float, duration: float) -> void:
-	_shake_strength = maxf(_shake_strength, strength)
+	# 低画质档只降幅度不清零；玩家关掉时 scale 为 0，直接不排这次震动。
+	var scaled := strength * PresentationSettings.screen_shake_scale()
+	if scaled <= 0.0:
+		return
+	_shake_strength = maxf(_shake_strength, scaled)
 	_shake_until_msec = maxi(_shake_until_msec, Time.get_ticks_msec() + int(round(duration * 1000.0)))
 
 func set_camera(camera: Camera2D) -> void:

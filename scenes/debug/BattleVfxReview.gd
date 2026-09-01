@@ -14,7 +14,7 @@ const BattleScreenScene := preload("res://scenes/battle/BattleScreen.tscn")
 const BattleSim := preload("res://scripts/battle/BattleSimulator.gd")
 const BudgetScript := preload("res://effects/vfx3d/core/VFXQualityBudget.gd")
 const ResolverScript := preload("res://effects/runtime/presentation/VfxProfileResolver.gd")
-const Fixture := preload("res://tools/FixedBattleFixture.gd")
+const Fixture := preload("res://scripts/qa/FixedBattleFixture.gd")
 
 const DEFAULT_SEED := 20260823
 const SPEEDS := [0.25, 0.5, 1.0, 2.0]

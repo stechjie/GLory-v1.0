@@ -29,11 +29,12 @@ NetworkService="*res://scripts/autoload/NetworkService.gd"
 RngService="*res://scripts/autoload/RngService.gd"
 VFXManager="*res://effects/VFXManager.gd"
 TutorialMode="*res://scripts/tutorial/TutorialMode.gd"
-PerfLog="*res://tools/PerfLog.gd"
-DeviceHarness="*res://tools/DeviceHarness.gd"
+PerfLog="*res://scripts/autoload/PerfLog.gd"
+DeviceHarness="*res://scripts/autoload/DeviceHarness.gd"
 IssueReport="*res://scripts/autoload/IssueReport.gd"
 ModalStack="*res://ui/services/ModalStack.gd"
 DialogService="*res://ui/services/DialogService.gd"
+AsyncActionController="*res://ui/controllers/AsyncActionController.gd"
 
 [display]
 

@@ -38,35 +38,44 @@ import re
 import sys
 import zipfile
 
-# res:// top-level directories observed in the 2026-08-21 build. Anything outside
-# this set is a finding: either something new is being shipped on purpose (add it
-# here, with a reason) or a directory lost its .gdignore.
+# Intentional res:// top-level runtime directories. Anything outside this set is a
+# finding: either something new is being shipped on purpose (add it here, with a
+# reason) or a directory lost its .gdignore. `ui` is the production Glory theme,
+# component and modal-service root introduced by commit 248cb45.
 ALLOWED_ROOTS = {
     "assets",
     "data",
     "effects",
-    "officetest",
     "scenes",
     "scripts",
     "shaders",
-    "tools",
+    "ui",
 }
 
 # Roots that ship today and arguably should not, recorded so the report says so
-# out loud instead of quietly passing. Not failures: excluding tools/ outright
-# would break the build, because two autoloads live there.
-KNOWN_SHIPPING_NOTES = {
-    "tools": (
-        "QA tooling ships in the APK (~194 entries). Cannot simply be excluded: "
-        "tools/PerfLog.gd and tools/DeviceHarness.gd are autoloads, so dropping "
-        "the directory stops the game from booting. Needs the autoloads moved "
-        "out first -- tracked as a later batch, not a scan failure."
-    ),
-    "officetest": (
-        "Offline self-test screen ships in the APK (~8 entries). Reachable only "
-        "from a debug path; harmless but unnecessary in a release build."
-    ),
-}
+# out loud instead of quietly passing.
+#
+# 2026-08-29: this map is now empty, and that is the point.
+#
+# `tools` and `officetest` used to live here. They are now excluded by
+# export_presets (`tools/*,officetest/*`) and dropped out of ALLOWED_ROOTS, so
+# putting either back into the package is a hard failure rather than a note.
+#
+# Excluding tools/ wholesale was blocked by two autoloads living in it. The fix
+# was not a cleverer filter but moving what genuinely has to ship out of the
+# directory:
+#   * tools/PerfLog.gd, tools/DeviceHarness.gd  -> scripts/autoload/  (autoloads)
+#   * tools/battle_presentation_baseline.*      -> scripts/qa/        (device measurement)
+#   * tools/ReplayDigest.gd, FixedBattleFixture.gd -> scripts/qa/     (its only res://tools deps)
+#
+# scripts/qa/ ships deliberately: the device baseline has to run against the
+# **shipping** build, or the cross-platform digest comparison proves nothing
+# (V2 P0-08, "所测即所构建"). Everything else in tools/ -- 64 check scenes and
+# their harness -- has no business on a player's phone.
+#
+# Measured: 3780 -> 3503 entries. Size barely moved (757.8 -> 757.1 MB); the win
+# is the shipped surface, not the bytes. Assets are ~92% of the package.
+KNOWN_SHIPPING_NOTES = {}
 
 # Substring/regex patterns that must never appear in a shipped APK.
 FORBIDDEN_PATTERNS = [

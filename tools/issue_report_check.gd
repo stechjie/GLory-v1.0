@@ -34,7 +34,7 @@ func _run() -> void:
 	reporter.name = "IssueReportUnderTest"
 	add_child(reporter)
 
-	_check_unavailable_sections_are_honest(reporter)
+	_check_action_sections_are_wired(reporter)
 	_check_modal_stack_is_wired(reporter)
 	_check_blocker_scan_finds_a_real_blocker(reporter)
 	_check_small_controls_are_not_blockers(reporter)
@@ -49,23 +49,22 @@ func _run() -> void:
 	_h.finish(get_tree())
 
 
-# ModalStack and AsyncActionController are not built. Reporting an empty stack or a
-# zeroed action state would read as a measurement -- "no modal was open" -- when the
-# truth is that nobody looked.
-func _check_unavailable_sections_are_honest(reporter) -> void:
+# P0-05 is now built, so IssueReport must ask the service rather than leave the old
+# honest-at-the-time "unavailable" placeholder in place.
+func _check_action_sections_are_wired(reporter) -> void:
 	var report: Dictionary = reporter.capture("check_probe")
-	# modal_stack 已经不在这一组了：ModalStack 服务已由同事落地（ui/services/ModalStack.gd），
-	# 报告改成直接问它，断言见 _check_modal_stack_is_wired()。
 	for section_name in ["action_state", "input_breadcrumbs"]:
 		var section: Dictionary = report.get(section_name, {})
 		if not _h.expect(not section.is_empty(), "section_missing",
 				"报告里没有 %s 段" % section_name):
 			continue
-		_h.expect(section.has("available") and not bool(section["available"]),
-			"section_claims_available",
-			"%s 声称可用，但对应的服务还不存在" % section_name)
-		_h.expect(not str(section.get("reason", "")).is_empty(),
-			"section_no_reason", "%s 不可用却没有说明原因" % section_name)
+		_h.expect(bool(section.get("available", false)),
+			"action_section_still_stubbed",
+			"%s 仍声称 unavailable，但 AsyncActionController 已存在" % section_name)
+	_h.expect((report.get("action_state", {}) as Dictionary).has("active"),
+		"action_active_missing", "action_state 缺 active")
+	_h.expect((report.get("input_breadcrumbs", {}) as Dictionary).has("entries"),
+		"breadcrumb_entries_missing", "input_breadcrumbs 缺 entries")
 
 	# The sections that ARE answered must not be quietly missing.
 	for section_name in ["build", "startup", "warmup", "screen", "input_blockers", "network"]:

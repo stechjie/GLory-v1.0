@@ -135,7 +135,7 @@ _h.expect(not ResourceLoader.exists("res://effects/runtime/presentation/BattlePr
 - 用 `assert()`，失败会中断脚本，后面的用例一个都不跑
 
 **现在**：整份 replay（含 `frames` / `frame_events` / `roster` / `result`）走 SHA-256，
-且与 `tools/battle_presentation_baseline.gd` **共用** `tools/ReplayDigest.gd` 的规范化与哈希。
+且与 `scripts/qa/battle_presentation_baseline.gd` **共用** `scripts/qa/ReplayDigest.gd` 的规范化与哈希。
 两份实现会漂移，跨平台比对就失去意义 —— 所以抽成一处。
 
 `ReplayDigest.gd` 提供 `json_safe` / `canonical_json` / `sha256_text` / `sha256_variant` /
@@ -1878,3 +1878,30 @@ signal state_changed              # 需要整屏刷新
 * `PrepShared` 里还有 18 个抽象桩 —— 见步骤 6′，那是继承链未拆净的直接量度。
 * 面板的可见控件仍挂在宿主节点下（`host.add_child`），面板节点本身是零尺寸的逻辑宿主。
   让面板真正拥有自己的子树需要重排布局锚点，是独立的一步，风险与收益都要单独评估。
+
+---
+
+## 2026-08-31：隐藏动作动画活动门禁
+
+`battle_animation_activity` 用一个包含 idle / attack / run 三个动作分支的包装模型，按
+idle → attack → run → idle 走正式 `BattleRenderer._play_model_action_method()` 路径。每次切换都断言：
+
+- 当前动作元数据正确；
+- 当前可见分支的内部 `AnimationPlayer` 正在播放；
+- 完全隐藏分支的内部 `AnimationPlayer` 已暂停；
+- 包装场景的代理播放器仍保持原合同；
+- 隐藏播放数为 0。
+
+命令：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/run_check.ps1 battle_animation_activity
+```
+
+当前结果为 29/29 PASS。反向变异验证中临时移除
+`_pause_hidden_model_animation_players(action_node)`，同一门禁变为 12 项失败且进程退出码为 1；恢复调用后重新全绿。
+
+真机证据位于
+`C:\Users\Leno\Documents\Glory prep screen\android_qa_20260831_hidden_animation`：Round 20
+战斗就绪后的 46/46 个皮肤采样均为 `hidden_play=0`，平均 FPS 从 13.96 提升到 16.20；
+回合 1/5/20/21 的六项 digest 均与桌面逐字段一致，设备日志 0 Godot ERROR。

@@ -1,9 +1,9 @@
 {
   "by_class": {
-    "dynamic_dir": 302,
-    "editor_only": 1,
+    "dynamic_dir": 300,
+    "editor_only": 2,
     "import_meta": 1036,
-    "runtime_required": 917,
+    "runtime_required": 918,
     "third_party": 257,
     "unreferenced": 145
   },
@@ -4187,8 +4187,8 @@
       "path": "res://assets/models/mercenaries/merc_virgo_heal_animated/merc_virgo_heal_body_material.tres",
       "required_by": "res://assets/models/mercenaries/merc_virgo_heal_animated/mercvirgohealAnimated.gd",
       "required_by_count": 1,
-      "sha256": "74df53a748325acc2cf08d2328067ce893492007548aa766cafc5a7c678c9a89",
-      "size": 1489,
+      "sha256": "e19ca67a26df274c1ca0b7075a850acbb3c7972fa40b6cf442d21cabeda217ea",
+      "size": 1853,
       "type": "tres"
     },
     {
@@ -8977,8 +8977,8 @@
       "path": "res://assets/models/units/god_arbiter_animated/god_arbiter_weapon_material.tres",
       "required_by": "res://assets/models/units/god_arbiter_animated/GodarbiterAnimated.gd",
       "required_by_count": 1,
-      "sha256": "ffd58e081c54bacbb29c54b22d89fdd4066e57c625670ce8934f652fefb63259",
-      "size": 1465,
+      "sha256": "441f89bee02a8228120959ed4db35058921ba6accff4eea035eceae753171a43",
+      "size": 1826,
       "type": "tres"
     },
     {
@@ -12127,7 +12127,7 @@
       "path": "res://assets/models/units/human_swordsman_animated/human_swordsman_body_material.tres",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "1da3b436c761f2d6613e6c30e223da26f5a5d4d772d2462a38781aac90ecbe7d",
+      "sha256": "81953b05cde410edeb31cb604a3d4b682ddb6772f2eea10ffddeee5dd5103d81",
       "size": 1641,
       "type": "tres"
     },
@@ -15595,8 +15595,8 @@
       "class": "runtime_required",
       "license_id": "unknown",
       "path": "res://assets/ui/shop/card_frame_common.png",
-      "required_by": "res://effects/runtime/presentation/UnitVisualResolver.gd, res://scenes/prep/panels/ShopPanel.gd",
-      "required_by_count": 2,
+      "required_by": "res://effects/runtime/presentation/UnitVisualResolver.gd, res://scenes/prep/panels/ShopPanel.gd, res://tools/portrait_fallback_quality_check.gd",
+      "required_by_count": 3,
       "sha256": "224268702f9ccf807f69076e222ddd4979930a1df4a302599e78e7bf201ab148",
       "size": 306637,
       "type": "png"
@@ -17852,11 +17852,11 @@
       "type": "import"
     },
     {
-      "class": "dynamic_dir",
+      "class": "editor_only",
       "license_id": "unknown",
       "path": "res://assets/ui/unit_portraits/human_king.png",
-      "required_by": "",
-      "required_by_count": 0,
+      "required_by": "res://tools/portrait_fallback_quality_check.gd",
+      "required_by_count": 1,
       "sha256": "2eacc6041a99a17c348282b77847552cd9d9e10866c655d91f0b2cd83f6f4388",
       "size": 316714,
       "type": "png"
@@ -19832,11 +19832,11 @@
       "type": "import"
     },
     {
-      "class": "dynamic_dir",
+      "class": "runtime_required",
       "license_id": "unknown",
       "path": "res://assets/vfx/skills/distinct_v2/guardian_gold_shield_v2.png",
-      "required_by": "",
-      "required_by_count": 0,
+      "required_by": "res://scenes/battle/StatusVFXController.gd",
+      "required_by_count": 1,
       "sha256": "38fa7820ec5cfd06b78b045ec8b42a099b615974ad4ceeb8850f110864a5c979",
       "size": 163898,
       "type": "png"
@@ -26593,15 +26593,15 @@
     }
   ],
   "file_count": 2658,
-  "generated_at": "2026-08-28T13:33:01",
+  "generated_at": "2026-08-31T10:36:51",
   "generated_by": "tools/asset_manifest_check.gd",
   "godot_version": "4.7-stable (official)",
-  "inventory_sha256": "766575cb4b2a70195c6184e6eb6496576dfad0eb9f70547710ce80e595b74012",
+  "inventory_sha256": "f029df50b2892028aad2796439eac0b12bac490de7f377d948ba2bbd28edecf8",
   "missing_count": 3,
   "roots": [
     "res://assets",
     "res://effects/vfx3d/vfxv2"
   ],
   "schema_version": 2,
-  "total_bytes": 3082805543
+  "total_bytes": 3082806268
 }

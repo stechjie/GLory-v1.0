@@ -16,6 +16,14 @@ var needs_starter_pick := false
 # a player has seen is ever taken away.
 var codex_seen: Array[String] = []
 var board_readability_enabled := true
+# V2 P1-05 第 4 条：无障碍开关。三项都默认开启 —— 这是演出效果，不是辅助功能，
+# 默认关掉会让绝大多数玩家看到一个更差的版本。需要的人自己去设置里关。
+#
+# 低画质档会**额外**压制它们（见 PresentationSettings），那一层不改这里的值：
+# 玩家关掉的开关不该因为换了台手机就自己开回来。
+var screen_shake_enabled := true
+var flash_effects_enabled := true
+var hit_stop_enabled := true
 
 func _ready() -> void:
 	load_profile()
@@ -27,6 +35,9 @@ func load_profile() -> void:
 		active_pet = ""
 		codex_seen.clear()
 		board_readability_enabled = true
+		screen_shake_enabled = true
+		flash_effects_enabled = true
+		hit_stop_enabled = true
 		needs_starter_pick = true
 		save_profile()
 		return
@@ -36,6 +47,9 @@ func load_profile() -> void:
 		active_pet = ""
 		codex_seen.clear()
 		board_readability_enabled = true
+		screen_shake_enabled = true
+		flash_effects_enabled = true
+		hit_stop_enabled = true
 		needs_starter_pick = true
 		return
 	# Migrate before reading: older profiles carry renamed pet ids and no codex.
@@ -52,6 +66,9 @@ func load_profile() -> void:
 		if not entry.is_empty() and not codex_seen.has(entry):
 			codex_seen.append(entry)
 	board_readability_enabled = bool(data.get("board_readability_enabled", true))
+	screen_shake_enabled = bool(data.get("screen_shake_enabled", true))
+	flash_effects_enabled = bool(data.get("flash_effects_enabled", true))
+	hit_stop_enabled = bool(data.get("hit_stop_enabled", true))
 	needs_starter_pick = bool(data.get("needs_starter_pick", owned_pets.is_empty()))
 	# 出战宠物必须是已拥有的；否则回落到第一只（或空）。
 	if not active_pet.is_empty() and not owned_pets.has(active_pet):
@@ -68,6 +85,9 @@ func save_profile() -> void:
 		"needs_starter_pick": needs_starter_pick,
 		"codex_seen": codex_seen,
 		"board_readability_enabled": board_readability_enabled,
+		"screen_shake_enabled": screen_shake_enabled,
+		"flash_effects_enabled": flash_effects_enabled,
+		"hit_stop_enabled": hit_stop_enabled,
 	}
 	var f := FileAccess.open(PROFILE_PATH, FileAccess.WRITE)
 	if f != null:
@@ -81,6 +101,39 @@ func set_board_readability_enabled(enabled: bool) -> void:
 	board_readability_enabled = enabled
 	save_profile()
 	presentation_settings_changed.emit()
+
+
+# 三个无障碍开关共用一条写入路径：值没变就不落盘、不发信号。
+func set_presentation_toggle(key: String, enabled: bool) -> void:
+	match key:
+		"screen_shake":
+			if screen_shake_enabled == enabled:
+				return
+			screen_shake_enabled = enabled
+		"flash_effects":
+			if flash_effects_enabled == enabled:
+				return
+			flash_effects_enabled = enabled
+		"hit_stop":
+			if hit_stop_enabled == enabled:
+				return
+			hit_stop_enabled = enabled
+		_:
+			push_warning("[PROFILE] 未知的演出开关：%s" % key)
+			return
+	save_profile()
+	presentation_settings_changed.emit()
+
+
+func get_presentation_toggle(key: String) -> bool:
+	match key:
+		"screen_shake":
+			return screen_shake_enabled
+		"flash_effects":
+			return flash_effects_enabled
+		"hit_stop":
+			return hit_stop_enabled
+	return true
 
 # --- codex ---------------------------------------------------------------
 

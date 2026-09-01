@@ -3,7 +3,7 @@ class_name FixedBattleFixture
 
 # The one definition of the fixed 3v3 battle every diagnostic tool replays.
 #
-# Before this existed, tools/battle_presentation_baseline.gd and tools/promo_capture.gd
+# Before this existed, scripts/qa/battle_presentation_baseline.gd and tools/promo_capture.gd
 # each carried their own copy of the lineup and the match-state setup, with a comment
 # telling the next person to keep them identical by hand. scenes/debug/BattleVfxReview.gd
 # then shipped without the setup at all, which is why its "Run fixed battle" button

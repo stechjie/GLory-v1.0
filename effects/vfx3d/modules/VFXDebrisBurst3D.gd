@@ -1,5 +1,6 @@
 extends VFXBlockRoot
 class_name VFXDebrisBurst3D
+const PresentationSettings := preload("res://effects/runtime/presentation/PresentationSettings.gd")
 const SHADER_CACHE := preload("res://effects/vfx3d/core/VFXShaderCache.gd")
 
 const QUALITY := preload("res://effects/vfx3d/core/VFXQualityBudget.gd")
@@ -49,10 +50,12 @@ func _play_layered(at: Vector3, color: Color, amount: int, speed: float, lifetim
 	var spark_count := int(params.get("spark_count", 7))
 	var residue_size := float(params.get("residue_size", 0.78))
 
-	var flash := IMPACT_FLASH.new()
-	flash.name = "DebrisIgnitionFlash"
-	add_child(flash)
-	flash.play_flash(Vector3.ZERO, color.lightened(0.36), flash_size, minf(0.22, lifetime * 0.34))
+	# V2 P1-05 第 4 条：闪光可关。碎屑本体照旧，只省掉最亮的那一下。
+	if PresentationSettings.flash_allowed():
+		var flash := IMPACT_FLASH.new()
+		flash.name = "DebrisIgnitionFlash"
+		add_child(flash)
+		flash.play_flash(Vector3.ZERO, color.lightened(0.36), flash_size, minf(0.22, lifetime * 0.34))
 
 	var total_shards := QUALITY.particle_count(amount)
 	var base_count := total_shards / 3

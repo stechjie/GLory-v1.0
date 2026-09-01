@@ -5,6 +5,12 @@ signal release_finished
 
 const WALL_TEXTURE := preload("res://assets/vfx/battlefield/final_lane_light_wall.png")
 const RELEASE_SEC := 0.32
+# This is the final-round horizontal light wall, not the user-approved full-height
+# BattleLaneBarrier2D crystal. At 0.20 the 241 px source occupied about 48 px on
+# screen and crossed several unit silhouettes; 0.08 keeps the full lane width but
+# turns it into a roughly 19 px floor separator.
+const SCREEN_HEIGHT_SCALE := 0.08
+const STEADY_ALPHA := 0.36
 
 var _sprite: Sprite2D
 var _released := false
@@ -16,7 +22,7 @@ func _ready() -> void:
 	_sprite.texture = WALL_TEXTURE
 	_sprite.centered = true
 	_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-	_sprite.modulate = Color(0.82, 0.88, 1.0, 0.68)
+	_sprite.modulate = Color(0.82, 0.88, 1.0, STEADY_ALPHA)
 	add_child(_sprite)
 	set_process(false)
 

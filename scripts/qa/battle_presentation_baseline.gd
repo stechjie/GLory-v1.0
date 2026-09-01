@@ -2,7 +2,7 @@ extends Node
 
 # D0 baseline recorder for the first two fixed-seed PVE rounds.
 #
-# Runs on desktop and, since 2026-08-20, on an Android device: tools/DeviceHarness.gd
+# Runs on desktop and, since 2026-08-20, on an Android device: scripts/autoload/DeviceHarness.gd
 # swaps to this scene when the app is launched with --device-baseline, and the output
 # lands under user:// where `adb shell run-as` can read it. Both sides must stay this
 # same script — a separate device recorder would compute its digests differently and
@@ -16,11 +16,11 @@ extends Node
 
 const BattleSim := preload("res://scripts/battle/BattleSimulator.gd")
 const BattleReplay := preload("res://scripts/battle/BattleReplayUtil.gd")
-const ReplayDigest := preload("res://tools/ReplayDigest.gd")
+const ReplayDigest := preload("res://scripts/qa/ReplayDigest.gd")
 const BattleScreenScene := preload("res://scenes/battle/BattleScreen.tscn")
 const UnitVisualResolverScript := preload("res://effects/runtime/presentation/UnitVisualResolver.gd")
 const QualityBudgetScript := preload("res://effects/vfx3d/core/VFXQualityBudget.gd")
-const Fixture := preload("res://tools/FixedBattleFixture.gd")
+const Fixture := preload("res://scripts/qa/FixedBattleFixture.gd")
 
 const TOOL_VERSION := 1
 const DEFAULT_SEED := 20260807
@@ -30,7 +30,7 @@ const MIN_PERF_SAMPLES := 30
 const ROUND_TIMEOUT_SEC := 180.0
 const SCREENSHOT_LABELS: Array[String] = ["start", "mid", "end"]
 
-# The lineup and match-state setup live in tools/FixedBattleFixture.gd so the
+# The lineup and match-state setup live in scripts/qa/FixedBattleFixture.gd so the
 # baseline, the promo capture and the review scene cannot drift apart.
 
 var _out_dir := ""
@@ -783,7 +783,7 @@ func _monitor_mb(monitor: int) -> float:
 	return float(Performance.get_monitor(monitor)) / 1048576.0
 
 
-# 以下四个改为委托 tools/ReplayDigest.gd —— determinism_check 要用同一套规范化与哈希，
+# 以下四个改为委托 scripts/qa/ReplayDigest.gd —— determinism_check 要用同一套规范化与哈希，
 # 两份实现会漂移，跨平台比对就失去意义。行为逐字不变：Director 的四个冻结哈希依赖它们。
 func _canonical_json(value: Variant) -> String:
 	return ReplayDigest.canonical_json(value)

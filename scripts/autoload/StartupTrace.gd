@@ -90,7 +90,7 @@ var _build_info: Dictionary = {}
 
 
 func _ready() -> void:
-	# Same rule as tools/PerfLog.gd: only an explicit flag counts as "this is a
+	# Same rule as scripts/autoload/PerfLog.gd: only an explicit flag counts as "this is a
 	# server". A bare --headless is how every tools/ check runs, and those are
 	# allowed to trace.
 	#

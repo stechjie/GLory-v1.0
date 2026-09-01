@@ -22,6 +22,7 @@ const SellDropPanel := preload("res://scenes/prep/PrepSellDropPanel.gd")
 const BoardCellButton := preload("res://scenes/prep/PrepBoardCellButton.gd")
 const BenchCellButton := preload("res://scenes/prep/PrepBenchCellButton.gd")
 const RelationProgressOverlay := preload("res://scenes/prep/PrepRelationProgressOverlay.gd")
+const GloryBusyButtonScript := preload("res://ui/components/GloryBusyButton.gd")
 # 五个面板都以**场景**形式存在，可以脱离备战界面单独 load 起来跑测试
 # （tools/panel_scene_check.tscn 就是这么做的）—— 这是 README D2 的验收之一。
 # 两个常量各有用处：Script 用于类型标注（保住静态检查），Scene 用于实例化。
@@ -183,7 +184,7 @@ class SpaceFrameDebugOverlay:
 var _player_formation_art: FormationCrystal
 var _enemy_formation_art: FormationCrystal
 var _start_battle_label: Label
-var _start_battle_button: Button
+var _start_battle_button: GloryBusyButtonScript
 var _round_info_label: Label
 var _ready_indicator: Control
 var _ready_dots: Array = []
@@ -328,6 +329,9 @@ func _on_refresh_shop() -> void:
 	pass
 
 func _on_start_battle() -> void:
+	pass
+
+func _on_start_battle_input_down() -> void:
 	pass
 
 func _pick_treasure(tid: String) -> void:

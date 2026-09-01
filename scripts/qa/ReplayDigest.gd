@@ -2,12 +2,12 @@ extends RefCounted
 
 # 回放摘要：规范化 JSON、SHA-256、首差异定位。
 #
-# 为什么要有这个文件：这三件事原本是 tools/battle_presentation_baseline.gd 的私有方法，
+# 为什么要有这个文件：这三件事原本是 scripts/qa/battle_presentation_baseline.gd 的私有方法，
 # 而 tools/determinism_check_node.gd 用的是 32 位 String.hash()。两套实现意味着
 # 两个工具算出来的"同一份回放"根本没有可比性 —— 而跨平台确定性比对的全部意义，
 # 就是两边用**同一套**规范化和哈希。所以抽成一处，两边共用。
 #
-# 用法：const ReplayDigest := preload("res://tools/ReplayDigest.gd")
+# 用法：const ReplayDigest := preload("res://scripts/qa/ReplayDigest.gd")
 # 不用 class_name：新增的全局类要靠编辑器导入才进 global_script_class_cache，
 # 直接 --headless 跑场景时可能解析不到（详见 docs/CHECKS.md）。
 #

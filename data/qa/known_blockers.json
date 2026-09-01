@@ -26,30 +26,6 @@
       ]
     },
     {
-      "id": "virgo-outline-alpha",
-      "title": "Virgo 自动矩阵通过，但人工可见黑色三角/透明轮廓错误",
-      "state": "in_progress",
-      "owner": "codex",
-      "area": "V2 P0-04 人工验收",
-      "detail": "merc_virgo_heal_body_material.tres 的 next_pass 使用不读取贴图 alpha 的 outline shader，透明区域被画成不透明黑边。自动门禁看不出来，商业美术验收未通过。",
-      "evidence": "reports/model_visual_matrix_virgo_glb_rig_normalized/model_visual_matrix.json",
-      "blocks": [
-        "V2 P0-04"
-      ]
-    },
-    {
-      "id": "android-battle-regression",
-      "title": "Android 战斗回归未完成",
-      "state": "not_started",
-      "owner": "unassigned",
-      "area": "README A4",
-      "detail": "冷启动与安装门禁已跑通，但完整战斗回归、低端机与冷缓存首启仍未做。",
-      "evidence": "",
-      "blocks": [
-        "README A4"
-      ]
-    },
-    {
       "id": "third-party-license-ledger",
       "title": "第三方许可总账未完成",
       "state": "not_started",
@@ -62,47 +38,70 @@
       ]
     },
     {
+      "id": "asset-bundle-manifest-drift",
+      "title": "资源 manifest 已更新，但可恢复 bundle/ZIP 仍属于旧库存",
+      "state": "in_progress",
+      "owner": "codex",
+      "area": "V2 P0-01 / 资源交付合同",
+      "detail": "当前 assets.manifest.json 的 inventory_sha256 为 7a1d6bf01af99c542a42be4c2532e7259eb66d672525b7cf58168a9160514a6f；assets.bundle.json 及其 2.43 GB 内容寻址 ZIP 仍属于 766575cb4b2a70195c6184e6eb6496576dfad0eb9f70547710ce80e595b74012。当前工作树的 asset_delivery 2658/2658 通过，但 restore_assets.ps1 会按设计拒绝不同库存指纹。需要在本轮文件冻结后运行 package_assets.ps1 生成新的 ZIP 和 bundle，保留旧归档，不得覆盖。",
+      "evidence": "assets.manifest.json; assets.bundle.json; tools/restore_assets.ps1",
+      "blocks": [
+        "V2 P0-01",
+        "V2 完成定义"
+      ]
+    },
+    {
       "id": "device-evidence-missing",
-      "title": "启动阈值仍未打开：真机基线只有单次样本",
+      "title": "当前 Android 启动仍超过 V3 预算，阈值尚未打开",
       "state": "in_progress",
       "owner": "unassigned",
       "area": "V3 P0-01",
-      "detail": "真机 T1-T4 已于 2026-08-28 在 25028RN03A / Android 15 上采到（无线 adb）。Main.gd 的 preload 图改为运行时 load 之后，t3_first_input_ready 从 8949 ms 降到 5156 ms（-42%），t0_trace_ready（引擎自身启动）4328 ms 仍占 84%。但这是单次、暖缓存的一个样本，V3 的 3000 ms 预算仍未达到（超 72%），所以 --assert-startup 仍未打开。需要 3-5 次冷/暖交替样本后再定阈值。",
-      "evidence": "build/android/smoke_20260828_212850_d278b93/smoke.json",
+      "detail": "2026-08-31 已对包含隐藏动作动画暂停修复的当前工作树重新导出并完成真机身份闭环：25028RN03A / Android 15，无线 ADB；设备 base.apk SHA-256 与本地 APK 38e2ded3…97d 完全一致，0 fatal / 0 script error，PSS 375131 KB。该次 t0_trace_ready=5033 ms、t1_first_frame=7403 ms、t3_first_input_ready=7259 ms，仍超过 T1<=800 ms / T3<=3000 ms 预算，因此 --assert-startup 保持关闭。",
+      "evidence": "C:/Users/Leno/Documents/Glory prep screen/android_qa_20260831_hidden_animation/smoke_20260831_155942_4780262/smoke.json",
       "blocks": [
         "V3 P0-01",
         "V3 完成定义"
       ]
     },
     {
-      "id": "human-mage-set-action-dead-guard",
-      "title": "法师技能预览的动作调用恒为死分支：全仓没有 set_action",
-      "state": "not_started",
-      "owner": "codex",
-      "area": "dynamic_call 衍生",
-      "detail": "assets/models/units/human_mage_animated/human_mage_skill_preview.gd:51 与 :65 写 `if unit and unit.has_method(\"set_action\")` 后调 unit.set_action(...)，但全仓没有任何脚本定义 func set_action。守卫恒为 false，攻击与 idle 两处动作一直被静默跳过——技能预览从未驱动过单位动画。正是 dynamic_call_check 文件头警告的那类事故。文件在 assets/ 下（gitignore + Codex 领域），Claude 未改。修法多半是换成 wrapper 上真实存在的方法名。",
-      "evidence": "reports/checks/dynamic_call_check.stdout.log",
-      "blocks": []
+      "id": "battle-round20-android-performance",
+      "title": "全局动画包装模型 Android 性能仍未达标（Round 20 压力样本 16.20 FPS）",
+      "state": "in_progress",
+      "owner": "unassigned",
+      "area": "V2 P1-01 / V3 P2-02",
+      "detail": "优化对象是所有战斗轮次和所有使用动画包装场景的单位，禁止按回合号或战斗类型特判；Round 20 只是当前高密度 Android 压力样本。2026-08-31 在 25028RN03A / Android 15 上重跑新 APK：该样本平均 16.20 FPS、1% low 7.08 FPS、p95 124.27 ms、最大帧时 143.31 ms、峰值 568 draw calls。死亡单位 2D 节点重建修复先把 9.04 提升到 13.96 FPS；本轮在通用动作切换路径暂停完全隐藏分支的 AnimationPlayer，战斗就绪后的 46/46 个皮肤采样 hidden_play=0，平均 FPS 再提升约 16.0%，相对 9.04 总提升约 79.2%，>100 ms 帧从 73 降到 42。全局性能仍未达商业移动端要求。回合 1/5/20/21 的六项 digest 均与桌面逐字段一致；后续功能回归还必须增加固定 PVP 样本和包装模型动作合同矩阵。",
+      "evidence": "C:/Users/Leno/Documents/Glory prep screen/android_qa_20260831_hidden_animation/baseline_round20_after_hidden_animation/device/round_20/summary.json",
+      "blocks": [
+        "V2 P1-01",
+        "V3 P2-02",
+        "V2 完成定义"
+      ]
     },
     {
-      "id": "tools-dir-ships-in-apk",
-      "title": "tools/ 与 officetest/ 进了发布包",
-      "state": "not_started",
+      "id": "sky-hymn-spirit-commercial-visual-review",
+      "title": "晶柱与护盾已复核通过；Sky Hymn Spirit 灰色半球仍需专项修复",
+      "state": "in_progress",
       "owner": "unassigned",
-      "area": "V2 P2-01 衍生",
-      "detail": "APK 内含 tools/ 194 条、officetest/ 8 条。不能直接排除：tools/PerfLog.gd 与 tools/DeviceHarness.gd 是 autoload，整个排除会让包起不来，需先把这两个移出 tools/。备份/证据目录本身不进包（各自带 .gdignore），这一条与备份无关。",
-      "evidence": "reports/apk_content_scan.json",
-      "blocks": []
+      "area": "V2 P1-04",
+      "detail": "2026-08-31 新 APK 真机截图确认：Round 1 普通竖向晶柱保持原公式；Round 21 终局横墙已缩为 8% 屏高、steady alpha 0.36；护盾常驻改为空心环，完整泡罩只在施加/吸收/破盾事件出现，角色脸部和武器不再被全身染色遮挡。相关门禁通过。仍未解决的是 Round 5 的 pve_sky_hymn_spirit 灰色半球；actor/material 审计仍判完整 textured model，需要单独批准 A/B 诊断后再修改。",
+      "evidence": "C:/Users/Leno/Documents/Glory prep screen/android_qa_20260831_hidden_animation/baseline_rounds_1_5_21_after_hidden_animation/device/round_05/start.png",
+      "blocks": [
+        "V2 P1-04",
+        "V2 完成定义"
+      ]
     },
     {
-      "id": "android-smoke-install-ok-false-positive",
-      "title": "android_smoke.sh 会在没装上时打印 install ok",
+      "id": "battle-victory-five-person-test",
+      "title": "Victory 已在动态录像出现，但 5 人识别率验收与胜利音效仍未完成",
       "state": "not_started",
-      "owner": "unassigned",
-      "area": "工具",
-      "detail": "2026-08-28 21:23 那次：脚本打印 install ok via push_pm_install 后 adb 通道掉线，报 device_lost_after_install。实际 dumpsys 的 lastUpdateTime 仍停在上一次安装，包根本没装上。那句 install ok 过于乐观，应在通道恢复后用 lastUpdateTime 或 APK 哈希复核之后再打，否则会让人以为测的是新包。",
-      "evidence": "build/android/smoke_20260828_212326_d278b93/install.log",
-      "blocks": []
+      "owner": "external",
+      "area": "V2 P1-05 人工验收",
+      "detail": "整合包录像约 38 秒可见居中 Victory，自动 result_overlay_seen=true 与录像一致；但原验收要求 5 名测试者在固定视频中识别率 >=80%，单人自动检查不能替代，胜利音效资产也仍未交付。当前录像是竖屏录制、横屏内容缩在中央，下一轮应锁定横屏重录。",
+      "evidence": "C:/Users/Leno/Documents/Glory prep screen/battle_presentation_android_20260830/glory_battle_integrated_round1_20260830_final.mp4",
+      "blocks": [
+        "V2 P1-05",
+        "V2 完成定义"
+      ]
     }
   ]
 }

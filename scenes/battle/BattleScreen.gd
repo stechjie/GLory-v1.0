@@ -7,6 +7,31 @@ const VfxProfileResolverScript := preload("res://effects/runtime/presentation/Vf
 
 # Upper bound on how long the result page may wait for presentation cues.
 const PRESENTATION_DRAIN_TIMEOUT_SEC := 3.0
+
+# --- V2 P1-01：最短可读演出时长 -----------------------------------------------
+#
+# 问题：固定 seed 的两个 PVE 回合实测只有 46 帧和 35 帧，按 SIM_TICK_SEC=0.1 播出来
+# 就是 4.6 秒和 3.5 秒。技能起手、命中、死亡挤在一起，玩家来不及看清发生了什么。
+#
+# 做法：**只改播放节奏，不碰模拟**。回放是一个已经算完的帧数组，播放速度决定的只是
+# 走多快；帧的内容、顺序、最终状态都不受影响。所以这里拉长的是可读窗口，
+# 不是战斗本身 —— final_state / replay / frame_events 三个哈希必须逐字不变，
+# 这一点由 tools/battle_presentation_baseline 的改前/改后对比守住。
+#
+# 刻意不做的事：
+#   * 不改 SIM_TICK_SEC（那是模拟步长，动它就是改战斗）
+#   * 不加速：natural >= 目标时保持 1.0，长战不会被压缩
+#   * 拉长有上限（READABLE_MIN_PLAYBACK_SPEED），否则一场 1 秒的战斗会被抻成慢动作
+#
+# 覆盖范围：**只覆盖回放路径**。本地模拟分支事先不知道总时长，无法据此定速度；
+# 那条路要另想办法（按事件密度动态调速），不在本项范围内。
+const READABLE_MIN_SEC := 5.0
+const READABLE_MIN_SEC_BOSS := 8.0
+# 最慢到 0.5 倍速，也就是最多拉长一倍。再慢就从"看得清"变成"拖沓"。
+const READABLE_MIN_PLAYBACK_SPEED := 0.5
+
+# 本场回放的播放倍率。1.0 表示自然时长已经够读，不做任何拉伸。
+var _readable_speed := 1.0
 const VFXSummonSpawn3D := preload("res://effects/vfx3d/modules/VFXSummonSpawn3D.gd")
 const FINAL_SUMMON_RED := preload("res://effects/vfx3d/profiles/formation/summon_formation_red.tres")
 const FINAL_SUMMON_BLUE := preload("res://effects/vfx3d/profiles/formation/summon_formation_blue.tres")
@@ -162,7 +187,7 @@ func _process(delta: float) -> void:
 		# 全程 draw call 反而从 274 掉到 24（画面越空越卡），直到回放播完才恢复。
 		# 封顶后追不上就丢时间，宁可回放比实时略慢，也不攒出无限积压。
 		# 下面本地模拟那条分支一直有 MAX_STEPS_PER_FRAME，只有这里漏了。
-		_sim_accumulator = minf(_sim_accumulator + delta * PLAYBACK_SPEED,
+		_sim_accumulator = minf(_sim_accumulator + delta * PLAYBACK_SPEED * _readable_speed,
 			SIM_TICK_SEC * MAX_STEPS_PER_FRAME)
 		var frames: Array = _replay.get("frames", [])
 		# 时间线终点：看自己时就是己方 replay 的长度；观战敌方时取两边较长者，
@@ -215,6 +240,8 @@ func _start_replay(replay: Dictionary) -> void:
 	_replay_mode = true
 	_replay_frame = 0
 	_replay_events_applied = -1
+	# 上一局的胜利收束不能带进这一局，否则镜头会一场比一场紧。
+	reset_battle_camera_framing()
 	_begin_presentation_replay(replay)
 	_load_replay_roster(replay)
 	_prefetch_battle_assets()
@@ -234,7 +261,8 @@ func _start_replay(replay: Dictionary) -> void:
 		_start_battle_music()
 		await _prepare_battle_models()
 		# Actors are registered now, so queued cues may resolve their anchors.
-		_presentation_director.set_playback_speed(PLAYBACK_SPEED)
+		_readable_speed = _compute_readable_speed()
+		_presentation_director.set_playback_speed(PLAYBACK_SPEED * _readable_speed)
 
 
 # 每帧最多建几个单位模型。3 个是折中：太小则读条拖长，太大则单帧又开始卡。
@@ -445,7 +473,7 @@ func _switch_active_replay(replay: Dictionary) -> void:
 		_apply_replay_frame(target_tick)
 	_refresh_visuals()
 	# _refresh_visuals() re-registered the new roster, so cues can resolve again.
-	_presentation_director.set_playback_speed(PLAYBACK_SPEED)
+	_presentation_director.set_playback_speed(PLAYBACK_SPEED * _readable_speed)
 
 func _clear_unit_visuals() -> void:
 	# 两份 replay 的 uid 命名会撞车（都是 player_L0_0 这类），
@@ -612,6 +640,9 @@ func _finish_replay() -> void:
 	_stop_battle_music()
 	await _await_presentation_drained()
 	await _play_crystal_attack_sequence(_result)
+	# V2 P1-05 第 3 条：镜头轻收束 + 幸存者定格，然后才出胜负字样。
+	# 保持时长由 RESULT_DISPLAY_SECONDS(1.0) 兜住 V2 的"至少 0.8 秒"。
+	play_victory_finish()
 	_show_result_overlay()
 	await get_tree().create_timer(RESULT_DISPLAY_SECONDS).timeout
 	battle_finished.emit(_result)
@@ -635,6 +666,32 @@ func _skip_animation() -> void:
 
 # Skipping calls skip_to_result() first, which clears every queued cue, so this
 # returns on the first check instead of stalling the result page.
+# 纯函数，供门禁直接喂合成输入验证（见 tools/battle_readable_pace_check.gd）。
+#
+# 只依赖帧数与回合类型。刻意不看战斗内容 —— 演出节奏不该由谁打赢了决定。
+static func readable_speed_for(frame_count: int, tick_sec: float, is_boss: bool) -> float:
+	if frame_count <= 0 or tick_sec <= 0.0:
+		return 1.0
+	var natural_sec := float(frame_count) * tick_sec
+	var want_sec := READABLE_MIN_SEC_BOSS if is_boss else READABLE_MIN_SEC
+	if natural_sec >= want_sec:
+		# 自然就够长：不加速、不减速。长战绝不被压缩。
+		return 1.0
+	return maxf(natural_sec / want_sec, READABLE_MIN_PLAYBACK_SPEED)
+
+
+# 让这场回放至少播满可读窗口。返回 1.0 表示自然时长已经够长，不做拉伸。
+func _compute_readable_speed() -> float:
+	var frames: Array = _replay.get("frames", [])
+	var speed := readable_speed_for(frames.size(), SIM_TICK_SEC, _effective_kind() == "boss")
+	# 打一行可观测的证据：真机/基线日志里能直接看到这场拉伸了没有、拉了多少。
+	if not is_equal_approx(speed, 1.0):
+		print("[READABLE_PACE] frames=%d natural=%.2fs speed=%.3f -> %.2fs kind=%s"
+			% [frames.size(), float(frames.size()) * SIM_TICK_SEC, speed,
+				float(frames.size()) * SIM_TICK_SEC / speed, _effective_kind()])
+	return speed
+
+
 func _await_presentation_drained() -> void:
 	var deadline := Time.get_ticks_msec() + int(PRESENTATION_DRAIN_TIMEOUT_SEC * 1000.0)
 	while _presentation_director.has_blocking_cues() and Time.get_ticks_msec() < deadline:

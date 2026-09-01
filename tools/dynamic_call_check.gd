@@ -39,11 +39,17 @@ const CHECK_NAME := "dynamic_call"
 const ROOTS := ["res://scenes", "res://scripts", "res://tools", "res://effects", "res://assets"]
 const SKIP_DIR_PATTERNS := ["*_prechange_backup_*", "*_backup_2*", "D?_*_20*", "E?_*_20*"]
 
-# 无法静态确定接收者的调用处数**棘轮**：上限固定为 189，只许降不许升。
+# 无法静态确定接收者的调用处数**棘轮**：上限固定为 191，只许降不许升。
 # 这类调用编译器一概管不到 —— 方法搬走 / 改名时它们不会报错，
 # 用 has_method 保护的还会**静默走 false 分支**（拖放整个失效就是这么来的）。
 # 调高这个数字等于承认又多了一处这种调用，改之前先想清楚能不能写成静态调用。
-const MAX_UNRESOLVED := 189
+#
+# 2026-08-29：189 -> 191。V2 P1-05 给 LegacyBattleVfxAdapter 加了两个 cue 派发
+# （cue_play_attack_lunge / cue_play_impact_feedback）。这个 adapter 里**每一个** cue
+# 都是 _host.call(...)：它刻意不持有 BattleVfx 的具体类型，改成静态调用等于把
+# 表现适配器耦合回渲染器，正是它存在的理由所要避免的。两处新增与既有的
+# cue_play_basic_attack / cue_play_death 同种同源，不是新引入的一类风险。
+const MAX_UNRESOLVED := 191
 
 var _h: CheckHarness
 var _files: Array[String] = []

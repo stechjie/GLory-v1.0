@@ -241,7 +241,7 @@ func _build_top_bar(root: VBoxContainer) -> void:
 	_player_formation_art = _create_formation_crystal(false)
 	formation_row.add_child(_player_formation_art)
 
-	var battle := Button.new()
+	var battle := GloryBusyButtonScript.new()
 	_start_battle_button = battle
 	battle.custom_minimum_size = START_BTN_SIZE
 	battle.focus_mode = Control.FOCUS_NONE
@@ -250,6 +250,7 @@ func _build_top_bar(root: VBoxContainer) -> void:
 	battle.add_theme_stylebox_override("normal", battle_style)
 	battle.add_theme_stylebox_override("hover", battle_style)
 	battle.add_theme_stylebox_override("pressed", battle_style)
+	battle.button_down.connect(_on_start_battle_input_down)
 	battle.pressed.connect(_on_start_battle)
 	var battle_label := Label.new()          # 单独 Label：_refresh_start_button_label 会改它的文字
 	battle_label.text = tr("ui_start_battle_btn")
@@ -260,6 +261,8 @@ func _build_top_bar(root: VBoxContainer) -> void:
 	battle_label.add_theme_font_size_override("font_size", 20)
 	battle_label.add_theme_color_override("font_color", Color(1.0, 0.90, 0.60))
 	battle.add_child(battle_label)
+	battle.bind_content_label(battle_label)
+	battle.set_idle_text(tr("ui_start_battle_btn"))
 	_start_battle_label = battle_label
 	# (3) Round number + next battle type (PVE / PVP / BOSS), stacked under the button.
 	var battle_col := VBoxContainer.new()
@@ -834,9 +837,9 @@ func _refresh_start_button_label() -> void:
 	if NetworkService.team_active:
 		var my := NetworkService.team_local_slot
 		var ready := my >= 0 and my < NetworkService.team_ready.size() and bool(NetworkService.team_ready[my])
-		_start_battle_label.text = tr("lobby_ready_done") if ready else tr("lobby_ready")
+		_start_battle_button.set_idle_text(tr("lobby_ready_done") if ready else tr("lobby_ready"))
 	else:
-		_start_battle_label.text = tr("ui_start_battle_btn")
+		_start_battle_button.set_idle_text(tr("ui_start_battle_btn"))
 
 func show_message(text: String) -> void:
 	# Transient centered toast that fades out (used for rejected placements, etc.).

@@ -174,6 +174,15 @@ static func pending_count() -> int:
 static func cached_count() -> int:
 	return _scenes.size()
 
+# Read-only progress query for a caller-owned path list. Unlike get_scene(), this
+# never waits or starts a cold load, so it is safe to call once per loading frame.
+static func ready_count(paths: Array) -> int:
+	var ready := 0
+	for raw_path in paths:
+		if _scenes.has(str(raw_path)):
+			ready += 1
+	return ready
+
 # 整局结束时叫一次，别让上一局的阵容留到下一局。
 static func reset_run() -> void:
 	_scenes.clear()

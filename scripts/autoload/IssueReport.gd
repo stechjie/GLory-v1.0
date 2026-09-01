@@ -3,11 +3,9 @@ extends Node
 # One-command snapshot for a "I tapped it and nothing happened" report.
 #
 # The V3 review asked for a fixed report shape (V3 P2-06) so that every such report
-# arrives with the same evidence instead of a sentence and a screenshot. Two of the
-# fields it lists come from services that do not exist yet -- there is no
-# ModalStack (P0-07) and no AsyncActionController (P0-05). Those are reported as
-# {"available": false, "reason": ...}. Filling them with zeros would be worse than
-# leaving them out, because a zero reads like a measurement.
+# arrives with the same evidence instead of a sentence and a screenshot. ModalStack
+# and AsyncActionController now answer their sections directly; an empty active list
+# therefore means "measured zero", not "nobody looked".
 #
 # One field is answered anyway, by measurement rather than by registry:
 # `input_blockers`. The reason "nothing happened" is usually that some full-screen
@@ -15,8 +13,8 @@ extends Node
 # more than ten places in this project that create one (BattleRenderer, PrepUI x4,
 # TutorialMode, Main's reconnect overlay, ...) and nothing tracks them, which is
 # exactly V3's C-08. So this walks the live tree and reports what is actually
-# consuming input right now. When ModalStack lands it can replace this; until then
-# it is the only answer available, and it is a real one.
+# consuming input right now. This remains alongside ModalStack: the registry reports
+# what was registered, while this scan finds an unregistered glass pane.
 #
 # Usage:
 #   IssueReport.capture("start button did nothing")   # from code or the debugger
@@ -61,7 +59,7 @@ var _last_recorded_ms := 0.0
 
 
 func _ready() -> void:
-	# Same rule as tools/PerfLog.gd and StartupTrace: only an explicit flag means
+	# Same rule as scripts/autoload/PerfLog.gd and StartupTrace: only an explicit flag means
 	# "this is a server". A bare --headless is how every tools/ check runs.
 	if "--server" in OS.get_cmdline_args() or "--dedicated-server" in OS.get_cmdline_args():
 		_enabled = false
@@ -134,14 +132,8 @@ func capture(reason: String) -> Dictionary:
 		"slow_frame_threshold_ms": SLOW_FRAME_MS,
 		"network": _network_section(),
 		"modal_stack": _modal_stack_section(),
-		"action_state": {
-			"available": false,
-			"reason": "AsyncActionController does not exist yet (V3 P0-05)",
-		},
-		"input_breadcrumbs": {
-			"available": false,
-			"reason": "InputBreadcrumb does not exist yet (V3 P0-05)",
-		},
+		"action_state": _action_state_section(),
+		"input_breadcrumbs": _input_breadcrumbs_section(),
 	}
 	_last_report = report
 	_emit(report)
@@ -154,6 +146,23 @@ func last_report() -> Dictionary:
 
 func slow_frames() -> Array:
 	return _slow_frames.duplicate(true)
+
+
+func _action_state_section() -> Dictionary:
+	if not is_instance_valid(AsyncActionController):
+		return {"available": false, "reason": "AsyncActionController autoload missing"}
+	return AsyncActionController.dump_action_state()
+
+
+func _input_breadcrumbs_section() -> Dictionary:
+	if not is_instance_valid(AsyncActionController):
+		return {"available": false, "reason": "AsyncActionController autoload missing"}
+	var entries: Array = AsyncActionController.recent_breadcrumbs(10)
+	return {
+		"available": true,
+		"count": entries.size(),
+		"entries": entries,
+	}
 
 
 # Appends to the ring buffer. Public because _process() cannot be driven on demand:

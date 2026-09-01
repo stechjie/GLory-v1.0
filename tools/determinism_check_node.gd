@@ -11,7 +11,7 @@ extends Node
 #   * 用 assert()，失败会中断脚本，后面的用例一个都不跑
 #
 # 现在：整份 replay（含 frames / frame_events / roster / result）走 SHA-256，
-# 与 tools/battle_presentation_baseline.gd **共用** tools/ReplayDigest.gd 的
+# 与 scripts/qa/battle_presentation_baseline.gd **共用** scripts/qa/ReplayDigest.gd 的
 # 规范化与哈希实现 —— 两份实现会漂移，跨平台比对就没有意义。
 #
 # 覆盖不是靠"跑了几个 case"声称的：每个 case 都要用 expect 断言它那一维
@@ -27,7 +27,7 @@ extends Node
 
 const BattleSim := preload("res://scripts/battle/BattleSimulator.gd")
 const CheckHarness := preload("res://tools/CheckHarness.gd")
-const ReplayDigest := preload("res://tools/ReplayDigest.gd")
+const ReplayDigest := preload("res://scripts/qa/ReplayDigest.gd")
 
 const CHECK_NAME := "determinism"
 

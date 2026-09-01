@@ -1,4 +1,5 @@
 extends "res://scenes/battle/BattleUI.gd"
+const PresentationSettings := preload("res://effects/runtime/presentation/PresentationSettings.gd")
 
 const BossProceduralVFX3D := preload("res://effects/BossProceduralVFX3D.gd")
 const CrystalRibbon3D := preload("res://effects/CrystalRibbon3D.gd")
@@ -392,6 +393,8 @@ func _add_battle_3v3_dividers(arena_wrap: Control) -> void:
 		barrier.name = "Battle3v3LaneBarrier%d" % i
 		barrier.z_index = 40
 		arena_wrap.add_child(barrier)
+		# 低画质档退化成细线提示。写法与下面 _board_readability_layer 那两处一致。
+		barrier.set_low_quality(VFXManager.get_quality_tier() == VFXQualityBudget.Tier.LOW)
 		barrier.play_loop(i * 7)
 		_3v3_barriers.append(barrier)
 
@@ -408,7 +411,11 @@ func _update_3v3_dividers() -> void:
 			var wall := _final_lane_walls[i]
 			wall.position = (p_left + p_right) * 0.5
 			wall.rotation = (p_right - p_left).angle()
-			wall.scale = Vector2(maxf(0.1, p_left.distance_to(p_right) / 1024.0), 0.20)
+			# Final-only horizontal light wall: preserve its full lane width, but keep
+			# the painted ridge close to the floor so it no longer cuts across faces
+			# and weapons. The regular vertical BattleLaneBarrier2D scale below is
+			# deliberately unchanged.
+			wall.scale = Vector2(maxf(0.1, p_left.distance_to(p_right) / 1024.0), FinalLaneLightWall2D.SCREEN_HEIGHT_SCALE)
 			if not wall.is_released() and _should_release_3v3_boundary(i):
 				wall.play_release()
 		return
@@ -427,6 +434,11 @@ func _update_3v3_dividers() -> void:
 		var mid_x := (p_top.x + p_bot.x) * 0.5
 		var barrier := _3v3_barriers[i]
 		barrier.position = Vector2(mid_x, (top_y + bot_y) * 0.5)
+		# 晶柱必须铺满战场可视高度。V2 P1-02 写的"高度缩到 45%-60%"曾经照做过一版，
+		# 用户实看后否决：「你把那个晶体缩短了，看不出那种隔开的感觉，不能弄短」。
+		# 高度就是"隔开"这件事的载体，不能拿它换视觉克制 —— 太抢眼要靠 alpha 解决
+		# （见 BattleLaneBarrier2D.STEADY_ALPHA）。tools/battle_lane_barrier_check
+		# 有一条反向断言盯着这里，防止有人照 V2 原文再缩一次。
 		barrier.scale = Vector2(0.42, maxf(0.1, (bot_y - top_y) / 512.0))
 		if not barrier.is_released() and _should_release_3v3_boundary(i):
 			barrier.play_release()
@@ -851,7 +863,8 @@ func _clear_crystal_hp_label() -> void:
 func _apply_crystal_hit(is_red_team: bool) -> void:
 	_crystal_hp_current = maxi(0, _crystal_hp_current - 1)
 	_refresh_crystal_hp_text()
-	_crystal_shake = CRYSTAL_SHAKE_IMPULSE
+	# 晶体抖动不走 VFXManager，得单独接同一个系数，否则"关掉屏震"会漏掉这一处。
+	_crystal_shake = CRYSTAL_SHAKE_IMPULSE * PresentationSettings.screen_shake_scale()
 	if _crystal_hp_label != null and is_instance_valid(_crystal_hp_label):
 		var pop := create_tween()
 		pop.tween_property(_crystal_hp_label, "scale", Vector2(1.22, 1.22), 0.06)

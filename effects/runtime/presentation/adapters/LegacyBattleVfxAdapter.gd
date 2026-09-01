@@ -71,6 +71,10 @@ func play_cue(event: Dictionary, completion: Callable, playback_speed: float) ->
 		"projectile_spawn":
 			return _play_projectile(event, source_uid, completion, speed)
 		"impact":
+			# V2 P1-05 第 1 条：命中要有一次小屏震；暴击只把它乘 20%-35%，
+			# 不另加全屏效果。is_crit 由 DamageService.emit_impact() 带过来。
+			_host.call("cue_play_impact_feedback", _first_target(event),
+				bool(event.get("is_crit", false)))
 			return _finish_after(_beat_seconds(event, IMPACT_SEC) / speed, completion, "impact")
 		"hit_number":
 			return _play_hit_number(event, completion)
@@ -114,6 +118,9 @@ func _play_attack_start(event: Dictionary, source_uid: String, completion: Calla
 		_with_cue_priority(event, func() -> void:
 			_host.call("cue_play_basic_attack", source_uid, _first_target(event), false))
 		_count("attack_start")
+	# V2 P1-05 第 1 条：近战前冲、远程后坐。起手这一拍还不知道会不会暴击
+	# （伤害尚未结算），所以幅度不分暴击 —— 暴击的强调放在 impact 那一拍。
+	_host.call("cue_play_attack_lunge", source_uid, _first_target(event), ranged)
 	return _finish_after(_beat_seconds(event, WINDUP_SEC) / speed, completion, "attack_start")
 
 

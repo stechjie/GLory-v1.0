@@ -5,7 +5,7 @@ extends Node
 # 桌面上要跑 D0 基线，直接把场景路径传给 Godot 就行。出包后这条路全断了，
 # 2026-08-20 在真机上逐条验过：
 #
-#   1. 位置参数覆盖主场景 —— 无效。传 res://tools/battle_presentation_baseline.tscn，
+#   1. 位置参数覆盖主场景 —— 无效。传 res://scripts/qa/battle_presentation_baseline.tscn，
 #      跑起来的还是正常游戏（导出包的主场景来自 pack）。
 #   2. `am start --esa command_line ...` —— 参数根本到不了 Godot。同一个包，无参数
 #      53 行 godot 日志、加 --verbose 52 行，没有差别。原因是导出的入口是
@@ -26,7 +26,7 @@ extends Node
 const FLAG := "--device-baseline"
 const TRIGGER_PATH := "user://device_harness.json"
 
-const BASELINE_SCENE := "res://tools/battle_presentation_baseline.tscn"
+const BASELINE_SCENE := "res://scripts/qa/battle_presentation_baseline.tscn"
 
 # 交给工具场景的参数。Android 上它们来自标记文件，桌面上来自命令行。
 var tool_args: PackedStringArray = []

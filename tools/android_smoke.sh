@@ -287,6 +287,13 @@ _push_install() {
     MSYS_NO_PATHCONV=1 "$ADB_BIN" shell rm -f "$remote" >> "$INSTALL_LOG" 2>&1
 }
 
+# Accept only PackageManager's result line. A loose case-insensitive search for
+# "Success" also matches adb's "daemon started successfully" banner, which once
+# turned a disconnected install into a false success.
+_install_log_has_success() {
+    grep -qiE '^Success([[:space:](]|$)' "$INSTALL_LOG"
+}
+
 # 大包直接走 push + pm install，不先试 adb install。实测 694 MB 的 streamed
 # install 会把设备的 adbd 拖挂成 offline，之后连 shell 都执行不了，只能在手机上
 # 重开 USB 调试才能恢复。小包才值得先试更快的直连安装。
@@ -322,13 +329,13 @@ else
         timeout "$INSTALL_TIMEOUT_SEC" "$ADB_BIN" install -r "$APK_WIN" > "$INSTALL_LOG" 2>&1
         INSTALL_RC=$?
     fi
-    if [ $INSTALL_RC -ne 0 ] || ! grep -qi 'Success' "$INSTALL_LOG"; then
+    if [ $INSTALL_RC -ne 0 ] || ! _install_log_has_success; then
         note "首次安装未成功（rc=$INSTALL_RC），回退为 push + pm install"
         INSTALL_METHOD="push_pm_install"
         _push_install
     fi
-    if grep -qi 'Success' "$INSTALL_LOG"; then
-        note "install ok via $INSTALL_METHOD"
+    if _install_log_has_success; then
+        note "pm install returned Success via $INSTALL_METHOD; waiting for on-device APK hash verification"
     else
         fail "install_failed: 两种方式都没装上（见 install.log）"
         tail -10 "$INSTALL_LOG" >&2
@@ -355,6 +362,9 @@ _wait_transport() {
 # the script outright instead of letting it report the failure it just recorded.
 INSTALLED_VERSION=""
 INSTALLED_PATH=""
+INSTALLED_APK_PATH=""
+INSTALLED_APK_SHA=""
+INSTALL_IDENTITY_VERIFIED=false
 INSTALLED_VERSION_CODE=0
 EXPECTED_VERSION_CODE=0
 RIVAL_PACKAGES=""
@@ -363,6 +373,22 @@ if _wait_transport; then
     INSTALLED_VERSION="$("$ADB_BIN" shell dumpsys package "$PACKAGE" 2>/dev/null | tr -d '\r' | grep -m1 'versionName' | sed 's/.*versionName=//')"
     INSTALLED_PATH="$("$ADB_BIN" shell pm path "$PACKAGE" 2>/dev/null | tr -d '\r' | head -1)"
     [ -n "$INSTALLED_PATH" ] || fail "not_installed: pm path 查不到 $PACKAGE"
+
+    # `pm install` printing Success is only an acknowledgement from PackageManager,
+    # not proof that the package now on disk is the APK produced by this run. The
+    # transport can drop at exactly this point, leaving the old package installed;
+    # versionCode cannot distinguish it because repeated QA builds reuse version 5.
+    # Hash the installed base.apk and require byte identity before claiming success.
+    INSTALLED_APK_PATH="${INSTALLED_PATH#package:}"
+    if [ -n "$INSTALLED_APK_PATH" ]; then
+        INSTALLED_APK_SHA="$(MSYS_NO_PATHCONV=1 "$ADB_BIN" shell sha256sum "$INSTALLED_APK_PATH" 2>/dev/null | tr -d '\r' | awk '{print $1}')"
+    fi
+    if [ "$INSTALLED_APK_SHA" = "$APK_SHA" ]; then
+        INSTALL_IDENTITY_VERIFIED=true
+        note "install verified via on-device APK sha256 ($INSTALLED_APK_PATH)"
+    else
+        fail "installed_apk_hash_mismatch: 设备上 ${INSTALLED_APK_SHA:-<读不到>} != 本地 $APK_SHA"
+    fi
 
     # versionCode, not just versionName: versionName is "" in this project's presets,
     # so it can never disagree with anything. The code is what actually distinguishes
@@ -570,6 +596,9 @@ cat > "$RUN_DIR/smoke.json" <<JSON
   "install": {
     "method": "$INSTALL_METHOD",
     "installed_path": "$INSTALLED_PATH",
+    "installed_apk_sha256": "$INSTALLED_APK_SHA",
+    "expected_apk_sha256": "$APK_SHA",
+    "identity_verified": $INSTALL_IDENTITY_VERIFIED,
     "version_name": "$INSTALLED_VERSION",
     "version_code": $INSTALLED_VERSION_CODE,
     "expected_version_code": $EXPECTED_VERSION_CODE,

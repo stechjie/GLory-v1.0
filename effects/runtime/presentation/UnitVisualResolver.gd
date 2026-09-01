@@ -65,7 +65,9 @@ static func resolve_definition(unit_id: String, raw_def: Dictionary = {}) -> Dic
 		for field in VISUAL_FIELDS:
 			if canonical.has(field):
 				out[field] = canonical[field]
-		for field in ["id", "name", "name_en", "race"]:
+		# `range` 只在缺失时补：它既是战斗字段也是 archetype_for() 的依据，
+		# fighter 自带的值优先，registry 只兜底。
+		for field in ["id", "name", "name_en", "race", "range"]:
 			if not out.has(field) and canonical.has(field):
 				out[field] = canonical[field]
 	if not unit_id.is_empty():
@@ -140,6 +142,24 @@ static func fallback_frame_for_tier(tier: int) -> String:
 	if tier == 2:
 		return FRAME_RARE
 	return FRAME_COMMON
+
+
+# V2 P1-04 第 4 条：近战、远程、Boss 分别配置 scale/anchor，不允许所有角色共用
+# 同一个高度常量。这里给出分类，锚点比例由 UnitActor3D 按分类取。
+#
+# 用 registry 里已有的 `range` 字段分近战/远程（实测 32 个单位：range 1 有 19 个、
+# range 4 有 11 个、另有 1.5 和 2 各一个），不新造字段。Boss 单独一档，因为它的
+# model_visual_scale 是 2.0，和其余单位不在一个量级。
+const RANGED_MIN_RANGE := 2.0
+
+static func archetype_for(definition: Dictionary) -> String:
+	var unit_id := str(definition.get("id", ""))
+	var kind := str(definition.get("visual_kind", infer_kind(unit_id, definition)))
+	if kind == "boss":
+		return "boss"
+	if float(definition.get("range", 1.0)) >= RANGED_MIN_RANGE:
+		return "ranged"
+	return "melee"
 
 
 static func infer_kind(unit_id: String, definition: Dictionary = {}) -> String:
