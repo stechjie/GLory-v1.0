@@ -31,6 +31,15 @@ const CHECK_NAME := "modal_lifecycle"
 
 const MENU_SCENE := "res://scenes/menu/MainMenu.tscn"
 const PREP_SCENE := "res://scenes/prep/PrepScreen.tscn"
+# 用 preload 常量做类型标注，下面对 PrepScreen 的调用才是**静态**调用。
+# 按方法名派发会给 dynamic_call 的棘轮（191，只降不升）添丁 —— 检查工具本身
+# 不该是让项目未受编译器检查的调用变多的那个。
+const PrepScript := preload("res://scenes/prep/PrepScreen.gd")
+
+# PvP 警告层的时间常量，与 PrepUI 里的保持一致；改那边这里要同步。
+const PVP_WARNING_ID := "pvp_warning"
+const PVP_WARNING_DWELL_SEC := 2.0
+const PVP_WARNING_FADE_SEC := 0.18
 
 # Cycles whose growth is treated as one-time initialisation.
 const WARMUP_CYCLES := 2
@@ -57,6 +66,7 @@ func _ready() -> void:
 	await _check_repeat_modal_is_one_modal()
 	await _check_dialog_dismissed_outside_can_reopen()
 	await _check_stale_request_cannot_clobber_new_one()
+	await _check_pvp_warning_modal()
 	await _check_page_cycles_leave_nothing()
 	await _check_final_state_is_clean()
 
@@ -313,6 +323,188 @@ func _check_stale_request_cannot_clobber_new_one() -> void:
 	AsyncActionController.cancel(fresh, "cleanup", true)
 	AsyncActionController.reset("lifecycle_probe")
 	await _settle()
+
+
+# --- 3b. PvP 开战警告层（C-11 的 C5，V3 P0-07 / P1-03）--------------------------
+#
+# 迁移前这一层自己铺全屏 MOUSE_FILTER_STOP、自己 queue_free，带两个真实缺陷：
+# 没有防叠守卫（2 秒内二次触发叠两层），以及 await 恢复后可能在已释放节点上动手。
+# 下面三组就是钉住这两条，外加一条「模态期间必须能被 IssueReport 看见」。
+
+func _new_prep() -> PrepScript:
+	var packed := load(PREP_SCENE) as PackedScene
+	if not _h.expect(packed != null, "pvp_prep_scene_load_failed",
+			"%s 加载不出来" % PREP_SCENE):
+		return null
+	var prep: PrepScript = packed.instantiate() as PrepScript
+	if not _h.expect(prep != null, "pvp_prep_wrong_type",
+			"PrepScreen.tscn 实例化出来的不是 PrepScreen 脚本类型"):
+		return null
+	add_child(prep)
+	return prep
+
+
+func _pvp_entries() -> int:
+	var n := 0
+	for row in ModalStack.dump_modal_stack():
+		if str(row.get("id", "")) == PVP_WARNING_ID:
+			n += 1
+	return n
+
+
+# content 子树里不该再有任何 STOP：那是 ModalStack backdrop 的职责。
+func _pvp_content_stop_count() -> int:
+	var host := get_tree().root.get_node_or_null(NodePath("Modal_%s" % PVP_WARNING_ID))
+	if host == null:
+		return 0
+	var content := host.get_node_or_null(NodePath("ModalRoot/PvPWarningOverlay"))
+	if content == null:
+		return 0
+	var counts := {"canvas_layers": 0, "stop_controls": 0, "timers": 0}
+	_walk(content, counts)
+	return int(counts["stop_controls"])
+
+
+func _wait_sec(seconds: float) -> void:
+	await get_tree().create_timer(seconds).timeout
+
+
+func _check_pvp_warning_modal() -> void:
+	ModalStack.close_all()
+	await _settle(4)
+	var baseline := _snapshot()
+	var base_depth := int(baseline["modal_depth"])
+
+	# --- A. 2 秒内重复触发，栈里只能有一个 -----------------------------------
+	var prep_a := _new_prep()
+	if prep_a == null:
+		return
+	await _settle(2)
+	# 基准必须在 PrepScreen 建好**之后**取。备战页自带约 20 个隐藏的 STOP 面板
+	# （_merc_overlay / _team_mercs_overlay / 宝藏层，正是 C-11 清点里的 C3/C4），
+	# 拿建页之前的基准比，会把它们全算成本次警告的残留。
+	var page_baseline := _snapshot()
+
+	prep_a._show_pvp_warning_overlay()
+	prep_a._show_pvp_warning_overlay()
+	await _settle(3)
+
+	# 前置：警告必须真的弹出来了。缺贴图时函数会静默 return，
+	# 那样下面每条断言都会空过 —— 空过比红更危险。
+	if not _h.expect(_pvp_entries() == 1, "pvp_warning_not_shown_once",
+			"两次触发后栈里有 %d 个 %s，应为 1（0 = 根本没弹出来，2 = 去重失效）"
+				% [_pvp_entries(), PVP_WARNING_ID]):
+		prep_a.queue_free()
+		await _settle(4)
+		return
+
+	_h.expect(ModalStack.depth() == base_depth + 1, "pvp_warning_stacked_twice",
+		"2 秒内触发两次后 depth=%d，相对基线 %d 应只 +1 —— 同 id 去重失效"
+			% [ModalStack.depth(), base_depth])
+
+	# --- C（前半）. 模态期间必须可被 IssueReport / dump_modal_stack 看见 ------
+	var seen_in_dump := false
+	var in_tree := false
+	for row in ModalStack.dump_modal_stack():
+		if str(row.get("id", "")) == PVP_WARNING_ID:
+			seen_in_dump = true
+			in_tree = bool(row.get("in_tree", false))
+	_h.expect(seen_in_dump, "pvp_warning_invisible_to_dump",
+		"警告正在显示，dump_modal_stack() 里却查不到 %s —— IssueReport 会看不见它"
+			% PVP_WARNING_ID)
+	_h.expect(in_tree, "pvp_warning_not_in_tree",
+		"%s 记在栈上却不在树里，玩家看不到它" % PVP_WARNING_ID)
+
+	# 迁移的核心收益：全屏 STOP 只剩 ModalStack 那一块，content 自己不再拦。
+	var content_stops := _pvp_content_stop_count()
+	_h.expect(content_stops == 0, "pvp_warning_content_still_stops",
+		("警告 content 子树里还有 %d 个 MOUSE_FILTER_STOP 控件 —— "
+		+ "输入拦截应当只由 ModalStack 的 backdrop 负责") % content_stops)
+
+	# 等完整生命周期（停留 + 淡出）自然结束。
+	await _wait_sec(PVP_WARNING_DWELL_SEC + PVP_WARNING_FADE_SEC + 0.6)
+
+	_h.expect(_pvp_entries() == 0, "pvp_warning_not_popped",
+		"停留与淡出都结束了，栈里还有 %d 个 %s" % [_pvp_entries(), PVP_WARNING_ID])
+	_h.expect(ModalStack.depth() == base_depth, "pvp_warning_depth_not_restored",
+		"关闭后 depth=%d，未回到基线 %d" % [ModalStack.depth(), base_depth])
+
+	# queue_free 在帧末回收，等几帧再快照，否则量到的是「还没收干净」而不是泄漏。
+	await _settle(6)
+	var after_warmup := _snapshot()
+
+	# 不可见 STOP 是可以绝对判定的：警告这一轮不该新增一个。
+	_h.expect(int(after_warmup["invisible_stop"]) <= int(page_baseline["invisible_stop"]),
+		"pvp_warning_stop_residue",
+		"警告关闭后，不可见 STOP 控件相对建页基准增加了：%d -> %d"
+			% [int(page_baseline["invisible_stop"]), int(after_warmup["invisible_stop"])])
+
+	# 节点总数要按「第二轮」量，不是第一轮。实测第一轮 +1、第二轮 +0 ——
+	# 那 1 个是首次走这条路径的一次性懒初始化，不是每次触发都漏。
+	# 这和本文件对页面循环用的是同一套方法论：先热身吸收一次性开销，
+	# 再要求随后的一轮一点都不涨。基准取得更晚，不是判得更松。
+	prep_a._show_pvp_warning_overlay()
+	await _settle(3)
+	_h.expect(_pvp_entries() == 1, "pvp_warning_second_cycle_not_shown",
+		"第二轮触发没有弹出警告，增量测量会空过")
+	await _wait_sec(PVP_WARNING_DWELL_SEC + PVP_WARNING_FADE_SEC + 0.6)
+	await _settle(6)
+	var after_a := _snapshot()
+
+	var grew := _growth(after_warmup, after_a)
+	_h.expect(grew.is_empty(), "pvp_warning_left_residue",
+		"热身一轮之后再走一整轮，相对上一轮仍有残留：%s" % _describe(grew))
+
+	prep_a.queue_free()
+	await _settle(6)
+
+	# --- B. owner 在停留期间被释放 -------------------------------------------
+	ModalStack.close_all()
+	await _settle(4)
+	var b_base := int(_snapshot()["modal_depth"])
+
+	var prep_b := _new_prep()
+	if prep_b == null:
+		return
+	await _settle(2)
+	prep_b._show_pvp_warning_overlay()
+	await _settle(3)
+	if not _h.expect(_pvp_entries() == 1, "pvp_warning_setup_b_failed",
+			"用例 B 前置：警告没有弹出来"):
+		prep_b.queue_free()
+		await _settle(4)
+		return
+
+	# 停留 2 秒还没到就把宿主释放掉。
+	await _wait_sec(0.4)
+	prep_b.queue_free()
+	await _settle(6)
+
+	_h.expect(_pvp_entries() == 0, "pvp_warning_survived_owner",
+		"owner 已释放，栈里仍有 %d 个 %s —— ModalStack 的 owner 兜底没生效"
+			% [_pvp_entries(), PVP_WARNING_ID])
+	_h.expect(ModalStack.depth() == b_base, "pvp_warning_depth_after_owner_freed",
+		"owner 释放后 depth=%d，应回到 %d" % [ModalStack.depth(), b_base])
+
+	# 关键的一步：**继续等到超过原协程的 2.0 + 0.18 秒**。
+	# 如果迟到的协程在已释放节点上建 tween 或 queue_free，引擎错误会在这段时间里打出来，
+	# 由 run_check.ps1 的 EngineErrorPatterns 判红（本门禁自己看不到引擎日志）。
+	await _wait_sec(PVP_WARNING_DWELL_SEC + PVP_WARNING_FADE_SEC + 0.4)
+
+	var after_b := _snapshot()
+	_h.expect(_pvp_entries() == 0, "pvp_warning_late_resurrect",
+		"迟到协程恢复后又往栈里放回了 %s" % PVP_WARNING_ID)
+	_h.expect(ModalStack.depth() == b_base, "pvp_warning_late_depth_drift",
+		"迟到协程跑完后 depth=%d，应仍为 %d" % [ModalStack.depth(), b_base])
+	_h.expect(int(after_b["invisible_stop"]) <= int(baseline["invisible_stop"]),
+		"pvp_warning_late_stop_residue",
+		"owner 释放路径留下了不可见 STOP 控件：%d" % int(after_b["invisible_stop"]))
+	var orphan_hosts := 0
+	for child in get_tree().root.get_children():
+		if str(child.name) == "Modal_%s" % PVP_WARNING_ID:
+			orphan_hosts += 1
+	_h.expect(orphan_hosts == 0, "pvp_warning_orphan_host",
+		"root 下还挂着 %d 个 Modal_%s CanvasLayer" % [orphan_hosts, PVP_WARNING_ID])
 
 
 # --- 4. the cycle ---------------------------------------------------------------

@@ -69,6 +69,15 @@ const TREASURE_LINKAGE_LOGOS := {
 	"link_hu_pai_master": "胡牌手",
 }
 const PVP_WARNING_FRAME_PATH := "res://assets/ui/pvp_warning_frame.png"
+# 稳定 id：同 id 重复 push 会被 ModalStack 拒绝，这就是 2 秒内重复触发的去重机制。
+const PVP_WARNING_MODAL_ID := "pvp_warning"
+# 优先级阶梯：60 警告 < 80 开始战斗加载（PrepScreen.BATTLE_LOADING_MODAL_PRIORITY）
+# < 100 确认框（DialogService.MODAL_PRIORITY）。
+# 警告是纯播报、没有任何决策；加载层带阶段/重试/返回，确认框要玩家选边。
+# 两者同时在栈上时，能操作的那个必须在上面，所以警告取最低的 60。
+const PVP_WARNING_MODAL_PRIORITY := 60
+const PVP_WARNING_DWELL_SEC := 2.0
+const PVP_WARNING_FADE_SEC := 0.18
 
 var _team_mercs_button: Button
 var _team_merc_alert
@@ -1678,23 +1687,36 @@ func _maybe_show_pvp_warning(kind: String) -> void:
 		return
 	_show_pvp_warning_overlay()
 
+# PvP / 最终战的开战播报。**没有任何决策**：不确认、不取消、不可点掉，
+# 停 2 秒自己淡出。
+#
+# 输入拦截由 ModalStack 的 backdrop 独占（V3 P0-07 / P1-03，C-11 的 C5）。
+# 迁移前这里自己铺了一层全屏 MOUSE_FILTER_STOP，代价是两个真实缺陷：
+#   * 2 秒内二次触发会叠出第二层 STOP —— 函数没有任何防叠守卫；
+#   * 函数里有 await，宿主在这 2 秒内被释放时，恢复后会在已释放节点上
+#     建 tween 并 queue_free。
+# 现在两条都由 ModalStack 兜住：同 id 去重挡住前者，owner + 内容自持的
+# 计时器挡住后者（计时器随模态摘树而停，协程永远不会在死对象上恢复）。
 func _show_pvp_warning_overlay() -> void:
 	var tex := PrepWidgets.cached_texture(PVP_WARNING_FRAME_PATH)
 	if tex == null:
 		return
 	var overlay := Control.new()
 	overlay.name = "PvPWarningOverlay"
-	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	# content 不再拦输入：全屏 STOP 只能有一块，且必须是 ModalStack 管理的那块，
+	# 否则 _reindex() 管不到它，就会变成清点里说的「看不见却仍然 STOP」。
+	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	overlay.z_index = 120
-	add_child(overlay)
 
 	var dim := ColorRect.new()
 	dim.color = Color(0.0, 0.0, 0.0, 0.0)
+	# ColorRect 的默认 mouse_filter 就是 STOP，必须显式关掉。
+	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	overlay.add_child(dim)
 
 	var center := Control.new()
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	center.anchor_left = 0.5
 	center.anchor_top = 0.5
 	center.anchor_right = 0.5
@@ -1709,6 +1731,7 @@ func _show_pvp_warning_overlay() -> void:
 	overlay.add_child(center)
 
 	var glow := TextureRect.new()
+	glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	glow.texture = tex
 	glow.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	glow.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -1720,6 +1743,7 @@ func _show_pvp_warning_overlay() -> void:
 	center.add_child(glow)
 
 	var frame := TextureRect.new()
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	frame.texture = tex
 	frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -1727,6 +1751,7 @@ func _show_pvp_warning_overlay() -> void:
 	center.add_child(frame)
 
 	var title := Label.new()
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	title.text = "Showdown Time!" if LocaleManager.get_locale() == "en" else "敌袭快准备！"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -1739,7 +1764,35 @@ func _show_pvp_warning_overlay() -> void:
 	title.add_theme_constant_override("outline_size", 6)
 	center.add_child(title)
 
-	var tween := create_tween()
+	# 停留计时器挂在 content 上，**不是** get_tree().create_timer()。
+	# 这是「协程绝不会在死对象上恢复」的关键：模态因任何原因被 pop（owner 释放、
+	# close_all、程序化关闭）时，ModalStack._teardown() 会同帧 remove_child，
+	# content 连同这个 Timer 一起离树、停止计时，timeout 永远不发，
+	# 下面的 await 就永远不恢复 —— 而不是恢复之后再去判「我还活着吗」。
+	var dwell := Timer.new()
+	dwell.name = "PvPWarningDwell"
+	dwell.one_shot = true
+	dwell.wait_time = PVP_WARNING_DWELL_SEC
+	overlay.add_child(dwell)
+
+	# 入栈。同 id 已在栈上（2 秒内重复触发）时返回空串，且 push 已经把 overlay
+	# 收掉了 —— 这里绝不能再 queue_free 一次。
+	var modal_id := ModalStack.push(overlay, {
+		"id": PVP_WARNING_MODAL_ID,
+		"owner": self,
+		"priority": PVP_WARNING_MODAL_PRIORITY,
+		"dismiss_on_backdrop": false,
+		# 变暗由下面的 dim 用 tween 做（0 → 0.48），backdrop 只负责挡输入，
+		# 不能再叠一层颜色，否则画面比迁移前更暗。
+		"backdrop_color": Color.TRANSPARENT,
+	})
+	if modal_id.is_empty():
+		return
+
+	dwell.start()
+
+	# tween 绑到 content：模态被提前 pop 时随之作废，不会在已释放节点上继续跑。
+	var tween := create_tween().bind_node(overlay)
 	tween.set_parallel(true)
 	tween.tween_property(dim, "color:a", 0.48, 0.12)
 	tween.tween_property(center, "modulate:a", 1.0, 0.12)
@@ -1747,19 +1800,30 @@ func _show_pvp_warning_overlay() -> void:
 	tween.set_parallel(false)
 	tween.tween_property(center, "scale", Vector2.ONE, 0.13)
 
-	var glow_tween := create_tween().set_loops()
+	var glow_tween := create_tween().bind_node(overlay).set_loops()
 	glow_tween.tween_property(glow, "modulate:a", 0.58, 0.35)
 	glow_tween.tween_property(glow, "modulate:a", 0.22, 0.35)
 
-	await get_tree().create_timer(2.0).timeout
-	glow_tween.kill()
-	var out := create_tween()
+	await dwell.timeout
+
+	# 走到这里说明计时器真的响了，也就说明 content 还在树上。仍然再判一次：
+	# 同一帧内仍可能有别的路径先把它 pop 掉。
+	if not is_instance_valid(overlay) or not ModalStack.has(PVP_WARNING_MODAL_ID):
+		return
+	if glow_tween != null and glow_tween.is_valid():
+		glow_tween.kill()
+
+	var out := create_tween().bind_node(overlay)
 	out.set_parallel(true)
-	out.tween_property(dim, "color:a", 0.0, 0.18)
-	out.tween_property(center, "modulate:a", 0.0, 0.18)
-	out.tween_property(center, "scale", Vector2(0.96, 0.96), 0.18)
+	out.tween_property(dim, "color:a", 0.0, PVP_WARNING_FADE_SEC)
+	out.tween_property(center, "modulate:a", 0.0, PVP_WARNING_FADE_SEC)
+	out.tween_property(center, "scale", Vector2(0.96, 0.96), PVP_WARNING_FADE_SEC)
 	await out.finished
-	overlay.queue_free()
+
+	# 收尾走 ModalStack.pop，不是 overlay.queue_free() —— content 的所有权在
+	# push 时就交给 ModalStack 了，自己 free 会让栈里留一条指向死节点的记录。
+	if ModalStack.has(PVP_WARNING_MODAL_ID):
+		ModalStack.pop(PVP_WARNING_MODAL_ID, ModalStack.REASON_PROGRAMMATIC)
 
 
 # --- 商店面板信号的宿主侧处理（D2 步骤 3′b）---------------------------------
