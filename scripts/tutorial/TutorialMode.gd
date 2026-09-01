@@ -3,6 +3,8 @@ extends Node
 signal completed
 signal skip_requested
 
+const TutorialTargetProviderScript := preload("res://scripts/tutorial/TutorialTargetProvider.gd")
+
 const GOLD_TEXT := "∞"
 const TUTORIAL_GOLD := 9999
 const TUTORIAL_HP := 10
@@ -79,7 +81,7 @@ var _progress_index := 0
 # 教学 PVP 步的伪造对手棋盘（原先借用 NetworkService.opponent_board_snapshot，
 # 1v1 联机删除后由教学模式自持，BattleSimulator 的教学 PVP 路径从这里读）。
 var opponent_snapshot: Dictionary = {}
-var _prep: Control
+var _target_provider: TutorialTargetProviderScript
 var _overlay: Control
 var _arrow: Label
 var _bubble: PanelContainer
@@ -121,10 +123,10 @@ func finish() -> void:
 	_detach()
 	completed.emit()
 
-func attach(prep: Control) -> void:
+func attach(provider: TutorialTargetProviderScript) -> void:
 	if not active:
 		return
-	_prep = prep
+	_target_provider = provider
 	_ensure_overlay()
 	sync()
 	update_overlay()
@@ -157,8 +159,9 @@ func sync() -> void:
 	if step == Step.TAKE_TREASURE_2 and GameState.owned_treasures.size() >= 2:
 		step = Step.HIRE_MERC
 	if step == Step.HIRE_MERC and _mercenary_count() >= 2:
-		if _prep != null and _prep.has_method("_close_merc_picker"):
-			_prep.call("_close_merc_picker")
+		if _target_provider != null:
+			_target_provider.request_action(
+				TutorialTargetProviderScript.ACTION_CLOSE_MERCENARY)
 		_apply_shop(FILL_SHOP)
 		step = Step.FILL_7
 	if step == Step.FILL_7 and GameState.normal_unit_count() >= 7:
@@ -173,8 +176,8 @@ func follow_arrow_hint() -> String:
 
 func begin_battle() -> bool:
 	if not can_start_battle():
-		if _prep != null and _prep.has_method("show_message"):
-			_prep.show_message(follow_arrow_hint())
+		if _target_provider != null:
+			_target_provider.show_feedback(follow_arrow_hint())
 		return false
 	if step == Step.START_PVP:
 		opponent_snapshot = _tutorial_opponent_snapshot()
@@ -252,7 +255,7 @@ func current_text() -> String:
 			return _t("教学胜利。", "Tutorial victory.")
 
 func update_overlay() -> void:
-	if not active or _prep == null or _overlay == null:
+	if not active or _target_provider == null or _overlay == null:
 		return
 	var target := _target_control()
 	var rect := Rect2(Vector2(540, 290), Vector2(200, 80))
@@ -495,138 +498,54 @@ func _bubble_position(target_rect: Rect2, dir: int) -> Vector2:
 	return Vector2(center_x, clampf(y, margin, max_y))
 
 func _target_control() -> Control:
-	if _prep == null:
+	if _target_provider == null:
 		return null
+	var target_id := ""
 	match step:
 		Step.BUY_3:
-			# 商店还关着：先指底部的卷轴按钮，玩家点开后才轮到卡片/采购键。
-			var closed_shop := _shop_entry_control()
-			if closed_shop != null:
-				return closed_shop
-			var selected := int(_prep_shop_field("selected"))
-			if _shop_index_available(selected):
-				return _prep_shop_field("buy_button") as Control
-			return _first_available_shop_control()
+			target_id = TutorialTargetProviderScript.TARGET_BUY_UNIT
 		Step.PLACE_3:
-			return _first_empty_board_control_middle() if _placing_from_bench() else _first_occupied_bench_control()
+			target_id = TutorialTargetProviderScript.TARGET_PLACE_UNIT
 		Step.UPGRADE_2, Step.UPGRADE_3, Step.UPGRADE_OTHERS:
-			# 自动合成接管升星后玩家不用再拖材料，三步都只需要在商店买够同名棋子，
-			# 箭头一路指商店（关着就先指卷轴）。
-			return _upgrade_shop_control()
+			target_id = TutorialTargetProviderScript.TARGET_UPGRADE_UNIT
 		Step.START_PVE_1, Step.START_PVE_2, Step.START_BOSS, Step.START_PVP:
-			return _prep.get("_start_battle_button") as Control
+			target_id = TutorialTargetProviderScript.TARGET_START_BATTLE
 		Step.FORMATION_HP:
-			# _enemy_formation_bar 早已被置 null（红条删了只留数字），指水晶本体。
-			return _prep.get("_enemy_formation_art") as Control
+			target_id = TutorialTargetProviderScript.TARGET_FORMATION_HP
 		Step.TAKE_TREASURE_1, Step.TAKE_TREASURE_2:
-			var row := _treasure_field("_treasure_choice_row") as Control
-			return row.get_child(0) as Control if row != null and row.get_child_count() > 0 else row
+			target_id = TutorialTargetProviderScript.TARGET_TREASURE_CHOICE
 		Step.HIRE_MERC:
-			if not bool(_prep.get("_merc_picker_open")):
-				return _prep.get("_merc_button") as Control
-			var grid := _prep.get("_merc_overlay_grid") as Control
-			if grid != null and grid.get_child_count() > 0:
-				return grid.get_child(0) as Control
-			return _prep.get("_merc_button") as Control
+			target_id = TutorialTargetProviderScript.TARGET_HIRE_MERCENARY
 		Step.FILL_7:
-			if _owned_normal_count() > GameState.normal_unit_count():
-				return _first_empty_board_control() if _placing_from_bench() else _first_occupied_bench_control()
-			var closed_shop := _shop_entry_control()
-			if closed_shop != null:
-				return closed_shop
-			var selected := int(_prep_shop_field("selected"))
-			if _shop_index_available(selected):
-				return _prep_shop_field("buy_button") as Control
-			return _first_available_shop_control()
+			target_id = TutorialTargetProviderScript.TARGET_FILL_SEVEN
 		Step.BOND_HINT:
-			return _first_bond_row_control()
+			target_id = TutorialTargetProviderScript.TARGET_BOND_ROW
 		Step.VIEW_TREASURE:
-			return _treasure_logo_control()
-	return null
-
-# 第一条羁绊行（_add_current_synergy_widgets 往 _left_panel 塞的 HBoxContainer，
-# 标题之后的第一个）。指整个 _left_panel 会落到面板中部、离羁绊图标很远。
-func _first_bond_row_control() -> Control:
-	# 左面板已随 D2 搬进 SynergyPanel 节点（scenes/prep/panels/SynergyPanel.gd）。
-	var synergy: Variant = _prep.get("_synergy")
-	var panel: Control = null if synergy == null else synergy.get("_left_panel") as Control
-	if panel == null:
+			target_id = TutorialTargetProviderScript.TARGET_TREASURE_LOGO
+	if target_id.is_empty():
 		return null
-	for child in panel.get_children():
-		if child is HBoxContainer and (child as Control).visible:
-			return child as Control
-	return panel
-
-func _treasure_logo_control() -> Control:
-	var box := _treasure_field("_owned_treasure_box") as Control
-	if box != null and box.get_child_count() > 0 and box.get_child(0) is Control:
-		return box.get_child(0) as Control
-	return box
-
-# 商店关着时返回底部卷轴按钮（先让玩家开店），已经开着返回 null 交给后续分支。
-# 备战界面的商店/棋盘成员在 D2 里收进了 PrepShared 的 ShopPanel / BoardPanel 内部类，
-# 不能再用 _prep.get("_shop_open_button") 这种旧名字 —— Object.get() 取不到就返回 null，
-# 而 null 会一路传下去（bool(null) 直接报 "Nonexistent bool constructor"，实测踩到过）。
-# 这两个辅助函数统一走「先取簇、再取字段」。
-func _prep_shop_field(name: String) -> Variant:
-	if _prep == null:
-		return null
-	var shop: Variant = _prep.get("_shop")
-	return null if shop == null else shop.get(name)
-
-func _prep_board_field(name: String) -> Variant:
-	if _prep == null:
-		return null
-	var board: Variant = _prep.get("_board_hud")
-	return null if board == null else board.get(name)
-
-func _shop_entry_control() -> Control:
-	if _prep == null or bool(_prep_shop_field("picker_open")):
-		return null
-	return _prep_shop_field("open_button") as Control
-
-func _upgrade_shop_control() -> Control:
-	var closed_shop := _shop_entry_control()
-	if closed_shop != null:
-		return closed_shop
-	var selected := int(_prep_shop_field("selected"))
-	if _shop_index_available(selected):
-		return _prep_shop_field("buy_button") as Control
-	return _first_available_shop_control()
-
-# Total copies of the target unit at the target star across board + standby.
-# Compared against GameState.copies_to_upgrade() to decide whether the upgrade
-# arrow keeps pointing at the shop (not enough) or moves to standby (enough).
-func _upgrade_total_copies() -> int:
-	var id := _upgrade_id()
-	var star := _upgrade_star()
-	var count := 0
-	for cell in GameState.board_slots + GameState.bench_slots:
-		if _cell_matches_upgrade(cell, id, star):
-			count += 1
-	return count
-
-func _first_empty_board_control_middle() -> Control:
-	# 引导摆放到中间排：优先第 2 排（中间偏前），再第 1 排，最后任意空位。
-	var buttons := _prep_board_field("buttons") as Array
-	for pref_row in [2, 1]:
-		for col in GameConstants.BOARD_COLUMNS:
-			var i: int = int(pref_row) * GameConstants.BOARD_COLUMNS + col
-			if i >= 0 and i < GameState.board_slots.size() and GameState.board_slots[i] == null:
-				var item = buttons[i]
-				if item is Control and (item as Control).visible:
-					return item as Control
-	return _first_empty_board_control()
+	return _target_provider.resolve_target(
+		target_id,
+		step_key(),
+		_t("教学目标暂时不可用，请关闭当前面板后重试。",
+			"The tutorial target is temporarily unavailable. Close the current panel and try again."))
 
 func _ensure_overlay() -> void:
 	if _overlay != null and is_instance_valid(_overlay):
+		return
+	if _target_provider == null:
+		return
+	var host := _target_provider.overlay_host()
+	if host == null:
+		push_warning("Tutorial overlay host missing provider=%s" %
+			_target_provider.provider_name())
 		return
 	_overlay = Control.new()
 	_overlay.name = "TutorialOverlay"
 	_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_overlay.z_index = 500
-	_prep.add_child(_overlay)
+	host.add_child(_overlay)
 
 	_arrow = Label.new()
 	_arrow.text = "▼"
@@ -752,7 +671,7 @@ func _detach() -> void:
 	if _overlay != null and is_instance_valid(_overlay):
 		_overlay.queue_free()
 	_overlay = null
-	_prep = null
+	_target_provider = null
 
 func tutorial_shop_ids() -> Array:
 	# 刷新商店时按当前步铺货：升星步铺满要凑的同名棋子。
@@ -794,8 +713,8 @@ func _on_continue_pressed() -> void:
 	update_overlay()
 
 func _refresh_prep() -> void:
-	if _prep != null and _prep.has_method("_refresh_all"):
-		_prep.call_deferred("_refresh_all")
+	if _target_provider != null:
+		_target_provider.request_action(TutorialTargetProviderScript.ACTION_REFRESH_VIEW)
 
 func _start_treasure(ids: Array) -> void:
 	GameState.pending_treasure = {"active": true, "round": GameState.round_index, "candidates": ids.duplicate(), "refresh_index": 0}
@@ -847,131 +766,5 @@ func _mercenary_count() -> int:
 			count += 1
 	return count
 
-func _first_live_control(items: Array) -> Control:
-	for item in items:
-		if item is Control and (item as Control).visible:
-			return item as Control
-	return null
-
-func _first_occupied_bench_control() -> Control:
-	var buttons := _prep_board_field("bench_buttons") as Array
-	for i in buttons.size():
-		if i < GameState.bench_slots.size() and GameState.bench_slots[i] != null:
-			var item = buttons[i]
-			if item is Control and (item as Control).visible:
-				return item as Control
-	return null
-
-func _first_empty_board_control() -> Control:
-	var buttons := _prep_board_field("buttons") as Array
-	for i in buttons.size():
-		if i < GameState.board_slots.size() and GameState.board_slots[i] == null:
-			var item = buttons[i]
-			if item is Control and (item as Control).visible:
-				return item as Control
-	return null
-
-func _placing_from_bench() -> bool:
-	if _prep == null:
-		return false
-	if int(_board_hud_field("_selected_bench")) >= 0:
-		return true
-	var payload = _prep.get("_active_drag_payload")
-	return typeof(payload) == TYPE_DICTIONARY and str((payload as Dictionary).get("kind", "")) == "bench"
-
-func _upgrade_material_control() -> Control:
-	var id := _upgrade_id()
-	var star := _upgrade_star()
-	var buttons := _prep_board_field("bench_buttons") as Array
-	for i in buttons.size():
-		if i < GameState.bench_slots.size() and _cell_matches_upgrade(GameState.bench_slots[i], id, star):
-			var item = buttons[i]
-			if item is Control and (item as Control).visible:
-				return item as Control
-	return _first_occupied_bench_control()
-
-func _upgrade_target_control() -> Control:
-	var id := _upgrade_id()
-	var star := _upgrade_star()
-	var material_index := _held_upgrade_bench_index()
-	var board_buttons := _prep_board_field("buttons") as Array
-	for i in board_buttons.size():
-		if i < GameState.board_slots.size() and _cell_matches_upgrade(GameState.board_slots[i], id, star):
-			var item = board_buttons[i]
-			if item is Control and (item as Control).visible:
-				return item as Control
-	var bench_buttons := _prep_board_field("bench_buttons") as Array
-	for i in bench_buttons.size():
-		if i == material_index:
-			continue
-		if i < GameState.bench_slots.size() and _cell_matches_upgrade(GameState.bench_slots[i], id, star):
-			var item = bench_buttons[i]
-			if item is Control and (item as Control).visible:
-				return item as Control
-	return _upgrade_material_control()
-
-func _holding_upgrade_piece() -> bool:
-	return _held_upgrade_bench_index() >= 0
-
-func _held_upgrade_bench_index() -> int:
-	var id := _upgrade_id()
-	var star := _upgrade_star()
-	var selected := int(_board_hud_field("_selected_bench"))
-	if selected >= 0 and selected < GameState.bench_slots.size() and _cell_matches_upgrade(GameState.bench_slots[selected], id, star):
-		return selected
-	var payload = _prep.get("_active_drag_payload")
-	if typeof(payload) == TYPE_DICTIONARY and str((payload as Dictionary).get("kind", "")) == "bench":
-		var index := int((payload as Dictionary).get("index", -1))
-		if index >= 0 and index < GameState.bench_slots.size() and _cell_matches_upgrade(GameState.bench_slots[index], id, star):
-			return index
-	return -1
-
-func _upgrade_id() -> String:
-	if step == Step.UPGRADE_OTHERS:
-		return "human_archer" if _unit_star("human_archer") < 2 else "human_merchant"
-	return "human_militia"
-
-func _upgrade_star() -> int:
-	return 2 if step == Step.UPGRADE_3 else 1
-
-func _cell_matches_upgrade(cell: Variant, id: String, star: int) -> bool:
-	return typeof(cell) == TYPE_DICTIONARY and str((cell as Dictionary).get("id", "")) == id and int((cell as Dictionary).get("star", 1)) == star
-
-func _first_available_shop_control() -> Control:
-	var buttons := _prep_shop_field("buttons") as Array
-	if buttons == null:
-		return null
-	for i in buttons.size():
-		if _shop_index_available(i):
-			var item = buttons[i]
-			if item is Control and (item as Control).visible:
-				return item as Control
-	return null
-
-func _shop_index_available(index: int) -> bool:
-	if index < 0 or index >= GameState.shop_offers.size() or index >= GameState.shop_sold.size():
-		return false
-	if bool(GameState.shop_sold[index]):
-		return false
-	var offer = GameState.shop_offers[index]
-	return typeof(offer) == TYPE_DICTIONARY and not (offer as Dictionary).is_empty()
-
 func _t(zh: String, en: String) -> String:
 	return en if LocaleManager.get_locale() == "en" else zh
-
-
-# 宝物面板的控件已随 D2 搬进 TreasureChoicePanel 节点。
-# 和 _prep_shop_field 同样的形状：面板取不到就返回 null，不让空指针往下走。
-func _treasure_field(name: String) -> Variant:
-	if _prep == null:
-		return null
-	var panel: Variant = _prep.get("_treasure")
-	return null if panel == null else panel.get(name)
-
-
-# 棋盘选中态已随 D2 搬进 BoardHud 节点。形状同 _prep_shop_field / _treasure_field。
-func _board_hud_field(name: String) -> Variant:
-	if _prep == null:
-		return null
-	var panel: Variant = _prep.get("_board_hud")
-	return null if panel == null else panel.get(name)

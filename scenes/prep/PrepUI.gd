@@ -6,6 +6,7 @@ const PrepShopRaceIcon = preload("res://scenes/prep/PrepShopRaceIcon.gd")
 
 const PrepShopRefreshBurnScript = preload("res://scenes/prep/effects/PrepShopRefreshBurn.gd")
 const PrepTeamMercAlertScript = preload("res://scenes/prep/effects/PrepTeamMercAlert.gd")
+const TutorialTargetProviderScript := preload("res://scripts/tutorial/TutorialTargetProvider.gd")
 const SHOP_SCROLL_BURN_SHADER: Shader = preload("res://assets/shaders/prep_scroll_burn.gdshader")
 const SHOP_REFRESH_WIDTH := 112.0
 const SHOP_GOLD_WIDTH := 112.0
@@ -74,6 +75,7 @@ var _team_merc_alert
 var _team_merc_counts_snapshot: Dictionary = {}
 var _team_merc_snapshot_round := -1
 var _team_merc_snapshot_initialized := false
+var _tutorial_target_provider: TutorialTargetProviderScript
 
 const MERCENARY_PORTRAIT_PATHS := {
 	"merc_pisces_bubble": "res://assets/ui/mercenary_portraits/merc_pisces_bubble.png",
@@ -105,6 +107,189 @@ var _merc_overlay_signature := "unset"
 # DX =左右【像素】偏移：正=右移、负=左移。
 const BOARD_CAPTION_DROP := 0.5
 const BOARD_CAPTION_DX := 0
+
+
+# TutorialMode must not know this screen's private fields. Prep composes the one
+# runtime adapter here, where ShopPanel/BoardHud/etc. are statically typed.
+func tutorial_target_provider() -> TutorialTargetProviderScript:
+	if _tutorial_target_provider != null:
+		return _tutorial_target_provider
+	var provider: TutorialTargetProviderScript = TutorialTargetProviderScript.new(
+		"PrepScreen", self)
+	provider.bind_target(TutorialTargetProviderScript.TARGET_BUY_UNIT,
+		_tutorial_target_buy_unit)
+	provider.bind_target(TutorialTargetProviderScript.TARGET_PLACE_UNIT,
+		_tutorial_target_place_unit)
+	provider.bind_target(TutorialTargetProviderScript.TARGET_UPGRADE_UNIT,
+		_tutorial_target_upgrade_unit)
+	provider.bind_target(TutorialTargetProviderScript.TARGET_START_BATTLE,
+		_tutorial_target_start_battle)
+	provider.bind_target(TutorialTargetProviderScript.TARGET_FORMATION_HP,
+		_tutorial_target_formation_hp)
+	provider.bind_target(TutorialTargetProviderScript.TARGET_TREASURE_CHOICE,
+		_tutorial_target_treasure_choice)
+	provider.bind_target(TutorialTargetProviderScript.TARGET_HIRE_MERCENARY,
+		_tutorial_target_hire_mercenary)
+	provider.bind_target(TutorialTargetProviderScript.TARGET_FILL_SEVEN,
+		_tutorial_target_fill_seven)
+	provider.bind_target(TutorialTargetProviderScript.TARGET_BOND_ROW,
+		_tutorial_target_bond_row)
+	provider.bind_target(TutorialTargetProviderScript.TARGET_TREASURE_LOGO,
+		_tutorial_target_treasure_logo)
+	provider.bind_action(TutorialTargetProviderScript.ACTION_CLOSE_MERCENARY,
+		_close_merc_picker)
+	provider.bind_action(TutorialTargetProviderScript.ACTION_REFRESH_VIEW,
+		_tutorial_refresh_view)
+	provider.bind_feedback(show_message)
+	_tutorial_target_provider = provider
+	return provider
+
+
+func release_tutorial_target_provider() -> void:
+	if _tutorial_target_provider == null:
+		return
+	_tutorial_target_provider.release()
+	_tutorial_target_provider = null
+
+
+func _tutorial_target_buy_unit() -> Control:
+	return _tutorial_shop_purchase_target()
+
+
+func _tutorial_target_place_unit() -> Control:
+	if _tutorial_placing_from_bench():
+		return _tutorial_first_empty_board_middle()
+	return _tutorial_first_occupied_bench()
+
+
+func _tutorial_target_upgrade_unit() -> Control:
+	return _tutorial_shop_purchase_target()
+
+
+func _tutorial_target_start_battle() -> Control:
+	return _start_battle_button
+
+
+func _tutorial_target_formation_hp() -> Control:
+	return _enemy_formation_art
+
+
+func _tutorial_target_treasure_choice() -> Control:
+	var row: Control = _treasure._treasure_choice_row
+	if row != null and row.get_child_count() > 0:
+		return row.get_child(0) as Control
+	return row
+
+
+func _tutorial_target_hire_mercenary() -> Control:
+	if not _merc_picker_open:
+		return _merc_button
+	if _merc_overlay_grid != null and _merc_overlay_grid.get_child_count() > 0:
+		return _merc_overlay_grid.get_child(0) as Control
+	return _merc_button
+
+
+func _tutorial_target_fill_seven() -> Control:
+	if _tutorial_owned_normal_count() > GameState.normal_unit_count():
+		if _tutorial_placing_from_bench():
+			return _tutorial_first_empty_board()
+		return _tutorial_first_occupied_bench()
+	return _tutorial_shop_purchase_target()
+
+
+func _tutorial_target_bond_row() -> Control:
+	var panel: Control = _synergy._left_panel
+	if panel == null:
+		return null
+	for child in panel.get_children():
+		if child is HBoxContainer and (child as Control).visible:
+			return child as Control
+	return panel
+
+
+func _tutorial_target_treasure_logo() -> Control:
+	var box: Control = _treasure._owned_treasure_box
+	if box != null and box.get_child_count() > 0 and box.get_child(0) is Control:
+		return box.get_child(0) as Control
+	return box
+
+
+func _tutorial_shop_purchase_target() -> Control:
+	if not _shop.picker_open:
+		return _shop.open_button
+	if _tutorial_shop_index_available(_shop.selected):
+		return _shop.buy_button
+	return _tutorial_first_available_shop()
+
+
+func _tutorial_first_available_shop() -> Control:
+	for i in _shop.buttons.size():
+		if _tutorial_shop_index_available(i):
+			var button := _shop.buttons[i] as Control
+			if button != null and button.visible:
+				return button
+	return null
+
+
+func _tutorial_shop_index_available(index: int) -> bool:
+	if index < 0 or index >= GameState.shop_offers.size() \
+			or index >= GameState.shop_sold.size():
+		return false
+	if bool(GameState.shop_sold[index]):
+		return false
+	var offer: Variant = GameState.shop_offers[index]
+	return typeof(offer) == TYPE_DICTIONARY and not (offer as Dictionary).is_empty()
+
+
+func _tutorial_first_occupied_bench() -> Control:
+	for i in _board_hud.bench_buttons.size():
+		if i < GameState.bench_slots.size() and GameState.bench_slots[i] != null:
+			var button := _board_hud.bench_buttons[i] as Control
+			if button != null and button.visible:
+				return button
+	return null
+
+
+func _tutorial_first_empty_board() -> Control:
+	for i in _board_hud.buttons.size():
+		if i < GameState.board_slots.size() and GameState.board_slots[i] == null:
+			var button := _board_hud.buttons[i] as Control
+			if button != null and button.visible:
+				return button
+	return null
+
+
+func _tutorial_first_empty_board_middle() -> Control:
+	for preferred_row in [2, 1]:
+		for column in GameConstants.BOARD_COLUMNS:
+			var index: int = int(preferred_row) * GameConstants.BOARD_COLUMNS + column
+			if index >= _board_hud.buttons.size() or index >= GameState.board_slots.size():
+				continue
+			if GameState.board_slots[index] == null:
+				var button := _board_hud.buttons[index] as Control
+				if button != null and button.visible:
+					return button
+	return _tutorial_first_empty_board()
+
+
+func _tutorial_placing_from_bench() -> bool:
+	if _board_hud._selected_bench >= 0:
+		return true
+	return str(_active_drag_payload.get("kind", "")) == "bench"
+
+
+func _tutorial_owned_normal_count() -> int:
+	var count := 0
+	for cell in GameState.board_slots + GameState.bench_slots:
+		if typeof(cell) == TYPE_DICTIONARY:
+			count += 1
+	return count
+
+
+func _tutorial_refresh_view() -> void:
+	_refresh_all.call_deferred()
+
+
 func _build() -> void:
 	# 面板的依赖与信号必须在**构建之前**接好：build_* 里会用到 overlay 与 host，
 	# 也会把按钮的 pressed 连到面板自己的方法上。放到末尾接的话，

@@ -81,7 +81,7 @@ func _ready() -> void:
 	_maybe_start_pending_treasure()
 	_refresh_all()
 	if GameState.tutorial_mode:
-		TutorialMode.attach(self)
+		TutorialMode.attach(tutorial_target_provider())
 	_maybe_show_pvp_warning.call_deferred(PrepRules.next_round_kind())
 
 func _start_prep_music() -> void:
@@ -132,6 +132,7 @@ func _exit_tree() -> void:
 		AsyncActionController.action_state_changed.disconnect(_on_async_action_state_changed)
 	AsyncActionController.clear_for_owner(self, "prep_scene_exit")
 	_close_battle_loading_overlay()
+	release_tutorial_target_provider()
 
 func _on_team_round_start() -> void:
 	# All players readied -> launch this round's battle.

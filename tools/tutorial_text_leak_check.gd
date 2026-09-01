@@ -23,6 +23,7 @@ extends Node
 
 const CheckHarness := preload("res://tools/CheckHarness.gd")
 const TutorialScript := preload("res://scripts/tutorial/TutorialMode.gd")
+const PrepScript := preload("res://scenes/prep/PrepScreen.gd")
 
 const CHECK_NAME := "tutorial_text_leak"
 
@@ -191,7 +192,7 @@ func _check_live_overlay_shows_no_keys() -> void:
 	if not _h.expect(packed != null, "prep_scene_load_failed",
 			"%s 加载不出来" % PREP_SCENE):
 		return
-	var prep: Control = packed.instantiate() as Control
+	var prep: PrepScript = packed.instantiate() as PrepScript
 	add_child(prep)
 	await get_tree().process_frame
 	await get_tree().process_frame
@@ -200,7 +201,7 @@ func _check_live_overlay_shows_no_keys() -> void:
 	tutorial.name = "TutorialUnderTest"
 	add_child(tutorial)
 	tutorial.start()
-	tutorial.attach(prep)
+	tutorial.attach(prep.tutorial_target_provider())
 	await get_tree().process_frame
 
 	var keys: Array = _step_keys()
