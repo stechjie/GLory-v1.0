@@ -39,6 +39,7 @@ const PrepScript := preload("res://scenes/prep/PrepScreen.gd")
 # PvP 警告层的时间常量，与 PrepUI 里的保持一致；改那边这里要同步。
 const PVP_WARNING_ID := "pvp_warning"
 const TEAM_MERCS_ID := "team_mercs_review"
+const MERC_PICKER_ID := "mercenary_picker"
 const PVP_WARNING_DWELL_SEC := 2.0
 const PVP_WARNING_FADE_SEC := 0.18
 
@@ -69,6 +70,7 @@ func _ready() -> void:
 	await _check_stale_request_cannot_clobber_new_one()
 	await _check_pvp_warning_modal()
 	await _check_team_mercs_modal()
+	await _check_merc_picker_modal()
 	await _check_page_cycles_leave_nothing()
 	await _check_final_state_is_clean()
 
@@ -749,6 +751,310 @@ func _check_team_mercs_modal() -> void:
 
 
 # --- 4. the cycle ---------------------------------------------------------------
+
+# --- 普通佣兵选择层（C-11 的 C3，V3 P0-07 / P1-03）------------------------------
+#
+# 与 C4 检阅台的关键差别：这一层 content 里有 12 张**可点击**的佣兵卡。
+# 所以 content 根保留 STOP（它只占 center_host 矩形、不是全屏），卡片正常收输入；
+# 全屏 STOP 仍然只有 ModalStack 的 backdrop 那一块。
+
+func _mp_entries() -> int:
+	var n := 0
+	for row in ModalStack.dump_modal_stack():
+		if str(row.get("id", "")) == MERC_PICKER_ID:
+			n += 1
+	return n
+
+
+func _mp_host() -> Node:
+	return get_tree().root.get_node_or_null(NodePath("Modal_%s" % MERC_PICKER_ID))
+
+
+func _mp_content() -> Control:
+	var host := _mp_host()
+	if host == null:
+		return null
+	return host.get_node_or_null(NodePath("ModalRoot/MercPickerOverlay")) as Control
+
+
+func _mp_grid() -> GridContainer:
+	var content := _mp_content()
+	if content == null:
+		return null
+	var found: Array[GridContainer] = []
+	_mp_find_grid(content, found)
+	return null if found.is_empty() else found[0]
+
+
+func _mp_find_grid(node: Node, out: Array[GridContainer]) -> void:
+	if node is GridContainer:
+		out.append(node as GridContainer)
+		return
+	for child in node.get_children():
+		_mp_find_grid(child, out)
+
+
+func _mp_filled_slots() -> int:
+	var n := 0
+	for cell in GameState.mercenary_slots:
+		if cell != null:
+			n += 1
+	return n
+
+
+# 送一次主键按下+释放到栈顶 backdrop，走 ModalStack._on_backdrop_input 的真实路径。
+func _mp_tap_backdrop() -> void:
+	var host := _mp_host()
+	if host == null:
+		return
+	var backdrop := host.get_node_or_null(NodePath("ModalRoot/Backdrop")) as Control
+	if backdrop == null:
+		return
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	backdrop.gui_input.emit(press)
+	var release := InputEventMouseButton.new()
+	release.button_index = MOUSE_BUTTON_LEFT
+	release.pressed = false
+	backdrop.gui_input.emit(release)
+
+
+func _check_merc_picker_modal() -> void:
+	ModalStack.close_all()
+	await _settle(4)
+
+	# 购买用例会改 GameState，先整份快照，用例结束逐字还原。
+	var gold_before := GameState.gold
+	var slots_before: Array = GameState.mercenary_slots.duplicate(true)
+
+	var prep := _new_prep()
+	if prep == null:
+		return
+	await _settle(3)
+	var page_baseline := _snapshot()
+	var base_depth := int(page_baseline["modal_depth"])
+
+	# --- 4（关闭态）教程目标应是入口按钮 --------------------------------
+	var closed_target := prep._tutorial_target_hire_mercenary()
+	_h.expect(closed_target != null and is_instance_valid(closed_target),
+		"mp_tutorial_target_closed_invalid", "关闭状态下教程目标无效")
+
+	# --- 1 打开：稳定 id 存在，depth 只 +1 -------------------------------
+	prep._toggle_merc_picker()
+	await _settle(3)
+	if not _h.expect(_mp_entries() == 1, "mp_not_opened_once",
+			"打开后栈里有 %d 条 %s，应为 1" % [_mp_entries(), MERC_PICKER_ID]):
+		prep.queue_free()
+		await _settle(4)
+		GameState.gold = gold_before
+		return
+	_h.expect(ModalStack.depth() == base_depth + 1, "mp_depth_not_plus_one",
+		"打开后 depth=%d，相对基线 %d 应只 +1" % [ModalStack.depth(), base_depth])
+	_h.expect(prep._merc_picker_open, "mp_state_desync_open",
+		"模态开着但 _merc_picker_open 是 false")
+
+	# --- 2 连点 10 次仍只有一层 -----------------------------------------------
+	for i in 10:
+		prep._refresh_mercenary_overlay()
+	await _settle(3)
+	_h.expect(_mp_entries() == 1, "mp_repeat_open_stacked",
+		"重复调用 10 次后栈里有 %d 条，应仍为 1" % _mp_entries())
+	_h.expect(ModalStack.depth() == base_depth + 1, "mp_repeat_open_grew_depth",
+		"重复调用 10 次后 depth=%d，应仍是 %d" % [ModalStack.depth(), base_depth + 1])
+
+	# --- 3 content 在正确矩形，样式与 4 列网格都在 -----------------------------
+	var content := _mp_content()
+	if not _h.expect(content != null, "mp_content_missing",
+			"栈里有条目但找不到 MercPickerOverlay content"):
+		prep.queue_free()
+		await _settle(4)
+		GameState.gold = gold_before
+		return
+	var vp := get_viewport().get_visible_rect().size
+	var rect := content.get_global_rect()
+	_h.expect(rect.size.x > 0.0 and rect.size.y > 0.0, "mp_content_rect_empty",
+		"content 矩形是空的：%s" % str(rect))
+	_h.expect(rect.size.x < vp.x, "mp_content_went_fullscreen",
+		("content 宽度 %.0f 已铺满视口 %.0f —— 迁移前它只占 center_host 那一列"
+			% [rect.size.x, vp.x]))
+	var grid := _mp_grid()
+	_h.expect(grid != null, "mp_grid_missing", "content 里找不到 GridContainer")
+	if grid != null:
+		_h.expect(grid.columns == 4, "mp_grid_columns_changed",
+			"佣兵网格是 %d 列，应为 4 列" % grid.columns)
+		_h.expect(grid.get_child_count() > 0, "mp_grid_empty",
+			"网格里一张卡都没有，下面的教程目标与购买断言会空过")
+	_h.expect(content.mouse_filter == Control.MOUSE_FILTER_STOP,
+		"mp_content_root_not_stop",
+		("content 根不是 STOP —— 卡片之间的间隙会穿透到 backdrop，"
+			+ "玩家挑佣兵时误触就会把面板关掉"))
+	_h.expect(content.has_theme_stylebox_override("panel"), "mp_style_lost",
+		"content 的 StyleBoxFlat 边框样式丢了")
+	var row := {}
+	for r in ModalStack.dump_modal_stack():
+		if str(r.get("id", "")) == MERC_PICKER_ID:
+			row = r
+	_h.expect(str(row.get("backdrop_filter", "")) == "STOP", "mp_backdrop_not_stop",
+		"栈顶 backdrop 不是 STOP，点击会漏到下面的备战页")
+	_h.expect(bool(row.get("owner_valid", false)), "mp_owner_invalid",
+		"%s 的 owner 无效 —— owner 兜底会失效" % MERC_PICKER_ID)
+
+	# --- 4（打开态）教程目标必须是当前 content 里有效的第一张卡 ----------------
+	var open_target := prep._tutorial_target_hire_mercenary()
+	_h.expect(open_target != null and is_instance_valid(open_target),
+		"mp_tutorial_target_open_invalid",
+		"打开状态下教程目标无效 —— 极可能返回了已释放的实例")
+	if grid != null and grid.get_child_count() > 0:
+		_h.expect(open_target == grid.get_child(0), "mp_tutorial_target_not_first_card",
+			"打开状态下教程目标不是当前 content 的第一张佣兵卡")
+	_h.expect(open_target != closed_target, "mp_tutorial_target_did_not_change",
+		"开合两态返回了同一个目标")
+
+	# --- 7 购买一次，只发生一次金币/槽位变化 -----------------------------
+	GameState.gold = 9999
+	prep._refresh_mercenary_overlay()
+	await _settle(3)
+	grid = _mp_grid()
+	var buyable: BaseButton = null
+	if grid != null:
+		for child in grid.get_children():
+			if child is BaseButton and bool((child as BaseButton).get_meta("can_purchase", false)):
+				buyable = child as BaseButton
+				break
+	if buyable != null:
+		var gold_pre := GameState.gold
+		var filled_pre := _mp_filled_slots()
+		buyable.pressed.emit()
+		await _settle(3)
+		var filled_post := _mp_filled_slots()
+		_h.expect(filled_post == filled_pre + 1, "mp_purchase_slot_delta_wrong",
+			"一次点击后佣兵槽由 %d 变成 %d，应恰好 +1" % [filled_pre, filled_post])
+		_h.expect(GameState.gold < gold_pre, "mp_purchase_gold_not_spent",
+			"一次购买后金币没有扣除：%d -> %d" % [gold_pre, GameState.gold])
+		# 买完面板必须还开着：backdrop 迁移后最容易出的倒退就是「买一个就被关掉」。
+		_h.expect(_mp_entries() == 1, "mp_closed_by_purchase",
+			"买一名佣兵之后面板被关掉了 —— 玩家连买两个要重开两次")
+		_h.expect(prep._merc_picker_open, "mp_state_desync_after_purchase",
+			"购买后 _merc_picker_open 与栈不一致")
+		# 刷新是幂等的：重复刷不会再扣一次钱、也不会再占一个槽。
+		var gold_settled := GameState.gold
+		for i in 5:
+			prep._refresh_mercenary_overlay()
+		await _settle(3)
+		_h.expect(GameState.gold == gold_settled, "mp_refresh_charged_again",
+			"重复刷新面板又扣了一次钱：%d -> %d" % [gold_settled, GameState.gold])
+		_h.expect(_mp_filled_slots() == filled_post, "mp_refresh_hired_again",
+			"重复刷新面板又雇了一个人")
+	else:
+		_h.note("没有可购买的佣兵卡（多半是槽位已满或数据表为空），购买这一组跳过")
+
+	# --- 6 与组队佣兵层双向互斥 -----------------------------------------------
+	prep._toggle_team_mercs_picker()
+	await _settle(3)
+	_h.expect(_mp_entries() == 0, "mp_not_closed_by_team_mercs",
+		"打开组队佣兵层之后，普通佣兵层还在栈上")
+	_h.expect(not prep._merc_picker_open, "mp_state_desync_after_team_open",
+		"组队佣兵层已接管，_merc_picker_open 仍是 true")
+	prep._toggle_merc_picker()
+	await _settle(3)
+	_h.expect(_tm_entries() == 0, "mp_team_mercs_not_closed",
+		"打开普通佣兵层之后，组队佣兵检阅台还在栈上")
+	_h.expect(_mp_entries() == 1, "mp_reopen_failed", "互斥切换后普通佣兵层没打开")
+
+	# --- 5 三条关闭路径都同步业务状态并清引用 ---------------------------
+	_mp_tap_backdrop()
+	await _settle(4)
+	_h.expect(_mp_entries() == 0, "mp_backdrop_tap_did_not_close",
+		"点 backdrop 之后面板还在 —— 玩家的关闭路径断了")
+	_h.expect(not prep._merc_picker_open, "mp_state_desync_backdrop",
+		"backdrop 关闭后 _merc_picker_open 仍是 true")
+	# Godot 4 里 `已释放对象 == null` 也是 true，所以这里必须用 typeof 才可证伪：
+	# 真的置空是 TYPE_NIL，悬空指针仍是 TYPE_OBJECT。
+	_h.expect(typeof(prep._merc_overlay) == TYPE_NIL, "mp_ref_not_cleared_backdrop",
+		"backdrop 关闭后 _merc_overlay 仍指向已释放节点（未置空）")
+	_h.expect(typeof(prep._merc_count_label) == TYPE_NIL, "mp_count_label_not_cleared",
+		"backdrop 关闭后 _merc_count_label 仍指向已释放节点（未置空）")
+
+	prep._toggle_merc_picker()
+	await _settle(3)
+	prep._close_merc_picker()
+	await _settle(4)
+	_h.expect(_mp_entries() == 0 and not prep._merc_picker_open,
+		"mp_programmatic_close_failed", "程序化关闭没有生效")
+
+	prep._toggle_merc_picker()
+	await _settle(3)
+	ModalStack.close_all()
+	await _settle(4)
+	_h.expect(_mp_entries() == 0, "mp_close_all_left_entry", "close_all 之后栈里还有它")
+	_h.expect(not prep._merc_picker_open, "mp_state_desync_close_all",
+		"close_all 关掉了模态，_merc_picker_open 却还是 true")
+	_h.expect(typeof(prep._merc_overlay_grid) == TYPE_NIL, "mp_grid_ref_not_cleared",
+		"close_all 之后 _merc_overlay_grid 仍指向已释放节点（未置空）")
+
+	# --- 8 连续 20 次开关零增长 -----------------------------------------------
+	# 先热身一轮吸收首次走这条路径的一次性懒初始化，与本文件既有方法论一致。
+	prep._toggle_merc_picker()
+	await _settle(3)
+	prep._close_merc_picker()
+	await _settle(4)
+	var cycle_baseline := _snapshot()
+	for i in MEASURED_CYCLES:
+		prep._toggle_merc_picker()
+		await _settle(2)
+		prep._close_merc_picker()
+		await _settle(2)
+	await _settle(6)
+	var after_cycles := _snapshot()
+	_h.expect(int(after_cycles["modal_depth"]) == base_depth, "mp_cycle_depth_drift",
+		"%d 轮开关后 depth=%d，应回到 %d"
+			% [MEASURED_CYCLES, int(after_cycles["modal_depth"]), base_depth])
+	var grew := _growth(cycle_baseline, after_cycles)
+	_h.expect(grew.is_empty(), "mp_cycle_left_residue",
+		"%d 轮开关之后相对热身基线仍有残留：%s" % [MEASURED_CYCLES, _describe(grew)])
+
+	# --- 9 owner 在面板打开时释放 ---------------------------------------------
+	prep._toggle_merc_picker()
+	await _settle(3)
+	if _h.expect(_mp_entries() == 1, "mp_owner_case_setup_failed",
+			"owner 用例前置：面板没打开"):
+		prep.queue_free()
+		await _settle(8)
+		_h.expect(_mp_entries() == 0, "mp_survived_owner",
+			"owner 已释放，栈里仍有 %s" % MERC_PICKER_ID)
+		_h.expect(ModalStack.depth() == base_depth, "mp_depth_after_owner_freed",
+			"owner 释放后 depth=%d，应回到 %d" % [ModalStack.depth(), base_depth])
+		var orphan := 0
+		for child in get_tree().root.get_children():
+			if str(child.name) == "Modal_%s" % MERC_PICKER_ID:
+				orphan += 1
+		_h.expect(orphan == 0, "mp_orphan_host",
+			"root 下还挂着 %d 个 Modal_%s CanvasLayer" % [orphan, MERC_PICKER_ID])
+	else:
+		prep.queue_free()
+		await _settle(6)
+
+	# --- 10 生产源码不再用 visible 当生命周期 ---------------------------------
+	var ui_src := FileAccess.get_file_as_string("res://scenes/prep/PrepUI.gd")
+	_h.expect(not ui_src.is_empty(), "mp_source_unreadable", "读不到 PrepUI.gd")
+	_h.expect(not ui_src.contains("_merc_overlay.visible = _merc_picker_open"),
+		"mp_visible_lifecycle_returned",
+		"源码里又出现了 `_merc_overlay.visible = _merc_picker_open` —— 生命周期回到了 visible 开关")
+
+	# --- 还原 GameState -------------------------------------------------------
+	GameState.gold = gold_before
+	for i in mini(slots_before.size(), GameState.mercenary_slots.size()):
+		GameState.mercenary_slots[i] = slots_before[i]
+	var filled_orig := 0
+	for cell in slots_before:
+		if cell != null:
+			filled_orig += 1
+	_h.expect(GameState.gold == gold_before, "mp_gold_not_restored",
+		"测试结束后金币未还原：%d != %d" % [GameState.gold, gold_before])
+	_h.expect(_mp_filled_slots() == filled_orig, "mp_slots_not_restored",
+		"测试结束后佣兵槽未还原：%d != %d" % [_mp_filled_slots(), filled_orig])
+
 
 func _run_one_cycle(index: int) -> void:
 	# menu -> dialog -> close -> leave

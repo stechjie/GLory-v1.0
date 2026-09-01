@@ -204,22 +204,11 @@ func _input(event: InputEvent) -> void:
 			and shop_hovered != null and _shop.side_controls.is_ancestor_of(shop_hovered)
 		if shop_should_check and not click_on_shop and not click_on_shop_btn and not click_on_shop_side:
 			_shop.close_picker()
-	if not _merc_picker_open or _merc_overlay == null or not _merc_overlay.visible:
-		return
-	var pointer_position := Vector2.ZERO
-	var should_check := false
-	if event is InputEventMouseButton:
-		var mouse_event := event as InputEventMouseButton
-		if mouse_event.pressed and mouse_event.button_index == MOUSE_BUTTON_LEFT:
-			pointer_position = mouse_event.position
-			should_check = true
-	elif event is InputEventScreenTouch:
-		var touch_event := event as InputEventScreenTouch
-		if touch_event.pressed:
-			pointer_position = touch_event.position
-			should_check = true
-	if should_check and not _merc_overlay.get_global_rect().has_point(pointer_position):
-		_close_merc_picker()
+	# 佣兵选择层原本在这里手写「点面板矩形之外就关」。它已迁进 ModalStack
+	# （C-11 的 C3），关闭改由 backdrop 的 dismiss_on_backdrop 承担 ——
+	# backdrop 在 _unhandled_input 之前就消费掉那一下点击，这段永远不会再触发。
+	# 而且 _merc_overlay 现在是每次开合重建的瞬时节点，留着这段就是一处读死指针的
+	# 死代码，所以删掉而不是留着。商店那段仍是自建面板，保持原样。
 
 func take_loaded_battle_scene() -> PackedScene:
 	var scene := _loaded_battle_scene

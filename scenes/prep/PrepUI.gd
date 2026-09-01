@@ -80,6 +80,10 @@ const PVP_WARNING_MODAL_PRIORITY := 60
 # < 确认框 100 —— 检阅台是纯展示，任何带决策的层都该压在它上面。
 const TEAM_MERCS_MODAL_ID := "team_mercs_review"
 const TEAM_MERCS_MODAL_PRIORITY := 40
+# 普通佣兵选择层（C-11 的 C3）。与检阅台同为备战普通面板，取同一档 40 ——
+# 两者互斥（开一个必关另一个），永远不会同时在栈上，同优先级不产生歧义。
+const MERC_PICKER_MODAL_ID := "mercenary_picker"
+const MERC_PICKER_MODAL_PRIORITY := 40
 const PVP_WARNING_DWELL_SEC := 2.0
 const PVP_WARNING_FADE_SEC := 0.18
 
@@ -200,7 +204,10 @@ func _tutorial_target_treasure_choice() -> Control:
 func _tutorial_target_hire_mercenary() -> Control:
 	if not _merc_picker_open:
 		return _merc_button
-	if _merc_overlay_grid != null and _merc_overlay_grid.get_child_count() > 0:
+	# content 现在每次开合都会被 ModalStack 销毁重建，所以除了 null 还要判有效性 ——
+	# 绝不能把一个已释放的实例交给教程去高亮。
+	if (_merc_overlay_grid != null and is_instance_valid(_merc_overlay_grid)
+			and _merc_overlay_grid.get_child_count() > 0):
 		return _merc_overlay_grid.get_child(0) as Control
 	return _merc_button
 
@@ -790,51 +797,11 @@ func _build_merc_panels(body: HBoxContainer, center_host: Control) -> void:
 	_merc_panel.add_theme_constant_override("separation", 8)
 	_merc_scroll.add_child(_merc_panel)
 
-	_merc_overlay = PanelContainer.new()
-	_merc_overlay.visible = false
-	_merc_overlay.z_index = 40
-	_merc_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
-	_merc_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var overlay_style := StyleBoxFlat.new()
-	overlay_style.bg_color = Color(0.055, 0.065, 0.075, 0.98)
-	overlay_style.border_color = Color(0.42, 0.50, 0.58, 0.92)
-	overlay_style.set_border_width_all(2)
-	overlay_style.set_corner_radius_all(4)
-	_merc_overlay.add_theme_stylebox_override("panel", overlay_style)
-	center_host.add_child(_merc_overlay)
-	var overlay_margin := MarginContainer.new()
-	overlay_margin.add_theme_constant_override("margin_left", 12)
-	overlay_margin.add_theme_constant_override("margin_top", 10)
-	overlay_margin.add_theme_constant_override("margin_right", 12)
-	overlay_margin.add_theme_constant_override("margin_bottom", 12)
-	_merc_overlay.add_child(overlay_margin)
-	var overlay_box := VBoxContainer.new()
-	overlay_box.add_theme_constant_override("separation", 8)
-	overlay_margin.add_child(overlay_box)
-	var overlay_header := HBoxContainer.new()
-	overlay_box.add_child(overlay_header)
-	var overlay_title := Label.new()
-	overlay_title.text = tr("ui_choose_mercenary")
-	overlay_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	overlay_title.add_theme_font_size_override("font_size", 18)
-	overlay_header.add_child(overlay_title)
-	# 右上角「已雇 N/8」：备战界面没有其它已购佣兵的提示，这里是唯一的计数反馈。
-	_merc_count_label = Label.new()
-	_merc_count_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_merc_count_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_merc_count_label.add_theme_font_size_override("font_size", 18)
-	_merc_count_label.add_theme_color_override("font_color", Color(0.96, 0.97, 1.0))
-	_merc_count_label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.95))
-	_merc_count_label.add_theme_constant_override("outline_size", 3)
-	overlay_header.add_child(_merc_count_label)
-	_merc_overlay_grid = GridContainer.new()
-	_merc_overlay_grid.columns = 4
-	_merc_overlay_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_merc_overlay_grid.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_merc_overlay_grid.add_theme_constant_override("h_separation", 8)
-	_merc_overlay_grid.add_theme_constant_override("v_separation", 8)
-	overlay_box.add_child(_merc_overlay_grid)
-
+	# 佣兵选择层已迁进 ModalStack（C-11 的 C3）：这里不再建常驻 content。
+	# push() 接管 content、pop() 会销毁它，常驻一份再靠 visible 开关的老做法
+	# 会在 close_all / owner 释放之后留下死指针。content 每次打开现建、关闭即弃，
+	# 宿主矩形与 modal_closed 的接线由 _build_team_mercs_overlay() 统一装配
+	# （两层共用同一个 center_host 与同一条 modal_closed 连接）。
 	_build_team_mercs_overlay(center_host)
 
 	_build_detail_popups()
@@ -1341,13 +1308,37 @@ func _hired_mercenary_count() -> int:
 	return n
 
 func _refresh_mercenary_overlay() -> void:
-	if _merc_overlay == null or _merc_overlay_grid == null:
-		return
-	_merc_overlay.visible = _merc_picker_open
 	if not _merc_picker_open:
-		_merc_overlay_signature = "unset"
-		for child in _merc_overlay_grid.get_children():
-			child.queue_free()
+		# 关：交给 ModalStack。content 连同 12 张卡一起被销毁 ——
+		# 迁移前是「留在树里、手动清空网格」，现在整棵子树都不在了。
+		# 业务状态由 modal_closed 统一收口（见 _on_merc_picker_modal_closed）。
+		if ModalStack.has(MERC_PICKER_MODAL_ID):
+			ModalStack.pop(MERC_PICKER_MODAL_ID, ModalStack.REASON_PROGRAMMATIC)
+		else:
+			_merc_picker_teardown_state()
+		return
+
+	if not ModalStack.has(MERC_PICKER_MODAL_ID):
+		var content := _create_merc_picker_content()
+		var modal_id := ModalStack.push(content, {
+			"id": MERC_PICKER_MODAL_ID,
+			"owner": self,
+			"priority": MERC_PICKER_MODAL_PRIORITY,
+			# 取代迁移前 PrepScreen._unhandled_input() 里那段手写的矩形外点击判定。
+			"dismiss_on_backdrop": true,
+			# 迁移前面板外没有任何变暗，backdrop 再上色就是改视觉。
+			"backdrop_color": Color.TRANSPARENT,
+		})
+		if modal_id.is_empty():
+			# 上面已用 has() 挡过重复；走到这里说明 push 真的失败了。
+			# content 已由 push 收走，不能再 free，只清引用。
+			_merc_picker_open = false
+			_merc_picker_teardown_state()
+			return
+		_merc_overlay = content
+		_sync_merc_picker_content_rect()
+
+	if _merc_overlay_grid == null or not is_instance_valid(_merc_overlay_grid):
 		return
 	# 计数放在下面的签名短路之前，否则签名没变时会漏更新。
 	if _merc_count_label != null:
@@ -1381,6 +1372,80 @@ func _close_merc_picker() -> void:
 		return
 	_merc_picker_open = false
 	_refresh_merc_panel()
+# 每次打开现建一份佣兵选择层 content。节点结构、样式、边距、4 列网格与间距
+# 与迁移前逐项一致；唯一的差别是不再设 z_index（ModalStack 的 CanvasLayer 接管层级）。
+#
+# 根节点**保留 MOUSE_FILTER_STOP**：迁移后 content 只占 center_host 的矩形、不是全屏，
+# 所以它不构成「另一块全屏 STOP」。若改成 IGNORE，卡片之间的 8px 间隙和 12px 边距会
+# 穿透到 backdrop —— 玩家在 4 列网格里挑佣兵时手指偏一点就把面板关掉。
+# 这一点与 C4 的检阅台不同：那一层是纯展示、没有可交互子节点。
+func _create_merc_picker_content() -> PanelContainer:
+	var overlay := PanelContainer.new()
+	overlay.name = "MercPickerOverlay"
+	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	var overlay_style := StyleBoxFlat.new()
+	overlay_style.bg_color = Color(0.055, 0.065, 0.075, 0.98)
+	overlay_style.border_color = Color(0.42, 0.50, 0.58, 0.92)
+	overlay_style.set_border_width_all(2)
+	overlay_style.set_corner_radius_all(4)
+	overlay.add_theme_stylebox_override("panel", overlay_style)
+	var overlay_margin := MarginContainer.new()
+	overlay_margin.add_theme_constant_override("margin_left", 12)
+	overlay_margin.add_theme_constant_override("margin_top", 10)
+	overlay_margin.add_theme_constant_override("margin_right", 12)
+	overlay_margin.add_theme_constant_override("margin_bottom", 12)
+	overlay.add_child(overlay_margin)
+	var overlay_box := VBoxContainer.new()
+	overlay_box.add_theme_constant_override("separation", 8)
+	overlay_margin.add_child(overlay_box)
+	var overlay_header := HBoxContainer.new()
+	overlay_box.add_child(overlay_header)
+	var overlay_title := Label.new()
+	overlay_title.text = tr("ui_choose_mercenary")
+	overlay_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	overlay_title.add_theme_font_size_override("font_size", 18)
+	overlay_header.add_child(overlay_title)
+	# 右上角「已雇 N/8」：备战界面没有其它已购佣兵的提示，这里是唯一的计数反馈。
+	_merc_count_label = Label.new()
+	_merc_count_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_merc_count_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_merc_count_label.add_theme_font_size_override("font_size", 18)
+	_merc_count_label.add_theme_color_override("font_color", Color(0.96, 0.97, 1.0))
+	_merc_count_label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.95))
+	_merc_count_label.add_theme_constant_override("outline_size", 3)
+	overlay_header.add_child(_merc_count_label)
+	_merc_overlay_grid = GridContainer.new()
+	_merc_overlay_grid.columns = 4
+	_merc_overlay_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_merc_overlay_grid.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_merc_overlay_grid.add_theme_constant_override("h_separation", 8)
+	_merc_overlay_grid.add_theme_constant_override("v_separation", 8)
+	overlay_box.add_child(_merc_overlay_grid)
+	return overlay
+
+
+func _sync_merc_picker_content_rect() -> void:
+	_sync_modal_content_to_host(_merc_overlay)
+
+
+# 模态被任何一条路关掉时（点外面、close_all、owner 释放、程序化 pop）都会走到这里。
+func _on_merc_picker_modal_closed(id: String, _reason: String) -> void:
+	if id != MERC_PICKER_MODAL_ID:
+		return
+	_merc_picker_open = false
+	_merc_picker_teardown_state()
+
+
+# content 已由 ModalStack 销毁（或即将销毁），这里只清本页面持有的引用。
+# 不 free 任何节点 —— 所有权在 push 时就交出去了。
+# 卡片的 pressed / 长按连接随卡片一起消失，不会累积。
+func _merc_picker_teardown_state() -> void:
+	_merc_overlay_signature = "unset"
+	_merc_overlay = null
+	_merc_overlay_grid = null
+	_merc_count_label = null
+
+
 # ─── team mercs review stage ──────────────────────────────────────────────────
 
 func _build_team_mercs_overlay(center_host: Control) -> void:
@@ -1395,6 +1460,8 @@ func _build_team_mercs_overlay(center_host: Control) -> void:
 	_team_mercs_host = center_host
 	if not center_host.item_rect_changed.is_connected(_sync_team_mercs_content_rect):
 		center_host.item_rect_changed.connect(_sync_team_mercs_content_rect)
+	if not center_host.item_rect_changed.is_connected(_sync_merc_picker_content_rect):
+		center_host.item_rect_changed.connect(_sync_merc_picker_content_rect)
 	# 30Hz 渲染节流：和河流视口同一采样率，动画推进不受影响。
 	# 挂在 self 上而不是 content 里 —— 它要跨开合存活，且 pop() 不该带走它。
 	_team_mercs_render_timer = Timer.new()
@@ -1407,6 +1474,8 @@ func _build_team_mercs_overlay(center_host: Control) -> void:
 	# 统一在这里把业务状态同步回来，避免 _team_mercs_open 与栈不一致。
 	if not ModalStack.modal_closed.is_connected(_on_team_mercs_modal_closed):
 		ModalStack.modal_closed.connect(_on_team_mercs_modal_closed)
+	if not ModalStack.modal_closed.is_connected(_on_merc_picker_modal_closed):
+		ModalStack.modal_closed.connect(_on_merc_picker_modal_closed)
 
 
 # 每次打开现建一份 content。节点结构、尺寸、背景、灯光、相机、缩放与迁移前逐项一致，
@@ -1486,16 +1555,23 @@ func _create_team_mercs_content() -> Control:
 # 所以开合与尺寸变化时都要把它钉回宿主的屏幕矩形 —— 否则舞台会铺满整屏，
 # 那就是改视觉了。
 func _sync_team_mercs_content_rect() -> void:
-	if _team_mercs_overlay == null or not is_instance_valid(_team_mercs_overlay):
+	_sync_modal_content_to_host(_team_mercs_overlay)
+
+
+# 备战页两个模态共用：content 挂在 ModalStack 的全屏 root 下，不再自动跟随
+# center_host 的布局，所以开合与尺寸变化时都要把它钉回宿主的屏幕矩形 ——
+# 否则面板会铺满整屏，那就是改视觉了。
+func _sync_modal_content_to_host(content: Control) -> void:
+	if content == null or not is_instance_valid(content):
 		return
 	if _team_mercs_host == null or not is_instance_valid(_team_mercs_host):
 		return
 	if not _team_mercs_host.is_inside_tree():
 		return
 	var host_rect := _team_mercs_host.get_global_rect()
-	_team_mercs_overlay.set_anchors_preset(Control.PRESET_TOP_LEFT, true)
-	_team_mercs_overlay.global_position = host_rect.position
-	_team_mercs_overlay.size = host_rect.size
+	content.set_anchors_preset(Control.PRESET_TOP_LEFT, true)
+	content.global_position = host_rect.position
+	content.size = host_rect.size
 
 
 # 模态被任何一条路关掉时（点外面、close_all、owner 释放、程序化 pop）都会走到这里。
