@@ -36,6 +36,7 @@
                   },
                   {
                       "id":  "god_priestess",
+                      "model_in_place_actions": ["run"],
                       "name":  "大祭司",
                       "race":  "god",
                       "element":  "ren",
@@ -89,6 +90,7 @@
                   },
                   {
                       "id":  "god_aurora",
+                      "model_in_place_actions": ["run"],
                       "name":  "极光射手",
                       "race":  "god",
                       "element":  "sky",
@@ -139,6 +141,7 @@
                   },
                   {
                       "id":  "god_arbiter",
+                      "model_in_place_actions": ["run"],
                       "name":  "裁决者",
                       "race":  "god",
                       "element":  "land",
@@ -378,6 +381,7 @@
                   },
                   {
                       "id":  "dark_doom",
+                      "model_in_place_actions": ["run"],
                       "name":  "末日守卫",
                       "race":  "dark",
                       "element":  "land",
@@ -432,6 +436,7 @@
                   },
                   {
                       "id":  "undead_small",
+                      "model_in_place_actions": ["run"],
                       "name":  "小灵",
                       "race":  "undead",
                       "element":  "sky",
@@ -481,6 +486,7 @@
                   },
                   {
                       "id":  "undead_parasite",
+                      "model_in_place_actions": ["run"],
                       "name":  "寄生灵",
                       "race":  "undead",
                       "element":  "ren",
@@ -530,6 +536,7 @@
                   },
                   {
                       "id":  "undead_fly",
+                      "model_in_place_actions": ["run"],
                       "name":  "飞灵",
                       "race":  "undead",
                       "element":  "sky",
@@ -553,6 +560,7 @@
                   },
                   {
                       "id":  "undead_bomb",
+                      "model_in_place_actions": ["run"],
                       "name":  "自爆灵",
                       "race":  "undead",
                       "element":  "ren",
@@ -629,6 +637,7 @@
                   },
                   {
                       "id":  "human_militia",
+                      "model_in_place_actions": ["run"],
                       "name":  "民兵",
                       "race":  "human",
                       "element":  "land",
@@ -657,6 +666,7 @@
                   },
                   {
                       "id":  "human_merchant",
+                      "model_in_place_actions": ["run"],
                       "name":  "商人",
                       "race":  "human",
                       "element":  "ren",
@@ -708,6 +718,7 @@
                   },
                   {
                       "id":  "human_swordsman",
+                      "model_in_place_actions": ["run"],
                       "name":  "剑士",
                       "race":  "human",
                       "element":  "land",
@@ -780,6 +791,7 @@
                   },
                   {
                       "id":  "human_death_servant",
+                      "model_in_place_actions": ["run"],
                       "name":  "死侍",
                       "race":  "human",
                       "element":  "land",

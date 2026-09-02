@@ -3,6 +3,7 @@
 const StatusVFXController := preload("res://scenes/battle/StatusVFXController.gd")
 const UnitActor3DScript := preload("res://effects/runtime/presentation/UnitActor3D.gd")
 const UnitVisualResolverScript := preload("res://effects/runtime/presentation/UnitVisualResolver.gd")
+const ModelRootMotionPolicyScript := preload("res://effects/runtime/presentation/ModelRootMotionPolicy.gd")
 
 # Per-frame visual caches: the separation pass is O(N) per unit over the living
 # set, and several call sites ask for the same unit's position within one frame.
@@ -391,6 +392,13 @@ func _sync_3d_model_nodes(living: Array, facing_delta: float, prune := true) -> 
 				continue
 			_battle_3d_models[id] = model_node
 			_battle_3d_root.add_child(model_node)
+			var root_motion_result := ModelRootMotionPolicyScript.apply_to_actor(
+				model_node, _display_unit_def_for_fighter(f))
+			if bool(root_motion_result.get("requested", false)) \
+					and int(root_motion_result.get("locked_tracks", 0)) <= 0:
+				UnitVisualResolverScript.report_failure(str(f.get("id", id)),
+					str(f.get("def", {}).get("model", "")), "battle",
+					"configured in-place action has no lockable root-motion track")
 			_refresh_actor_material_audit(model_node)
 			if not _unit_actor_registry.register_actor(id, model_node):
 				UnitVisualResolverScript.report_failure(str(f.get("id", id)), str(f.get("def", {}).get("model", "")), "battle", "actor contract registration failed")
