@@ -35,6 +35,7 @@ var _overlay_host: Control
 var _target_resolvers: Dictionary = {}
 var _actions: Dictionary = {}
 var _feedback: Callable
+var _keep_clear: Callable
 var _last_request: Dictionary = {}
 var _last_missing: Dictionary = {}
 var _reported_missing: Dictionary = {}
@@ -73,6 +74,31 @@ func bind_action(action_id: String, action: Callable) -> void:
 
 func bind_feedback(feedback: Callable) -> void:
 	_feedback = feedback
+
+
+# 教程气泡不得压住的区域：主按钮、待命区、宝藏刷新等（V2 P1-09）。
+#
+# 这是一条**可选**合同：没绑就返回空数组，REQUIRED_TARGETS 一条没动，
+# 所以既有的 tutorial_target 门禁不受影响。之所以走 provider 而不是让
+# TutorialMode 直接伸手到 PrepScreen 的私有字段拿控件，是因为 P1-10 刚把
+# 那种耦合拆掉，不能从这里再接回去。
+func bind_keep_clear(resolver: Callable) -> void:
+	if not resolver.is_valid():
+		return
+	_keep_clear = resolver
+
+
+func keep_clear_rects() -> Array[Rect2]:
+	var out: Array[Rect2] = []
+	if not _keep_clear.is_valid():
+		return out
+	var raw = _keep_clear.call()
+	if not (raw is Array):
+		return out
+	for value in (raw as Array):
+		if value is Rect2 and (value as Rect2).size.x > 0.0 and (value as Rect2).size.y > 0.0:
+			out.append(value as Rect2)
+	return out
 
 
 func has_target(target_id: String) -> bool:

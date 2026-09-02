@@ -112,8 +112,7 @@ func refresh() -> void:
 		var t := TreasureService.treasure_by_id(tid)
 		var tname := str(t.get("name", tid))
 		var card := Button.new()
-		# 三选一抽宝藏卡整体放大 30%（336×448 → 437×582）。
-		card.custom_minimum_size = Vector2(437, 582)
+		card.custom_minimum_size = _treasure_card_size(cands.size())
 		card.focus_mode = Control.FOCUS_NONE
 		PrepWidgets.apply_empty_button_styles(card)
 		PrepWidgets.configure_unframed_portrait_card(card, hover_handler)
@@ -154,6 +153,46 @@ func refresh() -> void:
 
 
 # 原 _refresh_treasure_candidates（PrepFlowController.gd）
+
+# 三选一抽宝藏卡的基准尺寸（336×448 整体放大 30% 得来）。
+const TREASURE_CARD_BASE := Vector2(437, 582)
+# 卡之间的水平间距，与 _create_content() 里 _treasure_choice_row 的 separation 一致。
+const TREASURE_CARD_SEPARATION := 28.0
+# 标题、刷新按钮与上下留白合计占掉的高度，用来算卡面还剩多少纵向空间。
+const TREASURE_CHROME_HEIGHT := 138.0
+# 再窄也不缩到看不清；低于这个比例就该改布局而不是继续缩。
+const TREASURE_CARD_MIN_SCALE := 0.55
+# 与 TutorialMode.BUBBLE_EDGE_MARGIN 同一条边距。两处各自定义是刻意的：
+# scripts/tutorial 不应该反向依赖 scenes/prep。数值若要改，两边一起改。
+const TREASURE_SAFE_INSET := 18.0
+
+
+# V2 P1-09：卡面按 content 的实际可用矩形等比收缩，不再写死 437×582。
+#
+# 项目基准视口是 1600×720 且 stretch=canvas_items/expand，canvas 高度恒为 720、
+# 宽度随设备宽高比在 1280（16:9）到 1600（20:9）之间变化。写死尺寸时：
+#   * 16:9 与 1280×720 下三张卡要 437*3 + 28*2 = 1367 > 1280，两侧的卡被切掉 87px；
+#   * 582 高的卡加上标题与刷新按钮约占 720 的 96%，安全区一压就出界。
+# 等比收缩同时解决这两条，且宽高比保持不变，美术比例不会被拉伸。
+func _treasure_card_size(count: int) -> Vector2:
+	var slots := maxi(1, count)
+	var available := Vector2.ZERO
+	if _treasure_overlay != null and is_instance_valid(_treasure_overlay):
+		available = _treasure_overlay.size
+	if available.x <= 0.0 or available.y <= 0.0:
+		# 还没入树时拿不到真实尺寸，退回基准视口，至少不会算出 0。
+		available = Vector2(
+			float(ProjectSettings.get_setting("display/window/size/viewport_width", 1600)),
+			float(ProjectSettings.get_setting("display/window/size/viewport_height", 720)))
+	# 上下各留一条安全边距再算可用高度 —— 否则 20:9（canvas 1600×720）与
+	# 2640×1216 下正好差这一圈：582 + 138 = 720 塞满整块画布，安全区一收就出界。
+	var usable_w := available.x - TREASURE_CARD_SEPARATION * float(slots - 1) - TREASURE_CARD_SEPARATION * 2.0
+	var usable_h := available.y - TREASURE_CHROME_HEIGHT - TREASURE_SAFE_INSET * 2.0
+	var scale_w := (usable_w / float(slots)) / TREASURE_CARD_BASE.x
+	var scale_h := usable_h / TREASURE_CARD_BASE.y
+	var scale := clampf(minf(scale_w, scale_h), TREASURE_CARD_MIN_SCALE, 1.0)
+	return (TREASURE_CARD_BASE * scale).floor()
+
 
 func _refresh_candidates() -> void:
 	var cost := TreasureService.refresh_cost(int(GameState.pending_treasure.get("refresh_index", 0)), TreasureService.has_set("money"))

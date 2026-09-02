@@ -81,6 +81,14 @@ const BUBBLE_TEXT_WIDTH := BUBBLE_WIDTH - BUBBLE_MARGIN_X * 2.0
 const BUBBLE_MIN_HEIGHT := 72.0
 const BUBBLE_MAX_HEIGHT := 200.0
 
+# V2 P1-09 的版面常量。
+# 气泡与安全区边缘之间的最小间隙。
+const BUBBLE_EDGE_MARGIN := 18.0
+# 压住目标的单位面积代价。验收线是「目标可见面积 ≥90%」，所以它必须显著高于禁区。
+const TARGET_OVERLAP_WEIGHT := 8.0
+# 候选顺序的固定代价，只用来在完全同分时保住首选方向，不足以压过任何真实遮挡。
+const CANDIDATE_ORDER_PENALTY := 1.0
+
 var active := false
 var step: int = Step.BUY_3
 var bought_units := 0
@@ -303,6 +311,7 @@ func update_overlay() -> void:
 	_continue_btn.visible = false
 	_bubble.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_position_hotspot(rect)
+	_position_chrome()
 
 func total_steps() -> int:
 	return STEP_SEQUENCE.size()
@@ -411,17 +420,33 @@ func _arrow_dir() -> int:
 	return ArrowDir.DOWN
 
 func _apply_arrow(rect: Rect2, dir: int) -> void:
+	var pos := Vector2.ZERO
 	match dir:
 		ArrowDir.LEFT:
 			_arrow.text = "◀"
-			_arrow.position = Vector2(rect.position.x + rect.size.x + ARROW_LEFT_GAP, rect.position.y + rect.size.y * 0.5 - 48.0)
+			pos = Vector2(rect.position.x + rect.size.x + ARROW_LEFT_GAP, rect.position.y + rect.size.y * 0.5 - 48.0)
 		ArrowDir.UP:
 			# 箭尖贴目标底边，箭身朝下延伸，气泡再排在箭尾下方。
 			_arrow.text = "▲"
-			_arrow.position = Vector2(rect.position.x + rect.size.x * 0.5 - 36.0, rect.position.y + rect.size.y + ARROW_UP_GAP)
+			pos = Vector2(rect.position.x + rect.size.x * 0.5 - 36.0, rect.position.y + rect.size.y + ARROW_UP_GAP)
 		_:
 			_arrow.text = "▼"
-			_arrow.position = rect.position + Vector2(rect.size.x * 0.5 - 36.0, ARROW_DOWN_Y_OFFSET)
+			pos = rect.position + Vector2(rect.size.x * 0.5 - 36.0, ARROW_DOWN_Y_OFFSET)
+	# V2 P1-09：箭头也要收进安全区。20:9 与 2640×1216 下，指向屏幕最上/最下一排
+	# 目标的箭头原本会整个跑到刘海或手势条底下去。
+	_arrow.position = _clamp_into(pos, Vector2(ARROW_WIDTH, ARROW_HEIGHT), _safe_rect())
+
+# V2 P1-09：常驻控件（跳过按钮、进度条所在的气泡）也要落在安全区内。
+# 跳过按钮原本写死在 (16, 44)；横屏时刘海在左边缘，正好压住它。
+func _position_chrome() -> void:
+	if _skip_btn == null or not is_instance_valid(_skip_btn):
+		return
+	var safe := _safe_rect()
+	var size := _skip_btn.size
+	if size.x <= 0.0 or size.y <= 0.0:
+		size = _skip_btn.custom_minimum_size
+	_skip_btn.position = _clamp_into(Vector2(16.0, 44.0), size, safe)
+
 
 func _position_hotspot(rect: Rect2) -> void:
 	# 点击推进的步用透明热区拦截点击（不再依赖会被子节点吞掉的 gui_input）。
@@ -656,30 +681,121 @@ func _fit_bubble() -> void:
 	_bubble.reset_size()
 	_bubble.size = Vector2(BUBBLE_WIDTH, clampf(_bubble.size.y, BUBBLE_MIN_HEIGHT, BUBBLE_MAX_HEIGHT))
 
-func _bubble_position(target_rect: Rect2, dir: int) -> Vector2:
-	var margin := 18.0
-	# 宽度已钉死，高度取 _fit_bubble() 收完的实际值。
-	var bubble_size := Vector2(BUBBLE_WIDTH, maxf(_bubble.size.y, BUBBLE_MIN_HEIGHT))
-	var max_x := maxf(margin, _overlay.size.x - bubble_size.x - margin)
-	var max_y := maxf(margin, _overlay.size.y - bubble_size.y - margin)
-	var center_x := clampf(target_rect.position.x + target_rect.size.x * 0.5 - bubble_size.x * 0.5, margin, max_x)
+# 屏幕安全区（刘海、圆角、手势条），换算到 overlay 局部坐标并收掉边距。
+#
+# `DisplayServer.get_display_safe_area()` 在桌面返回整块窗口、在 Android 返回真实
+# 可视矩形 —— 两边共用同一条代码路径，不做平台分支，桌面上因此是无害的恒等变换。
+# overlay 可能因为 stretch 与窗口像素尺寸不同，所以按比例换算而不是直接用像素值。
+func _safe_rect() -> Rect2:
+	var full := Rect2(Vector2.ZERO, _overlay.size)
+	var safe := DisplayServer.get_display_safe_area()
+	var win := DisplayServer.window_get_size()
+	if safe.size.x > 0 and safe.size.y > 0 and win.x > 0 and win.y > 0:
+		var sx := _overlay.size.x / float(win.x)
+		var sy := _overlay.size.y / float(win.y)
+		var mapped := Rect2(
+			Vector2(float(safe.position.x) * sx, float(safe.position.y) * sy),
+			Vector2(float(safe.size.x) * sx, float(safe.size.y) * sy))
+		var clipped := full.intersection(mapped)
+		if clipped.size.x > 0.0 and clipped.size.y > 0.0:
+			full = clipped
+	# 极窄屏下不要把安全区收成负的，宁可贴边也不要算出 NaN 版面。
+	var inset := minf(BUBBLE_EDGE_MARGIN, minf(full.size.x, full.size.y) * 0.25)
+	return full.grow(-inset)
+
+
+func _keep_clear_rects() -> Array[Rect2]:
+	if _target_provider == null:
+		return [] as Array[Rect2]
+	return _target_provider.keep_clear_rects()
+
+
+func _overlap_area(a: Rect2, b: Rect2) -> float:
+	var hit := a.intersection(b)
+	if hit.size.x <= 0.0 or hit.size.y <= 0.0:
+		return 0.0
+	return hit.size.x * hit.size.y
+
+
+func _clamp_into(pos: Vector2, size: Vector2, bounds: Rect2) -> Vector2:
+	var max_x := maxf(bounds.position.x, bounds.position.x + bounds.size.x - size.x)
+	var max_y := maxf(bounds.position.y, bounds.position.y + bounds.size.y - size.y)
+	return Vector2(
+		clampf(pos.x, bounds.position.x, max_x),
+		clampf(pos.y, bounds.position.y, max_y))
+
+
+# 四个候选位置：目标的上方 / 下方 / 右侧 / 左侧。返回时首选方向排在第 0 位，
+# 这样同分的情况下版面与迁移前一致，只有真的压住目标或禁区才会换位。
+func _bubble_candidates(target_rect: Rect2, size: Vector2, dir: int) -> Array[Vector2]:
+	var center_x := target_rect.position.x + target_rect.size.x * 0.5 - size.x * 0.5
+	var center_y := target_rect.position.y + target_rect.size.y * 0.5 - size.y * 0.5
+	var above_y := target_rect.position.y + ARROW_DOWN_Y_OFFSET - 8.0 - size.y
+	var below_y := target_rect.position.y + target_rect.size.y + ARROW_UP_GAP + ARROW_HEIGHT
+	var right_x := target_rect.position.x + target_rect.size.x + ARROW_LEFT_GAP + ARROW_WIDTH + 12.0
+	var left_x := target_rect.position.x - ARROW_LEFT_GAP - ARROW_WIDTH - 12.0 - size.x
+	# 每个方向再给三个沿垂直轴的对齐变体（居中 / 贴目标一边 / 贴另一边）。
+	# 只给四个正中候选时，四个都压住禁区就只能挑「最不糟」的那个；
+	# 多这几档平移能真正让开待命区和主按钮，而不是少压一点。
+	var above: Array[Vector2] = [
+		Vector2(center_x, above_y),
+		Vector2(target_rect.position.x, above_y),
+		Vector2(target_rect.position.x + target_rect.size.x - size.x, above_y)]
+	var below: Array[Vector2] = [
+		Vector2(center_x, below_y),
+		Vector2(target_rect.position.x, below_y),
+		Vector2(target_rect.position.x + target_rect.size.x - size.x, below_y)]
+	var right: Array[Vector2] = [
+		Vector2(right_x, center_y),
+		Vector2(right_x, target_rect.position.y),
+		Vector2(right_x, target_rect.position.y + target_rect.size.y - size.y)]
+	var left: Array[Vector2] = [
+		Vector2(left_x, center_y),
+		Vector2(left_x, target_rect.position.y),
+		Vector2(left_x, target_rect.position.y + target_rect.size.y - size.y)]
+	var out: Array[Vector2] = []
 	match dir:
 		ArrowDir.LEFT:
-			# 箭头 ◀ 指向左侧面板/宝藏图标，气泡整体让到箭头右边（原来的 46 比箭头还窄，会叠上）。
-			var bx := target_rect.position.x + target_rect.size.x + ARROW_LEFT_GAP + ARROW_WIDTH + 12.0
-			var by := target_rect.position.y + target_rect.size.y * 0.5 - bubble_size.y * 0.5
-			return Vector2(clampf(bx, margin, max_x), clampf(by, margin, max_y))
+			# 箭头 ◀ 指向目标左侧的面板，气泡让到箭头右边。
+			for group in [right, above, below, left]:
+				out.append_array(group)
 		ArrowDir.UP:
 			# 目标在屏幕顶部：箭头在气泡上方指向目标，气泡排在箭尾下面。
-			var uy := target_rect.position.y + target_rect.size.y + ARROW_UP_GAP + ARROW_HEIGHT
-			return Vector2(center_x, clampf(uy, margin, max_y))
-	# 向下箭头的步：气泡放在箭头「上方」，整体不压住箭头和目标（修复升星箭头被黑字挡）。
-	var arrow_top := target_rect.position.y + ARROW_DOWN_Y_OFFSET - 8.0
-	var y := arrow_top - bubble_size.y
-	if y < margin:
-		# 上方放不下就落到目标下方，仍然不与箭头重叠。
-		y = target_rect.position.y + target_rect.size.y + 18.0
-	return Vector2(center_x, clampf(y, margin, max_y))
+			for group in [below, above, right, left]:
+				out.append_array(group)
+		_:
+			for group in [above, below, right, left]:
+				out.append_array(group)
+	return out
+
+
+# V2 P1-09：气泡按「目标矩形 + 安全区 + 当前面板禁区」动态选位，
+# 不再是按步骤写死一个方向再硬 clamp —— 那种做法在 20:9 和 2640×1216 下
+# 会把气泡直接压在目标上，验收要求的「目标可见面积 ≥90%」达不到。
+func _bubble_position(target_rect: Rect2, dir: int) -> Vector2:
+	# 用气泡的**实际**尺寸夹边，不能用 BUBBLE_WIDTH：PanelContainer 的边框会让
+	# 实测宽度比常量大几像素，按常量夹就会有一条窄边露在安全区之外。
+	var bubble_size := Vector2(
+		maxf(_bubble.size.x, BUBBLE_WIDTH),
+		maxf(_bubble.size.y, BUBBLE_MIN_HEIGHT))
+	var safe := _safe_rect()
+	var keep_clear := _keep_clear_rects()
+	var candidates := _bubble_candidates(target_rect, bubble_size, dir)
+	var best := _clamp_into(candidates[0], bubble_size, safe)
+	var best_score := INF
+	for i in candidates.size():
+		var pos := _clamp_into(candidates[i], bubble_size, safe)
+		var rect := Rect2(pos, bubble_size)
+		# 压住目标的代价远高于压住禁区：验收线画在目标可见度上。
+		var score := _overlap_area(rect, target_rect) * TARGET_OVERLAP_WEIGHT
+		for blocked in keep_clear:
+			score += _overlap_area(rect, blocked)
+		# 同分时保持首选方向。代价足够小，一旦真压住目标就必然让位。
+		score += float(i) * CANDIDATE_ORDER_PENALTY
+		if score < best_score:
+			best_score = score
+			best = pos
+	return best
 
 func _target_control() -> Control:
 	if _target_provider == null:

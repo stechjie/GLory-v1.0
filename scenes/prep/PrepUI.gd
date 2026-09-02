@@ -164,8 +164,45 @@ func tutorial_target_provider() -> TutorialTargetProviderScript:
 	provider.bind_action(TutorialTargetProviderScript.ACTION_REFRESH_VIEW,
 		_tutorial_refresh_view)
 	provider.bind_feedback(show_message)
+	# V2 P1-09：教程气泡不得压住这几块。走 provider 的可选合同，
+	# 让 TutorialMode 不必再认识备战页的私有字段（那正是 P1-10 拆掉的耦合）。
+	provider.bind_keep_clear(_tutorial_keep_clear_rects)
 	_tutorial_target_provider = provider
 	return provider
+
+
+# 开始战斗按钮、商店入口、待命区整排、宝藏刷新按钮 —— 气泡压住任何一块，
+# 玩家都会卡在「看得见提示但点不到东西」的状态。
+func _tutorial_keep_clear_rects() -> Array[Rect2]:
+	var out: Array[Rect2] = []
+	for control in [
+		_start_battle_button,
+		_merc_button,
+		_shop.open_button if _shop != null else null,
+		_treasure._treasure_refresh_btn if _treasure != null else null,
+	]:
+		_append_visible_rect(control as Control, out)
+	if _board_hud != null:
+		# 待命区按整排算一个矩形：逐格加进去会让评分被格数放大。
+		var bench := Rect2()
+		var has_bench := false
+		for button in _board_hud.bench_buttons:
+			var control := button as Control
+			if control == null or not is_instance_valid(control) or not control.is_visible_in_tree():
+				continue
+			bench = control.get_global_rect() if not has_bench else bench.merge(control.get_global_rect())
+			has_bench = true
+		if has_bench:
+			out.append(bench)
+	return out
+
+
+func _append_visible_rect(control: Control, out: Array[Rect2]) -> void:
+	if control == null or not is_instance_valid(control) or not control.is_visible_in_tree():
+		return
+	var rect := control.get_global_rect()
+	if rect.size.x > 0.0 and rect.size.y > 0.0:
+		out.append(rect)
 
 
 func release_tutorial_target_provider() -> void:
