@@ -8,6 +8,7 @@ signal join_room_request_check_requested(request_id: String, room_id: int, targe
 signal join_room_navigation_check_requested(request_id: String)
 signal short_code_resume_request_check_requested(request_id: String, token_id: String)
 signal short_code_resume_result_check_requested(request_id: String, succeeded: bool)
+signal reconnect_cancel_navigation_check_requested()
 
 const VFX_WARMUP := preload("res://effects/vfx3d/VFXWarmup.gd")
 
@@ -27,10 +28,25 @@ const SHORT_CODE_RESUME_ACTION := "team_short_code_resume"
 const SHORT_CODE_RESUME_CONTROL_ID := "main_menu/public_token_resume"
 const SHORT_CODE_RESUME_TIMEOUT_MSEC := 15000
 
+# 断线重连提示层的 ModalStack 合同（C-11 的 B1）。
+# 90：高于战斗加载 80、低于确认框 100 —— 重连中弹出的确认框必须盖在它上面，
+# 而它必须盖住战斗加载。
+const RECONNECT_MODAL_ID := "reconnect_status"
+const RECONNECT_MODAL_PRIORITY := 90
+# 迁移前这 0.72 的黑是浮层自己那块 ColorRect；现在由 ModalStack 的 backdrop 承担，
+# 数值逐字保持。
+const RECONNECT_BACKDROP_COLOR := Color(0.0, 0.0, 0.0, 0.72)
+
 var _menu: Control
 var _prep: Control
 var _battle: Control
-var _reconnect_overlay: CanvasLayer
+# 迁移后这三个都是**瞬时**节点：ModalStack 每次开层现建、关层销毁。
+# 根不再是自建的 CanvasLayer（layer=100），而是一块透明的全屏 Control；
+# 层级与 0.72 变暗都交给 ModalStack。
+var _reconnect_overlay: Control
+var _reconnect_label: Label
+var _reconnect_cancel_button: Button
+var _reconnect_cancel_navigation_check_hook := Callable()
 var _public_token_request_id := ""
 var _public_token_waiting_for_session := false
 var _public_token_request_check_hook := Callable()
@@ -112,46 +128,132 @@ func _on_global_session_changed() -> void:
 		_hide_reconnect_overlay()
 
 func _show_reconnect_overlay() -> void:
-	if _reconnect_overlay != null and is_instance_valid(_reconnect_overlay):
+	# 迁移前这里自己建 CanvasLayer(layer=100) 挂到 root（C-11 的 B1 之前）。
+	# 现在交给 ModalStack：去重由 has() 负责，层级由 CanvasLayer priority 负责。
+	# 仍然不挂在 Main 下面 —— _clear() 每次切界面都会把 Main 的子节点全部 queue_free，
+	# 而 ModalStack 的宿主层挂在 root，结构上就不会被误删。
+	if ModalStack.has(RECONNECT_MODAL_ID):
 		return
-	# 挂在 root 上：Main._clear() 切界面时不会误删
-	_reconnect_overlay = CanvasLayer.new()
-	_reconnect_overlay.name = "ReconnectOverlay"
-	_reconnect_overlay.layer = 100
-	var dim := ColorRect.new()
-	dim.color = Color(0.0, 0.0, 0.0, 0.72)
-	dim.mouse_filter = Control.MOUSE_FILTER_STOP
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_reconnect_overlay.add_child(dim)
+	if not ModalStack.modal_closed.is_connected(_on_reconnect_modal_closed):
+		ModalStack.modal_closed.connect(_on_reconnect_modal_closed)
+	var content := _create_reconnect_content()
+	var modal_id := ModalStack.push(content, {
+		"id": RECONNECT_MODAL_ID,
+		"owner": self,
+		"priority": RECONNECT_MODAL_PRIORITY,
+		# 重连中点外面不能关：唯一的出口是那个「取消并返回主菜单」按钮。
+		"dismiss_on_backdrop": false,
+		"backdrop_color": RECONNECT_BACKDROP_COLOR,
+	})
+	if modal_id.is_empty():
+		# 上面已用 has() 挡过重复；走到这里说明 push 真的失败了。
+		# content 已被 push 收走，不能再 free，只清引用。
+		_teardown_reconnect_refs()
+		return
+	_reconnect_overlay = content
+
+
+# 每次开层现建一份 content。文案、字号、颜色、260×48、间距 18 与迁移前逐字一致。
+# 两处差别：不再自带 0.72 的 dim（交给 backdrop，避免叠成两层黑），
+# 不再依赖 layer=100。全链 IGNORE 到取消按钮为止 ——
+# 全屏 STOP 只能有 backdrop 一块，而按钮之外的点击落到 backdrop 上被吃掉
+# （dismiss_on_backdrop=false），既不穿透到底层界面、也不关层。
+func _create_reconnect_content() -> Control:
+	var root := Control.new()
+	root.name = "ReconnectStatusOverlay"
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var center := CenterContainer.new()
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.add_child(center)
+	root.add_child(center)
 	var box := VBoxContainer.new()
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_theme_constant_override("separation", 18)
 	center.add_child(box)
-	var lbl := Label.new()
-	lbl.text = "连接中断，正在重连…" if not LocaleManager.get_locale().begins_with("en") else "Connection lost, reconnecting..."
-	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lbl.add_theme_font_size_override("font_size", 30)
-	lbl.add_theme_color_override("font_color", Color(0.95, 0.92, 0.80))
-	box.add_child(lbl)
-	var cancel := Button.new()
-	cancel.text = "取消并返回主菜单" if not LocaleManager.get_locale().begins_with("en") else "Cancel and return to menu"
-	cancel.custom_minimum_size = Vector2(260, 48)
-	cancel.pressed.connect(_on_reconnect_cancel)
-	box.add_child(cancel)
-	get_tree().root.add_child(_reconnect_overlay)
+	_reconnect_label = Label.new()
+	_reconnect_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_reconnect_label.text = "连接中断，正在重连…" if not LocaleManager.get_locale().begins_with("en") else "Connection lost, reconnecting..."
+	_reconnect_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_reconnect_label.add_theme_font_size_override("font_size", 30)
+	_reconnect_label.add_theme_color_override("font_color", Color(0.95, 0.92, 0.80))
+	box.add_child(_reconnect_label)
+	_reconnect_cancel_button = Button.new()
+	_reconnect_cancel_button.text = "取消并返回主菜单" if not LocaleManager.get_locale().begins_with("en") else "Cancel and return to menu"
+	_reconnect_cancel_button.custom_minimum_size = Vector2(260, 48)
+	_reconnect_cancel_button.pressed.connect(_on_reconnect_cancel)
+	box.add_child(_reconnect_cancel_button)
+	return root
+
 
 func _hide_reconnect_overlay() -> void:
-	if _reconnect_overlay != null and is_instance_valid(_reconnect_overlay):
-		_reconnect_overlay.queue_free()
+	if ModalStack.has(RECONNECT_MODAL_ID):
+		# 所有权在 push 时就交给 ModalStack 了，绝不能自己 queue_free content。
+		ModalStack.pop(RECONNECT_MODAL_ID, ModalStack.REASON_PROGRAMMATIC)
+	else:
+		_teardown_reconnect_refs()
+
+
+# 任何一条关闭路径（程序化 pop、close_all、Back、owner 释放）都会走到这里。
+#
+# ⚠️ 这里**绝不碰会话状态**：不调 cancel_reconnect()、不清凭证、不改 team_mode、
+# 不导航。外部关掉这一层不等于玩家按了取消 —— 那样等于把玩家的重连凭证无声销毁。
+func _on_reconnect_modal_closed(id: String, _reason: String) -> void:
+	if id != RECONNECT_MODAL_ID:
+		return
+	_teardown_reconnect_refs()
+	# ⚠️ 必须 deferred。ModalStack.close_all() 是 `while not _entries.is_empty()`，
+	# 而 pop() 同步 emit modal_closed —— 在这里直接重新 push，_entries 永远不空，
+	# 整个进程原地转死。deferred 回调在 close_all() 返回之后才跑。
+	_restore_reconnect_if_still_needed.call_deferred()
+
+
+# 强制层的自愈：只要还在重连，层就得回来。
+# 不需要判断关闭原因 —— 取消 / 恢复成功 / 恢复失败时 state 都已经离开
+# RECONNECTING，这里读到就什么都不做，不会把已经该消失的层又拉回来。
+func _restore_reconnect_if_still_needed() -> void:
+	if not is_instance_valid(self) or not is_inside_tree():
+		return
+	if NetworkService.state != NetworkService.SessionState.RECONNECTING:
+		return
+	if ModalStack.has(RECONNECT_MODAL_ID):
+		return
+	_show_reconnect_overlay()
+
+
+# content 已由 ModalStack 销毁（或即将销毁），这里只清本页面持有的引用。
+# 不 free 任何节点；取消按钮的 pressed 连接随按钮一起消失，不会累积。
+func _teardown_reconnect_refs() -> void:
 	_reconnect_overlay = null
+	_reconnect_label = null
+	_reconnect_cancel_button = null
+
 
 func _on_reconnect_cancel() -> void:
+	# 取消是一次性的。迁移前这里没有任何守卫：连点 N 次就调 N 次
+	# cancel_reconnect()（每次都删一遍凭证、reset 一遍会话）并导航 N 次。
+	# 守卫绑在「面板确实还在屏幕上」这个玩家可见事实上，而不是再加一份要同步的 bool。
+	if not ModalStack.has(RECONNECT_MODAL_ID):
+		return
 	NetworkService.cancel_reconnect()
 	GameState.team_mode = false
 	_hide_reconnect_overlay()
+	if OS.is_debug_build() and _reconnect_cancel_navigation_check_hook.is_valid():
+		reconnect_cancel_navigation_check_requested.emit()
+		return
 	_show_menu()
+
+
+func set_reconnect_cancel_navigation_check_hook(hook: Callable) -> bool:
+	if not OS.is_debug_build():
+		return false
+	if _reconnect_cancel_navigation_check_hook.is_valid() \
+			and reconnect_cancel_navigation_check_requested.is_connected(_reconnect_cancel_navigation_check_hook):
+		reconnect_cancel_navigation_check_requested.disconnect(_reconnect_cancel_navigation_check_hook)
+	_reconnect_cancel_navigation_check_hook = hook
+	if _reconnect_cancel_navigation_check_hook.is_valid():
+		reconnect_cancel_navigation_check_requested.connect(_reconnect_cancel_navigation_check_hook)
+	return true
 
 func _on_resume_completed(payload: Dictionary) -> void:
 	if _short_code_resume_ignore_late_result:
