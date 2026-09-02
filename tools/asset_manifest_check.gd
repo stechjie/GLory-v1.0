@@ -138,9 +138,23 @@ func _ready() -> void:
 	_check_dependency_failures()
 
 	# --- 产出 ---
+	# V2 P0-01 第 4 条：当前树不完整时**禁止覆盖最后一次可信清单**。
+	#
+	# 这不是普通的红灯。`assets.manifest.json` 正是 `asset_delivery_check`
+	# 的比对基准；从残缺树重新生成，会把「这批文件缺了」洗成「它们本来就不该在」，
+	# 于是 delivery 从此再也报不出这批缺失 —— 基准被自己毁掉，
+	# 而套件依然全绿。红灯能被人看见，被洗掉的基准不能。
+	# 判据用 `failure_count()`（**未被允许列表豁免**的失败数），不是 `_missing.size()`。
+	# 树里长期有 4 条挂了负责人和到期日的豁免项；按原始计数拦，清单从此再也
+	# 生不出来 —— 那不是守卫，那是把生成器焊死。
 	var entries := _build_entries()
-	_write_manifest(entries)
-	_write_doc(entries)
+	if _h.failure_count() == 0:
+		_write_manifest(entries)
+		_write_doc(entries)
+	else:
+		print("[%s] manifest_untrusted=true 未豁免失败=%d（缺失=%d 依赖查询失败=%d）拒绝覆盖 %s 与 %s" % [
+			CHECK_NAME, _h.failure_count(), _missing.size(), _dep_failed.size(),
+			MANIFEST_PATH, DOC_PATH])
 
 	print("[%s] 完成，耗时 %.1f 秒（hash 缓存命中 %d 个）" % [
 		CHECK_NAME, (Time.get_ticks_msec() - started) / 1000.0, _cache_hits])
