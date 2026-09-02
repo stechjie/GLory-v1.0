@@ -28,6 +28,11 @@ const SHORT_CODE_RESUME_ACTION := "team_short_code_resume"
 const SHORT_CODE_RESUME_CONTROL_ID := "main_menu/public_token_resume"
 const SHORT_CODE_RESUME_TIMEOUT_MSEC := 15000
 
+# V2 P1-08：返回键二次确认的窗口。PrepScreen 走 preload 常量做静态类型判断，
+# 不用 has_method 动态派发 —— 那会给 dynamic_call 棘轮添丁。
+const BACK_EXIT_CONFIRM_WINDOW_SEC := 2.0
+const PrepScreenScript := preload("res://scenes/prep/PrepScreen.gd")
+
 # 断线重连提示层的 ModalStack 合同（C-11 的 B1）。
 # 90：高于战斗加载 80、低于确认框 100 —— 重连中弹出的确认框必须盖在它上面，
 # 而它必须盖住战斗加载。
@@ -74,6 +79,7 @@ var _short_code_resume_request_check_hook := Callable()
 var _short_code_resume_result_check_hook := Callable()
 # 离线自测·单位测试模式(officetest):进入前的 team_mode 快照,退出时还原。
 var _selftest_prev_team_mode := false
+var _back_exit_armed_until := 0.0
 
 func _ready() -> void:
 	# Idempotent on purpose: the DataRegistry autoload has already loaded by now, and
@@ -439,8 +445,77 @@ func _show_language_select() -> void:
 func _select_language(locale: String) -> void:
 	LocaleManager.set_locale(locale)
 	StartupTrace.mark_first_action("select_language", locale)
-	TutorialMode.start()
+	# V2 P1-08：有断点就恢复到原来那一步，而不是从 BUY_3 重来。
+	# 恢复失败（版本不符、结构损坏）时退回全新教程 —— 宁可从头，也不半恢复出夹生状态。
+	# 语言以玩家这次的选择为准，断点里的 locale 只作记录；
+	# 「跳过语言页直接恢复」属于 V3 P0-08 的启动路由，本批不做。
+	if not (TutorialMode.has_checkpoint() and TutorialMode.restore_checkpoint()):
+		TutorialMode.start()
 	_show_prep()
+
+
+# --- V2 P1-08：Android 返回键 -------------------------------------------------
+#
+# 优先级：最上层 modal → 当前页面自己的面板 → 二次确认退出。**不直接退桌面。**
+# 全局 ScreenRouter 与 pending 动作询问那一套属于 V3 P0-09，本批不做。
+func _notification(what: int) -> void:
+	match what:
+		NOTIFICATION_WM_GO_BACK_REQUEST:
+			_on_back_requested()
+		NOTIFICATION_APPLICATION_PAUSED:
+			# 切后台：教程断点必须落盘。主存档由 SaveManager 自己的 _notification 负责。
+			if TutorialMode.active:
+				TutorialMode.save_checkpoint(true)
+
+
+func _on_back_requested() -> void:
+	# 1. 最上层 modal（重连提示、宝藏三选一、佣兵层、确认框都在这里）
+	if ModalStack.handle_back_request():
+		return
+	# 2. 当前页面自己的面板（备战页的商店 / 佣兵 / 组队检阅台）
+	if _prep != null and is_instance_valid(_prep) and _prep is PrepScreenScript:
+		if (_prep as PrepScreenScript).handle_back_request():
+			return
+	# 3. 退出前先把教程断点钉住，玩家回来还在同一步
+	if TutorialMode.active:
+		TutorialMode.save_checkpoint(true)
+	var now := Time.get_ticks_msec() / 1000.0
+	if now < _back_exit_armed_until:
+		_back_exit_armed_until = 0.0
+		get_tree().quit()
+		return
+	_back_exit_armed_until = now + BACK_EXIT_CONFIRM_WINDOW_SEC
+	_show_back_exit_hint()
+
+
+func _show_back_exit_hint() -> void:
+	var existing := get_node_or_null("BackExitHint")
+	if existing != null:
+		existing.queue_free()
+	var hint := Label.new()
+	hint.name = "BackExitHint"
+	hint.text = "再按一次返回键退出" if not LocaleManager.get_locale().begins_with("en") else "Press back again to exit"
+	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hint.add_theme_font_size_override("font_size", 22)
+	hint.add_theme_color_override("font_color", Color(0.98, 0.96, 0.86))
+	hint.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
+	hint.add_theme_constant_override("outline_size", 4)
+	hint.anchor_left = 0.0
+	hint.anchor_right = 1.0
+	hint.anchor_top = 1.0
+	hint.anchor_bottom = 1.0
+	hint.offset_top = -120.0
+	hint.offset_bottom = -80.0
+	add_child(hint)
+	# 计时器挂在提示自己身上：页面切换把提示删掉时计时器一起消失，
+	# 回调不会落到已释放的节点上。
+	var timer := Timer.new()
+	timer.one_shot = true
+	timer.wait_time = BACK_EXIT_CONFIRM_WINDOW_SEC
+	hint.add_child(timer)
+	timer.timeout.connect(hint.queue_free)
+	timer.start()
 
 func _show_menu() -> void:
 	# 首次启动：进主菜单前强制选择初始宠物（三选一，选完才放行）。

@@ -143,6 +143,8 @@ func start() -> void:
 	bought_units = 0
 	_progress_index = 0
 	_end_fill_step()
+	# 重新开始教程：旧断点必须先清掉，否则下次启动会把玩家拽回上一局的进度。
+	clear_checkpoint()
 	GameState.reset_run()
 	GameState.tutorial_mode = true
 	GameState.player_formation_hp = TUTORIAL_HP
@@ -155,6 +157,7 @@ func finish() -> void:
 	GameState.tutorial_mode = false
 	opponent_snapshot = {}
 	_end_fill_step()
+	clear_checkpoint()
 	_detach()
 	completed.emit()
 
@@ -206,6 +209,8 @@ func sync() -> void:
 	if step == Step.FILL_7 and GameState.normal_unit_count() >= FILL_TARGET_UNITS:
 		_end_fill_step()
 		step = Step.FORMATION_HP
+	# 每次推进都落一次断点（内部按进度签名节流，不会每帧写盘）。
+	save_checkpoint()
 	update_overlay()
 
 func can_start_battle() -> bool:
@@ -256,6 +261,7 @@ func after_battle(result: Dictionary) -> void:
 			GameState.enemy_formation_hp = 0
 			step = Step.DONE
 	GameState.gold = TUTORIAL_GOLD
+	save_checkpoint(true)
 
 func current_text() -> String:
 	match step:
@@ -515,6 +521,136 @@ func _on_hotspot_pressed() -> void:
 		_:
 			return
 	update_overlay()
+
+# --- 教程断点（V2 P1-08）------------------------------------------------------
+#
+# 为什么需要它：`SaveManager._write_now()` 第一行是 `if GameState.tutorial_mode: return`，
+# 教程期间主存档整个被跳过。所以 Back 退出、被系统杀死或切后台之后，
+# 回来必然从 BUY_3 重来 —— 这正是 R-10 记录的现象。
+#
+# 断点只存**语义步骤与可重建的数据**，不存任何 Node 引用（MD 要求「幂等、可恢复」）。
+const CHECKPOINT_VERSION := 1
+
+# 写盘节流用的进度签名。sync() 每次 _refresh_all() 都会跑，
+# 不加签名就会变成每帧写文件。
+var _checkpoint_signature := ""
+
+
+func save_checkpoint(force: bool = false) -> void:
+	if not active:
+		return
+	var signature := _checkpoint_progress_signature()
+	if not force and signature == _checkpoint_signature:
+		return
+	_checkpoint_signature = signature
+	SaveManager.save_tutorial({
+		"version": CHECKPOINT_VERSION,
+		"locale": LocaleManager.get_locale(),
+		"step": step,
+		"progress_index": _progress_index,
+		"bought_units": bought_units,
+		"fill": {
+			"started": _fill_started,
+			"phase": _fill_phase,
+			"buy_target": _fill_buy_target,
+			"bought": _fill_bought,
+			"shop_open": _fill_shop_open,
+			"compensated": _fill_compensated,
+		},
+		"round_index": GameState.round_index,
+		"gold": GameState.gold,
+		"player_formation_hp": GameState.player_formation_hp,
+		"enemy_formation_hp": GameState.enemy_formation_hp,
+		"board_slots": GameState.board_slots.duplicate(true),
+		"bench_slots": GameState.bench_slots.duplicate(true),
+		"mercenary_slots": GameState.mercenary_slots.duplicate(true),
+		"shop_offers": GameState.shop_offers.duplicate(true),
+		"shop_sold": GameState.shop_sold.duplicate(true),
+		"owned_treasures": GameState.owned_treasures.duplicate(),
+		"claimed_treasure_rounds": GameState.claimed_treasure_rounds.duplicate(),
+		"pending_treasure": GameState.pending_treasure.duplicate(true),
+		"pve_completed": GameState.pve_completed,
+		"boss_completed": GameState.boss_completed,
+	})
+
+
+# 进度签名只取「玩家实际推进了什么」，不取金币这类每帧会被 sync() 重置的量。
+func _checkpoint_progress_signature() -> String:
+	return "%d|%d|%d|%d|%d|%d|%d|%d|%d" % [
+		step, _progress_index, bought_units,
+		_fill_phase, _fill_bought,
+		_owned_normal_count(), GameState.normal_unit_count(),
+		_mercenary_count(), GameState.owned_treasures.size(),
+	]
+
+
+func has_checkpoint() -> bool:
+	return SaveManager.has_tutorial()
+
+
+func clear_checkpoint() -> void:
+	_checkpoint_signature = ""
+	SaveManager.clear_tutorial()
+
+
+# 从断点恢复。成功返回 true；断点缺失/版本不符/结构损坏一律返回 false，
+# 由调用方退回「从头开始教程」——绝不半恢复出一个夹生状态。
+func restore_checkpoint() -> bool:
+	var data := SaveManager.load_tutorial()
+	if data.is_empty() or int(data.get("version", 0)) != CHECKPOINT_VERSION:
+		return false
+	var saved_step := int(data.get("step", -1))
+	if saved_step < 0 or saved_step > int(Step.DONE):
+		return false
+
+	active = true
+	GameState.reset_run()
+	GameState.tutorial_mode = true
+	step = saved_step
+	_progress_index = int(data.get("progress_index", 0))
+	bought_units = int(data.get("bought_units", 0))
+
+	var fill: Dictionary = data.get("fill", {}) if data.get("fill", {}) is Dictionary else {}
+	_fill_started = bool(fill.get("started", false))
+	_fill_phase = int(fill.get("phase", FillPhase.BUY))
+	_fill_buy_target = int(fill.get("buy_target", 0))
+	_fill_bought = int(fill.get("bought", 0))
+	_fill_shop_open = bool(fill.get("shop_open", false))
+	_fill_compensated = int(fill.get("compensated", 0))
+
+	GameState.round_index = int(data.get("round_index", 1))
+	GameState.gold = int(data.get("gold", TUTORIAL_GOLD))
+	GameState.player_formation_hp = int(data.get("player_formation_hp", TUTORIAL_HP))
+	GameState.enemy_formation_hp = int(data.get("enemy_formation_hp", TUTORIAL_HP))
+	_restore_slots(GameState.board_slots, data.get("board_slots", []))
+	_restore_slots(GameState.bench_slots, data.get("bench_slots", []))
+	_restore_slots(GameState.mercenary_slots, data.get("mercenary_slots", []))
+	_restore_slots(GameState.shop_offers, data.get("shop_offers", []))
+	_restore_slots(GameState.shop_sold, data.get("shop_sold", []), false)
+	GameState.owned_treasures.clear()
+	for tid in data.get("owned_treasures", []):
+		GameState.owned_treasures.append(str(tid))
+	GameState.claimed_treasure_rounds.clear()
+	for r in data.get("claimed_treasure_rounds", []):
+		GameState.claimed_treasure_rounds.append(int(r))
+	var pending: Variant = data.get("pending_treasure", {})
+	if pending is Dictionary:
+		GameState.pending_treasure = (pending as Dictionary).duplicate(true)
+	GameState.pve_completed = int(data.get("pve_completed", 0))
+	GameState.boss_completed = int(data.get("boss_completed", 0))
+
+	_checkpoint_signature = _checkpoint_progress_signature()
+	return true
+
+
+# 按目标数组的既有长度逐格写回，不改容量 —— reset_run() 已经把尺寸摆好了。
+func _restore_slots(target: Array, raw: Variant, fallback: Variant = null) -> void:
+	if not (raw is Array):
+		return
+	var source: Array = raw
+	for i in target.size():
+		target[i] = source[i] if i < source.size() else fallback
+
 
 func record_shop_purchase() -> void:
 	if not active:

@@ -735,3 +735,21 @@ func _on_battle_loading_retry_requested(request_id: String) -> void:
 		_start_battle_button.reset_idle(request_id)
 	_battle_action_request_id = ""
 	_emit_battle_request_once.call_deferred()
+
+
+# V2 P1-08：返回键落到备战页时，先关掉页面自己的面板再谈退出。
+# 顺序与玩家的心智一致：最后打开的最先关。ModalStack 管的那几层（宝藏、佣兵、
+# 重连提示）已经在 Main 里更早一步处理掉了，这里只管备战页自建的面板。
+#
+# 返回 true 表示「这一下被消费了」，Main 就不再往下走二次确认退出。
+func handle_back_request() -> bool:
+	if _shop != null and _shop.picker_open:
+		_shop.close_picker()
+		return true
+	if _merc_picker_open:
+		_close_merc_picker()
+		return true
+	if _team_mercs_open:
+		_close_team_mercs_picker()
+		return true
+	return false

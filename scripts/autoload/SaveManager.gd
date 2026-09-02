@@ -3,6 +3,8 @@
 const SAVE_PATH := "user://glory_beta_004.save"
 const RECONNECT_PATH := "user://glory_reconnect.json"
 const PUBLIC_TOKEN_PATH := "user://glory_public_token.txt"
+# 教程断点（V2 P1-08）。与主存档分开，见下面 save_tutorial() 上的说明。
+const TUTORIAL_PATH := "user://glory_tutorial.json"
 const SAVE_DEBOUNCE_SEC := 0.5
 
 var _save_pending := false
@@ -126,6 +128,35 @@ func load_reconnect() -> Dictionary:
 func clear_reconnect() -> void:
 	# 凭证作废必须连 .bak/.tmp 一起清，否则下次启动会从兜底文件里把死 token 读回来。
 	_remove_all_variants(RECONNECT_PATH)
+
+# --- 教程断点（V2 P1-08）------------------------------------------------------
+#
+# 走**独立文件**而不是主存档：`_write_now()` 第一行就是 `if GameState.tutorial_mode: return`，
+# 教程期间主存档整个被跳过 —— 那正是「Back 退出后回到语言页、教程从头开始」的根因。
+# 不去动那条早退，是因为主存档参与 replay / final-state SHA，
+# 而 V2 收尾明确要求这些字节不变。
+#
+# 复用同一套原子写：写临时文件 → flush → 回读校验 → 旧文件转 .bak → 转正。
+# 清除时连 .bak/.tmp 一起删，否则下次启动会从兜底文件里读回一个死断点。
+func save_tutorial(payload: Dictionary) -> void:
+	_atomic_write(TUTORIAL_PATH, JSON.stringify(payload))
+
+
+func load_tutorial() -> Dictionary:
+	var text := _read_with_fallback(TUTORIAL_PATH)
+	if text.is_empty():
+		return {}
+	var parsed: Variant = JSON.parse_string(text)
+	return parsed as Dictionary if parsed is Dictionary else {}
+
+
+func has_tutorial() -> bool:
+	return not _read_with_fallback(TUTORIAL_PATH).strip_edges().is_empty()
+
+
+func clear_tutorial() -> void:
+	_remove_all_variants(TUTORIAL_PATH)
+
 
 func save_public_token(token_id: String) -> void:
 	_atomic_write(PUBLIC_TOKEN_PATH, token_id.strip_edges().to_upper())
