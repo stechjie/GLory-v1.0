@@ -4,6 +4,8 @@ signal public_token_request_check_requested(request_id: String)
 signal room_list_request_check_requested(request_id: String)
 signal create_room_request_check_requested(request_id: String)
 signal create_room_navigation_check_requested(request_id: String)
+signal join_room_request_check_requested(request_id: String, room_id: int, target_port: int)
+signal join_room_navigation_check_requested(request_id: String)
 
 const VFX_WARMUP := preload("res://effects/vfx3d/VFXWarmup.gd")
 
@@ -16,13 +18,15 @@ const ROOM_LIST_TIMEOUT_MSEC := 15000
 const CREATE_ROOM_ACTION := "team_create_room"
 const CREATE_ROOM_CONTROL_ID := "main_menu/team_room_create"
 const CREATE_ROOM_TIMEOUT_MSEC := 15000
+const JOIN_ROOM_ACTION := "team_join_room"
+const JOIN_ROOM_CONTROL_ID := "main_menu/team_room_join"
+const JOIN_ROOM_TIMEOUT_MSEC := 15000
 
 var _menu: Control
 var _prep: Control
 var _battle: Control
 var _reconnect_overlay: CanvasLayer
 var _pending_team_menu_action := ""
-var _pending_team_room_id := 0
 var _pending_public_token := ""
 var _public_token_request_id := ""
 var _public_token_waiting_for_session := false
@@ -35,6 +39,13 @@ var _create_room_waiting_for_session := false
 var _create_room_request_dispatched := false
 var _create_room_request_check_hook := Callable()
 var _create_room_navigation_check_hook := Callable()
+var _join_room_request_id := ""
+var _join_room_id := 0
+var _join_room_target_port := NetworkService.DEFAULT_PORT
+var _join_room_waiting_for_session := false
+var _join_room_request_dispatched := false
+var _join_room_request_check_hook := Callable()
+var _join_room_navigation_check_hook := Callable()
 # 离线自测·单位测试模式(officetest):进入前的 team_mode 快照,退出时还原。
 var _selftest_prev_team_mode := false
 
@@ -499,8 +510,8 @@ func _on_team_room_create_requested() -> void:
 	_start_create_room_action()
 
 func _on_team_room_join_requested(room_id: int) -> void:
-	_pending_team_room_id = room_id
-	_start_team_menu_action("join")
+	AsyncActionController.record_input_received(JOIN_ROOM_ACTION, JOIN_ROOM_CONTROL_ID)
+	_start_join_room_action(room_id)
 
 func _on_public_token_generate_requested() -> void:
 	AsyncActionController.record_input_received(PUBLIC_TOKEN_ACTION, PUBLIC_TOKEN_CONTROL_ID)
@@ -602,6 +613,9 @@ func _on_async_action_state_changed(
 	state: String,
 	_snapshot: Dictionary
 ) -> void:
+	if action == JOIN_ROOM_ACTION:
+		_on_join_room_action_state_changed(request_id, state)
+		return
 	if action == CREATE_ROOM_ACTION:
 		_on_create_room_action_state_changed(request_id, state)
 		return
@@ -940,10 +954,182 @@ func create_room_request_id_for_check() -> String:
 	return _create_room_request_id if OS.is_debug_build() else ""
 
 
+# Fourth C-10 migration. The room id determines the dedicated-server shard, so
+# both id and port are snapshotted for the request instead of reading a mutable
+# shared pending slot after an asynchronous connect.
+func _start_join_room_action(room_id: int) -> void:
+	if room_id <= 0:
+		return
+	_supersede_other_team_action(JOIN_ROOM_ACTION)
+	var owner: Object = _menu if _menu != null and is_instance_valid(_menu) else self
+	var request_id := AsyncActionController.begin(JOIN_ROOM_ACTION, {
+		"owner": owner,
+		"control_id": JOIN_ROOM_CONTROL_ID,
+		"timeout_msec": JOIN_ROOM_TIMEOUT_MSEC,
+		"cancellable": true,
+		"stage": "connect",
+		"room_id": room_id,
+		"target_port": NetworkConfig.port_of_room(room_id),
+	})
+	if request_id.is_empty():
+		return
+	if request_id == _join_room_request_id \
+			and AsyncActionController.is_current(request_id):
+		return
+	_join_room_request_id = request_id
+	_join_room_id = room_id
+	_join_room_target_port = NetworkConfig.port_of_room(room_id)
+	_join_room_waiting_for_session = false
+	_join_room_request_dispatched = false
+	_disconnect_join_room_handlers()
+	AsyncActionController.mark_pending(request_id)
+	if is_instance_valid(_menu):
+		_menu.show_connecting()
+
+	NetworkService._net_log("join room action request=%s room=%d port=%d active=%s state=%d slot=%d" % [
+		request_id, _join_room_id, _join_room_target_port,
+		str(NetworkService.team_active), int(NetworkService.state),
+		int(NetworkService.team_local_slot)])
+	if NetworkService.team_active and NetworkService.remote_port != _join_room_target_port:
+		NetworkService.disconnect_session()
+	elif NetworkService.team_active \
+			and NetworkService.state == NetworkService.SessionState.READY \
+			and NetworkService.team_local_slot < 0:
+		_dispatch_join_room_request(request_id)
+		return
+	if NetworkService.team_active and NetworkService.team_local_slot >= 0:
+		NetworkService.disconnect_session()
+	if not NetworkService.team_join(NetworkService.DEFAULT_HOST, _join_room_target_port):
+		AsyncActionController.fail(request_id, "JOIN_ROOM_CONNECT_START_FAILED", true)
+		if is_instance_valid(_menu):
+			_menu.show_connection_error(NetworkService.last_error)
+		return
+	_join_room_waiting_for_session = true
+	if not NetworkService.session_changed.is_connected(_on_join_room_session_changed):
+		NetworkService.session_changed.connect(_on_join_room_session_changed)
+
+
+func _on_join_room_session_changed() -> void:
+	var request_id := _join_room_request_id
+	if request_id.is_empty() or not AsyncActionController.is_current(request_id):
+		_disconnect_join_room_handlers()
+		return
+	match NetworkService.state:
+		NetworkService.SessionState.READY:
+			_dispatch_join_room_request(request_id)
+		NetworkService.SessionState.FAILED, NetworkService.SessionState.OFFLINE:
+			_disconnect_join_room_handlers()
+			AsyncActionController.fail(request_id, "JOIN_ROOM_CONNECT_FAILED", true)
+			if is_instance_valid(_menu):
+				var message := NetworkService.last_error if NetworkService.last_error != "" else tr("net_err_connect_generic")
+				_menu.show_connection_error(message)
+
+
+func _dispatch_join_room_request(request_id: String) -> void:
+	if request_id != _join_room_request_id \
+			or not AsyncActionController.is_current(request_id):
+		return
+	_disconnect_join_room_session_handler()
+	_join_room_request_dispatched = true
+	AsyncActionController.update_context(request_id, {
+		"stage": "request_join_room",
+		"room_id": _join_room_id,
+		"target_port": _join_room_target_port,
+	})
+	if not NetworkService.team_lobby_changed.is_connected(_on_join_room_lobby_changed):
+		NetworkService.team_lobby_changed.connect(_on_join_room_lobby_changed)
+	if OS.is_debug_build() and _join_room_request_check_hook.is_valid():
+		join_room_request_check_requested.emit(
+			request_id, _join_room_id, _join_room_target_port)
+		return
+	NetworkService.team_request_join_room(_join_room_id)
+
+
+func _on_join_room_lobby_changed() -> void:
+	if NetworkService.team_local_slot < 0:
+		return
+	var request_id := _join_room_request_id
+	if request_id.is_empty() or not AsyncActionController.is_current(request_id):
+		_disconnect_join_room_handlers()
+		return
+	if not AsyncActionController.succeed(request_id):
+		return
+	if OS.is_debug_build() and _join_room_navigation_check_hook.is_valid():
+		join_room_navigation_check_requested.emit(request_id)
+		return
+	_show_team3v3_lobby()
+
+
+func _disconnect_join_room_session_handler() -> void:
+	_join_room_waiting_for_session = false
+	if NetworkService.session_changed.is_connected(_on_join_room_session_changed):
+		NetworkService.session_changed.disconnect(_on_join_room_session_changed)
+
+
+func _disconnect_join_room_handlers() -> void:
+	_disconnect_join_room_session_handler()
+	if NetworkService.team_lobby_changed.is_connected(_on_join_room_lobby_changed):
+		NetworkService.team_lobby_changed.disconnect(_on_join_room_lobby_changed)
+
+
+func _on_join_room_action_state_changed(request_id: String, state: String) -> void:
+	if request_id != _join_room_request_id:
+		return
+	match state:
+		AsyncActionController.STATE_SUCCEEDED, AsyncActionController.STATE_FAILED:
+			_disconnect_join_room_handlers()
+			_join_room_request_dispatched = false
+		AsyncActionController.STATE_TIMED_OUT:
+			var must_disconnect := _join_room_waiting_for_session \
+				or _join_room_request_dispatched
+			_disconnect_join_room_handlers()
+			_join_room_request_dispatched = false
+			if must_disconnect:
+				NetworkService.disconnect_session()
+			if is_instance_valid(_menu):
+				_menu.show_connection_error(tr("net_err_timeout") % [
+					NetworkService.DEFAULT_HOST, _join_room_target_port])
+		AsyncActionController.STATE_CANCELLED:
+			var must_disconnect := _join_room_waiting_for_session \
+				or _join_room_request_dispatched
+			_disconnect_join_room_handlers()
+			_join_room_request_dispatched = false
+			if must_disconnect:
+				NetworkService.disconnect_session()
+
+
+func set_join_room_request_check_hook(hook: Callable) -> bool:
+	if not OS.is_debug_build():
+		return false
+	if _join_room_request_check_hook.is_valid() \
+			and join_room_request_check_requested.is_connected(_join_room_request_check_hook):
+		join_room_request_check_requested.disconnect(_join_room_request_check_hook)
+	_join_room_request_check_hook = hook
+	if _join_room_request_check_hook.is_valid():
+		join_room_request_check_requested.connect(_join_room_request_check_hook)
+	return true
+
+
+func set_join_room_navigation_check_hook(hook: Callable) -> bool:
+	if not OS.is_debug_build():
+		return false
+	if _join_room_navigation_check_hook.is_valid() \
+			and join_room_navigation_check_requested.is_connected(_join_room_navigation_check_hook):
+		join_room_navigation_check_requested.disconnect(_join_room_navigation_check_hook)
+	_join_room_navigation_check_hook = hook
+	if _join_room_navigation_check_hook.is_valid():
+		join_room_navigation_check_requested.connect(_join_room_navigation_check_hook)
+	return true
+
+
+func join_room_request_id_for_check() -> String:
+	return _join_room_request_id if OS.is_debug_build() else ""
+
+
 # The server's room-action failure signal has no request id. Keeping migrated
 # actions active together would let one failure settle several requests. The old
 # string pending slot was latest-intent-wins while connecting, so make that
-# contract explicit while the remaining join/resume actions are migrated.
+# contract explicit while the remaining short-code resume action is migrated.
 func _supersede_other_team_action(next_action: String) -> void:
 	# Legacy join/resume still use the shared string slot. Detach them before a
 	# newer intent starts so their unnumbered lobby/failure callbacks cannot settle
@@ -952,8 +1138,6 @@ func _supersede_other_team_action(next_action: String) -> void:
 	if not _pending_team_menu_action.is_empty():
 		if NetworkService.session_changed.is_connected(_on_pending_team_menu_session_changed):
 			NetworkService.session_changed.disconnect(_on_pending_team_menu_session_changed)
-		if NetworkService.team_lobby_changed.is_connected(_on_pending_room_joined):
-			NetworkService.team_lobby_changed.disconnect(_on_pending_room_joined)
 		_pending_team_menu_action = ""
 		NetworkService.disconnect_session()
 	if next_action != PUBLIC_TOKEN_ACTION \
@@ -971,20 +1155,16 @@ func _supersede_other_team_action(next_action: String) -> void:
 			and AsyncActionController.is_current(_create_room_request_id):
 		AsyncActionController.cancel(_create_room_request_id,
 			"superseded_by_%s" % next_action)
-
-# 这次动作该连哪个服务器进程（多进程分片）。
-# "join" 是唯一一个目标进程由数据决定的动作：房间号里编了分片号，必须连到那个
-# 分片，否则会在错误的进程上找不到房间。其余动作（建房/看列表/拿短码）连哪个
-# 都行 —— 现在按默认分片，以后接了「分配端点」由它来决定。
-func _target_port_for_action(action: String) -> int:
-	if action == "join":
-		return NetworkConfig.port_of_room(_pending_team_room_id)
-	return NetworkService.DEFAULT_PORT
+	if next_action != JOIN_ROOM_ACTION \
+			and not _join_room_request_id.is_empty() \
+			and AsyncActionController.is_current(_join_room_request_id):
+		AsyncActionController.cancel(_join_room_request_id,
+			"superseded_by_%s" % next_action)
 
 func _start_team_menu_action(action: String) -> void:
 	_supersede_other_team_action(action)
 	_pending_team_menu_action = action
-	var target_port := _target_port_for_action(action)
+	var target_port := NetworkService.DEFAULT_PORT
 	# 这四个值决定下面走哪条分支。不记的话，一旦卡在 connecting，
 	# 现场日志里只能看到“连上了然后没下文”，分不出是哪一步断的。
 	NetworkService._net_log("team menu action=%s port=%d active=%s state=%d slot=%d" % [
@@ -1021,9 +1201,6 @@ func _on_pending_team_menu_session_changed() -> void:
 
 func _run_pending_team_menu_action() -> void:
 	match _pending_team_menu_action:
-		"join":
-			_wait_for_room_join()
-			NetworkService.team_request_join_room(_pending_team_room_id)
 		"resume_public":
 			NetworkService.team_request_public_resume(_pending_public_token)
 		_:
@@ -1032,18 +1209,6 @@ func _run_pending_team_menu_action() -> void:
 			NetworkService._net_log("team menu action unknown: '%s'（UI 会卡在 connecting）"
 				% str(_pending_team_menu_action))
 
-func _wait_for_room_join() -> void:
-	if not NetworkService.team_lobby_changed.is_connected(_on_pending_room_joined):
-		NetworkService.team_lobby_changed.connect(_on_pending_room_joined)
-
-func _on_pending_room_joined() -> void:
-	if NetworkService.team_local_slot < 0:
-		return
-	if NetworkService.team_lobby_changed.is_connected(_on_pending_room_joined):
-		NetworkService.team_lobby_changed.disconnect(_on_pending_room_joined)
-	_pending_team_menu_action = ""
-	_show_team3v3_lobby()
-
 func _on_team_room_list_received(rooms: Array) -> void:
 	if not _room_list_request_id.is_empty() \
 			and AsyncActionController.succeed(_room_list_request_id):
@@ -1051,8 +1216,6 @@ func _on_team_room_list_received(rooms: Array) -> void:
 			_menu.show_room_list(rooms)
 
 func _on_team_room_action_failed(reason: String) -> void:
-	if NetworkService.team_lobby_changed.is_connected(_on_pending_room_joined):
-		NetworkService.team_lobby_changed.disconnect(_on_pending_room_joined)
 	if not _public_token_request_id.is_empty() \
 			and AsyncActionController.is_current(_public_token_request_id):
 		AsyncActionController.fail(_public_token_request_id, "TOKEN_REQUEST_FAILED", true)
@@ -1062,6 +1225,9 @@ func _on_team_room_action_failed(reason: String) -> void:
 	if not _create_room_request_id.is_empty() \
 			and AsyncActionController.is_current(_create_room_request_id):
 		AsyncActionController.fail(_create_room_request_id, "CREATE_ROOM_REQUEST_FAILED", true)
+	if not _join_room_request_id.is_empty() \
+			and AsyncActionController.is_current(_join_room_request_id):
+		AsyncActionController.fail(_join_room_request_id, "JOIN_ROOM_REQUEST_FAILED", true)
 	if is_instance_valid(_menu) and _menu.has_method("show_room_error"):
 		_menu.show_room_error(reason)
 
