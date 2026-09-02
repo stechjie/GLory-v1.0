@@ -17,6 +17,16 @@ extends Control
 const PrepWidgets := preload("res://scenes/prep/PrepWidgets.gd")
 const TREASURE_CARD_DIRECTORY := "res://assets/ui/treasure_cards"
 
+# 三选一层的 ModalStack 合同（C-11 的 C2）。
+# 70：高于纯播报的 pvp_warning=60，低于战斗加载 80 与确认框 100 ——
+# 抽宝时弹出的确认框必须盖在它上面，而它必须盖住 PvP 播报。
+const TREASURE_MODAL_ID := "treasure_choice"
+const TREASURE_MODAL_PRIORITY := 70
+const PICK_PENDING_RETRY_MSEC := 5000
+# 迁移前这 0.66 的黑是浮层自己那块 ColorRect；现在由 ModalStack 的 backdrop 承担，
+# 数值逐字保持，玩家看到的变暗程度不变。
+const TREASURE_BACKDROP_COLOR := Color(0.0, 0.0, 0.0, 0.66)
+
 signal pick_requested(tid: String)  # 玩家点了某个候选；领取流程归宿主（要走服务端授予）
 signal claim_requested              # 该结算这一轮的宝物了
 signal net_signals_needed           # 联机重摇前，请宿主确保 NetworkService 宝物信号已连
@@ -38,21 +48,60 @@ func setup(p_host: Control, p_overlay: RefCounted, p_hover: Callable) -> void:
 
 
 # --- 搬过来的成员 ---
-var _treasure_overlay: ColorRect
+# 迁移后这四个都是**瞬时**节点：ModalStack 每次开层现建、关层销毁。
+# 根不再是自带 dim 的 ColorRect，而是一块透明的全屏 Control。
+var _treasure_overlay: Control
 var _treasure_timer_lbl: Label
 var _treasure_choice_row: HBoxContainer
 var _treasure_refresh_btn: Button
 var _owned_treasure_box: GridContainer
 
+# 联机局点卡片只是发意图，要等服务端 grant/deny。这段等待里必须挡住连点，
+# 否则一次选择会发出多份 treasure_choice。锁放在面板上而不是卡片上，并且跨
+# ModalStack 的 Back/close_all 自愈保留；UI 重建不是服务端结算，不能顺手解锁。
+# 5 秒后允许玩家再点一次作为有限重试，避免丢包变成永久不可操作。
+var _pick_pending_tid := ""
+var _pick_pending_since_msec := 0
+
 
 # 原 _refresh_treasure_panel（PrepUI.gd）
 
 func refresh() -> void:
-	if _treasure_overlay == null:
+	# 迁移前这里守的是 `_treasure_overlay == null`（常驻节点还没建好）。浮层现在是
+	# 瞬时的，关着的时候本来就是 null —— 再守它，强制选择层就永远开不起来。
+	# 改守 host：setup() 还没跑过时才是真的什么都做不了。
+	if host == null or not is_instance_valid(host):
 		return
 	var active := bool(GameState.pending_treasure.get("active", false))
-	_treasure_overlay.visible = active
 	if not active:
+		# 玩法状态已经结算，旧意图锁不再属于任何待选 offer。
+		clear_pick_pending()
+		# 关：交给 ModalStack。三张卡随 content 一起销毁。
+		# 注意 pending 已经由生产链（_pick_treasure / _on_treasure_granted）置成 false
+		# 了才会走到这里 —— 关层本身从不改玩法状态。
+		if ModalStack.has(TREASURE_MODAL_ID):
+			ModalStack.pop(TREASURE_MODAL_ID, ModalStack.REASON_PROGRAMMATIC)
+		else:
+			_teardown_modal_state()
+		return
+	if not ModalStack.has(TREASURE_MODAL_ID):
+		var content := _create_content()
+		var modal_id := ModalStack.push(content, {
+			"id": TREASURE_MODAL_ID,
+			"owner": host,
+			"priority": TREASURE_MODAL_PRIORITY,
+			# 强制选择层：点外面**不能**关。玩家必须选一件宝物才能继续。
+			"dismiss_on_backdrop": false,
+			"backdrop_color": TREASURE_BACKDROP_COLOR,
+		})
+		if modal_id.is_empty():
+			# 上面已用 has() 挡过重复；走到这里说明 push 真的失败了。
+			# content 已被 push 收走，不能再 free，只清引用。
+			_teardown_modal_state()
+			return
+		_treasure_overlay = content
+		# 不清待定锁：Back / close_all 只重建 UI，同一份服务端意图仍在飞行中。
+	if _treasure_choice_row == null or not is_instance_valid(_treasure_choice_row):
 		return
 	_treasure_timer_lbl.text = tr("ui_treasure_pick")
 	for child in _treasure_choice_row.get_children():
@@ -68,7 +117,7 @@ func refresh() -> void:
 		card.focus_mode = Control.FOCUS_NONE
 		PrepWidgets.apply_empty_button_styles(card)
 		PrepWidgets.configure_unframed_portrait_card(card, hover_handler)
-		card.pressed.connect(func(): pick_requested.emit(tid))
+		card.pressed.connect(_on_candidate_pressed.bind(tid))
 		overlay.attach_long_press(card, show_detail.bind(tid))
 		var tex := TextureRect.new()
 		tex.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -130,23 +179,35 @@ func _refresh_candidates() -> void:
 # 原 _build_treasure_overlay（PrepUI.gd）
 
 func build_overlay() -> void:
-	# Treasure draw: full-screen modal overlay (dim background + 3 big cards,
-	# forced pick) centered over the prep screen. z_index keeps it above the board.
-	_treasure_overlay = ColorRect.new()
-	_treasure_overlay.color = Color(0.0, 0.0, 0.0, 0.66)
-	_treasure_overlay.visible = false
-	_treasure_overlay.z_index = 60
-	_treasure_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
-	_treasure_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	# Added to the screen root (self) so the dim + cards cover the ENTIRE screen,
-	# not just the center column.
-	host.add_child(_treasure_overlay)
+	# 迁移后这里不再建任何节点：浮层由 refresh() 在 pending 变 active 时现建，
+	# 并 push 进 ModalStack（C-11 的 C2）。函数名保留 —— PrepUI._build() 在调它，
+	# 改名会牵动本任务范围外的文件。
+	#
+	# 连 modal_closed 是这一层比前几层多出来的一步：它是**强制选择层**，
+	# 被外部（close_all / Back / owner 释放）关掉时不能就这么算了，得自己回来。
+	if not ModalStack.modal_closed.is_connected(_on_modal_closed):
+		ModalStack.modal_closed.connect(_on_modal_closed)
+
+
+# 每次开层现建一份 content。节点结构、字号、颜色、描边、间距 16 与 28、
+# 刷新按钮 220×46 与迁移前逐项一致。两处差别：
+#   1. 根不再是自带 0.66 黑的 ColorRect —— 变暗交给 backdrop，避免叠成两层黑；
+#   2. 不再设 z_index=60 —— 层级由 ModalStack 的 CanvasLayer 管。
+# 全链 IGNORE 到卡片为止：全屏 STOP 只能有 backdrop 一块。卡片缝隙的点击会落到
+# backdrop 上被吃掉（dismiss_on_backdrop=false），既不穿透到底层备战页、也不关层。
+func _create_content() -> Control:
+	var root := Control.new()
+	root.name = "TreasureChoiceOverlay"
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var treasure_box := VBoxContainer.new()
+	treasure_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	treasure_box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	treasure_box.alignment = BoxContainer.ALIGNMENT_CENTER
 	treasure_box.add_theme_constant_override("separation", 16)
-	_treasure_overlay.add_child(treasure_box)
+	root.add_child(treasure_box)
 	_treasure_timer_lbl = Label.new()
+	_treasure_timer_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_treasure_timer_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_treasure_timer_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_treasure_timer_lbl.add_theme_font_size_override("font_size", 24)
@@ -155,11 +216,13 @@ func build_overlay() -> void:
 	_treasure_timer_lbl.add_theme_constant_override("outline_size", 3)
 	treasure_box.add_child(_treasure_timer_lbl)
 	_treasure_choice_row = HBoxContainer.new()
+	_treasure_choice_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_treasure_choice_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	_treasure_choice_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_treasure_choice_row.add_theme_constant_override("separation", 28)
 	treasure_box.add_child(_treasure_choice_row)
 	var treasure_refresh_holder := HBoxContainer.new()
+	treasure_refresh_holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	treasure_refresh_holder.alignment = BoxContainer.ALIGNMENT_CENTER
 	treasure_refresh_holder.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	treasure_box.add_child(treasure_refresh_holder)
@@ -169,6 +232,70 @@ func build_overlay() -> void:
 	PrepWidgets.apply_refresh_button_styles(_treasure_refresh_btn)
 	_treasure_refresh_btn.pressed.connect(_refresh_candidates)
 	treasure_refresh_holder.add_child(_treasure_refresh_btn)
+	return root
+
+
+# 一次有效点击只发一次意图。联机局要等服务端 grant/deny，这中间连点必须无效。
+func _on_candidate_pressed(tid: String) -> void:
+	if not _pick_pending_tid.is_empty():
+		var elapsed := Time.get_ticks_msec() - _pick_pending_since_msec
+		if elapsed < PICK_PENDING_RETRY_MSEC:
+			return
+		# 没有 grant/deny 的有限重试。只在玩家再次点击时解锁，不建常驻 Timer。
+		clear_pick_pending()
+	_pick_pending_tid = tid
+	_pick_pending_since_msec = Time.get_ticks_msec()
+	pick_requested.emit(tid)
+
+
+# 待定锁的结算口。grant / deny / offer_changed 三条由 PrepFlowController 调；
+# pending 变 inactive 时本文件也会清。单纯关闭/重开 UI 不是结算，不得清锁。
+func clear_pick_pending() -> void:
+	_pick_pending_tid = ""
+	_pick_pending_since_msec = 0
+
+
+# 任何一条关闭路径（程序化 pop、close_all、Back、owner 释放）都会走到这里。
+#
+# ⚠️ 这里**绝不碰玩法状态**：不清 pending_treasure.active、不 claim round、
+# 不发宝物。外部关掉这一层不等于玩家做出了选择 —— 那样等于白送一轮抽奖机会。
+func _on_modal_closed(id: String, _reason: String) -> void:
+	if id != TREASURE_MODAL_ID:
+		return
+	_teardown_modal_state()
+	# ⚠️ 必须 deferred。ModalStack.close_all() 是 `while not _entries.is_empty()`，
+	# 而 pop() 同步 emit modal_closed —— 在这里直接重新 push，_entries 永远不空，
+	# 整个进程原地转死。deferred 回调在 close_all() 返回之后才跑。
+	_restore_if_still_pending.call_deferred()
+
+
+# 强制选择层的自愈：只要这一轮的宝物还没选，层就得回来。
+# 不需要判断关闭原因 —— 玩家正常选中时生产链已经先把 active 置成 false，
+# 这里读到 false 就什么都不做；外部关闭时 active 仍是 true，层就放回去。
+func _restore_if_still_pending() -> void:
+	if not is_instance_valid(self) or not is_inside_tree():
+		return
+	if host == null or not is_instance_valid(host) or not host.is_inside_tree():
+		# owner 已经没了：只清 UI，pending 留着。下次进备战页由
+		# _maybe_start_pending_treasure() / _refresh_all() 恢复。
+		return
+	if not bool(GameState.pending_treasure.get("active", false)):
+		return
+	if ModalStack.has(TREASURE_MODAL_ID):
+		return
+	refresh()
+
+
+# content 已由 ModalStack 销毁（或即将销毁），这里只清本面板持有的引用。
+# 不 free 任何节点 —— 所有权在 push 时就交出去了。
+# 三张卡的 pressed 与长按连接随卡片一起消失，不会累积。
+func _teardown_modal_state() -> void:
+	_treasure_overlay = null
+	_treasure_timer_lbl = null
+	_treasure_choice_row = null
+	_treasure_refresh_btn = null
+	# 不清 _pick_pending_tid：外部 Back/close_all 后若 pending 仍 active，层会自愈；
+	# 等待中的服务端意图必须继续锁住新建卡片，直到结算或有限重试到期。
 
 
 
@@ -392,4 +519,3 @@ func link_effect_text(link_id: String) -> String:
 		"link_clearance_sale":    return "狂怒阵容与折扣令牌同时拥有时自动激活，棋子商店价格 -40%。"
 		"link_hu_pai_master":     return "生命丰碑、法阵回春、震荡余波、血契之刃、狂怒阵容同时拥有时激活：前四件宝藏的正面数值翻倍，狂怒阵容棋子上限再 +1（7→9）；冷却、概率、次数和负面代价不变。"
 	return "联动效果待说明。"
-

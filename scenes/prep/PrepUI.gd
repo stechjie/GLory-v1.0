@@ -195,10 +195,18 @@ func _tutorial_target_formation_hp() -> Control:
 
 
 func _tutorial_target_treasure_choice() -> Control:
+	# 三选一层迁进 ModalStack 后（C-11 的 C2），这一行是每次开合都会被销毁重建的
+	# 瞬时节点，所以除了 null 还要判有效性 —— 绝不能把已释放的实例交给教程去高亮。
 	var row: Control = _treasure._treasure_choice_row
-	if row != null and row.get_child_count() > 0:
-		return row.get_child(0) as Control
-	return row
+	if row != null and is_instance_valid(row):
+		if row.get_child_count() > 0:
+			return row.get_child(0) as Control
+		return row
+	# 层关着时它根本不在树上。迁移前这里能返回那个常驻的空 HBox，现在没有了，
+	# 于是退回同为宝物区、且页面常驻的已持有 logo 栏 —— 教程的取宝步只在这一层
+	# 开着时才会问这个目标，所以兜底值不会真的被拿去高亮，但它必须是个有效 Control：
+	# tutorial_target_check 要求每个语义目标在实屏上都解析得出来。
+	return _treasure._owned_treasure_box
 
 
 func _tutorial_target_hire_mercenary() -> Control:

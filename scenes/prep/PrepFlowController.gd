@@ -60,17 +60,23 @@ func _on_treasure_granted(tid: String, owned: Array) -> void:
 			before, GameState.owned_treasures.size(), owned.size(), tid])
 	_claim_pending_treasure_round()
 	GameState.pending_treasure.active = false
+	# 意图已经有结果了，解开待定锁。
+	_treasure.clear_pick_pending()
 	SaveManager.save_run()
 	_refresh_all()
 
 func _on_treasure_denied(reason: String) -> void:
 	# 不静默：拒收后界面必须回到一个玩家能理解的状态，否则就是「点了没反应」。
 	show_message(tr("net_err_treasure_denied") % reason)
+	# 被拒也是结果：必须解锁，否则一次拒收就把三张卡永久锁死。
+	_treasure.clear_pick_pending()
 	_refresh_all()
 
 func _on_treasure_offer_changed(candidates: Array, refresh_index: int) -> void:
 	GameState.pending_treasure.candidates = candidates.duplicate()
 	GameState.pending_treasure.refresh_index = refresh_index
+	# 候选换了一批，之前那次意图作废，解锁让玩家能在新候选里重新选。
+	_treasure.clear_pick_pending()
 	SaveManager.save_run()
 	_refresh_all()
 func _claim_pending_treasure_round() -> void:
@@ -176,6 +182,5 @@ func _on_generous_fate_gamble() -> void:
 		GameState.gold = maxi(0, int(floor(float(before) * loss_keep)))
 	SaveManager.save_run()
 	_refresh_all()
-
 
 

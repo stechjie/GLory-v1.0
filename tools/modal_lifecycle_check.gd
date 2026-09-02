@@ -40,6 +40,10 @@ const PrepScript := preload("res://scenes/prep/PrepScreen.gd")
 const PVP_WARNING_ID := "pvp_warning"
 const TEAM_MERCS_ID := "team_mercs_review"
 const MERC_PICKER_ID := "mercenary_picker"
+const TREASURE_ID := "treasure_choice"
+const TREASURE_PRIORITY := 70
+# 与 TreasureChoicePanel.TREASURE_BACKDROP_COLOR 保持一致；改那边这里要同步。
+const TREASURE_BACKDROP := Color(0.0, 0.0, 0.0, 0.66)
 const PVP_WARNING_DWELL_SEC := 2.0
 const PVP_WARNING_FADE_SEC := 0.18
 
@@ -71,6 +75,7 @@ func _ready() -> void:
 	await _check_pvp_warning_modal()
 	await _check_team_mercs_modal()
 	await _check_merc_picker_modal()
+	await _check_treasure_choice_modal()
 	await _check_page_cycles_leave_nothing()
 	await _check_final_state_is_clean()
 
@@ -1054,6 +1059,596 @@ func _check_merc_picker_modal() -> void:
 		"测试结束后金币未还原：%d != %d" % [GameState.gold, gold_before])
 	_h.expect(_mp_filled_slots() == filled_orig, "mp_slots_not_restored",
 		"测试结束后佣兵槽未还原：%d != %d" % [_mp_filled_slots(), filled_orig])
+
+
+# --- 宝藏三选一层（C-11 的 C2，V3 P0-07 / P1-03）--------------------------------
+#
+# 这一层与前三层的根本差别：它是**强制选择层**。
+# GameState.pending_treasure.active 是玩法状态，不是 UI 状态 ——
+# 外部关掉这一层不等于玩家做出了选择，所以关层不得清 pending、不得 claim、
+# 不得白送宝物；而且只要 pending 仍 active、owner 仍有效，层就必须自己回来。
+
+# 单机真实选宝会落盘两处：SaveManager 的存档（含 .bak 轮转）和 PlayerProfile
+# 的图鉴档案（add_owned -> mark_seen -> save_profile）。两处都要逐字还原，
+# 否则跑一次门禁就在开发者的真实档案里永久多解锁一条图鉴。
+const TC_USER_FILES: PackedStringArray = [
+	"user://glory_beta_004.save",
+	"user://glory_beta_004.save.bak",
+	"user://profile.json",
+]
+
+
+func _tc_snapshot_files() -> Dictionary:
+	var out := {}
+	for path in TC_USER_FILES:
+		out[path] = FileAccess.get_file_as_bytes(path) if FileAccess.file_exists(path) else null
+	return out
+
+
+func _tc_restore_files(snap: Dictionary) -> void:
+	for path in snap.keys():
+		var want = snap[path]
+		if want == null:
+			if FileAccess.file_exists(path):
+				DirAccess.remove_absolute(path)
+			continue
+		var f := FileAccess.open(path, FileAccess.WRITE)
+		if f != null:
+			f.store_buffer(want)
+			f = null
+	# 原子写的中间文件：正常路径下已被 rename 掉，异常中断时可能残留。
+	for path in TC_USER_FILES:
+		if FileAccess.file_exists(path + ".tmp"):
+			DirAccess.remove_absolute(path + ".tmp")
+
+
+# 返回与快照不一致的文件描述；空数组表示逐字还原成功。
+func _tc_file_drift(snap: Dictionary) -> Array:
+	var bad: Array = []
+	for path in snap.keys():
+		var want = snap[path]
+		var exists := FileAccess.file_exists(path)
+		if want == null:
+			if exists:
+				bad.append("%s 本来不存在，现在多出来了" % path)
+			continue
+		if not exists:
+			bad.append("%s 不见了" % path)
+			continue
+		if FileAccess.get_file_as_bytes(path) != want:
+			bad.append("%s 字节与开跑前不同" % path)
+	return bad
+
+
+func _tc_entries() -> int:
+	var n := 0
+	for row in ModalStack.dump_modal_stack():
+		if str(row.get("id", "")) == TREASURE_ID:
+			n += 1
+	return n
+
+
+func _tc_row() -> Dictionary:
+	for row in ModalStack.dump_modal_stack():
+		if str(row.get("id", "")) == TREASURE_ID:
+			return row
+	return {}
+
+
+func _tc_host() -> Node:
+	return get_tree().root.get_node_or_null(NodePath("Modal_%s" % TREASURE_ID))
+
+
+func _tc_content() -> Control:
+	var host := _tc_host()
+	if host == null:
+		return null
+	return host.get_node_or_null(NodePath("ModalRoot/TreasureChoiceOverlay")) as Control
+
+
+func _tc_backdrop() -> ColorRect:
+	var host := _tc_host()
+	if host == null:
+		return null
+	return host.get_node_or_null(NodePath("ModalRoot/Backdrop")) as ColorRect
+
+
+# content 子树里**全屏**的 STOP 控件数。卡片和刷新按钮当然要 STOP，
+# 但绝不能再有第二块盖满视口的 STOP —— 那是 backdrop 一个人的职责。
+func _tc_fullscreen_stops(node: Node, vp: Vector2) -> int:
+	var n := 0
+	if node is Control:
+		var c := node as Control
+		if c.mouse_filter == Control.MOUSE_FILTER_STOP:
+			var r := c.get_global_rect()
+			if r.size.x >= vp.x - 1.0 and r.size.y >= vp.y - 1.0:
+				n += 1
+	for child in node.get_children():
+		n += _tc_fullscreen_stops(child, vp)
+	return n
+
+
+func _tc_cards(prep: PrepScript) -> Array:
+	var row: Control = prep._treasure._treasure_choice_row
+	if row == null or not is_instance_valid(row):
+		return []
+	return row.get_children()
+
+
+func _tc_tap_backdrop() -> void:
+	var backdrop := _tc_backdrop()
+	if backdrop == null:
+		return
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	backdrop.gui_input.emit(press)
+	var release := InputEventMouseButton.new()
+	release.button_index = MOUSE_BUTTON_LEFT
+	release.pressed = false
+	backdrop.gui_input.emit(release)
+
+
+func _tc_money_ids(count: int) -> Array:
+	var out: Array = []
+	for raw in DataRegistry.get_table("treasures").get("treasures", []):
+		var t: Dictionary = raw
+		if str(t.get("category", "")) == "money":
+			out.append(str(t.get("id", "")))
+		if out.size() >= count:
+			break
+	return out
+
+
+# 把 pending 摆成「这一轮有三个候选待选」。round 取 2：非 0 才会被 claim 记账。
+#
+# 先按生产路径把上一层关干净再开新的一层：直接换 pending 而不关层的话，
+# 待定锁会留在上一轮的状态里（生产里那是由 offer_changed / grant / deny 结算的），
+# 下一组用例点卡片就会静默无效。
+func _tc_arm_pending(prep: PrepScript) -> void:
+	GameState.pending_treasure.active = false
+	prep._treasure.refresh()
+	GameState.pending_treasure = {
+		"active": true,
+		"round": 2,
+		"candidates": TreasureService.roll_candidates(3),
+		"refresh_index": 0,
+	}
+	prep._treasure.refresh()
+
+
+func _check_treasure_choice_modal() -> void:
+	ModalStack.close_all()
+	await _settle(4)
+
+	# --- 全量快照：三个用户文件 + 所有会被本用例改到的运行时状态 ---------------
+	var files_before := _tc_snapshot_files()
+	var gold_before := GameState.gold
+	var owned_before: Array = GameState.owned_treasures.duplicate()
+	var claimed_before: Array = GameState.claimed_treasure_rounds.duplicate()
+	var pending_before: Dictionary = GameState.pending_treasure.duplicate(true)
+	var team_before: bool = NetworkService.team_active
+
+	GameState.pending_treasure = {"active": false, "round": 0, "candidates": [], "refresh_index": 0}
+	GameState.owned_treasures.clear()
+	GameState.claimed_treasure_rounds.clear()
+	GameState.gold = 1000
+	NetworkService.team_active = false
+
+	var prep := _new_prep()
+	if prep == null:
+		_tc_restore_files(files_before)
+		return
+	await _settle(3)
+	var page_baseline := _snapshot()
+	var base_depth := int(page_baseline["modal_depth"])
+	var vp := get_viewport().get_visible_rect().size
+
+	# --- 1 pending 未激活时不该有这一层 ---------------------------------------
+	_h.expect(_tc_entries() == 0, "tc_open_while_inactive",
+		"pending 是 inactive，栈里却已经有 %s" % TREASURE_ID)
+
+	# --- 1 激活：恰好一层，owner 有效、在树上、priority=70 ---------------------
+	_tc_arm_pending(prep)
+	await _settle(3)
+	if not _h.expect(_tc_entries() == 1, "tc_not_opened_once",
+			"pending 激活后栈里有 %d 条 %s，应为 1" % [_tc_entries(), TREASURE_ID]):
+		prep.queue_free()
+		await _settle(4)
+		GameState.pending_treasure = pending_before.duplicate(true)
+		_tc_restore_files(files_before)
+		return
+	var row := _tc_row()
+	_h.expect(ModalStack.depth() == base_depth + 1, "tc_depth_not_plus_one",
+		"打开后 depth=%d，相对基线 %d 应只 +1" % [ModalStack.depth(), base_depth])
+	_h.expect(int(row.get("priority", -1)) == TREASURE_PRIORITY, "tc_priority_wrong",
+		"priority=%s，应为 %d（高于 pvp_warning=60、低于战斗加载 80）"
+			% [str(row.get("priority", "?")), TREASURE_PRIORITY])
+	_h.expect(bool(row.get("in_tree", false)), "tc_not_in_tree",
+		"记在栈上却不在树里 —— 界面其实没显示出来")
+	_h.expect(bool(row.get("owner_valid", false)), "tc_owner_invalid",
+		"owner 无效 —— owner 兜底会失效")
+
+	# --- 2 连续刷新 10 次仍只有一层 -------------------------------------------
+	for i in 5:
+		prep._treasure.refresh()
+		prep._refresh_all()
+	await _settle(3)
+	_h.expect(_tc_entries() == 1, "tc_repeat_refresh_stacked",
+		"_treasure.refresh()/_refresh_all() 各 5 次后栈里有 %d 条，应仍为 1" % _tc_entries())
+	_h.expect(ModalStack.depth() == base_depth + 1, "tc_repeat_refresh_grew_depth",
+		"重复刷新后 depth=%d，应仍是 %d" % [ModalStack.depth(), base_depth + 1])
+
+	# --- 3 三张卡、原尺寸、标题、刷新按钮、backdrop 颜色、只有 backdrop 全屏 STOP
+	var content := _tc_content()
+	if not _h.expect(content != null, "tc_content_missing",
+			"栈里有条目但找不到 TreasureChoiceOverlay content"):
+		prep.queue_free()
+		await _settle(4)
+		GameState.pending_treasure = pending_before.duplicate(true)
+		_tc_restore_files(files_before)
+		return
+	var cards := _tc_cards(prep)
+	_h.expect(cards.size() == 3, "tc_card_count_changed",
+		"候选卡有 %d 张，应为 3 张" % cards.size())
+	for card in cards:
+		if card is Control:
+			_h.expect((card as Control).custom_minimum_size == Vector2(437, 582),
+				"tc_card_size_changed",
+				"卡片尺寸变成 %s，应为 437×582" % str((card as Control).custom_minimum_size))
+	_h.expect(prep._treasure._treasure_timer_lbl != null
+			and prep._treasure._treasure_timer_lbl.text == tr("ui_treasure_pick"),
+		"tc_title_lost", "标题文案不是 ui_treasure_pick")
+	_h.expect(prep._treasure._treasure_refresh_btn != null
+			and prep._treasure._treasure_refresh_btn.custom_minimum_size == Vector2(220, 46),
+		"tc_refresh_button_changed", "刷新按钮不见了或尺寸变了（应 220×46）")
+	var backdrop := _tc_backdrop()
+	_h.expect(backdrop != null and backdrop.color.is_equal_approx(TREASURE_BACKDROP),
+		"tc_backdrop_color_changed",
+		"backdrop 颜色是 %s，应为迁移前那块浮层的 Color(0,0,0,0.66)"
+			% ("(无)" if backdrop == null else str(backdrop.color)))
+	_h.expect(str(row.get("backdrop_filter", "")) == "STOP", "tc_backdrop_not_stop",
+		"栈顶 backdrop 不是 STOP，卡片缝隙的点击会漏到下面的备战页")
+	var extra_stops := _tc_fullscreen_stops(content, vp)
+	_h.expect(extra_stops == 0, "tc_content_has_fullscreen_stop",
+		"content 子树里还有 %d 个全屏 STOP —— 全屏拦截只能由 backdrop 一处负责" % extra_stops)
+	_h.expect(int(_snapshot()["invisible_stop"]) <= int(page_baseline["invisible_stop"]),
+		"tc_invisible_stop_grew", "打开三选一之后多出了不可见 STOP 控件")
+
+	# --- 11 长按详情的挂接仍在（见交接：show_detail 目前是空实现）--------------
+	var with_long_press := 0
+	for card in cards:
+		if card is BaseButton:
+			var timer = (card as BaseButton).get_meta("long_press_timer", null)
+			if timer != null and is_instance_valid(timer) and timer is Timer:
+				with_long_press += 1
+	_h.expect(with_long_press == cards.size(), "tc_long_press_lost",
+		"%d/%d 张卡还挂着长按计时器 —— 迁移不能把长按详情的接线弄丢"
+			% [with_long_press, cards.size()])
+
+	# --- 10 教程目标就是当前 content 里的第一张卡 -----------------------------
+	var target_a := prep._tutorial_target_treasure_choice()
+	_h.expect(target_a != null and is_instance_valid(target_a), "tc_tutorial_target_invalid",
+		"打开状态下教程取宝目标无效")
+	if not cards.is_empty():
+		_h.expect(target_a == cards[0], "tc_tutorial_target_not_first_card",
+			"教程取宝目标不是当前 content 的第一张卡")
+	# 重建一次：旧卡必须失效，新目标必须有效 —— 这正是迁移最容易漏的死引用来源。
+	prep._treasure.refresh()
+	await _settle(3)
+	var target_b := prep._tutorial_target_treasure_choice()
+	_h.expect(not is_instance_valid(target_a), "tc_old_card_survived_rebuild",
+		"重建之后旧卡仍然有效 —— 说明旧 content 没被销毁")
+	_h.expect(target_b != null and is_instance_valid(target_b), "tc_tutorial_target_stale",
+		"重建之后教程目标失效 —— 教程会拿到已释放的实例")
+
+	# --- 4 backdrop 点击不得关闭，pending 不变 --------------------------------
+	# ⚠️ 只断言「层还在」是不可证伪的 —— 就算 backdrop 真把它关掉了，
+	# 强制层的自愈也会在几帧内把它放回来。所以这里比对 content **实例本身**：
+	# 没被关过，实例就必须是同一个。
+	var content_before_tap := _tc_content()
+	_tc_tap_backdrop()
+	await _settle(4)
+	_h.expect(_tc_entries() == 1, "tc_backdrop_tap_closed_it",
+		"点 backdrop 把强制选择层关掉了 —— 玩家可以不选宝物就跳过这一轮")
+	_h.expect(content_before_tap != null and is_instance_valid(content_before_tap)
+			and _tc_content() == content_before_tap,
+		"tc_backdrop_tap_churned_content",
+		("点 backdrop 之后 content 被销毁重建了 —— 说明 backdrop 其实关掉了这一层，"
+			+ "只是自愈又把它放了回来。玩家会看到面板闪一下，强制选择也被绕过了一瞬。"))
+	_h.expect(bool(GameState.pending_treasure.get("active", false)), "tc_backdrop_tap_cleared_pending",
+		"点 backdrop 之后 pending_treasure.active 变成了 false")
+
+	# --- 5 Back / close_all 都不能跳过选择，且 settle 后自愈 -------------------
+	ModalStack.handle_back_request()
+	await _settle(6)
+	_h.expect(bool(GameState.pending_treasure.get("active", false)), "tc_back_cleared_pending",
+		"Back 关层之后 pending 被清了 —— 这一轮宝物白送掉了")
+	_h.expect(_tc_entries() == 1, "tc_back_did_not_restore",
+		"Back 关层后强制选择层没有回来（栈里 %d 条）" % _tc_entries())
+	var owned_after_back := GameState.owned_treasures.size()
+	_h.expect(owned_after_back == 0, "tc_back_granted_treasure",
+		"Back 关层竟然让玩家白拿了 %d 件宝物" % owned_after_back)
+	_h.expect(GameState.claimed_treasure_rounds.is_empty(), "tc_back_claimed_round",
+		"Back 关层就把这一轮 claim 掉了 —— 玩家再也抽不到这一轮的宝物")
+
+	ModalStack.close_all()
+	await _settle(6)
+	_h.expect(bool(GameState.pending_treasure.get("active", false)), "tc_close_all_cleared_pending",
+		"close_all 之后 pending 被清了")
+	_h.expect(_tc_entries() == 1, "tc_close_all_did_not_restore",
+		"close_all 之后强制选择层没有回来（栈里 %d 条）" % _tc_entries())
+	_h.expect(ModalStack.depth() == base_depth + 1, "tc_restore_stacked",
+		"自愈之后 depth=%d，应仍只有一层（%d）" % [ModalStack.depth(), base_depth + 1])
+
+	# --- 9 刷新：普通费用精确扣一次 -------------------------------------------
+	GameState.gold = 1000
+	prep._treasure.refresh()
+	await _settle(2)
+	var cost := TreasureService.refresh_cost(
+		int(GameState.pending_treasure.get("refresh_index", 0)), TreasureService.has_set("money"))
+	var cands_before: Array = (GameState.pending_treasure.get("candidates", []) as Array).duplicate()
+	var idx_before := int(GameState.pending_treasure.get("refresh_index", 0))
+	prep._treasure._treasure_refresh_btn.pressed.emit()
+	await _settle(3)
+	_h.note("刷新实测：金币 1000 -> %d（费用 %d），refresh_index %d -> %d"
+		% [GameState.gold, cost, idx_before,
+			int(GameState.pending_treasure.get("refresh_index", 0))])
+	_h.expect(GameState.gold == 1000 - cost, "tc_refresh_cost_wrong",
+		"一次刷新后金币 %d，应为 %d（扣 %d）" % [GameState.gold, 1000 - cost, cost])
+	_h.expect(int(GameState.pending_treasure.get("refresh_index", 0)) == idx_before + 1,
+		"tc_refresh_index_wrong", "refresh_index 没有 +1")
+	_h.expect((GameState.pending_treasure.get("candidates", []) as Array) != cands_before,
+		"tc_refresh_candidates_same", "刷新之后候选没变")
+	_h.expect(_tc_entries() == 1, "tc_refresh_closed_layer",
+		"刷新一次把面板关掉了")
+
+	# --- 9 金币不足：零变化 ---------------------------------------------------
+	var poor_cost := TreasureService.refresh_cost(
+		int(GameState.pending_treasure.get("refresh_index", 0)), TreasureService.has_set("money"))
+	GameState.gold = poor_cost - 1
+	prep._treasure.refresh()
+	await _settle(2)
+	var poor_idx := int(GameState.pending_treasure.get("refresh_index", 0))
+	var poor_cands: Array = (GameState.pending_treasure.get("candidates", []) as Array).duplicate()
+	prep._treasure._treasure_refresh_btn.pressed.emit()
+	await _settle(3)
+	_h.expect(GameState.gold == poor_cost - 1, "tc_refresh_charged_when_poor",
+		"金币不足时仍然扣了钱：%d != %d" % [GameState.gold, poor_cost - 1])
+	_h.expect(int(GameState.pending_treasure.get("refresh_index", 0)) == poor_idx,
+		"tc_refresh_indexed_when_poor", "金币不足时 refresh_index 仍然前进了")
+	_h.expect((GameState.pending_treasure.get("candidates", []) as Array) == poor_cands,
+		"tc_refresh_rolled_when_poor", "金币不足时候选仍然被重摇了")
+
+	# --- 9 Money 四件套：费用为 0 ---------------------------------------------
+	var money_ids := _tc_money_ids(4)
+	if money_ids.size() == 4:
+		# 直接写 owned，不走 add_owned —— 那条路会 mark_seen 并落盘 profile.json。
+		for tid in money_ids:
+			GameState.owned_treasures.append(str(tid))
+		_h.expect(TreasureService.has_set("money"), "tc_money_set_not_detected",
+			"塞了 4 件 money 类宝物，has_set(\"money\") 仍是 false")
+		_h.expect(TreasureService.refresh_cost(
+				int(GameState.pending_treasure.get("refresh_index", 0)), true) == 0,
+			"tc_money_cost_not_free", "Money 套装下刷新费用不是 0")
+		GameState.gold = 0
+		GameState.pending_treasure.candidates = TreasureService.roll_candidates(3)
+		prep._treasure.refresh()
+		await _settle(2)
+		_h.expect(not prep._treasure._treasure_refresh_btn.disabled,
+			"tc_money_refresh_disabled",
+			"Money 套装时费用为 0，刷新按钮却因为没钱被禁用了")
+		_h.expect(prep._treasure._treasure_refresh_btn.text == tr("ui_treasure_refresh_free"),
+			"tc_money_refresh_text", "Money 套装时刷新按钮没有显示免费文案")
+		GameState.owned_treasures.clear()
+	else:
+		_h.note("数据表里 money 类宝物不足 4 件，Money 免费这一组跳过")
+
+	# --- 8 联机：不乐观入袋，一次意图合同 -------------------------------------
+	# request_treasure_choice 内部有 `multiplayer_peer != null` 守卫，
+	# headless 下是空操作 —— 不会发真实 RPC、不改协议。
+	NetworkService.team_active = true
+	GameState.gold = 1000
+	GameState.owned_treasures.clear()
+	_tc_arm_pending(prep)
+	await _settle(3)
+	var intents := [0]
+	var counter := func(_tid: String) -> void: intents[0] += 1
+	prep._treasure.pick_requested.connect(counter)
+	var net_cards := _tc_cards(prep)
+	if net_cards.size() > 0 and net_cards[0] is BaseButton:
+		for i in 5:
+			(net_cards[0] as BaseButton).pressed.emit()
+		await _settle(3)
+		_h.expect(intents[0] == 1, "tc_online_multiple_intents",
+			"联机等待 grant 期间连点 5 次发出了 %d 次选择意图，应只有 1 次" % intents[0])
+		_h.expect(GameState.owned_treasures.is_empty(), "tc_online_optimistic_grant",
+			"联机选宝乐观入袋了 %d 件 —— 必须等服务端 grant" % GameState.owned_treasures.size())
+		_h.expect(bool(GameState.pending_treasure.get("active", false)),
+			"tc_online_cleared_pending", "联机只发了意图，pending 就被清成 false 了")
+		_h.expect(_tc_entries() == 1, "tc_online_closed_layer",
+			"联机只发了意图，面板就关掉了 —— 服务端还没授权")
+		_h.expect(GameState.claimed_treasure_rounds.is_empty(), "tc_online_claimed_early",
+			"联机只发了意图就把这一轮 claim 掉了")
+		# UI 自愈不是服务端结算：Back / close_all 关闭并恢复同一轮候选时，
+		# 首次选择意图仍在等待 grant/deny，不能因此解锁再发第二份。
+		ModalStack.handle_back_request()
+		await _settle(6)
+		var back_cards := _tc_cards(prep)
+		if not back_cards.is_empty() and back_cards[0] is BaseButton:
+			for i in 5:
+				(back_cards[0] as BaseButton).pressed.emit()
+		await _settle(3)
+		_h.expect(intents[0] == 1, "tc_online_back_unlocked_pending",
+			"联机等待 grant/deny 时按 Back 并恢复后又发出选择意图（共 %d 次）" % intents[0])
+
+		ModalStack.close_all()
+		await _settle(6)
+		var close_all_cards := _tc_cards(prep)
+		if not close_all_cards.is_empty() and close_all_cards[0] is BaseButton:
+			for i in 5:
+				(close_all_cards[0] as BaseButton).pressed.emit()
+		await _settle(3)
+		_h.expect(intents[0] == 1, "tc_online_close_all_unlocked_pending",
+			"联机等待 grant/deny 时 close_all 并恢复后又发出选择意图（共 %d 次）" % intents[0])
+		# 待定锁必须能解开，否则一次丢包就把三张卡永久锁死。
+		prep._treasure.clear_pick_pending()
+		if not close_all_cards.is_empty() and close_all_cards[0] is BaseButton:
+			(close_all_cards[0] as BaseButton).pressed.emit()
+		await _settle(2)
+		_h.expect(intents[0] == 2, "tc_lock_never_clears",
+			"clear_pick_pending() 之后再点仍然发不出意图 —— 网络失败会把按钮永久锁死")
+		# 没回包也不能永久锁死：超过生产合同的 5 秒后，玩家再次点击可重试一次。
+		prep._treasure._pick_pending_since_msec = Time.get_ticks_msec() - 5001
+		if not close_all_cards.is_empty() and close_all_cards[0] is BaseButton:
+			(close_all_cards[0] as BaseButton).pressed.emit()
+		await _settle(2)
+		_h.expect(intents[0] == 3, "tc_lock_retry_timeout_missing",
+			"选择意图 5 秒无回包后仍不能有限重试（共 %d 次，应为 3）" % intents[0])
+	else:
+		_h.note("联机用例没有拿到候选卡，这一组跳过")
+	prep._treasure.pick_requested.disconnect(counter)
+	NetworkService.team_active = false
+
+	# --- 7 单机真实选一次：只加一件、只 claim 一次、层关闭且不自愈 -------------
+	GameState.owned_treasures.clear()
+	GameState.claimed_treasure_rounds.clear()
+	GameState.gold = 1000
+	_tc_arm_pending(prep)
+	await _settle(3)
+	var pick_cards := _tc_cards(prep)
+	if pick_cards.size() > 0 and pick_cards[0] is BaseButton:
+		var picked_tid := str((GameState.pending_treasure.get("candidates", []) as Array)[0])
+		var stale_card := pick_cards[0] as BaseButton
+		stale_card.pressed.emit()
+		await _settle(4)
+		_h.expect(GameState.owned_treasures.size() == 1, "tc_pick_owned_delta_wrong",
+			"选一件之后持有 %d 件，应恰好 1 件" % GameState.owned_treasures.size())
+		_h.expect(GameState.owned_treasures.has(picked_tid), "tc_pick_wrong_treasure",
+			"入袋的不是点的那一件（点了 %s，袋里是 %s）"
+				% [picked_tid, str(GameState.owned_treasures)])
+		_h.note("单机选宝实测：选中 %s，持有 0 -> %d 件，claim %d 次，active=%s，栈内 %d 层"
+			% [picked_tid, GameState.owned_treasures.size(),
+				GameState.claimed_treasure_rounds.size(),
+				str(GameState.pending_treasure.get("active", false)), _tc_entries()])
+		_h.expect(GameState.claimed_treasure_rounds.size() == 1, "tc_claim_count_wrong",
+			"claim 了 %d 次，应恰好 1 次" % GameState.claimed_treasure_rounds.size())
+		_h.expect(not bool(GameState.pending_treasure.get("active", true)),
+			"tc_pick_left_pending_active", "选完之后 pending 仍是 active")
+		_h.expect(_tc_entries() == 0, "tc_pick_left_layer_open",
+			"选完之后面板没关")
+		# 自愈只在「还没选」时生效：选完了再等几帧也不能把层放回来。
+		await _settle(8)
+		_h.expect(_tc_entries() == 0, "tc_reopened_after_pick",
+			"选完之后强制层又自己回来了 —— 玩家会被要求再选一次")
+		# 关层后四个瞬时引用都必须真的置空。⚠️ Godot 4 里「已释放对象 == null」
+		# 也是 true，只能用 typeof 区分：真 null 是 TYPE_NIL，悬空指针仍是 TYPE_OBJECT。
+		_h.expect(typeof(prep._treasure._treasure_overlay) == TYPE_NIL,
+			"tc_overlay_ref_not_cleared", "关层后 _treasure_overlay 仍指向已释放节点")
+		_h.expect(typeof(prep._treasure._treasure_choice_row) == TYPE_NIL,
+			"tc_row_ref_not_cleared", "关层后 _treasure_choice_row 仍指向已释放节点")
+		_h.expect(typeof(prep._treasure._treasure_timer_lbl) == TYPE_NIL,
+			"tc_title_ref_not_cleared", "关层后 _treasure_timer_lbl 仍指向已释放节点")
+		_h.expect(typeof(prep._treasure._treasure_refresh_btn) == TYPE_NIL,
+			"tc_refresh_ref_not_cleared", "关层后 _treasure_refresh_btn 仍指向已释放节点")
+		# 迟到/重复点击：旧卡已随 content 销毁，不得再加第二件。
+		if is_instance_valid(stale_card):
+			stale_card.pressed.emit()
+			await _settle(3)
+		_h.expect(GameState.owned_treasures.size() == 1, "tc_late_click_granted_second",
+			"迟到的重复点击又发了一件宝物（现在 %d 件）" % GameState.owned_treasures.size())
+	else:
+		_h.note("单机选宝用例没有拿到候选卡，这一组跳过")
+
+	# --- 12 连续 20 次开/正常关，零增长 ---------------------------------------
+	# 先热身一轮吸收首次走这条路径的一次性懒初始化，与本文件既有方法论一致。
+	GameState.owned_treasures.clear()
+	GameState.claimed_treasure_rounds.clear()
+	_tc_arm_pending(prep)
+	await _settle(3)
+	GameState.pending_treasure.active = false
+	prep._treasure.refresh()
+	await _settle(4)
+	var cycle_baseline := _snapshot()
+	_h.note("宝藏层热身后的基线：%s" % JSON.stringify(cycle_baseline))
+	for i in MEASURED_CYCLES:
+		GameState.pending_treasure.active = true
+		prep._treasure.refresh()
+		await _settle(2)
+		GameState.pending_treasure.active = false
+		prep._treasure.refresh()
+		await _settle(2)
+	await _settle(6)
+	var after_cycles := _snapshot()
+	_h.note("宝藏层 %d 轮后：%s" % [MEASURED_CYCLES, JSON.stringify(after_cycles)])
+	_h.expect(int(after_cycles["modal_depth"]) == base_depth, "tc_cycle_depth_drift",
+		"%d 轮开关后 depth=%d，应回到 %d"
+			% [MEASURED_CYCLES, int(after_cycles["modal_depth"]), base_depth])
+	var grew := _growth(cycle_baseline, after_cycles)
+	_h.expect(grew.is_empty(), "tc_cycle_left_residue",
+		"%d 轮开关之后相对热身基线仍有残留：%s" % [MEASURED_CYCLES, _describe(grew)])
+
+	# --- 6 owner 在 active 时释放：清栈不清 pending ---------------------------
+	_tc_arm_pending(prep)
+	await _settle(3)
+	if _h.expect(_tc_entries() == 1, "tc_owner_case_setup_failed",
+			"owner 用例前置：面板没打开"):
+		prep.queue_free()
+		await _settle(10)
+		_h.expect(_tc_entries() == 0, "tc_survived_owner",
+			"owner 已释放，栈里仍有 %s" % TREASURE_ID)
+		_h.expect(ModalStack.depth() == base_depth, "tc_depth_after_owner_freed",
+			"owner 释放后 depth=%d，应回到 %d" % [ModalStack.depth(), base_depth])
+		var orphan := 0
+		for child in get_tree().root.get_children():
+			if str(child.name) == "Modal_%s" % TREASURE_ID:
+				orphan += 1
+		_h.expect(orphan == 0, "tc_orphan_host",
+			"root 下还挂着 %d 个 Modal_%s CanvasLayer" % [orphan, TREASURE_ID])
+		_h.expect(ModalStack.find_invisible_stop_controls().is_empty(),
+			"tc_owner_left_invisible_stop", "owner 释放后残留了不可见 STOP 控件")
+		_h.expect(bool(GameState.pending_treasure.get("active", false)),
+			"tc_owner_freed_cleared_pending",
+			"owner 释放把 pending 清了 —— 玩家重进备战页就再也抽不到这一轮")
+	else:
+		prep.queue_free()
+		await _settle(6)
+
+	# ⚠️ 后面还有 _check_page_cycles_leave_nothing 要建 22 次备战页。
+	# pending 留在 active 会让强制层次次弹出、close_all 又把它救回来，整套断言崩掉。
+	GameState.pending_treasure = {"active": false, "round": 0, "candidates": [], "refresh_index": 0}
+	ModalStack.close_all()
+	await _settle(6)
+	_h.expect(_tc_entries() == 0, "tc_still_open_at_teardown",
+		"用例收尾时 %s 还在栈上" % TREASURE_ID)
+
+	# --- 13 生产源码不再用 visible 管生命周期 ---------------------------------
+	var src := FileAccess.get_file_as_string("res://scenes/prep/panels/TreasureChoicePanel.gd")
+	_h.expect(not src.is_empty(), "tc_source_unreadable", "读不到 TreasureChoicePanel.gd")
+	_h.expect(not src.contains("_treasure_overlay.visible = active"),
+		"tc_visible_lifecycle_returned",
+		"源码里又出现了 `_treasure_overlay.visible = active` —— 生命周期回到了 visible 开关")
+
+	# --- 还原：先运行时状态，再三个用户文件，最后逐字校验 ---------------------
+	GameState.gold = gold_before
+	GameState.owned_treasures.clear()
+	for tid in owned_before:
+		GameState.owned_treasures.append(str(tid))
+	GameState.claimed_treasure_rounds.clear()
+	for r in claimed_before:
+		GameState.claimed_treasure_rounds.append(int(r))
+	GameState.pending_treasure = pending_before.duplicate(true)
+	NetworkService.team_active = team_before
+	_tc_restore_files(files_before)
+	var drift := _tc_file_drift(files_before)
+	_h.expect(drift.is_empty(), "tc_user_files_not_restored",
+		"测试结束后用户文件没有逐字还原：%s" % ", ".join(drift))
+	_h.expect(GameState.gold == gold_before, "tc_gold_not_restored",
+		"测试结束后金币未还原：%d != %d" % [GameState.gold, gold_before])
+	_h.expect(GameState.owned_treasures.size() == owned_before.size(),
+		"tc_owned_not_restored", "测试结束后持有宝物数未还原")
+	_h.expect(not bool(GameState.pending_treasure.get("active", false)),
+		"tc_pending_left_active", "测试结束时 pending 仍是 active，会污染后面的用例")
 
 
 func _run_one_cycle(index: int) -> void:
