@@ -52,6 +52,14 @@ const STEP_SEQUENCE: Array = [
 	Step.START_PVP,
 ]
 
+# FILL_7 的三个子阶段（V2 P1-07）。**必须是显式状态**：
+# 不靠气泡当前显示什么、不靠某个节点可不可见、也不靠固定帧数去反推玩家走到哪了。
+# 三个阶段各自有一条来自生产链的推进条件：
+#   BUY        <- PrepBoardController 成交后调 record_shop_purchase()
+#   CLOSE_SHOP <- ShopPanel.picker_toggled(false) 经 PrepUI 调 record_shop_toggled()
+#   DEPLOY     <- GameState.board_slots 的真实占用数
+enum FillPhase { BUY, CLOSE_SHOP, DEPLOY }
+
 enum ArrowDir { DOWN, UP, LEFT }
 
 # 放大2倍后的向下箭头（字号84）比原来高，往上多抬一些，箭尖仍指向目标顶部。
@@ -76,6 +84,20 @@ const BUBBLE_MAX_HEIGHT := 200.0
 var active := false
 var step: int = Step.BUY_3
 var bought_units := 0
+
+# --- FILL_7 子阶段状态（V2 P1-07）---------------------------------------------
+# _fill_started 保证「进入 FILL_7 时只初始化一次」：重复 sync()、面板刷新、
+# 重复信号都不会把计数打回去或重复补偿。离开 FILL_7 / finish() / start() 会完整清理。
+var _fill_started := false
+var _fill_phase: int = FillPhase.BUY
+# 还需要买几个才能凑够 7 个可上阵棋子。正常基线（棋盘 3 个）下就是 4。
+var _fill_buy_target := 0
+# 真实成交次数：只由 record_shop_purchase() 递增，而它只在扣钱与 shop_sold 都已落地
+# 之后才被调用 —— 所以这不是「按钮点击计数」，买失败（钱不够/待命区满）不会计。
+var _fill_bought := 0
+var _fill_shop_open := false
+# 自动合成/融合导致买够了却仍凑不满 7 个时补发的数量。门禁和交接要能看见它。
+var _fill_compensated := 0
 # 进度条指针，指向 STEP_SEQUENCE 的下标；只增不减。
 var _progress_index := 0
 # 教学 PVP 步的伪造对手棋盘（原先借用 NetworkService.opponent_board_snapshot，
@@ -97,6 +119,9 @@ var _skip_btn: Button
 
 const START_SHOP := ["human_militia", "human_archer", "human_merchant", "human_swordsman"]
 const FILL_SHOP := ["human_swordsman", "human_mage", "human_cleric", "human_death_servant"]
+
+# PVP 前要凑满的上阵数。取生产常量而不是写死 7 —— 规则改了这里跟着走。
+const FILL_TARGET_UNITS := GameConstants.NORMAL_UNIT_CAP
 # 升星步：商店铺满玩家要凑的同名棋子，让玩家自己买 + 刷新
 const UPGRADE_2_SHOP := ["human_militia", "human_militia", "human_militia", "human_militia"]
 const UPGRADE_OTHERS_SHOP := ["human_archer", "human_archer", "human_merchant", "human_merchant"]
@@ -109,6 +134,7 @@ func start() -> void:
 	step = Step.BUY_3
 	bought_units = 0
 	_progress_index = 0
+	_end_fill_step()
 	GameState.reset_run()
 	GameState.tutorial_mode = true
 	GameState.player_formation_hp = TUTORIAL_HP
@@ -120,6 +146,7 @@ func finish() -> void:
 	active = false
 	GameState.tutorial_mode = false
 	opponent_snapshot = {}
+	_end_fill_step()
 	_detach()
 	completed.emit()
 
@@ -164,7 +191,12 @@ func sync() -> void:
 				TutorialTargetProviderScript.ACTION_CLOSE_MERCENARY)
 		_apply_shop(FILL_SHOP)
 		step = Step.FILL_7
-	if step == Step.FILL_7 and GameState.normal_unit_count() >= 7:
+		_begin_fill_step()
+	if step == Step.FILL_7:
+		# 幂等：重复 sync() 只会把子阶段往前推，不会重置计数、不会重复补偿。
+		_advance_fill_step()
+	if step == Step.FILL_7 and GameState.normal_unit_count() >= FILL_TARGET_UNITS:
+		_end_fill_step()
 		step = Step.FORMATION_HP
 	update_overlay()
 
@@ -246,7 +278,7 @@ func current_text() -> String:
 		Step.HIRE_MERC:
 			return _t("打开佣兵面板，召唤 2 个佣兵。佣兵是额外战力，但不算羁绊。", "Open the mercenary panel and hire 2 mercenaries. They are extra power but do not count for bonds.")
 		Step.FILL_7:
-			return _t("PVP 前把普通棋子放满 7 个。", "Before PVP, fill the board with 7 normal units.")
+			return _fill_step_text()
 		Step.FORMATION_HP:
 			return _t("看上方血条——教学局法阵 HP 是 10，把敌方法阵打到归零就胜利。点一下继续。", "See the HP bar above — tutorial formation HP is 10. Bring the enemy's to 0 to win. Tap to continue.")
 		Step.START_PVP:
@@ -460,9 +492,161 @@ func _on_hotspot_pressed() -> void:
 	update_overlay()
 
 func record_shop_purchase() -> void:
-	if active and step == Step.BUY_3:
+	if not active:
+		return
+	if step == Step.BUY_3:
 		bought_units += 1
 		sync()
+	elif step == Step.FILL_7:
+		# 生产链在扣钱、写 shop_sold、完成合成之后才调到这里，所以这一次
+		# 一定是**真实成交**。钱不够、待命区满、槽位已售都在上游就 return 了。
+		if _fill_started and _fill_phase == FillPhase.BUY:
+			_fill_bought += 1
+		sync()
+
+
+# 商店开合的生产事件（ShopPanel.picker_toggled -> PrepUI._on_shop_picker_toggled）。
+# 「关闭商店」这一子阶段必须靠它推进，不能靠延时或轮询猜。
+func record_shop_toggled(is_open: bool) -> void:
+	if not active:
+		return
+	_fill_shop_open = is_open
+	if step == Step.FILL_7:
+		sync()
+
+
+# --- FILL_7 子阶段（V2 P1-07）--------------------------------------------------
+
+func fill_phase() -> int:
+	return _fill_phase
+
+
+func fill_started() -> bool:
+	return _fill_started
+
+
+# [已成交, 需要买的总数]
+func fill_buy_progress() -> Array:
+	return [mini(_fill_bought, _fill_buy_target), _fill_buy_target]
+
+
+func fill_shop_closed() -> bool:
+	return not _fill_shop_open
+
+
+# [已上阵, 目标]
+func fill_deploy_progress() -> Array:
+	return [mini(GameState.normal_unit_count(), FILL_TARGET_UNITS), FILL_TARGET_UNITS]
+
+
+func fill_compensated_count() -> int:
+	return _fill_compensated
+
+
+func _begin_fill_step() -> void:
+	if _fill_started:
+		return
+	_fill_started = true
+	_fill_phase = FillPhase.BUY
+	_fill_bought = 0
+	_fill_compensated = 0
+	# 目标按**还差几个**算，而不是写死 4：玩家可能带着待命区里的棋子进这一步
+	# （提前达成部分目标），那样就不该再逼他买满 4 个。
+	_fill_buy_target = maxi(0, FILL_TARGET_UNITS - _owned_normal_count())
+
+
+func _end_fill_step() -> void:
+	_fill_started = false
+	_fill_phase = FillPhase.BUY
+	_fill_buy_target = 0
+	_fill_bought = 0
+	_fill_shop_open = false
+	_fill_compensated = 0
+
+
+func _advance_fill_step() -> void:
+	if not _fill_started:
+		_begin_fill_step()
+	match _fill_phase:
+		FillPhase.BUY:
+			if _fill_buy_done():
+				# 走出购买阶段前先把「买够了却还是不满 7 个」补齐 ——
+				# 否则自动合成会把玩家留在一个永远完成不了的上阵阶段里。
+				_compensate_fill_shortfall()
+				# 商店没开过就没有「关闭商店」可言（比如进这一步时就已经有 7 个）。
+				_fill_phase = FillPhase.CLOSE_SHOP if _fill_shop_open else FillPhase.DEPLOY
+		FillPhase.CLOSE_SHOP:
+			if not _fill_shop_open:
+				_fill_phase = FillPhase.DEPLOY
+		_:
+			pass
+
+
+func _fill_buy_done() -> bool:
+	if _fill_bought >= _fill_buy_target:
+		return true
+	# 玩家已经（提前或中途）攒够 7 个可上阵棋子，不必再买。
+	if _owned_normal_count() >= FILL_TARGET_UNITS:
+		return true
+	# 商店里已经没有买得到的东西了（全部售罄，或 FILL_SHOP 的候选在数据表里
+	# 取不到 def 而变成空槽）。再等下去就是死局，交给下面的补偿收场。
+	return _fill_shop_purchasable_count() <= 0
+
+
+# 补足「可上阵棋子」到 7 个。只发到待命区 —— 上阵那一步必须由玩家自己完成，
+# 直接放上棋盘等于替玩家把教学做完了。
+#
+# 待命区满时这里必然不会被触发：满 = 待命区 8 个，加上棋盘的就已经 >= 8 > 7，
+# 差额是负的、直接 return。所以不存在「补偿时没地方放」的分支。
+func _compensate_fill_shortfall() -> void:
+	var guard := 0
+	while _owned_normal_count() < FILL_TARGET_UNITS and guard < FILL_TARGET_UNITS:
+		var before := _owned_normal_count()
+		_grant_units(str(FILL_SHOP[guard % FILL_SHOP.size()]), 1, 1)
+		if _owned_normal_count() <= before:
+			break
+		_fill_compensated += 1
+		guard += 1
+
+
+# 三个阶段的玩家可见文案。数字全部来自真实游戏状态：
+# 购买数来自成交回调，关闭商店来自 picker_toggled，上阵数来自 board_slots。
+# 三行同时显示，玩家始终看得到自己走到哪、还差什么。
+func _fill_step_text() -> String:
+	var buy: Array = fill_buy_progress()
+	var deploy: Array = fill_deploy_progress()
+	var buy_line := _t("① 在商店买 %d/%d 个棋子" % [int(buy[0]), int(buy[1])],
+		"1. Buy %d/%d units from the shop" % [int(buy[0]), int(buy[1])])
+	var close_line := ""
+	if fill_shop_closed():
+		close_line = _t("② 关闭商店：已完成", "2. Close the shop: done")
+	else:
+		close_line = _t("② 关闭商店：未完成", "2. Close the shop: not yet")
+	var deploy_line := _t("③ 把棋子拖上棋盘 %d/%d" % [int(deploy[0]), int(deploy[1])],
+		"3. Drag units onto the board %d/%d" % [int(deploy[0]), int(deploy[1])])
+	var head := ""
+	match _fill_phase:
+		FillPhase.BUY:
+			head = _t("PVP 前要凑满 %d 个上阵棋子。先去商店把缺的买齐。" % FILL_TARGET_UNITS,
+				"You need %d units on the board before PVP. Buy what you are missing first." % FILL_TARGET_UNITS)
+		FillPhase.CLOSE_SHOP:
+			head = _t("买齐了。先关掉商店，才能把棋子拖上棋盘。",
+				"All bought. Close the shop so you can drag units onto the board.")
+		_:
+			head = _t("把待命区的棋子拖到棋盘的空位上。",
+				"Drag the units from standby onto the empty board slots.")
+	return "%s\n%s\n%s\n%s" % [head, buy_line, close_line, deploy_line]
+
+
+func _fill_shop_purchasable_count() -> int:
+	var n := 0
+	for i in GameState.shop_offers.size():
+		if i >= GameState.shop_sold.size() or bool(GameState.shop_sold[i]):
+			continue
+		var offer = GameState.shop_offers[i]
+		if typeof(offer) == TYPE_DICTIONARY and not (offer as Dictionary).is_empty():
+			n += 1
+	return n
 
 # 按当前文案把气泡收到内容高度，并限死在 BUBBLE_MAX_HEIGHT 内，
 # 避免任何一步的长文案再次把气泡撑成半屏。

@@ -7,6 +7,9 @@ const PrepShopRaceIcon = preload("res://scenes/prep/PrepShopRaceIcon.gd")
 const PrepShopRefreshBurnScript = preload("res://scenes/prep/effects/PrepShopRefreshBurn.gd")
 const PrepTeamMercAlertScript = preload("res://scenes/prep/effects/PrepTeamMercAlert.gd")
 const TutorialTargetProviderScript := preload("res://scripts/tutorial/TutorialTargetProvider.gd")
+# 只为拿 FillPhase 枚举做**静态**引用（教学第 15 步的子阶段），
+# 走 preload 常量而不是从 autoload 实例上取，dynamic_call 棘轮才不会长。
+const TutorialModeScript := preload("res://scripts/tutorial/TutorialMode.gd")
 const SHOP_SCROLL_BURN_SHADER: Shader = preload("res://assets/shaders/prep_scroll_burn.gdshader")
 const SHOP_REFRESH_WIDTH := 112.0
 const SHOP_GOLD_WIDTH := 112.0
@@ -221,11 +224,19 @@ func _tutorial_target_hire_mercenary() -> Control:
 
 
 func _tutorial_target_fill_seven() -> Control:
-	if _tutorial_owned_normal_count() > GameState.normal_unit_count():
-		if _tutorial_placing_from_bench():
-			return _tutorial_first_empty_board()
-		return _tutorial_first_occupied_bench()
-	return _tutorial_shop_purchase_target()
+	# 三个子阶段各指各的目标（V2 P1-07）。阶段由 TutorialMode 的显式状态给出，
+	# 不再靠「拥有数 > 上阵数」反推 —— 那个反推在「买够了但还没关商店」时会
+	# 直接把箭头甩到待命区，而那时候待命格还被商店盖着、点不到。
+	match TutorialMode.fill_phase():
+		TutorialModeScript.FillPhase.BUY:
+			return _tutorial_shop_purchase_target()
+		TutorialModeScript.FillPhase.CLOSE_SHOP:
+			# 商店按钮本身就是开合开关，关闭时要指的还是它。
+			return _shop.open_button
+		_:
+			if _tutorial_placing_from_bench():
+				return _tutorial_first_empty_board()
+			return _tutorial_first_occupied_bench()
 
 
 func _tutorial_target_bond_row() -> Control:
@@ -2020,6 +2031,10 @@ func _on_shop_buy_requested(index: int) -> void:
 # 商店开合：关掉别的弹窗，并调整待命格的输入 ——
 # 商店开着时待命格被商店盖住，不禁用的话它们会抢走商店区域的点击。
 func _on_shop_picker_toggled(is_open: bool) -> void:
+	# 教学第 15 步的「关闭商店」子阶段靠这个真实开合事件推进（V2 P1-07），
+	# 不靠延时、不靠轮询面板可见性。与 record_shop_purchase() 同一种接线方式。
+	if GameState.tutorial_mode:
+		TutorialMode.record_shop_toggled(is_open)
 	if is_open:
 		_close_merc_picker()
 		_close_team_mercs_picker()
