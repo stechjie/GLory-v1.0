@@ -6,6 +6,8 @@ signal create_room_request_check_requested(request_id: String)
 signal create_room_navigation_check_requested(request_id: String)
 signal join_room_request_check_requested(request_id: String, room_id: int, target_port: int)
 signal join_room_navigation_check_requested(request_id: String)
+signal short_code_resume_request_check_requested(request_id: String, token_id: String)
+signal short_code_resume_result_check_requested(request_id: String, succeeded: bool)
 
 const VFX_WARMUP := preload("res://effects/vfx3d/VFXWarmup.gd")
 
@@ -21,13 +23,14 @@ const CREATE_ROOM_TIMEOUT_MSEC := 15000
 const JOIN_ROOM_ACTION := "team_join_room"
 const JOIN_ROOM_CONTROL_ID := "main_menu/team_room_join"
 const JOIN_ROOM_TIMEOUT_MSEC := 15000
+const SHORT_CODE_RESUME_ACTION := "team_short_code_resume"
+const SHORT_CODE_RESUME_CONTROL_ID := "main_menu/public_token_resume"
+const SHORT_CODE_RESUME_TIMEOUT_MSEC := 15000
 
 var _menu: Control
 var _prep: Control
 var _battle: Control
 var _reconnect_overlay: CanvasLayer
-var _pending_team_menu_action := ""
-var _pending_public_token := ""
 var _public_token_request_id := ""
 var _public_token_waiting_for_session := false
 var _public_token_request_check_hook := Callable()
@@ -46,6 +49,13 @@ var _join_room_waiting_for_session := false
 var _join_room_request_dispatched := false
 var _join_room_request_check_hook := Callable()
 var _join_room_navigation_check_hook := Callable()
+var _short_code_resume_request_id := ""
+var _short_code_resume_token := ""
+var _short_code_resume_waiting_for_session := false
+var _short_code_resume_request_dispatched := false
+var _short_code_resume_ignore_late_result := false
+var _short_code_resume_request_check_hook := Callable()
+var _short_code_resume_result_check_hook := Callable()
 # 离线自测·单位测试模式(officetest):进入前的 team_mode 快照,退出时还原。
 var _selftest_prev_team_mode := false
 
@@ -144,6 +154,17 @@ func _on_reconnect_cancel() -> void:
 	_show_menu()
 
 func _on_resume_completed(payload: Dictionary) -> void:
+	if _short_code_resume_ignore_late_result:
+		_short_code_resume_ignore_late_result = false
+		return
+	if not _short_code_resume_request_id.is_empty() \
+			and AsyncActionController.is_current(_short_code_resume_request_id):
+		var request_id := _short_code_resume_request_id
+		if not AsyncActionController.succeed(request_id):
+			return
+		if OS.is_debug_build() and _short_code_resume_result_check_hook.is_valid():
+			short_code_resume_result_check_requested.emit(request_id, true)
+			return
 	_hide_reconnect_overlay()
 	GameState.team_mode = true
 	# 只有内存里没有对局数据（app 重开导致 GameState 全新）才从磁盘恢复棋盘/备战席；
@@ -200,6 +221,16 @@ func _team_run_state_is_fresh() -> bool:
 	return true
 
 func _on_resume_failed(reason: String) -> void:
+	if _short_code_resume_ignore_late_result:
+		_short_code_resume_ignore_late_result = false
+		return
+	if not _short_code_resume_request_id.is_empty() \
+			and AsyncActionController.is_current(_short_code_resume_request_id):
+		var request_id := _short_code_resume_request_id
+		AsyncActionController.fail(request_id, "SHORT_CODE_RESUME_FAILED", true)
+		if OS.is_debug_build() and _short_code_resume_result_check_hook.is_valid():
+			short_code_resume_result_check_requested.emit(request_id, false)
+			return
 	_hide_reconnect_overlay()
 	GameState.team_mode = false
 	_show_menu()
@@ -336,6 +367,13 @@ func _show_menu() -> void:
 
 func _on_team_reconnect_requested() -> void:
 	# 手动重连：读本地凭证连回上一场，弹重连遮罩，成功落回备战/结果，失败清凭证回菜单
+	# 新的手动恢复明确取代任何旧短码请求；begin_resume_from_disk() 会重置传输，
+	# 因此旧请求的迟到保护也不能误吞这次手动恢复的结果。
+	if not _short_code_resume_request_id.is_empty() \
+			and AsyncActionController.is_current(_short_code_resume_request_id):
+		AsyncActionController.cancel(_short_code_resume_request_id, "superseded_by_manual_resume")
+	_short_code_resume_request_id = ""
+	_short_code_resume_ignore_late_result = false
 	var rc := SaveManager.load_reconnect()
 	var rc_token := str(rc.get("token", ""))
 	var rc_address := str(rc.get("address", ""))
@@ -518,8 +556,9 @@ func _on_public_token_generate_requested() -> void:
 	_start_public_token_action()
 
 func _on_public_token_resume_requested(token_id: String) -> void:
-	_pending_public_token = token_id
-	_start_team_menu_action("resume_public")
+	AsyncActionController.record_input_received(
+		SHORT_CODE_RESUME_ACTION, SHORT_CODE_RESUME_CONTROL_ID)
+	_start_short_code_resume_action(token_id)
 
 
 # First C-10 migration: public-token generation owns a request identity instead
@@ -613,6 +652,9 @@ func _on_async_action_state_changed(
 	state: String,
 	_snapshot: Dictionary
 ) -> void:
+	if action == SHORT_CODE_RESUME_ACTION:
+		_on_short_code_resume_action_state_changed(request_id, state)
+		return
 	if action == JOIN_ROOM_ACTION:
 		_on_join_room_action_state_changed(request_id, state)
 		return
@@ -1126,20 +1168,158 @@ func join_room_request_id_for_check() -> String:
 	return _join_room_request_id if OS.is_debug_build() else ""
 
 
-# The server's room-action failure signal has no request id. Keeping migrated
-# actions active together would let one failure settle several requests. The old
-# string pending slot was latest-intent-wins while connecting, so make that
-# contract explicit while the remaining short-code resume action is migrated.
-func _supersede_other_team_action(next_action: String) -> void:
-	# Legacy join/resume still use the shared string slot. Detach them before a
-	# newer intent starts so their unnumbered lobby/failure callbacks cannot settle
-	# or navigate the new action. With no request id to reject a late server-side
-	# mutation, closing this transport is the only safe cancellation boundary.
-	if not _pending_team_menu_action.is_empty():
-		if NetworkService.session_changed.is_connected(_on_pending_team_menu_session_changed):
-			NetworkService.session_changed.disconnect(_on_pending_team_menu_session_changed)
-		_pending_team_menu_action = ""
+# Fifth C-10 migration. The player-visible short code is normalized once and
+# kept only in this private request path; it is never placed in AsyncAction's
+# public snapshot or diagnostic breadcrumbs.
+func _start_short_code_resume_action(raw_token_id: String) -> void:
+	var token_id := raw_token_id.strip_edges().to_upper()
+	if token_id.is_empty():
+		return
+	_supersede_other_team_action(SHORT_CODE_RESUME_ACTION)
+	var owner: Object = _menu if _menu != null and is_instance_valid(_menu) else self
+	var request_id := AsyncActionController.begin(SHORT_CODE_RESUME_ACTION, {
+		"owner": owner,
+		"control_id": SHORT_CODE_RESUME_CONTROL_ID,
+		"timeout_msec": SHORT_CODE_RESUME_TIMEOUT_MSEC,
+		"cancellable": true,
+		"stage": "connect",
+	})
+	if request_id.is_empty():
+		return
+	if request_id == _short_code_resume_request_id \
+			and AsyncActionController.is_current(request_id):
+		return
+	_short_code_resume_request_id = request_id
+	_short_code_resume_token = token_id
+	_short_code_resume_waiting_for_session = false
+	_short_code_resume_request_dispatched = false
+	_short_code_resume_ignore_late_result = false
+	_disconnect_short_code_resume_session_handler()
+	AsyncActionController.mark_pending(request_id)
+	if is_instance_valid(_menu):
+		_menu.show_connecting()
+
+	var target_port := NetworkService.DEFAULT_PORT
+	NetworkService._net_log("short code resume action request=%s port=%d active=%s state=%d slot=%d" % [
+		request_id, target_port, str(NetworkService.team_active),
+		int(NetworkService.state), int(NetworkService.team_local_slot)])
+	if NetworkService.team_active and NetworkService.remote_port != target_port:
 		NetworkService.disconnect_session()
+	elif NetworkService.team_active \
+			and NetworkService.state == NetworkService.SessionState.READY \
+			and NetworkService.team_local_slot < 0:
+		_dispatch_short_code_resume_request(request_id)
+		return
+	if NetworkService.team_active and NetworkService.team_local_slot >= 0:
+		NetworkService.disconnect_session()
+	if not NetworkService.team_join(NetworkService.DEFAULT_HOST, target_port):
+		AsyncActionController.fail(request_id, "SHORT_CODE_CONNECT_START_FAILED", true)
+		if is_instance_valid(_menu):
+			_menu.show_connection_error(NetworkService.last_error)
+		return
+	_short_code_resume_waiting_for_session = true
+	if not NetworkService.session_changed.is_connected(_on_short_code_resume_session_changed):
+		NetworkService.session_changed.connect(_on_short_code_resume_session_changed)
+
+
+func _on_short_code_resume_session_changed() -> void:
+	var request_id := _short_code_resume_request_id
+	if request_id.is_empty() or not AsyncActionController.is_current(request_id):
+		_disconnect_short_code_resume_session_handler()
+		return
+	match NetworkService.state:
+		NetworkService.SessionState.READY:
+			_dispatch_short_code_resume_request(request_id)
+		NetworkService.SessionState.FAILED, NetworkService.SessionState.OFFLINE:
+			_disconnect_short_code_resume_session_handler()
+			AsyncActionController.fail(request_id, "SHORT_CODE_CONNECT_FAILED", true)
+			if is_instance_valid(_menu):
+				var message := NetworkService.last_error if NetworkService.last_error != "" else tr("net_err_connect_generic")
+				_menu.show_connection_error(message)
+
+
+func _dispatch_short_code_resume_request(request_id: String) -> void:
+	if request_id != _short_code_resume_request_id \
+			or not AsyncActionController.is_current(request_id):
+		return
+	_disconnect_short_code_resume_session_handler()
+	_short_code_resume_request_dispatched = true
+	AsyncActionController.update_context(request_id, {"stage": "request_short_code_resume"})
+	if OS.is_debug_build() and _short_code_resume_request_check_hook.is_valid():
+		short_code_resume_request_check_requested.emit(request_id, _short_code_resume_token)
+		return
+	NetworkService.team_request_public_resume(_short_code_resume_token)
+
+
+func _disconnect_short_code_resume_session_handler() -> void:
+	_short_code_resume_waiting_for_session = false
+	if NetworkService.session_changed.is_connected(_on_short_code_resume_session_changed):
+		NetworkService.session_changed.disconnect(_on_short_code_resume_session_changed)
+
+
+func _on_short_code_resume_action_state_changed(request_id: String, state: String) -> void:
+	if request_id != _short_code_resume_request_id:
+		return
+	match state:
+		AsyncActionController.STATE_SUCCEEDED, AsyncActionController.STATE_FAILED:
+			_disconnect_short_code_resume_session_handler()
+			_short_code_resume_request_dispatched = false
+			# The transport result has no request id. Ignore one duplicate/late copy
+			# after settlement so it cannot fall through into the manual reconnect path.
+			_short_code_resume_ignore_late_result = true
+		AsyncActionController.STATE_TIMED_OUT:
+			var must_disconnect := _short_code_resume_waiting_for_session \
+				or _short_code_resume_request_dispatched
+			_disconnect_short_code_resume_session_handler()
+			_short_code_resume_request_dispatched = false
+			_short_code_resume_ignore_late_result = true
+			if must_disconnect:
+				NetworkService.disconnect_session()
+			if is_instance_valid(_menu):
+				_menu.show_connection_error(tr("net_err_timeout") % [
+					NetworkService.DEFAULT_HOST, NetworkService.DEFAULT_PORT])
+		AsyncActionController.STATE_CANCELLED:
+			var must_disconnect := _short_code_resume_waiting_for_session \
+				or _short_code_resume_request_dispatched
+			_disconnect_short_code_resume_session_handler()
+			_short_code_resume_request_dispatched = false
+			_short_code_resume_ignore_late_result = true
+			if must_disconnect:
+				NetworkService.disconnect_session()
+
+
+func set_short_code_resume_request_check_hook(hook: Callable) -> bool:
+	if not OS.is_debug_build():
+		return false
+	if _short_code_resume_request_check_hook.is_valid() \
+			and short_code_resume_request_check_requested.is_connected(_short_code_resume_request_check_hook):
+		short_code_resume_request_check_requested.disconnect(_short_code_resume_request_check_hook)
+	_short_code_resume_request_check_hook = hook
+	if _short_code_resume_request_check_hook.is_valid():
+		short_code_resume_request_check_requested.connect(_short_code_resume_request_check_hook)
+	return true
+
+
+func set_short_code_resume_result_check_hook(hook: Callable) -> bool:
+	if not OS.is_debug_build():
+		return false
+	if _short_code_resume_result_check_hook.is_valid() \
+			and short_code_resume_result_check_requested.is_connected(_short_code_resume_result_check_hook):
+		short_code_resume_result_check_requested.disconnect(_short_code_resume_result_check_hook)
+	_short_code_resume_result_check_hook = hook
+	if _short_code_resume_result_check_hook.is_valid():
+		short_code_resume_result_check_requested.connect(_short_code_resume_result_check_hook)
+	return true
+
+
+func short_code_resume_request_id_for_check() -> String:
+	return _short_code_resume_request_id if OS.is_debug_build() else ""
+
+
+# The server's room-action failure signal has no request id. Keeping migrated
+# actions active together would let one failure settle several requests, so all
+# five Main-menu actions explicitly preserve latest-intent-wins behavior.
+func _supersede_other_team_action(next_action: String) -> void:
 	if next_action != PUBLIC_TOKEN_ACTION \
 			and not _public_token_request_id.is_empty() \
 			and AsyncActionController.is_current(_public_token_request_id):
@@ -1160,55 +1340,11 @@ func _supersede_other_team_action(next_action: String) -> void:
 			and AsyncActionController.is_current(_join_room_request_id):
 		AsyncActionController.cancel(_join_room_request_id,
 			"superseded_by_%s" % next_action)
-
-func _start_team_menu_action(action: String) -> void:
-	_supersede_other_team_action(action)
-	_pending_team_menu_action = action
-	var target_port := NetworkService.DEFAULT_PORT
-	# 这四个值决定下面走哪条分支。不记的话，一旦卡在 connecting，
-	# 现场日志里只能看到“连上了然后没下文”，分不出是哪一步断的。
-	NetworkService._net_log("team menu action=%s port=%d active=%s state=%d slot=%d" % [
-		action, target_port, str(NetworkService.team_active),
-		int(NetworkService.state), int(NetworkService.team_local_slot)])
-	# 已连着、但连的是别的分片：必须先断开再连对的那个。
-	if NetworkService.team_active and NetworkService.remote_port != target_port:
-		NetworkService.disconnect_session()
-	elif NetworkService.team_active and NetworkService.state == NetworkService.SessionState.READY and NetworkService.team_local_slot < 0:
-		_run_pending_team_menu_action()
-		return
-	if NetworkService.team_active and NetworkService.team_local_slot >= 0:
-		NetworkService.disconnect_session()
-	if not NetworkService.team_join(NetworkService.DEFAULT_HOST, target_port):
-		if is_instance_valid(_menu) and _menu.has_method("show_connection_error"):
-			_menu.show_connection_error(NetworkService.last_error)
-		return
-	if is_instance_valid(_menu) and _menu.has_method("show_connecting"):
-		_menu.show_connecting()
-	if not NetworkService.session_changed.is_connected(_on_pending_team_menu_session_changed):
-		NetworkService.session_changed.connect(_on_pending_team_menu_session_changed)
-
-func _on_pending_team_menu_session_changed() -> void:
-	match NetworkService.state:
-		NetworkService.SessionState.READY:
-			if NetworkService.session_changed.is_connected(_on_pending_team_menu_session_changed):
-				NetworkService.session_changed.disconnect(_on_pending_team_menu_session_changed)
-			_run_pending_team_menu_action()
-		NetworkService.SessionState.FAILED, NetworkService.SessionState.OFFLINE:
-			if NetworkService.session_changed.is_connected(_on_pending_team_menu_session_changed):
-				NetworkService.session_changed.disconnect(_on_pending_team_menu_session_changed)
-			if is_instance_valid(_menu) and _menu.has_method("show_connection_error"):
-				_menu.show_connection_error(NetworkService.last_error if NetworkService.last_error != "" else "连接失败")
-
-func _run_pending_team_menu_action() -> void:
-	match _pending_team_menu_action:
-		"resume_public":
-			NetworkService.team_request_public_resume(_pending_public_token)
-		_:
-			# 没有兜底分支的话，一个认不出的 action 会让本函数安静地什么都不做，
-			# 而 UI 那边已经进了 connecting 状态在等回包 —— 就是永远卡住。
-			NetworkService._net_log("team menu action unknown: '%s'（UI 会卡在 connecting）"
-				% str(_pending_team_menu_action))
-
+	if next_action != SHORT_CODE_RESUME_ACTION \
+			and not _short_code_resume_request_id.is_empty() \
+			and AsyncActionController.is_current(_short_code_resume_request_id):
+		AsyncActionController.cancel(_short_code_resume_request_id,
+			"superseded_by_%s" % next_action)
 func _on_team_room_list_received(rooms: Array) -> void:
 	if not _room_list_request_id.is_empty() \
 			and AsyncActionController.succeed(_room_list_request_id):
@@ -1232,14 +1368,11 @@ func _on_team_room_action_failed(reason: String) -> void:
 		_menu.show_room_error(reason)
 
 func _on_public_token_changed(token_id: String) -> void:
-	# succeed() is the stale-result gate: a timeout/cancelled request cannot update
-	# the UI. resume_public stays on the legacy path until its own C-10 migration.
+	# succeed() is the stale-result gate: a timeout/cancelled generation request
+	# cannot update the UI. Short-code resume settles through resume_completed.
 	if not _public_token_request_id.is_empty():
 		if AsyncActionController.succeed(_public_token_request_id):
 			_show_public_token_in_menu(token_id)
-			return
-	if _pending_team_menu_action == "resume_public":
-		_show_public_token_in_menu(token_id)
 
 
 func _show_public_token_in_menu(token_id: String) -> void:

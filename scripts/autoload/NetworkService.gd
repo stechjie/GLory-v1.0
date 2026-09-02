@@ -208,6 +208,7 @@ var team_leader_slot: int:
 	set(value):
 		_session.team_leader_slot = value
 var _reconnect_retry_left := 0.0
+var _public_resume_pending := false
 var _ping_accum := 0.0
 var _last_pong_at := 0.0
 var _ping_sent_at := 0                    # RTT 测量：本轮 ping 的发出时刻（ticks_msec）
@@ -650,8 +651,8 @@ func team_join(address: String = DEFAULT_HOST, port: int = DEFAULT_PORT) -> bool
 # peer=1 protocol=17），但请求包没发出去 —— 而这一步**不报错、不留日志**，
 # 从现场日志里看到的只是“连上了然后什么都没发生”，根本无法定位。
 #
-# 静默失败本身就是缺陷的成因：调用方（Main.gd 的 _run_pending_team_menu_action）
-# 以为请求发出去了，就去等服务器回包，于是永远等下去。
+# 静默失败本身就是缺陷的成因：调用方已经进入 AsyncAction 的 PENDING，
+# 若网络层不说明为何拒绝发送，就只能一直等到超时。
 func team_request_room_list() -> void:
 	if not _can_send_room_request("room_list"):
 		return
@@ -687,6 +688,11 @@ func team_request_public_resume(token_id: String) -> void:
 	if team_active and multiplayer.multiplayer_peer != null:
 		public_token_id = token_id.strip_edges().to_upper()
 		SaveManager.save_public_token(public_token_id)
+		# 短码恢复沿用同一份 room_state / resume_failed 协议，但它不是由
+		# begin_resume_from_disk() 发起，state 不会进入 RECONNECTING。单独记住这次
+		# 意图，收到状态信封时也发 resume_completed，避免客户端已恢复座位却永远
+		# 不执行 Main 的恢复落地。只存 bool，不把玩家短码写进诊断状态。
+		_public_resume_pending = true
 		_rpc_public_resume_request.rpc_id(1, public_token_id)
 
 func _team_next_free_slot() -> int:
@@ -2663,6 +2669,7 @@ func reset_peer_only() -> void:
 
 func reset() -> void:
 	reset_peer_only()
+	_public_resume_pending = false
 	state = SessionState.OFFLINE
 	_join_elapsed = 0.0
 	is_host = false
@@ -3263,6 +3270,8 @@ func _rpc_room_state(envelope: Dictionary) -> void:
 		return
 
 	var was_reconnecting := state == SessionState.RECONNECTING
+	var was_public_resuming := _public_resume_pending
+	_public_resume_pending = false
 	_match_state.mark_applied(epoch, seq)
 
 	team_active = true
@@ -3303,6 +3312,10 @@ func _rpc_room_state(envelope: Dictionary) -> void:
 		_net_log("resume completed via room_state: slot=%d phase=%s round=%d seq=%d" % [
 			team_local_slot, server_phase, server_round_index, seq])
 		resume_completed.emit(payload)
+	elif was_public_resuming:
+		_net_log("public resume completed via room_state: slot=%d phase=%s round=%d seq=%d" % [
+			team_local_slot, server_phase, server_round_index, seq])
+		resume_completed.emit(payload)
 
 # 玩家开新游戏时放弃旧座位：旧房间还有其他在线玩家 -> 该座位转 AI(dummy)；
 # 没人了就不管（空房间靠超时自清）。token 作废，之后连不回。
@@ -3329,6 +3342,7 @@ func _rpc_abandon_seat(token: String) -> void:
 
 @rpc("authority", "call_remote", "reliable")
 func _rpc_resume_failed(reason: String) -> void:
+	_public_resume_pending = false
 	# 分级表统一在 NetError（E1）。此前这里挂着一个两元素的硬编码数组，
 	# 而别处的失败路径各判各的 —— 同一个错误码在不同地方待遇不一样。
 	_net_log("resume failed reason=%s class=%s" % [reason, NetError.class_name_of(reason)])
