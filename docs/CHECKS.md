@@ -2022,3 +2022,56 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/run_check.ps1 -Name in
 0 failure、0 stale、0 运行中源文件修改。完整套件仍只有既有 Flame Claw 源资产阻塞：
 三个动作槽复用同一个无内部动画、无贴图的 FBX，导致 `model_material_integrity` 对三个
 动作分支各报 1 项白模失败；该美术阻塞与本轮 UI 服务修复无关。
+
+## 2026-09-03：返回键全页面矩阵与手动重连（V3 P0-05 / P0-09）
+
+### `tutorial_checkpoint` 162 → 169：Esc 与返回路由
+
+两个缺口，都是「代码看着对、行为不对」那一类：
+
+- 桌面 Esc 完全没接。`ui_cancel` 在整个仓里只出现在两处注释中，实际只有 Android 的
+  `NOTIFICATION_WM_GO_BACK_REQUEST` 走返回逻辑。现在 `Main._unhandled_input()` 判
+  `ui_cancel` 之后直接调 `_on_back_requested()` —— 只接输入、不复制逻辑。
+- 返回键只覆盖了备战页。11 个顶层页面里，设置 / 宠物 / 图鉴 / 组队大厅 / 自测这 5 个都
+  有 `back_requested` 接好的返回路由，但那**只有页面自己的返回按钮**会发。Android Back
+  落到第 2 级只问 `PrepScreen`，其余页面直接掉到「再按一次退出」—— 玩家在设置页按返回
+  会看到退出提示。
+
+阶梯现在是：Modal → 页内面板 → 页面出口 → 二次确认退出 → 系统退出。
+
+矩阵断言断的是**不变式**而不是页面名单：凡是接了 `back_requested` 的 `_show_*`，同一个
+函数体里必须登记 `_page_back_route`。点名单的写法在加新页面时会静默漏掉，而漏掉正是这条
+缺陷本身的成因。另配一条守卫，页面数掉到 5 以下就叫 —— 否则「没有缺路由的页面」在空集
+上恒真，断言会变成摆设。
+
+### 新增 `main_team_manual_reconnect_action`（35 项）
+
+主菜单「游戏重连」此前是 `Main` 里唯一没走 `AsyncActionController` 的联网动作。三个后果：
+
+1. 按下到 `NetworkService` 报 `RECONNECTING` 之间没有任何反馈
+2. 连点会重复调 `begin_resume_from_disk()`，而它每次都 `reset()` 传输
+3. 凭证不全时直接 `return` —— 而按钮的显隐判据是 `load_reconnect().is_empty()`，
+   一条 token/address 为空、只剩 port 的记录会让按钮**可见但点了没反应**
+
+第 3 条现在按「先受理再失败」处理：`fail(RECONNECT_NO_CREDENTIAL, retryable=false)` +
+可见文案，玩家看得到原因，breadcrumb 里也留得下痕迹，而不是一片空白。
+
+**门禁直接复现的生产缺陷**：`begin_resume_from_disk()` 第一行是 `reset()`，而 `reset()`
+结尾自己会 `session_changed.emit()` —— 那一刻 `state` 还是 `OFFLINE`。所以监听方先收到
+一次 `OFFLINE`、再收到 `RECONNECTING`。把 `OFFLINE` 一律当失败的话，动作在派发的同一帧
+就被这声噪声结算掉：实测连点 100 次派发了 100 次，去重完全失效。判据改成「在途过才算
+掉线」—— 只有观察到 `RECONNECTING`/`JOINING`/`READY` 之后的 `OFFLINE` 才是结果。
+
+这条门禁会写真实的重连凭证文件，所以开头把主文件与 `.bak`/`.tmp` 三个变体整份快照成
+字节、结尾逐字还原，并断言字节一致（只存主文件的话，`_read_with_fallback()` 会从残留的
+兜底文件里把测试用的 token 读回来）。
+
+夹具里有个值得记的坑：结算之后 `AsyncActionController` 会把动作放回 `idle`，所以断言
+终态不能直接取状态序列的 `back()` —— 那样写取决于断言前隔了几帧，会时红时绿。取最后一个
+**非 idle** 的状态才稳定。
+
+命令：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/run_check.ps1 -Name tutorial_checkpoint,main_team_manual_reconnect_action,main_team_short_code_resume_action,modal_lifecycle
+```

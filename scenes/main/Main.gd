@@ -27,6 +27,11 @@ const JOIN_ROOM_TIMEOUT_MSEC := 15000
 const SHORT_CODE_RESUME_ACTION := "team_short_code_resume"
 const SHORT_CODE_RESUME_CONTROL_ID := "main_menu/public_token_resume"
 const SHORT_CODE_RESUME_TIMEOUT_MSEC := 15000
+# 第六个受控动作（V3 P0-05）。手动重连此前是 Main 里唯一没受控的联网动作：
+# 没有 busy 态、连点会重复发起、凭证不全时静默返回。
+const MANUAL_RECONNECT_ACTION := "team_manual_reconnect"
+const MANUAL_RECONNECT_CONTROL_ID := "main_menu/team_reconnect"
+const MANUAL_RECONNECT_TIMEOUT_MSEC := 15000
 
 # V2 P1-08：返回键二次确认的窗口。PrepScreen 走 preload 常量做静态类型判断，
 # 不用 has_method 动态派发 —— 那会给 dynamic_call 棘轮添丁。
@@ -81,6 +86,12 @@ var _short_code_resume_request_dispatched := false
 var _short_code_resume_ignore_late_result := false
 var _short_code_resume_request_check_hook := Callable()
 var _short_code_resume_result_check_hook := Callable()
+var _manual_reconnect_request_id := ""
+var _manual_reconnect_request_check_hook := Callable()
+# 会话是否真的进过重连流程。begin_resume_from_disk() 里的 reset() 会先发一次
+# state=OFFLINE 的 session_changed，晚于它才置 RECONNECTING —— 不区分的话，
+# 动作会在派发的同一帧被这声噪声结算掉。
+var _manual_reconnect_saw_flight := false
 # 离线自测·单位测试模式(officetest):进入前的 team_mode 快照,退出时还原。
 var _selftest_prev_team_mode := false
 var _back_exit_armed_until := 0.0
@@ -595,24 +606,112 @@ func _show_menu() -> void:
 	_menu.codex_requested.connect(_show_codex_screen)
 	add_child(_menu)
 
+# 手动重连：读本地凭证连回上一场，弹重连遮罩，成功落回备战/结果，失败清凭证回菜单。
+#
+# V3 P0-05 之前这里是 Main 里唯一没走 AsyncActionController 的联网动作。三个后果：
+#   1. 按下到 NetworkService 报 RECONNECTING 之间没有任何反馈
+#   2. 连点会重复调 begin_resume_from_disk()，每次都重置传输
+#   3. 凭证不全时直接 return —— 而按钮的显隐判据是 `load_reconnect().is_empty()`，
+#      一条只剩 port 字段的记录会让按钮可见但点了没反应
+#
+# 第 3 条现在按「先受理再失败」处理，而不是静默返回：玩家看得到原因，
+# breadcrumb 里也留得下 action_failed，而不是一片空白。
 func _on_team_reconnect_requested() -> void:
-	# 手动重连：读本地凭证连回上一场，弹重连遮罩，成功落回备战/结果，失败清凭证回菜单
-	# 新的手动恢复明确取代任何旧短码请求；begin_resume_from_disk() 会重置传输，
+	AsyncActionController.record_input_received(
+		MANUAL_RECONNECT_ACTION, MANUAL_RECONNECT_CONTROL_ID)
+	var owner: Object = _menu if _menu != null and is_instance_valid(_menu) else self
+	var request_id := AsyncActionController.begin(MANUAL_RECONNECT_ACTION, {
+		"owner": owner,
+		"control_id": MANUAL_RECONNECT_CONTROL_ID,
+		"timeout_msec": MANUAL_RECONNECT_TIMEOUT_MSEC,
+		"cancellable": true,
+		"stage": "connect",
+	})
+	if request_id.is_empty():
+		return
+	# 连点：begin() 已经记了 action_rejected(duplicate_pending) 并把原 id 还回来。
+	if request_id == _manual_reconnect_request_id and AsyncActionController.is_current(request_id):
+		return
+	_manual_reconnect_request_id = request_id
+	_manual_reconnect_saw_flight = false
+	# 新的手动恢复明确取代任何旧的组队请求；begin_resume_from_disk() 会重置传输，
 	# 因此旧请求的迟到保护也不能误吞这次手动恢复的结果。
-	if not _short_code_resume_request_id.is_empty() \
-			and AsyncActionController.is_current(_short_code_resume_request_id):
-		AsyncActionController.cancel(_short_code_resume_request_id, "superseded_by_manual_resume")
+	_supersede_other_team_action(MANUAL_RECONNECT_ACTION)
 	_short_code_resume_request_id = ""
 	_short_code_resume_ignore_late_result = false
+
 	var rc := SaveManager.load_reconnect()
 	var rc_token := str(rc.get("token", ""))
 	var rc_address := str(rc.get("address", ""))
 	if rc_token.is_empty() or rc_address.is_empty():
+		# 不可重试：再点一次读到的还是同一条残缺记录。
+		AsyncActionController.fail(request_id, "RECONNECT_NO_CREDENTIAL", false)
+		_manual_reconnect_request_id = ""
+		if is_instance_valid(_menu):
+			_menu.show_connection_error(_menu_reconnect_missing_text())
 		return
+
+	AsyncActionController.mark_pending(request_id)
+	if is_instance_valid(_menu):
+		_menu.show_connecting()
+	if not NetworkService.session_changed.is_connected(_on_manual_reconnect_session_changed):
+		NetworkService.session_changed.connect(_on_manual_reconnect_session_changed)
+	if _manual_reconnect_request_check_hook.is_valid():
+		_manual_reconnect_request_check_hook.call(request_id)
 	GameState.team_mode = true
 	# 端口必须用存下来的那个：座位 token 是进程内的，多进程下连错端口 = 凭证失效。
 	# 老存档没有 port 字段，退化为默认端口（等价于单进程时的旧行为）。
 	NetworkService.begin_resume_from_disk(rc_token, rc_address, int(rc.get("port", NetworkService.DEFAULT_PORT)))
+
+
+func _menu_reconnect_missing_text() -> String:
+	if LocaleManager.get_locale().begins_with("en"):
+		return "Reconnect record is incomplete — start a new game instead."
+	return "重连凭证不完整，请重新开始一局"
+
+
+# 结算沿用 NetworkService 的会话状态，不另设超时判断 —— AsyncActionController
+# 自己的 deadline 会兜底，两套超时会互相打架。
+func _on_manual_reconnect_session_changed() -> void:
+	var request_id := _manual_reconnect_request_id
+	if request_id.is_empty() or not AsyncActionController.is_current(request_id):
+		_disconnect_manual_reconnect_session_handler()
+		return
+	match NetworkService.state:
+		NetworkService.SessionState.RECONNECTING, NetworkService.SessionState.JOINING:
+			_manual_reconnect_saw_flight = true
+		NetworkService.SessionState.READY:
+			_disconnect_manual_reconnect_session_handler()
+			AsyncActionController.succeed(request_id)
+			_manual_reconnect_request_id = ""
+		NetworkService.SessionState.FAILED:
+			_disconnect_manual_reconnect_session_handler()
+			AsyncActionController.fail(request_id, "RECONNECT_SESSION_FAILED", true)
+			_manual_reconnect_request_id = ""
+		NetworkService.SessionState.OFFLINE:
+			# 只有在途过才算掉线。派发之前的 OFFLINE 是 reset() 的噪声，不是结论。
+			if not _manual_reconnect_saw_flight:
+				return
+			_disconnect_manual_reconnect_session_handler()
+			AsyncActionController.fail(request_id, "RECONNECT_SESSION_FAILED", true)
+			_manual_reconnect_request_id = ""
+
+
+func _disconnect_manual_reconnect_session_handler() -> void:
+	if NetworkService.session_changed.is_connected(_on_manual_reconnect_session_changed):
+		NetworkService.session_changed.disconnect(_on_manual_reconnect_session_changed)
+
+
+func manual_reconnect_request_id_for_check() -> String:
+	return _manual_reconnect_request_id if OS.is_debug_build() else ""
+
+
+# 与其余五个受控动作同形的 debug 接缝：release 构建拒绝安装。
+func set_manual_reconnect_request_check_hook(hook: Callable) -> bool:
+	if not OS.is_debug_build():
+		return false
+	_manual_reconnect_request_check_hook = hook
+	return true
 
 func _on_team_offline_requested() -> void:
 	# 纯离线自测：断开任何联机会话，team_active 保持 false，进大厅走本地槽位。
@@ -1580,6 +1679,13 @@ func _supersede_other_team_action(next_action: String) -> void:
 			and AsyncActionController.is_current(_short_code_resume_request_id):
 		AsyncActionController.cancel(_short_code_resume_request_id,
 			"superseded_by_%s" % next_action)
+	if next_action != MANUAL_RECONNECT_ACTION \
+			and not _manual_reconnect_request_id.is_empty() \
+			and AsyncActionController.is_current(_manual_reconnect_request_id):
+		AsyncActionController.cancel(_manual_reconnect_request_id,
+			"superseded_by_%s" % next_action)
+		_disconnect_manual_reconnect_session_handler()
+		_manual_reconnect_request_id = ""
 func _on_team_room_list_received(rooms: Array) -> void:
 	if not _room_list_request_id.is_empty() \
 			and AsyncActionController.succeed(_room_list_request_id):
