@@ -84,6 +84,10 @@ var _short_code_resume_result_check_hook := Callable()
 # 离线自测·单位测试模式(officetest):进入前的 team_mode 快照,退出时还原。
 var _selftest_prev_team_mode := false
 var _back_exit_armed_until := 0.0
+# 当前页面按返回键该去哪。每个有返回出口的 _show_* 在连 back_requested 的
+# 同一处设它，_clear() 清掉。空 = 这一页没有页内出口（主菜单、战斗中、
+# 初始宠物强制三选一），返回键继续往下走到二次确认退出。
+var _page_back_route := Callable()
 
 func _ready() -> void:
 	# Idempotent on purpose: the DataRegistry autoload has already loaded by now, and
@@ -392,6 +396,9 @@ func _instantiate_screen(path: String) -> Control:
 
 
 func _clear() -> void:
+	# 先清路由：下一页要么自己设一个，要么就该没有。留着上一页的会让返回键
+	# 把玩家送回一个已经不在树上的界面。
+	_page_back_route = Callable()
 	# Menu-owned async work must stop before its controls leave the tree. This also
 	# makes a later public-token response stale instead of painting the next screen.
 	if _menu != null and is_instance_valid(_menu):
@@ -458,7 +465,15 @@ func _select_language(locale: String) -> void:
 	_show_prep()
 
 
-# --- V2 P1-08：Android 返回键 -------------------------------------------------
+# --- V2 P1-08 / V3 P0-09：返回键与 ui_cancel ---------------------------------
+#
+# 优先级：最上层 modal → 当前页面自己的面板 → 二次确认退出。**不直接退桌面。**
+#
+# V3 P0-09：桌面 Esc（ui_cancel）与 Android Back 走**同一个**处理函数。
+# 分成两套实现是这类需求最常见的坏法：两边会各自漂移，而 QA 通常只在一个
+# 平台上点得到。所以这里只接输入、不复制逻辑。
+#
+# 全局 ScreenRouter 与 pending 动作询问那一套仍归后续批次。
 #
 # 优先级：最上层 modal → 当前页面自己的面板 → 二次确认退出。**不直接退桌面。**
 # 全局 ScreenRouter 与 pending 动作询问那一套属于 V3 P0-09，本批不做。
@@ -472,6 +487,15 @@ func _notification(what: int) -> void:
 				TutorialMode.save_checkpoint(true)
 
 
+# 用 _unhandled_input 而不是 _input：LineEdit 这类控件要先有机会吃掉自己的
+# Esc（取消编辑、关下拉），只有没人认领的才升级成「返回」。
+func _unhandled_input(event: InputEvent) -> void:
+	if not event.is_action_pressed("ui_cancel"):
+		return
+	get_viewport().set_input_as_handled()
+	_on_back_requested()
+
+
 func _on_back_requested() -> void:
 	# 1. 最上层 modal（重连提示、宝藏三选一、佣兵层、确认框都在这里）
 	if ModalStack.handle_back_request():
@@ -480,7 +504,16 @@ func _on_back_requested() -> void:
 	if _prep != null and is_instance_valid(_prep) and _prep is PrepScreenScript:
 		if (_prep as PrepScreenScript).handle_back_request():
 			return
-	# 3. 退出前先把教程断点钉住，玩家回来还在同一步
+	# 3. 当前页面的返回出口（设置 / 宠物 / 图鉴 / 组队大厅 / 自测 → 上一层）
+	#    走的是页面返回按钮同一个回调，不另写一套导航。
+	if _page_back_route.is_valid():
+		var route := _page_back_route
+		# 先清再调：路由函数自己会 _clear()，但先清掉能保证即使某个路由
+		# 将来不走 _clear() 也不会连按两次退两层。
+		_page_back_route = Callable()
+		route.call()
+		return
+	# 4. 退出前先把教程断点钉住，玩家回来还在同一步
 	if TutorialMode.active:
 		TutorialMode.save_checkpoint(true)
 	var now := Time.get_ticks_msec() / 1000.0
@@ -591,6 +624,7 @@ func _show_settings() -> void:
 	_clear()
 	var settings := _instantiate_screen("res://scenes/menu/SettingsScreen.tscn")
 	settings.back_requested.connect(_show_menu)
+	_page_back_route = _show_menu
 	add_child(settings)
 
 # 备战界面（暂时只有宠物系统）。从主菜单「备战」按钮进入，返回回主菜单。
@@ -598,6 +632,7 @@ func _show_pet_screen() -> void:
 	_clear()
 	var pet_screen := _instantiate_screen("res://scenes/menu/PetScreen.tscn")
 	pet_screen.back_requested.connect(_show_menu)
+	_page_back_route = _show_menu
 	add_child(pet_screen)
 
 # 图鉴界面。从主菜单「图鉴」按钮进入，返回回主菜单。
@@ -605,6 +640,7 @@ func _show_codex_screen() -> void:
 	_clear()
 	var codex := _instantiate_screen("res://scenes/menu/CodexScreen.tscn")
 	codex.back_requested.connect(_show_menu)
+	_page_back_route = _show_menu
 	add_child(codex)
 
 # 首次启动的初始宠物三选一关卡：无返回按钮，选完后再进主菜单。
@@ -619,6 +655,7 @@ func _show_team3v3_lobby() -> void:
 	var lobby := _instantiate_screen("res://scenes/menu/Team3v3Lobby.tscn")
 	lobby.start_requested.connect(_on_team3v3_start)
 	lobby.back_requested.connect(_on_lobby_back)
+	_page_back_route = _on_lobby_back
 	lobby.selftest_requested.connect(_show_selftest)
 	add_child(lobby)
 
@@ -632,6 +669,7 @@ func _show_selftest() -> void:
 	# parse-time dependency of Main on a cold boot before its .import exists.
 	var screen: Node = (load("res://officetest/OfficeTestScreen.tscn") as PackedScene).instantiate()
 	screen.back_requested.connect(_on_selftest_back)
+	_page_back_route = _on_selftest_back
 	add_child(screen)
 
 func _on_selftest_back() -> void:

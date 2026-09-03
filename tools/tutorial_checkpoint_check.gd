@@ -265,6 +265,34 @@ func _check_source_contract() -> void:
 	_h.expect(main_src.contains("CanvasLayer.new()") and main_src.contains("BACK_EXIT_HINT_LAYER"),
 		"back_hint_not_on_own_layer",
 		"返回键提示没有自带 CanvasLayer —— 会被当前页面的 UI 盖住")
+
+	# V3 P0-09：桌面 Esc 必须复用同一条返回路径，不能另写一套。
+	#
+	# 分成两套实现是这类需求最常见的坏法：两边各自漂移，而 QA 通常只在一个平台
+	# 点得到。所以断言的是「Esc 落到 _on_back_requested()」，而不是「有处理 Esc」。
+	#
+	# 断言限定在函数体里、并用带缩进的代码形状 —— 本轮已经三次栽在
+	# 「整文件 contains 被自己写的注释满足」上（见 source-assert-contains-trap）。
+	var esc_at := main_src.find("func _unhandled_input(event: InputEvent) -> void:")
+	if _h.expect(esc_at >= 0, "esc_not_wired",
+			"Main 没有 _unhandled_input —— 桌面 Esc 到不了返回逻辑"):
+		var esc_end := main_src.find("\nfunc ", esc_at + 1)
+		if esc_end < 0:
+			esc_end = main_src.length()
+		var esc_body := main_src.substr(esc_at, esc_end - esc_at)
+		_h.expect(esc_body.contains("is_action_pressed(\"ui_cancel\")"),
+			"esc_not_ui_cancel",
+			"_unhandled_input 没有按 ui_cancel 判断")
+		_h.expect(esc_body.contains("\t_on_back_requested()"),
+			"esc_has_own_logic",
+			("Esc 没有落到 _on_back_requested() —— 两套返回逻辑会各自漂移，"
+				+ "而 QA 通常只在一个平台点得到"))
+		_h.expect(esc_body.contains("set_input_as_handled()"),
+			"esc_not_consumed",
+			"Esc 处理完没有 set_input_as_handled()，事件会继续冒泡")
+
+	_check_back_route_matrix(main_src)
+
 	var save_src := FileAccess.get_file_as_string("res://scripts/autoload/SaveManager.gd")
 	_h.expect(save_src.contains("TUTORIAL_PATH"), "tutorial_path_missing",
 		"SaveManager 没有教程断点路径")
@@ -449,3 +477,79 @@ func _file_drifted() -> bool:
 func _settle(frames: int = 2) -> void:
 	for i in frames:
 		await get_tree().process_frame
+
+
+# V3 P0-09：返回键的全页面矩阵。
+#
+# 迁移前每个子页面都有 back_requested 信号接了返回路由，但那**只有页面自己的
+# 返回按钮**会发。Android Back / 桌面 Esc 落到第 2 级只问 PrepScreen，其余页面
+# 直接掉到「再按一次退出」—— 玩家在设置页按返回会看到退出提示。
+#
+# 这里断言的是**不变式**而不是页面名单：凡是接了 back_requested 的 _show_*，
+# 同一个函数体里必须登记 _page_back_route。点名单的写法在加新页面时会静默漏掉，
+# 而漏掉正是这条缺陷本身的成因。
+func _check_back_route_matrix(main_src: String) -> void:
+	var funcs := _split_funcs(main_src)
+
+	var pages_with_signal: Array[String] = []
+	var pages_missing_route: Array[String] = []
+	for fname in funcs.keys():
+		var body: String = funcs[fname]
+		if not body.contains(".back_requested.connect("):
+			continue
+		pages_with_signal.append(fname)
+		if not body.contains("\t_page_back_route = "):
+			pages_missing_route.append(fname)
+
+	# 先证明这条断言有东西可查。页面全被改名/信号全被换掉时，上面的循环会一个都
+	# 收不到，而「没有缺路由的页面」在空集上恒真 —— 那样断言就成了摆设。
+	_h.expect(pages_with_signal.size() >= 5, "back_route_matrix_found_nothing",
+		("只找到 %d 个接 back_requested 的页面（预期 ≥5）—— "
+			+ "断言可能已经查不到任何东西了") % pages_with_signal.size())
+	_h.expect(pages_missing_route.is_empty(), "page_without_back_route",
+		("这些页面接了返回按钮却没登记 _page_back_route，"
+			+ "Android Back / Esc 会跳过它们直接问退出：%s") % str(pages_missing_route))
+
+	# 路由必须在切页时清掉，否则返回键会把玩家送回一个已经不在树上的界面。
+	var clear_body: String = funcs.get("_clear", "")
+	_h.expect(clear_body.contains("_page_back_route = Callable()"),
+		"back_route_not_cleared",
+		"_clear() 没有重置 _page_back_route —— 上一页的路由会漏到下一页")
+
+	# 阶梯顺序：ModalStack → 页面自己的面板 → 页面返回出口 → 二次确认退出。
+	# 顺序错了每一条单独看都还在，所以按下标比较，而不是各查各的 contains。
+	var back_body: String = funcs.get("_on_back_requested", "")
+	var i_modal := back_body.find("ModalStack.handle_back_request()")
+	var i_prep := back_body.find("handle_back_request()", i_modal + 1)
+	var i_route := back_body.find("_page_back_route.is_valid()")
+	var i_quit := back_body.find("get_tree().quit()")
+	_h.expect(i_modal >= 0 and i_prep > i_modal and i_route > i_prep and i_quit > i_route,
+		"back_ladder_out_of_order",
+		("返回键阶梯顺序不对（modal=%d prep=%d route=%d quit=%d），"
+			+ "必须是 Modal → 页内面板 → 页面出口 → 二次确认退出")
+			% [i_modal, i_prep, i_route, i_quit])
+
+
+# 按顶层 func 切开源码，返回 {函数名: 函数体}。
+#
+# 门禁里「整文件 contains」会被自己写的注释满足 —— 本轮已经栽过三次。
+# 限定到函数体是最可靠的一种修法，所以这里做成公共的。
+func _split_funcs(src: String) -> Dictionary:
+	var out := {}
+	var lines := src.split("\n")
+	var name := ""
+	var buf := PackedStringArray()
+	for raw in lines:
+		var line := raw.trim_suffix("\r")
+		if line.begins_with("func "):
+			if name != "":
+				out[name] = "\n".join(buf)
+			var open_paren := line.find("(")
+			name = line.substr(5, open_paren - 5) if open_paren > 5 else line.substr(5)
+			buf = PackedStringArray()
+			continue
+		if name != "":
+			buf.append(line)
+	if name != "":
+		out[name] = "\n".join(buf)
+	return out
