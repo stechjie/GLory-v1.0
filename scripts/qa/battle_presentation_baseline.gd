@@ -720,12 +720,47 @@ func _performance_summary() -> Dictionary:
 	var sorted_asc := _perf_deltas_ms.duplicate()
 	sorted_asc.sort()
 	var p95_index := clampi(int(ceil(float(sorted_asc.size()) * 0.95)) - 1, 0, sorted_asc.size() - 1)
+	# V3 P2-02：固定报告字段。审计点名缺的是这几样——不是新指标，是把已经采样
+	# 在 _perf_deltas_ms 里的数据换算成清单要求的固定形状，好让门禁按同一套
+	# 字段名逐场比阈值，不用每次现算。
+	var p99_index := clampi(int(ceil(float(sorted_asc.size()) * 0.99)) - 1, 0, sorted_asc.size() - 1)
+	var over_16_7 := 0
+	var over_33 := 0
+	var over_50 := 0
+	var over_100 := 0
+	for value in _perf_deltas_ms:
+		if value > 16.7:
+			over_16_7 += 1
+		if value > 33.0:
+			over_33 += 1
+		if value > 50.0:
+			over_50 += 1
+		if value > 100.0:
+			over_100 += 1
+	# 内存前后差：取采样窗口首尾两帧，不是峰值——峰值已经有 peak_* 字段，
+	# 「前后差」问的是这一场打完之后有没有净增长（残留），跟"打到一半冲多高"
+	# 是两件事。
+	var mem_delta := {"video_mb": 0.0, "texture_mb": 0.0, "static_mb": 0.0}
+	if _perf_samples.size() >= 2:
+		var first: Dictionary = _perf_samples[0]
+		var last: Dictionary = _perf_samples[_perf_samples.size() - 1]
+		mem_delta = {
+			"video_mb": float(last.get("video_mb", 0.0)) - float(first.get("video_mb", 0.0)),
+			"texture_mb": float(last.get("texture_mb", 0.0)) - float(first.get("texture_mb", 0.0)),
+			"static_mb": float(last.get("static_mb", 0.0)) - float(first.get("static_mb", 0.0)),
+		}
 	return {
 		"sample_count": _perf_deltas_ms.size(),
 		"average_fps": average_fps,
 		"one_percent_low_fps": one_percent_low,
 		"p95_frame_time_ms": float(sorted_asc[p95_index]),
+		"p99_frame_time_ms": float(sorted_asc[p99_index]),
 		"max_frame_time_ms": float(sorted_desc[0]),
+		"frames_over_16_7ms": over_16_7,
+		"frames_over_33ms": over_33,
+		"frames_over_50ms": over_50,
+		"frames_over_100ms": over_100,
+		"memory_delta_mb": mem_delta,
 		"measurement_window_sec": total_ms / 1000.0,
 		"peak_video_mb": _peak_video_mb,
 		"peak_texture_mb": _peak_texture_mb,

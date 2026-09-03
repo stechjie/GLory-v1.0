@@ -2372,3 +2372,52 @@ ModalStack 的层），让循环里真的有模态可开可关，覆盖设置 / 
 
 五条断言逐条反向变异全部转红，涉及的两个生产文件（`ModalStack.gd` 纯 LF、
 不需要按字节还原技巧）与门禁自身脚本均可正常还原。
+
+## 2026-09-03：帧时间固定字段与阈值判定（V3 P2-02）
+
+`scripts/qa/battle_presentation_baseline.gd`（D0 基线，真实渲染一整场战斗，一轮几十秒
+到几分钟）已经在产出 `average_fps` / `one_percent_low_fps` / `p95_frame_time_ms` /
+`max_frame_time_ms`，但缺清单要求的另外几个固定字段，而且**从来没有阈值判定**——
+`_finish_all()` 里的 `passed` 只看审计失败和轮数是否齐，不看帧时间。
+
+补的字段：`p99_frame_time_ms`、`frames_over_16_7ms` / `_33ms` / `_50ms` / `_100ms`
+四档计数、`memory_delta_mb`（采样窗口首尾两帧的 video/texture/static 内存差 ——
+问的是「这一场打完有没有净增长」，跟已有的 `peak_*` 问的「打到一半冲多高」是两件事）。
+
+新增 `battle_frame_time`（11 项）做**判定**，跟产出报告的脚本分开：判定吃的是普通
+`Dictionary`，不用真的渲染一遍就能反向变异，也不会让「这条门禁能不能转红」依赖一次
+GPU 才能复现。判据：
+
+- 单帧硬顶（`max_frame_time_ms > 100`）独立于均值判断——「平均 120 FPS 但出现
+  105ms 帧仍判失败」，两者不能互相抵消。
+- 持续卡顿的软预算（`frames_over_50ms` 占比 > 2%）——最坏一帧正常、均值也正常，
+  但三分钟里三分钟都在 40ms 帧的「整场发闷」，同样要抓。
+- 报告缺字段直接判不合规，不是「查不到就当过」。
+- **`judge_performance()` 的函数签名本身不接受 round 参数**——源码层面钉死
+  「不能按 Round 20 特判」，不是靠人记着不写。
+
+⚠️ **阈值是本次新加的默认值，不是既有产品决策的回收**：仓库里没有任何地方明确写过
+`AVG_FPS_MIN`/`ONE_PCT_LOW_FPS_MIN`/`MAX_FRAME_TIME_MS_HARD` 这三个数字，是按「移动端
+3v3 自走棋，允许偶发卡顿但不能整场糊」的常见口径估的（30 FPS / 20 FPS / 100ms）。
+写进最终交接报告，等产品/主美回来确认或改。
+
+用两份**真实历史采样**（2026-08-20 A4 设备/桌面双跑，不是编出来的数字）验证判定
+本身有意义：`A4_device_battle_20260820/desktop/round_01`（健康局，143 FPS）应该通过；
+`A4_device_battle_20260820/cold_cache/device/round_20`（均 8.93 FPS、1% low 6.84、
+P95 帧时 138ms，早就是已知的性能缺口）必须判失败——门禁如果对着这份数据还给通过，
+阈值就是形同虚设。同时这份旧采样天然没有新加的固定字段，顺手验证了「缺字段判不合规」
+这条不是纸上谈兵。
+
+**反向变异过程中的两个坑**：
+
+1. `_check_uniform_thresholds_no_round_special_case()` 里判「函数签名不接受 round
+   参数」，第一版直接 `src.find("func judge_performance(")` —— 而这条检查**自己的
+   源码**里就写着这个字面量（这行注释、这行代码本身），不锚定到真正的函数定义
+   会先匹配到自己。改成按行扫描、只认 `begins_with("func judge_performance(")`
+   的整行。
+2. 修复过程中用一次性 Python heredoc 写文件时，转义字符 `\n` 被环境吃成了真实换行
+   （已知坑，见 `windows-escaping-traps` 记忆）——教训是这类字符串拼接改用 Edit 工具
+   或独立 `.py` 文件，不要经过 shell heredoc。
+
+十一条断言逐条反向变异全部转红（含用真实数据验证的两条），涉及的两个生产文件均
+按字节还原。
