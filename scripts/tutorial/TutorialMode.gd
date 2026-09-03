@@ -176,39 +176,41 @@ func sync() -> void:
 	# 按「实际拥有 3 个」推进，不按采购次数：自动合成下重复买同名会融合，
 	# 买满 3 次也可能只剩 2 个棋子，那样 PLACE_3 的 3 个上阵条件永远达不到。
 	if step == Step.BUY_3 and _owned_normal_count() >= 3:
-		step = Step.PLACE_3
+		_advance_to(Step.PLACE_3)
 	if step == Step.PLACE_3 and GameState.normal_unit_count() >= 3:
-		step = Step.START_PVE_1
+		_advance_to(Step.START_PVE_1)
 	if step == Step.UPGRADE_2 and _unit_star("human_militia") >= 2:
-		step = Step.START_PVE_2
+		_advance_to(Step.START_PVE_2)
 	if step == Step.TAKE_TREASURE_1 and GameState.owned_treasures.size() >= 1:
 		# 只送 1 个 2 星（送 2 个会和场上那个凑满 3 个、当场自动合成到 3 星，
 		# UPGRADE_3 就被跳过了）。剩下 1 个 2 星让玩家自己买 2 个 1 星凑。
 		_grant_units("human_militia", 1, 2)
-		step = Step.UPGRADE_3
+		_advance_to(Step.UPGRADE_3)
 		_refresh_prep()
 	if step == Step.UPGRADE_3 and _unit_star("human_militia") >= 3:
 		# 弓手/商人升 2 星也让玩家自己在商店买，不再直接发材料。
 		_apply_shop(UPGRADE_OTHERS_SHOP)
-		step = Step.UPGRADE_OTHERS
+		_advance_to(Step.UPGRADE_OTHERS)
 		_refresh_prep()
 	if step == Step.UPGRADE_OTHERS and _unit_star("human_archer") >= 2 and _unit_star("human_merchant") >= 2:
-		step = Step.BOND_HINT
+		_advance_to(Step.BOND_HINT)
 	if step == Step.TAKE_TREASURE_2 and GameState.owned_treasures.size() >= 2:
-		step = Step.HIRE_MERC
+		_advance_to(Step.HIRE_MERC)
 	if step == Step.HIRE_MERC and _mercenary_count() >= 2:
 		if _target_provider != null:
 			_target_provider.request_action(
 				TutorialTargetProviderScript.ACTION_CLOSE_MERCENARY)
 		_apply_shop(FILL_SHOP)
-		step = Step.FILL_7
+		# 必须排在推进之前：_advance_to() 会立刻落盘，晚一步就会把
+		# _fill_started=false 记进 FILL_7 的断点，恢复时子状态机对不上。
 		_begin_fill_step()
+		_advance_to(Step.FILL_7)
 	if step == Step.FILL_7:
 		# 幂等：重复 sync() 只会把子阶段往前推，不会重置计数、不会重复补偿。
 		_advance_fill_step()
 	if step == Step.FILL_7 and GameState.normal_unit_count() >= FILL_TARGET_UNITS:
 		_end_fill_step()
-		step = Step.FORMATION_HP
+		_advance_to(Step.FORMATION_HP)
 	# 每次推进都落一次断点（内部按进度签名节流，不会每帧写盘）。
 	save_checkpoint()
 	update_overlay()
@@ -246,20 +248,20 @@ func after_battle(result: Dictionary) -> void:
 		Step.START_PVE_1:
 			# 升 2 星的民兵材料让玩家自己在商店买，不再直接发。
 			_apply_shop(UPGRADE_2_SHOP)
-			step = Step.UPGRADE_2
+			_advance_to(Step.UPGRADE_2)
 		Step.START_PVE_2:
 			_start_treasure(TREASURE_1)
-			step = Step.TAKE_TREASURE_1
+			_advance_to(Step.TAKE_TREASURE_1)
 		Step.START_BOSS:
 			_start_treasure(TREASURE_2)
-			step = Step.TAKE_TREASURE_2
+			_advance_to(Step.TAKE_TREASURE_2)
 		Step.START_PVP:
 			result["kind"] = "pvp"
 			result["player_wins"] = true
 			result["enemy_alive"] = 0
 			result["enemy_hp_current"] = 0
 			GameState.enemy_formation_hp = 0
-			step = Step.DONE
+			_advance_to(Step.DONE)
 	GameState.gold = TUTORIAL_GOLD
 	save_checkpoint(true)
 
@@ -513,11 +515,11 @@ func _on_skip_dialog_result(result: String, _request_id: String) -> void:
 func _on_hotspot_pressed() -> void:
 	match step:
 		Step.BOND_HINT:
-			step = Step.VIEW_TREASURE
+			_advance_to(Step.VIEW_TREASURE)
 		Step.VIEW_TREASURE:
-			step = Step.FORMATION_HP
+			_advance_to(Step.FORMATION_HP)
 		Step.FORMATION_HP:
-			step = Step.START_PVP if GameState.normal_unit_count() >= 7 and _mercenary_count() >= 2 else Step.START_BOSS
+			_advance_to(Step.START_PVP if GameState.normal_unit_count() >= 7 and _mercenary_count() >= 2 else Step.START_BOSS)
 		_:
 			return
 	update_overlay()
@@ -534,6 +536,27 @@ const CHECKPOINT_VERSION := 1
 # 写盘节流用的进度签名。sync() 每次 _refresh_all() 都会跑，
 # 不加签名就会变成每帧写文件。
 var _checkpoint_signature := ""
+
+
+# 唯一的运行时推进入口（V3 P0-08）。
+#
+# 此前 step 是十几处直接赋值，其中确认型的两处 —— _on_continue_pressed() 与
+# _on_hotspot_pressed() —— 忘了落盘。玩家按下「继续」之后强杀 app，回来还在
+# 按之前那一步：断点要等下一次 sync() 才跟上，而那两步之后玩家做的第一件事
+# 就是开战，中间隔着整场战斗。
+#
+# 逐点补 save_checkpoint() 治不住：下次加步骤照样会漏。所以收口成一个入口，
+# 并由门禁断言别处不得直接赋值 step。
+#
+# 链式推进（一次 sync() 里连推三步）会写三次盘。留着不优化：save_tutorial()
+# 是一次原子写，教程全程也就几十次，而任何「攒着最后写」的做法都要引入一个
+# 必须记得清的标志位 —— 那正是这条缺陷的形状。
+func _advance_to(next_step: int) -> void:
+	if step == next_step:
+		return
+	step = next_step
+	_sync_progress_index()
+	save_checkpoint()
 
 
 func save_checkpoint(force: bool = false) -> void:
@@ -576,9 +599,11 @@ func save_checkpoint(force: bool = false) -> void:
 
 # 进度签名只取「玩家实际推进了什么」，不取金币这类每帧会被 sync() 重置的量。
 func _checkpoint_progress_signature() -> String:
-	return "%d|%d|%d|%d|%d|%d|%d|%d|%d" % [
+	return "%d|%d|%d|%s|%d|%d|%d|%d|%d|%d" % [
 		step, _progress_index, bought_units,
-		_fill_phase, _fill_bought,
+		# _fill_started 也算进来：BUY 相位与 bought=0 在「还没开始」和
+		# 「刚开始」两种状态下取值相同，只看那两个会漏掉这次转变。
+		str(_fill_started), _fill_phase, _fill_bought,
 		_owned_normal_count(), GameState.normal_unit_count(),
 		_mercenary_count(), GameState.owned_treasures.size(),
 	]
@@ -1143,9 +1168,9 @@ func _grant_units(id: String, count: int, star: int = 1) -> void:
 
 func _on_continue_pressed() -> void:
 	if step == Step.BOND_HINT:
-		step = Step.START_BOSS
+		_advance_to(Step.START_BOSS)
 	elif step == Step.FORMATION_HP:
-		step = Step.START_PVP
+		_advance_to(Step.START_PVP)
 	update_overlay()
 
 func _refresh_prep() -> void:

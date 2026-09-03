@@ -28,6 +28,8 @@ const PREP_SCENE := "res://scenes/prep/PrepScreen.tscn"
 
 # MD 点名的四个断点。用序列位置（1 起）而不是枚举值，与进度条口径一致。
 const CHECKPOINT_STEPS := [1, 6, 10, 15]
+# 教程里只增不减的三样。断点里它们回退就说明写进去的是过期快照。
+const MONOTONE_FIELDS := ["宝藏", "佣兵", "采购"]
 const ACTION_BUDGET := 60
 
 var _h: CheckHarness
@@ -47,6 +49,8 @@ func _ready() -> void:
 		await _check_restore_at(int(position))
 	await _check_back_priority()
 	await _check_no_checkpoint_falls_back_to_fresh()
+	await _check_every_step_persists_immediately()
+	_check_step_writes_are_funnelled()
 
 	TutorialMode.finish()
 	GameState.reset_run()
@@ -553,3 +557,139 @@ func _split_funcs(src: String) -> Dictionary:
 	if name != "":
 		out[name] = "\n".join(buf)
 	return out
+
+
+# V3 P0-08：走完整条教程，每一次步骤推进之后**立刻**比对落盘内容。
+#
+# V2 实测缺陷：按下「继续」或点热点推进之后强杀 app，回来还在按之前那一步。
+# 根因是 _on_continue_pressed() / _on_hotspot_pressed() 推进了 step 却从不落盘，
+# 断点要等玩家在备战页再做点什么触发 sync() 才跟上 —— 而那两步之后玩家做的
+# 第一件事就是开战，中间隔着整场战斗。
+#
+# 上面那组 CHECKPOINT_STEPS 只抽查 1/6/10/15，而且是在 save_checkpoint(true)
+# **之后**才读，天然测不到「谁忘了落盘」。这里改成：只推进、不强制落盘，
+# 每换一步就读一次盘。覆盖全部步骤 —— 任务书点名不能只修 step 10。
+func _check_every_step_persists_immediately() -> void:
+	TutorialMode.start()
+	var prep := _new_prep()
+	if prep == null:
+		return
+	await _settle(3)
+	TutorialMode.attach(prep.tutorial_target_provider())
+	await _settle(2)
+
+	# 教程期间主存档必须一个字节都不动：_write_now() 第一行就是
+	# `if GameState.tutorial_mode: return`，而主存档参与 replay / final-state SHA。
+	var main_save_before := _main_save_digest()
+
+	var seen: Array[int] = []
+	var lagged: Array[String] = []
+	var mismatched: Array[String] = []
+	var monotone := [0, 0, 0]
+	var last_step := TutorialMode.step
+	var guard := 0
+	while TutorialMode.step != TutorialScript.Step.DONE and guard < 600:
+		guard += 1
+		await _drive_current_step(prep)
+		if TutorialMode.step == last_step:
+			continue
+		last_step = TutorialMode.step
+		seen.append(int(last_step))
+		# 关键：这里**不调** save_checkpoint()。盘上是什么就是什么。
+		var saved := SaveManager.load_tutorial()
+		var saved_step := int(saved.get("step", -1))
+		if saved_step != int(last_step):
+			lagged.append("%s(盘上=%d)" % [TutorialMode.step_key(), saved_step])
+		else:
+			# 步号也必须跟上，否则恢复后进度条会倒退。
+			var saved_index := int(saved.get("progress_index", -1))
+			if saved_index != TutorialMode.step_number() - 1:
+				lagged.append("%s(步号盘上=%d 实际=%d)"
+					% [TutorialMode.step_key(), saved_index + 1, TutorialMode.step_number()])
+		# 步号对上还不够：断点还得是**这一局**的快照，不能是某个旧状态。
+		#
+		# 不能拿盘上的内容去比实时状态 —— 断点是推进那一刻的快照，之后玩家还会
+		# 继续买、继续摆，几帧后再比必然不等，那样的断言只是把噪声当缺陷。
+		# 真正的不变式是单调性：教程里宝藏、佣兵、累计采购只增不减，
+		# 断点里这三个数一旦回退，就说明写进去的是一份过期快照。
+		var owned := [
+			int((saved.get("owned_treasures", []) as Array).size()),
+			_non_null_count(saved.get("mercenary_slots", [])),
+			int(saved.get("bought_units", 0)),
+		]
+		for i in owned.size():
+			if owned[i] < monotone[i]:
+				mismatched.append("%s[%s] %d -> %d"
+					% [TutorialMode.step_key(), MONOTONE_FIELDS[i], monotone[i], owned[i]])
+			monotone[i] = maxi(monotone[i], owned[i])
+
+	# 守卫：走不完就别拿「没有落后的步骤」当通过 —— 空集上恒真。
+	_h.expect(seen.size() >= 12, "step_walk_covered_too_little",
+		"只推进了 %d 步（预期 ≥12）—— 这一组等于没测" % seen.size())
+	_h.expect(TutorialMode.step == TutorialScript.Step.DONE, "step_walk_did_not_finish",
+		"教程没走到 DONE，停在 %s" % TutorialMode.step_key())
+	_h.expect(lagged.is_empty(), "checkpoint_lags_behind_step",
+		"这些步骤推进后断点没有立刻跟上（强杀会退回上一步）：%s" % str(lagged))
+	_h.expect(mismatched.is_empty(), "checkpoint_state_went_backwards",
+		"这些步骤的断点里，只增不减的东西反而变少了（写进去的是过期快照）：%s"
+			% str(mismatched))
+	_h.expect(monotone[0] >= 2 and monotone[1] >= 2 and monotone[2] >= 3,
+		"monotone_probe_saw_too_little",
+		("走完全程后断点里只见到 宝藏=%d 佣兵=%d 采购=%d —— "
+			+ "样本太少，单调性断言等于没测") % [monotone[0], monotone[1], monotone[2]])
+	_h.expect(_main_save_digest() == main_save_before, "tutorial_touched_main_save",
+		"教程走完之后主存档字节变了 —— 它参与 replay / final-state SHA，必须原封不动")
+
+	prep.queue_free()
+	await _settle(3)
+	TutorialMode.finish()
+	GameState.reset_run()
+
+
+# step 只能由三处直接赋值：start()（刚 clear 过断点）、restore_checkpoint()
+# （正在从断点读回来）、以及 _advance_to() 自己。别处直接赋值就会漏落盘 ——
+# 逐点补 save_checkpoint() 治不住，下次加步骤照样会漏。
+func _check_step_writes_are_funnelled() -> void:
+	var src := FileAccess.get_file_as_string("res://scripts/tutorial/TutorialMode.gd")
+	var funcs := _split_funcs(src)
+	const ALLOWED := ["start", "restore_checkpoint", "_advance_to"]
+	var offenders: Array[String] = []
+	for fname in funcs.keys():
+		if ALLOWED.has(str(fname)):
+			continue
+		var body: String = funcs[fname]
+		for raw in body.split("\n"):
+			var line := str(raw)
+			var trimmed := line.strip_edges()
+			if trimmed.begins_with("step = ") or trimmed.begins_with("step="):
+				offenders.append("%s: %s" % [fname, trimmed])
+	_h.expect(offenders.is_empty(), "step_assigned_outside_mutator",
+		("这些地方绕过 _advance_to() 直接赋值 step —— 推进不会落盘：%s")
+			% str(offenders))
+	var mutator: String = funcs.get("_advance_to", "")
+	_h.expect(mutator.contains("save_checkpoint()"), "mutator_does_not_persist",
+		"_advance_to() 没有落盘 —— 收口了但没解决问题")
+	_h.expect(mutator.contains("_sync_progress_index()"), "mutator_skips_progress_index",
+		"_advance_to() 没有同步步号 —— 盘上的 progress_index 会落后一步")
+
+
+# 主存档三个变体的字节摘要。教程期间这个值必须一动不动。
+func _main_save_digest() -> String:
+	var ctx := HashingContext.new()
+	ctx.start(HashingContext.HASH_SHA256)
+	for path in [SaveManager.SAVE_PATH, SaveManager.SAVE_PATH + ".bak",
+			SaveManager.SAVE_PATH + ".tmp"]:
+		ctx.update(path.to_utf8_buffer())
+		if FileAccess.file_exists(path):
+			ctx.update(FileAccess.get_file_as_bytes(path))
+	return ctx.finish().hex_encode()
+
+
+func _non_null_count(value) -> int:
+	if not (value is Array):
+		return 0
+	var n := 0
+	for entry in (value as Array):
+		if entry != null:
+			n += 1
+	return n

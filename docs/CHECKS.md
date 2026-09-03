@@ -2075,3 +2075,40 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/run_check.ps1 -Name in
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/run_check.ps1 -Name tutorial_checkpoint,main_team_manual_reconnect_action,main_team_short_code_resume_action,modal_lifecycle
 ```
+
+### `tutorial_checkpoint` 169 → 180：确认型步骤的断点延迟落盘（V3 P0-08）
+
+V2 实测缺陷：按下「继续」或点热点推进之后强杀 app，回来还在按之前那一步。
+
+根因是 `_on_continue_pressed()` 与 `_on_hotspot_pressed()` 推进了 `step` 却从不落盘 ——
+断点要等玩家在备战页再做点什么触发 `sync()` 才跟上，而那两步之后玩家做的第一件事就是
+开战，中间隔着整场战斗。
+
+**先失败门禁**（对着修复前的代码跑出来的原文，落后幅度与 V2 记录一致）：
+
+```
+FAIL [checkpoint_lags_behind_step] 这些步骤推进后断点没有立刻跟上（强杀会退回上一步）：
+["START_PVE_1(步号盘上=2 实际=3)", "START_PVE_2(步号盘上=4 实际=5)",
+ "BOND_HINT(步号盘上=8 实际=9)", "VIEW_TREASURE(盘上=8)", "FORMATION_HP(盘上=8)",
+ "START_BOSS(盘上=8)", "FORMATION_HP(步号盘上=15 实际=16)", "START_PVP(盘上=14)"]
+```
+
+盘上停在第 8 步，玩家已经走到 9/10/11/12 —— 这就是「落后 2～3 步」。
+
+逐点补 `save_checkpoint()` 治不住：`step` 有 19 处直接赋值，下次加步骤照样会漏。改成
+单一 mutator `_advance_to()`（赋值 + 同步步号 + 落盘），并由门禁断言除 `start()` /
+`restore_checkpoint()` / mutator 自身之外**不得直接赋值 `step`**。18 处运行时赋值全部
+改道，两处白名单保留原样。
+
+顺带修一处排序：`_begin_fill_step()` 原本排在 `step = Step.FILL_7` 之后，而 `_advance_to()`
+会立刻落盘 —— 晚一步就会把 `_fill_started=false` 记进 FILL_7 的断点，恢复时子状态机对不上。
+同时把 `_fill_started` 纳入落盘节流签名：`BUY` 相位与 `bought=0` 在「还没开始」和「刚开始」
+两种状态下取值相同，只看那两个会漏掉这次转变。
+
+新增的三条行为断言里有一条**写错过一次**，值得记：最初写的是「每次推进后盘上的
+棋子/宝藏/佣兵/金币要等于实时状态」。那不是不变式 —— 断点是推进那一刻的快照，之后玩家
+还会继续买、继续摆，几帧后再比必然不等。改成真正的不变式：教程里宝藏、佣兵、累计采购
+只增不减，断点里这三个数一旦回退就说明写进去的是过期快照。另配一条守卫，样本太少就叫。
+
+另加一条：教程全程主存档必须一个字节都不动（`_write_now()` 第一行就是
+`if GameState.tutorial_mode: return`，而主存档参与 replay / final-state SHA）。
