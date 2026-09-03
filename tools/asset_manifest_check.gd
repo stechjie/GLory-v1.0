@@ -90,6 +90,18 @@ var _cache_hits := 0
 var _skipped_dirs: Array[String] = []       # 被跳过的归档/证据目录，收尾时列出
 var _ignored_literal_lines := 0             # 带 asset-manifest-ignore 标记的行数
 
+# V2 收尾 G2：**默认只读**。只有显式 `--update-manifest` 才写基准。
+#
+# 以前这个检查每次运行都改写 assets.manifest.json 和 docs/ASSET_MANIFEST.md，
+# 而 asset_delivery_check 读的正是前者。字母序上 delivery 排在 manifest 前面，
+# 于是任何资产改动都会让**第一次**全量红、**第二次**绿 ——
+# 自愈的假红会训练人「再跑一遍就好」，长期比假绿还危险。
+#
+# 拆开之后：普通套件不再改写任何基准，delivery 校验的永远是进入本次套件时
+# 已有的受信任清单，顺序依赖自然消失。run_check.ps1 另有一道守卫：
+# 普通运行若改写了这两份文件，整套判失败并点名文件。
+var _update_manifest := false
+
 
 # 归档/证据目录不参与扫描。名字命中 SKIP_DIR_NAMES 或 SKIP_DIR_PATTERNS 即跳过，
 # 并记下来在日志里列出 —— 悄悄少扫一个目录，等于悄悄放宽判定。
@@ -108,6 +120,7 @@ func _should_skip_dir(dir_name: String) -> bool:
 func _ready() -> void:
 	_h = CheckHarness.new(CHECK_NAME)
 	var started := Time.get_ticks_msec()
+	_parse_args()
 
 	_load_cache()
 
@@ -138,28 +151,73 @@ func _ready() -> void:
 	_check_dependency_failures()
 
 	# --- 产出 ---
-	# V2 P0-01 第 4 条：当前树不完整时**禁止覆盖最后一次可信清单**。
-	#
-	# 这不是普通的红灯。`assets.manifest.json` 正是 `asset_delivery_check`
-	# 的比对基准；从残缺树重新生成，会把「这批文件缺了」洗成「它们本来就不该在」，
-	# 于是 delivery 从此再也报不出这批缺失 —— 基准被自己毁掉，
-	# 而套件依然全绿。红灯能被人看见，被洗掉的基准不能。
-	# 判据用 `failure_count()`（**未被允许列表豁免**的失败数），不是 `_missing.size()`。
-	# 树里长期有 4 条挂了负责人和到期日的豁免项；按原始计数拦，清单从此再也
-	# 生不出来 —— 那不是守卫，那是把生成器焊死。
 	var entries := _build_entries()
-	if _h.failure_count() == 0:
-		_write_manifest(entries)
-		_write_doc(entries)
+	if _update_manifest:
+		_explicit_update(entries)
 	else:
-		print("[%s] manifest_untrusted=true 未豁免失败=%d（缺失=%d 依赖查询失败=%d）拒绝覆盖 %s 与 %s" % [
-			CHECK_NAME, _h.failure_count(), _missing.size(), _dep_failed.size(),
-			MANIFEST_PATH, DOC_PATH])
+		_read_only_report(entries)
 
 	print("[%s] 完成，耗时 %.1f 秒（hash 缓存命中 %d 个）" % [
 		CHECK_NAME, (Time.get_ticks_msec() - started) / 1000.0, _cache_hits])
 	_save_cache()
 	_h.finish(get_tree())
+
+
+func _parse_args() -> void:
+	for arg in OS.get_cmdline_user_args():
+		if arg == "--update-manifest":
+			_update_manifest = true
+		else:
+			_h.fail("unknown_argument", "未知参数：%s" % arg)
+
+
+# 默认路径：把候选结果算出来给人看，但**一个字节都不写**。
+func _read_only_report(entries: Array) -> void:
+	var candidate := _inventory_digest(entries)
+	var current := _current_inventory_sha()
+	print("[%s] 只读模式（未写任何基准）。候选 inventory=%s 条目=%d；已提交基准 inventory=%s" % [
+		CHECK_NAME, candidate, entries.size(), current if not current.is_empty() else "<读不到>"])
+	if not current.is_empty() and candidate != current:
+		print(("[%s] 候选与已提交基准不同 —— 这本身不是失败。要更新基准请显式跑："
+			+ "powershell -File tools/update_asset_manifest.ps1") % CHECK_NAME)
+
+
+# 显式更新路径。守卫保留：树不完整时仍拒绝覆盖最后一次可信基准。
+#
+# 这不是普通的红灯。assets.manifest.json 正是 asset_delivery_check 的比对基准；
+# 从残缺树重新生成，会把「这批文件缺了」洗成「它们本来就不该在」，
+# 于是 delivery 从此再也报不出这批缺失 —— 基准被自己毁掉，而套件依然全绿。
+# 红灯能被人看见，被洗掉的基准不能。
+#
+# 判据用 failure_count()（**未被允许列表豁免**的失败数），不是 _missing.size()：
+# 树里长期有 4 条挂了负责人和到期日的豁免项，按原始计数拦会把生成器焊死。
+func _explicit_update(entries: Array) -> void:
+	var candidate := _inventory_digest(entries)
+	var current := _current_inventory_sha()
+	if _h.failure_count() != 0:
+		print(("[%s] manifest_untrusted=true 未豁免失败=%d（缺失=%d 依赖查询失败=%d）"
+			+ "拒绝覆盖 %s 与 %s") % [
+			CHECK_NAME, _h.failure_count(), _missing.size(), _dep_failed.size(),
+			MANIFEST_PATH, DOC_PATH])
+		return
+	print("[%s] 显式更新基准：" % CHECK_NAME)
+	print("[%s]   %s" % [CHECK_NAME, MANIFEST_PATH])
+	print("[%s]   %s" % [CHECK_NAME, DOC_PATH])
+	print("[%s]   inventory  旧=%s  新=%s" % [
+		CHECK_NAME, current if not current.is_empty() else "<读不到>", candidate])
+	print("[%s]   条目数     新=%d" % [CHECK_NAME, entries.size()])
+	_write_manifest(entries)
+	_write_doc(entries)
+
+
+# 读已提交基准里的 inventory_sha256，用于「旧 -> 新」对照。读不到返回空串。
+func _current_inventory_sha() -> String:
+	if not FileAccess.file_exists(MANIFEST_PATH):
+		return ""
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(MANIFEST_PATH))
+	if not (parsed is Dictionary):
+		return ""
+	return str((parsed as Dictionary).get("inventory_sha256", ""))
 
 
 # --- 收集盘点范围 -------------------------------------------------------------

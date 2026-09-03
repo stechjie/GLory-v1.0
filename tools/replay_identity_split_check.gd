@@ -50,14 +50,16 @@ func _sample() -> Dictionary:
 				"team": "player", "lane": 0, "max_hp": 100,
 				"is_mercenary": false, "is_formation_ally": false,
 				"star": 1, "footprint_cells": 1, "owner_slot": 0,
-				"def": {"model": "res://a.tscn", "portrait": "res://a.png"},
+				# 故意写不存在的路径：这里只需要 def 里有几个表现字段供投影丢弃，
+				# 不需要它们真的能加载。行尾标记告诉 asset_manifest_check 别当缺失报。
+				"def": {"model": "res://fixture_a.tscn", "portrait": "res://fixture_a.png"},  # asset-manifest-ignore
 			},
 			"e1": {
 				"uid": "e1", "id": "pve_land_rock_beast", "name": "岩兽", "name_en": "Rock Beast",
 				"team": "enemy", "lane": 1, "max_hp": 80,
 				"is_mercenary": false, "is_formation_ally": false,
 				"star": 2, "footprint_cells": 1, "owner_slot": -1,
-				"def": {"model": "res://b.tscn", "portrait": "res://b.png"},
+				"def": {"model": "res://fixture_b.tscn", "portrait": "res://fixture_b.png"},  # asset-manifest-ignore
 			},
 		},
 	}

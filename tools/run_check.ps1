@@ -205,6 +205,16 @@ function Compare-SourceSnapshots {
     return @($changes | Sort-Object at)
 }
 
+# SHA-256 of one trusted baseline file, or "<absent>" when it is not there.
+# Absent is a legitimate state (a fresh clone before the first generation), and
+# it still compares correctly: absent -> present is a change and must be caught.
+function Get-BaselineSha {
+    param([string]$Root, [string]$Relative)
+    $path = Join-Path $Root $Relative
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return "<absent>" }
+    return (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
 function Write-JsonUtf8 {
     param([string]$Path, [object]$Value)
     $json = $Value | ConvertTo-Json -Depth 8
@@ -431,6 +441,23 @@ Write-Host ""
 # Snapshot before the first check so a mid-run edit can be named afterwards.
 $snapshotBefore = Get-SourceSnapshot $root
 Write-Host ("[run_check] watching " + $snapshotBefore.Count + " source files for mid-run edits")
+
+# A plain suite run must never move a trusted baseline. assets.manifest.json is
+# what asset_delivery_check validates against; if a check rewrites it mid-run,
+# delivery ends up grading the tree against a manifest generated from that same
+# tree -- structurally incapable of failing. That is how "first run red, second
+# run green" happened, and a self-healing false red trains people to re-run
+# instead of look.
+#
+# asset_manifest_check is read-only by default now (tools/update_asset_manifest.ps1
+# is the explicit way to move the baseline). This is the guard that keeps it that
+# way: if a normal run changed either file, the whole suite fails and names it.
+$baselineFiles = @("assets.manifest.json", "docs/ASSET_MANIFEST.md")
+$baselineBefore = @{}
+foreach ($rel in $baselineFiles) {
+    $baselineBefore[$rel] = Get-BaselineSha $root $rel
+}
+Write-Host ("[run_check] guarding " + $baselineFiles.Count + " trusted baseline file(s) against mid-run rewrite")
 Write-Host ""
 
 $results = @()
@@ -499,6 +526,33 @@ if ($polluted) {
     Write-Host ""
 }
 
+# --- trusted baseline guard ---------------------------------------------------
+$baselineViolations = @()
+foreach ($rel in $baselineFiles) {
+    $after = Get-BaselineSha $root $rel
+    if ($after -ne $baselineBefore[$rel]) {
+        $baselineViolations += [pscustomobject]@{
+            path = $rel
+            before = $baselineBefore[$rel]
+            after = $after
+        }
+    }
+}
+if ($baselineViolations.Count -gt 0) {
+    Write-Host ""
+    Write-Host "[run_check] !! A PLAIN RUN REWROTE A TRUSTED BASELINE -- this run is not evidence."
+    foreach ($violation in $baselineViolations) {
+        Write-Host ("[run_check] !!   " + $violation.path)
+        Write-Host ("[run_check] !!     before " + $violation.before)
+        Write-Host ("[run_check] !!     after  " + $violation.after)
+    }
+    Write-Host "[run_check] !! asset_delivery_check validates against assets.manifest.json. Regenerating"
+    Write-Host "[run_check] !! it mid-run makes delivery grade the tree against itself, which cannot fail."
+    Write-Host "[run_check] !! Move the baseline explicitly instead:"
+    Write-Host "[run_check] !!   powershell -NoProfile -ExecutionPolicy Bypass -File tools/update_asset_manifest.ps1"
+    Write-Host ""
+}
+
 $failed = @($results | Where-Object { -not $_.passed })
 $summary = [pscustomobject]@{
     generated = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
@@ -515,6 +569,10 @@ $summary = [pscustomobject]@{
         [pscustomobject]@{ path = $_.path.Replace($root + "\", ""); kind = $_.kind }
     })
     possibly_affected_checks = $suspectNames
+    # Unlike polluted_by_mid_run_edits, this one DOES change the verdict: a run
+    # that moved the baseline it grades against has invalidated its own evidence.
+    rewrote_trusted_baseline = ($baselineViolations.Count -gt 0)
+    trusted_baseline_changes = @($baselineViolations)
     results = $results
 }
 Write-JsonUtf8 (Join-Path $ReportDir "summary.json") $summary
@@ -522,9 +580,15 @@ Write-JsonUtf8 (Join-Path $ReportDir "summary.json") $summary
 Write-Host ""
 $pollutedFlag = "false"
 if ($polluted) { $pollutedFlag = "true" }
-Write-Host ("RUN_CHECK_SUMMARY total=" + $results.Count + " failed=" + $failed.Count + " polluted=" + $pollutedFlag + " report=" + (Join-Path $ReportDir "summary.json"))
+$baselineFlag = "false"
+if ($baselineViolations.Count -gt 0) { $baselineFlag = "true" }
+Write-Host ("RUN_CHECK_SUMMARY total=" + $results.Count + " failed=" + $failed.Count + " polluted=" + $pollutedFlag + " baseline_rewritten=" + $baselineFlag + " report=" + (Join-Path $ReportDir "summary.json"))
 if ($failed.Count -gt 0) {
     Write-Host ("[run_check] failed: " + (($failed | ForEach-Object { $_.name }) -join ", "))
+    exit 1
+}
+if ($baselineViolations.Count -gt 0) {
+    Write-Host ("[run_check] failed: trusted baseline rewritten by a plain run (" + (($baselineViolations | ForEach-Object { $_.path }) -join ", ") + ")")
     exit 1
 }
 exit 0

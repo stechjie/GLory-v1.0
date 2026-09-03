@@ -1459,6 +1459,11 @@ A2 冷克隆恢复与首次完整导入也使用同一份稳定库存指纹
 
 ### ⚠️ 待办：清单指纹重新冻结（2026-08-19 起未决）
 
+> **⚠️ 以下三段是 2026-08-19 的历史记录，其中的操作建议已作废。**
+> 自 2026-09-03（V2 收尾 G2）起 `asset_manifest_check` **默认只读**，
+> 普通运行不会改写任何基准，不需要再 `git checkout --` 还原。
+> 保留原文是因为它记录了当时的实测数字与那个结构漏洞的成因。
+
 **跑 `asset_manifest_check` 会重写 `assets.manifest.json` 和 `docs/ASSET_MANIFEST.md`。**
 在下面这件事定案之前，跑完请用 `git checkout -- assets.manifest.json docs/ASSET_MANIFEST.md`
 还原，不要顺手把新指纹提交上去。
@@ -1478,6 +1483,49 @@ FAIL 大小不匹配：.../formation_ally_4_animated/attack.fbx expected=3703593
 这个文件。按「先跑 manifest、再跑 delivery」的顺序，delivery 永远是拿刚生成的清单校验刚扫过的树，
 **结构上不可能失败**。交付校验必须以受信任的、不在同一次运行里被重写的清单为基准
 （例如显式传 `--manifest=` 指向 git 中的版本）。这条属于 A2，尚未修。
+
+> **✅ 结论更正（2026-09-03，V2 收尾 G2）：上面这个漏洞已修。**
+> 上面的历史测量与描述保留，但「尚未修」和「跑完请用 `git checkout --` 还原」
+> 两句已经作废 —— 现在普通运行根本不会改写基准。详见下节。
+
+### 资产清单：默认只读，更新基准要显式（V2 收尾 G2，2026-09-03）
+
+实测发现的症状比上面记的更具体：字母序上 `asset_delivery_check` 排在
+`asset_manifest_check` **前面**，所以任何资产改动都会让**第一次**全量红、
+**第二次**绿 —— delivery 比对的是改动前的清单，紧随其后的 manifest 把清单
+重新生成，下一次就一致了。
+
+**自愈的假红会训练人「再跑一遍就好」，长期比假绿还危险** ——
+假绿至少没人看见，自愈的红是被看见之后学会忽略。
+
+新合同分三层：
+
+| 层 | 行为 |
+| --- | --- |
+| `asset_manifest_check` 默认 | **只读**。照常扫引用/缺失/依赖失败，打印候选 inventory SHA 与条目数，**一个字节都不写** |
+| `--update-manifest` | 唯一允许写基准的路径。写之前仍走 `failure_count() == 0` 守卫；打印「将更新哪些文件、旧/新 inventory SHA、条目数」 |
+| `run_check.ps1` | 套件前后取两份基准的 SHA-256。**普通运行若改写了它们，整套判失败并点名文件**（`baseline_rewritten=true`，独立于 `failed`） |
+
+显式入口（会显示 `git diff --stat`，**不自动提交** —— 移动基准是决定，不是副作用）：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/update_asset_manifest.ps1
+```
+
+`asset_delivery_check` 不需要改：普通套件不再改写 `assets.manifest.json`，
+它读到的永远是进入本次套件时已有的受信任清单，顺序依赖自然消失。
+（它本来就支持 `--manifest=` 指定别的清单，那条路保留。）
+
+#### 验证证据
+
+- 连跑两次普通 `-All`：verdict 相同，两份基准 SHA 均不变
+- 可恢复夹具（给 `flare_star.png` 追加 1 字节）后连跑两次
+  `-Name asset_delivery,asset_manifest`：**两次 `asset_delivery` 都 FAIL**，
+  `baseline_rewritten=false`，不自愈
+- 变异（强制 `asset_manifest_check` 每次都写）：普通运行 `failed=0` 但
+  `baseline_rewritten=true`、退出码 1、点名两个文件 —— 守卫是独立判决路径
+- 缺失夹具（把被引用的资产挪走）下跑显式更新：打印 `manifest_untrusted=true`，
+  拒绝覆盖，两份基准 SHA 逐字未变
 
 `class` 的取值与含义：
 
