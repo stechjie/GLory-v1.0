@@ -2231,3 +2231,28 @@ enum key 的地方。采购类步骤（`BUY_3` / `UPGRADE_*` / `FILL_7` 的 BUY 
 真正会越拼越长的地方。第一版指着语言按钮，做不出能让它转红的变异。**断言要指着能坏的那一处。**
 
 九条断言逐条反向变异全部转红，`PlayerProfile.gd` 与 `SettingsScreen.gd` 均按字节还原。
+
+## 2026-09-03：程序化 UI 棘轮（V3 P1-08）
+
+新增 `procedural_ui_ratchet`（7 项）。盯的是业务代码里 `StyleBoxFlat.new()` 与
+`Button.new()` 的**数量**，基线 `data/qa/procedural_ui_baseline.json`。
+
+分批迁移最常见的失败方式不是「没迁」，是**边迁边加** —— 这一批减了 3 处，另一个页面又
+新写了 4 处，总数看着在动，观感一致性没有任何改善。所以三条一起断言：
+
+- **总数只能下降。**
+- **单文件也只能下降。** 总数持平但从 A 文件搬到 B 文件同样红 —— 那不是迁移，是换地方藏。
+- **降下来之后必须显式收紧基线。** 不收紧的话，「只能下降」会退化成「不能高于最初那个
+  很松的数」，之后随便加回去都不会红。
+
+`--update-baseline` 是唯一的写入路径，普通运行**只读**（同 `asset_manifest` 的合同：
+自愈更新基线等于让棘轮自己松开）。`ui/theme/` 不计 —— 那正是这些调用**应该**在的地方；
+把它算进来会逼着迁移把 StyleBox 从主题里也删掉，方向正好是反的。`scenes/debug/` 不进包，
+也不计。计数**跳过注释**：注释里提到 `Button.new()` 是常事，算进去会逼人去改注释而不是改代码。
+
+首批迁移 `scenes/menu/MainMenu.gd`：5 处 `StyleBoxFlat.new()` → 0。做法是把那五处逐个
+`set_*` 的东西抬进 `GloryTokens.flat_box(bg, edge, border_width, radius)`，配色抬成具名
+token（`PARCHMENT` / `INK_PANEL` 等），**逐值透传、观感不变**。业务目录总数
+`StyleBoxFlat.new()` 26 → 21，`Button.new()` 45（本批未动）。
+
+四条断言逐条反向变异全部转红（`baseline_not_tightened` 是迁移当场自己红的）。

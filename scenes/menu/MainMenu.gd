@@ -15,6 +15,7 @@ signal team_reconnect_requested # 手动重连回上一场对局
 signal prep_requested           # 「备战」按钮：进入备战界面（暂时只有宠物系统）
 signal codex_requested          # 「图鉴」按钮：进入图鉴界面
 
+const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const REF_SIZE := Vector2(1672.0, 941.0)
 
 # V3 P0-07：房间面板改由 ModalStack 收口。
@@ -178,11 +179,7 @@ func _build() -> void:
 	offline_btn.text = _menu_text("离线自测", "Offline")
 	offline_btn.focus_mode = Control.FOCUS_NONE
 	offline_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	var ob_style := StyleBoxFlat.new()
-	ob_style.bg_color = Color(0.11, 0.075, 0.035, 0.95)
-	ob_style.border_color = Color(0.78, 0.56, 0.24)
-	ob_style.set_border_width_all(2)
-	ob_style.set_corner_radius_all(26)
+	var ob_style := Tokens.flat_box(Tokens.INK_PANEL, Tokens.INK_EDGE, 2, 26)
 	offline_btn.add_theme_stylebox_override("normal", ob_style)
 	offline_btn.add_theme_stylebox_override("hover", ob_style)
 	offline_btn.add_theme_stylebox_override("pressed", ob_style)
@@ -198,11 +195,7 @@ func _build() -> void:
 	reconnect_btn.text = _menu_text("↩ 游戏重连", "↩ Reconnect")
 	reconnect_btn.focus_mode = Control.FOCUS_NONE
 	reconnect_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	var rc_style := StyleBoxFlat.new()
-	rc_style.bg_color = Color(0.11, 0.075, 0.035, 0.95)
-	rc_style.border_color = Color(0.78, 0.56, 0.24)
-	rc_style.set_border_width_all(3)
-	rc_style.set_corner_radius_all(26)
+	var rc_style := Tokens.flat_box(Tokens.INK_PANEL, Tokens.INK_EDGE, 3, 26)
 	reconnect_btn.add_theme_stylebox_override("normal", rc_style)
 	reconnect_btn.add_theme_stylebox_override("hover", rc_style)
 	reconnect_btn.add_theme_stylebox_override("pressed", rc_style)
@@ -237,11 +230,7 @@ func _build_room_panel() -> Control:
 
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(920, 560)
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(1.0, 0.96, 0.84, 0.96)
-	style.border_color = Color(0.58, 0.40, 0.16)
-	style.set_border_width_all(4)
-	style.set_corner_radius_all(24)
+	var style := Tokens.flat_box(Tokens.PARCHMENT, Tokens.PARCHMENT_EDGE, 4, 24)
 	panel.add_theme_stylebox_override("panel", style)
 	center.add_child(panel)
 
@@ -530,14 +519,9 @@ func _add_label(text: String, pos: Vector2, size: Vector2, font_size: int, edge:
 	return label
 
 func _add_pill(text: String, pos: Vector2, size: Vector2) -> void:
-	var bg := StyleBoxFlat.new()
-	bg.bg_color = Color(1.0, 0.96, 0.82, 0.76)
-	bg.border_color = Color(0.57, 0.38, 0.13)
-	bg.set_border_width_all(2)
-	bg.corner_radius_top_left = int(size.y * 0.5)
-	bg.corner_radius_top_right = int(size.y * 0.5)
-	bg.corner_radius_bottom_left = int(size.y * 0.5)
-	bg.corner_radius_bottom_right = int(size.y * 0.5)
+	# 四角同值，等价于原来逐角赋的 size.y * 0.5（药丸形）。
+	var bg := Tokens.flat_box(Tokens.PARCHMENT_SOFT, Tokens.PARCHMENT_EDGE_SOFT,
+		2, int(size.y * 0.5))
 	var panel := Panel.new()
 	panel.add_theme_stylebox_override("panel", bg)
 	add_child(panel)
@@ -569,11 +553,7 @@ func _dialog_button(text: String, cb: Callable) -> Button:
 	btn.focus_mode = Control.FOCUS_NONE
 	btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	btn.custom_minimum_size = Vector2(150, 42)
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(1.0, 0.94, 0.76, 0.95)
-	style.border_color = Color(0.58, 0.40, 0.16)
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(18)
+	var style := Tokens.flat_box(Tokens.PARCHMENT_BUTTON, Tokens.PARCHMENT_EDGE, 2, 18)
 	btn.add_theme_stylebox_override("normal", style)
 	btn.add_theme_stylebox_override("hover", style)
 	btn.add_theme_stylebox_override("pressed", style)

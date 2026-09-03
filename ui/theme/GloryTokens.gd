@@ -40,6 +40,17 @@ const TEXT_SECONDARY := Color(0.722, 0.741, 0.800)
 const TEXT_DISABLED := Color(0.451, 0.471, 0.522)
 const TEXT_ON_GOLD := Color(0.055, 0.055, 0.071)
 
+# --- 主菜单羊皮纸（V3 P1-08 迁移时从 MainMenu 抬上来的实测值）------------------
+# 这几个值原本以字面量散在 MainMenu 的五处 StyleBoxFlat 里。抬上来是为了让别的
+# 页面复用同一套，而不是各自再抄一遍 hex —— 逐字保持原值，这一批不动观感。
+const PARCHMENT := Color(1.0, 0.96, 0.84, 0.96)
+const PARCHMENT_SOFT := Color(1.0, 0.96, 0.82, 0.76)
+const PARCHMENT_BUTTON := Color(1.0, 0.94, 0.76, 0.95)
+const PARCHMENT_EDGE := Color(0.58, 0.40, 0.16)
+const PARCHMENT_EDGE_SOFT := Color(0.57, 0.38, 0.13)
+const INK_PANEL := Color(0.11, 0.075, 0.035, 0.95)
+const INK_EDGE := Color(0.78, 0.56, 0.24)
+
 # --- 遮罩 ---------------------------------------------------------------------
 # V3 P1-02 要求 80–88%：太浅看不出模态，太深会把背景战场吃掉。
 const BACKDROP := Color(0.008, 0.016, 0.031, 0.84)
@@ -110,6 +121,24 @@ static func panel_box(bg: Color = SURFACE, edge: Color = GOLD_EDGE, pad: int = P
 	box.set_border_width_all(BORDER_WIDTH)
 	box.set_corner_radius_all(RADIUS)
 	box.set_content_margin_all(pad)
+	return box
+
+
+# 通用扁平底板。业务页面不再自己 StyleBoxFlat.new() —— 那是 P1-08 棘轮盯的调用，
+# 每处各自写死 hex 和圆角正是「同一个确认框在两处长得不一样」的来源。
+#
+# 参数照搬原来那几处逐个 set 的东西，所以迁移可以逐值透传、观感不变。
+static func flat_box(
+	bg: Color,
+	edge: Color,
+	border_width: int = BORDER_WIDTH,
+	radius: int = RADIUS
+) -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = bg
+	box.border_color = edge
+	box.set_border_width_all(border_width)
+	box.set_corner_radius_all(radius)
 	return box
 
 

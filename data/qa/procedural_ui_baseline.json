@@ -1,0 +1,72 @@
+{
+	"files": {
+		"res://scenes/battle/BattleArena.gd": {
+			"Button.new()": 1
+		},
+		"res://scenes/battle/BattleScreen.gd": {
+			"Button.new()": 1,
+			"StyleBoxFlat.new()": 2
+		},
+		"res://scenes/main/Main.gd": {
+			"Button.new()": 4,
+			"StyleBoxFlat.new()": 1
+		},
+		"res://scenes/menu/CodexScreen.gd": {
+			"Button.new()": 3,
+			"StyleBoxFlat.new()": 2
+		},
+		"res://scenes/menu/MainMenu.gd": {
+			"Button.new()": 4
+		},
+		"res://scenes/menu/PetScreen.gd": {
+			"Button.new()": 2
+		},
+		"res://scenes/menu/SettingsScreen.gd": {
+			"Button.new()": 6
+		},
+		"res://scenes/menu/Team3v3Lobby.gd": {
+			"Button.new()": 3,
+			"StyleBoxFlat.new()": 2
+		},
+		"res://scenes/prep/PrepUI.gd": {
+			"Button.new()": 6,
+			"StyleBoxFlat.new()": 2
+		},
+		"res://scenes/prep/PrepWidgets.gd": {
+			"Button.new()": 2,
+			"StyleBoxFlat.new()": 2
+		},
+		"res://scenes/prep/effects/PrepTeamMercAlert.gd": {
+			"StyleBoxFlat.new()": 1
+		},
+		"res://scenes/prep/panels/BoardHud.gd": {
+			"StyleBoxFlat.new()": 4
+		},
+		"res://scenes/prep/panels/ShopPanel.gd": {
+			"Button.new()": 3,
+			"StyleBoxFlat.new()": 1
+		},
+		"res://scenes/prep/panels/SynergyPanel.gd": {
+			"Button.new()": 3
+		},
+		"res://scenes/prep/panels/TreasureChoicePanel.gd": {
+			"Button.new()": 2
+		},
+		"res://scripts/tutorial/TutorialMode.gd": {
+			"Button.new()": 3,
+			"StyleBoxFlat.new()": 4
+		},
+		"res://ui/components/GloryConfirmDialog.gd": {
+			"Button.new()": 1
+		},
+		"res://ui/components/GloryLoadingOverlay.gd": {
+			"Button.new()": 1
+		}
+	},
+	"note": "业务代码里自绘 UI 的调用计数。只能下降；降下来之后要跑 --update-baseline 收紧，否则棘轮会松掉。ui/theme 与 scenes/debug 不计。",
+	"schema": "glory.procedural_ui_ratchet.v1",
+	"totals": {
+		"Button.new()": 45,
+		"StyleBoxFlat.new()": 21
+	}
+}
