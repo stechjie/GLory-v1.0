@@ -14,6 +14,15 @@ const MODE_PENDING := "pending"
 const MODE_FAILED := "failed"
 const MODE_SUCCEEDED := "succeeded"
 
+# 等待到多久要说话（V3 P1-05）。计时按**进度**复位而不只是阶段：进度在动就
+# 不算慢。慢和卡是两件事，把慢说成卡会把正常的冷启动讲成故障。
+const EXPLAIN_AFTER_SEC := 2.0
+const ESCAPE_AFTER_SEC := 8.0
+# 进度推进多少算「有动静」。太小会被浮点抖动一直复位，升级就永远不发生。
+const PROGRESS_EPSILON := 0.01
+
+enum Escalation { QUIET, EXPLAINED, ESCAPE_OFFERED }
+
 var _request_id := ""
 var _mode := MODE_PENDING
 var _stage_key := ""
@@ -23,6 +32,15 @@ var _indeterminate := true
 var _spinner_elapsed := 0.0
 var _spinner_phase := 0
 var _resolution_sent := false
+var _stage_elapsed := 0.0
+var _escalation := Escalation.QUIET
+var _escalation_progress := 0.0
+# 调用方可以给一句针对本阶段的解释。不给的话，升级时用当前阶段文案兜底 ——
+# 兜底也必须指向真实阶段，写死一句「请稍候」等于什么都没说。
+var _slow_explanation := ""
+var _cancellable := false
+var _cancel_reason := ""
+var _retryable := false
 
 var _card: PanelContainer
 var _title_label: Label
@@ -58,7 +76,9 @@ func configure(spec: Dictionary) -> void:
 	_title_label.text = str(spec.get("title", ""))
 	_error_label.visible = false
 	_retry_button.visible = false
-	_cancel_button.visible = bool(spec.get("cancellable", false))
+	_cancellable = bool(spec.get("cancellable", false))
+	_cancel_reason = str(spec.get("cancel_reason", ""))
+	_cancel_button.visible = _cancellable
 	_cancel_button.text = str(spec.get("cancel_text", "取消并返回备战"))
 	_policy_label.text = str(spec.get("cancel_reason", ""))
 	_policy_label.visible = not _policy_label.text.is_empty()
@@ -87,6 +107,8 @@ func set_stage(
 	_detail_label.visible = not detail.is_empty()
 	_count_label.text = counts
 	_count_label.visible = not counts.is_empty()
+	# 换阶段 = 有进展，等待重新计时。
+	_reset_escalation()
 	set_progress(ratio)
 
 
@@ -115,6 +137,8 @@ func set_network_text(text: String) -> void:
 
 func set_cancel_policy(cancellable: bool, reason: String = "") -> void:
 	_ensure_built()
+	_cancellable = cancellable
+	_cancel_reason = reason
 	_cancel_button.visible = cancellable or _mode == MODE_FAILED
 	_policy_label.text = reason
 	_policy_label.visible = not reason.is_empty()
@@ -134,6 +158,8 @@ func set_failed(error_code: String, message: String, retryable: bool) -> void:
 	_spinner_label.visible = false
 	_count_label.visible = false
 	_network_label.visible = false
+	_retryable = retryable
+	_reset_escalation()
 	_error_label.text = tr("battle_load_error_code") % error_code
 	_error_label.visible = true
 	_retry_button.text = tr("battle_load_retry")
@@ -156,6 +182,7 @@ func set_entering(stage_text: String) -> void:
 	_retry_button.visible = false
 	_cancel_button.visible = false
 	_policy_label.visible = false
+	_reset_escalation()
 	set_progress(1.0)
 
 
@@ -168,10 +195,17 @@ func snapshot() -> Dictionary:
 		"progress": -1.0 if _indeterminate else _last_progress,
 		"retry_visible": _retry_button != null and _retry_button.visible,
 		"cancel_visible": _cancel_button != null and _cancel_button.visible,
+		"elapsed_sec": _stage_elapsed,
+		"escalation": _escalation,
+		"escalation_name": Escalation.keys()[_escalation],
+		"explanation_visible": _detail_label != null and _detail_label.visible
+			and not _detail_label.text.strip_edges().is_empty(),
+		"policy_visible": _policy_label != null and _policy_label.visible,
 	}
 
 
 func _process(delta: float) -> void:
+	_tick_escalation(delta)
 	if not _indeterminate or _spinner_label == null or not _spinner_label.visible:
 		return
 	if Tokens.reduced_motion():
@@ -183,6 +217,85 @@ func _process(delta: float) -> void:
 	_spinner_elapsed = 0.0
 	_spinner_phase = (_spinner_phase + 1) % 4
 	_spinner_label.text = "◆" + ".".repeat(_spinner_phase)
+
+
+# --- 等待升级（V3 P1-05）------------------------------------------------
+#
+# 两级：2 秒解释为什么慢，8 秒给出路。都不改进度条 —— 用等待时间伪造完成度
+# 是清单明令禁止的，而且玩家一旦发现进度条会自己爬，之后就再也不信它。
+func _tick_escalation(delta: float) -> void:
+	if _mode != MODE_PENDING:
+		return
+	if not _indeterminate:
+		var ratio := _last_progress
+		if absf(ratio - _escalation_progress) >= PROGRESS_EPSILON:
+			# 进度在动 = 有进展。慢不等于卡。
+			_escalation_progress = ratio
+			_reset_escalation()
+			return
+	_stage_elapsed += delta
+	var next_level := Escalation.QUIET
+	if _stage_elapsed >= ESCAPE_AFTER_SEC:
+		next_level = Escalation.ESCAPE_OFFERED
+	elif _stage_elapsed >= EXPLAIN_AFTER_SEC:
+		next_level = Escalation.EXPLAINED
+	if next_level == _escalation:
+		return
+	_escalation = next_level
+	_apply_escalation()
+
+
+func _apply_escalation() -> void:
+	match _escalation:
+		Escalation.EXPLAINED:
+			_detail_label.text = _slow_text()
+			_detail_label.visible = true
+		Escalation.ESCAPE_OFFERED:
+			_detail_label.text = _slow_text()
+			_detail_label.visible = true
+			if _cancellable:
+				_cancel_button.visible = true
+			else:
+				# 不可取消时**不造**一个按不动的取消键 —— 那比没有更糟。
+				# 改为把「为什么走不掉」摆到明面上（清单：不可取消时显示原因）。
+				_policy_label.text = _no_escape_text()
+				_policy_label.visible = true
+			if _retryable:
+				_retry_button.visible = true
+
+
+func _reset_escalation() -> void:
+	_stage_elapsed = 0.0
+	_escalation = Escalation.QUIET
+	# 复位的含义是「基线就是现在」，不是「基线未知」。不记的话，复位之后的
+	# 第一帧会被自己造出来的进度差吃掉，两个门槛整体晚一帧。
+	_escalation_progress = _last_progress
+
+
+func set_slow_explanation(text: String) -> void:
+	_slow_explanation = text
+
+
+# 兜底文案也必须指向真实阶段。写死一句「请稍候」等于什么都没说，
+# 而这道门槛的全部意义就是让玩家知道在等什么。
+func _slow_text() -> String:
+	if not _slow_explanation.strip_edges().is_empty():
+		return _slow_explanation
+	var stage := _stage_label.text.strip_edges() if _stage_label != null else ""
+	if stage.is_empty():
+		stage = _stage_key
+	if TranslationServer.get_locale().begins_with("en"):
+		return "Still on: %s. This is taking longer than usual." % stage
+	return "仍在「%s」，比平时久一些，仍在继续" % stage
+
+
+func _no_escape_text() -> String:
+	if not _cancel_reason.strip_edges().is_empty():
+		return _cancel_reason
+	if TranslationServer.get_locale().begins_with("en"):
+		return "This step cannot be cancelled once started; leaving now would" \
+			+ " desync the match."
+	return "这一步开始后不能中断，中途离开会让对局状态对不上"
 
 
 func _ensure_built() -> void:

@@ -52,6 +52,8 @@ func _ready() -> void:
 	await _check_overlay_contract()
 	await _check_failure_recovery_paths()
 	await _check_offline_success_path()
+	await _check_wait_escalation()
+	await _check_wait_resets_on_progress()
 	await get_tree().process_frame
 	var after: Array = ModalStack.find_invisible_stop_controls()
 	var leaked: Array = []
@@ -342,3 +344,110 @@ func _capture_if_requested(suffix: String) -> void:
 		return
 	_h.expect(image.save_png(path) == OK, "loading_capture_failed",
 		"加载界面截图无法写入 %s" % path)
+
+
+# V3 P1-05：等待到 2 秒解释原因、8 秒给出路。
+#
+# 迁移前加载层完全没有时间维度：卡在「等待服务器」上无论多久，画面都是同一句话
+# 加一个转圈的菱形。玩家唯一能做的判断是「它是不是死了」，而那个判断没有依据。
+#
+# 三条硬约束一起查：
+#   1. 不用等待时间伪造完成度（进度条一格都不许自己爬）
+#   2. 兜底文案必须指向真实阶段（写死一句「请稍候」等于什么都没说）
+#   3. 不可取消时不造一个按不动的取消键，改为把「为什么走不掉」摆到明面上
+func _check_wait_escalation() -> void:
+	var overlay = OverlayScene.instantiate()
+	add_child(overlay)
+	await get_tree().process_frame
+	overlay.configure({
+		"request_id": "slow_1",
+		"title": "Battle Preparation",
+		"stage_key": "wait_server",
+		"stage_text": "等待服务器",
+		"cancellable": false,
+	})
+	# 不确定进度（转圈）：这正是最容易让人以为死机的形态。
+	overlay.set_progress(-1.0)
+	var progress_before: float = overlay.snapshot().get("progress", -99.0)
+
+	var levels: Array[String] = []
+	for i in 10:
+		overlay._tick_escalation(1.0)
+		levels.append(str(overlay.snapshot().get("escalation_name", "")))
+
+	_h.expect(levels[0] == "QUIET", "wait_escalates_too_early",
+		"等待 1 秒就升级了（%s）—— 正常加载会被它吵到" % levels[0])
+	_h.expect(levels[1] == "EXPLAINED", "wait_explain_missed",
+		"等待 2 秒没有解释原因，实际是 %s" % levels[1])
+	_h.expect(levels[7] == "ESCAPE_OFFERED", "wait_escape_missed",
+		"等待 8 秒没有给出路，实际是 %s" % levels[7])
+
+	var snap: Dictionary = overlay.snapshot()
+	_h.expect(is_equal_approx(float(snap.get("progress", -99.0)), float(progress_before)),
+		"wait_escalation_fakes_progress",
+		"升级过程推动了进度 —— 那是在用等待时间伪造完成度")
+	_h.expect(bool(snap.get("explanation_visible", false)),
+		"wait_explanation_not_shown", "升级之后没有任何可见解释")
+	# 不可取消：不给假的取消键，但必须说清为什么走不掉。
+	_h.expect(not bool(snap.get("cancel_visible", true)),
+		"wait_fabricates_cancel",
+		"不可取消的动作在 8 秒后长出了取消键 —— 按不动的出口比没有更糟")
+	_h.expect(bool(snap.get("policy_visible", false)),
+		"wait_no_reason_when_uncancellable",
+		"不可取消却没有说明原因，玩家只能干等")
+
+	# 换成可取消的同一条路径：8 秒后必须真的给出取消键。
+	var overlay2 = OverlayScene.instantiate()
+	add_child(overlay2)
+	await get_tree().process_frame
+	overlay2.configure({
+		"request_id": "slow_2",
+		"title": "Battle Preparation",
+		"stage_key": "wait_server",
+		"stage_text": "等待服务器",
+		"cancellable": true,
+	})
+	overlay2.set_progress(-1.0)
+	overlay2._cancel_button.visible = false
+	for i in 10:
+		overlay2._tick_escalation(1.0)
+	_h.expect(bool(overlay2.snapshot().get("cancel_visible", false)),
+		"wait_escape_not_offered",
+		"可取消的动作等了 8 秒仍然没有露出取消键")
+
+	# 文案必须跟着阶段走：换个阶段名，解释里那一句得跟着变。
+	var text_a: String = overlay._detail_label.text
+	overlay.set_stage("wait_opponent", "等待对手", "", -1.0)
+	for i in 10:
+		overlay._tick_escalation(1.0)
+	_h.expect(overlay._detail_label.text != text_a, "wait_text_ignores_stage",
+		"两个阶段慢下来时给出同一句话 —— 玩家看不出在等什么")
+
+	overlay.queue_free()
+	overlay2.queue_free()
+	await get_tree().process_frame
+
+
+# 进度在动就不算慢。冷启动第一次解压资源本来就慢，那种情况下弹「是不是卡住了」
+# 比不弹更糟 —— 玩家会去杀进程。
+func _check_wait_resets_on_progress() -> void:
+	var overlay = OverlayScene.instantiate()
+	add_child(overlay)
+	await get_tree().process_frame
+	overlay.configure({
+		"request_id": "slow_3",
+		"title": "Battle Preparation",
+		"stage_key": "download",
+		"stage_text": "下载对局数据",
+		"cancellable": true,
+	})
+	for i in 10:
+		# 每秒推进 10%：慢，但一直在动。
+		overlay.set_progress(float(i + 1) * 0.1)
+		overlay._tick_escalation(1.0)
+	_h.expect(str(overlay.snapshot().get("escalation_name", "")) == "QUIET",
+		"wait_ignores_progress",
+		"进度一直在推进却升到了 %s —— 慢被当成了卡住"
+			% str(overlay.snapshot().get("escalation_name", "")))
+	overlay.queue_free()
+	await get_tree().process_frame
