@@ -1,8 +1,8 @@
 # 资产清单（自动生成，勿手改）
 
-生成者：`tools/asset_manifest_check.gd`　生成时间：2026-08-31T10:36:51　Godot：4.7-stable (official)
+生成者：`tools/asset_manifest_check.gd`　生成时间：2026-09-03T04:35:15　Godot：4.7-stable (official)
 
-清单协议：`schema_version=2`　稳定库存指纹：`f029df50b2892028aad2796439eac0b12bac490de7f377d948ba2bbd28edecf8`
+清单协议：`schema_version=2`　稳定库存指纹：`ed99230ce8d75f20e81bb7f68ad179aec61b2951e196e65d1aafce9b559ad610`
 
 机读版本在 `assets.manifest.json`，A2 用它在新机器上校验资源恢复结果。
 
@@ -10,11 +10,11 @@
 
 | 分类 | 文件数 | 体积 | 含义 |
 | --- | ---: | ---: | --- |
-| `runtime_required` | 918 | 2337.8 MiB | 正式运行会加载，必须进发布包 |
+| `runtime_required` | 940 | 2348.2 MiB | 正式运行会加载，必须进发布包 |
 | `dynamic_dir` | 300 | 257.5 MiB | 代码运行时按目录拼路径，静态查不到引用，一律保留 |
 | `editor_only` | 2 | 2.7 MiB | 只被 tools/ 或 scenes/debug/ 引用，不必进发布包 |
 | `third_party` | 257 | 7.3 MiB | 外部参考包，发布前必须有许可证（C1/A5） |
-| `import_meta` | 1036 | 1.1 MiB | Godot 导入元数据，由引擎生成 |
+| `import_meta` | 1057 | 1.2 MiB | Godot 导入元数据，由引擎生成 |
 | `unreferenced` | 145 | 333.6 MiB | 任何静态引用都查不到，可评估删除 |
 
 ## 判定结果

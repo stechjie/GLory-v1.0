@@ -2,8 +2,8 @@
   "by_class": {
     "dynamic_dir": 300,
     "editor_only": 2,
-    "import_meta": 1036,
-    "runtime_required": 918,
+    "import_meta": 1057,
+    "runtime_required": 940,
     "third_party": 257,
     "unreferenced": 145
   },
@@ -624,11 +624,81 @@
     {
       "class": "runtime_required",
       "license_id": "unknown",
+      "path": "res://assets/models/allies/formation_ally_1_animated/flame_claw_albedo.png",
+      "required_by": "res://assets/models/allies/formation_ally_1_animated/flame_claw_body_material.tres",
+      "required_by_count": 1,
+      "sha256": "b178c81762032307336a0f21bba9cfc895876b7f8948994a375aaa1d2887e659",
+      "size": 1683989,
+      "type": "png"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/models/allies/formation_ally_1_animated/flame_claw_albedo.png.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "d893fcd83e6a2b2697ac9517854264537739d4dd419ab44326bf000c6d7cae52",
+      "size": 1254,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/models/allies/formation_ally_1_animated/flame_claw_body_material.tres",
+      "required_by": "res://assets/models/allies/formation_ally_1_animated/formation_ally_1_animated.tscn",
+      "required_by_count": 1,
+      "sha256": "5e2fcaff15f4a42b9398b974b61ccbde785b43dc6b13219e73c85fbf1b05d15c",
+      "size": 1654,
+      "type": "tres"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/models/allies/formation_ally_1_animated/flame_claw_emission.png",
+      "required_by": "res://assets/models/allies/formation_ally_1_animated/flame_claw_body_material.tres",
+      "required_by_count": 1,
+      "sha256": "71587e633518c24c51d98bdbfed2def5c851d57ac05d7ecdb65b656addf566a6",
+      "size": 32802,
+      "type": "png"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/models/allies/formation_ally_1_animated/flame_claw_emission.png.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "db931c3148c25557a3b7a8761d98b9e3ebe53eb4fa6ea47fbd07e871653c1f18",
+      "size": 1265,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/models/allies/formation_ally_1_animated/flame_claw_normal.png",
+      "required_by": "res://assets/models/allies/formation_ally_1_animated/flame_claw_body_material.tres",
+      "required_by_count": 1,
+      "sha256": "3051693e66228705bb0b693ae67c7b8b9c1061a435ff1125819bdc8c2d0c62ac",
+      "size": 1794092,
+      "type": "png"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/models/allies/formation_ally_1_animated/flame_claw_normal.png.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "1b9ce7c323344a438a09b18aeae27f95b717bf9545017d3d5bb70ca1f03aaa6e",
+      "size": 1255,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
       "path": "res://assets/models/allies/formation_ally_1_animated/formation_ally_1_animated.tscn",
       "required_by": "res://data/formation/formation_allies.json",
       "required_by_count": 1,
-      "sha256": "32202aea7637353b28632223c2109e6d917547f01214bff047e1ebc003cc23a9",
-      "size": 1221,
+      "sha256": "17900355f0dbbab36ad5c5ba0c5a37b5074a51f58004188d647cbaf211fba622",
+      "size": 1303,
       "type": "tscn"
     },
     {
@@ -1287,8 +1357,8 @@
       "path": "res://assets/models/battle_crystals/blue/Meshy_AI_Blue_Crystal_Spire_0717152101_texture_fbx/Meshy_AI_Blue_Crystal_Spire_0717152101_texture_3.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "13e8612beb649a28b41f8faae9ff25f08ffe786306564e76ca317a0f6bc6b9d7",
-      "size": 1199,
+      "sha256": "0799ce9660e15ff90acc57d06eda1c2ec4139eb778d1bf9c8a458150c4c0e5bb",
+      "size": 1202,
       "type": "import"
     },
     {
@@ -1307,8 +1377,8 @@
       "path": "res://assets/models/battle_crystals/blue/Meshy_AI_Blue_Crystal_Spire_0717152101_texture_fbx/Meshy_AI_Blue_Crystal_Spire_0717152101_texture_4.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "014d3b54bb0e5dc9672315f41cf9a86646c8ada996eb3dff5b3568c0df124a6d",
-      "size": 1199,
+      "sha256": "912788bb38581c408c7687b8bafc27961da0ac96f3b717d20597759229c248d6",
+      "size": 1202,
       "type": "import"
     },
     {
@@ -1407,8 +1477,8 @@
       "path": "res://assets/models/battle_crystals/red/Meshy_AI_Crimson_Prism_0717152324_texture_fbx/Meshy_AI_Crimson_Prism_0717152324_texture_3.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "5b88db4248f28fbbed65c982652bab8f97fde841904e642a645d962d9d667377",
-      "size": 1179,
+      "sha256": "fdd1d8cf284b80317de35e46c1ac674a1040ec43284bd65e4b405e2f41fd78f9",
+      "size": 1182,
       "type": "import"
     },
     {
@@ -1427,8 +1497,8 @@
       "path": "res://assets/models/battle_crystals/red/Meshy_AI_Crimson_Prism_0717152324_texture_fbx/Meshy_AI_Crimson_Prism_0717152324_texture_4.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "6c6fdac611db02c1dc2448e5fdaf51d67ae4b1c72eb7cc43e7a37dab243c7fad",
-      "size": 1178,
+      "sha256": "825a8b4cfe6b6f311f9c5ccbd50cc27f5b08ed87deb22b9c406ffc66b2397f0e",
+      "size": 1181,
       "type": "import"
     },
     {
@@ -6155,8 +6225,8 @@
       "class": "runtime_required",
       "license_id": "unknown",
       "path": "res://assets/models/monsters/sky/pve_sky_hymn_spirit_animated/pve_sky_hymn_spirit_animated.tscn",
-      "required_by": "res://data/pve/pve_monsters.json",
-      "required_by_count": 1,
+      "required_by": "res://tools/model_root_motion_lock_check.gd, res://data/pve/pve_monsters.json",
+      "required_by_count": 2,
       "sha256": "f50a81b1ffc534f6971465dbfc973e3fdd40ed495f2ad23f5bfd393f2d286ea7",
       "size": 933,
       "type": "tscn"
@@ -6165,8 +6235,8 @@
       "class": "runtime_required",
       "license_id": "unknown",
       "path": "res://assets/models/monsters/sky/pve_sky_hymn_spirit_animated/pve_sky_hymn_spirit_attack.fbx",
-      "required_by": "res://assets/models/monsters/sky/pve_sky_hymn_spirit_animated/pve_sky_hymn_spirit_Animated.gd",
-      "required_by_count": 1,
+      "required_by": "res://assets/models/monsters/sky/pve_sky_hymn_spirit_animated/pve_sky_hymn_spirit_Animated.gd, res://tools/model_root_motion_lock_check.gd",
+      "required_by_count": 2,
       "sha256": "8c1c9de0e13a03603359e571b9faa077e5bb9d1589ee06ced917927d3a59c94b",
       "size": 1606224,
       "type": "fbx"
@@ -6235,8 +6305,8 @@
       "class": "runtime_required",
       "license_id": "unknown",
       "path": "res://assets/models/monsters/sky/pve_sky_hymn_spirit_animated/pve_sky_hymn_spirit_walking.fbx",
-      "required_by": "res://assets/models/monsters/sky/pve_sky_hymn_spirit_animated/pve_sky_hymn_spirit_Animated.gd",
-      "required_by_count": 1,
+      "required_by": "res://assets/models/monsters/sky/pve_sky_hymn_spirit_animated/pve_sky_hymn_spirit_Animated.gd, res://tools/model_root_motion_lock_check.gd",
+      "required_by_count": 2,
       "sha256": "d594d3adf4cad8999945412eae63f8016ee060397ed2d4adfaa3d725cddb385d",
       "size": 1317840,
       "type": "fbx"
@@ -14287,8 +14357,8 @@
       "path": "res://assets/ui/crystals/blue_0_10.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "5887b3f1b7bd6513063a10b914929bc77878d0ee5457cb83f30b4caf445b5100",
-      "size": 949,
+      "sha256": "ba61a5756c20fb295415cf99e90e554852b4730b4d719ff701a2a36effa03078",
+      "size": 951,
       "type": "import"
     },
     {
@@ -14307,8 +14377,8 @@
       "path": "res://assets/ui/crystals/blue_10_20.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "a43915add6c3abb8f7c2fcac2f4cfede353066111ed8262d6b080700a80926ec",
-      "size": 952,
+      "sha256": "1449d0576a1632077af53197a71acacd6250f29e7989b1be0fb5403171897389",
+      "size": 954,
       "type": "import"
     },
     {
@@ -14327,8 +14397,8 @@
       "path": "res://assets/ui/crystals/blue_20_30.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "525ebbe3a0335f7241845f5f03594a07811ff5ecdb3d8c92bebfd0decd2a0c27",
-      "size": 953,
+      "sha256": "757a853fd0230c416afb7c762dcd7e7e65b1172644bba49213e616c5fdaabcd4",
+      "size": 955,
       "type": "import"
     },
     {
@@ -14347,8 +14417,8 @@
       "path": "res://assets/ui/crystals/blue_30_40.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "02178b9e3b9e191cd37e78580a2332705a7174b85b8c3b37c3480874184491c4",
-      "size": 953,
+      "sha256": "25e898d366b24a8f57fa87800f1bc2f5b990a0b23fff7a5bfa954051be87efec",
+      "size": 955,
       "type": "import"
     },
     {
@@ -14367,8 +14437,8 @@
       "path": "res://assets/ui/crystals/blue_40_50.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "1ef0b03c8bf0757cdbf12fe8827134a7a6cf6abb10d552d238fefd3998fa00a3",
-      "size": 953,
+      "sha256": "9194ab77bf417600049fb32e04772acbfad2baf038c2907fe5c02b2b59e5576f",
+      "size": 955,
       "type": "import"
     },
     {
@@ -14387,8 +14457,8 @@
       "path": "res://assets/ui/crystals/red_0_10.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "a84c5bfdd5e4840a942b3eb1f12ccf037f02ea974dc11b832f8f8092847cb1b6",
-      "size": 947,
+      "sha256": "caeb59ca7612455bef7c4e2cdfe9e737e3e0d47e90fe6237ef1c434c5f8ed8e0",
+      "size": 949,
       "type": "import"
     },
     {
@@ -14407,8 +14477,8 @@
       "path": "res://assets/ui/crystals/red_10_20.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "d0b3127830eb66cafc7241593f94205e7181b5649e753d0a00a3ea5a3d9ae3c0",
-      "size": 950,
+      "sha256": "f1e71c39551011ffc0a9d7fd1bc07040b3181085d2a8ab911135b49706ae2879",
+      "size": 952,
       "type": "import"
     },
     {
@@ -14427,8 +14497,8 @@
       "path": "res://assets/ui/crystals/red_20_30.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "00beafe15efc87ff21d2e877d989be8fa57550530514d2ddc3a7499a4493588f",
-      "size": 950,
+      "sha256": "7540503f9bff8d69b03d59fc0c4f4e68b5f72795cbad8e01bc5d950c1c96a7e7",
+      "size": 952,
       "type": "import"
     },
     {
@@ -14447,8 +14517,8 @@
       "path": "res://assets/ui/crystals/red_30_40.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "217dd49756648fc2d6febb39e1b45bf9df32e842dbf0e126bdf2200c39718a22",
-      "size": 950,
+      "sha256": "c5f4682dbe680b1c38a07b128db4d43fc4eb7724ef79b4fae5f240a5dffa9673",
+      "size": 952,
       "type": "import"
     },
     {
@@ -14467,8 +14537,8 @@
       "path": "res://assets/ui/crystals/red_40_50.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "031000d1eaf036869ab7c496cc74f3b48f058609506d5610cf6ec8fcf3158b84",
-      "size": 950,
+      "sha256": "412f773dd34e66eea528debd748236ad311fa92ffe12328ce709f0aec9df9980",
+      "size": 952,
       "type": "import"
     },
     {
@@ -15667,8 +15737,8 @@
       "path": "res://assets/ui/treasure_cards/亡魂反击.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "ed20297f80b0094e13bfa03474c67a7d73ae4638559b2c4507c6c6a142b0511f",
-      "size": 965,
+      "sha256": "28e55ab11b7e98de3b87edac6de4fb6cb29da8d90f9d3ec47ffdbe85c0216fa1",
+      "size": 968,
       "type": "import"
     },
     {
@@ -15687,8 +15757,8 @@
       "path": "res://assets/ui/treasure_cards/亡魂反击_en.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "5dfb142a0ecf975c728b01ca13acce5bbd2384335d159d49ffa251c996efced4",
-      "size": 974,
+      "sha256": "bff0e435da2b5e0373fb217b5f175b95d52b35c57ab619860baa6c7707a07ba9",
+      "size": 977,
       "type": "import"
     },
     {
@@ -15707,8 +15777,8 @@
       "path": "res://assets/ui/treasure_cards/冰封霜刃.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "e8f1f65349fd098f6b0ffb6a3c2d8b2ffe9bffcf57b566fe9738d1020dea1880",
-      "size": 964,
+      "sha256": "c798d66c77cb60e8dd9f681fcddbc4a83af5cf430dde7e34d5861855a6d9970b",
+      "size": 967,
       "type": "import"
     },
     {
@@ -15727,8 +15797,8 @@
       "path": "res://assets/ui/treasure_cards/冰封霜刃_en.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "30ad0f4aada1269d2fbe23699543f64ce0b2f7b95f4ebe094e28943100e96b8d",
-      "size": 973,
+      "sha256": "e27efb005b5014c4e240754788c8b61f8fca253164976448b13f8113da28a2f9",
+      "size": 976,
       "type": "import"
     },
     {
@@ -15747,8 +15817,8 @@
       "path": "res://assets/ui/treasure_cards/剧毒蔓延.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "f42eeb653d1d896c8437b8d2d6d9a77d1f2f05d67662f6b93c97303381879d75",
-      "size": 964,
+      "sha256": "a1d8f35e6323f03a46a79aeb5699cb0fffcf2d5403d32aba5ce708defd3aaa12",
+      "size": 967,
       "type": "import"
     },
     {
@@ -15767,8 +15837,8 @@
       "path": "res://assets/ui/treasure_cards/剧毒蔓延_en.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "6e87de359c932c56826013f275193d54e5f2aee2c4f6d7657527dd9ff4161f88",
-      "size": 974,
+      "sha256": "4edffda6f3fa3eb77acaebae50e20a336799890099213102b7b5297509e119c5",
+      "size": 977,
       "type": "import"
     },
     {
@@ -15787,8 +15857,8 @@
       "path": "res://assets/ui/treasure_cards/吸血纹章.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "6879e6bc460e915b45b402907f9547691e332937229627c54b3811e79cd67f26",
-      "size": 965,
+      "sha256": "fc7ffa81ba63b0e61a89c543d66adefd19c2f805fb843f6924ccce767ddd1386",
+      "size": 968,
       "type": "import"
     },
     {
@@ -15807,8 +15877,8 @@
       "path": "res://assets/ui/treasure_cards/吸血纹章_en.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "a7d617cd3ab8fcdae792e7691600c29fa2aaf82035b2f085cf09345005a97a49",
-      "size": 973,
+      "sha256": "b6cfa641e33afdd37eb4976dd1b4039f3e2ac62b7fdc0a8f733152b25392d163",
+      "size": 976,
       "type": "import"
     },
     {
@@ -15827,8 +15897,8 @@
       "path": "res://assets/ui/treasure_cards/哀鸣共鸣.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "8a0dda396593a01cf185f3a06689b361c426965aec945f33d5d84f156b454eab",
-      "size": 965,
+      "sha256": "150f5328c938277bf5854fce1004730c3791b8f5ebf74cb314f2f29fa0932fe8",
+      "size": 968,
       "type": "import"
     },
     {
@@ -15847,8 +15917,8 @@
       "path": "res://assets/ui/treasure_cards/哀鸣共鸣_en.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "85dd4b1f1783d2f777f9663a0981fe1de390005671913b76292d9df79c685f8b",
-      "size": 973,
+      "sha256": "7b6d1b3940c811c7f37d105e911220a337c1950c56a49be35fe806eee9b664bf",
+      "size": 976,
       "type": "import"
     },
     {
@@ -15867,8 +15937,8 @@
       "path": "res://assets/ui/treasure_cards/复利之道.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "85c10220c8505547c54736f9da08ec2883fbd2d19858e815de0ed094ebe47fb6",
-      "size": 965,
+      "sha256": "c0e9b571f325c029700a3c4eb3d828035e4c1305a81e1cb5fc53c570a9c42749",
+      "size": 968,
       "type": "import"
     },
     {
@@ -15887,8 +15957,8 @@
       "path": "res://assets/ui/treasure_cards/复利之道_en.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "97bb5398ee786fb476a9d2fb340f0794f274ffaee64cfaa393e54a083056e133",
-      "size": 974,
+      "sha256": "4005d1b1ac9db735f6b04d17cd06a973f5d1df710ca9f37d5e1ddff1a7cbb081",
+      "size": 977,
       "type": "import"
     },
     {
@@ -15907,8 +15977,8 @@
       "path": "res://assets/ui/treasure_cards/幸运信封.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "bf4cf5d8ddc35e3a27e80b780bd681afd2dc4b2e7d23f5d14738e9334c38fc89",
-      "size": 964,
+      "sha256": "38ff7848dd95e2fb991555c10d045e8f82ac9dddcf0d3dc72e669e8331177eeb",
+      "size": 967,
       "type": "import"
     },
     {
@@ -15927,8 +15997,8 @@
       "path": "res://assets/ui/treasure_cards/幸运信封_en.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "9b00f99eb1464e16f91a6b94549200ee1b2d9584816254dc136876eb6722d3cd",
-      "size": 974,
+      "sha256": "3b14bbf9eae93d8dea7848eae3c52b11c54ab3d950b4c984e7b9d86d4d08f2a6",
+      "size": 977,
       "type": "import"
     },
     {
@@ -15947,8 +16017,8 @@
       "path": "res://assets/ui/treasure_cards/幻影步伐.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "217c0fd1e90d2ea485bf7cfeb52b0862fb455982ec9ad82162e3b431fc223429",
-      "size": 964,
+      "sha256": "45b2616e0d64589a0635c3be642049afa779c7f64dcb6ec1bf87af21fa31b97b",
+      "size": 967,
       "type": "import"
     },
     {
@@ -15967,8 +16037,8 @@
       "path": "res://assets/ui/treasure_cards/幻影步伐_en.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "8c1bc6c97e06c86b3fc8bc88260285526c7c5304d80a2f84dd4d80fac323ab8f",
-      "size": 974,
+      "sha256": "541c1d17532d3a9562f3858db31f28cc1345db227ef81a823ebc38afb989d147",
+      "size": 977,
       "type": "import"
     },
     {
@@ -15987,8 +16057,8 @@
       "path": "res://assets/ui/treasure_cards/慷慨命运.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "c5765f7be291b43654390b0500c013c571237446b1c63f724f4e11a3595f68dd",
-      "size": 964,
+      "sha256": "fc5105db0b1728c9879e3be1b9c3424c5eed67a67c831c62bc198a1a52289b76",
+      "size": 967,
       "type": "import"
     },
     {
@@ -16007,8 +16077,8 @@
       "path": "res://assets/ui/treasure_cards/慷慨命运_en.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "16fa76d051cb87eebf84f9bbfb66d408eadd505a166adb28009a73e97dd8f5b7",
-      "size": 973,
+      "sha256": "0d0143e1f7342c406e3a8991bc0479da3fd03c89142fff936d73343401986a78",
+      "size": 976,
       "type": "import"
     },
     {
@@ -16027,8 +16097,8 @@
       "path": "res://assets/ui/treasure_cards/打断锁链.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "7e5821f47e881566c0b33873b5603d3cca5dec6e2f2c771ab4a2499bd8472856",
-      "size": 965,
+      "sha256": "200d51a7d32525cfaf246a40a8a986727ed091a5b21b1d2696f2e157a2f1bb0e",
+      "size": 968,
       "type": "import"
     },
     {
@@ -16047,8 +16117,8 @@
       "path": "res://assets/ui/treasure_cards/打断锁链_en.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "e8b123c46d11d84b77768891f5c658c457a0b22371897b2792a930ad1dd0de32",
-      "size": 973,
+      "sha256": "aa8c4e35bc902776883c5435907d532d9792a48f095b3d846bf51e2345a2cd54",
+      "size": 976,
       "type": "import"
     },
     {
@@ -16067,8 +16137,8 @@
       "path": "res://assets/ui/treasure_cards/折扣令牌.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "347d11e74d9247c0c675e7e6e90104904510a4ac1fa298622b3062694364129c",
-      "size": 964,
+      "sha256": "43114c278a61431250439c56405c5038a0fb5ffcfe086bef50bea76b74a4fc70",
+      "size": 967,
       "type": "import"
     },
     {
@@ -16087,8 +16157,8 @@
       "path": "res://assets/ui/treasure_cards/折扣令牌_en.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "c29de0e7263f70382a0ee7abe1a36f062063907123f95b31a773a5428746ec8c",
-      "size": 974,
+      "sha256": "4fc1d7017e046756c284b6fb6f2c6c553bbd95a14c1f9651a2764d3d0cf6dfaa",
+      "size": 977,
       "type": "import"
     },
     {
@@ -16107,8 +16177,8 @@
       "path": "res://assets/ui/treasure_cards/时空压缩.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "86e0e830af657fa1a9c3e729a47734e09681c5bee12d3de0f460df4c33d03d84",
-      "size": 965,
+      "sha256": "9107d43105732f81a5b76042f127da60091f1ad5dbd072b194d242075d4b8edf",
+      "size": 968,
       "type": "import"
     },
     {
@@ -16127,8 +16197,8 @@
       "path": "res://assets/ui/treasure_cards/时空压缩_en.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "1fd6fc9bb3691aba4f62904e522b50988b567dec4decb1dd048459dc349beea5",
-      "size": 973,
+      "sha256": "ec61f8ba99e3ff83f8baef64d2dd3d5a7d7300d796004060792a3e6a6aabb1c8",
+      "size": 976,
       "type": "import"
     },
     {
@@ -16147,8 +16217,8 @@
       "path": "res://assets/ui/treasure_cards/束缚重压.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "be06eee1e8add7c50de9cac70b9f835da1a698ae53ebb591b208af4c918d1bf8",
-      "size": 964,
+      "sha256": "03ae124a97409fa1de9bb5acdeb18139841bd473835f4553ce968837b0eea61d",
+      "size": 967,
       "type": "import"
     },
     {
@@ -16167,8 +16237,8 @@
       "path": "res://assets/ui/treasure_cards/束缚重压_en.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "8c7363a1c7968fbdca50764e6d149fa602716cc05511f3a674e235544c9636ab",
-      "size": 974,
+      "sha256": "0523583a41077d3cdd16920747430d97d91faf035151c833d372be3c30cad36b",
+      "size": 977,
       "type": "import"
     },
     {
@@ -16187,8 +16257,8 @@
       "path": "res://assets/ui/treasure_cards/法阵回春.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "79051f6ab1b222767fe986a0005cb74fd45b6aa61ac1de40de84f25774ce8e79",
-      "size": 965,
+      "sha256": "1f0f47897f7382ff531eaa8b56d090e30c0c77a5ced7fe8154f6a43261293d39",
+      "size": 968,
       "type": "import"
     },
     {
@@ -16207,8 +16277,8 @@
       "path": "res://assets/ui/treasure_cards/法阵回春_en.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "074830935f6eb73e0738c906d97000a4e881f0bf04dfe53c691be55b87e923c0",
-      "size": 974,
+      "sha256": "6e8e3d83eab4154f807460d002b45cc59f38b4e26c169edca1b9248a3656a31c",
+      "size": 977,
       "type": "import"
     },
     {
@@ -16227,8 +16297,8 @@
       "path": "res://assets/ui/treasure_cards/炎焰碎裂.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "c865f417da927c985d23a692bf6f76feb56045383508f739a9bb19bf23a20f71",
-      "size": 965,
+      "sha256": "dd65994bb6d6d4fbc2e82e520f7938cb18ab14e2dca14dea3ff55e3e2c95df53",
+      "size": 968,
       "type": "import"
     },
     {
@@ -16247,8 +16317,8 @@
       "path": "res://assets/ui/treasure_cards/炎焰碎裂_en.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "a5158e97dbdd44c798f2d6043488d3fdfc71b1732748c59e6e7eae7675e0019e",
-      "size": 974,
+      "sha256": "41f7c10dcb3cb290b99637a38479de6bf7c119b7b5e117536533ff27fe150e02",
+      "size": 977,
       "type": "import"
     },
     {
@@ -16267,8 +16337,8 @@
       "path": "res://assets/ui/treasure_cards/爆裂核心.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "2137270ef16227d4731a3865a83fa46be03b532a9eed0c4d858d8aec7b592e0b",
-      "size": 965,
+      "sha256": "0cf0004111c562f2a8b1677cd8ce1cdd3e8b7f1aa892cb7f280bfdebd2a0b3c6",
+      "size": 968,
       "type": "import"
     },
     {
@@ -16287,8 +16357,8 @@
       "path": "res://assets/ui/treasure_cards/爆裂核心_en.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "894a5f9e6e67e61ec550d884e54357786d31c45b7fc44008e56e47efdb3f1387",
-      "size": 974,
+      "sha256": "9bcd9fd494973c9a5d11ecb2da821d33d021cb70127a3f769dd96a410f30449b",
+      "size": 977,
       "type": "import"
     },
     {
@@ -16307,8 +16377,8 @@
       "path": "res://assets/ui/treasure_cards/狂怒阵容.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "e91a865c4f8648e5f75e186a08276fc2b63a7d80e0d6358761268c0a6c2a3ed8",
-      "size": 965,
+      "sha256": "b9784dbbc7b3ad86436480b2622c4373527295eae73b9f1f2f6b9b90f16010a2",
+      "size": 968,
       "type": "import"
     },
     {
@@ -16327,8 +16397,8 @@
       "path": "res://assets/ui/treasure_cards/狂怒阵容_en.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "9302c02eeec476c773ab6b649def000b5357b6615d8b2be964cdd26595fe4269",
-      "size": 974,
+      "sha256": "e8dcb45a62a576263dad884256721dce713de8e509a65aca97b7d821314d7271",
+      "size": 977,
       "type": "import"
     },
     {
@@ -16347,8 +16417,8 @@
       "path": "res://assets/ui/treasure_cards/狂暴进攻.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "9185ef31e051da075874fd47baeb586cc003426339c57edbf368966dff5edaca",
-      "size": 964,
+      "sha256": "25f266501e9fd48155f04a580051d0f8b75afb72d231918dba8b65a0157027af",
+      "size": 967,
       "type": "import"
     },
     {
@@ -16367,8 +16437,8 @@
       "path": "res://assets/ui/treasure_cards/狂暴进攻_en.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "97c55a83404b56de7a29c5dddf2c27bb46719d6e7bcd8b42955013b9e681a5b7",
-      "size": 974,
+      "sha256": "4e66cee539f7998cba46a32876f68919d8c6d28be96b69f7d80d02c9512f6c91",
+      "size": 977,
       "type": "import"
     },
     {
@@ -16387,8 +16457,8 @@
       "path": "res://assets/ui/treasure_cards/生命丰碑.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "35f406c75ca6e5cb0e97bf9ed4cf42859eb471f5e6474ce17fc2e5e10b403e5b",
-      "size": 965,
+      "sha256": "73067d9fb58a9047b104d26ca50f0805d956dce4aa094cdcc922885220db333b",
+      "size": 968,
       "type": "import"
     },
     {
@@ -16407,8 +16477,8 @@
       "path": "res://assets/ui/treasure_cards/生命丰碑_en.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "1c8033db87f0eca417404b9d33aefb948201ec39f0d031998ddc657e53fbaa80",
-      "size": 974,
+      "sha256": "6b4a3bf224eb14266e92f8e86900f7a7abd3df68a003b20f0f01b7ece8deafd7",
+      "size": 977,
       "type": "import"
     },
     {
@@ -16427,8 +16497,8 @@
       "path": "res://assets/ui/treasure_cards/腐蚀毒针.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "e45fbac77a6f3596ff3585635b9ab7e78eca74fee740c944401f6556d7833daa",
-      "size": 965,
+      "sha256": "98070699b53a2f05e95e51225e8ef21a995f65085673861a792398f7d6da958d",
+      "size": 968,
       "type": "import"
     },
     {
@@ -16447,8 +16517,8 @@
       "path": "res://assets/ui/treasure_cards/腐蚀毒针_en.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "b2aa047707fb0edc9a8e436d4184c39766e4380aefb0a81e90f67ed8419cfe71",
-      "size": 974,
+      "sha256": "2add285e3bc2189eb954ae18becaf52ce9d6cff3a4eecd45eeb1d1b7eda8353a",
+      "size": 977,
       "type": "import"
     },
     {
@@ -16467,8 +16537,8 @@
       "path": "res://assets/ui/treasure_cards/血契之刃.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "f18b0918b8862ba181348d3bbcb56e4bc034c66e87aeb53cd6fc82e17fa12b70",
-      "size": 965,
+      "sha256": "49605facc6abb696f3c0a004c76855cefd73e4cc384abc31b3e05b2eca0e6c3e",
+      "size": 968,
       "type": "import"
     },
     {
@@ -16487,8 +16557,8 @@
       "path": "res://assets/ui/treasure_cards/血契之刃_en.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "14c2b4e31be0322e75e010703c48545fbafe9cbfbb678cb623001b974fdbdc5b",
-      "size": 974,
+      "sha256": "39b808abb7bce6c6ee14dc31c6a09c2f22627fda5e40c3f2ff2c306865ae007b",
+      "size": 977,
       "type": "import"
     },
     {
@@ -16507,8 +16577,8 @@
       "path": "res://assets/ui/treasure_cards/铁壁之护.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "35832a2a19ab10b40fe965983539e15cfe68c47e7ef166dd07512174f6484495",
-      "size": 964,
+      "sha256": "7691cc6ec2f06a5d31090dd193abd1fc0e333d41653fd47def051cd37140a76b",
+      "size": 967,
       "type": "import"
     },
     {
@@ -16527,8 +16597,8 @@
       "path": "res://assets/ui/treasure_cards/铁壁之护_en.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "2a09d335d38a9182f8078ab1d64ea8b2b10a9474eb1aaefb5b1d2a90ed010e6b",
-      "size": 974,
+      "sha256": "b3ad8fee3759fa82a61ec8818e2d25b1b2e905483a07672d296a58999cb7e9a3",
+      "size": 977,
       "type": "import"
     },
     {
@@ -16547,8 +16617,8 @@
       "path": "res://assets/ui/treasure_cards/雷霆加速.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "31a3fd0c5d42b94752bb6796cc8a3583ad31d4f4443f511224967fbbe337a303",
-      "size": 965,
+      "sha256": "02c8f04e96557038607ef8ff9ee30fcc56eea43faf30ded82adbd3b9152cccd6",
+      "size": 968,
       "type": "import"
     },
     {
@@ -16567,8 +16637,8 @@
       "path": "res://assets/ui/treasure_cards/雷霆加速_en.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "81d23e2485b651f8f360edf43fd7063c6e17b3355ab4eafaf2c1460ce0d2a694",
-      "size": 974,
+      "sha256": "230122397e3347fb6b626ae67f4cca0c88d6964b1ab56ca1a5dd3472dd54344d",
+      "size": 977,
       "type": "import"
     },
     {
@@ -16587,8 +16657,8 @@
       "path": "res://assets/ui/treasure_cards/震荡余波.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "877ebdff109ca2baa5944624eb07ff279bed8ea3799d9fe35067d78b84a5df7d",
-      "size": 964,
+      "sha256": "2b5c1a71389f14322bc8f42ca68f9cf4af932b8d1682438a103c1a177ede7eee",
+      "size": 967,
       "type": "import"
     },
     {
@@ -16607,8 +16677,8 @@
       "path": "res://assets/ui/treasure_cards/震荡余波_en.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "f73fbe945f6d4c2719cbec5dc1d556340b6499f32f9cae5de5f07d276f11c612",
-      "size": 974,
+      "sha256": "c8dbd63d3136e0372ffc31cdf86455f83892a38ebdd7e13c00701a9c2a413000",
+      "size": 977,
       "type": "import"
     },
     {
@@ -16627,8 +16697,8 @@
       "path": "res://assets/ui/treasure_cards/黄金祭坛.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "2f38fee4512beedf946d5767b6b7f2c96057dfbb1137d9483abbe78cbb1799f2",
-      "size": 965,
+      "sha256": "2a8535a0ad8c1b50e95445acc93d386a48279167ad4707af9f675efb0951e381",
+      "size": 968,
       "type": "import"
     },
     {
@@ -16647,8 +16717,8 @@
       "path": "res://assets/ui/treasure_cards/黄金祭坛_en.png.import",
       "required_by": "",
       "required_by_count": 0,
-      "sha256": "e39782fa389db0ed39fdcce7ccc4e09484a756aa726e8426ab9390e560f0c475",
-      "size": 973,
+      "sha256": "80769bdaf592db240b873341a8b134ecdd42febec97ced2ac231f1b3686c492a",
+      "size": 976,
       "type": "import"
     },
     {
@@ -18829,6 +18899,366 @@
       "required_by_count": 0,
       "sha256": "fd27d2d193aee1ab934240a320f69e5748075be8587fafd454de1bf669688655",
       "size": 1010,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_abyss_beast/devour_lifesteal_pull.png",
+      "required_by": "res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd",
+      "required_by_count": 1,
+      "sha256": "31c175a0db5984c6c26060c1eb1a25ae4c5b108a4a03e85308a8fb8f2eb75c9a",
+      "size": 141773,
+      "type": "png"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_abyss_beast/devour_lifesteal_pull.png.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "2676592c27dff640fb8681df6fa909641c15e3de9a2e35d7242abd9757d941f8",
+      "size": 1002,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_abyss_beast/devour_maw_tear.png",
+      "required_by": "res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd",
+      "required_by_count": 1,
+      "sha256": "c03a4f31ca5f4ac2032038b533d9e6e81f90786db49fc1da282f86d076a827a5",
+      "size": 604959,
+      "type": "png"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_abyss_beast/devour_maw_tear.png.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "56ed94e0f1e0f4a253861cbe95b2afe71250244d4a0c453750303abb8d533e09",
+      "size": 984,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_abyss_beast/devour_silence_gag.png",
+      "required_by": "res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd",
+      "required_by_count": 1,
+      "sha256": "8823bb98a722444161aaa94b5b2d9333b0744f477b22f9a9878ac3e1a712ecc6",
+      "size": 630892,
+      "type": "png"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_abyss_beast/devour_silence_gag.png.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "14b5c37ed3ad97f4fdce8032d33e8d367653914fe5d3c8332c1d63a4b82a7b78",
+      "size": 993,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_eternal_night/eternal_night_impact.png",
+      "required_by": "res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd",
+      "required_by_count": 1,
+      "sha256": "c2e19c6f816be5775bcd15593feb689abce17f674f88f5f47b506f4dec10d71e",
+      "size": 433567,
+      "type": "png"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_eternal_night/eternal_night_impact.png.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "68dcbb2cafba60561a4177288a10bdc48dbd969de0d386c0e43d98dbfd093d06",
+      "size": 1000,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_eternal_night/eternal_night_meteor.png",
+      "required_by": "res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd",
+      "required_by_count": 1,
+      "sha256": "c08f11e0016e996bc2195d093d68e4077fe60b4eb78212bc578fbc3ab2e52498",
+      "size": 211763,
+      "type": "png"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_eternal_night/eternal_night_meteor.png.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "a9f2fd75fb7789ed1575169ae473a6267b08f60c6344de64dbcb6972da3e9121",
+      "size": 1001,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_eternal_night/eternal_night_vortex.png",
+      "required_by": "res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd",
+      "required_by_count": 1,
+      "sha256": "ed5256fd932a5701421a36bf3932180a3cf6d4f1dfa632dc0a707c1a80db15db",
+      "size": 565920,
+      "type": "png"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_eternal_night/eternal_night_vortex.png.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "7b78b85ce0ee3bd5a0093a842b1cb527f50421d8314e24087672b9ed3d555261",
+      "size": 1001,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_flame_claw/flameclaw_burn_break.png",
+      "required_by": "res://effects/vfx3d/modules/VFXRaceBasicAttack3D.gd",
+      "required_by_count": 1,
+      "sha256": "4c5bdb932340f691992f1a0186ccc80928c853ac403b6bb558baeb759ddbd528",
+      "size": 153726,
+      "type": "png"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_flame_claw/flameclaw_burn_break.png.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "4a772def21ab7710ba98628002ab496e2d6f4e1dae1f460af7146a483b28e722",
+      "size": 998,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_flame_claw/flameclaw_claw_swipe.png",
+      "required_by": "res://effects/vfx3d/modules/VFXRaceBasicAttack3D.gd",
+      "required_by_count": 1,
+      "sha256": "6fcc0e0da9605c81f03a87e25a34e5d5d72469c063963c7cd6014203da6ec4f3",
+      "size": 360920,
+      "type": "png"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_flame_claw/flameclaw_claw_swipe.png.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "2b7eb67e45ee1878ea375314d812005402312db316b8a70942e9a4f548e4bef6",
+      "size": 998,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_flame_claw/flameclaw_ember_shell.png",
+      "required_by": "res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd",
+      "required_by_count": 1,
+      "sha256": "a2b6df9098d8056f9e30b8a92af617f012411dea74104941cd680201eae1c86b",
+      "size": 448569,
+      "type": "png"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_flame_claw/flameclaw_ember_shell.png.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "891462a3e8e8b11f895a484b15eb394cdb513be48da54d4cff47c2ee69d79f5d",
+      "size": 1001,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_flame_claw/flameclaw_ground_coals.png",
+      "required_by": "res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd",
+      "required_by_count": 1,
+      "sha256": "e98779585cdd4f5fa5f4b9053305619988f8f3a7e866fe1a04dc42f1e4cb9d35",
+      "size": 746346,
+      "type": "png"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_flame_claw/flameclaw_ground_coals.png.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "83d4d4f74ef2ed3d5cd503cf6328aa837e2cdd5254d1cd7466386e4ef3407b6b",
+      "size": 1004,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_flame_claw/flameclaw_heal_updraft.png",
+      "required_by": "res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd",
+      "required_by_count": 1,
+      "sha256": "f3a9d7219fa0030e37fde5e3cb439af8e1135b6a760937c9a6d36b1e0dbe0d38",
+      "size": 361661,
+      "type": "png"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_flame_claw/flameclaw_heal_updraft.png.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "fbb45c19e16fc660a1e55699f535fd1ccb82e32c275735b4c9a0240b9325589d",
+      "size": 1003,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_hell_inferno/inferno_atk_down_brand.png",
+      "required_by": "res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd",
+      "required_by_count": 1,
+      "sha256": "8475dbc48dc4938ca0c2aabad4880bfc26cef4cf1f662b439901866a6acbb67e",
+      "size": 479858,
+      "type": "png"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_hell_inferno/inferno_atk_down_brand.png.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "b26d2293ae8fe42303b445a0847ed0a8cb114dd5031b01436353248d9444696e",
+      "size": 1006,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_hell_inferno/inferno_ground_scorch.png",
+      "required_by": "res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd",
+      "required_by_count": 1,
+      "sha256": "ba0e9fac19853b74bcc5b1705996cd70c8d9410d7b82be9623615463761b6a93",
+      "size": 487918,
+      "type": "png"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_hell_inferno/inferno_ground_scorch.png.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "45c5635da08962d9561ede9999ef699e7f5d575e9592c042d0a0cc0343ed6bd8",
+      "size": 1003,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_hell_inferno/inferno_sky_column.png",
+      "required_by": "res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd",
+      "required_by_count": 1,
+      "sha256": "e866d11c5a4c319d354146c5ad4518196b877c30d93eaf1764ac734796bc2392",
+      "size": 211292,
+      "type": "png"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_hell_inferno/inferno_sky_column.png.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "6afb3d390e7ec4363d2455fecae7683f147a0a815eafb0c49623cbd0e44c1c4d",
+      "size": 993,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_soul_chain/soulchain_cast_coil.png",
+      "required_by": "res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd",
+      "required_by_count": 1,
+      "sha256": "5d7f7a3351bb90120298c548cce57065b3886cbd9881d07128aebadb3f0b7f86",
+      "size": 533164,
+      "type": "png"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_soul_chain/soulchain_cast_coil.png.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "a41d5572a0ed0fba6d3ba6b9b6fafad4ac84e91d80c2f1568e09cb6664765bd0",
+      "size": 994,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_soul_chain/soulchain_chain_link.png",
+      "required_by": "res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd",
+      "required_by_count": 1,
+      "sha256": "ebb98856ec46ef9e7c707b8d92bcd0c400c3386d46bfd32c95272aeee6387d65",
+      "size": 163255,
+      "type": "png"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_soul_chain/soulchain_chain_link.png.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "2991078f1998abaf9f21431eaaa84bb44e683645a7b37e62ad37a4b804bfc091",
+      "size": 998,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_soul_chain/soulchain_drag_smear.png",
+      "required_by": "res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd",
+      "required_by_count": 1,
+      "sha256": "acb79b0a079f58a7914d26741becde6daf22c96d8fe5722a0040df3f34eec982",
+      "size": 364929,
+      "type": "png"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_soul_chain/soulchain_drag_smear.png.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "f29e895db2aef4a39b3d81fbbd8856bee704ecde4bfb76dd9ec5294a2a153530",
+      "size": 998,
+      "type": "import"
+    },
+    {
+      "class": "runtime_required",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_soul_chain/soulchain_lock_seal.png",
+      "required_by": "res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd",
+      "required_by_count": 1,
+      "sha256": "1998a8ace50e3dba1dceb91a8bf886cb4e524defbaa4e0d1b3e19b4685f32db8",
+      "size": 532955,
+      "type": "png"
+    },
+    {
+      "class": "import_meta",
+      "license_id": "unknown",
+      "path": "res://assets/vfx/skills/ally_soul_chain/soulchain_lock_seal.png.import",
+      "required_by": "",
+      "required_by_count": 0,
+      "sha256": "d480f61337abc96d5423566c9b70950b52e7e01e65da92ae73e9dcb7aaaba489",
+      "size": 995,
       "type": "import"
     },
     {
@@ -26592,16 +27022,16 @@
       "type": "uid"
     }
   ],
-  "file_count": 2658,
-  "generated_at": "2026-08-31T10:36:51",
+  "file_count": 2701,
+  "generated_at": "2026-09-03T04:35:15",
   "generated_by": "tools/asset_manifest_check.gd",
   "godot_version": "4.7-stable (official)",
-  "inventory_sha256": "f029df50b2892028aad2796439eac0b12bac490de7f377d948ba2bbd28edecf8",
+  "inventory_sha256": "ed99230ce8d75f20e81bb7f68ad179aec61b2951e196e65d1aafce9b559ad610",
   "missing_count": 3,
   "roots": [
     "res://assets",
     "res://effects/vfx3d/vfxv2"
   ],
   "schema_version": 2,
-  "total_bytes": 3082806268
+  "total_bytes": 3093774282
 }
