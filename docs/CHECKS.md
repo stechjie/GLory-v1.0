@@ -2288,3 +2288,47 @@ external —— 本机 25028RN03A 横屏 `navigation_mode=0`，没有 cutout 可
 
 六条断言逐条反向变异全部转红，涉及的三个生产文件（MainMenu / SettingsScreen /
 CodexScreen）均按字节还原。
+
+## 2026-09-03：Release 包会崩溃的调试入口（V3 P1-07）
+
+审计（`reports/v3_audit.json` P1-07）原先标「完成」，只欠「Release 导出回归」。
+做这一步验证时发现的不是一个显示层面的小问题，是一个**真的会崩溃**的缺陷：
+
+`Team3v3Lobby` 的「自测开始」按钮此前只按 `not _online()` 显隐，没有查
+`OS.is_debug_build()`。这颗按钮打开的是 `officetest/OfficeTestScreen.tscn` ——
+而 `officetest/*` 在 `export_presets.cfg` 的 `exclude_filter` 里，**根本不进
+Android/Windows 的 Release 包**。Release 玩家离线时能看见并点这颗按钮，点下去
+`Main._show_selftest()` 里 `load(...)` 拿到 `null`，对 `null` 调 `.instantiate()`
+直接崩溃。同一个文件里 F3 排布调试网格也只按在线状态无关的按键触发，桌面
+Release 版有真实键盘，同样能被玩家意外唤出。
+
+修法三处：
+
+1. `_selftest_btn.visible` 的两处赋值（初始化 + 状态刷新）都加
+   `OS.is_debug_build() and`。
+2. F3 处理函数入口先判 `OS.is_debug_build()`，不满足直接 return。
+3. `Main._show_selftest()` 补防御性判空：`load()` 结果为 `null` 时退回大厅，
+   不再无条件对它调 `.instantiate()` —— 这是纵深防御，即便以后又长出第二个
+   能触发它的入口，也不会重演同一次崩溃。
+
+新增门禁 `release_debug_ui`（8 项）。headless 跑的是 debug 模板，
+`OS.is_debug_build()` 在测试进程里恒为 `true`，没有办法在同一个进程里让它变
+`false` 来验证「Release 下这颗按钮真的不显示」——能验的是**源码合同**：显隐
+赋值那一行有没有把 `OS.is_debug_build()` 当作显式的与运算项。这条合同验证的是
+「代码写没写这道判断」，不是「Release 二进制运行时真的隐藏了它」；后者需要一次
+真实的 Release 导出加人工确认可见性，那部分标 external，留给用户回来看一眼。
+
+对着修复前的原始代码跑出的**先失败证据**：
+
+```
+FAIL [selftest_button_visible_in_release] ...["_build: _selftest_btn.visible = not _online()", ...]
+FAIL [f3_overlay_not_gated] F3 排布调试网格没有在处理按键之前先判 OS.is_debug_build()
+FAIL [show_selftest_no_null_guard] _show_selftest() 直接对 load() 的结果调 instantiate()，没有判空
+```
+
+六条断言逐条反向变异全部转红，`Team3v3Lobby.gd`（纯 LF）与 `export_presets.cfg`
+均按字节还原；`Main.gd`（混合行尾）用「读 HEAD 字节 + 行级正则匹配」脚本改动，
+新增行一律 LF，`git diff --check` 干净。
+
+外部依赖（写进最终交接表，不代自动绿）：Windows Desktop / Android 的 Release
+导出需要用户实际打开一次，肉眼确认「自测开始」按钮确实不见了。

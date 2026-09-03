@@ -219,9 +219,16 @@ func _build() -> void:
 	_start_lbl = _add_label("", Vector2(1300, 790), Vector2(270, 95), 28, Color(0.96, 0.87, 0.70), "right")
 	_start_btn = _add_hit(Vector2(1300, 790), Vector2(270, 95), _on_primary_pressed, "right", "hit_start")
 	# 离线自测专用入口(officetest):开始游戏上方,仅离线显示,纯追加不动原布局。
+	#
+	# V3 P1-07：officetest 场景在 export_presets.cfg 的 exclude_filter 里，
+	# 不进 Release 包。这个按钮此前只按 not _online() 显隐，没有按 is_debug_build()
+	# 关掉 —— 意味着 Release 玩家离线时能看见并点这个按钮，而点下去
+	# Main._show_selftest() 里 load("res://officetest/OfficeTestScreen.tscn")
+	# 在 Release 包里取到的是 null，对 null 调 .instantiate() 直接崩溃。
+	# 加 is_debug_build() 之后，Release 包里这个按钮从一开始就不会显示。
 	_selftest_btn = _add_ai_button(Vector2(1310, 719), Vector2(255, 55), func(): selftest_requested.emit(), "right", "btn_selftest", 24)
 	_selftest_btn.text = _room_text("自测开始", "Self-Test")
-	_selftest_btn.visible = not _online()
+	_selftest_btn.visible = OS.is_debug_build() and not _online()
 	_host_hint_lbl = _add_label(_room_text("等待其他玩家准备后可按", "Waiting for players"), Vector2(1285, 880), Vector2(310, 28), 20, Color(1.0, 0.94, 0.78), "right")
 	_status_lbl = _add_label("", Vector2(626, 167), Vector2(420, 28), 17, Color(0.98, 0.94, 0.78))
 	_build_debug_layer()
@@ -344,7 +351,7 @@ func _refresh() -> void:
 	if _host_hint_lbl != null:
 		_host_hint_lbl.visible = is_host_seat
 	if _selftest_btn != null:
-		_selftest_btn.visible = not _online()
+		_selftest_btn.visible = OS.is_debug_build() and not _online()
 
 # 3v3 大厅状态：取代原先误显示的 1v1 session_label（棋盘/对手准备那套）。
 func _lobby_status_text() -> String:
@@ -578,6 +585,10 @@ func _build_debug_layer() -> void:
 	add_child(_debug_layer)
 
 func _unhandled_key_input(event: InputEvent) -> void:
+	# V3 P1-07：F3 切排布调试网格，也只在 debug 包响应 —— Release 桌面版有真实
+	# 键盘，玩家按到 F3 不该看见内部调试线。
+	if not OS.is_debug_build():
+		return
 	var key := event as InputEventKey
 	if key == null or not key.pressed or key.echo or key.keycode != KEY_F3:
 		return

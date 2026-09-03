@@ -766,7 +766,18 @@ func _show_selftest() -> void:
 	GameState.team_mode = true
 	# load() (not preload) so this optional officetest scene never becomes a
 	# parse-time dependency of Main on a cold boot before its .import exists.
-	var screen: Node = (load("res://officetest/OfficeTestScreen.tscn") as PackedScene).instantiate()
+	#
+	# V3 P1-07：officetest/ 不进 Release 包（见 export_presets.cfg 的
+	# exclude_filter）。这条路唯一的生产入口（Team3v3Lobby 的自测按钮）已经
+	# 按 OS.is_debug_build() 关掉了，这里再判一次空是防御性的 —— 万一以后
+	# 多出第二个入口，不会重演对 null 调 instantiate() 崩溃。
+	var packed := load("res://officetest/OfficeTestScreen.tscn") as PackedScene
+	if packed == null:
+		push_warning("officetest scene unavailable (expected in release exports); returning to lobby")
+		GameState.team_mode = _selftest_prev_team_mode
+		_show_team3v3_lobby()
+		return
+	var screen: Node = packed.instantiate()
 	screen.back_requested.connect(_on_selftest_back)
 	_page_back_route = _on_selftest_back
 	add_child(screen)
