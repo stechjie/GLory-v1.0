@@ -278,10 +278,32 @@ func _start_next_round() -> void:
 		"result": result,
 	}
 	var indexed_events := _indexed_events(frame_events)
+	# 玩法身份与完整载荷拆成两个 SHA（V2 收尾 G1）。
+	#
+	# simulation_replay_sha256 —— 只看 kind/frames/result + 白名单投影的 roster。
+	#   给单位加一个 model_in_place_actions 这类纯表现配置不会让它变，
+	#   所以「模拟是否变了」这个问题终于答得出来。
+	# replay_payload_sha256   —— 完整载荷，roster/def/frame_events 全算，
+	#   任何字段变化仍可检测、可用 first_difference() 定位。
+	#
+	# 判据分工：**玩法确定性看 simulation，传输/演出载荷看 payload。**
+	var simulation_sha := ReplayDigest.simulation_sha256(replay_1)
+	# 跨实现校验，不是同义反复：replay_1_sha 走的是本文件的
+	# _canonical_json + _sha256_text，payload_sha256() 走的是 ReplayDigest。
+	# 两条路算出来必须一致，否则兼容别名就名不副实了。
+	var payload_sha := ReplayDigest.payload_sha256(replay_1)
+	if payload_sha != replay_1_sha:
+		_record_failure("payload_sha_alias_drift",
+			"ReplayDigest.payload_sha256=%s 与本地 canonical SHA=%s 不一致"
+				% [payload_sha, replay_1_sha])
 	var hashes := {
 		"roster_sha256": _sha256_variant(roster),
 		"frame_events_sha256": _sha256_variant(frame_events),
 		"final_state_sha256": _sha256_variant(final_state),
+		"simulation_replay_sha256": simulation_sha,
+		"replay_payload_sha256": replay_1_sha,
+		# 历史字段，保留为完整载荷的兼容别名。含义不变，不得静默改指向。
+		# 上面的 _h_expect_alias() 断言它确实等于 replay_payload_sha256。
 		"replay_sha256": replay_1_sha,
 		"repeat_replay_sha256": replay_2_sha,
 		"repeatable": repeatable,
@@ -954,19 +976,25 @@ func _summary_markdown(manifest: Dictionary) -> String:
 		"- Android: `DEFERRED_BY_USER`",
 		"- Tool pass: `%s`" % str(bool(manifest.get("passed", false))),
 		"",
-		"| Round | Roster | Frames | Events | Replay SHA-256 | Final-state SHA-256 | Avg FPS | 1% Low | Visible fallbacks | Complete actor contracts |",
-		"| ---: | ---: | ---: | ---: | --- | --- | ---: | ---: | ---: | ---: |",
+		"",
+		"回放身份分两栏读（V2 收尾 G1）：**玩法确定性看 Simulation SHA-256**",
+		"（表现字段变化不影响它）；**传输/演出载荷看 Payload SHA-256**",
+		"（roster/def/frame_events 全算，任何字段变化都能检测到）。",
+		"",
+		"| Round | Roster | Frames | Events | Simulation SHA-256 | Payload SHA-256 | Final-state SHA-256 | Avg FPS | 1% Low | Visible fallbacks | Complete actor contracts |",
+		"| ---: | ---: | ---: | ---: | --- | --- | --- | ---: | ---: | ---: | ---: |",
 	]
 	for summary in _round_summaries:
 		var hashes: Dictionary = summary.get("hashes", {})
 		var performance: Dictionary = summary.get("performance", {})
 		var audit: Dictionary = summary.get("actor_audit", {})
-		lines.append("| %d | %d | %d | %d | `%s` | `%s` | %.2f | %.2f | %d | %d/%d |" % [
+		lines.append("| %d | %d | %d | %d | `%s` | `%s` | `%s` | %.2f | %.2f | %d | %d/%d |" % [
 			int(summary.get("round", 0)),
 			int(summary.get("roster_count", 0)),
 			int(summary.get("frame_count", 0)),
 			int(summary.get("event_count", 0)),
-			str(hashes.get("replay_sha256", "")),
+			str(hashes.get("simulation_replay_sha256", "")),
+			str(hashes.get("replay_payload_sha256", "")),
 			str(hashes.get("final_state_sha256", "")),
 			float(performance.get("average_fps", 0.0)),
 			float(performance.get("one_percent_low_fps", 0.0)),

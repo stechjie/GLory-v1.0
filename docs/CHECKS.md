@@ -28,8 +28,50 @@ Godot 不在 PATH 上，用 console 版才能把日志打到 stdout：
 | `tools/board_readability_check.tscn` | E1-E：16格/三路双半场契约、样式预算、设置迁移、评审场景 |
 | `tools/dep_scan.tscn` | assets/ 下 PNG 的引用情况 |
 | `tools/determinism_check.tscn` | 回放确定性：14 个用例的种子矩阵、SHA-256、首差异定位（D3） |
+| `tools/replay_identity_split_check.tscn` | 玩法回放身份与完整载荷的双 SHA 合同（见下节） |
 | `tools/rate_limit_check.tscn` | RPC 限流服务的行为用例（D1 PR1，注入假时钟） |
 | `tools/client_log_check.tscn` | 客户端日志服务的行为用例（D1 PR3，注入临时文件路径） |
+
+### 回放身份：两个 SHA，别混用（V2 收尾 G1，2026-09-03）
+
+回放摘要现在给出**两个**互不替代的 SHA-256。判据分工是硬性的：
+
+| 字段 | 覆盖什么 | 什么时候看它 |
+| --- | --- | --- |
+| `simulation_replay_sha256` | 顶层 `kind` / `frames` / `result` + **正向白名单**投影后的 roster | **玩法/模拟确定性** |
+| `replay_payload_sha256` | 完整载荷：roster、`def`、`frame_events`、所有表现字段 | **传输 / 演出载荷完整性** |
+
+- `replay_sha256` 保留为**完整载荷的兼容别名**，含义不变。
+  baseline 每次都跨实现校验它确实等于 `replay_payload_sha256`
+  （一边走本地 canonical 路径，一边走 `ReplayDigest.payload_sha256()`）。
+- `final_state_sha256` / `frame_events_sha256` / `roster_sha256` / `repeat_replay_sha256` 一律保留。
+
+白名单在 `ReplayDigest.SIMULATION_ROSTER_FIELDS`：
+`uid / id / team / lane / max_hp / is_mercenary / is_formation_ally / star /
+footprint_cells / owner_slot`。
+
+**刻意不纳入**：roster 的整份 `def`（混着 model / material / animation /
+`model_in_place_actions` 等表现配置）、`name` / `name_en`（本地化展示串，
+改文案不该让玩法身份变化）、`frame_events`（演出事件流，属完整载荷）。
+
+用正向白名单而不是「排除已知表现字段」的黑名单 ——
+黑名单会随新字段静默失效，白名单加字段必须有人显式改 `ReplayDigest`。
+**投影只能在 `ReplayDigest` 里做一份，禁止散落到各工具。**
+
+#### 为什么要拆
+
+2026-09-02 的根位移批次给 5 个单位加了 `model_in_place_actions`（纯表现配置）。
+结果：`final_state_sha256` 三个回合逐字节相同，`replay_sha256` 却全变。
+当时无法回答「模拟到底变没变」，只能把决定权交回给人。
+
+拆完之后用真实设备数据复核（8-31 旧包 vs 当前包，rounds 1/5/21）：
+
+```
+round_01  simulation a25e9a09f3df… 一致 ✓   payload 5a4ba7b4 -> 9b9163a5 不同
+          首差异 $.roster.player_L0_1.def.model_in_place_actions(extra in repeat)
+round_05  simulation af21cbd3432c… 一致 ✓   payload 78b1442b -> 2fb9f679 不同
+round_21  simulation fd58f3d36bc5… 一致 ✓   payload acbe79e5 -> e547545d 不同
+```
 
 改动过任何 `class_name` 脚本后，先跑一次编辑器导入重建全局类缓存，
 否则会看到 `Parse Error: Could not find type "XXX"`：

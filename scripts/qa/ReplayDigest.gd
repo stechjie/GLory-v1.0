@@ -16,6 +16,68 @@ extends RefCounted
 # 所以改这里必须重跑 baseline 验证四个哈希一字不变。
 
 
+# --- 玩法身份投影 -------------------------------------------------------------
+#
+# 为什么要拆成两个 SHA：表现层改动不应该让「玩法回放身份」变化，
+# 但完整回放载荷仍必须对任何字段变化敏感。两件事以前挤在同一个
+# `replay_sha256` 里，于是给某个单位加一个 `model_in_place_actions`
+# （纯表现配置）就会让「模拟是否变了」这个问题答不出来 ——
+# 2026-09-02 的根位移批次真的撞上了：final_state 逐字节相同、replay SHA 却全变。
+#
+# 做成**正向白名单**而不是「排除已知表现字段」：黑名单会随新字段静默失效，
+# 白名单加字段必须有人显式改这里。
+#
+# roster 条目的构造见 scripts/battle/BattleSimulator.gd 的 _replay_capture_roster()。
+const SIMULATION_ROSTER_FIELDS := [
+	"uid", "id", "team", "lane", "max_hp",
+	"is_mercenary", "is_formation_ally", "star", "footprint_cells", "owner_slot",
+]
+
+# 顶层只取这三项。**刻意不含 frame_events** —— 那是演出事件流，
+# 属于完整载荷与演出确定性，不是玩法状态。
+const SIMULATION_TOP_FIELDS := ["kind", "frames", "result"]
+
+
+# 玩法身份投影：顶层三项 + 白名单过滤后的 roster。
+#
+# 不纳入 roster 的整份 `def`：里面混着 model / material / animation /
+# model_in_place_actions 等表现配置。也不纳入 name / name_en ——
+# 那是本地化展示串，改文案不该让玩法身份变化（`id` 已经唯一标识单位）。
+static func simulation_projection(replay: Variant) -> Dictionary:
+	var out: Dictionary = {}
+	if not (replay is Dictionary):
+		return out
+	var source := replay as Dictionary
+	for key in SIMULATION_TOP_FIELDS:
+		out[key] = source.get(key)
+	var roster_value: Variant = source.get("roster", {})
+	var roster_out: Dictionary = {}
+	if roster_value is Dictionary:
+		for uid in (roster_value as Dictionary).keys():
+			var entry_value: Variant = (roster_value as Dictionary)[uid]
+			if not (entry_value is Dictionary):
+				continue
+			var entry := entry_value as Dictionary
+			var projected: Dictionary = {}
+			for field in SIMULATION_ROSTER_FIELDS:
+				if entry.has(field):
+					projected[field] = entry[field]
+			roster_out[str(uid)] = projected
+	out["roster"] = roster_out
+	return out
+
+
+# 玩法/模拟身份的 SHA-256。表现字段变化不影响它。
+static func simulation_sha256(replay: Variant) -> String:
+	return sha256_variant(simulation_projection(replay))
+
+
+# 完整回放载荷的 SHA-256。roster、def、frame_events 和所有表现字段都算进去，
+# 任何载荷变化都可检测、可用 first_difference() 定位。
+static func payload_sha256(replay: Variant) -> String:
+	return sha256_variant(replay)
+
+
 # 把 Variant 转成 JSON 能表达的形式。Vector/Color/Packed* 展开成数组，
 # Resource 取 resource_path —— 否则 JSON.stringify 会得到不稳定的对象表示。
 static func json_safe(value: Variant) -> Variant:
