@@ -2332,3 +2332,43 @@ FAIL [show_selftest_no_null_guard] _show_selftest() 直接对 load() 的结果�
 
 外部依赖（写进最终交接表，不代自动绿）：Windows Desktop / Android 的 Release
 导出需要用户实际打开一次，肉眼确认「自测开始」按钮确实不见了。
+
+## 2026-09-03：真实页面循环的生命周期泄漏（V3 P2-04）
+
+`modal_lifecycle` 已经覆盖「热身 + 20 轮」的漂移检测，但它驱动的是**独立实例化**
+的 MainMenu / PrepScreen 各自开关一次 Dialog/Modal 再销毁 —— 不是真的经过
+`Main._show_menu()` → 信号 → `Main._show_xxx()` → `_on_back_requested()` 这条
+玩家实际会走的页面切换路径。审计（`reports/v3_audit.json` P2-04）点名的缺口正是
+这个：**真实页面循环（非仅 modal）**。新增 `page_lifecycle`（74 项）补上它。
+
+走法只用 `Main` 自己的公开入口，不额外造测试专用接缝：`_show_menu()` 建出的
+`MainMenu` 会把 `settings_requested` / `codex_requested` / `prep_requested` /
+`team_offline_requested` 接到 `Main` 对应的 `_show_xxx()`，每个子页面的
+`back_requested` 已经接到 `_page_back_route`（V3 P0-09）—— 于是调用
+`main._on_back_requested()` 就等价于玩家按了一次 Android Back / 桌面 Esc。
+另加一步 `_show_room_overlay()`（P0-07 迁移后唯一从 MainMenu 直接推到
+ModalStack 的层），让循环里真的有模态可开可关，覆盖设置 / 图鉴 / 宠物 /
+组队大厅(离线) / 房间面板五个真实页面，20 轮。PrepScreen/BattleScreen 需要
+真实对局状态，风险和铺垫都更大，留给 `tutorial_checkpoint` /
+`prep_battle_loading` 这些已经在跑它们的门禁去覆盖。
+
+**一条断言写错过一次**：`cycle_left_invisible_stop` 最初判的是「不可见 STOP
+控件数量必须是 0」。这在 MainMenu 的稳定态下天然为假 —— 重连按钮、地址输入框
+都是「仅在满足某条件时才显示」的合法设计，默认隐藏但 `mouse_filter=STOP`，
+每次全新建出 MainMenu 都会有这两个。改成跟基线比**增量**：真正的泄漏信号是
+这个数字比基线还往上涨，不是它非零。
+
+**`cycle_left_modal_open` 的反向变异也踩了一次坑，值得记**：第一次直接把
+`ModalStack.handle_back_request()` 改成 `return false`，结果测试进程在几轮
+之内自己退出了（exit=0，看着像通过）——因为返回键阶梯在「没有模态可关、没有
+页面路由」时会继续走到二次确认退出，连续几次 Back 落空之后触发了
+`get_tree().quit()`，把整个测试进程杀掉，而不是让某条断言转红。换成让
+`close_top()` 假装成功但不真的弹栈，进程倒是活到了终点，可断言依然不红——
+再查才发现 `ModalStack._process()` 有一层独立的兜底：`owner` 节点被释放时
+自动 `pop()`（不经过 `close_top()`）。而本轮循环下一步就是切到设置页，
+`Main._clear()` 会把持有房间面板的 MainMenu 一并释放，安全网正好抢先把泄漏
+清理掉，断言测的其实是这层兜底而不是 `close_top()` 本身。真正独立证明这条
+断言的做法是直接改 `pop()`（两条路径共用的最终落点）。
+
+五条断言逐条反向变异全部转红，涉及的两个生产文件（`ModalStack.gd` 纯 LF、
+不需要按字节还原技巧）与门禁自身脚本均可正常还原。
