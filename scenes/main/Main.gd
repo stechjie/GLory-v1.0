@@ -31,6 +31,10 @@ const SHORT_CODE_RESUME_TIMEOUT_MSEC := 15000
 # V2 P1-08：返回键二次确认的窗口。PrepScreen 走 preload 常量做静态类型判断，
 # 不用 has_method 动态派发 —— 那会给 dynamic_call 棘轮添丁。
 const BACK_EXIT_CONFIRM_WINDOW_SEC := 2.0
+# 提示自带的 CanvasLayer 层号。要压过备战页的所有 UI（商店按钮曾经把它盖住），
+# 同时不去和 ModalStack 抢 —— 那套用的是自己的 priority，不是 CanvasLayer.layer。
+const BACK_EXIT_HINT_LAYER := 250
+const BACK_EXIT_HINT_BOTTOM_MARGIN := 46.0
 const PrepScreenScript := preload("res://scenes/prep/PrepScreen.gd")
 
 # 断线重连提示层的 ModalStack 合同（C-11 的 B1）。
@@ -492,29 +496,45 @@ func _show_back_exit_hint() -> void:
 	var existing := get_node_or_null("BackExitHint")
 	if existing != null:
 		existing.queue_free()
+	# 必须自带 CanvasLayer。第一版把 Label 直接挂在 Main 上，真机实测被备战页的
+	# 商店按钮压住，只露出「再按一次」半截字 —— 提示本身没被看见，等于没提示。
+	var layer := CanvasLayer.new()
+	layer.name = "BackExitHint"
+	layer.layer = BACK_EXIT_HINT_LAYER
+	var panel := PanelContainer.new()
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.04, 0.04, 0.06, 0.88)
+	style.set_corner_radius_all(10)
+	style.set_content_margin_all(14)
+	style.content_margin_left = 26.0
+	style.content_margin_right = 26.0
+	panel.add_theme_stylebox_override("panel", style)
+	# 底板贴着底边居中。水面和地形都可能在下面，所以靠底板保对比度，
+	# 不靠描边 —— 描边在浅色水面上一样糊。
+	panel.anchor_left = 0.5
+	panel.anchor_right = 0.5
+	panel.anchor_top = 1.0
+	panel.anchor_bottom = 1.0
+	panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	panel.offset_bottom = -BACK_EXIT_HINT_BOTTOM_MARGIN
 	var hint := Label.new()
-	hint.name = "BackExitHint"
 	hint.text = "再按一次返回键退出" if not LocaleManager.get_locale().begins_with("en") else "Press back again to exit"
 	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.add_theme_font_size_override("font_size", 22)
 	hint.add_theme_color_override("font_color", Color(0.98, 0.96, 0.86))
-	hint.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
-	hint.add_theme_constant_override("outline_size", 4)
-	hint.anchor_left = 0.0
-	hint.anchor_right = 1.0
-	hint.anchor_top = 1.0
-	hint.anchor_bottom = 1.0
-	hint.offset_top = -120.0
-	hint.offset_bottom = -80.0
-	add_child(hint)
+	panel.add_child(hint)
+	layer.add_child(panel)
+	add_child(layer)
 	# 计时器挂在提示自己身上：页面切换把提示删掉时计时器一起消失，
 	# 回调不会落到已释放的节点上。
 	var timer := Timer.new()
 	timer.one_shot = true
 	timer.wait_time = BACK_EXIT_CONFIRM_WINDOW_SEC
-	hint.add_child(timer)
-	timer.timeout.connect(hint.queue_free)
+	layer.add_child(timer)
+	timer.timeout.connect(layer.queue_free)
 	timer.start()
 
 func _show_menu() -> void:

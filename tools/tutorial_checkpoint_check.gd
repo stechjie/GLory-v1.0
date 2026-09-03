@@ -248,6 +248,23 @@ func _check_source_contract() -> void:
 	var quit_index := main_src.find("get_tree().quit()")
 	_h.expect(armed_index >= 0 and quit_index > armed_index, "quit_not_guarded",
 		"get_tree().quit() 不在二次确认之后 —— 可能一按就退桌面")
+	# 上面三条都是**源码**断言，而返回键真正的成败在引擎设置上：
+	# 派发完 NOTIFICATION_WM_GO_BACK_REQUEST 之后，引擎默认还会自己退出，
+	# Main.gd 里的三级优先级写得再对也拦不住。
+	#
+	# 2026-09-03 真机实测撞到过：设置保持默认 true 时按第一下返回键 app 就退了，
+	# 而上面那三条源码断言**全部照常通过**。典型的「源码对、行为错」，
+	# headless 门禁只看文本就永远发现不了 —— 所以这一条查运行时取值。
+	_h.expect(not bool(ProjectSettings.get_setting("application/config/quit_on_go_back", true)),
+		"engine_quits_on_go_back",
+		("application/config/quit_on_go_back 不是 false —— "
+			+ "引擎会绕过返回键处理器直接退出，二次确认形同虚设"))
+	# 二次确认要成立，玩家得先**看见**提示。第一版把 Label 直接挂在 Main 上，
+	# 真机实测被备战页的商店按钮压住，只露出半截字 —— 功能在、提示看不见，
+	# 玩家按第二下前根本不知道自己在确认什么。
+	_h.expect(main_src.contains("CanvasLayer.new()") and main_src.contains("BACK_EXIT_HINT_LAYER"),
+		"back_hint_not_on_own_layer",
+		"返回键提示没有自带 CanvasLayer —— 会被当前页面的 UI 盖住")
 	var save_src := FileAccess.get_file_as_string("res://scripts/autoload/SaveManager.gd")
 	_h.expect(save_src.contains("TUTORIAL_PATH"), "tutorial_path_missing",
 		"SaveManager 没有教程断点路径")
