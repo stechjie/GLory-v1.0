@@ -109,7 +109,7 @@ func _capture_battle_loading_pending() -> void:
 	await _settle(2)
 	overlay.configure({
 		"request_id": "capture_1",
-		"title": overlay.tr("battle_load_title") if overlay.has_method("tr") else "Battle Preparation",
+		"title": tr("battle_load_title"),
 		"stage_key": "wait_server",
 		"stage_text": "等待服务器",
 		"cancellable": true,
