@@ -104,10 +104,11 @@ func _check_engine_boot_mark(trace) -> void:
 func _check_ordering(trace) -> void:
 	_h.expect(trace.ordering_is_sane(),
 		"ordering_broken", "空/部分时间线不应判为乱序")
+	trace.mark(TraceScript.T1_FIRST_FRAME)
 	trace.mark(TraceScript.T2_MAIN_READY)
 	trace.mark(TraceScript.T3_INPUT_READY)
 	_h.expect(trace.ordering_is_sane(),
-		"ordering_false_negative", "t2 -> t3 顺序正常却被判乱序")
+		"ordering_false_negative", "t1 -> t2 -> t3 顺序正常却被判乱序")
 	_h.expect(int(trace.ms_of(TraceScript.T3_INPUT_READY)) >= int(trace.ms_of(TraceScript.T2_MAIN_READY)),
 		"ordering_timestamps", "t3 的时间戳早于 t2")
 

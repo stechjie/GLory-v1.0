@@ -1,0 +1,130 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/bootstrap/Bootstrap.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://ui/branding/glory_bootstrap.png" id="2_icon"]
+
+[node name="Bootstrap" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 1
+script = ExtResource("1_script")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.113725, 0.14902, 0.2, 1)
+
+[node name="SafeMargin" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 48
+theme_override_constants/margin_top = 36
+theme_override_constants/margin_right = 48
+theme_override_constants/margin_bottom = 36
+
+[node name="Center" type="CenterContainer" parent="SafeMargin"]
+layout_mode = 2
+
+[node name="Content" type="VBoxContainer" parent="SafeMargin/Center"]
+custom_minimum_size = Vector2(560, 0)
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Logo" type="TextureRect" parent="SafeMargin/Center/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(160, 160)
+layout_mode = 2
+texture = ExtResource("2_icon")
+expand_mode = 3
+stretch_mode = 5
+
+[node name="Title" type="Label" parent="SafeMargin/Center/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.925, 0.757, 0.349, 1)
+theme_override_font_sizes/font_size = 42
+text = "GLORY"
+horizontal_alignment = 1
+
+[node name="Subtitle" type="Label" parent="SafeMargin/Center/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.722, 0.741, 0.8, 1)
+theme_override_font_sizes/font_size = 18
+text = "荣耀启程"
+horizontal_alignment = 1
+
+[node name="Divider" type="ColorRect" parent="SafeMargin/Center/Content"]
+custom_minimum_size = Vector2(0, 2)
+layout_mode = 2
+mouse_filter = 2
+color = Color(0.925, 0.757, 0.349, 0.72)
+
+[node name="Status" type="Label" parent="SafeMargin/Center/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.961, 0.941, 0.882, 1)
+theme_override_font_sizes/font_size = 22
+text = "正在启动 Glory"
+horizontal_alignment = 1
+
+[node name="Detail" type="Label" parent="SafeMargin/Center/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.722, 0.741, 0.8, 1)
+theme_override_font_sizes/font_size = 16
+text = "正在显示轻量启动画面"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="Progress" type="ProgressBar" parent="SafeMargin/Center/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(560, 14)
+layout_mode = 2
+show_percentage = false
+
+[node name="ErrorPanel" type="VBoxContainer" parent="SafeMargin/Center/Content"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="ErrorText" type="Label" parent="SafeMargin/Center/Content/ErrorPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.72, 0.72, 1)
+theme_override_font_sizes/font_size = 17
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="Actions" type="HBoxContainer" parent="SafeMargin/Center/Content/ErrorPanel"]
+layout_mode = 2
+theme_override_constants/separation = 16
+alignment = 1
+
+[node name="RetryButton" type="Button" parent="SafeMargin/Center/Content/ErrorPanel/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(180, 56)
+layout_mode = 2
+theme_type_variation = &"GloryPrimary"
+text = "重试"
+
+[node name="ExitButton" type="Button" parent="SafeMargin/Center/Content/ErrorPanel/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(180, 56)
+layout_mode = 2
+theme_type_variation = &"GloryGhost"
+text = "退出"

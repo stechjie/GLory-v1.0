@@ -18,9 +18,7 @@ extends Node
 #   GLORY_STARTUP {"mark":"t3_first_input_ready","ms":2140,"base":"engine_init",...}
 #
 # Reading the numbers:
-#   t1_first_frame       something was presented. With no Bootstrap scene yet this
-#                        is the language screen's background, not a branded splash
-#                        (that is V3 P0-02 and is not built).
+#   t1_first_frame       the lightweight branded Bootstrap was presented.
 #   t2_godot_main_ready  Main._ready() returned.
 #   t3_first_input_ready a real control is on screen and can be pressed.
 #   t4_first_action      the first meaningful action the player took completed.
@@ -58,13 +56,11 @@ const T4_FIRST_ACTION := "t4_first_action_complete"
 # The ordered spine of a startup. Marks outside this list are still recorded (phase
 # detail, data loading), they just do not participate in the ordering assertion.
 #
-# T1 is deliberately absent. With no Bootstrap scene, Main._ready() runs before the
-# renderer has presented anything, so a real launch measures t2=4343 ms, t3=4360 ms,
-# t1=4407 ms -- the first frame lands last, and asserting t1 <= t2 would fail on a
-# perfectly healthy boot. Once a branded Bootstrap scene exists (V3 P0-02) the first
-# frame genuinely precedes Main and T1 can join this list.
+# Bootstrap is the project main scene, so its branded first frame must precede Main.
+# If T2 arrives before T1 again, the startup path has regressed to loading the full
+# interface before showing an acknowledgement frame.
 const ORDERED_MARKS: PackedStringArray = [
-	T0_TRACE_READY, T2_MAIN_READY, T3_INPUT_READY, T4_FIRST_ACTION,
+	T0_TRACE_READY, T1_FIRST_FRAME, T2_MAIN_READY, T3_INPUT_READY, T4_FIRST_ACTION,
 ]
 
 const TRACE_PATH := "user://startup_trace.jsonl"
