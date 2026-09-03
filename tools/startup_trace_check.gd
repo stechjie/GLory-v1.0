@@ -20,6 +20,7 @@ const TraceScript := preload("res://scripts/autoload/StartupTrace.gd")
 const CHECK_NAME := "startup_trace"
 
 const MAIN_PATH := "res://scenes/main/Main.gd"
+const TRACE_SOURCE_PATH := "res://scripts/autoload/StartupTrace.gd"
 const PROJECT_PATH := "res://project.godot"
 
 var _h: RefCounted
@@ -36,9 +37,12 @@ func _run() -> void:
 	add_child(trace)
 
 	_check_engine_boot_mark(trace)
+	_check_first_frame_provenance()
 	_check_marks_are_write_once(trace)
 	_check_ordering(trace)
+	_check_missing_marks_are_visible(trace)
 	_check_metadata_is_sanitized(trace)
+	_check_values_are_scrubbed(trace)
 	_check_log_line_is_single_line_json(trace)
 	_check_call_sites_exist()
 	_check_registered_first()
@@ -49,6 +53,74 @@ func _run() -> void:
 
 	trace.queue_free()
 	_h.finish(get_tree())
+
+
+# V3 P0-01: T1 must come from a real present.
+#
+# The ordering assertion cannot catch this. If someone moves the T1 mark into
+# `_ready()` or behind a timer, T1 still lands before T2 and every existing
+# assertion here stays green -- while the number stops meaning "the player saw a
+# frame" and starts meaning "a script ran". That is the same shape as the V2
+# `quit_on_go_back` defect: source reads fine, behaviour is wrong.
+#
+# So this asserts the wiring itself: T1 is emitted from the `frame_post_draw`
+# handler, that handler is connected to `RenderingServer`, and it is not reachable
+# from `_ready()` or a timer.
+func _check_first_frame_provenance() -> void:
+	var source := FileAccess.get_file_as_string(TRACE_SOURCE_PATH)
+	if not _h.expect(not source.is_empty(), "trace_source_unreadable",
+			"读不到 %s" % TRACE_SOURCE_PATH):
+		return
+	_h.expect(source.contains("RenderingServer.frame_post_draw.connect(_on_first_frame)"),
+		"t1_not_wired_to_present",
+		"T1 没有接到 RenderingServer.frame_post_draw —— 那它就不是「玩家看到了一帧」")
+
+	# The mark must live inside the present handler, not anywhere else.
+	var handler_at := source.find("func _on_first_frame() -> void:")
+	if not _h.expect(handler_at >= 0, "first_frame_handler_missing",
+			"找不到 _on_first_frame 处理器"):
+		return
+	var handler_end := source.find("\nfunc ", handler_at + 1)
+	if handler_end < 0:
+		handler_end = source.length()
+	var handler_body := source.substr(handler_at, handler_end - handler_at)
+	_h.expect(handler_body.contains("mark(T1_FIRST_FRAME)"),
+		"t1_not_marked_in_handler",
+		"T1 不是在 frame_post_draw 处理器里打的")
+
+	# And nowhere else may emit it. Two emitters means the earlier one wins and the
+	# present-based one becomes decorative.
+	var occurrences := source.count("mark(T1_FIRST_FRAME)")
+	_h.expect(occurrences == 1, "t1_marked_more_than_once",
+		("T1_FIRST_FRAME 在 StartupTrace 里被打了 %d 次 —— "
+			+ "写入点必须唯一，否则最早的那次赢，present 那次就成了摆设") % occurrences)
+
+	# mark_first_frame() is a public convenience that must not become a second
+	# startup-path emitter: if Main called it, T1 would mean "Main ran".
+	var main_source := FileAccess.get_file_as_string(MAIN_PATH)
+	_h.expect(not main_source.contains("mark_first_frame"),
+		"main_marks_first_frame",
+		"Main 自己打了 T1 —— 那测的是脚本执行，不是 present")
+
+
+# `ordering_is_sane()` skips marks that never arrived, so it cannot answer
+# "did startup finish". V3 P0-01 wants a missing mark to be visible, not silent.
+func _check_missing_marks_are_visible(trace) -> void:
+	var missing = trace.missing_ordered_marks()
+	_h.expect(missing is Array, "missing_marks_api_broken",
+		"missing_ordered_marks() 没有返回数组")
+	# T4 is the player's first action; a check scene never performs one, so the
+	# spine is legitimately incomplete here. That is exactly what makes this a
+	# usable assertion: incomplete must be *reported*, not silently sane.
+	_h.expect(not trace.startup_is_complete(),
+		"complete_claimed_without_t4",
+		"检查场景没有触发 T4，startup_is_complete() 却说完整了")
+	_h.expect(trace.ordering_is_sane(),
+		"ordering_confused_with_completeness",
+		"缺 T4 不应该让顺序判定失败 —— 两个问题必须分开回答")
+	_h.expect(missing.has(TraceScript.T4_FIRST_ACTION),
+		"missing_mark_not_named",
+		"missing_ordered_marks() 没有点名缺失的 T4：%s" % str(missing))
 
 
 # The first value wins. If a later call could overwrite it, a slow path could be
@@ -129,6 +201,44 @@ func _check_metadata_is_sanitized(trace) -> void:
 		"address_leaked", "服务器地址出现在启动日志里：%s" % line)
 	_h.expect(line.contains("language_select"),
 		"benign_meta_dropped", "无害的 screen 字段被误删了，字段过滤太宽")
+
+
+# V3 P0-01: the check above only proves *key-based* redaction -- both its probes use
+# key names that are already on the blocklist. A leak under an innocuous key name
+# would have sailed through, and "用户路径" was not on that list at all.
+#
+# So this probes the opposite shape: harmless keys, dangerous values.
+func _check_values_are_scrubbed(trace) -> void:
+	var line := _line_for(trace, "probe_values", {
+		"note": "connecting to 198.51.100.23:9000 now",
+		"detail": "restored from user://glory_beta_004.save",
+		"win_path": "C:\\Users\\Leno\\Desktop\\Beta 0.04\\save.json",
+		"screen": "main_menu",
+		"engine": "4.7.stable",
+	})
+	if not _h.expect(not line.is_empty(), "value_line_missing", "拿不到 probe_values 的日志行"):
+		return
+	_h.expect(not line.contains("198.51.100.23"),
+		"ip_value_leaked",
+		"无害键名下的 IP 泄漏到启动日志：%s" % line)
+	_h.expect(not line.contains("glory_beta_004.save"),
+		"user_path_leaked",
+		"user:// 存档路径泄漏到启动日志：%s" % line)
+	_h.expect(not line.contains("Leno"),
+		"home_dir_leaked",
+		"用户主目录名泄漏到启动日志：%s" % line)
+
+	# 断言「被替换了」而不只是「不见了」—— 不见了也可能是整条 mark 被丢掉。
+	_h.expect(line.contains(TraceScript.IP_PLACEHOLDER),
+		"ip_not_replaced", "IP 没有被占位符替换，可能是整个字段被丢弃了")
+	_h.expect(line.contains(TraceScript.PATH_PLACEHOLDER),
+		"path_not_replaced", "路径没有被占位符替换，可能是整个字段被丢弃了")
+
+	# 反方向：过滤不能宽到吃掉正常内容。版本号的点分段数不够，不该被当成 IP。
+	_h.expect(line.contains("main_menu"),
+		"benign_value_dropped", "无害的 screen 值被误删了")
+	_h.expect(line.contains("4.7.stable"),
+		"version_string_eaten", "版本号被当成 IP 吃掉了，过滤太宽")
 
 
 # android_smoke.sh pulls these out of logcat with grep and feeds each hit to a JSON

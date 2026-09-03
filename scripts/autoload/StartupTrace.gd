@@ -75,6 +75,12 @@ const SENSITIVE_KEY_PARTS: PackedStringArray = [
 ]
 const MAX_META_VALUE_LEN := 96
 
+# What a scrubbed value leaves behind. Distinct strings so a reader can tell which
+# rule fired, and so the gate can assert the redaction happened rather than merely
+# assert the secret is absent (absent could also mean the mark was dropped).
+const IP_PLACEHOLDER := "<ip>"
+const PATH_PLACEHOLDER := "<path>"
+
 var _marks: Dictionary = {}
 var _order: Array[String] = []
 var _duplicates: Array[String] = []
@@ -143,8 +149,18 @@ func mark(mark_name: String, meta: Dictionary = {}) -> void:
 	})
 
 
-func mark_first_frame() -> void:
-	mark(T1_FIRST_FRAME)
+# V3 P0-01: there is deliberately no `mark_first_frame()` helper.
+#
+# T1 has exactly one writer -- `_on_first_frame()`, driven by
+# `RenderingServer.frame_post_draw` -- because that is the only moment that means
+# "the player saw a frame". A public convenience that lets any caller stamp T1 would
+# make the number mean "some script ran", and since the first write wins, one early
+# call would permanently mask the real present time.
+#
+# The helper existed with zero callers and was removed rather than left as a trap.
+# `tools/startup_trace_check.gd::_check_first_frame_provenance` asserts the single
+# writer, so re-adding one turns the gate red instead of quietly changing what
+# every startup report means.
 
 
 # Call this once the screen's controls are actually on screen and hittable, not when
@@ -215,6 +231,32 @@ func ordering_is_sane() -> bool:
 			return false
 		last = ms
 	return true
+
+
+# V3 P0-01: `ordering_is_sane()` skips marks that were never recorded, so a startup
+# that never presented a frame still reports sane ordering. That is the right call
+# for the ordering question on its own -- a run cut short mid-startup has not
+# violated any order -- but it means "sane ordering" cannot be read as "the startup
+# completed". These two answer the other half.
+#
+# `missing_ordered_marks()` is what a device report should print: naming which
+# segment never arrived is the difference between "startup failed" and "startup
+# failed after T2".
+func missing_ordered_marks() -> Array[String]:
+	var missing: Array[String] = []
+	for name_value in ORDERED_MARKS:
+		var mark_name := str(name_value)
+		if not _marks.has(mark_name):
+			missing.append(mark_name)
+	return missing
+
+
+# True only when every mark on the ordered spine arrived AND arrived in order.
+# T4 is the player's first meaningful action, so a run that reached an interactive
+# screen and stopped there is legitimately incomplete by this measure -- callers
+# that only care about reaching interactivity should ask for T3 directly.
+func startup_is_complete() -> bool:
+	return missing_ordered_marks().is_empty() and ordering_is_sane()
 
 
 # --- internals ----------------------------------------------------------------
@@ -304,6 +346,15 @@ func _rotate_trace_if_large() -> void:
 # Drops keys that could carry identity or network detail, and clips long values.
 # Applied in every build, not just release: a mark is a timing record, and letting
 # debug builds log more only guarantees the two behave differently under test.
+#
+# V3 P0-01: filtering by key name alone was not enough. `{"session_token": ...}`
+# was caught, but `{"note": "connecting to 203.0.113.7"}` sailed straight through --
+# the key is innocuous, the value is not. Same for a save path pasted into a detail
+# string: `user://` and `C:\Users\<name>\` both name a real person's machine.
+#
+# So values are scrubbed too, regardless of what the key is called. This is the
+# difference between "we redact fields we remembered to name" and "a leak has to get
+# past a check".
 func _sanitize(meta: Dictionary) -> Dictionary:
 	var out := {}
 	for key in meta.keys():
@@ -313,7 +364,7 @@ func _sanitize(meta: Dictionary) -> Dictionary:
 			continue
 		var value: Variant = meta[key]
 		if typeof(value) == TYPE_STRING:
-			var text := str(value)
+			var text := _scrub_value(str(value))
 			if text.length() > MAX_META_VALUE_LEN:
 				text = text.substr(0, MAX_META_VALUE_LEN) + "…"
 			out[str(key)] = text
@@ -327,3 +378,23 @@ func _is_sensitive_key(key_name: String) -> bool:
 		if key_name.contains(str(part)):
 			return true
 	return false
+
+
+# Replaces the parts of a free-text value that identify a machine or a session.
+# Deliberately narrow: it must not eat ordinary words, version strings or the
+# screen names the trace exists to record. `_check_metadata_is_sanitized` asserts
+# both directions -- the leak is gone AND `language_select` survives.
+func _scrub_value(text: String) -> String:
+	var out := text
+	# IPv4 with optional :port. Version strings like "4.7.stable" have too few
+	# groups to match, so they survive.
+	var ipv4 := RegEx.create_from_string("\\b\\d{1,3}(\\.\\d{1,3}){3}(:\\d{1,5})?\\b")
+	if ipv4 != null and ipv4.is_valid():
+		out = ipv4.sub(out, IP_PLACEHOLDER, true)
+	# Godot user paths and Windows/POSIX home directories. The whole path goes --
+	# the directory name is the identifying part, not just the leaf.
+	var user_path := RegEx.create_from_string(
+		"(user://|res://\\.godot/|[A-Za-z]:\\\\Users\\\\[^\\\\\"']+|/home/[^/\"']+|/Users/[^/\"']+)[^\\s\"']*")
+	if user_path != null and user_path.is_valid():
+		out = user_path.sub(out, PATH_PLACEHOLDER, true)
+	return out
