@@ -2256,3 +2256,35 @@ token（`PARCHMENT` / `INK_PANEL` 等），**逐值透传、观感不变**。业
 `StyleBoxFlat.new()` 26 → 21，`Button.new()` 45（本批未动）。
 
 四条断言逐条反向变异全部转红（`baseline_not_tightened` 是迁移当场自己红的）。
+
+## 2026-09-03：响应式覆盖扩到教程之外的页面（V3 P1-06）
+
+`tutorial_overlay_layout` 只覆盖 PrepScreen 的教程遮罩。审计（`reports/v3_audit.json`
+的 P1-06 条目）点名的缺口是**其余页面没有等价覆盖**。新增 `responsive_layout`（48 项），
+覆盖 MainMenu（连同它拉起的 MainMenuAmbience / MainMenuPet 子组件）、Team3v3Lobby、
+SettingsScreen、CodexScreen，六种分辨率：16:9、19.5:9、20:9（项目基准视口 1600×720
+正好是 20:9，是画布最矮的一档）、平板横屏、1280×720、平板竖深。刘海/挖孔安全区仍然
+external —— 本机 25028RN03A 横屏 `navigation_mode=0`，没有 cutout 可测。
+
+**三种版面各查各的不变式**，不是笼统遍历整棵控件树：
+
+- REF_SIZE 信封页（MainMenu / Team3v3Lobby）：核对页面自己算出的 `_layout_scale`
+  与按 `min(viewport/REF_SIZE)` 独立重算的期望值一致。原来还有「画布不超出视口」
+  与「scale 不是 0」两条，**删掉了**——只要 scale 真的等于这个公式的结果，画布落在
+  视口内是公式本身的数学保证，不是另一件需要验的事；找不到一个只让那两条单独转红、
+  不牵连 scale 一致性的生产代码变异，就说明它们是复读，不是独立信息。
+- CenterContainer 面板页（SettingsScreen）：直接测量面板矩形是否完整落在画布内。
+- 自带缩放系统的页（CodexScreen）：`_book` 背景按「cover」故意铺满裁边，**不检查
+  背景是否超出视口**（那是设计意图，裁边越裁越宽本来就该超出）；只检查返回键这个
+  真正要可达的控件。
+
+`Rect2.grow()` 的方向踩了一次坑：容差要加在**视口**这一边而不是画布那一边——
+`grow()` 往外扩，扩画布只会让判据更严（要求画布比视口还小一圈），扩视口才是
+「放宽 0.5px」该有的方向。写反了会让所有正常页面都假红。
+
+实测六个页面在全部六档分辨率下都**没有溢出**；`SettingsScreen` 在 20:9
+（画布收到最矮的 1600×720）下边距只有 7px，记为回归基线（不是当场重新设计布局—
+没有实际点击不到的按钮，只是余量小，未来再加一个开关就会真的溢出）。
+
+六条断言逐条反向变异全部转红，涉及的三个生产文件（MainMenu / SettingsScreen /
+CodexScreen）均按字节还原。
