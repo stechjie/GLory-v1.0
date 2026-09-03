@@ -24,6 +24,16 @@ var board_readability_enabled := true
 var screen_shake_enabled := true
 var flash_effects_enabled := true
 var hit_stop_enabled := true
+# V3 P1-09：降低动态效果。默认关闭 —— 它压掉的是所有过场与呼吸动画，
+# 默认打开会让绝大多数玩家看到一个更静的版本。
+#
+# 与上面三个不同，它要同步进 ProjectSettings：GloryTokens.reduced_motion()
+# 是 static 的，拿不到 autoload。让 profile 单向写入那一处，
+# 读侧就只有一个入口，不会出现「设置页开了、动画还在跑」。
+var reduced_motion_enabled := false
+# 与 GloryTokens.REDUCED_MOTION_SETTING 必须一致。这里不 preload 那个类：
+# autoload 反过来依赖 UI 层会把依赖方向倒过来。门禁断言两边字面相同。
+const REDUCED_MOTION_SETTING := "glory/ui/reduced_motion"
 
 func _ready() -> void:
 	load_profile()
@@ -38,6 +48,8 @@ func load_profile() -> void:
 		screen_shake_enabled = true
 		flash_effects_enabled = true
 		hit_stop_enabled = true
+		reduced_motion_enabled = false
+		_apply_reduced_motion()
 		needs_starter_pick = true
 		save_profile()
 		return
@@ -50,6 +62,8 @@ func load_profile() -> void:
 		screen_shake_enabled = true
 		flash_effects_enabled = true
 		hit_stop_enabled = true
+		reduced_motion_enabled = false
+		_apply_reduced_motion()
 		needs_starter_pick = true
 		return
 	# Migrate before reading: older profiles carry renamed pet ids and no codex.
@@ -69,6 +83,8 @@ func load_profile() -> void:
 	screen_shake_enabled = bool(data.get("screen_shake_enabled", true))
 	flash_effects_enabled = bool(data.get("flash_effects_enabled", true))
 	hit_stop_enabled = bool(data.get("hit_stop_enabled", true))
+	reduced_motion_enabled = bool(data.get("reduced_motion_enabled", false))
+	_apply_reduced_motion()
 	needs_starter_pick = bool(data.get("needs_starter_pick", owned_pets.is_empty()))
 	# 出战宠物必须是已拥有的；否则回落到第一只（或空）。
 	if not active_pet.is_empty() and not owned_pets.has(active_pet):
@@ -88,6 +104,7 @@ func save_profile() -> void:
 		"screen_shake_enabled": screen_shake_enabled,
 		"flash_effects_enabled": flash_effects_enabled,
 		"hit_stop_enabled": hit_stop_enabled,
+		"reduced_motion_enabled": reduced_motion_enabled,
 	}
 	var f := FileAccess.open(PROFILE_PATH, FileAccess.WRITE)
 	if f != null:
@@ -118,6 +135,11 @@ func set_presentation_toggle(key: String, enabled: bool) -> void:
 			if hit_stop_enabled == enabled:
 				return
 			hit_stop_enabled = enabled
+		"reduced_motion":
+			if reduced_motion_enabled == enabled:
+				return
+			reduced_motion_enabled = enabled
+			_apply_reduced_motion()
 		_:
 			push_warning("[PROFILE] 未知的演出开关：%s" % key)
 			return
@@ -133,7 +155,16 @@ func get_presentation_toggle(key: String) -> bool:
 			return flash_effects_enabled
 		"hit_stop":
 			return hit_stop_enabled
+		"reduced_motion":
+			return reduced_motion_enabled
 	return true
+
+
+# 单向写进 ProjectSettings，给 GloryTokens.reduced_motion() 读。
+# 命令行 --reduced-motion 仍然优先（真机上不改代码就能验），
+# 所以这里只写设置、不去覆盖那条判断。
+func _apply_reduced_motion() -> void:
+	ProjectSettings.set_setting(REDUCED_MOTION_SETTING, reduced_motion_enabled)
 
 # --- codex ---------------------------------------------------------------
 

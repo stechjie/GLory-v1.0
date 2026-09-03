@@ -7,6 +7,8 @@ var _btn_en: Button
 var _quality_btns: Array[Button] = []
 var _board_guides_btn: CheckButton
 var _presentation_btns: Dictionary = {}
+# 每个开关的原始标题。刷新时要在它后面拼「开 / 关」，不能拿已经拼过的文本再拼一次。
+var _presentation_labels: Dictionary = {}
 
 func _ready() -> void:
 	_build()
@@ -122,6 +124,8 @@ func _build() -> void:
 		{"key": "screen_shake", "label": "settings_screen_shake"},
 		{"key": "flash_effects", "label": "settings_flash_effects"},
 		{"key": "hit_stop", "label": "settings_hit_stop"},
+		# V3 P1-09：降低动态效果。压掉过场与呼吸动画，默认关闭。
+		{"key": "reduced_motion", "label": "settings_reduced_motion"},
 	]:
 		var spec_dict: Dictionary = spec
 		var key := str(spec_dict["key"])
@@ -135,6 +139,7 @@ func _build() -> void:
 			_refresh_presentation_button(key))
 		panel.add_child(btn)
 		_presentation_btns[key] = btn
+		_presentation_labels[key] = tr(str(spec_dict["label"]))
 		_refresh_presentation_button(key)
 
 	var sep2 := HSeparator.new()
@@ -147,12 +152,29 @@ func _build() -> void:
 	back_btn.pressed.connect(func(): back_requested.emit())
 	panel.add_child(back_btn)
 
+# V3 P1-09：状态不能只靠颜色。
+#
+# 迁移前语言、画质、三个无障碍开关的「当前选中」全部只用 modulate 表示。
+# 色觉障碍、强光下的手机屏幕、以及任何截图转灰度的场合，这些界面都读不出
+# 自己选的是哪一项 —— 而这几项恰好都是「选错了要重新找回来」的设置。
+#
+# 加一个文字标记，颜色照常保留：两条通道并存，不是用一条换另一条。
+const SELECTED_MARK := "✓ "
+
+
+static func _mark_selected(text: String, selected: bool) -> String:
+	var bare := text.trim_prefix(SELECTED_MARK)
+	return SELECTED_MARK + bare if selected else bare
+
+
 func _refresh_quality_buttons() -> void:
 	var current := VFXManager.get_quality_tier()
 	for i in _quality_btns.size():
 		var btn := _quality_btns[i]
 		if is_instance_valid(btn):
-			btn.modulate = Color(1.0, 0.85, 0.3) if i == current else Color(1, 1, 1)
+			var on := i == current
+			btn.modulate = Color(1.0, 0.85, 0.3) if on else Color(1, 1, 1)
+			btn.text = _mark_selected(btn.text, on)
 
 func _refresh_presentation_button(key: String) -> void:
 	var btn_value = _presentation_btns.get(key)
@@ -162,20 +184,35 @@ func _refresh_presentation_button(key: String) -> void:
 	var on: bool = PlayerProfile.get_presentation_toggle(key)
 	btn.button_pressed = on
 	btn.modulate = Color(1.0, 0.88, 0.48) if on else Color(0.76, 0.78, 0.78)
+	# CheckButton 自带的滑块本身就是第二条通道，但它在低对比度屏上不明显；
+	# 再补一句开/关文字，读屏和灰度截图都拿得到。
+	btn.text = _toggle_label(str(_presentation_labels.get(key, "")), on)
+
+
+func _toggle_label(base: String, on: bool) -> String:
+	if base.is_empty():
+		return ""
+	var suffix := tr("settings_toggle_on") if on else tr("settings_toggle_off")
+	return "%s  %s" % [base, suffix]
 
 
 func _refresh_board_guides_button() -> void:
 	if not is_instance_valid(_board_guides_btn):
 		return
-	_board_guides_btn.button_pressed = PlayerProfile.board_readability_enabled
-	_board_guides_btn.modulate = Color(1.0, 0.88, 0.48) if PlayerProfile.board_readability_enabled else Color(0.76, 0.78, 0.78)
+	var on := PlayerProfile.board_readability_enabled
+	_board_guides_btn.button_pressed = on
+	_board_guides_btn.modulate = Color(1.0, 0.88, 0.48) if on else Color(0.76, 0.78, 0.78)
+	_board_guides_btn.text = _toggle_label(tr("settings_board_guides"), on)
 
 func _refresh_lang_buttons() -> void:
 	if not is_instance_valid(_btn_zh) or not is_instance_valid(_btn_en):
 		return
 	var locale := LocaleManager.get_locale()
-	_btn_zh.modulate = Color(1.0, 0.85, 0.3) if locale == "zh" else Color(1, 1, 1)
-	_btn_en.modulate = Color(1.0, 0.85, 0.3) if locale == "en" else Color(1, 1, 1)
+	var zh_on := locale == "zh"
+	_btn_zh.modulate = Color(1.0, 0.85, 0.3) if zh_on else Color(1, 1, 1)
+	_btn_en.modulate = Color(1.0, 0.85, 0.3) if not zh_on else Color(1, 1, 1)
+	_btn_zh.text = _mark_selected("中文", zh_on)
+	_btn_en.text = _mark_selected("English", not zh_on)
 
 func _on_locale_changed(_locale: String) -> void:
 	_refresh_lang_buttons()

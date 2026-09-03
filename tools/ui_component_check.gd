@@ -13,6 +13,8 @@ extends Node
 
 const CheckHarness := preload("res://tools/CheckHarness.gd")
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
+const SettingsScene := preload("res://scenes/menu/SettingsScreen.tscn")
+const SettingsScreenScript := preload("res://scenes/menu/SettingsScreen.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const Dialog := preload("res://ui/components/GloryConfirmDialog.gd")
 
@@ -36,6 +38,8 @@ func _ready() -> void:
 	_check_theme_state_coverage()
 	_check_busy_state_is_distinct()
 	await _check_minimum_touch_size()
+	_check_reduced_motion_setting()
+	await _check_settings_state_is_not_colour_only()
 	_check_no_legacy_dialogs()
 	await _check_modal_stack()
 	await _check_dialog_contract()
@@ -495,4 +499,96 @@ func _check_minimum_touch_size() -> void:
 	_h.expect(undersized.is_empty(), "control_below_touch_minimum",
 		"这些控件在主题作用后仍低于最小触控高度，手指点不中：%s" % str(undersized))
 	host.queue_free()
+	await get_tree().process_frame
+
+
+# V3 P1-09：降低动态效果要能在**设置页**里开关，且状态不能只靠颜色。
+func _check_reduced_motion_setting() -> void:
+	# 两处常量必须字面一致。PlayerProfile 不 preload GloryTokens（autoload 反过来
+	# 依赖 UI 层会把依赖方向倒过来），所以那一处是抄的 —— 抄的东西要有人核对。
+	_h.expect(PlayerProfile.REDUCED_MOTION_SETTING == Tokens.REDUCED_MOTION_SETTING,
+		"reduced_motion_setting_key_drifted",
+		"PlayerProfile 与 GloryTokens 的 reduced motion 设置名不一致：%s vs %s"
+			% [PlayerProfile.REDUCED_MOTION_SETTING, Tokens.REDUCED_MOTION_SETTING])
+
+	var before: bool = PlayerProfile.get_presentation_toggle("reduced_motion")
+	var setting_before = ProjectSettings.get_setting(Tokens.REDUCED_MOTION_SETTING, false)
+
+	PlayerProfile.set_presentation_toggle("reduced_motion", true)
+	_h.expect(PlayerProfile.get_presentation_toggle("reduced_motion"),
+		"reduced_motion_not_persisted", "打开降低动态效果之后 profile 没记住")
+	# 玩家在设置页打开之后，读侧必须**立刻**看到 —— 不能等下次启动。
+	_h.expect(bool(ProjectSettings.get_setting(Tokens.REDUCED_MOTION_SETTING, false)),
+		"reduced_motion_not_applied",
+		"设置页开了但 ProjectSettings 没跟上 —— 动画还会照跑")
+	_h.expect(Tokens.reduced_motion(), "reduced_motion_reader_disagrees",
+		"GloryTokens.reduced_motion() 读不到玩家的选择")
+	_h.expect(is_equal_approx(Tokens.motion(0.5), 0.0), "reduced_motion_does_not_zero_durations",
+		"降低动态效果打开时 Tokens.motion() 没有归零")
+
+	PlayerProfile.set_presentation_toggle("reduced_motion", false)
+	_h.expect(not Tokens.reduced_motion(), "reduced_motion_stuck_on",
+		"关掉降低动态效果之后读侧仍然认为是开的")
+
+	# 还原测试前的状态。这条门禁写的是真实 profile。
+	PlayerProfile.set_presentation_toggle("reduced_motion", before)
+	ProjectSettings.set_setting(Tokens.REDUCED_MOTION_SETTING, setting_before)
+	_h.expect(PlayerProfile.get_presentation_toggle("reduced_motion") == before,
+		"reduced_motion_not_restored", "测试结束后没有还原玩家原来的设置")
+
+
+# V3 P1-09：设置页的「当前选中」不能只靠颜色。
+#
+# 色觉障碍、强光下的手机屏幕、以及任何截图转灰度的场合，只有 modulate 的界面都
+# 读不出自己选的是哪一项 —— 而语言和画质恰好都是「选错了要重新找回来」的设置。
+func _check_settings_state_is_not_colour_only() -> void:
+	var screen := SettingsScene.instantiate()
+	add_child(screen)
+	await get_tree().process_frame
+
+	var zh_before := str(screen._btn_zh.text)
+	var en_before := str(screen._btn_en.text)
+	_h.expect(zh_before != "中文" or en_before != "English",
+		"language_selection_is_colour_only",
+		"语言按钮的文本没有任何选中标记，只有 modulate —— 灰度下读不出选的是哪个")
+	var marked_before := zh_before.contains(SettingsScreenScript.SELECTED_MARK)
+
+	LocaleManager.set_locale("en" if LocaleManager.get_locale() == "zh" else "zh")
+	screen._refresh_lang_buttons()
+	await get_tree().process_frame
+	_h.expect(zh_before.contains(SettingsScreenScript.SELECTED_MARK)
+			!= str(screen._btn_zh.text).contains(SettingsScreenScript.SELECTED_MARK),
+		"language_mark_does_not_follow_selection",
+		"切换语言之后中文按钮的选中标记没有跟着变")
+	# 标记只能有一份，反复刷新不能越拼越长。
+	#
+	# 查的是**画质**按钮而不是语言按钮：语言那两个每次传的是字面量（"中文"），
+	# 重刷多少次都不会累加；画质按钮传的是 btn.text —— 读自己再拼一次，
+	# 那才是真正会越拼越长的地方。断言要指着能坏的那一处。
+	for _i in 5:
+		screen._refresh_quality_buttons()
+	var worst := 0
+	for btn_any in screen._quality_btns:
+		var q_btn: Button = btn_any
+		worst = maxi(worst, str(q_btn.text).count(SettingsScreenScript.SELECTED_MARK))
+	_h.expect(worst <= 1, "selection_mark_accumulates",
+		"反复刷新之后画质按钮的选中标记被重复拼接了 %d 次" % worst)
+
+	# 开关同理：CheckButton 的滑块在低对比度屏上不明显，要有开/关文字。
+	var guides: CheckButton = screen._board_guides_btn
+	var text_on := ""
+	var text_off := ""
+	PlayerProfile.set_board_readability_enabled(true)
+	screen._refresh_board_guides_button()
+	text_on = str(guides.text)
+	PlayerProfile.set_board_readability_enabled(false)
+	screen._refresh_board_guides_button()
+	text_off = str(guides.text)
+	_h.expect(text_on != text_off, "toggle_state_is_colour_only",
+		"开关的文本在开与关时完全相同 —— 状态只靠颜色和滑块")
+	PlayerProfile.set_board_readability_enabled(true)
+
+	if marked_before:
+		LocaleManager.set_locale("zh")
+	screen.queue_free()
 	await get_tree().process_frame
