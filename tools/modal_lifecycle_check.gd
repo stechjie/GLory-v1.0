@@ -76,6 +76,7 @@ func _ready() -> void:
 	await _check_team_mercs_modal()
 	await _check_merc_picker_modal()
 	await _check_treasure_choice_modal()
+	_check_room_panel_is_modal()
 	await _check_page_cycles_leave_nothing()
 	await _check_final_state_is_clean()
 
@@ -1782,3 +1783,68 @@ func _check_final_state_is_clean() -> void:
 	# leaves global run state dirty is still a landmine for whatever runs next.
 	_h.expect(not FileAccess.file_exists("user://modal_lifecycle_check.save"),
 		"gate_wrote_save", "门禁写了存档文件")
+
+
+# --- V3 P0-07：房间面板的生产接线 ---------------------------------------------
+
+# 迁移前 MainMenu 自己建了一个常驻 overlay（add_child + 自带 dim ColorRect），
+# 用 visible 开关。那样有三个后果：
+#   * Back 键到不了它 —— ModalStack.handle_back_request() 不知道它存在
+#   * 它的 dim 不参与「只有栈顶 backdrop 吃输入」的合同，会和别的层叠成两层黑
+#   * owner 释放 / close_all 都结算不到它
+#
+# 这里断言的是**生产代码的接线**，不是 ModalStack 夹具：夹具早就绿了，
+# 而漏的正好是没接上去的那一个。
+func _check_room_panel_is_modal() -> void:
+	var source := FileAccess.get_file_as_string("res://scenes/menu/MainMenu.gd")
+	if not _h.expect(not source.is_empty(), "main_menu_unreadable", "读不到 MainMenu.gd"):
+		return
+
+	# 断言限定在 _show_room_overlay 的**函数体**里，而不是「整个文件出现过」。
+	# 前者是代码，后者会被注释里的同名字符串满足 —— 本轮已经在
+	# android_smoke 的 cache_condition、VFXWarmup 的 memory_warning 上各栽过一次，
+	# 这是第三次。散文里提到一个 API 名太常见了，contains 挡不住。
+	var show_at := source.find("func _show_room_overlay() -> void:")
+	if not _h.expect(show_at >= 0, "room_show_missing", "找不到 _show_room_overlay()"):
+		return
+	var show_end := source.find("\nfunc ", show_at + 1)
+	if show_end < 0:
+		show_end = source.length()
+	var show_body := source.substr(show_at, show_end - show_at)
+
+	_h.expect(show_body.contains("ModalStack.push(content, {"),
+		"room_panel_not_pushed",
+		"房间面板没有走 ModalStack.push —— Back 键和 close_all 都结算不到它")
+	_h.expect(source.contains("const ROOM_MODAL_ID :="),
+		"room_modal_id_missing", "房间面板没有稳定的 modal id，去重和关闭都无从下手")
+	# 带缩进和冒号的完整判断行，注释里不可能长这样。
+	_h.expect(show_body.contains("\tif ModalStack.has(ROOM_MODAL_ID):"),
+		"room_panel_no_dedupe",
+		"开层前没有 has() 去重 —— 连点两次「自定房间」会开出两层")
+	_h.expect(source.contains("\tModalStack.pop(ROOM_MODAL_ID)"),
+		"room_panel_not_popped",
+		"关闭没有走 ModalStack.pop，栈里会留下一条永远关不掉的记录")
+
+	# 常驻 overlay 的痕迹必须清干净。留着 visible 开关就等于两套显示逻辑并存。
+	_h.expect(not source.contains("_room_overlay.visible"),
+		"room_panel_still_visibility_toggled",
+		"房间面板还在用 visible 开关 —— 那条路径绕过了 ModalStack")
+	_h.expect(not source.contains("_room_overlay = Control.new()"),
+		"room_panel_still_persistent",
+		"房间面板仍然是常驻节点，切界面时会被连带删掉")
+
+	# 自建 dim 必须去掉：backdrop 归 ModalStack，两层黑叠在一起是可见缺陷。
+	var build_at := source.find("func _build_room_panel() -> Control:")
+	if not _h.expect(build_at >= 0, "room_panel_builder_missing",
+			"找不到 _build_room_panel()"):
+		return
+	var build_end := source.find("\nfunc ", build_at + 1)
+	if build_end < 0:
+		build_end = source.length()
+	var build_body := source.substr(build_at, build_end - build_at)
+	_h.expect(not build_body.contains("ColorRect.new()"),
+		"room_panel_builds_own_dim",
+		"房间面板自己建了 dim —— 会和 ModalStack 的 backdrop 叠成两层黑")
+	_h.expect(build_body.contains("return center"),
+		"room_panel_builder_returns_nothing",
+		"_build_room_panel() 没有把面板返回给调用方")

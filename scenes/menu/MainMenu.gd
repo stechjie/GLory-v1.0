@@ -16,6 +16,12 @@ signal prep_requested           # 「备战」按钮：进入备战界面（暂�
 signal codex_requested          # 「图鉴」按钮：进入图鉴界面
 
 const REF_SIZE := Vector2(1672.0, 941.0)
+
+# V3 P0-07：房间面板改由 ModalStack 收口。
+# priority 40 与组队佣兵检阅台同档 —— 都是页面级面板，
+# 低于 pvp_warning 60 < 战斗加载 80 < 重连 90 < DialogService 100。
+const ROOM_MODAL_ID := "main_menu_room_panel"
+const ROOM_MODAL_PRIORITY := 40
 const TEX_BACKGROUND := preload("res://assets/ui/main_menu_live/background.png")
 const TEX_PROFILE_PANEL := preload("res://assets/ui/main_menu_live/profile_panel.png")
 const TEX_PROFILE_AVATAR := preload("res://assets/ui/main_menu_live/profile_avatar.png")
@@ -55,7 +61,8 @@ var _menu_music_player: AudioStreamPlayer
 var _address_edit: LineEdit
 var _net_status: Label
 # 「敬请期待」不再持有 AcceptDialog 节点：见 _show_coming_soon()。
-var _room_overlay: Control
+# 迁移前这是常驻在 MainMenu 下的 overlay 节点。现在面板由 ModalStack 持有，
+# 开关状态用 ModalStack.has(ROOM_MODAL_ID) 问，不再自己记一个节点引用。
 var _room_list_box: VBoxContainer
 var _room_id_edit: LineEdit
 var _room_status: Label
@@ -215,23 +222,18 @@ func _build() -> void:
 	_address_edit.visible = false
 	add_child(_address_edit)
 
-	_build_room_overlay()
 	_build_debug_layer()
 
-func _build_room_overlay() -> void:
-	_room_overlay = Control.new()
-	_room_overlay.visible = false
-	_room_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(_room_overlay)
-
-	var dim := ColorRect.new()
-	dim.color = Color(0.0, 0.0, 0.0, 0.45)
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_room_overlay.add_child(dim)
-
+# 每次开层现建一份。ModalStack.push() 接管所有权，pop 时连同宿主层一起释放，
+# 所以这里**不能**挂到 MainMenu 下 —— 那样切界面时会被清理逻辑连带删掉。
+#
+# 也不再自带 dim：背景交给 ModalStack 的 backdrop。自建那层不参与
+# 「只有栈顶 backdrop 吃输入」的合同，而且两层黑会叠在一起。
+func _build_room_panel() -> Control:
 	var center := CenterContainer.new()
+	center.name = "RoomPanel"
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_room_overlay.add_child(center)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(920, 560)
@@ -288,7 +290,7 @@ func _build_room_overlay() -> void:
 	_room_status.add_theme_color_override("font_color", Color(0.55, 0.22, 0.12))
 	left.add_child(_room_status)
 
-	left.add_child(_dialog_button(_menu_text("关闭", "Close"), func(): _room_overlay.visible = false))
+	left.add_child(_dialog_button(_menu_text("关闭", "Close"), _close_room_panel))
 
 	var right := VBoxContainer.new()
 	right.custom_minimum_size = Vector2(500, 0)
@@ -311,6 +313,7 @@ func _build_room_overlay() -> void:
 	_room_list_box = VBoxContainer.new()
 	_room_list_box.add_theme_constant_override("separation", 8)
 	scroll.add_child(_room_list_box)
+	return center
 
 func show_connecting() -> void:
 	if _net_status == null:
@@ -379,9 +382,29 @@ func _emit_join() -> void:
 	team_join_requested.emit(address)
 
 func _show_room_overlay() -> void:
-	_room_overlay.visible = true
-	_room_status.text = ""
+	# 去重交给 has()：连点两次「自定房间」不该开出两层。
+	if ModalStack.has(ROOM_MODAL_ID):
+		return
+	var content := _build_room_panel()
+	var modal_id := ModalStack.push(content, {
+		"id": ROOM_MODAL_ID,
+		"owner": self,
+		"priority": ROOM_MODAL_PRIORITY,
+		# 点外面可以关：这是纯浏览面板，没有未完成的强制选择。
+		"dismiss_on_backdrop": true,
+	})
+	if modal_id.is_empty():
+		# content 已被 push 收走，不能再 free，只清引用。
+		_room_status = null
+		_room_list_box = null
+		return
+	if _room_status != null:
+		_room_status.text = ""
 	team_room_list_requested.emit()
+
+
+func _close_room_panel() -> void:
+	ModalStack.pop(ROOM_MODAL_ID)
 
 func _emit_generate_token() -> void:
 	public_token_generate_requested.emit()
