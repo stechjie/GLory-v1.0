@@ -2112,3 +2112,38 @@ FAIL [checkpoint_lags_behind_step] 这些步骤推进后断点没有立刻跟上
 
 另加一条：教程全程主存档必须一个字节都不动（`_write_now()` 第一行就是
 `if GameState.tutorial_mode: return`，而主存档参与 replay / final-state SHA）。
+
+### `bootstrap` 41 → 57：启动看门狗 3 / 8 / 15 秒（V3 P0-10）
+
+迁移前 Bootstrap **完全没有看门狗**：线程载入卡住的话，玩家看到的是一张无限呼吸的启动
+画面 —— 没有升级提示、没有解释、没有出路。
+
+三级：3 秒说明仍在哪一步、8 秒补一句为什么慢、15 秒摆出重试/退出。三级都**不碰载入本身**：
+15 秒之后仍然不进 `Phase.FAILED`，线程载入继续跑，随时可能完成，那时 `_finish_loading()`
+会照常切场景，玩家自己就走出去了。主线程强杀只会把一次「慢」变成一次「坏」，而且丢掉
+本来能自己恢复的那条路。
+
+计时由**进度**驱动而不只是阶段：进度在动就重置。慢不等于坏 —— 冷启动第一次解压资源本来
+就慢，那种情况下弹「启动失败」比不弹更糟。
+
+两个实现细节各踩了一次：
+
+- `_reset_watchdog()` 最初没有把当前进度记成基线，于是复位后的第一次 tick 被自己造出来的
+  进度差吃掉，三个门槛整体晚一秒。重置的含义是「基线就是现在」，不是「基线未知」。
+- `_set_phase()` 里的复位最初放在开头，那时 `_progress.value` 还是上一阶段的值，同样会
+  吃掉一次 tick。挪到末尾。
+
+**一条断言写成了装饰品，值得记**：最初只有一条 `watchdog_text_ignores_phase`，比的是
+「两个阶段卡住后 `_detail.text` 是否相同」。把 `_phase_noun()` 写死之后它照样通过 ——
+因为 EXPLAIN 的文案是「阶段名词 + 解释」两行，解释还在变就把名词的写死盖过去了。
+拆成三条（NOTICE 只用名词 / EXPLAIN 只比第二行 / STUCK 比错误面板），每条都做出了能让
+它单独转红的变异才算数。**做不出单独转红的变异，就说明这条断言是上一条的复读。**
+
+九条断言逐条反向变异全部转红，`Bootstrap.gd` 按字节还原：
+
+```
+watchdog_fires_too_early / watchdog_explain_missed / watchdog_killed_on_main_thread
+watchdog_fakes_progress / watchdog_ignores_progress / watchdog_not_reset_on_phase_change
+watchdog_notice_text_ignores_phase / watchdog_explain_text_ignores_phase
+watchdog_stuck_text_ignores_phase
+```

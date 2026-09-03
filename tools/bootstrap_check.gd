@@ -17,6 +17,8 @@ func _ready() -> void:
 	_check_splash_continuity()
 	await _check_success_path()
 	await _check_failure_and_retry()
+	await _check_watchdog_escalation()
+	await _check_watchdog_resets_on_progress()
 	_h.finish(get_tree())
 
 
@@ -202,3 +204,128 @@ func _color_after(text: String, key: String) -> String:
 	for piece in inner.split(","):
 		parts.append("%.5f" % float(piece.strip_edges()))
 	return ",".join(parts)
+
+
+# V3 P0-10：启动看门狗 3 / 8 / 15 秒。
+#
+# 迁移前 Bootstrap 完全没有看门狗：线程载入卡住的话，玩家看到的是一张无限呼吸的
+# 启动画面 —— 没有升级提示、没有解释、没有出路。
+#
+# 三条硬性约束都在这里查：
+#   1. 只提示**真实**阶段（写死一句「正在载入」在 PREPARE_DATA 卡住时就是假话）
+#   2. 不在主线程强杀（15 秒之后仍然不进 FAILED，线程载入继续跑）
+#   3. 不伪造进度（看门狗一格进度条都不许推）
+func _check_watchdog_escalation() -> void:
+	var bootstrap := _new_bootstrap(FIXTURE_PATH)
+	await get_tree().process_frame
+	# 停在 LOAD_MAIN 而不真的去载：手工设阶段，然后按秒喂 delta。
+	bootstrap._set_phase(BootstrapScript.Phase.LOAD_MAIN, "load", "detail", 0.12)
+	# .get() 返回 Variant，:= 推不出类型（推不出来会让整个脚本编译失败，
+	# 而门禁表现为挂住而不是报错）。
+	var progress_before: float = bootstrap.snapshot().get("progress", -1.0)
+
+	var levels: Array[String] = []
+	var texts: Array[String] = []
+	# 逐秒推进到 16 秒。每秒记一次等级，最后核对三个门槛各自的落点。
+	for i in 16:
+		bootstrap._tick_watchdog(1.0)
+		levels.append(str(bootstrap.snapshot().get("watchdog_level_name", "")))
+		texts.append(bootstrap._detail.text)
+
+	# levels[i] 是「喂完第 i+1 秒」之后的等级。
+	_h.expect(levels[1] == "QUIET", "watchdog_fires_too_early",
+		"2 秒就升级了（%s）—— 正常启动会被它吵到" % levels[1])
+	_h.expect(levels[2] == "NOTICE", "watchdog_notice_missed",
+		"3 秒没有进入 NOTICE，实际是 %s" % levels[2])
+	_h.expect(levels[7] == "EXPLAIN", "watchdog_explain_missed",
+		"8 秒没有进入 EXPLAIN，实际是 %s" % levels[7])
+	_h.expect(levels[14] == "STUCK", "watchdog_stuck_missed",
+		"15 秒没有进入 STUCK，实际是 %s" % levels[14])
+
+	var snap := bootstrap.snapshot()
+	# 卡住 ≠ 失败。载入还在后台跑，随时可能完成 —— 主线程强杀只会把一次「慢」
+	# 变成一次「坏」，而且丢掉本来能自己恢复的那条路。
+	_h.expect(str(snap.get("phase_name", "")) == "LOAD_MAIN",
+		"watchdog_killed_on_main_thread",
+		"15 秒之后阶段变成了 %s —— 看门狗不该结束载入" % str(snap.get("phase_name", "")))
+	_h.expect(bool(snap.get("stuck", false)), "watchdog_stuck_flag_missing",
+		"STUCK 之后没有置 stuck 标志，重试入口打不开")
+	_h.expect(bool(snap.get("error_visible", false)), "watchdog_offers_no_way_out",
+		"卡住 15 秒之后没有给玩家任何出路")
+	_h.expect(is_equal_approx(float(snap.get("progress", -1.0)), float(progress_before)),
+		"watchdog_fakes_progress",
+		"看门狗推动了进度条 —— 那是在用等待时间伪造完成度")
+
+	# 文案必须指向真实阶段：换个阶段，同样卡住，说法必须跟着变。
+	#
+	# 三级各自查一次，不能只查一处。NOTICE 只用到阶段名词，EXPLAIN 多一句解释，
+	# STUCK 是错误面板 —— 只查合起来的那一句时，任何一处写死都会被另一处的差异
+	# 盖过去（这条断言第一版就是这么漏掉的）。
+	var notice_load := texts[2]
+	var explain_load := texts[7]
+	var stuck_load := bootstrap._error_text.text
+	bootstrap._set_phase(BootstrapScript.Phase.PREPARE_DATA, "prep", "detail", 0.08)
+	var notice_prep := ""
+	var explain_prep := ""
+	for i in 16:
+		bootstrap._tick_watchdog(1.0)
+		if i == 2:
+			notice_prep = bootstrap._detail.text
+		elif i == 7:
+			explain_prep = bootstrap._detail.text
+	_h.expect(notice_prep != notice_load, "watchdog_notice_text_ignores_phase",
+		"两个阶段的 3 秒提示是同一句：%s —— 阶段名词被写死了" % notice_load)
+	# 只比第二行。EXPLAIN 的第一行还是阶段名词，连着比的话，解释写死了也会被
+	# 名词的差异盖过去 —— 那样这条断言就成了上一条的复读，做不出能让它单独转红
+	# 的变异。第二行才是它名字里说的那一句。
+	_h.expect(_second_line(explain_prep) != _second_line(explain_load),
+		"watchdog_explain_text_ignores_phase",
+		"两个阶段的 8 秒解释是同一句「%s」—— 玩家看不出卡在哪一步"
+			% _second_line(explain_load))
+	_h.expect(bootstrap._error_text.text != stuck_load, "watchdog_stuck_text_ignores_phase",
+		"两个阶段卡死 15 秒后的错误面板是同一句")
+	_h.expect(bootstrap._error_text.text.contains(BootstrapScript.ERROR_STUCK),
+		"watchdog_stuck_has_no_code", "卡住提示没有带错误码，用户报障时说不清")
+
+	bootstrap.queue_free()
+	await get_tree().process_frame
+
+
+# 进度在动就不算卡住。慢不等于坏 —— 冷启动第一次解压资源本来就慢，
+# 那种情况下弹「启动失败」比不弹更糟。
+func _check_watchdog_resets_on_progress() -> void:
+	var bootstrap := _new_bootstrap(FIXTURE_PATH)
+	await get_tree().process_frame
+	bootstrap._set_phase(BootstrapScript.Phase.LOAD_MAIN, "load", "detail", 0.0)
+	for i in 10:
+		# 每秒推进 10% —— 慢，但一直在动。
+		bootstrap._progress.value = float(i + 1) * 10.0
+		bootstrap._tick_watchdog(1.0)
+	var snap := bootstrap.snapshot()
+	_h.expect(str(snap.get("watchdog_level_name", "")) == "QUIET",
+		"watchdog_ignores_progress",
+		"进度一直在推进却升到了 %s —— 慢被当成了卡住"
+			% str(snap.get("watchdog_level_name", "")))
+	_h.expect(not bool(snap.get("stuck", false)), "watchdog_stuck_while_progressing",
+		"进度还在推进就被判定卡住")
+
+	# 换阶段也要重置：新阶段从零开始计时，不继承上一段的等待。
+	bootstrap._set_phase(BootstrapScript.Phase.LOAD_MAIN, "load", "detail", 0.5)
+	for i in 4:
+		bootstrap._tick_watchdog(1.0)
+	_h.expect(str(bootstrap.snapshot().get("watchdog_level_name", "")) == "NOTICE",
+		"watchdog_phase_reset_broken", "同阶段停住 4 秒之后没有进入 NOTICE")
+	bootstrap._set_phase(BootstrapScript.Phase.PREPARE_DATA, "prep", "detail", 0.08)
+	_h.expect(str(bootstrap.snapshot().get("watchdog_level_name", "")) == "QUIET",
+		"watchdog_not_reset_on_phase_change",
+		"换阶段之后等级没有归零 —— 新阶段会立刻继承上一段的告警")
+
+	bootstrap.queue_free()
+	await get_tree().process_frame
+
+
+# 取多行文案的第二行。空则返回空串。
+func _second_line(text: String) -> String:
+	var lines := text.split("
+")
+	return str(lines[1]) if lines.size() > 1 else ""

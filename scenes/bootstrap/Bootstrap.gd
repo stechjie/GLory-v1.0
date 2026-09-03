@@ -10,6 +10,21 @@ const Theming := preload("res://ui/theme/GloryTheme.gd")
 
 const DEFAULT_MAIN_SCENE := "res://scenes/main/Main.tscn"
 const ERROR_MAIN_LOAD := "BOOT-MAIN-LOAD"
+const ERROR_STUCK := "BOOT-STUCK"
+
+# 看门狗三级（V3 P0-10）。计时器由**进度**驱动而不只是阶段：慢但在推进的
+# 载入不该被叫做卡住，而阶段不变、进度也不动才是真的没动静。
+#
+# 三级都不碰载入本身。线程载入继续跑，随时可能完成 —— 主线程强杀只会把
+# 一次「慢」变成一次「坏」，而且丢掉本来能自己恢复的那条路。
+const WATCHDOG_NOTICE_SEC := 3.0
+const WATCHDOG_EXPLAIN_SEC := 8.0
+const WATCHDOG_STUCK_SEC := 15.0
+# 进度推进多少算「有动静」。线程载入的进度是分段跳的，太小的阈值会被
+# 浮点抖动一直重置，看门狗就永远升不了级。
+const WATCHDOG_PROGRESS_EPSILON := 0.01
+
+enum WatchdogLevel { QUIET, NOTICE, EXPLAIN, STUCK }
 
 enum Phase { FIRST_FRAME, PREPARE_DATA, LOAD_MAIN, READY, FAILED }
 
@@ -31,6 +46,12 @@ var _load_started := false
 var _transition_queued := false
 var _loaded_scene: PackedScene
 var _pulse_elapsed := 0.0
+var _phase_elapsed := 0.0
+var _watchdog_level := WatchdogLevel.QUIET
+var _watchdog_progress := 0.0
+# 卡住不等于失败：载入还在后台跑，随时可能完成。所以不进 Phase.FAILED，
+# 只把重试/退出这条出路摆出来。
+var _stuck := false
 
 
 func _ready() -> void:
@@ -46,6 +67,7 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_update_breathing(delta)
+	_tick_watchdog(delta)
 	if not _load_started or _phase != Phase.LOAD_MAIN:
 		return
 	var progress_values: Array = []
@@ -85,9 +107,14 @@ func start_loading() -> void:
 	_load_started = true
 
 
+# 卡住时也允许重试：那时 _phase 还是 LOAD_MAIN（载入没失败，只是没回来）。
 func retry() -> void:
-	if _phase != Phase.FAILED:
+	if _phase != Phase.FAILED and not _stuck:
 		return
+	# 在途的那次线程载入**不取消**：取消要在主线程等它收尾，正是
+	# 「不在主线程强杀」要避免的。让它自己跑完，结果被下面这次重发丢弃。
+	_stuck = false
+	_error_panel.visible = false
 	_load_started = false
 	_transition_queued = false
 	_loaded_scene = null
@@ -107,6 +134,10 @@ func snapshot() -> Dictionary:
 		"error_visible": _error_panel.visible,
 		"error_text": _error_text.text,
 		"loaded": _loaded_scene != null,
+		"watchdog_level": _watchdog_level,
+		"watchdog_level_name": WatchdogLevel.keys()[_watchdog_level],
+		"phase_elapsed_sec": _phase_elapsed,
+		"stuck": _stuck,
 	}
 
 
@@ -126,6 +157,8 @@ func _finish_loading() -> void:
 	if _loaded_scene == null:
 		_fail(ERROR_MAIN_LOAD, _tr_text("主界面资源类型不正确。", "The main screen resource has the wrong type."))
 		return
+	_stuck = false
+	_error_panel.visible = false
 	_set_phase(Phase.READY, _tr_text("准备完成", "Ready"),
 		_tr_text("正在进入 Glory", "Entering Glory"), 1.0)
 	main_scene_ready.emit(next_scene_path)
@@ -151,12 +184,120 @@ func _fail(code: String, message: String) -> void:
 
 
 func _set_phase(next_phase: int, title: String, detail: String, ratio: float) -> void:
+	var phase_changed := next_phase != _phase
 	_phase = next_phase
 	_status.text = title
 	_detail.text = detail
 	_detail.visible = not detail.is_empty()
 	_progress.value = clampf(ratio, 0.0, 1.0) * 100.0
 	_progress.visible = next_phase != Phase.FAILED
+	# 放在最后：_reset_watchdog() 要把**新**阶段的进度记成基线。放在开头的话
+	# 记下的是上一阶段的值，第一次 tick 会被「进度变了」吃掉，三个门槛整体晚一秒。
+	if phase_changed:
+		_reset_watchdog()
+
+
+# --- 启动看门狗（V3 P0-10）---------------------------------------------
+#
+# 三级都只**说明当前真实阶段**，不编造进度、不伪造百分比、不在主线程强杀。
+# 15 秒之后仍然不进 Phase.FAILED：线程载入还在跑，随时可能完成，那时
+# _finish_loading() 会照常切场景，玩家自己就走出去了。
+func _tick_watchdog(delta: float) -> void:
+	if _phase == Phase.READY or _phase == Phase.FAILED:
+		return
+	var ratio := float(_progress.value) / 100.0
+	if absf(ratio - _watchdog_progress) >= WATCHDOG_PROGRESS_EPSILON:
+		# 进度在动 = 没卡住。慢不等于坏。
+		_watchdog_progress = ratio
+		_reset_watchdog()
+		return
+	_phase_elapsed += delta
+	var next_level := WatchdogLevel.QUIET
+	if _phase_elapsed >= WATCHDOG_STUCK_SEC:
+		next_level = WatchdogLevel.STUCK
+	elif _phase_elapsed >= WATCHDOG_EXPLAIN_SEC:
+		next_level = WatchdogLevel.EXPLAIN
+	elif _phase_elapsed >= WATCHDOG_NOTICE_SEC:
+		next_level = WatchdogLevel.NOTICE
+	if next_level == _watchdog_level:
+		return
+	_watchdog_level = next_level
+	_apply_watchdog_level()
+
+
+func _apply_watchdog_level() -> void:
+	match _watchdog_level:
+		WatchdogLevel.NOTICE:
+			_detail.text = _tr_text(
+				"%s，比平时久一些，仍在继续" % _phase_noun(),
+				"Still %s. This is taking longer than usual." % _phase_gerund())
+			_detail.visible = true
+		WatchdogLevel.EXPLAIN:
+			_detail.text = "%s\n%s" % [
+				_tr_text("%s，比平时久一些，仍在继续" % _phase_noun(),
+					"Still %s. This is taking longer than usual." % _phase_gerund()),
+				_phase_explanation(),
+			]
+			_detail.visible = true
+		WatchdogLevel.STUCK:
+			_stuck = true
+			_error_text.text = "%s\n%s\n%s" % [
+				_tr_text("启动比预期慢很多。载入仍在后台继续，可以再等一会儿，
+					也可以重试或退出。",
+					"Startup is much slower than expected. Loading is still running in"
+					+ " the background; you can keep waiting, retry, or exit."),
+				_phase_explanation(),
+				_tr_text("错误码：%s" % ERROR_STUCK, "Error code: %s" % ERROR_STUCK),
+			]
+			_error_panel.visible = true
+
+
+func _reset_watchdog() -> void:
+	_phase_elapsed = 0.0
+	_watchdog_level = WatchdogLevel.QUIET
+	# 重置的含义是「基线就是现在」，不是「基线未知」。不记下来的话，
+	# 复位之后的第一次 tick 会被自己造出来的进度差吃掉。
+	_watchdog_progress = float(_progress.value) / 100.0
+
+
+# 看门狗的文案必须指向**真实**阶段。写死一句「正在载入」在 PREPARE_DATA
+# 卡住时就是假话，而这条门槛的全部意义就是让玩家知道卡在哪一步。
+func _phase_noun() -> String:
+	match _phase:
+		Phase.FIRST_FRAME:
+			return "正在显示启动画面"
+		Phase.PREPARE_DATA:
+			return "正在准备数据"
+		Phase.LOAD_MAIN:
+			return "正在载入界面"
+		_:
+			return "正在启动"
+
+
+func _phase_gerund() -> String:
+	match _phase:
+		Phase.FIRST_FRAME:
+			return "presenting the startup screen"
+		Phase.PREPARE_DATA:
+			return "preparing data"
+		Phase.LOAD_MAIN:
+			return "loading the interface"
+		_:
+			return "starting up"
+
+
+func _phase_explanation() -> String:
+	match _phase:
+		Phase.PREPARE_DATA:
+			return _tr_text("正在校验游戏数据表。",
+				"Verifying the game data tables.")
+		Phase.LOAD_MAIN:
+			return _tr_text("主界面资源较大，首次启动需要解压，仍在后台载入。",
+				"The main screen is large and is unpacked on first launch;"
+				+ " it is still loading in the background.")
+		_:
+			return _tr_text("仍在等待启动流程推进。",
+				"Still waiting for startup to advance.")
 
 
 func _apply_locale() -> void:
