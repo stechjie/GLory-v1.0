@@ -14,8 +14,8 @@ config_version=5
 
 config/name="Glory Beta 0.04"
 run/main_scene="res://scenes/main/Main.tscn"
-config/features=PackedStringArray("4.7", "Mobile")
 config/quit_on_go_back=false
+config/features=PackedStringArray("4.7", "Mobile")
 config/icon="res://icon.svg"
 
 [autoload]
