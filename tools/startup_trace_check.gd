@@ -21,6 +21,7 @@ const CHECK_NAME := "startup_trace"
 
 const MAIN_PATH := "res://scenes/main/Main.gd"
 const TRACE_SOURCE_PATH := "res://scripts/autoload/StartupTrace.gd"
+const ANDROID_SMOKE_PATH := "res://tools/android_smoke.sh"
 const PROJECT_PATH := "res://project.godot"
 
 var _h: RefCounted
@@ -50,6 +51,7 @@ func _run() -> void:
 	_check_build_info_line(trace)
 	_check_overlay_is_build_gated()
 	_check_android_install_identity_contract()
+	_check_android_startup_report_contract()
 
 	trace.queue_free()
 	_h.finish(get_tree())
@@ -412,3 +414,47 @@ func _check_android_install_identity_contract() -> void:
 func _line_for(trace, mark_name: String, meta: Dictionary = {}) -> String:
 	trace.mark(mark_name, meta)
 	return str(trace.last_line())
+
+
+# V3 P0-01 §5.2: a startup report has to be attributable and actionable.
+#
+# The absolute marks answer "how long"; they do not answer "which segment", and a
+# `verdict: reported_only` line does not answer "by how much did it miss". Both of
+# those are what someone reads the report to find out, so the script must emit them
+# and this asserts it keeps doing so.
+#
+# The cache condition matters because comparing a warm-cache launch against a cold
+# budget is not a comparison. This script force-stops the process but cannot drop the
+# page cache, so the honest label is warm_after_force_stop -- calling it "cold" would
+# make the T1 number look better than the thing it is supposed to measure.
+func _check_android_startup_report_contract() -> void:
+	var source := FileAccess.get_file_as_string(ANDROID_SMOKE_PATH)
+	if not _h.expect(not source.is_empty(), "android_smoke_unreadable_startup",
+			"读不到 android_smoke.sh"):
+		return
+
+	for field in ["segments_ms", "over_budget_ms", "cache_condition"]:
+		_h.expect(source.contains("\"%s\"" % field),
+			"startup_report_field_missing",
+			"smoke.json 的 startup 块缺 %s —— 报告答不出「哪一段」或「超了多少」" % field)
+
+	for segment in ["t0_to_t1", "t1_to_t2", "t2_to_t3"]:
+		_h.expect(source.contains("\"%s\"" % segment),
+			"startup_segment_missing", "分段耗时缺 %s" % segment)
+
+	# 超预算差值必须在 --assert-startup 之外也算。否则「当前不通过就保持关闭」
+	# 会退化成「什么都不说」，读的人还得自己去减。
+	var assert_at := source.find("if [ \"$ASSERT_STARTUP\" -eq 1 ]")
+	var over_at := source.find("T1_OVER_MS=\"$(over ")
+	_h.expect(over_at >= 0 and assert_at >= 0 and over_at < assert_at,
+		"over_budget_computed_only_when_asserting",
+		"超预算差值是在 --assert-startup 分支里算的 —— 关闭时报告就不说超了多少")
+
+	# 断言**赋值**而不是「文件里出现过这个词」。
+	# 第一版写成 `source.contains("warm_after_force_stop")`，结果把赋值改成 "cold"
+	# 之后断言照样通过 —— 因为那个词还留在同一文件的 note 说明里。
+	# 自己的反向变异抓到了这条不可证伪的断言，改成盯赋值行。
+	_h.expect(source.contains("CACHE_CONDITION=\"warm_after_force_stop\""),
+		"cache_condition_overclaimed",
+		("CACHE_CONDITION 的赋值不是 warm_after_force_stop —— 本脚本只 force-stop 进程，"
+			+ "清不掉 page cache，标成 cold 会让 T1 与预算的比较失去意义"))

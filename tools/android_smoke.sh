@@ -548,6 +548,45 @@ if [ -n "$MISSING_MARKS" ]; then
     note "!! 缺标记通常意味着装的包比 StartupTrace 早，或进程在到达该阶段前就死了"
 fi
 
+# V3 P0-01 §5.2：分段耗时。绝对标记回答"多久"，分段回答"哪一段"。
+# 只有相邻且两端都抓到的才算，缺一端就是 -1 —— 用 0 冒充会让报告读起来像"这段不花时间"。
+seg() {
+    if [ "$1" -ge 0 ] && [ "$2" -ge 0 ] && [ "$2" -ge "$1" ]; then
+        printf '%s' "$(( $2 - $1 ))"
+    else
+        printf '%s' "-1"
+    fi
+}
+SEG_T0_T1="$(seg "$T0_MS" "$T1_MS")"
+SEG_T1_T2="$(seg "$T1_MS" "$T2_MS")"
+SEG_T2_T3="$(seg "$T2_MS" "$T3_MS")"
+SEG_T3_T4="$(seg "$T3_MS" "$T4_MS")"
+
+# V3 P0-01 §5.2：超预算差值**始终**计算，不只在 --assert-startup 打开时。
+# 「当前不通过就保持关闭」只有配上「明确超出多少」才是可用的信息；
+# 否则报告只说"reported_only"，读的人还得自己去减。
+over() {
+    if [ "$1" -ge 0 ] && [ "$1" -gt "$2" ]; then
+        printf '%s' "$(( $1 - $2 ))"
+    else
+        printf '%s' "0"
+    fi
+}
+T1_OVER_MS="$(over "$T1_MS" "$T1_MAX_MS")"
+T3_OVER_MS="$(over "$T3_MS" "$T3_MAX_MS")"
+
+# V3 P0-01 §5.2：冷/热条件必须如实标注。
+# 本脚本做的是 am force-stop 再启动：进程是新的，但安装留下的 page cache、
+# dex/oat 都还是热的。真正的冷启动需要 root 清缓存或重启设备，这里做不到，
+# 所以标 warm_after_force_stop —— 把它写成 "cold" 会让 T1 预算的比较失去意义。
+CACHE_CONDITION="warm_after_force_stop"
+
+if [ "$T1_OVER_MS" -gt 0 ] || [ "$T3_OVER_MS" -gt 0 ]; then
+    note "!! 启动超预算：t1 超 ${T1_OVER_MS}ms（${T1_MS}/${T1_MAX_MS}），t3 超 ${T3_OVER_MS}ms（${T3_MS}/${T3_MAX_MS}）"
+    note "!! 分段：t0->t1 ${SEG_T0_T1}ms  t1->t2 ${SEG_T1_T2}ms  t2->t3 ${SEG_T2_T3}ms（-1=某端没抓到）"
+    note "!! t0 本身是引擎加载 pck/导入表/UID 表的成本，发生在任何游戏代码之前 —— Bootstrap 改不动这一段"
+fi
+
 STARTUP_VERDICT="reported_only"
 if [ "$ASSERT_STARTUP" -eq 1 ]; then
     STARTUP_VERDICT="asserted"
@@ -636,10 +675,18 @@ cat > "$RUN_DIR/smoke.json" <<JSON
       "t3_first_input_ready": $T3_MS,
       "t4_first_action_complete": $T4_MS
     },
+    "segments_ms": {
+      "t0_to_t1": $SEG_T0_T1,
+      "t1_to_t2": $SEG_T1_T2,
+      "t2_to_t3": $SEG_T2_T3,
+      "t3_to_t4": $SEG_T3_T4
+    },
+    "over_budget_ms": {"t1_first_frame": $T1_OVER_MS, "t3_first_input_ready": $T3_OVER_MS},
+    "cache_condition": "$CACHE_CONDITION",
     "mark_lines_in_logcat": $STARTUP_MARK_COUNT,
     "missing_marks": "$MISSING_MARKS",
     "trace_file": "startup_trace.jsonl",
-    "note": "activity_displayed_ms 从 Android 进程启动起算；marks_ms 从 Godot 引擎初始化起算。两者基准不同，不可相减。t4 需要玩家动作，本脚本不点屏幕，缺席属正常。"
+    "note": "activity_displayed_ms 从 Android 进程启动起算；marks_ms 从 Godot 引擎初始化起算。两者基准不同，不可相减。t4 需要玩家动作，本脚本不点屏幕，缺席属正常。segments_ms 里 -1 表示某一端没抓到，不是耗时为 0。over_budget_ms 始终计算，与 verdict 是否 asserted 无关。cache_condition=warm_after_force_stop 表示进程是新的但文件缓存仍热，不是真冷启动。"
   },
   "note": "Debug 构建，仅用于 QA。不得当作 Release 验收：没有私有 keystore 签名、没有体积门槛、没有低端机与双设备联机验收。"
 }
@@ -655,6 +702,8 @@ note "device    $DEVICE_MODEL  Android $DEVICE_RELEASE (api $DEVICE_SDK, $DEVICE
 note "install   $INSTALL_METHOD  path=$INSTALLED_PATH"
 note "launch    pid=$PID  fatal=$FATAL_COUNT  script_error=$SCRIPT_ERR_COUNT  pss=${MEM_KB}KB"
 note "startup   displayed=${DISPLAYED_MS}ms (自进程启动)  t0=${T0_MS}ms t1=${T1_MS}ms t2=${T2_MS}ms t3=${T3_MS}ms t4=${T4_MS}ms (自引擎初始化，-1=没抓到)"
+note "startup   分段 t0->t1=${SEG_T0_T1}ms  t1->t2=${SEG_T1_T2}ms  t2->t3=${SEG_T2_T3}ms   缓存条件=${CACHE_CONDITION}"
+note "startup   超预算 t1=+${T1_OVER_MS}ms  t3=+${T3_OVER_MS}ms  (0=未超)  verdict=${STARTUP_VERDICT}"
 note "          t0 = 引擎自身启动开销（此前无任何游戏代码运行）；t0->t2 = autoload 构造 + 主场景"
 note "          判定=$STARTUP_VERDICT  预算 t1<=${T1_MAX_MS}ms t3<=${T3_MAX_MS}ms"
 note "identity  build_info_in_apk=$APK_BUILD_MATCH  apk_scan=$APK_SCAN_STATUS  template_sha=${TEMPLATE_SHA:0:16}"
