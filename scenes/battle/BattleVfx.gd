@@ -570,6 +570,10 @@ func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictio
 		target_world=unit.get("world_foot",Vector3.ZERO)
 	elif sid=="holy_shield_burst":
 		target_world=unit.get("world_foot",Vector3.ZERO)
+	# 焰爪魔灵的主动技是纯自保（回血 + 加盾都作用在自己身上），落点必须回到施法者
+	# 脚下。以前它跟着默认分支指向最近的敌人，于是一个自保技把特效放在了敌人身上。
+	elif sid=="burn_claw":
+		target_world=unit.get("world_foot",Vector3.ZERO)
 	elif sid in ["slow_aura","eternal_night"]:
 		context["targets"]=_living_enemy_world_positions(unit,current)
 		target_world=unit.get("world_foot",Vector3.ZERO)

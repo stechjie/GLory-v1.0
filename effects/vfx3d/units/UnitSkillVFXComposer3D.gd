@@ -73,6 +73,24 @@ const DRAGON_GROUND_CURL_TEXTURE:="res://assets/vfx/skills/dark_dragon_hole/drag
 const DRAGON_DARK_MASS_TEXTURE:="res://assets/vfx/skills/dark_dragon_hole/dragon_dark_mass.png"
 const DRAGON_PULL_SHARDS_TEXTURE:="res://assets/vfx/skills/dark_dragon_hole/dragon_pull_shards.png"
 const DRAGON_TARGET_DRAG_TEXTURE:="res://assets/vfx/skills/dark_dragon_hole/dragon_target_drag.png"
+# 阵型盟友（第 21 回合的守护者）。这五个技能以前全是程序化几何，截帧下
+# burn_claw / soul_chain 的画面占比只有 0.05%，等于没有表现。
+const FLAMECLAW_EMBER_SHELL_TEXTURE:="res://assets/vfx/skills/ally_flame_claw/flameclaw_ember_shell.png"
+const FLAMECLAW_HEAL_UPDRAFT_TEXTURE:="res://assets/vfx/skills/ally_flame_claw/flameclaw_heal_updraft.png"
+const FLAMECLAW_GROUND_COALS_TEXTURE:="res://assets/vfx/skills/ally_flame_claw/flameclaw_ground_coals.png"
+const SOULCHAIN_CAST_COIL_TEXTURE:="res://assets/vfx/skills/ally_soul_chain/soulchain_cast_coil.png"
+const SOULCHAIN_CHAIN_LINK_TEXTURE:="res://assets/vfx/skills/ally_soul_chain/soulchain_chain_link.png"
+const SOULCHAIN_LOCK_SEAL_TEXTURE:="res://assets/vfx/skills/ally_soul_chain/soulchain_lock_seal.png"
+const SOULCHAIN_DRAG_SMEAR_TEXTURE:="res://assets/vfx/skills/ally_soul_chain/soulchain_drag_smear.png"
+const DEVOUR_MAW_TEAR_TEXTURE:="res://assets/vfx/skills/ally_abyss_beast/devour_maw_tear.png"
+const DEVOUR_SILENCE_GAG_TEXTURE:="res://assets/vfx/skills/ally_abyss_beast/devour_silence_gag.png"
+const DEVOUR_LIFESTEAL_PULL_TEXTURE:="res://assets/vfx/skills/ally_abyss_beast/devour_lifesteal_pull.png"
+const INFERNO_SKY_COLUMN_TEXTURE:="res://assets/vfx/skills/ally_hell_inferno/inferno_sky_column.png"
+const INFERNO_GROUND_SCORCH_TEXTURE:="res://assets/vfx/skills/ally_hell_inferno/inferno_ground_scorch.png"
+const INFERNO_ATK_DOWN_BRAND_TEXTURE:="res://assets/vfx/skills/ally_hell_inferno/inferno_atk_down_brand.png"
+const ETERNAL_NIGHT_VORTEX_TEXTURE:="res://assets/vfx/skills/ally_eternal_night/eternal_night_vortex.png"
+const ETERNAL_NIGHT_METEOR_TEXTURE:="res://assets/vfx/skills/ally_eternal_night/eternal_night_meteor.png"
+const ETERNAL_NIGHT_IMPACT_TEXTURE:="res://assets/vfx/skills/ally_eternal_night/eternal_night_impact.png"
 const BUBBLE_BODY_TEXTURE:="res://assets/vfx/skills/merc_pisces_bubble/bubble_body.png"
 const BUBBLE_BURST_TEXTURE:="res://assets/vfx/skills/merc_pisces_bubble/bubble_burst_damage.png"
 const BUBBLE_STICKY_TEXTURE:="res://assets/vfx/skills/merc_pisces_bubble/bubble_slow_sticky.png"
@@ -163,9 +181,9 @@ func play_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary
 		"curse":_curse_hit(target,context)
 		"counter_slash":_counter_slash(target)
 		# ── 阵型盟友 ──────────────────────────────────────
-		"burn_claw":_burn_claw(target)
+		"burn_claw":_burn_claw(origin,context)
 		"soul_chain":_soul_chain(origin,target,context)
-		"devour_bite":_devour_bite(target)
+		"devour_bite":_devour_bite(origin,target,context)
 		"hell_burst":_hell_burst(target,context)
 		"eternal_night":_eternal_night(origin,context)
 		_:
@@ -251,6 +269,9 @@ const MELEE_KIND_BY_UNIT := {
 	"god_king":"cross",      # 神王·神圣交叉斩
 	"god_guard":"guardian_crystal", # 光之卫士·晶体圣刃
 	"dark_doom":"doom_scythe",   # Doom Guard: painted scythe arc
+	# 焰爪魔灵的普攻带灼烧 DoT（BattleSimulator._apply_attack_statuses 的 burn_claw
+	# 分支），所以普攻这条路也要有火爪与灼烧印，主动技那条只管自保。
+	"ally_flame_claw":"flame_claw",
 }
 
 func _melee_kind_for(unit_id:String)->String:
@@ -1532,50 +1553,234 @@ func _counter_slash(target:Vector3)->void:
 	_spawn(VFX_SLASH_ARC,second,{"target":_lvl(target,th,LEVEL_BODY),"direction":Vector3.LEFT})
 	_spawn(VFX_IMPACT_FLASH,first,{"target":_lvl(target,th,LEVEL_BODY)})
 
-# 阵型盟友：深渊/炼狱配色，比 PVE 怪更重一档。
-func _burn_claw(target:Vector3)->void:
-	var th := UNIT_HEIGHT_FALLBACK
-	var p:=_profile(Color(.10,.02,.005),Color(.84,.24,.03),Color(1.0,.78,.28),.52,.40,3.6,6)
-	for i in 3:
-		var claw:=_profile(p.dark_color,p.main_color,p.core_color,.46,.30,3.2,4)
-		claw.parameters={"width":.052,"arc_degrees":88.0,"tilt_degrees":-18.0+float(i)*18.0}
-		_spawn(VFX_SLASH_ARC,claw,{"target":_lvl(target,th,LEVEL_BODY)+Vector3(0,th*.06*float(i),0),"direction":Vector3.RIGHT})
-	_spawn(VFX_IMPACT_FLASH,p,{"target":_lvl(target,th,LEVEL_BODY)})
+# 阵型盟友：深渊/炼狱配色，比 PVE 怪更重一档。手绘分层，和暗族同规格。
+#
+# 这五个以前全是程序化几何，截帧下 burn_claw 0.056% / soul_chain 0.052%，
+# 低于 vfx_diff 的 0.2% 空表现阈值 —— 玩家在最终回合看到的是「什么都没放」。
+#
+# 三条在重画时一并纠正的错配：
+#   1. 全场技（锁魂/噬兽）过去只画一个目标，BattleVfx 传进来的 targets 被忽略；
+#   2. 焰爪的主动技其实是自保（BattleSimSkills._skill_ally_self_sustain 回血+加盾），
+#      过去却往最近的敌人身上挠爪；
+#   3. 锁魂挂的状态图标是 slow，而技能的主效果是 stun。
+const INFERNO_EDGE:=Color(.11,.03,.01)   # 炼狱系：焦黑边
+const INFERNO_BODY:=Color(1.0,.86,.72)   # 本体几乎保留贴图原色，只压一点暖
+const INFERNO_CORE:=Color(1.0,.94,.78)   # 熔核：偏白的金
+# 锁魂者：烧红的锻铁。五个友军同为橙红，靠明度和饱和度分层次，不靠色相分。
+#
+# body 必须贴近 1.0：这几个 tint 是**乘进**贴图的（见 VFXBossTextureLayer3D 的
+# TEXTURE_SHADER），链子本身画的就是深灰铁，body 再压到 .8 以下就整个发黑，
+# 实测暖色像素只剩 31%，看上去是一坨灰的。
+const FORGE_EDGE:=Color(.10,.03,.01)
+const FORGE_BODY:=Color(1.0,.74,.52)
+const FORGE_CORE:=Color(1.0,.70,.30)
 
+# 焰爪魔灵（1-10 血）：自保技。回血 + 护盾都作用在自己身上，所以三层全部
+# 锚在施法者身上 —— 脚下焦土、裹身炭壳、上升的余烬。
+func _burn_claw(origin:Vector3,context:Dictionary)->void:
+	var oh := _uh(context,"origin_height")
+	var seed:=float(abs(int(origin.x*31.0+origin.z*17.0))%97)
+	var coals:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
+	if coals!=null:
+		coals.play_layer(FLAMECLAW_GROUND_COALS_TEXTURE,{
+			"name":"BurnClaw_Coals","position":_lvl(origin,oh,LEVEL_FOOT,0.0),
+			"size":Vector2(2.00,2.00),"ground":true,"duration":1.05,
+			"start_scale":.14,"peak_scale":.86,"end_scale":1.04,
+			"dark_tint":INFERNO_EDGE,"body_tint":INFERNO_BODY,"core_tint":INFERNO_CORE,
+			"flow_strength":.010,"opacity":.88,"seed":seed
+		})
+	var shell:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
+	if shell!=null:
+		# 护盾壳：start < peak > end 收一点，读作「合拢包住自己」而不是炸开。
+		shell.play_layer(FLAMECLAW_EMBER_SHELL_TEXTURE,{
+			"name":"BurnClaw_Shell","position":_lvl(origin,oh,LEVEL_BODY),
+			"size":Vector2(1.72,1.84),"duration":.92,
+			"start_scale":.36,"peak_scale":.96,"end_scale":.84,
+			"dark_tint":INFERNO_EDGE,"body_tint":INFERNO_BODY,"core_tint":INFERNO_CORE,
+			"flow_strength":.022,"opacity":.96,"delay":.10,"seed":seed+3.0,
+			"follow_node":context.get("origin_node")
+		})
+	var updraft:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
+	if updraft!=null:
+		# 回血：余烬往上飘，尺寸一路放大，是全场唯一一处「向上」的读法。
+		updraft.play_layer(FLAMECLAW_HEAL_UPDRAFT_TEXTURE,{
+			"name":"BurnClaw_Heal","position":_lvl(origin,oh,LEVEL_SHOULDER),
+			"size":Vector2(1.16,1.70),"duration":.86,
+			"start_scale":.20,"peak_scale":.88,"end_scale":1.06,
+			"dark_tint":INFERNO_EDGE,"body_tint":INFERNO_BODY,"core_tint":INFERNO_CORE,
+			"flow_strength":.026,"opacity":.90,"delay":.26,"seed":seed+7.0,
+			"follow_node":context.get("origin_node")
+		})
+
+# 暗狱锁魂者（11-20 血）：全场眩晕 + 减攻速。链子从施法者甩向每一个敌人，
+# 锁印落在每个目标头上 —— 这是「全场」，不是单体。
 func _soul_chain(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var th := _uh(context)
 	var oh := _uh(context,"origin_height")
-	var p:=_shadow_profile(.42,1.20);p.main_color=Color(.30,.10,.52);p.core_color=Color(.82,.56,1.0)
-	_spawn(VFX_TRACKED_LINK,p,{"origin":_lvl(origin,oh,LEVEL_BODY),"target":_lvl(target,th,LEVEL_BODY),"origin_node":context.get("origin_node"),"target_node":context.get("target_node"),"persistent":false})
-	_status_hit(target,"slow",context)
+	var seed:=float(abs(int(target.x*23.0+target.z*11.0))%97)
+	var coil:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
+	if coil!=null:
+		coil.play_layer(SOULCHAIN_CAST_COIL_TEXTURE,{
+			"name":"SoulChain_Coil","position":_lvl(origin,oh,LEVEL_BODY),
+			"size":Vector2(1.52,1.64),"duration":.40,
+			"start_scale":.72,"peak_scale":.50,"end_scale":.30,
+			"dark_tint":FORGE_EDGE,"body_tint":FORGE_BODY,"core_tint":FORGE_CORE,
+			"flow_strength":.024,"opacity":.94,"seed":seed
+		})
+	# 链体飞向最近的那个目标（有 track_node 会跟着走），其余目标只落锁印 ——
+	# 十条链同时在场会糊成一团，读不出「谁被锁住了」。
+	var chain:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
+	if chain!=null:
+		chain.play_layer(SOULCHAIN_CHAIN_LINK_TEXTURE,{
+			"name":"SoulChain_Link","from":_lvl(origin,oh,LEVEL_BODY),"to":_lvl(target,th,LEVEL_BODY),
+			"track_node":context.get("target_node"),
+			"size":Vector2(2.05,.58),"duration":.62,"travel_ratio":.68,
+			"start_scale":.34,"peak_scale":1.0,"end_scale":.88,
+			"dark_tint":FORGE_EDGE,"body_tint":FORGE_BODY,"core_tint":FORGE_CORE,
+			"flow_strength":.018,"opacity":1.0,"delay":.16,"seed":seed+3.0
+		})
+	var index:=0.0
+	for value in _capped_targets(context.get("targets",[])):
+		var seal:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
+		if seal==null:
+			continue
+		# 逐目标错开一点，全场同帧齐闪会读成一次全屏闪光而不是「一个个被锁上」。
+		seal.play_layer(SOULCHAIN_LOCK_SEAL_TEXTURE,{
+			"name":"SoulChain_Seal","position":_lvl_foot(value,th,LEVEL_HEAD),
+			"size":Vector2(1.00,1.06),"duration":.52,
+			"start_scale":.12,"peak_scale":.84,"end_scale":.96,
+			"dark_tint":FORGE_EDGE,"body_tint":FORGE_BODY,"core_tint":FORGE_CORE,
+			"flow_strength":.020,"opacity":.96,"delay":.46+index*.05,"seed":seed+index*13.0
+		})
+		index+=1.0
+	# 减攻速的残迹留在最近那个目标肩上，跟着它走。
+	var smear:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
+	if smear!=null:
+		smear.play_layer(SOULCHAIN_DRAG_SMEAR_TEXTURE,{
+			"name":"SoulChain_Drag","position":_lvl(target,th,LEVEL_SHOULDER),
+			"size":Vector2(.90,1.14),
+			"duration":clampf(float(context.get("status_duration",1.5)),1.2,3.0),
+			"start_scale":.14,"peak_scale":.62,"end_scale":.74,
+			"dark_tint":FORGE_EDGE,"body_tint":Color(.86,.66,.52),"core_tint":Color(1.0,.74,.44),
+			"flow_strength":.016,"opacity":.70,"delay":.58,"seed":seed+11.0,
+			"follow_node":context.get("target_node")
+		})
+	_status_hit(target,"stun",context)
 
-func _devour_bite(target:Vector3)->void:
-	var th := UNIT_HEIGHT_FALLBACK
-	var p:=_blood_profile(.72,.56);p.main_color=Color(.46,.03,.10);p.core_color=Color(1.0,.28,.30)
-	_spawn(VFX_ENERGY_BURST,p,{"target":_lvl(target,th,LEVEL_BODY),"direction":Vector3.UP})
-	var bite:=_profile(p.dark_color,p.main_color,p.core_color,.50,.30,3.4,5)
-	bite.parameters={"width":.095,"arc_degrees":124.0,"tilt_degrees":8.0}
-	_spawn(VFX_SLASH_ARC,bite,{"target":_lvl(target,th,LEVEL_BODY),"direction":Vector3.RIGHT})
-	_spawn(VFX_IMPACT_FLASH,p,{"target":_lvl(target,th,LEVEL_BODY)})
+# 深渊噬兽（21-30 血）：全场沉默 + 吸血。巨口咬在最近的目标上，封口印落在
+# 每一个敌人身上，血再回抽到施法者。
+func _devour_bite(origin:Vector3,target:Vector3,context:Dictionary)->void:
+	var th := _uh(context)
+	var oh := _uh(context,"origin_height")
+	var seed:=float(abs(int(target.x*19.0+target.z*29.0))%97)
+	var maw:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
+	if maw!=null:
+		maw.play_layer(DEVOUR_MAW_TEAR_TEXTURE,{
+			"name":"Devour_Maw","position":_lvl(target,th,LEVEL_BODY),
+			"size":Vector2(1.96,1.60),"duration":.50,
+			"start_scale":.24,"peak_scale":1.0,"end_scale":.78,
+			"dark_tint":Color(.12,.03,.01),"body_tint":Color(1.0,.84,.62),"core_tint":Color(1.0,.72,.34),
+			"flow_strength":.024,"opacity":1.0,"seed":seed
+		})
+	var index:=0.0
+	for value in _capped_targets(context.get("targets",[])):
+		var gag:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
+		if gag==null:
+			continue
+		gag.play_layer(DEVOUR_SILENCE_GAG_TEXTURE,{
+			"name":"Devour_Gag","position":_lvl_foot(value,th,LEVEL_HEAD),
+			"size":Vector2(.98,.98),"duration":.58,
+			"start_scale":.12,"peak_scale":.80,"end_scale":.92,
+			"dark_tint":Color(.12,.03,.01),"body_tint":Color(.96,.76,.58),"core_tint":Color(1.0,.74,.38),
+			"flow_strength":.018,"opacity":.94,"delay":.30+index*.05,"seed":seed+index*17.0
+		})
+		index+=1.0
+	var pull:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
+	if pull!=null:
+		# 吸血：方向和链体相反，从目标回到施法者。
+		pull.play_layer(DEVOUR_LIFESTEAL_PULL_TEXTURE,{
+			"name":"Devour_Lifesteal","from":_lvl(target,th,LEVEL_BODY),"to":_lvl(origin,oh,LEVEL_BODY),
+			"track_node":context.get("origin_node"),
+			"size":Vector2(1.80,.56),"duration":.66,"travel_ratio":.72,
+			"start_scale":.30,"peak_scale":.92,"end_scale":.62,
+			"dark_tint":Color(.10,.02,.01),"body_tint":Color(.96,.52,.24),"core_tint":Color(1.0,.66,.30),
+			"flow_strength":.022,"opacity":.92,"delay":.34,"seed":seed+5.0
+		})
 
+# 炼狱焚界者（31-40 血）：全场灼烧 + 减攻。火柱落在最近的目标，焦痕铺满每一个
+# 敌人脚下，减攻烙印跟着补。
 func _hell_burst(target:Vector3,context:Dictionary)->void:
 	var th := _uh(context)
-	var p:=_profile(Color(.11,.02,.006),Color(.90,.20,.03),Color(1.0,.76,.30),.92,.80,4.4,11)
-	_spawn(VFX_ENERGY_BURST,p,{"target":_lvl(target,th,LEVEL_BODY),"direction":Vector3.UP})
-	_spawn(VFX_FALLING_PILLAR,p,{"target":target})
+	var seed:=float(abs(int(target.x*37.0+target.z*13.0))%97)
+	var column:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
+	if column!=null:
+		column.play_layer(INFERNO_SKY_COLUMN_TEXTURE,{
+			"name":"Inferno_Column","from":_lvl(target,th,LEVEL_SKY),"to":_lvl(target,th,LEVEL_BODY),
+			"track_node":context.get("target_node"),
+			"size":Vector2(.76,2.30),"duration":.58,"travel_ratio":.62,
+			"start_scale":.62,"peak_scale":1.0,"end_scale":.86,
+			"dark_tint":INFERNO_EDGE,"body_tint":INFERNO_BODY,"core_tint":INFERNO_CORE,
+			"flow_strength":.026,"opacity":1.0,"seed":seed
+		})
+	var index:=0.0
 	for value in _capped_targets(context.get("targets",[])):
-		_spawn(VFX_LIGHT_PULSE,p,{"target":_lvl_foot(value,th,LEVEL_BODY)})
+		var scorch:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
+		if scorch!=null:
+			scorch.play_layer(INFERNO_GROUND_SCORCH_TEXTURE,{
+				"name":"Inferno_Scorch","position":_lvl_foot(value,th,LEVEL_FOOT),
+				"size":Vector2(1.74,1.74),"ground":true,"duration":.96,
+				"start_scale":.16,"peak_scale":.90,"end_scale":1.02,
+				"dark_tint":INFERNO_EDGE,"body_tint":INFERNO_BODY,"core_tint":INFERNO_CORE,
+				"flow_strength":.012,"opacity":.86,"delay":.40+index*.04,"seed":seed+index*7.0
+			})
+		var brand:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
+		if brand!=null:
+			brand.play_layer(INFERNO_ATK_DOWN_BRAND_TEXTURE,{
+				"name":"Inferno_Brand","position":_lvl_foot(value,th,LEVEL_BODY),
+				"size":Vector2(.84,1.18),"duration":.72,
+				"start_scale":.10,"peak_scale":.74,"end_scale":.86,
+				"dark_tint":INFERNO_EDGE,"body_tint":Color(.88,.72,.62),"core_tint":Color(1.0,.82,.52),
+				"flow_strength":.016,"opacity":.82,"delay":.54+index*.04,"seed":seed+index*11.0
+			})
+		index+=1.0
 
+# 深渊魔君·厄夜（41-50 血）：全场流星，无视防御。地面漩涡开场，每个敌人头顶
+# 落一颗流星，落点撕开一道裂口。
 func _eternal_night(origin:Vector3,context:Dictionary)->void:
 	var th := _uh(context)
 	var oh := _uh(context,"origin_height")
-	# 魔君的场面技：地面漩涡 + 上冲暗能，比普通盟友技重一档。
-	var p:=_shadow_profile(.92,1.55);p.main_color=Color(.16,.03,.32);p.core_color=Color(.60,.20,.92);p.emission_energy=3.0
-	_spawn(VFX_VORTEX,p,{"target":_lvl(origin,oh,LEVEL_FOOT,0.0)})
-	_spawn(VFX_ENERGY_BURST,p,{"target":_lvl(origin,oh,LEVEL_BODY),"direction":Vector3.UP})
+	var seed:=float(abs(int(origin.x*41.0+origin.z*23.0))%97)
+	var vortex:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
+	if vortex!=null:
+		vortex.play_layer(ETERNAL_NIGHT_VORTEX_TEXTURE,{
+			"name":"EternalNight_Vortex","position":_lvl(origin,oh,LEVEL_FOOT,0.0),
+			"size":Vector2(2.34,2.34),"ground":true,"duration":1.24,
+			"start_scale":.10,"peak_scale":.94,"end_scale":1.14,
+			"dark_tint":Color(.05,.02,.01),"body_tint":Color(.82,.60,.44),"core_tint":Color(1.0,.62,.26),
+			"flow_strength":.020,"opacity":.92,"seed":seed
+		})
+	var index:=0.0
 	for value in _capped_targets(context.get("targets",[])):
-		var mark:=_shadow_profile(.36,.86);mark.main_color=p.main_color;mark.core_color=p.core_color
-		_spawn(VFX_LIGHT_PULSE,mark,{"target":_lvl_foot(value,th,LEVEL_BODY)})
+		var meteor:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
+		if meteor!=null:
+			meteor.play_layer(ETERNAL_NIGHT_METEOR_TEXTURE,{
+				"name":"EternalNight_Meteor",
+				"from":_lvl_foot(value,th,LEVEL_SKY),"to":_lvl_foot(value,th,LEVEL_BODY),
+				"size":Vector2(.74,1.82),"duration":.62,"travel_ratio":.70,
+				"start_scale":.46,"peak_scale":.96,"end_scale":.78,
+				"dark_tint":Color(.05,.02,.01),"body_tint":Color(.86,.64,.46),"core_tint":Color(1.0,.66,.28),
+				"flow_strength":.018,"opacity":1.0,"delay":.28+index*.07,"seed":seed+index*19.0
+			})
+		var tear:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
+		if tear!=null:
+			tear.play_layer(ETERNAL_NIGHT_IMPACT_TEXTURE,{
+				"name":"EternalNight_Tear","position":_lvl_foot(value,th,LEVEL_BODY),
+				"size":Vector2(1.44,1.50),"duration":.54,
+				"start_scale":.16,"peak_scale":.92,"end_scale":.72,
+				"dark_tint":Color(.05,.02,.01),"body_tint":Color(.88,.66,.48),"core_tint":Color(1.0,.68,.30),
+				"flow_strength":.024,"opacity":.96,"delay":.66+index*.07,"seed":seed+index*23.0
+			})
+		index+=1.0
 
 # match 的兜底分支用：一次中性的命中反馈。
 func _generic_hit(target:Vector3)->void:

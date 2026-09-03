@@ -23,6 +23,8 @@ const DARK_SCYTHE_SLASH := "res://assets/vfx/skills/dark_basic_melee/dark_scythe
 const DARK_SUC_SWIPE := "res://assets/vfx/skills/dark_basic_melee/dark_suc_swipe.png"
 const DARK_DOOM_SCYTHE_ARC := "res://assets/vfx/skills/dark_basic_melee/dark_doom_scythe_arc.png"
 const DARK_DRAGON_CLAW_ARC := "res://assets/vfx/skills/dark_basic_melee/dark_dragon_claw_arc.png"
+const FLAMECLAW_CLAW_SWIPE := "res://assets/vfx/skills/ally_flame_claw/flameclaw_claw_swipe.png"
+const FLAMECLAW_BURN_BREAK := "res://assets/vfx/skills/ally_flame_claw/flameclaw_burn_break.png"
 const DARK_QUEEN_BOLT_PROJECTILE := "res://assets/vfx/skills/dark_basic_projectiles/dark_queen_bolt_projectile.png"
 const DARK_QUEEN_BOLT_TRAIL := "res://assets/vfx/skills/dark_basic_projectiles/dark_queen_bolt_trail.png"
 const DARK_QUEEN_BOLT_IMPACT := "res://assets/vfx/skills/dark_basic_projectiles/dark_queen_bolt_impact.png"
@@ -121,6 +123,14 @@ const PAINTED_MELEE := {
 		"slash_size": Vector2(1.86, 1.40), "hit_size": Vector2(1.30, 1.30),
 		"dark": Color(.14, .06, .16), "body": Color(1.0, .90, .98), "core": Color(1.0, .86, .96),
 		"seed": 157.0,
+	},
+	# Formation ally. The only inferno-palette melee: its basic attack applies the
+	# burn DoT, so the hit plate is a scorch rather than the shared dark break.
+	"flame_claw": {
+		"slash": FLAMECLAW_CLAW_SWIPE, "hit": FLAMECLAW_BURN_BREAK,
+		"slash_size": Vector2(1.74, 1.10), "hit_size": Vector2(1.12, 1.12),
+		"dark": Color(.11, .03, .01), "body": Color(1.0, .86, .72), "core": Color(1.0, .94, .78),
+		"seed": 163.0,
 	},
 }
 
