@@ -218,8 +218,35 @@ func sync() -> void:
 func can_start_battle() -> bool:
 	return step in [Step.START_PVE_1, Step.START_PVE_2, Step.START_BOSS, Step.START_PVP]
 
+# 无效点击的反馈（V3 P1-10）。
+#
+# 原来无论在哪一步都只回一句「先完成箭头指示的操作」。那句话有两个问题：
+# 它没说要做什么，而且箭头指的地方**可能正被商店盖住** —— 玩家照着看，
+# 看到的是商店，于是在商店里反复找。
+#
+# 现在说清两件事：商店开着就先让它关掉，然后复述这一步的目标。
+# 目标直接取 current_text() 的首行，不另建一张会漂移的文案表 ——
+# 那张表还会成为第二处可能泄漏 enum key 的地方。
 func follow_arrow_hint() -> String:
-	return _t("先完成箭头指示的操作。", "Follow the arrow first.")
+	var objective := current_text().split("
+")[0].strip_edges()
+	if _fill_shop_open and not _target_is_in_shop():
+		if objective.is_empty():
+			return _t("商店挡住了要点的地方，先关掉商店。",
+				"The shop is covering the target. Close it first.")
+		return _t("商店挡住了要点的地方。先关掉商店，然后：%s" % objective,
+			"The shop is covering the target. Close it first, then: %s" % objective)
+	if objective.is_empty():
+		return _t("先完成箭头指示的操作。", "Follow the arrow first.")
+	return _t("这一步还没完成：%s" % objective,
+		"This step is not done yet: %s" % objective)
+
+
+# 这一步的目标本来就在商店里时，不该让玩家去关商店。
+func _target_is_in_shop() -> bool:
+	if step in [Step.BUY_3, Step.UPGRADE_2, Step.UPGRADE_3, Step.UPGRADE_OTHERS]:
+		return true
+	return step == Step.FILL_7 and _fill_phase == FillPhase.BUY
 
 func begin_battle() -> bool:
 	if not can_start_battle():

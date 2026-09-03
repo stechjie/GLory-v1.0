@@ -45,6 +45,7 @@ func _ready() -> void:
 	_check_fallback_is_human()
 	_check_key_accessor_is_not_wired_to_a_label()
 	await _check_live_overlay_shows_no_keys()
+	_check_invalid_tap_explains_why()
 
 	LocaleManager.set_locale(_locale_before)
 	_h.finish(get_tree())
@@ -257,3 +258,56 @@ func _collect_text(node: Node, out: Array[String]) -> void:
 			out.append(t3)
 	for child in node.get_children():
 		_collect_text(child, out)
+
+
+# V3 P1-10：无效点击必须说明原因。
+#
+# 原来无论在哪一步都只回一句「先完成箭头指示的操作」。那句话有两个问题：
+# 它没说要做什么，而且箭头指的地方**可能正被商店盖住** —— 玩家照着看，
+# 看到的是商店，于是在商店里反复找。
+func _check_invalid_tap_explains_why() -> void:
+	var probe: TutorialScript = TutorialScript.new()
+	add_child(probe)
+	probe.active = true
+	var keys: Array = _step_keys()
+	var internal := RegEx.create_from_string(INTERNAL_TOKEN)
+
+	for locale in ["zh", "en"]:
+		LocaleManager.set_locale(locale)
+		var seen := {}
+		for i in keys.size():
+			probe.step = i
+			var hint := probe.follow_arrow_hint()
+			_h.item()
+			_h.expect(not hint.strip_edges().is_empty(), "invalid_tap_hint_empty",
+				"[%s] 步骤 %s 的无效点击反馈是空的" % [locale, str(keys[i])])
+			_h.expect(not hint.contains(str(keys[i])), "invalid_tap_hint_leaks_key",
+				"[%s] 无效点击反馈里含有枚举名：%s" % [locale, hint])
+			var m := internal.search(hint)
+			_h.expect(m == null, "invalid_tap_hint_has_internal_token",
+				"[%s] 无效点击反馈里含有内部标识：%s" % [locale, hint])
+			seen[hint] = true
+		# 每一步都回同一句话 = 没有说明原因，只是换了个说法的「再试一次」。
+		_h.expect(seen.size() >= 5, "invalid_tap_hint_is_one_size_fits_all",
+			"[%s] %d 个步骤的无效点击反馈只有 %d 种说法 —— 等于没说明原因"
+				% [locale, keys.size(), seen.size()])
+
+	# 商店盖住目标时必须先让玩家关商店。箭头指的地方在商店后面，
+	# 照着箭头看只会看到商店。
+	LocaleManager.set_locale("zh")
+	probe.step = TutorialScript.Step.PLACE_3
+	var without_shop := probe.follow_arrow_hint()
+	probe.record_shop_toggled(true)
+	var with_shop := probe.follow_arrow_hint()
+	_h.expect(with_shop != without_shop, "shop_occlusion_not_mentioned",
+		"商店开着时无效点击反馈和关着时一模一样 —— 没有提示先关商店")
+	_h.expect(with_shop.contains("商店"), "shop_occlusion_hint_missing_shop",
+		"商店遮挡的提示里没提到商店：%s" % with_shop)
+	# 目标本来就在商店里的步骤不该让玩家去关商店。
+	probe.step = TutorialScript.Step.BUY_3
+	var buy_hint := probe.follow_arrow_hint()
+	_h.expect(not buy_hint.contains("先关掉商店"), "shop_hint_fires_on_shop_steps",
+		"采购步骤也在叫玩家关商店 —— 那正是要点的地方：%s" % buy_hint)
+	probe.record_shop_toggled(false)
+
+	probe.queue_free()
