@@ -38,6 +38,9 @@ func _run() -> void:
 	_check_offline_only_guard_survives()
 	_check_input_is_observed_not_consumed()
 	_check_budget_backoff(warmup)
+	_check_state_machine(warmup)
+	_check_pauses_for_modal(warmup)
+	_check_low_memory_scope(warmup)
 	_check_input_yield_behaviour(warmup)
 
 	_h.note("queue=%d phases=%s" % [queue.size(), str(totals)])
@@ -253,3 +256,92 @@ func _first_skill_of(table_name: String, rows_key: String) -> String:
 		if not sid.is_empty() and sid != "none" and not WarmupScript.NO_VFX_SKILLS.has(sid):
 			return sid
 	return ""
+
+
+# V3 P0-04：状态机必须能回答「为什么没在跑」。
+#
+# 以前只有 _running / _aborted 两个布尔。报告里看到"完成 40/233"时，
+# 读的人分不清这三种情况：玩家一直在点（等等就好）、有 modal 挡着
+# （玩家在做决定，本来就该让）、系统内存告警（要放缓存，可能还会被杀）。
+# 三种的处置完全不同，所以状态和**原因**都必须留在报告里。
+func _check_state_machine(warmup) -> void:
+	# 六个状态都得存在。少一个就意味着某类"没在跑"会被归到别的状态里，
+	# 报告就又开始撒谎了。
+	var names: Array = WarmupScript.State.keys()
+	for wanted in ["RUNNING", "IDLE_WINDOW", "NON_INTERACTIVE", "PAUSED",
+			"CANCELLED", "FINISHED"]:
+		_h.expect(names.has(wanted), "state_missing",
+			"State 枚举缺 %s —— 那类「没在跑」会被并进别的状态" % wanted)
+
+	_h.expect(warmup.state_name() is String and not warmup.state_name().is_empty(),
+		"state_name_unreadable", "state_name() 读不出状态名")
+	_h.expect(warmup.state_reason() is String,
+		"state_reason_unreadable", "state_reason() 没有返回原因串")
+	_h.expect(not warmup.low_memory(),
+		"low_memory_stuck_on", "刚构造出来就报低内存")
+
+
+# V3 P0-04：有 modal 在栈上时必须让开。
+#
+# 输入让路只看"最近有没有点过"，挡不住这一幕：玩家打开宝藏三选一，
+# 盯着三张卡想了五秒没动手 —— 输入静默期早过了，预热照跑，
+# 而那正是他要做决定的时刻。
+func _check_pauses_for_modal(warmup) -> void:
+	var source := FileAccess.get_file_as_string("res://effects/vfx3d/VFXWarmup.gd")
+	if not _h.expect(not source.is_empty(), "warmup_unreadable", "读不到 VFXWarmup.gd"):
+		return
+	_h.expect(source.contains("ModalStack.depth() > 0"),
+		"modal_not_observed",
+		"预热没有看 ModalStack —— 玩家在弹窗里做决定时预热还在抢主线程")
+
+	# 顺序要紧：modal 判定必须排在输入让路**之前**。
+	# 反过来的话，一个长时间不动的 modal 会因为输入静默而被放行。
+	var modal_at := source.find("ModalStack.depth() > 0")
+	var yield_at := source.find("if _should_yield_to_input():")
+	_h.expect(modal_at >= 0 and yield_at > modal_at,
+		"modal_check_after_input_yield",
+		"modal 判定排在输入让路之后 —— 玩家盯着弹窗不动时会被放行")
+
+
+# V3 P0-04：低内存只停 deferred。
+#
+# first_battle 那批是当前战斗要用的，停了会把一次内存告警变成一次可见的战斗卡顿，
+# 而系统很可能根本不会来杀我们。
+func _check_low_memory_scope(warmup) -> void:
+	var source := FileAccess.get_file_as_string("res://effects/vfx3d/VFXWarmup.gd")
+	# 断言 _notification 里的**守卫表达式**，不是"文件里出现过这个常量"。
+	# 第一版写成 source.contains("NOTIFICATION_OS_MEMORY_WARNING")，结果把守卫
+	# 改成别的通知之后断言照样通过 —— 那个常量名还留在 _low_memory 的注释里。
+	# 和 android_smoke 的 cache_condition 是同一类，自己的反向变异抓到的。
+	var notify_at := source.find("func _notification(what: int) -> void:")
+	if not _h.expect(notify_at >= 0, "notification_handler_missing",
+			"VFXWarmup 没有 _notification 处理器"):
+		return
+	var notify_end := source.find("\nfunc ", notify_at + 1)
+	if notify_end < 0:
+		notify_end = source.length()
+	var notify_body := source.substr(notify_at, notify_end - notify_at)
+	_h.expect(notify_body.contains("what != NOTIFICATION_OS_MEMORY_WARNING"),
+		"memory_warning_ignored",
+		"_notification 没有按 NOTIFICATION_OS_MEMORY_WARNING 分派 —— 系统会替我们做决定")
+	_h.expect(notify_body.contains("_low_memory = true"),
+		"memory_warning_not_recorded",
+		"收到低内存告警但没有置位 _low_memory，暂停判定读不到它")
+	_h.expect(source.contains("_next_phase_is_deferred()"),
+		"low_memory_scope_missing",
+		"低内存暂停没有限定到 deferred 阶段")
+
+	# 释放路径只能丢 deferred。断言它按阶段判断，而不是清空整个队列。
+	var release_at := source.find("func _release_preview_cache")
+	if not _h.expect(release_at >= 0, "release_missing", "没有 _release_preview_cache"):
+		return
+	var release_end := source.find("\nfunc ", release_at + 1)
+	if release_end < 0:
+		release_end = source.length()
+	var body := source.substr(release_at, release_end - release_at)
+	_h.expect(body.contains("PHASE_DEFERRED"),
+		"release_drops_everything",
+		"释放缓存时没有按阶段判断 —— 会把当前战斗要用的 first_battle 也丢掉")
+	_h.expect(not body.contains("_queue.clear()"),
+		"release_clears_queue",
+		"释放缓存直接清空了整个队列，first_battle 会一起没")

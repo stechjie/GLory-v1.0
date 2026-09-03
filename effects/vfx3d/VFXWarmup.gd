@@ -133,6 +133,29 @@ var _done := 0
 var _total := 0
 var _aborted := false
 var _running := false
+
+# V3 P0-04：显式状态机。
+#
+# 以前只有 `_running` / `_aborted` 两个布尔，读报告的人能看出「没在跑」，
+# 但看不出**为什么**没在跑 —— 是玩家在操作、是有 modal 挡着、还是内存告警了。
+# 这三种"没在跑"的处理方式完全不同：第一种等一会儿就好，第三种要放缓存。
+#
+# RUNNING         正在起项
+# IDLE_WINDOW     队列还有东西，但这一帧让给了输入（最近 500 ms 有输入）
+# NON_INTERACTIVE 玩家碰不到的阶段（Bootstrap / 不可交互加载页），可以放开跑
+# PAUSED          被 modal 或低内存挡住，且原因记在 _state_reason 里
+# CANCELLED       abort() 过
+# FINISHED        队列跑完
+enum State { RUNNING, IDLE_WINDOW, NON_INTERACTIVE, PAUSED, CANCELLED, FINISHED }
+
+var _state := State.NON_INTERACTIVE
+var _state_reason := "not_started"
+# 每个状态累计停留的帧数。报告里给出分布，才能回答
+# 「预热没跑完是因为一直被挡着，还是因为它本来就慢」。
+var _state_frames: Dictionary = {}
+# 收到 NOTIFICATION_OS_MEMORY_WARNING 之后置位。只暂停 deferred 阶段，
+# 不动 first_battle —— 那批是当前战斗要用的。
+var _low_memory := false
 var _t_start_us := 0
 var _slowest_ms := 0.0
 var _slowest_id := ""
@@ -424,11 +447,29 @@ func _process(_delta: float) -> void:
 		_finish()
 		return
 
+	# V3 P0-04：modal 在栈上就暂停。
+	#
+	# 输入让路（下面那段）只看"最近有没有点过"，挡不住这种情况：玩家打开了宝藏
+	# 三选一，盯着三张卡想了五秒没动手 —— 输入静默期早就过了，预热照跑，
+	# 而那正是他要做决定的时刻。有 modal 就是有人在等玩家，让开。
+	if ModalStack.depth() > 0:
+		_enter_state(State.PAUSED, "modal_open:%s" % ModalStack.top_id())
+		return
+
+	# V3 P0-04：低内存时停掉 deferred。
+	# first_battle 那批是当前战斗要用的，停了会让战斗现场掉帧，得不偿失。
+	if _low_memory and _next_phase_is_deferred():
+		_enter_state(State.PAUSED, "low_memory")
+		return
+
 	# Yield the frame rather than the window: this defers one item by a few frames,
 	# it does not stop the queue. See INPUT_QUIET_MS.
 	if _should_yield_to_input():
 		_yielded_frames += 1
+		_enter_state(State.IDLE_WINDOW, "recent_input")
 		return
+
+	_enter_state(State.RUNNING, "")
 
 	var skill_id: String = _queue.pop_front()
 	_active_id = skill_id
@@ -557,3 +598,69 @@ func _finish() -> void:
 	if _viewport != null and is_instance_valid(_viewport):
 		_viewport.queue_free()
 	finished.emit(report)
+
+
+# --- V3 P0-04：状态机与低内存 -------------------------------------------------
+
+# 记录状态转移。同状态重复进入只累计帧数，不刷屏日志 ——
+# 被 modal 挡住几百帧是正常的，每帧打一行会把 logcat 冲垮。
+func _enter_state(next_state: int, reason: String) -> void:
+	var key: String = State.keys()[next_state]
+	_state_frames[key] = int(_state_frames.get(key, 0)) + 1
+	if _state == next_state and _state_reason == reason:
+		return
+	_state = next_state
+	_state_reason = reason
+	if next_state == State.PAUSED:
+		print("[WARMUP] 暂停：%s（完成 %d/%d）" % [reason, _done, _total])
+
+
+# 队列头那一项是不是 deferred 阶段。低内存只停 deferred，
+# 所以得看**下一项**属于哪一阶段，而不是看整体进度。
+func _next_phase_is_deferred() -> bool:
+	if _queue.is_empty():
+		return false
+	return str(_phase_by_id.get(str(_queue[0]), "")) == PHASE_DEFERRED
+
+
+# Android 在内存吃紧时会先发这个通知，再决定要不要杀进程。
+# 收到之后停掉 deferred 预热并放掉预览缓存，是"别让系统选择杀我们"的最便宜做法。
+#
+# 刻意**不**清当前战斗必需的资源：那会把一次内存告警变成一次可见的战斗卡顿，
+# 而系统很可能根本不会来杀我们。
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_OS_MEMORY_WARNING:
+		return
+	_low_memory = true
+	print("[WARMUP] 收到系统低内存告警：暂停 deferred 预热并释放预览缓存")
+	_release_preview_cache()
+
+
+# 只释放预热自己造出来的东西。战斗现场的资源不归这里管。
+func _release_preview_cache() -> void:
+	if _active != null and is_instance_valid(_active):
+		_active.queue_free()
+		_active = null
+		_active_id = ""
+	var dropped := 0
+	for index in range(_queue.size() - 1, -1, -1):
+		if str(_phase_by_id.get(str(_queue[index]), "")) == PHASE_DEFERRED:
+			_queue.remove_at(index)
+			dropped += 1
+	if dropped > 0:
+		_total -= dropped
+		print("[WARMUP] 低内存：丢弃 %d 项 deferred 预热（first_battle 不动）" % dropped)
+
+
+# 供门禁与 IssueReport 读。状态名而不是数字：报告要给人看。
+func state_name() -> String:
+	var names: Array = State.keys()
+	return str(names[_state])
+
+
+func state_reason() -> String:
+	return _state_reason
+
+
+func low_memory() -> bool:
+	return _low_memory
