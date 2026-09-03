@@ -3,48 +3,38 @@ extends Node
 # V2 P1-04 / P1-01：**包装模型动作合同矩阵**。
 #
 # V2 清单在 P1-01 和 P1-04 里两次写到「后续还必须增加包装模型动作合同矩阵」，
-# 这份报告就是它：把每个单位的 idle / attack / run 实际播出的 clip 列出来，
-# 并把「动作语义和 clip 语义打架」的挑出来。
+# 这份报告就是它：把每个单位的 idle / attack / run 实际播出的 clip 如实列出来。
 #
 # 这**不是门禁**（文件名不以 _check 结尾，run_check.ps1 -All 不会收它）。
-# 判据只能是名字，机器读不出画面，所以它不该去卡红灯 —— 但它能把
-# 「攻击时在跳舞」从「玩到才发现」变成「一条命令就列出来」。
 #
-# 起因：给 27 条待批准的根位移做分类时，发现超标 clip 叫
-# dance-graceful / aerobic-dance / birdcage / stand-to-sit。逐个 dump 后确认
-# 每个动作节点**只挂一条 clip**，所以不是选曲打分挑错，是资产映射本身把
-# 跳舞片指给了 attack。
+# ## 只记录事实，不按名称判定对错
+#
+# 2026-09-03 更正：本报告的第一版按 clip 名字里的词（dance / sit / birdcage …）
+# 判定「静态动作被绑到 attack 或 run」是冲突，并把 16 条列成缺陷。
+# **用户确认那批舞蹈动作用于攻击/奔跑是设计选择，不是错误。**
+#
+# 名字判不了对错，原因很直接：
+#   * clip 名来自通用动作库，和它在本作里承担的演出职责没有必然关系；
+#   * 时长、候选数、英文词义同样说明不了「这个动作放在这里对不对」——
+#     那是美术和策划的判断，不是字符串匹配能替代的。
+#
+# 所以本报告只回答一个可证伪的问题：**每个单位的每个动作，实际播的是哪条 clip。**
+# 判断某个动作是否需要 `model_in_place_actions`，只看**播放时角色主体是否
+# 不合理地离开自己的圆盘**（那是 battle_actor_body_on_disc 与
+# root_motion_backlog_report 的职责，判据是位移数字），与动作名称无关。
+#
+# ## 取值方式：让 wrapper 自己播，读回它选中的那条
 #
 # **不重实现选曲逻辑。** 73 个 wrapper 的 `_action_aliases()` 有 7 种不同变体
 # （有的 idle 认 "relax"，有的 attack 认 "bite"/"devour"，有的 run 认 "gallop"），
 # 抄任何一份都会在别的单位上报错人。这里改成让 wrapper 自己 `play_xxx()`，
 # 再从 AnimationPlayer 读回 `current_animation` —— 那是 ground truth，
 # 和玩家真实看到的逐字一致。
-#
-# 判据刻意分两档，因为「名字里没有 attack」和「名字里写着 dance」不是一回事：
-#   * 共享 clip（relax-378947 给几十个单位当 idle）只是命名不带别名，**正常**；
-#   * 冲突 clip（dance / sit / birdcage 绑到 attack 或 run）才是要人去看的。
-# 只报第二档，第一档留在全量矩阵里供查。
 
 const CheckHarness := preload("res://tools/CheckHarness.gd")
 
 const CHECK_NAME := "model_action_contract_report"
 const OUT_PATH := "user://model_action_contract.md"
-
-# clip 名里出现这些词，说明它演的是「静态/生活化」内容。
-# 绑到 idle 无所谓（idle 本来就该是这种），绑到 attack 或 run 才是冲突。
-const SEDENTARY_WORDS := [
-	"dance", "sit", "birdcage", "relax", "talk", "pose", "cage", "sleep",
-	"yawn", "clap", "salute", "wave", "think", "look", "breath",
-]
-
-# 反过来的赦免词：名字里带这些就明确是战斗/位移内容，不算冲突。
-# 比 wrapper 的别名表宽，因为这里只用于「免罪」，宽一点只会漏报不会误报。
-const ACTION_WORDS := {
-	"attack": ["attack", "atk", "punch", "slash", "hit", "cast", "spell", "shoot",
-		"gun", "bite", "devour", "blast", "kick", "swing", "stab", "claw"],
-	"run": ["run", "walk", "move", "catwalk", "trot", "gallop", "sprint", "dash", "fly"],
-}
 
 const ACTION_METHODS := {"idle": "play_idle", "attack": "play_attack", "run": "play_run"}
 const ACTIONS := ["idle", "attack", "run"]
@@ -127,34 +117,16 @@ func _scan(definition: Dictionary, kind: String) -> void:
 					length = animation.length if animation != null else 0.0
 		_rows.append({
 			"id": unit_id, "kind": kind, "action": action, "clip": clip,
-			"length": length, "count": pool, "conflict": _is_conflict(clip, action),
+			"length": length, "count": pool,
 		})
 	root.queue_free()
 	await get_tree().process_frame
 	_seen_models[model_path] = true
 
 
-# 冲突 = 一条明显在演「坐着/跳舞/闲聊」的 clip 被绑到了 attack 或 run。
-# 反过来（战斗 clip 当 idle）不算：待机摆个攻击起手式是常见做法。
-func _is_conflict(clip: String, action: String) -> bool:
-	if not ACTION_WORDS.has(action) or clip.begins_with("<"):
-		return false
-	var lower := clip.to_lower()
-	for word in ACTION_WORDS[action]:
-		if lower.contains(str(word)):
-			return false
-	for word in SEDENTARY_WORDS:
-		if lower.contains(str(word)):
-			return true
-	return false
-
-
 func _write_report() -> void:
-	var conflicts: Array[Dictionary] = []
 	var by_clip := {}
 	for row in _rows:
-		if bool(row["conflict"]):
-			conflicts.append(row)
 		var key := str(row["clip"]) + KEY_SEP + str(row["action"])
 		if not by_clip.has(key):
 			by_clip[key] = {"clip": str(row["clip"]), "action": str(row["action"]),
@@ -171,30 +143,15 @@ func _write_report() -> void:
 	lines.append("clip 是**让 wrapper 自己 `play_xxx()` 之后从 `current_animation` 读回来的**，")
 	lines.append("不是重算的 —— 73 个 wrapper 的别名表有 7 种变体，重算必然报错人。")
 	lines.append("")
-	lines.append("**共享 clip 不是问题**：一条 idle 给几十个单位复用是正常做法。")
-	lines.append("下面只列语义打架的。")
+	lines.append("> **本报告只记录事实，不判定动作对错。**")
+	lines.append("> clip 名来自通用动作库，与它在本作里承担的演出职责没有必然关系；")
+	lines.append("> 名字、时长、候选数都说明不了「这个动作放在这里对不对」。")
+	lines.append("> 某个动作是否需要 `model_in_place_actions`，只看播放时角色主体是否")
+	lines.append("> 不合理地离开自己的圆盘 —— 判据是位移数字，见")
+	lines.append("> `battle_actor_body_on_disc_check` 与 `root_motion_backlog_report`。")
 	lines.append("")
 
-	lines.append("## 一、冲突：静态/生活化 clip 被绑到 attack 或 run（%d 条）" % conflicts.size())
-	lines.append("")
-	if conflicts.is_empty():
-		lines.append("无。")
-	else:
-		lines.append("| # | 单位 | 类 | 动作 | 实际播的 clip | 时长 | 该节点可选 clip 数 |")
-		lines.append("|---|---|---|---|---|---|---|")
-		conflicts.sort_custom(func(a, b): return str(a["clip"]) + str(a["id"]) < str(b["clip"]) + str(b["id"]))
-		var index := 0
-		for row in conflicts:
-			index += 1
-			lines.append("| %d | `%s` | %s | **%s** | `%s` | %.2fs | %d |" % [
-				index, str(row["id"]), str(row["kind"]), str(row["action"]),
-				str(row["clip"]), float(row["length"]), int(row["count"])])
-		lines.append("")
-		lines.append("> **可选 clip 数为 1 时不是选曲挑错**（没有别的可选），")
-		lines.append("> 而是资产映射本身把这条指给了这个动作。修法是换 FBX，不是改代码。")
-	lines.append("")
-
-	lines.append("## 二、clip × 动作 绑定表（按使用单位数排序）")
+	lines.append("## 一、clip × 动作 绑定表（按使用单位数排序）")
 	lines.append("")
 	lines.append("| clip | 绑到 | 时长 | 单位数 |")
 	lines.append("|---|---|---|---|")
@@ -205,12 +162,14 @@ func _write_report() -> void:
 	for key in keys:
 		var entry := by_clip[key] as Dictionary
 		var users := entry["users"] as Array
-		var mark := " ⚠" if _is_conflict(str(entry["clip"]), str(entry["action"])) else ""
-		lines.append("| `%s`%s | %s | %.2fs | %d |" % [
-			str(entry["clip"]), mark, str(entry["action"]), float(entry["length"]), users.size()])
+		lines.append("| `%s` | %s | %.2fs | %d |" % [
+			str(entry["clip"]), str(entry["action"]), float(entry["length"]), users.size()])
 	lines.append("")
 
-	lines.append("## 三、全量矩阵")
+	lines.append("## 二、全量矩阵")
+	lines.append("")
+	lines.append("括号内是该动作节点里可选的 clip 数。为 1 表示该节点只挂了这一条，")
+	lines.append("没有别的候选 —— 这是资产映射的事实，不构成对错判断。")
 	lines.append("")
 	lines.append("| 单位 | 类 | idle | attack | run |")
 	lines.append("|---|---|---|---|---|")
@@ -231,10 +190,7 @@ func _write_report() -> void:
 				cells.append("—")
 				continue
 			var row := row_value as Dictionary
-			var text := "`%s`" % str(row["clip"])
-			if bool(row["conflict"]):
-				text = "⚠ " + text
-			cells.append(text)
+			cells.append("`%s` (%d)" % [str(row["clip"]), int(row["count"])])
 		lines.append("| `%s` | %s | %s | %s | %s |" % [
 			unit_id, str(entry.get("kind", "")), cells[0], cells[1], cells[2]])
 
@@ -246,8 +202,8 @@ func _write_report() -> void:
 		file.store_string(text)
 		file.close()
 	_h.note("矩阵已写到 %s" % ProjectSettings.globalize_path(OUT_PATH))
-	_h.note("扫描 %d 个模型、%d 条单位×动作、%d 条 clip×动作绑定；语义冲突 %d 条"
-		% [_seen_models.size(), _rows.size(), by_clip.size(), conflicts.size()])
+	_h.note("扫描 %d 个模型、%d 条单位×动作、%d 条 clip×动作绑定"
+		% [_seen_models.size(), _rows.size(), by_clip.size()])
 
 
 func _find(root: Node, type_name: String) -> Node:

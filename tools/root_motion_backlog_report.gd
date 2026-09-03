@@ -14,6 +14,12 @@ extends Node
 #
 # 量法与 inventory / lock 两条门禁逐字一致（只看无父骨骼的 POSITION_3D 轨道、
 # 相对第一帧、只算水平面），三份数字才可比。
+#
+# **判据只有位移数字，与 clip 名称无关。**
+# 2026-09-03 用户确认：通用动作库的 clip 名（dance / birdcage / aerobic 之类）
+# 被用在攻击或奔跑上是设计选择，不是错误。所以这份清单不看名字，
+# 只回答「播放时身体有没有留在圆盘外」，并且**最终仍需 Leno 逐条批准**
+# 才能改数据 —— 有些位移是故意的（扑击、飘浮），登记了反而毁掉表现。
 
 const CheckHarness := preload("res://tools/CheckHarness.gd")
 const UnitActor3D := preload("res://effects/runtime/presentation/UnitActor3D.gd")
