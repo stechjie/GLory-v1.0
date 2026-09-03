@@ -33,6 +33,9 @@ func _ready() -> void:
 	_h = CheckHarness.new(CHECK_NAME)
 	_check_tokens()
 	_check_theme()
+	_check_theme_state_coverage()
+	_check_busy_state_is_distinct()
+	await _check_minimum_touch_size()
 	_check_no_legacy_dialogs()
 	await _check_modal_stack()
 	await _check_dialog_contract()
@@ -402,3 +405,94 @@ func _linearize(channel: float) -> float:
 	if channel <= 0.03928:
 		return channel / 12.92
 	return pow((channel + 0.055) / 1.055, 2.4)
+
+
+# V3 P1-01：主题覆盖表逐条核对。
+#
+# 漏一个状态就会在那个状态下露出 Godot 默认外观 —— 深色界面里突然冒出一块浅灰，
+# 而且只在 hover / 只读 / 禁用这些不常走的分支上出现，人工点不到。
+# 表写在 GloryTheme 里（生产侧），这里只负责核对，避免门禁自带一份会漂移的副本。
+func _check_theme_state_coverage() -> void:
+	var theme := Theming.build()
+	if theme == null:
+		return
+	var missing: Array[String] = []
+	var total := 0
+	for type_name in Theming.REQUIRED_STYLEBOX_COVERAGE.keys():
+		for state in Theming.REQUIRED_STYLEBOX_COVERAGE[type_name] as Array:
+			total += 1
+			# has_stylebox 而不是 get_stylebox()!=null：后者在缺失时会回落到默认，
+			# 断言就永远通不了红。
+			if not theme.has_stylebox(str(state), str(type_name)):
+				missing.append("%s/%s" % [type_name, state])
+	_h.expect(total >= 30, "coverage_table_too_small",
+		"覆盖表只有 %d 条，可能被删空了 —— 空表上「没有缺失」恒真" % total)
+	_h.expect(missing.is_empty(), "theme_state_uncovered",
+		"主题没有覆盖这些 (类型/状态)，该状态下会露出 Godot 默认外观：%s" % str(missing))
+
+
+# V3 P1-01：忙碌态必须与禁用态可分辨。
+#
+# 禁用说的是「现在不能点」，忙碌说的是「你点到了，正在做」。两者共用一套外观时，
+# 玩家分不出「我按空了」和「它在跑」—— 那正是连点的成因。
+func _check_busy_state_is_distinct() -> void:
+	var theme := Theming.build()
+	if theme == null:
+		return
+	for state in Theming.REQUIRED_BUTTON_STATES:
+		_h.expect(theme.has_stylebox(str(state), Theming.VARIATION_BUSY),
+			"busy_state_missing", "忙碌变体缺少 %s 状态" % state)
+	var busy := theme.get_stylebox("normal", Theming.VARIATION_BUSY) as StyleBoxFlat
+	var disabled := theme.get_stylebox("disabled", "Button") as StyleBoxFlat
+	var normal := theme.get_stylebox("normal", "Button") as StyleBoxFlat
+	if busy == null or disabled == null or normal == null:
+		return
+	_h.expect(not (busy.bg_color.is_equal_approx(disabled.bg_color)
+			and busy.border_color.is_equal_approx(disabled.border_color)),
+		"busy_looks_disabled",
+		"忙碌态与禁用态外观完全相同 —— 玩家分不出「按空了」和「在跑」")
+	_h.expect(not (busy.bg_color.is_equal_approx(normal.bg_color)
+			and busy.border_color.is_equal_approx(normal.border_color)),
+		"busy_looks_idle", "忙碌态与常态外观完全相同 —— 按下去没有任何变化")
+
+
+# V3 P1-02：移动端最小触控尺寸。
+#
+# 量的是**主题作用之后**控件的最小尺寸，不是 token 常量本身：TOUCH_MIN 写成 48
+# 而按钮实际只有 42 高，是这条要求最常见的失败方式 —— 常量看着对，手指点不中。
+func _check_minimum_touch_size() -> void:
+	var theme := Theming.build()
+	if theme == null:
+		return
+	var probes := {
+		"Button": Button.new(),
+		Theming.VARIATION_PRIMARY: Button.new(),
+		Theming.VARIATION_DANGER: Button.new(),
+		Theming.VARIATION_GHOST: Button.new(),
+		Theming.VARIATION_BUSY: Button.new(),
+		"CheckButton": CheckButton.new(),
+		"LineEdit": LineEdit.new(),
+	}
+	var host := Control.new()
+	host.theme = theme
+	add_child(host)
+	var undersized: Array[String] = []
+	for type_name in probes.keys():
+		var control: Control = probes[type_name]
+		if control is Button:
+			(control as Button).text = "确认"
+			if type_name != "Button" and type_name != "CheckButton":
+				control.theme_type_variation = str(type_name)
+		elif control is LineEdit:
+			(control as LineEdit).text = "0000"
+		host.add_child(control)
+	await get_tree().process_frame
+	for type_name in probes.keys():
+		var control: Control = probes[type_name]
+		var min_size := control.get_combined_minimum_size()
+		if min_size.y < Tokens.TOUCH_MIN:
+			undersized.append("%s 高 %.1f < %.1f" % [type_name, min_size.y, Tokens.TOUCH_MIN])
+	_h.expect(undersized.is_empty(), "control_below_touch_minimum",
+		"这些控件在主题作用后仍低于最小触控高度，手指点不中：%s" % str(undersized))
+	host.queue_free()
+	await get_tree().process_frame

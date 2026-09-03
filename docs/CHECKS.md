@@ -2147,3 +2147,33 @@ watchdog_fakes_progress / watchdog_ignores_progress / watchdog_not_reset_on_phas
 watchdog_notice_text_ignores_phase / watchdog_explain_text_ignores_phase
 watchdog_stuck_text_ignores_phase
 ```
+
+### `ui_component` 95 → 105、`async_action` 174 → 178：六态覆盖、忙碌态、最小触控（V3 P1-01 / P1-02）
+
+三个实测缺口：
+
+- **CheckButton 五个状态的底板全是 Godot 默认外观**（原来只设了字色）。深色界面里按下去
+  会闪一块浅灰。
+- **TabBar / TabContainer 完全没进主题**。设置页与图鉴用得到，不覆盖就会露出一整条浅色标签栏。
+- **LineEdit 只有 normal / focus**。Godot 的输入框没有 `disabled`，只有 `read_only` ——
+  名字不同、语义相同，缺了它玩家看不出「这一格现在不能改」。
+
+覆盖表 `REQUIRED_STYLEBOX_COVERAGE` 写在 `GloryTheme`（生产侧），门禁只负责逐条核对 ——
+表放门禁里会变成一份会漂移的副本。核对用 `has_stylebox()` 而不是 `get_stylebox()!=null`：
+后者在缺失时回落到默认，断言永远通不了红。
+
+**忙碌态与禁用态分开**。`GloryBusyButton.show_pending()` 原来只置 `disabled=true`，于是
+「你点到了、正在做」和「这个按钮现在不能点」长得一模一样 —— 玩家读成后者就会去别处点，
+或者反复点这一个。现在同时切到 `GloryBusy` 变体（青色，和加载层同一套语义），结算后还回
+原变体。还原这一步必须两条路径各自成立：`show_terminal()` 和 `reset_idle()`，因为取消
+那条路径上根本没有 terminal。
+
+**最小触控尺寸量的是主题作用之后的控件，不是 token 常量**。`TOUCH_MIN` 一直写着 48，而
+实测按钮只有 44、输入框和 CheckButton 只有 47 —— 常量看着对，手指点不中，是这条要求最
+常见的失败方式。`BUTTON_PAD_V` 按**最矮**的那类（`FONT_BODY` 的 LineEdit / CheckButton）
+校准成 11；按按钮校准就会把输入框卡在 47。换字号后任何一类矮下去，门禁转红。
+
+八条断言逐条反向变异全部转红，两个主题文件与 `GloryBusyButton.gd` 均按字节还原。
+其中 `idle_variation_not_restored` 第一版是装饰品 —— 断言点在 `show_terminal()` 之后，
+而那里已经还原过一次，做不出能让它单独转红的变异。补了「pending 直接回 IDLE」的取消路径
+之后才立得住。**做不出单独转红的变异，就说明这条断言是别处的复读。**

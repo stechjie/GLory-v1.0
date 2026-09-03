@@ -6,6 +6,7 @@ extends Node
 const CheckHarness := preload("res://tools/CheckHarness.gd")
 const ControllerScript := preload("res://ui/controllers/AsyncActionController.gd")
 const BusyButtonScene := preload("res://ui/components/GloryBusyButton.tscn")
+const Theming := preload("res://ui/theme/GloryTheme.gd")
 
 const CHECK_NAME := "async_action"
 
@@ -133,19 +134,40 @@ func _check_busy_button() -> void:
 	add_child(button)
 	await get_tree().process_frame
 	button.set_idle_text("Start Battle")
+	# 带一个非默认变体进来：忙碌态结束后必须还回这个，而不是掉到默认样式。
+	button.theme_type_variation = Theming.VARIATION_PRIMARY
 	button.show_pending("busy_1", "Preparing Battle")
 	var pending: Dictionary = button.action_snapshot()
 	_h.expect(bool(pending.get("disabled", false)), "busy_button_not_disabled",
 		"业务 pending 时按钮仍可重复触发")
 	_h.expect(bool(pending.get("busy_text_visible", false)), "silent_disabled_button",
 		"按钮 disabled 但没有可见 busy 动词")
+	# V3 P1-01：只置 disabled 不够。「你点到了、正在做」和「这个按钮现在不能点」
+	# 长得一模一样时，玩家读成后者就会去别处点，或者反复点这一个。
+	_h.expect(bool(pending.get("looks_busy", false)), "busy_button_looks_disabled",
+		"pending 时按钮外观仍是禁用态 —— 玩家分不出「按空了」和「在跑」")
 	_h.expect(str(pending.get("state", "")) == ControllerScript.STATE_PENDING,
 		"busy_button_wrong_state", "BusyButton 没显示 PENDING")
 	button.show_terminal("busy_1", ControllerScript.STATE_FAILED, "Failed")
 	_h.expect(not button.disabled, "terminal_button_still_disabled", "失败后按钮仍永久 disabled")
+	_h.expect(str(button.action_snapshot().get("variation", ""))
+			== Theming.VARIATION_PRIMARY,
+		"terminal_variation_not_restored",
+		"结算后没有还回原来的主题变体 —— 按钮跑完一次异步动作就永久变样")
 	button.reset_idle("busy_1")
 	_h.expect(button.text == "Start Battle", "busy_button_idle_text_not_restored",
 		"回到 IDLE 后没有恢复原按钮文案")
+	# reset_idle() 必须自己会还原，不能靠前面 show_terminal() 已经还过一次 ——
+	# 取消这条路径上根本没有 terminal。（这条断言第一版就是被前面的还原盖住的，
+	# 做不出能让它单独转红的变异。）
+	button.show_pending("busy_2", "Preparing Battle")
+	_h.expect(bool(button.action_snapshot().get("looks_busy", false)),
+		"busy_look_not_reentrant", "第二次进入 pending 没有换成忙碌变体")
+	button.reset_idle("busy_2")
+	_h.expect(str(button.action_snapshot().get("variation", ""))
+			== Theming.VARIATION_PRIMARY,
+		"idle_variation_not_restored",
+		"取消路径（pending 直接回 IDLE）没有还原主题变体")
 	button.queue_free()
 
 

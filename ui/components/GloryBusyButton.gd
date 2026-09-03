@@ -21,6 +21,9 @@ var _visual_state := STATE_IDLE
 var _busy_verb := ""
 var _dot_phase := 0
 var _dot_elapsed := 0.0
+# 闲时用的主题变体，进忙碌态前记下来，结算后还回去。不记的话，
+# 一个 GloryPrimary 按钮跑完一次异步动作就永久变成默认样式。
+var _idle_variation := &""
 
 
 func _ready() -> void:
@@ -50,6 +53,11 @@ func show_pending(request_id: String, verb: String) -> void:
 	_dot_elapsed = 0.0
 	_apply_busy_text()
 	# The visible verb is set first. Do not reverse these two lines.
+	#
+	# disabled=true 之外还要换成忙碌变体（V3 P1-01）。只置 disabled 的话，
+	# 「你点到了、正在做」和「这个按钮现在不能点」长得一模一样 ——
+	# 玩家读成后者就会继续找别的地方点，或者反复点这一个。
+	_enter_busy_look()
 	disabled = true
 	set_process(true)
 
@@ -61,6 +69,7 @@ func show_terminal(request_id: String, state: String, message: String) -> bool:
 	_visual_state = state
 	set_process(false)
 	_apply_text(message)
+	_restore_idle_look()
 	disabled = false
 	return true
 
@@ -73,14 +82,27 @@ func reset_idle(request_id: String = "") -> bool:
 	_busy_verb = ""
 	set_process(false)
 	_apply_text(_idle_text)
+	_restore_idle_look()
 	disabled = false
 	return true
+
+
+func _enter_busy_look() -> void:
+	if theme_type_variation != Theming.VARIATION_BUSY:
+		_idle_variation = theme_type_variation
+	theme_type_variation = Theming.VARIATION_BUSY
+
+
+func _restore_idle_look() -> void:
+	theme_type_variation = _idle_variation
 
 
 func action_snapshot() -> Dictionary:
 	return {
 		"request_id": _request_id,
 		"state": _visual_state,
+		"variation": str(theme_type_variation),
+		"looks_busy": theme_type_variation == Theming.VARIATION_BUSY,
 		"busy_text_visible": _visual_state == STATE_PENDING and not _display_text().strip_edges().is_empty(),
 		"disabled": disabled,
 	}

@@ -19,8 +19,31 @@ const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const VARIATION_PRIMARY := "GloryPrimary"
 const VARIATION_DANGER := "GloryDanger"
 const VARIATION_GHOST := "GloryGhost"
+# busy 不是 disabled（V3 P1-01）。禁用态说的是「现在不能点」，忙碌态说的是
+# 「你点到了，正在做」。两者共用一套外观时，玩家分不出「我按空了」和
+# 「它在跑」—— 那正是连点的成因。
+const VARIATION_BUSY := "GloryBusy"
 
 const REQUIRED_BUTTON_STATES := ["normal", "hover", "pressed", "focus", "disabled"]
+
+# 主题必须覆盖到的 (类型, 状态) 全表（V3 P1-01）。
+#
+# 做成表而不是散落在各 _build_* 里，是为了让门禁能逐条核对：漏一个状态就
+# 会在那个状态下露出 Godot 默认外观 —— 深色界面里突然冒出一块浅灰。
+# LineEdit 的「禁用」在 Godot 里叫 read_only，不是 disabled。
+const REQUIRED_STYLEBOX_COVERAGE := {
+	"LineEdit": ["normal", "hover", "focus", "read_only"],
+	"CheckButton": ["normal", "hover", "pressed", "focus", "disabled"],
+	"TabBar": ["tab_selected", "tab_unselected", "tab_hovered", "tab_disabled",
+		"tab_focus"],
+	"TabContainer": ["panel", "tab_selected", "tab_unselected", "tab_hovered",
+		"tab_disabled"],
+	"PanelContainer": ["panel"],
+	"Panel": ["panel"],
+	"ProgressBar": ["background", "fill"],
+	"VScrollBar": ["scroll", "grabber", "grabber_highlight", "grabber_pressed"],
+	"HScrollBar": ["scroll", "grabber", "grabber_highlight", "grabber_pressed"],
+}
 
 static var _cached: Theme = null
 
@@ -42,12 +65,14 @@ static func build() -> Theme:
 		Tokens.DANGER, Tokens.DANGER_HOVER, Tokens.DANGER_PRESSED, Tokens.TEXT_PRIMARY, true)
 	_build_button_variation(theme, VARIATION_GHOST,
 		Tokens.BORDER, Tokens.CYAN, Tokens.SURFACE_RAISED, Tokens.TEXT_PRIMARY, false)
+	_build_busy_variation(theme)
 
 	_build_label(theme)
 	_build_panel(theme)
 	_build_progress(theme)
 	_build_line_edit(theme)
 	_build_check_button(theme)
+	_build_tabs(theme)
 	_build_scrollbars(theme)
 	return theme
 
@@ -99,6 +124,28 @@ static func _build_button_variation(
 	theme.set_font_size("font_size", variation, Tokens.FONT_BUTTON)
 
 
+# 忙碌态：青色（= 信息/进行中，和加载层同一套语义），底色比 normal 更沉，
+# 但描边更亮 —— 一眼能看出「它在动」，而不是「它死了」。
+#
+# 五个状态都给同一套外观：忙碌期间按钮不接受输入，hover/pressed 变化只会
+# 让玩家以为还能点。这跟 normal/hover/pressed 必须互不相同不是一回事 ——
+# 那条要求针对的是**可点**的按钮。
+static func _build_busy_variation(theme: Theme) -> void:
+	theme.set_type_variation(VARIATION_BUSY, "Button")
+	var busy := Tokens.button_box(Tokens.SURFACE, Tokens.CYAN)
+	for state in REQUIRED_BUTTON_STATES:
+		if state == "focus":
+			theme.set_stylebox(state, VARIATION_BUSY, Tokens.focus_box())
+			continue
+		theme.set_stylebox(state, VARIATION_BUSY, busy)
+	theme.set_color("font_color", VARIATION_BUSY, Tokens.CYAN_HOVER)
+	theme.set_color("font_hover_color", VARIATION_BUSY, Tokens.CYAN_HOVER)
+	theme.set_color("font_pressed_color", VARIATION_BUSY, Tokens.CYAN_HOVER)
+	theme.set_color("font_focus_color", VARIATION_BUSY, Tokens.CYAN_HOVER)
+	theme.set_color("font_disabled_color", VARIATION_BUSY, Tokens.CYAN_HOVER)
+	theme.set_font_size("font_size", VARIATION_BUSY, Tokens.FONT_BUTTON)
+
+
 # --- 其余控件 ------------------------------------------------------------------
 
 static func _build_label(theme: Theme) -> void:
@@ -131,18 +178,61 @@ static func _build_progress(theme: Theme) -> void:
 static func _build_line_edit(theme: Theme) -> void:
 	var normal := Tokens.button_box(Tokens.BG_DEEP, Tokens.BORDER)
 	theme.set_stylebox("normal", "LineEdit", normal)
+	theme.set_stylebox("hover", "LineEdit", Tokens.button_box(Tokens.BG_DEEP, Tokens.BORDER.lightened(0.25)))
 	theme.set_stylebox("focus", "LineEdit", Tokens.button_box(Tokens.BG_DEEP, Tokens.CYAN))
+	# Godot 的输入框没有 disabled，只有 read_only。名字不同、语义相同：
+	# 玩家需要一眼看出「这一格现在不能改」。
+	var read_only := Tokens.button_box(Tokens.SURFACE, Tokens.BORDER)
+	read_only.bg_color.a = 0.5
+	theme.set_stylebox("read_only", "LineEdit", read_only)
 	theme.set_color("font_color", "LineEdit", Tokens.TEXT_PRIMARY)
+	theme.set_color("font_uneditable_color", "LineEdit", Tokens.TEXT_DISABLED)
+	theme.set_color("font_selected_color", "LineEdit", Tokens.TEXT_ON_GOLD)
+	theme.set_color("selection_color", "LineEdit", Tokens.GOLD)
 	theme.set_color("font_placeholder_color", "LineEdit", Tokens.TEXT_DISABLED)
 	theme.set_color("caret_color", "LineEdit", Tokens.GOLD)
 	theme.set_font_size("font_size", "LineEdit", Tokens.FONT_BODY)
 
 
 static func _build_check_button(theme: Theme) -> void:
+	# 迁移前 CheckButton 只有字色，五个状态的底板全是 Godot 默认外观 ——
+	# 深色界面里按下去会闪一块浅灰。
+	theme.set_stylebox("normal", "CheckButton", Tokens.button_box(Tokens.SURFACE_RAISED, Tokens.BORDER))
+	theme.set_stylebox("hover", "CheckButton", Tokens.button_box(Tokens.SURFACE_RAISED, Tokens.CYAN))
+	theme.set_stylebox("pressed", "CheckButton", Tokens.button_box(Tokens.SURFACE, Tokens.CYAN_HOVER))
+	theme.set_stylebox("focus", "CheckButton", Tokens.focus_box())
+	var cb_disabled := Tokens.button_box(Tokens.SURFACE, Tokens.BORDER)
+	cb_disabled.bg_color.a = 0.5
+	theme.set_stylebox("disabled", "CheckButton", cb_disabled)
 	theme.set_color("font_color", "CheckButton", Tokens.TEXT_PRIMARY)
+	theme.set_color("font_hover_color", "CheckButton", Tokens.TEXT_PRIMARY)
+	theme.set_color("font_focus_color", "CheckButton", Tokens.TEXT_PRIMARY)
 	theme.set_color("font_pressed_color", "CheckButton", Tokens.GOLD)
 	theme.set_color("font_disabled_color", "CheckButton", Tokens.TEXT_DISABLED)
 	theme.set_font_size("font_size", "CheckButton", Tokens.FONT_BODY)
+
+
+# 迁移前 TabBar / TabContainer 完全没进主题。设置页与图鉴用得到，
+# 不覆盖就会在深色界面里露出一整条浅色标签栏。
+static func _build_tabs(theme: Theme) -> void:
+	var selected := Tokens.button_box(Tokens.SURFACE_RAISED, Tokens.GOLD)
+	var unselected := Tokens.button_box(Tokens.SURFACE, Tokens.BORDER)
+	var hovered := Tokens.button_box(Tokens.SURFACE_RAISED, Tokens.CYAN)
+	var tab_disabled := Tokens.button_box(Tokens.SURFACE, Tokens.BORDER)
+	tab_disabled.bg_color.a = 0.5
+	for type_name in ["TabBar", "TabContainer"]:
+		theme.set_stylebox("tab_selected", type_name, selected)
+		theme.set_stylebox("tab_unselected", type_name, unselected)
+		theme.set_stylebox("tab_hovered", type_name, hovered)
+		theme.set_stylebox("tab_disabled", type_name, tab_disabled)
+		theme.set_color("font_selected_color", type_name, Tokens.GOLD)
+		theme.set_color("font_unselected_color", type_name, Tokens.TEXT_SECONDARY)
+		theme.set_color("font_hovered_color", type_name, Tokens.TEXT_PRIMARY)
+		theme.set_color("font_disabled_color", type_name, Tokens.TEXT_DISABLED)
+		theme.set_font_size("font_size", type_name, Tokens.FONT_BODY)
+	# 焦点框只有 TabBar 有；TabContainer 的标签焦点走它内部的 TabBar。
+	theme.set_stylebox("tab_focus", "TabBar", Tokens.focus_box())
+	theme.set_stylebox("panel", "TabContainer", Tokens.panel_box())
 
 
 static func _build_scrollbars(theme: Theme) -> void:

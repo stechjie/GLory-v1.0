@@ -57,6 +57,14 @@ const RADIUS_SMALL := 6
 const BORDER_WIDTH := 2
 
 const GAP_S := 8
+# 可点控件的上下内边距。用 GAP_S(8) 时单行按钮实测只有 44 高，比 TOUCH_MIN 矮 4 ——
+# 常量写着 48、手指还是点不中，是这条要求最常见的失败方式。
+#
+# 取值按**最矮**的那类控件校准：LineEdit / CheckButton 用 FONT_BODY(19)，比按钮的
+# FONT_BUTTON(20) 再矮 1。按它们校准，按钮会略高于 48 —— 那是下限，超出无妨；
+# 反过来按按钮校准就会把输入框卡在 47。
+# 这个值由门禁实测校准；换字号后任何一类矮下去，control_below_touch_minimum 转红。
+const BUTTON_PAD_V := 11
 const GAP_M := 16
 const GAP_L := 24
 const PAD := 24
@@ -113,8 +121,8 @@ static func button_box(bg: Color, edge: Color, filled: bool = true) -> StyleBoxF
 	box.set_corner_radius_all(RADIUS_SMALL)
 	box.content_margin_left = GAP_L
 	box.content_margin_right = GAP_L
-	box.content_margin_top = GAP_S
-	box.content_margin_bottom = GAP_S
+	box.content_margin_top = BUTTON_PAD_V
+	box.content_margin_bottom = BUTTON_PAD_V
 	return box
 
 
