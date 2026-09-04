@@ -13,19 +13,6 @@
   "schema_version": 1,
   "blockers": [
     {
-      "id": "flame-claw-source-textures",
-      "title": "Flame Claw 缺少源贴图，12 张截图仍是白模",
-      "state": "blocked",
-      "owner": "external",
-      "area": "V2 P0-03 / P0-04",
-      "detail": "formation_ally_1_animated 的 FBX 引用旧 Meshy 路径下的 Baked_BaseColor.png / Baked_Emit.png / normal.png，磁盘上已搜索不到。model_material_integrity 因此有 3 条 white_material_suspect。不得用纯色占位图冒充完成，也不得加入 allowlist。",
-      "evidence": "reports/model_material_integrity.json",
-      "blocks": [
-        "V2 P0-03",
-        "V2 P0-04"
-      ]
-    },
-    {
       "id": "third-party-license-ledger",
       "title": "第三方许可总账未完成",
       "state": "not_started",
@@ -35,19 +22,6 @@
       "evidence": "",
       "blocks": [
         "README A5"
-      ]
-    },
-    {
-      "id": "asset-bundle-manifest-drift",
-      "title": "资源 manifest 已更新，但可恢复 bundle/ZIP 仍属于旧库存",
-      "state": "in_progress",
-      "owner": "codex",
-      "area": "V2 P0-01 / 资源交付合同",
-      "detail": "当前 assets.manifest.json 的 inventory_sha256 为 7a1d6bf01af99c542a42be4c2532e7259eb66d672525b7cf58168a9160514a6f；assets.bundle.json 及其 2.43 GB 内容寻址 ZIP 仍属于 766575cb4b2a70195c6184e6eb6496576dfad0eb9f70547710ce80e595b74012。当前工作树的 asset_delivery 2658/2658 通过，但 restore_assets.ps1 会按设计拒绝不同库存指纹。需要在本轮文件冻结后运行 package_assets.ps1 生成新的 ZIP 和 bundle，保留旧归档，不得覆盖。",
-      "evidence": "assets.manifest.json; assets.bundle.json; tools/restore_assets.ps1",
-      "blocks": [
-        "V2 P0-01",
-        "V2 完成定义"
       ]
     },
     {
@@ -78,19 +52,6 @@
       ]
     },
     {
-      "id": "sky-hymn-spirit-commercial-visual-review",
-      "title": "晶柱与护盾已复核通过；Sky Hymn Spirit 灰色半球仍需专项修复",
-      "state": "in_progress",
-      "owner": "unassigned",
-      "area": "V2 P1-04",
-      "detail": "2026-08-31 新 APK 真机截图确认：Round 1 普通竖向晶柱保持原公式；Round 21 终局横墙已缩为 8% 屏高、steady alpha 0.36；护盾常驻改为空心环，完整泡罩只在施加/吸收/破盾事件出现，角色脸部和武器不再被全身染色遮挡。相关门禁通过。仍未解决的是 Round 5 的 pve_sky_hymn_spirit 灰色半球；actor/material 审计仍判完整 textured model，需要单独批准 A/B 诊断后再修改。",
-      "evidence": "C:/Users/Leno/Documents/Glory prep screen/android_qa_20260831_hidden_animation/baseline_rounds_1_5_21_after_hidden_animation/device/round_05/start.png",
-      "blocks": [
-        "V2 P1-04",
-        "V2 完成定义"
-      ]
-    },
-    {
       "id": "battle-victory-five-person-test",
       "title": "Victory 已在动态录像出现，但 5 人识别率验收与胜利音效仍未完成",
       "state": "not_started",
@@ -101,6 +62,107 @@
       "blocks": [
         "V2 P1-05",
         "V2 完成定义"
+      ]
+    },
+    {
+      "id": "export-profiles-keystore",
+      "title": "三个 export profile 配不齐，缺私有 keystore",
+      "state": "not_started",
+      "owner": "external",
+      "area": "V2 P0-08",
+      "detail": "build_info.json 生成/打包/回读比对已闭环，导出漂移降到 0。但本机只有 Android 与 Windows Desktop 两个预设，且没有私有 keystore，无法配出清单要求的三个 profile。仓内改不动，需要用户提供 keystore。",
+      "evidence": "export_presets.cfg; export_presets.template.cfg",
+      "blocks": [
+        "V2 P0-08",
+        "V2 完成定义"
+      ]
+    },
+    {
+      "id": "root-motion-remaining-manual-review",
+      "title": "剩余 19 条 attack + 8 条 idle 根位移需逐条人工判断",
+      "state": "in_progress",
+      "owner": "external",
+      "area": "V2 P1-04",
+      "detail": "根位移自动合同已完成（ModelRootMotionPolicy，四条门禁全绿，关掉策略可让 29 条转红）。剩余 attack/idle 是否需要约束只能按实际离盘位移逐条判断，且清单明确要求逐条批准、禁止批量处理。",
+      "evidence": "reports/checks/model_root_motion_inventory_check.result.json",
+      "blocks": [
+        "V2 P1-04"
+      ]
+    },
+    {
+      "id": "second-device-baseline",
+      "title": "只有一台 25028RN03A，缺第二档 Android 设备基线",
+      "state": "not_started",
+      "owner": "external",
+      "area": "V2 P1-12 / V2 完成定义",
+      "detail": "发布门要求至少两档 Android 设备给出冷/暖启动、平均与 1% low、PSS/RSS、fallback/drop。本机只有一台 25028RN03A，连续 10 局与冷/暖启动矩阵在第二档设备上未做。",
+      "evidence": "reports/current_health.json",
+      "blocks": [
+        "V2 P1-12",
+        "V2 完成定义"
+      ]
+    },
+    {
+      "id": "release-binary-visual-confirm",
+      "title": "没有在真正的 Release 二进制上肉眼确认调试 UI 已消失",
+      "state": "not_started",
+      "owner": "external",
+      "area": "V2 P1-11 / V3 P1-07",
+      "detail": "源码合同已绿：release_debug_ui 8/8（含本轮修的组队大厅自测按钮崩溃缺陷）、tutorial_text_leak 21773/0。但 headless 跑的是 debug 模板，OS.is_debug_build() 恒为 true，无法在同一进程里验证 Release 行为；本机没装 Windows 导出模板，Android Release 包又与设备已装的 debug 包签名不一致、不能卸载（会清空玩家存档）。需要用户打开一次真正的 Release 构建确认。",
+      "evidence": "tools/release_debug_ui_check.gd",
+      "blocks": [
+        "V2 P1-11",
+        "V3 P1-07",
+        "V3 完成定义"
+      ]
+    },
+    {
+      "id": "notch-safe-area-unverifiable",
+      "title": "刘海/挖孔安全区在本硬件上无法证伪",
+      "state": "not_started",
+      "owner": "external",
+      "area": "V2 P1-09 / V3 P1-06",
+      "detail": "自动版面门禁已绿：tutorial_overlay_layout 424/0、responsive_layout 48/0（4 个页面 × 6 种分辨率）。但本机 25028RN03A 横屏 navigation_mode=0、无 cutout，刘海与手势条安全区在这台硬件上既证不实也证不伪。需要带刘海的设备或配 cutout 的模拟器。",
+      "evidence": "tools/responsive_layout_check.gd",
+      "blocks": [
+        "V2 P1-09",
+        "V3 P1-06"
+      ]
+    },
+    {
+      "id": "frame-time-budget-unconfirmed",
+      "title": "帧时间阈值是本批新定的默认值，未经产品确认",
+      "state": "in_progress",
+      "owner": "external",
+      "area": "V3 P2-02",
+      "detail": "battle_frame_time 门禁已落地（11/11，单帧硬顶独立于均值判断，不按 Round 20 特判）。但 AVG_FPS_MIN=30 / ONE_PCT_LOW_FPS_MIN=20 / MAX_FRAME_TIME_MS_HARD=100 这三个数字仓库里从没写过，是按移动端常见口径估的，需要产品/主美确认或改。",
+      "evidence": "tools/battle_frame_time_check.gd",
+      "blocks": [
+        "V3 P2-02"
+      ]
+    },
+    {
+      "id": "touch-feedback-audio-haptic",
+      "title": "按钮触摸反馈缺音效/触觉与拒绝动作 shake/toast",
+      "state": "not_started",
+      "owner": "unassigned",
+      "area": "V3 P1-04",
+      "detail": "六态可区分、busy 态、移动端最小触控尺寸（按实测校准 44→50）已完成，ui_component 116/0。清单还要求：touch down 先出视觉反馈、业务成功后播一次确认音/轻触觉、拒绝动作播短 shake/toast 并说明原因、且不因 mouse+touch 双路发两次。需要音效资源与触觉 API 调研，是独立一批。",
+      "evidence": "tools/ui_component_check.gd",
+      "blocks": [
+        "V3 P1-04"
+      ]
+    },
+    {
+      "id": "device-input-stress-matrix",
+      "title": "真机输入压力矩阵未做（旋转/切后台/断网重连/加载中取消）",
+      "state": "in_progress",
+      "owner": "external",
+      "area": "V3 P2-03",
+      "detail": "headless 侧已齐：input_stress 410/0 含「无拒绝没有原因」的穷举规则，六个动作门禁各自覆盖连点去重与 rejected breadcrumb。清单还要求真机用 ADB 跑启动早期点击、旋转、切后台、断网重连、加载中取消，这部分未做。",
+      "evidence": "tools/input_stress_check.gd",
+      "blocks": [
+        "V3 P2-03"
       ]
     }
   ]
