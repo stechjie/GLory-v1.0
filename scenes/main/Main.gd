@@ -11,6 +11,10 @@ signal short_code_resume_result_check_requested(request_id: String, succeeded: b
 signal reconnect_cancel_navigation_check_requested()
 
 const VFX_WARMUP := preload("res://effects/vfx3d/VFXWarmup.gd")
+# 用 preload 而不是全局类名 UiFeedback：headless 跑检查场景时不走导入，
+# .godot/global_script_class_cache.cfg 里没有新登记的 class_name，
+# 直接写全局名会「Identifier not declared」——实测踩过。
+const UiFeedbackService := preload("res://ui/services/UiFeedback.gd")
 
 const PUBLIC_TOKEN_ACTION := "team_public_token"
 const PUBLIC_TOKEN_CONTROL_ID := "main_menu/public_token_generate"
@@ -124,6 +128,10 @@ func _ready() -> void:
 		AsyncActionController.action_state_changed.connect(_on_async_action_state_changed)
 	if not TutorialMode.skip_requested.is_connected(_on_tutorial_skip):
 		TutorialMode.skip_requested.connect(_on_tutorial_skip)
+	# V3 P1-04：接上确认音/触觉。挂在 action_resolved 上，不挂按钮、
+	# 更不挂 _input —— 那个信号每个 request_id 只发一次，且不是输入驱动的，
+	# 所以连点和 mouse+touch 双路都不会让它多发。
+	UiFeedbackService.install()
 	_start_vfx_warmup()
 	_show_language_select()
 	StartupTrace.mark(StartupTrace.T2_MAIN_READY)

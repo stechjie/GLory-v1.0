@@ -16,11 +16,10 @@ config/name="Glory Beta 0.04"
 run/main_scene="res://scenes/bootstrap/Bootstrap.tscn"
 config/quit_on_go_back=false
 config/features=PackedStringArray("4.7", "Mobile")
-config/icon="res://icon.svg"
-boot_splash/image="res://ui/branding/glory_bootstrap.png"
 boot_splash/bg_color=Color(0.113725, 0.14902, 0.2, 1)
-boot_splash/fullsize=false
-boot_splash/use_filter=true
+boot_splash/stretch_mode=0
+boot_splash/image="res://ui/branding/glory_bootstrap.png"
+config/icon="res://icon.svg"
 
 [autoload]
 
