@@ -1,5 +1,9 @@
 extends Control
 
+# 触控下限从令牌来，不再写字面量：这一页原本有三个控件是 46 / 46 / 40，
+# 都低于 TOUCH_MIN=48 —— 而 P1-04 第 1 条要的正是移动端最小触控尺寸。
+const Tokens := preload("res://ui/theme/GloryTokens.gd")
+
 signal back_requested
 
 var _btn_zh: Button
@@ -24,9 +28,25 @@ func _build() -> void:
 	add_child(bg)
 	bg.z_index = -10
 
+	# 内容比画布高时必须滚得动。
+	#
+	# 这一页的开关是一路加上来的（语言 / 画质 / 棋盘辅助 / 屏震 / 闪光 /
+	# hit-stop / 降低动态 / 界面音效 / 触感），到 P1-04 这两行为止，
+	# 20:9（2400×1080）下面板底部已经溢出 110px —— 返回键直接点不到。
+	# responsive_layout 的门禁注释里早就记着「20:9 下边距只剩 7px」，
+	# 那是这次溢出的预告。
+	#
+	# 靠压缩行高/间距只能把下一次溢出往后推一行；真正的修法是让它能滚。
+	# 横向禁用滚动：这一页从来不需要横向滚，开着只会让手指划错方向。
+	var scroll := ScrollContainer.new()
+	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	add_child(scroll)
+
 	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(center)
+	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.add_child(center)
 
 	var panel := VBoxContainer.new()
 	panel.custom_minimum_size = Vector2(360, 0)
@@ -107,7 +127,7 @@ func _build() -> void:
 
 	_board_guides_btn = CheckButton.new()
 	_board_guides_btn.text = tr("settings_board_guides")
-	_board_guides_btn.custom_minimum_size = Vector2(280, 46)
+	_board_guides_btn.custom_minimum_size = Vector2(280, Tokens.TOUCH_MIN)
 	_board_guides_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_board_guides_btn.button_pressed = PlayerProfile.board_readability_enabled
 	_board_guides_btn.toggled.connect(func(enabled: bool):
@@ -126,12 +146,15 @@ func _build() -> void:
 		{"key": "hit_stop", "label": "settings_hit_stop"},
 		# V3 P1-09：降低动态效果。压掉过场与呼吸动画，默认关闭。
 		{"key": "reduced_motion", "label": "settings_reduced_motion"},
+		# V3 P1-04：界面音效与触感反馈，默认开启。
+		{"key": "ui_sound", "label": "settings_ui_sound"},
+		{"key": "haptics", "label": "settings_haptics"},
 	]:
 		var spec_dict: Dictionary = spec
 		var key := str(spec_dict["key"])
 		var btn := CheckButton.new()
 		btn.text = tr(str(spec_dict["label"]))
-		btn.custom_minimum_size = Vector2(280, 46)
+		btn.custom_minimum_size = Vector2(280, Tokens.TOUCH_MIN)
 		btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		btn.button_pressed = PlayerProfile.get_presentation_toggle(key)
 		btn.toggled.connect(func(enabled: bool):
@@ -147,7 +170,7 @@ func _build() -> void:
 
 	var back_btn := Button.new()
 	back_btn.text = tr("settings_back")
-	back_btn.custom_minimum_size = Vector2(160, 40)
+	back_btn.custom_minimum_size = Vector2(160, Tokens.TOUCH_MIN)
 	back_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	back_btn.pressed.connect(func(): back_requested.emit())
 	panel.add_child(back_btn)

@@ -31,6 +31,13 @@ var hit_stop_enabled := true
 # 是 static 的，拿不到 autoload。让 profile 单向写入那一处，
 # 读侧就只有一个入口，不会出现「设置页开了、动画还在跑」。
 var reduced_motion_enabled := false
+# V3 P1-04：UI 音效与触觉。默认开启 —— 与上面三个演出开关同理，默认关掉
+# 会让绝大多数玩家看到（听到）一个更差的版本。
+#
+# 这两个不需要像 reduced_motion 那样同步进 ProjectSettings：读侧
+# PresentationSettings 是 autoload 可达的，直接问 profile 就行。
+var ui_sound_enabled := true
+var haptics_enabled := true
 # 与 GloryTokens.REDUCED_MOTION_SETTING 必须一致。这里不 preload 那个类：
 # autoload 反过来依赖 UI 层会把依赖方向倒过来。门禁断言两边字面相同。
 const REDUCED_MOTION_SETTING := "glory/ui/reduced_motion"
@@ -49,6 +56,8 @@ func load_profile() -> void:
 		flash_effects_enabled = true
 		hit_stop_enabled = true
 		reduced_motion_enabled = false
+		ui_sound_enabled = true
+		haptics_enabled = true
 		_apply_reduced_motion()
 		needs_starter_pick = true
 		save_profile()
@@ -63,6 +72,8 @@ func load_profile() -> void:
 		flash_effects_enabled = true
 		hit_stop_enabled = true
 		reduced_motion_enabled = false
+		ui_sound_enabled = true
+		haptics_enabled = true
 		_apply_reduced_motion()
 		needs_starter_pick = true
 		return
@@ -84,6 +95,8 @@ func load_profile() -> void:
 	flash_effects_enabled = bool(data.get("flash_effects_enabled", true))
 	hit_stop_enabled = bool(data.get("hit_stop_enabled", true))
 	reduced_motion_enabled = bool(data.get("reduced_motion_enabled", false))
+	ui_sound_enabled = bool(data.get("ui_sound_enabled", true))
+	haptics_enabled = bool(data.get("haptics_enabled", true))
 	_apply_reduced_motion()
 	needs_starter_pick = bool(data.get("needs_starter_pick", owned_pets.is_empty()))
 	# 出战宠物必须是已拥有的；否则回落到第一只（或空）。
@@ -105,6 +118,8 @@ func save_profile() -> void:
 		"flash_effects_enabled": flash_effects_enabled,
 		"hit_stop_enabled": hit_stop_enabled,
 		"reduced_motion_enabled": reduced_motion_enabled,
+		"ui_sound_enabled": ui_sound_enabled,
+		"haptics_enabled": haptics_enabled,
 	}
 	var f := FileAccess.open(PROFILE_PATH, FileAccess.WRITE)
 	if f != null:
@@ -140,6 +155,14 @@ func set_presentation_toggle(key: String, enabled: bool) -> void:
 				return
 			reduced_motion_enabled = enabled
 			_apply_reduced_motion()
+		"ui_sound":
+			if ui_sound_enabled == enabled:
+				return
+			ui_sound_enabled = enabled
+		"haptics":
+			if haptics_enabled == enabled:
+				return
+			haptics_enabled = enabled
 		_:
 			push_warning("[PROFILE] 未知的演出开关：%s" % key)
 			return
@@ -157,6 +180,10 @@ func get_presentation_toggle(key: String) -> bool:
 			return hit_stop_enabled
 		"reduced_motion":
 			return reduced_motion_enabled
+		"ui_sound":
+			return ui_sound_enabled
+		"haptics":
+			return haptics_enabled
 	return true
 
 

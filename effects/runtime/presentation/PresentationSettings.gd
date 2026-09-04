@@ -56,3 +56,43 @@ static func flash_allowed() -> bool:
 # hit-stop 只受玩家开关影响，不随画质档降级 —— 它不花性能。
 static func hit_stop_allowed() -> bool:
 	return _toggle("hit_stop")
+
+
+# --- V3 P1-04：UI 音效与触觉 ------------------------------------------
+
+# 关于「系统静音」：Godot 4 **没有可移植的 OS 静音查询 API**。
+# 能查的只有游戏自己的 Master 总线（备战页那个静音按钮写的就是它）。
+# 所以这里只保证「游戏内静音时不出声」，做不到「跟随系统静音」——
+# 同上面低电量那半条，说清楚，不假装做到。
+#
+# 不随画质档降级：音效的成本是解码一个几十 KB 的短音，跟填充率无关，
+# 低画质档关掉它只会让反馈变差、一点性能都省不下来（同 hit-stop 的理由）。
+static func ui_sound_allowed() -> bool:
+	if not _toggle("ui_sound"):
+		return false
+	var master := AudioServer.get_bus_index("Master")
+	if master < 0:
+		return true
+	return not AudioServer.is_bus_mute(master)
+
+
+# 触觉只有手持设备有。桌面即使开关是开的也不该假装能震 ——
+# Input.vibrate_handheld() 在桌面是 no-op，但明确挡在这里，
+# 门禁才能断言「桌面不调用」，而不是依赖引擎碰巧不做事。
+#
+# 刻意**不**并进 reduced motion：那个开关压的是屏幕上的运动，
+# 而震动不是屏幕运动。把两者绑一起是概念混淆 —— 想关震动的人
+# 未必想让所有过场动画也变静。
+#
+# `device_supported` 是**默认参数**，不是可变的测试开关：生产调用一律不传，
+# 取的就是 _haptics_device_supported()。门禁跑在 Windows 上，如果没有这个参数，
+# 「关掉开关就不震」这半条**在桌面上恒真**——平台判断会先返回 false，
+# 断言永远绿，等于没测。加了它，门禁才能在桌面上跑手机那条分支。
+static func haptics_allowed(device_supported := _haptics_device_supported()) -> bool:
+	if not _toggle("haptics"):
+		return false
+	return device_supported
+
+
+static func _haptics_device_supported() -> bool:
+	return OS.get_name() in ["Android", "iOS"]

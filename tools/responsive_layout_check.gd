@@ -17,14 +17,20 @@ extends Node
 #     `scale = min(viewport/REF_SIZE)` 居中缩放出一块画布；这条门禁按同一个公式
 #     重新算一遍期望值，核对页面自己算出来的 _layout_scale 与之一致，且画布不会
 #     超出视口。
-#   * CenterContainer 面板页（SettingsScreen）——直接测量最终布局，断言面板矩形
-#     完整落在画布内。
+#   * CenterContainer 面板页（SettingsScreen）——直接测量最终布局，断言最后一个
+#     控件（返回键）落在画布内；页面可滚动时先滚到底再测。
 #   * 自带缩放系统的页（CodexScreen）——它的书本背景按「cover」故意铺满裁边，
 #     不检查背景是否超出（那是设计意图），只检查返回键这个真正要可达的控件。
 #
-# 全部只读：不改布局代码，只在发现真溢出时才失败。这一轮实测这几个页面都没有
-# 溢出，只有 SettingsScreen 在 20:9（画布 1600×720）下边距压到 7px ——
-# 记在这里，作为回归基线，而不是当场重新设计布局。
+# 2026-09-03 建立时：全部只读，不改布局代码。实测这几个页面都没有溢出，
+# 只有 SettingsScreen 在 20:9 下边距压到 7px —— 当时记在这里作为回归基线，
+# 而不是当场重新设计布局。
+#
+# 2026-09-04 更正：那 7px 就是预告。V3 P1-04 往设置页加了「界面音效」「触感反馈」
+# 两行，19.5:9 / 20:9 / 平板三档当场溢出 92–110px，返回键点不到 —— 门禁按预期
+# 转红。修法是把设置页内容放进 ScrollContainer（见 SettingsScreen._build），
+# 判据同时从「面板必须装得下」改成「返回键必须可达」：内容比画布高是允许的，
+# 滚不到底才是缺陷。所以本文件现在不再是「面板矩形完整落在画布内」那条口径。
 
 const CheckHarness := preload("res://tools/CheckHarness.gd")
 const SettingsScene := preload("res://scenes/menu/SettingsScreen.tscn")
@@ -131,11 +137,7 @@ func _check_centered_panel_page(label: String, scene: PackedScene, entry: Dictio
 	add_child(page)
 	await _settle(4)
 
-	var center: CenterContainer = null
-	for child in page.get_children():
-		if child is CenterContainer:
-			center = child
-			break
+	var center := _find_center_container(page)
 	if not _h.expect(center != null and center.get_child_count() > 0,
 			"centered_panel_not_found",
 			"[%s @ %s] 没找到 CenterContainer 面板 —— 页面结构可能已经改了"
@@ -151,9 +153,30 @@ func _check_centered_panel_page(label: String, scene: PackedScene, entry: Dictio
 	var margin_bottom := canvas.y - (rect.position.y + rect.size.y)
 	_h.expect(margin_top >= -0.5, "centered_panel_overflow_top",
 		"[%s @ %s] 面板顶部超出画布 %.1fpx" % [label, res_label, -margin_top])
-	_h.expect(margin_bottom >= -0.5, "centered_panel_overflow_bottom",
-		("[%s @ %s] 面板底部超出画布 %.1fpx —— 底部的返回键会点不到")
-			% [label, res_label, -margin_bottom])
+	# 底部的判据是**可达**，不是「装得下」。
+	#
+	# 原来断言的是「整块面板必须落在画布内」。SettingsScreen 改成可滚动之后
+	# 这条就没有主语了：内容比画布高是设计允许的（设置项只会越加越多），
+	# 留着它等于留一个永远不会被评估的分支。换成直接测最后一个控件
+	# （返回键）：能滚就先滚到底再测，不能滚就原地测 —— 两种页面同一条判据，
+	# 而且它才是原文「底部的返回键会点不到」真正要保证的东西。
+	var scroll := _find_scroll_ancestor(panel)
+	if scroll != null:
+		scroll.scroll_vertical = int(scroll.get_v_scroll_bar().max_value)
+		await _settle(3)
+	var last_value = panel.get_child(panel.get_child_count() - 1)
+	if _h.expect(last_value is Control, "centered_panel_last_child_not_control",
+			"[%s @ %s] 面板最后一个子节点不是 Control，无法判断返回键可达性"
+				% [label, res_label]):
+		var last_rect := (last_value as Control).get_global_rect()
+		var over := last_rect.position.y + last_rect.size.y - canvas.y
+		_h.expect(over <= 0.5 and last_rect.position.y >= -0.5,
+			"centered_panel_bottom_unreachable",
+			("[%s @ %s] %s之后最后一个控件仍然超出画布 %.1fpx —— 返回键点不到")
+				% [label, res_label, "滚到底" if scroll != null else "", over])
+	if scroll != null:
+		scroll.scroll_vertical = 0
+		await _settle(2)
 	if margin_top >= 0.0 and margin_top < TIGHT_MARGIN_WARN_PX:
 		_h.note("[%s @ %s] 上边距只有 %.1fpx，接近极限" % [label, res_label, margin_top])
 	if margin_bottom >= 0.0 and margin_bottom < TIGHT_MARGIN_WARN_PX:
@@ -161,6 +184,26 @@ func _check_centered_panel_page(label: String, scene: PackedScene, entry: Dictio
 
 	page.queue_free()
 	await _settle(2)
+
+
+# 面板不一定是 page 的直接子节点：可滚动的页面中间会隔一层 ScrollContainer。
+func _find_center_container(node: Node) -> CenterContainer:
+	for child in node.get_children():
+		if child is CenterContainer:
+			return child as CenterContainer
+		var found := _find_center_container(child)
+		if found != null:
+			return found
+	return null
+
+
+func _find_scroll_ancestor(node: Node) -> ScrollContainer:
+	var cursor := node.get_parent()
+	while cursor != null:
+		if cursor is ScrollContainer:
+			return cursor as ScrollContainer
+		cursor = cursor.get_parent()
+	return null
 
 
 # --- 自带缩放系统的页：CodexScreen ------------------------------------------

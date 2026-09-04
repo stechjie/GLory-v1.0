@@ -13,6 +13,7 @@ extends Node
 
 const CheckHarness := preload("res://tools/CheckHarness.gd")
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
+const Presentation := preload("res://effects/runtime/presentation/PresentationSettings.gd")
 const SettingsScene := preload("res://scenes/menu/SettingsScreen.tscn")
 const SettingsScreenScript := preload("res://scenes/menu/SettingsScreen.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
@@ -39,6 +40,8 @@ func _ready() -> void:
 	_check_busy_state_is_distinct()
 	await _check_minimum_touch_size()
 	_check_reduced_motion_setting()
+	_check_feedback_gating()
+	_check_feedback_toggles_persist()
 	await _check_settings_state_is_not_colour_only()
 	_check_no_legacy_dialogs()
 	await _check_modal_stack()
@@ -588,7 +591,156 @@ func _check_settings_state_is_not_colour_only() -> void:
 		"开关的文本在开与关时完全相同 —— 状态只靠颜色和滑块")
 	PlayerProfile.set_board_readability_enabled(true)
 
+	# V3 P1-04：两个新开关必须真的出现在设置页上。
+	#
+	# 裁决层的断言全绿也证明不了这一点 —— 把 SettingsScreen 那两行 spec 删掉，
+	# ui_sound_allowed() 照样正确工作，只是玩家永远够不着那个开关。
+	for key in ["ui_sound", "haptics"]:
+		var row_key := str(key)
+		var row = screen._presentation_btns.get(row_key)
+		if not _h.expect(row is CheckButton and is_instance_valid(row),
+				"feedback_row_missing",
+				"设置页没有 %s 这一行，开关对玩家不可达" % row_key):
+			continue
+		var row_btn: CheckButton = row
+		# 文案两个语言都要登记。
+		#
+		# 直觉写法「tr(key) != key」在这里**证明不了任何事**：Godot 的
+		# TranslationServer 在当前语言查不到时会回落到 fallback locale（en），
+		# 所以只删 zh 那一条，tr() 照样返回英文、断言照样全绿 —— 而中文玩家
+		# 看到的是一行英文。这一条实测过，不是推测。
+		#
+		# 能被回落掩盖不掉的信号是：两个语言返回**同一个字符串**。
+		# 这条口径成立的前提是这两行的中英文本来就不同（界面音效/UI Sound、
+		# 触感反馈/Haptics），所以它是这两行的断言，不是通用的文案覆盖规则。
+		var label_key := "settings_" + row_key
+		var locale_before := LocaleManager.get_locale()
+		LocaleManager.set_locale("zh")
+		var label_zh := tr(label_key)
+		LocaleManager.set_locale("en")
+		var label_en := tr(label_key)
+		LocaleManager.set_locale(locale_before)
+		_h.expect(label_zh != label_key and label_en != label_key
+				and label_zh != label_en,
+			"feedback_row_label_untranslated",
+			"%s 缺文案或有一边在回落：zh=%s en=%s" % [label_key, label_zh, label_en])
+
+		# 开/关不能只靠颜色和滑块 —— 与 board_guides 同一条口径。
+		# 这几行原本一条断言都没有：toggle_state_is_colour_only 查的是
+		# _refresh_board_guides_button，走的是另一个函数。
+		PlayerProfile.set_presentation_toggle(row_key, true)
+		screen._refresh_presentation_button(row_key)
+		var row_on := str(row_btn.text)
+		PlayerProfile.set_presentation_toggle(row_key, false)
+		screen._refresh_presentation_button(row_key)
+		var row_off := str(row_btn.text)
+		PlayerProfile.set_presentation_toggle(row_key, true)
+		screen._refresh_presentation_button(row_key)
+		_h.expect(row_on != row_off, "feedback_row_state_is_colour_only",
+			"%s 开与关时按钮文本完全相同 —— 状态只靠颜色" % row_key)
+
+	# P1-04 第 1 条：移动端最小触控尺寸。查的是**排完版之后的实际高度**，
+	# 不是 custom_minimum_size —— 容器可能把控件压得比它的最小值还矮，
+	# 那种情况下只看声明值会得到一个假绿。
+	#
+	# 这一页建立时有三个控件写的是 46 / 46 / 40 的字面量，全都低于 48。
+	var too_small := 0
+	var worst_h := 9999.0
+	for node in _all_buttons(screen):
+		var b: BaseButton = node
+		if b.size.y < Tokens.TOUCH_MIN - 0.5:
+			too_small += 1
+			worst_h = minf(worst_h, b.size.y)
+	_h.expect(too_small == 0, "settings_button_below_touch_min",
+		"设置页有 %d 个按钮低于 TOUCH_MIN=%.0f，最矮的只有 %.1fpx"
+			% [too_small, Tokens.TOUCH_MIN, worst_h])
+
 	if marked_before:
 		LocaleManager.set_locale("zh")
 	screen.queue_free()
 	await get_tree().process_frame
+
+
+func _all_buttons(node: Node) -> Array[BaseButton]:
+	var out: Array[BaseButton] = []
+	for child in node.get_children():
+		if child is BaseButton:
+			out.append(child as BaseButton)
+		out.append_array(_all_buttons(child))
+	return out
+
+
+# V3 P1-04：UI 音效与触觉的裁决必须走 PresentationSettings，且真的被开关左右。
+#
+# 这条门禁只验**裁决**，不验发声——仓里没有任何 UI 音效素材（音频许可还是未闭环
+# blocker），本批刻意只搭管线不放音。所以能验的是「开关关掉时不允许播」，
+# 而不是「播出来的声音对不对」。
+func _check_feedback_gating() -> void:
+	var sound_before: bool = PlayerProfile.get_presentation_toggle("ui_sound")
+	var haptics_before: bool = PlayerProfile.get_presentation_toggle("haptics")
+	var master := AudioServer.get_bus_index("Master")
+	var mute_before: bool = AudioServer.is_bus_mute(master) if master >= 0 else false
+
+	# --- 音效：玩家开关 ---
+	PlayerProfile.set_presentation_toggle("ui_sound", false)
+	_h.expect(not Presentation.ui_sound_allowed(), "ui_sound_ignores_toggle",
+		"关掉界面音效开关之后 ui_sound_allowed() 仍然是 true")
+	PlayerProfile.set_presentation_toggle("ui_sound", true)
+	if master >= 0:
+		AudioServer.set_bus_mute(master, false)
+	_h.expect(Presentation.ui_sound_allowed(), "ui_sound_stuck_off",
+		"开关打开、总线没静音，ui_sound_allowed() 却是 false")
+
+	# --- 音效：游戏内静音 ---
+	# 备战页那个静音按钮静的就是 Master。开关是开的也不该出声 ——
+	# 玩家按了静音就是不想听见，不该还要再去设置页关一次。
+	if master >= 0:
+		AudioServer.set_bus_mute(master, true)
+		_h.expect(not Presentation.ui_sound_allowed(), "ui_sound_ignores_mute",
+			"Master 总线已静音，ui_sound_allowed() 仍然是 true")
+		AudioServer.set_bus_mute(master, mute_before)
+
+	# --- 触觉：玩家开关 ---
+	# 显式传 device_supported=true 跑「手机」那条分支。不传的话平台判断会先
+	# 返回 false，这条断言在桌面上恒绿，等于没测（见 haptics_allowed 的注释）。
+	PlayerProfile.set_presentation_toggle("haptics", false)
+	_h.expect(not Presentation.haptics_allowed(true), "haptics_ignores_toggle",
+		"关掉触感反馈开关之后 haptics_allowed() 仍然是 true")
+
+	# --- 触觉：没有振动器的设备必须为 false ---
+	PlayerProfile.set_presentation_toggle("haptics", true)
+	_h.expect(Presentation.haptics_allowed(true), "haptics_stuck_off",
+		"开关打开、设备支持振动，haptics_allowed() 却是 false")
+	_h.expect(not Presentation.haptics_allowed(false), "haptics_ignores_device",
+		"设备不支持振动，haptics_allowed() 仍然是 true —— 会去调一个不存在的能力")
+
+	# 本机（Windows）走的是默认参数那条路。真机是否真的震由人工确认，
+	# 写在交接里，不在这里假装验过。
+	if not (OS.get_name() in ["Android", "iOS"]):
+		_h.expect(not Presentation.haptics_allowed(), "haptics_on_desktop",
+			"桌面平台默认参数下 haptics_allowed() 返回 true")
+
+	# 还原玩家原来的设置 —— 这条门禁写的是真实 profile，不是内存副本。
+	PlayerProfile.set_presentation_toggle("ui_sound", sound_before)
+	PlayerProfile.set_presentation_toggle("haptics", haptics_before)
+	if master >= 0:
+		AudioServer.set_bus_mute(master, mute_before)
+
+
+# 新开关必须真的存进 profile，不是只活在内存里 —— 否则重启就丢。
+func _check_feedback_toggles_persist() -> void:
+	for key in ["ui_sound", "haptics"]:
+		var before: bool = PlayerProfile.get_presentation_toggle(str(key))
+		PlayerProfile.set_presentation_toggle(str(key), not before)
+		var payload: Variant = JSON.parse_string(
+			FileAccess.get_file_as_string(PlayerProfile.PROFILE_PATH))
+		_h.expect(payload is Dictionary
+				and (payload as Dictionary).has("%s_enabled" % str(key)),
+			"feedback_toggle_not_in_profile",
+			"%s 没有写进 profile.json，重启就丢" % str(key))
+		if payload is Dictionary:
+			_h.expect(bool((payload as Dictionary).get("%s_enabled" % str(key), before))
+					== (not before),
+				"feedback_toggle_value_not_saved",
+				"%s 落盘的值不是刚设置的那个" % str(key))
+		PlayerProfile.set_presentation_toggle(str(key), before)
