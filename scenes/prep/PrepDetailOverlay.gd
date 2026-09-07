@@ -45,7 +45,7 @@ func is_showing() -> bool:
 
 # 常规详情框（棋子属性、宝物说明、商店卡片）。
 func show_text(text: String) -> void:
-	_show(text, Vector2(500, 360), Vector2i(540, 390), false)
+	_show(text, Vector2(500, 340), Vector2i(540, 390), false)
 
 
 # 战力推荐框，比常规的矮一些。

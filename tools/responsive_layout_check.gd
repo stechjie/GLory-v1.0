@@ -105,8 +105,27 @@ func _check_team3v3_lobby(entry: Dictionary) -> void:
 	add_child(page)
 	await _settle(4)
 	_check_ref_size_invariant("Team3v3Lobby", res_label, page.REF_SIZE, page._layout_scale)
+	_check_lobby_status_spacing(page, res_label)
 	page.queue_free()
 	await _settle(2)
+
+
+func _check_lobby_status_spacing(page: Team3v3LobbyScript, res_label: String) -> void:
+	var status_rect := page._status_lbl.get_global_rect()
+	for i in 3:
+		var name_rect: Rect2 = (page._slot_name_lbls[i] as Label).get_global_rect()
+		_h.expect(not status_rect.intersects(name_rect), "lobby_status_overlaps_slot_title",
+			"[Team3v3Lobby @ %s] 顶部模式状态 %s 与席位 %d 标题 %s 重叠" % [
+				res_label, str(status_rect), i, str(name_rect)])
+	if page._asset_lbl != null:
+		var asset_rect := page._asset_lbl.get_global_rect()
+		_h.expect(not asset_rect.intersects(status_rect), "lobby_asset_overlaps_status",
+			"[Team3v3Lobby @ %s] 资源进度与模式状态重叠" % res_label)
+		for i in 6:
+			var slot_name_rect: Rect2 = (page._slot_name_lbls[i] as Label).get_global_rect()
+			_h.expect(not asset_rect.intersects(slot_name_rect),
+				"lobby_asset_overlaps_slot_title",
+				"[Team3v3Lobby @ %s] 资源进度与席位 %d 标题重叠" % [res_label, i])
 
 
 # 只留一条断言：`_layout_scale` 必须等于按 REF_SIZE 独立重算出来的

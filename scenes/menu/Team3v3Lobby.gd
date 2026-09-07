@@ -20,6 +20,7 @@ const TEX_CHAT := preload("res://assets/ui/room_v2/chat.png")
 const TEX_START := preload("res://assets/ui/room_v2/start.png")
 const TEX_VS := preload("res://assets/ui/room/vs.png")
 const MENU_MUSIC_PATH := "res://assets/audio/bgm/menu_music.mp3"
+const SELFTEST_SCENE_PATH := "res://officetest/OfficeTestScreen.tscn"
 
 # ── 布局调试overlay ────────────────────────────────────────────────
 # 与主界面同款：黑线 = 空间划分（参考画布边界 / 功能分区 / 席位格 / 每个元素占位框）
@@ -101,7 +102,10 @@ func _setup_asset_loader() -> void:
 	_asset_total = BattleAssetService.pending_count()
 	print("[ASSET] 大厅预载启动：外部VFX %d 个、商店池 %d 个 -> 待加载 %d 个"
 		% [vfx.size(), shop.size(), _asset_total])
-	_asset_lbl = _add_label("", Vector2(626, 197), Vector2(420, 24), 14, Color(0.62, 0.86, 0.98))
+	# Keep preload progress outside the center status/seat-name band. The previous
+	# 626..1046 × 197..221 rectangle crossed the top B/C seat titles on device.
+	_asset_lbl = _add_label("", Vector2(1340, 600), Vector2(230, 28), 14,
+		Color(0.62, 0.86, 0.98), "right")
 	set_process(true)
 
 func _process(delta: float) -> void:
@@ -220,17 +224,13 @@ func _build() -> void:
 	_start_btn = _add_hit(Vector2(1300, 790), Vector2(270, 95), _on_primary_pressed, "right", "hit_start")
 	# 离线自测专用入口(officetest):开始游戏上方,仅离线显示,纯追加不动原布局。
 	#
-	# V3 P1-07：officetest 场景在 export_presets.cfg 的 exclude_filter 里，
-	# 不进 Release 包。这个按钮此前只按 not _online() 显隐，没有按 is_debug_build()
-	# 关掉 —— 意味着 Release 玩家离线时能看见并点这个按钮，而点下去
-	# Main._show_selftest() 里 load("res://officetest/OfficeTestScreen.tscn")
-	# 在 Release 包里取到的是 null，对 null 调 .instantiate() 直接崩溃。
-	# 加 is_debug_build() 之后，Release 包里这个按钮从一开始就不会显示。
+	# V3 P1-07 先加了 debug 守卫；V12-12 再补资源能力判断。普通 Debug APK
+	# 同样会按 preset 排除 officetest/，所以只看 is_debug_build() 仍会显示死入口。
 	_selftest_btn = _add_ai_button(Vector2(1310, 719), Vector2(255, 55), func(): selftest_requested.emit(), "right", "btn_selftest", 24)
 	_selftest_btn.text = _room_text("自测开始", "Self-Test")
-	_selftest_btn.visible = OS.is_debug_build() and not _online()
+	_selftest_btn.visible = selftest_available() and not _online()
 	_host_hint_lbl = _add_label(_room_text("等待其他玩家准备后可按", "Waiting for players"), Vector2(1285, 880), Vector2(310, 28), 20, Color(1.0, 0.94, 0.78), "right")
-	_status_lbl = _add_label("", Vector2(626, 167), Vector2(420, 28), 17, Color(0.98, 0.94, 0.78))
+	_status_lbl = _add_label("", Vector2(626, 142), Vector2(420, 28), 17, Color(0.98, 0.94, 0.78))
 	_build_debug_layer()
 
 func _build_slot(index: int) -> void:
@@ -351,7 +351,13 @@ func _refresh() -> void:
 	if _host_hint_lbl != null:
 		_host_hint_lbl.visible = is_host_seat
 	if _selftest_btn != null:
-		_selftest_btn.visible = OS.is_debug_build() and not _online()
+		_selftest_btn.visible = selftest_available() and not _online()
+
+
+func selftest_available() -> bool:
+	# Debug is necessary but not sufficient: normal debug APKs deliberately exclude
+	# officetest/. Capability-gating prevents a visible button whose scene cannot load.
+	return OS.is_debug_build() and ResourceLoader.exists(SELFTEST_SCENE_PATH, "PackedScene")
 
 # 3v3 大厅状态：取代原先误显示的 1v1 session_label（棋盘/对手准备那套）。
 func _lobby_status_text() -> String:

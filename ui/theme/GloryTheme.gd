@@ -40,6 +40,7 @@ const REQUIRED_STYLEBOX_COVERAGE := {
 		"tab_disabled"],
 	"PanelContainer": ["panel"],
 	"Panel": ["panel"],
+	"PopupPanel": ["panel"],
 	"ProgressBar": ["background", "fill"],
 	"VScrollBar": ["scroll", "grabber", "grabber_highlight", "grabber_pressed"],
 	"HScrollBar": ["scroll", "grabber", "grabber_highlight", "grabber_pressed"],
@@ -156,6 +157,8 @@ static func _build_label(theme: Theme) -> void:
 static func _build_panel(theme: Theme) -> void:
 	theme.set_stylebox("panel", "PanelContainer", Tokens.panel_box())
 	theme.set_stylebox("panel", "Panel", Tokens.panel_box())
+	theme.set_stylebox("panel", "PopupPanel", Tokens.panel_box(
+		Tokens.SURFACE, Tokens.GOLD_EDGE, Tokens.GAP_M))
 
 
 static func _build_progress(theme: Theme) -> void:

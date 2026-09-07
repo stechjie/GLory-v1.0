@@ -791,6 +791,9 @@ func _show_team3v3_lobby() -> void:
 # 离线自测·单位测试模式(officetest):独立场景,不走备战/回合/存档,
 # 返回时还原 team_mode,不在 GameState 留任何痕迹。
 func _show_selftest() -> void:
+	if not ResourceLoader.exists("res://officetest/OfficeTestScreen.tscn", "PackedScene"):
+		push_warning("officetest scene unavailable; keeping current lobby")
+		return
 	_clear()
 	_selftest_prev_team_mode = GameState.team_mode
 	GameState.team_mode = true
@@ -803,7 +806,7 @@ func _show_selftest() -> void:
 	# 多出第二个入口，不会重演对 null 调 instantiate() 崩溃。
 	var packed := load("res://officetest/OfficeTestScreen.tscn") as PackedScene
 	if packed == null:
-		push_warning("officetest scene unavailable (expected in release exports); returning to lobby")
+		push_warning("officetest scene unavailable; returning to lobby")
 		GameState.team_mode = _selftest_prev_team_mode
 		_show_team3v3_lobby()
 		return
