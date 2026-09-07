@@ -188,8 +188,6 @@ var _start_battle_button: GloryBusyButtonScript
 var _round_info_label: Label
 var _ready_indicator: Control
 var _ready_dots: Array = []
-var _toast_label: Label
-var _toast_tween: Tween
 var _player_formation_bar: TextureProgressBar
 var _enemy_formation_bar: TextureProgressBar
 var _player_formation_hp_label: Label

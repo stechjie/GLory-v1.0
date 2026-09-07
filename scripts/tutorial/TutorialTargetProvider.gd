@@ -4,6 +4,7 @@ extends RefCounted
 # TutorialMode asks for semantic targets; the Prep adapter owns private fields.
 
 const TARGET_BUY_UNIT := "buy_unit"
+const GloryToastScript := preload("res://ui/components/GloryToast.gd")
 const TARGET_PLACE_UNIT := "place_unit"
 const TARGET_UPGRADE_UNIT := "upgrade_unit"
 const TARGET_START_BATTLE := "start_battle"
@@ -148,10 +149,18 @@ func request_action(action_id: String) -> bool:
 
 
 func show_feedback(text: String) -> bool:
-	if text.is_empty() or not _feedback.is_valid():
+	# V3 P1-04：_feedback 没绑定时**回落到全局 toast**，而不是静默失效。
+	#
+	# 唯一的生产绑定是 PrepUI.gd 的 bind_feedback(show_message)，所以此前
+	# 在备战页之外这个函数一律 return false，什么都不显示 ——
+	# TutorialMode.gd 里 begin_battle() 被拒绝时走的 follow_arrow_hint()
+	# 就是一条会在别处触发的路径，玩家那时看到的是「点了没反应」。
+	if text.is_empty():
 		return false
-	_feedback.call(text)
-	return true
+	if _feedback.is_valid():
+		_feedback.call(text)
+		return true
+	return GloryToastScript.show_text(text)
 
 
 func release() -> void:

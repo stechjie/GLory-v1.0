@@ -31,6 +31,9 @@ extends Node
 
 const CheckHarness := preload("res://tools/CheckHarness.gd")
 const Feedback := preload("res://ui/services/UiFeedback.gd")
+const Toast := preload("res://ui/components/GloryToast.gd")
+const ModalStackScript := preload("res://ui/services/ModalStack.gd")
+const ProviderScript := preload("res://scripts/tutorial/TutorialTargetProvider.gd")
 const Presentation := preload("res://effects/runtime/presentation/PresentationSettings.gd")
 
 const CHECK_NAME := "ui_feedback"
@@ -57,6 +60,7 @@ func _ready() -> void:
 	_check_feedback_not_called_from_input_handlers()
 	_check_main_installs_feedback()
 	_check_vibrate_permission()
+	await _check_toast()
 	_h.finish(get_tree())
 
 
@@ -234,6 +238,75 @@ func _check_vibrate_permission() -> void:
 			break
 	_h.expect(found, "vibrate_permission_not_requested",
 		"export_presets.template.cfg 没有请求 VIBRATE 权限 —— 触觉在真机上永远不会响")
+
+
+# --- Toast ------------------------------------------------------------------
+
+func _check_toast() -> void:
+	# 层级必须压过模态栈。拒绝动作**就发生在**打开的模态里 ——
+	# 原因盖在模态底下等于没写。留出的余量是给栈深的（BASE_LAYER + i）。
+	_h.expect(Toast.TOAST_LAYER > ModalStackScript.BASE_LAYER + 16,
+		"toast_below_modals",
+		"toast 层 %d 不够高，模态栈基线是 %d —— 模态里的拒绝原因会被盖住"
+			% [Toast.TOAST_LAYER, ModalStackScript.BASE_LAYER])
+
+	Toast.dismiss()
+	await get_tree().process_frame
+	Toast.reset_counters_for_check()
+
+	_h.expect(Toast.show_text("门禁提示 A"), "toast_show_returned_false",
+		"GloryToast.show_text() 返回 false —— 后面的断言无从谈起")
+	await get_tree().process_frame
+	_h.expect(Toast.shown_count() == 1 and Toast.last_text() == "门禁提示 A",
+		"toast_not_shown",
+		"show_text 之后计数=%d、文本=%s" % [Toast.shown_count(), Toast.last_text()])
+	_h.expect(Toast.is_showing(), "toast_not_visible",
+		"show_text 之后 is_showing() 仍然是 false")
+
+	# 挂在 current_scene 而不是 root：页面切换时 Main._clear() 会释放自己所有
+	# 子节点，层和计时器一起没。挂 root 上就会跨页面残留。
+	var layer := get_tree().current_scene.get_node_or_null(Toast.LAYER_NAME)
+	_h.expect(layer != null, "toast_not_parented_to_scene",
+		"toast 层没挂在 current_scene 下 —— 页面切换时不会被回收")
+
+	# 连点只能替换，不能堆叠：屏幕上永远只有一条。
+	for i in 5:
+		Toast.show_text("门禁提示 %d" % i)
+	await get_tree().process_frame
+	# 按**层号**数，不按名字。
+	#
+	# 名字这条路走不通：add_child 遇到重名兄弟会自动改成
+	# "@GloryToastLayer@2" —— 前缀是 @，所以精确相等和 begins_with 都数不到
+	# 第二层，断言会永远是绿的。两种写法都实测过，记在这里免得再绕一圈。
+	var layers := 0
+	for child in get_tree().current_scene.get_children():
+		if child is CanvasLayer and (child as CanvasLayer).layer == Toast.TOAST_LAYER:
+			layers += 1
+	_h.expect(layers == 1, "toast_stacks",
+		"连发 6 条之后屏幕上有 %d 层 toast" % layers)
+	_h.expect(Toast.last_text() == "门禁提示 4", "toast_text_not_replaced",
+		"重复显示之后文本停在 %s" % Toast.last_text())
+
+	Toast.dismiss()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_h.expect(not Toast.is_showing(), "toast_not_dismissed",
+		"dismiss() 之后 is_showing() 仍然是 true")
+
+	# 教学反馈在备战页之外也必须看得见。
+	#
+	# 此前 show_feedback() 只是对 _feedback 的转发，而唯一的生产绑定在
+	# PrepUI 里，所以出了备战页一律 return false、什么都不显示。
+	Toast.reset_counters_for_check()
+	var provider = ProviderScript.new()
+	var shown: bool = provider.show_feedback("门禁：未绑定回调时的教学反馈")
+	await get_tree().process_frame
+	_h.expect(shown and Toast.shown_count() == 1,
+		"tutorial_feedback_silent_without_binding",
+		"没有绑定 _feedback 时教学反馈静默失效了（返回 %s，toast 计数 %d）"
+			% [str(shown), Toast.shown_count()])
+	Toast.dismiss()
+	await get_tree().process_frame
 
 
 # --- 工具 -------------------------------------------------------------------

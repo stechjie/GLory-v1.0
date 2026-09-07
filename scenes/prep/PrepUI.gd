@@ -7,6 +7,7 @@ const PrepShopRaceIcon = preload("res://scenes/prep/PrepShopRaceIcon.gd")
 const PrepShopRefreshBurnScript = preload("res://scenes/prep/effects/PrepShopRefreshBurn.gd")
 const PrepTeamMercAlertScript = preload("res://scenes/prep/effects/PrepTeamMercAlert.gd")
 const TutorialTargetProviderScript := preload("res://scripts/tutorial/TutorialTargetProvider.gd")
+const GloryToastScript := preload("res://ui/components/GloryToast.gd")
 # 只为拿 FillPhase 枚举做**静态**引用（教学第 15 步的子阶段），
 # 走 preload 常量而不是从 autoload 实例上取，dynamic_call 棘轮才不会长。
 const TutorialModeScript := preload("res://scripts/tutorial/TutorialMode.gd")
@@ -1066,31 +1067,17 @@ func _refresh_start_button_label() -> void:
 		_start_battle_button.set_idle_text(tr("ui_start_battle_btn"))
 
 func show_message(text: String) -> void:
-	# Transient centered toast that fades out (used for rejected placements, etc.).
-	if _toast_label == null:
-		_toast_label = Label.new()
-		_toast_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_toast_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		_toast_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		_toast_label.anchor_left = 0.0
-		_toast_label.anchor_right = 1.0
-		_toast_label.anchor_top = 0.34
-		_toast_label.anchor_bottom = 0.34
-		_toast_label.offset_bottom = 44
-		_toast_label.add_theme_font_size_override("font_size", 24)
-		_toast_label.add_theme_color_override("font_color", Color(1.0, 0.9, 0.7))
-		_toast_label.add_theme_color_override("font_outline_color", Color(0.12, 0.02, 0.0, 0.96))
-		_toast_label.add_theme_constant_override("outline_size", 5)
-		_toast_label.z_index = 60
-		add_child(_toast_label)
-	_toast_label.text = text
-	_toast_label.visible = true
-	_toast_label.modulate = Color(1, 1, 1, 1)
-	if _toast_tween != null and _toast_tween.is_valid():
-		_toast_tween.kill()
-	_toast_tween = create_tween()
-	_toast_tween.tween_interval(1.3)
-	_toast_tween.tween_property(_toast_label, "modulate:a", 0.0, 0.6)
+	# V3 P1-04：转发给全局 GloryToast。
+	#
+	# 函数名保留：9 个调用点、_shop.message_requested 的连接、以及
+	# provider.bind_feedback(show_message) 都不用动。
+	#
+	# 观感上有一处**可见**变化：旧实现是 5px 描边的裸 Label，而备战页背景是
+	# 浅蓝水面（ColorRect 0.38/0.70/0.88）——Main._show_back_exit_hint 的注释
+	# 早就记着「描边在浅色水面上一样糊」。新的底板是实心面板，可读性更好。
+	# 位置和时长照旧（anchor 0.34 / 1.3s + 0.6s）。
+	GloryToastScript.show_text(text)
+
 
 func _build_ready_indicator() -> void:
 	# 3v3 准备状态：上排=敌队 3 个、下排=自己队 3 个（自己队永远在下，和战斗演示一致）。
