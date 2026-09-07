@@ -18,7 +18,18 @@ var _accum := 0.0
 var _last_video_mb := 0.0
 var _last_static_mb := 0.0
 
+# Full-tree skinning census is a diagnostic, not part of normal gameplay.
+# Keep headless checks observable and allow device captures to opt in explicitly.
+static func diagnostics_enabled(args: PackedStringArray, headless: bool) -> bool:
+	if "--server" in args or "--dedicated-server" in args:
+		return false
+	return headless or "--perf-log" in args or "--device-baseline" in args
+
 func _ready() -> void:
+	var args := OS.get_cmdline_args() + OS.get_cmdline_user_args()
+	if not diagnostics_enabled(args, DisplayServer.get_name() == "headless"):
+		set_process(false)
+		return
 	# 专服上这个采样一分钱价值都没有，代价却是实打实的：每 0.5 秒两行，一天约 34 万行
 	# 灌进 journald，把 `server started protocol=N` 这类只出现一次的启动日志冲到几千行
 	# 以外（实测查不到）。而 _print_skinning_census() 每次还要遍历整棵场景树找

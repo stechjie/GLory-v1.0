@@ -115,21 +115,19 @@ func _ready() -> void:
 	set_process(false)
 
 func update_from_fighter(fighter: Dictionary) -> void:
-	var active := {}
 	var shield_now := int(fighter.get("shield", 0))
 	_note_shield_transition(shield_now)
 	# BREAK 期间必须保持可见，否则 shield 归零的同一帧精灵就被隐藏，
 	# 破盾演出一帧都放不出来 —— 那等于没做。
-	active["shield"] = shield_now > 0 or _shield_phase == ShieldPhase.BREAK
+	_set_effect_visible("shield", shield_now > 0 or _shield_phase == ShieldPhase.BREAK)
 	var statuses: Dictionary = fighter.get("statuses", {})
-	var remaining_by_kind:={}
-	for kind in ["stun", "poison", "burn", "silence", "slow", "bleed", "attack_down", "interrupt", "defense_down", "defense_flat_down", "heal_reduction", "ice_vulnerable", "ice_affected", "fear"]:
+	# Iterate the fixed definitions without allocating per-fighter dictionaries,
+	# key arrays or an unused remaining-duration map on every rendered frame.
+	for kind in EFFECTS:
+		if kind == "shield":
+			continue
 		var status: Dictionary = statuses.get(kind, {})
-		var remaining:=float(status.get("remaining",0.0))
-		active[kind] = remaining > 0.0
-		remaining_by_kind[kind]=remaining
-	for kind in EFFECTS.keys():
-		_set_effect_visible(kind, bool(active.get(kind, false)))
+		_set_effect_visible(kind, float(status.get("remaining", 0.0)) > 0.0)
 
 # 按护盾值的变化定相位。只在这里判定，_process 只负责把相位画出来。
 func _note_shield_transition(shield_now: int) -> void:
@@ -229,6 +227,10 @@ func _process(delta: float) -> void:
 
 func _set_effect_visible(kind: String, visible: bool) -> void:
 	var sprite := _sprites.get(kind) as Sprite3D
+	# A status that stays active needs no visibility/layout/process notifications.
+	# Shield phase transitions still run above, and animate in _process.
+	if sprite != null and sprite.visible == visible:
+		return
 	if sprite == null:
 		if not visible:
 			return
