@@ -146,7 +146,7 @@ Windows 上 `main.py` 会把 stdout/stderr 拧成 UTF-8 —— 默认的 cp1252 
 | 步骤 | 状态 |
 |---|---|
 | 1. 骨架 + 配置 + `/health` | ✅ |
-| 2. 接上 Supabase，验证三张表 | ✅ 代码就位，待填 `GLORY_DATABASE_URL` 后实测 |
+| 2. 接上 Supabase，验证三张表 | ✅ 实测通过（三张表 / RLS 全开 / policy 数 0） |
 | 3. `POST /v1/auth/anonymous` | ⬜ |
 | 4. JWT 验签 + `GET /v1/me` | ⬜ |
 | 5. Godot `AccountManager.gd` | ⬜ |
