@@ -62,3 +62,33 @@ override.cfg
 
 # A5：283 MB 的历史备份不进运行仓库。需要时从工件库取回，不要提交。
 backups/
+
+# 私有凭据，不进仓库
+upload ssh code.txt
+
+# ── 审计证据与改动前备份：留在本地/工件库，不进运行仓库 ──
+# 依据：全部带 .gdignore（Godot 完全跳过）+ 全仓库零 res:// 引用 + 导出不含。
+# 参见 docs/GLORY_V2_白模与真机复审优化清单_20260822.md:458
+# 例外：A4_device_battle_20260820/ 必须继续跟踪 ——
+#       tools/battle_frame_time_check.gd 读它的 summary.json 当帧时间基线。
+/A4_android_smoke_20260820/
+/A4_prechange_backup_20260820/
+/A5_asset_and_license_20260820/
+/A5_prechange_backup_20260820/
+/B4_prechange_backup_20260819/
+/B4_vfx_budget_20260819/
+/B5_prechange_backup_20260820/
+/B5_review_compare_20260820/
+/D3_battle_presentation_actors_20260819/
+/D3_prechange_backup_20260819/
+/D4_battle_presentation_basic_attack_20260819/
+/D4_prechange_backup_20260819/
+/D5_battle_presentation_feel_20260819/
+/D5_prechange_backup_20260819/
+/D6_battle_presentation_cleanup_20260819/
+/D6_prechange_backup_20260819/
+/E3_prechange_backup_20260819/
+/E3_startup_warmup_20260819/
+
+# 服务器包由 make_server_zip.ps1 生成，是构建产物不是源码
+/glory_server_p17.zip

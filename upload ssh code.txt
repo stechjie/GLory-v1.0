@@ -1,7 +1,0 @@
-ls -la ~/Glory*
-
-rm -f ~/Glory_server_upload_v3*
-
-unzip -o ~/glory_server_upload.zip -d ~/Glory/"Beta 0.04"
-sudo systemctl restart glory-server 
-journalctl -u glory-server -n 5 --no-pager

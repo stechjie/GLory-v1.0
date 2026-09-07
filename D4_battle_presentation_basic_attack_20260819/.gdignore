@@ -1,5 +1,0 @@
-# Godot must not scan this directory.
-# It holds stage evidence and pre-change backups: the backups contain copies of .gd
-# files that declare the same class_name as the live ones, which registers duplicate
-# global classes ("hides a global script class"), and the metrics CSVs get imported
-# as translation resources. Neither is source the engine should touch.
