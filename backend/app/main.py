@@ -23,6 +23,7 @@ from app import db
 from app.config import get_settings
 from app.routes import auth as auth_routes
 from app.routes import debug as debug_routes
+from app.routes import me as me_routes
 
 # Windows 控制台默认是 cp1252，中文日志会被转义成 以... 甚至直接抛
 # UnicodeEncodeError。这里是应用入口，把两个流拧成 UTF-8 是合适的做法。
@@ -83,6 +84,7 @@ app = FastAPI(
 )
 
 app.include_router(auth_routes.router)
+app.include_router(me_routes.router)
 
 # 自检接口只在开发环境挂载。生产上它会把表结构和 RLS 状态说得太清楚，
 # 而且没有任何生产用途 —— 少一个入口就少一个面。

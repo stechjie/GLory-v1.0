@@ -130,6 +130,42 @@ pooler（端口 6543）—— 那是 pgbouncer transaction 模式，与 asyncpg 
 只建了 players 没建映射，玩家下次登录就解析不到自己 —— 账号等于丢了，
 而那行还占着。外键挡不住这个方向，只能靠事务。
 
+## 令牌校验与 `GET /v1/me`
+
+第 3 步是**发**令牌，这里是**收**。之后所有「需要知道你是谁」的接口都用同一条路：
+
+```
+Authorization: Bearer <access_token>
+   -> 验签拿到 auth_uid (sub)
+   -> 查 player_identities 拿到 player_id
+   -> 之后一切游戏数据都用 player_id
+```
+
+实测这个项目签发的令牌是 **ES256 非对称签名**，公钥在
+`/auth/v1/.well-known/jwks.json`。所以后端**不需要任何 JWT 密钥** ——
+只用公钥验签，密钥轮换靠重拉 JWKS（收到未知 `kid` 时提前刷新，
+但有最小间隔保护，否则随机 kid 的令牌就能让我们不停打 Supabase）。
+
+### ⛔ 算法白名单绝不能加 HS256
+
+`ALLOWED_ALGORITHMS = ["ES256", "RS256"]`。**改这一行前先想清楚。**
+
+这是 JWT 最经典的洞（algorithm confusion）：验签方同时接受非对称和对称算法时，
+攻击者可以拿那把**公开的**公钥当 HMAC 密钥去签一个 HS256 令牌。公钥就在
+jwks.json 里人人可取 —— 于是任何人都能伪造任意 `sub`，也就是任意玩家的身份。
+
+`test_hs256_forgery_is_rejected` 钉着这条。注意那个用例是**手工拼字节**造的
+伪造令牌 —— PyJWT 在编码侧就拒绝拿 PEM 公钥当 HMAC 密钥，但那保护不了验签方，
+攻击者不会用我们的库。
+
+一并校验的还有 `iss`（挡别的 Supabase 项目签的令牌）、`aud`、`exp`，
+以及 `require` 里那几个必需 claim（不给「某项恰好缺失所以被跳过」留空间）。
+
+### `/v1/me` 只读不建
+
+令牌有效但查不到玩家 → **404，不自动补建**。建账号只有
+`/v1/auth/anonymous` 一条路，多一条就多一个可以绕开的入口。
+
 ## 日志
 
 `main.py` 里的 `_configure_logging()` 给 `glory.*` 装 handler。**不做这一步，
@@ -167,15 +203,18 @@ backend/
     config.py         环境变量读取。代码里不写任何密钥
     db.py             asyncpg 连接池 + 表结构自检
     supabase_auth.py  **全后端唯一知道 Supabase 存在的文件**。换 Auth 只改这里
+    jwt_verify.py     令牌验签（JWKS / ES256）。算法白名单在这里
     players.py        players / player_identities 的读写（含事务）
     main.py           FastAPI 入口 + /health + 日志配置
     routes/
       auth.py         /v1/auth/anonymous + /refresh
+      me.py           /v1/me + current_claims 依赖
       debug.py        /v1/debug/schema（仅 dev）
   tests/
     test_health.py        /health 不泄漏密钥
     test_debug_schema.py  未配置时干净拒绝 + 迁移文件与检查清单一致
     test_auth.py          错误信息不带 token + 匿名登录没开时的提示
+    test_jwt_verify.py    **算法混淆伪造被拒** + 签发方/受众/过期/未知 kid
 ```
 
 ## 环境
@@ -192,6 +231,6 @@ Windows 上 `main.py` 会把 stdout/stderr 拧成 UTF-8 —— 默认的 cp1252 
 | 1. 骨架 + 配置 + `/health` | ✅ |
 | 2. 接上 Supabase，验证三张表 | ✅ 实测通过（三张表 / RLS 全开 / policy 数 0） |
 | 3. `POST /v1/auth/anonymous` + `/refresh` | ✅ 实测通过（真实 Supabase） |
-| 4. JWT 验签 + `GET /v1/me` | ⬜ |
+| 4. JWT 验签 + `GET /v1/me` | ✅ 实测通过（真实令牌 + 四类反例） |
 | 5. Godot `AccountManager.gd` | ⬜ |
 | 6. 完整门禁 | ⬜ |
