@@ -290,10 +290,6 @@ func _roll_shop_tier(rng: RandomNumberGenerator) -> int:
 
 func _shop_unit_cost(unit_def: Dictionary) -> int:
 	return 0
-func _format_treasure_detail(t: Dictionary) -> String:
-	return ""
-
-
 # ─── 抽象桩 ─────────────────────────────────────────────────────────────────
 #
 # D2 步骤 6′：这一层原本有 44 个只写 pass 的桩 —— 它们是给内部类和基类代码

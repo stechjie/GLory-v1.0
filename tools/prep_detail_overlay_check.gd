@@ -20,6 +20,7 @@ const CheckHarness := preload("res://tools/CheckHarness.gd")
 # 第一版用 ov.show_text(...) 写了 15 处按名字调用，
 # 被 dynamic_call 的棘轮当场报警：检查工具自己也不该制造编译器管不到的调用。
 const PrepDetailOverlay := preload("res://scenes/prep/PrepDetailOverlay.gd")
+const TreasureChoicePanel := preload("res://scenes/prep/panels/TreasureChoicePanel.gd")
 
 const CHECK_NAME := "prep_detail_overlay"
 
@@ -43,6 +44,7 @@ func _ready() -> void:
 	_case_show_and_hide()
 	_case_gold_interest_isolation()
 	_case_long_press_wiring()
+	_case_treasure_card_gesture_contract()
 
 	_h.finish(get_tree())
 
@@ -134,3 +136,88 @@ func _case_long_press_wiring() -> void:
 	_h.expect(btn.gui_input.get_connections().size() > 0, "long_press_no_motion",
 		"gui_input 未连接 —— 拖拽时不会取消长按，拖着拖着就弹出说明框")
 	btn.queue_free()
+
+
+# 使用 TreasureChoicePanel 自己的装配入口跑真实信号顺序：
+# button_down -> 0.7s timeout -> button_up -> pressed。
+# 过去最后一个 pressed 会继续领取；这条会把那种静默回归直接变红。
+func _case_treasure_card_gesture_contract() -> void:
+	var ov := _overlay()
+	var panel := _prep.get("_treasure") as TreasureChoicePanel
+	if not _h.expect(panel != null, "treasure_panel_missing",
+		"PrepScreen 上没有 TreasureChoicePanel，无法验证真实宝藏卡信号"):
+		return
+	var tid := "def_iron_wall"
+	var before_owned := GameState.owned_treasures.duplicate()
+	var before_gold := GameState.gold
+	var before_pending := GameState.pending_treasure.duplicate(true)
+	var picked: Array[String] = []
+	panel.pick_requested.connect(func(picked_tid: String): picked.append(picked_tid))
+
+	var long_card := Button.new()
+	add_child(long_card)
+	panel._wire_candidate_card(long_card, tid)
+	long_card.button_down.emit()
+	var long_timer := long_card.get_meta("long_press_timer") as Timer
+	long_timer.timeout.emit()
+	long_card.button_up.emit()
+	long_card.pressed.emit()
+	_h.expect(picked.is_empty(), "treasure_long_press_claimed",
+		"宝藏卡长按松手后仍发出了领取意图")
+	_h.expect(ov.is_showing(), "treasure_long_press_no_detail",
+		"宝藏卡长按没有显示详情")
+	_h.expect(str(ov.text_label.text).contains("+10"), "treasure_detail_content_missing",
+		"宝藏详情没有使用真实宝藏效果文案")
+	_h.expect(GameState.owned_treasures == before_owned, "treasure_long_press_changed_owned",
+		"长按查看修改了 owned_treasures")
+	_h.expect(GameState.gold == before_gold, "treasure_long_press_changed_gold",
+		"长按查看修改了金币")
+	_h.expect(GameState.pending_treasure == before_pending, "treasure_long_press_changed_candidates",
+		"长按查看修改了候选状态")
+	for card_tid in ["def_phantom_step", "money_discount", "def_iron_wall"]:
+		var detail := panel.format_detail(TreasureService.treasure_by_id(card_tid))
+		_h.expect(not detail.is_empty() and not detail.contains("暂未写入"),
+			"treasure_docx_card_detail_missing_%s" % card_tid,
+			"DOCX 三张宝藏卡之一没有完整详情：%s" % card_tid)
+	var original_locale := LocaleManager.get_locale()
+	LocaleManager.set_locale("en")
+	_h.expect(panel.format_detail(TreasureService.treasure_by_id(tid)).contains("Effect:"),
+		"treasure_detail_en_missing", "英文宝藏详情没有 Effect 字段")
+	LocaleManager.set_locale("zh")
+	_h.expect(panel.format_detail(TreasureService.treasure_by_id(tid)).contains("效果："),
+		"treasure_detail_zh_missing", "中文宝藏详情没有效果字段")
+	LocaleManager.set_locale(original_locale)
+
+	var drag_card := Button.new()
+	add_child(drag_card)
+	panel._wire_candidate_card(drag_card, tid)
+	drag_card.button_down.emit()
+	var touch := InputEventScreenTouch.new()
+	touch.index = 7
+	touch.position = Vector2.ZERO
+	touch.pressed = true
+	drag_card.gui_input.emit(touch)
+	var drag := InputEventScreenDrag.new()
+	drag.index = 7
+	drag.position = Vector2(20, 0)
+	drag_card.gui_input.emit(drag)
+	(drag_card.get_meta("long_press_timer") as Timer).timeout.emit()
+	drag_card.button_up.emit()
+	drag_card.pressed.emit()
+	_h.expect(picked.is_empty(), "treasure_drag_claimed",
+		"宝藏卡移动超过阈值后仍发出了领取意图")
+
+	panel.clear_pick_pending()
+	var short_card := Button.new()
+	add_child(short_card)
+	panel._wire_candidate_card(short_card, tid)
+	short_card.button_down.emit()
+	short_card.button_up.emit()
+	short_card.pressed.emit()
+	_h.expect(picked.size() == 1 and picked[0] == tid, "treasure_short_press_wrong_count",
+		"宝藏卡短按必须且只能发出一次领取意图")
+	panel.clear_pick_pending()
+	ov.hide_detail()
+	long_card.queue_free()
+	drag_card.queue_free()
+	short_card.queue_free()

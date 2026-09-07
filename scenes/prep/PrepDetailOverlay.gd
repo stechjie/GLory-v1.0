@@ -99,11 +99,14 @@ func update_release_state() -> void:
 
 # 给按钮装上「长按 0.7 秒弹详情」。
 #
-# 三个 meta 缺一不可：
+# 手势状态都存在按钮 meta 上：
 #   long_press_cancelled  手指移动超过 8 像素 = 用户在拖拽，不是长按
 #   long_press_triggered  已经弹出过，松手时**不要**顺手收起（详情要常驻）
+#   long_press_consumed   业务 pressed 必须被消费，不能继续执行领取/购买
+#   long_press_pointer    多指时只跟踪发起本次手势的 pointer
+#   long_press_down_msec  诊断时可确认真实按住时间
 #   dragging              拖拽中，同样不算长按
-# 少判一个的表现都是「长按有时不灵 / 拖着拖着弹出说明框」，没有任何报错。
+# 少判一个的表现都是「长按有时不灵 / 拖着拖着弹出说明框 / 松手误操作」，没有报错。
 func attach_long_press(btn: BaseButton, cb: Callable) -> void:
 	var timer := Timer.new()
 	timer.one_shot = true
@@ -113,12 +116,16 @@ func attach_long_press(btn: BaseButton, cb: Callable) -> void:
 	timer.timeout.connect(func():
 		if not bool(btn.get_meta("long_press_cancelled", false)) and not bool(btn.get_meta("dragging", false)):
 			btn.set_meta("long_press_triggered", true)
+			btn.set_meta("long_press_consumed", true)
 			cb.call()
 	)
 	btn.button_down.connect(func():
 		btn.set_meta("long_press_start", btn.get_local_mouse_position())
+		btn.set_meta("long_press_down_msec", Time.get_ticks_msec())
+		btn.set_meta("long_press_pointer", -1)
 		btn.set_meta("long_press_cancelled", false)
 		btn.set_meta("long_press_triggered", false)
+		btn.set_meta("long_press_consumed", false)
 		btn.set_meta("dragging", false)
 		timer.start()
 	)
@@ -131,11 +138,42 @@ func attach_long_press(btn: BaseButton, cb: Callable) -> void:
 			hide_detail()
 	)
 	btn.gui_input.connect(func(event: InputEvent):
+		if event is InputEventScreenTouch:
+			var touch := event as InputEventScreenTouch
+			if touch.pressed:
+				btn.set_meta("long_press_pointer", touch.index)
+				btn.set_meta("long_press_start", touch.position)
+			elif touch.canceled:
+				btn.set_meta("long_press_cancelled", true)
+				timer.stop()
 		if not timer.time_left > 0.0:
 			return
 		if event is InputEventMouseMotion or event is InputEventScreenDrag:
-			var start: Vector2 = btn.get_meta("long_press_start", btn.get_local_mouse_position())
-			if btn.get_local_mouse_position().distance_to(start) > 8.0:
+			var current := btn.get_local_mouse_position()
+			if event is InputEventMouseMotion:
+				current = (event as InputEventMouseMotion).position
+			else:
+				var drag := event as InputEventScreenDrag
+				var pointer := int(btn.get_meta("long_press_pointer", -1))
+				if pointer >= 0 and drag.index != pointer:
+					return
+				current = drag.position
+			var start: Vector2 = btn.get_meta("long_press_start", current)
+			if current.distance_to(start) > 8.0:
 				btn.set_meta("long_press_cancelled", true)
 				timer.stop()
 	)
+
+
+# pressed 信号的业务回调调用这个函数。返回 true 表示本次激活来自长按、
+# 超阈值移动或触摸取消，调用方必须直接返回；同时只消费一次。
+func consume_long_press(btn: BaseButton) -> bool:
+	if btn == null:
+		return false
+	var blocked := (
+		bool(btn.get_meta("long_press_consumed", false))
+		or bool(btn.get_meta("long_press_cancelled", false)))
+	btn.set_meta("long_press_consumed", false)
+	btn.set_meta("long_press_triggered", false)
+	btn.set_meta("long_press_cancelled", false)
+	return blocked

@@ -116,8 +116,7 @@ func refresh() -> void:
 		card.focus_mode = Control.FOCUS_NONE
 		PrepWidgets.apply_empty_button_styles(card)
 		PrepWidgets.configure_unframed_portrait_card(card, hover_handler)
-		card.pressed.connect(_on_candidate_pressed.bind(tid))
-		overlay.attach_long_press(card, show_detail.bind(tid))
+		_wire_candidate_card(card, tid)
 		var tex := TextureRect.new()
 		tex.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		tex.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
@@ -275,7 +274,18 @@ func _create_content() -> Control:
 
 
 # 一次有效点击只发一次意图。联机局要等服务端 grant/deny，这中间连点必须无效。
-func _on_candidate_pressed(tid: String) -> void:
+func _wire_candidate_card(card: BaseButton, tid: String) -> void:
+	# 同一个入口同时装短按领取与长按查看，避免以后新卡片只接其中一半。
+	# pressed 在 button_up 之后发出；长按回调会先把 consumed 置位，
+	# 所以这里必须把 card 一起传入，不能只传 tid。
+	card.pressed.connect(_on_candidate_pressed.bind(tid, card))
+	overlay.attach_long_press(card, show_detail.bind(tid))
+
+
+func _on_candidate_pressed(tid: String, source: BaseButton = null) -> void:
+	# 长按只查看。消费这一次 pressed，不能靠详情弹窗偶然吞掉松手事件。
+	if source != null and overlay.consume_long_press(source):
+		return
 	if not _pick_pending_tid.is_empty():
 		var elapsed := Time.get_ticks_msec() - _pick_pending_since_msec
 		if elapsed < PICK_PENDING_RETRY_MSEC:
@@ -378,7 +388,36 @@ func build_logos_panel() -> void:
 # 原 _show_treasure_detail（PrepShared.gd）
 
 func show_detail(tid: String) -> void:
-	pass
+	var treasure := TreasureService.treasure_by_id(tid)
+	if treasure.is_empty() or str(treasure.get("id", "")) != tid:
+		push_warning("TreasureChoicePanel: unknown treasure id '%s'" % tid)
+		if overlay != null and overlay.is_ready():
+			overlay.show_text(
+				"Unknown treasure: %s" % tid if PrepWidgets.is_en()
+				else "未知宝藏：%s" % tid)
+		return
+	if overlay == null or not overlay.is_ready():
+		push_warning("TreasureChoicePanel: detail overlay is not ready for '%s'" % tid)
+		return
+	overlay.show_text(format_detail(treasure))
+
+
+func format_detail(treasure: Dictionary) -> String:
+	var tid := str(treasure.get("id", ""))
+	var category := str(treasure.get("category", ""))
+	var lines: Array[String] = [PrepWidgets.localized_name(treasure)]
+	if PrepWidgets.is_en():
+		lines.append("Effect: %s" % effect_text(tid))
+		lines.append("Owned: %s" % ("Yes" if GameState.owned_treasures.has(tid) else "No"))
+	else:
+		lines.append("效果：%s" % effect_text(tid))
+		lines.append("已拥有：%s" % ("是" if GameState.owned_treasures.has(tid) else "否"))
+	var current_set_status := set_status(category)
+	if not current_set_status.is_empty():
+		lines.append(current_set_status)
+	for line in linkage_status(tid):
+		lines.append(line)
+	return "\n".join(lines)
 
 
 
