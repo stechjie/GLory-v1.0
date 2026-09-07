@@ -143,14 +143,15 @@
     },
     {
       "id": "touch-feedback-audio-haptic",
-      "title": "按钮触摸反馈缺音效/触觉与拒绝动作 shake/toast",
-      "state": "not_started",
-      "owner": "unassigned",
+      "title": "UI 音效素材缺失、触觉与权限未在真机确认",
+      "state": "in_progress",
+      "owner": "external",
       "area": "V3 P1-04",
-      "detail": "六态可区分、busy 态、移动端最小触控尺寸（按实测校准 44→50）已完成，ui_component 116/0。清单还要求：touch down 先出视觉反馈、业务成功后播一次确认音/轻触觉、拒绝动作播短 shake/toast 并说明原因、且不因 mouse+touch 双路发两次。需要音效资源与触觉 API 调研，是独立一批。",
-      "evidence": "tools/ui_component_check.gd",
+      "detail": "2026-09-07：仓内部分已完成（V3 P1-04 步骤 1-8）——开关与裁决走 PresentationSettings，音频总线 default_bus_layout.tres 已注册，GloryToast / Control 级 shake / 拒绝原因 / 禁用态解释全部落地，新增 ui_feedback 门禁 39 项，全量 88/88。剩下的三项仓内改不动：(1) 一个 UI 音效素材都没有，CONFIRM_SFX_PATH 是空串、通道今天完全静音，等素材与 third-party-license-ledger 闭环——填一个真实文件即可生效，零门禁改动；(2) VIBRATE 权限只证明了受 git 跟踪的模板请求了它，live 的 export_presets.cfg 不进 git，在一台从没同步过它的机器上导出就是没有，CI 也看不见，需要一次真实导出确认；(3) 12 ms 震动在真机上是否可感知、以及验收原文要求的 240 fps 录屏测反馈时延，都需要设备。",
+      "evidence": "tools/ui_feedback_check.gd",
       "blocks": [
-        "V3 P1-04"
+        "V3 P1-04 验收",
+        "V3 完成定义"
       ]
     },
     {

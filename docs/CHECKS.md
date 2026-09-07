@@ -2463,3 +2463,127 @@ P95 帧时 138ms，早就是已知的性能缺口）必须判失败——门禁�
 
 外部依赖（写进最终交接表）：完整的 viewport/locale/quality 矩阵、语言选择页、
 教程确认页，以及刘海/挖孔设备下的截图，留给下一批与真机确认。
+
+## 2026-09-07：按钮触摸反馈（V3 P1-04 步骤 1–8）
+
+新增 `ui_feedback`（39 项），`ui_component` 116 → 134，`responsive_layout`
+48 → 54，`export_presets` 6（新增一条正向断言）。全量 87 → 88 条检查。
+
+清单 P1-04 有四条要求，第 1 条（六态可区分、最小触控）2026-09-03 已完成。
+这一批做的是剩下三条，外加验收原文那句「无业务按钮使用 Godot 默认主题」。
+
+### 裁决：并进 `PresentationSettings`，不另起一套
+
+`ui_sound_allowed()` = 玩家开关 **且** Master 总线未静音。备战页那颗静音
+按钮静的就是 Master，而此前没有任何 UI 音效会去查它——玩家按了静音，还得
+再去设置页关一次。加这一条把「静音按钮只管 BGM」变成「静音就是静音」。
+
+**「跟随系统静音」做不到**：Godot 4 没有可移植的 OS 静音查询 API，能查的只有
+游戏自己的总线。按该文件对「低电量降级」的既有写法如实写在注释里，不假装做到。
+
+`haptics_allowed(device_supported := ...)` 的默认参数**不是可变的测试开关**，
+生产调用一律不传。没有它，「关掉开关就不震」这半条在桌面门禁上恒真——平台
+判断会先返回 false，断言永远绿，等于没测。有了它，门禁才能在 Windows 上跑
+手机那条分支。
+
+触觉**刻意不并进 reduced motion**：那个开关压的是屏幕上的运动，震动不是屏幕
+运动。想关震动的人未必想让所有过场动画也变静。
+
+### 一次点击只发一次：靠锚点，不靠事后去重
+
+确认反馈只接 `AsyncActionController.action_resolved`。`_resolve()` 只在
+「找得到这个 request_id」且「状态属于 ACTIVE_STATES」时才发信号，其余路径
+记面包屑后返回 false——所以一个 request_id 最多产生一次 `action_resolved`，
+这是结构上的保证，不是一个 bool 标志位。
+
+反例就在仓里：`PrepScreen._input()` 用 if/elif 同时处理 `InputEventMouseButton`
+与 `InputEventScreenTouch`，两条路之间没有去重。今天无害（关面板是幂等的），
+但只要把播音挂进去，Android 上一次触摸就会响两次——而**在 Windows 开发机上
+完全看不出来**，桌面只有鼠标那一路会来。这种「桌面正常、真机翻倍」的不对称
+正是它必须机械化成规则而不能靠人 review 的原因，所以有两条源码合同：
+`Input.vibrate_handheld(` 全仓只能有一个调用点；任何 `_input` / `_unhandled_input`
+/ `_gui_input` / `_shortcut_input` 的**函数体**里都不许出现 `UiFeedback`。
+
+### 音频管线：搭好但静音
+
+新增 `default_bus_layout.tres`，只有 Master 和 SFX 两条。**刻意没有 Music**：
+四处 BGM 代码都写着 `bus = "Music" if get_bus_index("Music") >= 0 else "Master"`，
+那个分支今天永远走 false；加一条 Music 会让这四处**同时**改走一条从没调过
+音量的总线——在一个标题写着「按钮反馈」的提交里偷偷改掉线上 BGM 的路由。
+门禁反过来钉住「不许有 Music 总线」，别让谁顺手补上。
+
+`project.godot` 里**没有** `[audio]` 段是对的，不是漏了：
+`audio/buses/default_bus_layout` 的引擎默认值就是 `res://default_bus_layout.tres`，
+Godot 重写 project.godot 时会把停留在默认值的设置删掉。第一版显式写了那一行，
+跑一次就被抹掉了。
+
+`CONFIRM_SFX_PATH` 是空串，今天完全静音——仓里一个 UI 音效素材都没有，音频
+许可仍是未闭环 blocker。**没有断言「stream 是 null」**：那条断言会在有人做对
+事情、把文件放进来的那天转红。填一个真实文件即可生效，零门禁改动。
+
+### toast / shake / 拒绝原因
+
+`GloryToast` 是仓里唯一的 toast 实现，照抄 `Main._show_back_exit_hint()` 那套
+真机验过的写法（自带 CanvasLayer、实心底板不靠描边、计时器挂在层自己身上）。
+迁移了两处旧机制，函数名都保留所以调用点没动；`MainMenu` 的两个状态标签
+**不迁**——那是常驻状态，换成 1.3 秒的 toast 是把信息弄丢。
+
+shake 抖 `rotation` 不抖 `position`：Container 每次重排都会重写子控件的
+position/size（`fit_child_in_rect`），却从不碰 rotation/pivot_offset。
+两条容易写错的地方各有断言钉着：**还原到存下来的原值而不是归零**；
+**重入时取回存下来的原值**，不能拿抖到一半的当前值当原值。
+
+**toast 与 shake 是两条独立通道，不能互相顶替**：抖动是吸引注意力的，原因
+文字是可达性通道，关掉屏震或开了 reduced motion 的玩家照样要看得见原因。
+
+### 禁用态可以问原因
+
+实现前先实测了机制：禁用的 `BaseButton` **仍然派发 `gui_input`**（连发按下
++抬起，`gui_input` 收到 2 次、`pressed` 收到 0 次）。C++ 侧
+`Control::_call_gui_input` 先发信号再调虚函数，而 `BaseButton::gui_input`
+在 disabled 时提前返回。挂 `gui_input` 既收得到点击又绝不触发业务。
+
+**必须先 `has_meta`**：Godot 4.7 里 `get_meta(key, default)` 取不到 key 时
+仍然会打引擎 ERROR，而 `run_check.ps1` 把这类 ERROR 直接算失败。带默认值也
+救不了。
+
+长按刻意不做：验收原文是「点击**或**长按」，只做点击就满足。
+
+### 顺带修掉的四个真缺陷
+
+1. **买不起一声不吭**。同一个「金币不够」，走商店面板有提示，走拖拽购买 /
+   雇佣佣兵 / 刷新商店则静默 return——而静默 return 的上面两行就是会提示的
+   `toast_unique_limit`。六处全部补上同一个文案 key，并配一条**穷举规则**：
+   `PrepBoardController` 里每一处 `if GameState.gold <` 块内没有
+   `show_message`/`reject` 就红。
+2. **教学反馈出了备战页静默失效**。`TutorialTargetProvider.show_feedback()`
+   的唯一生产绑定在 `PrepUI` 里，所以别处一律 `return false`、什么都不显示。
+3. **设置页溢出**。加两行开关之后 19.5:9 / 20:9 / 平板三档面板底部溢出
+   92–110px，返回键点不到。`responsive_layout` 的注释里早就记着
+   「20:9 下边距只剩 7px」——那是预告。改成 ScrollContainer，门禁判据同步从
+   「面板必须装得下」改成「返回键必须可达」。
+4. **触控尺寸**。设置页三个控件写死 46 / 46 / 40，都低于 `TOUCH_MIN=48`。
+
+### 变异证据里踩的坑（都写在断言旁边）
+
+- **文案断言的「`tr(key) != key`」写法证明不了任何事**：TranslationServer
+  查不到会回落到 fallback locale（en），只删 zh 那一条照样全绿，而中文玩家
+  看到的是英文。改成断言两个语言返回不同字符串。
+- **数 toast 层数不能按名字**：重名兄弟会被 Godot 改成 `@GloryToastLayer@2`，
+  前缀是 `@`，精确相等和 `begins_with` 都数不到第二层。按层号数。
+- **变异不能把脚本弄崩**：把 layer 直接置 null 那一版导致运行期报错、检查
+  中途夭折（`checked` 从 22 掉到 14 却仍然打印 PASS），那证明不了断言能转红。
+  变异脚本因此加了一道保险：变异后 `checked` 必须仍等于基线。
+- **注释也会造假红**：扫 `Input.vibrate_handheld(` 的规则第一版没去注释，被
+  `PresentationSettings` 里一句说明性注释判成违规。和「整文件 contains 被
+  自己写的注释满足」是同一个坑，方向反过来。规则改成扫去掉注释之后的代码。
+- **删掉了一条装饰性断言**：`feedback_toggles_not_restored` 做不出独立变异
+  （被 `ui_sound_ignores_toggle` 支配），还原照做，断言删掉。
+
+### 仍然 external
+
+- **确认音素材**：管线就绪但静音，等素材与 `third-party-license-ledger` 闭环。
+- **VIBRATE 权限真的进了 APK**：只证明了受 git 跟踪的模板请求了它；
+  live 的 `export_presets.cfg` 不进 git，在一台从没同步过它的机器上导出就是
+  没有，CI 也看不见。
+- **12 ms 震动在真机上感不感觉得到**、**240 fps 录屏测反馈时延**：需要设备。
