@@ -320,7 +320,7 @@ func _check_build_info_absence_is_honest(trace) -> void:
 			"build_info_commit_empty", "build_info 声称可用却没有 git_commit")
 		# JSON gives back floats; an identity field printed as "v5.0" will not match
 		# the "5" that dumpsys and export_presets report.
-		for int_key in ["schema_version", "dirty_tracked_files", "version_code"]:
+		for int_key in ["schema_version", "dirty_tracked_files", "dirty_files", "version_code"]:
 			if info.has(int_key):
 				_h.expect(typeof(info[int_key]) == TYPE_INT,
 					"build_info_float_id",

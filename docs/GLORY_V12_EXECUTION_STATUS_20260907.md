@@ -7,7 +7,7 @@
 | 阶段 | V12 项 | 当前判断 | 下一动作 |
 |---|---|---|---|
 | 1 | V12-02 宝藏详情/长按误领取 | **完成（待真机触控复核）** | 详情职责已迁入面板；长按/拖动取消不领取；三张 DOCX 卡与中英文已纳入门禁 |
-| 2 | V12-10 APK 身份可信 | V2 已部分闭环，仍需按实际导出链复验 | 核对 build info、manifest、bundle、APK 回读 |
+| 2 | V12-10 APK 身份可信 | **工程闭环完成（待真机安装复核）** | 唯一 build ID、dirty 指纹、manifest/bundle/AndroidManifest 全字段回读、产物映射已接入 |
 | 3 | V12-03 教程/语言持久化 | 待对账 | 先核对现有 schema；旧存档策略单独留为产品决定 |
 | 4 | V12-04 教程气泡稳定 | 待对账 | 先加脏因记录，再限制无输入重排 |
 | 5 | V12-05 / V12-12 可读性与 QA 入口 | V12-12 的 Release 隐藏已有门禁；其余待复验 | 复验羁绊颜色、QA 能力检测和大厅布局 |
@@ -32,3 +32,13 @@
 - `modal_lifecycle`：433/433。
 - `dynamic_call`：201/201。
 - 正式真机仍需复核 0.5 秒短按、1 秒/4 秒长按、拖出/系统取消、已获得图标以及返回键层级。
+
+## 阶段 2 验证记录
+
+- 旧 V12 APK 实测被新门禁拒绝：build_info 声明与包内 manifest/bundle 不一致，且 build_info 的空 `versionName` 与 AndroidManifest 的 `1.0.0` 不一致。
+- 新增 `tools/apk_identity.py`：构建前生成 schema 2 身份；构建后逐字段回读，并输出 APK 条目库存和源资源到 `.ctex/.scn/.gdc` 的映射。
+- dirty 身份同时覆盖 tracked diff 与未忽略的 untracked 文件，不再只记录“脏文件数量”。
+- Android/Windows 模板显式携带 `assets.manifest.json`、`assets.bundle.json`、`build_info.json`，并显式固定 Android `versionName=1.0.0`（与此前隐式产物一致）。
+- 首次新包内容扫描发现 `reports/` 被带入 APK；已加入两个导出模板的排除规则。复验 `APK_CONTENT_SCAN status=PASS entries=3577 violations=0`。
+- 新包身份复验：build_info、manifest、bundle、AndroidManifest 一致，642 条产物映射，零 identity failure。
+- 当前仅是本机 Debug APK 工程验证；没有私有 keystore，因此不声称完成 Release 签名或商店包验收。

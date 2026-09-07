@@ -134,36 +134,27 @@ PRESET_VERSION_NAME="$(grep -m1 'version/name=' "$PROJECT_ROOT/export_presets.cf
 # res://build_info.json 在导出**之前**写，才会被打进包里。这一份是"所测即所构建"
 # 的锚点：装机之后再从 APK 里读回来比对，不一致就说明测的不是刚出的那个包。
 #
-# 写在这里而不是用 GDScript 现算：commit / dirty / manifest 指纹 / 包身份这些值
-# 本脚本上面已经全算过了，在引擎里再实现一遍只会多一份会各自漂移的逻辑。
-#
-# preset_template_sha256 取**已提交的模板**，不取本机 export_presets.cfg —— 后者带
-# 机器本地路径、将来还会带 keystore 口令，既不可复现也不能进证据链。
+# 由同仓库的 apk_identity.py 统一生成，避免 shell 与包后验校验各维护一套字段。
+# 工具只将脱敏后的 preset contract 写入包内；keystore 账号、密码和本机路径不进入
+# build_info。dirty 现在除了数量还有二进制 diff 指纹，两个同为“dirty=1”的构建
+# 不会再被误认成同一份源码。
 BUILD_INFO_PATH="$PROJECT_ROOT/build_info.json"
-TEMPLATE_SHA="$(sha256sum "$PROJECT_ROOT/export_presets.template.cfg" 2>/dev/null | cut -d' ' -f1)"
-[ -n "$TEMPLATE_SHA" ] || TEMPLATE_SHA="unknown"
-BUILD_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-cat > "$BUILD_INFO_PATH" <<BUILDINFO
-{
-  "schema_version": 1,
-  "git_commit": "$COMMIT_FULL",
-  "git_commit_short": "$COMMIT",
-  "dirty_tracked_files": $DIRTY,
-  "build_utc": "$BUILD_UTC",
-  "asset_inventory_sha256": "$MANIFEST_SHA",
-  "preset_template_sha256": "$TEMPLATE_SHA",
-  "preset": "$PRESET",
-  "package_id": "$PACKAGE",
-  "version_code": $PRESET_VERSION_CODE,
-  "version_name": "$PRESET_VERSION_NAME",
-  "godot_version": "$GODOT_VERSION"
-}
-BUILDINFO
-if ! BUILD_INFO_PATH="$BUILD_INFO_PATH" python -c 'import json,io,os;json.load(io.open(os.environ["BUILD_INFO_PATH"],encoding="utf-8"))' 2>/dev/null; then
-    fail "build_info_unparseable: 生成的 build_info.json 不是合法 JSON"
+if ! python "$PROJECT_ROOT/tools/apk_identity.py" create \
+    --project-root "$PROJECT_ROOT" \
+    --preset-config "$PROJECT_ROOT/export_presets.cfg" \
+    --preset "$PRESET" \
+    --godot-version "$GODOT_VERSION" \
+    --output "$BUILD_INFO_PATH" > "$RUN_DIR/build_identity_create.log" 2>&1; then
+    fail "build_info_create_failed: 无法生成可信构建身份"
+    cat "$RUN_DIR/build_identity_create.log" >&2
+    exit 1
 fi
 cp "$BUILD_INFO_PATH" "$RUN_DIR/build_info.json" 2>/dev/null || true
-note "build_info commit=$COMMIT dirty=$DIRTY template_sha=${TEMPLATE_SHA:0:16} version_code=$PRESET_VERSION_CODE"
+TEMPLATE_SHA="$(BI="$BUILD_INFO_PATH" python -c 'import json,io,os;print(json.load(io.open(os.environ["BI"],encoding="utf-8"))["preset_template_sha256"])')"
+BUILD_ID="$(BI="$BUILD_INFO_PATH" python -c 'import json,io,os;print(json.load(io.open(os.environ["BI"],encoding="utf-8"))["build_id"])')"
+DIFF_SHA="$(BI="$BUILD_INFO_PATH" python -c 'import json,io,os;print(json.load(io.open(os.environ["BI"],encoding="utf-8"))["dirty_diff_sha256"])')"
+DIRTY_ALL="$(BI="$BUILD_INFO_PATH" python -c 'import json,io,os;print(json.load(io.open(os.environ["BI"],encoding="utf-8"))["dirty_files"])')"
+note "build_info id=$BUILD_ID commit=$COMMIT dirty=$DIRTY diff=${DIFF_SHA:0:16} template=${TEMPLATE_SHA:0:16} version_code=$PRESET_VERSION_CODE"
 
 # --- 导出 ---------------------------------------------------------------------
 EXPORT_LOG="$RUN_DIR/export.log"
@@ -212,43 +203,37 @@ APK_SHA="$(sha256sum "$APK" | cut -d' ' -f1)"
 note "apk=$(basename "$APK") size=${APK_MIB} MiB sha256=$APK_SHA"
 
 # --- 包内构建身份回读 ---------------------------------------------------------
-# 把刚写的 build_info.json 从 APK 里读回来比对。这一步才是"所测即所构建"真正的
-# 闭环：前面写的那份只证明脚本算对了值，读回来的这份才证明它进了这个包。
-# --skip-export 时两者本就可能不同（复用的是旧包），所以只报告不判失败。
+# 不再只比较 commit：整份 build_info、包内 manifest/bundle、AndroidManifest 和
+# 源资源 -> 导入产物映射一起验证。--skip-export 只检查旧包自身一致性，不拿它与
+# 本次工作树比较。
 APK_BUILD_INFO="$RUN_DIR/build_info_in_apk.json"
+APK_IDENTITY_REPORT="$RUN_DIR/apk_identity.json"
 APK_BUILD_COMMIT="unknown"
 APK_BUILD_MATCH="unknown"
-if APK_PATH="$APK" OUT_PATH="$APK_BUILD_INFO" python -c '
-import zipfile, os, sys
-z = zipfile.ZipFile(os.environ["APK_PATH"])
-# Godot keeps res:// paths under a leading assets/ segment.
-for name in ("assets/build_info.json", "build_info.json"):
-    if name in z.namelist():
-        data = z.read(name)
-        with open(os.environ["OUT_PATH"], "wb") as handle:
-            handle.write(data)
-        sys.exit(0)
-sys.exit(3)
-' 2>/dev/null; then
+IDENTITY_ARGS=(inspect --apk "$APK" --report "$APK_IDENTITY_REPORT" --extracted-build-info "$APK_BUILD_INFO")
+if [ "$SKIP_EXPORT" -eq 0 ]; then
+    IDENTITY_ARGS+=(--expected "$BUILD_INFO_PATH")
+fi
+if python "$PROJECT_ROOT/tools/apk_identity.py" "${IDENTITY_ARGS[@]}" > "$RUN_DIR/apk_identity.log" 2>&1; then
     APK_BUILD_COMMIT="$(BI="$APK_BUILD_INFO" python -c 'import json,io,os;print(json.load(io.open(os.environ["BI"],encoding="utf-8")).get("git_commit","unknown"))' 2>/dev/null || echo unknown)"
     if [ "$SKIP_EXPORT" -eq 1 ]; then
         APK_BUILD_MATCH="skipped_reused_apk"
-        note "build_info 包内 commit=${APK_BUILD_COMMIT:0:12}（--skip-export，复用旧包，不判失败）"
-    elif [ "$APK_BUILD_COMMIT" = "$COMMIT_FULL" ]; then
-        APK_BUILD_MATCH="match"
-        note "build_info 包内 commit 与本次一致（${APK_BUILD_COMMIT:0:12}）"
+        note "旧 APK 内部身份自洽，commit=${APK_BUILD_COMMIT:0:12}（不代表等于当前源码）"
     else
-        APK_BUILD_MATCH="mismatch"
-        fail "build_info_mismatch: 包内 commit=${APK_BUILD_COMMIT:0:12}，本次构建 commit=${COMMIT_FULL:0:12} —— 这个 APK 不是本次源码出的"
+        APK_BUILD_MATCH="match"
+        note "APK 代码/资源/AndroidManifest 身份闭环通过（${APK_BUILD_COMMIT:0:12}）"
     fi
 else
-    APK_BUILD_MATCH="absent"
+    APK_BUILD_MATCH="mismatch"
+    tail -20 "$RUN_DIR/apk_identity.log" >&2
     if [ "$SKIP_EXPORT" -eq 1 ]; then
-        note "包内没有 build_info.json（--skip-export，复用的是加入该文件之前出的包）"
+        fail "apk_identity_invalid: 复用的旧 APK 内部身份不自洽"
     else
-        fail "build_info_absent: 刚导出的 APK 里没有 build_info.json —— 导出没把它带上，构建身份无法追溯"
+        fail "apk_identity_mismatch: 包内代码/资源/AndroidManifest 与本次构建声明不一致"
     fi
 fi
+APK_MAPPING_COUNT="$(IR="$APK_IDENTITY_REPORT" python -c 'import json,io,os;print(json.load(io.open(os.environ["IR"],encoding="utf-8")).get("artifact_mapping_count",0))' 2>/dev/null || echo 0)"
+APK_ENTRY_INVENTORY_SHA="$(IR="$APK_IDENTITY_REPORT" python -c 'import json,io,os;print(json.load(io.open(os.environ["IR"],encoding="utf-8")).get("apk_entry_inventory_sha256","unknown"))' 2>/dev/null || echo unknown)"
 
 # --- APK 内容扫描 -------------------------------------------------------------
 APK_SCAN_JSON="$RUN_DIR/apk_content_scan.json"
@@ -390,9 +375,9 @@ if _wait_transport; then
         fail "installed_apk_hash_mismatch: 设备上 ${INSTALLED_APK_SHA:-<读不到>} != 本地 $APK_SHA"
     fi
 
-    # versionCode, not just versionName: versionName is "" in this project's presets,
-    # so it can never disagree with anything. The code is what actually distinguishes
-    # the build that was just pushed from one already on the device.
+    # versionCode, not just versionName: versionName is the market-facing 1.0.0,
+    # so it intentionally stays stable across many QA builds. The code distinguishes
+    # the package version; build_id + APK hash distinguish an individual QA artifact.
     INSTALLED_VERSION_CODE="$("$ADB_BIN" shell dumpsys package "$PACKAGE" 2>/dev/null | tr -d '\r' | grep -m1 'versionCode=' | sed 's/.*versionCode=\([0-9]*\).*/\1/')"
     EXPECTED_VERSION_CODE="$PRESET_VERSION_CODE"
     [ -n "$INSTALLED_VERSION_CODE" ] || INSTALLED_VERSION_CODE=0
@@ -614,6 +599,8 @@ cat > "$RUN_DIR/smoke.json" <<JSON
     "commit": "$COMMIT_FULL",
     "commit_short": "$COMMIT",
     "uncommitted_tracked_files": $DIRTY,
+    "uncommitted_files": $DIRTY_ALL,
+    "dirty_diff_sha256": "$DIFF_SHA",
     "assets_manifest_inventory_sha256": "$MANIFEST_SHA",
     "godot": "$GODOT_VERSION"
   },
@@ -653,6 +640,7 @@ cat > "$RUN_DIR/smoke.json" <<JSON
     "screenshot_bytes": $SHOT_BYTES
   },
   "identity": {
+    "build_id": "$BUILD_ID",
     "build_info_written": "build_info.json",
     "build_info_in_apk": "$APK_BUILD_MATCH",
     "build_info_apk_commit": "$APK_BUILD_COMMIT",
@@ -660,6 +648,9 @@ cat > "$RUN_DIR/smoke.json" <<JSON
     "preset_version_code": $PRESET_VERSION_CODE,
     "preset_version_name": "$PRESET_VERSION_NAME",
     "apk_content_scan": "$APK_SCAN_STATUS",
+    "apk_entry_inventory_sha256": "$APK_ENTRY_INVENTORY_SHA",
+    "artifact_mapping_count": $APK_MAPPING_COUNT,
+    "artifact_mapping_report": "apk_identity.json",
     "note": "build_info_in_apk=match 才表示所测即所构建；skipped_reused_apk / absent 只在 --skip-export 下可接受。"
   },
   "startup": {
@@ -706,7 +697,7 @@ note "startup   分段 t0->t1=${SEG_T0_T1}ms  t1->t2=${SEG_T1_T2}ms  t2->t3=${SE
 note "startup   超预算 t1=+${T1_OVER_MS}ms  t3=+${T3_OVER_MS}ms  (0=未超)  verdict=${STARTUP_VERDICT}"
 note "          t0 = 引擎自身启动开销（此前无任何游戏代码运行）；t0->t2 = autoload 构造 + 主场景"
 note "          判定=$STARTUP_VERDICT  预算 t1<=${T1_MAX_MS}ms t3<=${T3_MAX_MS}ms"
-note "identity  build_info_in_apk=$APK_BUILD_MATCH  apk_scan=$APK_SCAN_STATUS  template_sha=${TEMPLATE_SHA:0:16}"
+note "identity  build_id=$BUILD_ID build_info_in_apk=$APK_BUILD_MATCH apk_scan=$APK_SCAN_STATUS mappings=$APK_MAPPING_COUNT"
 note "evidence  $RUN_DIR"
 
 # 旧构建清理，只留最近 N 份。
