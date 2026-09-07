@@ -92,3 +92,10 @@ upload ssh code.txt
 
 # 服务器包由 make_server_zip.ps1 生成，是构建产物不是源码
 /glory_server_p17.zip
+
+# ── Glory Backend（FastAPI）──
+# 真实密钥。模板是 backend/.env.example（只有键名），那个进 git。
+backend/.env
+# 虚拟环境是本机产物，用 requirements.txt 重建
+backend/.venv/
+.pytest_cache/

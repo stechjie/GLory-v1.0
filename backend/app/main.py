@@ -1,0 +1,68 @@
+"""Glory Game Backend —— 四层架构里的 ②。
+
+    ① Godot ── HTTPS ──> ② 这里 ──> ④ Supabase (Auth + PostgreSQL)
+    ① Godot ── ENet  ──> ③ 战斗服务器（另一条链路，见 docs/账号系统RFC.md 第六节）
+
+职责边界（RFC 第三节）：
+  - Godot **永远不直连** Supabase，只认 AccountManager 这一个门面打到这里。
+  - 金币 / 钻石 / 抽卡 / 商城 / Rank / 奖励只能由这一层修改。
+  - RLS 是第二道保险，不是游戏规则。
+
+跑起来：
+    backend/.venv/Scripts/python -m uvicorn app.main:app --reload --app-dir backend
+"""
+
+import logging
+import sys
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+
+from app.config import get_settings
+
+# Windows 控制台默认是 cp1252，中文日志会被转义成 以... 甚至直接抛
+# UnicodeEncodeError。这里是应用入口，把两个流拧成 UTF-8 是合适的做法。
+# （也可以用环境变量 PYTHONIOENCODING=utf-8，但那要求每个人都记得设。）
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+
+log = logging.getLogger("glory.backend")
+
+settings = get_settings()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    missing = settings.missing_keys()
+    if missing:
+        # 刻意**不**直接退出：骨架要能在还没建 Supabase 项目时跑起来，
+        # 否则第 1 步就没法单独验证。真正需要密钥的接口会各自 fail closed。
+        log.warning("以下配置项还没填，需要它们的接口会拒绝服务：%s", ", ".join(missing))
+    yield
+
+
+app = FastAPI(
+    title="Glory Backend",
+    version="0.1.0",
+    # 生产环境关掉交互文档：少一个把接口形状白送出去的入口。
+    docs_url="/docs" if settings.is_dev else None,
+    redoc_url=None,
+    lifespan=lifespan,
+)
+
+
+@app.get("/health")
+def health() -> dict:
+    """存活探针。
+
+    只报「配没配」，**绝不报值本身** —— health 端点通常对外可达。
+    """
+    missing = settings.missing_keys()
+    return {
+        "status": "ok",
+        "environment": settings.environment,
+        "configured": not missing,
+        "missing_config": missing,
+    }
