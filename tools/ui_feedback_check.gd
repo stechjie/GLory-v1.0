@@ -56,6 +56,7 @@ func _ready() -> void:
 	_check_vibrate_has_single_call_site()
 	_check_feedback_not_called_from_input_handlers()
 	_check_main_installs_feedback()
+	_check_vibrate_permission()
 	_h.finish(get_tree())
 
 
@@ -208,6 +209,31 @@ func _check_main_installs_feedback() -> void:
 	_h.expect(body.contains("UiFeedbackService.install()"),
 		"main_does_not_install_feedback",
 		"Main._ready() 没有调 UiFeedbackService.install() —— 确认反馈整条链是断的")
+
+
+# VIBRATE 权限必须在**受 git 跟踪的模板**里请求。
+#
+# export_presets.cfg 本身进不了 git（export_presets_check 自己有一条断言守着
+# 它保持被忽略），所以这里只能证明模板请求了这个权限。漂移由
+# export_presets_check._check_no_drift 负责：两个文件不一致会转红。
+#
+# **但这两条加起来仍然证明不了导出的 APK 真的带上了这个权限** ——
+# 在一台从没同步过 live cfg 的机器上导出就是没有，CI 也看不见。
+# 那一半是 external，写在交接里，不在这里假装验过。
+#
+# 只查 drift 不够：模板和 live 一起被重新生成回 false 时 drift 仍然是 0。
+# 所以要一条正向断言。按行首匹配，不用整文件 find —— 本文件自己的注释里
+# 就写着 permissions/vibrate，整文件 find 会匹配到检查器自己。
+func _check_vibrate_permission() -> void:
+	var src := FileAccess.get_file_as_string("res://export_presets.template.cfg")
+	var found := false
+	for raw in src.split("
+"):
+		if str(raw).strip_edges().begins_with("permissions/vibrate="):
+			found = str(raw).strip_edges() == "permissions/vibrate=true"
+			break
+	_h.expect(found, "vibrate_permission_not_requested",
+		"export_presets.template.cfg 没有请求 VIBRATE 权限 —— 触觉在真机上永远不会响")
 
 
 # --- 工具 -------------------------------------------------------------------
