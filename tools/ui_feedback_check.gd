@@ -62,9 +62,14 @@ func _ready() -> void:
 # --- 总线 -------------------------------------------------------------------
 
 func _check_bus_layout() -> void:
+	# project.godot 里**没有** [audio] 段，这是对的，不是漏了：
+	# audio/buses/default_bus_layout 的引擎默认值就是
+	# "res://default_bus_layout.tres"，Godot 重写 project.godot 时会把停留在
+	# 默认值的设置删掉。第一版显式写了那一行，跑一次就被引擎抹掉了 ——
+	# 别再照着「怎么没注册」把它加回去。总线到底在不在，以这条断言为准。
 	_h.expect(AudioServer.get_bus_index(Feedback.SFX_BUS) >= 0,
 		"sfx_bus_missing",
-		"没有 %s 总线 —— default_bus_layout.tres 没被 project.godot 注册？"
+		"没有 %s 总线 —— default_bus_layout.tres 里的 bus/1/name 改了？"
 			% Feedback.SFX_BUS)
 
 	# 刻意**没有** Music 总线：四处 BGM 代码写的是
