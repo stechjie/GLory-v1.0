@@ -25,6 +25,8 @@ extends RefCounted
 # 这条规则由门禁的源码合同守着，不靠人记。
 
 const Presentation := preload("res://effects/runtime/presentation/PresentationSettings.gd")
+const Tokens := preload("res://ui/theme/GloryTokens.gd")
+const Toast := preload("res://ui/components/GloryToast.gd")
 
 # 播放器所在的总线。default_bus_layout.tres 里只有 Master 和 SFX 两条。
 #
@@ -107,6 +109,100 @@ static func vibrate(ms: int) -> void:
 	_vibrate_calls += 1
 	# 振幅交给系统默认：在一台没测过的设备上猜一个数值只会更糟。
 	Input.vibrate_handheld(ms)
+
+
+# --- 拒绝动作 ---------------------------------------------------------------
+
+# 短促抖动的幅度（弧度）与时长。0.03 rad 在一个 56px 高的按钮上大约是
+# 边缘位移 1.5px 左右——看得出来「它动了一下」，又不至于像坏掉。
+const SHAKE_RAD := 0.03
+const SHAKE_SEC := 0.24
+
+# 正在抖的控件的原始变换，按 instance id 记账。
+# 重入时**取回存下来的原值**，绝不拿抖到一半的当前值当原值——那会让控件
+# 每被拒绝一次就歪一点，连点几次以后永久斜着。
+static var _shake_originals := {}
+
+
+# 拒绝一个动作：说明原因 + 抖一下 + 稍长一点的震动。
+#
+# **toast 和 shake 是两条独立通道，不能互相顶替。** 抖动是吸引注意力的，
+# 关掉屏震（或开了 reduced motion）的玩家照样要看得见原因文字，
+# 所以 toast 无条件出，shake 才受开关管。门禁钉着这一条。
+static func reject(control: Control, reason: String) -> void:
+	if not reason.is_empty():
+		Toast.show_text(reason)
+	shake(control)
+	vibrate(HAPTIC_REJECT_MS)
+
+
+# 抖 rotation，不抖 position。
+#
+# Container 每次重排都会重写子控件的 position 和 size（fit_child_in_rect），
+# 却从不碰 rotation / pivot_offset。对容器里的按钮做 position 补间会和排版
+# 打架：抖动期间来一次 re-sort，控件就停在一个错的偏移上。
+#
+# pivot_offset 也要一起改成居中：默认是左上角，绕左上角转看起来像挂在
+# 合页上晃，不像抖。所以 rotation 和 pivot_offset **两个都要存、都要还原**。
+static func shake(control: Control, base_rad := SHAKE_RAD) -> bool:
+	if control == null or not is_instance_valid(control):
+		return false
+	var scale := Presentation.screen_shake_scale()
+	if Tokens.reduced_motion():
+		scale = 0.0
+	if scale <= 0.0:
+		return false
+
+	var key := control.get_instance_id()
+	var origin: Dictionary = {}
+	if _shake_originals.has(key):
+		# 重入：杀掉上一条 tween，原值取存下来的那份。
+		origin = _shake_originals[key]
+		var live: Variant = origin.get("tween")
+		if live is Tween and (live as Tween).is_valid():
+			(live as Tween).kill()
+	else:
+		origin = {
+			"rotation": control.rotation,
+			"pivot": control.pivot_offset,
+		}
+		_shake_originals[key] = origin
+
+	control.pivot_offset = control.size * 0.5
+	var base: float = float(origin["rotation"])
+	var amp: float = base_rad * scale
+	var step := Tokens.motion(SHAKE_SEC) / 4.0
+	if step <= 0.0:
+		# reduced motion 下 motion() 归零，上面已经拦住了；这里是双保险。
+		_restore_shake(control, key)
+		return false
+
+	var tween := control.create_tween()
+	tween.tween_property(control, "rotation", base + amp, step)
+	tween.tween_property(control, "rotation", base - amp, step)
+	tween.tween_property(control, "rotation", base + amp * 0.5, step)
+	tween.tween_property(control, "rotation", base, step)
+	tween.finished.connect(func(): _restore_shake(control, key))
+	origin["tween"] = tween
+	_shake_originals[key] = origin
+	return true
+
+
+# 还原到**存下来的原值**，不是归零：控件本来就可能带一个非零的变换，
+# 把它设成 0 是把别人的状态抹掉。
+static func _restore_shake(control: Control, key: int) -> void:
+	var origin: Variant = _shake_originals.get(key)
+	_shake_originals.erase(key)
+	if control == null or not is_instance_valid(control):
+		return
+	if origin is Dictionary:
+		control.rotation = float((origin as Dictionary)["rotation"])
+		control.pivot_offset = (origin as Dictionary)["pivot"]
+
+
+# 门禁接缝：还在记账里的控件数。抖完没清干净就会一直涨。
+static func shake_tracked_count() -> int:
+	return _shake_originals.size()
 
 
 # --- 门禁接缝 ---------------------------------------------------------------

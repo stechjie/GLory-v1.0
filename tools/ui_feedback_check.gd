@@ -61,6 +61,7 @@ func _ready() -> void:
 	_check_main_installs_feedback()
 	_check_vibrate_permission()
 	await _check_toast()
+	await _check_reject()
 	_h.finish(get_tree())
 
 
@@ -306,6 +307,76 @@ func _check_toast() -> void:
 		"没有绑定 _feedback 时教学反馈静默失效了（返回 %s，toast 计数 %d）"
 			% [str(shown), Toast.shown_count()])
 	Toast.dismiss()
+	await get_tree().process_frame
+
+
+# --- 拒绝动作 ---------------------------------------------------------------
+
+func _check_reject() -> void:
+	var shake_before: bool = PlayerProfile.get_presentation_toggle("screen_shake")
+	var host := Control.new()
+	host.size = Vector2(200, 56)
+	add_child(host)
+	var btn := Button.new()
+	btn.size = Vector2(200, 56)
+	# 故意给一个非零的初始变换：还原必须回到**这个值**，不是回到 0。
+	# 「抖完设成 0」是这类实现最经典的写法，也最经典地错。
+	btn.rotation = 0.21
+	btn.pivot_offset = Vector2(7, 9)
+	host.add_child(btn)
+	await get_tree().process_frame
+
+	PlayerProfile.set_presentation_toggle("screen_shake", true)
+	Toast.reset_counters_for_check()
+	Feedback.reset_counters_for_check()
+
+	_h.expect(Feedback.shake(btn), "shake_did_not_start",
+		"屏震开着，shake() 却返回 false")
+	# 重入：连点五次。原值必须始终取第一次存下的那份，
+	# 否则每抖一次就把「抖到一半的角度」当成新的原值，控件会越歪越远。
+	for _i in 5:
+		Feedback.shake(btn)
+	await get_tree().create_timer(Feedback.SHAKE_SEC + 0.35).timeout
+	_h.expect(is_equal_approx(btn.rotation, 0.21),
+		"shake_does_not_restore_rotation",
+		"抖完之后 rotation=%.4f，应该回到 0.2100" % btn.rotation)
+	_h.expect(btn.pivot_offset.is_equal_approx(Vector2(7, 9)),
+		"shake_does_not_restore_pivot",
+		"抖完之后 pivot_offset=%s，应该回到 (7, 9)" % str(btn.pivot_offset))
+	_h.expect(Feedback.shake_tracked_count() == 0, "shake_leaks_tracking",
+		"抖完之后还有 %d 个控件留在记账里" % Feedback.shake_tracked_count())
+
+	# 进入「关掉屏震」这一段之前先把控件摆回已知状态。
+	#
+	# 不这么做的话，上一段没还原干净的 pivot 会漏进来，把
+	# shake_moved_control_when_off 也一起弄红 —— 两条断言看起来就像同一条。
+	# 每条断言只该为自己那一段负责。
+	btn.rotation = 0.21
+	btn.pivot_offset = Vector2(7, 9)
+
+	# 关掉屏震：不抖，但**原因照样要说**。
+	# 抖动是吸引注意力的通道，原因文字是可达性通道，后者不能被前者的开关关掉。
+	PlayerProfile.set_presentation_toggle("screen_shake", false)
+	Toast.reset_counters_for_check()
+	_h.expect(not Feedback.shake(btn), "shake_ignores_toggle",
+		"屏震已关，shake() 仍然返回 true")
+	Feedback.reject(btn, "门禁：拒绝原因")
+	await get_tree().process_frame
+	_h.expect(Toast.shown_count() == 1 and Toast.last_text() == "门禁：拒绝原因",
+		"reject_reason_lost_with_shake_off",
+		"屏震关掉之后拒绝原因也没了：计数 %d、文本 %s"
+			% [Toast.shown_count(), Toast.last_text()])
+	# rotation 和 pivot 都要查：只查 rotation 的话，「在开关判断之前就把
+	# pivot 改掉」这种写法能溜过去 —— 那已经动了别人的状态。
+	_h.expect(is_equal_approx(btn.rotation, 0.21)
+			and btn.pivot_offset.is_equal_approx(Vector2(7, 9)),
+		"shake_moved_control_when_off",
+		"屏震已关，控件却被动过：rotation=%.4f pivot=%s"
+			% [btn.rotation, str(btn.pivot_offset)])
+
+	PlayerProfile.set_presentation_toggle("screen_shake", shake_before)
+	Toast.dismiss()
+	host.queue_free()
 	await get_tree().process_frame
 
 
