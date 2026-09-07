@@ -99,3 +99,11 @@
 - 新增 Windows/PowerShell 5.1 雷电取证脚本，采集 ABI 列表、Android/EGL、SurfaceFlinger、display/package、宿主 dxdiag、冷启动 30 秒 logcat、截图和同 APK SHA-256。
 - 脚本不安装 APK、不改模拟器配置、不切 renderer；通过 `GLORY_STARTUP` 把黑屏分流到引擎初始化、数据加载或首场景之后。
 - 当前仍缺雷电实例、版本、镜像和图形模式，因此状态只能是“诊断就绪”，不能写成复现或修复完成。运行与结果分流见 `V12_LDPLAYER_BLACK_SCREEN_PROTOCOL_20260907.md`。
+
+## 最终回归（隔离分支）
+
+- `tools/run_check.ps1 -All`：91/91 项通过，`failed=0`、`polluted=false`、`baseline_rewritten=false`。
+- 启动 UI 不是以 SKIP 计入：已用 RTX 5070 Ti / D3D12 Forward Mobile 真实渲染生成 5 张 current 图，`startup_ui_regression` 17/17 通过；未更新受信任基准图。
+- 全量首次运行发现并修正两个真实门禁问题：运行时材质报告路径被误扫成必备资产；设置页新增重播教学按钮使程序化 UI 棘轮上升。修后 `asset_manifest` 2705/2705（另有 4 个有期限的既有允许项）、`procedural_ui_ratchet` 7/7。
+- `tools/multiplayer_regression.sh`：21/21 模式通过，覆盖 dedicated server、握手 ok/bad/silent、持久化 save/load、真实 ENet channel、强制分块及 ack。
+- 工作树干净；全部改动位于 `codex/v12-execution` 隔离分支，尚未合并到用户的 Desktop `main`。
