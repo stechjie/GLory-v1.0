@@ -8,7 +8,7 @@
 |---|---|---|---|
 | 1 | V12-02 宝藏详情/长按误领取 | **完成（待真机触控复核）** | 详情职责已迁入面板；长按/拖动取消不领取；三张 DOCX 卡与中英文已纳入门禁 |
 | 2 | V12-10 APK 身份可信 | **工程闭环完成（待真机安装复核）** | 唯一 build ID、dirty 指纹、manifest/bundle/AndroidManifest 全字段回读、产物映射已接入 |
-| 3 | V12-03 教程/语言持久化 | 待对账 | 先核对现有 schema；旧存档策略单独留为产品决定 |
+| 3 | V12-03 教程/语言持久化 | **工程闭环完成（待真机强杀复核）** | 语言与 completed/skipped/in_progress 已原子落盘；旧档不猜测完成状态；设置页可重播 |
 | 4 | V12-04 教程气泡稳定 | 待对账 | 先加脏因记录，再限制无输入重排 |
 | 5 | V12-05 / V12-12 可读性与 QA 入口 | V12-12 的 Release 隐藏已有门禁；其余待复验 | 复验羁绊颜色、QA 能力检测和大厅布局 |
 | 6 | V12-06 / V12-07 战斗与模型表现 | 需要固定阵容/回放；不改仿真 | 建取证矩阵，仅做表现层校正；模型/VFX 改动另行审批 |
@@ -42,3 +42,15 @@
 - 首次新包内容扫描发现 `reports/` 被带入 APK；已加入两个导出模板的排除规则。复验 `APK_CONTENT_SCAN status=PASS entries=3577 violations=0`。
 - 新包身份复验：build_info、manifest、bundle、AndroidManifest 一致，642 条产物映射，零 identity failure。
 - 当前仅是本机 Debug APK 工程验证；没有私有 keystore，因此不声称完成 Release 签名或商店包验收。
+
+## 阶段 3 验证记录
+
+- `profile.json` schema 升至 v4，新增 `locale`、`language_selected`、`onboarding_version`、`onboarding_status`。
+- 旧档统一迁移为 `legacy_unknown`，不会根据金币、宠物、图鉴或局内存档猜测“已经完成教学”；旧用户仍按原行为明确选一次语言并进入/恢复教学。
+- 新用户选定语言后原子落盘；已完成或明确跳过的用户冷启动直达主菜单；`in_progress` 用户恢复断点或从教学开头开始。
+- 教学完成/跳过严格先写账户状态，再清教程断点；账户写入失败时保留断点。
+- 设置页语言选择使用同一持久化入口，并新增中英文“重新体验教学”入口。
+- `PlayerProfile` 使用临时文件回读校验、`.bak` 轮换与损坏主档兜底；其初始化早于 `SaveManager`，因此不依赖尚未 ready 的 autoload。
+- 新增 `onboarding_persistence` 门禁：20/20，覆盖旧档迁移、语言落盘、完成后三次冷启动、跳过、重播、损坏主档兜底与 Main 调用顺序。
+- 定向回归组：`onboarding_persistence` 20/20、`ui_component` 134/134、`tutorial_checkpoint` 180/180、`tutorial_overlay_layout` 424/424、`tutorial_step15_flow` 217/217、`board_readability` PASS；`polluted=false`。（`board_readability` 是旧式检查，未输出 checked 计数。）
+- 仍需真机复核：选语言后强杀、教学中强杀、跳过确认后强杀、完成后连续三次冷启动，以及设置页重播入口。

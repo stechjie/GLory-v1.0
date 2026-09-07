@@ -152,12 +152,13 @@ func start() -> void:
 	GameState.gold = TUTORIAL_GOLD
 	_apply_shop(START_SHOP)
 
-func finish() -> void:
+func finish(clear_saved_checkpoint: bool = true) -> void:
 	active = false
 	GameState.tutorial_mode = false
 	opponent_snapshot = {}
 	_end_fill_step()
-	clear_checkpoint()
+	if clear_saved_checkpoint:
+		clear_checkpoint()
 	_detach()
 	completed.emit()
 

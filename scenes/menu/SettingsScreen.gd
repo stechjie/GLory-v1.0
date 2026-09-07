@@ -6,6 +6,7 @@ const Theming := preload("res://ui/theme/GloryTheme.gd")
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 
 signal back_requested
+signal replay_tutorial_requested
 
 var _btn_zh: Button
 var _btn_en: Button
@@ -25,6 +26,8 @@ func _build() -> void:
 	# 而 project.godot 也没有 gui/theme/custom —— 所以按钮走的是引擎
 	# 默认灰色样式，和游戏其它地方长得完全不是一套。
 	theme = Theming.get_theme()
+	_presentation_btns.clear()
+	_presentation_labels.clear()
 	for child in get_children():
 		child.queue_free()
 
@@ -83,13 +86,13 @@ func _build() -> void:
 	_btn_zh = Button.new()
 	_btn_zh.text = "中文"
 	_btn_zh.custom_minimum_size = Vector2(140, 48)
-	_btn_zh.pressed.connect(func(): LocaleManager.set_locale("zh"))
+	_btn_zh.pressed.connect(func(): PlayerProfile.select_language("zh"))
 	lang_row.add_child(_btn_zh)
 
 	_btn_en = Button.new()
 	_btn_en.text = "English"
 	_btn_en.custom_minimum_size = Vector2(140, 48)
-	_btn_en.pressed.connect(func(): LocaleManager.set_locale("en"))
+	_btn_en.pressed.connect(func(): PlayerProfile.select_language("en"))
 	lang_row.add_child(_btn_en)
 
 	_refresh_lang_buttons()
@@ -173,6 +176,13 @@ func _build() -> void:
 
 	var sep2 := HSeparator.new()
 	panel.add_child(sep2)
+
+	var replay_btn := Button.new()
+	replay_btn.text = tr("settings_replay_tutorial")
+	replay_btn.custom_minimum_size = Vector2(280, Tokens.TOUCH_MIN)
+	replay_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	replay_btn.pressed.connect(func(): replay_tutorial_requested.emit())
+	panel.add_child(replay_btn)
 
 	var back_btn := Button.new()
 	back_btn.text = tr("settings_back")

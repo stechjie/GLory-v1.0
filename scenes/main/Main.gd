@@ -133,7 +133,7 @@ func _ready() -> void:
 	# 所以连点和 mouse+touch 双路都不会让它多发。
 	UiFeedbackService.install()
 	_start_vfx_warmup()
-	_show_language_select()
+	_route_startup()
 	StartupTrace.mark(StartupTrace.T2_MAIN_READY)
 
 # VFX shader 预热。挂在这里是因为从引擎就绪到连上服务器有约 44 秒的菜单导航时间，
@@ -378,7 +378,10 @@ func _on_tutorial_skip() -> void:
 	# 跳过整段教学：结束教学态，回到主菜单让玩家自己选普通/组队。
 	if not TutorialMode.active:
 		return
-	TutorialMode.finish()
+	# 先落账户状态、再删断点。写盘失败时保留断点，下次启动仍有恢复点，
+	# 绝不出现「状态没存到、断点却先删了」的双重丢失。
+	var persisted := PlayerProfile.set_onboarding_status(PlayerProfile.ONBOARDING_SKIPPED)
+	TutorialMode.finish(persisted)
 	_show_menu()
 
 # 界面场景一律运行时 load，不用 preload。
@@ -472,16 +475,30 @@ func _show_language_select() -> void:
 	# been laid out and drawn.
 	StartupTrace.mark_input_ready.call_deferred("language_select")
 
-func _select_language(locale: String) -> void:
-	LocaleManager.set_locale(locale)
-	StartupTrace.mark_first_action("select_language", locale)
-	# V2 P1-08：有断点就恢复到原来那一步，而不是从 BUY_3 重来。
-	# 恢复失败（版本不符、结构损坏）时退回全新教程 —— 宁可从头，也不半恢复出夹生状态。
-	# 语言以玩家这次的选择为准，断点里的 locale 只作记录；
-	# 「跳过语言页直接恢复」属于 V3 P0-08 的启动路由，本批不做。
+
+func _route_startup() -> void:
+	match PlayerProfile.startup_route():
+		PlayerProfile.STARTUP_MENU:
+			_show_menu()
+		PlayerProfile.STARTUP_TUTORIAL:
+			_enter_tutorial_from_startup()
+		_:
+			_show_language_select()
+
+
+func _enter_tutorial_from_startup() -> void:
+	# Persist intent before mutating the run. This also converts legacy_unknown into
+	# an explicit state without guessing whether the old player had completed it.
+	PlayerProfile.begin_tutorial()
 	if not (TutorialMode.has_checkpoint() and TutorialMode.restore_checkpoint()):
 		TutorialMode.start()
 	_show_prep()
+
+
+func _select_language(locale: String) -> void:
+	PlayerProfile.select_language(locale)
+	StartupTrace.mark_first_action("select_language", locale)
+	_enter_tutorial_from_startup()
 
 
 # --- V2 P1-08 / V3 P0-09：返回键与 ui_cancel ---------------------------------
@@ -731,8 +748,13 @@ func _show_settings() -> void:
 	_clear()
 	var settings := _instantiate_screen("res://scenes/menu/SettingsScreen.tscn")
 	settings.back_requested.connect(_show_menu)
+	settings.replay_tutorial_requested.connect(_on_replay_tutorial_requested)
 	_page_back_route = _show_menu
 	add_child(settings)
+
+
+func _on_replay_tutorial_requested() -> void:
+	_enter_tutorial_from_startup()
 
 # 备战界面（暂时只有宠物系统）。从主菜单「备战」按钮进入，返回回主菜单。
 func _show_pet_screen() -> void:
@@ -1935,7 +1957,9 @@ func _on_battle_finished(result: Dictionary = {}) -> void:
 	if GameState.tutorial_mode:
 		TutorialMode.after_battle(result)
 		if TutorialMode.step == TutorialMode.Step.DONE:
-			TutorialMode.finish()
+			var persisted := PlayerProfile.set_onboarding_status(
+				PlayerProfile.ONBOARDING_COMPLETED)
+			TutorialMode.finish(persisted)
 			_show_game_over()
 			return
 		_show_prep()
