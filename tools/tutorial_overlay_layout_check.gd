@@ -96,6 +96,25 @@ func _check_resolution(entry: Dictionary) -> void:
 		measured += 1
 		var where := "%s · %s" % [label, step_key]
 
+		# Equivalent to ten seconds at 60 fps: the production PrepScreen calls
+		# update_overlay every frame. Repeated identical inputs must be a true no-op.
+		var stable_position := TutorialMode._bubble.position
+		var debug_before := TutorialMode.layout_debug_snapshot()
+		for idle_frame in 600:
+			TutorialMode.update_overlay()
+			if idle_frame % 60 == 59:
+				await get_tree().process_frame
+		_h.expect(TutorialMode._bubble.position.is_equal_approx(stable_position),
+			"idle_bubble_drift",
+			"%s：模拟静止 10 秒后气泡从 %s 漂到 %s" % [
+				where, str(stable_position), str(TutorialMode._bubble.position)])
+		var debug_after := TutorialMode.layout_debug_snapshot()
+		_h.expect(int(debug_after.get("recompute_count", -1))
+				== int(debug_before.get("recompute_count", -2)),
+			"idle_layout_recomputed",
+			"%s：输入没变却重复重排，before=%s after=%s" % [
+				where, str(debug_before), str(debug_after)])
+
 		# --- 不出界 -----------------------------------------------------------
 		_expect_inside(TutorialMode._bubble.get_global_rect(), safe, where, "气泡")
 		_expect_inside(_arrow_rect(), safe, where, "箭头")
@@ -125,6 +144,13 @@ func _check_resolution(entry: Dictionary) -> void:
 
 	_h.expect(measured >= 6, "too_few_targets_measured",
 		"%s：只量到 %d 个可解析目标，这一档等于没验" % [label, measured])
+
+	TutorialMode.set_overlay_suppressed(true)
+	_h.expect(not TutorialMode._overlay.visible, "detail_does_not_pause_tutorial",
+		"%s：顶层详情打开时教程气泡仍在遮挡阅读" % label)
+	TutorialMode.set_overlay_suppressed(false)
+	_h.expect(TutorialMode._overlay.visible, "tutorial_does_not_resume_after_detail",
+		"%s：关闭详情后教程气泡没有恢复" % label)
 
 	await _check_treasure_row(prep, label, safe)
 

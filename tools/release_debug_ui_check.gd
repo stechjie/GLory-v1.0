@@ -9,13 +9,10 @@ extends Node
 # 并点这颗按钮，点下去 `Main._show_selftest()` 里 `load(...)` 拿到 null，
 # 对 null 调 `.instantiate()` 直接崩溃。
 #
-# headless 跑的是 debug 模板，`OS.is_debug_build()` 在这里恒为 true —— 没有办法
-# 在同一个进程里让它变 false 来验证「Release 下这颗按钮不显示」。能验的是
-# **源码合同**：显隐赋值那一行必须把 `OS.is_debug_build()` 当作显式的
-# 与运算项，而不是只查在线状态。这条合同能通过它自己的反向变异证明能转红
-# （去掉 `OS.is_debug_build() and` 就应该红），但它验的是「代码写没写这道判断」，
-# 不是「Release 二进制运行时真的隐藏了它」——那部分需要一次真实的 Release 导出
-# 加人工确认，见 docs/CHECKS.md 里记的导出验证。
+# headless 跑的是 debug 模板，无法在同一进程伪装 Release。这里守源码合同：
+# 两处显隐统一走 selftest_available()，而该入口必须同时检查 Debug 和 PackedScene
+# 的真实资源能力。这样普通 Debug APK 即使排除了 officetest/ 也不会显示死按钮；
+# Release 的二进制显隐仍需真实导出复核。
 #
 # 官方约定的三个调试入口一起查：自测按钮、F3 排布调试网格、officetest 场景本身
 # 的判空兜底。逐条限定到函数体，不整文件 contains —— 本轮已经三次栽在
@@ -35,6 +32,7 @@ func _ready() -> void:
 	var lobby_src := FileAccess.get_file_as_string(LOBBY_SRC_PATH)
 	var main_src := FileAccess.get_file_as_string(MAIN_SRC_PATH)
 	_check_selftest_button_gated(lobby_src)
+	_check_selftest_capability(lobby_src)
 	_check_f3_overlay_gated(lobby_src)
 	_check_selftest_handler_defends_missing_scene(main_src)
 	_check_officetest_excluded_from_export()
@@ -80,12 +78,21 @@ func _check_selftest_button_gated(lobby_src: String) -> void:
 			% sites.size())
 	var ungated: Array[String] = []
 	for site in sites:
-		if not site.contains("OS.is_debug_build()"):
+		if not site.contains("selftest_available()"):
 			ungated.append(site)
 	_h.expect(ungated.is_empty(), "selftest_button_visible_in_release",
-		("这些地方把自测按钮的显隐没有跟 OS.is_debug_build() 挂钩，"
-			+ "Release 包里离线时也会显示，点了会因 officetest 缺失而崩溃：%s")
+		("这些地方没有统一走 selftest_available() 能力判断，"
+			+ "场景未打包时仍可能显示一个死入口：%s")
 			% str(ungated))
+
+
+func _check_selftest_capability(lobby_src: String) -> void:
+	var funcs := _split_funcs(lobby_src)
+	var body: String = funcs.get("selftest_available", "")
+	_h.expect(body.contains("OS.is_debug_build()")
+			and body.contains("ResourceLoader.exists(SELFTEST_SCENE_PATH"),
+		"selftest_capability_incomplete",
+		"selftest_available() 必须同时验证 Debug 构建和场景真实存在")
 
 
 func _check_f3_overlay_gated(lobby_src: String) -> void:

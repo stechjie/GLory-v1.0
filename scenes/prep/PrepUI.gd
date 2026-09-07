@@ -8,6 +8,8 @@ const PrepShopRefreshBurnScript = preload("res://scenes/prep/effects/PrepShopRef
 const PrepTeamMercAlertScript = preload("res://scenes/prep/effects/PrepTeamMercAlert.gd")
 const TutorialTargetProviderScript := preload("res://scripts/tutorial/TutorialTargetProvider.gd")
 const GloryToastScript := preload("res://ui/components/GloryToast.gd")
+const GloryTheme := preload("res://ui/theme/GloryTheme.gd")
+const GloryTokens := preload("res://ui/theme/GloryTokens.gd")
 # 只为拿 FillPhase 枚举做**静态**引用（教学第 15 步的子阶段），
 # 走 preload 常量而不是从 autoload 实例上取，dynamic_call 棘轮才不会长。
 const TutorialModeScript := preload("res://scripts/tutorial/TutorialMode.gd")
@@ -954,17 +956,22 @@ func _mute_label_text() -> String:
 	return "已静音" if muted else "静音"
 func _build_detail_popups() -> void:
 	_detail = PopupPanel.new()
+	_detail.theme = GloryTheme.get_theme()
 	add_child(_detail)
 	var detail_margin := MarginContainer.new()
-	detail_margin.add_theme_constant_override("margin_left", 12)
-	detail_margin.add_theme_constant_override("margin_top", 12)
-	detail_margin.add_theme_constant_override("margin_right", 12)
-	detail_margin.add_theme_constant_override("margin_bottom", 12)
+	detail_margin.add_theme_constant_override("margin_left", GloryTokens.GAP_M)
+	detail_margin.add_theme_constant_override("margin_top", GloryTokens.GAP_M)
+	detail_margin.add_theme_constant_override("margin_right", GloryTokens.GAP_M)
+	detail_margin.add_theme_constant_override("margin_bottom", GloryTokens.GAP_M)
 	_detail.add_child(detail_margin)
 	_detail_text = RichTextLabel.new()
 	_detail_text.bbcode_enabled = true
-	_detail_text.fit_content = true
-	_detail_text.custom_minimum_size = Vector2(500, 360)
+	_detail_text.fit_content = false
+	_detail_text.scroll_active = true
+	_detail_text.custom_minimum_size = Vector2(500, 340)
+	_detail_text.add_theme_font_size_override("normal_font_size", GloryTokens.FONT_BODY)
+	_detail_text.add_theme_font_size_override("bold_font_size", GloryTokens.FONT_BODY)
+	_detail_text.add_theme_color_override("default_color", GloryTokens.TEXT_PRIMARY)
 	detail_margin.add_child(_detail_text)
 	# 节点造好了，交给详情浮层组件接管（它持有关闭时序等状态）。
 	_overlay.bind(_detail, _detail_text)

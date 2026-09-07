@@ -55,6 +55,8 @@ func _ready() -> void:
 	_check_treasures(treasures)
 	_check_linkages(linkages)
 	_check_race_names()
+	_check_synergy_readability()
+	_check_detail_surface()
 
 	print("[%s] 宝物 %d 件、联动 %d 条" % [CHECK_NAME, treasures.size(), linkages.size()])
 	_h.finish(get_tree())
@@ -105,3 +107,52 @@ func _check_race_names() -> void:
 		var name := "" if panel == null else panel.race_name(race)
 		_h.expect(name != race and not name.is_empty(), "race_name_missing",
 			"种族 %s 没有显示名，直接返回了 id" % race)
+
+
+func _check_synergy_readability() -> void:
+	var panel := _prep.get("_synergy") as SynergyPanelScript
+	if not _h.expect(panel != null, "synergy_panel_missing", "无法取得羁绊面板"):
+		return
+	var locale_before := LocaleManager.get_locale()
+	for locale in ["zh", "en"]:
+		LocaleManager.set_locale(locale)
+		for race in ["god", "dark", "undead", "human"]:
+			var maximum := panel.race_max_threshold(race)
+			var before := panel.format_synergy_detail(race, maximum - 1)
+			var reached := panel.format_synergy_detail(race, maximum)
+			_h.expect(not before.contains("#686868"), "synergy_uses_unreadable_grey",
+				"%s/%s 未达成说明仍使用旧的 #686868" % [locale, race])
+			_h.expect(before.contains("Need 1 more") if locale == "en" else before.contains("还差 1 人"),
+				"synergy_missing_count_absent",
+				"%s/%s 未明确显示还差人数" % [locale, race])
+			_h.expect(not reached.contains("Locked") if locale == "en" else not reached.contains("未解锁"),
+				"synergy_max_still_locked", "%s/%s 达到最高阈值后仍显示未解锁" % [locale, race])
+	# DOCX 点名的人族 1/2/6/7 必须都有稳定、可读的输出。
+	LocaleManager.set_locale("zh")
+	for count in [1, 2, 6, 7]:
+		var text := panel.format_synergy_detail("human", count)
+		_h.expect(not text.is_empty() and text.contains("当前数量：%d/7" % count),
+			"human_synergy_count_missing", "人族 %d/7 详情缺失或数量不一致" % count)
+	LocaleManager.set_locale(locale_before)
+
+
+func _check_detail_surface() -> void:
+	var popup := _prep.get("_detail") as PopupPanel
+	var text := _prep.get("_detail_text") as RichTextLabel
+	if not _h.expect(popup != null and text != null, "detail_popup_missing",
+			"羁绊/宝藏共用详情 Popup 没有建起来"):
+		return
+	var panel_style := popup.get_theme_stylebox("panel", "PopupPanel") as StyleBoxFlat
+	_h.expect(panel_style != null and panel_style.bg_color.a >= 0.95,
+		"detail_surface_translucent",
+		"详情底板不是高不透明主题面板，明亮草地背景会穿透正文")
+	_h.expect(text.scroll_active and not text.fit_content,
+		"detail_body_not_bounded_scroll",
+		"详情正文没有固定视窗滚动，长文案会把弹窗撑出屏幕")
+	_h.expect(text.get_theme_font_size("normal_font_size") >= 14,
+		"detail_font_too_small", "详情正文字号低于移动端可读下限 14")
+	var margin := text.get_parent() as MarginContainer
+	_h.expect(margin != null
+			and margin.get_theme_constant("margin_left") >= 16
+			and margin.get_theme_constant("margin_top") >= 16,
+		"detail_margin_too_small", "详情正文没有至少 16px 的底板内边距")

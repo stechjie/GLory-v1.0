@@ -200,9 +200,11 @@ func build_info_label() -> String:
 	if not bool(_build_info.get("available", false)):
 		return "build ?  (%s)" % str(_build_info.get("reason", "unknown"))
 	var commit := str(_build_info.get("git_commit_short", "?"))
-	if int(_build_info.get("dirty_tracked_files", 0)) > 0:
+	if int(_build_info.get("dirty_files", _build_info.get("dirty_tracked_files", 0))) > 0:
 		commit += "+dirty"
-	return "%s  %s v%s  assets %s" % [
+	var build_id := str(_build_info.get("build_id", "?")).substr(0, 8)
+	return "%s  %s  %s v%s  assets %s" % [
+		build_id,
 		commit,
 		str(_build_info.get("package_id", "?")),
 		str(_build_info.get("version_code", "?")),
@@ -278,7 +280,7 @@ func _load_build_info() -> void:
 	# GDScript's JSON parses every number as float, so version_code 5 comes back as
 	# 5.0 and the identity line reads "v5.0" while every other report says "5".
 	# These are counts and ids, never fractional.
-	for key in ["schema_version", "dirty_tracked_files", "version_code"]:
+	for key in ["schema_version", "dirty_tracked_files", "dirty_files", "version_code"]:
 		if _build_info.has(key):
 			_build_info[key] = int(_build_info[key])
 	_build_info["available"] = true

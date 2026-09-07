@@ -5,7 +5,7 @@ const UnitVisualResolverScript := preload("res://effects/runtime/presentation/Un
 
 const CHECK_NAME := "model_material_integrity"
 const WHITELIST_PATH := "res://data/qa/intentional_untextured_materials.json"
-const REPORT_PATH := "res://reports/model_material_integrity.json"
+const REPORT_PATH := "res://reports/model_material_integrity.json" # asset-manifest-ignore: runtime-generated QA report
 const WHITE_FLOOR := 0.97
 
 var _h: CheckHarness

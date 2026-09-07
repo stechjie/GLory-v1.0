@@ -133,7 +133,7 @@ func _ready() -> void:
 	# 所以连点和 mouse+touch 双路都不会让它多发。
 	UiFeedbackService.install()
 	_start_vfx_warmup()
-	_show_language_select()
+	_route_startup()
 	StartupTrace.mark(StartupTrace.T2_MAIN_READY)
 
 # VFX shader 预热。挂在这里是因为从引擎就绪到连上服务器有约 44 秒的菜单导航时间，
@@ -312,7 +312,15 @@ func _on_resume_completed(payload: Dictionary) -> void:
 	GameState.round_index = int(payload.get("round_id", GameState.round_index))
 	GameState.team_hp = int(payload.get("team_hp", GameState.team_hp))
 	GameState.enemy_team_hp = int(payload.get("rival_team_hp", GameState.enemy_team_hp))
-	GameState.gold = int(payload.get("gold", GameState.gold))
+	# 金币同步：默认（经济账本未开启权威）配置下金币由客户端权威维护——备战阶段每一笔
+	# 购买/出售都只改本地 GameState.gold，服务端 slot_gold 仅在战斗结算时更新一次，
+	# 等于"购买前"的金币。重连若用这份陈旧快照覆盖本地正确金币，金币会回退到购买前
+	# （BUG：商店购买阶段掉线重连后金币被重置）。因此未开启权威时保留本地金币不覆盖；
+	# 仅在经济账本权威开启、快照携带权威金币时才以服务端为准。
+	var _eco_state: Dictionary = payload.get("economy", {}) as Dictionary
+	if not _eco_state.is_empty() and bool(_eco_state.get("authoritative", false)):
+		GameState.gold = int(_eco_state.get("gold", GameState.gold))
+	# else: 保留本地金币（GameState.gold 已是本回合真实值）
 	GameState.loss_streak = int(payload.get("loss_streak", GameState.loss_streak))
 	GameState.pve_completed = int(payload.get("pve_completed", GameState.pve_completed))
 	GameState.boss_completed = int(payload.get("boss_completed", GameState.boss_completed))
@@ -336,9 +344,15 @@ func _on_resume_completed(payload: Dictionary) -> void:
 			"candidates": (resumed_offer.get("candidates", []) as Array).duplicate(),
 			"refresh_index": int(resumed_offer.get("refresh_index", 0)),
 		}
-	# 商店按恢复后的当前回合重新滚：旧商店在重连/跨回合后无意义，磁盘存档也可能是空的。
-	# 清空后 PrepScreen._ready 会自动 _roll_shop() 出一批新的。
-	GameState.clear_shop()
+	# 商店：活着重连（内存里的对局数据还在）时，**保留**掉线前的商店，不要刷新 ——
+	# 否则购买棋子阶段掉线重连后，商店会被重新摇一遍（BUG：商店购买阶段掉线重连后商店刷新）。
+	# 本地 GameState.shop_offers 本就是商店的权威来源（摇店由客户端 _roll_shop() 完成，
+	# 服务端快照不携带商店字段），重连时它仍保存着玩家掉线前正在看的棋子，直接保留即可。
+	# 只有在确实没有任何商店数据时才清空，交给 PrepScreen._ready 自动 _roll_shop() 出一批新的
+	# （冷启动 / 跨回合全新对局 / 大厅等场景）。
+	if GameState.shop_offers.is_empty() or GameState.shop_offers[0].is_empty():
+		GameState.clear_shop()
+	# else：保留 GameState.shop_offers，PrepScreen._ready 检测到非空就不会再摇店。
 	if str(payload.get("phase", "prep")) == NetworkService.ROOM_LOBBY:
 		_show_team3v3_lobby()
 		return
@@ -378,7 +392,10 @@ func _on_tutorial_skip() -> void:
 	# 跳过整段教学：结束教学态，回到主菜单让玩家自己选普通/组队。
 	if not TutorialMode.active:
 		return
-	TutorialMode.finish()
+	# 先落账户状态、再删断点。写盘失败时保留断点，下次启动仍有恢复点，
+	# 绝不出现「状态没存到、断点却先删了」的双重丢失。
+	var persisted := PlayerProfile.set_onboarding_status(PlayerProfile.ONBOARDING_SKIPPED)
+	TutorialMode.finish(persisted)
 	_show_menu()
 
 # 界面场景一律运行时 load，不用 preload。
@@ -472,16 +489,30 @@ func _show_language_select() -> void:
 	# been laid out and drawn.
 	StartupTrace.mark_input_ready.call_deferred("language_select")
 
-func _select_language(locale: String) -> void:
-	LocaleManager.set_locale(locale)
-	StartupTrace.mark_first_action("select_language", locale)
-	# V2 P1-08：有断点就恢复到原来那一步，而不是从 BUY_3 重来。
-	# 恢复失败（版本不符、结构损坏）时退回全新教程 —— 宁可从头，也不半恢复出夹生状态。
-	# 语言以玩家这次的选择为准，断点里的 locale 只作记录；
-	# 「跳过语言页直接恢复」属于 V3 P0-08 的启动路由，本批不做。
+
+func _route_startup() -> void:
+	match PlayerProfile.startup_route():
+		PlayerProfile.STARTUP_MENU:
+			_show_menu()
+		PlayerProfile.STARTUP_TUTORIAL:
+			_enter_tutorial_from_startup()
+		_:
+			_show_language_select()
+
+
+func _enter_tutorial_from_startup() -> void:
+	# Persist intent before mutating the run. This also converts legacy_unknown into
+	# an explicit state without guessing whether the old player had completed it.
+	PlayerProfile.begin_tutorial()
 	if not (TutorialMode.has_checkpoint() and TutorialMode.restore_checkpoint()):
 		TutorialMode.start()
 	_show_prep()
+
+
+func _select_language(locale: String) -> void:
+	PlayerProfile.select_language(locale)
+	StartupTrace.mark_first_action("select_language", locale)
+	_enter_tutorial_from_startup()
 
 
 # --- V2 P1-08 / V3 P0-09：返回键与 ui_cancel ---------------------------------
@@ -731,8 +762,13 @@ func _show_settings() -> void:
 	_clear()
 	var settings := _instantiate_screen("res://scenes/menu/SettingsScreen.tscn")
 	settings.back_requested.connect(_show_menu)
+	settings.replay_tutorial_requested.connect(_on_replay_tutorial_requested)
 	_page_back_route = _show_menu
 	add_child(settings)
+
+
+func _on_replay_tutorial_requested() -> void:
+	_enter_tutorial_from_startup()
 
 # 备战界面（暂时只有宠物系统）。从主菜单「备战」按钮进入，返回回主菜单。
 func _show_pet_screen() -> void:
@@ -769,6 +805,9 @@ func _show_team3v3_lobby() -> void:
 # 离线自测·单位测试模式(officetest):独立场景,不走备战/回合/存档,
 # 返回时还原 team_mode,不在 GameState 留任何痕迹。
 func _show_selftest() -> void:
+	if not ResourceLoader.exists("res://officetest/OfficeTestScreen.tscn", "PackedScene"):
+		push_warning("officetest scene unavailable; keeping current lobby")
+		return
 	_clear()
 	_selftest_prev_team_mode = GameState.team_mode
 	GameState.team_mode = true
@@ -781,7 +820,7 @@ func _show_selftest() -> void:
 	# 多出第二个入口，不会重演对 null 调 instantiate() 崩溃。
 	var packed := load("res://officetest/OfficeTestScreen.tscn") as PackedScene
 	if packed == null:
-		push_warning("officetest scene unavailable (expected in release exports); returning to lobby")
+		push_warning("officetest scene unavailable; returning to lobby")
 		GameState.team_mode = _selftest_prev_team_mode
 		_show_team3v3_lobby()
 		return
@@ -1935,7 +1974,9 @@ func _on_battle_finished(result: Dictionary = {}) -> void:
 	if GameState.tutorial_mode:
 		TutorialMode.after_battle(result)
 		if TutorialMode.step == TutorialMode.Step.DONE:
-			TutorialMode.finish()
+			var persisted := PlayerProfile.set_onboarding_status(
+				PlayerProfile.ONBOARDING_COMPLETED)
+			TutorialMode.finish(persisted)
 			_show_game_over()
 			return
 		_show_prep()
@@ -1996,8 +2037,15 @@ func _on_network_match_state_received(state_payload: Dictionary) -> void:
 		return
 	if GameState.team_mode:
 		_apply_team_match_state_payload(state_payload)
-		if _prep != null and is_instance_valid(_prep) and _prep.has_method("_refresh_all"):
-			_prep.call_deferred("_refresh_all")
+		if _prep != null and is_instance_valid(_prep):
+			# 结算会清空商店（_apply_team_match_state_payload 内部 clear_shop），但本路径不像
+			# _on_team_battle_finished 那样走 _show_prep() 重建备战界面，若不再摇一次商店，
+			# 重连玩家看到的商店会是空的（BUG：战斗场景掉线重连后商店无商品）。与正常战斗
+			# 结束路径保持一致，这里补一次摇店。
+			if _prep.has_method("_roll_shop") and (GameState.shop_offers.is_empty() or GameState.shop_offers[0].is_empty()):
+				_prep.call_deferred("_roll_shop")
+			if _prep.has_method("_refresh_all"):
+				_prep.call_deferred("_refresh_all")
 
 func _apply_post_battle_unit_outcomes(result: Dictionary) -> void:
 	if not result.has("player_survivor_slots"):

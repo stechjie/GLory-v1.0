@@ -674,21 +674,3 @@ func _show_linkage_detail(link_id: String) -> void:
 		lines.append("宝藏：%s" % " + ".join(names))
 		lines.append("联动效果：%s" % _treasure.link_effect_text(link_id))
 	_overlay.show_text("\n".join(lines))
-
-func _format_treasure_detail(t: Dictionary) -> String:
-	var tid := str(t.get("id", ""))
-	var category := str(t.get("category", ""))
-	var tname := PrepWidgets.localized_name(t)
-	var lines: Array[String] = []
-	lines.append(tname)
-	if PrepWidgets.is_en():
-		lines.append("Effect: %s" % _treasure.effect_text(tid))
-	else:
-		lines.append("效果：%s" % _treasure.effect_text(tid))
-	var set_status := _treasure.set_status(category)
-	if not set_status.is_empty():
-		lines.append(set_status)
-	var link_lines := _treasure.linkage_status(tid)
-	for line in link_lines:
-		lines.append(line)
-	return "\n".join(lines)

@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[node name="GloryActionButton" type="Button"]
+custom_minimum_size = Vector2(280, 48)
+size_flags_horizontal = 4
+

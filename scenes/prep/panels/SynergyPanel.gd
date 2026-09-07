@@ -12,6 +12,7 @@ extends Control
 
 const PrepWidgets := preload("res://scenes/prep/PrepWidgets.gd")
 const PrepShopRaceIcon = preload("res://scenes/prep/PrepShopRaceIcon.gd")
+const Tokens := preload("res://ui/theme/GloryTokens.gd")
 
 signal altar_requested                       # 点了黄金祭坛
 signal gamble_requested                      # 点了慷慨命运
@@ -208,11 +209,20 @@ func format_synergy_detail(race: String, count: int) -> String:
 		lines.append("[b]%s族羁绊[/b]" % race_name(race))
 		lines.append("当前数量：%d/%d" % [count, max_threshold])
 	for item in _race_entries(race):
-		var active := count >= int(item.get("threshold", 0))
-		var color := "#f4f4ee" if active else "#686868"
+		var threshold := int(item.get("threshold", 0))
+		var active := count >= threshold
+		var status := ""
+		if active:
+			status = "Active" if PrepWidgets.is_en() else "已解锁"
+		else:
+			var missing := maxi(0, threshold - count)
+			status = ("Locked · Need %d more" % missing if PrepWidgets.is_en()
+				else "未解锁 · 还差 %d 人" % missing)
 		lines.append("")
-		lines.append("[color=%s][b]%s[/b]\n%s[/color]" % [
-			color,
+		lines.append("[color=#%s][b]%s[/b][/color]" % [
+			Tokens.GOLD.to_html(false), status])
+		lines.append("[color=#%s][b]%s[/b]\n%s[/color]" % [
+			Tokens.TEXT_PRIMARY.to_html(false) if active else Tokens.TEXT_SECONDARY.to_html(false),
 			str(item.get("name", "")),
 			str(item.get("detail", "")),
 		])

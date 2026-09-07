@@ -1,8 +1,8 @@
 class_name SaveSchema
 extends RefCounted
 
-# 局内存档（run save）的版本。下面那串 history 讲的是 profile，不是它 —— 两者
-# 各有各的版本号，别混。
+# 局内存档（run save）的版本。下面那串 history 讲的是 profile，不是它 ——
+# 两者各有各的版本号，别混。
 const VERSION := 2
 
 # Account-level profile (user://profile.json) is versioned separately from the run
@@ -12,12 +12,19 @@ const VERSION := 2
 #   1 - account profile had no version field at all
 #   2 - profile gains codex_seen; pet_duck renamed to pet_rabbit
 #   3 - profile gains the persistent BoardReadabilityLayer visibility setting
-#   4 - profile gains player_id（账号系统第 0 步，见 docs/账号系统RFC.md）
+#   4 - profile gains persisted locale and an explicit onboarding lifecycle
+#   5 - profile gains player_id（账号系统第 0 步，见 docs/账号系统RFC.md）
+#
+# ⚠️ **4 曾经被两条分支各发过一次，内容不同。** 账号线当时也把版本号写成 4
+# （装的是 player_id），onboarding 线写的 4 装的是 locale/onboarding。合并时把
+# 账号那份让到 5，并把下面 onboarding 的迁移条件从 `from < 4` 放宽到 `from < 5`
+# —— 否则"版本写着 4、但只有 player_id 没有 locale"的档案会整块被跳过。
+# 那个块里每个字段都有 has() 守卫，放宽只补齐、不覆盖。
 #
 # 注：3 之后加的六个演出开关（screen_shake / flash_effects / hit_stop /
 # reduced_motion / ui_sound / haptics）没有升版本号，因为它们每一个都有安全默认值，
 # 读侧 `data.get(key, default)` 就够了。player_id 不是这种字段 —— 见下。
-const PROFILE_VERSION := 4
+const PROFILE_VERSION := 5
 
 # Pets renamed after the art came in. Old profiles still hold the old id, so it is
 # rewritten on load rather than orphaning a pet the player already owns.
@@ -29,10 +36,9 @@ const PET_ID_RENAMES := {
 #
 # 这个 id 在设备上**第一次**读档时签发，之后永不改变。它不是 Supabase / Google /
 # Steam 的账号 id，也不是 SessionContext.session_token（那是一局一换的重连凭证）。
-# 将来接账号时，各家 Auth 的 id 只是映射到它的一行 player_identities：
+# 接账号时，各家 Auth 的 id 只是映射到它的一行 player_identities：
 #
 #   player_id      provider   provider_user_id
-#   52c7027a-...   local      ← 这里签发的这个
 #   52c7027a-...   supabase   a91d3f...
 #
 # 游戏侧（金币 / 单位 / 宝物 / Rank / 战绩）永远只认 player_id，所以换登录方式、
@@ -54,11 +60,27 @@ static func migrate_profile(payload: Dictionary) -> Dictionary:
 				out["codex_seen"] = []
 		if from < 3 and not out.has("board_readability_enabled"):
 			out["board_readability_enabled"] = true
+		# 条件是 `< 5` 而不是 `< 4`：见顶部关于"两个版本 4"的说明。
+		if from < 5:
+			# Never guess that an old account completed onboarding from gold, pets or run
+			# state. Those are not proof. Legacy accounts keep the old behaviour (show
+			# language, then resume/start tutorial) once, and become explicit thereafter.
+			if not out.has("locale"):
+				out["locale"] = "zh"
+			if not out.has("language_selected"):
+				out["language_selected"] = false
+			if not out.has("onboarding_version"):
+				out["onboarding_version"] = 1
+			if not out.has("onboarding_status"):
+				out["onboarding_status"] = "legacy_unknown"
 
 	# player_id 故意**不**放进上面的版本分支。它是不变量，不是一次性的迁移步骤：
-	# 版本号已经是最新、但档案里缺 id 或 id 被写坏，同样必须补发。放进 `from < 4`
-	# 里就会漏掉这种档案，而漏掉的后果是每次冷启动重签一个新 id ——
+	# 版本号已经是最新、但档案里缺 id 或 id 被写坏，同样必须补发。放进版本分支
+	# 就会漏掉这种档案，而漏掉的后果是每次冷启动重签一个新 id ——
 	# 接账号之后那等于玩家每次开游戏都丢失全部进度，且不报错、不崩溃。
+	#
+	# 这次合并顺带印证了这个设计：两条分支各自改了版本号的含义，而这一行
+	# 因为不依赖版本号，完全不受影响。
 	_ensure_player_id(out)
 	out["version"] = PROFILE_VERSION
 	return out

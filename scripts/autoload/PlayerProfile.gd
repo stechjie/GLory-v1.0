@@ -6,17 +6,27 @@ extends Node
 const PROFILE_PATH := "user://profile.json"
 # 解析失败的档案在被覆盖前先挪到这里。见 _preserve_corrupt_profile。
 const CORRUPT_PROFILE_PATH := "user://profile.corrupt.json"
+const TMP_SUFFIX := ".tmp"
+const BAK_SUFFIX := ".bak"
+
+const ONBOARDING_VERSION := 1
+const ONBOARDING_NOT_STARTED := "not_started"
+const ONBOARDING_IN_PROGRESS := "in_progress"
+const ONBOARDING_COMPLETED := "completed"
+const ONBOARDING_SKIPPED := "skipped"
+const ONBOARDING_LEGACY_UNKNOWN := "legacy_unknown"
+const STARTUP_LANGUAGE := "language"
+const STARTUP_TUTORIAL := "tutorial"
+const STARTUP_MENU := "menu"
+const SUPPORTED_LOCALES: PackedStringArray = ["zh", "en"]
 
 signal pets_changed()
 signal codex_changed()
 signal presentation_settings_changed()
 
 # 玩家的永久身份，本机第一次读档时签发，之后永不改变。
-# 语义、随机源、以及"为什么不能等接账号时再加"都在 SaveSchema.PLAYER_ID_PATTERN
+# 语义、随机源、以及「为什么不能等接账号时再加」在 SaveSchema.PLAYER_ID_PATTERN
 # 那一段和 docs/账号系统RFC.md 里。
-#
-# 这里只存不用：第 0 步不联网、不注册、不登录，也没有任何一张表挂在它下面。
-# 先把 id 固定下来，是为了让将来那些表**一开始就**挂对地方。
 var player_id := ""
 var owned_pets: Array[String] = []
 var active_pet := ""
@@ -47,6 +57,10 @@ var reduced_motion_enabled := false
 # PresentationSettings 是 autoload 可达的，直接问 profile 就行。
 var ui_sound_enabled := true
 var haptics_enabled := true
+var locale := "zh"
+var language_selected := false
+var onboarding_version := ONBOARDING_VERSION
+var onboarding_status := ONBOARDING_NOT_STARTED
 # 与 GloryTokens.REDUCED_MOTION_SETTING 必须一致。这里不 preload 那个类：
 # autoload 反过来依赖 UI 层会把依赖方向倒过来。门禁断言两边字面相同。
 const REDUCED_MOTION_SETTING := "glory/ui/reduced_motion"
@@ -55,21 +69,22 @@ func _ready() -> void:
 	load_profile()
 
 func load_profile() -> void:
-	if not FileAccess.file_exists(PROFILE_PATH):
+	var profile_text := _read_with_fallback(PROFILE_PATH)
+	if profile_text.is_empty():
 		# 全新账号：等待玩家三选一，先不发放任何宠物。
-		_reset_to_defaults()
+		_reset_defaults()
 		player_id = SaveSchema.new_player_id()
 		save_profile()
 		return
-	# 不叫 raw：下面读 codex_seen 的循环已经用了这个名字，同作用域会直接编译失败。
-	var raw_text := FileAccess.get_file_as_string(PROFILE_PATH)
-	var parsed = JSON.parse_string(raw_text)
+	var parsed = JSON.parse_string(profile_text)
 	if typeof(parsed) != TYPE_DICTIONARY:
-		# 坏档：这条路径原本只重置内存、不落盘。现在必须落盘 —— 新签的 player_id
-		# 不写回去，下次冷启动就会再签一个，正是本次要防的那种静默身份漂移。
+		# 坏档原本只重置内存、不落盘。现在必须落盘 —— 新签的 player_id 不写回去，
+		# 下次冷启动就会再签一个，正是「签发一次、永不改变」要防的静默身份漂移。
 		# 既然要覆盖，原始字节先另存一份，别让「存档打不开」变成「存档没了」。
-		_preserve_corrupt_profile(raw_text)
-		_reset_to_defaults()
+		# 注意这里的 profile_text 可能已经是 _read_with_fallback 从 .bak 取回来的，
+		# 也就是说主文件和兜底文件都坏了 —— 更值得留痕。
+		_preserve_corrupt_profile(profile_text)
+		_reset_defaults()
 		player_id = SaveSchema.new_player_id()
 		save_profile()
 		return
@@ -97,7 +112,15 @@ func load_profile() -> void:
 	reduced_motion_enabled = bool(data.get("reduced_motion_enabled", false))
 	ui_sound_enabled = bool(data.get("ui_sound_enabled", true))
 	haptics_enabled = bool(data.get("haptics_enabled", true))
+	locale = str(data.get("locale", "zh"))
+	if not SUPPORTED_LOCALES.has(locale):
+		locale = "zh"
+	language_selected = bool(data.get("language_selected", false))
+	onboarding_version = int(data.get("onboarding_version", ONBOARDING_VERSION))
+	onboarding_status = _normalise_onboarding_status(
+		str(data.get("onboarding_status", ONBOARDING_LEGACY_UNKNOWN)))
 	_apply_reduced_motion()
+	LocaleManager.set_locale(locale)
 	needs_starter_pick = bool(data.get("needs_starter_pick", owned_pets.is_empty()))
 	# 出战宠物必须是已拥有的；否则回落到第一只（或空）。
 	if not active_pet.is_empty() and not owned_pets.has(active_pet):
@@ -107,9 +130,51 @@ func load_profile() -> void:
 	# player_id 要单独判一次：档案版本号已经是最新、但 id 缺失或被写坏时，
 	# migrate_profile 会现签一个，而上面那个版本条件是 false —— 只看版本号就会漏掉
 	# 这份档案，新 id 不落盘，下次启动再签一个。必须两个条件都看。
-	if int(parsed.get("version", 1)) < SaveSchema.PROFILE_VERSION \
-			or str(parsed.get("player_id", "")) != player_id:
+	if int(parsed.get("version", 1)) < SaveSchema.PROFILE_VERSION 			or str(parsed.get("player_id", "")) != player_id:
 		save_profile()
+
+func save_profile() -> bool:
+	var payload := {
+		"version": SaveSchema.PROFILE_VERSION,
+		"player_id": player_id,
+		"owned_pets": owned_pets,
+		"active_pet": active_pet,
+		"needs_starter_pick": needs_starter_pick,
+		"codex_seen": codex_seen,
+		"board_readability_enabled": board_readability_enabled,
+		"screen_shake_enabled": screen_shake_enabled,
+		"flash_effects_enabled": flash_effects_enabled,
+		"hit_stop_enabled": hit_stop_enabled,
+		"reduced_motion_enabled": reduced_motion_enabled,
+		"ui_sound_enabled": ui_sound_enabled,
+		"haptics_enabled": haptics_enabled,
+		"locale": locale,
+		"language_selected": language_selected,
+		"onboarding_version": onboarding_version,
+		"onboarding_status": onboarding_status,
+	}
+	return _atomic_write(PROFILE_PATH, JSON.stringify(payload))
+
+
+func _reset_defaults() -> void:
+	owned_pets.clear()
+	active_pet = ""
+	codex_seen.clear()
+	board_readability_enabled = true
+	screen_shake_enabled = true
+	flash_effects_enabled = true
+	hit_stop_enabled = true
+	reduced_motion_enabled = false
+	ui_sound_enabled = true
+	haptics_enabled = true
+	locale = "zh"
+	language_selected = false
+	onboarding_version = ONBOARDING_VERSION
+	onboarding_status = ONBOARDING_NOT_STARTED
+	needs_starter_pick = true
+	_apply_reduced_motion()
+	LocaleManager.set_locale(locale)
+
 
 # **唯一允许改变已有 player_id 的入口，而且只有一个合法理由：**
 # 账号服务器回了 409，说这个 id 已经属于别人（见 AccountManager.login）。
@@ -130,22 +195,6 @@ func reissue_player_id() -> void:
 	push_warning("[PROFILE] player_id 已重新签发：%s -> %s" % [previous, player_id])
 
 
-# 全新档案与坏档共用的重置。原来这两段是逐字段抄的两份，加 player_id 时
-# 正好合并 —— 两份默认值各改各的迟早会漂。
-func _reset_to_defaults() -> void:
-	owned_pets.clear()
-	active_pet = ""
-	codex_seen.clear()
-	board_readability_enabled = true
-	screen_shake_enabled = true
-	flash_effects_enabled = true
-	hit_stop_enabled = true
-	reduced_motion_enabled = false
-	ui_sound_enabled = true
-	haptics_enabled = true
-	_apply_reduced_motion()
-	needs_starter_pick = true
-
 # 覆盖坏档之前留一份原始字节，方便事后人工捞。只留最近一次：更早的那份已经
 # 是「上一次也坏了」，价值不大，不值得为它做轮转。
 func _preserve_corrupt_profile(raw: String) -> void:
@@ -156,25 +205,88 @@ func _preserve_corrupt_profile(raw: String) -> void:
 	f.store_string(raw)
 	push_warning("[PROFILE] profile.json 解析失败，原始内容已另存到 %s" % CORRUPT_PROFILE_PATH)
 
-func save_profile() -> void:
-	var payload := {
-		"version": SaveSchema.PROFILE_VERSION,
-		"player_id": player_id,
-		"owned_pets": owned_pets,
-		"active_pet": active_pet,
-		"needs_starter_pick": needs_starter_pick,
-		"codex_seen": codex_seen,
-		"board_readability_enabled": board_readability_enabled,
-		"screen_shake_enabled": screen_shake_enabled,
-		"flash_effects_enabled": flash_effects_enabled,
-		"hit_stop_enabled": hit_stop_enabled,
-		"reduced_motion_enabled": reduced_motion_enabled,
-		"ui_sound_enabled": ui_sound_enabled,
-		"haptics_enabled": haptics_enabled,
-	}
-	var f := FileAccess.open(PROFILE_PATH, FileAccess.WRITE)
-	if f != null:
-		f.store_string(JSON.stringify(payload))
+
+func _normalise_onboarding_status(value: String) -> String:
+	if value in [ONBOARDING_NOT_STARTED, ONBOARDING_IN_PROGRESS,
+			ONBOARDING_COMPLETED, ONBOARDING_SKIPPED, ONBOARDING_LEGACY_UNKNOWN]:
+		return value
+	return ONBOARDING_LEGACY_UNKNOWN
+
+
+# Account profile has to be safe before SaveManager enters the tree (autoload order
+# intentionally loads PlayerProfile first), so this small atomic primitive lives here.
+func _atomic_write(path: String, content: String) -> bool:
+	var tmp := path + TMP_SUFFIX
+	var bak := path + BAK_SUFFIX
+	var f := FileAccess.open(tmp, FileAccess.WRITE)
+	if f == null:
+		push_warning("[PROFILE] cannot open temp file: %s" % tmp)
+		return false
+	f.store_string(content)
+	f.flush()
+	f = null
+	if FileAccess.get_file_as_string(tmp) != content:
+		push_warning("[PROFILE] temp verify failed: %s" % path)
+		DirAccess.remove_absolute(tmp)
+		return false
+	if FileAccess.file_exists(path):
+		DirAccess.remove_absolute(bak)
+		if DirAccess.rename_absolute(path, bak) != OK:
+			push_warning("[PROFILE] cannot rotate previous file: %s" % path)
+			DirAccess.remove_absolute(tmp)
+			return false
+	if DirAccess.rename_absolute(tmp, path) != OK:
+		if FileAccess.file_exists(bak):
+			DirAccess.rename_absolute(bak, path)
+		push_warning("[PROFILE] atomic rename failed: %s" % path)
+		return false
+	return true
+
+
+func _read_with_fallback(path: String) -> String:
+	for candidate in [path, path + BAK_SUFFIX]:
+		if not FileAccess.file_exists(candidate):
+			continue
+		var text := FileAccess.get_file_as_string(candidate)
+		var parser := JSON.new()
+		if not text.strip_edges().is_empty() and parser.parse(text) == OK \
+				and parser.data is Dictionary:
+			return text
+	return ""
+
+
+# --- startup / onboarding -------------------------------------------------
+
+func startup_route() -> String:
+	if not language_selected:
+		return STARTUP_LANGUAGE
+	if onboarding_status in [ONBOARDING_COMPLETED, ONBOARDING_SKIPPED]:
+		return STARTUP_MENU
+	return STARTUP_TUTORIAL
+
+
+func select_language(value: String) -> bool:
+	if not SUPPORTED_LOCALES.has(value):
+		push_warning("[PROFILE] unsupported locale: %s" % value)
+		return false
+	locale = value
+	language_selected = true
+	LocaleManager.set_locale(locale)
+	return save_profile()
+
+
+func set_onboarding_status(value: String) -> bool:
+	var normalised := _normalise_onboarding_status(value)
+	if normalised == ONBOARDING_LEGACY_UNKNOWN and value != ONBOARDING_LEGACY_UNKNOWN:
+		push_warning("[PROFILE] invalid onboarding status: %s" % value)
+		return false
+	onboarding_version = ONBOARDING_VERSION
+	onboarding_status = normalised
+	return save_profile()
+
+
+func begin_tutorial() -> bool:
+	return set_onboarding_status(ONBOARDING_IN_PROGRESS)
 
 # --- presentation settings -----------------------------------------------
 
