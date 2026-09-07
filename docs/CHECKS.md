@@ -31,6 +31,7 @@ Godot 不在 PATH 上，用 console 版才能把日志打到 stdout：
 | `tools/replay_identity_split_check.tscn` | 玩法回放身份与完整载荷的双 SHA 合同（见下节） |
 | `tools/rate_limit_check.tscn` | RPC 限流服务的行为用例（D1 PR1，注入假时钟） |
 | `tools/client_log_check.tscn` | 客户端日志服务的行为用例（D1 PR3，注入临时文件路径） |
+| `tools/player_identity_check.tscn` | `player_id` 的签发与**不变性**（账号系统第 0 步，见 `docs/账号系统RFC.md`） |
 
 ### 回放身份：两个 SHA，别混用（V2 收尾 G1，2026-09-03）
 

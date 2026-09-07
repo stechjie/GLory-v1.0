@@ -4,11 +4,20 @@ extends Node
 # 首次进游戏时不直接发放，而是标记 needs_starter_pick，由备战界面弹「三选一」。
 
 const PROFILE_PATH := "user://profile.json"
+# 解析失败的档案在被覆盖前先挪到这里。见 _preserve_corrupt_profile。
+const CORRUPT_PROFILE_PATH := "user://profile.corrupt.json"
 
 signal pets_changed()
 signal codex_changed()
 signal presentation_settings_changed()
 
+# 玩家的永久身份，本机第一次读档时签发，之后永不改变。
+# 语义、随机源、以及"为什么不能等接账号时再加"都在 SaveSchema.PLAYER_ID_PATTERN
+# 那一段和 docs/账号系统RFC.md 里。
+#
+# 这里只存不用：第 0 步不联网、不注册、不登录，也没有任何一张表挂在它下面。
+# 先把 id 固定下来，是为了让将来那些表**一开始就**挂对地方。
+var player_id := ""
 var owned_pets: Array[String] = []
 var active_pet := ""
 var needs_starter_pick := false
@@ -48,37 +57,28 @@ func _ready() -> void:
 func load_profile() -> void:
 	if not FileAccess.file_exists(PROFILE_PATH):
 		# 全新账号：等待玩家三选一，先不发放任何宠物。
-		owned_pets.clear()
-		active_pet = ""
-		codex_seen.clear()
-		board_readability_enabled = true
-		screen_shake_enabled = true
-		flash_effects_enabled = true
-		hit_stop_enabled = true
-		reduced_motion_enabled = false
-		ui_sound_enabled = true
-		haptics_enabled = true
-		_apply_reduced_motion()
-		needs_starter_pick = true
+		_reset_to_defaults()
+		player_id = SaveSchema.new_player_id()
 		save_profile()
 		return
-	var parsed = JSON.parse_string(FileAccess.get_file_as_string(PROFILE_PATH))
+	# 不叫 raw：下面读 codex_seen 的循环已经用了这个名字，同作用域会直接编译失败。
+	var raw_text := FileAccess.get_file_as_string(PROFILE_PATH)
+	var parsed = JSON.parse_string(raw_text)
 	if typeof(parsed) != TYPE_DICTIONARY:
-		owned_pets.clear()
-		active_pet = ""
-		codex_seen.clear()
-		board_readability_enabled = true
-		screen_shake_enabled = true
-		flash_effects_enabled = true
-		hit_stop_enabled = true
-		reduced_motion_enabled = false
-		ui_sound_enabled = true
-		haptics_enabled = true
-		_apply_reduced_motion()
-		needs_starter_pick = true
+		# 坏档：这条路径原本只重置内存、不落盘。现在必须落盘 —— 新签的 player_id
+		# 不写回去，下次冷启动就会再签一个，正是本次要防的那种静默身份漂移。
+		# 既然要覆盖，原始字节先另存一份，别让「存档打不开」变成「存档没了」。
+		_preserve_corrupt_profile(raw_text)
+		_reset_to_defaults()
+		player_id = SaveSchema.new_player_id()
+		save_profile()
 		return
 	# Migrate before reading: older profiles carry renamed pet ids and no codex.
 	var data: Dictionary = SaveSchema.migrate_profile(parsed as Dictionary)
+	# migrate_profile 保证这里一定拿得到一个合法 id：档案里有就原样带出来，
+	# 没有或写坏了才现签一个。不要在这里加 `if player_id.is_empty()` 之类的兜底 ——
+	# 签发只能有一处，两处就迟早会各签各的。
+	player_id = str(data.get("player_id", ""))
 	owned_pets.clear()
 	for pid in data.get("owned_pets", []):
 		var id := str(pid)
@@ -103,12 +103,44 @@ func load_profile() -> void:
 	if not active_pet.is_empty() and not owned_pets.has(active_pet):
 		active_pet = owned_pets[0] if not owned_pets.is_empty() else ""
 	# Persist the migrated shape so the upgrade only ever runs once.
-	if int(parsed.get("version", 1)) < SaveSchema.PROFILE_VERSION:
+	#
+	# player_id 要单独判一次：档案版本号已经是最新、但 id 缺失或被写坏时，
+	# migrate_profile 会现签一个，而上面那个版本条件是 false —— 只看版本号就会漏掉
+	# 这份档案，新 id 不落盘，下次启动再签一个。必须两个条件都看。
+	if int(parsed.get("version", 1)) < SaveSchema.PROFILE_VERSION \
+			or str(parsed.get("player_id", "")) != player_id:
 		save_profile()
+
+# 全新档案与坏档共用的重置。原来这两段是逐字段抄的两份，加 player_id 时
+# 正好合并 —— 两份默认值各改各的迟早会漂。
+func _reset_to_defaults() -> void:
+	owned_pets.clear()
+	active_pet = ""
+	codex_seen.clear()
+	board_readability_enabled = true
+	screen_shake_enabled = true
+	flash_effects_enabled = true
+	hit_stop_enabled = true
+	reduced_motion_enabled = false
+	ui_sound_enabled = true
+	haptics_enabled = true
+	_apply_reduced_motion()
+	needs_starter_pick = true
+
+# 覆盖坏档之前留一份原始字节，方便事后人工捞。只留最近一次：更早的那份已经
+# 是「上一次也坏了」，价值不大，不值得为它做轮转。
+func _preserve_corrupt_profile(raw: String) -> void:
+	var f := FileAccess.open(CORRUPT_PROFILE_PATH, FileAccess.WRITE)
+	if f == null:
+		push_warning("[PROFILE] profile.json 解析失败，且原始内容备份不出去（%s 打不开）" % CORRUPT_PROFILE_PATH)
+		return
+	f.store_string(raw)
+	push_warning("[PROFILE] profile.json 解析失败，原始内容已另存到 %s" % CORRUPT_PROFILE_PATH)
 
 func save_profile() -> void:
 	var payload := {
 		"version": SaveSchema.PROFILE_VERSION,
+		"player_id": player_id,
 		"owned_pets": owned_pets,
 		"active_pet": active_pet,
 		"needs_starter_pick": needs_starter_pick,
