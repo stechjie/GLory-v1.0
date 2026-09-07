@@ -2,6 +2,7 @@ extends Control
 
 # 触控下限从令牌来，不再写字面量：这一页原本有三个控件是 46 / 46 / 40，
 # 都低于 TOUCH_MIN=48 —— 而 P1-04 第 1 条要的正是移动端最小触控尺寸。
+const Theming := preload("res://ui/theme/GloryTheme.gd")
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 
 signal back_requested
@@ -19,6 +20,11 @@ func _ready() -> void:
 	LocaleManager.locale_changed.connect(_on_locale_changed)
 
 func _build() -> void:
+	# V3 P1-04 验收原文：「无业务按钮使用 Godot 默认主题」。
+	# 这一页此前既没有 theme=，也没有任何 add_theme_stylebox_override，
+	# 而 project.godot 也没有 gui/theme/custom —— 所以按钮走的是引擎
+	# 默认灰色样式，和游戏其它地方长得完全不是一套。
+	theme = Theming.get_theme()
 	for child in get_children():
 		child.queue_free()
 

@@ -5,6 +5,7 @@ extends Control
 #   - 右上角返回按钮回主菜单。
 # 卡片统一规格：模型(占位) + 名字 + 效果。模型美术到位后替换 _build_model_placeholder。
 
+const Theming := preload("res://ui/theme/GloryTheme.gd")
 signal back_requested
 signal starter_picked   # 首次三选一选定后发出（用于「进主菜单前的强制关卡」）
 
@@ -27,6 +28,11 @@ func _exit_tree() -> void:
 		PlayerProfile.pets_changed.disconnect(_refresh)
 
 func _build() -> void:
+	# V3 P1-04 验收原文：「无业务按钮使用 Godot 默认主题」。
+	# 这一页此前既没有 theme=，也没有任何 add_theme_stylebox_override，
+	# 而 project.godot 也没有 gui/theme/custom —— 所以按钮走的是引擎
+	# 默认灰色样式，和游戏其它地方长得完全不是一套。
+	theme = Theming.get_theme()
 	var bg := ColorRect.new()
 	bg.color = Color(0.05, 0.06, 0.08)
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
