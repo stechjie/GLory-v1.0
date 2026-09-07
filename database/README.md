@@ -63,6 +63,7 @@ Supabase Dashboard → SQL Editor，按编号顺序逐个执行。
 |---|---|
 | `001_players.sql` | 账号本体。`player_id` / 显示名 / 时间戳 |
 | `002_player_bio.sql` | 玩家自愿填写的展示资料。性别 / 生日月日 / 地区 |
+| `003_player_identities.sql` | 登录方式 → `player_id` 的映射。**不存任何凭证** |
 
 ## 一条硬规则
 
