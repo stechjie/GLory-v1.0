@@ -1,6 +1,9 @@
 class_name BattleSimShared
 extends RefCounted
 
+const BotBudget := preload("res://scripts/economy/BotEconomyBudget.gd")
+const ShopRoll := preload("res://scripts/economy/ShopRoll.gd")
+
 const DECAY_START_SEC := 10.0
 const DECAY_INTERVAL_SEC := 6.0
 const HARD_TIMEOUT_SEC := 180.0
@@ -368,31 +371,24 @@ const DUMMY_MERC_BUDGET_SHARE := 0.15    # fraction spent on sent mercenaries
 const DUMMY_MAX_MERCS := 3
 
 static func _dummy_total_gold(round_n: int) -> int:
-	# Cumulative gold the AI has earned by the start of round_n, mirroring the
-	# 3v3 income each round: +5 base, +10% interest, plus rough kill gold. The AI
-	# keeps a growing reserve and invests the rest, so interest ramps over time.
-	var gold := GameState.START_GOLD
-	var earned := gold
-	for r in range(2, round_n + 1):
-		var interest := int(floor(float(mini(gold, 50)) * EconomyService.BASE_INTEREST_RATE))
-		var kill_gold := 2 + r / 3
-		var income := 5 + interest + kill_gold
-		gold += income
-		earned += income
-		gold = mini(gold, mini(40, 4 * r))  # spend down to a round-scaled reserve
-	return earned
+	return BotBudget.cumulative_earned(round_n)
 
 static func _dummy_tier_for_round(round_n: int, rng: RandomNumberGenerator) -> int:
-	# Same shop tier odds a real player faces at this round (see PrepShared).
-	if round_n >= 15:
-		var x := rng.randf()
-		return 1 if x < 0.15 else (2 if x < 0.75 else 3)
-	if round_n >= 10:
-		var y := rng.randf()
-		return 1 if y < 0.25 else (2 if y < 0.85 else 3)
-	if round_n >= 5:
-		return 1 if rng.randf() < 0.50 else 2
-	return 1 if rng.randf() < 0.80 else 2
+	# 客户端、服务端和假想敌共用同一条档位曲线。
+	return ShopRoll.tier_for_roll(round_n, rng.randf())
+
+
+static func _dummy_star_buckets(copy_count: int) -> Dictionary:
+	# 与真人/服务端账本共用 GameConstants 的 1★→2★、2★→3★份数。
+	# 旧实现硬编码 3/9，实际规则已经是 2 个一星合二星、3 个二星合三星。
+	var copies := maxi(0, copy_count)
+	var copies_per_two := GameConstants.copies_to_upgrade(1)
+	var copies_per_three := copies_per_two * GameConstants.copies_to_upgrade(2)
+	var threes := copies / copies_per_three
+	var remainder := copies % copies_per_three
+	var twos := remainder / copies_per_two
+	var ones := remainder % copies_per_two
+	return {1: ones, 2: twos, 3: threes}
 
 static func build_dummy_board(rng: RandomNumberGenerator) -> Array:
 	var board: Array = []
@@ -438,20 +434,17 @@ static func build_dummy_board(rng: RandomNumberGenerator) -> Array:
 		budget -= cost
 		var id := str(u.get("id", ""))
 		counts[id] = int(counts.get(id, 0)) + 1
-	# Convert copies into starred units (3 copies -> 2★, 9 copies -> 3★).
+	# Convert copies with the canonical merge requirements.
 	var placed: Array = []
 	for id in counts:
 		var c := int(counts[id])
 		var u: Dictionary = by_id[id]
-		var threes := c / 9
-		var rem := c % 9
-		var twos := rem / 3
-		var ones := rem % 3
-		for _i in threes:
+		var buckets := _dummy_star_buckets(c)
+		for _i in int(buckets[3]):
 			placed.append({"u": u, "star": 3})
-		for _i in twos:
+		for _i in int(buckets[2]):
 			placed.append({"u": u, "star": 2})
-		for _i in ones:
+		for _i in int(buckets[1]):
 			placed.append({"u": u, "star": 1})
 	# 超过上限时保留最强的。C23a：同星级的次级键用单位 id ——
 	# 这个排序决定"超员时谁被丢掉"，平手时顺序不定就是阵容不定。
