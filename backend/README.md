@@ -232,5 +232,5 @@ Windows 上 `main.py` 会把 stdout/stderr 拧成 UTF-8 —— 默认的 cp1252 
 | 2. 接上 Supabase，验证三张表 | ✅ 实测通过（三张表 / RLS 全开 / policy 数 0） |
 | 3. `POST /v1/auth/anonymous` + `/refresh` | ✅ 实测通过（真实 Supabase） |
 | 4. JWT 验签 + `GET /v1/me` | ✅ 实测通过（真实令牌 + 四类反例） |
-| 5. Godot `AccountManager.gd` | ⬜ |
+| 5. Godot `AccountManager.gd` | ✅ 实测通过（两次启动，第二次走 refresh） |
 | 6. 完整门禁 | ⬜ |

@@ -40,6 +40,7 @@ func _ready() -> void:
 	_case_id_format()
 	_case_autoload_wired()
 	_case_disk_round_trip()
+	_case_reissue_is_explicit_and_persists()
 	_h.finish(get_tree())
 
 
@@ -177,3 +178,40 @@ func _case_disk_round_trip() -> void:
 	_h.expect(int((parsed as Dictionary).get("version", 0)) == SaveSchema.PROFILE_VERSION,
 		"disk_version_stale", "落盘的 profile 版本应为 %d，实得 %d" % [
 			SaveSchema.PROFILE_VERSION, int((parsed as Dictionary).get("version", 0))])
+
+
+# reissue_player_id() 是**唯一**允许改变已有 id 的入口，只在服务器回 409 时调用。
+# 它与本文件其余部分守的不变量方向相反，所以单独验：调了就必须真的换一个、
+# 而且必须落盘 —— 换了不落盘，下次启动又变回旧的，等于没换。
+#
+# 这个用例会动真实档案，所以结束前把原来的 id 还原回去（内存与磁盘一起），
+# 否则跑一次检查就把开发者的账号身份换掉了。
+func _case_reissue_is_explicit_and_persists() -> void:
+	var profile := get_node_or_null("/root/PlayerProfile")
+	if profile == null:
+		return  # 前面的用例已经记过失败
+	if not _h.expect(profile.has_method("reissue_player_id"),
+		"reissue_missing", "PlayerProfile 缺少 reissue_player_id()"):
+		return
+
+	var path := str(profile.get_script().get_script_constant_map().get("PROFILE_PATH", ""))
+	var original := str(profile.get("player_id"))
+
+	profile.call("reissue_player_id")
+	var reissued := str(profile.get("player_id"))
+	_h.expect(reissued != original, "reissue_did_nothing", "重新签发后 id 必须变化")
+	_h.expect(SaveSchema.is_valid_player_id(reissued),
+		"reissue_invalid", "重新签发出来的必须是合法 UUID：%s" % reissued)
+
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+	if _h.expect(parsed is Dictionary, "reissue_disk_unreadable", "重签后档案读不出来"):
+		_h.expect(str((parsed as Dictionary).get("player_id", "")) == reissued,
+			"reissue_not_persisted",
+			"重签后必须落盘 —— 没落盘的话下次启动又变回旧 id，等于没换")
+
+	# 还原：内存与磁盘一起改回去。
+	profile.set("player_id", original)
+	profile.call("save_profile")
+	var restored: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+	_h.expect(restored is Dictionary and str((restored as Dictionary).get("player_id", "")) == original,
+		"restore_failed", "用例结束后必须把原来的 player_id 还原回去")

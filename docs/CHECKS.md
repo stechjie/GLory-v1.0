@@ -32,6 +32,21 @@ Godot 不在 PATH 上，用 console 版才能把日志打到 stdout：
 | `tools/rate_limit_check.tscn` | RPC 限流服务的行为用例（D1 PR1，注入假时钟） |
 | `tools/client_log_check.tscn` | 客户端日志服务的行为用例（D1 PR3，注入临时文件路径） |
 | `tools/player_identity_check.tscn` | `player_id` 的签发与**不变性**（账号系统第 0 步，见 `docs/账号系统RFC.md`） |
+| `tools/account_check.tscn` | 账号凭证存储与门面接线。核心判据：**access token 永不落盘** |
+
+### 需要外部依赖的检查，不进核心清单
+
+`tools/account_live_check.tscn` 是**手动**验收：它要后端在跑、要真实的
+`backend/.env` 凭据，所以刻意不列进上面那张表。让门禁依赖某人本机的配置
+就是另一种假绿。
+
+```bash
+cd backend && .venv/Scripts/python -m uvicorn app.main:app --port 8099
+```
+
+它覆盖两次「启动」：第一次本地无凭证走 `/v1/auth/anonymous`，第二次有凭证走
+`/v1/auth/refresh` 且 `player_id` 必须不变。第二条最要命 —— 走错分支（重复注册）
+不报错，只会让玩家每次启动都变成新玩家，进度看起来就没了。
 
 ### 回放身份：两个 SHA，别混用（V2 收尾 G1，2026-09-03）
 

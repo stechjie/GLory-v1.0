@@ -109,10 +109,16 @@
 player_identities
 player_id                          provider    provider_user_id
 ---------------------------------------------------------------
-52c7027a-...                       local       ← 设备首次读档时签发
-52c7027a-...                       supabase    a91d3f...
+52c7027a-...                       supabase    a91d3f...   ← 匿名登录也走这行
 52c7027a-...                       google      109238...
 ```
+
+> **2026-09-08 修订：白名单里没有 `local`。** 上一版这里列了一行
+> `local ← 设备首次读档时签发`，那是"自建设备登录"的设想。定下用 Supabase
+> 匿名登录之后它不成立了，而且**不能**成立：匿名设备登录里 device_id 的地位
+> 等同于密码，把它明文存进 `provider_user_id` 就是把密码明文入库 ——
+> 一次泄库所有匿名账号全部沦陷，而且它还会出现在客户端日志与崩溃报告里。
+> 见 `database/003_player_identities.sql` 里同一处说明。
 
 ```
 players / player_wallet / player_units / player_inventory
@@ -123,13 +129,24 @@ player_mercenaries / player_treasures / player_rank / match_players
 **任何游戏表里都不允许出现 `supabase_user_id` / `google_user_id` / `steam_user_id`。**
 身份系统和游戏数据系统分开，这是整套设计里唯一不可逆的部分。
 
-### 本地档案就是第一个 provider
+### 本机签发的 `player_id` 直接成为账号的 `player_id`
 
-这一点值得单独说，因为它解决了一个通常很烦的问题：**先玩后注册的进度认领**。
+这解决了通常很烦的一个问题：**先玩后注册的进度认领**。
 
-设备上第一次读档时就签发 `player_id`（第七节，已实现）。玩家后来注册邮箱时，
-Supabase 的 Auth id 作为**第二行** `player_identities` 挂到同一个 `player_id` 上。
-玩家本地攒的进度不需要"迁移"，因为它从一开始就挂在正确的 id 上。
+设备第一次读档时就签发 `player_id`（第七节，已实现）。首次登录时客户端把它
+**报给** `/v1/auth/anonymous`，服务端直接拿它当 `players.player_id`。
+于是本地存档与服务器账号从第一天起就是同一个 id，不存在"两个 player_id"的歧义，
+也不需要任何"迁移"。
+
+实测确认过：`tools/account_live_check.tscn` 断言服务器返回的 `player_id`
+与 `PlayerProfile.player_id` 相等。
+
+它**不是身份凭证** —— 能不能登录完全由 Supabase 的 auth_uid 决定。
+如果那个 id 已被占用（同一份存档被复制到两台设备是现实的），服务端回 409，
+客户端调 `PlayerProfile.reissue_player_id()` 重签一个，而不是接管别人的账号。
+
+玩家之后要绑邮箱时，Supabase 的匿名用户可**原地升级**成正式账号且 auth uid 不变，
+所以 `player_identities` 连新增一行都不用，进度天然延续。
 
 ### `player_id` 不是什么
 
@@ -191,9 +208,9 @@ Supabase 的 Auth id 作为**第二行** `player_identities` 挂到同一个 `pl
 | `/database/NNN_*.sql` | 字段从 `SaveSchema` / `PlayerProfile` / `EconomyLedger` **反推**，不要凭空设计 |
 | FastAPI 骨架 | 结构、配置、health、JWT 验签中间件 |
 | 注册 / 登录 | Supabase Auth → `player_identities` 映射到第 0 步签发的 `player_id` |
-| `AccountManager.gd` | Godot 侧唯一出口，HTTPSRequest 打 ② |
+| ~~`AccountManager.gd`~~ | ✅ 已完成，见 `scripts/autoload/AccountManager.gd` |
 | 账号态 / 设备态拆分 | 见第五节 |
-| 本地进度认领 | 注册时把 `local` provider 那行接到新账号 |
+| ~~本地进度认领~~ | ✅ 已完成 —— 客户端报上 `player_id`，服务端直接采用 |
 
 这一整块做完就是一个完整可用的账号系统：能注册、能登录、能存云端资料、能换设备。
 **全程不碰 ENet。**
@@ -253,7 +270,7 @@ Supabase 的 Auth id 作为**第二行** `player_identities` 挂到同一个 `pl
 |---|---|
 | `SaveSchema` | `PROFILE_VERSION` 3 → 4；新增 `new_player_id()` / `is_valid_player_id()` / `_ensure_player_id()` |
 | `PlayerProfile` | 新增 `player_id` 字段；读档三条路径各自保证它存在；`save_profile()` 落盘；坏档先备份到 `user://profile.corrupt.json` |
-| `tools/player_identity_check.tscn` | 门禁，703 条断言 |
+| `tools/player_identity_check.tscn` | 门禁，709 条断言 |
 
 ### 不变量
 

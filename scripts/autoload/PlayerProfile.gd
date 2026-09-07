@@ -111,6 +111,25 @@ func load_profile() -> void:
 			or str(parsed.get("player_id", "")) != player_id:
 		save_profile()
 
+# **唯一允许改变已有 player_id 的入口，而且只有一个合法理由：**
+# 账号服务器回了 409，说这个 id 已经属于别人（见 AccountManager.login）。
+#
+# 除此之外任何地方调用它都是 bug —— 它会让玩家变成另一个人，且不报错。
+#
+# 什么时候真会发生：UUIDv4 撞号的概率约等于零，但**同一份 profile.json 被复制
+# 到两台设备**是现实的（手工备份、还原、拷贝存档目录）。那时第二台注册会撞上
+# 第一台的 id，重签是正确处理 —— 它就该是一个新玩家。
+#
+# 自动路径（load_profile / migrate_profile）**绝不调用这里**：那条路上
+# 「没有就签一次、已经有了就绝不再签」是硬不变量，由
+# tools/player_identity_check.tscn 钉着。这个函数是显式的、有人主动调的例外。
+func reissue_player_id() -> void:
+	var previous := player_id
+	player_id = SaveSchema.new_player_id()
+	save_profile()
+	push_warning("[PROFILE] player_id 已重新签发：%s -> %s" % [previous, player_id])
+
+
 # 全新档案与坏档共用的重置。原来这两段是逐字段抄的两份，加 player_id 时
 # 正好合并 —— 两份默认值各改各的迟早会漂。
 func _reset_to_defaults() -> void:

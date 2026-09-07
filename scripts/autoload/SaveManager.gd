@@ -5,6 +5,10 @@ const RECONNECT_PATH := "user://glory_reconnect.json"
 const PUBLIC_TOKEN_PATH := "user://glory_public_token.txt"
 # 教程断点（V2 P1-08）。与主存档分开，见下面 save_tutorial() 上的说明。
 const TUTORIAL_PATH := "user://glory_tutorial.json"
+# 账号凭证（refresh token）。**单独一个文件**，不进 profile.json ——
+# 那个文件里全是可以随便看的展示设置，凭证不该跟着它一起被读写、被截图、被贴出来。
+# 详见 save_account_credentials()。
+const ACCOUNT_PATH := "user://glory_account.json"
 const SAVE_DEBOUNCE_SEC := 0.5
 
 var _save_pending := false
@@ -128,6 +132,39 @@ func load_reconnect() -> Dictionary:
 func clear_reconnect() -> void:
 	# 凭证作废必须连 .bak/.tmp 一起清，否则下次启动会从兜底文件里把死 token 读回来。
 	_remove_all_variants(RECONNECT_PATH)
+
+# --- 账号凭证（refresh token）-------------------------------------------------
+#
+# 与断线重连凭证是两回事：那个是「这一局的座位」，一局一换；这个是「我是谁」，
+# 跨设备生命周期长期有效。
+#
+# **只存 refresh token，不存 access token。** access token 一小时就过期，
+# 存它没有收益，却多一处会泄漏的地方 —— AccountManager 只把它放在内存里。
+#
+# ⚠️ Supabase 默认**轮换** refresh token：每次刷新返回的那个和传进去的不同。
+# 必须存回新的，否则下次刷新失败、玩家被踢回匿名注册、进度看起来就没了。
+#
+# 复用同一套原子写（C21）。凭证写坏的后果和存档写坏一样严重：
+# 半截 JSON 读不出来 = 认不回自己的账号。
+func save_account_credentials(refresh_token: String, player_id: String) -> void:
+	_atomic_write(ACCOUNT_PATH, JSON.stringify({
+		"refresh_token": refresh_token,
+		# 只作缓存，方便离线时先把昵称显示出来。**身份以服务器返回的为准** ——
+		# 本地这份被改了也没用，服务器只认令牌解出来的 auth_uid。
+		"player_id": player_id,
+	}))
+
+func load_account_credentials() -> Dictionary:
+	var text := _read_with_fallback(ACCOUNT_PATH)
+	if text.is_empty():
+		return {}
+	var parsed = JSON.parse_string(text)
+	return parsed if typeof(parsed) == TYPE_DICTIONARY else {}
+
+func clear_account_credentials() -> void:
+	# 同 clear_reconnect：连 .bak/.tmp 一起清。留着兜底文件会让下次启动
+	# 拿一个已经被服务器吊销的 refresh token 去刷新，然后又失败一次。
+	_remove_all_variants(ACCOUNT_PATH)
 
 # --- 教程断点（V2 P1-08）------------------------------------------------------
 #
