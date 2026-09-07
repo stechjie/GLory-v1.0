@@ -21,6 +21,7 @@ from fastapi import FastAPI
 
 from app import db
 from app.config import get_settings
+from app.routes import auth as auth_routes
 from app.routes import debug as debug_routes
 
 # Windows 控制台默认是 cp1252，中文日志会被转义成 以... 甚至直接抛
@@ -29,6 +30,28 @@ from app.routes import debug as debug_routes
 for _stream in (sys.stdout, sys.stderr):
     if hasattr(_stream, "reconfigure"):
         _stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+
+def _configure_logging() -> None:
+    """给 glory.* 这组 logger 装上 handler。
+
+    uvicorn 只配置它自己的 logger，不碰别人的。不做这一步，应用自己的
+    `log.info()` 会被完全吞掉 —— 只有 WARNING 以上才会经 logging 的
+    lastResort 漏到 stderr。
+
+    这个坑很安静：代码里写满了 log.info，跑起来一条都看不到，而你以为记了。
+    实测踩过一次 —— 登录成功那条日志始终不出现，一度以为是没执行到。
+    """
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter("%(levelname)s:     [%(name)s] %(message)s"))
+    glory_log = logging.getLogger("glory")
+    glory_log.handlers.clear()
+    glory_log.addHandler(handler)
+    glory_log.setLevel(logging.INFO)
+    # 不往上冒泡，免得 uvicorn 的 root handler 再打一遍。
+    glory_log.propagate = False
+
+
+_configure_logging()
 
 log = logging.getLogger("glory.backend")
 
@@ -58,6 +81,8 @@ app = FastAPI(
     redoc_url=None,
     lifespan=lifespan,
 )
+
+app.include_router(auth_routes.router)
 
 # 自检接口只在开发环境挂载。生产上它会把表结构和 RLS 状态说得太清楚，
 # 而且没有任何生产用途 —— 少一个入口就少一个面。

@@ -103,6 +103,46 @@ pooler（端口 6543）—— 那是 pgbouncer transaction 模式，与 asyncpg 
 语句缓存冲突，症状是随机的 `prepared statement ... does not exist`，很难查。
 `db.py` 检测到 6543 会自动关掉语句缓存兜底，但选对那条更省事。
 
+## 登录接口
+
+| 接口 | 什么时候调 |
+|---|---|
+| `POST /v1/auth/anonymous` | 客户端**手上没有** refresh token 时（第一次装、或清了数据） |
+| `POST /v1/auth/refresh` | 之后每次启动 |
+
+```
+有 refresh token -> /refresh；失败(401)或没有 -> /anonymous
+```
+
+⚠️ **`/anonymous` 天然不幂等** —— 每次调用都在 Supabase 建一个新的匿名用户，
+也就多一个玩家。客户端拿到 refresh token 后必须走 `/refresh`，
+否则每次启动都会多一个账号。
+
+⚠️ **Supabase 默认轮换 refresh token** —— `/refresh` 返回的那个和传入的不同。
+客户端必须存回返回的那个，否则下次刷新失败。
+
+请求可以带上客户端签发的 `player_id`（`SaveSchema.new_player_id`）。带了的好处是
+本地存档与服务器账号从第一天起就是同一个 id，不会出现「两个 player_id」的歧义。
+它**不是**身份凭证 —— 能不能登录完全由 Supabase 的 auth_uid 决定；
+如果那个 id 已被占用，返回 409 让客户端重签，而不是接管别人的账号。
+
+`players` 与 `player_identities` 在**同一个事务**里创建。半执行的后果很具体：
+只建了 players 没建映射，玩家下次登录就解析不到自己 —— 账号等于丢了，
+而那行还占着。外键挡不住这个方向，只能靠事务。
+
+## 日志
+
+`main.py` 里的 `_configure_logging()` 给 `glory.*` 装 handler。**不做这一步，
+应用自己的 `log.info()` 会被完全吞掉** —— uvicorn 只配置它自己的 logger，
+只有 WARNING 以上才会经 logging 的 lastResort 漏到 stderr。
+
+这个坑很安静：代码里写满 log.info，跑起来一条都看不到，而你以为记了。
+实测踩过 —— 登录成功那条始终不出现，一度以为是没执行到。
+
+登录日志**只记 `player_id`，不记任何 token**。实测审计过：
+一次完整登录+刷新的日志里，`eyJ`（JWT 前缀）、`Bearer`、`sb_secret`、
+`postgresql://` 全部零命中。
+
 ## 测试
 
 ```bash
@@ -124,14 +164,18 @@ backend/
   requirements.txt  锁定版本，pip freeze 生成
   pytest.ini        测试配置
   app/
-    config.py       环境变量读取。代码里不写任何密钥
-    db.py           asyncpg 连接池 + 表结构自检
-    main.py         FastAPI 入口 + /health
+    config.py         环境变量读取。代码里不写任何密钥
+    db.py             asyncpg 连接池 + 表结构自检
+    supabase_auth.py  **全后端唯一知道 Supabase 存在的文件**。换 Auth 只改这里
+    players.py        players / player_identities 的读写（含事务）
+    main.py           FastAPI 入口 + /health + 日志配置
     routes/
-      debug.py      /v1/debug/schema（仅 dev）
+      auth.py         /v1/auth/anonymous + /refresh
+      debug.py        /v1/debug/schema（仅 dev）
   tests/
     test_health.py        /health 不泄漏密钥
     test_debug_schema.py  未配置时干净拒绝 + 迁移文件与检查清单一致
+    test_auth.py          错误信息不带 token + 匿名登录没开时的提示
 ```
 
 ## 环境
@@ -147,7 +191,7 @@ Windows 上 `main.py` 会把 stdout/stderr 拧成 UTF-8 —— 默认的 cp1252 
 |---|---|
 | 1. 骨架 + 配置 + `/health` | ✅ |
 | 2. 接上 Supabase，验证三张表 | ✅ 实测通过（三张表 / RLS 全开 / policy 数 0） |
-| 3. `POST /v1/auth/anonymous` | ⬜ |
+| 3. `POST /v1/auth/anonymous` + `/refresh` | ✅ 实测通过（真实 Supabase） |
 | 4. JWT 验签 + `GET /v1/me` | ⬜ |
 | 5. Godot `AccountManager.gd` | ⬜ |
 | 6. 完整门禁 | ⬜ |
