@@ -143,6 +143,9 @@ func _on_team_round_start() -> void:
 func _process(delta: float) -> void:
 	_overlay.update_release_state()
 	if GameState.tutorial_mode:
+		# A detail popup is a deliberate reading task. Pause the unrelated tutorial
+		# chrome while it is topmost, then restore from the same semantic target.
+		TutorialMode.set_overlay_suppressed(_overlay.is_showing())
 		TutorialMode.update_overlay()
 	if _fps_label != null:
 		_fps_accum += delta

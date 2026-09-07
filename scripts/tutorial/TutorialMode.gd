@@ -88,6 +88,11 @@ const BUBBLE_EDGE_MARGIN := 18.0
 const TARGET_OVERLAP_WEIGHT := 8.0
 # 候选顺序的固定代价，只用来在完全同分时保住首选方向，不足以压过任何真实遮挡。
 const CANDIDATE_ORDER_PENALTY := 1.0
+# Once a bubble is valid for the same semantic target, small layout noise must not
+# make it jump to another candidate. These are the same 90% visibility limits used
+# by tutorial_overlay_layout_check.
+const MAX_STICKY_OVERLAP_RATIO := 0.10
+const LAYOUT_GEOMETRY_EPS := 2.0
 
 var active := false
 var step: int = Step.BUY_3
@@ -123,6 +128,17 @@ var _progress_bar: ProgressBar
 var _continue_btn: Button
 var _hotspot: Button
 var _skip_btn: Button
+var _overlay_suppressed := false
+var _layout_signature := ""
+var _layout_context := ""
+var _last_bubble_position := Vector2.ZERO
+var _last_candidate_index := -1
+var _layout_recompute_count := 0
+var _last_layout_reason := "not_laid_out"
+var _last_content_key := ""
+var _last_target_rect := Rect2()
+var _last_safe_rect := Rect2()
+var _last_keep_clear_rects: Array[Rect2] = []
 # 跳过确认框不再由本文件持有节点：见 _show_skip_confirm()。
 
 const START_SHOP := ["human_militia", "human_archer", "human_merchant", "human_swordsman"]
@@ -333,21 +349,69 @@ func current_text() -> String:
 func update_overlay() -> void:
 	if not active or _target_provider == null or _overlay == null:
 		return
+	if _overlay_suppressed:
+		_overlay.visible = false
+		return
+	_overlay.visible = true
 	var target := _target_control()
 	var rect := Rect2(Vector2(540, 290), Vector2(200, 80))
 	if target is Control and target.is_inside_tree():
 		rect = (target as Control).get_global_rect()
 	var dir := _arrow_dir()
-	_apply_arrow(rect, dir)
-	# 先填内容再定位：气泡高度随文案和进度条变化，定位要用刷新后的尺寸。
-	_text.text = current_text()
+	var next_text := current_text()
+	if _text.text != next_text:
+		_text.text = next_text
 	_update_progress()
+	var safe := _safe_rect()
+	var keep_clear := _keep_clear_rects()
+	var content_key := _overlay_content_key(target, next_text, dir)
+	if not _layout_signature.is_empty() and _layout_inputs_equivalent(
+			content_key, rect, safe, keep_clear):
+		return
+	var signature := _overlay_layout_signature(target, rect, next_text, dir)
+	var previous_signature := _layout_signature
+	_layout_signature = signature
+	_last_content_key = content_key
+	_last_target_rect = rect
+	_last_safe_rect = safe
+	_last_keep_clear_rects = keep_clear.duplicate()
+	_layout_recompute_count += 1
+	_last_layout_reason = "initial" if previous_signature.is_empty() else "inputs_changed"
+	_apply_arrow(rect, dir)
+	# Measure the combined minimum after content changed. Reading size immediately
+	# after reset_size() used to alternate between stale and settled container sizes.
 	_fit_bubble()
-	_bubble.position = _bubble_position(rect, dir)
+	var target_id := target.get_instance_id() if target != null and is_instance_valid(target) else 0
+	var context := "%d|%d" % [step, target_id]
+	_bubble.position = _bubble_position(rect, dir, context)
 	_continue_btn.visible = false
 	_bubble.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_position_hotspot(rect)
 	_position_chrome()
+
+
+func set_overlay_suppressed(suppressed: bool) -> void:
+	if _overlay_suppressed == suppressed:
+		return
+	_overlay_suppressed = suppressed
+	_layout_signature = ""
+	if _overlay != null and is_instance_valid(_overlay):
+		_overlay.visible = not suppressed
+	if not suppressed:
+		update_overlay()
+
+
+func layout_debug_snapshot() -> Dictionary:
+	return {
+		"step": step_key(),
+		"signature": _layout_signature,
+		"context": _layout_context,
+		"bubble_rect": _bubble.get_global_rect() if _bubble != null and is_instance_valid(_bubble) else Rect2(),
+		"candidate_index": _last_candidate_index,
+		"recompute_count": _layout_recompute_count,
+		"reason": _last_layout_reason,
+		"suppressed": _overlay_suppressed,
+	}
 
 func total_steps() -> int:
 	return STEP_SEQUENCE.size()
@@ -867,8 +931,65 @@ func _fill_shop_purchasable_count() -> int:
 func _fit_bubble() -> void:
 	if _bubble == null or not is_instance_valid(_bubble):
 		return
-	_bubble.reset_size()
-	_bubble.size = Vector2(BUBBLE_WIDTH, clampf(_bubble.size.y, BUBBLE_MIN_HEIGHT, BUBBLE_MAX_HEIGHT))
+	_bubble.custom_minimum_size = Vector2(BUBBLE_WIDTH, 0.0)
+	var measured := _bubble.get_combined_minimum_size()
+	var height := clampf(measured.y, BUBBLE_MIN_HEIGHT, BUBBLE_MAX_HEIGHT)
+	_bubble.custom_minimum_size = Vector2(BUBBLE_WIDTH, height)
+	_bubble.size = Vector2(BUBBLE_WIDTH, height)
+
+
+func _rect_signature(rect: Rect2) -> String:
+	return "%d,%d,%d,%d" % [
+		roundi(rect.position.x), roundi(rect.position.y),
+		roundi(rect.size.x), roundi(rect.size.y)]
+
+
+func _overlay_layout_signature(target: Control, target_rect: Rect2, text: String, dir: int) -> String:
+	var parts: Array[String] = [
+		str(step),
+		str(target.get_instance_id() if target != null and is_instance_valid(target) else 0),
+		_rect_signature(target_rect),
+		_rect_signature(_safe_rect()),
+		str(dir),
+		text,
+		progress_text(),
+		step_display_name(),
+	]
+	for blocked in _keep_clear_rects():
+		parts.append(_rect_signature(blocked))
+	return "|".join(parts)
+
+
+func _overlay_content_key(target: Control, text: String, dir: int) -> String:
+	return "%d|%d|%d|%s|%s|%s" % [
+		step,
+		target.get_instance_id() if target != null and is_instance_valid(target) else 0,
+		dir,
+		text,
+		progress_text(),
+		step_display_name(),
+	]
+
+
+func _layout_inputs_equivalent(content_key: String, target_rect: Rect2,
+		safe: Rect2, keep_clear: Array[Rect2]) -> bool:
+	if content_key != _last_content_key:
+		return false
+	if not _rect_near(target_rect, _last_target_rect) or not _rect_near(safe, _last_safe_rect):
+		return false
+	if keep_clear.size() != _last_keep_clear_rects.size():
+		return false
+	for i in keep_clear.size():
+		if not _rect_near(keep_clear[i], _last_keep_clear_rects[i]):
+			return false
+	return true
+
+
+func _rect_near(a: Rect2, b: Rect2) -> bool:
+	return absf(a.position.x - b.position.x) <= LAYOUT_GEOMETRY_EPS \
+		and absf(a.position.y - b.position.y) <= LAYOUT_GEOMETRY_EPS \
+		and absf(a.size.x - b.size.x) <= LAYOUT_GEOMETRY_EPS \
+		and absf(a.size.y - b.size.y) <= LAYOUT_GEOMETRY_EPS
 
 # 屏幕安全区（刘海、圆角、手势条），换算到 overlay 局部坐标并收掉边距。
 #
@@ -961,7 +1082,7 @@ func _bubble_candidates(target_rect: Rect2, size: Vector2, dir: int) -> Array[Ve
 # V2 P1-09：气泡按「目标矩形 + 安全区 + 当前面板禁区」动态选位，
 # 不再是按步骤写死一个方向再硬 clamp —— 那种做法在 20:9 和 2640×1216 下
 # 会把气泡直接压在目标上，验收要求的「目标可见面积 ≥90%」达不到。
-func _bubble_position(target_rect: Rect2, dir: int) -> Vector2:
+func _bubble_position(target_rect: Rect2, dir: int, context: String = "") -> Vector2:
 	# 用气泡的**实际**尺寸夹边，不能用 BUBBLE_WIDTH：PanelContainer 的边框会让
 	# 实测宽度比常量大几像素，按常量夹就会有一条窄边露在安全区之外。
 	var bubble_size := Vector2(
@@ -969,9 +1090,14 @@ func _bubble_position(target_rect: Rect2, dir: int) -> Vector2:
 		maxf(_bubble.size.y, BUBBLE_MIN_HEIGHT))
 	var safe := _safe_rect()
 	var keep_clear := _keep_clear_rects()
+	if context == _layout_context and _sticky_position_is_valid(
+			_last_bubble_position, bubble_size, safe, target_rect, keep_clear):
+		_last_layout_reason = "sticky_valid"
+		return _last_bubble_position
 	var candidates := _bubble_candidates(target_rect, bubble_size, dir)
 	var best := _clamp_into(candidates[0], bubble_size, safe)
 	var best_score := INF
+	var best_index := 0
 	for i in candidates.size():
 		var pos := _clamp_into(candidates[i], bubble_size, safe)
 		var rect := Rect2(pos, bubble_size)
@@ -984,7 +1110,26 @@ func _bubble_position(target_rect: Rect2, dir: int) -> Vector2:
 		if score < best_score:
 			best_score = score
 			best = pos
+			best_index = i
+	_layout_context = context
+	_last_bubble_position = best
+	_last_candidate_index = best_index
 	return best
+
+
+func _sticky_position_is_valid(pos: Vector2, size: Vector2, safe: Rect2,
+		target_rect: Rect2, keep_clear: Array[Rect2]) -> bool:
+	var bubble_rect := Rect2(pos, size)
+	if not safe.encloses(bubble_rect):
+		return false
+	var target_area := maxf(1.0, target_rect.size.x * target_rect.size.y)
+	if _overlap_area(bubble_rect, target_rect) / target_area > MAX_STICKY_OVERLAP_RATIO:
+		return false
+	for blocked in keep_clear:
+		var blocked_area := maxf(1.0, blocked.size.x * blocked.size.y)
+		if _overlap_area(bubble_rect, blocked) / blocked_area > MAX_STICKY_OVERLAP_RATIO:
+			return false
+	return true
 
 func _target_control() -> Control:
 	if _target_provider == null:
@@ -1151,16 +1296,25 @@ func _ensure_overlay() -> void:
 	_skip_btn.pressed.connect(_on_skip_pressed)
 	_overlay.add_child(_skip_btn)
 
-	var tween := _arrow.create_tween()
-	tween.set_loops()
-	tween.tween_property(_arrow, "modulate:a", 0.35, 0.45)
-	tween.tween_property(_arrow, "modulate:a", 1.0, 0.45)
+	if not PlayerProfile.reduced_motion_enabled:
+		var tween := _arrow.create_tween()
+		tween.set_loops()
+		tween.tween_property(_arrow, "modulate:a", 0.35, 0.45)
+		tween.tween_property(_arrow, "modulate:a", 1.0, 0.45)
 
 func _detach() -> void:
 	if _overlay != null and is_instance_valid(_overlay):
 		_overlay.queue_free()
 	_overlay = null
 	_target_provider = null
+	_overlay_suppressed = false
+	_layout_signature = ""
+	_layout_context = ""
+	_last_candidate_index = -1
+	_last_content_key = ""
+	_last_target_rect = Rect2()
+	_last_safe_rect = Rect2()
+	_last_keep_clear_rects.clear()
 
 func tutorial_shop_ids() -> Array:
 	# 刷新商店时按当前步铺货：升星步铺满要凑的同名棋子。
