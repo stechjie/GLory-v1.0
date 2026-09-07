@@ -35,6 +35,13 @@ class Settings(BaseSettings):
 
     environment: str = "dev"
 
+    # 限流额度。默认对**账号创建**收得很紧 —— 一个正常玩家一辈子只需要注册一次，
+    # 频繁注册只会是脚本或误接线（例如客户端把 refresh 走成了 anonymous）。
+    # 刷新宽松得多：那是每次启动、以及令牌过期时的正常动作。
+    # 本机调试要连开多个账号时把 anonymous 那个调大即可。
+    rate_limit_anonymous_per_hour: int = 10
+    rate_limit_refresh_per_hour: int = 120
+
     @property
     def is_dev(self) -> bool:
         return self.environment != "prod"

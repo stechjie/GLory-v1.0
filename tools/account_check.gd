@@ -33,6 +33,7 @@ func _ready() -> void:
 	_case_clear_removes_fallback_copies()
 	_case_backend_url_shape()
 	_case_manager_wiring()
+	_case_auto_login_defaults_off()
 	_restore_existing()
 	_h.finish(get_tree())
 
@@ -127,3 +128,36 @@ func _case_manager_wiring() -> void:
 	for method in ["login", "logout", "is_logged_in", "access_token"]:
 		_h.expect(mgr.has_method(method),
 			"facade_method_missing", "AccountManager 缺少门面方法：%s" % method)
+
+
+# 自动登录默认必须是关的。
+#
+# 翻成 true 的前提是后端已经部署、DEFAULT_BACKEND_URL 指向它（C15）。
+# 在那之前打开的后果很具体：任何没起后端的人每次启动都看到一次登录失败；
+# 真出了包，每个玩家白建一个 Supabase 账号并占掉 MAU 额度。
+#
+# 同 ServerFlags 对 P1 经济账本的做法：功能先接上、开关先关着。
+func _case_auto_login_defaults_off() -> void:
+	# 直接访问常量。**不要**写成 AccountConfig.get_script_constant_map()：
+	# 那是非静态方法，在类上直接调是**解析错误** —— 而解析错误会让整个检查场景
+	# 根本跑不起来（既不 PASS 也不 FAIL，只是没有输出），比断言失败难查得多。
+	_h.expect(not AccountConfig.AUTO_LOGIN_DEFAULT,
+		"auto_login_on_by_default",
+		"启动时自动登录必须默认关闭 —— 后端还没部署，打开等于给每个人制造一次失败")
+
+	# 没有任何命令行开关时（门禁就是这个情形），结果必须跟默认值一致。
+	_h.expect(AccountConfig.auto_login_enabled() == AccountConfig.AUTO_LOGIN_DEFAULT,
+		"auto_login_flag_drift", "无命令行开关时 auto_login_enabled() 必须等于默认值")
+
+	# Bootstrap 侧的挂载点还在。放在 Bootstrap 而不是 autoload 的 _ready，
+	# 正是为了让 tools/ 下的检查场景不去建真实账号 —— 这条一旦被人挪回
+	# autoload，整个门禁套件都会开始注册账号。
+	var boot := load("res://scenes/bootstrap/Bootstrap.gd")
+	if not _h.expect(boot != null, "bootstrap_unloadable", "Bootstrap.gd 载入失败"):
+		return
+	var method_names: Array = []
+	for m in boot.get_script_method_list():
+		method_names.append(str(m.get("name", "")))
+	_h.expect("_kick_off_account_login" in method_names,
+		"bootstrap_hook_missing",
+		"Bootstrap 应保留 _kick_off_account_login —— 登录不能挪回 autoload 的 _ready")

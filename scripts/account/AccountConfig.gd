@@ -22,6 +22,32 @@ const DEFAULT_BACKEND_URL := "http://127.0.0.1:8099"
 # 命令行覆盖，方便在不改代码的前提下切环境（同 DeviceHarness 的 --device-baseline）。
 const BACKEND_URL_FLAG := "--backend-url="
 
+# --- 启动时自动登录 -----------------------------------------------------------
+#
+# **默认关闭。** 同 ServerFlags 对 P1 经济账本的做法：功能先接上、开关先关着。
+#
+# 现在打开是错的，两条具体理由：
+#   1. 后端只在开发机的 localhost 上跑。默认打开的话，任何没起后端的人
+#      （你同事、CI、拿到包的测试）每次启动都会看到一次登录失败。
+#   2. 账号目前**不承载任何东西** —— 没有云端资料、没有账号 UI。
+#      真出包的话，每个玩家会白建一个 Supabase 账号，一点用都没有，
+#      还要占 MAU 额度。
+#
+# 翻成 true 的前提：后端已经部署，且 DEFAULT_BACKEND_URL 指向它（联机审计的
+# C15 部署那一步）。在那之前用 --account 单次打开来联调。
+const AUTO_LOGIN_DEFAULT := false
+const AUTO_LOGIN_ON_FLAG := "--account"
+const AUTO_LOGIN_OFF_FLAG := "--no-account"
+
+static func auto_login_enabled() -> bool:
+	var args := OS.get_cmdline_args()
+	# 关的优先：显式说了不要，就绝不要。
+	if AUTO_LOGIN_OFF_FLAG in args:
+		return false
+	if AUTO_LOGIN_ON_FLAG in args:
+		return true
+	return AUTO_LOGIN_DEFAULT
+
 # 单次请求超时。比战斗链路宽松 —— 这些请求发生在启动阶段，
 # 宁可多等两秒也不要在弱网上把玩家直接判成登录失败。
 const REQUEST_TIMEOUT_SEC := 15.0

@@ -13,16 +13,43 @@ from __future__ import annotations
 import logging
 import uuid
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app import db, players
 from app.config import get_settings
+from app.rate_limit import RateLimited, SlidingWindowLimiter
 from app.supabase_auth import AuthError, Session, SupabaseAuth
 
 log = logging.getLogger("glory.auth")
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
+
+# 进程内共用。限流状态是内存里的，每请求新建一个等于没限流。
+_settings = get_settings()
+_anonymous_limiter = SlidingWindowLimiter(_settings.rate_limit_anonymous_per_hour, 3600.0)
+_refresh_limiter = SlidingWindowLimiter(_settings.rate_limit_refresh_per_hour, 3600.0)
+
+
+def _client_ip(request: Request) -> str:
+    """限流用的来源标识。
+
+    **刻意只认直连对端，不读 X-Forwarded-For。** 那个头是客户端可以随便写的，
+    盲信它等于限流白做 —— 换个头就绕过去了。部署到反向代理后面时要显式配置
+    可信代理再启用，那是 C15 那一步的事（见 app/rate_limit.py 顶部说明）。
+    """
+    return request.client.host if request.client else "unknown"
+
+
+def _enforce(limiter: SlidingWindowLimiter, request: Request) -> None:
+    try:
+        limiter.check(_client_ip(request))
+    except RateLimited as exc:
+        raise HTTPException(
+            status_code=429,
+            detail=str(exc),
+            headers={"Retry-After": str(exc.retry_after)},
+        ) from None
 
 
 class AnonymousRequest(BaseModel):
@@ -96,12 +123,15 @@ async def _respond(session: Session, proposed: uuid.UUID | None) -> SessionRespo
 
 
 @router.post("/anonymous", response_model=SessionResponse)
-async def anonymous(body: AnonymousRequest) -> SessionResponse:
+async def anonymous(body: AnonymousRequest, request: Request) -> SessionResponse:
     """开一个新的匿名账号。
 
     ⚠️ 每次调用都会新建一个玩家。客户端手上有 refresh token 时必须走
     /refresh，否则每次启动都会多一个账号。
+
+    限流最紧的就是这个端点：它是唯一会**凭空造出数据**的公开接口。
     """
+    _enforce(_anonymous_limiter, request)
     _require_db()
     client = _auth_client()
     try:
@@ -113,12 +143,13 @@ async def anonymous(body: AnonymousRequest) -> SessionResponse:
 
 
 @router.post("/refresh", response_model=SessionResponse)
-async def refresh(body: RefreshRequest) -> SessionResponse:
+async def refresh(body: RefreshRequest, request: Request) -> SessionResponse:
     """用 refresh token 换新会话。
 
     Supabase 默认轮换 refresh token，返回的那个可能和传入的不同 ——
     **客户端必须存回返回的那个**，否则下次刷新会失败。
     """
+    _enforce(_refresh_limiter, request)
     _require_db()
     client = _auth_client()
     try:

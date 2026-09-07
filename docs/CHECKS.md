@@ -34,6 +34,19 @@ Godot 不在 PATH 上，用 console 版才能把日志打到 stdout：
 | `tools/player_identity_check.tscn` | `player_id` 的签发与**不变性**（账号系统第 0 步，见 `docs/账号系统RFC.md`） |
 | `tools/account_check.tscn` | 账号凭证存储与门面接线。核心判据：**access token 永不落盘** |
 
+### 检查脚本自己写坏时会怎样（2026-09-08 实测）
+
+**GDScript 解析错误会让 Godot 永远挂住** —— 不退出、不输出 `CHECK_RESULT`，
+只在 stderr 打一行 `SCRIPT ERROR: Parse Error`。既不是 PASS 也不是 FAIL，是**没有结果**。
+
+`tools/run_check.ps1` 已经覆盖这种情况（600 秒超时 → `verdict = timeout`、
+`passed = $false`），所以走它跑不会假绿。**但手动直接调 Godot 时要自己带超时**，
+否则就是干等。
+
+一个具体的踩法：`AccountConfig.get_script_constant_map()` —— 那是非静态方法，
+在类上直接调是解析错误。要读 preload 进来的脚本常量，直接
+`AccountConfig.SOME_CONST` 就行。
+
 ### 需要外部依赖的检查，不进核心清单
 
 `tools/account_live_check.tscn` 是**手动**验收：它要后端在跑、要真实的

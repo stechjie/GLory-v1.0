@@ -7,6 +7,7 @@ signal main_scene_ready(path: String)
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
+const AccountConfig := preload("res://scripts/account/AccountConfig.gd")
 
 const DEFAULT_MAIN_SCENE := "res://scenes/main/Main.tscn"
 const ERROR_MAIN_LOAD := "BOOT-MAIN-LOAD"
@@ -148,6 +149,26 @@ func _after_first_frame() -> void:
 	StartupTrace.mark("bootstrap_first_frame", {"scene": "bootstrap"})
 	if auto_start:
 		start_loading()
+	_kick_off_account_login()
+
+
+# 账号登录：**发出去就不管，Bootstrap 绝不等它。**
+#
+# 挂在这里而不是 AccountManager._ready()，有两个理由：
+#   1. autoload 的 _ready 在第一帧之前跑，会和启动关键路径抢时间；
+#   2. 更要紧的是 tools/ 下那一堆检查场景**不经过 Bootstrap** ——
+#      放在 autoload 里的话，每跑一次门禁都会去建一个真实账号。
+#
+# 不 await 是刻意的：现在没有任何东西依赖账号，让它阻塞启动只会把一次网络抖动
+# 变成一次"打不开游戏"，而这个场景整套看门狗设计（P0-10）正是为了避免那件事。
+#
+# 默认关闭，见 AccountConfig.AUTO_LOGIN_DEFAULT 上的说明。
+func _kick_off_account_login() -> void:
+	if not AccountConfig.auto_login_enabled():
+		return
+	if AccountManager.is_logged_in():
+		return
+	AccountManager.login()
 
 
 func _finish_loading() -> void:
