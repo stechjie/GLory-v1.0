@@ -4,6 +4,7 @@ extends Control
 # 都低于 TOUCH_MIN=48 —— 而 P1-04 第 1 条要的正是移动端最小触控尺寸。
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
+const ActionButtonScene := preload("res://ui/components/GloryActionButton.tscn")
 
 signal back_requested
 signal replay_tutorial_requested
@@ -177,7 +178,7 @@ func _build() -> void:
 	var sep2 := HSeparator.new()
 	panel.add_child(sep2)
 
-	var replay_btn := Button.new()
+	var replay_btn := ActionButtonScene.instantiate() as Button
 	replay_btn.text = tr("settings_replay_tutorial")
 	replay_btn.custom_minimum_size = Vector2(280, Tokens.TOUCH_MIN)
 	replay_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
