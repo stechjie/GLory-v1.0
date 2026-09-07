@@ -62,6 +62,7 @@ func _ready() -> void:
 	_check_vibrate_permission()
 	await _check_toast()
 	await _check_reject()
+	_check_gold_rejections_speak()
 	_h.finish(get_tree())
 
 
@@ -378,6 +379,48 @@ func _check_reject() -> void:
 	Toast.dismiss()
 	host.queue_free()
 	await get_tree().process_frame
+
+
+# 买不起必须有话说。
+#
+# 这是本轮排查里最刺眼的一处不一致：同一个「金币不够」，走商店面板会提示
+# （ShopPanel 发 ui_not_enough_gold），走拖拽购买 / 雇佣佣兵 / 刷新商店则
+# 一声不吭 —— 而且静默 return 的**上面两行**就是会提示的 toast_unique_limit
+# 和 toast_board_full。玩家看到的是「拖过去，弹回来，没有任何解释」。
+#
+# 写成穷举规则而不是逐点断言：下一个人再加一处 `gold < cost: return`
+# 时要当场红，而不是等下一次复审再发现。
+func _check_gold_rejections_speak() -> void:
+	var src := _code_only(FileAccess.get_file_as_string(
+		"res://scenes/prep/PrepBoardController.gd"))
+	var lines := src.split("
+")
+	var silent: Array[String] = []
+	var total := 0
+	for i in lines.size():
+		var line := str(lines[i])
+		if not line.strip_edges().begins_with("if GameState.gold <"):
+			continue
+		total += 1
+		# 往下看，直到缩进回到 if 这一层为止。
+		var indent := line.length() - line.lstrip("	").length()
+		var speaks := false
+		for j in range(i + 1, mini(i + 8, lines.size())):
+			var body := str(lines[j])
+			if body.strip_edges().is_empty():
+				continue
+			var body_indent := body.length() - body.lstrip("	").length()
+			if body_indent <= indent:
+				break
+			if body.contains("show_message(") or body.contains("reject("):
+				speaks = true
+				break
+		if not speaks:
+			silent.append("第 %d 行" % (i + 1))
+	_h.expect(total > 0, "gold_guard_not_found",
+		"PrepBoardController 里一处 `if GameState.gold <` 都没找到 —— 断言可能已失效")
+	_h.expect(silent.is_empty(), "gold_rejection_is_silent",
+		"金币不足时一声不吭的分支：%s（共 %d 处金币判断）" % [str(silent), total])
 
 
 # --- 工具 -------------------------------------------------------------------

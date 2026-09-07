@@ -142,6 +142,7 @@ func _hire_mercenary_to_slot(index: int, mercenary_index: int) -> void:
 	var m: Dictionary = mercs[index]
 	var cost := int(m.get("cost", 0))
 	if GameState.gold < cost:
+		show_message(tr("ui_not_enough_gold"))
 		return
 	GameState.gold -= cost
 	var def := m.duplicate(true)
@@ -206,12 +207,14 @@ func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
 			show_message(tr("toast_board_full") % GameState.normal_unit_cap())
 			return
 		if GameState.gold < cost:
+			show_message(tr("ui_not_enough_gold"))
 			return
 		GameState.gold -= cost
 		GameState.board_slots[board_index] = incoming
 		GameState.shop_sold[shop_index] = true
 	elif PrepRules.can_merge_cells(target, incoming):
 		if GameState.gold < cost:
+			show_message(tr("ui_not_enough_gold"))
 			return
 		if not _merge_copies_into_cell(target, incoming, [board_index], []):
 			return
@@ -237,12 +240,14 @@ func _buy_or_merge_shop_to_bench(shop_index: int, bench_index: int) -> void:
 	var incoming := {"id": offer.id, "star": 1, "def": offer.duplicate(true)}
 	if target == null:
 		if GameState.gold < cost:
+			show_message(tr("ui_not_enough_gold"))
 			return
 		GameState.gold -= cost
 		GameState.bench_slots[bench_index] = incoming
 		GameState.shop_sold[shop_index] = true
 	elif PrepRules.can_merge_cells(target, incoming):
 		if GameState.gold < cost:
+			show_message(tr("ui_not_enough_gold"))
 			return
 		if not _merge_copies_into_cell(target, incoming, [], [bench_index]):
 			return
@@ -579,6 +584,7 @@ func _on_refresh_shop() -> void:
 	var all_free := TreasureService.has_set("money")
 	var cost := EconomyService.shop_refresh_cost(GameState.shop_refresh_uses_this_round, all_free)
 	if GameState.gold < cost:
+		show_message(tr("ui_not_enough_gold"))
 		return
 	GameState.gold -= cost
 	GameState.shop_refresh_uses_this_round += 1
