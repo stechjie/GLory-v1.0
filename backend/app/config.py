@@ -25,6 +25,14 @@ class Settings(BaseSettings):
     # ⛔ 服务端专用，绕过 RLS。绝不进 Godot / APK / git。
     supabase_secret_key: str = ""
 
+    # PostgreSQL 连接串（含数据库密码）。⛔ 与 secret key 同级，绝不外泄。
+    #
+    # 直连 Postgres 而不是走 Supabase 的 PostgREST：账号层以后要做钱包与充值，
+    # 那些是「要么全做、要么不做」的多语句事务，PostgREST 给不了。
+    # 直连也让迁移只需要换这一条串。Auth 仍然走 Supabase 的 REST 接口 ——
+    # 这正是 RFC 的分工：Auth 可替换，数据库是标准 PostgreSQL。
+    database_url: str = ""
+
     environment: str = "dev"
 
     @property
@@ -40,6 +48,7 @@ class Settings(BaseSettings):
             "GLORY_SUPABASE_URL": self.supabase_url,
             "GLORY_SUPABASE_PUBLISHABLE_KEY": self.supabase_publishable_key,
             "GLORY_SUPABASE_SECRET_KEY": self.supabase_secret_key,
+            "GLORY_DATABASE_URL": self.database_url,
         }
         return [name for name, value in required.items() if not value.strip()]
 

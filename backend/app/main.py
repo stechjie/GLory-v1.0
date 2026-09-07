@@ -19,7 +19,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app import db
 from app.config import get_settings
+from app.routes import debug as debug_routes
 
 # Windows 控制台默认是 cp1252，中文日志会被转义成 以... 甚至直接抛
 # UnicodeEncodeError。这里是应用入口，把两个流拧成 UTF-8 是合适的做法。
@@ -40,7 +42,12 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         # 刻意**不**直接退出：骨架要能在还没建 Supabase 项目时跑起来，
         # 否则第 1 步就没法单独验证。真正需要密钥的接口会各自 fail closed。
         log.warning("以下配置项还没填，需要它们的接口会拒绝服务：%s", ", ".join(missing))
-    yield
+    # 连接串为空时 connect() 不建池也不抛异常 —— 同样是为了让骨架能单独起来。
+    await db.connect(settings.database_url)
+    try:
+        yield
+    finally:
+        await db.disconnect()
 
 
 app = FastAPI(
@@ -51,6 +58,11 @@ app = FastAPI(
     redoc_url=None,
     lifespan=lifespan,
 )
+
+# 自检接口只在开发环境挂载。生产上它会把表结构和 RLS 状态说得太清楚，
+# 而且没有任何生产用途 —— 少一个入口就少一个面。
+if settings.is_dev:
+    app.include_router(debug_routes.router)
 
 
 @app.get("/health")
