@@ -34,6 +34,8 @@ const Feedback := preload("res://ui/services/UiFeedback.gd")
 const Toast := preload("res://ui/components/GloryToast.gd")
 const ModalStackScript := preload("res://ui/services/ModalStack.gd")
 const ProviderScript := preload("res://scripts/tutorial/TutorialTargetProvider.gd")
+const DisabledReason := preload("res://ui/components/GloryDisabledReason.gd")
+const BusyButtonScene := preload("res://ui/components/GloryBusyButton.tscn")
 const Presentation := preload("res://effects/runtime/presentation/PresentationSettings.gd")
 
 const CHECK_NAME := "ui_feedback"
@@ -63,6 +65,7 @@ func _ready() -> void:
 	await _check_toast()
 	await _check_reject()
 	_check_gold_rejections_speak()
+	await _check_disabled_reason()
 	_h.finish(get_tree())
 
 
@@ -421,6 +424,89 @@ func _check_gold_rejections_speak() -> void:
 		"PrepBoardController 里一处 `if GameState.gold <` 都没找到 —— 断言可能已失效")
 	_h.expect(silent.is_empty(), "gold_rejection_is_silent",
 		"金币不足时一声不吭的分支：%s（共 %d 处金币判断）" % [str(silent), total])
+
+
+# --- 禁用态可以问原因 --------------------------------------------------------
+
+func _check_disabled_reason() -> void:
+	var btn := Button.new()
+	btn.size = Vector2(160, 48)
+	btn.disabled = true
+	add_child(btn)
+	var business := {"pressed": 0}
+	btn.pressed.connect(func(): business["pressed"] += 1)
+	DisabledReason.attach(btn, "门禁：正在处理中")
+	await get_tree().process_frame
+
+	Toast.reset_counters_for_check()
+	_send(btn, _mouse(true))
+	_send(btn, _mouse(false))
+	await get_tree().process_frame
+	_h.expect(Toast.shown_count() == 1,
+		"disabled_button_gives_no_reason",
+		"点了禁用按钮之后 toast 计数是 %d，应该正好 1" % Toast.shown_count())
+	_h.expect(Toast.last_text() == "门禁：正在处理中",
+		"disabled_reason_text_wrong",
+		"禁用原因显示成了 %s" % Toast.last_text())
+	# 解释归解释，业务绝不能被触发 —— 那才是「禁用」这两个字的含义。
+	_h.expect(int(business["pressed"]) == 0, "disabled_button_runs_business",
+		"点禁用按钮触发了 %d 次业务" % int(business["pressed"]))
+
+	# 一次点击只能出一条。按下和松开是两个事件，两个都认就会弹两条；
+	# Android 上还会再来一路模拟鼠标事件。
+	Toast.reset_counters_for_check()
+	_send(btn, _touch(true))
+	_send(btn, _touch(false))
+	await get_tree().process_frame
+	_h.expect(Toast.shown_count() == 1, "disabled_reason_fires_twice_per_tap",
+		"一次触摸出了 %d 条原因" % Toast.shown_count())
+
+	# 清掉之后不再解释。
+	DisabledReason.clear(btn)
+	Toast.reset_counters_for_check()
+	_send(btn, _mouse(true))
+	_send(btn, _mouse(false))
+	await get_tree().process_frame
+	_h.expect(Toast.shown_count() == 0, "disabled_reason_not_cleared",
+		"clear() 之后还在解释，出了 %d 条" % Toast.shown_count())
+	btn.queue_free()
+
+	# GloryBusyButton：全游戏最常被点的禁用按钮。
+	var busy := BusyButtonScene.instantiate()
+	add_child(busy)
+	await get_tree().process_frame
+	busy.show_pending("check_req", "正在连接")
+	_h.expect(busy.disabled, "busy_button_not_disabled",
+		"show_pending 之后按钮没有进禁用态 —— 后面的断言无从谈起")
+	_h.expect(DisabledReason.reason_for(busy) == "正在连接",
+		"busy_button_has_no_reason",
+		"忙碌中的按钮问不出原因，拿到的是「%s」" % DisabledReason.reason_for(busy))
+	busy.reset_idle("check_req")
+	_h.expect(DisabledReason.reason_for(busy).is_empty(),
+		"busy_reason_not_cleared",
+		"回到闲置态之后原因还挂着：「%s」" % DisabledReason.reason_for(busy))
+	busy.queue_free()
+	Toast.dismiss()
+	await get_tree().process_frame
+
+
+func _send(control: Control, event: InputEvent) -> void:
+	control.gui_input.emit(event)
+
+
+func _mouse(pressed: bool) -> InputEventMouseButton:
+	var e := InputEventMouseButton.new()
+	e.button_index = MOUSE_BUTTON_LEFT
+	e.pressed = pressed
+	e.position = Vector2(10, 10)
+	return e
+
+
+func _touch(pressed: bool) -> InputEventScreenTouch:
+	var e := InputEventScreenTouch.new()
+	e.pressed = pressed
+	e.position = Vector2(10, 10)
+	return e
 
 
 # --- 工具 -------------------------------------------------------------------

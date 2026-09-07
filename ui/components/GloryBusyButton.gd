@@ -5,6 +5,7 @@ extends Button
 # responding. A caller may bind an existing child Label to preserve legacy layout.
 
 const Theming := preload("res://ui/theme/GloryTheme.gd")
+const DisabledReason := preload("res://ui/components/GloryDisabledReason.gd")
 
 const STATE_IDLE := "idle"
 const STATE_PRESSED := "pressed"
@@ -58,6 +59,12 @@ func show_pending(request_id: String, verb: String) -> void:
 	# 「你点到了、正在做」和「这个按钮现在不能点」长得一模一样 ——
 	# 玩家读成后者就会继续找别的地方点，或者反复点这一个。
 	_enter_busy_look()
+	# 忙碌中被点到时能说出「正在做什么」。
+	#
+	# 这是全游戏最常被点的禁用按钮：玩家点了没立刻变化，本能就是再点一下。
+	# 挂在这里一处，所有走 AsyncActionController 的按钮一起有了解释，
+	# 不用去每个 _start_*_action() 里逐个补。
+	DisabledReason.attach(self, verb)
 	disabled = true
 	set_process(true)
 
@@ -70,6 +77,7 @@ func show_terminal(request_id: String, state: String, message: String) -> bool:
 	set_process(false)
 	_apply_text(message)
 	_restore_idle_look()
+	DisabledReason.clear(self)
 	disabled = false
 	return true
 
@@ -83,6 +91,7 @@ func reset_idle(request_id: String = "") -> bool:
 	set_process(false)
 	_apply_text(_idle_text)
 	_restore_idle_look()
+	DisabledReason.clear(self)
 	disabled = false
 	return true
 
