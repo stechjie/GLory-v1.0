@@ -74,13 +74,28 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         await db.disconnect()
 
 
+def doc_urls(is_dev: bool) -> dict[str, str | None]:
+    """交互文档与 OpenAPI schema 的暴露策略。
+
+    生产环境下**三个都必须是 None**。
+
+    实测踩过：只关了 docs_url / redoc_url，漏了 openapi_url，于是线上
+    /openapi.json 仍然返回 200 —— 那份 JSON 是完整的接口清单（每个端点、
+    每个字段、每种参数），等于把攻击面图纸白送出去。/docs 关掉了看着像没事，
+    实际最有价值的那份还开着。
+
+    三个写在一起、由一个开关决定，就不会再漏其中一个。有测试钉着。
+    """
+    if not is_dev:
+        return {"docs_url": None, "redoc_url": None, "openapi_url": None}
+    return {"docs_url": "/docs", "redoc_url": None, "openapi_url": "/openapi.json"}
+
+
 app = FastAPI(
     title="Glory Backend",
     version="0.1.0",
-    # 生产环境关掉交互文档：少一个把接口形状白送出去的入口。
-    docs_url="/docs" if settings.is_dev else None,
-    redoc_url=None,
     lifespan=lifespan,
+    **doc_urls(settings.is_dev),
 )
 
 app.include_router(auth_routes.router)
