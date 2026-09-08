@@ -1,38 +1,49 @@
 #!/usr/bin/env bash
-# 更新账号后端到 origin/main 的最新代码。
+# 更新账号后端到最新代码。
 #
-#   sudo bash /opt/glory/repo/deploy/update.sh
+#   sudo bash /opt/glory/src/deploy/update.sh
 #
 # 首次安装用 bootstrap.sh；这个脚本假设那一步已经做过。
+#
+# 两种取代码方式都支持：
+#   /opt/glory/src 是 git 仓库 -> 先 git pull
+#   不是（当初是传文件上来的）-> 跳过拉取，直接用当前内容重装
 set -euo pipefail
 
 BASE=/opt/glory
+SRC="$BASE/src"
 REPO="$BASE/repo"
+VENV="$BASE/venv"
 SERVICE_USER=glory
 
 say() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 
 [[ $EUID -eq 0 ]] || { echo "请用 sudo 运行" >&2; exit 1; }
-[[ -d "$REPO/.git" ]] || { echo "$REPO 不是 git 仓库，先跑 bootstrap.sh" >&2; exit 1; }
+[[ -d "$SRC/backend" ]] || { echo "$SRC 下没有 backend/，先跑 bootstrap.sh" >&2; exit 1; }
 
-BEFORE=$(git -C "$REPO" rev-parse --short HEAD)
-
-say "拉取最新代码"
-# 用 git 而不是解压覆盖：git 会**删掉**新版本里已经移除的文件。
-# 审计文档第八节点名批评过 `unzip -o` 覆盖在线目录 —— 它留下的是新旧混合版本，
-# 而混合版本的故障最难查。git reset --hard 没有这个问题。
-git -C "$REPO" fetch --quiet origin
-git -C "$REPO" reset --hard --quiet origin/main
-chown -R "$SERVICE_USER:$SERVICE_USER" "$REPO"
-
-AFTER=$(git -C "$REPO" rev-parse --short HEAD)
-echo "$BEFORE -> $AFTER"
-if [[ "$BEFORE" == "$AFTER" ]]; then
-	echo "代码没变化"
+if [[ -d "$SRC/.git" ]]; then
+	say "拉取最新代码"
+	BEFORE=$(git -C "$SRC" rev-parse --short HEAD)
+	git -C "$SRC" fetch --quiet origin
+	git -C "$SRC" reset --hard --quiet origin/main
+	AFTER=$(git -C "$SRC" rev-parse --short HEAD)
+	echo "$BEFORE -> $AFTER"
+	[[ "$BEFORE" == "$AFTER" ]] && echo "代码没变化"
+else
+	say "跳过拉取（$SRC 不是 git 仓库）"
 fi
 
+say "复制到运行目录"
+# --delete：新版本删掉的文件也要在服务器上消失。直接覆盖会留下新旧混合的
+# 目录，而混合版本的故障最难查（审计文档第八节点名批评过 unzip -o 覆盖在线目录）。
+rsync -a --delete "$SRC/backend/" "$REPO/backend/"
+rsync -a --delete "$SRC/deploy/" "$REPO/deploy/"
+chown -R root:root "$REPO"
+chmod -R a+rX "$REPO"
+
 say "同步依赖"
-sudo -u "$SERVICE_USER" "$REPO/backend/.venv/bin/pip" install --quiet -r "$REPO/backend/requirements.txt"
+"$VENV/bin/pip" install --quiet -r "$REPO/backend/requirements.txt"
+chown -R "$SERVICE_USER:$SERVICE_USER" "$VENV"
 
 say "更新 systemd 单元（如有改动）"
 if ! cmp -s "$REPO/deploy/glory-backend.service" /etc/systemd/system/glory-backend.service; then

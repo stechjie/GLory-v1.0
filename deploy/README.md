@@ -37,14 +37,53 @@ GCP Console → VPC network → Firewall，放开 **tcp:80 和 tcp:443**。
 
 ---
 
+### 3. 部署密钥（仓库是私有的）
+
+服务器要拉私有仓库，得有一把钥匙。用 **deploy key** 而不是 token：
+它只对这一个仓库有效、只读、不过期。服务器被攻破时，别人也只能读这个仓库，
+碰不到 GitHub 账号的任何其它东西。
+
+在服务器上生成：
+
+```bash
+sudo ssh-keygen -t ed25519 -C "glory-server deploy" -f /root/.ssh/glory_deploy -N ""
+sudo tee -a /root/.ssh/config >/dev/null <<'EOF'
+Host github.com
+  IdentityFile /root/.ssh/glory_deploy
+  IdentitiesOnly yes
+EOF
+sudo cat /root/.ssh/glory_deploy.pub
+```
+
+把最后打印的那一行（**公**钥，可以公开）加到
+`https://github.com/stechjie/GLory-v1.0/settings/keys` →
+**Add deploy key**，**不要勾 Allow write access**。
+
+验证：
+
+```bash
+sudo ssh -T git@github.com
+```
+
+看到 `Hi stechjie/GLory-v1.0! You've successfully authenticated...` 就对了
+（它接着会说 `does not provide shell access`，那是正常的）。
+
+---
+
 ## 首次安装
 
 在服务器上：
 
 ```bash
-git clone https://github.com/stechjie/GLory-v1.0.git /tmp/glory-src
-sudo bash /tmp/glory-src/deploy/bootstrap.sh 你的域名
+sudo git clone git@github.com:stechjie/GLory-v1.0.git /opt/glory/src
+sudo bash /opt/glory/src/deploy/bootstrap.sh 你的域名
 ```
+
+代码拉到 `/opt/glory/src`（git 检出，root 所有），
+`bootstrap.sh` 再把 `backend/` 和 `deploy/` 复制到 `/opt/glory/repo` 作为运行目录。
+
+分成两个目录是有理由的：git 检出里有整个游戏工程（客户端代码、美术引用），
+运行目录只放后端真正要用的东西，少一份暴露面。
 
 脚本做完之后**服务还不会起来** —— 密钥是空的。这是刻意的。
 
@@ -83,8 +122,10 @@ curl https://你的域名/health
 ## 日常更新
 
 ```bash
-sudo bash /opt/glory/repo/deploy/update.sh
+sudo bash /opt/glory/src/deploy/update.sh
 ```
+
+它会 `git pull` 到最新，再同步到运行目录、装依赖、重启、验收。
 
 用 `git reset --hard` 而不是解压覆盖：git 会**删掉**新版本里已移除的文件。
 审计文档第八节点名批评过 `unzip -o` 覆盖在线目录 —— 它留下新旧混合版本，
