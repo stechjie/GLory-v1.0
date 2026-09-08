@@ -62,8 +62,17 @@ func _run() -> void:
 	if not _h.expect(mgr != null, "autoload_missing", "AccountManager 没挂上"):
 		return
 
-	# 从"干净安装"开始
+	# 模拟「干净安装」：凭证和 player_id **都要**是新的。
+	#
+	# 只清凭证是不够的 —— profile.json 里的 id 早就注册过，服务器会以 409 拒绝
+	# （不许凭一个 id 接管已有账号），客户端于是走重签分支。那条路是对的，
+	# 但它是**异常路径**：真实玩家的全新安装两者都没有。只清凭证的话，
+	# 这个用例就永远在测异常路径，正常路径一次都没覆盖到。
+	#
+	# 开发者本机的 id 在 _restore() 里还原。
 	SaveManager.clear_account_credentials()
+	PlayerProfile.player_id = SaveSchema.new_player_id()
+	PlayerProfile.save_profile()
 
 	# --- 第一次启动：应当走匿名注册 ---
 	await mgr.call("login")

@@ -34,6 +34,8 @@ func _ready() -> void:
 	_case_backend_url_shape()
 	_case_manager_wiring()
 	_case_auto_login_implies_https()
+	_case_status_payload_is_safe()
+	_case_failure_classification()
 	_restore_existing()
 	_h.finish(get_tree())
 
@@ -174,3 +176,57 @@ func _case_auto_login_implies_https() -> void:
 	_h.expect("_kick_off_account_login" in method_names,
 		"bootstrap_hook_missing",
 		"Bootstrap 应保留 _kick_off_account_login —— 登录不能挪回 autoload 的 _ready")
+
+
+# 结构化日志与 bug 报告里绝不能出现凭证。
+#
+# 这条守的是一类**静默泄漏**：加一个字段进 GLORY_ACCOUNT 很容易，而那行会进
+# logcat、被贴进 issue、被截图。多带一个 token 出去不会有任何报错。
+func _case_status_payload_is_safe() -> void:
+	var mgr := get_node_or_null("/root/AccountManager")
+	if not _h.expect(mgr != null, "autoload_missing", "AccountManager 没挂上"):
+		return
+	if not _h.expect(mgr.has_method("status_payload"),
+		"status_payload_missing", "AccountManager 缺少 status_payload()"):
+		return
+
+	var keys: Array = (mgr.call("status_payload") as Dictionary).keys()
+	keys.sort()
+	_h.expect(keys == ["failure", "has_saved_credential", "player_id", "state"],
+		"status_payload_keys_changed",
+		"GLORY_ACCOUNT 的字段集合变了，先确认新字段不含凭证：%s" % str(keys))
+
+	# 哨兵：把一个可识别的假令牌塞进内存，断言它不出现在输出里。
+	var sentinel := "eyJ_ACCESS_TOKEN_MUST_NEVER_BE_LOGGED"
+	var original := str(mgr.get("_access_token"))
+	mgr.set("_access_token", sentinel)
+	var dumped := JSON.stringify(mgr.call("status_payload"))
+	mgr.set("_access_token", original)
+	_h.expect(not dumped.contains(sentinel),
+		"token_in_status_log", "access token 出现在了 GLORY_ACCOUNT 行里")
+	_h.expect(not dumped.contains("last_error"),
+		"last_error_in_status_log",
+		"last_error 可能含后端地址，不该进结构化日志（IssueReport 的隐私规则同）")
+
+
+# 失败分类的映射。分类是给日志和报告用的稳定标识，映射错了会让排查看错方向 ——
+# 例如把限流（429）报成 UNKNOWN，就没人会想到去调额度。
+func _case_failure_classification() -> void:
+	var mgr := get_node_or_null("/root/AccountManager")
+	if mgr == null:
+		return
+	var expected := {
+		0: "OFFLINE",        # 请求没发出去 / 没收到响应
+		429: "RATE_LIMITED",
+		401: "AUTH_REJECTED",
+		403: "AUTH_REJECTED",
+		409: "CONFLICT",
+		500: "SERVER_ERROR",
+		502: "SERVER_ERROR",
+		418: "UNKNOWN",      # 没归类的一律 UNKNOWN，而不是猜
+	}
+	var names: Array = mgr.get("Failure").keys()
+	for code in expected:
+		var got := str(names[int(mgr.call("classify", code))])
+		_h.expect(got == expected[code],
+			"classify_wrong", "HTTP %d 应归为 %s，实得 %s" % [code, expected[code], got])

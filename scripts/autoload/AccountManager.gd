@@ -25,10 +25,30 @@ signal login_failed(reason: String)
 
 enum State { IDLE, WORKING, LOGGED_IN, FAILED }
 
+# 失败分类。**给日志与 bug 报告用的稳定标识，不是给玩家看的文案。**
+#
+# 为什么不直接用 last_error 那句话：它可能带上后端地址或上游返回的原文，
+# 而 IssueReport 顶部的隐私规则明写着「绝不带服务器地址」——报告是要被粘进
+# 聊天窗口的。分类是枚举名，粘到哪都安全，而且不会因为改了一句提示文案就让
+# 日志里的历史记录对不上。
+enum Failure {
+	NONE,
+	OFFLINE,        # 请求没发出去 / 没收到响应：断网、后端没起、DNS、超时
+	RATE_LIMITED,   # 429，注册太频繁
+	SERVER_ERROR,   # 5xx，后端或它上游出错
+	AUTH_REJECTED,  # 401，凭证不再有效（正常流程会自动改走注册，走到这说明注册也失败了）
+	CONFLICT,       # 409 且重签后仍冲突
+	BAD_RESPONSE,   # HTTP 200 但响应里缺东西
+	UNKNOWN,
+}
+
 var state: int = State.IDLE
 var player_id := ""
 var player_name := ""
+# 给人看的一句话，可能含地址等细节。**不要**把它写进结构化日志或 IssueReport。
 var last_error := ""
+# 给机器看的分类，可以安全地进日志与报告。
+var last_failure: int = Failure.NONE
 
 # access token **只在内存里**，永不落盘。
 #
@@ -64,6 +84,7 @@ func login() -> void:
 	_busy = true
 	state = State.WORKING
 	last_error = ""
+	last_failure = Failure.NONE
 	login_started.emit()
 
 	var saved: Dictionary = SaveManager.load_account_credentials()
@@ -81,7 +102,8 @@ func login() -> void:
 		else:
 			# 网络不通、后端没起、5xx —— 这些**不是**凭证问题。
 			# 这时候绝不能去注册新账号：那会把一个临时故障变成永久丢号。
-			_finish_failure(str(refreshed.get("error", "刷新失败")))
+			_finish_failure(str(refreshed.get("error", "刷新失败")),
+				classify(int(refreshed.get("code", 0))))
 			return
 
 	var created := await _post("/v1/auth/anonymous", {"player_id": PlayerProfile.player_id})
@@ -97,9 +119,11 @@ func login() -> void:
 		if int(retried.get("code", 0)) == 200:
 			_finish_success(retried.get("body", {}))
 			return
-		_finish_failure(str(retried.get("error", "注册失败")))
+		_finish_failure(str(retried.get("error", "注册失败")),
+			classify(int(retried.get("code", 0))))
 		return
-	_finish_failure(str(created.get("error", "注册失败")))
+	_finish_failure(str(created.get("error", "注册失败")),
+		classify(int(created.get("code", 0))))
 
 
 func logout() -> void:
@@ -122,18 +146,62 @@ func _finish_success(body: Dictionary) -> void:
 		SaveManager.save_account_credentials(refresh_token, player_id)
 
 	state = State.LOGGED_IN
+	last_failure = Failure.NONE
 	_busy = false
 	# 只打 player_id，**不打任何 token**。
 	print("[ACCOUNT] 登录成功 player_id=%s" % player_id)
+	_emit_status()
 	login_succeeded.emit(player_id, player_name)
 
 
-func _finish_failure(reason: String) -> void:
+func _finish_failure(reason: String, failure: int = Failure.UNKNOWN) -> void:
 	state = State.FAILED
 	last_error = reason
+	last_failure = failure
 	_busy = false
+	# push_warning 只在编辑器/调试里显眼，真机上没人看得到；结构化那行才是
+	# 能在 logcat 里被 tools/android_logcat_errors.py 扫到的。两条都留。
 	push_warning("[ACCOUNT] 登录失败：%s" % reason)
+	_emit_status()
 	login_failed.emit(reason)
+
+
+# 把 HTTP 结果映射成稳定分类。
+static func classify(code: int) -> int:
+	if code == 0:
+		return Failure.OFFLINE
+	if code == 429:
+		return Failure.RATE_LIMITED
+	if code == 401 or code == 403:
+		return Failure.AUTH_REJECTED
+	if code == 409:
+		return Failure.CONFLICT
+	if code >= 500:
+		return Failure.SERVER_ERROR
+	return Failure.UNKNOWN
+
+
+# 结构化状态行的载荷。**单独一个函数是为了能被门禁断言。**
+#
+# 硬规则：**不含任何凭证，也不含后端地址与 last_error。**
+# 日志会进 logcat、会被贴进 issue、会被截图。player_id 是打的 ——
+# 它不是凭证，而且没有它就没法把一份报告和库里的账号对上，那正是它的用途。
+#
+# tools/account_check.tscn 断言这里的键集合恰好是这四个，并用哨兵值验证
+# 内存里的 access token 不会出现在输出里。加字段前先想清楚它会不会泄漏。
+func status_payload() -> Dictionary:
+	return {
+		"state": State.keys()[state],
+		"failure": Failure.keys()[last_failure],
+		"player_id": player_id,
+		"has_saved_credential": not str(
+			SaveManager.load_account_credentials().get("refresh_token", "")).is_empty(),
+	}
+
+
+# 体例同 GLORY_STARTUP / GLORY_BUILD / GLORY_ISSUE，真机上 logcat 扫得到。
+func _emit_status() -> void:
+	print("GLORY_ACCOUNT %s" % JSON.stringify(status_payload()))
 
 
 # --- HTTP --------------------------------------------------------------------
