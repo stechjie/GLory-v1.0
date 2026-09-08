@@ -57,14 +57,38 @@ var _battle_scene_path_for_check := ""
 
 func _ready() -> void:
 	# 回合采集是备战入口的幂等结算点。动画和面板重建不会再次发放。
+	#
+	# 「谁负责发放」必须与本作其余萝卜动作用**同一条判据**：只有「联机且不是房主」
+	# 交给服务端，其余（单人、房主）一律本地结算。对照
+	# PrepBoardController.request_carrot_harvest_upgrade / request_upgrade_stone_draw，
+	# 两者都是 `if team_active and not is_host: 走服务端`；买佣兵扣萝卜更是直接改
+	# GameState，压根没有联网分支。房主在萝卜上本来就是本地权威。
+	#
+	# 此前这里写的是 `not NetworkService.team_active`，判据比其余动作**多挡了房主**：
+	# 一进 3v3 大厅 team_active 就为 true（team_host/team_join 都会置位，本机开房也算），
+	# 于是房主既不本地采集，也收不到自己广播的 room_state —— _apply_carrot_state 只在
+	# 「客户端收包」和「重连恢复」两条路径上被调用，房主两条都不走，萝卜恒为 0。
+	#
+	# 不能改成「房主从 room.prep 回灌」：房主买佣兵只扣 GameState.carrots、不动账本，
+	# 回灌会把花掉的萝卜还回来。
 	var carrot_harvest_gain := 0
-	if not GameState.tutorial_mode and not NetworkService.team_active:
+	var carrot_server_authoritative := NetworkService.team_active and not NetworkService.is_host
+	if not GameState.tutorial_mode and not carrot_server_authoritative:
 		var harvest := GameState.harvest_carrots_for_round(GameState.round_index)
 		if bool(harvest.get("ok", false)):
 			carrot_harvest_gain = int(harvest.get("gain", 0))
 			SaveManager.save_run()
-	elif NetworkService.team_active and GameState.last_harvest_round == GameState.round_index:
+	elif carrot_server_authoritative and GameState.last_harvest_round == GameState.round_index:
 		carrot_harvest_gain = NetworkService.last_carrot_harvest_gain
+	# 这套系统的失败模式全是**静默**的：不采集、被覆盖、被幂等挡掉，界面上一模一样，
+	# 都只表现为"萝卜不涨"。留一行 Debug 日志，出问题时一眼能分辨是哪一种，
+	# 不必再靠猜。Release 不打。
+	if OS.is_debug_build():
+		print("[CARROT] round=%d 本地采集=%s（team_active=%s is_host=%s tutorial=%s）本回合到账=%d 余额=%d/%d last_harvest_round=%d" % [
+			GameState.round_index, str(not carrot_server_authoritative and not GameState.tutorial_mode),
+			str(NetworkService.team_active), str(NetworkService.is_host), str(GameState.tutorial_mode),
+			carrot_harvest_gain, GameState.carrots, GameState.carrot_capacity(),
+			GameState.last_harvest_round])
 	_board_hud.setup_cell_styles()
 	if not NetworkService.session_changed.is_connected(_on_network_session_changed):
 		NetworkService.session_changed.connect(_on_network_session_changed)

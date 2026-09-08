@@ -28,6 +28,9 @@ const PREP_RIVER_FLOW_SHADER := "res://assets/shaders/prep_river_flow.gdshader"
 const PREP_RIVER_TOP_EF_PATH := "res://assets/board/prep_2_5d/prep20_river_top_ef.png"
 const PREP_RIVER_BOTTOM_EF_PATH := "res://assets/board/prep_2_5d/prep20_river_bottom_ef.png"
 const PREP_CARROT_PROP_PATH := "res://assets/props/prep/carrot_gathering_v1.png"
+const PREP_CARROT_FARM_DECOR_PATH := "res://assets/props/carrot_system/vfx/atlas_farm_level_decorations.png"
+const PREP_CARROT_DIG_PATH := "res://assets/props/carrot_system/vfx/atlas_digging_dust_4x4.png"
+const PREP_CARROT_LEVELUP_PATH := "res://assets/props/carrot_system/vfx/atlas_farm_levelup_4x4.png"
 # ══════ 只调「4×4 格子」（发光圈 + 落子网格）在地面上的铺排 ══════
 # ⚠️ 只动格子，不动画死的石台图；挪多了格子会跑出石台、对不上。
 # UV 是贴图 0~1 占比：范围拉大 = 格子铺更开；两端同时加/减 = 格子整排平移。
@@ -70,6 +73,9 @@ var _carrot_gather_root: Node3D
 var _carrot_pet_nodes: Array[Node3D] = []
 var _carrot_placeholder: Node3D
 var _carrot_pet_signature := ""
+var _carrot_farm_decor: Sprite3D
+var _carrot_last_farm_level := -1
+var _carrot_vfx_serial := 0
 var _prep_river_viewport: SubViewport
 var _prep_river_stage_root: Node3D
 var _prep_river_camera: Camera3D
@@ -191,7 +197,7 @@ func _setup_carrot_gathering() -> void:
 	_carrot_gather_root.name = "CarrotGatheringRoot"
 	# Keep the gathering group in the open ground between the board and the
 	# right-side UI.  These are stage-local coordinates (the stage is scaled).
-	_carrot_gather_root.position = Vector3(0.18, 0.02, 0.24)
+	_carrot_gather_root.position = Vector3(0.373, 0.02, 0.10)
 	_prep_river_stage_root.add_child(_carrot_gather_root)
 	_carrot_placeholder = Node3D.new()
 	_carrot_placeholder.name = "CarrotVisual"
@@ -214,7 +220,36 @@ func _setup_carrot_gathering() -> void:
 	else:
 		# Keep a readable development fallback if the imported PNG is unavailable.
 		_add_carrot_placeholder_fallback()
+	_setup_carrot_farm_decoration()
 	_refresh_carrot_gathering()
+
+func _setup_carrot_farm_decoration() -> void:
+	var texture := ResourceLoader.load(PREP_CARROT_FARM_DECOR_PATH) as Texture2D
+	if texture == null:
+		return
+	_carrot_farm_decor = Sprite3D.new()
+	_carrot_farm_decor.name = "CarrotFarmLevelDecoration"
+	_carrot_farm_decor.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_carrot_farm_decor.pixel_size = 0.00042
+	_carrot_farm_decor.position = Vector3(0.0, 0.12, -0.025)
+	_carrot_farm_decor.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	_carrot_farm_decor.transparent = true
+	_carrot_farm_decor.shaded = false
+	_carrot_farm_decor.no_depth_test = false
+	_carrot_gather_root.add_child(_carrot_farm_decor)
+
+func _refresh_carrot_farm_visual() -> void:
+	var farm_level := GameState.carrot_farm_level()
+	if _carrot_farm_decor != null and is_instance_valid(_carrot_farm_decor):
+		var atlas := AtlasTexture.new()
+		atlas.atlas = ResourceLoader.load(PREP_CARROT_FARM_DECOR_PATH) as Texture2D
+		# Six economy levels share four visual tiers so progression stays readable.
+		var tier: int = int([0, 0, 1, 2, 2, 3][clampi(farm_level, 0, 5)])
+		atlas.region = Rect2((tier % 2) * 512, (tier / 2) * 512, 512, 512)
+		_carrot_farm_decor.texture = atlas
+	if _carrot_last_farm_level >= 0 and farm_level > _carrot_last_farm_level:
+		_play_carrot_world_flipbook(PREP_CARROT_LEVELUP_PATH, 0.23, 0.00058)
+	_carrot_last_farm_level = farm_level
 
 func _add_carrot_placeholder_fallback() -> void:
 	var box := MeshInstance3D.new()
@@ -245,6 +280,7 @@ func refresh_carrot_gathering() -> void:
 func _refresh_carrot_gathering() -> void:
 	if _carrot_gather_root == null or not is_instance_valid(_carrot_gather_root):
 		return
+	_refresh_carrot_farm_visual()
 	var entries := _carrot_pet_entries()
 	var signature := JSON.stringify(entries)
 	if signature == _carrot_pet_signature and not _carrot_pet_nodes.is_empty():
@@ -290,7 +326,7 @@ func _carrot_pet_entries() -> Array:
 		local_pet = str(starters[0])
 	if not NetworkService.team_active:
 		return [{"slot": 0, "pet_id": local_pet,
-			"position": Vector3(0.0, 0.0, 0.14), "yaw": 180.0}]
+			"position": Vector3(-0.11, 0.0, 0.14), "yaw": 0.0}]
 	var local_slot := maxi(0, NetworkService.team_local_slot)
 	var local_team := GameConstants.team_of_slot(local_slot)
 	var entries: Array = []
@@ -317,9 +353,11 @@ func _carrot_pet_entries() -> Array:
 		entries.append({
 			"slot": slot,
 			"pet_id": pet_id,
-			"position": Vector3((float(row_index) - 1.0) * 0.18, 0.0,
-				0.15 if friendly else -0.15),
-			"yaw": 180.0 if friendly else 0.0,
+			"position": Vector3((float(row_index) - 1.0) * 0.15, 0.0,
+				0.14 if friendly else -0.14),
+			# All gathering pets face the preparation camera so their faces and
+			# bodies remain readable at this steep 2.5D camera angle.
+			"yaw": 0.0,
 		})
 	return entries
 
@@ -327,6 +365,12 @@ func _normalize_carrot_pet(pet: Node3D, pet_id: String, target: Vector3, yaw: fl
 		attempts_left: int = 0) -> void:
 	if pet == null or not is_instance_valid(pet):
 		return
+	# The preparation camera looks down at a steep angle.  Tilt only the visual
+	# model away from the camera so the face and front of the body remain visible.
+	# The rotated bounds below then keep the feet resting on the gathering ground.
+	var visual_root := pet.get_node_or_null("ModelRoot") as Node3D
+	if visual_root != null:
+		visual_root.rotation_degrees.x = -18.0
 	var pet_box := _carrot_pet_aabb(pet)
 	if pet_box.size.y <= 0.0001:
 		if attempts_left > 0:
@@ -336,27 +380,53 @@ func _normalize_carrot_pet(pet: Node3D, pet_id: String, target: Vector3, yaw: fl
 			push_warning("萝卜采集宠物模型未生成可测量网格：%s" % pet_id)
 		return
 	var pet_height := pet_box.size.y
-	# This projects to roughly the same on-screen height as the main-menu pet
-	# preview (about 90 px at the reference 1600 x 720 viewport).
-	var pet_scale := 0.18 / pet_height * PetService.model_scale(pet_id)
+	# The gathering pets are supporting actors around the carrot.  A 0.12-world
+	# height projects to about 60-70 px at 1600 x 720, matching the reference.
+	var pet_scale := 0.12 / pet_height * PetService.model_scale(pet_id)
 	pet.scale = Vector3.ONE * pet_scale
 	pet.position = Vector3(target.x,
 		-pet_box.position.y * pet_scale + PetService.model_y(pet_id) / PREP_RIVER_STAGE_SCALE.y,
 		target.z)
 	pet.rotation_degrees.y = yaw
 	pet.visible = true
+	_play_carrot_pet_ambient(pet)
+
+func _play_carrot_pet_ambient(pet: Node3D) -> void:
+	if pet == null or not is_instance_valid(pet) or pet not in _carrot_pet_nodes:
+		return
+	# The current pet library has no authored idle clips; its idle is a frozen
+	# attack frame.  Loop the original run clip in place so the gathering pets
+	# remain alive without changing their assigned positions.
+	if pet.has_method("play_run"):
+		pet.call("play_run")
+	elif pet.has_method("play_idle"):
+		pet.call("play_idle")
+
+func _resume_carrot_pet_ambient(pet: Node3D, harvest_serial: int) -> void:
+	await get_tree().create_timer(1.15).timeout
+	if pet == null or not is_instance_valid(pet):
+		return
+	if int(pet.get_meta("carrot_harvest_serial", -1)) != harvest_serial:
+		return
+	_play_carrot_pet_ambient(pet)
 
 func play_carrot_harvest_feedback(gain: int) -> void:
 	if gain <= 0 or _carrot_gather_root == null or not is_instance_valid(_carrot_gather_root):
 		return
+	_play_carrot_world_flipbook(PREP_CARROT_DIG_PATH, 0.12, 0.00050)
 	for pet in _carrot_pet_nodes:
 		if not is_instance_valid(pet):
 			continue
+		var harvest_serial := int(pet.get_meta("carrot_harvest_serial", 0)) + 1
+		pet.set_meta("carrot_harvest_serial", harvest_serial)
+		if pet.has_method("play_attack"):
+			pet.call("play_attack")
+		_resume_carrot_pet_ambient(pet, harvest_serial)
 		var base_y := pet.position.y
 		var tween := create_tween()
-		tween.tween_property(pet, "position:y", base_y + 0.045, 0.18)
+		tween.tween_property(pet, "position:y", base_y + 0.030, 0.18)
 		tween.tween_property(pet, "position:y", base_y, 0.18)
-		tween.tween_property(pet, "position:y", base_y + 0.035, 0.18)
+		tween.tween_property(pet, "position:y", base_y + 0.022, 0.18)
 		tween.tween_property(pet, "position:y", base_y, 0.18)
 	var gain_label := Label3D.new()
 	gain_label.text = "+%d 萝卜" % gain
@@ -371,6 +441,37 @@ func play_carrot_harvest_feedback(gain: int) -> void:
 	label_tween.tween_property(gain_label, "position:y", 0.55, 1.2)
 	label_tween.tween_property(gain_label, "modulate:a", 0.0, 1.2)
 	label_tween.chain().tween_callback(gain_label.queue_free)
+
+func _play_carrot_world_flipbook(path: String, height: float, pixel_size: float) -> void:
+	if _carrot_gather_root == null or not is_instance_valid(_carrot_gather_root):
+		return
+	var texture := ResourceLoader.load(path) as Texture2D
+	if texture == null:
+		return
+	_carrot_vfx_serial += 1
+	var serial := _carrot_vfx_serial
+	var frame_texture := AtlasTexture.new()
+	frame_texture.atlas = texture
+	var sprite := Sprite3D.new()
+	sprite.name = "CarrotGatheringFlipbook"
+	sprite.texture = frame_texture
+	sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	sprite.pixel_size = pixel_size
+	sprite.position = Vector3(0.0, height, 0.035)
+	sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	sprite.transparent = true
+	sprite.shaded = false
+	sprite.no_depth_test = true
+	_carrot_gather_root.add_child(sprite)
+	for frame in range(16):
+		if serial != _carrot_vfx_serial or not is_instance_valid(sprite):
+			if is_instance_valid(sprite):
+				sprite.queue_free()
+			return
+		frame_texture.region = Rect2((frame % 4) * 256, (frame / 4) * 256, 256, 256)
+		await get_tree().create_timer(0.055).timeout
+	if is_instance_valid(sprite):
+		sprite.queue_free()
 
 func _carrot_pet_aabb(root: Node3D) -> AABB:
 	var out := AABB()

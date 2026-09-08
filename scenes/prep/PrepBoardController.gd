@@ -170,6 +170,9 @@ func _hire_mercenary_to_slot(index: int, mercenary_index: int) -> void:
 	NetworkService.team_send_prep_mercs()
 	SaveManager.save_run()
 	_refresh_all()
+	# A carrot-paid hire can cross a farm threshold. Refresh the world prop in
+	# the same transaction so its decoration and level-up VFX change immediately.
+	refresh_carrot_gathering()
 
 func request_carrot_harvest_upgrade() -> void:
 	if GameState.tutorial_mode:
@@ -211,6 +214,30 @@ func request_upgrade_stone_draw() -> void:
 	GameState.apply_team_stone(stone_type)
 	SaveManager.save_run()
 	show_message("获得%s石" % {"sky": "天", "land": "地", "ren": "人"}.get(stone_type, stone_type))
+	_refresh_all()
+
+# 用一颗同属性升级石把三星升为四星。
+# where 是 "board" / "bench"，index 是该数组下标 —— 面板列出来的就是这两个来源。
+#
+# 判定全部委托 GameState.four_star_check()：面板置灰用它、这里执行也用它，
+# 同一份条件不会分家。四星**不能**靠合成获得（合成封顶在 MAX_MERGE_STAR），
+# 所以这是唯一的入口。
+func request_four_star_upgrade(where: String, index: int) -> void:
+	if GameState.tutorial_mode:
+		return
+	var slots: Array = GameState.board_slots if where == "board" else GameState.bench_slots
+	if index < 0 or index >= slots.size():
+		return
+	var cell = slots[index]
+	var result := GameState.upgrade_cell_to_four_star(cell)
+	if not bool(result.get("ok", false)):
+		show_message("无法升四星：%s" % str(result.get("error", "denied")))
+		return
+	var d: Dictionary = (cell as Dictionary).get("def", {})
+	show_message("%s 升为四星" % str(d.get("name", d.get("id", "棋子"))))
+	if where == "board":
+		_mark_online_board_changed()
+	SaveManager.save_run()
 	_refresh_all()
 func _on_board_pressed(index: int) -> void:
 	if _shop.selected >= 0:
@@ -638,7 +665,9 @@ func _preserve_unique_king_growth_among(keeper: Dictionary, cells: Array) -> voi
 func _sell_refund_for_cell(cell: Dictionary) -> int:
 	var def: Dictionary = cell.get("def", {})
 	var price := EconomyLedger.base_unit_cost(def)
-	return int(floor(float(price * int(cell.get("star", 1))) * 0.5))
+	# 倍率表也放在 EconomyLedger —— 1~3 星与旧公式 `售价 × 星级 × 0.5` 逐字等价，
+	# 4 星不能照那个公式外推（见那边的说明）。
+	return EconomyLedger.star_sell_refund(price, int(cell.get("star", 1)))
 
 func _on_refresh_shop() -> void:
 	var all_free := TreasureService.has_set("money")

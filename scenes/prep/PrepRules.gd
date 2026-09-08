@@ -56,7 +56,7 @@ static func can_merge_cells(target: Dictionary, incoming: Dictionary) -> bool:
 		return false
 	return str(target.get("id", "")) == str(incoming.get("id", "")) \
 		and int(target.get("star", 1)) == int(incoming.get("star", 1)) \
-		and int(target.get("star", 1)) < GameState.MAX_UNIT_STAR
+		and int(target.get("star", 1)) < GameState.MAX_MERGE_STAR
 
 
 # 这一格是不是「可用于合成的同名同星棋子」。

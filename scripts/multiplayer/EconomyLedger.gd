@@ -119,6 +119,23 @@ static func unit_cost(unit_def: Dictionary, owned: Array) -> int:
 static func sell_refund(cost_basis: int) -> int:
 	return int(floor(float(maxi(0, cost_basis)) * SELL_REFUND_RATE))
 
+# 按星级的出售返还倍率（乘在**棋子自身售价**上，见 base_unit_cost）。
+#
+# 1~3 星沿用旧公式 `售价 × 星级 × 0.5`，逐字等价：0.5 / 1.0 / 1.5。
+# 4 星**不能**照这个公式外推（那会得到 ×2）：4 星要 6 份材料（270 金@cost30）
+# 外加一颗升级石，退 ×2 太少；但更关键的是**定额或过高的返还会被小灵撬出套利** ——
+# 小灵 cost 10 是次便宜单位的一半，任何"每颗多给 N 金"的写法都会让
+# 「买 9 份 → 升四星 → 卖掉」变成正收益，直接撞穿 sell_refund_check 的
+# `sell_for_profit` 硬断言。改用比例制 ×3：全表在三种折扣状态下都仍是净亏。
+#
+# 客户端 `PrepBoardController._sell_refund_for_cell()` 读同一个函数 ——
+# 不在两边各写一份，那正是这个文件里已经修过一次的坑。
+const STAR_REFUND_MULTIPLIER := [0.5, 1.0, 1.5, 3.0]
+
+static func star_sell_refund(price: int, star: int) -> int:
+	var idx := clampi(star, 1, GameConstants.MAX_STAR) - 1
+	return int(floor(float(maxi(0, price)) * float(STAR_REFUND_MULTIPLIER[idx])))
+
 # --- 主入口 -------------------------------------------------------------------
 # 返回 receipt；`ok=false` 时 prep **一定没被改过**。
 static func apply(prep: Dictionary, action: String, payload: Dictionary, ctx: Dictionary) -> Dictionary:
@@ -214,7 +231,8 @@ static func _upgrade_harvest_tech(prep: Dictionary, _payload: Dictionary, _ctx: 
 	return {"ok": true, "result": {
 		"price": price,
 		"harvest_tech_level": level + 1,
-		"production": CarrotEconomy.production_for_tech(level + 1),
+		"production": CarrotEconomy.total_production(
+			level + 1, int(prep.get("merc_carrots_spent_total", 0))),
 	}}
 
 static func _hire_merc_carrot(prep: Dictionary, payload: Dictionary, ctx: Dictionary) -> Dictionary:
@@ -326,9 +344,10 @@ static func _merge(prep: Dictionary, payload: Dictionary, _ctx: Dictionary) -> D
 			return {"ok": false, "error": "not_mergeable"}
 		basis += int(u.get("cost_basis", 0))
 	var star := int(first.get("star", 1))
-	# 满星不能再合。不拦的话服务端能凭空造出四星、五星 ——
-	# 客户端根本没有这个概念（_can_merge_cells 要求 star < MAX_UNIT_STAR）。
-	if star >= GameConstants.MAX_STAR:
+	# 合成封顶。读 MAX_MERGE_STAR 而不是 MAX_STAR：四星存在，但**只能靠升级石**，
+	# 不能靠同名合成。两者共用一个常量时，把上限提到 4 就等于免费开放
+	# 「3 个三星合成四星」，升级石系统被整个绕过。
+	if star >= GameConstants.MAX_MERGE_STAR:
 		return {"ok": false, "error": "star_capped"}
 	if uids.size() != GameConstants.copies_to_upgrade(star):
 		return {"ok": false, "error": "bad_merge_count"}

@@ -18,7 +18,7 @@ static func localized_name(d: Dictionary) -> String:
 static func format_unit_def(d: Dictionary, star: int = 1, cell: Dictionary = {}) -> String:
 	if d.is_empty():
 		return "No details" if is_en() else "无详情"
-	var mul := GameState.star_stat_multiplier(star) if not bool(d.get("is_mercenary", false)) else 1.0
+	var mul := GameState.star_stat_multiplier(star, d) if not bool(d.get("is_mercenary", false)) else 1.0
 	var uname := localized_name(d)
 	var race := unit_race_name(str(d.get("race", "-")))
 	var elem := unit_element_name(str(d.get("element", "-")))

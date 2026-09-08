@@ -13,7 +13,7 @@ const GloryTokens := preload("res://ui/theme/GloryTokens.gd")
 # 只为拿 FillPhase 枚举做**静态**引用（教学第 15 步的子阶段），
 # 走 preload 常量而不是从 autoload 实例上取，dynamic_call 棘轮才不会长。
 const TutorialModeScript := preload("res://scripts/tutorial/TutorialMode.gd")
-const CarrotCampPanelScript := preload("res://scenes/prep/CarrotCampPanel.gd")
+const CarrotCampPanelScript := preload("res://scenes/prep/CarrotCampPanelV2.gd")
 const SHOP_SCROLL_BURN_SHADER: Shader = preload("res://assets/shaders/prep_scroll_burn.gdshader")
 const SHOP_REFRESH_WIDTH := 112.0
 const SHOP_GOLD_WIDTH := 112.0
@@ -28,7 +28,7 @@ const STATS_BTN_SIZE := Vector2(140, 94)                                  # 比�
 const REFRESH_BTN_PATH := "res://assets/ui/buttons/btn_refresh_fire_lowpoly.png"
 const MERC_BTN_PATH := "res://assets/ui/buttons/btn_merc_lowpoly.png"
 const TEAM_MERCS_BTN_PATH := "res://assets/ui/buttons/btn_team_mercs_lowpoly.png"
-const CARROT_BTN_PATH := "res://assets/props/prep/carrot_gathering_v1.png"
+const CARROT_BTN_PATH := "res://assets/props/carrot_system/ui/button_carrot_camp.png"
 const TEAM_MERCS_STAGE_BACKGROUND_PATH := "res://assets/ui/prep/team_mercs_stage.png"
 const MERC_BTN_SIZE := Vector2(132, 132)                                  # 方形
 const SHOP_REFRESH_FIRE_ATLAS_PATH := "res://assets/vfx/prep/scroll_edge_fire_atlas.png"
@@ -971,14 +971,14 @@ func _build_top_actions() -> void:
 
 	_carrot_panel = CarrotCampPanelScript.new()
 	_carrot_panel.name = "CarrotCampPanel"
-	_carrot_panel.anchor_left = 1.0
-	_carrot_panel.anchor_right = 1.0
-	_carrot_panel.anchor_top = 0.0
-	_carrot_panel.anchor_bottom = 0.0
-	_carrot_panel.offset_left = -390
-	_carrot_panel.offset_right = -12
-	_carrot_panel.offset_top = 150
-	_carrot_panel.offset_bottom = 620
+	_carrot_panel.anchor_left = 0.5
+	_carrot_panel.anchor_right = 0.5
+	_carrot_panel.anchor_top = 0.5
+	_carrot_panel.anchor_bottom = 0.5
+	_carrot_panel.offset_left = -224
+	_carrot_panel.offset_right = 224
+	_carrot_panel.offset_top = -280
+	_carrot_panel.offset_bottom = 280
 	_carrot_panel.z_index = 35
 	_carrot_panel.visible = false
 	# The concrete economy handlers live farther down the PrepScreen inheritance
@@ -986,7 +986,8 @@ func _build_top_actions() -> void:
 	_carrot_panel.setup(Callable(self, "request_carrot_harvest_upgrade"),
 		Callable(self, "request_upgrade_stone_draw"),
 		Callable(self, "_on_carrot_hire_requested"),
-		Callable(self, "_toggle_merc_picker"), Callable(self, "_toggle_team_mercs_picker"))
+		Callable(self, "_toggle_merc_picker"), Callable(self, "_toggle_team_mercs_picker"),
+		Callable(self, "request_four_star_upgrade"))
 	add_child(_carrot_panel)
 
 func _toggle_mute() -> void:
