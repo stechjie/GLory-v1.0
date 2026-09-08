@@ -31,14 +31,54 @@ _anonymous_limiter = SlidingWindowLimiter(_settings.rate_limit_anonymous_per_hou
 _refresh_limiter = SlidingWindowLimiter(_settings.rate_limit_refresh_per_hour, 3600.0)
 
 
+# 可信反向代理。**只有从这些地址进来的请求，X-Forwarded-For 才作数。**
+#
+# 生产部署里 Caddy 与后端在同一台机器上，后端只监听 127.0.0.1
+# （见 deploy/glory-backend.service），所以可信来源就是本机回环。
+TRUSTED_PROXIES = frozenset({"127.0.0.1", "::1"})
+
+
 def _client_ip(request: Request) -> str:
     """限流用的来源标识。
 
-    **刻意只认直连对端，不读 X-Forwarded-For。** 那个头是客户端可以随便写的，
-    盲信它等于限流白做 —— 换个头就绕过去了。部署到反向代理后面时要显式配置
-    可信代理再启用，那是 C15 那一步的事（见 app/rate_limit.py 顶部说明）。
+    ### 为什么不能直接读 X-Forwarded-For
+
+    那个头是**客户端可以随便写的**。盲信它的话，攻击者每次请求换一个假 IP
+    就完全绕过限流 —— 比不限流还糟，因为你以为限住了。
+
+    所以判断顺序是：**先看这个请求是不是从可信代理来的**。
+      - 不是（有人绕过 Caddy 直连 8099）→ 一个字都不信，用真实对端；
+      - 是 → 才采信 X-Forwarded-For。
+
+    ### 为什么这样是安全的
+
+    两层：Caddyfile 里是 `header_up X-Forwarded-For {remote_host}`，
+    **覆盖**而不是追加 —— 玩家自己塞的假值在 Caddy 那一层就被丢掉了；
+    这里再确认一次请求确实来自 Caddy。
+
+    ### 前提：Caddy 前面没有别的代理
+
+    现在 Caddy 直接面向公网，所以这个头里只有一个 IP，取整段就是玩家的。
+    以后若在前面再加一层（Cloudflare 之类），头会变成 `真实IP, 中间代理...`
+    的链条，那时**必须**改成按可信代理数量从右往左取，否则取到的是代理的 IP，
+    等于全体又共用一个额度。改动前先回来看这段。
+
+    ### 它挡不住什么
+
+    同一出口 IP 的人共用额度（办公室、校园网、手机运营商 NAT），
+    以及手上有大量 IP 的攻击者。那是按 IP 限流的固有边界，
+    真要解决得靠设备标识或人机验证。
     """
-    return request.client.host if request.client else "unknown"
+    peer = request.client.host if request.client else "unknown"
+    if peer not in TRUSTED_PROXIES:
+        return peer
+    forwarded = request.headers.get("X-Forwarded-For", "").strip()
+    if not forwarded:
+        return peer
+    # 即便当前只会有一个值，也按逗号切一下取第一段 —— 万一哪天 Caddy 的配置
+    # 从覆盖改成了追加，这里不会把整串当成一个 key（那会让每次请求都是新 key，
+    # 限流静默失效）。
+    return forwarded.split(",")[0].strip() or peer
 
 
 def _enforce(limiter: SlidingWindowLimiter, request: Request) -> None:
