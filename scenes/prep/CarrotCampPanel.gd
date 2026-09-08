@@ -214,10 +214,18 @@ func refresh() -> void:
 		gain_text = "下回合 +%d（%s浪费 %d）" % [actual_gain, full_prefix, wasted]
 		if actual_gain <= 0:
 			overflow_hint = "\n→ 雇佣兵消耗的萝卜会提升萝卜田等级与储存上限"
-	_summary.text = "萝卜 %d/%d   %s\n萝卜田 Lv.%d   累计雇佣 %s\n营地收入 +%d 金/场%s" % [
+	# 临时诊断（只在 Debug 构建显示）：萝卜不涨时，这几个值能直接区分是
+	# 「采集没跑」「跑了被覆盖」还是「被幂等挡掉」。定位完就删。
+	var diag := ""
+	if OS.is_debug_build():
+		diag = "\n[调试] 上次采集回合=%d  当前回合=%d  team_active=%s  is_host=%s  tutorial=%s" % [
+			GameState.last_harvest_round, GameState.round_index,
+			str(NetworkService.team_active), str(NetworkService.is_host),
+			str(GameState.tutorial_mode)]
+	_summary.text = "萝卜 %d/%d   %s\n萝卜田 Lv.%d   累计雇佣 %s\n营地收入 +%d 金/场%s%s" % [
 		GameState.carrots, GameState.carrot_capacity(), gain_text,
 		GameState.carrot_farm_level() + 1, threshold_text, GameState.carrot_camp_income(),
-		overflow_hint]
+		overflow_hint, diag]
 	var tech_price := CarrotEconomy.tech_price(GameState.harvest_tech_level)
 	_tech_button.text = "采集科技 Lv.%d → %s" % [GameState.harvest_tech_level,
 		("满级" if tech_price < 0 else "%d 金" % tech_price)]
