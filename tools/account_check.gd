@@ -33,7 +33,7 @@ func _ready() -> void:
 	_case_clear_removes_fallback_copies()
 	_case_backend_url_shape()
 	_case_manager_wiring()
-	_case_auto_login_defaults_off()
+	_case_auto_login_implies_https()
 	_restore_existing()
 	_h.finish(get_tree())
 
@@ -130,24 +130,37 @@ func _case_manager_wiring() -> void:
 			"facade_method_missing", "AccountManager 缺少门面方法：%s" % method)
 
 
-# 自动登录默认必须是关的。
+# 自动登录开着的时候，默认后端地址必须是 https 的公网地址。
 #
-# 翻成 true 的前提是后端已经部署、DEFAULT_BACKEND_URL 指向它（C15）。
-# 在那之前打开的后果很具体：任何没起后端的人每次启动都看到一次登录失败；
-# 真出了包，每个玩家白建一个 Supabase 账号并占掉 MAU 额度。
+# 这条取代了原来那条「自动登录必须默认关闭」——那条的前提是「后端还没部署」，
+# 2026-09-09 后端上线后不再成立。
 #
-# 同 ServerFlags 对 P1 经济账本的做法：功能先接上、开关先关着。
-func _case_auto_login_defaults_off() -> void:
-	# 直接访问常量。**不要**写成 AccountConfig.get_script_constant_map()：
-	# 那是非静态方法，在类上直接调是**解析错误** —— 而解析错误会让整个检查场景
-	# 根本跑不起来（既不 PASS 也不 FAIL，只是没有输出），比断言失败难查得多。
-	_h.expect(not AccountConfig.AUTO_LOGIN_DEFAULT,
-		"auto_login_on_by_default",
-		"启动时自动登录必须默认关闭 —— 后端还没部署，打开等于给每个人制造一次失败")
+# 现在真正危险的组合是「自动登录开着 + 后端地址是本机或明文」：
+#   - 指向 127.0.0.1：每个玩家的客户端去连**他自己的手机**，必然失败，
+#     而登录失败目前对玩家是无感的 —— 没人会发现，直到账号真的开始承载数据。
+#   - 明文 http：账号凭证（JWT / refresh token）过公网等于送出去；
+#     Android 9+ 还会直接拒绝。
+#
+# 两者都不会在本机开发时暴露（本机连 127.0.0.1 当然是通的），只有出包给别人
+# 才会炸 —— 正是需要断言挡住的那类。
+func _case_auto_login_implies_https() -> void:
+	var url: String = AccountConfig.DEFAULT_BACKEND_URL
 
-	# 没有任何命令行开关时（门禁就是这个情形），结果必须跟默认值一致。
+	# 无命令行开关时（门禁就是这个情形），结果必须等于常量本身。
 	_h.expect(AccountConfig.auto_login_enabled() == AccountConfig.AUTO_LOGIN_DEFAULT,
 		"auto_login_flag_drift", "无命令行开关时 auto_login_enabled() 必须等于默认值")
+
+	if AccountConfig.AUTO_LOGIN_DEFAULT:
+		_h.expect(url.begins_with("https://"),
+			"auto_login_over_plaintext",
+			"自动登录开着时 DEFAULT_BACKEND_URL 必须是 https —— 账号凭证不能明文过公网：%s" % url)
+		for local in ["127.0.0.1", "localhost", "192.168.", "10.0.", "0.0.0.0"]:
+			_h.expect(not url.contains(local),
+				"auto_login_points_at_localhost",
+				"自动登录开着时后端地址不能是本机/内网地址（玩家连不上）：%s" % url)
+	else:
+		# 关着的话地址指向哪都无所谓，但记一条，免得检查集看起来是空的。
+		_h.item()
 
 	# Bootstrap 侧的挂载点还在。放在 Bootstrap 而不是 autoload 的 _ready，
 	# 正是为了让 tools/ 下的检查场景不去建真实账号 —— 这条一旦被人挪回

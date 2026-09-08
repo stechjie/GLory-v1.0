@@ -25,6 +25,9 @@ const CHECK_NAME := "account_live"
 var _h: CheckHarness
 var _backup_text := ""
 var _had_file := false
+# 用例可能触发 409 → reissue_player_id()，那会改掉开发者本机的身份。
+# 检查不该有这种副作用，结束前还原。
+var _backup_player_id := ""
 
 
 func _ready() -> void:
@@ -32,12 +35,20 @@ func _ready() -> void:
 	_had_file = FileAccess.file_exists(SaveManager.ACCOUNT_PATH)
 	if _had_file:
 		_backup_text = FileAccess.get_file_as_string(SaveManager.ACCOUNT_PATH)
+	_backup_player_id = PlayerProfile.player_id
 	await _run()
 	_restore()
 	_h.finish(get_tree())
 
 
 func _restore() -> void:
+	# 先还原 player_id：本用例清掉凭证模拟「全新安装」，但 profile.json 里的
+	# id 还在，服务器会以 409 拒绝（不许凭一个 id 接管已有账号），客户端于是
+	# 重签一个。那是**正确的产品行为**，但作为检查的副作用不可接受 ——
+	# 跑一次门禁就把开发者换成另一个玩家。
+	if not _backup_player_id.is_empty() and PlayerProfile.player_id != _backup_player_id:
+		PlayerProfile.player_id = _backup_player_id
+		PlayerProfile.save_profile()
 	SaveManager.clear_account_credentials()
 	if not _had_file:
 		return
@@ -60,6 +71,9 @@ func _run() -> void:
 		"first_login_failed", "第一次登录失败：%s" % str(mgr.get("last_error"))):
 		return
 
+	# 注意：本机 player_id 若已在库里注册过，服务器会回 409，客户端重签一个
+	# 再试（AccountManager.login 里那段）。所以这里比对的是**当前**的
+	# PlayerProfile.player_id，不是用例开始时那个。
 	var first_id := str(mgr.get("player_id"))
 	_h.expect(first_id == PlayerProfile.player_id,
 		"server_id_mismatch",

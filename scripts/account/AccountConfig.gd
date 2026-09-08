@@ -10,32 +10,34 @@ extends RefCounted
 # 新增全局类若未先重建缓存就打包，服务器会在解析阶段直接挂（见 docs/CHECKS.md，
 # 以及 SessionContext.gd 顶部同样的说明）。
 
-# 本机开发默认值。上线前必须换成真实域名。
+# 线上账号后端。部署与运维见 deploy/README.md。
 #
-# ⚠️ 真机上这个地址是连不通的：
-#   1. 127.0.0.1 在手机上指的是手机自己，不是你的开发机；
-#   2. Android 9+ 默认禁止明文 HTTP。
-# 真机联调用 --backend-url=http://<开发机局域网IP>:8099，并临时放开明文；
-# 正式环境一律 https。
-const DEFAULT_BACKEND_URL := "http://127.0.0.1:8099"
+# **必须是 https。** 这条链路上跑的是账号凭证（JWT 与 refresh token），
+# 明文过公网等于把账号发出去。而且 Android 9+ 默认就禁止明文 HTTP。
+#
+# 本机联调不改这里，用命令行覆盖：
+#   --backend-url=http://127.0.0.1:8099          （开发机自己）
+#   --backend-url=http://192.168.x.x:8099        （手机连开发机，需临时放开明文）
+const DEFAULT_BACKEND_URL := "https://glorytd-api.duckdns.org"
 
 # 命令行覆盖，方便在不改代码的前提下切环境（同 DeviceHarness 的 --device-baseline）。
 const BACKEND_URL_FLAG := "--backend-url="
 
 # --- 启动时自动登录 -----------------------------------------------------------
 #
-# **默认关闭。** 同 ServerFlags 对 P1 经济账本的做法：功能先接上、开关先关着。
+# **2026-09-09 起默认开启。** 之前关着的理由是「后端还没部署」，
+# 后端上线并从外网验证通过之后那条不再成立。
 #
-# 现在打开是错的，两条具体理由：
-#   1. 后端只在开发机的 localhost 上跑。默认打开的话，任何没起后端的人
-#      （你同事、CI、拿到包的测试）每次启动都会看到一次登录失败。
-#   2. 账号目前**不承载任何东西** —— 没有云端资料、没有账号 UI。
-#      真出包的话，每个玩家会白建一个 Supabase 账号，一点用都没有，
-#      还要占 MAU 额度。
+# 打开之后的实际行为，需要知道：
+#   1. 玩家首次启动会**自动注册一个匿名账号**（本地没凭证 → /v1/auth/anonymous）。
+#      账号目前不承载任何东西，所以这只意味着 players 表会开始攒行、
+#      Supabase 的 MAU 额度会被占用。
+#   2. **登录失败对玩家是无感的** —— 只有一条 push_warning，界面上什么都不显示。
+#      现在没有任何东西依赖账号，所以静默失败是对的；但也意味着链路坏了
+#      不会有人发现。等账号真正承载数据时，必须补上失败提示。
 #
-# 翻成 true 的前提：后端已经部署，且 DEFAULT_BACKEND_URL 指向它（联机审计的
-# C15 部署那一步）。在那之前用 --account 单次打开来联调。
-const AUTO_LOGIN_DEFAULT := false
+# 单次关闭用 --no-account（关的优先级高于 --account）。
+const AUTO_LOGIN_DEFAULT := true
 const AUTO_LOGIN_ON_FLAG := "--account"
 const AUTO_LOGIN_OFF_FLAG := "--no-account"
 
