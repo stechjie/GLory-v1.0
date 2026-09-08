@@ -78,13 +78,6 @@ func _build() -> void:
 	merc_page.name = "佣兵"
 	merc_page.add_theme_constant_override("separation", 6)
 	tabs.add_child(merc_page)
-	var utility := HBoxContainer.new()
-	merc_page.add_child(utility)
-	var cards := Button.new()
-	cards.text = "查看佣兵卡"
-	cards.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	cards.pressed.connect(_open_existing_picker)
-	utility.add_child(cards)
 	var merc_title := Label.new()
 	merc_title.text = "本回合佣兵（点击直接雇佣）"
 	merc_title.add_theme_color_override("font_color", Color(0.78, 0.88, 1.0))

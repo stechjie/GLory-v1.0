@@ -189,9 +189,9 @@ func _setup_prep_river_background() -> void:
 func _setup_carrot_gathering() -> void:
 	_carrot_gather_root = Node3D.new()
 	_carrot_gather_root.name = "CarrotGatheringRoot"
-	# Stage root is scaled by 3.5, so keep this in stage-local coordinates;
-	# x≈0.95 places the gathering prop just to the right of the four-by-four board.
-	_carrot_gather_root.position = Vector3(0.95, 0.02, -0.22)
+	# Keep the gathering group in the open ground between the board and the
+	# right-side UI.  These are stage-local coordinates (the stage is scaled).
+	_carrot_gather_root.position = Vector3(0.18, 0.02, 0.24)
 	_prep_river_stage_root.add_child(_carrot_gather_root)
 	_carrot_placeholder = Node3D.new()
 	_carrot_placeholder.name = "CarrotVisual"
@@ -268,6 +268,10 @@ func _refresh_carrot_gathering() -> void:
 		if pet == null:
 			continue
 		pet.name = "CarrotGatheringPet_%d" % int(entry.get("slot", 0))
+		# The pet scenes create their action meshes from their own _ready().  Keep
+		# the raw model hidden until its real bounds have been measured so a large
+		# source FBX cannot flash on screen or remain at its import size.
+		pet.visible = false
 		var target: Vector3 = entry.get("position", Vector3.ZERO)
 		pet.position = target
 		_carrot_gather_root.add_child(pet)
@@ -275,7 +279,7 @@ func _refresh_carrot_gathering() -> void:
 		# Pet scenes populate their FBX meshes in _ready(), so normalize after
 		# the model tree exists.
 		call_deferred("_normalize_carrot_pet", pet, pet_id, target,
-			float(entry.get("yaw", 0.0)))
+			float(entry.get("yaw", 0.0)), 6)
 
 func _carrot_pet_entries() -> Array:
 	var starters: Array = PetService.starter_ids()
@@ -286,7 +290,7 @@ func _carrot_pet_entries() -> Array:
 		local_pet = str(starters[0])
 	if not NetworkService.team_active:
 		return [{"slot": 0, "pet_id": local_pet,
-			"position": Vector3(0.0, 0.0, 0.26), "yaw": 180.0}]
+			"position": Vector3(0.0, 0.0, 0.14), "yaw": 180.0}]
 	var local_slot := maxi(0, NetworkService.team_local_slot)
 	var local_team := GameConstants.team_of_slot(local_slot)
 	var entries: Array = []
@@ -313,25 +317,34 @@ func _carrot_pet_entries() -> Array:
 		entries.append({
 			"slot": slot,
 			"pet_id": pet_id,
-			"position": Vector3((float(row_index) - 1.0) * 0.28, 0.0,
-				0.27 if friendly else -0.27),
+			"position": Vector3((float(row_index) - 1.0) * 0.18, 0.0,
+				0.15 if friendly else -0.15),
 			"yaw": 180.0 if friendly else 0.0,
 		})
 	return entries
 
-func _normalize_carrot_pet(pet: Node3D, pet_id: String, target: Vector3, yaw: float) -> void:
+func _normalize_carrot_pet(pet: Node3D, pet_id: String, target: Vector3, yaw: float,
+		attempts_left: int = 0) -> void:
 	if pet == null or not is_instance_valid(pet):
 		return
 	var pet_box := _carrot_pet_aabb(pet)
-	var pet_height := maxf(0.0001, pet_box.size.y)
-	# Normalize the existing pet scene to about 0.9 world units after the
-	# 3.5x stage scale, matching the size used by the game's pet previews.
+	if pet_box.size.y <= 0.0001:
+		if attempts_left > 0:
+			call_deferred("_normalize_carrot_pet", pet, pet_id, target, yaw,
+				attempts_left - 1)
+		else:
+			push_warning("萝卜采集宠物模型未生成可测量网格：%s" % pet_id)
+		return
+	var pet_height := pet_box.size.y
+	# This projects to roughly the same on-screen height as the main-menu pet
+	# preview (about 90 px at the reference 1600 x 720 viewport).
 	var pet_scale := 0.18 / pet_height * PetService.model_scale(pet_id)
 	pet.scale = Vector3.ONE * pet_scale
 	pet.position = Vector3(target.x,
 		-pet_box.position.y * pet_scale + PetService.model_y(pet_id) / PREP_RIVER_STAGE_SCALE.y,
 		target.z)
 	pet.rotation_degrees.y = yaw
+	pet.visible = true
 
 func play_carrot_harvest_feedback(gain: int) -> void:
 	if gain <= 0 or _carrot_gather_root == null or not is_instance_valid(_carrot_gather_root):
@@ -379,7 +392,7 @@ func _carrot_pet_aabb(root: Node3D) -> AABB:
 		else:
 			out = box
 			found = true
-	return out if found else AABB(Vector3.ZERO, Vector3.ONE)
+	return out if found else AABB()
 
 func _add_prep_art_layers(world: Node3D) -> void:
 	# v4 横向竞技场，一层一层贴在平躺 3D 平面上（保留 2.5D 倾斜）
