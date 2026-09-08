@@ -42,3 +42,16 @@ effects/vfx3d/vfxv2/**/*.mtl glory-asset-text
 effects/vfx3d/vfxv2/**/*.ptex glory-asset-text
 effects/vfx3d/vfxv2/**/*.bak glory-asset-text
 effects/vfx3d/vfxv2/**/*.backup_vfx_scale_* glory-asset-text
+
+# 账号系统（后端与部署）一律 LF。
+# 踩过一次：在 Windows 上用脚本改 deploy/bootstrap.sh 时写成了 CRLF，
+# Linux 的 bash 读到 `set -euo pipefail` 直接报 invalid option name。
+# .env.example 同样危险：bootstrap 会 grep 它生成 backend.env，
+#  会跟进密钥值里去。
+#
+# 不加全仓库规则：仓库现有一批 CRLF 文件（data/*.json、
+# 几个 .tscn/.gd），加了会触发大范围重新规范化，与本次改动无关。
+*.sh text=auto eol=lf
+backend/** text=auto eol=lf
+deploy/** text=auto eol=lf
+database/** text=auto eol=lf
