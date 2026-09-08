@@ -144,6 +144,8 @@ static func settle_post_battle_gold(ctx: Dictionary) -> int:
 		interest += int(floor(float(gold) * 0.05))
 	interest += pet_interest_bonus(gold, str(ctx.get("pet_id", "")))
 	gold += interest
+	# (9) 营地固定收入：发生在本次利息之后，避免本场收入再参与利息。
+	gold += maxi(0, int(ctx.get("camp_income", 0)))
 	return maxi(0, gold)
 
 # 商店刷新的递增价：首价 10 金，之后每次翻倍 → 10, 20, 40, 80, 160, 320…

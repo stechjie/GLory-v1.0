@@ -17,9 +17,11 @@ enum SessionState { OFFLINE, JOINING, READY, FAILED, RECONNECTING }
 
 const BattleSim := preload("res://scripts/battle/BattleSimulator.gd")
 const ShopRoll := preload("res://scripts/economy/ShopRoll.gd")
+const CarrotEconomy := preload("res://scripts/economy/CarrotEconomy.gd")
 const DEFAULT_PORT := NetworkConfig.SERVER_PORT
 const DEFAULT_HOST := NetworkConfig.SERVER_IP
 const TEAM_MAX_CLIENTS := 512
+var last_carrot_harvest_gain := 0
 const TEAM_SLOTS := 6
 const CLEANUP_INTERVAL_SEC := 5.0
 const LOBBY_EMPTY_TTL_SEC := 60.0
@@ -1025,11 +1027,29 @@ func _room_begin_next_prep(room: Dictionary) -> void:
 	var next_round := mini(int(room.get("round_index", 1)) + 1, GameState.FINAL_ROUND)
 	# 账本的按回合部分同样重置，并给每个座位摇一份新商店（P1）。
 	# 金币与 roster **不重置** —— 那是跨回合累积的。
-	if economy_enabled():
+	if _economy_action_enabled("upgrade_harvest_tech"):
 		var preps: Dictionary = room.get("prep", {})
+		var refreshed_slots: Dictionary = {}
+		# Keep the old behavior for reserved/disconnected seats whose prep ledger
+		# still exists, then include newly active seats that did not have a ledger.
 		for slot_key in preps.keys():
-			var prep: Dictionary = preps[slot_key]
+			refreshed_slots[int(slot_key)] = true
+		var states_for_economy: Array = room.get("slot_states", [])
+		for seat in TEAM_SLOTS:
+			if seat < states_for_economy.size() and str(states_for_economy[seat]) == "player":
+				refreshed_slots[seat] = true
+		for slot_key in refreshed_slots.keys():
+			var slot := int(slot_key)
+			var prep: Dictionary = _room_prep(room, slot)
+			# carrot-only rollout still uses the existing seat_gold mirror for
+			# battle settlement and room snapshots. Keep the ledger's gold seed in
+			# lockstep without changing the old authoritative ledger path.
+			if not economy_enabled():
+				var slot_gold: Array = room.get("slot_gold", [])
+				if slot < slot_gold.size() and slot_gold[slot] != null:
+					prep["gold"] = int(slot_gold[slot])
 			EconomyLedger.reset_round(prep)
+			EconomyLedger.harvest_for_round(prep, next_round)
 			var shop: Dictionary = prep.get("shop", {})
 			shop["offers"] = _server_roll_shop_offers(GameState.SHOP_UNIT_SLOTS, next_round)
 			shop["offer_id"] = _make_offer_id()
@@ -1369,6 +1389,17 @@ func _room_start_authoritative(room: Dictionary) -> void:
 	_set_room_state(room, ROOM_PREP)
 	var ready: Array = room.get("ready", [])
 	var states: Array = room.get("slot_states", [])
+	if _economy_action_enabled("upgrade_harvest_tech"):
+		# The first prep is a real round boundary. Seed each player once before
+		# the first room_state so an authoritative client cannot miss the +3.
+		for slot in TEAM_SLOTS:
+			if slot < states.size() and str(states[slot]) == "player":
+				var prep: Dictionary = _room_prep(room, slot)
+				if not economy_enabled():
+					var slot_gold: Array = room.get("slot_gold", [])
+					if slot < slot_gold.size() and slot_gold[slot] != null:
+						prep["gold"] = int(slot_gold[slot])
+				EconomyLedger.harvest_for_round(prep, int(room.get("round_index", 1)))
 	for i in TEAM_SLOTS:
 		if str(states[i]) == "player":
 			ready[i] = false
@@ -1453,14 +1484,22 @@ func _build_room_state(room: Dictionary, slot: int) -> Dictionary:
 	}
 
 func _build_economy_state(room: Dictionary, slot: int) -> Dictionary:
-	if not economy_enabled():
+	if not _economy_action_enabled("upgrade_harvest_tech"):
 		return {}
 	var prep := _room_prep(room, slot)
 	var shop: Dictionary = prep.get("shop", {})
 	return {
 		"authoritative": economy_authoritative(),
+		"carrot_authoritative": carrot_economy_enabled(),
 		"revision": int(prep.get("revision", 0)),
 		"gold": int(prep.get("gold", 0)),
+		"carrots": int(prep.get("carrots", 0)),
+		"harvest_tech_level": int(prep.get("harvest_tech_level", 0)),
+		"merc_carrots_spent_total": int(prep.get("merc_carrots_spent_total", 0)),
+		"last_harvest_round": int(prep.get("last_harvest_round", -1)),
+		"last_harvest_gain": int(prep.get("last_harvest_gain", 0)),
+		"stone_draw_used_round": int(prep.get("stone_draw_used_round", -1)),
+		"team_upgrade_stones": _room_team_stones(room, slot).duplicate(true),
 		"shop": {
 			"offer_id": str(shop.get("offer_id", "")),
 			"offers": (shop.get("offers", []) as Array).duplicate(true),
@@ -2375,10 +2414,11 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 			"player_wins": bool(team_wins[own_team]),
 			"round_index": completed_round,
 			"loss_streak_after": int(loss_streak[own_team]),
+			"camp_income": CarrotEconomy.income_for_spent(int(_room_prep(room, slot).get("merc_carrots_spent_total", 0))),
 		})
 		slot_gold[slot] = gold_after
 		# 战后收益回写账本，让下一轮备战从正确的余额开始（P1）。
-		if economy_enabled():
+		if _economy_action_enabled("upgrade_harvest_tech"):
 			_room_prep(room, slot)["gold"] = gold_after
 		out[slot] = {
 			"protocol": NetworkConfig.NETWORK_PROTOCOL_VERSION,
@@ -2392,6 +2432,12 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 			"team_hp": hp_a if own_team == 0 else hp_b,
 			"enemy_team_hp": hp_b if own_team == 0 else hp_a,
 			"gold": gold_after,
+			"carrots": int(_room_prep(room, slot).get("carrots", 0)),
+			"harvest_tech_level": int(_room_prep(room, slot).get("harvest_tech_level", 0)),
+			"merc_carrots_spent_total": int(_room_prep(room, slot).get("merc_carrots_spent_total", 0)),
+			"last_harvest_round": int(_room_prep(room, slot).get("last_harvest_round", -1)),
+			"stone_draw_used_round": int(_room_prep(room, slot).get("stone_draw_used_round", -1)),
+			"team_upgrade_stones": _room_team_stones(room, slot).duplicate(true),
 			"pve_completed": int(room.get("pve_completed", 0)),
 			"boss_completed": int(room.get("boss_completed", 0)),
 			"loss_streak": int(loss_streak[own_team]),
@@ -2427,6 +2473,7 @@ func _server_gold_after_battle(gold_before: int, result: Dictionary, slot: int, 
 		"merchant_gold": EconomyService.merchant_gold_from_board(NetProtocol.extract_board(snapshot)),
 		"treasures": snapshot.get("treasures", []),
 		"pet_id": NetProtocol.extract_pet(snapshot),
+		"camp_income": int(round_ctx.get("camp_income", 0)),
 	})
 
 const TREASURE_OFFER_NONE := {"active": false, "round": 0, "candidates": [], "refresh_index": 0}
@@ -3273,6 +3320,7 @@ func _rpc_room_state(envelope: Dictionary) -> void:
 	var was_public_resuming := _public_resume_pending
 	_public_resume_pending = false
 	_match_state.mark_applied(epoch, seq)
+	_apply_carrot_state((payload.get("economy", {}) as Dictionary))
 
 	team_active = true
 	team_room_id = int(envelope.get("room_id", 0))
@@ -3563,11 +3611,20 @@ func _tx_context(sender: int, rid: String, limit_key: String) -> Dictionary:
 # `economy_ledger_authoritative` 才让它成为唯一真相。后者必须等客户端改造完成。
 const ECONOMY_ACTIONS := [
 	"buy", "merge", "sell", "hire_merc", "shop_refresh", "gamble",
+	"upgrade_harvest_tech", "hire_merc_carrot", "draw_upgrade_stone",
 ]
 const MAX_MERGE_UIDS := 4
 
 func economy_enabled() -> bool:
 	return ServerFlags.get_bool("economy_ledger_enabled")
+
+func carrot_economy_enabled() -> bool:
+	return ServerFlags.get_bool("carrot_economy_enabled")
+
+func _economy_action_enabled(action: String) -> bool:
+	return economy_enabled() or (carrot_economy_enabled() and action in [
+		"upgrade_harvest_tech", "hire_merc_carrot", "draw_upgrade_stone",
+	])
 
 func economy_authoritative() -> bool:
 	# 权威必须蕴含启用：只开后者是配置错误，按"没上线"处理，不是按"权威"处理。
@@ -3579,6 +3636,24 @@ func _room_prep(room: Dictionary, slot: int) -> Dictionary:
 		preps[slot] = EconomyLedger.new_prep(GameState.START_GOLD)
 		room["prep"] = preps
 	return preps[slot]
+
+func _room_team_stones(room: Dictionary, slot: int) -> Dictionary:
+	var raw: Variant = room.get("team_upgrade_stones", [])
+	var warehouses: Array = []
+	if typeof(raw) == TYPE_ARRAY:
+		warehouses = raw as Array
+	elif typeof(raw) == TYPE_DICTIONARY:
+		# The prototype stored one room-wide warehouse. Preserve old snapshots
+		# while migrating them to one independent warehouse per side.
+		var legacy := (raw as Dictionary).duplicate(true)
+		warehouses = [legacy.duplicate(true), legacy.duplicate(true)]
+	while warehouses.size() < 2:
+		warehouses.append({"sky": 0, "land": 0, "ren": 0})
+	for team_index in 2:
+		if typeof(warehouses[team_index]) != TYPE_DICTIONARY:
+			warehouses[team_index] = {"sky": 0, "land": 0, "ren": 0}
+	room["team_upgrade_stones"] = warehouses
+	return warehouses[GameConstants.team_of_slot(clampi(slot, 0, TEAM_SLOTS - 1))] as Dictionary
 
 func _room_owned_for_ledger(room: Dictionary, slot: int) -> Array:
 	# 账本按**服务端记录的**持有宝物算折扣，不按客户端自报 —— 否则伪造一件
@@ -3617,6 +3692,8 @@ func _economy_ctx(room: Dictionary, slot: int, action: String) -> Dictionary:
 		"merc_table": DataRegistry.get_table("mercenaries").get("mercenaries", []),
 		"roster_cap": GameConstants.CELL_COUNT + GameState.BENCH_SLOTS,
 		"merc_cap": GameState.MERCENARY_SLOTS,
+		"round_index": int(room.get("round_index", 1)),
+		"team_stones": _room_team_stones(room, slot),
 	}
 	match action:
 		"shop_refresh":
@@ -3633,6 +3710,9 @@ func _economy_ctx(room: Dictionary, slot: int, action: String) -> Dictionary:
 			# 赌博是「慷慨命运」这件宝物的能力 —— 没有它根本不该开奖。
 			# 客户端有这道门（PrepFlowController:183），服务端此前没有。
 			ctx["gamble_entitled"] = owned.has("money_generous_fate")
+		"draw_upgrade_stone":
+			# 开奖发生在服务端，且在幂等回执检查之后；重放只重发原结果。
+			ctx["stone_roll"] = _crypto_unit_float()
 	return ctx
 
 func request_economy(action: String, payload: Dictionary) -> String:
@@ -3644,7 +3724,7 @@ func request_economy(action: String, payload: Dictionary) -> String:
 
 @rpc("any_peer", "call_remote", "reliable")
 func _rpc_economy_intent(request_id: String, action: String, payload: Dictionary) -> void:
-	if not _dedicated_server or not economy_enabled():
+	if not _dedicated_server or not _economy_action_enabled(action):
 		return
 	var sender := multiplayer.get_remote_sender_id()
 	# 幂等、限流、房间与座位校验全部复用 E4 那一套：
@@ -3656,6 +3736,7 @@ func _rpc_economy_intent(request_id: String, action: String, payload: Dictionary
 		return
 	var room: Dictionary = ctx0["room"]
 	var receipt := _room_apply_economy(room, slot, action, payload)
+	receipt["action"] = action
 	_tx_record(room, slot, request_id, "economy", receipt)
 	_rpc_economy_receipt.rpc_id(sender, request_id, receipt)
 	if bool(receipt.get("ok", false)):
@@ -3670,9 +3751,26 @@ func _room_apply_economy(room: Dictionary, slot: int, action: String, payload: D
 	if action == "merge" and (payload.get("uids", []) as Array).size() > MAX_MERGE_UIDS:
 		return _economy_reject(room, slot, "bad_request")
 	var prep := _room_prep(room, slot)
+	if action == "upgrade_harvest_tech" and not economy_enabled():
+		# Ordinary purchases are still client-side in carrot-only rollout. A
+		# lower reported balance is safe to accept; raising the server's last
+		# settled balance is rejected as forged money.
+		var reported_gold := int(payload.get("gold", -1))
+		var settled_gold: Array = room.get("slot_gold", [])
+		if reported_gold < 0 or slot >= settled_gold.size() \
+				or settled_gold[slot] == null or reported_gold > int(settled_gold[slot]):
+			return _economy_reject(room, slot, "gold_desync")
+		prep["gold"] = reported_gold
 	var receipt := EconomyLedger.apply(prep, action, payload, _economy_ctx(room, slot, action))
 	receipt["action"] = action
 	if bool(receipt.get("ok", false)):
+		# carrot-only rollout still exposes slot_gold in the room snapshot. Keep
+		# the mirror current when harvest tech spends gold so a later full state
+		# cannot restore the pre-upgrade balance.
+		var slot_gold: Array = room.get("slot_gold", [])
+		if slot >= 0 and slot < slot_gold.size():
+			slot_gold[slot] = int(receipt.get("gold_after", slot_gold[slot]))
+			room["slot_gold"] = slot_gold
 		_net_log("economy room=%d slot=%d %s delta=%d gold=%d rev=%d" % [
 			int(room.get("id", 0)), slot, action,
 			int(receipt.get("delta", 0)), int(receipt.get("gold_after", 0)),
@@ -3693,9 +3791,61 @@ func _economy_reject(room: Dictionary, slot: int, reason: String) -> Dictionary:
 func _rpc_economy_receipt(request_id: String, receipt: Dictionary) -> void:
 	if not _tx_consume(request_id):
 		return
+	_apply_carrot_receipt(receipt)
 	economy_receipt.emit(receipt)
 
 signal economy_receipt(receipt: Dictionary)
+
+func _apply_carrot_state(state: Dictionary) -> void:
+	if state.is_empty() or not bool(state.get("carrot_authoritative", false)):
+		return
+	GameState.carrots = maxi(0, int(state.get("carrots", GameState.carrots)))
+	GameState.harvest_tech_level = clampi(int(state.get("harvest_tech_level", GameState.harvest_tech_level)), 0, CarrotEconomy.MAX_HARVEST_TECH_LEVEL)
+	GameState.merc_carrots_spent_total = maxi(0, int(state.get("merc_carrots_spent_total", GameState.merc_carrots_spent_total)))
+	GameState.last_harvest_round = int(state.get("last_harvest_round", GameState.last_harvest_round))
+	last_carrot_harvest_gain = maxi(0, int(state.get("last_harvest_gain", 0)))
+	GameState.stone_draw_used_round = int(state.get("stone_draw_used_round", GameState.stone_draw_used_round))
+	var stones: Variant = state.get("team_upgrade_stones", {})
+	if typeof(stones) == TYPE_DICTIONARY:
+		GameState.team_upgrade_stones = (stones as Dictionary).duplicate(true)
+	SaveManager.save_run()
+
+func _apply_carrot_receipt(receipt: Dictionary) -> void:
+	var action := str(receipt.get("action", ""))
+	var result: Dictionary = receipt.get("result", {})
+	if not bool(receipt.get("ok", false)):
+		return
+	match action:
+		"upgrade_harvest_tech":
+			GameState.gold = int(receipt.get("gold_after", GameState.gold))
+			GameState.harvest_tech_level = int(result.get("harvest_tech_level", GameState.harvest_tech_level))
+		"hire_merc_carrot":
+			GameState.carrots = int(result.get("carrots", GameState.carrots))
+			GameState.merc_carrots_spent_total = int(result.get("merc_carrots_spent_total", GameState.merc_carrots_spent_total))
+			_apply_remote_mercenary(result)
+		"draw_upgrade_stone":
+			GameState.carrots = int(result.get("carrots", GameState.carrots))
+			GameState.stone_draw_used_round = int(result.get("stone_draw_used_round", GameState.stone_draw_used_round))
+			var stones: Variant = result.get("team_upgrade_stones", {})
+			if typeof(stones) == TYPE_DICTIONARY:
+				GameState.team_upgrade_stones = (stones as Dictionary).duplicate(true)
+	SaveManager.save_run()
+
+func _apply_remote_mercenary(result: Dictionary) -> void:
+	var slot := int(result.get("merc_slot", -1))
+	var unit_id := str(result.get("unit_id", ""))
+	if slot < 0 or slot >= GameState.mercenary_slots.size() or unit_id.is_empty():
+		return
+	if GameState.mercenary_slots[slot] != null:
+		return
+	var mercs: Array = DataRegistry.get_table("mercenaries").get("mercenaries", [])
+	for row_value in mercs:
+		var row: Dictionary = row_value
+		if str(row.get("id", "")) == unit_id:
+			var def := row.duplicate(true)
+			def["is_mercenary"] = true
+			GameState.mercenary_slots[slot] = {"id": unit_id, "star": 1, "def": def, "is_mercenary": true}
+			return
 
 # 影子比对：客户端自报的钱 vs 账本记的钱。
 # 这是 authoritative 开关能不能开的**唯一依据** —— 影子期零差异之前不许翻。

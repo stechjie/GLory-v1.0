@@ -36,6 +36,7 @@ const SNAPSHOT_INTERVAL_SEC := 5.0
 const PERSISTED_ROOM_FIELDS := [
 	"id", "state", "slot_states", "ready",
 	"slot_gold", "team_hp", "pve_completed", "boss_completed", "team_loss_streak",
+	"team_upgrade_stones",
 	"run_over", "last_match_state", "shared_seed", "round_index",
 	"seat_tokens", "seat_public_id", "join_seq", "next_join_seq",
 	"leader_slot", "altar_uses", "treasure_offer", "owned_treasures",

@@ -1,6 +1,8 @@
 class_name EconomyLedger
 extends RefCounted
 
+const CarrotEconomy := preload("res://scripts/economy/CarrotEconomy.gd")
+
 # P1 备战经济账本（服务端权威）。
 #
 # 为什么要有这个文件：此前**八条**改金币的路径全部是客户端自己算完直接写
@@ -34,6 +36,12 @@ const SELL_REFUND_RATE := 0.5
 static func new_prep(start_gold: int) -> Dictionary:
 	return {
 		"gold": start_gold,
+		"carrots": 0,
+		"harvest_tech_level": 0,
+		"merc_carrots_spent_total": 0,
+		"last_harvest_round": -1,
+		"last_harvest_gain": 0,
+		"stone_draw_used_round": -1,
 		"revision": 0,
 		"shop": {"offer_id": "", "offers": [], "sold": [], "refresh_uses": 0},
 		"roster": {},        # uid(String) -> {unit_id, star, cost_basis, kind}
@@ -49,6 +57,30 @@ static func reset_round(prep: Dictionary) -> void:
 	prep["shop"] = shop
 	prep["altar_uses"] = 0
 	prep["gamble_used"] = false
+	# Mercenaries last for one battle. Clear only their roster records; the
+	# cumulative carrot spend remains and continues to drive farm progression.
+	var roster: Dictionary = prep.get("roster", {})
+	for uid in roster.keys():
+		var owned: Dictionary = roster[uid]
+		if str(owned.get("kind", "")) == "merc":
+			roster.erase(uid)
+	prep["roster"] = roster
+
+static func harvest_for_round(prep: Dictionary, round_index: int) -> Dictionary:
+	var last_round := int(prep.get("last_harvest_round", -1))
+	if round_index < 1 or last_round >= round_index:
+		return {"ok": false, "already_harvested": true, "gain": 0,
+			"carrots": int(prep.get("carrots", 0))}
+	var spent := int(prep.get("merc_carrots_spent_total", 0))
+	var tech := int(prep.get("harvest_tech_level", 0))
+	var result := CarrotEconomy.harvest(int(prep.get("carrots", 0)), spent, tech)
+	prep["carrots"] = int(result.after)
+	prep["last_harvest_round"] = round_index
+	prep["last_harvest_gain"] = int(result.gain)
+	prep["revision"] = int(prep.get("revision", 0)) + 1
+	return {"ok": true, "already_harvested": false, "gain": int(result.gain),
+		"overflow": int(result.overflow), "carrots": int(prep["carrots"]),
+		"capacity": int(result.capacity), "production": int(result.production)}
 
 # --- 价格：从显式 owned 列表算，不碰 GameState -------------------------------
 # 与 `PrepBoardController._shop_unit_cost` 必须逐字一致，否则客户端预览价和
@@ -97,6 +129,9 @@ static func apply(prep: Dictionary, action: String, payload: Dictionary, ctx: Di
 		"merge":          out = _merge(prep, payload, ctx)
 		"sell":           out = _sell(prep, payload, ctx)
 		"hire_merc":      out = _hire_merc(prep, payload, ctx)
+		"upgrade_harvest_tech": out = _upgrade_harvest_tech(prep, payload, ctx)
+		"hire_merc_carrot": out = _hire_merc_carrot(prep, payload, ctx)
+		"draw_upgrade_stone": out = _draw_upgrade_stone(prep, payload, ctx)
 		"shop_refresh":   out = _shop_refresh(prep, payload, ctx)
 		"treasure_refresh_cost": out = _treasure_refresh_cost(prep, payload, ctx)
 		"altar_grant":    out = _altar_grant(prep, payload, ctx)
@@ -166,6 +201,100 @@ static func _hire_merc(prep: Dictionary, payload: Dictionary, ctx: Dictionary) -
 	prep["gold"] = int(prep["gold"]) - cost
 	var uid := _add_unit(prep, str(m.get("id", "")), 1, cost, "merc")
 	return {"ok": true, "result": {"uid": uid, "unit_id": str(m.get("id", "")), "cost": cost}}
+
+static func _upgrade_harvest_tech(prep: Dictionary, _payload: Dictionary, _ctx: Dictionary) -> Dictionary:
+	var level := int(prep.get("harvest_tech_level", 0))
+	var price := CarrotEconomy.tech_price(level)
+	if price < 0:
+		return {"ok": false, "error": "max_level"}
+	if int(prep.get("gold", 0)) < price:
+		return {"ok": false, "error": "not_enough_gold"}
+	prep["gold"] = int(prep["gold"]) - price
+	prep["harvest_tech_level"] = level + 1
+	return {"ok": true, "result": {
+		"price": price,
+		"harvest_tech_level": level + 1,
+		"production": CarrotEconomy.production_for_tech(level + 1),
+	}}
+
+static func _hire_merc_carrot(prep: Dictionary, payload: Dictionary, ctx: Dictionary) -> Dictionary:
+	var mercs: Array = ctx.get("merc_table", [])
+	var merc_id := str(payload.get("merc_id", ""))
+	var selected: Dictionary = {}
+	for row_value in mercs:
+		var row: Dictionary = row_value
+		if str(row.get("id", "")) == merc_id:
+			selected = row
+			break
+	if selected.is_empty():
+		return {"ok": false, "error": "bad_mercenary"}
+	var cost := int(selected.get("carrot_cost", -1))
+	if cost < 0:
+		return {"ok": false, "error": "missing_carrot_cost"}
+	var merc_slot := int(payload.get("merc_slot", -1))
+	var merc_cap := int(ctx.get("merc_cap", 8))
+	if merc_slot < 0 or merc_slot >= merc_cap:
+		return {"ok": false, "error": "bad_merc_slot"}
+	var roster: Dictionary = prep.get("roster", {})
+	var merc_count := 0
+	for uid in roster.keys():
+		var owned: Dictionary = roster[uid]
+		if str(owned.get("kind", "")) == "merc":
+			merc_count += 1
+			if int(owned.get("merc_slot", -1)) == merc_slot:
+				return {"ok": false, "error": "merc_slot_occupied"}
+	if merc_count >= int(ctx.get("merc_cap", 8)):
+		return {"ok": false, "error": "merc_slots_full"}
+	var carrots := int(prep.get("carrots", 0))
+	if carrots < cost:
+		return {"ok": false, "error": "not_enough_carrots"}
+	prep["carrots"] = carrots - cost
+	prep["merc_carrots_spent_total"] = int(prep.get("merc_carrots_spent_total", 0)) + cost
+	var uid := _add_unit(prep, merc_id, 1, 0, "merc")
+	roster = prep.get("roster", {})
+	var added_unit: Dictionary = roster[uid]
+	added_unit["merc_slot"] = merc_slot
+	roster[uid] = added_unit
+	prep["roster"] = roster
+	var spent := int(prep["merc_carrots_spent_total"])
+	return {"ok": true, "result": {
+		"uid": uid,
+		"unit_id": merc_id,
+		"merc_slot": merc_slot,
+		"carrot_cost": cost,
+		"carrots": int(prep["carrots"]),
+		"merc_carrots_spent_total": spent,
+		"farm_level": CarrotEconomy.farm_level_for_spent(spent),
+		"capacity": CarrotEconomy.capacity_for_spent(spent),
+		"camp_income": CarrotEconomy.income_for_spent(spent),
+	}}
+
+static func _draw_upgrade_stone(prep: Dictionary, _payload: Dictionary, ctx: Dictionary) -> Dictionary:
+	var round_index := int(ctx.get("round_index", 0))
+	if int(prep.get("stone_draw_used_round", -1)) == round_index:
+		return {"ok": false, "error": "already_used"}
+	var carrots := int(prep.get("carrots", 0))
+	if carrots < CarrotEconomy.STONE_COST:
+		return {"ok": false, "error": "not_enough_carrots"}
+	var capacity := CarrotEconomy.capacity_for_spent(int(prep.get("merc_carrots_spent_total", 0)))
+	if capacity < CarrotEconomy.STONE_COST:
+		return {"ok": false, "error": "capacity_too_low"}
+	var team_stones: Dictionary = ctx.get("team_stones", {})
+	if team_stones.is_empty():
+		return {"ok": false, "error": "team_stones_unavailable"}
+	var roll := float(ctx.get("stone_roll", -1.0))
+	if roll < 0.0 or roll >= 1.0:
+		return {"ok": false, "error": "no_roll"}
+	var stone_type := CarrotEconomy.draw_type_from_roll(roll)
+	prep["carrots"] = carrots - CarrotEconomy.STONE_COST
+	prep["stone_draw_used_round"] = round_index
+	team_stones[stone_type] = int(team_stones.get(stone_type, 0)) + 1
+	return {"ok": true, "result": {
+		"stone_type": stone_type,
+		"carrots": int(prep["carrots"]),
+		"stone_draw_used_round": round_index,
+		"team_upgrade_stones": team_stones.duplicate(true),
+	}}
 
 # 合成：两个同名同星 -> 一个高一星，`cost_basis` 相加。
 # 相加是这条规则的全部意义 —— 出售时退的就是"你为这一坨总共花了多少"的一半，

@@ -1,5 +1,7 @@
 extends Node
 
+const CarrotEconomyRules = preload("res://scripts/economy/CarrotEconomy.gd")
+
 const START_FORMATION_HP := 50
 const START_GOLD := 100
 const MAX_NORMAL_UNITS := 7
@@ -22,6 +24,14 @@ var round_index := 1
 var player_formation_hp := START_FORMATION_HP
 var enemy_formation_hp := START_FORMATION_HP
 var gold := START_GOLD
+## Per-run carrot economy. These are player-owned values; derived farm values
+## come from CarrotEconomyRules so saves do not carry duplicate truths.
+var carrots := 0
+var harvest_tech_level := 0
+var merc_carrots_spent_total := 0
+var last_harvest_round := -1
+var stone_draw_used_round := -1
+var team_upgrade_stones: Dictionary = CarrotEconomyRules.empty_stones()
 var board_slots: Array = []
 var bench_slots: Array = []
 var mercenary_slots: Array = []
@@ -64,6 +74,12 @@ func reset_run() -> void:
 	player_formation_hp = START_FORMATION_HP
 	enemy_formation_hp = START_FORMATION_HP
 	gold = START_GOLD
+	carrots = 0
+	harvest_tech_level = 0
+	merc_carrots_spent_total = 0
+	last_harvest_round = -1
+	stone_draw_used_round = -1
+	team_upgrade_stones = CarrotEconomyRules.empty_stones()
 	board_slots.resize(GameConstants.CELL_COUNT)
 	board_slots.fill(null)
 	bench_slots.resize(BENCH_SLOTS)
@@ -92,6 +108,56 @@ func normal_unit_cap() -> int:
 
 func copies_to_upgrade(star: int) -> int:
 	return GameConstants.copies_to_upgrade(star)
+
+func carrot_capacity() -> int:
+	return CarrotEconomyRules.capacity_for_spent(merc_carrots_spent_total)
+
+func carrot_production() -> int:
+	return CarrotEconomyRules.production_for_tech(harvest_tech_level)
+
+func carrot_farm_level() -> int:
+	return CarrotEconomyRules.farm_level_for_spent(merc_carrots_spent_total)
+
+func carrot_camp_income() -> int:
+	return CarrotEconomyRules.income_for_spent(merc_carrots_spent_total)
+
+func carrot_next_threshold() -> int:
+	return CarrotEconomyRules.next_threshold_for_spent(merc_carrots_spent_total)
+
+## Idempotent per-round harvest. The caller may safely invoke this whenever the
+## prep scene is entered; only the first call for a round can change state.
+func harvest_carrots_for_round(round_number: int) -> Dictionary:
+	if round_number < 1 or last_harvest_round >= round_number:
+		return {"ok": false, "already_harvested": true, "gain": 0, "overflow": 0,
+			"after": carrots, "capacity": carrot_capacity(), "production": carrot_production()}
+	var result := CarrotEconomyRules.harvest(carrots, merc_carrots_spent_total, harvest_tech_level)
+	carrots = int(result.after)
+	last_harvest_round = round_number
+	return {"ok": true, "already_harvested": false, "gain": int(result.gain),
+		"overflow": int(result.overflow), "after": carrots,
+		"capacity": int(result.capacity), "production": int(result.production)}
+
+func upgrade_harvest_tech() -> Dictionary:
+	var price := CarrotEconomyRules.tech_price(harvest_tech_level)
+	if price < 0:
+		return {"ok": false, "error": "max_level", "price": -1}
+	if gold < price:
+		return {"ok": false, "error": "not_enough_gold", "price": price}
+	gold -= price
+	harvest_tech_level += 1
+	return {"ok": true, "price": price, "level": harvest_tech_level,
+		"production": carrot_production()}
+
+func record_merc_carrot_spend(amount: int) -> void:
+	merc_carrots_spent_total += maxi(0, amount)
+
+func can_draw_upgrade_stone(round_number: int) -> bool:
+	return stone_draw_used_round != round_number
+
+func apply_team_stone(stone_type: String) -> void:
+	if not CarrotEconomyRules.valid_stone_type(stone_type):
+		return
+	team_upgrade_stones[stone_type] = int(team_upgrade_stones.get(stone_type, 0)) + 1
 
 func star_stat_multiplier(star: int) -> float:
 	match clampi(star, 1, MAX_UNIT_STAR):

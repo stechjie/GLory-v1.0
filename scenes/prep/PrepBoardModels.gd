@@ -27,6 +27,7 @@ const PREP_BOARD_GROUND_FLIP_V := false                  # 若图上下颠倒则
 const PREP_RIVER_FLOW_SHADER := "res://assets/shaders/prep_river_flow.gdshader"
 const PREP_RIVER_TOP_EF_PATH := "res://assets/board/prep_2_5d/prep20_river_top_ef.png"
 const PREP_RIVER_BOTTOM_EF_PATH := "res://assets/board/prep_2_5d/prep20_river_bottom_ef.png"
+const PREP_CARROT_PROP_PATH := "res://assets/props/prep/carrot_gathering_v1.png"
 # ══════ 只调「4×4 格子」（发光圈 + 落子网格）在地面上的铺排 ══════
 # ⚠️ 只动格子，不动画死的石台图；挪多了格子会跑出石台、对不上。
 # UV 是贴图 0~1 占比：范围拉大 = 格子铺更开；两端同时加/减 = 格子整排平移。
@@ -65,6 +66,10 @@ const PREP_MODEL_BASE_SCALE := 0.04
 var _prep_model_root: Node3D
 var _prep_standby_model_root: Node3D
 var _prep_relation_link_root: Node3D
+var _carrot_gather_root: Node3D
+var _carrot_pet_nodes: Array[Node3D] = []
+var _carrot_placeholder: Node3D
+var _carrot_pet_signature := ""
 var _prep_river_viewport: SubViewport
 var _prep_river_stage_root: Node3D
 var _prep_river_camera: Camera3D
@@ -142,6 +147,7 @@ func _setup_prep_river_background() -> void:
 	_prep_relation_link_root.rotation_degrees = board_rotation
 	_prep_relation_link_root.scale = board_scale
 	_prep_river_stage_root.add_child(_prep_relation_link_root)
+	_setup_carrot_gathering()
 
 	var key_light := DirectionalLight3D.new()
 	key_light.name = "PrepRiverKeyLight"
@@ -178,6 +184,202 @@ func _setup_prep_river_background() -> void:
 	camera.current = true
 	world.add_child(camera)
 	_prep_river_camera = camera
+
+
+func _setup_carrot_gathering() -> void:
+	_carrot_gather_root = Node3D.new()
+	_carrot_gather_root.name = "CarrotGatheringRoot"
+	# Stage root is scaled by 3.5, so keep this in stage-local coordinates;
+	# x≈0.95 places the gathering prop just to the right of the four-by-four board.
+	_carrot_gather_root.position = Vector3(0.95, 0.02, -0.22)
+	_prep_river_stage_root.add_child(_carrot_gather_root)
+	_carrot_placeholder = Node3D.new()
+	_carrot_placeholder.name = "CarrotVisual"
+	_carrot_gather_root.add_child(_carrot_placeholder)
+	var carrot_texture := ResourceLoader.load(PREP_CARROT_PROP_PATH) as Texture2D
+	if carrot_texture != null:
+		var carrot_sprite := Sprite3D.new()
+		carrot_sprite.name = "CarrotGeneratedSprite"
+		carrot_sprite.texture = carrot_texture
+		carrot_sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		# Keep the generated prop close to one world unit after the
+		# 3.5x preparation-stage scale.
+		carrot_sprite.pixel_size = 0.00026
+		carrot_sprite.position = Vector3(0.0, 0.14, 0.0)
+		carrot_sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		carrot_sprite.transparent = true
+		carrot_sprite.shaded = false
+		carrot_sprite.no_depth_test = false
+		_carrot_placeholder.add_child(carrot_sprite)
+	else:
+		# Keep a readable development fallback if the imported PNG is unavailable.
+		_add_carrot_placeholder_fallback()
+	_refresh_carrot_gathering()
+
+func _add_carrot_placeholder_fallback() -> void:
+	var box := MeshInstance3D.new()
+	var box_mesh := BoxMesh.new()
+	box_mesh.size = Vector3(0.28, 0.20, 0.28)
+	box.mesh = box_mesh
+	var box_material := StandardMaterial3D.new()
+	box_material.albedo_color = Color(0.94, 0.44, 0.08)
+	box_material.roughness = 0.82
+	box.material_override = box_material
+	box.position.y = 0.11
+	_carrot_placeholder.add_child(box)
+	var leaf := MeshInstance3D.new()
+	var leaf_mesh := BoxMesh.new()
+	leaf_mesh.size = Vector3(0.08, 0.04, 0.18)
+	leaf.mesh = leaf_mesh
+	var leaf_material := StandardMaterial3D.new()
+	leaf_material.albedo_color = Color(0.22, 0.68, 0.22)
+	leaf_material.roughness = 0.9
+	leaf.material_override = leaf_material
+	leaf.position = Vector3(0.0, 0.24, -0.02)
+	leaf.rotation_degrees = Vector3(0.0, 18.0, -18.0)
+	_carrot_placeholder.add_child(leaf)
+
+func refresh_carrot_gathering() -> void:
+	_refresh_carrot_gathering()
+
+func _refresh_carrot_gathering() -> void:
+	if _carrot_gather_root == null or not is_instance_valid(_carrot_gather_root):
+		return
+	var entries := _carrot_pet_entries()
+	var signature := JSON.stringify(entries)
+	if signature == _carrot_pet_signature and not _carrot_pet_nodes.is_empty():
+		return
+	for pet in _carrot_pet_nodes:
+		if is_instance_valid(pet):
+			pet.queue_free()
+	_carrot_pet_nodes.clear()
+	_carrot_pet_signature = signature
+	for entry_value in entries:
+		var entry: Dictionary = entry_value
+		var pet_id := str(entry.get("pet_id", ""))
+		var model_path := PetService.model_path(pet_id)
+		if model_path.is_empty():
+			continue
+		var scene := ResourceLoader.load(model_path) as PackedScene
+		if scene == null:
+			push_warning("萝卜采集宠物模型加载失败：%s" % model_path)
+			continue
+		var pet := scene.instantiate() as Node3D
+		if pet == null:
+			continue
+		pet.name = "CarrotGatheringPet_%d" % int(entry.get("slot", 0))
+		var target: Vector3 = entry.get("position", Vector3.ZERO)
+		pet.position = target
+		_carrot_gather_root.add_child(pet)
+		_carrot_pet_nodes.append(pet)
+		# Pet scenes populate their FBX meshes in _ready(), so normalize after
+		# the model tree exists.
+		call_deferred("_normalize_carrot_pet", pet, pet_id, target,
+			float(entry.get("yaw", 0.0)))
+
+func _carrot_pet_entries() -> Array:
+	var starters: Array = PetService.starter_ids()
+	var local_pet := PlayerProfile.get_active()
+	if local_pet.is_empty() and not PlayerProfile.owned_pets.is_empty():
+		local_pet = str(PlayerProfile.owned_pets[0])
+	if local_pet.is_empty() and not starters.is_empty():
+		local_pet = str(starters[0])
+	if not NetworkService.team_active:
+		return [{"slot": 0, "pet_id": local_pet,
+			"position": Vector3(0.0, 0.0, 0.26), "yaw": 180.0}]
+	var local_slot := maxi(0, NetworkService.team_local_slot)
+	var local_team := GameConstants.team_of_slot(local_slot)
+	var entries: Array = []
+	for slot in NetworkService.TEAM_SLOTS:
+		var state := "empty"
+		if slot < NetworkService.team_slot_states.size():
+			state = str(NetworkService.team_slot_states[slot])
+		if state not in ["player", "bot"]:
+			continue
+		var pet_id := local_pet if slot == local_slot else ""
+		var snapshot: Dictionary = {}
+		if NetworkService.team_boards.has(slot):
+			snapshot = NetworkService.team_boards[slot]
+		elif NetworkService.team_boards.has(str(slot)):
+			snapshot = NetworkService.team_boards[str(slot)]
+		if pet_id.is_empty():
+			pet_id = str(snapshot.get("pet", ""))
+		if pet_id.is_empty() and not starters.is_empty():
+			pet_id = str(starters[slot % starters.size()])
+		if PetService.model_path(pet_id).is_empty():
+			continue
+		var friendly := GameConstants.team_of_slot(slot) == local_team
+		var row_index := slot % GameConstants.TEAM_SIDE_SIZE
+		entries.append({
+			"slot": slot,
+			"pet_id": pet_id,
+			"position": Vector3((float(row_index) - 1.0) * 0.28, 0.0,
+				0.27 if friendly else -0.27),
+			"yaw": 180.0 if friendly else 0.0,
+		})
+	return entries
+
+func _normalize_carrot_pet(pet: Node3D, pet_id: String, target: Vector3, yaw: float) -> void:
+	if pet == null or not is_instance_valid(pet):
+		return
+	var pet_box := _carrot_pet_aabb(pet)
+	var pet_height := maxf(0.0001, pet_box.size.y)
+	# Normalize the existing pet scene to about 0.9 world units after the
+	# 3.5x stage scale, matching the size used by the game's pet previews.
+	var pet_scale := 0.18 / pet_height * PetService.model_scale(pet_id)
+	pet.scale = Vector3.ONE * pet_scale
+	pet.position = Vector3(target.x,
+		-pet_box.position.y * pet_scale + PetService.model_y(pet_id) / PREP_RIVER_STAGE_SCALE.y,
+		target.z)
+	pet.rotation_degrees.y = yaw
+
+func play_carrot_harvest_feedback(gain: int) -> void:
+	if gain <= 0 or _carrot_gather_root == null or not is_instance_valid(_carrot_gather_root):
+		return
+	for pet in _carrot_pet_nodes:
+		if not is_instance_valid(pet):
+			continue
+		var base_y := pet.position.y
+		var tween := create_tween()
+		tween.tween_property(pet, "position:y", base_y + 0.045, 0.18)
+		tween.tween_property(pet, "position:y", base_y, 0.18)
+		tween.tween_property(pet, "position:y", base_y + 0.035, 0.18)
+		tween.tween_property(pet, "position:y", base_y, 0.18)
+	var gain_label := Label3D.new()
+	gain_label.text = "+%d 萝卜" % gain
+	gain_label.font_size = 42
+	gain_label.outline_size = 10
+	gain_label.modulate = Color(1.0, 0.78, 0.25, 1.0)
+	gain_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	gain_label.position = Vector3(0.0, 0.40, 0.0)
+	_carrot_gather_root.add_child(gain_label)
+	var label_tween := create_tween()
+	label_tween.set_parallel(true)
+	label_tween.tween_property(gain_label, "position:y", 0.55, 1.2)
+	label_tween.tween_property(gain_label, "modulate:a", 0.0, 1.2)
+	label_tween.chain().tween_callback(gain_label.queue_free)
+
+func _carrot_pet_aabb(root: Node3D) -> AABB:
+	var out := AABB()
+	var found := false
+	var stack: Array[Node] = [root]
+	while not stack.is_empty():
+		var current: Node = stack.pop_back()
+		for child in current.get_children():
+			stack.append(child)
+		if not (current is MeshInstance3D):
+			continue
+		var mesh_instance := current as MeshInstance3D
+		if mesh_instance.mesh == null:
+			continue
+		var local := root.global_transform.affine_inverse() * mesh_instance.global_transform
+		var box := local * mesh_instance.get_aabb()
+		if found:
+			out = out.merge(box)
+		else:
+			out = box
+			found = true
+	return out if found else AABB(Vector3.ZERO, Vector3.ONE)
 
 func _add_prep_art_layers(world: Node3D) -> void:
 	# v4 横向竞技场，一层一层贴在平躺 3D 平面上（保留 2.5D 倾斜）

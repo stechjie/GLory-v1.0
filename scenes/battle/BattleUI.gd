@@ -234,6 +234,7 @@ func _settlement_preview(result: Dictionary) -> String:
 	if GameState.owned_treasures.has("money_compound"):
 		interest += int(floor(float(before_interest) * 0.05))
 	interest += EconomyService.pet_interest_bonus(before_interest, PlayerProfile.get_active())
+	var camp_income := GameState.carrot_camp_income()
 	if merchant_gold > 0:
 		lines.append(tr("settle_merchant") % merchant_gold)
 	if bonus_gold > 0:
@@ -248,6 +249,8 @@ func _settlement_preview(result: Dictionary) -> String:
 	if TreasureService.has_linkage("link_money_magic"):
 		lines.append(tr("settle_money_magic"))
 	lines.append(tr("settle_interest") % interest)
+	if camp_income > 0:
+		lines.append("萝卜营地收入 +%d金" % camp_income)
 	var formation_damage := _formation_damage_preview(result, win)
 	lines.append(tr("settle_formation_change") % (tr("settle_enemy_formation") % formation_damage if win else tr("settle_self_formation") % formation_damage))
 	return tr("settle_prefix") + " | ".join(lines)

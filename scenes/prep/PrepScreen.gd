@@ -56,6 +56,15 @@ var _battle_prepare_check_hook := Callable()
 var _battle_scene_path_for_check := ""
 
 func _ready() -> void:
+	# 回合采集是备战入口的幂等结算点。动画和面板重建不会再次发放。
+	var carrot_harvest_gain := 0
+	if not GameState.tutorial_mode and not NetworkService.team_active:
+		var harvest := GameState.harvest_carrots_for_round(GameState.round_index)
+		if bool(harvest.get("ok", false)):
+			carrot_harvest_gain = int(harvest.get("gain", 0))
+			SaveManager.save_run()
+	elif NetworkService.team_active and GameState.last_harvest_round == GameState.round_index:
+		carrot_harvest_gain = NetworkService.last_carrot_harvest_gain
 	_board_hud.setup_cell_styles()
 	if not NetworkService.session_changed.is_connected(_on_network_session_changed):
 		NetworkService.session_changed.connect(_on_network_session_changed)
@@ -68,6 +77,8 @@ func _ready() -> void:
 	if GameState.shop_offers.is_empty() or GameState.shop_offers[0].is_empty():
 		_roll_shop()
 	_build()
+	if carrot_harvest_gain > 0:
+		call_deferred("play_carrot_harvest_feedback", carrot_harvest_gain)
 	# 这条连接必须放在最派生的类里：_connect_treasure_signals 定义在 PrepFlowController，
 	# 而面板的接线在 PrepUI._build() 里 —— 父类看不见子类的方法。
 	if not _treasure.net_signals_needed.is_connected(_connect_treasure_signals):
