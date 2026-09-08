@@ -1,0 +1,60 @@
+[Unit]
+Description=Glory Account Backend (FastAPI)
+Documentation=https://github.com/stechjie/GLory-v1.0/blob/main/deploy/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+
+# 专用低权限用户。**不要用 root 跑** —— 这个进程持有 Supabase 的 secret key
+# 与数据库密码，一旦被攻破，以 root 身份跑等于把整台机器一起交出去。
+User=glory
+Group=glory
+
+WorkingDirectory=/opt/glory/repo/backend
+
+# 密钥从这里读，不写进 unit 文件（unit 文件是世界可读的）。
+# 这个文件必须 chmod 600 且属主是 glory。
+EnvironmentFile=/opt/glory/backend.env
+
+# ⚠️ **只监听 127.0.0.1，绝不监听 0.0.0.0。**
+#
+# 对外由 Caddy 反向代理并终结 TLS。直接对外监听等于开了一个明文 HTTP 端口，
+# 任何人都能绕过 HTTPS 直连它 —— 而这条链路上跑的是账号凭证。
+# 改这一行前先想清楚。
+ExecStart=/opt/glory/repo/backend/.venv/bin/python -m uvicorn app.main:app \
+    --host 127.0.0.1 --port 8099 --workers 1
+
+# 单 worker 是刻意的：限流计数在进程内存里（见 backend/app/rate_limit.py），
+# 多 worker 会让实际额度按 worker 数翻倍。要加 worker 必须先把限流换成
+# Redis 或挪到代理层。
+#
+# 单进程的吞吐对现阶段绰绰有余 —— 登录是每个玩家一天几次的操作，
+# 不是每帧都在打的接口。
+
+Restart=on-failure
+RestartSec=5s
+# 反复崩溃时不要无限重启刷日志：10 分钟内超过 5 次就停下，等人来看。
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+# --- 加固 ---------------------------------------------------------------
+# 这个进程只需要读自己的代码、连出去打网络。别的一概不给。
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+# 不给写任何地方。日志走 journald，不落文件。
+ReadWritePaths=
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=glory-backend
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,48 @@
+# Caddy 配置：TLS 终结 + 反向代理到账号后端。
+#
+# 为什么用 Caddy 而不是 nginx：证书**全自动**。它自己去 Let's Encrypt 申请、
+# 自己续期，你完全不用管证书过期这件事。nginx 要另外配 certbot 和续期定时任务，
+# 而"忘了续期导致全体玩家登不上"是这类系统最常见的事故之一。
+#
+# 装到 /etc/caddy/Caddyfile，然后 `sudo systemctl reload caddy`。
+
+# ⚠️ 把下面这一行换成你的真实域名。
+# DuckDNS 的话形如 glorytd-api.duckdns.org；换正式域名时也只改这里，
+# 以及客户端的 AccountConfig.DEFAULT_BACKEND_URL。
+GLORY_API_DOMAIN_PLACEHOLDER {
+
+	# 后端只监听 127.0.0.1（见 glory-backend.service），所以外面进不来，
+	# 必须从这里过。
+	reverse_proxy 127.0.0.1:8099 {
+		# 后端要靠这个拿真实来源 IP 做限流。
+		#
+		# ⚠️ 配套前提：后端目前**刻意不读** X-Forwarded-For
+		# （见 backend/app/rate_limit.py 顶部）—— 那个头客户端可以随便写，
+		# 盲信等于限流白做。要启用它，必须先在后端确认"只信任来自
+		# 127.0.0.1 的这个头"，改完再打开。在那之前后端看到的是
+		# 127.0.0.1，也就是**全体玩家共用一个限流额度**。
+		#
+		# 这是当前的已知限制，不是遗漏。真开放注册前必须处理。
+		header_up X-Forwarded-For {remote_host}
+	}
+
+	# 安全响应头。这是个纯 JSON API，不该被当网页嵌进别的站点。
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		# 别把服务器软件版本白送出去。
+		-Server
+	}
+
+	# 请求日志。出问题时要能看到是谁在什么时候打了什么。
+	# ⚠️ 只记路径与状态码，**不记请求体** —— 请求体里有 refresh token。
+	log {
+		output file /var/log/caddy/glory-api.log {
+			roll_size 20mb
+			roll_keep 5
+		}
+		format json
+	}
+}
