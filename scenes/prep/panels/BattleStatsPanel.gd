@@ -152,19 +152,19 @@ func _group_label(group: String) -> String:
 
 # 原 _entry_stats_group（PrepShared.gd）
 func _entry_group(entry: Dictionary) -> String:
-	return ""
+	return BattleStatsFormat.entry_stats_group(entry)
 
 
 
 # 原 _sanitize_stats_cell（PrepShared.gd）
 func _sanitize_cell(text: String) -> String:
-	return ""
+	return BattleStatsFormat.sanitize_stats_cell(text)
 
 
 
 # 原 _format_status_bucket（PrepShared.gd）
 func _format_status_bucket(value: Variant) -> String:
-	return ""
+	return BattleStatsFormat.format_status_bucket(value)
 
 
 
