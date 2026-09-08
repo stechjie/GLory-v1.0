@@ -103,8 +103,11 @@ GLORY_DATABASE_URL=
 GLORY_ENVIRONMENT=prod
 ```
 
-> `GLORY_ENVIRONMENT=prod` 会关掉 `/docs` 与 `/v1/debug/*`。
+> `GLORY_ENVIRONMENT=prod` 会关掉 `/docs`、`/redoc`、**`/openapi.json`** 与 `/v1/debug/*`。
 > 生产上不该把接口形状和表结构白送出去。
+>
+> `openapi.json` 那一条是部署后从外网实测才发现漏掉的 —— 只关 `/docs` 看着像关严了，
+> 实际最完整的那份清单还开着。现在三个由同一个开关决定，且有测试钉着。
 
 这个文件是 `chmod 600`、属主 `glory`。**不进 git，不要复制到别处，不要贴进聊天。**
 
