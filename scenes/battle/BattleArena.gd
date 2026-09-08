@@ -626,6 +626,7 @@ func _setup_battle_3d_view(arena_wrap: Control) -> void:
 	arena_wrap.add_child(container)
 
 	_battle_3d_viewport = SubViewport.new()
+	_battle_3d_viewport.own_world_3d = true
 	_battle_3d_viewport.size = Vector2i(960, 540)
 	_battle_3d_viewport.transparent_bg = true
 	_battle_3d_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS

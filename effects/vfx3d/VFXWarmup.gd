@@ -311,6 +311,9 @@ func _build_viewport() -> void:
 	# 逐项对齐 BattleArena._battle_3d_viewport。尺寸不进管线 key（视口是动态状态），
 	# 所以这里开 64x64 就够；transparent_bg / msaa / 更新模式必须一致。
 	_viewport = SubViewport.new()
+	# Offscreen rendering alone does not isolate the world. Without this,
+	# warmup effects at the origin are visible through the preparation camera.
+	_viewport.own_world_3d = true
 	_viewport.name = "VFXWarmupViewport"
 	_viewport.size = Vector2i(64, 64)
 	_viewport.transparent_bg = true

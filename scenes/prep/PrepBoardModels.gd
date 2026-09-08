@@ -92,6 +92,7 @@ func _setup_prep_river_background() -> void:
 	add_child(container)
 
 	_prep_river_viewport = SubViewport.new()
+	_prep_river_viewport.own_world_3d = true
 	_prep_river_viewport.size = PREP_RIVER_VIEWPORT_SIZE
 	# 透明：棋盘没盖到的角落露出后面的满屏 2D 背景（同一张 base 图，任何屏幕尺寸都铺满），不再露深色兜底
 	_prep_river_viewport.transparent_bg = true
