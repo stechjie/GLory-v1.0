@@ -13,6 +13,7 @@ const GloryTokens := preload("res://ui/theme/GloryTokens.gd")
 # 只为拿 FillPhase 枚举做**静态**引用（教学第 15 步的子阶段），
 # 走 preload 常量而不是从 autoload 实例上取，dynamic_call 棘轮才不会长。
 const TutorialModeScript := preload("res://scripts/tutorial/TutorialMode.gd")
+const CarrotCampPanelScript := preload("res://scenes/prep/CarrotCampPanel.gd")
 const SHOP_SCROLL_BURN_SHADER: Shader = preload("res://assets/shaders/prep_scroll_burn.gdshader")
 const SHOP_REFRESH_WIDTH := 112.0
 const SHOP_GOLD_WIDTH := 112.0
@@ -27,6 +28,7 @@ const STATS_BTN_SIZE := Vector2(140, 94)                                  # 比�
 const REFRESH_BTN_PATH := "res://assets/ui/buttons/btn_refresh_fire_lowpoly.png"
 const MERC_BTN_PATH := "res://assets/ui/buttons/btn_merc_lowpoly.png"
 const TEAM_MERCS_BTN_PATH := "res://assets/ui/buttons/btn_team_mercs_lowpoly.png"
+const CARROT_BTN_PATH := "res://assets/props/prep/carrot_gathering_v1.png"
 const TEAM_MERCS_STAGE_BACKGROUND_PATH := "res://assets/ui/prep/team_mercs_stage.png"
 const MERC_BTN_SIZE := Vector2(132, 132)                                  # 方形
 const SHOP_REFRESH_FIRE_ATLAS_PATH := "res://assets/vfx/prep/scroll_edge_fire_atlas.png"
@@ -101,6 +103,8 @@ var _team_merc_counts_snapshot: Dictionary = {}
 var _team_mercs_host: Control
 var _team_merc_snapshot_round := -1
 var _team_merc_snapshot_initialized := false
+var _carrot_panel
+var _carrot_button: Button
 var _tutorial_target_provider: TutorialTargetProviderScript
 
 const MERCENARY_PORTRAIT_PATHS := {
@@ -400,6 +404,8 @@ func _build() -> void:
 		_shop.refresh_requested.connect(_on_refresh_shop)
 		_shop.message_requested.connect(show_message)
 		_shop.state_changed.connect(_refresh_all)
+	if not NetworkService.economy_receipt.is_connected(_on_carrot_economy_receipt):
+		NetworkService.economy_receipt.connect(_on_carrot_economy_receipt)
 
 	var bg := ColorRect.new()
 	bg.color = Color(0.38, 0.70, 0.88)
@@ -896,7 +902,7 @@ func _build_top_actions() -> void:
 	side_col.offset_left = -STATS_BTN_SIZE.x - 8
 	side_col.offset_right = -8
 	side_col.offset_top = 2 + TOP_ROW_BTN_SIZE.y + 6
-	side_col.offset_bottom = 2 + TOP_ROW_BTN_SIZE.y + 6 + MERC_BTN_SIZE.y + STATS_BTN_SIZE.y + 6
+	side_col.offset_bottom = 2 + TOP_ROW_BTN_SIZE.y + 6 + MERC_BTN_SIZE.y * 3.0 + 12
 	side_col.alignment = BoxContainer.ALIGNMENT_BEGIN
 	side_col.add_theme_constant_override("separation", 6)
 	side_col.z_index = 20
@@ -942,12 +948,91 @@ func _build_top_actions() -> void:
 	team_mercs_btn.visible = not GameState.tutorial_mode
 	side_col.add_child(team_mercs_btn)
 
+	# 独立的萝卜入口放在两枚既有佣兵按钮下方。
+	var carrot_btn := PrepWidgets.make_framed_text_button("", CARROT_BTN_PATH,
+		MERC_BTN_SIZE, 16, _toggle_carrot_camp)
+	_carrot_button = carrot_btn
+	var carrot_lbl := Label.new()
+	carrot_lbl.text = "萝卜营地" if LocaleManager.get_locale() != "en" else "Carrot Camp"
+	carrot_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	carrot_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	carrot_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	carrot_lbl.anchor_left = 0.12
+	carrot_lbl.anchor_right = 0.88
+	carrot_lbl.anchor_top = 0.72
+	carrot_lbl.anchor_bottom = 0.93
+	carrot_lbl.add_theme_font_size_override("font_size", 14)
+	carrot_lbl.add_theme_color_override("font_color", Color(1.0, 0.94, 0.78))
+	carrot_lbl.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.95))
+	carrot_lbl.add_theme_constant_override("outline_size", 3)
+	carrot_btn.add_child(carrot_lbl)
+	carrot_btn.visible = not GameState.tutorial_mode
+	side_col.add_child(carrot_btn)
+
+	_carrot_panel = CarrotCampPanelScript.new()
+	_carrot_panel.name = "CarrotCampPanel"
+	_carrot_panel.anchor_left = 1.0
+	_carrot_panel.anchor_right = 1.0
+	_carrot_panel.anchor_top = 0.0
+	_carrot_panel.anchor_bottom = 0.0
+	_carrot_panel.offset_left = -390
+	_carrot_panel.offset_right = -12
+	_carrot_panel.offset_top = 150
+	_carrot_panel.offset_bottom = 620
+	_carrot_panel.z_index = 35
+	_carrot_panel.visible = false
+	# The concrete economy handlers live farther down the PrepScreen inheritance
+	# chain. String callables keep this reusable UI layer independently parsable.
+	_carrot_panel.setup(Callable(self, "request_carrot_harvest_upgrade"),
+		Callable(self, "request_upgrade_stone_draw"),
+		Callable(self, "_on_carrot_hire_requested"),
+		Callable(self, "_toggle_merc_picker"), Callable(self, "_toggle_team_mercs_picker"))
+	add_child(_carrot_panel)
+
 func _toggle_mute() -> void:
 	# 全局静音开关：静音 Master 总线（BGM + 音效都停），引擎级状态，切场景仍生效
 	var master := AudioServer.get_bus_index("Master")
 	AudioServer.set_bus_mute(master, not AudioServer.is_bus_mute(master))
 	if _mute_button != null:
 		_mute_button.text = _mute_label_text()
+
+func _toggle_carrot_camp() -> void:
+	if _carrot_panel == null or not is_instance_valid(_carrot_panel):
+		return
+	_carrot_panel.toggle()
+	if _carrot_panel.visible:
+		_close_team_mercs_picker()
+		_close_merc_picker()
+
+func _close_carrot_camp() -> void:
+	if _carrot_panel != null and is_instance_valid(_carrot_panel):
+		_carrot_panel.visible = false
+
+func _on_carrot_hire_requested(merc_id: String) -> void:
+	var mercs: Array = DataRegistry.get_table("mercenaries").get("mercenaries", [])
+	for index in mercs.size():
+		var merc: Dictionary = mercs[index]
+		if str(merc.get("id", "")) != merc_id:
+			continue
+		var empty := PrepRules.first_empty_mercenary_slot()
+		if empty >= 0:
+			call("_hire_mercenary_to_slot", index, empty)
+		return
+
+func _on_carrot_economy_receipt(receipt: Dictionary) -> void:
+	var action := str(receipt.get("action", ""))
+	if action not in ["upgrade_harvest_tech", "hire_merc_carrot", "draw_upgrade_stone"]:
+		return
+	if not bool(receipt.get("ok", false)):
+		show_message("萝卜交易失败：%s" % str(receipt.get("error", "denied")))
+		return
+	if action == "hire_merc_carrot":
+		call("_mark_online_board_changed")
+		NetworkService.team_send_prep_mercs()
+	if _carrot_panel != null and is_instance_valid(_carrot_panel):
+		_carrot_panel.refresh()
+	refresh_carrot_gathering()
+	_refresh_all()
 
 func _mute_label_text() -> String:
 	var muted := AudioServer.is_bus_mute(AudioServer.get_bus_index("Master"))
@@ -1174,8 +1259,12 @@ func _mercenary_purchase_reason(index: int) -> String:
 	if PrepRules.first_empty_mercenary_slot() < 0:
 		return tr("ui_merc_full")
 	var mercenary: Dictionary = mercenaries[index]
-	if GameState.gold < int(mercenary.get("cost", 0)):
-		return tr("ui_not_enough_gold")
+	if GameState.tutorial_mode:
+		if GameState.gold < int(mercenary.get("cost", 0)):
+			return tr("ui_not_enough_gold")
+	else:
+		if GameState.carrots < int(mercenary.get("carrot_cost", 0)):
+			return "萝卜不足"
 	return ""
 
 func _on_portrait_card_hover(card: Control, hovered: bool) -> void:
@@ -1207,7 +1296,10 @@ func _create_mercenary_purchase_card(mercenary: Dictionary, index: int) -> DragB
 	card.clip_contents = false
 	card.text = ""
 	card.drag_enabled = false
-	card.set_meta("drag_preview_text", "%s\n%s" % [str(mercenary.get("name", tr("ui_mercenary"))), tr("ui_gold_format") % int(mercenary.get("cost", 0))])
+	var price_text := tr("ui_gold_format") % int(mercenary.get("cost", 0))
+	if not GameState.tutorial_mode:
+		price_text = "萝卜 %d" % int(mercenary.get("carrot_cost", 0))
+	card.set_meta("drag_preview_text", "%s\n%s" % [str(mercenary.get("name", tr("ui_mercenary"))), price_text])
 	var purchase_reason := _mercenary_purchase_reason(index)
 	var can_purchase := purchase_reason.is_empty()
 	card.set_meta("can_purchase", can_purchase)
@@ -1259,7 +1351,7 @@ func _create_mercenary_purchase_card(mercenary: Dictionary, index: int) -> DragB
 	price_label.offset_top = -19
 	price_label.offset_right = -1
 	price_label.offset_bottom = 0
-	price_label.text = tr("ui_gold_format") % int(mercenary.get("cost", 0))
+	price_label.text = price_text
 	price_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	price_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	price_label.add_theme_font_size_override("font_size", 10)
@@ -1291,6 +1383,8 @@ func _refresh_all() -> void:
 	_refresh_merc_panel()
 	_treasure.refresh()
 	_refresh_owned_treasure_logos()
+	if _carrot_panel != null and is_instance_valid(_carrot_panel):
+		_carrot_panel.refresh()
 	if GameState.tutorial_mode:
 		TutorialMode.update_overlay()
 	_check_team_merc_alert()
@@ -1413,6 +1507,7 @@ func _refresh_mercenary_overlay() -> void:
 func _toggle_merc_picker() -> void:
 	_merc_picker_open = not _merc_picker_open
 	if _merc_picker_open:
+		_close_carrot_camp()
 		_close_team_mercs_picker()
 		_shop.close_picker()
 	_refresh_merc_panel()
@@ -1663,6 +1758,7 @@ func _on_team_prep_mercs_changed() -> void:
 func _toggle_team_mercs_picker() -> void:
 	_team_mercs_open = not _team_mercs_open
 	if _team_mercs_open:
+		_close_carrot_camp()
 		_close_merc_picker()
 		if _team_merc_alert != null:
 			_team_merc_alert.mark_seen()

@@ -4,6 +4,7 @@ extends "res://scenes/prep/PrepFlowController.gd"
 # 用 preload 而非 class_name：新增的全局类要等编辑器重扫才进类缓存，
 # 而服务端包是直接打包仓库里的缓存文件的（make_server_zip.ps1）。
 const ShopRoll := preload("res://scripts/economy/ShopRoll.gd")
+const CarrotEconomy := preload("res://scripts/economy/CarrotEconomy.gd")
 func _drop_on_board(board_index: int, data: Variant) -> void:
 	_drop_consumed = true
 	_set_shop_sell_mode(false)
@@ -140,17 +141,76 @@ func _hire_mercenary_to_slot(index: int, mercenary_index: int) -> void:
 	if not PrepRules.can_hire_mercenary(index):
 		return
 	var m: Dictionary = mercs[index]
-	var cost := int(m.get("cost", 0))
-	if GameState.gold < cost:
-		show_message(tr("ui_not_enough_gold"))
+	if not GameState.tutorial_mode and NetworkService.team_active and not NetworkService.is_host:
+		if not NetworkService.carrot_economy_enabled():
+			show_message("联机萝卜系统尚未开启")
+			return
+		NetworkService.request_economy("hire_merc_carrot", {
+			"merc_id": str(m.get("id", "")),
+			"merc_slot": mercenary_index,
+		})
 		return
-	GameState.gold -= cost
+	var cost := int(m.get("cost", 0))
+	var carrot_cost := int(m.get("carrot_cost", -1))
+	if GameState.tutorial_mode:
+		if GameState.gold < cost:
+			show_message(tr("ui_not_enough_gold"))
+			return
+		GameState.gold -= cost
+	else:
+		if carrot_cost < 0 or GameState.carrots < carrot_cost:
+			show_message("萝卜不足")
+			return
+		GameState.carrots -= carrot_cost
+		GameState.record_merc_carrot_spend(carrot_cost)
 	var def := m.duplicate(true)
 	def["is_mercenary"] = true
 	GameState.mercenary_slots[mercenary_index] = {"id": def.id, "star": 1, "def": def, "is_mercenary": true}
 	_mark_online_board_changed()
 	NetworkService.team_send_prep_mercs()
 	SaveManager.save_run()
+	_refresh_all()
+
+func request_carrot_harvest_upgrade() -> void:
+	if GameState.tutorial_mode:
+		return
+	if NetworkService.team_active and not NetworkService.is_host:
+		if not NetworkService.carrot_economy_enabled():
+			show_message("联机萝卜系统尚未开启")
+			return
+		# In carrot-only rollout the full gold ledger is not authoritative yet.
+		# Report the current balance; the server only accepts a value no higher
+		# than its last settled balance before applying the upgrade cost.
+		NetworkService.request_economy("upgrade_harvest_tech", {"gold": GameState.gold})
+		return
+	var result := GameState.upgrade_harvest_tech()
+	if not bool(result.get("ok", false)):
+		show_message("采集科技无法升级：%s" % str(result.get("error", "denied")))
+		return
+	SaveManager.save_run()
+	_refresh_all()
+
+func request_upgrade_stone_draw() -> void:
+	if GameState.tutorial_mode:
+		return
+	if not GameState.can_draw_upgrade_stone(GameState.round_index):
+		show_message("本回合已经抽取过升级石")
+		return
+	if GameState.carrots < CarrotEconomy.STONE_COST:
+		show_message("萝卜不足：需要50萝卜")
+		return
+	if GameState.carrot_capacity() < CarrotEconomy.STONE_COST:
+		show_message("萝卜田4级后才能储存50萝卜")
+		return
+	if NetworkService.team_active and not NetworkService.is_host:
+		NetworkService.request_economy("draw_upgrade_stone", {})
+		return
+	GameState.carrots -= CarrotEconomy.STONE_COST
+	GameState.stone_draw_used_round = GameState.round_index
+	var stone_type := CarrotEconomy.draw_type_from_roll(randf())
+	GameState.apply_team_stone(stone_type)
+	SaveManager.save_run()
+	show_message("获得%s石" % {"sky": "天", "land": "地", "ren": "人"}.get(stone_type, stone_type))
 	_refresh_all()
 func _on_board_pressed(index: int) -> void:
 	if _shop.selected >= 0:

@@ -674,6 +674,14 @@ func save_checkpoint(force: bool = false) -> void:
 		},
 		"round_index": GameState.round_index,
 		"gold": GameState.gold,
+		# 教学仍使用金币雇佣佣兵，但把新增字段一并写入断点，避免从旧/新
+		# 断点恢复时把上一种模式的萝卜状态带进来。
+		"carrots": GameState.carrots,
+		"harvest_tech_level": GameState.harvest_tech_level,
+		"merc_carrots_spent_total": GameState.merc_carrots_spent_total,
+		"last_harvest_round": GameState.last_harvest_round,
+		"stone_draw_used_round": GameState.stone_draw_used_round,
+		"team_upgrade_stones": GameState.team_upgrade_stones.duplicate(true),
 		"player_formation_hp": GameState.player_formation_hp,
 		"enemy_formation_hp": GameState.enemy_formation_hp,
 		"board_slots": GameState.board_slots.duplicate(true),
@@ -737,6 +745,14 @@ func restore_checkpoint() -> bool:
 
 	GameState.round_index = int(data.get("round_index", 1))
 	GameState.gold = int(data.get("gold", TUTORIAL_GOLD))
+	GameState.carrots = maxi(0, int(data.get("carrots", 0)))
+	GameState.harvest_tech_level = clampi(int(data.get("harvest_tech_level", 0)), 0, 5)
+	GameState.merc_carrots_spent_total = maxi(0, int(data.get("merc_carrots_spent_total", 0)))
+	GameState.last_harvest_round = int(data.get("last_harvest_round", -1))
+	GameState.stone_draw_used_round = int(data.get("stone_draw_used_round", -1))
+	var saved_stones: Variant = data.get("team_upgrade_stones", {})
+	if saved_stones is Dictionary:
+		GameState.team_upgrade_stones = (saved_stones as Dictionary).duplicate(true)
 	GameState.player_formation_hp = int(data.get("player_formation_hp", TUTORIAL_HP))
 	GameState.enemy_formation_hp = int(data.get("enemy_formation_hp", TUTORIAL_HP))
 	_restore_slots(GameState.board_slots, data.get("board_slots", []))

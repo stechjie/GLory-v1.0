@@ -34,6 +34,8 @@ const DEFAULTS := {
 	# 或者反过来，都会让两边账目分叉。默认全 false = 等于这批改动没上线。
 	"economy_ledger_enabled": false,
 	"economy_ledger_authoritative": false,
+	# 萝卜资源使用同一套幂等账本，但可以独立上线，不影响旧金币账本开关。
+	"carrot_economy_enabled": true,
 	# 已移除：send_rival_replay
 	# 它和已确认的产品规则「两队 replay 一律全发（玩家要能随时切镜头看另一队）」
 	# 直接冲突 —— 一个生产开关能悄悄破坏产品不变量，本身就是缺陷。

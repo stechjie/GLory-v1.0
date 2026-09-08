@@ -320,6 +320,8 @@ func _on_resume_completed(payload: Dictionary) -> void:
 	var _eco_state: Dictionary = payload.get("economy", {}) as Dictionary
 	if not _eco_state.is_empty() and bool(_eco_state.get("authoritative", false)):
 		GameState.gold = int(_eco_state.get("gold", GameState.gold))
+	if not _eco_state.is_empty() and bool(_eco_state.get("carrot_authoritative", false)):
+		NetworkService._apply_carrot_state(_eco_state)
 	# else: 保留本地金币（GameState.gold 已是本回合真实值）
 	GameState.loss_streak = int(payload.get("loss_streak", GameState.loss_streak))
 	GameState.pve_completed = int(payload.get("pve_completed", GameState.pve_completed))
@@ -1843,6 +1845,7 @@ func _on_team_battle_finished(result: Dictionary) -> void:
 		"merchant_gold": EconomyService.merchant_gold_from_board(GameState.board_slots),
 		"treasures": GameState.owned_treasures,
 		"pet_id": PlayerProfile.get_active(),
+		"camp_income": GameState.carrot_camp_income(),
 	})
 	_apply_post_battle_unit_outcomes(result)
 	GameState.battle_history.append(result)
@@ -1928,6 +1931,15 @@ func _apply_team_match_state_payload(state_payload: Dictionary, result: Dictiona
 	GameState.team_hp = int(state_payload.get("team_hp", GameState.team_hp))
 	GameState.enemy_team_hp = int(state_payload.get("enemy_team_hp", GameState.enemy_team_hp))
 	GameState.gold = int(state_payload.get("gold", GameState.gold))
+	if state_payload.has("carrots"):
+		GameState.carrots = maxi(0, int(state_payload.get("carrots", GameState.carrots)))
+		GameState.harvest_tech_level = clampi(int(state_payload.get("harvest_tech_level", GameState.harvest_tech_level)), 0, 5)
+		GameState.merc_carrots_spent_total = maxi(0, int(state_payload.get("merc_carrots_spent_total", GameState.merc_carrots_spent_total)))
+		GameState.last_harvest_round = int(state_payload.get("last_harvest_round", GameState.last_harvest_round))
+		GameState.stone_draw_used_round = int(state_payload.get("stone_draw_used_round", GameState.stone_draw_used_round))
+		var stones: Variant = state_payload.get("team_upgrade_stones", {})
+		if typeof(stones) == TYPE_DICTIONARY:
+			GameState.team_upgrade_stones = (stones as Dictionary).duplicate(true)
 	GameState.pve_completed = int(state_payload.get("pve_completed", GameState.pve_completed))
 	GameState.boss_completed = int(state_payload.get("boss_completed", GameState.boss_completed))
 	GameState.loss_streak = int(state_payload.get("loss_streak", GameState.loss_streak))

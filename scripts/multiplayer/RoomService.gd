@@ -117,6 +117,11 @@ func new_room() -> Dictionary:
 		"peer_slot": {},
 		"boards": {},
 		"slot_gold": slot_gold,
+		# One shared warehouse per side (slots 0..2 and slots 3..5).
+		"team_upgrade_stones": [
+			{"sky": 0, "land": 0, "ren": 0},
+			{"sky": 0, "land": 0, "ren": 0},
+		],
 		"team_hp": [GameState.START_FORMATION_HP, GameState.START_FORMATION_HP],
 		"pve_completed": 0,
 		"boss_completed": 0,

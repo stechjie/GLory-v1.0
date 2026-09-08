@@ -1,5 +1,6 @@
 ﻿extends Node
 
+const CarrotEconomy = preload("res://scripts/economy/CarrotEconomy.gd")
 const SAVE_PATH := "user://glory_beta_004.save"
 const RECONNECT_PATH := "user://glory_reconnect.json"
 const PUBLIC_TOKEN_PATH := "user://glory_public_token.txt"
@@ -231,6 +232,12 @@ func _write_now() -> void:
 		"player_formation_hp": GameState.player_formation_hp,
 		"enemy_formation_hp": GameState.enemy_formation_hp,
 		"gold": GameState.gold,
+		"carrots": GameState.carrots,
+		"harvest_tech_level": GameState.harvest_tech_level,
+		"merc_carrots_spent_total": GameState.merc_carrots_spent_total,
+		"last_harvest_round": GameState.last_harvest_round,
+		"stone_draw_used_round": GameState.stone_draw_used_round,
+		"team_upgrade_stones": GameState.team_upgrade_stones,
 		"board_slots": GameState.board_slots,
 		"bench_slots": GameState.bench_slots,
 		"mercenary_slots": GameState.mercenary_slots,
@@ -265,6 +272,18 @@ func load_run() -> bool:
 	GameState.player_formation_hp = int(parsed.get("player_formation_hp", GameState.START_FORMATION_HP))
 	GameState.enemy_formation_hp = int(parsed.get("enemy_formation_hp", GameState.START_FORMATION_HP))
 	GameState.gold = int(parsed.get("gold", GameState.START_GOLD))
+	GameState.carrots = maxi(0, int(parsed.get("carrots", 0)))
+	GameState.harvest_tech_level = clampi(int(parsed.get("harvest_tech_level", 0)), 0, CarrotEconomy.MAX_HARVEST_TECH_LEVEL)
+	GameState.merc_carrots_spent_total = maxi(0, int(parsed.get("merc_carrots_spent_total", 0)))
+	# Old saves have no carrot round marker. Treat the saved round as already
+	# harvested so migration cannot grant a retroactive first-round payout.
+	GameState.last_harvest_round = int(parsed.get("last_harvest_round", GameState.round_index))
+	GameState.stone_draw_used_round = int(parsed.get("stone_draw_used_round", -1))
+	GameState.team_upgrade_stones = CarrotEconomy.empty_stones()
+	var saved_stones: Variant = parsed.get("team_upgrade_stones", {})
+	if typeof(saved_stones) == TYPE_DICTIONARY:
+		for stone_type in CarrotEconomy.STONE_TYPES:
+			GameState.team_upgrade_stones[stone_type] = maxi(0, int((saved_stones as Dictionary).get(stone_type, 0)))
 	GameState.board_slots = parsed.get("board_slots", [])
 	GameState.bench_slots = parsed.get("bench_slots", [])
 	GameState.mercenary_slots = parsed.get("mercenary_slots", [])

@@ -141,7 +141,12 @@ static func can_hire_mercenary(index: int) -> bool:
 		return false
 	if first_empty_mercenary_slot() < 0:
 		return false
-	return GameState.gold >= int((mercs[index] as Dictionary).get("cost", 0))
+	var merc: Dictionary = mercs[index]
+	# 教学流程仍使用旧金币教程；正式对局的佣兵统一使用萝卜。
+	if GameState.tutorial_mode:
+		return GameState.gold >= int(merc.get("cost", 0))
+	var carrot_cost := int(merc.get("carrot_cost", -1))
+	return carrot_cost >= 0 and GameState.carrots >= carrot_cost
 
 
 # --- 回合 ---------------------------------------------------------------------
