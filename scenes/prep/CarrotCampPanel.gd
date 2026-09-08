@@ -119,9 +119,33 @@ func refresh() -> void:
 		return
 	var next_threshold := GameState.carrot_next_threshold()
 	var threshold_text := "已满级" if next_threshold < 0 else "%d / 下一级 %d" % [GameState.merc_carrots_spent_total, next_threshold]
-	_summary.text = "萝卜 %d/%d   下回合 +%d\n萝卜田 Lv.%d   累计雇佣 %s\n营地收入 +%d 金/场" % [
-		GameState.carrots, GameState.carrot_capacity(), GameState.carrot_production(),
-		GameState.carrot_farm_level() + 1, threshold_text, GameState.carrot_camp_income()]
+	# 「下回合 +N」必须显示**实际到账**，不是原始产量。采集是
+	# `gained = min(产量, 上限 - 当前)`，满仓时到账 0、多出来的部分直接丢弃。
+	# 此前这里显示的是 carrot_production()（原始产量），于是满仓玩家看到
+	# 「12/12 下回合 +3」，然后下一回合数字一动不动 —— 看起来像采集坏了。
+	#
+	# 这里不重抄公式，而是拿 CarrotEconomy.harvest() 做一次**无副作用的预演**：
+	# 它是纯静态函数，返回 gain/overflow。显示与实际发放读同一份规则，
+	# 以后改产量表（比如给萝卜田等级加产量）这里会自动跟上，不会再分家。
+	var preview := CarrotEconomy.harvest(
+		GameState.carrots, GameState.merc_carrots_spent_total, GameState.harvest_tech_level)
+	var actual_gain := int(preview.get("gain", 0))
+	var wasted := int(preview.get("overflow", 0))
+	# 「浪费」和「已满仓」是两种状态，不能混为一谈：产量高于剩余空间时会浪费一部分
+	# （此时仓还没满），只有到账为 0 才是真的满仓。提示行只在真满仓时出现——
+	# 那才是玩家会卡死的状态（萝卜不再增长），少量溢出靠数字本身表达就够，
+	# 否则高采集科技下会常驻一行噪声。
+	var gain_text := "下回合 +%d" % actual_gain
+	var overflow_hint := ""
+	if wasted > 0:
+		var full_prefix := "已满仓，" if actual_gain <= 0 else ""
+		gain_text = "下回合 +%d（%s浪费 %d）" % [actual_gain, full_prefix, wasted]
+		if actual_gain <= 0:
+			overflow_hint = "\n→ 雇佣兵消耗的萝卜会提升萝卜田等级与储存上限"
+	_summary.text = "萝卜 %d/%d   %s\n萝卜田 Lv.%d   累计雇佣 %s\n营地收入 +%d 金/场%s" % [
+		GameState.carrots, GameState.carrot_capacity(), gain_text,
+		GameState.carrot_farm_level() + 1, threshold_text, GameState.carrot_camp_income(),
+		overflow_hint]
 	var tech_price := CarrotEconomy.tech_price(GameState.harvest_tech_level)
 	_tech_button.text = "采集科技 Lv.%d → %s" % [GameState.harvest_tech_level,
 		("满级" if tech_price < 0 else "%d 金" % tech_price)]
