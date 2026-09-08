@@ -5,7 +5,17 @@ const BOARD_ROWS := 4
 const BOARD_COLUMNS := 4
 const CELL_COUNT := BOARD_ROWS * BOARD_COLUMNS
 const NORMAL_UNIT_CAP := 7
-const MAX_STAR := 3
+# 星级上限与**合成**上限是两件事，必须分开。
+#
+# 4 星只能靠升级石获得，不能靠同名合成。这两个概念以前共用一个常量，
+# 只把它改成 4 会同时开放「3 个三星合成四星」—— 而且那条路径是现成可用的：
+# copies_to_upgrade() 读的是 STAR_UPGRADE_COPIES.get(star, 3)，表里只有 {1:2, 2:3}，
+# star=3 会走**默认值 3**。改完常量当天就会被玩家发现，且升级石系统直接被绕过。
+#
+# 合成相关的判定一律读 MAX_MERGE_STAR（PrepRules.can_merge_cells / EconomyLedger._merge），
+# 星级本身的上限（属性系数、显示、网络校验）读 MAX_STAR。
+const MAX_STAR := 4
+const MAX_MERGE_STAR := 3
 
 # 升星所需份数：1 星要 2 个同名同星，2 星要 3 个。
 #

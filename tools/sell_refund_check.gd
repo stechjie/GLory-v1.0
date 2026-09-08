@@ -66,9 +66,14 @@ func _clearance_requires() -> Array:
 
 
 # 造出 star 星需要的一星份数：2 星要 2 个，3 星要 2*3 = 6 个。
+#
+# 4 星**不是合成出来的**（合成封顶在 MAX_MERGE_STAR），它是「6 份 + 一颗升级石」。
+# 升级石不花金币，所以 4 星的**金币**取得成本与 3 星相同——循环上界因此夹在
+# MAX_MERGE_STAR。不夹的话会按 copies_to_upgrade(3) 的默认值 3 多乘一次，
+# 算出 18 份的虚高成本，让「退款 < 成本」这条断言被稀释成永远成立。
 func _copies_for_star(star: int) -> int:
 	var n := 1
-	for s in range(1, star):
+	for s in range(1, mini(star, GameState.MAX_MERGE_STAR)):
 		n *= GameState.copies_to_upgrade(s)
 	return n
 
@@ -91,7 +96,7 @@ func _case_no_arbitrage() -> void:
 		for row in units:
 			var d: Dictionary = row
 			var unit_price := int(_prep.call("_shop_unit_cost", d))
-			for star in [1, 2, 3]:
+			for star in [1, 2, 3, 4]:
 				var paid := unit_price * _copies_for_star(star)
 				var cell := {"id": str(d.get("id", "")), "star": star, "def": d}
 				var refund := int(_prep.call("_sell_refund_for_cell", cell))

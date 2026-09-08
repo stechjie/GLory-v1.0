@@ -34,7 +34,9 @@ func _ready() -> void:
 	_case_harvest_formula()
 	_case_idempotent()
 	_case_client_server_parity()
+	_case_capacity_fillable()
 	_case_stone_reachable()
+	_case_four_star_upgrade()
 	await _case_harvest_owner()
 	_h.finish(get_tree())
 
@@ -48,6 +50,8 @@ func _case_table_shape() -> void:
 		"FARM_CAPACITIES 长度 %d != FARM_THRESHOLDS 长度 %d" % [CarrotEconomy.FARM_CAPACITIES.size(), n])
 	_h.expect(CarrotEconomy.FARM_INCOME.size() == n, "farm_table_length",
 		"FARM_INCOME 长度 %d != FARM_THRESHOLDS 长度 %d" % [CarrotEconomy.FARM_INCOME.size(), n])
+	_h.expect(CarrotEconomy.FARM_PRODUCTION.size() == n, "farm_table_length",
+		"FARM_PRODUCTION 长度 %d != FARM_THRESHOLDS 长度 %d" % [CarrotEconomy.FARM_PRODUCTION.size(), n])
 	_h.expect(CarrotEconomy.HARVEST_TECH_BONUSES.size() == CarrotEconomy.MAX_HARVEST_TECH_LEVEL + 1,
 		"tech_table_length", "HARVEST_TECH_BONUSES 长度 %d != MAX_HARVEST_TECH_LEVEL+1 = %d"
 			% [CarrotEconomy.HARVEST_TECH_BONUSES.size(), CarrotEconomy.MAX_HARVEST_TECH_LEVEL + 1])
@@ -58,6 +62,7 @@ func _case_table_shape() -> void:
 	_assert_monotonic(CarrotEconomy.FARM_THRESHOLDS, "FARM_THRESHOLDS")
 	_assert_monotonic(CarrotEconomy.FARM_CAPACITIES, "FARM_CAPACITIES")
 	_assert_monotonic(CarrotEconomy.FARM_INCOME, "FARM_INCOME")
+	_assert_monotonic(CarrotEconomy.FARM_PRODUCTION, "FARM_PRODUCTION")
 	_assert_monotonic(CarrotEconomy.HARVEST_TECH_BONUSES, "HARVEST_TECH_BONUSES")
 	_assert_monotonic(CarrotEconomy.HARVEST_TECH_PRICES, "HARVEST_TECH_PRICES")
 
@@ -83,7 +88,7 @@ func _case_harvest_formula() -> void:
 		for level in CarrotEconomy.FARM_THRESHOLDS.size():
 			var spent := int(CarrotEconomy.FARM_THRESHOLDS[level])
 			var capacity := CarrotEconomy.capacity_for_spent(spent)
-			var production := CarrotEconomy.production_for_tech(tech)
+			var production := CarrotEconomy.total_production(tech, spent)
 			# 空仓、半仓、差一格满、正好满、以及越界的脏值
 			for before in [0, capacity / 2, maxi(0, capacity - 1), capacity, capacity + 7]:
 				var r := CarrotEconomy.harvest(before, spent, tech)
@@ -174,7 +179,39 @@ func _case_client_server_parity() -> void:
 					_h.item()
 
 
-# --- 5. 升级石可达性 -----------------------------------------------------------
+# --- 5. 容量必须填得满 ---------------------------------------------------------
+# 每一级萝卜田的容量，在**不买任何采集科技**（tech 0，最保守）的前提下，
+# 必须能在一局 21 回合之内装满。装不满 = 那一级的容量是纯装饰，玩家花萝卜
+# 升上去却什么都没得到，而且界面上完全看不出来。
+#
+# 这条正是 FARM_PRODUCTION 存在的理由：加它之前 Lv6 是「容量 150 / 产量 3」，
+# 要 50 回合才满，是这张表里最明显的死数值。
+func _case_capacity_fillable() -> void:
+	for level in CarrotEconomy.FARM_THRESHOLDS.size():
+		var spent := int(CarrotEconomy.FARM_THRESHOLDS[level])
+		var capacity := CarrotEconomy.capacity_for_spent(spent)
+		var production := CarrotEconomy.total_production(0, spent)
+		if not _h.expect(production > 0, "zero_production",
+				"萝卜田 Lv%d 的产量为 0 —— 永远装不满" % [level + 1]):
+			continue
+		var rounds := int(ceil(float(capacity) / float(production)))
+		if rounds > FINAL_ROUND:
+			_h.fail("capacity_unfillable",
+				"萝卜田 Lv%d：容量 %d / 产量 %d = 要 %d 回合才装满，而一局只有 %d 回合 —— 这一级的容量是死数值"
+					% [level + 1, capacity, production, rounds, FINAL_ROUND])
+		else:
+			_h.item()
+	# 把各级的装满耗时打出来，改表时一眼能看出节奏有没有走形。
+	var shape: Array[String] = []
+	for level in CarrotEconomy.FARM_THRESHOLDS.size():
+		var spent2 := int(CarrotEconomy.FARM_THRESHOLDS[level])
+		var cap2 := CarrotEconomy.capacity_for_spent(spent2)
+		var prod2 := CarrotEconomy.total_production(0, spent2)
+		shape.append("Lv%d %d/%d=%d回合" % [level + 1, cap2, prod2, int(ceil(float(cap2) / float(prod2)))])
+	_h.note("装满耗时（采集科技 0 级）：" + " · ".join(shape))
+
+
+# --- 6. 升级石可达性 -----------------------------------------------------------
 # 石头价必须小于等于某一级萝卜田的容量，否则玩家永远存不到那么多萝卜，
 # 升级石会变成一条无法触发的死内容 —— 而且界面上看不出来。
 func _case_stone_reachable() -> void:
@@ -196,7 +233,157 @@ func _case_stone_reachable() -> void:
 			% [int(CarrotEconomy.FARM_CAPACITIES[0]), CarrotEconomy.STONE_COST])
 
 
-# --- 6. 采集权责判据 -----------------------------------------------------------
+# --- 7. 四星升级 ---------------------------------------------------------------
+# 四星只能由「三星 + 同属性升级石」获得。这里守四条：
+#   1. 属性必须对得上（拿天石升不了地属性的棋子）
+#   2. 没石头不能升，且失败时**一颗石头都不能少**
+#   3. 升级正好消耗一颗，且只消耗对应属性那一种
+#   4. 四星不能再升（不能靠反复点消耗石头）
+func _case_four_star_upgrade() -> void:
+	var units: Array = DataRegistry.get_table("race_units").get("units", [])
+	if not _h.expect(not units.is_empty(), "units_empty", "race_units 表为空"):
+		return
+	var by_element := {}
+	for row in units:
+		var d: Dictionary = row
+		by_element[str(d.get("element", ""))] = d
+	for stone in CarrotEconomy.STONE_TYPES:
+		if not by_element.has(stone):
+			continue
+		var d: Dictionary = by_element[stone]
+		var name := str(d.get("name", d.get("id", "?")))
+
+		# 2. 没石头不能升
+		GameState.reset_run()
+		var cell := {"id": str(d.get("id", "")), "star": GameState.MAX_MERGE_STAR, "def": d}
+		var denied := GameState.upgrade_cell_to_four_star(cell)
+		if bool(denied.get("ok", false)):
+			_h.fail("four_star_without_stone", "%s：仓库里没有%s石却升成功了" % [name, stone])
+		elif int(cell.get("star", 0)) != GameState.MAX_MERGE_STAR:
+			_h.fail("four_star_failed_but_mutated", "%s：升级被拒，但星级被改成了 %d" % [name, int(cell.get("star", 0))])
+		else:
+			_h.item()
+
+		# 1. 属性不匹配的石头不能用
+		for other in CarrotEconomy.STONE_TYPES:
+			if other == stone:
+				continue
+			GameState.reset_run()
+			GameState.apply_team_stone(other)
+			var cell2 := {"id": str(d.get("id", "")), "star": GameState.MAX_MERGE_STAR, "def": d}
+			var wrong := GameState.upgrade_cell_to_four_star(cell2)
+			if bool(wrong.get("ok", false)):
+				_h.fail("four_star_wrong_element",
+					"%s（%s属性）被%s石升级了 —— 属性门槛失效" % [name, stone, other])
+			elif int(GameState.team_upgrade_stones.get(other, 0)) != 1:
+				_h.fail("four_star_stone_leak", "%s：升级失败却消耗了%s石" % [name, other])
+			else:
+				_h.item()
+
+		# 3. 正确的石头恰好消耗一颗，且不动别的属性
+		GameState.reset_run()
+		for s in CarrotEconomy.STONE_TYPES:
+			GameState.apply_team_stone(s)
+			GameState.apply_team_stone(s)
+		var cell3 := {"id": str(d.get("id", "")), "star": GameState.MAX_MERGE_STAR, "def": d}
+		var ok := GameState.upgrade_cell_to_four_star(cell3)
+		if not _h.expect(bool(ok.get("ok", false)), "four_star_denied",
+				"%s：有%s石、是三星，却升不了（error=%s）" % [name, stone, str(ok.get("error", "?"))]):
+			continue
+		if int(cell3.get("star", 0)) != GameState.MAX_UNIT_STAR:
+			_h.fail("four_star_wrong_star", "%s：升级后星级是 %d，应为 %d"
+				% [name, int(cell3.get("star", 0)), GameState.MAX_UNIT_STAR])
+		elif int(GameState.team_upgrade_stones.get(stone, 0)) != 1:
+			_h.fail("four_star_stone_count", "%s：升级后%s石剩 %d 颗，应为 1"
+				% [name, stone, int(GameState.team_upgrade_stones.get(stone, 0))])
+		else:
+			_h.item()
+		for other2 in CarrotEconomy.STONE_TYPES:
+			if other2 == stone:
+				continue
+			if int(GameState.team_upgrade_stones.get(other2, 0)) != 2:
+				_h.fail("four_star_stone_count", "%s：升级动了不相干的%s石" % [name, other2])
+			else:
+				_h.item()
+
+		# 4. 四星不能再升
+		var again := GameState.upgrade_cell_to_four_star(cell3)
+		if bool(again.get("ok", false)):
+			_h.fail("four_star_repeatable", "%s：四星还能再升 —— 可反复点消耗石头" % name)
+		elif int(GameState.team_upgrade_stones.get(stone, 0)) != 1:
+			_h.fail("four_star_stone_leak", "%s：对四星再次升级消耗了石头" % name)
+		else:
+			_h.item()
+
+	# 四星的**属性**必须真的生效。最静默的失败模式是 UnitFactory 里的星级 clamp
+	# 漏改（历史上那里硬写 3）：棋子显示四星、属性却按三星算，战斗里没有任何提示。
+	var scale_def: Dictionary = units[0]
+	var s3 := UnitFactory.apply_star_stats(scale_def, GameState.MAX_MERGE_STAR)
+	var s4 := UnitFactory.apply_star_stats(scale_def, GameState.MAX_UNIT_STAR)
+	if int(s4.get("star", 0)) != GameState.MAX_UNIT_STAR:
+		_h.fail("four_star_clamped", "apply_star_stats 返回的星级是 %d，应为 %d —— 四星被静默降级"
+			% [int(s4.get("star", 0)), GameState.MAX_UNIT_STAR])
+	elif int(s4.get("hp", 0)) <= int(s3.get("hp", 0)) or int(s4.get("atk", 0)) <= int(s3.get("atk", 0)):
+		_h.fail("four_star_stats_not_applied",
+			"四星属性没有高于三星：hp %d→%d、atk %d→%d"
+				% [int(s3.get("hp", 0)), int(s4.get("hp", 0)), int(s3.get("atk", 0)), int(s4.get("atk", 0))])
+	else:
+		_h.item()
+	# 按单位覆写：star4_multiplier 必须真的被读到（小灵靠它拿 ×1.50 而非默认 ×1.15）。
+	var override_def := scale_def.duplicate(true)
+	override_def["star4_multiplier"] = 1.50
+	var s4o := UnitFactory.apply_star_stats(override_def, GameState.MAX_UNIT_STAR)
+	if int(s4o.get("hp", 0)) <= int(s4.get("hp", 0)):
+		_h.fail("star4_multiplier_ignored",
+			"star4_multiplier=1.50 的棋子 hp 是 %d，不高于默认的 %d —— 覆写字段没被读到"
+				% [int(s4o.get("hp", 0)), int(s4.get("hp", 0))])
+	else:
+		_h.item()
+
+	# 四星必须能**存档往返**，也必须能过联机校验。
+	# SaveManager 整块存 board_slots，但 NetProtocol 对 star 有 clamp 与白名单校验
+	# （读 MAX_UNIT_STAR）。加四星时漏改那里的表现是「重开游戏 / 提交棋盘后四星退回
+	# 三星」或「棋盘被整个拒收」，两种都不报错。
+	var probe_def: Dictionary = units[0]
+	var probe := {"id": str(probe_def.get("id", "")), "star": GameState.MAX_UNIT_STAR,
+		"def": probe_def}
+	GameState.reset_run()
+	GameState.board_slots[0] = probe
+	# save_run() 是**去抖**的（挂一个 SAVE_DEBOUNCE_SEC 的定时器），同一帧调完立刻
+	# load_run() 会读到上一次的文件。检查里必须显式落盘，否则这条会假红。
+	SaveManager.save_run()
+	SaveManager._flush_pending_save()
+	if not _h.expect(SaveManager.load_run(), "save_read_failed", "存档写入后读不回来"):
+		return
+	var reloaded = GameState.board_slots[0]
+	if typeof(reloaded) != TYPE_DICTIONARY:
+		_h.fail("four_star_save_lost", "存档往返后 0 号格子空了")
+	elif int((reloaded as Dictionary).get("star", 0)) != GameState.MAX_UNIT_STAR:
+		_h.fail("four_star_save_downgraded", "存档往返后星级变成 %d，应为 %d —— 四星被静默降级"
+			% [int((reloaded as Dictionary).get("star", 0)), GameState.MAX_UNIT_STAR])
+	else:
+		_h.item()
+	var submission := NetProtocol.team_board_submission(GameState.board_slots)
+	var validated := NetProtocol.validate_team_snapshot(submission, GameState.round_index)
+	if not bool(validated.get("ok", true)):
+		_h.fail("four_star_net_rejected", "四星棋盘被联机校验拒收：%s" % str(validated.get("reason", "?")))
+	else:
+		_h.item()
+
+	# 佣兵不能升四星
+	GameState.reset_run()
+	for s2 in CarrotEconomy.STONE_TYPES:
+		GameState.apply_team_stone(s2)
+	var merc_cell := {"id": "merc_x", "star": GameState.MAX_MERGE_STAR, "is_mercenary": true,
+		"def": {"id": "merc_x", "element": "sky", "is_mercenary": true}}
+	var merc_res := GameState.upgrade_cell_to_four_star(merc_cell)
+	if bool(merc_res.get("ok", false)):
+		_h.fail("four_star_mercenary", "佣兵被升成了四星 —— 佣兵只存在一个回合，升星是白送")
+	else:
+		_h.item()
+
+
+# --- 8. 采集权责判据 -----------------------------------------------------------
 # 守 2026-09-08 那个 bug：谁在本地采集，必须与本作其余萝卜动作用同一条判据
 #   —— 只有「联机且不是房主」交给服务端，其余（单人、房主）一律本地结算。
 # 对照 PrepBoardController.request_carrot_harvest_upgrade / request_upgrade_stone_draw。

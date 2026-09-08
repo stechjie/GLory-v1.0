@@ -31,6 +31,7 @@ const PVE_WIN_BONUS_PER_ROUND := 10    # PVE 胜利奖励 = 当前回合号 × �
 const KILL_GOLD_PER_TIER := 10         # 普通棋子击杀金 = tier 档位 × 此值
 const KILL_GOLD_STAR2_BONUS := 20      # 2 星额外
 const KILL_GOLD_STAR3_BONUS := 30      # 3 星额外
+const KILL_GOLD_STAR4_BONUS := 40      # 4 星额外（沿用 +10 的等差）
 const MERCHANT_GOLD_PER_STAR := 10     # 商人棋子按星级给金
 
 # PVE 胜利奖励：当前回合号 × 10，只有赢了才给。
@@ -40,10 +41,11 @@ static func pve_win_bonus(round_index: int) -> int:
 
 static func pvp_normal_kill_reward(tier: int, star: int) -> int:
 	var t := maxi(1, tier) * KILL_GOLD_PER_TIER
-	match clampi(star, 1, 3):
+	match clampi(star, 1, GameState.MAX_UNIT_STAR):
 		1: return t
 		2: return t + KILL_GOLD_STAR2_BONUS
-		_: return t + KILL_GOLD_STAR3_BONUS
+		3: return t + KILL_GOLD_STAR3_BONUS
+		_: return t + KILL_GOLD_STAR4_BONUS
 
 static func pvp_mercenary_kill_reward(cost: int) -> int:
 	# 击杀佣兵的赏金 = 佣兵费用 ÷ 5（50费→10金，100费→20金，以此类推），只给击杀方。

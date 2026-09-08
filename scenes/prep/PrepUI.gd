@@ -986,7 +986,8 @@ func _build_top_actions() -> void:
 	_carrot_panel.setup(Callable(self, "request_carrot_harvest_upgrade"),
 		Callable(self, "request_upgrade_stone_draw"),
 		Callable(self, "_on_carrot_hire_requested"),
-		Callable(self, "_toggle_merc_picker"), Callable(self, "_toggle_team_mercs_picker"))
+		Callable(self, "_toggle_merc_picker"), Callable(self, "_toggle_team_mercs_picker"),
+		Callable(self, "request_four_star_upgrade"))
 	add_child(_carrot_panel)
 
 func _toggle_mute() -> void:

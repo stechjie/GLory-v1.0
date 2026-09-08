@@ -6,6 +6,11 @@ const START_FORMATION_HP := 50
 const START_GOLD := 100
 const MAX_NORMAL_UNITS := 7
 const MAX_UNIT_STAR := GameConstants.MAX_STAR
+# 合成只能到 3 星；4 星只能靠升级石。见 GameConstants 的说明。
+const MAX_MERGE_STAR := GameConstants.MAX_MERGE_STAR
+# 4 星属性 = 3 星 × 本值。棋子可用数据表字段 `star4_multiplier` 覆写它 ——
+# 小灵是全表唯一没有技能的单位，用 1.50 的纯属性补偿。
+const STAR4_DEFAULT_MULTIPLIER := 1.15
 # Copies of a unit at a given star required to fuse into the next star.
 # 1-star fuses from 2 copies; 2-star fuses from 3.
 #
@@ -113,7 +118,7 @@ func carrot_capacity() -> int:
 	return CarrotEconomyRules.capacity_for_spent(merc_carrots_spent_total)
 
 func carrot_production() -> int:
-	return CarrotEconomyRules.production_for_tech(harvest_tech_level)
+	return CarrotEconomyRules.total_production(harvest_tech_level, merc_carrots_spent_total)
 
 func carrot_farm_level() -> int:
 	return CarrotEconomyRules.farm_level_for_spent(merc_carrots_spent_total)
@@ -159,14 +164,60 @@ func apply_team_stone(stone_type: String) -> void:
 		return
 	team_upgrade_stones[stone_type] = int(team_upgrade_stones.get(stone_type, 0)) + 1
 
-func star_stat_multiplier(star: int) -> float:
+
+# --- 四星升级 -----------------------------------------------------------------
+# 四星**只能**由升级石获得，不能靠同名合成（合成封顶在 MAX_MERGE_STAR）。
+# 条件：满星三星的普通棋子 + 一颗**同属性**的队伍升级石。
+#
+# 判定与执行分开：面板要能在不消耗石头的前提下问"这只能不能升"，
+# 好把按钮置灰并说明原因。两者读同一份条件，不会出现"按钮亮着但点了没反应"。
+
+## 这只棋子当前能否升四星。返回 {ok: bool, error: String, stone: String}。
+func four_star_check(cell: Variant) -> Dictionary:
+	if typeof(cell) != TYPE_DICTIONARY:
+		return {"ok": false, "error": "empty_cell", "stone": ""}
+	var c: Dictionary = cell
+	if bool(c.get("is_mercenary", false)):
+		return {"ok": false, "error": "mercenary", "stone": ""}
+	var star := int(c.get("star", 1))
+	if star >= MAX_UNIT_STAR:
+		return {"ok": false, "error": "already_max", "stone": ""}
+	if star < MAX_MERGE_STAR:
+		return {"ok": false, "error": "need_three_star", "stone": ""}
+	var stone := str((c.get("def", {}) as Dictionary).get("element", ""))
+	if not CarrotEconomyRules.valid_stone_type(stone):
+		return {"ok": false, "error": "bad_element", "stone": stone}
+	if int(team_upgrade_stones.get(stone, 0)) <= 0:
+		return {"ok": false, "error": "no_stone", "stone": stone}
+	return {"ok": true, "error": "", "stone": stone}
+
+## 消耗一颗同属性升级石，把这只三星升为四星。
+## cell 是 board_slots / bench_slots 里的那个字典本身——就地改 star，
+## 与 _merge_copies_into_cell 的做法一致（那里也是直接 target.star = star + 1）。
+func upgrade_cell_to_four_star(cell: Variant) -> Dictionary:
+	var check := four_star_check(cell)
+	if not bool(check.get("ok", false)):
+		return check
+	var stone := str(check.get("stone", ""))
+	team_upgrade_stones[stone] = int(team_upgrade_stones.get(stone, 0)) - 1
+	(cell as Dictionary)["star"] = MAX_UNIT_STAR
+	return {"ok": true, "error": "", "stone": stone}
+
+## 星级属性系数。unit_def 只在 4 星时才被读到（取 `star4_multiplier` 覆写）——
+## 传空字典就是默认曲线，老调用点不用改。
+func star_stat_multiplier(star: int, unit_def: Dictionary = {}) -> float:
 	match clampi(star, 1, MAX_UNIT_STAR):
 		1:
 			return 1.0
 		2:
 			return 1.5
-		_:
+		3:
 			return 3.0
+		_:
+			# 4 星只提 15%：它的价值主要在技能，属性只是点缀。
+			# **只作用于 HP / 攻击 / 防御三项**，不含攻速——攻速直接乘 DPS，
+			# 一起涨的话实际战力增幅是 1.15³ ≈ 1.52，而不是预期的 1.15。
+			return 3.0 * maxf(1.0, float(unit_def.get("star4_multiplier", STAR4_DEFAULT_MULTIPLIER)))
 
 func normal_unit_count() -> int:
 	var n := 0

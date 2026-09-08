@@ -80,6 +80,15 @@ func _ready() -> void:
 			SaveManager.save_run()
 	elif carrot_server_authoritative and GameState.last_harvest_round == GameState.round_index:
 		carrot_harvest_gain = NetworkService.last_carrot_harvest_gain
+	# 这套系统的失败模式全是**静默**的：不采集、被覆盖、被幂等挡掉，界面上一模一样，
+	# 都只表现为"萝卜不涨"。留一行 Debug 日志，出问题时一眼能分辨是哪一种，
+	# 不必再靠猜。Release 不打。
+	if OS.is_debug_build():
+		print("[CARROT] round=%d 本地采集=%s（team_active=%s is_host=%s tutorial=%s）本回合到账=%d 余额=%d/%d last_harvest_round=%d" % [
+			GameState.round_index, str(not carrot_server_authoritative and not GameState.tutorial_mode),
+			str(NetworkService.team_active), str(NetworkService.is_host), str(GameState.tutorial_mode),
+			carrot_harvest_gain, GameState.carrots, GameState.carrot_capacity(),
+			GameState.last_harvest_round])
 	_board_hud.setup_cell_styles()
 	if not NetworkService.session_changed.is_connected(_on_network_session_changed):
 		NetworkService.session_changed.connect(_on_network_session_changed)

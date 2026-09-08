@@ -5,6 +5,7 @@ const CarrotEconomy := preload("res://scripts/economy/CarrotEconomy.gd")
 signal closed
 
 var _upgrade_callback: Callable
+var _four_star_callback: Callable
 var _draw_callback: Callable
 var _hire_callback: Callable
 var _open_merc_callback: Callable
@@ -15,14 +16,17 @@ var _summary: Label
 var _tech_button: Button
 var _draw_button: Button
 var _stones: Label
+var _four_star_list: VBoxContainer
 
 func setup(upgrade_callback: Callable, draw_callback: Callable, hire_callback: Callable,
-		open_merc_callback: Callable, warehouse_callback: Callable) -> void:
+		open_merc_callback: Callable, warehouse_callback: Callable,
+		four_star_callback: Callable = Callable()) -> void:
 	_upgrade_callback = upgrade_callback
 	_draw_callback = draw_callback
 	_hire_callback = hire_callback
 	_open_merc_callback = open_merc_callback
 	_warehouse_callback = warehouse_callback
+	_four_star_callback = four_star_callback
 	_build()
 
 func _build() -> void:
@@ -104,6 +108,74 @@ func _build() -> void:
 	_stones = Label.new()
 	_stones.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	stone_page.add_child(_stones)
+	var four_star_scroll := ScrollContainer.new()
+	four_star_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	four_star_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	stone_page.add_child(four_star_scroll)
+	_four_star_list = VBoxContainer.new()
+	_four_star_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	four_star_scroll.add_child(_four_star_list)
+
+# 列出棋盘和待命区里所有三星棋子，能升的给按钮、不能升的置灰并写明原因。
+# 判定不在这里重写 —— 一律问 GameState.four_star_check()，与实际执行读同一份条件，
+# 不会出现「按钮亮着但点了没反应」。
+func _refresh_four_star_list() -> void:
+	if _four_star_list == null:
+		return
+	for child in _four_star_list.get_children():
+		child.queue_free()
+	var stone_label := {"sky": "天", "land": "地", "ren": "人"}
+	var rows := 0
+	for source in [["board", GameState.board_slots], ["bench", GameState.bench_slots]]:
+		var where := str(source[0])
+		var slots: Array = source[1]
+		for i in slots.size():
+			var cell = slots[i]
+			if typeof(cell) != TYPE_DICTIONARY:
+				continue
+			if int((cell as Dictionary).get("star", 1)) != GameState.MAX_MERGE_STAR:
+				continue
+			rows += 1
+			var check := GameState.four_star_check(cell)
+			var d: Dictionary = (cell as Dictionary).get("def", {})
+			var name := str(d.get("name", d.get("id", "?")))
+			var stone := str(check.get("stone", ""))
+			var row := Button.new()
+			row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			row.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			if bool(check.get("ok", false)):
+				row.text = "%s（%s）%s → ★★★★  消耗 1 颗%s石" % [
+					name, "场上" if where == "board" else "待命", "★★★",
+					stone_label.get(stone, stone)]
+				row.disabled = false
+				row.pressed.connect(_on_four_star.bind(where, i))
+			else:
+				row.text = "%s（%s） %s" % [name, "场上" if where == "board" else "待命",
+					_four_star_reason(str(check.get("error", "")), stone_label.get(stone, stone))]
+				row.disabled = true
+			_four_star_list.add_child(row)
+	if rows == 0:
+		var empty := Label.new()
+		empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		empty.text = "还没有三星棋子。四星只能由三星 + 同属性升级石获得，无法靠合成得到。"
+		_four_star_list.add_child(empty)
+
+func _four_star_reason(error: String, stone_name: String) -> String:
+	match error:
+		"no_stone":
+			return "缺少%s石" % stone_name
+		"already_max":
+			return "已经是四星"
+		"mercenary":
+			return "佣兵不能升四星"
+		"bad_element":
+			return "属性数据缺失"
+		_:
+			return "暂不可升级"
+
+func _on_four_star(where: String, index: int) -> void:
+	if _four_star_callback.is_valid():
+		_four_star_callback.call(where, index)
 
 func _close() -> void:
 	visible = false
@@ -155,7 +227,8 @@ func refresh() -> void:
 	var draw_ready := GameState.carrots >= CarrotEconomy.STONE_COST and GameState.carrot_capacity() >= CarrotEconomy.STONE_COST and draw_available
 	_draw_button.text = "本回合已抽取" if not draw_available else ("抽升级石（50萝卜）" if draw_ready else "抽石：4级田/50萝卜/每回合1次")
 	_draw_button.disabled = not draw_ready or carrot_online_blocked
-	_stones.text = "队伍升级石：天 %d · 地 %d · 人 %d（四星升级待开放）" % [
+	_refresh_four_star_list()
+	_stones.text = "队伍升级石：天 %d · 地 %d · 人 %d" % [
 		int(GameState.team_upgrade_stones.get("sky", 0)),
 		int(GameState.team_upgrade_stones.get("land", 0)),
 		int(GameState.team_upgrade_stones.get("ren", 0))]

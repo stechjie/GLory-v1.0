@@ -20,6 +20,8 @@ extends Node
 #   Godot_v4.7-stable_win64_console.exe --headless --path . tools/merge_rule_parity_check.tscn
 
 const CheckHarness := preload("res://tools/CheckHarness.gd")
+# PrepRules 没有 class_name，要 preload 才能引用（PrepShared.gd 里也是这么拿的）。
+const PrepRules := preload("res://scenes/prep/PrepRules.gd")
 
 const CHECK_NAME := "merge_rule_parity"
 
@@ -74,13 +76,26 @@ func _case_copies_required_matches_client() -> void:
 					star, need - 1, need])
 
 
-# 三星封顶。不封顶的话服务端能造出客户端根本没有的四星。
+# 合成封顶在**三星**。四星存在，但只能靠升级石，不能靠同名合成 ——
+# 不封的话服务端（和客户端）都能免费造出四星，升级石系统被整个绕过。
 #
 # ⚠️ 这条用例第一版是**假绿**：满星那次合成确实被拒了，但拒它的是份数检查
 # （旧账本写死要 2 个，我给了 3 个），不是封顶。只断言「被拒了」不够 ——
 # 必须断言**拒绝的理由就是封顶**，否则份数规则一改这条就悄悄失效。
+#
+# ⚠️ 第二次差点又假绿：加四星时把 MAX_STAR 提到 4，而这里读的是 MAX_UNIT_STAR，
+# 用例于是悄悄变成「测 4 星不能合成 5 星」——必然通过，却**不再覆盖真正要守的
+# 那条边界**。合成相关的断言一律读 MAX_MERGE_STAR。
 func _case_star_cap_enforced() -> void:
-	var cap := GameState.MAX_UNIT_STAR
+	var cap := GameState.MAX_MERGE_STAR
+	_h.expect(cap < GameState.MAX_UNIT_STAR, "merge_cap_not_below_star_cap",
+		"MAX_MERGE_STAR(%d) 没有低于 MAX_UNIT_STAR(%d) —— 那样合成就能直接顶到最高星，升级石失去意义"
+			% [cap, GameState.MAX_UNIT_STAR])
+	# 客户端侧：两个满合成星的同名棋子不允许再合。
+	var cell_a := {"id": "god_priest", "star": cap, "def": {"id": "god_priest"}}
+	var cell_b := {"id": "god_priest", "star": cap, "def": {"id": "god_priest"}}
+	_h.expect(not PrepRules.can_merge_cells(cell_a, cell_b), "client_star_cap_not_enforced",
+		"客户端允许把两个 %d 星合成 %d 星 —— 四星只能靠升级石" % [cap, cap + 1])
 	for count in [2, 3, GameState.copies_to_upgrade(cap)]:
 		var made := _make_prep("god_priest", cap, count, 3)
 		var r := _merge(made[0] as Dictionary, made[1] as Array)
