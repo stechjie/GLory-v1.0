@@ -128,6 +128,18 @@ install -m 644 "$REPO/deploy/glory-backend.service" /etc/systemd/system/glory-ba
 systemctl daemon-reload
 systemctl enable --quiet glory-backend
 
+# 校验单元里的 ExecStart 真的存在。
+# 踩过一次：venv 从代码目录挪到 /opt/glory/venv，单元文件没跟着改，
+# systemctl start 只说「control process exited with error code」，
+# 完全看不出是路径不对。
+EXEC_BIN=$(awk -F'=' '/^ExecStart=/{print $2}' /etc/systemd/system/glory-backend.service | awk '{print $1}')
+if [[ ! -x "$EXEC_BIN" ]]; then
+	echo "单元文件的 ExecStart 指向 $EXEC_BIN，但它不存在或不可执行。" >&2
+	echo "deploy/glory-backend.service 与 bootstrap.sh 的 VENV 路径对不上。" >&2
+	exit 1
+fi
+echo "ExecStart 校验通过：$EXEC_BIN"
+
 say "8/8 Caddy 配置"
 sed "s|GLORY_API_DOMAIN_PLACEHOLDER|$DOMAIN|" "$REPO/deploy/Caddyfile" > /etc/caddy/Caddyfile
 mkdir -p /var/log/caddy && chown caddy:caddy /var/log/caddy

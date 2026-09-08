@@ -23,7 +23,11 @@ EnvironmentFile=/opt/glory/backend.env
 # 对外由 Caddy 反向代理并终结 TLS。直接对外监听等于开了一个明文 HTTP 端口，
 # 任何人都能绕过 HTTPS 直连它 —— 而这条链路上跑的是账号凭证。
 # 改这一行前先想清楚。
-ExecStart=/opt/glory/repo/backend/.venv/bin/python -m uvicorn app.main:app \
+# 解释器在 /opt/glory/venv，**不在**代码目录里 —— 代码目录归 root 只读，
+# 而 pip 要写，所以分开放（见 deploy/bootstrap.sh 的 5/8 步）。
+# 这两处路径必须一致；bootstrap 装完会校验一次，不一致就报错，
+# 免得再出现「服务起不来但看不出为什么」。
+ExecStart=/opt/glory/venv/bin/python -m uvicorn app.main:app \
     --host 127.0.0.1 --port 8099 --workers 1
 
 # 单 worker 是刻意的：限流计数在进程内存里（见 backend/app/rate_limit.py），
