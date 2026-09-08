@@ -170,6 +170,9 @@ func _hire_mercenary_to_slot(index: int, mercenary_index: int) -> void:
 	NetworkService.team_send_prep_mercs()
 	SaveManager.save_run()
 	_refresh_all()
+	# A carrot-paid hire can cross a farm threshold. Refresh the world prop in
+	# the same transaction so its decoration and level-up VFX change immediately.
+	refresh_carrot_gathering()
 
 func request_carrot_harvest_upgrade() -> void:
 	if GameState.tutorial_mode:
