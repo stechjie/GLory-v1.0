@@ -92,6 +92,9 @@ func _ready() -> void:
 		_roll_shop()
 	_build()
 	if carrot_harvest_gain > 0:
+		# 记账：客机那条路径（_maybe_play_pending_carrot_harvest）也会在权威采集
+		# 到达时补播，两边共用这个标记保证一回合只播一次。
+		_carrot_feedback_round = GameState.round_index
 		call_deferred("play_carrot_harvest_feedback", carrot_harvest_gain)
 	# 这条连接必须放在最派生的类里：_connect_treasure_signals 定义在 PrepFlowController，
 	# 而面板的接线在 PrepUI._build() 里 —— 父类看不见子类的方法。

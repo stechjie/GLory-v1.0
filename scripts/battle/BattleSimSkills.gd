@@ -6,15 +6,26 @@ static func _mark_vfx_target(caster: Dictionary, target: Dictionary) -> void:
 	caster.vfx_skill_target_uid = str(target.get("uid", ""))
 
 static func _apply_death_servant_aura(servant: Dictionary, team_units: Array, d: Dictionary) -> void:
-	var amount := int(d.get("ally_def_bonus", 3))
 	var duration := float(d.get("ally_def_duration", 5.0))
-	if amount <= 0 or duration <= 0.0:
+	if duration <= 0.0:
+		return
+	# 4 星把「+3 防」换成「+30% 防」（设计文档 §5.7）。绝对值不随星级缩放，
+	# 4 星和 1 星效果完全一样 —— 那正是这一条要改的理由。
+	# ally_def_pct 只在 4 星的 star4 覆写里有，1~3 星仍走绝对值那一支。
+	var pct := float(d.get("ally_def_pct", 0.0))
+	var amount := int(d.get("ally_def_bonus", 3))
+	if pct <= 0.0 and amount <= 0:
 		return
 	var slot := int(servant.get("slot", -99))
 	for a in team_units:
 		if not bool(a.get("alive", false)) or a == servant:
 			continue
-		if abs(int(a.get("slot", -99)) - slot) <= 1:
+		if abs(int(a.get("slot", -99)) - slot) > 1:
+			continue
+		if pct > 0.0:
+			StatusEffectService.add_status(a, "defense_flat_up", duration,
+				{"amount": maxi(1, int(round(float(a.get("def", 0)) * pct)))})
+		else:
 			StatusEffectService.add_status(a, "defense_flat_up", duration, {"amount": amount})
 
 static func _skill_lowest_ally_heal(caster: Dictionary, allies: Array, d: Dictionary) -> void:
@@ -53,6 +64,13 @@ static func _skill_random_attribute_bolt(caster: Dictionary, opponents: Array, d
 	_mark_vfx_target(caster, target)
 	DamageService.apply_damage(target, maxi(1, int(round(float(caster.atk) * float(d.get("damage_atk_pct", 3.0))))), false)
 	_apply_attribute_effect(["fire", "ice", "thunder", "poison"][RngService.rng.randi() % 4], caster, target)
+	# 4 星：有概率再触发一次随机属性效果。
+	# ⚠️ 这里多摇一次随机数会改变确定性流的位置，所以**必须**先判字段再摇 ——
+	# double_element_chance 只在 4 星的 star4 覆写里有，1~3 星一次 randf 都不多摇，
+	# 回放哈希才不会漂。
+	var double_chance := float(d.get("double_element_chance", 0.0))
+	if double_chance > 0.0 and RngService.rng.randf() < double_chance:
+		_apply_attribute_effect(["fire", "ice", "thunder", "poison"][RngService.rng.randi() % 4], caster, target)
 
 
 static func _skill_judgement(caster: Dictionary, opponents: Array, d: Dictionary) -> void:
@@ -122,6 +140,13 @@ static func _skill_blink_low_def_backline(caster: Dictionary, allies: Array, opp
 	var side := -1.0 if str(caster.get("team", "")) == "player" else 1.0
 	caster.pos = target.pos + Vector2(28.0 * side, 0.0)
 	var was_alive := bool(target.get("alive", false))
+	# 4 星：突进同时给目标挂减防。原稿写的是「降低 5 点防御」的绝对值，
+	# 绝对值不随星级缩放，改成百分比（设计文档 §5.7）。
+	# def_down_pct 只在 4 星的 star4 覆写里有，1~3 星不挂这个状态。
+	var shred := float(d.get("def_down_pct", 0.0))
+	if shred > 0.0:
+		StatusEffectService.add_status(target, "defense_down",
+			float(d.get("duration", 5.0)), {"pct": shred})
 	DamageService.apply_damage(target, maxi(1, int(round(float(caster.atk) * float(d.get("damage_atk_pct", 2.0))))), false)
 	BattleSimulator._handle_attack_kill(caster, target, state, allies, opponents, was_alive)
 	return was_alive and not bool(target.get("alive", false))

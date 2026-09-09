@@ -27,8 +27,8 @@ const MY_SLOT := 0
 # 服务端经济契约的指纹，与 NETWORK_PROTOCOL_VERSION 绑在一起。
 # 改契约（ECONOMY_ACTIONS 或 room_state.economy 的字段集）就必须同时升协议号并
 # 重新钉这两个值 —— 理由见 _case_server_contract_pinned()。
-const PINNED_PROTOCOL := 17
-const PINNED_CONTRACT := "ktVdNBGq99RKff1h"
+const PINNED_PROTOCOL := 19
+const PINNED_CONTRACT := "EJtXJv9dZMNC8Ipn"
 
 var _h: CheckHarness
 
@@ -39,9 +39,12 @@ func _ready() -> void:
 	_case_server_contract_pinned()
 	_case_room_state_carries_carrots()
 	_case_harvest_tech_online()
+	_case_ledger_shadow_roundtrip()
 	_case_draw_stone_online()
 	_case_four_star_online()
+	_case_forged_four_star_rejected()
 	await _case_client_panel_online()
+	await _case_client_ui_tracks_room_state()
 	_h.finish(get_tree())
 
 
@@ -59,6 +62,18 @@ func _make_prep_room(round_index: int) -> Dictionary:
 		var prep: Dictionary = NetworkService._room_prep(room, slot)
 		EconomyLedgerScript.reset_round(prep)
 		EconomyLedgerScript.harvest_for_round(prep, round_index)
+		# 服务端在推进回合时还会给每个座位摇一份商店（_room_next_round 的经济段）。
+		# 少了这一步，账本里 shop.offers 是空的、offer_id 是空串，任何买入意图都会
+		# 被 _buy 判 bad_index / stale_offer —— 那是脚手架的洞，不是产品缺陷。
+		var shop: Dictionary = prep.get("shop", {})
+		shop["offers"] = NetworkService._server_roll_shop_offers(
+			GameState.SHOP_UNIT_SLOTS, round_index)
+		shop["offer_id"] = NetworkService._make_offer_id()
+		var sold: Array = []
+		sold.resize(GameState.SHOP_UNIT_SLOTS)
+		sold.fill(false)
+		shop["sold"] = sold
+		prep["shop"] = shop
 	return room
 
 
@@ -101,27 +116,32 @@ func _case_room_state_carries_carrots() -> void:
 
 
 # --- 3. 采集科技升级（客机 -> 服务端 -> 回执）------------------------------------
-# 客机点「采集 Lv.N」走 request_economy("upgrade_harvest_tech", {"gold": 本地金币})。
-# 服务端在 carrot-only 阶段用 room.slot_gold 做防伪：**只接受不高于**已结算余额的自报值。
-# 这条判据的边界必须守住 —— 松了能凭空造钱，紧了玩家点了没反应。
+# 账本影子期（economy_ledger_enabled）之后，服务端**完全不看**客户端自报的金币，
+# 一律读 prep.gold（每回合从 room.slot_gold 重新锚定）。
+#
+# 这一段的历史：开关打开之前，服务端用「自报金币不得高于已结算余额」做防伪造，
+# 而卖棋子在当时是纯客户端行为、服务端镜像不会跟着涨 —— 于是本回合卖过一次棋子，
+# 采集科技就整回合升不了，客户端弹「萝卜交易失败：gold_desync」。
 func _case_harvest_tech_online() -> void:
 	var price := CarrotEconomy.tech_price(0)
-	var room := _make_prep_room(2)
-	var slot_gold: Array = room.get("slot_gold", [])
-	slot_gold[MY_SLOT] = price + 50
-	room["slot_gold"] = slot_gold
 
-	# 3a. 正常：自报金币等于服务端已结算余额
+	# 3a. 账本余额够 -> 受理
+	var room := _make_prep_room(2)
+	var prep: Dictionary = NetworkService._room_prep(room, MY_SLOT)
+	prep["gold"] = price + 50
 	var receipt: Dictionary = NetworkService._room_apply_economy(
 		room, MY_SLOT, "upgrade_harvest_tech", {"gold": price + 50})
 	receipt["action"] = "upgrade_harvest_tech"
 	if not _h.expect(bool(receipt.get("ok", false)), "tech_upgrade_rejected",
-			"金币够、在备战阶段，采集科技升级仍被服务端拒绝：%s" % str(receipt.get("error", "?"))):
+			"账本里有 %d 金、在备战阶段，采集科技升级仍被拒：%s"
+				% [price + 50, str(receipt.get("error", "?"))]):
 		return
 	var result: Dictionary = receipt.get("result", {})
 	_h.expect(int(result.get("harvest_tech_level", 0)) == 1, "tech_level_not_raised",
 		"服务端受理了升级，但回执里的 harvest_tech_level 是 %d，应为 1"
 			% int(result.get("harvest_tech_level", 0)))
+	_h.expect(int(receipt.get("gold_after", -1)) == 50, "tech_gold_wrong",
+		"扣完 %d 应剩 50，回执给的是 %d" % [price, int(receipt.get("gold_after", -1))])
 
 	# 3b. 回执必须真的写回 GameState —— 否则玩家扣了钱、界面纹丝不动
 	GameState.reset_run()
@@ -133,24 +153,37 @@ func _case_harvest_tech_online() -> void:
 	_h.expect(GameState.gold == int(receipt.get("gold_after", -1)), "receipt_gold_not_applied",
 		"回执 ok 但客户端金币是 %d，回执里是 %d" % [GameState.gold, int(receipt.get("gold_after", -1))])
 
-	# 3c. 自报金币**高于**已结算余额 = 伪造，必须拒
+	# 3c. 自报金币对结果**没有任何影响** —— 账本余额说了算。
+	# ⚠️ 这条以前写成「自报 999999 会被拒」，账本一开就变成了假绿：那时候拒它的是
+	# 「余额不足」而不是「识破伪造」。改成对照实验才测得到真正的性质。
+	var poor_a := _make_prep_room(2)
+	(NetworkService._room_prep(poor_a, MY_SLOT) as Dictionary)["gold"] = price - 1
 	var forged: Dictionary = NetworkService._room_apply_economy(
-		room, MY_SLOT, "upgrade_harvest_tech", {"gold": 999999})
+		poor_a, MY_SLOT, "upgrade_harvest_tech", {"gold": 999999})
 	_h.expect(not bool(forged.get("ok", false)), "forged_gold_accepted",
-		"客户端自报 999999 金币被服务端接受了 —— 改个内存就能白嫖采集科技")
+		"账本余额只有 %d，客户端自报 999999 就买到了采集科技" % (price - 1))
 
-	# 3d. 备战期卖棋子会让本地金币**高于**服务端已结算余额。
-	# 这一步是玩家最容易撞上的：卖一个再点升级，按钮就永久失灵到本回合结束。
+	var poor_b := _make_prep_room(2)
+	(NetworkService._room_prep(poor_b, MY_SLOT) as Dictionary)["gold"] = price - 1
+	var honest: Dictionary = NetworkService._room_apply_economy(
+		poor_b, MY_SLOT, "upgrade_harvest_tech", {"gold": 0})
+	_h.expect(str(honest.get("error", "")) == str(forged.get("error", "")),
+		"reported_gold_still_matters",
+		"自报 0 与自报 999999 的结果不一样（%s vs %s）—— 服务端还在看客户端报的钱"
+			% [str(honest.get("error", "?")), str(forged.get("error", "?"))])
+
+	# 3d. 备战期卖棋子会让本地金币高于服务端上次结算的余额。
+	# 这就是原来的 gold_desync：账本上线前这一步整回合被封死。
 	var room_sold := _make_prep_room(2)
 	var sold_gold: Array = room_sold.get("slot_gold", [])
 	sold_gold[MY_SLOT] = price          # 服务端结算时的余额
 	room_sold["slot_gold"] = sold_gold
+	(NetworkService._room_prep(room_sold, MY_SLOT) as Dictionary)["gold"] = price + 20
 	var after_sell: Dictionary = NetworkService._room_apply_economy(
 		room_sold, MY_SLOT, "upgrade_harvest_tech", {"gold": price + 20})   # 卖掉一个棋子退了 20
 	_h.expect(bool(after_sell.get("ok", false)), "sell_then_upgrade_blocked",
-		"备战期卖棋子涨了金币之后，采集科技升级被判 %s —— 玩家点按钮没有任何反应，"
-			% str(after_sell.get("error", "?"))
-		+ "而卖棋子在 carrot-only 阶段是纯客户端行为，服务端的 slot_gold 不会跟着涨")
+		"备战期卖棋子涨了金币之后，采集科技升级被判 %s —— 玩家点按钮没有任何反应"
+			% str(after_sell.get("error", "?")))
 
 	# 3e. 战斗/结算阶段不许改经济
 	var battle_room := _make_prep_room(2)
@@ -159,6 +192,49 @@ func _case_harvest_tech_online() -> void:
 		battle_room, MY_SLOT, "upgrade_harvest_tech", {"gold": 100})
 	_h.expect(not bool(in_battle.get("ok", false)), "economy_in_battle",
 		"战斗阶段还能升采集科技")
+
+
+# --- 3f. 影子记账：客户端那一笔必须能被账本原样收下 --------------------------------
+# 影子期的全部价值就是「两边算出来的钱一样」。对不上就永远翻不了 authoritative
+# （NetworkService 里那条注释：影子期零差异是翻开关的唯一依据）。
+#
+# 这条守的是链路本身能通：客户端用**自己铸的 uid** 买入 -> 账本按同一个 uid 记进
+# roster -> 卖掉时按同一个 uid 查得到。以前账本自己铸 "u1"、棋盘记的是别的，
+# 卖出必然 unknown_uid，roster 永远对不上棋盘。
+func _case_ledger_shadow_roundtrip() -> void:
+	if not _h.expect(NetworkService.economy_enabled(), "ledger_disabled",
+			"economy_ledger_enabled 是关的 —— 影子期没上线，账本收不到任何一笔"):
+		return
+	var room := _make_prep_room(2)
+	var prep: Dictionary = NetworkService._room_prep(room, MY_SLOT)
+	prep["gold"] = 500
+	# 服务端摇好的商店：客户端就是照着这一份显示的（_adopt_server_shop）
+	var shop: Dictionary = prep.get("shop", {})
+	var offers: Array = shop.get("offers", [])
+	if not _h.expect(not offers.is_empty(), "server_shop_empty",
+			"服务端账本里这一轮没有商店 —— 客户端拿不到可买的货"):
+		return
+	var offer_id := str(shop.get("offer_id", ""))
+	_h.expect(not offer_id.is_empty(), "server_shop_no_offer_id",
+		"服务端商店没有 offer_id —— 买入意图会被 stale_offer 全拒")
+
+	GameState.reset_run()
+	var my_uid := GameState.mint_piece_uid()
+	var buy: Dictionary = NetworkService._room_apply_economy(room, MY_SLOT, "buy",
+		{"shop_index": 0, "offer_id": offer_id, "uid": my_uid})
+	if not _h.expect(bool(buy.get("ok", false)), "shadow_buy_rejected",
+			"照着服务端商店买第 0 格仍被拒：%s" % str(buy.get("error", "?"))):
+		return
+	_h.expect(str((buy.get("result", {}) as Dictionary).get("uid", "")) == my_uid,
+		"ledger_minted_own_uid",
+		"账本没有采用客户端的 uid（给的是 %s，客户端是 %s）—— roster 与棋盘对不上，"
+			% [str((buy.get("result", {}) as Dictionary).get("uid", "")), my_uid]
+		+ "卖出时会 unknown_uid")
+
+	var sell: Dictionary = NetworkService._room_apply_economy(room, MY_SLOT, "sell",
+		{"uid": my_uid})
+	_h.expect(bool(sell.get("ok", false)), "shadow_sell_rejected",
+		"刚买的那一枚按同一个 uid 卖不掉：%s" % str(sell.get("error", "?")))
 
 
 # --- 4. 抽升级石（客机 -> 服务端 -> 回执）---------------------------------------
@@ -213,49 +289,202 @@ func _case_draw_stone_online() -> void:
 		"同一回合抽了第二次升级石")
 
 
-# --- 5. 四星升级在联机里有没有服务端路径 ----------------------------------------
-# 升四星要消耗**队伍共享**仓库里的一颗石头，而那个仓库在联机里是服务端的
-# room.team_upgrade_stones。客户端只要没有对应的意图动作，这一步就只能改本地副本，
-# 下一个 room_state 一到 _apply_carrot_state() 就会把仓库整个覆盖回去。
+# --- 5. 四星升级：服务端权威 ------------------------------------------------------
+# 四星要消耗**队伍共享**仓库里的一颗石头，那个仓库在联机里是服务端的
+# room.team_upgrade_stones。这一段以前完全没有服务端动作：客机只改本地副本，
+# 下一个 room_state 一到 _apply_carrot_state() 就整块覆盖回去 —— 表现是
+# 「点了没东西」，而且同一颗石头能反复用。
+#
+# 动作名用 use_upgrade_stone，与设计文档
+# 《萝卜采集与升级石系统设计实施方案》:241 一致（本用例第一版钉的是
+# four_star_upgrade，以文档为准改过来了）。
 func _case_four_star_online() -> void:
-	_h.expect(NetworkService.ECONOMY_ACTIONS.has("four_star_upgrade"),
-		"four_star_no_server_action",
-		"ECONOMY_ACTIONS 里没有四星升级 —— 联机时客机升四星只改本地，"
-		+ "石头会被下一个 room_state 覆盖回来，棋子星级也没进服务端账本")
+	if not _h.expect(NetworkService.ECONOMY_ACTIONS.has("use_upgrade_stone"),
+			"four_star_no_server_action",
+			"ECONOMY_ACTIONS 里没有 use_upgrade_stone —— 联机时客机升四星只改本地，"
+			+ "石头会被下一个 room_state 覆盖回来，棋子星级也没进服务端账本"):
+		return
 
-	# 直接演一遍：客户端花掉一颗石头，然后服务端下发一份 room_state。
+	var target := _elemental_unit()
+	if target.is_empty():
+		return
+	var element := str(target.get("element", ""))
+	var unit_id := str(target.get("id", ""))
+
+	# --- 5a. 正常一次：石头真的从服务端仓库里少一颗，回执把星级落到那枚棋子上 ---
 	var room := _make_prep_room(4)
 	var warehouse: Dictionary = NetworkService._room_team_stones(room, MY_SLOT)
 	for stone in CarrotEconomy.STONE_TYPES:
 		warehouse[stone] = 1
-	var state: Dictionary = NetworkService._build_economy_state(room, MY_SLOT)
 	GameState.reset_run()
-	NetworkService._apply_carrot_state(state)
+	NetworkService._apply_carrot_state(NetworkService._build_economy_state(room, MY_SLOT))
+	var uid := GameState.mint_piece_uid()
+	GameState.board_slots[0] = {"id": unit_id, "uid": uid,
+		"star": GameState.MAX_MERGE_STAR, "def": target}
 
-	var units: Array = DataRegistry.get_table("race_units").get("units", [])
-	var target: Dictionary = {}
-	for row in units:
-		var d: Dictionary = row
-		if CarrotEconomy.STONE_TYPES.has(str(d.get("element", ""))):
-			target = d
-			break
-	if not _h.expect(not target.is_empty(), "no_elemental_unit", "找不到带天/地/人属性的棋子"):
+	var receipt: Dictionary = NetworkService._room_apply_economy(
+		room, MY_SLOT, "use_upgrade_stone", {"uid": uid, "unit_id": unit_id})
+	receipt["action"] = "use_upgrade_stone"
+	if not _h.expect(bool(receipt.get("ok", false)), "four_star_rejected",
+			"仓库里有 %s 石、棋子是三星，服务端仍拒绝升四星：%s"
+				% [element, str(receipt.get("error", "?"))]):
 		return
-	var element := str(target.get("element", ""))
-	var cell := {"id": str(target.get("id", "")), "star": GameState.MAX_MERGE_STAR, "def": target}
-	var upgraded := GameState.upgrade_cell_to_four_star(cell)
-	if not _h.expect(bool(upgraded.get("ok", false)), "four_star_local_denied",
-			"本地升四星被拒：%s" % str(upgraded.get("error", "?"))):
-		return
-	_h.expect(int(GameState.team_upgrade_stones.get(element, 0)) == 0, "four_star_no_local_spend",
-		"本地升四星之后 %s 石还剩 %d 颗" % [element, int(GameState.team_upgrade_stones.get(element, 0))])
+	_h.expect(int(warehouse.get(element, 0)) == 0, "four_star_stone_not_spent",
+		"服务端受理了升级，但队伍仓库里的 %s 石还剩 %d 颗 —— 石头没真扣"
+			% [element, int(warehouse.get(element, 0))])
 
-	# 服务端并不知道刚才那一下，于是下一包 room_state 把石头还了回来
+	NetworkService._apply_carrot_receipt(receipt)
+	_h.expect(int((GameState.board_slots[0] as Dictionary).get("star", 1)) == GameState.MAX_UNIT_STAR,
+		"four_star_receipt_not_applied",
+		"回执 ok，但棋子星级仍是 %d —— 玩家点了按钮什么都没发生"
+			% int((GameState.board_slots[0] as Dictionary).get("star", 1)))
+	_h.expect(int(GameState.team_upgrade_stones.get(element, 0)) == 0,
+		"four_star_client_stone_stale",
+		"回执 ok，但客户端仓库里 %s 石还剩 %d 颗"
+			% [element, int(GameState.team_upgrade_stones.get(element, 0))])
+
+	# --- 5b. 下一份 room_state 不能把石头还回来（这是原缺陷的核心症状）---
 	NetworkService._apply_carrot_state(NetworkService._build_economy_state(room, MY_SLOT))
 	_h.expect(int(GameState.team_upgrade_stones.get(element, 0)) == 0, "four_star_stone_restored",
-		"升四星消耗的 %s 石在下一个 room_state 之后又变回 %d 颗 —— 石头能反复用，"
-			% [element, int(GameState.team_upgrade_stones.get(element, 0))]
-		+ "而服务端仓库从头到尾没减过")
+		"升四星消耗的 %s 石在下一个 room_state 之后又变回 %d 颗 —— 石头能反复用"
+			% [element, int(GameState.team_upgrade_stones.get(element, 0))])
+
+	# --- 5c. 同一枚棋子不能升第二次（幂等 + 不重复扣石）---
+	warehouse[element] = 1
+	var again: Dictionary = NetworkService._room_apply_economy(
+		room, MY_SLOT, "use_upgrade_stone", {"uid": uid, "unit_id": unit_id})
+	_h.expect(not bool(again.get("ok", false)), "four_star_double_spend",
+		"同一个 uid 升了第二次四星")
+	_h.expect(str(again.get("error", "")) == "already_four_star", "four_star_repeat_wrong_reason",
+		"重复升级的拒绝理由是 %s，应为 already_four_star" % str(again.get("error", "?")))
+	_h.expect(int(warehouse.get(element, 0)) == 1, "four_star_repeat_spent_stone",
+		"重复升级被拒，却还是扣了一颗石头")
+
+	# --- 5d. 没有石头就不许升 ---
+	var poor := _make_prep_room(4)
+	var empty_house: Dictionary = NetworkService._room_team_stones(poor, MY_SLOT)
+	for stone in CarrotEconomy.STONE_TYPES:
+		empty_house[stone] = 0
+	var denied: Dictionary = NetworkService._room_apply_economy(
+		poor, MY_SLOT, "use_upgrade_stone", {"uid": "x-1", "unit_id": unit_id})
+	_h.expect(str(denied.get("error", "")) == "no_stone", "four_star_without_stone",
+		"仓库空着还能升四星（error=%s）" % str(denied.get("error", "?")))
+
+	# --- 5e. 属性必须对得上：服务端只认数据表里的 element，不认客户端自报 ---
+	var wrong := _make_prep_room(4)
+	var wrong_house: Dictionary = NetworkService._room_team_stones(wrong, MY_SLOT)
+	for stone in CarrotEconomy.STONE_TYPES:
+		wrong_house[stone] = 5 if stone != element else 0
+	var mismatched: Dictionary = NetworkService._room_apply_economy(
+		wrong, MY_SLOT, "use_upgrade_stone", {"uid": "y-1", "unit_id": unit_id})
+	_h.expect(not bool(mismatched.get("ok", false)), "four_star_wrong_element",
+		"手里只有别的属性的石头，%s 属性的棋子却升成功了 —— 属性门槛失效" % element)
+
+	# --- 5f. 佣兵不能升四星（设计文档 §2.6）---
+	var merc_room := _make_prep_room(4)
+	var merc_house: Dictionary = NetworkService._room_team_stones(merc_room, MY_SLOT)
+	for stone in CarrotEconomy.STONE_TYPES:
+		merc_house[stone] = 5
+	var mercs: Array = DataRegistry.get_table("mercenaries").get("mercenaries", [])
+	if not mercs.is_empty():
+		var merc_res: Dictionary = NetworkService._room_apply_economy(
+			merc_room, MY_SLOT, "use_upgrade_stone",
+			{"uid": "z-1", "unit_id": str((mercs[0] as Dictionary).get("id", ""))})
+		_h.expect(not bool(merc_res.get("ok", false)), "four_star_mercenary",
+			"佣兵被升成了四星 —— 佣兵只存在一个回合，升星是白送")
+
+	# --- 5g. 同队两人抢最后一颗石头，只能成一个（设计文档 :128 / :320）---
+	var race := _make_prep_room(4)
+	var shared: Dictionary = NetworkService._room_team_stones(race, MY_SLOT)
+	for stone in CarrotEconomy.STONE_TYPES:
+		shared[stone] = 0
+	shared[element] = 1
+	var teammate := _same_team_slot(MY_SLOT)
+	var first: Dictionary = NetworkService._room_apply_economy(
+		race, MY_SLOT, "use_upgrade_stone", {"uid": "race-a", "unit_id": unit_id})
+	var second: Dictionary = NetworkService._room_apply_economy(
+		race, teammate, "use_upgrade_stone", {"uid": "race-b", "unit_id": unit_id})
+	var wins := int(bool(first.get("ok", false))) + int(bool(second.get("ok", false)))
+	_h.expect(wins == 1, "stone_double_spend",
+		"库存只有 1 颗 %s 石，同队两名队员各发一次意图，成功了 %d 次（应恰好 1 次）"
+			% [element, wins])
+	_h.expect(int(shared.get(element, 0)) == 0, "stone_negative",
+		"抢完之后仓库里 %s 石是 %d 颗" % [element, int(shared.get(element, 0))])
+
+
+# --- 5h. 血统核验：没走过意图就不许在棋盘里自报四星 ---------------------------------
+# 设计文档 :246 点名的洞：「仅仅允许客户端在棋盘快照里上报 star = 4
+# 会留下直接修改客户端制造四星的漏洞」。
+func _case_forged_four_star_rejected() -> void:
+	var target := _elemental_unit()
+	if target.is_empty():
+		return
+	var unit_id := str(target.get("id", ""))
+	var element := str(target.get("element", ""))
+	var room := _make_prep_room(4)
+
+	var forged := {
+		"board": [{"slot": 0, "id": unit_id, "uid": "forged-1",
+			"star": GameState.MAX_UNIT_STAR, "is_mercenary": false, "race_relations": {}}],
+		"mercenaries": [],
+	}
+	var verdict: Dictionary = NetworkService._room_validate_provenance(room, MY_SLOT, forged)
+	_h.expect(not bool(verdict.get("ok", true)), "forged_four_star_accepted",
+		"没走过 use_upgrade_stone 的 star=4 棋盘被服务端接受了 —— 改客户端就能造四星")
+	_h.expect(str(verdict.get("reason", "")).begins_with("forged_four_star"),
+		"forged_four_star_wrong_reason",
+		"拒绝理由是 %s，应以 forged_four_star 开头" % str(verdict.get("reason", "?")))
+
+	# 三星及以下不受影响，否则整块棋盘都提交不上去
+	var plain := {
+		"board": [{"slot": 0, "id": unit_id, "uid": "",
+			"star": GameState.MAX_MERGE_STAR, "is_mercenary": false, "race_relations": {}}],
+		"mercenaries": [],
+	}
+	_h.expect(bool(NetworkService._room_validate_provenance(room, MY_SLOT, plain).get("ok", false)),
+		"plain_board_rejected", "三星棋盘也被血统核验拒了 —— 所有人都提交不了")
+
+	# 走过意图的那一枚必须放行，否则合法玩家会被自己的四星卡住整局
+	var uid := "legit-1"
+	var house: Dictionary = NetworkService._room_team_stones(room, MY_SLOT)
+	house[element] = 1
+	var ok_receipt: Dictionary = NetworkService._room_apply_economy(
+		room, MY_SLOT, "use_upgrade_stone", {"uid": uid, "unit_id": unit_id})
+	if _h.expect(bool(ok_receipt.get("ok", false)), "four_star_legit_rejected",
+			"合法升级被拒：%s" % str(ok_receipt.get("error", "?"))):
+		var legit := {
+			"board": [{"slot": 0, "id": unit_id, "uid": uid,
+				"star": GameState.MAX_UNIT_STAR, "is_mercenary": false, "race_relations": {}}],
+			"mercenaries": [],
+		}
+		var pass_verdict: Dictionary = NetworkService._room_validate_provenance(room, MY_SLOT, legit)
+		_h.expect(bool(pass_verdict.get("ok", false)), "legit_four_star_rejected",
+			"走过 use_upgrade_stone 的四星仍被判伪造（%s）—— 合法玩家会被自己的四星卡住"
+				% str(pass_verdict.get("reason", "?")))
+
+	# 战斗阶段不许升四星
+	room["state"] = NetworkService.ROOM_BATTLE
+	house[element] = 1
+	var in_battle: Dictionary = NetworkService._room_apply_economy(
+		room, MY_SLOT, "use_upgrade_stone", {"uid": "battle-1", "unit_id": unit_id})
+	_h.expect(not bool(in_battle.get("ok", false)), "four_star_in_battle",
+		"战斗阶段还能升四星")
+
+
+func _elemental_unit() -> Dictionary:
+	for row in (DataRegistry.get_table("race_units").get("units", []) as Array):
+		var d: Dictionary = row
+		if CarrotEconomy.STONE_TYPES.has(str(d.get("element", ""))):
+			return d
+	_h.fail("no_elemental_unit", "找不到带天/地/人属性的棋子")
+	return {}
+
+
+func _same_team_slot(slot: int) -> int:
+	for other in NetworkService.TEAM_SLOTS:
+		if other != slot and GameConstants.team_of_slot(other) == GameConstants.team_of_slot(slot):
+			return other
+	return slot
 
 
 # --- 6. 客机手上的面板到底是什么样 ----------------------------------------------
@@ -384,3 +613,83 @@ func _case_server_contract_pinned() -> void:
 			+ "请升协议号，并把 PINNED_PROTOCOL / PINNED_CONTRACT 一起改成新值")
 	else:
 		_h.item()
+
+
+# --- 7. 客机界面必须跟着 room_state 走 -------------------------------------------
+# 客机的萝卜**全部**来自服务端，而 room_state 只写 GameState、不碰 UI。
+# 这三条守的是「服务端发了、界面也确实动了」，三种失效模式当初各自独立存在：
+#   a. 佣兵卡的增量刷新签名漏了 carrots -> 卡片价格/可买态冻在旧值
+#   b. session_changed 没刷萝卜面板 -> 面板数字与按钮置灰态冻住
+#   c. 采集反馈只在 _ready() 判一次，而客机那一刻权威采集还没到 -> 挖土动画永不播
+func _case_client_ui_tracks_room_state() -> void:
+	var packed := load("res://scenes/prep/PrepScreen.tscn") as PackedScene
+	if not _h.expect(packed != null, "scene_load_failed", "PrepScreen.tscn 无法加载"):
+		return
+	var was_active := NetworkService.team_active
+	var was_host := NetworkService.is_host
+	GameState.reset_run()
+	NetworkService.team_active = true
+	NetworkService.is_host = false
+	var screen: Node = packed.instantiate()
+	add_child(screen)
+	await get_tree().process_frame
+
+	# --- a. 佣兵卡签名跟着萝卜走 ---
+	screen.call("_toggle_merc_picker")
+	await get_tree().process_frame
+	screen.call("_refresh_mercenary_overlay")
+	var sig_before := str(screen.get("_merc_overlay_signature"))
+	_apply_server_carrots(screen, 40, 0, GameState.round_index, 0)
+	screen.call("_refresh_mercenary_overlay")
+	var sig_after := str(screen.get("_merc_overlay_signature"))
+	_h.expect(sig_before != sig_after, "merc_card_stale_on_carrot_change",
+		"萝卜从 0 变成 40，佣兵卡的刷新签名没变（%s）—— 12 张卡不会重建，"
+			% sig_after
+		+ "涨了的还挂着「萝卜不足」点不动，跌了的还显示可买、点下去静默 return")
+	screen.call("_close_merc_picker")
+	await get_tree().process_frame
+
+	# --- b. session_changed 要刷新萝卜面板 ---
+	var panel = screen.get("_carrot_panel")
+	if _h.expect(panel != null and is_instance_valid(panel), "panel_missing", "没有萝卜营地面板"):
+		screen.call("_toggle_carrot_camp")
+		await get_tree().process_frame
+		var label: Label = panel.get("_carrot_balance")
+		if _h.expect(label != null, "carrot_label_missing", "面板里没有萝卜数字"):
+			var before := label.text
+			_apply_server_carrots(screen, 77, 0, GameState.round_index, 0)
+			NetworkService.session_changed.emit()
+			await get_tree().process_frame
+			_h.expect(label.text != before and label.text.contains("77"),
+				"panel_frozen_on_room_state",
+				"服务端把萝卜发到 77，面板仍显示 \"%s\" —— 客机面板在两次本地操作之间是冻的"
+					% label.text)
+
+	# --- c. 权威采集到达时补播采集反馈 ---
+	screen.set("_carrot_feedback_round", -1)
+	_apply_server_carrots(screen, 80, 3, GameState.round_index, 3)
+	NetworkService.session_changed.emit()
+	await get_tree().process_frame
+	_h.expect(int(screen.get("_carrot_feedback_round")) == GameState.round_index,
+		"harvest_feedback_never_plays",
+		"权威采集（本回合 +3）到达后没有播采集反馈 —— 客机进备战时服务端还没推进回合，"
+		+ "_ready() 里那条 last_harvest_round == round_index 判据结构性不成立，"
+		+ "不在这里补播就等于挖土动画和 +N 飘字对客机从来不存在")
+
+	screen.queue_free()
+	await get_tree().process_frame
+	NetworkService.team_active = was_active
+	NetworkService.is_host = was_host
+
+
+func _apply_server_carrots(_screen: Node, carrots: int, gain: int, harvest_round: int, spent: int) -> void:
+	NetworkService._apply_carrot_state({
+		"carrot_authoritative": true,
+		"carrots": carrots,
+		"harvest_tech_level": 0,
+		"merc_carrots_spent_total": spent,
+		"last_harvest_round": harvest_round,
+		"last_harvest_gain": gain,
+		"stone_draw_used_round": -1,
+		"team_upgrade_stones": {"sky": 0, "land": 0, "ren": 0},
+	})

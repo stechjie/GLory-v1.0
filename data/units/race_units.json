@@ -6,6 +6,10 @@
     "units":  [
                   {
                       "id":  "god_priest",
+                      "star4":  {
+                          "heal_pct":  0.24,
+                          "cleanse_chance":  0.5
+                      },
                       "name":  "神侍",
                       "race":  "god",
                       "element":  "ren",
@@ -36,6 +40,11 @@
                   },
                   {
                       "id":  "god_priestess",
+                      "star4":  {
+                          "atk_bonus":  0.32,
+                          "aspd_bonus":  0.45,
+                          "skill_cd":  4.5
+                      },
                       "name":  "大祭司",
                       "race":  "god",
                       "element":  "ren",
@@ -61,6 +70,11 @@
                   },
                   {
                       "id":  "god_guard",
+                      "star4":  {
+                          "shield_control_immune":  true,
+                          "start_shield_pct":  0.4,
+                          "taunt_radius":  240
+                      },
                       "name":  "光之卫士",
                       "race":  "god",
                       "element":  "land",
@@ -89,6 +103,10 @@
                   },
                   {
                       "id":  "god_aurora",
+                      "star4":  {
+                          "third_hit_double":  true,
+                          "true_damage_pct":  0.45
+                      },
                       "name":  "极光射手",
                       "race":  "god",
                       "element":  "sky",
@@ -112,6 +130,13 @@
                   },
                   {
                       "id":  "god_angel",
+                      "star4":  {
+                          "control_immune_sec":  2,
+                          "heal_pct":  0.4,
+                          "atk_bonus":  0.4,
+                          "aspd_bonus":  0.45,
+                          "skill_cd":  5
+                      },
                       "name":  "天使",
                       "race":  "god",
                       "element":  "sky",
@@ -139,6 +164,11 @@
                   },
                   {
                       "id":  "god_arbiter",
+                      "star4":  {
+                          "damage_atk_pct":  4.4,
+                          "def_stack_pct":  0.2,
+                          "skill_cd":  2
+                      },
                       "name":  "裁决者",
                       "race":  "god",
                       "element":  "land",
@@ -165,6 +195,11 @@
                   },
                   {
                       "id":  "god_archangel",
+                      "star4":  {
+                          "damage_reduction":  0.65,
+                          "duration":  8,
+                          "skill_cd":  4
+                      },
                       "name":  "大天使",
                       "race":  "god",
                       "element":  "sky",
@@ -191,6 +226,11 @@
                   },
                   {
                       "id":  "god_king",
+                      "star4":  {
+                          "damage_atk_pct":  3.2,
+                          "max_hp_bonus_pct":  0.2,
+                          "skill_cd":  6
+                      },
                       "name":  "神王",
                       "race":  "god",
                       "element":  "land",
@@ -217,6 +257,10 @@
                   },
                   {
                       "id":  "dark_imp",
+                      "star4":  {
+                          "attack_down":  0.32,
+                          "aspd_down":  0.32
+                      },
                       "name":  "魔童",
                       "race":  "dark",
                       "element":  "ren",
@@ -247,6 +291,10 @@
                   },
                   {
                       "id":  "dark_mage",
+                      "star4":  {
+                          "damage_atk_pct":  3.4,
+                          "skill_cd":  4
+                      },
                       "name":  "暗影法师",
                       "race":  "dark",
                       "element":  "sky",
@@ -277,6 +325,10 @@
                   },
                   {
                       "id":  "dark_fear",
+                      "star4":  {
+                          "fear_sec":  3,
+                          "skill_cd":  4
+                      },
                       "name":  "恐惧魔",
                       "race":  "dark",
                       "element":  "land",
@@ -301,6 +353,10 @@
                   },
                   {
                       "id":  "dark_queen",
+                      "star4":  {
+                          "stack_damage":  0.35,
+                          "max_stacks":  6
+                      },
                       "name":  "痛苦女王",
                       "race":  "dark",
                       "element":  "sky",
@@ -325,6 +381,10 @@
                   },
                   {
                       "id":  "dark_scythe",
+                      "star4":  {
+                          "def_down_pct":  0.25,
+                          "damage_atk_pct":  5
+                      },
                       "name":  "偷袭者",
                       "race":  "dark",
                       "element":  "ren",
@@ -349,6 +409,10 @@
                   },
                   {
                       "id":  "dark_suc",
+                      "star4":  {
+                          "stun_sec":  2,
+                          "skill_cd":  3.5
+                      },
                       "name":  "魅魔",
                       "race":  "dark",
                       "element":  "ren",
@@ -378,6 +442,9 @@
                   },
                   {
                       "id":  "dark_doom",
+                      "star4":  {
+                          "link_regen_pct":  0.03
+                      },
                       "name":  "末日守卫",
                       "race":  "dark",
                       "element":  "land",
@@ -402,6 +469,10 @@
                   },
                   {
                       "id":  "dark_dragon",
+                      "star4":  {
+                          "pull_sec":  2,
+                          "damage_atk_pct":  4.4
+                      },
                       "name":  "黑龙",
                       "race":  "dark",
                       "element":  "sky",
@@ -482,6 +553,10 @@
                   },
                   {
                       "id":  "undead_parasite",
+                      "star4":  {
+                          "clone_hp_pct":  0.5,
+                          "clone_atk_def_pct":  0.75
+                      },
                       "name":  "寄生灵",
                       "race":  "undead",
                       "element":  "ren",
@@ -506,6 +581,9 @@
                   },
                   {
                       "id":  "undead_spike",
+                      "star4":  {
+                          "def_down_pct":  0.33
+                      },
                       "name":  "刺灵",
                       "race":  "undead",
                       "element":  "sky",
@@ -531,6 +609,9 @@
                   },
                   {
                       "id":  "undead_fly",
+                      "star4":  {
+                          "dodge":  0.4
+                      },
                       "name":  "飞灵",
                       "race":  "undead",
                       "element":  "sky",
@@ -554,6 +635,9 @@
                   },
                   {
                       "id":  "undead_bomb",
+                      "star4":  {
+                          "damage_atk_pct":  5
+                      },
                       "name":  "自爆灵",
                       "race":  "undead",
                       "element":  "ren",
@@ -577,6 +661,10 @@
                   },
                   {
                       "id":  "undead_titan",
+                      "star4":  {
+                          "reflect_taken_damage_pct":  0.3,
+                          "armor_per_hit":  6
+                      },
                       "name":  "巨甲灵",
                       "race":  "undead",
                       "element":  "land",
@@ -602,6 +690,11 @@
                   },
                   {
                       "id":  "undead_mother",
+                      "star4":  {
+                          "death_threshold":  4,
+                          "boss_max_hp_damage":  0.3,
+                          "tier1_or_merc_chance":  0.55
+                      },
                       "name":  "母灵",
                       "race":  "undead",
                       "element":  "land",
@@ -630,6 +723,10 @@
                   },
                   {
                       "id":  "human_militia",
+                      "star4":  {
+                          "stun_sec":  0.5,
+                          "interrupt_chance":  0.2
+                      },
                       "name":  "民兵",
                       "race":  "human",
                       "element":  "land",
@@ -685,6 +782,10 @@
                   },
                   {
                       "id":  "human_archer",
+                      "star4":  {
+                          "every":  3,
+                          "combo_atk_pct":  3
+                      },
                       "name":  "弓箭手",
                       "race":  "human",
                       "element":  "sky",
@@ -709,6 +810,10 @@
                   },
                   {
                       "id":  "human_swordsman",
+                      "star4":  {
+                          "damage_atk_pct":  3,
+                          "stun_sec":  2
+                      },
                       "name":  "剑士",
                       "race":  "human",
                       "element":  "land",
@@ -733,6 +838,11 @@
                   },
                   {
                       "id":  "human_mage",
+                      "star4":  {
+                          "double_element_chance":  0.2,
+                          "damage_atk_pct":  6,
+                          "skill_cd":  2
+                      },
                       "name":  "法师",
                       "race":  "human",
                       "element":  "sky",
@@ -757,6 +867,10 @@
                   },
                   {
                       "id":  "human_cleric",
+                      "star4":  {
+                          "heal_pct":  0.4,
+                          "every":  4
+                      },
                       "name":  "牧师",
                       "race":  "human",
                       "element":  "ren",
@@ -781,6 +895,10 @@
                   },
                   {
                       "id":  "human_death_servant",
+                      "star4":  {
+                          "ally_def_pct":  0.3,
+                          "ally_def_duration":  8
+                      },
                       "name":  "死侍",
                       "race":  "human",
                       "element":  "land",
@@ -805,6 +923,10 @@
                   },
                   {
                       "id":  "human_king",
+                      "star4":  {
+                          "max_stacks":  8,
+                          "post_battle_all_stat_growth":  0.25
+                      },
                       "name":  "人王",
                       "race":  "human",
                       "element":  "ren",

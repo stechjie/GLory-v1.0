@@ -25,6 +25,8 @@ const CarrotEconomy := preload("res://scripts/economy/CarrotEconomy.gd")
 # 合成时新单位的 `cost_basis` = 被合成单位 `cost_basis` 之和。
 
 const SELL_REFUND_RATE := 0.5
+# 与 NetProtocol.MAX_ID_LENGTH 同值：来路是网络，长度必须在常数级步数内被拒。
+const MAX_UID_LENGTH := 64
 # 升星份数与星级上限都在 GameConstants —— 客户端读的是同一份。
 # GameConstants 是纯常量脚本，没有任何可变状态，不违反上面「零全局」那条
 # （那条防的是 GameState/TreasureService 这类带房间状态的单例）。
@@ -42,6 +44,7 @@ static func new_prep(start_gold: int) -> Dictionary:
 		"last_harvest_round": -1,
 		"last_harvest_gain": 0,
 		"stone_draw_used_round": -1,
+		"four_star_uids": {},   # uid -> {unit_id, round}：四星血统，见 _use_upgrade_stone
 		"revision": 0,
 		"shop": {"offer_id": "", "offers": [], "sold": [], "refresh_uses": 0},
 		"roster": {},        # uid(String) -> {unit_id, star, cost_basis, kind}
@@ -149,6 +152,7 @@ static func apply(prep: Dictionary, action: String, payload: Dictionary, ctx: Di
 		"upgrade_harvest_tech": out = _upgrade_harvest_tech(prep, payload, ctx)
 		"hire_merc_carrot": out = _hire_merc_carrot(prep, payload, ctx)
 		"draw_upgrade_stone": out = _draw_upgrade_stone(prep, payload, ctx)
+		"use_upgrade_stone": out = _use_upgrade_stone(prep, payload, ctx)
 		"shop_refresh":   out = _shop_refresh(prep, payload, ctx)
 		"treasure_refresh_cost": out = _treasure_refresh_cost(prep, payload, ctx)
 		"altar_grant":    out = _altar_grant(prep, payload, ctx)
@@ -196,7 +200,8 @@ static func _buy(prep: Dictionary, payload: Dictionary, ctx: Dictionary) -> Dict
 	sold[index] = true
 	shop["sold"] = sold
 	prep["shop"] = shop
-	var uid := _add_unit(prep, str((unit_def as Dictionary).get("id", "")), 1, cost, "unit")
+	var uid := _add_unit(prep, str((unit_def as Dictionary).get("id", "")), 1, cost, "unit",
+		str(payload.get("uid", "")))
 	return {"ok": true, "result": {"uid": uid, "unit_id": str((unit_def as Dictionary).get("id", "")), "cost": cost}}
 
 static func _hire_merc(prep: Dictionary, payload: Dictionary, ctx: Dictionary) -> Dictionary:
@@ -314,6 +319,77 @@ static func _draw_upgrade_stone(prep: Dictionary, _payload: Dictionary, ctx: Dic
 		"team_upgrade_stones": team_stones.duplicate(true),
 	}}
 
+# 用一颗同属性的**队伍**升级石把三星升为四星。
+#
+# 这是四星唯一的来源（同名合成封顶在 MAX_MERGE_STAR，见 _merge）。石头在队伍仓库里，
+# 三个人共用一份，所以「查库存 -> 扣石 -> 记血统」必须是一笔原子交易：设计文档
+# 《萝卜采集与升级石系统设计实施方案》:128 要求同一颗石头被两名队友同时点时只能成一次。
+# 服务端是同步主循环、本函数内不 await，这个原子性天然成立。
+#
+# 记的是 uid 而不是「第几格」：格子会被拖动、合成会吞掉棋子，只有 uid 跟着棋子走。
+# prep["four_star_uids"] 就是 _room_validate_provenance() 判「这枚 star=4 是不是真的」
+# 的唯一依据 —— 只凭客户端在棋盘快照里自报 star=4 是认不出伪造的（设计文档 :246）。
+#
+# ⚠️ 双实现登记：账本开关打开（economy_ledger_enabled）之后，prep["roster"] 会记录
+# 每一枚棋子，届时血统应当收敛成 roster[uid].star == 4，**four_star_uids 要删掉**。
+# 在那之前 roster 是空的（buy/merge/hire 三个动作还没有客户端调用点），只能用这份。
+static func _use_upgrade_stone(prep: Dictionary, payload: Dictionary, ctx: Dictionary) -> Dictionary:
+	var uid := str(payload.get("uid", ""))
+	if uid.is_empty() or uid.length() > MAX_UID_LENGTH:
+		return {"ok": false, "error": "bad_uid"}
+	var granted: Dictionary = prep.get("four_star_uids", {})
+	if granted.has(uid):
+		return {"ok": false, "error": "already_four_star"}
+	var unit_id := str(payload.get("unit_id", ""))
+	var def := _unit_def_from(ctx, unit_id)
+	if def.is_empty():
+		return {"ok": false, "error": "unknown_unit"}
+	if bool(def.get("is_mercenary", false)):
+		return {"ok": false, "error": "mercenary"}
+	var element := str(def.get("element", ""))
+	if not CarrotEconomy.valid_stone_type(element):
+		return {"ok": false, "error": "bad_element"}
+	var team_stones: Dictionary = ctx.get("team_stones", {})
+	if team_stones.is_empty():
+		return {"ok": false, "error": "team_stones_unavailable"}
+	if int(team_stones.get(element, 0)) <= 0:
+		return {"ok": false, "error": "no_stone"}
+	# 账本上线之后 roster 才有内容；有内容时必须核对星级与单位，防止拿一枚
+	# 一星棋子的 uid 来换四星。
+	var roster: Dictionary = prep.get("roster", {})
+	if roster.has(uid):
+		var owned: Dictionary = roster[uid]
+		if str(owned.get("unit_id", "")) != unit_id:
+			return {"ok": false, "error": "unit_mismatch"}
+		if int(owned.get("star", 1)) != GameConstants.MAX_MERGE_STAR:
+			return {"ok": false, "error": "not_three_star"}
+
+	# 判据全部通过，开始改状态。
+	team_stones[element] = int(team_stones[element]) - 1
+	granted[uid] = {"unit_id": unit_id, "round": int(ctx.get("round_index", 0))}
+	prep["four_star_uids"] = granted
+	if roster.has(uid):
+		var upgraded: Dictionary = roster[uid]
+		upgraded["star"] = GameConstants.MAX_STAR
+		roster[uid] = upgraded
+		prep["roster"] = roster
+	return {"ok": true, "result": {
+		"uid": uid,
+		"unit_id": unit_id,
+		"stone_type": element,
+		"team_upgrade_stones": team_stones.duplicate(true),
+	}}
+
+
+static func _unit_def_from(ctx: Dictionary, unit_id: String) -> Dictionary:
+	if unit_id.is_empty():
+		return {}
+	for row in (ctx.get("unit_table", []) as Array):
+		if typeof(row) == TYPE_DICTIONARY and str((row as Dictionary).get("id", "")) == unit_id:
+			return row
+	return {}
+
+
 # 合成：两个同名同星 -> 一个高一星，`cost_basis` 相加。
 # 相加是这条规则的全部意义 —— 出售时退的就是"你为这一坨总共花了多少"的一半，
 # 不管中间经过几次合成、用了几次折扣。
@@ -351,10 +427,16 @@ static func _merge(prep: Dictionary, payload: Dictionary, _ctx: Dictionary) -> D
 		return {"ok": false, "error": "star_capped"}
 	if uids.size() != GameConstants.copies_to_upgrade(star):
 		return {"ok": false, "error": "bad_merge_count"}
+	# 客户端合成是「keeper 原地升星、被吞的置空」，keeper 的 uid 存活。
+	# 账本这边以前是「全 erase + 铸一个新的」，两边 uid 语义分叉：合成之后
+	# roster 里那一枚在棋盘上根本不存在。keeper_uid 由调用方指明，对齐两边。
+	var keeper_uid := str(payload.get("keeper_uid", ""))
+	if not keeper_uid.is_empty() and not seen.has(keeper_uid):
+		return {"ok": false, "error": "keeper_not_in_merge"}
 	for raw in uids:
 		roster.erase(str(raw))
 	prep["roster"] = roster
-	var uid_new := _add_unit(prep, str(first.get("unit_id", "")), star + 1, basis, "unit")
+	var uid_new := _add_unit(prep, str(first.get("unit_id", "")), star + 1, basis, "unit", keeper_uid)
 	return {"ok": true, "result": {"uid": uid_new, "unit_id": str(first.get("unit_id", "")),
 		"star": star + 1, "cost_basis": basis}}
 
@@ -438,8 +520,15 @@ static func _gamble(prep: Dictionary, _payload: Dictionary, ctx: Dictionary) -> 
 static func _roster_size(prep: Dictionary) -> int:
 	return (prep.get("roster", {}) as Dictionary).size()
 
-static func _add_unit(prep: Dictionary, unit_id: String, star: int, cost_basis: int, kind: String) -> String:
-	var uid := "u%d" % int(prep.get("next_uid", 1))
+# preferred_uid：客户端已经给这枚棋子铸好了 uid（GameState.mint_piece_uid），
+# 传进来就用它。两边用同一个标识，roster 才能和棋盘对上 —— 否则账本记 "u3"、
+# 棋盘记 "9f2a1c04-7"，出售时 _sell 按 uid 查 roster 必然 unknown_uid，
+# 而四星血统（four_star_uids）也永远收敛不到 roster 上。
+static func _add_unit(prep: Dictionary, unit_id: String, star: int, cost_basis: int, kind: String,
+		preferred_uid: String = "") -> String:
+	var uid := preferred_uid
+	if uid.is_empty() or (prep.get("roster", {}) as Dictionary).has(uid):
+		uid = "u%d" % int(prep.get("next_uid", 1))
 	prep["next_uid"] = int(prep.get("next_uid", 1)) + 1
 	var roster: Dictionary = prep.get("roster", {})
 	roster[uid] = {"unit_id": unit_id, "star": star, "cost_basis": cost_basis, "kind": kind}

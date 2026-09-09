@@ -53,8 +53,13 @@ var _stones_initialized := false
 var _reveal_serial := 0
 var _action_locked := false
 
-func setup(upgrade_callback: Callable, draw_callback: Callable, _hire_callback: Callable,
-		_open_merc_callback: Callable, _warehouse_callback: Callable,
+# 只收面板真正会调用的三个回调。
+#
+# 以前还有 hire / open_merc / warehouse 三个参数，是 V1 那版「萝卜营地替换佣兵按钮」
+# 设计的遗留：V1 里有第三个「佣兵」页签用 hire_callback，4fd1e48 改版时页签被拿掉，
+# 另外两个从建出来就没接过按钮。参数留着不报错，只会让调用方以为面板能雇佣兵 ——
+# 而实际入口在佣兵选择层（PrepUI._create_mercenary_purchase_card）。
+func setup(upgrade_callback: Callable, draw_callback: Callable,
 		four_star_callback: Callable = Callable()) -> void:
 	_upgrade_callback = upgrade_callback
 	_draw_callback = draw_callback
@@ -493,6 +498,11 @@ func _play_stone_reveal(stone_type: String) -> void:
 			return
 		frames.region = Rect2((frame % 4) * 256, (frame / 4) * 256, 256, 256)
 		await get_tree().create_timer(0.055).timeout
+	# 循环里每帧都判了，循环**外**这三行以前没判 —— 最后一次 await 期间切场景
+	# （备战被释放）就会在已销毁的节点上写属性。那会打一条引擎级错误，而
+	# tools/run_check.ps1 把引擎错误行当硬失败，于是不相干的检查会莫名其妙变红。
+	if serial != _reveal_serial or not is_instance_valid(_stone_reveal) 			or not is_instance_valid(_stone_art) or not is_instance_valid(_draw_result):
+		return
 	_stone_reveal.visible = false
 	_stone_art.texture = _stone_texture(stone_type)
 	_draw_result.text = "获得 %s石 ×1 · 已存入队伍库存" % _stone_display(stone_type)

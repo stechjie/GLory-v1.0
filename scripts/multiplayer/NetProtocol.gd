@@ -1,7 +1,10 @@
 class_name NetProtocol
 extends RefCounted
 
-const SNAPSHOT_VERSION := 2
+# v3: 每格新增 uid（棋子唯一标识）。服务端靠它认「这枚四星是不是由一次成功的
+#     升级石交易产生的」—— 只凭自报的 star=4 认不出伪造（设计文档 §5）。
+#     版本没跟着加字段一起顶，旧客户端的提交会被按新语义解析成「所有棋子 uid 为空」。
+const SNAPSHOT_VERSION := 3
 const BOARD_SIZE := GameConstants.CELL_COUNT
 
 # --- 载荷硬上限 -------------------------------------------------------------
@@ -168,6 +171,9 @@ static func sanitize_cell(cell: Variant) -> Variant:
 		return null
 	return {
 		"id": str(c.get("id", def.get("id", ""))),
+		# uid 必须原样带过 —— 这条路径（normalize_snapshot / 本机房主）丢掉它，
+		# 棋子过一次就没血统了，之后再提交会被服务端判成伪造四星。
+		"uid": str(c.get("uid", "")),
 		"star": clampi(int(c.get("star", 1)), 1, GameState.MAX_UNIT_STAR),
 		"def": def,
 		"is_mercenary": bool(c.get("is_mercenary", def.get("is_mercenary", false))),
@@ -222,6 +228,7 @@ static func _minimal_slots(slots: Variant, mercenary: bool) -> Array:
 		out.append({
 			"slot": i,
 			"id": str((cell as Dictionary).get("id", "")),
+			"uid": str((cell as Dictionary).get("uid", "")),
 			"star": clampi(int((cell as Dictionary).get("star", 1)), 1, GameState.MAX_UNIT_STAR),
 			"is_mercenary": mercenary or bool((cell as Dictionary).get("is_mercenary", false)),
 			"race_relations": _safe_race_relations((cell as Dictionary).get("race_relations", {})),
@@ -235,6 +242,7 @@ static func _validate_slots(value: Variant, mercenary: bool, max_slots: int) -> 
 	if (value as Array).size() > MAX_SLOT_ENTRIES:
 		return {"ok": false, "reason": "too_many_slots"}
 	var used := {}
+	var used_uids := {}
 	for item in (value as Array):
 		if typeof(item) != TYPE_DICTIONARY:
 			return {"ok": false, "reason": "malformed_slot_entry"}
@@ -252,8 +260,22 @@ static func _validate_slots(value: Variant, mercenary: bool, max_slots: int) -> 
 		var star := int(d.get("star", 1))
 		if star < 1 or star > GameState.MAX_UNIT_STAR:
 			return {"ok": false, "reason": "invalid_star:%d" % star}
+		# uid 在这里只做**语法**校验：长度、以及本次提交内不重复。
+		#
+		# 「这个 uid 有没有血统」是**语义**问题，必须留给 NetworkService：
+		# 本函数是纯静态的、拿不到 room，而 _restamp_cached_board() 会拿一份跨回合
+		# 缓存的棋盘重跑本校验 —— 把血统判据塞进来，看门狗代打会因为服务器重启后
+		# boards/last_board 没持久化而莫名其妙拒掉一整个座位的棋盘。
+		var uid := str(d.get("uid", ""))
+		if uid.length() > MAX_ID_LENGTH:
+			return {"ok": false, "reason": "invalid_uid_length:%d" % uid.length()}
+		if not uid.is_empty():
+			if used_uids.has(uid):
+				return {"ok": false, "reason": "duplicate_uid:%s" % uid}
+			used_uids[uid] = true
 		var clean := {
 			"id": id,
+			"uid": uid,
 			"star": star,
 			"def": def,
 			"is_mercenary": mercenary,

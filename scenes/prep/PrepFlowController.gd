@@ -1,5 +1,9 @@
 ﻿extends "res://scenes/prep/PrepUI.gd"
 
+# 已经播过采集反馈的回合号。客机的采集是服务端发的，到达时机与本场景 _ready()
+# 是竞态的，所以两条路径都可能触发播放 —— 用它保证一回合只播一次。
+var _carrot_feedback_round := -1
+
 func _maybe_start_pending_treasure() -> void:
 	# 联机局：候选完全由服务端发放（match_state.pending_treasure / resume payload）。
 	# 客户端既不能自己开抽奖，也不能在候选为空时本地补摇——这两条都是「自发宝物」，
@@ -131,6 +135,37 @@ func _mark_online_board_changed() -> void:
 func _on_network_session_changed() -> void:
 	_refresh_formation_status()
 	_refresh_merc_panel()
+	# room_state 是客机**唯一**的萝卜来源（NetworkService._apply_carrot_state）。
+	# 不在这里刷新，客机的萝卜营地面板和 3D 萝卜田就冻在上一次本地操作的状态：
+	# 服务端发了萝卜、涨了田等级、队友抽到的共享石头进了仓库，面板上一个数字都不动，
+	# 抽石/升科技按钮也保持旧的置灰状态，直到玩家关掉面板再打开（toggle 会 refresh）。
+	if _carrot_panel != null and is_instance_valid(_carrot_panel):
+		_carrot_panel.refresh()
+	refresh_carrot_gathering()
+	_maybe_play_pending_carrot_harvest()
+
+
+# 客机进备战时，本回合的采集**还没到**：服务端是先建 match_state（带的是上一回合
+# 的采集）、再推进回合并采集、最后才广播 room_state。PrepScreen._ready() 里那条
+# `last_harvest_round == round_index` 判据在那个时刻结构性不成立，于是挖土动画和
+# `+N 萝卜` 飘字对专服客机**从来没播过**。
+#
+# 权威采集随后才由 room_state 送达，这里补播。房主与单机不走这条路（他们在
+# _ready() 里本地采集并当场播），_carrot_feedback_round 保证不会重播。
+func _maybe_play_pending_carrot_harvest() -> void:
+	if GameState.tutorial_mode:
+		return
+	if not (NetworkService.team_active and not NetworkService.is_host):
+		return
+	if GameState.last_harvest_round != GameState.round_index:
+		return
+	if _carrot_feedback_round == GameState.round_index:
+		return
+	var gain := NetworkService.last_carrot_harvest_gain
+	if gain <= 0:
+		return
+	_carrot_feedback_round = GameState.round_index
+	play_carrot_harvest_feedback(gain)
 
 func _on_golden_altar() -> void:
 	if not GameState.owned_treasures.has("money_golden_altar"):

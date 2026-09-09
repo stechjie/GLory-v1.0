@@ -57,7 +57,18 @@ const USE_DEDICATED_SERVER := true
 #      症状是随机调错方法，比任何报错都难查。顶号把它变成握手阶段一次干净的
 #      protocol_mismatch 拒绝，玩家看到的是可读原因。
 #      代价：线上服务器必须同步重新部署，否则两端都连不上。这是有意的，不是回归。
-const NETWORK_PROTOCOL_VERSION := 17
+# v18: 萝卜经济（4a10441 `carrot` 起）。ECONOMY_ACTIONS 新增 upgrade_harvest_tech /
+#      hire_merc_carrot / draw_upgrade_stone，room_state 的 `economy` 段新增
+#      carrot_authoritative / carrots / harvest_tech_level / merc_carrots_spent_total /
+#      last_harvest_round / stone_draw_used_round / team_upgrade_stones。
+#      **这一格是补顶的**：那批改动当时没顶号，于是线上那台萝卜之前的服务器与新
+#      客户端协议号都是 17、握手照常放行，然后 _rpc_economy_intent 因为
+#      _economy_action_enabled() 不认识这三个动作而直接 return（不发回执），
+#      room_state 也不带 carrot_authoritative —— 玩家看到的是萝卜恒为 0、三个按钮
+#      点了没反应、一条报错都没有。这正是 v16 注释里写的那种静默分歧。
+#      规则重申：改服务端契约（RPC、ECONOMY_ACTIONS、room_state 字段集）必须顶号，
+#      并同步 tools/carrot_online_check.gd 的 PINNED_PROTOCOL / PINNED_CONTRACT。
+const NETWORK_PROTOCOL_VERSION := 19
 
 # Local phone hosting is debug-only.
 const ALLOW_LOCAL_HOST_DEBUG := false

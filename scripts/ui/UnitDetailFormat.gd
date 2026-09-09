@@ -22,7 +22,12 @@ static func format_unit_def(d: Dictionary, star: int = 1, cell: Dictionary = {})
 	var uname := localized_name(d)
 	var race := unit_race_name(str(d.get("race", "-")))
 	var elem := unit_element_name(str(d.get("element", "-")))
-	var skill_text := format_skill_detail(d)
+	# 技能文案必须读**按星级缩放后**的 def：4 星的技能数值在 `star4` 子对象里，
+	# 而 format_skill_detail() 是直接 d.get(key, 默认值) 的。不先过一遍
+	# apply_star_stats()，四星棋子的技能说明会显示三星的数字 —— 那是第二份
+	# 数值真相，而且是玩家唯一看得到的那一份。
+	var skill_def := UnitFactory.apply_star_stats(d, star) if not bool(d.get("is_mercenary", false)) else d
+	var skill_text := format_skill_detail(skill_def)
 	var detail: String
 	if is_en():
 		detail = "%s ★%d\nRace: %s  Element: %s  Tier: %d  Cost: %d G\nHP: %d  ATK: %d  DEF: %d\nAS: %.2f  Crit: %.0f%%  CritDmg: %.0f%%\nRange: %s  Speed: %s\n\n[b]Skill[/b]\n%s" % [

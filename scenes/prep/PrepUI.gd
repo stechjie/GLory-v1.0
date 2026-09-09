@@ -1004,8 +1004,6 @@ func _build_top_actions() -> void:
 	# chain. String callables keep this reusable UI layer independently parsable.
 	_carrot_panel.setup(Callable(self, "request_carrot_harvest_upgrade"),
 		Callable(self, "request_upgrade_stone_draw"),
-		Callable(self, "_on_carrot_hire_requested"),
-		Callable(self, "_toggle_merc_picker"), Callable(self, "_toggle_team_mercs_picker"),
 		Callable(self, "request_four_star_upgrade"))
 	_carrot_panel.closed.connect(_close_carrot_camp)
 	add_child(_carrot_panel)
@@ -1039,24 +1037,22 @@ func _on_carrot_dimmer_input(event: InputEvent) -> void:
 	elif event is InputEventScreenTouch and event.pressed:
 		_close_carrot_camp()
 
-func _on_carrot_hire_requested(merc_id: String) -> void:
-	var mercs: Array = DataRegistry.get_table("mercenaries").get("mercenaries", [])
-	for index in mercs.size():
-		var merc: Dictionary = mercs[index]
-		if str(merc.get("id", "")) != merc_id:
-			continue
-		var empty := PrepRules.first_empty_mercenary_slot()
-		if empty >= 0:
-			call("_hire_mercenary_to_slot", index, empty)
-		return
-
 func _on_carrot_economy_receipt(receipt: Dictionary) -> void:
 	var action := str(receipt.get("action", ""))
-	if action not in ["upgrade_harvest_tech", "hire_merc_carrot", "draw_upgrade_stone"]:
+	# 只处理这四个**玩家发起、等服务端裁决**的动作。
+	# buy / merge / sell / shop_refresh 也会发意图，但那是影子记账（L2）：
+	# 本地那一笔早就生效了，服务端只是跟着记账。它们被拒（比如卖一枚开关上线前
+	# 买的棋子会 unknown_uid）是影子期的正常噪音，弹给玩家只会制造困惑 ——
+	# 差异由 _shadow_audit_economy 记进服务端日志，那才是翻 authoritative 的依据。
+	if action not in ["upgrade_harvest_tech", "hire_merc_carrot", "draw_upgrade_stone", "use_upgrade_stone"]:
 		return
 	if not bool(receipt.get("ok", false)):
 		show_message("萝卜交易失败：%s" % str(receipt.get("error", "denied")))
 		return
+	if action == "use_upgrade_stone":
+		# 星级已由 NetworkService._apply_carrot_receipt 按 uid 落到棋子上；
+		# 棋盘变了要重新提交，否则服务端还按三星那份快照结算。
+		call("_mark_online_board_changed")
 	if action == "hire_merc_carrot":
 		call("_mark_online_board_changed")
 		NetworkService.team_send_prep_mercs()
@@ -1519,8 +1515,14 @@ func _refresh_mercenary_overlay() -> void:
 	if _merc_count_label != null:
 		_merc_count_label.text = tr("ui_merc_hired_count") % [_hired_mercenary_count(), GameState.MERCENARY_SLOTS]
 	# 打开状态下只有影响卡片内容的数据变了才重建 12 张卡。
+	# 卡片价格与可买判据在非教学局读的是**萝卜**（_mercenary_purchase_reason），
+	# 签名却只有金币 —— 萝卜变了卡片不重建：涨了还挂着「萝卜不足」点不动，
+	# 跌了（比如抽了一次 50 萝卜的升级石）还显示可买，点下去在
+	# PrepBoardController._on_hire_mercenary 静默 return，没有任何提示。
+	# 签名必须覆盖该分区渲染的全部数据（见本文件 :138 的约定）。
 	var sig := JSON.stringify([
 		GameState.gold,
+		GameState.carrots,
 		GameState.mercenary_slots,
 		GameState.tutorial_mode,
 		LocaleManager.get_locale(),

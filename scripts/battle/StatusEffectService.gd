@@ -9,8 +9,27 @@ static func ensure_status(fighter: Dictionary) -> void:
 	if not fighter.has("statuses") or typeof(fighter.statuses) != TYPE_DICTIONARY:
 		fighter.statuses = {}
 
+# 控制类状态。恐惧（fear_sec）与黑洞（pull_sec）在实现上都落成 stun，所以只有这三种。
+static func _is_control_status(kind: String) -> bool:
+	return kind in ["stun", "silence", "interrupt"]
+
+
+# 控制免疫。两个来源都只在 4 星才有对应字段（走 race_units.json 的 star4 覆写），
+# 所以 1~3 星的行为一字不变：
+#   * 天使 control_immune_sec  -> 开场挂一个 control_immune 状态
+#   * 光之卫士 shield_control_immune -> 护盾还在时免疫
+static func is_control_immune(fighter: Dictionary) -> bool:
+	ensure_status(fighter)
+	if fighter.statuses.has("control_immune"):
+		return true
+	var d: Dictionary = fighter.get("def", {})
+	return bool(d.get("shield_control_immune", false)) and int(fighter.get("shield", 0)) > 0
+
+
 static func add_status(fighter: Dictionary, kind: String, duration: float, params: Dictionary = {}) -> void:
 	ensure_status(fighter)
+	if _is_control_status(kind) and is_control_immune(fighter):
+		return
 	var existing: Dictionary = fighter.statuses.get(kind, {})
 	# 不变量：params 必须是扁平字典（标量值，无嵌套容器）——所有调用方目前都传
 	# 现场构造的字面量。浅拷足以隔离，热路径上省去逐 tick 的深拷开销。

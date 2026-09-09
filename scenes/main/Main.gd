@@ -1,4 +1,5 @@
 extends Control
+const CarrotEconomy := preload("res://scripts/economy/CarrotEconomy.gd")
 
 signal public_token_request_check_requested(request_id: String)
 signal room_list_request_check_requested(request_id: String)
@@ -1949,15 +1950,13 @@ func _apply_team_match_state_payload(state_payload: Dictionary, result: Dictiona
 	GameState.team_hp = int(state_payload.get("team_hp", GameState.team_hp))
 	GameState.enemy_team_hp = int(state_payload.get("enemy_team_hp", GameState.enemy_team_hp))
 	GameState.gold = int(state_payload.get("gold", GameState.gold))
-	if state_payload.has("carrots"):
-		GameState.carrots = maxi(0, int(state_payload.get("carrots", GameState.carrots)))
-		GameState.harvest_tech_level = clampi(int(state_payload.get("harvest_tech_level", GameState.harvest_tech_level)), 0, 5)
-		GameState.merc_carrots_spent_total = maxi(0, int(state_payload.get("merc_carrots_spent_total", GameState.merc_carrots_spent_total)))
-		GameState.last_harvest_round = int(state_payload.get("last_harvest_round", GameState.last_harvest_round))
-		GameState.stone_draw_used_round = int(state_payload.get("stone_draw_used_round", GameState.stone_draw_used_round))
-		var stones: Variant = state_payload.get("team_upgrade_stones", {})
-		if typeof(stones) == TYPE_DICTIONARY:
-			GameState.team_upgrade_stones = (stones as Dictionary).duplicate(true)
+	# 萝卜字段走 NetworkService._apply_carrot_state 这**唯一一份**实现（room_state、
+	# 重连恢复、战后 match_state 三条路径共用），它自带 carrot_authoritative 判据。
+	# 以前这里是逐字段抄的第二份，判据也不一样（只判 has("carrots")）—— 加字段时
+	# 漏掉一处不会报错，只会让那个字段在某一条路径上永远不更新。
+	# match_state 不带 last_harvest_gain 是对的：它在回合推进**之前**生成，
+	# 带的会是上一回合已经播过的采集量。本回合的采集由随后的 room_state 送达。
+	NetworkService._apply_carrot_state(state_payload)
 	GameState.pve_completed = int(state_payload.get("pve_completed", GameState.pve_completed))
 	GameState.boss_completed = int(state_payload.get("boss_completed", GameState.boss_completed))
 	GameState.loss_streak = int(state_payload.get("loss_streak", GameState.loss_streak))
@@ -2094,6 +2093,16 @@ func _apply_post_battle_unit_outcomes(result: Dictionary) -> void:
 
 func _grow_human_king(cell: Dictionary) -> void:
 	var d: Dictionary = cell.get("def", {})
+	# 全表唯一的复利技能，必须封层数。不封的话第 5 回合上场撑到第 21 回合是
+	# 1.25^16 ≈ 35 倍（原稿的 0.3 更是 1.3^16 ≈ 77 倍）。
+	#
+	# max_stacks 在 4 星的 star4 覆写里，而 cell.def 是**没经过星级缩放**的原始表，
+	# 所以要过一遍唯一的解析点 UnitFactory.apply_star_stats() 才读得到。
+	# 这里只从它身上读上限，成长仍然改 cell 自己的 def。
+	var effective := UnitFactory.apply_star_stats(d, int(cell.get("star", 1)))
+	var cap := int(effective.get("max_stacks", 0))
+	if cap > 0 and int(cell.get("king_growth_stacks", 0)) >= cap:
+		return
 	var mul := 1.0 + float(d.get("post_battle_all_stat_growth", 0.20))
 	for key in ["hp", "atk", "def"]:
 		if d.has(key):

@@ -36,6 +36,27 @@ var harvest_tech_level := 0
 var merc_carrots_spent_total := 0
 var last_harvest_round := -1
 var stone_draw_used_round := -1
+
+# --- 棋子唯一标识（P3 血统）---------------------------------------------------
+# 每一枚玩家棋子从买入那一刻起带一个本局唯一的 uid，合成时由存活的那一枚继承，
+# 出售时随格子消失。服务端用它认「这枚四星是不是由一次成功的升级石交易产生的」——
+# 只凭棋盘快照里自报的 star=4 是认不出伪造的（设计文档 §5）。
+#
+# run_nonce 前缀不是装饰：没有它，「读旧档 -> 计数器回到 1」会和存档里已有的
+# u3 撞号，而撞号在服务端表现为「别人的四星血统被我复用」。
+var run_nonce := ""
+var next_piece_uid := 1
+
+func mint_piece_uid() -> String:
+	if run_nonce.is_empty():
+		new_run_nonce()
+	var uid := "%s-%d" % [run_nonce, next_piece_uid]
+	next_piece_uid += 1
+	return uid
+
+func new_run_nonce() -> void:
+	run_nonce = Crypto.new().generate_random_bytes(4).hex_encode()
+	next_piece_uid = 1
 var team_upgrade_stones: Dictionary = CarrotEconomyRules.empty_stones()
 var board_slots: Array = []
 var bench_slots: Array = []
@@ -53,6 +74,10 @@ var pending_treasure := {
 var pve_completed := 0
 var boss_completed := 0
 var loss_streak := 0
+# 本轮商店的服务端标识。联机客机的商店由服务端摇（NetworkService.server_shop），
+# 买入意图必须带着它 —— EconomyLedger._buy 用它判「你看到的还是不是这一轮的货」。
+# 单机/房主自己摇，这里留空。
+var shop_offer_id := ""
 var shop_refresh_uses_this_round := 0
 var golden_altar_uses := 0
 var gamble_used := false
@@ -85,12 +110,14 @@ func reset_run() -> void:
 	last_harvest_round = -1
 	stone_draw_used_round = -1
 	team_upgrade_stones = CarrotEconomyRules.empty_stones()
+	new_run_nonce()
 	board_slots.resize(GameConstants.CELL_COUNT)
 	board_slots.fill(null)
 	bench_slots.resize(BENCH_SLOTS)
 	bench_slots.fill(null)
 	mercenary_slots.resize(MERCENARY_SLOTS)
 	mercenary_slots.fill(null)
+	shop_offer_id = ""
 	clear_shop()
 	owned_treasures.clear()
 	claimed_treasure_rounds.clear()

@@ -481,7 +481,10 @@ static func _credit_mother_kill(state: Dictionary, victim: Dictionary) -> void:
 			owner_syn = _owner_syn(state, _owner_key(mother))
 		else:
 			owner_syn = state.get("player_syn", {}) if killer_is_player else state.get("enemy_syn", {})
-		var threshold := maxi(1, int(ceil(5.0 * SynergyService.safe_factor(owner_syn, "undead_threshold_mul", 1.0, 1.0))))
+		# 触发阈值读 def（§5.6：硬编码值一律改读数据表）。4 星在 star4 里给 4，
+		# 1~3 星没有这个字段，默认值 5 与原来硬编码的完全一致。
+		var base_threshold := float((mother.get("def", {}) as Dictionary).get("death_threshold", 5))
+		var threshold := maxi(1, int(ceil(base_threshold * SynergyService.safe_factor(owner_syn, "undead_threshold_mul", 1.0, 1.0))))
 		var os := _owner_state(state, "mother_%s" % str(mother.get("uid", "")))
 		os.mother_count = int(os.get("mother_count", 0)) + 1
 		if int(os.mother_count) < threshold:
@@ -528,7 +531,13 @@ static func _mother_execute_on(state: Dictionary, candidates: Array, mother: Dic
 	var target: Dictionary = {}
 	if not candidates.is_empty():
 		var roll := RngService.rng.randf()
-		var wanted_tier := 1 if roll < 0.50 else (2 if roll < 0.85 else 3)
+		# 概率同样读 def。默认值与原来硬编码的 50% / 35% / 15%... 一致：
+		# 原式是 roll<0.50 -> t1、roll<0.85 -> t2、其余 t3，即 0.50 / 0.35 / 0.15。
+		# 4 星在 star4 里把 t1 提到 0.55（史诗那一档按设计文档**不动**）。
+		var mother_def: Dictionary = mother.get("def", {})
+		var tier1_p := float(mother_def.get("tier1_or_merc_chance", 0.50))
+		var tier2_p := float(mother_def.get("tier2_chance", 0.35))
+		var wanted_tier := 1 if roll < tier1_p else (2 if roll < tier1_p + tier2_p else 3)
 		target = _pick_execute_target(candidates, wanted_tier)
 	# 事件永远发。三条路互不重叠：普通处决（目标已死）走 death_events；Boss 扣血
 	# （目标存活）与无目标（target_uid 空）走前端的 mother_execute 分支。
@@ -536,7 +545,7 @@ static func _mother_execute_on(state: Dictionary, candidates: Array, mother: Dic
 	if target.is_empty():
 		return
 	if bool(target.get("def", {}).get("is_boss", false)):
-		DamageService.apply_damage(target, maxi(1, int(round(float(target.max_hp) * 0.20))), true)
+		DamageService.apply_damage(target, maxi(1, int(round(float(target.max_hp) * float((mother.get("def", {}) as Dictionary).get("boss_max_hp_damage", 0.20))))), true)
 		return
 	target.mother_execute_kill = true
 	# Preserve the real Mother Wisp as the lethal damage source so the VFX

@@ -36,6 +36,8 @@ func _ready() -> void:
 	_case_star_cap_enforced()
 	_case_cost_basis_sums()
 	_case_still_rejects_bad_input()
+	await _case_auto_combine_caps_at_merge_star()
+	await _case_auto_combine_still_cascades()
 
 	_h.finish(get_tree())
 
@@ -164,3 +166,99 @@ func _case_still_rejects_bad_input() -> void:
 		diff_uids.append(EconomyLedger._add_unit(diff, "god_priest", 1, 3, "unit"))
 	_h.expect(str(_merge(diff, diff_uids).get("error", "")) == "mismatched_units",
 		"mismatched_star_allowed", "星级不同应被拒")
+
+
+# --- 自动合成：客户端的**第三份**合成实现 -------------------------------------
+# 上面 _case_star_cap_enforced 守的是 PrepRules.can_merge_cells（手动合成）和
+# EconomyLedger._merge（服务端）。客户端还有第三处：PrepBoardController
+# ._auto_combine_pass —— 它自己遍历星级、自己调 copies_to_upgrade、自己写
+# keeper.star，完全不经过前两者。
+#
+# 2026-09-09 实测：它的上界写的是 `range(1, GameState.MAX_UNIT_STAR)`，
+# 在 MAX_STAR 从 3 提到 4 的那一刻就变成了 [1,2,3]，而 copies_to_upgrade(3)
+# 落到 STAR_UPGRADE_COPIES.get(star, 3) 的默认值 3 —— 于是**三个三星自动融合成
+# 四星**，不看 element、不看队伍仓库、不走 four_star_check，整个升级石经济被绕过。
+# 而且 _auto_combine_all() 是 PrepUI._refresh_all() 的第一行，玩家连点都不用点。
+#
+# GameConstants.gd 顶部的注释一字不差地预言了这个坑，b21231「4 star」也确实改了
+# 另外两处上限 —— 唯独漏了这一处，因为**没有任何用例覆盖它**。
+#
+# 断言的是结果（棋盘上有没有出现超过合成上限的星），不是那行 range 怎么写。
+func _case_auto_combine_caps_at_merge_star() -> void:
+	var cap := GameState.MAX_MERGE_STAR
+	var screen := await _spawn_prep()
+	if screen == null:
+		return
+	var need := GameState.copies_to_upgrade(cap)
+	for i in need:
+		GameState.bench_slots[i] = _piece("god_priest", cap)
+	screen.call("_auto_combine_all")
+
+	var top := 0
+	var survivors := 0
+	for arr in [GameState.board_slots, GameState.bench_slots]:
+		for cell in arr:
+			if typeof(cell) == TYPE_DICTIONARY:
+				survivors += 1
+				top = maxi(top, int((cell as Dictionary).get("star", 1)))
+	_h.expect(top <= cap, "auto_combine_exceeds_merge_cap",
+		"自动合成把 %d 个 %d 星融成了 %d 星 —— 四星只能靠升级石，这条路径绕过了整个升级石经济"
+			% [need, cap, top])
+	_h.expect(survivors == need, "auto_combine_ate_pieces",
+		"自动合成吞掉了棋子：摆了 %d 个 %d 星，之后只剩 %d 个" % [need, cap, survivors])
+	await _despawn(screen)
+
+
+# 反向断言：修上界时最容易写出的假修是把 range 收成空的（比如 range(1, 1)），
+# 那样上面那条会通过，而**级联合成整个失效** —— 玩家买的同名棋子再也不会自动升星，
+# 且没有任何报错。这条用例的存在就是为了让那种改法红。
+func _case_auto_combine_still_cascades() -> void:
+	var cap := GameState.MAX_MERGE_STAR
+	var screen := await _spawn_prep()
+	if screen == null:
+		return
+	# 凑出恰好级联到合成上限所需的一星份数：copies(1) * copies(2) * ... * copies(cap-1)
+	var need := 1
+	for star in range(1, cap):
+		need *= GameState.copies_to_upgrade(star)
+	if not _h.expect(need <= GameState.BENCH_SLOTS, "bench_too_small",
+			"备战席只有 %d 格，装不下级联所需的 %d 个一星" % [GameState.BENCH_SLOTS, need]):
+		await _despawn(screen)
+		return
+	for i in need:
+		GameState.bench_slots[i] = _piece("god_priest", 1)
+	screen.call("_auto_combine_all")
+
+	var top := 0
+	for arr in [GameState.board_slots, GameState.bench_slots]:
+		for cell in arr:
+			if typeof(cell) == TYPE_DICTIONARY:
+				top = maxi(top, int((cell as Dictionary).get("star", 1)))
+	_h.expect(top == cap, "auto_combine_broken",
+		"%d 个一星自动合成之后最高只有 %d 星，应当级联到 %d 星 —— 级联被改坏了"
+			% [need, top, cap])
+	await _despawn(screen)
+
+
+func _piece(id: String, star: int) -> Dictionary:
+	return {"id": id, "star": star, "def": {"id": id, "element": "sky"}}
+
+
+# 自动合成是 PrepBoardController 上的方法，只能在真实的 PrepScreen 实例上调。
+# 单机身份（team_active=false）进入，避免 _ready() 里的联机分支。
+func _spawn_prep() -> Node:
+	var packed := load("res://scenes/prep/PrepScreen.tscn") as PackedScene
+	if not _h.expect(packed != null, "scene_load_failed", "PrepScreen.tscn 无法加载"):
+		return null
+	GameState.reset_run()
+	NetworkService.team_active = false
+	NetworkService.is_host = false
+	var screen: Node = packed.instantiate()
+	add_child(screen)
+	await get_tree().process_frame
+	return screen
+
+
+func _despawn(screen: Node) -> void:
+	screen.queue_free()
+	await get_tree().process_frame

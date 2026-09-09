@@ -238,9 +238,13 @@ func _write_now() -> void:
 		"last_harvest_round": GameState.last_harvest_round,
 		"stone_draw_used_round": GameState.stone_draw_used_round,
 		"team_upgrade_stones": GameState.team_upgrade_stones,
+		# 棋子的 uid 键随 board_slots/bench_slots 整块序列化，这里只需要存计数器本身。
+		"run_nonce": GameState.run_nonce,
+		"next_piece_uid": GameState.next_piece_uid,
 		"board_slots": GameState.board_slots,
 		"bench_slots": GameState.bench_slots,
 		"mercenary_slots": GameState.mercenary_slots,
+		"shop_offer_id": GameState.shop_offer_id,
 		"shop_offers": GameState.shop_offers,
 		"shop_sold": GameState.shop_sold,
 		"shop_refresh_uses_this_round": GameState.shop_refresh_uses_this_round,
@@ -284,9 +288,12 @@ func load_run() -> bool:
 	if typeof(saved_stones) == TYPE_DICTIONARY:
 		for stone_type in CarrotEconomy.STONE_TYPES:
 			GameState.team_upgrade_stones[stone_type] = maxi(0, int((saved_stones as Dictionary).get(stone_type, 0)))
+	GameState.run_nonce = str(parsed.get("run_nonce", ""))
+	GameState.next_piece_uid = maxi(1, int(parsed.get("next_piece_uid", 1)))
 	GameState.board_slots = parsed.get("board_slots", [])
 	GameState.bench_slots = parsed.get("bench_slots", [])
 	GameState.mercenary_slots = parsed.get("mercenary_slots", [])
+	GameState.shop_offer_id = str(parsed.get("shop_offer_id", ""))
 	GameState.shop_offers = parsed.get("shop_offers", [])
 	GameState.shop_sold = parsed.get("shop_sold", [])
 	GameState.shop_refresh_uses_this_round = int(parsed.get("shop_refresh_uses_this_round", 0))
@@ -315,6 +322,33 @@ func _normalize_arrays() -> void:
 	GameState.mercenary_slots.resize(GameState.MERCENARY_SLOTS)
 	GameState.shop_offers.resize(GameState.SHOP_UNIT_SLOTS)
 	GameState.shop_sold.resize(GameState.SHOP_UNIT_SLOTS)
+	_backfill_piece_uids()
+
+# 老存档里的棋子没有 uid。现铸一个 run_nonce 并给每一枚补发，然后把计数器推到
+# 已用序号之上 —— 不推的话下一次 mint 会和刚补发的撞号，而撞号在服务端表现为
+# 「别人的四星血统被我复用」。
+#
+# 补发出来的 uid 在服务端没有任何血统记录，这是**对的**：老档里不可能有合法四星
+# （四星只能靠升级石，而升级石是这一批才上线的），补发的都是 1~3 星。
+func _backfill_piece_uids() -> void:
+	if GameState.run_nonce.is_empty():
+		GameState.new_run_nonce()
+	var highest := 0
+	var missing: Array = []
+	for slots in [GameState.board_slots, GameState.bench_slots, GameState.mercenary_slots]:
+		for cell in slots:
+			if typeof(cell) != TYPE_DICTIONARY:
+				continue
+			var uid := str((cell as Dictionary).get("uid", ""))
+			if uid.is_empty():
+				missing.append(cell)
+				continue
+			var parts := uid.rsplit("-", true, 1)
+			if parts.size() == 2 and str(parts[1]).is_valid_int():
+				highest = maxi(highest, int(parts[1]))
+	GameState.next_piece_uid = maxi(GameState.next_piece_uid, highest + 1)
+	for cell in missing:
+		(cell as Dictionary)["uid"] = GameState.mint_piece_uid()
 
 func _normalize_board_slots(raw_slots: Array) -> Array:
 	var normalized: Array = []

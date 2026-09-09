@@ -1044,7 +1044,12 @@ func _room_begin_next_prep(room: Dictionary) -> void:
 			# carrot-only rollout still uses the existing seat_gold mirror for
 			# battle settlement and room snapshots. Keep the ledger's gold seed in
 			# lockstep without changing the old authoritative ledger path.
-			if not economy_enabled():
+			# 影子期（enabled 但未 authoritative）**也要**每回合重新锚定：
+			# 战后结算的权威余额在 room.slot_gold 里，账本只在备战期跟着意图走。
+			# 判据写成 economy_enabled() 时，开关一开这里就不再锚定，prep.gold
+			# 会永远停在 START_GOLD —— 而 upgrade_harvest_tech 正是读它扣钱的，
+			# 于是「采集科技永远买不起」。只有账本成为唯一真相之后才不能覆盖它。
+			if not economy_authoritative():
 				var slot_gold: Array = room.get("slot_gold", [])
 				if slot < slot_gold.size() and slot_gold[slot] != null:
 					prep["gold"] = int(slot_gold[slot])
@@ -1395,7 +1400,8 @@ func _room_start_authoritative(room: Dictionary) -> void:
 		for slot in TEAM_SLOTS:
 			if slot < states.size() and str(states[slot]) == "player":
 				var prep: Dictionary = _room_prep(room, slot)
-				if not economy_enabled():
+				# 同 _room_next_round：影子期也要锚定，理由见那里的注释。
+				if not economy_authoritative():
 					var slot_gold: Array = room.get("slot_gold", [])
 					if slot < slot_gold.size() and slot_gold[slot] != null:
 						prep["gold"] = int(slot_gold[slot])
@@ -2045,6 +2051,19 @@ func _rpc_team_submit_board(slot: int, snapshot: Dictionary) -> void:
 				_send_room_state(room, sender, _bump_room_seq(room))
 				_rpc_board_rejected.rpc_id(sender, reason)
 			return
+		# 血统核验：四星必须来自一次成功的 use_upgrade_stone 交易。
+		# 放在这里而不是 NetProtocol 里 —— 那边是纯静态、拿不到 room，而
+		# _restamp_cached_board() 会拿跨回合缓存重跑它，塞进去会让看门狗代打
+		# 因为「服务器重启后 boards/last_board 没持久化」而莫名拒掉整个座位。
+		var provenance := _room_validate_provenance(room, slot, validation.get("snapshot", {}))
+		if not bool(provenance.get("ok", false)):
+			var bad := str(provenance.get("reason", "forged_four_star"))
+			_net_log("board rejected reason=%s room=%d round=%d slot=%d" % [
+				bad, int(room.get("id", 0)), int(room.get("round_index", 1)), slot])
+			# 明确拒收 + 补一份 room_state。静默丢会让这个座位一直卡到看门狗超时。
+			_send_room_state(room, sender, _bump_room_seq(room))
+			_rpc_board_rejected.rpc_id(sender, bad)
+			return
 		_shadow_audit_submission(room, slot, snapshot, validation.get("snapshot", {}))
 		boards[slot] = validation.get("snapshot", {})
 		room.boards = boards
@@ -2244,6 +2263,39 @@ func _room_compute_and_broadcast_replays(room: Dictionary) -> void:
 # 影子审计：只记录、不拦截。上线前必须先知道自己的误判率——直接开拦截会把
 # 数据表不同步、存档迁移、重连边界上的诚实玩家一起判成作弊。
 # 跑够一周零差异，再把这些规则翻成硬拒收（见整改方案「影子模式」）。
+# 一份已过语法校验的棋盘里，每一枚四星是不是真的。
+#
+# 只凭客户端在快照里自报 star=4 是认不出伪造的 —— 改一下内存或存档就能造四星，
+# 这是设计文档《萝卜采集与升级石系统设计实施方案》:246 点名要堵的洞。
+#
+# 判据：uid 必须在本座位的 four_star_uids 里，且 unit_id 对得上（防止把一枚
+# 四星的 uid 挪到另一个单位上）。佣兵一律不许四星（设计文档 §2.6：佣兵只存在
+# 一个回合，升星是白送）。
+#
+# ⚠️ 双实现登记：economy_ledger_enabled 打开之后 prep["roster"] 会记录每一枚棋子，
+# 届时这里应当收敛成 roster[uid].star == MAX_STAR，**并删掉 four_star_uids**
+# （见 EconomyLedger._use_upgrade_stone 顶部）。
+func _room_validate_provenance(room: Dictionary, slot: int, snapshot: Dictionary) -> Dictionary:
+	if snapshot.is_empty():
+		return {"ok": true}
+	var prep := _room_prep(room, slot)
+	var granted: Dictionary = prep.get("four_star_uids", {})
+	for key in ["board", "mercenaries"]:
+		for cell in (snapshot.get(key, []) as Array):
+			if typeof(cell) != TYPE_DICTIONARY:
+				continue
+			var c: Dictionary = cell
+			if int(c.get("star", 1)) < GameState.MAX_UNIT_STAR:
+				continue
+			if bool(c.get("is_mercenary", false)):
+				return {"ok": false, "reason": "forged_four_star:mercenary"}
+			var uid := str(c.get("uid", ""))
+			if uid.is_empty() or not granted.has(uid):
+				return {"ok": false, "reason": "forged_four_star:%s" % str(c.get("id", "?"))}
+			if str((granted[uid] as Dictionary).get("unit_id", "")) != str(c.get("id", "")):
+				return {"ok": false, "reason": "forged_four_star:unit_mismatch"}
+	return {"ok": true}
+
 func _shadow_audit_submission(room: Dictionary, slot: int, raw_snapshot: Variant, clean: Dictionary) -> void:
 	if typeof(raw_snapshot) != TYPE_DICTIONARY:
 		return
@@ -2432,6 +2484,10 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 			"team_hp": hp_a if own_team == 0 else hp_b,
 			"enemy_team_hp": hp_b if own_team == 0 else hp_a,
 			"gold": gold_after,
+			# 与 room_state 的 economy 段同一道门。以前这里无条件发萝卜字段、客户端
+			# 只判 has("carrots")，于是开关关掉时每次战后结算都会拿服务端那份没动过的
+			# 零值把客户端的萝卜/科技/消费总额/队伍石头**全部清掉**，且无从察觉。
+			"carrot_authoritative": carrot_economy_enabled(),
 			"carrots": int(_room_prep(room, slot).get("carrots", 0)),
 			"harvest_tech_level": int(_room_prep(room, slot).get("harvest_tech_level", 0)),
 			"merc_carrots_spent_total": int(_room_prep(room, slot).get("merc_carrots_spent_total", 0)),
@@ -2621,6 +2677,25 @@ func _tick_tx_retry(_delta: float) -> void:
 			match str(p.get("kind", "")):
 				"altar":
 					altar_result.emit(false, GameState.team_hp, -1)
+				"economy":
+					# 经济意图必须发 economy_receipt，不能落进下面的默认分支 ——
+					# 那会让一次超时的萝卜交易弹出「宝物领取失败」，还顺手把宝物
+					# 三选一的 pick_pending 锁给解了（PrepFlowController._on_treasure_denied）。
+					# 形状与真回执一致，好让唯一的监听方 PrepUI._on_carrot_economy_receipt
+					# 直接走它现成的 ok==false 分支。
+					# revision 用 -1 作哨兵：这份是**本地伪造**的，不是服务端说的，
+					# 将来客户端按 revision 拒收迟到回执时它必须不可能被当成权威。
+					var timeout_args: Array = p.get("args", [])
+					economy_receipt.emit({
+						"ok": false,
+						"error": "timeout",
+						"action": str(timeout_args[0]) if not timeout_args.is_empty() else "",
+						"gold_before": GameState.gold,
+						"delta": 0,
+						"gold_after": GameState.gold,
+						"revision": -1,
+						"result": {},
+					})
 				_:
 					treasure_denied.emit("timeout")
 			continue
@@ -3321,6 +3396,7 @@ func _rpc_room_state(envelope: Dictionary) -> void:
 	_public_resume_pending = false
 	_match_state.mark_applied(epoch, seq)
 	_apply_carrot_state((payload.get("economy", {}) as Dictionary))
+	_apply_server_shop((payload.get("economy", {}) as Dictionary))
 
 	team_active = true
 	team_room_id = int(envelope.get("room_id", 0))
@@ -3612,6 +3688,7 @@ func _tx_context(sender: int, rid: String, limit_key: String) -> Dictionary:
 const ECONOMY_ACTIONS := [
 	"buy", "merge", "sell", "hire_merc", "shop_refresh", "gamble",
 	"upgrade_harvest_tech", "hire_merc_carrot", "draw_upgrade_stone",
+	"use_upgrade_stone",
 ]
 const MAX_MERGE_UIDS := 4
 
@@ -3624,6 +3701,8 @@ func carrot_economy_enabled() -> bool:
 func _economy_action_enabled(action: String) -> bool:
 	return economy_enabled() or (carrot_economy_enabled() and action in [
 		"upgrade_harvest_tech", "hire_merc_carrot", "draw_upgrade_stone",
+		# 花的是队伍升级石不是金币，所以归萝卜链路，跟着 carrot_economy_enabled 走。
+		"use_upgrade_stone",
 	])
 
 func economy_authoritative() -> bool:
@@ -3713,6 +3792,10 @@ func _economy_ctx(room: Dictionary, slot: int, action: String) -> Dictionary:
 		"draw_upgrade_stone":
 			# 开奖发生在服务端，且在幂等回执检查之后；重放只重发原结果。
 			ctx["stone_roll"] = _crypto_unit_float()
+		"use_upgrade_stone":
+			# 属性（element）只认**服务端数据表**里的那一份，不认客户端自报 ——
+			# 否则改个 element 就能拿天石升地属性的棋子。
+			ctx["unit_table"] = DataRegistry.get_table("race_units").get("units", [])
 	return ctx
 
 func request_economy(action: String, payload: Dictionary) -> String:
@@ -3796,6 +3879,22 @@ func _rpc_economy_receipt(request_id: String, receipt: Dictionary) -> void:
 
 signal economy_receipt(receipt: Dictionary)
 
+# 服务端每回合摇好的商店。客户端以前完全不读它，自己用本机 RNG 另摇一份 ——
+# 于是 EconomyLedger._buy 的 offer_id 校验必然 stale_offer，买入意图 100% 被拒，
+# roster 永远是空的，账本也就永远记不成账。
+var server_shop: Dictionary = {}
+
+func _apply_server_shop(state: Dictionary) -> void:
+	if state.is_empty():
+		return
+	var shop: Variant = state.get("shop", {})
+	if typeof(shop) != TYPE_DICTIONARY:
+		return
+	if str((shop as Dictionary).get("offer_id", "")).is_empty():
+		return
+	server_shop = (shop as Dictionary).duplicate(true)
+
+
 func _apply_carrot_state(state: Dictionary) -> void:
 	if state.is_empty() or not bool(state.get("carrot_authoritative", false)):
 		return
@@ -3829,7 +3928,27 @@ func _apply_carrot_receipt(receipt: Dictionary) -> void:
 			var stones: Variant = result.get("team_upgrade_stones", {})
 			if typeof(stones) == TYPE_DICTIONARY:
 				GameState.team_upgrade_stones = (stones as Dictionary).duplicate(true)
+		"use_upgrade_stone":
+			# 按 uid 找那一枚棋子 —— 不按格子号：从发出意图到回执回来，玩家可能已经
+			# 把它拖到别的格子、或者棋盘被服务端快照覆盖过。
+			_apply_four_star_to_uid(str(result.get("uid", "")))
+			var stones_after: Variant = result.get("team_upgrade_stones", {})
+			if typeof(stones_after) == TYPE_DICTIONARY:
+				GameState.team_upgrade_stones = (stones_after as Dictionary).duplicate(true)
 	SaveManager.save_run()
+
+func _apply_four_star_to_uid(uid: String) -> void:
+	if uid.is_empty():
+		return
+	for slots in [GameState.board_slots, GameState.bench_slots]:
+		for index in (slots as Array).size():
+			var cell: Variant = (slots as Array)[index]
+			if typeof(cell) != TYPE_DICTIONARY:
+				continue
+			if str((cell as Dictionary).get("uid", "")) != uid:
+				continue
+			(cell as Dictionary)["star"] = GameState.MAX_UNIT_STAR
+			return
 
 func _apply_remote_mercenary(result: Dictionary) -> void:
 	var slot := int(result.get("merc_slot", -1))
@@ -3844,7 +3963,7 @@ func _apply_remote_mercenary(result: Dictionary) -> void:
 		if str(row.get("id", "")) == unit_id:
 			var def := row.duplicate(true)
 			def["is_mercenary"] = true
-			GameState.mercenary_slots[slot] = {"id": unit_id, "star": 1, "def": def, "is_mercenary": true}
+			GameState.mercenary_slots[slot] = {"id": unit_id, "uid": str(result.get("uid", GameState.mint_piece_uid())), "star": 1, "def": def, "is_mercenary": true}
 			return
 
 # 影子比对：客户端自报的钱 vs 账本记的钱。

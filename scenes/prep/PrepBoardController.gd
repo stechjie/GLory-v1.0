@@ -165,7 +165,7 @@ func _hire_mercenary_to_slot(index: int, mercenary_index: int) -> void:
 		GameState.record_merc_carrot_spend(carrot_cost)
 	var def := m.duplicate(true)
 	def["is_mercenary"] = true
-	GameState.mercenary_slots[mercenary_index] = {"id": def.id, "star": 1, "def": def, "is_mercenary": true}
+	GameState.mercenary_slots[mercenary_index] = {"id": def.id, "uid": GameState.mint_piece_uid(), "star": 1, "def": def, "is_mercenary": true}
 	_mark_online_board_changed()
 	NetworkService.team_send_prep_mercs()
 	SaveManager.save_run()
@@ -206,6 +206,13 @@ func request_upgrade_stone_draw() -> void:
 		show_message("萝卜田4级后才能储存50萝卜")
 		return
 	if NetworkService.team_active and not NetworkService.is_host:
+		# 与 request_carrot_harvest_upgrade / _hire_mercenary_to_slot 同一道判据。
+		# 少了它，开关关掉时服务端会在 _rpc_economy_intent 直接 return（不发回执），
+		# 玩家点了没有任何反应也没有任何提示 —— 面板的 online_blocked 置灰读的是
+		# **客户端本机**的 flags 文件，两端不一致时按钮是亮的。
+		if not NetworkService.carrot_economy_enabled():
+			show_message("联机萝卜系统尚未开启")
+			return
 		NetworkService.request_economy("draw_upgrade_stone", {})
 		return
 	GameState.carrots -= CarrotEconomy.STONE_COST
@@ -229,6 +236,26 @@ func request_four_star_upgrade(where: String, index: int) -> void:
 	if index < 0 or index >= slots.size():
 		return
 	var cell = slots[index]
+	# 联机客机：石头在**服务端的队伍仓库**里，本地扣只会被下一份 room_state 还回来
+	# （_apply_carrot_state 整块覆盖 team_upgrade_stones）—— 那正是「点了没东西、
+	# 而且一颗石头能反复用」的成因。只发意图，等回执落星级。
+	if NetworkService.team_active and not NetworkService.is_host:
+		if not NetworkService.carrot_economy_enabled():
+			show_message("联机萝卜系统尚未开启")
+			return
+		# 本地这份判据**只**用于即时提示与按钮置灰，裁决权在服务端
+		# （EconomyLedger._use_upgrade_stone）。两份判据读的是同一批条件，
+		# 但服务端那份是唯一算数的。
+		var check := GameState.four_star_check(cell)
+		if not bool(check.get("ok", false)):
+			show_message("无法升四星：%s" % str(check.get("error", "denied")))
+			return
+		var c: Dictionary = cell
+		NetworkService.request_economy("use_upgrade_stone", {
+			"uid": str(c.get("uid", "")),
+			"unit_id": str(c.get("id", "")),
+		})
+		return
 	var result := GameState.upgrade_cell_to_four_star(cell)
 	if not bool(result.get("ok", false)):
 		show_message("无法升四星：%s" % str(result.get("error", "denied")))
@@ -285,7 +312,7 @@ func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
 	var offer: Dictionary = GameState.shop_offers[shop_index]
 	var cost := _shop_unit_cost(offer)
 	var target = GameState.board_slots[board_index]
-	var incoming := {"id": offer.id, "star": 1, "def": offer.duplicate(true)}
+	var incoming := {"id": offer.id, "uid": GameState.mint_piece_uid(), "star": 1, "def": offer.duplicate(true)}
 	if target == null:
 		if bool(offer.get("unique_on_board", false)) and PrepRules.has_unique_board_unit(str(offer.get("id", "")), PrepRules.board_limit_for_def(offer)):
 			show_message(tr("toast_unique_limit"))
@@ -299,6 +326,7 @@ func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
 		GameState.gold -= cost
 		GameState.board_slots[board_index] = incoming
 		GameState.shop_sold[shop_index] = true
+		_shadow_report_buy(shop_index, incoming)
 	elif PrepRules.can_merge_cells(target, incoming):
 		if GameState.gold < cost:
 			show_message(tr("ui_not_enough_gold"))
@@ -307,6 +335,8 @@ func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
 			return
 		GameState.gold -= cost
 		GameState.shop_sold[shop_index] = true
+		_shadow_report_buy(shop_index, incoming)
+		_shadow_report_merge()
 	else:
 		return
 	_shop.selected = -1
@@ -324,7 +354,7 @@ func _buy_or_merge_shop_to_bench(shop_index: int, bench_index: int) -> void:
 	var offer: Dictionary = GameState.shop_offers[shop_index]
 	var cost := _shop_unit_cost(offer)
 	var target = GameState.bench_slots[bench_index]
-	var incoming := {"id": offer.id, "star": 1, "def": offer.duplicate(true)}
+	var incoming := {"id": offer.id, "uid": GameState.mint_piece_uid(), "star": 1, "def": offer.duplicate(true)}
 	if target == null:
 		if GameState.gold < cost:
 			show_message(tr("ui_not_enough_gold"))
@@ -332,6 +362,7 @@ func _buy_or_merge_shop_to_bench(shop_index: int, bench_index: int) -> void:
 		GameState.gold -= cost
 		GameState.bench_slots[bench_index] = incoming
 		GameState.shop_sold[shop_index] = true
+		_shadow_report_buy(shop_index, incoming)
 	elif PrepRules.can_merge_cells(target, incoming):
 		if GameState.gold < cost:
 			show_message(tr("ui_not_enough_gold"))
@@ -340,6 +371,8 @@ func _buy_or_merge_shop_to_bench(shop_index: int, bench_index: int) -> void:
 			return
 		GameState.gold -= cost
 		GameState.shop_sold[shop_index] = true
+		_shadow_report_buy(shop_index, incoming)
+		_shadow_report_merge()
 	else:
 		return
 	_shop.selected = -1
@@ -368,6 +401,7 @@ func _move_or_merge_board(from_index: int, to_index: int) -> void:
 			_board_hud._selected_board = -1
 			_refresh_all()
 			return
+		_shadow_report_merge()
 		GameState.board_slots[from_index] = null
 	else:
 		GameState.board_slots[to_index] = from_cell
@@ -394,6 +428,7 @@ func _move_or_merge_board_to_bench(from_index: int, bench_index: int) -> void:
 			_board_hud._selected_board = -1
 			_refresh_all()
 			return
+		_shadow_report_merge()
 		GameState.board_slots[from_index] = null
 	else:
 		if _would_exceed_board_limit(to_cell, from_index):
@@ -439,6 +474,7 @@ func _move_or_merge_bench_to_board(from_index: int, board_index: int) -> void:
 			_board_hud._selected_bench = -1
 			_refresh_all()
 			return
+		_shadow_report_merge()
 		GameState.bench_slots[from_index] = null
 	else:
 		# Occupied by a different unit -> swap the two (bench piece goes on the
@@ -473,6 +509,7 @@ func _move_or_merge_bench(from_index: int, to_index: int) -> void:
 			_board_hud._selected_bench = -1
 			_refresh_all()
 			return
+		_shadow_report_merge()
 		GameState.bench_slots[from_index] = null
 	else:
 		GameState.bench_slots[to_index] = from_cell
@@ -489,34 +526,98 @@ func _on_sell_selected() -> void:
 		return
 	_sell_board_index(_board_hud._selected_board)
 
-func _sell_board_index(index: int) -> void:
+func _sell_board_index(index: int, confirmed: bool = false) -> void:
 	if index < 0 or index >= GameState.board_slots.size() or GameState.board_slots[index] == null:
 		return
 	var cell: Dictionary = GameState.board_slots[index]
+	if not confirmed and _needs_four_star_sell_confirm(cell):
+		_ask_four_star_sell("board", index, cell)
+		return
 	var refund := _sell_refund_for_cell(cell)
+	var sold_uid := str(cell.get("uid", ""))
 	GameState.gold += refund
 	GameState.board_slots[index] = null
+	_shadow_report("sell", {"uid": sold_uid})
 	_board_hud._selected_board = -1
 	_mark_online_board_changed()
 	SaveManager.save_run()
 	_refresh_all()
 
-func _sell_bench_index(index: int) -> void:
+func _sell_bench_index(index: int, confirmed: bool = false) -> void:
 	if index < 0 or index >= GameState.bench_slots.size() or GameState.bench_slots[index] == null:
 		return
 	var cell: Dictionary = GameState.bench_slots[index]
+	if not confirmed and _needs_four_star_sell_confirm(cell):
+		_ask_four_star_sell("bench", index, cell)
+		return
 	var refund := _sell_refund_for_cell(cell)
+	var sold_uid := str(cell.get("uid", ""))
 	GameState.gold += refund
 	GameState.bench_slots[index] = null
+	_shadow_report("sell", {"uid": sold_uid})
 	_board_hud._selected_bench = -1
 	SaveManager.save_run()
 	_refresh_all()
+
+# 四星出售前的二次确认（设计文档《萝卜采集与升级石系统设计实施方案》:117）。
+#
+# 一个四星 = 6 份同名棋子 + 50 萝卜抽到的一颗**队伍共享**升级石。出售不返还石头
+# （EconomyLedger.STAR_REFUND_MULTIPLIER 只给金币），而拖拽卖棋是一步到位的：
+# 一次误拖就把队友一起攒的石头也扔了。三星及以下不弹，避免打断正常的卖棋节奏。
+const FOUR_STAR_SELL_DIALOG := "prep_four_star_sell"
+# 读枚举而不是写 1：Intent 的成员顺序一改，硬写的数字会静默指向别的意图。
+const ConfirmDialog := preload("res://ui/components/GloryConfirmDialog.gd")
+
+func _needs_four_star_sell_confirm(cell: Variant) -> bool:
+	if typeof(cell) != TYPE_DICTIONARY:
+		return false
+	return int((cell as Dictionary).get("star", 1)) >= GameState.MAX_UNIT_STAR
+
+func _ask_four_star_sell(where: String, index: int, cell: Dictionary) -> void:
+	var d: Dictionary = cell.get("def", {})
+	var unit_name := str(d.get("name", d.get("id", "棋子")))
+	# 对话框解析时棋盘可能已经变了（拖拽、合成、服务端覆盖）。记下 id，回来再核对，
+	# 否则确认键会卖掉**换到这一格上的另一枚棋子**。
+	var unit_id := str(cell.get("id", ""))
+	var refund := _sell_refund_for_cell(cell)
+	var english := LocaleManager.get_locale() == "en"
+	DialogService.confirm({
+		"request_id": FOUR_STAR_SELL_DIALOG,
+		"owner": self,
+		"intent": ConfirmDialog.Intent.DANGER,   # 不可逆，焦点默认留在取消
+		"title": "出售四星棋子" if not english else "Sell a Four-Star Unit",
+		"body": ("卖掉「%s」只退 %d 金，**升级石不返还**。这颗石头是队伍共享的。" % [unit_name, refund]
+			if not english else
+			"Selling \"%s\" refunds only %d gold. The upgrade stone is NOT returned, and it came from the shared team stock." % [unit_name, refund]),
+		"confirm_text": "确认出售" if not english else "Sell",
+		"cancel_text": "留着" if not english else "Keep",
+		"on_result": func(result: String, _rid: String) -> void:
+			if result != ConfirmDialog.RESULT_CONFIRMED:
+				return
+			var slots: Array = GameState.board_slots if where == "board" else GameState.bench_slots
+			if index < 0 or index >= slots.size():
+				return
+			var current: Variant = slots[index]
+			if typeof(current) != TYPE_DICTIONARY:
+				return
+			if str((current as Dictionary).get("id", "")) != unit_id 					or int((current as Dictionary).get("star", 1)) < GameState.MAX_UNIT_STAR:
+				return   # 这一格已经不是当初那枚四星了
+			if where == "board":
+				_sell_board_index(index, true)
+			else:
+				_sell_bench_index(index, true),
+	})
 
 func _first_empty_board_slot() -> int:
 	for i in GameState.board_slots.size():
 		if GameState.board_slots[i] == null:
 			return i
 	return -1
+# 上一次成功合成参与的 uid，供影子记账把同一笔合成也报给服务端账本
+# （EconomyLedger._merge 按 uid 收，keeper 留 target 那一枚）。
+var _last_merge_uids: Array = []
+var _last_merge_keeper_uid := ""
+
 func _merge_copies_into_cell(target: Dictionary, incoming: Dictionary, excluded_board: Array = [], excluded_bench: Array = []) -> bool:
 	if not PrepRules.can_merge_cells(target, incoming):
 		return false
@@ -531,6 +632,10 @@ func _merge_copies_into_cell(target: Dictionary, incoming: Dictionary, excluded_
 			return false
 	_preserve_unique_king_growth_on_merge(target, incoming, extra)
 	target.star = star + 1
+	_last_merge_keeper_uid = str(target.get("uid", ""))
+	_last_merge_uids = [_last_merge_keeper_uid, str(incoming.get("uid", ""))]
+	if not extra.is_empty():
+		_last_merge_uids.append(str(extra.get("uid", "")))
 	return true
 
 func _take_extra_merge_piece(id: String, star: int, excluded_board: Array, excluded_bench: Array) -> Dictionary:
@@ -581,7 +686,17 @@ func _auto_combine_all() -> void:
 		guard += 1
 
 func _auto_combine_pass() -> bool:
-	for star in range(1, GameState.MAX_UNIT_STAR):
+	# 上界是**合成**上限，不是星级上限。写成 MAX_UNIT_STAR 时这个循环会包含 star=3，
+	# 而 copies_to_upgrade(3) 落到 STAR_UPGRADE_COPIES.get(star, 3) 的默认值 3 ——
+	# 于是三个三星在这里自动融成四星，不看 element、不看队伍仓库、也不走
+	# GameState.four_star_check()，整个升级石经济被绕过。而本函数是 _refresh_all()
+	# 的第一步，玩家连点都不用点。四星只能靠升级石（GameConstants.gd 顶部有说明）。
+	#
+	# 这是客户端的**第三份**合成实现（另外两份：PrepRules.can_merge_cells 手动合成、
+	# EconomyLedger._merge 服务端）。三份都读同一个常量，但各自遍历、各自写 star，
+	# 所以改上限时三处都要看。守它的是 tools/merge_rule_parity_check.gd 的
+	# _case_auto_combine_caps_at_merge_star / _case_auto_combine_still_cascades。
+	for star in range(1, GameState.MAX_MERGE_STAR):
 		var groups: Dictionary = {}   # id -> Array of [location, index]
 		_gather_star_pieces(GameState.board_slots, "board", star, groups)
 		_gather_star_pieces(GameState.bench_slots, "bench", star, groups)
@@ -669,6 +784,41 @@ func _sell_refund_for_cell(cell: Dictionary) -> int:
 	# 4 星不能照那个公式外推（见那边的说明）。
 	return EconomyLedger.star_sell_refund(price, int(cell.get("star", 1)))
 
+# --- 影子记账（P1 账本 L2）------------------------------------------------------
+# 备战期的金币仍由客户端自己算（authoritative 还没翻），但每一笔都同时报给服务端
+# 账本，让它把账记起来。服务端 _shadow_audit_economy 会在棋盘提交时把两边的余额
+# 对一遍 —— **影子期零差异是翻 authoritative 开关的唯一依据**
+# （见 NetworkService 里那条注释与 docs/P1经济账本RFC.md）。
+#
+# 拒绝在这里是**正常**的：账本刚上线时 roster 是空的，卖掉一枚开关之前买的棋子
+# 必然 unknown_uid。这些都进影子日志，不影响玩家 —— 本地那一笔已经生效了。
+func _shadow_report(action: String, payload: Dictionary) -> void:
+	if GameState.tutorial_mode:
+		return
+	if not (NetworkService.team_active and not NetworkService.is_host):
+		return
+	NetworkService.request_economy(action, payload)
+
+
+func _shadow_report_buy(shop_index: int, cell: Dictionary) -> void:
+	_shadow_report("buy", {
+		"shop_index": shop_index,
+		"offer_id": GameState.shop_offer_id,
+		"uid": str(cell.get("uid", "")),
+	})
+
+
+func _shadow_report_merge() -> void:
+	if _last_merge_uids.is_empty():
+		return
+	_shadow_report("merge", {
+		"uids": _last_merge_uids.duplicate(),
+		"keeper_uid": _last_merge_keeper_uid,
+	})
+	_last_merge_uids = []
+	_last_merge_keeper_uid = ""
+
+
 func _on_refresh_shop() -> void:
 	var all_free := TreasureService.has_set("money")
 	var cost := EconomyService.shop_refresh_cost(GameState.shop_refresh_uses_this_round, all_free)
@@ -677,6 +827,9 @@ func _on_refresh_shop() -> void:
 		return
 	GameState.gold -= cost
 	GameState.shop_refresh_uses_this_round += 1
+	# 先报账再摇：服务端摇好的新一轮商店随回执/下一份 room_state 回来，
+	# _roll_shop() 里的 _adopt_server_shop() 负责采用它。
+	_shadow_report("shop_refresh", {})
 	_roll_shop()
 	_shop.selected = -1
 	SaveManager.save_run()
@@ -685,6 +838,11 @@ func _on_refresh_shop() -> void:
 func _roll_shop() -> void:
 	if GameState.tutorial_mode:
 		TutorialMode.call("_apply_shop", TutorialMode.tutorial_shop_ids())
+		return
+	# 联机客机：商店由服务端摇（每回合随 room_state 下发）。
+	# 以前这里无条件本机另摇一份，两边的 offer_id 对不上，买入意图必然被
+	# EconomyLedger._buy 判 stale_offer —— 账本因此永远记不成账。
+	if _adopt_server_shop():
 		return
 	var units: Array = DataRegistry.get_table("race_units").get("units", [])
 	if units.is_empty():
@@ -695,6 +853,24 @@ func _roll_shop() -> void:
 		GameState.shop_offers[i] = ShopRoll.pick_offer(
 			units, GameState.round_index, rng.randf(), rng.randf())
 		GameState.shop_sold[i] = false
+
+# 采用服务端下发的这一轮商店。成功返回 true。
+# 只对「联机且不是房主」生效：单机与本机房主没有服务端账本，仍走本机摇。
+func _adopt_server_shop() -> bool:
+	if not (NetworkService.team_active and not NetworkService.is_host):
+		return false
+	var shop: Dictionary = NetworkService.server_shop
+	var offers: Variant = shop.get("offers", [])
+	var offer_id := str(shop.get("offer_id", ""))
+	if offer_id.is_empty() or typeof(offers) != TYPE_ARRAY or (offers as Array).is_empty():
+		return false
+	var sold: Variant = shop.get("sold", [])
+	for i in GameState.SHOP_UNIT_SLOTS:
+		GameState.shop_offers[i] = ((offers as Array)[i] as Dictionary).duplicate(true) 			if i < (offers as Array).size() and typeof((offers as Array)[i]) == TYPE_DICTIONARY else {}
+		GameState.shop_sold[i] = bool((sold as Array)[i]) 			if typeof(sold) == TYPE_ARRAY and i < (sold as Array).size() else false
+	GameState.shop_offer_id = offer_id
+	return true
+
 
 # 档位曲线本体已移到 ShopRoll —— 服务端的 _server_roll_shop_offers() 要用同一份。
 # 之前服务端是全表均匀随机，第一回合就能刷出三档单位（设计上应为 0%），

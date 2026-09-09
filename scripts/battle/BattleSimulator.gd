@@ -686,7 +686,13 @@ static func _perform_attack(attacker: Dictionary, target: Dictionary, state: Dic
 	var dealt := DamageService.apply_damage(target, maxi(1, int(round(base))), false)
 	DamageService.clear_hit_context()
 	if str(d.get("skill_id", "")) == "true_damage_attack":
-		dealt += DamageService.apply_damage(target, maxi(1, int(round(float(attacker.atk) * float(d.get("true_damage_pct", 0.18))))), true)
+		var true_pct := float(d.get("true_damage_pct", 0.18))
+		# 4 星：每第 3 次攻击真伤翻倍。attack_count 在上面已经自增过，与
+		# every_fourth_combo / every_fifth_group_heal 用的是同一个计数与同一种取模写法。
+		# 字段只在 4 星的 star4 覆写里出现，所以 1~3 星走的还是原来那一行。
+		if bool(d.get("third_hit_double", false)) and int(attacker.get("attack_count", 0)) % 3 == 0:
+			true_pct *= 2.0
+		dealt += DamageService.apply_damage(target, maxi(1, int(round(float(attacker.atk) * true_pct))), true)
 	_apply_attack_statuses(attacker, target, state)
 	BattleSimTreasures._apply_attack_treasure_effects(attacker, target, state)
 	BattleSimTreasures._maybe_control_set_extra_debuff(attacker, target, state, before_status_count)
@@ -732,7 +738,14 @@ static func _apply_attack_statuses(attacker: Dictionary, target: Dictionary, sta
 		StatusEffectService.add_status(target, "defense_flat_down", float(d.get("duration", 4.0)), {"amount": int(d.get("armor_break", 8))})
 		StatusEffectService.add_status(target, "heal_reduction", float(d.get("duration", 4.0)), {"pct": float(d.get("heal_reduction", 0.50))})
 	elif sid == "attack_interrupt" and RngService.rng.randf() < float(d.get("interrupt_chance", 0.12)):
-		StatusEffectService.interrupt(target)
+		# 4 星把「打断」换成「眩晕」（设计文档 §5.4）：interrupt 只锁普攻、时长硬编码
+		# 1 秒；stun 是完整定身、连技能一起锁。stun_sec 只在 4 星的 star4 覆写里有，
+		# 所以 1~3 星仍然走 interrupt，行为不变。
+		var militia_stun := float(d.get("stun_sec", 0.0))
+		if militia_stun > 0.0:
+			StatusEffectService.add_status(target, "stun", militia_stun, {})
+		else:
+			StatusEffectService.interrupt(target)
 		var visual_events: Array = state.get("visual_events", [])
 		visual_events.append({
 			"type": "unit_skill_proc",
@@ -757,14 +770,27 @@ static func _apply_opening_unit_skills(player: Array, enemy: Array, event_log: A
 				var open_cd := float(d.get("opening_cd", 0.0))
 				if open_cd > 0.0:
 					f.skill_ready = maxf(float(f.get("skill_ready", 0.0)), open_cd)
+			# 4 星天使：开场若干秒控制免疫。注意 opening_cd 是**开场冷却**，
+			# 与这个是两件事（设计文档里点名过原稿把两者混为一谈）。
+			var immune_sec := float(d.get("control_immune_sec", 0.0))
+			if immune_sec > 0.0:
+				StatusEffectService.add_status(f, "control_immune", immune_sec, {})
 			if sid == "guardian_shield_taunt":
 				f.shield = int(f.get("shield", 0)) + maxi(1, int(round(float(f.max_hp) * float(d.get("start_shield_pct", 0.20)))))
 				f.taunt_active = true
 				f.taunt_radius = float(d.get("taunt_radius", 180.0))
 			elif sid == "left_neighbor_sacrifice":
 				BattleSimSkills._apply_death_servant_aura(f, team_units, d)
-				var target := _unit_at_slot(team_units, int(f.get("slot", -1)) - 1)
-				if not target.is_empty():
+				# 3 星只绑左邻；4 星左右各绑一个（设计文档：绑定左邻是这只棋子唯一的
+				# 站位谜题，双向绑定保留博弈、价值翻倍）。死侍只能牺牲一次 ——
+				# DamageService._try_sacrifice_revive 会判 guard.alive，
+				# 先死的那一侧用掉之后另一侧自然失效，不需要额外记账。
+				var servant_slot := int(f.get("slot", -1))
+				var bind_offsets: Array = [-1, 1] if float(d.get("ally_def_pct", 0.0)) > 0.0 else [-1]
+				for offset in bind_offsets:
+					var target := _unit_at_slot(team_units, servant_slot + int(offset))
+					if target.is_empty():
+						continue
 					target.sacrifice_guardian = f
 					f.guard_target_uid = str(target.get("uid", ""))
 					f.vfx_skill_target_uid = str(target.get("uid", ""))
@@ -846,7 +872,7 @@ static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) ->
 				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 5.0))
 			"black_hole":
 				BattleSimSkills._skill_black_hole(caster, opponents, d, state)
-				caster.skill_ready = float(state.elapsed) + 8.0
+				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 8.0))
 			"blink_low_def_backline":
 				var killed := BattleSimSkills._skill_blink_low_def_backline(caster, casters, opponents, d, state)
 				caster.skill_ready = float(state.elapsed) if killed and bool(d.get("refresh_on_kill", false)) else float(state.elapsed) + float(d.get("skill_cd", 5.0))
@@ -855,7 +881,7 @@ static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) ->
 				caster.skill_ready = float(state.elapsed) + 1.0
 			"front_cone_stun":
 				BattleSimSkills._skill_front_cone_stun(caster, opponents, d, state)
-				caster.skill_ready = float(state.elapsed) + 5.0
+				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 5.0))
 			"element_meteor":
 				BattleSimSkills._skill_element_meteor(caster, opponents, d)
 				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 6.0))
@@ -1065,6 +1091,23 @@ static func _process_shared_links(state: Dictionary) -> void:
 			DamageService.apply_damage(f, peer_loss, true)
 		f.shared_link_last_hp = int(f.hp)
 		peer.shared_link_last_hp = int(peer.hp)
+		# 4 星末日守卫：链接期间每秒回自己一定比例的最大生命。
+		# 原稿写的是「每秒回 30 血」的绝对值 —— 全表唯一，4 星完全没变强，
+		# 所以改成百分比（设计文档 §5.7）。link_regen_pct 只在 4 星的 star4
+		# 覆写里有，1~3 星这里一行都不执行。
+		_apply_shared_link_regen(f, peer)
+
+
+# 链接双方里，谁是末日守卫谁回血（另一方是被链接的敌人，不回）。
+# 按 tick 折算：TICK_SEC 是 0.1 秒，所以每 tick 回「每秒量」的十分之一。
+static func _apply_shared_link_regen(a: Dictionary, b: Dictionary) -> void:
+	for unit in [a, b]:
+		var pct := float((unit.get("def", {}) as Dictionary).get("link_regen_pct", 0.0))
+		if pct <= 0.0:
+			continue
+		var per_tick := int(round(float(unit.get("max_hp", 0)) * pct * TICK_SEC))
+		if per_tick > 0:
+			_heal_unit(unit, per_tick)
 
 
 static func _clear_shared_link_for_dead_unit(unit: Dictionary, fighters: Array) -> void:

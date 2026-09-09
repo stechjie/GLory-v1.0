@@ -1,4 +1,23 @@
-# P1 服务端权威经济账本 RFC（设计稿，未实现）
+# P1 服务端权威经济账本 RFC（L2 影子期已落地，L4 未实现）
+
+> **落地记录（2026-09-09）—— 做到 L2，`economy_ledger_enabled` 已翻为 true。**
+>
+> * 客户端改读服务端商店（`PrepBoardController._adopt_server_shop`）。此前它用本机
+>   RNG 另摇一份，offer_id 对不上，买入意图 100% 被 `stale_offer` 拒 —— roster 永远是空的。
+> * buy / merge / sell / shop_refresh 四条路径双写：本地照旧改钱，同时把意图发给账本
+>   （`PrepBoardController._shadow_report*`）。这些意图的回执**不弹给玩家**，理由见
+>   `PrepUI._on_carrot_economy_receipt` 的注释。
+> * uid 统一：账本采用客户端铸的棋子 uid（`EconomyLedger._add_unit` 的 `preferred_uid`），
+>   合成保留 keeper 的 uid。以前两边各铸各的，roster 与棋盘永远对不上。
+> * 备战期金币每回合从 `room.slot_gold` 重新锚定，判据从 `economy_enabled()`
+>   改成 `economy_authoritative()` —— 不改的话开关一开 `prep.gold` 会永远停在
+>   START_GOLD，采集科技变成永远买不起。
+> * 顺带修掉了 **gold_desync**：`upgrade_harvest_tech` 不再看客户端自报的金币。
+> * `economy` 限流额度 60 → 120：双写让每次操作的 intent 数翻倍，而连续超限会踢人。
+>
+> **`economy_ledger_authoritative` 仍为 false，且两道门禁没过之前不许翻**：
+> (1) 影子日志跑满一个版本、`diff` 恒为 0；(2) 4.1 的退款口径拍板并落地
+> （一翻就有 96 组里 64 组的退款金额当场变化）。
 
 > 状态：**待审**。本文只定方案，不含代码。
 > 第四节是**需要你拍板的清单**，其余是设计。

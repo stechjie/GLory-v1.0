@@ -32,7 +32,15 @@ const DEFAULTS := {
 	#
 	# **第二个开关必须等客户端改造完成后才能开。** 只开它而客户端还在自己预扣，
 	# 或者反过来，都会让两边账目分叉。默认全 false = 等于这批改动没上线。
-	"economy_ledger_enabled": false,
+	# 2026-09-09：影子期上线（RFC 的 L2）。客户端已改成读服务端商店，并把
+	# buy / merge / sell / shop_refresh 双写给账本（本地照旧改钱 + 同时发意图），
+	# 所以这一格可以打开：服务端开始记账并在棋盘提交时做影子比对。
+	# 它顺带修掉了「卖过棋子之后采集科技永远升不了」—— upgrade_harvest_tech
+	# 不再读客户端自报的金币，改读账本自己的余额。
+	"economy_ledger_enabled": true,
+	# **仍然是 false，且不许在影子日志零差异之前打开。**
+	# 翻它意味着客户端切 receipt-only、备战每一次点击都变成一次网络往返，
+	# 而且 96 组里 64 组的出售退款金额会当场变化（RFC 4.1 还没拍板）。
 	"economy_ledger_authoritative": false,
 	# 萝卜资源使用同一套幂等账本，但可以独立上线，不影响旧金币账本开关。
 	"carrot_economy_enabled": true,

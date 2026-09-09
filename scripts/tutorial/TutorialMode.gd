@@ -1,4 +1,5 @@
 extends Node
+const CarrotEconomy := preload("res://scripts/economy/CarrotEconomy.gd")
 
 signal completed
 signal skip_requested
@@ -746,7 +747,7 @@ func restore_checkpoint() -> bool:
 	GameState.round_index = int(data.get("round_index", 1))
 	GameState.gold = int(data.get("gold", TUTORIAL_GOLD))
 	GameState.carrots = maxi(0, int(data.get("carrots", 0)))
-	GameState.harvest_tech_level = clampi(int(data.get("harvest_tech_level", 0)), 0, 5)
+	GameState.harvest_tech_level = clampi(int(data.get("harvest_tech_level", 0)), 0, CarrotEconomy.MAX_HARVEST_TECH_LEVEL)
 	GameState.merc_carrots_spent_total = maxi(0, int(data.get("merc_carrots_spent_total", 0)))
 	GameState.last_harvest_round = int(data.get("last_harvest_round", -1))
 	GameState.stone_draw_used_round = int(data.get("stone_draw_used_round", -1))
@@ -1362,7 +1363,7 @@ func _grant_units(id: String, count: int, star: int = 1) -> void:
 		var index := GameState.bench_slots.find(null)
 		if index < 0:
 			return
-		GameState.bench_slots[index] = {"id": id, "star": star, "def": def.duplicate(true)}
+		GameState.bench_slots[index] = {"id": id, "uid": GameState.mint_piece_uid(), "star": star, "def": def.duplicate(true)}
 
 func _on_continue_pressed() -> void:
 	if step == Step.BOND_HINT:
@@ -1387,7 +1388,7 @@ func _tutorial_opponent_snapshot() -> Dictionary:
 		var id := str(PVP_OPPONENT[i])
 		var def := _unit_def(id)
 		if not def.is_empty():
-			board[int(slots[i])] = {"id": id, "star": 1, "def": def}
+			board[int(slots[i])] = {"id": id, "uid": GameState.mint_piece_uid(), "star": 1, "def": def}
 	return {
 		"version": NetProtocol.SNAPSHOT_VERSION,
 		"round": GameState.round_index,
