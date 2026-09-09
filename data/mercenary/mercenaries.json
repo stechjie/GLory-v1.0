@@ -8,7 +8,6 @@
     "mercenaries":  [
                         {
                             "id":  "merc_pisces_bubble",
-                            "model_in_place_actions": ["run"],
                             "name":  "泡沫术士",
                             "cost":  50,
                             "carrot_cost": 3,
@@ -65,7 +64,6 @@
                         },
                         {
                             "id":  "merc_libra_judge",
-                            "model_in_place_actions": ["run"],
                             "name":  "审判剑士",
                             "cost":  150,
                             "carrot_cost": 9,
@@ -92,7 +90,6 @@
                         },
                         {
                             "id":  "merc_taurus_charge",
-                            "model_in_place_actions": ["run"],
                             "name":  "黄金重骑",
                             "cost":  200,
                             "carrot_cost": 12,
@@ -177,7 +174,6 @@
                         },
                         {
                             "id":  "merc_leo_sun",
-                            "model_in_place_actions": ["run"],
                             "name":  "炎阳王者",
                             "cost":  350,
                             "carrot_cost": 21,
@@ -233,7 +229,6 @@
                         },
                         {
                             "id":  "merc_aries_blood",
-                            "model_in_place_actions": ["run"],
                             "name":  "狂战先锋",
                             "cost":  450,
                             "carrot_cost": 27,

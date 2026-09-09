@@ -13,7 +13,7 @@ const GloryTokens := preload("res://ui/theme/GloryTokens.gd")
 # 只为拿 FillPhase 枚举做**静态**引用（教学第 15 步的子阶段），
 # 走 preload 常量而不是从 autoload 实例上取，dynamic_call 棘轮才不会长。
 const TutorialModeScript := preload("res://scripts/tutorial/TutorialMode.gd")
-const CarrotCampPanelScript := preload("res://scenes/prep/CarrotCampPanelV2.gd")
+const CarrotCampPanelScript := preload("res://scenes/prep/CarrotCampPanelV3.gd")
 const SHOP_SCROLL_BURN_SHADER: Shader = preload("res://assets/shaders/prep_scroll_burn.gdshader")
 const SHOP_REFRESH_WIDTH := 112.0
 const SHOP_GOLD_WIDTH := 112.0
@@ -105,6 +105,7 @@ var _team_merc_snapshot_round := -1
 var _team_merc_snapshot_initialized := false
 var _carrot_panel
 var _carrot_button: Button
+var _carrot_dimmer: ColorRect
 var _tutorial_target_provider: TutorialTargetProviderScript
 
 const MERCENARY_PORTRAIT_PATHS := {
@@ -969,16 +970,28 @@ func _build_top_actions() -> void:
 	carrot_btn.visible = not GameState.tutorial_mode
 	side_col.add_child(carrot_btn)
 
+	# The camp is a focused mobile modal.  A restrained scrim keeps the busy
+	# battlefield readable as context while giving the controls clear priority.
+	_carrot_dimmer = ColorRect.new()
+	_carrot_dimmer.name = "CarrotCampDimmer"
+	_carrot_dimmer.color = Color(0.02, 0.035, 0.025, 0.68)
+	_carrot_dimmer.mouse_filter = Control.MOUSE_FILTER_STOP
+	_carrot_dimmer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_carrot_dimmer.z_index = 34
+	_carrot_dimmer.visible = false
+	_carrot_dimmer.gui_input.connect(_on_carrot_dimmer_input)
+	add_child(_carrot_dimmer)
+
 	_carrot_panel = CarrotCampPanelScript.new()
 	_carrot_panel.name = "CarrotCampPanel"
 	_carrot_panel.anchor_left = 0.5
 	_carrot_panel.anchor_right = 0.5
 	_carrot_panel.anchor_top = 0.5
 	_carrot_panel.anchor_bottom = 0.5
-	_carrot_panel.offset_left = -224
-	_carrot_panel.offset_right = 224
-	_carrot_panel.offset_top = -280
-	_carrot_panel.offset_bottom = 280
+	_carrot_panel.offset_left = -380
+	_carrot_panel.offset_right = 380
+	_carrot_panel.offset_top = -260
+	_carrot_panel.offset_bottom = 260
 	_carrot_panel.z_index = 35
 	_carrot_panel.visible = false
 	# The concrete economy handlers live farther down the PrepScreen inheritance
@@ -988,6 +1001,7 @@ func _build_top_actions() -> void:
 		Callable(self, "_on_carrot_hire_requested"),
 		Callable(self, "_toggle_merc_picker"), Callable(self, "_toggle_team_mercs_picker"),
 		Callable(self, "request_four_star_upgrade"))
+	_carrot_panel.closed.connect(_close_carrot_camp)
 	add_child(_carrot_panel)
 
 func _toggle_mute() -> void:
@@ -1001,6 +1015,8 @@ func _toggle_carrot_camp() -> void:
 	if _carrot_panel == null or not is_instance_valid(_carrot_panel):
 		return
 	_carrot_panel.toggle()
+	if _carrot_dimmer != null:
+		_carrot_dimmer.visible = _carrot_panel.visible
 	if _carrot_panel.visible:
 		_close_team_mercs_picker()
 		_close_merc_picker()
@@ -1008,6 +1024,14 @@ func _toggle_carrot_camp() -> void:
 func _close_carrot_camp() -> void:
 	if _carrot_panel != null and is_instance_valid(_carrot_panel):
 		_carrot_panel.visible = false
+	if _carrot_dimmer != null and is_instance_valid(_carrot_dimmer):
+		_carrot_dimmer.visible = false
+
+func _on_carrot_dimmer_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed:
+		_close_carrot_camp()
+	elif event is InputEventScreenTouch and event.pressed:
+		_close_carrot_camp()
 
 func _on_carrot_hire_requested(merc_id: String) -> void:
 	var mercs: Array = DataRegistry.get_table("mercenaries").get("mercenaries", [])

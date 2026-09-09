@@ -34,6 +34,7 @@ Godot 不在 PATH 上，用 console 版才能把日志打到 stdout：
 | `tools/player_identity_check.tscn` | `player_id` 的签发与**不变性**（账号系统第 0 步，见 `docs/账号系统RFC.md`） |
 | `tools/account_check.tscn` | 账号凭证存储与门面接线。核心判据：**access token 永不落盘** |
 | `tools/carrot_economy_check.tscn` | 萝卜经济：等级表形状与单调性、采集公式、幂等、**客户端/服务端一致性**、升级石可达性、采集权责判据 |
+| `tools/carrot_online_check.tscn` | 联机 3v3 的萝卜链路：服务端准入判据、回执写回 GameState、room_state 带不带萝卜、客机面板按钮可用性 |
 
 ### 检查脚本自己写坏时会怎样（2026-09-08 实测）
 
