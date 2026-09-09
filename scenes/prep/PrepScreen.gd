@@ -138,7 +138,9 @@ func _setup_fps_overlay() -> void:
 	_fps_label = Label.new()
 	_fps_label.name = "FpsOverlay"
 	_fps_label.text = "FPS --"
-	_fps_label.position = Vector2(8, 2)
+	# B8: moved off the very top-left corner so the readout is clearly visible on
+	# mobile (was Vector2(8, 2), jammed into the edge per bug report 9.9bug提交及修复08 #8).
+	_fps_label.position = Vector2(16, 8)
 	_fps_label.add_theme_font_size_override("font_size", 14)
 	_fps_label.add_theme_color_override("font_color", Color(0.6, 1.0, 0.6))
 	_fps_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))

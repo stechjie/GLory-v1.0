@@ -51,6 +51,10 @@ var _final_round_intro_started := false
 var _replay_own: Dictionary = {}
 var _replay_rival: Dictionary = {}
 var _view_toggle_btn: Button
+# B8: on-screen frame-rate readout (player-facing only, like PrepScreen).
+# Battle scene had none before this; see bug report 9.9bug提交及修复08 #8.
+var _fps_label: Label
+var _fps_accum := 0.0
 var _presentation_director: RefCounted = BattlePresentationDirectorScript.new()
 # D4: migration-period adapter. It only plays cues for units in
 # BattlePresentationSlice; everything else is completed immediately and keeps
@@ -66,6 +70,7 @@ var _vfx_profiles_loaded := false
 const TEAM_REPLAY_WAIT_TIMEOUT_SEC := 60.0
 
 func _ready() -> void:
+	_setup_fps_overlay()
 	if GameState.team_mode:
 		var package := GameState.take_pending_battle_package()
 		if str(package.get("mode", "")) == "team_replay":
@@ -168,6 +173,12 @@ func _exit_tree() -> void:
 	release_round_assets()
 
 func _process(delta: float) -> void:
+	# B8: keep the on-screen FPS readout live in every mode (team + tutorial).
+	if _fps_label != null:
+		_fps_accum += delta
+		if _fps_accum >= 0.25:
+			_fps_accum = 0.0
+			_fps_label.text = "FPS %d" % int(Engine.get_frames_per_second())
 	if not _battle_setup_ready:
 		return
 	# _update_vfx_camera_shake is defined in BattleVfx (a base class), so the old
@@ -453,6 +464,25 @@ func _set_watching_rival(watch_rival: bool) -> void:
 	if _view_toggle_btn != null:
 		_view_toggle_btn.text = tr("battle_view_own") if _watching_rival else tr("battle_view_rival")
 	_switch_active_replay(_replay_rival if _watching_rival else _replay_own)
+
+# B8: lightweight on-screen FPS readout for the battle scene.
+# Mirrors PrepScreen._setup_fps_overlay; positioned slightly off the top-left
+# corner (see bug report 9.9bug提交及修复08 #8 — old corner spot was hard to
+# see on mobile, "too close to the edge").
+func _setup_fps_overlay() -> void:
+	if _fps_label != null:
+		return
+	_fps_label = Label.new()
+	_fps_label.name = "FpsOverlay"
+	_fps_label.text = "FPS --"
+	_fps_label.position = Vector2(16, 8)
+	_fps_label.add_theme_font_size_override("font_size", 14)
+	_fps_label.add_theme_color_override("font_color", Color(0.6, 1.0, 0.6))
+	_fps_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	_fps_label.add_theme_constant_override("outline_size", 3)
+	_fps_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fps_label.z_index = 300
+	add_child(_fps_label)
 
 func _switch_active_replay(replay: Dictionary) -> void:
 	_clear_unit_visuals()
