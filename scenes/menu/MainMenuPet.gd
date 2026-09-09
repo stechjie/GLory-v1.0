@@ -47,6 +47,9 @@ const WEIGHT_ACTION := 24
 const WEIGHT_IDLE := 14
 
 var _viewport: SubViewport
+var _container: SubViewportContainer
+# 出图之前不显示容器，见 _build_stage 里那段说明。
+var _revealing := false
 var _stage: Node3D
 var _camera: Camera3D
 var _pets: Array[Dictionary] = []
@@ -63,6 +66,9 @@ func _ready() -> void:
 		PlayerProfile.pets_changed.connect(_rebuild_pets)
 	get_viewport().size_changed.connect(_layout_area)
 	_layout_area()
+	# 不等第一个 30Hz tick（33ms）。立刻请求一次出图，
+	# 显示时机交给 _tick_render 里那段等 frame_post_draw 的逻辑。
+	_tick_render()
 
 func _build_stage() -> void:
 	var container := SubViewportContainer.new()
@@ -70,6 +76,20 @@ func _build_stage() -> void:
 	container.stretch = true
 	container.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	container.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# ⚠️ **出过第一帧之前不显示。**
+	#
+	# SubViewportContainer 直接把视口的渲染目标画出来，而一个**从未渲染过**的
+	# 渲染目标里是未定义内容 —— 在 D3D12 / GL 兼容模式下表现为**不透明黑**。
+	# 视口建出来时是 UPDATE_DISABLED（省电），第一次出图要等 30Hz 定时器，
+	# 而真正画完还要等材质首次编译，实测能到 0.4 秒以上。
+	#
+	# 那段时间玩家看到的就是主菜单正中央一块黑格，大小正好是
+	# AREA_SIZE(1080x360) 按参考画布缩放后的尺寸。每次进主菜单都会出现，
+	# 从别的界面返回主菜单（菜单是重建的）也会。
+	#
+	# 藏起来的代价是最初一两帧那块地方是空草地 —— 本来就该是草地。
+	container.visible = false
+	_container = container
 	add_child(container)
 
 	_viewport = SubViewport.new()
@@ -128,10 +148,34 @@ func _build_stage() -> void:
 func _tick_render() -> void:
 	if _viewport == null:
 		return
-	# 看不见就别画（弹窗挡住、切到别的界面）
-	_viewport.render_target_update_mode = (SubViewport.UPDATE_ONCE
-		if is_visible_in_tree() and not _pets.is_empty()
-		else SubViewport.UPDATE_DISABLED)
+	# 看不见就别画（弹窗挡住、切到别的界面），没有宠物也没什么可画
+	var want := is_visible_in_tree() and not _pets.is_empty()
+	if not want:
+		_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+		# 没有宠物时把容器收起来：留着只会显示上一次的残影，
+		# 或者（首次进入时）那块从没画过的黑。
+		if _container != null and is_instance_valid(_container):
+			_container.visible = false
+		return
+
+	_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+	if _container == null or not is_instance_valid(_container):
+		return
+	if _container.visible or _revealing:
+		return
+
+	# 等这一帧**真的画完**再显示。
+	# 必须是 frame_post_draw 而不是 process_frame —— 后者在绘制之前就返回，
+	# 容器会抢在渲染目标被写入之前先画一次，黑格照旧。
+	_revealing = true
+	await RenderingServer.frame_post_draw
+	# await 期间主菜单可能已经被换掉（进备战、进战斗、开资料页都会重建菜单）。
+	# 不加这道判断就会在已经离树的节点上继续跑。
+	if not is_inside_tree():
+		return
+	_revealing = false
+	if is_instance_valid(_container):
+		_container.visible = true
 
 # 脚下的软阴影：径向渐变，比开真阴影便宜得多，也好调
 func _make_shadow_texture() -> GradientTexture2D:
