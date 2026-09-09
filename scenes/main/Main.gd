@@ -1019,6 +1019,8 @@ func _on_team_host_requested() -> void:
 		_menu.show_connection_error(NetworkService.last_error)
 
 func _on_team_join_requested(address: String = NetworkService.DEFAULT_HOST) -> void:
+	if not await NetworkService.allow_new_match():
+		return
 	# Client-side production path: connect to the dedicated ENet server.
 	# 开始新游戏 = 放弃上一场：清本地重连凭证，并让服务器把旧座位交给 AI
 	# （若旧房间还有其他玩家；没人就靠超时自清）。之后从此连不回旧局。
@@ -1346,6 +1348,8 @@ func room_list_request_id_for_check() -> String:
 # slot assignment from leaving the player inside a room after the UI abandoned
 # the request. The server protocol and create-room RPC remain unchanged.
 func _start_create_room_action() -> void:
+	if not await NetworkService.allow_new_match():
+		return
 	_supersede_other_team_action(CREATE_ROOM_ACTION)
 	var owner: Object = _menu if _menu != null and is_instance_valid(_menu) else self
 	var request_id := AsyncActionController.begin(CREATE_ROOM_ACTION, {
@@ -1507,6 +1511,8 @@ func create_room_request_id_for_check() -> String:
 # both id and port are snapshotted for the request instead of reading a mutable
 # shared pending slot after an asynchronous connect.
 func _start_join_room_action(room_id: int) -> void:
+	if not await NetworkService.allow_new_match():
+		return
 	if room_id <= 0:
 		return
 	_supersede_other_team_action(JOIN_ROOM_ACTION)

@@ -418,7 +418,7 @@ func cleanup_rooms(close_fn: Callable, begin_next_prep_fn: Callable) -> void:
 	var room_battle := str(_cfg.get("room_battle", "battle"))
 	var room_result := str(_cfg.get("room_result", "result"))
 	var lobby_empty_ttl := float(_cfg.get("lobby_empty_ttl_sec", 60.0))
-	var suspend_grace := float(_cfg.get("room_suspend_grace_sec", 300.0))
+	var suspend_grace := float(_cfg.get("room_suspend_grace_sec", 30.0))
 	var prep_timeout := float(_cfg.get("prep_timeout_sec", 1800.0))
 	var battle_timeout := float(_cfg.get("battle_timeout_sec", 300.0))
 	var result_timeout := float(_cfg.get("result_timeout_sec", 600.0))
@@ -447,7 +447,7 @@ func cleanup_rooms(close_fn: Callable, begin_next_prep_fn: Callable) -> void:
 				# _room_begin_next_prep 对 final 房间直接 return，内存只涨不降）。
 				close_fn.call(room, "match_over")
 			elif empty_for >= suspend_grace:
-				# 有有效 token，但过了产品确认的 300 秒恢复窗口。
+				# 有有效 token，但过了配置的恢复窗口。
 				close_fn.call(room, "suspend_expired")
 			else:
 				# 恢复窗口内：转 suspended。**不推进阶段、不启动新模拟**，
@@ -465,7 +465,7 @@ func cleanup_rooms(close_fn: Callable, begin_next_prep_fn: Callable) -> void:
 			to_delete.append(room_id)
 			continue
 		# suspended 房间不参与任何阶段推进：既不超时关闭也不开新回合。
-		# 它的生死只由上面那段（token 数 + 300 秒窗口）决定。
+		# 它的生死只由上面那段（token 数 + 配置的恢复窗口）决定。
 		if bool(room.get("suspended", false)):
 			continue
 		var age := now - float(room.get("state_started_at", now))

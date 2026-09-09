@@ -85,6 +85,7 @@ var _layout_origin := Vector2.ZERO
 
 func _ready() -> void:
 	_build()
+	_refresh_saved_match.call_deferred()
 	_layout()
 	_start_menu_music()
 	if not AccountManager.profile_changed.is_connected(_on_account_profile_changed):
@@ -201,7 +202,7 @@ func _build() -> void:
 	_add_label(_menu_text("图鉴", "Gallery"), Vector2(1250, 807), Vector2(220, 36), 26)
 	_add_hit(Vector2(200, 690), Vector2(220, 190), _emit_prep)
 	_add_hit(Vector2(440, 690), Vector2(220, 190), _show_coming_soon)
-	_add_hit(Vector2(680, 650), Vector2(310, 260), _show_coming_soon)
+	_add_hit(Vector2(680, 650), Vector2(310, 260), _on_ranked)
 	_add_hit(Vector2(1010, 690), Vector2(220, 190), _show_room_overlay)
 	_add_hit(Vector2(1250, 690), Vector2(220, 190), _emit_codex)
 
@@ -401,6 +402,10 @@ func _emit_join() -> void:
 	team_join_requested.emit(address)
 
 func _show_room_overlay() -> void:
+	if not await NetworkService.allow_new_match():
+		return
+	if not is_inside_tree():
+		return
 	# 去重交给 has()：连点两次「自定房间」不该开出两层。
 	if ModalStack.has(ROOM_MODAL_ID):
 		return
@@ -453,6 +458,20 @@ func _emit_offline() -> void:
 
 func _emit_reconnect() -> void:
 	team_reconnect_requested.emit()
+
+func _on_ranked() -> void:
+	if await NetworkService.allow_new_match():
+		_show_coming_soon()
+
+func _refresh_saved_match() -> void:
+	while is_inside_tree() and not SaveManager.load_resumable_reconnect().is_empty():
+		await NetworkService.check_saved_match()
+		if not is_inside_tree():
+			return
+		for child in get_children():
+			if child is Button and child.pressed.is_connected(_emit_reconnect):
+				child.visible = not SaveManager.load_resumable_reconnect().is_empty()
+		await get_tree().create_timer(3.0).timeout
 
 func _emit_prep() -> void:
 	prep_requested.emit()

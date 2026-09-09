@@ -81,7 +81,7 @@ const USE_DTLS := true
 #      点了没反应、一条报错都没有。这正是 v16 注释里写的那种静默分歧。
 #      规则重申：改服务端契约（RPC、ECONOMY_ACTIONS、room_state 字段集）必须顶号，
 #      并同步 tools/carrot_online_check.gd 的 PINNED_PROTOCOL / PINNED_CONTRACT。
-const NETWORK_PROTOCOL_VERSION := 19
+const NETWORK_PROTOCOL_VERSION := 20
 
 # Local phone hosting is debug-only.
 const ALLOW_LOCAL_HOST_DEBUG := false

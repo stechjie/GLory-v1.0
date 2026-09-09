@@ -110,11 +110,22 @@ func _remove_all_variants(path: String) -> void:
 func save_reconnect(token: String, address: String, port: int = NetworkConfig.SERVER_PORT) -> void:
 	var rc := {"token": token, "address": address, "port": port}
 	var previous := load_reconnect()
+	if str(previous.get("token", "")) == token and str(previous.get("address", "")) == address \
+			and int(previous.get("port", NetworkConfig.SERVER_PORT)) == port and bool(previous.get("match_started", false)):
+		rc["match_started"] = true
 	# A late credential refresh must not undo the user's leave intent.
 	if str(previous.get("token", "")) == token and str(previous.get("address", "")) == address \
 			and int(previous.get("port", NetworkConfig.SERVER_PORT)) == port \
 			and not str(previous.get("pending_leave", "")).is_empty():
 		rc["pending_leave"] = previous["pending_leave"]
+	_atomic_write(RECONNECT_PATH, JSON.stringify(rc))
+
+func mark_match_started() -> void:
+	var rc := load_reconnect()
+	if rc.is_empty() or bool(rc.get("match_started", false)):
+		return
+	rc["match_started"] = true
+	rc.erase("pending_leave")
 	_atomic_write(RECONNECT_PATH, JSON.stringify(rc))
 
 # 标记"这一局是玩家主动退的，还没拿到服务端回执"（状态信封 E3 / R1）。

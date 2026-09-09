@@ -11,6 +11,87 @@ signal team_room_list_received(rooms: Array)
 signal team_room_action_failed(reason: String)
 signal public_token_changed(token_id: String)
 
+const ACTIVE_MATCH_HINT := "正在对局中，请进行游戏重连"
+var _match_check_busy := false
+var _match_check_id := ""
+var _match_check_result := ""
+
+func allow_new_match() -> bool:
+	var result := await check_saved_match()
+	if result == "clear":
+		return true
+	DialogService.info({"request_id": "active_match_guard", "title": "提示", "body": ACTIVE_MATCH_HINT if result == "active" else "暂时无法确认对局状态，请检查网络后重试", "owner": self})
+	return false
+
+# Check the original server/port without occupying a seat in the old match.
+# Unknown/network failure never clears credentials or unlocks a new match.
+func check_saved_match() -> String:
+	var wait_deadline := Time.get_ticks_msec() + 9000
+	while _match_check_busy and Time.get_ticks_msec() < wait_deadline:
+		await get_tree().create_timer(0.1).timeout
+	var rc := SaveManager.load_resumable_reconnect()
+	if rc.is_empty():
+		return "clear"
+	if _match_check_busy:
+		return "unknown"
+	if state == SessionState.RECONNECTING or (team_local_slot >= 0 and bool(rc.get("match_started", false))):
+		return "active"
+	_match_check_busy = true
+	var address := str(rc.get("address", ""))
+	var port := int(rc.get("port", DEFAULT_PORT))
+	var token := str(rc.get("token", ""))
+	var deadline := Time.get_ticks_msec() + 8000
+	if not (team_active and state == SessionState.READY and remote_address == address and remote_port == port):
+		if not team_join(address, port):
+			_match_check_busy = false
+			return "unknown"
+	while state == SessionState.JOINING and Time.get_ticks_msec() < deadline:
+		await get_tree().create_timer(0.1).timeout
+	if state != SessionState.READY:
+		_match_check_busy = false
+		return "unknown"
+	_match_check_id = _make_request_id()
+	_match_check_result = ""
+	_rpc_match_status_request.rpc_id(1, _match_check_id, token)
+	while _match_check_result.is_empty() and Time.get_ticks_msec() < deadline:
+		await get_tree().create_timer(0.1).timeout
+	var result := _match_check_result if not _match_check_result.is_empty() else "unknown"
+	_match_check_id = ""
+	_match_check_busy = false
+	# Never erase credentials that changed while this request was in flight.
+	if str(SaveManager.load_reconnect().get("token", "")) != token:
+		return "unknown"
+	if result == "clear":
+		SaveManager.clear_reconnect()
+	elif result == "active":
+		SaveManager.mark_match_started()
+	return result
+
+func _active_match_for_token(token: String) -> Dictionary:
+	var seat: Dictionary = _token_seat.get(token, {})
+	var room: Dictionary = _rooms.get(int(seat.get("room_id", 0)), {})
+	if room.is_empty() or str(room.get("state", ROOM_LOBBY)) in [ROOM_LOBBY, ROOM_CLOSED] or bool(room.get("run_over", false)):
+		return {}
+	if _room_online_count(room) == 0 and float(room.get("empty_since", 0.0)) > 0.0 \
+			and _now() - float(room.empty_since) >= ROOM_SUSPEND_GRACE_SEC:
+		return {}
+	return room
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_match_status_request(request_id: String, token: String) -> void:
+	if not _dedicated_server:
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if request_id.length() > MAX_TOKEN_LEN or token.length() > MAX_TOKEN_LEN or not _rate_ok(sender, "room_list"):
+		return
+	_cleanup_rooms()
+	_rpc_match_status_result.rpc_id(sender, request_id, not _active_match_for_token(token).is_empty())
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_match_status_result(request_id: String, active: bool) -> void:
+	if request_id == _match_check_id and not request_id.is_empty():
+		_match_check_result = "active" if active else "clear"
+
 # HOSTING 随 1v1 P2P 路径一并移除：组队专用服务器模式下客户端只会经历
 # JOINING -> READY，服务器进程自身不用这个枚举表状态。
 enum SessionState { OFFLINE, JOINING, READY, FAILED, RECONNECTING }
@@ -23,13 +104,13 @@ const DEFAULT_HOST := NetworkConfig.SERVER_IP
 const TEAM_MAX_CLIENTS := 512
 var last_carrot_harvest_gain := 0
 const TEAM_SLOTS := 6
-const CLEANUP_INTERVAL_SEC := 5.0
+const CLEANUP_INTERVAL_SEC := 1.0
 const LOBBY_EMPTY_TTL_SEC := 60.0
 # 全房零在线真人、但仍有有效 token 时的保留时长（B11，产品确认值）。
 # 期间房间转 suspended：不推进阶段、不启动新模拟、不进公开房间列表。
 # 任一有效 token 重连即取消；到期则关房并清理 token / 短码 / 缓存映射。
 # 依赖 C20 的单调时钟 —— 用墙钟的话一次 NTP 校时就能让它提前或永不到期。
-const ROOM_SUSPEND_GRACE_SEC := 300.0
+const ROOM_SUSPEND_GRACE_SEC := 30.0
 const PREP_TIMEOUT_SEC := 30.0 * 60.0
 const BATTLE_TIMEOUT_SEC := 5.0 * 60.0
 const RESULT_TIMEOUT_SEC := 10.0 * 60.0
@@ -2801,6 +2882,10 @@ func _tick_tx_retry(_delta: float) -> void:
 # 先把 pending_leave 落盘再发包 —— 进程这时候被杀，下次启动能凭它知道
 # "这局是主动退的，别再提示重连"。
 func request_user_leave() -> void:
+	# Leaving a started match disconnects the player, but keeps their seat resumable.
+	if not is_host and bool(SaveManager.load_reconnect().get("match_started", false)):
+		reset()
+		return
 	if not (team_active and not is_host and multiplayer.multiplayer_peer != null and not session_token.is_empty()):
 		# 本地房主局 / 还没拿到凭证：没有需要服务端确认的东西，直接清场
 		SaveManager.clear_reconnect()
@@ -3015,7 +3100,8 @@ func _enter_reconnect_backoff() -> void:
 
 # 玩家点"取消并返回主菜单"：放弃重连，彻底清场。
 func cancel_reconnect() -> void:
-	SaveManager.clear_reconnect()
+	if not bool(SaveManager.load_reconnect().get("match_started", false)):
+		SaveManager.clear_reconnect()
 	reset()
 
 # app 重开后凭本地存的 token 恢复对局（Main 在启动时调用）。
@@ -3098,6 +3184,9 @@ func _rpc_team_create_room(public_id: String = "") -> void:
 	var sender := multiplayer.get_remote_sender_id()
 	if not _rate_ok(sender, "create_room"):
 		return
+	if not _active_match_for_token(str(_public_token_seat.get(_sanitize_public_id(public_id), ""))).is_empty():
+		_rpc_team_action_failed.rpc_id(sender, ACTIVE_MATCH_HINT)
+		return
 	# 一人一房不变量：不加这条时，循环调用会把 _rooms 撑爆，并在每个旧房间里留下
 	# 一个永不 ready 的幽灵座位（实测 25 次调用 = 25 个幽灵座位）。
 	var existing := _room_for_peer(sender)
@@ -3119,6 +3208,9 @@ func _rpc_team_join_room(room_id: int, public_id: String = "") -> void:
 		return
 	var sender := multiplayer.get_remote_sender_id()
 	if not _rate_ok(sender, "join_room"):
+		return
+	if not _active_match_for_token(str(_public_token_seat.get(_sanitize_public_id(public_id), ""))).is_empty():
+		_rpc_team_action_failed.rpc_id(sender, ACTIVE_MATCH_HINT)
 		return
 	var existing := _room_for_peer(sender)
 	if not existing.is_empty():
@@ -3325,6 +3417,7 @@ func _rpc_resume_request(token: String) -> void:
 # 限流在两个 RPC 入口各做一次，这里不再重复计数（A9）——短码入口自己有
 # public_resume 配额用于抗短码枚举，两者语义不同，不能互相顶替。
 func _resume_seat(sender: int, token: String) -> void:
+	_cleanup_rooms()
 	var seat: Dictionary = _token_seat.get(token, {})
 	if seat.is_empty():
 		_net_log("resume failed reason=token_unknown peer=%d" % sender)
@@ -3518,6 +3611,8 @@ func _rpc_room_state(envelope: Dictionary) -> void:
 		if reconnect_address.is_empty():
 			reconnect_address = remote_address
 		SaveManager.save_reconnect(session_token, reconnect_address, remote_port)
+	if server_phase in [ROOM_PREP, ROOM_BATTLE, ROOM_RESULT] and not bool(payload.get("run_over", false)):
+		SaveManager.mark_match_started()
 	var incoming_public := str(payload.get("public_id", ""))
 	if not incoming_public.is_empty() and incoming_public != public_token_id:
 		public_token_id = incoming_public
@@ -3547,6 +3642,8 @@ func _rpc_room_state(envelope: Dictionary) -> void:
 @rpc("any_peer", "call_remote", "reliable")
 func _rpc_abandon_seat(token: String) -> void:
 	if not _dedicated_server:
+		return
+	if not _active_match_for_token(token).is_empty():
 		return
 	var seat: Dictionary = _token_seat.get(token, {})
 	if seat.is_empty():
@@ -4333,27 +4430,11 @@ func _rpc_team_leave() -> void:
 
 # 离场的实际处理，供 `_rpc_team_leave`（遗留）与 `_rpc_leave_intent`（E3）共用。
 func _apply_peer_leave(room: Dictionary, peer_id: int) -> void:
-	# 大厅阶段：硬移除，座位彻底释放。
-	# 开赛后：不能走硬移除——那会在别人正等这个座位交棋盘时把它变成 "empty"，
-	# 房间要死等到 30 秒看门狗才继续。改成与 _rpc_abandon_seat 相同的语义：
-	# 座位转 AI 顶上、token 作废、当前阶段立即推进，别人一秒都不用等。
+	# Lobby leaves release the seat; started-match leaves preserve it for resuming.
 	if str(room.get("state", ROOM_LOBBY)) == ROOM_LOBBY:
 		_room_remove_peer(room, peer_id)
 		return
-	var peer_slot: Dictionary = room.get("peer_slot", {})
-	var slot := int(peer_slot.get(peer_id, -1))
-	if slot < 0 or slot >= TEAM_SLOTS:
-		return
-	_clear_seat_metadata(room, slot)
-	peer_slot.erase(peer_id)
-	room.peer_slot = peer_slot
-	_peer_room.erase(peer_id)
-	_reconnect_service.release_reservation(room, slot)
-	if _room_online_count(room) <= 0:
-		room.empty_since = _now()
-	_maybe_promote_leader(room)
-	_net_log("player left mid-match room=%d slot=%d -> AI takeover" % [int(room.get("id", 0)), slot])
-	_room_auto_complete_seat(room, slot)
+	_room_reserve_peer(room, peer_id)
 
 func _room_remove_peer(room: Dictionary, peer_id: int) -> void:
 	# 硬移除（大厅掉线/主动离开/被踢）：座位彻底释放，token 作废。

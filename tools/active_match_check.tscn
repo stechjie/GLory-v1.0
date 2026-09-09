@@ -1,0 +1,4 @@
+[gd_scene load_steps=2 format=3]
+[ext_resource type="Script" path="res://tools/active_match_check.gd" id="1"]
+[node name="ActiveMatchCheck" type="Node"]
+script = ExtResource("1")
