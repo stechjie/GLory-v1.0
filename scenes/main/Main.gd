@@ -683,7 +683,7 @@ func _on_team_reconnect_requested() -> void:
 	_short_code_resume_request_id = ""
 	_short_code_resume_ignore_late_result = false
 
-	var rc := SaveManager.load_reconnect()
+	var rc := SaveManager.load_resumable_reconnect()
 	var rc_token := str(rc.get("token", ""))
 	var rc_address := str(rc.get("address", ""))
 	if rc_token.is_empty() or rc_address.is_empty():

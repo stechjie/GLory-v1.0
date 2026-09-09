@@ -79,6 +79,7 @@ func _ready() -> void:
 	await _check_success(main)
 	await _check_failure(main, probe)
 	await _check_incomplete_credential_is_rejected_visibly(main, menu, probe)
+	await _check_pending_leave_cannot_resume(main, menu, probe)
 	await _check_superseded_by_other_action(main, probe)
 	_check_source_contract()
 
@@ -257,6 +258,45 @@ func _check_superseded_by_other_action(main: MainScript, probe: RequestProbe) ->
 
 
 # --- 源码合同 ----------------------------------------------------------------
+
+func _check_pending_leave_cannot_resume(main: MainScript, menu: FakeMenu, probe: RequestProbe) -> void:
+	_configure_offline_transport()
+	SaveManager.clear_reconnect()
+	SaveManager.save_reconnect(TOKEN, ADDRESS, PORT)
+	_h.expect(not SaveManager.load_resumable_reconnect().is_empty(),
+		"normal_resume", "A disconnected session must remain resumable")
+	SaveManager.mark_pending_leave("leave-regression")
+	_h.expect(SaveManager.load_resumable_reconnect().is_empty(),
+		"pending_leave_visible", "An explicitly left room is still resumable")
+	_h.expect(str(SaveManager.load_reconnect().get("pending_leave", "")) == "leave-regression",
+		"leave_receipt_lost", "Filtering deleted credentials needed by the leave receipt")
+	var menu_script := load("res://scenes/menu/MainMenu.gd") as Script
+	var actual_menu: Control = menu_script.new()
+	actual_menu._build()
+	var found := false
+	for child in actual_menu.get_children():
+		if child is Button and child.pressed.is_connected(actual_menu._emit_reconnect):
+			found = true
+			_h.expect(not child.visible, "leave_button_visible", "Real menu shows Reconnect after leaving")
+	_h.expect(found, "reconnect_button_missing", "Test did not find the real reconnect button")
+	actual_menu.free()
+	var before := probe.call_count
+	var errors_before := menu.connection_errors.size()
+	main._on_team_reconnect_requested()
+	_h.expect(probe.call_count == before, "leave_resume_dispatched", "Stale button dispatched a resume after leave")
+	_h.expect(menu.connection_errors.size() == errors_before + 1,
+		"leave_resume_unsettled", "Rejected resume did not settle visibly")
+	SaveManager.save_reconnect(TOKEN, ADDRESS, PORT)
+	_h.expect(SaveManager.load_resumable_reconnect().is_empty(),
+		"late_refresh_revived_leave", "Same-session refresh erased the leave marker")
+	SaveManager.save_reconnect("NEW-SESSION", ADDRESS, PORT)
+	_h.expect(not SaveManager.load_resumable_reconnect().is_empty(),
+		"new_session_blocked", "Old leave marker blocked a new session")
+	SaveManager.clear_reconnect()
+	_h.expect(SaveManager.load_resumable_reconnect().is_empty(),
+		"receipt_resurrected_backup", "Cleared credentials reappeared through fallback")
+	await get_tree().process_frame
+
 
 func _check_source_contract() -> void:
 	var src := FileAccess.get_file_as_string("res://scenes/main/Main.gd")

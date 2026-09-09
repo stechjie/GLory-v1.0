@@ -231,8 +231,8 @@ func _build() -> void:
 	reconnect_btn.add_theme_color_override("font_color", Color(1.0, 0.90, 0.60))
 	reconnect_btn.add_theme_font_size_override("font_size", 26)
 	reconnect_btn.pressed.connect(_emit_reconnect)
-	# 仅在有重连凭证时才显示（没得连时不给一个点了没用的按钮）
-	reconnect_btn.visible = not SaveManager.load_reconnect().is_empty()
+	# Active leave requests retain credentials only for the server receipt.
+	reconnect_btn.visible = not SaveManager.load_resumable_reconnect().is_empty()
 	add_child(reconnect_btn)
 	_track(reconnect_btn, Vector2(1110, 594), Vector2(235, 58))
 

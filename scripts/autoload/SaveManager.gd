@@ -108,7 +108,14 @@ func _remove_all_variants(path: String) -> void:
 # 此前只存 address，app 重开时端口被填成 DEFAULT_PORT —— 单进程时碰巧对，
 # 多进程时是 (N-1)/N 的概率连错。
 func save_reconnect(token: String, address: String, port: int = NetworkConfig.SERVER_PORT) -> void:
-	_atomic_write(RECONNECT_PATH, JSON.stringify({"token": token, "address": address, "port": port}))
+	var rc := {"token": token, "address": address, "port": port}
+	var previous := load_reconnect()
+	# A late credential refresh must not undo the user's leave intent.
+	if str(previous.get("token", "")) == token and str(previous.get("address", "")) == address \
+			and int(previous.get("port", NetworkConfig.SERVER_PORT)) == port \
+			and not str(previous.get("pending_leave", "")).is_empty():
+		rc["pending_leave"] = previous["pending_leave"]
+	_atomic_write(RECONNECT_PATH, JSON.stringify(rc))
 
 # 标记"这一局是玩家主动退的，还没拿到服务端回执"（状态信封 E3 / R1）。
 # 落盘的意义：进程在发出退出意图后被杀，下次启动能凭它知道**不要提示重连**，
@@ -129,6 +136,15 @@ func load_reconnect() -> Dictionary:
 		return {}
 	var parsed = JSON.parse_string(text)
 	return parsed if typeof(parsed) == TYPE_DICTIONARY else {}
+
+# Keep raw credentials for the leave receipt, but never offer them for resuming.
+func load_resumable_reconnect() -> Dictionary:
+	var rc := load_reconnect()
+	if not str(rc.get("pending_leave", "")).is_empty() \
+			or str(rc.get("token", "")).is_empty() \
+			or str(rc.get("address", "")).is_empty():
+		return {}
+	return rc
 
 func clear_reconnect() -> void:
 	# 凭证作废必须连 .bak/.tmp 一起清，否则下次启动会从兜底文件里把死 token 读回来。
