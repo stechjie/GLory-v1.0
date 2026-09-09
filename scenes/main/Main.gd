@@ -645,6 +645,7 @@ func _show_menu() -> void:
 	_menu.settings_requested.connect(_show_settings)
 	_menu.prep_requested.connect(_show_pet_screen)
 	_menu.codex_requested.connect(_show_codex_screen)
+	_menu.profile_requested.connect(_show_profile_screen)
 	add_child(_menu)
 
 # 手动重连：读本地凭证连回上一场，弹重连遮罩，成功落回备战/结果，失败清凭证回菜单。
@@ -787,6 +788,23 @@ func _show_codex_screen() -> void:
 	codex.back_requested.connect(_show_menu)
 	_page_back_route = _show_menu
 	add_child(codex)
+
+# 玩家资料页。入口是主菜单左上角那个名牌（此前是「敬请期待」）。
+#
+# 用 configure_self() 而不是 configure(Mode.SELF)：传枚举就得 preload
+# ProfileScreen.gd，那会把它的整张依赖图拉进 Main 的加载路径 —— 正是
+# _load_screen 上面那段注释量过的 1.5 秒。看别人的资料走 configure_public(code)，
+# 但今天还没有任何入口能拿到别人的好友码（好友/聊天都还没做）。
+func _show_profile_screen() -> void:
+	_clear()
+	var profile := _instantiate_screen("res://scenes/menu/ProfileScreen.tscn")
+	if profile == null:
+		_show_menu()
+		return
+	profile.call("configure_self")
+	profile.back_requested.connect(_show_menu)
+	_page_back_route = _show_menu
+	add_child(profile)
 
 # 首次启动的初始宠物三选一关卡：无返回按钮，选完后再进主菜单。
 func _show_starter_pet_gate() -> void:

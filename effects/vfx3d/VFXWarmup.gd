@@ -337,11 +337,9 @@ func _build_viewport() -> void:
 	light.rotation_degrees = Vector3(-55.0, 35.0, 0.0)
 	_viewport.add_child(light)
 
-# E3: this is a developer readout. It used to be built unconditionally, so a
-# release build drew "预热 96/96 最慢 54 ms (…)" over the language-select screen —
-# exactly the "不得在语言页暴露开发文字" the README calls out.
+# Developer readout is opt-in, including in debug APKs used by testers.
 func _build_label() -> void:
-	if not OS.is_debug_build():
+	if not OS.is_debug_build() or not ("--warmup-overlay" in OS.get_cmdline_args() or "--warmup-overlay" in OS.get_cmdline_user_args()):
 		return
 	var layer := CanvasLayer.new()
 	layer.name = "VFXWarmupHUD"

@@ -56,6 +56,8 @@ static func cached_texture(path: String) -> Texture2D:
 	var cached: Texture2D = _texture_cache.get(path)
 	if cached != null:
 		return cached
+	if not ResourceLoader.exists(path):
+		return null
 	var tex := load(path) as Texture2D
 	if tex != null:
 		_texture_cache[path] = tex

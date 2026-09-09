@@ -1,0 +1,139 @@
+{
+	"schema_version": 1,
+	"_why": "头像 id 与单位 id 刻意脱钩。数据库里存的是 avatar_0NN，永不改变；美术改名、重做、替换只改这里的 source 一行，玩家数据一行都不用动。理由与事故先例（pet_duck→pet_rabbit）见 docs/玩家资料系统设计.md 第四节。",
+	"default_id": "avatar_001",
+	"default_frame_id": "frame_default",
+	"thumb_size": 128,
+	"thumb_dir": "res://assets/ui/avatars/thumb",
+	"_frames_why": "头像框这一版 UI 只有默认框，清单先建好。它是最便宜的奖励载体（一张图、零逻辑），现在留位比以后加迁移便宜。",
+	"frames": [
+		{
+			"id": "frame_default",
+			"name": "默认",
+			"name_en": "Default",
+			"source": "res://assets/ui/main_menu_live/profile_avatar.png"
+		}
+	],
+	"avatars": [
+		{
+			"id": "avatar_001",
+			"name": "人族国王",
+			"name_en": "Human King",
+			"source": "res://assets/ui/unit_portraits/human_king.png"
+		},
+		{
+			"id": "avatar_002",
+			"name": "人族剑士",
+			"name_en": "Swordsman",
+			"source": "res://assets/ui/unit_portraits/human_swordsman.png"
+		},
+		{
+			"id": "avatar_003",
+			"name": "人族弓手",
+			"name_en": "Archer",
+			"source": "res://assets/ui/unit_portraits/human_archer.png"
+		},
+		{
+			"id": "avatar_004",
+			"name": "人族法师",
+			"name_en": "Mage",
+			"source": "res://assets/ui/unit_portraits/human_mage.png"
+		},
+		{
+			"id": "avatar_005",
+			"name": "暗黑巨龙",
+			"name_en": "Dark Dragon",
+			"source": "res://assets/ui/unit_portraits/dark_dragon.png"
+		},
+		{
+			"id": "avatar_006",
+			"name": "暗黑女王",
+			"name_en": "Dark Queen",
+			"source": "res://assets/ui/unit_portraits/dark_queen.png"
+		},
+		{
+			"id": "avatar_007",
+			"name": "暗黑法师",
+			"name_en": "Dark Mage",
+			"source": "res://assets/ui/unit_portraits/dark_mage.png"
+		},
+		{
+			"id": "avatar_008",
+			"name": "末日",
+			"name_en": "Doom",
+			"source": "res://assets/ui/unit_portraits/dark_doom.png"
+		},
+		{
+			"id": "avatar_009",
+			"name": "神族之王",
+			"name_en": "God King",
+			"source": "res://assets/ui/unit_portraits/god_king.png"
+		},
+		{
+			"id": "avatar_010",
+			"name": "大天使",
+			"name_en": "Archangel",
+			"source": "res://assets/ui/unit_portraits/god_archangel.png"
+		},
+		{
+			"id": "avatar_011",
+			"name": "极光",
+			"name_en": "Aurora",
+			"source": "res://assets/ui/unit_portraits/god_aurora.png"
+		},
+		{
+			"id": "avatar_012",
+			"name": "女祭司",
+			"name_en": "Priestess",
+			"source": "res://assets/ui/unit_portraits/god_priestess.png"
+		},
+		{
+			"id": "avatar_013",
+			"name": "亡灵泰坦",
+			"name_en": "Undead Titan",
+			"source": "res://assets/ui/unit_portraits/undead_titan.png"
+		},
+		{
+			"id": "avatar_014",
+			"name": "亡灵母体",
+			"name_en": "Undead Mother",
+			"source": "res://assets/ui/unit_portraits/undead_mother.png"
+		},
+		{
+			"id": "avatar_015",
+			"name": "尖刺",
+			"name_en": "Spike",
+			"source": "res://assets/ui/unit_portraits/undead_spike.png"
+		},
+		{
+			"id": "avatar_016",
+			"name": "剧毒",
+			"name_en": "Poison",
+			"source": "res://assets/ui/unit_portraits/undead_poison.png"
+		},
+		{
+			"id": "avatar_017",
+			"name": "狮子座 · 烈阳",
+			"name_en": "Leo",
+			"source": "res://assets/ui/mercenary_portraits/merc_leo_sun.png"
+		},
+		{
+			"id": "avatar_018",
+			"name": "天蝎座 · 死神",
+			"name_en": "Scorpio",
+			"source": "res://assets/ui/mercenary_portraits/merc_scorpio_death.png"
+		},
+		{
+			"id": "avatar_019",
+			"name": "天秤座 · 裁决",
+			"name_en": "Libra",
+			"source": "res://assets/ui/mercenary_portraits/merc_libra_judge.png"
+		},
+		{
+			"id": "avatar_020",
+			"name": "白羊座 · 血怒",
+			"name_en": "Aries",
+			"source": "res://assets/ui/mercenary_portraits/merc_aries_blood.png"
+		}
+	]
+}

@@ -326,7 +326,9 @@ func _case_client_panel_online() -> void:
 				% [GameState.carrots, GameState.carrot_capacity()])
 
 	# 数字有没有真的跟着服务端走
-	var carrot_label: Label = panel.get("_carrot_value")
+	var carrot_label: Label = panel.get("_carrot_balance")
+	if carrot_label == null:
+		carrot_label = panel.get("_carrot_value")
 	if _h.expect(carrot_label != null, "carrot_label_missing", "面板里没有萝卜数字"):
 		_h.expect(carrot_label.text.contains(str(GameState.carrots)), "carrot_label_stale",
 			"面板显示 \"%s\"，服务端给的是 %d 萝卜" % [carrot_label.text, GameState.carrots])

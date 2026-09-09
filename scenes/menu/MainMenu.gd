@@ -14,6 +14,7 @@ signal team_offline_requested   # 不联网，本地单人 vs AI 自测
 signal team_reconnect_requested # 手动重连回上一场对局
 signal prep_requested           # 「备战」按钮：进入备战界面（暂时只有宠物系统）
 signal codex_requested          # 「图鉴」按钮：进入图鉴界面
+signal profile_requested        # 左上角名牌：进入玩家资料界面
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const REF_SIZE := Vector2(1672.0, 941.0)
@@ -58,6 +59,9 @@ const DEBUG_BANDS := [
 	{"name": "底部主按钮区", "y": 640.0, "h": 280.0},
 ]
 
+# 左上角名牌上的两行字。要在账号资料到达后就地刷新，所以留引用。
+var _profile_name_label: Label
+var _profile_sub_label: Label
 var _menu_music_player: AudioStreamPlayer
 var _address_edit: LineEdit
 var _net_status: Label
@@ -80,6 +84,17 @@ func _ready() -> void:
 	_build()
 	_layout()
 	_start_menu_music()
+	if not AccountManager.profile_changed.is_connected(_on_account_profile_changed):
+		AccountManager.profile_changed.connect(_on_account_profile_changed)
+	_refresh_profile_plate()
+	_ensure_profile_loaded()
+
+func _exit_tree() -> void:
+	if AccountManager.profile_changed.is_connected(_on_account_profile_changed):
+		AccountManager.profile_changed.disconnect(_on_account_profile_changed)
+
+func _on_account_profile_changed(_profile: Dictionary) -> void:
+	_refresh_profile_plate()
 
 func _start_menu_music() -> void:
 	if _menu_music_player != null:
@@ -126,9 +141,12 @@ func _build() -> void:
 	# TODO 以后往头像框里放玩家立绘：要一张圆心透明的头像框，立绘那行插在头像框之前垫底。
 	_add_texture(TEX_PROFILE_PANEL, Vector2(18, 46), Vector2(550, 110), "left")
 	_add_texture(TEX_PROFILE_AVATAR, Vector2(18, 12), Vector2(180, 175), "left")
-	_add_label("GloryMaster", Vector2(200, 70), Vector2(330, 35), 24, "left")
-	_add_label(_menu_text("等级 45", "Lv. 45"), Vector2(200, 104), Vector2(330, 24), 18, "left")
-	_add_hit(Vector2(18, 12), Vector2(550, 178), _show_coming_soon, "left")
+	# 这两行**曾经是写死的假数据**（"GloryMaster" / "等级 45"）。等级系统不存在，
+	# 所以第二行现在放注册天数 —— 有真实来源，且比精确注册日期少泄漏一点。
+	# 等级/段位做出来之后再换回去，那时第二行才有真东西可放。
+	_profile_name_label = _add_label("", Vector2(200, 70), Vector2(330, 35), 24, "left")
+	_profile_sub_label = _add_label("", Vector2(200, 104), Vector2(330, 24), 18, "left")
+	_add_hit(Vector2(18, 12), Vector2(550, 178), _emit_profile, "left")
 	_add_texture(TEX_GOLD, Vector2(645, 35), Vector2(220, 55))
 	_add_label("89,450", Vector2(645, 35), Vector2(220, 55), 24)
 	_add_texture(TEX_DIAMOND, Vector2(885, 35), Vector2(220, 55))
@@ -444,6 +462,36 @@ func _show_coming_soon() -> void:
 		"body": _menu_text("这个功能还在开发中。", "This feature is still in development."),
 		"confirm_text": _menu_text("知道了", "Got it"),
 	})
+
+func _emit_profile() -> void:
+	profile_requested.emit()
+
+# 名牌上的昵称与副行。**不自己拼显示名** —— 只从 AccountManager.display_name 出，
+# 那是全仓唯一的拼法。理由：player_name 不唯一（database/001 的设计），
+# 任何一处只显示昵称的地方，改名冒充就成立。
+func _refresh_profile_plate() -> void:
+	if _profile_name_label == null or not is_instance_valid(_profile_name_label):
+		return
+	var profile: Dictionary = AccountManager.profile
+	if profile.is_empty():
+		# 还没登录 / 还没拉到资料。**不放假名字** —— 玩家看到一个陌生昵称
+		# 比看到一条横线更糟，而且那正是这次要消灭的东西。
+		_profile_name_label.text = _menu_text("玩家", "Player")
+		_profile_sub_label.text = "—"
+		return
+	_profile_name_label.text = AccountManager.display_name(
+		str(profile.get("player_name", "")), str(profile.get("friend_code", "")))
+	var days := int(profile.get("days_since_created", 1))
+	_profile_sub_label.text = _menu_text("第 %d 天" % days, "Day %d" % days)
+
+# 首次进主菜单时拉一次资料，之后吃 AccountManager 的缓存。
+# 每次回主菜单都发一次请求既慢又费流量，而这些字段只有玩家自己能改。
+func _ensure_profile_loaded() -> void:
+	if not AccountManager.profile.is_empty():
+		return
+	if not AccountManager.is_logged_in():
+		return
+	await AccountManager.fetch_my_profile()
 
 func _menu_text(zh: String, en: String) -> String:
 	return en if TranslationServer.get_locale().begins_with("en") else zh

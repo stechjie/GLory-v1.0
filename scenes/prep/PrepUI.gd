@@ -14,6 +14,12 @@ const GloryTokens := preload("res://ui/theme/GloryTokens.gd")
 # 走 preload 常量而不是从 autoload 实例上取，dynamic_call 棘轮才不会长。
 const TutorialModeScript := preload("res://scripts/tutorial/TutorialMode.gd")
 const CarrotCampPanelScript := preload("res://scenes/prep/CarrotCampPanelV3.gd")
+
+# Keep the selector API used by preparation-screen regression checks while the
+# redesigned code-drawn panel remains the production implementation.
+static func _carrot_camp_panel_script() -> Script:
+	return CarrotCampPanelScript
+
 const SHOP_SCROLL_BURN_SHADER: Shader = preload("res://assets/shaders/prep_scroll_burn.gdshader")
 const SHOP_REFRESH_WIDTH := 112.0
 const SHOP_GOLD_WIDTH := 112.0
@@ -982,7 +988,7 @@ func _build_top_actions() -> void:
 	_carrot_dimmer.gui_input.connect(_on_carrot_dimmer_input)
 	add_child(_carrot_dimmer)
 
-	_carrot_panel = CarrotCampPanelScript.new()
+	_carrot_panel = _carrot_camp_panel_script().new()
 	_carrot_panel.name = "CarrotCampPanel"
 	_carrot_panel.anchor_left = 0.5
 	_carrot_panel.anchor_right = 0.5

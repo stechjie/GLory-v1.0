@@ -131,6 +131,7 @@ func capture(reason: String) -> Dictionary:
 		"slow_frames": _slow_frames.duplicate(true),
 		"slow_frame_threshold_ms": SLOW_FRAME_MS,
 		"network": _network_section(),
+		"account": _account_section(),
 		"modal_stack": _modal_stack_section(),
 		"action_state": _action_state_section(),
 		"input_breadcrumbs": _input_breadcrumbs_section(),
@@ -376,6 +377,30 @@ func _script_path_of(node: Node) -> String:
 
 # State only. The address, port, seat token and public room code are deliberately
 # absent: a report is meant to be pasted into a chat window.
+# 账号链路状态。加这一节的理由很具体：自动登录默认开着，但**登录失败对玩家
+# 是无感的**（没有任何界面提示，只有一条 push_warning）。也就是说链路坏了
+# 没人会主动发现 —— 那就至少让每一份 bug 报告自动带上它。
+#
+# 只报枚举名与布尔，不报 last_error 那句话：它可能含后端地址，而本文件顶部的
+# 隐私规则明写着报告不带服务器地址（报告是要被粘进聊天窗口的）。
+# 想看具体原因去看 GLORY_ACCOUNT 那行日志。
+func _account_section() -> Dictionary:
+	var mgr := get_node_or_null("/root/AccountManager")
+	if mgr == null:
+		return {"available": false, "reason": "AccountManager autoload missing"}
+	var states: Array = mgr.get("State").keys() if mgr.get("State") != null else []
+	var failures: Array = mgr.get("Failure").keys() if mgr.get("Failure") != null else []
+	var state_index := int(mgr.get("state"))
+	var failure_index := int(mgr.get("last_failure"))
+	return {
+		"available": true,
+		"state": str(states[state_index]) if state_index < states.size() else "UNKNOWN(%d)" % state_index,
+		"failure": str(failures[failure_index]) if failure_index < failures.size() else "UNKNOWN(%d)" % failure_index,
+		"logged_in": bool(mgr.call("is_logged_in")),
+		"player_id": str(mgr.get("player_id")),
+	}
+
+
 func _network_section() -> Dictionary:
 	if not is_instance_valid(NetworkService):
 		return {"available": false, "reason": "NetworkService autoload missing"}

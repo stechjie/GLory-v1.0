@@ -24,6 +24,11 @@ static func add_status(fighter: Dictionary, kind: String, duration: float, param
 	if kind == "poison" or kind == "bleed" or kind == "burn":
 		next["tick_left"] = minf(float(existing.get("tick_left", 0.0)), float(next.get("tick_left", 0.0))) if existing.has("tick_left") else 0.0
 	fighter.statuses[kind] = next
+	# Record the effective duration added by this application. Refreshing a status
+	# must not count its already remaining time again. The damage context supplies
+	# the caster, so buffs on allies and debuffs on enemies belong to that caster.
+	var added_duration := maxf(0.0, float(next.remaining) - maxf(0.0, float(existing.get("remaining", 0.0))))
+	DamageService.record_status_applied(kind, added_duration, _is_negative_status(kind))
 
 static func _is_boss(fighter: Dictionary) -> bool:
 	var d: Dictionary = fighter.get("def", {})
