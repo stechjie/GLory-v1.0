@@ -13,7 +13,19 @@ const GloryTokens := preload("res://ui/theme/GloryTokens.gd")
 # 只为拿 FillPhase 枚举做**静态**引用（教学第 15 步的子阶段），
 # 走 preload 常量而不是从 autoload 实例上取，dynamic_call 棘轮才不会长。
 const TutorialModeScript := preload("res://scripts/tutorial/TutorialMode.gd")
-const CarrotCampPanelScript := preload("res://scenes/prep/CarrotCampPanelV2.gd")
+const CarrotCampPanelFallback := preload("res://scenes/prep/CarrotCampPanel.gd")
+
+# The illustrated panel is optional; missing art must not prevent the entire
+# preparation screen (including its statistics controls) from compiling.
+static func _carrot_camp_panel_script() -> Script:
+	for relative in ["ui/panel_carrot_camp.png", "ui/plaque_resource_header.png",
+		"ui/frame_tab_selected.png", "ui/icon_carrot_currency.png", "ui/icon_carrot_farm_level.png",
+		"ui/icon_harvest_tech.png", "ui/progress_track.png", "ui/progress_fill.png",
+		"stones/stone_unknown.png", "stones/stone_sky.png", "stones/stone_land.png",
+		"stones/stone_ren.png", "vfx/atlas_stone_reveal_4x4.png"]:
+		if not ResourceLoader.exists("res://assets/props/carrot_system/" + relative):
+			return CarrotCampPanelFallback
+	return load("res://scenes/prep/CarrotCampPanelV2.gd") as Script
 const SHOP_SCROLL_BURN_SHADER: Shader = preload("res://assets/shaders/prep_scroll_burn.gdshader")
 const SHOP_REFRESH_WIDTH := 112.0
 const SHOP_GOLD_WIDTH := 112.0
@@ -969,7 +981,7 @@ func _build_top_actions() -> void:
 	carrot_btn.visible = not GameState.tutorial_mode
 	side_col.add_child(carrot_btn)
 
-	_carrot_panel = CarrotCampPanelScript.new()
+	_carrot_panel = _carrot_camp_panel_script().new()
 	_carrot_panel.name = "CarrotCampPanel"
 	_carrot_panel.anchor_left = 0.5
 	_carrot_panel.anchor_right = 0.5
