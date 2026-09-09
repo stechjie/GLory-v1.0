@@ -706,10 +706,14 @@ func _add_prep_river_layer(world: Node3D, node_name: String, texture_path: Strin
 func _setup_prep_board_model_view(board_frame: Control) -> void:
 	# Board models now share the river arena viewport, camera, lights and depth.
 	_prep_board_frame = board_frame
-	if not board_frame.resized.is_connected(_queue_prep_model_layout_refresh):
-		board_frame.resized.connect(_queue_prep_model_layout_refresh)
-	if _board_hud.standby_frame != null and not _board_hud.standby_frame.resized.is_connected(_queue_prep_model_layout_refresh):
-		_board_hud.standby_frame.resized.connect(_queue_prep_model_layout_refresh)
+	# 用 item_rect_changed 而不是 resized：左侧羁绊面板在 body 这个 HBox 里和棋盘共享水平空间，
+	# 加按钮（如慷慨命运赌博）会把 board_frame 整体右挤——这是**平移**不是 resize，
+	# 纯平移不触发 resized，于是 _realign_prep_board_cells 不重跑，棋盘圆圈就停留在旧坐标、
+	# 相对于固定位置的 3D 石台向右偏移。item_rect_changed 在 rect（位置+尺寸）变化时都会发。
+	if not board_frame.item_rect_changed.is_connected(_queue_prep_model_layout_refresh):
+		board_frame.item_rect_changed.connect(_queue_prep_model_layout_refresh)
+	if _board_hud.standby_frame != null and not _board_hud.standby_frame.item_rect_changed.is_connected(_queue_prep_model_layout_refresh):
+		_board_hud.standby_frame.item_rect_changed.connect(_queue_prep_model_layout_refresh)
 	if not resized.is_connected(_queue_prep_model_layout_refresh):
 		resized.connect(_queue_prep_model_layout_refresh)
 	_queue_prep_model_layout_refresh()
@@ -727,6 +731,24 @@ func _apply_prep_model_layout_after_frames(version: int) -> void:
 	await get_tree().process_frame
 	if version != _prep_layout_refresh_version or not is_inside_tree():
 		return
+	# 轮询到棋盘 global_position 真正稳定再对齐：选中/赌博宝物会改变左侧羁绊面板与
+	# 商店内容，进而使棋盘整体平移（多为竖直方向）。这个平移可能在接下来若干帧内才
+	# 落定；若用过渡中的旧 global_position 去投影，圆圈就会整体错开石台——
+	# 这正是 tester 看到的「绿/红圈向右/向左偏移」且进下一轮对战后回正的根因。
+	# 这里等到 global_position 连续两帧不变（或版本被新请求覆盖）再算，杜绝陈旧坐标。
+	var stable := 0
+	var last_pos := _board_hud.grid.global_position
+	var guard := 0
+	while stable < 2 and is_inside_tree() and guard < 16:
+		await get_tree().process_frame
+		guard += 1
+		if version != _prep_layout_refresh_version:
+			return
+		if _board_hud.grid.global_position.is_equal_approx(last_pos):
+			stable += 1
+		else:
+			stable = 0
+			last_pos = _board_hud.grid.global_position
 	_reposition_existing_prep_models()
 	_realign_prep_board_cells()
 	_realign_prep_standby_cells()

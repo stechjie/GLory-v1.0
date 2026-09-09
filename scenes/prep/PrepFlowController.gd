@@ -68,6 +68,10 @@ func _on_treasure_granted(tid: String, owned: Array) -> void:
 	_treasure.clear_pick_pending()
 	SaveManager.save_run()
 	_refresh_all()
+	# 宝物入袋（折扣令牌/慷慨命运等）会改变左侧羁绊面板或商店内容，棋盘随之平移。
+	# 主动重新对齐 3D 投影的棋盘圆圈，避免「绿/红圈偏移石台」的 bug 复现
+	# （进下一轮对战后回正，正是重建 PrepUI 时重新跑了这次对齐）。
+	_queue_prep_model_layout_refresh()
 
 func _on_treasure_denied(reason: String) -> void:
 	# 不静默：拒收后界面必须回到一个玩家能理解的状态，否则就是「点了没反应」。
@@ -223,5 +227,7 @@ func _on_generous_fate_gamble() -> void:
 		GameState.gold = maxi(0, int(floor(float(before) * loss_keep)))
 	SaveManager.save_run()
 	_refresh_all()
+	# 赌博同样会改变面板内容并触发棋盘平移，重新对齐圆圈以防偏移。
+	_queue_prep_model_layout_refresh()
 
 

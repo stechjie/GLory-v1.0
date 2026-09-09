@@ -563,6 +563,9 @@ func refresh() -> void:
 		PrepRules.first_empty_bench_slot() < 0,
 		GameState.tutorial_mode,
 		LocaleManager.get_locale(),
+		# 宝物持有变了要立刻重算价格（折扣令牌 / 狂怒+折扣清仓联动），
+		# 否则签名命中旧值，refresh 提前返回，新折扣要等下次刷新商店才生效。
+		GameState.owned_treasures,
 	])
 	if cards_sig == _shop_cards_signature:
 		return
