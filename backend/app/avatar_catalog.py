@@ -52,7 +52,17 @@ def _load() -> dict:
     而运维那边什么错都看不到。宁可让接口 500 并在日志里留下原因。
     """
     global _cache
-    mtime = _CATALOG_PATH.stat().st_mtime
+    try:
+        mtime = _CATALOG_PATH.stat().st_mtime
+    except OSError as exc:
+        # 这个失败有一个具体且会重复发生的原因，值得把话说全：
+        # 部署脚本**只**把 backend/ 和 deploy/ 同步到运行目录（少一份暴露面），
+        # 而这个文件在仓库根的 data/ 下。deploy/update.sh 里有一段专门复制它 ——
+        # 报这个错基本就是那段没跑到，或者服务器上的脚本是旧版。
+        raise RuntimeError(
+            "读不到头像清单 %s —— 检查 deploy/update.sh 的「复制后端要读的数据文件」那一段，"
+            "或设置 GLORY_AVATAR_CATALOG 指向它" % _CATALOG_PATH
+        ) from exc
     if _cache is not None and _cache[0] == mtime:
         return _cache[1]
 

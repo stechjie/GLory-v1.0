@@ -295,3 +295,38 @@ def test_migration_does_not_touch_earlier_files() -> None:
     lowered = sql.lower()
     for phrase in forbidden:
         assert phrase not in lowered, "004 里出现了破坏性语句：%s" % phrase
+
+
+# --- 部署一致性 ---------------------------------------------------------------
+
+
+def test_deploy_ships_the_files_the_backend_reads() -> None:
+    """后端从仓库根的 data/ 读文件，而部署脚本**只**同步 backend/ 和 deploy/。
+
+    这两件事各自都是对的（运行目录少一份暴露面），合起来就是一个陷阱：
+    代码在本机跑得好好的，上线之后第一个换头像的玩家拿到 500。
+    第一次部署就踩了。以后再有「后端要读仓库根的某个文件」时，这条会把它挡住。
+    """
+    for script in ["update.sh", "bootstrap.sh"]:
+        text = (REPO / "deploy" / script).read_text(encoding="utf-8")
+        assert "avatars.json" in text, (
+            "deploy/%s 没有把 data/avatars.json 复制到运行目录，"
+            "avatar_catalog.py 上线后会读不到" % script
+        )
+
+
+def test_backend_only_reads_files_deploy_actually_copies() -> None:
+    """反向锁：后端里每一处指向仓库根 data/ 的文件，部署脚本都要复制。"""
+    import re as _re
+
+    copied = set()
+    for script in ["update.sh", "bootstrap.sh"]:
+        copied |= set(
+            _re.findall(r"[\w-]+\.(?:json|txt)", (REPO / "deploy" / script).read_text(encoding="utf-8"))
+        )
+    for module in ["avatar_catalog.py", "text_guard.py"]:
+        source = (REPO / "backend" / "app" / module).read_text(encoding="utf-8")
+        for name in _re.findall(r'"data"\s*/\s*"([^"]+)"', source):
+            assert name in copied, (
+                "backend/app/%s 要读 data/%s，但 deploy 的脚本没复制它" % (module, name)
+            )

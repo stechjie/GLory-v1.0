@@ -222,10 +222,13 @@ signal profile_changed(profile: Dictionary)
 
 # 昵称永远和好友码一起显示的**唯一实现**。
 #
+# 刻意**不是 static**：调用方拿到的都是 autoload 实例，在实例上调静态函数
+# 会被引擎警告「应当直接从类型调用」，而把警告留在控制台里久了就没人看了。
+#
 # ⚠️ players.player_name 不唯一（database/001 的设计）。你叫 Leno，
 # 别人改名成 Leno 就能冒充你 —— 只要 UI 里存在任何一处只显示昵称的地方，
 # 冒充就成立。所以显示名只能从这里出，不许有第二个拼法。
-static func display_name(player_name: String, friend_code: String) -> String:
+func display_name(player_name: String, friend_code: String) -> String:
 	if friend_code.is_empty():
 		return player_name
 	return "%s #%s" % [player_name, friend_code]
@@ -325,12 +328,32 @@ func _request(
 		# 连不上后端最常见：本机没起服务、真机上填了 127.0.0.1、明文被 Android 拦。
 		return {"code": 0, "error": "连不上账号服务器（result=%d）" % outcome}
 
-	var parsed = JSON.parse_string(raw)
-	var body: Dictionary = parsed if typeof(parsed) == TYPE_DICTIONARY else {}
+	# ⚠️ **不是所有响应体都是 JSON。**
+	#
+	# 后端 500 时 Starlette 回的是纯文本 "Internal Server Error"；
+	# Caddy 的 502 回的是一段 HTML。直接丢给 JSON.parse_string 的话，
+	# 引擎会在控制台刷一条红色 Parse JSON failed —— 而真正的信息
+	# （HTTP 500）反倒被那条红字盖住，查错的人会往 JSON 的方向走很远。
+	#
+	# 用 JSON.new().parse() 而不是 parse_string()：前者把失败作为返回值给我们，
+	# 后者会直接往引擎日志里打。
+	var body: Dictionary = {}
+	if not raw.is_empty():
+		var json := JSON.new()
+		if json.parse(raw) == OK and typeof(json.data) == TYPE_DICTIONARY:
+			body = json.data
+
 	if code == 200:
 		return {"code": code, "body": body}
+
 	# 后端的 detail 已经脱敏（backend 那边有测试钉着不含 token），可以直接显示。
-	return {"code": code, "error": str(body.get("detail", "HTTP %d" % code))}
+	# 拿不到 detail（响应体不是 JSON）时**不要把原文回显给玩家** ——
+	# 那可能是一整页 HTML 或一段服务器内部信息。只报状态码。
+	if body.has("detail"):
+		return {"code": code, "error": str(body["detail"])}
+	if code >= 500:
+		return {"code": code, "error": "服务器出错了（HTTP %d），稍后再试" % code}
+	return {"code": code, "error": "请求失败（HTTP %d）" % code}
 
 
 # 登录那两个调用的薄封装。保留它是为了让登录路径一个字都不用改 ——

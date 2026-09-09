@@ -38,6 +38,21 @@ say "复制到运行目录"
 # 目录，而混合版本的故障最难查（审计文档第八节点名批评过 unzip -o 覆盖在线目录）。
 rsync -a --delete "$SRC/backend/" "$REPO/backend/"
 rsync -a --delete "$SRC/deploy/" "$REPO/deploy/"
+
+say "复制后端要读的数据文件"
+# 后端要读 data/avatars.json（头像 id 的授权校验，见 backend/app/avatar_catalog.py）
+# 与可选的 data/blocked_words.txt（文本词表）。
+#
+# **只复制这两个文件，不复制整个 data/。** 运行目录只放后端真正要用的东西 ——
+# 整个 data/ 是全套游戏数值表（单位、宝物、回合、AI 曲线），后端一个都不读，
+# 复制过去只是白白多一份暴露面。理由同 bootstrap 里 src 与 repo 分家那段。
+mkdir -p "$REPO/data"
+for f in avatars.json blocked_words.txt; do
+	if [[ -f "$SRC/data/$f" ]]; then
+		rsync -a "$SRC/data/$f" "$REPO/data/$f"
+	fi
+done
+
 chown -R root:root "$REPO"
 chmod -R a+rX "$REPO"
 

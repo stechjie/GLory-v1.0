@@ -57,6 +57,7 @@ var _data: Dictionary = {}
 var _busy := false
 
 var _body: VBoxContainer
+var _public_rows: VBoxContainer
 var _status: Label
 var _avatar_rect: TextureRect
 var _name_label: Label
@@ -120,9 +121,14 @@ func _build() -> void:
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(dim)
 
+	# 游戏是 **1600x720 横屏**（project.godot 的 viewport）。
+	# 第一版做成了竖着长的单列，在真实画布上必须往下滚 —— 横屏游戏里
+	# 需要滚动的资料页是错的。现在是三栏，一屏放得下。
+	#
+	# ScrollContainer 仍然留着，但它是**兜底**不是主要布局：更窄的机型
+	# （或以后往栏里加东西）时还能滚，正常比例下根本不会出现滚动条。
 	var scroll := ScrollContainer.new()
 	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	# 这一页只往下长，横向滚只会让手指划错方向。同 SettingsScreen。
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	add_child(scroll)
 
@@ -132,32 +138,55 @@ func _build() -> void:
 	scroll.add_child(center)
 
 	_body = VBoxContainer.new()
-	_body.custom_minimum_size = Vector2(460, 0)
 	_body.add_theme_constant_override("separation", Tokens.GAP_M)
 	center.add_child(_body)
 
 	_body.add_child(_header())
-	_body.add_child(_identity_card())
+
+	var columns := HBoxContainer.new()
+	columns.add_theme_constant_override("separation", Tokens.GAP_M)
+	columns.alignment = BoxContainer.ALIGNMENT_CENTER
+	_body.add_child(columns)
 
 	if _mode == Mode.SELF:
-		_body.add_child(_name_section())
-		_body.add_child(_bio_section())
-		_body.add_child(_placeholder_block(
-			_text("战绩", "Record"),
-			[_text("等级", "Level"), _text("段位", "Rank"), _text("场次 / 胜率", "Matches / Winrate")]))
-		_body.add_child(_placeholder_block(
-			_text("收藏", "Collection"),
-			[_text("图鉴进度", "Codex"), _text("拥有宠物", "Pets"), _text("拥有皮肤", "Skins")]))
-		_body.add_child(_bind_account_slot())
+		columns.add_child(_column(400, [
+			_identity_card(),
+			_name_section(),
+			_bind_account_slot(),
+		]))
+		columns.add_child(_column(440, [_bio_section()]))
+		columns.add_child(_column(340, [
+			_placeholder_block(
+				_text("战绩", "Record"),
+				[_text("等级", "Level"), _text("段位", "Rank"),
+					_text("场次 / 胜率", "Matches / Winrate")]),
+			_placeholder_block(
+				_text("收藏", "Collection"),
+				[_text("图鉴进度", "Codex"), _text("拥有宠物", "Pets"),
+					_text("拥有皮肤", "Skins")]),
+		]))
 	else:
-		_body.add_child(_public_bio_block())
-		_body.add_child(_report_button())
+		columns.add_child(_column(400, [_identity_card()]))
+		columns.add_child(_column(440, [_public_bio_block(), _report_button()]))
 
 	_status = Label.new()
 	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_status.custom_minimum_size = Vector2(0, 26)
 	_status.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
 	_body.add_child(_status)
+
+
+# 一栏。定宽是刻意的：三栏各自内容长度差很多，让它们自己去抢宽度
+# 会导致换个语言（英文更长）就重排成另一个样子。
+func _column(width: float, panels: Array) -> Control:
+	var column := VBoxContainer.new()
+	column.custom_minimum_size = Vector2(width, 0)
+	column.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	column.add_theme_constant_override("separation", Tokens.GAP_M)
+	for panel in panels:
+		column.add_child(panel as Control)
+	return column
 
 
 func _header() -> Control:
@@ -188,7 +217,7 @@ func _header() -> Control:
 
 func _identity_card() -> Control:
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box())
+	panel.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SURFACE, Tokens.GOLD_EDGE, Tokens.GAP_M))
 
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", Tokens.GAP_M)
@@ -241,7 +270,7 @@ func _identity_card() -> Control:
 
 func _name_section() -> Control:
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box())
+	panel.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SURFACE, Tokens.GOLD_EDGE, Tokens.GAP_M))
 
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", Tokens.GAP_S)
@@ -278,7 +307,7 @@ func _name_section() -> Control:
 
 func _bio_section() -> Control:
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box())
+	panel.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SURFACE, Tokens.GOLD_EDGE, Tokens.GAP_M))
 
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", Tokens.GAP_S)
@@ -348,12 +377,10 @@ func _bio_section() -> Control:
 
 func _public_bio_block() -> Control:
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box())
-	panel.name = "PublicBio"
-	var column := VBoxContainer.new()
-	column.name = "Rows"
-	column.add_theme_constant_override("separation", Tokens.GAP_S)
-	panel.add_child(column)
+	panel.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SURFACE, Tokens.GOLD_EDGE, Tokens.GAP_M))
+	_public_rows = VBoxContainer.new()
+	_public_rows.add_theme_constant_override("separation", Tokens.GAP_S)
+	panel.add_child(_public_rows)
 	return panel
 
 
@@ -380,7 +407,7 @@ func _report_button() -> Control:
 func _placeholder_block(title: String, rows: Array) -> Control:
 	# ⚠️ **只在 SELF 模式出现。** 见文件顶部第 1 条。
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box())
+	panel.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SURFACE, Tokens.GOLD_EDGE, Tokens.GAP_M))
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", Tokens.GAP_S)
 	panel.add_child(column)
@@ -494,11 +521,8 @@ func _refresh_self() -> void:
 
 
 func _refresh_public() -> void:
-	var panel := _find_child_by_name(_body, "PublicBio")
-	if panel == null:
-		return
-	var column := panel.get_node_or_null("Rows") as VBoxContainer
-	if column == null:
+	var column := _public_rows
+	if column == null or not is_instance_valid(column):
 		return
 	for child in column.get_children():
 		child.queue_free()
@@ -577,13 +601,21 @@ func _bio_payload() -> Dictionary:
 	var hide_gender := gender_index >= GENDER_VALUES.size()
 	# 选「不显示」时**保留原来的值**，只把可见性关掉 —— 否则玩家关一次显示
 	# 就把自己填过的内容抹了，再打开时是空的。
-	var gender: Variant = _field("gender") if hide_gender else GENDER_VALUES[gender_index]
+	var gender: Variant = null
+	if hide_gender:
+		gender = _field("gender")
+	else:
+		gender = str(GENDER_VALUES[gender_index])
 	if typeof(gender) == TYPE_STRING and str(gender).is_empty():
 		gender = null
 
 	var region_index := _region_pick.selected
 	var hide_region := region_index >= REGIONS.size()
-	var region: Variant = _field("region") if hide_region else str(REGIONS[region_index][0])
+	var region: Variant = null
+	if hide_region:
+		region = _field("region")
+	else:
+		region = str(REGIONS[region_index][0])
 	if typeof(region) == TYPE_STRING and str(region).is_empty():
 		region = null
 
@@ -694,14 +726,19 @@ func _rebuild_days() -> void:
 		_day_pick.select(index)
 
 
+# 标签与控件**左右排**，不是上下排。上下排每一行要占两倍高度，
+# 六行下来就是一屏放不下 —— 而这一页的全部内容本来一屏就该放得下。
 func _labeled(label_text: String, control: Control) -> Control:
-	var row := VBoxContainer.new()
-	row.add_theme_constant_override("separation", 4)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", Tokens.GAP_S)
 	var label := Label.new()
 	label.text = label_text
+	label.custom_minimum_size = Vector2(64, 0)
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.add_theme_font_size_override("font_size", Tokens.FONT_BODY - 2)
 	label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
 	row.add_child(label)
+	control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(control)
 	return row
 
@@ -733,13 +770,6 @@ func _region_label(code: String) -> String:
 		if str(region[0]) == code:
 			return _text(str(region[1]), str(region[2]))
 	return code
-
-
-func _find_child_by_name(root: Node, wanted: String) -> Node:
-	for child in root.get_children():
-		if child.name == wanted:
-			return child
-	return null
 
 
 func _failure_text(result: Dictionary) -> String:
