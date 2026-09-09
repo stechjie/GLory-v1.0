@@ -31,6 +31,7 @@ class Player:
     player_id: uuid.UUID
     player_name: str
     created: bool  # 这次调用是否新建了玩家（供日志与客户端区分首登）
+    friend_code: str = ""  # 见 database/004_profile_display.sql，由数据库默认值签发
 
 
 class PlayerIdConflict(RuntimeError):
@@ -40,6 +41,49 @@ class PlayerIdConflict(RuntimeError):
     或者同一份存档被复制到了两台设备上。两种都应该让客户端重新签一个，
     而不是让它接管别人的账号。
     """
+
+
+# 好友码由数据库默认值 glory_new_friend_code() 签发（database/004）。
+# 8 位、31 个字符的字母表 ≈ 8.5x10^11 种，撞一次要到百万量级玩家才可能发生一回，
+# 但**会**发生 —— 所以要重试。3 次足够：连撞 3 次的概率不可想象，
+# 真发生了一定是生成函数坏了，那时候报错比无限重试有用。
+_FRIEND_CODE_RETRIES = 3
+
+
+async def _insert_player(conn, player_id: uuid.UUID):
+    """建玩家行。区分两种唯一性冲突 —— **这两种绝不能混为一谈**。
+
+    players_pkey 冲突 = 客户端报上来的 player_id 被占了 → 让它重签一个。
+    friend_code 冲突 = 我们自己生成的码撞了     → 我们自己重试。
+
+    混在一起的后果很具体：一次好友码碰撞会被报成 player_id 冲突，
+    客户端照 AccountManager 的逻辑重新签发 player_id 再来一次 ——
+    本机存档的身份就这么被一次纯运气事件改掉了，
+    而那正是 docs/账号系统RFC.md 第七节那条不变量要防的静默身份漂移。
+    """
+    for attempt in range(_FRIEND_CODE_RETRIES):
+        try:
+            # ⚠️ **每次尝试必须包在嵌套事务（savepoint）里。**
+            # PostgreSQL 里一条语句失败之后整个事务就进入 aborted 状态，
+            # 后续任何语句都只会回 "current transaction is aborted" ——
+            # 不开 savepoint 的话这个重试循环 100% 是摆设，而且第二次的
+            # 报错还和真实原因完全无关，查起来会往错误方向走很远。
+            # asyncpg 的嵌套 conn.transaction() 就是 savepoint。
+            async with conn.transaction():
+                return await conn.fetchrow(
+                    "insert into players (player_id) values ($1) "
+                    "returning player_id, player_name, friend_code",
+                    player_id,
+                )
+        except asyncpg.UniqueViolationError as exc:
+            # asyncpg 把违反的约束名带在 constraint_name 上。缺了它就没法区分，
+            # 那种情况按 player_id 冲突处理 —— 保守的一侧是让客户端重签，
+            # 而不是让我们在这里无脑重试同一个必然失败的插入。
+            if getattr(exc, "constraint_name", "") != "friend_code_unique":
+                raise PlayerIdConflict(str(player_id)) from exc
+            if attempt == _FRIEND_CODE_RETRIES - 1:
+                raise
+    raise AssertionError("unreachable")
 
 
 async def resolve_or_create(
@@ -62,7 +106,7 @@ async def resolve_or_create(
         async with conn.transaction():
             existing = await conn.fetchrow(
                 """
-                select p.player_id, p.player_name
+                select p.player_id, p.player_name, p.friend_code
                 from player_identities i
                 join players p on p.player_id = i.player_id
                 where i.provider = $1 and i.provider_user_id = $2
@@ -76,16 +120,15 @@ async def resolve_or_create(
                     "update players set last_seen_at = now() where player_id = $1",
                     existing["player_id"],
                 )
-                return Player(existing["player_id"], existing["player_name"], created=False)
+                return Player(
+                    existing["player_id"],
+                    existing["player_name"],
+                    created=False,
+                    friend_code=existing["friend_code"],
+                )
 
             player_id = proposed_player_id or uuid.uuid4()
-            try:
-                row = await conn.fetchrow(
-                    "insert into players (player_id) values ($1) returning player_id, player_name",
-                    player_id,
-                )
-            except asyncpg.UniqueViolationError as exc:
-                raise PlayerIdConflict(str(player_id)) from exc
+            row = await _insert_player(conn, player_id)
 
             await conn.execute(
                 """
@@ -96,7 +139,12 @@ async def resolve_or_create(
                 auth_uid,
                 player_id,
             )
-            return Player(row["player_id"], row["player_name"], created=True)
+            return Player(
+                row["player_id"],
+                row["player_name"],
+                created=True,
+                friend_code=row["friend_code"],
+            )
 
 
 async def get_by_auth_uid(auth_uid: str) -> Player | None:
@@ -104,7 +152,7 @@ async def get_by_auth_uid(auth_uid: str) -> Player | None:
     async with db.pool().acquire() as conn:
         row = await conn.fetchrow(
             """
-            select p.player_id, p.player_name
+            select p.player_id, p.player_name, p.friend_code
             from player_identities i
             join players p on p.player_id = i.player_id
             where i.provider = $1 and i.provider_user_id = $2
@@ -114,4 +162,9 @@ async def get_by_auth_uid(auth_uid: str) -> Player | None:
         )
     if row is None:
         return None
-    return Player(row["player_id"], row["player_name"], created=False)
+    return Player(
+        row["player_id"],
+        row["player_name"],
+        created=False,
+        friend_code=row["friend_code"],
+    )

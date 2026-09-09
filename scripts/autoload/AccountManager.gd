@@ -56,14 +56,9 @@ var last_failure: int = Failure.NONE
 # 玩家发来的截图）。落盘的只有 refresh token，在 SaveManager.ACCOUNT_PATH。
 var _access_token := ""
 
-var _http: HTTPRequest = null
+# 登录流程的互斥标志。**只保护登录**，不保护资料等其它请求 ——
+# 那些是可以并发的，见 _request 顶部关于「每次自建 HTTPRequest」的说明。
 var _busy := false
-
-
-func _ready() -> void:
-	_http = HTTPRequest.new()
-	_http.timeout = AccountConfig.REQUEST_TIMEOUT_SEC
-	add_child(_http)
 
 
 func is_logged_in() -> bool:
@@ -132,6 +127,10 @@ func logout() -> void:
 	player_id = ""
 	player_name = ""
 	state = State.IDLE
+	# 资料缓存必须一起清。留着的话，下一个人在这台设备上登录后，
+	# 主菜单名牌会先画出上一个账号的昵称与好友码，直到第一次拉取回来。
+	profile = {}
+	profile_changed.emit(profile)
 
 
 func _finish_success(body: Dictionary) -> void:
@@ -204,18 +203,120 @@ func _emit_status() -> void:
 	print("GLORY_ACCOUNT %s" % JSON.stringify(status_payload()))
 
 
+# --- 玩家资料 -----------------------------------------------------------------
+#
+# 设计与取舍见 docs/玩家资料系统设计.md。这四个方法是 UI 与资料后端之间的
+# **全部**通道 —— ProfileScreen、MainMenu 名牌、以后的好友列表都只认它们。
+#
+# 全部返回 _request 的原始形状 {"code": int, "body": Dictionary, "error": String}：
+# 不再包一层，是因为调用方真正要分支的就是 code（400 要显示后端那句话、
+# 409 是改名冷却、0 是断网），包装只会把这些信息压扁。
+
+# 资料的本地缓存。主菜单名牌要在**不发请求**的情况下画出真实昵称与好友码 ——
+# 每次回主菜单都拉一次接口既慢又费流量，而这些字段只有玩家自己能改。
+# 任何一次成功的拉取或修改都会刷新它并发信号。
+var profile: Dictionary = {}
+
+signal profile_changed(profile: Dictionary)
+
+
+# 昵称永远和好友码一起显示的**唯一实现**。
+#
+# ⚠️ players.player_name 不唯一（database/001 的设计）。你叫 Leno，
+# 别人改名成 Leno 就能冒充你 —— 只要 UI 里存在任何一处只显示昵称的地方，
+# 冒充就成立。所以显示名只能从这里出，不许有第二个拼法。
+static func display_name(player_name: String, friend_code: String) -> String:
+	if friend_code.is_empty():
+		return player_name
+	return "%s #%s" % [player_name, friend_code]
+
+
+func cached_display_name() -> String:
+	return display_name(
+		str(profile.get("player_name", "")),
+		str(profile.get("friend_code", "")),
+	)
+
+
+func _remember_profile(result: Dictionary) -> Dictionary:
+	if int(result.get("code", 0)) == 200:
+		profile = result.get("body", {})
+		profile_changed.emit(profile)
+	return result
+
+
+# 自己的完整资料，含隐藏字段与可见性开关。**一次请求拿全** ——
+# 后端刻意没有拆成 /me + /me/bio，见设计文档第六节。
+func fetch_my_profile() -> Dictionary:
+	return _remember_profile(await _request(HTTPClient.METHOD_GET, "/v1/me/profile", null, true))
+
+
+# 昵称 / 头像 / 头像框 / 展示宠物。只传要改的键。
+# showcase_pet 传空字符串表示清空（与「不传」区分开）。
+func update_profile(fields: Dictionary) -> Dictionary:
+	return _remember_profile(
+		await _request(HTTPClient.METHOD_PATCH, "/v1/me/profile", fields, true)
+	)
+
+
+# 性别 / 生日 / 地区 / 签名 + 三个可见性开关。**整份覆盖**，不是打补丁。
+# 生日只能设一次：已经设过时后端会保留原值，这里不用特判。
+func update_bio(fields: Dictionary) -> Dictionary:
+	return _remember_profile(await _request(HTTPClient.METHOD_PUT, "/v1/me/bio", fields, true))
+
+
+# 别人的资料。**不带令牌** —— 它只返回对方选择公开的内容，不需要身份。
+# 隐藏的字段在响应里连键都没有，所以客户端不用（也不能）自己判可见性。
+func fetch_public_profile(friend_code: String) -> Dictionary:
+	var code := friend_code.strip_edges().to_upper()
+	if code.length() != 8:
+		# 本地就能判的失败，不必往返。用 404 让调用方的处理路径和「查无此人」一致。
+		return {"code": 404, "error": "好友码是 8 位"}
+	return await _request(HTTPClient.METHOD_GET, "/v1/players/by-code/%s" % code, null, false)
+
+
 # --- HTTP --------------------------------------------------------------------
 
-# 返回 {"code": int, "body": Dictionary, "error": String}。
+# 所有账号请求的唯一出口。返回 {"code": int, "body": Dictionary, "error": String}。
 # code 为 0 表示请求根本没发出去或没收到响应（断网、后端没起、超时）。
-func _post(path: String, payload: Dictionary) -> Dictionary:
-	var url := AccountConfig.endpoint(path)
+#
+# ⚠️ **每次调用自建一个 HTTPRequest，用完就 queue_free，绝不共用一个节点。**
+#
+# 这里原本是全类共用一个 `_http`。那样只要有两个请求同时在飞，
+# `await _http.request_completed` 就会**收到串台的信号** —— A 请求拿到 B 的响应。
+# 它不报错、不崩溃，表现是「偶尔头像和名字对不上」这类查不出来的怪事。
+# 登录期间只有一个请求，所以一直没暴露；资料页会同时拉 /v1/me 与 /v1/me/bio，
+# 第一天就会踩到。
+#
+# authed=true 时带上内存里的 access token。**token 只出现在请求头里**，
+# 不进日志、不进错误信息 —— 错误串会被 IssueReport 收走并贴进聊天窗口。
+func _request(
+	method: int,
+	path: String,
+	payload: Variant = null,
+	authed: bool = false,
+) -> Dictionary:
 	var headers := PackedStringArray(["Content-Type: application/json"])
-	var err := _http.request(url, headers, HTTPClient.METHOD_POST, JSON.stringify(payload))
+	if authed:
+		if _access_token.is_empty():
+			# 本地就能判定的失败，不必往返一次。用 401 是为了让调用方的
+			# 处理路径与「服务端说令牌无效」完全一致。
+			return {"code": 401, "error": "尚未登录"}
+		headers.append("Authorization: Bearer %s" % _access_token)
+
+	var http := HTTPRequest.new()
+	http.timeout = AccountConfig.REQUEST_TIMEOUT_SEC
+	add_child(http)
+
+	var url := AccountConfig.endpoint(path)
+	var body_text := "" if payload == null else JSON.stringify(payload)
+	var err := http.request(url, headers, method, body_text)
 	if err != OK:
+		http.queue_free()
 		return {"code": 0, "error": "请求发不出去（%s）" % error_string(err)}
 
-	var result: Array = await _http.request_completed
+	var result: Array = await http.request_completed
+	http.queue_free()
 	var outcome := int(result[0])
 	var code := int(result[1])
 	var raw := (result[3] as PackedByteArray).get_string_from_utf8()
@@ -230,3 +331,9 @@ func _post(path: String, payload: Dictionary) -> Dictionary:
 		return {"code": code, "body": body}
 	# 后端的 detail 已经脱敏（backend 那边有测试钉着不含 token），可以直接显示。
 	return {"code": code, "error": str(body.get("detail", "HTTP %d" % code))}
+
+
+# 登录那两个调用的薄封装。保留它是为了让登录路径一个字都不用改 ——
+# 那段有 refresh/anonymous 的顺序纪律，不该在重构 HTTP 层时被顺手动到。
+func _post(path: String, payload: Dictionary) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, path, payload, false)
