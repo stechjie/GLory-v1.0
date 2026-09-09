@@ -15,6 +15,7 @@ signal team_reconnect_requested # 手动重连回上一场对局
 signal prep_requested           # 「备战」按钮：进入备战界面（暂时只有宠物系统）
 signal codex_requested          # 「图鉴」按钮：进入图鉴界面
 signal profile_requested        # 左上角名牌：进入玩家资料界面
+signal friends_requested        # 左侧「朋友」按钮：进入好友界面
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
@@ -165,7 +166,7 @@ func _build() -> void:
 
 	_add_texture(TEX_FRIENDS, Vector2(28, 300), Vector2(132, 132), "left")
 	_add_label(_menu_text("朋友", "Friends"), Vector2(47, 380), Vector2(94, 30), 21, "left")
-	_add_hit(Vector2(28, 300), Vector2(132, 132), _show_coming_soon, "left")
+	_add_hit(Vector2(28, 300), Vector2(132, 132), _emit_friends, "left")
 	_add_texture(TEX_CHAT, Vector2(28, 440), Vector2(132, 132), "left")
 	_add_label(_menu_text("聊天", "Chat"), Vector2(47, 520), Vector2(94, 30), 21, "left")
 	_add_hit(Vector2(28, 440), Vector2(132, 132), _show_coming_soon, "left")
@@ -476,6 +477,10 @@ func _show_coming_soon() -> void:
 
 func _emit_profile() -> void:
 	profile_requested.emit()
+
+
+func _emit_friends() -> void:
+	friends_requested.emit()
 
 # 名牌上的昵称与副行。**不自己拼显示名** —— 只从 AccountManager.display_name 出，
 # 那是全仓唯一的拼法。理由：player_name 不唯一（database/001 的设计），

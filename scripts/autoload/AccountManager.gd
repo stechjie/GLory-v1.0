@@ -300,6 +300,168 @@ func delete_account(confirm_friend_code: String) -> Dictionary:
 	return result
 
 
+# --- 交友（docs/交友系统设计.md）------------------------------------------------
+#
+# 全部走同一个 _request 出口。**列表接口的响应体是对象不是数组** ——
+# _request 只接受 Dictionary，后端因此把列表包了一层（有测试钉着）。
+
+# 心跳间隔。必须与后端 friends.HEARTBEAT_INTERVAL_SEC 一致：
+# 后端按 PRESENCE_TTL(150s) 判在线，发得比它慢就会显示成离线。
+const PRESENCE_HEARTBEAT_SEC := 60.0
+
+var _presence_timer: Timer
+# 房间号从哪来。**刻意用注入的 Callable，不直接引用 NetworkService** ——
+# 账号门面（HTTPS）与战斗门面（ENet）是两条链路，不该互相认识
+# （docs/账号系统RFC.md 第三节）。接线在 Main.gd 一处可见。
+var _room_provider: Callable = Callable()
+# 上一次心跳还没回来时不叠加：弱网下会堆出一串在途请求，
+# 而它们携带的房间号已经过期了。
+var _presence_busy := false
+
+
+func _ready() -> void:
+	_presence_timer = Timer.new()
+	_presence_timer.wait_time = PRESENCE_HEARTBEAT_SEC
+	_presence_timer.autostart = false
+	_presence_timer.timeout.connect(_on_presence_tick)
+	add_child(_presence_timer)
+
+
+# 好友码归一：去空白 + 转大写。**唯一实现** —— 库里一律存大写（database/004），
+# 玩家会照着截图手抄，不该因为按了大写锁或多打一个空格失败。
+static func normalize_friend_code(code: String) -> String:
+	return code.strip_edges().to_upper()
+
+
+# 本地就能判掉的失败，不必往返。返回空串表示合法，否则是给玩家看的原因。
+static func friend_code_problem(code: String) -> String:
+	var norm := normalize_friend_code(code)
+	if norm.length() != 8:
+		return "好友码是 8 位"
+	# 与 database/004 的 check 约束同一个字母表（排掉 0 O 1 I L）。
+	var re := RegEx.create_from_string("^[2-9A-HJKMNP-Z]{8}$")
+	if re.search(norm) == null:
+		return "好友码里有无效字符"
+	return ""
+
+
+func fetch_friends() -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/me/friends", null, true)
+
+
+# 收到的 + 发出的**一次拿全**。后端刻意没拆成两个接口 ——
+# 拆开会出「收到的到了、发出的没到」的中间态。
+func fetch_friend_requests() -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/me/friends/requests", null, true)
+
+
+# 返回体的 result 是 'pending' 或 'accepted'。
+# 'accepted' 是交叉请求：对方已经先加过我，这一下直接成为好友 ——
+# 界面要据此提示「已成为好友」而不是「已发送」。
+func send_friend_request(code: String) -> Dictionary:
+	var problem := friend_code_problem(code)
+	if not problem.is_empty():
+		return {"code": 400, "error": problem}
+	return await _request(HTTPClient.METHOD_POST, "/v1/me/friends/requests",
+		{"friend_code": normalize_friend_code(code)}, true)
+
+
+func accept_friend_request(code: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST,
+		"/v1/me/friends/requests/%s/accept" % normalize_friend_code(code), null, true)
+
+
+# 拒绝收到的 / 取消发出的 —— **两者都是删掉那一行**，没有「已拒绝」状态。
+func drop_friend_request(code: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_DELETE,
+		"/v1/me/friends/requests/%s" % normalize_friend_code(code), null, true)
+
+
+# 删好友。**双向消失** —— 界面必须提示「对方也会从他的列表里消失」。
+# 不通知对方（通知等于制造对抗，而且对方也做不了什么）。
+func remove_friend(code: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_DELETE,
+		"/v1/me/friends/%s" % normalize_friend_code(code), null, true)
+
+
+func fetch_blocks() -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/me/blocks", null, true)
+
+
+# 拉黑。服务端会在同一事务里删掉已有好友关系与待处理请求。
+# **与举报是两件事**：举报是给我们看的、异步的；拉黑即时生效。
+func block_player(code: String) -> Dictionary:
+	var problem := friend_code_problem(code)
+	if not problem.is_empty():
+		return {"code": 400, "error": problem}
+	return await _request(HTTPClient.METHOD_POST, "/v1/me/blocks",
+		{"friend_code": normalize_friend_code(code)}, true)
+
+
+# 解除拉黑**不恢复好友关系** —— 那在拉黑时已经删掉了，要重新走请求流程。
+func unblock_player(code: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_DELETE,
+		"/v1/me/blocks/%s" % normalize_friend_code(code), null, true)
+
+
+func fetch_presence_visibility() -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/me/presence/visibility", null, true)
+
+
+# 两个开关**整份覆盖**。取值只有 'friends' / 'nobody'（在线状态只对好友可见）。
+func update_presence_visibility(presence_visibility: String, room_visibility: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_PUT, "/v1/me/presence/visibility", {
+		"presence_visibility": presence_visibility,
+		"room_visibility": room_visibility,
+	}, true)
+
+
+# --- 在线状态心跳 -------------------------------------------------------------
+#
+# **事件驱动 + 慢心跳**，不是纯轮询：进出房间时立刻补一次（report_presence_now），
+# 平时 60 秒一次保活。状态变化那一刻才有价值，中间的重复上报没有。
+
+
+# 接线入口。room_provider 返回当前房间号，0 或负数表示不在房间。
+func configure_presence(room_provider: Callable) -> void:
+	_room_provider = room_provider
+
+
+func start_presence() -> void:
+	if _presence_timer != null and _presence_timer.is_stopped():
+		_presence_timer.start()
+	report_presence_now()
+
+
+func stop_presence() -> void:
+	if _presence_timer != null:
+		_presence_timer.stop()
+
+
+# 进出房间、回主菜单时调它。**不等定时器** —— 好友看到的房间号要跟得上，
+# 慢 60 秒的话「点进去发现人已经走了」会很常见。
+func report_presence_now() -> void:
+	await _send_presence()
+
+
+func _on_presence_tick() -> void:
+	await _send_presence()
+
+
+func _send_presence() -> void:
+	if _presence_busy or not is_logged_in():
+		return
+	var room := 0
+	if _room_provider.is_valid():
+		room = int(_room_provider.call())
+	_presence_busy = true
+	# room_id 传 null 表示「在线但不在房间」。0 / 负数都归到这一档 ——
+	# 后端有 check (room_id is null or room_id > 0)，传 0 会被拒。
+	var payload := {"room_id": room if room > 0 else null}
+	await _request(HTTPClient.METHOD_PUT, "/v1/me/presence", payload, true)
+	_presence_busy = false
+
+
 # --- HTTP --------------------------------------------------------------------
 
 # 所有账号请求的唯一出口。返回 {"code": int, "body": Dictionary, "error": String}。
@@ -365,7 +527,15 @@ func _request(
 		if json.parse(raw) == OK and typeof(json.data) == TYPE_DICTIONARY:
 			body = json.data
 
-	if code == 200:
+	# **2xx 都算成功，不只是 200。**
+	#
+	# 原本只认 200。交友接口里有一批 204（删好友、拒绝请求、拉黑…），
+	# 它们会掉进下面的错误分支 —— 表现是「操作其实成功了，界面却报失败」，
+	# 而重试一次又会得到 404（因为第一次真的删掉了）。
+	#
+	# ⚠️ body 仍然只接受 Dictionary。**返回顶层数组的接口会静默变成空**，
+	# 所以后端那边一律把列表包进对象（有测试钉着）。
+	if code >= 200 and code < 300:
 		return {"code": code, "body": body}
 
 	# 后端的 detail 已经脱敏（backend 那边有测试钉着不含 token），可以直接显示。

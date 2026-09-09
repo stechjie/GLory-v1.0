@@ -133,6 +133,7 @@ func _ready() -> void:
 	# 更不挂 _input —— 那个信号每个 request_id 只发一次，且不是输入驱动的，
 	# 所以连点和 mouse+touch 双路都不会让它多发。
 	UiFeedbackService.install()
+	_install_presence_reporting()
 	_start_vfx_warmup()
 	_route_startup()
 	StartupTrace.mark(StartupTrace.T2_MAIN_READY)
@@ -647,6 +648,7 @@ func _show_menu() -> void:
 	_menu.prep_requested.connect(_show_pet_screen)
 	_menu.codex_requested.connect(_show_codex_screen)
 	_menu.profile_requested.connect(_show_profile_screen)
+	_menu.friends_requested.connect(_show_friends_screen)
 	add_child(_menu)
 
 # 手动重连：读本地凭证连回上一场，弹重连遮罩，成功落回备战/结果，失败清凭证回菜单。
@@ -796,6 +798,98 @@ func _show_codex_screen() -> void:
 # ProfileScreen.gd，那会把它的整张依赖图拉进 Main 的加载路径 —— 正是
 # _load_screen 上面那段注释量过的 1.5 秒。看别人的资料走 configure_public(code)，
 # 但今天还没有任何入口能拿到别人的好友码（好友/聊天都还没做）。
+# 好友界面。入口是主菜单左侧那个「朋友」按钮（此前是「敬请期待」）。
+#
+# 用 configure() 而不是传枚举：传枚举就得 preload FriendsScreen.gd，
+# 那会把它的整张依赖图拉进 Main 的加载路径 —— 同 _show_profile_screen 的理由。
+func _show_friends_screen() -> void:
+	_clear()
+	var screen := _instantiate_screen("res://scenes/menu/FriendsScreen.tscn")
+	if screen == null:
+		_show_menu()
+		return
+	screen.back_requested.connect(_show_menu)
+	# 点好友头像看资料 —— 这补上了 _show_profile_screen 上面那条注释说的
+	# 「今天还没有任何入口能拿到别人的好友码」。
+	screen.profile_requested.connect(_show_public_profile)
+	# 一键加入好友所在的房间。走已有的加入流程，不新造路径。
+	screen.join_room_requested.connect(_join_room_by_id)
+	_page_back_route = _show_menu
+	add_child(screen)
+
+
+# 一键加入好友所在的房间。
+#
+# **先回主菜单再发起**，不是留在好友界面里连。理由是反馈：
+# _start_join_room_action 的「连接中」遮罩与失败提示都挂在 _menu 上
+# （show_connecting / show_connection_error），而切到好友界面时 _menu 已经被
+# _clear() 释放了。留在原地的话，加入失败会**一点反馈都没有** ——
+# 而房间满了 / 已开打 / 房间号已回收都是很常见的失败，
+# 正是 docs/交友系统设计.md 第六节第 5 条点名要避免的。
+#
+# 代价是画面会跳回主菜单一下。第一版接受这个代价：复用一条验过的路径，
+# 比为了不跳屏而复制一套连接中/错误 UI 划算。
+func _join_room_by_id(room_id: int) -> void:
+	if room_id <= 0:
+		return
+	_show_menu()
+	_start_join_room_action(room_id)
+
+
+# --- 在线状态上报（docs/交友系统设计.md 第二节）--------------------------------
+#
+# **接线在这里，不在 AccountManager 里。** 账号门面（HTTPS）与战斗门面（ENet）
+# 是两条链路，不该互相认识（docs/账号系统RFC.md 第三节），所以房间号是通过一个
+# Callable 注入进去的，而这一处是唯一同时知道两边的地方。
+#
+# 上报的只有「我在线」和「我在哪个房间」。房间号是**客户端自报**的 ——
+# 谎报只能让好友进错房间，而房间号本来就是任何人知道号就能进。
+# ⚠️ 这条边界只对「说谎没收益」的数据成立，别拿它承载战绩/奖励。
+var _presence_last_room := -1
+
+
+func _install_presence_reporting() -> void:
+	AccountManager.configure_presence(func() -> int: return NetworkService.team_room_id)
+	AccountManager.start_presence()
+	# 登录成功后补一次：_ready 跑在登录之前，第一次心跳会因为还没登录被跳过，
+	# 不补的话好友要等满一个心跳周期才看见我上线。
+	if not AccountManager.login_succeeded.is_connected(_on_presence_login):
+		AccountManager.login_succeeded.connect(_on_presence_login)
+	# 进出房间时立刻补一次。慢 60 秒的话「点进去发现人已经走了」会很常见。
+	if not NetworkService.team_lobby_changed.is_connected(_on_presence_room_changed):
+		NetworkService.team_lobby_changed.connect(_on_presence_room_changed)
+	if not NetworkService.session_changed.is_connected(_on_presence_room_changed):
+		NetworkService.session_changed.connect(_on_presence_room_changed)
+
+
+func _on_presence_login(_player_id: String, _player_name: String) -> void:
+	AccountManager.report_presence_now()
+
+
+# 只在**房间号真的变了**时上报。这两个信号在一局里会发很多次，
+# 无条件上报等于把「慢心跳」变成高频轮询。
+func _on_presence_room_changed() -> void:
+	var room := NetworkService.team_room_id
+	if room == _presence_last_room:
+		return
+	_presence_last_room = room
+	AccountManager.report_presence_now()
+
+
+# 看别人的资料页。好友列表点头像进来。
+func _show_public_profile(friend_code: String) -> void:
+	_clear()
+	var profile := _instantiate_screen("res://scenes/menu/ProfileScreen.tscn")
+	if profile == null:
+		_show_friends_screen()
+		return
+	profile.call("configure_public", friend_code)
+	# 返回回好友列表，不是主菜单 —— 玩家是从那里进来的。
+	profile.back_requested.connect(_show_friends_screen)
+	_page_back_route = _show_friends_screen
+	add_child(profile)
+
+
 func _show_profile_screen() -> void:
 	_clear()
 	var profile := _instantiate_screen("res://scenes/menu/ProfileScreen.tscn")

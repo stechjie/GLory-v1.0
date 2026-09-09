@@ -90,8 +90,12 @@ upload ssh code.txt
 /E3_prechange_backup_20260819/
 /E3_startup_warmup_20260819/
 
-# 服务器包由 make_server_zip.ps1 生成，是构建产物不是源码
-/glory_server_p17.zip
+# 服务器包由 make_server_zip.ps1 生成，是构建产物不是源码。
+# **用通配符，不要写死协议号** —— 包名跟着协议号走（glory_server_p<N>.zip），
+# 写死 p17 的话，顶号到 p19 之后新包就不在忽略范围内了，
+# 然后某次 `git add -A` 会把一个 4.8 MB 的构建产物提交进仓库。
+/glory_server_p*.zip
+/glory_server_upload*.zip
 
 # ── Glory Backend（FastAPI）──
 # 真实密钥。模板是 backend/.env.example（只有键名），那个进 git。

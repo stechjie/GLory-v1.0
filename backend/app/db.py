@@ -81,7 +81,16 @@ def is_connected() -> bool:
 
 # 账号层当前应当存在的表。新增迁移文件时同步更新这里 ——
 # 它是 /v1/debug/schema 的判据，漏了就等于那张表没人检查。
-EXPECTED_TABLES: tuple[str, ...] = ("players", "player_bio", "player_identities")
+EXPECTED_TABLES: tuple[str, ...] = (
+    "players",
+    "player_bio",
+    "player_identities",
+    # 005（交友系统）
+    "player_friendships",
+    "player_blocks",
+    "friend_request_log",
+    "player_presence",
+)
 
 
 async def inspect_schema() -> list[dict]:

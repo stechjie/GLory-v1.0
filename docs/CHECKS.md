@@ -34,6 +34,7 @@ Godot 不在 PATH 上，用 console 版才能把日志打到 stdout：
 | `tools/player_identity_check.tscn` | `player_id` 的签发与**不变性**（账号系统第 0 步，见 `docs/账号系统RFC.md`） |
 | `tools/account_check.tscn` | 账号凭证存储与门面接线。核心判据：**access token 永不落盘** |
 | `tools/dtls_check.tscn` | 战斗链路的传输加密与服务端身份认证（C14）。核心判据：**明文客户端必须连不上、拿错证书必须连不上** |
+| `tools/friends_check.tscn` | 交友系统客户端侧。核心判据：**心跳间隔必须与后端 TTL 对得上**（两个常量在两种语言里，分开改没有任何症状）；好友码校验与 004 的字母表一致；好友界面三个页签都能真的搭起来 |
 | `tools/carrot_economy_check.tscn` | 萝卜经济：等级表形状与单调性、采集公式、幂等、**客户端/服务端一致性**、升级石可达性、采集权责判据 |
 | `tools/carrot_online_check.tscn` | 联机 3v3 的萝卜链路：服务端准入判据、回执写回 GameState、room_state 带不带萝卜、客机面板按钮可用性 |
 | `tools/piece_uid_check.tscn` | 棋子 uid：铸造唯一、跨局不复用、存档往返与老档补发、快照携带与去重 —— 四星血统的前提 |
