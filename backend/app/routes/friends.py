@@ -6,6 +6,7 @@
     POST   /v1/me/friends/requests/{code}/accept 通过
     DELETE /v1/me/friends/requests/{code}        拒绝 / 取消（都是删记录）
     DELETE /v1/me/friends/{code}                 删好友（双向）
+    GET    /v1/me/recent-players                 最近一起玩过、还不是好友的人
     GET    /v1/me/blocks                         拉黑列表
     POST   /v1/me/blocks                         拉黑
     DELETE /v1/me/blocks/{code}                  解除拉黑
@@ -111,6 +112,18 @@ class BlocksResponse(BaseModel):
     blocks: list[BlockItem]
 
 
+class RecentPlayerItem(BaseModel):
+    friend_code: str
+    player_name: str
+    avatar: str
+    avatar_frame: str
+    last_together: str
+
+
+class RecentPlayersResponse(BaseModel):
+    players: list[RecentPlayerItem]
+
+
 class SendRequestResponse(BaseModel):
     # 'pending' 或 'accepted'。后者是交叉请求：对方已经先加过我，直接成为好友。
     # 客户端要据此决定是提示"已发送"还是"已成为好友"。
@@ -198,6 +211,31 @@ async def my_requests(
         ]
 
     return RequestsResponse(incoming=pack(data["incoming"]), outgoing=pack(data["outgoing"]))
+
+
+@router.get("/me/recent-players", response_model=RecentPlayersResponse)
+async def recent_players(
+    claims: Annotated[Claims, Depends(current_claims)],
+) -> RecentPlayersResponse:
+    """最近一起玩过、但还不是好友的人。
+
+    **不是「我打过的所有人」**：已经是好友的、有待处理请求的、互相拉黑的、
+    设了隐身的都排掉了 —— 这个列表的用途只有一个，就是「加他」。
+
+    🔴 关联要求**双向**：两边都留下访问记录且时间窗重叠才算。
+    这是防伪造的全部机制，见 friends._RECENT_PLAYERS 的说明。
+    """
+    rows = await friends.list_recent_players(await _me(claims))
+    return RecentPlayersResponse(players=[
+        RecentPlayerItem(
+            friend_code=r.friend_code,
+            player_name=r.player_name,
+            avatar=r.avatar,
+            avatar_frame=r.avatar_frame,
+            last_together=r.last_together.isoformat(),
+        )
+        for r in rows
+    ])
 
 
 # --- 请求 ---------------------------------------------------------------------

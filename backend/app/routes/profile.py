@@ -24,9 +24,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Path
 from pydantic import BaseModel, Field
 
-from app import avatar_catalog, db, players, profile, text_guard
+from app import avatar_catalog, db, friends, players, profile, text_guard
 from app.jwt_verify import Claims
-from app.routes.me import current_claims
+from app.routes.me import current_claims, optional_claims
 
 log = logging.getLogger("glory.profile")
 
@@ -86,6 +86,10 @@ class PublicProfileResponse(BaseModel):
     birth_day: int | None = None
     region: str | None = None
     signature: str | None = None
+    # 我和这个玩家是什么关系：none / pending_out / pending_in / friends / blocked / self。
+    # **只在请求带了有效令牌时才有这个键**；匿名调用者拿不到（也不该拿到）。
+    # 资料页靠它决定那个按钮显示「加好友」还是「已是好友」。
+    relation: str | None = None
 
 
 # --- 请求模型 -----------------------------------------------------------------
@@ -285,17 +289,34 @@ async def put_me_bio(
 )
 async def public_profile(
     code: Annotated[str, Path(min_length=8, max_length=8)],
+    claims: Annotated[Claims | None, Depends(optional_claims)] = None,
 ) -> PublicProfileResponse:
-    """公开视图。**不需要登录** —— 它只返回玩家自己选择公开的内容。
+    """公开视图。**仍然不需要登录** —— 它只返回玩家自己选择公开的内容。
 
     好友码是大小写不敏感的：玩家会照着截图手抄，不该因为按了大写锁失败。
     库里存的一律是大写。
+
+    **带了有效令牌时多返回一个 relation 字段**（交友系统，2026-09-10）。
+    匿名调用的行为与之前逐字节相同 —— 那条路径上一个键都没多。
+    用 optional_claims 而不是 current_claims：令牌过期不该让整个资料页打不开，
+    理由见那个依赖的说明。
     """
     _require_db()
-    row = await profile.get_by_friend_code(code.upper())
+    normalized = code.upper()
+    row = await profile.get_by_friend_code(normalized)
     if row is None:
         raise HTTPException(status_code=404, detail="没有这个好友码")
-    return to_public(row)
+    result = to_public(row)
+    if claims is not None:
+        viewer = await players.get_by_auth_uid(claims.auth_uid)
+        if viewer is not None:
+            try:
+                result.relation = await friends.relation_to(viewer.player_id, normalized)
+            except friends.FriendsRejected:
+                # 上面刚按这个码查到过人，这里查不到只可能是并发注销。
+                # 关系算不出来不该让整页失败 —— 少一个字段而已。
+                result.relation = None
+    return result
 
 
 class DeleteRequest(BaseModel):

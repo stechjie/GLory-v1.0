@@ -57,6 +57,34 @@ async def current_claims(
         raise HTTPException(status_code=401, detail=str(exc)) from None
 
 
+async def optional_claims(
+    authorization: Annotated[str | None, Header()] = None,
+) -> Claims | None:
+    """**能解出身份就解，解不出就当匿名，永不抛异常。**
+
+    只给「公开但带了身份会更好用」的接口用 —— 目前是
+    GET /v1/players/by-code/{code}（要显示「加好友 / 已是好友 / 待通过」）。
+
+    为什么令牌无效时不回 401：那是一个**公开视图**，身份只是增强。
+    带着过期令牌的玩家点进别人资料页时，401 会让整页打不开；
+    降级成匿名最多让按钮显示成「加好友」，他点下去会收到
+    「你们已经是好友了」——那句话本身就解释了发生什么。
+    两种坏结果里，后者明显轻。
+
+    ⚠️ **绝不能把这个依赖用在会改数据的接口上。** 那里必须是 current_claims，
+    无效令牌就该 401。这条只在读接口上成立。
+    """
+    if not authorization or not get_settings().supabase_url:
+        return None
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        return None
+    try:
+        return await get_verifier().verify(token.strip())
+    except TokenError:
+        return None
+
+
 class MeResponse(BaseModel):
     player_id: uuid.UUID
     player_name: str

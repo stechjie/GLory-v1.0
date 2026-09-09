@@ -275,7 +275,11 @@ func fetch_public_profile(friend_code: String) -> Dictionary:
 	if code.length() != 8:
 		# 本地就能判的失败，不必往返。用 404 让调用方的处理路径和「查无此人」一致。
 		return {"code": 404, "error": "好友码是 8 位"}
-	return await _request(HTTPClient.METHOD_GET, "/v1/players/by-code/%s" % code, null, false)
+	# **登录了就带上令牌**，好换回 relation 字段（「加好友 / 已是好友 / 待通过」）。
+	# 没登录就照旧匿名请求 —— 这个接口本来就不要求登录，
+	# 而 _request 在 authed=true 且没有令牌时会直接返回 401、根本不发请求。
+	return await _request(HTTPClient.METHOD_GET, "/v1/players/by-code/%s" % code,
+		null, is_logged_in())
 
 
 # 注销账号。**不可撤销。**
@@ -382,6 +386,12 @@ func drop_friend_request(code: String) -> Dictionary:
 func remove_friend(code: String) -> Dictionary:
 	return await _request(HTTPClient.METHOD_DELETE,
 		"/v1/me/friends/%s" % normalize_friend_code(code), null, true)
+
+
+# 最近一起玩过、但还不是好友的人。**不是战绩** ——
+# 它是靠「同一时间报了同一个房间号」关联出来的，只用于加人。
+func fetch_recent_players() -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/me/recent-players", null, true)
 
 
 func fetch_blocks() -> Dictionary:

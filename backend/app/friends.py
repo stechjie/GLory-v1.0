@@ -43,6 +43,11 @@ DAILY_REQUEST_QUOTA = 20
 #
 # 代价是「刚下线」最多显示成在线 2.5 分钟。没有更好的办法 ——
 # 客户端崩溃时不会发「我下线了」，任何「下线时发个包」的方案都挡不住进程被杀。
+# 「最近一起玩过」只看最近这么多天，最多返回这么多人。
+# 上限首先是**响应体上界**，其次是「最近」本来就不该翻很久以前的。
+RECENT_WINDOW_DAYS = 7
+RECENT_LIMIT = 20
+
 HEARTBEAT_INTERVAL_SEC = 60
 PRESENCE_TTL = dt.timedelta(seconds=150)
 
@@ -75,6 +80,15 @@ class PendingRequest:
     avatar: str
     avatar_frame: str
     created_at: dt.datetime
+
+
+@dataclass(frozen=True)
+class RecentPlayer:
+    friend_code: str
+    player_name: str
+    avatar: str
+    avatar_frame: str
+    last_together: dt.datetime
 
 
 @dataclass(frozen=True)
@@ -243,6 +257,68 @@ async def list_blocks(player_id: uuid.UUID) -> list[BlockedPlayer]:
             player_name=r["player_name"],
             avatar=r["avatar"],
             created_at=r["created_at"],
+        )
+        for r in rows
+    ]
+
+
+# 「最近一起玩过」。
+#
+# 🔴 **双向要求就写在这条 join 里，不是靠额外校验。**
+# 只有「两边都留下了访问记录、且时间窗重叠」才会被关联出来 ——
+# 要伪造就必须真的进那个房间，而那时你本来就是队友了。
+# 改成单边匹配的话，谎报房间号就能把自己塞进陌生人的列表 = 定向骚扰入口，
+# 而且不会报错。
+#
+# 排掉四类人：已经是好友或有待处理请求的、互相拉黑的、设了隐身的、我自己。
+# 隐身（presence_visibility = 'nobody'）也排掉是刻意的：这个功能是靠
+# presence 数据推出来的，玩家关掉 presence 曝光时不该还能从这里被翻出来。
+_RECENT_PLAYERS = """
+with my_visits as (
+    select room_id, entered_at, coalesce(left_at, now()) as left_at
+    from player_room_visits
+    where player_id = $1 and entered_at > now() - ($2 * interval '1 day')
+), together as (
+    select v.player_id, max(v.entered_at) as last_together
+    from player_room_visits v
+    join my_visits m
+      on v.room_id = m.room_id
+     and v.player_id <> $1
+     and tstzrange(v.entered_at, coalesce(v.left_at, now()), '[]')
+         && tstzrange(m.entered_at, m.left_at, '[]')
+    where v.entered_at > now() - ($2 * interval '1 day')
+    group by v.player_id
+)
+select p.friend_code, p.player_name, p.avatar, p.avatar_frame, t.last_together
+from together t
+join players p on p.player_id = t.player_id
+left join player_presence pr on pr.player_id = t.player_id
+where not exists (
+        select 1 from player_friendships f
+        where f.low_id = least($1, t.player_id)
+          and f.high_id = greatest($1, t.player_id)
+      )
+  and not exists (
+        select 1 from player_blocks b
+        where (b.blocker_id = $1 and b.blocked_id = t.player_id)
+           or (b.blocker_id = t.player_id and b.blocked_id = $1)
+      )
+  and coalesce(pr.presence_visibility, 'friends') <> 'nobody'
+order by t.last_together desc
+limit $3
+"""
+
+
+async def list_recent_players(player_id: uuid.UUID) -> list[RecentPlayer]:
+    async with db.pool().acquire() as conn:
+        rows = await conn.fetch(_RECENT_PLAYERS, player_id, RECENT_WINDOW_DAYS, RECENT_LIMIT)
+    return [
+        RecentPlayer(
+            friend_code=r["friend_code"],
+            player_name=r["player_name"],
+            avatar=r["avatar"],
+            avatar_frame=r["avatar_frame"],
+            last_together=r["last_together"],
         )
         for r in rows
     ]

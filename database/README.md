@@ -66,6 +66,7 @@ Supabase Dashboard → SQL Editor，按编号顺序逐个执行。
 | `003_player_identities.sql` | 登录方式 → `player_id` 的映射。**不存任何凭证** |
 | `004_profile_display.sql` | 玩家资料的展示字段。头像 / 头像框 / **好友码** / 改名冷却 / 签名 / 三个可见性开关 |
 | `005_friends.sql` | 交友系统。好友关系 / 拉黑 / 请求日志 / 在线状态 |
+| `006_room_visits.sql` | 房间访问记录。「最近一起玩过」的同房关联 |
 
 ## 一条硬规则
 

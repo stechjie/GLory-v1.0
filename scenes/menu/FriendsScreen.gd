@@ -44,6 +44,7 @@ var _friends: Array = []
 var _incoming: Array = []
 var _outgoing: Array = []
 var _blocks: Array = []
+var _recent: Array = []
 var _notice := ""
 var _notice_bad := false
 
@@ -183,6 +184,7 @@ func _reload(show_errors: bool) -> void:
 	var friends_result: Dictionary = await AccountManager.fetch_friends()
 	var requests_result: Dictionary = await AccountManager.fetch_friend_requests()
 	var blocks_result: Dictionary = await AccountManager.fetch_blocks()
+	var recent_result: Dictionary = await AccountManager.fetch_recent_players()
 	_busy = false
 	if not is_inside_tree():
 		return
@@ -202,6 +204,10 @@ func _reload(show_errors: bool) -> void:
 		_blocks = (blocks_result.get("body", {}) as Dictionary).get("blocks", [])
 	elif failed.is_empty():
 		failed = str(blocks_result.get("error", ""))
+	if int(recent_result.get("code", 0)) / 100 == 2:
+		_recent = (recent_result.get("body", {}) as Dictionary).get("players", [])
+	elif failed.is_empty():
+		failed = str(recent_result.get("error", ""))
 
 	if show_errors and not failed.is_empty():
 		_set_notice(failed, true)
@@ -406,6 +412,36 @@ func _render_add() -> void:
 			_set_notice(_text("已复制好友码", "Code copied"), false))
 		my_row.add_child(copy)
 		_list_box.add_child(my_row)
+
+	# 最近一起玩过 —— 加人最真实的路径之一：刚打完一局配合不错，顺手加。
+	# 列表里只有「还不是好友」的人（后端已经排掉好友/待处理/拉黑/隐身）。
+	_list_box.add_child(_section(_text("最近一起玩过", "Recently played with")))
+	if _recent.is_empty():
+		_list_box.add_child(_hint(_text(
+			"最近没有一起玩过的人。打几局 3v3 之后这里会有人。",
+			"Nobody yet. Play a few 3v3 matches and they will show up here.")))
+	else:
+		for entry in _recent:
+			var recent: Dictionary = entry
+			var rcode := str(recent.get("friend_code", ""))
+			var rrow := _card()
+			var rname := Label.new()
+			rname.text = AccountManager.display_name(str(recent.get("player_name", "")), rcode)
+			rname.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			rrow.add_child(rname)
+			var rview := Button.new()
+			rview.text = _text("看资料", "Profile")
+			rview.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+			rview.pressed.connect(func() -> void: profile_requested.emit(rcode))
+			rrow.add_child(rview)
+			var radd := Button.new()
+			radd.text = _text("加好友", "Add")
+			radd.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+			radd.pressed.connect(func() -> void:
+				await _run(func(): return await AccountManager.send_friend_request(rcode),
+					_text("已发送好友请求", "Friend request sent")))
+			rrow.add_child(radd)
+			_list_box.add_child(rrow)
 
 	_list_box.add_child(_section(_text("已拉黑", "Blocked")))
 	if _blocks.is_empty():

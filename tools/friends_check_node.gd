@@ -94,7 +94,7 @@ func _case_facade_methods() -> void:
 	for method in [
 		"fetch_friends", "fetch_friend_requests", "send_friend_request",
 		"accept_friend_request", "drop_friend_request", "remove_friend",
-		"fetch_blocks", "block_player", "unblock_player",
+		"fetch_blocks", "block_player", "unblock_player", "fetch_recent_players",
 		"fetch_presence_visibility", "update_presence_visibility",
 		"configure_presence", "start_presence", "stop_presence", "report_presence_now",
 	]:

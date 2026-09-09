@@ -90,6 +90,8 @@ EXPECTED_TABLES: tuple[str, ...] = (
     "player_blocks",
     "friend_request_log",
     "player_presence",
+    # 006（最近一起玩过）
+    "player_room_visits",
 )
 
 

@@ -51,15 +51,57 @@ async def heartbeat(player_id: uuid.UUID, room_id: int | None) -> None:
     if room_id is not None and not (0 < room_id <= MAX_ROOM_ID):
         raise PresenceRejected("bad_room_id", "房间号不合法")
     async with db.pool().acquire() as conn:
-        await conn.execute(
+        # 一条语句同时做两件事：写心跳，并把**改之前**的房间号带回来。
+        #
+        # CTE 里的 prev 读的是同一个快照，所以拿到的是更新前的值 ——
+        # 用 `returning` 拿不到（那返回的是更新后的行）。
+        # 分成「先 select 再 upsert」两次往返也行，但心跳是这套系统里
+        # 唯一的高频写，能一次做完就别做两次。
+        previous = await conn.fetchval(
             """
-            insert into player_presence (player_id, last_seen_at, room_id)
-            values ($1, now(), $2)
-            on conflict (player_id) do update
-              set last_seen_at = now(), room_id = excluded.room_id
+            with prev as (
+                select room_id from player_presence where player_id = $1
+            ), upsert as (
+                insert into player_presence (player_id, last_seen_at, room_id)
+                values ($1, now(), $2)
+                on conflict (player_id) do update
+                  set last_seen_at = now(), room_id = excluded.room_id
+            )
+            select room_id from prev
             """,
             player_id,
             room_id,
+        )
+        if previous != room_id:
+            await _record_room_transition(conn, player_id, previous, room_id)
+
+
+async def _record_room_transition(
+    conn, player_id: uuid.UUID, previous: int | None, current: int | None
+) -> None:
+    """房间号变了才写访问记录。**不是每次心跳都写。**
+
+    心跳每 60 秒一次，逐条记录等于每个在线玩家每分钟一行；
+    只记进出的话，一局对战只产生一行。
+
+    ⚠️ 闭合上一段用 `left_at is null` 而不是取最新一行：客户端崩溃、
+    进程被杀、重连换房 —— 这些都会留下未闭合的记录，
+    而查询侧一律用 coalesce(left_at, now())，所以留着不致命，
+    但同一个玩家不该有两条同时开着的。这里一次把该玩家所有未闭合的都闭上。
+    """
+    if previous is not None:
+        await conn.execute(
+            """
+            update player_room_visits set left_at = now()
+            where player_id = $1 and left_at is null
+            """,
+            player_id,
+        )
+    if current is not None:
+        await conn.execute(
+            "insert into player_room_visits (player_id, room_id) values ($1, $2)",
+            player_id,
+            current,
         )
 
 

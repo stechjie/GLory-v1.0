@@ -30,6 +30,7 @@ from app.routes.friends import _STATUS_BY_CODE, _norm
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 SQL_005 = (REPO / "database" / "005_friends.sql").read_text(encoding="utf-8")
+SQL_006 = (REPO / "database" / "006_room_visits.sql").read_text(encoding="utf-8")
 
 NEW_TABLES = (
     "player_friendships",
@@ -222,6 +223,69 @@ def test_migration_only_adds_tables() -> None:
             )
 
 
+# --- 最近一起玩过（批次 3）---------------------------------------------------
+
+
+def test_room_visits_table_is_registered_and_locked_down() -> None:
+    from app import db
+
+    assert "player_room_visits" in db.EXPECTED_TABLES
+    assert "alter table player_room_visits enable row level security" in SQL_006
+    assert "create policy" not in SQL_006
+
+
+def test_room_visits_migration_only_adds_a_table() -> None:
+    """006 不许改动 001–005 建的东西。编号只增不改。"""
+    for line in SQL_006.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("alter table"):
+            assert "enable row level security" in stripped, stripped
+
+
+def test_recent_players_requires_both_sides() -> None:
+    """🔴 「最近同玩」的关联必须是**双向**的。
+
+    这条是整个批次 3 唯一的防伪造机制：只有两边都留下访问记录、
+    且时间窗重叠才算。改成单边匹配的话，谎报房间号就能把自己塞进
+    陌生人的列表 = 定向骚扰入口 —— 而且不会报错。
+
+    所以判据钉在 SQL 上：必须 join 到 my_visits、必须比时间区间、
+    必须排掉自己。
+    """
+    sql = friends._RECENT_PLAYERS
+    assert "join my_visits m" in sql, "关联必须 join 到我自己的访问记录（双向要求）"
+    assert "tstzrange" in sql and "&&" in sql, "必须比较时间区间是否重叠"
+    assert "v.player_id <> $1" in sql, "必须排掉自己"
+
+
+@pytest.mark.parametrize(
+    "must_exclude, why",
+    [
+        ("player_friendships", "已经是好友或有待处理请求的人不该再出现在加人列表里"),
+        ("player_blocks", "互相拉黑的人绝不能出现"),
+        ("presence_visibility", "设了隐身的人不该还能从这里被翻出来"),
+    ],
+)
+def test_recent_players_excludes(must_exclude: str, why: str) -> None:
+    assert must_exclude in friends._RECENT_PLAYERS, why
+
+
+def test_recent_players_has_bounds() -> None:
+    """响应体必须有上界，时间窗必须有限 —— 否则「最近」会翻到开服第一天。"""
+    assert "limit $3" in friends._RECENT_PLAYERS
+    assert friends.RECENT_LIMIT <= 50
+    assert 1 <= friends.RECENT_WINDOW_DAYS <= 30
+
+
+def test_left_at_null_is_treated_as_still_inside() -> None:
+    """未闭合的访问记录（客户端崩溃/被杀）必须当成「还在里面」。
+
+    查询里少一处 coalesce，那些记录就会被整个漏掉 ——
+    表现是「明明一起打了一局，列表里没有他」，而且不报错。
+    """
+    assert friends._RECENT_PLAYERS.count("coalesce(") >= 3
+
+
 # --- 路由接线 -----------------------------------------------------------------
 
 
@@ -231,6 +295,7 @@ EXPECTED_ROUTES = {
     "/v1/me/friends/requests/{code}": {"delete"},
     "/v1/me/friends/requests/{code}/accept": {"post"},
     "/v1/me/friends/{code}": {"delete"},
+    "/v1/me/recent-players": {"get"},
     "/v1/me/blocks": {"get", "post"},
     "/v1/me/blocks/{code}": {"delete"},
     "/v1/me/presence": {"put"},
@@ -287,6 +352,107 @@ def test_status_map_has_no_dead_entries() -> None:
     # bad_friend_code 由路由层的长度校验产生，不经过 FriendsRejected。
     dead = set(_STATUS_BY_CODE) - raised - {"bad_friend_code"}
     assert not dead, "这些条目已经没人用了：%s" % sorted(dead)
+
+
+# --- 公开视图上的关系字段 -----------------------------------------------------
+
+
+def test_optional_claims_returns_none_without_header() -> None:
+    """没有 Authorization 头 = 匿名，不是错误。
+
+    这个接口是**公开视图**，身份只是增强。
+    """
+    import asyncio
+
+    from app.routes.me import optional_claims
+
+    assert asyncio.run(optional_claims(None)) is None
+    assert asyncio.run(optional_claims("")) is None
+
+
+@pytest.mark.parametrize(
+    "header", ["Basic abc", "Bearer", "Bearer ", "garbage", "bearer"]
+)
+def test_optional_claims_returns_none_for_malformed_header(header: str) -> None:
+    """畸形的头一律当匿名。**不抛异常、不 401。**"""
+    import asyncio
+
+    from app.routes.me import optional_claims
+
+    assert asyncio.run(optional_claims(header)) is None
+
+
+def test_optional_claims_never_raises() -> None:
+    """静态断言：optional_claims 里不许有 raise。
+
+    它的全部价值就是「永不抛异常」—— 一旦有人往里加一个 raise，
+    带着过期令牌的玩家点开别人资料页会看到整页失败，
+    而那看起来完全不像是这个函数造成的。
+
+    用 AST 而不是读文档：注释会过期，这条不会。
+    """
+    import ast
+
+    tree = ast.parse((REPO / "backend" / "app" / "routes" / "me.py").read_text(
+        encoding="utf-8"))
+    target = None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "optional_claims":
+            target = node
+    assert target is not None, "找不到 optional_claims —— 测试的锚点过期了"
+    raises = [n for n in ast.walk(target) if isinstance(n, ast.Raise)]
+    assert not raises, "optional_claims 里出现了 raise，它必须永不抛异常"
+
+
+def test_anonymous_public_view_has_no_relation_key() -> None:
+    """匿名调用者拿不到 relation 键 —— 不是「有键但为 null」。
+
+    与 docs/玩家资料系统设计.md 第六节第 1 条同一条纪律：
+    裁剪在服务端做，隐藏的字段连键都不出现。
+    """
+    from app.routes.profile import PublicProfileResponse
+
+    body = PublicProfileResponse(
+        friend_code="7K2M9Q4B", player_name="Leno", avatar="preset:avatar_001",
+        avatar_frame="preset:frame_default", days_since_created=1,
+    ).model_dump(exclude_none=True)
+    assert "relation" not in body
+
+
+def test_relation_values_match_between_backend_and_response_model() -> None:
+    """friends.relation_to 返回的取值必须与响应模型注释里列的那一组一致。
+
+    两边漂了不报错：客户端按注释写 if/else，遇到没列出的值就走到 else，
+    于是按钮显示成「加好友」——而对方其实已经是好友了。
+    """
+    import ast
+
+    source = (REPO / "backend" / "app" / "friends.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    target = None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "relation_to":
+            target = node
+    assert target is not None
+    # 只走「返回值分支」，不进条件表达式。
+    #
+    # 两个坑都踩过：直接看 Return.value 会漏掉三元表达式返回的
+    # pending_out / pending_in；而无脑 ast.walk(Return) 又会把条件里的
+    # row["requested_by"] 那个字典键也收进来。所以要显式递归 IfExp 的
+    # body / orelse，跳过 test。
+    def value_strings(node: ast.AST) -> set[str]:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return {node.value}
+        if isinstance(node, ast.IfExp):
+            return value_strings(node.body) | value_strings(node.orelse)
+        return set()
+
+    returned: set[str] = set()
+    for node in ast.walk(target):
+        if isinstance(node, ast.Return) and node.value is not None:
+            returned |= value_strings(node.value)
+    documented = {"none", "pending_out", "pending_in", "friends", "blocked", "self"}
+    assert returned == documented, "relation_to 的取值与文档不一致：%s" % sorted(returned)
 
 
 # --- 好友码归一 ---------------------------------------------------------------
