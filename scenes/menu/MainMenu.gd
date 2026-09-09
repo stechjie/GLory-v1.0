@@ -17,6 +17,7 @@ signal codex_requested          # 「图鉴」按钮：进入图鉴界面
 signal profile_requested        # 左上角名牌：进入玩家资料界面
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
+const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
 const REF_SIZE := Vector2(1672.0, 941.0)
 
 # V3 P0-07：房间面板改由 ModalStack 收口。
@@ -60,6 +61,7 @@ const DEBUG_BANDS := [
 ]
 
 # 左上角名牌上的两行字。要在账号资料到达后就地刷新，所以留引用。
+var _profile_portrait: TextureRect
 var _profile_name_label: Label
 var _profile_sub_label: Label
 var _menu_music_player: AudioStreamPlayer
@@ -141,6 +143,15 @@ func _build() -> void:
 	# TODO 以后往头像框里放玩家立绘：要一张圆心透明的头像框，立绘那行插在头像框之前垫底。
 	_add_texture(TEX_PROFILE_PANEL, Vector2(18, 46), Vector2(550, 110), "left")
 	_add_texture(TEX_PROFILE_AVATAR, Vector2(18, 12), Vector2(180, 175), "left")
+	# 头像画在框**之上**，不是垫在底下。
+	#
+	# 顶部原来那条 TODO 写的是「以后往头像框里放玩家立绘：要一张圆心透明的头像框，
+	# 立绘那行插在头像框之前垫底」—— 但 profile_avatar.png 的圆心**不是透明的洞**，
+	# 实测是不透明深棕（RGB 59,44,25 / alpha 255）。垫在底下会被整个盖住。
+	#
+	# 所以改成盖在上面 + 裁成圆形。等美术出了圆心透明的版本，可以把这行挪到
+	# 上一行之前并去掉裁剪，那样更省一次绘制。
+	_profile_portrait = _add_round_portrait(Vector2(55.5, 44.5), Vector2(104, 104), "left")
 	# 这两行**曾经是写死的假数据**（"GloryMaster" / "等级 45"）。等级系统不存在，
 	# 所以第二行现在放注册天数 —— 有真实来源，且比精确注册日期少泄漏一点。
 	# 等级/段位做出来之后再换回去，那时第二行才有真东西可放。
@@ -476,9 +487,14 @@ func _refresh_profile_plate() -> void:
 	if profile.is_empty():
 		# 还没登录 / 还没拉到资料。**不放假名字** —— 玩家看到一个陌生昵称
 		# 比看到一条横线更糟，而且那正是这次要消灭的东西。
+		# 头像同理：宁可空着露出框里的深棕底，也不要先画一个默认头像再跳变。
 		_profile_name_label.text = _menu_text("玩家", "Player")
 		_profile_sub_label.text = "—"
+		if _profile_portrait != null and is_instance_valid(_profile_portrait):
+			_profile_portrait.texture = null
 		return
+	if _profile_portrait != null and is_instance_valid(_profile_portrait):
+		_profile_portrait.texture = AvatarCatalog.texture_for(str(profile.get("avatar", "")))
 	_profile_name_label.text = AccountManager.display_name(
 		str(profile.get("player_name", "")), str(profile.get("friend_code", "")))
 	var days := int(profile.get("days_since_created", 1))
@@ -538,6 +554,35 @@ func _add_texture(texture: Texture2D, pos: Vector2, size: Vector2, edge: String 
 	add_child(rect)
 	_track(rect, pos, size, 0, edge)
 	return rect
+
+# 圆形头像。用一个画满圆角的 Panel 当遮罩，clip_children 只画被它盖住的部分 ——
+# 比写 shader 轻，也不用等美术出新素材。
+#
+# 位置与直径是从 profile_avatar.png 量出来的：图 850x825，内圆直径 532px、
+# 圆心 (423, 399)，换算到参考画布是直径约 113、圆心 (107.6, 96.6)。
+# 这里取 104 略小一圈，免得压到金色圆环。**换了那张框图就要重新量。**
+func _add_round_portrait(pos: Vector2, size: Vector2, edge: String = "") -> TextureRect:
+	var mask := Panel.new()
+	mask.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# 只画孩子、不画自己，用自己的形状当裁剪蒙版。
+	mask.clip_children = CanvasItem.CLIP_CHILDREN_ONLY
+	var circle := StyleBoxFlat.new()
+	circle.bg_color = Color.WHITE
+	# 圆角给到边长，引擎会自动收敛成正圆。
+	circle.set_corner_radius_all(int(maxf(size.x, size.y)))
+	mask.add_theme_stylebox_override("panel", circle)
+	add_child(mask)
+
+	var portrait := TextureRect.new()
+	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	# COVERED 而不是 KEEP_ASPECT：立绘不是正方形，留边会在圆里露出缺口。
+	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	portrait.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mask.add_child(portrait)
+
+	_track(mask, pos, size, 0, edge)
+	return portrait
 
 func _add_rect(color: Color, pos: Vector2, size: Vector2) -> ColorRect:
 	var rect := ColorRect.new()

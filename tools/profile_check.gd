@@ -34,6 +34,7 @@ func _ready() -> void:
 	_case_days_in_month_matches_migration()
 	_case_screens_instantiate()
 	_case_region_codes_are_iso()
+	_case_nameplate_shows_avatar()
 	_h.finish(get_tree())
 
 
@@ -189,4 +190,44 @@ func _case_screens_instantiate() -> void:
 	var menu := menu_scene.instantiate() as Control
 	_h.expect(menu.has_signal("profile_requested"), "menu_profile_signal",
 		"MainMenu 缺少 profile_requested 信号")
+	menu.free()
+
+
+func _case_nameplate_shows_avatar() -> void:
+	"""主菜单名牌要真的把头像画出来。
+
+	这条挡的是一个不会报错的退化：profile_avatar.png 的圆心是**不透明**的，
+	所以头像必须画在框之上并裁成圆形。哪天有人把它挪回框之前（照那条旧 TODO
+	的写法），画面上就是一个空框 —— 没有任何错误，只是头像没了。
+	"""
+	var mgr := get_node_or_null("/root/AccountManager")
+	var menu_scene := load("res://scenes/menu/MainMenu.tscn") as PackedScene
+	if mgr == null or menu_scene == null:
+		return
+	var menu := menu_scene.instantiate() as Control
+	# 名牌是在 _ready 里建的，要先进树。
+	add_child(menu)
+
+	var saved: Dictionary = mgr.get("profile")
+	mgr.set("profile", {
+		"friend_code": "7K2M9Q4B", "player_name": "Leno",
+		"avatar": "preset:avatar_005", "days_since_created": 12,
+	})
+	menu.call("_refresh_profile_plate")
+	var portrait := menu.get("_profile_portrait") as TextureRect
+	_h.expect(portrait != null, "nameplate_portrait_missing",
+		"MainMenu 名牌上没有头像节点")
+	if portrait != null:
+		_h.expect(portrait.texture != null, "nameplate_portrait_blank",
+			"名牌头像是空的 —— 资料里有 avatar 却没画出来")
+
+	# 没登录时**不该**先画一个默认头像再跳变。
+	mgr.set("profile", {})
+	menu.call("_refresh_profile_plate")
+	if portrait != null:
+		_h.expect(portrait.texture == null, "nameplate_portrait_placeholder",
+			"还没拉到资料时名牌不该先画一个头像")
+
+	mgr.set("profile", saved)
+	remove_child(menu)
 	menu.free()
