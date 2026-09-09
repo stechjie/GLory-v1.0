@@ -89,6 +89,14 @@ func _claim_pending_treasure_round() -> void:
 		GameState.claimed_treasure_rounds.append(completed_round)
 
 func _on_start_battle() -> void:
+	# Cancelling an existing (including in-flight) ready intent is always allowed.
+	if NetworkService.team_active and NetworkService.local_ready_intent():
+		NetworkService.team_set_ready(false)
+		_refresh_all()
+		return
+	if not _has_any_board_unit():
+		show_message("At least 1 unit must be on the board before you can ready up" if LocaleManager.get_locale().begins_with("en") else "至少有1个棋子在棋盘上才能准备")
+		return
 	# 教学：当前步还不能开战时，给提示并直接返回——不要触发 _emit_battle_request_once，
 	# 否则一次性发射锁 _battle_launch_emitted 会被烧掉，导致之后真到可开战步时按钮无反应。
 	if GameState.tutorial_mode and not TutorialMode.can_start_battle():
@@ -99,9 +107,7 @@ func _on_start_battle() -> void:
 	if NetworkService.team_active:
 		# 3v3: the button is "准备" — toggle ready and stay in prep. The round
 		# launches for everyone (team_round_start) once all players are ready.
-		var my := NetworkService.team_local_slot
-		var is_ready := my >= 0 and my < NetworkService.team_ready.size() and bool(NetworkService.team_ready[my])
-		NetworkService.team_set_ready(not is_ready)
+		NetworkService.team_set_ready(true)
 		_refresh_all()
 		return
 	_emit_battle_request_once()
