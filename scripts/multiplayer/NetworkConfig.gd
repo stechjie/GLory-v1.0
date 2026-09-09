@@ -6,6 +6,19 @@ const SERVER_IP := "34.142.168.170"
 const SERVER_PORT := 8080
 const CONNECTION_TIMEOUT := 10.0
 const USE_DEDICATED_SERVER := true
+
+# --- 传输加密（C14）---------------------------------------------------------
+# 战斗链路走 DTLS。实现在 scripts/multiplayer/NetTLS.gd，那里写了为什么审计文档
+# 原来记的"插不进去"是错的，以及为什么用 client_unsafe。
+#
+# **这个常量是客户端和服务器共同的唯一真相，两端必须一起改、一起部署。**
+# 不一致的症状不是干净报错，而是客户端**卡在 CONNECTING 直到超时** ——
+# DTLS 在协议握手之下，对不上时连 protocol_mismatch 都发不出来。
+# 这与 v17 顶协议号那次是同一类代价，且已被接受为"有意的，不是回归"。
+#
+# 关掉它 = 逐字节回到明文时代（连回放分块阈值都会退回原值）。
+# 开着但服务器找不到私钥 = **拒绝启动**，不会静默退回明文。
+const USE_DTLS := true
 # v6: 新增备战期佣兵同步 RPC（_rpc_team_prep_mercs / _rpc_team_prep_mercs_submit）。
 # v7: 宝物归属改服务端 intent，新增 5 个 RPC（_rpc_treasure_choice / _rpc_treasure_refresh /
 #     _rpc_treasure_offer / _rpc_treasure_granted / _rpc_treasure_denied）；

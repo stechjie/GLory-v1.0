@@ -151,7 +151,7 @@ func _build() -> void:
 	#
 	# 所以改成盖在上面 + 裁成圆形。等美术出了圆心透明的版本，可以把这行挪到
 	# 上一行之前并去掉裁剪，那样更省一次绘制。
-	_profile_portrait = _add_round_portrait(Vector2(55.5, 44.5), Vector2(104, 104), "left")
+	_profile_portrait = _add_round_portrait(Vector2(46, 36), Vector2(123, 123), "left")
 	# 这两行**曾经是写死的假数据**（"GloryMaster" / "等级 45"）。等级系统不存在，
 	# 所以第二行现在放注册天数 —— 有真实来源，且比精确注册日期少泄漏一点。
 	# 等级/段位做出来之后再换回去，那时第二行才有真东西可放。

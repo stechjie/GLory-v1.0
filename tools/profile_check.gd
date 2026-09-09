@@ -35,6 +35,7 @@ func _ready() -> void:
 	_case_screens_instantiate()
 	_case_region_codes_are_iso()
 	_case_nameplate_shows_avatar()
+	_case_account_reset_keeps_device_state()
 	_h.finish(get_tree())
 
 
@@ -231,3 +232,80 @@ func _case_nameplate_shows_avatar() -> void:
 	mgr.set("profile", saved)
 	remove_child(menu)
 	menu.free()
+
+
+# 注销之后本地要清成什么样。
+#
+# ⚠️ 这一条会**真的写** user://profile.json（reset_account_state 内部会落盘），
+# 所以先备份再还原 —— 同 tools/account_check.gd 对凭证文件的做法。
+# 额外在磁盘上留一份 profile.check_backup.json：万一进程中途挂了，
+# 开发者的宠物和图鉴还能捞回来，而不是「跑了个检查，存档没了」。
+const PROFILE_PATH := "user://profile.json"
+const CHECK_BACKUP := "user://profile.check_backup.json"
+
+func _case_account_reset_keeps_device_state() -> void:
+	var backup := FileAccess.get_file_as_string(PROFILE_PATH)
+	if not backup.is_empty():
+		var f := FileAccess.open(CHECK_BACKUP, FileAccess.WRITE)
+		if f != null:
+			f.store_string(backup)
+			f.close()
+
+	var pp := get_node_or_null("/root/PlayerProfile")
+	if not _h.expect(pp != null, "profile_autoload_missing", "PlayerProfile autoload 没挂上"):
+		return
+	_h.expect(pp.has_method("reset_account_state"), "reset_method_missing",
+		"PlayerProfile 缺少 reset_account_state —— 注销之后本地清不掉")
+	if not pp.has_method("reset_account_state"):
+		return
+
+	# 造一个「有进度、且设备态被玩家改过」的状态
+	var old_id: String = pp.get("player_id")
+	pp.set("owned_pets", ["pet_cat"] as Array[String])
+	pp.set("active_pet", "pet_cat")
+	pp.set("codex_seen", ["unit_human_king"] as Array[String])
+	pp.set("needs_starter_pick", false)
+	pp.set("screen_shake_enabled", false)
+	pp.set("haptics_enabled", false)
+	pp.set("locale", "en")
+	pp.set("language_selected", true)
+
+	pp.call("reset_account_state")
+
+	# 账号态：清干净
+	_h.expect((pp.get("owned_pets") as Array).is_empty(), "reset_kept_pets",
+		"注销后还留着宠物")
+	_h.expect(str(pp.get("active_pet")).is_empty(), "reset_kept_active_pet",
+		"注销后还留着出战宠物")
+	_h.expect((pp.get("codex_seen") as Array).is_empty(), "reset_kept_codex",
+		"注销后还留着图鉴进度")
+	_h.expect(bool(pp.get("needs_starter_pick")), "reset_skips_starter",
+		"注销后应当重新走一遍三选一")
+	# player_id 必须重签，否则下次匿名注册会把同一个 id 报上去，身份原地复活。
+	_h.expect(str(pp.get("player_id")) != old_id, "reset_kept_player_id",
+		"注销后没有重签 player_id —— 同一个身份会原地复活，等于没删")
+
+	# 设备态：一个都不许动
+	_h.expect(not bool(pp.get("screen_shake_enabled")), "reset_clobbered_device_state",
+		"注销把屏震开关重置了 —— 设备态不属于账号")
+	_h.expect(not bool(pp.get("haptics_enabled")), "reset_clobbered_device_state",
+		"注销把触感开关重置了")
+	_h.expect(str(pp.get("locale")) == "en", "reset_clobbered_locale",
+		"注销把语言重置了 —— 重问一次语言不保护任何数据，只是摩擦")
+	_h.expect(bool(pp.get("language_selected")), "reset_clobbered_locale",
+		"注销后又要重选语言")
+
+	# 门面完整性
+	var mgr := get_node_or_null("/root/AccountManager")
+	if mgr != null:
+		_h.expect(mgr.has_method("delete_account"), "facade_method_missing",
+			"AccountManager 缺少 delete_account")
+
+	# 还原
+	if not backup.is_empty():
+		var out := FileAccess.open(PROFILE_PATH, FileAccess.WRITE)
+		if out != null:
+			out.store_string(backup)
+			out.close()
+		pp.call("load_profile")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(CHECK_BACKUP))

@@ -101,6 +101,30 @@ func _log(message: String) -> void:
 const CHUNK_THRESHOLD_BYTES := 192 * 1024
 # 每块净荷。留在 ENet 可靠包舒适区内，且 4 MiB 的传输上限对应 88 块，远低于 MAX_CHUNKS。
 const CHUNK_PAYLOAD_BYTES := 48 * 1024
+
+# --- 加密链路下的另一套阈值（C14）--------------------------------------------
+#
+# DTLS 垫在 ENet 底下，ENet 一帧内把一个大包的分片全轰出去时，**接收端的 UDP
+# 接收缓冲一次装不下就丢**，然后 ENet 重传 —— 在完全没有丢包的本机回环上都会
+# 塌。实测（Godot 4.7.1，tools/dtls_check.tscn 里固化成用例）：
+#
+#     明文 62 KB 单包                    20 ms
+#     DTLS 62 KB 单包                  2686 ms   ← 134 倍，刷 Buffer full 告警
+#     DTLS 48 KB × 2，一帧一块         2969 ms   ← 分块但仍太大，照样塌
+#     DTLS 32 KB × 2，一帧一块           21 ms
+#     DTLS 16 KB × 4，一帧一块           35 ms
+#
+# 结论有两条，第二条是反直觉的那条：
+#   ① 真实 replay 压缩后 61.8 KB，**远低于 192 KiB 阈值**，所以生产里从来不分块
+#      —— 也就是说加密之后线上跑的正是最坏的那一行。
+#   ② **分块本身不是解药，节流才是。** 8 KB 一块但一帧全发 = 4896 ms；
+#      同样 8 KB 一块、一帧一块 = 62 ms。决定成败的是"两次 poll 之间灌进去多少
+#      字节"，不是"每块多大"。发送侧的节流在 NetworkService._tick_replay_send。
+#
+# 安全余量：已知 32 KB/帧 可以、48 KB/帧 不行，取 16 KB —— 服务器限帧 30、
+# 客户端 60，真实网络还有抖动，不在悬崖边上取值。
+const CHUNK_THRESHOLD_ENCRYPTED_BYTES := 16 * 1024
+const CHUNK_PAYLOAD_ENCRYPTED_BYTES := 16 * 1024
 # 单次传输的压缩后字节上限。unpack() 那道 16 MiB 是解压**后**的上限，
 # 挡不住「声称有一万块」这种在重组阶段就该被拒的输入，所以这里要单独设一道。
 const MAX_TRANSFER_BYTES := 4 * 1024 * 1024
@@ -109,7 +133,10 @@ const MAX_REASSEMBLY_BYTES := 8 * 1024 * 1024
 # 同时重组中的传输条数上限。
 const MAX_INFLIGHT_TRANSFERS := 4
 # 单次传输允许的最大块数。先用它判掉离谱的 total，再决定要不要分配任何东西。
-const MAX_CHUNKS := 256
+# 512 而不是 256：加密模式下每块 16 KiB，4 MiB 上限正好对应 256 块 —— 卡在
+# 等号上没有余量，再调小一次块大小就会把合法传输判成非法。真正的内存闸是
+# MAX_TRANSFER_BYTES / MAX_REASSEMBLY_BYTES，这一条只挡"声称有一万块"。
+const MAX_CHUNKS := 512
 # 多久没有新块就回收。重组缓冲不带过期 = 一个发一半就跑的对端能把内存钉死。
 const REASSEMBLY_TTL_SEC := 30.0
 
@@ -121,6 +148,18 @@ const CHUNK_KIND_RIVAL := "rival"
 # key（"battle_id|kind"）-> {total:int, chunks:{idx:PackedByteArray}, bytes:int, age:float}
 var _inflight: Dictionary = {}
 
+# 链路是不是加密的（C14）。由 NetworkService 在建 peer 时告知 —— 本类是
+# RefCounted，够不着 NetworkConfig 以外的任何运行时状态，也不该自己去猜。
+var _encrypted := false
+
+
+func set_transport_encrypted(on: bool) -> void:
+	_encrypted = on
+
+
+func chunk_payload_bytes() -> int:
+	return CHUNK_PAYLOAD_ENCRYPTED_BYTES if _encrypted else CHUNK_PAYLOAD_BYTES
+
 
 # 低于阈值返回 false —— 调用方据此走原来的单包 _rpc_team_replay。
 # force 只给门禁和真机测试用，理由见本节开头。
@@ -129,6 +168,8 @@ func should_chunk(packed: PackedByteArray, force: bool = false) -> bool:
 		return false          # 空包/只有头：没有可分的东西
 	if force:
 		return true
+	if _encrypted:
+		return packed.size() > CHUNK_THRESHOLD_ENCRYPTED_BYTES
 	return packed.size() > CHUNK_THRESHOLD_BYTES
 
 
@@ -144,14 +185,15 @@ func split(packed: PackedByteArray, battle_id: String, kind: String) -> Array:
 	if packed.size() > MAX_TRANSFER_BYTES:
 		_log("replay split rejected: bytes=%d cap=%d" % [packed.size(), MAX_TRANSFER_BYTES])
 		return []
-	var total := int(ceil(float(packed.size()) / float(CHUNK_PAYLOAD_BYTES)))
+	var payload_bytes := chunk_payload_bytes()
+	var total := int(ceil(float(packed.size()) / float(payload_bytes)))
 	if total <= 0 or total > MAX_CHUNKS:
 		_log("replay split rejected: total=%d cap=%d" % [total, MAX_CHUNKS])
 		return []
 	var out: Array = []
 	for i in total:
-		var from := i * CHUNK_PAYLOAD_BYTES
-		var to: int = min(from + CHUNK_PAYLOAD_BYTES, packed.size())
+		var from := i * payload_bytes
+		var to: int = min(from + payload_bytes, packed.size())
 		out.append({
 			"battle_id": battle_id,
 			"kind": kind,

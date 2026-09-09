@@ -18,6 +18,10 @@ const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const Catalog := preload("res://scripts/account/AvatarCatalog.gd")
 const AvatarPicker := preload("res://scenes/menu/AvatarPickerPanel.gd")
+# 引用常量而不是写字符串字面量。第一版这里写的是 "confirm"，而真值是 "confirmed"
+# —— 判断永远为假，玩家第一次设生日点了确认什么都不会发生，且不报任何错。
+# 仓库里 TutorialMode 就是引用常量的（SkipDialog.RESULT_CONFIRMED）。
+const ConfirmDialog := preload("res://ui/components/GloryConfirmDialog.gd")
 const MENU_BG_TEX := preload("res://assets/ui/main_menu_live/background.png")
 
 signal back_requested
@@ -72,6 +76,8 @@ var _birth_private: CheckBox
 var _region_pick: OptionButton
 var _signature_edit: LineEdit
 var _save_btn: Button
+var _delete_code_edit: LineEdit
+var _delete_btn: Button
 
 
 # 加进树之前调。不调就是「看自己」。
@@ -164,6 +170,7 @@ func _build() -> void:
 				_text("收藏", "Collection"),
 				[_text("图鉴进度", "Codex"), _text("拥有宠物", "Pets"),
 					_text("拥有皮肤", "Skins")]),
+			_danger_zone(),
 		]))
 	else:
 		columns.add_child(_column(400, [_identity_card()]))
@@ -427,6 +434,104 @@ func _placeholder_block(title: String, rows: Array) -> Control:
 	return panel
 
 
+# 注销账号。**这一版唯一能真正删除个人数据的途径。**
+#
+# 为什么必须有：生日是「只能设一次」的（产品决定），签名可以清空、性别地区可以
+# 设成不显示，但**藏 ≠ 删** —— 没有这个按钮的话，玩家填了生日之后就再也无法
+# 删除那条个人数据。可见性开关解决不了它。
+#
+# 为什么用「手打好友码」而不是密码：匿名账号没有密码，没有任何东西可以在删号前
+# 再问一次「真的是你吗」。让玩家把屏幕上那串码打一遍，是这种情况下能做到的最好的
+# 确认。同 GitHub 删仓库要你打一遍仓库名。服务端也会再校验一次 ——
+# UI 上的确认挡不住一个写错的客户端，而这个操作没有撤销。
+func _danger_zone() -> Control:
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override(
+		"panel", Tokens.panel_box(Tokens.SURFACE, Tokens.DANGER, Tokens.GAP_M))
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", Tokens.GAP_S)
+	panel.add_child(column)
+
+	var title := Label.new()
+	title.text = _text("注销账号", "Delete account")
+	title.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
+	title.add_theme_color_override("font_color", Tokens.DANGER_HOVER)
+	column.add_child(title)
+
+	var warn := Label.new()
+	warn.text = _text(
+		"昵称、头像、资料、宠物、图鉴全部删除，不可恢复，也没有冷静期。",
+		"Name, avatar, profile, pets and codex are deleted for good.")
+	warn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	warn.add_theme_font_size_override("font_size", Tokens.FONT_BODY - 4)
+	warn.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	column.add_child(warn)
+
+	_delete_code_edit = LineEdit.new()
+	_delete_code_edit.max_length = 8
+	_delete_code_edit.placeholder_text = _text("输入好友码确认", "Type your friend code")
+	_delete_code_edit.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+	_delete_code_edit.text_changed.connect(func(_t: String) -> void: _sync_delete_button())
+	column.add_child(_delete_code_edit)
+
+	_delete_btn = Button.new()
+	_delete_btn.text = _text("注销账号", "Delete account")
+	_delete_btn.disabled = true
+	_delete_btn.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+	var box := Tokens.button_box(Tokens.DANGER, Tokens.DANGER_HOVER)
+	_delete_btn.add_theme_stylebox_override("normal", box)
+	_delete_btn.add_theme_stylebox_override("hover",
+		Tokens.button_box(Tokens.DANGER_HOVER, Tokens.DANGER_HOVER))
+	_delete_btn.add_theme_stylebox_override("pressed",
+		Tokens.button_box(Tokens.DANGER_PRESSED, Tokens.DANGER_HOVER))
+	_delete_btn.pressed.connect(_on_delete_pressed)
+	column.add_child(_delete_btn)
+	return panel
+
+
+# 打对了才让按。大小写不敏感 —— 玩家是照着屏幕抄的。
+func _sync_delete_button() -> void:
+	if _delete_btn == null or not is_instance_valid(_delete_btn):
+		return
+	var typed := _delete_code_edit.text.strip_edges().to_upper()
+	_delete_btn.disabled = typed.is_empty() or typed != _field("friend_code")
+
+
+func _on_delete_pressed() -> void:
+	if _busy:
+		return
+	var code := _delete_code_edit.text.strip_edges().to_upper()
+	DialogService.confirm({
+		"title": _text("确认注销", "Confirm deletion"),
+		"body": _text(
+			"这会永久删除你的账号和全部资料。没有撤销，也没有冷静期。",
+			"This permanently deletes your account and all profile data. There is no undo."),
+		# DANGER：主按钮暗红，且默认焦点留在取消 —— 见 GloryConfirmDialog.Intent。
+		"intent": ConfirmDialog.Intent.DANGER,
+		"confirm_text": _text("永久删除", "Delete forever"),
+		"owner": self,
+		"on_result": func(result: String) -> void:
+			if result == ConfirmDialog.RESULT_CONFIRMED:
+				_run_delete(code),
+	})
+
+
+func _run_delete(code: String) -> void:
+	_begin_submit()
+	var result: Dictionary = await AccountManager.delete_account(code)
+	_busy = false
+	if not is_inside_tree():
+		return
+	if int(result.get("code", 0)) != 200:
+		_set_status(_failure_text(result))
+		return
+	# 删完不留在这一页 —— 它显示的每一个字段都已经不存在了。
+	# 回主菜单会撞上 needs_starter_pick，玩家从「三选一」重新开始，
+	# 这正是注销该有的样子。
+	_set_status(_text("账号已删除", "Account deleted"))
+	back_requested.emit()
+
+
 func _bind_account_slot() -> Control:
 	# 位置先留。功能（Google / Apple 登录）是下一批 —— 但这一页恰恰是第一个
 	# 让玩家产生「我不想丢」的东西，所以入口该从第一天就在这儿。
@@ -518,6 +623,7 @@ func _refresh_self() -> void:
 		_region_pick.select(found if found >= 0 else REGIONS.size())
 
 	_signature_edit.text = _field("signature")
+	_sync_delete_button()
 
 
 func _refresh_public() -> void:
@@ -579,7 +685,7 @@ func _on_save_bio_pressed() -> void:
 			) % [int(payload["birth_month"]), int(payload["birth_day"])],
 			"confirm_text": _text("确认", "Confirm"),
 			"on_result": func(result: String) -> void:
-				if result == "confirm":
+				if result == ConfirmDialog.RESULT_CONFIRMED:
 					_save_bio(payload),
 		})
 		return

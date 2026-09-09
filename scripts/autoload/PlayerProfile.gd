@@ -176,8 +176,13 @@ func _reset_defaults() -> void:
 	LocaleManager.set_locale(locale)
 
 
-# **唯一允许改变已有 player_id 的入口，而且只有一个合法理由：**
-# 账号服务器回了 409，说这个 id 已经属于别人（见 AccountManager.login）。
+# **唯一允许改变已有 player_id 的入口。合法理由只有两个：**
+#
+#   1. 账号服务器回了 409，说这个 id 已经属于别人（见 AccountManager.login）
+#   2. 玩家注销了账号（见下面的 reset_account_state）
+#
+# 第 2 条是 2026-09-09 加的。不重签的话，注销之后下一次匿名注册会把**同一个
+# player_id** 报上去，服务端看它空着就收下 —— 同一个身份原地复活，等于没删。
 #
 # 除此之外任何地方调用它都是 bug —— 它会让玩家变成另一个人，且不报错。
 #
@@ -193,6 +198,28 @@ func reissue_player_id() -> void:
 	player_id = SaveSchema.new_player_id()
 	save_profile()
 	push_warning("[PROFILE] player_id 已重新签发：%s -> %s" % [previous, player_id])
+
+
+# 注销账号之后清理本地。**只清账号态，保留设备态。**
+#
+# 判据用 docs/账号系统RFC.md 第五节那张表现成的：
+# 「换一台性能不同的手机，这个值应不应该跟过去？」——
+# 不该跟过去的就是设备态，它不属于账号，不该被注销带走。
+# 玩家在低端机上关掉的屏震、调过的画质、选好的语言，都不该因为删了资料而重来。
+#
+# ⚠️ **onboarding 与 locale 刻意保留**，尽管严格按上面那条判据它们算账号态。
+# 理由：注销的目的是删除个人数据，不是重置游戏教学。让玩家重看一遍教学、
+# 重选一次语言，既不保护任何数据，又是纯摩擦。needs_starter_pick 置回 true
+# 已经让玩家重新走一遍「三选一」，那才是真正的「从头开始」。
+func reset_account_state() -> void:
+	owned_pets.clear()
+	active_pet = ""
+	codex_seen.clear()
+	needs_starter_pick = true
+	# 放在最后：它内部会 save_profile()，上面几个字段要先改完。
+	reissue_player_id()
+	pets_changed.emit()
+	codex_changed.emit()
 
 
 # 覆盖坏档之前留一份原始字节，方便事后人工捞。只留最近一次：更早的那份已经

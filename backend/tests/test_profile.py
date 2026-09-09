@@ -330,3 +330,61 @@ def test_backend_only_reads_files_deploy_actually_copies() -> None:
             assert name in copied, (
                 "backend/app/%s 要读 data/%s，但 deploy 的脚本没复制它" % (module, name)
             )
+
+
+# --- 注销账号 -----------------------------------------------------------------
+
+
+def test_every_table_referencing_players_cascades() -> None:
+    """引用 players 的表**必须**带 on delete cascade。
+
+    delete_player() 只发一句 `delete from players`，它成立的**全部前提**就是这条。
+    哪天有人加一张新表引用 players 却忘了 cascade，注销会变成：
+    玩家看到「账号已删除」，而他的数据还在那张新表里 —— 不报错、不回滚，
+    只是没删干净。这正是最不该靠人记住的那类约束。
+    """
+    seen = 0
+    for path in sorted((REPO / "database").glob("*.sql")):
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            stripped = line.strip().lower()
+            # 注释里提到 references 不算
+            if stripped.startswith("--") or "references players" not in stripped:
+                continue
+            seen += 1
+            # 逐行判断而不是用正则跨行匹配：这个仓库里外键约束都写在一行上，
+            # 真有人拆成多行的话这条会**大声地误报**，而不是悄悄漏掉一张表 ——
+            # 对一条守着「删干净」的断言来说，宁可误报。
+            assert "on delete cascade" in stripped, (
+                "%s:%d 引用了 players(player_id) 却没有 on delete cascade，"
+                "注销账号会漏掉这张表的数据" % (path.name, number)
+            )
+    assert seen >= 2, "没扫到引用 players 的外键 —— 这条断言可能已经失效"
+
+
+def test_delete_route_is_registered() -> None:
+    """注销接口必须真的挂上去了。
+
+    路由文件写好了但忘了 include_router，表现是客户端拿到 404 而不是删除 ——
+    而 404 在客户端那边和「玩家不存在」是同一个分支。
+    """
+    from app.main import app
+
+    # 走 openapi() 而不是遍历 app.routes：这个 FastAPI 版本把 include_router
+    # 进来的东西包成 _IncludedRouter，上面没有 .path，遍历出来是空的 ——
+    # 第一版就是这么写的，结果断言在「路由明明注册了」的情况下失败。
+    # schema 里的 paths 是客户端真正能看到的那份清单，才是权威。
+    paths = app.openapi()["paths"]
+    for expected in ["/v1/me/profile", "/v1/me/bio", "/v1/me/delete"]:
+        assert expected in paths, "%s 没有注册" % expected
+    assert "post" in paths["/v1/me/delete"], "/v1/me/delete 不接受 POST"
+
+
+def test_delete_requires_friend_code_field() -> None:
+    """确认载荷不能是可选的。
+
+    如果 friend_code 有默认值，一个空 body 就能把号删了 ——
+    而这个接口没有撤销。
+    """
+    from app.routes.profile import DeleteRequest
+
+    assert DeleteRequest.model_fields["friend_code"].is_required()

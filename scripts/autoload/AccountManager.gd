@@ -278,6 +278,28 @@ func fetch_public_profile(friend_code: String) -> Dictionary:
 	return await _request(HTTPClient.METHOD_GET, "/v1/players/by-code/%s" % code, null, false)
 
 
+# 注销账号。**不可撤销。**
+#
+# 成功之后本地必须做三件事，缺一件这个「删除」就是假的：
+#   1. 清掉 refresh token（logout）—— 否则下次启动还拿着一张指向不存在玩家的凭证
+#   2. 清掉资料缓存（logout）—— 否则主菜单名牌还画着刚删掉的那个人
+#   3. **重签 player_id**（PlayerProfile.reset_account_state）——
+#      不重签的话下次匿名注册会把同一个 id 报上去，服务端看它空着就收下，
+#      同一个身份原地复活
+#
+# 顺序不能反：先删服务器、成功了再动本地。反过来的话，服务器删失败时
+# 本地已经把凭证扔了，玩家会丢失一个**还存在**的账号。
+func delete_account(confirm_friend_code: String) -> Dictionary:
+	var result := await _request(
+		HTTPClient.METHOD_POST, "/v1/me/delete",
+		{"friend_code": confirm_friend_code}, true)
+	if int(result.get("code", 0)) != 200:
+		return result
+	logout()
+	PlayerProfile.reset_account_state()
+	return result
+
+
 # --- HTTP --------------------------------------------------------------------
 
 # 所有账号请求的唯一出口。返回 {"code": int, "body": Dictionary, "error": String}。

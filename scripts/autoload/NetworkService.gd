@@ -277,6 +277,9 @@ var _reconnect_service: RefCounted = ReconnectService.new()
 const DedicatedServerService := preload("res://scripts/multiplayer/DedicatedServerService.gd")
 var _server_service: RefCounted = DedicatedServerService.new()
 const NetworkTransport := preload("res://scripts/multiplayer/NetworkTransport.gd")
+
+# 传输层 DTLS（C14）。三个建 peer 的入口都必须过它，见各处调用点的注释。
+const NetTLS := preload("res://scripts/multiplayer/NetTLS.gd")
 var _transport: RefCounted = NetworkTransport.new()
 const MatchStateService := preload("res://scripts/multiplayer/MatchStateService.gd")
 var _match_state: RefCounted = MatchStateService.new()
@@ -285,6 +288,9 @@ func _ready() -> void:
 	# 依赖注入：抽出的服务都不认识 NetworkService，也不碰 multiplayer。
 	_rate_limiter.configure(_now, _net_log, _disconnect_peer)
 	_replay_transfer.configure(_net_log)
+	# 加密链路要用另一套分块阈值与块大小（C14）。理由与实测数字见
+	# ReplayTransferService 的「加密链路下的另一套阈值」一节。
+	_replay_transfer.set_transport_encrypted(NetworkConfig.USE_DTLS)
 	# 房间服务只注入**行为**（时钟/日志/分片号）；房间域常量在服务里、门面重新导出。
 	# TEAM_SLOTS / ROOM_LOBBY / ROOM_RESULT / RESERVE_GRACE_SEC 留在门面
 	# （内部 43/24/11/5 处引用、外部还有引用），按配置传进去。
@@ -444,6 +450,8 @@ func _process(delta: float) -> void:
 		# 排在最前：本帧要算的战斗先算完，后面的心跳/清理才是基于最新状态的。
 		# 每帧最多一个房间（见 _drain_finalize_queue 的说明）。
 		_drain_finalize_queue()
+		# 每帧排空一点回放队列（C14 节流）。必须在 1 秒累加器**之外**。
+		_tick_replay_send()
 		ServerFlags.poll_reload(proc_now)
 		_cleanup_elapsed += delta
 		if _cleanup_elapsed >= CLEANUP_INTERVAL_SEC:
@@ -577,8 +585,13 @@ func start_dedicated_server(port: int = DEFAULT_PORT) -> bool:
 	# 小机型(GCP 突发积分)积分耗尽后被限速到卡死、连 SSH 都进不去、只能 reset。
 	# 服务器只跑房间/心跳/清理，30 FPS 绰绰有余，限帧后 CPU 占用降到几乎为 0。
 	Engine.max_fps = 30
-	_net_log("server starting protocol=%d shard=%d port=%d max_fps=%d room_id_range=[%d,%d]" % [
+	# dtls= 与 key= 一起打出来，是部署之后**唯一能从外面确认加密真的开了**的地方
+	# （C14）。journalctl -u glory-server 里看这一行；key 路径同时能证明
+	# --tls-key= 有没有被吃掉。私钥内容当然不打。
+	_net_log("server starting protocol=%d shard=%d port=%d max_fps=%d dtls=%s key=%s room_id_range=[%d,%d]" % [
 		NetworkConfig.NETWORK_PROTOCOL_VERSION, _shard_index, port, Engine.max_fps,
+		"on" if NetworkConfig.USE_DTLS else "off",
+		NetTLS.server_key_path() if NetworkConfig.USE_DTLS else "-",
 		_shard_index * NetworkConfig.SHARD_ID_STRIDE + 100000,
 		_shard_index * NetworkConfig.SHARD_ID_STRIDE + 999999])
 	return team_host(port, true)
@@ -602,6 +615,17 @@ func team_host(port: int = DEFAULT_PORT, dedicated: bool = false) -> bool:
 		last_error = tr("net_err_host_failed") % str(err)
 		session_changed.emit()
 		return false
+	# DTLS（C14）。**必须在 multiplayer_peer 赋值之前** —— 赋值之后 ENet 就开始
+	# service()，再配就晚了，而且不会报错、不会告警，只是没加密。
+	# 拿不到密钥就**拒绝启动**，绝不静默退回明文（见 NetTLS 顶部 fail closed 一节）。
+	if NetworkConfig.USE_DTLS:
+		var tls_err := NetTLS.apply_server(p)
+		if not tls_err.is_empty():
+			state = SessionState.FAILED
+			last_error = tr("net_err_tls_setup") % tls_err
+			_net_log("DTLS server setup failed: %s" % tls_err)
+			session_changed.emit()
+			return false
 	_peer = p
 	multiplayer.multiplayer_peer = _peer
 	state = SessionState.READY
@@ -637,6 +661,15 @@ func team_join(address: String = DEFAULT_HOST, port: int = DEFAULT_PORT) -> bool
 		last_error = tr("net_err_join_failed") % str(err)
 		session_changed.emit()
 		return false
+	# DTLS（C14）。顺序同 team_host：赋值之前配，配不上就干净失败。
+	if NetworkConfig.USE_DTLS:
+		var tls_err := NetTLS.apply_client(p)
+		if not tls_err.is_empty():
+			state = SessionState.FAILED
+			last_error = tr("net_err_tls_setup") % tls_err
+			_net_log("DTLS client setup failed: %s" % tls_err)
+			session_changed.emit()
+			return false
 	_peer = p
 	multiplayer.multiplayer_peer = _peer
 	state = SessionState.JOINING
@@ -1774,6 +1807,17 @@ var _replay_in: Dictionary = {}
 # 只给门禁与真机测试用：把生产里走不到的分块路径强制走一遍。
 var _force_replay_chunking := false
 
+# 待发的回放块，按 FIFO 排。每项 {peer_id, battle_id, kind, idx, total, kinds, data}。
+#
+# **为什么不直接 rpc_id 发完**：见 _tick_replay_send。一句话版本 ——
+# 加密链路上一帧灌进去太多字节，接收端 UDP 缓冲会溢出丢包，然后 ENet 重传，
+# 62 KB 的回放在零丢包的本机回环上要跑 2.7 秒。
+var _replay_send_queue: Array = []
+
+# 每帧允许送出的回放字节数。实测已知 32 KB/帧 可以、48 KB/帧 会塌，取 16 KB
+# 留一倍余量。明文链路不受影响（那边阈值高，压根不会走到分块路径）。
+const REPLAY_SEND_BUDGET_BYTES := 16 * 1024
+
 
 func set_force_replay_chunking(on: bool) -> void:
 	_force_replay_chunking = on
@@ -1833,9 +1877,16 @@ func _send_replay_chunks(peer_id: int, missing: PackedInt32Array, only_kind: Str
 			var idx := int((env as Dictionary).get("idx", 0))
 			if missing.size() > 0 and not missing.has(idx):
 				continue
-			_rpc_team_replay_chunk.rpc_id(peer_id, battle_id, str(kind), idx,
-				int((env as Dictionary).get("total", 0)), kinds,
-				(env as Dictionary).get("data", PackedByteArray()))
+			# 入队，不直接发 —— 节流在 _tick_replay_send 里按字节预算放行。
+			_replay_send_queue.append({
+				"peer_id": peer_id,
+				"battle_id": battle_id,
+				"kind": str(kind),
+				"idx": idx,
+				"total": int((env as Dictionary).get("total", 0)),
+				"kinds": kinds,
+				"data": (env as Dictionary).get("data", PackedByteArray()),
+			})
 
 
 # 服务端下发的分块。authority：只有服务器能发，客户端这边照收。
@@ -1949,10 +2000,51 @@ func _tick_replay_retry(_delta: float) -> void:
 		_send_replay_chunks(int(peer_id), PackedInt32Array(), "")
 
 
+# 按字节预算把排队的回放块发出去。**每帧都要跑**，不能挂在那个 1 秒的
+# 累加器下面 —— 节流的全部意义就是把字节摊到多帧上。
+#
+# 这是 C14 能不能上线的前提，不是优化。DTLS 垫在 ENet 底下之后，ENet 一帧内
+# 轰出去的分片会把接收端 UDP 缓冲挤爆，丢了再重传。实测（Godot 4.7.1，零丢包
+# 本机回环）62 KB 单包从 20 ms 变成 2686 ms；同样的字节数摊成一帧 16 KB 之后
+# 是 35 ms。决定成败的是「两次 poll 之间灌进去多少字节」。
+#
+# 至少放行一块：块大小若超过预算，一块也不发就是永远发不出去。
+func _tick_replay_send() -> void:
+	if _replay_send_queue.is_empty():
+		return
+	var budget := REPLAY_SEND_BUDGET_BYTES
+	while not _replay_send_queue.is_empty():
+		var item: Dictionary = _replay_send_queue[0]
+		var peer_id := int(item.get("peer_id", 0))
+		# 这一场已经确认收齐 / 对方掉线 / 已放弃 —— 队里的残块直接丢掉，
+		# 不然会给一个不存在的传输继续发包。
+		if not _replay_out.has(peer_id):
+			_replay_send_queue.pop_front()
+			continue
+		var data: PackedByteArray = item.get("data", PackedByteArray())
+		if data.size() > budget and budget < REPLAY_SEND_BUDGET_BYTES:
+			return          # 本帧预算用得差不多了，剩下的下一帧再说
+		_replay_send_queue.pop_front()
+		_rpc_team_replay_chunk.rpc_id(peer_id, str(item.get("battle_id", "")),
+			str(item.get("kind", "")), int(item.get("idx", 0)),
+			int(item.get("total", 0)), int(item.get("kinds", 0)), data)
+		budget -= data.size()
+		if budget <= 0:
+			return
+
+
 # 断线时把这个 peer 的下发状态丢掉。不清的话每个掉线的人都留一份几十 KB 的
 # payloads 在 _replay_out 里，而他重连回来走的是 _resume_seat 补发那条路。
 func _replay_forget_peer(peer_id: int) -> void:
 	_replay_out.erase(peer_id)
+	# 队里可能还压着这个人的块。不清就是给一个已经没了的连接继续排队。
+	if _replay_send_queue.is_empty():
+		return
+	var kept: Array = []
+	for item in _replay_send_queue:
+		if int((item as Dictionary).get("peer_id", 0)) != peer_id:
+			kept.append(item)
+	_replay_send_queue = kept
 
 # B9：replay 走独立可靠通道 CH_BULK。它内部仍然有序、仍然可靠，
 # 但**压不到控制流**——房间状态、结算、交易、握手都在 CH_CONTROL 上各走各的。
@@ -2896,6 +2988,15 @@ func _begin_reconnect_attempt() -> void:
 	if p.create_client(reconnect_address, remote_port) != OK:
 		_enter_reconnect_backoff()
 		return
+	# DTLS（C14）。**第三个入口，最容易漏的一个** —— 漏了它的症状是"正常进房能连，
+	# 断线重连永远连不上"，而重连路径本来就难复现。配不上按普通重连失败退避，
+	# 不要在这里放弃凭证：这是传输层问题，不是凭证失效（见 NetError 的分级）。
+	if NetworkConfig.USE_DTLS:
+		var tls_err := NetTLS.apply_client(p)
+		if not tls_err.is_empty():
+			_net_log("DTLS client setup failed on reconnect: %s" % tls_err)
+			_enter_reconnect_backoff()
+			return
 	_peer = p
 	multiplayer.multiplayer_peer = _peer
 	_reconnect_phase = ReconnectPhase.CONNECTING

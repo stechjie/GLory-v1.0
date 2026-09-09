@@ -145,7 +145,11 @@ func _on_peer_connected(peer_id: int) -> void:
 		# 分块真的开始了吗？没建下发条目就说明走的是单包路径，
 		# 那本轮测的不是分块，必须当失败报而不是默默通过。
 		_chunk_started = NetworkService._replay_out.has(peer_id)
-		var nchunks := int(ceil(float(packed.size()) / float(ReplayTransferService.CHUNK_PAYLOAD_BYTES)))
+		# 块大小要问**服务实例**，不能读常量：加密链路下它是 16 KiB 而不是 48 KiB
+		# （C14，见 ReplayTransferService）。读常量的话这里算出来的块数是错的，
+		# 下面那条 `nchunks < 3` 的守卫就会按错的数字放行或误杀。
+		var nchunks := int(ceil(float(packed.size())
+			/ float(NetworkService._replay_transfer.chunk_payload_bytes())))
 		print("[CH] server chunk_started=%s inflight=%d chunks=%d" % [
 			_chunk_started, NetworkService._replay_out.size(), nchunks])
 		if _chunk_started and nchunks < 3:

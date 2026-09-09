@@ -99,3 +99,11 @@ backend/.env
 # 虚拟环境是本机产物，用 requirements.txt 重建
 backend/.venv/
 .pytest_cache/
+
+# ── 战斗服务器的 DTLS 私钥（C14）──
+# 默认在 user://（AppData），本来就不在仓库树里；这几条是防御性的 ——
+# 有人用 --tls-key=./xxx.pem 把它指到仓库里时挡一道。
+# 配对的**证书**是公开的，在 scripts/multiplayer/NetTLSCert.gd 里，那个要进 git。
+*_key.pem
+glory_server_key*.pem
+/certs/

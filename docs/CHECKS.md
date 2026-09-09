@@ -33,6 +33,7 @@ Godot 不在 PATH 上，用 console 版才能把日志打到 stdout：
 | `tools/client_log_check.tscn` | 客户端日志服务的行为用例（D1 PR3，注入临时文件路径） |
 | `tools/player_identity_check.tscn` | `player_id` 的签发与**不变性**（账号系统第 0 步，见 `docs/账号系统RFC.md`） |
 | `tools/account_check.tscn` | 账号凭证存储与门面接线。核心判据：**access token 永不落盘** |
+| `tools/dtls_check.tscn` | 战斗链路的传输加密与服务端身份认证（C14）。核心判据：**明文客户端必须连不上、拿错证书必须连不上** |
 | `tools/carrot_economy_check.tscn` | 萝卜经济：等级表形状与单调性、采集公式、幂等、**客户端/服务端一致性**、升级石可达性、采集权责判据 |
 | `tools/carrot_online_check.tscn` | 联机 3v3 的萝卜链路：服务端准入判据、回执写回 GameState、room_state 带不带萝卜、客机面板按钮可用性 |
 | `tools/piece_uid_check.tscn` | 棋子 uid：铸造唯一、跨局不复用、存档往返与老档补发、快照携带与去重 —— 四星血统的前提 |
@@ -50,6 +51,25 @@ Godot 不在 PATH 上，用 console 版才能把日志打到 stdout：
 一个具体的踩法：`AccountConfig.get_script_constant_map()` —— 那是非静态方法，
 在类上直接调是解析错误。要读 preload 进来的脚本常量，直接
 `AccountConfig.SOME_CONST` 就行。
+
+### 服务端用例需要先有 DTLS 私钥（C14）
+
+`dtls_check` 里那三个走真实 ENet 的用例、以及 `channel_check` / `persist_check`
+（它们都起真的监听服务器）都要求本机有服务器私钥：
+
+```bash
+"C:/Users/Leno/Desktop/Godot_v4.7-stable_win64.exe/Godot_v4.7-stable_win64_console.exe" --headless --path . tools/dtls_make_cert.tscn
+```
+
+跑一次就够，密钥落在 `user://glory_server_key.pem`。**换一台机器要重新拿到同一份
+私钥，不能重新生成** —— 客户端 pin 的是 `scripts/multiplayer/NetTLSCert.gd` 里那张
+配对的证书，重新生成会让所有客户端连不上。它和 `export_presets.cfg` 的 keystore
+密码是同一类东西：不进 git，靠仓库外的渠道传。
+
+没有私钥时 `team_host` 会**拒绝启动**并说明原因，不会静默退回明文 —— 那正是
+这套设计要防的（见 `scripts/multiplayer/NetTLS.gd` 的 fail closed 一节）。
+
+线上服务器怎么装这把私钥、怎么验证装对了，见 `deploy/BATTLE_SERVER_KEY.md`。
 
 ### 需要外部依赖的检查，不进核心清单
 

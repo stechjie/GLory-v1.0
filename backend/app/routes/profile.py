@@ -4,6 +4,7 @@
     PATCH /v1/me/profile              昵称 / 头像 / 头像框 / 展示宠物
     PUT   /v1/me/bio                  性别 / 生日 / 地区 / 签名 + 可见性
     GET   /v1/players/by-code/{code}  公开视图
+    POST  /v1/me/delete               注销账号（删库里这个玩家的全部数据）
 
 设计文档：docs/玩家资料系统设计.md。
 
@@ -295,3 +296,48 @@ async def public_profile(
     if row is None:
         raise HTTPException(status_code=404, detail="没有这个好友码")
     return to_public(row)
+
+
+class DeleteRequest(BaseModel):
+    """注销要带上自己的好友码。
+
+    这**不是**身份验证 —— 身份由 Authorization 头决定。它是一道**故意的摩擦**：
+    匿名账号没有密码，没有任何东西可以在删号前再问一次「真的是你吗」。
+    让玩家把屏幕上那串码手打一遍，是这种情况下能做到的最好的「确认」。
+    同 GitHub 删仓库要你打一遍仓库名。
+
+    校验放在服务端而不是只放 UI：UI 上的确认框挡不住一个写错的客户端，
+    而这个接口一旦误触发就没有撤销。
+    """
+
+    friend_code: str
+
+
+@router.post("/me/delete")
+async def delete_me(
+    body: DeleteRequest,
+    claims: Annotated[Claims, Depends(current_claims)],
+) -> dict:
+    """注销账号。**不可撤销，没有冷静期。**
+
+    为什么用 POST 而不是 DELETE：这个操作要带确认载荷，
+    而 DELETE 带 body 在各家客户端和中间层里的支持参差不齐。
+    语义上的洁癖换不来任何东西，出问题却要查很久。
+
+    为什么没有冷静期：今天只有匿名登录 —— 玩家没有邮箱、没有第二种登录方式，
+    冷静期里既收不到通知，也没有第二条路回来撤销。它只是把删除推迟，
+    不产生任何保护。等接了绑定登录再谈冷静期。
+    """
+    row = await _current_profile(claims)
+    if body.friend_code.strip().upper() != row.friend_code:
+        # 不回显正确答案。也不区分「打错了」和「格式不对」。
+        raise HTTPException(status_code=400, detail="好友码不对，注销未执行")
+
+    deleted = await profile.delete_player(row.player_id)
+    if not deleted:
+        # 上一句刚查到这个玩家，这里删不到只可能是并发重复注销。
+        # 结果与预期一致（数据已经没了），所以不当失败处理。
+        log.warning("delete_me: player %s already gone", row.player_id)
+    # 只记 player_id，不记昵称、好友码或任何资料内容 —— 那些正是玩家要删掉的东西。
+    log.info("account deleted player_id=%s", row.player_id)
+    return {"deleted": True}

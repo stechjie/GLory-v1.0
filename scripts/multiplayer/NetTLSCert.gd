@@ -1,0 +1,30 @@
+extends RefCounted
+
+# 战斗服务器的**公开证书**，由 tools/dtls_make_cert.tscn 生成。不要手改。
+#
+# 客户端把它 pin 在包里，用来认"对面那台真的是我们的服务器"（C14）。
+# 证书是公开信息，进 git 是对的；配对的私钥在服务器上，绝不进这里。
+#
+# 生成于 20260909000000，有效期至 20360909000000。
+# 换证书 = 重新跑生成工具 + 客户端重新发版 + 服务器换私钥，三件事必须一起做。
+
+const PEM := """-----BEGIN CERTIFICATE-----
+MIIDITCCAgmgAwIBAgIVAKBdr4cfVKaMmiV7Oy+GlqmD8/pjMA0GCSqGSIb3DQEB
+CwUAMD4xFTATBgNVBAMMDGdsb3J5LWJhdHRsZTEOMAwGA1UECgwFR2xvcnkxFTAT
+BgNVBAsMDEJhdHRsZVNlcnZlcjAeFw0yNjA5MDkwMDAwMDBaFw0zNjA5MDkwMDAw
+MDBaMD4xFTATBgNVBAMMDGdsb3J5LWJhdHRsZTEOMAwGA1UECgwFR2xvcnkxFTAT
+BgNVBAsMDEJhdHRsZVNlcnZlcjCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoC
+ggEBAJsuUnvvjbXbVMXMEVm1+Wb6mHZuC5Zf9j9gHMhkzVbcSgPDr3PEVIo3gkHv
+O7J9Zyx6VUVm79XJpX2yZMzqSw38K5u8roD38zSkl5H+6y1BzylnplI0yccnchXU
+scNvrMR5KIxd24pYFlOhe+3d3x1mWtMeyaoNnAcmHzuCM/6c+RXbF64bxRkFYlj1
+YXlKSH56ABVZHeienRHC4EO6t36jLcATqkzeSSyFDIffXo1E0u1eOr4v2yCw2OOd
+QaiUdLcx/xN/7/JAPdq4HZoLrV1WbG6TLOVZlBDxCxhUjmj1ehf8lfl73FLPFscR
++vEfspHHcp4gYQR1LzWa6JPcxpkCAwEAAaMWMBQwEgYDVR0TAQH/BAgwBgEB/wIB
+ADANBgkqhkiG9w0BAQsFAAOCAQEAPsYAfqG/PyLU+QPXYMEfgBhlrqKELpZ5Sf+7
+S3NAxE8I3UD5znn2GYHeE2N/ih9H9BRv6Ij86zcnj5b/nNFqXev/S30JmpGh3hWw
+3N71OscZ8QgHvWaHPyW8+UDolL//85yzWJ5xRzq11s8J4v/tXja7yrOXu8uJpsA8
+VOPDoHPzbhX1L2x6REtiDdGYhQ6ScXSw6nbambycv9R47YX6BOTycWQpWf9sIpoY
+kbKzW3W2vEVZAzMTohjaaAYTlW5igwM78i95TpQXQ/fL9SOQMZmhanpvKnlNpdkm
+A6O2RW18y5IbFft6lbJtk3V9t+IYkKD0HigvKoSuzCeDU0oV8Q==
+-----END CERTIFICATE-----
+"""

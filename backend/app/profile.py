@@ -230,3 +230,30 @@ async def update_bio(
             )
             row = await conn.fetchrow(_SELF_QUERY % "p.player_id = $1", player_id)
     return _row_to_self(row)
+
+
+async def delete_player(player_id: uuid.UUID) -> bool:
+    """删掉这个玩家的**全部**数据库数据。返回是否真的删到了一行。
+
+    只需要删 players 一行：player_bio 与 player_identities 都是
+    `references players(player_id) on delete cascade`，会跟着走。
+    全库只有这两张表引用 players，所以这一句就是完整的删除，
+    不需要再写任何清理代码。**以后加新表时，外键必须带 on delete cascade，
+    否则这里会悄悄漏掉那张表的数据。**
+
+    ⚠️ **Supabase Auth 那边的用户刻意不删。**
+    今天全是匿名用户，那条记录里没有邮箱、没有任何可识别的个人数据 ——
+    真正的个人资料（昵称/性别/生日/地区/签名）全在这两张表里，删完就没了。
+    而删 auth 用户要用 secret key 调 admin API，会把 secret key 引进
+    supabase_auth.py —— 那个类的注释里明写着「不要在这里用 secret key」。
+    为一行没有个人数据的记录破坏那条边界不划算。
+
+    **接了 Google / Apple 登录之后这一条必须重新做**：那时 auth 用户里
+    有邮箱，是明确的个人数据，且商店的「应用内注销」规定也毫无疑问适用。
+    """
+    async with db.pool().acquire() as conn:
+        row = await conn.fetchrow(
+            "delete from players where player_id = $1 returning player_id",
+            player_id,
+        )
+    return row is not None

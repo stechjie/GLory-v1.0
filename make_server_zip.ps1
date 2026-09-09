@@ -62,7 +62,16 @@ try {
     New-Item -ItemType Directory -Force $stage | Out-Null
 
     Write-Host "[3/6] 复制服务器需要的文件(脚本/场景/特效/数据/工具)..." -ForegroundColor Cyan
-    foreach ($d in @("scripts", "scenes", "effects", "data", "tools")) {
+    # ui 是 2026-09-09 加的。此前没有它，而 project.godot 里有三个 autoload
+    # 就住在 ui/ 下面（ModalStack / DialogService / AsyncActionController），
+    # TutorialMode 还 preload 了 ui/components/GloryConfirmDialog.gd，
+    # boot_splash 也指向 ui/branding/。于是服务器每次启动都刷 5 条 SCRIPT ERROR
+    # 和一条 boot splash 失败 —— 服务器不用这些东西所以照常跑，但那堆固定噪音会把
+    # 真正的错误盖住，而且下面那道 SCRIPT ERROR 门禁一开就会被它顶红。
+    # ui/ 一共 171 KB / 28 个文件，相对 4.7 MB 的包可以忽略。
+    # 比起从 project.godot 里摘掉那几个 autoload，直接打进去更稳：以后再加 UI
+    # autoload 不会又一次静默地把服务器打回这个状态。
+    foreach ($d in @("scripts", "scenes", "effects", "data", "tools", "ui")) {
         if (-not (Test-Path "$src\$d")) { throw "缺少文件夹: $src\$d" }
         Copy-Item -Recurse -Force "$src\$d" "$stage\$d"
     }
@@ -100,7 +109,40 @@ try {
         Out-File -Encoding utf8 "$stage\build_info.txt"
 
     Write-Host "[4/6] 打包成临时 zip..." -ForegroundColor Cyan
-    Compress-Archive -Path "$stage\*" -DestinationPath $tmpZip -Force
+    # 打包与冒烟解压都要它，所以提到这里加载一次。
+    # **两个程序集都要加载**：ZipFile / ZipFileExtensions 在 .FileSystem 里，
+    # 而 ZipArchive / ZipArchiveMode 在 System.IO.Compression 里。
+    # 只加载前者的话，报的是 "Unable to find type [ZipArchiveMode]"。
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    # **不用 Compress-Archive，也不用 ZipFile::CreateFromDirectory。**
+    #
+    # 两者在 Windows PowerShell 5.1（.NET Framework 4.x）上都会把 zip 条目里的
+    # 路径分隔符写成**反斜杠**，而 ZIP 规范要求正斜杠。后果是服务器上解压时报
+    #   warning: ... appears to use backslashes as path separators
+    # Info-ZIP 会自己纠正，所以一直没出事 —— 但换个不纠正的解压工具，就会解出
+    # 一堆文件名里带反斜杠的**平铺**文件，而症状同样只是"服务器起不来"。
+    # （CreateFromDirectory 在 .NET Core / .NET 5+ 才修好，5.1 上没得用。）
+    #
+    # 所以逐个文件建条目，自己把相对路径里的 \ 换成 /。多几行，但结果确定。
+    # 实测门禁：打完包会断言 zip 里带反斜杠的条目数为 0，不为 0 直接打包失败。
+    $zip = [System.IO.Compression.ZipFile]::Open($tmpZip, [System.IO.Compression.ZipArchiveMode]::Create)
+    try {
+        $baseLen = ((Resolve-Path $stage).Path.TrimEnd('\') + '\').Length
+        foreach ($f in (Get-ChildItem -Path $stage -Recurse -File)) {
+            $rel = $f.FullName.Substring($baseLen).Replace('\', '/')
+            [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $f.FullName, $rel)
+        }
+    } finally { $zip.Dispose() }
+
+    # 断言：一个反斜杠条目都不许有。没有这条，上面那段写错了也没人会发现 ——
+    # 因为 Info-ZIP 照样能解开，症状要等换工具或换平台才浮出来。
+    $check = [System.IO.Compression.ZipFile]::OpenRead($tmpZip)
+    $backslashEntries = @($check.Entries | Where-Object { $_.FullName.Contains('\') }).Count
+    $check.Dispose()
+    if ($backslashEntries -gt 0) {
+        throw "zip 里有 $backslashEntries 个条目用反斜杠当路径分隔符，不符合 ZIP 规范"
+    }
 
     Write-Host "[5/6] 冷启动冒烟测试(空目录解压 + headless 起服)..." -ForegroundColor Cyan
     if ($SkipSmoke) {
@@ -109,9 +151,14 @@ try {
         throw "找不到 Godot 可执行文件: $Godot（用 -Godot 指定，或 -SkipSmoke 明确放弃验证）"
     } else {
         New-Item -ItemType Directory -Force $smokeDir | Out-Null
-        Add-Type -AssemblyName System.IO.Compression.FileSystem
         [System.IO.Compression.ZipFile]::ExtractToDirectory($tmpZip, $smokeDir)
         $so = "$env:TEMP\glory_smoke_out_$stamp.txt"
+        # stderr 必须单独收。**此前只收了 stdout，而 Godot 把 SCRIPT ERROR 打到
+        # stderr** —— 于是下面那句 `if ($log -match "SCRIPT ERROR")` 从来没有可能
+        # 触发过，是一道从写下就失效的门禁（2026-09-09 实测：一次刷了 5 条
+        # SCRIPT ERROR，打包照样报成功）。
+        # 两个流不能重定向到同一个文件，PowerShell 会直接报错，所以是两个文件。
+        $se = "$env:TEMP\glory_smoke_err_$stamp.txt"
         # --port=N 必须是等号形式：NetworkService._cmdline_int() 只认 "--port=" 前缀，
         # 空格形式会被静默忽略然后回落到 SERVER_PORT+shard=8080。之前这里写的是空格
         # 形式，于是冒烟测试名义上用 8199、实际去抢 8080 —— 本机只要有别的东西占着
@@ -119,24 +166,37 @@ try {
         #
         # 注意：下面那行以反引号续行，中间不能插注释行 —— 一插 -ArgumentList 就断成
         # 独立语句，Godot 变成无参启动、弹出项目管理器 GUI，然后永远挂在那里。
-        $proc = Start-Process -FilePath $Godot -PassThru -NoNewWindow -RedirectStandardOutput $so `
+        $proc = Start-Process -FilePath $Godot -PassThru -NoNewWindow -RedirectStandardOutput $so -RedirectStandardError $se `
             -ArgumentList @("--headless", "--path", $smokeDir, "res://scenes/server/ServerMain.tscn",
                             "--server", "--port=$smokePort")
         Start-Sleep -Seconds 15
         if (-not $proc.HasExited) { $proc.Kill(); $proc.WaitForExit() }
         $log = ""
         if (Test-Path $so) { $log = Get-Content $so -Raw }
+        $errlog = ""
+        if (Test-Path $se) { $errlog = Get-Content $se -Raw }
         Remove-Item -Recurse -Force $smokeDir -ErrorAction SilentlyContinue
-        Remove-Item -Force $so -ErrorAction SilentlyContinue
+        Remove-Item -Force $so, $se -ErrorAction SilentlyContinue
         if ($log -notmatch "server started protocol=$protocol") {
             Write-Host "---- 冒烟测试输出 ----" -ForegroundColor Yellow
             Write-Host $log
             throw "冷启动失败：没等到 'server started protocol=$protocol'。这个包传上去只会静默挂住。"
         }
-        if ($log -match "SCRIPT ERROR") {
-            Write-Host "---- 冒烟测试输出 ----" -ForegroundColor Yellow
-            Write-Host $log
-            throw "冷启动过程中有 SCRIPT ERROR —— 不能当作可发布产物"
+        # 判据在 **stderr** 上。两条都是"服务器要用的东西没加载起来"的明确信号，
+        # 健康启动时一条都不该出现：
+        #   SCRIPT ERROR                      脚本没编译过（"静默挂住"就是这么来的）
+        #   Failed to instantiate an autoload  autoload 没起来
+        # 刻意**不**拿裸 "ERROR:" 当判据：Godot 用它报很多无害的事，
+        # 那样会让打包因为噪音变红，然后所有人学会无视它 —— 比没有门禁更糟。
+        $fatalPatterns = @("SCRIPT ERROR", "Failed to instantiate an autoload")
+        $hits = @()
+        foreach ($pat in $fatalPatterns) {
+            if ($errlog -match [regex]::Escape($pat)) { $hits += $pat }
+        }
+        if ($hits.Count -gt 0) {
+            Write-Host "---- 冒烟测试 stderr ----" -ForegroundColor Yellow
+            Write-Host $errlog
+            throw "冷启动 stderr 里出现了 $($hits -join ' / ') —— 不能当作可发布产物"
         }
         Write-Host "    冷启动 OK：server started protocol=$protocol" -ForegroundColor Green
     }
