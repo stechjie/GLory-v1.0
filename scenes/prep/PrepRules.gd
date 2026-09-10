@@ -68,6 +68,35 @@ static func is_merge_piece(cell: Variant, id: String, star: int) -> bool:
 	return str(d.get("id", "")) == id and int(d.get("star", 1)) == star
 
 
+# --- 出售 ---------------------------------------------------------------------
+
+# 我方当前拥有的棋子总数（棋盘 + 备战席）。
+# 佣兵不计入：佣兵是花萝卜/金币临时雇的（`GameState.mercenary_slots`），
+# 和"自己攒出来的棋子"是两套东西，不能拿它去顶"还有没有棋子可用"。
+static func owned_unit_count() -> int:
+	var count := 0
+	for cell in GameState.board_slots:
+		if cell != null:
+			count += 1
+	for cell in GameState.bench_slots:
+		if cell != null:
+			count += 1
+	return count
+
+
+# 还能不能卖棋子：**只剩最后一枚时不允许出售**。
+#
+# 原因（9.10 测试报告）：卖掉最后一枚之后，玩家既没有能上场的棋子，
+# 又可能因为金币不足买不起商店里的棋子 —— 于是这一回合直接变成"空棋盘挨打"的死局，
+# 且没有任何手段可以补救（商店刷新也要钱）。与其让玩家自己承担这个不可逆的后果，
+# 不如在出口处直接挡住。
+#
+# 服务端账本 EconomyLedger._sell() 有同一条规则（错误码 last_unit），
+# 权威经济打开后由服务端兜底，两者口径一致。
+static func can_sell_unit() -> bool:
+	return owned_unit_count() > 1
+
+
 # --- 空位 ---------------------------------------------------------------------
 
 static func first_empty_bench_slot() -> int:

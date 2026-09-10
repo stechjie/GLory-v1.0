@@ -44,6 +44,11 @@ func _drop_to_sell(data: Variant) -> void:
 	_set_shop_sell_mode(false)
 	if not _can_drop_to_sell(data):
 		return
+	# 最后一只棋子不允许出售（9.10 测试报告）：拖到出售区应当被挡下并说明原因，
+	# 而不是"看起来能卖、松手才发现卖光了"。
+	if not PrepRules.can_sell_unit():
+		show_message(tr("toast_last_unit_no_sell"))
+		return
 	var d := data as Dictionary
 	match str(d.get("kind", "")):
 		"bench":
@@ -520,6 +525,11 @@ func _move_or_merge_bench(from_index: int, to_index: int) -> void:
 	_refresh_all()
 
 func _on_sell_selected() -> void:
+	# 最后一只棋子不允许出售：与其让玩家卖光后陷入"没钱买、也没棋子上场"的死局，
+	# 不如在这里直接挡住（判据集中在 PrepRules.can_sell_unit）。
+	if not PrepRules.can_sell_unit():
+		show_message(tr("toast_last_unit_no_sell"))
+		return
 	if _board_hud._selected_bench >= 0:
 		_sell_bench_index(_board_hud._selected_bench)
 		return
@@ -529,6 +539,13 @@ func _on_sell_selected() -> void:
 
 func _sell_board_index(index: int, confirmed: bool = false) -> void:
 	if index < 0 or index >= GameState.board_slots.size() or GameState.board_slots[index] == null:
+		return
+	# 兜底门：无论是点击、拖拽还是四星二次确认回调，最后一只棋子都卖不掉。
+	# 放在这里而不是只在入口判一次，是因为确认对话框是异步的 —— 弹窗期间
+	# 棋盘可能已经变了（合成 / 服务端覆盖），入口那次判断早已过期。
+	if not PrepRules.can_sell_unit():
+		if not confirmed:
+			show_message(tr("toast_last_unit_no_sell"))
 		return
 	var cell: Dictionary = GameState.board_slots[index]
 	if not confirmed and _needs_four_star_sell_confirm(cell):
@@ -546,6 +563,11 @@ func _sell_board_index(index: int, confirmed: bool = false) -> void:
 
 func _sell_bench_index(index: int, confirmed: bool = false) -> void:
 	if index < 0 or index >= GameState.bench_slots.size() or GameState.bench_slots[index] == null:
+		return
+	# 同上：最后一只棋子不允许出售（兜底门，覆盖异步确认回调等所有调用路径）。
+	if not PrepRules.can_sell_unit():
+		if not confirmed:
+			show_message(tr("toast_last_unit_no_sell"))
 		return
 	var cell: Dictionary = GameState.bench_slots[index]
 	if not confirmed and _needs_four_star_sell_confirm(cell):

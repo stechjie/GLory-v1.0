@@ -180,6 +180,9 @@ func _zh_strings() -> Dictionary:
 		# 放置提示
 		"toast_board_full": "棋盘人口已满（%d）",
 		"toast_unique_limit": "传奇棋子只能上场一个",
+		# 最后一只棋子不可出售：卖掉就再没有能上场的棋子，
+		# 极端情况下会出现「金币不够买棋子、棋盘也空着」的死局。
+		"toast_last_unit_no_sell": "只剩最后一枚棋子，无法出售",
 		# 战斗统计 / 结算面板
 		"battle_time": "时间：%.1fs%s",
 		"battle_wait_authoritative": "等待主机权威结算...",
@@ -555,6 +558,7 @@ func _en_strings() -> Dictionary:
 		# Placement toasts
 		"toast_board_full": "Board is full (%d)",
 		"toast_unique_limit": "Only one legendary unit allowed",
+		"toast_last_unit_no_sell": "Last unit — cannot be sold",
 		# Battle stats / settlement panel
 		"battle_time": "Time: %.1fs%s",
 		"battle_wait_authoritative": "Waiting for host result...",

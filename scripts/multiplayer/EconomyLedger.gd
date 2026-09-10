@@ -448,6 +448,13 @@ static func _sell(prep: Dictionary, payload: Dictionary, _ctx: Dictionary) -> Di
 	if not roster.has(uid):
 		return {"ok": false, "error": "unknown_uid"}
 	var u: Dictionary = roster[uid]
+	# 最后一只棋子不允许出售（9.10 测试报告）：卖光之后玩家既没棋子上场、
+	# 又可能买不起商店里的棋子，等于把一个回合直接变成死局。
+	# 客户端 PrepRules.can_sell_unit() 是同一条规则，这里必须自己再判一次 ——
+	# 客户端的门只挡得住正常操作，权威账本才是"怎么改客户端都绕不过去"的那道。
+	# 佣兵（kind="merc"）不计入：它不是玩家攒出来的棋子，卖掉佣兵不受此限。
+	if str(u.get("kind", "unit")) == "unit" and _unit_count(prep) <= 1:
+		return {"ok": false, "error": "last_unit"}
 	var refund := sell_refund(int(u.get("cost_basis", 0)))
 	roster.erase(uid)
 	prep["roster"] = roster
@@ -521,6 +528,16 @@ static func _gamble(prep: Dictionary, _payload: Dictionary, ctx: Dictionary) -> 
 
 static func _roster_size(prep: Dictionary) -> int:
 	return (prep.get("roster", {}) as Dictionary).size()
+
+# 账本里"真正的棋子"数量（不含佣兵）。只有它是"玩家还有没有棋子可用"的判据 ——
+# 佣兵是雇来的、随时可以再雇，拿它顶数会把"最后一枚棋子"这个保护架空。
+static func _unit_count(prep: Dictionary) -> int:
+	var count := 0
+	for uid in (prep.get("roster", {}) as Dictionary).keys():
+		var entry: Dictionary = (prep["roster"] as Dictionary)[uid]
+		if str(entry.get("kind", "unit")) == "unit":
+			count += 1
+	return count
 
 # preferred_uid：客户端已经给这枚棋子铸好了 uid（GameState.mint_piece_uid），
 # 传进来就用它。两边用同一个标识，roster 才能和棋盘对上 —— 否则账本记 "u3"、
