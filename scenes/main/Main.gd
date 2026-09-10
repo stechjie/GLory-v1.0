@@ -949,8 +949,19 @@ func _on_selftest_back() -> void:
 	_show_team3v3_lobby()
 
 func _on_lobby_back() -> void:
+	if _lobby_exit_requires_cancel():
+		DialogService.info({"owner": self, "body": "Please cancel ready first" if LocaleManager.get_locale() == "en" else "请先取消准备"})
+		return
 	NetworkService.disconnect_session()
 	_show_menu()
+
+func _lobby_exit_requires_cancel() -> bool:
+	if not NetworkService.team_active or NetworkService.can_control_room():
+		return false
+	var slot := NetworkService.team_local_slot
+	var confirmed := slot >= 0 and slot < NetworkService.team_ready.size() and bool(NetworkService.team_ready[slot])
+	# 准备请求尚在途也不能退出；取消准备须等待服务器确认后再离开。
+	return confirmed or NetworkService.local_ready_intent()
 
 func _show_prep() -> void:
 	# 保底：对局已结束（最终局打完）就不再进备战，直接游戏结束界面。

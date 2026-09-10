@@ -24,6 +24,8 @@ func _publish_identity(_profile: Dictionary = {}) -> void:
 	_refresh()
 
 func _view_seat_profile(index: int) -> void:
+	if index == _my_slot() or index < 0 or index >= _states().size() or str(_states()[index]) != "player":
+		return
 	var identity := _seat_profile(index)
 	var code := str(identity.get("friend_code", ""))
 	if code.length() != 8:
@@ -295,7 +297,8 @@ func _build_slot(index: int) -> void:
 
 func _on_slot_pressed(index: int) -> void:
 	if str(_states()[index]) == "player":
-		_view_seat_profile(index)
+		if index != _my_slot():
+			_view_seat_profile(index)
 		return
 	if str(_states()[index]) != "empty":
 		return
@@ -434,7 +437,6 @@ func selftest_available() -> bool:
 # 3v3 大厅状态：取代原先误显示的 1v1 session_label（棋盘/对手准备那套）。
 func _lobby_status_text() -> String:
 	var states := _states()
-	var ready_arr := _ready_arr()
 	var players := 0
 	var ais := 0
 	for i in 6:
@@ -444,9 +446,8 @@ func _lobby_status_text() -> String:
 		elif st == "dummy":
 			ais += 1
 	var mode := _room_text("在线", "Online") if _online() else _room_text("离线", "Offline")
-	# 房主视角把自己视为将 ready（按开始即准备）；具体阻止原因由 _start_block_reason 给。
-	var reason := _start_block_reason(_is_host_seat())
-	var tail := reason if not reason.is_empty() else _room_text("可以开始", "Ready to start")
+	var reason := _start_block_reason(true)
+	var tail := reason if not reason.is_empty() else (_room_text("可以开始", "Ready to start") if _is_host_seat() else _room_text("等待房主开始游戏", "Waiting for host to start"))
 	return _room_text("%s ｜ 玩家%d AI%d ｜ %s", "%s | Players %d AI %d | %s") % [mode, players, ais, tail]
 
 func _slot_name(index: int, state: String, self_slot: bool) -> String:
@@ -465,24 +466,25 @@ func _is_host_seat() -> bool:
 func _start_block_reason(host_ready: bool) -> String:
 	var states := _states()
 	var ready_arr: Array = _ready_arr().duplicate()
-	var my_slot := _my_slot()
-	if host_ready and my_slot >= 0 and my_slot < ready_arr.size():
-		ready_arr[my_slot] = true
+	var leader := _leader_slot()
+	if host_ready and leader >= 0 and leader < ready_arr.size():
+		ready_arr[leader] = true
 	if _online() and (states.size() < 6 or ready_arr.size() < 6):
 		return _room_text("房间状态同步中", "Room state syncing")
 	var side_a := 0
 	var side_b := 0
 	for i in 6:
 		var state := str(states[i])
-		if state == "player" and not bool(ready_arr[i]):
-			return _room_text("玩家%s 还未准备", "Player %s is not ready") % SLOT_LABELS[i]
 		if state != "empty":
 			if i < 3:
 				side_a += 1
 			else:
 				side_b += 1
 	if side_a <= 0 or side_b <= 0:
-		return _room_text("敌我双方都需要至少1个占位", "Both sides need at least one occupant")
+		return _room_text("敌我双方至少一个占位", "Both sides need at least one occupant")
+	for i in 6:
+		if str(states[i]) == "player" and not bool(ready_arr[i]):
+			return _room_text("有玩家未准备", "Some players are not ready")
 	return ""
 
 func _on_start() -> void:
@@ -499,8 +501,6 @@ func _on_start() -> void:
 	var reason := _start_block_reason(true)
 	if not reason.is_empty():
 		_refresh()
-		if _status_lbl != null:
-			_status_lbl.text = reason
 		return
 	if _online():
 		NetworkService.team_start()
