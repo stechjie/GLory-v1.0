@@ -39,17 +39,17 @@ MAX_FRIENDS = 100
 DAILY_REQUEST_QUOTA = 20
 
 # 心跳间隔与在线判定 TTL。TTL 必须**大于**心跳间隔，否则丢一个包就显示离线。
-# 留一次重试的余量：60 秒发一次，150 秒内没消息才算离线。
+# 留一次重试的余量：10 秒发一次，30 秒内没消息才算离线。
 #
-# 代价是「刚下线」最多显示成在线 2.5 分钟。没有更好的办法 ——
+# 代价是「刚下线」最多显示成在线 30 秒。没有更好的办法 ——
 # 客户端崩溃时不会发「我下线了」，任何「下线时发个包」的方案都挡不住进程被杀。
 # 「最近一起玩过」只看最近这么多天，最多返回这么多人。
 # 上限首先是**响应体上界**，其次是「最近」本来就不该翻很久以前的。
 RECENT_WINDOW_DAYS = 7
 RECENT_LIMIT = 20
 
-HEARTBEAT_INTERVAL_SEC = 60
-PRESENCE_TTL = dt.timedelta(seconds=150)
+HEARTBEAT_INTERVAL_SEC = 10
+PRESENCE_TTL = dt.timedelta(seconds=30)
 
 
 class FriendsRejected(RuntimeError):

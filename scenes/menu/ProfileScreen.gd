@@ -175,7 +175,11 @@ func _build() -> void:
 		]))
 	else:
 		columns.add_child(_column(400, [_identity_card()]))
-		columns.add_child(_column(440, [_public_bio_block(), _report_button()]))
+		columns.add_child(_column(440, [_public_bio_block(), _friend_request_button()]))
+		var report_row := HBoxContainer.new()
+		report_row.alignment = BoxContainer.ALIGNMENT_END
+		report_row.add_child(_report_button())
+		_body.add_child(report_row)
 
 	_status = Label.new()
 	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -408,6 +412,91 @@ func _report_button() -> Control:
 		}))
 	return button
 
+var _friend_action: Button
+var _block_action: Button
+
+func _update_friend_actions() -> void:
+	if _friend_action == null:
+		return
+	var relation := str(_data.get("relation", "none"))
+	_friend_action.text = _text("删除好友", "Remove friend") if relation == "friends" else _text("添加朋友请求", "Send friend request")
+	_friend_action.disabled = relation in ["blocked", "self"]
+	var blocked_by_me := bool(_data.get("blocked_by_me", false))
+	_block_action.text = _text("解除黑名单", "Unblock player") if blocked_by_me else _text("拉入黑名单", "Block player")
+	_block_action.disabled = relation == "self" or (relation == "blocked" and not blocked_by_me)
+
+func _on_block_action() -> void:
+	if not bool(_data.get("blocked_by_me", false)):
+		_confirm_friend_action(true)
+		return
+	_block_action.disabled = true
+	var response: Dictionary = await _send_unblock()
+	if not is_inside_tree():
+		return
+	if int(response.get("code", 0)) >= 200 and int(response.get("code", 0)) < 300:
+		_data["relation"] = "none"
+		_data["blocked_by_me"] = false
+		_set_status(_text("已解除黑名单，可重新发送好友请求", "Unblocked. You can send a friend request again."))
+	else:
+		_set_status(str(response.get("error", _text("解除失败，请重试", "Unable to unblock. Please retry."))))
+	_update_friend_actions()
+
+func _send_unblock() -> Dictionary:
+	return await AccountManager.unblock_player(_target_code)
+
+func _confirm_friend_action(blocking: bool) -> void:
+	DialogService.confirm({"owner": self, "intent": ConfirmDialog.Intent.DANGER,
+		"body": _text("拉黑将同时解除好友关系，并阻止对方发送好友请求。", "Blocking removes the friendship and prevents requests.") if blocking else _text("删除后，你也会从对方好友列表中消失。", "Removing also removes you from their friend list."),
+		"confirm_text": _text("拉黑", "Block") if blocking else _text("删除", "Remove"),
+		"on_result": func(result: String, _request_id: String) -> void:
+			if result != ConfirmDialog.RESULT_CONFIRMED:
+				return
+			_friend_action.disabled = true
+			_block_action.disabled = true
+			var response: Dictionary = await _send_friend_change(blocking)
+			if not is_inside_tree():
+				return
+			if int(response.get("code", 0)) >= 200 and int(response.get("code", 0)) < 300:
+				_data["relation"] = "blocked" if blocking else "none"
+				_data["blocked_by_me"] = blocking
+				_set_status(_text("已拉黑", "Blocked") if blocking else _text("已删除好友", "Friend removed"))
+			else:
+				_set_status(str(response.get("error", "操作失败")))
+			_update_friend_actions()})
+
+func _send_friend_change(blocking: bool) -> Dictionary:
+	return await AccountManager.block_player(_target_code) if blocking else await AccountManager.remove_friend(_target_code)
+
+func _friend_request_button() -> Control:
+	var column := VBoxContainer.new()
+	var button := Button.new()
+	_friend_action = button
+	button.text = _text("添加朋友请求", "Send friend request")
+	button.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+	button.pressed.connect(func() -> void:
+		if str(_data.get("relation", "")) == "friends":
+			_confirm_friend_action(false)
+			return
+		button.disabled = true
+		var result: Dictionary = await AccountManager.send_friend_request(_target_code)
+		if not is_inside_tree():
+			return
+		button.disabled = false
+		if int(result.get("code", 0)) >= 200 and int(result.get("code", 0)) < 300:
+			var accepted := str((result.get("body", {}) as Dictionary).get("result", "")) == "accepted"
+			_data["relation"] = "friends" if accepted else "pending_out"
+			_update_friend_actions()
+			_set_status(_text("已成为好友", "You are now friends") if accepted else _text("已发送好友请求", "Friend request sent"))
+		else:
+			_set_status(str(result.get("error", _text("请求失败", "Request failed")))))
+	column.add_child(button)
+	_block_action = Button.new()
+	_block_action.text = _text("拉入黑名单", "Block player")
+	_block_action.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+	_block_action.pressed.connect(_on_block_action)
+	column.add_child(_block_action)
+	return column
+
 
 # --- 占位与入口位 -------------------------------------------------------------
 
@@ -560,6 +649,15 @@ func _load() -> void:
 		_set_status(_failure_text(result))
 		return
 	_data = result.get("body", {})
+	# relation=blocked 不区分拉黑方向；仅自己的黑名单才有权限解除。
+	if _mode == Mode.PUBLIC and str(_data.get("relation", "")) == "blocked":
+		var blocks: Dictionary = await AccountManager.fetch_blocks()
+		if not is_inside_tree():
+			return
+		_data["blocked_by_me"] = false
+		for entry in (blocks.get("body", {}) as Dictionary).get("blocks", []):
+			if str(entry.get("friend_code", "")) == _target_code:
+				_data["blocked_by_me"] = true
 	_set_status("")
 	_refresh()
 
@@ -628,6 +726,7 @@ func _refresh_self() -> void:
 
 
 func _refresh_public() -> void:
+	_update_friend_actions()
 	var column := _public_rows
 	if column == null or not is_instance_valid(column):
 		return

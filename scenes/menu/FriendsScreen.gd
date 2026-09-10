@@ -34,7 +34,7 @@ const ConfirmDialog := preload("res://ui/components/GloryConfirmDialog.gd")
 const MENU_BG_TEX := preload("res://assets/ui/main_menu_live/background.png")
 
 # 面板开着时的刷新间隔。**不是心跳** —— 这是读，心跳是写。
-const REFRESH_SEC := 30.0
+const REFRESH_SEC := 5.0
 
 enum Tab { FRIENDS, REQUESTS, ADD }
 
@@ -168,6 +168,8 @@ func _tabs() -> Control:
 
 func _switch_tab(tab_id: int) -> void:
 	_tab = tab_id
+	if _tab == Tab.REQUESTS:
+		AccountManager.mark_friend_requests_seen(_incoming)
 	_notice = ""
 	_render()
 
@@ -198,6 +200,8 @@ func _reload(show_errors: bool) -> void:
 		var body: Dictionary = requests_result.get("body", {})
 		_incoming = body.get("incoming", [])
 		_outgoing = body.get("outgoing", [])
+		if _tab == Tab.REQUESTS:
+			AccountManager.mark_friend_requests_seen(_incoming)
 	elif failed.is_empty():
 		failed = str(requests_result.get("error", ""))
 	if int(blocks_result.get("code", 0)) / 100 == 2:
@@ -235,7 +239,8 @@ func _run(action: Callable, ok_message: String) -> void:
 	if not is_inside_tree():
 		return
 	if int(result.get("code", 0)) / 100 == 2:
-		_set_notice(ok_message, false)
+		var outcome := str((result.get("body", {}) as Dictionary).get("result", ""))
+		_set_notice(_text("已成为好友", "You are now friends") if outcome == "accepted" else ok_message, false)
 		await _reload(true)
 	else:
 		_set_notice(str(result.get("error", _text("操作失败", "Action failed"))), true)
@@ -252,6 +257,20 @@ func _render() -> void:
 		child.queue_free()
 	for tab_id in _tab_buttons:
 		(_tab_buttons[tab_id] as Button).button_pressed = tab_id == _tab
+	var request_tab: Button = _tab_buttons.get(Tab.REQUESTS)
+	if request_tab != null:
+		var badge := request_tab.get_node_or_null("RequestBadge") as Label
+		if badge == null:
+			badge = Label.new()
+			badge.name = "RequestBadge"
+			badge.text = "!"
+			badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			badge.add_theme_color_override("font_color", Color(1, 0.15, 0.12))
+			badge.add_theme_font_size_override("font_size", 24)
+			request_tab.add_child(badge)
+			badge.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+			badge.position.x -= 24
+		badge.visible = AccountManager.has_unread_friend_requests(_incoming)
 	_set_notice(_notice, _notice_bad)
 
 	match _tab:
@@ -301,13 +320,15 @@ func _friend_row(entry: Dictionary) -> Control:
 	row.add_child(name_label)
 
 	var online := bool(entry.get("online", false))
+	name_label.add_theme_color_override("font_color", Color.WHITE if online else Tokens.TEXT_DISABLED)
 	var status := Label.new()
 	status.text = _text("在线", "Online") if online else _text("离线", "Offline")
 	status.add_theme_color_override(
-		"font_color", Tokens.CYAN if online else Tokens.TEXT_DISABLED)
+		"font_color", Color.WHITE if online else Tokens.TEXT_DISABLED)
 	row.add_child(status)
 
-	var room_id := int(entry.get("room_id", 0))
+	var room_value: Variant = entry.get("room_id")
+	var room_id := int(room_value) if room_value != null else 0
 	if room_id > 0:
 		var join := Button.new()
 		join.text = _text("加入", "Join")
@@ -350,6 +371,7 @@ func _request_row(entry: Dictionary, incoming: bool) -> Control:
 	var name_label := Label.new()
 	name_label.text = AccountManager.display_name(str(entry.get("player_name", "")), code)
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_label.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
 	row.add_child(name_label)
 
 	var view := Button.new()
@@ -428,6 +450,7 @@ func _render_add() -> void:
 			var rname := Label.new()
 			rname.text = AccountManager.display_name(str(recent.get("player_name", "")), rcode)
 			rname.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			rname.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
 			rrow.add_child(rname)
 			var rview := Button.new()
 			rview.text = _text("看资料", "Profile")
@@ -454,6 +477,7 @@ func _render_add() -> void:
 		var name_label := Label.new()
 		name_label.text = AccountManager.display_name(str(blocked.get("player_name", "")), code)
 		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		name_label.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
 		row.add_child(name_label)
 		var unblock := Button.new()
 		unblock.text = _text("解除", "Unblock")
@@ -500,7 +524,7 @@ func _confirm_remove(entry: Dictionary) -> void:
 		"intent": ConfirmDialog.Intent.DANGER,
 		"confirm_text": _text("删除", "Remove"),
 		"owner": self,
-		"on_result": func(result: String) -> void:
+		"on_result": func(result: String, _request_id: String) -> void:
 			if result == ConfirmDialog.RESULT_CONFIRMED:
 				await _run(func(): return await AccountManager.remove_friend(code),
 					_text("已删除好友", "Friend removed")),
@@ -521,7 +545,7 @@ func _confirm_block(entry: Dictionary) -> void:
 		"intent": ConfirmDialog.Intent.DANGER,
 		"confirm_text": _text("拉黑", "Block"),
 		"owner": self,
-		"on_result": func(result: String) -> void:
+		"on_result": func(result: String, _request_id: String) -> void:
 			if result == ConfirmDialog.RESULT_CONFIRMED:
 				await _run(func(): return await AccountManager.block_player(code),
 					_text("已拉黑", "Blocked")),

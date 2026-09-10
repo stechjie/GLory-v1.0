@@ -329,8 +329,8 @@ func delete_account(confirm_friend_code: String) -> Dictionary:
 # _request 只接受 Dictionary，后端因此把列表包了一层（有测试钉着）。
 
 # 心跳间隔。必须与后端 friends.HEARTBEAT_INTERVAL_SEC 一致：
-# 后端按 PRESENCE_TTL(150s) 判在线，发得比它慢就会显示成离线。
-const PRESENCE_HEARTBEAT_SEC := 60.0
+# 后端按 PRESENCE_TTL(30s) 判在线，发得比它慢就会显示成离线。
+const PRESENCE_HEARTBEAT_SEC := 10.0
 
 var _presence_timer: Timer
 # 房间号从哪来。**刻意用注入的 Callable，不直接引用 NetworkService** ——
@@ -372,6 +372,32 @@ static func friend_code_problem(code: String) -> String:
 
 func fetch_friends() -> Dictionary:
 	return await _request(HTTPClient.METHOD_GET, "/v1/me/friends", null, true)
+
+# 已读只作用于当前账号和当前请求；同一玩家重新发送的新请求仍会提醒。
+var friend_request_seen: Dictionary = {}
+
+func friend_request_key(entry: Dictionary) -> String:
+	return player_id + ":" + str(entry.get("friend_code", "")) + ":" + str(entry.get("created_at", ""))
+
+func has_unread_friend_requests(incoming: Array) -> bool:
+	for entry in incoming:
+		if entry is Dictionary and not friend_request_seen.has(friend_request_key(entry)):
+			return true
+	return false
+
+func mark_friend_requests_seen(incoming: Array) -> void:
+	for entry in incoming:
+		if entry is Dictionary:
+			friend_request_seen[friend_request_key(entry)] = true
+
+func normalize_list_response(path: String, value: Variant) -> Dictionary:
+	if value is Dictionary:
+		return value
+	# 兼容旧账号服务的顶层数组响应，避免成功响应静默变为空列表。
+	var keys := {"/v1/me/friends": "friends", "/v1/me/blocks": "blocks", "/v1/me/recent-players": "players"}
+	if value is Array and keys.has(path):
+		return {keys[path]: value}
+	return {}
 
 
 # 收到的 + 发出的**一次拿全**。后端刻意没拆成两个接口 ——
@@ -450,7 +476,7 @@ func update_presence_visibility(presence_visibility: String, room_visibility: St
 # --- 在线状态心跳 -------------------------------------------------------------
 #
 # **事件驱动 + 慢心跳**，不是纯轮询：进出房间时立刻补一次（report_presence_now），
-# 平时 60 秒一次保活。状态变化那一刻才有价值，中间的重复上报没有。
+# 平时 10 秒一次保活。状态变化那一刻才有价值，中间的重复上报没有。
 
 
 # 接线入口。room_provider 返回当前房间号，0 或负数表示不在房间。
@@ -470,7 +496,7 @@ func stop_presence() -> void:
 
 
 # 进出房间、回主菜单时调它。**不等定时器** —— 好友看到的房间号要跟得上，
-# 慢 60 秒的话「点进去发现人已经走了」会很常见。
+# 慢一个轮询周期的话「点进去发现人已经走了」会很常见。
 func report_presence_now() -> void:
 	await _send_presence()
 
@@ -555,8 +581,8 @@ func _request(
 	var body: Dictionary = {}
 	if not raw.is_empty():
 		var json := JSON.new()
-		if json.parse(raw) == OK and typeof(json.data) == TYPE_DICTIONARY:
-			body = json.data
+		if json.parse(raw) == OK:
+			body = normalize_list_response(path, json.data)
 
 	# **2xx 都算成功，不只是 200。**
 	#

@@ -13,6 +13,36 @@ const SLOT_POS := [
 const SLOT_SIZE := Vector2(184, 175)
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
 var _slot_avatars: Array[TextureRect] = []
+var _friends_box: VBoxContainer
+var _friends_loading := false
+
+func _reload_online_friends() -> void:
+	if _friends_loading or not AccountManager.is_logged_in():
+		return
+	_friends_loading = true
+	var result: Dictionary = await AccountManager.fetch_friends()
+	_friends_loading = false
+	if not is_inside_tree() or _friends_box == null:
+		return
+	if int(result.get("code", 0)) >= 200 and int(result.get("code", 0)) < 300:
+		_render_online_friends((result.get("body", {}) as Dictionary).get("friends", []))
+
+func _render_online_friends(friends: Array) -> void:
+	for child in _friends_box.get_children():
+		_friends_box.remove_child(child)
+		child.queue_free()
+	for entry in friends:
+		if not entry is Dictionary or not bool(entry.get("online", false)):
+			continue
+		var label := Label.new()
+		label.text = AccountManager.display_name(str(entry.get("player_name", "")), str(entry.get("friend_code", "")))
+		label.add_theme_color_override("font_color", Color.WHITE)
+		label.add_theme_color_override("font_outline_color", Color(0.15, 0.1, 0.05))
+		label.add_theme_constant_override("outline_size", 2)
+		label.add_theme_font_size_override("font_size", 14)
+		label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		label.tooltip_text = label.text
+		_friends_box.add_child(label)
 
 func _seat_profile(index: int) -> Dictionary:
 	if index == _my_slot():
@@ -97,6 +127,12 @@ func _ready() -> void:
 		NetworkService.team_chat_received.connect(_on_chat_received)
 	_build()
 	_refresh()
+	var friends_timer := Timer.new()
+	friends_timer.wait_time = 5.0
+	friends_timer.autostart = true
+	friends_timer.timeout.connect(_reload_online_friends)
+	add_child(friends_timer)
+	_reload_online_friends()
 	NetworkService.publish_lobby_identity()
 	var identity_retry := Timer.new()
 	identity_retry.wait_time = 10.0
@@ -245,6 +281,13 @@ func _build() -> void:
 	# 右侧朋友列表：锚定屏幕右边（edge="right"）
 	_add_texture(TEX_FRIENDS, Vector2(1340, 180), Vector2(230, 400), "right")
 	_add_label(_room_text("朋友列表", "Friends"), Vector2(1340, 215), Vector2(230, 42), 28, Color(0.47, 0.28, 0.08), "right")
+	var friends_scroll := ScrollContainer.new()
+	friends_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	add_child(friends_scroll)
+	_track(friends_scroll, Vector2(1350, 270), Vector2(210, 290), 0, "right")
+	_friends_box = VBoxContainer.new()
+	_friends_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	friends_scroll.add_child(_friends_box)
 	_add_texture(TEX_CHAT, Vector2(80, 704), Vector2(430, 210), "left")
 	_build_chat_box()
 	_add_texture(TEX_VS, Vector2(746, 427), Vector2(180, 85))
