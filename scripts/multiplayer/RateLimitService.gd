@@ -57,6 +57,12 @@ const LIMITS := {
 	# 注意它走 count_strike=false（不计 strike）——心跳超频更可能是客户端 bug 或时钟
 	# 抖动，不是攻击；用累计 strike 去踢人等于拿自己人的连接赌。
 	"ping": 8,
+	# 快捷短语（docs/聊天系统设计.md 批次 A）：10 秒窗口 5 条，约等于 2 秒一条。
+	#
+	# ⚠️ 调用方传 **count_strike=false**（同 ping）。聊天刷屏是烦人，不是攻击 ——
+	# STRIKES_BEFORE_KICK 是 3，计 strike 意味着「连着多点了几下短语按钮就被踢下线」，
+	# 而那是对局中，代价是整局崩掉。超限的正确后果就是**这一条不转发**，仅此而已。
+	"chat_phrase": 5,
 	# 重连：直连入口必须和短码入口共用同一个身份配额，否则客户端绕开
 	# _rpc_public_resume_request 直接打 _rpc_resume_request 就把 A6 的保护全跳过了。
 	"resume": 5,

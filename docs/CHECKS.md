@@ -35,6 +35,7 @@ Godot 不在 PATH 上，用 console 版才能把日志打到 stdout：
 | `tools/account_check.tscn` | 账号凭证存储与门面接线。核心判据：**access token 永不落盘** |
 | `tools/dtls_check.tscn` | 战斗链路的传输加密与服务端身份认证（C14）。核心判据：**明文客户端必须连不上、拿错证书必须连不上** |
 | `tools/friends_check.tscn` | 交友系统客户端侧。核心判据：**心跳间隔必须与后端 TTL 对得上**（两个常量在两种语言里，分开改没有任何症状）；好友码校验与 004 的字母表一致；好友界面三个页签都能真的搭起来 |
+| `tools/chat_check.tscn` | 聊天批次 A（`docs/聊天系统设计.md`）。核心判据：**`_rpc_team_chat_submit` 的签名里不许出现 slot** —— 客户端能自报座位号就等于能「以队友的名义说话」，而这种伪造在界面上完全看不出来；短语 id 集合被钉死（重排会让旧客户端发的同一个 id 在新表里变成另一句话，不报错只说错话）；`chat_phrase` 限流项存在、额度在范围内、且**是软限不踢人**。两条 🔴 断言都做过变异测试 |
 | `tools/carrot_economy_check.tscn` | 萝卜经济：等级表形状与单调性、采集公式、幂等、**客户端/服务端一致性**、升级石可达性、采集权责判据 |
 | `tools/carrot_online_check.tscn` | 联机 3v3 的萝卜链路：服务端准入判据、回执写回 GameState、room_state 带不带萝卜、客机面板按钮可用性 |
 | `tools/piece_uid_check.tscn` | 棋子 uid：铸造唯一、跨局不复用、存档往返与老档补发、快照携带与去重 —— 四星血统的前提 |

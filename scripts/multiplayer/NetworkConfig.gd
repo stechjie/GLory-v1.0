@@ -81,7 +81,19 @@ const USE_DTLS := true
 #      点了没反应、一条报错都没有。这正是 v16 注释里写的那种静默分歧。
 #      规则重申：改服务端契约（RPC、ECONOMY_ACTIONS、room_state 字段集）必须顶号，
 #      并同步 tools/carrot_online_check.gd 的 PINNED_PROTOCOL / PINNED_CONTRACT。
-const NETWORK_PROTOCOL_VERSION := 21
+# v22: 房间 / 局内快捷短语（docs/聊天系统设计.md 批次 A），新增两个 RPC
+#      （_rpc_team_chat_submit、_rpc_team_chat）。**与 v17 完全同一类。**
+#      2026-09-10 实测漏顶号的后果：Godot 4.7 会先一步在 scene cache 上比对两端
+#      NetworkService 的方法表，客户端直接刷
+#          process_simplify_path: The rpc node checksum failed.
+#          Make sure to have the same methods on both nodes. Node path: NetworkService
+#      比 v17 那会儿好一点的是：这次**有明确报错**，不用靠猜。
+#      但危险的不是那条错误本身，而是它背后的事实 —— 两端的方法表已经不一致，
+#      于是 v17 注释里那件事同时成立：**方法编号错位，RPC 可能被派发到别的方法上**。
+#      ⚠️ 方法表不一致时联机行为是**未定义的**。不要试图靠观察症状判断"是不是还能用"。
+#      代价同 v17：**线上战斗服务器必须同步重新打包部署**，否则两端连不上。
+#      这是有意的，不是回归。
+const NETWORK_PROTOCOL_VERSION := 22
 
 # Local phone hosting is debug-only.
 const ALLOW_LOCAL_HOST_DEBUG := false

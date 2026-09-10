@@ -35,6 +35,9 @@ const REFRESH_BTN_PATH := "res://assets/ui/buttons/btn_refresh_fire_lowpoly.png"
 const MERC_BTN_PATH := "res://assets/ui/buttons/btn_merc_lowpoly.png"
 const TEAM_MERCS_BTN_PATH := "res://assets/ui/buttons/btn_team_mercs_lowpoly.png"
 const CARROT_BTN_PATH := "res://assets/props/carrot_system/ui/button_carrot_camp.png"
+# 局内聊天入口。**刻意与主界面用同一张图**（MainMenu.TEX_CHAT），
+# 让「聊天」这个入口在两个界面里长得一样 —— 换图要两处一起换。
+const CHAT_BTN_PATH := "res://assets/ui/main_menu_live/chat.png"
 const CARROT_CURRENCY_ICON_PATH := "res://assets/props/carrot_system/ui/icon_carrot_currency.png"
 const TEAM_MERCS_STAGE_BACKGROUND_PATH := "res://assets/ui/prep/team_mercs_stage.png"
 const MERC_BTN_SIZE := Vector2(132, 132)                                  # 方形
@@ -1049,6 +1052,185 @@ func _build_top_actions() -> void:
 		Callable(self, "request_four_star_upgrade"))
 	_carrot_panel.closed.connect(_close_carrot_camp)
 	add_child(_carrot_panel)
+
+	_build_chat_entry()
+
+# ── 局内快捷短语（docs/聊天系统设计.md 批次 A）─────────────────────────────
+#
+# 走 ③ 的 ENet，网络上只有 {seat, phrase_id} 两个整数。协议与理由见
+# NetworkService.team_send_phrase 与 scripts/multiplayer/ChatPhrases.gd。
+#
+# 🔴 **备战阶段不能挡棋盘。** 这是玩家操作最密集的阶段（拖棋子、买卖），所以：
+#   - 入口是折叠的：平时只有一颗按钮，短语面板点开才有
+#   - **不上遮罩** —— 萝卜营地那种全屏 dimmer 在这里是错的，
+#     玩家要能一边看着棋盘一边发短语
+#   - 消息条的 mouse_filter 一律 IGNORE，绝不能吃掉落在它下面的棋盘点击
+#
+# 收到的消息**常驻显示在按钮上方并自动淡出**，不点开面板也看得见，
+# 所以这里不需要未读红点。局内的聊天是「瞥一眼」，不是「读列表」。
+
+const ChatPhrases := preload("res://scripts/multiplayer/ChatPhrases.gd")
+
+const CHAT_BTN_SIZE := Vector2(132, 132)
+const CHAT_LOG_LINES := 3
+const CHAT_LINE_HOLD_SEC := 6.0        # 停留多久之后开始淡出
+const CHAT_LINE_FADE_SEC := 1.0
+# 与 Team3v3Lobby.SLOT_LABELS 一致。⚠️ 两处都有，改一个必须改另一个 ——
+# 对不上的症状是同一个人在大厅显示成「席位B」、局内显示成「席位2」。
+const CHAT_SEAT_LABELS := ["A", "B", "C", "1", "2", "3"]
+
+var _chat_button: Button = null
+var _chat_panel: PanelContainer = null
+var _chat_log: VBoxContainer = null
+
+func _build_chat_entry() -> void:
+	# 只在联机 3v3 里建。单机与教学没有队友，一个永远不会有人说话的入口是纯噪音 ——
+	# 同 carrot_btn / team_mercs_btn 那两句 `visible = not GameState.tutorial_mode`。
+	if GameState.tutorial_mode or not NetworkService.team_active:
+		return
+
+	_chat_button = PrepWidgets.make_framed_text_button("", CHAT_BTN_PATH, CHAT_BTN_SIZE, 16,
+		_toggle_chat_panel)
+	_chat_button.name = "PrepChatButton"
+	_chat_button.anchor_left = 1.0
+	_chat_button.anchor_right = 1.0
+	_chat_button.anchor_top = 1.0
+	_chat_button.anchor_bottom = 1.0
+	# 右下角，**在商店刷新按钮正上方**。刷新占的是 offset_top -200 ~ -70
+	# （见 _build_sell_zone_and_refresh 里那句「改它就能挪按钮」），压上去会盖住它，
+	# 而刷新是备战期点得最勤的按钮之一。
+	_chat_button.offset_left = -CHAT_BTN_SIZE.x - 8
+	_chat_button.offset_right = -8
+	_chat_button.offset_top = -340
+	_chat_button.offset_bottom = -340 + CHAT_BTN_SIZE.y
+	_chat_button.z_index = 20
+	add_child(_chat_button)
+
+	_chat_log = VBoxContainer.new()
+	_chat_log.name = "PrepChatLog"
+	_chat_log.anchor_left = 1.0
+	_chat_log.anchor_right = 1.0
+	_chat_log.anchor_top = 1.0
+	_chat_log.anchor_bottom = 1.0
+	_chat_log.offset_left = -380
+	_chat_log.offset_right = -8
+	_chat_log.offset_top = -470
+	_chat_log.offset_bottom = -348
+	_chat_log.alignment = BoxContainer.ALIGNMENT_END
+	# 🔴 消息条压在棋盘右下方的空域上。IGNORE 不能省 —— 少了它，
+	# 一条飘过的消息会把它盖住的那格棋盘变成点不动的，而玩家只会觉得「卡了」。
+	_chat_log.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_chat_log.add_theme_constant_override("separation", 4)
+	_chat_log.z_index = 20
+	add_child(_chat_log)
+
+	_build_chat_panel()
+	if not NetworkService.team_chat_received.is_connected(_on_prep_chat_received):
+		NetworkService.team_chat_received.connect(_on_prep_chat_received)
+
+func _build_chat_panel() -> void:
+	_chat_panel = PanelContainer.new()
+	_chat_panel.name = "PrepChatPanel"
+	_chat_panel.anchor_left = 1.0
+	_chat_panel.anchor_right = 1.0
+	_chat_panel.anchor_top = 1.0
+	_chat_panel.anchor_bottom = 1.0
+	# 贴按钮左侧、底边与按钮对齐。往左展开是因为按钮已经贴着屏幕右缘了。
+	_chat_panel.offset_right = -CHAT_BTN_SIZE.x - 16
+	_chat_panel.offset_left = -CHAT_BTN_SIZE.x - 16 - 372
+	_chat_panel.offset_bottom = -340 + CHAT_BTN_SIZE.y
+	_chat_panel.offset_top = -340 + CHAT_BTN_SIZE.y - 268
+	_chat_panel.z_index = 30
+	_chat_panel.visible = false
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.075, 0.095, 0.055, 0.96)
+	style.border_color = Color(0.78, 0.57, 0.20, 0.92)
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(10)
+	style.set_content_margin_all(10)
+	_chat_panel.add_theme_stylebox_override("panel", style)
+	add_child(_chat_panel)
+
+	# 两列。一列放不下 12 条（会比棋盘还高），三列会让「我这边有点难」这种
+	# 六字短语被截断。
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 6)
+	grid.add_theme_constant_override("v_separation", 6)
+	_chat_panel.add_child(grid)
+	for group in ChatPhrases.GROUP_ORDER:
+		for phrase_id in ChatPhrases.ids_in_group(group):
+			grid.add_child(PrepWidgets.make_menu_button(
+				ChatPhrases.text(phrase_id), Vector2(170, 38), 15,
+				_send_chat_phrase.bind(int(phrase_id))))
+
+func _toggle_chat_panel() -> void:
+	if _chat_panel == null or not is_instance_valid(_chat_panel):
+		return
+	_chat_panel.visible = not _chat_panel.visible
+
+func _send_chat_phrase(phrase_id: int) -> void:
+	NetworkService.team_send_phrase(phrase_id)
+	# 发完就收起：备战期每一次多余的点击都是从摆棋时间里扣的。
+	# **不在这里回显** —— 等服务器广播回来，理由见 NetworkService.team_send_phrase。
+	if _chat_panel != null and is_instance_valid(_chat_panel):
+		_chat_panel.visible = false
+
+func _on_prep_chat_received(slot: int, phrase_id: int) -> void:
+	var body := ChatPhrases.text(phrase_id)
+	if body.is_empty():
+		# id 不合法。text() 刻意返回空串而不是占位符，见 ChatPhrases.gd。
+		return
+	_push_chat_line("%s：%s" % [_chat_speaker_name(slot), body])
+
+func _chat_speaker_name(slot: int) -> String:
+	var who := ""
+	if slot == int(NetworkService.team_local_slot):
+		# 自己的资料不在 team_seat_profiles 里（那张表是别人广播过来的）。
+		who = str(AccountManager.profile.get("player_name", "")).strip_edges()
+	else:
+		var profiles: Dictionary = NetworkService.team_seat_profiles
+		var identity: Dictionary = profiles.get(slot, profiles.get(str(slot), {}))
+		who = str(identity.get("player_name", "")).strip_edges()
+	if not who.is_empty():
+		return who
+	# 资料还没到（publish_lobby_identity 是异步的）。用座位号顶着 ——
+	# 空名字会让这条消息看起来像是没有人说的。
+	var seat: String = CHAT_SEAT_LABELS[slot] if slot >= 0 and slot < CHAT_SEAT_LABELS.size() else "?"
+	return ("Seat " + seat) if LocaleManager.get_locale() == "en" else ("席位" + seat)
+
+func _push_chat_line(text: String) -> void:
+	if _chat_log == null or not is_instance_valid(_chat_log):
+		return
+	var lbl := Label.new()
+	lbl.text = text
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	lbl.clip_text = true
+	lbl.add_theme_font_size_override("font_size", 17)
+	lbl.add_theme_color_override("font_color", Color(1.0, 0.94, 0.78))
+	lbl.add_theme_color_override("font_outline_color", Color(0.02, 0.025, 0.01, 0.95))
+	lbl.add_theme_constant_override("outline_size", 3)
+	_chat_log.add_child(lbl)
+	while _chat_log.get_child_count() > CHAT_LOG_LINES:
+		var oldest := _chat_log.get_child(0)
+		_chat_log.remove_child(oldest)
+		oldest.queue_free()
+	# 每条自己管自己的寿命，**不要共用一个 Timer**：共用的话后到的消息会重置
+	# 前一条的计时，表现为「一直有人说话时最早那条永远不消失」。
+	#
+	# tween 挂在 lbl 上（不是 self）—— 上面那个 while 提前把它 free 掉时
+	# tween 跟着失效，不会对着一个已销毁的节点写属性。
+	var tween := lbl.create_tween()
+	tween.tween_interval(CHAT_LINE_HOLD_SEC)
+	tween.tween_property(lbl, "modulate:a", 0.0, CHAT_LINE_FADE_SEC)
+	tween.tween_callback(lbl.queue_free)
+
+func _teardown_chat_entry() -> void:
+	# NetworkService 是 autoload（活得比本场景久），连接必须显式断开。
+	# 由 PrepScreen._exit_tree 调用 —— 生命周期钩子只在那一层有。
+	if NetworkService.team_chat_received.is_connected(_on_prep_chat_received):
+		NetworkService.team_chat_received.disconnect(_on_prep_chat_received)
 
 func _toggle_mute() -> void:
 	# 全局静音开关：静音 Master 总线（BGM + 音效都停），引擎级状态，切场景仍生效

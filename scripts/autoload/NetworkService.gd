@@ -1805,6 +1805,81 @@ func _rpc_team_prep_mercs(slot: int, round_index: int, ids: Array) -> void:
 		return
 	_store_team_prep_mercs(slot, round_index, ids)
 
+# --- 房间 / 局内快捷短语（docs/聊天系统设计.md 批次 A）-----------------------
+#
+# 网络上只走 phrase_id 一个整数，**不走文本**。理由见 ChatPhrases.gd 顶部：
+# 内容审核归零、不碰 RFC 第六节 🔴 第 3 条、载荷上界天然存在。
+#
+# 🔴 **客户端不自报座位号。** slot 一律由服务端从 sender 反查（`peer_slot[sender]`）。
+# 让客户端带 slot 就等于开放「以队友的名义说话」，而这类伪造在界面上完全看不出来 ——
+# 收到的人只看到一个座位和一句话，没有任何东西能让他起疑。
+#
+# 上面 `_rpc_team_prep_mercs_submit` 带了 slot，那是因为它要配合回合号做迟到包判断，
+# 且服务端逐条校验过 sender 与 slot 一致。这里没有那个需要，**不传就是最简单的挡法**。
+
+const ChatPhrases := preload("res://scripts/multiplayer/ChatPhrases.gd")
+
+signal team_chat_received(slot: int, phrase_id: int)
+
+func team_send_phrase(phrase_id: int) -> void:
+	# **本地不回显**，等服务器广播回来再显示。
+	#
+	# 服务器是唯一定序者。本地先显示会让发送者看到的顺序与其他人不同 ——
+	# 自己那条永远在最前，别人看到的是按到达顺序排的。聊天里这种不一致不会报错，
+	# 只会让两个人对着同一段对话说不到一起去。
+	# 代价是一个 RTT 的延迟，对快捷短语可以接受。
+	if not team_active or team_local_slot < 0:
+		return
+	if not ChatPhrases.is_valid_id(phrase_id):
+		return
+	if is_host:
+		# 本地房主模式：自己就是权威，直接广播并自己 emit（"call_remote" 不回环）。
+		_rpc_team_chat.rpc(team_local_slot, phrase_id)
+		team_chat_received.emit(team_local_slot, phrase_id)
+	else:
+		_rpc_team_chat_submit.rpc_id(1, phrase_id)
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_team_chat_submit(phrase_id: int) -> void:
+	if _dedicated_server:
+		var sender := multiplayer.get_remote_sender_id()
+		# count_strike=false：超限只丢这一条，不累计踢人。
+		# 见 RateLimitService.LIMITS 里 "chat_phrase" 的注释 ——
+		# 计 strike 意味着连点几下短语按钮就被踢下线，而那是对局中。
+		if not _rate_ok(sender, "chat_phrase", false):
+			return
+		var room := _room_for_peer(sender)
+		if room.is_empty():
+			return
+		var slot := int((room.get("peer_slot", {}) as Dictionary).get(sender, -1))
+		if slot < 0 or slot >= TEAM_SLOTS:
+			return
+		if not ChatPhrases.is_valid_id(phrase_id):
+			return
+		# 广播给房间里所有人，**包括发送者** —— 他那条也要经服务器定序回来，
+		# 否则就回到了 team_send_phrase 注释里说的那个不一致状态。
+		for peer_id in (room.get("peer_slot", {}) as Dictionary).keys():
+			if _peer_connected(int(peer_id)):
+				_rpc_team_chat.rpc_id(int(peer_id), slot, phrase_id)
+		return
+	if not is_host:
+		return
+	var host_slot := int(_team_peer_slot.get(multiplayer.get_remote_sender_id(), -1))
+	if host_slot < 0 or host_slot >= TEAM_SLOTS or not ChatPhrases.is_valid_id(phrase_id):
+		return
+	_rpc_team_chat.rpc(host_slot, phrase_id)
+	team_chat_received.emit(host_slot, phrase_id)
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_team_chat(slot: int, phrase_id: int) -> void:
+	# 来路是网络，收到的一样要校验。专服转发的是它已经校验过的 id，
+	# 但本地房主模式下这里就是唯一的那道门 —— 少这一道，房主一改包全房都跟着显示。
+	if slot < 0 or slot >= TEAM_SLOTS:
+		return
+	if not ChatPhrases.is_valid_id(phrase_id):
+		return
+	team_chat_received.emit(slot, phrase_id)
+
 # --- 3v3 team board collection (N2) ----------------------------------------
 # After everyone presses "start battle" in prep, each player submits their board
 # snapshot. The host gathers all real-player boards, then broadcasts the full

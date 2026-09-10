@@ -27,7 +27,11 @@ const MY_SLOT := 0
 # 服务端经济契约的指纹，与 NETWORK_PROTOCOL_VERSION 绑在一起。
 # 改契约（ECONOMY_ACTIONS 或 room_state.economy 的字段集）就必须同时升协议号并
 # 重新钉这两个值 —— 理由见 _case_server_contract_pinned()。
-const PINNED_PROTOCOL := 21
+# 2026-09-10 从 21 跟到 22（聊天批次 A 顶号，见 NetworkConfig 的 v22 注释）。
+# ⚠️ **这个值落后于协议号会让下面那条断言静默失效**：断言判的是
+# 「契约变了但协议号没变」，而它一旦落后，`VERSION != PINNED_PROTOCOL` 就恒为真，
+# 于是改契约不顶号也照样绿。协议号每次顶，这里必须跟。
+const PINNED_PROTOCOL := 22
 const PINNED_CONTRACT := "EJtXJv9dZMNC8Ipn"
 
 var _h: CheckHarness

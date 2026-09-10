@@ -159,6 +159,8 @@ func _exit_tree() -> void:
 	if AsyncActionController.action_state_changed.is_connected(_on_async_action_state_changed):
 		AsyncActionController.action_state_changed.disconnect(_on_async_action_state_changed)
 	AsyncActionController.clear_for_owner(self, "prep_scene_exit")
+	# 聊天入口建在 PrepUI 层，但生命周期钩子只有这一层有。
+	_teardown_chat_entry()
 	_close_battle_loading_overlay()
 	release_tutorial_target_provider()
 

@@ -92,6 +92,8 @@ func _ready() -> void:
 		NetworkService.team_lobby_changed.connect(_on_session_changed)
 	if not NetworkService.team_start_requested.is_connected(_on_team_start_requested):
 		NetworkService.team_start_requested.connect(_on_team_start_requested)
+	if not NetworkService.team_chat_received.is_connected(_on_chat_received):
+		NetworkService.team_chat_received.connect(_on_chat_received)
 	_build()
 	_refresh()
 	NetworkService.publish_lobby_identity()
@@ -195,6 +197,8 @@ func _exit_tree() -> void:
 		NetworkService.team_lobby_changed.disconnect(_on_session_changed)
 	if NetworkService.team_start_requested.is_connected(_on_team_start_requested):
 		NetworkService.team_start_requested.disconnect(_on_team_start_requested)
+	if NetworkService.team_chat_received.is_connected(_on_chat_received):
+		NetworkService.team_chat_received.disconnect(_on_chat_received)
 
 func _online() -> bool:
 	return NetworkService.team_active
@@ -242,7 +246,7 @@ func _build() -> void:
 	_add_texture(TEX_FRIENDS, Vector2(1340, 180), Vector2(230, 400), "right")
 	_add_label(_room_text("朋友列表", "Friends"), Vector2(1340, 215), Vector2(230, 42), 28, Color(0.47, 0.28, 0.08), "right")
 	_add_texture(TEX_CHAT, Vector2(80, 704), Vector2(430, 210), "left")
-	_add_label(_room_text("目前暂无聊天功能", "Chat coming soon"), Vector2(80, 780), Vector2(430, 36), 22, Color(0.53, 0.40, 0.27), "left")
+	_build_chat_box()
 	_add_texture(TEX_VS, Vector2(746, 427), Vector2(180, 85))
 
 	_slot_name_lbls.resize(6)
@@ -639,6 +643,170 @@ func _add_x_button(pos: Vector2, size: Vector2, cb: Callable, dbg_name: String =
 
 func _track(node: Control, pos: Vector2, size: Vector2, font_size: int = 0, edge: String = "") -> void:
 	_placed.append({"node": node, "pos": pos, "size": size, "font_size": font_size, "edge": edge})
+
+# ── 房间快捷短语（docs/聊天系统设计.md 批次 A）────────────────────────────
+# 预留位置就是原来那句「目前暂无聊天功能」所在的 TEX_CHAT 框：(80,704) 430×210。
+#
+# ⚠️ 这块是 edge="left" 左锚列的**宽度基准** —— 见 _draw_debug_layer 里那句
+# 「左列最宽的是聊天框(147+432)」。往右扩会推动 edge=left 那条分界线，
+# 进而影响所有左锚元素的位置。改宽度前先按 F3 看一眼那条线。
+#
+# 网络上只走 phrase_id，文本在本地查表。理由见 ChatPhrases.gd 顶部。
+
+const ChatPhrases := preload("res://scripts/multiplayer/ChatPhrases.gd")
+
+# 短语面板的样式与控件**直接复用备战期那套**（PrepWidgets），不是照着抄一份参数。
+# 它是「全静态、不持任何界面状态」的工具箱，且 make_menu_button 的注释写着
+# 「仿主界面『离线自测』样式」—— 在大厅用它是回到本源，不是跨界引用。
+# 这样两个界面的短语按钮是**同一份样式代码**，不存在改了一边忘了另一边。
+const PrepWidgets := preload("res://scenes/prep/PrepWidgets.gd")
+
+const CHAT_LINES := 4                              # 210 高的框放得下的行数上限
+const CHAT_LINE_H := 28.0
+# 🔴 文字区不能贴聊天框的边（框是 80,704 430×210），要让开贴图自带的边框装饰。
+# 实测两轮（tools/chat_ui_capture.tscn 出的图）：714 时第一行上半截被压住，
+# 726 仍蹭到，732 才干净；左边同理，96 时首字紧贴边框，收到 104。
+# **这件事在代码里完全看不出来，只有出图才看得见** —— 那个截图工具因此值得留着。
+# 框内可用区约 732 ~ 890：4 行 ×28 = 112 到 844，底下 848 起是短语入口，正好填满。
+const CHAT_FIRST_LINE_Y := 732.0
+const CHAT_ENTRY_Y := 848.0
+const CHAT_TEXT_X := 104.0
+const CHAT_TEXT_W := 392.0                         # 右边界 496，与下面那块判定区一致
+const CHAT_TEXT_COLOR := Color(0.53, 0.40, 0.27)   # 沿用原占位文字的颜色
+
+# 短语面板：从聊天框顶部往上弹。往下、往左都没地方 —— 聊天框已经贴着左下角。
+#
+# 宽度刻意收到 360（比聊天框的 430 窄）：再宽就会盖到敌方席位 1 的左半边
+# （SLOT_POS[3] 的 x 是 447）。面板是临时 UI，盖住一点无所谓，但能不盖就不盖。
+const PHRASE_PANEL_POS := Vector2(80, 392)
+const PHRASE_PANEL_SIZE := Vector2(360, 304)
+const PHRASE_BTN_SIZE := Vector2(162, 40)
+const PHRASE_BTN_STEP := Vector2(170, 48)          # 按钮间距 8
+const PHRASE_BTN_ORIGIN := Vector2(92, 404)        # 面板内边距 12
+const PHRASE_BTN_FONT := 15
+const PHRASE_COLUMNS := 2
+
+var _chat_labels: Array[Label] = []
+var _chat_history: Array[String] = []
+var _phrase_panel: Panel = null
+var _phrase_buttons: Array[Button] = []
+var _phrase_btn_label: Label = null
+
+func _build_chat_box() -> void:
+	# 必须在 _layout() 之前被调用（_build 里）—— _add_label 只是登记进 _placed，
+	# 真正定位是 _layout() 干的。同 _ready 里那条注释。
+	for i in CHAT_LINES:
+		var lbl := _add_label("", Vector2(CHAT_TEXT_X, CHAT_FIRST_LINE_Y + i * CHAT_LINE_H),
+			Vector2(CHAT_TEXT_W, CHAT_LINE_H), 19, CHAT_TEXT_COLOR, "left")
+		# _add_label 默认居中。聊天是逐行累积的文本，居中会让每来一条整块字都在跳。
+		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		# 昵称最长 24 字，一行放不下时截断而不是把框撑破。
+		lbl.clip_text = true
+		_chat_labels.append(lbl)
+	_phrase_btn_label = _add_label(_room_text("＋ 快捷短语", "＋ Quick chat"),
+		Vector2(CHAT_TEXT_X, CHAT_ENTRY_Y), Vector2(CHAT_TEXT_W, 40), 20, CHAT_TEXT_COLOR, "left")
+	_phrase_btn_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	# 判定区右边界 496，**刻意把贴图右下角那个黄色箭头也圈进来** ——
+	# 那个箭头是聊天框贴图自带的，看着就是「发送」，玩家一定会去点它。
+	# 圈不进来的话它点了没反应，而没反应的按钮比没有按钮更让人困惑。
+	_add_hit(Vector2(CHAT_TEXT_X, CHAT_ENTRY_Y), Vector2(CHAT_TEXT_W, 40), _toggle_phrase_panel,
+		"left", "hit_chat_phrase")
+	_build_phrase_panel()
+	_refresh_chat()
+
+func _build_phrase_panel() -> void:
+	# 面板与按钮**都在 _build 期建好、默认隐藏**，不是点开时才创建。
+	# 这是被 _layout() 逼出来的：它只给 _placed 里登记过的控件定位与缩放，
+	# 而登记发生在创建时。点开时才 new 的控件不在 _placed 里，
+	# 会停在默认位置（左上角、原始尺寸）—— 那正是 _ready() 里那句
+	# 「放在 _layout() 后面创建的标签会停在默认位置、看不见」说的坑。
+	_phrase_panel = Panel.new()
+	_phrase_panel.name = "PhrasePanel"
+	# 与备战期那块面板同一套参数（PrepUI._build_chat_panel）。
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.075, 0.095, 0.055, 0.96)
+	style.border_color = Color(0.78, 0.57, 0.20, 0.92)
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(10)
+	_phrase_panel.add_theme_stylebox_override("panel", style)
+	# 面板与按钮都要盖在后面才创建的席位/开始按钮之上，所以显式给 z_index，
+	# 不依赖 add_child 的先后顺序（_build_chat_box 在 _build 中段就被调了）。
+	_phrase_panel.z_index = 40
+	_phrase_panel.visible = false
+	add_child(_phrase_panel)
+	_track(_phrase_panel, PHRASE_PANEL_POS, PHRASE_PANEL_SIZE, 0, "left")
+
+	# 按 id 升序铺 2 列。**不放分组标题** —— 两列网格里塞不下，
+	# 备战期那块也没有，两边保持一致。12 条扫一眼就完了，标题是噪音。
+	var index := 0
+	for group in ChatPhrases.GROUP_ORDER:
+		for phrase_id in ChatPhrases.ids_in_group(group):
+			var btn := PrepWidgets.make_menu_button(
+				ChatPhrases.text(phrase_id), PHRASE_BTN_SIZE, PHRASE_BTN_FONT,
+				_on_phrase_picked.bind(int(phrase_id)))
+			# 🔴 必须清掉。make_menu_button 会设 custom_minimum_size = size，
+			# 而 Control.size 的 setter 会把值 clamp 到 custom_minimum_size ——
+			# 于是 _layout() 在窗口缩小（scale < 1）时设的尺寸会被顶回原值，
+			# 按钮不缩小、整块布局散开。备战期那边不用清，它走的是容器布局。
+			btn.custom_minimum_size = Vector2.ZERO
+			btn.z_index = 41
+			btn.visible = false
+			add_child(btn)
+			_track(btn, PHRASE_BTN_ORIGIN + Vector2(
+				float(index % PHRASE_COLUMNS) * PHRASE_BTN_STEP.x,
+				float(index / PHRASE_COLUMNS) * PHRASE_BTN_STEP.y),
+				PHRASE_BTN_SIZE, PHRASE_BTN_FONT, "left")
+			_phrase_buttons.append(btn)
+			index += 1
+
+func _toggle_phrase_panel() -> void:
+	if not _online():
+		DialogService.info({"owner": self,
+			"body": _room_text("联机对局中才能发送", "Available in online matches only")})
+		return
+	_set_phrase_panel_visible(not _phrase_panel.visible)
+
+func _set_phrase_panel_visible(shown: bool) -> void:
+	if _phrase_panel == null or not is_instance_valid(_phrase_panel):
+		return
+	_phrase_panel.visible = shown
+	for btn in _phrase_buttons:
+		btn.visible = shown
+
+func _on_phrase_picked(phrase_id: int) -> void:
+	# 只发不显示。本地回显要等服务器广播回来 —— 服务器是唯一定序者，
+	# 本地抢先显示会让自己看到的顺序和别人不一样。见 NetworkService.team_send_phrase。
+	NetworkService.team_send_phrase(phrase_id)
+	# 发完收起，同备战期。面板压着敌方席位的一角，没理由让它一直开着。
+	_set_phrase_panel_visible(false)
+
+func _on_chat_received(slot: int, phrase_id: int) -> void:
+	var body := ChatPhrases.text(phrase_id)
+	if body.is_empty():
+		# id 不合法。ChatPhrases.text() 刻意返回空串而不是「未知短语」这类占位符 ——
+		# 占位符会让一个协议错误在界面上长得像一条正常消息，于是没人会去查。
+		return
+	_chat_history.append("%s：%s" % [_chat_speaker_name(slot), body])
+	while _chat_history.size() > CHAT_LINES:
+		_chat_history.pop_front()
+	_refresh_chat()
+
+func _chat_speaker_name(slot: int) -> String:
+	var identity := _seat_profile(slot)
+	var who := str(identity.get("player_name", "")).strip_edges()
+	if not who.is_empty():
+		return who
+	# 资料还没到（publish_lobby_identity 是异步的，还带 10 秒重试）。
+	# 用座位号顶着 —— 空名字会让这条消息看起来像是没有人说的。
+	# 显式标 String：SLOT_LABELS 是无类型 Array，取出来是 Variant，
+	# `:=` 推断不出类型会直接变成解析错误（而解析错误在 headless 下不产生结果，
+	# 只打一行 SCRIPT ERROR —— 见 docs/CHECKS.md）。
+	var seat: String = SLOT_LABELS[slot] if slot >= 0 and slot < SLOT_LABELS.size() else "?"
+	return "%s%s" % [_room_text("席位", "Seat "), seat]
+
+func _refresh_chat() -> void:
+	for i in _chat_labels.size():
+		_chat_labels[i].text = _chat_history[i] if i < _chat_history.size() else ""
 
 func _room_text(zh: String, en: String) -> String:
 	return en if TranslationServer.get_locale().begins_with("en") else zh
