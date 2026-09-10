@@ -11,6 +11,30 @@ const SLOT_POS := [
 	Vector2(447, 502), Vector2(739, 502), Vector2(1015, 502),
 ]
 const SLOT_SIZE := Vector2(184, 175)
+const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
+var _slot_avatars: Array[TextureRect] = []
+var _identity_slot := -1
+
+func _seat_profile(index: int) -> Dictionary:
+	if index == _my_slot():
+		return AccountManager.profile
+	return NetworkService.team_seat_profiles.get(index, NetworkService.team_seat_profiles.get(str(index), {}))
+
+func _publish_identity(_profile: Dictionary = {}) -> void:
+	NetworkService.publish_lobby_identity()
+	_refresh()
+
+func _view_seat_profile(index: int) -> void:
+	var identity := _seat_profile(index)
+	var code := str(identity.get("friend_code", ""))
+	if code.length() != 8:
+		DialogService.info({"owner": self, "body": _room_text("玩家资料正在加载，请稍后重试", "Player profile is loading. Please retry shortly.")})
+		return
+	var screen := load("res://scenes/menu/ProfileScreen.tscn").instantiate() as Control
+	screen.configure_public(code)
+	var modal_id := "lobby_player_profile"
+	screen.back_requested.connect(func(): ModalStack.pop(modal_id))
+	ModalStack.push(screen, {"id": modal_id, "owner": self, "priority": 50, "dismiss_on_backdrop": false})
 const TEX_BACKGROUND := preload("res://assets/ui/room_v2/background.png")
 const TEX_BACK := preload("res://assets/ui/room_v2/back.png")
 const TEX_TITLE := preload("res://assets/ui/room_v2/title.png")
@@ -60,6 +84,7 @@ var _layout_scale := 1.0
 var _layout_origin := Vector2.ZERO
 
 func _ready() -> void:
+	AccountManager.profile_changed.connect(_publish_identity)
 	_slot_states[_local_slot] = "player"
 	if not NetworkService.session_changed.is_connected(_on_session_changed):
 		NetworkService.session_changed.connect(_on_session_changed)
@@ -69,6 +94,15 @@ func _ready() -> void:
 		NetworkService.team_start_requested.connect(_on_team_start_requested)
 	_build()
 	_refresh()
+	NetworkService.publish_lobby_identity()
+	_identity_slot = _my_slot()
+	var identity_retry := Timer.new()
+	identity_retry.wait_time = 10.0
+	identity_retry.autostart = true
+	identity_retry.timeout.connect(func():
+		if _online() and not NetworkService.team_seat_profiles.has(_my_slot()):
+			NetworkService.publish_lobby_identity())
+	add_child(identity_retry)
 	# 必须在 _layout() 之前：_add_label 只是把控件登记进 _placed，
 	# 真正定位是 _layout() 干的。放在它后面创建的标签会停在默认位置、看不见。
 	_setup_asset_loader()
@@ -215,6 +249,7 @@ func _build() -> void:
 	_slot_status_lbls.resize(6)
 	_slot_x_btns.resize(6)
 	_slot_ai_btns.resize(6)
+	_slot_avatars.resize(6)
 	for i in 6:
 		_build_slot(i)
 
@@ -236,6 +271,14 @@ func _build() -> void:
 func _build_slot(index: int) -> void:
 	var pos: Vector2 = SLOT_POS[index]
 	_add_texture(TEX_SLOT, pos, SLOT_SIZE)
+	var avatar := _add_texture(null, pos + Vector2(39, 40), Vector2(106, 106))
+	avatar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var shader := Shader.new()
+	shader.code = "shader_type canvas_item; void fragment(){vec4 c=texture(TEXTURE,UV); c.a*=1.0-smoothstep(0.48,0.5,length(UV-vec2(0.5))); COLOR=c;}"
+	var material := ShaderMaterial.new()
+	material.shader = shader
+	avatar.material = material
+	_slot_avatars[index] = avatar
 	_add_hit(pos + Vector2(0, 0), Vector2(182, 125), _on_slot_pressed.bind(index),
 		"", "hit_slot_%s" % SLOT_LABELS[index])
 	var name_pos := Vector2(pos.x - 10, pos.y - 46) if index < 3 else Vector2(pos.x - 10, pos.y + SLOT_SIZE.y + 4)
@@ -249,6 +292,9 @@ func _build_slot(index: int) -> void:
 	_slot_ai_btns[index] = ai_btn
 
 func _on_slot_pressed(index: int) -> void:
+	if str(_states()[index]) == "player":
+		_view_seat_profile(index)
+		return
 	if str(_states()[index]) != "empty":
 		return
 	var from := _my_slot()
@@ -321,13 +367,27 @@ func _refresh() -> void:
 		var x_btn: Button = _slot_x_btns[i]
 		var ai_btn: Button = _slot_ai_btns[i]
 		name_lbl.text = _slot_name(i, state, i == my_slot)
+		var identity := _seat_profile(i)
+		_slot_avatars[i].visible = state == "player"
+		if state == "player":
+			_slot_avatars[i].texture = AvatarCatalog.texture_for(str(identity.get("avatar", AvatarCatalog.default_avatar())))
+			if not identity.is_empty():
+				name_lbl.text = AccountManager.display_name(str(identity.get("player_name", "")), str(identity.get("friend_code", "")))
+			name_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		for placement in _placed:
+			if placement.node == name_lbl:
+				placement.font_size = 20 if state == "player" else 28
+			if placement.node == status_lbl:
+				placement.pos = SLOT_POS[i] + (Vector2(39, 137) if state == "player" else Vector2(34, 72))
+				placement.size = Vector2(106, 32) if state == "player" else Vector2(122, 42)
+				placement.font_size = 17 if state == "player" else 20
 		match state:
 			"player":
 				# 房主席位不显示准备状态（他用的是"开始游戏"按钮）。
 				# C25：此前写死 `i == 0`，而房主会因掉线顺延、也会因换位搬走
 				# （见 C19/R5）——迁移之后 slot 0 上的普通玩家准备状态被隐藏，
 				# 真正的房主又按普通玩家显示。改成认服务端广播的 leader_slot。
-				status_lbl.text = "" if i == _leader_slot() else (tr("lobby_ready_done") if bool(ready_arr[i]) else tr("lobby_ready"))
+				status_lbl.text = _room_text("准备", "Ready") if bool(ready_arr[i]) else _room_text("未准备", "Not ready")
 			"dummy":
 				status_lbl.text = _room_text("假想敌", "AI")
 			_:
@@ -438,6 +498,10 @@ func _on_start() -> void:
 
 func _on_session_changed() -> void:
 	_refresh()
+	_layout()
+	if _my_slot() != _identity_slot:
+		_identity_slot = _my_slot()
+		NetworkService.publish_lobby_identity()
 
 func _layout() -> void:
 	var viewport_size := get_viewport_rect().size

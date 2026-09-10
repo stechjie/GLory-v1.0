@@ -211,7 +211,7 @@ func _log(message: String) -> void:
 # 座位的对局进度。它们必须整组一起搬/一起清 —— 只动其中一部分，就会让后来坐进
 # 这个位子的人继承前一个人的身份或进度。
 const SEAT_SLOT_MAPS := [
-	"seat_tokens", "seat_public_id", "join_seq",
+	"seat_tokens", "seat_public_id", "seat_profiles", "join_seq",
 	"reserved", "reserve_deadline",
 	"treasure_offer", "owned_treasures", "altar_uses", "last_board", "boards",
 	"tx_log",   # E4：座位没了，这个座位的交易回执也没有意义了

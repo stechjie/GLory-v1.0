@@ -18,6 +18,7 @@ const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const Catalog := preload("res://scripts/account/AvatarCatalog.gd")
 const AvatarPicker := preload("res://scenes/menu/AvatarPickerPanel.gd")
+const TouchChoice := preload("res://ui/components/TouchChoiceButton.gd")
 # 引用常量而不是写字符串字面量。第一版这里写的是 "confirm"，而真值是 "confirmed"
 # —— 判断永远为假，玩家第一次设生日点了确认什么都不会发生，且不报任何错。
 # 仓库里 TutorialMode 就是引用常量的（SkipDialog.RESULT_CONFIRMED）。
@@ -70,8 +71,8 @@ var _pet_label: Label
 var _name_edit: LineEdit
 var _name_hint: Label
 var _gender_pick: OptionButton
-var _month_pick: OptionButton
-var _day_pick: OptionButton
+var _month_pick: TouchChoice
+var _day_pick: TouchChoice
 var _birth_private: CheckBox
 var _region_pick: OptionButton
 var _signature_edit: LineEdit
@@ -335,7 +336,7 @@ func _bio_section() -> Control:
 	# 生日。**只能设置一次** —— 设过之后两个下拉变只读。
 	var birth_row := HBoxContainer.new()
 	birth_row.add_theme_constant_override("separation", Tokens.GAP_S)
-	_month_pick = OptionButton.new()
+	_month_pick = TouchChoice.new()
 	_month_pick.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
 	_month_pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_month_pick.add_item(_text("月份", "Month"), 0)
@@ -344,7 +345,7 @@ func _bio_section() -> Control:
 	_month_pick.item_selected.connect(func(_i: int) -> void: _rebuild_days())
 	birth_row.add_child(_month_pick)
 
-	_day_pick = OptionButton.new()
+	_day_pick = TouchChoice.new()
 	_day_pick.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
 	_day_pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	birth_row.add_child(_day_pick)
@@ -573,7 +574,7 @@ func _refresh() -> void:
 	var days := _field_int("days_since_created", 1)
 	_days_label.text = _text("第 %d 天" % days, "Day %d" % days)
 
-	_pet_label.text = _text("出战宠物：%s", "Pet: %s") % _pet_display(_field("showcase_pet"))
+	_pet_label.text = _text("出战宠物：%s", "Pet: %s") % _pet_display(PlayerProfile.get_active() if _mode == Mode.SELF else _field("showcase_pet"))
 
 	if _mode == Mode.SELF:
 		_refresh_self()
@@ -678,13 +679,15 @@ func _on_save_bio_pressed() -> void:
 	var first_time := _field_int("birth_month") == 0 and int(payload.get("birth_month", 0)) > 0
 	if first_time:
 		DialogService.confirm({
+			"owner": self,
+			"request_id": "profile_birthday_%d" % get_instance_id(),
 			"title": _text("确认生日", "Confirm birthday"),
 			"body": _text(
 				"生日设置后**不可更改**。确认是 %d 月 %d 日吗？",
 				"Your birthday cannot be changed later. Confirm %d/%d?"
 			) % [int(payload["birth_month"]), int(payload["birth_day"])],
 			"confirm_text": _text("确认", "Confirm"),
-			"on_result": func(result: String) -> void:
+			"on_result": func(result: String, _request_id: String) -> void:
 				if result == ConfirmDialog.RESULT_CONFIRMED:
 					_save_bio(payload),
 		})

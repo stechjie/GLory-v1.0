@@ -251,7 +251,26 @@ func _remember_profile(result: Dictionary) -> Dictionary:
 # 自己的完整资料，含隐藏字段与可见性开关。**一次请求拿全** ——
 # 后端刻意没有拆成 /me + /me/bio，见设计文档第六节。
 func fetch_my_profile() -> Dictionary:
+	await sync_active_pet()
 	return _remember_profile(await _request(HTTPClient.METHOD_GET, "/v1/me/profile", null, true))
+
+var _pet_sync_busy := false
+
+func sync_active_pet() -> void:
+	if _pet_sync_busy or not is_logged_in():
+		return
+	_pet_sync_busy = true
+	while is_logged_in():
+		var pet := PlayerProfile.get_active()
+		var current: Variant = profile.get("showcase_pet", "")
+		if pet == ("" if current == null else str(current)):
+			break
+		var result := await update_profile({"showcase_pet": pet})
+		if int(result.get("code", 0)) != 200:
+			break
+		if PlayerProfile.get_active() == pet:
+			break
+	_pet_sync_busy = false
 
 
 # 昵称 / 头像 / 头像框 / 展示宠物。只传要改的键。
@@ -324,6 +343,8 @@ var _presence_busy := false
 
 
 func _ready() -> void:
+	PlayerProfile.pets_changed.connect(sync_active_pet)
+	login_succeeded.connect(func(_id: String, _name: String): sync_active_pet())
 	_presence_timer = Timer.new()
 	_presence_timer.wait_time = PRESENCE_HEARTBEAT_SEC
 	_presence_timer.autostart = false

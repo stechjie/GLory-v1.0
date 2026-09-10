@@ -11,6 +11,62 @@ signal team_room_list_received(rooms: Array)
 signal team_room_action_failed(reason: String)
 signal public_token_changed(token_id: String)
 
+var team_seat_profiles: Dictionary = {}
+
+func publish_lobby_identity() -> void:
+	if not team_active or is_host or state != SessionState.READY or team_local_slot < 0:
+		return
+	var bearer := AccountManager.access_token()
+	if not bearer.is_empty():
+		_rpc_lobby_identity.rpc_id(1, bearer)
+
+# Only verified account identity is broadcast. Private biography stays in HTTPS.
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_lobby_identity(bearer: String) -> void:
+	if not _dedicated_server or bearer.is_empty() or bearer.length() > 8192:
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if not _rate_ok(sender, "public_token"):
+		return
+	var room := _room_for_peer(sender)
+	if room.is_empty():
+		return
+	var slot := int((room.get("peer_slot", {}) as Dictionary).get(sender, -1))
+	var token := str((room.get("seat_tokens", {}) as Dictionary).get(slot, ""))
+	var request := HTTPRequest.new()
+	request.timeout = 8.0
+	request.body_size_limit = 65536
+	add_child(request)
+	var config := preload("res://scripts/account/AccountConfig.gd")
+	var err := request.request(config.backend_url() + "/v1/me/profile", PackedStringArray(["Authorization: Bearer " + bearer]))
+	if err != OK:
+		request.queue_free()
+		return
+	var reply: Array = await request.request_completed
+	request.queue_free()
+	if int(reply[0]) != HTTPRequest.RESULT_SUCCESS or int(reply[1]) != 200:
+		return
+	if _room_for_peer(sender) != room or int((room.get("peer_slot", {}) as Dictionary).get(sender, -1)) != slot \
+			or str((room.get("seat_tokens", {}) as Dictionary).get(slot, "")) != token:
+		return
+	var parsed: Variant = JSON.parse_string((reply[3] as PackedByteArray).get_string_from_utf8())
+	if not parsed is Dictionary:
+		return
+	var identity := public_seat_identity(parsed)
+	if identity.is_empty():
+		return
+	var profiles: Dictionary = room.get("seat_profiles", {})
+	profiles[slot] = identity
+	room["seat_profiles"] = profiles
+	_touch_room(room)
+	_broadcast_room_lobby(room)
+
+static func public_seat_identity(profile_data: Dictionary) -> Dictionary:
+	var code := str(profile_data.get("friend_code", ""))
+	if code.length() != 8:
+		return {}
+	return {"friend_code": code, "player_name": str(profile_data.get("player_name", "")).left(64), "avatar": str(profile_data.get("avatar", "")).left(128)}
+
 const ACTIVE_MATCH_HINT := "正在对局中，请进行游戏重连"
 var _match_check_busy := false
 var _match_check_id := ""
@@ -1579,6 +1635,7 @@ func _build_room_state(room: Dictionary, slot: int) -> Dictionary:
 		"round_id": round_id,
 		"leader_slot": int(room.get("leader_slot", 0)),
 		"slot_states": (room.get("slot_states", []) as Array).duplicate(),
+		"seat_profiles": (room.get("seat_profiles", {}) as Dictionary).duplicate(true),
 		"ready": (room.get("ready", []) as Array).duplicate(),
 		"suspended": bool(room.get("suspended", false)),
 		# --- 本座位身份 ---
@@ -2967,6 +3024,7 @@ func reset_peer_only() -> void:
 	_peer = null
 
 func reset() -> void:
+	team_seat_profiles.clear()
 	reset_peer_only()
 	_public_resume_pending = false
 	state = SessionState.OFFLINE
@@ -3597,6 +3655,7 @@ func _rpc_room_state(envelope: Dictionary) -> void:
 	team_local_slot = int(payload.get("my_slot", -1))
 	team_leader_slot = int(payload.get("leader_slot", 0))
 	team_slot_states = (payload.get("slot_states", []) as Array).duplicate()
+	team_seat_profiles = (payload.get("seat_profiles", {}) as Dictionary).duplicate(true)
 	team_ready = (payload.get("ready", []) as Array).duplicate()
 	server_round_index = int(payload.get("round_id", 0))
 	server_phase = str(payload.get("phase", ""))
