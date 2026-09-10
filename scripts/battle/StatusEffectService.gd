@@ -81,11 +81,41 @@ static func _boss_reduced_params(kind: String, params: Dictionary) -> Dictionary
 				next[key] = float(next[key]) * 0.5
 	return next
 
+# Damage-over-time effects remember who applied them.
+#
+# The caster is read from the damage context rather than passed in by every call
+# site: whoever applies the effect (basic attack, skill dispatch, treasure
+# reaction) has already opened that context, so this is correct for all ten
+# existing call sites and for any added later. _boss_reduced_params only halves
+# int/float params, so the uid string passes through untouched.
+#
+# Without it a DoT kill leaves killer_uid empty and
+# BattleSimulator._process_pending_kill_rewards skips the victim: the kill gold
+# is not misattributed, it is lost outright, and the stats panel credits nobody.
 static func add_poison(fighter: Dictionary, duration: float = 4.0, pct_max_hp: float = 0.03, bonus: float = 0.0) -> void:
-	add_status(fighter, "poison", duration, {"pct_max_hp": pct_max_hp * (1.0 + bonus), "tick_left": 0.0})
+	add_status(fighter, "poison", duration, {
+		"pct_max_hp": pct_max_hp * (1.0 + bonus),
+		"tick_left": 0.0,
+		"source_uid": DamageService.current_stat_source_uid(),
+	})
 
 static func add_bleed(fighter: Dictionary, duration: float = 3.0, pct_current_hp: float = 0.06) -> void:
-	add_status(fighter, "bleed", duration, {"pct_current_hp": pct_current_hp, "tick_left": 0.0})
+	add_status(fighter, "bleed", duration, {
+		"pct_current_hp": pct_current_hp,
+		"tick_left": 0.0,
+		"source_uid": DamageService.current_stat_source_uid(),
+	})
+
+
+# _tick_statuses clears the damage context before every fighter, so the caster
+# recorded above has to be put back for the duration of the tick.
+static func _apply_dot_damage(fighter: Dictionary, amount: int, params: Dictionary) -> void:
+	var previous := DamageService.current_stat_source_uid()
+	var source := str(params.get("source_uid", ""))
+	if not source.is_empty():
+		DamageService.set_stat_source_uid(source)
+	DamageService.apply_damage(fighter, amount, true)
+	DamageService.set_stat_source_uid(previous)
 
 static func interrupt(fighter: Dictionary) -> void:
 	# 缴械：1 秒内无法进行普通攻击（普攻在 _perform_attack 处被 has_status("interrupt") 拦下）。
@@ -103,14 +133,14 @@ static func tick(fighter: Dictionary, delta: float) -> Array[int]:
 			if float(s.tick_left) <= 0.0:
 				s.tick_left = POISON_TICK_SEC
 				var dmg := maxi(1, int(floor(float(fighter.max_hp) * float(s.get("pct_max_hp", 0.03)))))
-				DamageService.apply_damage(fighter, dmg, true)
+				_apply_dot_damage(fighter, dmg, s)
 				damages.append(dmg)
 		elif key == "burn":
 			s.tick_left = float(s.get("tick_left", 0.0)) - delta
 			if float(s.tick_left) <= 0.0:
 				s.tick_left = 1.0
 				var burn_dmg := maxi(1, int(round(float(s.get("dps", 1.0)))))
-				DamageService.apply_damage(fighter, burn_dmg, true)
+				_apply_dot_damage(fighter, burn_dmg, s)
 				damages.append(burn_dmg)
 		elif key == "bleed":
 			s.tick_left = float(s.get("tick_left", 0.0)) - delta
@@ -118,7 +148,7 @@ static func tick(fighter: Dictionary, delta: float) -> Array[int]:
 				s.tick_left = BLEED_TICK_SEC
 				var dmg2 := bleed_damage(int(fighter.hp), float(s.get("pct_current_hp", 0.06)))
 				if dmg2 > 0:
-					DamageService.apply_damage(fighter, dmg2, true)
+					_apply_dot_damage(fighter, dmg2, s)
 					damages.append(dmg2)
 		if float(s.remaining) <= 0.0:
 			remove_keys.append(str(key))

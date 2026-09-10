@@ -169,7 +169,7 @@ static func format_skill_detail(d: Dictionary) -> String:
 		"black_hole":
 			return "黑洞%s：牵引周围敌人，眩晕%.1f秒，并造成自身攻击%s伤害；暗7会延长控制。" % [cd, float(d.get("pull_sec", 2.0)), pct(float(d.get("damage_atk_pct", 2.2)))]
 		"poison_attack":
-			return "毒击：普通攻击附带中毒，每秒造成目标最大生命3%伤害，持续4秒；灵4毒伤x2。"
+			return "毒击：普通攻击附带中毒，每秒造成目标最大生命%s伤害，持续%.1f秒；灵4毒伤x2。" % [pct(float(d.get("poison_pct_max_hp", 0.03))), float(d.get("poison_duration", 4.0))]
 		"parasite_on_kill":
 			return "寄生：普攻标记目标；标记目标死亡时召唤该敌人的分身，生命为原目标%s，攻防为原目标%s。" % [pct(float(d.get("clone_hp_pct", 0.10))), pct(float(d.get("clone_atk_def_pct", 0.50)))]
 		"defense_down_attack":
@@ -177,7 +177,7 @@ static func format_skill_detail(d: Dictionary) -> String:
 		"death_poison_explosion":
 			return "死亡毒爆：死亡时对周围敌人造成自身攻击%s真实伤害，并施加中毒。" % pct(float(d.get("damage_atk_pct", 2.5)))
 		"poison_reflect_armor_stack":
-			return "毒甲：受伤后反弹本次伤害%s真实伤害并使攻击者中毒；自身防御每次+%d，最多%d层。" % [pct(float(d.get("reflect_taken_damage_pct", 0.12))), int(d.get("armor_per_hit", 2)), int(d.get("max_stacks", 10))]
+			return "毒甲：受伤后反弹本次伤害%s真实伤害并使攻击者中毒；自身防御每次+%s，最多%d层。" % [pct(float(d.get("reflect_taken_damage_pct", 0.12))), pct(float(d.get("armor_per_hit_pct", 0.14))), int(d.get("max_stacks", 10))]
 		"unique_death_execute":
 			return "母灵：每名玩家最多1只；3v3中多个玩家的母灵可同时生效且各自独立计数。每5个非母灵处决造成的敌军死亡触发一次；1阶/佣兵50%、2阶35%、3阶10%即死，Boss改为20%最大生命伤害。灵7改为每4个死亡触发。"
 		"attack_interrupt":
@@ -298,7 +298,7 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"black_hole":
 			return "Black Hole%s: Pull surrounding enemies, stun for %.1fs, and deal %s ATK damage. Dark 7 extends the stun." % [cd, float(d.get("pull_sec", 2.0)), pct(float(d.get("damage_atk_pct", 2.2)))]
 		"poison_attack":
-			return "Poison Strike: Normal attacks apply poison — 3% max HP per second for 4s. Undead 4 doubles poison damage."
+			return "Poison Strike: Normal attacks apply poison — %s max HP per second for %.1fs. Undead 4 doubles poison damage." % [pct(float(d.get("poison_pct_max_hp", 0.03))), float(d.get("poison_duration", 4.0))]
 		"parasite_on_kill":
 			return "Parasite: Mark targets with normal attacks. When a marked target dies, summon its clone at %s HP and %s ATK/DEF." % [pct(float(d.get("clone_hp_pct", 0.10))), pct(float(d.get("clone_atk_def_pct", 0.50)))]
 		"defense_down_attack":
@@ -306,7 +306,7 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"death_poison_explosion":
 			return "Death Poison Burst: On death, deal %s ATK true damage to surrounding enemies and apply poison." % pct(float(d.get("damage_atk_pct", 2.5)))
 		"poison_reflect_armor_stack":
-			return "Toxic Armor: On taking damage, reflect %s as true damage and poison the attacker. Own DEF stacks +%d per hit (max %d stacks)." % [pct(float(d.get("reflect_taken_damage_pct", 0.12))), int(d.get("armor_per_hit", 2)), int(d.get("max_stacks", 10))]
+			return "Toxic Armor: On taking damage, reflect %s as true damage and poison the attacker. Own DEF stacks +%s per hit (max %d stacks)." % [pct(float(d.get("reflect_taken_damage_pct", 0.12))), pct(float(d.get("armor_per_hit_pct", 0.14))), int(d.get("max_stacks", 10))]
 		"unique_death_execute":
 			return "Mother Wisp: each player can field 1; in 3v3, each player's Mother Wisp works at the same time and counts independently. Every 5 enemy deaths not caused by Mother Wisp execute: Tier 1/Merc 50%, Tier 2 35%, Tier 3 10%; vs Boss deal 20% max HP instead. Undead 7: every 4 deaths."
 		"attack_interrupt":
