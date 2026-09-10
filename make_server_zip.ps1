@@ -26,7 +26,8 @@ param(
     # 留空 = 自动命名为 glory_server_p<协议号>.zip（协议号从源码实读）
     [string]$Out = "",
     # 冷启动冒烟测试用的 Godot。找不到就跳过测试并**降级为失败**（不能默默放过）。
-    [string]$Godot = "C:\Users\Leno\Desktop\godot\Godot_v4.7-stable_win64_console.exe",
+    # **留空 = 自动查找**（见 Resolve-Godot）。
+    [string]$Godot = "",
     [switch]$SkipSmoke,
     [switch]$NoPause
 )
@@ -43,6 +44,62 @@ $tmpZip = "$env:TEMP\glory_server_$stamp.zip"
 $smokeDir = "C:\_glory_smoke_$stamp"
 $smokePort = 8199
 
+# Godot console 版的位置：**按优先级找，不写死路径。**
+#
+# 这里原来写死的是 "C:\Users\Leno\Desktop\godot\..."。换一台机器（或者换个人）
+# 之后双击 make_server_zip.bat 必然失败，报的还是「找不到 Godot 可执行文件」——
+# 于是「打包」变成了必须问别人才会做的事。
+#
+# 优先级，越靠前越优先：
+#   1. -Godot 参数           明确指定，永远最高
+#   2. GLORY_GODOT 环境变量   CI / 想固定某个版本时用
+#   3. tools\godot_path.txt   本机设一次就不用再管（已进 .gitignore）
+#   4. 自动扫描常见位置        桌面 / 下载 / Program Files
+#
+# 必须是 **console 版**：普通版在 Windows 上不把日志写到 stdout，
+# 冒烟测试会收到空输出，然后把「起服成功」误判成失败。
+function Resolve-Godot([string]$explicit, [string]$srcRoot) {
+    if ($explicit) {
+        if (-not (Test-Path $explicit)) { throw "-Godot 指定的文件不存在: $explicit" }
+        return $explicit
+    }
+    if ($env:GLORY_GODOT -and (Test-Path $env:GLORY_GODOT)) { return $env:GLORY_GODOT }
+
+    $pinFile = Join-Path $srcRoot "tools\godot_path.txt"
+    if (Test-Path $pinFile) {
+        $pinned = (Get-Content $pinFile -Raw -Encoding UTF8).Trim()
+        if ($pinned -and (Test-Path $pinned)) { return $pinned }
+        if ($pinned) {
+            Write-Host "    tools\godot_path.txt 指向的文件不存在，改用自动扫描: $pinned" -ForegroundColor Yellow
+        }
+    }
+
+    $roots = @(
+        (Join-Path $env:USERPROFILE "Downloads"),
+        (Join-Path $env:USERPROFILE "Desktop"),
+        (Join-Path $env:USERPROFILE "OneDrive\桌面"),
+        (Join-Path $env:USERPROFILE "OneDrive\Desktop"),
+        "C:\Program Files",
+        "C:\Program Files (x86)"
+    ) | Where-Object { $_ -and (Test-Path $_) }
+
+    $found = @()
+    foreach ($root in $roots) {
+        # 深度限制 2 层：Godot 官方 zip 解出来就是 <目录>\Godot_...exe，
+        # 再深就是在扫整个用户目录，慢且没必要。
+        $found += Get-ChildItem -Path $root -Filter "Godot*console*.exe" -File -Depth 2 -ErrorAction SilentlyContinue
+    }
+    if (-not $found) { return "" }
+
+    # 优先 4.7.x（project.godot 的 config/features 写的是 4.7），同版本取最新。
+    $best = $found |
+        Sort-Object @{ Expression = { if ($_.Name -match "v4\.7") { 1 } else { 0 } }; Descending = $true },
+                    @{ Expression = { $_.Name }; Descending = $true } |
+        Select-Object -First 1
+    return $best.FullName
+}
+
+
 function Fail($msg) {
     Write-Host ""
     Write-Host "!! 打包失败: $msg" -ForegroundColor Red
@@ -56,6 +113,11 @@ try {
     if (-not (Test-Path $src)) { throw "找不到项目目录: $src" }
     if (-not (Test-Path "$src\scenes\server\ServerMain.tscn")) {
         throw "缺少专服入口场景 scenes/server/ServerMain.tscn（没有它服务器会去加载 UI 主场景然后静默挂住）"
+    }
+
+    if (-not $SkipSmoke) {
+        $Godot = Resolve-Godot $Godot $src
+        if ($Godot) { Write-Host "    Godot: $Godot" -ForegroundColor DarkGray }
     }
 
     Write-Host "[2/6] 准备临时目录..." -ForegroundColor Cyan
@@ -148,7 +210,10 @@ try {
     if ($SkipSmoke) {
         Write-Host "    !! 已跳过冒烟测试 —— 这个包**没有**冷启动证据，不可作为发布候选" -ForegroundColor Yellow
     } elseif (-not (Test-Path $Godot)) {
-        throw "找不到 Godot 可执行文件: $Godot（用 -Godot 指定，或 -SkipSmoke 明确放弃验证）"
+        throw ("自动找不到 Godot console 版。三种解法任选一种：`n" +
+            "  1. 在项目根目录建 tools\godot_path.txt，写一行 Godot_v4.7.x_console.exe 的完整路径（推荐，设一次就好）`n" +
+            "  2. 运行时加 -Godot ""<完整路径>""`n" +
+            "  3. 加 -SkipSmoke 明确放弃冷启动验证（那种包没有冷启动证据，不可作为发布候选）")
     } else {
         New-Item -ItemType Directory -Force $smokeDir | Out-Null
         [System.IO.Compression.ZipFile]::ExtractToDirectory($tmpZip, $smokeDir)

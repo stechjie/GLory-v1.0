@@ -27,7 +27,7 @@ const MY_SLOT := 0
 # 服务端经济契约的指纹，与 NETWORK_PROTOCOL_VERSION 绑在一起。
 # 改契约（ECONOMY_ACTIONS 或 room_state.economy 的字段集）就必须同时升协议号并
 # 重新钉这两个值 —— 理由见 _case_server_contract_pinned()。
-const PINNED_PROTOCOL := 19
+const PINNED_PROTOCOL := 21
 const PINNED_CONTRACT := "EJtXJv9dZMNC8Ipn"
 
 var _h: CheckHarness

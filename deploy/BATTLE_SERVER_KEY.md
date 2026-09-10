@@ -106,16 +106,54 @@ ls ~/*.zip
 
 ### 5. 打包
 
-在项目文件夹里 Shift+右键 →「在此处打开 PowerShell 窗口」：
+**双击项目根目录的 `make_server_zip.bat`。** 就这一步。
 
-```powershell
-.\make_server_zip.ps1 -Godot "<你的 Godot console 版路径>"
+脚本会自己找 Godot（2026-09-10 起），不用再传路径。它按这个顺序找：
+
+| 顺序 | 来源 |
+|---|---|
+| 1 | `-Godot "<路径>"` 参数 |
+| 2 | `GLORY_GODOT` 环境变量 |
+| 3 | `tools\godot_path.txt`（本机设一次，已在 .gitignore 里） |
+| 4 | 自动扫描：下载 / 桌面 / OneDrive 桌面 / Program Files，深度 2 层 |
+
+自动扫描优先挑 **4.7.x**（`project.godot` 的 `config/features` 写的是 4.7），
+同版本取最新。必须是 **console 版** —— 普通版在 Windows 上不把日志写到 stdout，
+冒烟测试会收到空输出，然后把「起服成功」误判成失败。
+
+自动找不到时报错会直接告诉你怎么办。想固定一个版本（比如让它和线上服务器的
+Godot 版本一致）就建这个文件：
+
+```
+tools\godot_path.txt
 ```
 
-**不要双击 `make_server_zip.bat`** —— 它用脚本里写死的默认 Godot 路径
-（`C:\Users\Leno\...`），换台机器就找不到。
+里面写一行完整路径，例如：
 
-记下输出里的 SHA-256，下一步要核对。
+```
+C:\Users\你\Desktop\GODOT4.7\Godot_v4.7-stable_win64.exe\Godot_v4.7-stable_win64_console.exe
+```
+
+#### 输出
+
+包名是 `glory_server_p<协议号>.zip`，协议号**从源码实读**，不接受手写 ——
+手写的版本号会和内容漂移。记下输出里的 SHA-256，下一步要核对。
+
+#### 打包失败是件好事
+
+脚本在这些情况下会**拒绝出包**，并且**不覆盖上一个好包**：
+
+- 冷启动起不来（解压到空目录 → headless 起服 → 必须打印 `server started protocol=N`）
+- 冷启动的 stderr 里有 `SCRIPT ERROR` 或 `Failed to instantiate an autoload`
+- zip 里有反斜杠路径分隔符（不符合 ZIP 规范，换个解压工具就会解成平铺文件）
+- 缺 `scenes/server/ServerMain.tscn` 或 `.godot/global_script_class_cache.cfg`
+
+红字出现时**不要绕过它**，包传上去只会静默挂住。
+
+> 新增了 `class_name` 全局类之后要先重建缓存，否则服务器解析阶段直接挂：
+> ```
+> <Godot console> --headless --editor --quit --path .
+> ```
 
 ### 6. 上传并替换项目目录
 

@@ -278,7 +278,14 @@ func refresh_carrot_gathering() -> void:
 	_refresh_carrot_gathering()
 
 func _refresh_carrot_gathering() -> void:
+	# 离树守卫：Main._clear() 是 remove_child + queue_free，切界面后节点在本帧末
+	# 销毁前仍然 is_instance_valid，但已经不在树上。而 NetworkService 是 autoload，
+	# 这窗口里来一个 room_state 广播照样会打到这里（PrepFlowController._on_network_
+	# session_changed），往离树的根上重建一批宠物。同帧 _refresh_carrot_farm_visual()
+	# 还可能触发 _play_carrot_world_flipbook 的 `await get_tree()...`，离树时是空指针。
 	if _carrot_gather_root == null or not is_instance_valid(_carrot_gather_root):
+		return
+	if not is_inside_tree():
 		return
 	_refresh_carrot_farm_visual()
 	var entries := _carrot_pet_entries()
@@ -365,6 +372,10 @@ func _normalize_carrot_pet(pet: Node3D, pet_id: String, target: Vector3, yaw: fl
 		attempts_left: int = 0) -> void:
 	if pet == null or not is_instance_valid(pet):
 		return
+	# 已离树就直接放弃，且**不重试**：离树的宠物不会再回来，重试只会烧掉 6 次
+	# call_deferred，最后再报一句误导人的「模型未生成可测量网格」。
+	if not pet.is_inside_tree():
+		return
 	# The preparation camera looks down at a steep angle.  Tilt only the visual
 	# model away from the camera so the face and front of the body remain visible.
 	# The rotated bounds below then keep the feet resting on the gathering ground.
@@ -411,7 +422,12 @@ func _resume_carrot_pet_ambient(pet: Node3D, harvest_serial: int) -> void:
 	_play_carrot_pet_ambient(pet)
 
 func play_carrot_harvest_feedback(gain: int) -> void:
+	# 这个函数是 PrepScreen._ready() 里 call_deferred 出去的，落地时界面可能已被
+	# Main._clear() 摘树（见 _refresh_carrot_gathering 的说明）。离树时 create_tween()
+	# 会直接报 "Can't create Tween when not inside scene tree"。
 	if gain <= 0 or _carrot_gather_root == null or not is_instance_valid(_carrot_gather_root):
+		return
+	if not is_inside_tree():
 		return
 	_play_carrot_world_flipbook(PREP_CARROT_DIG_PATH, 0.12, 0.00050)
 	for pet in _carrot_pet_nodes:
@@ -474,6 +490,10 @@ func _play_carrot_world_flipbook(path: String, height: float, pixel_size: float)
 		sprite.queue_free()
 
 func _carrot_pet_aabb(root: Node3D) -> AABB:
+	# 下面按 global_transform 换算，离树时引擎只会报错并返回单位矩阵，算出来的包围盒
+	# 是错的。兜底放在 helper 里，任何调用点都不会再踩。
+	if root == null or not is_instance_valid(root) or not root.is_inside_tree():
+		return AABB()
 	var out := AABB()
 	var found := false
 	var stack: Array[Node] = [root]
