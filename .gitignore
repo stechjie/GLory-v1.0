@@ -95,6 +95,10 @@ upload ssh code.txt
 # 写死 p17 的话，顶号到 p19 之后新包就不在忽略范围内了，
 # 然后某次 `git add -A` 会把一个 4.8 MB 的构建产物提交进仓库。
 /glory_server_p*.zip
+
+# 本机的 Godot console 版路径。每台机器不一样，所以不进 git ——
+# make_server_zip.ps1 会读它，读不到就自动扫描（见 Resolve-Godot）。
+/tools/godot_path.txt
 /glory_server_upload*.zip
 
 # ── Glory Backend（FastAPI）──
