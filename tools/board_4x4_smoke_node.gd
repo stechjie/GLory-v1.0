@@ -29,6 +29,21 @@ func _ready() -> void:
 	add_child(prep)
 	await get_tree().process_frame
 	await get_tree().process_frame
+	# 联机客机的萝卜由 room_state 直接写入 GameState；入口计数必须跟着
+	# session_changed 刷新，不能只在玩家本地操作时刷新。
+	var carrot_counter := prep.get("_carrot_counter_label") as Label
+	var initial_carrots := GameState.carrots
+	GameState.carrots = mini(7, GameState.carrot_capacity())
+	prep.call("_on_network_session_changed")
+	_h.expect(carrot_counter != null, "carrot_counter_missing",
+		"Carrot Camp 入口缺少常驻萝卜数量")
+	if carrot_counter != null:
+		_h.expect(carrot_counter.text == "%d / %d" % [GameState.carrots, GameState.carrot_capacity()],
+			"carrot_counter_stale_after_room_state",
+			"room_state 同步后入口显示 %s，实际为 %d / %d" % [
+				carrot_counter.text, GameState.carrots, GameState.carrot_capacity()])
+	GameState.carrots = initial_carrots
+	prep.call("_refresh_carrot_counter")
 	_h.expect(GameState.board_slots.size() == GameConstants.CELL_COUNT,
 		"board_slots_size", "GameState.board_slots 有 %d 格，期望 %d" % [
 			GameState.board_slots.size(), GameConstants.CELL_COUNT])

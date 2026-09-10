@@ -31,6 +31,10 @@ const PREP_CARROT_PROP_PATH := "res://assets/props/prep/carrot_gathering_v1.png"
 const PREP_CARROT_FARM_DECOR_PATH := "res://assets/props/carrot_system/vfx/atlas_farm_level_decorations.png"
 const PREP_CARROT_DIG_PATH := "res://assets/props/carrot_system/vfx/atlas_digging_dust_4x4.png"
 const PREP_CARROT_LEVELUP_PATH := "res://assets/props/carrot_system/vfx/atlas_farm_levelup_4x4.png"
+const CARROT_PET_POSITIONS := [
+	Vector3(-0.14, 0.0, -0.11), Vector3(0.0, 0.0, -0.18), Vector3(0.14, 0.0, -0.11),
+	Vector3(-0.14, 0.0, 0.12), Vector3(0.0, 0.0, 0.15), Vector3(0.14, 0.0, 0.12),
+]
 # ══════ 只调「4×4 格子」（发光圈 + 落子网格）在地面上的铺排 ══════
 # ⚠️ 只动格子，不动画死的石台图；挪多了格子会跑出石台、对不上。
 # UV 是贴图 0~1 占比：范围拉大 = 格子铺更开；两端同时加/减 = 格子整排平移。
@@ -210,8 +214,9 @@ func _setup_carrot_gathering() -> void:
 		carrot_sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		# Keep the generated prop close to one world unit after the
 		# 3.5x preparation-stage scale.
-		carrot_sprite.pixel_size = 0.00026
-		carrot_sprite.position = Vector3(0.0, 0.14, 0.0)
+		# Leave enough room for the faces of the three pets in the back row.
+		carrot_sprite.pixel_size = 0.00022
+		carrot_sprite.position = Vector3(0.0, 0.12, 0.0)
 		carrot_sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		carrot_sprite.transparent = true
 		carrot_sprite.shaded = false
@@ -230,8 +235,8 @@ func _setup_carrot_farm_decoration() -> void:
 	_carrot_farm_decor = Sprite3D.new()
 	_carrot_farm_decor.name = "CarrotFarmLevelDecoration"
 	_carrot_farm_decor.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	_carrot_farm_decor.pixel_size = 0.00042
-	_carrot_farm_decor.position = Vector3(0.0, 0.12, -0.025)
+	_carrot_farm_decor.pixel_size = 0.00032
+	_carrot_farm_decor.position = Vector3(0.0, 0.09, -0.025)
 	_carrot_farm_decor.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	_carrot_farm_decor.transparent = true
 	_carrot_farm_decor.shaded = false
@@ -241,12 +246,16 @@ func _setup_carrot_farm_decoration() -> void:
 func _refresh_carrot_farm_visual() -> void:
 	var farm_level := GameState.carrot_farm_level()
 	if _carrot_farm_decor != null and is_instance_valid(_carrot_farm_decor):
-		var atlas := AtlasTexture.new()
-		atlas.atlas = ResourceLoader.load(PREP_CARROT_FARM_DECOR_PATH) as Texture2D
-		# Six economy levels share four visual tiers so progression stays readable.
-		var tier: int = int([0, 0, 1, 2, 2, 3][clampi(farm_level, 0, 5)])
-		atlas.region = Rect2((tier % 2) * 512, (tier / 2) * 512, 512, 512)
-		_carrot_farm_decor.texture = atlas
+		# The tall foliage tiers looked like a second, shorter carrot.  Early
+		# levels use the single authored carrot; later levels add only a low
+		# planting ring or the final golden wreath around its base.
+		_carrot_farm_decor.visible = farm_level >= 2
+		if _carrot_farm_decor.visible:
+			var atlas := AtlasTexture.new()
+			atlas.atlas = ResourceLoader.load(PREP_CARROT_FARM_DECOR_PATH) as Texture2D
+			var tier := 2 if farm_level < 4 else 3
+			atlas.region = Rect2((tier % 2) * 512, (tier / 2) * 512, 512, 512)
+			_carrot_farm_decor.texture = atlas
 	if _carrot_last_farm_level >= 0 and farm_level > _carrot_last_farm_level:
 		_play_carrot_world_flipbook(PREP_CARROT_LEVELUP_PATH, 0.23, 0.00058)
 	_carrot_last_farm_level = farm_level
@@ -315,7 +324,7 @@ func _refresh_carrot_gathering() -> void:
 		# Pet scenes populate their FBX meshes in _ready(), so normalize after
 		# the model tree exists.
 		call_deferred("_normalize_carrot_pet", pet, pet_id, target,
-			float(entry.get("yaw", 0.0)), 6)
+			_carrot_facing_yaw(target), 6)
 
 func _carrot_pet_entries() -> Array:
 	var starters: Array = PetService.starter_ids()
@@ -324,42 +333,33 @@ func _carrot_pet_entries() -> Array:
 		local_pet = str(PlayerProfile.owned_pets[0])
 	if local_pet.is_empty() and not starters.is_empty():
 		local_pet = str(starters[0])
-	if not NetworkService.team_active:
-		return [{"slot": 0, "pet_id": local_pet,
-			"position": Vector3(-0.11, 0.0, 0.14), "yaw": 0.0}]
-	var local_slot := maxi(0, NetworkService.team_local_slot)
-	var local_team := GameConstants.team_of_slot(local_slot)
+	if starters.is_empty():
+		return []
+	var local_slot := clampi(NetworkService.team_local_slot, 0, 5) if NetworkService.team_active else 4
 	var entries: Array = []
-	for slot in NetworkService.TEAM_SLOTS:
-		var state := "empty"
-		if slot < NetworkService.team_slot_states.size():
-			state = str(NetworkService.team_slot_states[slot])
-		if state not in ["player", "bot"]:
-			continue
+	for slot in 6:
 		var pet_id := local_pet if slot == local_slot else ""
 		var snapshot: Dictionary = {}
-		if NetworkService.team_boards.has(slot):
+		if NetworkService.team_active and NetworkService.team_boards.has(slot):
 			snapshot = NetworkService.team_boards[slot]
-		elif NetworkService.team_boards.has(str(slot)):
+		elif NetworkService.team_active and NetworkService.team_boards.has(str(slot)):
 			snapshot = NetworkService.team_boards[str(slot)]
 		if pet_id.is_empty():
 			pet_id = str(snapshot.get("pet", ""))
 		if pet_id.is_empty() and not starters.is_empty():
 			pet_id = str(starters[slot % starters.size()])
 		if PetService.model_path(pet_id).is_empty():
-			continue
-		var friendly := GameConstants.team_of_slot(slot) == local_team
-		var row_index := slot % GameConstants.TEAM_SIDE_SIZE
+			pet_id = str(starters[slot % starters.size()])
 		entries.append({
 			"slot": slot,
 			"pet_id": pet_id,
-			"position": Vector3((float(row_index) - 1.0) * 0.15, 0.0,
-				0.14 if friendly else -0.14),
-			# All gathering pets face the preparation camera so their faces and
-			# bodies remain readable at this steep 2.5D camera angle.
-			"yaw": 0.0,
+			"position": CARROT_PET_POSITIONS[slot],
 		})
 	return entries
+
+func _carrot_facing_yaw(position: Vector3) -> float:
+	var toward_carrot := Vector3(-position.x, 0.0, -position.z).normalized()
+	return rad_to_deg(atan2(toward_carrot.x, toward_carrot.z))
 
 func _normalize_carrot_pet(pet: Node3D, pet_id: String, target: Vector3, yaw: float,
 		attempts_left: int = 0) -> void:

@@ -35,6 +35,7 @@ const REFRESH_BTN_PATH := "res://assets/ui/buttons/btn_refresh_fire_lowpoly.png"
 const MERC_BTN_PATH := "res://assets/ui/buttons/btn_merc_lowpoly.png"
 const TEAM_MERCS_BTN_PATH := "res://assets/ui/buttons/btn_team_mercs_lowpoly.png"
 const CARROT_BTN_PATH := "res://assets/props/carrot_system/ui/button_carrot_camp.png"
+const CARROT_CURRENCY_ICON_PATH := "res://assets/props/carrot_system/ui/icon_carrot_currency.png"
 const TEAM_MERCS_STAGE_BACKGROUND_PATH := "res://assets/ui/prep/team_mercs_stage.png"
 const MERC_BTN_SIZE := Vector2(132, 132)                                  # 方形
 const SHOP_REFRESH_FIRE_ATLAS_PATH := "res://assets/vfx/prep/scroll_edge_fire_atlas.png"
@@ -111,6 +112,7 @@ var _team_merc_snapshot_round := -1
 var _team_merc_snapshot_initialized := false
 var _carrot_panel
 var _carrot_button: Button
+var _carrot_counter_label: Label
 var _carrot_dimmer: ColorRect
 var _tutorial_target_provider: TutorialTargetProviderScript
 
@@ -909,7 +911,7 @@ func _build_top_actions() -> void:
 	side_col.offset_left = -STATS_BTN_SIZE.x - 8
 	side_col.offset_right = -8
 	side_col.offset_top = 2 + TOP_ROW_BTN_SIZE.y + 6
-	side_col.offset_bottom = 2 + TOP_ROW_BTN_SIZE.y + 6 + MERC_BTN_SIZE.y * 3.0 + 12
+	side_col.offset_bottom = 2 + TOP_ROW_BTN_SIZE.y + 6 + MERC_BTN_SIZE.y * 3.0 + 50
 	side_col.alignment = BoxContainer.ALIGNMENT_BEGIN
 	side_col.add_theme_constant_override("separation", 6)
 	side_col.z_index = 20
@@ -975,6 +977,46 @@ func _build_top_actions() -> void:
 	carrot_btn.add_child(carrot_lbl)
 	carrot_btn.visible = not GameState.tutorial_mode
 	side_col.add_child(carrot_btn)
+
+	# 萝卜持有量常驻在入口下方，玩家无需打开营地即可查看。
+	var carrot_counter := PanelContainer.new()
+	carrot_counter.name = "CarrotResourceCounter"
+	carrot_counter.custom_minimum_size = Vector2(MERC_BTN_SIZE.x, 32)
+	carrot_counter.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	carrot_counter.visible = not GameState.tutorial_mode
+	var counter_style := StyleBoxFlat.new()
+	counter_style.bg_color = Color(0.075, 0.095, 0.055, 0.94)
+	counter_style.border_color = Color(0.78, 0.57, 0.20, 0.92)
+	counter_style.set_border_width_all(2)
+	counter_style.set_corner_radius_all(10)
+	counter_style.content_margin_left = 10
+	counter_style.content_margin_right = 10
+	counter_style.content_margin_top = 3
+	counter_style.content_margin_bottom = 3
+	carrot_counter.add_theme_stylebox_override("panel", counter_style)
+	var counter_row := HBoxContainer.new()
+	counter_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	counter_row.add_theme_constant_override("separation", 5)
+	counter_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	carrot_counter.add_child(counter_row)
+	var counter_icon := TextureRect.new()
+	counter_icon.custom_minimum_size = Vector2(22, 22)
+	counter_icon.texture = load(CARROT_CURRENCY_ICON_PATH)
+	counter_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	counter_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	counter_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	counter_row.add_child(counter_icon)
+	_carrot_counter_label = Label.new()
+	_carrot_counter_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_carrot_counter_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_carrot_counter_label.add_theme_font_size_override("font_size", 16)
+	_carrot_counter_label.add_theme_color_override("font_color", Color(1.0, 0.94, 0.70))
+	_carrot_counter_label.add_theme_color_override("font_outline_color", Color(0.02, 0.025, 0.01, 0.95))
+	_carrot_counter_label.add_theme_constant_override("outline_size", 2)
+	_carrot_counter_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	counter_row.add_child(_carrot_counter_label)
+	side_col.add_child(carrot_counter)
+	_refresh_carrot_counter()
 
 	# The camp is a focused mobile modal.  A restrained scrim keeps the busy
 	# battlefield readable as context while giving the controls clear priority.
@@ -1060,6 +1102,16 @@ func _on_carrot_economy_receipt(receipt: Dictionary) -> void:
 		_carrot_panel.refresh()
 	refresh_carrot_gathering()
 	_refresh_all()
+
+func _refresh_carrot_counter() -> void:
+	if _carrot_counter_label == null or not is_instance_valid(_carrot_counter_label):
+		return
+	var amount := int(GameState.carrots)
+	var capacity := int(GameState.carrot_capacity())
+	_carrot_counter_label.text = "%d / %d" % [amount, capacity]
+	_carrot_counter_label.tooltip_text = ("Current carrots" if LocaleManager.get_locale() == "en" else "现有萝卜")
+	_carrot_counter_label.add_theme_color_override("font_color",
+		Color(0.72, 1.0, 0.58) if amount >= capacity else Color(1.0, 0.94, 0.70))
 
 func _mute_label_text() -> String:
 	var muted := AudioServer.is_bus_mute(AudioServer.get_bus_index("Master"))
@@ -1412,6 +1464,7 @@ func _refresh_all() -> void:
 	_refresh_owned_treasure_logos()
 	if _carrot_panel != null and is_instance_valid(_carrot_panel):
 		_carrot_panel.refresh()
+	_refresh_carrot_counter()
 	if GameState.tutorial_mode:
 		TutorialMode.update_overlay()
 	_check_team_merc_alert()

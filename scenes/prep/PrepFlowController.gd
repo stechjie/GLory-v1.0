@@ -151,6 +151,7 @@ func _on_network_session_changed() -> void:
 	# 抽石/升科技按钮也保持旧的置灰状态，直到玩家关掉面板再打开（toggle 会 refresh）。
 	if _carrot_panel != null and is_instance_valid(_carrot_panel):
 		_carrot_panel.refresh()
+	_refresh_carrot_counter()
 	refresh_carrot_gathering()
 	_maybe_play_pending_carrot_harvest()
 
@@ -229,5 +230,4 @@ func _on_generous_fate_gamble() -> void:
 	_refresh_all()
 	# 赌博同样会改变面板内容并触发棋盘平移，重新对齐圆圈以防偏移。
 	_queue_prep_model_layout_refresh()
-
 

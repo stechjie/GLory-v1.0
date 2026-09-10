@@ -105,13 +105,14 @@ func _build_header(parent: VBoxContainer) -> void:
 	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	header.add_child(title)
 	var wallet := PanelContainer.new()
-	wallet.custom_minimum_size = Vector2(180, 44)
+	wallet.custom_minimum_size = Vector2(230, 44)
 	wallet.add_theme_stylebox_override("panel", _flat(Color(0.075,0.115,0.09,0.98),11,Color(0.28,0.34,0.25),1))
 	header.add_child(wallet)
 	var wallet_row := HBoxContainer.new()
 	wallet_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	wallet_row.add_theme_constant_override("separation", 4)
 	wallet.add_child(wallet_row)
+	wallet_row.add_child(_label("当前萝卜", 14, MUTED))
 	wallet_row.add_child(_icon(TEX_CARROT, Vector2(36,36)))
 	_carrot_balance = _label("0", 23, TEXT)
 	wallet_row.add_child(_carrot_balance)
