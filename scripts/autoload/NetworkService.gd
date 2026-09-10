@@ -26,7 +26,14 @@ func _rpc_lobby_identity(bearer: String) -> void:
 	if not _dedicated_server or bearer.is_empty() or bearer.length() > 8192:
 		return
 	var sender := multiplayer.get_remote_sender_id()
-	if not _rate_ok(sender, "public_token"):
+	# 走独立的 lobby_identity 配额，且**软限流（不计 strike）**——与 ping 同一待遇。
+	# 此前复用 public_token（3 次/10 秒、计 strike），而客户端每次换座位都会重发
+	# 一次身份：连续换座 6 次 = 3 个 strike = 服务器直接断开连接。大厅阶段掉线
+	# 会立刻作废座位 token，玩家自动重连必然撞 token_unknown 被弹回主菜单
+	# （实测 bug：自定义房间连换 6 次座位必掉线）。身份上报不是攻击面
+	# （要带有效 bearer，服务端下面还会校验座位归属），超频丢弃这次调用即可，
+	# 拿 strike 踢人等于拿自己人的连接赌。
+	if not _rate_ok(sender, "lobby_identity", false):
 		return
 	var room := _room_for_peer(sender)
 	if room.is_empty():

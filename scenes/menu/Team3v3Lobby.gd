@@ -13,7 +13,6 @@ const SLOT_POS := [
 const SLOT_SIZE := Vector2(184, 175)
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
 var _slot_avatars: Array[TextureRect] = []
-var _identity_slot := -1
 
 func _seat_profile(index: int) -> Dictionary:
 	if index == _my_slot():
@@ -95,7 +94,6 @@ func _ready() -> void:
 	_build()
 	_refresh()
 	NetworkService.publish_lobby_identity()
-	_identity_slot = _my_slot()
 	var identity_retry := Timer.new()
 	identity_retry.wait_time = 10.0
 	identity_retry.autostart = true
@@ -509,9 +507,13 @@ func _on_start() -> void:
 func _on_session_changed() -> void:
 	_refresh()
 	_layout()
-	if _my_slot() != _identity_slot:
-		_identity_slot = _my_slot()
-		NetworkService.publish_lobby_identity()
+	# 换座位**不要**重发身份：服务端 _room_do_move 会把 seat_profiles 随座位
+	# 一起搬（SEAT_SLOT_MAPS），换位后各端看到的身份本来就是对的。
+	# 此前这里每次换座都 publish_lobby_identity()，连续快速换座会在 10 秒
+	# 窗口里打出多条身份上报，曾触发服务端限流踢线（换座 6 次必掉线 bug）。
+	# 身份需要（重新）上报的场景只剩三个，都已各自覆盖：
+	#   进大厅（_ready）、账号资料变更（profile_changed 信号）、
+	#   座位上迟迟没有身份（下方 10 秒重试定时器）。
 
 func _layout() -> void:
 	var viewport_size := get_viewport_rect().size
