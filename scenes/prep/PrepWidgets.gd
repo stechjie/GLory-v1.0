@@ -18,8 +18,8 @@ extends RefCounted
 # 全静态、不持任何界面状态。唯一的例外是 _texture_cache，
 # 它在原处就是 static var，是进程级贴图缓存，搬过来语义不变。
 
-const CAPTION_WIDTH := 156.0
-const CAPTION_HEIGHT := 37.0
+const CAPTION_WIDTH := 112.0
+const CAPTION_HEIGHT := 42.0
 
 
 # --- 文本与本地化 -------------------------------------------------------------
@@ -32,15 +32,10 @@ static func localized_name(d: Dictionary) -> String:
 	return UnitDetailFormat.localized_name(d)
 
 
-# 单位显示名。英文语言下优先 name_en，缺了就退回中文名，再缺退回 id。
-# 与 UnitDetailFormat.localized_name() 的区别：这个多一层 id 兜底，
-# 界面上宁可显示 id 也不能显示空白。
+# 单位显示名统一委托给详情格式器；它会先按 id 取本地正式名称，
+# 避免服务器或旧存档携带的历史名称重新出现在界面。
 static func unit_name(d: Dictionary) -> String:
-	if LocaleManager.get_locale() == "en":
-		var en := str(d.get("name_en", ""))
-		if not en.is_empty():
-			return en
-	return str(d.get("name", str(d.get("id", "?"))))
+	return DataRegistry.unit_display_name(d, LocaleManager.get_locale() == "en")
 
 
 # --- 贴图缓存 -----------------------------------------------------------------
@@ -191,7 +186,7 @@ static func create_formation_health_bar(_mirrored: bool) -> Control:
 	return stack
 
 
-# 格子正下方的一行「名字 ★星级」标签（棋盘 / 待命共用）。默认隐藏，有棋子时才显示。
+# 格子正下方的两行「名字\n★星级」标签（棋盘 / 待命共用）。默认隐藏，有棋子时才显示。
 # 竖直方向文字居中于框、框中心固定（改字号不会让位置跑）；位置微调改 offset。
 static func make_cell_caption() -> Label:
 	var cap := Label.new()
@@ -203,11 +198,13 @@ static func make_cell_caption() -> Label:
 	cap.anchor_right = 0.5
 	cap.anchor_top = 1.0
 	cap.anchor_bottom = 1.0
-	cap.offset_left = -78
-	cap.offset_right = 78
-	cap.offset_top = -14      # 框中心 = 格子底 + 4.5（改字号不影响这个中心）
-	cap.offset_bottom = 23
-	cap.add_theme_font_size_override("font_size", 18)   # 字号；棋盘与待命两处共用
+	cap.offset_left = -56
+	cap.offset_right = 56
+	cap.offset_top = -4       # 名字贴近格子底部，星级落在名字正下方
+	cap.offset_bottom = 38
+	cap.add_theme_font_size_override("font_size", 16)   # 两行共用；短名在待命区保持完整可读
+	cap.add_theme_constant_override("line_spacing", -2)
+	cap.clip_text = true
 	cap.add_theme_color_override("font_color", Color.WHITE)
 	cap.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 	cap.add_theme_constant_override("outline_size", 3)

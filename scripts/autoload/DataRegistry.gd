@@ -37,6 +37,7 @@ var failed_files: Array[String] = []
 # Counts actual disk reads. tools/data_registry_check.gd asserts this stays at 1
 # across repeated ensure_loaded() calls -- the whole point of the split.
 var _file_reads := 0
+var _canonical_unit_defs: Dictionary = {}
 
 func _ready() -> void:
 	ensure_loaded()
@@ -55,6 +56,7 @@ func load_all() -> void:
 	failed_files.clear()
 	for key in DATA_FILES.keys():
 		data[key] = _load_json(DATA_FILES[key])
+	_rebuild_unit_index()
 	state = State.FAILED if not failed_files.is_empty() else State.READY
 
 	var elapsed_ms := float(Time.get_ticks_usec() - started_us) / 1000.0
@@ -69,6 +71,42 @@ func load_all() -> void:
 
 func get_table(key: String) -> Variant:
 	return data.get(key, {})
+
+# Network shop payloads and old saves contain a snapshot of the whole unit row.
+# Gameplay still keys units by `id`, but that snapshot also used to make display
+# names stale forever after a rename. Keep one local source of truth for the two
+# presentation-only fields; callers must not replace the whole def with this row,
+# because a live def may contain four-star overrides or king growth.
+func canonical_unit_def(unit_id: String) -> Dictionary:
+	var found: Variant = _canonical_unit_defs.get(unit_id, {})
+	return found as Dictionary if typeof(found) == TYPE_DICTIONARY else {}
+
+func _rebuild_unit_index() -> void:
+	_canonical_unit_defs.clear()
+	for table_and_rows in [["race_units", "units"], ["mercenaries", "mercenaries"]]:
+		for raw in get_table(str(table_and_rows[0])).get(str(table_and_rows[1]), []):
+			if typeof(raw) != TYPE_DICTIONARY:
+				continue
+			var unit_id := str((raw as Dictionary).get("id", ""))
+			if not unit_id.is_empty():
+				_canonical_unit_defs[unit_id] = raw
+
+func canonicalize_unit_display_names(definition: Dictionary) -> void:
+	var canonical := canonical_unit_def(str(definition.get("id", "")))
+	if canonical.is_empty():
+		return
+	for key in ["name", "name_en"]:
+		if canonical.has(key):
+			definition[key] = canonical[key]
+
+func unit_display_name(definition: Dictionary, english: bool) -> String:
+	var canonical := canonical_unit_def(str(definition.get("id", "")))
+	var display := canonical if not canonical.is_empty() else definition
+	if english:
+		var name_en := str(display.get("name_en", ""))
+		if not name_en.is_empty():
+			return name_en
+	return str(display.get("name", str(definition.get("id", "?"))))
 
 func is_ready() -> bool:
 	return state == State.READY

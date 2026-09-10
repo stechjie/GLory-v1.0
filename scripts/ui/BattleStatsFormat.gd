@@ -12,11 +12,9 @@ static func entry_stats_group(entry: Dictionary) -> String:
 	return group
 
 static func stats_display_name(row: Dictionary) -> String:
-	if UnitDetailFormat.is_en():
-		var en := str(row.get("name_en", ""))
-		if not en.is_empty():
-			return sanitize_stats_cell(en)
-	return sanitize_stats_cell(str(row.get("name", "?")))
+	# Battle history rows also carry names by value. Resolve normal units by id so
+	# an old pre-rename fight cannot reintroduce Shadow Mage in Last Battle.
+	return sanitize_stats_cell(DataRegistry.unit_display_name(row, UnitDetailFormat.is_en()))
 
 static func stats_display_position(row: Dictionary) -> String:
 	if not UnitDetailFormat.is_en():

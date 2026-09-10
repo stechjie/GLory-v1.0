@@ -9,11 +9,7 @@ static func is_en() -> bool:
 	return LocaleManager.get_locale() == "en"
 
 static func localized_name(d: Dictionary) -> String:
-	if is_en():
-		var en := str(d.get("name_en", ""))
-		if not en.is_empty():
-			return en
-	return str(d.get("name", str(d.get("id", "?"))))
+	return DataRegistry.unit_display_name(d, is_en())
 
 static func format_unit_def(d: Dictionary, star: int = 1, cell: Dictionary = {}) -> String:
 	if d.is_empty():
@@ -308,7 +304,7 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"poison_reflect_armor_stack":
 			return "Toxic Armor: On taking damage, reflect %s as true damage and poison the attacker. Own DEF stacks +%s per hit (max %d stacks)." % [pct(float(d.get("reflect_taken_damage_pct", 0.12))), pct(float(d.get("armor_per_hit_pct", 0.14))), int(d.get("max_stacks", 10))]
 		"unique_death_execute":
-			return "Mother Wisp: each player can field 1; in 3v3, each player's Mother Wisp works at the same time and counts independently. Every 5 enemy deaths not caused by Mother Wisp execute: Tier 1/Merc 50%, Tier 2 35%, Tier 3 10%; vs Boss deal 20% max HP instead. Undead 7: every 4 deaths."
+			return "Matron: each player can field 1; in 3v3, each player's Matron works at the same time and counts independently. Every 5 enemy deaths not caused by Matron execute: Tier 1/Merc 50%, Tier 2 35%, Tier 3 10%; vs Boss deal 20% max HP instead. Undead 7: every 4 deaths."
 		"attack_interrupt":
 			return "Disarm Strike: Normal attacks have a %s chance to disarm the target (cannot use normal attacks for 1s)." % pct(float(d.get("interrupt_chance", 0.12)))
 		"post_battle_gold_by_star":

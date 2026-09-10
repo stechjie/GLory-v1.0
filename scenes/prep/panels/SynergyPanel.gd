@@ -186,7 +186,7 @@ func _race_entries_en(race: String) -> Array:
 			return [
 				{"threshold": 1, "name": "Undead Trait: Death Summon", "detail": "At 30 total deaths, each of your Undead units summons a clone of a random dead unit at 40% stats."},
 				{"threshold": 4, "name": "Undead 4: Poison", "detail": "Undead poison deals double damage."},
-				{"threshold": 7, "name": "Undead 7: Lower Thresholds", "detail": "Undead trigger thresholds reduced: Mother Wisp triggers every 4 deaths (was 5); summon at 23 deaths (was 30)."},
+				{"threshold": 7, "name": "Undead 7: Lower Thresholds", "detail": "Undead trigger thresholds reduced: Matron triggers every 4 deaths (was 5); summon at 23 deaths (was 30)."},
 			]
 		"human":
 			return [

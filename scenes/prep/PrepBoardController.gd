@@ -879,7 +879,14 @@ func _adopt_server_shop() -> bool:
 		return false
 	var sold: Variant = shop.get("sold", [])
 	for i in GameState.SHOP_UNIT_SLOTS:
-		GameState.shop_offers[i] = ((offers as Array)[i] as Dictionary).duplicate(true) 			if i < (offers as Array).size() and typeof((offers as Array)[i]) == TYPE_DICTIONARY else {}
+		var offer: Dictionary = ((offers as Array)[i] as Dictionary).duplicate(true) \
+			if i < (offers as Array).size() and typeof((offers as Array)[i]) == TYPE_DICTIONARY else {}
+		# The dedicated server can briefly be one content revision behind the client.
+		# Its unit id/cost/stats remain authoritative, but names are local presentation
+		# data. Overlay only those two fields so an old "Shadow Mage" can never enter
+		# the shop, purchased piece or save while preserving skill/star4 exactly.
+		DataRegistry.canonicalize_unit_display_names(offer)
+		GameState.shop_offers[i] = offer
 		GameState.shop_sold[i] = bool((sold as Array)[i]) 			if typeof(sold) == TYPE_ARRAY and i < (sold as Array).size() else false
 	GameState.shop_offer_id = offer_id
 	return true

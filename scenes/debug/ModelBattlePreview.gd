@@ -994,7 +994,7 @@ func _on_vfx_play_pressed() -> void:
 			vfx_preview_root.add_child(silence_fx)
 			vfx_preview_effect=silence_fx
 			silence_fx.play_skill("silence_bolt",left_slot.position+Vector3(0.0,.18,0.0),right_slot.position+Vector3(0.0,.18,0.0),{"target_node":right_slot})
-			vfx_status_label.text="Playing: Shadow Mage Silence Bolt"
+			vfx_status_label.text="Playing: Hexmage Silence Bolt"
 		56:
 			var poison_fx:=UNIT_SKILL_COMPOSER.new()
 			poison_fx.name="PreviewPoisonDart"

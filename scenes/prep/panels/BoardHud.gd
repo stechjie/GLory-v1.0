@@ -55,7 +55,7 @@ var standby_frame: Control
 var buttons: Array[BoardCellButton] = []
 var readability_layer: BoardReadabilityLayer
 var relation_overlays: Array[RelationProgressOverlay] = []
-var cell_captions: Array[Label] = []   # 棋盘格子下方的「名字 ★星级」标签（有棋子才显示）
+var cell_captions: Array[Label] = []   # 棋盘格子下方的「名字\n★星级」标签（有棋子才显示）
 var bench_buttons: Array[BenchCellButton] = []
 var bench_card_labels: Array[Label] = []
 var empty_style: StyleBoxFlat
@@ -184,11 +184,11 @@ func set_standby_drop_hover(bench_index: int) -> void:
 
 # 原 _cell_caption_text（PrepUI.gd）
 func cell_caption_text(cell: Dictionary) -> String:
-	# 一行：名字 + ★（星数）
+	# 两行：名字在上，星级在下。避免英文长名与星星横向挤进相邻格子。
 	# Callable 的返回值是 Variant，:= 推断不出来（GDScript 会把它当错误）。
 	var d: Dictionary = display_unit_def.call(cell)
 	var star := clampi(int(cell.get("star", 1)), 1, GameState.MAX_UNIT_STAR)
-	return "%s %s" % [PrepWidgets.unit_name(d), "★".repeat(star)]
+	return "%s\n%s" % [PrepWidgets.unit_name(d), "★".repeat(star)]
 
 
 

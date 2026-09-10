@@ -600,7 +600,7 @@ func _en_strings() -> Dictionary:
 		"log_stalemate_power": "Neither side's remaining units can attack; deciding early by remaining power.",
 		"log_decay_triggered": "%.0fs battle decay triggered.",
 		"log_timeout_power": "3-minute ruling: ally power %.0f, enemy power %.0f.",
-		"log_light_guard": "Light Guardian: opening shield and area taunt applied.",
+		"log_light_guard": "Lightguard: opening shield and area taunt applied.",
 		"log_deadpool_bind": "Deadpool: bound to the left unit, ready to revive on death.",
 		"log_convert": "%s links and converts %s.",
 		"log_arbiter_interrupted": "Doom Arbiter's charge was interrupted.",

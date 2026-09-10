@@ -36,7 +36,7 @@
                       "model_attack_sync_seek":  0.18,
                       "model_attack_lock_time":  0.40,
                       "model_run_animation_name":  "run",
-                      "name_en":  "Divine Servant"
+                      "name_en":  "Godhand"
                   },
                   {
                       "id":  "god_priestess",
@@ -66,7 +66,7 @@
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
                       "model_frame_fill":  0.96,
-                      "name_en":  "High Priestess"
+                      "name_en":  "Priestess"
                   },
                   {
                       "id":  "god_guard",
@@ -99,7 +99,7 @@
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
                       "model_frame_fill":  0.96,
-                      "name_en":  "Light Guardian"
+                      "name_en":  "Lightguard"
                   },
                   {
                       "id":  "god_aurora",
@@ -126,7 +126,7 @@
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
                       "model_frame_fill":  0.96,
-                      "name_en":  "Aurora Archer"
+                      "name_en":  "Aurora"
                   },
                   {
                       "id":  "god_angel",
@@ -321,7 +321,7 @@
                       "model_attack_sync_seek":  0.18,
                       "model_attack_lock_time":  0.40,
                       "model_run_animation_name":  "run",
-                      "name_en":  "Shadow Mage"
+                      "name_en":  "Hexmage"
                   },
                   {
                       "id":  "dark_fear",
@@ -499,7 +499,7 @@
                       "model_attack_sync_seek":  0.18,
                       "model_attack_lock_time":  0.45,
                       "model_run_animation_name":  "run",
-                      "name_en":  "Black Dragon"
+                      "name_en":  "Blackwyrm"
                   },
                   {
                       "id":  "undead_small",
@@ -555,7 +555,7 @@
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
                       "model_frame_fill":  0.96,
-                      "name_en":  "Poison Wisp"
+                      "name_en":  "Venom"
                   },
                   {
                       "id":  "undead_parasite",
@@ -583,7 +583,7 @@
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
                       "model_frame_fill":  0.96,
-                      "name_en":  "Parasite Wisp"
+                      "name_en":  "Leech Wisp"
                   },
                   {
                       "id":  "undead_spike",
@@ -731,7 +731,7 @@
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
                       "model_frame_fill":  0.96,
-                      "name_en":  "Mother Wisp"
+                      "name_en":  "Matron"
                   },
                   {
                       "id":  "human_militia",
@@ -931,7 +931,7 @@
                       "model_frame_fill":  0.96,
                       "ally_def_bonus":  3,
                       "ally_def_duration":  5,
-                      "name_en":  "Death Servant"
+                      "name_en":  "Deathbound"
                   },
                   {
                       "id":  "human_king",

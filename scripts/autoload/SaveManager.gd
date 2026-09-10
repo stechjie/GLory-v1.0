@@ -349,7 +349,25 @@ func _normalize_arrays() -> void:
 	GameState.mercenary_slots.resize(GameState.MERCENARY_SLOTS)
 	GameState.shop_offers.resize(GameState.SHOP_UNIT_SLOTS)
 	GameState.shop_sold.resize(GameState.SHOP_UNIT_SLOTS)
+	_normalize_unit_display_names()
 	_backfill_piece_uids()
+
+# Unit rows are saved by value, so renamed units in existing saves keep their old
+# English name unless migrated. Touch presentation fields only: replacing `def`
+# would destroy live four-star/skill overrides, uid lineage and king growth.
+func _normalize_unit_display_names() -> void:
+	DataRegistry.ensure_loaded()
+	for slots in [GameState.board_slots, GameState.bench_slots, GameState.mercenary_slots]:
+		for raw_cell in slots:
+			if typeof(raw_cell) != TYPE_DICTIONARY:
+				continue
+			var cell := raw_cell as Dictionary
+			var raw_def: Variant = cell.get("def", {})
+			if typeof(raw_def) == TYPE_DICTIONARY:
+				DataRegistry.canonicalize_unit_display_names(raw_def as Dictionary)
+	for raw_offer in GameState.shop_offers:
+		if typeof(raw_offer) == TYPE_DICTIONARY:
+			DataRegistry.canonicalize_unit_display_names(raw_offer as Dictionary)
 
 # 老存档里的棋子没有 uid。现铸一个 run_nonce 并给每一枚补发，然后把计数器推到
 # 已用序号之上 —— 不推的话下一次 mint 会和刚补发的撞号，而撞号在服务端表现为

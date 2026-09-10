@@ -25,12 +25,19 @@ var _top5_next_refresh_msec := 0
 var _formation_allies_hidden_for_intro := false
 
 func _fighter_display_name(f: Dictionary) -> String:
+	var d: Dictionary = f.get("def", {})
+	var unit_id := str(f.get("id", d.get("id", "")))
+	# Team replays contain a by-value name snapshot and the dedicated server may
+	# still be one content revision behind. Normal units always display the local
+	# canonical name by stable id; monsters/bosses keep their replay/data names.
+	var canonical := DataRegistry.canonical_unit_def(unit_id)
+	if not canonical.is_empty():
+		return DataRegistry.unit_display_name(canonical, LocaleManager.get_locale() == "en")
 	if LocaleManager.get_locale() == "en":
-		var d: Dictionary = f.get("def", {})
 		var en := str(f.get("name_en", d.get("name_en", "")))
 		if not en.is_empty():
 			return en
-		return _english_name_from_id(str(f.get("id", d.get("id", ""))))
+		return _english_name_from_id(unit_id)
 	return str(f.get("name", str(f.get("id", "?"))))
 
 func _english_name_from_id(id: String) -> String:
@@ -96,7 +103,6 @@ func _refresh_top5_atk(living: Array) -> void:
 	_top5_next_refresh_msec = now + 250
 	var ranked := living.duplicate()
 	ranked.sort_custom(func(a, b): return _fighter_atk(a) > _fighter_atk(b))
-	var en := LocaleManager.get_locale() == "en"
 	var lines: Array[String] = []
 	lines.append("[b]%s[/b]" % tr("top_atk"))
 	var shown := mini(5, ranked.size())
@@ -104,10 +110,6 @@ func _refresh_top5_atk(living: Array) -> void:
 		var f: Dictionary = ranked[i]
 		var col := _fighter_display_color(f)
 		var name_txt := _fighter_display_name(f)
-		if en:
-			name_txt = name_txt.substr(0, 10)
-		else:
-			name_txt = name_txt.substr(0, 5)
 		lines.append("[color=#%s]%s  %s %d  %s %d[/color]" % [
 			col.to_html(false),
 			name_txt,
@@ -281,9 +283,10 @@ func _make_unit_node(f: Dictionary) -> Control:
 	label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.92))
 	label.add_theme_constant_override("outline_size", 3)
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.clip_text = true
+	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	# Names don't change mid-battle: set once here instead of every frame.
-	var dn := _fighter_display_name(f)
-	label.text = dn.substr(0, 8) if LocaleManager.get_locale() == "en" else dn.substr(0, 4)
+	label.text = _fighter_display_name(f)
 	root.add_child(label)
 	return root
 

@@ -552,11 +552,16 @@ func refresh() -> void:
 	)
 	if not selected_valid:
 		selected = -1
-	var offer_ids: Array = []
+	var offer_identity: Array = []
 	for offer_entry in GameState.shop_offers:
-		offer_ids.append(str((offer_entry as Dictionary).get("id", "")))
+		# Name is part of the cache identity too. This matters when the same unit id
+		# survives a refresh while an old server/save display name is canonicalized.
+		offer_identity.append([
+			str((offer_entry as Dictionary).get("id", "")),
+			DataRegistry.unit_display_name(offer_entry as Dictionary, LocaleManager.get_locale() == "en"),
+		])
 	var cards_sig := JSON.stringify([
-		offer_ids,
+		offer_identity,
 		GameState.shop_sold,
 		GameState.gold,
 		selected,
@@ -596,7 +601,7 @@ func refresh() -> void:
 		var sold := bool(GameState.shop_sold[i])
 		var cost := EconomyLedger.unit_cost(offer, GameState.owned_treasures)
 		var can_purchase := not sold and GameState.gold >= cost
-		var unit_name := PrepWidgets.unit_name(offer)
+		var unit_name := DataRegistry.unit_display_name(offer, LocaleManager.get_locale() == "en")
 		btn.disabled = false
 		btn.text = ""
 		btn.set_meta("drag_preview_text", "%s\n%s" % [unit_name, tr("ui_gold_format") % cost])
