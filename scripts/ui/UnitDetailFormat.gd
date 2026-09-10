@@ -11,6 +11,11 @@ static func is_en() -> bool:
 static func localized_name(d: Dictionary) -> String:
 	return DataRegistry.unit_display_name(d, is_en())
 
+static func purchase_price_text(d: Dictionary) -> String:
+	if d.has("carrot_cost") and not GameState.tutorial_mode:
+		return ("%d carrots" if is_en() else "%d萝卜") % int(d.get("carrot_cost", 0))
+	return ("%d G" if is_en() else "%d金") % int(d.get("cost", 0))
+
 static func format_unit_def(d: Dictionary, star: int = 1, cell: Dictionary = {}) -> String:
 	if d.is_empty():
 		return "No details" if is_en() else "无详情"
@@ -26,17 +31,17 @@ static func format_unit_def(d: Dictionary, star: int = 1, cell: Dictionary = {})
 	var skill_text := format_skill_detail(skill_def)
 	var detail: String
 	if is_en():
-		detail = "%s ★%d\nRace: %s  Element: %s  Tier: %d  Cost: %d G\nHP: %d  ATK: %d  DEF: %d\nAS: %.2f  Crit: %.0f%%  CritDmg: %.0f%%\nRange: %s  Speed: %s\n\n[b]Skill[/b]\n%s" % [
+		detail = "%s ★%d\nRace: %s  Element: %s  Tier: %d  Cost: %s\nHP: %d  ATK: %d  DEF: %d\nAS: %.2f  Crit: %.0f%%  CritDmg: %.0f%%\nRange: %s  Speed: %s\n\n[b]Skill[/b]\n%s" % [
 			uname, star,
-			race, elem, int(d.get("tier", 0)), int(d.get("cost", 0)),
+			race, elem, int(d.get("tier", 0)), purchase_price_text(d),
 			int(round(float(d.get("hp", 0)) * mul)), int(round(float(d.get("atk", 0)) * mul)), int(round(float(d.get("def", 0)) * mul)),
 			float(d.get("attack_speed", 1.0)), float(d.get("crit", 0.0)) * 100.0, float(d.get("crit_dmg", 1.5)) * 100.0,
 			str(d.get("range", 1)), str(d.get("move_speed", 3.0)), skill_text,
 		]
 	else:
-		detail = "%s %d星\n种族：%s  属性：%s  阶级：%d  价格：%d金\n生命：%d  攻击：%d  防御：%d\n攻速：%.2f  暴击：%.0f%%  暴伤：%.0f%%\n射程：%s  移速：%s\n\n[b]技能效果[/b]\n%s" % [
+		detail = "%s %d星\n种族：%s  属性：%s  阶级：%d  价格：%s\n生命：%d  攻击：%d  防御：%d\n攻速：%.2f  暴击：%.0f%%  暴伤：%.0f%%\n射程：%s  移速：%s\n\n[b]技能效果[/b]\n%s" % [
 			uname, star,
-			race, elem, int(d.get("tier", 0)), int(d.get("cost", 0)),
+			race, elem, int(d.get("tier", 0)), purchase_price_text(d),
 			int(round(float(d.get("hp", 0)) * mul)), int(round(float(d.get("atk", 0)) * mul)), int(round(float(d.get("def", 0)) * mul)),
 			float(d.get("attack_speed", 1.0)), float(d.get("crit", 0.0)) * 100.0, float(d.get("crit_dmg", 1.5)) * 100.0,
 			str(d.get("range", 1)), str(d.get("move_speed", 3.0)), skill_text,

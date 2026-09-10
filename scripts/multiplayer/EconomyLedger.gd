@@ -225,6 +225,8 @@ static func _hire_merc(prep: Dictionary, payload: Dictionary, ctx: Dictionary) -
 	return {"ok": true, "result": {"uid": uid, "unit_id": str(m.get("id", "")), "cost": cost}}
 
 static func _upgrade_harvest_tech(prep: Dictionary, _payload: Dictionary, _ctx: Dictionary) -> Dictionary:
+	if int(_ctx.get("round_index", 1)) < 2:
+		return {"ok": false, "error": "harvest_locked_first_round"}
 	var level := int(prep.get("harvest_tech_level", 0))
 	var price := CarrotEconomy.tech_price(level)
 	if price < 0:

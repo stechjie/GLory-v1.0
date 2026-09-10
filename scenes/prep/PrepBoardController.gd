@@ -175,15 +175,16 @@ func _hire_mercenary_to_slot(index: int, mercenary_index: int) -> void:
 	refresh_carrot_gathering()
 
 func request_carrot_harvest_upgrade() -> void:
+	if GameState.round_index < 2:
+		show_message("下一回合解锁升级")
+		return
 	if GameState.tutorial_mode:
 		return
 	if NetworkService.team_active and not NetworkService.is_host:
 		if not NetworkService.carrot_economy_enabled():
 			show_message("联机萝卜系统尚未开启")
 			return
-		# In carrot-only rollout the full gold ledger is not authoritative yet.
-		# Report the current balance; the server only accepts a value no higher
-		# than its last settled balance before applying the upgrade cost.
+		# 非权威金币模式上报买卖后的当前余额；权威模式由服务端账本结算。
 		NetworkService.request_economy("upgrade_harvest_tech", {"gold": GameState.gold})
 		return
 	var result := GameState.upgrade_harvest_tech()

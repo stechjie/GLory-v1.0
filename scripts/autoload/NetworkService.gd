@@ -4091,14 +4091,15 @@ func _room_apply_economy(room: Dictionary, slot: int, action: String, payload: D
 	if action == "merge" and (payload.get("uids", []) as Array).size() > MAX_MERGE_UIDS:
 		return _economy_reject(room, slot, "bad_request")
 	var prep := _room_prep(room, slot)
-	if action == "upgrade_harvest_tech" and not economy_enabled():
-		# Ordinary purchases are still client-side in carrot-only rollout. A
-		# lower reported balance is safe to accept; raising the server's last
-		# settled balance is rejected as forged money.
+	var gold_before_sync := int(prep.get("gold", 0))
+	if action == "upgrade_harvest_tech" and not economy_authoritative():
+		# 未启用金币权威时，买卖仍由客户端结算（与战后 snapshot.gold 同源）。
+		# 影子账本可能缺少旧棋子的卖出记录，不能用它或上轮余额否定卖棋收入。
+		# 权威模式则完全忽略自报金币，继续由服务端账本判定。
+		if typeof(payload.get("gold")) != TYPE_INT:
+			return _economy_reject(room, slot, "gold_desync")
 		var reported_gold := int(payload.get("gold", -1))
-		var settled_gold: Array = room.get("slot_gold", [])
-		if reported_gold < 0 or slot >= settled_gold.size() \
-				or settled_gold[slot] == null or reported_gold > int(settled_gold[slot]):
+		if reported_gold < 0:
 			return _economy_reject(room, slot, "gold_desync")
 		prep["gold"] = reported_gold
 	var receipt := EconomyLedger.apply(prep, action, payload, _economy_ctx(room, slot, action))
@@ -4116,6 +4117,8 @@ func _room_apply_economy(room: Dictionary, slot: int, action: String, payload: D
 			int(receipt.get("delta", 0)), int(receipt.get("gold_after", 0)),
 			int(receipt.get("revision", 0))])
 	else:
+		# 失败的升级不应改变服务端余额（包括首回合锁定、满级、金币不足）。
+		prep["gold"] = gold_before_sync
 		_net_log("economy rejected room=%d slot=%d %s reason=%s" % [
 			int(room.get("id", 0)), slot, action, str(receipt.get("error", ""))])
 	return receipt

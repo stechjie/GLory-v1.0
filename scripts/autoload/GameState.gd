@@ -170,6 +170,8 @@ func harvest_carrots_for_round(round_number: int) -> Dictionary:
 		"capacity": int(result.capacity), "production": int(result.production)}
 
 func upgrade_harvest_tech() -> Dictionary:
+	if round_index < 2:
+		return {"ok": false, "error": "harvest_locked_first_round"}
 	var price := CarrotEconomyRules.tech_price(harvest_tech_level)
 	if price < 0:
 		return {"ok": false, "error": "max_level", "price": -1}

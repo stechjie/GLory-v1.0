@@ -380,8 +380,10 @@ func refresh() -> void:
 	_tech_next.text = "MAX" if tech_maxed else str(next_production)
 	_tech_button.text = "已满级" if tech_maxed else "升级采集\n%d 金币" % price
 	var online_blocked := NetworkService.team_active and not NetworkService.is_host and not NetworkService.carrot_economy_enabled()
-	_tech_button.disabled = _action_locked or tech_maxed or (not tech_maxed and GameState.gold < price) or online_blocked
-	if tech_maxed:
+	_tech_button.disabled = GameState.round_index < 2 or _action_locked or tech_maxed or (not tech_maxed and GameState.gold < price) or online_blocked
+	if GameState.round_index < 2:
+		_tech_note.text = "下一回合解锁升级"
+	elif tech_maxed:
 		_tech_note.text = "采集已达到最高等级"
 	elif GameState.gold < price:
 		_tech_note.text = "金币不足 · 还差 %d" % (price - GameState.gold)

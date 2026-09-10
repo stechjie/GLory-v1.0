@@ -39,6 +39,7 @@ func _ready() -> void:
 	_case_server_contract_pinned()
 	_case_room_state_carries_carrots()
 	_case_harvest_tech_online()
+	_case_sell_then_harvest_modes()
 	_case_ledger_shadow_roundtrip()
 	_case_draw_stone_online()
 	_case_four_star_online()
@@ -123,6 +124,9 @@ func _case_room_state_carries_carrots() -> void:
 # 而卖棋子在当时是纯客户端行为、服务端镜像不会跟着涨 —— 于是本回合卖过一次棋子，
 # 采集科技就整回合升不了，客户端弹「萝卜交易失败：gold_desync」。
 func _case_harvest_tech_online() -> void:
+	var saved_flags := ServerFlags._values.duplicate(true)
+	ServerFlags._values["economy_ledger_enabled"] = true
+	ServerFlags._values["economy_ledger_authoritative"] = true
 	var price := CarrotEconomy.tech_price(0)
 
 	# 3a. 账本余额够 -> 受理
@@ -192,6 +196,38 @@ func _case_harvest_tech_online() -> void:
 		battle_room, MY_SLOT, "upgrade_harvest_tech", {"gold": 100})
 	_h.expect(not bool(in_battle.get("ok", false)), "economy_in_battle",
 		"战斗阶段还能升采集科技")
+	ServerFlags._values = saved_flags
+
+func _case_sell_then_harvest_modes() -> void:
+	var saved_flags := ServerFlags._values.duplicate(true)
+	for shadow in [false, true]:
+		ServerFlags._values["economy_ledger_enabled"] = shadow
+		ServerFlags._values["economy_ledger_authoritative"] = false
+		var room := _make_prep_room(5)
+		var prep: Dictionary = NetworkService._room_prep(room, MY_SLOT)
+		prep["gold"] = 195
+		prep["harvest_tech_level"] = 1
+		room["slot_gold"][MY_SLOT] = 195
+		var poor := NetworkService._room_apply_economy(room, MY_SLOT, "upgrade_harvest_tech", {"gold": 195})
+		_h.expect(not poor.get("ok", false) and prep.gold == 195 and prep.harvest_tech_level == 1, "before_sale", "卖棋前195不足200，状态不变")
+		var receipt := NetworkService._room_apply_economy(room, MY_SLOT, "upgrade_harvest_tech", {"gold": 210})
+		_h.expect(receipt.get("ok", false) and prep.gold == 10 and prep.harvest_tech_level == 2, "sold_upgrade", "卖棋后210应能升级，剩余10；shadow=" + str(shadow))
+		_h.expect(room.slot_gold[MY_SLOT] == 10, "sold_snapshot", "房间金币镜像更新为10")
+		var saved := [GameState.gold, GameState.harvest_tech_level]
+		GameState.gold = 210
+		NetworkService._apply_carrot_receipt(receipt)
+		_h.expect(GameState.gold == 10 and GameState.harvest_tech_level == 2, "sold_receipt", "升级回执应用到客户端")
+		GameState.gold = saved[0]
+		GameState.harvest_tech_level = saved[1]
+		var before := prep.duplicate(true)
+		room["round_index"] = 1
+		var locked := NetworkService._room_apply_economy(room, MY_SLOT, "upgrade_harvest_tech", {"gold": 500})
+		_h.expect(not locked.get("ok", false) and prep == before, "locked_unchanged", "首回合拒绝且不改变账本")
+		room["round_index"] = 5
+		for invalid in [{}, {"gold": -1}, {"gold": "210"}]:
+			var rejected := NetworkService._room_apply_economy(room, MY_SLOT, "upgrade_harvest_tech", invalid)
+			_h.expect(not rejected.get("ok", false) and prep == before, "invalid_balance", "非法余额不改变账本")
+	ServerFlags._values = saved_flags
 
 
 # --- 3f. 影子记账：客户端那一笔必须能被账本原样收下 --------------------------------
@@ -540,6 +576,8 @@ func _case_client_panel_online() -> void:
 		"team_upgrade_stones": {"sky": 0, "land": 0, "ren": 0},
 	})
 	GameState.gold = CarrotEconomy.tech_price(0) + 50
+	# 采集升级从第二回合解锁；本用例检查已解锁后的联机按钮。
+	GameState.round_index = 2
 	panel.call("refresh")
 	await get_tree().process_frame
 
