@@ -19,6 +19,28 @@ static func refresh_cost(index: int, money_set_active: bool) -> int:
 static func can_draw() -> bool:
 	return GameState.owned_treasures.size() < MAX_OWNED
 
+# 保留有效候选顺序，用未拥有的宝藏补足；用于本地教学及旧存档修复。
+static func available_candidates(preferred: Array, count: int = 3) -> Array:
+	var result: Array = []
+	if not can_draw():
+		return result
+	for value in preferred + unowned_ids():
+		var tid := str(value)
+		if result.size() >= count:
+			break
+		if tid in GameState.owned_treasures or tid in result or treasure_by_id(tid).is_empty():
+			continue
+		result.append(tid)
+	return result
+
+static func claim_local_choice(tid: String) -> bool:
+	if not bool(GameState.pending_treasure.get("active", false)):
+		return false
+	if tid not in GameState.pending_treasure.get("candidates", []) or tid in GameState.owned_treasures or treasure_by_id(tid).is_empty() or not can_draw():
+		return false
+	add_owned(tid)
+	return tid in GameState.owned_treasures
+
 # 用服务端权威持有列表覆盖本地（联机 resume / grant 用）。
 # 不能直接 `GameState.owned_treasures = server_owned`：那会绕过 add_owned 里的
 # PlayerProfile.mark_seen 与联动解锁，玩家重连一次就少解锁一批图鉴条目。

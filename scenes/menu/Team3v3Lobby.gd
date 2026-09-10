@@ -13,7 +13,6 @@ const SLOT_POS := [
 const SLOT_SIZE := Vector2(184, 175)
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
 var _slot_avatars: Array[TextureRect] = []
-var _identity_slot := -1
 
 func _seat_profile(index: int) -> Dictionary:
 	if index == _my_slot():
@@ -97,7 +96,6 @@ func _ready() -> void:
 	_build()
 	_refresh()
 	NetworkService.publish_lobby_identity()
-	_identity_slot = _my_slot()
 	var identity_retry := Timer.new()
 	identity_retry.wait_time = 10.0
 	identity_retry.autostart = true
@@ -370,7 +368,7 @@ func _refresh() -> void:
 		var status_lbl: Label = _slot_status_lbls[i]
 		var x_btn: Button = _slot_x_btns[i]
 		var ai_btn: Button = _slot_ai_btns[i]
-		name_lbl.text = _slot_name(i, state, i == my_slot)
+		name_lbl.text = _slot_name(i, state, false)
 		var identity := _seat_profile(i)
 		_slot_avatars[i].visible = state == "player"
 		if state == "player":
@@ -378,6 +376,19 @@ func _refresh() -> void:
 			if not identity.is_empty():
 				name_lbl.text = AccountManager.display_name(str(identity.get("player_name", "")), str(identity.get("friend_code", "")))
 			name_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		var is_me := state == "player" and i == my_slot
+		if is_me:
+			var suffix := _room_text("（我）", " (Me)")
+			var base_name := name_lbl.text
+			var font := name_lbl.get_theme_font("font")
+			# 给身份后缀预留宽度，长昵称不能把“我”挤出省略区域。
+			while base_name.length() > 1 and font.get_string_size(base_name + suffix, HORIZONTAL_ALIGNMENT_LEFT, -1, 20).x > SLOT_SIZE.x + 12:
+				base_name = base_name.left(base_name.length() - 1)
+			if base_name != name_lbl.text:
+				base_name = base_name.left(maxi(0, base_name.length() - 1)) + "…"
+			name_lbl.text = base_name + suffix
+		name_lbl.add_theme_color_override("font_color", Color(1.0, 0.82, 0.18) if is_me else Color(0.47, 0.28, 0.08))
+		name_lbl.add_theme_color_override("font_outline_color", Color(0.22, 0.12, 0.02) if is_me else Color(1.0, 0.94, 0.78))
 		for placement in _placed:
 			if placement.node == name_lbl:
 				placement.font_size = 20 if state == "player" else 28
@@ -387,11 +398,8 @@ func _refresh() -> void:
 				placement.font_size = 17 if state == "player" else 20
 		match state:
 			"player":
-				# 房主席位不显示准备状态（他用的是"开始游戏"按钮）。
-				# C25：此前写死 `i == 0`，而房主会因掉线顺延、也会因换位搬走
-				# （见 C19/R5）——迁移之后 slot 0 上的普通玩家准备状态被隐藏，
-				# 真正的房主又按普通玩家显示。改成认服务端广播的 leader_slot。
-				status_lbl.text = _room_text("准备", "Ready") if bool(ready_arr[i]) else _room_text("未准备", "Not ready")
+				# 使用当前房主席位，兼容换位及房主迁移。
+				status_lbl.text = _room_text("房主", "Host") if i == _leader_slot() else (_room_text("准备", "Ready") if bool(ready_arr[i]) else _room_text("未准备", "Not ready"))
 			"dummy":
 				status_lbl.text = _room_text("假想敌", "AI")
 			_:
@@ -503,9 +511,13 @@ func _on_start() -> void:
 func _on_session_changed() -> void:
 	_refresh()
 	_layout()
-	if _my_slot() != _identity_slot:
-		_identity_slot = _my_slot()
-		NetworkService.publish_lobby_identity()
+	# 换座位**不要**重发身份：服务端 _room_do_move 会把 seat_profiles 随座位
+	# 一起搬（SEAT_SLOT_MAPS），换位后各端看到的身份本来就是对的。
+	# 此前这里每次换座都 publish_lobby_identity()，连续快速换座会在 10 秒
+	# 窗口里打出多条身份上报，曾触发服务端限流踢线（换座 6 次必掉线 bug）。
+	# 身份需要（重新）上报的场景只剩三个，都已各自覆盖：
+	#   进大厅（_ready）、账号资料变更（profile_changed 信号）、
+	#   座位上迟迟没有身份（下方 10 秒重试定时器）。
 
 func _layout() -> void:
 	var viewport_size := get_viewport_rect().size

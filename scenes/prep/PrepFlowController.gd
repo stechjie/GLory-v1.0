@@ -12,8 +12,7 @@ func _maybe_start_pending_treasure() -> void:
 	if NetworkService.team_active:
 		return
 	if bool(GameState.pending_treasure.get("active", false)):
-		if GameState.pending_treasure.get("candidates", []).is_empty() and TreasureService.can_draw():
-			GameState.pending_treasure.candidates = TreasureService.roll_candidates(3)
+		GameState.pending_treasure.candidates = TreasureService.available_candidates(GameState.pending_treasure.get("candidates", []))
 		return
 	var completed_round := maxi(0, GameState.round_index - 1)
 	if completed_round in GameState.claimed_treasure_rounds:
@@ -34,7 +33,12 @@ func _pick_treasure(tid: String) -> void:
 		_connect_treasure_signals()
 		NetworkService.request_treasure_choice(tid)
 		return
-	TreasureService.add_owned(tid)
+	if not TreasureService.claim_local_choice(tid):
+		_treasure.clear_pick_pending()
+		if bool(GameState.pending_treasure.get("active", false)):
+			GameState.pending_treasure.candidates = TreasureService.available_candidates(GameState.pending_treasure.get("candidates", []))
+		_refresh_all()
+		return
 	_claim_pending_treasure_round()
 	GameState.pending_treasure.active = false
 	SaveManager.save_run()

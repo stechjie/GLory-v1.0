@@ -28,6 +28,17 @@ const LIMITS := {
 	"join_room": 6,
 	"room_list": 10,
 	"public_token": 3,
+	# 大厅身份上报（lobby_identity）。**独立配额 + 不计 strike**（调用处传
+	# count_strike=false），理由与 ping 相同：
+	#   * 正常玩家换座位时，客户端会对每个新座位重发一次身份 —— 连续快速换座
+	#     很容易在 10 秒窗口里打出 4+ 次；
+	#   * 这条曾经复用 public_token 的 3 次/10 秒配额且默认计 strike，
+	#     STRIKES_BEFORE_KICK=3 —— 连续换座 6 次正好攒满 3 个 strike，
+	#     服务器把正常玩家踢下线（实测 bug：换座 6 次必掉线，重连再撞
+	#     token_unknown 被弹回主菜单）。
+	#   * 身份上报不是攻击面（带账号 bearer、服务端还会二次校验座位归属），
+	#     超频更可能是客户端 UI 抖动而非攻击，超限丢弃这一次调用即可。
+	"lobby_identity": 8,
 	"public_resume": 5,
 	"client_log": 4,
 	"set_ready": 30,

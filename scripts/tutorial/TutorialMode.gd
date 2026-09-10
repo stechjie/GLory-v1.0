@@ -191,6 +191,17 @@ func sync() -> void:
 	if not active:
 		return
 	GameState.gold = TUTORIAL_GOLD
+	# 旧版本重复领取会关掉选择层却没有增加持有数。恢复候选让该步骤可继续。
+	var required := 1 if step == Step.TAKE_TREASURE_1 else 2 if step == Step.TAKE_TREASURE_2 else 0
+	if required > 0 and GameState.owned_treasures.size() < required:
+		var preferred: Array = GameState.pending_treasure.get("candidates", [])
+		if preferred.is_empty():
+			preferred = TREASURE_1 if required == 1 else TREASURE_2
+		var candidates := TreasureService.available_candidates(preferred)
+		if not bool(GameState.pending_treasure.get("active", false)) or candidates != preferred:
+			GameState.pending_treasure["active"] = true
+			GameState.pending_treasure["candidates"] = candidates
+			_refresh_prep()
 	# 按「实际拥有 3 个」推进，不按采购次数：自动合成下重复买同名会融合，
 	# 买满 3 次也可能只剩 2 个棋子，那样 PLACE_3 的 3 个上阵条件永远达不到。
 	if step == Step.BUY_3 and _owned_normal_count() >= 3:
@@ -1377,7 +1388,7 @@ func _refresh_prep() -> void:
 		_target_provider.request_action(TutorialTargetProviderScript.ACTION_REFRESH_VIEW)
 
 func _start_treasure(ids: Array) -> void:
-	GameState.pending_treasure = {"active": true, "round": GameState.round_index, "candidates": ids.duplicate(), "refresh_index": 0}
+	GameState.pending_treasure = {"active": true, "round": GameState.round_index, "candidates": TreasureService.available_candidates(ids), "refresh_index": 0}
 
 func _tutorial_opponent_snapshot() -> Dictionary:
 	var board := []
