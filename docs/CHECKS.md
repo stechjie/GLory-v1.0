@@ -39,6 +39,7 @@ Godot 不在 PATH 上，用 console 版才能把日志打到 stdout：
 | `tools/carrot_online_check.tscn` | 联机 3v3 的萝卜链路：服务端准入判据、回执写回 GameState、room_state 带不带萝卜、客机面板按钮可用性 |
 | `tools/piece_uid_check.tscn` | 棋子 uid：铸造唯一、跨局不复用、存档往返与老档补发、快照携带与去重 —— 四星血统的前提 |
 | `tools/four_star_values_check.tscn` | 四星技能数值：`star4` 覆写只在 4 星生效、不泄漏到低星，以及 §2 配平封顶表的机器可读版本 |
+| `tools/dot_attribution_check.tscn` | 持续伤害的归属：毒/失血致死要算给施法者（否则击杀金蒸发），最后一击仍归补刀者，自残不算别人头上 |
 
 ### 检查脚本自己写坏时会怎样（2026-09-08 实测）
 

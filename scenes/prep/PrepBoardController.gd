@@ -657,9 +657,15 @@ func _take_extra_merge_piece(id: String, star: int, excluded_board: Array, exclu
 			return taken
 	return {}
 
+# The merged king keeps the strongest def among the pieces consumed. The growth
+# counter must travel with that def: carrying the def but keeping the keeper's
+# own counter lets a player grow a king to its cap, merge it with fresh copies,
+# and resume growing from zero with the grown stats intact — a cap bypass that
+# repeats indefinitely.
 func _preserve_unique_king_growth_on_merge(target: Dictionary, incoming: Dictionary, extra: Dictionary) -> void:
 	var best_def: Dictionary = {}
 	var best_score := -1.0
+	var best_stacks := 0
 	for cell in [target, incoming, extra]:
 		if typeof(cell) != TYPE_DICTIONARY:
 			continue
@@ -670,10 +676,12 @@ func _preserve_unique_king_growth_on_merge(target: Dictionary, incoming: Diction
 		if score > best_score:
 			best_score = score
 			best_def = d
+			best_stacks = int((cell as Dictionary).get("king_growth_stacks", 0))
 	if best_def.is_empty():
 		return
 	target.def = best_def.duplicate(true)
 	target.id = str(best_def.get("id", target.get("id", "")))
+	target.king_growth_stacks = best_stacks
 
 func _unique_king_growth_score(d: Dictionary) -> float:
 	return float(d.get("hp", 0))
@@ -743,9 +751,12 @@ func _combine_copies_auto(star: int, locs: Array) -> void:
 		var arr: Array = GameState.board_slots if str(loc[0]) == "board" else GameState.bench_slots
 		arr[int(loc[1])] = null
 
+# Same rule as _preserve_unique_king_growth_on_merge: the growth counter travels
+# with the def that won, or the cap can be reset by merging.
 func _preserve_unique_king_growth_among(keeper: Dictionary, cells: Array) -> void:
 	var best_def: Dictionary = {}
 	var best_score := -1.0
+	var best_stacks := 0
 	for c in cells:
 		if typeof(c) != TYPE_DICTIONARY:
 			continue
@@ -756,10 +767,12 @@ func _preserve_unique_king_growth_among(keeper: Dictionary, cells: Array) -> voi
 		if score > best_score:
 			best_score = score
 			best_def = d
+			best_stacks = int((c as Dictionary).get("king_growth_stacks", 0))
 	if best_def.is_empty():
 		return
 	keeper.def = best_def.duplicate(true)
 	keeper.id = str(best_def.get("id", keeper.get("id", "")))
+	keeper.king_growth_stacks = best_stacks
 
 # 出售退款 = 棋子自身售价 x 星级 x 0.5。
 #

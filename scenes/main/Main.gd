@@ -2193,23 +2193,34 @@ func _apply_post_battle_unit_outcomes(result: Dictionary) -> void:
 
 func _grow_human_king(cell: Dictionary) -> void:
 	var d: Dictionary = cell.get("def", {})
-	# 全表唯一的复利技能，必须封层数。不封的话第 5 回合上场撑到第 21 回合是
-	# 1.25^16 ≈ 35 倍（原稿的 0.3 更是 1.3^16 ≈ 77 倍）。
+	# The only compounding skill in the game, so the stack count must be capped.
 	#
-	# max_stacks 在 4 星的 star4 覆写里，而 cell.def 是**没经过星级缩放**的原始表，
-	# 所以要过一遍唯一的解析点 UnitFactory.apply_star_stats() 才读得到。
-	# 这里只从它身上读上限，成长仍然改 cell 自己的 def。
+	# The cap lives at the top level of the unit def (3-star ceiling) and is
+	# overridden in `star4` (4-star ceiling). Capping only the 4-star tier — which
+	# is what an earlier pass did — inverts the tiers: an uncapped 3-star king
+	# overtakes a capped 4-star one after ~10 surviving rounds.
+	#
+	# max_stacks may come from the `star4` block, and cell.def is the raw table
+	# entry with no star scaling applied, so read it through the single parse
+	# point (UnitFactory.apply_star_stats). Only the ceiling is read from there;
+	# the growth itself still mutates the cell's own def.
 	var effective := UnitFactory.apply_star_stats(d, int(cell.get("star", 1)))
 	var cap := int(effective.get("max_stacks", 0))
 	if cap > 0 and int(cell.get("king_growth_stacks", 0)) >= cap:
 		return
 	var mul := 1.0 + float(d.get("post_battle_all_stat_growth", 0.20))
+	# Growth is limited to HP / ATK / DEF, matching the star-scaling rule in
+	# docs/四星技能与数值设计规格.md §1 ("仅 HP / 攻击 / 防御三项").
+	#
+	# This used to compound attack_speed / move_speed / crit / crit_dmg / range as
+	# well. That is the exact trap §1 exists to prevent: attack speed and crit
+	# damage both multiply DPS, so a "x5.96 stat growth" was really ~119x DPS,
+	# and 16 surviving rounds reached ~22000x. crit_dmg and range are not clamped
+	# anywhere; attack speed only saturates at the 2.5 ceiling in
+	# BattleSimulator._tick_attacks.
 	for key in ["hp", "atk", "def"]:
 		if d.has(key):
 			d[key] = maxi(1, int(round(float(d[key]) * mul)))
-	for key in ["attack_speed", "move_speed", "crit", "crit_dmg", "range"]:
-		if d.has(key):
-			d[key] = float(d[key]) * mul
 	cell.def = d
 	cell.king_growth_stacks = int(cell.get("king_growth_stacks", 0)) + 1
 

@@ -731,7 +731,17 @@ static func _apply_attack_statuses(attacker: Dictionary, target: Dictionary, sta
 	elif sid == "parasite_on_kill":
 		target.parasite_owner = attacker
 	elif sid == "poison_attack":
-		StatusEffectService.add_poison(target, 4.0 * duration_bonus, 0.03, SynergyService.safe_factor(syn, "undead_poison_bonus"))
+		# Poison strength and duration come from the unit def. They used to be
+		# hardcoded 0.03 / 4.0 here, which meant the 4-star tier could not touch
+		# them -- and poison damage is a share of the TARGET's max HP, so the
+		# +15% attack a 4-star grants does nothing for a poison unit's main
+		# output (it is 82-93% of what undead_poison actually deals).
+		# Defaults match the old constants exactly, so 1-3 star behaviour is
+		# unchanged. undead_poison and undead_fly can now be tuned separately.
+		StatusEffectService.add_poison(target,
+			float(d.get("poison_duration", 4.0)) * duration_bonus,
+			float(d.get("poison_pct_max_hp", 0.03)),
+			SynergyService.safe_factor(syn, "undead_poison_bonus"))
 	elif sid == "defense_down_attack":
 		StatusEffectService.add_status(target, "defense_down", float(d.get("duration", 5.0)) * duration_bonus, {"pct": float(d.get("def_down_pct", 0.10)) * strength})
 	elif sid == "death_hunt":

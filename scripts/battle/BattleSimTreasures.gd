@@ -446,7 +446,17 @@ static func _apply_defender_reaction(attacker: Dictionary, target: Dictionary, d
 		DamageService.apply_damage(attacker, maxi(1, int(round(float(dealt) * float(d.get("reflect_taken_damage_pct", 0.12))))), true)
 		StatusEffectService.add_poison(attacker)
 		target.skill_stacks = mini(int(d.get("max_stacks", 10)), int(target.get("skill_stacks", 0)) + 1)
-		target.defense = int(target.get("defense", 0)) + int(d.get("armor_per_hit", 2))
+		# Armor gained per hit is a share of this unit's own (star-scaled) base
+		# defense, not a flat number. A flat +3 is worth x2.4 of base defense at
+		# 1 star but only x1.8 at 4 star: the absolute value does not scale, which
+		# is exactly what docs/四星技能与数值设计规格.md §2 rules out
+		# ("绝对值一律改成百分比").
+		#
+		# The share is taken from the def entry, never from target.defense, so the
+		# stacks stay linear instead of compounding into each other.
+		var titan_base_def := float((d as Dictionary).get("def", 0))
+		var per_hit := int(round(titan_base_def * float(d.get("armor_per_hit_pct", 0.14))))
+		target.defense = int(target.get("defense", 0)) + maxi(1, per_hit)
 	DamageService.set_stat_source_uid(prev_source)
 
 

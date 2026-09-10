@@ -20,6 +20,8 @@ extends Node
 #   Godot_v4.7-stable_win64_console.exe --headless --path . tools/four_star_values_check.tscn
 
 const CheckHarness := preload("res://tools/CheckHarness.gd")
+# BattleSimTreasures has no class_name, so preload it to reach the skill hook.
+const BattleSimTreasures := preload("res://scripts/battle/BattleSimTreasures.gd")
 
 const CHECK_NAME := "four_star_values"
 
@@ -66,6 +68,10 @@ func _ready() -> void:
 	_case_detail_text_reads_star4()
 	_case_star4_fields_are_read()
 	_case_control_immunity()
+	_case_star4_moves_in_the_right_direction()
+	_case_growth_ceiling_exists_at_every_star()
+	_case_execute_epic_band_not_reduced()
+	_case_titan_armor_scales_with_star()
 	_h.finish(get_tree())
 
 
@@ -310,3 +316,166 @@ func _case_control_immunity() -> void:
 		StatusEffectService.add_status(immune, kind, 2.0, {"pct": 0.1})
 		_h.expect(StatusEffectService.has_status(immune, kind), "immunity_over_blocks",
 			"控制免疫把 %s 也挡掉了 —— 那不是控制，会让这只单位白拿一堆免疫" % kind)
+
+
+# --- 9. A 4-star override must move the value the right way ------------------
+# The cap table (case 3) only asks "is it too strong". It says nothing about
+# direction, so a 4-star value that is *weaker* than the 3-star one sails
+# through. Two real regressions got in that way:
+#
+#   * human_king had max_stacks only inside star4, so 1-3 star kings grew with
+#     no ceiling at all and overtook the capped 4-star one after ~10 rounds.
+#   * undead_mother raised tier1_or_merc_chance, which silently pushed the
+#     epic-execute tier from 15% down to 10% (case 10 covers that one).
+#
+# Fields are split by which way "better" points. Anything not listed is skipped
+# rather than guessed at: a wrong entry here would be worse than no entry.
+const HIGHER_IS_BETTER := [
+	"heal_pct", "damage_atk_pct", "atk_bonus", "aspd_bonus", "cleanse_chance",
+	"start_shield_pct", "taunt_radius", "true_damage_pct", "def_stack_pct",
+	"damage_reduction", "duration", "max_hp_bonus_pct", "attack_down", "aspd_down",
+	"fear_sec", "stun_sec", "silence_sec", "stack_damage", "clone_hp_pct",
+	"clone_atk_def_pct", "def_down_pct", "dodge", "reflect_taken_damage_pct",
+	"armor_per_hit_pct", "boss_max_hp_damage", "interrupt_chance", "combo_atk_pct",
+	"pull_sec", "ally_def_duration", "ally_def_pct", "post_battle_all_stat_growth",
+	"control_immune_sec", "double_element_chance", "link_regen_pct",
+	"poison_pct_max_hp", "poison_duration",
+]
+const LOWER_IS_BETTER := ["skill_cd", "every", "death_threshold"]
+
+
+func _case_star4_moves_in_the_right_direction() -> void:
+	for row in _units():
+		var d: Dictionary = row
+		var block: Variant = d.get("star4", null)
+		if typeof(block) != TYPE_DICTIONARY:
+			continue
+		var uid := str(d.get("id", "?"))
+		for key in (block as Dictionary):
+			if not d.has(key):
+				continue   # new 4-star-only field, no baseline to compare against
+			var base := float(d[key])
+			var four := float((block as Dictionary)[key])
+			if HIGHER_IS_BETTER.has(key) and four < base:
+				_h.fail("star4_moved_backwards",
+					"%s 的 4 星 %s 从 %s 降到了 %s —— 这个字段越大越好，4 星比 3 星弱"
+						% [uid, key, str(base), str(four)])
+			elif LOWER_IS_BETTER.has(key) and four > base:
+				_h.fail("star4_moved_backwards",
+					"%s 的 4 星 %s 从 %s 涨到了 %s —— 这个字段越小越好，4 星比 3 星弱"
+						% [uid, key, str(base), str(four)])
+			else:
+				_h.item()
+
+
+# --- 10. Ceilings must exist at every star, not just at 4 star ---------------
+# unique_king_growth compounds every surviving round, so its stack ceiling is
+# what keeps it finite. Putting the ceiling only in star4 does not just fail to
+# cap the lower stars, it inverts the tiers: an uncapped 3-star king passes the
+# capped 4-star one and never comes back.
+func _case_growth_ceiling_exists_at_every_star() -> void:
+	for row in _units():
+		var d: Dictionary = row
+		if str(d.get("skill_id", "")) != "unique_king_growth":
+			continue
+		var uid := str(d.get("id", "?"))
+		if not _h.expect(d.has("max_stacks"), "growth_ceiling_missing",
+				"%s 是复利成长单位，但 max_stacks 只在 star4 里 —— 1~3 星不封顶，"
+					% uid
+				+ "撑得够久就会反超 4 星"):
+			continue
+		var base_cap := int(d.get("max_stacks", 0))
+		var block: Dictionary = d.get("star4", {})
+		var four_cap := int(block.get("max_stacks", base_cap))
+		_h.expect(four_cap >= base_cap, "growth_ceiling_inverted",
+			"%s 的 4 星层数上限 %d 低于 3 星的 %d" % [uid, four_cap, base_cap])
+		# A compounding stat with no ceiling at all is the failure this guards.
+		_h.expect(base_cap > 0, "growth_ceiling_zero",
+			"%s 的 max_stacks 是 %d —— 0 在 _grow_human_king 里等于不封顶" % [uid, base_cap])
+
+
+# --- 11. A raised probability must not quietly starve the tier above it ------
+# unique_death_execute rolls one number and reads it as cumulative bands:
+# tier1 < t1, tier2 < t1+t2, everything else is tier3 (the epic band). Raising
+# t1 without lowering t2 takes the difference straight out of tier3 -- and
+# executing an epic is the whole point of the skill.
+func _case_execute_epic_band_not_reduced() -> void:
+	for row in _units():
+		var d: Dictionary = row
+		if str(d.get("skill_id", "")) != "unique_death_execute":
+			continue
+		var uid := str(d.get("id", "?"))
+		var block: Dictionary = d.get("star4", {})
+		var base_epic := 1.0 - float(d.get("tier1_or_merc_chance", 0.50)) - float(d.get("tier2_chance", 0.35))
+		var four_epic := 1.0 \
+			- float(block.get("tier1_or_merc_chance", d.get("tier1_or_merc_chance", 0.50))) \
+			- float(block.get("tier2_chance", d.get("tier2_chance", 0.35)))
+		_h.expect(four_epic >= base_epic - 0.0001, "execute_epic_band_reduced",
+			"%s 的 4 星处决史诗概率从 %.0f%% 降到 %.0f%% —— 处决史诗是这个技能的最高价值输出"
+				% [uid, base_epic * 100.0, four_epic * 100.0])
+		_h.expect(four_epic >= -0.0001, "execute_bands_overflow",
+			"%s 的 4 星 tier1+tier2 超过 100%%，史诗档变成负数" % uid)
+
+
+# --- 12. Toxic Armor must scale with the wearer's own defense ----------------
+# The armour gained per hit used to be a flat number from the data table. A flat
+# +3 is x2.4 of a 1-star titan's base defense but only x1.8 of a 4-star one, so
+# the higher the star the *less* the skill was worth in relative terms -- the
+# case docs/四星技能与数值设计规格.md §2 rules out ("绝对值一律改成百分比").
+#
+# determinism_check does NOT cover this: its fixture lists undead_titan, but
+# setting armor_per_hit_pct to 5.0 (a 3-star titan gaining +315 per hit) leaves
+# every replay hash untouched, so that path is never exercised there. This case
+# is the only automated evidence the skill works at all.
+func _case_titan_armor_scales_with_star() -> void:
+	var titan: Dictionary = {}
+	for row in _units():
+		if str((row as Dictionary).get("skill_id", "")) == "poison_reflect_armor_stack":
+			titan = row
+			break
+	if titan.is_empty():
+		_h.note("没有 poison_reflect_armor_stack 单位，跳过")
+		return
+
+	var gained := {}
+	for star in [1, GameConstants.MAX_MERGE_STAR, GameConstants.MAX_STAR]:
+		var scaled := UnitFactory.apply_star_stats(titan, star)
+		var target := _fighter(scaled)
+		var attacker := _fighter(UnitFactory.apply_star_stats(titan, 1))
+		attacker["uid"] = "atk"
+		var before := int(target.get("defense", 0))
+		BattleSimTreasures._apply_defender_reaction(attacker, target, 100)
+		gained[star] = int(target.get("defense", 0)) - before
+		if gained[star] <= 0:
+			_h.fail("titan_armor_not_applied",
+				"%d 星毒甲被打了一下，防御一点没涨 —— 技能没接上" % star)
+			return
+		_h.item()
+
+	# Relative worth must hold across stars: that is the whole point of moving
+	# off an absolute value.
+	var one := float(gained[1]) / float(int(UnitFactory.apply_star_stats(titan, 1).get("def", 1)))
+	var four := float(gained[GameConstants.MAX_STAR]) \
+		/ float(int(UnitFactory.apply_star_stats(titan, GameConstants.MAX_STAR).get("def", 1)))
+	_h.expect(four >= one - 0.01, "titan_armor_worth_less_at_high_star",
+		"毒甲每次加的护甲：1 星是自身防御的 %.0f%%，4 星只有 %.0f%% —— 绝对值不随星级缩放的老毛病"
+			% [one * 100.0, four * 100.0])
+	_h.expect(gained[GameConstants.MAX_STAR] > gained[GameConstants.MAX_MERGE_STAR],
+		"titan_armor_flat_across_stars",
+		"毒甲 4 星每次加 %d 点，3 星加 %d 点 —— 没有随星级变强"
+			% [int(gained[GameConstants.MAX_STAR]), int(gained[GameConstants.MAX_MERGE_STAR])])
+	_h.note("毒甲每次加护甲：1星 %d / 3星 %d / 4星 %d" % [
+		int(gained[1]), int(gained[GameConstants.MAX_MERGE_STAR]),
+		int(gained[GameConstants.MAX_STAR])])
+
+
+# Minimal fighter shaped like BattleSimShared._fighter_from_def builds them.
+func _fighter(scaled_def: Dictionary) -> Dictionary:
+	var hp := int(scaled_def.get("hp", 1000))
+	return {
+		"uid": "probe", "id": str(scaled_def.get("id", "")), "team": "player",
+		"def": scaled_def, "star": int(scaled_def.get("star", 1)),
+		"hp": hp, "max_hp": hp, "atk": int(scaled_def.get("atk", 1)),
+		"defense": int(scaled_def.get("def", 0)), "alive": true,
+		"shield": 0, "skill_stacks": 0, "statuses": {},
+	}
