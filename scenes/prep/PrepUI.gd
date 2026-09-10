@@ -1072,6 +1072,26 @@ func _build_top_actions() -> void:
 const ChatPhrases := preload("res://scripts/multiplayer/ChatPhrases.gd")
 
 const CHAT_BTN_SIZE := Vector2(132, 132)
+
+# 🔴 **聊天整块必须让开右侧那一列，横竖两个方向都要让。**
+#
+# 2026-09-10 实测（tools/chat_ui_capture.tscn，1280×720）：第一版把聊天贴着屏幕
+# 右缘、按钮锚在 offset_top=-340，结果正好盖住萝卜计数器，消息条压在萝卜按钮旁边。
+# **941 高时一点问题都没有** —— 因为两边用的是不同的锚：
+#
+#   side_col（佣兵 / 队伍佣兵 / 萝卜 / 萝卜计数）  从**屏幕顶部**往下固定排到 y=518
+#   聊天入口                                      从**屏幕底部**往上锚
+#
+# 窗口越矮，两者越近；到 720 就撞上了。所以：
+#   横向 —— 右边界收到 -148，让开那一列（STATS_BTN_SIZE.x=140 + 贴边 8）
+#   纵向 —— 按钮压到 -200 ~ -68，与商店刷新按钮同一水平带（它是右下角唯一
+#           本来就安全的高度：518 之下）。x 上错开，所以并不会真的叠上刷新。
+#
+# 改这几个数之前先跑一次那个截图工具，**用矮窗口看**，别用参考画布的高度。
+const CHAT_RIGHT := 148.0
+const CHAT_BTN_TOP := -200.0
+const CHAT_LOG_WIDTH := 352.0
+
 const CHAT_LOG_LINES := 3
 const CHAT_LINE_HOLD_SEC := 6.0        # 停留多久之后开始淡出
 const CHAT_LINE_FADE_SEC := 1.0
@@ -1096,13 +1116,14 @@ func _build_chat_entry() -> void:
 	_chat_button.anchor_right = 1.0
 	_chat_button.anchor_top = 1.0
 	_chat_button.anchor_bottom = 1.0
-	# 右下角，**在商店刷新按钮正上方**。刷新占的是 offset_top -200 ~ -70
-	# （见 _build_sell_zone_and_refresh 里那句「改它就能挪按钮」），压上去会盖住它，
-	# 而刷新是备战期点得最勤的按钮之一。
-	_chat_button.offset_left = -CHAT_BTN_SIZE.x - 8
-	_chat_button.offset_right = -8
-	_chat_button.offset_top = -340
-	_chat_button.offset_bottom = -340 + CHAT_BTN_SIZE.y
+	# 与商店刷新按钮同一水平带（它也是 -200 ~ -70），但**横向错开**：
+	# 刷新在 -105 ~ 25，聊天在 -280 ~ -148，中间隔着 43。见 CHAT_RIGHT 那段。
+	_chat_button.offset_right = -CHAT_RIGHT
+	_chat_button.offset_left = -CHAT_RIGHT - CHAT_BTN_SIZE.x
+	_chat_button.offset_top = CHAT_BTN_TOP
+	_chat_button.offset_bottom = CHAT_BTN_TOP + CHAT_BTN_SIZE.y
+	# z_index 刻意低于商店弹窗(40)与卖出区(50)：**商店开着的时候聊天就该点不到**。
+	# 那时玩家在买卖，一个压在商店上的聊天按钮只会造成误触。
 	_chat_button.z_index = 20
 	add_child(_chat_button)
 
@@ -1112,10 +1133,11 @@ func _build_chat_entry() -> void:
 	_chat_log.anchor_right = 1.0
 	_chat_log.anchor_top = 1.0
 	_chat_log.anchor_bottom = 1.0
-	_chat_log.offset_left = -380
-	_chat_log.offset_right = -8
-	_chat_log.offset_top = -470
-	_chat_log.offset_bottom = -348
+	# 贴在按钮正上方，右边界与按钮对齐（同样让开 side_col 那一列）。
+	_chat_log.offset_right = -CHAT_RIGHT
+	_chat_log.offset_left = -CHAT_RIGHT - CHAT_LOG_WIDTH
+	_chat_log.offset_bottom = CHAT_BTN_TOP - 8
+	_chat_log.offset_top = CHAT_BTN_TOP - 8 - 122
 	_chat_log.alignment = BoxContainer.ALIGNMENT_END
 	# 🔴 消息条压在棋盘右下方的空域上。IGNORE 不能省 —— 少了它，
 	# 一条飘过的消息会把它盖住的那格棋盘变成点不动的，而玩家只会觉得「卡了」。
@@ -1135,11 +1157,12 @@ func _build_chat_panel() -> void:
 	_chat_panel.anchor_right = 1.0
 	_chat_panel.anchor_top = 1.0
 	_chat_panel.anchor_bottom = 1.0
-	# 贴按钮左侧、底边与按钮对齐。往左展开是因为按钮已经贴着屏幕右缘了。
-	_chat_panel.offset_right = -CHAT_BTN_SIZE.x - 16
-	_chat_panel.offset_left = -CHAT_BTN_SIZE.x - 16 - 372
-	_chat_panel.offset_bottom = -340 + CHAT_BTN_SIZE.y
-	_chat_panel.offset_top = -340 + CHAT_BTN_SIZE.y - 268
+	# **往上弹**，与消息条同一列（右边界对齐、同宽）。
+	# 不往左弹：那会横穿到棋盘中央去；往上只压掉自己那几条消息，代价最小。
+	_chat_panel.offset_right = -CHAT_RIGHT
+	_chat_panel.offset_left = -CHAT_RIGHT - CHAT_LOG_WIDTH
+	_chat_panel.offset_bottom = CHAT_BTN_TOP - 8
+	_chat_panel.offset_top = CHAT_BTN_TOP - 8 - 282
 	_chat_panel.z_index = 30
 	_chat_panel.visible = false
 	var style := StyleBoxFlat.new()
@@ -1161,7 +1184,7 @@ func _build_chat_panel() -> void:
 	for group in ChatPhrases.GROUP_ORDER:
 		for phrase_id in ChatPhrases.ids_in_group(group):
 			grid.add_child(PrepWidgets.make_menu_button(
-				ChatPhrases.text(phrase_id), Vector2(170, 38), 15,
+				ChatPhrases.text(phrase_id), Vector2(160, 38), 15,
 				_send_chat_phrase.bind(int(phrase_id))))
 
 func _toggle_chat_panel() -> void:

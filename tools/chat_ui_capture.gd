@@ -45,9 +45,53 @@ func _ready() -> void:
 	# 把面板摆出来 —— 这里要看的是版面，不是那条判断。
 	_lobby.call("_set_phrase_panel_visible", true)
 	await _shot("lobby_chat_panel_open")
+	_lobby.queue_free()
+	await get_tree().process_frame
+
+	await _capture_prep()
 
 	print("CHAT_UI_CAPTURE shots=%d dir=%s" % [_shots, OUT_DIR])
 	get_tree().quit(0)
+
+
+# 备战期的聊天入口（PrepUI._build_chat_entry）。
+#
+# 🔴 **刻意用 1280×720 这个矮窗口**，不用参考画布的 941 高。
+# 备战界面右侧那一列（佣兵 / 队伍佣兵 / 萝卜 / 萝卜计数）是**从屏幕顶部往下固定
+# 排到 y=518** 的，而聊天按钮是**从屏幕底部往上锚**的 —— 窗口越矮，两者越容易撞。
+# 941 高时看不出任何问题，720 高就会压到萝卜按钮上。
+# 用户 2026-09-10 报的正是这个，而 941 那张图完全拍不到它。
+const PREP_WINDOW := Vector2i(1280, 720)
+const PREP_SETTLE_FRAMES := 60
+
+
+func _capture_prep() -> void:
+	DisplayServer.window_set_size(PREP_WINDOW)
+	for _i in 5:
+		await get_tree().process_frame
+
+	# 与 tools/carrot_online_check.gd 的 _case_client_ui_tracks_room_state 同一套起法。
+	GameState.reset_run()
+	GameState.tutorial_mode = false
+	NetworkService.team_active = true
+	NetworkService.is_host = false
+	var packed := load("res://scenes/prep/PrepScreen.tscn") as PackedScene
+	if packed == null:
+		push_error("PrepScreen.tscn 加载失败")
+		return
+	var prep: Node = packed.instantiate()
+	add_child(prep)
+	for _i in PREP_SETTLE_FRAMES:
+		await get_tree().process_frame
+
+	for pair in [[1, 2], [0, 8]]:
+		prep.call("_on_prep_chat_received", int(pair[0]), int(pair[1]))
+	await _shot("prep_chat_collapsed")
+
+	prep.call("_toggle_chat_panel")
+	await _shot("prep_chat_panel_open")
+	prep.queue_free()
+	await get_tree().process_frame
 
 
 func _stub_online_state() -> void:

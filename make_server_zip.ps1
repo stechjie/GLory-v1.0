@@ -12,7 +12,9 @@
 #
 #  名字是从源码自动生成的，**不要手写**：手写的版本号会和内容漂移，
 #  而自动生成的名字永远不会擒谎。最终以服务器启动日志
-#  （journalctl -u glory-server）里 "server starting protocol=N" 为准。
+#  （journalctl -u glory-server）里 "server started protocol=N" 为准。
+#  **是 started 不是 starting**：starting 那行在 team_host() 之前就打了，
+#  端口被占用、DTLS 私钥没找到都照样会有它，只有 started 能证明真的监听上了。
 #
 #  2026-07-28 修：此前脚本"打包成功"只代表**文件复制完了**，不代表包能跑。
 #  实测上一个包在空目录里根本起不来（没有 assets/，UI 主场景 preload 失败 ->
@@ -292,7 +294,8 @@ try {
     Write-Host "   2. unzip -q ~/$zipName -d ~/Glory/`"Beta 0.04`""
     Write-Host "   3. sudo systemctl restart glory-server"
     Write-Host "   4. journalctl -u glory-server -n 5 --no-pager"
-    Write-Host "      ^ 看到 server starting protocol=$protocol 才算部署成功" -ForegroundColor Yellow
+    Write-Host "      ^ 看到 server started protocol=$protocol 才算部署成功（started，不是 starting）" -ForegroundColor Yellow
+    Write-Host "        starting 那行在绑端口之前就打了 —— 端口被占、私钥没找到都照样有它。" -ForegroundColor DarkYellow
     Write-Host ""
     Write-Host " !! systemd 的 ExecStart 必须带上入口场景，否则会去加载 UI 主场景然后静默挂住：" -ForegroundColor Yellow
     Write-Host "    godot --headless --path <目录> res://scenes/server/ServerMain.tscn --server --port=8080" -ForegroundColor Yellow
