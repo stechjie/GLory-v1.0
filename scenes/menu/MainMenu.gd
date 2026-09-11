@@ -16,6 +16,7 @@ signal prep_requested           # 「备战」按钮：进入备战界面（暂�
 signal codex_requested          # 「图鉴」按钮：进入图鉴界面
 signal profile_requested        # 左上角名牌：进入玩家资料界面
 signal friends_requested        # 左侧「朋友」按钮：进入好友界面
+signal chat_requested           # 左侧「聊天」按钮：进入私聊界面
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
@@ -65,6 +66,8 @@ const DEBUG_BANDS := [
 var _profile_portrait: TextureRect
 var _profile_name_label: Label
 var _profile_sub_label: Label
+# 「聊天」图标右上角的未读红点。显隐只跟 ChatService 走（状态只有一份）。
+var _chat_dot: Label
 var _menu_music_player: AudioStreamPlayer
 var _address_edit: LineEdit
 var _net_status: Label
@@ -90,12 +93,16 @@ func _ready() -> void:
 	_start_menu_music()
 	if not AccountManager.profile_changed.is_connected(_on_account_profile_changed):
 		AccountManager.profile_changed.connect(_on_account_profile_changed)
+	if not ChatService.unread_changed.is_connected(_on_chat_unread_changed):
+		ChatService.unread_changed.connect(_on_chat_unread_changed)
 	_refresh_profile_plate()
 	_ensure_profile_loaded()
 
 func _exit_tree() -> void:
 	if AccountManager.profile_changed.is_connected(_on_account_profile_changed):
 		AccountManager.profile_changed.disconnect(_on_account_profile_changed)
+	if ChatService.unread_changed.is_connected(_on_chat_unread_changed):
+		ChatService.unread_changed.disconnect(_on_chat_unread_changed)
 
 func _on_account_profile_changed(_profile: Dictionary) -> void:
 	_refresh_profile_plate()
@@ -170,7 +177,12 @@ func _build() -> void:
 	_add_hit(Vector2(28, 300), Vector2(132, 132), _emit_friends, "left")
 	_add_texture(TEX_CHAT, Vector2(28, 440), Vector2(132, 132), "left")
 	_add_label(_menu_text("聊天", "Chat"), Vector2(47, 520), Vector2(94, 30), 21, "left")
-	_add_hit(Vector2(28, 440), Vector2(132, 132), _show_coming_soon, "left")
+	# 未读红点压在图标右上角。hit 仍然放在最后（见上面「顺序 = 绘制层级」那条）。
+	_chat_dot = _add_label("●", Vector2(120, 444), Vector2(32, 32), 26, "left")
+	_chat_dot.add_theme_color_override("font_color", Tokens.UNREAD_DOT)
+	_chat_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_chat_dot.visible = ChatService.any_unread()
+	_add_hit(Vector2(28, 440), Vector2(132, 132), _emit_chat, "left")
 
 	# 右上角背包/邮件/设置、右侧商店/公告：锚定到屏幕右边（edge="right"）
 	_add_texture(TEX_BAG, Vector2(1340, 25), Vector2(100, 100), "right")
@@ -500,6 +512,16 @@ func _emit_profile() -> void:
 
 func _emit_friends() -> void:
 	friends_requested.emit()
+
+
+# 「聊天」按钮：此前是「敬请期待」，批次 C 起进私聊界面（世界频道以后也在那个界面里）。
+func _emit_chat() -> void:
+	chat_requested.emit()
+
+
+func _on_chat_unread_changed(any_unread: bool) -> void:
+	if _chat_dot != null and is_instance_valid(_chat_dot):
+		_chat_dot.visible = any_unread
 
 # 名牌上的昵称与副行。**不自己拼显示名** —— 只从 AccountManager.display_name 出，
 # 那是全仓唯一的拼法。理由：player_name 不唯一（database/001 的设计），

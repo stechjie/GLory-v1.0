@@ -92,7 +92,22 @@ EXPECTED_TABLES: tuple[str, ...] = (
     "player_presence",
     # 006（最近一起玩过）
     "player_room_visits",
+    # 007（私聊）
+    "chat_conversations",
+    "chat_messages",
+    "chat_read_state",
 )
+
+
+def affected_rows(status: str) -> int:
+    """asyncpg 的 execute() 返回的是命令标签（形如 "DELETE 12"），取出行数。
+
+    取不出来就当 0：这个数只用于日志与测试，不该因为标签格式变了让调用方崩掉。
+    """
+    try:
+        return int(str(status).rsplit(" ", 1)[-1])
+    except ValueError:
+        return 0
 
 
 async def inspect_schema() -> list[dict]:

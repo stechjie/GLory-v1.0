@@ -22,6 +22,8 @@ const AccountConfig := preload("res://scripts/account/AccountConfig.gd")
 signal login_started()
 signal login_succeeded(player_id: String, player_name: String)
 signal login_failed(reason: String)
+# 登出（含注销账号）。WebSocket 与私聊的客户端状态靠它收尾。
+signal logged_out()
 
 enum State { IDLE, WORKING, LOGGED_IN, FAILED }
 
@@ -55,6 +57,21 @@ var last_failure: int = Failure.NONE
 # 它一小时就过期，存它没有任何收益，却多一处会泄漏的地方（日志、崩溃报告、
 # 玩家发来的截图）。落盘的只有 refresh token，在 SaveManager.ACCOUNT_PATH。
 var _access_token := ""
+
+# access token 的到期时刻（本机墙钟，unix 秒）。0 = 不知道 / 没登录。
+#
+# 🔴 **必须用墙钟，不能用 Timer。** 手机切到后台时引擎不跑帧，Timer 也跟着停；
+# 回到前台时它还以为离过期很远，而令牌早就过期了。
+var _token_expires_at := 0.0
+# 续期的单飞标志：同一时刻只允许一次续期在飞。
+# 🔴 Supabase 的 refresh token 会轮换：两次并发续期拿同一张旧票去换，后到的那次
+# 会被当成重放，严重时整条会话被吊销 —— 玩家直接掉号。
+var _refreshing := false
+signal _refresh_finished(ok: bool)
+# 续期被 401 拒过 = 凭证已经失效。**不在会话中途改走匿名注册**（那等于游戏开着开着
+# 换了一个号），等下次启动由 login() 按原流程处理。
+var _refresh_dead := false
+var _last_refresh_failed_at := 0.0
 
 # 登录流程的互斥标志。**只保护登录**，不保护资料等其它请求 ——
 # 那些是可以并发的，见 _request 顶部关于「每次自建 HTTPRequest」的说明。
@@ -124,6 +141,8 @@ func login() -> void:
 func logout() -> void:
 	SaveManager.clear_account_credentials()
 	_access_token = ""
+	_token_expires_at = 0.0
+	_refresh_dead = false
 	player_id = ""
 	player_name = ""
 	state = State.IDLE
@@ -131,12 +150,15 @@ func logout() -> void:
 	# 主菜单名牌会先画出上一个账号的昵称与好友码，直到第一次拉取回来。
 	profile = {}
 	profile_changed.emit(profile)
+	logged_out.emit()
 
 
 func _finish_success(body: Dictionary) -> void:
 	player_id = str(body.get("player_id", ""))
 	player_name = str(body.get("player_name", ""))
 	_access_token = str(body.get("access_token", ""))
+	_note_token_lifetime(body)
+	_refresh_dead = false
 	var refresh_token := str(body.get("refresh_token", ""))
 
 	# ⚠️ 必须存**返回的**那个 refresh token。Supabase 默认轮换，
@@ -163,6 +185,98 @@ func _finish_failure(reason: String, failure: int = Failure.UNKNOWN) -> void:
 	push_warning("[ACCOUNT] 登录失败：%s" % reason)
 	_emit_status()
 	login_failed.emit(reason)
+
+
+# --- 令牌续期（docs/聊天系统设计.md 第二节「token 过期后重连」）----------------
+#
+# access token 一小时就过期（backend/app/jwt_verify.py：exp = iat + 3600）。
+# 在这之前，登录之后**从来没有续过期** —— 开着游戏满一小时，好友列表、在线心跳
+# 全部开始 401，而界面只会显示「请求失败」。私聊是第一个让这件事显形的功能：
+# 聊天界面常开，WebSocket 断线重连时拿着过期令牌会永远握手失败。
+#
+# 做法是**按需续期**，不是定时器（理由见 _token_expires_at 的注释）：
+#   1. 每次带令牌的请求之前，看墙钟离到期是否不足 TOKEN_REFRESH_MARGIN_SEC，是就先续
+#   2. 请求仍然收到 401（令牌被提前吊销、本机时钟不准），续一次、重试一次
+#   3. RealtimeService 建连之前同样先 ensure_fresh_token()
+
+const TOKEN_REFRESH_MARGIN_SEC := 120.0
+# 续期失败（断网、5xx）之后多久内不再试。在线心跳 10 秒一次，
+# 断网时每一次都去续期只会把续期接口的限流额度打光。
+const REFRESH_RETRY_COOLDOWN_SEC := 15.0
+
+
+func _note_token_lifetime(body: Dictionary) -> void:
+	var expires_in := int(body.get("expires_in", 0))
+	# 后端没给就按 Supabase 默认的一小时算。宁可早续，不要晚续。
+	if expires_in <= 0:
+		expires_in = 3600
+	_token_expires_at = Time.get_unix_time_from_system() + float(expires_in)
+
+
+func _token_needs_refresh() -> bool:
+	return _token_expires_at > 0.0 \
+		and Time.get_unix_time_from_system() >= _token_expires_at - TOKEN_REFRESH_MARGIN_SEC
+
+
+# 令牌够新就直接返回 true；快过期了就先续。给 RealtimeService 建连前用。
+func ensure_fresh_token() -> bool:
+	if not is_logged_in():
+		return false
+	if _token_needs_refresh():
+		return await refresh_session()
+	return true
+
+
+# 用落盘的 refresh token 换一张新的 access token。返回是否成功。
+#
+# **单飞**：并发调用只发出一次请求，其余的等同一个结果（见 _refreshing 的注释）。
+# **不改走匿名注册**：被 401 拒了只标记失效，见 _refresh_dead 的注释。
+func refresh_session() -> bool:
+	if _refreshing:
+		return await _refresh_finished
+	if not is_logged_in() or _refresh_dead:
+		return false
+	var now := Time.get_unix_time_from_system()
+	if now - _last_refresh_failed_at < REFRESH_RETRY_COOLDOWN_SEC:
+		return false
+	var refresh_token := str(SaveManager.load_account_credentials().get("refresh_token", ""))
+	if refresh_token.is_empty():
+		return false
+
+	_refreshing = true
+	var result := await _post("/v1/auth/refresh", {"refresh_token": refresh_token})
+	var code := int(result.get("code", 0))
+	var ok := false
+	if code == 200:
+		ok = _apply_refreshed_session(result.get("body", {}))
+	elif code == 401:
+		_refresh_dead = true
+		push_warning("[ACCOUNT] 续期被拒：凭证已失效，下次启动会重新走登录流程")
+	else:
+		_last_refresh_failed_at = now
+	_refreshing = false
+	_refresh_finished.emit(ok)
+	return ok
+
+
+# 只换令牌，**不发 login_succeeded**：那个信号的订阅者（资料同步、在线状态补报、
+# 聊天连线）都是「刚登录」时才该做的事，续期时再跑一遍只会平白多几轮请求。
+func _apply_refreshed_session(body: Dictionary) -> bool:
+	# 续期换回来的必须还是同一个玩家。对不上说明凭证串了（比如存档被换过），
+	# 这时绝不能在游戏开着的情况下悄悄换号。
+	if str(body.get("player_id", "")) != player_id:
+		push_warning("[ACCOUNT] 续期返回的 player_id 与当前不一致，放弃这次续期")
+		return false
+	var token := str(body.get("access_token", ""))
+	if token.is_empty():
+		return false
+	_access_token = token
+	_note_token_lifetime(body)
+	# ⚠️ 同 _finish_success：必须存**返回的**那个 refresh token（Supabase 默认轮换）。
+	var rotated := str(body.get("refresh_token", ""))
+	if not rotated.is_empty():
+		SaveManager.save_account_credentials(rotated, player_id)
+	return true
 
 
 # 把 HTTP 结果映射成稳定分类。
@@ -473,6 +587,38 @@ func update_presence_visibility(presence_visibility: String, room_visibility: St
 	}, true)
 
 
+# --- 私聊（docs/聊天系统设计.md 批次 C）---------------------------------------
+#
+# 发送走这里（HTTPS），**接收走 RealtimeService 的推送**，红点等状态在 ChatService。
+# 为什么发送不走 WebSocket，见 backend/app/routes/chat.py 顶部。
+
+# 会话列表：**全部好友**，各自带最后一条与未读。聊天界面兼做选人。
+func fetch_chats() -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/me/chats", null, true)
+
+
+# 某个好友的消息，按 message_id 升序。after_id > 0 是增量：只要比它新的 ——
+# 断线重连、推送漏掉之后靠它补齐。推送只是「快」，正确性全押在这个游标上。
+func fetch_chat_messages(code: String, after_id: int = 0) -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET,
+		"/v1/me/chats/%s/messages?after=%d" % [normalize_friend_code(code), maxi(0, after_id)],
+		null, true)
+
+
+# client_msg_id 由调用方生成，重试同一条时**原样复用** —— 服务端靠它认出重发，
+# 弱网下「我发了一次、对方收到两条」就是它在挡。
+func send_chat_message(code: String, body: String, client_msg_id: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST,
+		"/v1/me/chats/%s/messages" % normalize_friend_code(code),
+		{"body": body, "client_msg_id": client_msg_id}, true)
+
+
+func mark_chat_read(code: String, last_read_id: int) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST,
+		"/v1/me/chats/%s/read" % normalize_friend_code(code),
+		{"last_read_id": maxi(0, last_read_id)}, true)
+
+
 # --- 在线状态心跳 -------------------------------------------------------------
 #
 # **事件驱动 + 慢心跳**，不是纯轮询：进出房间时立刻补一次（report_presence_now），
@@ -539,9 +685,13 @@ func _request(
 	path: String,
 	payload: Variant = null,
 	authed: bool = false,
+	allow_refresh: bool = true,
 ) -> Dictionary:
 	var headers := PackedStringArray(["Content-Type: application/json"])
 	if authed:
+		# 令牌快过期就先续，免得这一趟白跑一次 401（见「令牌续期」那一节）。
+		if allow_refresh and _token_needs_refresh():
+			await refresh_session()
 		if _access_token.is_empty():
 			# 本地就能判定的失败，不必往返一次。用 401 是为了让调用方的
 			# 处理路径与「服务端说令牌无效」完全一致。
@@ -594,6 +744,13 @@ func _request(
 	# 所以后端那边一律把列表包进对象（有测试钉着）。
 	if code >= 200 and code < 300:
 		return {"code": code, "body": body}
+
+	# 401 且这一趟还没重试过：令牌被提前吊销、或者本机时钟不准。续一次、重试一次。
+	# 服务端的 401 出在令牌校验那一步，业务逻辑还没跑 —— 所以连 POST 重试也是安全的。
+	if code == 401 and authed and allow_refresh:
+		var refreshed: bool = await refresh_session()
+		if refreshed:
+			return await _request(method, path, payload, authed, false)
 
 	# 后端的 detail 已经脱敏（backend 那边有测试钉着不含 token），可以直接显示。
 	# 拿不到 detail（响应体不是 JSON）时**不要把原文回显给玩家** ——

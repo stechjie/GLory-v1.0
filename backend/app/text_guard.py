@@ -28,6 +28,10 @@ import unicodedata
 NAME_MIN, NAME_MAX = 1, 24
 SIGNATURE_MAX = 60
 
+# 私聊单条上限。与 database/007_chat.sql 的 chat_body_length、
+# 客户端 ChatService.MAX_BODY_CHARS 必须一致（tools/chat_check.gd 钉着）。
+CHAT_MAX = 200
+
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _BLOCKLIST_PATH = pathlib.Path(
     os.environ.get("GLORY_BLOCKLIST_PATH", _REPO_ROOT / "data" / "blocked_words.txt")
@@ -222,4 +226,39 @@ def clean_signature(raw: str) -> str | None:
         raise TextRejected("length", "签名最多 %d 个字" % SIGNATURE_MAX)
     _contact_check(text)
     _blocklist_check(text)
+    return text
+
+
+# --- 私聊（docs/聊天系统设计.md 批次 C）--------------------------------------
+
+# 零宽连接符（ZWJ）。它是组合 emoji 的胶水：一个「一家三口」其实是三个人形 + 两个 ZWJ。
+_ZWJ = chr(0x200D)
+
+
+def clean_chat_message(raw: str) -> str:
+    """校验并规范化一条私聊消息。不通过就抛 TextRejected。
+
+    与昵称、签名有三处**刻意**不同（设计文档第四节）：
+
+      1. **不查引流**（② 那层）。已定：私聊是点对点、对方已经同意加好友，
+         交换联系方式是正常社交行为。记录但不拦，靠举报后处理。
+      2. **不套词表**（③ 那层）。data/blocked_words.txt 是给昵称与签名写的；
+         聊天是高频海量的对话，同一份表会同时漏（谐音拆字随便过）和误杀
+         （正常对话被拦，玩家不知道为什么）。聊天的内容审核归外部 provider，
+         私聊在那一层是 fail-open。
+      3. **换行压成空格、ZWJ 直接去掉，而不是整条拒绝。** 昵称里出现这些只可能是
+         在搞破坏；聊天里多半是粘贴了一段多行文字，或者输入法发来的组合 emoji。
+         整条拒掉只会让玩家对着「不能包含不可见字符」发呆。
+         去掉 ZWJ 的代价是组合 emoji 退化成几个单独的 emoji —— 意思还在。
+
+    结构层（零宽 / 双向覆写 / Zalgo / 控制字符）照旧全开：那是防显示破坏，
+    与内容无关，聊天里同样有人会拿 Zalgo 糊屏幕。
+    """
+    if raw is None:
+        raise TextRejected("empty", "消息不能为空")
+    text = raw.replace("\r\n", " ").replace("\r", " ").replace("\n", " ").replace("\t", " ")
+    text = text.replace(_ZWJ, "")
+    text = _structural_check(text, "消息")
+    if len(text) > CHAT_MAX:
+        raise TextRejected("length", "消息最多 %d 个字" % CHAT_MAX)
     return text

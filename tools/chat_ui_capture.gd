@@ -49,6 +49,7 @@ func _ready() -> void:
 	await get_tree().process_frame
 
 	await _capture_prep()
+	await _capture_chat_screen()
 
 	print("CHAT_UI_CAPTURE shots=%d dir=%s" % [_shots, OUT_DIR])
 	get_tree().quit(0)
@@ -91,6 +92,70 @@ func _capture_prep() -> void:
 	prep.call("_toggle_chat_panel")
 	await _shot("prep_chat_panel_open")
 	prep.queue_free()
+	await get_tree().process_frame
+
+
+# 私聊界面（批次 C，scenes/menu/ChatScreen.gd）。
+#
+# 同样用 1280×720 的矮窗口：左栏固定 440 宽，消息区是剩下的部分 ——
+# 窗口越窄，气泡的最大宽度越小，长消息折行、「发送失败」那一行和「重发」按钮
+# 越容易挤出问题。按参考画布那么宽出图，什么都看不出来。
+const CHAT_SCREEN := preload("res://scenes/menu/ChatScreen.tscn")
+const CHAT_WINDOW := Vector2i(1280, 720)
+
+
+func _capture_chat_screen() -> void:
+	DisplayServer.window_set_size(CHAT_WINDOW)
+	for _i in 5:
+		await get_tree().process_frame
+	var screen: Control = CHAT_SCREEN.instantiate()
+	add_child(screen)
+	for _i in 10:
+		await get_tree().process_frame
+
+	# 出图时没有登录，列表拉取必然失败 —— 这里要看的是版面，直接灌样例数据；
+	# 渲染走的仍是界面自己的函数，红点也走 ChatService（和线上同一条路）。
+	var chats := [
+		{"friend_code": "BBBB2222", "player_name": "小林", "avatar": "", "avatar_frame": "",
+			"online": true, "unread": false, "last_message": {"message_id": 8, "from_me": true,
+			"body": "好，八点见", "created_at": "2026-09-11T12:31:00+00:00"}},
+		{"friend_code": "CCCC3333", "player_name": "阿泰的小号", "avatar": "", "avatar_frame": "",
+			"online": false, "unread": true, "last_message": {"message_id": 3, "from_me": false,
+			"body": "你上把那个阵容哪抄的，教教我", "created_at": "2026-09-10T09:00:00+00:00"}},
+		{"friend_code": "DDDD4444", "player_name": "路人甲", "avatar": "", "avatar_frame": "",
+			"online": false, "unread": false, "last_message": null},
+	]
+	screen.set("_chats", chats)
+	ChatService.apply_chat_list(chats)
+	screen.set("_open_code", "BBBB2222")
+	ChatService.set_open_conversation("BBBB2222")
+	var messages: Array[Dictionary] = [
+		{"message_id": 5, "from_me": false, "body": "在吗",
+			"created_at": "2026-09-11T12:00:00+00:00", "state": "sent"},
+		{"message_id": 6, "from_me": true, "body": "在，刚打完一把",
+			"created_at": "2026-09-11T12:01:00+00:00", "state": "sent"},
+		{"message_id": 7, "from_me": false,
+			"body": "今晚八点开一局三排？我拉上阿泰，你把上次那套四星弓手阵带上，别又开局就把棋子卖光了哈哈哈",
+			"created_at": "2026-09-11T12:30:00+00:00", "state": "sent"},
+		{"message_id": 8, "from_me": true, "body": "好，八点见",
+			"created_at": "2026-09-11T12:31:00+00:00", "state": "sent"},
+		{"message_id": 0, "from_me": true, "body": "我先去领一下萝卜",
+			"created_at": "", "state": "pending", "seq": 1},
+		{"message_id": 0, "from_me": true, "body": "这条是发送失败的样子",
+			"created_at": "", "state": "failed", "error": "你们不是好友，发不了消息", "seq": 2},
+	]
+	screen.set("_messages", messages)
+	screen.call("_set_notice", "", false)
+	screen.call("_update_peer_label")
+	screen.call("_render_list")
+	screen.call("_render_messages", true)
+	await _shot("chat_screen_conversation")
+
+	# 被顶号：消息区上方的原因条 +「在本设备重新连接」，输入框禁用。
+	ChatService.call("_set_kicked", true)
+	await _shot("chat_screen_kicked")
+	ChatService.reset()
+	screen.queue_free()
 	await get_tree().process_frame
 
 

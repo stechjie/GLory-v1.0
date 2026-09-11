@@ -56,7 +56,148 @@ func _ready() -> void:
 	_case_ui_scripts_parse()
 	_case_prep_log_ignores_mouse()
 	_case_rpc_count_pinned()
+	_case_ws_constants_match_backend()
+	_case_chat_constants_match_backend()
+	_case_token_refresh_wired()
+	_case_chat_entry_wired()
 	_h.finish(get_tree())
+
+
+# --- 7. 🔴 客户端与后端的跨语言常量 ---------------------------------------------
+
+func _case_ws_constants_match_backend() -> void:
+	# 与 friends_check 钉「心跳间隔 vs 后端 TTL」完全同一类问题：
+	# **同一个约定写在两种语言里，分开改不会有任何症状。**
+	#
+	# 这几条对不上的表现分别是：
+	#   关闭码   —— 被顶号会被当成普通掉线，于是客户端一直重连，两台设备无限互踢
+	#   设备正则 —— 握手被服务端 1008 拒绝，而客户端只看到「连不上」，
+	#               排查的人会先去怀疑令牌
+	# 两种都不报错。
+	var py := FileAccess.get_file_as_string("res://backend/app/realtime.py")
+	var gd := FileAccess.get_file_as_string("res://scripts/autoload/RealtimeService.gd")
+	_h.item()
+	if py.is_empty() or gd.is_empty():
+		_h.fail("ws_source_unreadable", "读不到 realtime.py 或 RealtimeService.gd")
+		return
+	_h.expect(true, "", "")
+
+	for pair in [["CLOSE_KICKED", 4001], ["CLOSE_IDLE", 4002]]:
+		var name := str(pair[0])
+		var value := int(pair[1])
+		_h.item()
+		_h.expect(py.contains("%s = %d" % [name, value]), "ws_close_code_drift_py",
+			"backend/app/realtime.py 里的 %s 不是 %d 了。" % [name, value]
+			+ "客户端 RealtimeService.gd 还按旧值判 —— 被顶号会被当成普通掉线，"
+			+ "然后两台设备开始无限互踢。")
+		_h.item()
+		_h.expect(gd.contains("const %s := %d" % [name, value]), "ws_close_code_drift_gd",
+			"RealtimeService.gd 里的 %s 不是 %d 了（后端仍是）。" % [name, value])
+
+	# 设备标识的形状。后端是正则，客户端是逐字符判，写法不同但约定必须一样。
+	_h.item()
+	_h.expect(FileAccess.get_file_as_string("res://backend/app/routes/ws.py")
+			.contains("[A-Za-z0-9_-]{8,64}"),
+		"ws_device_regex_drift",
+		"backend/app/routes/ws.py 的 _DEVICE_RE 变了。"
+		+ "RealtimeService._is_valid_device_id 是照它逐字符实现的，两边必须一起改 —— "
+		+ "对不上的症状是握手被 1008 拒绝，而客户端只显示「连不上」。")
+	_h.item()
+	_h.expect(gd.contains("value.length() < 8 or value.length() > 64"),
+		"ws_device_length_drift",
+		"RealtimeService._is_valid_device_id 的长度范围与后端 {8,64} 对不上了。")
+
+	# 心跳间隔必须由服务端下发，客户端只留兜底值。
+	# 写死两份的话，改了服务端而客户端还按旧值发，会被判成超时掉线。
+	_h.item()
+	_h.expect(gd.contains("payload.get(\"heartbeat_sec\""), "ws_heartbeat_hardcoded",
+		"客户端必须用服务端 ready 里下发的 heartbeat_sec，不能只用本地常量。")
+
+
+# --- 8. 🔴 私聊（批次 C）的跨语言常量 --------------------------------------------
+
+func _case_chat_constants_match_backend() -> void:
+	# 同上一条：同一个约定写在三种地方（Python / SQL / GDScript），分开改不会有任何症状。
+	#   "dm"   —— 对不上的话推送全部掉进 RealtimeService 的「未知类型」分支：
+	#             不报错，就是收不到，玩家只会觉得「对方的消息要重新打开才看得见」
+	#   200 字 —— 客户端放行、服务端 400；或者反过来，客户端先截断了合法的长消息
+	#   200 条 —— 客户端缓存与服务端存的对不上，重连补拉时会多出或少掉几条
+	var svc := FileAccess.get_file_as_string("res://scripts/autoload/ChatService.gd")
+	var routes := FileAccess.get_file_as_string("res://backend/app/routes/chat.py")
+	var guard := FileAccess.get_file_as_string("res://backend/app/text_guard.py")
+	var chat_py := FileAccess.get_file_as_string("res://backend/app/chat.py")
+	var sql := FileAccess.get_file_as_string("res://database/007_chat.sql")
+	var screen := FileAccess.get_file_as_string("res://scenes/menu/ChatScreen.gd")
+	_h.item()
+	for src in [svc, routes, guard, chat_py, sql, screen]:
+		if str(src).is_empty():
+			_h.fail("chat_source_unreadable",
+				"读不到私聊相关的源文件（ChatService.gd / ChatScreen.gd / routes/chat.py / "
+				+ "text_guard.py / chat.py / 007_chat.sql）")
+			return
+
+	_h.expect(routes.contains("DM_TYPE = \"dm\"") and svc.contains("const DM_TYPE := \"dm\""),
+		"chat_dm_type_drift",
+		"推送的消息类型两边不是同一个串了（routes/chat.py 的 DM_TYPE vs ChatService.DM_TYPE）。"
+		+ "对不上的症状是推送收不到，而且不报错。")
+	_h.expect(guard.contains("CHAT_MAX = 200") and svc.contains("const MAX_BODY_CHARS := 200")
+			and sql.contains("char_length(body) between 1 and 200"),
+		"chat_max_chars_drift",
+		"私聊单条上限在 text_guard.CHAT_MAX / ChatService.MAX_BODY_CHARS / "
+		+ "007 的 chat_body_length 三处不一致了。")
+	_h.expect(chat_py.contains("KEEP_PER_CONVERSATION = 200")
+			and svc.contains("const HISTORY_LIMIT := 200"),
+		"chat_history_limit_drift",
+		"每对保留条数 chat.KEEP_PER_CONVERSATION 与客户端 ChatService.HISTORY_LIMIT 对不上了。")
+	# 输入框上限必须引用常量，不许写死一个数 —— 写死的那个数就是下一次漂移的起点。
+	_h.expect(screen.contains("max_length = ChatService.MAX_BODY_CHARS"),
+		"chat_input_limit_hardcoded",
+		"ChatScreen 的输入框上限必须用 ChatService.MAX_BODY_CHARS，不能写死。")
+
+
+# --- 9. 🔴 令牌续期接上了 --------------------------------------------------------
+
+func _case_token_refresh_wired() -> void:
+	# access token 一小时过期。续期断掉的症状是「开着游戏满一小时，聊天、好友、在线状态
+	# 一起开始失败」，而且只在长时间游玩时出现 —— 本机调试几乎撞不到。
+	var am := FileAccess.get_file_as_string("res://scripts/autoload/AccountManager.gd")
+	var rt := FileAccess.get_file_as_string("res://scripts/autoload/RealtimeService.gd")
+	_h.item()
+	if am.is_empty() or rt.is_empty():
+		_h.fail("refresh_source_unreadable", "读不到 AccountManager.gd 或 RealtimeService.gd")
+		return
+	# 401 之后只重试一次：重试那一趟必须带 allow_refresh=false，否则续期失败时会无限递归。
+	_h.expect(am.contains("return await _request(method, path, payload, authed, false)"),
+		"refresh_retry_unbounded",
+		"AccountManager._request 收到 401 后的重试必须传 allow_refresh=false（只重试一次）。")
+	# 到期判断必须用墙钟：手机切后台时引擎不跑帧，Timer 跟着停，回来时令牌早过期了。
+	_h.expect(am.contains("Time.get_unix_time_from_system() >= _token_expires_at"),
+		"refresh_not_wall_clock",
+		"令牌到期判断必须用墙钟（Time.get_unix_time_from_system），不能用 Timer。")
+	# WebSocket 建连前先保证令牌够新 —— 否则断线重连会拿着过期令牌永远握手失败。
+	_h.expect(rt.contains("await AccountManager.ensure_fresh_token()"),
+		"realtime_stale_token",
+		"RealtimeService._open 建连前必须先 AccountManager.ensure_fresh_token()。")
+
+
+# --- 10. 私聊入口接上了 -----------------------------------------------------------
+
+func _case_chat_entry_wired() -> void:
+	# 同 friends_check 里「朋友」按钮那一条：按钮还连着「敬请期待」的话，
+	# 整个私聊根本进不去 —— 而这不会报错。
+	var menu_src := FileAccess.get_file_as_string("res://scenes/menu/MainMenu.gd")
+	var main_src := FileAccess.get_file_as_string("res://scenes/main/Main.gd")
+	_h.item()
+	if menu_src.is_empty() or main_src.is_empty():
+		_h.fail("entry_source_unreadable", "读不到 MainMenu.gd 或 Main.gd")
+		return
+	_h.expect(menu_src.contains("Vector2(28, 440), Vector2(132, 132), _emit_chat"),
+		"chat_menu_button_not_wired",
+		"主菜单「聊天」按钮没接到 _emit_chat（还连着 _show_coming_soon？）")
+	_h.expect(main_src.contains("_menu.chat_requested.connect(_show_chat_screen)"),
+		"chat_route_missing", "Main._show_menu 没把 chat_requested 接到 _show_chat_screen")
+	_h.expect(main_src.contains("\t_install_realtime()"), "realtime_not_installed",
+		"Main._ready 没调 _install_realtime() —— WebSocket 永远不会连，私聊收不到推送。")
 
 
 # --- 0. 🔴 加 @rpc 方法必须顶协议号 --------------------------------------------
@@ -269,6 +410,11 @@ func _case_ui_scripts_parse() -> void:
 		"res://scenes/menu/Team3v3Lobby.gd",
 		"res://scenes/prep/PrepUI.gd",
 		"res://scenes/prep/PrepScreen.gd",
+		"res://scripts/autoload/RealtimeService.gd",
+		"res://scripts/autoload/ChatService.gd",
+		"res://scenes/menu/ChatScreen.gd",
+		"res://scenes/menu/FriendsScreen.gd",
+		"res://scenes/menu/MainMenu.gd",
 	]:
 		_h.item()
 		# 🔴 判据是 `can_instantiate()`，**不是 `load() != null`**。

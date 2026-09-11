@@ -246,7 +246,7 @@ func _check_dialog_dismissed_outside_can_reopen() -> void:
 	# Both production callers use a FIXED request_id on purpose, so that repeat
 	# taps merge into one box:
 	#   TutorialMode.SKIP_DIALOG_REQUEST = "tutorial_skip"
-	#   MainMenu._show_coming_soon()     = "main_menu_coming_soon"   (9 hot zones)
+	#   MainMenu._show_coming_soon()     = "main_menu_coming_soon"   (8 hot zones; the chat one left for ChatScreen on 2026-09-11)
 	# DialogService.info() also sets dismiss_on_backdrop=true for INFO intent.
 	# So the dismiss-by-tapping-outside path is reachable in shipped builds today,
 	# with no Back-key routing required (V3 P0-09 is still 未开始).

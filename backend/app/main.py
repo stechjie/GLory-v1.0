@@ -12,21 +12,24 @@
     backend/.venv/Scripts/python -m uvicorn app.main:app --reload --app-dir backend
 """
 
+import asyncio
 import logging
 import sys
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 
-from app import db
+from app import db, maintenance, realtime, single_instance
 from app.config import get_settings
 from app.routes import auth as auth_routes
+from app.routes import chat as chat_routes
 from app.routes import debug as debug_routes
 from app.routes import friends as friends_routes
 from app.routes import me as me_routes
 from app.routes import presence as presence_routes
 from app.routes import profile as profile_routes
+from app.routes import ws as ws_routes
 
 # Windows 控制台默认是 cp1252，中文日志会被转义成 以... 甚至直接抛
 # UnicodeEncodeError。这里是应用入口，把两个流拧成 UTF-8 是合适的做法。
@@ -64,17 +67,47 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    missing = settings.missing_keys()
+    # ⚠️ **这里重新取一次 settings，不用模块级那个。**
+    #
+    # 模块级 `settings` 是**导入时**求值的，而 lifespan 是运行时才跑。
+    # 两者的差别在测试里会咬人：`monkeypatch.setenv` + `get_settings.cache_clear()`
+    # 对模块级那份完全无效 —— 于是测试会真的去抢 48099 端口、真的连生产库，
+    # 而且**看起来是通过的**（第一次总能抢到），直到 CI 并行或者
+    # 本机正开着服务时才莫名其妙红一片。实测踩过（2026-09-10）。
+    cfg = get_settings()
+
+    missing = cfg.missing_keys()
     if missing:
         # 刻意**不**直接退出：骨架要能在还没建 Supabase 项目时跑起来，
         # 否则第 1 步就没法单独验证。真正需要密钥的接口会各自 fail closed。
         log.warning("以下配置项还没填，需要它们的接口会拒绝服务：%s", ", ".join(missing))
+
+    # 🔴 单实例令牌要**第一个**抢，在连数据库、起后台任务之前。
+    # 抢不到就该立刻退出，没必要先把池子建起来再失败。
+    # 这一条与上面那条「配置没填也让它起来」不同：配置缺失只影响部分接口，
+    # 而多开一个进程会让**一部分玩家收不到消息且毫无报错**，不能放行。
+    lock = None
+    if not cfg.disable_instance_lock:
+        lock = single_instance.claim(cfg.instance_lock_port)
+
     # 连接串为空时 connect() 不建池也不抛异常 —— 同样是为了让骨架能单独起来。
-    await db.connect(settings.database_url)
+    await db.connect(cfg.database_url)
+
+    # 巡检死连接。TCP 不会告诉你对端已经没了（手机进隧道、被系统冻结、
+    # NAT 表项过期），没有它连接表只增不减。
+    sweeper = asyncio.create_task(realtime.sweep_loop(realtime.hub()))
+    # 定时清理过期私聊会话与好友请求日志（app/maintenance.py）。
+    # 单实例保证了它只有一份在跑。
+    cleaner = asyncio.create_task(maintenance.loop())
     try:
         yield
     finally:
+        for task in (sweeper, cleaner):
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
         await db.disconnect()
+        single_instance.release(lock)
 
 
 def doc_urls(is_dev: bool) -> dict[str, str | None]:
@@ -106,6 +139,8 @@ app.include_router(me_routes.router)
 app.include_router(profile_routes.router)
 app.include_router(friends_routes.router)
 app.include_router(presence_routes.router)
+app.include_router(chat_routes.router)
+app.include_router(ws_routes.router)
 
 # 自检接口只在开发环境挂载。生产上它会把表结构和 RLS 状态说得太清楚，
 # 而且没有任何生产用途 —— 少一个入口就少一个面。

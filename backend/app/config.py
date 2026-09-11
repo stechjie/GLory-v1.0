@@ -42,6 +42,17 @@ class Settings(BaseSettings):
     rate_limit_anonymous_per_hour: int = 10
     rate_limit_refresh_per_hour: int = 120
 
+    # --- WebSocket 单实例（docs/聊天系统设计.md 批次 B）------------------------
+    #
+    # WS 连接表在进程内存里，所以 ② 从此**必须单进程单实例**。
+    # 启动时抢这个回环端口当令牌，抢不到就拒绝启动。理由见 app/single_instance.py。
+    instance_lock_port: int = 48099
+
+    # ⚠️ **生产上打开它等于把单实例保护整个关掉**，那时候的症状是
+    # 「一部分玩家收不到消息」，而且没有任何报错。
+    # 它存在只为两件事：跑测试，以及本机想同时开两份服务时。
+    disable_instance_lock: bool = False
+
     @property
     def is_dev(self) -> bool:
         return self.environment != "prod"

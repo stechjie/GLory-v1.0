@@ -40,6 +40,10 @@ const TEXT_SECONDARY := Color(0.722, 0.741, 0.800)
 const TEXT_DISABLED := Color(0.451, 0.471, 0.522)
 const TEXT_ON_GOLD := Color(0.055, 0.055, 0.071)
 
+# 未读红点。刻意比 DANGER 亮：DANGER 是「这一步会毁东西」的按钮底色，
+# 红点说的是「这里有新东西」—— 两者混用，玩家会把新消息读成警告。
+const UNREAD_DOT := Color(1.0, 0.15, 0.12)
+
 # --- 主菜单羊皮纸（V3 P1-08 迁移时从 MainMenu 抬上来的实测值）------------------
 # 这几个值原本以字面量散在 MainMenu 的五处 StyleBoxFlat 里。抬上来是为了让别的
 # 页面复用同一套，而不是各自再抄一遍 hex —— 逐字保持原值，这一批不动观感。

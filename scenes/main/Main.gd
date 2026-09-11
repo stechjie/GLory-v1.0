@@ -134,6 +134,7 @@ func _ready() -> void:
 	# 所以连点和 mouse+touch 双路都不会让它多发。
 	UiFeedbackService.install()
 	_install_presence_reporting()
+	_install_realtime()
 	_start_vfx_warmup()
 	_route_startup()
 	StartupTrace.mark(StartupTrace.T2_MAIN_READY)
@@ -649,7 +650,10 @@ func _show_menu() -> void:
 	_menu.codex_requested.connect(_show_codex_screen)
 	_menu.profile_requested.connect(_show_profile_screen)
 	_menu.friends_requested.connect(_show_friends_screen)
+	_menu.chat_requested.connect(_show_chat_screen)
 	add_child(_menu)
+	# 对局中被顶号时挂着的提示，回到主菜单这一刻才弹（设计文档第五节）。
+	_show_kicked_notice_if_pending()
 
 # 手动重连：读本地凭证连回上一场，弹重连遮罩，成功落回备战/结果，失败清凭证回菜单。
 #
@@ -814,6 +818,8 @@ func _show_friends_screen() -> void:
 	screen.profile_requested.connect(_show_public_profile)
 	# 一键加入好友所在的房间。走已有的加入流程，不新造路径。
 	screen.join_room_requested.connect(_join_room_by_id)
+	# 私聊。从好友列表进来的，返回回好友列表。
+	screen.chat_requested.connect(func(code: String) -> void: _show_chat_screen(code, true))
 	_page_back_route = _show_menu
 	add_child(screen)
 
@@ -834,6 +840,85 @@ func _join_room_by_id(room_id: int) -> void:
 		return
 	_show_menu()
 	_start_join_room_action(room_id)
+
+
+# 私聊界面（docs/聊天系统设计.md 批次 C）。两个入口：主菜单「聊天」、好友列表每一行的「私聊」。
+# 从好友列表进来的，返回回好友列表 —— 玩家是从那里进来的（同 _show_public_profile）。
+func _show_chat_screen(focus_code: String = "", back_to_friends: bool = false) -> void:
+	_clear()
+	var screen := _instantiate_screen("res://scenes/menu/ChatScreen.tscn")
+	if screen == null:
+		_show_menu()
+		return
+	screen.call("configure", focus_code)
+	var back: Callable = _show_friends_screen if back_to_friends else _show_menu
+	screen.back_requested.connect(back)
+	_page_back_route = back
+	add_child(screen)
+
+
+# --- 私聊的长连接（docs/聊天系统设计.md 批次 B 的接线）-------------------------
+#
+# **接线在这里**，理由同下面在线状态上报那一段：Main 是唯一同时知道账号、界面与
+# 对局状态的地方。RealtimeService 只管连接，ChatService 只管状态；
+# 谁弹框、什么时候弹由这里定。
+
+# 被顶号的提示还没弹（对局中被顶号时先挂着，回到主菜单再弹）。
+var _kicked_notice_pending := false
+
+
+func _install_realtime() -> void:
+	if AccountManager.is_logged_in():
+		RealtimeService.start()
+	if not AccountManager.login_succeeded.is_connected(_on_realtime_login):
+		AccountManager.login_succeeded.connect(_on_realtime_login)
+	if not AccountManager.logged_out.is_connected(_on_realtime_logout):
+		AccountManager.logged_out.connect(_on_realtime_logout)
+	if not RealtimeService.kicked_by_other_device.is_connected(_on_realtime_kicked):
+		RealtimeService.kicked_by_other_device.connect(_on_realtime_kicked)
+
+
+# ⚠️ RealtimeService.start() 只挂在「登录成功」上（那只发生在启动时）。
+# **不要**把它挂到回主菜单、切前台这类会反复发生的事件上：被顶号之后它会被
+# 自动拉起来，两台设备开始无限互踢。被顶号后再连只能是玩家亲手点
+# （ChatService.reconnect_here）。
+func _on_realtime_login(_player_id: String, _player_name: String) -> void:
+	RealtimeService.start()
+
+
+func _on_realtime_logout() -> void:
+	RealtimeService.stop()
+	ChatService.reset()
+	_kicked_notice_pending = false
+
+
+# 🔴 被顶号：**只在主菜单上弹**，对局中先挂着（设计文档第五节）。
+# 弹窗会直接打断操作；而战斗连接本来就不受这套机制影响，回主菜单再说清楚不迟。
+func _on_realtime_kicked() -> void:
+	_kicked_notice_pending = true
+	if _menu != null and is_instance_valid(_menu) and _menu.is_inside_tree():
+		_show_kicked_notice_if_pending()
+
+
+func _show_kicked_notice_if_pending() -> void:
+	if not _kicked_notice_pending:
+		return
+	_kicked_notice_pending = false
+	var en := LocaleManager.get_locale() == "en"
+	# 必须手动点确认，不倒计时、不自动跳转；文案要说清楚是**什么事**，
+	# 而不是「连接已断开」「登录已失效」这类什么都没说的话。
+	# 今天没有登录界面可回（匿名账号），所以确认之后停在原地：聊天保持断开，
+	# 在聊天界面里点「在本设备重新连接」才会再连。
+	var body := "你的账号在另一台设备上登录了，这里的聊天已断开。可以在聊天界面里重新连接。"
+	if en:
+		body = "Your account signed in on another device, so chat here was disconnected. You can reconnect from the Chat screen."
+	DialogService.info({
+		"request_id": "realtime_kicked",
+		"owner": self,
+		"title": "Signed in elsewhere" if en else "账号在另一台设备登录",
+		"body": body,
+		"confirm_text": "Got it" if en else "知道了",
+	})
 
 
 # --- 在线状态上报（docs/交友系统设计.md 第二节）--------------------------------

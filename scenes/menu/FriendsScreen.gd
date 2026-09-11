@@ -26,11 +26,15 @@ signal profile_requested(friend_code: String)
 # 一键加入好友所在的房间。Main 会先回主菜单再走已有的加入流程（那里才有
 # 「连接中」与失败提示），见 Main._join_room_by_id 的注释。
 signal join_room_requested(room_id: int)
+# 私聊。带好友码 —— Main 用它开 ChatScreen 并定位到这个人。
+signal chat_requested(friend_code: String)
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const Catalog := preload("res://scripts/account/AvatarCatalog.gd")
 const ConfirmDialog := preload("res://ui/components/GloryConfirmDialog.gd")
+# 新按钮一律实例化组件，不写 Button.new()：V3 P1-08 的棘轮盯着本文件的自绘按钮数，只能降。
+const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
 const MENU_BG_TEX := preload("res://assets/ui/main_menu_live/background.png")
 
 # 面板开着时的刷新间隔。**不是心跳** —— 这是读，心跳是写。
@@ -59,6 +63,7 @@ func _ready() -> void:
 	theme = Theming.get_theme()
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build()
+	ChatService.unread_changed.connect(_on_chat_unread_changed)
 	_refresh_timer = Timer.new()
 	_refresh_timer.wait_time = REFRESH_SEC
 	_refresh_timer.timeout.connect(func() -> void: await _reload(false))
@@ -71,6 +76,15 @@ func _exit_tree() -> void:
 	# 关掉就停。留着的话玩家在战斗里还在替一个已经不存在的界面拉好友列表。
 	if _refresh_timer != null:
 		_refresh_timer.stop()
+	# ChatService 是 autoload，活得比这个界面久 —— 连接必须显式断开。
+	if ChatService.unread_changed.is_connected(_on_chat_unread_changed):
+		ChatService.unread_changed.disconnect(_on_chat_unread_changed)
+
+
+# 私聊红点跟着 ChatService 走（状态只有一份）。私聊按钮只在「好友」页签上。
+func _on_chat_unread_changed(_any_unread: bool) -> void:
+	if _tab == Tab.FRIENDS:
+		_render()
 
 
 # --- 骨架 ---------------------------------------------------------------------
@@ -265,7 +279,7 @@ func _render() -> void:
 			badge.name = "RequestBadge"
 			badge.text = "!"
 			badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			badge.add_theme_color_override("font_color", Color(1, 0.15, 0.12))
+			badge.add_theme_color_override("font_color", Tokens.UNREAD_DOT)
 			badge.add_theme_font_size_override("font_size", 24)
 			request_tab.add_child(badge)
 			badge.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
@@ -335,6 +349,16 @@ func _friend_row(entry: Dictionary) -> Control:
 		join.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
 		join.pressed.connect(func() -> void: join_room_requested.emit(room_id))
 		row.add_child(join)
+
+	# 私聊。实例化组件而不是 Button.new()（见 ACTION_BUTTON 的注释）。
+	var chat := ACTION_BUTTON.instantiate() as Button
+	chat.text = _text("私聊", "Chat")
+	chat.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+	chat.size_flags_horizontal = Control.SIZE_FILL
+	chat.pressed.connect(func() -> void: chat_requested.emit(code))
+	if ChatService.has_unread(code):
+		_attach_unread_dot(chat)
+	row.add_child(chat)
 
 	var remove := Button.new()
 	remove.text = _text("删除", "Remove")
@@ -553,6 +577,17 @@ func _confirm_block(entry: Dictionary) -> void:
 
 
 # --- 小工具 -------------------------------------------------------------------
+
+
+# 按钮右上角的未读红点。与「请求」页签上那个「!」同色（Tokens.UNREAD_DOT）。
+func _attach_unread_dot(button: Control) -> void:
+	var dot := Label.new()
+	dot.text = "●"
+	dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dot.add_theme_color_override("font_color", Tokens.UNREAD_DOT)
+	button.add_child(dot)
+	dot.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	dot.position.x -= 18
 
 
 func _card() -> HBoxContainer:
