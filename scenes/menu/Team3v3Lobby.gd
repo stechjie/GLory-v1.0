@@ -125,6 +125,8 @@ func _ready() -> void:
 		NetworkService.team_start_requested.connect(_on_team_start_requested)
 	if not NetworkService.team_chat_received.is_connected(_on_chat_received):
 		NetworkService.team_chat_received.connect(_on_chat_received)
+	if not NetworkService.team_chat_text_received.is_connected(_on_chat_text_received):
+		NetworkService.team_chat_text_received.connect(_on_chat_text_received)
 	_build()
 	_refresh()
 	var friends_timer := Timer.new()
@@ -235,6 +237,8 @@ func _exit_tree() -> void:
 		NetworkService.team_start_requested.disconnect(_on_team_start_requested)
 	if NetworkService.team_chat_received.is_connected(_on_chat_received):
 		NetworkService.team_chat_received.disconnect(_on_chat_received)
+	if NetworkService.team_chat_text_received.is_connected(_on_chat_text_received):
+		NetworkService.team_chat_text_received.disconnect(_on_chat_text_received)
 
 func _online() -> bool:
 	return NetworkService.team_active
@@ -709,6 +713,8 @@ func _track(node: Control, pos: Vector2, size: Vector2, font_size: int = 0, edge
 # 网络上只走 phrase_id，文本在本地查表。理由见 ChatPhrases.gd 顶部。
 
 const ChatPhrases := preload("res://scripts/multiplayer/ChatPhrases.gd")
+# 自由文字（批次 D）：输入条贴在屏幕顶部，理由见 ChatInputBar.gd 顶部（手机键盘）。
+const ChatInputBar := preload("res://ui/components/ChatInputBar.gd")
 
 # 短语面板的样式与控件**直接复用备战期那套**（PrepWidgets），不是照着抄一份参数。
 # 它是「全静态、不持任何界面状态」的工具箱，且 make_menu_button 的注释写着
@@ -727,7 +733,16 @@ const CHAT_FIRST_LINE_Y := 732.0
 const CHAT_ENTRY_Y := 848.0
 const CHAT_TEXT_X := 104.0
 const CHAT_TEXT_W := 392.0                         # 右边界 496，与下面那块判定区一致
+# 🔴 消息那 4 行还要再让开贴图左上角自带的**对话气泡图标**（约 x 97~130、y 725~762）。
+# 上面的 732 / 104 只让开了边框，气泡图标仍压着第一行开头两个字 ——
+# 2026-09-11 把截图放大两倍才看清，原尺寸下它像是边框的一部分。
+# 只动消息列，不动下面的入口行（图标够不到 848 那一行）。
+# 右边界不变（496），一行少放一两个字；折行按 CHAT_MSG_W 算，不会被截断。
+const CHAT_MSG_X := 138.0
+const CHAT_MSG_W := 358.0
 const CHAT_TEXT_COLOR := Color(0.53, 0.40, 0.27)   # 沿用原占位文字的颜色
+# 入口那一行对半分：左「快捷短语」、右「打字」（批次 D）。
+const CHAT_ENTRY_SPLIT := 196.0
 
 # 短语面板：从聊天框顶部往上弹。往下、往左都没地方 —— 聊天框已经贴着左下角。
 #
@@ -746,26 +761,34 @@ var _chat_history: Array[String] = []
 var _phrase_panel: Panel = null
 var _phrase_buttons: Array[Button] = []
 var _phrase_btn_label: Label = null
+var _type_btn_label: Label = null
 
 func _build_chat_box() -> void:
 	# 必须在 _layout() 之前被调用（_build 里）—— _add_label 只是登记进 _placed，
 	# 真正定位是 _layout() 干的。同 _ready 里那条注释。
 	for i in CHAT_LINES:
-		var lbl := _add_label("", Vector2(CHAT_TEXT_X, CHAT_FIRST_LINE_Y + i * CHAT_LINE_H),
-			Vector2(CHAT_TEXT_W, CHAT_LINE_H), 19, CHAT_TEXT_COLOR, "left")
+		var lbl := _add_label("", Vector2(CHAT_MSG_X, CHAT_FIRST_LINE_Y + i * CHAT_LINE_H),
+			Vector2(CHAT_MSG_W, CHAT_LINE_H), CHAT_FONT_SIZE, CHAT_TEXT_COLOR, "left")
 		# _add_label 默认居中。聊天是逐行累积的文本，居中会让每来一条整块字都在跳。
 		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 		# 昵称最长 24 字，一行放不下时截断而不是把框撑破。
 		lbl.clip_text = true
 		_chat_labels.append(lbl)
 	_phrase_btn_label = _add_label(_room_text("＋ 快捷短语", "＋ Quick chat"),
-		Vector2(CHAT_TEXT_X, CHAT_ENTRY_Y), Vector2(CHAT_TEXT_W, 40), 20, CHAT_TEXT_COLOR, "left")
+		Vector2(CHAT_TEXT_X, CHAT_ENTRY_Y), Vector2(CHAT_ENTRY_SPLIT, 40), 20, CHAT_TEXT_COLOR, "left")
 	_phrase_btn_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	# 判定区右边界 496，**刻意把贴图右下角那个黄色箭头也圈进来** ——
+	_add_hit(Vector2(CHAT_TEXT_X, CHAT_ENTRY_Y), Vector2(CHAT_ENTRY_SPLIT, 40), _toggle_phrase_panel,
+		"left", "hit_chat_phrase")
+	_type_btn_label = _add_label(_room_text("＋ 打字", "＋ Type"),
+		Vector2(CHAT_TEXT_X + CHAT_ENTRY_SPLIT, CHAT_ENTRY_Y),
+		Vector2(CHAT_TEXT_W - CHAT_ENTRY_SPLIT, 40), 20, CHAT_TEXT_COLOR, "left")
+	_type_btn_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	# 右半边判定区的右边界 496，**刻意把贴图右下角那个黄色箭头也圈进来** ——
 	# 那个箭头是聊天框贴图自带的，看着就是「发送」，玩家一定会去点它。
 	# 圈不进来的话它点了没反应，而没反应的按钮比没有按钮更让人困惑。
-	_add_hit(Vector2(CHAT_TEXT_X, CHAT_ENTRY_Y), Vector2(CHAT_TEXT_W, 40), _toggle_phrase_panel,
-		"left", "hit_chat_phrase")
+	# 批次 A 时它归「快捷短语」；有了打字之后归「打字」，语义更对得上。
+	_add_hit(Vector2(CHAT_TEXT_X + CHAT_ENTRY_SPLIT, CHAT_ENTRY_Y),
+		Vector2(CHAT_TEXT_W - CHAT_ENTRY_SPLIT, 40), _open_text_input, "left", "hit_chat_text")
 	_build_phrase_panel()
 	_refresh_chat()
 
@@ -841,10 +864,72 @@ func _on_chat_received(slot: int, phrase_id: int) -> void:
 		# id 不合法。ChatPhrases.text() 刻意返回空串而不是「未知短语」这类占位符 ——
 		# 占位符会让一个协议错误在界面上长得像一条正常消息，于是没人会去查。
 		return
-	_chat_history.append("%s：%s" % [_chat_speaker_name(slot), body])
+	_push_chat_entry("%s：%s" % [_chat_speaker_name(slot), body])
+
+
+func _on_chat_text_received(slot: int, text: String) -> void:
+	_push_chat_entry("%s：%s" % [_chat_speaker_name(slot), text])
+
+
+# 打字入口（批次 D）。离线时同短语那句提示 —— 一个点了没反应的入口比没有更让人困惑。
+func _open_text_input() -> void:
+	if not _online():
+		DialogService.info({"owner": self,
+			"body": _room_text("联机对局中才能发送", "Available in online matches only")})
+		return
+	_set_phrase_panel_visible(false)
+	ChatInputBar.new().present(self, func(text: String) -> String:
+		return NetworkService.team_send_text(text))
+
+
+# 一条消息可能占好几行（自由文字最多 40 字，加上昵称一行放不下）。
+# 按聊天框的实际宽度折好行再进历史，4 行放不下时最老的行先出去。
+#
+# 不改用 Label 自带的自动折行：这 4 行是 _placed 登记的固定位置标签，
+# 换成一个自动折行的大标签会动到批次 A 已经出图验过的版面。
+func _push_chat_entry(line: String) -> void:
+	for part in _wrap_chat_line(line):
+		_chat_history.append(part)
 	while _chat_history.size() > CHAT_LINES:
 		_chat_history.pop_front()
 	_refresh_chat()
+
+
+# 消息标签的字号（_build_chat_box 建标签用的也是它）。
+const CHAT_FONT_SIZE := 19
+# 不能出现在行首的标点（中文排版的「避头」）。碰到它们换行时，把上一行最后一个字
+# 一起带下来，而不是让逗号、句号孤零零地顶在下一行开头。
+const CHAT_NO_LINE_START := "，。、；：！？）」』】》…,.;:!?)"
+
+func _wrap_chat_line(line: String) -> PackedStringArray:
+	if _chat_labels.is_empty():
+		return PackedStringArray([line])
+	# 按参考画布上的尺寸量（宽 CHAT_MSG_W —— 消息列的宽，不是入口行的）。
+	# _layout() 缩放时字号与宽度同比例变，参考尺寸下折好的行，缩放之后一样放得下。
+	return wrap_chat_text(line, _chat_labels[0].get_theme_font("font"), CHAT_FONT_SIZE, CHAT_MSG_W)
+
+
+# 逐字符折行：中文没有空格可断；英文单词偶尔会被拆开，聊天里可以接受。
+# 静态、不碰界面状态 —— tools/chat_check 直接调它量「最长的一条放不放得下」。
+static func wrap_chat_text(line: String, font: Font, font_size: int, width: float) -> PackedStringArray:
+	var out := PackedStringArray()
+	var current := ""
+	for i in line.length():
+		var ch := line[i]
+		var candidate := current + ch
+		if current.is_empty() or font.get_string_size(
+				candidate, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x <= width:
+			current = candidate
+		elif CHAT_NO_LINE_START.contains(ch) and current.length() > 1:
+			# 避头：上一行让出最后一个字，陪这个标点一起换行。
+			out.append(current.left(-1))
+			current = current.right(1) + ch
+		else:
+			out.append(current)
+			current = ch
+	if not current.is_empty():
+		out.append(current)
+	return out
 
 func _chat_speaker_name(slot: int) -> String:
 	var identity := _seat_profile(slot)

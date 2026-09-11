@@ -18,6 +18,7 @@ extends Node
 
 const CheckHarness := preload("res://tools/CheckHarness.gd")
 const ChatPhrases := preload("res://scripts/multiplayer/ChatPhrases.gd")
+const ChatText := preload("res://scripts/multiplayer/ChatText.gd")
 const RateLimitService := preload("res://scripts/multiplayer/RateLimitService.gd")
 const NetworkConfig := preload("res://scripts/multiplayer/NetworkConfig.gd")
 
@@ -36,8 +37,9 @@ const EXPECTED_IDS := [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
 # 🔴 NetworkService 上 @rpc 方法的数量，与协议号绑在一起。同 carrot_online_check
 # 的 PINNED_CONTRACT / PINNED_PROTOCOL 那一套，理由见 _case_rpc_count_pinned()。
-const PINNED_RPC_COUNT := 55
-const PINNED_RPC_PROTOCOL := 22
+# 2026-09-11 批次 D（自由文字）加了两个：55 -> 57、22 -> 23。
+const PINNED_RPC_COUNT := 57
+const PINNED_RPC_PROTOCOL := 24
 
 var _h: CheckHarness
 
@@ -60,6 +62,10 @@ func _ready() -> void:
 	_case_chat_constants_match_backend()
 	_case_token_refresh_wired()
 	_case_chat_entry_wired()
+	_case_text_submit_rpc_has_no_slot_param()
+	_case_chat_text_rules()
+	_case_longest_message_fits()
+	_case_text_client_interval_within_server_limit()
 	_h.finish(get_tree())
 
 
@@ -198,6 +204,64 @@ func _case_chat_entry_wired() -> void:
 		"chat_route_missing", "Main._show_menu 没把 chat_requested 接到 _show_chat_screen")
 	_h.expect(main_src.contains("\t_install_realtime()"), "realtime_not_installed",
 		"Main._ready 没调 _install_realtime() —— WebSocket 永远不会连，私聊收不到推送。")
+
+
+# --- 11. 🔴 自由文字（批次 D）：不许自报座位号，③ 必须自己再校验一遍 ----------------
+
+func _case_text_submit_rpc_has_no_slot_param() -> void:
+	_h.item()
+	var src := FileAccess.get_file_as_string(NETWORK_SERVICE_PATH)
+	if src.is_empty():
+		_h.fail("network_service_unreadable", "读不到 %s" % NETWORK_SERVICE_PATH)
+		return
+	# 同第 1 条：座位号一律由服务端从 sender 反查。带 slot = 开放「以队友的名义说话」。
+	var expected := "func _rpc_team_chat_text_submit(text: String) -> void:"
+	_h.expect(src.contains(expected), "chat_text_submit_signature_changed",
+		"`_rpc_team_chat_text_submit` 的签名变了。它必须**只收 text**，座位号由服务端从 "
+		+ "sender 反查。期望：%s" % expected)
+	# 限流必须调到，且必须是软限（不计 strike），同 chat_phrase。
+	_h.expect(src.contains("_rate_ok(sender, \"chat_text\", false)"),
+		"chat_text_rate_limit_not_called",
+		"服务端的 `_rpc_team_chat_text_submit` 必须调 `_rate_ok(sender, \"chat_text\", false)`。")
+	_h.expect(RateLimitService.LIMITS.has("chat_text"), "chat_text_rate_limit_missing",
+		"RateLimitService.LIMITS 里没有 chat_text —— allow() 会静默退回默认额度 20。")
+	# 权威校验在 ③：客户端发之前那一道，改包的客户端可以不过。
+	# 只看这个函数体（到下一个 @rpc 为止），不看整个文件 —— 整个文件里别处也调了
+	# ChatText.clean，整文件 contains 会被那些调用满足，这条断言就成了摆设。
+	var start := src.find(expected)
+	var stop := src.find("\n@rpc(", start + expected.length())
+	var body := src.substr(start, stop - start) if start >= 0 and stop > start else ""
+	_h.expect(body.contains("ChatText.clean("), "chat_text_server_not_cleaning",
+		"`_rpc_team_chat_text_submit` 转发之前必须自己调 ChatText.clean() —— "
+		+ "只靠客户端校验等于没有校验。")
+
+
+func _case_chat_text_rules() -> void:
+	# ChatText 是客户端与 ③ 共用的那一道。每条都对应一种「不报错、只是显示坏」的失败。
+	var cases := [
+		["第一行\n第二行", "第一行 第二行", "换行没有压成空格"],
+		["  两头  空白  ", "两头 空白", "首尾与连续空白没有规范化"],
+		[char(0x1F468) + char(0x200D) + char(0x1F469), char(0x1F468) + char(0x1F469), "ZWJ 没有去掉"],
+		["a" + char(0x200B) + "b", "", "零宽空格没有被拒"],
+		["abc" + char(0x202E) + "def", "", "双向覆写没有被拒"],
+		["a" + char(0x0301) + char(0x0301) + char(0x0301), "", "Zalgo（连续组合符）没有被拒"],
+		["a" + char(0x0007), "", "控制字符没有被拒"],
+		["   ", "", "全空白没有被拒"],
+		["字".repeat(ChatText.MAX_CHARS), "字".repeat(ChatText.MAX_CHARS), "正好上限的长度被误拒"],
+		["字".repeat(ChatText.MAX_CHARS + 1), "", "超长没有被拒"],
+		["加我微信 abc123", "加我微信 abc123", "联系方式被拦了（房间聊天与私聊一样，不拦引流）"],
+	]
+	for c in cases:
+		var got := ChatText.clean(str(c[0]))
+		_h.expect(got == str(c[1]), "chat_text_rule_broken", "%s：输入 %s，得到 %s，期望 %s"
+			% [str(c[2]), JSON.stringify(str(c[0])), JSON.stringify(got), JSON.stringify(str(c[1]))])
+	# 原始长度上界：一个巨长的串必须在逐字符扫描之前就被拒（常数级步数）。
+	_h.expect(not ChatText.problem("x".repeat(ChatText.MAX_RAW_CHARS + 1)).is_empty(),
+		"chat_text_raw_cap_missing", "超过 MAX_RAW_CHARS 的原始串没有被直接拒绝。")
+	# 输入框上限必须引用常量（同私聊那一条）。
+	var bar := FileAccess.get_file_as_string("res://ui/components/ChatInputBar.gd")
+	_h.expect(bar.contains("max_length = ChatText.MAX_CHARS"), "chat_text_input_limit_hardcoded",
+		"ChatInputBar 的输入框上限必须用 ChatText.MAX_CHARS，不能写死。")
 
 
 # --- 0. 🔴 加 @rpc 方法必须顶协议号 --------------------------------------------
@@ -415,6 +479,8 @@ func _case_ui_scripts_parse() -> void:
 		"res://scenes/menu/ChatScreen.gd",
 		"res://scenes/menu/FriendsScreen.gd",
 		"res://scenes/menu/MainMenu.gd",
+		"res://scripts/multiplayer/ChatText.gd",
+		"res://ui/components/ChatInputBar.gd",
 	]:
 		_h.item()
 		# 🔴 判据是 `can_instantiate()`，**不是 `load() != null`**。
@@ -447,3 +513,91 @@ func _case_prep_log_ignores_mouse() -> void:
 			.contains("_teardown_chat_entry()"),
 		"prep_chat_not_disconnected",
 		"PrepScreen._exit_tree 必须调 _teardown_chat_entry()。")
+
+
+# --- 12. 最长的一条消息在两个聊天框里都放得下、不被截断（批次 D）--------------------
+#
+# 备战期第一版给消息 Label 设了 max_lines_visible = 2：24 字昵称 + 40 字在 352 宽里要
+# 4 行，后半截被悄悄吞掉 —— 读的人只看到半句话，还不知道少了。现在按折行后的合计行数
+# 整条移走旧消息（PrepUI._push_chat_line）。这里钉住：
+#   ① 不许再用 max_lines_visible 截断；
+#   ② 最坏的一条（昵称上限 + 自由文字上限）单独放得进两个框：备战期的行数预算、大厅的 4 行。
+#      放不进的话，备战期那个 while 永远留着最新一条、照样超高；大厅会把开头的说话人挤出去。
+# 改昵称上限、自由文字上限、字号或框宽的人，会在这里第一时间知道版面装不下了。
+
+func _case_longest_message_fits() -> void:
+	_h.item()
+	var prep_src := FileAccess.get_file_as_string("res://scenes/prep/PrepUI.gd")
+	var start := prep_src.find("func _push_chat_line(")
+	var stop := prep_src.find("\nfunc ", start + 1)
+	var body := prep_src.substr(start, stop - start) if start >= 0 and stop > start else ""
+	if not _h.expect(not body.is_empty(), "prep_push_chat_line_missing",
+			"PrepUI 里找不到 _push_chat_line —— 备战期消息条换了写法，这条门禁要跟着改。"):
+		return
+	# 查的是赋值，不是字样：函数里那段注释本身就提到了这个属性名。
+	_h.expect(RegEx.create_from_string("max_lines_visible\\s*=").search(body) == null,
+		"prep_chat_log_truncates",
+		"PrepUI._push_chat_line 又设了 max_lines_visible。那会把长消息的后半截悄悄吞掉；"
+		+ "高度要靠 CHAT_LOG_TEXT_LINES 整条移走旧消息来管。")
+	_h.expect(body.contains("CHAT_LOG_TEXT_LINES"), "prep_chat_log_no_line_budget",
+		"PrepUI._push_chat_line 没有按 CHAT_LOG_TEXT_LINES 管合计行数 —— 长消息会把消息条撑出去。")
+
+	_h.item()
+	var prep_script := load("res://scenes/prep/PrepUI.gd") as GDScript
+	var lobby_script := load("res://scenes/menu/Team3v3Lobby.gd") as GDScript
+	if not _h.expect(prep_script != null and lobby_script != null, "chat_box_scripts_unloadable",
+			"PrepUI.gd / Team3v3Lobby.gd 加载失败（解析错误见 ui_scripts_parse 那一条）。"):
+		return
+	var prep_consts := prep_script.get_script_constant_map()
+	var lobby_consts := lobby_script.get_script_constant_map()
+	var guard := FileAccess.get_file_as_string("res://backend/app/text_guard.py")
+	var m := RegEx.create_from_string("NAME_MIN, NAME_MAX = \\d+, (\\d+)").search(guard)
+	if not _h.expect(m != null, "name_max_unreadable",
+			"从 backend/app/text_guard.py 读不到 NAME_MAX —— 昵称上限换了写法，这条门禁要跟着改。"):
+		return
+	var name_max := int(m.get_string(1))
+	# 全角字是最宽的常见情况（英文、数字都比它窄）。
+	var longest := "字".repeat(name_max) + "：" + "字".repeat(ChatText.MAX_CHARS)
+
+	# 用真 Label 取字体：两个聊天框用的都是主题的默认字体。
+	var probe := Label.new()
+	add_child(probe)
+	var font := probe.get_theme_font("font")
+	probe.queue_free()
+
+	var para := TextParagraph.new()
+	para.width = float(prep_consts.get("CHAT_LOG_WIDTH", 0.0))
+	# 与 PrepUI._chat_log_text_lines 同一组断行规则（= Label 的 AUTOWRAP_WORD_SMART）。
+	para.break_flags = (TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND
+		| TextServer.BREAK_ADAPTIVE)
+	para.add_string(longest, font, int(prep_consts.get("CHAT_LOG_FONT_SIZE", 0)))
+	var prep_lines := para.get_line_count()
+	var budget := int(prep_consts.get("CHAT_LOG_TEXT_LINES", 0))
+	_h.expect(prep_lines <= budget, "prep_longest_message_overflows",
+		"最长的一条（%d 字昵称 + %d 字）在备战期消息条里要 %d 行，超过行数预算 %d。"
+			% [name_max, ChatText.MAX_CHARS, prep_lines, budget])
+
+	# 大厅直接调它自己的折行函数（Team3v3Lobby.wrap_chat_text），不在这里另抄一份算法 ——
+	# 抄的那份会和真的慢慢分叉（比如后来加的「避头」），门禁就成了在量一个假的。
+	var rows := (lobby_script.call("wrap_chat_text", longest, font,
+		int(lobby_consts.get("CHAT_FONT_SIZE", 0)), float(lobby_consts.get("CHAT_MSG_W", 0.0)))
+		as PackedStringArray).size()
+	var box_rows := int(lobby_consts.get("CHAT_LINES", 0))
+	_h.expect(rows <= box_rows, "lobby_longest_message_overflows",
+		"最长的一条（%d 字昵称 + %d 字）在大厅要折 %d 行，框里只有 %d 行 —— 开头的说话人会被挤出去。"
+			% [name_max, ChatText.MAX_CHARS, rows, box_rows])
+
+
+# --- 13. 客户端节流必须比服务端限流更严（批次 D）--------------------------------
+#
+# 服务端 chat_text 是固定窗口 10 秒 3 条、超了静默丢弃。客户端最小间隔 × 3 必须 ≥ 10，
+# 否则客户端放行的第 4 条会落在同一个窗口里被丢掉，发送者只看到那句话凭空消失。
+# 第一版就是 3 秒（0 / 3 / 6 / 9 秒四条）。
+
+func _case_text_client_interval_within_server_limit() -> void:
+	_h.item()
+	var interval := float(NetworkService.TEXT_SEND_MIN_INTERVAL_SEC)
+	var limit := int(RateLimitService.LIMITS.get("chat_text", 0))
+	_h.expect(interval * limit >= RateLimitService.WINDOW_SEC, "text_interval_looser_than_server",
+		"客户端每 %.1f 秒放行一条，而服务端每 %.0f 秒只收 %d 条 —— 客户端放行的消息会被服务端静默丢弃。"
+			% [interval, RateLimitService.WINDOW_SEC, limit])

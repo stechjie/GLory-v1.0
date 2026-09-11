@@ -1889,6 +1889,94 @@ func _rpc_team_chat(slot: int, phrase_id: int) -> void:
 		return
 	team_chat_received.emit(slot, phrase_id)
 
+# --- 房间 / 局内自由文字（docs/聊天系统设计.md 批次 D）------------------------------
+#
+# 与上面的快捷短语是同一套形状：客户端只交文本，**座位号由服务端从 sender 反查**；
+# 服务端定序、广播给房间里所有人（包括发送者）；本地不回显。
+#
+# 与短语不同的两处：
+#   1. 文本要校验与规范化（ChatText.clean）。客户端发之前过一遍给玩家即时反馈，
+#      ③ 转发之前再过一遍 —— 改包的客户端只能绕过前一道。
+#   2. **不落库、不审核内容**（2026-09-11 已定：外部审核先不接，房间 / 局内按设计文档
+#      第四节是 fail-open）。以后接审核，插在 ③ 转发之前那一行。
+
+const ChatText := preload("res://scripts/multiplayer/ChatText.gd")
+
+signal team_chat_text_received(slot: int, text: String)
+
+# 客户端自己的节流。服务端额度是 10 秒 3 条（RateLimitService 的 chat_text），
+# 超了会**静默丢弃**（不计 strike、也不回执）—— 所以这里先挡一道，
+# 玩家才看得到「发太快了」，而不是发出去的话凭空消失。
+#
+# 🔴 必须满足 间隔 × 额度 ≥ 窗口（4 × 3 ≥ 10）。服务端是**固定窗口**，第一版写的 3 秒：
+# 0 / 3 / 6 / 9 秒各发一条，第 4 条落在同一个 10 秒窗口里被服务端静默丢掉，
+# 客户端这边却什么都没拦 —— 正是上面想避免的「凭空消失」。多出的那 1 秒给网络抖动留余量
+# （第一条晚到、后面的准时到，会把到达间隔压短）。门禁 tools/chat_check.tscn 钉着这个关系。
+const TEXT_SEND_MIN_INTERVAL_SEC := 4.0
+var _last_text_sent_at := -1000.0
+
+# 返回空串表示已发出；否则是给玩家看的原因（界面据此留着输入条让他改）。
+func team_send_text(raw: String) -> String:
+	if not team_active or team_local_slot < 0:
+		return "联机对局中才能发送"
+	var problem := ChatText.problem(raw)
+	if not problem.is_empty():
+		return problem
+	var now := Time.get_ticks_msec() / 1000.0
+	var wait := TEXT_SEND_MIN_INTERVAL_SEC - (now - _last_text_sent_at)
+	if wait > 0.0:
+		return "发得太快了，%d 秒后再发" % ceili(wait)
+	_last_text_sent_at = now
+	var text := ChatText.clean(raw)
+	if is_host:
+		# 本地房主模式：自己就是权威（同 team_send_phrase）。
+		_rpc_team_chat_text.rpc(team_local_slot, text)
+		team_chat_text_received.emit(team_local_slot, text)
+	else:
+		_rpc_team_chat_text_submit.rpc_id(1, text)
+	return ""
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_team_chat_text_submit(text: String) -> void:
+	if _dedicated_server:
+		var sender := multiplayer.get_remote_sender_id()
+		# 软限，不计 strike —— 理由同 chat_phrase：刷屏是烦人，不是攻击，
+		# 对局中被踢的代价是整局崩掉。超限的正确后果只是这一条不转发。
+		if not _rate_ok(sender, "chat_text", false):
+			return
+		var room := _room_for_peer(sender)
+		if room.is_empty():
+			return
+		var slot := int((room.get("peer_slot", {}) as Dictionary).get(sender, -1))
+		if slot < 0 or slot >= TEAM_SLOTS:
+			return
+		# 权威的那一道。客户端发之前也过了一遍，但改包的客户端可以不过。
+		var clean := ChatText.clean(text)
+		if clean.is_empty():
+			return
+		for peer_id in (room.get("peer_slot", {}) as Dictionary).keys():
+			if _peer_connected(int(peer_id)):
+				_rpc_team_chat_text.rpc_id(int(peer_id), slot, clean)
+		return
+	if not is_host:
+		return
+	var host_slot := int(_team_peer_slot.get(multiplayer.get_remote_sender_id(), -1))
+	var cleaned := ChatText.clean(text)
+	if host_slot < 0 or host_slot >= TEAM_SLOTS or cleaned.is_empty():
+		return
+	_rpc_team_chat_text.rpc(host_slot, cleaned)
+	team_chat_text_received.emit(host_slot, cleaned)
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_team_chat_text(slot: int, text: String) -> void:
+	# 收到的一样要校验：本地房主模式下这里就是唯一的那道门（同 _rpc_team_chat）。
+	if slot < 0 or slot >= TEAM_SLOTS:
+		return
+	var clean := ChatText.clean(text)
+	if clean.is_empty():
+		return
+	team_chat_text_received.emit(slot, clean)
+
 # --- 3v3 team board collection (N2) ----------------------------------------
 # After everyone presses "start battle" in prep, each player submits their board
 # snapshot. The host gathers all real-player boards, then broadcasts the full

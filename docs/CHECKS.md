@@ -2306,6 +2306,18 @@ enum key 的地方。采购类步骤（`BUY_3` / `UPGRADE_*` / `FILL_7` 的 BUY 
 把它算进来会逼着迁移把 StyleBox 从主题里也删掉，方向正好是反的。`scenes/debug/` 不进包，
 也不计。计数**跳过注释**：注释里提到 `Button.new()` 是常事，算进去会逼人去改注释而不是改代码。
 
+### 2026-09-11：重定基线（不是迁移）
+
+基线自 09-03 起没再动过，而之后加进来的几个界面（资料页 09-09、交友 09-10、萝卜营地
+V1–V3、`TouchChoiceButton` 等）新增了 44 处 `Button.new()`、8 处 `StyleBoxFlat.new()`，
+这条门禁因此**红了一周没人发现** —— 一条常红的门禁不挡任何东西，反而教会大家无视它。
+
+这次跑 `--update-baseline` 把基线定到当前实测（`Button.new()` 89、`StyleBoxFlat.new()` 29），
+**等于接受了这一周的增量**，目的是让棘轮从今天起重新生效：从这个数开始只能降。
+那几个文件的迁移（按钮改实例化 `ui/components/GloryActionButton.tscn`，样式改
+`GloryTokens.flat_box / panel_box`）仍是待办，不在这一次里做 —— 它们分属几条正在改的线，
+一次性迁移冲突面太大。新代码照旧不许写这两个调用（私聊界面 `ChatScreen.gd` 是 0）。
+
 首批迁移 `scenes/menu/MainMenu.gd`：5 处 `StyleBoxFlat.new()` → 0。做法是把那五处逐个
 `set_*` 的东西抬进 `GloryTokens.flat_box(bg, edge, border_width, radius)`，配色抬成具名
 token（`PARCHMENT` / `INK_PANEL` 等），**逐值透传、观感不变**。业务目录总数

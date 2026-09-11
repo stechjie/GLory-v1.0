@@ -17,7 +17,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
+import inspect
 import pathlib
 import re
 import uuid
@@ -65,6 +67,45 @@ def test_pair_matches_the_check_constraint() -> None:
     for _ in range(50):
         low, high = friends._pair(uuid.uuid4(), uuid.uuid4())
         assert low < high
+
+
+# --- 🔴 并发下的配额与上限 ----------------------------------------------------
+
+
+def test_quota_and_limit_checks_run_under_the_player_lock() -> None:
+    """配额与好友上限的「先查后写」必须在按玩家的事务锁**之后**。
+
+    READ COMMITTED 下，同一个号的并发请求各开一个事务、都数到旧值，都能通过检查 ——
+    事务本身挡不住。2026-09-11 之前这里只有事务，脚本并发打一波就能突破每日 20 个。
+    这条是静态断言（本文件不连库）；锁本身在并发下是否生效，归真库验证。
+    """
+    send_src = inspect.getsource(friends.send_request)
+    lock_at = send_src.index("_lock_players(")
+    assert lock_at < send_src.index("_friend_count("), "数好友数之前没上锁"
+    assert lock_at < send_src.index("from friend_request_log"), "数每日配额之前没上锁"
+
+    accept_src = inspect.getsource(friends.accept_request)
+    assert accept_src.index("_lock_players(") < accept_src.index("_accept_locked("), (
+        "通过请求之前没对双方上锁 —— _accept_locked 要数双方的好友数"
+    )
+
+
+def test_lock_players_orders_and_dedupes() -> None:
+    """按 uuid 升序、去重后加锁，而且必须是事务级锁。
+
+    两个事务锁同一对玩家时顺序必须一致，否则 A 先锁甲再等乙、B 先锁乙再等甲 = 死锁。
+    会话级锁在 Supabase 的 Transaction pooler 下会跟着连接被别的请求捡走，放不掉。
+    """
+    seen: list[str] = []
+
+    class _Conn:
+        async def execute(self, sql: str, *args):
+            assert "pg_advisory_xact_lock" in sql
+            seen.append(args[0])
+
+    low, high = uuid.UUID(int=1), uuid.UUID(int=2)
+    asyncio.run(friends._lock_players(_Conn(), high, low, high))
+    assert seen == ["friends:%s" % low, "friends:%s" % high]
 
 
 # --- 在线判定 -----------------------------------------------------------------

@@ -826,6 +826,15 @@ func _mp_tap_backdrop() -> void:
 	backdrop.gui_input.emit(release)
 
 
+# 雇佣兵这一下该扣的那种货币的余额（规则见第 7 组的注释：教学局金币、正式局萝卜）。
+func _mp_currency() -> int:
+	return GameState.gold if GameState.tutorial_mode else GameState.carrots
+
+
+func _mp_currency_name() -> String:
+	return "金币" if GameState.tutorial_mode else "萝卜"
+
+
 func _check_merc_picker_modal() -> void:
 	ModalStack.close_all()
 	await _settle(4)
@@ -917,8 +926,16 @@ func _check_merc_picker_modal() -> void:
 	_h.expect(open_target != closed_target, "mp_tutorial_target_did_not_change",
 		"开合两态返回了同一个目标")
 
-	# --- 7 购买一次，只发生一次金币/槽位变化 -----------------------------
+	# --- 7 购买一次，只发生一次扣费/槽位变化 -----------------------------
+	# 雇佣兵花哪种货币由规则决定（PrepBoardController._hire_mercenary_to_slot）：
+	# 教学局扣金币，正式局扣萝卜 —— docs/萝卜采集与升级石系统设计实施方案.md：
+	# 「所有购买按钮和服务端交易改读 carrot_cost」。所以这里只验「恰好扣了一次」，
+	# 不把货币写死。上一版写死了金币，萝卜经济上线后这一条红了一周（2026-09-11 改）。
+	# 萝卜与累计消费在这一组结束时逐字还原；金币由用例末尾那次整体还原负责。
+	var carrots_before := GameState.carrots
+	var carrots_spent_before := GameState.merc_carrots_spent_total
 	GameState.gold = 9999
+	GameState.carrots = 9999
 	prep._refresh_mercenary_overlay()
 	await _settle(3)
 	grid = _mp_grid()
@@ -929,31 +946,33 @@ func _check_merc_picker_modal() -> void:
 				buyable = child as BaseButton
 				break
 	if buyable != null:
-		var gold_pre := GameState.gold
+		var paid_pre := _mp_currency()
 		var filled_pre := _mp_filled_slots()
 		buyable.pressed.emit()
 		await _settle(3)
 		var filled_post := _mp_filled_slots()
 		_h.expect(filled_post == filled_pre + 1, "mp_purchase_slot_delta_wrong",
 			"一次点击后佣兵槽由 %d 变成 %d，应恰好 +1" % [filled_pre, filled_post])
-		_h.expect(GameState.gold < gold_pre, "mp_purchase_gold_not_spent",
-			"一次购买后金币没有扣除：%d -> %d" % [gold_pre, GameState.gold])
+		_h.expect(_mp_currency() < paid_pre, "mp_purchase_not_charged",
+			"一次购买后%s没有扣除：%d -> %d" % [_mp_currency_name(), paid_pre, _mp_currency()])
 		# 买完面板必须还开着：backdrop 迁移后最容易出的倒退就是「买一个就被关掉」。
 		_h.expect(_mp_entries() == 1, "mp_closed_by_purchase",
 			"买一名佣兵之后面板被关掉了 —— 玩家连买两个要重开两次")
 		_h.expect(prep._merc_picker_open, "mp_state_desync_after_purchase",
 			"购买后 _merc_picker_open 与栈不一致")
 		# 刷新是幂等的：重复刷不会再扣一次钱、也不会再占一个槽。
-		var gold_settled := GameState.gold
+		var paid_settled := _mp_currency()
 		for i in 5:
 			prep._refresh_mercenary_overlay()
 		await _settle(3)
-		_h.expect(GameState.gold == gold_settled, "mp_refresh_charged_again",
-			"重复刷新面板又扣了一次钱：%d -> %d" % [gold_settled, GameState.gold])
+		_h.expect(_mp_currency() == paid_settled, "mp_refresh_charged_again",
+			"重复刷新面板又扣了一次%s：%d -> %d" % [_mp_currency_name(), paid_settled, _mp_currency()])
 		_h.expect(_mp_filled_slots() == filled_post, "mp_refresh_hired_again",
 			"重复刷新面板又雇了一个人")
 	else:
 		_h.note("没有可购买的佣兵卡（多半是槽位已满或数据表为空），购买这一组跳过")
+	GameState.carrots = carrots_before
+	GameState.merc_carrots_spent_total = carrots_spent_before
 
 	# --- 6 与组队佣兵层双向互斥 -----------------------------------------------
 	prep._toggle_team_mercs_picker()

@@ -1093,6 +1093,14 @@ const CHAT_BTN_TOP := -200.0
 const CHAT_LOG_WIDTH := 352.0
 
 const CHAT_LOG_LINES := 3
+# 消息条高度。批次 A 时是 122（3 条单行短语）；批次 D 加了会折行的自由文字，放大到 156。
+const CHAT_LOG_HEIGHT := 156.0
+const CHAT_LOG_FONT_SIZE := 17
+# 折行之后合计最多几行（_push_chat_line 按它整条移走旧消息）。6 行加上条与条之间的
+# 间距放得进 156。最坏的一条（24 字昵称 + 40 字）在 352 宽里是 4 行，最新那条永远放得下。
+const CHAT_LOG_TEXT_LINES := 6
+# 自由文字（批次 D）：输入条贴在屏幕顶部，理由见 ChatInputBar.gd 顶部（手机键盘）。
+const ChatInputBar := preload("res://ui/components/ChatInputBar.gd")
 const CHAT_LINE_HOLD_SEC := 6.0        # 停留多久之后开始淡出
 const CHAT_LINE_FADE_SEC := 1.0
 # 与 Team3v3Lobby.SLOT_LABELS 一致。⚠️ 两处都有，改一个必须改另一个 ——
@@ -1137,8 +1145,11 @@ func _build_chat_entry() -> void:
 	_chat_log.offset_right = -CHAT_RIGHT
 	_chat_log.offset_left = -CHAT_RIGHT - CHAT_LOG_WIDTH
 	_chat_log.offset_bottom = CHAT_BTN_TOP - 8
-	_chat_log.offset_top = CHAT_BTN_TOP - 8 - 122
+	_chat_log.offset_top = CHAT_BTN_TOP - 8 - CHAT_LOG_HEIGHT
 	_chat_log.alignment = BoxContainer.ALIGNMENT_END
+	# 内容万一比 CHAT_LOG_HEIGHT 高（字体行高与估算不符时），往上长、不往下长 ——
+	# 往下会压到聊天按钮上。正常情况下行数预算已经保证放得下。
+	_chat_log.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	# 🔴 消息条压在棋盘右下方的空域上。IGNORE 不能省 —— 少了它，
 	# 一条飘过的消息会把它盖住的那格棋盘变成点不动的，而玩家只会觉得「卡了」。
 	_chat_log.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1149,6 +1160,8 @@ func _build_chat_entry() -> void:
 	_build_chat_panel()
 	if not NetworkService.team_chat_received.is_connected(_on_prep_chat_received):
 		NetworkService.team_chat_received.connect(_on_prep_chat_received)
+	if not NetworkService.team_chat_text_received.is_connected(_on_prep_chat_text_received):
+		NetworkService.team_chat_text_received.connect(_on_prep_chat_text_received)
 
 func _build_chat_panel() -> void:
 	_chat_panel = PanelContainer.new()
@@ -1162,7 +1175,8 @@ func _build_chat_panel() -> void:
 	_chat_panel.offset_right = -CHAT_RIGHT
 	_chat_panel.offset_left = -CHAT_RIGHT - CHAT_LOG_WIDTH
 	_chat_panel.offset_bottom = CHAT_BTN_TOP - 8
-	_chat_panel.offset_top = CHAT_BTN_TOP - 8 - 282
+	# 282（6 行短语）+ 44（最上面一行「打字」，批次 D）。
+	_chat_panel.offset_top = CHAT_BTN_TOP - 8 - 326
 	_chat_panel.z_index = 30
 	_chat_panel.visible = false
 	var style := StyleBoxFlat.new()
@@ -1176,11 +1190,19 @@ func _build_chat_panel() -> void:
 
 	# 两列。一列放不下 12 条（会比棋盘还高），三列会让「我这边有点难」这种
 	# 六字短语被截断。
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 6)
+	_chat_panel.add_child(col)
+	# 最上面一行是「打字」（批次 D），宽度等于下面两列短语（160 × 2 + 间距 6）。
+	# 用 make_menu_button 而不是 Button.new()：同一份样式，也不涨 V3 P1-08 棘轮的计数。
+	col.add_child(PrepWidgets.make_menu_button(
+		"＋ Type" if LocaleManager.get_locale() == "en" else "＋ 打字",
+		Vector2(326, 38), 15, _open_text_input))
 	var grid := GridContainer.new()
 	grid.columns = 2
 	grid.add_theme_constant_override("h_separation", 6)
 	grid.add_theme_constant_override("v_separation", 6)
-	_chat_panel.add_child(grid)
+	col.add_child(grid)
 	for group in ChatPhrases.GROUP_ORDER:
 		for phrase_id in ChatPhrases.ids_in_group(group):
 			grid.add_child(PrepWidgets.make_menu_button(
@@ -1206,6 +1228,18 @@ func _on_prep_chat_received(slot: int, phrase_id: int) -> void:
 		return
 	_push_chat_line("%s：%s" % [_chat_speaker_name(slot), body])
 
+func _on_prep_chat_text_received(slot: int, text: String) -> void:
+	_push_chat_line("%s：%s" % [_chat_speaker_name(slot), text])
+
+
+# 打字入口（批次 D）。先收起短语面板：输入条弹在顶部，短语面板留着只会挡棋盘。
+func _open_text_input() -> void:
+	if _chat_panel != null and is_instance_valid(_chat_panel):
+		_chat_panel.visible = false
+	ChatInputBar.new().present(self, func(text: String) -> String:
+		return NetworkService.team_send_text(text))
+
+
 func _chat_speaker_name(slot: int) -> String:
 	var who := ""
 	if slot == int(NetworkService.team_local_slot):
@@ -1229,13 +1263,20 @@ func _push_chat_line(text: String) -> void:
 	lbl.text = text
 	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	lbl.clip_text = true
-	lbl.add_theme_font_size_override("font_size", 17)
+	# 自由文字（批次 D）一行放不下，要折行。**不设 max_lines_visible**：
+	# 设了（第一版是 2）就会把长消息的后半截悄悄吞掉 —— 40 字加昵称在 352 宽里要 3~4 行，
+	# 读的人只看到半句话、还不知道少了。高度改由下面的行数预算管。
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl.add_theme_font_size_override("font_size", CHAT_LOG_FONT_SIZE)
 	lbl.add_theme_color_override("font_color", Color(1.0, 0.94, 0.78))
 	lbl.add_theme_color_override("font_outline_color", Color(0.02, 0.025, 0.01, 0.95))
 	lbl.add_theme_constant_override("outline_size", 3)
 	_chat_log.add_child(lbl)
-	while _chat_log.get_child_count() > CHAT_LOG_LINES:
+	# 两道上限：最多 CHAT_LOG_LINES 条，且折行后合计不超过 CHAT_LOG_TEXT_LINES 行。
+	# 超了就从最老的一条开始**整条**移走 —— 宁可少显示一条旧的，也不截断任何一条。
+	# 最新那条永远留着（它自己最多 4 行，放得下）。
+	while _chat_log.get_child_count() > 1 and (_chat_log.get_child_count() > CHAT_LOG_LINES
+			or _chat_log_text_lines() > CHAT_LOG_TEXT_LINES):
 		var oldest := _chat_log.get_child(0)
 		_chat_log.remove_child(oldest)
 		oldest.queue_free()
@@ -1249,11 +1290,30 @@ func _push_chat_line(text: String) -> void:
 	tween.tween_property(lbl, "modulate:a", 0.0, CHAT_LINE_FADE_SEC)
 	tween.tween_callback(lbl.queue_free)
 
+# 消息条里全部消息折行之后的总行数。按消息条的宽度自己排一遍版，
+# 不读 Label.get_line_count() —— 那要等容器排完版才准，而调用处是刚 add_child 的同一帧。
+func _chat_log_text_lines() -> int:
+	var total := 0
+	for child in _chat_log.get_children():
+		var lbl := child as Label
+		if lbl == null:
+			continue
+		var para := TextParagraph.new()
+		para.width = CHAT_LOG_WIDTH
+		# 与 Label 的 AUTOWRAP_WORD_SMART 同一组断行规则，否则算出的行数和显示的对不上。
+		para.break_flags = (TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND
+			| TextServer.BREAK_ADAPTIVE)
+		para.add_string(lbl.text, lbl.get_theme_font("font"), CHAT_LOG_FONT_SIZE)
+		total += para.get_line_count()
+	return total
+
 func _teardown_chat_entry() -> void:
 	# NetworkService 是 autoload（活得比本场景久），连接必须显式断开。
 	# 由 PrepScreen._exit_tree 调用 —— 生命周期钩子只在那一层有。
 	if NetworkService.team_chat_received.is_connected(_on_prep_chat_received):
 		NetworkService.team_chat_received.disconnect(_on_prep_chat_received)
+	if NetworkService.team_chat_text_received.is_connected(_on_prep_chat_text_received):
+		NetworkService.team_chat_text_received.disconnect(_on_prep_chat_text_received)
 
 func _toggle_mute() -> void:
 	# 全局静音开关：静音 Master 总线（BGM + 音效都停），引擎级状态，切场景仍生效

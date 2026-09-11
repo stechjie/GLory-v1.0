@@ -16,6 +16,10 @@ const LOBBY_SCENE := preload("res://scenes/menu/Team3v3Lobby.tscn")
 const OUT_DIR := "res://reports/chat_ui"
 # 大厅有淡入与异步贴图加载（_setup_asset_loader），抓早了会拍到半成品。
 const SETTLE_FRAMES := 30
+# 最坏情况的样例：昵称上限 24 字（backend/app/text_guard.py 的 NAME_MAX）、
+# 自由文字上限 40 字（ChatText.MAX_CHARS）。两张 *_worst_case 图看的是「整条都在」。
+const LONGEST_NAME := "今天也要努力上分的弓手玩家阿泰的第二个小号呀哈哈"
+const LONGEST_TEXT := "我这把先存钱不刷新，第五回合一口气升三星弓手，你们俩前排顶住别让他们先推过来啊啊"
 
 var _lobby: Control = null
 var _shots := 0
@@ -45,6 +49,16 @@ func _ready() -> void:
 	# 把面板摆出来 —— 这里要看的是版面，不是那条判断。
 	_lobby.call("_set_phrase_panel_visible", true)
 	await _shot("lobby_chat_panel_open")
+	# 批次 D：顶部输入条（手机键盘从底部弹出，输入条必须在它够不着的地方）。
+	_lobby.call("_open_text_input")
+	await _shot("lobby_chat_text_input")
+	ModalStack.close_all()
+	# 最坏情况：24 字昵称 + 40 字。消息列一行约 18 字，这一条要折 4 行、占满整个框 ——
+	# 这张图看的是「整条都在、没有被截」，不是好不好看。
+	NetworkService.team_seat_profiles[2] = {"player_name": LONGEST_NAME,
+		"friend_code": "CCCC3333", "avatar": ""}
+	_lobby.call("_on_chat_text_received", 2, LONGEST_TEXT)
+	await _shot("lobby_chat_worst_case")
 	_lobby.queue_free()
 	await get_tree().process_frame
 
@@ -87,7 +101,16 @@ func _capture_prep() -> void:
 
 	for pair in [[1, 2], [0, 8]]:
 		prep.call("_on_prep_chat_received", int(pair[0]), int(pair[1]))
+	# 批次 D：一条会折行的自由文字（最多两行）。
+	prep.call("_on_prep_chat_text_received", 1, "下回合我先卖掉那个两星民兵，你们别抢弓手")
 	await _shot("prep_chat_collapsed")
+	# 最坏情况：再来一条 24 字昵称 + 40 字（4 行）。条数上限 3 先挤掉最老的短语，
+	# 合计 1 + 2 + 4 = 7 行超了 6 行预算，再挤掉一条 —— 应当剩上面那条两行的
+	# 和这条四行的，**两条都完整**。
+	NetworkService.team_seat_profiles[2] = {"player_name": LONGEST_NAME,
+		"friend_code": "CCCC3333", "avatar": ""}
+	prep.call("_on_prep_chat_text_received", 2, LONGEST_TEXT)
+	await _shot("prep_chat_worst_case")
 
 	prep.call("_toggle_chat_panel")
 	await _shot("prep_chat_panel_open")
@@ -179,6 +202,8 @@ func _push_sample_messages() -> void:
 	# 这样连「谁说的」的取名逻辑与短语查表一起被拍进图里。
 	for pair in [[1, 1], [0, 5], [1, 8], [0, 4]]:
 		_lobby.call("_on_chat_received", int(pair[0]), int(pair[1]))
+	# 批次 D：一条会折行的自由文字，看 4 行里折得对不对、有没有把框撑破。
+	_lobby.call("_on_chat_text_received", 1, "今晚八点开一局三排？我拉上阿泰，你带四星弓手")
 
 
 func _shot(shot_name: String) -> void:

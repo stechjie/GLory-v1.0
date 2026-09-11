@@ -13,6 +13,12 @@
 
 把它们提到路由层就变成「先查一次、再写一次」的两段式，
 两个并发请求能同时通过检查 —— 上限就被突破了。
+
+⚠️ **光「放进一个事务」也挡不住**（2026-09-11 纠正，原来这里写的是事务就够了）。
+PostgreSQL 默认的 READ COMMITTED 下，同一个号的几十个并发请求各开一个事务，
+都数到旧值、都能通过检查 —— 脚本并发打一波，每日 20 个的配额就被一次性突破。
+真正挡住它的是事务开头的 _lock_players()：按玩家加事务级互斥锁，
+同一个人的好友写操作排队进行。
 """
 
 from __future__ import annotations
@@ -110,6 +116,33 @@ def _pair(a: uuid.UUID, b: uuid.UUID) -> tuple[uuid.UUID, uuid.UUID]:
     但错误信息完全看不出是排序问题。
     """
     return (a, b) if a < b else (b, a)
+
+
+# 好友写操作那把事务锁的键前缀。advisory lock 是全库共用的一个号段，
+# 加前缀是为了以后别处也用它时，不会跟这里撞在同一个键上。
+_LOCK_PREFIX = "friends:"
+
+
+async def _lock_players(conn: asyncpg.Connection, *player_ids: uuid.UUID) -> None:
+    """给这些玩家的好友写操作加**事务级**互斥锁，事务结束（提交或回滚）自动释放。
+
+    为什么需要它：好友数上限与每日配额都是「先 count、再 insert」。
+    READ COMMITTED 下两个并发事务互相看不到对方还没提交的 insert，
+    于是都数到旧值、都通过检查 —— 事务本身挡不住，必须让同一个人的操作排队。
+
+    🔴 **按 uuid 升序加锁**。两个事务锁同一对玩家时顺序一致，才不会互相等死
+    （A 先锁甲再等乙、B 先锁乙再等甲 = 死锁）。
+
+    用 advisory lock 而不是 `select ... from players for update`：后者会跟所有
+    引用 players 的外键检查抢锁（在线心跳、资料更新都会被卡住）。
+    ⚠️ 只能用 **xact** 版本：Supabase 的 Transaction pooler 下，会话级锁
+    会跟着连接被别的请求捡走，释放不掉。
+    """
+    for player_id in sorted(set(player_ids)):
+        await conn.execute(
+            "select pg_advisory_xact_lock(hashtextextended($1, 0))",
+            _LOCK_PREFIX + str(player_id),
+        )
 
 
 def _online(last_seen: dt.datetime | None, visibility: str | None) -> bool:
@@ -355,14 +388,17 @@ async def relation_to(player_id: uuid.UUID, other_code: str) -> str:
 async def send_request(player_id: uuid.UUID, target_code: str) -> str:
     """发起好友请求。返回 'pending' 或 'accepted'（对方已经先加过我）。
 
-    整个流程在**一个事务**里，因为好友数上限和每日配额都是「先查后写」，
-    分成两次往返就能被并发绕过。
+    整个流程在**一个事务**里、并且先对双方加锁（见 _lock_players）：好友数上限和
+    每日配额都是「先查后写」，光有事务不够 —— 并发请求会同时数到旧值。
+    锁双方而不只锁自己，是因为交叉请求那条路会顺带数对方的好友数。
     """
     async with db.pool().acquire() as conn:
         async with conn.transaction():
             target = await _resolve_code(conn, target_code)
             if target == player_id:
                 raise FriendsRejected("cannot_add_self", "不能加自己为好友")
+            # 🔴 先上锁，再做下面所有的「先查后写」（见 _lock_players）。
+            await _lock_players(conn, player_id, target)
 
             blocked = await _blocked_between(conn, player_id, target)
             if blocked == "i_blocked":
@@ -450,7 +486,7 @@ async def _accept_locked(
     me: uuid.UUID,
     other: uuid.UUID,
 ) -> None:
-    """把一行 pending 置为 accepted。调用方必须已经在事务里。
+    """把一行 pending 置为 accepted。调用方必须已经在事务里，并且已对双方 _lock_players()。
 
     **两边都要查上限。** 只查自己的话，对方满员时这段关系照样建立，
     他的好友列表就会超过 MAX_FRIENDS —— 而那正是响应体上界要防的。
@@ -475,6 +511,10 @@ async def accept_request(player_id: uuid.UUID, other_code: str) -> None:
     async with db.pool().acquire() as conn:
         async with conn.transaction():
             other = await _resolve_code(conn, other_code)
+            # 🔴 _accept_locked 要数双方的好友数，两边都得锁（见 _lock_players）。
+            # 光靠下面那句 for update 不够：它锁的只是这一对的请求行，
+            # 挡不住同一个人同时通过另外几个请求。
+            await _lock_players(conn, player_id, other)
             low, high = _pair(player_id, other)
             row = await conn.fetchrow(
                 """

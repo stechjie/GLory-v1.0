@@ -95,7 +95,16 @@ const USE_DTLS := true
 #      这是有意的，不是回归。
 # v23: four-star ascension consumes 500/800/1100 gold plus a team stone.
 # Upgrade intents carry shadow-mode gold; receipts carry the trusted tier cost.
-const NETWORK_PROTOCOL_VERSION := 23
+# v24: 房间 / 局内自由文字（docs/聊天系统设计.md 批次 D），新增两个 RPC
+#      （_rpc_team_chat_text_submit、_rpc_team_chat_text）。**与 v17、v22 完全同一类**：
+#      加 @rpc 方法会平移整套 RPC 的 wire ID。
+#      🔴 **为什么是 24 不是 23**：批次 D 与上面的四星升阶是 2026-09-11 同一天分头顶的号，
+#      两边都写成了 23，但两个「23」一个多了两条 RPC、一个改了经济契约 —— 合并后的代码
+#      与任何一边单独打出来的 23 都不一样。同一个号对应两套方法表，正是 v17 / v22 那种
+#      握手放行、然后方法错位的静默事故。**合并时撞号，一律顶到一个没人用过的新号。**
+#      代价同上：**线上战斗服务器必须用合并后的代码重新打包部署到 p24**（make_server_zip.ps1），
+#      否则新客户端连不上。确认依据是服务器日志里的 `server started protocol=24`。
+const NETWORK_PROTOCOL_VERSION := 24
 
 # Local phone hosting is debug-only.
 const ALLOW_LOCAL_HOST_DEBUG := false

@@ -11,26 +11,48 @@
 			"Button.new()": 4,
 			"StyleBoxFlat.new()": 1
 		},
+		"res://scenes/menu/AvatarPickerPanel.gd": {
+			"Button.new()": 2
+		},
 		"res://scenes/menu/CodexScreen.gd": {
 			"Button.new()": 3,
 			"StyleBoxFlat.new()": 2
 		},
+		"res://scenes/menu/FriendsScreen.gd": {
+			"Button.new()": 15
+		},
 		"res://scenes/menu/MainMenu.gd": {
-			"Button.new()": 4
+			"Button.new()": 4,
+			"StyleBoxFlat.new()": 1
 		},
 		"res://scenes/menu/PetScreen.gd": {
 			"Button.new()": 2
+		},
+		"res://scenes/menu/ProfileScreen.gd": {
+			"Button.new()": 11
 		},
 		"res://scenes/menu/SettingsScreen.gd": {
 			"Button.new()": 6
 		},
 		"res://scenes/menu/Team3v3Lobby.gd": {
 			"Button.new()": 3,
-			"StyleBoxFlat.new()": 2
+			"StyleBoxFlat.new()": 3
+		},
+		"res://scenes/prep/CarrotCampPanel.gd": {
+			"Button.new()": 5,
+			"StyleBoxFlat.new()": 1
+		},
+		"res://scenes/prep/CarrotCampPanelV2.gd": {
+			"Button.new()": 5,
+			"StyleBoxFlat.new()": 1
+		},
+		"res://scenes/prep/CarrotCampPanelV3.gd": {
+			"Button.new()": 4,
+			"StyleBoxFlat.new()": 1
 		},
 		"res://scenes/prep/PrepUI.gd": {
 			"Button.new()": 6,
-			"StyleBoxFlat.new()": 2
+			"StyleBoxFlat.new()": 4
 		},
 		"res://scenes/prep/PrepWidgets.gd": {
 			"Button.new()": 2,
@@ -61,12 +83,16 @@
 		},
 		"res://ui/components/GloryLoadingOverlay.gd": {
 			"Button.new()": 1
+		},
+		"res://ui/components/TouchChoiceButton.gd": {
+			"Button.new()": 2,
+			"StyleBoxFlat.new()": 1
 		}
 	},
 	"note": "业务代码里自绘 UI 的调用计数。只能下降；降下来之后要跑 --update-baseline 收紧，否则棘轮会松掉。ui/theme 与 scenes/debug 不计。",
 	"schema": "glory.procedural_ui_ratchet.v1",
 	"totals": {
-		"Button.new()": 45,
-		"StyleBoxFlat.new()": 21
+		"Button.new()": 89,
+		"StyleBoxFlat.new()": 29
 	}
 }

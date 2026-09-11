@@ -74,6 +74,10 @@ const LIMITS := {
 	# STRIKES_BEFORE_KICK 是 3，计 strike 意味着「连着多点了几下短语按钮就被踢下线」，
 	# 而那是对局中，代价是整局崩掉。超限的正确后果就是**这一条不转发**，仅此而已。
 	"chat_phrase": 5,
+	# 自由文字（批次 D）：10 秒窗口 3 条，约等于 3 秒一条。比短语更紧 —— 打字本来就慢，
+	# 正常聊天碰不到；而一条自由文字能占掉大厅聊天框一半的行数，刷屏的代价更大。
+	# 同样**不计 strike**（调用处传 count_strike=false），理由同 chat_phrase。
+	"chat_text": 3,
 	# 重连：直连入口必须和短码入口共用同一个身份配额，否则客户端绕开
 	# _rpc_public_resume_request 直接打 _rpc_resume_request 就把 A6 的保护全跳过了。
 	"resume": 5,
