@@ -23,5 +23,8 @@ static func apply_star_stats(unit_def: Dictionary, star: int) -> Dictionary:
 	if out.star >= GameConstants.MAX_STAR and typeof(out.get("star4", null)) == TYPE_DICTIONARY:
 		for key in (out["star4"] as Dictionary):
 			out[key] = (out["star4"] as Dictionary)[key]
+	# 死侍各星级基础攻击固定为 1，包括旧存档和四星覆写。
+	if str(out.get("id", "")) == "human_death_servant":
+		out.atk = 1
 	out.erase("star4")
 	return out

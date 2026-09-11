@@ -608,6 +608,10 @@ func _layout() -> void:
 func _add_texture(texture: Texture2D, pos: Vector2, size: Vector2, edge: String = "") -> TextureRect:
 	var rect := TextureRect.new()
 	rect.texture = texture
+	if texture == TEX_CHAT:
+		var chat_material := ShaderMaterial.new()
+		chat_material.shader = preload("res://scenes/menu/chat_no_badge.gdshader")
+		rect.material = chat_material
 	rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	rect.stretch_mode = TextureRect.STRETCH_SCALE
 	add_child(rect)

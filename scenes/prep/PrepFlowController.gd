@@ -147,6 +147,10 @@ func _mark_online_board_changed() -> void:
 			NetworkService.team_set_ready(false)
 
 func _on_network_session_changed() -> void:
+	var incoming_offer := str(NetworkService.server_shop.get("offer_id", ""))
+	if not incoming_offer.is_empty() and incoming_offer != GameState.shop_offer_id:
+		if bool(call("_adopt_server_shop")):
+			_refresh_all()
 	_refresh_formation_status()
 	_refresh_merc_panel()
 	# room_state 是客机**唯一**的萝卜来源（NetworkService._apply_carrot_state）。

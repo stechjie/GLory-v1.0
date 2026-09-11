@@ -34,7 +34,7 @@ static func format_unit_def(d: Dictionary, star: int = 1, cell: Dictionary = {})
 		detail = "%s ★%d\nRace: %s  Element: %s  Tier: %d  Cost: %s\nHP: %d  ATK: %d  DEF: %d\nAS: %.2f  Crit: %.0f%%  CritDmg: %.0f%%\nRange: %s  Speed: %s\n\n[b]Skill[/b]\n%s" % [
 			uname, star,
 			race, elem, int(d.get("tier", 0)), purchase_price_text(d),
-			int(round(float(d.get("hp", 0)) * mul)), int(round(float(d.get("atk", 0)) * mul)), int(round(float(d.get("def", 0)) * mul)),
+			int(round(float(d.get("hp", 0)) * mul)), int(skill_def.get("atk", 0)), int(round(float(d.get("def", 0)) * mul)),
 			float(d.get("attack_speed", 1.0)), float(d.get("crit", 0.0)) * 100.0, float(d.get("crit_dmg", 1.5)) * 100.0,
 			str(d.get("range", 1)), str(d.get("move_speed", 3.0)), skill_text,
 		]
@@ -42,7 +42,7 @@ static func format_unit_def(d: Dictionary, star: int = 1, cell: Dictionary = {})
 		detail = "%s %d星\n种族：%s  属性：%s  阶级：%d  价格：%s\n生命：%d  攻击：%d  防御：%d\n攻速：%.2f  暴击：%.0f%%  暴伤：%.0f%%\n射程：%s  移速：%s\n\n[b]技能效果[/b]\n%s" % [
 			uname, star,
 			race, elem, int(d.get("tier", 0)), purchase_price_text(d),
-			int(round(float(d.get("hp", 0)) * mul)), int(round(float(d.get("atk", 0)) * mul)), int(round(float(d.get("def", 0)) * mul)),
+			int(round(float(d.get("hp", 0)) * mul)), int(skill_def.get("atk", 0)), int(round(float(d.get("def", 0)) * mul)),
 			float(d.get("attack_speed", 1.0)), float(d.get("crit", 0.0)) * 100.0, float(d.get("crit_dmg", 1.5)) * 100.0,
 			str(d.get("range", 1)), str(d.get("move_speed", 3.0)), skill_text,
 		]
@@ -184,7 +184,7 @@ static func format_skill_detail(d: Dictionary) -> String:
 		"attack_interrupt":
 			return "缴械攻击：普通攻击有%s概率缴械目标（1 秒内无法普攻）。" % pct(float(d.get("interrupt_chance", 0.12)))
 		"post_battle_gold_by_star":
-			return "战后经商：参与战斗后，按星级获得金币。1星+10，2星+20，3星+30。"
+			return "战后经商：参与战斗后，按星级获得金币。1星+10，2星+20，3星+30，4星+40。"
 		"every_fourth_combo":
 			return "连射：每第%d次普通攻击额外造成自身攻击%s伤害。" % [int(d.get("every", 4)), pct(float(d.get("combo_atk_pct", 0.70)))]
 		"front_cone_stun":
@@ -313,7 +313,7 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"attack_interrupt":
 			return "Disarm Strike: Normal attacks have a %s chance to disarm the target (cannot use normal attacks for 1s)." % pct(float(d.get("interrupt_chance", 0.12)))
 		"post_battle_gold_by_star":
-			return "Trade: After each battle, gain gold by star level (★1 → +10G, ★2 → +20G, ★3 → +30G)."
+			return "Trade: After each battle, gain gold by star level (★1 → +10G, ★2 → +20G, ★3 → +30G, ★4 → +40G)."
 		"every_fourth_combo":
 			return "Rapid Fire: Every %d attacks, deal bonus %s ATK damage." % [int(d.get("every", 4)), pct(float(d.get("combo_atk_pct", 0.70)))]
 		"front_cone_stun":
@@ -391,6 +391,8 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 
 
 static func skill_cd_text(d: Dictionary) -> String:
+	if str(d.get("skill_id", "")) == "black_hole" and not d.has("skill_cd"):
+		return " (CD 8.0s)" if is_en() else "（冷却8.0秒）"
 	if d.has("skill_cd"):
 		if is_en():
 			return " (CD %.1fs)" % float(d.get("skill_cd", 0.0))

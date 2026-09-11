@@ -1346,6 +1346,14 @@ func _on_carrot_dimmer_input(event: InputEvent) -> void:
 
 func _on_carrot_economy_receipt(receipt: Dictionary) -> void:
 	var action := str(receipt.get("action", ""))
+	if action == "shop_refresh":
+		if bool(receipt.get("ok", false)):
+			call("_adopt_server_shop")
+			_shop.selected = -1
+			_refresh_all()
+		else:
+			show_message("商店刷新失败：%s" % str(receipt.get("error", "denied")))
+		return
 	# 只处理这四个**玩家发起、等服务端裁决**的动作。
 	# buy / merge / sell / shop_refresh 也会发意图，但那是影子记账（L2）：
 	# 本地那一笔早就生效了，服务端只是跟着记账。它们被拒（比如卖一枚开关上线前

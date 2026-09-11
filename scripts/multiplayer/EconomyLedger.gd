@@ -361,14 +361,21 @@ static func _use_upgrade_stone(prep: Dictionary, payload: Dictionary, ctx: Dicti
 		return {"ok": false, "error": "bad_tier"}
 	if int(prep.get("gold", 0)) < cost:
 		return {"ok": false, "error": "not_enough_gold"}
-	# 账本上线之后 roster 才有内容；有内容时必须核对星级与单位，防止拿一枚
-	# 一星棋子的 uid 来换四星。
+	# 影子账本可能漏记旧棋子的购买/合成，不能用残留的一星记录否定本地三星。
+	# 权威模式只认完整 roster，绝不接受客户端自报星级替代它。
 	var roster: Dictionary = prep.get("roster", {})
+	var authoritative := bool(ctx.get("roster_authoritative", true))
 	if roster.has(uid):
 		var owned: Dictionary = roster[uid]
 		if str(owned.get("unit_id", "")) != unit_id:
 			return {"ok": false, "error": "unit_mismatch"}
-		if int(owned.get("star", 1)) != GameConstants.MAX_MERGE_STAR:
+		if authoritative and int(owned.get("star", 1)) != GameConstants.MAX_MERGE_STAR:
+			return {"ok": false, "error": "not_three_star"}
+	elif authoritative and ctx.has("roster_authoritative"):
+		return {"ok": false, "error": "unknown_uid"}
+	# 老版本请求没有 star；保留原有影子模式兼容路径。新客户端显式提交星级。
+	if not authoritative and payload.has("star"):
+		if typeof(payload["star"]) != TYPE_INT or int(payload["star"]) != GameConstants.MAX_MERGE_STAR:
 			return {"ok": false, "error": "not_three_star"}
 
 	# 判据全部通过，开始改状态。

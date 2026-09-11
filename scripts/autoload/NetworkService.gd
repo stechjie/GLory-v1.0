@@ -4140,6 +4140,7 @@ func carrot_economy_enabled() -> bool:
 
 func _economy_action_enabled(action: String) -> bool:
 	return economy_enabled() or (carrot_economy_enabled() and action in [
+		"shop_refresh",
 		"upgrade_harvest_tech", "hire_merc_carrot", "draw_upgrade_stone",
 		# 花的是队伍升级石不是金币，所以归萝卜链路，跟着 carrot_economy_enabled 走。
 		"use_upgrade_stone",
@@ -4236,6 +4237,7 @@ func _economy_ctx(room: Dictionary, slot: int, action: String) -> Dictionary:
 			# 属性（element）只认**服务端数据表**里的那一份，不认客户端自报 ——
 			# 否则改个 element 就能拿天石升地属性的棋子。
 			ctx["unit_table"] = DataRegistry.get_table("race_units").get("units", [])
+			ctx["roster_authoritative"] = economy_authoritative()
 	return ctx
 
 func request_economy(action: String, payload: Dictionary) -> String:
@@ -4264,6 +4266,7 @@ func _rpc_economy_intent(request_id: String, action: String, payload: Dictionary
 	_rpc_economy_receipt.rpc_id(sender, request_id, receipt)
 	if bool(receipt.get("ok", false)):
 		_touch_room(room)
+		_broadcast_room_lobby(room)
 
 func _room_apply_economy(room: Dictionary, slot: int, action: String, payload: Dictionary) -> Dictionary:
 	if not ECONOMY_ACTIONS.has(action):
@@ -4275,7 +4278,7 @@ func _room_apply_economy(room: Dictionary, slot: int, action: String, payload: D
 		return _economy_reject(room, slot, "bad_request")
 	var prep := _room_prep(room, slot)
 	var gold_before_sync := int(prep.get("gold", 0))
-	if action in ["upgrade_harvest_tech", "use_upgrade_stone"] and not economy_authoritative():
+	if action in ["upgrade_harvest_tech", "use_upgrade_stone", "shop_refresh"] and not economy_authoritative():
 		# 未启用金币权威时，买卖仍由客户端结算（与战后 snapshot.gold 同源）。
 		# 影子账本可能缺少旧棋子的卖出记录，不能用它或上轮余额否定卖棋收入。
 		# 权威模式则完全忽略自报金币，继续由服务端账本判定。
@@ -4329,6 +4332,15 @@ signal economy_receipt(receipt: Dictionary)
 # 于是 EconomyLedger._buy 的 offer_id 校验必然 stale_offer，买入意图 100% 被拒，
 # roster 永远是空的，账本也就永远记不成账。
 var server_shop: Dictionary = {}
+var shop_refresh_request_id := ""
+
+func request_shop_refresh() -> void:
+	if shop_refresh_in_flight():
+		return
+	shop_refresh_request_id = request_economy("shop_refresh", {"gold": GameState.gold})
+
+func shop_refresh_in_flight() -> bool:
+	return _tx_pending.has(shop_refresh_request_id)
 var server_four_star_cost_version := 0
 var four_star_request_id := ""
 var four_star_request_uid := ""
@@ -4394,6 +4406,15 @@ func _apply_carrot_receipt(receipt: Dictionary) -> void:
 	if not bool(receipt.get("ok", false)):
 		return
 	match action:
+		"shop_refresh":
+			# 等待期间可能卖棋，按这笔刷新实际费用扣除，不覆盖期间的新收入。
+			GameState.gold = maxi(0, GameState.gold - int(result.get("cost", 0)))
+			GameState.shop_refresh_uses_this_round = int(result.get("refresh_uses", GameState.shop_refresh_uses_this_round))
+			var offers: Array = result.get("offers", [])
+			var sold: Array = []
+			sold.resize(offers.size())
+			sold.fill(false)
+			_apply_server_shop({"shop": {"offer_id": result.get("offer_id", ""), "offers": offers, "sold": sold}})
 		"upgrade_harvest_tech":
 			GameState.gold = int(receipt.get("gold_after", GameState.gold))
 			GameState.harvest_tech_level = int(result.get("harvest_tech_level", GameState.harvest_tech_level))

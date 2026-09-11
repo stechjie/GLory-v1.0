@@ -380,13 +380,7 @@ func _add_battle_3v3_dividers(arena_wrap: Control) -> void:
 	_3v3_barriers.clear()
 	_final_lane_walls.clear()
 	if _battlefield_kind() == "final":
-		for i in BATTLE_3V3_BOUNDS.size():
-			var wall := FinalLaneLightWall2D.new()
-			wall.name = "FinalLaneLightWall%d" % i
-			wall.z_index = 40
-			arena_wrap.add_child(wall)
-			wall.play_loop()
-			_final_lane_walls.append(wall)
+		# 最终回合左右对战，不绘制半场及分路分割线。
 		return
 	for i in BATTLE_3V3_BOUNDS.size():
 		var barrier := BattleLaneBarrier2D.new()
@@ -504,6 +498,9 @@ func _add_battle_grid_overlay(arena_wrap: Control) -> void:
 
 func _sync_battle_readability_static_geometry() -> void:
 	if _board_readability_layer == null or not is_instance_valid(_board_readability_layer):
+		return
+	_board_readability_layer.visible = _battlefield_kind() != "final"
+	if not _board_readability_layer.visible:
 		return
 	if _arena == null or _battle_3d_camera == null or _battle_3d_viewport == null:
 		return

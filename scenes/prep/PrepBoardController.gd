@@ -276,6 +276,7 @@ func _execute_four_star_upgrade(where: String, index: int) -> void:
 		var rid := NetworkService.request_economy("use_upgrade_stone", {
 			"uid": str(c.get("uid", "")),
 			"unit_id": str(c.get("id", "")),
+			"star": int(c.get("star", 1)),
 			"gold": GameState.gold,
 		})
 		NetworkService.four_star_request_id = rid
@@ -330,6 +331,9 @@ func _on_bench_pressed(index: int) -> void:
 	_refresh_all()
 
 func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
+	if NetworkService.shop_refresh_in_flight():
+		show_message("商店刷新中，请稍候")
+		return
 	if GameState.tutorial_mode:
 		_shop.selected = -1
 		_refresh_all()
@@ -376,6 +380,9 @@ func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
 	_refresh_all()
 
 func _buy_or_merge_shop_to_bench(shop_index: int, bench_index: int) -> void:
+	if NetworkService.shop_refresh_in_flight():
+		show_message("商店刷新中，请稍候")
+		return
 	if shop_index < 0 or shop_index >= GameState.shop_offers.size() or bool(GameState.shop_sold[shop_index]):
 		return
 	if bench_index < 0 or bench_index >= GameState.bench_slots.size():
@@ -879,6 +886,9 @@ func _shadow_report_merge() -> void:
 
 
 func _on_refresh_shop() -> void:
+	if not GameState.tutorial_mode and NetworkService.team_active and not NetworkService.is_host and not NetworkService.server_shop.is_empty():
+		NetworkService.request_shop_refresh()
+		return
 	var all_free := TreasureService.has_set("money")
 	var cost := EconomyService.shop_refresh_cost(GameState.shop_refresh_uses_this_round, all_free)
 	if GameState.gold < cost:
