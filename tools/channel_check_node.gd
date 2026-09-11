@@ -61,9 +61,12 @@ func _ready() -> void:
 		print("[CH] server ready port=%d chunked=%s" % [PORT, _chunked])
 		_dump_channel_info()
 	else:
+		# 必须在 team_join 之前：连上、建房之后 NetworkService 就会写重连凭证（见 _snapshot_reconnect）。
+		_snapshot_reconnect()
 		NetworkService.team_replay_received.connect(func(): _got_replay = true)
 		if not NetworkService.team_join("127.0.0.1", PORT):
 			print("[CH] FATAL: cannot create client")
+			_restore_reconnect()
 			get_tree().quit(2)
 			return
 		_deadline = _now() + CLIENT_TIMEOUT_SEC
@@ -178,7 +181,32 @@ func _finish() -> void:
 		"PASS" if ok else "FAIL",
 		NetworkService._last_pong_at > 0.0, _got_replay, _got_room_state,
 		_chunked, content_ok, frames.size()])
+	_restore_reconnect()
 	get_tree().quit(0 if ok else 3)
+
+# 客户端走的是真的 team_join + 建房：NetworkService 会把这一局的重连凭证写进 user://
+# （和开发机上的真实游戏**共用同一个存档目录**）并标成已开局。不还原的话，跑完一次回归，
+# 本机的游戏就会一直去 127.0.0.1:8092 确认「上一局」，而那台测试服务器早就退出了 ——
+# 结果是「自定义房间」被 NetworkService.allow_new_match() 永久挡住。2026-09-11 实测踩过。
+# 做法同 tools/active_match_transport_check.gd：跑之前把文件原样存下来，结束时原样写回。
+var _saved_reconnect := {}   # path -> PackedByteArray，只存跑之前就存在的那几个文件
+
+func _snapshot_reconnect() -> void:
+	for suffix in ["", ".bak", ".tmp"]:
+		var path: String = SaveManager.RECONNECT_PATH + suffix
+		if FileAccess.file_exists(path):
+			_saved_reconnect[path] = FileAccess.get_file_as_bytes(path)
+
+func _restore_reconnect() -> void:
+	# 先连 .bak/.tmp 一起清掉本轮写进去的，再把跑之前的原样写回（原来没有就保持没有）。
+	SaveManager.clear_reconnect()
+	for path in _saved_reconnect:
+		var f := FileAccess.open(path, FileAccess.WRITE)
+		if f == null:
+			print("[CH] WARN: 还原重连凭证失败 %s" % path)
+			continue
+		f.store_buffer(_saved_reconnect[path])
+		f.close()
 
 func _now() -> float:
 	return Time.get_ticks_msec() / 1000.0
