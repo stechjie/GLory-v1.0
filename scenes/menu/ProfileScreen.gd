@@ -420,10 +420,25 @@ func _update_friend_actions() -> void:
 		return
 	var relation := str(_data.get("relation", "none"))
 	_friend_action.text = _text("删除好友", "Remove friend") if relation == "friends" else _text("添加朋友请求", "Send friend request")
-	_friend_action.disabled = relation in ["blocked", "self"]
+	# ⚠️ **不要**因为 relation == "blocked" 就把这两个按钮置灰（9.11 测试报告）。
+	#
+	# 服务端刻意不区分拉黑方向：`friends.relation_to()` 对「我拉黑了他」和
+	# 「他拉黑了我」都只回 `blocked`（见那边注释：把"对方拉黑了我"说破，等于给
+	# 骚扰者一个探测器）。而**按钮变灰恰恰就是把方向说破的最直接方式** ——
+	# 被拉黑的人一进资料页看到两个按钮全不可用，就"推理"出了自己被拉黑。
+	#
+	# 所以按钮一律照常可用，让**动作**去回答：
+	#   * 添加朋友请求 -> 服务端回通用失败「无法向该玩家发送好友请求」
+	#     （我拉黑过对方时回的是「你已拉黑对方。先解除拉黑才能加好友」，
+	#      那是我自己做的事，明说无妨）；
+	#   * 拉入黑名单   -> 正常执行：对方先拉黑了我，我仍然可以拉黑他。
+	# 只有"看自己"（relation == "self"）这两个动作才真的没有意义。
+	_friend_action.disabled = relation == "self"
 	var blocked_by_me := bool(_data.get("blocked_by_me", false))
 	_block_action.text = _text("解除黑名单", "Unblock player") if blocked_by_me else _text("拉入黑名单", "Block player")
-	_block_action.disabled = relation == "self" or (relation == "blocked" and not blocked_by_me)
+	# 文案只取决于**我自己的**黑名单（blocked_by_me），因此"解除黑名单"不会泄露
+	# 对方的选择；对方拉黑我时这里仍是「拉入黑名单」，且可用。
+	_block_action.disabled = relation == "self"
 
 func _on_block_action() -> void:
 	if not bool(_data.get("blocked_by_me", false)):
@@ -467,6 +482,12 @@ func _confirm_friend_action(blocking: bool) -> void:
 func _send_friend_change(blocking: bool) -> Dictionary:
 	return await AccountManager.block_player(_target_code) if blocking else await AccountManager.remove_friend(_target_code)
 
+# 与 _send_unblock / _send_friend_change 同一套接缝：出网请求单独一个方法，
+# 检查（tools/friends08_check.gd）才能把"服务端拒绝"这条路径驱动起来 ——
+# 否则「被对方拉黑时点加好友要给通用失败提示」就只能靠手测。
+func _send_friend_request() -> Dictionary:
+	return await AccountManager.send_friend_request(_target_code)
+
 func _friend_request_button() -> Control:
 	var column := VBoxContainer.new()
 	var button := Button.new()
@@ -478,7 +499,7 @@ func _friend_request_button() -> Control:
 			_confirm_friend_action(false)
 			return
 		button.disabled = true
-		var result: Dictionary = await AccountManager.send_friend_request(_target_code)
+		var result: Dictionary = await _send_friend_request()
 		if not is_inside_tree():
 			return
 		button.disabled = false

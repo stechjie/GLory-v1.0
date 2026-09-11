@@ -22,12 +22,17 @@ class ProfileProbe:
 	var changes: Array = []
 	var unblock_response := {"code": 204, "body": {}}
 	var unblock_calls := 0
+	var friend_request_response := {"code": 400, "error": "无法向该玩家发送好友请求"}
+	var friend_request_calls := 0
 	func _send_unblock() -> Dictionary:
 		unblock_calls += 1
 		return unblock_response
 	func _send_friend_change(blocking: bool) -> Dictionary:
 		changes.append(blocking)
 		return {"code": 204, "body": {}}
+	func _send_friend_request() -> Dictionary:
+		friend_request_calls += 1
+		return friend_request_response
 	func _ready() -> void:
 		_build()
 
@@ -85,6 +90,25 @@ func _ready() -> void:
 	profile.unblock_response = {"code": 204, "body": {}}
 	profile._block_action.pressed.emit()
 	h.expect(profile.unblock_calls == 2 and profile._data.relation == "none" and profile._block_action.text == "拉入黑名单" and not profile._friend_action.disabled, "unblock_success", "解除成功恢复拉黑及加好友按钮，不自动加为好友")
+	# 9.11 缺陷回归：**对方拉黑了我**时，两个按钮都必须照常可用。
+	#
+	# 服务端只回 relation=blocked、不区分方向（说破方向等于给骚扰者一个探测器），
+	# 而"按钮变灰"就是把方向说破 —— 被拉黑的人一进资料页看到两个按钮全不可用，
+	# 就等于被告知自己被拉黑了。正确做法是按钮可用、让动作去回答。
+	profile._data["relation"] = "blocked"
+	profile._data["blocked_by_me"] = false
+	profile._update_friend_actions()
+	h.expect(profile._friend_action.text == "添加朋友请求" and not profile._friend_action.disabled, "blocked_request_usable", "被对方拉黑时加好友按钮仍可用")
+	h.expect(profile._block_action.text == "拉入黑名单" and not profile._block_action.disabled, "blocked_block_usable", "被对方拉黑时拉黑按钮仍可用")
+	profile._friend_action.pressed.emit()
+	h.expect(profile.friend_request_calls == 1 and profile._status.text == "无法向该玩家发送好友请求", "blocked_request_message", "被拉黑时点加好友显示通用失败提示")
+	# 我自己拉黑过对方：按钮同样可用，提示是明说原因的那一条（这是我自己做的事）。
+	profile._data["blocked_by_me"] = true
+	profile._update_friend_actions()
+	h.expect(profile._block_action.text == "解除黑名单" and not profile._friend_action.disabled, "blocked_self_usable", "自己拉黑对方时两个按钮仍可用")
+	profile.friend_request_response = {"code": 400, "error": "你已拉黑对方。先解除拉黑才能加好友"}
+	profile._friend_action.pressed.emit()
+	h.expect(profile.friend_request_calls == 2 and profile._status.text == "你已拉黑对方。先解除拉黑才能加好友", "blocked_self_message", "自己拉黑对方时提示先解除拉黑")
 	friends.mock_changes = true
 	friends._confirm_remove(entries[0])
 	DialogService._on_dialog_resolved("confirmed", str(DialogService._pending.keys()[0]))
