@@ -4,6 +4,55 @@ const PREP_RELATION_PARTICLES_SCRIPT := preload("res://scenes/prep/PrepRelationP
 const PREP_RELATION_LINK_SCRIPT := preload("res://scenes/prep/PrepRelationLink3D.gd")
 const UnitActor3DScript := preload("res://effects/runtime/presentation/UnitActor3D.gd")
 const UnitVisualResolverScript := preload("res://effects/runtime/presentation/UnitVisualResolver.gd")
+const FOUR_STAR_AURA := preload("res://effects/vfx3d/modules/FourStarAura3D.gd")
+var _four_star_visual_poll := 0.0
+
+func refresh_four_star_visuals(delta: float) -> void:
+	_four_star_visual_poll += delta
+	if _four_star_visual_poll < 0.2:
+		return
+	_four_star_visual_poll = 0.0
+	for source in [[GameState.board_slots, _prep_board_model_nodes], [GameState.bench_slots, _prep_standby_model_nodes]]:
+		var slots: Array = source[0]
+		var models: Dictionary = source[1]
+		for index in models:
+			var actor := models[index] as Node3D
+			if is_instance_valid(actor) and int(index) < slots.size() and slots[index] is Dictionary:
+				_sync_four_star_actor(actor, slots[index])
+
+func _sync_four_star_actor(actor: Node3D, cell: Dictionary) -> void:
+	var def: Dictionary = cell.get("def", {})
+	var state := 0
+	if not bool(cell.get("is_mercenary", false)):
+		if int(cell.get("star", 1)) == GameState.MAX_UNIT_STAR:
+			state = 2
+		elif not GameState.tutorial_mode and NetworkService.four_star_upgrade_available() and NetworkService.four_star_request_id.is_empty() and bool(GameState.four_star_check(cell).get("ok", false)):
+			state = 1
+	var aura := FOUR_STAR_AURA.sync(actor, state, str(def.get("element", "")), 1.0)
+	if aura != null and actor.is_inside_tree():
+		if not actor.has_meta("four_star_aura_transform") and bool(actor.get_meta("prep_model_centered", false)):
+			FOUR_STAR_AURA.fit_to_skeleton(aura, actor, 0.24)
+			var attempts := int(actor.get_meta("four_star_fit_attempts", 0)) + 1
+			actor.set_meta("four_star_fit_attempts", attempts)
+			if bool(aura.get_meta("skeleton_fitted", false)) or attempts >= 10:
+				actor.set_meta("four_star_aura_transform", aura.transform)
+		if actor.has_meta("four_star_aura_transform"):
+			aura.transform = actor.get_meta("four_star_aura_transform")
+			aura.attach_rim(actor)
+
+func play_four_star_upgrade(uid: String) -> void:
+	for source in [[GameState.board_slots, _prep_board_model_nodes], [GameState.bench_slots, _prep_standby_model_nodes]]:
+		var slots: Array = source[0]
+		var models: Dictionary = source[1]
+		for index in slots.size():
+			if slots[index] is Dictionary and str(slots[index].get("uid", "")) == uid:
+				var actor := models.get(index) as Node3D
+				if is_instance_valid(actor):
+					_sync_four_star_actor(actor, slots[index])
+					var aura := actor.get_node_or_null("FourStarAura")
+					if aura != null:
+						aura.play_upgrade()
+				return
 # 3D 河流场地（river_arena FBX + 其材质）已弃用，改为贴在平躺 quad 上的 2D 分层棋盘，
 # 见下方 _add_prep_art_layers()。原来的两个路径常量与 _apply_prep_river_material()
 # 指向的 assets/models/prep/river_arena/ 目录早已不存在，且全仓无调用点，
@@ -923,6 +972,7 @@ func _update_prep_model_anchors(model_node: Node3D, attempt: int) -> void:
 		return
 	_configure_prep_contact_shadow(model_node)
 	model_node.set_meta("relation_waist_height", bounds.size.y * 0.52)
+	model_node.set_meta("four_star_height", bounds.size.y)
 	model_node.set_meta("prep_anchor_update_pending", false)
 
 func _make_prep_board_model(cell: Dictionary, unit_def: Dictionary) -> Node3D:
@@ -962,6 +1012,7 @@ func _make_prep_board_model(cell: Dictionary, unit_def: Dictionary) -> Node3D:
 	actor.set_meta("relation_waist_height", _prep_board_model_target_size() * 0.52)
 	# Prep models are enlarged 20%; epic (tier 3) units 40%.
 	_add_prep_contact_shadow(actor)
+	_sync_four_star_actor(actor, cell)
 	# 名字/星级改为 2D 格子下方标签（见 _make_cell_caption），不再用 3D Label3D 浮标+锚点。
 	return actor
 

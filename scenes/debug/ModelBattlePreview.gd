@@ -539,6 +539,9 @@ func _build_vfx_test_panel() -> void:
 	vfx_select.add_item("Custom: Lane Barrier Static")
 	vfx_select.add_item("Custom: Lane Barrier Release")
 	vfx_select.add_item("Custom: Final Two Light Walls")
+	vfx_select.add_item("Ascension: Sky", 100)
+	vfx_select.add_item("Ascension: Land", 101)
+	vfx_select.add_item("Ascension: Human", 102)
 	select_row.add_child(vfx_select)
 	var action_row := HBoxContainer.new()
 	action_row.add_theme_constant_override("separation", 6)
@@ -677,6 +680,21 @@ func _on_vfx_play_pressed() -> void:
 		return
 	var target := Vector3(0.0, 0.18, 0.0)
 	match vfx_select.get_selected_id():
+		100, 101, 102:
+			auto_fight_enabled = false
+			var aura := preload("res://effects/vfx3d/modules/FourStarAura3D.gd").new()
+			vfx_preview_root.add_child(aura)
+			var bounds := _node_bounds_relative(left_slot, left_slot)
+			var foot := Vector3(bounds.get_center().x, bounds.position.y, bounds.get_center().z)
+			aura.global_position = left_slot.to_global(foot)
+			aura.configure(2, ["sky", "land", "ren"][vfx_select.get_selected_id() - 100], maxf(0.4, bounds.size.y))
+			preload("res://effects/vfx3d/modules/FourStarAura3D.gd").fit_to_skeleton(aura, left_slot, 0.95)
+			# fit_to_skeleton returns actor-local placement; this preview is owned
+			# by the cleanup root rather than the model slot.
+			aura.global_transform = left_slot.global_transform * aura.transform
+			aura.play_upgrade()
+			vfx_preview_effect = aura
+			vfx_status_label.text = "Four-star ascension → persistent aura (review candidate)"
 		0:
 			var lightning := VFX_LIGHTNING_ARC.new()
 			lightning.name = "PreviewLightningArc"

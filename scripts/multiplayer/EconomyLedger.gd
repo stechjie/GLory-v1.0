@@ -356,6 +356,11 @@ static func _use_upgrade_stone(prep: Dictionary, payload: Dictionary, ctx: Dicti
 		return {"ok": false, "error": "team_stones_unavailable"}
 	if int(team_stones.get(element, 0)) <= 0:
 		return {"ok": false, "error": "no_stone"}
+	var cost := CarrotEconomy.four_star_gold(int(def.get("tier", 0)))
+	if cost < 0:
+		return {"ok": false, "error": "bad_tier"}
+	if int(prep.get("gold", 0)) < cost:
+		return {"ok": false, "error": "not_enough_gold"}
 	# 账本上线之后 roster 才有内容；有内容时必须核对星级与单位，防止拿一枚
 	# 一星棋子的 uid 来换四星。
 	var roster: Dictionary = prep.get("roster", {})
@@ -367,8 +372,9 @@ static func _use_upgrade_stone(prep: Dictionary, payload: Dictionary, ctx: Dicti
 			return {"ok": false, "error": "not_three_star"}
 
 	# 判据全部通过，开始改状态。
+	prep["gold"] = int(prep["gold"]) - cost
 	team_stones[element] = int(team_stones[element]) - 1
-	granted[uid] = {"unit_id": unit_id, "round": int(ctx.get("round_index", 0))}
+	granted[uid] = {"unit_id": unit_id, "round": int(ctx.get("round_index", 0)), "cost": cost}
 	prep["four_star_uids"] = granted
 	if roster.has(uid):
 		var upgraded: Dictionary = roster[uid]
@@ -379,6 +385,8 @@ static func _use_upgrade_stone(prep: Dictionary, payload: Dictionary, ctx: Dicti
 		"uid": uid,
 		"unit_id": unit_id,
 		"stone_type": element,
+		"cost": cost,
+		"cost_version": CarrotEconomy.FOUR_STAR_COST_VERSION,
 		"team_upgrade_stones": team_stones.duplicate(true),
 	}}
 

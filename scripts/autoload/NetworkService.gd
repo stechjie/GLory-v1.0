@@ -1675,6 +1675,8 @@ func _build_economy_state(room: Dictionary, slot: int) -> Dictionary:
 	return {
 		"authoritative": economy_authoritative(),
 		"carrot_authoritative": carrot_economy_enabled(),
+		"four_star_cost_version": CarrotEconomy.FOUR_STAR_COST_VERSION,
+		"four_star_grants": (prep.get("four_star_uids", {}) as Dictionary).duplicate(true),
 		"revision": int(prep.get("revision", 0)),
 		"gold": int(prep.get("gold", 0)),
 		"carrots": int(prep.get("carrots", 0)),
@@ -2979,6 +2981,14 @@ func _tick_tx_retry(_delta: float) -> void:
 		if now < float(p.get("deadline", 0.0)):
 			continue
 		if int(p.get("tries", 0)) >= TX_MAX_TRIES:
+			if rid == four_star_request_id:
+				# A lost receipt is NOT a rejected upgrade. Keep the original id
+				# (server idempotency), including across automatic reconnects.
+				# Never unlock spending and silently discard a successful charge.
+				p["deadline"] = now + 15.0
+				_tx_pending[rid] = p
+				_tx_send(rid)
+				continue
 			# 放弃重发。**结果按"未知"处理，不是按"失败"**：服务端可能已经成功了。
 			# 这里只把 UI 解锁（否则宝物弹窗会永远转圈），权威值由下一份
 			# room_state 快照纠正 —— owned_treasures / altar_uses 都在里面。
@@ -3106,6 +3116,9 @@ func reset_peer_only() -> void:
 	_peer = null
 
 func reset() -> void:
+	server_four_star_cost_version = 0
+	four_star_request_id = ""
+	four_star_request_uid = ""
 	team_seat_profiles.clear()
 	reset_peer_only()
 	_public_resume_pending = false
@@ -4174,7 +4187,7 @@ func _room_apply_economy(room: Dictionary, slot: int, action: String, payload: D
 		return _economy_reject(room, slot, "bad_request")
 	var prep := _room_prep(room, slot)
 	var gold_before_sync := int(prep.get("gold", 0))
-	if action == "upgrade_harvest_tech" and not economy_authoritative():
+	if action in ["upgrade_harvest_tech", "use_upgrade_stone"] and not economy_authoritative():
 		# 未启用金币权威时，买卖仍由客户端结算（与战后 snapshot.gold 同源）。
 		# 影子账本可能缺少旧棋子的卖出记录，不能用它或上轮余额否定卖棋收入。
 		# 权威模式则完全忽略自报金币，继续由服务端账本判定。
@@ -4217,6 +4230,9 @@ func _rpc_economy_receipt(request_id: String, receipt: Dictionary) -> void:
 	if not _tx_consume(request_id):
 		return
 	_apply_carrot_receipt(receipt)
+	if request_id == four_star_request_id:
+		four_star_request_id = ""
+		four_star_request_uid = ""
 	economy_receipt.emit(receipt)
 
 signal economy_receipt(receipt: Dictionary)
@@ -4225,6 +4241,13 @@ signal economy_receipt(receipt: Dictionary)
 # 于是 EconomyLedger._buy 的 offer_id 校验必然 stale_offer，买入意图 100% 被拒，
 # roster 永远是空的，账本也就永远记不成账。
 var server_shop: Dictionary = {}
+var server_four_star_cost_version := 0
+var four_star_request_id := ""
+var four_star_request_uid := ""
+
+func four_star_upgrade_available() -> bool:
+	return not (team_active and not is_host) or (carrot_economy_enabled() \
+		and server_four_star_cost_version == CarrotEconomy.FOUR_STAR_COST_VERSION)
 
 func _apply_server_shop(state: Dictionary) -> void:
 	if state.is_empty():
@@ -4238,6 +4261,7 @@ func _apply_server_shop(state: Dictionary) -> void:
 
 
 func _apply_carrot_state(state: Dictionary) -> void:
+	server_four_star_cost_version = int(state.get("four_star_cost_version", 0))
 	if state.is_empty() or not bool(state.get("carrot_authoritative", false)):
 		return
 	GameState.carrots = maxi(0, int(state.get("carrots", GameState.carrots)))
@@ -4249,7 +4273,32 @@ func _apply_carrot_state(state: Dictionary) -> void:
 	var stones: Variant = state.get("team_upgrade_stones", {})
 	if typeof(stones) == TYPE_DICTIONARY:
 		GameState.team_upgrade_stones = (stones as Dictionary).duplicate(true)
+	# Recovery after a dropped receipt or process restart: the paid grant lives
+	# on the server, not just in the transient client request table. Reconcile
+	# by UID and unit ID; never replay the burst for a restored save/replay.
+	var grants: Dictionary = state.get("four_star_grants", {})
+	for slots in [GameState.board_slots, GameState.bench_slots]:
+		for cell in slots:
+			if not cell is Dictionary:
+				continue
+			var uid := str(cell.get("uid", ""))
+			var grant: Dictionary = grants.get(uid, {})
+			if grant.is_empty() or str(grant.get("unit_id", "")) != str(cell.get("id", "")):
+				continue
+			var changed := int(cell.get("star", 1)) < GameState.MAX_UNIT_STAR
+			if changed:
+				GameState.gold = int(state.get("gold", GameState.gold)) if bool(state.get("authoritative", false)) else maxi(0, GameState.gold - int(grant.get("cost", 0)))
+				cell["star"] = GameState.MAX_UNIT_STAR
+			if uid == four_star_request_uid and not four_star_request_id.is_empty():
+				_tx_consume(four_star_request_id)
+				four_star_request_id = ""
+				four_star_request_uid = ""
+				if changed:
+					_emit_recovered_four_star.call_deferred(uid)
 	SaveManager.save_run()
+
+func _emit_recovered_four_star(uid: String) -> void:
+	economy_receipt.emit({"ok": true, "action": "use_upgrade_stone", "result": {"uid": uid}})
 
 func _apply_carrot_receipt(receipt: Dictionary) -> void:
 	var action := str(receipt.get("action", ""))
@@ -4271,6 +4320,15 @@ func _apply_carrot_receipt(receipt: Dictionary) -> void:
 			if typeof(stones) == TYPE_DICTIONARY:
 				GameState.team_upgrade_stones = (stones as Dictionary).duplicate(true)
 		"use_upgrade_stone":
+			var upgraded_uid := str(result.get("uid", ""))
+			var already_applied := false
+			for slots in [GameState.board_slots, GameState.bench_slots]:
+				for cell in slots:
+					if cell is Dictionary and str(cell.get("uid", "")) == upgraded_uid:
+						already_applied = int(cell.get("star", 1)) >= GameState.MAX_UNIT_STAR
+			if not already_applied:
+				GameState.gold = int(receipt.get("gold_after", GameState.gold)) if economy_authoritative() \
+					else maxi(0, GameState.gold - int(result.get("cost", 0)))
 			# 按 uid 找那一枚棋子 —— 不按格子号：从发出意图到回执回来，玩家可能已经
 			# 把它拖到别的格子、或者棋盘被服务端快照覆盖过。
 			_apply_four_star_to_uid(str(result.get("uid", "")))

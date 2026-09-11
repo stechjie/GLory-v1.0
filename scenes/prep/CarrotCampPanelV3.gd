@@ -450,7 +450,7 @@ func _refresh_four_star_list() -> void:
 			info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			row_content.add_child(info)
 			info.add_child(_label("%s  ★★★" % str(unit_def.get("name", unit_def.get("id", "棋子"))), 14, TEXT))
-			var reason := "消耗 1 颗%s石" % _stone_display(stone_type)
+			var reason := "1 颗%s石 ＋ %d 金" % [_stone_display(stone_type), CarrotEconomy.four_star_gold(int(unit_def.get("tier", 0)))]
 			if not bool(check.get("ok", false)):
 				reason = _four_star_reason(str(check.get("error", "")), stone_type)
 			info.add_child(_label(reason, 12, MUTED))
@@ -459,7 +459,7 @@ func _refresh_four_star_list() -> void:
 			action.custom_minimum_size = Vector2(90,44)
 			action.add_theme_font_size_override("font_size", 14)
 			action.add_theme_stylebox_override("normal", _secondary_button_style())
-			action.disabled = _action_locked or not bool(check.get("ok", false))
+			action.disabled = _action_locked or not bool(check.get("ok", false)) or not NetworkService.four_star_upgrade_available() or not NetworkService.four_star_request_id.is_empty()
 			action.pressed.connect(_on_four_star.bind(where, index))
 			row_content.add_child(action)
 	if rows == 0:
@@ -672,6 +672,7 @@ func _stone_display(stone_type: String) -> String:
 func _four_star_reason(error: String, stone_type: String) -> String:
 	match error:
 		"no_stone": return "缺少%s石" % _stone_display(stone_type)
+		"not_enough_gold": return "金币不足"
 		"bad_element": return "该棋子暂无对应升级石"
 		"already_max": return "已经达到四星"
 		_: return "暂时无法升级"

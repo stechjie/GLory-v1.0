@@ -218,7 +218,12 @@ func four_star_check(cell: Variant) -> Dictionary:
 		return {"ok": false, "error": "bad_element", "stone": stone}
 	if int(team_upgrade_stones.get(stone, 0)) <= 0:
 		return {"ok": false, "error": "no_stone", "stone": stone}
-	return {"ok": true, "error": "", "stone": stone}
+	var cost := CarrotEconomyRules.four_star_gold(int((c.get("def", {}) as Dictionary).get("tier", 0)))
+	if cost < 0:
+		return {"ok": false, "error": "bad_tier", "stone": stone}
+	if gold < cost:
+		return {"ok": false, "error": "not_enough_gold", "stone": stone, "cost": cost}
+	return {"ok": true, "error": "", "stone": stone, "cost": cost}
 
 ## 消耗一颗同属性升级石，把这只三星升为四星。
 ## cell 是 board_slots / bench_slots 里的那个字典本身——就地改 star，
@@ -228,6 +233,7 @@ func upgrade_cell_to_four_star(cell: Variant) -> Dictionary:
 	if not bool(check.get("ok", false)):
 		return check
 	var stone := str(check.get("stone", ""))
+	gold -= int(check["cost"])
 	team_upgrade_stones[stone] = int(team_upgrade_stones.get(stone, 0)) - 1
 	(cell as Dictionary)["star"] = MAX_UNIT_STAR
 	return {"ok": true, "error": "", "stone": stone}

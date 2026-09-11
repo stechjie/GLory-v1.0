@@ -31,8 +31,8 @@ const MY_SLOT := 0
 # ⚠️ **这个值落后于协议号会让下面那条断言静默失效**：断言判的是
 # 「契约变了但协议号没变」，而它一旦落后，`VERSION != PINNED_PROTOCOL` 就恒为真，
 # 于是改契约不顶号也照样绿。协议号每次顶，这里必须跟。
-const PINNED_PROTOCOL := 22
-const PINNED_CONTRACT := "EJtXJv9dZMNC8Ipn"
+const PINNED_PROTOCOL := 23
+const PINNED_CONTRACT := "VCjg+twg3T63Ev0T"
 
 var _h: CheckHarness
 
@@ -271,6 +271,8 @@ func _case_ledger_shadow_roundtrip() -> void:
 			% [str((buy.get("result", {}) as Dictionary).get("uid", "")), my_uid]
 		+ "卖出时会 unknown_uid")
 
+	# Keep a second piece: selling the last unit is intentionally forbidden.
+	prep.roster["fixture-companion"] = {"unit_id": str(offers[0].get("id", "")), "star": 1, "kind": "unit", "cost_basis": 10}
 	var sell: Dictionary = NetworkService._room_apply_economy(room, MY_SLOT, "sell",
 		{"uid": my_uid})
 	_h.expect(bool(sell.get("ok", false)), "shadow_sell_rejected",
@@ -361,9 +363,10 @@ func _case_four_star_online() -> void:
 	var uid := GameState.mint_piece_uid()
 	GameState.board_slots[0] = {"id": unit_id, "uid": uid,
 		"star": GameState.MAX_MERGE_STAR, "def": target}
+	GameState.gold = 2000
 
 	var receipt: Dictionary = NetworkService._room_apply_economy(
-		room, MY_SLOT, "use_upgrade_stone", {"uid": uid, "unit_id": unit_id})
+		room, MY_SLOT, "use_upgrade_stone", {"uid": uid, "unit_id": unit_id, "gold": 2000})
 	receipt["action"] = "use_upgrade_stone"
 	if not _h.expect(bool(receipt.get("ok", false)), "four_star_rejected",
 			"仓库里有 %s 石、棋子是三星，服务端仍拒绝升四星：%s"
@@ -392,7 +395,7 @@ func _case_four_star_online() -> void:
 	# --- 5c. 同一枚棋子不能升第二次（幂等 + 不重复扣石）---
 	warehouse[element] = 1
 	var again: Dictionary = NetworkService._room_apply_economy(
-		room, MY_SLOT, "use_upgrade_stone", {"uid": uid, "unit_id": unit_id})
+		room, MY_SLOT, "use_upgrade_stone", {"uid": uid, "unit_id": unit_id, "gold": 2000})
 	_h.expect(not bool(again.get("ok", false)), "four_star_double_spend",
 		"同一个 uid 升了第二次四星")
 	_h.expect(str(again.get("error", "")) == "already_four_star", "four_star_repeat_wrong_reason",
@@ -406,7 +409,7 @@ func _case_four_star_online() -> void:
 	for stone in CarrotEconomy.STONE_TYPES:
 		empty_house[stone] = 0
 	var denied: Dictionary = NetworkService._room_apply_economy(
-		poor, MY_SLOT, "use_upgrade_stone", {"uid": "x-1", "unit_id": unit_id})
+		poor, MY_SLOT, "use_upgrade_stone", {"uid": "x-1", "unit_id": unit_id, "gold": 2000})
 	_h.expect(str(denied.get("error", "")) == "no_stone", "four_star_without_stone",
 		"仓库空着还能升四星（error=%s）" % str(denied.get("error", "?")))
 
@@ -416,7 +419,7 @@ func _case_four_star_online() -> void:
 	for stone in CarrotEconomy.STONE_TYPES:
 		wrong_house[stone] = 5 if stone != element else 0
 	var mismatched: Dictionary = NetworkService._room_apply_economy(
-		wrong, MY_SLOT, "use_upgrade_stone", {"uid": "y-1", "unit_id": unit_id})
+		wrong, MY_SLOT, "use_upgrade_stone", {"uid": "y-1", "unit_id": unit_id, "gold": 2000})
 	_h.expect(not bool(mismatched.get("ok", false)), "four_star_wrong_element",
 		"手里只有别的属性的石头，%s 属性的棋子却升成功了 —— 属性门槛失效" % element)
 
@@ -429,7 +432,7 @@ func _case_four_star_online() -> void:
 	if not mercs.is_empty():
 		var merc_res: Dictionary = NetworkService._room_apply_economy(
 			merc_room, MY_SLOT, "use_upgrade_stone",
-			{"uid": "z-1", "unit_id": str((mercs[0] as Dictionary).get("id", ""))})
+			{"uid": "z-1", "unit_id": str((mercs[0] as Dictionary).get("id", "")), "gold": 2000})
 		_h.expect(not bool(merc_res.get("ok", false)), "four_star_mercenary",
 			"佣兵被升成了四星 —— 佣兵只存在一个回合，升星是白送")
 
@@ -441,9 +444,9 @@ func _case_four_star_online() -> void:
 	shared[element] = 1
 	var teammate := _same_team_slot(MY_SLOT)
 	var first: Dictionary = NetworkService._room_apply_economy(
-		race, MY_SLOT, "use_upgrade_stone", {"uid": "race-a", "unit_id": unit_id})
+		race, MY_SLOT, "use_upgrade_stone", {"uid": "race-a", "unit_id": unit_id, "gold": 2000})
 	var second: Dictionary = NetworkService._room_apply_economy(
-		race, teammate, "use_upgrade_stone", {"uid": "race-b", "unit_id": unit_id})
+		race, teammate, "use_upgrade_stone", {"uid": "race-b", "unit_id": unit_id, "gold": 2000})
 	var wins := int(bool(first.get("ok", false))) + int(bool(second.get("ok", false)))
 	_h.expect(wins == 1, "stone_double_spend",
 		"库存只有 1 颗 %s 石，同队两名队员各发一次意图，成功了 %d 次（应恰好 1 次）"
@@ -489,7 +492,7 @@ func _case_forged_four_star_rejected() -> void:
 	var house: Dictionary = NetworkService._room_team_stones(room, MY_SLOT)
 	house[element] = 1
 	var ok_receipt: Dictionary = NetworkService._room_apply_economy(
-		room, MY_SLOT, "use_upgrade_stone", {"uid": uid, "unit_id": unit_id})
+		room, MY_SLOT, "use_upgrade_stone", {"uid": uid, "unit_id": unit_id, "gold": 2000})
 	if _h.expect(bool(ok_receipt.get("ok", false)), "four_star_legit_rejected",
 			"合法升级被拒：%s" % str(ok_receipt.get("error", "?"))):
 		var legit := {
@@ -506,7 +509,7 @@ func _case_forged_four_star_rejected() -> void:
 	room["state"] = NetworkService.ROOM_BATTLE
 	house[element] = 1
 	var in_battle: Dictionary = NetworkService._room_apply_economy(
-		room, MY_SLOT, "use_upgrade_stone", {"uid": "battle-1", "unit_id": unit_id})
+		room, MY_SLOT, "use_upgrade_stone", {"uid": "battle-1", "unit_id": unit_id, "gold": 2000})
 	_h.expect(not bool(in_battle.get("ok", false)), "four_star_in_battle",
 		"战斗阶段还能升四星")
 

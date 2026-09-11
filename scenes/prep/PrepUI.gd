@@ -1307,6 +1307,9 @@ func _on_carrot_economy_receipt(receipt: Dictionary) -> void:
 		_carrot_panel.refresh()
 	refresh_carrot_gathering()
 	_refresh_all()
+	if action == "use_upgrade_stone":
+		_overlay.hide_detail()
+		call_deferred("play_four_star_upgrade", str((receipt.get("result", {}) as Dictionary).get("uid", "")))
 
 func _refresh_carrot_counter() -> void:
 	if _carrot_counter_label == null or not is_instance_valid(_carrot_counter_label):
@@ -1333,6 +1336,8 @@ func _build_detail_popups() -> void:
 	detail_margin.add_theme_constant_override("margin_right", GloryTokens.GAP_M)
 	detail_margin.add_theme_constant_override("margin_bottom", GloryTokens.GAP_M)
 	_detail.add_child(detail_margin)
+	var detail_content := VBoxContainer.new()
+	detail_margin.add_child(detail_content)
 	_detail_text = RichTextLabel.new()
 	_detail_text.bbcode_enabled = true
 	_detail_text.fit_content = false
@@ -1341,7 +1346,15 @@ func _build_detail_popups() -> void:
 	_detail_text.add_theme_font_size_override("normal_font_size", GloryTokens.FONT_BODY)
 	_detail_text.add_theme_font_size_override("bold_font_size", GloryTokens.FONT_BODY)
 	_detail_text.add_theme_color_override("default_color", GloryTokens.TEXT_PRIMARY)
-	detail_margin.add_child(_detail_text)
+	detail_content.add_child(_detail_text)
+	_detail_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var upgrade_panel := preload("res://scenes/prep/FourStarUpgradePanel.gd").new()
+	detail_content.add_child(upgrade_panel)
+	upgrade_panel.hide()
+	_overlay.upgrade_panel = upgrade_panel
+	upgrade_panel.preview_requested.connect(func(enabled: bool, cell: Dictionary):
+		_detail_text.text = UnitDetailFormat.format_unit_def(cell.get("def", {}), \
+			4 if enabled else int(cell.get("star", 1)), cell))
 	# 节点造好了，交给详情浮层组件接管（它持有关闭时序等状态）。
 	_overlay.bind(_detail, _detail_text)
 

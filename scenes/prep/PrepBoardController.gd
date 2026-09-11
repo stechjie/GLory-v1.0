@@ -236,6 +236,22 @@ func request_upgrade_stone_draw() -> void:
 # 同一份条件不会分家。四星**不能**靠合成获得（合成封顶在 MAX_MERGE_STAR），
 # 所以这是唯一的入口。
 func request_four_star_upgrade(where: String, index: int) -> void:
+	var slots: Array = GameState.board_slots if where == "board" else GameState.bench_slots
+	if index >= 0 and index < slots.size() and slots[index] is Dictionary:
+		_close_carrot_camp()
+		_overlay.show_unit(slots[index], _commit_four_star_uid)
+
+func _commit_four_star_uid(uid: String) -> void:
+	if not NetworkService.four_star_request_id.is_empty():
+		return
+	for where in ["board", "bench"]:
+		var slots: Array = GameState.board_slots if where == "board" else GameState.bench_slots
+		for index in slots.size():
+			if slots[index] is Dictionary and str(slots[index].get("uid", "")) == uid:
+				_execute_four_star_upgrade(where, index)
+				return
+
+func _execute_four_star_upgrade(where: String, index: int) -> void:
 	if GameState.tutorial_mode:
 		return
 	var slots: Array = GameState.board_slots if where == "board" else GameState.bench_slots
@@ -246,8 +262,8 @@ func request_four_star_upgrade(where: String, index: int) -> void:
 	# （_apply_carrot_state 整块覆盖 team_upgrade_stones）—— 那正是「点了没东西、
 	# 而且一颗石头能反复用」的成因。只发意图，等回执落星级。
 	if NetworkService.team_active and not NetworkService.is_host:
-		if not NetworkService.carrot_economy_enabled():
-			show_message("联机萝卜系统尚未开启")
+		if not NetworkService.four_star_upgrade_available():
+			show_message("Server upgrade rules need updating" if LocaleManager.get_locale() == "en" else "服务器尚未更新四星费用规则")
 			return
 		# 本地这份判据**只**用于即时提示与按钮置灰，裁决权在服务端
 		# （EconomyLedger._use_upgrade_stone）。两份判据读的是同一批条件，
@@ -257,17 +273,24 @@ func request_four_star_upgrade(where: String, index: int) -> void:
 			show_message("无法升四星：%s" % str(check.get("error", "denied")))
 			return
 		var c: Dictionary = cell
-		NetworkService.request_economy("use_upgrade_stone", {
+		var rid := NetworkService.request_economy("use_upgrade_stone", {
 			"uid": str(c.get("uid", "")),
 			"unit_id": str(c.get("id", "")),
+			"gold": GameState.gold,
 		})
+		NetworkService.four_star_request_id = rid
+		NetworkService.four_star_request_uid = str(c.get("uid", "")) if not rid.is_empty() else ""
+		if rid.is_empty():
+			show_message("Connection unavailable" if LocaleManager.get_locale() == "en" else "连接不可用，请重连后重试")
 		return
 	var result := GameState.upgrade_cell_to_four_star(cell)
 	if not bool(result.get("ok", false)):
 		show_message("无法升四星：%s" % str(result.get("error", "denied")))
 		return
 	var d: Dictionary = (cell as Dictionary).get("def", {})
-	show_message("%s 升为四星" % str(d.get("name", d.get("id", "棋子"))))
+	show_message(("%s upgraded to four stars" if LocaleManager.get_locale() == "en" else "%s 升为四星") % DataRegistry.unit_display_name(d, LocaleManager.get_locale() == "en"))
+	_overlay.hide_detail()
+	play_four_star_upgrade.call_deferred(str((cell as Dictionary).get("uid", "")))
 	if where == "board":
 		_mark_online_board_changed()
 	SaveManager.save_run()
@@ -953,14 +976,14 @@ func _show_shop_detail(index: int) -> void:
 func _show_board_detail(index: int) -> void:
 	var cell = GameState.board_slots[index]
 	if cell != null:
-		_overlay.show_text(UnitDetailFormat.format_unit_def(cell.def, int(cell.star), cell))
+		_overlay.show_unit(cell, _commit_four_star_uid)
 
 func _show_bench_detail(index: int) -> void:
 	if index < 0 or index >= GameState.bench_slots.size():
 		return
 	var cell = GameState.bench_slots[index]
 	if cell != null:
-		_overlay.show_text(UnitDetailFormat.format_unit_def(cell.def, int(cell.star)))
+		_overlay.show_unit(cell, _commit_four_star_uid)
 func _show_linkage_detail(link_id: String) -> void:
 	var links: Array = DataRegistry.get_table("treasures").get("linkages", [])
 	var link: Dictionary = {}

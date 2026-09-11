@@ -286,7 +286,9 @@ func _case_four_star_upgrade() -> void:
 			GameState.apply_team_stone(s)
 			GameState.apply_team_stone(s)
 		var cell3 := {"id": str(d.get("id", "")), "star": GameState.MAX_MERGE_STAR, "def": d}
+		GameState.gold = 2000
 		var ok := GameState.upgrade_cell_to_four_star(cell3)
+		_h.expect(GameState.gold == 2000 - CarrotEconomy.four_star_gold(int(d.get("tier", 0))), "four_star_gold_cost", "四星费用必须按档位扣除")
 		if not _h.expect(bool(ok.get("ok", false)), "four_star_denied",
 				"%s：有%s石、是三星，却升不了（error=%s）" % [name, stone, str(ok.get("error", "?"))]):
 			continue

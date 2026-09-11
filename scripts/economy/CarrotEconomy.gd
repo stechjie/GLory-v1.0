@@ -22,6 +22,11 @@ const FARM_PRODUCTION := [0, 2, 4, 6, 8, 12]
 const STONE_COST := 50
 const STONE_DRAW_PER_ROUND := 1
 const STONE_TYPES := ["sky", "land", "ren"]
+const FOUR_STAR_COST_VERSION := 1
+const FOUR_STAR_GOLD := {1: 500, 2: 800, 3: 1100}
+
+static func four_star_gold(tier: int) -> int:
+	return int(FOUR_STAR_GOLD.get(tier, -1))
 
 static func production_for_tech(level: int) -> int:
 	return BASE_PRODUCTION + int(HARVEST_TECH_BONUSES[clampi(level, 0, MAX_HARVEST_TECH_LEVEL)])

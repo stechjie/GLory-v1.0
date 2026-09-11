@@ -224,8 +224,11 @@ func _case_merge_keeps_keeper_uid() -> void:
 	var packed := load("res://scenes/prep/PrepScreen.tscn") as PackedScene
 	if not _h.expect(packed != null, "scene_load_failed", "PrepScreen.tscn 无法加载"):
 		return
-	var was_active := NetworkService.team_active
-	var was_host := NetworkService.is_host
+	# These autoload properties are exposed as Variant values at parse time.
+	# Keep the test state explicitly typed so Godot 4 can compile this script
+	# without changing the runtime values that are restored below.
+	var was_active: bool = bool(NetworkService.team_active)
+	var was_host: bool = bool(NetworkService.is_host)
 	GameState.reset_run()
 	NetworkService.team_active = false
 	NetworkService.is_host = false

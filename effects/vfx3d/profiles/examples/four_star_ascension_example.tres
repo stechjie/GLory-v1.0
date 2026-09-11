@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="VFXProfile3D" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+duration = 1.2
+size = 1.0
+emission_energy = 0.35
+parameters = {
+"ready_opacity": 0.62,
+"prep_opacity": 0.86,
+"battle_opacity": 0.58,
+"radius": 0.46,
+"height": 0.92
+}

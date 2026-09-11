@@ -171,6 +171,7 @@ func _on_team_round_start() -> void:
 	_emit_battle_request_once()
 
 func _process(delta: float) -> void:
+	refresh_four_star_visuals(delta)
 	_overlay.update_release_state()
 	if GameState.tutorial_mode:
 		# A detail popup is a deliberate reading task. Pause the unrelated tutorial
@@ -184,15 +185,14 @@ func _process(delta: float) -> void:
 			_fps_label.text = "FPS %d" % int(Engine.get_frames_per_second())
 
 func _input(event: InputEvent) -> void:
+	# Keep the selected UID and its gold stable until the server settles this
+	# transaction. The detail panel shows the pending state; no early VFX/charge.
+	if not NetworkService.four_star_request_id.is_empty():
+		get_viewport().set_input_as_handled()
+		return
 	if _detail != null and _detail.visible:
-		if event is InputEventMouseButton:
-			var detail_mouse_event := event as InputEventMouseButton
-			if detail_mouse_event.pressed:
-				_overlay.hide_detail()
-		elif event is InputEventScreenTouch:
-			var detail_touch_event := event as InputEventScreenTouch
-			if detail_touch_event.pressed:
-				_overlay.hide_detail()
+		# PopupPanel owns outside-click/Escape dismissal. Its input positions
+		# are popup-local, so the main viewport must not reinterpret them.
 		return
 	if _team_mercs_open and _team_mercs_overlay != null and _team_mercs_overlay.visible:
 		var team_pointer := Vector2.ZERO

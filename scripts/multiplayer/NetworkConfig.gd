@@ -93,7 +93,9 @@ const USE_DTLS := true
 #      ⚠️ 方法表不一致时联机行为是**未定义的**。不要试图靠观察症状判断"是不是还能用"。
 #      代价同 v17：**线上战斗服务器必须同步重新打包部署**，否则两端连不上。
 #      这是有意的，不是回归。
-const NETWORK_PROTOCOL_VERSION := 22
+# v23: four-star ascension consumes 500/800/1100 gold plus a team stone.
+# Upgrade intents carry shadow-mode gold; receipts carry the trusted tier cost.
+const NETWORK_PROTOCOL_VERSION := 23
 
 # Local phone hosting is debug-only.
 const ALLOW_LOCAL_HOST_DEBUG := false
