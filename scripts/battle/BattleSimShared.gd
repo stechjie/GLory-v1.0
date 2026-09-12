@@ -545,11 +545,17 @@ static func _fighter_from_cell(cell: Dictionary, slot: int, team: String, mirror
 	# （hp/atk/def 等），浅拷会把改动泄漏回玩家棋盘数据。开战时才跑，代价可接受。
 	var d: Dictionary = cell.def.duplicate(true)
 	if not bool(cell.get("is_mercenary", false)):
-		var scaled := UnitFactory.apply_star_stats(d, int(cell.get("star", 1)))
 		var relation_multiplier := RaceRelationService.stat_multiplier_for_cell(cell)
-		d.hp = maxi(1, int(round(float(scaled.hp) * relation_multiplier)))
-		d.atk = maxi(1, int(round(float(scaled.atk) * relation_multiplier)))
-		d.def = maxi(0, int(round(float(scaled.def) * relation_multiplier)))
+		# **整份换过去**，不是只抄 hp/atk/def 三个字段。
+		# apply_star_stats 的返回值里除了缩放后的属性，还摊平了四星的 `star4` 技能
+		# 覆写（heal_pct / stun_sec / ally_def_pct / double_element_chance ...）。
+		# 战斗代码一律读 fighter.def，所以只抄三个字段就等于：四星的属性生效、
+		# 技能数值全部停留在三星，而且原始的 `star4` 子对象还挂在 def 上 ——
+		# 那正是 apply_star_stats 特意 erase 掉的第二份数值真相。
+		d = UnitFactory.apply_star_stats(d, int(cell.get("star", 1)))
+		d.hp = maxi(1, int(round(float(d.hp) * relation_multiplier)))
+		d.atk = maxi(1, int(round(float(d.atk) * relation_multiplier)))
+		d.def = maxi(0, int(round(float(d.def) * relation_multiplier)))
 	return _fighter_from_def(d, slot, team, slot, GameConstants.CELL_COUNT, int(cell.get("star", 1)), bool(cell.get("is_mercenary", false)), false, mirror_enemy_slot)
 
 

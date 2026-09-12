@@ -10,8 +10,10 @@ extends Node
 # 这条检查就是那张表的机器可读版本。它不断言「某只单位应该是多少」
 # （那是策划的事，改数值不该让检查变红），只断言「不管改成多少，都不许越过封顶」。
 #
-# 另外守两条机制：
+# 另外守三条机制：
 #   * star4 的值在 4 星时确实生效（apply_star_stats 是唯一解析点）
+#   * star4 的值**真的进到战斗里**（_fighter_from_cell 是棋盘格变战斗单位的唯一
+#     入口，单机与联机共用）—— 解析点对了不等于战斗读得到，见 §1b
 #   * star4 的值**不会**泄漏到 1~3 星，且 def 上不残留 star4 键
 #     —— 残留就意味着任何直接读 def 的地方（尤其是玩家看得到的技能文案）
 #     可能拿到第二份数值真相
@@ -61,6 +63,7 @@ var _h: CheckHarness
 func _ready() -> void:
 	_h = CheckHarness.new(CHECK_NAME)
 	_case_star4_block_applied()
+	_case_star4_reaches_the_fighter()
 	_case_star4_does_not_leak_to_three()
 	_case_caps_respected()
 	_case_cooldown_only_shortens()
@@ -102,6 +105,73 @@ func _case_star4_block_applied() -> void:
 			else:
 				_h.item()
 	_h.note("带 star4 覆写的单位：%d 只" % covered)
+
+
+# --- 1b. star4 必须真的到达战斗里的 fighter ---------------------------------------
+# 上一条只证明了 apply_star_stats() 本身是对的。但战斗代码读的不是它的返回值，
+# 而是 fighter["def"] —— 中间隔着 _fighter_from_cell()，那是「棋盘格 -> 战斗单位」
+# 的唯一入口，单机与联机共用（联机侧的快照经 NetProtocol 用数据表重建 def 之后
+# 也走这里）。
+#
+# 实测踩过：_fighter_from_cell 只把缩放后的 hp/atk/def 三个字段抄回**原始** def，
+# 于是四星属性生效、技能数值全部停留在三星，而 `star4` 子对象还原封不动挂在
+# fighter.def 上。当时上面那条、tools/four_star_upgrade_check、tools/carrot_online_check
+# 全是绿的 —— 因为没有任何一条走过这个入口。
+func _case_star4_reaches_the_fighter() -> void:
+	for row in _units():
+		var d: Dictionary = row
+		var block: Variant = d.get("star4", null)
+		if typeof(block) != TYPE_DICTIONARY:
+			continue
+		var id := str(d.get("id", "?"))
+		var fd := _battle_def(d, GameConstants.MAX_STAR)
+		if fd.has("star4"):
+			_h.fail("star4_key_reached_battle",
+				"%s 的战斗 def 上还挂着 star4 子对象 —— 战斗代码可能读到第二份数值" % id)
+		for key in (block as Dictionary):
+			var want: Variant = (block as Dictionary)[key]
+			var got: Variant = fd.get(key, null)
+			if str(got) != str(want):
+				_h.fail("star4_not_in_fighter",
+					"%s 的 %s：四星战斗里应为 %s，fighter.def 给出 %s —— 数值填了但打不出来"
+						% [id, key, str(want), str(got)])
+			else:
+				_h.item()
+		# 属性也要按四星系数到位：这条同时盯着「只抄了技能、忘了属性」的反向写法。
+		var scaled := UnitFactory.apply_star_stats(d, GameConstants.MAX_STAR)
+		for stat in ["hp", "atk", "def"]:
+			if int(fd.get(stat, 0)) != int(scaled.get(stat, 0)):
+				_h.fail("star4_stat_not_in_fighter",
+					"%s 的四星 %s：应为 %d，fighter.def 给出 %d"
+						% [id, stat, int(scaled.get(stat, 0)), int(fd.get(stat, 0))])
+			else:
+				_h.item()
+		# 反向：三星的 fighter 不许拿到四星数值（判据写成 star >= 3 时这里红）。
+		var fd3 := _battle_def(d, GameConstants.MAX_MERGE_STAR)
+		for key3 in (block as Dictionary):
+			var base: Variant = d.get(key3, null)
+			if base == null:
+				continue   # 4★ 才有的新字段，低星没有基准可比
+			if str(fd3.get(key3, null)) != str(base):
+				_h.fail("star4_leaked_to_fighter",
+					"%s 的三星战斗 %s 是 %s，应保持基准值 %s"
+						% [id, key3, str(fd3.get(key3, null)), str(base)])
+			else:
+				_h.item()
+
+
+# 把一张数据表行按指定星级送过战斗的建单位入口，取回战斗真正会读的那份 def。
+# race_relations 留空 -> 种族关系系数为 1.0，这条只想量星级这一个变量。
+func _battle_def(row: Dictionary, star: int) -> Dictionary:
+	var cell := {
+		"id": str(row.get("id", "")),
+		"uid": "check-%s-%d" % [str(row.get("id", "")), star],
+		"star": star,
+		"def": row.duplicate(true),
+		"is_mercenary": false,
+		"race_relations": {},
+	}
+	return BattleSimShared._fighter_from_cell(cell, 0, "player").get("def", {})
 
 
 # --- 2. 不许泄漏到 1~3 星 ---------------------------------------------------------

@@ -15,8 +15,13 @@ static func apply_star_stats(unit_def: Dictionary, star: int) -> Dictionary:
 	# 里面的键在这里**整块覆盖**到 def 上（见 docs/四星技能与数值设计规格.md §3）。
 	#
 	# 这是全项目唯一的解析点：apply_star_stats() 是产出「按星级缩放后的 def」的
-	# 唯一函数（调用方只有 BattleSimShared 与 BattleStatsPanel），战斗代码一律读
-	# d.get(...)，所以覆写完就自动生效，不需要在技能实现里到处判星级。
+	# 唯一函数，战斗代码一律读 d.get(...)，所以不需要在技能实现里到处判星级。
+	#
+	# ⚠️ 但「解析点唯一」不等于「自动生效」：调用方必须把**整份返回值**用下去。
+	# BattleSimShared._fighter_from_cell() 曾经只把 hp/atk/def 三个字段抄回原始 def，
+	# 结果四星属性生效、技能数值全部停在三星，而且 star4 子对象还留在 fighter.def 上。
+	# 守这一段的是 tools/four_star_values_check.tscn 的 §1b（它走 _fighter_from_cell，
+	# 不是直接调本函数 —— 只调本函数的用例当时全是绿的）。
 	#
 	# 无论几星都 erase：留着的话 1~3 星的 def 上会挂一份四星数值，任何一处
 	# 直接读 def 的地方（比如详情文案）都可能拿错那一份 —— 那就是第二份数值真相。
