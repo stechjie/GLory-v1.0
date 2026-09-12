@@ -302,7 +302,7 @@ func _update_grid_buttons_state() -> void:
 			sb.set_border_width_all(2)
 			btn.add_theme_color_override("font_color", Color(1, 1, 1, 0.95))
 			var def := OfficeTestSim.find_def(kind, str(p.get("unit_id", "")))
-			btn.tooltip_text = "%s · %s(%s)" % [_slot_display_name(slot), str(def.get("name", p.get("unit_id", ""))), _kind_display_name(kind)]
+			btn.tooltip_text = UnitDetailFormat.format_unit_def(def, int(p.get("star", 1))).replace("[b]", "").replace("[/b]", "")
 		for s in ["normal", "hover", "pressed", "focus"]:
 			btn.add_theme_stylebox_override(s, sb)
 
@@ -428,6 +428,7 @@ func _refresh_picker() -> void:
 		if _picker_kind == "piece":
 			display = "T%d %s" % [int(def.get("tier", 1)), display]
 		var item := _make_text_button(display, 14)
+		item.tooltip_text = UnitDetailFormat.format_unit_def(def, _picker_star).replace("[b]", "").replace("[/b]", "")
 		item.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		item.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		item.pressed.connect(_on_picker_unit.bind(str(def.get("id", ""))))
@@ -513,6 +514,9 @@ func _open_treasure_panel(slot: int) -> void:
 		check.text = str(def.get("name_en", def.get("name", tid))) if en else str(def.get("name", tid))
 		check.add_theme_font_size_override("font_size", 14)
 		check.add_theme_color_override("font_color", Color(0.94, 0.96, 0.90))
+		var formatter := preload("res://scenes/prep/panels/TreasureChoicePanel.gd").new()
+		check.tooltip_text = formatter.effect_text(tid)
+		formatter.free()
 		check.button_pressed = tid in owned
 		check.toggled.connect(_on_treasure_toggled.bind(tid))
 		_treasure_list_box.add_child(check)

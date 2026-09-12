@@ -525,6 +525,11 @@ func _clear_unit_visuals() -> void:
 	_vfx_seeded = false
 	_vfx_visual_event_index = 0
 
+func show_settlement_waiting() -> void:
+	_show_team_waiting()
+	if _result_overlay_lbl != null:
+		_result_overlay_lbl.text = "需等待其他人战斗结束"
+
 func _show_team_waiting() -> void:
 	if _result_overlay_lbl == null:
 		return

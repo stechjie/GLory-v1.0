@@ -331,6 +331,9 @@ func _on_bench_pressed(index: int) -> void:
 	_refresh_all()
 
 func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
+	if NetworkService.team_active and not NetworkService.is_host and not NetworkService.server_prep_confirmed(GameState.round_index):
+		show_message("需等待其他人战斗结束")
+		return
 	if NetworkService.shop_refresh_in_flight():
 		show_message("商店刷新中，请稍候")
 		return
@@ -380,6 +383,9 @@ func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
 	_refresh_all()
 
 func _buy_or_merge_shop_to_bench(shop_index: int, bench_index: int) -> void:
+	if NetworkService.team_active and not NetworkService.is_host and not NetworkService.server_prep_confirmed(GameState.round_index):
+		show_message("需等待其他人战斗结束")
+		return
 	if NetworkService.shop_refresh_in_flight():
 		show_message("商店刷新中，请稍候")
 		return
@@ -886,6 +892,9 @@ func _shadow_report_merge() -> void:
 
 
 func _on_refresh_shop() -> void:
+	if NetworkService.team_active and not NetworkService.is_host and not NetworkService.server_prep_confirmed(GameState.round_index):
+		show_message("需等待其他人战斗结束")
+		return
 	if not GameState.tutorial_mode and NetworkService.team_active and not NetworkService.is_host and not NetworkService.server_shop.is_empty():
 		NetworkService.request_shop_refresh()
 		return

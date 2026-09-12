@@ -181,7 +181,7 @@ static func attack_multiplier(fighter: Dictionary) -> float:
 
 static func attack_speed_multiplier(fighter: Dictionary) -> float:
 	ensure_status(fighter)
-	var mul := 1.0
+	var mul := pow(1.15, clampi(int(fighter.get("frenzy_stacks", 0)), 0, 64))
 	if fighter.statuses.has("slow"):
 		mul *= maxf(0.1, 1.0 - float(fighter.statuses.slow.get("attack_speed_pct", 0.0)))
 	if fighter.statuses.has("speed_bonus"):

@@ -1352,7 +1352,7 @@ func _on_carrot_economy_receipt(receipt: Dictionary) -> void:
 			_shop.selected = -1
 			_refresh_all()
 		else:
-			show_message("商店刷新失败：%s" % str(receipt.get("error", "denied")))
+			show_message(NetworkService.shop_refresh_error_text(str(receipt.get("error", "denied"))))
 		return
 	# 只处理这四个**玩家发起、等服务端裁决**的动作。
 	# buy / merge / sell / shop_refresh 也会发意图，但那是影子记账（L2）：

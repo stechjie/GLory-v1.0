@@ -607,6 +607,9 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 		if StatusEffectService.is_stunned(f):
 			continue
 		var target := _select_target(f, opponents)
+		if str(f.get("frenzy_target_uid", "")) != str(target.get("uid", "")):
+			f.frenzy_stacks = 0
+			f.frenzy_target_uid = str(target.get("uid", ""))
 		if target.is_empty():
 			continue
 		var delta: Vector2 = target.pos - f.pos

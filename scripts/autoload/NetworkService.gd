@@ -2004,6 +2004,15 @@ var team_replay_rival: Dictionary:      # 敌方队伍同回合的 replay（战�
 	set(value):
 		_replay_transfer.team_replay_rival = value
 
+# 只有对应回合的备战快照才可放行；上回合缓存的 prep 不是结束确认。
+func server_prep_confirmed(required_round: int) -> bool:
+	return server_phase == ROOM_PREP and server_round_index >= required_round
+
+func shop_refresh_error_text(reason: String) -> String:
+	if reason == "bad_phase":
+		return "需等待其他人战斗结束"
+	return "商店刷新失败：%s" % reason
+
 func team_begin_round() -> void:
 	team_boards = {}
 	_team_boards_collecting = {}

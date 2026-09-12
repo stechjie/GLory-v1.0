@@ -639,12 +639,17 @@ func _refresh_picker() -> void:
 
 func toggle_picker() -> void:
 	picker_open = not picker_open
+	if not picker_open:
+		selected = -1
+		card_selected.emit(-1)
 	# 打开商店要关掉佣兵与队伍佣兵弹窗 —— 同样由宿主协调，见 picker_toggled。
 	_refresh_picker()
 
 
 # 原 _close_shop_picker（PrepUI.gd）
 func close_picker() -> void:
+	selected = -1
+	card_selected.emit(-1)
 	if not picker_open:
 		return
 	picker_open = false
@@ -655,9 +660,9 @@ func close_picker() -> void:
 func _on_card_selected(index: int) -> void:
 	if index < 0 or index >= GameState.shop_offers.size() or bool(GameState.shop_sold[index]):
 		return
-	selected = index
+	selected = -1 if selected == index else index
 	# 棋盘与待命的选中态归它们自己管，商店只宣布「我选中了第几张」。
-	card_selected.emit(index)
+	card_selected.emit(selected)
 
 
 # 原 _on_shop_card_pressed（PrepUI.gd）

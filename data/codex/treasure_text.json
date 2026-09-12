@@ -68,8 +68,8 @@
   "ctrl_interrupt_chain": {
    "name": "打断锁链",
    "name_en": "Interrupt Chain",
-   "effect": "25% 概率打断目标，冷却 5 秒",
-   "effect_en": "25% chance to interrupt the target, 5s cooldown",
+   "effect": "25% 概率缴械目标，冷却 5 秒",
+   "effect_en": "25% chance to disarm the target, 5s cooldown",
    "trigger": "我方普通棋子攻击时",
    "trigger_en": "When an allied normal piece attacks"
   },
@@ -116,8 +116,8 @@
   "atk_wail_resonance": {
    "name": "哀鸣共鸣",
    "name_en": "Wail Resonance",
-   "effect": "击杀敌人时，对死亡目标周围 180 范围内敌人造成其最大生命 10% 真实伤害",
-   "effect_en": "On a kill, enemies within 180 of the corpse take 10% of their own max HP as true damage",
+   "effect": "击杀敌人时，对死亡目标周围 180 范围内敌人造成其最大生命 15% 真实伤害",
+   "effect_en": "On a kill, enemies within 180 of the corpse take 15% of their own max HP as true damage",
    "trigger": "我方普通棋子击杀敌人时",
    "trigger_en": "When an allied normal piece kills an enemy"
   },
@@ -286,10 +286,10 @@
   "link_hu_pai_master": {
    "name": "胡牌手",
    "name_en": "Winning Hand",
-   "requires_text": "生命丰碑 + 法阵回春 + 震荡余波 + 血契之刃 + 黄金祭坛",
-   "requires_text_en": "Life Monument + Formation Heal + Shockwave + Blood Pact + Golden Altar",
-   "effect": "五件全部拥有时激活：生命丰碑 +40%、法阵回春 +2、震荡余波眩晕 2 秒、血契之刃 ATK x1.50、黄金祭坛 +100 金（未实现）；冷却、概率、次数与负面代价不变",
-   "effect_en": "Active while all five are held: Life Monument +40%, Formation Heal +2, Shockwave stuns 2s, Blood Pact ATK ×1.50, Golden Altar +100 gold (not implemented). Cooldowns, chances, use counts and drawbacks are unchanged"
+   "requires_text": "生命丰碑 + 法阵回春 + 震荡余波 + 血契之刃 + 狂怒阵容",
+   "requires_text_en": "Life Monument + Formation Heal + Shockwave + Blood Pact + Fury Roster",
+   "effect": "五件全部拥有时激活：生命丰碑 +40%、法阵回春 +2、震荡余波眩晕 2 秒、血契之刃 ATK x1.50、狂怒阵容上限提高至9；冷却、概率、次数与负面代价不变",
+   "effect_en": "Active while all five are held: Life Monument +40%, Formation Heal +2, Shockwave stuns 2s, Blood Pact ATK ×1.50, Fury Roster raises the unit cap to 9. Cooldowns, chances, use counts and drawbacks are unchanged"
   }
  }
 }

@@ -1,4 +1,4 @@
-﻿extends "res://scenes/prep/PrepUI.gd"
+extends "res://scenes/prep/PrepUI.gd"
 
 # 已经播过采集反馈的回合号。客机的采集是服务端发的，到达时机与本场景 _ready()
 # 是竞态的，所以两条路径都可能触发播放 —— 用它保证一回合只播一次。
@@ -187,6 +187,9 @@ func _maybe_play_pending_carrot_harvest() -> void:
 	play_carrot_harvest_feedback(gain)
 
 func _on_golden_altar() -> void:
+	if NetworkService.team_active and not NetworkService.is_host and not NetworkService.server_prep_confirmed(GameState.round_index):
+		show_message("需等待其他人战斗结束")
+		return
 	if not GameState.owned_treasures.has("money_golden_altar"):
 		return
 	# 联机局：祭坛拿服务端权威的法阵 HP 换金币，本地扣 HP 会被下一份 match_state
@@ -221,6 +224,9 @@ func _on_altar_result(granted: bool, team_hp: int, uses: int) -> void:
 	_refresh_all()
 
 func _on_generous_fate_gamble() -> void:
+	if NetworkService.team_active and not NetworkService.is_host and not NetworkService.server_prep_confirmed(GameState.round_index):
+		show_message("需等待其他人战斗结束")
+		return
 	if not GameState.owned_treasures.has("money_generous_fate"):
 		return
 	if GameState.gamble_used:

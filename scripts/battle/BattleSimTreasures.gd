@@ -330,7 +330,7 @@ static func _apply_defender_treasure_reaction(defender: Dictionary, attacker: Di
 	var prev_source := DamageService.current_stat_source_uid()
 	DamageService.begin_stat_context(state, defender)
 	if _f_has_linkage(defender, "link_oppression_counter"):
-		_apply_frenzy_assault(defender, attacker)
+		_apply_frenzy_assault(attacker, defender)
 		StatusEffectService.add_status(attacker, "attack_down", 2.0, {"pct": 0.20})
 	if _f_has_linkage(defender, "link_iron_maiden") and _treasure_ready(defender, "link_iron_maiden", float(state.elapsed)):
 		StatusEffectService.add_bleed(attacker, 3.0, 0.06)
@@ -429,7 +429,8 @@ static func _apply_frenzy_assault(attacker: Dictionary, target: Dictionary) -> v
 		attacker.frenzy_target_uid = target_uid
 		attacker.frenzy_stacks = 0
 	attacker.frenzy_stacks = int(attacker.get("frenzy_stacks", 0)) + 1
-	attacker.attack_speed = clampf(float(attacker.attack_speed) * 1.15, 0.25, 2.5)
+	# 独立倍率由 StatusEffectService 计算，不永久污染基础攻速。
+	attacker.frenzy_stacks = mini(int(attacker.frenzy_stacks), 64)
 
 static func _apply_defender_reaction(attacker: Dictionary, target: Dictionary, dealt: int) -> void:
 	var d: Dictionary = target.get("def", {})

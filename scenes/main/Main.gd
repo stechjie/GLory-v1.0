@@ -2128,6 +2128,15 @@ func _finish_server_authoritative_team_battle(result: Dictionary) -> void:
 			_show_menu()
 		return
 	var state_payload := NetworkService.latest_match_state.duplicate(true)
+	# 本人看完/跳过仅确认回放结束；等全部在线玩家确认后才发放收益并进入备战。
+	NetworkService.send_result_ack(str(state_payload.get("battle_id", "")))
+	if not bool(state_payload.get("run_over", false)):
+		if is_instance_valid(_battle):
+			_battle.call("show_settlement_waiting")
+		while not NetworkService.server_prep_confirmed(completed_round + 1):
+			if not NetworkService.team_active or NetworkService.state == NetworkService.SessionState.RECONNECTING:
+				return
+			await get_tree().create_timer(0.1).timeout
 	_apply_team_match_state_payload(state_payload, result)
 	print("[NET] client applied match_state round=%d next=%d gold=%d hp=%d" % [completed_round, GameState.round_index, GameState.gold, GameState.team_hp])
 	if bool(state_payload.get("run_over", false)):
