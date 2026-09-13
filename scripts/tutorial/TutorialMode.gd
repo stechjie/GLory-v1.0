@@ -204,7 +204,11 @@ func sync() -> void:
 			_refresh_prep()
 	# 按「实际拥有 3 个」推进，不按采购次数：自动合成下重复买同名会融合，
 	# 买满 3 次也可能只剩 2 个棋子，那样 PLACE_3 的 3 个上阵条件永远达不到。
-	if step == Step.BUY_3 and _owned_normal_count() >= 3:
+	# 9.13 #4：买满 3 个之后不直接跳到第 2 步，先在**同一步（1/17）**里引导玩家
+	# 关闭商店 —— 商店盖着棋盘，不关掉就没法把待命区的棋子拖上棋盘
+	# （第 2 步的目标正是棋盘）。完成条件仍是「商店已关」，与 FILL_7 的
+	# CLOSE_SHOP 子阶段共用 record_shop_toggled() 的生产事件，不轮询、不猜。
+	if step == Step.BUY_3 and _owned_normal_count() >= 3 and not _fill_shop_open:
 		_advance_to(Step.PLACE_3)
 	if step == Step.PLACE_3 and GameState.normal_unit_count() >= 3:
 		_advance_to(Step.START_PVE_1)
@@ -273,7 +277,12 @@ func follow_arrow_hint() -> String:
 
 # 这一步的目标本来就在商店里时，不该让玩家去关商店。
 func _target_is_in_shop() -> bool:
-	if step in [Step.BUY_3, Step.UPGRADE_2, Step.UPGRADE_3, Step.UPGRADE_OTHERS]:
+	if step == Step.BUY_3:
+		# 9.13 #4：买满 3 个后这一步的目标变成「商店外面」（点外面关商店），
+		# 这里必须跟着变，否则 follow_arrow_hint() 会把该提示当成
+		# 「目标本来就在商店里」而吞掉。
+		return _owned_normal_count() < 3
+	if step in [Step.UPGRADE_2, Step.UPGRADE_3, Step.UPGRADE_OTHERS]:
 		return true
 	return step == Step.FILL_7 and _fill_phase == FillPhase.BUY
 
@@ -324,6 +333,10 @@ func after_battle(result: Dictionary) -> void:
 func current_text() -> String:
 	match step:
 		Step.BUY_3:
+			# 9.13 #4：第 3 个棋子买完、商店还开着时，这一步的后半段改成「关闭商店」。
+			# 步骤号仍是 1/17（step 未变），关掉商店后 sync() 才推进到第 2 步。
+			if _owned_normal_count() >= 3 and _fill_shop_open:
+				return _t("点击「商店」界面外的地方关闭「商店」。", "Tap outside the shop to close it.")
 			return _t("点击下方「商店」按钮打开商店，点击商店棋子，再点击采购按钮。买到的棋子会先进入待命区。已拥有：%d/3" % mini(_owned_normal_count(), 3), "Tap the Shop button at the bottom to open the shop, tap a unit, then tap Buy. Bought units go to standby first. Owned: %d/3" % mini(_owned_normal_count(), 3))
 		Step.PLACE_3:
 			return _t("从待命区把 3 个棋子拖到棋盘。棋盘上的棋子才会参战。", "Drag 3 units from standby onto the board. Only board units fight.")
@@ -468,6 +481,10 @@ func step_key() -> String:
 func step_display_name() -> String:
 	match step:
 		Step.BUY_3:
+			# 9.13 #4：关商店子阶段换个玩家可见的名字，免得标题还写着「购买棋子」
+			# 而正文在让他关商店。
+			if _owned_normal_count() >= 3 and _fill_shop_open:
+				return _t("关闭商店", "Close Shop")
 			return _t("购买棋子", "Buy Units")
 		Step.PLACE_3:
 			return _t("上阵布阵", "Place Units")
@@ -818,6 +835,9 @@ func record_shop_toggled(is_open: bool) -> void:
 		return
 	_fill_shop_open = is_open
 	if step == Step.FILL_7:
+		sync()
+	elif step == Step.BUY_3:
+		# 9.13 #4：第 1 步的「关闭商店」子阶段靠这条事件推进。
 		sync()
 
 

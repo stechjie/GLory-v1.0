@@ -1583,6 +1583,21 @@ func _room_start_authoritative(room: Dictionary) -> void:
 					if slot < slot_gold.size() and slot_gold[slot] != null:
 						prep["gold"] = int(slot_gold[slot])
 				EconomyLedger.harvest_for_round(prep, int(room.get("round_index", 1)))
+				# 9.13 #1：首回合也必须给服务端摇一份商店。
+				# _room_begin_next_prep 只覆盖第 2 回合起的房间推进，漏了开局这一份，
+				# 结果整局第一回合 server_shop 恒为空：客户端刷新商店走不了
+				# request_shop_refresh()，只能落回本地分支，上报一笔不带 gold 的影子账，
+				# 服务端 _room_apply_economy 判 typeof(payload.gold) != int → gold_desync，
+				# 玩家看到「商店刷新失败：gold_desync」。第 2 回合起 server_shop 有值就正常。
+				var shop: Dictionary = prep.get("shop", {})
+				shop["offers"] = _server_roll_shop_offers(GameState.SHOP_UNIT_SLOTS, int(room.get("round_index", 1)))
+				shop["offer_id"] = _make_offer_id()
+				var sold: Array = []
+				sold.resize(GameState.SHOP_UNIT_SLOTS)
+				sold.fill(false)
+				shop["sold"] = sold
+				prep["shop"] = shop
+				room["prep"][slot] = prep
 	for i in TEAM_SLOTS:
 		if str(states[i]) == "player":
 			ready[i] = false
@@ -4435,6 +4450,19 @@ func _apply_server_shop(state: Dictionary) -> void:
 func _apply_carrot_state(state: Dictionary) -> void:
 	server_four_star_cost_version = int(state.get("four_star_cost_version", 0))
 	if state.is_empty() or not bool(state.get("carrot_authoritative", false)):
+		return
+	# 9.13 #5：挡掉**过期的**萝卜状态。
+	#
+	# 战后那份 match_state 是在回合推进**之前**生成的，它带的萝卜字段是上一回合
+	# 的旧值（不是本回合该发的采集量）。而客户端在 Main._finish_server_authoritative_team_battle
+	# 里是「先等新回合 room_state 到达（server_prep_confirmed），再应用这份 match_state」——
+	# 于是这份旧值一定在新值**之后**才落地，把刚发放的采集萝卜又清回旧值。
+	# 表现就是玩家反馈的：战斗结束不直接拿到萝卜，要等别人在商店里买/刷新
+	# 触发一次新的 room_state 广播才「全场结算」。
+	#
+	# last_harvest_round 是每回合单调递增的锚点：比本地旧的状态一律丢弃。
+	# 同一回合内的正当同步（room_state / 重连恢复）round 相等，不受影响。
+	if int(state.get("last_harvest_round", GameState.last_harvest_round)) < GameState.last_harvest_round:
 		return
 	GameState.carrots = maxi(0, int(state.get("carrots", GameState.carrots)))
 	GameState.harvest_tech_level = clampi(int(state.get("harvest_tech_level", GameState.harvest_tech_level)), 0, CarrotEconomy.MAX_HARVEST_TECH_LEVEL)

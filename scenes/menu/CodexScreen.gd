@@ -400,7 +400,9 @@ func _build_portrait_column(entry: Dictionary, unlocked: bool) -> Control:
 	name_lbl.add_theme_font_size_override("font_size", _fs(22))
 	name_lbl.add_theme_color_override("font_color", INK if unlocked else LOCKED)
 	name_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	name_lbl.text = _entry_name(entry) if unlocked else tr("codex_locked_name")
+	# 详情页名称后面补「（唯一）」：unique_on_board 的棋子只能上场一只，
+	# 图鉴不写玩家只能靠试放才发现（9.13 测试反馈）。
+	name_lbl.text = (_entry_name(entry) + UnitDetailFormat.unique_suffix(entry.get("raw", {}))) if unlocked else tr("codex_locked_name")
 	col.add_child(name_lbl)
 
 	var en := Label.new()

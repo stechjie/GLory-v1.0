@@ -331,7 +331,9 @@ func _on_bench_pressed(index: int) -> void:
 	_refresh_all()
 
 func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
-	if NetworkService.team_active and not NetworkService.is_host and not NetworkService.server_prep_confirmed(GameState.round_index):
+	# 9.13 #3：教学是纯本地流程，不存在「等别人」这回事。上一场对局的残留会话
+	# （team_active 还在、阶段停在 battle/result）不应把教学卡成等待状态。
+	if not GameState.tutorial_mode and NetworkService.team_active and not NetworkService.is_host and not NetworkService.server_prep_confirmed(GameState.round_index):
 		show_message("需等待其他人战斗结束")
 		return
 	if NetworkService.shop_refresh_in_flight():
@@ -383,7 +385,9 @@ func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
 	_refresh_all()
 
 func _buy_or_merge_shop_to_bench(shop_index: int, bench_index: int) -> void:
-	if NetworkService.team_active and not NetworkService.is_host and not NetworkService.server_prep_confirmed(GameState.round_index):
+	# 9.13 #3：教学是纯本地流程，不存在「等别人」这回事。上一场对局的残留会话
+	# （team_active 还在、阶段停在 battle/result）不应把教学卡成等待状态。
+	if not GameState.tutorial_mode and NetworkService.team_active and not NetworkService.is_host and not NetworkService.server_prep_confirmed(GameState.round_index):
 		show_message("需等待其他人战斗结束")
 		return
 	if NetworkService.shop_refresh_in_flight():
@@ -892,7 +896,9 @@ func _shadow_report_merge() -> void:
 
 
 func _on_refresh_shop() -> void:
-	if NetworkService.team_active and not NetworkService.is_host and not NetworkService.server_prep_confirmed(GameState.round_index):
+	# 9.13 #3：教学是纯本地流程，不存在「等别人」这回事。上一场对局的残留会话
+	# （team_active 还在、阶段停在 battle/result）不应把教学卡成等待状态。
+	if not GameState.tutorial_mode and NetworkService.team_active and not NetworkService.is_host and not NetworkService.server_prep_confirmed(GameState.round_index):
 		show_message("需等待其他人战斗结束")
 		return
 	if not GameState.tutorial_mode and NetworkService.team_active and not NetworkService.is_host and not NetworkService.server_shop.is_empty():
@@ -903,11 +909,16 @@ func _on_refresh_shop() -> void:
 	if GameState.gold < cost:
 		show_message(tr("ui_not_enough_gold"))
 		return
+	# 9.13 #1：影子上报必须带上 gold，而且要在**扣费之前**报。
+	# 服务端账本自己会按 cost 扣一次（EconomyLedger._shop_refresh），报扣费后的余额
+	# 会少扣一笔；不带 gold 则会被 _room_apply_economy 判 gold_desync。
+	# 口径与 NetworkService.request_shop_refresh() 完全一致（那里发的也是扣费前的
+	# GameState.gold，扣费由回执处理）。
+	_shadow_report("shop_refresh", {"gold": GameState.gold})
 	GameState.gold -= cost
 	GameState.shop_refresh_uses_this_round += 1
-	# 先报账再摇：服务端摇好的新一轮商店随回执/下一份 room_state 回来，
+	# 服务端摇好的新一轮商店随回执/下一份 room_state 回来，
 	# _roll_shop() 里的 _adopt_server_shop() 负责采用它。
-	_shadow_report("shop_refresh", {})
 	_roll_shop()
 	_shop.selected = -1
 	SaveManager.save_run()

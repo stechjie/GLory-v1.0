@@ -168,7 +168,15 @@ func _run_once(index: int, trace: bool) -> Dictionary:
 # 按当前步用真实生产接口推进一步。
 func _drive_current_step(prep: PrepScript) -> void:
 	match TutorialMode.step:
-		TutorialScript.Step.BUY_3, TutorialScript.Step.UPGRADE_2, \
+		# 9.13 #4：第 1 步买到 3 个之后多了一个「关闭商店」子阶段（与 FILL_7 的
+		# CLOSE_SHOP 同源，由 record_shop_toggled 的生产事件推进）。买完仍停在第 1 步
+		# 就把商店关掉；下一次迭代还要接着买时会重新打开 —— 与玩家的真实操作序列一致。
+		TutorialScript.Step.BUY_3:
+			await _open_shop(prep)
+			await _buy_one(prep)
+			if TutorialMode.step == TutorialScript.Step.BUY_3:
+				await _close_shop(prep)
+		TutorialScript.Step.UPGRADE_2, \
 		TutorialScript.Step.UPGRADE_3, TutorialScript.Step.UPGRADE_OTHERS:
 			await _open_shop(prep)
 			await _buy_one(prep)

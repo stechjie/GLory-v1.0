@@ -2590,6 +2590,27 @@ func _on_shop_picker_toggled(is_open: bool) -> void:
 	for btn in _board_hud.bench_buttons:
 		if btn != null:
 			btn.mouse_filter = bench_filter
+	# 9.13 #6：语音按钮（宽 150、右对齐到 -292）的左半截正好压在商店弹窗
+	# （底部中央 896×230）的右下角里。商店面板本身是 Container（PASS）且背景层
+	# 一律 IGNORE，挡不住下层控件 —— 于是玩家在商店右端操作会穿透到语音按钮上，
+	# 弹出「这个版本没有语音功能」。和待命格同一套处理：商店开着就整块不吃输入。
+	_set_overlay_blocked(_voice_button, is_open)
+	_set_overlay_blocked(_chat_button, is_open)
+
+
+# 商店打开时禁用被它盖住的按钮；关闭时**下一帧**再恢复。
+#
+# 为什么要延迟：如果是「点商店外面关店」的那一下点击，PrepScreen._input 会在
+# 这里就把商店关掉；若当场恢复 STOP，同一次点击紧接着的 GUI 命中测试就又能打到
+# 语音按钮上 —— 正是要修的那个现象。set_deferred 让它错过这一次事件，同时不影响
+# 棋盘那侧「一点即选中」的穿透（棋盘不是被禁用的控件）。
+func _set_overlay_blocked(btn: Control, blocked: bool) -> void:
+	if btn == null or not is_instance_valid(btn):
+		return
+	if blocked:
+		btn.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	else:
+		btn.set_deferred("mouse_filter", Control.MOUSE_FILTER_STOP)
 
 
 

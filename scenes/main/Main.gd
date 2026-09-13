@@ -509,6 +509,17 @@ func _enter_tutorial_from_startup() -> void:
 	# Persist intent before mutating the run. This also converts legacy_unknown into
 	# an explicit state without guessing whether the old player had completed it.
 	PlayerProfile.begin_tutorial()
+	# 9.13 #3：重新体验教学是纯本地单人流，和联机会话毫无关系。
+	# 上一场对局如果没干净收尾（重连恢复还在进行、leave 回执没到、或恢复路径
+	# 把 team_active 又置回 true），残留的 NetworkService 状态会在教学备战里
+	# 到处触发联机等待门 —— 买棋子、点准备都弹「需等待其他人战斗结束」，
+	# 而且 room_state 里的服务端商店还会把教学的固定商品覆盖掉。
+	# 进教学前必须先把这一局会话拆掉：disconnect_session() 在「对局已开始 /
+	# 没有凭证」这两种残留情形下会同步 reset()，剩下的走幂等 leave 回执。
+	if NetworkService.team_active:
+		NetworkService.disconnect_session()
+		if NetworkService.team_active:
+			NetworkService.reset()
 	if not (TutorialMode.has_checkpoint() and TutorialMode.restore_checkpoint()):
 		TutorialMode.start()
 	_show_prep()

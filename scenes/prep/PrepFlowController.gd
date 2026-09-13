@@ -112,9 +112,11 @@ func _on_start_battle() -> void:
 		return
 	RaceRelationService.finalize_for_battle(GameState.board_slots, GameState.bench_slots)
 	SaveManager.save_run()
-	if NetworkService.team_active:
+	if NetworkService.team_active and not GameState.tutorial_mode:
 		# 3v3: the button is "准备" — toggle ready and stay in prep. The round
 		# launches for everyone (team_round_start) once all players are ready.
+		# 教学不算联机：残留会话不能让「准备」变成发给服务端的 ready 意图
+		# （那样教学里的战斗永远开不起来）。9.13 #3。
 		NetworkService.team_set_ready(true)
 		_refresh_all()
 		return
@@ -138,7 +140,7 @@ func _has_any_board_unit() -> bool:
 
 func _mark_online_board_changed() -> void:
 	RaceRelationService.reconcile_board(GameState.board_slots, GameState.bench_slots, false, true)
-	if NetworkService.team_active:
+	if NetworkService.team_active and not GameState.tutorial_mode:
 		# 3v3：改棋盘就取消准备，免得被锁在编辑到一半的状态。
 		# 判断依据必须是 local_ready_intent()，不能直接读 team_ready（C24）——
 		# 后者要等服务器广播回来才更新，"按下准备 → 回包到达前挪棋子"这段窗口里
@@ -187,7 +189,7 @@ func _maybe_play_pending_carrot_harvest() -> void:
 	play_carrot_harvest_feedback(gain)
 
 func _on_golden_altar() -> void:
-	if NetworkService.team_active and not NetworkService.is_host and not NetworkService.server_prep_confirmed(GameState.round_index):
+	if not GameState.tutorial_mode and NetworkService.team_active and not NetworkService.is_host and not NetworkService.server_prep_confirmed(GameState.round_index):
 		show_message("需等待其他人战斗结束")
 		return
 	if not GameState.owned_treasures.has("money_golden_altar"):
@@ -224,7 +226,7 @@ func _on_altar_result(granted: bool, team_hp: int, uses: int) -> void:
 	_refresh_all()
 
 func _on_generous_fate_gamble() -> void:
-	if NetworkService.team_active and not NetworkService.is_host and not NetworkService.server_prep_confirmed(GameState.round_index):
+	if not GameState.tutorial_mode and NetworkService.team_active and not NetworkService.is_host and not NetworkService.server_prep_confirmed(GameState.round_index):
 		show_message("需等待其他人战斗结束")
 		return
 	if not GameState.owned_treasures.has("money_generous_fate"):
