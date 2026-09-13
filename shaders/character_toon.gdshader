@@ -78,7 +78,11 @@ void vertex() {
 void fragment() {
 	vec4 base = texture(albedo_texture, UV) * albedo_color;
 	ALBEDO = base.rgb;
-	ALPHA = base.a;
+	// Character bodies are opaque. Reading/writing ALPHA moves the entire
+	// surface to the transparent queue, even for alpha == 1, losing opaque
+	// depth writes and allowing rear triangles and the outline to show through.
+	// Imported atlas alpha is not an opacity mask; cutout/transparent effects
+	// use separate shaders.
 
 	// Flat metallic/roughness: the custom light() ignores them, but keeping them
 	// pinned avoids reflection probes tinting the result unevenly.

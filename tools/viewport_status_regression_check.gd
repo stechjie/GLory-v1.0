@@ -12,6 +12,8 @@ func _ready() -> void:
 
 func _run() -> void:
 	var h = Harness.new("viewport_status_regression")
+	var original_tier: int = VFXManager.get_quality_tier()
+	VFXManager.set_quality_tier(VFXQualityBudget.Tier.HIGH)
 	var warm = Warmup.new()
 	add_child(warm)
 	warm._build_viewport()
@@ -24,6 +26,14 @@ func _run() -> void:
 	arena.add_child(wrap)
 	arena._setup_battle_3d_view(wrap)
 	var views: Array[SubViewport] = [warm._viewport, prep._prep_river_viewport, arena._battle_3d_viewport]
+	h.expect(views[0].msaa_3d == Viewport.MSAA_DISABLED, "warmup_aa_cost", "offscreen warmup must remain single-sample")
+	for view in [views[1], views[2]]:
+		h.expect(view.msaa_3d == Viewport.MSAA_2X, "high_aa_missing", "high quality prep/battle geometry must use 2x MSAA")
+		h.expect(is_equal_approx(view.scaling_3d_scale, 1.0), "aa_changed_resolution", "edge antialiasing must preserve render scale")
+	h.expect(is_equal_approx(prep.get_node("PrepRiverArenaLayer/PrepRiverRefreshTimer").wait_time, 1.0 / 30.0),
+		"aa_changed_refresh_rate", "preparation must retain its 30 Hz render budget")
+	_check_low_medium_aa(h)
+	VFXManager.set_quality_tier(original_tier)
 	for i in views.size():
 		h.expect(views[i].find_world_3d() != get_viewport().find_world_3d(), "parent_world", "viewport must not share the parent world")
 		for j in range(i):
@@ -69,3 +79,22 @@ func _run() -> void:
 		n.queue_free()
 	await get_tree().process_frame
 	h.finish(get_tree())
+
+func _check_low_medium_aa(h: RefCounted) -> void:
+	for tier in [VFXQualityBudget.Tier.LOW, VFXQualityBudget.Tier.MEDIUM]:
+		VFXManager.set_quality_tier(tier)
+		var prep = Prep.new()
+		add_child(prep)
+		prep._setup_prep_river_background()
+		var arena = Arena.new()
+		add_child(arena)
+		var wrap := Control.new()
+		arena.add_child(wrap)
+		arena._setup_battle_3d_view(wrap)
+		for view in [prep._prep_river_viewport, arena._battle_3d_viewport]:
+			h.expect(view.msaa_3d == Viewport.MSAA_DISABLED, "mobile_aa_cost_increased",
+				"low/medium must retain single-sample prep/battle rendering (tier=%d)" % tier)
+		for panel in [prep._shop, prep._synergy, prep._stats, prep._treasure, prep._board_hud]:
+			panel.free()
+		prep.queue_free()
+		arena.queue_free()

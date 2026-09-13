@@ -1,0 +1,173 @@
+{
+  "date": "2026-09-13",
+  "model": "dark_queen",
+  "engine": "Godot 4.7.stable",
+  "cause": "All 3054 triangles in each action had independent flat face normals. Other unit models have similar triangle counts with smooth normals.",
+  "repair": "Only replace FBX normal arrays using corner-angle weighted averaging at coincident positions, preserving creases over 60 degrees.",
+  "delivery": "Distinct *_smooth.fbx names are retained when current cloud assets are merged with Git; the tracked wrapper selects these filenames. Original FBX files and textures remain externally distributed.",
+  "reproduce": "python3 tools/repair_fbx_normals.py --source-dir PATH_TO_ORIGINAL_QUEEN_ASSETS --output-dir PATH_TO_FIXED_OUTPUT --report PATH_TO_REPORT.json",
+  "actions": [
+    {
+      "action": "idle",
+      "source_asset": "assets/models/units/dark_queen_animated/dark_queen_idle.fbx",
+      "source_sha256": "7e482b60857cdaf9e9381174a29a228166a16affbf09b0823fc4f7d634db00a5",
+      "shipped_asset": "assets/models/units/dark_queen_animated/dark_queen_idle_smooth.fbx",
+      "shipped_sha256": "4f88d0dd088b125c11b26aa6b7eb2e01cb4b23221faceaca4bfb414969b9b7e6",
+      "shipped_bytes": 6408534,
+      "import_uid": "uid://cmnok60jnslkd",
+      "import_parameters_unchanged": true,
+      "source_fbx_changed_property_nodes": [
+        "/Objects[8]/Geometry[85]/LayerElementNormal[3]/Normals[4]"
+      ],
+      "source_fbx_other_property_nodes_preserved": 11841,
+      "normal_repair": {
+        "vertices": 1519,
+        "triangles": 3054,
+        "normal_vectors": 9162,
+        "flat_faces_before": 3054,
+        "flat_faces_after": 47,
+        "normal_vectors_changed": 8450,
+        "corners_with_preserved_crease": 7744,
+        "smooth_fans": 181,
+        "maximum_normal_difference_in_smooth_fan": 0.0,
+        "crease_degrees": 60
+      },
+      "godot_import_validation": {
+        "action": "idle",
+        "fixed": {
+          "animation": "51c39a4e1e20813963c82b57e3112eb137305a59131c1d97521aa81e0eede795",
+          "animation_count": 1,
+          "flat_faces": 47,
+          "geometry": "3807911e77b88a11a74de940a9ebc6195013e3a918958247440d2b8ab4ab400d",
+          "imported_vertices": 6291,
+          "skeleton": "82727a19c1a459da6f9fa382bdf2269079af3b0c1c27e43421af9c5d668e1d33",
+          "skin": "8754f534643096a34f7cc6c9493e5ada161dc0d7367801df83ab79676daabc7c",
+          "triangles": 3054
+        },
+        "ok": true,
+        "original": {
+          "animation": "51c39a4e1e20813963c82b57e3112eb137305a59131c1d97521aa81e0eede795",
+          "animation_count": 1,
+          "flat_faces": 3054,
+          "geometry": "3807911e77b88a11a74de940a9ebc6195013e3a918958247440d2b8ab4ab400d",
+          "imported_vertices": 9162,
+          "skeleton": "82727a19c1a459da6f9fa382bdf2269079af3b0c1c27e43421af9c5d668e1d33",
+          "skin": "8754f534643096a34f7cc6c9493e5ada161dc0d7367801df83ab79676daabc7c",
+          "triangles": 3054
+        },
+        "same_animation_tracks_keys_values": true,
+        "same_skeleton_names_parents_rest": true,
+        "same_skin_bindings": true,
+        "same_triangle_positions_uv_bones_weights": true
+      }
+    },
+    {
+      "action": "attack",
+      "source_asset": "assets/models/units/dark_queen_animated/dark_queen_attack.fbx",
+      "source_sha256": "1e69eef33a3887bbe5ac2b5156c9d50f42d2dd4a3c7d7eb3a56f8cebd1c558e9",
+      "shipped_asset": "assets/models/units/dark_queen_animated/dark_queen_attack_smooth.fbx",
+      "shipped_sha256": "eb0c13a4e1152e385f0f3135ce3eb93d0e6ed60bab3197bd1292a3a7eb7e19e5",
+      "shipped_bytes": 3835926,
+      "import_uid": "uid://blojfo3omix1q",
+      "import_parameters_unchanged": true,
+      "source_fbx_changed_property_nodes": [
+        "/Objects[8]/Geometry[85]/LayerElementNormal[3]/Normals[4]"
+      ],
+      "source_fbx_other_property_nodes_preserved": 11841,
+      "normal_repair": {
+        "vertices": 1519,
+        "triangles": 3054,
+        "normal_vectors": 9162,
+        "flat_faces_before": 3054,
+        "flat_faces_after": 47,
+        "normal_vectors_changed": 8450,
+        "corners_with_preserved_crease": 7744,
+        "smooth_fans": 181,
+        "maximum_normal_difference_in_smooth_fan": 0.0,
+        "crease_degrees": 60
+      },
+      "godot_import_validation": {
+        "action": "attack",
+        "fixed": {
+          "animation": "2eacc8d1cd4ed7550ae33ed48056cee61ba2a4261a4d748622c132d529402e58",
+          "animation_count": 1,
+          "flat_faces": 47,
+          "geometry": "3807911e77b88a11a74de940a9ebc6195013e3a918958247440d2b8ab4ab400d",
+          "imported_vertices": 6291,
+          "skeleton": "82727a19c1a459da6f9fa382bdf2269079af3b0c1c27e43421af9c5d668e1d33",
+          "skin": "8754f534643096a34f7cc6c9493e5ada161dc0d7367801df83ab79676daabc7c",
+          "triangles": 3054
+        },
+        "ok": true,
+        "original": {
+          "animation": "2eacc8d1cd4ed7550ae33ed48056cee61ba2a4261a4d748622c132d529402e58",
+          "animation_count": 1,
+          "flat_faces": 3054,
+          "geometry": "3807911e77b88a11a74de940a9ebc6195013e3a918958247440d2b8ab4ab400d",
+          "imported_vertices": 9162,
+          "skeleton": "82727a19c1a459da6f9fa382bdf2269079af3b0c1c27e43421af9c5d668e1d33",
+          "skin": "8754f534643096a34f7cc6c9493e5ada161dc0d7367801df83ab79676daabc7c",
+          "triangles": 3054
+        },
+        "same_animation_tracks_keys_values": true,
+        "same_skeleton_names_parents_rest": true,
+        "same_skin_bindings": true,
+        "same_triangle_positions_uv_bones_weights": true
+      }
+    },
+    {
+      "action": "run",
+      "source_asset": "assets/models/units/dark_queen_animated/dark_queen_run.fbx",
+      "source_sha256": "f0289b0292a1a9369fce1dcfa7e05120b0d1392a712d1727744dcaba70c5f1c9",
+      "shipped_asset": "assets/models/units/dark_queen_animated/dark_queen_run_smooth.fbx",
+      "shipped_sha256": "7212bbcef33a0719000427a58a2851fd293af2c01b1ee30513f44e2f11306132",
+      "shipped_bytes": 1552070,
+      "import_uid": "uid://xygeqe0ywj4e",
+      "import_parameters_unchanged": true,
+      "source_fbx_changed_property_nodes": [
+        "/Objects[8]/Geometry[85]/LayerElementNormal[3]/Normals[4]"
+      ],
+      "source_fbx_other_property_nodes_preserved": 11841,
+      "normal_repair": {
+        "vertices": 1519,
+        "triangles": 3054,
+        "normal_vectors": 9162,
+        "flat_faces_before": 3054,
+        "flat_faces_after": 47,
+        "normal_vectors_changed": 8450,
+        "corners_with_preserved_crease": 7744,
+        "smooth_fans": 181,
+        "maximum_normal_difference_in_smooth_fan": 0.0,
+        "crease_degrees": 60
+      },
+      "godot_import_validation": {
+        "action": "run",
+        "fixed": {
+          "animation": "2babd239a54f497bf8474f5f51d8d249f447e9416f5f354513780704cd867447",
+          "animation_count": 1,
+          "flat_faces": 47,
+          "geometry": "3807911e77b88a11a74de940a9ebc6195013e3a918958247440d2b8ab4ab400d",
+          "imported_vertices": 6291,
+          "skeleton": "82727a19c1a459da6f9fa382bdf2269079af3b0c1c27e43421af9c5d668e1d33",
+          "skin": "8754f534643096a34f7cc6c9493e5ada161dc0d7367801df83ab79676daabc7c",
+          "triangles": 3054
+        },
+        "ok": true,
+        "original": {
+          "animation": "2babd239a54f497bf8474f5f51d8d249f447e9416f5f354513780704cd867447",
+          "animation_count": 1,
+          "flat_faces": 3054,
+          "geometry": "3807911e77b88a11a74de940a9ebc6195013e3a918958247440d2b8ab4ab400d",
+          "imported_vertices": 9162,
+          "skeleton": "82727a19c1a459da6f9fa382bdf2269079af3b0c1c27e43421af9c5d668e1d33",
+          "skin": "8754f534643096a34f7cc6c9493e5ada161dc0d7367801df83ab79676daabc7c",
+          "triangles": 3054
+        },
+        "same_animation_tracks_keys_values": true,
+        "same_skeleton_names_parents_rest": true,
+        "same_skin_bindings": true,
+        "same_triangle_positions_uv_bones_weights": true
+      }
+    }
+  ]
+}

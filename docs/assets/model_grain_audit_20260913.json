@@ -1,0 +1,5803 @@
+{
+  "date": "2026-09-13",
+  "engine": "4.7.stable.official.5b4e0cb0f",
+  "source_code": "8743267ed33ff00b5a67734b882ab81138c3e656",
+  "source_asset_inventory": "ed99230ce8d75f20e81bb7f68ad179aec61b2951e196e65d1aafce9b559ad610",
+  "summary": {
+    "source_models_scanned": 252,
+    "load_failures": 0,
+    "by_category": {
+      "allies": 18,
+      "battle_crystals": 2,
+      "bosses": 30,
+      "mercenaries": 39,
+      "monsters": 51,
+      "pets": 6,
+      "units": 106
+    },
+    "shared_toon_materials": 78,
+    "unique_albedo_textures": 76,
+    "zero_normals": 0
+  },
+  "source_models": [
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.008449, -0.010058, -0.000446), S: (0.017068, 0.018486, 0.014499)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material.001"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2812,
+          "vertices": 4065,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/allies/abyss_beast_animated/attack.fbx",
+      "skeletons": 1,
+      "triangles": 2812,
+      "vertices": 4065
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.008449, -0.010058, -0.000446), S: (0.017068, 0.018486, 0.014499)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material.001"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2812,
+          "vertices": 4065,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/allies/abyss_beast_animated/idle.fbx",
+      "skeletons": 1,
+      "triangles": 2812,
+      "vertices": 4065
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.002209, 0.000079, -0.002417), S: (0.004417, 0.003662, 0.004833)]",
+          "flat_faces": 385,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_1"
+            }
+          ],
+          "name": "Armature/Skeleton3D/char1",
+          "surfaces": 1,
+          "triangles": 2812,
+          "vertices": 4094,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/allies/abyss_beast_animated/run.fbx",
+      "skeletons": 1,
+      "triangles": 2812,
+      "vertices": 4094
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.008449, -0.010058, -0.000446), S: (0.017068, 0.018486, 0.014499)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material.001"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2812,
+          "vertices": 4065,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/allies/formation_ally_1_animated/attack.fbx",
+      "skeletons": 1,
+      "triangles": 2812,
+      "vertices": 4065
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.008449, -0.010058, -0.000446), S: (0.017068, 0.018486, 0.014499)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material.001"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2812,
+          "vertices": 4065,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/allies/formation_ally_1_animated/idle.fbx",
+      "skeletons": 1,
+      "triangles": 2812,
+      "vertices": 4065
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.008449, -0.010058, -0.000446), S: (0.017068, 0.018486, 0.014499)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material.001"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2812,
+          "vertices": 4065,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/allies/formation_ally_1_animated/run.fbx",
+      "skeletons": 1,
+      "triangles": 2812,
+      "vertices": 4065
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.008811, -0.009529, -0.007392), S: (0.017582, 0.019037, 0.014816)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material.001"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3127,
+          "vertices": 4119,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/allies/formation_ally_2_animated/attack.fbx",
+      "skeletons": 1,
+      "triangles": 3127,
+      "vertices": 4119
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.008811, -0.009529, -0.007392), S: (0.017582, 0.019037, 0.014816)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material.001"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3127,
+          "vertices": 4119,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/allies/formation_ally_2_animated/idle.fbx",
+      "skeletons": 1,
+      "triangles": 3127,
+      "vertices": 4119
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.002309, 0.000082, -0.0025), S: (0.004618, 0.003891, 0.005)]",
+          "flat_faces": 391,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_1"
+            }
+          ],
+          "name": "Armature/Skeleton3D/char1",
+          "surfaces": 1,
+          "triangles": 3127,
+          "vertices": 4163,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/allies/formation_ally_2_animated/run.fbx",
+      "skeletons": 1,
+      "triangles": 3127,
+      "vertices": 4163
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.007956, -0.007476, -0.009561), S: (0.015888, 0.014905, 0.019074)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material.001"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3106,
+          "vertices": 4090,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/allies/formation_ally_3_animated/attack.fbx",
+      "skeletons": 1,
+      "triangles": 3106,
+      "vertices": 4090
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.007956, -0.007476, -0.009561), S: (0.015888, 0.014905, 0.019074)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material.001"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3106,
+          "vertices": 4090,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/allies/formation_ally_3_animated/idle.fbx",
+      "skeletons": 1,
+      "triangles": 3106,
+      "vertices": 4090
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.007956, -0.007476, -0.009561), S: (0.015888, 0.014905, 0.019074)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material.001"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3106,
+          "vertices": 4090,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/allies/formation_ally_3_animated/run.fbx",
+      "skeletons": 1,
+      "triangles": 3106,
+      "vertices": 4090
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.003207, -0.009481, -0.006165), S: (0.006396, 0.018981, 0.012273)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": ""
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh_0",
+          "surfaces": 1,
+          "triangles": 80009,
+          "vertices": 57567,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/allies/formation_ally_4_animated/attack.fbx",
+      "skeletons": 1,
+      "triangles": 80009,
+      "vertices": 57567
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.003207, -0.009481, -0.006165), S: (0.006396, 0.018981, 0.012273)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": ""
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh_0",
+          "surfaces": 1,
+          "triangles": 80009,
+          "vertices": 57567,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/allies/formation_ally_4_animated/idle.fbx",
+      "skeletons": 1,
+      "triangles": 80009,
+      "vertices": 57567
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.000921, 0.00009, -0.00275), S: (0.001842, 0.003558, 0.0055)]",
+          "flat_faces": 609,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_1"
+            }
+          ],
+          "name": "Armature/Skeleton3D/char1",
+          "surfaces": 1,
+          "triangles": 3116,
+          "vertices": 5333,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/allies/formation_ally_4_animated/run.fbx",
+      "skeletons": 1,
+      "triangles": 3116,
+      "vertices": 5333
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.00951, -0.003764, -0.009372), S: (0.018992, 0.007548, 0.018721)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": ""
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh_0",
+          "surfaces": 1,
+          "triangles": 70031,
+          "vertices": 55951,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/allies/formation_ally_5_animated/attack.fbx",
+      "skeletons": 1,
+      "triangles": 70031,
+      "vertices": 55951
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.00951, -0.003764, -0.009372), S: (0.018992, 0.007548, 0.018721)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": ""
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh_0",
+          "surfaces": 1,
+          "triangles": 70031,
+          "vertices": 55951,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/allies/formation_ally_5_animated/idle.fbx",
+      "skeletons": 1,
+      "triangles": 70031,
+      "vertices": 55951
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.00951, -0.003764, -0.009372), S: (0.018992, 0.007548, 0.018721)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": ""
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh_0",
+          "surfaces": 1,
+          "triangles": 70031,
+          "vertices": 55951,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/allies/formation_ally_5_animated/run.fbx",
+      "skeletons": 1,
+      "triangles": 70031,
+      "vertices": 55951
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.004376, -0.004241, -0.009497), S: (0.008006, 0.008498, 0.018979)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material.001"
+            }
+          ],
+          "name": "Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2914,
+          "vertices": 2763,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/battle_crystals/blue/Meshy_AI_Blue_Crystal_Spire_0717152101_texture_fbx/Meshy_AI_Blue_Crystal_Spire_0717152101_texture.fbx",
+      "skeletons": 0,
+      "triangles": 2914,
+      "vertices": 2763
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.004129, -0.004527, -0.009505), S: (0.008237, 0.009073, 0.018991)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material.001"
+            }
+          ],
+          "name": "Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2437,
+          "vertices": 2514,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/battle_crystals/red/Meshy_AI_Crimson_Prism_0717152324_texture_fbx/Meshy_AI_Crimson_Prism_0717152324_texture.fbx",
+      "skeletons": 0,
+      "triangles": 2437,
+      "vertices": 2514
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.955201, -0.308148, -0.0), S: (1.910401, 0.931165, 1.833433)]",
+          "flat_faces": 62,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2893,
+          "vertices": 5070,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_apocalypse_animated/boss_apocalypse_attack.fbx",
+      "skeletons": 1,
+      "triangles": 2893,
+      "vertices": 5070
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.955201, -0.308148, -0.0), S: (1.910401, 0.931165, 1.833433)]",
+          "flat_faces": 62,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2893,
+          "vertices": 5070,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_apocalypse_animated/boss_apocalypse_idle.fbx",
+      "skeletons": 1,
+      "triangles": 2893,
+      "vertices": 5070
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.955201, -0.308148, -0.0), S: (1.910401, 0.931165, 1.833433)]",
+          "flat_faces": 62,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2893,
+          "vertices": 5070,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_apocalypse_animated/boss_apocalypse_walking.fbx",
+      "skeletons": 1,
+      "triangles": 2893,
+      "vertices": 5070
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.915222, -0.374522, 0.0), S: (1.869361, 1.031146, 1.883005)]",
+          "flat_faces": 62,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2987,
+          "vertices": 4822,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_blood_demon_animated/boss_blood_demon_attack.fbx",
+      "skeletons": 1,
+      "triangles": 2987,
+      "vertices": 4822
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.915222, -0.374522, 0.0), S: (1.869361, 1.031146, 1.883005)]",
+          "flat_faces": 62,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2987,
+          "vertices": 4822,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_blood_demon_animated/boss_blood_demon_idle.fbx",
+      "skeletons": 1,
+      "triangles": 2987,
+      "vertices": 4822
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.915222, -0.374522, 0.0), S: (1.869361, 1.031146, 1.883005)]",
+          "flat_faces": 62,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2987,
+          "vertices": 4822,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_blood_demon_animated/boss_blood_demon_walking.fbx",
+      "skeletons": 1,
+      "triangles": 2987,
+      "vertices": 4822
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.862419, -0.241056, 0.0), S: (1.724837, 0.610121, 1.908528)]",
+          "flat_faces": 110,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2897,
+          "vertices": 4994,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_holy_priest_animated/boss_holy_priest_attack.fbx",
+      "skeletons": 1,
+      "triangles": 2897,
+      "vertices": 4994
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.862419, -0.241056, 0.0), S: (1.724837, 0.610121, 1.908528)]",
+          "flat_faces": 110,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2897,
+          "vertices": 4994,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_holy_priest_animated/boss_holy_priest_idle.fbx",
+      "skeletons": 1,
+      "triangles": 2897,
+      "vertices": 4994
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.862419, -0.241056, 0.0), S: (1.724837, 0.610121, 1.908528)]",
+          "flat_faces": 110,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2897,
+          "vertices": 4994,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_holy_priest_animated/boss_holy_priest_walking.fbx",
+      "skeletons": 1,
+      "triangles": 2897,
+      "vertices": 4994
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.789769, -0.345429, -0.0), S: (1.579538, 0.876588, 1.899505)]",
+          "flat_faces": 70,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2888,
+          "vertices": 4838,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_meteor_caster_animated/boss_meteor_caster_attack.fbx",
+      "skeletons": 1,
+      "triangles": 2888,
+      "vertices": 4838
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.789769, -0.345429, -0.0), S: (1.579538, 0.876588, 1.899505)]",
+          "flat_faces": 70,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2888,
+          "vertices": 4838,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_meteor_caster_animated/boss_meteor_caster_idle.fbx",
+      "skeletons": 1,
+      "triangles": 2888,
+      "vertices": 4838
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.789769, -0.345429, -0.0), S: (1.579538, 0.876588, 1.899505)]",
+          "flat_faces": 70,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2888,
+          "vertices": 4838,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_meteor_caster_animated/boss_meteor_caster_walking.fbx",
+      "skeletons": 1,
+      "triangles": 2888,
+      "vertices": 4838
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.865907, -0.212949, -0.0), S: (1.731814, 0.741051, 1.908059)]",
+          "flat_faces": 41,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3008,
+          "vertices": 4687,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_mirror_lord_animated/boss_mirror_lord_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3008,
+      "vertices": 4687
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.865907, -0.212949, -0.0), S: (1.731814, 0.741051, 1.908059)]",
+          "flat_faces": 41,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3008,
+          "vertices": 4687,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_mirror_lord_animated/boss_mirror_lord_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3008,
+      "vertices": 4687
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.865907, -0.212949, -0.0), S: (1.731814, 0.741051, 1.908059)]",
+          "flat_faces": 41,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3008,
+          "vertices": 4687,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_mirror_lord_animated/boss_mirror_lord_walking.fbx",
+      "skeletons": 1,
+      "triangles": 3008,
+      "vertices": 4687
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.959685, -0.190447, -0.000001), S: (1.893283, 0.933786, 1.881025)]",
+          "flat_faces": 58,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3002,
+          "vertices": 4870,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_rage_beast_animated/boss_rage_beast_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3002,
+      "vertices": 4870
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.959685, -0.190447, -0.000001), S: (1.893283, 0.933786, 1.881025)]",
+          "flat_faces": 58,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3002,
+          "vertices": 4870,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_rage_beast_animated/boss_rage_beast_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3002,
+      "vertices": 4870
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.959685, -0.190447, -0.000001), S: (1.893283, 0.933786, 1.881025)]",
+          "flat_faces": 58,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3002,
+          "vertices": 4870,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_rage_beast_animated/boss_rage_beast_walking.fbx",
+      "skeletons": 1,
+      "triangles": 3002,
+      "vertices": 4870
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.934844, -0.188002, 0.0), S: (1.834648, 0.646975, 1.90739)]",
+          "flat_faces": 66,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2993,
+          "vertices": 4682,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_soul_devourer_animated/boss_soul_devourer_attack.fbx",
+      "skeletons": 1,
+      "triangles": 2993,
+      "vertices": 4682
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.934844, -0.188002, 0.0), S: (1.834648, 0.646975, 1.90739)]",
+          "flat_faces": 66,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2993,
+          "vertices": 4682,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_soul_devourer_animated/boss_soul_devourer_idle.fbx",
+      "skeletons": 1,
+      "triangles": 2993,
+      "vertices": 4682
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.934844, -0.188002, 0.0), S: (1.834648, 0.646975, 1.90739)]",
+          "flat_faces": 66,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2993,
+          "vertices": 4682,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_soul_devourer_animated/boss_soul_devourer_run.fbx",
+      "skeletons": 1,
+      "triangles": 2993,
+      "vertices": 4682
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.868933, -0.215586, -0.0), S: (1.737865, 0.67939, 1.909471)]",
+          "flat_faces": 34,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3036,
+          "vertices": 4762,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_thunder_core_animated/boss_thunder_core_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3036,
+      "vertices": 4762
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.868933, -0.215586, -0.0), S: (1.737865, 0.67939, 1.909471)]",
+          "flat_faces": 34,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3036,
+          "vertices": 4762,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_thunder_core_animated/boss_thunder_core_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3036,
+      "vertices": 4762
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.868933, -0.215586, -0.0), S: (1.737865, 0.67939, 1.909471)]",
+          "flat_faces": 34,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3036,
+          "vertices": 4762,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_thunder_core_animated/boss_thunder_core_walking.fbx",
+      "skeletons": 1,
+      "triangles": 3036,
+      "vertices": 4762
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.641042, -0.367999, -0.0), S: (1.47939, 0.859242, 1.909347)]",
+          "flat_faces": 33,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2765,
+          "vertices": 4496,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_twin_gate_animated/land/boss_twin_gate_land_attack.fbx",
+      "skeletons": 1,
+      "triangles": 2765,
+      "vertices": 4496
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.641042, -0.367999, -0.0), S: (1.47939, 0.859242, 1.909347)]",
+          "flat_faces": 33,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2765,
+          "vertices": 4496,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_twin_gate_animated/land/boss_twin_gate_land_idle.fbx",
+      "skeletons": 1,
+      "triangles": 2765,
+      "vertices": 4496
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.641042, -0.367999, -0.0), S: (1.47939, 0.859242, 1.909347)]",
+          "flat_faces": 33,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2765,
+          "vertices": 4496,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_twin_gate_animated/land/boss_twin_gate_land_run.fbx",
+      "skeletons": 1,
+      "triangles": 2765,
+      "vertices": 4496
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.670171, -0.352337, -0.0), S: (1.220754, 0.795013, 1.907955)]",
+          "flat_faces": 53,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3071,
+          "vertices": 5105,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_twin_gate_animated/sky/boss_twin_gate_sky_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3071,
+      "vertices": 5105
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.670171, -0.352337, -0.0), S: (1.220754, 0.795013, 1.907955)]",
+          "flat_faces": 53,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3071,
+          "vertices": 5105,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_twin_gate_animated/sky/boss_twin_gate_sky_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3071,
+      "vertices": 5105
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.670171, -0.352337, -0.0), S: (1.220754, 0.795013, 1.907955)]",
+          "flat_faces": 53,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3071,
+          "vertices": 5105,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/bosses/boss_twin_gate_animated/sky/boss_twin_gate_sky_run.fbx",
+      "skeletons": 1,
+      "triangles": 3071,
+      "vertices": 5105
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.960647, -0.573679, -0.0), S: (1.908149, 1.115188, 1.684235)]",
+          "flat_faces": 2,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3108,
+          "vertices": 3661,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_aquarius_time_animated/merc_aquarius_time_Idle.fbx",
+      "skeletons": 1,
+      "triangles": 3108,
+      "vertices": 3661
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.960647, -0.573679, -0.0), S: (1.908149, 1.115188, 1.684235)]",
+          "flat_faces": 2,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3108,
+          "vertices": 3661,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_aquarius_time_animated/merc_aquarius_time_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3108,
+      "vertices": 3661
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.960647, -0.573679, -0.0), S: (1.908149, 1.115188, 1.684235)]",
+          "flat_faces": 2,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3108,
+          "vertices": 3661,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_aquarius_time_animated/merc_aquarius_time_walking.fbx",
+      "skeletons": 1,
+      "triangles": 3108,
+      "vertices": 3661
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.951626, -0.234674, -0.0), S: (1.903253, 0.659647, 1.607722)]",
+          "flat_faces": 4,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3094,
+          "vertices": 4154,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_aries_blood_animated/merc_aries_blood_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3094,
+      "vertices": 4154
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.951626, -0.234674, -0.0), S: (1.903253, 0.659647, 1.607722)]",
+          "flat_faces": 4,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3094,
+          "vertices": 4154,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_aries_blood_animated/merc_aries_blood_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3094,
+      "vertices": 4154
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.951626, -0.234674, -0.0), S: (1.903253, 0.659647, 1.607722)]",
+          "flat_faces": 4,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3094,
+          "vertices": 4154,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_aries_blood_animated/merc_aries_blood_walking.fbx",
+      "skeletons": 1,
+      "triangles": 3094,
+      "vertices": 4154
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.952018, -0.160001, 0.0), S: (1.904036, 0.317117, 0.982211)]",
+          "flat_faces": 4,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001.002"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3142,
+          "vertices": 3883,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_cancer_shell_animated/merc_cancer_shell_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3142,
+      "vertices": 3883
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.952018, -0.160001, 0.0), S: (1.904036, 0.317117, 0.982211)]",
+          "flat_faces": 4,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001.002"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3142,
+          "vertices": 3883,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_cancer_shell_animated/merc_cancer_shell_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3142,
+      "vertices": 3883
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.952018, -0.160001, 0.0), S: (1.904036, 0.317117, 0.982211)]",
+          "flat_faces": 4,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001.002"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3142,
+          "vertices": 3883,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_cancer_shell_animated/merc_cancer_shell_run.fbx",
+      "skeletons": 1,
+      "triangles": 3142,
+      "vertices": 3883
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-1.0403, -0.221921, -0.000001), S: (1.905564, 0.701625, 1.733045)]",
+          "flat_faces": 9,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3084,
+          "vertices": 4073,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_capricorn_steel_animated/merc_capricorn_steel_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3084,
+      "vertices": 4073
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-1.0403, -0.221921, -0.000001), S: (1.905564, 0.701625, 1.733045)]",
+          "flat_faces": 9,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3084,
+          "vertices": 4073,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_capricorn_steel_animated/merc_capricorn_steel_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3084,
+      "vertices": 4073
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-1.0403, -0.221921, -0.000001), S: (1.905564, 0.701625, 1.733045)]",
+          "flat_faces": 9,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3084,
+          "vertices": 4073,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_capricorn_steel_animated/merc_capricorn_steel_walking.fbx",
+      "skeletons": 1,
+      "triangles": 3084,
+      "vertices": 4073
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.743356, -0.368204, -0.0), S: (1.486712, 0.789645, 1.908583)]",
+          "flat_faces": 12,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3113,
+          "vertices": 4281,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_gemini_assassin_animated/merc_gemini_assassin_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3113,
+      "vertices": 4281
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.743356, -0.368204, -0.0), S: (1.486712, 0.789645, 1.908583)]",
+          "flat_faces": 12,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3113,
+          "vertices": 4281,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_gemini_assassin_animated/merc_gemini_assassin_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3113,
+      "vertices": 4281
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.743356, -0.368204, -0.0), S: (1.486712, 0.789645, 1.908583)]",
+          "flat_faces": 12,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3113,
+          "vertices": 4281,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_gemini_assassin_animated/merc_gemini_assassin_walking.fbx",
+      "skeletons": 1,
+      "triangles": 3113,
+      "vertices": 4281
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.92568, -0.285172, -0.0), S: (1.85136, 0.725585, 1.912114)]",
+          "flat_faces": 16,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3098,
+          "vertices": 4803,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_leo_sun_animated/merc_leo_sun_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3098,
+      "vertices": 4803
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.92568, -0.285172, -0.0), S: (1.85136, 0.725585, 1.912114)]",
+          "flat_faces": 16,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3098,
+          "vertices": 4803,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_leo_sun_animated/merc_leo_sun_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3098,
+      "vertices": 4803
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.92568, -0.285172, -0.0), S: (1.85136, 0.725585, 1.912114)]",
+          "flat_faces": 16,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3098,
+          "vertices": 4803,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_leo_sun_animated/merc_leo_sun_walking.fbx",
+      "skeletons": 1,
+      "triangles": 3098,
+      "vertices": 4803
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.891165, -0.223281, -0.0), S: (1.782308, 0.85684, 1.908707)]",
+          "flat_faces": 20,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3071,
+          "vertices": 5101,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_libra_judge_animated/merc_libra_judge_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3071,
+      "vertices": 5101
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.891165, -0.223281, -0.0), S: (1.782308, 0.85684, 1.908707)]",
+          "flat_faces": 20,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3071,
+          "vertices": 5101,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_libra_judge_animated/merc_libra_judge_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3071,
+      "vertices": 5101
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.891165, -0.223281, -0.0), S: (1.782308, 0.85684, 1.908707)]",
+          "flat_faces": 20,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3071,
+          "vertices": 5101,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_libra_judge_animated/merc_libra_judge_walking.fbx",
+      "skeletons": 1,
+      "triangles": 3071,
+      "vertices": 5101
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.891141, -0.526469, 0.0), S: (1.791045, 0.982442, 1.907991)]",
+          "flat_faces": 9,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3107,
+          "vertices": 4397,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_pisces_bubble_animated/merc_pisces_bubble_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3107,
+      "vertices": 4397
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.891141, -0.526469, 0.0), S: (1.791045, 0.982442, 1.907991)]",
+          "flat_faces": 9,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3107,
+          "vertices": 4397,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_pisces_bubble_animated/merc_pisces_bubble_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3107,
+      "vertices": 4397
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.891141, -0.526469, 0.0), S: (1.791045, 0.982442, 1.907991)]",
+          "flat_faces": 9,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3107,
+          "vertices": 4397,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_pisces_bubble_animated/merc_pisces_bubble_run.fbx",
+      "skeletons": 1,
+      "triangles": 3107,
+      "vertices": 4397
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.825767, -0.758835, -0.0), S: (1.48071, 1.472462, 1.907408)]",
+          "flat_faces": 6,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3130,
+          "vertices": 4115,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_sagittarius_rain_animated/merc_sagittarius_rain_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3130,
+      "vertices": 4115
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.825767, -0.758835, -0.0), S: (1.48071, 1.472462, 1.907408)]",
+          "flat_faces": 6,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3130,
+          "vertices": 4115,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_sagittarius_rain_animated/merc_sagittarius_rain_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3130,
+      "vertices": 4115
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.825767, -0.758835, -0.0), S: (1.48071, 1.472462, 1.907408)]",
+          "flat_faces": 6,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3130,
+          "vertices": 4115,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_sagittarius_rain_animated/merc_sagittarius_rain_walking.fbx",
+      "skeletons": 1,
+      "triangles": 3130,
+      "vertices": 4115
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.954052, -0.292096, -0.000001), S: (1.908105, 0.974596, 1.840627)]",
+          "flat_faces": 9,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3115,
+          "vertices": 4245,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_scorpio_death_animated/merc_scorpio_death_Idle.fbx",
+      "skeletons": 1,
+      "triangles": 3115,
+      "vertices": 4245
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.954052, -0.292096, -0.000001), S: (1.908105, 0.974596, 1.840627)]",
+          "flat_faces": 9,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3115,
+          "vertices": 4245,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_scorpio_death_animated/merc_scorpio_death_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3115,
+      "vertices": 4245
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.954052, -0.292096, -0.000001), S: (1.908105, 0.974596, 1.840627)]",
+          "flat_faces": 9,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3115,
+          "vertices": 4245,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_scorpio_death_animated/merc_scorpio_death_walking.fbx",
+      "skeletons": 1,
+      "triangles": 3115,
+      "vertices": 4245
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.951914, -0.542691, -0.0), S: (1.903827, 1.042084, 1.851673)]",
+          "flat_faces": 13,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3079,
+          "vertices": 4436,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_taurus_charge_animated/merc_taurus_charge_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3079,
+      "vertices": 4436
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.951914, -0.542691, -0.0), S: (1.903827, 1.042084, 1.851673)]",
+          "flat_faces": 13,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3079,
+          "vertices": 4436,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_taurus_charge_animated/merc_taurus_charge_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3079,
+      "vertices": 4436
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.951914, -0.542691, -0.0), S: (1.903827, 1.042084, 1.851673)]",
+          "flat_faces": 13,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3079,
+          "vertices": 4436,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_taurus_charge_animated/merc_taurus_charge_walking.fbx",
+      "skeletons": 1,
+      "triangles": 3079,
+      "vertices": 4436
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.007455, -0.005414, -0.009541), S: (0.014938, 0.010882, 0.018879)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material.001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3129,
+          "vertices": 4379,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_virgo_heal_animated/merc_virgo_heal_Idle.fbx",
+      "skeletons": 1,
+      "triangles": 3129,
+      "vertices": 4379
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.007455, -0.005414, -0.009541), S: (0.014938, 0.010882, 0.018879)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material.001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3129,
+          "vertices": 4379,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_virgo_heal_animated/merc_virgo_heal_Walking.fbx",
+      "skeletons": 1,
+      "triangles": 3129,
+      "vertices": 4379
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.007455, -0.005414, -0.009541), S: (0.014938, 0.010882, 0.018879)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material.001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3129,
+          "vertices": 4379,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_virgo_heal_animated/merc_virgo_heal_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3129,
+      "vertices": 4379
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.745528, -0.954053, -0.546812), S: (1.493845, 1.887907, 1.088165)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": ""
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3129,
+          "vertices": 4379,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_virgo_heal_animated/merc_virgo_heal_attack.glb",
+      "skeletons": 1,
+      "triangles": 3129,
+      "vertices": 4379
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.745528, -0.954053, -0.546812), S: (1.493845, 1.887907, 1.088165)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": ""
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3129,
+          "vertices": 4379,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_virgo_heal_animated/merc_virgo_heal_idle.glb",
+      "skeletons": 1,
+      "triangles": 3129,
+      "vertices": 4379
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.745528, -0.954053, -0.546812), S: (1.493845, 1.887907, 1.088165)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": ""
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3129,
+          "vertices": 4379,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/mercenaries/merc_virgo_heal_animated/merc_virgo_heal_run.glb",
+      "skeletons": 1,
+      "triangles": 3129,
+      "vertices": 4379
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.899239, -1.109896, -0.0), S: (1.940506, 1.734371, 1.914667)]",
+          "flat_faces": 126,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2966,
+          "vertices": 5135,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/land/pve_land_ancient_tree_animated/pve_land_ancient_tree_attack.fbx",
+      "skeletons": 1,
+      "triangles": 2966,
+      "vertices": 5135
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.899239, -1.109896, -0.0), S: (1.940506, 1.734371, 1.914667)]",
+          "flat_faces": 126,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2966,
+          "vertices": 5135,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/land/pve_land_ancient_tree_animated/pve_land_ancient_tree_idle.fbx",
+      "skeletons": 1,
+      "triangles": 2966,
+      "vertices": 5135
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.899239, -1.109896, -0.0), S: (1.940506, 1.734371, 1.914667)]",
+          "flat_faces": 126,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2966,
+          "vertices": 5135,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/land/pve_land_ancient_tree_animated/pve_land_ancient_tree_run.fbx",
+      "skeletons": 1,
+      "triangles": 2966,
+      "vertices": 5135
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.809052, -0.623392, -0.000001), S: (1.905157, 1.294885, 1.559881)]",
+          "flat_faces": 9,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3109,
+          "vertices": 4454,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/land/pve_land_lava_golem_animated/pve_land_lava_golem_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3109,
+      "vertices": 4454
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.809052, -0.623392, -0.000001), S: (1.905157, 1.294885, 1.559881)]",
+          "flat_faces": 9,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3109,
+          "vertices": 4454,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/land/pve_land_lava_golem_animated/pve_land_lava_golem_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3109,
+      "vertices": 4454
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.809052, -0.623392, -0.000001), S: (1.905157, 1.294885, 1.559881)]",
+          "flat_faces": 9,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3109,
+          "vertices": 4454,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/land/pve_land_lava_golem_animated/pve_land_lava_golem_walking.fbx",
+      "skeletons": 1,
+      "triangles": 3109,
+      "vertices": 4454
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.982747, -0.824613, -0.015122), S: (1.9067, 1.434987, 1.820008)]",
+          "flat_faces": 9,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3105,
+          "vertices": 4416,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/land/pve_land_mountain_giant_animated/pve_land_mountain_giant_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3105,
+      "vertices": 4416
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.982747, -0.824613, -0.015122), S: (1.9067, 1.434987, 1.820008)]",
+          "flat_faces": 9,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3105,
+          "vertices": 4416,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/land/pve_land_mountain_giant_animated/pve_land_mountain_giant_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3105,
+      "vertices": 4416
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.982747, -0.824613, -0.015122), S: (1.9067, 1.434987, 1.820008)]",
+          "flat_faces": 9,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3105,
+          "vertices": 4416,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/land/pve_land_mountain_giant_animated/pve_land_mountain_giant_walking.fbx",
+      "skeletons": 1,
+      "triangles": 3105,
+      "vertices": 4416
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.817297, -0.725417, -0.0), S: (1.634594, 1.903619, 1.66054)]",
+          "flat_faces": 11,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3115,
+          "vertices": 5157,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/land/pve_land_rock_beast_animated/pve_land_rock_beast_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3115,
+      "vertices": 5157
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.817297, -0.725417, -0.0), S: (1.634594, 1.903619, 1.66054)]",
+          "flat_faces": 11,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3115,
+          "vertices": 5157,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/land/pve_land_rock_beast_animated/pve_land_rock_beast_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3115,
+      "vertices": 5157
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.817297, -0.725417, -0.0), S: (1.634594, 1.903619, 1.66054)]",
+          "flat_faces": 11,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3115,
+          "vertices": 5157,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/land/pve_land_rock_beast_animated/pve_land_rock_beast_walking.fbx",
+      "skeletons": 1,
+      "triangles": 3115,
+      "vertices": 5157
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-1.042255, -1.289798, -0.0), S: (1.889278, 1.868569, 1.850078)]",
+          "flat_faces": 19,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3005,
+          "vertices": 4777,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/land/pve_land_vein_worm_animated/pve_land_vein_worm_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3005,
+      "vertices": 4777
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-1.042255, -1.289798, -0.0), S: (1.889278, 1.868569, 1.850078)]",
+          "flat_faces": 19,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3005,
+          "vertices": 4777,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/land/pve_land_vein_worm_animated/pve_land_vein_worm_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3005,
+      "vertices": 4777
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-1.042255, -1.289798, -0.0), S: (1.889278, 1.868569, 1.850078)]",
+          "flat_faces": 19,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3005,
+          "vertices": 4777,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/land/pve_land_vein_worm_animated/pve_land_vein_worm_walking.fbx",
+      "skeletons": 1,
+      "triangles": 3005,
+      "vertices": 4777
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.941923, -0.741468, -0.002127), S: (1.88331, 1.213985, 1.788655)]",
+          "flat_faces": 73,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3003,
+          "vertices": 5513,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/land/pve_land_vine_guard_animated/pve_land_vine_guard_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3003,
+      "vertices": 5513
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.941923, -0.741468, -0.002127), S: (1.88331, 1.213985, 1.788655)]",
+          "flat_faces": 73,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3003,
+          "vertices": 5513,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/land/pve_land_vine_guard_animated/pve_land_vine_guard_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3003,
+      "vertices": 5513
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.941923, -0.741468, -0.002127), S: (1.88331, 1.213985, 1.788655)]",
+          "flat_faces": 73,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3003,
+          "vertices": 5513,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/land/pve_land_vine_guard_animated/pve_land_vine_guard_walking.fbx",
+      "skeletons": 1,
+      "triangles": 3003,
+      "vertices": 5513
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.813326, -0.542888, -0.000001), S: (1.626652, 1.192835, 1.891286)]",
+          "flat_faces": 53,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3031,
+          "vertices": 4704,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/ren/pve_ren_poison_doctor_animated/pve_ren_poison_doctor_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3031,
+      "vertices": 4704
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.813326, -0.542888, -0.000001), S: (1.626652, 1.192835, 1.891286)]",
+          "flat_faces": 53,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3031,
+          "vertices": 4704,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/ren/pve_ren_poison_doctor_animated/pve_ren_poison_doctor_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3031,
+      "vertices": 4704
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.813326, -0.542888, -0.000001), S: (1.626652, 1.192835, 1.891286)]",
+          "flat_faces": 53,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3031,
+          "vertices": 4704,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/ren/pve_ren_poison_doctor_animated/pve_ren_poison_doctor_walking.fbx",
+      "skeletons": 1,
+      "triangles": 3031,
+      "vertices": 4704
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-1.001498, -0.467181, -0.0), S: (2.034217, 1.081523, 1.596332)]",
+          "flat_faces": 71,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2971,
+          "vertices": 4637,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/ren/pve_ren_puppet_master_animated/pve_ren_puppet_master_attack.fbx",
+      "skeletons": 1,
+      "triangles": 2971,
+      "vertices": 4637
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-1.001498, -0.467181, -0.0), S: (2.034217, 1.081523, 1.596332)]",
+          "flat_faces": 71,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2971,
+          "vertices": 4637,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/ren/pve_ren_puppet_master_animated/pve_ren_puppet_master_idle.fbx",
+      "skeletons": 1,
+      "triangles": 2971,
+      "vertices": 4637
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-1.001498, -0.467181, -0.0), S: (2.034217, 1.081523, 1.596332)]",
+          "flat_faces": 71,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2971,
+          "vertices": 4637,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/ren/pve_ren_puppet_master_animated/pve_ren_puppet_master_walking.fbx",
+      "skeletons": 1,
+      "triangles": 2971,
+      "vertices": 4637
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.85498, -0.590236, -0.0), S: (1.753608, 1.116156, 1.900776)]",
+          "flat_faces": 78,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2946,
+          "vertices": 4884,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/ren/pve_ren_shadow_thief_animated/pve_ren_shadow_thief_attack.fbx",
+      "skeletons": 1,
+      "triangles": 2946,
+      "vertices": 4884
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.85498, -0.590236, -0.0), S: (1.753608, 1.116156, 1.900776)]",
+          "flat_faces": 78,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2946,
+          "vertices": 4884,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/ren/pve_ren_shadow_thief_animated/pve_ren_shadow_thief_idle.fbx",
+      "skeletons": 1,
+      "triangles": 2946,
+      "vertices": 4884
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.85498, -0.590236, -0.0), S: (1.753608, 1.116156, 1.900776)]",
+          "flat_faces": 78,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2946,
+          "vertices": 4884,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/ren/pve_ren_shadow_thief_animated/pve_ren_shadow_thief_walking.fbx",
+      "skeletons": 1,
+      "triangles": 2946,
+      "vertices": 4884
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.668592, -0.470843, -0.0), S: (1.337184, 0.997555, 1.908813)]",
+          "flat_faces": 62,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2947,
+          "vertices": 5045,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/ren/pve_ren_voodoo_witch_animated/pve_ren_voodoo_witch_attack.fbx",
+      "skeletons": 1,
+      "triangles": 2947,
+      "vertices": 5045
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.668592, -0.470843, -0.0), S: (1.337184, 0.997555, 1.908813)]",
+          "flat_faces": 62,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2947,
+          "vertices": 5045,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/ren/pve_ren_voodoo_witch_animated/pve_ren_voodoo_witch_idle.fbx",
+      "skeletons": 1,
+      "triangles": 2947,
+      "vertices": 5045
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.668592, -0.470843, -0.0), S: (1.337184, 0.997555, 1.908813)]",
+          "flat_faces": 62,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2947,
+          "vertices": 5045,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/ren/pve_ren_voodoo_witch_animated/pve_ren_voodoo_witch_walking.fbx",
+      "skeletons": 1,
+      "triangles": 2947,
+      "vertices": 5045
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-1.001498, -0.467181, -0.0), S: (2.034217, 1.081523, 1.596332)]",
+          "flat_faces": 71,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2971,
+          "vertices": 4637,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/ren/pve_ren_wandering_swordsman_animated/pve_ren_wandering_swordsman_attack.fbx",
+      "skeletons": 1,
+      "triangles": 2971,
+      "vertices": 4637
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-1.001498, -0.467181, -0.0), S: (2.034217, 1.081523, 1.596332)]",
+          "flat_faces": 71,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2971,
+          "vertices": 4637,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/ren/pve_ren_wandering_swordsman_animated/pve_ren_wandering_swordsman_idle.fbx",
+      "skeletons": 1,
+      "triangles": 2971,
+      "vertices": 4637
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-1.001498, -0.467181, -0.0), S: (2.034217, 1.081523, 1.596332)]",
+          "flat_faces": 71,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2971,
+          "vertices": 4637,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/ren/pve_ren_wandering_swordsman_animated/pve_ren_wandering_swordsman_walking.fbx",
+      "skeletons": 1,
+      "triangles": 2971,
+      "vertices": 4637
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.86907, -0.319981, -0.0), S: (1.808978, 1.023296, 1.555556)]",
+          "flat_faces": 48,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2472,
+          "vertices": 4083,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/sky/pve_sky_cloud_eagle_animated/pve_sky_cloud_eagle_attack.fbx",
+      "skeletons": 1,
+      "triangles": 2472,
+      "vertices": 4083
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.86907, -0.319981, -0.0), S: (1.808978, 1.023296, 1.555556)]",
+          "flat_faces": 48,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2472,
+          "vertices": 4083,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/sky/pve_sky_cloud_eagle_animated/pve_sky_cloud_eagle_idle.fbx",
+      "skeletons": 1,
+      "triangles": 2472,
+      "vertices": 4083
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.86907, -0.319981, -0.0), S: (1.808978, 1.023296, 1.555556)]",
+          "flat_faces": 48,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2472,
+          "vertices": 4083,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/sky/pve_sky_cloud_eagle_animated/pve_sky_cloud_eagle_walking.fbx",
+      "skeletons": 1,
+      "triangles": 2472,
+      "vertices": 4083
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.947162, -0.260561, -0.0), S: (1.894529, 0.678277, 1.633173)]",
+          "flat_faces": 21,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3109,
+          "vertices": 5087,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/sky/pve_sky_dome_guard_animated/pve_sky_dome_guard_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3109,
+      "vertices": 5087
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.947162, -0.260561, -0.0), S: (1.894529, 0.678277, 1.633173)]",
+          "flat_faces": 21,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3109,
+          "vertices": 5087,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/sky/pve_sky_dome_guard_animated/pve_sky_dome_guard_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3109,
+      "vertices": 5087
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.947162, -0.260561, -0.0), S: (1.894529, 0.678277, 1.633173)]",
+          "flat_faces": 21,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3109,
+          "vertices": 5087,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/sky/pve_sky_dome_guard_animated/pve_sky_dome_guard_walking.fbx",
+      "skeletons": 1,
+      "triangles": 3109,
+      "vertices": 5087
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.909907, -0.246155, -0.0), S: (1.819814, 0.9207, 1.908652)]",
+          "flat_faces": 117,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2870,
+          "vertices": 5117,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/sky/pve_sky_hymn_spirit_animated/pve_sky_hymn_spirit_attack.fbx",
+      "skeletons": 1,
+      "triangles": 2870,
+      "vertices": 5117
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.909907, -0.246155, -0.0), S: (1.819814, 0.9207, 1.908652)]",
+          "flat_faces": 117,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2870,
+          "vertices": 5117,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/sky/pve_sky_hymn_spirit_animated/pve_sky_hymn_spirit_idle.fbx",
+      "skeletons": 1,
+      "triangles": 2870,
+      "vertices": 5117
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.909907, -0.246155, -0.0), S: (1.819814, 0.9207, 1.908652)]",
+          "flat_faces": 117,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2870,
+          "vertices": 5117,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/sky/pve_sky_hymn_spirit_animated/pve_sky_hymn_spirit_walking.fbx",
+      "skeletons": 1,
+      "triangles": 2870,
+      "vertices": 5117
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.929843, -0.16516, -0.0), S: (1.883684, 0.806718, 1.905261)]",
+          "flat_faces": 99,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2594,
+          "vertices": 4145,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/sky/pve_sky_star_butterfly_animated/pve_sky_star_butterfly_attack.fbx",
+      "skeletons": 1,
+      "triangles": 2594,
+      "vertices": 4145
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.929843, -0.16516, -0.0), S: (1.883684, 0.806718, 1.905261)]",
+          "flat_faces": 99,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2594,
+          "vertices": 4145,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/sky/pve_sky_star_butterfly_animated/pve_sky_star_butterfly_idle.fbx",
+      "skeletons": 1,
+      "triangles": 2594,
+      "vertices": 4145
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.929843, -0.16516, -0.0), S: (1.883684, 0.806718, 1.905261)]",
+          "flat_faces": 99,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2594,
+          "vertices": 4145,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/sky/pve_sky_star_butterfly_animated/pve_sky_star_butterfly_walking.fbx",
+      "skeletons": 1,
+      "triangles": 2594,
+      "vertices": 4145
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.950939, -0.362896, -0.0), S: (1.901878, 1.013388, 1.859162)]",
+          "flat_faces": 12,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3114,
+          "vertices": 4613,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/sky/pve_sky_thunder_spirit_animated/pve_sky_thunder_spirit_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3114,
+      "vertices": 4613
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.950939, -0.362896, -0.0), S: (1.901878, 1.013388, 1.859162)]",
+          "flat_faces": 12,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3114,
+          "vertices": 4613,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/sky/pve_sky_thunder_spirit_animated/pve_sky_thunder_spirit_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3114,
+      "vertices": 4613
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.950939, -0.362896, -0.0), S: (1.901878, 1.013388, 1.859162)]",
+          "flat_faces": 12,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3114,
+          "vertices": 4613,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/sky/pve_sky_thunder_spirit_animated/pve_sky_thunder_spirit_walking.fbx",
+      "skeletons": 1,
+      "triangles": 3114,
+      "vertices": 4613
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.948806, -0.244969, -0.0), S: (1.893263, 0.6904, 1.705808)]",
+          "flat_faces": 37,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3045,
+          "vertices": 4936,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/sky/pve_sky_wind_falcon_animated/pve_sky_wind_falcon_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3045,
+      "vertices": 4936
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.948806, -0.244969, -0.0), S: (1.893263, 0.6904, 1.705808)]",
+          "flat_faces": 37,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3045,
+          "vertices": 4936,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/sky/pve_sky_wind_falcon_animated/pve_sky_wind_falcon_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3045,
+      "vertices": 4936
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.948806, -0.244969, -0.0), S: (1.893263, 0.6904, 1.705808)]",
+          "flat_faces": 37,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3045,
+          "vertices": 4936,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/monsters/sky/pve_sky_wind_falcon_animated/pve_sky_wind_falcon_walking.fbx",
+      "skeletons": 1,
+      "triangles": 3045,
+      "vertices": 4936
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.009506, -0.005489, -0.007942), S: (0.018978, 0.011129, 0.015845)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "material.001"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3110,
+          "vertices": 4513,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/pets/pet_cat/pet_cat_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3110,
+      "vertices": 4513
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.009506, -0.005489, -0.007942), S: (0.018978, 0.011129, 0.015845)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "material.001"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3110,
+          "vertices": 4513,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/pets/pet_cat/pet_cat_run.fbx",
+      "skeletons": 1,
+      "triangles": 3110,
+      "vertices": 4513
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.009419, -0.006382, -0.007473), S: (0.018876, 0.012827, 0.01496)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "material.001"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3103,
+          "vertices": 4524,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/pets/pet_mushroom/pet_mushroom_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3103,
+      "vertices": 4524
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.009419, -0.006382, -0.007473), S: (0.018876, 0.012827, 0.01496)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "material.001"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3103,
+          "vertices": 4524,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/pets/pet_mushroom/pet_mushroom_run.fbx",
+      "skeletons": 1,
+      "triangles": 3103,
+      "vertices": 4524
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.008254, -0.005465, -0.009487), S: (0.016525, 0.010976, 0.01897)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "material.001"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3067,
+          "vertices": 4369,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/pets/pet_rabbit/pet_rabbit_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3067,
+      "vertices": 4369
+    },
+    {
+      "meshes": [],
+      "path": "res://assets/models/pets/pet_rabbit/pet_rabbit_run.fbx",
+      "skeletons": 1,
+      "triangles": 0,
+      "vertices": 0
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.955547, -0.3496, -0.843703), S: (1.909133, 0.702936, 1.688777)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material.001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3104,
+          "vertices": 4756,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3104,
+      "vertices": 4756
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.955547, -0.843703, -0.353336), S: (1.909133, 1.688777, 0.702936)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": ""
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3104,
+          "vertices": 4755,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack.glb",
+      "skeletons": 1,
+      "triangles": 3104,
+      "vertices": 4755
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.955547, -0.3496, -0.843703), S: (1.909133, 0.702936, 1.688777)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material.001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3104,
+          "vertices": 4756,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3104,
+      "vertices": 4756
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.955547, -0.843703, -0.353336), S: (1.909133, 1.688777, 0.702936)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": ""
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3104,
+          "vertices": 4755,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle.glb",
+      "skeletons": 1,
+      "triangles": 3104,
+      "vertices": 4755
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-95.45642, -38.39928, -0.000027), S: (190.9129, 70.28625, 168.8775)]",
+          "flat_faces": 10,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3104,
+          "vertices": 4756,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/dark_doom_animated/dark_doom_run.fbx",
+      "skeletons": 1,
+      "triangles": 3104,
+      "vertices": 4756
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.954564, -0.0, -0.31887), S: (1.909128, 1.688775, 0.702862)]",
+          "flat_faces": 10,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": ""
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3104,
+          "vertices": 4756,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/dark_doom_animated/dark_doom_run.glb",
+      "skeletons": 1,
+      "triangles": 3104,
+      "vertices": 4756
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.796115, -0.199407, -0.0), S: (1.592231, 0.753121, 1.908913)]",
+          "flat_faces": 52,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3010,
+          "vertices": 4992,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/dark_dragon_animated/attack.fbx",
+      "skeletons": 1,
+      "triangles": 3010,
+      "vertices": 4992
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.796115, -0.199407, -0.0), S: (1.592231, 0.753121, 1.908913)]",
+          "flat_faces": 52,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3010,
+          "vertices": 4992,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/dark_dragon_animated/idle.fbx",
+      "skeletons": 1,
+      "triangles": 3010,
+      "vertices": 4992
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.796115, -0.199407, -0.0), S: (1.592231, 0.753121, 1.908913)]",
+          "flat_faces": 52,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3010,
+          "vertices": 4992,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/dark_dragon_animated/run.fbx",
+      "skeletons": 1,
+      "triangles": 3010,
+      "vertices": 4992
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.953851, -0.427484, 0.0), S: (1.907703, 0.825732, 1.635725)]",
+          "flat_faces": 68,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3015,
+          "vertices": 5181,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/dark_fear_animated/dark_fear_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3015,
+      "vertices": 5181
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.953851, -0.427484, 0.0), S: (1.907703, 0.825732, 1.635725)]",
+          "flat_faces": 68,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3015,
+          "vertices": 5181,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/dark_fear_animated/dark_fear_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3015,
+      "vertices": 5181
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.953851, -0.427484, 0.0), S: (1.907703, 0.825732, 1.635725)]",
+          "flat_faces": 68,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3015,
+          "vertices": 5181,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/dark_fear_animated/dark_fear_run.fbx",
+      "skeletons": 1,
+      "triangles": 3015,
+      "vertices": 5181
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.785056, -0.338096, 0.0), S: (1.570113, 0.765357, 1.910032)]",
+          "flat_faces": 4,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3122,
+          "vertices": 4644,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/dark_imp_motong/dark_imp_motong_attack_punching.fbx",
+      "skeletons": 1,
+      "triangles": 3122,
+      "vertices": 4644
+    },
+    {
+      "meshes": [],
+      "path": "res://assets/models/units/dark_imp_motong/dark_imp_motong_idle_zombie.fbx",
+      "skeletons": 1,
+      "triangles": 0,
+      "vertices": 0
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.79842, -0.503409, -0.0), S: (1.885337, 1.097784, 1.793759)]",
+          "flat_faces": 10,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3117,
+          "vertices": 4889,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/dark_mage_violet_necromancer/dark_mage_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3117,
+      "vertices": 4889
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.79842, -0.503409, -0.0), S: (1.885337, 1.097784, 1.793759)]",
+          "flat_faces": 10,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3117,
+          "vertices": 4889,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/dark_mage_violet_necromancer/dark_mage_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3117,
+      "vertices": 4889
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.79842, -0.503409, -0.0), S: (1.885337, 1.097784, 1.793759)]",
+          "flat_faces": 10,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3117,
+          "vertices": 4889,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/dark_mage_violet_necromancer/dark_mage_run.fbx",
+      "skeletons": 1,
+      "triangles": 3117,
+      "vertices": 4889
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.888495, -0.317602, -0.0), S: (1.820556, 0.727372, 1.765657)]",
+          "flat_faces": 3054,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001_002"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0_002",
+          "surfaces": 1,
+          "triangles": 3054,
+          "vertices": 9162,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/dark_queen_animated/dark_queen_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3054,
+      "vertices": 9162
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.888495, -0.317602, -0.0), S: (1.820556, 0.727372, 1.765657)]",
+          "flat_faces": 3054,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001_002"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0_002",
+          "surfaces": 1,
+          "triangles": 3054,
+          "vertices": 9162,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/dark_queen_animated/dark_queen_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3054,
+      "vertices": 9162
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.888495, -0.317602, -0.0), S: (1.820556, 0.727372, 1.765657)]",
+          "flat_faces": 3054,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001_002"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0_002",
+          "surfaces": 1,
+          "triangles": 3054,
+          "vertices": 9162,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/dark_queen_animated/dark_queen_run.fbx",
+      "skeletons": 1,
+      "triangles": 3054,
+      "vertices": 9162
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.843499, -0.258928, -0.000001), S: (1.730907, 0.717258, 1.909576)]",
+          "flat_faces": 28,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3089,
+          "vertices": 4942,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/dark_scythe_animated/dark_scythe_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3089,
+      "vertices": 4942
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.843499, -0.258928, -0.000001), S: (1.730907, 0.717258, 1.909576)]",
+          "flat_faces": 28,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3089,
+          "vertices": 4942,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/dark_scythe_animated/dark_scythe_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3089,
+      "vertices": 4942
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.843499, -0.258928, -0.000001), S: (1.730907, 0.717258, 1.909576)]",
+          "flat_faces": 28,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3089,
+          "vertices": 4942,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/dark_scythe_animated/dark_scythe_run.fbx",
+      "skeletons": 1,
+      "triangles": 3089,
+      "vertices": 4942
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.922277, -0.231583, -0.0), S: (1.849423, 0.799024, 1.906032)]",
+          "flat_faces": 39,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3033,
+          "vertices": 4783,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/dark_suc_animated/dark_suc_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3033,
+      "vertices": 4783
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.922277, -0.231583, -0.0), S: (1.849423, 0.799024, 1.906032)]",
+          "flat_faces": 39,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3033,
+          "vertices": 4783,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/dark_suc_animated/dark_suc_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3033,
+      "vertices": 4783
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.924711, -0.372645, 0.000001), S: (1.849422, 0.799044, 1.906032)]",
+          "flat_faces": 39,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3033,
+          "vertices": 4783,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/dark_suc_animated/dark_suc_run.fbx",
+      "skeletons": 1,
+      "triangles": 3033,
+      "vertices": 4783
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.907008, -0.451689, -0.0), S: (1.814016, 1.168465, 1.908715)]",
+          "flat_faces": 113,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2934,
+          "vertices": 4786,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/god_angel_animated/god_angel_attack.fbx",
+      "skeletons": 1,
+      "triangles": 2934,
+      "vertices": 4786
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.907008, -0.451689, -0.0), S: (1.814016, 1.168465, 1.908715)]",
+          "flat_faces": 113,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2934,
+          "vertices": 4786,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/god_angel_animated/god_angel_idle.fbx",
+      "skeletons": 1,
+      "triangles": 2934,
+      "vertices": 4786
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.907008, -0.451689, -0.0), S: (1.814016, 1.168465, 1.908715)]",
+          "flat_faces": 113,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2934,
+          "vertices": 4786,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/god_angel_animated/god_angel_run.fbx",
+      "skeletons": 1,
+      "triangles": 2934,
+      "vertices": 4786
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.719172, -0.314659, 0.0), S: (1.438344, 0.919449, 1.909204)]",
+          "flat_faces": 52,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_02",
+          "surfaces": 1,
+          "triangles": 2981,
+          "vertices": 4748,
+          "zero_normals": 0
+        },
+        {
+          "aabb": "[P: (-0.007023, -0.007782, 0.008521), S: (0.001429, 0.009543, 0.001841)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material.001"
+            }
+          ],
+          "name": "Armature/Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3028,
+          "vertices": 3482,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/god_arbiter_animated/god_arbiter_attack.fbx",
+      "skeletons": 1,
+      "triangles": 6009,
+      "vertices": 8230
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.719172, -0.314659, 0.0), S: (1.438344, 0.919449, 1.909204)]",
+          "flat_faces": 52,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2981,
+          "vertices": 4748,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/god_arbiter_animated/god_arbiter_attackt.fbx",
+      "skeletons": 1,
+      "triangles": 2981,
+      "vertices": 4748
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.719172, -0.314659, 0.0), S: (1.438344, 0.919449, 1.909204)]",
+          "flat_faces": 52,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2981,
+          "vertices": 4748,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/god_arbiter_animated/god_arbiter_idle.fbx",
+      "skeletons": 1,
+      "triangles": 2981,
+      "vertices": 4748
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.719172, -0.314659, 0.0), S: (1.438344, 0.919449, 1.909204)]",
+          "flat_faces": 52,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2981,
+          "vertices": 4748,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/god_arbiter_animated/god_arbiter_run.fbx",
+      "skeletons": 1,
+      "triangles": 2981,
+      "vertices": 4748
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.002271, -0.000847, -0.00956), S: (0.004521, 0.001712, 0.019097)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material.001"
+            }
+          ],
+          "name": "Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3028,
+          "vertices": 3482,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/god_arbiter_animated/god_arbiter_weapon.fbx",
+      "skeletons": 0,
+      "triangles": 3028,
+      "vertices": 3482
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.796574, -0.38654, -0.000001), S: (1.593147, 0.95541, 1.90554)]",
+          "flat_faces": 38,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3020,
+          "vertices": 4822,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/god_archangel_animated/god_archangel_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3020,
+      "vertices": 4822
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.796574, -0.38654, -0.000001), S: (1.593147, 0.95541, 1.90554)]",
+          "flat_faces": 38,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3020,
+          "vertices": 4822,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/god_archangel_animated/god_archangel_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3020,
+      "vertices": 4822
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.796574, -0.38654, -0.000001), S: (1.593147, 0.95541, 1.90554)]",
+          "flat_faces": 38,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3020,
+          "vertices": 4822,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/god_archangel_animated/god_archangel_run.fbx",
+      "skeletons": 1,
+      "triangles": 3020,
+      "vertices": 4822
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.710994, -0.23713, -0.0), S: (1.421987, 0.744954, 1.905086)]",
+          "flat_faces": 10,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3099,
+          "vertices": 4558,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/god_aurora_animated/god_aurora_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3099,
+      "vertices": 4558
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.710994, -0.23713, -0.0), S: (1.421987, 0.744954, 1.905086)]",
+          "flat_faces": 10,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3099,
+          "vertices": 4558,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/god_aurora_animated/god_aurora_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3099,
+      "vertices": 4558
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.710994, -0.23713, -0.0), S: (1.421987, 0.744954, 1.905086)]",
+          "flat_faces": 10,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3099,
+          "vertices": 4558,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/god_aurora_animated/god_aurora_run.fbx",
+      "skeletons": 1,
+      "triangles": 3099,
+      "vertices": 4558
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.950532, -0.401927, -0.0), S: (1.901065, 1.214563, 1.743549)]",
+          "flat_faces": 19,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3018,
+          "vertices": 4409,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/god_guard_crystalbound/god_guard_crystalbound_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3018,
+      "vertices": 4409
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.950532, -0.401927, -0.0), S: (1.901065, 1.214563, 1.743549)]",
+          "flat_faces": 19,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3018,
+          "vertices": 4409,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/god_guard_crystalbound/god_guard_crystalbound_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3018,
+      "vertices": 4409
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.950532, -0.401927, -0.0), S: (1.901065, 1.214563, 1.743549)]",
+          "flat_faces": 19,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3018,
+          "vertices": 4409,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/god_guard_crystalbound/god_guard_crystalbound_run.fbx",
+      "skeletons": 1,
+      "triangles": 3018,
+      "vertices": 4409
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.73732, -0.29153, -0.0), S: (1.474641, 0.742035, 1.906472)]",
+          "flat_faces": 18,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3090,
+          "vertices": 4389,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/god_king_animated/god_king_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3090,
+      "vertices": 4389
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.73732, -0.29153, -0.0), S: (1.474641, 0.742035, 1.906472)]",
+          "flat_faces": 18,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3090,
+          "vertices": 4389,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/god_king_animated/god_king_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3090,
+      "vertices": 4389
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.73732, -0.29153, -0.0), S: (1.474641, 0.742035, 1.906472)]",
+          "flat_faces": 18,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3090,
+          "vertices": 4389,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/god_king_animated/god_king_run.fbx",
+      "skeletons": 1,
+      "triangles": 3090,
+      "vertices": 4389
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.61866, -0.26694, -0.0), S: (1.237319, 0.945337, 1.90711)]",
+          "flat_faces": 74,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2965,
+          "vertices": 4978,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/god_priest_halo_animated/god_priest_attack.fbx",
+      "skeletons": 1,
+      "triangles": 2965,
+      "vertices": 4978
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.61866, -0.26694, -0.0), S: (1.237319, 0.945337, 1.90711)]",
+          "flat_faces": 74,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2965,
+          "vertices": 4978,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/god_priest_halo_animated/god_priest_idle.fbx",
+      "skeletons": 1,
+      "triangles": 2965,
+      "vertices": 4978
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.61866, -0.26694, -0.0), S: (1.237319, 0.945337, 1.90711)]",
+          "flat_faces": 74,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2965,
+          "vertices": 4978,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/god_priest_halo_animated/god_priest_run.fbx",
+      "skeletons": 1,
+      "triangles": 2965,
+      "vertices": 4978
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.735479, -0.300476, -0.000001), S: (1.470957, 1.002981, 1.908061)]",
+          "flat_faces": 24,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3046,
+          "vertices": 4319,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/god_priestess_animated/god_priestess_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3046,
+      "vertices": 4319
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.735479, -0.300476, -0.000001), S: (1.470957, 1.002981, 1.908061)]",
+          "flat_faces": 24,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3046,
+          "vertices": 4319,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/god_priestess_animated/god_priestess_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3046,
+      "vertices": 4319
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.735479, -0.300476, -0.000001), S: (1.470957, 1.002981, 1.908061)]",
+          "flat_faces": 24,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3046,
+          "vertices": 4319,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/god_priestess_animated/god_priestess_run.fbx",
+      "skeletons": 1,
+      "triangles": 3046,
+      "vertices": 4319
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.76556, -0.256675, -0.000001), S: (1.57987, 0.78706, 1.908085)]",
+          "flat_faces": 49,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3053,
+          "vertices": 5190,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/human_archer_animated/human_archer_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3053,
+      "vertices": 5190
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.76556, -0.256675, 0.0), S: (1.57987, 0.787163, 1.908084)]",
+          "flat_faces": 49,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3053,
+          "vertices": 5190,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/human_archer_animated/human_archer_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3053,
+      "vertices": 5190
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.76556, -0.256675, 0.0), S: (1.57987, 0.787163, 1.908084)]",
+          "flat_faces": 49,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3053,
+          "vertices": 5190,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/human_archer_animated/human_archer_run.fbx",
+      "skeletons": 1,
+      "triangles": 3053,
+      "vertices": 5190
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.662752, -0.507047, 0.0), S: (1.321997, 0.976292, 1.910162)]",
+          "flat_faces": 27,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3090,
+          "vertices": 4311,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/human_cleric_animated/human_cleric_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3090,
+      "vertices": 4311
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.686515, -0.506514, -0.0), S: (1.350557, 0.976292, 1.910162)]",
+          "flat_faces": 27,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3090,
+          "vertices": 4311,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/human_cleric_animated/human_cleric_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3090,
+      "vertices": 4311
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.686515, -0.506514, -0.0), S: (1.350557, 0.976292, 1.910162)]",
+          "flat_faces": 27,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3090,
+          "vertices": 4311,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/human_cleric_animated/human_cleric_run.fbx",
+      "skeletons": 1,
+      "triangles": 3090,
+      "vertices": 4311
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.836283, -0.598697, -0.000001), S: (1.672567, 1.176041, 1.91008)]",
+          "flat_faces": 5,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3111,
+          "vertices": 4204,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/human_death_servant_animated/human_death_servant_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3111,
+      "vertices": 4204
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.836283, -0.598697, -0.000001), S: (1.672567, 1.176041, 1.91008)]",
+          "flat_faces": 5,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3111,
+          "vertices": 4204,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/human_death_servant_animated/human_death_servant_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3111,
+      "vertices": 4204
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.836283, -0.598697, -0.000001), S: (1.672567, 1.176041, 1.91008)]",
+          "flat_faces": 5,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3111,
+          "vertices": 4204,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/human_death_servant_animated/human_death_servant_run.fbx",
+      "skeletons": 1,
+      "triangles": 3111,
+      "vertices": 4204
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.798654, -0.315308, -0.0), S: (1.597308, 0.85991, 1.90609)]",
+          "flat_faces": 44,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2982,
+          "vertices": 4287,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/human_king_animated/attack.fbx",
+      "skeletons": 1,
+      "triangles": 2982,
+      "vertices": 4287
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.798654, -0.315308, -0.0), S: (1.597308, 0.85991, 1.90609)]",
+          "flat_faces": 44,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2982,
+          "vertices": 4287,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/human_king_animated/idle.fbx",
+      "skeletons": 1,
+      "triangles": 2982,
+      "vertices": 4287
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.798654, -0.315308, 0.0), S: (1.597308, 0.85991, 1.90609)]",
+          "flat_faces": 44,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2982,
+          "vertices": 4287,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/human_king_animated/run.fbx",
+      "skeletons": 1,
+      "triangles": 2982,
+      "vertices": 4287
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.798654, -0.315308, 0.0), S: (1.597308, 0.85991, 1.90609)]",
+          "flat_faces": 44,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2982,
+          "vertices": 4287,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/human_king_animated/walk-relaxed-2loop-378986.fbx",
+      "skeletons": 1,
+      "triangles": 2982,
+      "vertices": 4287
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.739161, -0.686966, -0.0), S: (1.478322, 1.345311, 1.913977)]",
+          "flat_faces": 3,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2943,
+          "vertices": 3964,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/human_mage_animated/human_mage_attack.fbx",
+      "skeletons": 1,
+      "triangles": 2943,
+      "vertices": 3964
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.739161, -0.686966, -0.0), S: (1.478322, 1.345311, 1.913977)]",
+          "flat_faces": 3,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2943,
+          "vertices": 3964,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/human_mage_animated/human_mage_idle.fbx",
+      "skeletons": 1,
+      "triangles": 2943,
+      "vertices": 3964
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.739161, -0.686966, -0.0), S: (1.478322, 1.345311, 1.913977)]",
+          "flat_faces": 3,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 2943,
+          "vertices": 3964,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/human_mage_animated/human_mage_run.fbx",
+      "skeletons": 1,
+      "triangles": 2943,
+      "vertices": 3964
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.794427, -0.340069, 0.0), S: (1.588854, 0.781238, 1.909141)]",
+          "flat_faces": 9,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3075,
+          "vertices": 4086,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/human_merchant_green_cloak/human_merchant_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3075,
+      "vertices": 4086
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.794427, -0.340069, 0.0), S: (1.588854, 0.781238, 1.909141)]",
+          "flat_faces": 9,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3075,
+          "vertices": 4086,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/human_merchant_green_cloak/human_merchant_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3075,
+      "vertices": 4086
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.794427, -0.340069, 0.0), S: (1.588854, 0.781238, 1.909141)]",
+          "flat_faces": 9,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3075,
+          "vertices": 4086,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/human_merchant_green_cloak/human_merchant_run.fbx",
+      "skeletons": 1,
+      "triangles": 3075,
+      "vertices": 4086
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.773749, -0.318977, 0.0), S: (1.547498, 0.748132, 1.908877)]",
+          "flat_faces": 5,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3109,
+          "vertices": 4299,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/human_militia_little_knight/human_militia_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3109,
+      "vertices": 4299
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.773749, -0.318977, 0.0), S: (1.547498, 0.748132, 1.908877)]",
+          "flat_faces": 5,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3109,
+          "vertices": 4299,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/human_militia_little_knight/human_militia_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3109,
+      "vertices": 4299
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.773749, -0.318977, 0.0), S: (1.547498, 0.748132, 1.908877)]",
+          "flat_faces": 5,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3109,
+          "vertices": 4299,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/human_militia_little_knight/human_militia_run.fbx",
+      "skeletons": 1,
+      "triangles": 3109,
+      "vertices": 4299
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.749365, -0.386526, 0.0), S: (1.498731, 0.850975, 1.906671)]",
+          "flat_faces": 11,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3081,
+          "vertices": 4333,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/human_swordsman_animated/human_swordsman_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3081,
+      "vertices": 4333
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.749365, -0.386526, 0.0), S: (1.498731, 0.850975, 1.906671)]",
+          "flat_faces": 11,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3081,
+          "vertices": 4333,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/human_swordsman_animated/human_swordsman_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3081,
+      "vertices": 4333
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.749365, -0.386526, 0.0), S: (1.498731, 0.850975, 1.906671)]",
+          "flat_faces": 11,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3081,
+          "vertices": 4333,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/human_swordsman_animated/human_swordsman_run.fbx",
+      "skeletons": 1,
+      "triangles": 3081,
+      "vertices": 4333
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.947537, -0.445688, -0.0), S: (1.895075, 0.925407, 1.782366)]",
+          "flat_faces": 22,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3084,
+          "vertices": 4842,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/undead_bomb_animated/undead_bomb_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3084,
+      "vertices": 4842
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.947537, -0.445688, -0.0), S: (1.895075, 0.925407, 1.782366)]",
+          "flat_faces": 22,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3084,
+          "vertices": 4842,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/undead_bomb_animated/undead_bomb_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3084,
+      "vertices": 4842
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.947537, -0.445688, -0.0), S: (1.895075, 0.925407, 1.782366)]",
+          "flat_faces": 22,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3084,
+          "vertices": 4842,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/undead_bomb_animated/undead_bomb_run.fbx",
+      "skeletons": 1,
+      "triangles": 3084,
+      "vertices": 4842
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.953791, -0.432063, -0.0), S: (1.907581, 0.657602, 1.907214)]",
+          "flat_faces": 14,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3099,
+          "vertices": 5108,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/undead_fly_animated/undead_fly_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3099,
+      "vertices": 5108
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.953791, -0.432063, -0.0), S: (1.907581, 0.657602, 1.907214)]",
+          "flat_faces": 14,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3099,
+          "vertices": 5108,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/undead_fly_animated/undead_fly_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3099,
+      "vertices": 5108
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.953791, -0.432063, -0.0), S: (1.907581, 0.657602, 1.907214)]",
+          "flat_faces": 14,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3099,
+          "vertices": 5108,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/undead_fly_animated/undead_fly_run.fbx",
+      "skeletons": 1,
+      "triangles": 3099,
+      "vertices": 5108
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.922553, -0.471869, -0.0), S: (1.845106, 1.131411, 1.897656)]",
+          "flat_faces": 35,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3090,
+          "vertices": 5233,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/undead_mother_animated/undead_mother_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3090,
+      "vertices": 5233
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.922553, -0.471869, -0.0), S: (1.845106, 1.131411, 1.897656)]",
+          "flat_faces": 35,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3090,
+          "vertices": 5233,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/undead_mother_animated/undead_mother_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3090,
+      "vertices": 5233
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.922553, -0.471869, -0.0), S: (1.845106, 1.131411, 1.897656)]",
+          "flat_faces": 35,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3090,
+          "vertices": 5233,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/undead_mother_animated/undead_mother_run.fbx",
+      "skeletons": 1,
+      "triangles": 3090,
+      "vertices": 5233
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.948136, -0.417667, 0.0), S: (1.896275, 1.121244, 1.858203)]",
+          "flat_faces": 13,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3121,
+          "vertices": 4932,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/undead_parasite_animated/undead_parasite_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3121,
+      "vertices": 4932
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.948136, -0.417667, 0.0), S: (1.896275, 1.121244, 1.858203)]",
+          "flat_faces": 13,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3121,
+          "vertices": 4932,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/undead_parasite_animated/undead_parasite_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3121,
+      "vertices": 4932
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.948136, -0.417667, 0.0), S: (1.896275, 1.121244, 1.858203)]",
+          "flat_faces": 13,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3121,
+          "vertices": 4932,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/undead_parasite_animated/undead_parasite_run.fbx",
+      "skeletons": 1,
+      "triangles": 3121,
+      "vertices": 4932
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.892595, -0.568238, 0.0), S: (1.78519, 1.077854, 1.909338)]",
+          "flat_faces": 14,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3110,
+          "vertices": 5177,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/undead_poison_animated/undead_poison_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3110,
+      "vertices": 5177
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.892595, -0.568238, 0.0), S: (1.78519, 1.077854, 1.909338)]",
+          "flat_faces": 14,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3110,
+          "vertices": 5177,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/undead_poison_animated/undead_poison_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3110,
+      "vertices": 5177
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.892595, -0.568238, 0.0), S: (1.78519, 1.077854, 1.909338)]",
+          "flat_faces": 14,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3110,
+          "vertices": 5177,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/undead_poison_animated/undead_poison_run.fbx",
+      "skeletons": 1,
+      "triangles": 3110,
+      "vertices": 5177
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.772552, -0.259765, 0.0), S: (1.545103, 0.719581, 1.909918)]",
+          "flat_faces": 14,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3104,
+          "vertices": 4402,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/undead_small_animated/undead_small_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3104,
+      "vertices": 4402
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.772552, -0.259765, 0.0), S: (1.545103, 0.719581, 1.909918)]",
+          "flat_faces": 14,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3104,
+          "vertices": 4402,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/undead_small_animated/undead_small_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3104,
+      "vertices": 4402
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.772552, -0.259765, 0.0), S: (1.545103, 0.719581, 1.909918)]",
+          "flat_faces": 14,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3104,
+          "vertices": 4402,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/undead_small_animated/undead_small_run.fbx",
+      "skeletons": 1,
+      "triangles": 3104,
+      "vertices": 4402
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.729882, -0.650481, -0.0), S: (1.459754, 1.098642, 1.908404)]",
+          "flat_faces": 28,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3082,
+          "vertices": 5283,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/undead_spike_animated/undead_spike_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3082,
+      "vertices": 5283
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.729882, -0.650481, -0.0), S: (1.459754, 1.098642, 1.908404)]",
+          "flat_faces": 28,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3082,
+          "vertices": 5283,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/undead_spike_animated/undead_spike_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3082,
+      "vertices": 5283
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.729882, -0.650481, -0.0), S: (1.459754, 1.098642, 1.908404)]",
+          "flat_faces": 28,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3082,
+          "vertices": 5283,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/undead_spike_animated/undead_spike_run.fbx",
+      "skeletons": 1,
+      "triangles": 3082,
+      "vertices": 5283
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.953752, -0.379852, 0.0), S: (1.907504, 0.813123, 1.796807)]",
+          "flat_faces": 74,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3030,
+          "vertices": 4986,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/undead_titan_animated/undead_titan_attack.fbx",
+      "skeletons": 1,
+      "triangles": 3030,
+      "vertices": 4986
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.953752, -0.379852, 0.0), S: (1.907504, 0.813123, 1.796807)]",
+          "flat_faces": 74,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3030,
+          "vertices": 4986,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/undead_titan_animated/undead_titan_idle.fbx",
+      "skeletons": 1,
+      "triangles": 3030,
+      "vertices": 4986
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.953752, -0.379852, 0.0), S: (1.907504, 0.813123, 1.796807)]",
+          "flat_faces": 74,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_001"
+            }
+          ],
+          "name": "Skeleton3D/Mesh1_0",
+          "surfaces": 1,
+          "triangles": 3030,
+          "vertices": 4986,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/undead_titan_animated/undead_titan_run.fbx",
+      "skeletons": 1,
+      "triangles": 3030,
+      "vertices": 4986
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.949779, -0.911984, -0.884045), S: (1.897718, 1.81808, 1.766454)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "material_0"
+            }
+          ],
+          "name": "Mesh",
+          "surfaces": 1,
+          "triangles": 1980672,
+          "vertices": 1115204,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/dark_dragon.glb",
+      "skeletons": 0,
+      "triangles": 1980672,
+      "vertices": 1115204
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.950112, -0.931725, -0.57306), S: (1.898174, 1.856179, 1.148968)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "material_0"
+            }
+          ],
+          "name": "Mesh",
+          "surfaces": 1,
+          "triangles": 1155681,
+          "vertices": 648925,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/dark_fear.glb",
+      "skeletons": 0,
+      "triangles": 1155681,
+      "vertices": 648925
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.842981, -0.950368, -0.825387), S: (1.685858, 1.898845, 1.648342)]",
+          "flat_faces": 4,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "material_0"
+            }
+          ],
+          "name": "Mesh",
+          "surfaces": 1,
+          "triangles": 1450823,
+          "vertices": 825977,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/dark_scythe.glb",
+      "skeletons": 0,
+      "triangles": 1450823,
+      "vertices": 825977
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.942545, -0.9563, -0.492616), S: (1.883496, 1.909583, 0.972162)]",
+          "flat_faces": 0,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_0.001"
+            }
+          ],
+          "name": "Mesh1_0",
+          "surfaces": 1,
+          "triangles": 10152,
+          "vertices": 13274,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/human_archer.glb",
+      "skeletons": 0,
+      "triangles": 10152,
+      "vertices": 13274
+    },
+    {
+      "meshes": [
+        {
+          "aabb": "[P: (-0.954759, -0.925443, -0.617471), S: (1.908504, 1.840696, 1.230714)]",
+          "flat_faces": 1,
+          "materials": [
+            {
+              "class": "StandardMaterial3D",
+              "name": "Material_0.001"
+            }
+          ],
+          "name": "Mesh1_0",
+          "surfaces": 1,
+          "triangles": 30443,
+          "vertices": 39226,
+          "zero_normals": 0
+        }
+      ],
+      "path": "res://assets/models/units/human_king.glb",
+      "skeletons": 0,
+      "triangles": 30443,
+      "vertices": 39226
+    }
+  ]
+}

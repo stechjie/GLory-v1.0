@@ -1,10 +1,10 @@
-// 宠物专用的两段式 cel shader —— 就是 character_toon.gdshader 去掉了 ALPHA 写入。
+// 宠物专用的两段式 cel shader，与 character_toon.gdshader 一样保持不透明。
 //
 // 为什么要单独一份：Godot 里只要 fragment() 写了 ALPHA，材质就被划进「透明队列」。
 // 主菜单的宠物跑在 transparent_bg = true 的 SubViewport 里，透明队列的物件在
 // alpha 为 0 的底上混合，合成回来 alpha 仍然是 0 —— 整只宠物直接隐形。
 // 宠物本来就是全不透明的，所以这里不写 ALPHA，让它留在不透明队列里。
-// 除此之外与 character_toon.gdshader 完全一致，改那边的话记得同步这边。
+// 保留独立资源路径以兼容现有宠物材质；光照算法与 character_toon.gdshader 一致。
 //
 // Lighting approach adapted from eldskald's "Complete Cel Shader for Godot 4" (MIT):
 // https://github.com/eldskald/godot4-cel-shader

@@ -625,6 +625,9 @@ func _setup_battle_3d_view(arena_wrap: Control) -> void:
 	_battle_3d_viewport = SubViewport.new()
 	_battle_3d_viewport.own_world_3d = true
 	_battle_3d_viewport.size = Vector2i(960, 540)
+	# Match preparation's high preset without increasing low/medium GPU cost.
+	_battle_3d_viewport.msaa_3d = Viewport.MSAA_2X \
+		if VFXManager.get_quality_tier() == VFXQualityBudget.Tier.HIGH else Viewport.MSAA_DISABLED
 	_battle_3d_viewport.transparent_bg = true
 	_battle_3d_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	container.add_child(_battle_3d_viewport)

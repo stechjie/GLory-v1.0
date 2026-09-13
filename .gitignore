@@ -20,6 +20,24 @@ android/
 # directory, so once the parent is excluded any "!" re-include below is dead.
 /assets/*
 
+# Ship the Queen normal repair with code. Distinct *_smooth.fbx filenames keep
+# the older cloud asset overlay from replacing the corrected geometry.
+!/assets/models/
+/assets/models/*
+!/assets/models/units/
+/assets/models/units/*
+!/assets/models/units/dark_queen_animated/
+/assets/models/units/dark_queen_animated/*
+!/assets/models/units/dark_queen_animated/DarkQueenAnimated.gd
+!/assets/models/units/dark_queen_animated/DarkQueenAnimated.gd.uid
+!/assets/models/units/dark_queen_animated/dark_queen_animated.tscn
+!/assets/models/units/dark_queen_animated/dark_queen_idle_smooth.fbx
+!/assets/models/units/dark_queen_animated/dark_queen_idle_smooth.fbx.import
+!/assets/models/units/dark_queen_animated/dark_queen_attack_smooth.fbx
+!/assets/models/units/dark_queen_animated/dark_queen_attack_smooth.fbx.import
+!/assets/models/units/dark_queen_animated/dark_queen_run_smooth.fbx
+!/assets/models/units/dark_queen_animated/dark_queen_run_smooth.fbx.import
+
 # Exception: VFX textures must ship through git. effects/ holds ~1080 references
 # to res://assets/vfx/, so a teammate without these files hits
 # "Failed loading resource" the moment a battle starts.
