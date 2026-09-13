@@ -78,8 +78,13 @@ static func _skill_judgement(caster: Dictionary, opponents: Array, d: Dictionary
 	if target.is_empty(): return
 	_mark_vfx_target(caster, target)
 	DamageService.apply_damage(target, maxi(1, int(float(caster.atk) * float(d.get("damage_atk_pct", 2.2)))), false)
-	caster.skill_stacks = mini(int(d.get("max_stacks", 5)), int(caster.get("skill_stacks", 0)) + 1)
-	caster.defense = int(round(float(caster.defense) * (1.0 + float(d.get("def_stack_pct", 0.06)))))
+	# 层数与防御必须一起封顶：原来只把 skill_stacks 用 mini 封到 max_stacks(5)，
+	# 防御乘算却无条件执行，于是层数停在 5 之后每次施法仍在 ×(1+def_stack_pct)，
+	# 实测无限叠加（9.13 测试反馈）。只有层数真的涨了才加防。
+	var stacks_before := int(caster.get("skill_stacks", 0))
+	caster.skill_stacks = mini(int(d.get("max_stacks", 5)), stacks_before + 1)
+	if int(caster.skill_stacks) > stacks_before:
+		caster.defense = int(round(float(caster.defense) * (1.0 + float(d.get("def_stack_pct", 0.06)))))
 
 
 static func _skill_archangel(caster: Dictionary, allies: Array, d: Dictionary) -> void:

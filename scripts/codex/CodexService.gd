@@ -122,6 +122,8 @@ static func _units(race: String) -> Array[Dictionary]:
 			"cost": int(d.get("cost", 0)),
 			"stats": _stats(d),
 			"skill_id": str(d.get("skill_id", "")),
+			# 「棋盘唯一」角标：图鉴名称后面要补（唯一），与棋子详情同源。
+			"unique": bool(d.get("unique_on_board", false)),
 			# The source row, kept so the codex can render the same skill copy the
 			# prep screen shows (UnitDetailFormat) instead of a bare skill id.
 			"raw": d,

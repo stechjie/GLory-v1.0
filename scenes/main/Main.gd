@@ -546,6 +546,11 @@ func _enter_tutorial_from_startup() -> void:
 	if serial != _startup_transition_serial:
 		return
 	StartupTrace.mark("tutorial_loading_visible")
+	# Tutorials remain local even when an unfinished team session survives.
+	if NetworkService.team_active:
+		NetworkService.disconnect_session()
+		if NetworkService.team_active:
+			NetworkService.reset()
 	if not TutorialMode.active:
 		PlayerProfile.begin_tutorial()
 		if not (TutorialMode.has_checkpoint() and TutorialMode.restore_checkpoint()):

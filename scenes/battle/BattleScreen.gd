@@ -51,6 +51,12 @@ var _final_round_intro_started := false
 var _replay_own: Dictionary = {}
 var _replay_rival: Dictionary = {}
 var _view_toggle_btn: Button
+# 9.13 #2：自己这一场已经播完（含"跳过画面"）、正在等其他人结束时置真。
+# 这个状态下允许继续切镜头看另一队的战斗 —— 打完之后切过去只推回放，
+# 不再走任何结算/返回逻辑（_finish_replay 只允许跑一次）。
+var _settlement_waiting := false
+# 补看另一队时的播放游标是否已经到末帧（到了就停住，不再推进、也不触发结算）。
+var _spectate_done := false
 # B8: on-screen frame-rate readout (player-facing only, like PrepScreen).
 # Battle scene had none before this; see bug report 9.9bug提交及修复08 #8.
 var _fps_label: Label
@@ -188,6 +194,11 @@ func _process(delta: float) -> void:
 	# `if _finished: return` 之前，否则水晶不漂浮、血量数字也不会跟到水晶脚下。
 	_update_crystal_demo(delta)
 	if _finished:
+		# 9.13 #2：自己打完了（或跳过了动画）在等别人时，仍然让「查看另一队」能用。
+		# 这里只推进补看的回放，绝不重入 _finish_replay —— 结算与 battle_finished
+		# 只能发一次，否则会被重复拉进备战/结算。
+		if _settlement_waiting and _watching_rival and _replay_mode:
+			_advance_spectate(delta)
 		return
 	if _final_round_intro_active:
 		return
@@ -451,7 +462,11 @@ func _setup_view_toggle() -> void:
 	add_child(_view_toggle_btn)
 
 func _on_view_toggle_pressed() -> void:
-	if _finished or _return_emitted or not _replay_mode:
+	# 正常对局中 _return_emitted 之前都能切；进入结算等待后（_settlement_waiting）
+	# 虽然 _return_emitted 已经是 true，仍然允许切过去补看另一队（9.13 #2）。
+	if _return_emitted and not _settlement_waiting:
+		return
+	if not _replay_mode:
 		return
 	_set_watching_rival(not _watching_rival)
 
@@ -464,6 +479,23 @@ func _set_watching_rival(watch_rival: bool) -> void:
 	if _view_toggle_btn != null:
 		_view_toggle_btn.text = tr("battle_view_own") if _watching_rival else tr("battle_view_rival")
 	_switch_active_replay(_replay_rival if _watching_rival else _replay_own)
+
+# 结算等待期「补看另一队」的播放推进。与 _process 里的主线播放是**两套**：
+# 这里只到末帧为止，不调用 _finish_replay（结算已经发过了）。
+func _advance_spectate(delta: float) -> void:
+	if _spectate_done:
+		return
+	# 与主线同一个封顶策略：慢帧不得攒出无限积压。
+	_sim_accumulator = minf(_sim_accumulator + delta * PLAYBACK_SPEED * _readable_speed,
+		SIM_TICK_SEC * MAX_STEPS_PER_FRAME)
+	var frames: Array = _replay.get("frames", [])
+	while _sim_accumulator >= SIM_TICK_SEC and _replay_frame < frames.size():
+		_sim_accumulator -= SIM_TICK_SEC
+		_apply_replay_frame(_replay_frame)
+		_replay_frame += 1
+	_refresh_visuals()
+	if _replay_frame >= frames.size():
+		_spectate_done = true
 
 # B8: lightweight on-screen FPS readout for the battle scene.
 # Mirrors PrepScreen._setup_fps_overlay; positioned slightly off the top-left
@@ -491,6 +523,7 @@ func _switch_active_replay(replay: Dictionary) -> void:
 	_replay_events_applied = -1
 	_state["visual_events"] = []
 	_vfx_visual_event_index = 0
+	_spectate_done = false
 	_load_replay_roster(replay)
 	_begin_presentation_replay(replay)
 	_prefetch_battle_assets()
@@ -526,6 +559,18 @@ func _clear_unit_visuals() -> void:
 	_vfx_visual_event_index = 0
 
 func show_settlement_waiting() -> void:
+	_settlement_waiting = true
+	# 9.13 #2：另一队的 replay 可能在本场开播之后才到（房主要把两队的都算完才广播），
+	# 那时 _setup_view_toggle() 会因为拿不到对手回放直接放弃，按钮压根没建出来。
+	# 进等待期时补一次：先补读 replay，再（幂等地）重建按钮。
+	if not _valid_team_replay(_replay_rival) and _valid_team_replay(NetworkService.team_replay_rival):
+		_replay_rival = NetworkService.team_replay_rival
+	_setup_view_toggle()
+	if _view_toggle_btn != null:
+		# PVP / 决赛两队同场，没有第二个战场可切 —— 与 _setup_view_toggle 同一判据。
+		var kind := str(_replay_own.get("kind", ""))
+		_view_toggle_btn.visible = _valid_team_replay(_replay_rival) \
+			and kind != "pvp" and kind != "final"
 	_show_team_waiting()
 	if _result_overlay_lbl != null:
 		_result_overlay_lbl.text = "需等待其他人战斗结束"
@@ -663,8 +708,9 @@ func _finish_replay() -> void:
 	# 结算永远基于己方 replay：正观战敌方时先切回我方战场收尾。
 	if _watching_rival:
 		_set_watching_rival(false)
-	if _view_toggle_btn != null:
-		_view_toggle_btn.visible = false
+	# 9.13 #2：这里**不隐藏**「查看另一队」按钮 —— Main 随后会调
+	# show_settlement_waiting()，等待期间玩家要能继续切过去补看另一队。
+	# 按钮最终随本场景一起销毁。
 	# D4: with a real adapter the cues are asynchronous, so DRAINING actually has
 	# something to wait for. Checklist 4.6: hold the result page for the
 	# critical/important cues, but never past the cap.

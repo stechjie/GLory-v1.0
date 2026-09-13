@@ -215,7 +215,12 @@ func _case_server_wiring_passes_round() -> void:
 			# 这条用例测的是摇出来的东西，不是价格阶梯，所以每次都把钱和次数复位。
 			prep["gold"] = 999999
 			((prep.get("shop", {}) as Dictionary))["refresh_uses"] = 0
-			var r: Dictionary = ns._room_apply_economy(room, 0, "shop_refresh", {})
+			# 9.13：非权威（影子）模式下服务端要求 shop_refresh 自带自报金币，
+			# 否则 _room_apply_economy 判 typeof(payload.gold) != int → gold_desync
+			# （这正是 9.13 #1 首回合刷新的报错）。这条用例测的是「摇出来的档位」，
+			# 所以按真实客户端那样把刷新前的余额一并报上去。
+			var r: Dictionary = ns._room_apply_economy(room, 0, "shop_refresh",
+				{"gold": int(prep.get("gold", 0))})
 			if not bool(r.get("ok", false)):
 				_h.fail("wiring_refresh_denied",
 					"回合 %d 的 shop_refresh 被拒：%s" % [round_index, str(r.get("error", "?"))])

@@ -11,6 +11,15 @@ static func is_en() -> bool:
 static func localized_name(d: Dictionary) -> String:
 	return DataRegistry.unit_display_name(d, is_en())
 
+
+# 「棋盘唯一」标记。unique_on_board 的棋子（大天使/神王/末日守卫/黑龙/母灵/人王）
+# 实测只能上场一只，但图鉴与棋子描述都没写，玩家只能靠试放才发现（9.13 测试反馈）。
+# 统一渲染成「名称 N星（唯一）」，图鉴与详情共用这一份文案。
+static func unique_suffix(d: Dictionary) -> String:
+	if not bool(d.get("unique_on_board", false)):
+		return ""
+	return " (Unique)" if is_en() else "（唯一）"
+
 static func purchase_price_text(d: Dictionary) -> String:
 	if d.has("carrot_cost") and not GameState.tutorial_mode:
 		return ("%d carrots" if is_en() else "%d萝卜") % int(d.get("carrot_cost", 0))
@@ -21,6 +30,7 @@ static func format_unit_def(d: Dictionary, star: int = 1, cell: Dictionary = {})
 		return "No details" if is_en() else "无详情"
 	var mul := GameState.star_stat_multiplier(star, d) if not bool(d.get("is_mercenary", false)) else 1.0
 	var uname := localized_name(d)
+	var uniq := unique_suffix(d)
 	var race := unit_race_name(str(d.get("race", "-")))
 	var elem := unit_element_name(str(d.get("element", "-")))
 	# 技能文案必须读**按星级缩放后**的 def：4 星的技能数值在 `star4` 子对象里，
@@ -31,16 +41,16 @@ static func format_unit_def(d: Dictionary, star: int = 1, cell: Dictionary = {})
 	var skill_text := format_skill_detail(skill_def)
 	var detail: String
 	if is_en():
-		detail = "%s ★%d\nRace: %s  Element: %s  Tier: %d  Cost: %s\nHP: %d  ATK: %d  DEF: %d\nAS: %.2f  Crit: %.0f%%  CritDmg: %.0f%%\nRange: %s  Speed: %s\n\n[b]Skill[/b]\n%s" % [
-			uname, star,
+		detail = "%s ★%d%s\nRace: %s  Element: %s  Tier: %d  Cost: %s\nHP: %d  ATK: %d  DEF: %d\nAS: %.2f  Crit: %.0f%%  CritDmg: %.0f%%\nRange: %s  Speed: %s\n\n[b]Skill[/b]\n%s" % [
+			uname, star, uniq,
 			race, elem, int(d.get("tier", 0)), purchase_price_text(d),
 			int(round(float(d.get("hp", 0)) * mul)), int(skill_def.get("atk", 0)), int(round(float(d.get("def", 0)) * mul)),
 			float(d.get("attack_speed", 1.0)), float(d.get("crit", 0.0)) * 100.0, float(d.get("crit_dmg", 1.5)) * 100.0,
 			str(d.get("range", 1)), str(d.get("move_speed", 3.0)), skill_text,
 		]
 	else:
-		detail = "%s %d星\n种族：%s  属性：%s  阶级：%d  价格：%s\n生命：%d  攻击：%d  防御：%d\n攻速：%.2f  暴击：%.0f%%  暴伤：%.0f%%\n射程：%s  移速：%s\n\n[b]技能效果[/b]\n%s" % [
-			uname, star,
+		detail = "%s %d星%s\n种族：%s  属性：%s  阶级：%d  价格：%s\n生命：%d  攻击：%d  防御：%d\n攻速：%.2f  暴击：%.0f%%  暴伤：%.0f%%\n射程：%s  移速：%s\n\n[b]技能效果[/b]\n%s" % [
+			uname, star, uniq,
 			race, elem, int(d.get("tier", 0)), purchase_price_text(d),
 			int(round(float(d.get("hp", 0)) * mul)), int(skill_def.get("atk", 0)), int(round(float(d.get("def", 0)) * mul)),
 			float(d.get("attack_speed", 1.0)), float(d.get("crit", 0.0)) * 100.0, float(d.get("crit_dmg", 1.5)) * 100.0,
