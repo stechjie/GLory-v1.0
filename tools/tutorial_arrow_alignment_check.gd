@@ -28,9 +28,47 @@ func _ready() -> void:
 	_h.finish(get_tree())
 
 
+func _check_buy_three_close_target() -> void:
+	TutorialMode.start()
+	var prep := (load("res://scenes/prep/PrepScreen.tscn") as PackedScene).instantiate()
+	add_child(prep)
+	await _settle(4)
+	prep._shop.open_button.pressed.emit()
+	await _settle(2)
+	for index in 3:
+		prep._shop.buttons[index].pressed.emit()
+		await _settle(1)
+		prep._shop.buy_button.pressed.emit()
+		await _settle(2)
+	_h.expect(prep._tutorial_owned_normal_count() == 3,
+		"buy_three_fixture_failed", "The real shop must purchase three distinct tutorial units")
+	_h.expect(TutorialMode.step == TutorialScript.Step.BUY_3 and prep._shop.picker_open,
+		"buy_three_skipped_close", "Buying three units must keep the close-shop tutorial substage")
+	var target: Control = TutorialMode._target_control()
+	_h.expect(target == prep._tutorial_first_empty_board() and target.is_visible_in_tree(),
+		"buy_three_wrong_close_target", "The close-shop arrow must target a visible area outside the shop")
+	var click_point := target.get_global_rect().get_center()
+	_h.expect(not prep._shop.panel.get_global_rect().has_point(click_point)
+		and not prep._shop.open_button.get_global_rect().has_point(click_point),
+		"buy_three_close_target_covered", "The close target must not be inside the shop or its covered wooden toggle")
+	await _capture("%dx%d_close_shop" % [get_window().size.x, get_window().size.y])
+	var touch := InputEventScreenTouch.new()
+	touch.position = click_point
+	touch.pressed = true
+	prep._input(touch)
+	await _settle(2)
+	_h.expect(TutorialMode.step == TutorialScript.Step.PLACE_3
+		and TutorialMode._target_control() == prep._board_hud.bench_buttons[0],
+		"buy_three_close_not_advanced", "Closing the shop must advance the arrow to the first standby unit")
+	TutorialMode.finish()
+	prep.queue_free()
+	await _settle(3)
+
+
 func _check_resolution(resolution: Vector2i) -> void:
 	get_window().size = resolution
 	await _settle(4)
+	await _check_buy_three_close_target()
 	TutorialMode.start()
 	var definition: Dictionary = DataRegistry.get_table("race_units").get("units", [])[0].duplicate(true)
 	var unit := {"uid": "tutorial_pointer_check", "id": definition.id, "star": 1, "def": definition}

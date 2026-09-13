@@ -232,6 +232,9 @@ func release_tutorial_target_provider() -> void:
 
 
 func _tutorial_target_buy_unit() -> Control:
+	# Once three units are owned, this step asks the player to close the shop.
+	if _shop.picker_open and _tutorial_owned_normal_count() >= 3:
+		return _tutorial_first_empty_board()
 	return _tutorial_shop_purchase_target()
 
 
@@ -287,8 +290,9 @@ func _tutorial_target_fill_seven() -> Control:
 		TutorialModeScript.FillPhase.BUY:
 			return _tutorial_shop_purchase_target()
 		TutorialModeScript.FillPhase.CLOSE_SHOP:
-			# 商店按钮本身就是开合开关，关闭时要指的还是它。
-			return _shop.open_button
+			# The open shop covers its wooden toggle. Point outside it so the
+			# normal pointer handler can close the shop at a visible location.
+			return _tutorial_first_empty_board()
 		_:
 			if _tutorial_placing_from_bench():
 				return _tutorial_first_empty_board()
