@@ -1147,6 +1147,12 @@ func _bubble_position(target_rect: Rect2, dir: int, context: String = "") -> Vec
 		maxf(_bubble.size.y, BUBBLE_MIN_HEIGHT))
 	var safe := _safe_rect()
 	var keep_clear := _keep_clear_rects()
+	# Clamping an above-target bubble into the safe area can cover the arrow
+	# without covering its target. Protect the drawn, scaled arrow in the same
+	# overlay coordinates for both candidate scoring and saved-position reuse.
+	if _arrow != null and is_instance_valid(_arrow):
+		var arrow_rect: Rect2 = _arrow.get_transform() * Rect2(Vector2.ZERO, _arrow.size)
+		keep_clear.append(arrow_rect.grow(6.0))
 	if context == _layout_context and _sticky_position_is_valid(
 			_last_bubble_position, bubble_size, safe, target_rect, keep_clear):
 		_last_layout_reason = "sticky_valid"

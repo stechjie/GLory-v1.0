@@ -51,6 +51,19 @@ func _check_buy_three_close_target() -> void:
 	_h.expect(not prep._shop.panel.get_global_rect().has_point(click_point)
 		and not prep._shop.open_button.get_global_rect().has_point(click_point),
 		"buy_three_close_target_covered", "The close target must not be inside the shop or its covered wooden toggle")
+	# A position kept from an earlier layout may expose the target while covering
+	# the arrow above it. Reproduce that valid-target, hidden-arrow state directly.
+	var arrow_bounds: Rect2 = TutorialMode._arrow.get_transform() \
+		* Rect2(Vector2.ZERO, TutorialMode._arrow.size)
+	var overlapping_position := arrow_bounds.end - TutorialMode._bubble.size
+	TutorialMode._last_bubble_position = TutorialMode._clamp_into(overlapping_position,
+		TutorialMode._bubble.size, TutorialMode._safe_rect())
+	TutorialMode._layout_signature = ""
+	TutorialMode.update_overlay()
+	var arrow_overlap := Rect2(TutorialMode._bubble.position, TutorialMode._bubble.size) \
+		.intersection(arrow_bounds)
+	_h.expect(arrow_overlap.get_area() < 1.0, "close_shop_bubble_covers_arrow",
+		"The tutorial bubble must move away from the arrow body, even when its old position exposed the target")
 	await _capture("%dx%d_close_shop" % [get_window().size.x, get_window().size.y])
 	var touch := InputEventScreenTouch.new()
 	touch.position = click_point
