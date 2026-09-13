@@ -38,8 +38,9 @@ const EXPECTED_IDS := [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 # 🔴 NetworkService 上 @rpc 方法的数量，与协议号绑在一起。同 carrot_online_check
 # 的 PINNED_CONTRACT / PINNED_PROTOCOL 那一套，理由见 _case_rpc_count_pinned()。
 # 2026-09-11 批次 D（自由文字）加了两个：55 -> 57、22 -> 23。
-const PINNED_RPC_COUNT := 57
-const PINNED_RPC_PROTOCOL := 24
+# 2026-09-13 组队语音又加了两个：57 -> 59、24 -> 25（中间 23 -> 24 是批次 D 与四星撞号，见 NetworkConfig v24）。
+const PINNED_RPC_COUNT := 59
+const PINNED_RPC_PROTOCOL := 25
 
 var _h: CheckHarness
 

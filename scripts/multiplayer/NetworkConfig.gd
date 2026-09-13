@@ -104,7 +104,12 @@ const USE_DTLS := true
 #      握手放行、然后方法错位的静默事故。**合并时撞号，一律顶到一个没人用过的新号。**
 #      代价同上：**线上战斗服务器必须用合并后的代码重新打包部署到 p24**（make_server_zip.ps1），
 #      否则新客户端连不上。确认依据是服务器日志里的 `server started protocol=24`。
-const NETWORK_PROTOCOL_VERSION := 24
+# v25: 游戏内组队语音（docs/聊天系统设计.md 第九节），新增两个 RPC
+#      （_rpc_team_voice_submit、_rpc_team_voice）和一条用户通道 CH_VOICE。**与 v17、v22、v24 同一类**：
+#      加 @rpc 方法会平移整套 RPC 的 wire ID。
+#      代价同上：**线上战斗服务器必须重新打包部署到 p25**（make_server_zip.ps1），
+#      否则新客户端连不上。确认依据是服务器日志里的 `server started protocol=25`。
+const NETWORK_PROTOCOL_VERSION := 25
 
 # Local phone hosting is debug-only.
 const ALLOW_LOCAL_HOST_DEBUG := false
@@ -126,6 +131,10 @@ const ALLOW_LOCAL_HOST_DEBUG := false
 # 通道号 0 表示"用该 transfer mode 的引擎默认通道"，≥1 才是用户通道。
 const CH_CONTROL := 0
 const CH_BULK := 1
+# 语音（v25，docs/聊天系统设计.md 第九节）：unreliable_ordered 的独立用户通道。
+# 语音是持续的高频小包（每人每秒 25 个），单独一条通道，不和其他流量共用序号；
+# 下面「不要传 max_channels」那条结论保证通道 2 存在（不传时上限 255）。
+const CH_VOICE := 2
 
 # **不要**给 create_server / create_client 传 max_channels。
 # 实测（tools/channel_check.tscn，Godot 4.7）：不传时 ENet host 的 max_channels = 255；

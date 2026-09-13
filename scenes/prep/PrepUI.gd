@@ -1134,6 +1134,7 @@ func _build_chat_entry() -> void:
 	# 那时玩家在买卖，一个压在商店上的聊天按钮只会造成误触。
 	_chat_button.z_index = 20
 	add_child(_chat_button)
+	_build_voice_button()
 
 	_chat_log = VBoxContainer.new()
 	_chat_log.name = "PrepChatLog"
@@ -1162,6 +1163,52 @@ func _build_chat_entry() -> void:
 		NetworkService.team_chat_received.connect(_on_prep_chat_received)
 	if not NetworkService.team_chat_text_received.is_connected(_on_prep_chat_text_received):
 		NetworkService.team_chat_text_received.connect(_on_prep_chat_text_received)
+
+# 语音按钮（docs/聊天系统设计.md 第九节）：聊天按钮左边，只占同一水平带的下半截（-120 ~ -72）。
+# 上半截会碰到备战席的右端：1280×720 下备战席底边在 y≈575，也就是 -145 左右。
+# 改这几个数之前同样先跑 tools/chat_ui_capture.tscn，用矮窗口看。
+const VOICE_BTN_SIZE := Vector2(150, 48)
+const VOICE_BTN_GAP := 12.0
+const VOICE_BTN_BOTTOM := -72.0
+var _voice_button: Button = null
+
+func _build_voice_button() -> void:
+	_voice_button = PrepWidgets.make_menu_button(VoiceService.mode_label(), VOICE_BTN_SIZE, 17,
+		_on_voice_pressed)
+	_voice_button.name = "PrepVoiceButton"
+	_voice_button.anchor_left = 1.0
+	_voice_button.anchor_right = 1.0
+	_voice_button.anchor_top = 1.0
+	_voice_button.anchor_bottom = 1.0
+	var right := -CHAT_RIGHT - CHAT_BTN_SIZE.x - VOICE_BTN_GAP
+	_voice_button.offset_right = right
+	_voice_button.offset_left = right - VOICE_BTN_SIZE.x
+	_voice_button.offset_bottom = VOICE_BTN_BOTTOM
+	_voice_button.offset_top = VOICE_BTN_BOTTOM - VOICE_BTN_SIZE.y
+	# 同聊天按钮：低于商店弹窗（40）与卖出区（50），商店开着时点不到。
+	_voice_button.z_index = 20
+	add_child(_voice_button)
+	if not VoiceService.mode_changed.is_connected(_on_voice_mode_changed):
+		VoiceService.mode_changed.connect(_on_voice_mode_changed)
+	# 按钮后面的「●」跟着有没有人在说话变，0.25 秒刷一次。
+	var timer := Timer.new()
+	timer.wait_time = 0.25
+	timer.autostart = true
+	timer.timeout.connect(_refresh_voice_button)
+	add_child(timer)
+
+func _on_voice_pressed() -> void:
+	var reason := VoiceService.cycle_mode()
+	if not reason.is_empty():
+		show_message(reason)
+	_refresh_voice_button()
+
+func _on_voice_mode_changed(_mode: int) -> void:
+	_refresh_voice_button()
+
+func _refresh_voice_button() -> void:
+	if _voice_button != null and is_instance_valid(_voice_button):
+		_voice_button.text = VoiceService.mode_label() + VoiceService.activity_mark()
 
 func _build_chat_panel() -> void:
 	_chat_panel = PanelContainer.new()
@@ -1314,6 +1361,8 @@ func _teardown_chat_entry() -> void:
 		NetworkService.team_chat_received.disconnect(_on_prep_chat_received)
 	if NetworkService.team_chat_text_received.is_connected(_on_prep_chat_text_received):
 		NetworkService.team_chat_text_received.disconnect(_on_prep_chat_text_received)
+	if VoiceService.mode_changed.is_connected(_on_voice_mode_changed):
+		VoiceService.mode_changed.disconnect(_on_voice_mode_changed)
 
 func _toggle_mute() -> void:
 	# 全局静音开关：静音 Master 总线（BGM + 音效都停），引擎级状态，切场景仍生效

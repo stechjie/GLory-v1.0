@@ -1977,6 +1977,69 @@ func _rpc_team_chat_text(slot: int, text: String) -> void:
 		return
 	team_chat_text_received.emit(slot, clean)
 
+# --- 组队语音（docs/聊天系统设计.md 第九节）--------------------------------------
+# 包是安卓插件打好的（ADPCM，android_plugins/glory_voice），这里**不解码、不看内容**，
+# 只做三件事：大小上限、限流、只转给同队。座位号由服务端从 sender 反查（同自由文字）。
+#
+# unreliable_ordered + 独立通道 CH_VOICE：语音丢一个包只是一声咔，重传回来的旧包反而是杂音；
+# ordered 让迟到的包在网络层就被丢掉。
+signal team_voice_received(slot: int, packet: PackedByteArray)
+
+# 一个包最多 3 帧（5 + 3 × 163 = 494 字节，AdpcmCodec.MAX_PACKET_BYTES）。
+# 还要明显低于 ENet 的 MTU：不可靠包一旦被分片，丢一片整包就没了。
+# tools/voice_check 拿 Java 那边的常量对账。
+const VOICE_MAX_PACKET_BYTES := 512
+
+# 发一个包。不在房间、没连上、本地房主模式（调试用）都直接丢：语音不需要回执。
+func team_send_voice(packet: PackedByteArray) -> void:
+	if not team_active or team_local_slot < 0 or is_host:
+		return
+	if packet.is_empty() or packet.size() > VOICE_MAX_PACKET_BYTES:
+		return
+	if multiplayer.multiplayer_peer == null or state != SessionState.READY:
+		return
+	_rpc_team_voice_submit.rpc_id(1, packet)
+
+@rpc("any_peer", "call_remote", "unreliable_ordered", NetworkConfig.CH_VOICE)
+func _rpc_team_voice_submit(packet: PackedByteArray) -> void:
+	if not _dedicated_server:
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if packet.is_empty() or packet.size() > VOICE_MAX_PACKET_BYTES:
+		return
+	# 软限，不计 strike：弱网恢复时包会攒成一串一起到，那是网络不是攻击。
+	if not _rate_ok(sender, "voice", false):
+		return
+	var room := _room_for_peer(sender)
+	if room.is_empty():
+		return
+	var slot := int((room.get("peer_slot", {}) as Dictionary).get(sender, -1))
+	for peer_id in voice_recipients(room, slot, sender):
+		if _peer_connected(peer_id):
+			_rpc_team_voice.rpc_id(peer_id, slot, packet)
+
+@rpc("authority", "call_remote", "unreliable_ordered", NetworkConfig.CH_VOICE)
+func _rpc_team_voice(slot: int, packet: PackedByteArray) -> void:
+	if slot < 0 or slot >= TEAM_SLOTS or packet.is_empty() or packet.size() > VOICE_MAX_PACKET_BYTES:
+		return
+	team_voice_received.emit(slot, packet)
+
+# 这个包该转给谁：**同队**、在这个房间里有座位、不是发送者自己。敌方永远收不到 ——
+# 语音里说的是战术。纯函数（不碰网络），tools/voice_check 直接调。
+static func voice_recipients(room: Dictionary, sender_slot: int, sender_peer: int) -> Array[int]:
+	var out: Array[int] = []
+	if sender_slot < 0 or sender_slot >= TEAM_SLOTS:
+		return out
+	var team := GameConstants.team_of_slot(sender_slot)
+	var peer_slot: Dictionary = room.get("peer_slot", {})
+	for peer in peer_slot.keys():
+		var slot := int(peer_slot[peer])
+		if int(peer) == sender_peer or slot < 0 or slot >= TEAM_SLOTS:
+			continue
+		if GameConstants.team_of_slot(slot) == team:
+			out.append(int(peer))
+	return out
+
 # --- 3v3 team board collection (N2) ----------------------------------------
 # After everyone presses "start battle" in prep, each player submits their board
 # snapshot. The host gathers all real-player boards, then broadcasts the full

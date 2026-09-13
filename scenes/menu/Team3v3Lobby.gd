@@ -239,6 +239,8 @@ func _exit_tree() -> void:
 		NetworkService.team_chat_received.disconnect(_on_chat_received)
 	if NetworkService.team_chat_text_received.is_connected(_on_chat_text_received):
 		NetworkService.team_chat_text_received.disconnect(_on_chat_text_received)
+	if VoiceService.mode_changed.is_connected(_on_voice_mode_changed):
+		VoiceService.mode_changed.disconnect(_on_voice_mode_changed)
 
 func _online() -> bool:
 	return NetworkService.team_active
@@ -793,8 +795,47 @@ func _build_chat_box() -> void:
 	# 批次 A 时它归「快捷短语」；有了打字之后归「打字」，语义更对得上。
 	_add_hit(Vector2(CHAT_TEXT_X + CHAT_ENTRY_SPLIT, CHAT_ENTRY_Y),
 		Vector2(CHAT_TEXT_W - CHAT_ENTRY_SPLIT, 40), _open_text_input, "left", "hit_chat_text")
+	_build_voice_button()
 	_build_phrase_panel()
 	_refresh_chat()
+
+# 语音按钮（docs/聊天系统设计.md 第九节）：一个按钮三档循环，关 → 只听 → 开麦。
+# 放在聊天框正上方（x 180~330、y 650~696）：左边是石柱装饰，右边从 x=447 起是敌方席位 1。
+# 短语面板打开时会盖住它（面板 z=40），面板本来就是临时的。
+const VOICE_BTN_POS := Vector2(180, 650)
+const VOICE_BTN_SIZE := Vector2(150, 46)
+const VOICE_BTN_FONT := 18
+var _voice_button: Button = null
+
+func _build_voice_button() -> void:
+	_voice_button = PrepWidgets.make_menu_button(VoiceService.mode_label(), VOICE_BTN_SIZE,
+		VOICE_BTN_FONT, _on_voice_pressed)
+	# 同短语按钮：清掉 make_menu_button 设的最小尺寸，否则窗口缩小时被顶回原尺寸（见 _build_phrase_panel）。
+	_voice_button.custom_minimum_size = Vector2.ZERO
+	_voice_button.name = "VoiceToggle"
+	add_child(_voice_button)
+	_track(_voice_button, VOICE_BTN_POS, VOICE_BTN_SIZE, VOICE_BTN_FONT, "left")
+	if not VoiceService.mode_changed.is_connected(_on_voice_mode_changed):
+		VoiceService.mode_changed.connect(_on_voice_mode_changed)
+	# 按钮后面的「●」跟着有没有人在说话变，0.25 秒刷一次（插件那边的状态也是这个节奏）。
+	var timer := Timer.new()
+	timer.wait_time = 0.25
+	timer.autostart = true
+	timer.timeout.connect(_refresh_voice_button)
+	add_child(timer)
+
+func _on_voice_pressed() -> void:
+	var reason := VoiceService.cycle_mode()
+	if not reason.is_empty():
+		DialogService.info({"owner": self, "body": reason})
+	_refresh_voice_button()
+
+func _on_voice_mode_changed(_mode: int) -> void:
+	_refresh_voice_button()
+
+func _refresh_voice_button() -> void:
+	if _voice_button != null and is_instance_valid(_voice_button):
+		_voice_button.text = VoiceService.mode_label() + VoiceService.activity_mark()
 
 func _build_phrase_panel() -> void:
 	# 面板与按钮**都在 _build 期建好、默认隐藏**，不是点开时才创建。

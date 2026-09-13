@@ -1,0 +1,2 @@
+# Godot: do not import this folder. It holds the Java sources of Android plugins;
+# the built .aar files live under addons/ (see android_plugins/glory_voice/build_aar.ps1).

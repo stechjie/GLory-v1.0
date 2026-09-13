@@ -1,0 +1,5 @@
+# The plugin class is loaded by name from the manifest meta-data
+# (org.godotengine.plugin.v2.GloryVoice) and its @UsedByGodot methods are called
+# through JNI by name. The Android build template does not shrink today; this keeps
+# it working if someone turns R8 on later.
+-keep class com.glory.voice.** { *; }

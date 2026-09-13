@@ -78,6 +78,10 @@ const LIMITS := {
 	# 正常聊天碰不到；而一条自由文字能占掉大厅聊天框一半的行数，刷屏的代价更大。
 	# 同样**不计 strike**（调用处传 count_strike=false），理由同 chat_phrase。
 	"chat_text": 3,
+	# 组队语音（docs/聊天系统设计.md 第九节）：两帧一包，每人每秒 25 个，10 秒 250 个，留 20% 余量。
+	# **不计 strike**（调用处传 count_strike=false）：弱网恢复时包会攒成一串一起到，
+	# 那是网络不是攻击；超了的正确后果只是这几个包不转发。
+	"voice": 300,
 	# 重连：直连入口必须和短码入口共用同一个身份配额，否则客户端绕开
 	# _rpc_public_resume_request 直接打 _rpc_resume_request 就把 A6 的保护全跳过了。
 	"resume": 5,
