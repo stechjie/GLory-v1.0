@@ -32,6 +32,10 @@ static func owner_future(round_index: int) -> String:
 	return "future/round/%d" % round_index
 
 static var _scenes: Dictionary = {}      # path -> PackedScene
+# Materials named by wrapper scripts are runtime dependencies, not PackedScene
+# dependencies. Retain them with the same lease so an unbought visible offer
+# does not lose its warmed textures as soon as the loading screen disappears.
+static var _runtime_resources: Dictionary = {}
 static var _owners: Dictionary = {}      # path -> { owner: true }
 static var _requested: Dictionary = {}   # path -> true（线程请求已发出，尚未收割）
 
@@ -54,6 +58,16 @@ static func acquire_many(paths: Array, owner: String) -> void:
 	for p in paths:
 		acquire(str(p), owner)
 
+# Adopt an already completed background load without requesting or waiting again.
+static func retain_ready_resource(path: String, resource: Resource, owner: String) -> void:
+	if path.is_empty() or resource == null or owner.is_empty():
+		return
+	_owners.get_or_add(path, {})[owner] = true
+	if resource is PackedScene:
+		_scenes[path] = resource
+	else:
+		_runtime_resources[path] = resource
+
 # 摘掉某个 owner。owner 全空的资源才真正释放。
 static func release_owner(owner: String) -> int:
 	var freed := 0
@@ -66,6 +80,7 @@ static func release_owner(owner: String) -> int:
 			continue
 		_owners.erase(path)
 		_scenes.erase(path)
+		_runtime_resources.erase(path)
 		_requested.erase(path)
 		freed += 1
 	return freed
@@ -186,5 +201,6 @@ static func ready_count(paths: Array) -> int:
 # 整局结束时叫一次，别让上一局的阵容留到下一局。
 static func reset_run() -> void:
 	_scenes.clear()
+	_runtime_resources.clear()
 	_owners.clear()
 	_requested.clear()

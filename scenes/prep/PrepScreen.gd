@@ -1,5 +1,8 @@
 extends "res://scenes/prep/PrepBoardController.gd"
 
+signal startup_ready
+var startup_staged := false
+
 const BattleReplayUtil = preload("res://scripts/battle/BattleReplayUtil.gd")
 const BattleSim = preload("res://scripts/battle/BattleSimulator.gd")
 # 只为拿它的 static 资源缓存（BattleRenderer.gd 没有 class_name）。战斗资源在这里
@@ -90,7 +93,7 @@ func _ready() -> void:
 		AsyncActionController.action_state_changed.connect(_on_async_action_state_changed)
 	if GameState.shop_offers.is_empty() or GameState.shop_offers[0].is_empty():
 		_roll_shop()
-	_build()
+	await _build(startup_staged)
 	if carrot_harvest_gain > 0:
 		# 记账：客机那条路径（_maybe_play_pending_carrot_harvest）也会在权威采集
 		# 到达时补播，两边共用这个标记保证一回合只播一次。
@@ -103,7 +106,8 @@ func _ready() -> void:
 	# 备战期只做**增量**：把后几轮的怪排进后台队列。
 	# 大批量加载在大厅完成（Team3v3Lobby._setup_asset_loader）—— 备战期玩家在拖
 	# 棋子、看羁绊，3D 棋盘和 UI 都在跑，往这里塞几百 MB 会直接卡到操作。
-	BattleRendererScript.prefetch_upcoming_rounds(GameState.round_index)
+	if not GameState.tutorial_mode:
+		BattleRendererScript.prefetch_upcoming_rounds(GameState.round_index)
 	_start_prep_music()
 	_setup_fps_overlay()
 	_maybe_start_pending_treasure()
@@ -111,6 +115,7 @@ func _ready() -> void:
 	if GameState.tutorial_mode:
 		TutorialMode.attach(tutorial_target_provider())
 	_maybe_show_pvp_warning.call_deferred(PrepRules.next_round_kind())
+	startup_ready.emit()
 
 func _start_prep_music() -> void:
 	if _prep_music_player != null:

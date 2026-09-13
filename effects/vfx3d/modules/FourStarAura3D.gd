@@ -25,7 +25,7 @@ func attach_rim(actor: Node3D) -> void:
 		return
 	for node in actor.find_children("*", "MeshInstance3D", true, false):
 		var mesh := node as MeshInstance3D
-		if is_ancestor_of(mesh) or not mesh.is_visible_in_tree() or mesh.material_overlay != null or mesh.name == "ContactShadow3D":
+		if is_ancestor_of(mesh) or not mesh.is_visible_in_tree() or mesh.material_overlay != null or mesh.name in ["ContactShadow3D", "GroundShadow3D", "TeamGlow3D"]:
 			continue
 		# Preserve any existing gameplay/status overlay rather than replacing it.
 		mesh.material_overlay = rim_material

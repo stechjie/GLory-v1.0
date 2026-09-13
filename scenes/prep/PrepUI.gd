@@ -388,7 +388,7 @@ func _tutorial_refresh_view() -> void:
 	_refresh_all.call_deferred()
 
 
-func _build() -> void:
+func _build(staged: bool = false) -> void:
 	# 面板的依赖与信号必须在**构建之前**接好：build_* 里会用到 overlay 与 host，
 	# 也会把按钮的 pressed 连到面板自己的方法上。放到末尾接的话，
 	# 构建期 overlay 还是 null —— 表现是长按详情静默失效，不报错。
@@ -436,7 +436,13 @@ func _build() -> void:
 	sky_background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	sky_background.z_index = -20
 	add_child(sky_background)
+	if staged:
+		StartupTrace.mark("tutorial_background_built")
+		await get_tree().process_frame
 	_setup_prep_river_background()
+	if staged:
+		StartupTrace.mark("tutorial_board_built")
+		await get_tree().process_frame
 
 	var root := VBoxContainer.new()
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -448,7 +454,12 @@ func _build() -> void:
 	add_child(root)
 
 	_build_top_bar(root)
+	if staged:
+		await get_tree().process_frame
 	_build_rest(root)
+	if staged:
+		StartupTrace.mark("tutorial_controls_built")
+		await get_tree().process_frame
 
 	# 调试空间框：满屏覆盖层，扫描整棵界面树，把每个可见控件的矩形用黑边画出来。
 	if SHOW_SPACE_FRAMES:

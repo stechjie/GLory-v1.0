@@ -4,6 +4,7 @@ const PREP_RELATION_PARTICLES_SCRIPT := preload("res://scenes/prep/PrepRelationP
 const PREP_RELATION_LINK_SCRIPT := preload("res://scenes/prep/PrepRelationLink3D.gd")
 const UnitActor3DScript := preload("res://effects/runtime/presentation/UnitActor3D.gd")
 const UnitVisualResolverScript := preload("res://effects/runtime/presentation/UnitVisualResolver.gd")
+const UnitContactShadowScript := preload("res://effects/runtime/presentation/UnitContactShadow.gd")
 const FOUR_STAR_AURA := preload("res://effects/vfx3d/modules/FourStarAura3D.gd")
 var _four_star_visual_poll := 0.0
 
@@ -91,8 +92,8 @@ const BOARD_STONE_U := Vector2(0.3, 0.64)             # 4×4 格子横向范围/
 const BOARD_STONE_V := Vector2(0.26, 0.78)             # 4×4 格子纵向范围/位置
 const BOARD_CELL_RADIUS := 0.22                         # 每个格子圆的大小（世界半径；地面上真圆，投影成椭圆）
 const BOARD_CELL_SEGMENTS := 20                          # 圆的多边形段数
-const BOARD_MODEL_SPREAD_U := 0.9  # 棋盘模型横向铺开缩放（不动圆圈）：1=和圆圈一样，<1=往中间收（治左右越偏），>1=更散
-const BOARD_MODEL_SPREAD_V := 0.9  # 棋盘模型纵向铺开缩放（不动圆圈）：1=和圆圈一样，<1=往中间收（治上下越偏），>1=更散
+const BOARD_MODEL_SPREAD_U := 0.95  # Compensate perspective at body height, after live foot anchoring.
+const BOARD_MODEL_SPREAD_V := 1.0
 # 待命区：横排 8 个，放在棋盘正下方（前景 v≈0.88，u 横跨 0.31~0.79）。
 # 待命区 8 个格子的地面 UV 落点，参数化：改下面几个数就能整排调位置/间距/大小，
 # 不用手编 8 个点。（格子和棋子模型都用这套值，改一处两个一起动。）
@@ -102,8 +103,8 @@ const STANDBY_CENTER_U := 0.49     # 整排水平中心：0=左，1=右（整体
 const STANDBY_STEP_U := 0.047      # 相邻两格的水平间距：越大越疏、越小越密
 const STANDBY_SPOT_RADIUS := 0.16   # 每个格子圆的世界半径：越大格子越大
 const STANDBY_MODEL_DX := 0.0   # 待命模型左右微调（不动圆圈）
-const STANDBY_MODEL_DZ := -0.05  # 待命模型前后微调（不动圆圈）
-const STANDBY_MODEL_SPREAD := 0.9  # 模型横向铺开缩放（不动圆圈）：1=和圆圈一样，<1=往中间收（治"越往两边越偏"），>1=更散
+const STANDBY_MODEL_DZ := 0.02  # Body center sits slightly above the platform center after foot anchoring.
+const STANDBY_MODEL_SPREAD := 0.94  # Body height expands the apparent spacing toward the screen edges.
 # 待命区背景平台：做成 3D 地面 quad（不是 2D 贴图），模型是地面上方的 3D 物体，自然盖在它上面。
 const PREP_STANDBY_BG_PATH := "res://assets/board/prep_2_5d/standby_bg.png"
 const PREP_STANDBY_BG_CENTER_UV := Vector2(0.49, 0.820)  # 平台中心 UV（默认对齐待命格子中心/前后）
@@ -950,6 +951,11 @@ func _request_prep_model_anchor_update(model_node: Node3D) -> void:
 	_update_prep_model_anchors.call_deferred(model_node, 0)
 
 func _update_prep_model_anchors(model_node: Node3D, attempt: int) -> void:
+	# Animated wrappers instantiate their rigs in _ready. Measure once after the
+	# first idle pose has reached Skeleton3D, including when the stage is hidden.
+	if attempt == 0 and is_instance_valid(model_node) and not bool(model_node.get_meta("prep_model_centered", false)):
+		await get_tree().process_frame
+		await get_tree().process_frame
 	if not is_instance_valid(model_node):
 		return
 	if str(model_node.get_meta("visual_kind", "")) == "portrait_fallback":
@@ -967,10 +973,8 @@ func _update_prep_model_anchors(model_node: Node3D, attempt: int) -> void:
 	var bounds := _prep_node3d_bounds(visual_root)
 	if bounds.size.y <= 0.001:
 		if attempt < 4:
-			get_tree().process_frame.connect(
-				_update_prep_model_anchors.bind(model_node, attempt + 1),
-				CONNECT_ONE_SHOT
-			)
+			await get_tree().process_frame
+			_update_prep_model_anchors.call_deferred(model_node, attempt + 1)
 		else:
 			model_node.set_meta("prep_anchor_update_pending", false)
 		return
@@ -1021,27 +1025,10 @@ func _make_prep_board_model(cell: Dictionary, unit_def: Dictionary) -> Node3D:
 	return actor
 
 func _add_prep_contact_shadow(pivot: Node3D) -> void:
-	var shadow_mesh := PlaneMesh.new()
-	shadow_mesh.size = Vector2.ONE
-	var shadow_shader := Shader.new()
-	shadow_shader.code = """
-shader_type spatial;
-render_mode unshaded, cull_disabled, depth_draw_never;
-
-void fragment() {
-	vec2 point = (UV - vec2(0.5)) * 2.0;
-	float distance_squared = dot(point, point);
-	ALBEDO = vec3(0.015, 0.02, 0.018);
-	ALPHA = (1.0 - smoothstep(0.10, 1.0, distance_squared)) * 0.46;
-}
-"""
-	var shadow_material := ShaderMaterial.new()
-	shadow_material.shader = shadow_shader
-	shadow_mesh.material = shadow_material
-	var shadow := MeshInstance3D.new()
-	shadow.name = "ContactShadow3D"
-	shadow.mesh = shadow_mesh
-	shadow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var shadow := UnitContactShadowScript.create("ContactShadow3D", Vector2(1.2, 0.9))
+	# Transparent cell marks (5) and the bench platform (7) draw after priority
+	# zero. Draw the contact shade last while keeping depth testing against feet.
+	shadow.get_active_material(0).render_priority = 8
 	pivot.add_child(shadow)
 
 func _configure_prep_contact_shadow(model_node: Node3D) -> void:
@@ -1051,8 +1038,8 @@ func _configure_prep_contact_shadow(model_node: Node3D) -> void:
 	var shadow_mesh := shadow.mesh as PlaneMesh
 	if shadow_mesh == null:
 		return
-	shadow_mesh.size = Vector2(1.2, 0.7)
-	shadow.position = Vector3(0.0, 0.08, -0.56)
+	shadow_mesh.size = Vector2(1.2, 0.9)
+	shadow.position = Vector3(0.0, 0.012, 0.0)
 
 # 3D 世界点 → 主屏幕像素坐标（穿过 river 相机投影，再映射到全屏）
 func _world_to_main_screen(world: Vector3) -> Vector2:
@@ -1084,8 +1071,11 @@ func _fit_cell_to_screen_polygon(child: Object, screen_pts: PackedVector2Array, 
 	for p in pts:
 		bounds = bounds.expand(p)
 	child.position = bounds.position
-	child.size = bounds.size
+	# Set the minimum first: Control.size is clamped to the previous minimum.
+	# Doing this in reverse kept the initial oversized hit rectangle after the
+	# visible ring had been projected, shifting tutorial pointers off its center.
 	child.custom_minimum_size = bounds.size
+	child.size = bounds.size
 	var local := PackedVector2Array()
 	for p in pts:
 		local.append(p - bounds.position)
@@ -1231,16 +1221,19 @@ func _position_prep_board_model(model_node: Node3D, index: int, unit_def: Dictio
 	var column := index % GameConstants.BOARD_COLUMNS
 	var row := floori(float(index) / float(GameConstants.BOARD_COLUMNS))
 	var u := lerpf(BOARD_STONE_U.x, BOARD_STONE_U.y, (float(column) + 0.5) / float(GameConstants.BOARD_COLUMNS))
-	var v := lerpf(BOARD_STONE_V.x, BOARD_STONE_V.y, (float(row) + 0.65) / float(GameConstants.BOARD_ROWS))
+	var v := lerpf(BOARD_STONE_V.x, BOARD_STONE_V.y, (float(row) + 0.60) / float(GameConstants.BOARD_ROWS))
 	# 模型"离棋盘中心的横/纵距离"按 SPREAD 缩放（圆圈不受影响）：治"中间对齐、越往边越偏"。
 	var center_u := (BOARD_STONE_U.x + BOARD_STONE_U.y) * 0.5
 	var center_v := (BOARD_STONE_V.x + BOARD_STONE_V.y) * 0.5
 	u = center_u + (u - center_u) * BOARD_MODEL_SPREAD_U
 	v = center_v + (v - center_v) * BOARD_MODEL_SPREAD_V
 	var world_pos := _board_plane_world_pos(u, v)
+	world_pos.y += PREP_CELL_MARK_Y_LIFT
 	if _prep_model_root != null and _prep_model_root.is_inside_tree():
 		model_node.position = _prep_model_root.to_local(world_pos)
-	model_node.position.y = unit_y_offset
+		# The stage and board root are translated/scaled. Replacing the converted
+		# local Y with zero lifts every piece 0.212 world units above its cell.
+		model_node.position.y += unit_y_offset
 	model_node.rotation_degrees = Vector3(0.0, float(unit_def.get("model_base_yaw", 180.0)), 0.0)
 
 func _prep_board_projected_ground_position(index: int) -> Variant:
@@ -1267,14 +1260,16 @@ func _prep_board_projected_ground_position(index: int) -> Variant:
 	)
 	var ray_origin := _prep_river_camera.project_ray_origin(river_point)
 	var ray_direction := _prep_river_camera.project_ray_normal(river_point)
-	var plane_origin := _prep_model_root.to_global(Vector3(0.0, unit_y_offset, 0.0))
+	var plane_local := _prep_model_root.to_local(PREP_BOARD_GROUND_CENTER + Vector3(0.0, PREP_CELL_MARK_Y_LIFT, 0.0))
+	plane_local.y += unit_y_offset
+	var plane_origin := _prep_model_root.to_global(plane_local)
 	var plane_normal := _prep_model_root.global_transform.basis.y.normalized()
 	var ground_plane := Plane(plane_normal, plane_origin)
 	var hit = ground_plane.intersects_ray(ray_origin, ray_direction)
 	if hit == null:
 		return null
 	var local_hit := _prep_model_root.to_local(hit)
-	local_hit.y = unit_y_offset
+	local_hit.y = plane_local.y
 	return local_hit
 
 func _standby_spot(index: int) -> Vector2:
@@ -1287,13 +1282,14 @@ func _position_prep_standby_model(model_node: Node3D, index: int, unit_def: Dict
 	if index >= 0 and index < STANDBY_SLOT_COUNT and _prep_standby_model_root != null and _prep_standby_model_root.is_inside_tree():
 		var spot: Vector2 = _standby_spot(index)
 		var world_pos := _board_plane_world_pos(spot.x, spot.y)
+		world_pos.y += PREP_STANDBY_BG_Y_LIFT
 		# 模型"离整排中心的横向距离"按 SPREAD 缩放（圆圈不受影响）：治"中间对齐、越往两边越偏"。
 		var center_wx := _board_plane_world_pos(STANDBY_CENTER_U, spot.y).x
 		world_pos.x = center_wx + (world_pos.x - center_wx) * STANDBY_MODEL_SPREAD
 		world_pos.x += STANDBY_MODEL_DX   # 微调左右：正=右移
 		world_pos.z += STANDBY_MODEL_DZ   # 微调前后：正=近/下移，负=远/上移
 		model_node.position = _prep_standby_model_root.to_local(world_pos)
-		model_node.position.y = standby_unit_y_offset
+		model_node.position.y += standby_unit_y_offset
 	if standby_face_battlefield and _prep_model_root != null:
 		var battlefield_center := _prep_standby_model_root.to_local(_prep_model_root.to_global(Vector3.ZERO))
 		battlefield_center.y = model_node.position.y
@@ -1547,6 +1543,39 @@ func _center_prep_model(model: Node3D) -> void:
 		return
 	var center := bounds.get_center()
 	model.position -= Vector3(center.x, bounds.position.y, center.z)
+	# A skinned mesh AABB describes its bind pose, not its idle stance. Several
+	# human rigs retained a full model unit of forward offset after AABB fitting,
+	# which pushed their bodies against the platform captions. Anchor only X/Z
+	# to the live feet; keep the established vertical clearance unchanged.
+	var foot_center: Variant = _prep_model_foot_center(model)
+	if foot_center is Vector3:
+		model.position -= Vector3(foot_center.x, 0.0, foot_center.z)
+
+func _prep_model_foot_center(model: Node3D) -> Variant:
+	var parent := model.get_parent() as Node3D
+	if parent == null or not model.is_inside_tree():
+		return null
+	var total := Vector3.ZERO
+	var count := 0
+	for node in model.find_children("*", "Skeleton3D", true, false):
+		var skeleton := node as Skeleton3D
+		# The whole prep stage can still be hidden during its first-frame reveal;
+		# exclude hidden action branches, not a hidden ancestor outside this model.
+		var branch: Node = skeleton
+		var active := true
+		while branch != model and branch != null:
+			if branch is Node3D and not (branch as Node3D).visible:
+				active = false
+				break
+			branch = branch.get_parent()
+		if not active:
+			continue
+		for bone_index in skeleton.get_bone_count():
+			if not skeleton.get_bone_name(bone_index).to_lower().ends_with("foot"):
+				continue
+			total += parent.to_local(skeleton.to_global(skeleton.get_bone_global_pose(bone_index).origin))
+			count += 1
+	return total / float(count) if count > 0 else null
 
 func _prep_node3d_bounds(root: Node3D) -> AABB:
 	var bounds := AABB()

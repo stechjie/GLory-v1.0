@@ -243,11 +243,7 @@ func _arrow_rect() -> Rect2:
 	var arrow: Control = TutorialMode._arrow
 	if arrow == null or not is_instance_valid(arrow):
 		return Rect2()
-	# 箭头是自由摆放的 Label，size 可能还没被容器算过，用常量兜底。
-	var size := arrow.size
-	if size.x <= 0.0 or size.y <= 0.0:
-		size = Vector2(TutorialScript.ARROW_WIDTH, TutorialScript.ARROW_HEIGHT)
-	return Rect2(arrow.global_position, size)
+	return arrow.get_global_rect()
 
 
 func _expect_inside(rect: Rect2, bounds: Rect2, where: String, what: String) -> void:

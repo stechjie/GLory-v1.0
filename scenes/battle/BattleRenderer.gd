@@ -4,6 +4,8 @@ const StatusVFXController := preload("res://scenes/battle/StatusVFXController.gd
 const UnitActor3DScript := preload("res://effects/runtime/presentation/UnitActor3D.gd")
 const UnitVisualResolverScript := preload("res://effects/runtime/presentation/UnitVisualResolver.gd")
 const ModelRootMotionPolicyScript := preload("res://effects/runtime/presentation/ModelRootMotionPolicy.gd")
+const UnitContactShadowScript := preload("res://effects/runtime/presentation/UnitContactShadow.gd")
+const UNIT_TEAM_RING_SHADER := preload("res://shaders/unit_team_ring.gdshader")
 
 # Per-frame visual caches: the separation pass is O(N) per unit over the living
 # set, and several call sites ask for the same unit's position within one frame.
@@ -256,7 +258,6 @@ func _make_unit_node(f: Dictionary) -> Control:
 	# Prevent the parent layout from touching this node
 	root.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
 	_add_unit_anchors(root)
-	_add_unit_shadow(root)
 	var hp_bg := ColorRect.new()
 	hp_bg.name = "HpBg"
 	hp_bg.color = Color(0.05, 0.05, 0.05)
@@ -363,19 +364,6 @@ func _add_unit_anchors(root: Control) -> void:
 		marker.position = anchors[anchor_name]
 		marker.visible = false
 		root.add_child(marker)
-
-func _add_unit_shadow(root: Control) -> void:
-	var shadow := Polygon2D.new()
-	shadow.name = "GroundShadow"
-	shadow.color = Color(0.0, 0.0, 0.0, 0.48)
-	shadow.position = Vector2(41, 70)
-	shadow.z_index = -1
-	var points: PackedVector2Array = []
-	for i in 24:
-		var angle := TAU * float(i) / 24.0
-		points.append(Vector2(cos(angle) * 34.0, sin(angle) * 10.0))
-	shadow.polygon = points
-	root.add_child(shadow)
 
 # prune=false：只建不删。分帧建造（_prepare_battle_models）一次只喂一个单位进来，
 # 若照常执行收尾的清理，每建一个就会把前面建好的全部 queue_free —— 最后只剩一个。
@@ -1263,21 +1251,10 @@ func _find_animation_players(root: Node) -> Array[AnimationPlayer]:
 
 func _add_3d_unit_readability(pivot: Node3D, f: Dictionary) -> void:
 	var team_color := _actor_team_color(f)
-	var shadow := MeshInstance3D.new()
-	shadow.name = "GroundShadow3D"
-	var shadow_mesh := CylinderMesh.new()
-	shadow_mesh.top_radius = 0.26
-	shadow_mesh.bottom_radius = 0.26
-	shadow_mesh.height = 0.018
-	shadow_mesh.radial_segments = 48
-	shadow.mesh = shadow_mesh
-	var shadow_mat := StandardMaterial3D.new()
-	shadow_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	shadow_mat.albedo_color = Color(0.0, 0.0, 0.0, 0.54)
-	shadow_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	shadow.material_override = shadow_mat
-	shadow.position = Vector3(0.0, 0.012, 0.0)
-	shadow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# One shadow in the actor's 3D space follows its movement, facing and death
+	# fade. The old fixed 68 px HUD ellipse doubled this into a dark ground smear.
+	var footprint_scale := clampf(float(pivot.get_meta("model_height", NOMINAL_UNIT_HEIGHT)) / NOMINAL_UNIT_HEIGHT, 0.7, 2.4)
+	var shadow := UnitContactShadowScript.create("GroundShadow3D", Vector2.ONE * 0.62 * footprint_scale)
 	var shadow_root := pivot.get_node_or_null("Shadow") as Node3D
 	if shadow_root != null:
 		shadow_root.add_child(shadow)
@@ -1286,19 +1263,12 @@ func _add_3d_unit_readability(pivot: Node3D, f: Dictionary) -> void:
 
 	var glow := MeshInstance3D.new()
 	glow.name = "TeamGlow3D"
-	var glow_mesh := CylinderMesh.new()
-	glow_mesh.top_radius = 0.30
-	glow_mesh.bottom_radius = 0.30
-	glow_mesh.height = 0.012
-	glow_mesh.radial_segments = 24
+	var glow_mesh := PlaneMesh.new()
+	glow_mesh.size = Vector2.ONE * 0.72 * footprint_scale
 	glow.mesh = glow_mesh
-	var glow_mat := StandardMaterial3D.new()
-	glow_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	glow_mat.albedo_color = team_color
-	glow_mat.emission_enabled = true
-	glow_mat.emission = Color(team_color.r, team_color.g, team_color.b, 1.0)
-	glow_mat.emission_energy_multiplier = 0.55
-	glow_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	var glow_mat := ShaderMaterial.new()
+	glow_mat.shader = UNIT_TEAM_RING_SHADER
+	glow_mat.set_shader_parameter("team_color", team_color)
 	glow.material_override = glow_mat
 	glow.position = Vector3(0.0, 0.022, 0.0)
 	glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

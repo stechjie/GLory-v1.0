@@ -5,6 +5,7 @@ signal completed
 signal skip_requested
 
 const TutorialTargetProviderScript := preload("res://scripts/tutorial/TutorialTargetProvider.gd")
+const TutorialArrowScript := preload("res://scripts/tutorial/TutorialArrow.gd")
 
 const GOLD_TEXT := "∞"
 const TUTORIAL_GOLD := 9999
@@ -63,13 +64,12 @@ enum FillPhase { BUY, CLOSE_SHOP, DEPLOY }
 
 enum ArrowDir { DOWN, UP, LEFT }
 
-# 放大2倍后的向下箭头（字号84）比原来高，往上多抬一些，箭尖仍指向目标顶部。
-const ARROW_DOWN_Y_OFFSET := -100.0
+# The arrow is drawn geometry, with an exact tip instead of guessed font metrics.
+const ARROW_DOWN_Y_OFFSET := -86.0
 # 向上箭头贴在目标底边下方的间隙。
 const ARROW_UP_GAP := 6.0
-# 箭头 Label（字号 84）的大致高度/宽度，用来把气泡排在箭尾之后、不跟箭头叠上。
-const ARROW_HEIGHT := 104.0
-const ARROW_WIDTH := 76.0
+const ARROW_HEIGHT := 84.0
+const ARROW_WIDTH := 84.0
 # 向左箭头跟目标右边缘的间隙。
 const ARROW_LEFT_GAP := 8.0
 
@@ -119,7 +119,7 @@ var _progress_index := 0
 var opponent_snapshot: Dictionary = {}
 var _target_provider: TutorialTargetProviderScript
 var _overlay: Control
-var _arrow: Label
+var _arrow: TutorialArrowScript
 var _bubble: PanelContainer
 var _text: Label
 var _progress_label: Label
@@ -368,7 +368,11 @@ func update_overlay() -> void:
 	var target := _target_control()
 	var rect := Rect2(Vector2(540, 290), Vector2(200, 80))
 	if target is Control and target.is_inside_tree():
-		rect = (target as Control).get_global_rect()
+		# Targets can belong to a modal CanvasLayer. Convert through canvas space
+		# before assigning the overlay's local position.
+		var to_overlay := _overlay.get_global_transform_with_canvas().affine_inverse() \
+			* target.get_global_transform_with_canvas()
+		rect = to_overlay * Rect2(Vector2.ZERO, target.size)
 	var dir := _arrow_dir()
 	var next_text := current_text()
 	if _text.text != next_text:
@@ -532,21 +536,26 @@ func _arrow_dir() -> int:
 	return ArrowDir.DOWN
 
 func _apply_arrow(rect: Rect2, dir: int) -> void:
-	var pos := Vector2.ZERO
+	_arrow.set_direction(dir)
+	var tip := Vector2.ZERO
 	match dir:
 		ArrowDir.LEFT:
-			_arrow.text = "◀"
-			pos = Vector2(rect.position.x + rect.size.x + ARROW_LEFT_GAP, rect.position.y + rect.size.y * 0.5 - 48.0)
+			tip = Vector2(rect.end.x + ARROW_LEFT_GAP, rect.get_center().y)
 		ArrowDir.UP:
-			# 箭尖贴目标底边，箭身朝下延伸，气泡再排在箭尾下方。
-			_arrow.text = "▲"
-			pos = Vector2(rect.position.x + rect.size.x * 0.5 - 36.0, rect.position.y + rect.size.y + ARROW_UP_GAP)
+			tip = Vector2(rect.get_center().x, rect.end.y + ARROW_UP_GAP)
 		_:
-			_arrow.text = "▼"
-			pos = rect.position + Vector2(rect.size.x * 0.5 - 36.0, ARROW_DOWN_Y_OFFSET)
-	# V2 P1-09：箭头也要收进安全区。20:9 与 2640×1216 下，指向屏幕最上/最下一排
-	# 目标的箭头原本会整个跑到刘海或手势条底下去。
-	_arrow.position = _clamp_into(pos, Vector2(ARROW_WIDTH, ARROW_HEIGHT), _safe_rect())
+			tip = Vector2(rect.get_center().x, rect.position.y - ARROW_UP_GAP)
+	# Fit around the anchored tip. Clamping position moved the pointer off the
+	# top row on wide phones; shrink its body slightly instead of moving its tip.
+	var local_tip := _arrow.tip_position()
+	var safe := _safe_rect()
+	var fit := 1.0
+	for axis in 2:
+		fit = minf(fit, (tip[axis] - safe.position[axis]) / local_tip[axis])
+		fit = minf(fit, (safe.end[axis] - tip[axis]) / (_arrow.size[axis] - local_tip[axis]))
+	fit = clampf(fit, 0.05, 1.0)
+	_arrow.scale = Vector2.ONE * fit
+	_arrow.position = tip - local_tip * fit
 
 # V2 P1-09：常驻控件（跳过按钮、进度条所在的气泡）也要落在安全区内。
 # 跳过按钮原本写死在 (16, 44)；横屏时刘海在左边缘，正好压住它。
@@ -1209,13 +1218,7 @@ func _ensure_overlay() -> void:
 	_overlay.z_index = 500
 	host.add_child(_overlay)
 
-	_arrow = Label.new()
-	_arrow.text = "▼"
-	_arrow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_arrow.add_theme_font_size_override("font_size", 84)
-	_arrow.add_theme_color_override("font_color", Color(0.95, 0.13, 0.10))
-	_arrow.add_theme_color_override("font_outline_color", Color(0.12, 0.0, 0.0))
-	_arrow.add_theme_constant_override("outline_size", 8)
+	_arrow = TutorialArrowScript.new()
 	_overlay.add_child(_arrow)
 
 	_bubble = PanelContainer.new()

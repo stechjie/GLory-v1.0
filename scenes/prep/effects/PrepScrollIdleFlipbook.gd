@@ -20,8 +20,10 @@ var _animation_time := 0.0
 var _frame_index := -1
 var _float_tween: Tween
 var _glow_tween: Tween
-var _rest_position := Vector2.ZERO
-var _rest_position_initialized := false
+var _rest_offset_top := 0.0
+var _rest_offset_bottom := 0.0
+var _rest_offsets_initialized := false
+var _float_offset := 0.0
 var _active := true
 
 
@@ -109,30 +111,26 @@ func _start_float() -> void:
 	if not _active or not is_instance_valid(_target):
 		return
 	_kill_tweens()
-	if not _rest_position_initialized:
-		_rest_position = _target.position
-		_rest_position_initialized = true
+	if not _rest_offsets_initialized:
+		# The parent Container may not have laid out yet during staged startup.
+		# Keep offsets from the bottom-center anchors, never its temporary local
+		# position; the latter would pull the button toward the top-left later.
+		_rest_offset_top = _target.offset_top
+		_rest_offset_bottom = _target.offset_bottom
+		_rest_offsets_initialized = true
 	_target.pivot_offset = _target.size * 0.5
 	_float_tween = create_tween().set_loops()
 	_float_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	_float_tween.tween_property(
-		_target,
-		"position",
-		_rest_position + Vector2(0.0, -FLOAT_DISTANCE),
-		HALF_CYCLE_SECONDS
-	)
+	_float_tween.tween_method(_apply_float_offset, _float_offset,
+		-FLOAT_DISTANCE, HALF_CYCLE_SECONDS)
 	_float_tween.parallel().tween_property(
 		_target,
 		"rotation",
 		SWAY_RADIANS,
 		HALF_CYCLE_SECONDS
 	)
-	_float_tween.tween_property(
-		_target,
-		"position",
-		_rest_position + Vector2(0.0, FLOAT_DISTANCE * 0.35),
-		HALF_CYCLE_SECONDS
-	)
+	_float_tween.tween_method(_apply_float_offset, -FLOAT_DISTANCE,
+		FLOAT_DISTANCE * 0.35, HALF_CYCLE_SECONDS)
 	_float_tween.parallel().tween_property(
 		_target,
 		"rotation",
@@ -145,10 +143,17 @@ func _start_float() -> void:
 	_glow_tween.tween_property(_halo, "modulate:a", 0.48, 1.25)
 
 
+func _apply_float_offset(value: float) -> void:
+	_float_offset = value
+	if is_instance_valid(_target):
+		_target.offset_top = _rest_offset_top + value
+		_target.offset_bottom = _rest_offset_bottom + value
+
+
 func _stop_float() -> void:
 	_kill_tweens()
-	if is_instance_valid(_target) and _rest_position_initialized:
-		_target.position = _rest_position
+	if is_instance_valid(_target) and _rest_offsets_initialized:
+		_apply_float_offset(0.0)
 		_target.rotation = 0.0
 	if is_instance_valid(_halo):
 		_halo.modulate.a = 0.62

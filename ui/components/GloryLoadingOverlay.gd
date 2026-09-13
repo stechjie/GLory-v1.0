@@ -144,14 +144,15 @@ func set_cancel_policy(cancellable: bool, reason: String = "") -> void:
 	_policy_label.visible = not reason.is_empty()
 
 
-func set_failed(error_code: String, message: String, retryable: bool) -> void:
+func set_failed(error_code: String, message: String, retryable: bool,
+		failure_title: String = "", return_text: String = "") -> void:
 	_ensure_built()
 	_mode = MODE_FAILED
 	_error_code = error_code
 	_resolution_sent = false
 	_indeterminate = false
 	_stage_key = "failed"
-	_stage_label.text = tr("battle_load_failed")
+	_stage_label.text = failure_title if not failure_title.is_empty() else tr("battle_load_failed")
 	_detail_label.text = message
 	_detail_label.visible = not message.is_empty()
 	_progress_bar.visible = false
@@ -164,7 +165,7 @@ func set_failed(error_code: String, message: String, retryable: bool) -> void:
 	_error_label.visible = true
 	_retry_button.text = tr("battle_load_retry")
 	_retry_button.visible = retryable
-	_cancel_button.text = tr("battle_load_back_to_prep")
+	_cancel_button.text = return_text if not return_text.is_empty() else tr("battle_load_back_to_prep")
 	_cancel_button.visible = true
 	_policy_label.visible = false
 

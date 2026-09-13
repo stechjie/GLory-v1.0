@@ -12,6 +12,17 @@ signal short_code_resume_result_check_requested(request_id: String, succeeded: b
 signal reconnect_cancel_navigation_check_requested()
 
 const VFX_WARMUP := preload("res://effects/vfx3d/VFXWarmup.gd")
+const StartupResourceLoader := preload("res://scripts/assets/FrameResourceLoader.gd")
+const PrepStartupAssets := preload("res://scripts/assets/PrepStartupAssets.gd")
+const StartupLoadingOverlay := preload("res://ui/components/GloryLoadingOverlay.gd")
+const PREP_STARTUP_PATH := "res://scenes/prep/PrepScreen.tscn"
+const STARTUP_LOADING_MODAL_ID := "startup_preparation"
+var _startup_transition_running := false
+var _startup_transition_committing := false
+var _startup_transition_serial := 0
+var _startup_loader: StartupResourceLoader
+var _startup_loading_overlay: StartupLoadingOverlay
+
 # 用 preload 而不是全局类名 UiFeedback：headless 跑检查场景时不走导入，
 # .godot/global_script_class_cache.cfg 里没有新登记的 class_name，
 # 直接写全局名会「Identifier not declared」——实测踩过。
@@ -135,12 +146,15 @@ func _ready() -> void:
 	UiFeedbackService.install()
 	_install_presence_reporting()
 	_install_realtime()
-	_start_vfx_warmup()
 	_route_startup()
+	# Full catalog shader warmup is diagnostic-only. Production loads the
+	# current battle through PrepScreen's existing replay resource stage.
+	if OS.is_debug_build() and OS.get_cmdline_user_args().has("--warmup-effects"):
+		_start_vfx_warmup()
 	StartupTrace.mark(StartupTrace.T2_MAIN_READY)
 
-# VFX shader 预热。挂在这里是因为从引擎就绪到连上服务器有约 44 秒的菜单导航时间，
-# 而且这段时间还没有心跳需要维持 —— 详见 VFXWarmup.gd 顶部。
+# Opt-in VFX diagnostics; catalog-wide compilation must not compete with the
+# language page or the player's first tutorial actions.
 func _start_vfx_warmup() -> void:
 	if NetworkService.state != NetworkService.SessionState.OFFLINE:
 		return
@@ -506,15 +520,133 @@ func _route_startup() -> void:
 
 
 func _enter_tutorial_from_startup() -> void:
-	# Persist intent before mutating the run. This also converts legacy_unknown into
-	# an explicit state without guessing whether the old player had completed it.
-	PlayerProfile.begin_tutorial()
-	if not (TutorialMode.has_checkpoint() and TutorialMode.restore_checkpoint()):
-		TutorialMode.start()
-	_show_prep()
+	if _startup_transition_running:
+		return
+	_startup_transition_running = true
+	_startup_transition_committing = false
+	_startup_transition_serial += 1
+	var serial := _startup_transition_serial
+	_startup_loading_overlay = StartupLoadingOverlay.new()
+	_startup_loading_overlay.configure({
+		"request_id": STARTUP_LOADING_MODAL_ID,
+		"title": _startup_text("准备新手教程", "Preparing tutorial"),
+		"stage_key": "resources",
+		"stage_text": _startup_text("载入棋盘与当前棋子", "Loading board and current pieces"),
+		"cancellable": true,
+		"cancel_text": _startup_text("返回语言选择", "Back to language selection"),
+	})
+	_startup_loading_overlay.retry_requested.connect(_retry_startup_preparation)
+	_startup_loading_overlay.cancel_requested.connect(_cancel_startup_preparation)
+	ModalStack.push(_startup_loading_overlay, {
+		"id": STARTUP_LOADING_MODAL_ID, "owner": self, "priority": 80,
+		"dismiss_on_backdrop": false,
+	})
+	# Acknowledge the tap before profile/checkpoint I/O or any resource work.
+	await _await_startup_frame()
+	if serial != _startup_transition_serial:
+		return
+	StartupTrace.mark("tutorial_loading_visible")
+	if not TutorialMode.active:
+		PlayerProfile.begin_tutorial()
+		if not (TutorialMode.has_checkpoint() and TutorialMode.restore_checkpoint()):
+			TutorialMode.start()
+	var loader := StartupResourceLoader.new()
+	_startup_loader = loader
+	var paths: Array = [PREP_STARTUP_PATH]
+	paths.append_array(PrepStartupAssets.paths())
+	var loaded := await loader.load_paths(get_tree(), paths,
+		_on_startup_resource_progress.bind(serial))
+	if not is_inside_tree() or serial != _startup_transition_serial:
+		return
+	if not loaded:
+		push_error("Tutorial resource loading failed: %s" % str(loader.failed_paths))
+		_startup_loading_overlay.set_failed("PREP-RESOURCE-LOAD",
+			_startup_text("部分资源未能载入，请重试。", "Some resources could not be loaded. Please retry."), true,
+			_startup_text("载入失败", "Loading failed"),
+			_startup_text("返回语言选择", "Back to language selection"))
+		_startup_transition_running = false
+		return
+	var scene := loader.resources.get(PREP_STARTUP_PATH) as PackedScene
+	if scene == null:
+		_startup_loading_overlay.set_failed("PREP-SCENE-TYPE",
+			_startup_text("棋盘资源无法打开，请重试。", "The board could not be opened. Please retry."), true,
+			_startup_text("载入失败", "Loading failed"),
+			_startup_text("返回语言选择", "Back to language selection"))
+		_startup_transition_running = false
+		return
+	_startup_loader = null
+	# Keep only current models and their actions/materials beyond this loader's
+	# lifetime. The shop presents portraits; its 3D models are needed on purchase.
+	for path in loader.resources:
+		if str(path).begins_with("res://assets/models/"):
+			BattleAssetService.retain_ready_resource(str(path), loader.resources[path],
+				BattleAssetService.OWNER_PLAYER)
+	StartupTrace.mark("tutorial_resources_ready", {"resources": loader.resources.size()})
+	# Construction touches the scene tree; cancellation is only offered during
+	# background I/O, then disabled for this short, frame-sliced commit.
+	_startup_transition_committing = true
+	_startup_loading_overlay.set_cancel_policy(false,
+		_startup_text("正在完成棋盘布置", "Finishing the board"))
+	_startup_loading_overlay.set_stage("build", _startup_text("布置棋盘", "Setting up the board"), "")
+	await get_tree().process_frame
+	_clear()
+	_prep = scene.instantiate() as Control
+	_prep.startup_staged = true
+	_prep.battle_requested.connect(_on_battle_requested)
+	add_child(_prep)
+	await _prep.startup_ready
+	await _await_startup_frame()
+	StartupTrace.mark("tutorial_first_frame_ready")
+	ModalStack.pop(STARTUP_LOADING_MODAL_ID, ModalStack.REASON_PROGRAMMATIC)
+	_startup_loading_overlay = null
+	_startup_transition_running = false
+	_startup_transition_committing = false
+	SaveManager.save_run()
+
+
+func _await_startup_frame() -> void:
+	if DisplayServer.get_name() == "headless":
+		await get_tree().process_frame
+	else:
+		await RenderingServer.frame_post_draw
+
+
+func _on_startup_resource_progress(done: int, total: int, serial: int) -> void:
+	if serial == _startup_transition_serial and is_instance_valid(_startup_loading_overlay):
+		# The wrapper's action list is discovered as it loads, so use truthful
+		# counts without a percentage that could go backwards as the total grows.
+		_startup_loading_overlay.set_progress(-1.0, "%d / %d" % [done, total])
+
+
+func _cancel_startup_preparation(_request_id: String) -> void:
+	if _startup_transition_committing:
+		return
+	_startup_transition_serial += 1
+	if _startup_loader != null:
+		_startup_loader.cancel()
+		_startup_loader = null
+	_startup_transition_running = false
+	ModalStack.pop(STARTUP_LOADING_MODAL_ID, ModalStack.REASON_PROGRAMMATIC)
+	_startup_loading_overlay = null
+	TutorialMode.finish(false)
+	_show_language_select()
+
+
+func _retry_startup_preparation(_request_id: String) -> void:
+	if _startup_transition_running:
+		return
+	ModalStack.pop(STARTUP_LOADING_MODAL_ID, ModalStack.REASON_PROGRAMMATIC)
+	_startup_loading_overlay = null
+	_enter_tutorial_from_startup()
+
+
+func _startup_text(zh: String, en: String) -> String:
+	return en if LocaleManager.get_locale().begins_with("en") else zh
 
 
 func _select_language(locale: String) -> void:
+	if _startup_transition_running:
+		return
 	PlayerProfile.select_language(locale)
 	StartupTrace.mark_first_action("select_language", locale)
 	_enter_tutorial_from_startup()
@@ -552,6 +684,12 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _on_back_requested() -> void:
+	# Back/Esc must follow the loading screen's cancel policy. Popping this
+	# modal generically frees the UI while its resource coroutine still uses it.
+	if ModalStack.top_id() == STARTUP_LOADING_MODAL_ID:
+		if not _startup_transition_committing:
+			_cancel_startup_preparation(STARTUP_LOADING_MODAL_ID)
+		return
 	# 1. 最上层 modal（重连提示、宝藏三选一、佣兵层、确认框都在这里）
 	if ModalStack.handle_back_request():
 		return
