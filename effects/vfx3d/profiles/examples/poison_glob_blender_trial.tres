@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="VFXProfile3D" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+profile_id = "poison_glob_blender_trial"
+module_id = "poison_glob_mesh"
+curve_name = "viscous_release"
+dark_color = Color(0.045, 0.012, 0.065, 1)
+main_color = Color(0.76, 0.94, 0.50, 1)
+core_color = Color(0.92, 1.0, 0.40, 1)
+size = 1.0
+duration = 2.34
+particle_count = 6
+trail_length = 0.92
+emission_energy = 2.0
+quality_group = "important"
+parameters = {"model_scale": 0.34, "travel_duration": 0.68, "arc_height": 0.16, "wobble": 0.15, "triangle_budget": 900}
