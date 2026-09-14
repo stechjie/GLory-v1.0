@@ -34,10 +34,11 @@ const MY_SLOT := 0
 # 2026-09-13 跟到 25（组队语音加 RPC 与语音通道，经济契约没变，指纹不动）。
 # 2026-09-14 跟到 26（四条聊天 RPC 各加 team_only 参数，经济契约没变，指纹不动）。
 # 2026-09-14 跟到 27（排队：线格没变，只为挡住没有排队逻辑的旧包顶号，指纹不动）。
+# 2026-09-15 跟到 28（出战种族：准备 / 开始两条 RPC 各加 races 参数，经济契约没变，指纹不动）。
 # ⚠️ **这个值落后于协议号会让下面那条断言静默失效**：断言判的是
 # 「契约变了但协议号没变」，而它一旦落后，`VERSION != PINNED_PROTOCOL` 就恒为真，
 # 于是改契约不顶号也照样绿。协议号每次顶，这里必须跟。
-const PINNED_PROTOCOL := 27
+const PINNED_PROTOCOL := 28
 const PINNED_CONTRACT := "VCjg+twg3T63Ev0T"
 
 var _h: CheckHarness
@@ -77,8 +78,9 @@ func _make_prep_room(round_index: int) -> Dictionary:
 		# 少了这一步，账本里 shop.offers 是空的、offer_id 是空串，任何买入意图都会
 		# 被 _buy 判 bad_index / stale_offer —— 那是脚手架的洞，不是产品缺陷。
 		var shop: Dictionary = prep.get("shop", {})
+		# 真服务器在开局前已经从「准备」里收下了座位的出战种族；这里没有大厅，直接用默认四族。
 		shop["offers"] = NetworkService._server_roll_shop_offers(
-			GameState.SHOP_UNIT_SLOTS, round_index)
+			GameState.SHOP_UNIT_SLOTS, round_index, NetworkService.RacePick.default_races())
 		shop["offer_id"] = NetworkService._make_offer_id()
 		var sold: Array = []
 		sold.resize(GameState.SHOP_UNIT_SLOTS)

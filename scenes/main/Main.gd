@@ -2123,6 +2123,10 @@ func _on_team_room_action_failed(reason: String) -> void:
 	if not _join_room_request_id.is_empty() \
 			and AsyncActionController.is_current(_join_room_request_id):
 		AsyncActionController.fail(_join_room_request_id, "JOIN_ROOM_REQUEST_FAILED", true)
+	# 大厅里按准备 / 开始时，出战种族被战斗服务器拒了（协议 28）。大厅没有能长留这条的地方，
+	# 下一次大厅广播就会把状态栏刷掉，所以用全局提示。
+	if reason == "bad_races":
+		GloryToast.show_text(tr("net_err_bad_races"))
 	if is_instance_valid(_menu) and _menu.has_method("show_room_error"):
 		_menu.show_room_error(reason)
 
@@ -2140,6 +2144,9 @@ func _show_public_token_in_menu(token_id: String) -> void:
 
 func _on_team3v3_start() -> void:
 	SaveManager.new_run()
+	# 出战种族在开局这一刻定下（GameState.run_races 的注释）。new_run() 刚清过它，所以放在后面。
+	GameState.run_races = PlayerProfile.get_selected_races()
+	SaveManager.save_run()
 	GameState.team_mode = true
 	GameState.team_hp = GameState.START_FORMATION_HP
 	GameState.enemy_team_hp = GameState.START_FORMATION_HP

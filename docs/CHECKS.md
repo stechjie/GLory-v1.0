@@ -41,6 +41,7 @@ Godot 不在 PATH 上，用 console 版才能把日志打到 stdout：
 | `tools/piece_uid_check.tscn` | 棋子 uid：铸造唯一、跨局不复用、存档往返与老档补发、快照携带与去重 —— 四星血统的前提 |
 | `tools/four_star_values_check.tscn` | 四星技能数值：`star4` 覆写只在 4 星生效、不泄漏到低星，以及 §2 配平封顶表的机器可读版本 |
 | `tools/dot_attribution_check.tscn` | 持续伤害的归属：毒/失血致死要算给施法者（否则击杀金蒸发），最后一击仍归补刀者，自残不算别人头上 |
+| `tools/race_pick_check.tscn` | 出战种族（协议 28）：选择规则、本机摇商店、战斗服务器三处摇商店（开局 / 每回合 / 刷新）、备战页种族页签。核心判据：**先往棋子表里塞一个假的第五族** —— 今天四族选四个等于全选，只用真实数据测，把过滤整个删掉照样全绿 |
 
 ### 检查脚本自己写坏时会怎样（2026-09-08 实测）
 
@@ -2655,3 +2656,78 @@ position/size（`fit_child_in_rect`），却从不碰 rotation/pivot_offset。
   live 的 `export_presets.cfg` 不进 git，在一台从没同步过它的机器上导出就是
   没有，CI 也看不见。
 - **12 ms 震动在真机上感不感觉得到**、**240 fps 录屏测反馈时延**：需要设备。
+
+## 2026-09-15：出战种族（协议 28）
+
+备战页加了「种族」页签：每名玩家选定**正好 4 个**种族，对局里自己的商店只刷这几族（3v3 各选各的）。
+规则只有一份 `scripts/units/RacePick.gd`，备战页、本机摇商店、战斗服务器、门禁共用。
+
+### 新增 `race_pick`（132 项）
+
+**核心判据：往棋子表里塞假种族。** 今天只有神 / 暗 / 灵 / 人四族，必须选四个 = 全选，
+过滤等于没过滤 —— 只用真实数据测，把过滤整个删掉照样全绿。所以除了钉住真实数据的形状，
+其余用例先在**内存里**给棋子表加一个假的第五族 `zz_fake`，选「暗、灵、人、假」：
+神族一个都不许出现，假族必须出现。用完还原，不写文件；界面用例只点选、不按保存。
+
+| 层 | 断言 |
+| --- | --- |
+| 规则 | 个数不对 / 重复 / 不存在 / 非字符串 / 20 万元素一律拒（后者 < 5 ms）；乱序整理成表顺序；不合法回落「表里前 4 族」 |
+| 回落 | 所选四族一个三档都没有时，`ShopRoll.pick_offer` 的回落只落在这四族里（必须先过滤再交给它） |
+| 本机 | `PrepBoardController._roll_shop` 按 `GameState.run_races` 过滤 |
+| **服务器接线** | `_room_start_authoritative`（开局）、`_room_begin_next_prep`（每回合）、`_room_apply_economy`（刷新）三处都按座位的选择过滤；座位没有选择时回落默认 |
+| 界面 | 页签切换；选满 4 个再点第 5 个被拒并提示；3 个时保存点不了；不按保存不落盘；四族时整页锁定；首次宠物三选一时只剩宠物页 |
+
+恶意载荷（1 个 / 5 个 / 重复 / 不存在 / 超大数组）、换座跟人走、离座清掉、开局后锁定在
+`adversarial_client` 的 `seat_races_validation`（14 项）；快照往返在 `room_snapshot_roundtrip`
+（多一项 `seat_races_kept`，13 项）；真进程重启在 `persist_check`（`seat_races=true`）。
+
+### 证伪
+
+把服务器 `_server_roll_shop_offers` 与客户端 `_roll_shop` 同时改回全表：
+
+```
+FAIL [client_roll_leaks_unpicked]      1200 个商品里却有 279 个神族
+FAIL [server_start_leaks_unpicked]      240 个商品里却有 53 个神族
+FAIL [server_next_prep_leaks_unpicked]  240 个商品里却有 56 个神族
+FAIL [server_refresh_leaks_unpicked]    240 个商品里却有 52 个神族
+FAIL [seat_without_races_not_default]  默认四族里混进了假族
+```
+
+还原后 132 项全过。
+
+### 第一版自己写出的「日志红、结果绿」
+
+第一次跑 `race_pick` 报 PASS 112 项，日志里却有 5 条 `SCRIPT ERROR`：`PlayerProfile` 漏加了
+`get_selected_races()`，`PetScreen.gd` 整页编译失败，界面用例拿到的是 null，访问成员时直接崩掉，
+一条断言都没跑到。`run_check.ps1` 会把这种情况判红；直接调 Godot 只看 `CHECK_RESULT` 会被骗。
+现在 `_open_pet_screen()` 实例化失败就记 `pet_screen_load_failed`。修好后 132 项（多出的 20 项就是界面用例）。
+
+同一轮 `profile` 的新断言 `reset_kept_races` 也红了（同一个漏洞：注销没清出战种族），一起修掉。
+
+### 协议 27 → 28
+
+`_rpc_team_set_ready`、`_rpc_team_start_request` 各加一个 `races` 参数（RPC 数量不变，签名指纹
+`e14ffcf49f3e7c30` → `0a69cb890ab7cf1b`）。`chat_check`、`carrot_online_check` 的钉值跟到 28。
+**线上战斗服务器必须用这份代码重新打包部署到 p28，和新 APK 一起上**；账号服务器不用动。
+
+### `persist_check` 手动跑两次会假红
+
+连续两轮手动跑 save + load，第二轮 load 看到 4 个房间（期望 2）：save 阶段是往**已有**快照里加房间，
+上一轮留下的 `user://server_rooms.bin.7` 被累加进来。`tools/multiplayer_regression.sh` 先删这份文件就是为此；
+手动跑之前也要先删。删掉重跑：PASS，`seat_races=true`。
+
+### 回归（2026-09-15，本机 MSI，Godot 4.7.1）
+
+全过：`race_pick`(132) / `chat`(246) / `shop_roll_parity`(6476) / `carrot_online`(91) / `prep_shop`(34) /
+`profile`(154) / `player_identity`(709) / `onboarding_persistence`(20) / `modal_lifecycle`(433) /
+`ui_feedback`(39) / `bootstrap`(75) / `board_4x4_smoke`(64) / `data_registry`(17) / `determinism`(111) /
+`economy_settle` / `four_star_upgrade`(305) / `main_team_create_room_action`(41) /
+`main_team_join_room_action`(46) / `main_team_manual_reconnect_action`(45) / `merge_rule_parity`(29) /
+`page_lifecycle`(74) / `piece_uid`(1056) / `release_debug_ui`(9) / `responsive_layout`(114) /
+`sell_refund`(482) / `shop_price_parity`(106) / `tutorial_checkpoint`(180) / `tutorial_target`(97) /
+`ui_component`(134) / `async_action`(178) / `persist_check`。
+
+改动前就红、这一批没变：`procedural_ui_ratchet`（3 条，`FourStarUpgradePanel.gd`；备战页新按钮全用
+`GloryActionButton.tscn`，计数没涨）、`dynamic_call`（4 条；未解析调用 262 → 261，
+`shop_roll_parity` 里一处 `.call` 改成了直接调用）、`prep_tree_snapshot`（节点 522 / 基线 308）、
+`adversarial_client` 27/29（`economy_ledger`、`economy_server_wiring` 两条，与改动前相同）。

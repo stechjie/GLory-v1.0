@@ -143,6 +143,9 @@ func new_room() -> Dictionary:
 		"altar_uses": {},        # slot -> 本回合黄金祭坛已用次数（服务端权威，每回合清零）
 		"tx_log": {},            # slot -> Array[交易回执]（E4 幂等，定长 TX_LOG_PER_SLOT）
 		"prep": {},              # slot -> EconomyLedger 座位账本（P1）
+		# slot -> Array[String] 出战种族（RacePick，协议 28）。大厅阶段随「准备 / 开始」收下，
+		# 开局即锁定；每回合摇商店都按它过滤。见 NetworkService._room_accept_seat_races。
+		"seat_races": {},
 		# --- 宝物归属（服务端权威）---
 		# 服务端本来就在 _server_pending_treasure 里摇候选并下发，只是从不记录玩家选了
 		# 哪个。记下来之后「这件宝物是不是服务器发给你的」就有了可信来源，不必等 P1
@@ -216,6 +219,7 @@ const SEAT_SLOT_MAPS := [
 	"treasure_offer", "owned_treasures", "altar_uses", "last_board", "boards",
 	"tx_log",   # E4：座位没了，这个座位的交易回执也没有意义了
 	"prep",     # P1：座位账本同理
+	"seat_races",  # 出战种族（协议 28）：换座跟着人走，离座一起清
 ]
 
 # 短码给玩家手输，所以不能太长；用 base32 去掉易混字符（0/O/1/I），

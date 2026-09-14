@@ -161,6 +161,7 @@ enum SessionState { OFFLINE, JOINING, READY, FAILED, RECONNECTING }
 
 const BattleSim := preload("res://scripts/battle/BattleSimulator.gd")
 const ShopRoll := preload("res://scripts/economy/ShopRoll.gd")
+const RacePick := preload("res://scripts/units/RacePick.gd")
 const CarrotEconomy := preload("res://scripts/economy/CarrotEconomy.gd")
 const DEFAULT_PORT := NetworkConfig.SERVER_PORT
 const DEFAULT_HOST := NetworkConfig.SERVER_IP
@@ -1234,7 +1235,8 @@ func _room_begin_next_prep(room: Dictionary) -> void:
 			EconomyLedger.reset_round(prep)
 			EconomyLedger.harvest_for_round(prep, next_round)
 			var shop: Dictionary = prep.get("shop", {})
-			shop["offers"] = _server_roll_shop_offers(GameState.SHOP_UNIT_SLOTS, next_round)
+			shop["offers"] = _server_roll_shop_offers(GameState.SHOP_UNIT_SLOTS, next_round,
+				_room_seat_races(room, slot))
 			shop["offer_id"] = _make_offer_id()
 			var sold: Array = []
 			sold.resize(GameState.SHOP_UNIT_SLOTS)
@@ -1491,7 +1493,15 @@ func team_set_ready(value: bool) -> void:
 		_team_maybe_start_round()
 	else:
 		_pending_ready = 1 if value else 0
-		_rpc_team_set_ready.rpc_id(1, team_local_slot, value)
+		_rpc_team_set_ready.rpc_id(1, team_local_slot, value, _local_races_for_server())
+
+# 本机要报给战斗服务器的出战种族（协议 28）。「准备」和「开始」两条 RPC 都带着它：
+# 服务器只在大厅阶段收下（开局即锁定），之后每回合按准备时照样带上 —— 参数表是固定的，
+# 服务器那边直接忽略。拷成无类型数组：RPC 参数声明的是 Array。
+func _local_races_for_server() -> Array:
+	var out: Array = []
+	out.append_array(PlayerProfile.get_selected_races())
+	return out
 
 func team_all_ready() -> bool:
 	# Empty slots are allowed (e.g. a 2v2). Requirements: every connected real
@@ -1518,7 +1528,7 @@ func team_start() -> void:
 	# the server validates readiness and launches for everyone.
 	if not is_host:
 		if can_control_room():
-			_rpc_team_start_request.rpc_id(1)
+			_rpc_team_start_request.rpc_id(1, _local_races_for_server())
 		return
 	# 本地房主：按开始游戏即自动提交自己的 ready，再做权威开局检查
 	if team_local_slot >= 0 and team_local_slot < team_ready.size():
@@ -1591,7 +1601,8 @@ func _room_start_authoritative(room: Dictionary) -> void:
 				# 服务端 _room_apply_economy 判 typeof(payload.gold) != int → gold_desync，
 				# 玩家看到「商店刷新失败：gold_desync」。第 2 回合起 server_shop 有值就正常。
 				var shop: Dictionary = prep.get("shop", {})
-				shop["offers"] = _server_roll_shop_offers(GameState.SHOP_UNIT_SLOTS, int(room.get("round_index", 1)))
+				shop["offers"] = _server_roll_shop_offers(GameState.SHOP_UNIT_SLOTS,
+					int(room.get("round_index", 1)), _room_seat_races(room, slot))
 				shop["offer_id"] = _make_offer_id()
 				var sold: Array = []
 				sold.resize(GameState.SHOP_UNIT_SLOTS)
@@ -4348,11 +4359,50 @@ func _room_owned_for_ledger(room: Dictionary, slot: int) -> Array:
 func _crypto_unit_float() -> float:
 	return float(_crypto.generate_random_bytes(4).decode_u32(0)) / 4294967296.0
 
+# --- 出战种族（RacePick，协议 28）----------------------------------------------
+
+# 收下一个座位的出战种族。返回 false = 这份选择不合法，调用方拒绝这次准备 / 开始。
+#
+# 只在大厅阶段收：开局那一刻锁定，之后每回合按准备带来的种族一律不理（返回 true、不改）——
+# 否则备战期改个包，下一回合商店就跟着换，等于局中换卡池。
+#
+# 不合法就整份拒绝、不帮忙修（RacePick.sanitize 的理由）：少报一族 = 卡池更浅 = 升星更快。
+# 正常客户端报的永远是合法值；唯一的正当失败是**客户端比服务器多一族**（新种族的数据
+# 先进了客户端），所以加新种族时战斗服务器必须先于或同时于客户端更新。
+func _room_accept_seat_races(room: Dictionary, slot: int, races: Variant) -> bool:
+	if str(room.get("state", ROOM_LOBBY)) != ROOM_LOBBY:
+		return true
+	var clean := RacePick.sanitize(races)
+	if clean.is_empty():
+		_net_log("seat races rejected room=%d slot=%d size=%d" % [int(room.get("id", 0)), slot,
+			(races as Array).size() if typeof(races) == TYPE_ARRAY else -1])
+		return false
+	var stored: Array = []
+	stored.append_array(clean)
+	var seat_races: Dictionary = room.get("seat_races", {})
+	seat_races[slot] = stored
+	room["seat_races"] = seat_races
+	_touch_room(room)
+	return true
+
+# 这个座位这一局生效的出战种族。正常路径下开局前一定收到过（准备 / 开始都带着）；
+# 取不到只可能是内部 bug —— 那时回落到默认（一份合法选择），不刷空商店，并留日志。
+func _room_seat_races(room: Dictionary, slot: int) -> Array:
+	var clean := RacePick.sanitize((room.get("seat_races", {}) as Dictionary).get(slot, []))
+	if clean.is_empty():
+		_net_log("seat races missing room=%d slot=%d -> default" % [int(room.get("id", 0)), slot])
+		clean = RacePick.default_races()
+	var out: Array = []
+	out.append_array(clean)
+	return out
+
 # 档位曲线与客户端共用 ShopRoll —— 这里原本是**全表均匀随机**，
 # 没有任何档位概念，等于把成长曲线整条抹掉（第一回合 19% 刷三档单位）。
 # 随机源仍然是 Crypto，只是「怎么摇」这条规则不再各写一份。
-func _server_roll_shop_offers(count: int, round_index: int) -> Array:
-	var units: Array = DataRegistry.get_table("race_units").get("units", [])
+# races 是这个座位的出战种族（_room_seat_races）。必须先过滤再交给 pick_offer ——
+# 顺序反了，pick_offer 在「这一档没有棋子」时退回全表，就会刷出没选的族。
+func _server_roll_shop_offers(count: int, round_index: int, races: Array) -> Array:
+	var units: Array = RacePick.shop_pool(DataRegistry.get_table("race_units").get("units", []), races)
 	var out: Array = []
 	if units.is_empty():
 		return out
@@ -4379,7 +4429,7 @@ func _economy_ctx(room: Dictionary, slot: int, action: String) -> Dictionary:
 	match action:
 		"shop_refresh":
 			ctx["rolled_offers"] = _server_roll_shop_offers(GameState.SHOP_UNIT_SLOTS,
-				int(room.get("round_index", 1)))
+				int(room.get("round_index", 1)), _room_seat_races(room, slot))
 			ctx["offer_id"] = _make_offer_id()
 		"gamble":
 			# 用 Crypto 取 [0,1)：randf() 的种子是可预测的，而这是钱。
@@ -5097,6 +5147,10 @@ func _rpc_team_room_list(rooms: Array) -> void:
 @rpc("authority", "call_remote", "reliable")
 func _rpc_team_action_failed(reason: String) -> void:
 	last_error = reason
+	# 出战种族被拒（协议 28）= 这次准备没生效。撤掉在途的准备意图，
+	# 否则 local_ready_intent() 一直按「已准备」算，大厅按钮停在已准备。
+	if reason == "bad_races":
+		_pending_ready = -1
 	team_room_action_failed.emit(reason)
 
 @rpc("authority", "call_remote", "reliable")
@@ -5144,7 +5198,7 @@ func _rpc_team_room_closed(reason: String) -> void:
 	team_lobby_changed.emit()
 
 @rpc("any_peer", "call_remote", "reliable")
-func _rpc_team_set_ready(slot: int, value: bool) -> void:
+func _rpc_team_set_ready(slot: int, value: bool, races: Array) -> void:
 	if _dedicated_server:
 		var sender := multiplayer.get_remote_sender_id()
 		if not _rate_ok(sender, "set_ready"):
@@ -5153,6 +5207,14 @@ func _rpc_team_set_ready(slot: int, value: bool) -> void:
 		if room.is_empty() or slot < 0 or slot >= TEAM_SLOTS:
 			return
 		if int((room.get("peer_slot", {}) as Dictionary).get(sender, -1)) != slot:
+			return
+		# 出战种族跟着「准备」一起到（协议 28）。开局的硬条件是所有真人都按过准备，
+		# 所以第一次摇商店时服务器手里一定已经有这个座位的选择。只看「按下准备」：
+		# 取消准备用不着种族，拒掉它反而会让人卡在已准备里出不来。
+		if value and not _room_accept_seat_races(room, slot, races):
+			_rpc_team_action_failed.rpc_id(sender, "bad_races")
+			# 客户端收到 bad_races 会撤掉在途的准备意图；再广播一次大厅让界面跟着刷新。
+			_broadcast_room_lobby(room)
 			return
 		# 在线玩家的座位可能被看门狗/宽限转成了 AI（dummy）——他人还连着并且在按
 		# 准备，说明活得好好的，立刻还他 player 身份，否则他之后交的棋盘会被无视。
@@ -5184,7 +5246,7 @@ func _rpc_team_set_ready(slot: int, value: bool) -> void:
 	_team_maybe_start_round()
 
 @rpc("any_peer", "call_remote", "reliable")
-func _rpc_team_start_request() -> void:
+func _rpc_team_start_request(races: Array) -> void:
 	if _dedicated_server:
 		var sender := multiplayer.get_remote_sender_id()
 		var room := _room_for_peer(sender)
@@ -5192,6 +5254,10 @@ func _rpc_team_start_request() -> void:
 		if room.is_empty() or slot != int(room.get("leader_slot", 0)):
 			return
 		if not _phase_allows(room, PHASE_LOBBY_ONLY, "start", sender):
+			return
+		# 房主按「开始」等于自动准备（见下），所以同样要带出战种族（协议 28）。
+		if not _room_accept_seat_races(room, slot, races):
+			_rpc_team_action_failed.rpc_id(sender, "bad_races")
 			return
 		# 房主按"开始游戏"即自动提交自己的 ready，再做权威开局检查（房主不再免检）
 		var ready: Array = room.get("ready", [])

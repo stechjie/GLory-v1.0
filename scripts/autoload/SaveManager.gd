@@ -1,6 +1,7 @@
 ﻿extends Node
 
 const CarrotEconomy = preload("res://scripts/economy/CarrotEconomy.gd")
+const RacePick := preload("res://scripts/units/RacePick.gd")
 const SAVE_PATH := "user://glory_beta_004.save"
 const RECONNECT_PATH := "user://glory_reconnect.json"
 const PUBLIC_TOKEN_PATH := "user://glory_public_token.txt"
@@ -283,6 +284,7 @@ func _write_now() -> void:
 		"loss_streak": GameState.loss_streak,
 		"golden_altar_uses": GameState.golden_altar_uses,
 		"gamble_used": GameState.gamble_used,
+		"run_races": GameState.run_races,
 		# 组队局字段（重连恢复用；team_mode 本身由 Main 显式控制，不入档）
 		"team_hp": GameState.team_hp,
 		"enemy_team_hp": GameState.enemy_team_hp,
@@ -334,6 +336,8 @@ func load_run() -> bool:
 	GameState.loss_streak = int(parsed.get("loss_streak", 0))
 	GameState.golden_altar_uses = int(parsed.get("golden_altar_uses", 0))
 	GameState.gamble_used = bool(parsed.get("gamble_used", false))
+	# 老存档没有这一项 / 不合法 -> 空，摇商店时 RacePick.resolve 回落默认。
+	GameState.run_races = RacePick.sanitize(parsed.get("run_races", []))
 	GameState.team_hp = int(parsed.get("team_hp", GameState.team_hp))
 	GameState.enemy_team_hp = int(parsed.get("enemy_team_hp", GameState.enemy_team_hp))
 	_normalize_arrays()

@@ -20,7 +20,10 @@ const STARTUP_TUTORIAL := "tutorial"
 const STARTUP_MENU := "menu"
 const SUPPORTED_LOCALES: PackedStringArray = ["zh", "en"]
 
+const RacePick := preload("res://scripts/units/RacePick.gd")
+
 signal pets_changed()
+signal races_changed()
 signal codex_changed()
 signal presentation_settings_changed()
 
@@ -30,6 +33,10 @@ signal presentation_settings_changed()
 var player_id := ""
 var owned_pets: Array[String] = []
 var active_pet := ""
+# 备战界面选的出战种族，**原样**存（可能为空 = 从没选过）。
+# 读的时候一律走 get_selected_races()：那里按当前棋子表校验，不合法就回落默认 ——
+# 以后删掉 / 改名一族，老档不需要像 pet_duck -> pet_rabbit 那样做迁移。
+var selected_races: Array[String] = []
 var needs_starter_pick := false
 # Codex entries the player has encountered. Account-level and append-only: nothing
 # a player has seen is ever taken away.
@@ -100,6 +107,9 @@ func load_profile() -> void:
 		if not id.is_empty() and not owned_pets.has(id):
 			owned_pets.append(id)
 	active_pet = str(data.get("active_pet", ""))
+	# 不合法（表里已经没有的族、个数对不上）就整份丢掉，读的时候回落默认。
+	# 不补不砍，理由见 RacePick.sanitize。有安全默认值，所以不升 PROFILE_VERSION。
+	selected_races.assign(RacePick.sanitize(data.get("selected_races", [])))
 	codex_seen.clear()
 	for raw in data.get("codex_seen", []):
 		var entry := str(raw)
@@ -139,6 +149,7 @@ func save_profile() -> bool:
 		"player_id": player_id,
 		"owned_pets": owned_pets,
 		"active_pet": active_pet,
+		"selected_races": selected_races,
 		"needs_starter_pick": needs_starter_pick,
 		"codex_seen": codex_seen,
 		"board_readability_enabled": board_readability_enabled,
@@ -159,6 +170,7 @@ func save_profile() -> bool:
 func _reset_defaults() -> void:
 	owned_pets.clear()
 	active_pet = ""
+	selected_races.clear()
 	codex_seen.clear()
 	board_readability_enabled = true
 	screen_shake_enabled = true
@@ -214,11 +226,14 @@ func reissue_player_id() -> void:
 func reset_account_state() -> void:
 	owned_pets.clear()
 	active_pet = ""
+	# 出战种族是玩法偏好、跟着账号走，不是设备态 —— 一起清，回到默认。
+	selected_races.clear()
 	codex_seen.clear()
 	needs_starter_pick = true
 	# 放在最后：它内部会 save_profile()，上面几个字段要先改完。
 	reissue_player_id()
 	pets_changed.emit()
+	races_changed.emit()
 	codex_changed.emit()
 
 
@@ -444,4 +459,22 @@ func pick_starter(pet_id: String) -> bool:
 	needs_starter_pick = false
 	save_profile()
 	pets_changed.emit()
+	return true
+
+# --- 出战种族（RacePick）---------------------------------------------------
+
+# 该用的出战种族。永远返回一份合法选择：从没选过、或存的那份已经不合法时就是默认。
+func get_selected_races() -> Array[String]:
+	return RacePick.resolve(selected_races)
+
+# 只收一份完整、合法的选择；不合法返回 false，什么都不改（备战页只在凑满时才让保存）。
+func set_selected_races(races: Array) -> bool:
+	var clean := RacePick.sanitize(races)
+	if clean.is_empty():
+		return false
+	if clean == selected_races:
+		return true
+	selected_races = clean
+	save_profile()
+	races_changed.emit()
 	return true

@@ -4,6 +4,7 @@ extends "res://scenes/prep/PrepFlowController.gd"
 # 用 preload 而非 class_name：新增的全局类要等编辑器重扫才进类缓存，
 # 而服务端包是直接打包仓库里的缓存文件的（make_server_zip.ps1）。
 const ShopRoll := preload("res://scripts/economy/ShopRoll.gd")
+const RacePick := preload("res://scripts/units/RacePick.gd")
 const CarrotEconomy := preload("res://scripts/economy/CarrotEconomy.gd")
 func _drop_on_board(board_index: int, data: Variant) -> void:
 	_drop_consumed = true
@@ -933,7 +934,9 @@ func _roll_shop() -> void:
 	# EconomyLedger._buy 判 stale_offer —— 账本因此永远记不成账。
 	if _adopt_server_shop():
 		return
-	var units: Array = DataRegistry.get_table("race_units").get("units", [])
+	# 只从这一局定下的出战种族里摇。必须先过滤再交给 pick_offer（RacePick.shop_pool 的注释）。
+	var units: Array = RacePick.shop_pool(
+		DataRegistry.get_table("race_units").get("units", []), GameState.run_races)
 	if units.is_empty():
 		return
 	var rng := RandomNumberGenerator.new()

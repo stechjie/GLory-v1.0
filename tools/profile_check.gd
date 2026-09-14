@@ -263,6 +263,7 @@ func _case_account_reset_keeps_device_state() -> void:
 	var old_id: String = pp.get("player_id")
 	pp.set("owned_pets", ["pet_cat"] as Array[String])
 	pp.set("active_pet", "pet_cat")
+	pp.set("selected_races", ["god", "dark", "undead", "human"] as Array[String])
 	pp.set("codex_seen", ["unit_human_king"] as Array[String])
 	pp.set("needs_starter_pick", false)
 	pp.set("screen_shake_enabled", false)
@@ -277,6 +278,8 @@ func _case_account_reset_keeps_device_state() -> void:
 		"注销后还留着宠物")
 	_h.expect(str(pp.get("active_pet")).is_empty(), "reset_kept_active_pet",
 		"注销后还留着出战宠物")
+	_h.expect((pp.get("selected_races") as Array).is_empty(), "reset_kept_races",
+		"注销后还留着出战种族")
 	_h.expect((pp.get("codex_seen") as Array).is_empty(), "reset_kept_codex",
 		"注销后还留着图鉴进度")
 	_h.expect(bool(pp.get("needs_starter_pick")), "reset_skips_starter",

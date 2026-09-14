@@ -94,6 +94,11 @@ var team_run_won := false                 # 本队是否赢下整局（平局时
 # team_run_won 是它在本队视角下的派生布尔 —— 单独看那个布尔分不出"输了"和"平局"。
 var team_run_outcome: int = TeamOutcome.TEAM_A
 var tutorial_mode := false
+# 这一局的出战种族（RacePick）。开局那一刻从 PlayerProfile 抄过来，整局只看这份 ——
+# 中途回主菜单改了选择，也不该让本局下一回合的商店跟着变。
+# 本机摇商店读它；联机时商店由战斗服务器按「准备」时收到的那份摇，这里只是同一份的本机记录。
+# 空数组 = 没定（老存档 / 教学关），RacePick.resolve 会回落到默认。
+var run_races: Array[String] = []
 
 func _ready() -> void:
 	reset_run()
@@ -131,6 +136,7 @@ func reset_run() -> void:
 	final_round_played = false
 	battle_history.clear()
 	pending_battle_package.clear()
+	run_races.clear()
 
 func normal_unit_cap() -> int:
 	if not owned_treasures.has("atk_fury_roster"):

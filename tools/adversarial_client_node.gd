@@ -58,6 +58,7 @@ func _ready() -> void:
 	_case_leader_join_seq_fairness()
 	_case_public_token_seat_released()
 	_case_seat_metadata_moves_and_clears()
+	_case_seat_races_validation()
 	_case_team_outcome_rules()
 	_case_suspended_room_recycling()
 	_case_shard_routing()
@@ -525,6 +526,60 @@ func _case_seat_metadata_moves_and_clears() -> void:
 		"move(token=%s public=%s seq=%s old_clean=%s reverse=%s) collision_safe=%s cleared=%s" % [
 			moved_token, moved_public, moved_seq, old_slot_empty, reverse_ok, collision_safe, cleared])
 
+# --- 出战种族（协议 28）--------------------------------------------------------
+# 选得越少卡池越浅、升星越快：改包少报一族就是作弊，服务端必须自己核对。
+# 而且开局后锁定 —— 每回合的准备照样带着种族来，不能让它在局中换卡池。
+func _case_seat_races_validation() -> void:
+	_arm_watchdog()
+	var ns := NetworkService
+	var room: Dictionary = ns._new_room()
+	var valid: Array = ["god", "dark", "undead", "human"]
+	var checks: Array = []
+	checks.append(["valid_accepted", ns._room_accept_seat_races(room, 3, valid.duplicate())])
+	var bad_cases := {
+		"one_race": ["god"],
+		"five_entries": ["god", "dark", "undead", "human", "god"],
+		"duplicate": ["god", "god", "undead", "human"],
+		"unknown": ["god", "dark", "undead", "elf"],
+		"non_string": ["god", "dark", "undead", 42],
+		"empty": [],
+	}
+	for key in bad_cases:
+		checks.append(["rejects_" + str(key), not ns._room_accept_seat_races(room, 1, bad_cases[key])])
+	checks.append(["bad_not_stored", not (room.get("seat_races", {}) as Dictionary).has(1)])
+	# 无界容器：先判大小再遍历，常数时间拒掉
+	var huge: Array = []
+	huge.resize(HUGE_N)
+	huge.fill("god")
+	var t0 := Time.get_ticks_usec()
+	var huge_ok: bool = ns._room_accept_seat_races(room, 2, huge)
+	var huge_ms := float(Time.get_ticks_usec() - t0) / 1000.0
+	checks.append(["oversized_rejected", not huge_ok])
+	checks.append(["oversized_fast", huge_ms < 5.0])
+	# 换座跟人走、离座一起清（SEAT_SLOT_MAPS）
+	ns._assign_peer_to_room(941, room, "")
+	var slot := int((room.get("peer_slot", {}) as Dictionary).get(941, -1))
+	ns._room_accept_seat_races(room, slot, valid.duplicate())
+	ns._room_do_move(room, 941, slot, 5)
+	var moved: Dictionary = room.get("seat_races", {})
+	checks.append(["moved_with_seat", moved.has(5) and not moved.has(slot)])
+	ns._room_remove_peer(room, 941)
+	checks.append(["cleared_on_leave", not (room.get("seat_races", {}) as Dictionary).has(5)])
+	# 开局后锁定：不改座位上的选择，也不因此拒绝准备（否则每回合的准备都按不下去）
+	room.state = ns.ROOM_PREP
+	var before := str((room.get("seat_races", {}) as Dictionary).get(3, []))
+	checks.append(["locked_ready_not_rejected", ns._room_accept_seat_races(room, 3, ["god"])])
+	checks.append(["locked_not_changed", str((room.get("seat_races", {}) as Dictionary).get(3, [])) == before])
+	ns._rooms.erase(int(room.id))
+
+	var failed: Array = []
+	for c in checks:
+		if not bool(c[1]):
+			failed.append(str(c[0]))
+	_record("seat_races_validation", failed.is_empty() and not _watchdog_tripped(),
+		"%d/%d checks oversized=%.2fms%s" % [checks.size() - failed.size(), checks.size(), huge_ms,
+			"" if failed.is_empty() else (" FAILED: " + ", ".join(failed))])
+
 # --- C16: 胜负判定的单一实现与两条已确认产品规则 -----------------------------
 # 规则（2026-07-28 确认）：
 #   1. 第 21 回合的整局归属由**最终战结果**决定，无视之前的血量差。
@@ -915,6 +970,7 @@ func _case_room_snapshot_roundtrip() -> void:
 	var seat_tokens: Dictionary = room.seat_tokens
 	seat_tokens[0] = "tok_a"
 	room.seat_tokens = seat_tokens
+	room.seat_races = {0: ["god", "dark", "undead", "human"]}   # 出战种族（协议 28）
 	NetworkService._save_rooms_snapshot()
 
 	# 模拟重启：清空内存，重新读
@@ -930,6 +986,9 @@ func _case_room_snapshot_roundtrip() -> void:
 		checks.append(["phase_kept", str(back.get("state", "")) == NetworkService.ROOM_PREP])
 		checks.append(["hp_kept", str(back.get("team_hp", [])) == str([42, 37])])
 		checks.append(["leader_kept", int(back.get("leader_slot", -1)) == 3])
+		# 出战种族不入快照的话，重启后所有座位回落默认四族，下一回合商店突然变样
+		checks.append(["seat_races_kept", str((back.get("seat_races", {}) as Dictionary).get(0, [])) \
+			== str(["god", "dark", "undead", "human"])])
 		# ① peer 状态清空
 		checks.append(["peer_slot_cleared", (back.get("peer_slot", {}) as Dictionary).is_empty()])
 		# 缓存类字段不入快照

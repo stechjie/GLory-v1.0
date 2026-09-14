@@ -47,8 +47,8 @@ const EXPECTED_IDS := [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 # PINNED_RPC_SIGNATURES：全部 @rpc 方法「@rpc 配置 | 方法名(参数类型,…)」排序后的 SHA-256 前 16 位，
 # 算法见 _rpc_signature_digest。参数只改名字不算（线上不传名字）。
 const PINNED_RPC_COUNT := 59
-const PINNED_RPC_PROTOCOL := 27
-const PINNED_RPC_SIGNATURES := "e14ffcf49f3e7c30"
+const PINNED_RPC_PROTOCOL := 28
+const PINNED_RPC_SIGNATURES := "0a69cb890ab7cf1b"
 
 var _h: CheckHarness
 

@@ -125,7 +125,15 @@ const USE_DTLS := true
 #      代价同上：**线上战斗服务器必须重新打包部署到 p27**（make_server_zip.ps1），
 #      否则新客户端连不上。确认依据是服务器日志里的 `server started protocol=27`。
 #      并且**账号后端要先于客户端更新**（deploy/README.md「在线人数上限与排队」）。
-const NETWORK_PROTOCOL_VERSION := 27
+# v28: 备战「出战种族」（scripts/units/RacePick.gd，2026-09-15）。**改了两条 RPC 的参数**：
+#      _rpc_team_set_ready 与 _rpc_team_start_request 各加一个 races 参数 —— 出战种族跟着
+#      「准备 / 开始」一起到服务器，开局第一次摇商店时服务器手里一定已经有每个座位的选择。
+#      RPC 数量没变（仍是 59），**与 v26 同一类**：两端版本不一致时参数对不上，收方直接丢掉
+#      这条 RPC —— 准备按不下去、房主开不了局，而且不报错。
+#      代价同上：**线上战斗服务器必须重新打包部署到 p28**（make_server_zip.ps1），和新 APK 一起上，
+#      否则新客户端连不上。确认依据是服务器日志里的 `server started protocol=28`。
+#      账号服务器不用动（它不认识战斗协议号）。
+const NETWORK_PROTOCOL_VERSION := 28
 
 # Local phone hosting is debug-only.
 const ALLOW_LOCAL_HOST_DEBUG := false
