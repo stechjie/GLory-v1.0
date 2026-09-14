@@ -83,7 +83,7 @@ Copy-Item -LiteralPath $testRoot -Destination $testCopy -Recurse
 
 # --- 1. desktop self-test --------------------------------------------------------------
 # Only the classes without android.* imports: they compile and run on the plain JDK.
-$pureNames = @("AdpcmCodec.java", "Packetizer.java", "RemoteStream.java")
+$pureNames = @("AdpcmCodec.java", "FrameCodec.java", "VoicePacket.java", "Resampler.java", "Packetizer.java", "RemoteStream.java")
 $selfTestSources = @()
 foreach ($name in $pureNames) {
     $path = Join-Path $srcCopy ("com\glory\voice\" + $name)

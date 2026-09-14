@@ -245,8 +245,8 @@ func _exit_tree() -> void:
 		NetworkService.team_chat_received.disconnect(_on_chat_received)
 	if NetworkService.team_chat_text_received.is_connected(_on_chat_text_received):
 		NetworkService.team_chat_text_received.disconnect(_on_chat_text_received)
-	if VoiceService.mode_changed.is_connected(_on_voice_mode_changed):
-		VoiceService.mode_changed.disconnect(_on_voice_mode_changed)
+	if _voice_controls != null:
+		_voice_controls.teardown()
 
 func _online() -> bool:
 	return NetworkService.team_active
@@ -808,43 +808,28 @@ func _build_chat_box() -> void:
 	_build_phrase_panel()
 	_refresh_chat()
 
-# 语音按钮（docs/聊天系统设计.md 第九节）：一个按钮三档循环，关 → 只听 → 开麦。
-# 放在聊天框正上方（x 180~330、y 650~696）：左边是石柱装饰，右边从 x=447 起是敌方席位 1。
-# 短语面板打开时会盖住它（面板 z=40），面板本来就是临时的。
+# 语音按钮 + 队友按钮（docs/聊天系统设计.md 第九节）。行为都在 VoiceControls 里（大厅 / 备战期 / 战斗界面共用）。
+# 放在聊天框正上方：语音 x 180~330、队友 x 336~426，y 650~696。左边是石柱装饰，
+# 右边从 x=447 起是敌方席位 1。短语面板打开时会盖住它们（面板 z=40），面板本来就是临时的。
+const VoiceControls := preload("res://ui/components/VoiceControls.gd")
 const VOICE_BTN_POS := Vector2(180, 650)
 const VOICE_BTN_SIZE := Vector2(150, 46)
+const VOICE_MEMBERS_POS := Vector2(336, 650)
+const VOICE_MEMBERS_SIZE := Vector2(90, 46)
 const VOICE_BTN_FONT := 18
-var _voice_button: Button = null
+var _voice_controls: VoiceControls = null
 
 func _build_voice_button() -> void:
-	_voice_button = PrepWidgets.make_menu_button(VoiceService.mode_label(), VOICE_BTN_SIZE,
-		VOICE_BTN_FONT, _on_voice_pressed)
+	_voice_controls = VoiceControls.new()
+	_voice_controls.build(self, VOICE_BTN_SIZE, VOICE_MEMBERS_SIZE, VOICE_BTN_FONT)
+	_place_voice_button(_voice_controls.voice_button, VOICE_BTN_POS, VOICE_BTN_SIZE)
+	_place_voice_button(_voice_controls.members_button, VOICE_MEMBERS_POS, VOICE_MEMBERS_SIZE)
+
+func _place_voice_button(button: Button, pos: Vector2, size: Vector2) -> void:
 	# 同短语按钮：清掉 make_menu_button 设的最小尺寸，否则窗口缩小时被顶回原尺寸（见 _build_phrase_panel）。
-	_voice_button.custom_minimum_size = Vector2.ZERO
-	_voice_button.name = "VoiceToggle"
-	add_child(_voice_button)
-	_track(_voice_button, VOICE_BTN_POS, VOICE_BTN_SIZE, VOICE_BTN_FONT, "left")
-	if not VoiceService.mode_changed.is_connected(_on_voice_mode_changed):
-		VoiceService.mode_changed.connect(_on_voice_mode_changed)
-	# 按钮后面的「●」跟着有没有人在说话变，0.25 秒刷一次（插件那边的状态也是这个节奏）。
-	var timer := Timer.new()
-	timer.wait_time = 0.25
-	timer.autostart = true
-	timer.timeout.connect(_refresh_voice_button)
-	add_child(timer)
-
-func _on_voice_pressed() -> void:
-	var reason := VoiceService.cycle_mode()
-	if not reason.is_empty():
-		DialogService.info({"owner": self, "body": reason})
-	_refresh_voice_button()
-
-func _on_voice_mode_changed(_mode: int) -> void:
-	_refresh_voice_button()
-
-func _refresh_voice_button() -> void:
-	if _voice_button != null and is_instance_valid(_voice_button):
-		_voice_button.text = VoiceService.mode_label() + VoiceService.activity_mark()
+	button.custom_minimum_size = Vector2.ZERO
+	add_child(button)
+	_track(button, pos, size, VOICE_BTN_FONT, "left")
 
 func _build_phrase_panel() -> void:
 	# 面板与按钮**都在 _build 期建好、默认隐藏**，不是点开时才创建。
@@ -912,7 +897,10 @@ func _on_phrase_picked(phrase_id: int) -> void:
 	# 发完收起，同备战期。面板压着敌方席位的一角，没理由让它一直开着。
 	_set_phrase_panel_visible(false)
 
-func _on_chat_received(slot: int, phrase_id: int) -> void:
+# team_only：大厅只发全部（2026-09-14 定：开局前还在换座位，队伍没定），这里用不上，
+# 只是信号带着它。会收到 true 的只有一种情况：同队有人已经进了备战期发消息、这台还停在大厅
+# （切场景的那一两秒）。那条本来就只发给了同队，照常显示、不加标记。
+func _on_chat_received(slot: int, phrase_id: int, _team_only: bool) -> void:
 	var body := ChatPhrases.text(phrase_id)
 	if body.is_empty():
 		# id 不合法。ChatPhrases.text() 刻意返回空串而不是「未知短语」这类占位符 ——
@@ -921,7 +909,7 @@ func _on_chat_received(slot: int, phrase_id: int) -> void:
 	_push_chat_entry("%s：%s" % [_chat_speaker_name(slot), body])
 
 
-func _on_chat_text_received(slot: int, text: String) -> void:
+func _on_chat_text_received(slot: int, text: String, _team_only: bool) -> void:
 	_push_chat_entry("%s：%s" % [_chat_speaker_name(slot), text])
 
 

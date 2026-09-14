@@ -2,7 +2,7 @@ extends Node
 
 # 游戏内组队语音（docs/聊天系统设计.md 第九节，方案 ②）的门禁。
 #
-# 验不了的：回声、延迟、断续 —— 只能在真手机上听（出包之后同事测）。
+# 验不了的：回声、延迟、断续、Opus 在真机上能不能用 —— 只能在手机上听（插件开语音时会自检 Opus，不过就用 ADPCM）。
 # 这里钉的是几件「不报错、只是坏」的事：
 #   1. 插件包 GloryVoice.aar 是照着现在的 Java 源码打的。改了 Java 忘了重打包，
 #      手机上跑的就是旧代码，而测的人以为是新的
@@ -10,10 +10,12 @@ extends Node
 #   3. 导出插件默认不打包：没开 Gradle 的出包流程不能被它弄失败
 #   4. 🔴 ③ 的转发契约：不许自报座位号、软限流、大小上限、不可靠有序 + 独立通道
 #   5. 🔴 只转同队：敌方永远收不到（语音里说的是战术）
-#   6. Java 的最大包长不超过 ③ 的上限：两边分开改不会报错，只会最长的那种包被整包丢掉
+#   6. Java 的包长上限不超过 ③ 的上限：两边分开改不会报错，只会最长的那种包被整包丢掉
 #   7. VoiceService 的状态机：麦克风不自己打开、短暂掉线不关、离开房间自动关、
 #      权限流程、自己的声音不回放、开不起来就退回「关」
-#   8. 两个界面都接上了按钮，并在离开时断开信号；验证版的「语音测试」入口已经删掉
+#   8. 屏蔽按人（好友码）记，换座位跟着人走；没权限时开麦前先说明用途
+#   9. 大厅 / 备战期 / 战斗界面都接上了按钮，并在离开时 teardown；验证版的「语音测试」入口已经删掉
+#  10. ③ 的语音流量统计：每分钟一行，计数都记上了、到点清零
 #
 # 运行：
 #   Godot_v4.7.1-stable_win64_console.exe --headless --path . res://tools/voice_check.tscn
@@ -69,6 +71,9 @@ class FakePlugin extends RefCounted:
 	func getStatus() -> String:
 		return "{}"
 
+	func getCapabilities() -> String:
+		return "{}"
+
 
 func _ready() -> void:
 	_h = CheckHarness.new(CHECK_NAME)
@@ -80,7 +85,10 @@ func _ready() -> void:
 	_case_team_only()
 	_case_split_packets()
 	_case_voice_service_state_machine()
+	_case_mutes_follow_player()
+	_case_mic_rationale()
 	_case_ui_wired()
+	_case_server_stats()
 	_h.finish(get_tree())
 
 
@@ -215,19 +223,20 @@ func _function_body(src: String, header: String) -> String:
 
 func _case_packet_budget() -> void:
 	_h.item()
-	var codec := FileAccess.get_file_as_string(PLUGIN_DIR.path_join("src/com/glory/voice/AdpcmCodec.java"))
-	var plugin := FileAccess.get_file_as_string(PLUGIN_DIR.path_join("src/com/glory/voice/GloryVoicePlugin.java"))
-	var frames := _java_int(codec, "MAX_FRAMES_PER_PACKET")
-	var samples := _java_int(codec, "FRAME_SAMPLES")
-	var header := _java_int(codec, "PACKET_HEADER_BYTES")
-	var per_read := _java_int(plugin, "MAX_PACKETS_PER_READ")
-	if not _h.expect(frames > 0 and samples > 0 and header > 0 and per_read > 0, "voice_java_constants_unreadable",
-			"从 Java 源码里读不到包格式常量 —— 常量换了写法，这条门禁要跟着改"):
+	var packet_src := FileAccess.get_file_as_string(PLUGIN_DIR.path_join("src/com/glory/voice/VoicePacket.java"))
+	var plugin_src := FileAccess.get_file_as_string(PLUGIN_DIR.path_join("src/com/glory/voice/GloryVoicePlugin.java"))
+	var java_max := _java_int(packet_src, "MAX_PACKET_BYTES")
+	var frame_max := _java_int(packet_src, "MAX_FRAME_BYTES")
+	var header := _java_int(packet_src, "HEADER_BYTES")
+	var per_read := _java_int(plugin_src, "MAX_PACKETS_PER_READ")
+	if not _h.expect(java_max > 0 and frame_max > 0 and header > 0 and per_read > 0,
+			"voice_java_constants_unreadable", "从 Java 源码里读不到包格式常量 —— 常量换了写法，这条门禁要跟着改"):
 		return
-	var java_max := header + frames * (3 + samples / 2)
 	var limit := int(NetworkService.VOICE_MAX_PACKET_BYTES)
 	_h.expect(java_max <= limit, "voice_packet_over_limit",
-		"插件最长的包 %d 字节，超过 ③ 的上限 %d：这种包会被服务端整包丢掉，而且不报错" % [java_max, limit])
+		"插件打包上限 %d 字节，超过 ③ 的上限 %d：这种包会被服务端整包丢掉，而且不报错" % [java_max, limit])
+	_h.expect(header + 1 + frame_max <= java_max, "voice_single_frame_over_packet",
+		"一个最大的帧（%d 字节）单独成包都放不下（包头 %d + 长度 1 > 上限 %d）" % [frame_max, header, java_max])
 	# 常见路径 MTU 1280~1500，扣掉 IP/UDP、DTLS、ENet、RPC 头之后，1000 以内不会被分片。
 	_h.expect(limit <= 1000, "voice_limit_near_mtu",
 		"VOICE_MAX_PACKET_BYTES = %d 太大：不可靠包一旦被分片，丢一片整包就没了" % limit)
@@ -235,8 +244,9 @@ func _case_packet_budget() -> void:
 		"插件一次交出 %d 个包，VoiceService 一帧只拆 %d 个：多出来的会被丢掉" % [per_read, int(VoiceService.MAX_PACKETS_PER_FRAME)])
 
 
+# \b：HEADER_BYTES 不能匹配到 V1_HEADER_BYTES 上。
 func _java_int(src: String, name: String) -> int:
-	var m := RegEx.create_from_string(name + "\\s*=\\s*(\\d+)\\s*;").search(src)
+	var m := RegEx.create_from_string("\\b" + name + "\\s*=\\s*(\\d+)\\s*;").search(src)
 	return int(m.get_string(1)) if m != null else -1
 
 
@@ -294,13 +304,36 @@ func _framed(payload: PackedByteArray) -> PackedByteArray:
 	return out
 
 
+# --- 状态保存与还原（下面几条都要改 autoload 上的状态）---------------------------------
+
+func _save_state() -> Dictionary:
+	return {
+		"plugin": VoiceService._plugin,
+		"mode": VoiceService.mode,
+		"muted": VoiceService._muted_keys.duplicate(),
+		"active": NetworkService.team_active,
+		"slot": NetworkService.team_local_slot,
+		"states": NetworkService.team_slot_states.duplicate(),
+		"profiles": NetworkService.team_seat_profiles.duplicate(true),
+	}
+
+
+func _restore_state(saved: Dictionary) -> void:
+	# 先用手上的（假）插件把会话关掉，再换回原来的插件与联机状态。
+	VoiceService.set_mode(VoiceService.Mode.OFF)
+	VoiceService._plugin = saved.plugin
+	VoiceService.mode = int(saved.mode)
+	VoiceService._muted_keys = saved.muted
+	NetworkService.team_active = bool(saved.active)
+	NetworkService.team_local_slot = int(saved.slot)
+	NetworkService.team_slot_states = saved.states
+	NetworkService.team_seat_profiles = saved.profiles
+
+
 # --- 8. VoiceService 状态机 ---------------------------------------------------------
 
 func _case_voice_service_state_machine() -> void:
-	var saved_plugin: Object = VoiceService._plugin
-	var saved_mode: int = VoiceService.mode
-	var saved_active: bool = NetworkService.team_active
-	var saved_slot: int = NetworkService.team_local_slot
+	var saved := _save_state()
 	var fake := FakePlugin.new()
 	var events: Array = []
 	var on_changed := func(changed: int) -> void: events.append(changed)
@@ -347,17 +380,27 @@ func _case_voice_service_state_machine() -> void:
 			and not fake.session and not fake.capturing,
 		"voice_off_not_stopped", "从「开麦」再点一次应该回到「关」，会话和麦克风都停")
 
-	# g) 没有麦克风权限：先进「只听」等系统弹窗，允许之后才开麦
+	# g) 没有麦克风权限：先进「只听」等系统弹窗；拒了停在「只听」并发 mic_permission_result(false)
+	#    （界面据此提示去系统设置打开），允许了才开麦
 	_h.item()
 	fake.permission = false
+	var permission_events: Array = []
+	var on_permission := func(granted: bool) -> void: permission_events.append(granted)
+	VoiceService.mic_permission_result.connect(on_permission)
 	VoiceService.set_mode(VoiceService.Mode.LISTEN)
 	VoiceService.set_mode(VoiceService.Mode.TALK)
 	_h.expect(VoiceService.mode == VoiceService.Mode.LISTEN and not fake.capturing,
 		"voice_talk_without_permission", "没有麦克风权限时不能进「开麦」")
+	VoiceService._on_permission_result("android.permission.RECORD_AUDIO", false)
+	_h.expect(VoiceService.mode == VoiceService.Mode.LISTEN and not fake.capturing and permission_events == [false],
+		"voice_permission_denial_silent",
+		"系统弹窗里拒绝后要停在「只听」并发 mic_permission_result(false)，实际档位 %d、信号 %s" % [VoiceService.mode, str(permission_events)])
+	VoiceService.set_mode(VoiceService.Mode.TALK)
 	fake.permission = true
 	VoiceService._on_permission_result("android.permission.RECORD_AUDIO", true)
 	_h.expect(VoiceService.mode == VoiceService.Mode.TALK and fake.capturing,
 		"voice_permission_grant_ignored", "玩家在系统弹窗里允许之后应该进「开麦」")
+	VoiceService.mic_permission_result.disconnect(on_permission)
 
 	# h) 短暂掉出房间（重连、切场景）不关；连续 LEAVE_GRACE_SEC 秒才关
 	_h.item()
@@ -387,32 +430,171 @@ func _case_voice_service_state_machine() -> void:
 		"档位变化时必须发 mode_changed（界面按钮靠它刷新），只收到 %d 次" % events.size())
 
 	VoiceService.mode_changed.disconnect(on_changed)
-	VoiceService.set_mode(VoiceService.Mode.OFF)
-	VoiceService._plugin = saved_plugin
-	VoiceService.mode = saved_mode
-	NetworkService.team_active = saved_active
-	NetworkService.team_local_slot = saved_slot
+	_restore_state(saved)
 
 
-# --- 9. 界面接线 --------------------------------------------------------------------
+# --- 9. 屏蔽按人记 ------------------------------------------------------------------
+
+func _case_mutes_follow_player() -> void:
+	var saved := _save_state()
+	var fake := FakePlugin.new()
+	VoiceService._plugin = fake
+	VoiceService._muted_keys = {}
+	VoiceService.mode = VoiceService.Mode.OFF
+	NetworkService.team_active = true
+	NetworkService.team_local_slot = 0
+	NetworkService.team_slot_states = ["player", "player", "ai", "player", "player", "empty"]
+	NetworkService.team_seat_profiles = {
+		1: {"player_name": "小林", "friend_code": "AAAA1111"},
+		3: {"player_name": "对面", "friend_code": "CCCC3333"},
+	}
+	VoiceService.set_mode(VoiceService.Mode.LISTEN)
+
+	_h.item()
+	var mates := VoiceService.teammates()
+	_h.expect(mates.size() == 1 and int(mates[0].slot) == 1 and str(mates[0].name) == "小林",
+		"voice_teammates_wrong",
+		"队友名单应只有 1 号位小林（2 号位是 AI，3~5 号位是敌方），实际 %s" % str(mates))
+
+	_h.item()
+	var changed := [0]
+	var on_mutes := func() -> void: changed[0] += 1
+	VoiceService.mutes_changed.connect(on_mutes)
+	VoiceService.set_muted(1, true)
+	fake.pushed.clear()
+	VoiceService._on_voice_received(1, PackedByteArray([1]))
+	_h.expect(fake.pushed.is_empty() and changed[0] == 1 and VoiceService.is_muted(1),
+		"voice_muted_player_still_heard", "屏蔽 1 号位之后，他的包不能再交给插件，且要发 mutes_changed")
+
+	# 换座位：小林从 1 号位挪到 2 号位，新来的人坐到 1 号位 —— 屏蔽要跟着小林走
+	_h.item()
+	NetworkService.team_slot_states = ["player", "player", "player", "player", "player", "empty"]
+	NetworkService.team_seat_profiles = {
+		1: {"player_name": "新来的", "friend_code": "BBBB2222"},
+		2: {"player_name": "小林", "friend_code": "AAAA1111"},
+	}
+	fake.pushed.clear()
+	VoiceService._on_voice_received(2, PackedByteArray([1]))
+	VoiceService._on_voice_received(1, PackedByteArray([1]))
+	_h.expect(fake.pushed == [1], "voice_mute_not_following_player",
+		"屏蔽按人（好友码）记：小林换到 2 号位仍然听不到，新坐到 1 号位的人听得到；实际交给插件的座位 %s" % str(fake.pushed))
+
+	_h.item()
+	VoiceService.set_muted(2, false)
+	fake.pushed.clear()
+	VoiceService._on_voice_received(2, PackedByteArray([1]))
+	_h.expect(fake.pushed == [2] and not VoiceService.is_muted(2), "voice_unmute_failed", "取消屏蔽后应该重新听得到")
+
+	_h.item()
+	NetworkService.team_seat_profiles = {}
+	VoiceService.set_muted(1, true)
+	_h.expect(VoiceService.member_key(1) == "slot:1" and VoiceService.is_muted(1), "voice_mute_without_profile",
+		"资料还没到的队友按座位号屏蔽")
+
+	_h.item()
+	NetworkService.team_seat_profiles = {1: {"player_name": "新来的", "friend_code": "BBBB2222"}}
+	_h.expect(VoiceService.is_muted(1), "voice_mute_lifted_by_profile",
+		"按座位号屏蔽之后他的资料到了，屏蔽不能悄悄解除")
+	VoiceService.set_muted(1, false)
+	_h.expect(not VoiceService.is_muted(1) and VoiceService._muted_keys.is_empty(), "voice_unmute_left_key",
+		"取消屏蔽要把好友码和座位号两条都清掉，实际还剩 %s" % str(VoiceService._muted_keys))
+
+	# 离开房间：座位号那条作废（下个房间同一个座位是别人），好友码那条留着（这局游戏里再碰到他仍然屏蔽）
+	_h.item()
+	NetworkService.team_seat_profiles = {}
+	VoiceService.set_muted(1, true)
+	NetworkService.team_seat_profiles = {2: {"player_name": "小林", "friend_code": "AAAA1111"}}
+	VoiceService.set_muted(2, true)
+	NetworkService.team_active = false
+	NetworkService.team_local_slot = -1
+	VoiceService._process(VoiceService.LEAVE_GRACE_SEC + 0.1)
+	_h.expect(VoiceService._muted_keys.keys() == ["code:AAAA1111"], "voice_seat_mutes_survive_leave",
+		"离开房间后按座位号记的屏蔽要清掉、按好友码记的留着；实际 %s" % str(VoiceService._muted_keys.keys()))
+
+	VoiceService.mutes_changed.disconnect(on_mutes)
+	_restore_state(saved)
+
+
+# --- 10. 开麦前说明麦克风用途 ----------------------------------------------------------
+
+func _case_mic_rationale() -> void:
+	var saved := _save_state()
+	var fake := FakePlugin.new()
+	_h.item()
+	VoiceService._plugin = null
+	_h.expect(not VoiceService.needs_mic_rationale(), "voice_rationale_without_plugin", "没有插件时不该弹麦克风说明")
+	VoiceService._plugin = fake
+	fake.permission = false
+	_h.expect(VoiceService.needs_mic_rationale(), "voice_rationale_missing", "还没有麦克风权限时，开麦前必须先说明用途")
+	fake.permission = true
+	_h.expect(not VoiceService.needs_mic_rationale(), "voice_rationale_repeated", "已经有权限就不要再弹说明")
+	var controls := FileAccess.get_file_as_string("res://ui/components/VoiceControls.gd")
+	var body := _function_body(controls, "func request_talk() -> void:")
+	_h.expect(body.contains("if VoiceService.needs_mic_rationale():") and body.contains("DialogService.confirm("),
+		"voice_rationale_not_wired", "VoiceControls.request_talk 必须先查 needs_mic_rationale 并弹确认框，再请求系统权限")
+	_h.expect(_function_body(controls, "func _on_voice_pressed() -> void:").contains("request_talk()"),
+		"voice_button_skips_rationale", "语音按钮从「只听」切「开麦」必须走 request_talk（带用途说明），不能直接 cycle_mode")
+	_h.expect(_function_body(controls, "func _on_rationale_result(result: String, _request_id: String) -> void:").contains("_awaiting_mic = true")
+			and _function_body(controls, "func _on_mic_permission_result(granted: bool) -> void:").contains("DialogService.info("),
+		"voice_permission_denied_no_hint",
+		"系统权限弹窗里被拒后必须提示去系统设置打开：安卓 11 起拒两次就不再弹窗，点开麦会毫无反应")
+	_h.expect(controls.contains("VoiceService.mic_permission_result.connect(_on_mic_permission_result)")
+			and controls.contains("VoiceService.mic_permission_result.disconnect(_on_mic_permission_result)"),
+		"voice_permission_signal_not_wired", "VoiceControls 要在 build 里连上 mic_permission_result、在 teardown 里断开")
+	_restore_state(saved)
+
+
+# --- 11. 界面接线 --------------------------------------------------------------------
 
 func _case_ui_wired() -> void:
 	_h.item()
 	var project := FileAccess.get_file_as_string("res://project.godot")
 	_h.expect(project.contains("VoiceService=\"*res://scripts/autoload/VoiceService.gd\""),
 		"voice_autoload_missing", "project.godot 的 [autoload] 里没有 VoiceService")
-	var lobby := FileAccess.get_file_as_string("res://scenes/menu/Team3v3Lobby.gd")
-	var prep := FileAccess.get_file_as_string("res://scenes/prep/PrepUI.gd")
-	for pair in [["Team3v3Lobby.gd", lobby], ["PrepUI.gd", prep]]:
-		var file_name := str(pair[0])
-		var src := str(pair[1])
-		_h.expect(src.contains("VoiceService.cycle_mode()"), "voice_button_missing",
-			"%s 里没有语音按钮（VoiceService.cycle_mode）" % file_name)
-		_h.expect(src.contains("VoiceService.mode_changed.disconnect(_on_voice_mode_changed)"),
-			"voice_signal_not_disconnected",
-			"%s 离开时必须断开 VoiceService.mode_changed —— VoiceService 是 autoload，活得比界面久" % file_name)
+	var sources := {
+		"Team3v3Lobby.gd": FileAccess.get_file_as_string("res://scenes/menu/Team3v3Lobby.gd"),
+		"PrepUI.gd": FileAccess.get_file_as_string("res://scenes/prep/PrepUI.gd"),
+		"BattleScreen.gd": FileAccess.get_file_as_string("res://scenes/battle/BattleScreen.gd"),
+	}
+	for file_name in sources:
+		var src := str(sources[file_name])
+		_h.expect(src.contains("VoiceControls.new()"), "voice_controls_missing",
+			"%s 里没有语音按钮（VoiceControls.new()）" % file_name)
+		_h.expect(src.contains("_voice_controls.teardown()"), "voice_controls_not_torn_down",
+			"%s 离开时必须调 _voice_controls.teardown() —— VoiceService 是 autoload，活得比界面久" % file_name)
+	var battle := str(sources["BattleScreen.gd"])
+	_h.expect(battle.contains("\t_setup_voice_controls()"), "voice_battle_not_built", "BattleScreen._ready 没有调 _setup_voice_controls()")
+	_h.expect(_function_body(battle, "func _setup_voice_controls() -> void:").contains("not NetworkService.team_active"),
+		"voice_battle_offline", "战斗界面的语音按钮只在联机对局里建（单机 / 教学没有队友）")
 	_h.expect(not FileAccess.get_file_as_string("res://scenes/menu/MainMenu.gd").contains("voice_spike"),
 		"voice_spike_entry_left", "主菜单还留着验证版的「语音测试」入口")
-	for path in ["res://scripts/autoload/VoiceService.gd", "res://scenes/menu/Team3v3Lobby.gd",
-			"res://scenes/prep/PrepUI.gd"]:
+	for path in ["res://scripts/autoload/VoiceService.gd", "res://ui/components/VoiceControls.gd",
+			"res://ui/components/VoicePanel.gd", "res://scenes/menu/Team3v3Lobby.gd",
+			"res://scenes/prep/PrepUI.gd", "res://scenes/battle/BattleScreen.gd"]:
 		_h.expect(load(path) != null, "voice_script_unloadable", "%s 加载失败（解析错误见上面的 SCRIPT ERROR）" % path)
+
+
+# --- 12. ③ 的语音流量统计 -----------------------------------------------------------
+
+func _case_server_stats() -> void:
+	_h.item()
+	var src := FileAccess.get_file_as_string(NETWORK_SERVICE_PATH)
+	_h.expect(_function_body(src, "func _process(delta: float) -> void:").contains("_voice_stats_tick(delta)"),
+		"voice_stats_not_ticked", "服务器 _process 里必须调 _voice_stats_tick(delta)，否则语音流量日志永远不打")
+	var submit_body := _function_body(src, "func _rpc_team_voice_submit(packet: PackedByteArray) -> void:")
+	for key in ["drop_size", "drop_rate", "drop_no_room", "packets_in", "relayed"]:
+		_h.expect(submit_body.contains("_voice_stats[\"%s\"]" % key), "voice_stats_not_counted",
+			"_rpc_team_voice_submit 没有记 %s" % key)
+	var saved_stats: Dictionary = NetworkService._voice_stats.duplicate()
+	var saved_elapsed: float = NetworkService._voice_stats_elapsed
+	NetworkService._voice_stats_elapsed = 0.0
+	NetworkService._voice_stats["packets_in"] = 5
+	NetworkService._voice_stats["bytes_in"] = 1500
+	NetworkService._voice_stats_tick(1.0)
+	_h.expect(int(NetworkService._voice_stats["packets_in"]) == 5, "voice_stats_flushed_early",
+		"统计窗口没到就清零了")
+	NetworkService._voice_stats_tick(NetworkService.VOICE_STATS_INTERVAL_SEC)
+	_h.expect(int(NetworkService._voice_stats["packets_in"]) == 0 and NetworkService._voice_stats_elapsed == 0.0,
+		"voice_stats_not_flushed", "统计窗口到点后必须打日志并清零")
+	NetworkService._voice_stats = saved_stats
+	NetworkService._voice_stats_elapsed = saved_elapsed

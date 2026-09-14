@@ -4,6 +4,7 @@ import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.media.AudioAttributes;
+import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
 import android.media.AudioFormat;
 import android.media.AudioManager;
@@ -15,6 +16,8 @@ import android.media.audiofx.AudioEffect;
 import android.media.audiofx.AutomaticGainControl;
 import android.media.audiofx.NoiseSuppressor;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.SystemClock;
 import android.util.Log;
 
@@ -32,9 +35,9 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  * 游戏内组队语音的安卓端（docs/聊天系统设计.md 第九节，方案 ②「自建 + 手机自带的回声消除」）。
  *
  * 分工：
- *   这里      录音（通话模式 + 系统回声消除 / 降噪 / 自动增益）、判断有没有在说话、ADPCM 编码打包；
- *             收队友的包、抖动缓冲、混音、用通话流播放。
- *   GDScript  scripts/autoload/VoiceService.gd：什么时候开关、把包交给 ③ 转发、把收到的包交回来。
+ *   这里      录音（通话模式 + 系统回声消除 / 降噪 / 自动增益）、判断有没有在说话、编码打包（Opus 或 ADPCM）；
+ *             收队友的包、解码、抖动缓冲、混音、用通话流播放；插拔耳机时重新选输出设备。
+ *   GDScript  scripts/autoload/VoiceService.gd：什么时候开关、屏蔽谁、把包交给 ③ 转发、把收到的包交回来。
  *
  * 为什么录音不用 Godot 自带的：Godot 的安卓录音没有设置录音模式，拿不到系统的回声消除。
  * 为什么播放也在这里：回声消除要知道扬声器在放什么，队友的声音必须走「通话」这条流。
@@ -44,15 +47,19 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  *   setCapture                  开关麦克风（「开麦」）。关麦时 AudioRecord 整个释放 ——
  *                               安卓 12 起状态栏的麦克风指示灯才会熄，玩家看得见我们没在录。
  *
- * 线程：采集线程只往队列里放包；混音线程靠 AudioTrack 的阻塞写入按真实时间走。
- * **不从这两个线程往 Godot 发信号**，Godot 每帧来取（readPackets）—— 跨线程发信号最容易出事。
+ * 编码（v1.1）：一开会话就在后台跑一次 Opus 自检（OpusCodec.selfTest，整个进程只跑一次）。
+ * 自检通过后，下一段话开始时把编码器从 ADPCM 换成 Opus；运行中 Opus 出错就换回 ADPCM、不再试。
+ * 包头带编码字段，队友按字段挑解码器，所以混着用也听得见。
+ *
+ * 线程：采集线程只往队列里放包；混音线程解码并靠 AudioTrack 的阻塞写入按真实时间走。
+ * **不从这些线程往 Godot 发信号**，Godot 每帧来取（readPackets）—— 跨线程发信号最容易出事。
  * 切到后台就全停（后台录音要前台服务，这一版不做），回到前台由 VoiceService 重新打开。
  */
 public class GloryVoicePlugin extends GodotPlugin {
     private static final String TAG = "GloryVoice";
 
     public static final int SLOTS = 6;
-    /** 两帧一包（40 毫秒）：每人每秒 25 个包、约 66 kbps。一帧一包的话包数翻倍，头部开销也翻倍。 */
+    /** 两帧一包（40 毫秒）：包数比一帧一包少一半，头部开销也少一半。 */
     private static final int FRAMES_PER_PACKET = 2;
     /** Godot 没来取时最多攒 2 秒，再多就丢最老的：不能让内存跟着卡顿一起涨。 */
     private static final int MAX_QUEUED_PACKETS = 50;
@@ -69,6 +76,10 @@ public class GloryVoicePlugin extends GodotPlugin {
     /** 界面上「正在说话」的门槛。 */
     private static final float SPEAKING_LEVEL = 0.02f;
 
+    /** Opus 自检结果，整个进程只跑一次：null = 还没跑、"running"、"ok"，其余是失败原因。 */
+    private static volatile String opusSelfTest = null;
+    private static final Object SELF_TEST_LOCK = new Object();
+
     private final Object lock = new Object();
     private volatile boolean sessionRunning;
     private volatile boolean capturing;
@@ -79,6 +90,20 @@ public class GloryVoicePlugin extends GodotPlugin {
     private AcousticEchoCanceler aec;
     private NoiseSuppressor ns;
     private AutomaticGainControl agc;
+    private AudioDeviceCallback deviceCallback;
+
+    private final FrameCodec.DecoderFactory decoderFactory = new FrameCodec.DecoderFactory() {
+        @Override
+        public FrameCodec.Decoder create(int codecId) {
+            if (codecId == FrameCodec.ADPCM) {
+                return new FrameCodec.AdpcmDecoder();
+            }
+            if (codecId == FrameCodec.OPUS) {
+                return OpusCodec.Decoder.create();
+            }
+            return null;
+        }
+    };
 
     private final RemoteStream[] remotes = new RemoteStream[SLOTS];
     private final ConcurrentLinkedQueue<byte[]> outgoing = new ConcurrentLinkedQueue<byte[]>();
@@ -90,14 +115,16 @@ public class GloryVoicePlugin extends GodotPlugin {
     private volatile float micLevel;
     private volatile float playLevel;
     private volatile boolean micActive;
+    private volatile int captureCodec = FrameCodec.ADPCM;
     private volatile long packetsEncoded;
     private volatile long packetsDroppedOut;
+    private volatile long deviceEvents;
     private volatile String lastError = "";
 
     public GloryVoicePlugin(Godot godot) {
         super(godot);
         for (int i = 0; i < SLOTS; i++) {
-            remotes[i] = new RemoteStream();
+            remotes[i] = new RemoteStream(decoderFactory);
         }
     }
 
@@ -115,7 +142,7 @@ public class GloryVoicePlugin extends GodotPlugin {
                 && ctx.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
     }
 
-    /** 这台手机「有没有」系统回声消除等能力（有 ≠ 效果好，效果只能听），以及包格式常量。JSON。 */
+    /** 这台手机「有没有」系统回声消除等能力（有 ≠ 效果好，效果只能听），以及编码相关的事实。JSON。 */
     @UsedByGodot
     public String getCapabilities() {
         JSONObject o = new JSONObject();
@@ -128,7 +155,9 @@ public class GloryVoicePlugin extends GodotPlugin {
             o.put("model", Build.MODEL);
             o.put("sample_rate", AdpcmCodec.SAMPLE_RATE);
             o.put("frames_per_packet", FRAMES_PER_PACKET);
-            o.put("max_packet_bytes", AdpcmCodec.MAX_PACKET_BYTES);
+            o.put("max_packet_bytes", VoicePacket.MAX_PACKET_BYTES);
+            o.put("opus_encoder_api", OpusCodec.encoderSupported());
+            o.put("opus_selftest", opusSelfTest == null ? "not_run" : opusSelfTest);
             o.put("has_record_permission", hasRecordPermission());
         } catch (Exception e) {
             Log.w(TAG, "getCapabilities", e);
@@ -176,6 +205,7 @@ public class GloryVoicePlugin extends GodotPlugin {
             am.setMode(AudioManager.MODE_IN_COMMUNICATION);
             speakerPreferred = speakerphone;
             routeAudio(am);
+            registerDeviceCallback(am);
             for (RemoteStream r : remotes) {
                 r.reset();
             }
@@ -194,6 +224,7 @@ public class GloryVoicePlugin extends GodotPlugin {
             t.setPriority(Thread.MAX_PRIORITY);
             mixerThread = t;
             t.start();
+            ensureOpusSelfTest();
             return "";
         }
     }
@@ -213,6 +244,10 @@ public class GloryVoicePlugin extends GodotPlugin {
         }
         joinQuietly(t);
         synchronized (lock) {
+            // 解码器只在混音线程里用；线程已经退出，这里释放才安全。
+            for (RemoteStream r : remotes) {
+                r.releaseDecoders();
+            }
             AudioTrack p = player;
             player = null;
             if (p != null) {
@@ -224,6 +259,7 @@ public class GloryVoicePlugin extends GodotPlugin {
             }
             AudioManager am = audioManager();
             if (am != null) {
+                unregisterDeviceCallback(am);
                 restoreAudio(am);
             }
             outgoing.clear();
@@ -311,7 +347,7 @@ public class GloryVoicePlugin extends GodotPlugin {
         return out.toByteArray();
     }
 
-    /** 队友 slot 的一个包（③ 转发来的）。 */
+    /** 队友 slot 的一个包（③ 转发来的）。只入队，解码在混音线程里做。 */
     @UsedByGodot
     public void pushPacket(int slot, byte[] packet) {
         if (!sessionRunning || slot < 0 || slot >= SLOTS || packet == null) {
@@ -320,7 +356,7 @@ public class GloryVoicePlugin extends GodotPlugin {
         remotes[slot].push(packet, SystemClock.elapsedRealtime());
     }
 
-    /** 屏蔽 / 取消屏蔽某个座位的声音（本地生效，不影响别人听）。 */
+    /** 屏蔽 / 取消屏蔽某个座位的声音（本地生效，不影响别人听）。VoiceService 按玩家屏蔽时在交包之前就丢了，这里是兜底。 */
     @UsedByGodot
     public void setRemoteMuted(int slot, boolean muted) {
         if (slot >= 0 && slot < SLOTS) {
@@ -347,10 +383,13 @@ public class GloryVoicePlugin extends GodotPlugin {
             o.put("mic_active", micActive);
             o.put("mic_level", micLevel);
             o.put("play_level", playLevel);
+            o.put("codec", captureCodec == FrameCodec.OPUS ? "opus" : "adpcm");
+            o.put("opus_selftest", opusSelfTest == null ? "not_run" : opusSelfTest);
             AudioManager am = audioManager();
             o.put("mode", am != null ? am.getMode() : -1);
             o.put("packets_encoded", packetsEncoded);
             o.put("packets_dropped_out", packetsDroppedOut);
+            o.put("device_events", deviceEvents);
             o.put("aec_enabled", effectEnabled(aec));
             o.put("ns_enabled", effectEnabled(ns));
             o.put("agc_enabled", effectEnabled(agc));
@@ -367,11 +406,14 @@ public class GloryVoicePlugin extends GodotPlugin {
                 JSONObject ro = new JSONObject();
                 ro.put("slot", s);
                 ro.put("level", r.level);
+                ro.put("codec", r.lastCodec() == FrameCodec.OPUS ? "opus" : (r.lastCodec() == FrameCodec.ADPCM ? "adpcm" : ""));
                 ro.put("queued", r.queued());
                 ro.put("packets", r.packets);
                 ro.put("lost", r.framesLost);
                 ro.put("late", r.packetsLate);
                 ro.put("bad", r.packetsBad);
+                ro.put("bad_frames", r.framesBad);
+                ro.put("dropped_packets", r.packetsDropped);
                 ro.put("underruns", r.underruns);
                 ro.put("dropped", r.framesDropped);
                 ro.put("muted", r.isMuted());
@@ -418,7 +460,15 @@ public class GloryVoicePlugin extends GodotPlugin {
             boolean any = false;
             long now = SystemClock.elapsedRealtime();
             for (int s = 0; s < SLOTS; s++) {
-                short[] frame = remotes[s].pull(now);
+                short[] frame;
+                try {
+                    frame = remotes[s].pull(now);
+                } catch (RuntimeException e) {
+                    // 一个队友的解码出错不能拖死整个混音线程（其他人还要听得见）。
+                    Log.w(TAG, "remote " + s + " decode failed", e);
+                    lastError = "decode_failed";
+                    continue;
+                }
                 if (frame == null) {
                     continue;
                 }
@@ -448,12 +498,13 @@ public class GloryVoicePlugin extends GodotPlugin {
 
     private void captureLoop() {
         android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO);
-        Packetizer packetizer = new Packetizer(FRAMES_PER_PACKET, new Packetizer.Sink() {
+        Packetizer packetizer = new Packetizer(FRAMES_PER_PACKET, new FrameCodec.AdpcmEncoder(), new Packetizer.Sink() {
             @Override
             public void onPacket(byte[] packet) {
                 enqueueOutgoing(packet);
             }
         });
+        captureCodec = FrameCodec.ADPCM;
         short[] frame = new short[AdpcmCodec.FRAME_SAMPLES];
         short[][] preroll = new short[VAD_PREROLL_FRAMES][];
         int prerollNext = 0;
@@ -461,57 +512,98 @@ public class GloryVoicePlugin extends GodotPlugin {
         float noiseFloor = 0.01f;
         int hangover = 0;
         boolean active = false;
-        while (capturing) {
-            AudioRecord rec = recorder;
-            if (rec == null) {
-                break;
-            }
-            if (readFully(rec, frame) < frame.length) {
-                if (!capturing) {
+        try {
+            while (capturing) {
+                AudioRecord rec = recorder;
+                if (rec == null) {
                     break;
                 }
-                continue;
-            }
-            float level = RemoteStream.rms(frame);
-            micLevel = level;
-            // 噪声底往下跟得快、往上跟得慢：说话时它几乎不动，安静下来很快回落。
-            if (level < noiseFloor) {
-                noiseFloor += (level - noiseFloor) * 0.1f;
-            } else {
-                noiseFloor += (level - noiseFloor) * 0.005f;
-            }
-            float threshold = Math.max(VAD_MIN_THRESHOLD, Math.min(VAD_MAX_THRESHOLD, noiseFloor * 3f));
-            if (level > threshold) {
-                hangover = VAD_HANGOVER_FRAMES;
-            } else if (hangover > 0) {
-                hangover--;
-            }
-            boolean nowActive = hangover > 0;
-            if (nowActive && !active) {
-                packetizer.startSpurt();
-                for (int i = 0; i < prerollCount; i++) {
-                    int idx = (prerollNext - prerollCount + i + VAD_PREROLL_FRAMES) % VAD_PREROLL_FRAMES;
-                    packetizer.add(preroll[idx]);
+                if (readFully(rec, frame) < frame.length) {
+                    if (!capturing) {
+                        break;
+                    }
+                    continue;
                 }
-                prerollCount = 0;
-            }
-            if (nowActive) {
-                packetizer.add(frame);
-            } else {
-                if (active) {
-                    packetizer.flush();
+                float level = RemoteStream.rms(frame);
+                micLevel = level;
+                // 噪声底往下跟得快、往上跟得慢：说话时它几乎不动，安静下来很快回落。
+                if (level < noiseFloor) {
+                    noiseFloor += (level - noiseFloor) * 0.1f;
+                } else {
+                    noiseFloor += (level - noiseFloor) * 0.005f;
                 }
-                preroll[prerollNext] = frame.clone();
-                prerollNext = (prerollNext + 1) % VAD_PREROLL_FRAMES;
-                if (prerollCount < VAD_PREROLL_FRAMES) {
-                    prerollCount++;
+                float threshold = Math.max(VAD_MIN_THRESHOLD, Math.min(VAD_MAX_THRESHOLD, noiseFloor * 3f));
+                if (level > threshold) {
+                    hangover = VAD_HANGOVER_FRAMES;
+                } else if (hangover > 0) {
+                    hangover--;
                 }
+                boolean nowActive = hangover > 0;
+                if (nowActive && !active) {
+                    maybeSwitchToOpus(packetizer);
+                    packetizer.startSpurt();
+                    for (int i = 0; i < prerollCount; i++) {
+                        int idx = (prerollNext - prerollCount + i + VAD_PREROLL_FRAMES) % VAD_PREROLL_FRAMES;
+                        addFrame(packetizer, preroll[idx]);
+                    }
+                    prerollCount = 0;
+                }
+                if (nowActive) {
+                    addFrame(packetizer, frame);
+                } else {
+                    if (active) {
+                        packetizer.flush();
+                    }
+                    preroll[prerollNext] = frame.clone();
+                    prerollNext = (prerollNext + 1) % VAD_PREROLL_FRAMES;
+                    if (prerollCount < VAD_PREROLL_FRAMES) {
+                        prerollCount++;
+                    }
+                }
+                active = nowActive;
+                micActive = nowActive;
             }
-            active = nowActive;
-            micActive = nowActive;
+        } finally {
+            try {
+                packetizer.release();
+            } catch (RuntimeException e) {
+                Log.w(TAG, "packetizer release", e);
+            }
+            micActive = false;
         }
-        packetizer.flush();
-        micActive = false;
+    }
+
+    /** 一段话开始前：Opus 自检已经通过、手上还是 ADPCM，就换成 Opus。 */
+    private void maybeSwitchToOpus(Packetizer packetizer) {
+        if (packetizer.codecId() == FrameCodec.OPUS || !"ok".equals(opusSelfTest)) {
+            return;
+        }
+        OpusCodec.Encoder opus = OpusCodec.Encoder.create();
+        if (opus == null) {
+            opusSelfTest = "encoder_create_failed";
+            return;
+        }
+        packetizer.swapEncoder(opus).release();
+        captureCodec = FrameCodec.OPUS;
+    }
+
+    /** 编码出错（只会是 Opus）：换回 ADPCM，这个进程里不再试 Opus，这一帧用 ADPCM 重编。 */
+    private void addFrame(Packetizer packetizer, short[] frame) {
+        try {
+            packetizer.add(frame);
+        } catch (RuntimeException e) {
+            if (packetizer.codecId() != FrameCodec.OPUS) {
+                throw e;
+            }
+            Log.w(TAG, "opus encode failed, falling back to ADPCM", e);
+            opusSelfTest = "encode_failed";
+            try {
+                packetizer.swapEncoder(new FrameCodec.AdpcmEncoder()).release();
+            } catch (RuntimeException ignored) {
+            }
+            captureCodec = FrameCodec.ADPCM;
+            packetizer.add(frame);
+        }
     }
 
     private void enqueueOutgoing(byte[] packet) {
@@ -555,6 +647,75 @@ public class GloryVoicePlugin extends GodotPlugin {
     }
 
     // --- 内部 ----------------------------------------------------------------------
+
+    /** Opus 自检放在后台线程：建两个 MediaCodec、编解 25 帧要一两百毫秒，不能卡在 Godot 线程上。 */
+    private void ensureOpusSelfTest() {
+        synchronized (SELF_TEST_LOCK) {
+            if (opusSelfTest != null) {
+                return;
+            }
+            if (!OpusCodec.encoderSupported()) {
+                opusSelfTest = "android_below_10";
+                return;
+            }
+            opusSelfTest = "running";
+        }
+        Thread t = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                String result = OpusCodec.selfTest();
+                opusSelfTest = result.isEmpty() ? "ok" : result;
+                Log.i(TAG, "opus self-test: " + opusSelfTest);
+            }
+        }, "GloryVoiceOpusSelfTest");
+        t.start();
+    }
+
+    /** 插拔耳机、连上 / 断开蓝牙时重新选输出设备。安卓 6 起才有这个回调。 */
+    private void registerDeviceCallback(AudioManager am) {
+        if (Build.VERSION.SDK_INT < 23 || deviceCallback != null) {
+            return;
+        }
+        deviceCallback = new AudioDeviceCallback() {
+            @Override
+            public void onAudioDevicesAdded(AudioDeviceInfo[] added) {
+                onDevicesChanged();
+            }
+
+            @Override
+            public void onAudioDevicesRemoved(AudioDeviceInfo[] removed) {
+                onDevicesChanged();
+            }
+        };
+        try {
+            am.registerAudioDeviceCallback(deviceCallback, new Handler(Looper.getMainLooper()));
+        } catch (Exception e) {
+            Log.w(TAG, "registerAudioDeviceCallback", e);
+            deviceCallback = null;
+        }
+    }
+
+    private void unregisterDeviceCallback(AudioManager am) {
+        if (deviceCallback == null) {
+            return;
+        }
+        try {
+            am.unregisterAudioDeviceCallback(deviceCallback);
+        } catch (Exception ignored) {
+        }
+        deviceCallback = null;
+    }
+
+    private void onDevicesChanged() {
+        if (!sessionRunning) {
+            return;
+        }
+        AudioManager am = audioManager();
+        if (am != null) {
+            routeAudio(am);
+            deviceEvents++;
+        }
+    }
 
     private void attachEffects(int session) {
         // 系统效果挂在录音的 session 上。isAvailable() 为 false 的手机就是没有 ——

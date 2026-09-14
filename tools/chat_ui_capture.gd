@@ -57,8 +57,15 @@ func _ready() -> void:
 	# 这张图看的是「整条都在、没有被截」，不是好不好看。
 	NetworkService.team_seat_profiles[2] = {"player_name": LONGEST_NAME,
 		"friend_code": "CCCC3333", "avatar": ""}
-	_lobby.call("_on_chat_text_received", 2, LONGEST_TEXT)
+	_lobby.call("_on_chat_text_received", 2, LONGEST_TEXT, false)
 	await _shot("lobby_chat_worst_case")
+	# 语音面板（第九节 v1.1）：同队成员 + 屏蔽。桌面上没有语音插件，面板顶部会写「这个版本没有语音功能」；
+	# 这里看的是版面：成员行（含 24 字昵称）、屏蔽按钮、说明文字有没有被挤掉。
+	var voice_controls: Variant = _lobby.get("_voice_controls")
+	if voice_controls != null:
+		voice_controls.call("_on_members_pressed")
+		await _shot("lobby_voice_panel")
+		ModalStack.close_all()
 	_lobby.queue_free()
 	await get_tree().process_frame
 
@@ -99,21 +106,35 @@ func _capture_prep() -> void:
 	for _i in PREP_SETTLE_FRAMES:
 		await get_tree().process_frame
 
-	for pair in [[1, 2], [0, 8]]:
-		prep.call("_on_prep_chat_received", int(pair[0]), int(pair[1]))
+	# 聊天范围（2026-09-14）：队友频道不加标记；自己人发到全部是橙字「【全部】」，
+	# 对面的人发的是红字「【对方】」。本地是 0 号位（红方），3~5 号位是对面。
+	prep.call("_on_prep_chat_received", 1, 2, true)
+	prep.call("_on_prep_chat_received", 0, 8, false)
 	# 批次 D：一条会折行的自由文字（最多两行）。
-	prep.call("_on_prep_chat_text_received", 1, "下回合我先卖掉那个两星民兵，你们别抢弓手")
+	prep.call("_on_prep_chat_text_received", 1, "下回合我先卖掉那个两星民兵，你们别抢弓手", true)
 	await _shot("prep_chat_collapsed")
-	# 最坏情况：再来一条 24 字昵称 + 40 字（4 行）。条数上限 3 先挤掉最老的短语，
+	# 最坏情况：对面的人发全部频道，「【对方】」+ 24 字昵称 + 40 字（4 行）。条数上限 3 先挤掉最老的短语，
 	# 合计 1 + 2 + 4 = 7 行超了 6 行预算，再挤掉一条 —— 应当剩上面那条两行的
 	# 和这条四行的，**两条都完整**。
-	NetworkService.team_seat_profiles[2] = {"player_name": LONGEST_NAME,
-		"friend_code": "CCCC3333", "avatar": ""}
-	prep.call("_on_prep_chat_text_received", 2, LONGEST_TEXT)
+	NetworkService.team_seat_profiles[3] = {"player_name": LONGEST_NAME,
+		"friend_code": "DDDD4444", "avatar": ""}
+	prep.call("_on_prep_chat_text_received", 3, LONGEST_TEXT, false)
 	await _shot("prep_chat_worst_case")
 
 	prep.call("_toggle_chat_panel")
 	await _shot("prep_chat_panel_open")
+	# 切到「全部」：按钮字变橙。再打开输入条，看输入框左边的范围按钮。
+	# 按真按钮（发 pressed），不按名字调方法：顺带验了按钮确实接到了回调，也不涨 dynamic_call 的计数。
+	var scope_button := prep.find_child("PrepChatScope", true, false) as Button
+	var type_button := prep.find_child("PrepChatType", true, false) as Button
+	if scope_button == null or type_button == null:
+		push_error("备战期聊天面板里找不到 PrepChatScope / PrepChatType 按钮")
+	else:
+		scope_button.pressed.emit()
+		await _shot("prep_chat_panel_scope_all")
+		type_button.pressed.emit()
+		await _shot("prep_chat_text_input")
+		ModalStack.close_all()
 	prep.queue_free()
 	await get_tree().process_frame
 
@@ -200,10 +221,11 @@ func _stub_online_state() -> void:
 func _push_sample_messages() -> void:
 	# 走真实入口 _on_chat_received(slot, phrase_id)，不是直接往标签里塞字符串 ——
 	# 这样连「谁说的」的取名逻辑与短语查表一起被拍进图里。
+	# 大厅只发全部（2026-09-14），team_only 一律 false。
 	for pair in [[1, 1], [0, 5], [1, 8], [0, 4]]:
-		_lobby.call("_on_chat_received", int(pair[0]), int(pair[1]))
+		_lobby.call("_on_chat_received", int(pair[0]), int(pair[1]), false)
 	# 批次 D：一条会折行的自由文字，看 4 行里折得对不对、有没有把框撑破。
-	_lobby.call("_on_chat_text_received", 1, "今晚八点开一局三排？我拉上阿泰，你带四星弓手")
+	_lobby.call("_on_chat_text_received", 1, "今晚八点开一局三排？我拉上阿泰，你带四星弓手", false)
 
 
 func _shot(shot_name: String) -> void:

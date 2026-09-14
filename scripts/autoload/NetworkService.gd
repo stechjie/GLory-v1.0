@@ -597,6 +597,7 @@ func _process(delta: float) -> void:
 		# 每帧排空一点回放队列（C14 节流）。必须在 1 秒累加器**之外**。
 		_tick_replay_send()
 		ServerFlags.poll_reload(proc_now)
+		_voice_stats_tick(delta)
 		_cleanup_elapsed += delta
 		if _cleanup_elapsed >= CLEANUP_INTERVAL_SEC:
 			_cleanup_elapsed = 0.0
@@ -1831,7 +1832,7 @@ func _rpc_team_prep_mercs(slot: int, round_index: int, ids: Array) -> void:
 
 # --- 房间 / 局内快捷短语（docs/聊天系统设计.md 批次 A）-----------------------
 #
-# 网络上只走 phrase_id 一个整数，**不走文本**。理由见 ChatPhrases.gd 顶部：
+# 网络上只走 phrase_id 一个整数（外加一个范围开关 team_only），**不走文本**。理由见 ChatPhrases.gd 顶部：
 # 内容审核归零、不碰 RFC 第六节 🔴 第 3 条、载荷上界天然存在。
 #
 # 🔴 **客户端不自报座位号。** slot 一律由服务端从 sender 反查（`peer_slot[sender]`）。
@@ -1843,10 +1844,16 @@ func _rpc_team_prep_mercs(slot: int, round_index: int, ids: Array) -> void:
 
 const ChatPhrases := preload("res://scripts/multiplayer/ChatPhrases.gd")
 
-signal team_chat_received(slot: int, phrase_id: int)
+# 🔴 聊天范围（2026-09-14，协议 26）：短语和自由文字都带 team_only。
+#   true  = 只给同队（含发送者自己 —— 他那条也要经服务器定序回来）
+#   false = 房间里所有人（含敌方）
+# **谁收得到由 ③ 算**（chat_recipients），客户端只是选。team_only 的消息敌方手机根本收不到，
+# 不是「收到了但不显示」—— 那样改过的客户端就能看到对面的队内聊天。
+# 界面：备战期默认 true、可切换（PrepUI._chat_team_only）；大厅固定 false（开局前队伍还没定）。
+signal team_chat_received(slot: int, phrase_id: int, team_only: bool)
 
-func team_send_phrase(phrase_id: int) -> void:
-	# **本地不回显**，等服务器广播回来再显示。
+func team_send_phrase(phrase_id: int, team_only: bool = false) -> void:
+	# **本地不回显**，等服务器转发回来再显示。
 	#
 	# 服务器是唯一定序者。本地先显示会让发送者看到的顺序与其他人不同 ——
 	# 自己那条永远在最前，别人看到的是按到达顺序排的。聊天里这种不一致不会报错，
@@ -1857,14 +1864,13 @@ func team_send_phrase(phrase_id: int) -> void:
 	if not ChatPhrases.is_valid_id(phrase_id):
 		return
 	if is_host:
-		# 本地房主模式：自己就是权威，直接广播并自己 emit（"call_remote" 不回环）。
-		_rpc_team_chat.rpc(team_local_slot, phrase_id)
-		team_chat_received.emit(team_local_slot, phrase_id)
+		# 本地房主模式：自己就是权威，直接转发并自己 emit（"call_remote" 不回环）。
+		_host_send_phrase(team_local_slot, phrase_id, team_only)
 	else:
-		_rpc_team_chat_submit.rpc_id(1, phrase_id)
+		_rpc_team_chat_submit.rpc_id(1, phrase_id, team_only)
 
 @rpc("any_peer", "call_remote", "reliable")
-func _rpc_team_chat_submit(phrase_id: int) -> void:
+func _rpc_team_chat_submit(phrase_id: int, team_only: bool) -> void:
 	if _dedicated_server:
 		var sender := multiplayer.get_remote_sender_id()
 		# count_strike=false：超限只丢这一条，不累计踢人。
@@ -1880,34 +1886,63 @@ func _rpc_team_chat_submit(phrase_id: int) -> void:
 			return
 		if not ChatPhrases.is_valid_id(phrase_id):
 			return
-		# 广播给房间里所有人，**包括发送者** —— 他那条也要经服务器定序回来，
-		# 否则就回到了 team_send_phrase 注释里说的那个不一致状态。
-		for peer_id in (room.get("peer_slot", {}) as Dictionary).keys():
-			if _peer_connected(int(peer_id)):
-				_rpc_team_chat.rpc_id(int(peer_id), slot, phrase_id)
+		# 转给 chat_recipients 算出来的人，**包括发送者** —— 他那条也要经服务器定序回来，
+		# 否则就回到了 team_send_phrase 注释里说的那个不一致状态。team_only 时敌方不在里面。
+		for peer_id in chat_recipients(room, slot, team_only):
+			if _peer_connected(peer_id):
+				_rpc_team_chat.rpc_id(peer_id, slot, phrase_id, team_only)
 		return
 	if not is_host:
 		return
 	var host_slot := int(_team_peer_slot.get(multiplayer.get_remote_sender_id(), -1))
 	if host_slot < 0 or host_slot >= TEAM_SLOTS or not ChatPhrases.is_valid_id(phrase_id):
 		return
-	_rpc_team_chat.rpc(host_slot, phrase_id)
-	team_chat_received.emit(host_slot, phrase_id)
+	_host_send_phrase(host_slot, phrase_id, team_only)
 
 @rpc("authority", "call_remote", "reliable")
-func _rpc_team_chat(slot: int, phrase_id: int) -> void:
+func _rpc_team_chat(slot: int, phrase_id: int, team_only: bool) -> void:
 	# 来路是网络，收到的一样要校验。专服转发的是它已经校验过的 id，
 	# 但本地房主模式下这里就是唯一的那道门 —— 少这一道，房主一改包全房都跟着显示。
 	if slot < 0 or slot >= TEAM_SLOTS:
 		return
 	if not ChatPhrases.is_valid_id(phrase_id):
 		return
-	team_chat_received.emit(slot, phrase_id)
+	team_chat_received.emit(slot, phrase_id, team_only)
+
+# 这条聊天该转给谁：team_only 只给同队，否则全房；**包括发送者自己**。
+# 纯函数（不碰网络），tools/chat_check 直接调。本地房主模式走 _host_chat_peers，同一条规则。
+static func chat_recipients(room: Dictionary, sender_slot: int, team_only: bool) -> Array[int]:
+	var out: Array[int] = []
+	var peer_slot: Dictionary = room.get("peer_slot", {})
+	for peer in peer_slot.keys():
+		if chat_reaches(sender_slot, int(peer_slot[peer]), team_only):
+			out.append(int(peer))
+	return out
+
+static func chat_reaches(sender_slot: int, receiver_slot: int, team_only: bool) -> bool:
+	if sender_slot < 0 or sender_slot >= TEAM_SLOTS or receiver_slot < 0 or receiver_slot >= TEAM_SLOTS:
+		return false
+	return not team_only or GameConstants.team_of_slot(receiver_slot) == GameConstants.team_of_slot(sender_slot)
+
+# 本地房主模式（调试用）没有 room 字典：收件人从 _team_peer_slot 算。
+# 那张表里只有远端 peer；房主自己要不要显示，由调用方用 chat_reaches 判断。
+func _host_chat_peers(sender_slot: int, team_only: bool) -> Array[int]:
+	var out: Array[int] = []
+	for peer_id in _team_peer_slot.keys():
+		if chat_reaches(sender_slot, int(_team_peer_slot[peer_id]), team_only):
+			out.append(int(peer_id))
+	return out
+
+func _host_send_phrase(slot: int, phrase_id: int, team_only: bool) -> void:
+	for peer_id in _host_chat_peers(slot, team_only):
+		_rpc_team_chat.rpc_id(peer_id, slot, phrase_id, team_only)
+	if chat_reaches(slot, team_local_slot, team_only):
+		team_chat_received.emit(slot, phrase_id, team_only)
 
 # --- 房间 / 局内自由文字（docs/聊天系统设计.md 批次 D）------------------------------
 #
-# 与上面的快捷短语是同一套形状：客户端只交文本，**座位号由服务端从 sender 反查**；
-# 服务端定序、广播给房间里所有人（包括发送者）；本地不回显。
+# 与上面的快捷短语是同一套形状：客户端只交文本和范围，**座位号由服务端从 sender 反查**；
+# 服务端定序、按 chat_recipients 转发（包括发送者）；本地不回显。
 #
 # 与短语不同的两处：
 #   1. 文本要校验与规范化（ChatText.clean）。客户端发之前过一遍给玩家即时反馈，
@@ -1917,7 +1952,7 @@ func _rpc_team_chat(slot: int, phrase_id: int) -> void:
 
 const ChatText := preload("res://scripts/multiplayer/ChatText.gd")
 
-signal team_chat_text_received(slot: int, text: String)
+signal team_chat_text_received(slot: int, text: String, team_only: bool)
 
 # 客户端自己的节流。服务端额度是 10 秒 3 条（RateLimitService 的 chat_text），
 # 超了会**静默丢弃**（不计 strike、也不回执）—— 所以这里先挡一道，
@@ -1931,7 +1966,7 @@ const TEXT_SEND_MIN_INTERVAL_SEC := 4.0
 var _last_text_sent_at := -1000.0
 
 # 返回空串表示已发出；否则是给玩家看的原因（界面据此留着输入条让他改）。
-func team_send_text(raw: String) -> String:
+func team_send_text(raw: String, team_only: bool = false) -> String:
 	if not team_active or team_local_slot < 0:
 		return "联机对局中才能发送"
 	var problem := ChatText.problem(raw)
@@ -1945,14 +1980,13 @@ func team_send_text(raw: String) -> String:
 	var text := ChatText.clean(raw)
 	if is_host:
 		# 本地房主模式：自己就是权威（同 team_send_phrase）。
-		_rpc_team_chat_text.rpc(team_local_slot, text)
-		team_chat_text_received.emit(team_local_slot, text)
+		_host_send_text(team_local_slot, text, team_only)
 	else:
-		_rpc_team_chat_text_submit.rpc_id(1, text)
+		_rpc_team_chat_text_submit.rpc_id(1, text, team_only)
 	return ""
 
 @rpc("any_peer", "call_remote", "reliable")
-func _rpc_team_chat_text_submit(text: String) -> void:
+func _rpc_team_chat_text_submit(text: String, team_only: bool) -> void:
 	if _dedicated_server:
 		var sender := multiplayer.get_remote_sender_id()
 		# 软限，不计 strike —— 理由同 chat_phrase：刷屏是烦人，不是攻击，
@@ -1969,9 +2003,10 @@ func _rpc_team_chat_text_submit(text: String) -> void:
 		var clean := ChatText.clean(text)
 		if clean.is_empty():
 			return
-		for peer_id in (room.get("peer_slot", {}) as Dictionary).keys():
-			if _peer_connected(int(peer_id)):
-				_rpc_team_chat_text.rpc_id(int(peer_id), slot, clean)
+		# 同短语：按范围转，包括发送者；team_only 时敌方不在里面。
+		for peer_id in chat_recipients(room, slot, team_only):
+			if _peer_connected(peer_id):
+				_rpc_team_chat_text.rpc_id(peer_id, slot, clean, team_only)
 		return
 	if not is_host:
 		return
@@ -1979,31 +2014,44 @@ func _rpc_team_chat_text_submit(text: String) -> void:
 	var cleaned := ChatText.clean(text)
 	if host_slot < 0 or host_slot >= TEAM_SLOTS or cleaned.is_empty():
 		return
-	_rpc_team_chat_text.rpc(host_slot, cleaned)
-	team_chat_text_received.emit(host_slot, cleaned)
+	_host_send_text(host_slot, cleaned, team_only)
 
 @rpc("authority", "call_remote", "reliable")
-func _rpc_team_chat_text(slot: int, text: String) -> void:
+func _rpc_team_chat_text(slot: int, text: String, team_only: bool) -> void:
 	# 收到的一样要校验：本地房主模式下这里就是唯一的那道门（同 _rpc_team_chat）。
 	if slot < 0 or slot >= TEAM_SLOTS:
 		return
 	var clean := ChatText.clean(text)
 	if clean.is_empty():
 		return
-	team_chat_text_received.emit(slot, clean)
+	team_chat_text_received.emit(slot, clean, team_only)
+
+func _host_send_text(slot: int, text: String, team_only: bool) -> void:
+	for peer_id in _host_chat_peers(slot, team_only):
+		_rpc_team_chat_text.rpc_id(peer_id, slot, text, team_only)
+	if chat_reaches(slot, team_local_slot, team_only):
+		team_chat_text_received.emit(slot, text, team_only)
 
 # --- 组队语音（docs/聊天系统设计.md 第九节）--------------------------------------
-# 包是安卓插件打好的（ADPCM，android_plugins/glory_voice），这里**不解码、不看内容**，
-# 只做三件事：大小上限、限流、只转给同队。座位号由服务端从 sender 反查（同自由文字）。
+# 包是安卓插件打好的（Opus 或 ADPCM，格式见 android_plugins/glory_voice 的 VoicePacket），
+# 这里**不解码、不看内容**，只做三件事：大小上限、限流、只转给同队。座位号由服务端从 sender 反查（同自由文字）。
+# 所以包格式改了（v1.1 加了编码字段）也不用顶协议号：服务端从头到尾不解析它。
 #
 # unreliable_ordered + 独立通道 CH_VOICE：语音丢一个包只是一声咔，重传回来的旧包反而是杂音；
 # ordered 让迟到的包在网络层就被丢掉。
 signal team_voice_received(slot: int, packet: PackedByteArray)
 
-# 一个包最多 3 帧（5 + 3 × 163 = 494 字节，AdpcmCodec.MAX_PACKET_BYTES）。
+# 插件打包时凑到 494 字节就发（VoicePacket.MAX_PACKET_BYTES）。
 # 还要明显低于 ENet 的 MTU：不可靠包一旦被分片，丢一片整包就没了。
 # tools/voice_check 拿 Java 那边的常量对账。
 const VOICE_MAX_PACKET_BYTES := 512
+
+# ③ 的语音流量：每分钟打一行日志（这一分钟一个语音包都没有就不打），看带宽和丢包用：
+#   journalctl -u glory-server | grep "voice stats"
+const VOICE_STATS_INTERVAL_SEC := 60.0
+var _voice_stats := {"packets_in": 0, "bytes_in": 0, "relayed": 0, "bytes_out": 0,
+	"drop_size": 0, "drop_rate": 0, "drop_no_room": 0}
+var _voice_stats_elapsed := 0.0
 
 # 发一个包。不在房间、没连上、本地房主模式（调试用）都直接丢：语音不需要回执。
 func team_send_voice(packet: PackedByteArray) -> void:
@@ -2021,17 +2069,24 @@ func _rpc_team_voice_submit(packet: PackedByteArray) -> void:
 		return
 	var sender := multiplayer.get_remote_sender_id()
 	if packet.is_empty() or packet.size() > VOICE_MAX_PACKET_BYTES:
+		_voice_stats["drop_size"] += 1
 		return
 	# 软限，不计 strike：弱网恢复时包会攒成一串一起到，那是网络不是攻击。
 	if not _rate_ok(sender, "voice", false):
+		_voice_stats["drop_rate"] += 1
 		return
 	var room := _room_for_peer(sender)
 	if room.is_empty():
+		_voice_stats["drop_no_room"] += 1
 		return
+	_voice_stats["packets_in"] += 1
+	_voice_stats["bytes_in"] += packet.size()
 	var slot := int((room.get("peer_slot", {}) as Dictionary).get(sender, -1))
 	for peer_id in voice_recipients(room, slot, sender):
 		if _peer_connected(peer_id):
 			_rpc_team_voice.rpc_id(peer_id, slot, packet)
+			_voice_stats["relayed"] += 1
+			_voice_stats["bytes_out"] += packet.size()
 
 @rpc("authority", "call_remote", "unreliable_ordered", NetworkConfig.CH_VOICE)
 func _rpc_team_voice(slot: int, packet: PackedByteArray) -> void:
@@ -2054,6 +2109,25 @@ static func voice_recipients(room: Dictionary, sender_slot: int, sender_peer: in
 		if GameConstants.team_of_slot(slot) == team:
 			out.append(int(peer))
 	return out
+
+# 服务器 _process 每帧调。到点打一行、清零；这一窗口什么都没有就不打（不给日志添噪声）。
+func _voice_stats_tick(delta: float) -> void:
+	_voice_stats_elapsed += delta
+	if _voice_stats_elapsed < VOICE_STATS_INTERVAL_SEC:
+		return
+	var seconds := _voice_stats_elapsed
+	_voice_stats_elapsed = 0.0
+	var total := 0
+	for key in _voice_stats:
+		total += int(_voice_stats[key])
+	if total == 0:
+		return
+	_net_log("voice stats window=%ds packets_in=%d kbps_in=%.1f relayed=%d kbps_out=%.1f drop_size=%d drop_rate=%d drop_no_room=%d" % [
+		int(seconds), int(_voice_stats["packets_in"]), float(_voice_stats["bytes_in"]) * 8.0 / 1000.0 / seconds,
+		int(_voice_stats["relayed"]), float(_voice_stats["bytes_out"]) * 8.0 / 1000.0 / seconds,
+		int(_voice_stats["drop_size"]), int(_voice_stats["drop_rate"]), int(_voice_stats["drop_no_room"])])
+	for key in _voice_stats.keys():
+		_voice_stats[key] = 0
 
 # --- 3v3 team board collection (N2) ----------------------------------------
 # After everyone presses "start battle" in prep, each player submits their board

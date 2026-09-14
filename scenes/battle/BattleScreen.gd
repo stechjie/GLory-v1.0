@@ -77,6 +77,7 @@ const TEAM_REPLAY_WAIT_TIMEOUT_SEC := 60.0
 
 func _ready() -> void:
 	_setup_fps_overlay()
+	_setup_voice_controls()
 	if GameState.team_mode:
 		var package := GameState.take_pending_battle_package()
 		if str(package.get("mode", "")) == "team_replay":
@@ -174,6 +175,8 @@ func _ready() -> void:
 	await _prepare_battle_models()
 func _exit_tree() -> void:
 	_presentation_director.dispose()
+	if _voice_controls != null:
+		_voice_controls.teardown()
 	_stop_battle_music()
 	# 本回合的敌人资源到此为止；玩家阵容留着，下回合还要用。
 	release_round_assets()
@@ -498,6 +501,33 @@ func _advance_spectate(delta: float) -> void:
 		_spectate_done = true
 
 # B8: lightweight on-screen FPS readout for the battle scene.
+# 组队语音（docs/聊天系统设计.md 第九节 v1.1）：右上角「跳过」（y 12~48）「切镜头」（y 56~92）下面，
+# 竖着放语音与队友两个按钮。只在联机对局里建；档位跨场景保持（VoiceService 是 autoload），
+# 这里只是给玩家一个随手开关。
+const VoiceControls := preload("res://ui/components/VoiceControls.gd")
+const VOICE_BTN_TOP := 100.0
+const VOICE_BTN_SIZE := Vector2(120, 36)
+const VOICE_BTN_STEP := 42.0
+var _voice_controls: VoiceControls = null
+
+func _setup_voice_controls() -> void:
+	if _voice_controls != null or not NetworkService.team_active:
+		return
+	_voice_controls = VoiceControls.new()
+	_voice_controls.build(self, VOICE_BTN_SIZE, VOICE_BTN_SIZE, 14)
+	var top := VOICE_BTN_TOP
+	for button in [_voice_controls.voice_button, _voice_controls.members_button]:
+		var control := button as Button
+		control.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+		control.offset_left = -16.0 - VOICE_BTN_SIZE.x
+		control.offset_right = -16.0
+		control.offset_top = top
+		control.offset_bottom = top + VOICE_BTN_SIZE.y
+		# 同「跳过」按钮：盖在全屏战场之上。
+		control.z_index = 100
+		add_child(control)
+		top += VOICE_BTN_STEP
+
 # Mirrors PrepScreen._setup_fps_overlay; positioned slightly off the top-left
 # corner (see bug report 9.9bug提交及修复08 #8 — old corner spot was hard to
 # see on mobile, "too close to the edge").

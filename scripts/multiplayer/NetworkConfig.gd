@@ -109,7 +109,16 @@ const USE_DTLS := true
 #      加 @rpc 方法会平移整套 RPC 的 wire ID。
 #      代价同上：**线上战斗服务器必须重新打包部署到 p25**（make_server_zip.ps1），
 #      否则新客户端连不上。确认依据是服务器日志里的 `server started protocol=25`。
-const NETWORK_PROTOCOL_VERSION := 25
+# v26: 聊天分范围（docs/聊天系统设计.md「聊天范围」，2026-09-14）。四条聊天 RPC
+#      （_rpc_team_chat_submit、_rpc_team_chat、_rpc_team_chat_text_submit、_rpc_team_chat_text）
+#      各加一个 team_only 参数，③ 据此只转同队或转全房。**RPC 数量没变（仍是 59），
+#      但参数个数变了**：两端版本不一致时参数对不上，收方直接丢掉这条 RPC
+#      （日志里只多一行 RPC 报错），聊天静默失效 —— 所以一样要顶号。
+#      tools/chat_check 的 PINNED_RPC_SIGNATURES 挡的就是「只改参数、忘了顶号」。
+#      同批带上语音 v1.1（语音包格式 v2；③ 不解析语音包，这件事本身不需要顶号）。
+#      代价同上：**线上战斗服务器必须重新打包部署到 p26**（make_server_zip.ps1），
+#      否则新客户端连不上。确认依据是服务器日志里的 `server started protocol=26`。
+const NETWORK_PROTOCOL_VERSION := 26
 
 # Local phone hosting is debug-only.
 const ALLOW_LOCAL_HOST_DEBUG := false

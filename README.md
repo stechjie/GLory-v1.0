@@ -1067,3 +1067,81 @@ FAIL [reset_not_wired] NetworkService.reset() 必须重置信封位置（实际 
 **未做**：安卓真机与真实多客户端/旧服务端联机实测；未导出 EXE/APK；未部署服务器；未刷新资源清单基线（原因同9.13）。
 
 实施细节、逐条检验方法、文件清单与还原方法见[9.14bug修复记录](docs/9.14bug修复记录.md)。
+
+## 2026-09-13：聊天系统与游戏内语音
+
+快捷短语、房间 / 局内自由文字、好友私聊，以及游戏内组队语音 v1 的代码都已提交；**③ p25 与私聊后端已上线（用户 2026-09-13 确认）**。2026-09-14 **语音 v1.1**（Opus、屏蔽队友、战斗界面按钮、插拔耳机、开麦前用途说明、③ 语音流量日志）与**聊天范围**（备战期默认只发给队友）代码完成，**未提交**；聊天范围把协议顶到 **26**，③ 要部署 p26、客户端一起换。2026-09-14 拉了上游 `3963336`（同事的 9.13 / 9.14 修复）并合并复验，p26 的服务器包与安卓包都按合并后的代码重打（见下面「合并上游 3963336」）。**语音还没真机测。** 设计取舍与接手点见 [聊天系统设计](docs/聊天系统设计.md)：第九节是语音，第十一之二节是当前进度；隐私政策段落与 Play 数据安全表单的答案见 [语音隐私与数据安全申报](docs/语音隐私与数据安全申报.md)。顶部自动生成的健康块仍是 2026-09-04 的历史产物，不代表本轮状态。
+
+### 做了什么
+
+| 提交 | 内容 | 协议 | 状态 |
+|---|---|---|---|
+| `2fa73cc` `36c1044` | 聊天系统设计文档；批次 A：房间大厅 / 备战期**快捷短语**（发短语 ID 不发文字，座位号由服务器从连接反查）；备战期聊天入口在 1280×720 矮窗口下的位置修正 | 22 | ✅ ③ p22 已部署 |
+| `04a2705` | 批次 B：② 的 WebSocket（单实例锁、`/v1/ws`、心跳、被顶号提示、令牌自动续期）<br>批次 C：**好友私聊**（`database/007_chat.sql`、`/v1/me/chats` 接口 + WebSocket 推送、主菜单「聊天」与未读红点、好友列表「私聊」；每对好友存最近 200 条，解除好友后 30 天清掉；被拉黑者发的消息静默丢弃、不落库） | — | ✅ 已上线（用户 2026-09-13 确认） |
+| `0a54937` | 批次 D：房间 / 局内**自由文字**（40 字、本地文本规则、服务器从连接反查座位、10 秒 3 条软限流、客户端 4 秒一条、不落库、贴屏幕顶部的输入条）<br>另：好友请求配额可被并发绕过的修复（advisory lock）；两项过期门禁（UI 棘轮基线、佣兵购买用例）；与同事四星升阶撞号的协议号改为 24 | 24 | ✅ ③ p25 已部署 |
+| `95a6bc7` | 回归探针 `channel_check` 跑完不再把测试用的重连记录留在本机存档里（它曾让「自定义房间」一直点不进去） | — | ✅ |
+| `8743267` | **游戏内组队语音 v1**：安卓插件（通话模式录音 + 系统回声消除 / 降噪 / 自动增益、判断有没有在说话、ADPCM 编码、每个队友一条抖动缓冲、混音后用通话流播放）；③ **只转同队**（独立语音通道 `CH_VOICE`、包大小上限、软限流）；`VoiceService` 三档状态机（关 / 只听 / 开麦，离开房间 3 秒自动关，麦克风绝不自己打开）；大厅与备战期「语音」按钮；`.gitignore` 加上导出密码文件与签名文件 | 25 | ✅ ③ p25 已部署；🔴 未真机测 |
+| （未提交） | **语音 v1.1**：安卓 10 起 **Opus**（系统 `MediaCodec`，24 kbps；开语音时后台自检，不过或运行中出错自动退回 ADPCM；包格式 v2 带编码号，仍能解 v1）；解码挪到混音线程；**屏蔽队友**（按好友码记，换座位跟着人走，只存内存）+ 语音面板（同队成员、谁在说话、编码 / 出声设备状态行）；「语音」「队友」按钮加到**战斗界面**（大厅 / 备战期 / 战斗共用 `ui/components/VoiceControls.gd`）；**插拔耳机**自动切换出声设备；没有麦克风权限时开麦前先**说明用途**，被拒后提示去系统设置；③ 每分钟一行**语音流量日志**；隐私政策段落与 Play 数据安全表单答案；导出预设 versionCode 5 → 6 | 25（本身不变，随聊天范围进 26） | 🔴 未真机测 |
+| （未提交） | **聊天范围**：备战期的快捷短语和打字**默认只发给队友**，短语面板顶行「发给：队友 / 全部」切换（打字输入条上也有同一个按钮），每回合备战期开始时回到队友；大厅保持全部、不加开关（2026-09-14 用户定）。**收件人由 ③ 算**（`NetworkService.chat_recipients`），敌方的手机收不到仅队友的消息，不是收到了再藏起来；显示只标例外：自己人发到全部是橙字「【全部】」，对面发的是红字「【对方】」。四条聊天 RPC 各加 `team_only` 参数；`chat_check` 新增范围用例与 RPC 签名指纹（挡「只改参数、忘了顶号」）；导出预设 versionCode 6 → 7 | **26** | 🔴 ③ 未部署 p26；未真机测 |
+
+验证（2026-09-13，MSI 这台电脑）：相关门禁 17 项中 16 项通过（含 `voice_check` 67 项、`chat_check` 207 项、`carrot_online` 91 项、`modal_lifecycle` 433 项）；联机回归 21 项在协议 25 下全过；语音插件桌面自测 37 项通过（压缩后信噪比 28.7 dB）；后端 pytest 182 项通过（09-11 好友修复时，不连真库）。唯一红的 `procedural_ui_ratchet` 来自 `scenes/prep/FourStarUpgradePanel.gd` 新增的 3 个 `Button.new()` 和 1 个 `StyleBoxFlat.new()`，与聊天语音无关。
+
+验证 v1.1（2026-09-14，MSI 这台电脑）：语音插件桌面自测通过（新增包格式 v2、打包器中途换编码、待解码队列上限、变长输出的解码器、48k → 16k 重采样等用例），`GloryVoice.aar` 已重新打包、安卓编译通过；相关门禁 22 项中 20 项通过（`voice_check` 105 项、`chat_check` 207、`carrot_online` 91、`modal_lifecycle` 433、`responsive_layout` 114、`four_star_upgrade` 305、`carrot_economy` 1043 等）；联机回归 21 项全过（协议 25）；`tools/chat_ui_capture.tscn` 出图 10 张，含新的语音面板。之后补了「开麦被拒后的提示」与面板长昵称省略号，复跑其中 14 项（`voice_check` 108 项）仍只红下面那两项，重新出图核对了省略号。战斗界面的两个按钮没有出图工具拍不到，是按代码核对的位置（「跳过」「切镜头」正下方，右上角没有别的控件）。两项红都不是这次造成的：`procedural_ui_ratchet`（同上，四星面板）；`dynamic_call` **在 `HEAD` 上就红** —— ① `PrepUI.gd:1050-1052` 的 3 个 `Callable(self, ...)` 指向子类 `PrepBoardController` 里的方法（四星 `4b21231` 引入），运行时 `self` 是 `PrepScreen`，没坏，是检查只沿父类找方法造成的误报；② 按名调用（接收者静态定不下来）累计 256 处、上限 191（上限是 09-01 定的，之后多个提交陆续涨上去），v1.1 新增的唯一一处是 `_on_` 开头的回调名，检查本来就不计。**Opus 在真机上能不能用、音质与延迟，桌面上验不了。**
+
+验证聊天范围（2026-09-14，MSI 这台电脑，协议 26）：相关门禁 26 项中 22 项通过 —— `chat_check` 230 项（新增：收件人函数同队 / 全房 / 含发送者 / 敌方收不到，③ 两条提交按 `chat_recipients` 转，本地房主模式不再整房广播，备战期默认仅队友、大厅只发全部，RPC 签名指纹；带范围标记的最长一条仍在行数预算内）、`voice_check` 108、`carrot_online` 91、`modal_lifecycle` 433、`responsive_layout` 114、`four_star_upgrade` 305、`carrot_economy` 1043、`piece_uid` 1056、`resource_case` 2855、`room_service` 133、`dedicated_server` 38、`network_transport` 35 等；联机回归 21 项全过（协议 26）。变异测试：给 `_rpc_team_chat` 多加一个参数、不顶协议号，`chat_check` 报 `rpc_signature_changed_without_protocol_bump`（第一次钉的指纹漏看了一条参数折行的 RPC `_rpc_team_replay_chunk`，已修，并加了「读不出签名就判红」）。`tools/chat_ui_capture.tscn` 出图 12 张，新增「发给：全部」的短语面板与带范围按钮的输入条；看过：队友消息不加标记、橙字「【全部】」、红字「【对方】」，最坏一条（【对方】+ 24 字昵称 + 40 字）4 行完整。4 项红都不是这次造成的：`procedural_ui_ratchet`、`dynamic_call`（按名调用 256 处，与改之前相同）、`prep_tree_snapshot`、`export_presets`（见「待拍板」）。**两台手机之间「敌方看不到」只能真机验。**
+
+合并上游 `3963336`（2026-09-14）：拉取时 GitHub Desktop 先暂存本地改动、快进到上游、再放回来，只有本文件冲突（两边都在同一位置追加了章节，都保留了）。**git 没报冲突、合并后却会坏的一处**：同事 9.13 #6（商店开着时挡住语音按钮）写的是 v1 的 `_voice_button`，这个变量在语音 v1.1 里已经换成「语音」「队友」两个按钮 —— 原样合并后 `PrepUI.gd` 解析失败，备战界面整个打不开（跑门禁确认过）；已改成商店开着时挡这两个按钮。合并后复验相关门禁 37 项：30 项通过（之前那 26 项，外加同事的 `viewport_status_regression`、`tutorial_checkpoint`、`tutorial_overlay_layout`、`tutorial_step15_flow`、`shop_roll_parity`、`four_star_values`、`main_team_create_room_action`、`main_team_join_room_action`）；5 项红都不是合并造成的：`procedural_ui_ratchet`、`dynamic_call`（按名调用 262 处，比合并前多的 6 处是同事新增的 `play_idle` / `play_attack` 调用）、`prep_tree_snapshot`、`prep_text_coverage`（同事 9.13 记录里标了既存漂移）、`export_presets`（见「待拍板」）；同事新增的 `startup_transition` 与 `tutorial_arrow_alignment` 要在项目副本里用 `override.cfg` 隔离 user 目录才跑，本次没跑。联机回归 21 项全过（协议 26）；出图 12 张。
+
+交付物（只在 MSI 这台电脑上）：
+- `glory_server_p26.zip`（项目根目录，被 git 忽略）：**按合并后的代码重打**（聊天范围 + 语音 v1.1 + 同事 9.13 需要同步服务端的首回合商店 / 萝卜过期状态修复 + 9.14 的 `race_units.json`，包内逐项核对过），取代下面的 p25 包；冷启动冒烟打出 `server started protocol=26`，SHA-256 `EF225DD1A60CAF8A…`（合并前打的那份 `97907B27…` 已被覆盖）
+- `桌面\apk\GLory-p26-merged-vc8-20260914.apk`（约 687 MB，**合并上游后重打，协议 26**）：versionCode 8；正式签名与之前的包相同（`CN=Leno, O=S Tech`，证书 SHA-256 `3d8c76f450f418a7…`），可以直接覆盖安装；权限多了 `VIBRATE`（另有 `RECORD_AUDIO` / `MODIFY_AUDIO_SETTINGS`），清单里有语音插件；包内 `build_info.json` 是导出前现生成的（commit `3963336` + 28 个未提交文件），`apk_identity.py inspect` 通过（702 项映射、0 失败）；SHA-256 `0751235039668068…`。导出日志有两类报错：暗黑女王 FBX 的 `.fbm` 贴图找不到（同事在 `docs/GLORY_模型颗粒问题修复_20260913.md` 说明过，最终模型不用这些贴图）；`addons/effekseer/bin/android/libeffekseer.*.so` 找不到（见「待拍板」）
+- `桌面\apk\GLory-p26-chatscope-vc7-20260914.apk`：**合并上游之前出的，别发** —— 不含同事 9.13 / 9.14 的修复，包内构建身份是 08-31 的旧值，也没有震动权限。原记录：versionCode 7；正式签名与之前的包相同（`CN=Leno, O=S Tech`，证书 SHA-256 `3d8c76f450f418a7…`），可以直接覆盖安装；带 `RECORD_AUDIO` / `MODIFY_AUDIO_SETTINGS`，清单里有语音插件；SHA-256 `10A6E9B4D9919485…`
+- `glory_server_p25.zip`（项目根目录，被 git 忽略）：**2026-09-14 按 v1.1 重打**，比已部署的那份只多了 ③ 的语音流量日志，协议仍是 25，不急着部署；冷启动冒烟打出 `server started protocol=25`，SHA-256 `6EEAEBA92C8C58A6…`（09-13 部署的那份是 `0FEF32292DCEAA2A…`，要重打从 `8743267` 出）
+- `桌面\apk\GLory-p25-voice11-vc6-20260914.apk`（约 638 MB，**v1.1**，协议 25 —— **③ 换成 p26 之后连不上**，届时别再发）：versionCode 6；正式签名与 09-13 的包相同（`CN=Leno, O=S Tech`，证书 SHA-256 `3d8c76f450f418a7…`），可以直接覆盖安装；带 `RECORD_AUDIO` / `MODIFY_AUDIO_SETTINGS`；清单里有语音插件，dex 里有 v1.1 的 Opus 类；SHA-256 `8941060B108F3C8C…`
+- `桌面\apk\GLory-p25-voice-20260913.apk`（v1，versionCode 5）：**别再发给测试的人** —— 它听不到 v1.1 的人说话
+
+### 🔴 测试 / 上线前必须按顺序做
+
+1. ✅ 已做（用户 2026-09-13 确认）。**部署 ③ p25**：上传 `glory_server_p25.zip` → 解压到 `~/Glory/"Beta 0.04"` → `sudo systemctl restart glory-server` → `journalctl -u glory-server -n 5` 里必须看到 `server started protocol=25`（是 started 不是 starting）。旧包连不上新服务器、新包也连不上旧服务器，**客户端与服务器一起发**
+2. ✅ 已做（用户 2026-09-13 确认）。**私聊后端上线**（批次 B + C）：先在 Supabase SQL Editor 跑 `database/007_chat.sql`，再部署 ②；`journalctl -u glory-backend` 里出现 `WS 连接建立` 同时证明 Caddy 没掐 WebSocket；然后两个账号真机互发、看红点、拉黑、删好友、断网重连补齐
+3. 🔴 **部署 ③ p26 并换 p26 的包**（2026-09-14 聊天范围 + 语音 v1.1）：上传 `glory_server_p26.zip`，解压、重启同第 1 步，`journalctl -u glory-server -n 5` 里必须看到 `server started protocol=26`；所有人装 `桌面\apk\GLory-p26-merged-vc8-20260914.apk`（versionCode 8，可覆盖安装；合并上游之前出的 vc7 别发）。p26 的服务器包也带上了同事 9.13 要同步服务端的两处修复（首回合商店、萝卜过期状态）和 9.14 的棋子数值 `race_units.json`，部署一次都齐了。**③ 一换成 p26，p25 的包（含 09-14 的 v1.1 包）就连不上**：同事正拿 p25 的包测的话测完再换；还没开始就直接用 p26 的包测下面两项
+4. **自由文字真机测**：大厅、备战期各发 40 字长消息；4 秒内连发第二条应提示「发得太快了」；手机上输入条在键盘上方。**聊天范围（p26）**：备战期默认发的短语和打字，同队看得到、敌方那台看不到；切到「发给：全部」后敌方看得到、显示红字「【对方】」，自己这边显示橙字「【全部】」；下一回合备战期开关回到「队友」；大厅照旧所有人可见
+5. **语音真机测**：同一队两三个人进同一个房间，都开外放、开着游戏音乐，轮流说话，听有没有自己声音的回声（最关键）、有没有对面的游戏音乐、延迟与断续；再各测蓝牙耳机、切后台再回来、敌方是否听不到。每台记机型、安卓版本、现象，有问题连电脑抓 `adb logcat -s GloryVoice godot`。**判定**：主力测试机上听不到明显回声和游戏音乐 → 继续自建方案；否则转商用语音 SDK（③ 转发与编解码届时作废）。**v1.1 的包另外测**：点「队友」看面板最下面的状态行（安卓 10 起应为「编码：Opus（Opus 自检：ok）」，不是 ok 的记下原因）、屏蔽队友（他换座位后仍屏蔽）、战斗界面右上角的两个按钮、通话中插拔有线 / 蓝牙耳机、第一次开麦的用途说明与被拒后的提示。**同一队必须装同一版包**（p26 起旧包连不上新服务器，不会混在一起）。步骤见 [聊天系统设计](docs/聊天系统设计.md) 第九节「同事测试步骤」
+
+### 还没做的，与打算怎么做（按优先级）
+
+| # | 事项 | 怎么做 | 前置 |
+|---|---|---|---|
+| 1 | ~~语音：屏蔽某人~~ | ✅ v1.1（2026-09-14）：语音面板里屏蔽，按好友码记、只存内存。没用插件的 `setRemoteMuted`，改在 `VoiceService` 里直接丢包 | 待真机测 |
+| 2 | ~~语音：战斗界面入口~~ | ✅ v1.1：右上角「语音」「队友」，只在联机对局里有 | 同上 |
+| 3 | ~~语音：插拔耳机自动切换输出~~ | ✅ v1.1：`AudioDeviceCallback`。🔴 安卓 11 及以下的蓝牙耳机可能不出声（没调 `startBluetoothSco`），看测试结果再补 | 同上 |
+| 4 | ~~语音：换 Opus~~ | ✅ v1.1：上行约 26 kbps（ADPCM 约 67）；后台自检、出错退回 ADPCM。v1.1 本身不顶协议号；随聊天范围进了 p26，旧包连不上新服务器，不会混在一个房间里互相听不到 | 同上 |
+| 5 | 语音：隐私政策与 Google Play 数据安全表单；③ 语音流量监控 | ✅ 文案与表单答案写好（`docs/语音隐私与数据安全申报.md`）。🔴 **还要有人把段落放进线上隐私政策、在 Play 管理中心照着填表**。③ 每分钟一行 `voice stats` 日志（包数、带宽、丢弃数；CPU 没单独做 —— ③ 不解码，只转发） | 上线前 |
+| 6 | 语音测不过时：商用 SDK（腾讯 GME / 声网 / 即构） | 注册账号拿 AppID → 写 Godot 安卓插件包 SDK → ② 签发进频道令牌、③ 按队下发频道号 | 选厂商、看报价 |
+| 7 | **举报系统**（上架前必做，定了以后再做） | 新表（举报人、被举报人、原因、服务器在举报那一刻快照的最近 200 条私聊、处理状态）+ `POST /v1/reports` + 资料页接上；先在 Supabase 后台审 | 另起时再排 |
+| 8 | 阿里云内容安全核实与接入 | 核实产品、价格、中文游戏黑话误杀率；在 ② 做 `app/moderation/` provider，私聊 fail-open 接入 | 挡着世界频道 |
+| 9 | 批次 E 世界频道 | `world_messages` 表（7 天）、② 内存 50 条环形缓冲、8 秒 CD、等级门槛函数、拦引流、fail-closed；做成聊天界面第二个页签 | 前置 8 |
+| 10 | 批次 F 顶号完整实现 | 登录时登记活跃设备、新设备登录吊销旧 refresh token、真正回登录界面 | 前置 OAuth 绑定登录 |
+| 11 | 预设表情贴图；战斗阶段的文字聊天入口 | 表情同快捷短语发 ID；战斗界面接 `team_chat_received` | 需要美术素材 |
+| 12 | 离线消息提醒 | FCM 推送（服务端发推送 + 客户端插件），单独一块 | — |
+| 13 | 开发用多账号参数；私聊 SQL 的真库自动化测试 | 启动参数切换 `user://` 凭证文件；测试库上跑 007 的集成测试 | — |
+| 14 | 「自定义房间」确认上一局时干等约 8 秒 | 点下立刻显示「正在确认上一局…」，确认不了时给「放弃上一局」 | 待确认要做 |
+| 15 | 发包版本号 | 每次发包前把 versionCode 往上加（手机上装了更高 versionCode 的包就装不上）。2026-09-14 的 v1.1 包是 6；p26 合并上游前出过一个 7（作废），合并后是 8 | 每次发包 |
+
+### MSI 这台电脑出安卓包的坑（2026-09-13 实测）
+
+系统代码页是 1252（英文），**Java 工具（keytool / Gradle / javac）打不开带中文的路径**：
+- 签名文件在 `桌面\key\` 下 → Godot 报「Release Username and/or Password is invalid for the given Release Keystore」，**跟密码无关**。解决：签名文件放到纯英文路径，或用环境变量 `GODOT_ANDROID_KEYSTORE_RELEASE_PATH` 指向英文路径 / 8.3 短路径
+- 项目在 `桌面\` 下 → 开了 Gradle 构建后报 `Could not find or load main class org.gradle.wrapper.GradleWrapperMain`。解决：从 `C:\Users\stech\GLory-v1.0-link`（指向同一个项目的目录联接，不是副本）打开项目再导出；删联接用 `rmdir`，**不要进到联接里面删文件**
+- 语音插件要求 Gradle 构建：本机导出预设已打开 Use Gradle Build 与 `glory_voice/enabled`；`android/build` 构建模板已重装为 4.7.1（旧的 4.7.0 在 `桌面\GLory-android-4.7.0-backup`，可删）。其他电脑要出带语音的包，需要 Android SDK、JDK 17 与编辑器同版本的构建模板，第一次 Gradle 构建会下载约 1 GB
+- Godot 4 的导出密码存在 `.godot/export_credentials.cfg`（已被 git 忽略），不在 `export_presets.cfg`
+- **出包前要现生成构建身份**（2026-09-14 查实）：`build_info.json` 会被打进包，不重新生成就是旧的（这台之前出的包都自称 08-31 的构建）。照 `tools/android_smoke.sh` 的做法：导出前 `python tools/apk_identity.py create --project-root <项目> --preset-config <项目>/export_presets.cfg --preset Android --godot-version <godot --version 的输出> --output <项目>/build_info.json`，导出后 `python tools/apk_identity.py inspect --apk <包> --expected <项目>/build_info.json --report <报告.json>`（`inspect` 靠 `ANDROID_HOME` 找 aapt2）。本机 `export_presets.cfg` 09-14 已按模板补上 VIBRATE 权限等；这个文件被 git 忽略，换电脑要重新对齐
+
+### 待拍板 / 不归本系统但被显形的
+
+- **座位票**（`docs/账号系统RFC.md` 第三节）仍未拍板。语音自建方案不依赖它；转商用 SDK 的话，「频道号只发给同队」会碰到它
+- **语音的目标年龄**：Play 上的目标受众如果包含 13 岁以下儿童，「家庭」政策对玩家之间的实时通信另有要求，要单独查（`docs/语音隐私与数据安全申报.md` 第五节）
+- 别人的红门禁（都不是聊天语音造成的）：`procedural_ui_ratchet`（四星面板要迁到 `GloryActionButton`）、`dynamic_call`（`HEAD` 上就红：四星 `4b21231` 的 3 个 `Callable(self, ...)` 是误报 —— 方法在子类，检查只沿父类找；按名调用累计 256 处超过上限 191，要么改成静态调用、要么由改的人调上限并写理由）、`adversarial_client` 的经济用例（0910bug9「最后一枚不许卖」与影子期开关默认开之后没跟着改）、`export_presets`（2026-09-14 用户定：**本机预设对齐模板**。已补 VIBRATE 权限（同事 09-07 在模板里开的，这台以前出的包都没有，界面震动在手机上不起作用）、两个预设的 include_filter / 排除 `reports/*`、version/name。上一版记录写的「本机包不带 `build_info.json`、却带着 `reports/` 截图」**不对**：json 本来就会进包，问题是进的是 08-31 的旧 `build_info.json`（包自称 commit `4780262`、versionCode 5）；`reports/` 有 `.gdignore`，从来没进过包。现在出包前用 `tools/apk_identity.py create` 现生成、出包后 `inspect` 对账。对齐后仍红，剩下 3 处是有意的：Gradle 构建、`glory_voice/enabled`、versionCode；重新生成模板会把 Gradle 与语音插件变成所有电脑的默认，没做）、`prep_tree_snapshot`（基线停在 08-20）、`active_match_transport`（`tools/run_check.ps1` 不会替它起服务器）、`startup_trace`（正式包常驻 FPS，由别人处理）
+- 服务端「最后一枚棋子不许卖」只数账本 roster，客户端数棋盘 + 备战席；影子期两边一分叉，服务端就会误拒出售
+- **Effekseer 的安卓库没进 git**（同事 `b6d91ee` 加的插件，2026-09-14 合并时发现）：`.gitignore` 里 `android/` 没带前导斜杠，会匹配任意层级叫 `android` 的目录（同一个文件里 `assets` 那条注释记过一模一样的坑），于是 `addons/effekseer/bin/android/libeffekseer.*.so` 从来没提交（windows / linux / macos / ios / web 的库都在）。从 git 拉的代码出的安卓包里就没有 Effekseer：目前只有实验性特效 `effects/vfx3d/experimental/undead_from_scratch_v3/` 和调试场景用到它，正式玩法不受影响，但以后正式特效用上它就会在手机上失效。修法：`.gitignore` 改成 `/android/`（根目录的安卓构建模板照样忽略，仓库里别处没有叫 android 的目录），再由同事从他电脑把 `bin/android` 下的 .so 提交上来。同一个提交还带进了 3 个临时文件：`addons/effekseer/bin/windows/~libeffekseer.x86_64.dll` 和两个 `~libeffekseer.x86_64.dll~RF….TMP`（看文件名和大小都是正式 DLL 的临时副本，1538560 字节）。这台跑过 Godot 之后 `~libeffekseer.x86_64.dll` 被删掉了，git 里显示为删除，提交这个删除没问题；两个 .TMP 也该删，并在 `.gitignore` 里加上 `~*.dll` 与 `*.TMP`
+- 内容审核的接入方式与价格、举报由谁审与响应时限、国内合规留存要求

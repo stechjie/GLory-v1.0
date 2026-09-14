@@ -1072,7 +1072,7 @@ func _build_top_actions() -> void:
 
 # ── 局内快捷短语（docs/聊天系统设计.md 批次 A）─────────────────────────────
 #
-# 走 ③ 的 ENet，网络上只有 {seat, phrase_id} 两个整数。协议与理由见
+# 走 ③ 的 ENet，网络上只有 {seat, phrase_id} 两个整数和一个范围开关 team_only。协议与理由见
 # NetworkService.team_send_phrase 与 scripts/multiplayer/ChatPhrases.gd。
 #
 # 🔴 **备战阶段不能挡棋盘。** 这是玩家操作最密集的阶段（拖棋子、买卖），所以：
@@ -1125,6 +1125,22 @@ const CHAT_SEAT_LABELS := ["A", "B", "C", "1", "2", "3"]
 var _chat_button: Button = null
 var _chat_panel: PanelContainer = null
 var _chat_log: VBoxContainer = null
+
+# 🔴 聊天范围（2026-09-14 定，协议 26）：**备战期默认只发给队友**，点「发给：…」切到全部。
+# 局内说的基本是战术（存钱、升星、谁顶前排），默认全部的话忘了切就被对面看到。
+# 开关跟着这个界面走：PrepScreen 每回合重建（Main._show_prep），所以每回合备战期开始时回到「队友」——
+# 上回合为了跟对面说一句切到了「全部」，这回合不会带着它把战术发出去。
+# 谁收得到由 ③ 决定（NetworkService.chat_recipients），这里只是选。
+var _chat_team_only := true
+var _chat_scope_button: Button = null
+# 消息前面的范围标记。队友频道是默认，**不加标记**，只标出例外。
+# tools/chat_check 读这两个常量算「最长一条放不放得下」，改字要跟着跑一次。
+const CHAT_TAG_ALL := "【全部】"      # 自己人发到全部：这条对面也看得到
+const CHAT_TAG_ENEMY := "【对方】"    # 对面的人发的（他们只能发到全部）
+const CHAT_TEAM_COLOR := Color(1.0, 0.94, 0.78)
+const CHAT_ALL_COLOR := Color(1.0, 0.76, 0.42)
+const CHAT_ENEMY_COLOR := Color(1.0, 0.56, 0.50)
+const CHAT_MENU_FONT_COLOR := Color(1.0, 0.90, 0.60)   # make_menu_button 的默认字色
 
 func _build_chat_entry() -> void:
 	# 只在联机 3v3 里建。单机与教学没有队友，一个永远不会有人说话的入口是纯噪音 ——
@@ -1179,51 +1195,38 @@ func _build_chat_entry() -> void:
 	if not NetworkService.team_chat_text_received.is_connected(_on_prep_chat_text_received):
 		NetworkService.team_chat_text_received.connect(_on_prep_chat_text_received)
 
-# 语音按钮（docs/聊天系统设计.md 第九节）：聊天按钮左边，只占同一水平带的下半截（-120 ~ -72）。
+# 语音按钮 + 队友按钮（docs/聊天系统设计.md 第九节）：聊天按钮左边，只占同一水平带的下半截（-120 ~ -72）。
 # 上半截会碰到备战席的右端：1280×720 下备战席底边在 y≈575，也就是 -145 左右。
-# 改这几个数之前同样先跑 tools/chat_ui_capture.tscn，用矮窗口看。
-const VOICE_BTN_SIZE := Vector2(150, 48)
+# 两个按钮合起来仍是原来那 150 宽（语音 102 + 间隔 4 + 队友 44）：再往左就碰到底部中间的金币卷轴。
+# 改这几个数之前同样先跑 tools/chat_ui_capture.tscn，用矮窗口看。行为都在 VoiceControls 里。
+const VoiceControls := preload("res://ui/components/VoiceControls.gd")
+const VOICE_BTN_SIZE := Vector2(102, 48)
+const VOICE_MEMBERS_SIZE := Vector2(44, 48)
 const VOICE_BTN_GAP := 12.0
+const VOICE_INNER_GAP := 4.0
 const VOICE_BTN_BOTTOM := -72.0
-var _voice_button: Button = null
+const VOICE_BTN_FONT := 14
+var _voice_controls: VoiceControls = null
 
 func _build_voice_button() -> void:
-	_voice_button = PrepWidgets.make_menu_button(VoiceService.mode_label(), VOICE_BTN_SIZE, 17,
-		_on_voice_pressed)
-	_voice_button.name = "PrepVoiceButton"
-	_voice_button.anchor_left = 1.0
-	_voice_button.anchor_right = 1.0
-	_voice_button.anchor_top = 1.0
-	_voice_button.anchor_bottom = 1.0
+	_voice_controls = VoiceControls.new()
+	_voice_controls.build(self, VOICE_BTN_SIZE, VOICE_MEMBERS_SIZE, VOICE_BTN_FONT)
 	var right := -CHAT_RIGHT - CHAT_BTN_SIZE.x - VOICE_BTN_GAP
-	_voice_button.offset_right = right
-	_voice_button.offset_left = right - VOICE_BTN_SIZE.x
-	_voice_button.offset_bottom = VOICE_BTN_BOTTOM
-	_voice_button.offset_top = VOICE_BTN_BOTTOM - VOICE_BTN_SIZE.y
+	_place_voice_button(_voice_controls.members_button, right, VOICE_MEMBERS_SIZE)
+	_place_voice_button(_voice_controls.voice_button, right - VOICE_MEMBERS_SIZE.x - VOICE_INNER_GAP, VOICE_BTN_SIZE)
+
+func _place_voice_button(button: Button, right: float, size: Vector2) -> void:
+	button.anchor_left = 1.0
+	button.anchor_right = 1.0
+	button.anchor_top = 1.0
+	button.anchor_bottom = 1.0
+	button.offset_right = right
+	button.offset_left = right - size.x
+	button.offset_bottom = VOICE_BTN_BOTTOM
+	button.offset_top = VOICE_BTN_BOTTOM - size.y
 	# 同聊天按钮：低于商店弹窗（40）与卖出区（50），商店开着时点不到。
-	_voice_button.z_index = 20
-	add_child(_voice_button)
-	if not VoiceService.mode_changed.is_connected(_on_voice_mode_changed):
-		VoiceService.mode_changed.connect(_on_voice_mode_changed)
-	# 按钮后面的「●」跟着有没有人在说话变，0.25 秒刷一次。
-	var timer := Timer.new()
-	timer.wait_time = 0.25
-	timer.autostart = true
-	timer.timeout.connect(_refresh_voice_button)
-	add_child(timer)
-
-func _on_voice_pressed() -> void:
-	var reason := VoiceService.cycle_mode()
-	if not reason.is_empty():
-		show_message(reason)
-	_refresh_voice_button()
-
-func _on_voice_mode_changed(_mode: int) -> void:
-	_refresh_voice_button()
-
-func _refresh_voice_button() -> void:
-	if _voice_button != null and is_instance_valid(_voice_button):
-		_voice_button.text = VoiceService.mode_label() + VoiceService.activity_mark()
+	button.z_index = 20
+	add_child(button)
 
 func _build_chat_panel() -> void:
 	_chat_panel = PanelContainer.new()
@@ -1255,11 +1258,22 @@ func _build_chat_panel() -> void:
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 6)
 	_chat_panel.add_child(col)
-	# 最上面一行是「打字」（批次 D），宽度等于下面两列短语（160 × 2 + 间距 6）。
+	# 最上面一行：左「＋ 打字」（批次 D），右「发给：队友 / 全部」（2026-09-14 聊天范围）。
+	# 合起来仍等于下面两列短语的宽度（206 + 间距 6 + 114 = 160 × 2 + 6），面板高度不变。
 	# 用 make_menu_button 而不是 Button.new()：同一份样式，也不涨 V3 P1-08 棘轮的计数。
-	col.add_child(PrepWidgets.make_menu_button(
+	var top_row := HBoxContainer.new()
+	top_row.add_theme_constant_override("separation", 6)
+	col.add_child(top_row)
+	var type_button := PrepWidgets.make_menu_button(
 		"＋ Type" if LocaleManager.get_locale() == "en" else "＋ 打字",
-		Vector2(326, 38), 15, _open_text_input))
+		Vector2(206, 38), 15, _open_text_input)
+	type_button.name = "PrepChatType"
+	top_row.add_child(type_button)
+	_chat_scope_button = PrepWidgets.make_menu_button(_chat_scope_text(), Vector2(114, 38), 15,
+		_toggle_chat_scope)
+	_chat_scope_button.name = "PrepChatScope"
+	top_row.add_child(_chat_scope_button)
+	_refresh_chat_scope_button()
 	var grid := GridContainer.new()
 	grid.columns = 2
 	grid.add_theme_constant_override("h_separation", 6)
@@ -1277,29 +1291,75 @@ func _toggle_chat_panel() -> void:
 	_chat_panel.visible = not _chat_panel.visible
 
 func _send_chat_phrase(phrase_id: int) -> void:
-	NetworkService.team_send_phrase(phrase_id)
+	NetworkService.team_send_phrase(phrase_id, _chat_team_only)
 	# 发完就收起：备战期每一次多余的点击都是从摆棋时间里扣的。
 	# **不在这里回显** —— 等服务器广播回来，理由见 NetworkService.team_send_phrase。
 	if _chat_panel != null and is_instance_valid(_chat_panel):
 		_chat_panel.visible = false
 
-func _on_prep_chat_received(slot: int, phrase_id: int) -> void:
+func _on_prep_chat_received(slot: int, phrase_id: int, team_only: bool) -> void:
 	var body := ChatPhrases.text(phrase_id)
 	if body.is_empty():
 		# id 不合法。text() 刻意返回空串而不是占位符，见 ChatPhrases.gd。
 		return
-	_push_chat_line("%s：%s" % [_chat_speaker_name(slot), body])
+	_push_chat_line(_chat_line_head(slot, team_only) + body, _chat_line_color(slot, team_only))
 
-func _on_prep_chat_text_received(slot: int, text: String) -> void:
-	_push_chat_line("%s：%s" % [_chat_speaker_name(slot), text])
+func _on_prep_chat_text_received(slot: int, text: String, team_only: bool) -> void:
+	_push_chat_line(_chat_line_head(slot, team_only) + text, _chat_line_color(slot, team_only))
 
 
 # 打字入口（批次 D）。先收起短语面板：输入条弹在顶部，短语面板留着只会挡棋盘。
+# 输入条上也放同一个范围按钮：打到一半发现范围不对，点一下就改，不用关掉重打。
 func _open_text_input() -> void:
 	if _chat_panel != null and is_instance_valid(_chat_panel):
 		_chat_panel.visible = false
-	ChatInputBar.new().present(self, func(text: String) -> String:
-		return NetworkService.team_send_text(text))
+	var send := func(text: String) -> String:
+		return NetworkService.team_send_text(text, _chat_team_only)
+	ChatInputBar.new().present(self, send,
+		{"scope_text": _chat_scope_text, "on_scope_pressed": _toggle_chat_scope})
+
+
+func _toggle_chat_scope() -> void:
+	_chat_team_only = not _chat_team_only
+	_refresh_chat_scope_button()
+
+
+func _chat_scope_text() -> String:
+	if LocaleManager.get_locale() == "en":
+		return "To: Team" if _chat_team_only else "To: All"
+	return "发给：队友" if _chat_team_only else "发给：全部"
+
+
+func _refresh_chat_scope_button() -> void:
+	if _chat_scope_button == null or not is_instance_valid(_chat_scope_button):
+		return
+	_chat_scope_button.text = _chat_scope_text()
+	# 发给全部时按钮字变橙：一眼看出「这条对面也看得到」。
+	_chat_scope_button.add_theme_color_override("font_color",
+		CHAT_MENU_FONT_COLOR if _chat_team_only else CHAT_ALL_COLOR)
+
+
+# 「【对方】小林：」这样的开头。队友频道不加标记（备战期默认就是它），只标出例外。
+func _chat_line_head(slot: int, team_only: bool) -> String:
+	var tag := ""
+	if not team_only:
+		var en := LocaleManager.get_locale() == "en"
+		if _chat_is_enemy(slot):
+			tag = "[Enemy] " if en else CHAT_TAG_ENEMY
+		else:
+			tag = "[All] " if en else CHAT_TAG_ALL
+	return "%s%s：" % [tag, _chat_speaker_name(slot)]
+
+
+func _chat_line_color(slot: int, team_only: bool) -> Color:
+	if team_only:
+		return CHAT_TEAM_COLOR
+	return CHAT_ENEMY_COLOR if _chat_is_enemy(slot) else CHAT_ALL_COLOR
+
+
+func _chat_is_enemy(slot: int) -> bool:
+	var me := int(NetworkService.team_local_slot)
+	return me >= 0 and GameConstants.team_of_slot(slot) != GameConstants.team_of_slot(me)
 
 
 func _chat_speaker_name(slot: int) -> String:
@@ -1318,7 +1378,7 @@ func _chat_speaker_name(slot: int) -> String:
 	var seat: String = CHAT_SEAT_LABELS[slot] if slot >= 0 and slot < CHAT_SEAT_LABELS.size() else "?"
 	return ("Seat " + seat) if LocaleManager.get_locale() == "en" else ("席位" + seat)
 
-func _push_chat_line(text: String) -> void:
+func _push_chat_line(text: String, color: Color = CHAT_TEAM_COLOR) -> void:
 	if _chat_log == null or not is_instance_valid(_chat_log):
 		return
 	var lbl := Label.new()
@@ -1330,7 +1390,7 @@ func _push_chat_line(text: String) -> void:
 	# 读的人只看到半句话、还不知道少了。高度改由下面的行数预算管。
 	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lbl.add_theme_font_size_override("font_size", CHAT_LOG_FONT_SIZE)
-	lbl.add_theme_color_override("font_color", Color(1.0, 0.94, 0.78))
+	lbl.add_theme_color_override("font_color", color)
 	lbl.add_theme_color_override("font_outline_color", Color(0.02, 0.025, 0.01, 0.95))
 	lbl.add_theme_constant_override("outline_size", 3)
 	_chat_log.add_child(lbl)
@@ -1376,8 +1436,8 @@ func _teardown_chat_entry() -> void:
 		NetworkService.team_chat_received.disconnect(_on_prep_chat_received)
 	if NetworkService.team_chat_text_received.is_connected(_on_prep_chat_text_received):
 		NetworkService.team_chat_text_received.disconnect(_on_prep_chat_text_received)
-	if VoiceService.mode_changed.is_connected(_on_voice_mode_changed):
-		VoiceService.mode_changed.disconnect(_on_voice_mode_changed)
+	if _voice_controls != null:
+		_voice_controls.teardown()
 
 func _toggle_mute() -> void:
 	# 全局静音开关：静音 Master 总线（BGM + 音效都停），引擎级状态，切场景仍生效
@@ -2609,7 +2669,11 @@ func _on_shop_picker_toggled(is_open: bool) -> void:
 	# （底部中央 896×230）的右下角里。商店面板本身是 Container（PASS）且背景层
 	# 一律 IGNORE，挡不住下层控件 —— 于是玩家在商店右端操作会穿透到语音按钮上，
 	# 弹出「这个版本没有语音功能」。和待命格同一套处理：商店开着就整块不吃输入。
-	_set_overlay_blocked(_voice_button, is_open)
+	# 语音 v1.1（2026-09-14）起这一块是「语音」「队友」两个按钮（VoiceControls，合起来仍是 150 宽），两个一起挡。
+	# 这一行原本写的是 v1 的 _voice_button：与 v1.1 合并时 git 没报冲突，但那个变量已经没有了，PrepUI 会解析失败。
+	if _voice_controls != null:
+		_set_overlay_blocked(_voice_controls.voice_button, is_open)
+		_set_overlay_blocked(_voice_controls.members_button, is_open)
 	_set_overlay_blocked(_chat_button, is_open)
 
 

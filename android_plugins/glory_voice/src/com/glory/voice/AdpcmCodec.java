@@ -1,17 +1,14 @@
 package com.glory.voice;
 
 /**
- * 语音编解码：IMA ADPCM，每 20 毫秒一块（docs/聊天系统设计.md 第九节）。
+ * IMA ADPCM，每 20 毫秒一块（docs/聊天系统设计.md 第九节）。
  *
- * 为什么不是 Opus：安卓上的 Opus 要么走 MediaCodec（安卓 10 起才有编码器），要么打原生库
- * （要 NDK，这台机器没有）。ADPCM 每个采样 4 比特（16 kHz 下约 64 kbps）、几十行、
- * 不挑安卓版本、结果确定，足够把「游戏里开麦」验出来。回声消除验过之后再换 Opus
- * （带宽能降到三分之一左右）。
+ * v1 只用它；v1.1 起安卓 10 以上优先用 Opus（OpusCodec），这里是退路：安卓 9 及以下没有 Opus 编码器，
+ * Opus 自检没过的机型也用它。每个采样 4 比特（16 kHz 下约 64 kbps），不挑安卓版本、结果确定。
  *
  * 一块（320 个采样 → 163 字节）：[s16 起始预测值 LE][u8 步长序号][160 字节，每字节两个 4 比特，低位在前]。
  * **每块自带解码起点**，任何一块都能单独解：丢一个包只丢那一个包，不会连累后面的。
- *
- * 一个网络包：[u8 版本][u8 标志][u16 首帧序号 LE][u8 帧数][帧数 × 163 字节]。
+ * 网络包的格式在 VoicePacket。
  *
  * 刻意写成纯 Java（不 import android.*）：VoiceSelfTest 在打包之前用桌面 JVM 跑它。
  */
@@ -19,14 +16,6 @@ public final class AdpcmCodec {
     public static final int SAMPLE_RATE = 16000;
     public static final int FRAME_SAMPLES = 320;
     public static final int BLOCK_BYTES = 3 + FRAME_SAMPLES / 2;
-
-    public static final int PACKET_VERSION = 1;
-    public static final int PACKET_HEADER_BYTES = 5;
-    /** 一段话的第一个包。收的一方据此重新攒缓冲，而不是把两段话之间的静音当成丢包。 */
-    public static final int FLAG_SPURT_START = 1;
-    public static final int MAX_FRAMES_PER_PACKET = 3;
-    /** 494 字节。NetworkService.VOICE_MAX_PACKET_BYTES 不能小于它（tools/voice_check 对账）。 */
-    public static final int MAX_PACKET_BYTES = PACKET_HEADER_BYTES + MAX_FRAMES_PER_PACKET * BLOCK_BYTES;
 
     static final int[] INDEX_TABLE = {-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8};
 
@@ -151,47 +140,5 @@ public final class AdpcmCodec {
             }
             out[outOffset + i] = (short) predictor;
         }
-    }
-
-    public static byte[] buildPacket(int seq, boolean spurtStart, byte[][] blocks, int count) {
-        byte[] packet = new byte[PACKET_HEADER_BYTES + count * BLOCK_BYTES];
-        packet[0] = (byte) PACKET_VERSION;
-        packet[1] = (byte) (spurtStart ? FLAG_SPURT_START : 0);
-        packet[2] = (byte) (seq & 0xff);
-        packet[3] = (byte) ((seq >> 8) & 0xff);
-        packet[4] = (byte) count;
-        for (int i = 0; i < count; i++) {
-            System.arraycopy(blocks[i], 0, packet, PACKET_HEADER_BYTES + i * BLOCK_BYTES, BLOCK_BYTES);
-        }
-        return packet;
-    }
-
-    /**
-     * 合法包的帧数；不合法返回 -1。长度必须**正好**等于声明的帧数 ——
-     * 只看声明不看实际字节，一个改过的包就能让解码读越界。
-     */
-    public static int packetFrameCount(byte[] packet) {
-        if (packet == null || packet.length < PACKET_HEADER_BYTES + BLOCK_BYTES) {
-            return -1;
-        }
-        if ((packet[0] & 0xff) != PACKET_VERSION) {
-            return -1;
-        }
-        int count = packet[4] & 0xff;
-        if (count < 1 || count > MAX_FRAMES_PER_PACKET) {
-            return -1;
-        }
-        if (packet.length != PACKET_HEADER_BYTES + count * BLOCK_BYTES) {
-            return -1;
-        }
-        return count;
-    }
-
-    public static int packetSeq(byte[] packet) {
-        return (packet[2] & 0xff) | ((packet[3] & 0xff) << 8);
-    }
-
-    public static boolean packetSpurtStart(byte[] packet) {
-        return (packet[1] & FLAG_SPURT_START) != 0;
     }
 }

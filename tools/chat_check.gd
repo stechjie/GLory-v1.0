@@ -12,6 +12,9 @@ extends Node
 #      `allow()` 会静默退回默认额度 20，等于把限流悄悄放宽四倍
 #   4. `text()` 对非法 id 返回**空串**而不是占位符 —— 占位符会让协议错误
 #      在界面上长得像一条正常消息，于是没人会去查
+#   5. 🔴 聊天范围（2026-09-14）：选了「仅队友」的消息**敌方永远收不到** —— 收件人由 ③ 算
+#      （chat_recipients），不是客户端收到了再藏起来；备战期默认仅队友，大厅只发全部
+#   6. 🔴 @rpc 方法的数量或签名（参数个数 / 类型、@rpc 配置）变了，必须顶协议号
 #
 # 运行：
 #   Godot_v4.7-stable_win64_console.exe --headless --path . tools/chat_check.tscn
@@ -39,8 +42,12 @@ const EXPECTED_IDS := [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 # 的 PINNED_CONTRACT / PINNED_PROTOCOL 那一套，理由见 _case_rpc_count_pinned()。
 # 2026-09-11 批次 D（自由文字）加了两个：55 -> 57、22 -> 23。
 # 2026-09-13 组队语音又加了两个：57 -> 59、24 -> 25（中间 23 -> 24 是批次 D 与四星撞号，见 NetworkConfig v24）。
+# 2026-09-14 聊天范围：数量没变，四条聊天 RPC 各加一个 team_only 参数 -> 签名指纹变了、25 -> 26。
+# PINNED_RPC_SIGNATURES：全部 @rpc 方法「@rpc 配置 | 方法名(参数类型,…)」排序后的 SHA-256 前 16 位，
+# 算法见 _rpc_signature_digest。参数只改名字不算（线上不传名字）。
 const PINNED_RPC_COUNT := 59
-const PINNED_RPC_PROTOCOL := 25
+const PINNED_RPC_PROTOCOL := 26
+const PINNED_RPC_SIGNATURES := "e14ffcf49f3e7c30"
 
 var _h: CheckHarness
 
@@ -67,6 +74,7 @@ func _ready() -> void:
 	_case_chat_text_rules()
 	_case_longest_message_fits()
 	_case_text_client_interval_within_server_limit()
+	_case_chat_scope_routing()
 	_h.finish(get_tree())
 
 
@@ -216,9 +224,9 @@ func _case_text_submit_rpc_has_no_slot_param() -> void:
 		_h.fail("network_service_unreadable", "读不到 %s" % NETWORK_SERVICE_PATH)
 		return
 	# 同第 1 条：座位号一律由服务端从 sender 反查。带 slot = 开放「以队友的名义说话」。
-	var expected := "func _rpc_team_chat_text_submit(text: String) -> void:"
+	var expected := "func _rpc_team_chat_text_submit(text: String, team_only: bool) -> void:"
 	_h.expect(src.contains(expected), "chat_text_submit_signature_changed",
-		"`_rpc_team_chat_text_submit` 的签名变了。它必须**只收 text**，座位号由服务端从 "
+		"`_rpc_team_chat_text_submit` 的签名变了。它必须**只收 text 和 team_only**，座位号由服务端从 "
 		+ "sender 反查。期望：%s" % expected)
 	# 限流必须调到，且必须是软限（不计 strike），同 chat_phrase。
 	_h.expect(src.contains("_rate_ok(sender, \"chat_text\", false)"),
@@ -290,16 +298,63 @@ func _case_rpc_count_pinned() -> void:
 	for line in src.split("\n"):
 		if line.begins_with("@rpc("):
 			count += 1
-	if count == PINNED_RPC_COUNT:
+	var protocol := int(NetworkConfig.NETWORK_PROTOCOL_VERSION)
+	if count != PINNED_RPC_COUNT:
+		_h.expect(protocol != PINNED_RPC_PROTOCOL,
+			"rpc_added_without_protocol_bump",
+			"NetworkService 的 @rpc 方法数变了（%d -> %d），但 NETWORK_PROTOCOL_VERSION "
+				% [PINNED_RPC_COUNT, count]
+			+ "还是 %d。旧服务器与新客户端的 scene cache 校验会失败，" % protocol
+			+ "整个 NetworkService 的 RPC 全部失效。请顶协议号、把 PINNED_RPC_COUNT / "
+			+ "PINNED_RPC_PROTOCOL / PINNED_RPC_SIGNATURES 一起改成新值，**并重新打包部署战斗服务器**。")
 		return
-	_h.expect(int(NetworkConfig.NETWORK_PROTOCOL_VERSION) != PINNED_RPC_PROTOCOL,
-		"rpc_added_without_protocol_bump",
-		"NetworkService 的 @rpc 方法数变了（%d -> %d），但 NETWORK_PROTOCOL_VERSION "
-			% [PINNED_RPC_COUNT, count]
-		+ "还是 %d。旧服务器与新客户端的 scene cache 校验会失败，"
-			% int(NetworkConfig.NETWORK_PROTOCOL_VERSION)
-		+ "整个 NetworkService 的 RPC 全部失效。请顶协议号、把 PINNED_RPC_COUNT / "
-		+ "PINNED_RPC_PROTOCOL 一起改成新值，**并重新打包部署战斗服务器**。")
+	# 数量没变、签名变了（2026-09-14 聊天加 team_only 就是这种）：方法编号不会错位，
+	# 但两端版本不一致时参数个数对不上，收方直接丢掉这条 RPC —— 一样是静默失效。
+	_h.item()
+	var digest := _rpc_signature_digest(src)
+	if not _h.expect(not digest.is_empty(), "rpc_signature_unparseable",
+			"有 @rpc 的下一行不是「func 方法名(参数…)」—— 读不出签名，指纹这条就挡不住改参数。"
+			+ "把 @rpc 单独放一行、紧跟 func，或者改 _rpc_signature_digest。"):
+		return
+	if digest == PINNED_RPC_SIGNATURES:
+		return
+	_h.expect(protocol != PINNED_RPC_PROTOCOL,
+		"rpc_signature_changed_without_protocol_bump",
+		("NetworkService 的 @rpc 签名变了（指纹 %s -> %s），但 NETWORK_PROTOCOL_VERSION 还是 %d。"
+			+ "两端版本不一致时参数对不上，RPC 会被直接丢掉。请顶协议号、把 PINNED_RPC_PROTOCOL / "
+			+ "PINNED_RPC_SIGNATURES 改成新值，**并重新打包部署战斗服务器**。")
+			% [PINNED_RPC_SIGNATURES, digest, protocol])
+
+
+# 每个 @rpc 方法归一成「@rpc 配置 | 方法名(参数类型,…)」，排序后取 SHA-256 前 16 位。
+# 参数只改名字不算（线上不传名字）；加减参数、改类型、改 @rpc 配置都算。
+# 排序：只关心有哪些方法，不关心它们在文件里的先后。
+func _rpc_signature_digest(src: String) -> String:
+	var lines := src.split("\n")
+	var head := RegEx.create_from_string("^func\\s+(\\w+)\\s*\\(([^)]*)\\)")
+	var sigs := PackedStringArray()
+	for i in lines.size():
+		if not lines[i].begins_with("@rpc("):
+			continue
+		# 签名可能折成几行（_rpc_team_replay_chunk 就是）：接着往下拼，直到参数表的右括号出现。
+		var text := ""
+		var j := i + 1
+		while j < lines.size() and j <= i + 6:
+			text += " " + lines[j].strip_edges()
+			if text.contains(")"):
+				break
+			j += 1
+		var m: RegExMatch = head.search(text.strip_edges())
+		if m == null:
+			# 读不出签名就不给指纹：否则这一条永远算成同一个值，它的参数怎么改指纹都不变。
+			return ""
+		var types := PackedStringArray()
+		for param in m.get_string(2).split(",", false):
+			var decl := param.split("=")[0]
+			types.append(decl.get_slice(":", 1).strip_edges() if decl.contains(":") else "Variant")
+		sigs.append("%s|%s(%s)" % [lines[i].strip_edges(), m.get_string(1), ",".join(types)])
+	sigs.sort()
+	return "\n".join(sigs).sha256_text().left(16)
 
 
 # --- 1. 🔴 客户端不许自报座位号 ------------------------------------------------
@@ -312,9 +367,9 @@ func _case_submit_rpc_has_no_slot_param() -> void:
 		return
 	# 源码断言而不是反射：反射拿不到参数名，而这条要挡的正是「多了一个叫 slot
 	# 的参数」。同 backend 那条钉着 optional_claims 里不许出现 raise 的 AST 断言。
-	var expected := "func _rpc_team_chat_submit(phrase_id: int) -> void:"
+	var expected := "func _rpc_team_chat_submit(phrase_id: int, team_only: bool) -> void:"
 	_h.expect(src.contains(expected), "chat_submit_signature_changed",
-		"`_rpc_team_chat_submit` 的签名变了。它必须**只收 phrase_id**：座位号一律由"
+		"`_rpc_team_chat_submit` 的签名变了。它必须**只收 phrase_id 和 team_only**：座位号一律由"
 		+ "服务端从 sender 反查（peer_slot[sender]）。让客户端带 slot 就是开放"
 		+ "「以队友的名义说话」，收到的人没有任何东西能让他起疑。期望：%s" % expected)
 
@@ -559,6 +614,15 @@ func _case_longest_message_fits() -> void:
 	var name_max := int(m.get_string(1))
 	# 全角字是最宽的常见情况（英文、数字都比它窄）。
 	var longest := "字".repeat(name_max) + "：" + "字".repeat(ChatText.MAX_CHARS)
+	# 备战期的消息前面还可能有范围标记（2026-09-14：「【对方】」「【全部】」），取长的那个。
+	# 大厅不加标记（只发全部），直接用上面那条。
+	var prep_tag := ""
+	for tag_name in ["CHAT_TAG_ALL", "CHAT_TAG_ENEMY"]:
+		var tag := str(prep_consts.get(tag_name, ""))
+		_h.expect(not tag.is_empty(), "prep_chat_tag_missing",
+			"PrepUI 里找不到 %s —— 范围标记换了写法，这条门禁要跟着改。" % tag_name)
+		if tag.length() > prep_tag.length():
+			prep_tag = tag
 
 	# 用真 Label 取字体：两个聊天框用的都是主题的默认字体。
 	var probe := Label.new()
@@ -571,12 +635,12 @@ func _case_longest_message_fits() -> void:
 	# 与 PrepUI._chat_log_text_lines 同一组断行规则（= Label 的 AUTOWRAP_WORD_SMART）。
 	para.break_flags = (TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND
 		| TextServer.BREAK_ADAPTIVE)
-	para.add_string(longest, font, int(prep_consts.get("CHAT_LOG_FONT_SIZE", 0)))
+	para.add_string(prep_tag + longest, font, int(prep_consts.get("CHAT_LOG_FONT_SIZE", 0)))
 	var prep_lines := para.get_line_count()
 	var budget := int(prep_consts.get("CHAT_LOG_TEXT_LINES", 0))
 	_h.expect(prep_lines <= budget, "prep_longest_message_overflows",
-		"最长的一条（%d 字昵称 + %d 字）在备战期消息条里要 %d 行，超过行数预算 %d。"
-			% [name_max, ChatText.MAX_CHARS, prep_lines, budget])
+		"最长的一条（范围标记「%s」+ %d 字昵称 + %d 字）在备战期消息条里要 %d 行，超过行数预算 %d。"
+			% [prep_tag, name_max, ChatText.MAX_CHARS, prep_lines, budget])
 
 	# 大厅直接调它自己的折行函数（Team3v3Lobby.wrap_chat_text），不在这里另抄一份算法 ——
 	# 抄的那份会和真的慢慢分叉（比如后来加的「避头」），门禁就成了在量一个假的。
@@ -602,3 +666,97 @@ func _case_text_client_interval_within_server_limit() -> void:
 	_h.expect(interval * limit >= RateLimitService.WINDOW_SEC, "text_interval_looser_than_server",
 		"客户端每 %.1f 秒放行一条，而服务端每 %.0f 秒只收 %d 条 —— 客户端放行的消息会被服务端静默丢弃。"
 			% [interval, RateLimitService.WINDOW_SEC, limit])
+
+
+# --- 14. 🔴 聊天范围（2026-09-14）：「仅队友」的消息敌方永远收不到 ----------------------
+#
+# 收件人由 ③ 算（NetworkService.chat_recipients），不是「都发过去、客户端不显示」——
+# 那样改过的客户端就能看到对面的队内聊天。这里钉住：
+#   ① 收件人函数本身：同队 / 全房 / 包括发送者 / 没座位的人谁都发不到
+#   ② ③ 的两条提交 RPC 真的按它转；本地房主模式也不再整房广播
+#   ③ 界面：备战期默认仅队友、发送时带上开关；大厅只发全部
+
+func _case_chat_scope_routing() -> void:
+	var peer_slot := {11: 0, 12: 1, 13: 2, 21: 3, 22: 4, 23: 5}
+	var room := {"peer_slot": peer_slot}
+	_h.item()
+	var red_team := NetworkService.chat_recipients(room, 0, true)
+	_h.expect(_same_peer_set(red_team, [11, 12, 13]), "chat_team_recipients_wrong",
+		"红方 0 号位发「仅队友」应只转给 11、12、13（含自己），实际 %s" % str(red_team))
+	var blue_team := NetworkService.chat_recipients(room, 4, true)
+	_h.expect(_same_peer_set(blue_team, [21, 22, 23]), "chat_team_recipients_wrong",
+		"蓝方 4 号位发「仅队友」应只转给 21、22、23（含自己），实际 %s" % str(blue_team))
+	var everyone := NetworkService.chat_recipients(room, 3, false)
+	_h.expect(_same_peer_set(everyone, [11, 12, 13, 21, 22, 23]), "chat_all_recipients_wrong",
+		"发「全部」应转给房间里所有人（含自己），实际 %s" % str(everyone))
+
+	_h.item()
+	var leaked: Array[String] = []
+	for sender_slot in NetworkService.TEAM_SLOTS:
+		for peer in NetworkService.chat_recipients(room, sender_slot, true):
+			var receiver_slot := int(peer_slot[peer])
+			if GameConstants.team_of_slot(receiver_slot) != GameConstants.team_of_slot(sender_slot):
+				leaked.append("%d->%d" % [sender_slot, receiver_slot])
+	_h.expect(leaked.is_empty(), "chat_team_only_leaks_to_enemy",
+		"「仅队友」的消息转到了敌方座位：%s" % str(leaked))
+	_h.expect(NetworkService.chat_recipients(room, -1, false).is_empty()
+			and NetworkService.chat_recipients({}, 0, false).is_empty(),
+		"chat_unseated_sender_relayed", "没有座位的 peer 发的、或房间里没有 peer_slot 时，谁都不该收到")
+
+	_h.item()
+	var src := FileAccess.get_file_as_string(NETWORK_SERVICE_PATH)
+	for header in ["func _rpc_team_chat_submit(phrase_id: int, team_only: bool) -> void:",
+			"func _rpc_team_chat_text_submit(text: String, team_only: bool) -> void:"]:
+		var body := _chat_fn_body(src, header)
+		_h.expect(body.contains("chat_recipients(room, slot, team_only)"), "chat_submit_not_scoped",
+			"%s 必须按 chat_recipients(room, slot, team_only) 转发" % header)
+		_h.expect(not body.contains("\"peer_slot\", {}) as Dictionary).keys()"), "chat_submit_broadcasts_room",
+			"%s 里又出现了整房遍历 —— 范围会被绕过" % header)
+	_h.expect(src.contains("func _rpc_team_chat(slot: int, phrase_id: int, team_only: bool) -> void:")
+			and src.contains("func _rpc_team_chat_text(slot: int, text: String, team_only: bool) -> void:"),
+		"chat_relay_signature_changed", "下行两条聊天 RPC 必须带 team_only（收到的人要知道这条是不是只发给了队友）")
+	_h.expect(not src.contains("_rpc_team_chat.rpc(") and not src.contains("_rpc_team_chat_text.rpc("),
+		"chat_host_broadcasts_room",
+		"本地房主模式不能再用 .rpc() 整房广播聊天，要走 _host_chat_peers（同一条范围规则）")
+
+	_h.item()
+	var prep := FileAccess.get_file_as_string("res://scenes/prep/PrepUI.gd")
+	_h.expect(prep.contains("var _chat_team_only := true"), "prep_chat_default_not_team",
+		"备战期聊天必须默认「仅队友」（2026-09-14 定）")
+	_h.expect(_chat_fn_body(prep, "func _send_chat_phrase(phrase_id: int) -> void:")
+			.contains("team_send_phrase(phrase_id, _chat_team_only)"),
+		"prep_phrase_scope_not_sent", "备战期发短语时没有带上范围开关")
+	_h.expect(_chat_fn_body(prep, "func _open_text_input() -> void:")
+			.contains("team_send_text(text, _chat_team_only)"),
+		"prep_text_scope_not_sent", "备战期打字发送时没有带上范围开关")
+	var lobby := FileAccess.get_file_as_string("res://scenes/menu/Team3v3Lobby.gd")
+	_h.expect(lobby.contains("NetworkService.team_send_phrase(phrase_id)")
+			and lobby.contains("NetworkService.team_send_text(text)"),
+		"lobby_chat_scope_changed", "大厅只发全部（2026-09-14 定）：大厅的发送调用不该带范围参数")
+
+
+func _same_peer_set(actual: Array, expected: Array) -> bool:
+	if actual.size() != expected.size():
+		return false
+	var sorted_actual := actual.duplicate()
+	sorted_actual.sort()
+	var sorted_expected := expected.duplicate()
+	sorted_expected.sort()
+	for i in sorted_expected.size():
+		if int(sorted_actual[i]) != int(sorted_expected[i]):
+			return false
+	return true
+
+
+# 从函数头到下一个顶层声明为止（同 tools/voice_check 的 _function_body）。只看这一段 ——
+# 整个文件里别处也有同样的调用，整文件 contains 会被那些满足，断言就成了摆设。
+func _chat_fn_body(src: String, header: String) -> String:
+	var start := src.find(header)
+	if start < 0:
+		return ""
+	var stop := src.length()
+	for marker in ["\n@rpc(", "\nfunc ", "\nstatic func "]:
+		var at := src.find(marker, start + header.length())
+		if at >= 0 and at < stop:
+			stop = at
+	return src.substr(start, stop - start)

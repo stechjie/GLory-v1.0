@@ -32,10 +32,11 @@ const MY_SLOT := 0
 # （加 RPC、契约没变）。两边同一天都写了 23，合并后顶到 24（见 NetworkConfig 的 v24 注释）；
 # 指纹用四星那次的新值 —— 批次 D 没动经济契约。
 # 2026-09-13 跟到 25（组队语音加 RPC 与语音通道，经济契约没变，指纹不动）。
+# 2026-09-14 跟到 26（四条聊天 RPC 各加 team_only 参数，经济契约没变，指纹不动）。
 # ⚠️ **这个值落后于协议号会让下面那条断言静默失效**：断言判的是
 # 「契约变了但协议号没变」，而它一旦落后，`VERSION != PINNED_PROTOCOL` 就恒为真，
 # 于是改契约不顶号也照样绿。协议号每次顶，这里必须跟。
-const PINNED_PROTOCOL := 25
+const PINNED_PROTOCOL := 26
 const PINNED_CONTRACT := "VCjg+twg3T63Ev0T"
 
 var _h: CheckHarness
