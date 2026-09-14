@@ -505,7 +505,11 @@ func _sync_battle_readability_static_geometry() -> void:
 	if _arena == null or _battle_3d_camera == null or _battle_3d_viewport == null:
 		return
 	var arena_size := _arena.size
-	var signature := "%0.2f|%0.2f|%s|%s" % [arena_size.x, arena_size.y, str(_arena_flip_y), str(_watching_rival)]
+	# 9.14：段签名不再带 _watching_rival —— 半场归属只由 _arena_flip_y 决定（下面那段）。
+	# 观战另一队时不再反转半场，画面与那位玩家自己的屏幕完全一致，所以切视角不需要
+	# 重算几何、也没有"切过去还是旧半场"的风险。_refresh_visuals() 每帧仍会调到这里，
+	# 尺寸一变照样刷新。
+	var signature := "%0.2f|%0.2f|%s" % [arena_size.x, arena_size.y, str(_arena_flip_y)]
 	if signature == _board_readability_static_signature:
 		return
 	_board_readability_static_signature = signature
@@ -526,7 +530,9 @@ func _sync_battle_readability_static_geometry() -> void:
 		for side in 2:
 			var canonical_player := side == 1
 			var display_friendly := canonical_player
-			if _arena_flip_y or _watching_rival:
+			# 9.14：同上，观战另一队不再反转半场归属 —— 见 BattleRenderer._display_team
+			# 的说明。半场底色、标注位置与那位玩家自己的画面保持一致。
+			if _arena_flip_y:
 				display_friendly = not display_friendly
 			var y0 := split_y if canonical_player else visual_min.y
 			var y1 := visual_max.y if canonical_player else split_y

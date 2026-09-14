@@ -235,12 +235,18 @@ func _hp_color_for_team(team: String) -> Color:
 
 # (4) Team color from the VIEWER's point of view: the local player's own units keep
 # the friendly color and the opponent stays red, even when the arena is flipped.
-# 观战敌方战场时同样反转：敌队 replay 里 "player" 侧是敌方棋子（显示红色），
-# "enemy" 侧是他们打的怪（显示绿色）。_arena_flip_y 只在 PVP、_watching_rival
-# 只在 PVE/Boss 出现，两者不会同时为真。
+#
+# 9.14 修正：**观战另一队时不再反转**。
+# 这条反转原来是为「观战敌方」写的 —— 把敌队 replay 的 "player" 侧染红、他们打的怪染绿，
+# 好让画面保持"我方绿、对面红"。但 3v3 里的另一队是**同等的真人玩家**（见
+# docs/联机审计与整改方案.md 的术语边界，UI 早已改名"查看另一队/返回本队"，C25），
+# 反馈要的是「查看另一队」呈现**对方视角本身**：和那位玩家自己屏幕上看到的一模一样。
+# 反转会让同一场战斗在两台设备上配色/半场标注相反，就是 9.14 反馈的"与对方视角不同步"。
+# 现在只保留 _arena_flip_y（那是"我方永远在下方"的本地镜像，与观战无关）——
+# 而且 _setup_view_toggle 对 pvp/final 直接不建按钮，所以这两个条件本来也不会同时为真。
 func _display_team(f: Dictionary) -> String:
 	var t := str(f.get("team", ""))
-	if _arena_flip_y or _watching_rival:
+	if _arena_flip_y:
 		return "player" if t == "enemy" else "enemy"
 	return t
 
@@ -255,6 +261,10 @@ func _make_unit_node(f: Dictionary) -> Control:
 	root.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	root.tooltip_text = _fighter_display_name(f)
 	root.gui_input.connect(_on_battle_unit_gui_input.bind(visual_id))
+	# 9.14 离线自测需求：鼠标放到棋子上要弹「实时数值面板」。基类只发一个空回调，
+	# 正式对局不受影响；OfficeTestScreen（离线自测）覆写 _on_battle_unit_hover 来接。
+	root.mouse_entered.connect(_on_battle_unit_hover.bind(visual_id, true))
+	root.mouse_exited.connect(_on_battle_unit_hover.bind(visual_id, false))
 	# Prevent the parent layout from touching this node
 	root.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
 	_add_unit_anchors(root)
@@ -290,6 +300,11 @@ func _make_unit_node(f: Dictionary) -> Control:
 	label.text = _fighter_display_name(f)
 	root.add_child(label)
 	return root
+
+
+# 9.14：单位悬停回调，基类空实现。离线自测（OfficeTestScreen）覆写它显示实时数值面板。
+func _on_battle_unit_hover(_unit_id: String, _entered: bool) -> void:
+	pass
 
 
 func _on_battle_unit_gui_input(event: InputEvent, unit_id: String) -> void:

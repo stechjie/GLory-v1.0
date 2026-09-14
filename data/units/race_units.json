@@ -702,7 +702,7 @@
                   {
                       "id":  "undead_mother",
                       "star4":  {
-                          "tier2_chance":  0.3,
+                          "tier2_chance":  0.35,
                           "death_threshold":  4,
                           "boss_max_hp_damage":  0.3,
                           "tier1_or_merc_chance":  0.55
@@ -869,6 +869,7 @@
                       "crit":  0.08,
                       "crit_dmg":  1.6,
                       "skill_id":  "random_attribute_bolt",
+                      "no_basic_attack":  true,
                       "model":  "res://assets/models/units/human_mage_animated/human_mage_animated.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
@@ -938,7 +939,7 @@
                       "max_stacks":  5,
                       "star4":  {
                           "max_stacks":  8,
-                          "post_battle_all_stat_growth":  0.25
+                          "post_battle_all_stat_growth":  0.3
                       },
                       "name":  "人王",
                       "race":  "human",

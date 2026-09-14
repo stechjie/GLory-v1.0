@@ -23,8 +23,14 @@ static func _apply_death_servant_aura(servant: Dictionary, team_units: Array, d:
 		if abs(int(a.get("slot", -99)) - slot) > 1:
 			continue
 		if pct > 0.0:
+			# ⚠️ 必须读 fighter 的 `defense`，不能读 `def`：fighter 字典里的 `def` 是
+			# **单位 def 子字典**而不是数字，写成 float(a.get("def", 0)) 会抛
+			# `Invalid call. Nonexistent 'float' constructor.` —— GDScript 会当场
+			# 中断整个函数，连第一个友军都还没 add_status 就退出。
+			# 这就是 9.14 反馈「3★ 加防 10 秒、4★ 完全没有」的根因：只有 4★ 的
+			# 百分比支路会走到这一行，3★ 走下面的绝对值支路，所以从来没人踩到。
 			StatusEffectService.add_status(a, "defense_flat_up", duration,
-				{"amount": maxi(1, int(round(float(a.get("def", 0)) * pct)))})
+				{"amount": maxi(1, int(round(float(a.get("defense", 0)) * pct)))})
 		else:
 			StatusEffectService.add_status(a, "defense_flat_up", duration, {"amount": amount})
 

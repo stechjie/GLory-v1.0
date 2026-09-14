@@ -286,28 +286,19 @@ func _build_room_panel() -> Control:
 	left.add_theme_constant_override("separation", 12)
 	root.add_child(left)
 
+	# 9.14 反馈：Token ID / 输入 Token ID / 生成 / 恢复 四个控件在实测里都没有作用，
+	# 从这里移除（网络侧动作与 Main 的信号处理保持不动，tools/main_team_*_action_check
+	# 直接调 Main 的处理函数，不经过这些按钮）。移除后左栏首项就是「创建房间」，
+	# 与右栏第一个房间行（表头下一行）自然对齐 —— 这正是反馈要求的位置。
 	var title := Label.new()
 	title.text = _menu_text("自定义房间", "Custom Room")
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 30)
 	title.add_theme_color_override("font_color", Color(0.45, 0.27, 0.08))
+	# 与右栏表头（24 号字的标题 + 42 高的刷新按钮 = 一行 42）等高，保证下一项
+	# 「创建房间」与第一个房间行处在同一水平线上。
+	title.custom_minimum_size = Vector2(0, 42)
 	left.add_child(title)
-
-	_token_label = Label.new()
-	_token_label.text = _menu_text("Token ID：", "Token ID: ") + SaveManager.load_public_token()
-	_token_label.add_theme_color_override("font_color", Color(0.45, 0.27, 0.08))
-	left.add_child(_token_label)
-
-	_token_id_edit = LineEdit.new()
-	_token_id_edit.placeholder_text = _menu_text("输入 Token ID", "Enter Token ID")
-	_token_id_edit.text = SaveManager.load_public_token()
-	left.add_child(_token_id_edit)
-
-	var token_row := HBoxContainer.new()
-	token_row.add_theme_constant_override("separation", 8)
-	left.add_child(token_row)
-	token_row.add_child(_dialog_button(_menu_text("生成", "Generate"), _emit_generate_token))
-	token_row.add_child(_dialog_button(_menu_text("恢复", "Resume"), _emit_resume_token))
 
 	left.add_child(_dialog_button(_menu_text("创建房间", "Create Room"), _emit_create_room))
 
@@ -321,6 +312,13 @@ func _build_room_panel() -> Control:
 	_room_status.custom_minimum_size = Vector2(300, 90)
 	_room_status.add_theme_color_override("font_color", Color(0.55, 0.22, 0.12))
 	left.add_child(_room_status)
+
+	# 「关闭」原来靠 Token 那几项把它顶到面板底部；控件移除后如果直接排在状态行后面，
+	# 它会跟着上移。加一个可伸缩的空白把「关闭」重新压在底部，保持原来的位置观感。
+	var close_spacer := Control.new()
+	close_spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	close_spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	left.add_child(close_spacer)
 
 	left.add_child(_dialog_button(_menu_text("关闭", "Close"), _close_room_panel))
 

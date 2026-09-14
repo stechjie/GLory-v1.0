@@ -36,6 +36,12 @@ func _render_online_friends(friends: Array) -> void:
 			continue
 		var label := Label.new()
 		label.text = AccountManager.display_name(str(entry.get("player_name", "")), str(entry.get("friend_code", "")))
+		# 9.14 反馈：「朋友列表」里的朋友 ID 要贴在框框里边、向左对齐。label 默认就是
+		# 左对齐，真正的毛病是列表容器压到了木框上（见 _build() 里 friends_scroll 的
+		# 位置说明）—— 两处一起改才看得出来。这里显式写上左对齐，免得将来换主题
+		# 把 Label 的默认对齐改掉时又悄悄居中。
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		label.add_theme_color_override("font_color", Color.WHITE)
 		label.add_theme_color_override("font_outline_color", Color(0.15, 0.1, 0.05))
 		label.add_theme_constant_override("outline_size", 2)
@@ -290,7 +296,10 @@ func _build() -> void:
 	var friends_scroll := ScrollContainer.new()
 	friends_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	add_child(friends_scroll)
-	_track(friends_scroll, Vector2(1350, 270), Vector2(210, 290), 0, "right")
+	# 9.14 反馈：名字原来从 1350 起，而羊皮纸的内边在 1373 左右 —— 文字压在木框上，
+	# 看着「没在框框里边」。按框内区域（实测约 1373 ~ 1540）重设滚动区，列表项显式
+	# 左对齐后正好贴着纸的左边。右边保持 1539 不变，框内的宽度不受影响。
+	_track(friends_scroll, Vector2(1374, 270), Vector2(165, 290), 0, "right")
 	_friends_box = VBoxContainer.new()
 	_friends_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	friends_scroll.add_child(_friends_box)

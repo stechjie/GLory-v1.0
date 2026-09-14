@@ -2450,13 +2450,17 @@ func _grow_human_king(cell: Dictionary) -> void:
 	#
 	# max_stacks may come from the `star4` block, and cell.def is the raw table
 	# entry with no star scaling applied, so read it through the single parse
-	# point (UnitFactory.apply_star_stats). Only the ceiling is read from there;
-	# the growth itself still mutates the cell's own def.
+	# point (UnitFactory.apply_star_stats). The growth itself still mutates the
+	# cell's own def, but both the ceiling **and** the multiplier come from there.
+	#
+	# 9.14 反馈补了后半句：当时只把 `cap` 改走 apply_star_stats，`mul` 仍读原始 d，
+	# 于是 4★ 出现「上限是 4★ 的 8 层、倍率还是 1~3★ 的 ×1.2」这种半接线状态，
+	# 与图鉴的 ×1.3 不符。同一个函数里两个数必须走同一条路。
 	var effective := UnitFactory.apply_star_stats(d, int(cell.get("star", 1)))
 	var cap := int(effective.get("max_stacks", 0))
 	if cap > 0 and int(cell.get("king_growth_stacks", 0)) >= cap:
 		return
-	var mul := 1.0 + float(d.get("post_battle_all_stat_growth", 0.20))
+	var mul := 1.0 + float(effective.get("post_battle_all_stat_growth", 0.20))
 	# Growth is limited to HP / ATK / DEF, matching the star-scaling rule in
 	# docs/四星技能与数值设计规格.md §1 ("仅 HP / 攻击 / 防御三项").
 	#

@@ -176,7 +176,11 @@ static func format_skill_detail(d: Dictionary) -> String:
 		"stun":
 			return "暗影击晕%s：眩晕最近敌人%.1f秒；暗7会延长持续时间。" % [cd, float(d.get("stun_sec", 1.0))]
 		"shared_hp_link":
-			return "血链%s：连接最近非Boss敌人并使其变为我方棋子；双方共享受到的生命损失，任一方死亡后清除连接，本回合不再释放。Boss免疫。" % cd
+			# 9.14 反馈：4 星连接期间会按每秒 3% 最大生命回血，但文案没写。link_regen_pct
+			# 只在 4 星的 star4 覆写里有，1~3 星回血为 0，文案自然不带那句。
+			var link_regen := float(d.get("link_regen_pct", 0.0))
+			var regen_clause := "；连接期间每秒回%s最大生命" % pct(link_regen) if link_regen > 0.0 else ""
+			return "血链%s：连接最近非Boss敌人并使其变为我方棋子；双方共享受到的生命损失%s。任一方死亡后清除连接，本回合不再释放。Boss免疫。" % [cd, regen_clause]
 		"black_hole":
 			return "黑洞%s：牵引周围敌人，眩晕%.1f秒，并造成自身攻击%s伤害；暗7会延长控制。" % [cd, float(d.get("pull_sec", 2.0)), pct(float(d.get("damage_atk_pct", 2.2)))]
 		"poison_attack":
@@ -190,8 +194,22 @@ static func format_skill_detail(d: Dictionary) -> String:
 		"poison_reflect_armor_stack":
 			return "毒甲：受伤后反弹本次伤害%s真实伤害并使攻击者中毒；自身防御每次+%s，最多%d层。" % [pct(float(d.get("reflect_taken_damage_pct", 0.12))), pct(float(d.get("armor_per_hit_pct", 0.14))), int(d.get("max_stacks", 10))]
 		"unique_death_execute":
-			return "母灵：每名玩家最多1只；3v3中多个玩家的母灵可同时生效且各自独立计数。每5个非母灵处决造成的敌军死亡触发一次；1阶/佣兵50%、2阶35%、3阶10%即死，Boss改为20%最大生命伤害。灵7改为每4个死亡触发。"
+			# 9.14：文案把所有可调数值都改成读 def，1~3 星与 4 星自动显示各自那一份。
+			# 灵7 的阈值 = ceil(阈值 × 0.75)（SynergyService.undead_threshold_mul），
+			# 所以 1~3 星 5 死→4 死、4 星 4 死→3 死，与实测一致。
+			var m_th := int(d.get("death_threshold", 5))
+			var m_t1 := float(d.get("tier1_or_merc_chance", 0.5))
+			var m_t2 := float(d.get("tier2_chance", 0.35))
+			var m_t3 := float(d.get("tier3_chance", 0.1))
+			var m_boss := float(d.get("boss_max_hp_damage", 0.2))
+			var m_u7 := int(ceil(float(m_th) * 0.75))
+			return "母灵：每名玩家最多1只；3v3中多个玩家的母灵可同时生效且各自独立计数。每%d个非母灵处决造成的敌军死亡触发一次；1阶/佣兵%s、2阶%s、3阶%s即死，Boss改为%s最大生命伤害。灵7改为每%d个死亡触发。" % [m_th, pct(m_t1), pct(m_t2), pct(m_t3), pct(m_boss), m_u7]
 		"attack_interrupt":
+			# 9.14：4 星把「打断」（锁普攻 1 秒）换成「眩晕」0.5 秒 —— stun_sec 只写在
+			# 4 星 star4 覆写里。文案按有无 stun_sec 分两支，与 BattleSimulator 的实现同源。
+			var militia_stun := float(d.get("stun_sec", 0.0))
+			if militia_stun > 0.0:
+				return "缴械攻击：普通攻击有%s概率眩晕目标%.1f秒。" % [pct(float(d.get("interrupt_chance", 0.12))), militia_stun]
 			return "缴械攻击：普通攻击有%s概率缴械目标（1 秒内无法普攻）。" % pct(float(d.get("interrupt_chance", 0.12)))
 		"post_battle_gold_by_star":
 			return "战后经商：参与战斗后，按星级获得金币。1星+10，2星+20，3星+30，4星+40。"
@@ -202,13 +220,30 @@ static func format_skill_detail(d: Dictionary) -> String:
 		"random_attribute_attack":
 			return "属性乱击：普通攻击随机附带火/冰/雷/毒属性效果。"
 		"random_attribute_bolt":
-			return "随机法术：无普攻，每2.5秒对随机敌人造成攻击300%的随机属性伤害。"
+			# 9.14：文案原来把 2.5 秒 / 300% 硬写死。改成读 def —— 4 星 star4 给的是
+			# 冷却 2 秒、600%、20% 双重施法，1~3 星仍是 2.5 秒 / 300%。
+			var mage_cd := float(d.get("skill_cd", 2.5))
+			var mage_dmg := float(d.get("damage_atk_pct", 3.0))
+			var mage_dbl := float(d.get("double_element_chance", 0.0))
+			var mage_tail := "，并有%s概率触发双重施法" % pct(mage_dbl) if mage_dbl > 0.0 else ""
+			return "随机法术：无普攻，每%.1f秒对随机敌人造成攻击%s的随机属性伤害%s。" % [mage_cd, pct(mage_dmg), mage_tail]
 		"every_fifth_group_heal":
 			return "战歌：每第%d次普通攻击治疗周围友军最大生命%s。" % [int(d.get("every", 5)), pct(float(d.get("heal_pct", 0.05)))]
 		"left_neighbor_sacrifice":
-			return "死侍契约：周围一圈友军防御+3持续5秒；战斗开始绑定左侧棋子，该棋子首次死亡时死侍代替其死亡并使其满血复活。"
+			# 9.14：1~3 星 +3 防 / 5 秒 / 只绑左邻；4 星 +30% 防 / 8 秒 / 左右各绑一个
+			# （但死侍只能牺牲一次，先死的那一侧用掉之后另一侧自然失效）。文案按
+			# ally_def_pct 是否存在分两支。
+			var ds_dur := float(d.get("ally_def_duration", 5.0))
+			var ds_pct := float(d.get("ally_def_pct", 0.0))
+			if ds_pct > 0.0:
+				return "死侍契约：周围一圈友军防御+%s持续%.1f秒；战斗开始绑定左右两侧棋子，其中先死亡的棋子首次阵亡时由死侍代替其死亡并使其满血复活（死侍仅能牺牲一次）。" % [pct(ds_pct), ds_dur]
+			return "死侍契约：周围一圈友军防御+%d持续%.1f秒；战斗开始绑定左侧棋子，该棋子首次死亡时死侍代替其死亡并使其满血复活。" % [int(d.get("ally_def_bonus", 3)), ds_dur]
 		"unique_king_growth":
-			return "人王唯一技：棋盘上只能存在一只人王。若参战且战后仍存活，全属性永久x%.1f；若死亡则从棋盘移除；升星继承三只材料中成长最高的人王数值。" % (1.0 + float(d.get("post_battle_all_stat_growth", 0.20)))
+			# 9.14：1~3 星成长 ×1.2、上限 5 层；4 星 ×1.3、上限 8 层。两者都写进文案，
+			# 数值全部读 def（apply_star_stats 会把 star4 的 0.3 / 8 覆盖上来）。
+			var king_growth := float(d.get("post_battle_all_stat_growth", 0.20))
+			var king_cap := int(d.get("max_stacks", 5))
+			return "人王唯一技：棋盘上只能存在一只人王。若参战且战后仍存活，全属性永久x%.1f（上限%d层）；若死亡则从棋盘移除；升星继承三只材料中成长最高的人王数值。" % [1.0 + king_growth, king_cap]
 		"balance_judge":
 			return "均衡裁决：攻击当前生命高于自己的目标时，伤害+%s。" % pct(float(d.get("bonus_vs_higher_hp", 0.40)))
 		"bubble_dream":
@@ -305,7 +340,11 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"stun":
 			return "Shadow Stun%s: Stun the nearest enemy for %.1fs. Dark 7 extends duration." % [cd, float(d.get("stun_sec", 1.0))]
 		"shared_hp_link":
-			return "Blood Chain%s: Link to the nearest non-Boss enemy and convert them to your side. Both share HP loss; link breaks on either death and will not reactivate this round. Boss immune." % cd
+			# 9.14: 4-star regenerates 3% max HP/s while linked; only 4-star sets
+			# link_regen_pct, so 1-3 star text stays without the clause.
+			var link_regen := float(d.get("link_regen_pct", 0.0))
+			var regen_clause := "; regenerate %s max HP per second while linked" % pct(link_regen) if link_regen > 0.0 else ""
+			return "Blood Chain%s: Link to the nearest non-Boss enemy and convert them to your side. Both share HP loss%s. Link breaks on either death and will not reactivate this round. Boss immune." % [cd, regen_clause]
 		"black_hole":
 			return "Black Hole%s: Pull surrounding enemies, stun for %.1fs, and deal %s ATK damage. Dark 7 extends the stun." % [cd, float(d.get("pull_sec", 2.0)), pct(float(d.get("damage_atk_pct", 2.2)))]
 		"poison_attack":
@@ -319,8 +358,17 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"poison_reflect_armor_stack":
 			return "Toxic Armor: On taking damage, reflect %s as true damage and poison the attacker. Own DEF stacks +%s per hit (max %d stacks)." % [pct(float(d.get("reflect_taken_damage_pct", 0.12))), pct(float(d.get("armor_per_hit_pct", 0.14))), int(d.get("max_stacks", 10))]
 		"unique_death_execute":
-			return "Matron: each player can field 1; in 3v3, each player's Matron works at the same time and counts independently. Every 5 enemy deaths not caused by Matron execute: Tier 1/Merc 50%, Tier 2 35%, Tier 3 10%; vs Boss deal 20% max HP instead. Undead 7: every 4 deaths."
+			var m_th := int(d.get("death_threshold", 5))
+			var m_t1 := float(d.get("tier1_or_merc_chance", 0.5))
+			var m_t2 := float(d.get("tier2_chance", 0.35))
+			var m_t3 := float(d.get("tier3_chance", 0.1))
+			var m_boss := float(d.get("boss_max_hp_damage", 0.2))
+			var m_u7 := int(ceil(float(m_th) * 0.75))
+			return "Matron: each player can field 1; in 3v3, each player's Matron works at the same time and counts independently. Every %d enemy deaths not caused by Matron execute: Tier 1/Merc %s, Tier 2 %s, Tier 3 %s; vs Boss deal %s max HP instead. Undead 7: every %d deaths." % [m_th, pct(m_t1), pct(m_t2), pct(m_t3), pct(m_boss), m_u7]
 		"attack_interrupt":
+			var militia_stun := float(d.get("stun_sec", 0.0))
+			if militia_stun > 0.0:
+				return "Disarm Strike: Normal attacks have a %s chance to stun the target for %.1fs." % [pct(float(d.get("interrupt_chance", 0.12))), militia_stun]
 			return "Disarm Strike: Normal attacks have a %s chance to disarm the target (cannot use normal attacks for 1s)." % pct(float(d.get("interrupt_chance", 0.12)))
 		"post_battle_gold_by_star":
 			return "Trade: After each battle, gain gold by star level (★1 → +10G, ★2 → +20G, ★3 → +30G, ★4 → +40G)."
@@ -331,13 +379,23 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"random_attribute_attack":
 			return "Elemental Strike: Normal attacks randomly apply fire / ice / thunder / poison."
 		"random_attribute_bolt":
-			return "Random Spell: No basic attack. Every 2.5s, deal 300% ATK random-element damage to a random enemy."
+			var mage_cd := float(d.get("skill_cd", 2.5))
+			var mage_dmg := float(d.get("damage_atk_pct", 3.0))
+			var mage_dbl := float(d.get("double_element_chance", 0.0))
+			var mage_tail := ", with a %s chance to double-cast" % pct(mage_dbl) if mage_dbl > 0.0 else ""
+			return "Random Spell: No basic attack. Every %.1fs, deal %s ATK random-element damage to a random enemy%s." % [mage_cd, pct(mage_dmg), mage_tail]
 		"every_fifth_group_heal":
 			return "War Song: Every %d attacks, heal nearby allies for %s of their max HP." % [int(d.get("every", 5)), pct(float(d.get("heal_pct", 0.05)))]
 		"left_neighbor_sacrifice":
-			return "Death Pact: Grant surrounding allies DEF +3 for 5s. At battle start, bind to the left neighbor — when that unit first dies, this unit sacrifices itself in their place, reviving them at full HP."
+			var ds_dur := float(d.get("ally_def_duration", 5.0))
+			var ds_pct := float(d.get("ally_def_pct", 0.0))
+			if ds_pct > 0.0:
+				return "Death Pact: Grant surrounding allies DEF +%s for %.1fs. At battle start, bind to both neighbours — whichever of them dies first is revived at full HP by this unit sacrificing itself (it can only sacrifice once)." % [pct(ds_pct), ds_dur]
+			return "Death Pact: Grant surrounding allies DEF +%d for %.1fs. At battle start, bind to the left neighbour — when that unit first dies, this unit sacrifices itself in their place, reviving them at full HP." % [int(d.get("ally_def_bonus", 3)), ds_dur]
 		"unique_king_growth":
-			return "Human King Unique (one on board): If this unit survives a battle, all stats permanently ×%.1f. If it dies, it is removed from the board. On upgrade, inherit the highest growth value from the three materials." % (1.0 + float(d.get("post_battle_all_stat_growth", 0.20)))
+			var king_growth := float(d.get("post_battle_all_stat_growth", 0.20))
+			var king_cap := int(d.get("max_stacks", 5))
+			return "Human King Unique (one on board): If this unit survives a battle, all stats permanently ×%.1f (cap %d stacks). If it dies, it is removed from the board. On upgrade, inherit the highest growth value from the three materials." % [1.0 + king_growth, king_cap]
 		"balance_judge":
 			return "Balance Judgement: Deal +%s damage against targets with more current HP than this unit." % pct(float(d.get("bonus_vs_higher_hp", 0.40)))
 		"bubble_dream":
