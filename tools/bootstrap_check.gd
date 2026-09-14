@@ -19,6 +19,8 @@ func _ready() -> void:
 	await _check_failure_and_retry()
 	await _check_watchdog_escalation()
 	await _check_watchdog_resets_on_progress()
+	_check_entry_gate_view()
+	await _check_entry_phase_is_not_watchdogged()
 	_h.finish(get_tree())
 
 
@@ -51,6 +53,9 @@ func _new_bootstrap(path: String) -> BootstrapScript:
 	var bootstrap := BootstrapScene.instantiate() as BootstrapScript
 	bootstrap.auto_start = false
 	bootstrap.auto_transition = false
+	# 进门那一步要真的去登录、连账号后端。这里测的是线程载入本身，关掉它；
+	# 进门的判定另由 _check_entry_gate_view 用纯函数测。
+	bootstrap.entry_gate = false
 	bootstrap.next_scene_path = path
 	add_child(bootstrap)
 	return bootstrap
@@ -320,6 +325,84 @@ func _check_watchdog_resets_on_progress() -> void:
 		"watchdog_not_reset_on_phase_change",
 		"换阶段之后等级没有归零 —— 新阶段会立刻继承上一段的告警")
 
+	bootstrap.queue_free()
+	await get_tree().process_frame
+
+
+# 同时在线上限与排队（2026-09-14）：主界面载完之后要登录成功、账号后端放行才进门。
+#
+# 核心判据，每条对应一种**不报错**的失败：
+#   🔴 连不上就不让进（已定）：登录中、登录失败、被顶号、连不上，等多久都不放行
+#   🔴 排着队的人不会因为等久了被放进去（唯一的按时长放行只针对「连上了但从不回名额」）
+#   🔴 被顶号之后不能自动重连（两台设备会无限互踢）
+func _check_entry_gate_view() -> void:
+	var admitted := BootstrapScript.entry_view({"login": "logged_in", "online": true, "admitted": true})
+	_h.expect(bool(admitted.get("pass", false)), "entry_admitted_not_passed", "服务器放行了却不进门")
+
+	var forever := 99999.0
+	var closed_cases := {
+		"登录中": {"login": "working", "offline_sec": forever, "unanswered_sec": forever},
+		"登录失败": {"login": "failed", "offline_sec": forever, "unanswered_sec": forever},
+		"被顶号": {"login": "logged_in", "kicked": true, "offline_sec": forever, "unanswered_sec": forever},
+		"一直连不上": {"login": "logged_in", "online": false, "failed_handshakes": 99,
+			"offline_sec": forever, "unanswered_sec": forever},
+		"排队很久": {"login": "logged_in", "online": true, "queue_position": 7, "unanswered_sec": forever},
+	}
+	for case_name in closed_cases:
+		var view: Dictionary = BootstrapScript.entry_view(closed_cases[case_name])
+		_h.expect(not bool(view.get("pass", false)), "entry_fails_open",
+			("进门这一步在「%s」时放行了 —— 已定连不上账号服务器就不让进，"
+				+ "排着队的人也不能等久了自己进去") % case_name)
+
+	var failed: Dictionary = BootstrapScript.entry_view(closed_cases["登录失败"])
+	_h.expect(str(failed.get("state", "")) == "login_failed" and bool(failed.get("actions", false)),
+		"entry_login_failed_no_way_out", "登录失败时没有摆出重试 / 退出")
+	var kicked: Dictionary = BootstrapScript.entry_view(closed_cases["被顶号"])
+	_h.expect(str(kicked.get("state", "")) == "kicked" and bool(kicked.get("actions", false)),
+		"entry_kicked_no_way_out", "被顶号时没有让玩家自己选择在这台设备上继续")
+	var queued: Dictionary = BootstrapScript.entry_view(closed_cases["排队很久"])
+	_h.expect(str(queued.get("state", "")) == "queued" and int(queued.get("position", 0)) == 7,
+		"entry_queue_position_lost", "排队时位次没有带到界面上")
+
+	var connecting := BootstrapScript.entry_view(
+		{"login": "logged_in", "online": false, "failed_handshakes": 0, "offline_sec": 1.0})
+	_h.expect(str(connecting.get("state", "")) == "connecting" and not bool(connecting.get("actions", false)),
+		"entry_error_flashes_on_reconnect", "刚登录上、连接还没失败过就弹出了错误面板")
+	var failing := BootstrapScript.entry_view({"login": "logged_in", "online": false,
+		"failed_handshakes": BootstrapScript.ENTRY_CONNECT_FAILURES})
+	_h.expect(str(failing.get("state", "")) == "connect_failed" and bool(failing.get("actions", false)),
+		"entry_connect_failure_hidden", "连续握手失败之后仍只显示「正在连接」，玩家不知道出了问题")
+
+	var checking := BootstrapScript.entry_view(
+		{"login": "logged_in", "online": true, "queue_position": 0, "unanswered_sec": 1.0})
+	_h.expect(not bool(checking.get("pass", false)), "entry_passes_before_answer", "还没收到名额消息就放行了")
+	var legacy := BootstrapScript.entry_view({"login": "logged_in", "online": true, "queue_position": 0,
+		"unanswered_sec": BootstrapScript.ENTRY_LEGACY_SERVER_SEC})
+	_h.expect(bool(legacy.get("pass", false)) and bool(legacy.get("legacy_server", false)),
+		"entry_legacy_server_blocks_everyone",
+		"账号后端是没有排队功能的旧版时，全体玩家会一直卡在启动画面")
+
+	var source := FileAccess.get_file_as_string("res://scenes/bootstrap/Bootstrap.gd")
+	_h.expect(source.contains("if _entry_gate_required():\n\t\t_begin_entry()"),
+		"entry_gate_bypassed", "主界面载完之后没有经过进门这一步就直接 READY 了")
+	_h.expect(source.contains("if not RealtimeService.is_kicked():\n\t\tRealtimeService.start()"),
+		"entry_auto_reconnect_after_kick", "进门那一步在被顶号之后仍会自动重连 —— 两台设备会无限互踢")
+
+
+# 排队可能要等十几分钟，那不是「启动卡住」。
+func _check_entry_phase_is_not_watchdogged() -> void:
+	var bootstrap := _new_bootstrap(FIXTURE_PATH)
+	await get_tree().process_frame
+	# 不让 _process 去驱动进门（那会真的去登录），只看看门狗对这个阶段的反应。
+	bootstrap.set_process(false)
+	bootstrap._set_phase(BootstrapScript.Phase.ENTRY, "entry", "", 1.0)
+	for i in 30:
+		bootstrap._tick_watchdog(1.0)
+	var snap := bootstrap.snapshot()
+	_h.expect(str(snap.get("watchdog_level_name", "")) == "QUIET" and not bool(snap.get("stuck", false)),
+		"entry_watchdogged", "排队 30 秒被看门狗判成了启动卡住")
+	_h.expect(not bool(snap.get("error_visible", false)), "entry_watchdog_error_panel",
+		"排队时看门狗弹出了「启动比预期慢很多」")
 	bootstrap.queue_free()
 	await get_tree().process_frame
 

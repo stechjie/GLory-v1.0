@@ -20,7 +20,7 @@ from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 
-from app import db, maintenance, realtime, single_instance
+from app import admission, db, maintenance, realtime, single_instance
 from app.config import get_settings
 from app.routes import auth as auth_routes
 from app.routes import chat as chat_routes
@@ -99,10 +99,15 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # 定时清理过期私聊会话与好友请求日志（app/maintenance.py）。
     # 单实例保证了它只有一份在跑。
     cleaner = asyncio.create_task(maintenance.loop())
+    # 同时在线上限与排队（app/admission.py）。必须在 yield 之前装好：第一条 WS 连进来
+    # 就要用到它，而且重启预热期从这一刻算起。
+    gate = admission.install(admission.Admission(
+        admission.hub_send, limit=cfg.online_limit, config_path=cfg.admission_file))
+    admitter = asyncio.create_task(admission.loop(gate))
     try:
         yield
     finally:
-        for task in (sweeper, cleaner):
+        for task in (sweeper, cleaner, admitter):
             task.cancel()
             with suppress(asyncio.CancelledError):
                 await task

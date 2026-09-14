@@ -1,8 +1,9 @@
 """WebSocket 端点（`docs/聊天系统设计.md` 批次 B）。
 
     ws(s)://<backend>/v1/ws
-      Authorization:    Bearer <supabase access_token>
-      X-Device-Session: <客户端生成的设备标识>
+      Authorization:     Bearer <supabase access_token>
+      X-Device-Session:  <客户端生成的设备标识>
+      X-Glory-Admission: enter | resume   （可选，旧版客户端不带；见 app/admission.py）
 
 ## 🔴 令牌走 header，不走 query string
 
@@ -31,7 +32,7 @@ import re
 from fastapi import APIRouter
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from app import db, players, realtime
+from app import admission, db, players, realtime
 from app.config import get_settings
 from app.jwt_verify import TokenError
 from app.realtime import Connection
@@ -101,7 +102,16 @@ async def realtime_endpoint(websocket: WebSocket) -> None:
         "player_id": str(player.player_id),
         "heartbeat_sec": realtime.HEARTBEAT_INTERVAL_SEC,
     })
-    log.info("WS 连接建立 player=%s 在线连接=%d", player.player_id, hub.connection_count())
+    # 名额放在 ready 之后：客户端先确认「连上了」，再看「进不进得去」。
+    # join 也必须在 register 之后 —— 换设备时新连接要接过旧连接的名额。
+    gate = admission.current()
+    intent = admission.parse_intent(websocket.headers.get(admission.HEADER))
+    decision = gate.join(conn, intent)
+    if intent != admission.LEGACY:
+        # 旧版客户端不认识这条消息，不发。它照样被放行、照样计入人数。
+        await hub.send(conn, decision)
+    log.info("WS 连接建立 player=%s 在线连接=%d 来意=%s 名额=%s",
+             player.player_id, hub.connection_count(), intent, decision["state"])
 
     try:
         await _pump(hub, conn)
@@ -112,6 +122,8 @@ async def realtime_endpoint(websocket: WebSocket) -> None:
     finally:
         # 幂等，且不会误删顶号后新连接的那一条（见 Hub.unregister）。
         hub.unregister(conn)
+        # 同样只认自己那条；名额进宽限期，不是立刻收回（见 admission 顶部）。
+        gate.leave(conn)
         log.info("WS 断开 player=%s 在线连接=%d", conn.player_id, hub.connection_count())
 
 

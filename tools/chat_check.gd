@@ -43,10 +43,11 @@ const EXPECTED_IDS := [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 # 2026-09-11 批次 D（自由文字）加了两个：55 -> 57、22 -> 23。
 # 2026-09-13 组队语音又加了两个：57 -> 59、24 -> 25（中间 23 -> 24 是批次 D 与四星撞号，见 NetworkConfig v24）。
 # 2026-09-14 聊天范围：数量没变，四条聊天 RPC 各加一个 team_only 参数 -> 签名指纹变了、25 -> 26。
+# 2026-09-14 排队：数量和签名都没动，只为挡住没有排队逻辑的旧包顶号 26 -> 27，指纹不动。
 # PINNED_RPC_SIGNATURES：全部 @rpc 方法「@rpc 配置 | 方法名(参数类型,…)」排序后的 SHA-256 前 16 位，
 # 算法见 _rpc_signature_digest。参数只改名字不算（线上不传名字）。
 const PINNED_RPC_COUNT := 59
-const PINNED_RPC_PROTOCOL := 26
+const PINNED_RPC_PROTOCOL := 27
 const PINNED_RPC_SIGNATURES := "e14ffcf49f3e7c30"
 
 var _h: CheckHarness
@@ -67,6 +68,7 @@ func _ready() -> void:
 	_case_prep_log_ignores_mouse()
 	_case_rpc_count_pinned()
 	_case_ws_constants_match_backend()
+	_case_admission_contract_matches_backend()
 	_case_chat_constants_match_backend()
 	_case_token_refresh_wired()
 	_case_chat_entry_wired()
@@ -127,6 +129,52 @@ func _case_ws_constants_match_backend() -> void:
 	_h.item()
 	_h.expect(gd.contains("payload.get(\"heartbeat_sec\""), "ws_heartbeat_hardcoded",
 		"客户端必须用服务端 ready 里下发的 heartbeat_sec，不能只用本地常量。")
+
+
+# --- 7b. 🔴 排队的跨语言约定（backend/app/admission.py）---------------------------
+
+func _case_admission_contract_matches_backend() -> void:
+	# 同上一条：同一个约定写在两种语言里，分开改没有任何症状。
+	#   握手头 / 来意  —— 对不上的话服务器把新客户端当成旧版：从不排队，上限形同虚设
+	#   消息类型 / 状态 —— 对不上的话客户端永远收不到放行，全体玩家卡在启动画面
+	var py := FileAccess.get_file_as_string("res://backend/app/admission.py")
+	var gd := FileAccess.get_file_as_string("res://scripts/autoload/RealtimeService.gd")
+	_h.item()
+	if py.is_empty() or gd.is_empty():
+		_h.fail("admission_source_unreadable", "读不到 admission.py 或 RealtimeService.gd")
+		return
+	_h.expect(true, "", "")
+
+	# HTTP 头名不分大小写：后端按小写查，客户端按惯例写成首字母大写。
+	_h.item()
+	_h.expect(py.contains("HEADER = \"x-glory-admission\"")
+			and gd.to_lower().contains("const admission_header := \"x-glory-admission\""),
+		"admission_header_drift",
+		"admission.HEADER 与 RealtimeService.ADMISSION_HEADER 不是同一个头了 —— "
+		+ "服务器会把新客户端当成旧版，从不排队。")
+	for pair in [["MESSAGE_TYPE", "ADMISSION_TYPE", "admission"],
+			["ENTER", "ADMISSION_ENTER", "enter"],
+			["RESUME", "ADMISSION_RESUME", "resume"]]:
+		_h.item()
+		_h.expect(py.contains("%s = \"%s\"" % [pair[0], pair[2]])
+				and gd.contains("const %s := \"%s\"" % [pair[1], pair[2]]),
+			"admission_constant_drift",
+			"admission.%s 与 RealtimeService.%s 不再都是 \"%s\" 了。" % [pair[0], pair[1], pair[2]])
+	_h.item()
+	_h.expect(py.contains("\"state\": \"admitted\"") and py.contains("\"state\": \"queued\"")
+			and gd.contains("\"admitted\":") and gd.contains("\"queued\":"),
+		"admission_state_drift",
+		"名额消息的 state 取值（admitted / queued）两边对不上了 —— 客户端会永远收不到放行。")
+	# 握手必须真的带上来意。漏了就是旧版客户端待遇：直接放行、从不排队。
+	_h.item()
+	_h.expect(gd.contains("\"%s: %s\" % [ADMISSION_HEADER, _admission_intent()]"),
+		"admission_header_not_sent",
+		"RealtimeService._open 的握手头里没有带 ADMISSION_HEADER。")
+	# 🔴 放行过就不许清掉：清了的话，对局中的一次断线重连会被当成「新来的」去排队。
+	_h.item()
+	_h.expect(not gd.contains("_admitted = false"),
+		"admission_flag_reset",
+		"RealtimeService 里出现了 _admitted = false —— 已经在游戏里的人重连时会被踢回队列。")
 
 
 # --- 8. 🔴 私聊（批次 C）的跨语言常量 --------------------------------------------

@@ -18,6 +18,11 @@ WorkingDirectory=/opt/glory/repo/backend
 # 这个文件必须 chmod 600 且属主是 glory。
 EnvironmentFile=/opt/glory/backend.env
 
+# 同时在线上限的热改文件（backend/app/admission.py）。内容形如 {"online_limit": 400}，
+# 改完 5 秒内生效，**不要为了改上限去重启** —— 重启会清空排队顺序。
+# 文件不存在 = 用默认值（GLORY_ONLINE_LIMIT，没设就是 1000）。它不是密钥，可以 644。
+Environment=GLORY_ADMISSION_FILE=/opt/glory/admission.json
+
 # ⚠️ **只监听 127.0.0.1，绝不监听 0.0.0.0。**
 #
 # 对外由 Caddy 反向代理并终结 TLS。直接对外监听等于开了一个明文 HTTP 端口，

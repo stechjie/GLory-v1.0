@@ -118,7 +118,14 @@ const USE_DTLS := true
 #      同批带上语音 v1.1（语音包格式 v2；③ 不解析语音包，这件事本身不需要顶号）。
 #      代价同上：**线上战斗服务器必须重新打包部署到 p26**（make_server_zip.ps1），
 #      否则新客户端连不上。确认依据是服务器日志里的 `server started protocol=26`。
-const NETWORK_PROTOCOL_VERSION := 26
+# v27: 同时在线上限与排队（backend/app/admission.py，2026-09-14）。**线格一个字节都没变**：
+#      RPC 数量、签名、通道全都没动。顶这一格只为一件事 —— 让没有排队逻辑的旧包连不上。
+#      排队拦在客户端的启动画面，战斗服务器不认识账号；旧包根本不走那道门，只有协议号挡得住它。
+#      同 v16 那格（没有线格变更也顶号）。
+#      代价同上：**线上战斗服务器必须重新打包部署到 p27**（make_server_zip.ps1），
+#      否则新客户端连不上。确认依据是服务器日志里的 `server started protocol=27`。
+#      并且**账号后端要先于客户端更新**（deploy/README.md「在线人数上限与排队」）。
+const NETWORK_PROTOCOL_VERSION := 27
 
 # Local phone hosting is debug-only.
 const ALLOW_LOCAL_HOST_DEBUG := false

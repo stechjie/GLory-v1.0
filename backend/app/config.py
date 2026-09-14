@@ -53,6 +53,16 @@ class Settings(BaseSettings):
     # 它存在只为两件事：跑测试，以及本机想同时开两份服务时。
     disable_instance_lock: bool = False
 
+    # --- 同时在线上限与排队（app/admission.py）--------------------------------
+    #
+    # 数的是登录着、连着 WebSocket 的玩家；超过的人在启动画面排队。
+    # ⚠️ 1000 是 2026-09-14 的暂定值，还没按线上机器实测校准。
+    online_limit: int = 1000
+
+    # 可热改的上限文件，内容形如 {"online_limit": 400}。每 5 秒看一次修改时间，改了就生效，
+    # 不用重启（重启会清空队列）。空 = 不读文件。生产上由 glory-backend.service 设置。
+    admission_file: str = ""
+
     @property
     def is_dev(self) -> bool:
         return self.environment != "prod"
