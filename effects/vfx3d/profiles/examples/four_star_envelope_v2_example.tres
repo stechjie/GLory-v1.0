@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="VFXProfile3D" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+profile_id = "four_star_envelope_v2"
+module_id = "FourStarAuraV2_3D"
+duration = 1.1
+size = 1.0
+particle_count = 14
+emission_energy = 0.55
+quality_group = "gameplay"
+parameters = {
+"radius": 0.72,
+"ground_radius": 0.66,
+"persistent_opacity": 0.80,
+"battle_opacity": 0.68,
+"ribbon_count": 4,
+"ground_arc_count": 3
+}

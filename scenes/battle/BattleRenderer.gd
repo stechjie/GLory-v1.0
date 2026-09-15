@@ -6,6 +6,7 @@ const UnitVisualResolverScript := preload("res://effects/runtime/presentation/Un
 const ModelRootMotionPolicyScript := preload("res://effects/runtime/presentation/ModelRootMotionPolicy.gd")
 const UnitContactShadowScript := preload("res://effects/runtime/presentation/UnitContactShadow.gd")
 const UNIT_TEAM_RING_SHADER := preload("res://shaders/unit_team_ring.gdshader")
+const FOUR_STAR_AURA := preload("res://effects/vfx3d/modules/FourStarAuraV2_3D.gd")
 
 # Per-frame visual caches: the separation pass is O(N) per unit over the living
 # set, and several call sites ask for the same unit's position within one frame.
@@ -441,9 +442,9 @@ func detach_actor_for_death(uid: String) -> Node3D:
 	# Checklist section 3 is explicit that the actor is unregistered *after* the
 	# death animation, which release_death_actor() below does.
 	_battle_3d_models.erase(uid)
-	var ascension := (node_value as Node3D).get_node_or_null("FourStarAura")
+	var ascension := (node_value as Node3D).get_node_or_null("FourStarAuraV2")
 	if ascension != null:
-		ascension.configure(0, "sky")
+		ascension.deactivate()
 	var status_vfx = _status_vfx_by_id.get(uid)
 	if status_vfx != null and is_instance_valid(status_vfx):
 		# V2 P1-05 第 2 条："血条和状态图标同步，不突然消失"。
@@ -538,16 +539,16 @@ func _make_shared_model_node(f: Dictionary) -> Node3D:
 	_ensure_status_vfx_controller(actor, model_height)
 	_add_3d_unit_readability(actor, f)
 	if int(f.get("star", 1)) == GameState.MAX_UNIT_STAR and not bool(unit_def.get("is_mercenary", false)):
-		preload("res://effects/vfx3d/modules/FourStarAura3D.gd").sync(actor, 2, str(unit_def.get("element", "")), model_height, true)
+		FOUR_STAR_AURA.sync(actor, 2, str(unit_def.get("element", "")), model_height, true)
 		_fit_four_star_battle_aura.call_deferred(actor, model_height)
 	return actor
 
 func _fit_four_star_battle_aura(actor: Node3D, height: float) -> void:
 	if not is_instance_valid(actor) or not actor.is_inside_tree():
 		return
-	var aura := actor.get_node_or_null("FourStarAura") as Node3D
+	var aura := actor.get_node_or_null("FourStarAuraV2") as Node3D
 	if aura != null:
-		preload("res://effects/vfx3d/modules/FourStarAura3D.gd").fit_to_skeleton(aura, actor, height)
+		FOUR_STAR_AURA.fit_to_actor(aura, actor, height)
 
 # model_height is the rendered height of this unit in world units. Pass 0 when
 # it is unknown (the late-repair path below) and the legacy 1.7 stand-in is used,

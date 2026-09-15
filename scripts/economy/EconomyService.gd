@@ -15,7 +15,7 @@ static func _rng() -> RandomNumberGenerator:
 
 # 金额一律以「进位后」的基数直接书写，不在公式外面套 ×10。
 # 比率（利息率、折扣倍率等）不是金额，不随之进位。
-const BASE_INTEREST_RATE := 0.10
+const BASE_INTEREST_RATE := 0.05
 const CONSOLATION_GOLD_PER_LOSS := 20
 const BOSS_WIN_REWARDS := {5: 100, 10: 150, 15: 250, 20: 400}
 const BOSS_WIN_REWARD_FALLBACK := 100

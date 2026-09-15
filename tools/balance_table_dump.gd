@@ -572,7 +572,7 @@ func _dump_economy() -> Dictionary:
 	for g in [0, 50, 100, 200, 300, 500, 800, 1000, 1500, 2000]:
 		interest.append({
 			"gold": g,
-			"base_10pct": EconomyService.base_interest(g),
+			"base_5pct": EconomyService.base_interest(g),
 			"plus_compound_treasure": EconomyService.base_interest(g) + int(floor(float(g) * 0.05)),
 			"pet_cat_bonus": EconomyService.pet_interest_bonus(g, "pet_cat"),
 			"all_three_total": EconomyService.base_interest(g) + int(floor(float(g) * 0.05)) + EconomyService.pet_interest_bonus(g, "pet_cat"),

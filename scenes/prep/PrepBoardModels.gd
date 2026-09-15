@@ -5,7 +5,8 @@ const PREP_RELATION_LINK_SCRIPT := preload("res://scenes/prep/PrepRelationLink3D
 const UnitActor3DScript := preload("res://effects/runtime/presentation/UnitActor3D.gd")
 const UnitVisualResolverScript := preload("res://effects/runtime/presentation/UnitVisualResolver.gd")
 const UnitContactShadowScript := preload("res://effects/runtime/presentation/UnitContactShadow.gd")
-const FOUR_STAR_AURA := preload("res://effects/vfx3d/modules/FourStarAura3D.gd")
+const FOUR_STAR_READY_AURA := preload("res://effects/vfx3d/modules/FourStarAura3D.gd")
+const FOUR_STAR_AURA := preload("res://effects/vfx3d/modules/FourStarAuraV2_3D.gd")
 var _four_star_visual_poll := 0.0
 
 func refresh_four_star_visuals(delta: float) -> void:
@@ -29,16 +30,27 @@ func _sync_four_star_actor(actor: Node3D, cell: Dictionary) -> void:
 			state = 2
 		elif not GameState.tutorial_mode and NetworkService.four_star_upgrade_available() and NetworkService.four_star_request_id.is_empty() and bool(GameState.four_star_check(cell).get("ok", false)):
 			state = 1
-	var aura := FOUR_STAR_AURA.sync(actor, state, str(def.get("element", "")), 1.0)
-	if aura != null and actor.is_inside_tree():
+	var affinity := str(def.get("element", ""))
+	# Keep the established gold readiness hint for eligible three-star pieces.
+	# The approved V2 envelope is reserved for completed four-star pieces.
+	var ready_aura := FOUR_STAR_READY_AURA.sync(actor, state if state == 1 else 0, affinity, 1.0)
+	if ready_aura != null and state == 1 and actor.is_inside_tree():
 		if not actor.has_meta("four_star_aura_transform") and bool(actor.get_meta("prep_model_centered", false)):
-			FOUR_STAR_AURA.fit_to_skeleton(aura, actor, 0.24)
+			FOUR_STAR_READY_AURA.fit_to_skeleton(ready_aura, actor, 0.24)
 			var attempts := int(actor.get_meta("four_star_fit_attempts", 0)) + 1
 			actor.set_meta("four_star_fit_attempts", attempts)
-			if bool(aura.get_meta("skeleton_fitted", false)) or attempts >= 10:
-				actor.set_meta("four_star_aura_transform", aura.transform)
+			if bool(ready_aura.get_meta("skeleton_fitted", false)) or attempts >= 10:
+				actor.set_meta("four_star_aura_transform", ready_aura.transform)
 		if actor.has_meta("four_star_aura_transform"):
-			aura.transform = actor.get_meta("four_star_aura_transform")
+			ready_aura.transform = actor.get_meta("four_star_aura_transform")
+			ready_aura.attach_rim(actor)
+	var aura := FOUR_STAR_AURA.sync(actor, 2 if state == 2 else 0, affinity, 1.0)
+	if aura != null and state == 2 and actor.is_inside_tree():
+		if not actor.has_meta("four_star_aura_v2_transform") and bool(actor.get_meta("prep_model_centered", false)):
+			FOUR_STAR_AURA.fit_to_actor(aura, actor, 0.24)
+			actor.set_meta("four_star_aura_v2_transform", aura.transform)
+		if actor.has_meta("four_star_aura_v2_transform"):
+			aura.transform = actor.get_meta("four_star_aura_v2_transform")
 			aura.attach_rim(actor)
 
 func play_four_star_upgrade(uid: String) -> void:
@@ -50,7 +62,7 @@ func play_four_star_upgrade(uid: String) -> void:
 				var actor := models.get(index) as Node3D
 				if is_instance_valid(actor):
 					_sync_four_star_actor(actor, slots[index])
-					var aura := actor.get_node_or_null("FourStarAura")
+					var aura := actor.get_node_or_null("FourStarAuraV2")
 					if aura != null:
 						aura.play_upgrade()
 				return

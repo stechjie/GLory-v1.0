@@ -1488,7 +1488,7 @@
     "ALTAR_GOLD": 50,
     "ALTAR_MAX_USES_PER_ROUND": 3,
     "ALTAR_MIN_HP": 10,
-    "BASE_INTEREST_RATE": 0.1,
+    "BASE_INTEREST_RATE": 0.05,
     "BOSS_WIN_REWARDS": {
       "5": 100,
       "10": 150,
@@ -1535,73 +1535,73 @@
     "interest_table": [
       {
         "all_three_total": 0,
-        "base_10pct": 0,
+        "base_5pct": 0,
         "gold": 0,
         "pet_cat_bonus": 0,
         "plus_compound_treasure": 0
       },
       {
-        "all_three_total": 7,
-        "base_10pct": 5,
+        "all_three_total": 4,
+        "base_5pct": 2,
         "gold": 50,
         "pet_cat_bonus": 0,
-        "plus_compound_treasure": 7
+        "plus_compound_treasure": 4
       },
       {
-        "all_three_total": 16,
-        "base_10pct": 10,
+        "all_three_total": 11,
+        "base_5pct": 5,
         "gold": 100,
         "pet_cat_bonus": 1,
-        "plus_compound_treasure": 15
+        "plus_compound_treasure": 10
       },
       {
-        "all_three_total": 32,
-        "base_10pct": 20,
+        "all_three_total": 22,
+        "base_5pct": 10,
         "gold": 200,
         "pet_cat_bonus": 2,
+        "plus_compound_treasure": 20
+      },
+      {
+        "all_three_total": 33,
+        "base_5pct": 15,
+        "gold": 300,
+        "pet_cat_bonus": 3,
         "plus_compound_treasure": 30
       },
       {
-        "all_three_total": 48,
-        "base_10pct": 30,
-        "gold": 300,
-        "pet_cat_bonus": 3,
-        "plus_compound_treasure": 45
-      },
-      {
-        "all_three_total": 80,
-        "base_10pct": 50,
+        "all_three_total": 55,
+        "base_5pct": 25,
         "gold": 500,
         "pet_cat_bonus": 5,
-        "plus_compound_treasure": 75
+        "plus_compound_treasure": 50
       },
       {
-        "all_three_total": 128,
-        "base_10pct": 80,
+        "all_three_total": 88,
+        "base_5pct": 40,
         "gold": 800,
         "pet_cat_bonus": 8,
-        "plus_compound_treasure": 120
+        "plus_compound_treasure": 80
       },
       {
-        "all_three_total": 160,
-        "base_10pct": 100,
+        "all_three_total": 110,
+        "base_5pct": 50,
         "gold": 1000,
         "pet_cat_bonus": 10,
+        "plus_compound_treasure": 100
+      },
+      {
+        "all_three_total": 165,
+        "base_5pct": 75,
+        "gold": 1500,
+        "pet_cat_bonus": 15,
         "plus_compound_treasure": 150
       },
       {
-        "all_three_total": 240,
-        "base_10pct": 150,
-        "gold": 1500,
-        "pet_cat_bonus": 15,
-        "plus_compound_treasure": 225
-      },
-      {
-        "all_three_total": 320,
-        "base_10pct": 200,
+        "all_three_total": 220,
+        "base_5pct": 100,
         "gold": 2000,
         "pet_cat_bonus": 20,
-        "plus_compound_treasure": 300
+        "plus_compound_treasure": 200
       }
     ],
     "kill_gold_table": [
@@ -1758,45 +1758,45 @@
     ],
     "settle_scenarios": [
       {
-        "gold_after": 170,
+        "gold_after": 162,
         "gold_before": 100,
-        "net": 70,
+        "net": 62,
         "scenario": "PVE 第1回合 胜 (杀3怪)"
       },
       {
-        "gold_after": 605,
+        "gold_after": 577,
         "gold_before": 300,
-        "net": 305,
+        "net": 277,
         "scenario": "PVE 第13回合 胜 (杀8怪)"
       },
       {
-        "gold_after": 456,
+        "gold_after": 435,
         "gold_before": 300,
-        "net": 156,
+        "net": 135,
         "scenario": "PVE 第13回合 败 (杀5怪)"
       },
       {
-        "gold_after": 495,
+        "gold_after": 472,
         "gold_before": 300,
-        "net": 195,
+        "net": 172,
         "scenario": "Boss 第10回合 胜"
       },
       {
-        "gold_after": 467,
+        "gold_after": 446,
         "gold_before": 300,
-        "net": 167,
+        "net": 146,
         "scenario": "Boss 第10回合 败(Boss剩30%)"
       },
       {
-        "gold_after": 682,
+        "gold_after": 651,
         "gold_before": 400,
-        "net": 282,
+        "net": 251,
         "scenario": "PVP 第12回合 胜(击杀120)"
       },
       {
-        "gold_after": 561,
+        "gold_after": 535,
         "gold_before": 400,
-        "net": 161,
+        "net": 135,
         "scenario": "PVP 第12回合 败"
       }
     ]
