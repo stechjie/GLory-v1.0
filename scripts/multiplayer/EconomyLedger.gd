@@ -44,6 +44,7 @@ static func new_prep(start_gold: int) -> Dictionary:
 		"last_harvest_round": -1,
 		"last_harvest_gain": 0,
 		"stone_draw_used_round": -1,
+		"stone_draw_count": 0,
 		"four_star_uids": {},   # uid -> {unit_id, round}：四星血统，见 _use_upgrade_stone
 		"revision": 0,
 		"shop": {"offer_id": "", "offers": [], "sold": [], "refresh_uses": 0},
@@ -298,11 +299,13 @@ static func _draw_upgrade_stone(prep: Dictionary, _payload: Dictionary, ctx: Dic
 	var round_index := int(ctx.get("round_index", 0))
 	if int(prep.get("stone_draw_used_round", -1)) == round_index:
 		return {"ok": false, "error": "already_used"}
+	var draw_count := maxi(0, int(prep.get("stone_draw_count", 0)))
+	var cost := CarrotEconomy.stone_cost_for_draw(draw_count)
 	var carrots := int(prep.get("carrots", 0))
-	if carrots < CarrotEconomy.STONE_COST:
+	if carrots < cost:
 		return {"ok": false, "error": "not_enough_carrots"}
 	var capacity := CarrotEconomy.capacity_for_spent(int(prep.get("merc_carrots_spent_total", 0)))
-	if capacity < CarrotEconomy.STONE_COST:
+	if capacity < cost:
 		return {"ok": false, "error": "capacity_too_low"}
 	var team_stones: Dictionary = ctx.get("team_stones", {})
 	if team_stones.is_empty():
@@ -311,13 +314,16 @@ static func _draw_upgrade_stone(prep: Dictionary, _payload: Dictionary, ctx: Dic
 	if roll < 0.0 or roll >= 1.0:
 		return {"ok": false, "error": "no_roll"}
 	var stone_type := CarrotEconomy.draw_type_from_roll(roll)
-	prep["carrots"] = carrots - CarrotEconomy.STONE_COST
+	prep["carrots"] = carrots - cost
 	prep["stone_draw_used_round"] = round_index
+	prep["stone_draw_count"] = draw_count + 1
 	team_stones[stone_type] = int(team_stones.get(stone_type, 0)) + 1
 	return {"ok": true, "result": {
 		"stone_type": stone_type,
+		"cost": cost,
 		"carrots": int(prep["carrots"]),
 		"stone_draw_used_round": round_index,
+		"stone_draw_count": int(prep["stone_draw_count"]),
 		"team_upgrade_stones": team_stones.duplicate(true),
 	}}
 

@@ -36,6 +36,7 @@ var harvest_tech_level := 0
 var merc_carrots_spent_total := 0
 var last_harvest_round := -1
 var stone_draw_used_round := -1
+var stone_draw_count := 0
 
 # --- 棋子唯一标识（P3 血统）---------------------------------------------------
 # 每一枚玩家棋子从买入那一刻起带一个本局唯一的 uid，合成时由存活的那一枚继承，
@@ -114,6 +115,7 @@ func reset_run() -> void:
 	merc_carrots_spent_total = 0
 	last_harvest_round = -1
 	stone_draw_used_round = -1
+	stone_draw_count = 0
 	team_upgrade_stones = CarrotEconomyRules.empty_stones()
 	new_run_nonce()
 	board_slots.resize(GameConstants.CELL_COUNT)
@@ -193,6 +195,9 @@ func record_merc_carrot_spend(amount: int) -> void:
 
 func can_draw_upgrade_stone(round_number: int) -> bool:
 	return stone_draw_used_round != round_number
+
+func upgrade_stone_draw_cost() -> int:
+	return CarrotEconomyRules.stone_cost_for_draw(stone_draw_count)
 
 func apply_team_stone(stone_type: String) -> void:
 	if not CarrotEconomyRules.valid_stone_type(stone_type):

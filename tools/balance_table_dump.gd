@@ -643,12 +643,12 @@ func _dump_economy() -> Dictionary:
 # ---------------------------------------------------------------- 萝卜
 func _dump_carrot() -> Dictionary:
 	var tech := []
-	for lv in range(0, CarrotEconomy.MAX_HARVEST_TECH_LEVEL + 1):
+	for lv in range(0, 10):
 		tech.append({"level": lv, "upgrade_price": CarrotEconomy.tech_price(lv),
 			"production_only_tech": CarrotEconomy.production_for_tech(lv)})
 	var farm := []
-	for lv in range(0, 6):
-		var spent: int = int(CarrotEconomy.FARM_THRESHOLDS[lv])
+	for lv in range(0, 12):
+		var spent := CarrotEconomy.farm_threshold_for_level(lv)
 		farm.append({
 			"level": CarrotEconomy.farm_level_for_spent(spent),
 			"spent_threshold": spent,
@@ -671,7 +671,9 @@ func _dump_carrot() -> Dictionary:
 		four.append({"tier": tier, "gold": CarrotEconomy.four_star_gold(tier)})
 	return {
 		"BASE_PRODUCTION": CarrotEconomy.BASE_PRODUCTION,
-		"STONE_COST": CarrotEconomy.STONE_COST,
+		"STONE_FIRST_COST": CarrotEconomy.STONE_FIRST_COST,
+		"STONE_COST_INCREMENT": CarrotEconomy.STONE_COST_INCREMENT,
+		"stone_draw_prices": [CarrotEconomy.stone_cost_for_draw(0), CarrotEconomy.stone_cost_for_draw(1), CarrotEconomy.stone_cost_for_draw(2)],
 		"STONE_DRAW_PER_ROUND": CarrotEconomy.STONE_DRAW_PER_ROUND,
 		"STONE_TYPES": CarrotEconomy.STONE_TYPES,
 		"harvest_tech": tech,

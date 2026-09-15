@@ -265,6 +265,7 @@ func _write_now() -> void:
 		"merc_carrots_spent_total": GameState.merc_carrots_spent_total,
 		"last_harvest_round": GameState.last_harvest_round,
 		"stone_draw_used_round": GameState.stone_draw_used_round,
+		"stone_draw_count": GameState.stone_draw_count,
 		"team_upgrade_stones": GameState.team_upgrade_stones,
 		# 棋子的 uid 键随 board_slots/bench_slots 整块序列化，这里只需要存计数器本身。
 		"run_nonce": GameState.run_nonce,
@@ -306,12 +307,13 @@ func load_run() -> bool:
 	GameState.enemy_formation_hp = int(parsed.get("enemy_formation_hp", GameState.START_FORMATION_HP))
 	GameState.gold = int(parsed.get("gold", GameState.START_GOLD))
 	GameState.carrots = maxi(0, int(parsed.get("carrots", 0)))
-	GameState.harvest_tech_level = clampi(int(parsed.get("harvest_tech_level", 0)), 0, CarrotEconomy.MAX_HARVEST_TECH_LEVEL)
+	GameState.harvest_tech_level = maxi(0, int(parsed.get("harvest_tech_level", 0)))
 	GameState.merc_carrots_spent_total = maxi(0, int(parsed.get("merc_carrots_spent_total", 0)))
 	# Old saves have no carrot round marker. Treat the saved round as already
 	# harvested so migration cannot grant a retroactive first-round payout.
 	GameState.last_harvest_round = int(parsed.get("last_harvest_round", GameState.round_index))
 	GameState.stone_draw_used_round = int(parsed.get("stone_draw_used_round", -1))
+	GameState.stone_draw_count = maxi(0, int(parsed.get("stone_draw_count", 0)))
 	GameState.team_upgrade_stones = CarrotEconomy.empty_stones()
 	var saved_stones: Variant = parsed.get("team_upgrade_stones", {})
 	if typeof(saved_stones) == TYPE_DICTIONARY:

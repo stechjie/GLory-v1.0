@@ -190,7 +190,7 @@ func refresh() -> void:
 	if _summary == null:
 		return
 	var next_threshold := GameState.carrot_next_threshold()
-	var threshold_text := "已满级" if next_threshold < 0 else "%d / 下一级 %d" % [GameState.merc_carrots_spent_total, next_threshold]
+	var threshold_text := "%d / 下一级 %d" % [GameState.merc_carrots_spent_total, next_threshold]
 	# 「下回合 +N」必须显示**实际到账**，不是原始产量。采集是
 	# `gained = min(产量, 上限 - 当前)`，满仓时到账 0、多出来的部分直接丢弃。
 	# 此前这里显示的是 carrot_production()（原始产量），于是满仓玩家看到
@@ -227,14 +227,14 @@ func refresh() -> void:
 		GameState.carrot_farm_level() + 1, threshold_text, GameState.carrot_camp_income(),
 		overflow_hint, diag]
 	var tech_price := CarrotEconomy.tech_price(GameState.harvest_tech_level)
-	_tech_button.text = "采集科技 Lv.%d → %s" % [GameState.harvest_tech_level,
-		("满级" if tech_price < 0 else "%d 金" % tech_price)]
+	_tech_button.text = "采集科技 Lv.%d → %d 金" % [GameState.harvest_tech_level + 1, tech_price]
 	var carrot_online_blocked := NetworkService.team_active and not NetworkService.is_host and not NetworkService.carrot_economy_enabled()
 	_tech_button.tooltip_text = "下一回合解锁升级" if GameState.round_index < 2 else ""
-	_tech_button.disabled = GameState.round_index < 2 or tech_price < 0 or GameState.gold < tech_price or carrot_online_blocked
+	_tech_button.disabled = GameState.round_index < 2 or GameState.gold < tech_price or carrot_online_blocked
 	var draw_available := GameState.can_draw_upgrade_stone(GameState.round_index)
-	var draw_ready := GameState.carrots >= CarrotEconomy.STONE_COST and GameState.carrot_capacity() >= CarrotEconomy.STONE_COST and draw_available
-	_draw_button.text = "本回合已抽取" if not draw_available else ("抽升级石（50萝卜）" if draw_ready else "抽石：4级田/50萝卜/每回合1次")
+	var stone_cost := GameState.upgrade_stone_draw_cost()
+	var draw_ready := GameState.carrots >= stone_cost and GameState.carrot_capacity() >= stone_cost and draw_available
+	_draw_button.text = "本回合已抽取" if not draw_available else ("抽升级石（%d萝卜）" % stone_cost if draw_ready else "抽石：容量%d/每回合1次" % stone_cost)
 	_draw_button.disabled = not draw_ready or carrot_online_blocked
 	_refresh_four_star_list()
 	_stones.text = "队伍升级石：天 %d · 地 %d · 人 %d" % [

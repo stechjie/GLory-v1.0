@@ -1712,6 +1712,7 @@ func _build_economy_state(room: Dictionary, slot: int) -> Dictionary:
 		"last_harvest_round": int(prep.get("last_harvest_round", -1)),
 		"last_harvest_gain": int(prep.get("last_harvest_gain", 0)),
 		"stone_draw_used_round": int(prep.get("stone_draw_used_round", -1)),
+		"stone_draw_count": maxi(0, int(prep.get("stone_draw_count", 0))),
 		"team_upgrade_stones": _room_team_stones(room, slot).duplicate(true),
 		"shop": {
 			"offer_id": str(shop.get("offer_id", "")),
@@ -3067,6 +3068,7 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 			"merc_carrots_spent_total": int(_room_prep(room, slot).get("merc_carrots_spent_total", 0)),
 			"last_harvest_round": int(_room_prep(room, slot).get("last_harvest_round", -1)),
 			"stone_draw_used_round": int(_room_prep(room, slot).get("stone_draw_used_round", -1)),
+			"stone_draw_count": maxi(0, int(_room_prep(room, slot).get("stone_draw_count", 0))),
 			"team_upgrade_stones": _room_team_stones(room, slot).duplicate(true),
 			"pve_completed": int(room.get("pve_completed", 0)),
 			"boss_completed": int(room.get("boss_completed", 0)),
@@ -4589,11 +4591,12 @@ func _apply_carrot_state(state: Dictionary) -> void:
 	if int(state.get("last_harvest_round", GameState.last_harvest_round)) < GameState.last_harvest_round:
 		return
 	GameState.carrots = maxi(0, int(state.get("carrots", GameState.carrots)))
-	GameState.harvest_tech_level = clampi(int(state.get("harvest_tech_level", GameState.harvest_tech_level)), 0, CarrotEconomy.MAX_HARVEST_TECH_LEVEL)
+	GameState.harvest_tech_level = maxi(0, int(state.get("harvest_tech_level", GameState.harvest_tech_level)))
 	GameState.merc_carrots_spent_total = maxi(0, int(state.get("merc_carrots_spent_total", GameState.merc_carrots_spent_total)))
 	GameState.last_harvest_round = int(state.get("last_harvest_round", GameState.last_harvest_round))
 	last_carrot_harvest_gain = maxi(0, int(state.get("last_harvest_gain", 0)))
 	GameState.stone_draw_used_round = int(state.get("stone_draw_used_round", GameState.stone_draw_used_round))
+	GameState.stone_draw_count = maxi(0, int(state.get("stone_draw_count", GameState.stone_draw_count)))
 	var stones: Variant = state.get("team_upgrade_stones", {})
 	if typeof(stones) == TYPE_DICTIONARY:
 		GameState.team_upgrade_stones = (stones as Dictionary).duplicate(true)
@@ -4649,6 +4652,7 @@ func _apply_carrot_receipt(receipt: Dictionary) -> void:
 		"draw_upgrade_stone":
 			GameState.carrots = int(result.get("carrots", GameState.carrots))
 			GameState.stone_draw_used_round = int(result.get("stone_draw_used_round", GameState.stone_draw_used_round))
+			GameState.stone_draw_count = maxi(0, int(result.get("stone_draw_count", GameState.stone_draw_count)))
 			var stones: Variant = result.get("team_upgrade_stones", {})
 			if typeof(stones) == TYPE_DICTIONARY:
 				GameState.team_upgrade_stones = (stones as Dictionary).duplicate(true)

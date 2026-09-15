@@ -24,6 +24,8 @@ const EconomyLedgerScript := preload("res://scripts/multiplayer/EconomyLedger.gd
 
 const CHECK_NAME := "carrot_economy"
 const FINAL_ROUND := 21
+const TECH_LEVELS_TO_CHECK := [0, 1, 2, 3, 4, 5, 6, 7, 12]
+const FARM_LEVELS_TO_CHECK := [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
 var _h: CheckHarness
 
@@ -35,6 +37,7 @@ func _ready() -> void:
 	_case_idempotent()
 	_case_client_server_parity()
 	_case_capacity_fillable()
+	_case_stone_price_curve()
 	_case_stone_reachable()
 	_case_four_star_upgrade()
 	await _case_harvest_owner()
@@ -52,19 +55,38 @@ func _case_table_shape() -> void:
 		"FARM_INCOME 长度 %d != FARM_THRESHOLDS 长度 %d" % [CarrotEconomy.FARM_INCOME.size(), n])
 	_h.expect(CarrotEconomy.FARM_PRODUCTION.size() == n, "farm_table_length",
 		"FARM_PRODUCTION 长度 %d != FARM_THRESHOLDS 长度 %d" % [CarrotEconomy.FARM_PRODUCTION.size(), n])
-	_h.expect(CarrotEconomy.HARVEST_TECH_BONUSES.size() == CarrotEconomy.MAX_HARVEST_TECH_LEVEL + 1,
-		"tech_table_length", "HARVEST_TECH_BONUSES 长度 %d != MAX_HARVEST_TECH_LEVEL+1 = %d"
-			% [CarrotEconomy.HARVEST_TECH_BONUSES.size(), CarrotEconomy.MAX_HARVEST_TECH_LEVEL + 1])
-	_h.expect(CarrotEconomy.HARVEST_TECH_PRICES.size() == CarrotEconomy.MAX_HARVEST_TECH_LEVEL,
-		"tech_table_length", "HARVEST_TECH_PRICES 长度 %d != MAX_HARVEST_TECH_LEVEL = %d"
-			% [CarrotEconomy.HARVEST_TECH_PRICES.size(), CarrotEconomy.MAX_HARVEST_TECH_LEVEL])
+	_h.expect(CarrotEconomy.HARVEST_TECH_PRODUCTION.size() == CarrotEconomy.HARVEST_TECH_PRICES.size(),
+		"tech_table_length", "HARVEST_TECH_PRODUCTION 长度 %d != HARVEST_TECH_PRICES 长度 %d"
+			% [CarrotEconomy.HARVEST_TECH_PRODUCTION.size(), CarrotEconomy.HARVEST_TECH_PRICES.size()])
 
 	_assert_monotonic(CarrotEconomy.FARM_THRESHOLDS, "FARM_THRESHOLDS")
 	_assert_monotonic(CarrotEconomy.FARM_CAPACITIES, "FARM_CAPACITIES")
 	_assert_monotonic(CarrotEconomy.FARM_INCOME, "FARM_INCOME")
 	_assert_monotonic(CarrotEconomy.FARM_PRODUCTION, "FARM_PRODUCTION")
-	_assert_monotonic(CarrotEconomy.HARVEST_TECH_BONUSES, "HARVEST_TECH_BONUSES")
+	_assert_monotonic(CarrotEconomy.HARVEST_TECH_PRODUCTION, "HARVEST_TECH_PRODUCTION")
 	_assert_monotonic(CarrotEconomy.HARVEST_TECH_PRICES, "HARVEST_TECH_PRICES")
+	var expected_production := [3, 6, 9, 13, 25, 35, 45, 55, 105]
+	for i in TECH_LEVELS_TO_CHECK.size():
+		var level := int(TECH_LEVELS_TO_CHECK[i])
+		_h.expect(CarrotEconomy.production_for_tech(level) == int(expected_production[i]),
+			"tech_production_curve", "采集 Lv.%d 产量 %d，应为 %d"
+				% [level + 1, CarrotEconomy.production_for_tech(level), int(expected_production[i])])
+		_h.expect(CarrotEconomy.tech_price(level) == (100 if level == 0 else 200 if level == 1 else 400 if level == 2 else 800 if level == 3 else 1600),
+			"tech_price_curve", "采集 Lv.%d 升级价格 %d 不符合 100/200/400/800/1600 固定曲线"
+				% [level + 1, CarrotEconomy.tech_price(level)])
+	var expected_farm := [
+		{"level": 6, "threshold": 110, "capacity": 220, "production": 14, "income": 110},
+		{"level": 7, "threshold": 155, "capacity": 300, "production": 16, "income": 120},
+		{"level": 8, "threshold": 210, "capacity": 390, "production": 18, "income": 130},
+	]
+	for row_value in expected_farm:
+		var row: Dictionary = row_value
+		var farm_level := int(row["level"])
+		_h.expect(CarrotEconomy.farm_threshold_for_level(farm_level) == int(row["threshold"])
+			and CarrotEconomy.farm_capacity_for_level(farm_level) == int(row["capacity"])
+			and CarrotEconomy.farm_production_for_level(farm_level) == int(row["production"])
+			and CarrotEconomy.farm_income_for_level(farm_level) == int(row["income"]),
+			"farm_repeat_curve", "萝卜田 Lv.%d 的延伸数值不符合已确认曲线" % [farm_level + 1])
 
 
 func _assert_monotonic(table: Array, label: String) -> void:
@@ -84,9 +106,9 @@ func _assert_monotonic(table: Array, label: String) -> void:
 # 面板的「下回合 +N」也读这个函数（CarrotCampPanel.refresh 拿它做无副作用预演），
 # 所以这条同时守住了显示与实发一致。
 func _case_harvest_formula() -> void:
-	for tech in range(0, CarrotEconomy.MAX_HARVEST_TECH_LEVEL + 1):
-		for level in CarrotEconomy.FARM_THRESHOLDS.size():
-			var spent := int(CarrotEconomy.FARM_THRESHOLDS[level])
+	for tech in TECH_LEVELS_TO_CHECK:
+		for level in FARM_LEVELS_TO_CHECK:
+			var spent := CarrotEconomy.farm_threshold_for_level(level)
 			var capacity := CarrotEconomy.capacity_for_spent(spent)
 			var production := CarrotEconomy.total_production(tech, spent)
 			# 空仓、半仓、差一格满、正好满、以及越界的脏值
@@ -148,9 +170,9 @@ func _case_idempotent() -> void:
 # 它们对同一输入必须给出**逐字段相同**的结果 —— 一旦分叉，房主和客机会拿到
 # 不同数量的萝卜，而且没有任何报错。
 func _case_client_server_parity() -> void:
-	for tech in range(0, CarrotEconomy.MAX_HARVEST_TECH_LEVEL + 1):
-		for level in CarrotEconomy.FARM_THRESHOLDS.size():
-			var spent := int(CarrotEconomy.FARM_THRESHOLDS[level])
+	for tech in TECH_LEVELS_TO_CHECK:
+		for level in FARM_LEVELS_TO_CHECK:
+			var spent := CarrotEconomy.farm_threshold_for_level(level)
 			GameState.reset_run()
 			GameState.harvest_tech_level = tech
 			GameState.merc_carrots_spent_total = spent
@@ -180,15 +202,15 @@ func _case_client_server_parity() -> void:
 
 
 # --- 5. 容量必须填得满 ---------------------------------------------------------
-# 每一级萝卜田的容量，在**不买任何采集科技**（tech 0，最保守）的前提下，
-# 必须能在一局 21 回合之内装满。装不满 = 那一级的容量是纯装饰，玩家花萝卜
-# 升上去却什么都没得到，而且界面上完全看不出来。
+# 可在21回合内自然达到的萝卜田（Lv.1-Lv.9），在**不买任何采集科技**
+# （tech 0，最保守）的前提下必须能装满。无限延伸的高等级需要对应的采集
+# 科技支撑，不能再拿“所有无限等级都必须在21回合装满”作无意义的断言。
 #
 # 这条正是 FARM_PRODUCTION 存在的理由：加它之前 Lv6 是「容量 150 / 产量 3」，
 # 要 50 回合才满，是这张表里最明显的死数值。
 func _case_capacity_fillable() -> void:
-	for level in CarrotEconomy.FARM_THRESHOLDS.size():
-		var spent := int(CarrotEconomy.FARM_THRESHOLDS[level])
+	for level in range(0, 9):
+		var spent := CarrotEconomy.farm_threshold_for_level(level)
 		var capacity := CarrotEconomy.capacity_for_spent(spent)
 		var production := CarrotEconomy.total_production(0, spent)
 		if not _h.expect(production > 0, "zero_production",
@@ -203,22 +225,30 @@ func _case_capacity_fillable() -> void:
 			_h.item()
 	# 把各级的装满耗时打出来，改表时一眼能看出节奏有没有走形。
 	var shape: Array[String] = []
-	for level in CarrotEconomy.FARM_THRESHOLDS.size():
-		var spent2 := int(CarrotEconomy.FARM_THRESHOLDS[level])
+	for level in range(0, 9):
+		var spent2 := CarrotEconomy.farm_threshold_for_level(level)
 		var cap2 := CarrotEconomy.capacity_for_spent(spent2)
 		var prod2 := CarrotEconomy.total_production(0, spent2)
 		shape.append("Lv%d %d/%d=%d回合" % [level + 1, cap2, prod2, int(ceil(float(cap2) / float(prod2)))])
 	_h.note("装满耗时（采集科技 0 级）：" + " · ".join(shape))
 
 
-# --- 6. 升级石可达性 -----------------------------------------------------------
-# 石头价必须小于等于某一级萝卜田的容量，否则玩家永远存不到那么多萝卜，
-# 升级石会变成一条无法触发的死内容 —— 而且界面上看不出来。
+# --- 6. 升级石价格与可达性 -----------------------------------------------------
+func _case_stone_price_curve() -> void:
+	for draws_completed in [0, 1, 2, 6]:
+		var expected := 50 + draws_completed * 20
+		_h.expect(CarrotEconomy.stone_cost_for_draw(draws_completed) == expected,
+			"stone_price_curve", "个人第%d次抽取价格 %d，应为 %d"
+				% [draws_completed + 1, CarrotEconomy.stone_cost_for_draw(draws_completed), expected])
+
+
+# 第一颗石头价必须小于等于某一级萝卜田的容量，否则玩家永远存不到第一笔成本，
+# 升级石会变成一条无法触发的死内容。之后的个人递增价格由农田延伸容量承接。
 func _case_stone_reachable() -> void:
 	var max_capacity := 0
 	var first_level := -1
-	for level in CarrotEconomy.FARM_CAPACITIES.size():
-		var cap := int(CarrotEconomy.FARM_CAPACITIES[level])
+	for level in range(0, 9):
+		var cap := CarrotEconomy.farm_capacity_for_level(level)
 		max_capacity = maxi(max_capacity, cap)
 		if first_level < 0 and cap >= CarrotEconomy.STONE_COST:
 			first_level = level + 1
@@ -228,9 +258,9 @@ func _case_stone_reachable() -> void:
 		return
 	_h.note("升级石（%d 萝卜）最早在萝卜田 Lv%d 可存下" % [CarrotEconomy.STONE_COST, first_level])
 	# 1 级田存不下石头是有意设计（逼玩家先花萝卜升级），这里只登记不失败。
-	if int(CarrotEconomy.FARM_CAPACITIES[0]) < CarrotEconomy.STONE_COST:
+	if CarrotEconomy.farm_capacity_for_level(0) < CarrotEconomy.STONE_COST:
 		_h.note("1 级田容量 %d < 石头价 %d：不花萝卜升级就永远抽不到石头，UI 必须讲清楚"
-			% [int(CarrotEconomy.FARM_CAPACITIES[0]), CarrotEconomy.STONE_COST])
+			% [CarrotEconomy.farm_capacity_for_level(0), CarrotEconomy.STONE_COST])
 
 
 # --- 7. 四星升级 ---------------------------------------------------------------

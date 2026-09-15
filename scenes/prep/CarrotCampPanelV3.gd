@@ -198,7 +198,7 @@ func _build_camp_page() -> Control:
 	_tech_level = _label("采集等级 · 0", 14, GOLD)
 	tech_titles.add_child(_tech_level)
 	tech_titles.add_child(_label("提升采集", 22, TEXT))
-	tech_titles.add_child(_label("每回合萝卜产量", 13, MUTED))
+	tech_titles.add_child(_label("采集基础产量", 13, MUTED))
 	var yield_row := HBoxContainer.new()
 	yield_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	yield_row.custom_minimum_size.y = 76
@@ -352,58 +352,51 @@ func refresh() -> void:
 	_carrot_balance.text = str(GameState.carrots)
 	_carrot_capacity.text = "/ %d" % capacity
 	var level := GameState.carrot_farm_level()
-	var max_farm := level >= CarrotEconomy.FARM_THRESHOLDS.size() - 1
 	_farm_level.text = "营地等级 · %d" % (level + 1)
-	if max_farm:
-		_farm_need.text = "萝卜田已达到最高等级"
-		_farm_progress.value = 100
-		_farm_next_capacity.text = "MAX"
-		_farm_next_production.text = "MAX"
-		_farm_next_income.text = "MAX"
-	else:
-		var current_threshold := int(CarrotEconomy.FARM_THRESHOLDS[level])
-		var next_threshold := int(CarrotEconomy.FARM_THRESHOLDS[level + 1])
-		var spent_in_level := GameState.merc_carrots_spent_total - current_threshold
-		var segment := maxi(1, next_threshold - current_threshold)
-		_farm_progress.value = 100.0 * float(spent_in_level) / float(segment)
-		_farm_need.text = "距离 Lv.%d · 还需消耗 %d 萝卜" % [level + 2, next_threshold - GameState.merc_carrots_spent_total]
-		_farm_next_capacity.text = "%d → %d" % [capacity, int(CarrotEconomy.FARM_CAPACITIES[level + 1])]
-		_farm_next_production.text = "%d → %d" % [production, CarrotEconomy.total_production(GameState.harvest_tech_level, next_threshold)]
-		_farm_next_income.text = "%d → %d G / 场" % [GameState.carrot_camp_income(), int(CarrotEconomy.FARM_INCOME[level + 1])]
+	var current_threshold := CarrotEconomy.farm_threshold_for_level(level)
+	var next_level := level + 1
+	var next_threshold := CarrotEconomy.farm_threshold_for_level(next_level)
+	var spent_in_level := GameState.merc_carrots_spent_total - current_threshold
+	var segment := maxi(1, next_threshold - current_threshold)
+	_farm_progress.value = 100.0 * float(spent_in_level) / float(segment)
+	_farm_need.text = "距离 Lv.%d · 还需消耗 %d 萝卜" % [next_level + 1, next_threshold - GameState.merc_carrots_spent_total]
+	_farm_next_capacity.text = "%d → %d" % [capacity, CarrotEconomy.farm_capacity_for_level(next_level)]
+	_farm_next_production.text = "%d → %d" % [production, CarrotEconomy.total_production(GameState.harvest_tech_level, next_threshold)]
+	_farm_next_income.text = "%d → %d G / 场" % [GameState.carrot_camp_income(), CarrotEconomy.farm_income_for_level(next_level)]
 
 	var tech_level := GameState.harvest_tech_level
 	var price := CarrotEconomy.tech_price(tech_level)
-	var tech_maxed := price < 0
-	var next_production := production if tech_maxed else CarrotEconomy.total_production(tech_level + 1, GameState.merc_carrots_spent_total)
-	_tech_level.text = "采集等级 · %d" % tech_level
-	_tech_current.text = str(production)
-	_tech_next.text = "MAX" if tech_maxed else str(next_production)
-	_tech_button.text = "已满级" if tech_maxed else "升级采集\n%d 金币" % price
+	var tech_production := CarrotEconomy.production_for_tech(tech_level)
+	var next_production := CarrotEconomy.production_for_tech(tech_level + 1)
+	var farm_bonus := CarrotEconomy.farm_production_bonus(GameState.merc_carrots_spent_total)
+	_tech_level.text = "采集等级 · %d" % (tech_level + 1)
+	_tech_current.text = str(tech_production)
+	_tech_next.text = str(next_production)
+	_tech_button.text = "升级采集\n%d 金币" % price
 	var online_blocked := NetworkService.team_active and not NetworkService.is_host and not NetworkService.carrot_economy_enabled()
-	_tech_button.disabled = GameState.round_index < 2 or _action_locked or tech_maxed or (not tech_maxed and GameState.gold < price) or online_blocked
+	_tech_button.disabled = GameState.round_index < 2 or _action_locked or GameState.gold < price or online_blocked
 	if GameState.round_index < 2:
 		_tech_note.text = "下一回合解锁升级"
-	elif tech_maxed:
-		_tech_note.text = "采集已达到最高等级"
 	elif GameState.gold < price:
 		_tech_note.text = "金币不足 · 还差 %d" % (price - GameState.gold)
 	elif online_blocked:
 		_tech_note.text = "等待房主开启联机萝卜系统"
 	else:
-		_tech_note.text = "升级后，下回合生效"
+		_tech_note.text = "农田额外 +%d · 升级下回合生效" % farm_bonus if farm_bonus > 0 else "升级后，下回合生效"
 	_harvest_footer.text = "下回合可收获 %d 萝卜%s" % [actual_gain, " · 容量将满" if overflow > 0 else ""]
 	_harvest_footer.modulate = Color(1.0,0.66,0.42) if overflow > 0 else Color.WHITE
 	_gold_footer.text = "持有金币 %d" % GameState.gold
 
 	var draw_available := GameState.can_draw_upgrade_stone(GameState.round_index)
-	var unlocked := capacity >= CarrotEconomy.STONE_COST
+	var stone_cost := GameState.upgrade_stone_draw_cost()
+	var unlocked := capacity >= stone_cost
 	_draw_status.text = "本回合剩余 1 次" if draw_available else "本回合已抽取 · 下回合恢复"
-	_draw_button.text = "抽取一次\n%d 萝卜" % CarrotEconomy.STONE_COST if draw_available else "下回合恢复"
-	_draw_button.disabled = _action_locked or not draw_available or not unlocked or GameState.carrots < CarrotEconomy.STONE_COST or online_blocked
+	_draw_button.text = "抽取一次\n%d 萝卜" % stone_cost if draw_available else "下回合恢复"
+	_draw_button.disabled = _action_locked or not draw_available or not unlocked or GameState.carrots < stone_cost or online_blocked
 	if not unlocked:
-		_draw_result.text = "萝卜田达到 Lv.4 后解锁"
-	elif GameState.carrots < CarrotEconomy.STONE_COST and draw_available:
-		_draw_result.text = "萝卜不足 · 还差 %d" % (CarrotEconomy.STONE_COST - GameState.carrots)
+		_draw_result.text = "容量不足 · 需要储存 %d 萝卜" % stone_cost
+	elif GameState.carrots < stone_cost and draw_available:
+		_draw_result.text = "萝卜不足 · 还差 %d" % (stone_cost - GameState.carrots)
 	elif draw_available and _stone_art.texture == TEX_STONE_UNKNOWN:
 		_draw_result.text = "随机获得天、地、人石之一"
 	var changed := ""

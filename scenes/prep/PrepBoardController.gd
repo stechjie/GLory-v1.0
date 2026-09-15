@@ -206,11 +206,12 @@ func request_upgrade_stone_draw() -> void:
 	if not GameState.can_draw_upgrade_stone(GameState.round_index):
 		show_message("本回合已经抽取过升级石")
 		return
-	if GameState.carrots < CarrotEconomy.STONE_COST:
-		show_message("萝卜不足：需要50萝卜")
+	var stone_cost := GameState.upgrade_stone_draw_cost()
+	if GameState.carrots < stone_cost:
+		show_message("萝卜不足：需要%d萝卜" % stone_cost)
 		return
-	if GameState.carrot_capacity() < CarrotEconomy.STONE_COST:
-		show_message("萝卜田4级后才能储存50萝卜")
+	if GameState.carrot_capacity() < stone_cost:
+		show_message("萝卜田容量不足：需要能储存%d萝卜" % stone_cost)
 		return
 	if NetworkService.team_active and not NetworkService.is_host:
 		# 与 request_carrot_harvest_upgrade / _hire_mercenary_to_slot 同一道判据。
@@ -222,8 +223,9 @@ func request_upgrade_stone_draw() -> void:
 			return
 		NetworkService.request_economy("draw_upgrade_stone", {})
 		return
-	GameState.carrots -= CarrotEconomy.STONE_COST
+	GameState.carrots -= stone_cost
 	GameState.stone_draw_used_round = GameState.round_index
+	GameState.stone_draw_count += 1
 	var stone_type := CarrotEconomy.draw_type_from_roll(randf())
 	GameState.apply_team_stone(stone_type)
 	SaveManager.save_run()

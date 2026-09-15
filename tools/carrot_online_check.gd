@@ -113,7 +113,7 @@ func _case_room_state_carries_carrots() -> void:
 			"economy.carrot_authoritative=false —— 客户端 _apply_carrot_state() 会整段跳过"):
 		return
 	for key in ["carrots", "harvest_tech_level", "merc_carrots_spent_total",
-			"last_harvest_round", "stone_draw_used_round", "team_upgrade_stones"]:
+			"last_harvest_round", "stone_draw_used_round", "stone_draw_count", "team_upgrade_stones"]:
 		_h.expect(state.has(key), "economy_state_missing_field",
 			"room_state.economy 缺字段 %s —— 客机面板的这一格会一直显示初始值" % key)
 	_h.expect(int(state.get("carrots", -1)) > 0, "server_not_harvesting",
@@ -294,23 +294,25 @@ func _case_draw_stone_online() -> void:
 	# 攒够钱、把萝卜田顶到能存下 50 萝卜的那一级
 	var need_spent := 0
 	for level in CarrotEconomy.FARM_THRESHOLDS.size():
-		if int(CarrotEconomy.FARM_CAPACITIES[level]) >= CarrotEconomy.STONE_COST:
-			need_spent = int(CarrotEconomy.FARM_THRESHOLDS[level])
+		if CarrotEconomy.farm_capacity_for_level(level) >= CarrotEconomy.STONE_FIRST_COST:
+			need_spent = CarrotEconomy.farm_threshold_for_level(level)
 			break
 	prep["merc_carrots_spent_total"] = need_spent
-	prep["carrots"] = CarrotEconomy.STONE_COST
+	prep["carrots"] = CarrotEconomy.stone_cost_for_draw(0)
 
 	var receipt: Dictionary = NetworkService._room_apply_economy(
 		room, MY_SLOT, "draw_upgrade_stone", {})
 	receipt["action"] = "draw_upgrade_stone"
 	if not _h.expect(bool(receipt.get("ok", false)), "draw_rejected",
 			"萝卜够 %d、田到 Lv%d，抽升级石仍被拒：%s" % [
-				CarrotEconomy.STONE_COST,
+				CarrotEconomy.stone_cost_for_draw(0),
 				CarrotEconomy.farm_level_for_spent(need_spent) + 1,
 				str(receipt.get("error", "?")),
 			]):
 		return
 	var result: Dictionary = receipt.get("result", {})
+	_h.expect(int(result.get("cost", -1)) == 50, "first_draw_price_wrong",
+		"个人第一次抽石实际扣了 %d，应为 50" % int(result.get("cost", -1)))
 	var stone_type := str(result.get("stone_type", ""))
 	_h.expect(CarrotEconomy.STONE_TYPES.has(stone_type), "draw_bad_stone_type",
 		"回执里的石头种类是 %s，不在 %s 里" % [stone_type, str(CarrotEconomy.STONE_TYPES)])
@@ -331,12 +333,28 @@ func _case_draw_stone_online() -> void:
 			% [stone_type, int(GameState.team_upgrade_stones.get(stone_type, 0))])
 	_h.expect(GameState.stone_draw_used_round == 3, "draw_round_not_applied",
 		"回执 ok 但客户端 stone_draw_used_round 是 %d，应为 3" % GameState.stone_draw_used_round)
+	_h.expect(GameState.stone_draw_count == 1, "draw_count_not_applied",
+		"回执 ok 但客户端个人抽石计数是 %d，应为 1" % GameState.stone_draw_count)
 
 	# 每回合一次
-	prep["carrots"] = CarrotEconomy.STONE_COST
+	prep["carrots"] = CarrotEconomy.stone_cost_for_draw(1)
 	var again: Dictionary = NetworkService._room_apply_economy(room, MY_SLOT, "draw_upgrade_stone", {})
 	_h.expect(not bool(again.get("ok", false)), "draw_twice_in_one_round",
 		"同一回合抽了第二次升级石")
+
+	# 下一回合同一位玩家再抽，价格应从50升到70；石头仍进入队伍共享仓库。
+	room["round_index"] = 4
+	EconomyLedgerScript.reset_round(prep)
+	# 第一颗可在 Lv.4（容量60）抽到；第二颗70萝卜要求农田继续升到 Lv.5（容量90）。
+	prep["merc_carrots_spent_total"] = CarrotEconomy.farm_threshold_for_level(4)
+	prep["carrots"] = CarrotEconomy.stone_cost_for_draw(1)
+	var second: Dictionary = NetworkService._room_apply_economy(room, MY_SLOT, "draw_upgrade_stone", {})
+	_h.expect(bool(second.get("ok", false)), "second_draw_rejected",
+		"下一回合个人第二次抽石被拒：%s" % str(second.get("error", "?")))
+	var second_result: Dictionary = second.get("result", {})
+	_h.expect(int(second_result.get("cost", -1)) == 70 and int(second_result.get("stone_draw_count", -1)) == 2,
+		"second_draw_price_wrong", "第二次抽石的价格/计数应为70/2，实际为%d/%d"
+			% [int(second_result.get("cost", -1)), int(second_result.get("stone_draw_count", -1))])
 
 
 # --- 5. 四星升级：服务端权威 ------------------------------------------------------
