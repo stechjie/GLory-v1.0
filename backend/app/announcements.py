@@ -1,18 +1,26 @@
 """公告（docs/公告系统设计.md）。
 
-    管理员 ── Supabase 后台 ──> announcements 表 + Storage 公开桶里的图
-    本进程每 REFRESH_SEC 读一次表；图片第一次出现时取回、检查、按内容哈希存进 media_dir
+    管理员 ── Supabase 后台 ──> announcements 表 + Storage 公开桶里的原图
+    本进程每 REFRESH_SEC 读一次表；图片第一次出现时取回原图、转成 WebP、按内容哈希存进 media_dir
     玩家   ── GET /v1/announcements ──> 内存里的快照（不查库）
-    玩家   ── GET /media/<sha256>.<ext> ──> Caddy 直接给文件（deploy/Caddyfile）
+    玩家   ── GET /media/<sha256>.webp ──> Caddy 直接给文件（deploy/Caddyfile）
 
 ## 为什么图由服务器取回，而不是让手机去 Supabase 下载（2026-09-15 定）
 
   1. RFC 第三节第一条：Godot 永远不直连 Supabase。
   2. 玩家那边能不能连上 supabase.co 没人验证过；我们自己的域名能登录就能下图。
-  3. 取回时就能检查：太大、格式不对、尺寸离谱的图根本不发给玩家，
+  3. 取回时就能处理：格式不对、像素离谱的图根本不发给玩家，
      原因写回这一行的 problem 列 —— 管理员在后台刷新表格就看得到，不用翻服务器日志。
 
-## 文件名 = 内容的 SHA-256
+## 为什么服务器把图转成 WebP（2026-09-15 改）
+
+原来是「原样转发，超过 512 KB 就拒」。第一次实测管理员传的就是 2.1 MB 的 PNG ——
+手绘图存 PNG 本来就是两三 MB。放宽上限让玩家直接下 PNG 的话，下载量是 WebP 的六七倍，
+而且登录弹窗那一刻大家同时下，占的是和战斗服务器同一台机器的带宽。
+所以改成：**管理员传什么都尽量收，玩家下载的永远是转过的那份**（实测游戏手绘图 1600×800 约 265 KB）。
+长边超过 IMAGE_MAX_SIDE 的等比缩小，不再拒收。转出来的文件不带 EXIF（手机照片里的位置信息不会发出去）。
+
+## 文件名 = 转出来那份的 SHA-256
 
 同一个地址永远是同一张图，所以手机和 Caddy 可以永久缓存。
 代价：管理员在 Storage 里**覆盖同名文件**时这里发现不了 —— 每个路径只在第一次见到时取一次
@@ -34,10 +42,12 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import hashlib
+import io
 import logging
 import os
 import re
 import time
+import warnings
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,6 +55,7 @@ from urllib.parse import quote
 
 import asyncpg
 import httpx
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from app import db, realtime
 
@@ -68,12 +79,23 @@ STATUS_WITHDRAWN = "withdrawn"
 PUSH_TYPE = "announcement"
 
 # --- 图片规格 -------------------------------------------------------------------
-#
-# 与客户端 AnnouncementImages.MAX_BYTES / MAX_SIDE 一致（tools/announcement_check 钉着）。
-# 长边也要限：一张 4000×3000 的照片压到几百 KB，解码后照样要几十 MB 内存，低端安卓机会闪退。
-IMAGE_MAX_BYTES = 512 * 1024
+
+# 管理员能传多大的原图。只防误传视频、超大照片 —— 取回时边收边数，超了就停。
+UPLOAD_MAX_BYTES = 10 * 1024 * 1024
+# 原图最多多少像素。解码时每像素要 4 字节：1600 万像素 ≈ 64 MB 内存，而这台机器上还跑着战斗服务器。
+# 判的是文件头里写的尺寸，**超了就不解码**。
+UPLOAD_MAX_PIXELS = 16_000_000
+UPLOAD_FORMATS = ("PNG", "JPEG", "WEBP")
+# 转出来的图长边超过就等比缩小。与客户端 AnnouncementImages.MAX_SIDE 一致（tools/announcement_check 钉着）：
+# 一张 4000×3000 的图解码后要几十 MB 内存，低端安卓机会闪退。
 IMAGE_MAX_SIDE = 2048
 IMAGE_MIN_SIDE = 16
+# 转出来的图最多多大。**客户端 AnnouncementImages.MAX_BYTES 不能比它小**（tools/announcement_check 钉着）——
+# 手机会拒收比自己上限大的图。客户端故意留得更宽：以后放宽这里不用发新包。
+IMAGE_MAX_BYTES = 1024 * 1024
+# WebP 质量。先用 85；压不进 IMAGE_MAX_BYTES 再往下降。
+WEBP_QUALITIES = (85, 75, 60)
+
 # 取图失败后多久再试。管理员传错文件名时不该每 30 秒去打一次 Storage。
 IMAGE_RETRY_SEC = 300.0
 IMAGE_FETCH_TIMEOUT_SEC = 15.0
@@ -94,7 +116,7 @@ MEDIA_NAME_RE = re.compile(r"[0-9a-f]{64}\.(png|jpg|webp)")
 MEDIA_TYPES = {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp"}
 
 
-# --- 图片检查 -------------------------------------------------------------------
+# --- 图片处理 -------------------------------------------------------------------
 
 
 class ImageRejected(ValueError):
@@ -103,6 +125,8 @@ class ImageRejected(ValueError):
 
 @dataclass(frozen=True)
 class ImageInfo:
+    """转出来、发给玩家的那份图。"""
+
     ext: str
     width: int
     height: int
@@ -114,97 +138,81 @@ class ImageInfo:
         return f"{self.sha256}.{self.ext}"
 
 
-def probe_image(data: bytes) -> tuple[str, int, int]:
-    """只看文件头，返回 (扩展名, 宽, 高)。
-
-    **不解码像素**：解码是手机的事，服务器只负责挡住不合格的。也因此不需要图像库 ——
-    多一个带 C 扩展的依赖，就多一处要跟 Python 版本对齐的地方（见 deploy/bootstrap.sh 顶部）。
-    """
-    if data.startswith(b"\x89PNG\r\n\x1a\n"):
-        if len(data) < 24 or data[12:16] != b"IHDR":
-            raise ImageRejected("PNG 文件头损坏")
-        return "png", int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
-    if data.startswith(b"\xff\xd8"):
-        width, height = _jpeg_size(data)
-        return "jpg", width, height
-    if len(data) >= 30 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
-        width, height = _webp_size(data)
-        return "webp", width, height
-    if data.startswith((b"GIF87a", b"GIF89a")):
-        raise ImageRejected("GIF 不支持（手机上显示不了动图），请转成 JPG、PNG 或 WebP")
-    raise ImageRejected("不是 JPG、PNG 或 WebP 图片")
-
-
-# 带尺寸的帧头（SOF）。C4 / C8 / CC 不是帧头，是别的表。
-_JPEG_SOF = {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}
-
-
-def _jpeg_size(data: bytes) -> tuple[int, int]:
-    i = 2
-    n = len(data)
-    while i + 4 <= n:
-        if data[i] != 0xFF:
-            break
-        marker = data[i + 1]
-        if marker == 0xFF:
-            # 标记前允许有任意多个填充字节 0xFF。
-            i += 1
-            continue
-        i += 2
-        if marker == 0x01 or 0xD0 <= marker <= 0xD7:
-            # 没有长度字段的标记。
-            continue
-        if marker in (0xD9, 0xDA):
-            # 图像结束 / 开始扫描：还没见到尺寸就到了这里，文件不对。
-            break
-        length = int.from_bytes(data[i:i + 2], "big")
-        if length < 2:
-            break
-        if marker in _JPEG_SOF:
-            if i + 7 > n:
-                break
-            height = int.from_bytes(data[i + 3:i + 5], "big")
-            width = int.from_bytes(data[i + 5:i + 7], "big")
-            return width, height
-        i += length
-    raise ImageRejected("JPG 文件头损坏，读不出尺寸")
-
-
-def _webp_size(data: bytes) -> tuple[int, int]:
-    chunk = data[12:16]
-    if chunk == b"VP8 ":
-        if data[23:26] != b"\x9d\x01\x2a":
-            raise ImageRejected("WebP 文件头损坏")
-        return (int.from_bytes(data[26:28], "little") & 0x3FFF,
-                int.from_bytes(data[28:30], "little") & 0x3FFF)
-    if chunk == b"VP8L":
-        if data[20] != 0x2F:
-            raise ImageRejected("WebP 文件头损坏")
-        bits = int.from_bytes(data[21:25], "little")
-        return (bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1
-    if chunk == b"VP8X":
-        if data[20] & 0x02:
-            raise ImageRejected("动态 WebP 不支持，请用静态图")
-        return int.from_bytes(data[24:27], "little") + 1, int.from_bytes(data[27:30], "little") + 1
-    raise ImageRejected("WebP 格式认不出")
-
-
 def _kb(size: int) -> str:
     return f"{size / 1024:.0f} KB"
 
 
-def validate_image(data: bytes) -> ImageInfo:
-    """大小 → 格式 → 尺寸。**大小先判**：超了的连文件头都不看。"""
-    if len(data) > IMAGE_MAX_BYTES:
-        raise ImageRejected(f"图片太大：{_kb(len(data))}，上限 {_kb(IMAGE_MAX_BYTES)}")
-    ext, width, height = probe_image(data)
-    if min(width, height) < IMAGE_MIN_SIDE:
-        raise ImageRejected(f"图片太小：{width}×{height}")
-    if max(width, height) > IMAGE_MAX_SIDE:
+def _mb(size: int) -> str:
+    return f"{size / 1024 / 1024:.1f} MB"
+
+
+_TOO_MANY_PIXELS = f"最多约 {UPLOAD_MAX_PIXELS // 10_000} 万像素（例如 5600×2800）"
+
+
+def prepare_image(data: bytes) -> tuple[ImageInfo, bytes]:
+    """管理员传的原图 -> 发给玩家的 WebP。返回 (信息, 转好的字节)。
+
+    同步、吃 CPU：调用方放进线程（asyncio.to_thread），别卡住事件循环 ——
+    这个进程同时在跑所有在线玩家的 WebSocket。
+    """
+    if len(data) > UPLOAD_MAX_BYTES:
+        raise ImageRejected(f"原图太大：{_mb(len(data))}，上限 {_mb(UPLOAD_MAX_BYTES)}")
+    if data.startswith((b"GIF87a", b"GIF89a")):
+        raise ImageRejected("GIF 不支持（手机上显示不了动图），请用 PNG、JPG 或 WebP")
+    try:
+        with warnings.catch_warnings():
+            # 像素多到 Pillow 自己都要警告的图（解压炸弹）直接当错误，不给它解码的机会。
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            # 🔴 formats 必须限死。不限的话 Pillow 会挨个试所有格式的解码器，
+            # 其中 EPS 会去调系统里的 Ghostscript —— 那是打开不可信文件的经典漏洞入口。
+            source = Image.open(io.BytesIO(data), formats=UPLOAD_FORMATS)
+    except (Image.DecompressionBombWarning, Image.DecompressionBombError):
+        raise ImageRejected(f"图片像素太多，{_TOO_MANY_PIXELS}") from None
+    except UnidentifiedImageError:
+        raise ImageRejected("不是 PNG、JPG 或 WebP 图片") from None
+    except (OSError, SyntaxError, ValueError):
+        raise ImageRejected("图片文件损坏，读不出来") from None
+
+    with source:
+        width, height = source.size
+        if width * height > UPLOAD_MAX_PIXELS:
+            raise ImageRejected(f"图片像素太多：{width}×{height}，{_TOO_MANY_PIXELS}")
+        if min(width, height) < IMAGE_MIN_SIDE:
+            raise ImageRejected(f"图片太小：{width}×{height}")
+        # 只看 PNG / WebP 的动图。有些手机拍的 JPG 是「多张图打包」（MPO），
+        # Pillow 也会说它有多帧，但那是正常照片，取第一张就对了。
+        if source.format in ("PNG", "WEBP") and getattr(source, "is_animated", False):
+            raise ImageRejected("动图不支持（手机上只会显示成静态图），请用静态的 PNG、JPG 或 WebP")
+        try:
+            # 手机拍的照片常把「横竖」写在 EXIF 里而不是真的转像素；不处理的话发出去是躺着的。
+            image = ImageOps.exif_transpose(source)
+            has_alpha = image.mode in ("RGBA", "LA", "PA") or (
+                image.mode == "P" and "transparency" in image.info)
+            image = image.convert("RGBA" if has_alpha else "RGB")
+        except (OSError, SyntaxError):
+            raise ImageRejected("图片文件损坏，读不出来") from None
+        except ValueError:
+            raise ImageRejected("图片的颜色格式不支持（例如 16 位 PNG），请另存为普通的 PNG 或 JPG") from None
+
+    if max(image.size) > IMAGE_MAX_SIDE:
+        image.thumbnail((IMAGE_MAX_SIDE, IMAGE_MAX_SIDE), Image.Resampling.LANCZOS)
+    out_width, out_height = image.size
+    if min(out_width, out_height) < IMAGE_MIN_SIDE:
         raise ImageRejected(
-            f"图片尺寸 {width}×{height} 太大，长边不能超过 {IMAGE_MAX_SIDE} 像素"
-            "（低端手机解码会占几十 MB 内存）")
-    return ImageInfo(ext, width, height, hashlib.sha256(data).hexdigest(), len(data))
+            f"图片太扁：{width}×{height} 缩到长边 {IMAGE_MAX_SIDE} 后只剩 {out_width}×{out_height}")
+
+    encoded = b""
+    for quality in WEBP_QUALITIES:
+        buffer = io.BytesIO()
+        image.save(buffer, format="WEBP", quality=quality, method=4)
+        encoded = buffer.getvalue()
+        if len(encoded) <= IMAGE_MAX_BYTES:
+            break
+    else:
+        raise ImageRejected(
+            f"转成 WebP 后仍超过 {_kb(IMAGE_MAX_BYTES)}（{_kb(len(encoded))}），"
+            "请换一张细节少一点或尺寸小一点的图")
+    return ImageInfo("webp", out_width, out_height, hashlib.sha256(encoded).hexdigest(), len(encoded)), encoded
 
 
 def is_valid_image_path(path: str) -> bool:
@@ -216,7 +224,7 @@ def is_valid_image_path(path: str) -> bool:
 
 
 class StorageFetcher:
-    """按**公开地址**从 Supabase Storage 取图，不带任何密钥。
+    """按**公开地址**从 Supabase Storage 取原图，不带任何密钥。
 
     桶设成公开就不需要密钥；secret key 只该出现在绕过 RLS 的数据库操作里
     （supabase_auth.py 顶部同一条）。玩家拿不到这个地址 —— 手机从来不连 Supabase。
@@ -257,9 +265,9 @@ class StorageFetcher:
                 total = 0
                 async for chunk in resp.aiter_bytes():
                     total += len(chunk)
-                    # 边收边数。先收完再判的话，一个 50 MB 的误传会被完整读进内存。
-                    if total > IMAGE_MAX_BYTES:
-                        raise ImageRejected(f"图片太大：超过 {_kb(IMAGE_MAX_BYTES)}")
+                    # 边收边数。先收完再判的话，一个误传的视频会被完整读进内存。
+                    if total > UPLOAD_MAX_BYTES:
+                        raise ImageRejected(f"原图太大：超过 {_mb(UPLOAD_MAX_BYTES)}")
                     chunks.append(chunk)
                 return b"".join(chunks)
         except httpx.HTTPError as exc:
@@ -386,7 +394,7 @@ class Board:
         self._clock = clock
         self._entries: list[Entry] = []
         self._loaded = False
-        # 路径 -> 已取回的图。**只在第一次见到这个路径时取**，理由见文件头「文件名 = 内容的 SHA-256」。
+        # 路径 -> 已转好的图。**只在第一次见到这个路径时取**，理由见文件头「文件名 = 转出来那份的 SHA-256」。
         self._images: dict[str, ImageInfo] = {}
         # 路径 -> (失败时刻, 原因)。IMAGE_RETRY_SEC 之内不再去打 Storage。
         self._image_failures: dict[str, tuple[float, str]] = {}
@@ -456,8 +464,10 @@ class Board:
             return None, failed[1]
         try:
             data = await self._fetch_image(path)
-            info = validate_image(data)
-            self._store(info, data)
+            # 解码、缩放、编码都吃 CPU（一张两三百毫秒）：放进线程，
+            # 别让所有人的 WebSocket 心跳和接口请求排队等它。
+            info, encoded = await asyncio.to_thread(prepare_image, data)
+            self._store(info, encoded)
         except ImageRejected as exc:
             return None, self._remember_failure(path, str(exc))
         except OSError as exc:
@@ -465,8 +475,8 @@ class Board:
                 path, f"服务器写不进图片目录（{exc.strerror or type(exc).__name__}）")
         self._image_failures.pop(path, None)
         self._images[path] = info
-        log.info("公告图片就绪 %s -> %s（%d×%d，%d 字节）",
-                 path, info.filename, info.width, info.height, info.size)
+        log.info("公告图片就绪 %s（原图 %s）-> %s（%d×%d，%s）",
+                 path, _kb(len(data)), info.filename, info.width, info.height, _kb(info.size))
         return info, ""
 
     def _remember_failure(self, path: str, reason: str) -> str:

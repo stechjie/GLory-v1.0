@@ -35,7 +35,7 @@ class ImageItem(BaseModel):
     # 相对地址（/media/...）。客户端拼上自己连的那个账号服务器地址 ——
     # 这样 --backend-url 切到本机时图片也跟着切过去。
     url: str
-    # 客户端下载完用它校验：拿到的就是服务器检查过的那份字节，一个都不差。
+    # 客户端下载完用它校验：拿到的就是服务器转好的那份 WebP，一个字节都不差。
     sha256: str
     width: int
     height: int

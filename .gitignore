@@ -65,6 +65,10 @@ Thumbs.db
 Desktop.ini
 .DS_Store
 
+# Godot 在 Windows 上运行时生成、用完即删的插件 dll 临时副本（~ 开头）。
+# ~libeffekseer.x86_64.dll 曾被误提交（6ba77d4 删掉），之后每次跑游戏都会冒成未跟踪文件。
+~*.dll
+
 # Claude Code local settings
 .claude/settings.local.json
 
