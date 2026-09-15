@@ -55,8 +55,9 @@ func _case_constants_match_backend() -> void:
 		return
 	_h.expect(py.contains('PUSH_TYPE = "%s"' % Service.PUSH_TYPE), "push_type_drift",
 		"后端的 PUSH_TYPE 不是 %s 了 —— 紧急公告会落进 RealtimeService 的未知类型分支，收不到也不报错" % Service.PUSH_TYPE)
-	_h.expect(py.contains("IMAGE_MAX_BYTES = 512 * 1024") and Images.MAX_BYTES == 512 * 1024, "image_bytes_drift",
-		"图片字节上限两边对不上 —— 服务器放行的图可能被手机拒收（或反过来）")
+	# 服务器把原图转成 WebP，转出来的不超过它的 IMAGE_MAX_BYTES；手机这边的上限只许更宽，不许更窄。
+	_h.expect(py.contains("IMAGE_MAX_BYTES = 1024 * 1024") and Images.MAX_BYTES >= 1024 * 1024, "image_bytes_drift",
+		"手机的图片字节上限（%d）比服务器转出来的图还小 —— 手机会拒收，玩家看不到图" % Images.MAX_BYTES)
 	_h.expect(py.contains("IMAGE_MAX_SIDE = %d" % Images.MAX_SIDE), "image_side_drift",
 		"图片长边上限两边对不上（客户端 %d）" % Images.MAX_SIDE)
 	_h.expect(py.contains('KINDS = ("%s")' % '", "'.join(PackedStringArray(Service.KINDS))), "kinds_drift",

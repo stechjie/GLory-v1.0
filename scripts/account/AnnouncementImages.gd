@@ -2,8 +2,8 @@ extends Node
 
 # 公告图片的下载、校验与缓存（docs/公告系统设计.md）。AnnouncementService 的子节点。
 #
-# 服务器取回图片时已经检查过大小、格式和尺寸，并把内容的 SHA-256 写在列表里。
-# 这里下载完**逐字节校验哈希**：拿到的一定就是服务器检查过的那份文件 ——
+# 服务器已经把管理员传的原图转成 WebP、缩到长边 2048 以内，并把转出来那份的 SHA-256 写在列表里。
+# 这里下载完**逐字节校验哈希**：拿到的一定就是服务器转好的那份文件 ——
 # 中途被换、下载截断、本地缓存损坏都会被认出来，认不出的一律不解码。解码后再判一次长边，只是兜底。
 #
 # 缓存：user://announcement_images/<sha256>.<ext>。同一个哈希永远是同一张图，不需要过期判断；
@@ -15,8 +15,10 @@ signal load_finished(sha: String)
 
 const AccountConfig := preload("res://scripts/account/AccountConfig.gd")
 
-# 与 backend/app/announcements.py 的 IMAGE_MAX_BYTES / IMAGE_MAX_SIDE 一致（tools/announcement_check 钉着）。
-const MAX_BYTES := 512 * 1024
+# MAX_SIDE 与 backend/app/announcements.py 的 IMAGE_MAX_SIDE 一致；MAX_BYTES **不能比**那边的
+# IMAGE_MAX_BYTES 小（tools/announcement_check 钉着），否则服务器转好的图手机拒收。
+# 这边故意留宽：这个数字随 APK 发出去就改不了，服务器以后放宽上限时不用发新包。
+const MAX_BYTES := 2 * 1024 * 1024
 const MAX_SIDE := 2048
 const EXTENSIONS := ["png", "jpg", "webp"]
 const CACHE_DIR := "user://announcement_images"
