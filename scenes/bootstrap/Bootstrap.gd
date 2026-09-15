@@ -8,6 +8,7 @@ signal main_scene_ready(path: String)
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const AccountConfig := preload("res://scripts/account/AccountConfig.gd")
+const ServiceStatus := preload("res://scripts/account/ServiceStatus.gd")
 
 const DEFAULT_MAIN_SCENE := "res://scenes/main/Main.tscn"
 const ERROR_MAIN_LOAD := "BOOT-MAIN-LOAD"
@@ -15,6 +16,7 @@ const ERROR_STUCK := "BOOT-STUCK"
 const ERROR_ENTRY_LOGIN := "BOOT-ENTRY-LOGIN"
 const ERROR_ENTRY_CONNECT := "BOOT-ENTRY-CONNECT"
 const ERROR_ENTRY_KICKED := "BOOT-ENTRY-KICKED"
+const ERROR_ENTRY_MAINTENANCE := "BOOT-ENTRY-MAINTENANCE"
 
 # 看门狗三级（V3 P0-10）。计时器由**进度**驱动而不只是阶段：慢但在推进的
 # 载入不该被叫做卡住，而阶段不变、进度也不动才是真的没动静。
@@ -54,6 +56,9 @@ const ENTRY_CONNECT_FAILURES := 2
 const ENTRY_CONNECT_PATIENCE_SEC := 8.0
 # 连上了但一直没收到名额消息，按「旧版账号后端」放行。见上面那段。
 const ENTRY_LEGACY_SERVER_SEC := 10.0
+# 进不去的时候多久读一次维护公告文件（scripts/account/ServiceStatus.gd）。
+const ENTRY_STATUS_POLL_SEC := 20.0
+const ENTRY_STATUS_TIMEOUT_SEC := 10.0
 
 @export_file("*.tscn") var next_scene_path := DEFAULT_MAIN_SCENE
 @export var auto_start := true
@@ -90,6 +95,10 @@ var _entry_unanswered_sec := 0.0
 var _entry_login_attempts := 0
 # 下一次自动重试登录的时刻（_entry_elapsed 的刻度）。< 0 = 还没排。
 var _entry_login_retry_at := -1.0
+# 维护公告（docs/公告系统设计.md）。非空 = /status.json 说在维护、还没过期。
+var _service_status: Dictionary = {}
+var _status_checked_at := -ENTRY_STATUS_POLL_SEC
+var _status_request: HTTPRequest
 
 
 func _ready() -> void:
@@ -307,6 +316,9 @@ func _tick_entry(delta: float, force := false) -> void:
 	_drive_entry()
 	var view := entry_view(_entry_facts())
 	_show_entry(view)
+	# 进不去的时候去看一眼是不是在维护（账号服务器停了，Caddy 照样给这个文件）。
+	if str(view.get("state", "")) in ["login_failed", "connect_failed", "maintenance"]:
+		_poll_service_status()
 	if bool(view.get("pass", false)):
 		if bool(view.get("legacy_server", false)):
 			push_warning("[BOOT] 账号后端连上了但 %.0f 秒没回名额消息，按旧版后端放行" % ENTRY_LEGACY_SERVER_SEC)
@@ -375,6 +387,7 @@ func _entry_facts() -> Dictionary:
 		"failed_handshakes": RealtimeService.failed_handshakes(),
 		"offline_sec": _entry_offline_sec,
 		"unanswered_sec": _entry_unanswered_sec,
+		"maintenance": not _service_status.is_empty(),
 	}
 
 
@@ -385,6 +398,10 @@ static func entry_view(facts: Dictionary) -> Dictionary:
 		return {"state": "pass", "pass": true}
 	match str(facts.get("login", "working")):
 		"failed":
+			# 维护公告只替换「连不上」的说法，不改变放不放行。
+			# 注册被限流不算：服务器没在维护，说成维护会让玩家一直干等。
+			if bool(facts.get("maintenance", false)) and not bool(facts.get("rate_limited", false)):
+				return {"state": "maintenance", "actions": true}
 			return {"state": "login_failed", "actions": true,
 				"rate_limited": bool(facts.get("rate_limited", false)),
 				"retry_in": float(facts.get("login_retry_in", -1.0))}
@@ -397,6 +414,8 @@ static func entry_view(facts: Dictionary) -> Dictionary:
 	if not bool(facts.get("online", false)):
 		if int(facts.get("failed_handshakes", 0)) >= ENTRY_CONNECT_FAILURES \
 				or float(facts.get("offline_sec", 0.0)) >= ENTRY_CONNECT_PATIENCE_SEC:
+			if bool(facts.get("maintenance", false)):
+				return {"state": "maintenance", "actions": true}
 			return {"state": "connect_failed", "actions": true}
 		return {"state": "connecting"}
 	# 排着队就一直排，等多久都不放 —— 下面那条「旧版后端」只看从没收到过名额消息的情况。
@@ -442,6 +461,17 @@ func _show_entry(view: Dictionary) -> void:
 			error = _entry_error(_tr_text("暂时连不上服务器，正在自动重试。连上之前无法进入游戏。",
 				"The server can't be reached; retrying automatically. The game can't be entered until it connects."),
 				ERROR_ENTRY_CONNECT)
+		"maintenance":
+			# 文案由管理员写在 /status.json 里；没写的部分用默认说法补上。
+			var english := LocaleManager.get_locale().begins_with("en")
+			title = str(_service_status.get("title_en" if english else "title_zh", ""))
+			if title.is_empty():
+				title = _tr_text("服务器维护中", "Server maintenance")
+			var message := str(_service_status.get("message_en" if english else "message_zh", ""))
+			if message.is_empty():
+				message = _tr_text("服务器正在维护。", "The server is under maintenance.")
+			error = _entry_error(message + "\n" + _tr_text("维护结束后会自动进入，不用重启游戏。",
+				"You'll get in automatically once it's over; no need to restart."), ERROR_ENTRY_MAINTENANCE)
 		"checking":
 			title = _tr_text("正在确认名额", "Checking for a free slot")
 		"queued":
@@ -464,6 +494,33 @@ func _show_entry(view: Dictionary) -> void:
 
 func _entry_error(message: String, code: String) -> String:
 	return "%s\n%s" % [message, _tr_text("错误码：%s" % code, "Error code: %s" % code)]
+
+
+# 读维护公告文件（scripts/account/ServiceStatus.gd 顶部）。只在进不去的时候、每 ENTRY_STATUS_POLL_SEC 读一次。
+# 读不到（404 = 没在维护、整台机器挂了、网络不通）一律当没在维护：显示原来那句「连不上」。
+func _poll_service_status() -> void:
+	if _status_request != null or _entry_elapsed - _status_checked_at < ENTRY_STATUS_POLL_SEC:
+		return
+	_status_checked_at = _entry_elapsed
+	var request := HTTPRequest.new()
+	request.timeout = ENTRY_STATUS_TIMEOUT_SEC
+	request.body_size_limit = 16 * 1024
+	add_child(request)
+	_status_request = request
+	if request.request(AccountConfig.endpoint(ServiceStatus.PATH)) != OK:
+		request.queue_free()
+		_status_request = null
+		return
+	var result: Array = await request.request_completed
+	request.queue_free()
+	_status_request = null
+	if int(result[0]) != HTTPRequest.RESULT_SUCCESS or int(result[1]) != 200:
+		_service_status = {}
+		return
+	var server_unix := ServiceStatus.server_time_from_headers(result[2])
+	if server_unix <= 0:
+		server_unix = int(Time.get_unix_time_from_system())
+	_service_status = ServiceStatus.parse((result[3] as PackedByteArray).get_string_from_utf8(), server_unix)
 
 
 # --- 启动看门狗（V3 P0-10）---------------------------------------------

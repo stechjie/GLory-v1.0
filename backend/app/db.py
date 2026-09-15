@@ -96,6 +96,8 @@ EXPECTED_TABLES: tuple[str, ...] = (
     "chat_conversations",
     "chat_messages",
     "chat_read_state",
+    # 008（公告）
+    "announcements",
 )
 
 

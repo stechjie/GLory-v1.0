@@ -5,25 +5,47 @@
 # 而"忘了续期导致全体玩家登不上"是这类系统最常见的事故之一。
 #
 # 装到 /etc/caddy/Caddyfile，然后 `sudo systemctl reload caddy`。
+# ⚠️ deploy/update.sh **不会**替你更新这个文件（只有首次安装的 bootstrap.sh 写过一次）。
+#    改了这里要手动装一次，命令见 deploy/README.md「公告」一节。
 
 # ⚠️ 把下面这一行换成你的真实域名。
 # DuckDNS 的话形如 glorytd-api.duckdns.org；换正式域名时也只改这里，
 # 以及客户端的 AccountConfig.DEFAULT_BACKEND_URL。
 GLORY_API_DOMAIN_PLACEHOLDER {
 
-	# 后端只监听 127.0.0.1（见 glory-backend.service），所以外面进不来，
-	# 必须从这里过。
-	reverse_proxy 127.0.0.1:8099 {
-		# 后端靠这个拿真实来源 IP 做限流。
-		#
-		# 这里是**覆盖**不是追加（追加要写 `header_up +X-Forwarded-For`）——
-		# 玩家自己在请求里塞的假值会在这一层被直接丢掉。
-		# 后端再确认一次请求确实来自本机回环才采信，见 routes/auth.py
-		# 的 _client_ip()。两层加起来，伪造这个头没有意义。
-		#
-		# ⚠️ 若以后在 Caddy 前面再加一层（Cloudflare 之类），这个头会变成
-		# 一串 IP，后端取第一段的做法要重新评估 —— 先看 _client_ip() 的注释。
-		header_up X-Forwarded-For {remote_host}
+	# 维护公告（docs/公告系统设计.md）。**由 Caddy 直接给，不经过后端** ——
+	# 它存在的全部意义就是账号服务器停了的时候也读得到。
+	# 文件由管理员写：sudo tee /opt/glory/public/status.json。没有这个文件 = 404 = 没在维护。
+	handle /status.json {
+		root * /opt/glory/public
+		header Cache-Control "no-store"
+		file_server
+	}
+
+	# 公告图片。后端取回、检查过的文件，名字就是内容的 SHA-256，永远不变，所以可以永久缓存。
+	# 目录由 glory-backend.service 的 StateDirectory 建（两处路径有测试钉着）。
+	# 没有 browse：不列目录。
+	handle_path /media/* {
+		root * /var/lib/glory-media
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	handle {
+		# 后端只监听 127.0.0.1（见 glory-backend.service），所以外面进不来，
+		# 必须从这里过。
+		reverse_proxy 127.0.0.1:8099 {
+			# 后端靠这个拿真实来源 IP 做限流。
+			#
+			# 这里是**覆盖**不是追加（追加要写 `header_up +X-Forwarded-For`）——
+			# 玩家自己在请求里塞的假值会在这一层被直接丢掉。
+			# 后端再确认一次请求确实来自本机回环才采信，见 routes/auth.py
+			# 的 _client_ip()。两层加起来，伪造这个头没有意义。
+			#
+			# ⚠️ 若以后在 Caddy 前面再加一层（Cloudflare 之类），这个头会变成
+			# 一串 IP，后端取第一段的做法要重新评估 —— 先看 _client_ip() 的注释。
+			header_up X-Forwarded-For {remote_host}
+		}
 	}
 
 	# 安全响应头。这是个纯 JSON API，不该被当网页嵌进别的站点。

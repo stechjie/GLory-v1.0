@@ -169,6 +169,26 @@ sudo journalctl -u glory-backend --since "10 min ago" | grep 在线
 
 ---
 
+## 公告
+
+管理员在 Supabase 后台改表发公告，操作手册、图片规格和部署步骤全在 `docs/公告系统设计.md`。
+这里只列服务器上要知道的三件事：
+
+**Caddy 配置要手动更新一次**（`update.sh` 不会替你做，它检测到旧配置会打一条提醒）：
+
+```bash
+sudo sed "s|GLORY_API_DOMAIN_PLACEHOLDER|你的域名|" /opt/glory/repo/deploy/Caddyfile | sudo tee /etc/caddy/Caddyfile >/dev/null
+sudo systemctl reload caddy
+```
+
+**维护公告**：账号服务器要停的时候写 `/opt/glory/public/status.json`（格式见设计文档第三节），维护完删掉。
+Caddy 直接给这个文件，账号服务器停了照样读得到。
+
+**公告图片**在 `/var/lib/glory-media`，由 systemd 的 `StateDirectory` 建（账号服务器唯一能写的目录），
+Caddy 从这里直接给 `/media/*`。里面的文件名都是内容哈希，不用手动管，不再被引用的 7 天后自动删。
+
+---
+
 ## 排查
 
 | 症状 | 先看这里 |

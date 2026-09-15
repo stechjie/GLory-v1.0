@@ -17,6 +17,7 @@ signal codex_requested          # 「图鉴」按钮：进入图鉴界面
 signal profile_requested        # 左上角名牌：进入玩家资料界面
 signal friends_requested        # 左侧「朋友」按钮：进入好友界面
 signal chat_requested           # 左侧「聊天」按钮：进入私聊界面
+signal announcements_requested  # 右侧「公告 / 活动」：进入公告界面
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
@@ -68,6 +69,8 @@ var _profile_name_label: Label
 var _profile_sub_label: Label
 # 「聊天」图标右上角的未读红点。显隐只跟 ChatService 走（状态只有一份）。
 var _chat_dot: Label
+# 「公告 / 活动」右上角的红点。显隐只跟 AnnouncementService 走。
+var _news_dot: Label
 var _menu_music_player: AudioStreamPlayer
 var _address_edit: LineEdit
 var _net_status: Label
@@ -95,6 +98,8 @@ func _ready() -> void:
 		AccountManager.profile_changed.connect(_on_account_profile_changed)
 	if not ChatService.unread_changed.is_connected(_on_chat_unread_changed):
 		ChatService.unread_changed.connect(_on_chat_unread_changed)
+	if not AnnouncementService.changed.is_connected(_on_announcements_changed):
+		AnnouncementService.changed.connect(_on_announcements_changed)
 	_refresh_profile_plate()
 	_ensure_profile_loaded()
 
@@ -103,6 +108,8 @@ func _exit_tree() -> void:
 		AccountManager.profile_changed.disconnect(_on_account_profile_changed)
 	if ChatService.unread_changed.is_connected(_on_chat_unread_changed):
 		ChatService.unread_changed.disconnect(_on_chat_unread_changed)
+	if AnnouncementService.changed.is_connected(_on_announcements_changed):
+		AnnouncementService.changed.disconnect(_on_announcements_changed)
 
 func _on_account_profile_changed(_profile: Dictionary) -> void:
 	_refresh_profile_plate()
@@ -200,7 +207,12 @@ func _build() -> void:
 	_add_hit(Vector2(1380, 140), Vector2(270, 250), _show_coming_soon, "right")
 	_add_texture(TEX_NEWS, Vector2(1380, 400), Vector2(270, 250), "right")
 	_add_label(_menu_text("公告 / 活动", "News / Events"), Vector2(1380, 407), Vector2(270, 34), 22, "right")
-	_add_hit(Vector2(1380, 400), Vector2(270, 250), _show_coming_soon, "right")
+	# 有没看过的公告时亮红点，同聊天那个。hit 仍然放在最后。
+	_news_dot = _add_label("●", Vector2(1612, 404), Vector2(32, 32), 26, "right")
+	_news_dot.add_theme_color_override("font_color", Tokens.UNREAD_DOT)
+	_news_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_news_dot.visible = AnnouncementService.any_unread()
+	_add_hit(Vector2(1380, 400), Vector2(270, 250), _emit_announcements, "right")
 
 	_add_texture(TEX_PREP, Vector2(215, 690), Vector2(220, 190))
 	_add_texture(TEX_CASUAL, Vector2(455, 690), Vector2(220, 190))
@@ -520,6 +532,16 @@ func _emit_chat() -> void:
 func _on_chat_unread_changed(any_unread: bool) -> void:
 	if _chat_dot != null and is_instance_valid(_chat_dot):
 		_chat_dot.visible = any_unread
+
+
+# 「公告 / 活动」：此前是「敬请期待」（docs/公告系统设计.md）。
+func _emit_announcements() -> void:
+	announcements_requested.emit()
+
+
+func _on_announcements_changed() -> void:
+	if _news_dot != null and is_instance_valid(_news_dot):
+		_news_dot.visible = AnnouncementService.any_unread()
 
 # 名牌上的昵称与副行。**不自己拼显示名** —— 只从 AccountManager.display_name 出，
 # 那是全仓唯一的拼法。理由：player_name 不唯一（database/001 的设计），

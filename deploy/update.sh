@@ -71,6 +71,19 @@ main() {
 	chown -R root:root "$REPO"
 	chmod -R a+rX "$REPO"
 
+	say "维护公告目录"
+	# Caddy 从这里直接给 /status.json（docs/公告系统设计.md「维护公告」），账号服务器停了也读得到。
+	# 目录归 root，文件由管理员用 sudo tee 写。
+	mkdir -p "$BASE/public"
+	chmod 755 "$BASE/public"
+	# 本脚本不改 Caddy 配置（要域名，而且改错了全体玩家连不上）。旧配置照样能跑，但要提醒。
+	if ! grep -q "status.json" /etc/caddy/Caddyfile 2>/dev/null; then
+		echo "⚠️  /etc/caddy/Caddyfile 还是旧版（没有 /status.json 与 /media/*）："
+		echo "   账号服务器停机时维护公告读不到；公告图片改由后端自己给（能用，多过一道 Python）。"
+		echo "   更新一次（把「你的域名」换掉）："
+		echo "   sed \"s|GLORY_API_DOMAIN_PLACEHOLDER|你的域名|\" $REPO/deploy/Caddyfile > /etc/caddy/Caddyfile && systemctl reload caddy"
+	fi
+
 	say "同步依赖"
 	"$VENV/bin/pip" install --quiet -r "$REPO/backend/requirements.txt"
 	chown -R "$SERVICE_USER:$SERVICE_USER" "$VENV"

@@ -619,6 +619,29 @@ func mark_chat_read(code: String, last_read_id: int) -> Dictionary:
 		{"last_read_id": maxi(0, last_read_id)}, true)
 
 
+# --- 公告（docs/公告系统设计.md）------------------------------------------------
+#
+# 只有拉列表。看过哪些、弹过哪些在 AnnouncementService（存本机），图片在 AnnouncementImages。
+
+func fetch_announcements() -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/announcements", null, true)
+
+
+# 每个请求都带上客户端版本（docs/公告系统设计.md「报版本号」）。**今天服务端还不读它** ——
+# 加它是为了以后能「只给旧版本弹请更新」：已经发出去的包补不上这个头，只能从这一版开始带。
+# build 取 build_info.json 的 version_code；编辑器里跑没有这个文件，记 0。
+const CLIENT_HEADER := "X-Glory-Client"
+var _client_header_line := ""
+
+
+func client_header_line() -> String:
+	if _client_header_line.is_empty():
+		var info: Dictionary = StartupTrace.build_info()
+		_client_header_line = "%s: protocol=%d; build=%d" % [
+			CLIENT_HEADER, NetworkConfig.NETWORK_PROTOCOL_VERSION, int(info.get("version_code", 0))]
+	return _client_header_line
+
+
 # --- 在线状态心跳 -------------------------------------------------------------
 #
 # **事件驱动 + 慢心跳**，不是纯轮询：进出房间时立刻补一次（report_presence_now），
@@ -687,7 +710,7 @@ func _request(
 	authed: bool = false,
 	allow_refresh: bool = true,
 ) -> Dictionary:
-	var headers := PackedStringArray(["Content-Type: application/json"])
+	var headers := PackedStringArray(["Content-Type: application/json", client_header_line()])
 	if authed:
 		# 令牌快过期就先续，免得这一趟白跑一次 401（见「令牌续期」那一节）。
 		if allow_refresh and _token_needs_refresh():

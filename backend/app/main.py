@@ -20,8 +20,9 @@ from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 
-from app import admission, db, maintenance, realtime, single_instance
+from app import admission, announcements, db, maintenance, realtime, single_instance
 from app.config import get_settings
+from app.routes import announcements as announcement_routes
 from app.routes import auth as auth_routes
 from app.routes import chat as chat_routes
 from app.routes import debug as debug_routes
@@ -104,13 +105,18 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     gate = admission.install(admission.Admission(
         admission.hub_send, limit=cfg.online_limit, config_path=cfg.admission_file))
     admitter = asyncio.create_task(admission.loop(gate))
+    # 公告（app/announcements.py）：每 30 秒读一次表、取回并检查图片、推紧急公告。
+    fetcher = announcements.StorageFetcher(cfg.supabase_url, cfg.announcement_bucket)
+    board = announcements.install(announcements.Board.for_production(fetcher, media_dir=cfg.media_dir))
+    notices = asyncio.create_task(announcements.loop(board))
     try:
         yield
     finally:
-        for task in (sweeper, cleaner, admitter):
+        for task in (sweeper, cleaner, admitter, notices):
             task.cancel()
             with suppress(asyncio.CancelledError):
                 await task
+        await fetcher.aclose()
         await db.disconnect()
         single_instance.release(lock)
 
@@ -145,6 +151,7 @@ app.include_router(profile_routes.router)
 app.include_router(friends_routes.router)
 app.include_router(presence_routes.router)
 app.include_router(chat_routes.router)
+app.include_router(announcement_routes.router)
 app.include_router(ws_routes.router)
 
 # 自检接口只在开发环境挂载。生产上它会把表结构和 RLS 状态说得太清楚，

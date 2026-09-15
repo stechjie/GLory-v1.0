@@ -794,9 +794,13 @@ func _show_menu() -> void:
 	_menu.profile_requested.connect(_show_profile_screen)
 	_menu.friends_requested.connect(_show_friends_screen)
 	_menu.chat_requested.connect(_show_chat_screen)
+	_menu.announcements_requested.connect(_show_announcements_screen)
 	add_child(_menu)
 	# 对局中被顶号时挂着的提示，回到主菜单这一刻才弹（设计文档第五节）。
 	_show_kicked_notice_if_pending()
+	# 公告：回主菜单时顺手刷新（有节流），有该弹的登录弹窗就弹（docs/公告系统设计.md）。
+	AnnouncementService.refresh()
+	_queue_announcement_popup()
 
 # 手动重连：读本地凭证连回上一场，弹重连遮罩，成功落回备战/结果，失败清凭证回菜单。
 #
@@ -1032,6 +1036,7 @@ func _on_realtime_login(_player_id: String, _player_name: String) -> void:
 func _on_realtime_logout() -> void:
 	RealtimeService.stop()
 	ChatService.reset()
+	AnnouncementService.reset()
 	_kicked_notice_pending = false
 
 
@@ -1062,6 +1067,112 @@ func _show_kicked_notice_if_pending() -> void:
 		"body": body,
 		"confirm_text": "Got it" if en else "知道了",
 	})
+
+
+# --- 公告（docs/公告系统设计.md）------------------------------------------------
+#
+# 状态在 AnnouncementService；**弹窗什么时候弹由这里定**（同上面被顶号那一段的理由）：
+# 只在主菜单上、没有别的弹窗、新手教学走完之后。
+
+const ANNOUNCEMENT_POPUP_MODAL_ID := "announcement_popup"
+# 最低一档：被顶号提示（DialogService 100）、重连（90）、房间面板（40）都比它要紧。
+const ANNOUNCEMENT_POPUP_PRIORITY := 20
+# 运行时 load，不 preload：理由见 _load_screen 上面那段。
+const ANNOUNCEMENT_POPUP_SCRIPT := "res://scenes/menu/AnnouncementPopup.gd"
+
+
+func _show_announcements_screen(focus_id: int = 0) -> void:
+	_clear()
+	var screen = _instantiate_screen("res://scenes/menu/AnnouncementScreen.tscn")
+	if screen == null:
+		_show_menu()
+		return
+	screen.configure(focus_id)
+	screen.back_requested.connect(_show_menu)
+	screen.navigate_requested.connect(_on_announcement_navigate)
+	_page_back_route = _show_menu
+	add_child(screen)
+
+
+# 正文里 [url=glory://…] 的跳转。与 AnnouncementText.ROUTES 一一对应（tools/announcement_check 钉着）。
+func _on_announcement_navigate(route: String) -> void:
+	match route:
+		"prep":
+			_show_pet_screen()
+		"codex":
+			_show_codex_screen()
+		"friends":
+			_show_friends_screen()
+		"profile":
+			_show_profile_screen()
+
+
+func _queue_announcement_popup() -> void:
+	if not AnnouncementService.changed.is_connected(_on_announcements_changed):
+		AnnouncementService.changed.connect(_on_announcements_changed)
+	if not ModalStack.modal_closed.is_connected(_on_modal_closed_for_announcements):
+		ModalStack.modal_closed.connect(_on_modal_closed_for_announcements)
+	_try_show_announcement_popup.call_deferred()
+
+
+func _on_announcements_changed() -> void:
+	_try_show_announcement_popup.call_deferred()
+
+
+# ⚠️ 必须 deferred：ModalStack.close_all() 边关边同步发 modal_closed，
+# 在这里直接 push 会让它原地转死（同 _on_reconnect_modal_closed 那条）。
+# 也正是这条让多条弹窗排队：关掉一条，下一条接着出来（一次启动最多 3 条）。
+func _on_modal_closed_for_announcements(_id: String, _reason: String) -> void:
+	_try_show_announcement_popup.call_deferred()
+
+
+func _try_show_announcement_popup() -> void:
+	if not _can_show_announcement_popup():
+		return
+	var item := AnnouncementService.next_popup()
+	if item.is_empty():
+		return
+	var popup_script := load(ANNOUNCEMENT_POPUP_SCRIPT) as GDScript
+	if popup_script == null:
+		push_error("公告弹窗脚本加载失败：%s" % ANNOUNCEMENT_POPUP_SCRIPT)
+		return
+	var popup = popup_script.new()
+	var modal_id := ModalStack.push(popup, {
+		"id": ANNOUNCEMENT_POPUP_MODAL_ID,
+		"owner": _menu,
+		"priority": ANNOUNCEMENT_POPUP_PRIORITY,
+		# 纯提示，点外面就收起。
+		"dismiss_on_backdrop": true,
+	})
+	if modal_id.is_empty():
+		return
+	# 弹出来那一刻就记下：图片还没下完玩家就切走了，也不该下次再弹同一条。
+	AnnouncementService.mark_popped(item)
+	popup.configure(item)
+	popup.details_requested.connect(_on_announcement_popup_details)
+	popup.dismissed.connect(_close_announcement_popup)
+
+
+func _can_show_announcement_popup() -> bool:
+	if _menu == null or not is_instance_valid(_menu) or not _menu.is_inside_tree():
+		return false
+	# 有别的弹窗（被顶号提示、房间面板……）就等它关掉：modal_closed 会再叫一次。
+	if ModalStack.depth() > 0:
+		return false
+	# 新手教学没走完不弹：第一次进游戏就被公告糊一脸。
+	if TutorialMode.active:
+		return false
+	return not (PlayerProfile.onboarding_status in
+		[PlayerProfile.ONBOARDING_NOT_STARTED, PlayerProfile.ONBOARDING_IN_PROGRESS])
+
+
+func _on_announcement_popup_details(id: int) -> void:
+	ModalStack.pop(ANNOUNCEMENT_POPUP_MODAL_ID)
+	_show_announcements_screen(id)
+
+
+func _close_announcement_popup() -> void:
+	ModalStack.pop(ANNOUNCEMENT_POPUP_MODAL_ID)
 
 
 # --- 在线状态上报（docs/交友系统设计.md 第二节）--------------------------------

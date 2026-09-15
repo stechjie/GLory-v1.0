@@ -47,6 +47,9 @@ SWEEP_INTERVAL_SEC = 15.0
 # 快捷短语与私聊都是短句，8 KiB 已经很宽。
 MAX_MESSAGE_BYTES = 8192
 
+# 广播时单条连接的发送上限（见 Hub.broadcast）。
+BROADCAST_SEND_TIMEOUT_SEC = 5.0
+
 # 顶号时给旧连接的关闭码。1000 是「正常关闭」，这里刻意用私有区间的码，
 # 让客户端能把「被顶号」与「服务器重启 / 网络断」分开 ——
 # 这两件事在玩家眼里完全不同，不能都显示成「连接已断开」。
@@ -156,6 +159,26 @@ class Hub:
             if await self.send(conn, payload):
                 sent += 1
         return sent
+
+    async def broadcast(self, payload: dict) -> int:
+        """发给**所有**连着的设备（紧急公告，app/announcements.py）。返回成功送达的连接数。
+
+        并发发，且每条都有超时：一条卡住的连接（手机进了隧道、TCP 还没断）
+        不能让排在后面的几百个人收不到。同 admission._deliver 的理由。
+        """
+        conns = [conn for devices in self._by_player.values() for conn in devices.values()]
+        if not conns:
+            return 0
+        results = await asyncio.gather(*(self._send_bounded(conn, payload) for conn in conns))
+        return sum(1 for ok in results if ok)
+
+    async def _send_bounded(self, conn: Connection, payload: dict) -> bool:
+        try:
+            # 读模块常量要放在函数体里 —— 写成参数默认值的话测试 monkeypatch 不到。
+            return await asyncio.wait_for(self.send(conn, payload), BROADCAST_SEND_TIMEOUT_SEC)
+        except TimeoutError:
+            log.info("广播发送超时 player=%s", conn.player_id)
+            return False
 
     # --- 巡检 -----------------------------------------------------------------
 

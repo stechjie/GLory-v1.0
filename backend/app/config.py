@@ -63,6 +63,15 @@ class Settings(BaseSettings):
     # 不用重启（重启会清空队列）。空 = 不读文件。生产上由 glory-backend.service 设置。
     admission_file: str = ""
 
+    # --- 公告（app/announcements.py，docs/公告系统设计.md）-----------------------
+    #
+    # 公告图片所在的 Supabase Storage 桶。**必须设成公开**：服务器按公开地址取图，不带任何密钥。
+    announcement_bucket: str = "announcements"
+
+    # 服务器取回、检查过的公告图片放在哪。空 = 不处理图片（公告照常显示，只是没图，
+    # 并在那一行的 problem 列里写明原因）。生产上由 glory-backend.service 的 StateDirectory 建好并设置。
+    media_dir: str = ""
+
     @property
     def is_dev(self) -> bool:
         return self.environment != "prod"

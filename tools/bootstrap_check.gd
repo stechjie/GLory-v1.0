@@ -382,6 +382,29 @@ func _check_entry_gate_view() -> void:
 		"entry_legacy_server_blocks_everyone",
 		"账号后端是没有排队功能的旧版时，全体玩家会一直卡在启动画面")
 
+	# 维护公告（docs/公告系统设计.md）：只把「连不上」换成维护说明，不改变放不放行。
+	var maintenance_login: Dictionary = BootstrapScript.entry_view({"login": "failed", "maintenance": true})
+	_h.expect(str(maintenance_login.get("state", "")) == "maintenance"
+			and bool(maintenance_login.get("actions", false)) and not bool(maintenance_login.get("pass", false)),
+		"entry_maintenance_hidden", "登录失败且有维护公告时没有显示维护说明，或者放行了")
+	var maintenance_connect: Dictionary = BootstrapScript.entry_view({"login": "logged_in", "online": false,
+		"failed_handshakes": BootstrapScript.ENTRY_CONNECT_FAILURES, "maintenance": true})
+	_h.expect(str(maintenance_connect.get("state", "")) == "maintenance"
+			and not bool(maintenance_connect.get("pass", false)),
+		"entry_maintenance_connect_hidden", "连不上服务器且有维护公告时没有显示维护说明，或者放行了")
+	var rate_limited: Dictionary = BootstrapScript.entry_view(
+		{"login": "failed", "rate_limited": true, "maintenance": true})
+	_h.expect(str(rate_limited.get("state", "")) == "login_failed", "entry_rate_limit_shown_as_maintenance",
+		"注册被限流时显示成了「服务器维护中」—— 服务器根本没在维护，玩家会一直干等")
+	var admitted_during_notice: Dictionary = BootstrapScript.entry_view(
+		{"login": "logged_in", "online": true, "admitted": true, "maintenance": true})
+	_h.expect(bool(admitted_during_notice.get("pass", false)), "entry_maintenance_blocks_admitted",
+		"维护公告文件忘了删、但服务器已经放行时，玩家被挡在了门外")
+	var connecting_during_notice: Dictionary = BootstrapScript.entry_view(
+		{"login": "logged_in", "online": false, "failed_handshakes": 0, "offline_sec": 1.0, "maintenance": true})
+	_h.expect(str(connecting_during_notice.get("state", "")) == "connecting", "entry_maintenance_flashes",
+		"连接还没失败过就显示了维护说明")
+
 	var source := FileAccess.get_file_as_string("res://scenes/bootstrap/Bootstrap.gd")
 	_h.expect(source.contains("if _entry_gate_required():\n\t\t_begin_entry()"),
 		"entry_gate_bypassed", "主界面载完之后没有经过进门这一步就直接 READY 了")
