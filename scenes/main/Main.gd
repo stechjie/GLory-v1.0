@@ -140,6 +140,9 @@ func _ready() -> void:
 		AsyncActionController.action_state_changed.connect(_on_async_action_state_changed)
 	if not TutorialMode.skip_requested.is_connected(_on_tutorial_skip):
 		TutorialMode.skip_requested.connect(_on_tutorial_skip)
+	# 宠物归属到手 / 变化时补判三选一，见 _on_pets_changed。
+	if not PlayerProfile.pets_changed.is_connected(_on_pets_changed):
+		PlayerProfile.pets_changed.connect(_on_pets_changed)
 	# V3 P1-04：接上确认音/触觉。挂在 action_resolved 上，不挂按钮、
 	# 更不挂 _input —— 那个信号每个 request_id 只发一次，且不是输入驱动的，
 	# 所以连点和 mouse+touch 双路都不会让它多发。
@@ -770,7 +773,11 @@ func _show_back_exit_hint() -> void:
 
 func _show_menu() -> void:
 	# 首次启动：进主菜单前强制选择初始宠物（三选一，选完才放行）。
-	if PlayerProfile.needs_starter_pick:
+	#
+	# 🔴 **必须先 pets_loaded。** 归属上云之后，没拉到服务端答复时 owned_pets 是空的 ——
+	# 只看 needs_starter_pick 的话，弱网下老玩家会被要求重选一遍三选一。
+	# 拉到之后如果确实要选，由 _on_pets_changed 补一次。
+	if PlayerProfile.pets_loaded and PlayerProfile.needs_starter_pick:
 		_show_starter_pet_gate()
 		return
 	_clear()
@@ -1267,6 +1274,20 @@ func _show_profile_screen() -> void:
 	profile.back_requested.connect(_show_menu)
 	_page_back_route = _show_menu
 	add_child(profile)
+
+# 宠物归属到手之后补判一次三选一。
+#
+# 两条路会走到这里：① 冷启动时玩家已经进了主菜单，拉取才回来；
+# ② 注销账号之后（reset_account_state 把 pets_loaded 清了，新身份没有任何宠物）。
+# 不补这一下，这两种情况玩家会停在一个没有宠物的主菜单里，而且没有任何提示。
+func _on_pets_changed() -> void:
+	if not PlayerProfile.pets_loaded or not PlayerProfile.needs_starter_pick:
+		return
+	# 只在主菜单上拦。对局中、或已经在三选一页上时都不许打断。
+	if _menu == null or not is_instance_valid(_menu) or not _menu.is_inside_tree():
+		return
+	_show_starter_pet_gate()
+
 
 # 首次启动的初始宠物三选一关卡：无返回按钮，选完后再进主菜单。
 func _show_starter_pet_gate() -> void:

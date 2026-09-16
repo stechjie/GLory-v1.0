@@ -84,9 +84,12 @@ func _case_existing_id_survives_upgrade() -> void:
 		"id_lost_on_upgrade",
 		"v1→v%d 升级后 player_id 必须不变，期望 %s，实得 %s" % [
 			SaveSchema.PROFILE_VERSION, KNOWN_ID, str(out.get("player_id", ""))])
-	# 顺带确认这一路上原有的迁移没被这次改动弄坏。
-	_h.expect(out.get("active_pet", "") == "pet_rabbit",
-		"rename_regressed", "v1 档案的宠物改名迁移不能因为加 player_id 而失效")
+	# 顺带确认 v6 的清理跑到了：宠物归属上云之后，本机档案里这几个键必须被删掉。
+	# 留着就是地雷（下一个人会以为它还在用），而且是「改一行文件就白嫖」的入口。
+	for dead_key in ["owned_pets", "active_pet", "needs_starter_pick"]:
+		_h.expect(not out.has(dead_key), "pet_key_survived_upgrade",
+			"v1→v%d 升级后本机档案不该还留着 %s —— 归属的真相在服务端" % [
+				SaveSchema.PROFILE_VERSION, dead_key])
 
 
 # 版本号已经是最新、但档案里没有 id —— migrate_profile 早年的写法会在这里直接

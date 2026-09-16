@@ -14,6 +14,9 @@ const VERSION := 2
 #   3 - profile gains the persistent BoardReadabilityLayer visibility setting
 #   4 - profile gains persisted locale and an explicit onboarding lifecycle
 #   5 - profile gains player_id（账号系统第 0 步，见 docs/账号系统RFC.md）
+#   6 - 宠物归属上云：owned_pets / active_pet / needs_starter_pick 从本机**删除**
+#       （docs/商城系统设计.md 第八节）。归属的唯一真相在服务端 player_entitlements，
+#       本机留着只会变成「改一行文件就白嫖」的入口，也会变成下一个人误以为还在用的地雷。
 #
 # ⚠️ **4 曾经被两条分支各发过一次，内容不同。** 账号线当时也把版本号写成 4
 # （装的是 player_id），onboarding 线写的 4 装的是 locale/onboarding。合并时把
@@ -24,13 +27,7 @@ const VERSION := 2
 # 注：3 之后加的六个演出开关（screen_shake / flash_effects / hit_stop /
 # reduced_motion / ui_sound / haptics）没有升版本号，因为它们每一个都有安全默认值，
 # 读侧 `data.get(key, default)` 就够了。player_id 不是这种字段 —— 见下。
-const PROFILE_VERSION := 5
-
-# Pets renamed after the art came in. Old profiles still hold the old id, so it is
-# rewritten on load rather than orphaning a pet the player already owns.
-const PET_ID_RENAMES := {
-	"pet_duck": "pet_rabbit",
-}
+const PROFILE_VERSION := 6
 
 # 玩家的永久身份。RFC 4122 版本 4 的 UUID，小写带连字符。
 #
@@ -54,10 +51,17 @@ static func migrate_profile(payload: Dictionary) -> Dictionary:
 	var from := int(out.get("version", 1))
 	if from < PROFILE_VERSION:
 		if from < 2:
-			out["owned_pets"] = _rename_ids(out.get("owned_pets", []))
-			out["active_pet"] = _rename_id(str(out.get("active_pet", "")))
 			if not out.has("codex_seen"):
 				out["codex_seen"] = []
+		# v6：宠物归属上云，本机这三个键作废。
+		#
+		# **主动 erase 并回写，不是读的时候忽略。** 留着就是地雷：下一个人
+		# （或下一个 AI）grep 到 owned_pets 还在存档里，完全可能当成还在用的东西继续改。
+		#
+		# 不做「把本机的宠物同步给服务器」：拍板是**不认本机**（存档是文本文件，
+		# 改一行就白嫖），所有人重走一次三选一。
+		for dead_key in ["owned_pets", "active_pet", "needs_starter_pick"]:
+			out.erase(dead_key)
 		if from < 3 and not out.has("board_readability_enabled"):
 			out["board_readability_enabled"] = true
 		# 条件是 `< 5` 而不是 `< 4`：见顶部关于"两个版本 4"的说明。
@@ -115,13 +119,4 @@ static func _ensure_player_id(out: Dictionary) -> void:
 		push_warning("[SAVE] profile.player_id 格式非法，已重新签发（原值：%s）" % existing)
 	out["player_id"] = new_player_id()
 
-static func _rename_id(id: String) -> String:
-	return str(PET_ID_RENAMES.get(id, id))
 
-static func _rename_ids(ids: Array) -> Array:
-	var out: Array = []
-	for raw in ids:
-		var id := _rename_id(str(raw))
-		if not id.is_empty() and not out.has(id):
-			out.append(id)
-	return out

@@ -92,6 +92,8 @@ var _entry_elapsed := 0.0
 var _entry_poll := 0.0
 var _entry_offline_sec := 0.0
 var _entry_unanswered_sec := 0.0
+# 宠物归属只在进门时发一次；失败了在这里退避重试，不拖住放行。
+var _pets_requested := false
 var _entry_login_attempts := 0
 # 下一次自动重试登录的时刻（_entry_elapsed 的刻度）。< 0 = 还没排。
 var _entry_login_retry_at := -1.0
@@ -338,9 +340,28 @@ func _drive_entry() -> void:
 					_retry_entry_login()
 		return
 	_entry_login_retry_at = -1.0
+	# 宠物归属（docs/商城系统设计.md）。登录一成功就顺手发一次，与下面连 WebSocket 并行。
+	#
+	# **刻意不把它做成放行条件。** 它要读服务器上的 data/pets/pets.json，
+	# 而那个文件正是 deploy/update.sh 第一趟不会复制的 —— 拿它当进门门槛，
+	# 等于「一个数据文件没传上去，全员进不了游戏」。为 1% 的加成换这个爆炸半径不划算。
+	#
+	# 不阻塞的代价只是「冷启动后极短一段时间里拿不到宠物」，而那段时间玩家
+	# 本来就在等下面这个 WebSocket 握手 —— 比一次 HTTPS 往返慢。
+	if not _pets_requested:
+		_pets_requested = true
+		_fetch_pets()
 	# 🔴 被顶号之后绝不自动重连（RealtimeService._kicked 那条：两台设备会无限互踢）。
 	if not RealtimeService.is_kicked():
 		RealtimeService.start()
+
+
+# 拉宠物归属。失败就等下一次（主菜单打开备战 / 商城时还会再拉），
+# **不清空已有缓存** —— PlayerProfile.refresh_pets 里那条纪律。
+func _fetch_pets() -> void:
+	if await PlayerProfile.refresh_pets():
+		return
+	_pets_requested = false
 
 
 func _entry_login_backoff() -> float:

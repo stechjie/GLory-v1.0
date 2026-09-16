@@ -367,6 +367,10 @@ func _buy(item: Dictionary) -> void:
 		_owned[str(receipt.get("granted", ""))] = true
 		# replayed = 服务端重放了一张旧回执（上一次其实成功了）。不另说一句的话，
 		# 玩家会以为这次又扣了一笔。
+		# 买的是宠物就把归属缓存刷一遍 —— 备战页与出战宠物都读 PlayerProfile，
+		# 不刷的话玩家买完回去发现新宠物不在那儿。
+		if str(item.get("kind", "")) == "pet":
+			await PlayerProfile.refresh_pets()
 		if bool(receipt.get("replayed", false)):
 			_set_notice(_t("这件你刚才已经买到了，没有重复扣费",
 				"You already bought this a moment ago — you were not charged twice"), false)

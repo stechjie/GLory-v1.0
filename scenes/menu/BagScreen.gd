@@ -140,7 +140,9 @@ func _header() -> Control:
 func _reload() -> void:
 	_loading = true
 	_render()
-	var pets: Dictionary = await AccountManager.fetch_pets()
+	# 宠物走 PlayerProfile —— 它是归属缓存的唯一主人。直连 AccountManager 的话，
+	# 这里换了出战宠物、备战页还显示旧的（两处各自维护一份缓存）。
+	var pets_ok := await PlayerProfile.refresh_pets()
 	var owned: Dictionary = await AccountManager.fetch_entitlements()
 	# 目录只用来回答「这个内容是不是付费的」，见文件头那段。
 	var catalog: Dictionary = await AccountManager.fetch_shop()
@@ -148,12 +150,11 @@ func _reload() -> void:
 		return
 	_loading = false
 
-	if int(pets.get("code", 0)) / 100 == 2:
-		var p: Dictionary = pets.get("body", {})
-		_owned_pets = (p.get("owned", []) as Array)
-		_active_pet = str(p.get("active", ""))
-	else:
-		_set_notice(str(pets.get("error", _t("背包打不开", "The bag failed to load"))), true)
+	# 拉失败也照样读缓存：PlayerProfile 失败时不动旧值，显示上次那份比显示空好。
+	_owned_pets = PlayerProfile.owned_pets.duplicate()
+	_active_pet = PlayerProfile.get_active()
+	if not pets_ok and not PlayerProfile.pets_loaded:
+		_set_notice(_t("宠物列表没拉到，稍后再试", "Could not load your pets — try again later"), true)
 
 	_paid_content.clear()
 	if int(owned.get("code", 0)) / 100 == 2:
@@ -302,17 +303,16 @@ func _set_active(pet_id: String) -> void:
 	if _busy:
 		return
 	_busy = true
-	var result: Dictionary = await AccountManager.set_active_pet(pet_id)
+	var ok := await PlayerProfile.set_active(pet_id)
 	_busy = false
 	if not is_inside_tree():
 		return
-	if int(result.get("code", 0)) / 100 == 2:
-		var body: Dictionary = result.get("body", {})
-		_owned_pets = (body.get("owned", []) as Array)
-		_active_pet = str(body.get("active", ""))
+	_owned_pets = PlayerProfile.owned_pets.duplicate()
+	_active_pet = PlayerProfile.get_active()
+	if ok:
 		_set_notice(_t("已换出战宠物", "Active pet changed"), false)
 	else:
-		_set_notice(str(result.get("error", _t("换不了", "Could not change pet"))), true)
+		_set_notice(_t("换不了，稍后再试", "Could not change pet — try again later"), true)
 	_render()
 
 

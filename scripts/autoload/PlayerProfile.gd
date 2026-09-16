@@ -1,7 +1,22 @@
 extends Node
 # 账号级持久档（跨局保留，绝不进 GameState.reset_run）。
-# 目前只承载宠物系统的归属数据：拥有的宠物 + 当前出战宠物。
-# 首次进游戏时不直接发放，而是标记 needs_starter_pick，由备战界面弹「三选一」。
+#
+# ## 🔴 宠物归属**不在这里持久化**（2026-09-16 上云）
+#
+# owned_pets / active_pet / needs_starter_pick 仍然是这个门面上的同步字段
+# —— 二十来处调用点照旧同步读 —— 但它们是**服务端答复的内存缓存**：
+# 不从 profile.json 读，也不写回去（SaveSchema v6 把这三个键从本机档案里删了）。
+#
+# 唯一真相在服务端 player_entitlements（docs/商城系统设计.md）。本机留一份的话，
+# 改一行文本文件就能白嫖付费宠物。
+#
+# 三条纪律：
+#   1. **刷新失败时保留旧值，绝不清空。** 网络抖一下就把玩家的宠物抹掉，
+#      表现是这一局没有加成 —— 而且不报错。
+#   2. **needs_starter_pick 只在 pets_loaded 之后才当真。** 没拉到就一律 false，
+#      否则弱网下新玩家被误弹、老玩家被要求重选。
+#   3. 改出战宠物只有 set_active() 一条路（异步、走服务端）。商城与备战页都走它，
+#      不许谁再直连 AccountManager —— 两条路各自维护缓存必然不一致。
 
 const PROFILE_PATH := "user://profile.json"
 # 解析失败的档案在被覆盖前先挪到这里。见 _preserve_corrupt_profile。
@@ -31,8 +46,11 @@ signal presentation_settings_changed()
 # 语义、随机源、以及「为什么不能等接账号时再加」在 SaveSchema.PLAYER_ID_PATTERN
 # 那一段和 docs/账号系统RFC.md 里。
 var player_id := ""
+# 服务端答复的缓存，不落盘。见文件头。
 var owned_pets: Array[String] = []
 var active_pet := ""
+# 有没有成功拉到过一次。**没拉到之前不许把空当成「他没有宠物」。**
+var pets_loaded := false
 # 备战界面选的出战种族，**原样**存（可能为空 = 从没选过）。
 # 读的时候一律走 get_selected_races()：那里按当前棋子表校验，不合法就回落默认 ——
 # 以后删掉 / 改名一族，老档不需要像 pet_duck -> pet_rabbit 那样做迁移。
@@ -101,12 +119,8 @@ func load_profile() -> void:
 	# 没有或写坏了才现签一个。不要在这里加 `if player_id.is_empty()` 之类的兜底 ——
 	# 签发只能有一处，两处就迟早会各签各的。
 	player_id = str(data.get("player_id", ""))
-	owned_pets.clear()
-	for pid in data.get("owned_pets", []):
-		var id := str(pid)
-		if not id.is_empty() and not owned_pets.has(id):
-			owned_pets.append(id)
-	active_pet = str(data.get("active_pet", ""))
+	# 宠物归属不从档案里读了（SaveSchema v6 已经把这几个键 erase 掉）。
+	# 它们由 refresh_pets() 从服务端填，见文件头。
 	# 不合法（表里已经没有的族、个数对不上）就整份丢掉，读的时候回落默认。
 	# 不补不砍，理由见 RacePick.sanitize。有安全默认值，所以不升 PROFILE_VERSION。
 	selected_races.assign(RacePick.sanitize(data.get("selected_races", [])))
@@ -131,10 +145,6 @@ func load_profile() -> void:
 		str(data.get("onboarding_status", ONBOARDING_LEGACY_UNKNOWN)))
 	_apply_reduced_motion()
 	LocaleManager.set_locale(locale)
-	needs_starter_pick = bool(data.get("needs_starter_pick", owned_pets.is_empty()))
-	# 出战宠物必须是已拥有的；否则回落到第一只（或空）。
-	if not active_pet.is_empty() and not owned_pets.has(active_pet):
-		active_pet = owned_pets[0] if not owned_pets.is_empty() else ""
 	# Persist the migrated shape so the upgrade only ever runs once.
 	#
 	# player_id 要单独判一次：档案版本号已经是最新、但 id 缺失或被写坏时，
@@ -147,10 +157,7 @@ func save_profile() -> bool:
 	var payload := {
 		"version": SaveSchema.PROFILE_VERSION,
 		"player_id": player_id,
-		"owned_pets": owned_pets,
-		"active_pet": active_pet,
 		"selected_races": selected_races,
-		"needs_starter_pick": needs_starter_pick,
 		"codex_seen": codex_seen,
 		"board_readability_enabled": board_readability_enabled,
 		"screen_shake_enabled": screen_shake_enabled,
@@ -170,6 +177,8 @@ func save_profile() -> bool:
 func _reset_defaults() -> void:
 	owned_pets.clear()
 	active_pet = ""
+	# 归属缓存也清掉：下次 refresh_pets 之前不许把空当成「他没有宠物」。
+	pets_loaded = false
 	selected_races.clear()
 	codex_seen.clear()
 	board_readability_enabled = true
@@ -226,6 +235,8 @@ func reissue_player_id() -> void:
 func reset_account_state() -> void:
 	owned_pets.clear()
 	active_pet = ""
+	# 归属缓存也清掉：下次 refresh_pets 之前不许把空当成「他没有宠物」。
+	pets_loaded = false
 	# 出战种族是玩法偏好、跟着账号走，不是设备态 —— 一起清，回到默认。
 	selected_races.clear()
 	codex_seen.clear()
@@ -430,36 +441,64 @@ func is_owned(pet_id: String) -> bool:
 func get_active() -> String:
 	return active_pet
 
-func grant(pet_id: String) -> void:
-	if pet_id.is_empty() or owned_pets.has(pet_id):
-		return
-	if PetService.pet_by_id(pet_id).is_empty():
-		return
-	owned_pets.append(pet_id)
-	if active_pet.is_empty():
-		active_pet = pet_id
-	save_profile()
+# grant() 删掉了：发放是服务端的事（POST /v1/shop/orders 或 /v1/me/pets/starter），
+# 客户端不许自己往拥有列表里塞东西。它此前也已经零调用方。
+
+
+# 从服务端拉一次归属。返回有没有拉到。
+#
+# 🔴 **失败时一个字段都不动。** 清空的话，网络抖一下玩家的宠物就没了 ——
+# 表现是这一局没有加成，而且不报错。没拉到 = 继续用上次拿到的。
+func refresh_pets() -> bool:
+	if not AccountManager.is_logged_in():
+		return false
+	var result: Dictionary = await AccountManager.fetch_pets()
+	if int(result.get("code", 0)) / 100 != 2:
+		return false
+	_adopt_pets(result.get("body", {}))
+	return true
+
+
+# 把服务端的答复装进缓存。set_active / pick_starter 的回执与 refresh 共用它 ——
+# 三条路各自解析一遍的话，迟早有一条漏掉某个字段。
+func _adopt_pets(body: Dictionary) -> void:
+	owned_pets.clear()
+	for raw in body.get("owned", []):
+		var id := str(raw)
+		if not id.is_empty() and not owned_pets.has(id):
+			owned_pets.append(id)
+	active_pet = str(body.get("active", ""))
+	needs_starter_pick = bool(body.get("needs_starter_pick", false))
+	pets_loaded = true
 	pets_changed.emit()
 
-func set_active(pet_id: String) -> void:
+
+# 换出战宠物。**唯一入口** —— 商城、背包、备战页都走这里，
+# 不许谁再直连 AccountManager（那样缓存就有两个主人了）。
+func set_active(pet_id: String) -> bool:
 	if not owned_pets.has(pet_id) or active_pet == pet_id:
-		return
-	active_pet = pet_id
-	save_profile()
-	pets_changed.emit()
+		return false
+	var result: Dictionary = await AccountManager.set_active_pet(pet_id)
+	if int(result.get("code", 0)) / 100 != 2:
+		return false
+	_adopt_pets(result.get("body", {}))
+	return true
 
-# 首次三选一：发放选中的宠物、设为出战、清除待选标记。
+
+# 首次三选一。走的是和购买**完全一样**的发货路径（同一张订单表、同一个幂等键），
+# 只是价格 0 —— 见 docs/商城系统设计.md 第九节。
 func pick_starter(pet_id: String) -> bool:
 	if not needs_starter_pick:
 		return false
 	if not PetService.is_starter(pet_id):
 		return false
-	owned_pets.append(pet_id)
-	active_pet = pet_id
-	needs_starter_pick = false
-	save_profile()
-	pets_changed.emit()
-	return true
+	var order_id := AccountManager.new_client_order_id()
+	var result: Dictionary = await AccountManager.pick_starter_pet(order_id, pet_id)
+	if int(result.get("code", 0)) / 100 != 2:
+		return false
+	# 发货回执里没有完整的宠物状态，拉一次拿权威值。
+	# 照着回执自己拼的话，「服务端到底给了哪只」就有两个说法了。
+	return await refresh_pets()
 
 # --- 出战种族（RacePick）---------------------------------------------------
 

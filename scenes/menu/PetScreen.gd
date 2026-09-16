@@ -57,6 +57,9 @@ func _ready() -> void:
 	if not PlayerProfile.races_changed.is_connected(_on_races_changed):
 		PlayerProfile.races_changed.connect(_on_races_changed)
 	_refresh()
+	# 归属的真相在服务端，开这一页时拉一次。成功会发 pets_changed，_refresh 再跑一遍；
+	# 失败什么都不做（缓存不动），页面就还是上次那份。
+	PlayerProfile.refresh_pets()
 
 func _exit_tree() -> void:
 	if PlayerProfile.pets_changed.is_connected(_refresh):
@@ -228,8 +231,10 @@ func _build_card_button(pet_id: String, owned: bool, is_active: bool, starter_mo
 	if starter_mode:
 		# 首次三选一：任选一只作为初始宠物，选定后发信号让上层放行进主菜单。
 		btn.text = tr("pet_pick")
+		# 归属上云之后这是一次服务端往返（同购买的发货路径）。
+		# 失败就什么都不做 —— PlayerProfile 不会动缓存，界面保持原样。
 		btn.pressed.connect(func():
-			if PlayerProfile.pick_starter(pet_id):
+			if await PlayerProfile.pick_starter(pet_id):
 				starter_picked.emit())
 	elif not owned:
 		btn.text = tr("pet_locked")
@@ -239,7 +244,7 @@ func _build_card_button(pet_id: String, owned: bool, is_active: bool, starter_mo
 		btn.disabled = true
 	else:
 		btn.text = tr("pet_set_active")
-		btn.pressed.connect(func(): PlayerProfile.set_active(pet_id))
+		btn.pressed.connect(func(): await PlayerProfile.set_active(pet_id))
 	return btn
 
 # --- 种族页 -------------------------------------------------------------------
