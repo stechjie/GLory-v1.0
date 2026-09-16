@@ -2,6 +2,8 @@
 
 const CarrotEconomy = preload("res://scripts/economy/CarrotEconomy.gd")
 const RacePick := preload("res://scripts/units/RacePick.gd")
+# 9.17 音效。preload 而不是全局类名（理由见 Main.gd 顶上那条注释）。
+const SfxService := preload("res://ui/services/SfxService.gd")
 const SAVE_PATH := "user://glory_beta_004.save"
 const RECONNECT_PATH := "user://glory_reconnect.json"
 const PUBLIC_TOKEN_PATH := "user://glory_public_token.txt"
@@ -343,6 +345,10 @@ func load_run() -> bool:
 	GameState.team_hp = int(parsed.get("team_hp", GameState.team_hp))
 	GameState.enemy_team_hp = int(parsed.get("enemy_team_hp", GameState.enemy_team_hp))
 	_normalize_arrays()
+	# 9.17：读档 = 换了一本账，不是一笔收入。上面那一整块赋值会把金币从
+	# 当前值直接换成存档里的值，不对齐基线就会在进游戏时响一声「入账/扣除」。
+	# 放在最后一行：必须等所有赋值都做完再对齐。
+	SfxService.resync_currency_baseline()
 	return true
 
 func new_run() -> void:

@@ -12,8 +12,12 @@ extends Node
 # 第 3 条「胜利：镜头轻收束、幸存者定格、胜利字样和短音效/震动；至少保持 0.8 秒」
 #   * 保持时长本来就够（RESULT_DISPLAY_SECONDS = 1.0）。
 #   * 收束和定格是新加的。
-#   * **短音效没做**：assets/audio 下只有 BGM 和一个 start_game.mp3，没有胜利音效
-#     资源。这条门禁不会假装它做到了 —— 补音频之前它就是缺的。
+#   * ~~**短音效没做**~~ **2026-09-17 已补**：assets/audio 下此前只有 BGM 和一个
+#     start_game.mp3，没有胜利音效资源，这条门禁当时如实记缺口。9.17 音效批次
+#     交付了 `assets/audio/sfx/battle/battle_victory.mp3` / `battle_defeat.mp3`，
+#     由 `ui/services/SfxService.gd` 在 BattleResult 的结算浮层处播。
+#     本门禁**仍然不验发声**（headless 是 Dummy 音频驱动，验不了），
+#     「有没有接上」由 `tools/audio_sfx_check.gd` 的 `cue_without_call_site` 管。
 #
 # 前冲位移打在 ActorRoot 上，因为 _position_3d_model_node() 每帧都会重写
 # actor.position。这条约束写成了下面的反向断言：谁把位移改到 actor 上就会红。

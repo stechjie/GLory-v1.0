@@ -672,9 +672,13 @@ func _all_buttons(node: Node) -> Array[BaseButton]:
 
 # V3 P1-04：UI 音效与触觉的裁决必须走 PresentationSettings，且真的被开关左右。
 #
-# 这条门禁只验**裁决**，不验发声——仓里没有任何 UI 音效素材（音频许可还是未闭环
-# blocker），本批刻意只搭管线不放音。所以能验的是「开关关掉时不允许播」，
+# 这条门禁只验**裁决**，不验发声。所以能验的是「开关关掉时不允许播」，
 # 而不是「播出来的声音对不对」。
+#
+# 2026-09-17 更新：当时写这条注释的理由是「仓里没有任何 UI 音效素材」，
+# 那个理由**已经不成立**（24 条 SFX 已落盘并接线，见
+# `tools/audio_sfx_check.gd` 与 `docs/9.17音效接入记录.md`）。
+# 但「本文件不验发声」这个分工**不变** —— 它是裁决层的检查。
 func _check_feedback_gating() -> void:
 	var sound_before: bool = PlayerProfile.get_presentation_toggle("ui_sound")
 	var haptics_before: bool = PlayerProfile.get_presentation_toggle("haptics")

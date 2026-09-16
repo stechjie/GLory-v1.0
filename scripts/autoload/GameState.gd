@@ -1,6 +1,8 @@
 extends Node
 
 const CarrotEconomyRules = preload("res://scripts/economy/CarrotEconomy.gd")
+# 9.17 音效。preload 而不是全局类名（理由见 Main.gd 顶上那条注释）。
+const SfxService := preload("res://ui/services/SfxService.gd")
 
 const START_FORMATION_HP := 50
 const START_GOLD := 100
@@ -139,6 +141,10 @@ func reset_run() -> void:
 	battle_history.clear()
 	pending_battle_package.clear()
 	run_races.clear()
+	# 9.17：上面这一整块是**换了一本账**，不是某笔收支。重开一局时金币从
+	# 上一局剩下的数额直接跳到 START_GOLD，不对齐基线就会响一声「扣除」。
+	# 放在最后一行：必须等所有赋值都做完再对齐。
+	SfxService.resync_currency_baseline()
 
 func normal_unit_cap() -> int:
 	if not owned_treasures.has("atk_fury_roster"):

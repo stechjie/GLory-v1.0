@@ -56,6 +56,16 @@ const BATTLE_VISUAL_MAX := Vector2(905.0, 452.0)
 const BATTLE_MUSIC_PATH := "res://assets/audio/bgm/fighting_music.mp3"
 const PVP_BATTLE_MUSIC_PATH := "res://assets/audio/bgm/pvp_battle_music.mp3"
 
+# 9.17 音效（boss 登场 / 人王阵亡 / 胜负）。
+#
+# 声明在继承链最底这一层，子类（BattleArena / BattleRenderer / BattleVfx /
+# BattleResult / BattleScreen）直接继承，各自再声明一次会撞「成员在父类里已存在」。
+#
+# **BGM 归 BGM，音效归音效**：那三条 *_MUSIC_PATH 由各页面自己建 AudioStreamPlayer
+# 播放（本文件 _start_battle_music 就是），而音效一律走 SfxService 的 root 播放器池 ——
+# 音效要求「换场景也不被掐断」（胜负音就是在换场景那一刻响的），BGM 要求「出场景就停」。
+const SfxService := preload("res://ui/services/SfxService.gd")
+
 @export_group("Battle Unit Layout")
 @export_range(0.35, 1.0, 0.01) var battle_unit_visual_scale := 0.42
 @export_range(-0.5, 2.0, 0.01) var battle_unit_y_offset := 1.0

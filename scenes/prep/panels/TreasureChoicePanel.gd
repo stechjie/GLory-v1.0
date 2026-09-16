@@ -15,6 +15,7 @@ extends Control
 # 少写一条不会崩，只会显示占位符。
 
 const PrepWidgets := preload("res://scenes/prep/PrepWidgets.gd")
+const SfxService := preload("res://ui/services/SfxService.gd")
 const TREASURE_CARD_DIRECTORY := "res://assets/ui/treasure_cards"
 
 # 三选一层的 ModalStack 合同（C-11 的 C2）。
@@ -93,6 +94,9 @@ func refresh() -> void:
 			# 强制选择层：点外面**不能**关。玩家必须选一件宝物才能继续。
 			"dismiss_on_backdrop": false,
 			"backdrop_color": TREASURE_BACKDROP_COLOR,
+			# 本面板自带「进入选宝界面」音，所以关掉 ModalStack 那条通用弹窗音 ——
+			# 两条一起播会糊成一片。
+			"popup_sfx": false,
 		})
 		if modal_id.is_empty():
 			# 上面已用 has() 挡过重复；走到这里说明 push 真的失败了。
@@ -100,6 +104,9 @@ func refresh() -> void:
 			_teardown_modal_state()
 			return
 		_treasure_overlay = content
+		# 音效放在 push 成功之后：跑到这里才是「界面真的开了」，
+		# 上面那条早退只是重复 push 失败，不该响。
+		SfxService.play(SfxService.CUE_TREASURE_CHOICE_OPEN)
 		# 不清待定锁：Back / close_all 只重建 UI，同一份服务端意图仍在飞行中。
 	if _treasure_choice_row == null or not is_instance_valid(_treasure_choice_row):
 		return

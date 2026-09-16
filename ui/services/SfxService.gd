@@ -1,0 +1,446 @@
+extends RefCounted
+
+# 全局音效服务（9.17 音效/BGM 接入批次）。
+#
+# ## 为什么不做 autoload
+#
+# 照 `ui/services/UiFeedback.gd` 的先例：autoload 全部在第一个场景之前构造，
+# 条条都在冷启动关键路径上（T3 实测 8730–8890 ms，预算 ≤3 s，是未闭环 blocker）。
+# 所以由 `Main._ready()` 调一次 `install()`，播放器和代币监视器都挂在
+# `get_tree().root` 下**按需创建**。
+#
+# 挂 root 而不是挂页面：`Main._clear()` 会把页面子树整个释放，挂页面上会出现
+# 「战斗胜利音刚开口就被掐掉」——胜负结算那一刻页面正在换。
+#
+# 挂载走 `add_child.call_deferred`，**不是**同步 add_child：`install()` 的时机
+# 正好是 root 在装配子节点的窗口里，同步挂必失败且不报错。本文件最容易静默
+# 失效的一处就在这，细节见 `_ensure_voices`。
+#
+# ## 消费方怎么拿它
+#
+# 一律 `const SfxService := preload("res://ui/services/SfxService.gd")`，
+# 与 Main 拿 `UiFeedbackService` 的方式一致。刻意**不声明 class_name**：
+# 少注册一个全局类，也不会踩「局部 const 名与全局类名同名」那种只能靠试出来的报错。
+#
+# ## 总线：只有 SFX，不加 Music
+#
+# `default_bus_layout.tres` 里只有 Master 和 SFX 两条。四处 BGM 代码写着
+# `bus = "Music" if get_bus_index("Music") >= 0 else "Master"` —— 加一条 Music
+# 总线会让它们**同时**改走一条从没调过音量的总线。`ui_feedback_check` 的
+# `music_bus_added_silently` 钉着这一条，别顺手补上。
+#
+# ## 静音门只有一处
+#
+# 每个 play() 都过 `Presentation.ui_sound_allowed()`：玩家关掉「界面音效」开关、
+# 或在备战页按了 Master 静音键，这里一律不出声。裁决不散到各调用点 ——
+# 散出去的结果是「关掉了但某个音还在响」。
+#
+# ## 一次点击只发一次
+#
+# 本服务**不接任何输入回调**（`_input` / `_unhandled_input` / `_gui_input`）。
+# `PrepScreen._input()` 用 if/elif 同时处理鼠标与触摸且无去重，挂上去在 Android
+# 上一次触摸会响两次，**而在 Windows 开发机上完全看不出来**。所以调用点必须
+# 落在「业务已确认成功」的那一行之后，见各调用点自己的注释。
+#
+# 另有一道 `RETRIGGER_GUARD_MSEC` 兜底：同一 cue 在 40 ms 内只发一次。
+# 它挡的是「同一帧里多条路径都判定成功」，不替代上面的结构性保证。
+
+const Presentation := preload("res://effects/runtime/presentation/PresentationSettings.gd")
+
+const SFX_BUS := "SFX"
+const VOICE_PREFIX := "GlorySfxVoice"
+
+# 同时能重叠几条。8 是取舍：AOE 多杀时的死亡音、连点时的按钮音都要能叠，
+# 但再多就是白白占着播放器不放。
+const VOICE_COUNT := 8
+
+# 同一 cue 的最小重触发间隔。
+const RETRIGGER_GUARD_MSEC := 40
+
+
+# --- cue id -----------------------------------------------------------------
+#
+# 用字符串 id 而不是裸路径：调用点把 id 写错是一个能搜出来的拼写差异，
+# 写错路径只会在运行时静默无声。路径只在本文件的 CUES 里出现一次。
+
+const CUE_UI_POPUP := "ui_popup"
+const CUE_UI_CONFIRM := "ui_confirm"
+const CUE_UI_REJECT := "ui_reject"
+const CUE_UI_CURRENCY_GAIN := "ui_currency_gain"
+const CUE_UI_CURRENCY_SPEND := "ui_currency_spend"
+
+const CUE_SYNERGY_ACTIVATE := "synergy_activate"
+const CUE_SHOP_REFRESH := "shop_refresh"
+const CUE_SHOP_BUY := "shop_buy"
+const CUE_UNIT_SELL := "unit_sell"
+const CUE_STAR4_HUMAN_KING := "star4_human_king"
+const CUE_STAR4_GOD := "star4_god"
+const CUE_STAR4_UNDEAD_MOTHER := "star4_undead_mother"
+const CUE_STAR4_DARK := "star4_dark"
+const CUE_STAR4_DEFAULT := "star4_default"
+const CUE_TREASURE_LINKAGE := "treasure_linkage"
+const CUE_TREASURE_CHOICE_OPEN := "treasure_choice_open"
+
+const CUE_BOSS_APPEAR := "boss_appear"
+const CUE_HUMAN_KING_DEATH := "human_king_death"
+const CUE_BATTLE_VICTORY := "battle_victory"
+const CUE_BATTLE_DEFEAT := "battle_defeat"
+
+const CUE_MERC_SUMMON := "merc_summon"
+const CUE_UPGRADE_STONE_DRAW := "upgrade_stone_draw"
+const CUE_CARROT_FARM_UPGRADE := "carrot_farm_upgrade"
+const CUE_HARVEST_TECH_UPGRADE := "harvest_tech_upgrade"
+
+const CUES := {
+	CUE_UI_POPUP: "res://assets/audio/sfx/ui/popup.mp3",
+	CUE_UI_CONFIRM: "res://assets/audio/sfx/ui/button_confirm.mp3",
+	CUE_UI_REJECT: "res://assets/audio/sfx/ui/button_reject.mp3",
+	CUE_UI_CURRENCY_GAIN: "res://assets/audio/sfx/ui/currency_gain.mp3",
+	CUE_UI_CURRENCY_SPEND: "res://assets/audio/sfx/ui/currency_spend.mp3",
+
+	CUE_SYNERGY_ACTIVATE: "res://assets/audio/sfx/prep/synergy_activate.mp3",
+	CUE_SHOP_REFRESH: "res://assets/audio/sfx/prep/shop_refresh.mp3",
+	CUE_SHOP_BUY: "res://assets/audio/sfx/prep/shop_buy.mp3",
+	CUE_UNIT_SELL: "res://assets/audio/sfx/prep/unit_sell.mp3",
+	CUE_STAR4_HUMAN_KING: "res://assets/audio/sfx/prep/star4_human_king.mp3",
+	CUE_STAR4_GOD: "res://assets/audio/sfx/prep/star4_god.mp3",
+	CUE_STAR4_UNDEAD_MOTHER: "res://assets/audio/sfx/prep/star4_undead_mother.mp3",
+	CUE_STAR4_DARK: "res://assets/audio/sfx/prep/star4_dark.mp3",
+	CUE_STAR4_DEFAULT: "res://assets/audio/sfx/prep/star4_default.mp3",
+	CUE_TREASURE_LINKAGE: "res://assets/audio/sfx/prep/treasure_linkage.mp3",
+	CUE_TREASURE_CHOICE_OPEN: "res://assets/audio/sfx/prep/treasure_choice_open.mp3",
+
+	CUE_BOSS_APPEAR: "res://assets/audio/sfx/battle/boss_appear.wav",
+	CUE_HUMAN_KING_DEATH: "res://assets/audio/sfx/battle/human_king_death.mp3",
+	CUE_BATTLE_VICTORY: "res://assets/audio/sfx/battle/battle_victory.mp3",
+	CUE_BATTLE_DEFEAT: "res://assets/audio/sfx/battle/battle_defeat.mp3",
+
+	CUE_MERC_SUMMON: "res://assets/audio/sfx/camp/merc_summon.mp3",
+	CUE_UPGRADE_STONE_DRAW: "res://assets/audio/sfx/camp/upgrade_stone_draw.mp3",
+	CUE_CARROT_FARM_UPGRADE: "res://assets/audio/sfx/camp/carrot_farm_upgrade.wav",
+	CUE_HARVEST_TECH_UPGRADE: "res://assets/audio/sfx/camp/harvest_tech_upgrade.mp3",
+}
+
+# 四星音效按棋子分流。源文件给的是 5 条：人王 / 大天使·神王 / 母灵 /
+# 黑龙·末日守卫 / 其他。
+#
+# **用 `def.id` 判定，不用 `def.name`**：客机路径的名字会被
+# `DataRegistry.canonicalize_unit_display_names()` 按本地化覆写，而 id 永远稳定。
+const STAR4_CUES := {
+	"human_king": CUE_STAR4_HUMAN_KING,
+	"god_archangel": CUE_STAR4_GOD,
+	"god_king": CUE_STAR4_GOD,
+	"undead_mother": CUE_STAR4_UNDEAD_MOTHER,
+	"dark_dragon": CUE_STAR4_DARK,
+	"dark_doom": CUE_STAR4_DARK,
+}
+
+
+# --- 状态 -------------------------------------------------------------------
+
+static var _voices: Array[AudioStreamPlayer] = []
+static var _next_voice := 0
+# path -> AudioStream。load() 本身有资源缓存，这里再存一份是为了改完 loop 标志后
+# 不必每次重新取 —— 改过的实例不会回写缓存，不存就会每次重算一遍。
+static var _streams: Dictionary = {}
+static var _last_play_msec: Dictionary = {}
+static var _play_counts: Dictionary = {}
+static var _watching := false
+
+# 代币监视器的基线。`_currency_ready` 为 false 时只记基线不出声 ——
+# 冷启动那一刻 gold 从 0 变 100 不是一笔收支。
+static var _last_gold := 0
+static var _currency_ready := false
+
+
+# --- 安装 -------------------------------------------------------------------
+
+# 由 Main._ready() 调一次，幂等。
+#
+# play() 在没装的情况下也会自己把播放器补上，所以「Main 忘了调」的最坏后果是
+# 第一个音效之前多建一次节点、以及代币监视器不工作，不是整条链静音。
+static func install() -> void:
+	_ensure_voices()
+	_watch_currency()
+	resync_currency_baseline()
+
+
+static func is_installed() -> bool:
+	return _watching
+
+
+static func _tree() -> SceneTree:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null or tree.root == null:
+		return null
+	return tree
+
+
+# 代币监视器靠 SceneTree.process_frame，而不是自己造一个带 _process 的 Node：
+# 少一个自定义脚本、少一处内部类，也就少了「内部类能不能调到外层 static」这种
+# 只能靠试才知道的写法。把 static 函数接成信号回调在本仓已有先例
+# （UiFeedback.install() 就是把 _on_action_resolved 接上 action_resolved 的）。
+static func _watch_currency() -> void:
+	if _watching:
+		return
+	var tree := _tree()
+	if tree == null:
+		return
+	if not tree.process_frame.is_connected(_poll_currency):
+		tree.process_frame.connect(_poll_currency)
+	_watching = true
+
+
+# --- 播放 -------------------------------------------------------------------
+
+# 播一条 cue。返回是否真的发声 —— 静音开关关着、cue 未登记、资源缺失或
+# 撞上重触发保护时返回 false。
+#
+# **返回值是给门禁和排障用的，不要拿它当业务判据。** 音效是表现，
+# 业务成不成功在调用它之前就已经定下来了。
+static func play(cue: String, volume_db := 0.0) -> bool:
+	if not Presentation.ui_sound_allowed():
+		return false
+	var path := str(CUES.get(cue, ""))
+	if path.is_empty():
+		push_warning("SfxService.play: 未登记的 cue %s" % cue)
+		return false
+	var now := Time.get_ticks_msec()
+	if now - int(_last_play_msec.get(cue, -RETRIGGER_GUARD_MSEC)) < RETRIGGER_GUARD_MSEC:
+		return false
+
+	var stream := _stream_for(path)
+	if stream == null:
+		return false
+	var voice := _take_voice()
+	if voice == null:
+		return false
+	_last_play_msec[cue] = now
+	_play_counts[cue] = int(_play_counts.get(cue, 0)) + 1
+	voice.stream = stream
+	voice.volume_db = volume_db
+	voice.play()
+	return true
+
+
+static func _stream_for(path: String) -> AudioStream:
+	if _streams.has(path):
+		return _streams[path]
+	var stream := load(path) as AudioStream
+	if stream == null:
+		push_warning("SfxService: 音效读取失败 %s" % path)
+		return null
+	# 音效一律不循环。导入设置里可能被勾上 loop，那样一条 0.3 s 的按钮音
+	# 会变成永不停的嗡鸣 —— 显式关掉，不依赖导入预设。
+	if stream is AudioStreamMP3:
+		(stream as AudioStreamMP3).loop = false
+	elif stream is AudioStreamWAV:
+		(stream as AudioStreamWAV).loop_mode = AudioStreamWAV.LOOP_DISABLED
+	_streams[path] = stream
+	return stream
+
+
+# 轮转发声：挑一个空闲的；都在响就抢最老的那一路。
+# 用池而不是单播放器，是因为 AOE 多杀、连点按钮这些场景天生要叠音。
+static func _take_voice() -> AudioStreamPlayer:
+	if not _ensure_voices():
+		return null
+	for i in VOICE_COUNT:
+		var idx := (_next_voice + i) % VOICE_COUNT
+		var voice: AudioStreamPlayer = _voices[idx]
+		if not _voice_usable(voice):
+			continue
+		if not voice.playing:
+			_next_voice = (idx + 1) % VOICE_COUNT
+			return voice
+	var fallback: AudioStreamPlayer = _voices[_next_voice]
+	_next_voice = (_next_voice + 1) % VOICE_COUNT
+	return fallback if _voice_usable(fallback) else null
+
+
+# 能不能拿来播。**「在树里」这一条不能省。**
+#
+# 播放器是延迟挂载的（见 `_ensure_voices`），所以存在「节点已建好但还没进树」
+# 的一帧窗口；对没进树的播放器调 `play()` 会打印
+# "Playback can only happen when a node is inside the scene tree" 并静默失败 ——
+# 也就是说调用方以为响了、其实没有。在这里挡掉，让它干净地算作「这一声没发出去」。
+static func _voice_usable(voice: AudioStreamPlayer) -> bool:
+	return voice != null and is_instance_valid(voice) and voice.is_inside_tree()
+
+
+# 建播放器池。**挂载一律走 `add_child.call_deferred`，不做同步 add_child。**
+#
+# `install()` 的调用点是 `Main._ready()`，而那一刻 root 正处在
+# `add_child(Main) -> _propagate_ready()` 里（`data.blocked > 0`）。此时同步
+# `add_child()` 会**直接失败**并打印
+# "Parent node is busy setting up children, `add_child()` failed"。
+#
+# 为什么这条值得单独写一段：`add_child()` 返回 void，没有异常可 catch，
+# GDScript 侧看不出任何异常 —— 于是 8 个播放器一个都没进树，而**整条音效链
+# 是静默的**：`play()` 照样返回 true、门禁计数照样 +1，只有引擎日志里有 8 行
+# ERROR。9.17 那一版就是这么写出来的，是 `audio_sfx_check` 的「播放器必须在树里」
+# 那条断言把它抓出来的（第一版门禁只验返回值，是绿的）。
+#
+# 没有公开 API 能查 `data.blocked`，所以也不做「先试同步、失败再延迟」——
+# 那会在每次冷启动的日志里留 8 行 ERROR，真出问题时反而淹掉有意义的报错。
+# 延迟一个空闲帧的代价是「App 第一帧内发出的音效会被丢掉」，实际为零：
+# 音效都由用户操作或业务事件触发，不可能与 `Main._ready()` 同帧。
+static func _ensure_voices() -> bool:
+	if _voices.size() == VOICE_COUNT and _voices_are_alive():
+		return true
+	var tree := _tree()
+	if tree == null:
+		return false
+	_voices.clear()
+	for i in VOICE_COUNT:
+		var name := "%s%d" % [VOICE_PREFIX, i]
+		var voice := tree.root.get_node_or_null(name) as AudioStreamPlayer
+		if voice == null or not is_instance_valid(voice):
+			voice = AudioStreamPlayer.new()
+			voice.name = name
+			voice.bus = SFX_BUS if AudioServer.get_bus_index(SFX_BUS) >= 0 else "Master"
+			# 页面切换、暂停都不该把提示音掐断（同 UiFeedback 的理由）。
+			voice.process_mode = Node.PROCESS_MODE_ALWAYS
+			tree.root.add_child.call_deferred(voice)
+		_voices.append(voice)
+	return true
+
+
+static func _voices_are_alive() -> bool:
+	for voice in _voices:
+		if not is_instance_valid(voice):
+			return false
+	return true
+
+
+static func stop_all() -> void:
+	for voice in _voices:
+		if voice != null and is_instance_valid(voice):
+			voice.stop()
+
+
+static func star4_cue_for(unit_id: String) -> String:
+	return str(STAR4_CUES.get(unit_id, CUE_STAR4_DEFAULT))
+
+
+# --- 代币收支监视器 ---------------------------------------------------------
+
+# 口径：**金币（GameState.gold）的任何增减都响**。
+#
+# 用「每帧比对」而不是在十几处 `gold -= cost` 旁边各插一行：
+#   * 局内金币的写点散在 PrepBoardController / PrepFlowController /
+#     TreasureChoicePanel / GameState / NetworkService / Main 六七个文件里，
+#     逐点插必然漏掉以后新加的那一处；
+#   * 战后结算（Main.gd 的 `settle_post_battle_gold`）与联机权威同步是整块赋值，
+#     逐点插正好覆盖不到 —— 而「战斗结算飘金币」恰恰是最该响的一声。
+#
+# **钻石不在这里**：钻石是服务端钱包（`AccountManager.fetch_wallet`），
+# 各页面自己 fetch 自己存，没有中心状态可盯。商城页那笔在收据落地处单独接。
+static func _poll_currency() -> void:
+	if not is_instance_valid(GameState):
+		return
+	var gold := int(GameState.gold)
+	if not _currency_ready:
+		_last_gold = gold
+		_currency_ready = true
+		return
+	if gold == _last_gold:
+		return
+	var delta := gold - _last_gold
+	_last_gold = gold
+	play(CUE_UI_CURRENCY_GAIN if delta > 0 else CUE_UI_CURRENCY_SPEND)
+
+
+# 把基线对齐到当前值**且不出声**。
+#
+# 给「整块替换状态」用：重开一局（GameState.reset_run）与读档（SaveManager.load_run）
+# 都不是某笔收支，它们是「换了另一本账」。不对齐的话，上一局剩 300 金、新局从 100
+# 起会响一声「扣钱」。
+static func resync_currency_baseline() -> void:
+	_currency_ready = false
+	if is_instance_valid(GameState):
+		_last_gold = int(GameState.gold)
+	_currency_ready = true
+
+
+# --- 门禁接缝 ---------------------------------------------------------------
+
+static func play_count(cue: String) -> int:
+	return int(_play_counts.get(cue, 0))
+
+
+static func total_play_count() -> int:
+	var total := 0
+	for key in _play_counts.keys():
+		total += int(_play_counts[key])
+	return total
+
+
+static func cue_path(cue: String) -> String:
+	return str(CUES.get(cue, ""))
+
+
+static func cue_ids() -> Array:
+	return CUES.keys()
+
+
+static func reset_counters_for_check() -> void:
+	_play_counts.clear()
+	_last_play_msec.clear()
+
+
+# 8 个播放器是不是都已经挂进树了。
+#
+# 存在的理由就是上面 `_ensure_voices` 那段讲的坑：**「池建好了」不等于
+# 「能发声」**。延迟挂载期间 `_voices.size() == VOICE_COUNT` 成立、节点也
+# is_instance_valid，但一个都发不出声。门禁必须先等到这里为 true 再断言静音门，
+# 否则它测的是一个恒不发声的实现。
+static func voices_ready() -> bool:
+	if not _ensure_voices():
+		return false
+	if _voices.size() != VOICE_COUNT:
+		return false
+	for voice in _voices:
+		if not _voice_usable(voice):
+			return false
+	return true
+
+
+# 收尾用：断开代币监视器、释放播放器池与流缓存。
+#
+# **产品运行时不调**（服务是常驻的，没有「用完要关」这回事），只给 headless
+# 检查收尾。调它的收益是可量化的：不调时日志尾巴固定是
+# "20 ObjectDB instances were leaked" + "4 resources still in use"；
+# 调了之后节点和流缓存都干净了。
+#
+# **但仍会偶发残留 8 个 ObjectDB + 4 条资源 —— 这一条修不掉，别去修。**
+# 实测 5 跑漏 2 跑，且永远是「8+4」或「什么都没有」两种，没有中间值。
+# `--verbose` 显示漏的是 `AudioStreamPlaybackMP3` 与对应的 `AudioStreamMP3`：
+# 那是**音频服务器混音线程**持有的播放对象，释放时机由那条线程决定，
+# GDScript 侧没有任何 API 能催它 flush（`stop()` 只能让它停，不能让它放）。
+# 所以这是 headless 退出时机与混音线程的竞态，不是本服务的泄漏；
+# 判断依据是它**不影响 CHECK_RESULT**（94 项照过），且产品路径根本不调本函数。
+static func shutdown() -> void:
+	var tree := _tree()
+	if tree != null and tree.process_frame.is_connected(_poll_currency):
+		tree.process_frame.disconnect(_poll_currency)
+	_watching = false
+	_currency_ready = false
+	# 整批 stop 完再整批 free，不要 stop 一个 free 一个。
+	#
+	# 这个顺序是能**减少**残留次数的那一版（逐个拆更差），但它治不了根：
+	# 残留的 `AudioStreamPlayback` 归混音线程管，见上面 shutdown 的说明。
+	# 写成整批而不是逐个，也顺带让「拆节点」集中在一次迭代里，好读。
+	for voice in _voices:
+		if voice != null and is_instance_valid(voice):
+			voice.stop()
+	for voice in _voices:
+		if voice == null or not is_instance_valid(voice):
+			continue
+		# 用 free() 而不是 queue_free()：门禁是「检查完就退出」的，
+		# 延迟释放根本没机会 flush。
+		voice.free()
+	_voices.clear()
+	_streams.clear()
+	_last_play_msec.clear()
+	_play_counts.clear()

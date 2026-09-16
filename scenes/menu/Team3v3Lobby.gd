@@ -81,6 +81,10 @@ const TEX_CHAT := preload("res://assets/ui/room_v2/chat.png")
 const TEX_START := preload("res://assets/ui/room_v2/start.png")
 const TEX_VS := preload("res://assets/ui/room/vs.png")
 const MENU_MUSIC_PATH := "res://assets/audio/bgm/menu_music.mp3"
+# 9.17：组队房间此前和主菜单共用 menu_music，这一批给了它独立的 BGM。
+# 两条常量分开而不是让房间读主菜单那条 —— 房间是「等队友」的场景，
+# 气氛和大厅本就不同，共用一个常量会让以后想分开时改错地方。
+const TEAM_ROOM_MUSIC_PATH := "res://assets/audio/bgm/team_room_music.mp3"
 const SELFTEST_SCENE_PATH := "res://officetest/OfficeTestScreen.tscn"
 
 # ── 布局调试overlay ────────────────────────────────────────────────
@@ -217,9 +221,9 @@ func _start_menu_music() -> void:
 	if _menu_music_player != null:
 		return
 	# 与摆放界面同款：必须用 load() 走资源系统，Android 导出包只含 mp3 的导入产物。
-	var stream := load(MENU_MUSIC_PATH) as AudioStream
+	var stream := load(TEAM_ROOM_MUSIC_PATH) as AudioStream
 	if stream == null:
-		push_warning("房间界面音乐读取失败：%s" % MENU_MUSIC_PATH)
+		push_warning("房间界面音乐读取失败：%s" % TEAM_ROOM_MUSIC_PATH)
 		return
 	if stream is AudioStreamMP3:
 		(stream as AudioStreamMP3).loop = true

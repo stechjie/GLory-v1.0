@@ -42,6 +42,19 @@ func _show_result_overlay() -> void:
 	_result_overlay_lbl.add_theme_font_size_override("font_size", 58)
 	_result_overlay_lbl.add_theme_color_override("font_color", Color(1.0, 0.94, 0.62) if player_wins else Color(0.95, 0.38, 0.34))
 	_result_overlay_lbl.visible = true
+	# 9.17：胜负音。
+	#
+	# 这里是**胜负显示的唯一收口点**：replay 那条路（BattleScreen._finish_replay）
+	# 和本地模拟那条路（_emit_finished）最后都走到这里，而 _return_emitted 保证了
+	# 每场只走一次。挂在别处会重复 —— `BattleRenderer.play_victory_finish()`
+	# 名字像胜利信号，实际上 BattleScreen 无条件调它，赢了输了都调，不能挂。
+	#
+	# 播放器在 SfxService 的 root 池里，不是本场景的子节点：结算之后
+	# Main._clear() 会立刻释放整个战斗场景，挂本节点上会被当场掐断。
+	#
+	# 平局（双杀 / 超时战力相等，result.is_draw）走 _local_player_wins 的结果 ——
+	# 素材只给了「胜利」和「失败」两条，不为平局另造一个。
+	SfxService.play(SfxService.CUE_BATTLE_VICTORY if player_wins else SfxService.CUE_BATTLE_DEFEAT)
 
 
 # --- 结算水晶演出 -----------------------------------------------------------

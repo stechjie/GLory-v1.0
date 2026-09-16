@@ -941,8 +941,12 @@ func _setup_animation_tracking_meta(pivot: Node3D, unit_def: Dictionary, f: Dict
 #
 # 保持时长已经够了（BattleUI.RESULT_DISPLAY_SECONDS = 1.0）。这里补的是收束和定格。
 #
-# **短音效没做**：assets/audio 下只有 BGM 和一个 start_game.mp3，没有胜利音效资源。
-# 编一个出来不如把缺口说清楚。震动用的是同一套无障碍开关，玩家关了就不震。
+# **2026-09-17 更新：短音效已补上。** 此前 assets/audio 下只有 BGM 和一个
+# start_game.mp3，没有胜利音效资源，这里就明写了缺口。9.17 音效批次交付后归
+# `ui/services/SfxService.gd` 统一播：胜负音接在
+# `scenes/battle/BattleResult.gd` 的结算浮层显示处（`battle_victory` /
+# `battle_defeat`），不在这里重复挂一次 —— 播两声比没声音更难查。
+# 震动用的是同一套无障碍开关，玩家关了就不震。
 
 # 正交相机的 size 越小越近。0.94 是"轻"收束：看得出镜头往里收了一点，
 # 又不会把边上的幸存者挤出画面。

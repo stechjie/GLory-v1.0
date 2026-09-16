@@ -22,6 +22,8 @@ signal back_requested
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
+# 9.17 音效。preload 而不是全局类名，理由见 Main.gd 顶上那条注释。
+const SfxService := preload("res://ui/services/SfxService.gd")
 const ConfirmDialog := preload("res://ui/components/GloryConfirmDialog.gd")
 # 新按钮一律实例化组件，不写 Button.new()：procedural_ui_ratchet 按文件只许降。
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
@@ -235,6 +237,8 @@ func _reload() -> void:
 	# 直接整页报错的话，一次网络抖动就把整个商城变成错误页。
 	if int(wallet.get("code", 0)) / 100 == 2:
 		var w: Dictionary = wallet.get("body", {})
+		# 9.17：进商城时 **不**播代币音。这是拉一次余额，不是一笔收支 ——
+		# 和读档、重开一局同一种性质（那两处也不响）。
 		_diamond = int(w.get("diamond", 0))
 		_coin = int(w.get("coin", 0))
 	if int(owned.get("code", 0)) / 100 == 2:
@@ -396,8 +400,22 @@ func _buy(item: Dictionary) -> void:
 		_pending_order_id = ""
 		_pending_item_id = ""
 		var receipt: Dictionary = (result.get("body", {}) as Dictionary).get("receipt", {})
-		_diamond = int(receipt.get("diamond", _diamond))
-		_coin = int(receipt.get("coin", _coin))
+		var diamond_after := int(receipt.get("diamond", _diamond))
+		var coin_after := int(receipt.get("coin", _coin))
+		# 9.17 钻石/金币收支音。SfxService 的代币监视器只盯 GameState.gold（局内金币），
+		# 盯不到这里的钱包 —— 钻石是服务端钱包（AccountManager.fetch_wallet），
+		# 各页面自己 fetch 自己存，没有中心状态。
+		#
+		# 按**余额变化方向**播，而不是按「购买 = 扣钱」写死：商品里既有花钻石买的
+		# 东西，也有充值钻石的档位，后者是入账。
+		#
+		# 重放的旧回执（replayed）不改余额，所以那段天然不会响。
+		if diamond_after != _diamond:
+			SfxService.play(SfxService.CUE_UI_CURRENCY_GAIN if diamond_after > _diamond else SfxService.CUE_UI_CURRENCY_SPEND)
+		elif coin_after != _coin:
+			SfxService.play(SfxService.CUE_UI_CURRENCY_GAIN if coin_after > _coin else SfxService.CUE_UI_CURRENCY_SPEND)
+		_diamond = diamond_after
+		_coin = coin_after
 		_owned[str(receipt.get("granted", ""))] = true
 		# replayed = 服务端重放了一张旧回执（上一次其实成功了）。不另说一句的话，
 		# 玩家会以为这次又扣了一笔。

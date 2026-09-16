@@ -1,6 +1,12 @@
 extends "res://scenes/prep/PrepShared.gd"
 
 const PREP_RELATION_PARTICLES_SCRIPT := preload("res://scenes/prep/PrepRelationParticles3D.gd")
+
+# 9.17 音效。**只在这一层声明一次**：整条继承链
+# PrepBoardModels ← PrepUI ← PrepFlowController ← PrepBoardController ← PrepScreen
+# 都从这里继承，子类再声明一次会撞「成员在父类里已存在」的解析错误。
+# preload 而不是全局类名，理由见 Main.gd 顶上那条注释。
+const SfxService := preload("res://ui/services/SfxService.gd")
 const PREP_RELATION_LINK_SCRIPT := preload("res://scenes/prep/PrepRelationLink3D.gd")
 const UnitActor3DScript := preload("res://effects/runtime/presentation/UnitActor3D.gd")
 const UnitVisualResolverScript := preload("res://effects/runtime/presentation/UnitVisualResolver.gd")
@@ -325,6 +331,15 @@ func _refresh_carrot_farm_visual() -> void:
 			_carrot_farm_decor.texture = atlas
 	if _carrot_last_farm_level >= 0 and farm_level > _carrot_last_farm_level:
 		_play_carrot_world_flipbook(PREP_CARROT_LEVELUP_PATH, 0.23, 0.00058)
+		# 9.17：萝卜田升级音。萝卜田是**自动**升级的（累计花萝卜到达门槛就升，
+		# 面板上没有升级按钮），所以这一行的 `farm_level > _carrot_last_farm_level`
+		# 就是全局唯一、且已经被缓存字段去重的跨门槛判据。
+		#
+		# 不能把音效放到 _refresh_carrot_farm_visual() 开头：它被
+		# _refresh_carrot_gathering() 带着跑，而后者在**每次 room_state 广播**
+		# （PrepFlowController）和每个萝卜动作之后都会执行 —— 放开头等于
+		# 每帧网络同步响一声。
+		SfxService.play(SfxService.CUE_CARROT_FARM_UPGRADE)
 	_carrot_last_farm_level = farm_level
 
 func _add_carrot_placeholder_fallback() -> void:

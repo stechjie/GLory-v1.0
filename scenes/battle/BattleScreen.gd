@@ -337,6 +337,17 @@ func _prepare_battle_models() -> void:
 	if _battle_3d_root != null:
 		_battle_3d_root.visible = true
 	_battle_setup_ready = true
+	# 9.17：Boss 登场音。放在这里而不是 _start_battle_music() 里 ——
+	# 后者在进场景那一刻就会被调一次（BattleScreen.gd:98），那时 replay 还没到、
+	# 单位模型还没建，声音会比画面早一整段读条。
+	#
+	# 这里是「模型全部建完、战斗马上开打」，而且 _prepare_battle_models() 每场
+	# 只跑一次（_start_replay 里那一条调用），天然不会重复。
+	#
+	# 判据用 _effective_kind() 而不是 _kind：3v3 时 _kind 停在占位的 "team"，
+	# 真正的类型要么在 replay 里，要么按回合表算（boss 回合 = 5/10/15/20）。
+	if _effective_kind() == "boss":
+		SfxService.play(SfxService.CUE_BOSS_APPEAR)
 	_try_start_final_round_intro()
 
 # 顶部一条细进度条，接着备战界面那条蓝线继续走，避免「画面停住」的观感。

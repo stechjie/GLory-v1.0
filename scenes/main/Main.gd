@@ -27,6 +27,8 @@ var _startup_loading_overlay: StartupLoadingOverlay
 # .godot/global_script_class_cache.cfg 里没有新登记的 class_name，
 # 直接写全局名会「Identifier not declared」——实测踩过。
 const UiFeedbackService := preload("res://ui/services/UiFeedback.gd")
+# 同一条理由（9.17 音效接入）：SfxService 也刻意不声明 class_name。
+const SfxService := preload("res://ui/services/SfxService.gd")
 
 const PUBLIC_TOKEN_ACTION := "team_public_token"
 const PUBLIC_TOKEN_CONTROL_ID := "main_menu/public_token_generate"
@@ -147,6 +149,9 @@ func _ready() -> void:
 	# 更不挂 _input —— 那个信号每个 request_id 只发一次，且不是输入驱动的，
 	# 所以连点和 mouse+touch 双路都不会让它多发。
 	UiFeedbackService.install()
+	# 9.17：全局音效服务。同样不做 autoload（autoload 全在冷启动关键路径上），
+	# 播放器与代币收支监视器都挂在 root 下按需创建。
+	SfxService.install()
 	_install_presence_reporting()
 	_install_realtime()
 	_route_startup()

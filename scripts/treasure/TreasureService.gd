@@ -1,6 +1,11 @@
 ﻿class_name TreasureService
 extends RefCounted
 
+# 9.17：音效走 SfxService（preload 而不是全局类名 —— headless 跑检查场景时不走
+# 导入，global_script_class_cache 里没有新登记的 class_name，写全局名会
+# 「Identifier not declared」，Main.gd 里采过这个坑）。
+const SfxService := preload("res://ui/services/SfxService.gd")
+
 const MAX_OWNED := 5
 const REFRESH_COSTS := [50, 100, 200, 400]
 
@@ -138,21 +143,43 @@ static func treasure_by_id(tid: String) -> Dictionary:
 static func add_owned(tid: String) -> void:
 	if tid.is_empty() or tid in GameState.owned_treasures or GameState.owned_treasures.size() >= MAX_OWNED:
 		return
+	# 9.17 联动激活音要在**入袋之前**取基线：联动没有自己的拾取动作，它的判据
+	# 就是「要求的那几件都到手」，所以只有比入袋前后才分得出「刚激活」和
+	# 「早就激活了」。
+	#
+	# 拿 PlayerProfile.mark_seen(link_id) 反推是不行的：那会把音效和**图鉴的
+	# 已读状态**耦合起来 —— 读一次带联动的旧档之后，那个联动永远判不出「新」。
+	# 这里要的是「这一次调用引起的激活」，不是「玩家有没有见过」。
+	var active_before := active_linkage_ids()
 	GameState.owned_treasures.append(tid)
 	PlayerProfile.mark_seen(tid)
 	# A linkage has no pickup of its own: it activates the moment its two treasures
 	# are both owned, so that is when it enters the codex.
 	_mark_active_linkages()
+	for link_id in active_linkage_ids():
+		if not active_before.has(link_id):
+			SfxService.play(SfxService.CUE_TREASURE_LINKAGE)
+			break
 
-static func _mark_active_linkages() -> void:
-	var unlocked: Array = []
+
+# 当前已满足条件的联动 id。顺序跟数据表一致，所以「哪一条先激活」是可预期的。
+#
+# _mark_active_linkages() 用它算该写进图鉴的集合；add_owned() 用它做前后差集
+# 判「刚激活」。两处都从这一个函数读，免得各写一份遍历。
+static func active_linkage_ids() -> Array[String]:
+	var out: Array[String] = []
 	for raw in DataRegistry.get_table("treasures").get("linkages", []):
 		var d := raw as Dictionary
 		if d == null:
 			continue
 		var link_id := str(d.get("id", ""))
 		if not link_id.is_empty() and has_linkage(link_id):
-			unlocked.append(link_id)
+			out.append(link_id)
+	return out
+
+
+static func _mark_active_linkages() -> void:
+	var unlocked := active_linkage_ids()
 	if not unlocked.is_empty():
 		PlayerProfile.mark_seen_many(unlocked)
 

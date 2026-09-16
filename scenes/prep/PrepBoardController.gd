@@ -161,6 +161,8 @@ func _hire_mercenary_to_slot(index: int, mercenary_index: int) -> void:
 	if GameState.tutorial_mode:
 		if GameState.gold < cost:
 			show_message(tr("ui_not_enough_gold"))
+			# 9.17：买不起 = 按钮被拒绝。
+			SfxService.play(SfxService.CUE_UI_REJECT)
 			return
 		GameState.gold -= cost
 	else:
@@ -172,6 +174,16 @@ func _hire_mercenary_to_slot(index: int, mercenary_index: int) -> void:
 	var def := m.duplicate(true)
 	def["is_mercenary"] = true
 	GameState.mercenary_slots[mercenary_index] = {"id": def.id, "uid": GameState.mint_piece_uid(), "star": 1, "def": def, "is_mercenary": true}
+	# 9.17：召唤佣兵音。**播在这一行之后**，因为到这里才算「业务已确认成功」——
+	# 上面每一道 return（栏位满 / 萝卜不够 / 不满足雇佣规则）都是没成交，不该出声。
+	#
+	# 这条只覆盖房主 / 单机 / 教程：客机在 L150 就 return 了（走服务端 `request_economy`
+	# 裁决），那一路的声音在回执落地处播（PrepUI._on_carrot_economy_receipt 的
+	# hire_merc_carrot 分支）。两条路径互斥，所以不会叠。
+	#
+	# 队友那边由 NetworkService.team_prep_mercs_changed → PrepUI._check_team_merc_alert
+	# 按座位增量补播（那一段**故意跳过自己那格**，否则房主在这里响一次、同步回来又响一次）。
+	SfxService.play(SfxService.CUE_MERC_SUMMON)
 	_mark_online_board_changed()
 	NetworkService.team_send_prep_mercs()
 	SaveManager.save_run()
@@ -196,7 +208,10 @@ func request_carrot_harvest_upgrade() -> void:
 	var result := GameState.upgrade_harvest_tech()
 	if not bool(result.get("ok", false)):
 		show_message("采集科技无法升级：%s" % str(result.get("error", "denied")))
+		SfxService.play(SfxService.CUE_UI_REJECT)
 		return
+	# 9.17：只在这一条 ok 分支上响。
+	SfxService.play(SfxService.CUE_HARVEST_TECH_UPGRADE)
 	SaveManager.save_run()
 	_refresh_all()
 
@@ -293,6 +308,10 @@ func _execute_four_star_upgrade(where: String, index: int) -> void:
 		return
 	var d: Dictionary = (cell as Dictionary).get("def", {})
 	show_message(("%s upgraded to four stars" if LocaleManager.get_locale() == "en" else "%s 升为四星") % DataRegistry.unit_display_name(d, LocaleManager.get_locale() == "en"))
+	# 9.17：按棋子分流。用 def.id 而不是 def.name —— 客机路径的名字会被
+	# DataRegistry.canonicalize_unit_display_names() 按本地化覆写，id 永远稳定。
+	# 放在成功判定之后（上面已经 return 掉了所有失败分支），所以只响真的升级。
+	SfxService.play(SfxService.star4_cue_for(str(d.get("id", ""))))
 	_overlay.hide_detail()
 	play_four_star_upgrade.call_deferred(str((cell as Dictionary).get("uid", "")))
 	if where == "board":
@@ -363,6 +382,8 @@ func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
 			return
 		if GameState.gold < cost:
 			show_message(tr("ui_not_enough_gold"))
+			# 9.17：买不起 = 按钮被拒绝。
+			SfxService.play(SfxService.CUE_UI_REJECT)
 			return
 		GameState.gold -= cost
 		GameState.board_slots[board_index] = incoming
@@ -371,6 +392,8 @@ func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
 	elif PrepRules.can_merge_cells(target, incoming):
 		if GameState.gold < cost:
 			show_message(tr("ui_not_enough_gold"))
+			# 9.17：买不起 = 按钮被拒绝。
+			SfxService.play(SfxService.CUE_UI_REJECT)
 			return
 		if not _merge_copies_into_cell(target, incoming, [board_index], []):
 			return
@@ -380,6 +403,10 @@ func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
 		_shadow_report_merge()
 	else:
 		return
+	# 9.17：到这里才确定买成了 —— 金币已扣、格子已写、`_shadow_report_buy` 已报。
+	# 放在这个汇合点，而不是两个分支里各放一次：两个分支都会落到这里，
+	# 分开放就是同一声在两条路径上各写一遍（也就各漏一次的机会）。
+	SfxService.play(SfxService.CUE_SHOP_BUY)
 	_shop.selected = -1
 	if GameState.tutorial_mode:
 		TutorialMode.record_shop_purchase()
@@ -407,6 +434,8 @@ func _buy_or_merge_shop_to_bench(shop_index: int, bench_index: int) -> void:
 	if target == null:
 		if GameState.gold < cost:
 			show_message(tr("ui_not_enough_gold"))
+			# 9.17：买不起 = 按钮被拒绝。
+			SfxService.play(SfxService.CUE_UI_REJECT)
 			return
 		GameState.gold -= cost
 		GameState.bench_slots[bench_index] = incoming
@@ -415,6 +444,8 @@ func _buy_or_merge_shop_to_bench(shop_index: int, bench_index: int) -> void:
 	elif PrepRules.can_merge_cells(target, incoming):
 		if GameState.gold < cost:
 			show_message(tr("ui_not_enough_gold"))
+			# 9.17：买不起 = 按钮被拒绝。
+			SfxService.play(SfxService.CUE_UI_REJECT)
 			return
 		if not _merge_copies_into_cell(target, incoming, [], [bench_index]):
 			return
@@ -424,6 +455,8 @@ func _buy_or_merge_shop_to_bench(shop_index: int, bench_index: int) -> void:
 		_shadow_report_merge()
 	else:
 		return
+	# 9.17：买成的那一声，与 `_buy_or_merge_shop_to_board` 同一口径（备战席这条路）。
+	SfxService.play(SfxService.CUE_SHOP_BUY)
 	_shop.selected = -1
 	if GameState.tutorial_mode:
 		TutorialMode.record_shop_purchase()
@@ -620,6 +653,8 @@ func _sell_bench_index(index: int, confirmed: bool = false) -> void:
 	var sold_uid := str(cell.get("uid", ""))
 	GameState.gold += refund
 	GameState.bench_slots[index] = null
+	# 9.17：同 _sell_board_index。
+	SfxService.play(SfxService.CUE_UNIT_SELL)
 	_shadow_report("sell", {"uid": sold_uid})
 	_board_hud._selected_bench = -1
 	SaveManager.save_run()
@@ -923,6 +958,12 @@ func _on_refresh_shop() -> void:
 	# 服务端摇好的新一轮商店随回执/下一份 room_state 回来，
 	# _roll_shop() 里的 _adopt_server_shop() 负责采用它。
 	_roll_shop()
+	# 9.17：扣了钱、摇了牌才算刷新成功。上面两条早退（等队友 / 客机发意图）
+	# 都不该响。**落点不能放进 _roll_shop()** —— 进备战页自动摇
+	# （PrepScreen）、掉线重连补摇（Main）、客机采纳服务端商店（_adopt_server_shop）
+	# 三条都会走它。客机那条玩家主动刷新在
+	# PrepUI._on_carrot_economy_receipt 的 shop_refresh 分支里。
+	SfxService.play(SfxService.CUE_SHOP_REFRESH)
 	_shop.selected = -1
 	SaveManager.save_run()
 	_refresh_all()

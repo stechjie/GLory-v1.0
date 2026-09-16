@@ -2587,9 +2587,16 @@ P95 帧时 138ms，早就是已知的性能缺口）必须判失败——门禁�
 Godot 重写 project.godot 时会把停留在默认值的设置删掉。第一版显式写了那一行，
 跑一次就被抹掉了。
 
-`CONFIRM_SFX_PATH` 是空串，今天完全静音——仓里一个 UI 音效素材都没有，音频
-许可仍是未闭环 blocker。**没有断言「stream 是 null」**：那条断言会在有人做对
-事情、把文件放进来的那天转红。填一个真实文件即可生效，零门禁改动。
+**2026-09-17 更新（音效与 BGM 接入批次）**：`CONFIRM_SFX_PATH` 那套自建播放器
+已经**删除** —— 确认音与拒绝音改走新增的 `ui/services/SfxService.gd`
+（`CUE_UI_CONFIRM` / `CUE_UI_REJECT`）。`UiFeedback.gd` 抬头写明「9.17 起这条
+通道不再静音」。当时的判断「**没有断言 stream 是 null**，免得有人做对事情的
+那天转红」是对的，所以那天没有断言要改；本批新增的是**另一条**门禁
+`tools/audio_sfx_check.gd`（96 项），它管的是「素材在不在、每条 cue 有没有生产
+调用点、静音门生不生效、代币监视器响得对不对」。
+
+保留的历史记录（9.17 之前的状态）：`CONFIRM_SFX_PATH` 是空串，完全静音——仓里
+一个 UI 音效素材都没有，音频许可仍是未闭环 blocker。
 
 ### toast / shake / 拒绝原因
 
@@ -2732,3 +2739,205 @@ FAIL [seat_without_races_not_default]  默认四族里混进了假族
 `GloryActionButton.tscn`，计数没涨）、`dynamic_call`（4 条；未解析调用 262 → 261，
 `shop_roll_parity` 里一处 `.call` 改成了直接调用）、`prep_tree_snapshot`（节点 522 / 基线 308）、
 `adversarial_client` 27/29（`economy_ledger`、`economy_server_wiring` 两条，与改动前相同）。
+
+## 2026-09-17：音效与 BGM 接入
+
+新增 `audio_sfx`（96 项）。`ui_feedback` 仍是 40 项（原有条数不变，只改了前置
+条件）；`ui_component` 134、`modal_lifecycle` 433 不变。
+
+### 新门禁 `tools/audio_sfx_check`
+
+验五件**会静默出错**的事，外加一条最容易漏的：
+
+| 断言 | 挡的是什么 |
+|---|---|
+| `cue_count_changed` / `cue_path_outside_sfx_dir` | cue 表条目数变了、或路径写到 `assets/audio/sfx/` 之外（导出后才暴露） |
+| `cue_file_missing` | 表里登记了但文件不在 —— 运行时只有一声没有内容的静默 |
+| `cue_without_call_site` | **登记了但没有任何生产调用点，永远不会响**（见下） |
+| `bgm_file_missing` / `bgm_not_loadable` / `music_constant_missing` | BGM 常量指向的文件不存在或没导入 —— 页面进得去，只是没声音 |
+| `unmuted_play_returned_false` / `play_not_counted` / `muted_play_returned_true` / `muted_play_still_counted` | 静音开关关掉了音还在响，或开着却发不出去 |
+| `voice_pool_not_in_tree` / `voice_pool_root_child_count` | **播放器一个都没进场景树 —— 全链无声**（见下） |
+| `currency_*` / `baseline_resync_played` | 代币监视器响错方向、响两次、或把「换了一本账」当成收支 |
+
+**不验发声**：headless 用 Dummy 音频驱动，文件烧坏了也听不出来。音色与音量是
+external，写进交接，不在这里假装验过。
+
+### `cue_without_call_site` 的两个关键细节
+
+第一版**没有**这条断言，于是 `CUE_SHOP_BUY` 登记了、文件在、门禁全绿，而买棋子
+那一声**根本没接上**（生产代码里零调用点，只有门禁自己的重触发用例用到它）。
+
+写这条断言时有两个坑，踩过才知道：
+
+* **必须要求带 `SfxService.` 前缀**。否则 `SfxService.gd` 里那些常量**定义**
+  （`const CUE_SHOP_BUY := "shop_buy"`）会把自己满足掉 —— 定义处永远存在。
+* **扫描范围必须排除 `tools/`**。门禁自己会调 `SfxService.play()` 来验静音门与
+  重触发，把这些算作「有调用点」等于让门禁给自己的断言当证人。
+
+`star4_*` 五条只能由 `star4_cue_for(unit_id)` 间接派发（调用方给的是棋子 id），
+常量名不会出现在调用点，所以列进 `INDIRECT_CUES` 明示豁免，并**额外**钉一条
+`indirect_cue_entry_unused`（派发入口本身必须有生产调用点）—— 否则把
+`STAR4_CUES` 映射整个删空也能全绿。
+
+**变异测试**：临时加一个无调用点的 `const CUE_ZZZ_MUTATION_PROBE`，门禁如期报
+`cue_without_call_site ... CUE_ZZZ_MUTATION_PROBE`；删掉后复绿。
+
+### `voice_pool_not_in_tree`：一条只有引擎日志能提示的静默失效
+
+`install()` 的调用点是 `Main._ready()`，那一刻 root 正在
+`add_child(Main) → _propagate_ready()` 里（`data.blocked > 0`），同步 `add_child()`
+会**直接失败**并打印 `Parent node is busy setting up children`。
+
+`add_child()` 返回 void、没有异常可 catch，GDScript 侧看不出任何异常 ——
+8 个播放器一个都没进树，而 `play()` 照样返回 **true**、计数照样 +1。
+第一版门禁只验返回值和计数，是绿的；**唯一的线索是 8 行引擎 ERROR，而那不是
+`CHECK_RESULT`**。所以现在直接从 `root` 侧数节点，不只手信服务自己的判据。
+
+### 改了两条既有门禁的**前置条件**（不是放宽断言）
+
+* `ui_feedback_check._check_confirm_fires_once()`：原来直接继承 `PlayerProfile` 里
+  持久化的 `ui_sound` 值。磁盘上曾留下 `false`，于是「关掉不发声」那条**空过**
+  （恒不发声的实现也能绿），而「成功该发一次」那条红。
+  现在显式建立「开关开 + Master 不走静音」，跑完还原成 `before`。
+  同文件里的 `_check_no_haptics_on_desktop()` 本来就是显式建前置的写法。
+* `modal_lifecycle_check._ready()`：把 SfxService 播放器池**预热**到基线之前。
+  9.17 起弹窗会发声，而池是首次播放时在 root 下建 8 个常驻节点，不预热就会被
+  「开→关不留残留」记成泄漏（实测 `nodes+7, root_children+8`）。
+  **没有**选择「把 `GlorySfxVoice` 从统计里滤掉」——那是把断言改松，
+  一旦真漏了播放器也照样绿。
+
+### 门禁工具本身的两个坑（留给下一个人）
+
+1. **门禁脚本里解析期报错 = 进程静默挂死**，不是「红了」：脚本编译失败 →
+   `_ready()` 整个不执行 → `_h.finish()` 永远不调用 → 不打印、不退出，只能手动
+   taskkill（实测挂了 5 分钟以上，日志里只有一行 SCRIPT ERROR）。
+   本轮踩到的是 `SfxService.get_script_constant_map()` —— `Script` 上的**非静态**
+   方法，对 preload 来的 GDScript 直接调是解析错。**新增断言后先单跑一次确认
+   它有返回**，别直接丢进批量。
+2. **`DirAccess` 的游标版（`list_dir_begin` / `get_next`）在嵌套递归里会互相踩**，
+   要么死循环要么漏文件。递归遍历用 `get_directories_at` / `get_files_at`。
+
+### 补充：`tools/team_merc_summon_sfx_check`（16 项，同日追加）
+
+佣兵召唤音效的全队同步修复（反馈：「我方队伍召唤佣兵时整队都该听到」）。**没有加 `@rpc`** ——
+复用既有 `team_prep_mercs_changed` -> `PrepUI._check_team_merc_alert()` 的座位增量链路，
+所以协议仍是 29、不需要重部署服务端。
+
+| 断言 | 挡的是什么 |
+|---|---|
+| `counts_scope_wrong` | 佣兵计数只取己方三个座位（`TEAM_SIDE_SIZE = 3`），对手座位不许进（那已经是信息泄漏） |
+| `first_observation_played` | 首次观察队友就响 —— 中途重连 / 刚进备战页的整表数据被当成增量 |
+| `teammate_summon_not_played_once` / `teammate_summon_extra_cues` | 主断言：队友 +1 恰好一声，且不夹带别的 cue |
+| `teammate_summon_replayed_on_idle_sync` | 数没变，再收一次同步又响 |
+| `own_summon_double_played` | 自己座位 +1 也响 —— 房主一次雇佣响两下（`_refresh_all()` 结尾就会走到本函数） |
+| `decrease_played` | 卖掉 / 换掉让条数变少，被当成召唤 |
+| `round_change_played` | 换回合后第一份队友数据就响（每回合开局凭空响） |
+| `enemy_slot_played` | 对手座位加人，我方响 |
+| `muted_team_summon_played` / `unmuted_team_summon_lost` | 静音门漏判；后一条是**正对照**，否则前一条只证明了「这条路径从来不发声」 |
+
+前置条件（不满足即判红，避免空过）：`voice_pool_not_in_tree` / `ui_sound_precondition_failed`
+/ `tutorial_mode_on` / `prep_scene_load_failed` / `prep_wrong_type`。
+
+**变异测试**：按字节改坏实现（不排除自己那格 / 去掉回合守卫 / 把 `my_slot` 口径改成恒 0），
+三处全部被抓；改回后 `PrepUI.gd` 与变异前**逐字节相同**（sha256 `cbf14f62460d1f66...`）。
+
+夹具要点：真实实例化 `PrepScreen`，设 `NetworkService.team_active` / `team_local_slot`，
+用 `_seed_slot()` 种 `team_prep_mercs` 后同帧调 `_on_team_prep_mercs_changed()` ——
+**不另造入口**，走的就是线上那条路。两条「0 次」的断言要求
+`SfxService.reset_counters_for_check()`（它连 `_last_play_msec` 一起清，断言才是严格的）。
+
+### 补充：`tools/synergy_activation_sfx_check`（39 项，同日追加）
+
+同族 7 人羁绊激活音无声的修复（反馈：「触发 7 棋子羁绊时没有声音」）。根因不是差分写错，
+而是**判「跨档」的口径**：原实现拿人数前后比、并且「`round_index` 变了就只记基线、不比较」，
+而 ③ 的服务端 state payload 把 `round_id` 与棋盘**一起**下发（`Main.gd:337` / `:2491`），
+于是「玩家把第 7 个神放上棋盘」与「回合号 +1」落在同一次 `_refresh_all()` 里 —— 跨档被整帧
+吃掉，快照却已经写成 7，整局不再补。现在比的是**已解锁档位集合**（`god@7` 这类键）。
+
+| 断言 | 挡的是什么 |
+|---|---|
+| `entry_announced` | 刚进备战页就为盘上已有的 7 神响（继承 / 读档 / 服务端下发）—— 那是旧战果；`entry_then_cross_lost` 是正对照，否则这条在「整条路径从不发声」的实现上也绿 |
+| `cross_7_not_played_once` / `cross_7_extra_cues` | 主断言：6 → 7 恰好一声，且总播放数也得是 1（不夹带别的 cue） |
+| `idle_resample_replayed` | 棋盘没变，再采样一次又响 —— 快照必须在判断**之后**无条件更新 |
+| `wiggle_above_tier_played` | 7 → 8 → 7 又响：人数在档位之间波动不是事件（这就是用集合而不是人数的原因） |
+| `requited_not_played` | 掉到 6 再补回 7 不响 —— 掉档又跨回来是玩家真的又做了一次这个操作 |
+| `multi_tier_multi_sound` | 一次采样同时跨神 7 与人 7 两档，连响两声（像卡带） |
+| `round_change_swallowed_cross` | **本轮修复的主回归面**：换回合同帧 6 → 7 被吞 —— 面板显示「已解锁」而一声不响 |
+| `round_change_phantom_played` | 只换回合、棋盘没变却凭空响 |
+| `muted_cross_played` / `unmuted_cross_lost` | 静音门漏判；后一条是**正对照** |
+| `board_counts_mismatch` | **夹具自检**：写进 `board_slots` 的棋子没被 `SynergyService` 数到 → 后面所有「没响」的断言会恒真空过 |
+
+**变异测试**：按字节改坏实现（M1 把回合守卫加回去 → `round_change_swallowed_cross`；
+M2 去掉首帧采样 → `entry_announced`；M3 恒判「有跨档」→ `idle_resample_replayed` /
+`wiggle_above_tier_played` / `round_change_phantom_played`），三处全被抓；改回后
+`PrepUI.gd` 与变异前**逐字节相同**（sha256 `844df37202ae66af`）。
+
+夹具要点：棋盘**必须在 `PrepScreen` 实例化之前**摆好 —— 进场那一帧的 `_refresh_all()`
+才是「第一帧采样」；等实例建好再摆，测到的是「进场之后的跨档」而不是「进场不为既有战果
+发声」（第一版夹具就这么错过一次）。「不该响」的断言每次测量前都调
+`SfxService.reset_counters_for_check()` —— 它连 `_last_play_msec` 一起清，40 ms 重触发
+保护没有记忆。
+### 回归（2026-09-17，本机）
+
+全过：`audio_sfx`(96) / `ui_feedback`(40) / `ui_component`(134) /
+`modal_lifecycle`(433) / `shop_roll_parity`(6476) / `shop_price_parity`(106) /
+`four_star_upgrade`(305) / `four_star_values`(684) / `sell_refund`(482) /
+`merge_rule_parity`(29) / `treasure_bug0910`(8) / `prep_shop`(34) /
+`prep_detail_overlay`(32) / `prep_empty_board`(9) / `prep_power_estimate`(22) /
+`prep_battle_loading`(60) / `battle_hit_victory`(39) / `battle_death_exit`(25) /
+`battle_cue_profile`(169) / `battle_presentation_event`(8314) /
+`battle_presentation_director`(93) / `tutorial_checkpoint`(180) /
+`tutorial_step15_flow`(217) / `tutorial_target`(97) / `main_screen_scenes`(56) /
+`page_lifecycle`(74) / `startup_ui_regression`(17) / `async_action`(178) /
+`unit_name_consistency`(63)。
+
+改动前就红、这一批没变（逐条在镜像 `GLory-codex` 上核对过）：`bootstrap`（3 条，
+镜像同样）、`voice`（3 条，镜像同样）、`procedural_ui_ratchet`(3)、
+`dynamic_call`(4)、`prep_text_coverage`(1)、`asset_manifest`(20，临时探针引用了
+已删文件，与音频无关)。
+
+追加修复同日复跑（2026-09-17，本机 26 项）：23 PASS，含上面这个新门禁。
+3 项 FAIL 全是既存、不是本批 —— `dynamic_call_check` 与 `procedural_ui_ratchet_check` 与镜像
+`GLory-codex` 的对应文件**逐字节相同**；`prep_text_coverage_check` 报的是 detail margin padding，
+与 PrepUI 的音效改动无关。
+
+**本批新增的已知红：`asset_delivery` 6 → 11 条** —— 5 首 BGM 被替换后
+`assets.bundle.json` 里还是旧字节数（另有 24 条 SFX 与 `team_room_music.mp3`
+完全没进去）。原因是 `.gitignore:21` 的 `/assets/*` 让整个 `assets/` 树不进 git，
+音频是**受 bundle 管理的外置资源**，要重跑 `tools/package_assets.ps1` 才会同步。
+本轮不重打包（要出约 2.7 GB 的 ZIP，会把既存 6 条不一致一起卷进来），
+**下一次重打包时自然消失**。见 `docs/9.17音效接入记录.md` 第九节。
+
+**批跑偶发**：`tutorial_checkpoint` 在整批里红 2 条，单跑 PASS（本仓惯例，不计）。
+### 收尾复跑（2026-09-17，本机 31 项，含两个新门禁）
+
+`synergy_activation_sfx`(39) 加入后整批 **31 PASS / 0 FAIL**（`tutorial_checkpoint` 这一次
+整批也过了，上面那条偶发没再现）。覆盖音频、备战、战斗演出、教程、页面生命周期：
+
+`audio_sfx`(96) / `ui_feedback`(40) / `ui_component`(134) / `modal_lifecycle`(433) /
+`shop_roll_parity`(6476) / `shop_price_parity`(106) / `four_star_upgrade`(305) /
+`four_star_values`(684) / `sell_refund`(482) / `merge_rule_parity`(29) / `treasure_bug0910`(8) /
+`prep_shop`(34) / `prep_detail_overlay`(32) / `prep_empty_board`(9) / `prep_power_estimate`(22) /
+`prep_battle_loading`(60) / `battle_hit_victory`(39) / `battle_death_exit`(25) /
+`battle_cue_profile`(169) / `battle_presentation_event`(8314) / `battle_presentation_director`(93) /
+`tutorial_checkpoint`(180) / `tutorial_step15_flow`(217) / `tutorial_target`(97) /
+`main_screen_scenes`(56) / `page_lifecycle`(74) / `startup_ui_regression`(17) /
+`async_action`(178) / `unit_name_consistency`(63) / `team_merc_summon_sfx`(16) /
+`synergy_activation_sfx`(39)。
+
+既存红 7 项同日单独复跑核对，逐条与本轮无关：
+
+* `bootstrap`(3)、`voice`(3) —— 与镜像 `GLory-codex` 同样红。
+* `prep_text_coverage`(1) —— detail margin padding。
+* `procedural_ui_ratchet`(3) —— `FourStarUpgradePanel.gd` 的自绘（`StyleBoxFlat.new()` 29→30、
+  `Button.new()` 89→92）；备战页新按钮全用 `GloryActionButton.tscn`，与本轮无关。
+* `asset_delivery`(**11**) —— 6 → 11 那 5 条是本批替换 BGM 造成的（见上）。
+* `asset_manifest`(**20**) —— 与 9.17 批次记录一致，**不多于基线**。查这一条时顺手修掉了一个
+  我自己造的增量：把归档探针 `_probe_*` 移出 `tools/` 时，它那 4 个 `.tscn` 还指着
+  `res://tools/_probe_*.gd`，`missing_asset` 一度涨到 24；把 `ext_resource` 改成归档路径
+  （`res://_qa_917_team_summon/probes/…`）后回到 20。
+* `dynamic_call`(4) —— 其中 `unresolved_grew` 报 **263**（上一批记录写的是 261）。**已单独证伪
+  与本轮无关**：四种状态下读数完全相同 —— ① 当前树；② 移走 `synergy_activation_sfx_check.gd`；
+  ③ 再把 `team_merc_summon_sfx_check.gd` 也移走；④ 把 `PrepUI.gd` 换成本轮修复前的备份
+  （sha `cbf14f62460d1f66`）。→ 本轮改动对这项计数**贡献 0**，差额来自批次之后的其它改动。
+  （前三条的 3 处 `callable_method_missing` 也都在 `PrepUI.gd:1074-1076`，属既存。）

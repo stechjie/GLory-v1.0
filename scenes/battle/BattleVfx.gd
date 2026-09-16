@@ -1040,6 +1040,7 @@ func cue_release_corpses() -> void:
 
 
 func cue_play_death(victim_uid: String, duration_sec: float = 0.35) -> bool:
+	_maybe_play_human_king_death_sfx(victim_uid)
 	var actor: Node3D = _cue_corpses.get(victim_uid)
 	_cue_corpses.erase(victim_uid)
 	if actor == null or not is_instance_valid(actor):
@@ -1091,6 +1092,49 @@ func _cue_unit_snapshot(sim_uid: String) -> Dictionary:
 		return {}
 	var snapshot: Dictionary = _vfx_prev_units.get(sim_uid, {})
 	return snapshot
+
+
+# --- 9.17 人王阵亡音 ---------------------------------------------------------
+
+# 已经响过的 uid。**去重是必须的，不是保险**：DamageService.apply_damage 对一个
+# 已经 hp == 0 的目标再打一次时 `died_now` 会再次为 true（`hp = maxi(0, 0 - remaining)`
+# 仍然是 0），所以同一个 uid 的 death 可能被重复投递。BattlePresentationDirector
+# 那层虽然有 _seen_event_keys 去重，但它只覆盖 replay 那条路。
+#
+# 按 uid 记而不是记一个 bool：3v3 的 PvP replay 里两边都可能有人王，
+# 各响一次是对的；同一个 uid 响两次才是错的。
+var _human_king_death_sfx_uids: Dictionary = {}
+
+
+func _maybe_play_human_king_death_sfx(victim_uid: String) -> void:
+	if victim_uid.is_empty() or _human_king_death_sfx_uids.has(victim_uid):
+		return
+	if not _is_unit_id(victim_uid, "human_king"):
+		return
+	_human_king_death_sfx_uids[victim_uid] = true
+	SfxService.play(SfxService.CUE_HUMAN_KING_DEATH)
+
+
+# 这个 uid 是不是指定的数据表棋子。两条路都试：
+#
+#   1. `_vfx_prev_units[uid].unit_id` —— 快照里已经存了（_collect_vfx_units 写的），
+#      最省事，但快照是按「本帧还在不在」剪枝的，某个时序下可能已经没了；
+#   2. 直接扫 `_state` 的双方单位表 —— cue 到得比快照清理晚时的兜底。
+#
+# **用数据表 id（human_king）判定，不用名字**：名字会随本地化变，
+# 而 data/units/race_units.json 里的 id 永远稳定。两条路都查不到就返回 false ——
+# 宁可少响一声，也不要把别人的阵亡音播给人王。
+func _is_unit_id(sim_uid: String, unit_id: String) -> bool:
+	if str(_cue_unit_snapshot(sim_uid).get("unit_id", "")) == unit_id:
+		return true
+	for side in ["player", "enemy"]:
+		for f in (_state.get(side, []) as Array):
+			if typeof(f) != TYPE_DICTIONARY:
+				continue
+			var fighter: Dictionary = f
+			if str(fighter.get("uid", "")) == sim_uid:
+				return str(fighter.get("id", "")) == unit_id
+	return false
 
 
 func _vfx_unit_by_sim_uid(current:Dictionary,sim_uid:String)->Dictionary:

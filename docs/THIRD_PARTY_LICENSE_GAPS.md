@@ -79,9 +79,29 @@
 
 ### assets/audio — BGM 与 UI 音效
 
-- 结论：**`awaiting_user_records`**
+- 结论：**`awaiting_user_records`**（2026-09-17 复核后不变 —— 见下面的更新）
 - 缺失字段：source、author、license、redistributable、source_url
 - Music and sound effects carry their own rights, separate from art. Six mp3 files; one stock-library receipt would settle all six at once.
+
+**2026-09-17 更新（音效与 BGM 接入批次）**
+
+- **素材本身已到位**：用户提供 6 首 BGM + 24 条 SFX，已落盘到 `assets/audio/bgm/`
+  与 `assets/audio/sfx/` 并全部接上线（见 `docs/9.17音效接入记录.md`）。
+  「仓里一个音效素材都没有」这个前置条件已经不成立了 —— 9.17 之前
+  `UiFeedback.CONFIRM_SFX_PATH` 是空串、UI 确认音通道是完全静音的。
+- **但许可结论不变，仍然是 `awaiting_user_records`。** 素材存在**不等于**权利清楚，
+  这一组缺的从来不是文件而是凭证。
+- 本组现在需要用户明确回答一个问题：**这些是不是 AI 工具生成的？**
+  - 若是**真人自制**（自己演奏 / 录音 / 用宿主软件合成）：给一句确认 + 使用的
+    音源 / 音色库名称即可，本组可转 `proven`。
+  - 若是**AI 生成**：必须给出**生成工具名 + 该工具服务条款的当时快照**。
+    只有「有据可查」才算 `proven` —— 仅凭「项目自己做的」这句声明不算。
+    另外多数音频生成平台的**权利不追溯**：**先订阅、再生成**，并在生成当时
+    留存 ToS 快照，事后补订阅不能覆盖此前生成的素材。
+- 上表里的「12 个文件 / 13.3 MiB」和 `proven / awaiting_user_records` 的分组计数
+  都来自 `assets.manifest.json`，而本批**没有**重生成该清单（音频是 git 忽略的
+  外置资源，要跑 `package_assets.ps1` 才会同步，见 `docs/9.17音效接入记录.md`
+  第九节）。所以本组的条数与体积在下次重打包之前仍是**旧值**，别按它核对数量。
 
 ### Starter_Vfx
 
@@ -174,7 +194,10 @@
    Vol 2 等价效果、或改为工程内自制程序化效果。
 2. **`assets/models` 与 `assets/ui` 的采购/委托记录。** 这两组占了包体的绝大部分。
    AI 生成的部分要单独说明生成工具及其服务条款。
-3. **`assets/audio` 六个 mp3 的音乐库购买凭证。** 一张收据能一次关掉整组。
+3. **`assets/audio` 的音乐 / 音效来源说明。** 素材已在 2026-09-17 到位
+   （6 BGM + 24 SFX），现在缺的是**凭证**：一句话说清是自制还是 AI 生成。
+   AI 生成的要给生成工具名 + 其服务条款快照（多数平台权利不追溯，**先订阅再生成**）。
+   一张音乐库收据或一句自制确认，都能一次关掉整组。
 4. **Binbun Vol 2 的下载页**，用来确认 `shared/` 是否随 BattleFX / ElementalMagicFX
    一同 CC0。这组最有可能转绿，但「大概率覆盖」不是证据。
 5. **一行确认**：`assets/shaders` 与工程源码是否全部为自有创作。

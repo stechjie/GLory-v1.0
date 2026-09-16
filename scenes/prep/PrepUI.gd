@@ -1483,6 +1483,10 @@ func _on_carrot_economy_receipt(receipt: Dictionary) -> void:
 		if bool(receipt.get("ok", false)):
 			call("_adopt_server_shop")
 			_shop.selected = -1
+			# 9.17：客机玩家主动刷新成功的确切时刻。单机/房主那条在
+			# PrepBoardController._on_refresh_shop 里，两边都要接 ——
+			# 只接一边就是「联机时刷新没声音」。
+			SfxService.play(SfxService.CUE_SHOP_REFRESH)
 			_refresh_all()
 		else:
 			show_message(NetworkService.shop_refresh_error_text(str(receipt.get("error", "denied"))))
@@ -1496,7 +1500,18 @@ func _on_carrot_economy_receipt(receipt: Dictionary) -> void:
 		return
 	if not bool(receipt.get("ok", false)):
 		show_message(("Carrot action failed: %s" if LocaleManager.get_locale().begins_with("en") else "萝卜交易失败：%s") % str(receipt.get("error", "denied")))
+		# 9.17：服务端拒绝 = 按钮被拒绝，与单机时「钱不够」同一个反馈。
+		SfxService.play(SfxService.CUE_UI_REJECT)
 		return
+	# 9.17：按 action 分流音效。**必须按分支**，不能在这条公共路径上无条件播 ——
+	# 四个动作共用这个函数，无条件播会让抽石头响成佣兵音。
+	match action:
+		"upgrade_harvest_tech":
+			SfxService.play(SfxService.CUE_HARVEST_TECH_UPGRADE)
+		"hire_merc_carrot":
+			SfxService.play(SfxService.CUE_MERC_SUMMON)
+		"draw_upgrade_stone":
+			SfxService.play(SfxService.CUE_UPGRADE_STONE_DRAW)
 	if action == "use_upgrade_stone":
 		# 星级已由 NetworkService._apply_carrot_receipt 按 uid 落到棋子上；
 		# 棋盘变了要重新提交，否则服务端还按三星那份快照结算。
@@ -1510,7 +1525,27 @@ func _on_carrot_economy_receipt(receipt: Dictionary) -> void:
 	_refresh_all()
 	if action == "use_upgrade_stone":
 		_overlay.hide_detail()
-		call_deferred("play_four_star_upgrade", str((receipt.get("result", {}) as Dictionary).get("uid", "")))
+		var upgraded_uid := str((receipt.get("result", {}) as Dictionary).get("uid", ""))
+		# 9.17：回执里只有 uid，没有 def。按 uid 反查棋子拿 def.id 来分流音效 ——
+		# 星级此刻已由 NetworkService._apply_carrot_receipt 落到棋子上，
+		# 所以格子一定已经在了。查不到就退回通用那条（star4_cue_for 的默认分支）。
+		SfxService.play(SfxService.star4_cue_for(_unit_id_for_uid(upgraded_uid)))
+		call_deferred("play_four_star_upgrade", upgraded_uid)
+
+
+# 按棋子唯一 uid 反查它的数据表 id。四星音效要用它分流，而服务端回执只带 uid。
+#
+# 棋盘和待命区都要查：四星升级的入口两条都通（PrepBoardController 的
+# request_four_star_upgrade 接受 where="board"/"bench"）。用 def.id 而不是
+# def.name —— 客机路径的名字会被按本地化覆写。
+func _unit_id_for_uid(uid: String) -> String:
+	if uid.is_empty():
+		return ""
+	for slots in [GameState.board_slots, GameState.bench_slots]:
+		for cell in (slots as Array):
+			if cell is Dictionary and str((cell as Dictionary).get("uid", "")) == uid:
+				return str(((cell as Dictionary).get("def", {}) as Dictionary).get("id", ""))
+	return ""
 
 func _refresh_carrot_counter() -> void:
 	if _carrot_counter_label == null or not is_instance_valid(_carrot_counter_label):
@@ -1867,6 +1902,85 @@ func _on_mercenary_purchase_card_pressed(card: BaseButton, index: int) -> void:
 		return
 	_on_hire_mercenary(index)
 
+# --- 9.17 羁绊激活音 ---------------------------------------------------------
+#
+# SynergyService 全是无状态纯函数：每次调用全量重算，没有信号、没有 prev 快照。
+# 所以「某个羁绊刚跨过某档」只能靠前后对比，没有现成的钩子可挂。
+#
+# 采样点选在 _refresh_all() 的末尾，而不是 SynergyPanel.refresh() 里：
+# 后者有签名早退（_left_panel_signature 不变就直接 return），
+# 拿它当采样点会把整档变化整个漏掉。
+#
+# ---------------------------------------------------------------------------
+# 2026-09-17 追加修复：口径从「人数前后比」改成「已解锁档位集合」
+#
+# 反馈：凑齐「同族 7 人」羁绊时没有声音（面板已经写着「已解锁」）。
+#
+# 原实现拿人数前后比（was < 档位 <= now），并且「回合号变了就只记基线、不比较」。
+# 那条守卫的本意是「下一回合的棋盘可能被服务端整块覆盖，那不是玩家刚做的操作」，
+# 可它是拿**回合号**当「棋盘是外面送来的」的代理判断，于是一个真实场景被整帧吃掉：
+# ③ 的服务端 state payload 把 round_id 与棋盘**一起**下发（Main.gd:337 / :2491），
+# 于是「玩家把第 7 个神放上棋盘」和「回合号 +1」落在同一次 _refresh_all() 里 ——
+# 面板显示神7 已解锁，声音一声不响，而快照已经被写成 7，整局不会再补。
+# 线上实测（探针 tools/_probe_synergy_roundguard）：同回合 6->7 响 1 次，
+# 换回合同帧 6->7 响 0 次。
+#
+# 现在比的是**集合**：
+#   * 「已解锁」= 人数 >= 档位，于是 6->8->6->8 这类人数波动不再是事件，
+#     只有档位真的从「未解锁」变「已解锁」才算一次跨档；
+#   * 卖掉一个再买回来（掉档后又跨回来）会重新响 —— 那是玩家真的又做了一次
+#     这个操作，本来就该有反馈；
+#   * 换回合不再重置：那条守卫会把跨档吃掉，而集合口径下每次解锁最多一声，
+#     不会因为「服务端整块覆盖」刷屏。
+# 「刚进备战页」那一帧仍然只认账不发声：那一刻的棋盘是既有战果
+# （上一回合留下的 / 读档 / 服务端下发），进场就为它响是把旧成果当新闻。
+# ---------------------------------------------------------------------------
+var _synergy_unlocked_before: Dictionary = {}
+var _synergy_sampled := false
+
+
+# 档位键："god@7"。用它而不是人数，是因为人数在档位之间怎么走都不该算事件。
+func _synergy_tier_key(race: String, threshold: int) -> String:
+	return "%s@%d" % [race, threshold]
+
+
+# 当前已解锁的档位集合。人数取自 SynergyService（唯一权威），
+# 档位取自 RACE_THRESHOLDS —— 与 SynergyPanel 显示的那几档同源，
+# tools/audio_sfx_check 会拿这两张表对一遍。
+func _synergy_unlocked_tiers() -> Dictionary:
+	var counts := SynergyService.count_races_from_board()
+	var unlocked: Dictionary = {}
+	for race in SynergyService.RACE_THRESHOLDS.keys():
+		var race_name := str(race)
+		var have := int(counts.get(race_name, 0))
+		for threshold in SynergyService.RACE_THRESHOLDS[race]:
+			if have >= int(threshold):
+				unlocked[_synergy_tier_key(race_name, int(threshold))] = true
+	return unlocked
+
+
+# 由 _refresh_all() 调用。
+#
+# 一次采样最多响一声：一次操作可能同时跨两档（比如一次性从 6 只补到 8 只，
+# god 的 7 档与 human 的 7 档都可能过），那种时候连续两声反而像卡带。
+# 快照在**判断之后无条件更新**，所以同一状态被反复采样不会重复响。
+func _check_synergy_activation() -> void:
+	var unlocked := _synergy_unlocked_tiers()
+	if not _synergy_sampled:
+		# 刚进备战页的第一帧：只认账，不发声。
+		_synergy_sampled = true
+		_synergy_unlocked_before = unlocked
+		return
+	var crossed := false
+	for key in unlocked.keys():
+		if not _synergy_unlocked_before.has(key):
+			crossed = true
+			break
+	_synergy_unlocked_before = unlocked
+	if crossed:
+		SfxService.play(SfxService.CUE_SYNERGY_ACTIVATE)
+
+
 func _refresh_all() -> void:
 	# 教学局也走自动合成：正式局就是这个规则，教学不能教一套正式局用不上的操作。
 	_auto_combine_all()
@@ -1887,6 +2001,9 @@ func _refresh_all() -> void:
 	if GameState.tutorial_mode:
 		TutorialMode.update_overlay()
 	_check_team_merc_alert()
+	# 9.17：羁绊激活音。放最后 —— 前面的 _auto_combine_all() 可能刚把棋子合成掉、
+	# 改变棋盘构成，先采样再判会拿到中间态。
+	_check_synergy_activation()
 func _sync_prep_board_readability_geometry() -> void:
 	if _board_hud.readability_layer == null or not is_instance_valid(_board_hud.readability_layer):
 		return
@@ -2299,7 +2416,11 @@ func _team_merc_counts() -> Dictionary:
 	return counts
 
 func _check_team_merc_alert() -> void:
-	if GameState.tutorial_mode or _team_merc_alert == null:
+	# 9.17：`_team_merc_alert == null` 的早退**从函数开头挪到了控件交互那两行**。
+	# 原先它和 tutorial 一起挡在最前面，于是「数变化」这段也跟着控件走了 ——
+	# 而队伍召唤音应当由「队友多了一个佣兵」这个事实决定，不该由某个控件建没建出来决定。
+	# 拆开之后：数照常采样，控件相关的分支各自判空。
+	if GameState.tutorial_mode:
 		return
 	var current := _team_merc_counts()
 	if not _team_merc_snapshot_initialized or _team_merc_snapshot_round != GameState.round_index:
@@ -2309,13 +2430,35 @@ func _check_team_merc_alert() -> void:
 		return
 
 	var increased := false
+	var teammate_increased := false
+	# 自己那一格的口径必须和 `_team_merc_counts()` 里**完全一致**（同一个三元 + 同一个
+	# `< 0` 归一），否则下面「这是不是我自己的座位」判错，房主那条会双响或干脆不响。
+	var my_slot := NetworkService.team_local_slot if NetworkService.team_active else 0
+	if my_slot < 0:
+		my_slot = 0
 	for slot_value in current:
 		var slot := int(slot_value)
 		if int(current.get(slot, 0)) > int(_team_merc_counts_snapshot.get(slot, 0)):
 			increased = true
-			break
+			if slot != my_slot:
+				teammate_increased = true
 	_team_merc_counts_snapshot = current
-	if not increased:
+
+	# 9.17：队伍召唤音 —— **队友**多雇了一个佣兵，全队都该听到这条召唤音。
+	#
+	# 只补队友那一半：自己那一次由「确认自己成功了」的本地路径播 ——
+	#   客机：服务端回执落地处 `_on_carrot_economy_receipt`（action == hire_merc_carrot）
+	#   房主 / 单机 / 教程：成交那行 `PrepBoardController._hire_mercenary_to_slot`
+	# 这里若连自己那格也播就会双响：`_team_merc_counts()` 把自己的座位也算进 current，
+	# 而 `_refresh_all()` 结尾就会调到本函数。
+	#
+	# 不按增量条数分次播：雇佣是一次一个（每回只填一个空槽），增量恒为 1；
+	# 真出现 +N 只可能是中途重连后的整表重发，那种也该只响一声。
+	# 「首次观察」与「换回合」两种误响来源已经在上面 return 掉，迟到同步不会凭空响。
+	if teammate_increased:
+		SfxService.play(SfxService.CUE_MERC_SUMMON)
+
+	if not increased or _team_merc_alert == null:
 		return
 	if _team_mercs_open:
 		_team_merc_alert.mark_seen()
