@@ -1,0 +1,41 @@
+{
+	"schema_version": 1,
+
+	"_why": "商品 id 与内容 id 刻意脱钩。id 卖出去过就永不改变，改名、改图、改模型都只改 grants 指向的那份数据；同一只宠物可以在不同活动里以不同价格、不同包装上架，都指向同一个 grants。理由与事故先例见 docs/商城系统设计.md 第四节。",
+
+	"_free_by_omission": "🔴 不在这个文件里的内容一律免费。现有 20 张头像与 frame_default 上线时就是免费的，不能因为做了商城就变成付费 —— 那是对已经在用它的玩家的回收。要卖新头像就出新图、给新 id，别把老的挪进来。判定在 backend/app/shop.py 的 requires_entitlement()。",
+
+	"_price_placeholder": "⚠️ 下面的价格是占位，没有经过任何数值设计。上线前必须由策划定。改价格是安全的 —— 历史订单存的是下单时的快照，不 join 这个文件。",
+
+	"_currency_note": "currency 只能是 diamond 或 coin。第一版 coin（黄金）没有任何产出口、余额恒为 0，所以全部商品都标 diamond；等黄金的赚取方式定了再把无战力商品（头像、头像框）改成 coin。",
+
+	"items": [
+		{
+			"id": "shop_pet_mushroom",
+			"kind": "pet",
+			"grants": "pet_mushroom",
+			"currency": "diamond",
+			"price": 300,
+			"name": "蘑菇",
+			"name_en": "Mushroom"
+		},
+		{
+			"id": "shop_pet_cat",
+			"kind": "pet",
+			"grants": "pet_cat",
+			"currency": "diamond",
+			"price": 300,
+			"name": "猫",
+			"name_en": "Cat"
+		},
+		{
+			"id": "shop_pet_rabbit",
+			"kind": "pet",
+			"grants": "pet_rabbit",
+			"currency": "diamond",
+			"price": 300,
+			"name": "兔子",
+			"name_en": "Rabbit"
+		}
+	]
+}

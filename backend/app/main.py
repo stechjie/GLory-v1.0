@@ -30,6 +30,7 @@ from app.routes import friends as friends_routes
 from app.routes import me as me_routes
 from app.routes import presence as presence_routes
 from app.routes import profile as profile_routes
+from app.routes import shop as shop_routes
 from app.routes import ws as ws_routes
 
 # Windows 控制台默认是 cp1252，中文日志会被转义成 以... 甚至直接抛
@@ -152,6 +153,7 @@ app.include_router(friends_routes.router)
 app.include_router(presence_routes.router)
 app.include_router(chat_routes.router)
 app.include_router(announcement_routes.router)
+app.include_router(shop_routes.router)
 app.include_router(ws_routes.router)
 
 # 自检接口只在开发环境挂载。生产上它会把表结构和 RLS 状态说得太清楚，

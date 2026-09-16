@@ -58,12 +58,22 @@ main() {
 	# 后端要读 data/avatars.json（头像 id 的授权校验，见 backend/app/avatar_catalog.py）
 	# 与可选的 data/blocked_words.txt（文本词表）。
 	#
+	# 商城又加了两个（backend/app/shop.py）：
+	#   data/shop.json       商品目录。**不在这份目录里的内容一律免费**，
+	#                        所以漏了它不是「商城空了」，是所有付费内容变免费。
+	#   data/pets/pets.json  宠物 id 与 starter_ids。服务端与客户端刻意读同一份 ——
+	#                        starter_ids 有两处定义的话，迟早出现
+	#                        「客户端让选、服务端说不是新手宠物」。
+	#
 	# **只复制这两个文件，不复制整个 data/。** 运行目录只放后端真正要用的东西 ——
 	# 整个 data/ 是全套游戏数值表（单位、宝物、回合、AI 曲线），后端一个都不读，
 	# 复制过去只是白白多一份暴露面。理由同 bootstrap 里 src 与 repo 分家那段。
 	mkdir -p "$REPO/data"
-	for f in avatars.json blocked_words.txt; do
+	# 列表里允许带子目录（pets/pets.json），所以每个文件各自 mkdir 一次父目录 ——
+	# 上面那个 mkdir 只建了 data/ 本身。
+	for f in avatars.json blocked_words.txt shop.json pets/pets.json; do
 		if [[ -f "$SRC/data/$f" ]]; then
+			mkdir -p "$(dirname "$REPO/data/$f")"
 			rsync -a "$SRC/data/$f" "$REPO/data/$f"
 		fi
 	done
