@@ -28,6 +28,13 @@ const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
 const MENU_BG_TEX := preload("res://assets/ui/main_menu_live/background.png")
 const TEX_GOLD := preload("res://assets/ui/main_menu_live/gold.png")
 const TEX_DIAMOND := preload("res://assets/ui/main_menu_live/diamond.png")
+# gold.png(423×105) / diamond.png(418×105) 是**整条货币条**：左边圆图标 + 中间深色数字底板 +
+# 右边绿色「+」充值键。主菜单是整个条按 220×55 画出来、再把数字压在底板上（MainMenu.gd:186-189）。
+# 商城只有「图标 + 数字」两格，把 4:1 的整条塞进 36×36 会被 STRETCH_KEEP_ASPECT 压成一条亮片
+# —— 玩家看到的「金币/钻石模型显示不正确」就是这个。所以按原图实测像素裁出图标那一段。
+# 下面的区域是在 423×105 / 418×105 原图上量的：金币圆心 (66,50)、钻石圆心 (70,50)，左右各留 2~3px 描边。
+const GOLD_ICON_REGION := Rect2(26, 10, 80, 80)
+const DIAMOND_ICON_REGION := Rect2(35, 10, 72, 80)
 const PetPreview := preload("res://scripts/pets/PetPreview.gd")
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
 
@@ -53,6 +60,10 @@ var _notice_label: Label
 var _diamond_label: Label
 var _coin_label: Label
 var _empty_label: Label
+
+# 裁好的货币图标。懒建一次就复用，见 GOLD_ICON_REGION 上面的注释。
+var _gold_icon: AtlasTexture
+var _diamond_icon: AtlasTexture
 
 
 func _ready() -> void:
@@ -147,15 +158,38 @@ func _header() -> Control:
 	title.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
 	row.add_child(title)
 
-	# 余额。与主菜单右上角是同一组图标 —— 两处显示同一个数，图不一样会让人以为是两种钱。
+	# 余额。与主菜单右上角是同一组图标（同一条 gold.png / diamond.png，这里只裁出图标那一段）——
+	# 两处显示同一个数，图不一样会让人以为是两种钱。
 	var purse := HBoxContainer.new()
 	purse.add_theme_constant_override("separation", Tokens.GAP_S)
 	purse.custom_minimum_size = Vector2(320, Tokens.TOUCH_MIN)
 	purse.alignment = BoxContainer.ALIGNMENT_END
-	_coin_label = _purse_entry(purse, TEX_GOLD)
-	_diamond_label = _purse_entry(purse, TEX_DIAMOND)
+	_coin_label = _purse_entry(purse, _icon_of("coin"))
+	_diamond_label = _purse_entry(purse, _icon_of("diamond"))
 	row.add_child(purse)
 	return row
+
+
+# 商城要的是「图标」，不是整条货币条 —— 按 GOLD_ICON_REGION 从原图裁一段。
+# 裁在代码里做，**不新增素材文件**：新增图要走 --import 重导 + manifest 登记，容易漏一环。
+# currency 口径与 _balance_of() 一致："diamond" 是钻石，其余都算金币。
+func _icon_of(currency: String) -> Texture2D:
+	if currency == "diamond":
+		if _diamond_icon == null:
+			_diamond_icon = _crop(TEX_DIAMOND, DIAMOND_ICON_REGION)
+		return _diamond_icon
+	if _gold_icon == null:
+		_gold_icon = _crop(TEX_GOLD, GOLD_ICON_REGION)
+	return _gold_icon
+
+
+func _crop(tex: Texture2D, region: Rect2) -> AtlasTexture:
+	var atlas := AtlasTexture.new()
+	atlas.atlas = tex
+	atlas.region = region
+	# 裁切边界上的线性采样会把旁边那块暗底板吸进来，关掉它，免得图标带一圈脏边。
+	atlas.filter_clip = true
+	return atlas
 
 
 func _purse_entry(parent: HBoxContainer, tex: Texture2D) -> Label:
@@ -270,7 +304,7 @@ func _card(item: Dictionary) -> Control:
 	box.add_child(price_row)
 	if not owned:
 		var icon := TextureRect.new()
-		icon.texture = TEX_DIAMOND if currency == "diamond" else TEX_GOLD
+		icon.texture = _icon_of(currency)
 		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		icon.custom_minimum_size = Vector2(28, 28)
