@@ -18,6 +18,8 @@ signal profile_requested        # 左上角名牌：进入玩家资料界面
 signal friends_requested        # 左侧「朋友」按钮：进入好友界面
 signal chat_requested           # 左侧「聊天」按钮：进入私聊界面
 signal announcements_requested  # 右侧「公告 / 活动」：进入公告界面
+signal shop_requested           # 右侧「商店」：进入商城
+signal bag_requested            # 右上角「背包」：进入背包
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
@@ -67,6 +69,8 @@ const DEBUG_BANDS := [
 var _profile_portrait: TextureRect
 var _profile_name_label: Label
 var _profile_sub_label: Label
+var _coin_label: Label
+var _diamond_label: Label
 # 「聊天」图标右上角的未读红点。显隐只跟 ChatService 走（状态只有一份）。
 var _chat_dot: Label
 # 「公告 / 活动」右上角的红点。显隐只跟 AnnouncementService 走。
@@ -102,6 +106,8 @@ func _ready() -> void:
 		AnnouncementService.changed.connect(_on_announcements_changed)
 	_refresh_profile_plate()
 	_ensure_profile_loaded()
+	# 钱包**每次回主菜单都重拉**，不像资料那样吃缓存 —— 玩家多半是刚从商城买完东西回来的。
+	_refresh_wallet()
 
 func _exit_tree() -> void:
 	if AccountManager.profile_changed.is_connected(_on_account_profile_changed):
@@ -174,10 +180,13 @@ func _build() -> void:
 	_profile_name_label = _add_label("", Vector2(200, 70), Vector2(330, 35), 24, "left")
 	_profile_sub_label = _add_label("", Vector2(200, 104), Vector2(330, 24), 18, "left")
 	_add_hit(Vector2(18, 12), Vector2(550, 178), _emit_profile, "left")
+	# 这两个数**曾经也是写死的假数据**（"89,450" / "2,350"），同上面名牌那两行。
+	# 现在接的是 GET /v1/me/wallet。拉到之前显示 "—" 而不是 0 ——
+	# 0 是一个**看起来正常的错值**，玩家会以为自己的钱没了。
 	_add_texture(TEX_GOLD, Vector2(645, 35), Vector2(220, 55))
-	_add_label("89,450", Vector2(645, 35), Vector2(220, 55), 24)
+	_coin_label = _add_label("—", Vector2(645, 35), Vector2(220, 55), 24)
 	_add_texture(TEX_DIAMOND, Vector2(885, 35), Vector2(220, 55))
-	_add_label("2,350", Vector2(885, 35), Vector2(220, 55), 24)
+	_diamond_label = _add_label("—", Vector2(885, 35), Vector2(220, 55), 24)
 
 	_add_texture(TEX_FRIENDS, Vector2(28, 300), Vector2(132, 132), "left")
 	_add_label(_menu_text("朋友", "Friends"), Vector2(47, 380), Vector2(94, 30), 21, "left")
@@ -194,7 +203,7 @@ func _build() -> void:
 	# 右上角背包/邮件/设置、右侧商店/公告：锚定到屏幕右边（edge="right"）
 	_add_texture(TEX_BAG, Vector2(1340, 25), Vector2(100, 100), "right")
 	_add_label(_menu_text("背包", "Bag"), Vector2(1340, 95), Vector2(100, 7), 7, "right")
-	_add_hit(Vector2(1340, 25), Vector2(100, 100), _show_coming_soon, "right")
+	_add_hit(Vector2(1340, 25), Vector2(100, 100), _emit_bag, "right")
 	_add_texture(TEX_MAIL, Vector2(1450, 25), Vector2(100, 100), "right")
 	_add_label(_menu_text("邮件", "Mail"), Vector2(1450, 95), Vector2(100, 7), 7, "right")
 	_add_hit(Vector2(1450, 25), Vector2(100, 100), _show_coming_soon, "right")
@@ -204,7 +213,7 @@ func _build() -> void:
 
 	_add_texture(TEX_SHOP, Vector2(1380, 140), Vector2(270, 250), "right")
 	_add_label(_menu_text("商店", "Shop"), Vector2(1380, 150), Vector2(270, 34), 24, "right")
-	_add_hit(Vector2(1380, 140), Vector2(270, 250), _show_coming_soon, "right")
+	_add_hit(Vector2(1380, 140), Vector2(270, 250), _emit_shop, "right")
 	_add_texture(TEX_NEWS, Vector2(1380, 400), Vector2(270, 250), "right")
 	_add_label(_menu_text("公告 / 活动", "News / Events"), Vector2(1380, 407), Vector2(270, 34), 22, "right")
 	# 有没看过的公告时亮红点，同聊天那个。hit 仍然放在最后。
@@ -565,6 +574,37 @@ func _refresh_profile_plate() -> void:
 		str(profile.get("player_name", "")), str(profile.get("friend_code", "")))
 	var days := int(profile.get("days_since_created", 1))
 	_profile_sub_label.text = _menu_text("第 %d 天" % days, "Day %d" % days)
+
+func _emit_shop() -> void:
+	shop_requested.emit()
+
+func _emit_bag() -> void:
+	bag_requested.emit()
+
+# 拉余额。失败就**保持 "—"**，不要退回 0：0 是个看起来正常的错值。
+func _refresh_wallet() -> void:
+	if not AccountManager.is_logged_in():
+		return
+	var result: Dictionary = await AccountManager.fetch_wallet()
+	if not is_inside_tree() or _coin_label == null:
+		return
+	if int(result.get("code", 0)) / 100 != 2:
+		return
+	var body: Dictionary = result.get("body", {})
+	_coin_label.text = _comma(int(body.get("coin", 0)))
+	_diamond_label.text = _comma(int(body.get("diamond", 0)))
+
+# 千分位。与商城界面的同名函数保持一致 —— 两处显示同一个数，格式不一样很显眼。
+func _comma(value: int) -> String:
+	var digits := str(absi(value))
+	var out := ""
+	var count := 0
+	for i in range(digits.length() - 1, -1, -1):
+		out = digits[i] + out
+		count += 1
+		if count % 3 == 0 and i > 0:
+			out = "," + out
+	return ("-" if value < 0 else "") + out
 
 # 首次进主菜单时拉一次资料，之后吃 AccountManager 的缓存。
 # 每次回主菜单都发一次请求既慢又费流量，而这些字段只有玩家自己能改。

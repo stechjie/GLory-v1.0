@@ -31,6 +31,7 @@ import uuid
 from dataclasses import dataclass
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from app import db, players, shop
@@ -38,6 +39,7 @@ from app.config import get_settings
 from app.jwt_verify import Claims, TokenError
 from app.main import app
 from app.routes import me as me_routes
+from app.routes import profile as profile_routes
 from app.routes import shop as shop_routes
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
@@ -536,6 +538,63 @@ def test_set_active_pet_requires_ownership(monkeypatch: pytest.MonkeyPatch) -> N
         asyncio.run(shop.set_active_pet(PLAYER_A, shop.starter_ids()[0]))
     assert exc.value.code == "not_owned"
     assert conn.count("update players") == 0
+
+
+# --- 装备时的归属校验 ----------------------------------------------------------
+#
+# avatar_catalog 只回答「这个 id 存不存在」。它自己的文件注释预告过：
+# 「等头像变成活动奖励或付费内容，同一个洞就是白嫖限定头像」。商城上线那天到了。
+
+
+def test_equipping_free_content_needs_no_entitlement(monkeypatch: pytest.MonkeyPatch) -> None:
+    """🔴 现有那 20 张头像不在目录里 = 免费，装备时**不能**去查归属表。
+
+    查了就会把每个玩家正在用的头像判成「你没有」—— 一夜之间全部失效。
+    """
+    called: list = []
+
+    async def _never(_player_id):
+        called.append(1)
+        return []
+
+    monkeypatch.setattr(shop, "read_entitlements", _never)
+    avatars = json.loads((REPO / "data" / "avatars.json").read_text(encoding="utf-8"))
+    value = "preset:%s" % avatars["avatars"][0]["id"]
+    asyncio.run(profile_routes._require_entitlement(PLAYER_A, value))
+    assert not called, "免费内容也去查了归属表"
+
+
+def test_equipping_sold_content_without_owning_it_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """卖过的东西必须查。不查就是「改个请求体就能用没买的宠物」。"""
+    async def _owns_nothing(_player_id):
+        return []
+
+    monkeypatch.setattr(shop, "read_entitlements", _owns_nothing)
+    sold = shop.items()[0].grants
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(profile_routes._require_entitlement(PLAYER_A, sold))
+    assert exc.value.status_code == 403
+    assert exc.value.headers.get("X-Glory-Reason") == "not_owned"
+
+
+def test_equipping_sold_content_you_own_is_allowed(monkeypatch: pytest.MonkeyPatch) -> None:
+    sold = shop.items()[0].grants
+
+    async def _owns_it(_player_id):
+        return [sold]
+
+    monkeypatch.setattr(shop, "read_entitlements", _owns_it)
+    asyncio.run(profile_routes._require_entitlement(PLAYER_A, sold))
+
+
+def test_profile_patch_checks_avatar_frame_and_pet(monkeypatch: pytest.MonkeyPatch) -> None:
+    """三样都要查 —— 漏掉任何一样，那一样就是白嫖入口。"""
+    source = inspect.getsource(profile_routes.patch_me_profile)
+    assert source.count("_require_entitlement") >= 3
+    for field in ("avatar", "frame", "pet"):
+        assert "_require_entitlement(row.player_id, %s)" % field in source
 
 
 # --- SQL 的静态一致性 ----------------------------------------------------------

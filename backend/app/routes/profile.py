@@ -19,12 +19,13 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path
 from pydantic import BaseModel, Field
 
-from app import avatar_catalog, db, friends, players, profile, text_guard
+from app import avatar_catalog, db, friends, players, profile, shop, text_guard
 from app.jwt_verify import Claims
 from app.routes.me import current_claims, optional_claims
 
@@ -39,6 +40,28 @@ router = APIRouter(prefix="/v1", tags=["profile"])
 # 以后必然出不一致，见 docs/玩家资料系统设计.md 第三节。
 GENDERS = {"male", "female", "other", "undisclosed"}
 VISIBILITIES = {"public", "private"}
+
+
+# --- 归属校验 -----------------------------------------------------------------
+
+
+async def _require_entitlement(player_id: uuid.UUID, content_id: str | None) -> None:
+    """付费内容要装备之前先确认他真的有。
+
+    🔴 判据是 `shop.requires_entitlement()`，**不是「归属表里有没有」**。
+    后者会把现有那 20 张免费头像全判成「你没有」—— 每个玩家的头像会一夜失效。
+
+    content_id 为 None 表示这次请求没改这一项，直接放行。
+    """
+    if not content_id or not shop.requires_entitlement(content_id):
+        return
+    owned = await shop.read_entitlements(player_id)
+    if content_id not in owned:
+        raise HTTPException(
+            status_code=403,
+            detail="你还没有这个",
+            headers={"X-Glory-Reason": "not_owned"},
+        )
 
 
 # --- 响应模型 -----------------------------------------------------------------
@@ -225,8 +248,21 @@ async def patch_me_profile(
     except avatar_catalog.AvatarRejected as exc:
         raise HTTPException(status_code=400, detail=exc.message) from None
 
+    # 🔴 归属校验。avatar_catalog 只回答「这个 id 存不存在」，不回答「你有没有」——
+    # 它自己的文件注释预告过这件事：「等头像变成活动奖励或付费内容，同一个洞就是
+    # 白嫖限定头像」。商城上线之后那一天到了。
+    #
+    # **不在 data/shop.json 里的内容一律免费**，所以现有那 20 张头像与默认头像框
+    # 走到这里 requires_entitlement 是 False，一行归属数据都不需要。
+    await _require_entitlement(row.player_id, avatar)
+    await _require_entitlement(row.player_id, frame)
+
     clear_pet = body.showcase_pet == ""
     pet = None if clear_pet else body.showcase_pet
+    # 出战宠物同理。这一列原本完全没有校验 —— 宠物一旦卖钱，
+    # 不校验就是「改个请求体就能用没买的宠物」。
+    if pet:
+        await _require_entitlement(row.player_id, pet)
 
     try:
         updated = await profile.update_identity(

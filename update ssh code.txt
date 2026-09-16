@@ -2,6 +2,8 @@ nins17121@gmail.com
 151213Aaa!
 
 
+sudo bash /opt/glory/src/deploy/update.sh
+
 sha256sum ~/glory_server_p21.zip
 
 sudo systemctl stop glory-server
@@ -13,7 +15,7 @@ sudo systemctl start glory-server
 grep -o "NETWORK_PROTOCOL_VERSION := [0-9]*" ~/Glory/"Beta 0.04"/scripts/multiplayer/NetworkConfig.gd
 
 
-unzip -q ~/glory_server_p25.zip -d ~/Glory/"Beta 0.04"
+unzip -q ~/glory_server_p28.zip -d ~/Glory/"Beta 0.04"
 sudo systemctl restart glory-server
 journalctl -u glory-server -n 5 --no-pager
 

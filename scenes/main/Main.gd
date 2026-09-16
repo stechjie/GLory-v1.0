@@ -795,6 +795,8 @@ func _show_menu() -> void:
 	_menu.friends_requested.connect(_show_friends_screen)
 	_menu.chat_requested.connect(_show_chat_screen)
 	_menu.announcements_requested.connect(_show_announcements_screen)
+	_menu.shop_requested.connect(_show_shop_screen)
+	_menu.bag_requested.connect(_show_bag_screen)
 	add_child(_menu)
 	# 对局中被顶号时挂着的提示，回到主菜单这一刻才弹（设计文档第五节）。
 	_show_kicked_notice_if_pending()
@@ -953,6 +955,32 @@ func _show_codex_screen() -> void:
 #
 # 用 configure() 而不是传枚举：传枚举就得 preload FriendsScreen.gd，
 # 那会把它的整张依赖图拉进 Main 的加载路径 —— 同 _show_profile_screen 的理由。
+# 商城（docs/商城系统设计.md）。返回主菜单时那边会重拉一次钱包 ——
+# 玩家多半是刚买完东西回来的。
+func _show_shop_screen() -> void:
+	_clear()
+	var screen := _instantiate_screen("res://scenes/menu/ShopScreen.tscn")
+	if screen == null:
+		_show_menu()
+		return
+	screen.back_requested.connect(_show_menu)
+	_page_back_route = _show_menu
+	add_child(screen)
+
+
+func _show_bag_screen() -> void:
+	_clear()
+	var screen := _instantiate_screen("res://scenes/menu/BagScreen.tscn")
+	if screen == null:
+		_show_menu()
+		return
+	screen.back_requested.connect(_show_menu)
+	# 头像换装在资料页，背包只展示（BagScreen 文件头写了为什么不在这儿再做一份）。
+	screen.profile_requested.connect(_show_profile_screen)
+	_page_back_route = _show_menu
+	add_child(screen)
+
+
 func _show_friends_screen() -> void:
 	_clear()
 	var screen := _instantiate_screen("res://scenes/menu/FriendsScreen.tscn")
