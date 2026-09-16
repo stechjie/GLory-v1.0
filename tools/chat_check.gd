@@ -43,12 +43,13 @@ const EXPECTED_IDS := [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 # 2026-09-11 批次 D（自由文字）加了两个：55 -> 57、22 -> 23。
 # 2026-09-13 组队语音又加了两个：57 -> 59、24 -> 25（中间 23 -> 24 是批次 D 与四星撞号，见 NetworkConfig v24）。
 # 2026-09-14 聊天范围：数量没变，四条聊天 RPC 各加一个 team_only 参数 -> 签名指纹变了、25 -> 26。
+# 2026-09-16 萝卜营地：新增 `_rpc_team_submit_active_pet`，方法数 59 -> 60、协议 28 -> 29。
 # 2026-09-14 排队：数量和签名都没动，只为挡住没有排队逻辑的旧包顶号 26 -> 27，指纹不动。
 # PINNED_RPC_SIGNATURES：全部 @rpc 方法「@rpc 配置 | 方法名(参数类型,…)」排序后的 SHA-256 前 16 位，
 # 算法见 _rpc_signature_digest。参数只改名字不算（线上不传名字）。
-const PINNED_RPC_COUNT := 59
-const PINNED_RPC_PROTOCOL := 28
-const PINNED_RPC_SIGNATURES := "0a69cb890ab7cf1b"
+const PINNED_RPC_COUNT := 60
+const PINNED_RPC_PROTOCOL := 29
+const PINNED_RPC_SIGNATURES := "a54e6c8d53288bcd"
 
 var _h: CheckHarness
 

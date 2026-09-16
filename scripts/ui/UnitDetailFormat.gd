@@ -186,7 +186,7 @@ static func format_skill_detail(d: Dictionary) -> String:
 		"poison_attack":
 			return "毒击：普通攻击附带中毒，每秒造成目标最大生命%s伤害，持续%.1f秒；灵4毒伤x2。" % [pct(float(d.get("poison_pct_max_hp", 0.03))), float(d.get("poison_duration", 4.0))]
 		"parasite_on_kill":
-			return "寄生：普攻标记目标；标记目标死亡时召唤该敌人的分身，生命为原目标%s，攻防为原目标%s。" % [pct(float(d.get("clone_hp_pct", 0.10))), pct(float(d.get("clone_atk_def_pct", 0.50)))]
+			return "寄生：普攻击杀非 Boss 敌人时，召唤该敌人的分身，生命为原目标%s，攻防为原目标%s。" % [pct(float(d.get("clone_hp_pct", 0.10))), pct(float(d.get("clone_atk_def_pct", 0.50)))]
 		"defense_down_attack":
 			return "腐蚀攻击：普通攻击降低目标防御%s，持续%.1f秒；暗5/暗7会增强。" % [pct(float(d.get("def_down_pct", 0.10))), float(d.get("duration", 5.0))]
 		"death_poison_explosion":
@@ -350,7 +350,7 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"poison_attack":
 			return "Poison Strike: Normal attacks apply poison — %s max HP per second for %.1fs. Undead 4 doubles poison damage." % [pct(float(d.get("poison_pct_max_hp", 0.03))), float(d.get("poison_duration", 4.0))]
 		"parasite_on_kill":
-			return "Parasite: Mark targets with normal attacks. When a marked target dies, summon its clone at %s HP and %s ATK/DEF." % [pct(float(d.get("clone_hp_pct", 0.10))), pct(float(d.get("clone_atk_def_pct", 0.50)))]
+			return "Parasite: When a basic attack kills a non-Boss enemy, summon its clone at %s HP and %s ATK/DEF." % [pct(float(d.get("clone_hp_pct", 0.10))), pct(float(d.get("clone_atk_def_pct", 0.50)))]
 		"defense_down_attack":
 			return "Corrosive Strike: Normal attacks reduce target DEF by %s for %.1fs. Dark 5/7 amplify this effect." % [pct(float(d.get("def_down_pct", 0.10))), float(d.get("duration", 5.0))]
 		"death_poison_explosion":

@@ -43,6 +43,8 @@ func _do_save() -> void:
 	# 出战种族（协议 28）要活过重启。今天只有四族，合法选择只有一份、和默认一模一样，
 	# 所以 load 阶段核对的是「座位上这个字段还在」，而不是「内容不等于默认」。
 	prep.seat_races = {1: ["god", "dark", "undead", "human"]}
+	# 协议 29 的营地展示宠物同样是座位状态；重启后不能退回错误的默认宠物。
+	prep.seat_pets = {1: "pet_cat"}
 	NetworkService._assign_peer_to_room(7001, prep, "")
 
 	var lobby: Dictionary = NetworkService._new_room()
@@ -95,7 +97,9 @@ func _do_load() -> void:
 		var races_ok := str((room.get("seat_races", {}) as Dictionary).get(1, [])) \
 			== str(["god", "dark", "undead", "human"])
 		detail.append("seat_races=%s" % races_ok)
-		if not (hp_ok and phase_ok and peers_cleared and reserved_ok and rebased and races_ok):
+		var pet_ok := str((room.get("seat_pets", {}) as Dictionary).get(1, "")) == "pet_cat"
+		detail.append("seat_pet=%s" % pet_ok)
+		if not (hp_ok and phase_ok and peers_cleared and reserved_ok and rebased and races_ok and pet_ok):
 			ok = false
 
 	if not found_prep:

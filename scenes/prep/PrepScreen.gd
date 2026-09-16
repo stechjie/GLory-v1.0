@@ -65,14 +65,21 @@ func _ready() -> void:
 	# 不能改成「房主从 room.prep 回灌」：房主买佣兵只扣 GameState.carrots、不动账本，
 	# 回灌会把花掉的萝卜还回来。
 	var carrot_harvest_gain := 0
+	var carrot_harvest_gains: Dictionary = {}
 	var carrot_server_authoritative := NetworkService.team_active and not NetworkService.is_host
 	if not GameState.tutorial_mode and not carrot_server_authoritative:
 		var harvest := GameState.harvest_carrots_for_round(GameState.round_index)
 		if bool(harvest.get("ok", false)):
 			carrot_harvest_gain = int(harvest.get("gain", 0))
+			var local_slot := clampi(NetworkService.team_local_slot, 0, 5) if NetworkService.team_active else 4
+			carrot_harvest_gains[local_slot] = carrot_harvest_gain
 			SaveManager.save_run()
 	elif carrot_server_authoritative and GameState.last_harvest_round == GameState.round_index:
 		carrot_harvest_gain = NetworkService.last_carrot_harvest_gain
+		if NetworkService.team_carrot_harvest_round == GameState.round_index:
+			carrot_harvest_gains = NetworkService.team_carrot_harvest_gains.duplicate(true)
+		if carrot_harvest_gains.is_empty():
+			carrot_harvest_gains[clampi(NetworkService.team_local_slot, 0, 5)] = carrot_harvest_gain
 	# 这套系统的失败模式全是**静默**的：不采集、被覆盖、被幂等挡掉，界面上一模一样，
 	# 都只表现为"萝卜不涨"。留一行 Debug 日志，出问题时一眼能分辨是哪一种，
 	# 不必再靠猜。Release 不打。
@@ -94,11 +101,11 @@ func _ready() -> void:
 	if GameState.shop_offers.is_empty() or GameState.shop_offers[0].is_empty():
 		_roll_shop()
 	await _build(startup_staged)
-	if carrot_harvest_gain > 0:
+	if not carrot_harvest_gains.is_empty():
 		# 记账：客机那条路径（_maybe_play_pending_carrot_harvest）也会在权威采集
 		# 到达时补播，两边共用这个标记保证一回合只播一次。
 		_carrot_feedback_round = GameState.round_index
-		call_deferred("play_carrot_harvest_feedback", carrot_harvest_gain)
+		call_deferred("play_carrot_harvest_feedback", carrot_harvest_gains)
 	# 这条连接必须放在最派生的类里：_connect_treasure_signals 定义在 PrepFlowController，
 	# 而面板的接线在 PrepUI._build() 里 —— 父类看不见子类的方法。
 	if not _treasure.net_signals_needed.is_connected(_connect_treasure_signals):

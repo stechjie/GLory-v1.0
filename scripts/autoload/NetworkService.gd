@@ -12,6 +12,30 @@ signal team_room_action_failed(reason: String)
 signal public_token_changed(token_id: String)
 
 var team_seat_profiles: Dictionary = {}
+# Public, presentation-only state for the preparation carrot camp. A pet is
+# assigned to an occupied seat by the authoritative room, never synthesized by
+# the client for an empty seat.
+var team_seat_pets: Dictionary = {}
+# slot(int) -> actual carrots harvested in `team_carrot_harvest_round`.
+# This exposes the round result only, never another player's private balance.
+var team_carrot_harvest_gains: Dictionary = {}
+var team_carrot_harvest_round := -1
+
+func publish_active_pet() -> void:
+	if not team_active or team_local_slot < 0 or state != SessionState.READY:
+		return
+	var pet_id := PlayerProfile.get_active()
+	if pet_id.is_empty() or PetService.model_path(pet_id).is_empty():
+		return
+	var known := str(team_seat_pets.get(team_local_slot, team_seat_pets.get(str(team_local_slot), "")))
+	if known == pet_id:
+		return
+	# The local debug host has no dedicated room RPC authority. Keep its own
+	# display correct while the dedicated-server path remains authoritative.
+	if is_host and not _dedicated_server:
+		team_seat_pets[team_local_slot] = pet_id
+		return
+	_rpc_team_submit_active_pet.rpc_id(1, pet_id)
 
 func publish_lobby_identity() -> void:
 	if not team_active or is_host or state != SessionState.READY or team_local_slot < 0:
@@ -1078,9 +1102,21 @@ const SEAT_SLOT_MAPS := RoomService.SEAT_SLOT_MAPS
 
 func _move_seat_metadata(room: Dictionary, from_slot: int, to_slot: int) -> void:
 	_room_service.move_seat_metadata(room, from_slot, to_slot)
+	var seat_pets: Dictionary = room.get("seat_pets", {})
+	if seat_pets.has(from_slot):
+		seat_pets[to_slot] = seat_pets[from_slot]
+		seat_pets.erase(from_slot)
+	elif seat_pets.has(str(from_slot)):
+		seat_pets[to_slot] = seat_pets[str(from_slot)]
+		seat_pets.erase(str(from_slot))
+	room["seat_pets"] = seat_pets
 # 永久释放座位（主动离开 / 被踢 / 放弃 / 关房）。临时掉线绝不能调这个。
 func _clear_seat_metadata(room: Dictionary, slot: int) -> void:
 	_room_service.clear_seat_metadata(room, slot)
+	var seat_pets: Dictionary = room.get("seat_pets", {})
+	seat_pets.erase(slot)
+	seat_pets.erase(str(slot))
+	room["seat_pets"] = seat_pets
 # 释放一个座位绑定的公开短码。
 # compare-and-delete：只有当这条映射**仍指向本座位的 token** 时才删。
 # 无条件删会在短码碰撞（同一 id 被另一个座位重新绑定）时，让先离开的人把后来者的
@@ -1215,7 +1251,7 @@ func _room_begin_next_prep(room: Dictionary) -> void:
 			refreshed_slots[int(slot_key)] = true
 		var states_for_economy: Array = room.get("slot_states", [])
 		for seat in TEAM_SLOTS:
-			if seat < states_for_economy.size() and str(states_for_economy[seat]) == "player":
+			if seat < states_for_economy.size() and str(states_for_economy[seat]) in ["player", "dummy"]:
 				refreshed_slots[seat] = true
 		for slot_key in refreshed_slots.keys():
 			var slot := int(slot_key)
@@ -1299,9 +1335,14 @@ func _team_toggle_slot_authoritative(slot: int) -> void:
 		"empty":
 			team_slot_states[slot] = "dummy"
 			team_ready[slot] = true
+			var starters: Array = PetService.starter_ids()
+			if not starters.is_empty():
+				team_seat_pets[slot] = str(starters[slot % starters.size()])
 		"dummy":
 			team_slot_states[slot] = "empty"
 			team_ready[slot] = false
+			team_seat_pets.erase(slot)
+			team_seat_pets.erase(str(slot))
 		_:
 			return
 	_team_broadcast_lobby()
@@ -1331,6 +1372,7 @@ func _room_toggle_slot(room: Dictionary, slot: int) -> void:
 		"empty":
 			states[slot] = "dummy"
 			ready[slot] = true
+			_ensure_dummy_seat_pet(room, slot)
 		"dummy":
 			states[slot] = "empty"
 			ready[slot] = false
@@ -1583,10 +1625,11 @@ func _room_start_authoritative(room: Dictionary) -> void:
 	var ready: Array = room.get("ready", [])
 	var states: Array = room.get("slot_states", [])
 	if _economy_action_enabled("upgrade_harvest_tech"):
-		# The first prep is a real round boundary. Seed each player once before
+		# The first prep is a real round boundary. Seed each occupied player or AI
+		# seat once before
 		# the first room_state so an authoritative client cannot miss the +3.
 		for slot in TEAM_SLOTS:
-			if slot < states.size() and str(states[slot]) == "player":
+			if slot < states.size() and str(states[slot]) in ["player", "dummy"]:
 				var prep: Dictionary = _room_prep(room, slot)
 				# 同 _room_next_round：影子期也要锚定，理由见那里的注释。
 				if not economy_authoritative():
@@ -1670,6 +1713,9 @@ func _build_room_state(room: Dictionary, slot: int) -> Dictionary:
 		"leader_slot": int(room.get("leader_slot", 0)),
 		"slot_states": (room.get("slot_states", []) as Array).duplicate(),
 		"seat_profiles": (room.get("seat_profiles", {}) as Dictionary).duplicate(true),
+		"seat_pets": _build_public_seat_pets(room),
+		"carrot_harvest_round": int(room.get("round_index", -1)),
+		"carrot_harvest_gains": _build_public_carrot_harvest_gains(room),
 		"ready": (room.get("ready", []) as Array).duplicate(),
 		"suspended": bool(room.get("suspended", false)),
 		# --- 本座位身份 ---
@@ -1723,6 +1769,55 @@ func _build_economy_state(room: Dictionary, slot: int) -> Dictionary:
 		"roster": (prep.get("roster", {}) as Dictionary).duplicate(true),
 		"gamble_used": bool(prep.get("gamble_used", false)),
 	}
+
+func _build_public_seat_pets(room: Dictionary) -> Dictionary:
+	var visible: Dictionary = {}
+	var states: Array = room.get("slot_states", [])
+	var seat_pets: Dictionary = room.get("seat_pets", {})
+	for slot in TEAM_SLOTS:
+		if slot >= states.size() or str(states[slot]) not in ["player", "dummy"]:
+			continue
+		var pet_id := str(seat_pets.get(slot, seat_pets.get(str(slot), "")))
+		if str(states[slot]) == "dummy" and PetService.model_path(pet_id).is_empty():
+			pet_id = _ensure_dummy_seat_pet(room, slot)
+		if not PetService.model_path(pet_id).is_empty():
+			visible[slot] = pet_id
+	return visible
+
+func _build_public_carrot_harvest_gains(room: Dictionary) -> Dictionary:
+	var gains: Dictionary = {}
+	if not _economy_action_enabled("upgrade_harvest_tech"):
+		return gains
+	var states: Array = room.get("slot_states", [])
+	var preps: Dictionary = room.get("prep", {})
+	var round_index := int(room.get("round_index", -1))
+	for slot in TEAM_SLOTS:
+		if slot >= states.size() or str(states[slot]) not in ["player", "dummy"]:
+			continue
+		var prep_value: Variant = preps.get(slot, preps.get(str(slot), {}))
+		if typeof(prep_value) != TYPE_DICTIONARY:
+			continue
+		var prep := prep_value as Dictionary
+		if int(prep.get("last_harvest_round", -1)) == round_index:
+			gains[slot] = maxi(0, int(prep.get("last_harvest_gain", 0)))
+	return gains
+
+func _ensure_dummy_seat_pet(room: Dictionary, slot: int) -> String:
+	var seat_pets: Dictionary = room.get("seat_pets", {})
+	var existing := str(seat_pets.get(slot, seat_pets.get(str(slot), "")))
+	if not PetService.model_path(existing).is_empty():
+		return existing
+	var starters: Array = PetService.starter_ids()
+	if starters.is_empty():
+		return ""
+	# An AI receives one deterministic, stored pet when it is created. The client
+	# renders that AI's assigned pet instead of filling a vacant seat.
+	var assigned := str(starters[slot % starters.size()])
+	if PetService.model_path(assigned).is_empty():
+		return ""
+	seat_pets[slot] = assigned
+	room["seat_pets"] = seat_pets
+	return assigned
 
 func _send_room_state(room: Dictionary, peer_id: int, seq: int) -> void:
 	var slot := int((room.get("peer_slot", {}) as Dictionary).get(peer_id, -1))
@@ -2640,8 +2735,10 @@ func _rpc_team_submit_board(slot: int, snapshot: Dictionary) -> void:
 			_rpc_board_rejected.rpc_id(sender, bad)
 			return
 		_shadow_audit_submission(room, slot, snapshot, validation.get("snapshot", {}))
-		boards[slot] = validation.get("snapshot", {})
+		var accepted_snapshot: Dictionary = validation.get("snapshot", {})
+		boards[slot] = accepted_snapshot
 		room.boards = boards
+		_store_room_seat_pet(room, slot, NetProtocol.extract_pet(accepted_snapshot))
 		# 跨回合缓存最后一次合法棋盘：该座位掉线时用它补交（room.boards 每轮清空）
 		var last_board: Dictionary = room.get("last_board", {})
 		last_board[slot] = validation.get("snapshot", {})
@@ -2654,6 +2751,7 @@ func _rpc_team_submit_board(slot: int, snapshot: Dictionary) -> void:
 		return
 	if int(_team_peer_slot.get(multiplayer.get_remote_sender_id(), -1)) != slot:
 		return
+	team_seat_pets[slot] = NetProtocol.extract_pet(snapshot)
 	_team_boards_collecting[slot] = snapshot
 	_team_try_finalize_boards()
 
@@ -3382,6 +3480,9 @@ func reset() -> void:
 	four_star_request_id = ""
 	four_star_request_uid = ""
 	team_seat_profiles.clear()
+	team_seat_pets.clear()
+	team_carrot_harvest_gains.clear()
+	team_carrot_harvest_round = -1
 	reset_peer_only()
 	_public_resume_pending = false
 	state = SessionState.OFFLINE
@@ -4004,6 +4105,9 @@ func _rpc_room_state(envelope: Dictionary) -> void:
 	var was_public_resuming := _public_resume_pending
 	_public_resume_pending = false
 	_match_state.mark_applied(epoch, seq)
+	team_seat_pets = (payload.get("seat_pets", {}) as Dictionary).duplicate(true)
+	team_carrot_harvest_gains = (payload.get("carrot_harvest_gains", {}) as Dictionary).duplicate(true)
+	team_carrot_harvest_round = int(payload.get("carrot_harvest_round", -1))
 	_apply_carrot_state((payload.get("economy", {}) as Dictionary))
 	_apply_server_shop((payload.get("economy", {}) as Dictionary))
 
@@ -4016,6 +4120,7 @@ func _rpc_room_state(envelope: Dictionary) -> void:
 	team_ready = (payload.get("ready", []) as Array).duplicate()
 	server_round_index = int(payload.get("round_id", 0))
 	server_phase = str(payload.get("phase", ""))
+	call_deferred("publish_active_pet")
 	# 服务器确认了在途的 ready 请求 -> 撤销本地意图（C24）
 	if _pending_ready >= 0 and team_local_slot >= 0 and team_local_slot < team_ready.size():
 		if bool(team_ready[team_local_slot]) == (_pending_ready == 1):
@@ -5069,6 +5174,9 @@ func _room_auto_complete_seat(room: Dictionary, slot: int) -> void:
 	# 状态变更已搬到 ReconnectService.apply_ai_takeover()。留在这里的是发消息与
 	# 阶段推进：广播大厅、按当前阶段决定接下来做什么 —— 那些都要发 RPC。
 	_reconnect_service.apply_ai_takeover(room, slot)
+	# A takeover keeps the disconnected player's pet when one exists; a legacy
+	# or unconfigured seat receives one stored AI pet exactly once.
+	_ensure_dummy_seat_pet(room, slot)
 	_broadcast_room_lobby(room)
 	# 转 dummy 后推进当前阶段：备战->可开局；战斗->dummy 由模拟自动出兵、不再被等待
 	match str(room.get("state", ROOM_LOBBY)):
@@ -5195,6 +5303,9 @@ func _rpc_team_room_closed(reason: String) -> void:
 	team_local_slot = -1
 	team_slot_states = []
 	team_ready = []
+	team_seat_pets.clear()
+	team_carrot_harvest_gains.clear()
+	team_carrot_harvest_round = -1
 	team_prep_mercs = {}
 	state = SessionState.FAILED
 	last_error = tr("net_err_room_closed") % reason
@@ -5291,3 +5402,36 @@ func _rpc_receive_match_state(state_payload: Dictionary) -> void:
 	latest_match_state = state_payload
 	_net_log("client received match_state round=%d slot=%d" % [int(state_payload.get("completed_round", 0)), int(state_payload.get("slot", -1))])
 	match_state_received.emit(latest_match_state)
+
+# Appended after every existing RPC declaration. The project's RPC method order
+# is protocol-sensitive, so this may only ever add a new trailing method.
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_team_submit_active_pet(pet_id: String) -> void:
+	if not _dedicated_server:
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if not _rate_ok(sender, "seat_pet", false):
+		return
+	if pet_id.length() > MAX_TREASURE_ID_LEN or PetService.model_path(pet_id).is_empty():
+		return
+	var room := _room_for_peer(sender)
+	if room.is_empty():
+		return
+	var slot := int((room.get("peer_slot", {}) as Dictionary).get(sender, -1))
+	var states: Array = room.get("slot_states", [])
+	if slot < 0 or slot >= states.size() or str(states[slot]) != "player":
+		return
+	var seat_pets: Dictionary = room.get("seat_pets", {})
+	if str(seat_pets.get(slot, seat_pets.get(str(slot), ""))) == pet_id:
+		return
+	_store_room_seat_pet(room, slot, pet_id)
+	_touch_room(room)
+	_broadcast_room_lobby(room)
+
+func _store_room_seat_pet(room: Dictionary, slot: int, pet_id: String) -> void:
+	if slot < 0 or slot >= TEAM_SLOTS or PetService.model_path(pet_id).is_empty():
+		return
+	var seat_pets: Dictionary = room.get("seat_pets", {})
+	seat_pets[slot] = pet_id
+	seat_pets.erase(str(slot))
+	room["seat_pets"] = seat_pets

@@ -82,6 +82,9 @@ const LIMITS := {
 	# **不计 strike**（调用处传 count_strike=false）：弱网恢复时包会攒成一串一起到，
 	# 那是网络不是攻击；超了的正确后果只是这几个包不转发。
 	"voice": 300,
+	# 当前出战宠物上报：进入房间与切换宠物时各一次；不计 strike，避免 UI 重建重发
+	# 造成正常玩家断线。超过额度只丢弃本次，随后 room_state 仍会触发一次补发。
+	"seat_pet": 8,
 	# 重连：直连入口必须和短码入口共用同一个身份配额，否则客户端绕开
 	# _rpc_public_resume_request 直接打 _rpc_resume_request 就把 A6 的保护全跳过了。
 	"resume": 5,

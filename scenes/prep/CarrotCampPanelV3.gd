@@ -64,7 +64,24 @@ func setup(upgrade_callback: Callable, draw_callback: Callable,
 	_upgrade_callback = upgrade_callback
 	_draw_callback = draw_callback
 	_four_star_callback = four_star_callback
+	if not LocaleManager.locale_changed.is_connected(_on_locale_changed):
+		LocaleManager.locale_changed.connect(_on_locale_changed)
 	_build()
+
+func _on_locale_changed(_locale: String) -> void:
+	var selected_page := 1 if _stone_page != null and _stone_page.visible else 0
+	_reveal_serial += 1
+	for child in get_children():
+		remove_child(child)
+		child.queue_free()
+	_camp_page = null
+	_stone_page = null
+	_help_panel = null
+	_stone_counts.clear()
+	_stones_initialized = false
+	_build()
+	_show_page(selected_page)
+	refresh()
 
 func _build() -> void:
 	if get_child_count() > 0:
@@ -100,7 +117,7 @@ func _build_header(parent: VBoxContainer) -> void:
 	header.custom_minimum_size.y = 48
 	header.add_theme_constant_override("separation", 10)
 	parent.add_child(header)
-	var title := _label("萝卜营地", 26, TEXT)
+	var title := _label(_t("萝卜营地", "Carrot Camp"), 26, TEXT)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	header.add_child(title)
@@ -112,16 +129,16 @@ func _build_header(parent: VBoxContainer) -> void:
 	wallet_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	wallet_row.add_theme_constant_override("separation", 4)
 	wallet.add_child(wallet_row)
-	wallet_row.add_child(_label("当前萝卜", 14, MUTED))
+	wallet_row.add_child(_label(_t("当前萝卜", "Carrots"), 14, MUTED))
 	wallet_row.add_child(_icon(TEX_CARROT, Vector2(36,36)))
 	_carrot_balance = _label("0", 23, TEXT)
 	wallet_row.add_child(_carrot_balance)
 	_carrot_capacity = _label("/ 0", 15, MUTED)
 	wallet_row.add_child(_carrot_capacity)
-	var help := _icon_button("?", "玩法说明")
+	var help := _icon_button("?", _t("玩法说明", "How it works"))
 	help.pressed.connect(_toggle_help)
 	header.add_child(help)
-	var close := _icon_button("×", "关闭")
+	var close := _icon_button("×", _t("关闭", "Close"))
 	close.add_theme_font_size_override("font_size", 22)
 	close.pressed.connect(_close)
 	header.add_child(close)
@@ -131,10 +148,10 @@ func _build_tabs(parent: VBoxContainer) -> void:
 	tabs.custom_minimum_size.y = 45
 	tabs.add_theme_constant_override("separation", 8)
 	parent.add_child(tabs)
-	_camp_tab = _tab_button("营地")
+	_camp_tab = _tab_button(_t("营地", "Camp"))
 	_camp_tab.pressed.connect(_show_page.bind(0))
 	tabs.add_child(_camp_tab)
-	_stone_tab = _tab_button("升级石")
+	_stone_tab = _tab_button(_t("升级石", "Upgrade Stones"))
 	_stone_tab.pressed.connect(_show_page.bind(1))
 	tabs.add_child(_stone_tab)
 	var spacer := Control.new()
@@ -161,11 +178,11 @@ func _build_camp_page() -> Control:
 	var farm_titles := VBoxContainer.new()
 	farm_titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	farm_heading.add_child(farm_titles)
-	_farm_level = _label("营地等级 · 1", 14, GOLD)
+	_farm_level = _label(_t("营地等级 · 1", "Camp Lv. 1"), 14, GOLD)
 	farm_titles.add_child(_farm_level)
-	farm_titles.add_child(_label("萝卜田", 22, TEXT))
-	farm_titles.add_child(_label("随雇佣自动成长", 13, GREEN))
-	_farm_need = _label("距离下一级", 15, TEXT)
+	farm_titles.add_child(_label(_t("萝卜田", "Carrot Field"), 22, TEXT))
+	farm_titles.add_child(_label(_t("随雇佣自动成长", "Grows as you hire"), 13, GREEN))
+	_farm_need = _label(_t("距离下一级", "To next level"), 15, TEXT)
 	farm.add_child(_farm_need)
 	_farm_progress = ProgressBar.new()
 	_farm_progress.custom_minimum_size.y = 14
@@ -173,15 +190,15 @@ func _build_camp_page() -> Control:
 	_farm_progress.add_theme_stylebox_override("background", _flat(Color(0.07,0.12,0.09),7))
 	_farm_progress.add_theme_stylebox_override("fill", _flat(Color(0.48,0.68,0.36),7))
 	farm.add_child(_farm_progress)
-	farm.add_child(_label("雇佣佣兵消耗的萝卜计入成长", 13, MUTED))
+	farm.add_child(_label(_t("雇佣佣兵消耗的萝卜计入成长", "Carrots spent hiring mercenaries count toward growth"), 13, MUTED))
 	var next_box := VBoxContainer.new()
 	next_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	next_box.add_theme_constant_override("separation", 5)
 	farm.add_child(next_box)
 	next_box.add_child(_divider())
-	_farm_next_capacity = _value_row(next_box, "下级容量")
-	_farm_next_production = _value_row(next_box, "每回合产量")
-	_farm_next_income = _value_row(next_box, "营地金币收益")
+	_farm_next_capacity = _value_row(next_box, _t("下级容量", "Next Capacity"))
+	_farm_next_production = _value_row(next_box, _t("每回合产量", "Yield / Round"))
+	_farm_next_income = _value_row(next_box, _t("营地金币收益", "Camp Gold / Battle"))
 	var tech_card := _card(true)
 	tech_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	cards.add_child(tech_card)
@@ -195,10 +212,10 @@ func _build_camp_page() -> Control:
 	var tech_titles := VBoxContainer.new()
 	tech_titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tech_heading.add_child(tech_titles)
-	_tech_level = _label("采集等级 · 0", 14, GOLD)
+	_tech_level = _label(_t("采集等级 · 0", "Harvest Lv. 0"), 14, GOLD)
 	tech_titles.add_child(_tech_level)
-	tech_titles.add_child(_label("提升采集", 22, TEXT))
-	tech_titles.add_child(_label("采集基础产量", 13, MUTED))
+	tech_titles.add_child(_label(_t("提升采集", "Harvest Upgrade"), 22, TEXT))
+	tech_titles.add_child(_label(_t("采集基础产量", "Base Harvest Yield"), 13, MUTED))
 	var yield_row := HBoxContainer.new()
 	yield_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	yield_row.custom_minimum_size.y = 76
@@ -209,22 +226,22 @@ func _build_camp_page() -> Control:
 	yield_row.add_child(_label("→", 25, MUTED))
 	_tech_next = _label("6", 36, GREEN)
 	yield_row.add_child(_tech_next)
-	_tech_note = _label("升级后，下回合生效", 14, MUTED)
+	_tech_note = _label(_t("升级后，下回合生效", "Takes effect next round"), 14, MUTED)
 	_tech_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	tech.add_child(_tech_note)
 	var tech_spacer := Control.new()
 	tech_spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	tech.add_child(tech_spacer)
-	_tech_button = _primary_button("升级采集")
+	_tech_button = _primary_button(_t("升级采集", "Upgrade Harvest"))
 	_tech_button.pressed.connect(_on_upgrade)
 	tech.add_child(_tech_button)
 	var footer := HBoxContainer.new()
 	footer.custom_minimum_size.y = 28
 	page.add_child(footer)
-	_harvest_footer = _label("下回合可收获 0 萝卜", 14, GREEN)
+	_harvest_footer = _label(_t("下回合可收获 0 萝卜", "Next harvest: 0"), 14, GREEN)
 	_harvest_footer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	footer.add_child(_harvest_footer)
-	_gold_footer = _label("持有金币 0", 14, TEXT)
+	_gold_footer = _label(_t("持有金币 0", "Gold: 0"), 14, TEXT)
 	footer.add_child(_gold_footer)
 	return page
 
@@ -242,10 +259,10 @@ func _build_stone_page() -> Control:
 	draw.alignment = BoxContainer.ALIGNMENT_CENTER
 	draw.add_theme_constant_override("separation", 5)
 	draw_card.add_child(draw)
-	var draw_title := _label("抽取升级石", 22, TEXT)
+	var draw_title := _label(_t("抽取升级石", "Draw Upgrade Stone"), 22, TEXT)
 	draw_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	draw.add_child(draw_title)
-	_draw_status = _label("本回合剩余 1 次", 14, MUTED)
+	_draw_status = _label(_t("本回合剩余 1 次", "1 draw remaining"), 14, MUTED)
 	_draw_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	draw.add_child(_draw_status)
 	var art_stack := Control.new()
@@ -258,11 +275,11 @@ func _build_stone_page() -> Control:
 	_stone_reveal.visible = false
 	art_stack.add_child(_stone_reveal)
 	_stone_reveal.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_draw_result = _label("随机获得天、地、人石之一", 14, MUTED)
+	_draw_result = _label(_t("随机获得天、地、人石之一", "Get one random Sky, Land, or Ren Stone"), 14, MUTED)
 	_draw_result.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_draw_result.custom_minimum_size.y = 26
 	draw.add_child(_draw_result)
-	_draw_button = _primary_button("抽取一次")
+	_draw_button = _primary_button(_t("抽取一次", "Draw Once"))
 	_draw_button.pressed.connect(_on_draw)
 	draw.add_child(_draw_button)
 
@@ -274,18 +291,18 @@ func _build_stone_page() -> Control:
 	inventory_card.add_child(inventory)
 	var inventory_header := HBoxContainer.new()
 	inventory.add_child(inventory_header)
-	var inventory_title := _label("升级石库存", 21, TEXT)
+	var inventory_title := _label(_t("升级石库存", "Upgrade Stone Inventory"), 21, TEXT)
 	inventory_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	inventory_header.add_child(inventory_title)
-	inventory_header.add_child(_label("队伍共享", 13, GREEN))
+	inventory_header.add_child(_label(_t("队伍共享", "Team Shared"), 13, GREEN))
 	var stones := HBoxContainer.new()
 	stones.add_theme_constant_override("separation", 7)
 	inventory.add_child(stones)
-	_add_stone_counter(stones, "sky", TEX_STONE_SKY, "天")
-	_add_stone_counter(stones, "land", TEX_STONE_LAND, "地")
-	_add_stone_counter(stones, "ren", TEX_STONE_REN, "人")
+	_add_stone_counter(stones, "sky", TEX_STONE_SKY, _stone_display("sky"))
+	_add_stone_counter(stones, "land", TEX_STONE_LAND, _stone_display("land"))
+	_add_stone_counter(stones, "ren", TEX_STONE_REN, _stone_display("ren"))
 	inventory.add_child(_divider())
-	inventory.add_child(_label("四星升级", 16, TEXT))
+	inventory.add_child(_label(_t("四星升级", "4-Star Upgrade"), 16, TEXT))
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -294,7 +311,7 @@ func _build_stone_page() -> Control:
 	_four_star_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_four_star_list.add_theme_constant_override("separation", 6)
 	scroll.add_child(_four_star_list)
-	var footer := _label("对应升级石 ×1  →  三星棋子升至四星", 14, GREEN)
+	var footer := _label(_t("对应升级石 ×1  →  三星棋子升至四星", "1 matching stone → upgrade a 3-star unit to 4 stars"), 14, GREEN)
 	footer.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	page.add_child(footer)
 	return page
@@ -322,16 +339,16 @@ func _build_help_panel() -> void:
 	margin.add_child(content)
 	var heading := HBoxContainer.new()
 	content.add_child(heading)
-	var title := _label("萝卜营地怎么玩", 23, TEXT)
+	var title := _label(_t("萝卜营地怎么玩", "How Carrot Camp Works"), 23, TEXT)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	heading.add_child(title)
-	var close := _icon_button("×", "关闭说明")
+	var close := _icon_button("×", _t("关闭说明", "Close help"))
 	close.pressed.connect(_toggle_help)
 	heading.add_child(close)
-	content.add_child(_label("宠物每回合自动采集萝卜。", 16, TEXT))
-	content.add_child(_label("用萝卜雇佣佣兵，萝卜田会自动成长。", 16, TEXT))
-	content.add_child(_label("用金币升级采集，提高之后每回合的产量。", 16, TEXT))
-	content.add_child(_label("萝卜田达到 Lv.4 后，每回合可抽取一次升级石。", 16, TEXT))
+	content.add_child(_label(_t("宠物每回合自动采集萝卜。", "Pets harvest carrots automatically every round."), 16, TEXT))
+	content.add_child(_label(_t("用萝卜雇佣佣兵，萝卜田会自动成长。", "Spend carrots on mercenaries to grow the field."), 16, TEXT))
+	content.add_child(_label(_t("用金币升级采集，提高之后每回合的产量。", "Spend gold to raise next round's harvest."), 16, TEXT))
+	content.add_child(_label(_t("萝卜田达到 Lv.4 后，每回合可抽取一次升级石。", "At Field Lv. 4, draw one upgrade stone each round."), 16, TEXT))
 
 func _show_page(index: int) -> void:
 	if _camp_page == null:
@@ -352,53 +369,53 @@ func refresh() -> void:
 	_carrot_balance.text = str(GameState.carrots)
 	_carrot_capacity.text = "/ %d" % capacity
 	var level := GameState.carrot_farm_level()
-	_farm_level.text = "营地等级 · %d" % (level + 1)
+	_farm_level.text = _t("营地等级 · %d", "Camp Lv. %d") % (level + 1)
 	var current_threshold := CarrotEconomy.farm_threshold_for_level(level)
 	var next_level := level + 1
 	var next_threshold := CarrotEconomy.farm_threshold_for_level(next_level)
 	var spent_in_level := GameState.merc_carrots_spent_total - current_threshold
 	var segment := maxi(1, next_threshold - current_threshold)
 	_farm_progress.value = 100.0 * float(spent_in_level) / float(segment)
-	_farm_need.text = "距离 Lv.%d · 还需消耗 %d 萝卜" % [next_level + 1, next_threshold - GameState.merc_carrots_spent_total]
+	_farm_need.text = _t("距离 Lv.%d · 还需消耗 %d 萝卜", "To Lv.%d · spend %d more carrots") % [next_level + 1, next_threshold - GameState.merc_carrots_spent_total]
 	_farm_next_capacity.text = "%d → %d" % [capacity, CarrotEconomy.farm_capacity_for_level(next_level)]
 	_farm_next_production.text = "%d → %d" % [production, CarrotEconomy.total_production(GameState.harvest_tech_level, next_threshold)]
-	_farm_next_income.text = "%d → %d G / 场" % [GameState.carrot_camp_income(), CarrotEconomy.farm_income_for_level(next_level)]
+	_farm_next_income.text = _t("%d → %d G / 场", "%d → %d G / battle") % [GameState.carrot_camp_income(), CarrotEconomy.farm_income_for_level(next_level)]
 
 	var tech_level := GameState.harvest_tech_level
 	var price := CarrotEconomy.tech_price(tech_level)
 	var tech_production := CarrotEconomy.production_for_tech(tech_level)
 	var next_production := CarrotEconomy.production_for_tech(tech_level + 1)
 	var farm_bonus := CarrotEconomy.farm_production_bonus(GameState.merc_carrots_spent_total)
-	_tech_level.text = "采集等级 · %d" % (tech_level + 1)
+	_tech_level.text = _t("采集等级 · %d", "Harvest Lv. %d") % (tech_level + 1)
 	_tech_current.text = str(tech_production)
 	_tech_next.text = str(next_production)
-	_tech_button.text = "升级采集\n%d 金币" % price
+	_tech_button.text = _t("升级采集\n%d 金币", "Upgrade Harvest\n%d Gold") % price
 	var online_blocked := NetworkService.team_active and not NetworkService.is_host and not NetworkService.carrot_economy_enabled()
 	_tech_button.disabled = GameState.round_index < 2 or _action_locked or GameState.gold < price or online_blocked
 	if GameState.round_index < 2:
-		_tech_note.text = "下一回合解锁升级"
+		_tech_note.text = _t("下一回合解锁升级", "Unlocks next round")
 	elif GameState.gold < price:
-		_tech_note.text = "金币不足 · 还差 %d" % (price - GameState.gold)
+		_tech_note.text = _t("金币不足 · 还差 %d", "Not enough gold · need %d") % (price - GameState.gold)
 	elif online_blocked:
-		_tech_note.text = "等待房主开启联机萝卜系统"
+		_tech_note.text = _t("等待房主开启联机萝卜系统", "Waiting for host to enable Carrot Camp")
 	else:
-		_tech_note.text = "农田额外 +%d · 升级下回合生效" % farm_bonus if farm_bonus > 0 else "升级后，下回合生效"
-	_harvest_footer.text = "下回合可收获 %d 萝卜%s" % [actual_gain, " · 容量将满" if overflow > 0 else ""]
+		_tech_note.text = _t("农田额外 +%d · 升级下回合生效", "Field bonus +%d · next round") % farm_bonus if farm_bonus > 0 else _t("升级后，下回合生效", "Takes effect next round")
+	_harvest_footer.text = _t("下回合可收获 %d 萝卜%s", "Next harvest: %d%s") % [actual_gain, _t(" · 容量将满", " · Near capacity") if overflow > 0 else ""]
 	_harvest_footer.modulate = Color(1.0,0.66,0.42) if overflow > 0 else Color.WHITE
-	_gold_footer.text = "持有金币 %d" % GameState.gold
+	_gold_footer.text = _t("持有金币 %d", "Gold: %d") % GameState.gold
 
 	var draw_available := GameState.can_draw_upgrade_stone(GameState.round_index)
 	var stone_cost := GameState.upgrade_stone_draw_cost()
 	var unlocked := capacity >= stone_cost
-	_draw_status.text = "本回合剩余 1 次" if draw_available else "本回合已抽取 · 下回合恢复"
-	_draw_button.text = "抽取一次\n%d 萝卜" % stone_cost if draw_available else "下回合恢复"
+	_draw_status.text = _t("本回合剩余 1 次", "1 draw remaining") if draw_available else _t("本回合已抽取 · 下回合恢复", "Draw used · resets next round")
+	_draw_button.text = _t("抽取一次\n%d 萝卜", "Draw Once\n%d Carrots") % stone_cost if draw_available else _t("下回合恢复", "Resets next round")
 	_draw_button.disabled = _action_locked or not draw_available or not unlocked or GameState.carrots < stone_cost or online_blocked
 	if not unlocked:
-		_draw_result.text = "容量不足 · 需要储存 %d 萝卜" % stone_cost
+		_draw_result.text = _t("容量不足 · 需要储存 %d 萝卜", "Capacity too low · store %d carrots") % stone_cost
 	elif GameState.carrots < stone_cost and draw_available:
-		_draw_result.text = "萝卜不足 · 还差 %d" % (stone_cost - GameState.carrots)
+		_draw_result.text = _t("萝卜不足 · 还差 %d", "Not enough carrots · need %d") % (stone_cost - GameState.carrots)
 	elif draw_available and _stone_art.texture == TEX_STONE_UNKNOWN:
-		_draw_result.text = "随机获得天、地、人石之一"
+		_draw_result.text = _t("随机获得天、地、人石之一", "Get one random Sky, Land, or Ren Stone")
 	var changed := ""
 	for stone_type in CarrotEconomy.STONE_TYPES:
 		var count := int(GameState.team_upgrade_stones.get(stone_type, 0))
@@ -442,13 +459,13 @@ func _refresh_four_star_list() -> void:
 			var info := VBoxContainer.new()
 			info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			row_content.add_child(info)
-			info.add_child(_label("%s  ★★★" % str(unit_def.get("name", unit_def.get("id", "棋子"))), 14, TEXT))
-			var reason := "1 颗%s石 ＋ %d 金" % [_stone_display(stone_type), CarrotEconomy.four_star_gold(int(unit_def.get("tier", 0)))]
+			info.add_child(_label("%s  ★★★" % str(unit_def.get("name", unit_def.get("id", _t("棋子", "Unit")))), 14, TEXT))
+			var reason := _t("1 颗%s石 ＋ %d 金", "1 %s Stone + %d Gold") % [_stone_display(stone_type), CarrotEconomy.four_star_gold(int(unit_def.get("tier", 0)))]
 			if not bool(check.get("ok", false)):
 				reason = _four_star_reason(str(check.get("error", "")), stone_type)
 			info.add_child(_label(reason, 12, MUTED))
 			var action := Button.new()
-			action.text = "升至四星"
+			action.text = _t("升至四星", "Upgrade to 4 Stars")
 			action.custom_minimum_size = Vector2(90,44)
 			action.add_theme_font_size_override("font_size", 14)
 			action.add_theme_stylebox_override("normal", _secondary_button_style())
@@ -460,10 +477,10 @@ func _refresh_four_star_list() -> void:
 		empty.alignment = BoxContainer.ALIGNMENT_CENTER
 		empty.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		_four_star_list.add_child(empty)
-		var title := _label("暂无三星棋子", 16, TEXT)
+		var title := _label(_t("暂无三星棋子", "No 3-Star Units"), 16, TEXT)
 		title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		empty.add_child(title)
-		var hint := _label("合成三星棋子后，可在这里使用对应升级石", 13, MUTED)
+		var hint := _label(_t("合成三星棋子后，可在这里使用对应升级石", "Merge a 3-star unit to use its matching stone here"), 13, MUTED)
 		hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		empty.add_child(hint)
@@ -488,7 +505,7 @@ func _play_stone_reveal(stone_type: String) -> void:
 	frames.atlas = TEX_STONE_REVEAL
 	_stone_reveal.texture = frames
 	_stone_reveal.visible = true
-	_draw_result.text = "正在揭晓……"
+	_draw_result.text = _t("正在揭晓……", "Revealing...")
 	for frame in range(16):
 		if serial != _reveal_serial or not is_instance_valid(_stone_reveal):
 			return
@@ -501,7 +518,7 @@ func _play_stone_reveal(stone_type: String) -> void:
 		return
 	_stone_reveal.visible = false
 	_stone_art.texture = _stone_texture(stone_type)
-	_draw_result.text = "获得 %s石 ×1 · 已存入队伍库存" % _stone_display(stone_type)
+	_draw_result.text = _t("获得 %s石 ×1 · 已存入队伍库存", "Received %s Stone ×1 · added to team inventory") % _stone_display(stone_type)
 
 func _on_upgrade() -> void:
 	if _action_locked or not _upgrade_callback.is_valid():
@@ -570,6 +587,9 @@ func _label(value: String, size: int, color: Color) -> Label:
 	result.add_theme_font_size_override("font_size", size)
 	result.add_theme_color_override("font_color", color)
 	return result
+
+func _t(zh: String, en: String) -> String:
+	return en if LocaleManager.get_locale().begins_with("en") else zh
 
 func _icon(texture: Texture2D, minimum: Vector2) -> TextureRect:
 	var result := TextureRect.new()
@@ -660,12 +680,16 @@ func _stone_texture(stone_type: String) -> Texture2D:
 		_: return TEX_STONE_UNKNOWN
 
 func _stone_display(stone_type: String) -> String:
-	return str({"sky":"天", "land":"地", "ren":"人"}.get(stone_type,"?"))
+	match stone_type:
+		"sky": return _t("天", "Sky")
+		"land": return _t("地", "Land")
+		"ren": return _t("人", "Ren")
+		_: return "?"
 
 func _four_star_reason(error: String, stone_type: String) -> String:
 	match error:
-		"no_stone": return "缺少%s石" % _stone_display(stone_type)
-		"not_enough_gold": return "金币不足"
-		"bad_element": return "该棋子暂无对应升级石"
-		"already_max": return "已经达到四星"
-		_: return "暂时无法升级"
+		"no_stone": return _t("缺少%s石", "Need %s Stone") % _stone_display(stone_type)
+		"not_enough_gold": return _t("金币不足", "Not enough gold")
+		"bad_element": return _t("该棋子暂无对应升级石", "No matching upgrade stone for this unit")
+		"already_max": return _t("已经达到四星", "Already 4 stars")
+		_: return _t("暂时无法升级", "Upgrade unavailable")

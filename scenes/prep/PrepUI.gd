@@ -115,6 +115,7 @@ var _team_merc_snapshot_round := -1
 var _team_merc_snapshot_initialized := false
 var _carrot_panel
 var _carrot_button: Button
+var _carrot_button_label: Label
 var _carrot_counter_label: Label
 var _carrot_dimmer: ColorRect
 var _tutorial_target_provider: TutorialTargetProviderScript
@@ -393,6 +394,8 @@ func _tutorial_refresh_view() -> void:
 
 
 func _build(staged: bool = false) -> void:
+	if not LocaleManager.locale_changed.is_connected(_on_locale_changed):
+		LocaleManager.locale_changed.connect(_on_locale_changed)
 	# 面板的依赖与信号必须在**构建之前**接好：build_* 里会用到 overlay 与 host，
 	# 也会把按钮的 pressed 连到面板自己的方法上。放到末尾接的话，
 	# 构建期 overlay 还是 null —— 表现是长按详情静默失效，不报错。
@@ -509,6 +512,11 @@ func _build(staged: bool = false) -> void:
 		_board_hud.custom_minimum_size = Vector2.ZERO
 		add_child(_board_hud)
 
+
+func _on_locale_changed(_locale: String) -> void:
+	if _carrot_button_label != null and is_instance_valid(_carrot_button_label):
+		_carrot_button_label.text = "Carrot Camp" if LocaleManager.get_locale().begins_with("en") else "萝卜营地"
+	_refresh_carrot_counter()
 
 func _build_top_bar(root: VBoxContainer) -> void:
 	var top := SellDropPanel.new()
@@ -980,7 +988,8 @@ func _build_top_actions() -> void:
 		MERC_BTN_SIZE, 16, _toggle_carrot_camp)
 	_carrot_button = carrot_btn
 	var carrot_lbl := Label.new()
-	carrot_lbl.text = "萝卜营地" if LocaleManager.get_locale() != "en" else "Carrot Camp"
+	_carrot_button_label = carrot_lbl
+	carrot_lbl.text = "Carrot Camp" if LocaleManager.get_locale().begins_with("en") else "萝卜营地"
 	carrot_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	carrot_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	carrot_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -1486,7 +1495,7 @@ func _on_carrot_economy_receipt(receipt: Dictionary) -> void:
 	if action not in ["upgrade_harvest_tech", "hire_merc_carrot", "draw_upgrade_stone", "use_upgrade_stone"]:
 		return
 	if not bool(receipt.get("ok", false)):
-		show_message("萝卜交易失败：%s" % str(receipt.get("error", "denied")))
+		show_message(("Carrot action failed: %s" if LocaleManager.get_locale().begins_with("en") else "萝卜交易失败：%s") % str(receipt.get("error", "denied")))
 		return
 	if action == "use_upgrade_stone":
 		# 星级已由 NetworkService._apply_carrot_receipt 按 uid 落到棋子上；
@@ -1753,7 +1762,7 @@ func _mercenary_purchase_reason(index: int) -> String:
 			return tr("ui_not_enough_gold")
 	else:
 		if GameState.carrots < int(mercenary.get("carrot_cost", 0)):
-			return "萝卜不足"
+			return "Not enough carrots" if LocaleManager.get_locale().begins_with("en") else "萝卜不足"
 	return ""
 
 func _on_portrait_card_hover(card: Control, hovered: bool) -> void:
@@ -1787,7 +1796,7 @@ func _create_mercenary_purchase_card(mercenary: Dictionary, index: int) -> DragB
 	card.drag_enabled = false
 	var price_text := tr("ui_gold_format") % int(mercenary.get("cost", 0))
 	if not GameState.tutorial_mode:
-		price_text = "萝卜 %d" % int(mercenary.get("carrot_cost", 0))
+		price_text = ("Carrots %d" if LocaleManager.get_locale().begins_with("en") else "萝卜 %d") % int(mercenary.get("carrot_cost", 0))
 	card.set_meta("drag_preview_text", "%s\n%s" % [str(mercenary.get("name", tr("ui_mercenary"))), price_text])
 	var purchase_reason := _mercenary_purchase_reason(index)
 	var can_purchase := purchase_reason.is_empty()

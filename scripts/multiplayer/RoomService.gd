@@ -146,6 +146,8 @@ func new_room() -> Dictionary:
 		# slot -> Array[String] 出战种族（RacePick，协议 28）。大厅阶段随「准备 / 开始」收下，
 		# 开局即锁定；每回合摇商店都按它过滤。见 NetworkService._room_accept_seat_races。
 		"seat_races": {},
+		# slot -> pet id。仅用于营地公开展示；离座/换座必须随座位一起处理。
+		"seat_pets": {},
 		# --- 宝物归属（服务端权威）---
 		# 服务端本来就在 _server_pending_treasure 里摇候选并下发，只是从不记录玩家选了
 		# 哪个。记下来之后「这件宝物是不是服务器发给你的」就有了可信来源，不必等 P1
@@ -220,6 +222,7 @@ const SEAT_SLOT_MAPS := [
 	"tx_log",   # E4：座位没了，这个座位的交易回执也没有意义了
 	"prep",     # P1：座位账本同理
 	"seat_races",  # 出战种族（协议 28）：换座跟着人走，离座一起清
+	"seat_pets",   # 萝卜营地展示宠物（协议 29）：同样不能让新座位继承
 ]
 
 # 短码给玩家手输，所以不能太长；用 base32 去掉易混字符（0/O/1/I），

@@ -35,11 +35,12 @@ const MY_SLOT := 0
 # 2026-09-14 跟到 26（四条聊天 RPC 各加 team_only 参数，经济契约没变，指纹不动）。
 # 2026-09-14 跟到 27（排队：线格没变，只为挡住没有排队逻辑的旧包顶号，指纹不动）。
 # 2026-09-15 跟到 28（出战种族：准备 / 开始两条 RPC 各加 races 参数，经济契约没变，指纹不动）。
+# 2026-09-16 跟到 29（萝卜营地新增宠物上报 RPC 与公开采集展示字段，经济账本字段不变）。
 # ⚠️ **这个值落后于协议号会让下面那条断言静默失效**：断言判的是
 # 「契约变了但协议号没变」，而它一旦落后，`VERSION != PINNED_PROTOCOL` 就恒为真，
 # 于是改契约不顶号也照样绿。协议号每次顶，这里必须跟。
-const PINNED_PROTOCOL := 28
-const PINNED_CONTRACT := "VCjg+twg3T63Ev0T"
+const PINNED_PROTOCOL := 29
+const PINNED_CONTRACT := "YOp1apnKGVUXgHng"
 
 var _h: CheckHarness
 
@@ -49,6 +50,7 @@ func _ready() -> void:
 	_case_flag_default()
 	_case_server_contract_pinned()
 	_case_room_state_carries_carrots()
+	_case_public_carrot_presentation()
 	_case_harvest_tech_online()
 	_case_sell_then_harvest_modes()
 	_case_ledger_shadow_roundtrip()
@@ -126,6 +128,29 @@ func _case_room_state_carries_carrots() -> void:
 	_h.expect(GameState.carrots == int(state.get("carrots", -1)), "carrot_state_not_applied",
 		"_apply_carrot_state() 之后客户端萝卜是 %d，服务端是 %d"
 			% [GameState.carrots, int(state.get("carrots", -1))])
+
+
+# --- 2b. 萝卜营地只展示实际占位宠物 --------------------------------------------
+# 空位绝不能被客户端补成起始宠物；否则玩家会误以为场上有六人。AI 由服务端分配并
+# 存储一个宠物，采集数字则只公开「本回合 +N」，不泄漏他人的萝卜余额。
+func _case_public_carrot_presentation() -> void:
+	var starters: Array = PetService.starter_ids()
+	if not _h.expect(not starters.is_empty(), "starter_pet_missing", "pets.json 没有可用的起始宠物"):
+		return
+	var room := _make_prep_room(1)
+	room["slot_states"] = ["player", "dummy", "empty", "empty", "empty", "empty"]
+	room["seat_pets"] = {0: str(starters[0])}
+	var payload: Dictionary = NetworkService._build_room_state(room, MY_SLOT)
+	var pets: Dictionary = payload.get("seat_pets", {})
+	var gains: Dictionary = payload.get("carrot_harvest_gains", {})
+	_h.expect(str(pets.get(0, "")) == str(starters[0]), "player_pet_not_public",
+		"已占位玩家的当前宠物没有出现在 room_state.seat_pets")
+	_h.expect(not str(pets.get(1, "")).is_empty(), "dummy_pet_not_assigned",
+		"AI 座位没有获得服务端分配的宠物")
+	_h.expect(not pets.has(2), "empty_seat_pet_visible",
+		"空座位被补出了宠物 —— 萝卜营地会看起来像固定六只宠物")
+	_h.expect(gains.has(0) and gains.has(1) and not gains.has(2), "harvest_gains_not_seat_scoped",
+		"本回合采集提示没有严格按实际玩家 / AI 座位下发")
 
 
 # --- 3. 采集科技升级（客机 -> 服务端 -> 回执）------------------------------------

@@ -133,7 +133,12 @@ const USE_DTLS := true
 #      代价同上：**线上战斗服务器必须重新打包部署到 p28**（make_server_zip.ps1），和新 APK 一起上，
 #      否则新客户端连不上。确认依据是服务器日志里的 `server started protocol=28`。
 #      账号服务器不用动（它不认识战斗协议号）。
-const NETWORK_PROTOCOL_VERSION := 28
+# v29: 备战萝卜营地公开席位状态。新增 `_rpc_team_submit_active_pet`，并在
+# room_state 下发 `seat_pets` 与仅本回合的 `carrot_harvest_gains`：营地只渲染真实
+# 玩家或 AI 的实际宠物，回合采集用各宠物头顶的小型 +N 提示，不暴露他人余额。
+# 新 RPC 改变了 Godot 的 NetworkService 方法表，客户端和战斗服务器必须同步部署到 p29；
+# 否则由连接握手明确拒绝，绝不能让 checksum 不一致的双方继续联机。
+const NETWORK_PROTOCOL_VERSION := 29
 
 # Local phone hosting is debug-only.
 const ALLOW_LOCAL_HOST_DEBUG := false

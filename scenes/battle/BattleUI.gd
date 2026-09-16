@@ -250,7 +250,7 @@ func _settlement_preview(result: Dictionary) -> String:
 		lines.append(tr("settle_money_magic"))
 	lines.append(tr("settle_interest") % interest)
 	if camp_income > 0:
-		lines.append("萝卜营地收入 +%d金" % camp_income)
+		lines.append(("Carrot Camp income +%dG" if LocaleManager.get_locale().begins_with("en") else "萝卜营地收入 +%d金") % camp_income)
 	var formation_damage := _formation_damage_preview(result, win)
 	lines.append(tr("settle_formation_change") % (tr("settle_enemy_formation") % formation_damage if win else tr("settle_self_formation") % formation_damage))
 	return tr("settle_prefix") + " | ".join(lines)
