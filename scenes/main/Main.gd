@@ -889,12 +889,15 @@ func _show_menu() -> void:
 	_menu.announcements_requested.connect(_show_announcements_screen)
 	_menu.shop_requested.connect(_show_shop_screen)
 	_menu.bag_requested.connect(_show_bag_screen)
+	_menu.mail_requested.connect(_show_mail_screen)
 	add_child(_menu)
 	# 对局中被顶号时挂着的提示，回到主菜单这一刻才弹（设计文档第五节）。
 	_show_kicked_notice_if_pending()
 	# 公告：回主菜单时顺手刷新（有节流），有该弹的登录弹窗就弹（docs/公告系统设计.md）。
 	AnnouncementService.refresh()
 	_queue_announcement_popup()
+	# 邮箱：回主菜单时顺手刷新（有节流），红点靠它（docs/邮件系统设计.md）。
+	MailService.refresh()
 
 # 手动重连：读本地凭证连回上一场，弹重连遮罩，成功落回备战/结果，失败清凭证回菜单。
 #
@@ -1073,6 +1076,18 @@ func _show_bag_screen() -> void:
 	add_child(screen)
 
 
+# 系统邮件（docs/邮件系统设计.md）。返回主菜单时那边会重拉一次钱包 —— 玩家多半刚领完附件。
+func _show_mail_screen() -> void:
+	_clear()
+	var screen := _instantiate_screen("res://scenes/menu/MailScreen.tscn")
+	if screen == null:
+		_show_menu()
+		return
+	screen.back_requested.connect(_show_menu)
+	_page_back_route = _show_menu
+	add_child(screen)
+
+
 func _show_friends_screen() -> void:
 	_clear()
 	var screen := _instantiate_screen("res://scenes/menu/FriendsScreen.tscn")
@@ -1157,6 +1172,7 @@ func _on_realtime_logout() -> void:
 	RealtimeService.stop()
 	ChatService.reset()
 	AnnouncementService.reset()
+	MailService.reset()
 	_kicked_notice_pending = false
 
 

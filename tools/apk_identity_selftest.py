@@ -38,14 +38,33 @@ def main():
             archive.writestr("assets/example.png.remap",
                              '[remap]\npath="res://.godot/imported/example.ctex"\n')
             archive.writestr("assets/.godot/imported/example.ctex", b"compiled")
+            # A dex that carries the voice plugin class, the way a Gradle export with
+            # glory_voice/enabled produces it.
+            archive.writestr("classes.dex", b"dex\n035\x00...Lcom/glory/voice/GloryVoicePlugin;...")
 
         report = identity.inspect_apk(apk)
         assert report["artifact_mapping_count"] == 1
         assert report["artifact_mappings"][0]["source"] == "res://example.png"
+        assert report["voice_plugin_present"] is True
         report["android_manifest_error"] = ""
         report["android_manifest"] = {
-            "package_id": "glory.beta001", "version_code": 5, "version_name": ""}
+            "package_id": "glory.beta001", "version_code": 5, "version_name": "",
+            "permissions": ["android.permission.INTERNET", identity.VOICE_PERMISSION]}
         assert identity.verify_report(report, build) == []
+
+        # An APK exported without the voice plugin must not verify (the p27-p30 case):
+        # it installs and runs, and the only symptom is a voice button that refuses.
+        silent = Path(temp) / "no_voice.apk"
+        with zipfile.ZipFile(silent, "w") as archive:
+            archive.writestr("assets/build_info.json", encoded(build))
+            archive.writestr("classes.dex", b"dex\n035\x00...Lorg/godotengine/godot/Godot;...")
+        assert identity.inspect_apk(silent)["voice_plugin_present"] is False
+        no_voice = dict(report, voice_plugin_present=False)
+        assert "voice_plugin_absent" in identity.verify_report(no_voice, build)
+
+        no_mic = dict(report, android_manifest=dict(report["android_manifest"],
+                                                    permissions=["android.permission.INTERNET"]))
+        assert "voice_record_audio_permission_absent" in identity.verify_report(no_mic, build)
 
         changed = dict(build)
         changed["version_code"] = 6
@@ -57,7 +76,7 @@ def main():
         assert "android_manifest_version_code_mismatch" in failures
         identity.write_json(report_path, report)
         assert report_path.is_file()
-    print("APK_IDENTITY_SELFTEST status=PASS checked=7")
+    print("APK_IDENTITY_SELFTEST status=PASS checked=11")
 
 
 if __name__ == "__main__":

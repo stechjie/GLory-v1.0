@@ -104,6 +104,9 @@ EXPECTED_TABLES: tuple[str, ...] = (
     # 010（商城）
     "player_entitlements",
     "shop_orders",
+    # 012（系统邮件）
+    "mails",
+    "mail_states",
 )
 
 

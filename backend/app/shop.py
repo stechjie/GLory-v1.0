@@ -69,7 +69,9 @@ CURRENCIES = ("diamond", "coin")
 # 流水与订单的 source 合法值。**这里是唯一真相** ——
 # 数据库那层刻意不加 check（加了以后运营手工发一种新名目就要先跑迁移，
 # 而那通常发生在出事故的当天），所以这一层漏了就等于没校验。
-SOURCES = ("shop", "iap", "grant", "refund", "starter_pick", "match_reward")
+#
+# mail = 系统邮件的附件（backend/app/mail.py）。那一笔流水同时记 mail_id，指明是哪封。
+SOURCES = ("shop", "iap", "grant", "refund", "starter_pick", "match_reward", "mail")
 
 
 class ShopRejected(RuntimeError):
@@ -201,6 +203,14 @@ def requires_entitlement(content_id: str) -> bool:
     return content_id in _catalog()["by_content"]
 
 
+def content_item(content_id: str) -> Item | None:
+    """卖这个内容的商品（取目录里第一个）。不在目录里 = None = 免费内容。
+
+    邮件用它给附件配名字与种类：能发的只有目录里卖的东西，见 mail.item_problem。
+    """
+    return _catalog()["by_content"].get(content_id)
+
+
 def starter_ids() -> list[str]:
     return list(_pets()["starters"])
 
@@ -252,10 +262,15 @@ async def _lock_wallet(conn: asyncpg.Connection, player_id: uuid.UUID) -> Wallet
 async def read_wallet(player_id: uuid.UUID) -> Wallet:
     """只读，不建行。没有行 = 余额全 0，不是错误。"""
     async with db.pool().acquire() as conn:
-        row = await conn.fetchrow(
-            "select diamond_paid, diamond_free, coin from player_wallets where player_id = $1",
-            player_id,
-        )
+        return await read_wallet_in(conn, player_id)
+
+
+async def read_wallet_in(conn: asyncpg.Connection, player_id: uuid.UUID) -> Wallet:
+    """同 read_wallet，用调用方手上的连接（邮件领完要回报余额，不必再借一条连接）。"""
+    row = await conn.fetchrow(
+        "select diamond_paid, diamond_free, coin from player_wallets where player_id = $1",
+        player_id,
+    )
     if row is None:
         return EMPTY_WALLET
     return Wallet(row["diamond_paid"], row["diamond_free"], row["coin"])
@@ -292,6 +307,7 @@ async def _apply(
     order_id: uuid.UUID | None,
     actor: str | None = None,
     note: str | None = None,
+    mail_id: int | None = None,
 ) -> Wallet:
     """把一组列变更写进钱包并**在同一事务里**写流水。changes 是有符号的。
 
@@ -299,8 +315,8 @@ async def _apply(
     所以这两件事在这一个函数里，**没有第二条改余额的路径**。
     这也是 player_wallets 那两列与流水始终对得上的唯一保证。
 
-    🔴 source 不能填错：手工发放记 grant、充值记 iap。填错当时没有任何症状，
-    坏的是以后对账。
+    🔴 source 不能填错：手工发放记 grant、充值记 iap、邮件附件记 mail（同时带 mail_id）。
+    填错当时没有任何症状，坏的是以后对账。
     """
     if source not in SOURCES:
         raise ValueError("未知的流水来源：%s（合法值在 shop.SOURCES）" % source)
@@ -318,12 +334,19 @@ async def _apply(
     )
     # 一笔钱跨两列时写两条流水，每条的 balance_after 是**那一列**的余额。
     # 合成一条的话就没法对账到具体某一列。
+    #
+    # mail_id 这一列（012）**只在邮件附件那一路才写**。其他路径不带它：部署顺序弄反、
+    # 012 还没跑的库上，商城照样能买 —— 坏的只是邮件，不是整个商城。
+    names = "player_id, currency, delta, balance_after, source, order_id, actor, note"
     for column, delta in changes.items():
+        values = [player_id, column, delta, after[column], source, order_id, actor, note]
+        if mail_id is not None:
+            values.append(mail_id)
+        placeholders = ", ".join("$%d" % (i + 1) for i in range(len(values)))
         await conn.execute(
-            "insert into wallet_ledger"
-            " (player_id, currency, delta, balance_after, source, order_id, actor, note)"
-            " values ($1, $2, $3, $4, $5, $6, $7, $8)",
-            player_id, column, delta, after[column], source, order_id, actor, note,
+            "insert into wallet_ledger (%s%s) values (%s)"
+            % (names, "" if mail_id is None else ", mail_id", placeholders),
+            *values,
         )
     return Wallet(after["diamond_paid"], after["diamond_free"], after["coin"])
 

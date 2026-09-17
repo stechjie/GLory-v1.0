@@ -33,6 +33,15 @@ SECRET_PRESET_KEYS = {
     "keystore/debug_password",
     "keystore/debug_user",
 }
+# Voice chat (docs/聊天系统设计.md section 9) only works when the GloryVoice Android
+# plugin is compiled into the APK. Whether it is depends on two export-preset keys
+# (gradle_build/use_gradle_build and glory_voice/enabled) that live in the gitignored
+# export_presets.cfg -- so an APK exported on a machine whose preset lacks them ships
+# without voice, and nothing fails: the in-game button just says "voice is not
+# available in this build". That is exactly what happened with the p27-p30 packages
+# (2026-09-17). The check below makes such an APK fail verification instead.
+VOICE_PLUGIN_CLASS = b"com/glory/voice/GloryVoicePlugin"
+VOICE_PERMISSION = "android.permission.RECORD_AUDIO"
 PRESET_CONTRACT_KEYS = (
     "package/unique_name",
     "package/name",
@@ -262,7 +271,12 @@ def android_manifest_identity(apk: Path, aapt: str) -> Dict[str, Any]:
     match = re.search(r"^package: name='([^']*)' versionCode='([^']*)' versionName='([^']*)'", text, re.MULTILINE)
     if not match:
         raise ValueError("aapt output has no package identity")
-    return {"package_id": match.group(1), "version_code": int(match.group(2)), "version_name": match.group(3)}
+    return {
+        "package_id": match.group(1),
+        "version_code": int(match.group(2)),
+        "version_name": match.group(3),
+        "permissions": re.findall(r"^uses-permission: name='([^']*)'", text, re.MULTILINE),
+    }
 
 
 def inspect_apk(apk: Path, aapt_request: str = "") -> Dict[str, Any]:
@@ -275,6 +289,11 @@ def inspect_apk(apk: Path, aapt_request: str = "") -> Dict[str, Any]:
             {"path": item.filename, "bytes": item.file_size, "crc32": f"{item.CRC:08x}"}
             for item in sorted(archive.infolist(), key=lambda value: value.filename)
         ]
+        voice_plugin_present = any(
+            VOICE_PLUGIN_CLASS in archive.read(item.filename)
+            for item in archive.infolist()
+            if item.filename.endswith(".dex")
+        )
     build_info = json.loads(build_bytes.decode("utf-8-sig")) if build_bytes else {}
     manifest = json.loads(manifest_bytes.decode("utf-8-sig")) if manifest_bytes else {}
     bundle = json.loads(bundle_bytes.decode("utf-8-sig")) if bundle_bytes else {}
@@ -302,6 +321,7 @@ def inspect_apk(apk: Path, aapt_request: str = "") -> Dict[str, Any]:
         "asset_bundle_inventory_sha256": str(bundle.get("inventory_sha256", "")),
         "android_manifest": android_identity,
         "android_manifest_error": manifest_error,
+        "voice_plugin_present": voice_plugin_present,
         "artifact_mapping_count": len(mappings),
         "artifact_mappings": mappings,
         "apk_entry_inventory_sha256": canonical_sha(entry_rows),
@@ -332,13 +352,18 @@ def verify_report(report: Dict[str, Any], expected: Optional[Dict[str, Any]]) ->
         bundle_inventory = str(report.get("asset_bundle_inventory_sha256", ""))
         if bundle_inventory != str(embedded.get("asset_inventory_sha256", "")):
             failures.append("asset_bundle_inventory_mismatch")
+    if not report.get("voice_plugin_present"):
+        failures.append("voice_plugin_absent")
     if report.get("android_manifest_error"):
         failures.append(str(report["android_manifest_error"]))
-    elif embedded:
+    else:
         android = report.get("android_manifest", {})
-        for key in ("package_id", "version_code", "version_name"):
-            if str(android.get(key, "")) != str(embedded.get(key, "")):
-                failures.append(f"android_manifest_{key}_mismatch")
+        if VOICE_PERMISSION not in android.get("permissions", []):
+            failures.append("voice_record_audio_permission_absent")
+        if embedded:
+            for key in ("package_id", "version_code", "version_name"):
+                if str(android.get(key, "")) != str(embedded.get(key, "")):
+                    failures.append(f"android_manifest_{key}_mismatch")
     return failures
 
 

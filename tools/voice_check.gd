@@ -7,7 +7,8 @@ extends Node
 #   1. 插件包 GloryVoice.aar 是照着现在的 Java 源码打的。改了 Java 忘了重打包，
 #      手机上跑的就是旧代码，而测的人以为是新的
 #   2. 插件包清单：Godot 找插件用的 meta-data、两条权限、显式 targetSdkVersion
-#   3. 导出插件默认不打包：没开 Gradle 的出包流程不能被它弄失败
+#   3. 导出插件本身的默认值是「不打包」，只看预设里的 glory_voice/enabled
+#   3b. 🔴 仓库里的导出模板必须打开 Gradle + 语音：所有电脑出的包都要带语音（2026-09-17 定）
 #   4. 🔴 ③ 的转发契约：不许自报座位号、软限流、大小上限、不可靠有序 + 独立通道
 #   5. 🔴 只转同队：敌方永远收不到（语音里说的是战术）
 #   6. Java 的包长上限不超过 ③ 的上限：两边分开改不会报错，只会最长的那种包被整包丢掉
@@ -80,6 +81,7 @@ func _ready() -> void:
 	_case_aar_matches_source()
 	_case_aar_manifest()
 	_case_export_plugin_off_by_default()
+	_case_template_ships_voice()
 	_case_relay_contract()
 	_case_packet_budget()
 	_case_team_only()
@@ -162,17 +164,52 @@ func _case_aar_manifest() -> void:
 		"插件包清单没写 targetSdkVersion：清单合并会给整个应用加上 READ_PHONE_STATE 等隐含权限")
 
 
-# --- 3. 默认不打包 ----------------------------------------------------------------
+# --- 3. 打不打包只看预设 ------------------------------------------------------------
 
 func _case_export_plugin_off_by_default() -> void:
 	_h.item()
 	var src := FileAccess.get_file_as_string(EXPORT_PLUGIN_PATH)
+	# 插件自己的默认值仍是 false：它只影响「从零新建、没从模板拷」的预设。
+	# 项目要的「每个包都带语音」由 3b 的模板保证，漏网的包由 tools/apk_identity.py 判失败。
 	_h.expect(src.contains("\"default_value\": false"), "voice_export_default_on",
-		"glory_voice/enabled 的默认值必须是 false —— 默认打包会让不开 Gradle 的出包直接失败")
+		"glory_voice/enabled 的插件默认值应保持 false —— 打不打包由预设（模板）决定，见 3b")
 	_h.expect(src.contains("if not (enabled is bool and enabled):"), "voice_export_ungated",
 		"_get_android_libraries 必须先看 glory_voice/enabled，没勾就不给 .aar")
 	_h.expect(load(EXPORT_PLUGIN_PATH) != null, "voice_export_plugin_broken",
 		"导出插件脚本加载失败：%s" % EXPORT_PLUGIN_PATH)
+
+
+# --- 3b. 🔴 模板打开 Gradle + 语音 ------------------------------------------------------
+#
+# 2026-09-17 实际出过的事：09-14 定了「Gradle 与语音只在 MSI 那台电脑的预设里开」，
+# 而 export_presets.cfg 不进 git。于是另一台电脑出的 p27–p30 包全都没有语音插件 ——
+# 包能装、能玩，唯一的症状是语音按钮说「这个版本没有语音功能」。
+# 所以模板必须带着这两个键。有人从一台没开语音的电脑重新生成模板，这里就红。
+
+func _case_template_ships_voice() -> void:
+	var cfg := ConfigFile.new()
+	_h.item()
+	if not _h.expect(cfg.load("res://export_presets.template.cfg") == OK, "voice_template_unreadable",
+			"读不到 export_presets.template.cfg"):
+		return
+	var android_sections: Array[String] = []
+	for section in cfg.get_sections():
+		if section.begins_with("preset.") and not section.ends_with(".options") \
+				and str(cfg.get_value(section, "platform", "")) == "Android":
+			android_sections.append(section + ".options")
+	_h.expect(not android_sections.is_empty(), "voice_template_no_android",
+		"模板里没有 Android 预设")
+	for options in android_sections:
+		_h.item()
+		_h.expect(cfg.get_value(options, "gradle_build/use_gradle_build", false) == true,
+			"voice_template_gradle_off",
+			"[%s] use_gradle_build 不是 true —— 语音插件只能用 Gradle 构建打进包，" % options
+			+ "从这份模板出的包会没有语音")
+		_h.item()
+		_h.expect(cfg.get_value(options, "glory_voice/enabled", false) == true,
+			"voice_template_voice_off",
+			"[%s] glory_voice/enabled 不是 true —— 从这份模板出的包会没有语音" % options
+			+ "（p27–p30 就是这么出的事）。在开了语音的电脑上重新生成模板")
 
 
 # --- 4. 🔴 ③ 的转发契约 -------------------------------------------------------------

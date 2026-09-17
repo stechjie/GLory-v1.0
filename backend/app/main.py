@@ -20,7 +20,7 @@ from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 
-from app import admission, announcements, db, maintenance, realtime, single_instance
+from app import admission, announcements, db, mail, maintenance, realtime, single_instance
 from app.config import get_settings
 from app.routes import announcements as announcement_routes
 from app.routes import auth as auth_routes
@@ -28,6 +28,7 @@ from app.routes import chat as chat_routes
 from app.routes import debug as debug_routes
 from app.routes import friends as friends_routes
 from app.routes import loadout as loadout_routes
+from app.routes import mail as mail_routes
 from app.routes import me as me_routes
 from app.routes import presence as presence_routes
 from app.routes import profile as profile_routes
@@ -111,10 +112,12 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     fetcher = announcements.StorageFetcher(cfg.supabase_url, cfg.announcement_bucket)
     board = announcements.install(announcements.Board.for_production(fetcher, media_dir=cfg.media_dir))
     notices = asyncio.create_task(announcements.loop(board))
+    # 系统邮件（app/mail.py）：每 30 秒看一次新邮件，推给在线的收件人。
+    postman = asyncio.create_task(mail.loop(mail.Postman.for_production()))
     try:
         yield
     finally:
-        for task in (sweeper, cleaner, admitter, notices):
+        for task in (sweeper, cleaner, admitter, notices, postman):
             task.cancel()
             with suppress(asyncio.CancelledError):
                 await task
@@ -156,6 +159,7 @@ app.include_router(chat_routes.router)
 app.include_router(announcement_routes.router)
 app.include_router(shop_routes.router)
 app.include_router(loadout_routes.router)
+app.include_router(mail_routes.router)
 app.include_router(ws_routes.router)
 
 # 自检接口只在开发环境挂载。生产上它会把表结构和 RLS 状态说得太清楚，

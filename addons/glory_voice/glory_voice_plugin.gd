@@ -1,16 +1,19 @@
 @tool
 extends EditorPlugin
 
-# 语音验证插件的导出接线（docs/聊天系统设计.md 第九节方案 ②）。
+# 游戏内语音插件的导出接线（docs/聊天系统设计.md 第九节方案 ②）。
 #
 # 插件本体是 addons/glory_voice/bin/GloryVoice.aar，源码与打包脚本在
 # android_plugins/glory_voice/（改了 Java 要重新跑 build_aar.ps1，
-# tools/voice_spike_check 会拿源码指纹对账）。
+# tools/voice_check 会拿源码指纹对账）。
 #
-# 🔴 **默认不打进包。** Godot 的安卓导出只要有插件提供 .aar，就要求开 Gradle 构建，
-# 否则整个导出直接报错 —— 那会让现在不开 Gradle 的正式出包流程当场失败。
-# 所以 Android 预设里多一个勾选项 glory_voice/enabled（默认关），只有出语音测试包时才勾，
-# 同时勾上 Use Gradle Build。
+# Android 预设里多一个勾选项 glory_voice/enabled。勾上时交出 .aar —— Godot 的安卓导出
+# 只要有插件提供 .aar 就要求开 Gradle 构建，所以它必须和 Use Gradle Build 一起勾。
+#
+# 🔴 **2026-09-17 起，每个安卓包都必须带语音。** 仓库里的 export_presets.template.cfg
+# 两项都是开的，tools/voice_check 钉着；出包后 tools/apk_identity.py 发现包里没有插件就判失败。
+# 这个选项自己的默认值仍是关：它只影响从零新建、没从模板拷的预设。
+# （之前是「只在一台电脑上开」，结果另一台出的 p27–p30 包全都没有语音。）
 
 var _export_plugin: EditorExportPlugin = null
 

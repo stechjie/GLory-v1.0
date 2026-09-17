@@ -2993,7 +2993,8 @@ RPC 数 60 → 58，签名指纹 `a54e6c8d53288bcd` → `03102a543d9ef148`。`ch
   `prep_text_coverage`、`startup_trace`、`startup_transition`、`tutorial_arrow_alignment`
 - `carrot_economy_check` **解析失败**（第 239 行 `var expected := 50 + draws_completed * 20`，循环变量没类型推不出来），
   脚本加载不了、场景永远不退出，`run_check` 等满 600 秒才判超时
-- 音效那批引用的 mp3 不在仓库里：`audio_sfx`、`synergy_activation_sfx`、`team_merc_summon_sfx`、`asset_manifest`
+- 音效那批（`audio_sfx`、`synergy_activation_sfx`、`team_merc_summon_sfx`、`friend_request_alert`）**不是代码问题**：本机没导入同事新加的音频（`assets/` 不走 git、另外分发），
+  跑一次 `godot --headless --path . --import`（或打开一次编辑器）就绿了。09-17 第二次合并后实测。
 - `asset_delivery`：`DarkQueenAnimated.gd` 大小对不上清单（6613 / 6634）
 - 模型 / 动画类：`battle_actor_body_on_disc`、`model_action_playback_continuity`、`model_root_motion_inventory`、
   `model_root_motion_lock`；`character_outline_projection` 要真渲染设备
@@ -3180,3 +3181,24 @@ root 下节点数 1、两帧后 `loop_player_ready()` 也是 true（那时播放
 `friends_check_node` 只有 `.gd`、没有 `.tscn`，是被别的门禁 include 的模块，**不是可跑场景**。
 第一版套件把它塞进去，得到一条 `Cannot open file 'res://tools/friends_check_node.tscn'`
 的假红。已剔除 —— 加门禁进套件前先确认它有没有 `.tscn`。
+
+## 2026-09-17：系统邮件（商城第 5 步）
+
+设计与管理员手册见 `docs/邮件系统设计.md`。战斗服务器不动、协议号不变。
+
+### 新增两道
+
+- `backend/tests/test_mail.py`（44 条，不连库）：领取的语句顺序（锁状态行 → 发钱 → 发东西 → 记已领，同一事务）、
+  已领过一分不动、钻石进赠送列且流水带 `source=mail` 与 `mail_id`、**只有邮件那一路的流水写 `mail_id`**
+  （012 没跑时商城照常）、附件有问题整封当不存在、一键领取每封一个事务、推送四种情形、SQL 与接口的静态约束。
+  **变异测过 13 种改坏，全红。**
+- `tools/mail_check`（88 项，不联网不写文件）：红点规则、已读先改本机、领到后快照跟上、没登录时不在本机假装成功、
+  界面按钮随状态出现、领取失败有提示且能重试、已拥有要明说、主菜单红点与入口、登出清空、
+  千分位与货币图标只有一份（`scripts/account/Currency.gd`）。**变异测过 12 种改坏，全红。**
+
+### 两个坑
+
+- 到账音效**不在 `mail_check` 里断言**：`SfxService.play` 要本机导入过的音频资源和发声池，
+  断言它会跟着「本机没导入新音频」一起红（09-17 就这样误判过一次，以为是文件没进仓库）。音效的登记与调用点归 `audio_sfx_check`。
+- 这版 FastAPI 把 `include_router` 包成 `_IncludedRouter`，`app.routes` 里看不到子路由的 path。
+  要检查某个模块的接口清单，直接看那个模块的 `router.routes`。

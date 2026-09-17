@@ -8,7 +8,7 @@
     PUT  /v1/me/pets/active      设出战宠物
     POST /v1/me/pets/starter     新手三选一
 
-座位票（POST /v1/battle/ticket）**不在这一批**。它要先定签名方案，属于第 4 步。
+出战名片（POST /v1/battle/card）在 routes/loadout.py，系统邮件在 routes/mail.py。
 
 ## 中英文两份都发，客户端自己选
 

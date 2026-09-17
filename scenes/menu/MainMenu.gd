@@ -20,6 +20,7 @@ signal chat_requested           # 左侧「聊天」按钮：进入私聊界面
 signal announcements_requested  # 右侧「公告 / 活动」：进入公告界面
 signal shop_requested           # 右侧「商店」：进入商城
 signal bag_requested            # 右上角「背包」：进入背包
+signal mail_requested           # 右上角「邮件」：进入邮箱（docs/邮件系统设计.md）
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
@@ -40,6 +41,8 @@ const TEX_PROFILE_AVATAR := preload("res://assets/ui/main_menu_live/profile_avat
 const TEX_GOLD := preload("res://assets/ui/main_menu_live/gold.png")
 const TEX_DIAMOND := preload("res://assets/ui/main_menu_live/diamond.png")
 const TEX_MAIL := preload("res://assets/ui/main_menu_live/mail.png")
+# 千分位与商城、邮件共用这一份（两处显示同一个数，格式不一样很显眼）。
+const Currency := preload("res://scripts/account/Currency.gd")
 const TEX_BAG := preload("res://assets/ui/main_menu_live/bag.png")
 const TEX_SETTINGS := preload("res://assets/ui/main_menu_live/settings.png")
 const TEX_FRIENDS := preload("res://assets/ui/main_menu_live/friends.png")
@@ -81,6 +84,7 @@ var _chat_dot: Label
 var _friends_dot: Label
 # 「公告 / 活动」右上角的红点。显隐只跟 AnnouncementService 走。
 var _news_dot: Label
+var _mail_dot: Label
 var _address_edit: LineEdit
 var _net_status: Label
 # 「敬请期待」不再持有 AcceptDialog 节点：见 _show_coming_soon()。
@@ -109,6 +113,8 @@ func _ready() -> void:
 		ChatService.unread_changed.connect(_on_chat_unread_changed)
 	if not AnnouncementService.changed.is_connected(_on_announcements_changed):
 		AnnouncementService.changed.connect(_on_announcements_changed)
+	if not MailService.changed.is_connected(_on_mail_changed):
+		MailService.changed.connect(_on_mail_changed)
 	_refresh_profile_plate()
 	_ensure_profile_loaded()
 	# 钱包**每次回主菜单都重拉**，不像资料那样吃缓存 —— 玩家多半是刚从商城买完东西回来的。
@@ -131,6 +137,8 @@ func _exit_tree() -> void:
 		ChatService.unread_changed.disconnect(_on_chat_unread_changed)
 	if AnnouncementService.changed.is_connected(_on_announcements_changed):
 		AnnouncementService.changed.disconnect(_on_announcements_changed)
+	if MailService.changed.is_connected(_on_mail_changed):
+		MailService.changed.disconnect(_on_mail_changed)
 
 func _on_account_profile_changed(_profile: Dictionary) -> void:
 	_refresh_profile_plate()
@@ -225,7 +233,12 @@ func _build() -> void:
 	_add_hit(Vector2(1340, 25), Vector2(100, 100), _emit_bag, "right")
 	_add_texture(TEX_MAIL, Vector2(1450, 25), Vector2(100, 100), "right")
 	_add_label(_menu_text("邮件", "Mail"), Vector2(1450, 95), Vector2(100, 7), 7, "right")
-	_add_hit(Vector2(1450, 25), Vector2(100, 100), _show_coming_soon, "right")
+	# 有没读的邮件、或者有没领的附件时亮红点（MailService.needs_attention）。hit 仍然放在最后。
+	_mail_dot = _add_label("●", Vector2(1522, 22), Vector2(32, 32), 26, "right")
+	_mail_dot.add_theme_color_override("font_color", Tokens.UNREAD_DOT)
+	_mail_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_mail_dot.visible = MailService.needs_attention()
+	_add_hit(Vector2(1450, 25), Vector2(100, 100), _emit_mail, "right")
 	_add_texture(TEX_SETTINGS, Vector2(1560, 25), Vector2(100, 100), "right")
 	_add_label(_menu_text("设定", "Setting"), Vector2(1560, 95), Vector2(100, 7), 7, "right")
 	_add_hit(Vector2(1560, 25), Vector2(100, 100), _emit_settings, "right")
@@ -581,6 +594,16 @@ func _on_announcements_changed() -> void:
 	if _news_dot != null and is_instance_valid(_news_dot):
 		_news_dot.visible = AnnouncementService.any_unread()
 
+
+# 「邮件」：此前是「敬请期待」（docs/邮件系统设计.md）。
+func _emit_mail() -> void:
+	mail_requested.emit()
+
+
+func _on_mail_changed() -> void:
+	if _mail_dot != null and is_instance_valid(_mail_dot):
+		_mail_dot.visible = MailService.needs_attention()
+
 # 名牌上的昵称与副行。**不自己拼显示名** —— 只从 AccountManager.display_name 出，
 # 那是全仓唯一的拼法。理由：player_name 不唯一（database/001 的设计），
 # 任何一处只显示昵称的地方，改名冒充就成立。
@@ -620,8 +643,8 @@ func _refresh_wallet() -> void:
 	if int(result.get("code", 0)) / 100 != 2:
 		return
 	var body: Dictionary = result.get("body", {})
-	_coin_label.text = _comma(int(body.get("coin", 0)))
-	_diamond_label.text = _comma(int(body.get("diamond", 0)))
+	_coin_label.text = Currency.comma(int(body.get("coin", 0)))
+	_diamond_label.text = Currency.comma(int(body.get("diamond", 0)))
 
 # 朋友申请的轮询间隔。与 AccountManager 的 presence 心跳同拍（10 秒）——
 # 朋友申请**没有实时推送**（socket 只推私聊与公告），轮询是唯一的近实时手段。
@@ -698,18 +721,6 @@ func _alert_new_friend_requests(incoming: Array) -> void:
 		SfxService.play(SfxService.CUE_CHAT_ALERT)
 		# 一次采样最多一声：同时收到三份申请不该连响三下。
 		return
-
-# 千分位。与商城界面的同名函数保持一致 —— 两处显示同一个数，格式不一样很显眼。
-func _comma(value: int) -> String:
-	var digits := str(absi(value))
-	var out := ""
-	var count := 0
-	for i in range(digits.length() - 1, -1, -1):
-		out = digits[i] + out
-		count += 1
-		if count % 3 == 0 and i > 0:
-			out = "," + out
-	return ("-" if value < 0 else "") + out
 
 # 首次进主菜单时拉一次资料，之后吃 AccountManager 的缓存。
 # 每次回主菜单都发一次请求既慢又费流量，而这些字段只有玩家自己能改。

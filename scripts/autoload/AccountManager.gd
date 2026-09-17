@@ -741,6 +741,36 @@ static func new_client_order_id() -> String:
 		hex.substr(16, 4), hex.substr(20, 12)]
 
 
+# --- 系统邮件（docs/邮件系统设计.md）--------------------------------------------
+#
+# 界面不直接调这些 —— 走 MailService，那里管邮箱快照和红点。
+# 这边没有「发」：发邮件只在 Supabase 里（database/012_mail.sql 的 send_mail）。
+
+func fetch_mail() -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/me/mail", null, true)
+
+
+func read_mail(mail_id: int) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/me/mail/%d/read" % mail_id, {}, true)
+
+
+# 领取天然幂等：服务端先锁状态行，领过的再点只回当前余额（replayed = true），不用幂等键。
+func claim_mail(mail_id: int) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/me/mail/%d/claim" % mail_id, {}, true)
+
+
+func claim_all_mail() -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/me/mail/claim-all", {}, true)
+
+
+func delete_mail(mail_id: int) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/me/mail/%d/delete" % mail_id, {}, true)
+
+
+func delete_read_mail() -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/me/mail/delete-read", {}, true)
+
+
 # --- 在线状态心跳 -------------------------------------------------------------
 #
 # **事件驱动 + 慢心跳**，不是纯轮询：进出房间时立刻补一次（report_presence_now），
