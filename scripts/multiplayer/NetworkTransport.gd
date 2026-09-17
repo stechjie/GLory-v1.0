@@ -29,6 +29,9 @@ const NetworkConfig := preload("res://scripts/multiplayer/NetworkConfig.gd")
 const AUTH_TIMEOUT_SEC := 8.0
 # 握手包的上限。认证阶段的数据来自未经验证的对端，不设限等于让它决定
 # 服务器要为一次握手分配多少内存。
+#
+# 出战名片**不走握手包**（它有 700～1700 字节，这里装不下）——
+# 它跟着「建房 / 加入房间」的请求一起交，见 BattleCard.gd 文件头。
 const AUTH_MAX_PAYLOAD_BYTES := 512
 # 同时在握手中的连接数上限。没有它，一个不完成握手的客户端可以无限开连接。
 const AUTH_MAX_PENDING := 64

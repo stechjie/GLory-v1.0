@@ -45,11 +45,13 @@ const EXPECTED_IDS := [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 # 2026-09-14 聊天范围：数量没变，四条聊天 RPC 各加一个 team_only 参数 -> 签名指纹变了、25 -> 26。
 # 2026-09-16 萝卜营地：新增 `_rpc_team_submit_active_pet`，方法数 59 -> 60、协议 28 -> 29。
 # 2026-09-14 排队：数量和签名都没动，只为挡住没有排队逻辑的旧包顶号 26 -> 27，指纹不动。
+# 2026-09-17 出战名片：删 `_rpc_lobby_identity` 与 `_rpc_team_submit_active_pet`，建房 / 加入各加一个
+# card 参数，准备 / 开始去掉 races 参数 —— 方法数 60 -> 58、协议 29 -> 30、指纹变了。
 # PINNED_RPC_SIGNATURES：全部 @rpc 方法「@rpc 配置 | 方法名(参数类型,…)」排序后的 SHA-256 前 16 位，
 # 算法见 _rpc_signature_digest。参数只改名字不算（线上不传名字）。
-const PINNED_RPC_COUNT := 60
-const PINNED_RPC_PROTOCOL := 29
-const PINNED_RPC_SIGNATURES := "a54e6c8d53288bcd"
+const PINNED_RPC_COUNT := 58
+const PINNED_RPC_PROTOCOL := 30
+const PINNED_RPC_SIGNATURES := "03102a543d9ef148"
 
 var _h: CheckHarness
 

@@ -696,6 +696,32 @@ func pick_starter_pet(client_order_id: String, pet_id: String) -> Dictionary:
 		{"client_order_id": client_order_id, "pet_id": pet_id}, true)
 
 
+# --- 出战配置与出战名片（docs/商城系统设计.md 第五节）----------------------------
+
+
+# {"races": [...] | null}。null = 从没选过，用默认（默认值由 RacePick 按棋子表算，
+# 账号服务器刻意不替客户端填）。
+func fetch_races() -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/me/races", null, true)
+
+
+# 存出战种族。账号服务器只查「每一族你有没有资格用」；「必须正好 4 个」由
+# 备战界面与战斗服务器按 RacePick 管。
+func save_races(races: Array) -> Dictionary:
+	return await _request(HTTPClient.METHOD_PUT, "/v1/me/races", {"races": races}, true)
+
+
+# 领一张出战名片，入座（建房 / 加入房间）之前用。返回名片字符串，领不到返回空串。
+#
+# **不透明，原样交给战斗服务器，不解析、不改。** 验章在战斗服务器上。
+# 有效期很短（60 秒），所以每次入座现领，不缓存。
+func fetch_battle_card() -> String:
+	var result: Dictionary = await _request(HTTPClient.METHOD_POST, "/v1/battle/card", {}, true)
+	if int(result.get("code", 0)) / 100 != 2:
+		return ""
+	return str((result.get("body", {}) as Dictionary).get("card", ""))
+
+
 # 一笔购买的幂等键（uuid v4 形状）。**生成一次，整笔重试期间都用同一个。**
 #
 # 用 Crypto 而不是 randi()：同 ChatService.new_client_msg_id 的理由 ——

@@ -1,22 +1,24 @@
 extends Node
 # 账号级持久档（跨局保留，绝不进 GameState.reset_run）。
 #
-# ## 🔴 宠物归属**不在这里持久化**（2026-09-16 上云）
+# ## 🔴 宠物归属与出战种族**不在这里持久化**（宠物 2026-09-16、种族 09-17 上云）
 #
-# owned_pets / active_pet / needs_starter_pick 仍然是这个门面上的同步字段
-# —— 二十来处调用点照旧同步读 —— 但它们是**服务端答复的内存缓存**：
-# 不从 profile.json 读，也不写回去（SaveSchema v6 把这三个键从本机档案里删了）。
+# owned_pets / active_pet / needs_starter_pick / selected_races 仍然是这个门面上的
+# 同步字段 —— 二十来处调用点照旧同步读 —— 但它们是**服务端答复的内存缓存**：
+# 不从 profile.json 读，也不写回去（SaveSchema v6 / v7 把这几个键从本机档案里删了）。
 #
-# 唯一真相在服务端 player_entitlements（docs/商城系统设计.md）。本机留一份的话，
-# 改一行文本文件就能白嫖付费宠物。
+# 唯一真相在服务端（宠物在 player_entitlements，种族在 players.selected_races）。
+# 联机对局用的也是账号服务器按这份真相签的出战名片（docs/商城系统设计.md 第五节）。
+# 本机另存一份的话：宠物是「改一行文件就白嫖」；种族是「页面上选的这几族，
+# 对局里用的却是另外几族」。
 #
 # 三条纪律：
 #   1. **刷新失败时保留旧值，绝不清空。** 网络抖一下就把玩家的宠物抹掉，
 #      表现是这一局没有加成 —— 而且不报错。
 #   2. **needs_starter_pick 只在 pets_loaded 之后才当真。** 没拉到就一律 false，
 #      否则弱网下新玩家被误弹、老玩家被要求重选。
-#   3. 改出战宠物只有 set_active() 一条路（异步、走服务端）。商城与备战页都走它，
-#      不许谁再直连 AccountManager —— 两条路各自维护缓存必然不一致。
+#   3. 改出战宠物只有 set_active() 一条路、改出战种族只有 set_selected_races() 一条路
+#      （都是异步、走服务端）。不许谁再直连 AccountManager —— 两条路各自维护缓存必然不一致。
 
 const PROFILE_PATH := "user://profile.json"
 # 解析失败的档案在被覆盖前先挪到这里。见 _preserve_corrupt_profile。
@@ -51,9 +53,9 @@ var owned_pets: Array[String] = []
 var active_pet := ""
 # 有没有成功拉到过一次。**没拉到之前不许把空当成「他没有宠物」。**
 var pets_loaded := false
-# 备战界面选的出战种族，**原样**存（可能为空 = 从没选过）。
+# 出战种族，服务端答复的缓存（空 = 从没选过，或者还没拉到）。
 # 读的时候一律走 get_selected_races()：那里按当前棋子表校验，不合法就回落默认 ——
-# 以后删掉 / 改名一族，老档不需要像 pet_duck -> pet_rabbit 那样做迁移。
+# 以后删掉 / 改名一族，不需要做任何迁移。
 var selected_races: Array[String] = []
 var needs_starter_pick := false
 # Codex entries the player has encountered. Account-level and append-only: nothing
@@ -119,11 +121,8 @@ func load_profile() -> void:
 	# 没有或写坏了才现签一个。不要在这里加 `if player_id.is_empty()` 之类的兜底 ——
 	# 签发只能有一处，两处就迟早会各签各的。
 	player_id = str(data.get("player_id", ""))
-	# 宠物归属不从档案里读了（SaveSchema v6 已经把这几个键 erase 掉）。
-	# 它们由 refresh_pets() 从服务端填，见文件头。
-	# 不合法（表里已经没有的族、个数对不上）就整份丢掉，读的时候回落默认。
-	# 不补不砍，理由见 RacePick.sanitize。有安全默认值，所以不升 PROFILE_VERSION。
-	selected_races.assign(RacePick.sanitize(data.get("selected_races", [])))
+	# 宠物归属与出战种族不从档案里读了（SaveSchema v6 / v7 已经把这几个键 erase 掉）。
+	# 它们由 refresh_pets() / refresh_races() 从服务端填，见文件头。
 	codex_seen.clear()
 	for raw in data.get("codex_seen", []):
 		var entry := str(raw)
@@ -157,7 +156,6 @@ func save_profile() -> bool:
 	var payload := {
 		"version": SaveSchema.PROFILE_VERSION,
 		"player_id": player_id,
-		"selected_races": selected_races,
 		"codex_seen": codex_seen,
 		"board_readability_enabled": board_readability_enabled,
 		"screen_shake_enabled": screen_shake_enabled,
@@ -237,7 +235,7 @@ func reset_account_state() -> void:
 	active_pet = ""
 	# 归属缓存也清掉：下次 refresh_pets 之前不许把空当成「他没有宠物」。
 	pets_loaded = false
-	# 出战种族是玩法偏好、跟着账号走，不是设备态 —— 一起清，回到默认。
+	# 出战种族跟着账号走，不是设备态 —— 缓存一起清，回到默认。
 	selected_races.clear()
 	codex_seen.clear()
 	needs_starter_pick = true
@@ -502,18 +500,48 @@ func pick_starter(pet_id: String) -> bool:
 
 # --- 出战种族（RacePick）---------------------------------------------------
 
-# 该用的出战种族。永远返回一份合法选择：从没选过、或存的那份已经不合法时就是默认。
+# 该用的出战种族。永远返回一份合法选择：从没选过、还没拉到、或存的那份已经不合法时就是默认。
 func get_selected_races() -> Array[String]:
 	return RacePick.resolve(selected_races)
 
+
+# 从服务端拉一次出战种族。返回有没有拉到。**失败时不动缓存**（同 refresh_pets）。
+func refresh_races() -> bool:
+	if not AccountManager.is_logged_in():
+		return false
+	var result: Dictionary = await AccountManager.fetch_races()
+	if int(result.get("code", 0)) / 100 != 2:
+		return false
+	_adopt_races(result.get("body", {}))
+	return true
+
+
 # 只收一份完整、合法的选择；不合法返回 false，什么都不改（备战页只在凑满时才让保存）。
+#
+# 🔴 **存到服务端才算数。** 没存上就返回 false、缓存一个字都不动，备战页据此提示「没存上」。
+# 只改本机缓存的话，页面上显示已保存，下一局出战名片上带的却还是服务端那份。
 func set_selected_races(races: Array) -> bool:
 	var clean := RacePick.sanitize(races)
 	if clean.is_empty():
 		return false
 	if clean == selected_races:
 		return true
-	selected_races = clean
-	save_profile()
-	races_changed.emit()
+	var result: Dictionary = await AccountManager.save_races(clean)
+	if int(result.get("code", 0)) / 100 != 2:
+		return false
+	_adopt_races(result.get("body", {}))
 	return true
+
+
+# body = {"races": [...] | null}，null = 从没选过。拉取与保存的回执共用它。
+# 服务端不管「必须几个」，所以这里按 RacePick 清洗：不合规则的清成空 = 用默认，
+# 与战斗服务器对名片的口径一致（BattleCard.races_of）。
+func _adopt_races(body: Dictionary) -> void:
+	var next: Array[String] = []
+	var raw: Variant = body.get("races", null)
+	if typeof(raw) == TYPE_ARRAY:
+		next = RacePick.sanitize(raw)
+	if next == selected_races:
+		return
+	selected_races = next
+	races_changed.emit()

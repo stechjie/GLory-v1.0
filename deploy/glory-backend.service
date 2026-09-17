@@ -23,6 +23,12 @@ EnvironmentFile=/opt/glory/backend.env
 # 文件不存在 = 用默认值（GLORY_ONLINE_LIMIT，没设就是 1000）。它不是密钥，可以 644。
 Environment=GLORY_ADMISSION_FILE=/opt/glory/admission.json
 
+# 出战名片的签名私钥（backend/app/loadout.py）。用 deploy/make_battle_card_key.py 生成，
+# **必须 chmod 600、属主 glory**，和 backend.env 同一待遇。
+# 文件不存在 = 发名片的接口回 503（玩家开不了新对局），但进程照常起来。
+# 这把可以重新生成（轮换），与战斗服务器那把不可重生成的 DTLS 私钥是两回事。
+Environment=GLORY_BATTLE_CARD_KEY_FILE=/opt/glory/battle_card_key.pem
+
 # 公告图片（backend/app/announcements.py）。systemd 建目录 /var/lib/glory-media、属主 glory、
 # 权限 755；下面 ProtectSystem=strict + ReadWritePaths= 空着时，这是本进程**唯一**能写的地方。
 # Caddy 直接从这个目录给 /media/*（deploy/Caddyfile），两处路径必须一致（有测试钉着）。

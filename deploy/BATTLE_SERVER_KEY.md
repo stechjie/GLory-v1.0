@@ -1,5 +1,7 @@
 # 战斗服务器的 DTLS 私钥部署（C14）
 
+> 协议 30 起战斗服务器还要一把**出战名片公钥**，见文末「出战名片公钥」一节。两把钥匙纪律不同，别混。
+
 部署的是 **③ 战斗服务器**（Godot headless + ENet），**不是**账号后端。
 账号后端看 `deploy/README.md`，那是另一套流程、另一个端口、另一个进程。
 
@@ -242,3 +244,126 @@ godot --headless --path <目录> res://scenes/server/ServerMain.tscn --server --
 
 漏掉第 3 步 = 所有老客户端连不上。这是自签名 pin 证书的固有代价，
 换成正式 CA 证书可以免掉，但那需要先有域名（见 `C15`：现在是硬编码 IP）。
+
+---
+
+# 出战名片公钥（协议 30 起）
+
+背景与设计：`docs/商城系统设计.md` 第五节；实现：`scripts/multiplayer/BattleCard.gd`。
+
+玩家入座时交一张账号服务器盖过章的「出战名片」（出战宠物、种族、名字头像），
+战斗服务器用**公钥**验章。**没有公钥，战斗服务器拒绝启动** —— 同上面 DTLS 私钥的理由：
+起来了但谁都入不了座，比起不来难查得多。
+
+和上面那把 DTLS 私钥**不是一回事**：
+
+| | DTLS 私钥（上文） | 出战名片公钥（本节） |
+|---|---|---|
+| 战斗服务器上放的是 | 私钥，要保密 | **公钥**，不用保密 |
+| 能不能重新生成 | **不能**（要重发 APK） | **能**，不用发 APK（手机从不验章） |
+| 从哪来 | 开发机 `tools/dtls_make_cert.tscn` | 账号服务器 `deploy/make_battle_card_key.py` |
+| 默认文件名 | `glory_server_key.pem` | `battle_card_public.pem` |
+| 命令行覆盖 | `--tls-key=` | `--battle-card-key=`（同样**必须等号形式**） |
+
+## 部署顺序（p30 这一版）
+
+1. **数据库**：Supabase SQL Editor 跑 `database/011_loadout.sql`
+2. **账号服务器**：拉新代码（`update.sh` 跑两次）→ 下面第 1 步生成钥匙 → 重启
+3. **战斗服务器**：下面第 2、3 步放公钥 → 按上文第 4–6 步换 p30 包 → 重启 → 第 4 步验证
+4. **新 APK** 和 p30 战斗服务器一起上（协议号不同，旧 APK 连不上新服务器）
+
+顺序反了会怎样：战斗服务器先上、账号服务器还没私钥 → 玩家领不到名片 →
+所有人开不了新对局（提示「暂时进不了对局，请稍后再试」），已经在打的不受影响。
+
+## 1. 在账号服务器上生成（只做一次）
+
+```bash
+sudo /opt/glory/venv/bin/python /opt/glory/repo/deploy/make_battle_card_key.py /opt/glory/battle_card_key.pem --owner glory
+sudo systemctl restart glory-backend
+```
+
+它写两个文件：
+
+- `/opt/glory/battle_card_key.pem` —— **私钥**，权限 600。**留在账号服务器上，哪儿也不去**：
+  不下载、不贴进聊天、不进 git、不放进 `tools/`（`make_server_zip.ps1` 会把整个 `tools/` 打进战斗服务器包）
+- `/opt/glory/battle_card_public.pem` —— 公钥，下一步要送去战斗服务器
+
+`glory-backend.service` 里已经有 `GLORY_BATTLE_CARD_KEY_FILE=/opt/glory/battle_card_key.pem`，
+不用再改 systemd。没有这个文件时 `/v1/battle/card` 回 503。
+
+## 2. 把公钥送到战斗服务器
+
+公钥不用保密，怎么传都行。最省事的是复制文字：
+
+```bash
+# 账号服务器上
+cat /opt/glory/battle_card_public.pem
+```
+
+把 `-----BEGIN PUBLIC KEY-----` 到 `-----END PUBLIC KEY-----` **整段**复制下来，然后在战斗服务器上
+（以服务用户登录，见上文第 0 步）：
+
+```bash
+mkdir -p ~/.local/share/godot/app_userdata/"Glory Beta 0.04"
+nano ~/.local/share/godot/app_userdata/"Glory Beta 0.04"/battle_card_public.pem   # 粘进去，Ctrl+O 保存，Ctrl+X 退出
+chmod 644 ~/.local/share/godot/app_userdata/"Glory Beta 0.04"/battle_card_public.pem
+```
+
+也可以用网页 SSH 的 DOWNLOAD FILE / UPLOAD FILE 传文件本身。两个服务在同一台机器上的话直接 `cp`，
+再 `chown` 给战斗服务器的服务用户。
+
+> **备选：绝对路径。** 同上文 DTLS 那条：放 `/etc/glory/battle_card_public.pem`，
+> 在 `ExecStart` 末尾加 `--battle-card-key=/etc/glory/battle_card_public.pem`，再 `daemon-reload`。
+
+## 3. 检查
+
+```bash
+head -1 ~/.local/share/godot/app_userdata/"Glory Beta 0.04"/battle_card_public.pem
+```
+
+必须是 `-----BEGIN PUBLIC KEY-----`。
+
+⚠️ **看到 `PRIVATE KEY` 就是放错了** —— 立刻删掉这个文件，私钥不该出现在战斗服务器上
+（服务器也不会收它，照样起不来）。
+
+## 4. 验证（换完包、重启之后）
+
+```bash
+journalctl -u glory-server -n 30 --no-pager | grep -E "battle card|server start"
+```
+
+必须看到：
+
+```
+[NET] battle card key loaded path=user://battle_card_public.pem
+[NET] server started protocol=30 port=8080 ...
+```
+
+没放对时是这样，而且**没有** `server started`：
+
+```
+[NET] battle card key setup failed: 缺出战名片公钥 user://battle_card_public.pem —— ...
+```
+
+然后用新 APK 真开一局：**能进房就是名片通了。** 进不了、提示「暂时进不了对局」时：
+
+| 在哪看 | 看到 | 意思 |
+|---|---|---|
+| 战斗服务器日志 | `seat card rejected ... reason=card_bad_signature` | 公钥和账号服务器的私钥不是一对（私钥重生成过、公钥没换） |
+| 战斗服务器日志 | `reason=card_expired` | 两台机器的时钟差了 30 秒以上，查 NTP |
+| 战斗服务器日志 | `reason=card_required` / `card_malformed` | 客户端是旧的或不对 |
+| 战斗服务器日志 | 什么都没有 | 请求根本没发出来 = 客户端没领到名片，看账号服务器（下一行） |
+| 账号服务器日志 | `/v1/battle/card` 回 503 | 账号服务器没读到私钥（第 1 步、属主） |
+
+## 换钥匙（轮换）
+
+1. 账号服务器：第 1 步那条命令加 `--force` → `sudo systemctl restart glory-backend`
+2. 新的 `battle_card_public.pem` 按第 2 步换到战斗服务器上 → `sudo systemctl restart glory-server`
+
+两步之间新开对局会失败（`card_bad_signature`），已经在打的不受影响（重连不需要名片）。
+重启战斗服务器会让在场玩家卡几秒后自己重连（房间快照会恢复）。**不用发 APK。**
+
+## 打包的冷启动测试
+
+`make_server_zip.ps1` 的冷启动测试不用线上公钥：它用包里的 `tools/make_smoke_card_key.gd`
+现场生成一把一次性公钥（私钥不落盘），测完随解压目录一起删。所以打包机上不需要放任何名片钥匙。

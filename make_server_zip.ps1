@@ -226,6 +226,19 @@ try {
         # SCRIPT ERROR，打包照样报成功）。
         # 两个流不能重定向到同一个文件，PowerShell 会直接报错，所以是两个文件。
         $se = "$env:TEMP\glory_smoke_err_$stamp.txt"
+        # 出战名片公钥：专服没有它就拒绝启动（scripts/multiplayer/BattleCard.gd）。
+        # 冒烟测试只验「起得来」，所以用包里的 tools/make_smoke_card_key.gd 现场生成一把
+        # 一次性公钥（私钥根本不落盘），放在解压目录里、随它一起删。
+        # 线上用的是账号服务器那把的公钥，见 deploy/BATTLE_SERVER_KEY.md「出战名片公钥」。
+        # 路径不能带空格：Start-Process 的 -ArgumentList 在 5.1 里不给参数加引号。
+        $smokeCardKey = Join-Path $smokeDir "smoke_battle_card_public.pem"
+        $keyProc = Start-Process -FilePath $Godot -PassThru -NoNewWindow `
+            -ArgumentList @("--headless", "--path", $smokeDir, "--script", "res://tools/make_smoke_card_key.gd",
+                            "--", "--out=$smokeCardKey")
+        if (-not $keyProc.WaitForExit(60000)) { $keyProc.Kill(); $keyProc.WaitForExit() }
+        if (-not (Test-Path $smokeCardKey)) {
+            throw "冒烟测试用的出战名片公钥没生成出来（tools/make_smoke_card_key.gd），没法验证冷启动"
+        }
         # --port=N 必须是等号形式：NetworkService._cmdline_int() 只认 "--port=" 前缀，
         # 空格形式会被静默忽略然后回落到 SERVER_PORT+shard=8080。之前这里写的是空格
         # 形式，于是冒烟测试名义上用 8199、实际去抢 8080 —— 本机只要有别的东西占着
@@ -235,7 +248,7 @@ try {
         # 独立语句，Godot 变成无参启动、弹出项目管理器 GUI，然后永远挂在那里。
         $proc = Start-Process -FilePath $Godot -PassThru -NoNewWindow -RedirectStandardOutput $so -RedirectStandardError $se `
             -ArgumentList @("--headless", "--path", $smokeDir, "res://scenes/server/ServerMain.tscn",
-                            "--server", "--port=$smokePort")
+                            "--server", "--port=$smokePort", "--battle-card-key=$smokeCardKey")
         Start-Sleep -Seconds 15
         if (-not $proc.HasExited) { $proc.Kill(); $proc.WaitForExit() }
         $log = ""
@@ -296,6 +309,9 @@ try {
     Write-Host "   4. journalctl -u glory-server -n 5 --no-pager"
     Write-Host "      ^ 看到 server started protocol=$protocol 才算部署成功（started，不是 starting）" -ForegroundColor Yellow
     Write-Host "        starting 那行在绑端口之前就打了 —— 端口被占、私钥没找到都照样有它。" -ForegroundColor DarkYellow
+    Write-Host ""
+    Write-Host " !! 协议 30 起，服务器上还要有出战名片公钥 battle_card_public.pem，没有就不会 started：" -ForegroundColor Yellow
+    Write-Host "    放法见 deploy/BATTLE_SERVER_KEY.md「出战名片公钥」；日志里应有 battle card key loaded" -ForegroundColor Yellow
     Write-Host ""
     Write-Host " !! systemd 的 ExecStart 必须带上入口场景，否则会去加载 UI 主场景然后静默挂住：" -ForegroundColor Yellow
     Write-Host "    godot --headless --path <目录> res://scenes/server/ServerMain.tscn --server --port=8080" -ForegroundColor Yellow

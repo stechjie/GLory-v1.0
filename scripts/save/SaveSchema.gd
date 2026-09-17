@@ -17,6 +17,8 @@ const VERSION := 2
 #   6 - 宠物归属上云：owned_pets / active_pet / needs_starter_pick 从本机**删除**
 #       （docs/商城系统设计.md 第八节）。归属的唯一真相在服务端 player_entitlements，
 #       本机留着只会变成「改一行文件就白嫖」的入口，也会变成下一个人误以为还在用的地雷。
+#   7 - 出战种族上云：selected_races 从本机**删除**（docs/商城系统设计.md 第五节）。
+#       对局用的是账号服务器签的出战名片，本机那份只会和它对不上。
 #
 # ⚠️ **4 曾经被两条分支各发过一次，内容不同。** 账号线当时也把版本号写成 4
 # （装的是 player_id），onboarding 线写的 4 装的是 locale/onboarding。合并时把
@@ -27,7 +29,7 @@ const VERSION := 2
 # 注：3 之后加的六个演出开关（screen_shake / flash_effects / hit_stop /
 # reduced_motion / ui_sound / haptics）没有升版本号，因为它们每一个都有安全默认值，
 # 读侧 `data.get(key, default)` 就够了。player_id 不是这种字段 —— 见下。
-const PROFILE_VERSION := 6
+const PROFILE_VERSION := 7
 
 # 玩家的永久身份。RFC 4122 版本 4 的 UUID，小写带连字符。
 #
@@ -62,6 +64,9 @@ static func migrate_profile(payload: Dictionary) -> Dictionary:
 		# 改一行就白嫖），所有人重走一次三选一。
 		for dead_key in ["owned_pets", "active_pet", "needs_starter_pick"]:
 			out.erase(dead_key)
+		# v7：出战种族上云，同样 erase。也不把本机那份传上去：今天只有四族、
+		# 必须选四个，唯一合法的选法就是默认那份 —— 删了什么都没丢。
+		out.erase("selected_races")
 		if from < 3 and not out.has("board_readability_enabled"):
 			out["board_readability_enabled"] = true
 		# 条件是 `< 5` 而不是 `< 4`：见顶部关于"两个版本 4"的说明。

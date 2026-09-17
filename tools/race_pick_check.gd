@@ -7,7 +7,8 @@ extends Node
 # 所以除了钉住真实数据的形状，其余用例先在**内存里**给棋子表加一个假的第五族（zz_fake），
 # 选「暗、灵、人、假」—— 神族一个都不许出现，假族必须出现。用完还原，不写任何文件。
 #
-# 界面用例只点选、不按保存（保存会写 user://profile.json）。
+# 界面用例在**没登录**的状态下按保存：请求在本机就判失败，不碰网络，也不写任何文件。
+# 出战种族存在账号服务器（docs/商城系统设计.md 第五节），存不上就是没存 —— 这正是要钉的。
 # 恶意载荷、换座 / 离座在 adversarial_client，重启后还在不在在 persist_check（那两处有真服务器）。
 #
 # 运行：
@@ -54,6 +55,7 @@ func _ready() -> void:
 	_case_server_accepts_four_of_five()
 	_restore_flags()
 	await _case_pet_screen_race_tab()
+	await _case_races_live_on_server()
 	_remove_fake_races()
 
 	_case_fallback_stays_in_picked_races()
@@ -414,11 +416,73 @@ func _case_pet_screen_race_tab() -> void:
 	_h.expect(not screen._race_save_btn.disabled, "save_disabled_when_valid",
 		"选满 4 个且有改动，保存按钮却点不了")
 	_h.expect(PlayerProfile.selected_races.is_empty(), "draft_saved_without_press",
-		"没按保存，档案里的出战种族就变了")
+		"没按保存，出战种族就变了")
+
+	# 按保存但存不上：缓存不动、要提示、草稿留着能直接再点
+	var login := _force_logged_out()
+	GloryToast.reset_counters_for_check()
+	screen._race_save_btn.pressed.emit()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_h.expect(PlayerProfile.selected_races.is_empty(), "save_failure_cached",
+		"没存到账号服务器，出战种族却变了 —— 页面显示已保存，对局里用的却是服务端那份")
+	_h.expect(GloryToast.shown_count() > 0, "save_failure_silent", "保存失败没有任何提示")
+	_h.expect(str(screen._race_draft) == str(PICK_WITH_FAKE) and not screen._race_save_btn.disabled,
+		"save_failure_lost_draft", "保存失败后草稿没了或者按钮点不了，玩家没法直接重试")
+	_restore_login(login)
 
 	screen.queue_free()
 	await get_tree().process_frame
 	PlayerProfile.needs_starter_pick = saved_starter
+	PlayerProfile.selected_races.assign(saved_races)
+
+
+# 没登录时 AccountManager 在本机就回 401，不发请求。返回原状态给 _restore_login。
+func _force_logged_out() -> Dictionary:
+	var saved := {"token": AccountManager._access_token, "expires": AccountManager._token_expires_at}
+	AccountManager._access_token = ""
+	AccountManager._token_expires_at = 0.0
+	return saved
+
+
+func _restore_login(saved: Dictionary) -> void:
+	AccountManager._access_token = str(saved.get("token", ""))
+	AccountManager._token_expires_at = float(saved.get("expires", 0.0))
+
+
+# 出战种族的缓存：存不上不改、拉不到不清、答复按 RacePick 清洗。
+func _case_races_live_on_server() -> void:
+	var saved_races: Array = PlayerProfile.selected_races.duplicate()
+	var login := _force_logged_out()
+	PlayerProfile.selected_races.clear()
+	var ok: bool = await PlayerProfile.set_selected_races(PICK_WITH_FAKE.duplicate())
+	_h.expect(not ok and PlayerProfile.selected_races.is_empty(), "races_saved_locally",
+		"没存到账号服务器，set_selected_races 却改了缓存（或者报了成功）")
+	# 拉取 / 保存的答复
+	PlayerProfile._adopt_races({"races": PICK_WITH_FAKE.duplicate()})
+	_h.expect(str(PlayerProfile.selected_races) == str(PICK_WITH_FAKE), "adopt_races",
+		"服务端答复的种族没装进缓存：%s" % str(PlayerProfile.selected_races))
+	PlayerProfile._adopt_races({"races": ["dark"]})
+	_h.expect(PlayerProfile.selected_races.is_empty(), "adopt_bad_races_kept",
+		"服务端存的不合规则（只有 1 族），缓存应清成空 = 用默认，实际 %s" % str(PlayerProfile.selected_races))
+	PlayerProfile._adopt_races({"races": PICK_WITH_FAKE.duplicate()})
+	PlayerProfile._adopt_races({"races": null})
+	_h.expect(PlayerProfile.selected_races.is_empty()
+			and str(PlayerProfile.get_selected_races()) == str(RacePick.resolve([])),
+		"adopt_null_not_default", "服务端说「从没选过」，应当回到默认")
+	# 拉不到：缓存一个字都不动。装成「已登录但令牌不可用」，请求真的发起并在本机判 401 ——
+	# 纯没登录的话 refresh_races 在发请求之前就返回了，失败那条分支根本没走到。
+	var saved_state: int = AccountManager.state
+	var saved_pid: String = AccountManager.player_id
+	AccountManager.state = AccountManager.State.LOGGED_IN
+	AccountManager.player_id = "race-pick-check"
+	PlayerProfile.selected_races.assign(PICK_WITH_FAKE)
+	var fetched: bool = await PlayerProfile.refresh_races()
+	AccountManager.state = saved_state
+	AccountManager.player_id = saved_pid
+	_h.expect(not fetched and str(PlayerProfile.selected_races) == str(PICK_WITH_FAKE),
+		"refresh_failure_cleared", "拉取失败把出战种族清掉了 —— 网络抖一下玩家的选择就没了")
+	_restore_login(login)
 	PlayerProfile.selected_races.assign(saved_races)
 
 

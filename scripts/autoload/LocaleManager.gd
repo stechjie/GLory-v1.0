@@ -421,7 +421,7 @@ func _zh_strings() -> Dictionary:
 		"race_pick_full": "最多选择 %d 个种族，先取消一个",
 		"race_pick_save": "保存",
 		"race_pick_saved": "出战种族已保存",
-		"net_err_bad_races": "出战种族无效，请回备战界面重新选择",
+		"race_pick_save_failed": "没存上，请检查网络后再试",
 	}
 
 func _en_strings() -> Dictionary:
@@ -814,5 +814,5 @@ func _en_strings() -> Dictionary:
 		"race_pick_full": "You can pick %d races. Remove one first.",
 		"race_pick_save": "Save",
 		"race_pick_saved": "Races saved",
-		"net_err_bad_races": "Invalid race selection. Pick again in Prep.",
+		"race_pick_save_failed": "Couldn't save. Check your connection and try again.",
 	}

@@ -78,18 +78,24 @@ func _case_existing_id_survives_upgrade() -> void:
 		"player_id": KNOWN_ID,
 		"owned_pets": ["pet_duck"],
 		"active_pet": "pet_duck",
+		"selected_races": ["god", "dark", "undead", "human"],
 	}
 	var out := SaveSchema.migrate_profile(old)
 	_h.expect(str(out.get("player_id", "")) == KNOWN_ID,
 		"id_lost_on_upgrade",
 		"v1→v%d 升级后 player_id 必须不变，期望 %s，实得 %s" % [
 			SaveSchema.PROFILE_VERSION, KNOWN_ID, str(out.get("player_id", ""))])
-	# 顺带确认 v6 的清理跑到了：宠物归属上云之后，本机档案里这几个键必须被删掉。
+	# 顺带确认 v6 / v7 的清理跑到了：宠物归属与出战种族上云之后，本机档案里这几个键必须被删掉。
 	# 留着就是地雷（下一个人会以为它还在用），而且是「改一行文件就白嫖」的入口。
-	for dead_key in ["owned_pets", "active_pet", "needs_starter_pick"]:
+	for dead_key in ["owned_pets", "active_pet", "needs_starter_pick", "selected_races"]:
 		_h.expect(not out.has(dead_key), "pet_key_survived_upgrade",
-			"v1→v%d 升级后本机档案不该还留着 %s —— 归属的真相在服务端" % [
+			"v1→v%d 升级后本机档案不该还留着 %s —— 真相在服务端" % [
 				SaveSchema.PROFILE_VERSION, dead_key])
+	# 已经是 v6 的档案（宠物已上云、种族还在本机）也要删掉种族。
+	var v6 := SaveSchema.migrate_profile({"version": 6, "player_id": KNOWN_ID,
+		"selected_races": ["god", "dark", "undead", "human"]})
+	_h.expect(not v6.has("selected_races"), "races_key_survived_v6_upgrade",
+		"v6→v%d 升级后本机档案还留着 selected_races —— 出战种族的真相在服务端" % SaveSchema.PROFILE_VERSION)
 
 
 # 版本号已经是最新、但档案里没有 id —— migrate_profile 早年的写法会在这里直接

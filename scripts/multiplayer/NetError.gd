@@ -49,6 +49,18 @@ const CLASSES := {
 	"already_in_match": RETRYABLE,
 	"room_not_found": RETRYABLE,      # 可能是分片路由到早了
 	"room_started": RETRYABLE,
+	# 出战名片（BattleCard.gd）。入座前每次都现领一张新的，所以一律可重试：
+	# 过期 / 用过 → 下次领的是新的；账号服务器暂时不可用 → 等会儿再领。
+	# 验不过（bad_signature）多半是两边公钥对不上 —— 那是部署问题，重试不会好，
+	# 但归 TERMINAL 会让玩家的重连凭证被清掉，代价远大于多试几次。
+	"card_unavailable": RETRYABLE,
+	"card_required": RETRYABLE,
+	"card_expired": RETRYABLE,
+	"card_replayed": RETRYABLE,
+	"card_malformed": RETRYABLE,
+	"card_version": RETRYABLE,
+	"card_bad_signature": RETRYABLE,
+	"card_key_missing": RETRYABLE,
 
 	# --- 传输：权威状态没问题，只是这次没送到 ---
 	"replay_timeout": TRANSPORT,

@@ -71,6 +71,7 @@ Supabase Dashboard → SQL Editor，按编号顺序逐个执行。
 | `008_announcements.sql` | 公告。**管理员在 Supabase 后台直接改行**（这一张是例外，见文件头）；账号服务器只写 problem 列。撤下不删 |
 | `009_wallet.sql` | 账号钱包与流水。钻石**分付费 / 赠送两列**、黄金一列；流水只追加。附 `grant_diamonds()`，手工发放的唯一入口 |
 | `010_shop.sql` | 商城归属与订单。归属存**内容 id**不存商品 id；订单幂等键 `(player_id, client_order_id)`；`external_id` 唯一索引留给充值去重 |
+| `011_loadout.sql` | 出战种族搬到账号服务器（`players.selected_races`）。出战名片要给它盖章，账号服务器得先知道它。只管格式，「必须几个」归战斗服务器 |
 
 ## 一条硬规则
 

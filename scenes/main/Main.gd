@@ -30,6 +30,26 @@ const UiFeedbackService := preload("res://ui/services/UiFeedback.gd")
 # 同一条理由（9.17 音效接入）：SfxService 也刻意不声明 class_name。
 const SfxService := preload("res://ui/services/SfxService.gd")
 
+const AccountConfig := preload("res://scripts/account/AccountConfig.gd")
+const BOOTSTRAP_SCENE := "res://scenes/bootstrap/Bootstrap.tscn"
+
+# --- 连不上账号服务器 = 回启动页 ---------------------------------------------
+#
+# 规则只有一条：**连不上账号服务器就进不了游戏。** 启动页在放行前检查一次
+# （Bootstrap.entry_view），但玩家进来以后服务器掉线，此前没有任何东西管 ——
+# 玩家会停在一个「显示已登录、其实已经断了」的主菜单里，商城、好友、开局都是坏的。
+#
+# 这里补上后半段：不在对局里的时候，实时连接断开超过 AccountConfig.CONNECT_PATIENCE_SEC，
+# 就送回启动页，由那边重走登录 / 连接 / 排队 / 维护提示（全部现成）。
+#
+# 三种情况**不送回**，各有各的去处：
+#   · 对局中（含离线自测、教学对局） —— 战斗服务器有自己的断线重连，踢出去等于毁掉一局
+#   · 教学中 —— 本地流程，不依赖账号服务器
+#   · 被顶号 —— RealtimeService 明确禁止自动重连（两台设备会无限互踢），走现有提示
+var _in_match_flow := false
+var _account_offline_sec := 0.0
+var _returning_to_login := false
+
 const PUBLIC_TOKEN_ACTION := "team_public_token"
 const PUBLIC_TOKEN_CONTROL_ID := "main_menu/public_token_generate"
 const PUBLIC_TOKEN_TIMEOUT_MSEC := 15000
@@ -458,10 +478,63 @@ func _instantiate_screen(path: String) -> Control:
 	return scene.instantiate() as Control
 
 
+# 对局类界面（备战、战斗、结算、3v3 大厅、自测）在 _clear() 之后调一次。
+# 标上之后「掉线回启动页」不会碰它 —— 对局有战斗服务器自己的断线重连。
+func _enter_match_flow() -> void:
+	_in_match_flow = true
+
+
+func _process(delta: float) -> void:
+	_watch_account_link(delta)
+
+
+# 连不上账号服务器超过耐心值就回启动页。规则与例外见文件顶部那段。
+func _watch_account_link(delta: float) -> void:
+	if not _should_watch_account_link():
+		_account_offline_sec = 0.0
+		return
+	if RealtimeService.is_online():
+		_account_offline_sec = 0.0
+		return
+	_account_offline_sec += delta
+	if _account_offline_sec >= AccountConfig.CONNECT_PATIENCE_SEC:
+		_return_to_login()
+
+
+func _should_watch_account_link() -> bool:
+	# 开发时用 --no-account 跑：实时连接根本不会起，盯着它只会把人无限送回启动页。
+	# 与 Bootstrap._entry_gate_required 同一个判据。
+	if not AccountConfig.auto_login_enabled():
+		return false
+	if _returning_to_login or _in_match_flow:
+		return false
+	if NetworkService.team_active or TutorialMode.active:
+		return false
+	# 被顶号不归这里管，见文件顶部。
+	if RealtimeService.is_kicked():
+		return false
+	return true
+
+
+func _return_to_login() -> void:
+	if _returning_to_login:
+		return
+	_returning_to_login = true
+	push_warning("[MAIN] 账号服务器连不上已超过 %.0f 秒，回启动页" % AccountConfig.CONNECT_PATIENCE_SEC)
+	# 启动页会重新 start()（它在连着时是空操作），并按现有流程显示
+	# 「连接中 / 连不上 / 维护中」。这里不 stop()：留着自动重连，
+	# 服务器一回来启动页就能直接放行，玩家不用多等一轮。
+	_clear()
+	get_tree().change_scene_to_file(BOOTSTRAP_SCENE)
+
+
 func _clear() -> void:
 	# 先清路由：下一页要么自己设一个，要么就该没有。留着上一页的会让返回键
 	# 把玩家送回一个已经不在树上的界面。
 	_page_back_route = Callable()
+	# 同理：下一页是不是对局，由它自己说（_enter_match_flow）。默认不是 ——
+	# 这样新加的菜单界面不用记得做任何事，就自动受「掉线回启动页」保护。
+	_in_match_flow = false
 	# Menu-owned async work must stop before its controls leave the tree. This also
 	# makes a later public-token response stale instead of painting the next screen.
 	if _menu != null and is_instance_valid(_menu):
@@ -1303,6 +1376,7 @@ func _show_starter_pet_gate() -> void:
 
 func _show_team3v3_lobby() -> void:
 	_clear()
+	_enter_match_flow()
 	var lobby := _instantiate_screen("res://scenes/menu/Team3v3Lobby.tscn")
 	lobby.start_requested.connect(_on_team3v3_start)
 	lobby.back_requested.connect(_on_lobby_back)
@@ -1317,6 +1391,7 @@ func _show_selftest() -> void:
 		push_warning("officetest scene unavailable; keeping current lobby")
 		return
 	_clear()
+	_enter_match_flow()
 	_selftest_prev_team_mode = GameState.team_mode
 	GameState.team_mode = true
 	# load() (not preload) so this optional officetest scene never becomes a
@@ -1363,6 +1438,7 @@ func _show_prep() -> void:
 		_show_game_over()
 		return
 	_clear()
+	_enter_match_flow()
 	_prep = _instantiate_screen("res://scenes/prep/PrepScreen.tscn")
 	_prep.battle_requested.connect(_on_battle_requested)
 	add_child(_prep)
@@ -1370,6 +1446,7 @@ func _show_prep() -> void:
 
 func _show_battle(battle_scene: PackedScene = null) -> void:
 	_clear()
+	_enter_match_flow()
 	var scene := battle_scene if battle_scene != null else _load_screen("res://scenes/battle/BattleScreen.tscn")
 	_battle = scene.instantiate()
 	_battle.battle_finished.connect(_on_battle_finished)
@@ -1379,6 +1456,7 @@ func _show_game_over() -> void:
 	# 对局结束：重连凭证作废，避免下次启动误恢复到已结束的房间
 	SaveManager.clear_reconnect()
 	_clear()
+	_enter_match_flow()
 	var bg := ColorRect.new()
 	bg.color = Color(0.05, 0.06, 0.07)
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -2288,10 +2366,6 @@ func _on_team_room_action_failed(reason: String) -> void:
 	if not _join_room_request_id.is_empty() \
 			and AsyncActionController.is_current(_join_room_request_id):
 		AsyncActionController.fail(_join_room_request_id, "JOIN_ROOM_REQUEST_FAILED", true)
-	# 大厅里按准备 / 开始时，出战种族被战斗服务器拒了（协议 28）。大厅没有能长留这条的地方，
-	# 下一次大厅广播就会把状态栏刷掉，所以用全局提示。
-	if reason == "bad_races":
-		GloryToast.show_text(tr("net_err_bad_races"))
 	if is_instance_valid(_menu) and _menu.has_method("show_room_error"):
 		_menu.show_room_error(reason)
 

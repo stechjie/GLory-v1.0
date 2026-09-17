@@ -59,7 +59,7 @@ static func unit_count(race: String) -> int:
 # 不合法一律返回空数组。
 #
 # **不帮忙修**：少一族就补、多一族就砍，等于替改过包的客户端把包改对。
-# 正常客户端报的永远是 PlayerProfile.get_selected_races() 给出的合法值。
+# 来路：出战名片（账号服务器只查资格、不管个数）、账号服务器的答复、局内存档。
 #
 # 先判容器大小再遍历（NetProtocol 顶部那条：来路是网络的容器必须在常数级步数内被拒）。
 static func sanitize(value: Variant) -> Array[String]:

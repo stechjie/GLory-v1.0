@@ -44,7 +44,7 @@ var _race_count_label: Label
 var _race_save_btn: Button
 var _race_cards: Dictionary = {}   # race -> {"panel": PanelContainer, "name": Label, "button": Button}
 # 草稿：玩家在页面上点来点去的那一份。只有凑满 RacePick.required_count() 个、按了「保存」
-# 才写回 PlayerProfile —— 选到一半（3 个）的状态绝不能落盘，否则档案里就是一份不合法的选择。
+# 才交给账号服务器 —— 选到一半（3 个）的状态绝不能存，否则存下来的就是一份不合法的选择。
 # 顺序始终跟 RacePick.all_races() 一致，这样才能直接和已保存的那份比较。
 var _race_draft: Array[String] = []
 
@@ -57,9 +57,10 @@ func _ready() -> void:
 	if not PlayerProfile.races_changed.is_connected(_on_races_changed):
 		PlayerProfile.races_changed.connect(_on_races_changed)
 	_refresh()
-	# 归属的真相在服务端，开这一页时拉一次。成功会发 pets_changed，_refresh 再跑一遍；
-	# 失败什么都不做（缓存不动），页面就还是上次那份。
+	# 归属与出战种族的真相在服务端，开这一页时拉一次。成功会发 pets_changed /
+	# races_changed，页面再刷一遍；失败什么都不做（缓存不动），页面就还是上次那份。
 	PlayerProfile.refresh_pets()
+	PlayerProfile.refresh_races()
 
 func _exit_tree() -> void:
 	if PlayerProfile.pets_changed.is_connected(_refresh):
@@ -386,8 +387,13 @@ func _on_race_card_pressed(race: String) -> void:
 	_refresh_races()
 
 func _on_race_save_pressed() -> void:
-	if PlayerProfile.set_selected_races(_race_draft):
-		GloryToast.show_text(tr("race_pick_saved"))
+	# 存要走一次网络。期间先把按钮按住，免得连点发出好几次。
+	_race_save_btn.disabled = true
+	var ok: bool = await PlayerProfile.set_selected_races(_race_draft)
+	if not is_inside_tree():
+		return
+	# 没存上时草稿原样留着（页面上仍标「还没保存」），玩家可以直接再点一次。
+	GloryToast.show_text(tr("race_pick_saved") if ok else tr("race_pick_save_failed"))
 	_refresh_races()
 
 func _on_races_changed() -> void:

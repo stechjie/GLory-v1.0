@@ -13,8 +13,13 @@ extends Node
 #             3. room_state 收到 -> CH_CONTROL 仍然通（没把默认通道改坏）
 #
 # 用法：
-#   godot --headless --path <proj> tools/channel_check.tscn -- --ch-role=server
+#   godot --headless --path <proj> tools/channel_check.tscn -- --ch-role=server --battle-card-key=user://test_battle_card_public.pem
 #   godot --headless --path <proj> tools/channel_check.tscn -- --ch-role=client
+#
+# 出战名片（BattleCard.gd）：专服没有公钥不肯启动，建房请求也必须带一张验得过的名片。
+# 这里没有账号服务器，所以 server 现场生成一把一次性钥匙（公钥给自己、私钥留给 client），
+# client 用那把私钥自己签名片。于是「建房带名片、过 ENet、验章、入座」这一路也顺带真跑了一遍 ——
+# room_state 收不到（第 3 条）就说明这一路断了。
 #
 # --ch-chunked=1：把回放走**分块**路径（D1：原始 README 的分块/确认/重试）。
 # 这个模式存在的理由和本文件开头一样：分块包发错通道、拼错顺序、或者重组
@@ -23,6 +28,7 @@ extends Node
 # 分块路径 —— 不强制跑一遍的话，那条代码路等于没人验。
 
 const ReplayTransferService := preload("res://scripts/multiplayer/ReplayTransferService.gd")
+const BattleCardTestKeys := preload("res://tools/battle_card_test_keys.gd")
 
 const PORT := 8092
 const SERVER_LIFETIME_SEC := 90.0
@@ -50,8 +56,14 @@ func _ready() -> void:
 	_chunked = _arg("--ch-chunked", "0") == "1"
 	if _role == "server":
 		NetworkService._shard_index = 9
+		var key_error := BattleCardTestKeys.install_for_server(true)
+		if not key_error.is_empty():
+			print("[CH] FATAL: %s" % key_error)
+			get_tree().quit(2)
+			return
 		if not NetworkService.start_dedicated_server(PORT):
-			print("[CH] FATAL: cannot listen on %d" % PORT)
+			print("[CH] FATAL: cannot start server on %d: %s" % [PORT, NetworkService.last_error])
+			BattleCardTestKeys.remove_files()
 			get_tree().quit(2)
 			return
 		multiplayer.peer_connected.connect(_on_peer_connected)
@@ -64,6 +76,16 @@ func _ready() -> void:
 		# 必须在 team_join 之前：连上、建房之后 NetworkService 就会写重连凭证（见 _snapshot_reconnect）。
 		_snapshot_reconnect()
 		NetworkService.team_replay_received.connect(func(): _got_replay = true)
+		# 服务端进程启动时写下的一次性私钥。读进内存就删掉，不在用户目录里留着。
+		var card_key := BattleCardTestKeys.load_private()
+		BattleCardTestKeys.remove_files()
+		if card_key == null:
+			print("[CH] FATAL: 读不到 %s（server 要先起来）" % BattleCardTestKeys.TEST_PRIVATE_PATH)
+			_restore_reconnect()
+			get_tree().quit(2)
+			return
+		NetworkService.seat_card_provider = func() -> String:
+			return BattleCardTestKeys.sign(card_key, BattleCardTestKeys.card("channel-check"))
 		if not NetworkService.team_join("127.0.0.1", PORT):
 			print("[CH] FATAL: cannot create client")
 			_restore_reconnect()

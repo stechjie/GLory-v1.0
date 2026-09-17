@@ -36,10 +36,11 @@ const MY_SLOT := 0
 # 2026-09-14 跟到 27（排队：线格没变，只为挡住没有排队逻辑的旧包顶号，指纹不动）。
 # 2026-09-15 跟到 28（出战种族：准备 / 开始两条 RPC 各加 races 参数，经济契约没变，指纹不动）。
 # 2026-09-16 跟到 29（萝卜营地新增宠物上报 RPC 与公开采集展示字段，经济账本字段不变）。
+# 2026-09-17 跟到 30（出战名片：删两条 RPC、建房 / 加入加 card 参数，经济契约没变，指纹不动）。
 # ⚠️ **这个值落后于协议号会让下面那条断言静默失效**：断言判的是
 # 「契约变了但协议号没变」，而它一旦落后，`VERSION != PINNED_PROTOCOL` 就恒为真，
 # 于是改契约不顶号也照样绿。协议号每次顶，这里必须跟。
-const PINNED_PROTOCOL := 29
+const PINNED_PROTOCOL := 30
 const PINNED_CONTRACT := "YOp1apnKGVUXgHng"
 
 var _h: CheckHarness

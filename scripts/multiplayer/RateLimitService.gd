@@ -28,17 +28,6 @@ const LIMITS := {
 	"join_room": 6,
 	"room_list": 10,
 	"public_token": 3,
-	# 大厅身份上报（lobby_identity）。**独立配额 + 不计 strike**（调用处传
-	# count_strike=false），理由与 ping 相同：
-	#   * 正常玩家换座位时，客户端会对每个新座位重发一次身份 —— 连续快速换座
-	#     很容易在 10 秒窗口里打出 4+ 次；
-	#   * 这条曾经复用 public_token 的 3 次/10 秒配额且默认计 strike，
-	#     STRIKES_BEFORE_KICK=3 —— 连续换座 6 次正好攒满 3 个 strike，
-	#     服务器把正常玩家踢下线（实测 bug：换座 6 次必掉线，重连再撞
-	#     token_unknown 被弹回主菜单）。
-	#   * 身份上报不是攻击面（带账号 bearer、服务端还会二次校验座位归属），
-	#     超频更可能是客户端 UI 抖动而非攻击，超限丢弃这一次调用即可。
-	"lobby_identity": 8,
 	"public_resume": 5,
 	"client_log": 4,
 	"set_ready": 30,
@@ -82,9 +71,6 @@ const LIMITS := {
 	# **不计 strike**（调用处传 count_strike=false）：弱网恢复时包会攒成一串一起到，
 	# 那是网络不是攻击；超了的正确后果只是这几个包不转发。
 	"voice": 300,
-	# 当前出战宠物上报：进入房间与切换宠物时各一次；不计 strike，避免 UI 重建重发
-	# 造成正常玩家断线。超过额度只丢弃本次，随后 room_state 仍会触发一次补发。
-	"seat_pet": 8,
 	# 重连：直连入口必须和短码入口共用同一个身份配额，否则客户端绕开
 	# _rpc_public_resume_request 直接打 _rpc_resume_request 就把 A6 的保护全跳过了。
 	"resume": 5,

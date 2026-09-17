@@ -39,6 +39,14 @@ const BACKEND_URL_FLAG := "--backend-url="
 #
 # 单次关闭用 --no-account（关的优先级高于 --account）。
 const AUTO_LOGIN_DEFAULT := true
+
+# 连不上账号服务器的实时连接超过这么久，就当「连不上」。
+#
+# **启动页与主菜单共用这一个数。** 规则只有一条：连不上账号服务器就进不了游戏 ——
+# 启动页据此不放行（Bootstrap.entry_view），进去以后据此送回启动页
+# （Main._watch_account_link）。两处各写一个数的话，迟早会出现
+# 「启动页等 8 秒、主菜单等 30 秒」这种同一件事两种说法。
+const CONNECT_PATIENCE_SEC := 8.0
 const AUTO_LOGIN_ON_FLAG := "--account"
 const AUTO_LOGIN_OFF_FLAG := "--no-account"
 

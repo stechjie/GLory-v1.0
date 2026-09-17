@@ -2941,3 +2941,62 @@ M2 去掉首帧采样 → `entry_announced`；M3 恒判「有跨档」→ `idle_
   ③ 再把 `team_merc_summon_sfx_check.gd` 也移走；④ 把 `PrepUI.gd` 换成本轮修复前的备份
   （sha `cbf14f62460d1f66`）。→ 本轮改动对这项计数**贡献 0**，差额来自批次之后的其它改动。
   （前三条的 3 处 `callable_method_missing` 也都在 `PrepUI.gd:1074-1076`，属既存。）
+
+## 2026-09-17：出战名片（协议 30）
+
+设计见 `docs/商城系统设计.md` 第五节。对局里的宠物 / 种族 / 名字头像一律以入座时账号服务器签的名片为准，名片存在座位上。
+
+### 新增 `battle_card`（83 项）
+
+验章（改字节、换钥匙、过期、钟差宽限、未来签发、版本、格式、超长要在解码前拒且快）、公钥文件（缺 / 坏 / 放成私钥）、
+座位（名片写入、交棋盘时手机报的宠物不算、缓存重盖戳、**重连后宠物与种族不变**、AI 展示宠物不漏进出战宠物、
+换座 / 离座 / 后来者不继承）、入座请求（没名片 / 坏名片进不了座**且原座位不丢**、同一张不能用两次）、缺公钥拒绝启动且不占端口。
+
+**变异测过 15 种改坏，全红。** 钥匙在运行时现场生成（`tools/battle_card_test_keys.gd`）。
+日志里会有几行引擎 `ERROR:`（Error parsing key、b64_decode、Parse JSON failed）—— 那是故意喂坏数据时引擎打的，不是失败。
+
+### 起真服务器的探针要带测试公钥
+
+专服没有出战名片公钥就拒绝启动。`persist_check` / `channel_check` 现场生成一把一次性钥匙，写到
+`user://test_battle_card_public.pem`，**由命令行 `--battle-card-key=` 指过去** —— `tools/multiplayer_regression.sh`
+已经带上了。手动跑要自己加这个参数；不加时探针直接报 FATAL，**不会去写默认路径**
+（开发机的 `user://battle_card_public.pem` 可能放着线上公钥）。
+
+`channel_check` 的客户端用那把私钥自己签名片，所以「建房带名片 → 过 ENet → 验章 → 入座」这一路现在也真跑一遍。
+
+打包的冷启动测试同理：`make_server_zip.ps1` 用 `tools/make_smoke_card_key.gd` 现场生成一次性公钥（私钥不落盘）。
+
+⚠️ **不要把任何名片私钥放进 `tools/`** —— 整个 `tools/` 会被打进战斗服务器包。
+
+### 协议 29 → 30
+
+删 `_rpc_lobby_identity`、`_rpc_team_submit_active_pet`；建房 / 加入各加一个 `card` 参数；准备 / 开始去掉 `races` 参数。
+RPC 数 60 → 58，签名指纹 `a54e6c8d53288bcd` → `03102a543d9ef148`。`chat_check`、`carrot_online_check` 的钉值跟到 30
+（经济契约没变，指纹不动）。**账号服务器先上（要有私钥），战斗服务器要先放公钥**，步骤见 `deploy/BATTLE_SERVER_KEY.md`。
+
+### 出战种族上云
+
+`race_pick` 132 → 140 项：没登录时按保存（存不上 = 缓存不动、有提示、草稿留着）、服务端答复按 `RacePick` 清洗、
+拉取失败不清空（用「已登录但令牌不可用」让请求真的发起，否则失败分支根本走不到 —— 变异测试第一遍就是这么漏的）。
+`player_identity` 钉 v1 / v6 升级后 `selected_races` 必须被删（`SaveSchema` v7）。5 种改坏全红。
+
+### 回归（2026-09-17，本机 MSI，Godot 4.7.1）
+
+`tools/multiplayer_regression.sh` 21 项全过（含 persist 两阶段、channel 三项）。
+`run_check -All` 133 项、红 21，与本批有关的只有 `main_team_create_room_action` / `main_team_join_room_action` 两条，
+**原因是本机 user 目录里残留一份 09-16 真实对局的重连凭证**（`glory_reconnect.json`）：开新局前要先确认那一局，
+动作停在确认那一步，测试同步数请求数得 0。那份凭证在同一轮里被后面的检查清掉，再跑两条都 PASS。
+这两条依赖「本机没有未结束对局的凭证」，是顺序相关的。
+
+其余红与本批无关：
+- 已知旧账：`dynamic_call`（仍是 263）、`procedural_ui_ratchet`（仍是 30 / 92）、`export_presets`、`active_match_transport`、
+  `prep_text_coverage`、`startup_trace`、`startup_transition`、`tutorial_arrow_alignment`
+- `carrot_economy_check` **解析失败**（第 239 行 `var expected := 50 + draws_completed * 20`，循环变量没类型推不出来），
+  脚本加载不了、场景永远不退出，`run_check` 等满 600 秒才判超时
+- 音效那批引用的 mp3 不在仓库里：`audio_sfx`、`synergy_activation_sfx`、`team_merc_summon_sfx`、`asset_manifest`
+- `asset_delivery`：`DarkQueenAnimated.gd` 大小对不上清单（6613 / 6634）
+- 模型 / 动画类：`battle_actor_body_on_disc`、`model_action_playback_continuity`、`model_root_motion_inventory`、
+  `model_root_motion_lock`；`character_outline_projection` 要真渲染设备
+- `adversarial_client`：`economy_ledger`（旧账）；`economy_server_wiring` 除旧账两条外，`shop_refresh` 不带自报金币
+  被 `gold_desync` 拒（萝卜提交引入的影子校验），连带 `server_rolls_shop` 等四条；`seat_races_validation` 的
+  `oversized_fast` 是计时抖动（同一台机器两次 0.59ms / 12.35ms，函数体本批没动）

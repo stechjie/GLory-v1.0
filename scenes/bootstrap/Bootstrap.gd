@@ -53,7 +53,8 @@ const ENTRY_RATE_LIMITED_RETRY_SEC := 60.0
 # 连续握手失败这么多次、或者登录后这么久还没连上，才把「连不上」摆出来。
 # 太敏感的话，重连一闪而过也会弹错误面板。
 const ENTRY_CONNECT_FAILURES := 2
-const ENTRY_CONNECT_PATIENCE_SEC := 8.0
+# 真相在 AccountConfig —— 主菜单掉线送回这里用的是同一个数。
+const ENTRY_CONNECT_PATIENCE_SEC := AccountConfig.CONNECT_PATIENCE_SEC
 # 连上了但一直没收到名额消息，按「旧版账号后端」放行。见上面那段。
 const ENTRY_LEGACY_SERVER_SEC := 10.0
 # 进不去的时候多久读一次维护公告文件（scripts/account/ServiceStatus.gd）。
@@ -93,7 +94,7 @@ var _entry_poll := 0.0
 var _entry_offline_sec := 0.0
 var _entry_unanswered_sec := 0.0
 # 宠物归属只在进门时发一次；失败了在这里退避重试，不拖住放行。
-var _pets_requested := false
+var _loadout_requested := false
 var _entry_login_attempts := 0
 # 下一次自动重试登录的时刻（_entry_elapsed 的刻度）。< 0 = 还没排。
 var _entry_login_retry_at := -1.0
@@ -340,7 +341,7 @@ func _drive_entry() -> void:
 					_retry_entry_login()
 		return
 	_entry_login_retry_at = -1.0
-	# 宠物归属（docs/商城系统设计.md）。登录一成功就顺手发一次，与下面连 WebSocket 并行。
+	# 宠物归属与出战种族（docs/商城系统设计.md）。登录一成功就顺手发一次，与下面连 WebSocket 并行。
 	#
 	# **刻意不把它做成放行条件。** 它要读服务器上的 data/pets/pets.json，
 	# 而那个文件正是 deploy/update.sh 第一趟不会复制的 —— 拿它当进门门槛，
@@ -348,20 +349,23 @@ func _drive_entry() -> void:
 	#
 	# 不阻塞的代价只是「冷启动后极短一段时间里拿不到宠物」，而那段时间玩家
 	# 本来就在等下面这个 WebSocket 握手 —— 比一次 HTTPS 往返慢。
-	if not _pets_requested:
-		_pets_requested = true
-		_fetch_pets()
+	if not _loadout_requested:
+		_loadout_requested = true
+		_fetch_loadout()
 	# 🔴 被顶号之后绝不自动重连（RealtimeService._kicked 那条：两台设备会无限互踢）。
 	if not RealtimeService.is_kicked():
 		RealtimeService.start()
 
 
-# 拉宠物归属。失败就等下一次（主菜单打开备战 / 商城时还会再拉），
+# 拉宠物归属与出战种族。有一样没拉到就等下一次（主菜单打开备战 / 商城时还会再拉），
 # **不清空已有缓存** —— PlayerProfile.refresh_pets 里那条纪律。
-func _fetch_pets() -> void:
-	if await PlayerProfile.refresh_pets():
+# 两个都要拉：种族没拉到时备战页显示的是默认，玩家会以为自己的选择丢了。
+func _fetch_loadout() -> void:
+	var pets_ok: bool = await PlayerProfile.refresh_pets()
+	var races_ok: bool = await PlayerProfile.refresh_races()
+	if pets_ok and races_ok:
 		return
-	_pets_requested = false
+	_loadout_requested = false
 
 
 func _entry_login_backoff() -> float:

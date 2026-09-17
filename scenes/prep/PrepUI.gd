@@ -1382,7 +1382,7 @@ func _chat_speaker_name(slot: int) -> String:
 		who = str(identity.get("player_name", "")).strip_edges()
 	if not who.is_empty():
 		return who
-	# 资料还没到（publish_lobby_identity 是异步的）。用座位号顶着 ——
+	# 这个座位没有身份（AI 座位，或进程内门禁不带名片建的座位）。用座位号顶着 ——
 	# 空名字会让这条消息看起来像是没有人说的。
 	var seat: String = CHAT_SEAT_LABELS[slot] if slot >= 0 and slot < CHAT_SEAT_LABELS.size() else "?"
 	return ("Seat " + seat) if LocaleManager.get_locale() == "en" else ("席位" + seat)

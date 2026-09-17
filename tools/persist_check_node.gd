@@ -9,10 +9,15 @@ extends Node
 #   阶段 load：新进程起同一个分片 -> 读回来 -> 核对内容
 #
 # 用法：
-#   godot --headless --path <proj> tools/persist_check.tscn -- --persist-phase=save
-#   godot --headless --path <proj> tools/persist_check.tscn -- --persist-phase=load
+#   godot --headless --path <proj> tools/persist_check.tscn -- --persist-phase=save --battle-card-key=user://test_battle_card_public.pem
+#   godot --headless --path <proj> tools/persist_check.tscn -- --persist-phase=load --battle-card-key=user://test_battle_card_public.pem
+#
+# --battle-card-key= 那一段是必须的：专服要出战名片公钥才肯启动，这里现场生成一把、
+# 写到那条测试路径（不碰默认路径，理由见 tools/battle_card_test_keys.gd）。
 #
 # 分片号固定用 7，避开默认端口，不会撞上真在跑的服务器。
+
+const BattleCardTestKeys := preload("res://tools/battle_card_test_keys.gd")
 
 const SHARD := 7
 const PORT := 8087
@@ -22,8 +27,17 @@ const HP_MARK := [33, 29]
 func _ready() -> void:
 	var phase := _arg("--persist-phase", "save")
 	NetworkService._shard_index = SHARD
-	if not NetworkService.start_dedicated_server(PORT):
-		print("[PERSIST] FATAL: cannot listen on %d" % PORT)
+	# 专服没有出战名片公钥就拒绝启动（BattleCard.gd）。这里现场生成一把一次性的；
+	# 服务器启动时读进内存，之后文件就没用了，立刻删。
+	var key_error := BattleCardTestKeys.install_for_server()
+	if not key_error.is_empty():
+		print("[PERSIST] FATAL: %s" % key_error)
+		get_tree().quit(2)
+		return
+	var started := NetworkService.start_dedicated_server(PORT)
+	BattleCardTestKeys.remove_files()
+	if not started:
+		print("[PERSIST] FATAL: cannot start server on %d: %s" % [PORT, NetworkService.last_error])
 		get_tree().quit(2)
 		return
 

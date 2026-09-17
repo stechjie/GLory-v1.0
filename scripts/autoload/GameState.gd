@@ -99,7 +99,8 @@ var team_run_outcome: int = TeamOutcome.TEAM_A
 var tutorial_mode := false
 # 这一局的出战种族（RacePick）。开局那一刻从 PlayerProfile 抄过来，整局只看这份 ——
 # 中途回主菜单改了选择，也不该让本局下一回合的商店跟着变。
-# 本机摇商店读它；联机时商店由战斗服务器按「准备」时收到的那份摇，这里只是同一份的本机记录。
+# 本机摇商店读它；联机时商店由战斗服务器按出战名片上的那份摇（账号服务器存的同一份），
+# 这里只是本机记录。
 # 空数组 = 没定（老存档 / 教学关），RacePick.resolve 会回落到默认。
 var run_races: Array[String] = []
 

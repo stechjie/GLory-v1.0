@@ -55,8 +55,9 @@ func _seat_profile(index: int) -> Dictionary:
 		return AccountManager.profile
 	return NetworkService.team_seat_profiles.get(index, NetworkService.team_seat_profiles.get(str(index), {}))
 
-func _publish_identity(_profile: Dictionary = {}) -> void:
-	NetworkService.publish_lobby_identity()
+# 自己的资料变了（改名、换头像）就重画。本机座位显示的是 AccountManager.profile，
+# 所以这里只需要刷新；别人看到的是入座时名片上的身份（NetworkService._room_store_seat_card）。
+func _on_profile_changed(_profile: Dictionary = {}) -> void:
 	_refresh()
 
 func _view_seat_profile(index: int) -> void:
@@ -125,7 +126,7 @@ var _layout_scale := 1.0
 var _layout_origin := Vector2.ZERO
 
 func _ready() -> void:
-	AccountManager.profile_changed.connect(_publish_identity)
+	AccountManager.profile_changed.connect(_on_profile_changed)
 	_slot_states[_local_slot] = "player"
 	if not NetworkService.session_changed.is_connected(_on_session_changed):
 		NetworkService.session_changed.connect(_on_session_changed)
@@ -145,14 +146,6 @@ func _ready() -> void:
 	friends_timer.timeout.connect(_reload_online_friends)
 	add_child(friends_timer)
 	_reload_online_friends()
-	NetworkService.publish_lobby_identity()
-	var identity_retry := Timer.new()
-	identity_retry.wait_time = 10.0
-	identity_retry.autostart = true
-	identity_retry.timeout.connect(func():
-		if _online() and not NetworkService.team_seat_profiles.has(_my_slot()):
-			NetworkService.publish_lobby_identity())
-	add_child(identity_retry)
 	# 必须在 _layout() 之前：_add_label 只是把控件登记进 _placed，
 	# 真正定位是 _layout() 干的。放在它后面创建的标签会停在默认位置、看不见。
 	_setup_asset_loader()
@@ -573,13 +566,8 @@ func _on_start() -> void:
 func _on_session_changed() -> void:
 	_refresh()
 	_layout()
-	# 换座位**不要**重发身份：服务端 _room_do_move 会把 seat_profiles 随座位
-	# 一起搬（SEAT_SLOT_MAPS），换位后各端看到的身份本来就是对的。
-	# 此前这里每次换座都 publish_lobby_identity()，连续快速换座会在 10 秒
-	# 窗口里打出多条身份上报，曾触发服务端限流踢线（换座 6 次必掉线 bug）。
-	# 身份需要（重新）上报的场景只剩三个，都已各自覆盖：
-	#   进大厅（_ready）、账号资料变更（profile_changed 信号）、
-	#   座位上迟迟没有身份（下方 10 秒重试定时器）。
+	# 换座位不用做任何事：身份在入座时随出战名片写进座位，服务端 _room_do_move
+	# 会把 seat_profiles 随座位一起搬（SEAT_SLOT_MAPS），换位后各端看到的本来就是对的。
 
 func _layout() -> void:
 	var viewport_size := get_viewport_rect().size
@@ -982,7 +970,7 @@ func _chat_speaker_name(slot: int) -> String:
 	var who := str(identity.get("player_name", "")).strip_edges()
 	if not who.is_empty():
 		return who
-	# 资料还没到（publish_lobby_identity 是异步的，还带 10 秒重试）。
+	# 这个座位没有身份（AI 座位，或进程内门禁不带名片建的座位）。
 	# 用座位号顶着 —— 空名字会让这条消息看起来像是没有人说的。
 	# 显式标 String：SLOT_LABELS 是无类型 Array，取出来是 Variant，
 	# `:=` 推断不出类型会直接变成解析错误（而解析错误在 headless 下不产生结果，

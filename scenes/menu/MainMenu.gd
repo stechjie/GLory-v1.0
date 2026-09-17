@@ -239,19 +239,24 @@ func _build() -> void:
 	_add_hit(Vector2(1010, 690), Vector2(220, 190), _show_room_overlay)
 	_add_hit(Vector2(1250, 690), Vector2(220, 190), _emit_codex)
 
-	var offline_btn := Button.new()
-	offline_btn.text = _menu_text("离线自测", "Offline")
-	offline_btn.focus_mode = Control.FOCUS_NONE
-	offline_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	var ob_style := Tokens.flat_box(Tokens.INK_PANEL, Tokens.INK_EDGE, 2, 26)
-	offline_btn.add_theme_stylebox_override("normal", ob_style)
-	offline_btn.add_theme_stylebox_override("hover", ob_style)
-	offline_btn.add_theme_stylebox_override("pressed", ob_style)
-	offline_btn.add_theme_color_override("font_color", Color(1.0, 0.90, 0.60))
-	offline_btn.add_theme_font_size_override("font_size", 22)
-	offline_btn.pressed.connect(_emit_offline)
-	add_child(offline_btn)
-	_track(offline_btn, Vector2(40, 876), Vector2(210, 54), 0, "left")
+	# 「离线自测」**只在调试版出现**（编辑器里跑、调试包）。
+	#
+	# 它不经过账号服务器就能打一整局，而规则是「连不上账号服务器就进不了游戏」——
+	# 发布包里留着它，等于给玩家一个绕开这条规则的入口。开发时照样能用。
+	if OS.is_debug_build():
+		var offline_btn := Button.new()
+		offline_btn.text = _menu_text("离线自测", "Offline")
+		offline_btn.focus_mode = Control.FOCUS_NONE
+		offline_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		var ob_style := Tokens.flat_box(Tokens.INK_PANEL, Tokens.INK_EDGE, 2, 26)
+		offline_btn.add_theme_stylebox_override("normal", ob_style)
+		offline_btn.add_theme_stylebox_override("hover", ob_style)
+		offline_btn.add_theme_stylebox_override("pressed", ob_style)
+		offline_btn.add_theme_color_override("font_color", Color(1.0, 0.90, 0.60))
+		offline_btn.add_theme_font_size_override("font_size", 22)
+		offline_btn.pressed.connect(_emit_offline)
+		add_child(offline_btn)
+		_track(offline_btn, Vector2(40, 876), Vector2(210, 54), 0, "left")
 
 	# 游戏重连：放在"开始游戏（自定房间 970,724）"正上方，仅在本地存在重连凭证时显示。
 	# 按它才连回上一场；按开始游戏则放弃旧局开新的一场。
@@ -422,7 +427,12 @@ func show_room_error(reason: String) -> void:
 		"token_id_unknown":
 			_room_status.text = _menu_text("没有找到可恢复的 Token ID", "No resumable game for this Token ID")
 		_:
-			_room_status.text = reason
+			# 出战名片的各种失败（领不到、过期、验不过…）对玩家是同一件事。
+			# 具体原因在战斗服务器日志里（seat card rejected reason=…），不给玩家看代码。
+			if reason.begins_with("card_"):
+				_room_status.text = _menu_text("暂时进不了对局，请稍后再试", "Can't join a match right now — try again later")
+			else:
+				_room_status.text = reason
 
 func _emit_join() -> void:
 	var address := NetworkConfig.SERVER_IP

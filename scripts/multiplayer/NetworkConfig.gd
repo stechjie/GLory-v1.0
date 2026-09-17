@@ -138,7 +138,17 @@ const USE_DTLS := true
 # 玩家或 AI 的实际宠物，回合采集用各宠物头顶的小型 +N 提示，不暴露他人余额。
 # 新 RPC 改变了 Godot 的 NetworkService 方法表，客户端和战斗服务器必须同步部署到 p29；
 # 否则由连接握手明确拒绝，绝不能让 checksum 不一致的双方继续联机。
-const NETWORK_PROTOCOL_VERSION := 29
+# v30: 出战名片（scripts/multiplayer/BattleCard.gd，docs/商城系统设计.md 第五节，2026-09-16）。
+#      座位上的名字头像、出战宠物、出战种族只认账号服务器签过名的名片。**改了 RPC 方法表**：
+#        · 删 _rpc_lobby_identity（手机把登录令牌交给战斗服务器那条）
+#        · 删 _rpc_team_submit_active_pet（v29 加的宠物自报）
+#        · _rpc_team_create_room / _rpc_team_join_room 各加一个 card 参数
+#        · _rpc_team_set_ready / _rpc_team_start_request 去掉 races 参数
+#      代价同上：**战斗服务器必须重新打包部署到 p30**，和新 APK 一起上。
+#      **而且战斗服务器上要先放好名片公钥**（deploy/BATTLE_SERVER_KEY.md「出战名片公钥」），
+#      否则它拒绝启动；**账号服务器要先于二者更新并配好私钥**（发名片的接口在那边）。
+#      确认依据是服务器日志里的 `battle card key loaded` 与 `server started protocol=30`。
+const NETWORK_PROTOCOL_VERSION := 30
 
 # Local phone hosting is debug-only.
 const ALLOW_LOCAL_HOST_DEBUG := false
