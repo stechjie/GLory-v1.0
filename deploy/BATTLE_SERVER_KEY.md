@@ -68,9 +68,12 @@ systemctl cat glory-server --no-pager
 ```bash
 sudo mkdir -p ~/.local/share/godot/app_userdata/"Glory Beta 0.04"
 sudo mv ~/glory_server_key.pem ~/.local/share/godot/app_userdata/"Glory Beta 0.04"/glory_server_key.pem
-sudo chown -R 服务用户:服务用户 ~/.local/share/godot
+sudo chown -R nins17121:nins17121 ~/.local/share/godot
 sudo chmod 600 ~/.local/share/godot/app_userdata/"Glory Beta 0.04"/glory_server_key.pem
 ```
+
+`nins17121` 是 glory-server-2 上第 0 步查到的 `User=`。换了机器或服务用户，把它换成新查到的那个
+（09-17 有人照抄过早先写在这里的占位词「服务用户」，chown 直接报 invalid user）。
 
 `server_flags.json` 和房间快照 `server_rooms.bin.N` 也在这个目录，所以它多半已经存在。
 

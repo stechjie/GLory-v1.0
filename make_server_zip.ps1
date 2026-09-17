@@ -303,15 +303,20 @@ try {
     Write-Host ""
     Write-Host " 接下来在服务器 SSH 里执行：" -ForegroundColor Cyan
     $zipName = Split-Path $out -Leaf
+    # 旧目录改名留作回滚、新包解到空目录 —— 不要解压覆盖在线目录（旧版本删掉的文件会留下来，
+    # 新旧混合的目录最难查；deploy/BATTLE_SERVER_KEY.md 第 6 步）。这里以前印的是覆盖式解压，09-17 照着做过一次。
+    # 带 $(date …) 的那行必须用单引号，否则 PowerShell 会把它当成自己的子表达式。
     Write-Host "   1. UPLOAD FILE 上传 $zipName"
-    Write-Host "   2. unzip -q ~/$zipName -d ~/Glory/`"Beta 0.04`""
-    Write-Host "   3. sudo systemctl restart glory-server"
-    Write-Host "   4. journalctl -u glory-server -n 5 --no-pager"
+    Write-Host "   2. 协议 30 起：先确认出战名片公钥在（没有就不会 started，放法见 deploy/BATTLE_SERVER_KEY.md「出战名片公钥」）" -ForegroundColor Yellow
+    Write-Host '      head -1 ~/.local/share/godot/app_userdata/"Glory Beta 0.04"/battle_card_public.pem'
+    Write-Host "   3. sudo systemctl stop glory-server"
+    Write-Host '   4. cd ~/Glory && mv "Beta 0.04" "Beta 0.04.bak-$(date +%m%d-%H%M)" && mkdir "Beta 0.04"'
+    Write-Host "   5. unzip -q ~/$zipName -d ~/Glory/`"Beta 0.04`""
+    Write-Host "   6. sudo systemctl start glory-server"
+    Write-Host "   7. journalctl -u glory-server -n 30 --no-pager | grep -E `"battle card|server start`""
     Write-Host "      ^ 看到 server started protocol=$protocol 才算部署成功（started，不是 starting）" -ForegroundColor Yellow
-    Write-Host "        starting 那行在绑端口之前就打了 —— 端口被占、私钥没找到都照样有它。" -ForegroundColor DarkYellow
-    Write-Host ""
-    Write-Host " !! 协议 30 起，服务器上还要有出战名片公钥 battle_card_public.pem，没有就不会 started：" -ForegroundColor Yellow
-    Write-Host "    放法见 deploy/BATTLE_SERVER_KEY.md「出战名片公钥」；日志里应有 battle card key loaded" -ForegroundColor Yellow
+    Write-Host "        starting 那行在绑端口之前就打了 —— 端口被占、私钥 / 公钥没找到都照样有它。" -ForegroundColor DarkYellow
+    Write-Host "      出问题回滚：stop → 删掉新的 Beta 0.04 → 把 .bak-… 改回来 → start" -ForegroundColor DarkYellow
     Write-Host ""
     Write-Host " !! systemd 的 ExecStart 必须带上入口场景，否则会去加载 UI 主场景然后静默挂住：" -ForegroundColor Yellow
     Write-Host "    godot --headless --path <目录> res://scenes/server/ServerMain.tscn --server --port=8080" -ForegroundColor Yellow
