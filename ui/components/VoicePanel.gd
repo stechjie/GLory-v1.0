@@ -195,6 +195,17 @@ func _status_text() -> String:
 	var device := str(st.get("output_device", "")).strip_edges()
 	if device.is_empty():
 		device = "-"
+	if str(st.get("platform", "")) == "desktop":
+		# 电脑版试用（scripts/voice/DesktopVoiceBackend.gd）：把测试时最容易误判的三件事直接写出来。
+		var line := _text("电脑版 · 编码：ADPCM · 输出：%s · 没有回声消除（外放开麦队友会听到回声）",
+			"PC · Codec: ADPCM · Output: %s · No echo cancellation (speakers will echo)") % device
+		if bool(st.get("mic_silent", false)):
+			line += _text("\n麦克风没有声音：检查 Windows 设置 → 隐私和安全性 → 麦克风，允许桌面应用访问",
+				"\nMic is silent: check Windows Settings → Privacy → Microphone (allow desktop apps)")
+		if bool(st.get("opus_from_teammates", false)):
+			line += _text("\n有队友的手机发的是 Opus，电脑版暂时听不到他",
+				"\nA teammate's phone sends Opus, which the PC build cannot play yet")
+		return line
 	return _text("编码：%s（Opus 自检：%s）· 输出：%s · 系统回声消除：%s",
 		"Codec: %s (Opus self-test: %s) · Output: %s · Echo cancel: %s") % [
 		VoiceService.codec_label(), str(st.get("opus_selftest", "-")), device, aec]

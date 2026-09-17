@@ -17,6 +17,9 @@ extends Node
 #   8. 屏蔽按人（好友码）记，换座位跟着人走；没权限时开麦前先说明用途
 #   9. 大厅 / 备战期 / 战斗界面都接上了按钮，并在离开时 teardown；验证版的「语音测试」入口已经删掉
 #  10. ③ 的语音流量统计：每分钟一行，计数都记上了、到点清零
+#  11. 🔴 电脑版（scripts/voice/）：方法表与插件一致；参数与 Java 一致；ADPCM 与 Java 逐字节一致
+#      （Java 跑出来的样本 tools/fixtures/voice_adpcm_golden.json）；包格式同 VoicePacket.java；
+#      说话检测 → 预录 → 打包的流程；接收缓冲；手机不开 Godot 自带录音
 #
 # 运行：
 #   Godot_v4.7.1-stable_win64_console.exe --headless --path . res://tools/voice_check.tscn
@@ -29,6 +32,11 @@ const AAR_PATH := "res://addons/glory_voice/bin/GloryVoice.aar"
 const PLUGIN_DIR := "res://android_plugins/glory_voice"
 const EXPORT_PLUGIN_PATH := "res://addons/glory_voice/glory_voice_plugin.gd"
 const NETWORK_SERVICE_PATH := "res://scripts/autoload/NetworkService.gd"
+# 电脑版（2026-09-17 试用版）
+const DESKTOP_BACKEND := preload("res://scripts/voice/DesktopVoiceBackend.gd")
+const VOICE_ADPCM := preload("res://scripts/voice/VoiceAdpcm.gd")
+const VOICE_PACKET := preload("res://scripts/voice/VoicePacketCodec.gd")
+const ADPCM_GOLDEN_PATH := "res://tools/fixtures/voice_adpcm_golden.json"
 
 var _h: CheckHarness
 
@@ -91,6 +99,12 @@ func _ready() -> void:
 	_case_mic_rationale()
 	_case_ui_wired()
 	_case_server_stats()
+	_case_desktop_contract()
+	_case_desktop_adpcm_golden()
+	_case_desktop_packets()
+	_case_desktop_capture_pipeline()
+	_case_desktop_jitter()
+	_case_desktop_wiring()
 	_h.finish(get_tree())
 
 
@@ -285,6 +299,25 @@ func _case_packet_budget() -> void:
 func _java_int(src: String, name: String) -> int:
 	var m := RegEx.create_from_string("\\b" + name + "\\s*=\\s*(\\d+)\\s*;").search(src)
 	return int(m.get_string(1)) if m != null else -1
+
+
+# 形如 `NAME = 0.006f;`。读不到返回 -1。
+func _java_float(src: String, name: String) -> float:
+	var m := RegEx.create_from_string("\\b" + name + "\\s*=\\s*([0-9.]+)f?\\s*;").search(src)
+	return float(m.get_string(1)) if m != null else -1.0
+
+
+# 形如 `NAME = { 1, 2, -3, }` 的整数数组。
+func _java_int_array(src: String, name: String) -> Array[int]:
+	var out: Array[int] = []
+	var m := RegEx.create_from_string("\\b" + name + "\\s*=\\s*\\{([^}]*)\\}").search(src)
+	if m == null:
+		return out
+	for part in m.get_string(1).split(","):
+		var text := part.strip_edges()
+		if not text.is_empty():
+			out.append(int(text))
+	return out
 
 
 # --- 6. 🔴 只转同队 -----------------------------------------------------------------
@@ -635,3 +668,305 @@ func _case_server_stats() -> void:
 		"voice_stats_not_flushed", "统计窗口到点后必须打日志并清零")
 	NetworkService._voice_stats = saved_stats
 	NetworkService._voice_stats_elapsed = saved_elapsed
+
+
+# --- 11. 🔴 电脑版（scripts/voice/，2026-09-17 试用版）----------------------------------
+#
+# 电脑和手机要互相听得见，靠的是「包格式、编码、参数」三样完全一致。任何一样对不上都不会报错，
+# 只会变成杂音、断断续续、或者干脆没声音。所以这里全部拿 Java 源码与 Java 跑出来的样本对账。
+
+func _case_desktop_contract() -> void:
+	# 方法表：VoiceService 只认假插件里那几个名字。电脑版少一个、参数个数不对，都是运行时才炸。
+	# 先放进 Script 变量：解析器不让在类名上直接调 get_script_method_list()。
+	var fake_script: Script = FakePlugin
+	var backend_script: Script = DESKTOP_BACKEND
+	var wanted := {}
+	for method in fake_script.get_script_method_list():
+		wanted[str(method.name)] = (method.args as Array).size()
+	var have := {}
+	for method in backend_script.get_script_method_list():
+		have[str(method.name)] = (method.args as Array).size()
+	for method_name in wanted:
+		_h.item()
+		_h.expect(have.has(method_name) and int(have[method_name]) == int(wanted[method_name]),
+			"voice_desktop_method_missing",
+			"电脑版后端缺少方法或参数个数不对：%s（要 %d 个参数）" % [method_name, int(wanted[method_name])])
+
+	var src_dir := PLUGIN_DIR.path_join("src/com/glory/voice")
+	var plugin_src := FileAccess.get_file_as_string(src_dir.path_join("GloryVoicePlugin.java"))
+	var remote_src := FileAccess.get_file_as_string(src_dir.path_join("RemoteStream.java"))
+	var packet_src := FileAccess.get_file_as_string(src_dir.path_join("VoicePacket.java"))
+	var codec_src := FileAccess.get_file_as_string(src_dir.path_join("FrameCodec.java"))
+	var adpcm_src := FileAccess.get_file_as_string(src_dir.path_join("AdpcmCodec.java"))
+	var ints := [
+		[plugin_src, "SLOTS", DESKTOP_BACKEND.SLOTS],
+		[plugin_src, "FRAMES_PER_PACKET", DESKTOP_BACKEND.FRAMES_PER_PACKET],
+		[plugin_src, "MAX_QUEUED_PACKETS", DESKTOP_BACKEND.MAX_QUEUED_PACKETS],
+		[plugin_src, "MAX_PACKETS_PER_READ", DESKTOP_BACKEND.MAX_PACKETS_PER_READ],
+		[plugin_src, "VAD_HANGOVER_FRAMES", DESKTOP_BACKEND.VAD_HANGOVER_FRAMES],
+		[plugin_src, "VAD_PREROLL_FRAMES", DESKTOP_BACKEND.VAD_PREROLL_FRAMES],
+		[remote_src, "START_FRAMES", DESKTOP_BACKEND.Remote.START_FRAMES],
+		[remote_src, "MAX_QUEUED_FRAMES", DESKTOP_BACKEND.Remote.MAX_QUEUED_FRAMES],
+		[remote_src, "IDLE_RESET_MS", DESKTOP_BACKEND.Remote.IDLE_RESET_MS],
+		[remote_src, "SHORT_SPURT_WAIT_MS", DESKTOP_BACKEND.Remote.SHORT_SPURT_WAIT_MS],
+		[packet_src, "VERSION_V1", VOICE_PACKET.VERSION_V1],
+		[packet_src, "VERSION", VOICE_PACKET.VERSION],
+		[packet_src, "V1_HEADER_BYTES", VOICE_PACKET.V1_HEADER_BYTES],
+		[packet_src, "HEADER_BYTES", VOICE_PACKET.HEADER_BYTES],
+		[packet_src, "FLAG_SPURT_START", VOICE_PACKET.FLAG_SPURT_START],
+		[packet_src, "MAX_FRAMES", VOICE_PACKET.MAX_FRAMES],
+		[packet_src, "MAX_FRAME_BYTES", VOICE_PACKET.MAX_FRAME_BYTES],
+		[packet_src, "MAX_PACKET_BYTES", VOICE_PACKET.MAX_PACKET_BYTES],
+		[codec_src, "ADPCM", VOICE_PACKET.CODEC_ADPCM],
+		[codec_src, "OPUS", VOICE_PACKET.CODEC_OPUS],
+		[adpcm_src, "SAMPLE_RATE", VOICE_ADPCM.SAMPLE_RATE],
+		[adpcm_src, "FRAME_SAMPLES", VOICE_ADPCM.FRAME_SAMPLES],
+	]
+	for row in ints:
+		_h.item()
+		var java_value := _java_int(str(row[0]), str(row[1]))
+		_h.expect(java_value >= 0 and java_value == int(row[2]), "voice_desktop_const_drift",
+			"%s：Java 是 %d，电脑版是 %d —— 两边分开改不会报错，只会手机和电脑互相听不清"
+				% [str(row[1]), java_value, int(row[2])])
+	var floats := [
+		["VAD_MIN_THRESHOLD", DESKTOP_BACKEND.VAD_MIN_THRESHOLD],
+		["VAD_MAX_THRESHOLD", DESKTOP_BACKEND.VAD_MAX_THRESHOLD],
+		["SPEAKING_LEVEL", DESKTOP_BACKEND.SPEAKING_LEVEL],
+	]
+	for row in floats:
+		_h.item()
+		var java_float := _java_float(plugin_src, str(row[0]))
+		_h.expect(java_float >= 0.0 and is_equal_approx(java_float, float(row[1])), "voice_desktop_const_drift",
+			"%s：Java 是 %s，电脑版是 %s" % [str(row[0]), str(java_float), str(row[1])])
+	_h.item()
+	_h.expect(_java_int_array(adpcm_src, "STEP_TABLE") == VOICE_ADPCM.STEP_TABLE, "voice_desktop_table_drift",
+		"ADPCM 步长表与 AdpcmCodec.java 不一致")
+	_h.item()
+	_h.expect(_java_int_array(adpcm_src, "INDEX_TABLE") == VOICE_ADPCM.INDEX_TABLE, "voice_desktop_table_drift",
+		"ADPCM 序号表与 AdpcmCodec.java 不一致")
+
+
+func _case_desktop_adpcm_golden() -> void:
+	_h.item()
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(ADPCM_GOLDEN_PATH))
+	if not _h.expect(parsed is Dictionary, "voice_desktop_golden_missing",
+			"读不到 %s —— 跑 tools/voice_adpcm_golden.ps1 生成" % ADPCM_GOLDEN_PATH):
+		return
+	var golden: Dictionary = parsed
+	var pcm_bytes := str(golden.get("pcm_le_hex", "")).hex_decode()
+	var pcm := PackedInt32Array()
+	pcm.resize(pcm_bytes.size() >> 1)
+	for i in pcm.size():
+		pcm[i] = pcm_bytes.decode_s16(i * 2)
+	var blocks: Array = golden.get("blocks_hex", [])
+	if not _h.expect(not blocks.is_empty() and pcm.size() == blocks.size() * VOICE_ADPCM.FRAME_SAMPLES,
+			"voice_desktop_golden_shape", "样本形状不对：%d 个采样、%d 块" % [pcm.size(), blocks.size()]):
+		return
+	var state := VOICE_ADPCM.new_state()
+	var decoded := PackedByteArray()
+	decoded.resize(pcm.size() * 2)
+	for f in blocks.size():
+		_h.item()
+		var mine := VOICE_ADPCM.encode_block(pcm, f * VOICE_ADPCM.FRAME_SAMPLES, state).hex_encode()
+		_h.expect(mine == str(blocks[f]), "voice_desktop_adpcm_encode_drift",
+			"第 %d 块编码与手机不一致 —— 电脑发给手机的声音会变成杂音" % f)
+		var samples := VOICE_ADPCM.decode_block(str(blocks[f]).hex_decode(), 0)
+		for i in samples.size():
+			decoded.encode_s16((f * VOICE_ADPCM.FRAME_SAMPLES + i) * 2, samples[i])
+	_h.item()
+	_h.expect(decoded.hex_encode() == str(golden.get("decoded_le_hex", "")), "voice_desktop_adpcm_decode_drift",
+		"解手机编出来的块，结果与手机自己解的不一致 —— 手机发给电脑的声音会变成杂音")
+
+
+func _case_desktop_packets() -> void:
+	var state := VOICE_ADPCM.new_state()
+	var tone := _tone_frame(6000)
+	var b0 := VOICE_ADPCM.encode_block(tone, 0, state)
+	var b1 := VOICE_ADPCM.encode_block(tone, 0, state)
+	var frames: Array[PackedByteArray] = [b0, b1]
+	var packet := VOICE_PACKET.build(0x1234, true, VOICE_PACKET.CODEC_ADPCM, frames)
+	_h.item()
+	_h.expect(packet.size() == 6 + 2 * (1 + 163) and packet.slice(0, 6) == PackedByteArray([2, 1, 0x34, 0x12, 2, 0])
+			and packet[6] == 163 and packet[6 + 164] == 163,
+		"voice_desktop_packet_layout",
+		"电脑版打出来的包与 VoicePacket.java 的布局不一致：%s" % packet.slice(0, 8).hex_encode())
+	var parsed := VOICE_PACKET.parse(packet)
+	_h.item()
+	_h.expect(not parsed.is_empty() and int(parsed.seq) == 0x1234 and bool(parsed.spurt_start)
+			and int(parsed.codec) == VOICE_PACKET.CODEC_ADPCM and (parsed.frames as Array).size() == 2
+			and parsed.frames[0] == b0 and parsed.frames[1] == b1,
+		"voice_desktop_packet_roundtrip", "自己打的包自己解不回来")
+	# 手机发的 Opus 包（帧长不定）要能认出来 —— 电脑版不放，但要知道那是 Opus，好提示测试的人。
+	var opus_frames: Array[PackedByteArray] = [PackedByteArray([1, 2, 3]), PackedByteArray([4, 5, 6, 7, 8])]
+	var opus := VOICE_PACKET.build(7, false, VOICE_PACKET.CODEC_OPUS, opus_frames)
+	var parsed_opus := VOICE_PACKET.parse(opus)
+	_h.item()
+	_h.expect(not parsed_opus.is_empty() and int(parsed_opus.codec) == VOICE_PACKET.CODEC_OPUS,
+		"voice_desktop_opus_unrecognized", "认不出手机发的 Opus 包")
+	# v1 包（09-13 第一版）照样能解
+	var v1 := PackedByteArray([1, 0, 5, 0, 1])
+	v1.append_array(b0)
+	var parsed_v1 := VOICE_PACKET.parse(v1)
+	_h.item()
+	_h.expect(not parsed_v1.is_empty() and int(parsed_v1.seq) == 5 and parsed_v1.frames[0] == b0,
+		"voice_desktop_v1_rejected", "解不了 v1 包")
+	# 坏包一律拒（照 VoicePacket.parse 的规则：长度必须正好对上）
+	var one_more := packet.duplicate()
+	one_more.append(0)
+	var bad := {
+		"少一个字节": packet.slice(0, packet.size() - 1),
+		"多一个字节": one_more,
+		"帧数为 0": _patched(packet, 4, 0),
+		"帧数为 4": _patched(packet, 4, 4),
+		"未知编码": _patched(packet, 5, 7),
+		"未知版本": _patched(packet, 0, 3),
+		"ADPCM 帧长不是 163": _patched(packet, 6, 162),
+		"Opus 帧长为 0": _patched(opus, 6, 0),
+		"太短": PackedByteArray([2, 0, 0, 0, 1]),
+	}
+	for label in bad:
+		_h.item()
+		_h.expect(VOICE_PACKET.parse(bad[label]).is_empty(), "voice_desktop_bad_packet_accepted",
+			"坏包没被拒：%s" % label)
+
+
+func _case_desktop_capture_pipeline() -> void:
+	var backend: DESKTOP_BACKEND = DESKTOP_BACKEND.new()
+	add_child(backend)
+	_h.item()
+	_h.expect(backend.setCapture(true) == "no_session", "voice_desktop_capture_without_session",
+		"没开语音就开麦，应该返回 no_session")
+	backend.startSession(true)
+	var silence := PackedInt32Array()
+	silence.resize(VOICE_ADPCM.FRAME_SAMPLES)
+	for _i in 10:
+		backend._on_capture_frame(silence.duplicate())
+	_h.item()
+	_h.expect(backend.readPackets().is_empty(), "voice_desktop_sends_silence", "没说话也发包了")
+
+	var tone := _tone_frame(8000)
+	for _i in 6:
+		backend._on_capture_frame(tone.duplicate())
+	for _i in 25:
+		backend._on_capture_frame(silence.duplicate())
+	var packets: Array[PackedByteArray] = []
+	for _round in 3:
+		packets.append_array(VoiceService.split_packets(backend.readPackets()))
+	# 预录 2 帧 + 说话 6 帧 + 拖尾 19 帧（第 20 帧静音时拖尾到期）= 27 帧，每包 2 帧 → 14 个包，最后一个 1 帧。
+	_h.item()
+	var count_ok := _h.expect(packets.size() == 14, "voice_desktop_packet_count",
+		"应打出 14 个包（预录 2 + 说话 6 + 拖尾 19 帧），实际 %d —— 说话检测或打包与手机不一致" % packets.size())
+	if count_ok:
+		var first := VOICE_PACKET.parse(packets[0])
+		_h.item()
+		_h.expect(not first.is_empty() and bool(first.spurt_start) and int(first.seq) == 0
+				and int(first.codec) == VOICE_PACKET.CODEC_ADPCM,
+			"voice_desktop_first_packet", "第一个包应带「一段话开头」标志、序号 0、ADPCM")
+		_h.item()
+		_h.expect(not first.is_empty() and first.frames[0].slice(0, 3) == PackedByteArray([0, 0, 0]),
+			"voice_desktop_encoder_not_reset", "一段话开头编码器没有归零（第一帧的块头应是 0,0,0）")
+		_h.item()
+		var second := VOICE_PACKET.parse(packets[1])
+		_h.expect(not first.is_empty() and not second.is_empty()
+				and VOICE_ADPCM.rms(VOICE_ADPCM.decode_block(first.frames[0], 0)) < 0.001
+				and VOICE_ADPCM.rms(VOICE_ADPCM.decode_block(second.frames[0], 0)) > 0.02,
+			"voice_desktop_preroll_missing", "开头应先发 2 帧预录（静音），第 3 帧才是说话")
+		var seq_ok := true
+		var total_frames := 0
+		for i in packets.size():
+			var p := VOICE_PACKET.parse(packets[i])
+			if p.is_empty() or int(p.seq) != total_frames or (i > 0 and bool(p.spurt_start)):
+				seq_ok = false
+				break
+			total_frames += (p.frames as Array).size()
+		_h.item()
+		_h.expect(seq_ok and total_frames == 27, "voice_desktop_seq_broken",
+			"序号不连续、中途又出现「开头」标志、或总帧数不是 27（实际 %d）" % total_frames)
+		_h.item()
+		_h.expect((VOICE_PACKET.parse(packets[13]).get("frames", []) as Array).size() == 1,
+			"voice_desktop_tail_not_flushed", "说完之后没把凑了一半的包发出去")
+	var st: Dictionary = JSON.parse_string(backend.getStatus())
+	_h.item()
+	_h.expect(str(st.get("platform", "")) == "desktop" and st.has("speaking_slots") and st.has("mic_active")
+			and str(st.get("codec", "")) == "adpcm" and st.has("output_device"),
+		"voice_desktop_status_shape", "状态字段不全：%s" % str(st.keys()))
+	backend.stopSession()
+	backend.queue_free()
+
+
+func _case_desktop_jitter() -> void:
+	var state := VOICE_ADPCM.new_state()
+	var tone := _tone_frame(8000)
+	var r: DESKTOP_BACKEND.Remote = DESKTOP_BACKEND.Remote.new()
+	var t := 10000
+	r.push(_adpcm_packet(0, true, tone, state), t)
+	_h.item()
+	_h.expect(r.pull(t).is_empty(), "voice_desktop_jitter_no_buffering", "只到了 2 帧、还没过 60 毫秒，不该开始放")
+	_h.item()
+	_h.expect(not r.pull(t + DESKTOP_BACKEND.Remote.SHORT_SPURT_WAIT_MS).is_empty() and r.level > DESKTOP_BACKEND.SPEAKING_LEVEL,
+		"voice_desktop_short_spurt_stuck", "短句等过 60 毫秒应该直接放，而且算「在说话」")
+	r.push(_adpcm_packet(6, false, tone, state), t + 40)
+	_h.item()
+	_h.expect(r.frames_lost == 4, "voice_desktop_loss_not_counted", "序号从 2 跳到 6，应记丢 4 帧，实际 %d" % r.frames_lost)
+	r.push(_adpcm_packet(2, false, tone, state), t + 60)
+	_h.item()
+	_h.expect(r.packets_late == 1, "voice_desktop_late_played", "比已收到的还旧的包应该丢掉")
+	var before := r.ring.size()
+	var opus_frames: Array[PackedByteArray] = [PackedByteArray([1, 2, 3])]
+	r.push(VOICE_PACKET.build(8, false, VOICE_PACKET.CODEC_OPUS, opus_frames), t + 80)
+	_h.item()
+	_h.expect(r.opus_dropped == 1 and r.ring.size() == before, "voice_desktop_opus_played",
+		"电脑版解不了 Opus：应记一笔、不放")
+	r.push(PackedByteArray([9, 9, 9]), t + 90)
+	_h.item()
+	_h.expect(r.packets_bad == 1, "voice_desktop_bad_not_counted", "坏包应记一笔")
+
+	var big: DESKTOP_BACKEND.Remote = DESKTOP_BACKEND.Remote.new()
+	for n in 11:
+		big.push(_adpcm_packet(n * 2, n == 0, tone, state), t + n)
+	_h.item()
+	_h.expect(big.ring.size() == DESKTOP_BACKEND.Remote.MAX_QUEUED_FRAMES and big.frames_dropped == 2,
+		"voice_desktop_backlog_unbounded", "最多压 20 帧（400 毫秒），多的丢最老的：实际压了 %d、丢了 %d"
+			% [big.ring.size(), big.frames_dropped])
+
+
+func _case_desktop_wiring() -> void:
+	var service_src := FileAccess.get_file_as_string("res://scripts/autoload/VoiceService.gd")
+	_h.item()
+	_h.expect(service_src.contains("DesktopVoiceBackend.new()") and service_src.contains("OS.has_feature(\"windows\")")
+			and service_src.contains("DisplayServer.get_name() != \"headless\""),
+		"voice_desktop_not_wired", "VoiceService 没在 Windows（有界面时）挂上电脑版后端")
+	var project := FileAccess.get_file_as_string("res://project.godot")
+	_h.item()
+	_h.expect(project.contains("driver/enable_input.windows=true"), "voice_desktop_input_off",
+		"project.godot 没对 Windows 打开录音输入 —— 电脑版开麦会报「麦克风打不开」")
+	# 🔴 手机不能开 Godot 自带的录音：它不设录音模式，拿不到系统回声消除。手机录音一律走插件。
+	_h.item()
+	_h.expect(RegEx.create_from_string("(?m)^driver/enable_input(\\.android)?\\s*=\\s*true").search(project) == null,
+		"voice_desktop_input_global", "录音输入只能对 Windows 打开（.windows），不能全局或对安卓打开")
+	if OS.has_feature("windows"):
+		_h.item()
+		_h.expect(DESKTOP_BACKEND.input_enabled(), "voice_desktop_override_ignored",
+			"Windows 上读到的 enable_input 不是 true：.windows 覆盖没生效")
+
+
+func _tone_frame(amplitude: int) -> PackedInt32Array:
+	var frame := PackedInt32Array()
+	frame.resize(VOICE_ADPCM.FRAME_SAMPLES)
+	for i in frame.size():
+		frame[i] = amplitude if (i % 20) < 10 else -amplitude
+	return frame
+
+
+func _adpcm_packet(seq: int, spurt: bool, frame: PackedInt32Array, state: Array[int]) -> PackedByteArray:
+	var frames: Array[PackedByteArray] = [
+		VOICE_ADPCM.encode_block(frame, 0, state),
+		VOICE_ADPCM.encode_block(frame, 0, state),
+	]
+	return VOICE_PACKET.build(seq, spurt, VOICE_PACKET.CODEC_ADPCM, frames)
+
+
+func _patched(src: PackedByteArray, index: int, value: int) -> PackedByteArray:
+	var out := src.duplicate()
+	out[index] = value
+	return out

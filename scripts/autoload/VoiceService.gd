@@ -18,7 +18,8 @@ extends Node
 # 屏蔽（v1.1）：按玩家的好友码记，队友换座位也跟着人走；**整个游戏进程内有效**（骚扰的人下一局还可能
 # 分到一起），重开游戏清空。被屏蔽的人的包在交给插件之前就丢掉，解都不解。只影响自己听不听得到。
 #
-# 没有插件的包（桌面、没勾 glory_voice/enabled 的安卓包）按钮照样在，点了说明原因。
+# 电脑（Windows）上用 scripts/voice/DesktopVoiceBackend.gd 顶替插件（2026-09-17 试用版：只有 ADPCM、没有回声消除）。
+# 没有插件的包（没勾 glory_voice/enabled 的安卓包、其它平台）按钮照样在，点了说明原因。
 
 signal mode_changed(mode: int)
 signal mutes_changed
@@ -28,6 +29,7 @@ signal mic_permission_result(granted: bool)
 enum Mode { OFF, LISTEN, TALK }
 
 const SINGLETON := "GloryVoice"
+const DesktopVoiceBackend := preload("res://scripts/voice/DesktopVoiceBackend.gd")
 const MIC_PERMISSION := "android.permission.RECORD_AUDIO"
 # 重连、切场景时 team_local_slot 可能短暂变成 -1。这么久都不在房间里才算真的离开。
 const LEAVE_GRACE_SEC := 3.0
@@ -53,6 +55,13 @@ var _muted_keys: Dictionary = {}
 func _ready() -> void:
 	if Engine.has_singleton(SINGLETON):
 		_plugin = Engine.get_singleton(SINGLETON)
+	elif OS.has_feature("windows") and DisplayServer.get_name() != "headless":
+		# 电脑版（scripts/voice/DesktopVoiceBackend.gd）：方法与安卓插件同名同参，下面的代码不用分平台。
+		# 无界面运行（门禁、战斗服务器）不挂：那里没人说话，也免得门禁里的「没有插件」用例失真。
+		var desktop: Node = DesktopVoiceBackend.new()
+		desktop.name = "DesktopVoice"
+		add_child(desktop)
+		_plugin = desktop
 	if not NetworkService.team_voice_received.is_connected(_on_voice_received):
 		NetworkService.team_voice_received.connect(_on_voice_received)
 	if not get_tree().on_request_permissions_result.is_connected(_on_permission_result):
@@ -346,6 +355,9 @@ static func explain(code: String) -> String:
 			return "麦克风被别的应用占着（比如正在通话）"
 		"record_init_failed", "record_start_failed", "bad_record_params":
 			return "麦克风打不开"
+		"input_disabled":
+			# 电脑版：项目设置里没打开录音输入（audio/driver/enable_input.windows）。是打包问题，不是玩家的错。
+			return "麦克风打不开（这个版本没有打开电脑录音）"
 		"play_init_failed", "no_audio_manager":
 			return "声音输出打不开"
 		"no_session":

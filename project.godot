@@ -21,6 +21,10 @@ boot_splash/stretch_mode=0
 boot_splash/image="res://ui/branding/glory_bootstrap.png"
 config/icon="res://icon.svg"
 
+[audio]
+
+driver/enable_input.windows=true
+
 [autoload]
 
 StartupTrace="*res://scripts/autoload/StartupTrace.gd"
