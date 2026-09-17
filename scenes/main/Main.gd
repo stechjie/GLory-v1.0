@@ -29,6 +29,10 @@ var _startup_loading_overlay: StartupLoadingOverlay
 const UiFeedbackService := preload("res://ui/services/UiFeedback.gd")
 # 同一条理由（9.17 音效接入）：SfxService 也刻意不声明 class_name。
 const SfxService := preload("res://ui/services/SfxService.gd")
+# 9.17 第二批：BGM 也收进一个常驻服务（同样不做 autoload）。
+# 播放器挂 root，所以它不随任何一页被 Main._clear() 释放 —— 这正是
+# 「打开图鉴/聊天/朋友/设置时菜单 BGM 不暂停」的实现方式。
+const MusicService := preload("res://ui/services/MusicService.gd")
 
 const AccountConfig := preload("res://scripts/account/AccountConfig.gd")
 const BOOTSTRAP_SCENE := "res://scenes/bootstrap/Bootstrap.tscn"
@@ -172,6 +176,9 @@ func _ready() -> void:
 	# 9.17：全局音效服务。同样不做 autoload（autoload 全在冷启动关键路径上），
 	# 播放器与代币收支监视器都挂在 root 下按需创建。
 	SfxService.install()
+	# 9.17 第二批：BGM 服务。install() 里做的两件事——建常驻播放器、
+	# 接上 PlayerProfile.presentation_settings_changed（设置页音乐开关即时生效）。
+	MusicService.install()
 	_install_presence_reporting()
 	_install_realtime()
 	_route_startup()

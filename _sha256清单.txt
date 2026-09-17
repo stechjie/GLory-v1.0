@@ -1,0 +1,50 @@
+# 9.17 第二批交付 + 其后补充修复（第三轮 boss BGM/受击音、第四轮好友申请红点与提示音）
+#
+# 同路径备份：夹内相对路径 = 工程内相对路径，上传时按原路径覆盖。
+# sha256 由本脚本在**落盘之后**重算（不是复制旧清单），逐文件与工作树比对过。
+#
+# 口径：本夹 = 9.17 第二批 + 之后的补充修复；**不含**第一批的文件
+# （例如 tools/team_merc_summon_sfx_check.* 属第一批）。要整批上传需另加第一批。
+#
+# 第四轮（2026-09-17）追加：
+#   - scenes/menu/MainMenu.gd：_ready() 补上 _refresh_friend_requests() 调用
+#     + 新增 10 秒轮询 _start_friend_request_poll()（好友申请无实时推送）
+#   - tools/friend_request_alert_check.{gd, gd.uid, tscn}（新门禁，23 项）
+#   - README.md / docs/9.17音效接入记录.md / docs/CHECKS.md 三份文档同步
+
+
+ff87e8f9e7f3580c226f1bace001d52cc6951241fe2762b19c84c02a3860b5fb  README.md  188975
+7ec997f44d7cea570fb8e8522abb1a902082d2e9dc4d65e89c7c52875eab8e92  docs/9.17音效接入记录.md  71053
+4d2dbcd54b428b53a59ead17c2ff0314a727285e5105c14415011b5e774e2bea  docs/CHECKS.md  191761
+7b7ef46abaf1ee9ff0156d455239b60df194374859ebaa63d45b4cede722208e  effects/runtime/presentation/PresentationSettings.gd  5158
+935faf43223233bda6d46cc6e9f12f1049a1ea5ec327ca463ad9588926b7a01c  scenes/battle/BattleResult.gd  13351
+f7e0116069e343004b49ea963eeb82b8fe8b735300a9e618dd2ae449d5bf031a  scenes/battle/BattleScreen.gd  40984
+c23ee750561df36ea5ac9993309bfb61e91b5b9f5524a4bed59f71d9f96f3780  scenes/battle/BattleUI.gd  19765
+b145f21161249da64ba88863793560207bce4bde069c26d0d4532a0c1ce50e8f  scenes/main/Main.gd  128989
+cc9df7947c8f428ff0586e40454aaa542faf8ac1654ed39e1522f1f5df6dbcca  scenes/menu/MainMenu.gd  46428
+b2556e37c88d4e9fb35602637d4ef3510711e77e3d863a88afc9f4b33c878094  scenes/menu/SettingsScreen.gd  11110
+9cfd594fedc1d60697e2b4369e27e7d632a4df3a110fb48a7fed18eb5128b326  scenes/menu/ShopScreen.gd  20676
+f4823e46b0921bd3977500d6618776541bbc9edf05006a2ccb02addc321c098b  scenes/menu/Team3v3Lobby.gd  52844
+12dacc76b6c07b9f17cfc22ff67cf73557d5b771afa2715cae6bd0274c384490  scenes/prep/PrepScreen.gd  38630
+377763bb19479b516eb9be81f58e863e8c978345395434bbb7f85b2f4d80c5e1  scenes/prep/PrepUI.gd  143610
+88305c701528b82cb754780ae46366eec4f5d8e785ffc08aa30cd1ba6a5b0339  scripts/autoload/ChatService.gd  6993
+c81980bc0df2b41debe106620dc3eb5c74329e20058fc227e1de4dafc508910c  scripts/autoload/LocaleManager.gd  37274
+2df63d63583f0c98b19070272235a05e844ba75cc6b514bc792f56b95b98893b  scripts/autoload/PlayerProfile.gd  23762
+1c019f4b43d2045b4a7a6e554b8d704e37722cb4e7a0980856bf63e6cd4694c3  tools/audio_sfx_check.gd  30057
+cf59becefc2a29125e8cd71f1f72ba8d8e4513989836ba507efa9e0b5f711220  tools/boss_battle_bgm_check.gd  13824
+a4aa5c8455d9665f6aec9d8f80b2c99d2872a88d5854b261c3084dffb831c63b  tools/boss_battle_bgm_check.gd.uid  20
+89d2382cffa4c8b86b21832d80cba5c0eedb5c7d4633bacb2ee3489c7848eed4  tools/boss_battle_bgm_check.tscn  186
+bd83c3baeb7fef97415925813b41b58c9c8ec41f82f37e7f12aef147d79de55b  tools/friend_request_alert_check.gd  11073
+b932238f1cd69ff51708450e54885b5dca5a27bfa8cac2891577cd08066cf04f  tools/friend_request_alert_check.gd.uid  20
+b70e7d1daa57daa386b8eb123c52b7d0bcee0501d7210c5f7b822a9cf5cfc379  tools/friend_request_alert_check.tscn  196
+0ed8b874c7f6d9635dce655d9ad6ce793fea054e5216ed420afc8656e9342c1d  tools/prep_mute_state_check.gd  11435
+e82e648b79877b8f59645646de9b40ccfbaa7ce07cc4a5765338d4cd39f3b6ce  tools/prep_mute_state_check.gd.uid  20
+bf704f17ccfc262b3b01615d9f78ea0c0eee27ed803e10193687087bfbdcd934  tools/prep_mute_state_check.tscn  186
+f1929890680af48d963de5442b2aafdeb04b7c69d40483c8d0ceedda34d7b750  tools/prep_tree_baseline.txt  39476
+1bdb430a6591aef0b4df2c19c9624f1d07306c2c0c1564ff7a7ef02594afd689  tools/synergy_activation_sfx_check.gd  17089
+d231d2abb64b80cdd9a7863e4b7a0f45d3cc08873728c53f8003fe3e20232aa5  tools/synergy_activation_sfx_check.gd.uid  20
+031bf1e1261f63503480e32b72d4431926d48914f318d884c2ff3ee0e542a2d9  ui/services/MusicService.gd  8580
+fdb89e240a826ce15a6eacd917073f9eca25efdebee2e601041d60e40a900879  ui/services/MusicService.gd.uid  20
+2939210942b0b7d19d590ed1310023aefdf633e1efa0b8fc5309b368d758fab3  ui/services/SfxService.gd  28322
+
+entries=33 mismatch=0 missing=0

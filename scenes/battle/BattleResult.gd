@@ -22,8 +22,26 @@ func _emit_finished() -> void:
 	_stop_battle_music()
 	await _play_crystal_attack_sequence(_result)
 	_show_result_overlay()
-	await get_tree().create_timer(RESULT_DISPLAY_SECONDS).timeout
+	await get_tree().create_timer(_result_linger_seconds()).timeout
 	battle_finished.emit(_result if not _result.is_empty() else BattleSim.result_from_state(_state))
+
+# 结算画面停留多久。
+#
+# **取「面板展示时长」与「胜负音实际时长」里更长的那个。**
+#
+# 9.17 反馈第 3 条原文：「回合战斗结束，bgm 未播放完毕，就进入其他界面的问题，
+# 现改为至少要等待胜利或者失败的 bgm 播放完毕后才能其他界面。」
+#
+# `battle_finished` 一发出去，Main 就会释放整个战斗场景并跳到下一页。胜负音
+# 虽然挂在 SfxService 的 root 池里、不会被当场掐断，但「界面已经换了、音乐还在响」
+# 正是玩家反馈的那件事。所以这里按**素材的真实长度**算，不写死一个「够长」的常数：
+# 以后换了更长的胜负音，这条会自动跟上（写死的数只会静默失效）。
+const RESULT_SOUND_MARGIN_SEC := 0.25
+
+func _result_linger_seconds() -> float:
+	var result := _result if not _result.is_empty() else BattleSim.result_from_state(_state)
+	var cue := SfxService.CUE_BATTLE_VICTORY if _local_player_wins(result) else SfxService.CUE_BATTLE_DEFEAT
+	return maxf(RESULT_DISPLAY_SECONDS, SfxService.cue_length(cue) + RESULT_SOUND_MARGIN_SEC)
 
 func _skip_animation() -> void:
 	if _return_emitted:
@@ -176,15 +194,32 @@ func _play_crystal_attack_sequence(result: Dictionary) -> void:
 	var ribbon_color := GameConstants.team_color(GameConstants.TEAM_BLUE if is_red_crystal else GameConstants.TEAM_RED)
 	var gap: float = maxf(CRYSTAL_VOLLEY_MIN_GAP_SEC, CRYSTAL_VOLLEY_BUDGET_SEC / float(attackers.size()))
 	var impact_point := target.global_position + Vector3(0.0, 0.35, 0.0)
+	# 9.17 第二批：己方法阵受击音（**循环**）。
+	#
+	# 判据 = 「挨打的这座水晶是不是我们自己的」。`losing_team` 用的是与
+	# `_crystal_demo_losing_team()` 同一条队伍口径（PvE 下我方被打穿才演、
+	# 返回的就是我方；PvP 下可能是红也可能是蓝），所以这里再比一次本地队即可。
+	#
+	# 循环而不是逐发播：`gap` 很密（人多时是连射），逐发播会互相切断成
+	# 一串断音；而这条音的语义就是「正在被打」—— 起于第一发、止于末发。
+	var our_crystal := losing_team == GameConstants.team_of_slot(NetworkService.team_local_slot)
+	var hit_loop := our_crystal and SfxService.start_loop(SfxService.CUE_FORMATION_HIT)
 	for fighter in attackers:
 		var muzzle := _crystal_attacker_muzzle(fighter)
 		_make_crystal_attack_ribbon(muzzle, impact_point, ribbon_color, _apply_crystal_hit.bind(is_red_crystal))
 		_vanish_crystal_attacker(fighter)
 		await get_tree().create_timer(gap).timeout
 		if not is_inside_tree():
+			# 中途退出战斗也必须停循环音：播放器挂在 root 下，
+			# 场景没了它照样在响（这正是它当初挂 root 的目的）。
+			if hit_loop:
+				SfxService.stop_loop()
 			return
 	# 等最后一发飞完并结算。
 	await get_tree().create_timer(CRYSTAL_RIBBON_FLIGHT_SEC + 0.35).timeout
+	# 攻击演完了就停 —— 后面的碎裂/淡出是「收场」，不再算受击。
+	if hit_loop:
+		SfxService.stop_loop()
 	if not is_inside_tree():
 		return
 

@@ -110,6 +110,7 @@ func _ready() -> void:
 
 	await _case_entry_does_not_announce()
 	await _case_cross_tiers()
+	await _case_non_ultimate_tier_silent()
 	await _case_round_change_crosses()
 	await _case_mute_gate()
 
@@ -219,6 +220,66 @@ func _case_cross_tiers() -> void:
 	_h.expect(_count() == 1, "multi_tier_multi_sound",
 		"一次采样同时跨了神7 与人7 两档，响了 %d 声（应为 1 声，连响像卡带）"
 			% _count())
+
+	prep.queue_free()
+	await _settle(3)
+
+
+# --- 2b. 非终极档位不发声（9.17 反馈第 1 条）----------------------------------
+
+# 反馈原文：「目前是激活羁绊就会生效，现在改为只在激活**终极羁绊**时才会生效，
+# 例如羁绊『神7·无敌』、『人7·狂战士』。」
+#
+# 也就是 2 档 / 4 档不再出声，只有每族的**最高档**（7 档）才响。
+# 这里用三族各跨一次非终极档（god@1、human@2、dark@5）钉住，最后用
+# god@7 做正对照 —— 少了正对照，「一直不响」的实现也能全绿。
+func _case_non_ultimate_tier_silent() -> void:
+	var prep := _new_prep()
+	if prep == null:
+		return
+	await _settle(4)
+
+	# 空棋盘起手：基线在 _new_prep() 的第一帧就记下了。
+	_set_board(0, 0)
+	prep._refresh_all()
+	await _settle(1)
+
+	# god 的第一档（1 只）—— RACE_THRESHOLDS.god = [1, 3, 7]，不是终极档。
+	SfxService.reset_counters_for_check()
+	_set_board(1, 0)
+	prep._refresh_all()
+	await _settle(1)
+	_expect_prep_ready(1, 0)
+	_h.expect(_count() == 0, "non_ultimate_god1_played",
+		"神羁绊第 1 档（非终极）响了 %d 声 —— 应该只在 7 档响" % _count())
+
+	# god 的第二档（3 只），仍不是终极档。
+	SfxService.reset_counters_for_check()
+	_set_board(3, 0)
+	prep._refresh_all()
+	await _settle(1)
+	_h.expect(_count() == 0, "non_ultimate_god3_played",
+		"神羁绊第 3 档（非终极）响了 %d 声 —— 应该只在 7 档响" % _count())
+
+	# human 的第 2 档（RACE_THRESHOLDS.human = [1, 2, 7]）。
+	_set_board(0, 0)
+	prep._refresh_all()
+	await _settle(1)
+	SfxService.reset_counters_for_check()
+	_set_board(0, 2)
+	prep._refresh_all()
+	await _settle(1)
+	_h.expect(_count() == 0, "non_ultimate_human2_played",
+		"人羁绊第 2 档（非终极）响了 %d 声 —— 应该只在 7 档响" % _count())
+
+	# 正对照：跨到 god@7（终极档）必须响。
+	SfxService.reset_counters_for_check()
+	_set_board(7, 2)
+	prep._refresh_all()
+	await _settle(1)
+	_h.expect(_count() == 1, "ultimate_god7_not_played",
+		"补到 7 神（终极羁绊）响了 %d 声（应为 1 声）—— 「只在终极档响」"
+			% _count() + "不等于「永远不响」")
 
 	prep.queue_free()
 	await _settle(3)

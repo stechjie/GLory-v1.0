@@ -76,6 +76,20 @@ static func ui_sound_allowed() -> bool:
 	return not AudioServer.is_bus_mute(master)
 
 
+# 9.17 反馈第 5 条：设置页新增的「背景音乐」开关。
+#
+# 与界面音效**分开裁决** —— 这正是这个开关存在的意义：只想听 BGM 的人
+# 可以关掉音效，只想静音效的人可以关掉 BGM。所以这里**不**复用 ui_sound，
+# 两者的键各自独立（"music" / "ui_sound"）。
+#
+# **刻意不看 Master 总线的静音状态。** 备战页那个「静音」按钮掐的是 Master，
+# 而反馈第 5 条要的是「在设置里关了音乐之后，对局中按右上的『已静音』能重新
+# 打开音乐」—— 那条路径由 PrepUI 在解除静音时把这个开关一并打开来实现，
+# 不是让这里去读总线。反过来写会让「关掉音乐」在按过静音键之后自动失效。
+static func music_allowed() -> bool:
+	return _toggle("music")
+
+
 # 触觉只有手持设备有。桌面即使开关是开的也不该假装能震 ——
 # Input.vibrate_handheld() 在桌面是 no-op，但明确挡在这里，
 # 门禁才能断言「桌面不调用」，而不是依赖引擎碰巧不做事。

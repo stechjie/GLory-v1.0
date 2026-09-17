@@ -12,6 +12,9 @@ const SLOT_POS := [
 ]
 const SLOT_SIZE := Vector2(184, 175)
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
+# 9.17 第二批：BGM 走常驻 MusicService，音效走 SfxService。
+const MusicService := preload("res://ui/services/MusicService.gd")
+const SfxService := preload("res://ui/services/SfxService.gd")
 var _slot_avatars: Array[TextureRect] = []
 var _friends_box: VBoxContainer
 var _friends_loading := false
@@ -119,7 +122,6 @@ var _start_lbl: Label
 var _host_hint_lbl: Label
 var _selftest_btn: Button
 var _screen_bands: Array[Dictionary] = []
-var _menu_music_player: AudioStreamPlayer
 var _debug_layer: Control
 var _debug_on := DEBUG_LAYOUT
 var _layout_scale := 1.0
@@ -211,21 +213,9 @@ func _process(delta: float) -> void:
 	_asset_lbl.text = "资源载入 %d%%" % int(round(100.0 * float(done) / maxf(1.0, float(_asset_total))))
 
 func _start_menu_music() -> void:
-	if _menu_music_player != null:
-		return
-	# 与摆放界面同款：必须用 load() 走资源系统，Android 导出包只含 mp3 的导入产物。
-	var stream := load(TEAM_ROOM_MUSIC_PATH) as AudioStream
-	if stream == null:
-		push_warning("房间界面音乐读取失败：%s" % TEAM_ROOM_MUSIC_PATH)
-		return
-	if stream is AudioStreamMP3:
-		(stream as AudioStreamMP3).loop = true
-	_menu_music_player = AudioStreamPlayer.new()
-	_menu_music_player.name = "MenuMusicPlayer"
-	_menu_music_player.stream = stream
-	_menu_music_player.bus = "Music" if AudioServer.get_bus_index("Music") >= 0 else "Master"
-	add_child(_menu_music_player)
-	_menu_music_player.play()
+	# 9.17 第二批：改走常驻 MusicService（播放器挂 root，不随页面释放）。
+	# 「同一首不重启」由服务内部判等负责。
+	MusicService.play(TEAM_ROOM_MUSIC_PATH)
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED:
@@ -360,6 +350,15 @@ func _on_slot_pressed(index: int) -> void:
 	var from := _my_slot()
 	if from < 0:
 		return
+	# 9.17 第二批：**只有自己换座**才响这一声。
+	#
+	# 位置选在这里而不是 NetworkService.team_request_move() 里：那是「自己的
+	# 换座请求」的入口，而这条音要的是**自己换座这个动作**的反馈 ——
+	# 别人换座走的是 room_state 广播，根本不经过这个函数，所以天然不响。
+	#
+	# 放在两处分支**之前**：上面的校验已经保证了「目标是空位、自己有座位」，
+	# 也就是说这一步无论在线还是离线都会真的换过去，不会出现「响了一声但没换」。
+	SfxService.play(SfxService.CUE_ROOM_SEAT_CHANGE)
 	if _online():
 		NetworkService.team_request_move(index)
 		return

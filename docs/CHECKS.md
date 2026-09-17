@@ -3000,3 +3000,183 @@ RPC 数 60 → 58，签名指纹 `a54e6c8d53288bcd` → `03102a543d9ef148`。`ch
 - `adversarial_client`：`economy_ledger`（旧账）；`economy_server_wiring` 除旧账两条外，`shop_refresh` 不带自报金币
   被 `gold_desync` 拒（萝卜提交引入的影子校验），连带 `server_rolls_shop` 等四条；`seat_races_validation` 的
   `oversized_fast` 是计时抖动（同一台机器两次 0.59ms / 12.35ms，函数体本批没动）
+## 2026-09-17：9.17 第二批音频（商城 BGM / 受击循环 / 换座位 / 聊天提醒）
+
+用户在 9.17 首版之后又给了 4 个音频与一份 bug 文档，本轮把这些接上并修 6 项反馈。
+
+### `tools/audio_sfx_check` 96 → 119
+
+- `EXPECTED_CUE_COUNT` 24 → 27（新增 `chat_alert` / `room_seat_change` / `formation_hit`）。
+- `BGM_PATHS` 加 `shop_music.mp3`（→ 7 首）。
+- 页面表新增 `"res://scenes/menu/ShopScreen.gd": ["SHOP_MUSIC_PATH"]`。
+- 三组新断言：
+  - `_check_throttle_config`：`chat_alert` 的节流窗口必须是 10 000 ms；连播 3 次只记 1 次。
+  - `await _check_loop_api`：循环播放器空闲时不发声、`start_loop` 必须记下**cue id 而不是路径**
+    （`loop_state_not_recorded`）、进树后 root 子节点数 +1、名字**不带** `GlorySfxVoice` 前缀
+    （否则会撞进 8 路池被算成池成员 → `loop_player_name_collides_with_voice_pool`）、`stop_loop` 后
+    `looping_cue()` 归空。
+  - `_check_cue_lengths`：`battle_victory` / `battle_defeat` / `boss_appear` 音长必须 > 0
+    （`cue_length_unreadable`）。「胜负 BGM 播完再切」「Boss 音优先」两条修复都靠它读数，读不到就恒真。
+
+### `tools/synergy_activation_sfx_check` 39 → 47
+
+新增 `_case_non_ultimate_tier_silent()`：神 1 / 神 3 / 人 2 落盘**不许**响
+（`non_ultimate_god1_played` / `non_ultimate_god3_played` / `non_ultimate_human2_played` 期望 0），
+正对照 `ultimate_god7_not_played` 期望 1。挡的是「羁绊音收窄到 7 人终极档」被改回去。
+
+### 夹具同步
+
+`tools/prep_tree_baseline.txt` 删除 `/PrepScreen/PrepMusicPlayer [AudioStreamPlayer]` —— 页面自带的
+BGM 播放器已由进程级 `MusicService` 取代。这是**真实的节点删除**，不是基线漂移。
+
+### 变异测试（6 处，全部被抓，均逐字节还原）
+
+| 变异 | 报的断言 |
+|---|---|
+| 节流窗口 10 000 → 0 | `chat_alert_throttle_window` |
+| 循环播放器改名撞进池 | `loop_player_name_collides_with_voice_pool` |
+| `cue_length` 恒 0 | `cue_length_unreadable` |
+| 去掉终极档过滤 | `non_ultimate_god1_played` 等三条 |
+| 删换座位调用点 | `cue_without_call_site` |
+| 删 `shop_music.mp3` | `bgm_file_missing` / `music_constant_file_missing` |
+
+### 回归（2026-09-17，本机 31 项）
+
+`work/_qa_913/run_checks.py` 31 项全 PASS（含 `audio_sfx_check` 119 / `synergy_activation_sfx_check` 47 /
+`team_merc_summon_sfx_check` 16）。日志 `_qa_917_team_summon/regression3.log`。
+
+### 一条既存红（与本批无关）
+
+`prep_tree_snapshot` 在**未改动的镜像 `GLory-codex`** 上同样 19 条 FAIL、同类 5 种、节点增量同为 +104
+—— 确认是**既存红**，本批只删了 1 行基线，不是它造成的。另 `startup_transition` 需要隔离
+`custom_user_dir_name`（临时 `override.cfg`）才能跑，本批只在临时文件里设过、跑完即删。
+## 2026-09-17：对局内的「静音」键跟随大厅的「背景音乐」开关
+
+反馈：大厅设置里关了背景音乐，进对局键上还写着「静音」。根因是那个键**只读 Master 总线**，
+而音乐开关是另一条闸门（`PresentationSettings.music_allowed()`）—— 两处状态各说各话。
+
+### 新增 `tools/prep_mute_state_check`（26 项）
+
+真实实例化 `PrepScreen`，读 `PrepUI._mute_button.text`（真按钮的真文案），点击走 `pressed.emit()`。
+
+- 正对照 `baseline_not_muted`：开关全开 → 「静音」。**少了它，「已静音」的断言在恒返回
+  「已静音」的实现上也会绿。**
+- 主断言 `music_off_shows_unmuted`：关掉背景音乐后**再**实例化 → 「已静音」。
+  `music_off_precondition_failed` 保证夹具真把开关关了。
+- `press_did_not_reopen_music` / `press_left_bus_muted` / `press_label_did_not_flip`：
+  按一下必须把声音打开。挡的是「显示与点击方向分叉」——那种实现第一下是在关一个本来就
+  没静音的总线，键上写着已静音、按下去更静。
+- `muting_touched_music_preference`：按「静音」不许顺手改玩家的音乐偏好。
+- `ui_sound_off_shown_as_muted`：只关「界面音效」不算已静音（范围锚点，改口径要显式改断言）。
+
+夹具等按钮用**轮询 `_mute_button != null`（≤120 帧）**，不是死等固定帧数 ——
+`PrepScreen._ready()` 里是 `await _build(...)`，固定帧数在慢机器上会偶发假红。
+
+### 变异测试（4 处全被抓，逐字节还原）
+
+| 变异 | 报的断言 |
+|---|---|
+| 文案改回只读总线 | `music_off_shows_unmuted` |
+| `_toggle_mute` 改回直接翻转总线 | `press_did_not_reopen_music` 等三条 |
+| 判据并进 `ui_sound_allowed()` | `ui_sound_off_shown_as_muted` |
+| 文案硬编码「已静音」 | `baseline_not_muted` 等四条 |
+
+### 回归（2026-09-17，本机 32 项）
+
+`work/_qa_913/run_checks.py` 32 项全 PASS。`prep_tree_baseline.txt` 不用改（只动逻辑、没动节点树）；
+全工程只有这一个门禁引用静音键。
+
+## 2026-09-17：boss 登场时的 BGM 交接 + 己方法阵受击音（9.17 第三轮）
+
+两条「门禁全绿但实际不生效」的反馈。两条都补了**能看到「真的发生了」**的观测缝，而不是只加返回值断言。
+
+### 新增 `tools/boss_battle_bgm_check`（24 项）
+
+直接实例化**真的 `BattleUI`**（`BattleUIScript.new()`；它是战斗继承链的根，`_ready()` 只定义在
+`BattleScreen` 上 → 没有棋盘、没有 3D 世界），用真的 `_kind` / `_state` 驱动真的
+`_start_battle_music()` / `_begin_boss_intro()` / `_resolve_pending_battle_music()`。
+
+判据是 `MusicService.current_path()`（当前曲目）而**不是** `is_playing()` —— headless 用 Dummy
+音频驱动，「有没有声音」在这里验不了；「当前曲目」是纯状态，照准。
+
+三段式时间线各钉一处，缺一段都红：`prep_music_stopped_too_early`（① 读条期不许变哑）、
+`prep_music_not_stopped_on_intro`（② 主断言：登场音响起那一瞬备战 BGM 停）、
+`boss_battle_music_not_started`（③ 音结束后起 PVE）。另加 pve 正对照
+（`pve_deferred_music` / `pve_battle_music_not_started`）与路径断言（`boss_uses_pvp_music`）。
+
+源码合同**先剥注释再找**：`screen_does_not_call_boss_intro` / `screen_plays_boss_appear_itself` /
+`boss_intro_order_wrong`。最后一条只看 `_begin_boss_intro()` **自己的函数体** —— 全文件里
+`MusicService.stop()` 还有一处（`_stop_battle_music()`），不圈定范围会被那一处蒙对。
+行为断言证明不了「BattleScreen 真的在那个位置调了它」，这一段补上。
+
+`_resolve_pending_battle_music()` 用**有界等待**（轮询 + 上限 30 s）而不是无限 `await`，
+超时报 `pending_never_resolved` —— 实现退化成不收口时，挂死比断言失败更糟（CI 里只表现为超时）。
+
+### `tools/audio_sfx_check` 119 → 123
+
+新增 `_check_loop_cold_start()`：把服务打回冷启动（`shutdown()` 连循环播放器一起 `free()`，
+于是下一次 `start_loop()` 必然重新走「新建 + 延迟挂载」），请求起播、等两帧，
+断言 `loop_start_count() > 0`；再断言 `stop_loop()` 之后计数不涨。
+
+新增观测缝 `SfxService.loop_start_count()`：只有「播放器已在树里、且真的调了 `play()`」才 +1。
+**第二批的四个判据会同时骗人** —— `start_loop()` 返回 true、`looping_cue()` 记着 cue、
+root 下节点数 1、两帧后 `loop_player_ready()` 也是 true（那时播放器已经挂上去了），
+而那一帧打空的 `play()` 不在任何一条的观测范围里，日志里只留一行
+"Playback can only happen when a node is inside the scene tree"。
+
+### 变异测试（5 处全被抓，逐字节还原）
+
+| 变异 | 报的断言 |
+|---|---|
+| 删掉 `MusicService.stop()` | `prep_music_not_stopped_on_intro` 等 4 条（`boss_battle_bgm`） |
+| stop / play 顺序对调 | `boss_intro_order_wrong`（只此一条） |
+| BattleScreen 改回自己播登场音 | `screen_does_not_call_boss_intro` / `screen_plays_boss_appear_itself` |
+| stop 挪进 `_start_battle_music()` | `prep_music_stopped_too_early` |
+| 去掉循环播放器的 ready 补起播 | `cold_loop_never_started` / `loop_restarted_after_stop`（`audio_sfx`） |
+
+`BattleUI.gd` / `BattleScreen.gd` / `SfxService.gd` 还原后与改前**逐字节相同**
+（`c23ee750561df36e` / `f7e0116069e34300` / `2939210942b0b7d1`）。
+
+### 回归（2026-09-17，本机 44 项）
+
+36 PASS；8 项 FAIL **全是既存红**，与 9.17 前两批逐项一致（`voice` 3 / `prep_tree_snapshot` 19 /
+`dynamic_call` 4 / `asset_manifest` 20 / `asset_delivery` 11 / `procedural_ui_ratchet` 3 /
+`prep_text_coverage` 1 / `startup_transition` 需隔离 `user://`）。**四处棘轮读数都没动**：
+`dynamic_call` 263、`asset_manifest` 20、`asset_delivery` 11、`procedural_ui_ratchet` 3 ——
+新增门禁的三个文件没给任何棘轮添丁。日志 `work/_qa_917_team_summon/suite_round3.log`。
+
+## 2026-09-17：收到好友申请时的红点与提示音（9.17 第四轮）
+
+### 新增 `tools/friend_request_alert_check`（23 项）
+
+### 判据选型：数「真的调了没有」，不是找那行字符串
+
+本轮的真实故障是 `MainMenu._refresh_friend_requests()` **写好了却没人调用**，
+红点与提示音因此一次都没生效。门禁若在源码里找 `_refresh_friend_requests()` 这行文本，
+会被**注释里的同名文本**蒙对 —— 那段代码里就有三处注释提到它。
+
+所以判据是：`MenuProbe` 继承 `MainMenu.gd`，只把钱包 / 资料 / 音乐 / 存档那几条打桩，
+`_ready()` 与 `_refresh_friend_requests()` 都走真实现，然后数一次 `add_child()`
+之后**真正发生**的取数次数（`fetch_calls`）。
+
+### 红灯取证
+
+修复前 18 项 / 5 红：`ready_did_not_refresh`（病根）、`friends_dot_hidden`、
+`alert_not_played`（播了 0 次），另两条是连带。修复后 23 项 / 0 红。
+
+### 变异测试（6 处全被抓，5 处隔离）
+
+删 `_ready()` 里的调用（= 真实故障）/ 删轮询 / 改轮询间隔 / 去掉失败早退 /
+去掉提示音 / 去掉去重 —— 后五处各自只红一条，说明门禁能定位。
+还原后 `MainMenu.gd` 仍为 `cc9df7947c8f428f`。
+
+### 回归（2026-09-17，本机 50 项）
+
+四处棘轮读数全部未变：`dynamic_call` 263 / `asset_manifest` 20 / `asset_delivery` 11 /
+`procedural_ui_ratchet` 3。红项 9 条全是既存红。
+
+### 套件清单里我自己加错的一条
+
+`friends_check_node` 只有 `.gd`、没有 `.tscn`，是被别的门禁 include 的模块，**不是可跑场景**。
+第一版套件把它塞进去，得到一条 `Cannot open file 'res://tools/friends_check_node.tscn'`
+的假红。已剔除 —— 加门禁进套件前先确认它有没有 `.tscn`。

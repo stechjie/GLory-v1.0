@@ -50,6 +50,11 @@ const Presentation := preload("res://effects/runtime/presentation/PresentationSe
 const SFX_BUS := "SFX"
 const VOICE_PREFIX := "GlorySfxVoice"
 
+# 循环音专用播放器名。**刻意不带 `GlorySfxVoice` 前缀**：audio_sfx_check 会数
+# root 下以 `GlorySfxVoice` 开头的节点并要求正好 8 个，名字撞上去会把那条
+# 「播放器池没挂进树」的断言弄红 —— 而那个诊断跟循环播放器毫无关系。
+const LOOP_PLAYER_NAME := "GlorySfxLoopVoice"
+
 # 同时能重叠几条。8 是取舍：AOE 多杀时的死亡音、连点时的按钮音都要能叠，
 # 但再多就是白白占着播放器不放。
 const VOICE_COUNT := 8
@@ -91,6 +96,16 @@ const CUE_UPGRADE_STONE_DRAW := "upgrade_stone_draw"
 const CUE_CARROT_FARM_UPGRADE := "carrot_farm_upgrade"
 const CUE_HARVEST_TECH_UPGRADE := "harvest_tech_upgrade"
 
+# --- 9.17 第二批（反馈文档 6 条里的第 6 条 + 社交/房间三条素材）-------------
+#
+# 三条新 cue 对应「音乐\0917」那一批素材：
+#   * 聊天新信息 / 朋友申请 —— 一条音，两处触发（私聊到达、朋友申请到达）；
+#   * 房间内更换座位 —— **只有自己换座**才响（别人换座不响）；
+#   * 己方法阵受击 —— 战斗结算水晶演出里，被打的是我方水晶时**循环**播。
+const CUE_CHAT_ALERT := "chat_alert"
+const CUE_ROOM_SEAT_CHANGE := "room_seat_change"
+const CUE_FORMATION_HIT := "formation_hit"
+
 const CUES := {
 	CUE_UI_POPUP: "res://assets/audio/sfx/ui/popup.mp3",
 	CUE_UI_CONFIRM: "res://assets/audio/sfx/ui/button_confirm.mp3",
@@ -119,6 +134,20 @@ const CUES := {
 	CUE_UPGRADE_STONE_DRAW: "res://assets/audio/sfx/camp/upgrade_stone_draw.mp3",
 	CUE_CARROT_FARM_UPGRADE: "res://assets/audio/sfx/camp/carrot_farm_upgrade.wav",
 	CUE_HARVEST_TECH_UPGRADE: "res://assets/audio/sfx/camp/harvest_tech_upgrade.mp3",
+
+	CUE_CHAT_ALERT: "res://assets/audio/sfx/ui/chat_alert.wav",
+	CUE_ROOM_SEAT_CHANGE: "res://assets/audio/sfx/ui/room_seat_change.wav",
+	CUE_FORMATION_HIT: "res://assets/audio/sfx/battle/formation_hit.mp3",
+}
+
+# 每条 cue 的最小重触发间隔（毫秒）。缺省是 RETRIGGER_GUARD_MSEC。
+#
+# 9.17 反馈：**聊天新信息 / 朋友申请 10 秒内只触发一次**，触发满 10 秒后
+# 再有新信息 / 新申请才会再响。这是个「节流窗口」，不是去重 ——
+# 所以放在服务里按 cue 记时间戳，而不是散到「谁在监听消息」的那几处：
+# 散出去的结果是私聊一处、朋友申请另一处，两处各响一遍，10 秒内听两下。
+const THROTTLE_MSEC_BY_CUE := {
+	CUE_CHAT_ALERT: 10_000,
 }
 
 # 四星音效按棋子分流。源文件给的是 5 条：人王 / 大天使·神王 / 母灵 /
@@ -146,6 +175,17 @@ static var _streams: Dictionary = {}
 static var _last_play_msec: Dictionary = {}
 static var _play_counts: Dictionary = {}
 static var _watching := false
+
+# 循环音那一份状态（见 start_loop / stop_loop）。
+static var _loop_player: AudioStreamPlayer
+static var _loop_path := ""
+# 当前循环的 cue id（looping_cue() 读它）。和 _loop_path 分开存：
+# 「同一首不重启」要比路径，而门禁/排障要看的是 cue id，两者不是一回事。
+static var _loop_cue := ""
+static var _loop_streams: Dictionary = {}
+# 循环音**真的起播过**几次。只有「播放器已在树里、且真的调了 play()」才 +1。
+# 见 loop_start_count() 与 start_loop() 的「冷启动窗口」说明。
+static var _loop_start_count := 0
 
 # 代币监视器的基线。`_currency_ready` 为 false 时只记基线不出声 ——
 # 冷启动那一刻 gold 从 0 变 100 不是一笔收支。
@@ -206,7 +246,11 @@ static func play(cue: String, volume_db := 0.0) -> bool:
 		push_warning("SfxService.play: 未登记的 cue %s" % cue)
 		return false
 	var now := Time.get_ticks_msec()
-	if now - int(_last_play_msec.get(cue, -RETRIGGER_GUARD_MSEC)) < RETRIGGER_GUARD_MSEC:
+	# 每条 cue 的窗口取「40 ms 重触发保护」与「本 cue 自己的节流」里更长的那个。
+	# 默认那条 40 ms 挡的是「同一帧里多条路径都判定成功」；chat_alert 的 10 s
+	# 挡的是「10 秒内收到一串消息只提醒一次」（见 THROTTLE_MSEC_BY_CUE）。
+	var guard := maxi(RETRIGGER_GUARD_MSEC, int(THROTTLE_MSEC_BY_CUE.get(cue, 0)))
+	if now - int(_last_play_msec.get(cue, -guard)) < guard:
 		return false
 
 	var stream := _stream_for(path)
@@ -317,10 +361,171 @@ static func stop_all() -> void:
 	for voice in _voices:
 		if voice != null and is_instance_valid(voice):
 			voice.stop()
+	stop_loop()
 
 
 static func star4_cue_for(unit_id: String) -> String:
 	return str(STAR4_CUES.get(unit_id, CUE_STAR4_DEFAULT))
+
+
+# --- 循环音（9.17 第二批：己方法阵受击）--------------------------------------
+
+# 播一条 cue 并让它一直循环，直到 stop_loop()。
+#
+# **为什么单独一路播放器，而不是复用 play() 的池**：`_stream_for()` 会显式
+# **关掉** loop（那里的注释写了理由：一条 0.3 s 的按钮音被导入预设勾上 loop
+# 就是永不停的嗡鸣）。循环是这一条音**要**的语义，不能靠改那条全局策略去满足，
+# 所以这里自己取一份开着 loop 的流，并用一个专用播放器独占它。
+#
+# 返回是否真的开始循环 —— 静音开关关着、cue 未登记、资源缺失时返回 false。
+static func start_loop(cue: String) -> bool:
+	if not Presentation.ui_sound_allowed():
+		return false
+	var path := str(CUES.get(cue, ""))
+	if path.is_empty():
+		push_warning("SfxService.start_loop: 未登记的 cue %s" % cue)
+		return false
+	var stream := _loop_stream_for(path)
+	if stream == null:
+		return false
+	var player := _ensure_loop_player()
+	if player == null:
+		return false
+	if _loop_path == path and player.playing:
+		return true
+	_loop_path = path
+	_loop_cue = cue
+	player.stream = stream
+	_play_loop_when_ready(player)
+	return true
+
+
+# 起播循环音。**循环播放器的 `play()` 只能从这里发出。**
+#
+# 播放器是 `add_child.call_deferred` 挂到 root 的（同 voices，理由见 `_ensure_voices`），
+# 所以**每个进程里的第一次 `start_loop()` 天生落在「节点已建好、还没进树」的那一帧**。
+# 对没进树的播放器调 `play()` 会打印
+# "Playback can only happen when a node is inside the scene tree" 并**静默失败**。
+#
+# 后果很隐蔽，值得写清楚，因为四个判据会同时骗人：`start_loop()` 返回 true、
+# `looping_cue()` 记下了 cue、计数器也 +1、两帧后 `loop_player_ready()` 还是 true
+# （那时播放器已经挂上去了）。全都绿，而**每局第一次的己方法阵受击音根本没响** ——
+# 第二场起播放器已在树里，就正常了。产品里表现为「第一次没声、后面都有」，
+# 不专门连打两场看不出来（9.17 第三轮反馈就是这一条）。
+#
+# 所以这里不把这一声丢掉，而是**等它进树再起**（同 MusicService._sync 的先例）：
+# 已经在树里就当场起；不在就挂 `ready`（一次性）补一次。
+static func _play_loop_when_ready(player: AudioStreamPlayer) -> void:
+	if player.is_inside_tree():
+		_start_loop_playback(player)
+		return
+	if not player.ready.is_connected(_on_loop_player_ready):
+		player.ready.connect(_on_loop_player_ready, CONNECT_ONE_SHOT)
+
+
+# `ready` 到了 = 播放器已经进树。**但要先确认这一声还没被取消。**
+#
+# 从「请求起播」到「进树」隔着一帧，而结算序列完全可能在这中间走到某条早退分支
+# 并调了 `stop_loop()`（水晶演出中途退出战斗就是）。那时 `_loop_cue` 已被清空，
+# 再补起播就会留下一路**没人收口的循环音**：播放器挂在 root 下，场景没了它照样响。
+static func _on_loop_player_ready() -> void:
+	if _loop_cue.is_empty():
+		return
+	var player := _loop_player
+	if player == null or not is_instance_valid(player):
+		return
+	_start_loop_playback(player)
+
+
+static func _start_loop_playback(player: AudioStreamPlayer) -> void:
+	# 这一层守卫不是「防御性编程」，是本文件已经踩过的那个坑：没进树的 play()
+	# 会静默失败。它同时给门禁留了一个判据 —— 只有真的起了播，计数才动。
+	if not player.is_inside_tree():
+		return
+	player.play()
+	_loop_start_count += 1
+
+
+static func stop_loop() -> void:
+	_loop_path = ""
+	_loop_cue = ""
+	if _loop_player != null and is_instance_valid(_loop_player):
+		_loop_player.stop()
+
+
+# 当前正在循环的 **cue id**，没有在循环时是空串。
+static func looping_cue() -> String:
+	return _loop_cue
+
+
+# 循环音**真的起播过**几次（不是「请求被接受」几次）。
+#
+# 为什么要和 `start_loop()` 的返回值分开：两者在坏实现上会分叉，而分叉**没有任何
+# 其它迹象**。9.17 第二批那版就是「在还没进树的播放器上调 play()」—— 引擎只打印
+# "Playback can only happen when a node is inside the scene tree" 然后静默失败，
+# 而 `start_loop()` 照样返回 true、`looping_cue()` 照样记着 cue、
+# 两帧后 `loop_player_ready()` 也照样是 true（那时播放器已经挂上去了）。
+# 三个判据全绿、产品却一声不响 —— 只能靠「到底起播了几次」这个计数器分开。
+static func loop_start_count() -> int:
+	return _loop_start_count
+
+
+# cue 的时长（秒）。读不到返回 0.0。
+#
+# 给「等胜负 BGM 播完再切界面」用（9.17 反馈第 3 条）：调用方拿它和
+# RESULT_DISPLAY_SECONDS 取 max，而不是自己写一个「够长」的常数 ——
+# 那种写法换了素材就对不上，而且没人会发现。
+static func cue_length(cue: String) -> float:
+	var path := str(CUES.get(cue, ""))
+	if path.is_empty():
+		return 0.0
+	var stream := _stream_for(path)
+	if stream == null:
+		return 0.0
+	return stream.get_length()
+
+
+static func _ensure_loop_player() -> AudioStreamPlayer:
+	if _loop_player != null and is_instance_valid(_loop_player) and _loop_player.is_inside_tree():
+		return _loop_player
+	var tree := _tree()
+	if tree == null:
+		return null
+	var existing := tree.root.get_node_or_null(LOOP_PLAYER_NAME) as AudioStreamPlayer
+	if existing != null and is_instance_valid(existing):
+		_loop_player = existing
+		return _loop_player
+	var player := AudioStreamPlayer.new()
+	player.name = LOOP_PLAYER_NAME
+	player.bus = SFX_BUS if AudioServer.get_bus_index(SFX_BUS) >= 0 else "Master"
+	player.process_mode = Node.PROCESS_MODE_ALWAYS
+	tree.root.add_child.call_deferred(player)
+	_loop_player = player
+	return _loop_player
+
+
+# 循环播放器是不是已经挂进树。理由同 voices_ready()：延迟挂载期间
+# `play()` 会打印 "Playback can only happen when a node is inside the scene tree"
+# 并**静默失败**，调用方以为响了其实没有。
+static func loop_player_ready() -> bool:
+	if _loop_player == null or not is_instance_valid(_loop_player):
+		return false
+	return _loop_player.is_inside_tree()
+
+
+static func _loop_stream_for(path: String) -> AudioStream:
+	if _loop_streams.has(path):
+		return _loop_streams[path]
+	var stream := load(path) as AudioStream
+	if stream == null:
+		push_warning("SfxService: 循环音读取失败 %s" % path)
+		return null
+	if stream is AudioStreamMP3:
+		(stream as AudioStreamMP3).loop = true
+	elif stream is AudioStreamWAV:
+		(stream as AudioStreamWAV).loop_mode = AudioStreamWAV.LOOP_FORWARD
+	_loop_streams[path] = stream
+	return stream
 
 
 # --- 代币收支监视器 ---------------------------------------------------------
@@ -387,6 +592,7 @@ static func cue_ids() -> Array:
 static func reset_counters_for_check() -> void:
 	_play_counts.clear()
 	_last_play_msec.clear()
+	_loop_start_count = 0
 
 
 # 8 个播放器是不是都已经挂进树了。
@@ -434,12 +640,20 @@ static func shutdown() -> void:
 	for voice in _voices:
 		if voice != null and is_instance_valid(voice):
 			voice.stop()
+	if _loop_player != null and is_instance_valid(_loop_player):
+		_loop_player.stop()
 	for voice in _voices:
 		if voice == null or not is_instance_valid(voice):
 			continue
 		# 用 free() 而不是 queue_free()：门禁是「检查完就退出」的，
 		# 延迟释放根本没机会 flush。
 		voice.free()
+	if _loop_player != null and is_instance_valid(_loop_player):
+		_loop_player.free()
+	_loop_player = null
+	_loop_path = ""
+	_loop_cue = ""
+	_loop_streams.clear()
 	_voices.clear()
 	_streams.clear()
 	_last_play_msec.clear()

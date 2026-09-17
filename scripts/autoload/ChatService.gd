@@ -19,6 +19,16 @@ signal unread_changed(any_unread: bool)
 signal dm_received(friend_code: String, message: Dictionary)
 signal kicked_changed(kicked: bool)
 
+# 9.17 第二批：新私聊的提示音。
+#
+# 挂在**这里**而不是界面上：私聊推送是随时到的（玩家可能正在备战、正在主菜单、
+# 正在好友列表），而界面只有当前那一页。挂在服务上就一处覆盖全部场景。
+#
+# 「10 秒内只响一次」不在这里判 —— 那是 SfxService.CUE_COOLDOWN_MSEC 里
+# 按 cue 记的节流窗口，和「朋友申请」共用同一条 cue 与同一个窗口
+# （素材本来就是一条《聊天新信息、朋友申请》）。
+const SfxService := preload("res://ui/services/SfxService.gd")
+
 # 与 backend/app/routes/chat.py 的 DM_TYPE 一致。⚠️ 两处都有 ——
 # 对不上的话推送全部掉进 RealtimeService 的「未知类型」分支：不报错，就是收不到。
 const DM_TYPE := "dm"
@@ -135,6 +145,9 @@ func _on_realtime_message(payload: Dictionary) -> void:
 	if code != _open_code and not _unread.has(code):
 		_unread[code] = true
 		unread_changed.emit(true)
+		# 只在「这条会话对玩家来说是新的未读」时响。正在看着的那个会话
+		# （code == _open_code）不响 —— 消息就在眼前，再响一声是噪音。
+		SfxService.play(SfxService.CUE_CHAT_ALERT)
 	dm_received.emit(code, message as Dictionary)
 
 

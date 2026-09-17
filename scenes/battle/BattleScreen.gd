@@ -337,7 +337,7 @@ func _prepare_battle_models() -> void:
 	if _battle_3d_root != null:
 		_battle_3d_root.visible = true
 	_battle_setup_ready = true
-	# 9.17：Boss 登场音。放在这里而不是 _start_battle_music() 里 ——
+	# 9.17：Boss 登场。放在这里而不是 _start_battle_music() 里 ——
 	# 后者在进场景那一刻就会被调一次（BattleScreen.gd:98），那时 replay 还没到、
 	# 单位模型还没建，声音会比画面早一整段读条。
 	#
@@ -346,9 +346,16 @@ func _prepare_battle_models() -> void:
 	#
 	# 判据用 _effective_kind() 而不是 _kind：3v3 时 _kind 停在占位的 "team"，
 	# 真正的类型要么在 replay 里，要么按回合表算（boss 回合 = 5/10/15/20）。
+	#
+	# 「停掉备战 BGM + 响登场音」打包在 BattleUI._begin_boss_intro() 里：两件事必须
+	# **同一时刻**发生（9.17 第三轮反馈），拆在两个地方迟早漂移。
 	if _effective_kind() == "boss":
-		SfxService.play(SfxService.CUE_BOSS_APPEAR)
+		_begin_boss_intro()
 	_try_start_final_round_intro()
+	# 9.17 反馈第 4 条：登场音播完之后才起 pve 战斗 BGM。
+	# 放在本函数**最末尾**：这是「模型全建完、战斗马上开打」的那一刻，
+	# 也是本函数里唯一保证会走到的收口点（前面几个早退分支都在建模型循环里）。
+	await _resolve_pending_battle_music()
 
 # 顶部一条细进度条，接着备战界面那条蓝线继续走，避免「画面停住」的观感。
 func _make_battle_prepare_bar() -> ProgressBar:
@@ -763,10 +770,12 @@ func _finish_replay() -> void:
 	await _await_presentation_drained()
 	await _play_crystal_attack_sequence(_result)
 	# V2 P1-05 第 3 条：镜头轻收束 + 幸存者定格，然后才出胜负字样。
-	# 保持时长由 RESULT_DISPLAY_SECONDS(1.0) 兜住 V2 的"至少 0.8 秒"。
+	# 9.17 反馈第 3 条：停留时长改为「至少等胜负音播完」（见
+	# BattleResult._result_linger_seconds —— 它是 RESULT_DISPLAY_SECONDS
+	# 与胜负音实际时长的 max，所以 V2 那条「至少 0.8 秒」仍然被兜住）。
 	play_victory_finish()
 	_show_result_overlay()
-	await get_tree().create_timer(RESULT_DISPLAY_SECONDS).timeout
+	await get_tree().create_timer(_result_linger_seconds()).timeout
 	battle_finished.emit(_result)
 
 func _skip_animation() -> void:

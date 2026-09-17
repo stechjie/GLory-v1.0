@@ -35,8 +35,9 @@ const Presentation := preload("res://effects/runtime/presentation/PresentationSe
 
 const CHECK_NAME := "audio_sfx"
 
-# 源文件里必须一条不漏登记进来的 cue 数（zip 里 24 条音效）。
-const EXPECTED_CUE_COUNT := 24
+# 源文件里必须一条不漏登记进来的 cue 数（zip 里 24 条音效 +
+# 9.17 第二批的 3 条：聊天新信息/朋友申请、房间内更换座位、己方法阵受击）。
+const EXPECTED_CUE_COUNT := 27
 
 # 播 SfxService 的生产代码扫描范围。**刻意不含 `res://tools`** ——
 # 门禁自己会调 play()，算进来就等于让门禁给自己的断言当证人
@@ -62,6 +63,7 @@ const BGM_PATHS: Array[String] = [
 	"res://assets/audio/bgm/fighting_music.mp3",
 	"res://assets/audio/bgm/pvp_battle_music.mp3",
 	"res://assets/audio/bgm/team_room_music.mp3",
+	"res://assets/audio/bgm/shop_music.mp3",
 ]
 
 var _h: CheckHarness
@@ -79,6 +81,11 @@ func _ready() -> void:
 	_check_install_is_idempotent()
 	_check_mute_gate()
 	_check_retrigger_guard()
+	# 9.17 第二批：三条新行为各自的最小断言。
+	_check_throttle_config()
+	await _check_loop_api()
+	await _check_loop_cold_start()
+	_check_cue_lengths()
 	await _check_currency_watcher()
 	_check_source_contract()
 	_check_main_installs()
@@ -255,6 +262,7 @@ func _check_screen_music_constants() -> void:
 	var screens := {
 		"res://scenes/menu/MainMenu.gd": ["MENU_MUSIC_PATH"],
 		"res://scenes/menu/Team3v3Lobby.gd": ["TEAM_ROOM_MUSIC_PATH"],
+		"res://scenes/menu/ShopScreen.gd": ["SHOP_MUSIC_PATH"],
 		"res://scenes/prep/PrepScreen.gd": ["PREP_MUSIC_PATH", "PREP_PVP_MUSIC_PATH"],
 		"res://scenes/battle/BattleUI.gd": ["BATTLE_MUSIC_PATH", "PVP_BATTLE_MUSIC_PATH"],
 	}
@@ -354,6 +362,153 @@ func _check_retrigger_guard() -> void:
 	var count := SfxService.play_count(SfxService.CUE_SHOP_BUY)
 	_h.expect(count >= 1 and count < 5, "retrigger_guard_ineffective",
 		"同一 cue 连发 5 次记了 %d 次播放（40 ms 保护没生效）" % count)
+
+
+# --- 9.17 第二批：10 秒节流（聊天新信息 / 朋友申请）--------------------------
+
+# 反馈原文：「聊天新信息、朋友申请音效 10 秒内只触发一次，触发 10 秒后，
+# 有新信息、新申请才会再次触发。」
+#
+# 这条验两件事，缺一不可：
+#   1. **窗口真的是 10 秒**（不是默认的 40 ms）—— 只验「连发 3 次只响 1 次」
+#      的话，40 ms 的保护也能让断言通过，而那不满足需求；
+#   2. 连发确实只响一声。
+func _check_throttle_config() -> void:
+	var window := int(SfxService.THROTTLE_MSEC_BY_CUE.get(SfxService.CUE_CHAT_ALERT, 0))
+	_h.expect(window == 10_000, "chat_alert_throttle_window",
+		"chat_alert 的节流窗口是 %d ms，需求是 10000 ms —— 40 ms 的重触发保护"
+			% window + "只能挡住同一帧，挡不住「10 秒内一串消息」")
+
+	SfxService.reset_counters_for_check()
+	for _i in 3:
+		SfxService.play(SfxService.CUE_CHAT_ALERT)
+	var count := SfxService.play_count(SfxService.CUE_CHAT_ALERT)
+	_h.expect(count == 1, "chat_alert_throttle_ineffective",
+		"连发 3 次 chat_alert 记了 %d 次播放（10 秒窗口内应恒为 1）" % count)
+
+
+# --- 9.17 第二批：循环音（己方法阵受击）--------------------------------------
+
+# 循环音**不能**复用 play() 那条路：`_stream_for()` 会显式关掉 loop。
+# 所以这里同时钉住「循环走的是专用播放器」和「专用播放器真的在树里」——
+# 后者是 SfxService 自己踩过的坑（延迟挂载那一帧 play() 静默失败）。
+func _check_loop_api() -> void:
+	_h.expect(SfxService.looping_cue().is_empty(), "loop_should_start_idle",
+		"开局就有循环音在响：%s" % SfxService.looping_cue())
+
+	var started := SfxService.start_loop(SfxService.CUE_FORMATION_HIT)
+	_h.expect(started, "loop_start_returned_false",
+		"start_loop(formation_hit) 返回 false —— 静音开关关着？资源没导入？")
+	_h.expect(SfxService.looping_cue() == SfxService.CUE_FORMATION_HIT,
+		"loop_state_not_recorded",
+		"start_loop 之后 looping_cue() 是 %s" % SfxService.looping_cue())
+
+	# 等一帧：循环播放器也是延迟挂载的，这一刻才可能进树。
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_h.expect(SfxService.loop_player_ready(), "loop_player_not_in_tree",
+		"循环播放器没进树 —— play() 会打印 'Playback can only happen when a node "
+			+ "is inside the scene tree' 并静默失败，调用方以为在响、其实没有")
+
+	# root 下必须真的有且只有 1 个循环播放器节点。
+	var loop_nodes := 0
+	for child in get_tree().root.get_children():
+		if str(child.name) == str(SfxService.LOOP_PLAYER_NAME):
+			loop_nodes += 1
+	_h.expect(loop_nodes == 1, "loop_player_root_child_count",
+		"root 下有 %d 个 %s 节点，应该是 1 个" % [loop_nodes, str(SfxService.LOOP_PLAYER_NAME)])
+
+	# 循环播放器**不能**落进 voices 的命名前缀里：_check_voice_pool 会数
+	# 以 GlorySfxVoice 开头的节点并要求正好 8 个。
+	_h.expect(not str(SfxService.LOOP_PLAYER_NAME).begins_with(str(SfxService.VOICE_PREFIX)),
+		"loop_player_name_collides_with_voice_pool",
+		"%s 以 %s 开头，会被 _check_voice_pool 数成第 9 个 voice"
+			% [str(SfxService.LOOP_PLAYER_NAME), str(SfxService.VOICE_PREFIX)])
+
+	SfxService.stop_loop()
+	_h.expect(SfxService.looping_cue().is_empty(), "loop_not_stopped",
+		"stop_loop() 之后 looping_cue() 仍然是 %s" % SfxService.looping_cue())
+
+
+# 冷启动窗口：**循环播放器还没进树的那一帧里 start_loop()，声音必须照样发出来。**
+#
+# 上面那条只验了「返回值 + 两帧后播放器在树里」，而这三点在一个**不发声**的实现上
+# 可以同时成立：`start_loop()` 返回 true、`looping_cue()` 记下 cue、
+# 两帧后 `loop_player_ready()` 也是 true —— 因为播放器在那一帧末尾就挂上去了，
+# 只是**当场的 play() 已经打空了**（引擎: "Playback can only happen when a node
+# is inside the scene tree"，静默失败）。9.17 第二批就是这一版：每局第一次结算的
+# 己方法阵受击音不响，第二场起才正常。
+#
+# 所以这里把服务**打回冷启动**（`shutdown()` 会把循环播放器一起 free 掉，
+# 于是下一次 `start_loop()` 必然重新走「新建 + 延迟挂载」那条路），
+# 再拿 `loop_start_count()` 问「到底真的起播没有」——而不是问「请求被接受没有」。
+func _check_loop_cold_start() -> void:
+	SfxService.stop_loop()
+	SfxService.shutdown()
+	SfxService.install()
+	await _await_voices(10)
+
+	SfxService.reset_counters_for_check()
+	var started := SfxService.start_loop(SfxService.CUE_FORMATION_HIT)
+	_h.expect(started, "cold_loop_start_returned_false",
+		"冷启动后 start_loop(formation_hit) 返回 false —— 静音开关关着？资源没导入？")
+
+	# 一帧给 call_deferred 的挂载与 ready 信号，一帧兜底。
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_h.expect(SfxService.loop_start_count() > 0, "cold_loop_never_started",
+		"冷启动后 start_loop() 返回 %s、looping_cue() 也记下了，但两帧内 "
+			% str(started)
+			+ "loop_start_count() 仍是 0 —— 这一声根本没发出去。冷启动的第一次 "
+			+ "start_loop() 必然落在「播放器已建好、还没进树」的那一帧上，"
+			+ "当场的 play() 只会打印一行 ERROR 然后静默失败")
+
+	_h.expect(SfxService.looping_cue() == SfxService.CUE_FORMATION_HIT,
+		"cold_loop_state_not_recorded",
+		"冷启动的 start_loop 之后 looping_cue() 是 %s" % SfxService.looping_cue())
+
+	# 补起播的那条回调必须先看「这一声是不是已经被取消了」。
+	# 结算序列（水晶演出）中途退出战斗会在同一帧内 stop_loop()，而播放器挂 root、
+	# 场景没了照样响 —— 没人收口的循环音就是这么来的。
+	SfxService.stop_loop()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_h.expect(SfxService.loop_start_count() == 1, "loop_restarted_after_stop",
+		"stop_loop() 之后循环音的起播次数是 %d 次（应为 1 次：冷启动那一次）。"
+			% SfxService.loop_start_count()
+			+ "多出来的一次说明补起播的回调没有检查「请求已经取消」，"
+			+ "会留下收不掉的循环音")
+
+	# 收尾：把播放器池与流缓存恢复到后续检查能用的状态（本条把服务拆过一次）。
+	SfxService.shutdown()
+	SfxService.install()
+	await _await_voices(10)
+
+
+# 有界等待播放器池落地。挂死比断言失败更糟（CI 里只表现为超时，看不出是哪条）。
+func _await_voices(frames: int) -> void:
+	var waited := 0
+	while not SfxService.voices_ready() and waited < frames:
+		await get_tree().process_frame
+		waited += 1
+
+
+# --- 9.17 第二批：cue 时长 ---------------------------------------------------
+
+# 「等胜负音播完再切界面」和「boss 登场音播完再起 BGM」两处都读 cue_length()。
+# 读不到时它返回 0.0，那两处的等待会**静默塌回默认值** —— 也就是说功能看着
+# 还在，实际已经不等了。这个塌陷没有任何其它迹象，只能在这里钉住。
+func _check_cue_lengths() -> void:
+	for pair in [
+		[SfxService.CUE_BATTLE_VICTORY, "battle_victory"],
+		[SfxService.CUE_BATTLE_DEFEAT, "battle_defeat"],
+		[SfxService.CUE_BOSS_APPEAR, "boss_appear"],
+	]:
+		var cue := str(pair[0])
+		var length := SfxService.cue_length(cue)
+		_h.expect(length > 0.0, "cue_length_unreadable",
+			"cue_length(%s) 是 %.3f 秒 —— 「等它播完」的逻辑会塌回默认停留时长，"
+				% [str(pair[1]), length] + "而这不会有任何其它症状")
 
 
 # --- 代币收支监视器 ----------------------------------------------------------

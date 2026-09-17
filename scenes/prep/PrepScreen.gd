@@ -8,6 +8,8 @@ const BattleSim = preload("res://scripts/battle/BattleSimulator.gd")
 # 只为拿它的 static 资源缓存（BattleRenderer.gd 没有 class_name）。战斗资源在这里
 # 就绪之后，BattleScreen 那边 _scene_for_model_path 直接命中缓存、不再同步读盘。
 const BattleRendererScript = preload("res://scenes/battle/BattleRenderer.gd")
+# 9.17 第二批：BGM 走常驻的 MusicService。
+const MusicService := preload("res://ui/services/MusicService.gd")
 const BattleLoadingOverlayScene := preload("res://ui/components/GloryLoadingOverlay.tscn")
 const BattleLoadingOverlayScript := preload("res://ui/components/GloryLoadingOverlay.gd")
 
@@ -28,7 +30,6 @@ const BATTLE_ACTION := "start_battle"
 const BATTLE_ACTION_TIMEOUT_MSEC := 90000
 const BATTLE_LOADING_MODAL_PRIORITY := 80
 
-var _prep_music_player: AudioStreamPlayer
 var _fps_label: Label
 var _fps_accum := 0.0
 
@@ -125,26 +126,18 @@ func _ready() -> void:
 	startup_ready.emit()
 
 func _start_prep_music() -> void:
-	if _prep_music_player != null:
-		return
 	# 下一回合是 PVP（含最终 PVP）时放专属音乐，否则放普通摆放音乐。
 	var next_kind := PrepRules.next_round_kind()
 	var music_path := PREP_PVP_MUSIC_PATH if next_kind == "pvp" or next_kind == "final" else PREP_MUSIC_PATH
-	# 必须用 load() 走资源系统：Android 导出包只含 mp3 的导入产物、不含原始文件，
-	# FileAccess.get_file_as_bytes 在真机上读到空字节（编辑器里却正常，因为原始
-	# 文件就在磁盘上）。战斗音乐用 load() 所以手机上一直有声，这里保持一致。
-	var stream := load(music_path) as AudioStream
-	if stream == null:
-		push_warning("准备界面音乐读取失败：%s" % music_path)
-		return
-	if stream is AudioStreamMP3:
-		(stream as AudioStreamMP3).loop = true
-	_prep_music_player = AudioStreamPlayer.new()
-	_prep_music_player.name = "PrepMusicPlayer"
-	_prep_music_player.stream = stream
-	_prep_music_player.bus = "Music" if AudioServer.get_bus_index("Music") >= 0 else "Master"
-	add_child(_prep_music_player)
-	_prep_music_player.play()
+	# 9.17 第二批：改走常驻 MusicService（播放器挂 root，不随页面释放）。
+	# 原来这里自建 AudioStreamPlayer 并 add_child 到备战页上；Main._clear() 切页面
+	# 时会把整页释放掉。BGM 由服务统一持有后，「打开子界面音乐断掉」那类问题
+	# 不会再从这一页冒出来。
+	#
+	# 「同一首不重启」由服务内部判等负责：每回合重建备战页时会再调一次这里，
+	# prep_music 不会从 0 秒重头播。load() 的注意事项（Android 导出包只含导入
+	# 产物）也已收进 MusicService._stream_for()。
+	MusicService.play(music_path)
 
 func _setup_fps_overlay() -> void:
 	_fps_label = Label.new()

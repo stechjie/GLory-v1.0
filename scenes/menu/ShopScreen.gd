@@ -24,6 +24,12 @@ const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 # 9.17 音效。preload 而不是全局类名，理由见 Main.gd 顶上那条注释。
 const SfxService := preload("res://ui/services/SfxService.gd")
+# 9.17 第二批：商城有**自己的独立 BGM**（反馈第 2 条括号里那句
+# 「商城功能自身有独立的 bgm」）。进商城切到这一首，返回主菜单时
+# MainMenu._start_menu_music() 会把 menu_music 切回来 —— 各页各播各的，
+# 播放器是同一个（MusicService），所以不会叠。
+const MusicService := preload("res://ui/services/MusicService.gd")
+const SHOP_MUSIC_PATH := "res://assets/audio/bgm/shop_music.mp3"
 const ConfirmDialog := preload("res://ui/components/GloryConfirmDialog.gd")
 # 新按钮一律实例化组件，不写 Button.new()：procedural_ui_ratchet 按文件只许降。
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
@@ -74,6 +80,10 @@ func _ready() -> void:
 	_build()
 	_render()
 	_reload()
+	# 9.17 第二批：商城独立 BGM。放在 _reload() 之后 —— 它只是一条 play()，
+	# 但排在网络请求后面能保证「进页面先看到东西、再听音乐」，不会反过来。
+	# 返回主菜单时由 MainMenu 负责切回 menu_music，这里不需要收尾。
+	MusicService.play(SHOP_MUSIC_PATH)
 
 
 # --- 骨架 ---------------------------------------------------------------------

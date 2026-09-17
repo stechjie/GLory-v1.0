@@ -10,6 +10,9 @@ const TutorialTargetProviderScript := preload("res://scripts/tutorial/TutorialTa
 const GloryToastScript := preload("res://ui/components/GloryToast.gd")
 const GloryTheme := preload("res://ui/theme/GloryTheme.gd")
 const GloryTokens := preload("res://ui/theme/GloryTokens.gd")
+# 右上角那个静音键要读「设置页的背景音乐开关」，裁决只在 PresentationSettings 一处
+# （同 SfxService / MusicService / UiFeedback 的写法，用 preload 常量而不是全局类名）。
+const Presentation := preload("res://effects/runtime/presentation/PresentationSettings.gd")
 # 只为拿 FillPhase 枚举做**静态**引用（教学第 15 步的子阶段），
 # 走 preload 常量而不是从 autoload 实例上取，dynamic_call 棘轮才不会长。
 const TutorialModeScript := preload("res://scripts/tutorial/TutorialMode.gd")
@@ -1448,10 +1451,47 @@ func _teardown_chat_entry() -> void:
 	if _voice_controls != null:
 		_voice_controls.teardown()
 
-func _toggle_mute() -> void:
-	# 全局静音开关：静音 Master 总线（BGM + 音效都停），引擎级状态，切场景仍生效
+# 「已静音」的判据，按钮文案与点击方向**共用这一处**。两处各判一次的话迟早分叉，
+# 而分叉的症状是「键上写着已静音、按下去却更静」——那种键按了像坏了。
+#
+# 两种情况都算静音：
+#   ① Master 总线被静音 —— 就是本页这个按键自己按下去的那一步；
+#   ② 设置页把「背景音乐」关了 —— 9.17 第二批反馈：在大厅里关了 BGM，
+#      进对局也该显示已静音，而不是两处各说各话。
+#
+# 只看「背景音乐」，**不看**「界面音效」：后者只掐 SFX，玩家还听得见 BGM，
+# 把它也算成「已静音」是句假话。这条范围由 prep_mute_state_check 钉住，
+# 将来要改成「任一开关关掉都算静音」得显式改断言，不能顺手漂移。
+func _is_audio_muted() -> bool:
 	var master := AudioServer.get_bus_index("Master")
-	AudioServer.set_bus_mute(master, not AudioServer.is_bus_mute(master))
+	if master >= 0 and AudioServer.is_bus_mute(master):
+		return true
+	return not Presentation.music_allowed()
+
+
+func _toggle_mute() -> void:
+	# 全局静音开关：静音 Master 总线（BGM + 音效都停），引擎级状态，切场景仍生效。
+	#
+	# 目标状态从 _is_audio_muted() 反推，**不是**直接翻转总线：设置页关过
+	# 「背景音乐」时按钮显示的是「已静音」，这一次按下去必须把声音打开
+	# （清总线静音 + 打开音乐开关）。照旧直接翻总线的话，那种局面下第一下是把
+	# 一个本来就没静音的总线翻成静音 —— 键上写着已静音、按下去更静，按了没反应。
+	var master := AudioServer.get_bus_index("Master")
+	var want_mute := not _is_audio_muted()
+	if master >= 0:
+		AudioServer.set_bus_mute(master, want_mute)
+	# 9.17 反馈第 5 条：「若在这里（设置页）关闭音乐，在游戏对局中可以通过右上的
+	# 『已静音』按键重新打开音乐。」
+	#
+	# 清总线静音只算半条：设置页那个「背景音乐」开关是**另一条**闸门
+	# （PresentationSettings.music_allowed()，由 MusicService 执行 stream_paused）。
+	# 只解总线的话，设置里关过音乐的玩家按这个键仍然听不到 BGM —— 反馈要的正是
+	# 这条路径能把音乐重新打开，所以这里一并把那个偏好打开。
+	#
+	# 只在**解除静音**时做：把整体静音这一步定义成「声音都回来」，
+	# 而按下去要静音时不该顺手改玩家的音乐偏好（那是设置页的事）。
+	if not want_mute:
+		PlayerProfile.set_presentation_toggle("music", true)
 	if _mute_button != null:
 		_mute_button.text = _mute_label_text()
 
@@ -1558,7 +1598,8 @@ func _refresh_carrot_counter() -> void:
 		Color(0.72, 1.0, 0.58) if amount >= capacity else Color(1.0, 0.94, 0.70))
 
 func _mute_label_text() -> String:
-	var muted := AudioServer.is_bus_mute(AudioServer.get_bus_index("Master"))
+	# 判据与点击方向同源（_is_audio_muted）：设置页关了背景音乐，这里也要写「已静音」。
+	var muted := _is_audio_muted()
 	if LocaleManager.get_locale() == "en":
 		return "Muted" if muted else "Mute"
 	return "已静音" if muted else "静音"
@@ -1964,6 +2005,16 @@ func _synergy_unlocked_tiers() -> Dictionary:
 # 一次采样最多响一声：一次操作可能同时跨两档（比如一次性从 6 只补到 8 只，
 # god 的 7 档与 human 的 7 档都可能过），那种时候连续两声反而像卡带。
 # 快照在**判断之后无条件更新**，所以同一状态被反复采样不会重复响。
+#
+# 9.17 反馈第 1 条：「目前是激活羁绊就会生效，现在改为只在激活**终极羁绊**时
+# 才会生效，例如羁绊『神7·无敌』、『人7·狂战士』。」
+#
+# 也就是说 2 档 / 4 档的激活不再出声，只有每族的**最高档**（7 档：人7 / 神7 /
+# 暗7 / 灵7）才响。判据取自 RACE_THRESHOLDS 的最后一档，不写死 7 ——
+# 以后把某一族调成 8 档，这里会跟着走。
+#
+# **掉档再跨回来仍然算事件**：判据是「这个档位键从无到有」，快照在判断后无条件
+# 更新，所以 7→6→7 会响第二声（玩家确实重新激活了终极羁绊）。
 func _check_synergy_activation() -> void:
 	var unlocked := _synergy_unlocked_tiers()
 	if not _synergy_sampled:
@@ -1973,12 +2024,30 @@ func _check_synergy_activation() -> void:
 		return
 	var crossed := false
 	for key in unlocked.keys():
-		if not _synergy_unlocked_before.has(key):
-			crossed = true
-			break
+		if _synergy_unlocked_before.has(key):
+			continue
+		if not _is_ultimate_synergy_tier(str(key)):
+			continue
+		crossed = true
+		break
 	_synergy_unlocked_before = unlocked
 	if crossed:
 		SfxService.play(SfxService.CUE_SYNERGY_ACTIVATE)
+
+
+# 这个档位键是不是「终极羁绊」。键的格式见 _synergy_tier_key()："god@7"。
+#
+# 判据 = 该族 RACE_THRESHOLDS 里的**最后一档**。取数组末项而不是判 `== 7`：
+# 阈值表是唯一权威（SynergyPanel 与门禁都对它），写死数字会在表变了之后
+# 静默失效 —— 而这一条失效的症状是「终极羁绊激活时没声音」，很难联想到这里。
+func _is_ultimate_synergy_tier(key: String) -> bool:
+	var parts := key.split("@")
+	if parts.size() != 2:
+		return false
+	var thresholds: Array = SynergyService.RACE_THRESHOLDS.get(parts[0], [])
+	if thresholds.is_empty():
+		return false
+	return int(parts[1]) == int(thresholds[thresholds.size() - 1])
 
 
 func _refresh_all() -> void:

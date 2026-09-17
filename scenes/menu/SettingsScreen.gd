@@ -156,6 +156,12 @@ func _build() -> void:
 		{"key": "hit_stop", "label": "settings_hit_stop"},
 		# V3 P1-09：降低动态效果。压掉过场与呼吸动画，默认关闭。
 		{"key": "reduced_motion", "label": "settings_reduced_motion"},
+		# 9.17 反馈第 5 条：背景音乐开关。**排在「界面音效」上面** ——
+		# 反馈原文就是「放置在界面音效开关功能的上面」。它走同一条
+		# PlayerProfile.get/set_presentation_toggle 通道，只是键是
+		# "music"，落盘字段 music_enabled，裁决在 PresentationSettings.music_allowed()，
+		# 由 MusicService 那个常驻播放器执行（关 = stream_paused，可续播）。
+		{"key": "music", "label": "settings_music"},
 		# V3 P1-04：界面音效与触感反馈，默认开启。
 		{"key": "ui_sound", "label": "settings_ui_sound"},
 		{"key": "haptics", "label": "settings_haptics"},

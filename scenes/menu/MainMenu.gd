@@ -23,6 +23,10 @@ signal bag_requested            # 右上角「背包」：进入背包
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
+# 9.17：BGM 走常驻服务（播放器挂 root），音效走 SfxService 的播放器池。
+# 两者都不做 autoload，由 Main._ready() 各 install() 一次。
+const MusicService := preload("res://ui/services/MusicService.gd")
+const SfxService := preload("res://ui/services/SfxService.gd")
 const REF_SIZE := Vector2(1672.0, 941.0)
 
 # V3 P0-07：房间面板改由 ModalStack 收口。
@@ -73,9 +77,10 @@ var _coin_label: Label
 var _diamond_label: Label
 # 「聊天」图标右上角的未读红点。显隐只跟 ChatService 走（状态只有一份）。
 var _chat_dot: Label
+# 「朋友」图标右上角的申请红点。显隐只跟 AccountManager 的未读申请集合走。
+var _friends_dot: Label
 # 「公告 / 活动」右上角的红点。显隐只跟 AnnouncementService 走。
 var _news_dot: Label
-var _menu_music_player: AudioStreamPlayer
 var _address_edit: LineEdit
 var _net_status: Label
 # 「敬请期待」不再持有 AcceptDialog 节点：见 _show_coming_soon()。
@@ -108,6 +113,16 @@ func _ready() -> void:
 	_ensure_profile_loaded()
 	# 钱包**每次回主菜单都重拉**，不像资料那样吃缓存 —— 玩家多半是刚从商城买完东西回来的。
 	_refresh_wallet()
+	# 9.17 反馈第 6 条：朋友申请的红点与提示音。
+	#
+	# ★ 这一行**曾经漏掉了** —— `_refresh_friend_requests()` 连同红点都写好了，却没人调它，
+	# 于是红点永远是 _build() 里的初值 false、提示音一次都没响（「音效不响」与「没红点」
+	# 两条反馈其实是同一个根因）。主菜单每次都是新实例（Main._clear() 会 free 掉旧的），
+	# _ready() 必然重跑 —— 所以这里就是「每次回到主菜单都重新拉一次」的可靠落点。
+	_refresh_friend_requests()
+	# 大厅是停留最久的页面：只靠上面这一次的话，「已经停在大厅时收到的申请」要等下一次
+	# 进出页面才会亮。补一个轻量轮询，把红点与提示音对齐到聊天那种「实时」的观感。
+	_start_friend_request_poll()
 
 func _exit_tree() -> void:
 	if AccountManager.profile_changed.is_connected(_on_account_profile_changed):
@@ -121,21 +136,16 @@ func _on_account_profile_changed(_profile: Dictionary) -> void:
 	_refresh_profile_plate()
 
 func _start_menu_music() -> void:
-	if _menu_music_player != null:
-		return
-	# 与摆放界面同款：必须用 load() 走资源系统，Android 导出包只含 mp3 的导入产物。
-	var stream := load(MENU_MUSIC_PATH) as AudioStream
-	if stream == null:
-		push_warning("主菜单音乐读取失败：%s" % MENU_MUSIC_PATH)
-		return
-	if stream is AudioStreamMP3:
-		(stream as AudioStreamMP3).loop = true
-	_menu_music_player = AudioStreamPlayer.new()
-	_menu_music_player.name = "MenuMusicPlayer"
-	_menu_music_player.stream = stream
-	_menu_music_player.bus = "Music" if AudioServer.get_bus_index("Music") >= 0 else "Master"
-	add_child(_menu_music_player)
-	_menu_music_player.play()
+	# 9.17 反馈第 2 条：菜单 BGM 改为常驻播放，打开图鉴/聊天/朋友/设置时不暂停。
+	#
+	# 原实现在这里自建一个 AudioStreamPlayer 并 add_child 到主菜单上 ——
+	# 而 Main._clear() 每次切子界面都会释放整个页面子树，播放器跟着没，
+	# 于是「开个设置，音乐就断了」。现在播放器挂在 get_tree().root 下
+	# （见 MusicService），不随任何一页生灭。
+	#
+	# 「同一首不重启」由 MusicService 内部判等负责：从子界面返回主菜单会再调
+	# 一次这里，不会把 menu_music 从 0 秒重头播。
+	MusicService.play(MENU_MUSIC_PATH)
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED:
@@ -190,6 +200,15 @@ func _build() -> void:
 
 	_add_texture(TEX_FRIENDS, Vector2(28, 300), Vector2(132, 132), "left")
 	_add_label(_menu_text("朋友", "Friends"), Vector2(47, 380), Vector2(94, 30), 21, "left")
+	# 9.17 反馈第 6 条：他人申请加好友时，在「朋友」按键上亮小红点，点进朋友后消失。
+	# 位置照「聊天」那个红点同款偏移（图标左上角 +92/+4），压在图标右上角。
+	# hit 仍然放在最后（顺序 = 绘制层级，见上面那条注释）。
+	_friends_dot = _add_label("●", Vector2(120, 304), Vector2(32, 32), 26, "left")
+	_friends_dot.add_theme_color_override("font_color", Tokens.UNREAD_DOT)
+	_friends_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# 初值先不亮：真实显隐等 _refresh_friend_requests() 拉到申请列表再定。
+	# 先亮再灭会在每次回主菜单时闪一下。
+	_friends_dot.visible = false
 	_add_hit(Vector2(28, 300), Vector2(132, 132), _emit_friends, "left")
 	_add_texture(TEX_CHAT, Vector2(28, 440), Vector2(132, 132), "left")
 	_add_label(_menu_text("聊天", "Chat"), Vector2(47, 520), Vector2(94, 30), 21, "left")
@@ -603,6 +622,82 @@ func _refresh_wallet() -> void:
 	var body: Dictionary = result.get("body", {})
 	_coin_label.text = _comma(int(body.get("coin", 0)))
 	_diamond_label.text = _comma(int(body.get("diamond", 0)))
+
+# 朋友申请的轮询间隔。与 AccountManager 的 presence 心跳同拍（10 秒）——
+# 朋友申请**没有实时推送**（socket 只推私聊与公告），轮询是唯一的近实时手段。
+const FRIEND_REQUEST_POLL_SEC := 10.0
+
+var _friend_request_poll: Timer
+# 同一时刻只允许一趟在飞：弱网下会堆出一串在途请求，回来的顺序还是乱的。
+var _friend_request_busy := false
+
+# 轮询只在主菜单活着时存在（跟着页面一起被 Main._clear() 释放），不常驻。
+func _start_friend_request_poll() -> void:
+	_friend_request_poll = Timer.new()
+	_friend_request_poll.name = "FriendRequestPoll"
+	_friend_request_poll.wait_time = FRIEND_REQUEST_POLL_SEC
+	_friend_request_poll.autostart = false
+	_friend_request_poll.timeout.connect(_refresh_friend_requests)
+	add_child(_friend_request_poll)
+	_friend_request_poll.start()
+
+# 取数单独一层：无头门禁靠替换它来喂固定响应（同 ProfileScreen._send_friend_request
+# 的先例，friends08_check 就是那样打的桩）。真实现只是转调 AccountManager。
+func _fetch_friend_requests() -> Dictionary:
+	return await AccountManager.fetch_friend_requests()
+
+# 9.17 反馈第 6 条：朋友申请红点。
+#
+# 红点跟 AccountManager 那个**已读集合**走（状态只有一份，同聊天红点的理由）：
+# 「有没有未读申请」由 has_unread_friend_requests() 判，而点进朋友界面时
+# FriendsScreen 会调 mark_friend_requests_seen() —— 回到主菜单这次重拉就
+# 自然不再亮。所以这里不需要自己记「玩家点过没有」。
+#
+# 每次进主菜单都拉一次：朋友申请没有实时推送，主菜单是唯一稳定的轮询点。
+func _refresh_friend_requests() -> void:
+	if _friend_request_busy:
+		return
+	if not AccountManager.is_logged_in():
+		return
+	_friend_request_busy = true
+	var result: Dictionary = await _fetch_friend_requests()
+	_friend_request_busy = false
+	if not is_inside_tree():
+		return
+	if int(result.get("code", 0)) / 100 != 2:
+		# 拉不到就保持现状：宁可留着上一次的红点，也不要在网络抖一下时
+		# 把这个「有人申请加你」的提示抹掉。
+		return
+	var body: Dictionary = result.get("body", {})
+	var incoming: Array = body.get("incoming", [])
+	if _friends_dot != null and is_instance_valid(_friends_dot):
+		_friends_dot.visible = AccountManager.has_unread_friend_requests(incoming)
+	_alert_new_friend_requests(incoming)
+
+# 新申请到的时候响一声（与「聊天新信息」共用同一条 cue，素材就是一条）。
+#
+# **去重放在这里，不只靠 SfxService 的 10 秒节流。** 节流管的是「10 秒内只响
+# 一次」，管不了「同一份申请每次回主菜单都响一遍」；而本函数每次进主菜单都跑。
+# 所以这里按 AccountManager 的申请键记账：同一个键在本次进程内只提醒一次，
+# 之后新到的申请是新键，照常提醒（与聊天音共用一个 10 秒窗口）。
+#
+# 用 static：主菜单每次都是**新建**的实例（Main._clear() 会 free 掉旧的），
+# 记在实例字段上等于每次回主菜单就清零，去重会完全失效。
+static var _alerted_request_keys: Dictionary = {}
+
+func _alert_new_friend_requests(incoming: Array) -> void:
+	for entry in incoming:
+		if not (entry is Dictionary):
+			continue
+		var key := AccountManager.friend_request_key(entry)
+		if key.is_empty() or AccountManager.friend_request_seen.has(key):
+			continue
+		if _alerted_request_keys.has(key):
+			continue
+		_alerted_request_keys[key] = true
+		SfxService.play(SfxService.CUE_CHAT_ALERT)
+		# 一次采样最多一声：同时收到三份申请不该连响三下。
+		return
 
 # 千分位。与商城界面的同名函数保持一致 —— 两处显示同一个数，格式不一样很显眼。
 func _comma(value: int) -> String:

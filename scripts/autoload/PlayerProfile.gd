@@ -84,6 +84,10 @@ var reduced_motion_enabled := false
 # PresentationSettings 是 autoload 可达的，直接问 profile 就行。
 var ui_sound_enabled := true
 var haptics_enabled := true
+# 9.17 反馈第 5 条：设置页的「背景音乐」开关。与 ui_sound_enabled 分开 ——
+# 只想静音效 / 只想静 BGM 的人都得能单独做到。裁决在 PresentationSettings.music_allowed()，
+# 实际掐的是 MusicService 那个常驻播放器（stream_paused，可续播）。
+var music_enabled := true
 var locale := "zh"
 var language_selected := false
 var onboarding_version := ONBOARDING_VERSION
@@ -135,6 +139,7 @@ func load_profile() -> void:
 	reduced_motion_enabled = bool(data.get("reduced_motion_enabled", false))
 	ui_sound_enabled = bool(data.get("ui_sound_enabled", true))
 	haptics_enabled = bool(data.get("haptics_enabled", true))
+	music_enabled = bool(data.get("music_enabled", true))
 	locale = str(data.get("locale", "zh"))
 	if not SUPPORTED_LOCALES.has(locale):
 		locale = "zh"
@@ -164,6 +169,7 @@ func save_profile() -> bool:
 		"reduced_motion_enabled": reduced_motion_enabled,
 		"ui_sound_enabled": ui_sound_enabled,
 		"haptics_enabled": haptics_enabled,
+		"music_enabled": music_enabled,
 		"locale": locale,
 		"language_selected": language_selected,
 		"onboarding_version": onboarding_version,
@@ -186,6 +192,7 @@ func _reset_defaults() -> void:
 	reduced_motion_enabled = false
 	ui_sound_enabled = true
 	haptics_enabled = true
+	music_enabled = true
 	locale = "zh"
 	language_selected = false
 	onboarding_version = ONBOARDING_VERSION
@@ -377,6 +384,10 @@ func set_presentation_toggle(key: String, enabled: bool) -> void:
 			if haptics_enabled == enabled:
 				return
 			haptics_enabled = enabled
+		"music":
+			if music_enabled == enabled:
+				return
+			music_enabled = enabled
 		_:
 			push_warning("[PROFILE] 未知的演出开关：%s" % key)
 			return
@@ -398,6 +409,8 @@ func get_presentation_toggle(key: String) -> bool:
 			return ui_sound_enabled
 		"haptics":
 			return haptics_enabled
+		"music":
+			return music_enabled
 	return true
 
 

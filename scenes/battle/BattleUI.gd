@@ -61,10 +61,13 @@ const PVP_BATTLE_MUSIC_PATH := "res://assets/audio/bgm/pvp_battle_music.mp3"
 # 声明在继承链最底这一层，子类（BattleArena / BattleRenderer / BattleVfx /
 # BattleResult / BattleScreen）直接继承，各自再声明一次会撞「成员在父类里已存在」。
 #
-# **BGM 归 BGM，音效归音效**：那三条 *_MUSIC_PATH 由各页面自己建 AudioStreamPlayer
-# 播放（本文件 _start_battle_music 就是），而音效一律走 SfxService 的 root 播放器池 ——
-# 音效要求「换场景也不被掐断」（胜负音就是在换场景那一刻响的），BGM 要求「出场景就停」。
+# **BGM 归 BGM，音效归音效**：BGM 走常驻的 MusicService（播放器挂 root，一个
+# 播放器、一首当前曲目），音效一律走 SfxService 的 root 播放器池 ——
+# 音效要求「换场景也不被掐断」（胜负音就是在换场景那一刻响的），BGM 要求
+# 「离开战斗就停」，而两者都不能挂在战斗场景的子节点上（Main._clear() 会
+# 把整个页面子树释放掉）。
 const SfxService := preload("res://ui/services/SfxService.gd")
+const MusicService := preload("res://ui/services/MusicService.gd")
 
 @export_group("Battle Unit Layout")
 @export_range(0.35, 1.0, 0.01) var battle_unit_visual_scale := 0.42
@@ -107,7 +110,12 @@ var _unit_actor_registry = UnitActorRegistryScript.new()
 #   * 跨场景存活（Main._show_battle() 每回合重建 BattleScreen，实例变量会跟着没）
 #   * 与备战棋盘共用一份（以前两边各一套，同一个模型加载两遍）
 #   * 按 owner/lease 释放，未来回合的预取不会被回合末清理误删
-var _battle_music_player: AudioStreamPlayer
+# 9.17 第二批：BGM 改走常驻的 MusicService，这里不再持有播放器。
+#
+# boss 登场音与 pve 战斗 BGM 的先后（9.17 反馈第 4 条）用这两个标志协调：
+# 见 _start_battle_music / BattleScreen._prepare_battle_models 末尾。
+var _boss_intro_pending := false
+var _boss_intro_played := false
 
 func _finish_simulation() -> void:
 	pass
@@ -133,27 +141,79 @@ func _battle_music_path() -> String:
 	var kind := _effective_kind()
 	return PVP_BATTLE_MUSIC_PATH if kind == "pvp" or kind == "final" else BATTLE_MUSIC_PATH
 
+# boss 登场的那一下：**先让上一页那首 BGM 让位，再响登场音。**
+#
+# 9.17 第三轮反馈（第二批之后）：「boss 回合进入战斗场景时，备战 bgm 没停止，
+# 应该响起 boss 登场音效时，备战 bgm 停止，音效结束后，pve 战斗 bgm 响起。」
+#
+# 第二批只做对了一半：`_start_battle_music()` 在 boss 回合会把战斗 BGM **推迟**到
+# 登场音之后（`_boss_intro_pending`），却**没有任何人叫停「上一页还在放的那首」**。
+# MusicService 是「一个播放器、一首当前曲目」，`play()` 只在路径不同时才换曲 ——
+# 于是从进战斗场景到登场音结束这整段（含分帧建模型的读条）耳朵里一直是备战页那首，
+# 登场音是**叠在它上面**出来的。
+#
+# 顺序是「先停、再响」而不是反过来：反过来的话登场音的头几毫秒会和备战 BGM 叠在
+# 一起，而反馈的原话就是「响起 boss 登场音效时，备战 bgm 停止」。
+#
+# 登场音之后那首 pve 战斗 BGM **不在这里起**：它在 BattleScreen._prepare_battle_models()
+# 末尾的 `_resolve_pending_battle_music()` 里等够素材时长再起（那一段本来就是对的）。
+func _begin_boss_intro() -> void:
+	MusicService.stop()
+	# 标记「登场音已经响过」—— `_start_battle_music()` 靠它区分
+	# 「还没登场，先把 BGM 挡住」和「登场完了，该起 BGM 了」。
+	_boss_intro_played = true
+	SfxService.play(SfxService.CUE_BOSS_APPEAR)
+
+
 func _start_battle_music() -> void:
-	if _battle_music_player != null:
+	# 9.17 反馈第 4 条：「在 boss 回合战斗场景，先播放 boss 登场音效完毕后，
+	# 再播放 pve 战斗 bgm。」
+	#
+	# 原实现两件事互不知情：本函数在进场景那一刻就起 BGM（BattleScreen 的
+	# 98 / 171 / 286 三处），而 boss 登场音在 _prepare_battle_models() 末尾
+	# （模型全部建完之后）才响 —— 于是登场音是叠在已经响着的 BGM 上出来的。
+	#
+	# 现在 boss 回合先不起 BGM，只记一个 pending；由 BattleScreen 在**登场音
+	# 播完之后**再调一次本函数（那时 _boss_intro_played 已经是 true，不会再被挡）。
+	#
+	# 用 `_boss_intro_played` 而不是「pending 清掉就不再 defer」：本函数在一场
+	# 战斗里会被调多次（_start_replay 里那一次就在 _prepare_battle_models 之前），
+	# 只靠 pending 会让后一次调用又把 BGM 挡回去，boss 回合整场没有战斗 BGM。
+	if _effective_kind() == "boss" and not _boss_intro_played:
+		_boss_intro_pending = true
 		return
-	var music_path := _battle_music_path()
-	var stream := load(music_path) as AudioStream
-	if stream == null:
-		push_warning("战斗音乐读取失败：%s" % music_path)
-		return
-	if stream is AudioStreamMP3:
-		(stream as AudioStreamMP3).loop = true
-	_battle_music_player = AudioStreamPlayer.new()
-	_battle_music_player.name = "BattleMusicPlayer"
-	_battle_music_player.stream = stream
-	_battle_music_player.bus = "Music" if AudioServer.get_bus_index("Music") >= 0 else "Master"
-	add_child(_battle_music_player)
-	_battle_music_player.play()
+	# 「同一首不重启」由 MusicService 内部判等负责：本函数被重复调用是常态。
+	MusicService.play(_battle_music_path())
 
 func _stop_battle_music() -> void:
-	if _battle_music_player == null:
+	# 停的是「战斗这一首」。不切回菜单那首：离开战斗的下一页（备战/主菜单/
+	# 结算后的路由）都会自己 play 它要的那一首，这里多切一次只会多一次从头播。
+	# pending 也要清掉，否则退场后再也没有人来收口，BGM 会永远不响。
+	_boss_intro_pending = false
+	_boss_intro_played = false
+	MusicService.stop()
+
+
+# battle 场景的收口：把 `_start_battle_music()` 挡下来的那次补上。
+#
+# 只在 boss 回合真的挡过（`_boss_intro_pending`）时才等 —— 非 boss 回合这里是
+# 一条空调用，BGM 早在 `_start_battle_music()` 那一刻就起了，不额外拖一帧。
+#
+# 等的是**素材的真实长度**（SfxService.cue_length）而不是写死的秒数：
+# 换一条更长/更短的登场音，这条会自动跟上。
+func _resolve_pending_battle_music() -> void:
+	if not _boss_intro_pending:
 		return
-	_battle_music_player.stop()
+	_boss_intro_pending = false
+	# 理论上 pending 只会在 boss 回合被置起，这里再判一次是兜底：
+	# 万一 kind 在两次采样之间变了，宁可立刻起 BGM，也不要整场没声音。
+	if _effective_kind() == "boss":
+		var intro_sec := SfxService.cue_length(SfxService.CUE_BOSS_APPEAR)
+		if intro_sec > 0.0:
+			await get_tree().create_timer(intro_sec).timeout
+			if not is_inside_tree():
+				return
+	_start_battle_music()
 
 # 3v3 PvP 用规范化棋局（result 的 "player" 方恒为 A 队），B 队本地显示
 # 胜负/存活时必须换视角。回合结算的同款反转在 Main._on_team_battle_finished
