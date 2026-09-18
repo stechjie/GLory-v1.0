@@ -12,6 +12,7 @@ extends Node
 # 输出：reports/chat_ui/*.png
 
 const LOBBY_SCENE := preload("res://scenes/menu/Team3v3Lobby.tscn")
+const LOBBY_PHONE_WINDOW := Vector2i(1280, 720)
 
 const OUT_DIR := "res://reports/chat_ui"
 # 大厅有淡入与异步贴图加载（_setup_asset_loader），抓早了会拍到半成品。
@@ -66,6 +67,14 @@ func _ready() -> void:
 		voice_controls.call("_on_members_pressed")
 		await _shot("lobby_voice_panel")
 		ModalStack.close_all()
+
+	# Lobby 的参考画布是 1672×941，但游戏逻辑高度是 720。文字清晰度问题只会在
+	# 缩小后暴露：字号跟着缩、描边如果不跟就会把笔画糊在一起。这张专门盯手机比例。
+	DisplayServer.window_set_size(LOBBY_PHONE_WINDOW)
+	for _i in 8:
+		await get_tree().process_frame
+	_lobby.call("_layout")
+	await _shot("lobby_text_1280")
 	_lobby.queue_free()
 	await get_tree().process_frame
 

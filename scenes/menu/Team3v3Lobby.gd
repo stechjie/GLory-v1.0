@@ -12,6 +12,7 @@ const SLOT_POS := [
 ]
 const SLOT_SIZE := Vector2(184, 175)
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
+const Tokens := preload("res://ui/theme/GloryTokens.gd")
 # 9.17 第二批：BGM 走常驻 MusicService，音效走 SfxService。
 const MusicService := preload("res://ui/services/MusicService.gd")
 const SfxService := preload("res://ui/services/SfxService.gd")
@@ -45,10 +46,11 @@ func _render_online_friends(friends: Array) -> void:
 		# 把 Label 的默认对齐改掉时又悄悄居中。
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		label.add_theme_color_override("font_color", Color.WHITE)
-		label.add_theme_color_override("font_outline_color", Color(0.15, 0.1, 0.05))
-		label.add_theme_constant_override("outline_size", 2)
-		label.add_theme_font_size_override("font_size", 14)
+		# 好友名写在羊皮纸里：深色正文已经有足够对比，不再加浅色粗描边。
+		# 旧版白字 + 2px 深边在 14px 下笔画几乎一样粗，看起来像失焦。
+		label.add_theme_color_override("font_color", Tokens.PARCHMENT_EDGE)
+		label.add_theme_constant_override("outline_size", 0)
+		label.add_theme_font_size_override("font_size", 15)
 		label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		label.tooltip_text = label.text
 		_friends_box.add_child(label)
@@ -184,7 +186,7 @@ func _setup_asset_loader() -> void:
 	# Keep preload progress outside the center status/seat-name band. The previous
 	# 626..1046 × 197..221 rectangle crossed the top B/C seat titles on device.
 	_asset_lbl = _add_label("", Vector2(1340, 600), Vector2(230, 28), 14,
-		Color(0.62, 0.86, 0.98), "right")
+		Color(0.62, 0.86, 0.98), "right", true)
 	set_process(true)
 
 func _process(delta: float) -> void:
@@ -276,10 +278,12 @@ func _build() -> void:
 	_add_hit(Vector2(80, 35), Vector2(143, 83), func(): back_requested.emit(), "left", "hit_back")
 	_add_texture(TEX_TITLE, Vector2(599, 21), Vector2(475, 143))
 	_room_id_lbl = _add_label("", Vector2(712, 103), Vector2(250, 30), 20, Color(0.45, 0.27, 0.08))
-	_add_label(_room_text("自定义房间", "CUSTOM GAME"), Vector2(650, 51), Vector2(372, 48), 32)
+	_add_label(_room_text("自定义房间", "CUSTOM GAME"), Vector2(650, 51), Vector2(372, 48), 32,
+		Tokens.TEXT_PRIMARY, "", true)
 	# 右侧朋友列表：锚定屏幕右边（edge="right"）
 	_add_texture(TEX_FRIENDS, Vector2(1340, 180), Vector2(230, 400), "right")
-	_add_label(_room_text("朋友列表", "Friends"), Vector2(1340, 215), Vector2(230, 42), 28, Color(0.47, 0.28, 0.08), "right")
+	_add_label(_room_text("朋友列表", "Friends"), Vector2(1340, 215), Vector2(230, 42), 28,
+		Tokens.GOLD_HOVER, "right", true)
 	var friends_scroll := ScrollContainer.new()
 	friends_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	add_child(friends_scroll)
@@ -304,7 +308,8 @@ func _build() -> void:
 
 	# 右下开始按钮组、自测、提示：锚定屏幕右边（edge="right"）
 	_add_texture(TEX_START, Vector2(1300, 760), Vector2(270, 130), "right")
-	_start_lbl = _add_label("", Vector2(1300, 790), Vector2(270, 95), 28, Color(0.96, 0.87, 0.70), "right")
+	_start_lbl = _add_label("", Vector2(1300, 790), Vector2(270, 95), 28,
+		Color(0.96, 0.87, 0.70), "right", true)
 	_start_btn = _add_hit(Vector2(1300, 790), Vector2(270, 95), _on_primary_pressed, "right", "hit_start")
 	# 离线自测专用入口(officetest):开始游戏上方,仅离线显示,纯追加不动原布局。
 	#
@@ -313,8 +318,10 @@ func _build() -> void:
 	_selftest_btn = _add_ai_button(Vector2(1310, 719), Vector2(255, 55), func(): selftest_requested.emit(), "right", "btn_selftest", 24)
 	_selftest_btn.text = _room_text("自测开始", "Self-Test")
 	_selftest_btn.visible = selftest_available() and not _online()
-	_host_hint_lbl = _add_label(_room_text("等待其他玩家准备后可按", "Waiting for players"), Vector2(1285, 880), Vector2(310, 28), 20, Color(1.0, 0.94, 0.78), "right")
-	_status_lbl = _add_label("", Vector2(626, 142), Vector2(420, 28), 17, Color(0.98, 0.94, 0.78))
+	_host_hint_lbl = _add_label(_room_text("等待其他玩家准备后可按", "Waiting for players"),
+		Vector2(1285, 880), Vector2(310, 28), 20, Tokens.TEXT_PRIMARY, "right", true)
+	_status_lbl = _add_label("", Vector2(626, 142), Vector2(420, 28), 17,
+		Tokens.TEXT_PRIMARY, "", true)
 	_build_debug_layer()
 
 func _build_slot(index: int) -> void:
@@ -331,7 +338,8 @@ func _build_slot(index: int) -> void:
 	_add_hit(pos + Vector2(0, 0), Vector2(182, 125), _on_slot_pressed.bind(index),
 		"", "hit_slot_%s" % SLOT_LABELS[index])
 	var name_pos := Vector2(pos.x - 10, pos.y - 46) if index < 3 else Vector2(pos.x - 10, pos.y + SLOT_SIZE.y + 4)
-	_slot_name_lbls[index] = _add_label("", name_pos, Vector2(SLOT_SIZE.x + 20, 36), 28)
+	_slot_name_lbls[index] = _add_label("", name_pos, Vector2(SLOT_SIZE.x + 20, 36), 28,
+		Tokens.TEXT_PRIMARY, "", true)
 	_slot_status_lbls[index] = _add_label("", pos + Vector2(34, 72), Vector2(122, 42), 20, Color(0.42, 0.28, 0.12))
 	var x_btn := _add_x_button(pos + Vector2(138, 30), Vector2(38, 38), _on_slot_x.bind(index),
 		"btn_kick_%s" % SLOT_LABELS[index])
@@ -444,8 +452,10 @@ func _refresh() -> void:
 			if base_name != name_lbl.text:
 				base_name = base_name.left(maxi(0, base_name.length() - 1)) + "…"
 			name_lbl.text = base_name + suffix
-		name_lbl.add_theme_color_override("font_color", Color(1.0, 0.82, 0.18) if is_me else Color(0.47, 0.28, 0.08))
-		name_lbl.add_theme_color_override("font_outline_color", Color(0.22, 0.12, 0.02) if is_me else Color(1.0, 0.94, 0.78))
+		name_lbl.add_theme_color_override("font_color",
+			Tokens.GOLD_HOVER if is_me else Tokens.TEXT_PRIMARY)
+		name_lbl.add_theme_color_override("font_outline_color", Tokens.INK_PANEL)
+		name_lbl.add_theme_constant_override("outline_size", 2)
 		for placement in _placed:
 			if placement.node == name_lbl:
 				placement.font_size = 20 if state == "player" else 28
@@ -599,12 +609,19 @@ func _layout() -> void:
 				x = viewport_size.x - (REF_SIZE.x - pos.x) * scale
 			_:
 				x = origin.x + pos.x * scale
-		node.position = Vector2(x, origin.y + pos.y * scale)
-		node.size = size * scale
+		var resolved_pos := Vector2(x, origin.y + pos.y * scale)
+		var resolved_size := size * scale
+		# 字形落在半像素上时，FreeType 的覆盖率会平均到两列像素，视觉上就像蒙了一层灰。
+		# 贴图保留连续缩放；只把承载文字的控件吸附到整数像素，不改变点击区语义。
+		if node is Label or (node is Button and int(item.font_size) > 0):
+			resolved_pos = resolved_pos.round()
+			resolved_size = resolved_size.round()
+		node.position = resolved_pos
+		node.size = resolved_size
 		# 字号也要跟着缩放，否则窗口一小文字就撑破按钮框、窗口一大文字又显得过小。
 		# font_size=0 的（纯判定区 _add_hit）没有文字，跳过。
 		if int(item.font_size) > 0 and (node is Label or node is Button):
-			node.add_theme_font_size_override("font_size", maxi(10, int(item.font_size * scale)))
+			node.add_theme_font_size_override("font_size", maxi(13, roundi(item.font_size * scale)))
 	if _debug_layer != null:
 		_debug_layer.queue_redraw()
 
@@ -638,14 +655,24 @@ func _add_screen_band(color: Color, y: float, height: float, from_bottom: bool) 
 	_screen_bands.append({"node": rect, "y": y, "height": height, "from_bottom": from_bottom})
 	return rect
 
-func _add_label(text: String, pos: Vector2, size: Vector2, font_size: int, color := Color(0.47, 0.28, 0.08), edge: String = "") -> Label:
+func _add_label(
+	text: String,
+	pos: Vector2,
+	size: Vector2,
+	font_size: int,
+	color := Color(0.47, 0.28, 0.08),
+	edge: String = "",
+	scene_text: bool = false
+) -> Label:
 	var label := Label.new()
 	label.text = text
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.add_theme_color_override("font_color", color)
-	label.add_theme_color_override("font_outline_color", Color(1.0, 0.94, 0.78))
-	label.add_theme_constant_override("outline_size", 3)
+	# 羊皮纸上的深字不需要描边；浮在场景或木牌上的浅字才用 2px 深边。
+	# 旧版所有文字统一 3px 浅边，缩到 720 高时正文只有 13~15px，描边占比过大而发虚。
+	label.add_theme_color_override("font_outline_color", Tokens.INK_PANEL)
+	label.add_theme_constant_override("outline_size", 2 if scene_text else 0)
 	label.add_theme_font_size_override("font_size", font_size)
 	add_child(label)
 	_track(label, pos, size, font_size, edge)
@@ -671,8 +698,7 @@ func _add_ai_button(pos: Vector2, size: Vector2, cb: Callable, edge: String = ""
 	btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	btn.add_theme_font_size_override("font_size", font_size)
 	btn.add_theme_color_override("font_color", Color(0.43, 0.26, 0.08))
-	btn.add_theme_color_override("font_outline_color", Color(1.0, 0.94, 0.78))
-	btn.add_theme_constant_override("outline_size", 2)
+	btn.add_theme_constant_override("outline_size", 0)
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(1.0, 0.93, 0.80, 0.82)
 	sb.border_color = Color(0.70, 0.42, 0.14)
@@ -694,8 +720,7 @@ func _add_x_button(pos: Vector2, size: Vector2, cb: Callable, dbg_name: String =
 	btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	btn.add_theme_font_size_override("font_size", 18)
 	btn.add_theme_color_override("font_color", Color(0.82, 0.06, 0.08))
-	btn.add_theme_color_override("font_outline_color", Color(1.0, 0.93, 0.76))
-	btn.add_theme_constant_override("outline_size", 2)
+	btn.add_theme_constant_override("outline_size", 0)
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(1.0, 0.93, 0.80, 0.88)
 	sb.border_color = Color(0.70, 0.42, 0.14)

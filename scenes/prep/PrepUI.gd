@@ -1120,7 +1120,7 @@ const COMMS_DOCK_HEIGHT := 88.0
 const COMMS_DOCK_BOTTOM := -32.0
 const CHAT_BTN_BOTTOM := -40.0
 const CHAT_LOG_WIDTH := 360.0
-const CHAT_PANEL_HEIGHT := 374.0
+const CHAT_PANEL_HEIGHT := 410.0
 const CHAT_FLOAT_GAP := 10.0
 
 const CHAT_LOG_LINES := 3
@@ -1291,7 +1291,7 @@ func _build_chat_panel() -> void:
 	header.add_theme_constant_override("separation", 8)
 	col.add_child(header)
 	var title := Label.new()
-	title.text = "Quick Chat" if LocaleManager.get_locale() == "en" else "快捷聊天"
+	title.text = "Team Chat" if LocaleManager.get_locale() == "en" else "队伍交流"
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 19)
@@ -1300,22 +1300,31 @@ func _build_chat_panel() -> void:
 	var close_button := PrepWidgets.make_menu_button("×", Vector2(42, 38), 19, _toggle_chat_panel)
 	close_button.name = "PrepChatClose"
 	header.add_child(close_button)
-	# 最上面一行：左「＋ 打字」（批次 D），右「发给：队友 / 全部」（2026-09-14 聊天范围）。
-	# 合起来仍等于下面两列短语的宽度（206 + 间距 6 + 114 = 160 × 2 + 6），面板高度不变。
-	# 用 make_menu_button 而不是 Button.new()：同一份样式，也不涨 V3 P1-08 棘轮的计数。
+	# 自由输入是一个会弹出键盘的输入入口，不是第 13 条快捷短语。它保持在面板最上面，
+	# 用浅羊皮纸底与左对齐的 placeholder 语言明确表达「点这里输入」；右边范围按钮仍是
+	# 次要操作。合起来等于下面两列短语的宽度（206 + 间距 6 + 114 = 160 × 2 + 6）。
+	# 用 make_menu_button 而不是 Button.new()：不涨 V3 P1-08 棘轮的计数，再单独覆盖外观。
 	var top_row := HBoxContainer.new()
 	top_row.add_theme_constant_override("separation", 6)
 	col.add_child(top_row)
 	var type_button := PrepWidgets.make_menu_button(
-		"＋ Type" if LocaleManager.get_locale() == "en" else "＋ 打字",
-		Vector2(206, 38), 15, _open_text_input)
+		"✎  Type a message…" if LocaleManager.get_locale() == "en" else "✎  点击输入文字…",
+		Vector2(206, 48), 17, _open_text_input)
 	type_button.name = "PrepChatType"
+	_apply_chat_type_button_style(type_button)
 	top_row.add_child(type_button)
-	_chat_scope_button = PrepWidgets.make_menu_button(_chat_scope_text(), Vector2(114, 38), 15,
+	_chat_scope_button = PrepWidgets.make_menu_button(_chat_scope_text(), Vector2(114, 48), 15,
 		_toggle_chat_scope)
 	_chat_scope_button.name = "PrepChatScope"
 	top_row.add_child(_chat_scope_button)
 	_refresh_chat_scope_button()
+
+	var phrases_label := Label.new()
+	phrases_label.text = "QUICK PHRASES" if LocaleManager.get_locale() == "en" else "快捷短语"
+	phrases_label.add_theme_font_size_override("font_size", 13)
+	phrases_label.add_theme_color_override("font_color", GloryTokens.TEXT_SECONDARY)
+	col.add_child(phrases_label)
+
 	var grid := GridContainer.new()
 	grid.columns = 2
 	grid.add_theme_constant_override("h_separation", 6)
@@ -1326,6 +1335,28 @@ func _build_chat_panel() -> void:
 			grid.add_child(PrepWidgets.make_menu_button(
 				ChatPhrases.text(phrase_id), Vector2(160, 38), 15,
 				_send_chat_phrase.bind(int(phrase_id))))
+
+
+func _apply_chat_type_button_style(button: Button) -> void:
+	# 做成「可点击的输入框」，而不是另一颗快捷短语按钮。颜色全部取 GloryTokens，
+	# 避免这块以后与主菜单的羊皮纸/暖金方向分叉。
+	var normal := GloryTokens.flat_box(
+		GloryTokens.PARCHMENT_BUTTON, GloryTokens.GOLD_EDGE, 2, 10)
+	var hover := GloryTokens.flat_box(
+		GloryTokens.PARCHMENT, GloryTokens.GOLD_HOVER, 2, 10)
+	var pressed := GloryTokens.flat_box(
+		GloryTokens.PARCHMENT_SOFT, GloryTokens.GOLD_PRESSED, 2, 10)
+	for style in [normal, hover, pressed]:
+		style.content_margin_left = 14
+		style.content_margin_right = 12
+	button.add_theme_stylebox_override("normal", normal)
+	button.add_theme_stylebox_override("hover", hover)
+	button.add_theme_stylebox_override("pressed", pressed)
+	button.add_theme_color_override("font_color", GloryTokens.TEXT_ON_GOLD)
+	button.add_theme_color_override("font_hover_color", GloryTokens.TEXT_ON_GOLD)
+	button.add_theme_color_override("font_pressed_color", GloryTokens.TEXT_ON_GOLD)
+	button.add_theme_font_size_override("font_size", 17)
+	button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 
 func _toggle_chat_panel() -> void:
 	if _chat_panel == null or not is_instance_valid(_chat_panel):
