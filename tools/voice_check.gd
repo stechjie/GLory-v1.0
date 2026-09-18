@@ -178,17 +178,21 @@ func _case_aar_manifest() -> void:
 		"插件包清单没写 targetSdkVersion：清单合并会给整个应用加上 READ_PHONE_STATE 等隐含权限")
 
 
-# --- 3. 打不打包只看预设 ------------------------------------------------------------
+# --- 3. 🔴 安卓导出无条件带语音 --------------------------------------------------------
+#
+# 2026-09-18：预设里那个 glory_voice/enabled 开关**删掉了**。它两次让语音悄悄从包里消失
+# （09-14「只在一台电脑开」、09-17「靠仓库模板」——而 export_presets.cfg 在 .gitignore 里，
+# 模板覆盖不了同事机器上已有的那份）。现在只剩两种结果：包里有语音，或者导出直接报错。
 
 func _case_export_plugin_off_by_default() -> void:
 	_h.item()
 	var src := FileAccess.get_file_as_string(EXPORT_PLUGIN_PATH)
-	# 插件自己的默认值仍是 false：它只影响「从零新建、没从模板拷」的预设。
-	# 项目要的「每个包都带语音」由 3b 的模板保证，漏网的包由 tools/apk_identity.py 判失败。
-	_h.expect(src.contains("\"default_value\": false"), "voice_export_default_on",
-		"glory_voice/enabled 的插件默认值应保持 false —— 打不打包由预设（模板）决定，见 3b")
-	_h.expect(src.contains("if not (enabled is bool and enabled):"), "voice_export_ungated",
-		"_get_android_libraries 必须先看 glory_voice/enabled，没勾就不给 .aar")
+	_h.expect(src.contains("return PackedStringArray([AAR])") and not src.contains("get_option("),
+		"voice_export_optional_again",
+		"安卓导出必须无条件交出 GloryVoice.aar —— 一旦又变成「看预设里的开关」，"
+		+ "某台机器上没勾就会出一个装上去才发现没语音的包（p27–p30 就是这么来的）")
+	_h.expect(not src.contains("_get_export_options"), "voice_export_option_back",
+		"不要再加 glory_voice/enabled 这种预设开关：它在 .gitignore 的文件里，每台机器各一份")
 	_h.expect(load(EXPORT_PLUGIN_PATH) != null, "voice_export_plugin_broken",
 		"导出插件脚本加载失败：%s" % EXPORT_PLUGIN_PATH)
 
