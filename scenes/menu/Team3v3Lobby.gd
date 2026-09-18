@@ -479,6 +479,7 @@ func _refresh() -> void:
 			_start_lbl.text = tr("lobby_ready_done") if ready else tr("lobby_ready")
 	if _host_hint_lbl != null:
 		_host_hint_lbl.visible = is_host_seat
+		_host_hint_lbl.text = _start_hint_text()
 	if _selftest_btn != null:
 		_selftest_btn.visible = selftest_available() and not _online()
 
@@ -489,6 +490,10 @@ func selftest_available() -> bool:
 	return OS.is_debug_build() and ResourceLoader.exists(SELFTEST_SCENE_PATH, "PackedScene")
 
 # 3v3 大厅状态：取代原先误显示的 1v1 session_label（棋盘/对手准备那套）。
+func _start_hint_text() -> String:
+	var reason := _start_block_reason(true)
+	return reason if not reason.is_empty() else (_room_text("可以开始", "Ready to start") if _is_host_seat() else _room_text("等待房主开始游戏", "Waiting for host to start"))
+
 func _lobby_status_text() -> String:
 	var states := _states()
 	var players := 0
@@ -500,8 +505,7 @@ func _lobby_status_text() -> String:
 		elif st == "dummy":
 			ais += 1
 	var mode := _room_text("在线", "Online") if _online() else _room_text("离线", "Offline")
-	var reason := _start_block_reason(true)
-	var tail := reason if not reason.is_empty() else (_room_text("可以开始", "Ready to start") if _is_host_seat() else _room_text("等待房主开始游戏", "Waiting for host to start"))
+	var tail := _start_hint_text()
 	return _room_text("%s ｜ 玩家%d AI%d ｜ %s", "%s | Players %d AI %d | %s") % [mode, players, ais, tail]
 
 func _slot_name(index: int, state: String, self_slot: bool) -> String:

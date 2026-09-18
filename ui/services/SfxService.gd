@@ -262,6 +262,7 @@ static func play(cue: String, volume_db := 0.0) -> bool:
 	_last_play_msec[cue] = now
 	_play_counts[cue] = int(_play_counts.get(cue, 0)) + 1
 	voice.stream = stream
+	voice.set_meta("sfx_cue", cue)
 	voice.volume_db = volume_db
 	voice.play()
 	return true
@@ -356,6 +357,11 @@ static func _voices_are_alive() -> bool:
 			return false
 	return true
 
+
+static func stop_cue(cue: String) -> void:
+	for voice in _voices:
+		if is_instance_valid(voice) and str(voice.get_meta("sfx_cue", "")) == cue:
+			voice.stop()
 
 static func stop_all() -> void:
 	for voice in _voices:

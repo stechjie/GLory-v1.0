@@ -280,6 +280,7 @@ func _card(item: Dictionary) -> Control:
 	box.add_child(name_label)
 
 	var price_row := HBoxContainer.new()
+	price_row.custom_minimum_size.y = 28
 	price_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	price_row.add_theme_constant_override("separation", Tokens.GAP_S)
 	box.add_child(price_row)

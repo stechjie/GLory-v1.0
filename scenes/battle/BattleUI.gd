@@ -116,6 +116,7 @@ var _unit_actor_registry = UnitActorRegistryScript.new()
 # 见 _start_battle_music / BattleScreen._prepare_battle_models 末尾。
 var _boss_intro_pending := false
 var _boss_intro_played := false
+var _battle_audio_generation := 0
 
 func _finish_simulation() -> void:
 	pass
@@ -158,6 +159,7 @@ func _battle_music_path() -> String:
 # 登场音之后那首 pve 战斗 BGM **不在这里起**：它在 BattleScreen._prepare_battle_models()
 # 末尾的 `_resolve_pending_battle_music()` 里等够素材时长再起（那一段本来就是对的）。
 func _begin_boss_intro() -> void:
+	_battle_audio_generation += 1
 	MusicService.stop()
 	# 标记「登场音已经响过」—— `_start_battle_music()` 靠它区分
 	# 「还没登场，先把 BGM 挡住」和「登场完了，该起 BGM 了」。
@@ -186,6 +188,8 @@ func _start_battle_music() -> void:
 	MusicService.play(_battle_music_path())
 
 func _stop_battle_music() -> void:
+	_battle_audio_generation += 1
+	SfxService.stop_cue(SfxService.CUE_BOSS_APPEAR)
 	# 停的是「战斗这一首」。不切回菜单那首：离开战斗的下一页（备战/主菜单/
 	# 结算后的路由）都会自己 play 它要的那一首，这里多切一次只会多一次从头播。
 	# pending 也要清掉，否则退场后再也没有人来收口，BGM 会永远不响。
@@ -208,10 +212,11 @@ func _resolve_pending_battle_music() -> void:
 	# 理论上 pending 只会在 boss 回合被置起，这里再判一次是兜底：
 	# 万一 kind 在两次采样之间变了，宁可立刻起 BGM，也不要整场没声音。
 	if _effective_kind() == "boss":
+		var generation := _battle_audio_generation
 		var intro_sec := SfxService.cue_length(SfxService.CUE_BOSS_APPEAR)
 		if intro_sec > 0.0:
 			await get_tree().create_timer(intro_sec).timeout
-			if not is_inside_tree():
+			if not is_inside_tree() or generation != _battle_audio_generation:
 				return
 	_start_battle_music()
 

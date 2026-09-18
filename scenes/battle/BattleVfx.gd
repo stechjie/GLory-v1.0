@@ -223,6 +223,7 @@ func _collect_vfx_units(state_snapshot: Dictionary) -> Dictionary:
 			u["world_head"] = _unit_vfx_position(id, "HeadAnchor", sim_pos, 1.45)
 			u["model_node"] = model_node
 			u["team"] = str(f.get("team", ""))
+			u["owner_slot"] = int(f.get("owner_slot", -1))
 			u["attack_count"] = int(f.get("attack_count", 0))
 			u["range_px"] = float(f.get("range_px", 0.0))
 			u["skill_ready"] = float(f.get("skill_ready", 0.0))
@@ -1101,15 +1102,14 @@ func _cue_unit_snapshot(sim_uid: String) -> Dictionary:
 # 仍然是 0），所以同一个 uid 的 death 可能被重复投递。BattlePresentationDirector
 # 那层虽然有 _seen_event_keys 去重，但它只覆盖 replay 那条路。
 #
-# 按 uid 记而不是记一个 bool：3v3 的 PvP replay 里两边都可能有人王，
-# 各响一次是对的；同一个 uid 响两次才是错的。
+# 按 uid 去重；仅本座位的人王通过下面的归属检查，队友及敌方不播放。
 var _human_king_death_sfx_uids: Dictionary = {}
 
 
 func _maybe_play_human_king_death_sfx(victim_uid: String) -> void:
 	if victim_uid.is_empty() or _human_king_death_sfx_uids.has(victim_uid):
 		return
-	if not _is_unit_id(victim_uid, "human_king"):
+	if not _is_unit_id(victim_uid, "human_king") or not _is_local_owned_unit(victim_uid):
 		return
 	_human_king_death_sfx_uids[victim_uid] = true
 	SfxService.play(SfxService.CUE_HUMAN_KING_DEATH)
@@ -1124,6 +1124,20 @@ func _maybe_play_human_king_death_sfx(victim_uid: String) -> void:
 # **用数据表 id（human_king）判定，不用名字**：名字会随本地化变，
 # 而 data/units/race_units.json 里的 id 永远稳定。两条路都查不到就返回 false ——
 # 宁可少响一声，也不要把别人的阵亡音播给人王。
+func _is_local_owned_unit(sim_uid: String) -> bool:
+	var unit: Dictionary = _cue_unit_snapshot(sim_uid)
+	for side in ["player", "enemy"]:
+		for raw in _state.get(side, []):
+			if raw is Dictionary and str(raw.get("uid", "")) == sim_uid:
+				unit = raw
+	if unit.is_empty():
+		return false
+	var owner := int(unit.get("owner_slot", -1))
+	if NetworkService.team_active or GameState.team_mode:
+		var local_slot := NetworkService.team_local_slot if NetworkService.team_active else 0
+		return local_slot >= 0 and owner == local_slot
+	return str(unit.get("team", "")) == "player" and owner <= 0
+
 func _is_unit_id(sim_uid: String, unit_id: String) -> bool:
 	if str(_cue_unit_snapshot(sim_uid).get("unit_id", "")) == unit_id:
 		return true
