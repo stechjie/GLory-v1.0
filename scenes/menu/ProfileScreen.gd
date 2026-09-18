@@ -1,5 +1,7 @@
 extends Control
 # 玩家资料页。入口是主菜单左上角那个名牌。
+
+const SfxService := preload("res://ui/services/SfxService.gd")
 #
 # 设计与取舍见 docs/玩家资料系统设计.md。三条在改这个文件之前必须知道的：
 #
@@ -792,6 +794,8 @@ func _on_rename_pressed() -> void:
 		return
 	_begin_submit()
 	_finish_submit(await AccountManager.update_profile({"player_name": wanted}))
+	# 9.18：改名成功反馈音。
+	SfxService.play(SfxService.CUE_PROFILE_SAVE)
 
 
 func _on_save_bio_pressed() -> void:
@@ -822,6 +826,8 @@ func _on_save_bio_pressed() -> void:
 func _save_bio(payload: Dictionary) -> void:
 	_begin_submit()
 	_finish_submit(await AccountManager.update_bio(payload))
+	# 9.18：保存资料（签名/生日/性别/地区等）成功反馈音。
+	SfxService.play(SfxService.CUE_PROFILE_SAVE)
 
 
 func _save_avatar(value: String) -> void:

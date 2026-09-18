@@ -265,6 +265,9 @@ func _start_replay(replay: Dictionary) -> void:
 	_replay_mode = true
 	_replay_frame = 0
 	_replay_events_applied = -1
+	# 9.19：每局重置「末日守卫技能音已响过」记录，否则同一实例跑第二局（离线自测
+	# 回编辑态后再演示）时那一次也不会响。见 BattleVfx._doom_skill_sfx_played。
+	_doom_skill_sfx_played.clear()
 	# 上一局的胜利收束不能带进这一局，否则镜头会一场比一场紧。
 	reset_battle_camera_framing()
 	_begin_presentation_replay(replay)

@@ -83,6 +83,15 @@ const CUE_STAR4_GOD := "star4_god"
 const CUE_STAR4_UNDEAD_MOTHER := "star4_undead_mother"
 const CUE_STAR4_DARK := "star4_dark"
 const CUE_STAR4_DEFAULT := "star4_default"
+# 9.18：四星大天使 / 四星末日守卫从「神 / 暗」分组里拆出，各自独立音效。
+const CUE_STAR4_ARCHANGEL := "star4_archangel"
+const CUE_STAR4_DOOM := "star4_doom"
+# 9.19：四星「合成」与「战斗技能释放」分离。神王 / 母灵 / 黑龙这三家的
+# 合成音是 9.18 之前就在用的原音，9.18 用户给的新素材只该在「战斗里自身棋子
+# 释放技能」时响。于是新素材另存一份 `*_skill.mp3`，合成音回滚到原件。
+const CUE_STAR4_GOD_SKILL := "star4_god_skill"
+const CUE_STAR4_UNDEAD_MOTHER_SKILL := "star4_undead_mother_skill"
+const CUE_STAR4_DARK_SKILL := "star4_dark_skill"
 const CUE_TREASURE_LINKAGE := "treasure_linkage"
 const CUE_TREASURE_CHOICE_OPEN := "treasure_choice_open"
 
@@ -105,6 +114,13 @@ const CUE_HARVEST_TECH_UPGRADE := "harvest_tech_upgrade"
 const CUE_CHAT_ALERT := "chat_alert"
 const CUE_ROOM_SEAT_CHANGE := "room_seat_change"
 const CUE_FORMATION_HIT := "formation_hit"
+# 9.18：战斗结算「敌方法阵受击」循环音（我方打敌水晶时播，与己方法阵受击对称）。
+const CUE_ENEMY_FORMATION_HIT := "enemy_formation_hit"
+# 9.18：社交 / 房间 / 设置 / 资料 / 语音 四条 UI 反馈音。
+const CUE_ROOM_READY_SWITCH := "room_ready_switch"
+const CUE_PROFILE_SAVE := "profile_save"
+const CUE_SETTINGS_SWITCH := "settings_switch"
+const CUE_VOICE_SWITCH := "voice_switch"
 
 const CUES := {
 	CUE_UI_POPUP: "res://assets/audio/sfx/ui/popup.mp3",
@@ -122,6 +138,11 @@ const CUES := {
 	CUE_STAR4_UNDEAD_MOTHER: "res://assets/audio/sfx/prep/star4_undead_mother.mp3",
 	CUE_STAR4_DARK: "res://assets/audio/sfx/prep/star4_dark.mp3",
 	CUE_STAR4_DEFAULT: "res://assets/audio/sfx/prep/star4_default.mp3",
+	CUE_STAR4_ARCHANGEL: "res://assets/audio/sfx/prep/star4_archangel.mp3",
+	CUE_STAR4_DOOM: "res://assets/audio/sfx/prep/star4_doom.mp3",
+	CUE_STAR4_GOD_SKILL: "res://assets/audio/sfx/prep/star4_god_skill.mp3",
+	CUE_STAR4_UNDEAD_MOTHER_SKILL: "res://assets/audio/sfx/prep/star4_undead_mother_skill.mp3",
+	CUE_STAR4_DARK_SKILL: "res://assets/audio/sfx/prep/star4_dark_skill.mp3",
 	CUE_TREASURE_LINKAGE: "res://assets/audio/sfx/prep/treasure_linkage.mp3",
 	CUE_TREASURE_CHOICE_OPEN: "res://assets/audio/sfx/prep/treasure_choice_open.mp3",
 
@@ -138,6 +159,11 @@ const CUES := {
 	CUE_CHAT_ALERT: "res://assets/audio/sfx/ui/chat_alert.wav",
 	CUE_ROOM_SEAT_CHANGE: "res://assets/audio/sfx/ui/room_seat_change.wav",
 	CUE_FORMATION_HIT: "res://assets/audio/sfx/battle/formation_hit.mp3",
+	CUE_ENEMY_FORMATION_HIT: "res://assets/audio/sfx/battle/enemy_formation_hit.mp3",
+	CUE_ROOM_READY_SWITCH: "res://assets/audio/sfx/ui/room_ready_switch.mp3",
+	CUE_PROFILE_SAVE: "res://assets/audio/sfx/ui/profile_save.mp3",
+	CUE_SETTINGS_SWITCH: "res://assets/audio/sfx/ui/settings_switch.mp3",
+	CUE_VOICE_SWITCH: "res://assets/audio/sfx/ui/voice_switch.mp3",
 }
 
 # 每条 cue 的最小重触发间隔（毫秒）。缺省是 RETRIGGER_GUARD_MSEC。
@@ -150,11 +176,22 @@ const THROTTLE_MSEC_BY_CUE := {
 	CUE_CHAT_ALERT: 10_000,
 }
 
-# 四星音效按棋子分流。源文件给的是 5 条：人王 / 大天使·神王 / 母灵 /
-# 黑龙·末日守卫 / 其他。
+# 四星音效按棋子分流。9.17 起是 5 条（人王 / 神王·大天使共用 / 母灵 /
+# 黑龙·末日守卫共用 / 其他）；9.18 用户给了「战斗、特效」一批素材，于是
+# 大天使（god_archangel）与末日守卫（dark_doom）从「神 / 暗」分组里拆出，
+# 各自独立成 CUE_STAR4_ARCHANGEL / CUE_STAR4_DOOM。
+#
+# ⚠️ 9.19 修正：**9.18 那一批素材全部是「技能释放」音，不是合成音**
+# （源目录 `音乐/0918/战斗、特效/` 五个文件全部叫「…技能释放」，一个合成音都没有）。
+# 而 STAR4_CUES 是**合成**分发表，于是大天使 / 末日守卫的合成音也被顶成了技能音
+# —— 与神王 / 母灵 / 黑龙同类问题。9.17 时这两家合成音**复用 god / dark 文件**
+# （见上「神王·大天使共用」「黑龙·末日守卫共用」），故 9.19 把它们的合成音
+# 回滚到 CUE_STAR4_GOD / CUE_STAR4_DARK（二者已是 9.18 前的原合成音）；
+# 各自的技能音仍走 STAR4_SKILL_CUES 里的 CUE_STAR4_ARCHANGEL / CUE_STAR4_DOOM。
 #
 # **用 `def.id` 判定，不用 `def.name`**：客机路径的名字会被
 # `DataRegistry.canonicalize_unit_display_names()` 按本地化覆写，而 id 永远稳定。
+# 战斗里释放技能时的触发点在 `scenes/battle/BattleVfx.gd`，门控「自身棋子」才响。
 const STAR4_CUES := {
 	"human_king": CUE_STAR4_HUMAN_KING,
 	"god_archangel": CUE_STAR4_GOD,
@@ -162,6 +199,20 @@ const STAR4_CUES := {
 	"undead_mother": CUE_STAR4_UNDEAD_MOTHER,
 	"dark_dragon": CUE_STAR4_DARK,
 	"dark_doom": CUE_STAR4_DARK,
+}
+
+# 战斗里「自身棋子释放技能」时用的四星音。9.18「战斗、特效」那批素材**全部**归这里：
+# 神王 / 母灵 / 黑龙走 `*_skill` 副本，大天使 / 末日守卫走各自的 archangel / doom 文件，
+# 人王 9.18 没给技能音，合成与技能共用唯一素材。
+# 见 9.19「合成音与战斗技能音分离」说明：合成走 STAR4_CUES（默认），
+# 技能走本表（star4_cue_for(unit_id, true)）。
+const STAR4_SKILL_CUES := {
+	"human_king": CUE_STAR4_HUMAN_KING,
+	"god_archangel": CUE_STAR4_ARCHANGEL,
+	"god_king": CUE_STAR4_GOD_SKILL,
+	"undead_mother": CUE_STAR4_UNDEAD_MOTHER_SKILL,
+	"dark_dragon": CUE_STAR4_DARK_SKILL,
+	"dark_doom": CUE_STAR4_DOOM,
 }
 
 
@@ -370,7 +421,14 @@ static func stop_all() -> void:
 	stop_loop()
 
 
-static func star4_cue_for(unit_id: String) -> String:
+# 四星音按棋子分流。9.19 起区分两种场景：
+#   * is_skill = false（默认）：备战页**合成 / 升星**时刻，指向各家原合成音；
+#   * is_skill = true：战斗里**自身棋子释放技能**时刻，指向 9.18 新素材
+#     （STAR4_SKILL_CUES）。门控「自身棋子」在调用方（BattleVfx）做，
+#     这里只负责按场景选对 cue。
+static func star4_cue_for(unit_id: String, is_skill := false) -> String:
+	if is_skill:
+		return str(STAR4_SKILL_CUES.get(unit_id, CUE_STAR4_DEFAULT))
 	return str(STAR4_CUES.get(unit_id, CUE_STAR4_DEFAULT))
 
 

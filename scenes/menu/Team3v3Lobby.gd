@@ -408,6 +408,8 @@ func _on_primary_pressed() -> void:
 	else:
 		_slot_ready[my_slot] = not now_ready
 		_refresh()
+	# 9.18：房间内「准备」切换反馈音。
+	SfxService.play(SfxService.CUE_ROOM_READY_SWITCH)
 
 func _toggle_dummy(index: int) -> void:
 	if _online():
