@@ -1269,3 +1269,7 @@ FAIL [reset_not_wired] NetworkService.reset() 必须重置信封位置（实际 
 - 服务端「最后一枚棋子不许卖」只数账本 roster，客户端数棋盘 + 备战席；影子期两边一分叉，服务端就会误拒出售
 - **Effekseer 的安卓库没进 git**（同事 `b6d91ee` 加的插件，2026-09-14 合并时发现）：`.gitignore` 里 `android/` 没带前导斜杠，会匹配任意层级叫 `android` 的目录（同一个文件里 `assets` 那条注释记过一模一样的坑），于是 `addons/effekseer/bin/android/libeffekseer.*.so` 从来没提交（windows / linux / macos / ios / web 的库都在）。从 git 拉的代码出的安卓包里就没有 Effekseer：目前只有实验性特效 `effects/vfx3d/experimental/undead_from_scratch_v3/` 和调试场景用到它，正式玩法不受影响，但以后正式特效用上它就会在手机上失效。修法：`.gitignore` 改成 `/android/`（根目录的安卓构建模板照样忽略，仓库里别处没有叫 android 的目录），再由同事从他电脑把 `bin/android` 下的 .so 提交上来。同一个提交还带进了 3 个临时文件：`addons/effekseer/bin/windows/~libeffekseer.x86_64.dll` 和两个 `~libeffekseer.x86_64.dll~RF….TMP`（看文件名和大小都是正式 DLL 的临时副本，1538560 字节）。这台跑过 Godot 之后 `~libeffekseer.x86_64.dll` 被删掉了，git 里显示为删除，提交这个删除没问题；两个 .TMP 也该删，并在 `.gitignore` 里加上 `~*.dll` 与 `*.TMP`
 - 内容审核的接入方式与价格、举报由谁审与响应时限、国内合规留存要求
+
+## 2026-09-18 测试反馈修复
+
+商城按钮状态对齐；改名冷却到期提示；战斗结束停止Boss登场音并取消延迟音乐；仅本人棋子播放人王阵亡音；房主开始按钮下方提示与房间状态一致。详见[9.18bug修复记录](docs/9.18bug修复记录.md)。本地专项12项、音效123项、Boss音乐24项通过；未进行安卓及真实多人听感验收。本次无需更新服务端，客户端需要重新运行源码或重新导出安装包。

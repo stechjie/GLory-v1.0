@@ -1,0 +1,4 @@
+[gd_scene load_steps=2 format=3]
+[ext_resource type="Script" path="res://tools/bug0918_check.gd" id="1"]
+[node name="Bug0918Check" type="Node"]
+script = ExtResource("1")
