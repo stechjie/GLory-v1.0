@@ -1098,7 +1098,7 @@ func _build_top_actions() -> void:
 
 const ChatPhrases := preload("res://scripts/multiplayer/ChatPhrases.gd")
 
-const CHAT_BTN_SIZE := Vector2(132, 132)
+const CHAT_BTN_SIZE := Vector2(72, 72)
 
 # 🔴 **聊天整块必须让开右侧那一列，横竖两个方向都要让。**
 #
@@ -1111,13 +1111,17 @@ const CHAT_BTN_SIZE := Vector2(132, 132)
 #
 # 窗口越矮，两者越近；到 720 就撞上了。所以：
 #   横向 —— 右边界收到 -148，让开那一列（STATS_BTN_SIZE.x=140 + 贴边 8）
-#   纵向 —— 按钮压到 -200 ~ -68，与商店刷新按钮同一水平带（它是右下角唯一
-#           本来就安全的高度：518 之下）。x 上错开，所以并不会真的叠上刷新。
+#   纵向 —— 整组收在底边 -120 ~ -32，给备战席留出 40px 以上的空档。
 #
 # 改这几个数之前先跑一次那个截图工具，**用矮窗口看**，别用参考画布的高度。
 const CHAT_RIGHT := 148.0
-const CHAT_BTN_TOP := -200.0
-const CHAT_LOG_WIDTH := 352.0
+const COMMS_DOCK_WIDTH := 288.0
+const COMMS_DOCK_HEIGHT := 88.0
+const COMMS_DOCK_BOTTOM := -32.0
+const CHAT_BTN_BOTTOM := -40.0
+const CHAT_LOG_WIDTH := 360.0
+const CHAT_PANEL_HEIGHT := 374.0
+const CHAT_FLOAT_GAP := 10.0
 
 const CHAT_LOG_LINES := 3
 # 消息条高度。批次 A 时是 122（3 条单行短语）；批次 D 加了会折行的自由文字，放大到 156。
@@ -1137,6 +1141,7 @@ const CHAT_SEAT_LABELS := ["A", "B", "C", "1", "2", "3"]
 var _chat_button: Button = null
 var _chat_panel: PanelContainer = null
 var _chat_log: VBoxContainer = null
+var _comms_dock: PanelContainer = null
 
 # 🔴 聊天范围（2026-09-14 定，协议 26）：**备战期默认只发给队友**，点「发给：…」切到全部。
 # 局内说的基本是战术（存钱、升星、谁顶前排），默认全部的话忘了切就被对面看到。
@@ -1160,6 +1165,7 @@ func _build_chat_entry() -> void:
 	if GameState.tutorial_mode or not NetworkService.team_active:
 		return
 
+	_build_comms_dock()
 	_chat_button = PrepWidgets.make_framed_text_button("", CHAT_BTN_PATH, CHAT_BTN_SIZE, 16,
 		_toggle_chat_panel)
 	_chat_button.name = "PrepChatButton"
@@ -1167,12 +1173,11 @@ func _build_chat_entry() -> void:
 	_chat_button.anchor_right = 1.0
 	_chat_button.anchor_top = 1.0
 	_chat_button.anchor_bottom = 1.0
-	# 与商店刷新按钮同一水平带（它也是 -200 ~ -70），但**横向错开**：
-	# 刷新在 -105 ~ 25，聊天在 -280 ~ -148，中间隔着 43。见 CHAT_RIGHT 那段。
+	# 右侧保留 148，让开佣兵 / 萝卜的侧栏；按钮与语音两键共用同一底板。
 	_chat_button.offset_right = -CHAT_RIGHT
 	_chat_button.offset_left = -CHAT_RIGHT - CHAT_BTN_SIZE.x
-	_chat_button.offset_top = CHAT_BTN_TOP
-	_chat_button.offset_bottom = CHAT_BTN_TOP + CHAT_BTN_SIZE.y
+	_chat_button.offset_bottom = CHAT_BTN_BOTTOM
+	_chat_button.offset_top = CHAT_BTN_BOTTOM - CHAT_BTN_SIZE.y
 	# z_index 刻意低于商店弹窗(40)与卖出区(50)：**商店开着的时候聊天就该点不到**。
 	# 那时玩家在买卖，一个压在商店上的聊天按钮只会造成误触。
 	_chat_button.z_index = 20
@@ -1185,11 +1190,11 @@ func _build_chat_entry() -> void:
 	_chat_log.anchor_right = 1.0
 	_chat_log.anchor_top = 1.0
 	_chat_log.anchor_bottom = 1.0
-	# 贴在按钮正上方，右边界与按钮对齐（同样让开 side_col 那一列）。
+	# 贴在整个通讯栏正上方，右边界与聊天按钮对齐。
 	_chat_log.offset_right = -CHAT_RIGHT
 	_chat_log.offset_left = -CHAT_RIGHT - CHAT_LOG_WIDTH
-	_chat_log.offset_bottom = CHAT_BTN_TOP - 8
-	_chat_log.offset_top = CHAT_BTN_TOP - 8 - CHAT_LOG_HEIGHT
+	_chat_log.offset_bottom = COMMS_DOCK_BOTTOM - COMMS_DOCK_HEIGHT - CHAT_FLOAT_GAP
+	_chat_log.offset_top = _chat_log.offset_bottom - CHAT_LOG_HEIGHT
 	_chat_log.alignment = BoxContainer.ALIGNMENT_END
 	# 内容万一比 CHAT_LOG_HEIGHT 高（字体行高与估算不符时），往上长、不往下长 ——
 	# 往下会压到聊天按钮上。正常情况下行数预算已经保证放得下。
@@ -1207,22 +1212,39 @@ func _build_chat_entry() -> void:
 	if not NetworkService.team_chat_text_received.is_connected(_on_prep_chat_text_received):
 		NetworkService.team_chat_text_received.connect(_on_prep_chat_text_received)
 
-# 语音按钮 + 队友按钮（docs/聊天系统设计.md 第九节）：聊天按钮左边，只占同一水平带的下半截（-120 ~ -72）。
-# 上半截会碰到备战席的右端：1280×720 下备战席底边在 y≈575，也就是 -145 左右。
-# 两个按钮合起来仍是原来那 150 宽（语音 102 + 间隔 4 + 队友 44）：再往左就碰到底部中间的金币卷轴。
+# 语音按钮 + 队友按钮：缩短整组宽度，但两键都不低于 48px 触控下限。
+# 72 + 8 + 56 + 4 + 128 = 268，比旧布局窄 26px，与金币卷轴的距离反而更大。
 # 改这几个数之前同样先跑 tools/chat_ui_capture.tscn，用矮窗口看。行为都在 VoiceControls 里。
 const VoiceControls := preload("res://ui/components/VoiceControls.gd")
-const VOICE_BTN_SIZE := Vector2(102, 48)
-const VOICE_MEMBERS_SIZE := Vector2(44, 48)
-const VOICE_BTN_GAP := 12.0
+const VOICE_BTN_SIZE := Vector2(128, 56)
+const VOICE_MEMBERS_SIZE := Vector2(56, 56)
+const VOICE_BTN_GAP := 8.0
 const VOICE_INNER_GAP := 4.0
-const VOICE_BTN_BOTTOM := -72.0
-const VOICE_BTN_FONT := 14
+const VOICE_BTN_BOTTOM := -48.0
+const VOICE_BTN_FONT := 13
 var _voice_controls: VoiceControls = null
+
+func _build_comms_dock() -> void:
+	_comms_dock = PanelContainer.new()
+	_comms_dock.name = "PrepCommsDock"
+	_comms_dock.anchor_left = 1.0
+	_comms_dock.anchor_right = 1.0
+	_comms_dock.anchor_top = 1.0
+	_comms_dock.anchor_bottom = 1.0
+	_comms_dock.offset_right = -CHAT_RIGHT + 10.0
+	_comms_dock.offset_left = _comms_dock.offset_right - COMMS_DOCK_WIDTH
+	_comms_dock.offset_bottom = COMMS_DOCK_BOTTOM
+	_comms_dock.offset_top = COMMS_DOCK_BOTTOM - COMMS_DOCK_HEIGHT
+	_comms_dock.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_comms_dock.z_index = 19
+	_comms_dock.add_theme_stylebox_override("panel",
+		GloryTokens.flat_box(GloryTokens.INK_PANEL, GloryTokens.INK_EDGE, 2, 18))
+	add_child(_comms_dock)
 
 func _build_voice_button() -> void:
 	_voice_controls = VoiceControls.new()
-	_voice_controls.build(self, VOICE_BTN_SIZE, VOICE_MEMBERS_SIZE, VOICE_BTN_FONT)
+	_voice_controls.build(self, VOICE_BTN_SIZE, VOICE_MEMBERS_SIZE, VOICE_BTN_FONT,
+		{"panel_context": "prep"})
 	var right := -CHAT_RIGHT - CHAT_BTN_SIZE.x - VOICE_BTN_GAP
 	_place_voice_button(_voice_controls.members_button, right, VOICE_MEMBERS_SIZE)
 	_place_voice_button(_voice_controls.voice_button, right - VOICE_MEMBERS_SIZE.x - VOICE_INNER_GAP, VOICE_BTN_SIZE)
@@ -1251,25 +1273,33 @@ func _build_chat_panel() -> void:
 	# 不往左弹：那会横穿到棋盘中央去；往上只压掉自己那几条消息，代价最小。
 	_chat_panel.offset_right = -CHAT_RIGHT
 	_chat_panel.offset_left = -CHAT_RIGHT - CHAT_LOG_WIDTH
-	_chat_panel.offset_bottom = CHAT_BTN_TOP - 8
-	# 282（6 行短语）+ 44（最上面一行「打字」，批次 D）。
-	_chat_panel.offset_top = CHAT_BTN_TOP - 8 - 326
+	_chat_panel.offset_bottom = COMMS_DOCK_BOTTOM - COMMS_DOCK_HEIGHT - CHAT_FLOAT_GAP
+	_chat_panel.offset_top = _chat_panel.offset_bottom - CHAT_PANEL_HEIGHT
 	_chat_panel.z_index = 30
 	_chat_panel.visible = false
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.075, 0.095, 0.055, 0.96)
-	style.border_color = Color(0.78, 0.57, 0.20, 0.92)
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(10)
-	style.set_content_margin_all(10)
+	var style := GloryTokens.flat_box(GloryTokens.INK_PANEL, GloryTokens.INK_EDGE, 2, 12)
+	style.set_content_margin_all(12)
 	_chat_panel.add_theme_stylebox_override("panel", style)
 	add_child(_chat_panel)
 
 	# 两列。一列放不下 12 条（会比棋盘还高），三列会让「我这边有点难」这种
 	# 六字短语被截断。
 	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 6)
+	col.add_theme_constant_override("separation", 8)
 	_chat_panel.add_child(col)
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 8)
+	col.add_child(header)
+	var title := Label.new()
+	title.text = "Quick Chat" if LocaleManager.get_locale() == "en" else "快捷聊天"
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 19)
+	title.add_theme_color_override("font_color", GloryTokens.GOLD_HOVER)
+	header.add_child(title)
+	var close_button := PrepWidgets.make_menu_button("×", Vector2(42, 38), 19, _toggle_chat_panel)
+	close_button.name = "PrepChatClose"
+	header.add_child(close_button)
 	# 最上面一行：左「＋ 打字」（批次 D），右「发给：队友 / 全部」（2026-09-14 聊天范围）。
 	# 合起来仍等于下面两列短语的宽度（206 + 间距 6 + 114 = 160 × 2 + 6），面板高度不变。
 	# 用 make_menu_button 而不是 Button.new()：同一份样式，也不涨 V3 P1-08 棘轮的计数。

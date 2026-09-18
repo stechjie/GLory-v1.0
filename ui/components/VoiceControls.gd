@@ -17,6 +17,7 @@ const VoicePanel := preload("res://ui/components/VoicePanel.gd")
 const ConfirmDialog := preload("res://ui/components/GloryConfirmDialog.gd")
 
 const ACTIVE_COLOR := Color(0.55, 1.0, 0.55)
+const LISTEN_COLOR := Color(0.50, 0.88, 1.0)
 # make_menu_button 的默认字色（PrepWidgets）。
 const IDLE_COLOR := Color(1.0, 0.90, 0.60)
 const REFRESH_SEC := 0.25
@@ -26,12 +27,15 @@ var voice_button: Button = null
 var members_button: Button = null
 var _owner: Node = null
 var _timer: Timer = null
+var _panel_context := ""
 # 这一份发起了系统权限请求、还在等结果。同时开着几份时（备战期 + 战斗界面），只由发起的那份提示。
 var _awaiting_mic := false
 
 
-func build(owner: Node, voice_size: Vector2, members_size: Vector2, font_size: int) -> void:
+func build(owner: Node, voice_size: Vector2, members_size: Vector2, font_size: int,
+		options: Dictionary = {}) -> void:
 	_owner = owner
+	_panel_context = str(options.get("panel_context", ""))
 	voice_button = PrepWidgets.make_menu_button(VoiceService.mode_label(), voice_size, font_size, _on_voice_pressed)
 	voice_button.name = "VoiceToggle"
 	members_button = PrepWidgets.make_menu_button(_text("队友", "Team"), members_size, font_size, _on_members_pressed)
@@ -66,7 +70,15 @@ func refresh() -> void:
 	if voice_button == null or not is_instance_valid(voice_button):
 		return
 	voice_button.text = VoiceService.mode_label()
-	voice_button.add_theme_color_override("font_color", ACTIVE_COLOR if VoiceService.is_active() else IDLE_COLOR)
+	var color := IDLE_COLOR
+	if VoiceService.mode == VoiceService.Mode.LISTEN:
+		color = LISTEN_COLOR
+	elif VoiceService.mode == VoiceService.Mode.TALK:
+		color = ACTIVE_COLOR
+	voice_button.add_theme_color_override("font_color", color)
+	if members_button != null and is_instance_valid(members_button) and _panel_context == "prep":
+		var count := VoiceService.teammates().size()
+		members_button.text = _text("队友\n%d" % count, "Team\n%d" % count)
 
 
 # 开麦的唯一入口（语音按钮和语音面板里的「开麦」都走这里）：没权限时先说明用途。
@@ -119,7 +131,7 @@ func _on_voice_pressed() -> void:
 
 
 func _on_members_pressed() -> void:
-	VoicePanel.new().present(_owner, request_talk)
+	VoicePanel.new().present(_owner, request_talk, {"context": _panel_context})
 
 
 func _on_mode_changed(_mode: int) -> void:

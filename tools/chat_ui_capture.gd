@@ -135,6 +135,18 @@ func _capture_prep() -> void:
 		type_button.pressed.emit()
 		await _shot("prep_chat_text_input")
 		ModalStack.close_all()
+	# 通讯栏的「队友」入口会打开 Prep 专用语音面板。先收起快捷聊天，
+	# 避免截图里两个层同时展开，也顺带验证关闭入口仍然可用。
+	var prep_chat_panel := prep.find_child("PrepChatPanel", true, false) as Control
+	if prep_chat_panel != null and prep_chat_panel.visible:
+		prep.call("_toggle_chat_panel")
+	var prep_voice_controls: Variant = prep.get("_voice_controls")
+	if prep_voice_controls == null:
+		push_error("备战期找不到 VoiceControls")
+	else:
+		prep_voice_controls.call("_on_members_pressed")
+		await _shot("prep_voice_panel_open")
+		ModalStack.close_all()
 	prep.queue_free()
 	await get_tree().process_frame
 
