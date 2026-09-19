@@ -31,10 +31,16 @@ const PetPreview := preload("res://scripts/pets/PetPreview.gd")
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
 const PetService := preload("res://scripts/pets/PetService.gd")
 
-const PET_CARD := Vector2(200, 260)
-const PET_PREVIEW := Vector2(170, 140)
-const AVATAR_TILE := Vector2(110, 110)
-const COLUMNS := 5
+const PET_CARD := Vector2(214, 244)
+const PET_PREVIEW := Vector2(176, 126)
+const PET_DETAIL_PREVIEW := Vector2(292, 226)
+const AVATAR_TILE := Vector2(126, 126)
+const DETAIL_WIDTH := 344.0
+const PET_COLUMNS := 3
+const AVATAR_COLUMNS := 8
+
+const TAB_PETS := "pets"
+const TAB_AVATARS := "avatars"
 
 var _busy := false
 var _loading := true
@@ -44,9 +50,17 @@ var _paid_content: Dictionary = {}   # 内容 id -> true，玩家买到的付费
 var _sold_content: Dictionary = {}   # 内容 id -> true，服务端目录里在卖的
 var _notice := ""
 var _notice_bad := false
+var _active_tab := TAB_PETS
+var _selected_pet := ""
+var _selected_avatar := ""
 
-var _body: VBoxContainer
+var _grid: GridContainer
+var _detail: VBoxContainer
+var _empty_label: Label
 var _notice_label: Label
+var _pet_count_label: Label
+var _avatar_count_label: Label
+var _tab_buttons: Dictionary = {}
 
 
 func _ready() -> void:
@@ -54,6 +68,9 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build()
 	_render()
+	# 开发截图场景会在进树前灌固定收藏；不发网络请求，保证视觉回归图稳定。
+	if has_meta("ui_capture_fixture"):
+		return
 	_reload()
 
 
@@ -92,21 +109,111 @@ func _build() -> void:
 	_notice_label.visible = false
 	root.add_child(_notice_label)
 
+	root.add_child(_tab_bar())
+
+	var shell := PanelContainer.new()
+	shell.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	shell.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.INK_PANEL, Tokens.INK_EDGE, Tokens.GAP_S))
+	root.add_child(shell)
+
+	var split := HBoxContainer.new()
+	split.add_theme_constant_override("separation", Tokens.GAP_S)
+	shell.add_child(split)
+	split.add_child(_collection_panel())
+
+	var divider := ColorRect.new()
+	divider.custom_minimum_size = Vector2(1, 0)
+	divider.color = Tokens.INK_EDGE.darkened(0.42)
+	divider.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	split.add_child(divider)
+	split.add_child(_detail_panel())
+
+
+func _tab_bar() -> Control:
 	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.SURFACE, Tokens.BORDER.darkened(0.35), Tokens.GAP_S))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", Tokens.GAP_S)
+	panel.add_child(row)
+	for entry in [
+		{"id": TAB_PETS, "zh": "宠物", "en": "Pets"},
+		{"id": TAB_AVATARS, "zh": "头像", "en": "Avatars"},
+	]:
+		var tab_id := str(entry.id)
+		var button: Button = ACTION_BUTTON.instantiate()
+		button.text = _t(str(entry.zh), str(entry.en))
+		button.custom_minimum_size = Vector2(220, Tokens.TOUCH_MIN)
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.pressed.connect(func() -> void: _select_tab(tab_id))
+		row.add_child(button)
+		_tab_buttons[tab_id] = button
+	return panel
+
+
+func _collection_panel() -> Control:
+	var panel := PanelContainer.new()
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	panel.add_theme_stylebox_override(
-		"panel", Tokens.panel_box(Tokens.SURFACE, Tokens.BORDER, Tokens.GAP_M))
-	root.add_child(panel)
+	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.SURFACE, Tokens.BORDER.darkened(0.42), Tokens.GAP_S))
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", Tokens.GAP_S)
+	panel.add_child(col)
+
+	var head := HBoxContainer.new()
+	head.custom_minimum_size.y = 34
+	col.add_child(head)
+	var title := Label.new()
+	title.text = _t("我的收藏", "My Collection")
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.add_theme_font_size_override("font_size", Tokens.FONT_BUTTON)
+	title.add_theme_color_override("font_color", Tokens.GOLD)
+	head.add_child(title)
+	_pet_count_label = _count_label()
+	head.add_child(_pet_count_label)
+	_avatar_count_label = _count_label()
+	head.add_child(_avatar_count_label)
 
 	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	panel.add_child(scroll)
+	col.add_child(scroll)
+	var holder := VBoxContainer.new()
+	holder.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	holder.add_theme_constant_override("separation", Tokens.GAP_S)
+	scroll.add_child(holder)
+	_empty_label = Label.new()
+	_empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_empty_label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	holder.add_child(_empty_label)
+	_grid = GridContainer.new()
+	_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_grid.add_theme_constant_override("h_separation", Tokens.GAP_S)
+	_grid.add_theme_constant_override("v_separation", Tokens.GAP_S)
+	holder.add_child(_grid)
+	return panel
 
-	_body = VBoxContainer.new()
-	_body.name = "Sections"
-	_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_body.add_theme_constant_override("separation", Tokens.GAP_L)
-	scroll.add_child(_body)
+
+func _detail_panel() -> Control:
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(DETAIL_WIDTH, 0)
+	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.SURFACE, Tokens.GOLD_PRESSED.darkened(0.18), Tokens.GAP_M))
+	_detail = VBoxContainer.new()
+	_detail.name = "CollectionDetail"
+	_detail.add_theme_constant_override("separation", Tokens.GAP_S)
+	panel.add_child(_detail)
+	return panel
+
+
+func _count_label() -> Label:
+	var label := Label.new()
+	label.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+	label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	return label
 
 
 func _header() -> Control:
@@ -121,17 +228,19 @@ func _header() -> Control:
 	row.add_child(back)
 
 	var title := Label.new()
-	title.text = _t("背包", "Bag")
+	title.text = _t("收藏背包", "Collection Bag")
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
-	title.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	title.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
 	row.add_child(title)
 
-	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(160, 0)
-	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_child(spacer)
+	var profile: Button = ACTION_BUTTON.instantiate()
+	profile.text = _t("个人资料 →", "Profile →")
+	profile.theme_type_variation = Theming.VARIATION_GHOST
+	profile.custom_minimum_size = Vector2(160, Tokens.TOUCH_MIN)
+	profile.pressed.connect(func() -> void: profile_requested.emit())
+	row.add_child(profile)
 	return row
 
 
@@ -171,96 +280,104 @@ func _reload() -> void:
 # --- 渲染 ---------------------------------------------------------------------
 
 func _render() -> void:
-	if _body == null:
+	if _grid == null:
 		return
 	_notice_label.visible = not _notice.is_empty()
 	_notice_label.text = _notice
 	_notice_label.add_theme_color_override(
 		"font_color", Tokens.DANGER if _notice_bad else Tokens.GOLD)
 
-	for child in _body.get_children():
-		child.queue_free()
+	for tab_id in _tab_buttons:
+		var tab_button := _tab_buttons[tab_id] as Button
+		tab_button.theme_type_variation = (Theming.VARIATION_PRIMARY
+			if str(tab_id) == _active_tab else Theming.VARIATION_GHOST)
+
+	_clear_children(_grid)
+	_clear_children(_detail)
+	var avatars := _usable_avatars() if not _loading else []
+	_pet_count_label.text = _t("宠物 %d", "Pets %d") % _owned_pets.size()
+	_avatar_count_label.text = _t("  ·  头像 %d", "  ·  Avatars %d") % avatars.size()
 
 	if _loading:
-		_body.add_child(_hint(_t("正在载入…", "Loading…")))
+		_empty_label.text = _t("正在整理收藏…", "Organizing your collection…")
+		_empty_label.visible = true
+		_detail.add_child(_detail_hint(_t("正在读取你的物品", "Loading your items")))
 		return
 
-	_body.add_child(_section_title(_t("宠物", "Pets")))
-	if _owned_pets.is_empty():
-		_body.add_child(_hint(_t("还没有宠物。去商城看看？", "No pets yet. Try the shop?")))
-	else:
-		var pet_grid := _grid(4)
+	if _active_tab == TAB_PETS:
+		_grid.columns = PET_COLUMNS
+		if _owned_pets.is_empty():
+			_empty_label.text = _t("还没有宠物。去商店看看吧。", "No pets yet. Visit the Shop to find one.")
+			_empty_label.visible = true
+			_detail.add_child(_detail_hint(_t("获得宠物后，可以在这里设为出战", "Equip a pet here after you unlock one")))
+			return
+		_empty_label.visible = false
+		if _selected_pet.is_empty() or not _owned_pets.has(_selected_pet):
+			_selected_pet = _active_pet if _owned_pets.has(_active_pet) else str(_owned_pets[0])
 		for pet_id in _owned_pets:
-			pet_grid.add_child(_pet_card(str(pet_id)))
-		_body.add_child(pet_grid)
+			_grid.add_child(_pet_card(str(pet_id)))
+		_render_pet_detail(_selected_pet)
+		return
 
-	_body.add_child(_section_title(_t("头像", "Avatars")))
-	_body.add_child(_hint(_t("在资料页更换头像", "Change your avatar on the profile page")))
-	var avatars := _usable_avatars()
+	_grid.columns = AVATAR_COLUMNS
 	if avatars.is_empty():
-		_body.add_child(_hint(_t("（没有可用的头像）", "(No avatars available)")))
-	else:
-		var avatar_grid := _grid(COLUMNS)
-		for value in avatars:
-			avatar_grid.add_child(_avatar_tile(str(value)))
-		_body.add_child(avatar_grid)
-
-
-func _section_title(text: String) -> Control:
-	var label := Label.new()
-	label.text = text
-	label.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
-	label.add_theme_color_override("font_color", Tokens.GOLD)
-	return label
-
-
-func _hint(text: String) -> Control:
-	var label := Label.new()
-	label.text = text
-	label.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
-	label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
-	return label
-
-
-func _grid(columns: int) -> GridContainer:
-	var grid := GridContainer.new()
-	grid.columns = columns
-	grid.add_theme_constant_override("h_separation", Tokens.GAP_M)
-	grid.add_theme_constant_override("v_separation", Tokens.GAP_M)
-	return grid
+		_empty_label.text = _t("没有可用的头像", "No avatars available")
+		_empty_label.visible = true
+		_detail.add_child(_detail_hint(_t("头像会显示在这里", "Your avatars will appear here")))
+		return
+	_empty_label.visible = false
+	if _selected_avatar.is_empty() or not avatars.has(_selected_avatar):
+		_selected_avatar = str(avatars[0])
+	for value in avatars:
+		_grid.add_child(_avatar_tile(str(value)))
+	_render_avatar_detail(_selected_avatar)
 
 
 func _pet_card(pet_id: String) -> Control:
 	var active := pet_id == _active_pet
+	var selected := pet_id == _selected_pet
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = PET_CARD
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.SURFACE_RAISED, Tokens.GOLD_EDGE if active else Tokens.BORDER, Tokens.GAP_S))
+		Tokens.SURFACE_RAISED,
+		Tokens.GOLD_EDGE if active else (Tokens.CYAN if selected else Tokens.BORDER),
+		Tokens.GAP_S))
+	panel.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			_select_pet(pet_id)
+		elif event is InputEventScreenTouch and event.pressed:
+			_select_pet(pet_id))
 
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", Tokens.GAP_S)
 	panel.add_child(box)
-	box.add_child(PetPreview.build(pet_id, PET_PREVIEW, false))
+	box.add_child(_pet_preview_stage(pet_id, PET_PREVIEW, active))
 
 	var name_label := Label.new()
 	name_label.text = PetService.display_name(pet_id)
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_label.clip_text = true
 	name_label.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
 	name_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(name_label)
 
 	var effect := Label.new()
 	effect.text = PetService.effect_text(pet_id)
 	effect.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	effect.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	effect.max_lines_visible = 2
 	effect.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
 	effect.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	effect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(effect)
 
 	var button: Button = ACTION_BUTTON.instantiate()
 	button.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
 	if active:
-		button.text = _t("出战中", "Active")
+		button.text = _t("出战中 ✓", "Equipped ✓")
 		button.disabled = true
 	else:
 		button.text = _t("设为出战", "Set active")
@@ -282,11 +399,18 @@ func _usable_avatars() -> Array:
 func _avatar_tile(value: String) -> Control:
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = AVATAR_TILE
+	panel.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	panel.add_theme_stylebox_override(
-		"panel", Tokens.panel_box(Tokens.SURFACE_RAISED, Tokens.BORDER, Tokens.GAP_S))
+		"panel", Tokens.panel_box(Tokens.SURFACE_RAISED,
+			Tokens.GOLD_EDGE if value == _selected_avatar else Tokens.BORDER, Tokens.GAP_S))
+	panel.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			_select_avatar(value)
+		elif event is InputEventScreenTouch and event.pressed:
+			_select_avatar(value))
 	var tex := AvatarCatalog.texture_for(value, true)
 	if tex == null:
-		panel.add_child(_hint("?"))
+		panel.add_child(_detail_hint("?"))
 		return panel
 	var rect := TextureRect.new()
 	rect.texture = tex
@@ -295,6 +419,170 @@ func _avatar_tile(value: String) -> Control:
 	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(rect)
 	return panel
+
+
+func _pet_preview_stage(pet_id: String, preview_size: Vector2, active: bool) -> Control:
+	var stage := Control.new()
+	stage.custom_minimum_size = Vector2(preview_size.x, preview_size.y + 8.0)
+	stage.mouse_filter = Control.MOUSE_FILTER_PASS
+	var well := PanelContainer.new()
+	well.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	well.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	well.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.BG_DEEP, Tokens.BORDER.darkened(0.45), Tokens.GAP_S))
+	stage.add_child(well)
+	var center := CenterContainer.new()
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	well.add_child(center)
+	var preview := PetPreview.build(pet_id, preview_size, false)
+	_ignore_mouse_tree(preview)
+	center.add_child(preview)
+	if active:
+		var badge := Label.new()
+		badge.text = _t("  出战中  ", "  EQUIPPED  ")
+		badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		badge.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+		badge.position = Vector2(-98, 8)
+		badge.size = Vector2(90, 26)
+		badge.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+		badge.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
+		badge.add_theme_stylebox_override("normal", Tokens.panel_box(
+			Tokens.INK_PANEL, Tokens.GOLD_PRESSED, 2))
+		badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		stage.add_child(badge)
+	return stage
+
+
+func _render_pet_detail(pet_id: String) -> void:
+	var active := pet_id == _active_pet
+	var eyebrow := Label.new()
+	eyebrow.text = _t("宠物详情", "PET DETAILS")
+	eyebrow.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+	eyebrow.add_theme_color_override("font_color", Tokens.GOLD)
+	_detail.add_child(eyebrow)
+	_detail.add_child(_pet_preview_stage(pet_id, PET_DETAIL_PREVIEW, active))
+	var name_label := Label.new()
+	name_label.text = PetService.display_name(pet_id)
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_label.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
+	_detail.add_child(name_label)
+	var effect := Label.new()
+	effect.text = PetService.effect_text(pet_id)
+	effect.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	effect.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	effect.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
+	effect.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	_detail.add_child(effect)
+	_detail.add_child(_flex_spacer())
+	var status := Label.new()
+	status.text = _t("✓ 当前出战宠物", "✓ Currently equipped") if active else _t("可设为出战", "Ready to equip")
+	status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	status.add_theme_color_override("font_color", Tokens.GOLD_HOVER if active else Tokens.TEXT_SECONDARY)
+	_detail.add_child(status)
+	var action: Button = ACTION_BUTTON.instantiate()
+	action.custom_minimum_size = Vector2(0, Tokens.BUTTON_HEIGHT)
+	if active:
+		action.text = _t("出战中 ✓", "Equipped ✓")
+		action.disabled = true
+	else:
+		action.text = _t("设为出战", "Set Active")
+		action.theme_type_variation = Theming.VARIATION_PRIMARY
+		action.pressed.connect(func() -> void: _set_active(pet_id))
+	_detail.add_child(action)
+
+
+func _render_avatar_detail(value: String) -> void:
+	var eyebrow := Label.new()
+	eyebrow.text = _t("头像预览", "AVATAR PREVIEW")
+	eyebrow.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+	eyebrow.add_theme_color_override("font_color", Tokens.GOLD)
+	_detail.add_child(eyebrow)
+	var well := PanelContainer.new()
+	well.custom_minimum_size = Vector2(292, 292)
+	well.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.BG_DEEP, Tokens.BORDER.darkened(0.45), Tokens.GAP_M))
+	_detail.add_child(well)
+	var tex := AvatarCatalog.texture_for(value)
+	if tex != null:
+		var rect := TextureRect.new()
+		rect.texture = tex
+		rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		well.add_child(rect)
+	var name_label := Label.new()
+	name_label.text = AvatarCatalog.display_name(AvatarCatalog.id_from_value(value))
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_label.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
+	_detail.add_child(name_label)
+	var hint := Label.new()
+	hint.text = _t("头像的装备与个人资料保持同步", "Avatar selection is managed on your profile")
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+	hint.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	_detail.add_child(hint)
+	_detail.add_child(_flex_spacer())
+	var action: Button = ACTION_BUTTON.instantiate()
+	action.text = _t("前往个人资料更换", "Change in Profile")
+	action.theme_type_variation = Theming.VARIATION_PRIMARY
+	action.custom_minimum_size = Vector2(0, Tokens.BUTTON_HEIGHT)
+	action.pressed.connect(func() -> void: profile_requested.emit())
+	_detail.add_child(action)
+
+
+func _select_tab(tab_id: String) -> void:
+	if _active_tab == tab_id:
+		return
+	_active_tab = tab_id
+	_render()
+
+
+func _select_pet(pet_id: String) -> void:
+	if _selected_pet == pet_id:
+		return
+	_selected_pet = pet_id
+	_render()
+
+
+func _select_avatar(value: String) -> void:
+	if _selected_avatar == value:
+		return
+	_selected_avatar = value
+	_render()
+
+
+func _detail_hint(text: String) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	return label
+
+
+func _flex_spacer() -> Control:
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return spacer
+
+
+func _clear_children(parent: Node) -> void:
+	if parent == null:
+		return
+	for child in parent.get_children():
+		parent.remove_child(child)
+		child.queue_free()
+
+
+func _ignore_mouse_tree(node: Node) -> void:
+	if node is Control:
+		(node as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for child in node.get_children():
+		_ignore_mouse_tree(child)
 
 
 # --- 换出战宠物 ---------------------------------------------------------------

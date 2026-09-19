@@ -39,9 +39,16 @@ const Currency := preload("res://scripts/account/Currency.gd")
 const PetPreview := preload("res://scripts/pets/PetPreview.gd")
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
 
-const CARD_SIZE := Vector2(220, 300)
-const PREVIEW_SIZE := Vector2(180, 150)
-const COLUMNS := 4
+const CARD_SIZE := Vector2(214, 264)
+const PREVIEW_SIZE := Vector2(176, 118)
+const DETAIL_PREVIEW_SIZE := Vector2(292, 220)
+const DETAIL_WIDTH := 344.0
+const COLUMNS := 3
+
+const CATEGORY_ALL := "all"
+const CATEGORY_PETS := "pet"
+const CATEGORY_AVATARS := "avatar"
+const CATEGORY_FRAMES := "frame"
 
 var _busy := false
 var _loading := true
@@ -51,16 +58,21 @@ var _diamond := 0
 var _coin := 0
 var _notice := ""
 var _notice_bad := false
+var _active_category := CATEGORY_ALL
+var _selected_item_id := ""
 
 # 正在进行的那笔购买的幂等键。**重试必须复用它**，见文件头第 2 条。
 var _pending_order_id := ""
 var _pending_item_id := ""
 
 var _grid: GridContainer
+var _detail: VBoxContainer
 var _notice_label: Label
 var _diamond_label: Label
 var _coin_label: Label
 var _empty_label: Label
+var _catalog_count_label: Label
+var _category_buttons: Dictionary = {}
 
 
 func _ready() -> void:
@@ -68,6 +80,9 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build()
 	_render()
+	# 开发截图场景会在进树前灌固定目录与余额；不发网络请求，保证视觉回归图稳定。
+	if has_meta("ui_capture_fixture"):
+		return
 	_reload()
 	# 9.17 第二批：商城独立 BGM。放在 _reload() 之后 —— 它只是一条 play()，
 	# 但排在网络请求后面能保证「进页面先看到东西、再听音乐」，不会反过来。
@@ -110,16 +125,81 @@ func _build() -> void:
 	_notice_label.visible = false
 	root.add_child(_notice_label)
 
+	root.add_child(_category_bar())
+
+	# 商店是「浏览 + 决策」页面：左边快速扫货，右边保留稳定的大预览和唯一的
+	# 购买决策区。卡片仍可直接购买，兼顾熟练玩家；点卡片其余区域则只切详情。
+	var shell := PanelContainer.new()
+	shell.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	shell.add_theme_stylebox_override(
+		"panel", Tokens.panel_box(Tokens.INK_PANEL, Tokens.INK_EDGE, Tokens.GAP_S))
+	root.add_child(shell)
+
+	var split := HBoxContainer.new()
+	split.add_theme_constant_override("separation", Tokens.GAP_S)
+	shell.add_child(split)
+	split.add_child(_catalog_panel())
+
+	var divider := ColorRect.new()
+	divider.custom_minimum_size = Vector2(1, 0)
+	divider.color = Tokens.INK_EDGE.darkened(0.42)
+	divider.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	split.add_child(divider)
+	split.add_child(_detail_panel())
+
+
+func _category_bar() -> Control:
 	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.SURFACE, Tokens.BORDER.darkened(0.35), Tokens.GAP_S))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", Tokens.GAP_S)
+	panel.add_child(row)
+	for entry in [
+		{"id": CATEGORY_ALL, "zh": "精选", "en": "Featured"},
+		{"id": CATEGORY_PETS, "zh": "宠物", "en": "Pets"},
+		{"id": CATEGORY_AVATARS, "zh": "头像", "en": "Avatars"},
+		{"id": CATEGORY_FRAMES, "zh": "头像框", "en": "Frames"},
+	]:
+		var category := str(entry.id)
+		var button: Button = ACTION_BUTTON.instantiate()
+		button.text = _t(str(entry.zh), str(entry.en))
+		button.custom_minimum_size = Vector2(142, Tokens.TOUCH_MIN)
+		button.pressed.connect(func() -> void: _select_category(category))
+		row.add_child(button)
+		_category_buttons[category] = button
+	return panel
+
+
+func _catalog_panel() -> Control:
+	var panel := PanelContainer.new()
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	panel.add_theme_stylebox_override(
-		"panel", Tokens.panel_box(Tokens.SURFACE, Tokens.BORDER, Tokens.GAP_M))
-	root.add_child(panel)
+	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.SURFACE, Tokens.BORDER.darkened(0.42), Tokens.GAP_S))
+
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", Tokens.GAP_S)
+	panel.add_child(col)
+
+	var head := HBoxContainer.new()
+	head.custom_minimum_size.y = 34
+	col.add_child(head)
+	var title := Label.new()
+	title.text = _t("商品陈列", "Collection")
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.add_theme_font_size_override("font_size", Tokens.FONT_BUTTON)
+	title.add_theme_color_override("font_color", Tokens.GOLD)
+	head.add_child(title)
+	_catalog_count_label = Label.new()
+	_catalog_count_label.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+	_catalog_count_label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	head.add_child(_catalog_count_label)
 
 	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	panel.add_child(scroll)
-
+	col.add_child(scroll)
 	var holder := VBoxContainer.new()
 	holder.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	holder.add_theme_constant_override("separation", Tokens.GAP_M)
@@ -135,9 +215,24 @@ func _build() -> void:
 	_grid = GridContainer.new()
 	_grid.name = "Grid"
 	_grid.columns = COLUMNS
-	_grid.add_theme_constant_override("h_separation", Tokens.GAP_M)
-	_grid.add_theme_constant_override("v_separation", Tokens.GAP_M)
+	_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_grid.add_theme_constant_override("h_separation", Tokens.GAP_S)
+	_grid.add_theme_constant_override("v_separation", Tokens.GAP_S)
 	holder.add_child(_grid)
+	return panel
+
+
+func _detail_panel() -> Control:
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(DETAIL_WIDTH, 0)
+	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.SURFACE, Tokens.GOLD_PRESSED.darkened(0.18), Tokens.GAP_M))
+	_detail = VBoxContainer.new()
+	_detail.name = "ItemDetail"
+	_detail.add_theme_constant_override("separation", Tokens.GAP_S)
+	panel.add_child(_detail)
+	return panel
 
 
 func _header() -> Control:
@@ -149,44 +244,63 @@ func _header() -> Control:
 	back.text = _t("← 返回", "← Back")
 	back.custom_minimum_size = Vector2(160, Tokens.TOUCH_MIN)
 	back.pressed.connect(func() -> void: back_requested.emit())
-	row.add_child(back)
+	var left_side := HBoxContainer.new()
+	left_side.custom_minimum_size = Vector2(360, Tokens.TOUCH_MIN)
+	left_side.add_child(back)
+	row.add_child(left_side)
 
 	var title := Label.new()
-	title.text = _t("商城", "Shop")
+	title.text = _t("荣耀商店", "Glory Shop")
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
-	title.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	title.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
 	row.add_child(title)
 
 	# 余额。与主菜单右上角是同一组图标（同一条 gold.png / diamond.png，这里只裁出图标那一段）——
 	# 两处显示同一个数，图不一样会让人以为是两种钱。
 	var purse := HBoxContainer.new()
 	purse.add_theme_constant_override("separation", Tokens.GAP_S)
-	purse.custom_minimum_size = Vector2(320, Tokens.TOUCH_MIN)
+	purse.custom_minimum_size = Vector2(360, Tokens.TOUCH_MIN)
 	purse.alignment = BoxContainer.ALIGNMENT_END
-	_coin_label = _purse_entry(purse, Currency.icon("coin"))
-	_diamond_label = _purse_entry(purse, Currency.icon("diamond"))
+	_coin_label = _purse_entry(purse, Currency.icon("coin"), _t("金币", "Coins"))
+	_diamond_label = _purse_entry(purse, Currency.icon("diamond"), _t("钻石", "Gems"))
 	row.add_child(purse)
 	return row
 
 
-func _purse_entry(parent: HBoxContainer, tex: Texture2D) -> Label:
+func _purse_entry(parent: HBoxContainer, tex: Texture2D, label_text: String) -> Label:
+	var chip := PanelContainer.new()
+	chip.custom_minimum_size = Vector2(172, Tokens.TOUCH_MIN)
+	chip.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.INK_PANEL, Tokens.INK_EDGE, Tokens.GAP_S))
+	parent.add_child(chip)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", Tokens.GAP_S)
+	chip.add_child(row)
+
 	var icon := TextureRect.new()
 	icon.texture = tex
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	icon.custom_minimum_size = Vector2(36, 36)
+	icon.custom_minimum_size = Vector2(32, 32)
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	parent.add_child(icon)
+	row.add_child(icon)
+
+	var caption := Label.new()
+	caption.text = label_text
+	caption.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+	caption.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	row.add_child(caption)
 
 	var label := Label.new()
 	label.text = "—"
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.custom_minimum_size = Vector2(96, 0)
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	label.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
-	label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
-	parent.add_child(label)
+	label.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
+	row.add_child(label)
 	return label
 
 
@@ -238,20 +352,44 @@ func _render() -> void:
 	_notice_label.add_theme_color_override(
 		"font_color", Tokens.DANGER if _notice_bad else Tokens.GOLD)
 
-	for child in _grid.get_children():
-		child.queue_free()
+	for category in _category_buttons:
+		var category_button := _category_buttons[category] as Button
+		category_button.visible = (_loading or str(category) == CATEGORY_ALL
+			or _category_has_items(str(category)))
+		category_button.theme_type_variation = (Theming.VARIATION_PRIMARY
+			if str(category) == _active_category else Theming.VARIATION_GHOST)
+
+	_clear_children(_grid)
+	_clear_children(_detail)
 
 	if _loading:
 		_empty_label.text = _t("正在载入…", "Loading…")
 		_empty_label.visible = true
+		_catalog_count_label.text = ""
+		_detail.add_child(_detail_hint(_t("正在准备商品…", "Preparing the collection…")))
 		return
 	if _items.is_empty():
 		_empty_label.text = _t("商城暂时没有上架的东西", "Nothing is on sale right now")
 		_empty_label.visible = true
+		_catalog_count_label.text = _t("0 件", "0 items")
+		_detail.add_child(_detail_hint(_t("新的商品正在路上", "New items are on the way")))
 		return
+
+	var visible_items := _visible_items()
+	_catalog_count_label.text = (_t("%d 件商品", "%d items") % visible_items.size())
+	if visible_items.is_empty():
+		_empty_label.text = _t("这个分类暂时没有商品", "No items in this category yet")
+		_empty_label.visible = true
+		_selected_item_id = ""
+		_detail.add_child(_detail_hint(_t("请选择其他分类", "Choose another category")))
+		return
+
 	_empty_label.visible = false
-	for raw in _items:
+	if _selected_item(visible_items).is_empty():
+		_selected_item_id = _item_id(visible_items[0] as Dictionary)
+	for raw in visible_items:
 		_grid.add_child(_card(raw as Dictionary))
+	_render_detail(_selected_item(visible_items))
 
 
 func _card(item: Dictionary) -> Control:
@@ -260,31 +398,52 @@ func _card(item: Dictionary) -> Control:
 	var price := int(item.get("price", 0))
 	var currency := str(item.get("currency", "diamond"))
 	var affordable := _balance_of(currency) >= price
+	var selected := _item_id(item) == _selected_item_id
 
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = CARD_SIZE
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	panel.add_theme_stylebox_override(
-		"panel", Tokens.panel_box(Tokens.SURFACE_RAISED, Tokens.BORDER, Tokens.GAP_S))
+		"panel", Tokens.panel_box(
+			Tokens.SURFACE_RAISED,
+			Tokens.GOLD_EDGE if selected else (Tokens.GOLD_PRESSED if owned else Tokens.BORDER),
+			Tokens.GAP_S))
+	panel.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			_select_item(item)
+		elif event is InputEventScreenTouch and event.pressed:
+			_select_item(item))
 
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", Tokens.GAP_S)
 	panel.add_child(box)
-	box.add_child(_preview(item, owned))
+	box.add_child(_preview_stage(item, owned, PREVIEW_SIZE))
 
 	var name_label := Label.new()
 	name_label.text = _item_name(item)
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_label.clip_text = true
+	name_label.tooltip_text = _item_name(item)
 	name_label.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
-	name_label.add_theme_color_override(
-		"font_color", Tokens.TEXT_DISABLED if owned else Tokens.TEXT_PRIMARY)
+	name_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(name_label)
 
 	var price_row := HBoxContainer.new()
 	price_row.custom_minimum_size.y = 28
 	price_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	price_row.add_theme_constant_override("separation", Tokens.GAP_S)
+	price_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(price_row)
-	if not owned:
+	if owned:
+		var owned_text := Label.new()
+		owned_text.text = _t("收藏中", "In collection")
+		owned_text.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+		owned_text.add_theme_color_override("font_color", Tokens.GOLD)
+		owned_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		price_row.add_child(owned_text)
+	else:
 		var icon := TextureRect.new()
 		icon.texture = Currency.icon(currency)
 		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -303,7 +462,7 @@ func _card(item: Dictionary) -> Control:
 	var button: Button = ACTION_BUTTON.instantiate()
 	button.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
 	if owned:
-		button.text = _t("已拥有", "Owned")
+		button.text = _t("已拥有 ✓", "Owned ✓")
 		button.disabled = true
 	elif not affordable:
 		button.text = _t("余额不足", "Not enough")
@@ -315,24 +474,223 @@ func _card(item: Dictionary) -> Control:
 	return panel
 
 
+func _preview_stage(item: Dictionary, owned: bool, preview_size: Vector2) -> Control:
+	var stage := Control.new()
+	stage.custom_minimum_size = Vector2(preview_size.x, preview_size.y + 8.0)
+	stage.mouse_filter = Control.MOUSE_FILTER_PASS
+
+	var well := PanelContainer.new()
+	well.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	well.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	well.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.BG_DEEP, Tokens.BORDER.darkened(0.45), Tokens.GAP_S))
+	stage.add_child(well)
+	var center := CenterContainer.new()
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	well.add_child(center)
+	var preview := _preview(item, false, preview_size)
+	preview.custom_minimum_size = preview_size
+	_ignore_mouse_tree(preview)
+	center.add_child(preview)
+
+	if owned:
+		var badge := Label.new()
+		badge.text = _t("  已拥有  ", "  OWNED  ")
+		badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		badge.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+		badge.position = Vector2(-90, 8)
+		badge.size = Vector2(82, 26)
+		badge.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+		badge.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
+		badge.add_theme_stylebox_override("normal", Tokens.panel_box(
+			Tokens.INK_PANEL, Tokens.GOLD_PRESSED, 2))
+		badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		stage.add_child(badge)
+	return stage
+
+
 # 卡片上的图。宠物只有 3D 模型（pets.json 的 icon 是空的），头像 / 头像框是 2D 图。
-func _preview(item: Dictionary, owned: bool) -> Control:
+func _preview(item: Dictionary, owned: bool, preview_size: Vector2 = PREVIEW_SIZE) -> Control:
 	var kind := str(item.get("kind", ""))
 	var grants := str(item.get("grants", ""))
 	if kind == "pet":
-		return PetPreview.build(grants, PREVIEW_SIZE, owned)
+		return PetPreview.build(grants, preview_size, owned)
 	var tex := AvatarCatalog.texture_for(grants)
 	if tex == null:
-		return PetPreview.placeholder(PREVIEW_SIZE, owned)
+		return PetPreview.placeholder(preview_size, owned)
 	var rect := TextureRect.new()
 	rect.texture = tex
-	rect.custom_minimum_size = PREVIEW_SIZE
+	rect.custom_minimum_size = preview_size
 	rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	if owned:
 		rect.modulate = Color(0.45, 0.45, 0.45)
 	return rect
+
+
+func _render_detail(item: Dictionary) -> void:
+	if item.is_empty():
+		_detail.add_child(_detail_hint(_t("选择一个商品查看详情", "Select an item to see details")))
+		return
+	var grants := str(item.get("grants", ""))
+	var owned := bool(_owned.get(grants, false))
+	var price := int(item.get("price", 0))
+	var currency := str(item.get("currency", "diamond"))
+	var affordable := _balance_of(currency) >= price
+
+	var eyebrow := Label.new()
+	eyebrow.text = _t("当前选择", "SELECTED ITEM")
+	eyebrow.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+	eyebrow.add_theme_color_override("font_color", Tokens.GOLD)
+	_detail.add_child(eyebrow)
+	_detail.add_child(_preview_stage(item, owned, DETAIL_PREVIEW_SIZE))
+
+	var name_label := Label.new()
+	name_label.text = _item_name(item)
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	name_label.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
+	name_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	_detail.add_child(name_label)
+
+	var kind_label := Label.new()
+	kind_label.text = _kind_label(item)
+	kind_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	kind_label.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+	kind_label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	_detail.add_child(kind_label)
+
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_detail.add_child(spacer)
+
+	var status := Label.new()
+	status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	status.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
+	if owned:
+		status.text = _t("✓ 已加入你的收藏", "✓ Already in your collection")
+		status.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
+	else:
+		status.text = (_t("价格：%s", "Price: %s") % Currency.comma(price))
+		status.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY if affordable else Tokens.DANGER)
+	_detail.add_child(status)
+
+	var buy: Button = ACTION_BUTTON.instantiate()
+	buy.custom_minimum_size = Vector2(0, Tokens.BUTTON_HEIGHT)
+	if owned:
+		buy.text = _t("已拥有 ✓", "Owned ✓")
+		buy.disabled = true
+	elif not affordable:
+		buy.text = _t("余额不足", "Not enough balance")
+		buy.disabled = true
+	else:
+		buy.text = _t("购买", "Buy")
+		buy.theme_type_variation = Theming.VARIATION_PRIMARY
+		buy.pressed.connect(func() -> void: _confirm_buy(item))
+	_detail.add_child(buy)
+
+	if not owned:
+		var balance_hint := Label.new()
+		balance_hint.text = (_t("当前余额：%s", "Balance: %s")
+			% Currency.comma(_balance_of(currency)))
+		balance_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		balance_hint.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+		balance_hint.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+		_detail.add_child(balance_hint)
+
+
+func _detail_hint(text: String) -> Control:
+	var label := Label.new()
+	label.text = text
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	return label
+
+
+func _select_category(category: String) -> void:
+	if _active_category == category:
+		return
+	_active_category = category
+	_selected_item_id = ""
+	_render()
+
+
+func _select_item(item: Dictionary) -> void:
+	var item_id := _item_id(item)
+	if item_id == _selected_item_id:
+		return
+	_selected_item_id = item_id
+	_render()
+
+
+func _visible_items() -> Array:
+	if _active_category == CATEGORY_ALL:
+		return _items.duplicate()
+	var out: Array = []
+	for raw in _items:
+		var item := raw as Dictionary
+		if _item_category(item) == _active_category:
+			out.append(item)
+	return out
+
+
+func _category_has_items(category: String) -> bool:
+	for raw in _items:
+		if _item_category(raw as Dictionary) == category:
+			return true
+	return false
+
+
+func _selected_item(items: Array) -> Dictionary:
+	for raw in items:
+		var item := raw as Dictionary
+		if _item_id(item) == _selected_item_id:
+			return item
+	return {}
+
+
+func _item_id(item: Dictionary) -> String:
+	return str(item.get("id", item.get("grants", "")))
+
+
+func _item_category(item: Dictionary) -> String:
+	var kind := str(item.get("kind", "")).to_lower()
+	if kind.contains("pet"):
+		return CATEGORY_PETS
+	if kind.contains("frame"):
+		return CATEGORY_FRAMES
+	return CATEGORY_AVATARS
+
+
+func _kind_label(item: Dictionary) -> String:
+	match _item_category(item):
+		CATEGORY_PETS:
+			return _t("宠物 · 可在背包设为出战", "PET · Equip it from your Bag")
+		CATEGORY_FRAMES:
+			return _t("头像框 · 个性装饰", "AVATAR FRAME · Cosmetic")
+		_:
+			return _t("头像 · 个人资料装饰", "AVATAR · Profile cosmetic")
+
+
+func _clear_children(parent: Node) -> void:
+	if parent == null:
+		return
+	for child in parent.get_children():
+		parent.remove_child(child)
+		child.queue_free()
+
+
+func _ignore_mouse_tree(node: Node) -> void:
+	if node is Control:
+		(node as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for child in node.get_children():
+		_ignore_mouse_tree(child)
 
 
 # --- 购买 ---------------------------------------------------------------------
