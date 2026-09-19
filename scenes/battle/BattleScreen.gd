@@ -268,6 +268,8 @@ func _start_replay(replay: Dictionary) -> void:
 	# 9.19：每局重置「末日守卫技能音已响过」记录，否则同一实例跑第二局（离线自测
 	# 回编辑态后再演示）时那一次也不会响。见 BattleVfx._doom_skill_sfx_played。
 	_doom_skill_sfx_played.clear()
+	# 9.19：人王奖励音/flash 的同款每局一次标记，也要跟着清。
+	_human_king_reward_played = false
 	# 上一局的胜利收束不能带进这一局，否则镜头会一场比一场紧。
 	reset_battle_camera_framing()
 	_begin_presentation_replay(replay)
@@ -770,6 +772,9 @@ func _finish_replay() -> void:
 	_result = _replay.get("result", {})
 	_return_emitted = true
 	_stop_battle_music()
+	# 9.19：人王奖励音 + 升级闪光（见 BattleVfx._play_human_king_reward）。
+	# 本地模拟那条路在 BattleResult._emit_finished 里调，这里是 replay/组队那条。
+	_play_human_king_reward()
 	await _await_presentation_drained()
 	await _play_crystal_attack_sequence(_result)
 	# V2 P1-05 第 3 条：镜头轻收束 + 幸存者定格，然后才出胜负字样。

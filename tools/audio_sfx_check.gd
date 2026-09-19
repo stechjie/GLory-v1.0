@@ -41,7 +41,11 @@ const CHECK_NAME := "audio_sfx"
 # 资料改名保存、设置切换、语音切换）。
 # 9.19 的 3 条：四星「合成」与「战斗技能」分离，神王/母灵/黑龙各加一条
 # `*_skill` 素材（合成音回滚到 9.18 前原件），故 34 → 37。
-const EXPECTED_CUE_COUNT := 37
+#
+# 9.19 第二批（`音乐/0919/战斗、特效` 9 个素材）= 四星技能音 6 条
+# （剑士 / 弓箭手 / 极光射手 / 法师 / 牧师 / 神侍·天使）+ 佣兵技能音 2 条
+# （星轨猎人、泡沫术士·圣愈修女）+ 人王「战后未阵亡奖励属性」1 条，故 37 → 46。
+const EXPECTED_CUE_COUNT := 46
 
 # 播 SfxService 的生产代码扫描范围。**刻意不含 `res://tools`** ——
 # 门禁自己会调 play()，算进来就等于让门禁给自己的断言当证人
@@ -58,8 +62,23 @@ const INDIRECT_CUES: Array[String] = [
 	"CUE_STAR4_ARCHANGEL", "CUE_STAR4_DOOM",
 	# 9.19：四星「战斗技能」专用素材，同样只经 star4_cue_for(unit_id, true) 间接派发。
 	"CUE_STAR4_GOD_SKILL", "CUE_STAR4_UNDEAD_MOTHER_SKILL", "CUE_STAR4_DARK_SKILL",
+	# 9.19 第二批「施法型」四星技能音（剑士盾击 / 法师法术 / 神侍·天使治疗）。
+	# 与上面三条共用同一条 star4_cue_for(unit_id, true) 派发路径。
+	"CUE_STAR4_SWORDSMAN_SKILL", "CUE_STAR4_MAGE_SKILL", "CUE_STAR4_PRIEST_SKILL",
+	# 9.19 第二批「攻击触发型」四星技能音（弓箭手第 N 击额外伤害 / 牧师第 N 击治疗 /
+	# 极光射手每次普攻的真伤）。它们没有 skill_ready 边沿，走
+	# attack_skill_cue_for(unit_id)，由 BattleVfx._play_attack_unit_procedural
+	# 在 `attack_count % every == 0` 判过之后才派发。
+	"CUE_STAR4_ARCHER_SKILL", "CUE_STAR4_CLERIC_SKILL", "CUE_STAR4_AURORA_SKILL",
+	# 9.19 第二批：佣兵专属技能音（星轨猎人 / 泡沫术士·圣愈修女）。
+	# 佣兵升不到四星，所以走 merc_skill_cue_for(unit_id)，不叠星级门。
+	"CUE_MERC_ARROW_RAIN_SKILL", "CUE_MERC_BUBBLE_HOLY_SONG_SKILL",
 ]
-const INDIRECT_ENTRY := "star4_cue_for"
+# 上面这组 cue 的**派发入口**。每一个都必须在生产代码里有调用点 ——
+# 少了这一条，把整张映射表删空也能全绿（那 8 个名字会被上面的循环全跳过）。
+const INDIRECT_ENTRIES: Array[String] = [
+	"star4_cue_for", "attack_skill_cue_for", "merc_skill_cue_for",
+]
 
 # 六条 BGM 槽位。team_room_music 是这一批新开的：此前 3v3 组队房间
 # 和主菜单共用 menu_music，zip 里给了独立的《组队房间》。
@@ -186,11 +205,17 @@ func _check_every_cue_has_call_site() -> void:
 		"这些 cue 在表里有、文件也在，但生产代码（非 tools/）里没有任何调用点，"
 			+ "永远不会响：%s" % ", ".join(missing))
 
-	# 间接那一组的兜底。少了这一条，把 STAR4_CUES 映射整个删空也能全绿 ——
-	# 因为那时上面循环会把那 5 个名字全跳过。
-	_h.expect(corpus.contains("SfxService." + INDIRECT_ENTRY), "indirect_cue_entry_unused",
-		"%s 这一组 cue 只能靠 SfxService.%s() 派发，但生产代码里没有任何调用点"
-			% [", ".join(INDIRECT_CUES), INDIRECT_ENTRY])
+	# 间接那一组的兜底。少了这一条，把映射表整个删空也能全绿 ——
+	# 因为那时上面循环会把那些名字全跳过。9.19 第二批之后有三个派发入口
+	# （star4_cue_for / attack_skill_cue_for / merc_skill_cue_for），逐个钉。
+	#
+	# ★ 匹配串带尾部 `(`：这里要求的是**真调用**，不是「出现过这个名字」。
+	# 变异测试实测过这个差别 —— 把调用改名成 `attack_skill_cue_for_MUTATED`
+	# 时，不带 `(` 的 `contains()` 会因为这个**前缀**仍然命中，变异照旧全绿。
+	for entry in INDIRECT_ENTRIES:
+		_h.expect(corpus.contains("SfxService." + entry + "("), "indirect_cue_entry_unused",
+			"%s 这一组 cue 只能靠 SfxService.%s() 派发，但生产代码里没有任何调用点"
+				% [", ".join(INDIRECT_CUES), entry])
 
 
 # 取 SfxService 里所有 `CUE_*` 常量名。

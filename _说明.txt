@@ -1,41 +1,61 @@
 最终覆盖上传 · 代码 / 文档
-生成时间：2026-09-19 04:47
+生成时间：2026-09-19 17:28
 
-【覆盖范围】2026-09-19 01:44（本轮修改前）→ 现在，全部代码与文档改动
-           = 9.18 批（今天 02:12-02:30）+ 9.19 批（今天 03:21-04:44）
+【这是什么】
+  2026-09-19 01:44（本轮修改前）以来，与「音效 / BGM 接入」相关的**全部代码与文档改动**，
+  按**相同路径**打成一个夹子，方便你一次性覆盖上传。
+  含：9.18 音效批 + 9.19 第一批（合成音/技能音分离）+ 9.19 第二批（本轮 9 条新战斗音效）。
 
-【用法】把本夹里的目录按**相同路径**覆盖到工程根目录
-       （scenes/ 、ui/ 、tools/ 、officetest/ 、docs/ 直接对上，README.md 放根目录）。
+【用法】
+  把本夹里的目录按**相同路径**覆盖到工程根目录：
+    scenes\ 、ui\ 、scripts\ 、tools\ 、officetest\ 、docs\ 直接对上；
+    README.md 放工程根目录。
+  本夹的 _说明.txt / _sha256清单.txt 不用拷进工程。
 
-【文件清单（13 个）】
+【文件清单（15 个）】
 
-  9.18 批（5 个，9.19 未再改动）：
-    scenes/battle/BattleResult.gd
-    scenes/menu/ProfileScreen.gd
-    scenes/menu/SettingsScreen.gd
-    scenes/menu/Team3v3Lobby.gd
-    ui/components/VoiceControls.gd
+  ● 9.18 音效批（4 个，之后未再改动；若上一批已上传可跳过）
+      scenes\menu\Team3v3Lobby.gd      房间准备音 / 语音开关音
+      scenes\menu\SettingsScreen.gd    设置页「界面音效」开关（写 profile.json，跨启动保留）
+      scenes\menu\ProfileScreen.gd     资料页保存音
+      ui\components\VoiceControls.gd   语音开关音
 
-  9.19 批（5 个代码）：
-    scenes/battle/BattleVfx.gd      含 9.18 改动，再叠加 9.19「合成音/技能音分离」
-                                    与「末日守卫技能音只播一次」
-    scenes/battle/BattleScreen.gd   9.19 新增：每局开始重置末日守卫播放标记
-    tools/audio_sfx_check.gd        门禁（cue 数 34→37）
-    ui/services/SfxService.gd       新增 STAR4_SKILL_CUES + star4_cue_for(id, is_skill)
-    officetest/OfficeTestScreen.gd  离线自测：升星按钮、红方为自身、修 9.17 遗留编译错误
+  ● 9.19 第一批（1 个；另外 4 个见下，本轮又叠了一层）
+      officetest\OfficeTestScreen.gd   离线自测：升星按钮、红方视为自身、修 9.17 遗留编译错误
 
-  文档（3 个）：
-    docs/9.18音效接入记录.md
-    docs/9.19音效分离与离线自测记录.md
-    README.md
+  ● 9.19 第二批 —— 本轮改动（★）
+    ★ ui\services\SfxService.gd       新增 9 条 cue + 拆三张派发表（施法 / 攻击 / 佣兵）；cue 数 37→46
+    ★ scenes\battle\BattleVfx.gd      攻击型技能音门控、佣兵派发、人王战后奖励音 + 闪光特效、
+                                      补回 D6 漏掉的 attack_count / skill_every
+    ★ scenes\battle\BattleScreen.gd   replay 收尾播人王奖励音；每局开始重置「已播」标记
+    ★ scenes\battle\BattleResult.gd   本地模拟收尾播人王奖励音（在水晶演出之前）
+    ★ scripts\ui\UnitDetailFormat.gd  IMPLICIT_SKILL_CD：剑士「盾击（冷却5.0秒）」
+    ★ tools\audio_sfx_check.gd        门禁：cue 数 37→46、新增 8 条间接 cue、收紧 contains 匹配
+
+  ● 文档（4 个）
+    ★ docs\9.19第二批战斗音效与剑士冷却文案.md   本轮记录（7 节：约束 / 落盘 / 接线 / 修缺陷 / 验证 / 清单）
+      docs\9.19音效分离与离线自测记录.md
+      docs\9.18音效接入记录.md
+    ★ README.md                       新增「2026-09-19：第二批战斗音效（9 条）+ 剑士技能冷却文案」一节
+
+【顺手清掉的一处历史残渣】
+  README.md 里原本卡着一段没解开的 git 冲突块：
+    第 1287 行 `<<<<<<< Updated upstream` 、第 1313 行 `=======` 、第 1411 行 `>>>>>>> Stashed changes`
+  两侧内容**互不重叠**（一侧是 9.18测试反馈 + 9.19四星分离，另一侧是 9.19 语音 LiveKit 三节），
+  这次只删掉那三行标记、两侧内容**全部保留**，并按时间顺序拼接。
+  改动前的 README 已备份到 %TEMP%\README.before_919b.md。
+  ★ 如果你本来只想留其中一侧，说一声，我按你的口径再改。
 
 【刻意未纳入】
-  - project.godot：本轮跑 Godot 只刷了 mtime 与行尾，sha256 未变（EC06205…），无需覆盖。
-  - export_presets.cfg：02:30 被动过一次，但不属于本次音效/自测改动，我没核实内容差异，
-    故没有放进夹子。如果你要连导出配置一起同步，说一声，我核对后再加。
+  - project.godot           与改动前逐字节相同，不需要覆盖。
+  - export_presets.cfg      不属于本次音效改动。
+  - data\units\race_units.json   本轮**只读不改**：剑士缺 skill_cd 是在代码侧补的，没动数据表。
+  - assets\audio\ 下的音频  在**资源夹**（最终覆盖上传_资源）里，不在本夹。
 
 【校验】
-  - 本夹 13 个文件与现工程**逐字节相同**（sha256 见 _sha256清单.txt）。
-  - 门禁全绿：audio_sfx_check 143/0、battle_cue_profile 169/0、
-    battle_presentation_event 8314/0、battle_hit_victory 39/0。
-  - 未做安卓 / 真机听感验收。
+  - 本夹 15 个文件与现工程**逐字节相同**（sha256 见 _sha256清单.txt）。
+  - 门禁：audio_sfx_check 163 项 0 失败；另 10 条相关门禁（synergy_activation_sfx / team_merc_summon_sfx /
+    prep_mute_state / battle_presentation_director / battle_presentation_event / battle_card /
+    prep_detail_overlay / battle_hit_victory / unit_name_consistency / four_star_values）全 PASS。
+  - 行为级探针 34 项全过；4 处变异测试全部正确变红、再逐字节还原。
+  - ▲ 未做安卓 / 真机听感验收：headless 是 Dummy 音频驱动，只能验「登记对、文件在、能解码、门控对」。

@@ -122,6 +122,33 @@ const CUE_PROFILE_SAVE := "profile_save"
 const CUE_SETTINGS_SWITCH := "settings_switch"
 const CUE_VOICE_SWITCH := "voice_switch"
 
+# --- 9.19 第二批（`音乐/0919/战斗、特效` 9 个素材）--------------------------
+#
+# 用户口径两条：
+#   ① 这批战斗音效**只有自身的棋子**才会播（队友、敌方都不响）；
+#   ② 四星前缀的素材不是「合成时」响，而是**该棋子四星、且这次真的触发
+#      技能/攻击**的那一下响。所以 1~3 星不响、没触发的那次普攻也不响。
+#
+# 6 条四星音按「怎么触发」分两张表：
+#   * 施法类（剑士盾击 / 法师法术 / 神侍·天使治疗）—— 走 STAR4_SKILL_CUES，
+#     由 `star4_cue_for(uid, true)` 在 skill_ready 上升沿派发；
+#   * 攻击触发类（弓箭手第 N 击额外伤害 / 牧师第 N 击治疗 / 极光射手每次都有的
+#     真伤）—— 它们不产生 skill_ready 边沿，走 STAR4_ATTACK_SKILL_CUES，
+#     由 `attack_skill_cue_for(uid)` 在 BattleVfx 判过 `attack_count % every`
+#     之后派发（那一步保证「真的触发」）。
+const CUE_STAR4_SWORDSMAN_SKILL := "star4_swordsman_skill"
+const CUE_STAR4_ARCHER_SKILL := "star4_archer_skill"
+const CUE_STAR4_AURORA_SKILL := "star4_aurora_skill"
+const CUE_STAR4_MAGE_SKILL := "star4_mage_skill"
+const CUE_STAR4_CLERIC_SKILL := "star4_cleric_skill"
+const CUE_STAR4_PRIEST_SKILL := "star4_priest_skill"
+# 佣兵 3 条（星轨猎人 / 泡沫术士 / 圣愈修女）。**佣兵升不到四星**，所以它们
+# 不带星级门，只判「自身棋子」——星级门在这里会把音效整个掐掉。
+const CUE_MERC_ARROW_RAIN_SKILL := "merc_arrow_rain_skill"
+const CUE_MERC_BUBBLE_HOLY_SONG_SKILL := "merc_bubble_holy_song_skill"
+# 人王「战斗结束未阵亡奖励属性」：战斗结束那一刻在自身人王身上响一次。
+const CUE_HUMAN_KING_REWARD := "human_king_reward"
+
 const CUES := {
 	CUE_UI_POPUP: "res://assets/audio/sfx/ui/popup.mp3",
 	CUE_UI_CONFIRM: "res://assets/audio/sfx/ui/button_confirm.mp3",
@@ -150,6 +177,15 @@ const CUES := {
 	CUE_HUMAN_KING_DEATH: "res://assets/audio/sfx/battle/human_king_death.mp3",
 	CUE_BATTLE_VICTORY: "res://assets/audio/sfx/battle/battle_victory.mp3",
 	CUE_BATTLE_DEFEAT: "res://assets/audio/sfx/battle/battle_defeat.mp3",
+	CUE_HUMAN_KING_REWARD: "res://assets/audio/sfx/battle/human_king_reward.mp3",
+	CUE_STAR4_SWORDSMAN_SKILL: "res://assets/audio/sfx/battle/star4_swordsman_skill.mp3",
+	CUE_STAR4_ARCHER_SKILL: "res://assets/audio/sfx/battle/star4_archer_skill.wav",
+	CUE_STAR4_AURORA_SKILL: "res://assets/audio/sfx/battle/star4_aurora_skill.mp3",
+	CUE_STAR4_MAGE_SKILL: "res://assets/audio/sfx/battle/star4_mage_skill.mp3",
+	CUE_STAR4_CLERIC_SKILL: "res://assets/audio/sfx/battle/star4_cleric_skill.mp3",
+	CUE_STAR4_PRIEST_SKILL: "res://assets/audio/sfx/battle/star4_priest_skill.mp3",
+	CUE_MERC_ARROW_RAIN_SKILL: "res://assets/audio/sfx/battle/merc_arrow_rain_skill.wav",
+	CUE_MERC_BUBBLE_HOLY_SONG_SKILL: "res://assets/audio/sfx/battle/merc_bubble_holy_song_skill.mp3",
 
 	CUE_MERC_SUMMON: "res://assets/audio/sfx/camp/merc_summon.mp3",
 	CUE_UPGRADE_STONE_DRAW: "res://assets/audio/sfx/camp/upgrade_stone_draw.mp3",
@@ -213,6 +249,38 @@ const STAR4_SKILL_CUES := {
 	"undead_mother": CUE_STAR4_UNDEAD_MOTHER_SKILL,
 	"dark_dragon": CUE_STAR4_DARK_SKILL,
 	"dark_doom": CUE_STAR4_DOOM,
+	# 9.19 第二批：**施法型**的四星技能音。它们的技能有 skill_cd、走 skill_ready
+	# 节拍，所以和上面六家共用同一个派发点（BattleVfx._play_skill_cast_vfx）。
+	# 神侍与天使共用一条素材 —— 用户给的命名就是「四星神侍、四星天使技能释放」。
+	"human_swordsman": CUE_STAR4_SWORDSMAN_SKILL,
+	"human_mage": CUE_STAR4_MAGE_SKILL,
+	"god_priest": CUE_STAR4_PRIEST_SKILL,
+	"god_angel": CUE_STAR4_PRIEST_SKILL,
+}
+
+# 9.19 第二批：**攻击触发型**的四星技能音。
+#
+# 这三家的「技能」不是施法，而是普攻的第 N 次触发（极光射手是每次都触发），
+# 模拟器里根本没有 skill_ready 边沿可挂（见 BattleSimulator._step_team:636/640
+# 与 _perform_attack:697）。派发点因此放在 BattleVfx._play_attack_unit_procedural
+# ——那里已经用 `_attack_skill_vfx_ready()` 判过 `attack_count % every == 0`，
+# 只有**真的触发**的那一次才会走到。
+const STAR4_ATTACK_SKILL_CUES := {
+	"human_archer": CUE_STAR4_ARCHER_SKILL,
+	"human_cleric": CUE_STAR4_CLERIC_SKILL,
+	"god_aurora": CUE_STAR4_AURORA_SKILL,
+}
+
+# 9.19 第二批：佣兵专属技能音。
+#
+# **独立成表而不是并进 STAR4_SKILL_CUES**：佣兵永远到不了四星
+# （`EconomyLedger._use_upgrade_stone` 会拒），并进去就等于要求调用方
+# 叠一个永远为假的 `star == 4` 判定，结果是一条永远不响的音。
+# 这三条只判「自身棋子」。
+const MERC_SKILL_CUES := {
+	"merc_sagittarius_rain": CUE_MERC_ARROW_RAIN_SKILL,
+	"merc_pisces_bubble": CUE_MERC_BUBBLE_HOLY_SONG_SKILL,
+	"merc_virgo_heal": CUE_MERC_BUBBLE_HOLY_SONG_SKILL,
 }
 
 
@@ -430,6 +498,18 @@ static func star4_cue_for(unit_id: String, is_skill := false) -> String:
 	if is_skill:
 		return str(STAR4_SKILL_CUES.get(unit_id, CUE_STAR4_DEFAULT))
 	return str(STAR4_CUES.get(unit_id, CUE_STAR4_DEFAULT))
+
+
+# 9.19 第二批：**攻击触发型**四星技能音。返回空串 = 这只棋子的技能不是
+# 「第 N 次普攻触发」这一类，调用方据此直接跳过（不要退回默认音 ——
+# 那会让没素材的棋子也跟着响）。
+static func attack_skill_cue_for(unit_id: String) -> String:
+	return str(STAR4_ATTACK_SKILL_CUES.get(unit_id, ""))
+
+
+# 9.19 第二批：佣兵专属技能音。同样返回空串表示这只棋子没有专属素材。
+static func merc_skill_cue_for(unit_id: String) -> String:
+	return str(MERC_SKILL_CUES.get(unit_id, ""))
 
 
 # --- 循环音（9.17 第二批：己方法阵受击）--------------------------------------
