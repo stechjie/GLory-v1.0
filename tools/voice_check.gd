@@ -8,6 +8,8 @@ extends Node
 #   2. 插件包清单：Godot 找插件用的 meta-data、两条权限、minSdkVersion
 #   3. 🔴 安卓导出无条件带语音插件和 LiveKit（三处版本号一致）、去掉 LiveKit 带来的摄像头 / 屏幕录制；
 #      仓库里的导出模板打开 Gradle 构建；安卓桥接（Kotlin）的方法、状态字段与 VoiceService 对得上
+#   3b. 电脑版桥接（C++ 扩展，docs/语音LiveKit方案.md 5.2）：方法、状态字段、单例名对得上；
+#      dll 是照着现在的源码编的；扩展声明的文件都在；LiveKit 开发包版本两处一致
 #   4. 🔴 钥匙：签名与 JWT 标准样例逐字节一致；只能进「本房间本队」的语音房间、只准发麦克风、10 分钟
 #   5. 🔴 发钥匙的规矩：谁、哪队一律从连接反查；没座位、AI 座位、服务器没配语音都不发；敌方拿不到本队的钥匙
 #   6. 🔴 踢人：换座跨队、离开 / 被踢、座位被 AI 接管都要请出语音房间，关房删两队的语音房间；
@@ -37,6 +39,10 @@ const PLUGIN_PROJECT_FILES := ["AndroidManifest.xml", "proguard.txt", "build.gra
 # VoiceService 读的状态字段 / 能力字段：安卓桥接必须都给（在 Kotlin 源码里对账）。
 const BRIDGE_STATUS_KEYS := ["state", "error", "mic_on", "mic_error", "self_speaking", "speaking", "participants", "audio_mode", "output"]
 const BRIDGE_CAPABILITY_KEYS := ["platform", "sdk", "aec", "listen_mode_fixed_at_join"]
+const DESKTOP_DIR := "res://native/glory_voice_desktop"
+const DESKTOP_CPP_PATH := "res://native/glory_voice_desktop/src/glory_voice_desktop.cpp"
+const DESKTOP_GDEXTENSION_PATH := "res://addons/glory_voice/glory_voice.gdextension"
+const DESKTOP_BIN_DIR := "res://addons/glory_voice/bin/windows"
 const NETWORK_SERVICE_PATH := "res://scripts/autoload/NetworkService.gd"
 # 只在门禁里用的假配置（secret ≥ 32 个字符）。
 const TEST_CONFIG := {
@@ -143,6 +149,8 @@ func _ready() -> void:
 	_case_old_transport_removed()
 	_case_bridge_contract()
 	_case_kotlin_bridge_contract()
+	_case_desktop_bridge_contract()
+	_case_desktop_build()
 	_case_state_machine()
 	_case_state_machine_fixed_listen_mode()
 	_case_mutes_follow_player()
@@ -693,6 +701,103 @@ func _case_kotlin_bridge_contract() -> void:
 	_h.item()
 	_h.expect(src.contains("if (listenOnly) AudioType.MediaAudioType() else AudioType.CallAudioType()"),
 		"voice_kotlin_audio_type", "安卓桥接：只听要用 MediaAudioType、开麦用 CallAudioType（改之前先看 docs/语音LiveKit方案.md 5.1）")
+
+
+# 电脑版桥接（C++）对账：绑定给 Godot 的方法与 BRIDGE_METHODS 同名同参；VoiceService 读的字段它都给；
+# 注册成同一个单例名。对不上的表现同安卓：脚本调了不存在的方法、或者界面一直「连接中」—— 只在电脑上出现。
+func _case_desktop_bridge_contract() -> void:
+	var src := FileAccess.get_file_as_string(DESKTOP_CPP_PATH)
+	_h.item()
+	if not _h.expect(not src.is_empty(), "voice_desktop_bridge_missing", "读不到 %s" % DESKTOP_CPP_PATH):
+		return
+	var bound := {}
+	for m in RegEx.create_from_string("D_METHOD\\(\"(\\w+)\"((?:,\\s*\"\\w+\")*)\\)").search_all(src):
+		bound[m.get_string(1)] = m.get_string(2).count(",")
+	for method_name in VoiceService.BRIDGE_METHODS:
+		_h.item()
+		_h.expect(bound.has(method_name) and int(bound[method_name]) == int(VoiceService.BRIDGE_METHODS[method_name]),
+			"voice_desktop_method_drift", "电脑版桥接缺方法或参数个数不对：%s（C++ 里是 %s）" % [method_name, str(bound.get(method_name, "没有"))])
+	_h.item()
+	_h.expect(bound.size() == VoiceService.BRIDGE_METHODS.size(), "voice_desktop_extra_method",
+		"电脑版桥接绑了 VoiceService 不认识的方法（没人调就删掉）：%s" % str(bound.keys()))
+	for key in BRIDGE_STATUS_KEYS + BRIDGE_CAPABILITY_KEYS:
+		_h.item()
+		_h.expect(src.contains("d[\"%s\"]" % key), "voice_desktop_status_key_missing", "电脑版桥接没给 %s" % key)
+	# 电脑上只听 / 开麦是同一套设备：报 false，VoiceService 换档时就不会退房重进。
+	_h.item()
+	_h.expect(src.contains("d[\"listen_mode_fixed_at_join\"] = false;"), "voice_desktop_rejoin_on_switch",
+		"电脑版不需要换档重进，listen_mode_fixed_at_join 应当是 false")
+	var register := FileAccess.get_file_as_string(DESKTOP_DIR.path_join("src/register_types.cpp"))
+	var gdext := ConfigFile.new()
+	_h.item()
+	_h.expect(register.contains("register_singleton(\"%s\"" % VoiceService.SINGLETON)
+			and gdext.load(DESKTOP_GDEXTENSION_PATH) == OK
+			and register.contains("GDExtensionBool GDE_EXPORT %s(" % str(gdext.get_value("configuration", "entry_symbol", "?"))),
+		"voice_desktop_identity", "电脑版桥接的单例名要是 %s，入口函数名要和 glory_voice.gdextension 的 entry_symbol 一致" % VoiceService.SINGLETON)
+	# 关麦要撤掉麦克风轨道并放掉录音源，不能只是静音 —— 静音的话麦克风其实还在录。
+	_h.item()
+	_h.expect(src.contains("local->unpublishTrack(publication->sid());") and src.contains("mic_source_.reset();"),
+		"voice_desktop_mic_kept_open", "电脑版关麦要撤掉麦克风轨道并放掉录音源")
+	# LiveKit 开发包版本：头文件里的常量（报给界面）和打包脚本核对的必须一样。
+	var header := FileAccess.get_file_as_string(DESKTOP_DIR.path_join("src/glory_voice_desktop.h"))
+	var script_src := FileAccess.get_file_as_string(DESKTOP_DIR.path_join("build_dll.ps1"))
+	var h_ver := RegEx.create_from_string("LIVEKIT_SDK_VERSION = \"([0-9.]+)\"").search(header)
+	var s_ver := RegEx.create_from_string("\\$SdkVersion = \"([0-9.]+)\"").search(script_src)
+	_h.item()
+	_h.expect(h_ver != null and s_ver != null and h_ver.get_string(1) == s_ver.get_string(1),
+		"voice_desktop_sdk_version_drift", "LiveKit C++ 开发包版本两处不一致（头文件 / build_dll.ps1）")
+
+
+# 电脑版 dll 是照着现在的源码编的，扩展声明要带的文件都在。
+# 这一条在 Windows 出包前必须绿：缺一个 dll，电脑版装上去点语音就是「语音组件没有加载起来」。
+func _case_desktop_build() -> void:
+	var gdext := ConfigFile.new()
+	_h.item()
+	if not _h.expect(gdext.load(DESKTOP_GDEXTENSION_PATH) == OK, "voice_desktop_gdextension_unreadable",
+			"读不到 %s" % DESKTOP_GDEXTENSION_PATH):
+		return
+	var declared: Array[String] = []
+	for key in gdext.get_section_keys("libraries"):
+		declared.append(str(gdext.get_value("libraries", key)))
+	var deps: Variant = gdext.get_value("dependencies", "windows.x86_64", {})
+	if deps is Dictionary:
+		for path in (deps as Dictionary).keys():
+			declared.append(str(path))
+	var missing: Array[String] = []
+	for path in declared:
+		if not FileAccess.file_exists(path):
+			missing.append(path.get_file())
+	_h.item()
+	_h.expect(declared.size() == 7 and missing.is_empty(), "voice_desktop_files_missing",
+		"电脑版语音扩展声明的文件缺了（跑 native/glory_voice_desktop/build_dll.ps1）：%s" % str(missing))
+	var recorded := FileAccess.get_file_as_string(DESKTOP_BIN_DIR.path_join("glory_voice_desktop_source.sha256")).strip_edges()
+	var actual := _desktop_source_digest()
+	_h.item()
+	_h.expect(not actual.is_empty() and recorded == actual, "voice_desktop_dll_stale",
+		("电脑版 dll 不是照着现在的源码编的（记录 %s…，源码 %s…）。改了 C++ / SConstruct 之后"
+			+ "要重跑 native/glory_voice_desktop/build_dll.ps1。") % [recorded.left(12), actual.left(12)])
+
+
+# 与 build_dll.ps1 同一个算法：SConstruct + src/ 下的 .cpp / .h，「相对路径:sha256」逐行、按码点排序、\n 连接。
+func _desktop_source_digest() -> String:
+	var rel := PackedStringArray(["SConstruct"])
+	var dir := DirAccess.open(DESKTOP_DIR.path_join("src"))
+	if dir == null:
+		return ""
+	for file in dir.get_files():
+		if file.ends_with(".cpp") or file.ends_with(".h"):
+			rel.append("src/" + file)
+	rel.sort()
+	var lines := PackedStringArray()
+	for path in rel:
+		var sha := FileAccess.get_sha256(DESKTOP_DIR.path_join(path))
+		if sha.is_empty():
+			return ""
+		lines.append("%s:%s" % [path, sha])
+	var ctx := HashingContext.new()
+	ctx.start(HashingContext.HASH_SHA256)
+	ctx.update("\n".join(lines).to_utf8_buffer())
+	return ctx.finish().hex_encode()
 
 
 func _save_state() -> Dictionary:
