@@ -46,6 +46,12 @@ var _picker_slot := -1
 var _picker_cell := -1
 var _picker_kind := "piece"
 var _picker_star := 1
+# 9.19：编辑态对一个「已摆放的棋子」点开选择器时，额外给「升星」按钮（直接升到 4 星，
+# 方便离线验证四星合成音）。该标志在 _on_grid_pressed 里按是否已有同格棋子置位。
+var _editing_existing_piece := false
+var _upgrade_row: HBoxContainer
+var _upgrade_btn: Button
+var _to4_btn: Button
 
 var _treasure_panel: PanelContainer
 var _treasure_title: Label
@@ -89,6 +95,9 @@ func _ready() -> void:
 		return
 	_build_edit_ui()
 	_refresh_visuals()
+	# 9.19：确保音效播放器池已挂到 root，离线自测里「升星」按钮才播得出四星合成音。
+	# install() 幂等（已挂则跳过），与 Main._ready 调的那次不冲突。
+	SfxService.install()
 	_battle_setup_ready = true
 
 
@@ -330,6 +339,7 @@ func _on_grid_pressed(slot: int, cell: int) -> void:
 	if not existing.is_empty():
 		_picker_kind = str(existing.get("kind", "piece"))
 		_picker_star = int(existing.get("star", 1))
+	_editing_existing_piece = not existing.is_empty() and str(existing.get("kind", "")) == "piece"
 	_picker_remove_btn.visible = not existing.is_empty()
 	_picker_title.text = "%s · %s %d" % [_slot_display_name(slot), _tt("格", "Cell"), cell]
 	_picker_panel.visible = true
@@ -384,6 +394,19 @@ func _build_picker_panel() -> void:
 		_picker_star_row.add_child(sb_btn)
 		_picker_star_btns.append(sb_btn)
 
+	# 9.19：升星按钮（仅编辑「已摆放棋子」时出现）。无条件 +1★，封顶 MAX_STAR；
+	# 另给「直接到 4★」一步到位，方便离线验证四星合成音。升到 4 星时播合成音。
+	_upgrade_row = HBoxContainer.new()
+	_upgrade_row.add_theme_constant_override("separation", 8)
+	col.add_child(_upgrade_row)
+	_upgrade_row.add_child(_panel_label(_tt("升星:", "Upgrade:"), 15))
+	_upgrade_btn = _make_text_button(_tt("升星 +1★", "Upgrade +1★"), 15)
+	_upgrade_btn.pressed.connect(_on_upgrade_star.bind(1))
+	_upgrade_row.add_child(_upgrade_btn)
+	_to4_btn = _make_text_button(_tt("直接到 4★", "To 4★"), 15)
+	_to4_btn.pressed.connect(_on_upgrade_star.bind(99))
+	_upgrade_row.add_child(_to4_btn)
+
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.custom_minimum_size = Vector2(310, 330)
@@ -415,6 +438,9 @@ func _on_picker_star(star: int) -> void:
 	var existing := OfficeTestSim.placement_at(_config, _picker_slot, _picker_cell)
 	if not existing.is_empty() and str(existing.get("kind", "")) == "piece":
 		OfficeTestSim.set_placement(_config, _picker_slot, _picker_cell, "piece", str(existing.get("unit_id", "")), star)
+		# 9.19：直接选到 4★ 时也播合成音，方便离线验证。
+		if star >= GameConstants.MAX_STAR:
+			SfxService.play(SfxService.star4_cue_for(str(existing.get("unit_id", ""))))
 		_rebuild_edit_preview()
 	_refresh_picker()
 
@@ -424,6 +450,9 @@ func _refresh_picker() -> void:
 		var tab := _picker_tab_btns[kind] as Button
 		tab.modulate = Color(1, 1, 1, 1.0) if str(kind) == _picker_kind else Color(1, 1, 1, 0.55)
 	_picker_star_row.visible = _picker_kind == "piece"
+	# 升星按钮只在「编辑一个已摆放的棋子」时出现；摆新单位或选佣兵/怪兽/Boss/法阵时隐藏。
+	if _upgrade_row != null:
+		_upgrade_row.visible = _editing_existing_piece
 	for i in _picker_star_btns.size():
 		(_picker_star_btns[i] as Button).modulate = Color(1, 1, 1, 1.0) if i + 1 == _picker_star else Color(1, 1, 1, 0.55)
 	for child in _picker_list.get_children():
@@ -448,6 +477,9 @@ func _on_picker_unit(unit_id: String) -> void:
 	if _picker_slot < 0 or _picker_cell < 0 or unit_id.is_empty():
 		return
 	OfficeTestSim.set_placement(_config, _picker_slot, _picker_cell, _picker_kind, unit_id, _picker_star)
+	# 9.19：摆 unit 时若直接选了 4★，也播合成音，方便离线验证。
+	if _picker_kind == "piece" and _picker_star >= GameConstants.MAX_STAR:
+		SfxService.play(SfxService.star4_cue_for(unit_id))
 	_picker_panel.visible = false
 	_rebuild_edit_preview()
 
@@ -458,6 +490,25 @@ func _on_picker_remove() -> void:
 	OfficeTestSim.remove_placement(_config, _picker_slot, _picker_cell)
 	_picker_panel.visible = false
 	_rebuild_edit_preview()
+
+
+# 9.19：编辑态对一个已摆放的棋子「无条件升星」。delta=1 时每次 +1★（可连点直到 4★），
+# delta>=MAX_STAR 时一步到位到 4★。升到 4★ 的瞬间播四星合成音，方便离线验证 9.19
+# 修复后的合成音（不再误用战斗技能素材）。
+func _on_upgrade_star(delta: int) -> void:
+	var existing := OfficeTestSim.placement_at(_config, _picker_slot, _picker_cell)
+	if existing.is_empty() or str(existing.get("kind", "")) != "piece":
+		return
+	var cur := int(existing.get("star", 1))
+	var target := clampi(cur + delta, 1, GameConstants.MAX_STAR) if delta < GameConstants.MAX_STAR else GameConstants.MAX_STAR
+	if target <= cur:
+		return
+	OfficeTestSim.set_placement(_config, _picker_slot, _picker_cell, "piece", str(existing.get("unit_id", "")), target)
+	_picker_star = target
+	if target >= GameConstants.MAX_STAR:
+		SfxService.play(SfxService.star4_cue_for(str(existing.get("unit_id", ""))))
+	_rebuild_edit_preview()
+	_refresh_picker()
 
 
 func _rebuild_edit_preview() -> void:
@@ -576,8 +627,12 @@ func _start_test_demo() -> void:
 		_return_to_edit()
 		return
 	_start_replay(replay)
-	if _battle_music_player != null:
-		_battle_music_player.play()
+	# 9.19：这里原本是 `_battle_music_player.play()`，而那个 AudioStreamPlayer
+	# 在 9.17「BGM 统一走 MusicService、五处页面自带播放器全删」时已被移除 ——
+	# 留下的是一个**已不存在的成员**，导致本脚本整个编译不过、离线自测打不开。
+	# 改调父类的 `_start_battle_music()`（内部走 MusicService.play + 正确的
+	# 战斗 BGM 路径），与正式对战起 BGM 的口径一致。
+	_start_battle_music()
 
 
 func _set_edit_ui_visible(visible_now: bool) -> void:
@@ -799,8 +854,25 @@ func _on_battle_unit_hover(unit_id: String, entered: bool) -> void:
 		return
 	if _hover_unit_id == unit_id:
 		_hover_unit_id = ""
-	if _hover_unit_id.is_empty():
-		_stat_panel.visible = false
+		if _hover_unit_id.is_empty():
+			_stat_panel.visible = false
+
+
+# 9.19：离线自测固定「红 A（slot 0）为自身」，让四星技能音等 self-only 音效
+# 按正式对战口径只响红方，方便逐一验证每个四星单位的技能音。
+# 不依赖 NetworkService.team_local_slot（从组队大厅进来自测时它可能是蓝方槽），
+# 也不改 BattleVfx 的线上逻辑——只在本自测场景覆写。布局上「下面三方(红队)=我方、
+# 上面三方(蓝队)=敌方」由 build_test_state / grid_sim_pos 保证，这里只定「自身」归属。
+func _is_local_owned_unit(sim_uid: String) -> bool:
+	var unit: Dictionary = _cue_unit_snapshot(sim_uid)
+	for side in ["player", "enemy"]:
+		for raw in _state.get(side, []):
+			if raw is Dictionary and str(raw.get("uid", "")) == sim_uid:
+				unit = raw
+	if unit.is_empty():
+		return false
+	var owner := int(unit.get("owner_slot", -1))
+	return owner == 0
 
 
 func _refresh_stat_panel() -> void:

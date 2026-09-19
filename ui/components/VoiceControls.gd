@@ -1,5 +1,7 @@
 extends RefCounted
 
+const SfxService := preload("res://ui/services/SfxService.gd")
+
 # 语音按钮 + 队友按钮（docs/聊天系统设计.md 第九节 v1.1）。大厅、备战期、战斗界面共用。
 #
 # 语音按钮：点一下切一档（关 → 只听 → 开麦 → 关）。从「只听」切「开麦」时如果还没有麦克风权限，
@@ -124,6 +126,8 @@ func _on_mic_permission_result(granted: bool) -> void:
 
 
 func _on_voice_pressed() -> void:
+	# 9.18：语音开关切换反馈音（关 → 只听 → 开麦 这一档切换的确认）。
+	SfxService.play(SfxService.CUE_VOICE_SWITCH)
 	if VoiceService.mode == VoiceService.Mode.LISTEN:
 		request_talk()
 		return

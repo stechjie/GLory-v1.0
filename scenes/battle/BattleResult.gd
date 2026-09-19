@@ -204,6 +204,10 @@ func _play_crystal_attack_sequence(result: Dictionary) -> void:
 	# 一串断音；而这条音的语义就是「正在被打」—— 起于第一发、止于末发。
 	var our_crystal := losing_team == GameConstants.team_of_slot(NetworkService.team_local_slot)
 	var hit_loop := our_crystal and SfxService.start_loop(SfxService.CUE_FORMATION_HIT)
+	# 9.18：敌方法阵受击（我方打敌水晶）循环音。判据取反于己方那条 —— 被攻击的是
+	# 敌方水晶 = 我方棋子在输出，仍属「自身棋子造成」，符合用户的战斗音效约束。
+	var enemy_crystal := not our_crystal
+	var enemy_hit_loop := enemy_crystal and SfxService.start_loop(SfxService.CUE_ENEMY_FORMATION_HIT)
 	for fighter in attackers:
 		var muzzle := _crystal_attacker_muzzle(fighter)
 		_make_crystal_attack_ribbon(muzzle, impact_point, ribbon_color, _apply_crystal_hit.bind(is_red_crystal))
@@ -212,13 +216,13 @@ func _play_crystal_attack_sequence(result: Dictionary) -> void:
 		if not is_inside_tree():
 			# 中途退出战斗也必须停循环音：播放器挂在 root 下，
 			# 场景没了它照样在响（这正是它当初挂 root 的目的）。
-			if hit_loop:
+			if hit_loop or enemy_hit_loop:
 				SfxService.stop_loop()
 			return
 	# 等最后一发飞完并结算。
 	await get_tree().create_timer(CRYSTAL_RIBBON_FLIGHT_SEC + 0.35).timeout
 	# 攻击演完了就停 —— 后面的碎裂/淡出是「收场」，不再算受击。
-	if hit_loop:
+	if hit_loop or enemy_hit_loop:
 		SfxService.stop_loop()
 	if not is_inside_tree():
 		return

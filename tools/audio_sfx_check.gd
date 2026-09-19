@@ -36,8 +36,12 @@ const Presentation := preload("res://effects/runtime/presentation/PresentationSe
 const CHECK_NAME := "audio_sfx"
 
 # 源文件里必须一条不漏登记进来的 cue 数（zip 里 24 条音效 +
-# 9.17 第二批的 3 条：聊天新信息/朋友申请、房间内更换座位、己方法阵受击）。
-const EXPECTED_CUE_COUNT := 27
+# 9.17 第二批的 3 条：聊天新信息/朋友申请、房间内更换座位、己方法阵受击 +
+# 9.18 的 7 条：四星大天使/末日守卫拆出 2 条、敌方法阵受击、房间准备切换、
+# 资料改名保存、设置切换、语音切换）。
+# 9.19 的 3 条：四星「合成」与「战斗技能」分离，神王/母灵/黑龙各加一条
+# `*_skill` 素材（合成音回滚到 9.18 前原件），故 34 → 37。
+const EXPECTED_CUE_COUNT := 37
 
 # 播 SfxService 的生产代码扫描范围。**刻意不含 `res://tools`** ——
 # 门禁自己会调 play()，算进来就等于让门禁给自己的断言当证人
@@ -51,6 +55,9 @@ const SCAN_ROOTS: Array[String] = ["res://scenes", "res://scripts", "res://ui", 
 const INDIRECT_CUES: Array[String] = [
 	"CUE_STAR4_HUMAN_KING", "CUE_STAR4_GOD", "CUE_STAR4_UNDEAD_MOTHER",
 	"CUE_STAR4_DARK", "CUE_STAR4_DEFAULT",
+	"CUE_STAR4_ARCHANGEL", "CUE_STAR4_DOOM",
+	# 9.19：四星「战斗技能」专用素材，同样只经 star4_cue_for(unit_id, true) 间接派发。
+	"CUE_STAR4_GOD_SKILL", "CUE_STAR4_UNDEAD_MOTHER_SKILL", "CUE_STAR4_DARK_SKILL",
 ]
 const INDIRECT_ENTRY := "star4_cue_for"
 

@@ -5,6 +5,7 @@ extends Control
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const ActionButtonScene := preload("res://ui/components/GloryActionButton.tscn")
+const SfxService := preload("res://ui/services/SfxService.gd")
 
 signal back_requested
 signal replay_tutorial_requested
@@ -142,7 +143,9 @@ func _build() -> void:
 	_board_guides_btn.button_pressed = PlayerProfile.board_readability_enabled
 	_board_guides_btn.toggled.connect(func(enabled: bool):
 		PlayerProfile.set_board_readability_enabled(enabled)
-		_refresh_board_guides_button())
+		_refresh_board_guides_button()
+		# 9.18：设置项切换反馈音。
+		SfxService.play(SfxService.CUE_SETTINGS_SWITCH))
 	panel.add_child(_board_guides_btn)
 	_refresh_board_guides_button()
 
@@ -175,7 +178,9 @@ func _build() -> void:
 		btn.button_pressed = PlayerProfile.get_presentation_toggle(key)
 		btn.toggled.connect(func(enabled: bool):
 			PlayerProfile.set_presentation_toggle(key, enabled)
-			_refresh_presentation_button(key))
+			_refresh_presentation_button(key)
+			# 9.18：设置项切换反馈音（含音乐 / 界面音效 / 无障碍开关）。
+			SfxService.play(SfxService.CUE_SETTINGS_SWITCH))
 		panel.add_child(btn)
 		_presentation_btns[key] = btn
 		_presentation_labels[key] = tr(str(spec_dict["label"]))

@@ -1,0 +1,41 @@
+最终覆盖上传 · 代码 / 文档
+生成时间：2026-09-19 04:47
+
+【覆盖范围】2026-09-19 01:44（本轮修改前）→ 现在，全部代码与文档改动
+           = 9.18 批（今天 02:12-02:30）+ 9.19 批（今天 03:21-04:44）
+
+【用法】把本夹里的目录按**相同路径**覆盖到工程根目录
+       （scenes/ 、ui/ 、tools/ 、officetest/ 、docs/ 直接对上，README.md 放根目录）。
+
+【文件清单（13 个）】
+
+  9.18 批（5 个，9.19 未再改动）：
+    scenes/battle/BattleResult.gd
+    scenes/menu/ProfileScreen.gd
+    scenes/menu/SettingsScreen.gd
+    scenes/menu/Team3v3Lobby.gd
+    ui/components/VoiceControls.gd
+
+  9.19 批（5 个代码）：
+    scenes/battle/BattleVfx.gd      含 9.18 改动，再叠加 9.19「合成音/技能音分离」
+                                    与「末日守卫技能音只播一次」
+    scenes/battle/BattleScreen.gd   9.19 新增：每局开始重置末日守卫播放标记
+    tools/audio_sfx_check.gd        门禁（cue 数 34→37）
+    ui/services/SfxService.gd       新增 STAR4_SKILL_CUES + star4_cue_for(id, is_skill)
+    officetest/OfficeTestScreen.gd  离线自测：升星按钮、红方为自身、修 9.17 遗留编译错误
+
+  文档（3 个）：
+    docs/9.18音效接入记录.md
+    docs/9.19音效分离与离线自测记录.md
+    README.md
+
+【刻意未纳入】
+  - project.godot：本轮跑 Godot 只刷了 mtime 与行尾，sha256 未变（EC06205…），无需覆盖。
+  - export_presets.cfg：02:30 被动过一次，但不属于本次音效/自测改动，我没核实内容差异，
+    故没有放进夹子。如果你要连导出配置一起同步，说一声，我核对后再加。
+
+【校验】
+  - 本夹 13 个文件与现工程**逐字节相同**（sha256 见 _sha256清单.txt）。
+  - 门禁全绿：audio_sfx_check 143/0、battle_cue_profile 169/0、
+    battle_presentation_event 8314/0、battle_hit_victory 39/0。
+  - 未做安卓 / 真机听感验收。
