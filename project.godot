@@ -24,6 +24,7 @@ config/icon="res://icon.svg"
 [autoload]
 
 StartupTrace="*res://scripts/autoload/StartupTrace.gd"
+UIFontFallback="*res://ui/fonts/UIFontFallback.gd"
 LocaleManager="*res://scripts/autoload/LocaleManager.gd"
 GameState="*res://scripts/autoload/GameState.gd"
 DataRegistry="*res://scripts/autoload/DataRegistry.gd"
