@@ -42,10 +42,12 @@ const BATTLE_ARENA_FOREST_ALBEDO := Color(0.38, 0.58, 0.30)
 const BATTLE_ARENA_FOREST_BLEND := 0.62
 const BATTLE_3D_WIDTH := 22.0
 const BATTLE_3D_DEPTH := 12.4
-const MODEL_SEPARATION_RADIUS := 78.0
-const MODEL_SEPARATION_STRENGTH := 42.0
-const MODEL_SEPARATION_MAX_OFFSET := 54.0
-const MODEL_SEPARATION_BASE_NUDGE := 18.0
+# Display-only crowd spacing. The simulator still owns targeting, range and
+# movement; these values only keep the rendered actors readable in a melee.
+const MODEL_SEPARATION_RADIUS := 92.0
+const MODEL_SEPARATION_ITERATIONS := 3
+const MODEL_SEPARATION_MAX_OFFSET := 128.0
+const MODEL_SEPARATION_SMOOTH_SPEED := 14.0
 const BATTLE_CAMERA_SIZE := 7.2
 const BATTLE_CAMERA_POS := Vector3(0.0, 7.4, 7.0)
 const BATTLE_PLAYABLE_WIDTH := 14.5

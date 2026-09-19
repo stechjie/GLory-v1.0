@@ -30,7 +30,7 @@ func _ready() -> void:
 	_h = CheckHarness.new(CHECK_NAME)
 	_case_poison_kill_credits_the_caster()
 	_case_poison_damage_credits_the_caster()
-	_case_bleed_kill_credits_the_caster()
+	_case_offensive_bleed_kill_credits_the_caster()
 	_case_last_hit_still_wins()
 	_case_self_inflicted_bleed_credits_nobody()
 	_case_poison_numbers_come_from_the_def()
@@ -104,31 +104,29 @@ func _case_poison_damage_credits_the_caster() -> void:
 			% [int(10000 * 0.05), dealt])
 
 
-# --- 3. Bleed credits the caster, and cannot kill ---------------------------
-# StatusEffectService.bleed_damage returns 0 once current HP is 1, so bleed can
-# never land the killing blow: there is no kill-gold hole here, only a stats one.
-# The floor is pinned as well — if bleed ever becomes lethal, whoever makes that
-# change has to come back and think about attribution.
-func _case_bleed_kill_credits_the_caster() -> void:
+# --- 3. Offensive bleed is lethal and credits the caster --------------------
+func _case_offensive_bleed_kill_credits_the_caster() -> void:
 	var state := _state(["bleeder", "victim"])
 	var caster := _fighter("bleeder", 500)
-	var victim := _fighter("victim", 2000)
+	var victim := _fighter("victim", 100)
 	_apply_from(caster, victim, state, func(): StatusEffectService.add_bleed(victim, 30.0, 0.5))
 
 	DamageService.set_stat_state(state)
 	DamageService.clear_stat_context()
-	for _i in 40:
+	for _i in 12:
+		if not bool(victim.get("alive", true)):
+			break
 		StatusEffectService.tick(victim, 1.0)
 
 	var stats: Dictionary = state.get("unit_stats", {})
 	_h.expect(int((stats.get("bleeder", {}) as Dictionary).get("damage_dealt", 0)) > 0,
 		"bleed_damage_unattributed",
 		"失血伤害没有记到施法者头上 —— 战斗统计面板会漏掉血契之刃那条线的输出")
-	_h.expect(bool(victim.get("alive", true)) and int(victim.get("hp", 0)) == 1,
-		"bleed_became_lethal",
-		"失血把目标打死了（剩 %d 血）—— bleed_damage 的 current_hp <= 1 下限没了，"
-			% int(victim.get("hp", 0))
-		+ "致死路径的归属要重新过一遍")
+	_h.expect(not bool(victim.get("alive", true)) and int(victim.get("hp", 0)) == 0,
+		"offensive_bleed_not_lethal",
+		"攻击型失血没有完成击杀（剩 %d 血）" % int(victim.get("hp", 0)))
+	_h.expect(str(victim.get("killer_uid", "")) == "bleeder", "bleed_kill_unattributed",
+		"失血击杀后的 killer_uid 是 %s，应为 bleeder" % _q(str(victim.get("killer_uid", ""))))
 
 
 # --- 4. Last hit still wins -------------------------------------------------
@@ -159,15 +157,11 @@ func _case_last_hit_still_wins() -> void:
 			% _q(str(victim.get("killer_uid", ""))))
 
 
-# --- 5. Self-inflicted bleed credits nobody ---------------------------------
-# atk_blood_pact makes its own holder bleed as the cost. If that kills, the
-# sweep must not pay the victim for its own death; _process_pending_kill_rewards
-# already skips killer == victim, so this pins that the source we now record
-# cannot route around it.
+# --- 5. Blood Pact self-bleed remains nonlethal -----------------------------
 func _case_self_inflicted_bleed_credits_nobody() -> void:
 	var state := _state(["loner"])
 	var loner := _fighter("loner", 20)
-	_apply_from(loner, loner, state, func(): StatusEffectService.add_bleed(loner, 10.0, 0.95))
+	_apply_from(loner, loner, state, func(): StatusEffectService.add_bleed(loner, 10.0, 0.95, true))
 
 	DamageService.set_stat_state(state)
 	DamageService.clear_stat_context()
@@ -176,12 +170,10 @@ func _case_self_inflicted_bleed_credits_nobody() -> void:
 			break
 		StatusEffectService.tick(loner, 1.0)
 
-	if not bool(loner.get("alive", true)):
-		_h.expect(str(loner.get("killer_uid", "")) == "loner", "self_bleed_source_lost",
-			"自残失血致死，killer_uid 应当就是它自己（补结算据此跳过），实际是 %s"
-				% _q(str(loner.get("killer_uid", ""))))
-	else:
-		_h.item()
+	_h.expect(bool(loner.get("alive", true)) and int(loner.get("hp", 0)) == 1,
+		"blood_pact_self_bleed_became_lethal",
+		"血契自残应保留 1 HP，实际 alive=%s hp=%d"
+			% [str(loner.get("alive", false)), int(loner.get("hp", 0))])
 
 
 # --- 6. Poison numbers come from the data table -----------------------------

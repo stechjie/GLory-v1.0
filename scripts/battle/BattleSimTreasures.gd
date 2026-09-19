@@ -295,7 +295,9 @@ static func _apply_opening_treasures(player: Array, event_log: Array[String]) ->
 		if _f_has_treasure(f, "atk_blood_pact"):
 			var blood_multiplier := 1.50 if _f_has_linkage(f, "link_hu_pai_master") else 1.25
 			f.atk = maxi(1, int(round(float(f.atk) * blood_multiplier)))
-			StatusEffectService.add_bleed(f, 999.0, 0.06)
+			# Blood Pact pays HP for power but is not allowed to kill its holder.
+			# Offensive bleed keeps the default lethal behaviour.
+			StatusEffectService.add_bleed(f, 999.0, 0.06, true)
 		if _f_has_treasure(f, "atk_burst_core"):
 			f.crit_bonus = float(f.get("crit_bonus", 0.0)) + 0.25
 		# 宠物开局加成（按该棋子所属者的出战宠物）：蘑菇 +生命 / 鸭子 +攻击。
@@ -805,4 +807,3 @@ static func _apply_blood_rampage_lifesteal(attacker: Dictionary, d: Dictionary, 
 	var pct := float(steps) * float(d.get("lifesteal_per_step", 0.05))
 	if pct > 0.0:
 		_heal_unit(attacker, maxi(1, int(round(float(dealt) * pct))))
-
