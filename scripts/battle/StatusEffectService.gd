@@ -40,7 +40,7 @@ static func add_status(fighter: Dictionary, kind: String, duration: float, param
 		if _boss_reduces_duration(kind):
 			adjusted_duration *= 0.5
 	next["remaining"] = maxf(float(existing.get("remaining", 0.0)), adjusted_duration)
-	if kind == "poison" or kind == "bleed" or kind == "burn":
+	if kind in ["poison", "bleed", "bleed_nonlethal", "burn"]:
 		next["tick_left"] = minf(float(existing.get("tick_left", 0.0)), float(next.get("tick_left", 0.0))) if existing.has("tick_left") else 0.0
 	fighter.statuses[kind] = next
 	# Record the effective duration added by this application. Refreshing a status
@@ -55,7 +55,7 @@ static func _is_boss(fighter: Dictionary) -> bool:
 	return bool(d.get("is_boss", false)) or id.begins_with("boss_")
 
 static func _is_negative_status(kind: String) -> bool:
-	return kind in ["slow", "attack_down", "silence", "stun", "interrupt", "defense_down", "defense_flat_down", "heal_reduction", "ice_vulnerable", "ice_affected", "poison", "bleed", "burn"]
+	return kind in ["slow", "attack_down", "silence", "stun", "interrupt", "defense_down", "defense_flat_down", "heal_reduction", "ice_vulnerable", "ice_affected", "poison", "bleed", "bleed_nonlethal", "burn"]
 
 static func clear_negative_statuses(fighter: Dictionary) -> int:
 	ensure_status(fighter)
@@ -73,7 +73,7 @@ static func _boss_reduces_duration(kind: String) -> bool:
 static func _boss_reduced_params(kind: String, params: Dictionary) -> Dictionary:
 	# 不变量：唯一调用方（add_status）传入的已是私有拷贝，可就地修改。
 	var next := params
-	if kind in ["slow", "attack_down", "defense_down", "defense_flat_down", "heal_reduction", "ice_vulnerable", "poison", "bleed", "burn"]:
+	if kind in ["slow", "attack_down", "defense_down", "defense_flat_down", "heal_reduction", "ice_vulnerable", "poison", "bleed", "bleed_nonlethal", "burn"]:
 		for key in next.keys():
 			if str(key) == "tick_left":
 				continue
@@ -99,8 +99,12 @@ static func add_poison(fighter: Dictionary, duration: float = 4.0, pct_max_hp: f
 		"source_uid": DamageService.current_stat_source_uid(),
 	})
 
-static func add_bleed(fighter: Dictionary, duration: float = 3.0, pct_current_hp: float = 0.06) -> void:
-	add_status(fighter, "bleed", duration, {
+static func add_bleed(fighter: Dictionary, duration: float = 3.0, pct_current_hp: float = 0.06, nonlethal: bool = false) -> void:
+	# Offensive bleed is lethal. Blood Pact uses a separate status key so its
+	# permanent self-bleed can retain the 1 HP floor without being merged with,
+	# or stealing attribution from, an enemy-applied bleed.
+	var kind := "bleed_nonlethal" if nonlethal else "bleed"
+	add_status(fighter, kind, duration, {
 		"pct_current_hp": pct_current_hp,
 		"tick_left": 0.0,
 		"source_uid": DamageService.current_stat_source_uid(),
@@ -142,11 +146,14 @@ static func tick(fighter: Dictionary, delta: float) -> Array[int]:
 				var burn_dmg := maxi(1, int(round(float(s.get("dps", 1.0)))))
 				_apply_dot_damage(fighter, burn_dmg, s)
 				damages.append(burn_dmg)
-		elif key == "bleed":
+		elif key == "bleed" or key == "bleed_nonlethal":
 			s.tick_left = float(s.get("tick_left", 0.0)) - delta
 			if float(s.tick_left) <= 0.0:
 				s.tick_left = BLEED_TICK_SEC
-				var dmg2 := bleed_damage(int(fighter.hp), float(s.get("pct_current_hp", 0.06)))
+				var dmg2 := bleed_damage(
+					int(fighter.hp),
+					float(s.get("pct_current_hp", 0.06)),
+					key == "bleed_nonlethal")
 				if dmg2 > 0:
 					_apply_dot_damage(fighter, dmg2, s)
 					damages.append(dmg2)
@@ -195,10 +202,13 @@ static func move_speed_multiplier(fighter: Dictionary) -> float:
 		mul *= maxf(0.1, 1.0 - float(fighter.statuses.slow.get("move_pct", 0.0)))
 	return mul
 
-static func bleed_damage(current_hp: int, pct: float = 0.06) -> int:
-	if current_hp <= 1:
+static func bleed_damage(current_hp: int, pct: float = 0.06, nonlethal: bool = false) -> int:
+	if current_hp <= 0 or (nonlethal and current_hp <= 1):
 		return 0
-	return maxi(1, int(floor(float(current_hp) * pct)))
+	var amount := maxi(1, int(floor(float(current_hp) * pct)))
+	if nonlethal:
+		amount = mini(amount, current_hp - 1)
+	return amount
 
 static func silence_blocks_skill() -> bool:
 	return true
@@ -210,6 +220,5 @@ static func _duration_after_control_reduction(fighter: Dictionary, kind: String,
 	if kind in ["slow", "attack_down", "silence", "stun", "interrupt", "defense_down", "defense_flat_down", "heal_reduction", "ice_vulnerable", "ice_affected", "dodge_bonus", "speed_bonus", "damage_reduction", "defense_flat_up", "invulnerable", "control_time_reduction"]:
 		return duration * maxf(0.0, 1.0 - float(fighter.statuses.control_time_reduction.get("pct", 0.0)))
 	return duration
-
 
 

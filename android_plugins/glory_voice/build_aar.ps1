@@ -1,23 +1,21 @@
-# Builds addons/glory_voice/bin/GloryVoice.aar from this folder, without Gradle.
+# Builds addons/glory_voice/bin/GloryVoice.aar (the LiveKit voice bridge; spec: the LiveKit voice doc under docs/, section 5.1).
 #
-# Why no Gradle: an AAR is a zip of AndroidManifest.xml + classes.jar (+ R.txt, proguard.txt).
-# The app's own Gradle build ("Use Gradle Build" in the Android preset) dexes classes.jar,
-# so plain javac against android.jar + Godot's classes is all this step needs, and
-# rebuilding the plugin never downloads anything.
+# The bridge is Kotlin on top of the LiveKit Android SDK, so this runs Gradle (the old javac-only
+# build could not compile Kotlin or resolve LiveKit). It uses the same toolchain as the Godot 4.7.1
+# Android build template - Gradle 8.11.1, AGP 8.6.1, Kotlin 2.1.21 - which a Gradle export has
+# already put into ~/.gradle. The first run also downloads LiveKit and its dependencies from Maven
+# Central and JitPack; later runs use the cache.
 #
-# Step 1 is a desktop self-test: the pure-Java parts (codec, packetizer, jitter buffer) are
-# compiled for the plain JDK and test/com/glory/voice/VoiceSelfTest runs against them.
-# If it fails, no AAR is written. A broken codec only shows up on a phone as "the voice
-# sounds wrong", by which point nobody can tell code from network from handset.
+# LiveKit is compileOnly: the AAR holds only our classes. The APK gets LiveKit from the export
+# plugin's _get_android_dependencies (addons/glory_voice/glory_voice_plugin.gd).
 #
-# The AAR also carries glory_voice_source.sha256, a digest of the sources it was built
-# from. tools/voice_check recomputes it: editing the Java without rebuilding the
-# AAR turns that check red instead of shipping a stale plugin.
+# Everything runs on a copy under the (ASCII) temp dir. On a machine whose ANSI code page is not
+# Chinese, Java receives non-ASCII path characters as "?" (this repo lives under a Chinese-named
+# folder), and javac / Gradle reject the path.
 #
-# Every Java tool here works on copies under the (ASCII) temp dir. On a machine whose ANSI
-# code page is not Chinese, Java receives non-ASCII path characters as "?" (this repo lives
-# under a Chinese-named folder) and javac / jar / java reject the path. Same root cause as
-# Godot's "Release Username and/or Password is invalid" when the keystore path is non-ASCII.
+# The AAR also carries glory_voice_source.sha256, a digest of the sources it was built from.
+# tools/voice_check recomputes it: editing the plugin without rebuilding turns that check red
+# instead of shipping a stale bridge.
 #
 # Usage (from the repo root):
 #   powershell -NoProfile -ExecutionPolicy Bypass -File android_plugins/glory_voice/build_aar.ps1
@@ -26,8 +24,9 @@
 
 [CmdletBinding()]
 param(
-    [string]$JdkBin = "",
-    [string]$AndroidSdk = ""
+    [string]$JdkHome = "",
+    [string]$AndroidSdk = "",
+    [string]$Gradle = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -37,28 +36,23 @@ $here = $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($here)) { $here = Split-Path -Parent $MyInvocation.MyCommand.Path }
 $root = [IO.Path]::GetFullPath((Join-Path $here "..\.."))
 
-if ([string]::IsNullOrWhiteSpace($JdkBin)) {
-    if (-not [string]::IsNullOrWhiteSpace($env:JAVA_HOME)) { $JdkBin = Join-Path $env:JAVA_HOME "bin" }
-    else { $JdkBin = "C:\Program Files\app\JDK17\bin" }
+if ([string]::IsNullOrWhiteSpace($JdkHome)) {
+    if (-not [string]::IsNullOrWhiteSpace($env:JAVA_HOME)) { $JdkHome = $env:JAVA_HOME }
+    else { $JdkHome = "C:\Program Files\app\JDK17" }
 }
+if (-not (Test-Path -LiteralPath (Join-Path $JdkHome "bin\java.exe"))) { throw "no JDK 17 at $JdkHome (pass -JdkHome)" }
 if ([string]::IsNullOrWhiteSpace($AndroidSdk)) {
     if (-not [string]::IsNullOrWhiteSpace($env:ANDROID_HOME)) { $AndroidSdk = $env:ANDROID_HOME }
     else { $AndroidSdk = Join-Path $env:LOCALAPPDATA "Android\Sdk" }
 }
-$javac = Join-Path $JdkBin "javac.exe"
-$jarTool = Join-Path $JdkBin "jar.exe"
-$java = Join-Path $JdkBin "java.exe"
-foreach ($tool in @($javac, $jarTool, $java)) {
-    if (-not (Test-Path -LiteralPath $tool)) { throw "missing $tool (pass -JdkBin <jdk>\bin)" }
+if (-not (Test-Path -LiteralPath (Join-Path $AndroidSdk "platforms\android-36"))) { throw "no platforms\android-36 under $AndroidSdk (pass -AndroidSdk)" }
+if ([string]::IsNullOrWhiteSpace($Gradle)) {
+    # The distribution the Godot build template's wrapper downloaded (gradle-wrapper.properties: 8.11.1).
+    $dists = Join-Path $env:USERPROFILE ".gradle\wrapper\dists\gradle-8.11.1-bin"
+    $found = @(Get-ChildItem -Path $dists -Recurse -Filter "gradle.bat" -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*\gradle-8.11.1\bin\gradle.bat" })
+    if ($found.Count -eq 0) { throw "no Gradle 8.11.1 under $dists - export once with Use Gradle Build, or pass -Gradle <path to gradle.bat>" }
+    $Gradle = $found[0].FullName
 }
-
-# Newest installed platform. The plugin guards every API above minSdk 24 with SDK_INT checks.
-$androidJar = $null
-foreach ($dir in (Get-ChildItem (Join-Path $AndroidSdk "platforms") -Directory | Sort-Object Name -Descending)) {
-    $candidate = Join-Path $dir.FullName "android.jar"
-    if (Test-Path -LiteralPath $candidate) { $androidJar = $candidate; break }
-}
-if ($null -eq $androidJar) { throw "no android.jar under $AndroidSdk\platforms (pass -AndroidSdk)" }
 
 # Godot's Java API comes from the installed Android build template. android/ is gitignored and
 # regenerated by the editor (Project > Install Android Build Template).
@@ -67,38 +61,20 @@ if (-not (Test-Path -LiteralPath $godotAar)) { throw "missing $godotAar - instal
 
 $work = Join-Path ([IO.Path]::GetTempPath()) "glory_voice_aar_build"
 if (Test-Path -LiteralPath $work) { Remove-Item -LiteralPath $work -Recurse -Force }
-$classesDir = Join-Path $work "classes"
-New-Item -ItemType Directory -Force -Path $classesDir | Out-Null
+New-Item -ItemType Directory -Force -Path $work | Out-Null
 
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
+# --- 1. project copy ----------------------------------------------------------------------
+# The files below are exactly the ones in the source digest (step 4).
+$projectFiles = @("AndroidManifest.xml", "proguard.txt", "build.gradle.kts", "settings.gradle.kts", "gradle.properties")
+foreach ($name in $projectFiles) { Copy-Item -LiteralPath (Join-Path $here $name) -Destination (Join-Path $work $name) }
 $srcRoot = Join-Path $here "src"
-$testRoot = Join-Path $here "test"
-if (@(Get-ChildItem $srcRoot -Recurse -Filter "*.java").Count -eq 0) { throw "no .java files under $srcRoot" }
-$srcCopy = Join-Path $work "src"
-Copy-Item -LiteralPath $srcRoot -Destination $srcCopy -Recurse
-$testCopy = Join-Path $work "test"
-Copy-Item -LiteralPath $testRoot -Destination $testCopy -Recurse
+if (@(Get-ChildItem $srcRoot -Recurse -Filter "*.kt").Count -eq 0) { throw "no .kt files under $srcRoot" }
+Copy-Item -LiteralPath $srcRoot -Destination (Join-Path $work "src") -Recurse
+[IO.File]::WriteAllText((Join-Path $work "local.properties"), "sdk.dir=" + $AndroidSdk.Replace("\", "/") + "`n")
 
-# --- 1. desktop self-test --------------------------------------------------------------
-# Only the classes without android.* imports: they compile and run on the plain JDK.
-$pureNames = @("AdpcmCodec.java", "Packetizer.java", "RemoteStream.java")
-$selfTestSources = @()
-foreach ($name in $pureNames) {
-    $path = Join-Path $srcCopy ("com\glory\voice\" + $name)
-    if (-not (Test-Path -LiteralPath $path)) { throw "missing pure source $name" }
-    $selfTestSources += $path
-}
-$selfTestSources += @(Get-ChildItem $testCopy -Recurse -Filter "*.java" | ForEach-Object { $_.FullName })
-$selfTestOut = Join-Path $work "selftest"
-New-Item -ItemType Directory -Force -Path $selfTestOut | Out-Null
-& $javac -encoding UTF-8 -d $selfTestOut @selfTestSources
-if ($LASTEXITCODE -ne 0) { throw "self-test javac failed" }
-& $java -cp $selfTestOut com.glory.voice.VoiceSelfTest
-if ($LASTEXITCODE -ne 0) { throw "VoiceSelfTest failed - AAR not built" }
-
-# --- 2. compile the plugin against the Android API ----------------------------------------
 $godotJar = Join-Path $work "godot-classes.jar"
 $lib = [IO.Compression.ZipFile]::OpenRead($godotAar)
 try {
@@ -109,25 +85,29 @@ try {
     $lib.Dispose()
 }
 
-$sources = @(Get-ChildItem $srcCopy -Recurse -Filter "*.java" | ForEach-Object { $_.FullName })
-# -source/-target 8 with -bootclasspath android.jar compiles against the real Android API
-# surface (with --release the JDK's own java.* would be used instead of Android's).
-# No lambdas in the plugin: android.jar's LambdaMetafactory has no metafactory, so they fail here.
-& $javac -source 8 -target 8 -bootclasspath $androidJar -classpath $godotJar -encoding UTF-8 -Xlint:-options -d $classesDir @sources
-if ($LASTEXITCODE -ne 0) { throw "javac failed" }
+# --- 2. gradle -----------------------------------------------------------------------------
+$env:JAVA_HOME = $JdkHome
+& $Gradle -p $work --no-daemon --console=plain ("-PgodotLib=" + $godotJar.Replace("\", "/")) assembleRelease
+if ($LASTEXITCODE -ne 0) { throw "gradle assembleRelease failed" }
+$builtAar = Join-Path $work "build\outputs\aar\glory_voice-release.aar"
+if (-not (Test-Path -LiteralPath $builtAar)) { throw "gradle did not produce $builtAar" }
 
-$classesJar = Join-Path $work "classes.jar"
-& $jarTool cf $classesJar -C $classesDir .
-if ($LASTEXITCODE -ne 0) { throw "jar failed" }
+# --- 3. the plugin must actually be in it ---------------------------------------------------
+$check = [IO.Compression.ZipFile]::OpenRead($builtAar)
+try {
+    $names = @($check.Entries | ForEach-Object { $_.FullName })
+    if (-not ($names -contains "classes.jar")) { throw "built AAR has no classes.jar" }
+    if (-not ($names -contains "AndroidManifest.xml")) { throw "built AAR has no AndroidManifest.xml" }
+} finally {
+    $check.Dispose()
+}
 
-# --- 3. package --------------------------------------------------------------------------
-# Source digest: "relative/path:sha256" lines, ordinal-sorted, joined with "\n", then SHA-256.
-# tools/voice_check.gd computes exactly the same thing. test/ is not part of it: the tests
-# are not inside the AAR, so changing only a test does not make the AAR stale.
+# --- 4. source digest ---------------------------------------------------------------------
+# "relative/path:sha256" lines, ordinal-sorted, joined with "\n", then SHA-256.
+# tools/voice_check.gd computes exactly the same thing.
 $rel = New-Object System.Collections.Generic.List[string]
-$rel.Add("AndroidManifest.xml")
-$rel.Add("proguard.txt")
-foreach ($file in (Get-ChildItem $srcRoot -Recurse -Filter "*.java")) {
+foreach ($name in $projectFiles) { $rel.Add($name) }
+foreach ($file in (Get-ChildItem $srcRoot -Recurse -Filter "*.kt")) {
     $rel.Add("src/" + $file.FullName.Substring($srcRoot.Length + 1).Replace("\", "/"))
 }
 $relArray = $rel.ToArray()
@@ -141,24 +121,35 @@ $sha = [Security.Cryptography.SHA256]::Create()
 $digestBytes = $sha.ComputeHash([Text.Encoding]::UTF8.GetBytes(($lines.ToArray() -join "`n")))
 $digest = ($digestBytes | ForEach-Object { $_.ToString("x2") }) -join ""
 
+# --- 5. package ---------------------------------------------------------------------------
+# A fresh archive: every entry of Gradle's AAR copied through, plus the digest.
+# Do NOT open the AAR in ZipArchiveMode.Update: .NET rewrites the empty R.txt as a STORED entry
+# that still claims the 2-byte deflated size. Gradle's AAR extraction (a streaming reader) then
+# stops there, AndroidManifest.xml never gets extracted and the APK export fails with a bare
+# path in the error (2026-09-19). tools/voice_check walks the local headers to catch this.
 $outDir = Join-Path $root "addons\glory_voice\bin"
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 $aar = Join-Path $outDir "GloryVoice.aar"
 if (Test-Path -LiteralPath $aar) { Remove-Item -LiteralPath $aar -Force }
+$src = [IO.Compression.ZipFile]::OpenRead($builtAar)
 $out = [IO.Compression.ZipFile]::Open($aar, [IO.Compression.ZipArchiveMode]::Create)
 try {
-    [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($out, (Join-Path $here "AndroidManifest.xml"), "AndroidManifest.xml") | Out-Null
-    [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($out, $classesJar, "classes.jar") | Out-Null
-    [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($out, (Join-Path $here "proguard.txt"), "proguard.txt") | Out-Null
-    $out.CreateEntry("R.txt") | Out-Null
+    foreach ($entry in $src.Entries) {
+        if ($entry.FullName -eq "glory_voice_source.sha256") { continue }
+        $copy = $out.CreateEntry($entry.FullName, [IO.Compression.CompressionLevel]::Optimal)
+        $inStream = $entry.Open()
+        $outStream = $copy.Open()
+        try { $inStream.CopyTo($outStream) } finally { $outStream.Dispose(); $inStream.Dispose() }
+    }
     $digestEntry = $out.CreateEntry("glory_voice_source.sha256")
     $writer = New-Object IO.StreamWriter($digestEntry.Open(), (New-Object Text.UTF8Encoding($false)))
     try { $writer.Write($digest) } finally { $writer.Dispose() }
 } finally {
     $out.Dispose()
+    $src.Dispose()
 }
 
 Write-Host ("built {0} ({1:N0} bytes)" -f $aar, (Get-Item -LiteralPath $aar).Length)
-Write-Host ("  android.jar: {0}" -f $androidJar)
-Write-Host ("  godot lib:   {0}" -f $godotAar)
-Write-Host ("  source sha:  {0}" -f $digest)
+Write-Host ("  gradle:     {0}" -f $Gradle)
+Write-Host ("  godot lib:  {0}" -f $godotAar)
+Write-Host ("  source sha: {0}" -f $digest)

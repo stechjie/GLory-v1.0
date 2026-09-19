@@ -7,6 +7,16 @@ var _vfx_prev_units: Dictionary = {}
 var _vfx_seeded: bool = false
 var _vfx_visual_event_index := 0
 var _persistent_unit_vfx: Dictionary = {}
+# 9.19：四星末日守卫（skill_id = shared_hp_link 血契连线）的技能音**只在开始释放时播一次**。
+#
+# 该技能是一次性的（命中后 `_skill_shared_hp_link` 置 `shared_link_spent` 后直接 return），
+# 但模拟器每轮仍会执行 `caster.skill_ready = state.elapsed + 1.0`
+# （BattleSimulator.gd:896-898，shared_hp_link 分支固定 +1.0）——
+# 于是 `_play_skill_cast_vfx` 的「skill_ready 上升沿」判定**每秒都会再满足一次**，
+# 音效跟着每一秒重响一声（即用户说的「后续链接效果也在播」）。
+# 这里按 sim_uid 记「这一只已经响过」，后续链接/续期不再播。
+# 每局开始由 BattleScreen._start_replay() 清空。
+var _doom_skill_sfx_played: Dictionary = {}
 # D4: bodies of slice units whose death cue has been enqueued but not played yet.
 # The renderer prunes a dead model on the next refresh, which is faster than the
 # death cue can be reached when the victim was mid-swing (checklist 4.3 keeps the
@@ -223,6 +233,7 @@ func _collect_vfx_units(state_snapshot: Dictionary) -> Dictionary:
 			u["world_head"] = _unit_vfx_position(id, "HeadAnchor", sim_pos, 1.45)
 			u["model_node"] = model_node
 			u["team"] = str(f.get("team", ""))
+			u["owner_slot"] = int(f.get("owner_slot", -1))
 			u["attack_count"] = int(f.get("attack_count", 0))
 			u["range_px"] = float(f.get("range_px", 0.0))
 			u["skill_ready"] = float(f.get("skill_ready", 0.0))
@@ -377,6 +388,24 @@ func _floor_target_for(source: Dictionary) -> Dictionary:
 func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events: Array[Dictionary], current: Dictionary) -> void:
 	var sid := str(unit.get("skill_id", ""))
 	var uid := str(unit.get("unit_id", ""))
+	# 9.18：四星单位施放专属技能时的音效。**仅自身棋子（不含队友）才响** ——
+	# 用户硬性要求「战斗、特效里的音效只能听见自身棋子造成的」。判定口径复用
+	# `_is_local_owned_unit`（owner_slot == local_slot，队友是不同 slot 所以天然排除），
+	# 再叠加 `star == 4` 防止低星单位的普攻上升沿误触发。
+	var _sim_uid := str(unit.get("sim_uid", ""))
+	if _is_local_owned_unit(_sim_uid) and _is_star4(_sim_uid):
+		# 9.19：末日守卫（`dark_doom`）的技能只响**一次**——它的 `shared_hp_link`
+		# 是一次性技能，`_skill_shared_hp_link()` 命中 `shared_link_spent` 会直接
+		# return，但模拟器末尾仍把 `caster.skill_ready` 推到 `elapsed + 1.0`
+		# （BattleSimulator.gd:896-898），于是每秒都产生一次上升沿 → 连线持续期间
+		# 音效被反复重播。这里按棋子记一次播放标记，后续上升沿全部跳过。
+		# 判据同时认 uid 与 skill_id：uid 保证「末日守卫」本体，skill_id 保证将来
+		# 若有别的单位复用该机制也不会重复响（数据里 `shared_hp_link` 目前只有它一家）。
+		var once_only := uid == "dark_doom" or sid == "shared_hp_link"
+		if not once_only or not _doom_skill_sfx_played.has(_sim_uid):
+			if once_only:
+				_doom_skill_sfx_played[_sim_uid] = true
+			SfxService.play(SfxService.star4_cue_for(uid, true))
 	var texture_pos: Vector2 = unit.get("cast_pos", Vector2.ZERO)
 	var should_play_texture := true
 	var procedural_played := false
@@ -865,6 +894,10 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 			if mother.is_empty():
 				mother=_vfx_unit_by_sim_uid(_vfx_prev_units,str(event.get("source_uid","")))
 			if not mother.is_empty():
+				# 9.18：母灵（undead_mother）四星专属技「死亡执行」音效。仅自身棋子才响。
+				var _msim := str(event.get("source_uid", ""))
+				if _is_local_owned_unit(_msim) and _is_star4(_msim):
+					SfxService.play(SfxService.star4_cue_for("undead_mother", true))
 				var victim:=_vfx_unit_by_sim_uid(current,str(event.get("target_uid","")))
 				var has_victim:=not victim.is_empty()
 				var book_target:Vector3=victim.get("world_foot",mother.get("world_foot",Vector3.ZERO)) if has_victim else mother.get("world_foot",Vector3.ZERO)
@@ -1040,6 +1073,7 @@ func cue_release_corpses() -> void:
 
 
 func cue_play_death(victim_uid: String, duration_sec: float = 0.35) -> bool:
+	_maybe_play_human_king_death_sfx(victim_uid)
 	var actor: Node3D = _cue_corpses.get(victim_uid)
 	_cue_corpses.erase(victim_uid)
 	if actor == null or not is_instance_valid(actor):
@@ -1091,6 +1125,73 @@ func _cue_unit_snapshot(sim_uid: String) -> Dictionary:
 		return {}
 	var snapshot: Dictionary = _vfx_prev_units.get(sim_uid, {})
 	return snapshot
+
+
+# --- 9.17 人王阵亡音 ---------------------------------------------------------
+
+# 已经响过的 uid。**去重是必须的，不是保险**：DamageService.apply_damage 对一个
+# 已经 hp == 0 的目标再打一次时 `died_now` 会再次为 true（`hp = maxi(0, 0 - remaining)`
+# 仍然是 0），所以同一个 uid 的 death 可能被重复投递。BattlePresentationDirector
+# 那层虽然有 _seen_event_keys 去重，但它只覆盖 replay 那条路。
+#
+# 按 uid 去重；仅本座位的人王通过下面的归属检查，队友及敌方不播放。
+var _human_king_death_sfx_uids: Dictionary = {}
+
+
+func _maybe_play_human_king_death_sfx(victim_uid: String) -> void:
+	if victim_uid.is_empty() or _human_king_death_sfx_uids.has(victim_uid):
+		return
+	if not _is_unit_id(victim_uid, "human_king") or not _is_local_owned_unit(victim_uid):
+		return
+	_human_king_death_sfx_uids[victim_uid] = true
+	SfxService.play(SfxService.CUE_HUMAN_KING_DEATH)
+
+
+# 这个 uid 是不是指定的数据表棋子。两条路都试：
+#
+#   1. `_vfx_prev_units[uid].unit_id` —— 快照里已经存了（_collect_vfx_units 写的），
+#      最省事，但快照是按「本帧还在不在」剪枝的，某个时序下可能已经没了；
+#   2. 直接扫 `_state` 的双方单位表 —— cue 到得比快照清理晚时的兜底。
+#
+# **用数据表 id（human_king）判定，不用名字**：名字会随本地化变，
+# 而 data/units/race_units.json 里的 id 永远稳定。两条路都查不到就返回 false ——
+# 宁可少响一声，也不要把别人的阵亡音播给人王。
+func _is_local_owned_unit(sim_uid: String) -> bool:
+	var unit: Dictionary = _cue_unit_snapshot(sim_uid)
+	for side in ["player", "enemy"]:
+		for raw in _state.get(side, []):
+			if raw is Dictionary and str(raw.get("uid", "")) == sim_uid:
+				unit = raw
+	if unit.is_empty():
+		return false
+	var owner := int(unit.get("owner_slot", -1))
+	if NetworkService.team_active or GameState.team_mode:
+		var local_slot := NetworkService.team_local_slot if NetworkService.team_active else 0
+		return local_slot >= 0 and owner == local_slot
+	return str(unit.get("team", "")) == "player" and owner <= 0
+
+
+# 9.18：该 sim_uid 对应单位是否四星。快照不存 star，所以直接扫 `_state` 双方表
+# （与 `_is_local_owned_unit` 同款兜底）。`GameConstants.MAX_STAR` 即 4。
+# 只用于四星技能音效门控 —— 宁可少响，也不在普攻上升沿误触。
+func _is_star4(sim_uid: String) -> bool:
+	for side in ["player", "enemy"]:
+		for raw in _state.get(side, []):
+			if raw is Dictionary and str(raw.get("uid", "")) == sim_uid:
+				return int(raw.get("star", 1)) == GameConstants.MAX_STAR
+	return false
+
+func _is_unit_id(sim_uid: String, unit_id: String) -> bool:
+	if str(_cue_unit_snapshot(sim_uid).get("unit_id", "")) == unit_id:
+		return true
+	for side in ["player", "enemy"]:
+		for f in (_state.get(side, []) as Array):
+			if typeof(f) != TYPE_DICTIONARY:
+				continue
+			var fighter: Dictionary = f
+			if str(fighter.get("uid", "")) == sim_uid:
+				return str(fighter.get("id", "")) == unit_id
+	return false
 
 
 func _vfx_unit_by_sim_uid(current:Dictionary,sim_uid:String)->Dictionary:

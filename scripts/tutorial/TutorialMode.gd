@@ -719,6 +719,7 @@ func save_checkpoint(force: bool = false) -> void:
 		"merc_carrots_spent_total": GameState.merc_carrots_spent_total,
 		"last_harvest_round": GameState.last_harvest_round,
 		"stone_draw_used_round": GameState.stone_draw_used_round,
+		"stone_draw_count": GameState.stone_draw_count,
 		"team_upgrade_stones": GameState.team_upgrade_stones.duplicate(true),
 		"player_formation_hp": GameState.player_formation_hp,
 		"enemy_formation_hp": GameState.enemy_formation_hp,
@@ -784,10 +785,11 @@ func restore_checkpoint() -> bool:
 	GameState.round_index = int(data.get("round_index", 1))
 	GameState.gold = int(data.get("gold", TUTORIAL_GOLD))
 	GameState.carrots = maxi(0, int(data.get("carrots", 0)))
-	GameState.harvest_tech_level = clampi(int(data.get("harvest_tech_level", 0)), 0, CarrotEconomy.MAX_HARVEST_TECH_LEVEL)
+	GameState.harvest_tech_level = maxi(0, int(data.get("harvest_tech_level", 0)))
 	GameState.merc_carrots_spent_total = maxi(0, int(data.get("merc_carrots_spent_total", 0)))
 	GameState.last_harvest_round = int(data.get("last_harvest_round", -1))
 	GameState.stone_draw_used_round = int(data.get("stone_draw_used_round", -1))
+	GameState.stone_draw_count = maxi(0, int(data.get("stone_draw_count", 0)))
 	var saved_stones: Variant = data.get("team_upgrade_stones", {})
 	if saved_stones is Dictionary:
 		GameState.team_upgrade_stones = (saved_stones as Dictionary).duplicate(true)

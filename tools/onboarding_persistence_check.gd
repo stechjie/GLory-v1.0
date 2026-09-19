@@ -40,10 +40,19 @@ func _run_checks() -> void:
 		"legacy_language_was_guessed", "旧档没有语言证据，却被当成已经选过语言")
 	_h.expect(PlayerProfile.startup_route() == PlayerProfile.STARTUP_LANGUAGE,
 		"legacy_startup_route_wrong", "旧档没有先回语言页完成一次显式迁移")
-	_h.expect(PlayerProfile.active_pet == "pet_rabbit"
-			and PlayerProfile.codex_seen.has("human_militia")
+	_h.expect(PlayerProfile.codex_seen.has("human_militia")
 			and not PlayerProfile.board_readability_enabled,
 		"legacy_fields_lost", "新增 onboarding 字段时改坏了旧档原有内容")
+	# 宠物**不在**上面那条里：归属 2026-09-16 上云之后，owned_pets / active_pet
+	# 已经不从本机档案读了（SaveSchema v6 直接把这几个键 erase 掉）。
+	# 这里反过来钉住新行为 —— 留着旧值才是 bug。
+	_h.expect(PlayerProfile.active_pet.is_empty() and PlayerProfile.owned_pets.is_empty(),
+		"legacy_pets_still_local",
+		"旧档里的宠物归属还被读进内存了 —— 真相在服务端，本机不该有")
+	for dead_key in ["owned_pets", "active_pet", "needs_starter_pick"]:
+		_h.expect(not _read_json(PlayerProfile.PROFILE_PATH).has(dead_key),
+			"legacy_pet_key_persisted",
+			"迁移后本机档案还留着 %s" % dead_key)
 	var migrated := _read_json(PlayerProfile.PROFILE_PATH)
 	_h.expect(int(migrated.get("version", 0)) == SaveSchema.PROFILE_VERSION,
 		"migration_not_persisted", "旧 profile 没有一次性迁移到当前 schema")

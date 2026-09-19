@@ -1,5 +1,7 @@
 extends Control
 # 玩家资料页。入口是主菜单左上角那个名牌。
+
+const SfxService := preload("res://ui/services/SfxService.gd")
 #
 # 设计与取舍见 docs/玩家资料系统设计.md。三条在改这个文件之前必须知道的：
 #
@@ -701,14 +703,18 @@ func _refresh() -> void:
 		_refresh_public()
 
 
+func _rename_hint(ready_at: String, now: int) -> String:
+	# 后端ISO时间可能带微秒；共用解析器处理UTC及偏移时区。
+	var normalized := RegEx.create_from_string("\\.\\d+").sub(ready_at, "")
+	var deadline := preload("res://scripts/account/ServiceStatus.gd").parse_iso_utc(normalized)
+	if ready_at.is_empty() or (deadline > 0 and now >= deadline):
+		return _text("现在可改名", "You can rename now")
+	return _text("下次可改名：%s", "Next rename: %s") % ready_at.left(10)
+
 func _refresh_self() -> void:
 	_name_edit.text = _field("player_name")
 	var ready_at := _field("rename_available_at")
-	if ready_at.is_empty():
-		_name_hint.text = _text("首次改名免费。之后每 7 天一次。",
-			"First rename is free. After that, once every 7 days.")
-	else:
-		_name_hint.text = _text("下次可改名：%s", "Next rename: %s") % ready_at.left(10)
+	_name_hint.text = _rename_hint(ready_at, int(Time.get_unix_time_from_system()))
 
 	var gender_index := GENDER_VALUES.find(_field("gender"))
 	if _field("gender_visibility", "public") == "private":
@@ -788,6 +794,8 @@ func _on_rename_pressed() -> void:
 		return
 	_begin_submit()
 	_finish_submit(await AccountManager.update_profile({"player_name": wanted}))
+	# 9.18：改名成功反馈音。
+	SfxService.play(SfxService.CUE_PROFILE_SAVE)
 
 
 func _on_save_bio_pressed() -> void:
@@ -818,6 +826,8 @@ func _on_save_bio_pressed() -> void:
 func _save_bio(payload: Dictionary) -> void:
 	_begin_submit()
 	_finish_submit(await AccountManager.update_bio(payload))
+	# 9.18：保存资料（签名/生日/性别/地区等）成功反馈音。
+	SfxService.play(SfxService.CUE_PROFILE_SAVE)
 
 
 func _save_avatar(value: String) -> void:

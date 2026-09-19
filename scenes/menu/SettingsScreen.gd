@@ -5,6 +5,7 @@ extends Control
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const ActionButtonScene := preload("res://ui/components/GloryActionButton.tscn")
+const SfxService := preload("res://ui/services/SfxService.gd")
 
 signal back_requested
 signal replay_tutorial_requested
@@ -142,7 +143,9 @@ func _build() -> void:
 	_board_guides_btn.button_pressed = PlayerProfile.board_readability_enabled
 	_board_guides_btn.toggled.connect(func(enabled: bool):
 		PlayerProfile.set_board_readability_enabled(enabled)
-		_refresh_board_guides_button())
+		_refresh_board_guides_button()
+		# 9.18：设置项切换反馈音。
+		SfxService.play(SfxService.CUE_SETTINGS_SWITCH))
 	panel.add_child(_board_guides_btn)
 	_refresh_board_guides_button()
 
@@ -156,6 +159,12 @@ func _build() -> void:
 		{"key": "hit_stop", "label": "settings_hit_stop"},
 		# V3 P1-09：降低动态效果。压掉过场与呼吸动画，默认关闭。
 		{"key": "reduced_motion", "label": "settings_reduced_motion"},
+		# 9.17 反馈第 5 条：背景音乐开关。**排在「界面音效」上面** ——
+		# 反馈原文就是「放置在界面音效开关功能的上面」。它走同一条
+		# PlayerProfile.get/set_presentation_toggle 通道，只是键是
+		# "music"，落盘字段 music_enabled，裁决在 PresentationSettings.music_allowed()，
+		# 由 MusicService 那个常驻播放器执行（关 = stream_paused，可续播）。
+		{"key": "music", "label": "settings_music"},
 		# V3 P1-04：界面音效与触感反馈，默认开启。
 		{"key": "ui_sound", "label": "settings_ui_sound"},
 		{"key": "haptics", "label": "settings_haptics"},
@@ -169,7 +178,9 @@ func _build() -> void:
 		btn.button_pressed = PlayerProfile.get_presentation_toggle(key)
 		btn.toggled.connect(func(enabled: bool):
 			PlayerProfile.set_presentation_toggle(key, enabled)
-			_refresh_presentation_button(key))
+			_refresh_presentation_button(key)
+			# 9.18：设置项切换反馈音（含音乐 / 界面音效 / 无障碍开关）。
+			SfxService.play(SfxService.CUE_SETTINGS_SWITCH))
 		panel.add_child(btn)
 		_presentation_btns[key] = btn
 		_presentation_labels[key] = tr(str(spec_dict["label"]))

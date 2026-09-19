@@ -1,6 +1,8 @@
 extends Node
 
 const CarrotEconomyRules = preload("res://scripts/economy/CarrotEconomy.gd")
+# 9.17 音效。preload 而不是全局类名（理由见 Main.gd 顶上那条注释）。
+const SfxService := preload("res://ui/services/SfxService.gd")
 
 const START_FORMATION_HP := 50
 const START_GOLD := 100
@@ -36,6 +38,7 @@ var harvest_tech_level := 0
 var merc_carrots_spent_total := 0
 var last_harvest_round := -1
 var stone_draw_used_round := -1
+var stone_draw_count := 0
 
 # --- 棋子唯一标识（P3 血统）---------------------------------------------------
 # 每一枚玩家棋子从买入那一刻起带一个本局唯一的 uid，合成时由存活的那一枚继承，
@@ -94,6 +97,12 @@ var team_run_won := false                 # 本队是否赢下整局（平局时
 # team_run_won 是它在本队视角下的派生布尔 —— 单独看那个布尔分不出"输了"和"平局"。
 var team_run_outcome: int = TeamOutcome.TEAM_A
 var tutorial_mode := false
+# 这一局的出战种族（RacePick）。开局那一刻从 PlayerProfile 抄过来，整局只看这份 ——
+# 中途回主菜单改了选择，也不该让本局下一回合的商店跟着变。
+# 本机摇商店读它；联机时商店由战斗服务器按出战名片上的那份摇（账号服务器存的同一份），
+# 这里只是本机记录。
+# 空数组 = 没定（老存档 / 教学关），RacePick.resolve 会回落到默认。
+var run_races: Array[String] = []
 
 func _ready() -> void:
 	reset_run()
@@ -109,6 +118,7 @@ func reset_run() -> void:
 	merc_carrots_spent_total = 0
 	last_harvest_round = -1
 	stone_draw_used_round = -1
+	stone_draw_count = 0
 	team_upgrade_stones = CarrotEconomyRules.empty_stones()
 	new_run_nonce()
 	board_slots.resize(GameConstants.CELL_COUNT)
@@ -131,6 +141,11 @@ func reset_run() -> void:
 	final_round_played = false
 	battle_history.clear()
 	pending_battle_package.clear()
+	run_races.clear()
+	# 9.17：上面这一整块是**换了一本账**，不是某笔收支。重开一局时金币从
+	# 上一局剩下的数额直接跳到 START_GOLD，不对齐基线就会响一声「扣除」。
+	# 放在最后一行：必须等所有赋值都做完再对齐。
+	SfxService.resync_currency_baseline()
 
 func normal_unit_cap() -> int:
 	if not owned_treasures.has("atk_fury_roster"):
@@ -187,6 +202,9 @@ func record_merc_carrot_spend(amount: int) -> void:
 
 func can_draw_upgrade_stone(round_number: int) -> bool:
 	return stone_draw_used_round != round_number
+
+func upgrade_stone_draw_cost() -> int:
+	return CarrotEconomyRules.stone_cost_for_draw(stone_draw_count)
 
 func apply_team_stone(stone_type: String) -> void:
 	if not CarrotEconomyRules.valid_stone_type(stone_type):

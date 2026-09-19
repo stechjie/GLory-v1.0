@@ -109,7 +109,53 @@ const USE_DTLS := true
 #      加 @rpc 方法会平移整套 RPC 的 wire ID。
 #      代价同上：**线上战斗服务器必须重新打包部署到 p25**（make_server_zip.ps1），
 #      否则新客户端连不上。确认依据是服务器日志里的 `server started protocol=25`。
-const NETWORK_PROTOCOL_VERSION := 25
+# v26: 聊天分范围（docs/聊天系统设计.md「聊天范围」，2026-09-14）。四条聊天 RPC
+#      （_rpc_team_chat_submit、_rpc_team_chat、_rpc_team_chat_text_submit、_rpc_team_chat_text）
+#      各加一个 team_only 参数，③ 据此只转同队或转全房。**RPC 数量没变（仍是 59），
+#      但参数个数变了**：两端版本不一致时参数对不上，收方直接丢掉这条 RPC
+#      （日志里只多一行 RPC 报错），聊天静默失效 —— 所以一样要顶号。
+#      tools/chat_check 的 PINNED_RPC_SIGNATURES 挡的就是「只改参数、忘了顶号」。
+#      同批带上语音 v1.1（语音包格式 v2；③ 不解析语音包，这件事本身不需要顶号）。
+#      代价同上：**线上战斗服务器必须重新打包部署到 p26**（make_server_zip.ps1），
+#      否则新客户端连不上。确认依据是服务器日志里的 `server started protocol=26`。
+# v27: 同时在线上限与排队（backend/app/admission.py，2026-09-14）。**线格一个字节都没变**：
+#      RPC 数量、签名、通道全都没动。顶这一格只为一件事 —— 让没有排队逻辑的旧包连不上。
+#      排队拦在客户端的启动画面，战斗服务器不认识账号；旧包根本不走那道门，只有协议号挡得住它。
+#      同 v16 那格（没有线格变更也顶号）。
+#      代价同上：**线上战斗服务器必须重新打包部署到 p27**（make_server_zip.ps1），
+#      否则新客户端连不上。确认依据是服务器日志里的 `server started protocol=27`。
+#      并且**账号后端要先于客户端更新**（deploy/README.md「在线人数上限与排队」）。
+# v28: 备战「出战种族」（scripts/units/RacePick.gd，2026-09-15）。**改了两条 RPC 的参数**：
+#      _rpc_team_set_ready 与 _rpc_team_start_request 各加一个 races 参数 —— 出战种族跟着
+#      「准备 / 开始」一起到服务器，开局第一次摇商店时服务器手里一定已经有每个座位的选择。
+#      RPC 数量没变（仍是 59），**与 v26 同一类**：两端版本不一致时参数对不上，收方直接丢掉
+#      这条 RPC —— 准备按不下去、房主开不了局，而且不报错。
+#      代价同上：**线上战斗服务器必须重新打包部署到 p28**（make_server_zip.ps1），和新 APK 一起上，
+#      否则新客户端连不上。确认依据是服务器日志里的 `server started protocol=28`。
+#      账号服务器不用动（它不认识战斗协议号）。
+# v29: 备战萝卜营地公开席位状态。新增 `_rpc_team_submit_active_pet`，并在
+# room_state 下发 `seat_pets` 与仅本回合的 `carrot_harvest_gains`：营地只渲染真实
+# 玩家或 AI 的实际宠物，回合采集用各宠物头顶的小型 +N 提示，不暴露他人余额。
+# 新 RPC 改变了 Godot 的 NetworkService 方法表，客户端和战斗服务器必须同步部署到 p29；
+# 否则由连接握手明确拒绝，绝不能让 checksum 不一致的双方继续联机。
+# v30: 出战名片（scripts/multiplayer/BattleCard.gd，docs/商城系统设计.md 第五节，2026-09-16）。
+#      座位上的名字头像、出战宠物、出战种族只认账号服务器签过名的名片。**改了 RPC 方法表**：
+#        · 删 _rpc_lobby_identity（手机把登录令牌交给战斗服务器那条）
+#        · 删 _rpc_team_submit_active_pet（v29 加的宠物自报）
+#        · _rpc_team_create_room / _rpc_team_join_room 各加一个 card 参数
+#        · _rpc_team_set_ready / _rpc_team_start_request 去掉 races 参数
+#      代价同上：**战斗服务器必须重新打包部署到 p30**，和新 APK 一起上。
+#      **而且战斗服务器上要先放好名片公钥**（deploy/BATTLE_SERVER_KEY.md「出战名片公钥」），
+#      否则它拒绝启动；**账号服务器要先于二者更新并配好私钥**（发名片的接口在那边）。
+#      确认依据是服务器日志里的 `battle card key loaded` 与 `server started protocol=30`。
+# v31: 语音改用 LiveKit 自建（docs/语音LiveKit方案.md，2026-09-19）。语音不再经过战斗服务器：
+#      删 _rpc_team_voice_submit / _rpc_team_voice 和语音通道 CH_VOICE，
+#      加 _rpc_team_voice_token_request / _rpc_team_voice_token（发只能进本队语音房间的钥匙）。
+#      RPC 数量没变（仍是 58），但方法表变了 —— 与 v26、v28 同一类，两端不一致时方法对不上。
+#      代价同上：**战斗服务器必须重新打包部署到 p31**，和新包一起上。要有语音还得先装好 LiveKit、
+#      放好语音钥匙配置（deploy/livekit/README.md）；没放的话照常开服，只是没有语音。
+#      确认依据是服务器日志里的 `voice configured (LiveKit)` 与 `server started protocol=31`。
+const NETWORK_PROTOCOL_VERSION := 31
 
 # Local phone hosting is debug-only.
 const ALLOW_LOCAL_HOST_DEBUG := false
@@ -131,10 +177,6 @@ const ALLOW_LOCAL_HOST_DEBUG := false
 # 通道号 0 表示"用该 transfer mode 的引擎默认通道"，≥1 才是用户通道。
 const CH_CONTROL := 0
 const CH_BULK := 1
-# 语音（v25，docs/聊天系统设计.md 第九节）：unreliable_ordered 的独立用户通道。
-# 语音是持续的高频小包（每人每秒 25 个），单独一条通道，不和其他流量共用序号；
-# 下面「不要传 max_channels」那条结论保证通道 2 存在（不传时上限 255）。
-const CH_VOICE := 2
 
 # **不要**给 create_server / create_client 传 max_channels。
 # 实测（tools/channel_check.tscn，Godot 4.7）：不传时 ENet host 的 max_channels = 255；

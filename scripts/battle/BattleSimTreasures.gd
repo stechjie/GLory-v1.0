@@ -295,7 +295,9 @@ static func _apply_opening_treasures(player: Array, event_log: Array[String]) ->
 		if _f_has_treasure(f, "atk_blood_pact"):
 			var blood_multiplier := 1.50 if _f_has_linkage(f, "link_hu_pai_master") else 1.25
 			f.atk = maxi(1, int(round(float(f.atk) * blood_multiplier)))
-			StatusEffectService.add_bleed(f, 999.0, 0.06)
+			# Blood Pact pays HP for power but is not allowed to kill its holder.
+			# Offensive bleed keeps the default lethal behaviour.
+			StatusEffectService.add_bleed(f, 999.0, 0.06, true)
 		if _f_has_treasure(f, "atk_burst_core"):
 			f.crit_bonus = float(f.get("crit_bonus", 0.0)) + 0.25
 		# 宠物开局加成（按该棋子所属者的出战宠物）：蘑菇 +生命 / 鸭子 +攻击。
@@ -446,18 +448,24 @@ static func _apply_defender_reaction(attacker: Dictionary, target: Dictionary, d
 	if str(d.get("skill_id", "")) == "poison_reflect_armor_stack" and dealt > 0 and bool(target.get("alive", false)):
 		DamageService.apply_damage(attacker, maxi(1, int(round(float(dealt) * float(d.get("reflect_taken_damage_pct", 0.12))))), true)
 		StatusEffectService.add_poison(attacker)
-		target.skill_stacks = mini(int(d.get("max_stacks", 10)), int(target.get("skill_stacks", 0)) + 1)
-		# Armor gained per hit is a share of this unit's own (star-scaled) base
-		# defense, not a flat number. A flat +3 is worth x2.4 of base defense at
-		# 1 star but only x1.8 at 4 star: the absolute value does not scale, which
-		# is exactly what docs/四星技能与数值设计规格.md §2 rules out
-		# ("绝对值一律改成百分比").
-		#
-		# The share is taken from the def entry, never from target.defense, so the
-		# stacks stay linear instead of compounding into each other.
-		var titan_base_def := float((d as Dictionary).get("def", 0))
-		var per_hit := int(round(titan_base_def * float(d.get("armor_per_hit_pct", 0.14))))
-		target.defense = int(target.get("defense", 0)) + maxi(1, per_hit)
+		# 层数与防御必须一起封顶（9.14 反馈：文案写「最多10层」，实测防御加成无封顶）。
+		# 原来只有 skill_stacks 被 mini 封到 max_stacks(10)，target.defense 却每次受击
+		# 都无条件加 —— 第 11 次起防御继续涨，与文案承诺的「最多10层」不符。
+		# 与 9.13 #8 裁决者 _skill_judgement 是同一个毛病：计数器封顶不等于效果封顶。
+		var armor_stacks_before := int(target.get("skill_stacks", 0))
+		target.skill_stacks = mini(int(d.get("max_stacks", 10)), armor_stacks_before + 1)
+		if int(target.skill_stacks) > armor_stacks_before:
+			# Armor gained per hit is a share of this unit's own (star-scaled) base
+			# defense, not a flat number. A flat +3 is worth x2.4 of base defense at
+			# 1 star but only x1.8 at 4 star: the absolute value does not scale, which
+			# is exactly what docs/四星技能与数值设计规格.md §2 rules out
+			# ("绝对值一律改成百分比").
+			#
+			# The share is taken from the def entry, never from target.defense, so the
+			# stacks stay linear instead of compounding into each other.
+			var titan_base_def := float((d as Dictionary).get("def", 0))
+			var per_hit := int(round(titan_base_def * float(d.get("armor_per_hit_pct", 0.14))))
+			target.defense = int(target.get("defense", 0)) + maxi(1, per_hit)
 	DamageService.set_stat_source_uid(prev_source)
 
 
@@ -542,14 +550,26 @@ static func _mother_execute_on(state: Dictionary, candidates: Array, mother: Dic
 	var target: Dictionary = {}
 	if not candidates.is_empty():
 		var roll := RngService.rng.randf()
-		# 概率同样读 def。默认值与原来硬编码的 50% / 35% / 15%... 一致：
-		# 原式是 roll<0.50 -> t1、roll<0.85 -> t2、其余 t3，即 0.50 / 0.35 / 0.15。
-		# 4 星在 star4 里把 t1 提到 0.55（史诗那一档按设计文档**不动**）。
+		# 三档概率各自读 def，**不再把史诗档当余数**（9.14 反馈）。
+		# 旧写法 `1 if roll<t1 else (2 if roll<t1+t2 else 3)` 里史诗档 = 1-t1-t2，
+		# 于是数据表的 `tier3_chance: 0.10` 是从未被读取的死字段，1~3★ 实测史诗率
+		# 恒为 15%，与文案承诺的 10% 不符。
+		# 现在三档显式判界，落在 t1+t2+t3 之外的那一段就是设计文档 §3 写的「空档」：
+		#   1~3★ = 0.50 + 0.35 + 0.10 = 95%，剩 5% 触发了但不处决；
+		#   4★   = 0.55 + 0.35 + 0.10 = 100%，没有空档。
 		var mother_def: Dictionary = mother.get("def", {})
 		var tier1_p := float(mother_def.get("tier1_or_merc_chance", 0.50))
 		var tier2_p := float(mother_def.get("tier2_chance", 0.35))
-		var wanted_tier := 1 if roll < tier1_p else (2 if roll < tier1_p + tier2_p else 3)
-		target = _pick_execute_target(candidates, wanted_tier)
+		var tier3_p := float(mother_def.get("tier3_chance", 0.10))
+		var wanted_tier := 0
+		if roll < tier1_p:
+			wanted_tier = 1
+		elif roll < tier1_p + tier2_p:
+			wanted_tier = 2
+		elif roll < tier1_p + tier2_p + tier3_p:
+			wanted_tier = 3
+		if wanted_tier > 0:
+			target = _pick_execute_target(candidates, wanted_tier)
 	# 事件永远发。三条路互不重叠：普通处决（目标已死）走 death_events；Boss 扣血
 	# （目标存活）与无目标（target_uid 空）走前端的 mother_execute 分支。
 	state.visual_events.append({"type":"mother_execute","source_uid":str(mother.get("uid","")),"target_uid":str(target.get("uid","")),"time":float(state.get("elapsed",0.0))})
@@ -787,4 +807,3 @@ static func _apply_blood_rampage_lifesteal(attacker: Dictionary, d: Dictionary, 
 	var pct := float(steps) * float(d.get("lifesteal_per_step", 0.05))
 	if pct > 0.0:
 		_heal_unit(attacker, maxi(1, int(round(float(dealt) * pct))))
-

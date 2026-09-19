@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="VFXProfile3D" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+profile_id = "first_batch_element_meteor"
+module_id = "first_batch_skills"
+curve_name = "warning_fall_impact"
+dark_color = Color(0.075, 0.014, 0.006, 1)
+main_color = Color(0.96, 0.68, 0.40, 1)
+core_color = Color(1, 0.70, 0.22, 1)
+size = 1.15
+duration = 1.74
+particle_count = 10
+trail_length = 1.25
+emission_energy = 2.8
+ground_aligned = true
+quality_group = "critical"
+parameters = {"layer_budget": 3, "mechanic": "element_meteor", "lane_local": true}

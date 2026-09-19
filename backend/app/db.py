@@ -96,6 +96,17 @@ EXPECTED_TABLES: tuple[str, ...] = (
     "chat_conversations",
     "chat_messages",
     "chat_read_state",
+    # 008（公告）
+    "announcements",
+    # 009（钱包）
+    "player_wallets",
+    "wallet_ledger",
+    # 010（商城）
+    "player_entitlements",
+    "shop_orders",
+    # 012（系统邮件）
+    "mails",
+    "mail_states",
 )
 
 

@@ -1,11 +1,18 @@
 extends "res://scenes/prep/PrepShared.gd"
 
 const PREP_RELATION_PARTICLES_SCRIPT := preload("res://scenes/prep/PrepRelationParticles3D.gd")
+
+# 9.17 音效。**只在这一层声明一次**：整条继承链
+# PrepBoardModels ← PrepUI ← PrepFlowController ← PrepBoardController ← PrepScreen
+# 都从这里继承，子类再声明一次会撞「成员在父类里已存在」的解析错误。
+# preload 而不是全局类名，理由见 Main.gd 顶上那条注释。
+const SfxService := preload("res://ui/services/SfxService.gd")
 const PREP_RELATION_LINK_SCRIPT := preload("res://scenes/prep/PrepRelationLink3D.gd")
 const UnitActor3DScript := preload("res://effects/runtime/presentation/UnitActor3D.gd")
 const UnitVisualResolverScript := preload("res://effects/runtime/presentation/UnitVisualResolver.gd")
 const UnitContactShadowScript := preload("res://effects/runtime/presentation/UnitContactShadow.gd")
-const FOUR_STAR_AURA := preload("res://effects/vfx3d/modules/FourStarAura3D.gd")
+const FOUR_STAR_READY_AURA := preload("res://effects/vfx3d/modules/FourStarAura3D.gd")
+const FOUR_STAR_AURA := preload("res://effects/vfx3d/modules/FourStarAuraV2_3D.gd")
 var _four_star_visual_poll := 0.0
 
 func refresh_four_star_visuals(delta: float) -> void:
@@ -29,16 +36,27 @@ func _sync_four_star_actor(actor: Node3D, cell: Dictionary) -> void:
 			state = 2
 		elif not GameState.tutorial_mode and NetworkService.four_star_upgrade_available() and NetworkService.four_star_request_id.is_empty() and bool(GameState.four_star_check(cell).get("ok", false)):
 			state = 1
-	var aura := FOUR_STAR_AURA.sync(actor, state, str(def.get("element", "")), 1.0)
-	if aura != null and actor.is_inside_tree():
+	var affinity := str(def.get("element", ""))
+	# Keep the established gold readiness hint for eligible three-star pieces.
+	# The approved V2 envelope is reserved for completed four-star pieces.
+	var ready_aura := FOUR_STAR_READY_AURA.sync(actor, state if state == 1 else 0, affinity, 1.0)
+	if ready_aura != null and state == 1 and actor.is_inside_tree():
 		if not actor.has_meta("four_star_aura_transform") and bool(actor.get_meta("prep_model_centered", false)):
-			FOUR_STAR_AURA.fit_to_skeleton(aura, actor, 0.24)
+			FOUR_STAR_READY_AURA.fit_to_skeleton(ready_aura, actor, 0.24)
 			var attempts := int(actor.get_meta("four_star_fit_attempts", 0)) + 1
 			actor.set_meta("four_star_fit_attempts", attempts)
-			if bool(aura.get_meta("skeleton_fitted", false)) or attempts >= 10:
-				actor.set_meta("four_star_aura_transform", aura.transform)
+			if bool(ready_aura.get_meta("skeleton_fitted", false)) or attempts >= 10:
+				actor.set_meta("four_star_aura_transform", ready_aura.transform)
 		if actor.has_meta("four_star_aura_transform"):
-			aura.transform = actor.get_meta("four_star_aura_transform")
+			ready_aura.transform = actor.get_meta("four_star_aura_transform")
+			ready_aura.attach_rim(actor)
+	var aura := FOUR_STAR_AURA.sync(actor, 2 if state == 2 else 0, affinity, 1.0)
+	if aura != null and state == 2 and actor.is_inside_tree():
+		if not actor.has_meta("four_star_aura_v2_transform") and bool(actor.get_meta("prep_model_centered", false)):
+			FOUR_STAR_AURA.fit_to_actor(aura, actor, 0.24)
+			actor.set_meta("four_star_aura_v2_transform", aura.transform)
+		if actor.has_meta("four_star_aura_v2_transform"):
+			aura.transform = actor.get_meta("four_star_aura_v2_transform")
 			aura.attach_rim(actor)
 
 func play_four_star_upgrade(uid: String) -> void:
@@ -50,7 +68,7 @@ func play_four_star_upgrade(uid: String) -> void:
 				var actor := models.get(index) as Node3D
 				if is_instance_valid(actor):
 					_sync_four_star_actor(actor, slots[index])
-					var aura := actor.get_node_or_null("FourStarAura")
+					var aura := actor.get_node_or_null("FourStarAuraV2")
 					if aura != null:
 						aura.play_upgrade()
 				return
@@ -125,6 +143,7 @@ var _prep_standby_model_root: Node3D
 var _prep_relation_link_root: Node3D
 var _carrot_gather_root: Node3D
 var _carrot_pet_nodes: Array[Node3D] = []
+var _carrot_pet_nodes_by_slot: Dictionary = {}
 var _carrot_placeholder: Node3D
 var _carrot_pet_signature := ""
 var _carrot_farm_decor: Sprite3D
@@ -312,6 +331,15 @@ func _refresh_carrot_farm_visual() -> void:
 			_carrot_farm_decor.texture = atlas
 	if _carrot_last_farm_level >= 0 and farm_level > _carrot_last_farm_level:
 		_play_carrot_world_flipbook(PREP_CARROT_LEVELUP_PATH, 0.23, 0.00058)
+		# 9.17：萝卜田升级音。萝卜田是**自动**升级的（累计花萝卜到达门槛就升，
+		# 面板上没有升级按钮），所以这一行的 `farm_level > _carrot_last_farm_level`
+		# 就是全局唯一、且已经被缓存字段去重的跨门槛判据。
+		#
+		# 不能把音效放到 _refresh_carrot_farm_visual() 开头：它被
+		# _refresh_carrot_gathering() 带着跑，而后者在**每次 room_state 广播**
+		# （PrepFlowController）和每个萝卜动作之后都会执行 —— 放开头等于
+		# 每帧网络同步响一声。
+		SfxService.play(SfxService.CUE_CARROT_FARM_UPGRADE)
 	_carrot_last_farm_level = farm_level
 
 func _add_carrot_placeholder_fallback() -> void:
@@ -353,12 +381,13 @@ func _refresh_carrot_gathering() -> void:
 	_refresh_carrot_farm_visual()
 	var entries := _carrot_pet_entries()
 	var signature := JSON.stringify(entries)
-	if signature == _carrot_pet_signature and not _carrot_pet_nodes.is_empty():
+	if signature == _carrot_pet_signature:
 		return
 	for pet in _carrot_pet_nodes:
 		if is_instance_valid(pet):
 			pet.queue_free()
 	_carrot_pet_nodes.clear()
+	_carrot_pet_nodes_by_slot.clear()
 	_carrot_pet_signature = signature
 	for entry_value in entries:
 		var entry: Dictionary = entry_value
@@ -382,35 +411,40 @@ func _refresh_carrot_gathering() -> void:
 		pet.position = target
 		_carrot_gather_root.add_child(pet)
 		_carrot_pet_nodes.append(pet)
+		_carrot_pet_nodes_by_slot[int(entry.get("slot", -1))] = pet
 		# Pet scenes populate their FBX meshes in _ready(), so normalize after
 		# the model tree exists.
 		call_deferred("_normalize_carrot_pet", pet, pet_id, target,
 			_carrot_facing_yaw(target), 6)
 
 func _carrot_pet_entries() -> Array:
-	var starters: Array = PetService.starter_ids()
-	var local_pet := PlayerProfile.get_active()
-	if local_pet.is_empty() and not PlayerProfile.owned_pets.is_empty():
-		local_pet = str(PlayerProfile.owned_pets[0])
-	if local_pet.is_empty() and not starters.is_empty():
-		local_pet = str(starters[0])
-	if starters.is_empty():
-		return []
-	var local_slot := clampi(NetworkService.team_local_slot, 0, 5) if NetworkService.team_active else 4
 	var entries: Array = []
+	if not NetworkService.team_active:
+		# Single-player has one real owner. Do not fill the other five gathering
+		# positions with starter pets.
+		var offline_pet := PlayerProfile.get_active()
+		if not PetService.model_path(offline_pet).is_empty():
+			entries.append({"slot": 4, "pet_id": offline_pet, "position": CARROT_PET_POSITIONS[4]})
+		return entries
+	var states: Array = NetworkService.team_slot_states
+	var local_slot := clampi(NetworkService.team_local_slot, 0, 5)
 	for slot in 6:
-		var pet_id := local_pet if slot == local_slot else ""
-		var snapshot: Dictionary = {}
-		if NetworkService.team_active and NetworkService.team_boards.has(slot):
-			snapshot = NetworkService.team_boards[slot]
-		elif NetworkService.team_active and NetworkService.team_boards.has(str(slot)):
-			snapshot = NetworkService.team_boards[str(slot)]
-		if pet_id.is_empty():
-			pet_id = str(snapshot.get("pet", ""))
-		if pet_id.is_empty() and not starters.is_empty():
-			pet_id = str(starters[slot % starters.size()])
+		if slot >= states.size() or str(states[slot]) not in ["player", "dummy"]:
+			continue
+		var pet_id := str(NetworkService.team_seat_pets.get(slot,
+			NetworkService.team_seat_pets.get(str(slot), "")))
+		# The local player's currently equipped pet is a valid immediate source
+		# while its first authoritative room-state update is in flight.
+		if pet_id.is_empty() and slot == local_slot:
+			pet_id = PlayerProfile.get_active()
+		# Local-host debugging still broadcasts real submitted boards. This is a
+		# factual fallback, unlike the removed starter-pet fallback.
+		if pet_id.is_empty() and NetworkService.team_boards.has(slot):
+			pet_id = str((NetworkService.team_boards[slot] as Dictionary).get("pet", ""))
+		elif pet_id.is_empty() and NetworkService.team_boards.has(str(slot)):
+			pet_id = str((NetworkService.team_boards[str(slot)] as Dictionary).get("pet", ""))
 		if PetService.model_path(pet_id).is_empty():
-			pet_id = str(starters[slot % starters.size()])
+			continue
 		entries.append({
 			"slot": slot,
 			"pet_id": pet_id,
@@ -475,18 +509,25 @@ func _resume_carrot_pet_ambient(pet: Node3D, harvest_serial: int) -> void:
 		return
 	_play_carrot_pet_ambient(pet)
 
-func play_carrot_harvest_feedback(gain: int) -> void:
+func play_carrot_harvest_feedback(gains_by_slot: Dictionary) -> void:
 	# 这个函数是 PrepScreen._ready() 里 call_deferred 出去的，落地时界面可能已被
 	# Main._clear() 摘树（见 _refresh_carrot_gathering 的说明）。离树时 create_tween()
 	# 会直接报 "Can't create Tween when not inside scene tree"。
-	if gain <= 0 or _carrot_gather_root == null or not is_instance_valid(_carrot_gather_root):
+	if gains_by_slot.is_empty() or _carrot_gather_root == null or not is_instance_valid(_carrot_gather_root):
 		return
 	if not is_inside_tree():
 		return
-	_play_carrot_world_flipbook(PREP_CARROT_DIG_PATH, 0.12, 0.00050)
-	for pet in _carrot_pet_nodes:
+	var has_harvest := false
+	for slot_value in _carrot_pet_nodes_by_slot.keys():
+		var slot := int(slot_value)
+		var pet := _carrot_pet_nodes_by_slot.get(slot) as Node3D
 		if not is_instance_valid(pet):
 			continue
+		var gain := maxi(0, int(gains_by_slot.get(slot, gains_by_slot.get(str(slot), 0))))
+		_show_carrot_pet_gain(pet, gain)
+		if gain <= 0:
+			continue
+		has_harvest = true
 		var harvest_serial := int(pet.get_meta("carrot_harvest_serial", 0)) + 1
 		pet.set_meta("carrot_harvest_serial", harvest_serial)
 		if pet.has_method("play_attack"):
@@ -498,18 +539,26 @@ func play_carrot_harvest_feedback(gain: int) -> void:
 		tween.tween_property(pet, "position:y", base_y, 0.18)
 		tween.tween_property(pet, "position:y", base_y + 0.022, 0.18)
 		tween.tween_property(pet, "position:y", base_y, 0.18)
+	if has_harvest:
+		_play_carrot_world_flipbook(PREP_CARROT_DIG_PATH, 0.12, 0.00050)
+
+func _show_carrot_pet_gain(pet: Node3D, gain: int) -> void:
 	var gain_label := Label3D.new()
-	gain_label.text = "+%d 萝卜" % gain
-	gain_label.font_size = 42
-	gain_label.outline_size = 10
-	gain_label.modulate = Color(1.0, 0.78, 0.25, 1.0)
+	gain_label.name = "CarrotHarvestGain"
+	gain_label.text = "+%d" % gain
+	gain_label.font_size = 18
+	gain_label.outline_size = 3
+	gain_label.pixel_size = 0.0021
+	gain_label.modulate = Color(1.0, 0.79, 0.28, 1.0) if gain > 0 else Color(0.72, 0.72, 0.62, 0.92)
 	gain_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	gain_label.position = Vector3(0.0, 0.40, 0.0)
+	# Every gathering pet is normalized to the same world height.  This keeps the
+	# compact gain badge just above its head without covering the face or carrot.
+	gain_label.position = pet.position + Vector3(0.0, 0.155, 0.0)
 	_carrot_gather_root.add_child(gain_label)
 	var label_tween := create_tween()
 	label_tween.set_parallel(true)
-	label_tween.tween_property(gain_label, "position:y", 0.55, 1.2)
-	label_tween.tween_property(gain_label, "modulate:a", 0.0, 1.2)
+	label_tween.tween_property(gain_label, "position:y", gain_label.position.y + 0.028, 1.1)
+	label_tween.tween_property(gain_label, "modulate:a", 0.0, 1.1)
 	label_tween.chain().tween_callback(gain_label.queue_free)
 
 func _play_carrot_world_flipbook(path: String, height: float, pixel_size: float) -> void:

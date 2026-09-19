@@ -27,6 +27,32 @@ var _startup_loading_overlay: StartupLoadingOverlay
 # .godot/global_script_class_cache.cfg 里没有新登记的 class_name，
 # 直接写全局名会「Identifier not declared」——实测踩过。
 const UiFeedbackService := preload("res://ui/services/UiFeedback.gd")
+# 同一条理由（9.17 音效接入）：SfxService 也刻意不声明 class_name。
+const SfxService := preload("res://ui/services/SfxService.gd")
+# 9.17 第二批：BGM 也收进一个常驻服务（同样不做 autoload）。
+# 播放器挂 root，所以它不随任何一页被 Main._clear() 释放 —— 这正是
+# 「打开图鉴/聊天/朋友/设置时菜单 BGM 不暂停」的实现方式。
+const MusicService := preload("res://ui/services/MusicService.gd")
+
+const AccountConfig := preload("res://scripts/account/AccountConfig.gd")
+const BOOTSTRAP_SCENE := "res://scenes/bootstrap/Bootstrap.tscn"
+
+# --- 连不上账号服务器 = 回启动页 ---------------------------------------------
+#
+# 规则只有一条：**连不上账号服务器就进不了游戏。** 启动页在放行前检查一次
+# （Bootstrap.entry_view），但玩家进来以后服务器掉线，此前没有任何东西管 ——
+# 玩家会停在一个「显示已登录、其实已经断了」的主菜单里，商城、好友、开局都是坏的。
+#
+# 这里补上后半段：不在对局里的时候，实时连接断开超过 AccountConfig.CONNECT_PATIENCE_SEC，
+# 就送回启动页，由那边重走登录 / 连接 / 排队 / 维护提示（全部现成）。
+#
+# 三种情况**不送回**，各有各的去处：
+#   · 对局中（含离线自测、教学对局） —— 战斗服务器有自己的断线重连，踢出去等于毁掉一局
+#   · 教学中 —— 本地流程，不依赖账号服务器
+#   · 被顶号 —— RealtimeService 明确禁止自动重连（两台设备会无限互踢），走现有提示
+var _in_match_flow := false
+var _account_offline_sec := 0.0
+var _returning_to_login := false
 
 const PUBLIC_TOKEN_ACTION := "team_public_token"
 const PUBLIC_TOKEN_CONTROL_ID := "main_menu/public_token_generate"
@@ -140,10 +166,19 @@ func _ready() -> void:
 		AsyncActionController.action_state_changed.connect(_on_async_action_state_changed)
 	if not TutorialMode.skip_requested.is_connected(_on_tutorial_skip):
 		TutorialMode.skip_requested.connect(_on_tutorial_skip)
+	# 宠物归属到手 / 变化时补判三选一，见 _on_pets_changed。
+	if not PlayerProfile.pets_changed.is_connected(_on_pets_changed):
+		PlayerProfile.pets_changed.connect(_on_pets_changed)
 	# V3 P1-04：接上确认音/触觉。挂在 action_resolved 上，不挂按钮、
 	# 更不挂 _input —— 那个信号每个 request_id 只发一次，且不是输入驱动的，
 	# 所以连点和 mouse+touch 双路都不会让它多发。
 	UiFeedbackService.install()
+	# 9.17：全局音效服务。同样不做 autoload（autoload 全在冷启动关键路径上），
+	# 播放器与代币收支监视器都挂在 root 下按需创建。
+	SfxService.install()
+	# 9.17 第二批：BGM 服务。install() 里做的两件事——建常驻播放器、
+	# 接上 PlayerProfile.presentation_settings_changed（设置页音乐开关即时生效）。
+	MusicService.install()
 	_install_presence_reporting()
 	_install_realtime()
 	_route_startup()
@@ -450,10 +485,63 @@ func _instantiate_screen(path: String) -> Control:
 	return scene.instantiate() as Control
 
 
+# 对局类界面（备战、战斗、结算、3v3 大厅、自测）在 _clear() 之后调一次。
+# 标上之后「掉线回启动页」不会碰它 —— 对局有战斗服务器自己的断线重连。
+func _enter_match_flow() -> void:
+	_in_match_flow = true
+
+
+func _process(delta: float) -> void:
+	_watch_account_link(delta)
+
+
+# 连不上账号服务器超过耐心值就回启动页。规则与例外见文件顶部那段。
+func _watch_account_link(delta: float) -> void:
+	if not _should_watch_account_link():
+		_account_offline_sec = 0.0
+		return
+	if RealtimeService.is_online():
+		_account_offline_sec = 0.0
+		return
+	_account_offline_sec += delta
+	if _account_offline_sec >= AccountConfig.CONNECT_PATIENCE_SEC:
+		_return_to_login()
+
+
+func _should_watch_account_link() -> bool:
+	# 开发时用 --no-account 跑：实时连接根本不会起，盯着它只会把人无限送回启动页。
+	# 与 Bootstrap._entry_gate_required 同一个判据。
+	if not AccountConfig.auto_login_enabled():
+		return false
+	if _returning_to_login or _in_match_flow:
+		return false
+	if NetworkService.team_active or TutorialMode.active:
+		return false
+	# 被顶号不归这里管，见文件顶部。
+	if RealtimeService.is_kicked():
+		return false
+	return true
+
+
+func _return_to_login() -> void:
+	if _returning_to_login:
+		return
+	_returning_to_login = true
+	push_warning("[MAIN] 账号服务器连不上已超过 %.0f 秒，回启动页" % AccountConfig.CONNECT_PATIENCE_SEC)
+	# 启动页会重新 start()（它在连着时是空操作），并按现有流程显示
+	# 「连接中 / 连不上 / 维护中」。这里不 stop()：留着自动重连，
+	# 服务器一回来启动页就能直接放行，玩家不用多等一轮。
+	_clear()
+	get_tree().change_scene_to_file(BOOTSTRAP_SCENE)
+
+
 func _clear() -> void:
 	# 先清路由：下一页要么自己设一个，要么就该没有。留着上一页的会让返回键
 	# 把玩家送回一个已经不在树上的界面。
 	_page_back_route = Callable()
+	# 同理：下一页是不是对局，由它自己说（_enter_match_flow）。默认不是 ——
+	# 这样新加的菜单界面不用记得做任何事，就自动受「掉线回启动页」保护。
+	_in_match_flow = false
 	# Menu-owned async work must stop before its controls leave the tree. This also
 	# makes a later public-token response stale instead of painting the next screen.
 	if _menu != null and is_instance_valid(_menu):
@@ -770,7 +858,11 @@ func _show_back_exit_hint() -> void:
 
 func _show_menu() -> void:
 	# 首次启动：进主菜单前强制选择初始宠物（三选一，选完才放行）。
-	if PlayerProfile.needs_starter_pick:
+	#
+	# 🔴 **必须先 pets_loaded。** 归属上云之后，没拉到服务端答复时 owned_pets 是空的 ——
+	# 只看 needs_starter_pick 的话，弱网下老玩家会被要求重选一遍三选一。
+	# 拉到之后如果确实要选，由 _on_pets_changed 补一次。
+	if PlayerProfile.pets_loaded and PlayerProfile.needs_starter_pick:
 		_show_starter_pet_gate()
 		return
 	_clear()
@@ -794,9 +886,18 @@ func _show_menu() -> void:
 	_menu.profile_requested.connect(_show_profile_screen)
 	_menu.friends_requested.connect(_show_friends_screen)
 	_menu.chat_requested.connect(_show_chat_screen)
+	_menu.announcements_requested.connect(_show_announcements_screen)
+	_menu.shop_requested.connect(_show_shop_screen)
+	_menu.bag_requested.connect(_show_bag_screen)
+	_menu.mail_requested.connect(_show_mail_screen)
 	add_child(_menu)
 	# 对局中被顶号时挂着的提示，回到主菜单这一刻才弹（设计文档第五节）。
 	_show_kicked_notice_if_pending()
+	# 公告：回主菜单时顺手刷新（有节流），有该弹的登录弹窗就弹（docs/公告系统设计.md）。
+	AnnouncementService.refresh()
+	_queue_announcement_popup()
+	# 邮箱：回主菜单时顺手刷新（有节流），红点靠它（docs/邮件系统设计.md）。
+	MailService.refresh()
 
 # 手动重连：读本地凭证连回上一场，弹重连遮罩，成功落回备战/结果，失败清凭证回菜单。
 #
@@ -949,6 +1050,44 @@ func _show_codex_screen() -> void:
 #
 # 用 configure() 而不是传枚举：传枚举就得 preload FriendsScreen.gd，
 # 那会把它的整张依赖图拉进 Main 的加载路径 —— 同 _show_profile_screen 的理由。
+# 商城（docs/商城系统设计.md）。返回主菜单时那边会重拉一次钱包 ——
+# 玩家多半是刚买完东西回来的。
+func _show_shop_screen() -> void:
+	_clear()
+	var screen := _instantiate_screen("res://scenes/menu/ShopScreen.tscn")
+	if screen == null:
+		_show_menu()
+		return
+	screen.back_requested.connect(_show_menu)
+	_page_back_route = _show_menu
+	add_child(screen)
+
+
+func _show_bag_screen() -> void:
+	_clear()
+	var screen := _instantiate_screen("res://scenes/menu/BagScreen.tscn")
+	if screen == null:
+		_show_menu()
+		return
+	screen.back_requested.connect(_show_menu)
+	# 头像换装在资料页，背包只展示（BagScreen 文件头写了为什么不在这儿再做一份）。
+	screen.profile_requested.connect(_show_profile_screen)
+	_page_back_route = _show_menu
+	add_child(screen)
+
+
+# 系统邮件（docs/邮件系统设计.md）。返回主菜单时那边会重拉一次钱包 —— 玩家多半刚领完附件。
+func _show_mail_screen() -> void:
+	_clear()
+	var screen := _instantiate_screen("res://scenes/menu/MailScreen.tscn")
+	if screen == null:
+		_show_menu()
+		return
+	screen.back_requested.connect(_show_menu)
+	_page_back_route = _show_menu
+	add_child(screen)
+
+
 func _show_friends_screen() -> void:
 	_clear()
 	var screen := _instantiate_screen("res://scenes/menu/FriendsScreen.tscn")
@@ -1032,6 +1171,8 @@ func _on_realtime_login(_player_id: String, _player_name: String) -> void:
 func _on_realtime_logout() -> void:
 	RealtimeService.stop()
 	ChatService.reset()
+	AnnouncementService.reset()
+	MailService.reset()
 	_kicked_notice_pending = false
 
 
@@ -1062,6 +1203,112 @@ func _show_kicked_notice_if_pending() -> void:
 		"body": body,
 		"confirm_text": "Got it" if en else "知道了",
 	})
+
+
+# --- 公告（docs/公告系统设计.md）------------------------------------------------
+#
+# 状态在 AnnouncementService；**弹窗什么时候弹由这里定**（同上面被顶号那一段的理由）：
+# 只在主菜单上、没有别的弹窗、新手教学走完之后。
+
+const ANNOUNCEMENT_POPUP_MODAL_ID := "announcement_popup"
+# 最低一档：被顶号提示（DialogService 100）、重连（90）、房间面板（40）都比它要紧。
+const ANNOUNCEMENT_POPUP_PRIORITY := 20
+# 运行时 load，不 preload：理由见 _load_screen 上面那段。
+const ANNOUNCEMENT_POPUP_SCRIPT := "res://scenes/menu/AnnouncementPopup.gd"
+
+
+func _show_announcements_screen(focus_id: int = 0) -> void:
+	_clear()
+	var screen = _instantiate_screen("res://scenes/menu/AnnouncementScreen.tscn")
+	if screen == null:
+		_show_menu()
+		return
+	screen.configure(focus_id)
+	screen.back_requested.connect(_show_menu)
+	screen.navigate_requested.connect(_on_announcement_navigate)
+	_page_back_route = _show_menu
+	add_child(screen)
+
+
+# 正文里 [url=glory://…] 的跳转。与 AnnouncementText.ROUTES 一一对应（tools/announcement_check 钉着）。
+func _on_announcement_navigate(route: String) -> void:
+	match route:
+		"prep":
+			_show_pet_screen()
+		"codex":
+			_show_codex_screen()
+		"friends":
+			_show_friends_screen()
+		"profile":
+			_show_profile_screen()
+
+
+func _queue_announcement_popup() -> void:
+	if not AnnouncementService.changed.is_connected(_on_announcements_changed):
+		AnnouncementService.changed.connect(_on_announcements_changed)
+	if not ModalStack.modal_closed.is_connected(_on_modal_closed_for_announcements):
+		ModalStack.modal_closed.connect(_on_modal_closed_for_announcements)
+	_try_show_announcement_popup.call_deferred()
+
+
+func _on_announcements_changed() -> void:
+	_try_show_announcement_popup.call_deferred()
+
+
+# ⚠️ 必须 deferred：ModalStack.close_all() 边关边同步发 modal_closed，
+# 在这里直接 push 会让它原地转死（同 _on_reconnect_modal_closed 那条）。
+# 也正是这条让多条弹窗排队：关掉一条，下一条接着出来（一次启动最多 3 条）。
+func _on_modal_closed_for_announcements(_id: String, _reason: String) -> void:
+	_try_show_announcement_popup.call_deferred()
+
+
+func _try_show_announcement_popup() -> void:
+	if not _can_show_announcement_popup():
+		return
+	var item := AnnouncementService.next_popup()
+	if item.is_empty():
+		return
+	var popup_script := load(ANNOUNCEMENT_POPUP_SCRIPT) as GDScript
+	if popup_script == null:
+		push_error("公告弹窗脚本加载失败：%s" % ANNOUNCEMENT_POPUP_SCRIPT)
+		return
+	var popup = popup_script.new()
+	var modal_id := ModalStack.push(popup, {
+		"id": ANNOUNCEMENT_POPUP_MODAL_ID,
+		"owner": _menu,
+		"priority": ANNOUNCEMENT_POPUP_PRIORITY,
+		# 纯提示，点外面就收起。
+		"dismiss_on_backdrop": true,
+	})
+	if modal_id.is_empty():
+		return
+	# 弹出来那一刻就记下：图片还没下完玩家就切走了，也不该下次再弹同一条。
+	AnnouncementService.mark_popped(item)
+	popup.configure(item)
+	popup.details_requested.connect(_on_announcement_popup_details)
+	popup.dismissed.connect(_close_announcement_popup)
+
+
+func _can_show_announcement_popup() -> bool:
+	if _menu == null or not is_instance_valid(_menu) or not _menu.is_inside_tree():
+		return false
+	# 有别的弹窗（被顶号提示、房间面板……）就等它关掉：modal_closed 会再叫一次。
+	if ModalStack.depth() > 0:
+		return false
+	# 新手教学没走完不弹：第一次进游戏就被公告糊一脸。
+	if TutorialMode.active:
+		return false
+	return not (PlayerProfile.onboarding_status in
+		[PlayerProfile.ONBOARDING_NOT_STARTED, PlayerProfile.ONBOARDING_IN_PROGRESS])
+
+
+func _on_announcement_popup_details(id: int) -> void:
+	ModalStack.pop(ANNOUNCEMENT_POPUP_MODAL_ID)
+	_show_announcements_screen(id)
+
+
+func _close_announcement_popup() -> void:
+	ModalStack.pop(ANNOUNCEMENT_POPUP_MODAL_ID)
 
 
 # --- 在线状态上报（docs/交友系统设计.md 第二节）--------------------------------
@@ -1129,6 +1376,20 @@ func _show_profile_screen() -> void:
 	_page_back_route = _show_menu
 	add_child(profile)
 
+# 宠物归属到手之后补判一次三选一。
+#
+# 两条路会走到这里：① 冷启动时玩家已经进了主菜单，拉取才回来；
+# ② 注销账号之后（reset_account_state 把 pets_loaded 清了，新身份没有任何宠物）。
+# 不补这一下，这两种情况玩家会停在一个没有宠物的主菜单里，而且没有任何提示。
+func _on_pets_changed() -> void:
+	if not PlayerProfile.pets_loaded or not PlayerProfile.needs_starter_pick:
+		return
+	# 只在主菜单上拦。对局中、或已经在三选一页上时都不许打断。
+	if _menu == null or not is_instance_valid(_menu) or not _menu.is_inside_tree():
+		return
+	_show_starter_pet_gate()
+
+
 # 首次启动的初始宠物三选一关卡：无返回按钮，选完后再进主菜单。
 func _show_starter_pet_gate() -> void:
 	_clear()
@@ -1138,6 +1399,7 @@ func _show_starter_pet_gate() -> void:
 
 func _show_team3v3_lobby() -> void:
 	_clear()
+	_enter_match_flow()
 	var lobby := _instantiate_screen("res://scenes/menu/Team3v3Lobby.tscn")
 	lobby.start_requested.connect(_on_team3v3_start)
 	lobby.back_requested.connect(_on_lobby_back)
@@ -1152,6 +1414,7 @@ func _show_selftest() -> void:
 		push_warning("officetest scene unavailable; keeping current lobby")
 		return
 	_clear()
+	_enter_match_flow()
 	_selftest_prev_team_mode = GameState.team_mode
 	GameState.team_mode = true
 	# load() (not preload) so this optional officetest scene never becomes a
@@ -1198,6 +1461,7 @@ func _show_prep() -> void:
 		_show_game_over()
 		return
 	_clear()
+	_enter_match_flow()
 	_prep = _instantiate_screen("res://scenes/prep/PrepScreen.tscn")
 	_prep.battle_requested.connect(_on_battle_requested)
 	add_child(_prep)
@@ -1205,6 +1469,7 @@ func _show_prep() -> void:
 
 func _show_battle(battle_scene: PackedScene = null) -> void:
 	_clear()
+	_enter_match_flow()
 	var scene := battle_scene if battle_scene != null else _load_screen("res://scenes/battle/BattleScreen.tscn")
 	_battle = scene.instantiate()
 	_battle.battle_finished.connect(_on_battle_finished)
@@ -1214,6 +1479,7 @@ func _show_game_over() -> void:
 	# 对局结束：重连凭证作废，避免下次启动误恢复到已结束的房间
 	SaveManager.clear_reconnect()
 	_clear()
+	_enter_match_flow()
 	var bg := ColorRect.new()
 	bg.color = Color(0.05, 0.06, 0.07)
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -2140,6 +2406,9 @@ func _show_public_token_in_menu(token_id: String) -> void:
 
 func _on_team3v3_start() -> void:
 	SaveManager.new_run()
+	# 出战种族在开局这一刻定下（GameState.run_races 的注释）。new_run() 刚清过它，所以放在后面。
+	GameState.run_races = PlayerProfile.get_selected_races()
+	SaveManager.save_run()
 	GameState.team_mode = true
 	GameState.team_hp = GameState.START_FORMATION_HP
 	GameState.enemy_team_hp = GameState.START_FORMATION_HP
@@ -2450,13 +2719,17 @@ func _grow_human_king(cell: Dictionary) -> void:
 	#
 	# max_stacks may come from the `star4` block, and cell.def is the raw table
 	# entry with no star scaling applied, so read it through the single parse
-	# point (UnitFactory.apply_star_stats). Only the ceiling is read from there;
-	# the growth itself still mutates the cell's own def.
+	# point (UnitFactory.apply_star_stats). The growth itself still mutates the
+	# cell's own def, but both the ceiling **and** the multiplier come from there.
+	#
+	# 9.14 反馈补了后半句：当时只把 `cap` 改走 apply_star_stats，`mul` 仍读原始 d，
+	# 于是 4★ 出现「上限是 4★ 的 8 层、倍率还是 1~3★ 的 ×1.2」这种半接线状态，
+	# 与图鉴的 ×1.3 不符。同一个函数里两个数必须走同一条路。
 	var effective := UnitFactory.apply_star_stats(d, int(cell.get("star", 1)))
 	var cap := int(effective.get("max_stacks", 0))
 	if cap > 0 and int(cell.get("king_growth_stacks", 0)) >= cap:
 		return
-	var mul := 1.0 + float(d.get("post_battle_all_stat_growth", 0.20))
+	var mul := 1.0 + float(effective.get("post_battle_all_stat_growth", 0.20))
 	# Growth is limited to HP / ATK / DEF, matching the star-scaling rule in
 	# docs/四星技能与数值设计规格.md §1 ("仅 HP / 攻击 / 防御三项").
 	#

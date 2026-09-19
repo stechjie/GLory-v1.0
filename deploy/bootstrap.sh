@@ -81,6 +81,9 @@ say "3/8 服务账号与目录"
 id -u "$SERVICE_USER" >/dev/null 2>&1 \
 	|| useradd --system --home "$BASE" --shell /usr/sbin/nologin "$SERVICE_USER"
 mkdir -p "$BASE" "$REPO"
+# 维护公告文件的目录（docs/公告系统设计.md）。Caddy 直接从这里给 /status.json。
+mkdir -p "$BASE/public"
+chmod 755 "$BASE/public"
 
 say "4/8 复制代码"
 # --delete：新版本删掉的文件也要在服务器上消失。

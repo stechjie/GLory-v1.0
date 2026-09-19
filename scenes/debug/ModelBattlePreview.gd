@@ -48,6 +48,7 @@ const VFX_SUMMON_SPAWN := preload("res://effects/vfx3d/modules/VFXSummonSpawn3D.
 const VFX_AFTERIMAGE_DASH := preload("res://effects/vfx3d/modules/VFXAfterimageDash3D.gd")
 const VFX_RACE_BASIC_ATTACK := preload("res://effects/vfx3d/modules/VFXRaceBasicAttack3D.gd")
 const VFX_MOTHER_EXECUTE := preload("res://effects/vfx3d/modules/VFXMotherExecute3D.gd")
+const VFX_FOUR_STAR_AURA_V2 := preload("res://effects/vfx3d/modules/FourStarAuraV2_3D.gd")
 const BOSS_SKILL_COMPOSER := preload("res://effects/vfx3d/boss/BossSkillVFXComposer3D.gd")
 const UNIT_SKILL_COMPOSER := preload("res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd")
 const VFX_ARCHANGEL_COVENANT := preload("res://effects/vfx3d/units/VFXArchangelCovenant3D.gd")
@@ -542,6 +543,9 @@ func _build_vfx_test_panel() -> void:
 	vfx_select.add_item("Ascension: Sky", 100)
 	vfx_select.add_item("Ascension: Land", 101)
 	vfx_select.add_item("Ascension: Human", 102)
+	vfx_select.add_item("Ascension V2: Sky", 103)
+	vfx_select.add_item("Ascension V2: Land", 104)
+	vfx_select.add_item("Ascension V2: Human", 105)
 	select_row.add_child(vfx_select)
 	var action_row := HBoxContainer.new()
 	action_row.add_theme_constant_override("separation", 6)
@@ -680,6 +684,20 @@ func _on_vfx_play_pressed() -> void:
 		return
 	var target := Vector3(0.0, 0.18, 0.0)
 	match vfx_select.get_selected_id():
+		103, 104, 105:
+			auto_fight_enabled = false
+			var aura_v2 := VFX_FOUR_STAR_AURA_V2.new()
+			vfx_preview_root.add_child(aura_v2)
+			var bounds_v2 := _node_bounds_relative(left_slot, left_slot)
+			# Imported meshes often have asymmetrical weapons/capes, so their AABB
+			# center is not the unit's gameplay pivot. Keep the aura on the slot pivot.
+			var foot_v2 := Vector3(0.0, bounds_v2.position.y, 0.0)
+			aura_v2.global_position = left_slot.to_global(foot_v2)
+			aura_v2.configure(["sky", "land", "ren"][vfx_select.get_selected_id() - 103], maxf(0.4, bounds_v2.size.y), false)
+			aura_v2.attach_rim(left_slot)
+			aura_v2.play_upgrade()
+			vfx_preview_effect = aura_v2
+			vfx_status_label.text = "Four-star V2: top-down surrounding envelope (isolated review candidate)"
 		100, 101, 102:
 			auto_fight_enabled = false
 			var aura := preload("res://effects/vfx3d/modules/FourStarAura3D.gd").new()

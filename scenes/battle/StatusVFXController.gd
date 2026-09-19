@@ -127,6 +127,10 @@ func update_from_fighter(fighter: Dictionary) -> void:
 		if kind == "shield":
 			continue
 		var status: Dictionary = statuses.get(kind, {})
+		# Blood Pact's nonlethal self-bleed is stored separately so an enemy bleed
+		# can remain lethal and keep its own attribution. Both share one icon.
+		if kind == "bleed" and float(status.get("remaining", 0.0)) <= 0.0:
+			status = statuses.get("bleed_nonlethal", {})
 		_set_effect_visible(kind, float(status.get("remaining", 0.0)) > 0.0)
 
 # 按护盾值的变化定相位。只在这里判定，_process 只负责把相位画出来。

@@ -36,6 +36,7 @@ func _run() -> void:
 	_check_reject_is_readable()
 	_check_no_object_construction()
 	_check_channel_constants_not_duplicated()
+	_check_reject_closes_after_callback()
 	_h.finish(get_tree())
 
 
@@ -178,3 +179,31 @@ func _check_channel_constants_not_duplicated() -> void:
 	_h.expect(NetworkConfig.CH_CONTROL == 0 and NetworkConfig.CH_BULK == 1,
 		"channel_values_changed", "通道号变了（CH_CONTROL=%d CH_BULK=%d）—— 改它等于改线上协议，两端必须同时更新"
 			% [NetworkConfig.CH_CONTROL, NetworkConfig.CH_BULK])
+
+
+# 🔴 客户端被拒时不能在认证回调里直接关 peer：回调跑在 SceneMultiplayer.poll() 里面，
+# 当场关 Godot 4.7.1 会崩（signal 11）。2026-09-19 用独立小工程复现过：同步关必崩，推迟关不崩。
+# 每次顶协议号，还没更新的旧包连新服务器都走这条路 —— 该看到「版本不对」，不是闪退。
+# handshake_check 的客户端是它自己的 SceneMultiplayer，走不到 NetworkService 这段，所以这里按源码钉。
+func _check_reject_closes_after_callback() -> void:
+	var source := FileAccess.get_file_as_string("res://scripts/autoload/NetworkService.gd")
+	var header := "func _on_auth_payload(id: int, data: PackedByteArray) -> void:"
+	var start := source.find(header)
+	var stop := source.find("
+func ", start + header.length())
+	var body := source.substr(start, stop - start) if start >= 0 and stop > start else ""
+	var code_lines := PackedStringArray()
+	for raw_line in body.split("
+"):
+		var line := str(raw_line).strip_edges()
+		if not line.begins_with("#"):
+			code_lines.append(line)
+	var code := "
+".join(code_lines)
+	_h.item()
+	_h.expect(not body.is_empty(), "auth_callback_missing", "NetworkService 里找不到 %s" % header)
+	_h.expect(code.contains("_close_rejected_peer.call_deferred(multiplayer.multiplayer_peer)")
+			and not code.contains("reset_peer_only()") and not code.contains(".close()")
+			and not code.contains("multiplayer_peer = null"),
+		"reject_closes_inside_callback",
+		"客户端被拒时必须推迟到认证回调之后再关连接（_close_rejected_peer.call_deferred），当场关引擎会崩")

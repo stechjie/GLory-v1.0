@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "baseline_id": "non_ui_visual_20260912",
+  "resolution": [1280, 720],
+  "renderer_method": "mobile",
+  "frozen_roots": [
+    "res://ui",
+    "res://assets/ui",
+    "res://assets/fonts",
+    "res://assets/vfx/prep"
+  ],
+  "frozen_exact": [
+    "res://assets/vfx/skills/distinct_v2/stun_star_mark_v2.png",
+    "res://assets/vfx/skills/distinct_v2/stun_star_mark_v2.png.import",
+    "res://assets/vfx/status/status_attack_down_icon_v2.png",
+    "res://assets/vfx/status/status_attack_down_icon_v2.png.import",
+    "res://assets/vfx/status/status_bleed_icon_v2.png",
+    "res://assets/vfx/status/status_bleed_icon_v2.png.import",
+    "res://assets/vfx/status/status_burn_icon_v2.png",
+    "res://assets/vfx/status/status_burn_icon_v2.png.import",
+    "res://assets/vfx/status/status_defense_down_icon_v2.png",
+    "res://assets/vfx/status/status_defense_down_icon_v2.png.import",
+    "res://assets/vfx/status/status_fear_icon_v2.png",
+    "res://assets/vfx/status/status_fear_icon_v2.png.import",
+    "res://assets/vfx/status/status_heal_reduction_icon_v2.png",
+    "res://assets/vfx/status/status_heal_reduction_icon_v2.png.import",
+    "res://assets/vfx/status/status_ice_affected_icon_v2.png",
+    "res://assets/vfx/status/status_ice_affected_icon_v2.png.import",
+    "res://assets/vfx/status/status_ice_vulnerable_icon_v2.png",
+    "res://assets/vfx/status/status_ice_vulnerable_icon_v2.png.import",
+    "res://assets/vfx/status/status_interrupt_icon_v2.png",
+    "res://assets/vfx/status/status_interrupt_icon_v2.png.import",
+    "res://assets/vfx/status/status_poison_icon_v2.png",
+    "res://assets/vfx/status/status_poison_icon_v2.png.import",
+    "res://assets/vfx/status/status_silence_icon_v2.png",
+    "res://assets/vfx/status/status_silence_icon_v2.png.import",
+    "res://assets/vfx/status/status_slow_icon_v2.png",
+    "res://assets/vfx/status/status_slow_icon_v2.png.import",
+    "res://assets/vfx/status/status_stun_icon_v2.png",
+    "res://assets/vfx/status/status_stun_icon_v2.png.import"
+  ],
+  "visual_inventory_roots": [
+    "res://assets/board",
+    "res://assets/models",
+    "res://assets/props",
+    "res://assets/vfx",
+    "res://assets/vfx_textures",
+    "res://effects/vfx3d",
+    "res://shaders"
+  ],
+  "pilot_ids": [
+    "human_militia",
+    "god_guard",
+    "dark_suc",
+    "pve_sky_wind_falcon",
+    "pve_land_rock_beast",
+    "boss_twin_gate"
+  ],
+  "protected_gameplay": [
+    "combat_stats",
+    "collision_and_navigation",
+    "three_lane_rules",
+    "skill_targeting_and_hit_timing",
+    "replay_determinism",
+    "camera_projection_and_board_mapping"
+  ]
+}

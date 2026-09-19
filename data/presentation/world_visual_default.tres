@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="WorldVisualStyle" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/runtime/presentation/WorldVisualStyle.gd" id="1_style"]
+
+[resource]
+script = ExtResource("1_style")
+key_color = Color(1, 0.92, 0.76, 1)
+key_energy = 0.64
+key_rotation_degrees = Vector3(-52, -28, 0)
+fill_color = Color(0.48, 0.68, 0.82, 1)
+fill_energy = 0.18
+fill_rotation_degrees = Vector3(-38, 142, 0)
+ambient_color = Color(0.58, 0.68, 0.61, 1)
+ambient_energy = 0.4
+outline_color = Color(0.035, 0.026, 0.055, 1)
+normal_outline_px = 1.5
+large_outline_px = 2.4
+contact_shadow_color = Color(0.025, 0.03, 0.026, 0.34)

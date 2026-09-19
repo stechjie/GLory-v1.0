@@ -10,6 +10,9 @@ const TutorialTargetProviderScript := preload("res://scripts/tutorial/TutorialTa
 const GloryToastScript := preload("res://ui/components/GloryToast.gd")
 const GloryTheme := preload("res://ui/theme/GloryTheme.gd")
 const GloryTokens := preload("res://ui/theme/GloryTokens.gd")
+# 右上角那个静音键要读「设置页的背景音乐开关」，裁决只在 PresentationSettings 一处
+# （同 SfxService / MusicService / UiFeedback 的写法，用 preload 常量而不是全局类名）。
+const Presentation := preload("res://effects/runtime/presentation/PresentationSettings.gd")
 # 只为拿 FillPhase 枚举做**静态**引用（教学第 15 步的子阶段），
 # 走 preload 常量而不是从 autoload 实例上取，dynamic_call 棘轮才不会长。
 const TutorialModeScript := preload("res://scripts/tutorial/TutorialMode.gd")
@@ -115,6 +118,7 @@ var _team_merc_snapshot_round := -1
 var _team_merc_snapshot_initialized := false
 var _carrot_panel
 var _carrot_button: Button
+var _carrot_button_label: Label
 var _carrot_counter_label: Label
 var _carrot_dimmer: ColorRect
 var _tutorial_target_provider: TutorialTargetProviderScript
@@ -393,6 +397,8 @@ func _tutorial_refresh_view() -> void:
 
 
 func _build(staged: bool = false) -> void:
+	if not LocaleManager.locale_changed.is_connected(_on_locale_changed):
+		LocaleManager.locale_changed.connect(_on_locale_changed)
 	# 面板的依赖与信号必须在**构建之前**接好：build_* 里会用到 overlay 与 host，
 	# 也会把按钮的 pressed 连到面板自己的方法上。放到末尾接的话，
 	# 构建期 overlay 还是 null —— 表现是长按详情静默失效，不报错。
@@ -509,6 +515,11 @@ func _build(staged: bool = false) -> void:
 		_board_hud.custom_minimum_size = Vector2.ZERO
 		add_child(_board_hud)
 
+
+func _on_locale_changed(_locale: String) -> void:
+	if _carrot_button_label != null and is_instance_valid(_carrot_button_label):
+		_carrot_button_label.text = "Carrot Camp" if LocaleManager.get_locale().begins_with("en") else "萝卜营地"
+	_refresh_carrot_counter()
 
 func _build_top_bar(root: VBoxContainer) -> void:
 	var top := SellDropPanel.new()
@@ -980,7 +991,8 @@ func _build_top_actions() -> void:
 		MERC_BTN_SIZE, 16, _toggle_carrot_camp)
 	_carrot_button = carrot_btn
 	var carrot_lbl := Label.new()
-	carrot_lbl.text = "萝卜营地" if LocaleManager.get_locale() != "en" else "Carrot Camp"
+	_carrot_button_label = carrot_lbl
+	carrot_lbl.text = "Carrot Camp" if LocaleManager.get_locale().begins_with("en") else "萝卜营地"
 	carrot_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	carrot_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	carrot_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -1072,7 +1084,7 @@ func _build_top_actions() -> void:
 
 # ── 局内快捷短语（docs/聊天系统设计.md 批次 A）─────────────────────────────
 #
-# 走 ③ 的 ENet，网络上只有 {seat, phrase_id} 两个整数。协议与理由见
+# 走 ③ 的 ENet，网络上只有 {seat, phrase_id} 两个整数和一个范围开关 team_only。协议与理由见
 # NetworkService.team_send_phrase 与 scripts/multiplayer/ChatPhrases.gd。
 #
 # 🔴 **备战阶段不能挡棋盘。** 这是玩家操作最密集的阶段（拖棋子、买卖），所以：
@@ -1086,7 +1098,7 @@ func _build_top_actions() -> void:
 
 const ChatPhrases := preload("res://scripts/multiplayer/ChatPhrases.gd")
 
-const CHAT_BTN_SIZE := Vector2(132, 132)
+const CHAT_BTN_SIZE := Vector2(72, 72)
 
 # 🔴 **聊天整块必须让开右侧那一列，横竖两个方向都要让。**
 #
@@ -1099,13 +1111,17 @@ const CHAT_BTN_SIZE := Vector2(132, 132)
 #
 # 窗口越矮，两者越近；到 720 就撞上了。所以：
 #   横向 —— 右边界收到 -148，让开那一列（STATS_BTN_SIZE.x=140 + 贴边 8）
-#   纵向 —— 按钮压到 -200 ~ -68，与商店刷新按钮同一水平带（它是右下角唯一
-#           本来就安全的高度：518 之下）。x 上错开，所以并不会真的叠上刷新。
+#   纵向 —— 整组收在底边 -120 ~ -32，给备战席留出 40px 以上的空档。
 #
 # 改这几个数之前先跑一次那个截图工具，**用矮窗口看**，别用参考画布的高度。
 const CHAT_RIGHT := 148.0
-const CHAT_BTN_TOP := -200.0
-const CHAT_LOG_WIDTH := 352.0
+const COMMS_DOCK_WIDTH := 288.0
+const COMMS_DOCK_HEIGHT := 88.0
+const COMMS_DOCK_BOTTOM := -32.0
+const CHAT_BTN_BOTTOM := -40.0
+const CHAT_LOG_WIDTH := 360.0
+const CHAT_PANEL_HEIGHT := 410.0
+const CHAT_FLOAT_GAP := 10.0
 
 const CHAT_LOG_LINES := 3
 # 消息条高度。批次 A 时是 122（3 条单行短语）；批次 D 加了会折行的自由文字，放大到 156。
@@ -1125,6 +1141,23 @@ const CHAT_SEAT_LABELS := ["A", "B", "C", "1", "2", "3"]
 var _chat_button: Button = null
 var _chat_panel: PanelContainer = null
 var _chat_log: VBoxContainer = null
+var _comms_dock: PanelContainer = null
+
+# 🔴 聊天范围（2026-09-14 定，协议 26）：**备战期默认只发给队友**，点「发给：…」切到全部。
+# 局内说的基本是战术（存钱、升星、谁顶前排），默认全部的话忘了切就被对面看到。
+# 开关跟着这个界面走：PrepScreen 每回合重建（Main._show_prep），所以每回合备战期开始时回到「队友」——
+# 上回合为了跟对面说一句切到了「全部」，这回合不会带着它把战术发出去。
+# 谁收得到由 ③ 决定（NetworkService.chat_recipients），这里只是选。
+var _chat_team_only := true
+var _chat_scope_button: Button = null
+# 消息前面的范围标记。队友频道是默认，**不加标记**，只标出例外。
+# tools/chat_check 读这两个常量算「最长一条放不放得下」，改字要跟着跑一次。
+const CHAT_TAG_ALL := "【全部】"      # 自己人发到全部：这条对面也看得到
+const CHAT_TAG_ENEMY := "【对方】"    # 对面的人发的（他们只能发到全部）
+const CHAT_TEAM_COLOR := Color(1.0, 0.94, 0.78)
+const CHAT_ALL_COLOR := Color(1.0, 0.76, 0.42)
+const CHAT_ENEMY_COLOR := Color(1.0, 0.56, 0.50)
+const CHAT_MENU_FONT_COLOR := Color(1.0, 0.90, 0.60)   # make_menu_button 的默认字色
 
 func _build_chat_entry() -> void:
 	# 只在联机 3v3 里建。单机与教学没有队友，一个永远不会有人说话的入口是纯噪音 ——
@@ -1132,6 +1165,7 @@ func _build_chat_entry() -> void:
 	if GameState.tutorial_mode or not NetworkService.team_active:
 		return
 
+	_build_comms_dock()
 	_chat_button = PrepWidgets.make_framed_text_button("", CHAT_BTN_PATH, CHAT_BTN_SIZE, 16,
 		_toggle_chat_panel)
 	_chat_button.name = "PrepChatButton"
@@ -1139,12 +1173,11 @@ func _build_chat_entry() -> void:
 	_chat_button.anchor_right = 1.0
 	_chat_button.anchor_top = 1.0
 	_chat_button.anchor_bottom = 1.0
-	# 与商店刷新按钮同一水平带（它也是 -200 ~ -70），但**横向错开**：
-	# 刷新在 -105 ~ 25，聊天在 -280 ~ -148，中间隔着 43。见 CHAT_RIGHT 那段。
+	# 右侧保留 148，让开佣兵 / 萝卜的侧栏；按钮与语音两键共用同一底板。
 	_chat_button.offset_right = -CHAT_RIGHT
 	_chat_button.offset_left = -CHAT_RIGHT - CHAT_BTN_SIZE.x
-	_chat_button.offset_top = CHAT_BTN_TOP
-	_chat_button.offset_bottom = CHAT_BTN_TOP + CHAT_BTN_SIZE.y
+	_chat_button.offset_bottom = CHAT_BTN_BOTTOM
+	_chat_button.offset_top = CHAT_BTN_BOTTOM - CHAT_BTN_SIZE.y
 	# z_index 刻意低于商店弹窗(40)与卖出区(50)：**商店开着的时候聊天就该点不到**。
 	# 那时玩家在买卖，一个压在商店上的聊天按钮只会造成误触。
 	_chat_button.z_index = 20
@@ -1157,11 +1190,11 @@ func _build_chat_entry() -> void:
 	_chat_log.anchor_right = 1.0
 	_chat_log.anchor_top = 1.0
 	_chat_log.anchor_bottom = 1.0
-	# 贴在按钮正上方，右边界与按钮对齐（同样让开 side_col 那一列）。
+	# 贴在整个通讯栏正上方，右边界与聊天按钮对齐。
 	_chat_log.offset_right = -CHAT_RIGHT
 	_chat_log.offset_left = -CHAT_RIGHT - CHAT_LOG_WIDTH
-	_chat_log.offset_bottom = CHAT_BTN_TOP - 8
-	_chat_log.offset_top = CHAT_BTN_TOP - 8 - CHAT_LOG_HEIGHT
+	_chat_log.offset_bottom = COMMS_DOCK_BOTTOM - COMMS_DOCK_HEIGHT - CHAT_FLOAT_GAP
+	_chat_log.offset_top = _chat_log.offset_bottom - CHAT_LOG_HEIGHT
 	_chat_log.alignment = BoxContainer.ALIGNMENT_END
 	# 内容万一比 CHAT_LOG_HEIGHT 高（字体行高与估算不符时），往上长、不往下长 ——
 	# 往下会压到聊天按钮上。正常情况下行数预算已经保证放得下。
@@ -1179,51 +1212,55 @@ func _build_chat_entry() -> void:
 	if not NetworkService.team_chat_text_received.is_connected(_on_prep_chat_text_received):
 		NetworkService.team_chat_text_received.connect(_on_prep_chat_text_received)
 
-# 语音按钮（docs/聊天系统设计.md 第九节）：聊天按钮左边，只占同一水平带的下半截（-120 ~ -72）。
-# 上半截会碰到备战席的右端：1280×720 下备战席底边在 y≈575，也就是 -145 左右。
-# 改这几个数之前同样先跑 tools/chat_ui_capture.tscn，用矮窗口看。
-const VOICE_BTN_SIZE := Vector2(150, 48)
-const VOICE_BTN_GAP := 12.0
-const VOICE_BTN_BOTTOM := -72.0
-var _voice_button: Button = null
+# 语音按钮 + 队友按钮：缩短整组宽度，但两键都不低于 48px 触控下限。
+# 72 + 8 + 56 + 4 + 128 = 268，比旧布局窄 26px，与金币卷轴的距离反而更大。
+# 改这几个数之前同样先跑 tools/chat_ui_capture.tscn，用矮窗口看。行为都在 VoiceControls 里。
+const VoiceControls := preload("res://ui/components/VoiceControls.gd")
+const VOICE_BTN_SIZE := Vector2(128, 56)
+const VOICE_MEMBERS_SIZE := Vector2(56, 56)
+const VOICE_BTN_GAP := 8.0
+const VOICE_INNER_GAP := 4.0
+const VOICE_BTN_BOTTOM := -48.0
+const VOICE_BTN_FONT := 13
+var _voice_controls: VoiceControls = null
+
+func _build_comms_dock() -> void:
+	_comms_dock = PanelContainer.new()
+	_comms_dock.name = "PrepCommsDock"
+	_comms_dock.anchor_left = 1.0
+	_comms_dock.anchor_right = 1.0
+	_comms_dock.anchor_top = 1.0
+	_comms_dock.anchor_bottom = 1.0
+	_comms_dock.offset_right = -CHAT_RIGHT + 10.0
+	_comms_dock.offset_left = _comms_dock.offset_right - COMMS_DOCK_WIDTH
+	_comms_dock.offset_bottom = COMMS_DOCK_BOTTOM
+	_comms_dock.offset_top = COMMS_DOCK_BOTTOM - COMMS_DOCK_HEIGHT
+	_comms_dock.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_comms_dock.z_index = 19
+	_comms_dock.add_theme_stylebox_override("panel",
+		GloryTokens.flat_box(GloryTokens.INK_PANEL, GloryTokens.INK_EDGE, 2, 18))
+	add_child(_comms_dock)
 
 func _build_voice_button() -> void:
-	_voice_button = PrepWidgets.make_menu_button(VoiceService.mode_label(), VOICE_BTN_SIZE, 17,
-		_on_voice_pressed)
-	_voice_button.name = "PrepVoiceButton"
-	_voice_button.anchor_left = 1.0
-	_voice_button.anchor_right = 1.0
-	_voice_button.anchor_top = 1.0
-	_voice_button.anchor_bottom = 1.0
+	_voice_controls = VoiceControls.new()
+	_voice_controls.build(self, VOICE_BTN_SIZE, VOICE_MEMBERS_SIZE, VOICE_BTN_FONT,
+		{"panel_context": "prep"})
 	var right := -CHAT_RIGHT - CHAT_BTN_SIZE.x - VOICE_BTN_GAP
-	_voice_button.offset_right = right
-	_voice_button.offset_left = right - VOICE_BTN_SIZE.x
-	_voice_button.offset_bottom = VOICE_BTN_BOTTOM
-	_voice_button.offset_top = VOICE_BTN_BOTTOM - VOICE_BTN_SIZE.y
+	_place_voice_button(_voice_controls.members_button, right, VOICE_MEMBERS_SIZE)
+	_place_voice_button(_voice_controls.voice_button, right - VOICE_MEMBERS_SIZE.x - VOICE_INNER_GAP, VOICE_BTN_SIZE)
+
+func _place_voice_button(button: Button, right: float, size: Vector2) -> void:
+	button.anchor_left = 1.0
+	button.anchor_right = 1.0
+	button.anchor_top = 1.0
+	button.anchor_bottom = 1.0
+	button.offset_right = right
+	button.offset_left = right - size.x
+	button.offset_bottom = VOICE_BTN_BOTTOM
+	button.offset_top = VOICE_BTN_BOTTOM - size.y
 	# 同聊天按钮：低于商店弹窗（40）与卖出区（50），商店开着时点不到。
-	_voice_button.z_index = 20
-	add_child(_voice_button)
-	if not VoiceService.mode_changed.is_connected(_on_voice_mode_changed):
-		VoiceService.mode_changed.connect(_on_voice_mode_changed)
-	# 按钮后面的「●」跟着有没有人在说话变，0.25 秒刷一次。
-	var timer := Timer.new()
-	timer.wait_time = 0.25
-	timer.autostart = true
-	timer.timeout.connect(_refresh_voice_button)
-	add_child(timer)
-
-func _on_voice_pressed() -> void:
-	var reason := VoiceService.cycle_mode()
-	if not reason.is_empty():
-		show_message(reason)
-	_refresh_voice_button()
-
-func _on_voice_mode_changed(_mode: int) -> void:
-	_refresh_voice_button()
-
-func _refresh_voice_button() -> void:
-	if _voice_button != null and is_instance_valid(_voice_button):
-		_voice_button.text = VoiceService.mode_label() + VoiceService.activity_mark()
+	button.z_index = 20
+	add_child(button)
 
 func _build_chat_panel() -> void:
 	_chat_panel = PanelContainer.new()
@@ -1236,30 +1273,58 @@ func _build_chat_panel() -> void:
 	# 不往左弹：那会横穿到棋盘中央去；往上只压掉自己那几条消息，代价最小。
 	_chat_panel.offset_right = -CHAT_RIGHT
 	_chat_panel.offset_left = -CHAT_RIGHT - CHAT_LOG_WIDTH
-	_chat_panel.offset_bottom = CHAT_BTN_TOP - 8
-	# 282（6 行短语）+ 44（最上面一行「打字」，批次 D）。
-	_chat_panel.offset_top = CHAT_BTN_TOP - 8 - 326
+	_chat_panel.offset_bottom = COMMS_DOCK_BOTTOM - COMMS_DOCK_HEIGHT - CHAT_FLOAT_GAP
+	_chat_panel.offset_top = _chat_panel.offset_bottom - CHAT_PANEL_HEIGHT
 	_chat_panel.z_index = 30
 	_chat_panel.visible = false
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.075, 0.095, 0.055, 0.96)
-	style.border_color = Color(0.78, 0.57, 0.20, 0.92)
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(10)
-	style.set_content_margin_all(10)
+	var style := GloryTokens.flat_box(GloryTokens.INK_PANEL, GloryTokens.INK_EDGE, 2, 12)
+	style.set_content_margin_all(12)
 	_chat_panel.add_theme_stylebox_override("panel", style)
 	add_child(_chat_panel)
 
 	# 两列。一列放不下 12 条（会比棋盘还高），三列会让「我这边有点难」这种
 	# 六字短语被截断。
 	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 6)
+	col.add_theme_constant_override("separation", 8)
 	_chat_panel.add_child(col)
-	# 最上面一行是「打字」（批次 D），宽度等于下面两列短语（160 × 2 + 间距 6）。
-	# 用 make_menu_button 而不是 Button.new()：同一份样式，也不涨 V3 P1-08 棘轮的计数。
-	col.add_child(PrepWidgets.make_menu_button(
-		"＋ Type" if LocaleManager.get_locale() == "en" else "＋ 打字",
-		Vector2(326, 38), 15, _open_text_input))
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 8)
+	col.add_child(header)
+	var title := Label.new()
+	title.text = "Team Chat" if LocaleManager.get_locale() == "en" else "队伍交流"
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 19)
+	title.add_theme_color_override("font_color", GloryTokens.GOLD_HOVER)
+	header.add_child(title)
+	var close_button := PrepWidgets.make_menu_button("×", Vector2(42, 38), 19, _toggle_chat_panel)
+	close_button.name = "PrepChatClose"
+	header.add_child(close_button)
+	# 自由输入是一个会弹出键盘的输入入口，不是第 13 条快捷短语。它保持在面板最上面，
+	# 用浅羊皮纸底与左对齐的 placeholder 语言明确表达「点这里输入」；右边范围按钮仍是
+	# 次要操作。合起来等于下面两列短语的宽度（206 + 间距 6 + 114 = 160 × 2 + 6）。
+	# 用 make_menu_button 而不是 Button.new()：不涨 V3 P1-08 棘轮的计数，再单独覆盖外观。
+	var top_row := HBoxContainer.new()
+	top_row.add_theme_constant_override("separation", 6)
+	col.add_child(top_row)
+	var type_button := PrepWidgets.make_menu_button(
+		"✎  Type a message…" if LocaleManager.get_locale() == "en" else "✎  点击输入文字…",
+		Vector2(206, 48), 17, _open_text_input)
+	type_button.name = "PrepChatType"
+	_apply_chat_type_button_style(type_button)
+	top_row.add_child(type_button)
+	_chat_scope_button = PrepWidgets.make_menu_button(_chat_scope_text(), Vector2(114, 48), 15,
+		_toggle_chat_scope)
+	_chat_scope_button.name = "PrepChatScope"
+	top_row.add_child(_chat_scope_button)
+	_refresh_chat_scope_button()
+
+	var phrases_label := Label.new()
+	phrases_label.text = "QUICK PHRASES" if LocaleManager.get_locale() == "en" else "快捷短语"
+	phrases_label.add_theme_font_size_override("font_size", 13)
+	phrases_label.add_theme_color_override("font_color", GloryTokens.TEXT_SECONDARY)
+	col.add_child(phrases_label)
+
 	var grid := GridContainer.new()
 	grid.columns = 2
 	grid.add_theme_constant_override("h_separation", 6)
@@ -1271,35 +1336,103 @@ func _build_chat_panel() -> void:
 				ChatPhrases.text(phrase_id), Vector2(160, 38), 15,
 				_send_chat_phrase.bind(int(phrase_id))))
 
+
+func _apply_chat_type_button_style(button: Button) -> void:
+	# 做成「可点击的输入框」，而不是另一颗快捷短语按钮。颜色全部取 GloryTokens，
+	# 避免这块以后与主菜单的羊皮纸/暖金方向分叉。
+	var normal := GloryTokens.flat_box(
+		GloryTokens.PARCHMENT_BUTTON, GloryTokens.GOLD_EDGE, 2, 10)
+	var hover := GloryTokens.flat_box(
+		GloryTokens.PARCHMENT, GloryTokens.GOLD_HOVER, 2, 10)
+	var pressed := GloryTokens.flat_box(
+		GloryTokens.PARCHMENT_SOFT, GloryTokens.GOLD_PRESSED, 2, 10)
+	for style in [normal, hover, pressed]:
+		style.content_margin_left = 14
+		style.content_margin_right = 12
+	button.add_theme_stylebox_override("normal", normal)
+	button.add_theme_stylebox_override("hover", hover)
+	button.add_theme_stylebox_override("pressed", pressed)
+	button.add_theme_color_override("font_color", GloryTokens.TEXT_ON_GOLD)
+	button.add_theme_color_override("font_hover_color", GloryTokens.TEXT_ON_GOLD)
+	button.add_theme_color_override("font_pressed_color", GloryTokens.TEXT_ON_GOLD)
+	button.add_theme_font_size_override("font_size", 17)
+	button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+
 func _toggle_chat_panel() -> void:
 	if _chat_panel == null or not is_instance_valid(_chat_panel):
 		return
 	_chat_panel.visible = not _chat_panel.visible
 
 func _send_chat_phrase(phrase_id: int) -> void:
-	NetworkService.team_send_phrase(phrase_id)
+	NetworkService.team_send_phrase(phrase_id, _chat_team_only)
 	# 发完就收起：备战期每一次多余的点击都是从摆棋时间里扣的。
 	# **不在这里回显** —— 等服务器广播回来，理由见 NetworkService.team_send_phrase。
 	if _chat_panel != null and is_instance_valid(_chat_panel):
 		_chat_panel.visible = false
 
-func _on_prep_chat_received(slot: int, phrase_id: int) -> void:
+func _on_prep_chat_received(slot: int, phrase_id: int, team_only: bool) -> void:
 	var body := ChatPhrases.text(phrase_id)
 	if body.is_empty():
 		# id 不合法。text() 刻意返回空串而不是占位符，见 ChatPhrases.gd。
 		return
-	_push_chat_line("%s：%s" % [_chat_speaker_name(slot), body])
+	_push_chat_line(_chat_line_head(slot, team_only) + body, _chat_line_color(slot, team_only))
 
-func _on_prep_chat_text_received(slot: int, text: String) -> void:
-	_push_chat_line("%s：%s" % [_chat_speaker_name(slot), text])
+func _on_prep_chat_text_received(slot: int, text: String, team_only: bool) -> void:
+	_push_chat_line(_chat_line_head(slot, team_only) + text, _chat_line_color(slot, team_only))
 
 
 # 打字入口（批次 D）。先收起短语面板：输入条弹在顶部，短语面板留着只会挡棋盘。
+# 输入条上也放同一个范围按钮：打到一半发现范围不对，点一下就改，不用关掉重打。
 func _open_text_input() -> void:
 	if _chat_panel != null and is_instance_valid(_chat_panel):
 		_chat_panel.visible = false
-	ChatInputBar.new().present(self, func(text: String) -> String:
-		return NetworkService.team_send_text(text))
+	var send := func(text: String) -> String:
+		return NetworkService.team_send_text(text, _chat_team_only)
+	ChatInputBar.new().present(self, send,
+		{"scope_text": _chat_scope_text, "on_scope_pressed": _toggle_chat_scope})
+
+
+func _toggle_chat_scope() -> void:
+	_chat_team_only = not _chat_team_only
+	_refresh_chat_scope_button()
+
+
+func _chat_scope_text() -> String:
+	if LocaleManager.get_locale() == "en":
+		return "To: Team" if _chat_team_only else "To: All"
+	return "发给：队友" if _chat_team_only else "发给：全部"
+
+
+func _refresh_chat_scope_button() -> void:
+	if _chat_scope_button == null or not is_instance_valid(_chat_scope_button):
+		return
+	_chat_scope_button.text = _chat_scope_text()
+	# 发给全部时按钮字变橙：一眼看出「这条对面也看得到」。
+	_chat_scope_button.add_theme_color_override("font_color",
+		CHAT_MENU_FONT_COLOR if _chat_team_only else CHAT_ALL_COLOR)
+
+
+# 「【对方】小林：」这样的开头。队友频道不加标记（备战期默认就是它），只标出例外。
+func _chat_line_head(slot: int, team_only: bool) -> String:
+	var tag := ""
+	if not team_only:
+		var en := LocaleManager.get_locale() == "en"
+		if _chat_is_enemy(slot):
+			tag = "[Enemy] " if en else CHAT_TAG_ENEMY
+		else:
+			tag = "[All] " if en else CHAT_TAG_ALL
+	return "%s%s：" % [tag, _chat_speaker_name(slot)]
+
+
+func _chat_line_color(slot: int, team_only: bool) -> Color:
+	if team_only:
+		return CHAT_TEAM_COLOR
+	return CHAT_ENEMY_COLOR if _chat_is_enemy(slot) else CHAT_ALL_COLOR
+
+
+func _chat_is_enemy(slot: int) -> bool:
+	var me := int(NetworkService.team_local_slot)
+	return me >= 0 and GameConstants.team_of_slot(slot) != GameConstants.team_of_slot(me)
 
 
 func _chat_speaker_name(slot: int) -> String:
@@ -1313,12 +1446,12 @@ func _chat_speaker_name(slot: int) -> String:
 		who = str(identity.get("player_name", "")).strip_edges()
 	if not who.is_empty():
 		return who
-	# 资料还没到（publish_lobby_identity 是异步的）。用座位号顶着 ——
+	# 这个座位没有身份（AI 座位，或进程内门禁不带名片建的座位）。用座位号顶着 ——
 	# 空名字会让这条消息看起来像是没有人说的。
 	var seat: String = CHAT_SEAT_LABELS[slot] if slot >= 0 and slot < CHAT_SEAT_LABELS.size() else "?"
 	return ("Seat " + seat) if LocaleManager.get_locale() == "en" else ("席位" + seat)
 
-func _push_chat_line(text: String) -> void:
+func _push_chat_line(text: String, color: Color = CHAT_TEAM_COLOR) -> void:
 	if _chat_log == null or not is_instance_valid(_chat_log):
 		return
 	var lbl := Label.new()
@@ -1330,7 +1463,7 @@ func _push_chat_line(text: String) -> void:
 	# 读的人只看到半句话、还不知道少了。高度改由下面的行数预算管。
 	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lbl.add_theme_font_size_override("font_size", CHAT_LOG_FONT_SIZE)
-	lbl.add_theme_color_override("font_color", Color(1.0, 0.94, 0.78))
+	lbl.add_theme_color_override("font_color", color)
 	lbl.add_theme_color_override("font_outline_color", Color(0.02, 0.025, 0.01, 0.95))
 	lbl.add_theme_constant_override("outline_size", 3)
 	_chat_log.add_child(lbl)
@@ -1376,13 +1509,50 @@ func _teardown_chat_entry() -> void:
 		NetworkService.team_chat_received.disconnect(_on_prep_chat_received)
 	if NetworkService.team_chat_text_received.is_connected(_on_prep_chat_text_received):
 		NetworkService.team_chat_text_received.disconnect(_on_prep_chat_text_received)
-	if VoiceService.mode_changed.is_connected(_on_voice_mode_changed):
-		VoiceService.mode_changed.disconnect(_on_voice_mode_changed)
+	if _voice_controls != null:
+		_voice_controls.teardown()
+
+# 「已静音」的判据，按钮文案与点击方向**共用这一处**。两处各判一次的话迟早分叉，
+# 而分叉的症状是「键上写着已静音、按下去却更静」——那种键按了像坏了。
+#
+# 两种情况都算静音：
+#   ① Master 总线被静音 —— 就是本页这个按键自己按下去的那一步；
+#   ② 设置页把「背景音乐」关了 —— 9.17 第二批反馈：在大厅里关了 BGM，
+#      进对局也该显示已静音，而不是两处各说各话。
+#
+# 只看「背景音乐」，**不看**「界面音效」：后者只掐 SFX，玩家还听得见 BGM，
+# 把它也算成「已静音」是句假话。这条范围由 prep_mute_state_check 钉住，
+# 将来要改成「任一开关关掉都算静音」得显式改断言，不能顺手漂移。
+func _is_audio_muted() -> bool:
+	var master := AudioServer.get_bus_index("Master")
+	if master >= 0 and AudioServer.is_bus_mute(master):
+		return true
+	return not Presentation.music_allowed()
+
 
 func _toggle_mute() -> void:
-	# 全局静音开关：静音 Master 总线（BGM + 音效都停），引擎级状态，切场景仍生效
+	# 全局静音开关：静音 Master 总线（BGM + 音效都停），引擎级状态，切场景仍生效。
+	#
+	# 目标状态从 _is_audio_muted() 反推，**不是**直接翻转总线：设置页关过
+	# 「背景音乐」时按钮显示的是「已静音」，这一次按下去必须把声音打开
+	# （清总线静音 + 打开音乐开关）。照旧直接翻总线的话，那种局面下第一下是把
+	# 一个本来就没静音的总线翻成静音 —— 键上写着已静音、按下去更静，按了没反应。
 	var master := AudioServer.get_bus_index("Master")
-	AudioServer.set_bus_mute(master, not AudioServer.is_bus_mute(master))
+	var want_mute := not _is_audio_muted()
+	if master >= 0:
+		AudioServer.set_bus_mute(master, want_mute)
+	# 9.17 反馈第 5 条：「若在这里（设置页）关闭音乐，在游戏对局中可以通过右上的
+	# 『已静音』按键重新打开音乐。」
+	#
+	# 清总线静音只算半条：设置页那个「背景音乐」开关是**另一条**闸门
+	# （PresentationSettings.music_allowed()，由 MusicService 执行 stream_paused）。
+	# 只解总线的话，设置里关过音乐的玩家按这个键仍然听不到 BGM —— 反馈要的正是
+	# 这条路径能把音乐重新打开，所以这里一并把那个偏好打开。
+	#
+	# 只在**解除静音**时做：把整体静音这一步定义成「声音都回来」，
+	# 而按下去要静音时不该顺手改玩家的音乐偏好（那是设置页的事）。
+	if not want_mute:
+		PlayerProfile.set_presentation_toggle("music", true)
 	if _mute_button != null:
 		_mute_button.text = _mute_label_text()
 
@@ -1414,6 +1584,10 @@ func _on_carrot_economy_receipt(receipt: Dictionary) -> void:
 		if bool(receipt.get("ok", false)):
 			call("_adopt_server_shop")
 			_shop.selected = -1
+			# 9.17：客机玩家主动刷新成功的确切时刻。单机/房主那条在
+			# PrepBoardController._on_refresh_shop 里，两边都要接 ——
+			# 只接一边就是「联机时刷新没声音」。
+			SfxService.play(SfxService.CUE_SHOP_REFRESH)
 			_refresh_all()
 		else:
 			show_message(NetworkService.shop_refresh_error_text(str(receipt.get("error", "denied"))))
@@ -1426,8 +1600,19 @@ func _on_carrot_economy_receipt(receipt: Dictionary) -> void:
 	if action not in ["upgrade_harvest_tech", "hire_merc_carrot", "draw_upgrade_stone", "use_upgrade_stone"]:
 		return
 	if not bool(receipt.get("ok", false)):
-		show_message("萝卜交易失败：%s" % str(receipt.get("error", "denied")))
+		show_message(("Carrot action failed: %s" if LocaleManager.get_locale().begins_with("en") else "萝卜交易失败：%s") % str(receipt.get("error", "denied")))
+		# 9.17：服务端拒绝 = 按钮被拒绝，与单机时「钱不够」同一个反馈。
+		SfxService.play(SfxService.CUE_UI_REJECT)
 		return
+	# 9.17：按 action 分流音效。**必须按分支**，不能在这条公共路径上无条件播 ——
+	# 四个动作共用这个函数，无条件播会让抽石头响成佣兵音。
+	match action:
+		"upgrade_harvest_tech":
+			SfxService.play(SfxService.CUE_HARVEST_TECH_UPGRADE)
+		"hire_merc_carrot":
+			SfxService.play(SfxService.CUE_MERC_SUMMON)
+		"draw_upgrade_stone":
+			SfxService.play(SfxService.CUE_UPGRADE_STONE_DRAW)
 	if action == "use_upgrade_stone":
 		# 星级已由 NetworkService._apply_carrot_receipt 按 uid 落到棋子上；
 		# 棋盘变了要重新提交，否则服务端还按三星那份快照结算。
@@ -1441,7 +1626,27 @@ func _on_carrot_economy_receipt(receipt: Dictionary) -> void:
 	_refresh_all()
 	if action == "use_upgrade_stone":
 		_overlay.hide_detail()
-		call_deferred("play_four_star_upgrade", str((receipt.get("result", {}) as Dictionary).get("uid", "")))
+		var upgraded_uid := str((receipt.get("result", {}) as Dictionary).get("uid", ""))
+		# 9.17：回执里只有 uid，没有 def。按 uid 反查棋子拿 def.id 来分流音效 ——
+		# 星级此刻已由 NetworkService._apply_carrot_receipt 落到棋子上，
+		# 所以格子一定已经在了。查不到就退回通用那条（star4_cue_for 的默认分支）。
+		SfxService.play(SfxService.star4_cue_for(_unit_id_for_uid(upgraded_uid)))
+		call_deferred("play_four_star_upgrade", upgraded_uid)
+
+
+# 按棋子唯一 uid 反查它的数据表 id。四星音效要用它分流，而服务端回执只带 uid。
+#
+# 棋盘和待命区都要查：四星升级的入口两条都通（PrepBoardController 的
+# request_four_star_upgrade 接受 where="board"/"bench"）。用 def.id 而不是
+# def.name —— 客机路径的名字会被按本地化覆写。
+func _unit_id_for_uid(uid: String) -> String:
+	if uid.is_empty():
+		return ""
+	for slots in [GameState.board_slots, GameState.bench_slots]:
+		for cell in (slots as Array):
+			if cell is Dictionary and str((cell as Dictionary).get("uid", "")) == uid:
+				return str(((cell as Dictionary).get("def", {}) as Dictionary).get("id", ""))
+	return ""
 
 func _refresh_carrot_counter() -> void:
 	if _carrot_counter_label == null or not is_instance_valid(_carrot_counter_label):
@@ -1454,7 +1659,8 @@ func _refresh_carrot_counter() -> void:
 		Color(0.72, 1.0, 0.58) if amount >= capacity else Color(1.0, 0.94, 0.70))
 
 func _mute_label_text() -> String:
-	var muted := AudioServer.is_bus_mute(AudioServer.get_bus_index("Master"))
+	# 判据与点击方向同源（_is_audio_muted）：设置页关了背景音乐，这里也要写「已静音」。
+	var muted := _is_audio_muted()
 	if LocaleManager.get_locale() == "en":
 		return "Muted" if muted else "Mute"
 	return "已静音" if muted else "静音"
@@ -1693,7 +1899,7 @@ func _mercenary_purchase_reason(index: int) -> String:
 			return tr("ui_not_enough_gold")
 	else:
 		if GameState.carrots < int(mercenary.get("carrot_cost", 0)):
-			return "萝卜不足"
+			return "Not enough carrots" if LocaleManager.get_locale().begins_with("en") else "萝卜不足"
 	return ""
 
 func _on_portrait_card_hover(card: Control, hovered: bool) -> void:
@@ -1727,7 +1933,7 @@ func _create_mercenary_purchase_card(mercenary: Dictionary, index: int) -> DragB
 	card.drag_enabled = false
 	var price_text := tr("ui_gold_format") % int(mercenary.get("cost", 0))
 	if not GameState.tutorial_mode:
-		price_text = "萝卜 %d" % int(mercenary.get("carrot_cost", 0))
+		price_text = ("Carrots %d" if LocaleManager.get_locale().begins_with("en") else "萝卜 %d") % int(mercenary.get("carrot_cost", 0))
 	card.set_meta("drag_preview_text", "%s\n%s" % [str(mercenary.get("name", tr("ui_mercenary"))), price_text])
 	var purchase_reason := _mercenary_purchase_reason(index)
 	var can_purchase := purchase_reason.is_empty()
@@ -1798,6 +2004,113 @@ func _on_mercenary_purchase_card_pressed(card: BaseButton, index: int) -> void:
 		return
 	_on_hire_mercenary(index)
 
+# --- 9.17 羁绊激活音 ---------------------------------------------------------
+#
+# SynergyService 全是无状态纯函数：每次调用全量重算，没有信号、没有 prev 快照。
+# 所以「某个羁绊刚跨过某档」只能靠前后对比，没有现成的钩子可挂。
+#
+# 采样点选在 _refresh_all() 的末尾，而不是 SynergyPanel.refresh() 里：
+# 后者有签名早退（_left_panel_signature 不变就直接 return），
+# 拿它当采样点会把整档变化整个漏掉。
+#
+# ---------------------------------------------------------------------------
+# 2026-09-17 追加修复：口径从「人数前后比」改成「已解锁档位集合」
+#
+# 反馈：凑齐「同族 7 人」羁绊时没有声音（面板已经写着「已解锁」）。
+#
+# 原实现拿人数前后比（was < 档位 <= now），并且「回合号变了就只记基线、不比较」。
+# 那条守卫的本意是「下一回合的棋盘可能被服务端整块覆盖，那不是玩家刚做的操作」，
+# 可它是拿**回合号**当「棋盘是外面送来的」的代理判断，于是一个真实场景被整帧吃掉：
+# ③ 的服务端 state payload 把 round_id 与棋盘**一起**下发（Main.gd:337 / :2491），
+# 于是「玩家把第 7 个神放上棋盘」和「回合号 +1」落在同一次 _refresh_all() 里 ——
+# 面板显示神7 已解锁，声音一声不响，而快照已经被写成 7，整局不会再补。
+# 线上实测（探针 tools/_probe_synergy_roundguard）：同回合 6->7 响 1 次，
+# 换回合同帧 6->7 响 0 次。
+#
+# 现在比的是**集合**：
+#   * 「已解锁」= 人数 >= 档位，于是 6->8->6->8 这类人数波动不再是事件，
+#     只有档位真的从「未解锁」变「已解锁」才算一次跨档；
+#   * 卖掉一个再买回来（掉档后又跨回来）会重新响 —— 那是玩家真的又做了一次
+#     这个操作，本来就该有反馈；
+#   * 换回合不再重置：那条守卫会把跨档吃掉，而集合口径下每次解锁最多一声，
+#     不会因为「服务端整块覆盖」刷屏。
+# 「刚进备战页」那一帧仍然只认账不发声：那一刻的棋盘是既有战果
+# （上一回合留下的 / 读档 / 服务端下发），进场就为它响是把旧成果当新闻。
+# ---------------------------------------------------------------------------
+var _synergy_unlocked_before: Dictionary = {}
+var _synergy_sampled := false
+
+
+# 档位键："god@7"。用它而不是人数，是因为人数在档位之间怎么走都不该算事件。
+func _synergy_tier_key(race: String, threshold: int) -> String:
+	return "%s@%d" % [race, threshold]
+
+
+# 当前已解锁的档位集合。人数取自 SynergyService（唯一权威），
+# 档位取自 RACE_THRESHOLDS —— 与 SynergyPanel 显示的那几档同源，
+# tools/audio_sfx_check 会拿这两张表对一遍。
+func _synergy_unlocked_tiers() -> Dictionary:
+	var counts := SynergyService.count_races_from_board()
+	var unlocked: Dictionary = {}
+	for race in SynergyService.RACE_THRESHOLDS.keys():
+		var race_name := str(race)
+		var have := int(counts.get(race_name, 0))
+		for threshold in SynergyService.RACE_THRESHOLDS[race]:
+			if have >= int(threshold):
+				unlocked[_synergy_tier_key(race_name, int(threshold))] = true
+	return unlocked
+
+
+# 由 _refresh_all() 调用。
+#
+# 一次采样最多响一声：一次操作可能同时跨两档（比如一次性从 6 只补到 8 只，
+# god 的 7 档与 human 的 7 档都可能过），那种时候连续两声反而像卡带。
+# 快照在**判断之后无条件更新**，所以同一状态被反复采样不会重复响。
+#
+# 9.17 反馈第 1 条：「目前是激活羁绊就会生效，现在改为只在激活**终极羁绊**时
+# 才会生效，例如羁绊『神7·无敌』、『人7·狂战士』。」
+#
+# 也就是说 2 档 / 4 档的激活不再出声，只有每族的**最高档**（7 档：人7 / 神7 /
+# 暗7 / 灵7）才响。判据取自 RACE_THRESHOLDS 的最后一档，不写死 7 ——
+# 以后把某一族调成 8 档，这里会跟着走。
+#
+# **掉档再跨回来仍然算事件**：判据是「这个档位键从无到有」，快照在判断后无条件
+# 更新，所以 7→6→7 会响第二声（玩家确实重新激活了终极羁绊）。
+func _check_synergy_activation() -> void:
+	var unlocked := _synergy_unlocked_tiers()
+	if not _synergy_sampled:
+		# 刚进备战页的第一帧：只认账，不发声。
+		_synergy_sampled = true
+		_synergy_unlocked_before = unlocked
+		return
+	var crossed := false
+	for key in unlocked.keys():
+		if _synergy_unlocked_before.has(key):
+			continue
+		if not _is_ultimate_synergy_tier(str(key)):
+			continue
+		crossed = true
+		break
+	_synergy_unlocked_before = unlocked
+	if crossed:
+		SfxService.play(SfxService.CUE_SYNERGY_ACTIVATE)
+
+
+# 这个档位键是不是「终极羁绊」。键的格式见 _synergy_tier_key()："god@7"。
+#
+# 判据 = 该族 RACE_THRESHOLDS 里的**最后一档**。取数组末项而不是判 `== 7`：
+# 阈值表是唯一权威（SynergyPanel 与门禁都对它），写死数字会在表变了之后
+# 静默失效 —— 而这一条失效的症状是「终极羁绊激活时没声音」，很难联想到这里。
+func _is_ultimate_synergy_tier(key: String) -> bool:
+	var parts := key.split("@")
+	if parts.size() != 2:
+		return false
+	var thresholds: Array = SynergyService.RACE_THRESHOLDS.get(parts[0], [])
+	if thresholds.is_empty():
+		return false
+	return int(parts[1]) == int(thresholds[thresholds.size() - 1])
+
+
 func _refresh_all() -> void:
 	# 教学局也走自动合成：正式局就是这个规则，教学不能教一套正式局用不上的操作。
 	_auto_combine_all()
@@ -1818,6 +2131,9 @@ func _refresh_all() -> void:
 	if GameState.tutorial_mode:
 		TutorialMode.update_overlay()
 	_check_team_merc_alert()
+	# 9.17：羁绊激活音。放最后 —— 前面的 _auto_combine_all() 可能刚把棋子合成掉、
+	# 改变棋盘构成，先采样再判会拿到中间态。
+	_check_synergy_activation()
 func _sync_prep_board_readability_geometry() -> void:
 	if _board_hud.readability_layer == null or not is_instance_valid(_board_hud.readability_layer):
 		return
@@ -2230,7 +2546,11 @@ func _team_merc_counts() -> Dictionary:
 	return counts
 
 func _check_team_merc_alert() -> void:
-	if GameState.tutorial_mode or _team_merc_alert == null:
+	# 9.17：`_team_merc_alert == null` 的早退**从函数开头挪到了控件交互那两行**。
+	# 原先它和 tutorial 一起挡在最前面，于是「数变化」这段也跟着控件走了 ——
+	# 而队伍召唤音应当由「队友多了一个佣兵」这个事实决定，不该由某个控件建没建出来决定。
+	# 拆开之后：数照常采样，控件相关的分支各自判空。
+	if GameState.tutorial_mode:
 		return
 	var current := _team_merc_counts()
 	if not _team_merc_snapshot_initialized or _team_merc_snapshot_round != GameState.round_index:
@@ -2240,13 +2560,35 @@ func _check_team_merc_alert() -> void:
 		return
 
 	var increased := false
+	var teammate_increased := false
+	# 自己那一格的口径必须和 `_team_merc_counts()` 里**完全一致**（同一个三元 + 同一个
+	# `< 0` 归一），否则下面「这是不是我自己的座位」判错，房主那条会双响或干脆不响。
+	var my_slot := NetworkService.team_local_slot if NetworkService.team_active else 0
+	if my_slot < 0:
+		my_slot = 0
 	for slot_value in current:
 		var slot := int(slot_value)
 		if int(current.get(slot, 0)) > int(_team_merc_counts_snapshot.get(slot, 0)):
 			increased = true
-			break
+			if slot != my_slot:
+				teammate_increased = true
 	_team_merc_counts_snapshot = current
-	if not increased:
+
+	# 9.17：队伍召唤音 —— **队友**多雇了一个佣兵，全队都该听到这条召唤音。
+	#
+	# 只补队友那一半：自己那一次由「确认自己成功了」的本地路径播 ——
+	#   客机：服务端回执落地处 `_on_carrot_economy_receipt`（action == hire_merc_carrot）
+	#   房主 / 单机 / 教程：成交那行 `PrepBoardController._hire_mercenary_to_slot`
+	# 这里若连自己那格也播就会双响：`_team_merc_counts()` 把自己的座位也算进 current，
+	# 而 `_refresh_all()` 结尾就会调到本函数。
+	#
+	# 不按增量条数分次播：雇佣是一次一个（每回只填一个空槽），增量恒为 1；
+	# 真出现 +N 只可能是中途重连后的整表重发，那种也该只响一声。
+	# 「首次观察」与「换回合」两种误响来源已经在上面 return 掉，迟到同步不会凭空响。
+	if teammate_increased:
+		SfxService.play(SfxService.CUE_MERC_SUMMON)
+
+	if not increased or _team_merc_alert == null:
 		return
 	if _team_mercs_open:
 		_team_merc_alert.mark_seen()
@@ -2609,7 +2951,11 @@ func _on_shop_picker_toggled(is_open: bool) -> void:
 	# （底部中央 896×230）的右下角里。商店面板本身是 Container（PASS）且背景层
 	# 一律 IGNORE，挡不住下层控件 —— 于是玩家在商店右端操作会穿透到语音按钮上，
 	# 弹出「这个版本没有语音功能」。和待命格同一套处理：商店开着就整块不吃输入。
-	_set_overlay_blocked(_voice_button, is_open)
+	# 语音 v1.1（2026-09-14）起这一块是「语音」「队友」两个按钮（VoiceControls，合起来仍是 150 宽），两个一起挡。
+	# 这一行原本写的是 v1 的 _voice_button：与 v1.1 合并时 git 没报冲突，但那个变量已经没有了，PrepUI 会解析失败。
+	if _voice_controls != null:
+		_set_overlay_blocked(_voice_controls.voice_button, is_open)
+		_set_overlay_blocked(_voice_controls.members_button, is_open)
 	_set_overlay_blocked(_chat_button, is_open)
 
 

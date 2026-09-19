@@ -156,8 +156,8 @@
   "money_golden_altar": {
    "name": "黄金祭坛",
    "name_en": "Golden Altar",
-   "effect": "准备阶段出现黄金祭坛按钮：法阵 HP -1，金币 +50；胡牌手激活后金币 +100（未实现）；每回合最多 3 次，法阵 HP <=10 不可用",
-   "effect_en": "A Golden Altar button appears in the prep phase: formation HP -1 for +50 gold; +100 once Winning Hand is active (not implemented). Up to 3 times per round, unavailable at formation HP <= 10",
+   "effect": "准备阶段出现黄金祭坛按钮：法阵 HP -1，金币 +50；每回合最多 3 次，法阵 HP <=10 不可用",
+   "effect_en": "A Golden Altar button appears in the prep phase: formation HP -1 for +50 gold. Up to 3 times per round, unavailable at formation HP <= 10",
    "trigger": "手动点击按钮",
    "trigger_en": "Manual button"
   },

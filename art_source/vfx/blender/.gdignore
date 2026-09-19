@@ -1,0 +1,2 @@
+# Blender source files are authoring inputs, not Godot runtime resources.
+# Runtime-ready exports live under res://assets/vfx/meshes/.

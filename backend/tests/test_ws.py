@@ -25,7 +25,7 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from app import db, players, realtime, single_instance
+from app import admission, db, players, realtime, single_instance
 from app.config import get_settings
 from app.jwt_verify import Claims, TokenError
 from app.main import app
@@ -44,7 +44,11 @@ class _FakeVerifier:
     """按令牌串决定放不放行。生产上的 verify 会去打 JWKS，测试里不该联网。"""
 
     def __init__(self) -> None:
-        self.accept = {"good-token": "auth-uid-1", "good-token-2": "auth-uid-2"}
+        self.accept = {
+            "good-token": "auth-uid-1",
+            "good-token-2": "auth-uid-2",
+            "good-token-3": "auth-uid-3",
+        }
 
     async def verify(self, token: str) -> Claims:
         uid = self.accept.get(token)
@@ -73,16 +77,22 @@ def wired(monkeypatch: pytest.MonkeyPatch):
     known = {
         "auth-uid-1": _FakePlayer(uuid.UUID("11111111-1111-1111-1111-111111111111")),
         "auth-uid-2": _FakePlayer(uuid.UUID("22222222-2222-2222-2222-222222222222")),
+        "auth-uid-3": _FakePlayer(uuid.UUID("33333333-3333-3333-3333-333333333333")),
     }
 
     async def _fake_lookup(auth_uid: str):
         return known.get(auth_uid)
 
     monkeypatch.setattr(players, "get_by_auth_uid", _fake_lookup)
+    # 重启预热期（admission.WARMUP_SEC）在测试里关掉：每个 TestClient 都是一次「刚启动」，
+    # 不关的话所有带 enter 的连接都会先排队。
+    monkeypatch.setattr(admission, "WARMUP_SEC", 0.0)
 
     realtime.reset_hub()
+    admission.reset()
     yield known
     realtime.reset_hub()
+    admission.reset()
     get_settings.cache_clear()
 
 
@@ -312,3 +322,53 @@ def test_idle_detection_uses_a_margin_over_heartbeat() -> None:
     )
     # 巡检周期要短于超时，否则一条死连接最长会在表里多待一个巡检周期。
     assert realtime.SWEEP_INTERVAL_SEC < realtime.IDLE_TIMEOUT_SEC
+
+
+# --- 同时在线上限与排队（接线；行为用例在 test_admission.py）-----------------
+
+
+def _with_intent(token: str = "good-token", device: str = DEVICE_A, intent: str = "enter") -> dict[str, str]:
+    headers = _headers(token, device)
+    headers["X-Glory-Admission"] = intent
+    return headers
+
+
+def test_legacy_client_gets_no_admission_message_but_is_counted(wired) -> None:
+    """旧版客户端不认识排队消息，不发 —— ready 之后紧接着就该是它自己的 pong。
+
+    发了的话，旧客户端会把它当成未知推送丢给聊天服务；不发、但照样计入人数。
+    """
+    client = TestClient(app)
+    with client, client.websocket_connect("/v1/ws", headers=_headers()) as ws:
+        assert ws.receive_json()["t"] == "ready"
+        ws.send_json({"t": "ping"})
+        assert ws.receive_json() == {"t": "pong"}
+        assert admission.current().stats()["online"] == 1
+
+
+def test_enter_is_admitted_right_after_ready(wired) -> None:
+    client = TestClient(app)
+    with client, client.websocket_connect("/v1/ws", headers=_with_intent()) as ws:
+        assert ws.receive_json()["t"] == "ready"
+        assert ws.receive_json() == {"t": "admission", "state": "admitted"}
+
+
+def test_full_server_queues_enter_but_admits_resume(wired, monkeypatch: pytest.MonkeyPatch) -> None:
+    """上限从配置读（GLORY_ONLINE_LIMIT），满了 enter 排队、resume 照放。"""
+    monkeypatch.setenv("GLORY_ONLINE_LIMIT", "1")
+    get_settings.cache_clear()
+    client = TestClient(app)
+    with client:
+        with client.websocket_connect("/v1/ws", headers=_with_intent()) as first:
+            first.receive_json()
+            assert first.receive_json() == {"t": "admission", "state": "admitted"}
+            with client.websocket_connect(
+                "/v1/ws", headers=_with_intent("good-token-2", DEVICE_B)
+            ) as second:
+                second.receive_json()
+                assert second.receive_json() == {"t": "admission", "state": "queued", "position": 1}
+                with client.websocket_connect(
+                    "/v1/ws", headers=_with_intent("good-token-3", "device-cccccccc", "resume")
+                ) as third:
+                    third.receive_json()
+                    assert third.receive_json() == {"t": "admission", "state": "admitted"}

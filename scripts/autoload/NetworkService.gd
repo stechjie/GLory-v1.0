@@ -12,62 +12,32 @@ signal team_room_action_failed(reason: String)
 signal public_token_changed(token_id: String)
 
 var team_seat_profiles: Dictionary = {}
+# Public, presentation-only state for the preparation carrot camp. A pet is
+# assigned to an occupied seat by the authoritative room, never synthesized by
+# the client for an empty seat.
+var team_seat_pets: Dictionary = {}
+# slot(int) -> actual carrots harvested in `team_carrot_harvest_round`.
+# This exposes the round result only, never another player's private balance.
+var team_carrot_harvest_gains: Dictionary = {}
+var team_carrot_harvest_round := -1
 
-func publish_lobby_identity() -> void:
-	if not team_active or is_host or state != SessionState.READY or team_local_slot < 0:
-		return
-	var bearer := AccountManager.access_token()
-	if not bearer.is_empty():
-		_rpc_lobby_identity.rpc_id(1, bearer)
+# --- 出战名片（scripts/multiplayer/BattleCard.gd）------------------------------
+#
+# 座位上的名字头像、出战宠物、出战种族**只有一个来源**：玩家入座时交上来的出战名片。
+#
+# 此前是三条各自的路，2026-09-16 一起拆掉：
+#   · 名字头像：publish_lobby_identity / _rpc_lobby_identity —— 手机把**登录令牌**交给
+#     战斗服务器，这边拿去问账号服务器。商城上线之后那个令牌能花钻石，
+#     战斗服务器一旦被拿下，所有在线玩家的令牌都在它手上。
+#   · 出战宠物：publish_active_pet / _rpc_team_submit_active_pet —— 手机自报，只查
+#     「表里有没有这只」，不查「你有没有」。
+#   · 出战种族：准备 / 开始时手机自报。
+#
+# 现在名片在 _room_store_seat_card 里一次性写进座位，之后谁也改不了；
+# 重连回同一个座位，名片还在。
 
-# Only verified account identity is broadcast. Private biography stays in HTTPS.
-@rpc("any_peer", "call_remote", "reliable")
-func _rpc_lobby_identity(bearer: String) -> void:
-	if not _dedicated_server or bearer.is_empty() or bearer.length() > 8192:
-		return
-	var sender := multiplayer.get_remote_sender_id()
-	# 走独立的 lobby_identity 配额，且**软限流（不计 strike）**——与 ping 同一待遇。
-	# 此前复用 public_token（3 次/10 秒、计 strike），而客户端每次换座位都会重发
-	# 一次身份：连续换座 6 次 = 3 个 strike = 服务器直接断开连接。大厅阶段掉线
-	# 会立刻作废座位 token，玩家自动重连必然撞 token_unknown 被弹回主菜单
-	# （实测 bug：自定义房间连换 6 次座位必掉线）。身份上报不是攻击面
-	# （要带有效 bearer，服务端下面还会校验座位归属），超频丢弃这次调用即可，
-	# 拿 strike 踢人等于拿自己人的连接赌。
-	if not _rate_ok(sender, "lobby_identity", false):
-		return
-	var room := _room_for_peer(sender)
-	if room.is_empty():
-		return
-	var slot := int((room.get("peer_slot", {}) as Dictionary).get(sender, -1))
-	var token := str((room.get("seat_tokens", {}) as Dictionary).get(slot, ""))
-	var request := HTTPRequest.new()
-	request.timeout = 8.0
-	request.body_size_limit = 65536
-	add_child(request)
-	var config := preload("res://scripts/account/AccountConfig.gd")
-	var err := request.request(config.backend_url() + "/v1/me/profile", PackedStringArray(["Authorization: Bearer " + bearer]))
-	if err != OK:
-		request.queue_free()
-		return
-	var reply: Array = await request.request_completed
-	request.queue_free()
-	if int(reply[0]) != HTTPRequest.RESULT_SUCCESS or int(reply[1]) != 200:
-		return
-	if _room_for_peer(sender) != room or int((room.get("peer_slot", {}) as Dictionary).get(sender, -1)) != slot \
-			or str((room.get("seat_tokens", {}) as Dictionary).get(slot, "")) != token:
-		return
-	var parsed: Variant = JSON.parse_string((reply[3] as PackedByteArray).get_string_from_utf8())
-	if not parsed is Dictionary:
-		return
-	var identity := public_seat_identity(parsed)
-	if identity.is_empty():
-		return
-	var profiles: Dictionary = room.get("seat_profiles", {})
-	profiles[slot] = identity
-	room["seat_profiles"] = profiles
-	_touch_room(room)
-	_broadcast_room_lobby(room)
-
+# 房间里给别人看的名字头像。只留这三项 —— 生日、签名这些私密资料绝不进 room_state
+# （tools/profile_bug03_check 钉着）。名片那边传进来的也要过这一道。
 static func public_seat_identity(profile_data: Dictionary) -> Dictionary:
 	var code := str(profile_data.get("friend_code", ""))
 	if code.length() != 8:
@@ -161,7 +131,23 @@ enum SessionState { OFFLINE, JOINING, READY, FAILED, RECONNECTING }
 
 const BattleSim := preload("res://scripts/battle/BattleSimulator.gd")
 const ShopRoll := preload("res://scripts/economy/ShopRoll.gd")
+const RacePick := preload("res://scripts/units/RacePick.gd")
 const CarrotEconomy := preload("res://scripts/economy/CarrotEconomy.gd")
+const BattleCard := preload("res://scripts/multiplayer/BattleCard.gd")
+
+# --- 出战名片的状态（见 BattleCard.gd 文件头）---------------------------------
+#
+# 专服：验章用的公钥（启动时从文件读，拿不到就拒绝启动），
+# 以及有效期内用过的名片编号 —— 同一张名片交第二次就拒，被截走的名片不能再占一个座位。
+var _battle_card_public_key := ""
+var _seen_card_jti: Dictionary = {}   # jti -> 过期时刻（unix 秒）
+
+# 客户端：入座前从哪儿领名片。默认问账号服务器（AccountManager.fetch_battle_card）。
+#
+# 只有两进程联机测试会换掉它 —— 那里没有账号服务器，测试客户端用现场生成的
+# 测试钥匙自己签（tools/channel_check_node.gd）。换掉它**不会**削弱任何东西：
+# 验章在战斗服务器上，客户端怎么拿到名片都得过那一关。
+var seat_card_provider: Callable = Callable()
 const DEFAULT_PORT := NetworkConfig.SERVER_PORT
 const DEFAULT_HOST := NetworkConfig.SERVER_IP
 const TEAM_MAX_CLIENTS := 512
@@ -551,7 +537,10 @@ func _on_auth_payload(id: int, data: PackedByteArray) -> void:
 		var code := str(verdict.get("code", "protocol_mismatch"))
 		last_error = tr("net_err_handshake") % code
 		state = SessionState.FAILED
-		reset_peer_only()
+		# 🔴 不能在这里直接关：这是 SceneMultiplayer.poll() 里的认证回调，当场关 peer 引擎会崩
+		# （Godot 4.7.1 实测 signal 11；2026-09-19 本地 31 连线上 30 时两个门禁都崩在这）。
+		# 每次顶协议号，还没更新的旧包连新服务器都走这里 —— 该看到「版本不对」而不是闪退。
+		_close_rejected_peer.call_deferred(multiplayer.multiplayer_peer)
 		session_changed.emit()
 		return
 
@@ -564,6 +553,15 @@ func _on_auth_payload(id: int, data: PackedByteArray) -> void:
 		return
 	scene_mp.send_auth(id, NetworkTransport.auth_accept_bytes())
 	scene_mp.complete_auth(id)
+
+# 被拒之后（认证回调已经返回）再关。这期间玩家若已发起新的连接，只关被拒的那个，不动新的。
+func _close_rejected_peer(rejected: MultiplayerPeer) -> void:
+	if rejected == null:
+		return
+	if multiplayer.multiplayer_peer == rejected:
+		reset_peer_only()
+	else:
+		rejected.close()
 
 func _auth_reject(code: String) -> PackedByteArray:
 	return NetworkTransport.auth_reject_bytes(code)
@@ -751,6 +749,21 @@ func team_host(port: int = DEFAULT_PORT, dedicated: bool = false) -> bool:
 	_dedicated_server = dedicated
 	team_active = true
 	remote_port = port
+	# 出战名片的公钥（BattleCard.gd）。**专服拿不到就拒绝启动**，同下面 DTLS 的理由：
+	# 起来了但谁都入不了座，比起不来难查得多。本地房主调试不走名片，不需要它。
+	# 放在开端口之前：它不依赖连接对象，失败时不该白占一个端口。
+	if dedicated:
+		var card_key := BattleCard.load_server_key()
+		_battle_card_public_key = str(card_key.get("pem", ""))
+		if _battle_card_public_key.is_empty():
+			state = SessionState.FAILED
+			last_error = str(card_key.get("error", "缺出战名片公钥"))
+			_net_log("battle card key setup failed: %s" % last_error)
+			session_changed.emit()
+			return false
+		_net_log("battle card key loaded path=%s" % BattleCard.server_key_path())
+		# 语音服务器（LiveKit）的钥匙配置。读不到照常开服，只是不发语音钥匙（docs/语音LiveKit方案.md 3.2）。
+		_voice_setup_server()
 	var p := ENetMultiplayerPeer.new()
 	# 不传 max_channels（B9）：默认就是 ENet 上限 255，传具体数字只会调低上限。
 	var err := p.create_server(port, TEAM_MAX_CLIENTS)
@@ -840,12 +853,36 @@ func team_request_room_list() -> void:
 func team_request_create_room() -> void:
 	if not _can_send_room_request("create_room"):
 		return
-	_rpc_team_create_room.rpc_id(1, public_token_id)
+	var card := await _fetch_seat_card("create_room")
+	# 领名片是一次网络往返，期间连接可能已经断了 —— 再查一次。
+	if card.is_empty() or not _can_send_room_request("create_room"):
+		return
+	_rpc_team_create_room.rpc_id(1, public_token_id, card)
 
 func team_request_join_room(room_id: int) -> void:
 	if not _can_send_room_request("join_room"):
 		return
-	_rpc_team_join_room.rpc_id(1, room_id, public_token_id)
+	var card := await _fetch_seat_card("join_room")
+	if card.is_empty() or not _can_send_room_request("join_room"):
+		return
+	_rpc_team_join_room.rpc_id(1, room_id, public_token_id, card)
+
+# 入座前领一张出战名片（BattleCard.gd）。**在入座这一刻才领**，不在连接时领 ——
+# 玩家可以在房间列表里待很久、中途去换了宠物，连接时领的名片早就过时了。
+#
+# 领不到就**不发**入座请求，直接按入座失败告诉界面：规则是连不上账号服务器
+# 就开不了新对局。重连不走这里（座位上已经有名片了）。
+func _fetch_seat_card(what: String) -> String:
+	var card := ""
+	if seat_card_provider.is_valid():
+		card = str(await seat_card_provider.call())
+	else:
+		card = await AccountManager.fetch_battle_card()
+	if card.is_empty():
+		_net_log("%s request dropped: no battle card" % what)
+		last_error = "card_unavailable"
+		team_room_action_failed.emit("card_unavailable")
+	return card
 
 # 能不能发房间请求。不能发时**必须留下原因**：
 # 这条路径上唯一会出错的地方就是“以为连着其实没连”，而那两个条件分别
@@ -1076,9 +1113,21 @@ const SEAT_SLOT_MAPS := RoomService.SEAT_SLOT_MAPS
 
 func _move_seat_metadata(room: Dictionary, from_slot: int, to_slot: int) -> void:
 	_room_service.move_seat_metadata(room, from_slot, to_slot)
+	var seat_pets: Dictionary = room.get("seat_pets", {})
+	if seat_pets.has(from_slot):
+		seat_pets[to_slot] = seat_pets[from_slot]
+		seat_pets.erase(from_slot)
+	elif seat_pets.has(str(from_slot)):
+		seat_pets[to_slot] = seat_pets[str(from_slot)]
+		seat_pets.erase(str(from_slot))
+	room["seat_pets"] = seat_pets
 # 永久释放座位（主动离开 / 被踢 / 放弃 / 关房）。临时掉线绝不能调这个。
 func _clear_seat_metadata(room: Dictionary, slot: int) -> void:
 	_room_service.clear_seat_metadata(room, slot)
+	var seat_pets: Dictionary = room.get("seat_pets", {})
+	seat_pets.erase(slot)
+	seat_pets.erase(str(slot))
+	room["seat_pets"] = seat_pets
 # 释放一个座位绑定的公开短码。
 # compare-and-delete：只有当这条映射**仍指向本座位的 token** 时才删。
 # 无条件删会在短码碰撞（同一 id 被另一个座位重新绑定）时，让先离开的人把后来者的
@@ -1089,6 +1138,8 @@ func _release_seat_public_id(room: Dictionary, slot: int) -> void:
 func _room_close(room: Dictionary, reason: String) -> void:
 	room.state = ROOM_CLOSED
 	room.finished_reason = reason
+	# 两队的语音房间一起删（里面的人会被 LiveKit 请出去）。放在清座位之前：要用房间里的语音随机串。
+	_voice_rooms_closed(room)
 	# 房间没了：每个座位上挂的所有东西一并作废（token、短码绑定、加入顺序、进度）。
 	# 房间是这些全局映射条目的最后一个持有者，这里不清就永远没人清了。
 	for slot_i in TEAM_SLOTS:
@@ -1213,7 +1264,7 @@ func _room_begin_next_prep(room: Dictionary) -> void:
 			refreshed_slots[int(slot_key)] = true
 		var states_for_economy: Array = room.get("slot_states", [])
 		for seat in TEAM_SLOTS:
-			if seat < states_for_economy.size() and str(states_for_economy[seat]) == "player":
+			if seat < states_for_economy.size() and str(states_for_economy[seat]) in ["player", "dummy"]:
 				refreshed_slots[seat] = true
 		for slot_key in refreshed_slots.keys():
 			var slot := int(slot_key)
@@ -1233,7 +1284,8 @@ func _room_begin_next_prep(room: Dictionary) -> void:
 			EconomyLedger.reset_round(prep)
 			EconomyLedger.harvest_for_round(prep, next_round)
 			var shop: Dictionary = prep.get("shop", {})
-			shop["offers"] = _server_roll_shop_offers(GameState.SHOP_UNIT_SLOTS, next_round)
+			shop["offers"] = _server_roll_shop_offers(GameState.SHOP_UNIT_SLOTS, next_round,
+				_room_seat_races(room, slot))
 			shop["offer_id"] = _make_offer_id()
 			var sold: Array = []
 			sold.resize(GameState.SHOP_UNIT_SLOTS)
@@ -1296,9 +1348,14 @@ func _team_toggle_slot_authoritative(slot: int) -> void:
 		"empty":
 			team_slot_states[slot] = "dummy"
 			team_ready[slot] = true
+			var starters: Array = PetService.starter_ids()
+			if not starters.is_empty():
+				team_seat_pets[slot] = str(starters[slot % starters.size()])
 		"dummy":
 			team_slot_states[slot] = "empty"
 			team_ready[slot] = false
+			team_seat_pets.erase(slot)
+			team_seat_pets.erase(str(slot))
 		_:
 			return
 	_team_broadcast_lobby()
@@ -1328,6 +1385,7 @@ func _room_toggle_slot(room: Dictionary, slot: int) -> void:
 		"empty":
 			states[slot] = "dummy"
 			ready[slot] = true
+			_ensure_dummy_seat_pet(room, slot)
 		"dummy":
 			states[slot] = "empty"
 			ready[slot] = false
@@ -1408,6 +1466,8 @@ func _room_do_move(room: Dictionary, peer_id: int, from_slot: int, to_slot: int)
 	if str(states[from_slot]) != "player" or str(states[to_slot]) != "empty":
 		return
 	var was_ready := bool(ready[from_slot])
+	# 语音身份要在座位信息搬走之前取（跨队时要把他从旧队伍的语音房间请出去，见函数末尾）。
+	var voice_identity := _voice_identity(room, from_slot)
 	states[from_slot] = "empty"
 	ready[from_slot] = false
 	states[to_slot] = "player"
@@ -1429,6 +1489,9 @@ func _room_do_move(room: Dictionary, peer_id: int, from_slot: int, to_slot: int)
 	if int(room.get("leader_slot", 0)) == from_slot:
 		room.leader_slot = to_slot
 		_net_log("leader moved with player room=%d %d->%d" % [int(room.get("id", 0)), from_slot, to_slot])
+	# 跨队换座：旧队伍的语音房间里还留着他（钥匙只管进门），请 LiveKit 把他请出去（docs/语音LiveKit方案.md 3.3）。
+	if GameConstants.team_of_slot(from_slot) != GameConstants.team_of_slot(to_slot):
+		_voice_seat_released(room, from_slot, voice_identity)
 	_touch_room(room)
 	# 房主变更、座位变更、凭证都在 room_state 里，一次全量广播就够 —— 不再需要
 	# team_leader / team_assign_slot 两条各发各的（E2）。
@@ -1572,10 +1635,11 @@ func _room_start_authoritative(room: Dictionary) -> void:
 	var ready: Array = room.get("ready", [])
 	var states: Array = room.get("slot_states", [])
 	if _economy_action_enabled("upgrade_harvest_tech"):
-		# The first prep is a real round boundary. Seed each player once before
+		# The first prep is a real round boundary. Seed each occupied player or AI
+		# seat once before
 		# the first room_state so an authoritative client cannot miss the +3.
 		for slot in TEAM_SLOTS:
-			if slot < states.size() and str(states[slot]) == "player":
+			if slot < states.size() and str(states[slot]) in ["player", "dummy"]:
 				var prep: Dictionary = _room_prep(room, slot)
 				# 同 _room_next_round：影子期也要锚定，理由见那里的注释。
 				if not economy_authoritative():
@@ -1590,7 +1654,8 @@ func _room_start_authoritative(room: Dictionary) -> void:
 				# 服务端 _room_apply_economy 判 typeof(payload.gold) != int → gold_desync，
 				# 玩家看到「商店刷新失败：gold_desync」。第 2 回合起 server_shop 有值就正常。
 				var shop: Dictionary = prep.get("shop", {})
-				shop["offers"] = _server_roll_shop_offers(GameState.SHOP_UNIT_SLOTS, int(room.get("round_index", 1)))
+				shop["offers"] = _server_roll_shop_offers(GameState.SHOP_UNIT_SLOTS,
+					int(room.get("round_index", 1)), _room_seat_races(room, slot))
 				shop["offer_id"] = _make_offer_id()
 				var sold: Array = []
 				sold.resize(GameState.SHOP_UNIT_SLOTS)
@@ -1658,6 +1723,9 @@ func _build_room_state(room: Dictionary, slot: int) -> Dictionary:
 		"leader_slot": int(room.get("leader_slot", 0)),
 		"slot_states": (room.get("slot_states", []) as Array).duplicate(),
 		"seat_profiles": (room.get("seat_profiles", {}) as Dictionary).duplicate(true),
+		"seat_pets": _build_public_seat_pets(room),
+		"carrot_harvest_round": int(room.get("round_index", -1)),
+		"carrot_harvest_gains": _build_public_carrot_harvest_gains(room),
 		"ready": (room.get("ready", []) as Array).duplicate(),
 		"suspended": bool(room.get("suspended", false)),
 		# --- 本座位身份 ---
@@ -1700,6 +1768,7 @@ func _build_economy_state(room: Dictionary, slot: int) -> Dictionary:
 		"last_harvest_round": int(prep.get("last_harvest_round", -1)),
 		"last_harvest_gain": int(prep.get("last_harvest_gain", 0)),
 		"stone_draw_used_round": int(prep.get("stone_draw_used_round", -1)),
+		"stone_draw_count": maxi(0, int(prep.get("stone_draw_count", 0))),
 		"team_upgrade_stones": _room_team_stones(room, slot).duplicate(true),
 		"shop": {
 			"offer_id": str(shop.get("offer_id", "")),
@@ -1710,6 +1779,64 @@ func _build_economy_state(room: Dictionary, slot: int) -> Dictionary:
 		"roster": (prep.get("roster", {}) as Dictionary).duplicate(true),
 		"gamble_used": bool(prep.get("gamble_used", false)),
 	}
+
+func _build_public_seat_pets(room: Dictionary) -> Dictionary:
+	var visible: Dictionary = {}
+	var states: Array = room.get("slot_states", [])
+	var seat_pets: Dictionary = room.get("seat_pets", {})
+	for slot in TEAM_SLOTS:
+		if slot >= states.size() or str(states[slot]) not in ["player", "dummy"]:
+			continue
+		var pet_id := str(seat_pets.get(slot, seat_pets.get(str(slot), "")))
+		if str(states[slot]) == "dummy" and PetService.model_path(pet_id).is_empty():
+			pet_id = _ensure_dummy_seat_pet(room, slot)
+		if not PetService.model_path(pet_id).is_empty():
+			visible[slot] = pet_id
+	return visible
+
+func _build_public_carrot_harvest_gains(room: Dictionary) -> Dictionary:
+	var gains: Dictionary = {}
+	if not _economy_action_enabled("upgrade_harvest_tech"):
+		return gains
+	var states: Array = room.get("slot_states", [])
+	var preps: Dictionary = room.get("prep", {})
+	var round_index := int(room.get("round_index", -1))
+	for slot in TEAM_SLOTS:
+		if slot >= states.size() or str(states[slot]) not in ["player", "dummy"]:
+			continue
+		var prep_value: Variant = preps.get(slot, preps.get(str(slot), {}))
+		if typeof(prep_value) != TYPE_DICTIONARY:
+			continue
+		var prep := prep_value as Dictionary
+		if int(prep.get("last_harvest_round", -1)) == round_index:
+			gains[slot] = maxi(0, int(prep.get("last_harvest_gain", 0)))
+	return gains
+
+# AI 座位在萝卜营地里**展示**的宠物。
+#
+# 🔴 **写进 seat_ai_pets，绝不写进 seat_pets。** seat_pets 是出战名片的宠物，
+# 战斗要读它（_room_seat_pet）。此前 AI 的展示宠物也写在 seat_pets 里：
+# 没带宠物的玩家掉线 → 座位被 AI 接手（_room_auto_complete_seat）→ 这里写进一只宠物
+# → 玩家重连、座位变回 player → **战斗里用上一只他根本没有的宠物**。
+#
+# 有名片宠物（掉线玩家自己的）就展示那只；没有才给 AI 配一只，只配一次。
+func _ensure_dummy_seat_pet(room: Dictionary, slot: int) -> String:
+	var own := _room_seat_pet(room, slot)
+	if not PetService.model_path(own).is_empty():
+		return own
+	var ai_pets: Dictionary = room.get("seat_ai_pets", {})
+	var existing := str(ai_pets.get(slot, ""))
+	if not PetService.model_path(existing).is_empty():
+		return existing
+	var starters: Array = PetService.starter_ids()
+	if starters.is_empty():
+		return ""
+	var assigned := str(starters[slot % starters.size()])
+	if PetService.model_path(assigned).is_empty():
+		return ""
+	ai_pets[slot] = assigned
+	room["seat_ai_pets"] = ai_pets
+	return assigned
 
 func _send_room_state(room: Dictionary, peer_id: int, seq: int) -> void:
 	var slot := int((room.get("peer_slot", {}) as Dictionary).get(peer_id, -1))
@@ -1831,7 +1958,7 @@ func _rpc_team_prep_mercs(slot: int, round_index: int, ids: Array) -> void:
 
 # --- 房间 / 局内快捷短语（docs/聊天系统设计.md 批次 A）-----------------------
 #
-# 网络上只走 phrase_id 一个整数，**不走文本**。理由见 ChatPhrases.gd 顶部：
+# 网络上只走 phrase_id 一个整数（外加一个范围开关 team_only），**不走文本**。理由见 ChatPhrases.gd 顶部：
 # 内容审核归零、不碰 RFC 第六节 🔴 第 3 条、载荷上界天然存在。
 #
 # 🔴 **客户端不自报座位号。** slot 一律由服务端从 sender 反查（`peer_slot[sender]`）。
@@ -1843,10 +1970,16 @@ func _rpc_team_prep_mercs(slot: int, round_index: int, ids: Array) -> void:
 
 const ChatPhrases := preload("res://scripts/multiplayer/ChatPhrases.gd")
 
-signal team_chat_received(slot: int, phrase_id: int)
+# 🔴 聊天范围（2026-09-14，协议 26）：短语和自由文字都带 team_only。
+#   true  = 只给同队（含发送者自己 —— 他那条也要经服务器定序回来）
+#   false = 房间里所有人（含敌方）
+# **谁收得到由 ③ 算**（chat_recipients），客户端只是选。team_only 的消息敌方手机根本收不到，
+# 不是「收到了但不显示」—— 那样改过的客户端就能看到对面的队内聊天。
+# 界面：备战期默认 true、可切换（PrepUI._chat_team_only）；大厅固定 false（开局前队伍还没定）。
+signal team_chat_received(slot: int, phrase_id: int, team_only: bool)
 
-func team_send_phrase(phrase_id: int) -> void:
-	# **本地不回显**，等服务器广播回来再显示。
+func team_send_phrase(phrase_id: int, team_only: bool = false) -> void:
+	# **本地不回显**，等服务器转发回来再显示。
 	#
 	# 服务器是唯一定序者。本地先显示会让发送者看到的顺序与其他人不同 ——
 	# 自己那条永远在最前，别人看到的是按到达顺序排的。聊天里这种不一致不会报错，
@@ -1857,14 +1990,13 @@ func team_send_phrase(phrase_id: int) -> void:
 	if not ChatPhrases.is_valid_id(phrase_id):
 		return
 	if is_host:
-		# 本地房主模式：自己就是权威，直接广播并自己 emit（"call_remote" 不回环）。
-		_rpc_team_chat.rpc(team_local_slot, phrase_id)
-		team_chat_received.emit(team_local_slot, phrase_id)
+		# 本地房主模式：自己就是权威，直接转发并自己 emit（"call_remote" 不回环）。
+		_host_send_phrase(team_local_slot, phrase_id, team_only)
 	else:
-		_rpc_team_chat_submit.rpc_id(1, phrase_id)
+		_rpc_team_chat_submit.rpc_id(1, phrase_id, team_only)
 
 @rpc("any_peer", "call_remote", "reliable")
-func _rpc_team_chat_submit(phrase_id: int) -> void:
+func _rpc_team_chat_submit(phrase_id: int, team_only: bool) -> void:
 	if _dedicated_server:
 		var sender := multiplayer.get_remote_sender_id()
 		# count_strike=false：超限只丢这一条，不累计踢人。
@@ -1880,34 +2012,63 @@ func _rpc_team_chat_submit(phrase_id: int) -> void:
 			return
 		if not ChatPhrases.is_valid_id(phrase_id):
 			return
-		# 广播给房间里所有人，**包括发送者** —— 他那条也要经服务器定序回来，
-		# 否则就回到了 team_send_phrase 注释里说的那个不一致状态。
-		for peer_id in (room.get("peer_slot", {}) as Dictionary).keys():
-			if _peer_connected(int(peer_id)):
-				_rpc_team_chat.rpc_id(int(peer_id), slot, phrase_id)
+		# 转给 chat_recipients 算出来的人，**包括发送者** —— 他那条也要经服务器定序回来，
+		# 否则就回到了 team_send_phrase 注释里说的那个不一致状态。team_only 时敌方不在里面。
+		for peer_id in chat_recipients(room, slot, team_only):
+			if _peer_connected(peer_id):
+				_rpc_team_chat.rpc_id(peer_id, slot, phrase_id, team_only)
 		return
 	if not is_host:
 		return
 	var host_slot := int(_team_peer_slot.get(multiplayer.get_remote_sender_id(), -1))
 	if host_slot < 0 or host_slot >= TEAM_SLOTS or not ChatPhrases.is_valid_id(phrase_id):
 		return
-	_rpc_team_chat.rpc(host_slot, phrase_id)
-	team_chat_received.emit(host_slot, phrase_id)
+	_host_send_phrase(host_slot, phrase_id, team_only)
 
 @rpc("authority", "call_remote", "reliable")
-func _rpc_team_chat(slot: int, phrase_id: int) -> void:
+func _rpc_team_chat(slot: int, phrase_id: int, team_only: bool) -> void:
 	# 来路是网络，收到的一样要校验。专服转发的是它已经校验过的 id，
 	# 但本地房主模式下这里就是唯一的那道门 —— 少这一道，房主一改包全房都跟着显示。
 	if slot < 0 or slot >= TEAM_SLOTS:
 		return
 	if not ChatPhrases.is_valid_id(phrase_id):
 		return
-	team_chat_received.emit(slot, phrase_id)
+	team_chat_received.emit(slot, phrase_id, team_only)
+
+# 这条聊天该转给谁：team_only 只给同队，否则全房；**包括发送者自己**。
+# 纯函数（不碰网络），tools/chat_check 直接调。本地房主模式走 _host_chat_peers，同一条规则。
+static func chat_recipients(room: Dictionary, sender_slot: int, team_only: bool) -> Array[int]:
+	var out: Array[int] = []
+	var peer_slot: Dictionary = room.get("peer_slot", {})
+	for peer in peer_slot.keys():
+		if chat_reaches(sender_slot, int(peer_slot[peer]), team_only):
+			out.append(int(peer))
+	return out
+
+static func chat_reaches(sender_slot: int, receiver_slot: int, team_only: bool) -> bool:
+	if sender_slot < 0 or sender_slot >= TEAM_SLOTS or receiver_slot < 0 or receiver_slot >= TEAM_SLOTS:
+		return false
+	return not team_only or GameConstants.team_of_slot(receiver_slot) == GameConstants.team_of_slot(sender_slot)
+
+# 本地房主模式（调试用）没有 room 字典：收件人从 _team_peer_slot 算。
+# 那张表里只有远端 peer；房主自己要不要显示，由调用方用 chat_reaches 判断。
+func _host_chat_peers(sender_slot: int, team_only: bool) -> Array[int]:
+	var out: Array[int] = []
+	for peer_id in _team_peer_slot.keys():
+		if chat_reaches(sender_slot, int(_team_peer_slot[peer_id]), team_only):
+			out.append(int(peer_id))
+	return out
+
+func _host_send_phrase(slot: int, phrase_id: int, team_only: bool) -> void:
+	for peer_id in _host_chat_peers(slot, team_only):
+		_rpc_team_chat.rpc_id(peer_id, slot, phrase_id, team_only)
+	if chat_reaches(slot, team_local_slot, team_only):
+		team_chat_received.emit(slot, phrase_id, team_only)
 
 # --- 房间 / 局内自由文字（docs/聊天系统设计.md 批次 D）------------------------------
 #
-# 与上面的快捷短语是同一套形状：客户端只交文本，**座位号由服务端从 sender 反查**；
-# 服务端定序、广播给房间里所有人（包括发送者）；本地不回显。
+# 与上面的快捷短语是同一套形状：客户端只交文本和范围，**座位号由服务端从 sender 反查**；
+# 服务端定序、按 chat_recipients 转发（包括发送者）；本地不回显。
 #
 # 与短语不同的两处：
 #   1. 文本要校验与规范化（ChatText.clean）。客户端发之前过一遍给玩家即时反馈，
@@ -1917,7 +2078,7 @@ func _rpc_team_chat(slot: int, phrase_id: int) -> void:
 
 const ChatText := preload("res://scripts/multiplayer/ChatText.gd")
 
-signal team_chat_text_received(slot: int, text: String)
+signal team_chat_text_received(slot: int, text: String, team_only: bool)
 
 # 客户端自己的节流。服务端额度是 10 秒 3 条（RateLimitService 的 chat_text），
 # 超了会**静默丢弃**（不计 strike、也不回执）—— 所以这里先挡一道，
@@ -1931,7 +2092,7 @@ const TEXT_SEND_MIN_INTERVAL_SEC := 4.0
 var _last_text_sent_at := -1000.0
 
 # 返回空串表示已发出；否则是给玩家看的原因（界面据此留着输入条让他改）。
-func team_send_text(raw: String) -> String:
+func team_send_text(raw: String, team_only: bool = false) -> String:
 	if not team_active or team_local_slot < 0:
 		return "联机对局中才能发送"
 	var problem := ChatText.problem(raw)
@@ -1945,14 +2106,13 @@ func team_send_text(raw: String) -> String:
 	var text := ChatText.clean(raw)
 	if is_host:
 		# 本地房主模式：自己就是权威（同 team_send_phrase）。
-		_rpc_team_chat_text.rpc(team_local_slot, text)
-		team_chat_text_received.emit(team_local_slot, text)
+		_host_send_text(team_local_slot, text, team_only)
 	else:
-		_rpc_team_chat_text_submit.rpc_id(1, text)
+		_rpc_team_chat_text_submit.rpc_id(1, text, team_only)
 	return ""
 
 @rpc("any_peer", "call_remote", "reliable")
-func _rpc_team_chat_text_submit(text: String) -> void:
+func _rpc_team_chat_text_submit(text: String, team_only: bool) -> void:
 	if _dedicated_server:
 		var sender := multiplayer.get_remote_sender_id()
 		# 软限，不计 strike —— 理由同 chat_phrase：刷屏是烦人，不是攻击，
@@ -1969,9 +2129,10 @@ func _rpc_team_chat_text_submit(text: String) -> void:
 		var clean := ChatText.clean(text)
 		if clean.is_empty():
 			return
-		for peer_id in (room.get("peer_slot", {}) as Dictionary).keys():
-			if _peer_connected(int(peer_id)):
-				_rpc_team_chat_text.rpc_id(int(peer_id), slot, clean)
+		# 同短语：按范围转，包括发送者；team_only 时敌方不在里面。
+		for peer_id in chat_recipients(room, slot, team_only):
+			if _peer_connected(peer_id):
+				_rpc_team_chat_text.rpc_id(peer_id, slot, clean, team_only)
 		return
 	if not is_host:
 		return
@@ -1979,81 +2140,159 @@ func _rpc_team_chat_text_submit(text: String) -> void:
 	var cleaned := ChatText.clean(text)
 	if host_slot < 0 or host_slot >= TEAM_SLOTS or cleaned.is_empty():
 		return
-	_rpc_team_chat_text.rpc(host_slot, cleaned)
-	team_chat_text_received.emit(host_slot, cleaned)
+	_host_send_text(host_slot, cleaned, team_only)
 
 @rpc("authority", "call_remote", "reliable")
-func _rpc_team_chat_text(slot: int, text: String) -> void:
+func _rpc_team_chat_text(slot: int, text: String, team_only: bool) -> void:
 	# 收到的一样要校验：本地房主模式下这里就是唯一的那道门（同 _rpc_team_chat）。
 	if slot < 0 or slot >= TEAM_SLOTS:
 		return
 	var clean := ChatText.clean(text)
 	if clean.is_empty():
 		return
-	team_chat_text_received.emit(slot, clean)
+	team_chat_text_received.emit(slot, clean, team_only)
 
-# --- 组队语音（docs/聊天系统设计.md 第九节）--------------------------------------
-# 包是安卓插件打好的（ADPCM，android_plugins/glory_voice），这里**不解码、不看内容**，
-# 只做三件事：大小上限、限流、只转给同队。座位号由服务端从 sender 反查（同自由文字）。
+func _host_send_text(slot: int, text: String, team_only: bool) -> void:
+	for peer_id in _host_chat_peers(slot, team_only):
+		_rpc_team_chat_text.rpc_id(peer_id, slot, text, team_only)
+	if chat_reaches(slot, team_local_slot, team_only):
+		team_chat_text_received.emit(slot, text, team_only)
+
+# --- 组队语音：LiveKit（docs/语音LiveKit方案.md）-----------------------------------------
 #
-# unreliable_ordered + 独立通道 CH_VOICE：语音丢一个包只是一声咔，重传回来的旧包反而是杂音；
-# ordered 让迟到的包在网络层就被丢掉。
-signal team_voice_received(slot: int, packet: PackedByteArray)
+# 语音**不经过**战斗服务器：客户端直接连同一台机器上的 LiveKit 语音服务器。这里只做两件事 ——
+#
+#   发钥匙  客户端只说「给我钥匙」，**不带任何参数**：谁、哪个房间、哪一队一律从连接反查
+#           （同聊天：带参数就等于能冒充别人）。钥匙只能进「这个对局房间、这一队」的语音房间，
+#           只准发麦克风。敌方拿不到本队的钥匙，也就听不到。
+#   踢人    钥匙只管进门：LiveKit 只在**首次进房**时检查钥匙，进去以后还会自动续。所以玩家
+#           换队、离开、座位被 AI 接管、关房时，要主动让 LiveKit 把人请出去
+#           （_voice_seat_released / _voice_rooms_closed，调用处在各条座位变动路径里）。
+#           对局中掉线、座位保留（_room_reserve_peer）**不踢**：人还在这一队，重连回来接着说。
+#
+# 这台服务器没配语音（没有 livekit_voice.json）时照常开服，钥匙请求回 voice_not_configured。
+# 语音挂了只影响语音：登录、房间、对战、文字聊天都不受影响，开局也不等语音。
 
-# 一个包最多 3 帧（5 + 3 × 163 = 494 字节，AdpcmCodec.MAX_PACKET_BYTES）。
-# 还要明显低于 ENet 的 MTU：不可靠包一旦被分片，丢一片整包就没了。
-# tools/voice_check 拿 Java 那边的常量对账。
-const VOICE_MAX_PACKET_BYTES := 512
+const LiveKitAuth := preload("res://scripts/voice/LiveKitAuth.gd")
+const LiveKitAdmin := preload("res://scripts/voice/LiveKitAdmin.gd")
 
-# 发一个包。不在房间、没连上、本地房主模式（调试用）都直接丢：语音不需要回执。
-func team_send_voice(packet: PackedByteArray) -> void:
+signal team_voice_token_received(url: String, token: String, room: String, error: String)
+
+var _voice_config: Dictionary = {}
+# 踢人 / 删房间的执行者（LiveKitAdmin）。门禁换成记账的假对象，所以不写死类型。
+var _voice_admin: Object = null
+
+
+# 客户端：向战斗服务器要一张本队语音房间的钥匙，回复走 team_voice_token_received。
+# 返回 false = 这会儿根本发不出去（没连上 / 不在房间 / 本地房主调试房没有语音服务器）。
+func team_request_voice_token() -> bool:
 	if not team_active or team_local_slot < 0 or is_host:
-		return
-	if packet.is_empty() or packet.size() > VOICE_MAX_PACKET_BYTES:
-		return
+		return false
 	if multiplayer.multiplayer_peer == null or state != SessionState.READY:
-		return
-	_rpc_team_voice_submit.rpc_id(1, packet)
+		return false
+	_rpc_team_voice_token_request.rpc_id(1)
+	return true
 
-@rpc("any_peer", "call_remote", "unreliable_ordered", NetworkConfig.CH_VOICE)
-func _rpc_team_voice_submit(packet: PackedByteArray) -> void:
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_team_voice_token_request() -> void:
 	if not _dedicated_server:
 		return
 	var sender := multiplayer.get_remote_sender_id()
-	if packet.is_empty() or packet.size() > VOICE_MAX_PACKET_BYTES:
+	# 软限，不计 strike：客户端连不上时会退避重试，那不是攻击。
+	if not _rate_ok(sender, "voice_token", false):
 		return
-	# 软限，不计 strike：弱网恢复时包会攒成一串一起到，那是网络不是攻击。
-	if not _rate_ok(sender, "voice", false):
-		return
-	var room := _room_for_peer(sender)
+	var reply := voice_token_for_peer(_room_for_peer(sender), sender, int(Time.get_unix_time_from_system()))
+	if _peer_connected(sender):
+		_rpc_team_voice_token.rpc_id(sender, str(reply.url), str(reply.token), str(reply.room), str(reply.error))
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_team_voice_token(url: String, token: String, room_name: String, error: String) -> void:
+	team_voice_token_received.emit(url, token, room_name, error)
+
+
+# 给这个 peer 签钥匙。纯逻辑（不碰网络），tools/voice_check 直接调。
+func voice_token_for_peer(room: Dictionary, peer_id: int, now: int) -> Dictionary:
+	if _voice_config.is_empty():
+		return _voice_reply("voice_not_configured")
 	if room.is_empty():
-		return
-	var slot := int((room.get("peer_slot", {}) as Dictionary).get(sender, -1))
-	for peer_id in voice_recipients(room, slot, sender):
-		if _peer_connected(peer_id):
-			_rpc_team_voice.rpc_id(peer_id, slot, packet)
+		return _voice_reply("not_in_room")
+	var slot := int((room.get("peer_slot", {}) as Dictionary).get(peer_id, -1))
+	var states: Array = room.get("slot_states", [])
+	if slot < 0 or slot >= TEAM_SLOTS or slot >= states.size() or str(states[slot]) != "player":
+		return _voice_reply("not_seated")
+	var room_name := voice_room_name(room, GameConstants.team_of_slot(slot))
+	if not bool(room.get("voice_used", false)):
+		room["voice_used"] = true
+		_rooms_dirty = true
+	var token := LiveKitAuth.join_token(_voice_config, _voice_identity(room, slot),
+		_voice_display_name(room, slot), room_name, now)
+	return {"url": str(_voice_config.get("client_url", "")), "token": token, "room": room_name, "error": ""}
 
-@rpc("authority", "call_remote", "unreliable_ordered", NetworkConfig.CH_VOICE)
-func _rpc_team_voice(slot: int, packet: PackedByteArray) -> void:
-	if slot < 0 or slot >= TEAM_SLOTS or packet.is_empty() or packet.size() > VOICE_MAX_PACKET_BYTES:
-		return
-	team_voice_received.emit(slot, packet)
 
-# 这个包该转给谁：**同队**、在这个房间里有座位、不是发送者自己。敌方永远收不到 ——
-# 语音里说的是战术。纯函数（不碰网络），tools/voice_check 直接调。
-static func voice_recipients(room: Dictionary, sender_slot: int, sender_peer: int) -> Array[int]:
-	var out: Array[int] = []
-	if sender_slot < 0 or sender_slot >= TEAM_SLOTS:
-		return out
-	var team := GameConstants.team_of_slot(sender_slot)
-	var peer_slot: Dictionary = room.get("peer_slot", {})
-	for peer in peer_slot.keys():
-		var slot := int(peer_slot[peer])
-		if int(peer) == sender_peer or slot < 0 or slot >= TEAM_SLOTS:
-			continue
-		if GameConstants.team_of_slot(slot) == team:
-			out.append(int(peer))
-	return out
+static func _voice_reply(error: String) -> Dictionary:
+	return {"url": "", "token": "", "room": "", "error": error}
+
+
+# 这个对局房间某一队的语音房间名。随机串建房时就有（RoomService.new_room）；
+# 旧快照里读回来的房间没有，第一次用时补一个并标脏存盘。
+func voice_room_name(room: Dictionary, team: int) -> String:
+	var salt := str(room.get("voice_salt", ""))
+	if salt.is_empty():
+		salt = Crypto.new().generate_random_bytes(6).hex_encode()
+		room["voice_salt"] = salt
+		_rooms_dirty = true
+	return LiveKitAuth.room_name(int(room.get("id", 0)), salt, team)
+
+
+# 座位上的人在语音里的身份：名片里的好友码（账号服务器签过名，可信）。没有名片的测试座位用 seat<N>。
+func _voice_identity(room: Dictionary, slot: int) -> String:
+	var profiles: Dictionary = room.get("seat_profiles", {})
+	var profile: Dictionary = profiles.get(slot, {})
+	var code := str(profile.get("friend_code", "")).strip_edges()
+	return code if not code.is_empty() else "seat%d" % slot
+
+
+func _voice_display_name(room: Dictionary, slot: int) -> String:
+	var profiles: Dictionary = room.get("seat_profiles", {})
+	var profile: Dictionary = profiles.get(slot, {})
+	return str(profile.get("player_name", "")).strip_edges()
+
+
+# 这个人不再属于 slot 所在的那一队了：请 LiveKit 把他从那一队的语音房间请出去（并作废他的钥匙）。
+# 调用方要在清座位**之前**取 identity —— 清完名片就没了。这个房间从没发过语音钥匙就不用去。
+func _voice_seat_released(room: Dictionary, slot: int, identity: String) -> void:
+	if _voice_admin == null or identity.is_empty() or slot < 0 or slot >= TEAM_SLOTS:
+		return
+	if not bool(room.get("voice_used", false)):
+		return
+	_voice_admin.remove_participant(voice_room_name(room, GameConstants.team_of_slot(slot)), identity)
+
+
+# 关房：两队的语音房间一起删掉（里面的人会被请出去）。
+func _voice_rooms_closed(room: Dictionary) -> void:
+	if _voice_admin == null or not bool(room.get("voice_used", false)):
+		return
+	for team in [GameConstants.TEAM_RED, GameConstants.TEAM_BLUE]:
+		_voice_admin.delete_room(voice_room_name(room, int(team)))
+
+
+# 专服启动时读语音配置（team_host 调）。读不到照常开服，只是不发钥匙。
+func _voice_setup_server() -> void:
+	_voice_config = {}
+	if _voice_admin is Node and is_instance_valid(_voice_admin):
+		(_voice_admin as Node).queue_free()
+	_voice_admin = null
+	var cfg := LiveKitAuth.load_config()
+	if not bool(cfg.get("ok", false)):
+		_net_log("voice not configured: %s" % str(cfg.get("error", "")))
+		return
+	_voice_config = cfg
+	var admin := LiveKitAdmin.new()
+	admin.name = "LiveKitAdmin"
+	add_child(admin)
+	admin.setup(cfg, _net_log)
+	_voice_admin = admin
+	_net_log("voice configured (LiveKit) path=%s url=%s" % [LiveKitAuth.config_path(), str(cfg.get("client_url", ""))])
 
 # --- 3v3 team board collection (N2) ----------------------------------------
 # After everyone presses "start battle" in prep, each player submits their board
@@ -2554,11 +2793,22 @@ func _rpc_team_submit_board(slot: int, snapshot: Dictionary) -> void:
 			_rpc_board_rejected.rpc_id(sender, bad)
 			return
 		_shadow_audit_submission(room, slot, snapshot, validation.get("snapshot", {}))
-		boards[slot] = validation.get("snapshot", {})
+		var accepted_snapshot: Dictionary = validation.get("snapshot", {})
+		# 🔴 出战宠物**一律用座位上名片里的**，玩家交来的棋盘里写的是什么都不算。
+		#
+		# 这是唯一的卡点：下游全部从这份棋盘取宠物 —— 战斗开局加成
+		# （BattleSimShared._team_owner_ctx_for_slot）、战后利息（_settle_* 的 pet_id）、
+		# 跨回合缓存（下面的 last_board，掉线代打与重连补交都用它）。
+		# 在这里改掉一次，它们全部拿到的就是名片上的那只。
+		#
+		# 重连也一样：手机刚重开、本机宠物缓存还是空的，交上来的棋盘里 pet 是空串 ——
+		# 照样换成座位上的，宠物不变、效果照有。
+		accepted_snapshot["pet"] = _room_seat_pet(room, slot)
+		boards[slot] = accepted_snapshot
 		room.boards = boards
 		# 跨回合缓存最后一次合法棋盘：该座位掉线时用它补交（room.boards 每轮清空）
 		var last_board: Dictionary = room.get("last_board", {})
-		last_board[slot] = validation.get("snapshot", {})
+		last_board[slot] = accepted_snapshot
 		room.last_board = last_board
 		_touch_room(room)
 		_net_log("board accepted room=%d round=%d slot=%d" % [int(room.get("id", 0)), int(room.get("round_index", 1)), slot])
@@ -2568,6 +2818,7 @@ func _rpc_team_submit_board(slot: int, snapshot: Dictionary) -> void:
 		return
 	if int(_team_peer_slot.get(multiplayer.get_remote_sender_id(), -1)) != slot:
 		return
+	team_seat_pets[slot] = NetProtocol.extract_pet(snapshot)
 	_team_boards_collecting[slot] = snapshot
 	_team_try_finalize_boards()
 
@@ -2612,6 +2863,9 @@ func _restamp_cached_board(room: Dictionary, slot: int, cached: Variant) -> Dict
 	var slot_gold: Array = room.get("slot_gold", [])
 	if slot >= 0 and slot < slot_gold.size() and slot_gold[slot] != null:
 		snap["gold"] = int(slot_gold[slot])
+	# 宠物同理，以座位上的名片为准。缓存可能来自存盘后读回的旧房间（旧版本存的是
+	# 手机自报的宠物），这里再强制一遍，缓存从哪来都不影响。
+	snap["pet"] = _room_seat_pet(room, slot)
 	var validation := NetProtocol.validate_team_snapshot(snap, round_index)
 	if bool(validation.get("ok", false)):
 		return validation.get("snapshot", {})
@@ -2982,6 +3236,7 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 			"merc_carrots_spent_total": int(_room_prep(room, slot).get("merc_carrots_spent_total", 0)),
 			"last_harvest_round": int(_room_prep(room, slot).get("last_harvest_round", -1)),
 			"stone_draw_used_round": int(_room_prep(room, slot).get("stone_draw_used_round", -1)),
+			"stone_draw_count": maxi(0, int(_room_prep(room, slot).get("stone_draw_count", 0))),
 			"team_upgrade_stones": _room_team_stones(room, slot).duplicate(true),
 			"pve_completed": int(room.get("pve_completed", 0)),
 			"boss_completed": int(room.get("boss_completed", 0)),
@@ -3295,6 +3550,9 @@ func reset() -> void:
 	four_star_request_id = ""
 	four_star_request_uid = ""
 	team_seat_profiles.clear()
+	team_seat_pets.clear()
+	team_carrot_harvest_gains.clear()
+	team_carrot_harvest_round = -1
 	reset_peer_only()
 	_public_resume_pending = false
 	state = SessionState.OFFLINE
@@ -3506,7 +3764,7 @@ func _rpc_team_room_list_request() -> void:
 	_rpc_team_room_list.rpc_id(sender, _public_room_list())
 
 @rpc("any_peer", "call_remote", "reliable")
-func _rpc_team_create_room(public_id: String = "") -> void:
+func _rpc_team_create_room(public_id: String = "", card: String = "") -> void:
 	if not _dedicated_server:
 		return
 	var sender := multiplayer.get_remote_sender_id()
@@ -3514,6 +3772,13 @@ func _rpc_team_create_room(public_id: String = "") -> void:
 		return
 	if not _active_match_for_token(str(_public_token_seat.get(_sanitize_public_id(public_id), ""))).is_empty():
 		_rpc_team_action_failed.rpc_id(sender, ACTIVE_MATCH_HINT)
+		return
+	# 出战名片：入座的硬条件（BattleCard.gd）。**必须在任何改状态的操作之前** ——
+	# 下面「一人一房」那段会先把人从原来的大厅座位里移走，名片要是在那之后才被拒，
+	# 玩家就旧座位没了、新座位也没拿到。
+	# 验过的名片会被记成「用过」；正常客户端每次请求都现领一张，不受影响。
+	var seat_card := _accept_seat_card(sender, card)
+	if seat_card.is_empty():
 		return
 	# 一人一房不变量：不加这条时，循环调用会把 _rooms 撑爆，并在每个旧房间里留下
 	# 一个永不 ready 的幽灵座位（实测 25 次调用 = 25 个幽灵座位）。
@@ -3528,10 +3793,10 @@ func _rpc_team_create_room(public_id: String = "") -> void:
 		_net_log("room cap reached (%d) -> refusing create peer=%d" % [MAX_ROOMS, sender])
 		_rpc_team_action_failed.rpc_id(sender, "server_busy")
 		return
-	_assign_peer_to_room(sender, _new_room(), _sanitize_public_id(public_id))
+	_assign_peer_to_room(sender, _new_room(), _sanitize_public_id(public_id), seat_card)
 
 @rpc("any_peer", "call_remote", "reliable")
-func _rpc_team_join_room(room_id: int, public_id: String = "") -> void:
+func _rpc_team_join_room(room_id: int, public_id: String = "", card: String = "") -> void:
 	if not _dedicated_server:
 		return
 	var sender := multiplayer.get_remote_sender_id()
@@ -3539,6 +3804,13 @@ func _rpc_team_join_room(room_id: int, public_id: String = "") -> void:
 		return
 	if not _active_match_for_token(str(_public_token_seat.get(_sanitize_public_id(public_id), ""))).is_empty():
 		_rpc_team_action_failed.rpc_id(sender, ACTIVE_MATCH_HINT)
+		return
+	# 出战名片：入座的硬条件（BattleCard.gd）。**必须在任何改状态的操作之前** ——
+	# 下面「一人一房」那段会先把人从原来的大厅座位里移走，名片要是在那之后才被拒，
+	# 玩家就旧座位没了、新座位也没拿到。
+	# 验过的名片会被记成「用过」；正常客户端每次请求都现领一张，不受影响。
+	var seat_card := _accept_seat_card(sender, card)
+	if seat_card.is_empty():
 		return
 	var existing := _room_for_peer(sender)
 	if not existing.is_empty():
@@ -3559,7 +3831,7 @@ func _rpc_team_join_room(room_id: int, public_id: String = "") -> void:
 	if _room_next_free_slot(room) < 0:
 		_rpc_team_action_failed.rpc_id(sender, "room_full")
 		return
-	_assign_peer_to_room(sender, room, _sanitize_public_id(public_id))
+	_assign_peer_to_room(sender, room, _sanitize_public_id(public_id), seat_card)
 
 @rpc("any_peer", "call_remote", "reliable")
 func _rpc_public_resume_request(public_id: String) -> void:
@@ -3917,6 +4189,9 @@ func _rpc_room_state(envelope: Dictionary) -> void:
 	var was_public_resuming := _public_resume_pending
 	_public_resume_pending = false
 	_match_state.mark_applied(epoch, seq)
+	team_seat_pets = (payload.get("seat_pets", {}) as Dictionary).duplicate(true)
+	team_carrot_harvest_gains = (payload.get("carrot_harvest_gains", {}) as Dictionary).duplicate(true)
+	team_carrot_harvest_round = int(payload.get("carrot_harvest_round", -1))
 	_apply_carrot_state((payload.get("economy", {}) as Dictionary))
 	_apply_server_shop((payload.get("economy", {}) as Dictionary))
 
@@ -4082,7 +4357,80 @@ func _on_peer_disconnected(id: int) -> void:
 	state = SessionState.OFFLINE
 	session_changed.emit()
 
-func _assign_peer_to_room(peer_id: int, room: Dictionary = {}, public_id: String = "") -> void:
+# --- 出战名片：验章与写入座位（BattleCard.gd）---------------------------------
+
+# 验一张入座用的名片。通过就返回清洗过的名片；不通过就把原因回给客户端、返回空。
+func _accept_seat_card(sender: int, card_text: String) -> Dictionary:
+	var now := int(Time.get_unix_time_from_system())
+	_prune_seen_card_jti(now)
+	var verdict := BattleCard.verify(card_text, now, _battle_card_public_key)
+	if not bool(verdict.get("ok", false)):
+		var code := str(verdict.get("code", "card_malformed"))
+		# 名片内容不进日志 —— 里面有玩家 id 和名字。
+		_net_log("seat card rejected peer=%d reason=%s" % [sender, code])
+		_rpc_team_action_failed.rpc_id(sender, code)
+		return {}
+	var card: Dictionary = verdict.get("card", {})
+	var jti := str(card.get("jti", ""))
+	if _seen_card_jti.has(jti):
+		_net_log("seat card rejected peer=%d reason=card_replayed" % sender)
+		_rpc_team_action_failed.rpc_id(sender, "card_replayed")
+		return {}
+	# 记到它过期为止（含钟差宽限）。过期之后 verify 自己就会拒，不用再记。
+	_seen_card_jti[jti] = int(card.get("exp", now)) + BattleCard.CLOCK_LEEWAY_SEC
+	return card
+
+
+func _prune_seen_card_jti(now: int) -> void:
+	for jti in _seen_card_jti.keys():
+		if int(_seen_card_jti[jti]) < now:
+			_seen_card_jti.erase(jti)
+
+
+# 把名片写进座位。
+#
+# 🔴 **这是座位上名字头像 / 出战宠物 / 出战种族唯一的写入口。** 此前三样各有各的路
+# （见文件开头「出战名片」那段），现在都从这里进，之后谁也改不了。
+# 三份都在 RoomService.SEAT_SLOT_MAPS 里：换座一起搬、离座一起清、**重连原样留着** ——
+# 重连回来宠物、种族、头像都一样，靠的就是这一条。
+func _room_store_seat_card(room: Dictionary, slot: int, card: Dictionary) -> void:
+	# 先清掉这个座位上的旧值。离座时 _clear_seat_metadata 应该已经清过，
+	# 这里再清一次是防御：后坐进来的人绝不能继承前一个人的身份。
+	var profiles: Dictionary = room.get("seat_profiles", {})
+	profiles.erase(slot)
+	room["seat_profiles"] = profiles
+	var pets: Dictionary = room.get("seat_pets", {})
+	pets.erase(slot)
+	pets.erase(str(slot))
+	room["seat_pets"] = pets
+	var races: Dictionary = room.get("seat_races", {})
+	races.erase(slot)
+	room["seat_races"] = races
+	var ai_pets: Dictionary = room.get("seat_ai_pets", {})
+	ai_pets.erase(slot)
+	room["seat_ai_pets"] = ai_pets
+	# 进程内门禁直接调 _assign_peer_to_room、不带名片：座位照常建，只是没有这三样
+	# （宠物空、种族回落默认、名字按座位号显示）。线上入座请求一定带着验过的名片。
+	if card.is_empty():
+		return
+	var identity := public_seat_identity(BattleCard.profile_of(card))
+	if not identity.is_empty():
+		profiles[slot] = identity
+		room["seat_profiles"] = profiles
+	_store_room_seat_pet(room, slot, BattleCard.pet_of(card))
+	# 不合规则（不是正好 4 个、有这边不认识的族）就不存 —— _room_seat_races 取不到时
+	# 回落默认并留日志。账号服务器只管「有没有资格」，组合规则归这边。
+	_room_accept_seat_races(room, slot, card.get("races", []))
+	_touch_room(room)
+
+
+# 这个座位的出战宠物，**只看座位上的名片**，不看玩家交来的棋盘。
+func _room_seat_pet(room: Dictionary, slot: int) -> String:
+	var pets: Dictionary = room.get("seat_pets", {})
+	return str(pets.get(slot, pets.get(str(slot), "")))
+
+
+func _assign_peer_to_room(peer_id: int, room: Dictionary = {}, public_id: String = "", card: Dictionary = {}) -> void:
 	if room.is_empty():
 		room = _find_or_create_room()
 	var slot := _room_next_free_slot(room)
@@ -4099,6 +4447,7 @@ func _assign_peer_to_room(peer_id: int, room: Dictionary = {}, public_id: String
 	room.ready = ready
 	room.peer_slot = peer_slot
 	room.empty_since = 0.0
+	_room_store_seat_card(room, slot, card)
 	_peer_room[peer_id] = int(room.get("id", 0))
 	_peer_last_ping[peer_id] = _now()
 	# 记录加入顺序（R5 leader 接任依据）。只在首次占座时分配；换位会搬走这个序号，
@@ -4274,11 +4623,52 @@ func _room_owned_for_ledger(room: Dictionary, slot: int) -> Array:
 func _crypto_unit_float() -> float:
 	return float(_crypto.generate_random_bytes(4).decode_u32(0)) / 4294967296.0
 
+# --- 出战种族（RacePick，协议 28）----------------------------------------------
+
+# 收下一个座位的出战种族。返回 false = 这份选择不合法，**不存**（取的时候回落默认）。
+#
+# 来源只有一个：入座时的出战名片（_room_store_seat_card）。账号服务器只管「每一族你有没有
+# 资格用」，「必须正好几个、这边认不认识这一族」是这里的规则。
+#
+# 只在大厅阶段收：开局那一刻锁定，之后一律不理（返回 true、不改）—— 局中换卡池不允许。
+#
+# 不合法就整份不收、不帮忙修（RacePick.sanitize 的理由）：少一族 = 卡池更浅 = 升星更快。
+# 唯一的正当失败是**账号服务器那边比这边多一族**（新种族先上了账号服务器与客户端），
+# 所以加新种族时战斗服务器必须先于或同时于客户端更新。
+func _room_accept_seat_races(room: Dictionary, slot: int, races: Variant) -> bool:
+	if str(room.get("state", ROOM_LOBBY)) != ROOM_LOBBY:
+		return true
+	var clean := RacePick.sanitize(races)
+	if clean.is_empty():
+		_net_log("seat races rejected room=%d slot=%d size=%d" % [int(room.get("id", 0)), slot,
+			(races as Array).size() if typeof(races) == TYPE_ARRAY else -1])
+		return false
+	var stored: Array = []
+	stored.append_array(clean)
+	var seat_races: Dictionary = room.get("seat_races", {})
+	seat_races[slot] = stored
+	room["seat_races"] = seat_races
+	_touch_room(room)
+	return true
+
+# 这个座位这一局生效的出战种族。正常路径下入座时就随名片写进来了；
+# 取不到（名片上的组合不合规则、AI 座位、进程内门禁不带名片）就回落默认，不刷空商店，并留日志。
+func _room_seat_races(room: Dictionary, slot: int) -> Array:
+	var clean := RacePick.sanitize((room.get("seat_races", {}) as Dictionary).get(slot, []))
+	if clean.is_empty():
+		_net_log("seat races missing room=%d slot=%d -> default" % [int(room.get("id", 0)), slot])
+		clean = RacePick.default_races()
+	var out: Array = []
+	out.append_array(clean)
+	return out
+
 # 档位曲线与客户端共用 ShopRoll —— 这里原本是**全表均匀随机**，
 # 没有任何档位概念，等于把成长曲线整条抹掉（第一回合 19% 刷三档单位）。
 # 随机源仍然是 Crypto，只是「怎么摇」这条规则不再各写一份。
-func _server_roll_shop_offers(count: int, round_index: int) -> Array:
-	var units: Array = DataRegistry.get_table("race_units").get("units", [])
+# races 是这个座位的出战种族（_room_seat_races）。必须先过滤再交给 pick_offer ——
+# 顺序反了，pick_offer 在「这一档没有棋子」时退回全表，就会刷出没选的族。
+func _server_roll_shop_offers(count: int, round_index: int, races: Array) -> Array:
+	var units: Array = RacePick.shop_pool(DataRegistry.get_table("race_units").get("units", []), races)
 	var out: Array = []
 	if units.is_empty():
 		return out
@@ -4305,7 +4695,7 @@ func _economy_ctx(room: Dictionary, slot: int, action: String) -> Dictionary:
 	match action:
 		"shop_refresh":
 			ctx["rolled_offers"] = _server_roll_shop_offers(GameState.SHOP_UNIT_SLOTS,
-				int(room.get("round_index", 1)))
+				int(room.get("round_index", 1)), _room_seat_races(room, slot))
 			ctx["offer_id"] = _make_offer_id()
 		"gamble":
 			# 用 Crypto 取 [0,1)：randf() 的种子是可预测的，而这是钱。
@@ -4465,11 +4855,12 @@ func _apply_carrot_state(state: Dictionary) -> void:
 	if int(state.get("last_harvest_round", GameState.last_harvest_round)) < GameState.last_harvest_round:
 		return
 	GameState.carrots = maxi(0, int(state.get("carrots", GameState.carrots)))
-	GameState.harvest_tech_level = clampi(int(state.get("harvest_tech_level", GameState.harvest_tech_level)), 0, CarrotEconomy.MAX_HARVEST_TECH_LEVEL)
+	GameState.harvest_tech_level = maxi(0, int(state.get("harvest_tech_level", GameState.harvest_tech_level)))
 	GameState.merc_carrots_spent_total = maxi(0, int(state.get("merc_carrots_spent_total", GameState.merc_carrots_spent_total)))
 	GameState.last_harvest_round = int(state.get("last_harvest_round", GameState.last_harvest_round))
 	last_carrot_harvest_gain = maxi(0, int(state.get("last_harvest_gain", 0)))
 	GameState.stone_draw_used_round = int(state.get("stone_draw_used_round", GameState.stone_draw_used_round))
+	GameState.stone_draw_count = maxi(0, int(state.get("stone_draw_count", GameState.stone_draw_count)))
 	var stones: Variant = state.get("team_upgrade_stones", {})
 	if typeof(stones) == TYPE_DICTIONARY:
 		GameState.team_upgrade_stones = (stones as Dictionary).duplicate(true)
@@ -4525,6 +4916,7 @@ func _apply_carrot_receipt(receipt: Dictionary) -> void:
 		"draw_upgrade_stone":
 			GameState.carrots = int(result.get("carrots", GameState.carrots))
 			GameState.stone_draw_used_round = int(result.get("stone_draw_used_round", GameState.stone_draw_used_round))
+			GameState.stone_draw_count = maxi(0, int(result.get("stone_draw_count", GameState.stone_draw_count)))
 			var stones: Variant = result.get("team_upgrade_stones", {})
 			if typeof(stones) == TYPE_DICTIONARY:
 				GameState.team_upgrade_stones = (stones as Dictionary).duplicate(true)
@@ -4856,9 +5248,12 @@ func _room_remove_peer(room: Dictionary, peer_id: int) -> void:
 	if slot >= 0 and slot < TEAM_SLOTS:
 		states[slot] = "empty"
 		ready[slot] = false
+		var voice_identity := _voice_identity(room, slot)
 		# 座位彻底释放：token、短码绑定、加入顺序、对局进度一起清。
 		# 只清一部分就会让后来坐进这个位子的人继承前一个人的 join_seq 或宝物记录。
 		_clear_seat_metadata(room, slot)
+		# 人离开了这一队：也要从这一队的语音房间出去（钥匙只管进门，docs/语音LiveKit方案.md 3.3）。
+		_voice_seat_released(room, slot, voice_identity)
 	peer_slot.erase(peer_id)
 	_peer_room.erase(peer_id)
 	room.slot_states = states
@@ -4940,7 +5335,13 @@ func _tick_reserved_seats() -> void:
 func _room_auto_complete_seat(room: Dictionary, slot: int) -> void:
 	# 状态变更已搬到 ReconnectService.apply_ai_takeover()。留在这里的是发消息与
 	# 阶段推进：广播大厅、按当前阶段决定接下来做什么 —— 那些都要发 RPC。
+	var voice_identity := _voice_identity(room, slot)
 	_reconnect_service.apply_ai_takeover(room, slot)
+	# AI 顶了这个座位：原来的人不再是这一队的玩家，请出语音房间（他重连回来会重新要钥匙）。
+	_voice_seat_released(room, slot, voice_identity)
+	# A takeover keeps the disconnected player's pet when one exists; a legacy
+	# or unconfigured seat receives one stored AI pet exactly once.
+	_ensure_dummy_seat_pet(room, slot)
 	_broadcast_room_lobby(room)
 	# 转 dummy 后推进当前阶段：备战->可开局；战斗->dummy 由模拟自动出兵、不再被等待
 	match str(room.get("state", ROOM_LOBBY)):
@@ -5063,6 +5464,9 @@ func _rpc_team_room_closed(reason: String) -> void:
 	team_local_slot = -1
 	team_slot_states = []
 	team_ready = []
+	team_seat_pets.clear()
+	team_carrot_harvest_gains.clear()
+	team_carrot_harvest_round = -1
 	team_prep_mercs = {}
 	state = SessionState.FAILED
 	last_error = tr("net_err_room_closed") % reason
@@ -5080,6 +5484,8 @@ func _rpc_team_set_ready(slot: int, value: bool) -> void:
 			return
 		if int((room.get("peer_slot", {}) as Dictionary).get(sender, -1)) != slot:
 			return
+		# 出战种族**不再**跟着「准备」来（协议 30）：入座时随出战名片写进了座位，
+		# 见 _room_store_seat_card。手机再报什么都不算。
 		# 在线玩家的座位可能被看门狗/宽限转成了 AI（dummy）——他人还连着并且在按
 		# 准备，说明活得好好的，立刻还他 player 身份，否则他之后交的棋盘会被无视。
 		var seat_states: Array = room.get("slot_states", [])
@@ -5147,3 +5553,11 @@ func _rpc_receive_match_state(state_payload: Dictionary) -> void:
 	latest_match_state = state_payload
 	_net_log("client received match_state round=%d slot=%d" % [int(state_payload.get("completed_round", 0)), int(state_payload.get("slot", -1))])
 	match_state_received.emit(latest_match_state)
+
+func _store_room_seat_pet(room: Dictionary, slot: int, pet_id: String) -> void:
+	if slot < 0 or slot >= TEAM_SLOTS or PetService.model_path(pet_id).is_empty():
+		return
+	var seat_pets: Dictionary = room.get("seat_pets", {})
+	seat_pets[slot] = pet_id
+	seat_pets.erase(str(slot))
+	room["seat_pets"] = seat_pets

@@ -25,7 +25,7 @@
 
 - Start formation HP: 50.
 - Start gold: 10.
-- Base interest: floor(gold before interest * 10%), no cap.
+- Base interest: floor(gold before interest * 5%), no cap.
 - PVE kill gold: every two completed PVE battles increases kill reward by 1.
 - PVP normal kill reward: 1 star = tier, 2 stars = tier + 2, 3 stars = tier + 3.
 - PVP mercenary kill reward: round(cost * 0.5).
@@ -106,4 +106,3 @@
 - Added host-authoritative PVP settlement sync: host broadcasts the final PVP result, clients convert it to their local perspective before rewards are applied, preventing random combat divergence between players.
 - Implemented mercenary combat skill pass: bubble dream, shell guard baseline reduction hook, balance judge, gold charge, holy song, twin strike, king aura, arrow rain, blood rampage, steel order, time slow, and death hunt.
 - Still pending deeper pass: production relay/NAT strategy, reconnect UX, and full two-instance manual network QA on target machines.
-

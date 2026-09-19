@@ -22,6 +22,8 @@ signal message_received(payload: Dictionary)
 # 被顶号。**与普通断线是两回事**，界面上必须分开处理 ——
 # 玩家看到「连接已断开」和「你的账号在其他设备登录」的反应完全不同。
 signal kicked_by_other_device
+# 名额变了：被放行，或者排队位次变了（backend/app/admission.py）。启动画面靠它判断放不放人进门。
+signal admission_changed
 
 const AccountConfig := preload("res://scripts/account/AccountConfig.gd")
 
@@ -33,6 +35,14 @@ const CLOSE_KICKED := 4001
 const CLOSE_IDLE := 4002
 # 服务端在 ready 里下发真实值，这个只是它还没到之前的兜底。
 const DEFAULT_PING_INTERVAL_SEC := 30.0
+
+# 同时在线上限与排队。与 backend/app/admission.py 的 HEADER / MESSAGE_TYPE / ENTER / RESUME 对应。
+# ⚠️ 两处都有，tools/chat_check 钉着。对不上的症状是被服务器当成旧版客户端（从不排队），
+# 或者永远收不到放行、全体卡在启动画面 —— 两种都不报错。
+const ADMISSION_HEADER := "X-Glory-Admission"
+const ADMISSION_TYPE := "admission"
+const ADMISSION_ENTER := "enter"
+const ADMISSION_RESUME := "resume"
 
 # 重连退避。首次快、之后指数涨、封顶 30 秒。
 #
@@ -76,6 +86,12 @@ var _opening := false
 # 客户端这边只看得到「握手失败」，分不出是令牌被拒还是网络不通 ——
 # 失败够次数就强制续一次令牌，而不是拿着同一张过期票永远重试。
 var _failed_handshakes := 0
+# 这个进程里服务器有没有放行过。🔴 **一旦为 true 就不再变回 false**（stop() 也不清）：
+# 放进来之后的每一次重连都带 resume，服务器保证不会把已经在游戏里的人踢回队列。
+# 清掉它，玩家会在对局中因为一次断线重连被当成「新来的」去排队。
+var _admitted := false
+# 排队位次（1 起）。0 = 不在排队 / 还不知道。
+var queue_position := 0
 
 
 func _ready() -> void:
@@ -91,6 +107,27 @@ func is_online() -> bool:
 
 func device_id() -> String:
 	return _device_id
+
+
+func is_admitted() -> bool:
+	return _admitted
+
+
+func is_kicked() -> bool:
+	return _kicked
+
+
+# 连续握手失败的次数（从没收到过 ready 就断了）。启动画面用它区分「真连不上」和「重连一闪而过」。
+func failed_handshakes() -> int:
+	return _failed_handshakes
+
+
+# 跳过当前的退避等待，下一帧就重连（启动画面的「重试」）。
+# 被顶号时无效 —— 那只能走 ChatService.reconnect_here，理由见 _kicked。
+func retry_now() -> void:
+	if not _want_connection or _kicked or _socket != null or _opening:
+		return
+	_reconnect_timer = 0.0
 
 
 func start() -> void:
@@ -155,6 +192,8 @@ func _open() -> void:
 	_socket.handshake_headers = PackedStringArray([
 		"Authorization: Bearer %s" % token,
 		"X-Device-Session: %s" % _device_id,
+		# 名额来意（backend/app/admission.py）。不带这个头的会被服务器当成旧版客户端。
+		"%s: %s" % [ADMISSION_HEADER, _admission_intent()],
 	])
 	var err := _socket.connect_to_url(_ws_url())
 	if err != OK:
@@ -174,6 +213,14 @@ func _ws_url() -> String:
 	if base.begins_with("http://"):
 		return "ws://" + base.substr(7) + "/v1/ws"
 	return base + "/v1/ws"
+
+
+# 已经被放进来过（这个进程里）、或者本地有没打完的对局 -> resume：服务器满了也直接放。
+# 冷启动回来接着打那一局的人不该去排队 —— 排完队，那局早被 AI 打完了。
+func _admission_intent() -> String:
+	if _admitted or not SaveManager.load_resumable_reconnect().is_empty():
+		return ADMISSION_RESUME
+	return ADMISSION_ENTER
 
 
 func _close_socket(code: int) -> void:
@@ -269,8 +316,26 @@ func _handle(payload: Dictionary) -> void:
 			pass
 		"kicked":
 			_mark_kicked()
+		ADMISSION_TYPE:
+			_apply_admission(payload)
 		_:
 			message_received.emit(payload)
+
+
+func _apply_admission(payload: Dictionary) -> void:
+	match str(payload.get("state", "")):
+		"admitted":
+			_admitted = true
+			queue_position = 0
+		"queued":
+			# 放进来过就不会再排（服务器对 resume 的保证）。万一收到，
+			# 也不能把已经在游戏里的人标回「排队中」。
+			if _admitted:
+				return
+			queue_position = maxi(1, int(payload.get("position", 1)))
+		_:
+			return
+	admission_changed.emit()
 
 
 func _mark_kicked() -> void:

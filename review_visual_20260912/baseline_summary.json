@@ -1,0 +1,46 @@
+{
+	"asset_bundle_sha256": "ff47b7a08251b061e6aa044b646afa961c23e077cb5ef29dab72a2b1af99fdae",
+	"asset_manifest_sha256": "680ded02eea879cdcf5df7add162b935ddb06d650576db5d95266a2f018a285e",
+	"baseline_id": "non_ui_visual_20260912",
+	"frozen_bytes": 236418860,
+	"frozen_files": 553,
+	"generated_utc": "2026-09-12T09:35:52",
+	"godot_version": {
+		"build": "official",
+		"hash": "5b4e0cb0fd279832bbdd69fed5354d4e5ad26f88",
+		"hex": 263936,
+		"major": 4,
+		"minor": 7,
+		"patch": 0,
+		"status": "stable",
+		"string": "4.7-stable (official)",
+		"timestamp": 0
+	},
+	"model_entries": 74,
+	"model_paths": 75,
+	"model_paths_missing": 0,
+	"pilot_ids": [
+		"human_militia",
+		"god_guard",
+		"dark_suc",
+		"pve_sky_wind_falcon",
+		"pve_land_rock_beast",
+		"boss_twin_gate"
+	],
+	"policy_path": "res://data/qa/non_ui_visual_freeze_policy.json",
+	"protected_gameplay": [
+		"combat_stats",
+		"collision_and_navigation",
+		"three_lane_rules",
+		"skill_targeting_and_hit_timing",
+		"replay_determinism",
+		"camera_projection_and_board_mapping"
+	],
+	"renderer_method": "mobile",
+	"schema_version": 1,
+	"vfx_fallback_review_required": 0,
+	"vfx_owner_entries": 74,
+	"vfx_skill_ids": 80,
+	"visual_bytes": 2918147898,
+	"visual_files": 2479
+}

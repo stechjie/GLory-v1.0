@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="VFXProfile3D" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+profile_id = "first_batch_silence_bolt"
+module_id = "first_batch_skills"
+curve_name = "snap_then_hold"
+dark_color = Color(0.018, 0.008, 0.035, 1)
+main_color = Color(0.84, 0.58, 0.94, 1)
+core_color = Color(1.0, 0.66, 0.88, 1)
+size = 1.25
+duration = 2.42
+particle_count = 6
+trail_length = 0.88
+emission_energy = 2.5
+quality_group = "critical"
+parameters = {"layer_budget": 4, "mechanic": "silence_bolt"}

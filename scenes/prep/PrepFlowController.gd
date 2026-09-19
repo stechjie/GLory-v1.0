@@ -182,11 +182,18 @@ func _maybe_play_pending_carrot_harvest() -> void:
 		return
 	if _carrot_feedback_round == GameState.round_index:
 		return
-	var gain := NetworkService.last_carrot_harvest_gain
-	if gain <= 0:
+	var gains: Dictionary = {}
+	if NetworkService.team_carrot_harvest_round == GameState.round_index:
+		gains = NetworkService.team_carrot_harvest_gains.duplicate(true)
+	if gains.is_empty():
+		var gain := NetworkService.last_carrot_harvest_gain
+		if gain <= 0:
+			return
+		gains[clampi(NetworkService.team_local_slot, 0, 5)] = gain
+	if gains.is_empty():
 		return
 	_carrot_feedback_round = GameState.round_index
-	play_carrot_harvest_feedback(gain)
+	play_carrot_harvest_feedback(gains)
 
 func _on_golden_altar() -> void:
 	if not GameState.tutorial_mode and NetworkService.team_active and not NetworkService.is_host and not NetworkService.server_prep_confirmed(GameState.round_index):
@@ -246,4 +253,3 @@ func _on_generous_fate_gamble() -> void:
 	_refresh_all()
 	# 赌博同样会改变面板内容并触发棋盘平移，重新对齐圆圈以防偏移。
 	_queue_prep_model_layout_refresh()
-

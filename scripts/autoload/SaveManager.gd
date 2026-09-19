@@ -1,6 +1,9 @@
 ﻿extends Node
 
 const CarrotEconomy = preload("res://scripts/economy/CarrotEconomy.gd")
+const RacePick := preload("res://scripts/units/RacePick.gd")
+# 9.17 音效。preload 而不是全局类名（理由见 Main.gd 顶上那条注释）。
+const SfxService := preload("res://ui/services/SfxService.gd")
 const SAVE_PATH := "user://glory_beta_004.save"
 const RECONNECT_PATH := "user://glory_reconnect.json"
 const PUBLIC_TOKEN_PATH := "user://glory_public_token.txt"
@@ -264,6 +267,7 @@ func _write_now() -> void:
 		"merc_carrots_spent_total": GameState.merc_carrots_spent_total,
 		"last_harvest_round": GameState.last_harvest_round,
 		"stone_draw_used_round": GameState.stone_draw_used_round,
+		"stone_draw_count": GameState.stone_draw_count,
 		"team_upgrade_stones": GameState.team_upgrade_stones,
 		# 棋子的 uid 键随 board_slots/bench_slots 整块序列化，这里只需要存计数器本身。
 		"run_nonce": GameState.run_nonce,
@@ -283,6 +287,7 @@ func _write_now() -> void:
 		"loss_streak": GameState.loss_streak,
 		"golden_altar_uses": GameState.golden_altar_uses,
 		"gamble_used": GameState.gamble_used,
+		"run_races": GameState.run_races,
 		# 组队局字段（重连恢复用；team_mode 本身由 Main 显式控制，不入档）
 		"team_hp": GameState.team_hp,
 		"enemy_team_hp": GameState.enemy_team_hp,
@@ -304,12 +309,13 @@ func load_run() -> bool:
 	GameState.enemy_formation_hp = int(parsed.get("enemy_formation_hp", GameState.START_FORMATION_HP))
 	GameState.gold = int(parsed.get("gold", GameState.START_GOLD))
 	GameState.carrots = maxi(0, int(parsed.get("carrots", 0)))
-	GameState.harvest_tech_level = clampi(int(parsed.get("harvest_tech_level", 0)), 0, CarrotEconomy.MAX_HARVEST_TECH_LEVEL)
+	GameState.harvest_tech_level = maxi(0, int(parsed.get("harvest_tech_level", 0)))
 	GameState.merc_carrots_spent_total = maxi(0, int(parsed.get("merc_carrots_spent_total", 0)))
 	# Old saves have no carrot round marker. Treat the saved round as already
 	# harvested so migration cannot grant a retroactive first-round payout.
 	GameState.last_harvest_round = int(parsed.get("last_harvest_round", GameState.round_index))
 	GameState.stone_draw_used_round = int(parsed.get("stone_draw_used_round", -1))
+	GameState.stone_draw_count = maxi(0, int(parsed.get("stone_draw_count", 0)))
 	GameState.team_upgrade_stones = CarrotEconomy.empty_stones()
 	var saved_stones: Variant = parsed.get("team_upgrade_stones", {})
 	if typeof(saved_stones) == TYPE_DICTIONARY:
@@ -334,9 +340,15 @@ func load_run() -> bool:
 	GameState.loss_streak = int(parsed.get("loss_streak", 0))
 	GameState.golden_altar_uses = int(parsed.get("golden_altar_uses", 0))
 	GameState.gamble_used = bool(parsed.get("gamble_used", false))
+	# 老存档没有这一项 / 不合法 -> 空，摇商店时 RacePick.resolve 回落默认。
+	GameState.run_races = RacePick.sanitize(parsed.get("run_races", []))
 	GameState.team_hp = int(parsed.get("team_hp", GameState.team_hp))
 	GameState.enemy_team_hp = int(parsed.get("enemy_team_hp", GameState.enemy_team_hp))
 	_normalize_arrays()
+	# 9.17：读档 = 换了一本账，不是一笔收入。上面那一整块赋值会把金币从
+	# 当前值直接换成存档里的值，不对齐基线就会在进游戏时响一声「入账/扣除」。
+	# 放在最后一行：必须等所有赋值都做完再对齐。
+	SfxService.resync_currency_baseline()
 	return true
 
 func new_run() -> void:

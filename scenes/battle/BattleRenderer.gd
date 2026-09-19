@@ -6,6 +6,7 @@ const UnitVisualResolverScript := preload("res://effects/runtime/presentation/Un
 const ModelRootMotionPolicyScript := preload("res://effects/runtime/presentation/ModelRootMotionPolicy.gd")
 const UnitContactShadowScript := preload("res://effects/runtime/presentation/UnitContactShadow.gd")
 const UNIT_TEAM_RING_SHADER := preload("res://shaders/unit_team_ring.gdshader")
+const FOUR_STAR_AURA := preload("res://effects/vfx3d/modules/FourStarAuraV2_3D.gd")
 
 # Per-frame visual caches: the separation pass is O(N) per unit over the living
 # set, and several call sites ask for the same unit's position within one frame.
@@ -16,6 +17,10 @@ var _frame_living_pos: PackedVector2Array = PackedVector2Array()
 # to a unit; holding the references costs nothing and keeps the lookup O(1).
 var _frame_fighter_by_id: Dictionary = {}
 var _visual_pos_cache: Dictionary = {}
+# Persistent display offsets are smoothed independently of the raw simulator
+# position. Units therefore keep the simulator's exact movement while crowd
+# spacing eases in and out without shaking or changing combat outcomes.
+var _visual_offset_by_id: Dictionary = {}
 var _status_vfx_by_id: Dictionary = {}
 # HpFill refs cached at node creation so the per-frame HP sync never walks the tree.
 var _hp_fill_by_id: Dictionary = {}
@@ -59,7 +64,7 @@ func _refresh_visuals() -> void:
 	var facing_delta := _model_facing_delta()
 	# Compute the living set ONCE per frame and reuse it everywhere.
 	var living := BattleSim.living_units(_state)
-	_begin_visual_frame(living)
+	_begin_visual_frame(living, facing_delta)
 	var living_ids := {}
 	var player_alive := 0
 	var enemy_alive := 0
@@ -235,12 +240,18 @@ func _hp_color_for_team(team: String) -> Color:
 
 # (4) Team color from the VIEWER's point of view: the local player's own units keep
 # the friendly color and the opponent stays red, even when the arena is flipped.
-# 观战敌方战场时同样反转：敌队 replay 里 "player" 侧是敌方棋子（显示红色），
-# "enemy" 侧是他们打的怪（显示绿色）。_arena_flip_y 只在 PVP、_watching_rival
-# 只在 PVE/Boss 出现，两者不会同时为真。
+#
+# 9.14 修正：**观战另一队时不再反转**。
+# 这条反转原来是为「观战敌方」写的 —— 把敌队 replay 的 "player" 侧染红、他们打的怪染绿，
+# 好让画面保持"我方绿、对面红"。但 3v3 里的另一队是**同等的真人玩家**（见
+# docs/联机审计与整改方案.md 的术语边界，UI 早已改名"查看另一队/返回本队"，C25），
+# 反馈要的是「查看另一队」呈现**对方视角本身**：和那位玩家自己屏幕上看到的一模一样。
+# 反转会让同一场战斗在两台设备上配色/半场标注相反，就是 9.14 反馈的"与对方视角不同步"。
+# 现在只保留 _arena_flip_y（那是"我方永远在下方"的本地镜像，与观战无关）——
+# 而且 _setup_view_toggle 对 pvp/final 直接不建按钮，所以这两个条件本来也不会同时为真。
 func _display_team(f: Dictionary) -> String:
 	var t := str(f.get("team", ""))
-	if _arena_flip_y or _watching_rival:
+	if _arena_flip_y:
 		return "player" if t == "enemy" else "enemy"
 	return t
 
@@ -255,6 +266,10 @@ func _make_unit_node(f: Dictionary) -> Control:
 	root.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	root.tooltip_text = _fighter_display_name(f)
 	root.gui_input.connect(_on_battle_unit_gui_input.bind(visual_id))
+	# 9.14 离线自测需求：鼠标放到棋子上要弹「实时数值面板」。基类只发一个空回调，
+	# 正式对局不受影响；OfficeTestScreen（离线自测）覆写 _on_battle_unit_hover 来接。
+	root.mouse_entered.connect(_on_battle_unit_hover.bind(visual_id, true))
+	root.mouse_exited.connect(_on_battle_unit_hover.bind(visual_id, false))
 	# Prevent the parent layout from touching this node
 	root.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
 	_add_unit_anchors(root)
@@ -290,6 +305,11 @@ func _make_unit_node(f: Dictionary) -> Control:
 	label.text = _fighter_display_name(f)
 	root.add_child(label)
 	return root
+
+
+# 9.14：单位悬停回调，基类空实现。离线自测（OfficeTestScreen）覆写它显示实时数值面板。
+func _on_battle_unit_hover(_unit_id: String, _entered: bool) -> void:
+	pass
 
 
 func _on_battle_unit_gui_input(event: InputEvent, unit_id: String) -> void:
@@ -426,9 +446,9 @@ func detach_actor_for_death(uid: String) -> Node3D:
 	# Checklist section 3 is explicit that the actor is unregistered *after* the
 	# death animation, which release_death_actor() below does.
 	_battle_3d_models.erase(uid)
-	var ascension := (node_value as Node3D).get_node_or_null("FourStarAura")
+	var ascension := (node_value as Node3D).get_node_or_null("FourStarAuraV2")
 	if ascension != null:
-		ascension.configure(0, "sky")
+		ascension.deactivate()
 	var status_vfx = _status_vfx_by_id.get(uid)
 	if status_vfx != null and is_instance_valid(status_vfx):
 		# V2 P1-05 第 2 条："血条和状态图标同步，不突然消失"。
@@ -523,16 +543,16 @@ func _make_shared_model_node(f: Dictionary) -> Node3D:
 	_ensure_status_vfx_controller(actor, model_height)
 	_add_3d_unit_readability(actor, f)
 	if int(f.get("star", 1)) == GameState.MAX_UNIT_STAR and not bool(unit_def.get("is_mercenary", false)):
-		preload("res://effects/vfx3d/modules/FourStarAura3D.gd").sync(actor, 2, str(unit_def.get("element", "")), model_height, true)
+		FOUR_STAR_AURA.sync(actor, 2, str(unit_def.get("element", "")), model_height, true)
 		_fit_four_star_battle_aura.call_deferred(actor, model_height)
 	return actor
 
 func _fit_four_star_battle_aura(actor: Node3D, height: float) -> void:
 	if not is_instance_valid(actor) or not actor.is_inside_tree():
 		return
-	var aura := actor.get_node_or_null("FourStarAura") as Node3D
+	var aura := actor.get_node_or_null("FourStarAuraV2") as Node3D
 	if aura != null:
-		preload("res://effects/vfx3d/modules/FourStarAura3D.gd").fit_to_skeleton(aura, actor, height)
+		FOUR_STAR_AURA.fit_to_actor(aura, actor, height)
 
 # model_height is the rendered height of this unit in world units. Pass 0 when
 # it is unknown (the late-repair path below) and the legacy 1.7 stand-in is used,
@@ -925,8 +945,12 @@ func _setup_animation_tracking_meta(pivot: Node3D, unit_def: Dictionary, f: Dict
 #
 # 保持时长已经够了（BattleUI.RESULT_DISPLAY_SECONDS = 1.0）。这里补的是收束和定格。
 #
-# **短音效没做**：assets/audio 下只有 BGM 和一个 start_game.mp3，没有胜利音效资源。
-# 编一个出来不如把缺口说清楚。震动用的是同一套无障碍开关，玩家关了就不震。
+# **2026-09-17 更新：短音效已补上。** 此前 assets/audio 下只有 BGM 和一个
+# start_game.mp3，没有胜利音效资源，这里就明写了缺口。9.17 音效批次交付后归
+# `ui/services/SfxService.gd` 统一播：胜负音接在
+# `scenes/battle/BattleResult.gd` 的结算浮层显示处（`battle_victory` /
+# `battle_defeat`），不在这里重复挂一次 —— 播两声比没声音更难查。
+# 震动用的是同一套无障碍开关，玩家关了就不震。
 
 # 正交相机的 size 越小越近。0.94 是"轻"收束：看得出镜头往里收了一点，
 # 又不会把边上的幸存者挤出画面。
@@ -1429,11 +1453,12 @@ func _apply_formation_intro_visibility(id: String, fighter: Dictionary) -> void:
 
 # Rebuilds the per-frame snapshot of living units (ids + raw sim positions) and
 # clears the memoized visual positions. Display-only: never writes to _state.
-func _begin_visual_frame(living: Array) -> void:
+func _begin_visual_frame(living: Array, delta: float = 0.0) -> void:
 	_visual_pos_cache.clear()
 	_frame_living_ids.clear()
 	_frame_living_pos.clear()
 	_frame_fighter_by_id.clear()
+	var living_ids := {}
 	for f in living:
 		if typeof(f) != TYPE_DICTIONARY:
 			continue
@@ -1441,41 +1466,108 @@ func _begin_visual_frame(living: Array) -> void:
 		_frame_living_ids.append(id)
 		_frame_living_pos.append(Vector2(float(f.pos.x), float(f.pos.y)))
 		_frame_fighter_by_id[id] = f
+		living_ids[id] = true
+	for stale_id in _visual_offset_by_id.keys():
+		if not living_ids.has(stale_id):
+			_visual_offset_by_id.erase(stale_id)
+	_solve_visual_positions(delta)
 
 func _visual_sim_pos_for_fighter(f: Dictionary) -> Vector2:
 	var id := _visual_id(f)
 	var cached: Variant = _visual_pos_cache.get(id)
 	if cached is Vector2:
 		return cached as Vector2
-	var pos := _compute_visual_sim_pos(f, id)
-	_visual_pos_cache[id] = pos
-	return pos
+	# A one-off caller may ask for a fighter outside the frame snapshot. Fall back
+	# to its unmodified simulation position rather than inventing a new offset.
+	return _clamp_visual_sim_pos(Vector2(float(f.pos.x), float(f.pos.y)))
 
-func _compute_visual_sim_pos(f: Dictionary, id: String) -> Vector2:
-	var base := Vector2(float(f.pos.x), float(f.pos.y))
-	var offset := _stable_unit_spread_dir(f) * MODEL_SEPARATION_BASE_NUDGE
-	for i in _frame_living_ids.size():
-		if _frame_living_ids[i] == id:
+
+# Resolve the whole crowd together. Every overlap pushes both actors by the same
+# amount in opposite directions, then repeats a few cheap iterations so the
+# final positions — not only the raw simulator positions — satisfy the spacing.
+# This stays render-only and deterministic; `_state` is never written.
+func _solve_visual_positions(delta: float) -> void:
+	var count := _frame_living_ids.size()
+	if count <= 0:
+		return
+	var solved: Array[Vector2] = []
+	for raw_pos in _frame_living_pos:
+		solved.append(raw_pos)
+	_seed_exact_position_clusters(solved)
+	for _iteration in MODEL_SEPARATION_ITERATIONS:
+		for i in count:
+			for j in range(i + 1, count):
+				var apart := solved[i] - solved[j]
+				var distance := apart.length()
+				if distance < 0.01:
+					apart = _stable_pair_spread_dir(_frame_living_ids[i], _frame_living_ids[j])
+					distance = 0.0
+				if distance >= MODEL_SEPARATION_RADIUS:
+					continue
+				var direction := apart.normalized()
+				var correction := direction * (MODEL_SEPARATION_RADIUS - distance) * 0.5
+				solved[i] += correction
+				solved[j] -= correction
+		for i in count:
+			var displacement := solved[i] - _frame_living_pos[i]
+			if displacement.length() > MODEL_SEPARATION_MAX_OFFSET:
+				displacement = displacement.normalized() * MODEL_SEPARATION_MAX_OFFSET
+			solved[i] = _clamp_visual_sim_pos(_frame_living_pos[i] + displacement)
+
+	var smoothing := 1.0 - exp(-MODEL_SEPARATION_SMOOTH_SPEED * maxf(0.0, delta))
+	if delta <= 0.0:
+		smoothing = 1.0
+	for i in count:
+		var id := _frame_living_ids[i]
+		var target_offset := solved[i] - _frame_living_pos[i]
+		var current_offset := target_offset
+		var previous: Variant = _visual_offset_by_id.get(id)
+		if previous is Vector2:
+			current_offset = (previous as Vector2).lerp(target_offset, smoothing)
+		_visual_offset_by_id[id] = current_offset
+		_visual_pos_cache[id] = _clamp_visual_sim_pos(_frame_living_pos[i] + current_offset)
+
+
+# Units can converge on the exact same simulator point. Pairwise corrections
+# alone have no natural ordering there and can place two members on nearly the
+# same side of the crowd. Seed each exact-position cluster on a stable ring,
+# then let the general solver handle neighbours that are merely close.
+func _seed_exact_position_clusters(solved: Array[Vector2]) -> void:
+	var clusters := {}
+	for i in _frame_living_pos.size():
+		var raw := _frame_living_pos[i]
+		var indices: Array = clusters.get(raw, [])
+		indices.append(i)
+		clusters[raw] = indices
+	for value in clusters.values():
+		var indices: Array = value
+		if indices.size() <= 1:
 			continue
-		var delta := base - _frame_living_pos[i]
-		var dist := delta.length()
-		if dist < 0.01:
-			delta = _stable_unit_spread_dir(f)
-			dist = 1.0
-		if dist < MODEL_SEPARATION_RADIUS:
-			var strength := (MODEL_SEPARATION_RADIUS - dist) / MODEL_SEPARATION_RADIUS
-			offset += delta.normalized() * strength * MODEL_SEPARATION_STRENGTH
-	if offset.length() > MODEL_SEPARATION_MAX_OFFSET:
-		offset = offset.normalized() * MODEL_SEPARATION_MAX_OFFSET
-	return _clamp_visual_sim_pos(base + offset)
+		indices.sort_custom(func(a: int, b: int) -> bool:
+			return _frame_living_ids[a] < _frame_living_ids[b])
+		var ring_radius := MODEL_SEPARATION_RADIUS * 0.5
+		if indices.size() > 2:
+			ring_radius = MODEL_SEPARATION_RADIUS / (2.0 * sin(PI / float(indices.size())))
+		# Leave a little headroom for the later pair pass and arena-edge clamping.
+		ring_radius = minf(ring_radius, MODEL_SEPARATION_MAX_OFFSET * 0.94)
+		var first_id := _frame_living_ids[int(indices[0])]
+		var rotation := deg_to_rad(float(absi(first_id.hash()) % 360))
+		for rank in indices.size():
+			var index := int(indices[rank])
+			var angle := rotation + TAU * float(rank) / float(indices.size())
+			solved[index] = _frame_living_pos[index] + Vector2(cos(angle), sin(angle)) * ring_radius
 
-func _stable_unit_spread_dir(f: Dictionary) -> Vector2:
-	var slot := int(f.get("slot", 0))
-	var uid_len := str(f.get("uid", "")).length()
-	var team_bias := 97 if str(f.get("team", "")) == "enemy" else 23
-	var degrees := (slot * 47 + uid_len * 29 + team_bias) % 360
+
+# When two simulator positions are identical there is no geometric direction to
+# push along. A sorted UID pair produces one stable axis and opposite directions
+# for its two members, avoiding random jitter and replay-to-replay differences.
+func _stable_pair_spread_dir(id_a: String, id_b: String) -> Vector2:
+	var low := id_a if id_a < id_b else id_b
+	var high := id_b if id_a < id_b else id_a
+	var degrees := absi((low + "|" + high).hash()) % 360
 	var angle := deg_to_rad(float(degrees))
-	return Vector2(cos(angle), sin(angle))
+	var direction := Vector2(cos(angle), sin(angle))
+	return direction if id_a == low else -direction
 
 func _display_unit_def_for_fighter(f: Dictionary) -> Dictionary:
 	return UnitVisualResolverScript.resolve_for_fighter(f)

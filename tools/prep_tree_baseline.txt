@@ -304,5 +304,4 @@
 /PrepScreen/BattleLoadProgress [Control] z=-4 vis=false mouse=2
 /PrepScreen/BattleLoadProgress/RiverLaneProgressBar [ProgressBar] z=0 vis=true mouse=2
 /PrepScreen/BattleLoadProgress/RiverLaneLoadParticles [CPUParticles2D] z=0 vis=true
-/PrepScreen/PrepMusicPlayer [AudioStreamPlayer]
 /PrepScreen/FpsOverlay [Label] z=300 vis=true mouse=2

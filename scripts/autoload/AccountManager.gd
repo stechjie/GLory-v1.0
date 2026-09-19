@@ -619,6 +619,158 @@ func mark_chat_read(code: String, last_read_id: int) -> Dictionary:
 		{"last_read_id": maxi(0, last_read_id)}, true)
 
 
+# --- 公告（docs/公告系统设计.md）------------------------------------------------
+#
+# 只有拉列表。看过哪些、弹过哪些在 AnnouncementService（存本机），图片在 AnnouncementImages。
+
+func fetch_announcements() -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/announcements", null, true)
+
+
+# 每个请求都带上客户端版本（docs/公告系统设计.md「报版本号」）。**今天服务端还不读它** ——
+# 加它是为了以后能「只给旧版本弹请更新」：已经发出去的包补不上这个头，只能从这一版开始带。
+# build 取 build_info.json 的 version_code；编辑器里跑没有这个文件，记 0。
+const CLIENT_HEADER := "X-Glory-Client"
+var _client_header_line := ""
+
+
+func client_header_line() -> String:
+	if _client_header_line.is_empty():
+		var info: Dictionary = StartupTrace.build_info()
+		_client_header_line = "%s: protocol=%d; build=%d" % [
+			CLIENT_HEADER, NetworkConfig.NETWORK_PROTOCOL_VERSION, int(info.get("version_code", 0))]
+	return _client_header_line
+
+
+# --- 商城（docs/商城系统设计.md）------------------------------------------------
+#
+# 客户端**只发意图**：买什么。价格从服务端目录取、余额从服务端钱包取，
+# 请求体里一个数字都不带（同 docs/P1经济账本RFC.md 第六节）。
+#
+# ⚠️ 这里的钱和局内金币无关。局内金币是 GameState.gold，一局一清，走战斗服务器。
+
+
+# 目录**不带令牌**：它对所有人一样、不含任何玩家数据。带上反而让没登录时看不了商城。
+# 「我买过没有」由调用方拿 fetch_entitlements() 自己比对。
+func fetch_shop() -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/shop", null, false)
+
+
+# {"diamond": int, "coin": int}。付费与赠送的分账**不下发** —— 那是退款与对账的口径。
+func fetch_wallet() -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/me/wallet", null, true)
+
+
+# 拥有的**内容 id**（pet_cat / preset:avatar_005），不是商品 id。
+#
+# 🔴 **不在这个列表里 ≠ 没有。** 不在服务端目录里的内容一律免费 ——
+# 现有那 20 张头像和默认头像框都不会出现在这里。拿它当「有没有资格用」的唯一判据，
+# 会让每个玩家的头像一夜之间全部失效。要判资格得先问「它卖不卖」。
+func fetch_entitlements() -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/me/entitlements", null, true)
+
+
+# client_order_id 由调用方生成，**重试同一笔时原样复用** —— 服务端靠它认出重发，
+# 重放原回执而不是再扣一次钱。换一个新的就是新订单，会再扣一次。
+#
+# 回执里的 replayed 说明这次是重放还是真的执行了：重放时别再放一次发货动画，
+# 玩家早就看过了。
+func place_shop_order(client_order_id: String, item_id: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/shop/orders",
+		{"client_order_id": client_order_id, "item_id": item_id}, true)
+
+
+# {"owned": [...], "active": "...", "needs_starter_pick": bool}
+func fetch_pets() -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/me/pets", null, true)
+
+
+# 出战宠物。服务端会校验归属 —— 没有的宠物设不上去，回 403。
+func set_active_pet(pet_id: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_PUT, "/v1/me/pets/active", {"pet_id": pet_id}, true)
+
+
+# 新手三选一。走和购买同一条发货路径（同一张订单表、同一个幂等键），价格是 0。
+func pick_starter_pet(client_order_id: String, pet_id: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/me/pets/starter",
+		{"client_order_id": client_order_id, "pet_id": pet_id}, true)
+
+
+# --- 出战配置与出战名片（docs/商城系统设计.md 第五节）----------------------------
+
+
+# {"races": [...] | null}。null = 从没选过，用默认（默认值由 RacePick 按棋子表算，
+# 账号服务器刻意不替客户端填）。
+func fetch_races() -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/me/races", null, true)
+
+
+# 存出战种族。账号服务器只查「每一族你有没有资格用」；「必须正好 4 个」由
+# 备战界面与战斗服务器按 RacePick 管。
+func save_races(races: Array) -> Dictionary:
+	return await _request(HTTPClient.METHOD_PUT, "/v1/me/races", {"races": races}, true)
+
+
+# 领一张出战名片，入座（建房 / 加入房间）之前用。返回名片字符串，领不到返回空串。
+#
+# **不透明，原样交给战斗服务器，不解析、不改。** 验章在战斗服务器上。
+# 有效期很短（60 秒），所以每次入座现领，不缓存。
+func fetch_battle_card() -> String:
+	var result: Dictionary = await _request(HTTPClient.METHOD_POST, "/v1/battle/card", {}, true)
+	if int(result.get("code", 0)) / 100 != 2:
+		return ""
+	return str((result.get("body", {}) as Dictionary).get("card", ""))
+
+
+# 一笔购买的幂等键（uuid v4 形状）。**生成一次，整笔重试期间都用同一个。**
+#
+# 用 Crypto 而不是 randi()：同 ChatService.new_client_msg_id 的理由 ——
+# RngService 是给回放确定性用的，同一个种子在两台设备上会签出同一个 id，
+# 那意味着两个玩家的订单幂等键会撞。
+#
+# ⚠️ 这是仓库里第三份逐字一样的 uuid v4 生成器
+# （另两份：SaveSchema.new_player_id、ChatService.new_client_msg_id）。该合并了，
+# 但那要动存档与聊天两条已经在线上跑的路径，不该顺手塞进商城这一批。
+static func new_client_order_id() -> String:
+	var bytes := Crypto.new().generate_random_bytes(16)
+	bytes[6] = (bytes[6] & 0x0f) | 0x40
+	bytes[8] = (bytes[8] & 0x3f) | 0x80
+	var hex := bytes.hex_encode()
+	return "%s-%s-%s-%s-%s" % [
+		hex.substr(0, 8), hex.substr(8, 4), hex.substr(12, 4),
+		hex.substr(16, 4), hex.substr(20, 12)]
+
+
+# --- 系统邮件（docs/邮件系统设计.md）--------------------------------------------
+#
+# 界面不直接调这些 —— 走 MailService，那里管邮箱快照和红点。
+# 这边没有「发」：发邮件只在 Supabase 里（database/012_mail.sql 的 send_mail）。
+
+func fetch_mail() -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/me/mail", null, true)
+
+
+func read_mail(mail_id: int) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/me/mail/%d/read" % mail_id, {}, true)
+
+
+# 领取天然幂等：服务端先锁状态行，领过的再点只回当前余额（replayed = true），不用幂等键。
+func claim_mail(mail_id: int) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/me/mail/%d/claim" % mail_id, {}, true)
+
+
+func claim_all_mail() -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/me/mail/claim-all", {}, true)
+
+
+func delete_mail(mail_id: int) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/me/mail/%d/delete" % mail_id, {}, true)
+
+
+func delete_read_mail() -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/me/mail/delete-read", {}, true)
+
+
 # --- 在线状态心跳 -------------------------------------------------------------
 #
 # **事件驱动 + 慢心跳**，不是纯轮询：进出房间时立刻补一次（report_presence_now），
@@ -687,7 +839,7 @@ func _request(
 	authed: bool = false,
 	allow_refresh: bool = true,
 ) -> Dictionary:
-	var headers := PackedStringArray(["Content-Type: application/json"])
+	var headers := PackedStringArray(["Content-Type: application/json", client_header_line()])
 	if authed:
 		# 令牌快过期就先续，免得这一趟白跑一次 401（见「令牌续期」那一节）。
 		if allow_refresh and _token_needs_refresh():

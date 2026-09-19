@@ -48,6 +48,10 @@ mkdir -p "$LOG_DIR"
 PASSED=()
 FAILED=()
 
+# 起真服务器的探针（persist / channel）要一把出战名片公钥，服务器才肯启动。
+# 探针自己现场生成，写到这条**测试专用**路径 —— 不碰默认路径，理由见 tools/battle_card_test_keys.gd。
+CARD_KEY_ARG="--battle-card-key=user://test_battle_card_public.pem"
+
 _skip() { [ -n "$ONLY" ] && [ "$ONLY" != "$1" ]; }
 
 # 跑一个模式。判定只看退出码：这些探针有的用 CheckHarness（退出码 0/1），有的自己
@@ -108,8 +112,8 @@ if ! _skip persist_check; then
         rm -f "$USER_DIR/server_rooms.bin.7" "$USER_DIR/server_rooms.bin.7.bak"
         note_cleared=1
     fi
-    run_mode "persist_check --persist-phase=save" "res://tools/persist_check.tscn" -- "--persist-phase=save"
-    run_mode "persist_check --persist-phase=load" "res://tools/persist_check.tscn" -- "--persist-phase=load"
+    run_mode "persist_check --persist-phase=save" "res://tools/persist_check.tscn" -- "--persist-phase=save" "$CARD_KEY_ARG"
+    run_mode "persist_check --persist-phase=load" "res://tools/persist_check.tscn" -- "--persist-phase=load" "$CARD_KEY_ARG"
 fi
 
 # --- channel：两个进程必须同时在 ----------------------------------------------
@@ -118,7 +122,7 @@ fi
 if ! _skip channel_check; then
     echo
     echo "channel_check（server 后台 + client 前台）："
-    "$GODOT_BIN" --headless --path "$PROJECT_ROOT_WIN" res://tools/channel_check.tscn -- --ch-role=server \
+    "$GODOT_BIN" --headless --path "$PROJECT_ROOT_WIN" res://tools/channel_check.tscn -- --ch-role=server "$CARD_KEY_ARG" \
         > "$LOG_DIR/channel_server.log" 2>&1 &
     CH_SERVER_PID=$!
     sleep 5
@@ -130,7 +134,7 @@ if ! _skip channel_check; then
     # 为什么必须单独跑一遍：实测最坏一场压缩后 61.8 KB，低于 192 KiB 阈值，
     # 也就是**生产里永远走不到分块**。不强制跑一遍的话，分块/确认/重试三件事
     # 在真实网络上等于没验过 —— 同进程单测测不到"包过不过得了 ENet"。
-    "$GODOT_BIN" --headless --path "$PROJECT_ROOT_WIN" res://tools/channel_check.tscn -- --ch-role=server --ch-chunked=1 > "$LOG_DIR/channel_server_chunked.log" 2>&1 &
+    "$GODOT_BIN" --headless --path "$PROJECT_ROOT_WIN" res://tools/channel_check.tscn -- --ch-role=server --ch-chunked=1 "$CARD_KEY_ARG" > "$LOG_DIR/channel_server_chunked.log" 2>&1 &
     CH_CHUNK_PID=$!
     sleep 5
     run_mode "channel_check --ch-chunked=1 (client)" "res://tools/channel_check.tscn" --         "--ch-role=client" "--ch-chunked=1"

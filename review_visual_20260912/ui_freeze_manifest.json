@@ -1,0 +1,2774 @@
+{
+	"file_count": 553,
+	"files": [
+		{
+			"path": "res://assets/fonts/Knewave-OFL.txt",
+			"sha256": "14b3fbd06078a869cf2ba96e6dacb852d373703c86ca7ad54a4cdd6e20fbab19",
+			"size": 4419
+		},
+		{
+			"path": "res://assets/fonts/Knewave-Regular.ttf",
+			"sha256": "ed3bac761d755b89ab3082c844d4a623d63c7d6eef85d22ba1fb6c680e6a4436",
+			"size": 32460
+		},
+		{
+			"path": "res://assets/fonts/Knewave-Regular.ttf.import",
+			"sha256": "75144f99ce84b2b2ea1375107f4ebe62aee90037f1fc98d027576bbf132d5ad0",
+			"size": 783
+		},
+		{
+			"path": "res://assets/ui/buttons/btn_buy_lowpoly.png",
+			"sha256": "6065cc2bb15b445b86d44b83850ecd97848f3fe62e0a4caacaee41d0122ca755",
+			"size": 1262888
+		},
+		{
+			"path": "res://assets/ui/buttons/btn_buy_lowpoly.png.import",
+			"sha256": "99845fdcde11a274b0a64dd42ffdb1be1f877c73403251bfc69e4b7bb3d654ca",
+			"size": 967
+		},
+		{
+			"path": "res://assets/ui/buttons/btn_hp_empty.png",
+			"sha256": "a3b09b7b34f4c1340ecd159350ca842e60e2c666f8cf582c269a3cdc8bef6e96",
+			"size": 571675
+		},
+		{
+			"path": "res://assets/ui/buttons/btn_hp_empty.png.import",
+			"sha256": "406f2a2043465d1d9a256e9f1d51c2bca48b65f218efe77eb69704e368aaf8d0",
+			"size": 958
+		},
+		{
+			"path": "res://assets/ui/buttons/btn_hp_red.png",
+			"sha256": "e7a4fbce677e0fb9280c46e305fa5b22c035fa48b5ab29bff392914d6350c391",
+			"size": 47493
+		},
+		{
+			"path": "res://assets/ui/buttons/btn_hp_red.png.import",
+			"sha256": "727fd30669bf1e940578a1abbba781d8072009193e3e70b45d5b5c574719aa5c",
+			"size": 952
+		},
+		{
+			"path": "res://assets/ui/buttons/btn_merc_lowpoly.png",
+			"sha256": "701876e4f4db95c7c0069f2ed8ee305aa9267d0845b29aab6f9d71c372f47653",
+			"size": 134666
+		},
+		{
+			"path": "res://assets/ui/buttons/btn_merc_lowpoly.png.import",
+			"sha256": "f394c2ee314c2366fac31dad7ef478803589bf97d2f9c8f6394ec9d835e7fc83",
+			"size": 970
+		},
+		{
+			"path": "res://assets/ui/buttons/btn_refresh_fire_lowpoly.png",
+			"sha256": "f953400b4f482961d8d0efa8a75e6682328197ef1e9bef5c592e649cab22b51b",
+			"size": 112767
+		},
+		{
+			"path": "res://assets/ui/buttons/btn_refresh_fire_lowpoly.png.import",
+			"sha256": "b3bbf1bcd2ad339bcef747a42e8a98d99ed34f0ffb3c4b8dbca80e31fedba1b6",
+			"size": 993
+		},
+		{
+			"path": "res://assets/ui/buttons/btn_start.png",
+			"sha256": "47d360bec99e5cdd2c92eeb67eabe2cf9e5533cf54fd0ebab202449dc2de29f9",
+			"size": 463039
+		},
+		{
+			"path": "res://assets/ui/buttons/btn_start.png.import",
+			"sha256": "635527a195acd0e8eff3f6cd68cc32d17c1345fe1a683782ac09d922c9792848",
+			"size": 949
+		},
+		{
+			"path": "res://assets/ui/buttons/btn_stats.png",
+			"sha256": "90bf900fe893c82c0e2fe8653c4aabce70ec5d9c32415e2433901358c6d2bd7f",
+			"size": 354847
+		},
+		{
+			"path": "res://assets/ui/buttons/btn_stats.png.import",
+			"sha256": "3a8eff2ed3b2a0dd060b413ecb10063f034b0b063b8ea2f7c7099888ac77c45b",
+			"size": 949
+		},
+		{
+			"path": "res://assets/ui/buttons/btn_team_mercs_lowpoly.png",
+			"sha256": "0a836f7469d4ed1d370596a5c66c25739525ddb65bfd37eca3ea1e696ef74fb2",
+			"size": 1218936
+		},
+		{
+			"path": "res://assets/ui/buttons/btn_team_mercs_lowpoly.png.import",
+			"sha256": "42d7c57db57b5e64d7360abe61456c1a546cdab2b0c1258463a0064079989d7b",
+			"size": 988
+		},
+		{
+			"path": "res://assets/ui/buttons/ready_magic_circle.png",
+			"sha256": "20c1db6db3f699c10bb938a97593abcda0ddc7490a0ab2a61f8bb3a0f5ae21d2",
+			"size": 835022
+		},
+		{
+			"path": "res://assets/ui/buttons/ready_magic_circle.png.import",
+			"sha256": "aefd677c92eabe72e24d36316db24913b7766fea4da2ba76d05c5be4928798e2",
+			"size": 976
+		},
+		{
+			"path": "res://assets/ui/buttons/shop_closed.png",
+			"sha256": "7d21bf6f14b0565c6dcf542b21a1812df22c2160e62584b0eb61a48b7cb01909",
+			"size": 918977
+		},
+		{
+			"path": "res://assets/ui/buttons/shop_closed.png.import",
+			"sha256": "8bebc8aac5af54f7299aaa839188e435ea25ca7dbc42e99b2d81ba7128f3f852",
+			"size": 955
+		},
+		{
+			"path": "res://assets/ui/codex/book_spread.png",
+			"sha256": "a1e2a4e035beb1c26fcec9fe3edc413e4f97f08cd6f12d19b4b3f82b98edb0b1",
+			"size": 1743400
+		},
+		{
+			"path": "res://assets/ui/codex/book_spread.png.import",
+			"sha256": "e89b76adde9834a1a1bf598319f22c76bffb8671f0a7c4884223626dbaa1d99a",
+			"size": 953
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/elem_land.png",
+			"sha256": "1cffe899b9aa8ad9590864b4e7aa800c6c17c71e2b00982e77cbd8a71839e913",
+			"size": 1519221
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/elem_land.png.import",
+			"sha256": "c4bcbff118da4c0d9db81b97c0c35415898fe5d3676ddd478387a600da79e537",
+			"size": 957
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/elem_ren.png",
+			"sha256": "a98342110e4f084543efbedb513d2630237e4c7431576a8ec7012e13e1451ea9",
+			"size": 1446753
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/elem_ren.png.import",
+			"sha256": "9fa4851db066ea316dc5f2d6f6c9e4cd818b1cb0602633810403073c5f5692b9",
+			"size": 954
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/elem_sky.png",
+			"sha256": "6a310c7cb574e71f44ce4de7fe250c585174564d43843c19a33fbaceea1e300a",
+			"size": 1651582
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/elem_sky.png.import",
+			"sha256": "2eddc323155998b754db1ee767f918d3c2961e3a1a89c7aef7cb07107ebea893",
+			"size": 954
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/云羽鹰.png",
+			"sha256": "e9dafc1066d6146f071fce3063a32ad572fbf6082d8da29bc25bfe0c82d4c854",
+			"size": 758572
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/云羽鹰.png.import",
+			"sha256": "40fe3351d789d439347c7704ff65d220fff815bbbd39df22aaeaabd766683870",
+			"size": 956
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/双生守门人.png",
+			"sha256": "35478ac70e8e8badf250282d8b55ee29ba4bec3f445340387349fcb4909f1239",
+			"size": 584837
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/双生守门人.png.import",
+			"sha256": "6c990d20e783e39b207fdc6ac6491e771cd42e43ce3ea1165b9d1830ecdb2e8c",
+			"size": 975
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/双生守门人·地.png",
+			"sha256": "35478ac70e8e8badf250282d8b55ee29ba4bec3f445340387349fcb4909f1239",
+			"size": 584837
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/双生守门人·地.png.import",
+			"sha256": "2b6c788f044d02cee4f8b03c6f196b3daf36e8102da4e61b862097c9caf8dd74",
+			"size": 990
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/双生守门人·天.png",
+			"sha256": "0020282891aaa778bf81431525a84d50f85ce247edcbabb3ae65cce2d27012c2",
+			"size": 759484
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/双生守门人·天.png.import",
+			"sha256": "c47d767e129dd76179d4fb4f8834ad69f3b750b1ca8028efe0209715b84679a5",
+			"size": 990
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/古树长者.png",
+			"sha256": "eb6b3f4f493b221ee0d4277752b75617bcd9b7bf5a1cfa1194fc9aa94c6a519b",
+			"size": 660031
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/古树长者.png.import",
+			"sha256": "e1c8a69e9aec912137e46c0a705b8e18ce841aee9301c1b13d2a9028c7644e6a",
+			"size": 965
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/噬魂领主.png",
+			"sha256": "49f051760486803ef355f089958888a9b73bd252a83cd8e1b24027a154280401",
+			"size": 646245
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/噬魂领主.png.import",
+			"sha256": "1ee48441bb0cbf08dc1377d7ed54447c8a488fedc152b5c9cf04bbfb06fcbad4",
+			"size": 966
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/圣愈祭司.png",
+			"sha256": "9c2f8852e92b904a4cc52d955d806ff6226b96014695ba948058bd5b08e8cade",
+			"size": 677276
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/圣愈祭司.png.import",
+			"sha256": "fbdf3c633aed43daa81d6fa5805236954c8f2c681f02b6519d5902071efe1cdc",
+			"size": 965
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/圣歌灵.png",
+			"sha256": "a3f051c52eb5d17a54c5176c9d2a979b93e8a2522b6cf7131a732c2826f06962",
+			"size": 709606
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/圣歌灵.png.import",
+			"sha256": "3d2a01ae116426a66d06cd352b0d7ac35349d5b197614ca503fa180bbd096db8",
+			"size": 957
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/地脉虫.png",
+			"sha256": "3856ea3efee3abd771ffa0fadcbbcef951678d5184d54a8ce5daedc1c70afdf4",
+			"size": 694104
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/地脉虫.png.import",
+			"sha256": "2d05bcd1dcc5576d7d56f462f7c7f7738aca379e5d5432a5e9866faf5966634f",
+			"size": 956
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/天穹守卫.png",
+			"sha256": "e18d38af5ba8c14a42bf74bed174773398367a85bb64ca1ab04babce18beb954",
+			"size": 730656
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/天穹守卫.png.import",
+			"sha256": "3aeb7ad60a58547c72f275f392ab84f59f648407852882c6123136b0f950c983",
+			"size": 966
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/天罚投星者.png",
+			"sha256": "a883e365b7d274e2a49a07f6384428214938f7b655316fa8385c8c9720423c6b",
+			"size": 726233
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/天罚投星者.png.import",
+			"sha256": "53f9bc18abfd25ccd56a8e79aedce1ac38f3d3b58394469520e66d8521a8fdb2",
+			"size": 975
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/小兔.png",
+			"sha256": "b368cbf4167668d4298fce233be98f52c5a8d374942bf931c2a4d048cabb0b46",
+			"size": 474709
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/小兔.png.import",
+			"sha256": "8d615976c25581a23d5936fce25ab55739d900d7677088477def127c04bb8885",
+			"size": 948
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/小喵.png",
+			"sha256": "22308e3ac4c3b6c9a1c79fad3bc48d676404182389ce778a38f9438c5b33c5be",
+			"size": 547876
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/小喵.png.import",
+			"sha256": "7201a876ef4132313a07540e8915f52ab5eba2723b49fd6dee5936b2732e3c46",
+			"size": 948
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/小菇.png",
+			"sha256": "84c43e211c1b56fc8626201f3d9fb49839ec72bcdd64da38623b434bf72f12f4",
+			"size": 549543
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/小菇.png.import",
+			"sha256": "f4cc3b65e158fdb78b02971c829d9fb610146cc018d9ccb7d05ca6b1e2bb3b66",
+			"size": 947
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/山岳巨人.png",
+			"sha256": "8486a4617c7ebc9ad8b5b2faf20e6930fdebe60cfa354a892aa5617a7a6019ae",
+			"size": 702839
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/山岳巨人.png.import",
+			"sha256": "1c4a82f53fb281d2577562343bfdcd007d76df31774267ac174f8d0a81809a4c",
+			"size": 966
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/岩甲兽.png",
+			"sha256": "d3f3fa5bbbdb6ac969f45280b2e726eb4d3acec68ecbdcf203add0d8ff961aed",
+			"size": 715432
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/岩甲兽.png.import",
+			"sha256": "509ac869f3ec0f7d13498187b3b1e466ed063f5225615e9cd7610d86e03620ba",
+			"size": 957
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/巫毒术士.png",
+			"sha256": "a5802560a39e5e1d8939687527e0df780de05153ddf68e2b215b0f2e879184d1",
+			"size": 732825
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/巫毒术士.png.import",
+			"sha256": "770ce6f66840e0d41bc5d8862d470a9065655ae8ad2ca527f6056fb8861788f5",
+			"size": 966
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/影行盗徒.png",
+			"sha256": "dbe3f6b174984fa5adc0d77333baf40baea2a09c62566af41e2fe08bab5b4467",
+			"size": 714335
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/影行盗徒.png.import",
+			"sha256": "f41f9d3bb4fc4473f6c06bee941c80b7c5562c73b2b94ba5c99f1ce7a400951d",
+			"size": 965
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/星辉蝶.png",
+			"sha256": "0c2d6d3316ecd7ba6938ee8c55392b75d0da3fbc415b48b2b37024ac60e2805c",
+			"size": 723948
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/星辉蝶.png.import",
+			"sha256": "eac65c1213041c048e451447503a88dd411466a4f44925b57bf4919bb3e0d24d",
+			"size": 956
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/暗狱锁魂者.png",
+			"sha256": "dc4912e2488c464dc5418aa7035645016f299b9561667e687352d06af179b87e",
+			"size": 675919
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/暗狱锁魂者.png.import",
+			"sha256": "e785a2d0c7ceede9dac802c06fc43408f52876bb048828dbeecbf8b2d86a8ea0",
+			"size": 975
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/流浪剑客.png",
+			"sha256": "a6da82c6f503dbbd39ca50878b96f2dbfaf33671fb3979ad5b0bb99f6bc1693d",
+			"size": 741185
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/流浪剑客.png.import",
+			"sha256": "42b67616a5ed5a1b675e04a694e21ed439822d93d53ad40fba049fbd8e68f186",
+			"size": 965
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/深渊噬兽.png",
+			"sha256": "54bd47e7656153282bbd58189e0d547c2c20eefa3d3c50e19a7126797cc20857",
+			"size": 660594
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/深渊噬兽.png.import",
+			"sha256": "ecdfbdbf056601ff5bf8cd293af6b157d4442bfb45d29b170e5e77efba59aa52",
+			"size": 966
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/深渊魔君·厄夜.png",
+			"sha256": "bf2eeacec0a4c6c597f18b3d17aeee163b5e76f79c40c60ce301a28e75b0ba6b",
+			"size": 648099
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/深渊魔君·厄夜.png.import",
+			"sha256": "444124b7a26a5aa7600dde73595d20701bf8a288fcb32901bc2b413b20a6c74b",
+			"size": 990
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/灭世裁决者.png",
+			"sha256": "2b0b484b8a64f30bff61ebca90cf651dedcea76e01e8afd9bb57466b336134b9",
+			"size": 698357
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/灭世裁决者.png.import",
+			"sha256": "81082ab665dc2c2ab4a67d76a090c67063ee0ed4fc2385184b9b47bf041dc7f2",
+			"size": 975
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/炼狱焚界者.png",
+			"sha256": "4956b9cbdaffe06898fe8c6d5b459ff1e8bd77288bfbafaa42e7d63b45fd1427",
+			"size": 672278
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/炼狱焚界者.png.import",
+			"sha256": "b9b3763f4fa8c3e0d60c8582792d04ba507e67957d6a894c41040688f5557242",
+			"size": 975
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/焰爪魔灵.png",
+			"sha256": "3b1792235a4b88addf06e9a9ff4a1614a0c00457da722ea6dae8e34383c4e6b9",
+			"size": 692787
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/焰爪魔灵.png.import",
+			"sha256": "38f916602d2c3ca5594cd526ae9a6f32a664e82fada6f92e0cfbb4f6c2f5c0af",
+			"size": 966
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/熔岩傀儡.png",
+			"sha256": "1d1bc4dd5b24a8745f80587212abed5336a65f11cc28312757e41af6d38bbfe0",
+			"size": 704345
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/熔岩傀儡.png.import",
+			"sha256": "1f066538a65a21e04db95fedba6a3a26db34df257b83f209a558bb19ab9f4769",
+			"size": 966
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/狂战灾兽.png",
+			"sha256": "f255207be1e2ba03604f8b5474fe4120d3321a2e378561826bde29d19801cfe4",
+			"size": 622420
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/狂战灾兽.png.import",
+			"sha256": "92f2b173a70dce28a3e33528a49a642bca3026117301c875a15ed37093e1f81a",
+			"size": 966
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/药毒医师.png",
+			"sha256": "df48a884a08e5476d7ee994738804e1e3c6f1c7386bf580cc00b93facae29f58",
+			"size": 741398
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/药毒医师.png.import",
+			"sha256": "cc6339080843708f42d30062d329be2a088461de5a881e2a704a79b756b7f116",
+			"size": 966
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/藤蔓守卫.png",
+			"sha256": "341077a4e3144ba9c0b2f892b27813ab6f2704fc42d2cb5ae062410bbb9bff7a",
+			"size": 715664
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/藤蔓守卫.png.import",
+			"sha256": "b8500365c33d8f293439c5862531a76125fbc5010b97684bbee3c338d7bea624",
+			"size": 966
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/血怒魔王.png",
+			"sha256": "d607bbf7eb616c213bdb099b3293bc3c70e0bfc545ee7d7ef30c7115c02f03d5",
+			"size": 550812
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/血怒魔王.png.import",
+			"sha256": "88010d023ad3c7cb10cbb4e92690873f00632a05bb13d4930eb90afa2a2dea4b",
+			"size": 966
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/镜像魔君.png",
+			"sha256": "488c6fc7af02456f10cec36ea1cbe6cb1db8afa236c7c6f598cdf4ad7473a98f",
+			"size": 692694
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/镜像魔君.png.import",
+			"sha256": "dac3fc42205f76a860f10387aa3673891351e5fcce035551101ad33434e9ddd1",
+			"size": 966
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/雷怒核心.png",
+			"sha256": "dd50950538162d189a84883c5b0c3c412ee008b68f78ea1c7dc6cdcbb342ce87",
+			"size": 751110
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/雷怒核心.png.import",
+			"sha256": "0b22792c03ad49425c56141c76e8522c29f09913cfffe66fb98edec0004f161b",
+			"size": 966
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/雷鸣灵.png",
+			"sha256": "fa599c6c447107ecc2ddb22131c86fc11f7f87e5a797c32d860cab6ee3fac0b4",
+			"size": 714228
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/雷鸣灵.png.import",
+			"sha256": "591b01eebe643913b9af6a9103685e24b4d67a33e5a46a5d75285ecbef26ce60",
+			"size": 957
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/风刃隼.png",
+			"sha256": "027e27f6aefc17592bd4ac7829f4b18dcaaa517fc393af37916190a6ca22140a",
+			"size": 658359
+		},
+		{
+			"path": "res://assets/ui/codex_portraits/风刃隼.png.import",
+			"sha256": "294663a26063eba4ad39ba0b96adcb5e893046293e7ffc5b955fb9d36984f96d",
+			"size": 957
+		},
+		{
+			"path": "res://assets/ui/crystals/blue_0_10.png",
+			"sha256": "78c3f674724300f51c387c3908073d6ac806c4cecc6f4ede8cccfb7a1a97d477",
+			"size": 1094984
+		},
+		{
+			"path": "res://assets/ui/crystals/blue_0_10.png.import",
+			"sha256": "ba61a5756c20fb295415cf99e90e554852b4730b4d719ff701a2a36effa03078",
+			"size": 951
+		},
+		{
+			"path": "res://assets/ui/crystals/blue_10_20.png",
+			"sha256": "437473553badd807ac46d72c42dbe37cf569c5e274272d3919e477be46fd4877",
+			"size": 1782304
+		},
+		{
+			"path": "res://assets/ui/crystals/blue_10_20.png.import",
+			"sha256": "1449d0576a1632077af53197a71acacd6250f29e7989b1be0fb5403171897389",
+			"size": 954
+		},
+		{
+			"path": "res://assets/ui/crystals/blue_20_30.png",
+			"sha256": "949051a9088123e1ce38bc1dcf2bb7d7318687817266afe6b9529fa073eeae63",
+			"size": 1673017
+		},
+		{
+			"path": "res://assets/ui/crystals/blue_20_30.png.import",
+			"sha256": "757a853fd0230c416afb7c762dcd7e7e65b1172644bba49213e616c5fdaabcd4",
+			"size": 955
+		},
+		{
+			"path": "res://assets/ui/crystals/blue_30_40.png",
+			"sha256": "7673ab499d15863840340c94c993badf17de657e5c0f89bde1dae5bc3c875982",
+			"size": 1506251
+		},
+		{
+			"path": "res://assets/ui/crystals/blue_30_40.png.import",
+			"sha256": "25e898d366b24a8f57fa87800f1bc2f5b990a0b23fff7a5bfa954051be87efec",
+			"size": 955
+		},
+		{
+			"path": "res://assets/ui/crystals/blue_40_50.png",
+			"sha256": "113a33135d1d522b75ab6f4a6a273c6407f219ee233c5862f5b2b0351131b794",
+			"size": 1427455
+		},
+		{
+			"path": "res://assets/ui/crystals/blue_40_50.png.import",
+			"sha256": "9194ab77bf417600049fb32e04772acbfad2baf038c2907fe5c02b2b59e5576f",
+			"size": 955
+		},
+		{
+			"path": "res://assets/ui/crystals/red_0_10.png",
+			"sha256": "c27ce43606f91f4c2bec7cc3c0ec3ea62a7dc43ef4c242b06997e5bb6c8bf99d",
+			"size": 1251420
+		},
+		{
+			"path": "res://assets/ui/crystals/red_0_10.png.import",
+			"sha256": "caeb59ca7612455bef7c4e2cdfe9e737e3e0d47e90fe6237ef1c434c5f8ed8e0",
+			"size": 949
+		},
+		{
+			"path": "res://assets/ui/crystals/red_10_20.png",
+			"sha256": "0141bdef78568380f5b35d2b8263c4d7fff365f3ef3c430124b6945838f7f5ca",
+			"size": 1811354
+		},
+		{
+			"path": "res://assets/ui/crystals/red_10_20.png.import",
+			"sha256": "f1e71c39551011ffc0a9d7fd1bc07040b3181085d2a8ab911135b49706ae2879",
+			"size": 952
+		},
+		{
+			"path": "res://assets/ui/crystals/red_20_30.png",
+			"sha256": "01e0ac52e5e77cf92827821a78fed97bbc48bb39f00bf483faf2d55dd2733e2b",
+			"size": 1870750
+		},
+		{
+			"path": "res://assets/ui/crystals/red_20_30.png.import",
+			"sha256": "7540503f9bff8d69b03d59fc0c4f4e68b5f72795cbad8e01bc5d950c1c96a7e7",
+			"size": 952
+		},
+		{
+			"path": "res://assets/ui/crystals/red_30_40.png",
+			"sha256": "0a10d5da426dd84a018d48538e91e5255cbd77fe64ad8cbeeb0c2ca31248f1cc",
+			"size": 1690116
+		},
+		{
+			"path": "res://assets/ui/crystals/red_30_40.png.import",
+			"sha256": "c5f4682dbe680b1c38a07b128db4d43fc4eb7724ef79b4fae5f240a5dffa9673",
+			"size": 952
+		},
+		{
+			"path": "res://assets/ui/crystals/red_40_50.png",
+			"sha256": "d24707197b0729a770eaffaba2f19b61572fc1ad1b0d5eb80c5a83bb89e1b252",
+			"size": 1631834
+		},
+		{
+			"path": "res://assets/ui/crystals/red_40_50.png.import",
+			"sha256": "412f773dd34e66eea528debd748236ad311fa92ffe12328ce709f0aec9df9980",
+			"size": 952
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/background.png",
+			"sha256": "2a2c3821551c604c1534279e5f3d9e5b5f0741d304a005e7f98869b10ead538c",
+			"size": 2587175
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/background.png.import",
+			"sha256": "fd13298bc40785e7a3a983ad3f591496391b2398ee09eabb95860e32b9c3d81b",
+			"size": 959
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/bag.png",
+			"sha256": "19bd7708c60216d948661eb293d9c6e3e05b538596bc997b9f700f5f79b8c1fc",
+			"size": 63045
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/bag.png.import",
+			"sha256": "7f53ae2d88b5240ef3604206541a438922af764b6d9ccdde44a6f985136dd223",
+			"size": 938
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/casual.png",
+			"sha256": "9dab62af2f3bd024e4e9b7ae67c558def091a2708811dd0f86a285c0c9f790d5",
+			"size": 172294
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/casual.png.import",
+			"sha256": "c4d1ea9bf4589325f40d4e86055198a89b125d4bcf84a3c3dcfef394d64dc4dd",
+			"size": 946
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/chat.png",
+			"sha256": "32192f36a54e6416cebadf52a027212c50cd902bc126fc56dec0f25511e1e6f1",
+			"size": 62899
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/chat.png.import",
+			"sha256": "46a9bda76ab1ae58853e9dca10a95a1609dde64f72f89d1207f0df2a1758d5ac",
+			"size": 941
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/custom.png",
+			"sha256": "0214cd3b7cf246ceaa7f3ba920ed25a93efdce77dc9cee0b1bca1f396b09c5f6",
+			"size": 164052
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/custom.png.import",
+			"sha256": "7e0d57e4fa88cb874d744355d5c7f3fedbb325ba0b1cc7331663b740c7426ed8",
+			"size": 947
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/diamond.png",
+			"sha256": "a1966b5dc6346aadd8bb768c9b19097184be2a38ed0b2faad9b805b2b3163f9e",
+			"size": 61369
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/diamond.png.import",
+			"sha256": "fbe308d61ca49f6fbd84a740e9625ab8157591ff2b47868120075bf27186a0f9",
+			"size": 949
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/foam_mask.png",
+			"sha256": "8fd8ced504ab109c9310a686e49ccc21397bd0249a08fdc6ac56fce9829d3101",
+			"size": 17292
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/foam_mask.png.import",
+			"sha256": "6b07188a16fc0758836c6f94ab0a7bf3fdb8ef8c90c14d3a294ea8d5781b60be",
+			"size": 956
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/friends.png",
+			"sha256": "fd81eb65451fb263b9cce00134abea68c6efee9993b768d29176800038a061d2",
+			"size": 60771
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/friends.png.import",
+			"sha256": "47632153d0325ea3c7057a9b6d67a9564ec20d4a9b9c361be7ebc2fefb24b648",
+			"size": 950
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/gallery.png",
+			"sha256": "d4128ea66901313bc40023e5310e3e89d37d729387eeb39ec076fd64e109d0d2",
+			"size": 172116
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/gallery.png.import",
+			"sha256": "621db4c4c17d9c421c1f0cb990d44a0204a95c3bc878262212ecbc7b957c04a7",
+			"size": 949
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/glow_blue.png",
+			"sha256": "33455c999fdf79335a0d5f009100c4362e762811f6794e44ec985baa70f6215c",
+			"size": 11055
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/glow_blue.png.import",
+			"sha256": "682da56aca209b51ecf8363ecbd1e0f2c82284105d1301b55ff14448424f8b2e",
+			"size": 955
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/glow_warm.png",
+			"sha256": "f301fce3442e654e47fa13ca192a4ca63769919ad50fdb51fe1ff60b10084cfd",
+			"size": 10840
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/glow_warm.png.import",
+			"sha256": "a881330e90cb6187ff24960840aa305702e36c546ec873525fdb0c1cace4b982",
+			"size": 956
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/gold.png",
+			"sha256": "0bbcaaf23fd425247850debb92364944ffa121cd33db2104fbb04676801d48bc",
+			"size": 63750
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/gold.png.import",
+			"sha256": "63475eee6998849e858dbffbdc05d44a52e2c78d1750d3e022d9d5466fd3bff0",
+			"size": 940
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/mail.png",
+			"sha256": "821acc0a3c20e59bf46b2348726f018d852f0ad56439decc4fbecc31fd8325ed",
+			"size": 63068
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/mail.png.import",
+			"sha256": "5934a95f7f43acf9016bb5188aa7c9fa27230367b62de42a26648a912359c5a0",
+			"size": 940
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/news.png",
+			"sha256": "3054b463c2c292f6bfb55f25da72b223c7f4f06de8aef7569e6ca16eac799565",
+			"size": 309798
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/news.png.import",
+			"sha256": "8fb539fbf15d4fb0d03ef6da54f65d7d6b696a7f78729f75c0a0df3ef2c0ef2e",
+			"size": 941
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/particle_blue.png",
+			"sha256": "e242223b9e18d68d7feaea95336e5db8083f9cc87794af8ab49013e46371ccdc",
+			"size": 651
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/particle_blue.png.import",
+			"sha256": "a45322656d5e7af5e1c72b59aa1d30005b3f34a02d8b4ea49bceb37194354616",
+			"size": 968
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/particle_gold.png",
+			"sha256": "195384fee54dbe48645791b3d4b48b47a677b55a29225d5beb8065c99acb4076",
+			"size": 649
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/particle_gold.png.import",
+			"sha256": "72ae60f91166ecec3b65aeba4a38a4cbd21eae2857eb25a16622899b94d84c89",
+			"size": 968
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/prep.png",
+			"sha256": "4065734dbde25b50873c1109bf154911f33e98385a49049c985b84e8bae1e39e",
+			"size": 175500
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/prep.png.import",
+			"sha256": "d10f81a28470091ceb4ca33bb01b612f6e1e705b52c37dcfe9ed9953ac1a3816",
+			"size": 941
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/profile_avatar.png",
+			"sha256": "a09ad2b26c14abb7e1f1a4522da7875a2b30d6045e5c543483dd37e4d8339345",
+			"size": 1024707
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/profile_avatar.png.import",
+			"sha256": "a1170e2d5c4f1ae134d20a4772a98a2d17f445b79ee06c8aedd66f59dc7be489",
+			"size": 971
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/profile_panel.png",
+			"sha256": "083ac4925267c222df52bf928d8ab63deb490213515c031a1e895f20fb653e22",
+			"size": 473846
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/profile_panel.png.import",
+			"sha256": "2a109a69bb289457645143a09525939bf09867eb359e389bdb9312b25e145b94",
+			"size": 968
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/ranked.png",
+			"sha256": "438917b98892252ad23b3e8128ca92d6770afdad9d9f0cf73855ceed3f0a2cc4",
+			"size": 359139
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/ranked.png.import",
+			"sha256": "a11447fd24aa608c9fdc70a98f3c35f70b52218ed9bfb9db5aa821c9903dbd88",
+			"size": 947
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/river_mask.png",
+			"sha256": "b65441ff6c41a2adc7867b741cd15d499559c141ca22059bd4cedfb820ec117f",
+			"size": 12378
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/river_mask.png.import",
+			"sha256": "d71a516eb31f470c4c152115d7357f79e2e75465805a18df0d0c4558d0381504",
+			"size": 959
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/settings.png",
+			"sha256": "99ad49177c5751dfa09c7eae38a4d41e4b956882da35f88a512128b4de3307b4",
+			"size": 60164
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/settings.png.import",
+			"sha256": "927b0205e964bcafe919a301817d50615ccae6dbd893c6d0ffa0da8e261f5726",
+			"size": 953
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/shop.png",
+			"sha256": "0c5013137e516012b7031bf215ee977806dbd9802a74a728fffb804a05e92a9a",
+			"size": 259653
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/shop.png.import",
+			"sha256": "8242e7bcec7705284777df33ddee7811e39c4485960cffa07808bfa0835f451a",
+			"size": 941
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/water_noise.png",
+			"sha256": "842a6494373eb6a2690106aa9b568f39f4fa069b1109e4649afa1e333fe82c87",
+			"size": 19966
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/water_noise.png.import",
+			"sha256": "4d4e4f82fa9484f5357363bb17c93586dd71b9d88b0bdf8eb4acaac1e51a7b7f",
+			"size": 962
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/waterfall_mask.png",
+			"sha256": "052c4795025b9e4745bc4ea7e72c0a977968e631d8b6c4b7be8d620d268f251b",
+			"size": 11854
+		},
+		{
+			"path": "res://assets/ui/main_menu_live/waterfall_mask.png.import",
+			"sha256": "1dd727021d01f7e283d6976b1cb2a524ec1b949afd3f9541a9c66cb97532ea70",
+			"size": 971
+		},
+		{
+			"path": "res://assets/ui/mercenary_portraits/merc_aquarius_time.png",
+			"sha256": "aa41066f86cd9dbbac8bfaa474ec6bb8162116be942b8e42d96c539d7ec95143",
+			"size": 209366
+		},
+		{
+			"path": "res://assets/ui/mercenary_portraits/merc_aquarius_time.png.import",
+			"sha256": "f03ed25be3a48cba1c9ee11aac58c22a7a03a4cfa5bd1fd58da44854844309d1",
+			"size": 988
+		},
+		{
+			"path": "res://assets/ui/mercenary_portraits/merc_aries_blood.png",
+			"sha256": "5c359aa19fa8bcd2cd2b4255915b6bbbc973b5756aa484e0c27af6f49ad4ad08",
+			"size": 198314
+		},
+		{
+			"path": "res://assets/ui/mercenary_portraits/merc_aries_blood.png.import",
+			"sha256": "fd99c9a7fbee7321d5149829123b65e9bb38e66cc6c95aae561f93937963b8d3",
+			"size": 982
+		},
+		{
+			"path": "res://assets/ui/mercenary_portraits/merc_cancer_shell.png",
+			"sha256": "d72f725d2c070ed7e48367f2f1c4706289d67757a114e3efcc47320cef911dfe",
+			"size": 209426
+		},
+		{
+			"path": "res://assets/ui/mercenary_portraits/merc_cancer_shell.png.import",
+			"sha256": "6484e2b50ffa6f8e71b82c7bb7bb7c5227659baec5ee58d099aed7b5346e6a8d",
+			"size": 985
+		},
+		{
+			"path": "res://assets/ui/mercenary_portraits/merc_capricorn_steel.png",
+			"sha256": "93e48a8ee2783cbbe097fd973ad0415d50edeedfc795860131c06ff1a1cb8fd7",
+			"size": 199335
+		},
+		{
+			"path": "res://assets/ui/mercenary_portraits/merc_capricorn_steel.png.import",
+			"sha256": "b6afeac4b3ec84fa1c75807f5a68f40f98cd06c2c1a677507345d4970472dd1e",
+			"size": 994
+		},
+		{
+			"path": "res://assets/ui/mercenary_portraits/merc_gemini_assassin.png",
+			"sha256": "bbf33939e42ae880a8d473cbb3f66091af70ccf162a06775cc6df31d7cb01caf",
+			"size": 200337
+		},
+		{
+			"path": "res://assets/ui/mercenary_portraits/merc_gemini_assassin.png.import",
+			"sha256": "0b75947aff8f4f03f27ea4319090d297121132f5f2f48caaf452888bfa3e6192",
+			"size": 994
+		},
+		{
+			"path": "res://assets/ui/mercenary_portraits/merc_leo_sun.png",
+			"sha256": "d2f9dc78c40a90aeb464c49e9d387a71cb0894af8365359e5cc6c23d6300c85b",
+			"size": 198178
+		},
+		{
+			"path": "res://assets/ui/mercenary_portraits/merc_leo_sun.png.import",
+			"sha256": "4e9ea3c67284c833b1d1b3ed2e6b2267b10ccde96e8bf0b1e6be4df9c790a0f1",
+			"size": 970
+		},
+		{
+			"path": "res://assets/ui/mercenary_portraits/merc_libra_judge.png",
+			"sha256": "82b4d384a9edf6c6217c4b57aa9bb22035daf6e8cab661fcb724686fb29607d7",
+			"size": 202421
+		},
+		{
+			"path": "res://assets/ui/mercenary_portraits/merc_libra_judge.png.import",
+			"sha256": "b2550f9f9c8aa9cab6a618609e29817818403f05f644fec82f20d1686627f950",
+			"size": 982
+		},
+		{
+			"path": "res://assets/ui/mercenary_portraits/merc_pisces_bubble.png",
+			"sha256": "912589063b34a213b085e7e6bc476b6feddb5f5e4f9f563f27d2bf0d7e7c6f69",
+			"size": 201119
+		},
+		{
+			"path": "res://assets/ui/mercenary_portraits/merc_pisces_bubble.png.import",
+			"sha256": "07db63543f39145c039c706492c29b1f95a392a29a874e185d1a24920d6be36b",
+			"size": 988
+		},
+		{
+			"path": "res://assets/ui/mercenary_portraits/merc_sagittarius_rain.png",
+			"sha256": "9c10ab676080d81241540be481574a83b87960897d8d217cc58abf28fbc5f6f6",
+			"size": 211241
+		},
+		{
+			"path": "res://assets/ui/mercenary_portraits/merc_sagittarius_rain.png.import",
+			"sha256": "9e78fd6ef09e9133ec9844d373e54d0c8c7c9e5962cf75a754d6f9e20beb4a2f",
+			"size": 997
+		},
+		{
+			"path": "res://assets/ui/mercenary_portraits/merc_scorpio_death.png",
+			"sha256": "02ed7f1680a57bc480a207b19f2cf86ac9781981811cb1fdca588ad3f2672f7a",
+			"size": 189062
+		},
+		{
+			"path": "res://assets/ui/mercenary_portraits/merc_scorpio_death.png.import",
+			"sha256": "f4e70ac79b596a4dd75f40050105793f459d4b275b4f9e5ec75b8e6e874580a4",
+			"size": 987
+		},
+		{
+			"path": "res://assets/ui/mercenary_portraits/merc_taurus_charge.png",
+			"sha256": "846f5feea9a70d69d642ff6506d6c4f47fabb1251c437dcef85ed9fdc34e49a1",
+			"size": 197731
+		},
+		{
+			"path": "res://assets/ui/mercenary_portraits/merc_taurus_charge.png.import",
+			"sha256": "e4df60a53d99f9ca16df9f743161fabdd65d304f3b112323bdf3f491648a04cb",
+			"size": 987
+		},
+		{
+			"path": "res://assets/ui/mercenary_portraits/merc_virgo_heal.png",
+			"sha256": "0821a7b5147c7c569f7f7451a44807fcdb09276b909e47edc58582a2c972f1f8",
+			"size": 183287
+		},
+		{
+			"path": "res://assets/ui/mercenary_portraits/merc_virgo_heal.png.import",
+			"sha256": "5edd3af36e7a07d7aaf983a2b5b15d9005e32db1573b920bee798ec10b35c00c",
+			"size": 979
+		},
+		{
+			"path": "res://assets/ui/prep/team_mercs_stage.png",
+			"sha256": "cd95c13b8a741cdb4fefcb4fac1c50ae4c9770f6a2b3dcee1ef91b9315187d33",
+			"size": 1786054
+		},
+		{
+			"path": "res://assets/ui/prep/team_mercs_stage.png.import",
+			"sha256": "8c0a4a13e73bf1f0f7add7ed2270ed90cf2f19e54f7193b641ee5a8c0f40ca64",
+			"size": 967
+		},
+		{
+			"path": "res://assets/ui/pvp_warning_frame.png",
+			"sha256": "0d97db3b2a0e36c03d989117dc81fdb2a2475f1b9f44227266089895d23b1e25",
+			"size": 2191504
+		},
+		{
+			"path": "res://assets/ui/pvp_warning_frame.png.import",
+			"sha256": "d9c59d3e0971d52d83ea8e221ef6d4bd6543fb2f165fbb69718a2dba445ea500",
+			"size": 965
+		},
+		{
+			"path": "res://assets/ui/race_logos/dark.png",
+			"sha256": "432832143ec6362f7b741924aaa25b667124b8e0ee56256b2c49c8ec84486e9b",
+			"size": 1944912
+		},
+		{
+			"path": "res://assets/ui/race_logos/dark.png.import",
+			"sha256": "b9a42322a9f90b2b033aa2aa748dcce5d5554eaf27754099436eab17f6ef1fd7",
+			"size": 937
+		},
+		{
+			"path": "res://assets/ui/race_logos/dark1.png",
+			"sha256": "1af06846f233c1827c7a440d68ef7771da57fcd04c966f202439d1e88d03db92",
+			"size": 629556
+		},
+		{
+			"path": "res://assets/ui/race_logos/dark1.png.import",
+			"sha256": "6e8ba1731c3b54fef2a440275af55dcab9d2853827c2473bc87ae04ac8f42618",
+			"size": 940
+		},
+		{
+			"path": "res://assets/ui/race_logos/god.png",
+			"sha256": "0443e9ac4417c71f031ee3894b48b2a821518cb95adeee600cfe704071c0f024",
+			"size": 1841282
+		},
+		{
+			"path": "res://assets/ui/race_logos/god.png.import",
+			"sha256": "bbe571de5a1942fc0c378e87282fee9bba5e385fe7027c03d2090ee32cc0affb",
+			"size": 934
+		},
+		{
+			"path": "res://assets/ui/race_logos/god1.png",
+			"sha256": "6b5fed0bdb7f90e1857c69cbdd53e30667af28950dfbfe9ec5a72bbe6755408a",
+			"size": 688566
+		},
+		{
+			"path": "res://assets/ui/race_logos/god1.png.import",
+			"sha256": "679ffc12e22b44ad555ce98c2338f7512f0d87735fedc921ad564b3fc4931b97",
+			"size": 936
+		},
+		{
+			"path": "res://assets/ui/race_logos/human.png",
+			"sha256": "62dfae250a490c645f2aba62f5ec8bb7d96337cbd62f9ecc1a779eff3a59fb35",
+			"size": 1757397
+		},
+		{
+			"path": "res://assets/ui/race_logos/human.png.import",
+			"sha256": "58f228e76ddec78ff8c339024e424e9052703764ff2462c742e33ff16d3c5c4b",
+			"size": 939
+		},
+		{
+			"path": "res://assets/ui/race_logos/human1.png",
+			"sha256": "2833e19ecdfbb0ec1bbd60f646f7d0444c6ce9e0e06d497ded6c747a2f3097c8",
+			"size": 411087
+		},
+		{
+			"path": "res://assets/ui/race_logos/human1.png.import",
+			"sha256": "77a124f1f9152dbde9b7dcf01287f305563e4b9014dcd5aa7894febed1c7369a",
+			"size": 942
+		},
+		{
+			"path": "res://assets/ui/race_logos/undead.png",
+			"sha256": "fed7f5805a64491fe337a876b9bf3a84dc399148b1e85cce1ad02a0f7dc2766a",
+			"size": 2060712
+		},
+		{
+			"path": "res://assets/ui/race_logos/undead.png.import",
+			"sha256": "a7f902eac62b54d2d1830101263041f9882c3b3eaa2aea638be054ab60c1860a",
+			"size": 942
+		},
+		{
+			"path": "res://assets/ui/race_logos/undead1.png",
+			"sha256": "7a0927ef9df188fd5575f57916241a0bb924bc100cb073ebaa7451269ea6c62e",
+			"size": 344656
+		},
+		{
+			"path": "res://assets/ui/race_logos/undead1.png.import",
+			"sha256": "94c52eaa31bb8b9256be6737ec562a379a8491edfb7273aa9983f7992d6d136e",
+			"size": 945
+		},
+		{
+			"path": "res://assets/ui/room/vs.png",
+			"sha256": "926e206417b47f703110de1373566c19c58a44769100aaef8ea908955d194bef",
+			"size": 155046
+		},
+		{
+			"path": "res://assets/ui/room/vs.png.import",
+			"sha256": "06d9c7e3bb89944b74aa606b8888301a00e2a266265f009919f5c4a62e6e57a1",
+			"size": 925
+		},
+		{
+			"path": "res://assets/ui/room_v2/back.png",
+			"sha256": "1e7b6d5245d5fcb37c5283967e7b99cadf678b3f89896bea427ccef7c28169f2",
+			"size": 70439
+		},
+		{
+			"path": "res://assets/ui/room_v2/back.png.import",
+			"sha256": "ec8c0f9e12fdeb6886d96408d9e8fc7a994bda750b7f193330f05bcaed463d44",
+			"size": 934
+		},
+		{
+			"path": "res://assets/ui/room_v2/background.png",
+			"sha256": "bd4c503146bebf632dc4214a82e1a3105ea2a028f5470613345849c1661c9ad7",
+			"size": 2414172
+		},
+		{
+			"path": "res://assets/ui/room_v2/background.png.import",
+			"sha256": "7388a4a663ebb3c8e9810f3d746d6b8dd0bff48595c3c8f2c4c5d7d0ec942e3c",
+			"size": 952
+		},
+		{
+			"path": "res://assets/ui/room_v2/chat.png",
+			"sha256": "8ce741b7ff76738e5e7907e518b865e9ef8f2acf646bf051507f6d1b860dc0eb",
+			"size": 260850
+		},
+		{
+			"path": "res://assets/ui/room_v2/chat.png.import",
+			"sha256": "f2b088a7ce8a2168856e947745cde0e4858eeb2a3c17b0ba2b3b19591a75a8ab",
+			"size": 933
+		},
+		{
+			"path": "res://assets/ui/room_v2/friends.png",
+			"sha256": "65c8c8f8ae59c193db6a4f4276bd078245b081815ad111955e8bb715b59828c7",
+			"size": 411161
+		},
+		{
+			"path": "res://assets/ui/room_v2/friends.png.import",
+			"sha256": "a7f08d85c48efa0067eca632f85cab3dfe00e97e6f2388b419be3f8d4c84e7e8",
+			"size": 943
+		},
+		{
+			"path": "res://assets/ui/room_v2/slot.png",
+			"sha256": "35a8da8de8346e7271d2d6fa87293cc0fdebfe654f8eff9c23ad73308119e9f2",
+			"size": 183060
+		},
+		{
+			"path": "res://assets/ui/room_v2/slot.png.import",
+			"sha256": "490db92c47b32640ef0f97e992c270552675a6381b2883b192036425d9c383bf",
+			"size": 934
+		},
+		{
+			"path": "res://assets/ui/room_v2/start.png",
+			"sha256": "b881a671fa3dd7d29d52077b62b02d6577139a5c80ae59687949dda79a3119eb",
+			"size": 102860
+		},
+		{
+			"path": "res://assets/ui/room_v2/start.png.import",
+			"sha256": "960e46ffef2ad1598d781044d74a042b01f1068eb387e70ac2a79ac8f269dffe",
+			"size": 937
+		},
+		{
+			"path": "res://assets/ui/room_v2/title.png",
+			"sha256": "dfb018b404a625afb3ec07d9e9afd454087082c11d1988005263c2bd0beb9d69",
+			"size": 500394
+		},
+		{
+			"path": "res://assets/ui/room_v2/title.png.import",
+			"sha256": "14fe5b4400758e726ffb73fc6d967b20c2dddfa41c59911549f870eccd36f37c",
+			"size": 936
+		},
+		{
+			"path": "res://assets/ui/shop/btm_stone_frame_v4.png",
+			"sha256": "4995b7df2cefa196523f9c0d1041768c300ae1aa88adbf4eb304e3c4de187cb6",
+			"size": 1094303
+		},
+		{
+			"path": "res://assets/ui/shop/btm_stone_frame_v4.png.import",
+			"sha256": "ab7930815d9a021442435263bcf86ae2df2a9f5fe2153c2a745445a60b6421fc",
+			"size": 973
+		},
+		{
+			"path": "res://assets/ui/shop/card_frame_common.png",
+			"sha256": "224268702f9ccf807f69076e222ddd4979930a1df4a302599e78e7bf201ab148",
+			"size": 306637
+		},
+		{
+			"path": "res://assets/ui/shop/card_frame_common.png.import",
+			"sha256": "5902d8f4d56ad6de6bc6466f2774a0badd2781ea0196a2c803d70bc988e6da55",
+			"size": 970
+		},
+		{
+			"path": "res://assets/ui/shop/card_frame_epic.png",
+			"sha256": "5443a885acdcfdabeb9d4331921f9e4b1a1ecd39c4add8961b1476f9cde96ff2",
+			"size": 412591
+		},
+		{
+			"path": "res://assets/ui/shop/card_frame_epic.png.import",
+			"sha256": "a2a8e2b589ca02e4e35bb5475d880fbcadeff8ea6a8ff572dd119cc86b06e66f",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/shop/card_frame_rare.png",
+			"sha256": "8125f909b3f7a4a0f5078eb22e4f36c3796c4d079b0a43025b7b9d538f18e9d4",
+			"size": 326416
+		},
+		{
+			"path": "res://assets/ui/shop/card_frame_rare.png.import",
+			"sha256": "786ced8c600dc5fc4bd467d975818be545572290da20d5dcf2e8516a5de36b63",
+			"size": 963
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/亡魂反击.png",
+			"sha256": "ee2954c2ba6c309298a479a1ad5995f6600bc9713e6cc3deb758d027f5f7155f",
+			"size": 2538357
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/亡魂反击.png.import",
+			"sha256": "28e55ab11b7e98de3b87edac6de4fb6cb29da8d90f9d3ec47ffdbe85c0216fa1",
+			"size": 968
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/亡魂反击_en.png",
+			"sha256": "8297cdc124194683d78ca68f4354ba65cbdcbf3a02b550783bae655ff7bb445b",
+			"size": 2548476
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/亡魂反击_en.png.import",
+			"sha256": "bff0e435da2b5e0373fb217b5f175b95d52b35c57ab619860baa6c7707a07ba9",
+			"size": 977
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/冰封霜刃.png",
+			"sha256": "0e506ede7becf58cd0fee7e2763d17ba6398d25ae3fedb8edb85705682a23743",
+			"size": 2568932
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/冰封霜刃.png.import",
+			"sha256": "c798d66c77cb60e8dd9f681fcddbc4a83af5cf430dde7e34d5861855a6d9970b",
+			"size": 967
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/冰封霜刃_en.png",
+			"sha256": "a11b59f437cd2f20011708f5cf7fcd813cd8275f810325010143f5dd6a9efe71",
+			"size": 2575383
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/冰封霜刃_en.png.import",
+			"sha256": "e27efb005b5014c4e240754788c8b61f8fca253164976448b13f8113da28a2f9",
+			"size": 976
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/剧毒蔓延.png",
+			"sha256": "46369ac9188102b509c5e0aaa3311f6894211ac24ab43208dbfd20f4acd2b22c",
+			"size": 2552041
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/剧毒蔓延.png.import",
+			"sha256": "a1d8f35e6323f03a46a79aeb5699cb0fffcf2d5403d32aba5ce708defd3aaa12",
+			"size": 967
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/剧毒蔓延_en.png",
+			"sha256": "d853b3d11192d595493a51df67768f5c9bbd2d9746b7d7210236f4b28372ecab",
+			"size": 2562845
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/剧毒蔓延_en.png.import",
+			"sha256": "4edffda6f3fa3eb77acaebae50e20a336799890099213102b7b5297509e119c5",
+			"size": 977
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/吸血纹章.png",
+			"sha256": "da4e863fb443960dfb8079194034a9b5d3bacdbb601738010f0d906e081a7bb0",
+			"size": 2630249
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/吸血纹章.png.import",
+			"sha256": "fc7ffa81ba63b0e61a89c543d66adefd19c2f805fb843f6924ccce767ddd1386",
+			"size": 968
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/吸血纹章_en.png",
+			"sha256": "1bba8eeaa25e7e04459736a587951a65206fa99901a2d8089ca39a2556adf50d",
+			"size": 2636461
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/吸血纹章_en.png.import",
+			"sha256": "b6cfa641e33afdd37eb4976dd1b4039f3e2ac62b7fdc0a8f733152b25392d163",
+			"size": 976
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/哀鸣共鸣.png",
+			"sha256": "6c53cb44d6cb3e7e1a3075503edc0ed21049981e71a494bcf9058c116ce0439c",
+			"size": 2526982
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/哀鸣共鸣.png.import",
+			"sha256": "150f5328c938277bf5854fce1004730c3791b8f5ebf74cb314f2f29fa0932fe8",
+			"size": 968
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/哀鸣共鸣_en.png",
+			"sha256": "c53b2155ae163f8a4f7d0a770dcd95ea7c5332edd5ef12c68f242f1c5a3fa3c0",
+			"size": 2535168
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/哀鸣共鸣_en.png.import",
+			"sha256": "7b6d1b3940c811c7f37d105e911220a337c1950c56a49be35fe806eee9b664bf",
+			"size": 976
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/复利之道.png",
+			"sha256": "097b7c45af5265b54f947255f52d100a325f0122a877c04eebb0991f9493f9bf",
+			"size": 2519144
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/复利之道.png.import",
+			"sha256": "c0e9b571f325c029700a3c4eb3d828035e4c1305a81e1cb5fc53c570a9c42749",
+			"size": 968
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/复利之道_en.png",
+			"sha256": "7718e1493f3c467e8f1bff6bc646d1ddc578cef5fc5919bfe6d477096f11ca61",
+			"size": 2524582
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/复利之道_en.png.import",
+			"sha256": "4005d1b1ac9db735f6b04d17cd06a973f5d1df710ca9f37d5e1ddff1a7cbb081",
+			"size": 977
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/幸运信封.png",
+			"sha256": "80268de9abe760d57eb6f7c68ed587e2a32ce2cc878811c52f51ffd5107a2860",
+			"size": 2617658
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/幸运信封.png.import",
+			"sha256": "38ff7848dd95e2fb991555c10d045e8f82ac9dddcf0d3dc72e669e8331177eeb",
+			"size": 967
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/幸运信封_en.png",
+			"sha256": "7556884e77c489fc9aa9f988645a2ecfd9de8a9d82e2057e503c7d97e8a11edd",
+			"size": 2625108
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/幸运信封_en.png.import",
+			"sha256": "3b14bbf9eae93d8dea7848eae3c52b11c54ab3d950b4c984e7b9d86d4d08f2a6",
+			"size": 977
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/幻影步伐.png",
+			"sha256": "559a3ce3ca4b78c51c23f5c94c912d01feef7d07546d2ab3c14bd1ba0d47bc1c",
+			"size": 2550944
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/幻影步伐.png.import",
+			"sha256": "45b2616e0d64589a0635c3be642049afa779c7f64dcb6ec1bf87af21fa31b97b",
+			"size": 967
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/幻影步伐_en.png",
+			"sha256": "2dabff86da7c019b4c071d7b0ed1af8a9aed7cc8cb62fd0a9001ad4c05aaa9e7",
+			"size": 2554575
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/幻影步伐_en.png.import",
+			"sha256": "541c1d17532d3a9562f3858db31f28cc1345db227ef81a823ebc38afb989d147",
+			"size": 977
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/慷慨命运.png",
+			"sha256": "95fc178006da1c35f96384aab51780c4b66bbc11845807b14f9f73cb3f72de25",
+			"size": 2555326
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/慷慨命运.png.import",
+			"sha256": "fc5105db0b1728c9879e3be1b9c3424c5eed67a67c831c62bc198a1a52289b76",
+			"size": 967
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/慷慨命运_en.png",
+			"sha256": "9df8f48c62850445c752487db13e3a272ca53c53aff8d57779e09f6f1b0ecc60",
+			"size": 2562971
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/慷慨命运_en.png.import",
+			"sha256": "0d0143e1f7342c406e3a8991bc0479da3fd03c89142fff936d73343401986a78",
+			"size": 976
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/打断锁链.png",
+			"sha256": "05b9ae39280bacc45183cc81e021fb17de8d324166687e3a13c604eb494c9e6c",
+			"size": 2568275
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/打断锁链.png.import",
+			"sha256": "200d51a7d32525cfaf246a40a8a986727ed091a5b21b1d2696f2e157a2f1bb0e",
+			"size": 968
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/打断锁链_en.png",
+			"sha256": "8bf5a263810a3164023e4f343ec67399ef92e21be0b8a20f19777ca9a81173b9",
+			"size": 2573981
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/打断锁链_en.png.import",
+			"sha256": "aa8c4e35bc902776883c5435907d532d9792a48f095b3d846bf51e2345a2cd54",
+			"size": 976
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/折扣令牌.png",
+			"sha256": "9c03ef063bde479a175a99a11e92ac308f4a4f49ffe2d71b1407031bcaa9f8da",
+			"size": 2625400
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/折扣令牌.png.import",
+			"sha256": "43114c278a61431250439c56405c5038a0fb5ffcfe086bef50bea76b74a4fc70",
+			"size": 967
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/折扣令牌_en.png",
+			"sha256": "14c34eb25b29002a75ed61571b736d4b1922f11d1f63b3c5c28748cf5c12cd2f",
+			"size": 2631367
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/折扣令牌_en.png.import",
+			"sha256": "4fc1d7017e046756c284b6fb6f2c6c553bbd95a14c1f9651a2764d3d0cf6dfaa",
+			"size": 977
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/时空压缩.png",
+			"sha256": "964ebcabdd4a04d54ce9f21899832b7c458d3bbaa0c1cb54d0fecb4610b0be28",
+			"size": 2637333
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/时空压缩.png.import",
+			"sha256": "9107d43105732f81a5b76042f127da60091f1ad5dbd072b194d242075d4b8edf",
+			"size": 968
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/时空压缩_en.png",
+			"sha256": "d6c5c6b406b40738d5247ed62add7f85b14bb37d68c01cc5291a98333b4aca0b",
+			"size": 2644404
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/时空压缩_en.png.import",
+			"sha256": "ec61f8ba99e3ff83f8baef64d2dd3d5a7d7300d796004060792a3e6a6aabb1c8",
+			"size": 976
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/束缚重压.png",
+			"sha256": "24bf1b11ce5f558041aea17014c018b7d09d812f4a80724f805ba510df9b10b0",
+			"size": 2607950
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/束缚重压.png.import",
+			"sha256": "03ae124a97409fa1de9bb5acdeb18139841bd473835f4553ce968837b0eea61d",
+			"size": 967
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/束缚重压_en.png",
+			"sha256": "a00d8683e94437debbb58d4e96ece4b6ebf2a27bbc8ea0a9f3a119cb5aed5096",
+			"size": 2617445
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/束缚重压_en.png.import",
+			"sha256": "0523583a41077d3cdd16920747430d97d91faf035151c833d372be3c30cad36b",
+			"size": 977
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/法阵回春.png",
+			"sha256": "d8f2708e568e200002614ec1edc677a47f72fd9889277eb0302f32f6f943f17c",
+			"size": 2579761
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/法阵回春.png.import",
+			"sha256": "1f0f47897f7382ff531eaa8b56d090e30c0c77a5ced7fe8154f6a43261293d39",
+			"size": 968
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/法阵回春_en.png",
+			"sha256": "474d7e71a2750ff54744ce05bcd405cf4819dd6ca39f5e729e52c43627fd3dd8",
+			"size": 2587472
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/法阵回春_en.png.import",
+			"sha256": "6e8e3d83eab4154f807460d002b45cc59f38b4e26c169edca1b9248a3656a31c",
+			"size": 977
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/炎焰碎裂.png",
+			"sha256": "c20d1d8102b6d57208cb45c2c2a1617513270c3d3dc16f3345dc254932877632",
+			"size": 2621801
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/炎焰碎裂.png.import",
+			"sha256": "dd65994bb6d6d4fbc2e82e520f7938cb18ab14e2dca14dea3ff55e3e2c95df53",
+			"size": 968
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/炎焰碎裂_en.png",
+			"sha256": "692893db69563a037e605e8177c6d754b0edce307a5c73c664a93c8ce9e6681c",
+			"size": 2628273
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/炎焰碎裂_en.png.import",
+			"sha256": "41f7c10dcb3cb290b99637a38479de6bf7c119b7b5e117536533ff27fe150e02",
+			"size": 977
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/爆裂核心.png",
+			"sha256": "4c853b8c43b20e892d1c258483239687b5d1a2c601a05f1d4eeae82980f8448c",
+			"size": 2632259
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/爆裂核心.png.import",
+			"sha256": "0cf0004111c562f2a8b1677cd8ce1cdd3e8b7f1aa892cb7f280bfdebd2a0b3c6",
+			"size": 968
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/爆裂核心_en.png",
+			"sha256": "7fcf38a80bcee605e7201ad76ced5f7a072ee3c1d1a1cb31bb2b2cc98abb008f",
+			"size": 2639483
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/爆裂核心_en.png.import",
+			"sha256": "9bcd9fd494973c9a5d11ecb2da821d33d021cb70127a3f769dd96a410f30449b",
+			"size": 977
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/狂怒阵容.png",
+			"sha256": "8a2c877dfe4f34acf27729af0e31ddeabbebff9d7f3c786d9695b444b5ac7c28",
+			"size": 2612927
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/狂怒阵容.png.import",
+			"sha256": "b9784dbbc7b3ad86436480b2622c4373527295eae73b9f1f2f6b9b90f16010a2",
+			"size": 968
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/狂怒阵容_en.png",
+			"sha256": "f6b2b67ab1157e5df3c3cb8d6fde6d99bd89a90922ea1b8fa00dd462c84a09a3",
+			"size": 2620436
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/狂怒阵容_en.png.import",
+			"sha256": "e8dcb45a62a576263dad884256721dce713de8e509a65aca97b7d821314d7271",
+			"size": 977
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/狂暴进攻.png",
+			"sha256": "a2ddb09501acf4dc107e209bf5e5c96a43b9702a1d43d43d31b521dbee7d7249",
+			"size": 2549063
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/狂暴进攻.png.import",
+			"sha256": "25f266501e9fd48155f04a580051d0f8b75afb72d231918dba8b65a0157027af",
+			"size": 967
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/狂暴进攻_en.png",
+			"sha256": "2b5555ff1692a6fa219c881fd88a88c9749969f59176783a9fc5001f5df4741b",
+			"size": 2557891
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/狂暴进攻_en.png.import",
+			"sha256": "4e66cee539f7998cba46a32876f68919d8c6d28be96b69f7d80d02c9512f6c91",
+			"size": 977
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/生命丰碑.png",
+			"sha256": "f267ab781008e3afd1d4404657236d7799d5bb414cc1a7139c714d9822407d81",
+			"size": 2574478
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/生命丰碑.png.import",
+			"sha256": "73067d9fb58a9047b104d26ca50f0805d956dce4aa094cdcc922885220db333b",
+			"size": 968
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/生命丰碑_en.png",
+			"sha256": "22b2795e088609488192b6a7325428150e1209d1b4b771956e459a20251466fa",
+			"size": 2580640
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/生命丰碑_en.png.import",
+			"sha256": "6b4a3bf224eb14266e92f8e86900f7a7abd3df68a003b20f0f01b7ece8deafd7",
+			"size": 977
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/腐蚀毒针.png",
+			"sha256": "e594b23b2419003bfeaa6df7586c44d4213dc5c5a914143e482a39a3bd9fedf0",
+			"size": 2543201
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/腐蚀毒针.png.import",
+			"sha256": "98070699b53a2f05e95e51225e8ef21a995f65085673861a792398f7d6da958d",
+			"size": 968
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/腐蚀毒针_en.png",
+			"sha256": "a9cc90ecc4a7351309a2140d3b0aa84e0b8a665b2fc208584973d84333fd9623",
+			"size": 2551524
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/腐蚀毒针_en.png.import",
+			"sha256": "2add285e3bc2189eb954ae18becaf52ce9d6cff3a4eecd45eeb1d1b7eda8353a",
+			"size": 977
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/血契之刃.png",
+			"sha256": "1d0dac0a3af3e9981326a7415b72b1c8e51d49dd63d591ef301468cd235ef438",
+			"size": 2585393
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/血契之刃.png.import",
+			"sha256": "49605facc6abb696f3c0a004c76855cefd73e4cc384abc31b3e05b2eca0e6c3e",
+			"size": 968
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/血契之刃_en.png",
+			"sha256": "1044dfa90656abc28a631e5b939d5f30e0f54cba5e1378087f60e44646dad61f",
+			"size": 2593125
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/血契之刃_en.png.import",
+			"sha256": "39b808abb7bce6c6ee14dc31c6a09c2f22627fda5e40c3f2ff2c306865ae007b",
+			"size": 977
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/铁壁之护.png",
+			"sha256": "b054a0bcad34f5558c7e6045d69573d205517b3abd2e84288f7cd22395129025",
+			"size": 2563940
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/铁壁之护.png.import",
+			"sha256": "7691cc6ec2f06a5d31090dd193abd1fc0e333d41653fd47def051cd37140a76b",
+			"size": 967
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/铁壁之护_en.png",
+			"sha256": "6c172987f77593e1b86d35aa430e943629ced4ba8689f7b59dc9779838bf5e28",
+			"size": 2571318
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/铁壁之护_en.png.import",
+			"sha256": "b3ad8fee3759fa82a61ec8818e2d25b1b2e905483a07672d296a58999cb7e9a3",
+			"size": 977
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/雷霆加速.png",
+			"sha256": "6a18163d65e78e3297f14f835d7ac5451aaac78195630b5d09250e6b1a1eef99",
+			"size": 2545090
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/雷霆加速.png.import",
+			"sha256": "02c8f04e96557038607ef8ff9ee30fcc56eea43faf30ded82adbd3b9152cccd6",
+			"size": 968
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/雷霆加速_en.png",
+			"sha256": "a77812483952fcaa410a9bd7fb38a0a87689eb88ce21c20a89cbe3d9e13b6779",
+			"size": 2554129
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/雷霆加速_en.png.import",
+			"sha256": "230122397e3347fb6b626ae67f4cca0c88d6964b1ab56ca1a5dd3472dd54344d",
+			"size": 977
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/震荡余波.png",
+			"sha256": "0e125f4aef4a69c8dba0e3da242bd5962b1e2e4a2ed24e90ffcfa4716f145c0b",
+			"size": 2599196
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/震荡余波.png.import",
+			"sha256": "2b5c1a71389f14322bc8f42ca68f9cf4af932b8d1682438a103c1a177ede7eee",
+			"size": 967
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/震荡余波_en.png",
+			"sha256": "c1895e6ae4b93c2edd9d5d742954e45c55e3a48da1d821090f78e79257e2ffa9",
+			"size": 2607561
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/震荡余波_en.png.import",
+			"sha256": "c8dbd63d3136e0372ffc31cdf86455f83892a38ebdd7e13c00701a9c2a413000",
+			"size": 977
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/黄金祭坛.png",
+			"sha256": "00228110449b9119f113f125b32b2862d0ba1be2c6efec718f68c19410ac7422",
+			"size": 2546059
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/黄金祭坛.png.import",
+			"sha256": "2a8535a0ad8c1b50e95445acc93d386a48279167ad4707af9f675efb0951e381",
+			"size": 968
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/黄金祭坛_en.png",
+			"sha256": "0d506c6b04160992409013210d5e3055deb45b0f65fcdded148faf2c4aafb56f",
+			"size": 2556078
+		},
+		{
+			"path": "res://assets/ui/treasure_cards/黄金祭坛_en.png.import",
+			"sha256": "80769bdaf592db240b873341a8b134ecdd42febec97ced2ac231f1b3686c492a",
+			"size": 976
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/4元素.png",
+			"sha256": "791d27bcbd2cf72430ef5653f30da392448fd42415911a9d167b89937d3d9c02",
+			"size": 414377
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/4元素.png.import",
+			"sha256": "318a54552f8430f4e2a8cfca97b8c35e41253cec4f215d1ebe0efec31f2963fb",
+			"size": 948
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/4控制.png",
+			"sha256": "0058678069c021851b6fb19aaf8ed8e3efdd8239eaea88d4cd2d045c749d0279",
+			"size": 564481
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/4控制.png.import",
+			"sha256": "82bc337b63e065f276998c98dda747510fe9d54b38f208ed4df5b63d3a6a75ce",
+			"size": 948
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/4攻击.png",
+			"sha256": "de846fbe99c80bf94b5d466638ee16df4415992be77eea72237bf9ab531a0861",
+			"size": 489535
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/4攻击.png.import",
+			"sha256": "9851b56ae3324f20eb22ed91d6fc2ccf8c818c469cc9177678c50aa464ac96b6",
+			"size": 949
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/4金钱.png",
+			"sha256": "4e0ac213792c1512ecb486711280982a8a9116dc64bc7ce11b499ec3f384d742",
+			"size": 223487
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/4金钱.png.import",
+			"sha256": "ce6767516f884c41bf637fd609168f477da2c94552bd7bad32f927757ce2df6d",
+			"size": 948
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/4防卫.png",
+			"sha256": "c121bdcdf876e1d982c90f72ea3ad4ce92cfed134b74be2cad4dc3719699ee76",
+			"size": 389213
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/4防卫.png.import",
+			"sha256": "eea2ac90c93d7df23f2c576a7e840a9d7aaadfc143150d217950e40f95a2b1bb",
+			"size": 949
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/亡魂反击.png",
+			"sha256": "5ff4cc34a1a92148aaedaaf6a8d0e9504e39b0daf1f62dcd36980742b5925fa9",
+			"size": 410030
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/亡魂反击.png.import",
+			"sha256": "e390c5665c318a340be3830036e9e527a25bc46a4c2c5a70bb1f2f3092adea05",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/冰封霜刃.png",
+			"sha256": "f5139a68dbc76d588f1526a07df207557999a8fa7ccbbb66d10e9fb60d30d3b2",
+			"size": 359774
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/冰封霜刃.png.import",
+			"sha256": "239a77d79b1fd28493977ba61c2a00c501dd07a43c7730c4e556ac78144ca476",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/凤凰涅槃.png",
+			"sha256": "f99876173450a4c537e77e67d11d3d90b9f3c85c041032d2376a83c8b346e3cb",
+			"size": 386232
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/凤凰涅槃.png.import",
+			"sha256": "a57dcbb494653e60c7730e6657908db9c73ea92122aea44cc6c5072359e7eb0b",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/剧毒爆发.png",
+			"sha256": "168045d9967b8b60ca5f64636fc00939ff7613cb7b80d1c4293b87fd1a98b832",
+			"size": 239745
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/剧毒爆发.png.import",
+			"sha256": "ea0127f6bd23f2ea86c7286340b2297d77520d223e70772d674cb7f077bc8814",
+			"size": 963
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/剧毒蔓延.png",
+			"sha256": "5aa6dd35bc5433ea6b7855e44accfb09f416f4c109e71ac05024e67bb59968ee",
+			"size": 366381
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/剧毒蔓延.png.import",
+			"sha256": "8facdfd7292b501a7cfaaeda65afd7198beb8e58f2dfcf25c2cd737380f3f8f1",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/压迫反击.png",
+			"sha256": "df320418de79ccea302e1ce8d8e4193126d234afa1a0c90921ef7c80bdd806e5",
+			"size": 237347
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/压迫反击.png.import",
+			"sha256": "d8ba923514e01fb8e4cfa8a4f216afc7e3aba81b2bfc7fc00ad06d13ba91f300",
+			"size": 963
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/吸血纹章.png",
+			"sha256": "b9259369079c796c612b17099224213aa38c4eaef5170de0b9fdf1e6cd13d24b",
+			"size": 399747
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/吸血纹章.png.import",
+			"sha256": "015ab4a7a298e713b4b1a29f004c0c888844ff9153e4bae6c623b3b6c9fdc6b5",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/哀鸣共鸣.png",
+			"sha256": "19dcf77642b6906b3d8b799b76f1486f18f5f82f81dc240c381f0f469ebea986",
+			"size": 381621
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/哀鸣共鸣.png.import",
+			"sha256": "c139fb62736473b17604a27e86782cf77745a615fef62de5306da765f7582d1c",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/复利之道.png",
+			"sha256": "dc13c4b826ce0e3fe7fc92fc3502c828a1adbfb700d748ef42ef3a7c5ba1840a",
+			"size": 313048
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/复利之道.png.import",
+			"sha256": "02f6b2d6fabeca7f6ba39809b812e10c8735c1223768f1af9c521e21e4914054",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/富裕之路.png",
+			"sha256": "a45f01667a1576dca39ff064069a0edc3bf936ad435e23500167f9c4cc4e79eb",
+			"size": 252326
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/富裕之路.png.import",
+			"sha256": "a86c7cf4ad9264d3a2dbbdadc117dab1657cbf4d15397f348603cf51e5ba9936",
+			"size": 963
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/幸运信封.png",
+			"sha256": "983b1a93c957994e313a7e99a8fccac862d88094cb52301d7a0bbef347553638",
+			"size": 330348
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/幸运信封.png.import",
+			"sha256": "726c34d4fe3c73be71ecbb0fcf7e427eec0380e243b2a17acb4fe7dc53a0557a",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/幻影步伐.png",
+			"sha256": "60d23a7a05ce244939bfd4e45af40a13b9df2b25ad8657aaf7e78f49b3949740",
+			"size": 374437
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/幻影步伐.png.import",
+			"sha256": "5f3f1eb6d0855ab5ae58e2cb45d66d597fa094dd458eebf2fb7e569f686781b7",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/慷慨命运.png",
+			"sha256": "4a08f668c477685fabee12249f2a4616667c8b84fbf44574204a4501464574a8",
+			"size": 364674
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/慷慨命运.png.import",
+			"sha256": "d0c862527c19ae19a55f9d830124f8b54ef25e115e201bcb400afbe9fdbc6aa3",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/打断锁链.png",
+			"sha256": "d1b86b7d789b32a125b4f961e134dba259f6d05840470ff2056d0b2feac9b806",
+			"size": 404830
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/打断锁链.png.import",
+			"sha256": "89f92baed21ce74b00357b052664be442fed6a08081c64396d14d32c12e6fa38",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/折扣令牌.png",
+			"sha256": "0da7f78dd32aa11db26e389158a7bc4d5cd85b3ebd04f0bb57f2c2fb159891e6",
+			"size": 299780
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/折扣令牌.png.import",
+			"sha256": "7ddc6b07fbf95158da9e48a01eea2e279debd32c9fd9abfadd395fe528219b18",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/时空压缩.png",
+			"sha256": "4a8165cd14434468c6d6041fee76acd6e99ce3914eaa9b55fa8b604cb6d65bd2",
+			"size": 421319
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/时空压缩.png.import",
+			"sha256": "24483bf1e166f54f19ed13ce55d62d059f85efc97432cc12456745b6658bcc84",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/束缚重压.png",
+			"sha256": "a6ece7d26b021f76fff52c37237a8eb397545f1c721fc960852ef38120a4994c",
+			"size": 404401
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/束缚重压.png.import",
+			"sha256": "b68fda01897659cb6657556579ad5cf0b73c5c3bb84ce20ee618a88c51269b4d",
+			"size": 963
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/法阵回春.png",
+			"sha256": "56c88fada7dfac756ae55d8ff82ca9f75cc5d35f49809973921f373d3832a0c3",
+			"size": 396953
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/法阵回春.png.import",
+			"sha256": "fe8c34181a178d94601f70adb82b3c75625e2c9442fa8e31d01156e0982166e1",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/清仓特卖.png",
+			"sha256": "d321ac0c939c4a341cf159a598972b32285cb74c0a04435666a067d50095282a",
+			"size": 381272
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/清仓特卖.png.import",
+			"sha256": "267e0a654b6a8653e28497db132d60def6e91700768b8409c97361a6dd0ff928",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/炎焰碎裂.png",
+			"sha256": "e661ed095c4072118d6cf89a5dd02a560e8efff85de7bb95f1b9dd069e268cba",
+			"size": 410326
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/炎焰碎裂.png.import",
+			"sha256": "c3b791988c78d172fb0747b65958a0d476e9c00f3096abb37c1f05d64dbea94e",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/爆裂核心.png",
+			"sha256": "b14b156a0233381e56cc9316b9f36d5ccbdaeb7899a9f36ecefaafaf0720ce86",
+			"size": 255114
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/爆裂核心.png.import",
+			"sha256": "69345ce27419e7879976af5a537ecd04b7e01b84c081987372caa407712e9cdd",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/狂怒阵容.png",
+			"sha256": "49235ccbcae9c106536ca9c0d280e6f7cb2b1105a44f7191fef40fcea5ce3142",
+			"size": 346295
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/狂怒阵容.png.import",
+			"sha256": "157c905b07856803964274c7c3385f44044ad606b055cbce2d5c77b1efddbc15",
+			"size": 963
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/狂暴进攻.png",
+			"sha256": "44a9b55734950f5a2c91b436b984b62ea8baf72ff077ed16750c01a685a2a622",
+			"size": 369471
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/狂暴进攻.png.import",
+			"sha256": "13e19ce47e7ddc9b119fa1b0a370c00eade4471abdedcb91ddbef78cfc81c253",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/生命丰碑.png",
+			"sha256": "830eff5d5af6054e948371b6d8461f895efc5b2b7d5f7c84145bbbd64d65582e",
+			"size": 390878
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/生命丰碑.png.import",
+			"sha256": "95fa24d6a64f7fa638ea49d34187e85c3f1eacfad3eebfa0640cda14eefd8d5d",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/瘫痪枷锁.png",
+			"sha256": "d6f3234035dbe1cd79804b22d0d4b483cbadd374e092253b7491e6615a9d2263",
+			"size": 397029
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/瘫痪枷锁.png.import",
+			"sha256": "aeb8fae4cb31dbfca5fac20724611b5062b581943574f591ed996f4053eb256b",
+			"size": 963
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/胡牌手.png",
+			"sha256": "821f85fac518d401fd7b83b3646ba7d2bfa47fec4954e42550e3a288ca4aa5e4",
+			"size": 176488
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/胡牌手.png.import",
+			"sha256": "6e17b91467eba66f54fe90a647eafbf1aa233f97c86a1283a2c589eb23381fe2",
+			"size": 954
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/腐蚀毒针.png",
+			"sha256": "fc0b9cc3170a3b9f308eeab13b91e6407d7b8e253077a05dcf48431e8c19c44c",
+			"size": 503920
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/腐蚀毒针.png.import",
+			"sha256": "b7bad09c8efd9c60b2deb284052a9cfb64aad0eb894b4429e74172177b227a2e",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/血之契约.png",
+			"sha256": "015330a45eeb90cc4d1c99f3aa279fe1469014a3da6d36cd8876ccb5443ae776",
+			"size": 329402
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/血之契约.png.import",
+			"sha256": "949c631723e32f6262589410d26106ffad139d620b61a88e94a67c8d7d9a0896",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/血契之刃.png",
+			"sha256": "377f3565c596071b0d813dba8aaad89abb46fd083fb4404679ad23eebaa10395",
+			"size": 353726
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/血契之刃.png.import",
+			"sha256": "4923772b5717007d4bd79ae039c654caf7e6b3cd2dc9707bf321811f6911ea34",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/诡诈命运.png",
+			"sha256": "92a4b9b9d36bf916f89a78e8555d4a0b07c0ef70f1ad759649b07f694f083a48",
+			"size": 409355
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/诡诈命运.png.import",
+			"sha256": "9994e703f8e0ea2d2eb0cf00c8113e4cfdb0b787fec88cc5aef69a018d546b38",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/金钱魔法.png",
+			"sha256": "20605b1c319cbb069dcf099376a0a770e95c7a04ca54418473e8a4b0f3278673",
+			"size": 225390
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/金钱魔法.png.import",
+			"sha256": "a7f7e9700001edda90acf2be5bbc0564fde50707587bdd5772a70843e45e0437",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/铁壁之护.png",
+			"sha256": "5d206b4ab35772db888fbcb5576fdf393ee4857ee05cc67c6d751fa6384162b5",
+			"size": 445125
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/铁壁之护.png.import",
+			"sha256": "1a95b53327339757136d714cbd0ec2a6fee271ea654730c6aeb879b12b53d9f0",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/铁处女.png",
+			"sha256": "0531f675ea644d5535c91991a7bbc06b58082b93957904da94e033cc2d7ac4a7",
+			"size": 249447
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/铁处女.png.import",
+			"sha256": "9332c91b09ce4f8b430cea3f859ba9ad7cfdd822cd33ef3d24fb5f6330f6a749",
+			"size": 955
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/雷霆加速.png",
+			"sha256": "876ad48d3c9e9e65a12417ffbab074573458f5370d7055fc09a2aece6467b42d",
+			"size": 398825
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/雷霆加速.png.import",
+			"sha256": "ee382dfeffba8cfae4e97e0e33d784c9847b99b6a32b868205bc08364509e1fa",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/震荡余波.png",
+			"sha256": "25011841e6e123f75381c4bd3c7dd09703dc99d3e5e7df38edb043935023c9fe",
+			"size": 412066
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/震荡余波.png.import",
+			"sha256": "9a8477833d5d7857ebf2b385cea96c6b93d956fd9f65f1cdffa7ca3a095478f1",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/黄金祭坛.png",
+			"sha256": "05049b29c2f3ccb5637c8bbb2542e39546119456f6368176310e4af32443a114",
+			"size": 359821
+		},
+		{
+			"path": "res://assets/ui/treasure_logos/黄金祭坛.png.import",
+			"sha256": "69d1317c2be6b28d23ca467b60e9b8897b06d213e2899a962e7a6a93956c2683",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/dark_doom.png",
+			"sha256": "d97ecc802465ae1f52772a197fcd79555aea022725fec9d6025d36b0282c8669",
+			"size": 243703
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/dark_doom.png.import",
+			"sha256": "c384f062bb0685c099b157f98073d3641c3cbfc89522c60d53b7798b0bc01a16",
+			"size": 956
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/dark_dragon.png",
+			"sha256": "dcb004f246213fe00aff481f894795d0d1bc0803be8944be515bbfd71fa650f3",
+			"size": 268429
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/dark_dragon.png.import",
+			"sha256": "5e2793d49208ac4c2610d9d98b48a02c5a82e468dc6e6f3bf72f31a68353b36a",
+			"size": 962
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/dark_fear.png",
+			"sha256": "f437358faeb93394a4729bcef5eb0e4a2e862b56a9bb97c042de1cf339f54c10",
+			"size": 235981
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/dark_fear.png.import",
+			"sha256": "1844a6938d9144d72edcadb20f2f28aecd569499edc6b5f0e1a50a973950e7f4",
+			"size": 956
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/dark_imp.png",
+			"sha256": "bcc3f7768dcb218acfc80d1bffdd150b928432ca4e39a7584489bf7dc11a6139",
+			"size": 241271
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/dark_imp.png.import",
+			"sha256": "24b97265d0dfb57981645157d5cd0a4788abffab8c90df0820ba4c042f137481",
+			"size": 952
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/dark_mage.png",
+			"sha256": "1d1df41e159ffb651776438ce1e855f0375640e0c09d572ace1ea3d9faa37866",
+			"size": 236344
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/dark_mage.png.import",
+			"sha256": "e630c8493e30fe8d6ff3ee580fd295531cdd7059ac74addf2295e63bec8504ea",
+			"size": 956
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/dark_queen.png",
+			"sha256": "76b31b9ab0a99570d2067ef4f83aa8b8a39f9a00b4121b96a94c0650dd942769",
+			"size": 274003
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/dark_queen.png.import",
+			"sha256": "c34a95065799f5db43fe254c3483c3595bab1e6c011963fbdd79c069f3dace40",
+			"size": 959
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/dark_scythe.png",
+			"sha256": "83ffb0462995ac750908c8bedf3e6c933bf812e11e6367563d1123d9562f5de8",
+			"size": 253458
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/dark_scythe.png.import",
+			"sha256": "e4b43605d555cb7105f5ad5999d60dbfc906724ae8ac74276ee1454476dda751",
+			"size": 962
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/dark_suc.png",
+			"sha256": "941f890396ba1c5332816d0ddf761b87f40630ccb1eccde89e5ba5307afd185f",
+			"size": 267404
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/dark_suc.png.import",
+			"sha256": "ea93df3c1856fc05eb5564102f9f84701c19837f7c393ef0965b110459e6a798",
+			"size": 953
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/god_angel.png",
+			"sha256": "d84d69b7df49c40c04fa55f991f385ea323185d0dd3f1a2d9599eeec7f55f645",
+			"size": 286030
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/god_angel.png.import",
+			"sha256": "4f31740d2424c1a50e6d09dded8c3b14f1df79cb513b51a53832ae6bae39b837",
+			"size": 956
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/god_arbiter.png",
+			"sha256": "f9aaf2e0c16cf3c0e1df323ffa7ea760edf88042d955f62651c630d21ed79db9",
+			"size": 288198
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/god_arbiter.png.import",
+			"sha256": "a5b3fac970bfbcd60b2a16fa6a92b1dc73f287b226a8f8e6f413421caffcc9a0",
+			"size": 962
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/god_archangel.png",
+			"sha256": "30cd23290cb18c74a917b364403df1604a064cfb78c805319df10bdb2145bd52",
+			"size": 280307
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/god_archangel.png.import",
+			"sha256": "175758853242e2d8ed70915edce7fcef5e19747b530bd84f125029c380b167a6",
+			"size": 967
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/god_aurora.png",
+			"sha256": "850c6cf7000c65104b357f17053247971cb5d4d8db4cbcafebf74ca3f59425cd",
+			"size": 287296
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/god_aurora.png.import",
+			"sha256": "e0e197d26d21eb7cb65a0efd4b4c2bfb34c519c9bcb8bcca463d4abe73fbe8f5",
+			"size": 959
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/god_guard.png",
+			"sha256": "f6e33ea70653bff0e7379456796d619351d5768f0582c280983b5b946a5be637",
+			"size": 251589
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/god_guard.png.import",
+			"sha256": "2ad3569247c49286018863a99b76d0588b9e1685a69c8aba69ac6d2e962e6b6e",
+			"size": 956
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/god_king.png",
+			"sha256": "4930e995bd8b6d2c924e378038d902058f443a0dfaa173063c1886f5381c9bcb",
+			"size": 306412
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/god_king.png.import",
+			"sha256": "0ee0429a0c601e7a7577727635ca598630a0b73db5743e7a7fd9722f7ec0382b",
+			"size": 953
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/god_priest.png",
+			"sha256": "76e3ed5b6d4e9f8cbbfc5e0fc34a103046602ec298dbe57bfac8599ae355707e",
+			"size": 264713
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/god_priest.png.import",
+			"sha256": "cc3e7590ab3b7dfd9259900fd2c1060f005ae3910472d8dc93808033c95477b6",
+			"size": 959
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/god_priestess.png",
+			"sha256": "fa07425966fda26d29b1b50b06e96bbe356563daa1d036bba9eeda965cc797f9",
+			"size": 273132
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/god_priestess.png.import",
+			"sha256": "df6c669a4bbd7381db4082e86fff892f812812ff52ea8cccc62d16ad22b7471b",
+			"size": 968
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/human_archer.png",
+			"sha256": "32c7388ea96f0ec78f0e924f05304d031b358c17b9a4c2f2c36d05ed80642bbd",
+			"size": 315664
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/human_archer.png.import",
+			"sha256": "058f92b641686abc6b1c580d6102284b19bbc22bca47bd75a9648e6c86d25238",
+			"size": 964
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/human_cleric.png",
+			"sha256": "75a3f79e1948c0bdde5a1b75cafd7b758769bb4b61082b75440f1853d18172de",
+			"size": 311594
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/human_cleric.png.import",
+			"sha256": "f9cfc826c93d8c6ebc0345a076338d3ab17118bdbeed28081996d357737b958a",
+			"size": 965
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/human_death_servant.png",
+			"sha256": "e53bd884fc675e7d2e07af5833679f7b52c7a9d3bf62ab28a9f60e28bb27e846",
+			"size": 234248
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/human_death_servant.png.import",
+			"sha256": "abd9b8d715aeb45b6bc1b32b44f3d621453e8e9107b5c578612c67467584a5c4",
+			"size": 986
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/human_king.png",
+			"sha256": "2eacc6041a99a17c348282b77847552cd9d9e10866c655d91f0b2cd83f6f4388",
+			"size": 316714
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/human_king.png.import",
+			"sha256": "45fd2001e735e2d3bae3c63f17f66c141afb99a57dbf274ebcb40c5ff8a3793e",
+			"size": 958
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/human_mage.png",
+			"sha256": "d65f8f8edc08cce2734257a704341408881e05648e0f88c15833a1bcee271e55",
+			"size": 288915
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/human_mage.png.import",
+			"sha256": "6c506cff8d8d89321943a3a0a171b6a295ee33aff5b79187c31f888f33c9ed35",
+			"size": 959
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/human_merchant.png",
+			"sha256": "93d223c44d7bbadd6ec87f3c6669406eeb2095ab3df64b808dde1bc87a5c4cee",
+			"size": 293767
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/human_merchant.png.import",
+			"sha256": "6c72328c0a9e838b158ffadda9e20c0d564bab12420e2a6ced40dc989a2b9688",
+			"size": 970
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/human_militia.png",
+			"sha256": "e337c026b9e5e6650e87c0756bd37e9e82fba549522cd47af945a4838b67432f",
+			"size": 265970
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/human_militia.png.import",
+			"sha256": "c7a881b2a53223a212cd4e2feb657be12501b8b6934db14c05b5536658ca2bf3",
+			"size": 967
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/human_swordsman.png",
+			"sha256": "05e100d8726949ab8312dbe79533a6416675dabe86a03ce3b8d1c66a2b3d4a49",
+			"size": 280884
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/human_swordsman.png.import",
+			"sha256": "2ead4e18a89e0314da4d293143b0c95444a29816fd23ee24bb9c1551bfb60cb2",
+			"size": 973
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/undead_bomb.png",
+			"sha256": "6c097d26cd65407df16ef410f50dd453494126dd2ccdcc4f83430850c74db9a9",
+			"size": 243332
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/undead_bomb.png.import",
+			"sha256": "d2b4746a81ad2e1f10cd95de25f8f87b9a45604c53beecea45f1e5601602bf28",
+			"size": 962
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/undead_fly.png",
+			"sha256": "061799a2bbda7565d6879b5224cc4e3bb334a8d74046c0d5b99273f670cffde6",
+			"size": 212281
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/undead_fly.png.import",
+			"sha256": "d93220da17dc10eb4ad9ce67048ccac349e1f01bfb4ed4d17b38a2b302a8b4b6",
+			"size": 959
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/undead_mother.png",
+			"sha256": "adabaa8680d908b0330ca54dc756e1a48fd3fdf700fc58d19f09325d1c3007b9",
+			"size": 248669
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/undead_mother.png.import",
+			"sha256": "9f6e308310bf7e9b991b4a6464b8e0a7a0cd9c15af3be0f2610de501c7f42af5",
+			"size": 967
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/undead_parasite.png",
+			"sha256": "f77b09e05be613c7d949a17bea0421cd180e932db9abfb85a03257dd241bf24e",
+			"size": 216803
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/undead_parasite.png.import",
+			"sha256": "e6f1e0ae76ec673e7f4506710e3691178766192264e9883c57c8aead5e4a1e15",
+			"size": 974
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/undead_poison.png",
+			"sha256": "7c43c758986c244c38843f9e84e283c30ef8943b8a86ee056eeafe3b5ac20cdf",
+			"size": 263027
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/undead_poison.png.import",
+			"sha256": "e16109e07a34c27b3aa4e16e543f92f8ca0ee7791d7f0f76b09316951fa36ec8",
+			"size": 968
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/undead_small.png",
+			"sha256": "042cb72589102d45abf849d0c86f215c0cdd8af338ee6278f261ec14bff1000f",
+			"size": 177899
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/undead_small.png.import",
+			"sha256": "3fd603f4929b44f5ac17c18612d63d74bb4b34cde221e95c0f64ad2e7d3b540b",
+			"size": 965
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/undead_spike.png",
+			"sha256": "fcd1a9154644aa7a0d18644142b01b4a57060c643d23630952908256063c1621",
+			"size": 237039
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/undead_spike.png.import",
+			"sha256": "1eb205517e59c951d215766c9b55f582f7887e35f0bbe16e477baaf1f1175d46",
+			"size": 965
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/undead_titan.png",
+			"sha256": "29029912e925a53cef196dad89175cf09875962c1d760c49d44c55f0324a083b",
+			"size": 248096
+		},
+		{
+			"path": "res://assets/ui/unit_portraits/undead_titan.png.import",
+			"sha256": "01acba577180ee12abc3f7e409ba40ed3b86e702e81dc51a233234366b9115cd",
+			"size": 965
+		},
+		{
+			"path": "res://assets/vfx/prep/scroll_edge_fire_atlas.png",
+			"sha256": "a802a68bdfaa4c28a7407f17df7c227d0db37805137fb7e4ed05fe4b02b35a8e",
+			"size": 790367
+		},
+		{
+			"path": "res://assets/vfx/prep/scroll_edge_fire_atlas.png.import",
+			"sha256": "9adab004c148345bdda35e75ea358260f4af1d377b609c194c8f622afae1e9ad",
+			"size": 986
+		},
+		{
+			"path": "res://assets/vfx/prep/scroll_idle_halo.png",
+			"sha256": "f335e1cfb361c55d88f4ff1b76de43462d678a4284322bf5f1f68016c4ca50a5",
+			"size": 14073
+		},
+		{
+			"path": "res://assets/vfx/prep/scroll_idle_halo.png.import",
+			"sha256": "4808d24a0940a0a049f66c7cc77f74c0ac07551307475eadbf0d345c1f15dee4",
+			"size": 968
+		},
+		{
+			"path": "res://assets/vfx/prep/scroll_idle_shimmer_atlas.png",
+			"sha256": "daf61f6d83522a36137dd3ff9600f6471750d2dbb9fdc123b2b7659394554448",
+			"size": 62095
+		},
+		{
+			"path": "res://assets/vfx/prep/scroll_idle_shimmer_atlas.png.import",
+			"sha256": "917934ae836a2811d5b359d46286026493455458f5b8f9fcf9adfebd7e3229b6",
+			"size": 995
+		},
+		{
+			"path": "res://assets/vfx/prep/team_merc_crossed_swords_atlas.png",
+			"sha256": "b25395965e395ec2a58da237e90bd329caef6047ad252e6c5f2657fcab323051",
+			"size": 341860
+		},
+		{
+			"path": "res://assets/vfx/prep/team_merc_crossed_swords_atlas.png.import",
+			"sha256": "fd27d2d193aee1ab934240a320f69e5748075be8587fafd454de1bf669688655",
+			"size": 1010
+		},
+		{
+			"path": "res://assets/vfx/skills/distinct_v2/stun_star_mark_v2.png",
+			"sha256": "aeb8b982bbce25876221d9ba0e04fa31087e9e5bb9b260b4af5451e675da1048",
+			"size": 166804
+		},
+		{
+			"path": "res://assets/vfx/skills/distinct_v2/stun_star_mark_v2.png.import",
+			"sha256": "03984f81d2a65934e630f57ce70cd93c8f338ca4e00410d901954afe74f4d3e3",
+			"size": 1235
+		},
+		{
+			"path": "res://assets/vfx/status/status_attack_down_icon_v2.png",
+			"sha256": "433c504dbc1b7ed8e3984156ca218f69939bbb9daca1c2bc0ba456d14512e5c8",
+			"size": 104442
+		},
+		{
+			"path": "res://assets/vfx/status/status_attack_down_icon_v2.png.import",
+			"sha256": "0aa8bc8fb0671b6b0773e4fe9db56b39f091993f607ea96acb9f79c16c4bb27e",
+			"size": 1268
+		},
+		{
+			"path": "res://assets/vfx/status/status_bleed_icon_v2.png",
+			"sha256": "a0eff9ab45d1dae27018a94b014a55d9604ac031597b6aaf8a8ae873f19db34c",
+			"size": 95990
+		},
+		{
+			"path": "res://assets/vfx/status/status_bleed_icon_v2.png.import",
+			"sha256": "5c831c8b543618605720ca41328efb0a63e67b2bc308161bac1efdf4bb4362bb",
+			"size": 1237
+		},
+		{
+			"path": "res://assets/vfx/status/status_burn_icon_v2.png",
+			"sha256": "25db378e6bda3e0ca845089f67bd0d33b6c14983e25a0d64bfeb6ec7187dd099",
+			"size": 195736
+		},
+		{
+			"path": "res://assets/vfx/status/status_burn_icon_v2.png.import",
+			"sha256": "de6658eef07fc73fd6b1802ad6e186dd406ec96371f5363505137357ac61e736",
+			"size": 1232
+		},
+		{
+			"path": "res://assets/vfx/status/status_defense_down_icon_v2.png",
+			"sha256": "a40c5872220b05bb2d04e2442cf8a03362f547139b3dd0472bc299b60127239e",
+			"size": 181257
+		},
+		{
+			"path": "res://assets/vfx/status/status_defense_down_icon_v2.png.import",
+			"sha256": "a22c1808893e325b69b37ef4547317f02e89d2761aa438c3a7b96c0c261a6df2",
+			"size": 1273
+		},
+		{
+			"path": "res://assets/vfx/status/status_fear_icon_v2.png",
+			"sha256": "448211f746b63d967803595d7f4e88061b47bb26521309d916b90237506b2e21",
+			"size": 185667
+		},
+		{
+			"path": "res://assets/vfx/status/status_fear_icon_v2.png.import",
+			"sha256": "151692ebf7fe7b39514c91cdf15ac1639b0f0a8826d154cfeb520b9bfcf7e7c4",
+			"size": 1233
+		},
+		{
+			"path": "res://assets/vfx/status/status_heal_reduction_icon_v2.png",
+			"sha256": "cfea14128bddb72d48c9dca35bee296b5036c181b503d3262613a2491f0c4c1f",
+			"size": 187260
+		},
+		{
+			"path": "res://assets/vfx/status/status_heal_reduction_icon_v2.png.import",
+			"sha256": "3ce0f716fe17a4f00a25e151e4863072c18b9043df93c2cf59df62fe9440372c",
+			"size": 1283
+		},
+		{
+			"path": "res://assets/vfx/status/status_ice_affected_icon_v2.png",
+			"sha256": "e87b5b0ebd119da8128ee8fd3e314a2e6489a934413999d43f9f8b23916fccb8",
+			"size": 136262
+		},
+		{
+			"path": "res://assets/vfx/status/status_ice_affected_icon_v2.png.import",
+			"sha256": "cb1ff8b60cd8628258c1434ae3ca82c1715796690d3a28ec7df81d72944b43de",
+			"size": 1273
+		},
+		{
+			"path": "res://assets/vfx/status/status_ice_vulnerable_icon_v2.png",
+			"sha256": "606f085ca787b9a65cfde07616ee30130334d30a1df8360662993d086c9d56bd",
+			"size": 172991
+		},
+		{
+			"path": "res://assets/vfx/status/status_ice_vulnerable_icon_v2.png.import",
+			"sha256": "a6f811addd876f2d9538069ff0f1f06274431f85172d3f748f5f4f668fa8ecab",
+			"size": 1282
+		},
+		{
+			"path": "res://assets/vfx/status/status_interrupt_icon_v2.png",
+			"sha256": "7dc86f234173763fc2a6a51fd52a715e4ae497003aaca284571cc8784a92ab6f",
+			"size": 91096
+		},
+		{
+			"path": "res://assets/vfx/status/status_interrupt_icon_v2.png.import",
+			"sha256": "1523d58cccb5d16d0cb8349569aa1385105cd00650a603b999074069f9d9c3a8",
+			"size": 1258
+		},
+		{
+			"path": "res://assets/vfx/status/status_poison_icon_v2.png",
+			"sha256": "69fd095d65d34eb584c97262448bf04a2350cac1f464f488b07978345f2b848d",
+			"size": 212404
+		},
+		{
+			"path": "res://assets/vfx/status/status_poison_icon_v2.png.import",
+			"sha256": "ee4201d1e569702288822b587ebaecbc13612ea7daf06da5e72fe8e98b05dea4",
+			"size": 1243
+		},
+		{
+			"path": "res://assets/vfx/status/status_silence_icon_v2.png",
+			"sha256": "dd75f7c888ecf22b8a7081f73eb4d79d2afff0059817cbe17a179b573e79ddfc",
+			"size": 234181
+		},
+		{
+			"path": "res://assets/vfx/status/status_silence_icon_v2.png.import",
+			"sha256": "6ee185c1ec45c75abe7fafb673a0ec431cd73fd392ac6ae4fa9c3c693cedbc45",
+			"size": 1247
+		},
+		{
+			"path": "res://assets/vfx/status/status_slow_icon_v2.png",
+			"sha256": "96ec8ff9a5e8ffba938dfc408a5e484273597d6044eb5d16ce80451dc33507a3",
+			"size": 186256
+		},
+		{
+			"path": "res://assets/vfx/status/status_slow_icon_v2.png.import",
+			"sha256": "a53b60eafaaeea3ea33549de22a7c34c82955fcb99ca9e08b8b1d8e0bb523cef",
+			"size": 1232
+		},
+		{
+			"path": "res://assets/vfx/status/status_stun_icon_v2.png",
+			"sha256": "bd43601d6d07c9902bdeeada1537c33fd8b49d58f2251067c52116b9b5200186",
+			"size": 138464
+		},
+		{
+			"path": "res://assets/vfx/status/status_stun_icon_v2.png.import",
+			"sha256": "8321e305646d575b4e6f0dd9b308f9f5add498fbfe60c129465825d146ccbac3",
+			"size": 1232
+		},
+		{
+			"path": "res://ui/branding/glory_bootstrap.png",
+			"sha256": "518178782627f5a247ded9a633bf8c7e89471ca0c092406bd72f865581ff7d88",
+			"size": 15799
+		},
+		{
+			"path": "res://ui/branding/glory_bootstrap.png.import",
+			"sha256": "5100306bd5cf0581f4cd1347589d3e714eac0cd3ca67d223827e499c1e2334d9",
+			"size": 961
+		},
+		{
+			"path": "res://ui/components/ChatInputBar.gd",
+			"sha256": "6542fae13f4e1faf7602bd944ff991c276d170ceaba548d4c1f6e5d7ed326afb",
+			"size": 4649
+		},
+		{
+			"path": "res://ui/components/ChatInputBar.gd.uid",
+			"sha256": "c70c2839ba852f22895a1932379d5a5b286eabfebc64be41da78d647773bcd45",
+			"size": 20
+		},
+		{
+			"path": "res://ui/components/GloryActionButton.tscn",
+			"sha256": "c14b8f95cbe64790b02622ec7d91399f9eb9a9c58ef890f2fceec6b1d2d81b2e",
+			"size": 133
+		},
+		{
+			"path": "res://ui/components/GloryBusyButton.gd",
+			"sha256": "928d0127a1dab1105023527841310be00f1790c6de3e4cb2198649564d09b69c",
+			"size": 4431
+		},
+		{
+			"path": "res://ui/components/GloryBusyButton.gd.uid",
+			"sha256": "9763b8cb4595f029f77c84e266e4503578408f35d42f2dbac1c0b72810e64c2d",
+			"size": 19
+		},
+		{
+			"path": "res://ui/components/GloryBusyButton.tscn",
+			"sha256": "1d3b71eec52664f0c18a5bb01e60bb7a808d9f5ebf4328ba89106a78ac0a333e",
+			"size": 241
+		},
+		{
+			"path": "res://ui/components/GloryConfirmDialog.gd",
+			"sha256": "dceddd30952255dd34783267ad06c9417fbb41329c7d0940044e13eb4714ed99",
+			"size": 9181
+		},
+		{
+			"path": "res://ui/components/GloryConfirmDialog.gd.uid",
+			"sha256": "4f5e5b64aaf01bc459b4b20b21e9afc45a9d6a54e81f8c27c7f2e30a30df2b6e",
+			"size": 19
+		},
+		{
+			"path": "res://ui/components/GloryConfirmDialog.tscn",
+			"sha256": "040b1f42616ac728df64bbf72ad237596c2918a86cfa322c7ccdf8532b1d6429",
+			"size": 324
+		},
+		{
+			"path": "res://ui/components/GloryDisabledReason.gd",
+			"sha256": "33122159d90a4d17ee5ce251dd6903d98a4643e41b8ad9fa71a0d6d81e747ca7",
+			"size": 3268
+		},
+		{
+			"path": "res://ui/components/GloryDisabledReason.gd.uid",
+			"sha256": "40165e83b099e76f7bbc7444902cd19636c527414c30e145fcccb7c2184a066b",
+			"size": 19
+		},
+		{
+			"path": "res://ui/components/GloryLoadingOverlay.gd",
+			"sha256": "4d24c80672d9c1065c65defc7e2d0edc89fb82c472bf8b3d376f5ae5a724ea10",
+			"size": 13991
+		},
+		{
+			"path": "res://ui/components/GloryLoadingOverlay.gd.uid",
+			"sha256": "f414e1baf96490fc1b1d87a9637f6bd0738dd1b0d48de5721c5f9fe25157c5d7",
+			"size": 20
+		},
+		{
+			"path": "res://ui/components/GloryLoadingOverlay.tscn",
+			"sha256": "31817713b3215fb5fb53f0a8678d6b3d92205dae0c9e77efd790a5656ce4f9d1",
+			"size": 326
+		},
+		{
+			"path": "res://ui/components/GloryToast.gd",
+			"sha256": "9a3275471aa746e27761a0269f74e2b3739ce1c5c00101a10af6bb64e75b5f47",
+			"size": 6395
+		},
+		{
+			"path": "res://ui/components/GloryToast.gd.uid",
+			"sha256": "bcfa7da9d924bc0ed81f105ec230d97bcdea6756bce409c7076cbb9b7e243bad",
+			"size": 19
+		},
+		{
+			"path": "res://ui/components/TouchChoiceButton.gd",
+			"sha256": "0825bc9c2a424670e21d9c2717c6fed947d6bbd43a7c2a0684abb96de119dfe1",
+			"size": 2771
+		},
+		{
+			"path": "res://ui/components/TouchChoiceButton.gd.uid",
+			"sha256": "e1410a3f2b8f8d606207f69b7a69caf01562228fa6831c3d45f5a9aa778015cc",
+			"size": 19
+		},
+		{
+			"path": "res://ui/controllers/AsyncActionController.gd",
+			"sha256": "ebcd8c74633e8ed1304185419a698170486f37cec56992884eed0b269feacdbb",
+			"size": 13169
+		},
+		{
+			"path": "res://ui/controllers/AsyncActionController.gd.uid",
+			"sha256": "d9e2959ee25632be6029d7b315f341f55287f3ac08376657b1e8a33a0cfdf3eb",
+			"size": 20
+		},
+		{
+			"path": "res://ui/services/DialogService.gd",
+			"sha256": "1d61a7361850265e40b35a47d445854a05fc07330cc21cb7c3156fac8382f704",
+			"size": 5404
+		},
+		{
+			"path": "res://ui/services/DialogService.gd.uid",
+			"sha256": "27b0c796029e234429fa18112a2c6c8d0d11c760bfa7659bfac4e32fa82e5d76",
+			"size": 20
+		},
+		{
+			"path": "res://ui/services/ModalStack.gd",
+			"sha256": "88b8ec90e4a6fa1773d5ab733284d381fa1828a7819a1ef4f4d4932e78dfffe5",
+			"size": 11006
+		},
+		{
+			"path": "res://ui/services/ModalStack.gd.uid",
+			"sha256": "fb6ef2dfaf83300d29b316368528bca65d93109f7edf9a5e826a5613e94ea6ef",
+			"size": 19
+		},
+		{
+			"path": "res://ui/services/UiFeedback.gd",
+			"sha256": "9958bde005b2c40cd7c7a76f00d0e10c4226489803cca7db95f601a347476c07",
+			"size": 9136
+		},
+		{
+			"path": "res://ui/services/UiFeedback.gd.uid",
+			"sha256": "f81f0aa6612c22df7415c868a021eb1733c24394888e48d77d8615a3686a0874",
+			"size": 20
+		},
+		{
+			"path": "res://ui/theme/GloryTheme.gd",
+			"sha256": "e188a50d9f8b34621032dff6ba163fc2745f1fa4bb4048e16f1909e6e2858be8",
+			"size": 12365
+		},
+		{
+			"path": "res://ui/theme/GloryTheme.gd.uid",
+			"sha256": "bbce2f341595331b4868d617c5ac49dce90231ca360cfbb8b3b02ef425104ba0",
+			"size": 19
+		},
+		{
+			"path": "res://ui/theme/GloryTokens.gd",
+			"sha256": "03784dcb442ab58b42f10a62ecc2e8c77ee49ae466d391a0ee75542375daa2d7",
+			"size": 7053
+		},
+		{
+			"path": "res://ui/theme/GloryTokens.gd.uid",
+			"sha256": "ece672f30f6283be88ec9f07fea9708020867d947f553a267bce35673fdcf3b6",
+			"size": 20
+		}
+	],
+	"generated_utc": "2026-09-12T09:35:41",
+	"policy_path": "res://data/qa/non_ui_visual_freeze_policy.json",
+	"schema_version": 1,
+	"total_bytes": 236418860
+}

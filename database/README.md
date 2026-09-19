@@ -68,6 +68,11 @@ Supabase Dashboard → SQL Editor，按编号顺序逐个执行。
 | `005_friends.sql` | 交友系统。好友关系 / 拉黑 / 请求日志 / 在线状态 |
 | `006_room_visits.sql` | 房间访问记录。「最近一起玩过」的同房关联 |
 | `007_chat.sql` | 好友私聊。会话 / 消息 / 已读游标。仍是好友时每对只存最近 200 条；删好友后再留 30 天 |
+| `008_announcements.sql` | 公告。**管理员在 Supabase 后台直接改行**（这一张是例外，见文件头）；账号服务器只写 problem 列。撤下不删 |
+| `009_wallet.sql` | 账号钱包与流水。钻石**分付费 / 赠送两列**、黄金一列；流水只追加。附 `grant_diamonds()`，手工发放的唯一入口 |
+| `010_shop.sql` | 商城归属与订单。归属存**内容 id**不存商品 id；订单幂等键 `(player_id, client_order_id)`；`external_id` 唯一索引留给充值去重 |
+| `011_loadout.sql` | 出战种族搬到账号服务器（`players.selected_races`）。出战名片要给它盖章，账号服务器得先知道它。只管格式，「必须几个」归战斗服务器 |
+| `012_mail.sql` | 系统邮件。一封群发只存一行，读 / 领 / 删才在 `mail_states` 落行；`wallet_ledger` 加 `mail_id`。附 `send_mail()` / `send_mail_all()` / `withdraw_mail()`，**管理员只走这三个函数**。邮件行不删 |
 
 ## 一条硬规则
 

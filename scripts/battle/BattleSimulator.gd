@@ -620,6 +620,12 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 			if dist > 0.001:
 				f.pos += delta.normalized() * step
 		elif elapsed >= float(f.next_attack):
+			# 无普攻的单位（法师，9.14 反馈：文案写「无普攻」但实测会普攻）。
+			# 只跳过攻击分支 —— 上面的移动分支照常执行，所以法师仍然会走到射程
+			# 边缘站定、被集火、被技能选中，只是不再有普攻动作与伤害；
+			# 它的输出全部由 _tick_skills 驱动的 random_attribute_bolt 提供。
+			if bool(f.get("def", {}).get("no_basic_attack", false)):
+				continue
 			# Render-only telemetry: preserve the simulator's exact chosen target so
 			# projectiles and hit VFX never have to guess from nearby damaged units.
 			f.vfx_attack_target_uid = str(target.get("uid", ""))
@@ -731,8 +737,6 @@ static func _apply_attack_statuses(attacker: Dictionary, target: Dictionary, sta
 		StatusEffectService.add_status(target, "burn", float(d.get("burn_duration", 3.0)), {"dps": float(d.get("burn_dps", 36.0)), "tick_left": 0.0})
 	elif sid == "devour_bite":
 		_heal_unit(attacker, maxi(1, int(round(float(attacker.atk) * float(d.get("lifesteal", 0.18))))))
-	elif sid == "parasite_on_kill":
-		target.parasite_owner = attacker
 	elif sid == "poison_attack":
 		# Poison strength and duration come from the unit def. They used to be
 		# hardcoded 0.03 / 4.0 here, which meant the 4-star tier could not touch
@@ -980,20 +984,28 @@ static func _on_unit_killed(killer: Dictionary, victim: Dictionary, state: Dicti
 			if bool(o.get("alive", false)) and _can_target(victim, o, killer_team) and victim.pos.distance_to(o.pos) <= 180.0:
 				DamageService.apply_damage(o, maxi(1, int(round(float(victim.atk) * float(vd.get("damage_atk_pct", 2.5))))), true)
 				StatusEffectService.add_poison(o)
-	var parasite_owner: Dictionary = victim.get("parasite_owner", {}) if typeof(victim.get("parasite_owner", {})) == TYPE_DICTIONARY else {}
-	if not parasite_owner.is_empty() and bool(parasite_owner.get("alive", false)):
-		var clone := victim.duplicate(true)
-		clone.uid = "%s_parasite_%d" % [str(parasite_owner.team), int(state.get("total_deaths", 0))]
-		clone.team = str(parasite_owner.team)
-		clone.hp = maxi(1, int(round(float(victim.max_hp) * float(parasite_owner.get("def", {}).get("clone_hp_pct", 0.10)))))
-		clone.max_hp = clone.hp
-		clone.atk = maxi(1, int(round(float(victim.atk) * float(parasite_owner.get("def", {}).get("clone_atk_def_pct", 0.50)))))
-		clone.defense = maxi(0, int(round(float(victim.defense) * float(parasite_owner.get("def", {}).get("clone_atk_def_pct", 0.50)))))
-		clone.alive = true
-		clone.statuses = {}
-		((state.player) if str(parasite_owner.team) == "player" else (state.enemy)).append(clone)
+	_maybe_spawn_parasite_clone(killer, victim, state)
 	# 母灵计数已移到每 tick 的死亡清扫 _process_single_race_death 里，
 	# 那条路能捕获普攻/技能/AOE 所有致死方式（本入口只覆盖普攻），且天然排除处决。
+
+
+static func _maybe_spawn_parasite_clone(killer: Dictionary, victim: Dictionary, state: Dictionary) -> bool:
+	# Parasite is a true last-hit effect: only Leech's own basic-attack kill may
+	# create the clone. Do not retain a permanent mark on targets, because that
+	# lets an ally's later hit claim the parasite. Boss fighters are immune.
+	if str(killer.get("def", {}).get("skill_id", "")) != "parasite_on_kill" or _is_boss_fighter(victim):
+		return false
+	var clone := victim.duplicate(true)
+	clone.uid = "%s_parasite_%d" % [str(killer.team), int(state.get("total_deaths", 0))]
+	clone.team = str(killer.team)
+	clone.hp = maxi(1, int(round(float(victim.max_hp) * float(killer.get("def", {}).get("clone_hp_pct", 0.10)))))
+	clone.max_hp = clone.hp
+	clone.atk = maxi(1, int(round(float(victim.atk) * float(killer.get("def", {}).get("clone_atk_def_pct", 0.50)))))
+	clone.defense = maxi(0, int(round(float(victim.defense) * float(killer.get("def", {}).get("clone_atk_def_pct", 0.50)))))
+	clone.alive = true
+	clone.statuses = {}
+	((state.player) if str(killer.team) == "player" else (state.enemy)).append(clone)
+	return true
 
 
 static func _skill_shared_hp_link(caster: Dictionary, opponents: Array, _d: Dictionary, state: Dictionary) -> void:
@@ -1008,7 +1020,7 @@ static func _skill_shared_hp_link(caster: Dictionary, opponents: Array, _d: Dict
 			caster.erase("shared_link_last_hp")
 		else:
 			return
-	var target := _nearest_non_boss(caster, opponents)
+	var target := _nearest_non_boss(caster, _link_targets_without_doom(caster, opponents))
 	if target.is_empty():
 		return
 	_convert_link_target_to_caster_team(caster, target, opponents, state)
@@ -1032,6 +1044,26 @@ static func _nearest_non_boss(f: Dictionary, opponents: Array) -> Dictionary:
 			best_dist = dist
 			best = o
 	return best
+
+
+# 血链的候选池：末日守卫不在其中（9.14 反馈的隐藏机制）。
+# 两只末日守卫互相连接会把对面整只策反过来，而 shared_hp_link 的「双方共享生命
+# 损失」判定依赖 caster/target 分属两队 —— 互连之后一边白拿一个满编单位，
+# 连接本身也失去意义。这里只剔末日守卫，Boss 仍由 _nearest_non_boss 拦。
+static func _link_targets_without_doom(caster: Dictionary, opponents: Array) -> Array:
+	var out: Array = []
+	for o in opponents:
+		if o == caster or _is_doom_guard_fighter(o):
+			continue
+		out.append(o)
+	return out
+
+
+static func _is_doom_guard_fighter(fighter: Dictionary) -> bool:
+	var d: Dictionary = fighter.get("def", {})
+	if str(d.get("skill_id", "")) == "shared_hp_link":
+		return true
+	return str(fighter.get("id", d.get("id", ""))) == "dark_doom"
 
 
 static func _is_boss_fighter(fighter: Dictionary) -> bool:

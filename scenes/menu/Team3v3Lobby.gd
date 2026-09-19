@@ -12,6 +12,10 @@ const SLOT_POS := [
 ]
 const SLOT_SIZE := Vector2(184, 175)
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
+const Tokens := preload("res://ui/theme/GloryTokens.gd")
+# 9.17 第二批：BGM 走常驻 MusicService，音效走 SfxService。
+const MusicService := preload("res://ui/services/MusicService.gd")
+const SfxService := preload("res://ui/services/SfxService.gd")
 var _slot_avatars: Array[TextureRect] = []
 var _friends_box: VBoxContainer
 var _friends_loading := false
@@ -36,10 +40,17 @@ func _render_online_friends(friends: Array) -> void:
 			continue
 		var label := Label.new()
 		label.text = AccountManager.display_name(str(entry.get("player_name", "")), str(entry.get("friend_code", "")))
-		label.add_theme_color_override("font_color", Color.WHITE)
-		label.add_theme_color_override("font_outline_color", Color(0.15, 0.1, 0.05))
-		label.add_theme_constant_override("outline_size", 2)
-		label.add_theme_font_size_override("font_size", 14)
+		# 9.14 反馈：「朋友列表」里的朋友 ID 要贴在框框里边、向左对齐。label 默认就是
+		# 左对齐，真正的毛病是列表容器压到了木框上（见 _build() 里 friends_scroll 的
+		# 位置说明）—— 两处一起改才看得出来。这里显式写上左对齐，免得将来换主题
+		# 把 Label 的默认对齐改掉时又悄悄居中。
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		# 好友名写在羊皮纸里：深色正文已经有足够对比，不再加浅色粗描边。
+		# 旧版白字 + 2px 深边在 14px 下笔画几乎一样粗，看起来像失焦。
+		label.add_theme_color_override("font_color", Tokens.PARCHMENT_EDGE)
+		label.add_theme_constant_override("outline_size", 0)
+		label.add_theme_font_size_override("font_size", 15)
 		label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		label.tooltip_text = label.text
 		_friends_box.add_child(label)
@@ -49,8 +60,9 @@ func _seat_profile(index: int) -> Dictionary:
 		return AccountManager.profile
 	return NetworkService.team_seat_profiles.get(index, NetworkService.team_seat_profiles.get(str(index), {}))
 
-func _publish_identity(_profile: Dictionary = {}) -> void:
-	NetworkService.publish_lobby_identity()
+# 自己的资料变了（改名、换头像）就重画。本机座位显示的是 AccountManager.profile，
+# 所以这里只需要刷新；别人看到的是入座时名片上的身份（NetworkService._room_store_seat_card）。
+func _on_profile_changed(_profile: Dictionary = {}) -> void:
 	_refresh()
 
 func _view_seat_profile(index: int) -> void:
@@ -75,6 +87,10 @@ const TEX_CHAT := preload("res://assets/ui/room_v2/chat.png")
 const TEX_START := preload("res://assets/ui/room_v2/start.png")
 const TEX_VS := preload("res://assets/ui/room/vs.png")
 const MENU_MUSIC_PATH := "res://assets/audio/bgm/menu_music.mp3"
+# 9.17：组队房间此前和主菜单共用 menu_music，这一批给了它独立的 BGM。
+# 两条常量分开而不是让房间读主菜单那条 —— 房间是「等队友」的场景，
+# 气氛和大厅本就不同，共用一个常量会让以后想分开时改错地方。
+const TEAM_ROOM_MUSIC_PATH := "res://assets/audio/bgm/team_room_music.mp3"
 const SELFTEST_SCENE_PATH := "res://officetest/OfficeTestScreen.tscn"
 
 # ── 布局调试overlay ────────────────────────────────────────────────
@@ -108,14 +124,13 @@ var _start_lbl: Label
 var _host_hint_lbl: Label
 var _selftest_btn: Button
 var _screen_bands: Array[Dictionary] = []
-var _menu_music_player: AudioStreamPlayer
 var _debug_layer: Control
 var _debug_on := DEBUG_LAYOUT
 var _layout_scale := 1.0
 var _layout_origin := Vector2.ZERO
 
 func _ready() -> void:
-	AccountManager.profile_changed.connect(_publish_identity)
+	AccountManager.profile_changed.connect(_on_profile_changed)
 	_slot_states[_local_slot] = "player"
 	if not NetworkService.session_changed.is_connected(_on_session_changed):
 		NetworkService.session_changed.connect(_on_session_changed)
@@ -135,14 +150,6 @@ func _ready() -> void:
 	friends_timer.timeout.connect(_reload_online_friends)
 	add_child(friends_timer)
 	_reload_online_friends()
-	NetworkService.publish_lobby_identity()
-	var identity_retry := Timer.new()
-	identity_retry.wait_time = 10.0
-	identity_retry.autostart = true
-	identity_retry.timeout.connect(func():
-		if _online() and not NetworkService.team_seat_profiles.has(_my_slot()):
-			NetworkService.publish_lobby_identity())
-	add_child(identity_retry)
 	# 必须在 _layout() 之前：_add_label 只是把控件登记进 _placed，
 	# 真正定位是 _layout() 干的。放在它后面创建的标签会停在默认位置、看不见。
 	_setup_asset_loader()
@@ -179,7 +186,7 @@ func _setup_asset_loader() -> void:
 	# Keep preload progress outside the center status/seat-name band. The previous
 	# 626..1046 × 197..221 rectangle crossed the top B/C seat titles on device.
 	_asset_lbl = _add_label("", Vector2(1340, 600), Vector2(230, 28), 14,
-		Color(0.62, 0.86, 0.98), "right")
+		Color(0.62, 0.86, 0.98), "right", true)
 	set_process(true)
 
 func _process(delta: float) -> void:
@@ -208,21 +215,9 @@ func _process(delta: float) -> void:
 	_asset_lbl.text = "资源载入 %d%%" % int(round(100.0 * float(done) / maxf(1.0, float(_asset_total))))
 
 func _start_menu_music() -> void:
-	if _menu_music_player != null:
-		return
-	# 与摆放界面同款：必须用 load() 走资源系统，Android 导出包只含 mp3 的导入产物。
-	var stream := load(MENU_MUSIC_PATH) as AudioStream
-	if stream == null:
-		push_warning("房间界面音乐读取失败：%s" % MENU_MUSIC_PATH)
-		return
-	if stream is AudioStreamMP3:
-		(stream as AudioStreamMP3).loop = true
-	_menu_music_player = AudioStreamPlayer.new()
-	_menu_music_player.name = "MenuMusicPlayer"
-	_menu_music_player.stream = stream
-	_menu_music_player.bus = "Music" if AudioServer.get_bus_index("Music") >= 0 else "Master"
-	add_child(_menu_music_player)
-	_menu_music_player.play()
+	# 9.17 第二批：改走常驻 MusicService（播放器挂 root，不随页面释放）。
+	# 「同一首不重启」由服务内部判等负责。
+	MusicService.play(TEAM_ROOM_MUSIC_PATH)
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED:
@@ -239,8 +234,8 @@ func _exit_tree() -> void:
 		NetworkService.team_chat_received.disconnect(_on_chat_received)
 	if NetworkService.team_chat_text_received.is_connected(_on_chat_text_received):
 		NetworkService.team_chat_text_received.disconnect(_on_chat_text_received)
-	if VoiceService.mode_changed.is_connected(_on_voice_mode_changed):
-		VoiceService.mode_changed.disconnect(_on_voice_mode_changed)
+	if _voice_controls != null:
+		_voice_controls.teardown()
 
 func _online() -> bool:
 	return NetworkService.team_active
@@ -283,14 +278,19 @@ func _build() -> void:
 	_add_hit(Vector2(80, 35), Vector2(143, 83), func(): back_requested.emit(), "left", "hit_back")
 	_add_texture(TEX_TITLE, Vector2(599, 21), Vector2(475, 143))
 	_room_id_lbl = _add_label("", Vector2(712, 103), Vector2(250, 30), 20, Color(0.45, 0.27, 0.08))
-	_add_label(_room_text("自定义房间", "CUSTOM GAME"), Vector2(650, 51), Vector2(372, 48), 32)
+	_add_label(_room_text("自定义房间", "CUSTOM GAME"), Vector2(650, 51), Vector2(372, 48), 32,
+		Tokens.TEXT_PRIMARY, "", true)
 	# 右侧朋友列表：锚定屏幕右边（edge="right"）
 	_add_texture(TEX_FRIENDS, Vector2(1340, 180), Vector2(230, 400), "right")
-	_add_label(_room_text("朋友列表", "Friends"), Vector2(1340, 215), Vector2(230, 42), 28, Color(0.47, 0.28, 0.08), "right")
+	_add_label(_room_text("朋友列表", "Friends"), Vector2(1340, 215), Vector2(230, 42), 28,
+		Tokens.GOLD_HOVER, "right", true)
 	var friends_scroll := ScrollContainer.new()
 	friends_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	add_child(friends_scroll)
-	_track(friends_scroll, Vector2(1350, 270), Vector2(210, 290), 0, "right")
+	# 9.14 反馈：名字原来从 1350 起，而羊皮纸的内边在 1373 左右 —— 文字压在木框上，
+	# 看着「没在框框里边」。按框内区域（实测约 1373 ~ 1540）重设滚动区，列表项显式
+	# 左对齐后正好贴着纸的左边。右边保持 1539 不变，框内的宽度不受影响。
+	_track(friends_scroll, Vector2(1374, 270), Vector2(165, 290), 0, "right")
 	_friends_box = VBoxContainer.new()
 	_friends_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	friends_scroll.add_child(_friends_box)
@@ -308,7 +308,8 @@ func _build() -> void:
 
 	# 右下开始按钮组、自测、提示：锚定屏幕右边（edge="right"）
 	_add_texture(TEX_START, Vector2(1300, 760), Vector2(270, 130), "right")
-	_start_lbl = _add_label("", Vector2(1300, 790), Vector2(270, 95), 28, Color(0.96, 0.87, 0.70), "right")
+	_start_lbl = _add_label("", Vector2(1300, 790), Vector2(270, 95), 28,
+		Color(0.96, 0.87, 0.70), "right", true)
 	_start_btn = _add_hit(Vector2(1300, 790), Vector2(270, 95), _on_primary_pressed, "right", "hit_start")
 	# 离线自测专用入口(officetest):开始游戏上方,仅离线显示,纯追加不动原布局。
 	#
@@ -317,8 +318,10 @@ func _build() -> void:
 	_selftest_btn = _add_ai_button(Vector2(1310, 719), Vector2(255, 55), func(): selftest_requested.emit(), "right", "btn_selftest", 24)
 	_selftest_btn.text = _room_text("自测开始", "Self-Test")
 	_selftest_btn.visible = selftest_available() and not _online()
-	_host_hint_lbl = _add_label(_room_text("等待其他玩家准备后可按", "Waiting for players"), Vector2(1285, 880), Vector2(310, 28), 20, Color(1.0, 0.94, 0.78), "right")
-	_status_lbl = _add_label("", Vector2(626, 142), Vector2(420, 28), 17, Color(0.98, 0.94, 0.78))
+	_host_hint_lbl = _add_label(_room_text("等待其他玩家准备后可按", "Waiting for players"),
+		Vector2(1285, 880), Vector2(310, 28), 20, Tokens.TEXT_PRIMARY, "right", true)
+	_status_lbl = _add_label("", Vector2(626, 142), Vector2(420, 28), 17,
+		Tokens.TEXT_PRIMARY, "", true)
 	_build_debug_layer()
 
 func _build_slot(index: int) -> void:
@@ -335,7 +338,8 @@ func _build_slot(index: int) -> void:
 	_add_hit(pos + Vector2(0, 0), Vector2(182, 125), _on_slot_pressed.bind(index),
 		"", "hit_slot_%s" % SLOT_LABELS[index])
 	var name_pos := Vector2(pos.x - 10, pos.y - 46) if index < 3 else Vector2(pos.x - 10, pos.y + SLOT_SIZE.y + 4)
-	_slot_name_lbls[index] = _add_label("", name_pos, Vector2(SLOT_SIZE.x + 20, 36), 28)
+	_slot_name_lbls[index] = _add_label("", name_pos, Vector2(SLOT_SIZE.x + 20, 36), 28,
+		Tokens.TEXT_PRIMARY, "", true)
 	_slot_status_lbls[index] = _add_label("", pos + Vector2(34, 72), Vector2(122, 42), 20, Color(0.42, 0.28, 0.12))
 	var x_btn := _add_x_button(pos + Vector2(138, 30), Vector2(38, 38), _on_slot_x.bind(index),
 		"btn_kick_%s" % SLOT_LABELS[index])
@@ -354,6 +358,15 @@ func _on_slot_pressed(index: int) -> void:
 	var from := _my_slot()
 	if from < 0:
 		return
+	# 9.17 第二批：**只有自己换座**才响这一声。
+	#
+	# 位置选在这里而不是 NetworkService.team_request_move() 里：那是「自己的
+	# 换座请求」的入口，而这条音要的是**自己换座这个动作**的反馈 ——
+	# 别人换座走的是 room_state 广播，根本不经过这个函数，所以天然不响。
+	#
+	# 放在两处分支**之前**：上面的校验已经保证了「目标是空位、自己有座位」，
+	# 也就是说这一步无论在线还是离线都会真的换过去，不会出现「响了一声但没换」。
+	SfxService.play(SfxService.CUE_ROOM_SEAT_CHANGE)
 	if _online():
 		NetworkService.team_request_move(index)
 		return
@@ -395,6 +408,8 @@ func _on_primary_pressed() -> void:
 	else:
 		_slot_ready[my_slot] = not now_ready
 		_refresh()
+	# 9.18：房间内「准备」切换反馈音。
+	SfxService.play(SfxService.CUE_ROOM_READY_SWITCH)
 
 func _toggle_dummy(index: int) -> void:
 	if _online():
@@ -439,8 +454,10 @@ func _refresh() -> void:
 			if base_name != name_lbl.text:
 				base_name = base_name.left(maxi(0, base_name.length() - 1)) + "…"
 			name_lbl.text = base_name + suffix
-		name_lbl.add_theme_color_override("font_color", Color(1.0, 0.82, 0.18) if is_me else Color(0.47, 0.28, 0.08))
-		name_lbl.add_theme_color_override("font_outline_color", Color(0.22, 0.12, 0.02) if is_me else Color(1.0, 0.94, 0.78))
+		name_lbl.add_theme_color_override("font_color",
+			Tokens.GOLD_HOVER if is_me else Tokens.TEXT_PRIMARY)
+		name_lbl.add_theme_color_override("font_outline_color", Tokens.INK_PANEL)
+		name_lbl.add_theme_constant_override("outline_size", 2)
 		for placement in _placed:
 			if placement.node == name_lbl:
 				placement.font_size = 20 if state == "player" else 28
@@ -474,6 +491,7 @@ func _refresh() -> void:
 			_start_lbl.text = tr("lobby_ready_done") if ready else tr("lobby_ready")
 	if _host_hint_lbl != null:
 		_host_hint_lbl.visible = is_host_seat
+		_host_hint_lbl.text = _start_hint_text()
 	if _selftest_btn != null:
 		_selftest_btn.visible = selftest_available() and not _online()
 
@@ -484,6 +502,10 @@ func selftest_available() -> bool:
 	return OS.is_debug_build() and ResourceLoader.exists(SELFTEST_SCENE_PATH, "PackedScene")
 
 # 3v3 大厅状态：取代原先误显示的 1v1 session_label（棋盘/对手准备那套）。
+func _start_hint_text() -> String:
+	var reason := _start_block_reason(true)
+	return reason if not reason.is_empty() else (_room_text("可以开始", "Ready to start") if _is_host_seat() else _room_text("等待房主开始游戏", "Waiting for host to start"))
+
 func _lobby_status_text() -> String:
 	var states := _states()
 	var players := 0
@@ -495,8 +517,7 @@ func _lobby_status_text() -> String:
 		elif st == "dummy":
 			ais += 1
 	var mode := _room_text("在线", "Online") if _online() else _room_text("离线", "Offline")
-	var reason := _start_block_reason(true)
-	var tail := reason if not reason.is_empty() else (_room_text("可以开始", "Ready to start") if _is_host_seat() else _room_text("等待房主开始游戏", "Waiting for host to start"))
+	var tail := _start_hint_text()
 	return _room_text("%s ｜ 玩家%d AI%d ｜ %s", "%s | Players %d AI %d | %s") % [mode, players, ais, tail]
 
 func _slot_name(index: int, state: String, self_slot: bool) -> String:
@@ -560,13 +581,8 @@ func _on_start() -> void:
 func _on_session_changed() -> void:
 	_refresh()
 	_layout()
-	# 换座位**不要**重发身份：服务端 _room_do_move 会把 seat_profiles 随座位
-	# 一起搬（SEAT_SLOT_MAPS），换位后各端看到的身份本来就是对的。
-	# 此前这里每次换座都 publish_lobby_identity()，连续快速换座会在 10 秒
-	# 窗口里打出多条身份上报，曾触发服务端限流踢线（换座 6 次必掉线 bug）。
-	# 身份需要（重新）上报的场景只剩三个，都已各自覆盖：
-	#   进大厅（_ready）、账号资料变更（profile_changed 信号）、
-	#   座位上迟迟没有身份（下方 10 秒重试定时器）。
+	# 换座位不用做任何事：身份在入座时随出战名片写进座位，服务端 _room_do_move
+	# 会把 seat_profiles 随座位一起搬（SEAT_SLOT_MAPS），换位后各端看到的本来就是对的。
 
 func _layout() -> void:
 	var viewport_size := get_viewport_rect().size
@@ -595,12 +611,19 @@ func _layout() -> void:
 				x = viewport_size.x - (REF_SIZE.x - pos.x) * scale
 			_:
 				x = origin.x + pos.x * scale
-		node.position = Vector2(x, origin.y + pos.y * scale)
-		node.size = size * scale
+		var resolved_pos := Vector2(x, origin.y + pos.y * scale)
+		var resolved_size := size * scale
+		# 字形落在半像素上时，FreeType 的覆盖率会平均到两列像素，视觉上就像蒙了一层灰。
+		# 贴图保留连续缩放；只把承载文字的控件吸附到整数像素，不改变点击区语义。
+		if node is Label or (node is Button and int(item.font_size) > 0):
+			resolved_pos = resolved_pos.round()
+			resolved_size = resolved_size.round()
+		node.position = resolved_pos
+		node.size = resolved_size
 		# 字号也要跟着缩放，否则窗口一小文字就撑破按钮框、窗口一大文字又显得过小。
 		# font_size=0 的（纯判定区 _add_hit）没有文字，跳过。
 		if int(item.font_size) > 0 and (node is Label or node is Button):
-			node.add_theme_font_size_override("font_size", maxi(10, int(item.font_size * scale)))
+			node.add_theme_font_size_override("font_size", maxi(13, roundi(item.font_size * scale)))
 	if _debug_layer != null:
 		_debug_layer.queue_redraw()
 
@@ -634,14 +657,24 @@ func _add_screen_band(color: Color, y: float, height: float, from_bottom: bool) 
 	_screen_bands.append({"node": rect, "y": y, "height": height, "from_bottom": from_bottom})
 	return rect
 
-func _add_label(text: String, pos: Vector2, size: Vector2, font_size: int, color := Color(0.47, 0.28, 0.08), edge: String = "") -> Label:
+func _add_label(
+	text: String,
+	pos: Vector2,
+	size: Vector2,
+	font_size: int,
+	color := Color(0.47, 0.28, 0.08),
+	edge: String = "",
+	scene_text: bool = false
+) -> Label:
 	var label := Label.new()
 	label.text = text
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.add_theme_color_override("font_color", color)
-	label.add_theme_color_override("font_outline_color", Color(1.0, 0.94, 0.78))
-	label.add_theme_constant_override("outline_size", 3)
+	# 羊皮纸上的深字不需要描边；浮在场景或木牌上的浅字才用 2px 深边。
+	# 旧版所有文字统一 3px 浅边，缩到 720 高时正文只有 13~15px，描边占比过大而发虚。
+	label.add_theme_color_override("font_outline_color", Tokens.INK_PANEL)
+	label.add_theme_constant_override("outline_size", 2 if scene_text else 0)
 	label.add_theme_font_size_override("font_size", font_size)
 	add_child(label)
 	_track(label, pos, size, font_size, edge)
@@ -667,8 +700,7 @@ func _add_ai_button(pos: Vector2, size: Vector2, cb: Callable, edge: String = ""
 	btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	btn.add_theme_font_size_override("font_size", font_size)
 	btn.add_theme_color_override("font_color", Color(0.43, 0.26, 0.08))
-	btn.add_theme_color_override("font_outline_color", Color(1.0, 0.94, 0.78))
-	btn.add_theme_constant_override("outline_size", 2)
+	btn.add_theme_constant_override("outline_size", 0)
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(1.0, 0.93, 0.80, 0.82)
 	sb.border_color = Color(0.70, 0.42, 0.14)
@@ -690,8 +722,7 @@ func _add_x_button(pos: Vector2, size: Vector2, cb: Callable, dbg_name: String =
 	btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	btn.add_theme_font_size_override("font_size", 18)
 	btn.add_theme_color_override("font_color", Color(0.82, 0.06, 0.08))
-	btn.add_theme_color_override("font_outline_color", Color(1.0, 0.93, 0.76))
-	btn.add_theme_constant_override("outline_size", 2)
+	btn.add_theme_constant_override("outline_size", 0)
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(1.0, 0.93, 0.80, 0.88)
 	sb.border_color = Color(0.70, 0.42, 0.14)
@@ -799,43 +830,28 @@ func _build_chat_box() -> void:
 	_build_phrase_panel()
 	_refresh_chat()
 
-# 语音按钮（docs/聊天系统设计.md 第九节）：一个按钮三档循环，关 → 只听 → 开麦。
-# 放在聊天框正上方（x 180~330、y 650~696）：左边是石柱装饰，右边从 x=447 起是敌方席位 1。
-# 短语面板打开时会盖住它（面板 z=40），面板本来就是临时的。
+# 语音按钮 + 队友按钮（docs/聊天系统设计.md 第九节）。行为都在 VoiceControls 里（大厅 / 备战期 / 战斗界面共用）。
+# 放在聊天框正上方：语音 x 180~330、队友 x 336~426，y 650~696。左边是石柱装饰，
+# 右边从 x=447 起是敌方席位 1。短语面板打开时会盖住它们（面板 z=40），面板本来就是临时的。
+const VoiceControls := preload("res://ui/components/VoiceControls.gd")
 const VOICE_BTN_POS := Vector2(180, 650)
 const VOICE_BTN_SIZE := Vector2(150, 46)
+const VOICE_MEMBERS_POS := Vector2(336, 650)
+const VOICE_MEMBERS_SIZE := Vector2(90, 46)
 const VOICE_BTN_FONT := 18
-var _voice_button: Button = null
+var _voice_controls: VoiceControls = null
 
 func _build_voice_button() -> void:
-	_voice_button = PrepWidgets.make_menu_button(VoiceService.mode_label(), VOICE_BTN_SIZE,
-		VOICE_BTN_FONT, _on_voice_pressed)
+	_voice_controls = VoiceControls.new()
+	_voice_controls.build(self, VOICE_BTN_SIZE, VOICE_MEMBERS_SIZE, VOICE_BTN_FONT)
+	_place_voice_button(_voice_controls.voice_button, VOICE_BTN_POS, VOICE_BTN_SIZE)
+	_place_voice_button(_voice_controls.members_button, VOICE_MEMBERS_POS, VOICE_MEMBERS_SIZE)
+
+func _place_voice_button(button: Button, pos: Vector2, size: Vector2) -> void:
 	# 同短语按钮：清掉 make_menu_button 设的最小尺寸，否则窗口缩小时被顶回原尺寸（见 _build_phrase_panel）。
-	_voice_button.custom_minimum_size = Vector2.ZERO
-	_voice_button.name = "VoiceToggle"
-	add_child(_voice_button)
-	_track(_voice_button, VOICE_BTN_POS, VOICE_BTN_SIZE, VOICE_BTN_FONT, "left")
-	if not VoiceService.mode_changed.is_connected(_on_voice_mode_changed):
-		VoiceService.mode_changed.connect(_on_voice_mode_changed)
-	# 按钮后面的「●」跟着有没有人在说话变，0.25 秒刷一次（插件那边的状态也是这个节奏）。
-	var timer := Timer.new()
-	timer.wait_time = 0.25
-	timer.autostart = true
-	timer.timeout.connect(_refresh_voice_button)
-	add_child(timer)
-
-func _on_voice_pressed() -> void:
-	var reason := VoiceService.cycle_mode()
-	if not reason.is_empty():
-		DialogService.info({"owner": self, "body": reason})
-	_refresh_voice_button()
-
-func _on_voice_mode_changed(_mode: int) -> void:
-	_refresh_voice_button()
-
-func _refresh_voice_button() -> void:
-	if _voice_button != null and is_instance_valid(_voice_button):
-		_voice_button.text = VoiceService.mode_label() + VoiceService.activity_mark()
+	button.custom_minimum_size = Vector2.ZERO
+	add_child(button)
+	_track(button, pos, size, VOICE_BTN_FONT, "left")
 
 func _build_phrase_panel() -> void:
 	# 面板与按钮**都在 _build 期建好、默认隐藏**，不是点开时才创建。
@@ -903,7 +919,10 @@ func _on_phrase_picked(phrase_id: int) -> void:
 	# 发完收起，同备战期。面板压着敌方席位的一角，没理由让它一直开着。
 	_set_phrase_panel_visible(false)
 
-func _on_chat_received(slot: int, phrase_id: int) -> void:
+# team_only：大厅只发全部（2026-09-14 定：开局前还在换座位，队伍没定），这里用不上，
+# 只是信号带着它。会收到 true 的只有一种情况：同队有人已经进了备战期发消息、这台还停在大厅
+# （切场景的那一两秒）。那条本来就只发给了同队，照常显示、不加标记。
+func _on_chat_received(slot: int, phrase_id: int, _team_only: bool) -> void:
 	var body := ChatPhrases.text(phrase_id)
 	if body.is_empty():
 		# id 不合法。ChatPhrases.text() 刻意返回空串而不是「未知短语」这类占位符 ——
@@ -912,7 +931,7 @@ func _on_chat_received(slot: int, phrase_id: int) -> void:
 	_push_chat_entry("%s：%s" % [_chat_speaker_name(slot), body])
 
 
-func _on_chat_text_received(slot: int, text: String) -> void:
+func _on_chat_text_received(slot: int, text: String, _team_only: bool) -> void:
 	_push_chat_entry("%s：%s" % [_chat_speaker_name(slot), text])
 
 
@@ -981,7 +1000,7 @@ func _chat_speaker_name(slot: int) -> String:
 	var who := str(identity.get("player_name", "")).strip_edges()
 	if not who.is_empty():
 		return who
-	# 资料还没到（publish_lobby_identity 是异步的，还带 10 秒重试）。
+	# 这个座位没有身份（AI 座位，或进程内门禁不带名片建的座位）。
 	# 用座位号顶着 —— 空名字会让这条消息看起来像是没有人说的。
 	# 显式标 String：SLOT_LABELS 是无类型 Array，取出来是 Variant，
 	# `:=` 推断不出类型会直接变成解析错误（而解析错误在 headless 下不产生结果，

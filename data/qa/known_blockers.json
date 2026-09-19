@@ -53,11 +53,11 @@
     },
     {
       "id": "battle-victory-five-person-test",
-      "title": "Victory 已在动态录像出现，但 5 人识别率验收与胜利音效仍未完成",
+      "title": "Victory 已在动态录像出现，但 5 人识别率验收仍未完成（胜利音效已于 2026-09-17 交付）",
       "state": "not_started",
       "owner": "external",
       "area": "V2 P1-05 人工验收",
-      "detail": "整合包录像约 38 秒可见居中 Victory，自动 result_overlay_seen=true 与录像一致；但原验收要求 5 名测试者在固定视频中识别率 >=80%，单人自动检查不能替代，胜利音效资产也仍未交付。当前录像是竖屏录制、横屏内容缩在中央，下一轮应锁定横屏重录。",
+      "detail": "整合包录像约 38 秒可见居中 Victory，自动 result_overlay_seen=true 与录像一致；但原验收要求 5 名测试者在固定视频中识别率 >=80%，单人自动检查不能替代。**2026-09-17 更新：胜利/失败音效资产已交付并接线** —— assets/audio/sfx/battle/battle_victory.mp3 与 battle_defeat.mp3，播放在 scenes/battle/BattleResult.gd:57 的结算浮层显示处，由新增门禁 tools/audio_sfx_check（96 项）覆盖「每条 cue 都有生产调用点」。当前录像是竖屏录制、横屏内容缩在中央，下一轮应锁定横屏重录。",
       "evidence": "C:/Users/Leno/Documents/Glory prep screen/battle_presentation_android_20260830/glory_battle_integrated_round1_20260830_final.mp4",
       "blocks": [
         "V2 P1-05",
@@ -143,12 +143,12 @@
     },
     {
       "id": "touch-feedback-audio-haptic",
-      "title": "UI 音效素材缺失、触觉与权限未在真机确认",
+      "title": "触觉与权限未在真机确认（UI 音效素材已于 2026-09-17 交付并接线）",
       "state": "in_progress",
       "owner": "external",
       "area": "V3 P1-04",
-      "detail": "2026-09-07：仓内部分已完成（V3 P1-04 步骤 1-8）——开关与裁决走 PresentationSettings，音频总线 default_bus_layout.tres 已注册，GloryToast / Control 级 shake / 拒绝原因 / 禁用态解释全部落地，新增 ui_feedback 门禁 39 项，全量 88/88。剩下的三项仓内改不动：(1) 一个 UI 音效素材都没有，CONFIRM_SFX_PATH 是空串、通道今天完全静音，等素材与 third-party-license-ledger 闭环——填一个真实文件即可生效，零门禁改动；(2) VIBRATE 权限只证明了受 git 跟踪的模板请求了它，live 的 export_presets.cfg 不进 git，在一台从没同步过它的机器上导出就是没有，CI 也看不见，需要一次真实导出确认；(3) 12 ms 震动在真机上是否可感知、以及验收原文要求的 240 fps 录屏测反馈时延，都需要设备。",
-      "evidence": "tools/ui_feedback_check.gd",
+      "detail": "2026-09-07：仓内部分已完成（V3 P1-04 步骤 1-8）——开关与裁决走 PresentationSettings，音频总线 default_bus_layout.tres 已注册，GloryToast / Control 级 shake / 拒绝原因 / 禁用态解释全部落地，新增 ui_feedback 门禁 39 项，全量 88/88。剩下的三项仓内改不动：(1) ~~一个 UI 音效素材都没有，CONFIRM_SFX_PATH 是空串、通道今天完全静音~~ **2026-09-17 已闭环**：24 条 SFX + 6 首 BGM 落盘并接线，新增 ui/services/SfxService.gd 与门禁 tools/audio_sfx_check（96 项）；UiFeedback 里那套自建播放器（CONFIRM_SFX_PATH / PLAYER_NAME / _play）已删除，确认音与拒绝音改走 SfxService，该文件抬头写明「9.17 起这条通道不再静音」。**但音频的制作凭证仍是未闭环项**：素材是否由 AI 工具辅助生成、用了哪个工具、其服务条款是否允许商用，需要用户给出说明后才能记进第三方许可台账（见 docs/THIRD_PARTY_LICENSE_GAPS.md 与 docs/9.17音效接入记录.md 第九节）；(2) VIBRATE 权限只证明了受 git 跟踪的模板请求了它，live 的 export_presets.cfg 不进 git，在一台从没同步过它的机器上导出就是没有，CI 也看不见，需要一次真实导出确认；(3) 12 ms 震动在真机上是否可感知、以及验收原文要求的 240 fps 录屏测反馈时延，都需要设备。",
+      "evidence": "tools/ui_feedback_check.gd; tools/audio_sfx_check.gd; docs/9.17音效接入记录.md",
       "blocks": [
         "V3 P1-04 验收",
         "V3 完成定义"

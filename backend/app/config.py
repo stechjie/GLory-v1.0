@@ -53,6 +53,40 @@ class Settings(BaseSettings):
     # 它存在只为两件事：跑测试，以及本机想同时开两份服务时。
     disable_instance_lock: bool = False
 
+    # --- 同时在线上限与排队（app/admission.py）--------------------------------
+    #
+    # 数的是登录着、连着 WebSocket 的玩家；超过的人在启动画面排队。
+    # ⚠️ 1000 是 2026-09-14 的暂定值，还没按线上机器实测校准。
+    online_limit: int = 1000
+
+    # 可热改的上限文件，内容形如 {"online_limit": 400}。每 5 秒看一次修改时间，改了就生效，
+    # 不用重启（重启会清空队列）。空 = 不读文件。生产上由 glory-backend.service 设置。
+    admission_file: str = ""
+
+    # --- 出战名片（app/loadout.py，docs/商城系统设计.md 第五节）------------------
+    #
+    # 给名片盖章用的 RSA 私钥文件（PEM）。战斗服务器只持对应的**公钥**
+    # （它自己机器上的 battle_card_public.pem，见 scripts/multiplayer/BattleCard.gd），
+    # 被拿下也伪造不了名片。
+    #
+    # 放文件而不是放进 backend.env：PEM 是多行的，systemd 的 EnvironmentFile
+    # 处理多行值很别扭。生产上由 glory-backend.service 设成 /opt/glory/battle_card_key.pem，
+    # 生成工具是 deploy/make_battle_card_key.py。
+    #
+    # ⚠️ 这把**可以**重新生成（旧名片最多再活一个有效期）—— 和战斗服务器那把
+    # 绝不能重生成的 DTLS 私钥（deploy/BATTLE_SERVER_KEY.md）是两回事。
+    # 空 = 没配置，发名片的接口回 503。
+    battle_card_key_file: str = ""
+
+    # --- 公告（app/announcements.py，docs/公告系统设计.md）-----------------------
+    #
+    # 公告图片所在的 Supabase Storage 桶。**必须设成公开**：服务器按公开地址取图，不带任何密钥。
+    announcement_bucket: str = "announcements"
+
+    # 服务器取回、检查过的公告图片放在哪。空 = 不处理图片（公告照常显示，只是没图，
+    # 并在那一行的 problem 列里写明原因）。生产上由 glory-backend.service 的 StateDirectory 建好并设置。
+    media_dir: str = ""
+
     @property
     def is_dev(self) -> bool:
         return self.environment != "prod"

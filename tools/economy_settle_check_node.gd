@@ -10,73 +10,73 @@ func _ready() -> void:
 	var failures := 0
 
 	# --- PVE：击杀金输赢都给（每只固定 15），回合奖励（回合号×10）仅胜利 ---
-	# 胜：100 + 击杀60 + 回合2×10=20 → 180，利息 18 → 198
+	# 胜：100 + 击杀60 + 回合2×10=20 → 180，利息 9 → 189
 	failures += _check("PVE胜/第2回合杀4只", {
 		"gold_before": 100, "kill_gold": 60, "kind": "pve", "player_wins": true,
 		"round_index": 2,
-	}, 198)
-	# 败：击杀金照给，回合奖励没有。100 + 60 = 160，利息 16 → 176
+	}, 189)
+	# 败：击杀金照给，回合奖励没有。100 + 60 = 160，利息 8 → 168
 	failures += _check("PVE败/击杀金照给", {
 		"gold_before": 100, "kill_gold": 60, "kind": "pve", "player_wins": false,
 		"round_index": 2, "loss_streak_after": 0,
-	}, 176)
-	# 回合奖励只看回合号，与 PVE 场次无关：第19回合胜 → 0 + 击杀225 + 190 = 415，利息41 → 456
+	}, 168)
+	# 回合奖励只看回合号，与 PVE 场次无关：第19回合胜 → 0 + 击杀225 + 190 = 415，利息20 → 435
 	failures += _check("PVE胜/第19回合", {
 		"gold_before": 0, "kill_gold": 225, "kind": "pve", "player_wins": true,
 		"round_index": 19,
-	}, 456)
+	}, 435)
 	# 一只没杀又输了：只剩利息
 	failures += _check("PVE败/零击杀", {
 		"gold_before": 100, "kill_gold": 0, "kind": "pve", "player_wins": false,
 		"round_index": 7, "loss_streak_after": 0,
-	}, 110)
+	}, 105)
 
 	# --- PVP：总奖励 = 击杀金币 + 胜负固定奖励（胜+100/负+50），击杀金币胜败都给 ---
 	failures += _check("PVP胜", {
 		"gold_before": 200, "kill_gold": 50, "kind": "pvp", "player_wins": true,
-	}, 385)
-	# 200 + 50 + 50 = 300，连败3 安慰金 3*20=60 → 360，利息 36 → 396
+	}, 367)
+	# 200 + 50 + 50 = 300，连败3 安慰金 3*20=60 → 360，利息 18 → 378
 	failures += _check("PVP败/连败3", {
 		"gold_before": 200, "kill_gold": 50, "kind": "pvp", "player_wins": false,
 		"loss_streak_after": 3,
-	}, 396)
+	}, 378)
 
 	# --- Boss：只给固定奖励/补偿，不结算击杀金币 ---
 	failures += _check("Boss胜/回合10", {
 		"gold_before": 100, "kind": "boss", "player_wins": true, "round_index": 10,
-	}, 275)
+	}, 262)
 	failures += _check("Boss胜/忽略击杀金币", {
 		"gold_before": 0, "kill_gold": 1000, "kind": "boss", "player_wins": true,
 		"round_index": 5,
-	}, 110)
+	}, 105)
 	# 文档示例：回合10 胜利150，打掉60%（剩40%）→ 补偿 150-floor(150*0.4)=90
 	failures += _check("Boss败/回合10打掉60%", {
 		"gold_before": 100, "kind": "boss", "player_wins": false, "round_index": 10,
 		"boss_hp_current": 40, "boss_hp_max": 100, "loss_streak_after": 0,
-	}, 209)
+	}, 199)
 	# 文档示例：回合20 胜利400，打掉75%（剩25%）→ 补偿 400-floor(400*0.25)=300
 	failures += _check("Boss败/回合20打掉75%", {
 		"gold_before": 0, "kind": "boss", "player_wins": false, "round_index": 20,
 		"boss_hp_current": 25, "boss_hp_max": 100, "loss_streak_after": 0,
-	}, 330)
+	}, 315)
 
 	# --- 商人战后金币（★1→10 / ★2→20 / ★3→30）---
-	# PVE胜：0 + 击杀0 + 回合1×10 + 商人30 = 40，利息 4 → 44
+	# PVE胜：0 + 击杀0 + 回合1×10 + 商人30 = 40，利息 2 → 42
 	failures += _check("商人金币到账", {
 		"gold_before": 0, "kind": "pve", "player_wins": true, "round_index": 1,
 		"merchant_gold": 30,
-	}, 44)
+	}, 42)
 
 	# --- 复利之道：利息额外 +5% ---
 	failures += _check("复利之道", {
 		"gold_before": 1000, "kind": "pvp", "player_wins": true,
 		"treasures": ["money_compound"],
-	}, 1265)
+	}, 1210)
 
 	# --- 安慰金随连败递增（每场 20 金）---
 	for streak: int in [1, 2, 3, 4]:
 		var expected: int = streak * 20
-		expected += int(floor(float(expected) * 0.10))
+		expected += int(floor(float(expected) * 0.05))
 		failures += _check("安慰金/连败%d" % streak, {
 			"gold_before": 0, "kind": "pve", "player_wins": false,
 			"round_index": 1, "loss_streak_after": streak,

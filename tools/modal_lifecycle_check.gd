@@ -26,6 +26,7 @@ extends Node
 # so the two checks stay complementary rather than counting one contract twice.
 
 const CheckHarness := preload("res://tools/CheckHarness.gd")
+const SfxService := preload("res://ui/services/SfxService.gd")
 
 const CHECK_NAME := "modal_lifecycle"
 
@@ -66,6 +67,25 @@ var _h: CheckHarness
 func _ready() -> void:
 	_h = CheckHarness.new(CHECK_NAME)
 	GameState.reset_run()
+	await get_tree().process_frame
+
+	# 前置：先把全局音效服务的播放器池预热出来，再开始量任何基线。
+	#
+	# 9.17 起弹窗会发声（`ModalStack.push` → `SfxService`），而 SfxService 的
+	# 播放器池是**首次 play() 时在 `get_tree().root` 下建 8 个节点、之后常驻**的
+	# （挂 root 而不是挂页面，见该文件抬头的理由）。不预热的话，弹窗第一次发声
+	# 就在本检查的「开→关不留残留」窗口里**顺手把这份一次性初始化记成泄漏** ——
+	# 实测报的是 `nodes+7, root_children+8`，正好是池的节点数。
+	#
+	# 这里选择**预热前置**，而不是「把 GlorySfxVoice 从统计里滤掉」：
+	# 后者是把断言改松，一旦真的漏了播放器也照样绿。预热只是把前置条件摆好，
+	# 池之外的任何新增节点仍然一条不漏。同款做法见 audio_sfx_check /
+	# ui_feedback_check 里对「开关前置」的处理。
+	#
+	# 等两帧：`install()` 走的是 `add_child.call_deferred`（`Main._ready()` 那个
+	# 时机 root 正在装配子节点，同步挂会静默失败），一帧之后节点才真的在树里。
+	SfxService.install()
+	await get_tree().process_frame
 	await get_tree().process_frame
 
 	await _check_detector_actually_detects()

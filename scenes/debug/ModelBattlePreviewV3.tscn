@@ -1,0 +1,114 @@
+[gd_scene load_steps=9 format=3]
+
+[ext_resource type="Script" path="res://scenes/debug/ModelBattlePreviewV3.gd" id="1_preview"]
+[ext_resource type="Texture2D" path="res://assets/board/2_5d/battlefield_jungle_pve.png" id="2_board"]
+[ext_resource type="PackedScene" path="res://assets/models/units/undead_small_animated/undead_small_animated.tscn" id="3_unit"]
+[ext_resource type="Script" path="res://effects/vfx3d/experimental/undead_from_scratch_v3/undead_small_spirit_strike_v3.gd" id="4_strike"]
+[ext_resource type="PackedScene" path="res://effects/vfx3d/experimental/undead_from_scratch_v3/assets/undead_small_spirit_claws_v3.glb" id="5_art"]
+[ext_resource type="Resource" path="res://effects/vfx3d/experimental/undead_from_scratch_v3/assets/effekseer/undead_small_spirit_impact_v3.efkefc" id="6_effekseer"]
+
+[sub_resource type="Environment" id="Environment_v3"]
+background_mode = 1
+background_color = Color(0.018, 0.026, 0.022, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.42, 0.50, 0.43, 1)
+ambient_light_energy = 0.44
+glow_enabled = true
+glow_intensity = 0.42
+glow_strength = 0.68
+glow_bloom = 0.01
+glow_hdr_threshold = 1.15
+
+[sub_resource type="StandardMaterial3D" id="BoardMaterial"]
+diffuse_mode = 3
+specular_mode = 1
+albedo_texture = ExtResource("2_board")
+roughness = 0.96
+cull_mode = 2
+
+[sub_resource type="QuadMesh" id="BoardQuad"]
+size = Vector2(16, 7.2)
+
+[sub_resource type="StyleBoxFlat" id="PanelStyle"]
+bg_color = Color(0.012, 0.019, 0.015, 0.88)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.36, 0.53, 0.34, 0.7)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+content_margin_left = 12.0
+content_margin_top = 10.0
+content_margin_right = 12.0
+content_margin_bottom = 10.0
+
+[node name="ModelBattlePreviewV3" type="Node3D"]
+script = ExtResource("1_preview")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_v3")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+position = Vector3(0, 7.4, 7)
+current = true
+size = 7.2
+
+[node name="KeyLight" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-36, -24, 0)
+light_color = Color(1, 0.84, 0.62, 1)
+light_energy = 0.82
+shadow_enabled = true
+
+[node name="Stage" type="Node3D" parent="."]
+
+[node name="BackgroundBillboard" type="MeshInstance3D" parent="Stage"]
+material_override = SubResource("BoardMaterial")
+mesh = SubResource("BoardQuad")
+
+[node name="CasterSlot" type="Node3D" parent="Stage"]
+
+[node name="Caster" parent="Stage/CasterSlot" instance=ExtResource("3_unit")]
+scale = Vector3(0.42, 0.42, 0.42)
+
+[node name="TargetSlot" type="Node3D" parent="Stage"]
+
+[node name="Target" parent="Stage/TargetSlot" instance=ExtResource("3_unit")]
+scale = Vector3(0.42, 0.42, 0.42)
+
+[node name="UndeadSmallSpiritStrikeV3" type="Node3D" parent="Stage"]
+script = ExtResource("4_strike")
+effekseer_effect = ExtResource("6_effekseer")
+
+[node name="Art" parent="Stage/UndeadSmallSpiritStrikeV3" instance=ExtResource("5_art")]
+
+[node name="EffekseerEmitter3D" type="EffekseerEmitter3D" parent="Stage/UndeadSmallSpiritStrikeV3"]
+effect = ExtResource("6_effekseer")
+color = Color(1, 1, 1, 1)
+
+[node name="CanvasLayer" type="CanvasLayer" parent="."]
+
+[node name="Panel" type="Panel" parent="CanvasLayer"]
+offset_left = 18.0
+offset_top = 18.0
+offset_right = 690.0
+offset_bottom = 80.0
+theme_override_styles/panel = SubResource("PanelStyle")
+
+[node name="Margin" type="MarginContainer" parent="CanvasLayer/Panel"]
+layout_mode = 2
+
+[node name="Rows" type="VBoxContainer" parent="CanvasLayer/Panel/Margin"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="CanvasLayer/Panel/Margin/Rows"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Model Battle Preview V3 · Glory VFX Brain · Blender Gate C"
+
+[node name="Status" type="Label" parent="CanvasLayer/Panel/Margin/Rows"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+text = "Loading V3..."

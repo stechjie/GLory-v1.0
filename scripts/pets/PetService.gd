@@ -69,7 +69,7 @@ static func effect_text(pet_id: String) -> String:
 
 # ---- 挂钩点助手：给定「出战宠物 id」，返回对应加成 ----
 
-# 猫：利息率加成（叠加到基础 0.10 上）。
+# 猫：利息率加成（叠加到基础 0.05 上）。
 static func interest_rate_bonus(pet_id: String) -> float:
 	var e := effect_of(pet_id)
 	return float(e.get("value", 0.0)) if str(e.get("effect", "")) == "interest_pct" else 0.0

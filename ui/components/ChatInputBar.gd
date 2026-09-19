@@ -17,6 +17,12 @@ extends PanelContainer
 #       return NetworkService.team_send_text(text))
 # 回调返回空串 = 已发出（输入条收起）；否则是给玩家看的原因（输入条留着、文字不清空，
 # 改一改还能再发）。
+#
+# 可选的第三个参数（备战期用，2026-09-14 聊天范围）：
+#   {"scope_text": Callable -> String, "on_scope_pressed": Callable}
+# 给了就在输入框左边多一个范围按钮（「发给：队友 / 全部」）：点它调 on_scope_pressed，
+# 再用 scope_text 刷新按钮上的字。打到一半发现范围不对，点一下就改，不用关掉重打。
+# 大厅不给（大厅只发全部），版面与以前一样。
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
@@ -29,14 +35,21 @@ const MODAL_ID := "chat_text_input"
 const MODAL_PRIORITY := 50
 const BAR_WIDTH := 880.0
 const TOP_MARGIN := 24.0
+# 范围按钮比「发送」「取消」宽：上面是「发给：队友」五个字。
+const SCOPE_BUTTON_WIDTH := 160.0
 
 var _on_submit: Callable = Callable()
+var _scope_text: Callable = Callable()
+var _on_scope_pressed: Callable = Callable()
 var _input: LineEdit
 var _error: Label
+var _scope_button: Button = null
 
 
-func present(owner: Object, on_submit: Callable) -> void:
+func present(owner: Object, on_submit: Callable, options: Dictionary = {}) -> void:
 	_on_submit = on_submit
+	_scope_text = options.get("scope_text", Callable())
+	_on_scope_pressed = options.get("on_scope_pressed", Callable())
 	ModalStack.push(self, {
 		"id": MODAL_ID,
 		"owner": owner,
@@ -67,6 +80,12 @@ func _ready() -> void:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", Tokens.GAP_S)
 	col.add_child(row)
+
+	if _scope_text.is_valid():
+		_scope_button = _button(str(_scope_text.call()), _on_scope_button_pressed)
+		_scope_button.theme_type_variation = Theming.VARIATION_GHOST
+		_scope_button.custom_minimum_size.x = SCOPE_BUTTON_WIDTH
+		row.add_child(_scope_button)
 
 	_input = LineEdit.new()
 	_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -108,6 +127,15 @@ func _submit() -> void:
 		return
 	_error.text = reason
 	_error.visible = true
+
+
+func _on_scope_button_pressed() -> void:
+	if _on_scope_pressed.is_valid():
+		_on_scope_pressed.call()
+	if _scope_button != null and _scope_text.is_valid():
+		_scope_button.text = str(_scope_text.call())
+	# 点按钮可能把焦点从输入框拿走（手机上键盘会跟着收起），还给输入框，接着打。
+	_input.grab_focus()
 
 
 func _close() -> void:

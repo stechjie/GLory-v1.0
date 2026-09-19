@@ -22,6 +22,7 @@ extends Node
 
 const CheckHarness := preload("res://tools/CheckHarness.gd")
 const ShopRoll := preload("res://scripts/economy/ShopRoll.gd")
+const RacePick := preload("res://scripts/units/RacePick.gd")
 
 const CHECK_NAME := "shop_roll_parity"
 const SAMPLES := 8000
@@ -84,8 +85,9 @@ func _server_tier_histogram(round_index: int, count: int) -> Dictionary:
 	var hist := {1: 0, 2: 0, 3: 0}
 	var drawn := 0
 	while drawn < count:
-		var batch: Array = NetworkService.call("_server_roll_shop_offers",
-			GameState.SHOP_UNIT_SLOTS, round_index)
+		# 默认四族 = 今天的全表，曲线断言不受出战种族影响（出战种族本身见 race_pick_check）。
+		var batch: Array = NetworkService._server_roll_shop_offers(
+			GameState.SHOP_UNIT_SLOTS, round_index, RacePick.default_races())
 		if batch.is_empty():
 			break
 		for entry in batch:

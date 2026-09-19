@@ -1,0 +1,67 @@
+nins17121@gmail.com
+151213Aaa!
+
+
+sudo bash /opt/glory/src/deploy/update.sh
+
+sha256sum ~/glory_server_p21.zip
+
+sudo systemctl stop glory-server
+cd ~/Glory
+rm -rf "Beta 0.04"
+mkdir -p "Beta 0.04"
+unzip -q ~/glory_server_p24 -d "Beta 0.04"
+sudo systemctl start glory-server
+grep -o "NETWORK_PROTOCOL_VERSION := [0-9]*" ~/Glory/"Beta 0.04"/scripts/multiplayer/NetworkConfig.gd
+
+
+unzip -q ~/glory_server_p28.zip -d ~/Glory/"Beta 0.04"
+sudo systemctl restart glory-server
+journalctl -u glory-server -n 5 --no-pager
+
+
+
+二、协议号
+怎么看现在是多少
+grep -n "NETWORK_PROTOCOL_VERSION :=" scripts/multiplayer/NetworkConfig.gd
+
+现在输出是：
+
+84:const NETWORK_PROTOCOL_VERSION := 21
+
+84: 是行号，21 是当前协议号。
+
+怎么改
+
+第 1 步：打开文件。 两个办法，选一个：
+
+推荐：在 Godot 编辑器里打开项目 → 左边文件树点开 scripts → multiplayer → 双击 NetworkConfig.gd
+或者跑这条，用记事本打开：
+notepad scripts/multiplayer/NetworkConfig.gd
+
+第 2 步：翻到第 84 行，你会看到这一行（前面两行是注释，长这样）：
+
+#      规则重申：改服务端契约（RPC、ECONOMY_ACTIONS、room_state 字段集）必须顶号，
+#      并同步 tools/carrot_online_check.gd 的 PINNED_PROTOCOL / PINNED_CONTRACT。
+const NETWORK_PROTOCOL_VERSION := 21
+
+第 3 步：把 21 改成 22（每次只加 1）：
+
+const NETWORK_PROTOCOL_VERSION := 22
+
+第 4 步：在它上面加一行注释，说明这次为什么顶号。照着上面 v18 那条的格式写，比如：
+
+# v22: 改了什么（一句话），不顶号会怎样（一句话）。
+const NETWORK_PROTOCOL_VERSION := 22
+
+第 5 步：存盘（Ctrl+S）。
+
+改完还要做两件事
+
+① 同步另一个文件。 打开 tools/carrot_online_check.gd，第 30 行：
+
+const PINNED_PROTOCOL := 21
+
+也改成 22。不改的话那条「改契约必须顶号」的守卫会失效——它就是这么在 19 那次坏掉的，我今天刚修好。
+
+② 重新出两个包。 服务器包（双击 .bat）和客户端包必须一起换。只换一边的症状就是「点自定义就断线」。

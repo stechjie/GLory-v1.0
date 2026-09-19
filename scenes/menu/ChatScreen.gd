@@ -24,12 +24,13 @@ const Catalog := preload("res://scripts/account/AvatarCatalog.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
 const MENU_BG_TEX := preload("res://assets/ui/main_menu_live/background.png")
 
-const LIST_WIDTH := 440.0
-const ROW_HEIGHT := 76.0
+const LIST_WIDTH := 332.0
+const ROW_HEIGHT := 72.0
+const AVATAR_SIZE := 46.0
 # 标题栏左右两侧等宽：左边是返回按钮，右边垫同样宽的空白，标题才在正中。
 const HEADER_SIDE_WIDTH := 120.0
 # 气泡最宽占消息区的多少。再宽就看不出「谁说的」—— 左右对齐靠留白才读得出来。
-const BUBBLE_MAX_RATIO := 0.72
+const BUBBLE_MAX_RATIO := 0.62
 # 离底部多近算「正看着最新消息」。在这个范围内来了新消息就跟着滚到底；
 # 往上翻历史的时候不跟 —— 否则每来一条都会把人拽回底部。
 const STICK_TO_BOTTOM_PX := 64.0
@@ -43,9 +44,12 @@ var _local_seq := 0
 var _list_loading := false
 
 var _list_box: VBoxContainer
+var _friend_count_label: Label
 var _status_label: Label
 var _notice_label: Label
 var _peer_label: Label
+var _peer_code_label: Label
+var _peer_avatar: TextureRect
 var _kicked_bar: Control
 var _msg_scroll: ScrollContainer
 var _msg_box: VBoxContainer
@@ -121,11 +125,24 @@ func _build() -> void:
 	_notice_label.visible = false
 	root.add_child(_notice_label)
 
+	# 好友与对话属于同一个通讯面板。统一外框比两个并排的金边黑框更像游戏内设施，
+	# 中间只留一条低对比度分隔线，让注意力落在玩家与消息上。
+	var shell := PanelContainer.new()
+	shell.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	shell.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.INK_PANEL, Tokens.INK_EDGE, Tokens.GAP_S))
+	root.add_child(shell)
+
 	var body := HBoxContainer.new()
-	body.add_theme_constant_override("separation", Tokens.GAP_M)
-	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	root.add_child(body)
+	body.add_theme_constant_override("separation", Tokens.GAP_S)
+	shell.add_child(body)
 	body.add_child(_list_panel())
+
+	var divider := ColorRect.new()
+	divider.custom_minimum_size = Vector2(1, 0)
+	divider.color = Tokens.INK_EDGE.darkened(0.42)
+	divider.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.add_child(divider)
 	body.add_child(_conversation_panel())
 
 
@@ -137,7 +154,7 @@ func _header() -> Control:
 	row.add_child(back)
 
 	var title := Label.new()
-	title.text = _text("聊天", "Chat")
+	title.text = _text("好友私聊", "Friend Chat")
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
@@ -157,10 +174,28 @@ func _list_panel() -> Control:
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(LIST_WIDTH, 0)
 	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.SURFACE, Tokens.BORDER.darkened(0.42), Tokens.GAP_S))
 
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", Tokens.GAP_S)
 	panel.add_child(col)
+
+	var list_head := HBoxContainer.new()
+	list_head.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+	col.add_child(list_head)
+
+	var list_title := Label.new()
+	list_title.text = _text("好友", "Friends")
+	list_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	list_title.add_theme_font_size_override("font_size", Tokens.FONT_BUTTON)
+	list_title.add_theme_color_override("font_color", Tokens.GOLD)
+	list_head.add_child(list_title)
+
+	_friend_count_label = Label.new()
+	_friend_count_label.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+	_friend_count_label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	list_head.add_child(_friend_count_label)
 
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -175,9 +210,12 @@ func _list_panel() -> Control:
 	# 隐私义务：保留规则必须出现在玩家看得到的地方（设计文档第三节）。
 	var retention := Label.new()
 	retention.text = _text(
+		"ⓘ 最近 %d 条 · 解除好友后最多保留 30 天" % ChatService.HISTORY_LIMIT,
+		"ⓘ Latest %d · kept for 30 days" % ChatService.HISTORY_LIMIT)
+	retention.tooltip_text = _text(
 		"与每位好友只保留最近 %d 条消息；解除好友后，记录最多再保留 30 天。" % ChatService.HISTORY_LIMIT,
 		"Only your latest %d messages with each friend are kept; after unfriending, they are kept for at most 30 more days." % ChatService.HISTORY_LIMIT)
-	retention.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	retention.clip_text = true
 	retention.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
 	retention.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
 	col.add_child(retention)
@@ -188,6 +226,8 @@ func _conversation_panel() -> Control:
 	var panel := PanelContainer.new()
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.SURFACE, Tokens.BORDER.darkened(0.42), Tokens.GAP_S))
 
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", Tokens.GAP_S)
@@ -195,15 +235,39 @@ func _conversation_panel() -> Control:
 
 	# 顶上一行：在跟谁聊 + 连接状态。状态放这里而不是标题栏 ——
 	# 它说的是「这段对话的新消息会不会实时出现」，挨着对话才读得懂。
+	var head_panel := PanelContainer.new()
+	head_panel.custom_minimum_size = Vector2(0, 64)
+	head_panel.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.SURFACE_RAISED, Tokens.BORDER.darkened(0.25), Tokens.GAP_S))
+	col.add_child(head_panel)
+
 	var head := HBoxContainer.new()
 	head.add_theme_constant_override("separation", Tokens.GAP_S)
-	col.add_child(head)
+	head_panel.add_child(head)
+
+	_peer_avatar = TextureRect.new()
+	_peer_avatar.custom_minimum_size = Vector2(AVATAR_SIZE, AVATAR_SIZE)
+	_peer_avatar.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_peer_avatar.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_peer_avatar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	head.add_child(_peer_avatar)
+
+	var identity := VBoxContainer.new()
+	identity.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	identity.add_theme_constant_override("separation", 0)
+	head.add_child(identity)
 
 	_peer_label = Label.new()
 	_peer_label.clip_text = true
-	_peer_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_peer_label.add_theme_color_override("font_color", Tokens.GOLD)
-	head.add_child(_peer_label)
+	_peer_label.add_theme_font_size_override("font_size", Tokens.FONT_BUTTON)
+	_peer_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	identity.add_child(_peer_label)
+
+	_peer_code_label = Label.new()
+	_peer_code_label.clip_text = true
+	_peer_code_label.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+	_peer_code_label.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
+	identity.add_child(_peer_code_label)
 
 	_status_label = Label.new()
 	_status_label.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
@@ -213,19 +277,30 @@ func _conversation_panel() -> Control:
 	_kicked_bar = _build_kicked_bar()
 	col.add_child(_kicked_bar)
 
+	var message_well := PanelContainer.new()
+	message_well.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	message_well.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.BG_DEEP, Tokens.BORDER.darkened(0.55), Tokens.GAP_S))
+	col.add_child(message_well)
+
 	_msg_scroll = ScrollContainer.new()
 	_msg_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_msg_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	col.add_child(_msg_scroll)
+	message_well.add_child(_msg_scroll)
 
 	_msg_box = VBoxContainer.new()
 	_msg_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_msg_box.add_theme_constant_override("separation", Tokens.GAP_S)
 	_msg_scroll.add_child(_msg_box)
 
+	var composer := PanelContainer.new()
+	composer.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.SURFACE_RAISED, Tokens.BORDER.darkened(0.25), Tokens.GAP_S))
+	col.add_child(composer)
+
 	var input_row := HBoxContainer.new()
 	input_row.add_theme_constant_override("separation", Tokens.GAP_S)
-	col.add_child(input_row)
+	composer.add_child(input_row)
 
 	_input = LineEdit.new()
 	_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -238,15 +313,29 @@ func _conversation_panel() -> Control:
 
 	_send_button = _button(_text("发送", "Send"), _on_send_pressed)
 	_send_button.theme_type_variation = Theming.VARIATION_PRIMARY
-	_send_button.custom_minimum_size = Vector2(120, Tokens.TOUCH_MIN)
+	_send_button.custom_minimum_size = Vector2(104, Tokens.TOUCH_MIN)
 	input_row.add_child(_send_button)
 	return panel
 
 
 func _build_kicked_bar() -> Control:
+	var panel := PanelContainer.new()
+	panel.visible = false
+	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.GOLD_PRESSED.darkened(0.72), Tokens.GOLD_PRESSED, Tokens.GAP_S))
+
 	var bar := HBoxContainer.new()
 	bar.add_theme_constant_override("separation", Tokens.GAP_S)
-	bar.visible = false
+	panel.add_child(bar)
+
+	var icon := Label.new()
+	icon.text = "!"
+	icon.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	icon.custom_minimum_size = Vector2(Tokens.TOUCH_MIN, Tokens.TOUCH_MIN)
+	icon.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
+	icon.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
+	bar.add_child(icon)
 
 	var reason := Label.new()
 	# 说清楚是**什么事**，不是「连接已断开」这种什么都没说的话（设计文档第五节）。
@@ -259,9 +348,11 @@ func _build_kicked_bar() -> Control:
 	bar.add_child(reason)
 
 	# 这一下会把另一台设备顶下线 —— 所以只能是玩家亲手点。
-	bar.add_child(_button(_text("在本设备重新连接", "Reconnect here"),
-		func() -> void: ChatService.reconnect_here()))
-	return bar
+	var reconnect := _button(_text("在本设备重新连接", "Reconnect here"),
+		func() -> void: ChatService.reconnect_here())
+	reconnect.theme_type_variation = Theming.VARIATION_PRIMARY
+	bar.add_child(reconnect)
+	return panel
 
 
 # --- 数据 ---------------------------------------------------------------------
@@ -481,12 +572,27 @@ func _on_kicked_changed(kicked: bool) -> void:
 func _refresh_status() -> void:
 	if _status_label == null:
 		return
-	if RealtimeService.is_online() or ChatService.kicked:
+	if ChatService.kicked:
 		# 被顶号的原因由消息区上方那一条说，这里不重复。
 		_status_label.text = ""
+	elif RealtimeService.is_online():
+		if _open_code.is_empty():
+			_status_label.text = ""
+			return
+		var peer_online := false
+		for entry in _chats:
+			if entry is Dictionary and str((entry as Dictionary).get("friend_code", "")) == _open_code:
+				peer_online = bool((entry as Dictionary).get("online", false))
+				break
+		_status_label.text = _text("● 在线", "● Online") if peer_online else _text("● 离线", "● Offline")
+		_status_label.add_theme_color_override("font_color",
+			Tokens.CYAN if peer_online else Tokens.TEXT_DISABLED)
 	else:
 		# 发送不受影响（走 HTTPS），受影响的只是「新消息实时出现」。
-		_status_label.text = _text("正在连接…新消息可能晚一点到", "Connecting… new messages may be delayed")
+		_status_label.text = _text("连接中…", "Connecting…")
+		_status_label.tooltip_text = _text(
+			"正在连接，新消息可能晚一点到", "Connecting; new messages may be delayed")
+		_status_label.add_theme_color_override("font_color", Tokens.GOLD)
 
 
 func _refresh_input() -> void:
@@ -503,6 +609,8 @@ func _refresh_input() -> void:
 func _render_list() -> void:
 	if _list_box == null:
 		return
+	if _friend_count_label != null:
+		_friend_count_label.text = _text("%d 位" % _chats.size(), "%d total" % _chats.size())
 	for child in _list_box.get_children():
 		child.queue_free()
 	if _chats.is_empty():
@@ -522,6 +630,15 @@ func _chat_row(entry: Dictionary) -> Control:
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.toggle_mode = true
 	row.button_pressed = code == _open_code
+	var selected := code == _open_code
+	var base := Tokens.GOLD_PRESSED.darkened(0.72) if selected else Tokens.SURFACE
+	var edge := Tokens.GOLD_PRESSED if selected else Tokens.BORDER.darkened(0.42)
+	row.add_theme_stylebox_override("normal", Tokens.button_box(base, edge))
+	row.add_theme_stylebox_override("hover", Tokens.button_box(
+		Tokens.SURFACE_RAISED, Tokens.GOLD_PRESSED))
+	row.add_theme_stylebox_override("pressed", Tokens.button_box(
+		Tokens.GOLD_PRESSED.darkened(0.78), Tokens.GOLD))
+	row.add_theme_stylebox_override("focus", Tokens.focus_box())
 
 	# 按钮不会给子节点排版：内容挂在一个铺满的容器里，且一律不吃点击 ——
 	# 否则点在名字上会被 Label 吞掉，按钮收不到。
@@ -537,13 +654,19 @@ func _chat_row(entry: Dictionary) -> Control:
 	line.add_theme_constant_override("separation", Tokens.GAP_S)
 	margin.add_child(line)
 
+	var avatar_panel := PanelContainer.new()
+	avatar_panel.custom_minimum_size = Vector2(AVATAR_SIZE, AVATAR_SIZE)
+	avatar_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	avatar_panel.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.BG_DEEP, Tokens.GOLD_PRESSED if selected else Tokens.BORDER, 2))
+	line.add_child(avatar_panel)
+
 	var avatar := TextureRect.new()
 	avatar.texture = Catalog.texture_for(str(entry.get("avatar", "")), true)
-	avatar.custom_minimum_size = Vector2(Tokens.TOUCH_MIN, Tokens.TOUCH_MIN)
 	avatar.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	avatar.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	avatar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	line.add_child(avatar)
+	avatar_panel.add_child(avatar)
 
 	var texts := VBoxContainer.new()
 	texts.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -551,26 +674,63 @@ func _chat_row(entry: Dictionary) -> Control:
 	texts.add_theme_constant_override("separation", 0)
 	line.add_child(texts)
 
+	var name_line := HBoxContainer.new()
+	name_line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	name_line.add_theme_constant_override("separation", Tokens.GAP_S)
+	texts.add_child(name_line)
+
+	var online_dot := Label.new()
+	online_dot.text = "●"
+	online_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	online_dot.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+	online_dot.add_theme_color_override("font_color",
+		Tokens.CYAN if bool(entry.get("online", false)) else Tokens.TEXT_DISABLED)
+	name_line.add_child(online_dot)
+
 	var name_label := Label.new()
-	# 昵称永远带好友码 —— 唯一实现在 AccountManager.display_name()。
-	name_label.text = AccountManager.display_name(str(entry.get("player_name", "")), code)
+	var identity_text := AccountManager.display_name(str(entry.get("player_name", "")), code)
+	var code_suffix := " #" + code
+	name_label.text = identity_text.trim_suffix(code_suffix)
 	name_label.clip_text = true
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	texts.add_child(name_label)
+	name_label.add_theme_color_override("font_color", Tokens.GOLD if selected else Tokens.TEXT_PRIMARY)
+	name_line.add_child(name_label)
+
+	var code_label := Label.new()
+	code_label.text = identity_text.trim_prefix(name_label.text).strip_edges()
+	code_label.clip_text = true
+	code_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	code_label.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+	code_label.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
+	name_line.add_child(code_label)
+
+	var preview_line := HBoxContainer.new()
+	preview_line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	preview_line.add_theme_constant_override("separation", Tokens.GAP_S)
+	texts.add_child(preview_line)
 
 	var preview := Label.new()
 	preview.text = _preview_text(entry)
 	preview.clip_text = true
+	preview.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	preview.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	preview.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
 	preview.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
-	texts.add_child(preview)
+	preview_line.add_child(preview)
+
+	var stamp := Label.new()
+	stamp.text = _friend_time(entry)
+	stamp.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stamp.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+	stamp.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
+	preview_line.add_child(stamp)
 
 	var dot := Label.new()
 	dot.text = "●"
 	dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	dot.add_theme_color_override("font_color", Tokens.UNREAD_DOT)
-	dot.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
+	dot.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
 	# 红点只看 ChatService —— 状态只有一份，主菜单和好友列表看的也是它。
 	dot.visible = ChatService.has_unread(code)
 	line.add_child(dot)
@@ -578,30 +738,50 @@ func _chat_row(entry: Dictionary) -> Control:
 
 
 func _preview_text(entry: Dictionary) -> String:
-	var status := _text("在线", "Online") if bool(entry.get("online", false)) else _text("离线", "Offline")
 	var last: Variant = entry.get("last_message")
 	if not (last is Dictionary):
-		return "%s · %s" % [status, _text("还没有消息", "No messages yet")]
+		return _text("还没有消息", "No messages yet")
 	var msg := last as Dictionary
 	var body := str(msg.get("body", ""))
 	if bool(msg.get("from_me", false)):
 		body = _text("我：", "Me: ") + body
-	return "%s · %s" % [status, body]
+	return body
+
+
+func _friend_time(entry: Dictionary) -> String:
+	var last: Variant = entry.get("last_message")
+	if not (last is Dictionary):
+		return ""
+	return _format_time(str((last as Dictionary).get("created_at", "")))
 
 
 func _update_peer_label() -> void:
 	if _peer_label == null:
 		return
 	if _open_code.is_empty():
-		_peer_label.text = ""
+		_peer_label.text = _text("选择一位好友", "Choose a friend")
+		_peer_code_label.text = _text("从左侧列表开始私聊", "Select someone from the list")
+		_peer_avatar.texture = null
 		return
 	var peer_name := ""
+	var peer_avatar := ""
+	var peer_online := false
 	for entry in _chats:
 		if entry is Dictionary and str((entry as Dictionary).get("friend_code", "")) == _open_code:
 			peer_name = str((entry as Dictionary).get("player_name", ""))
+			peer_avatar = str((entry as Dictionary).get("avatar", ""))
+			peer_online = bool((entry as Dictionary).get("online", false))
 			break
-	_peer_label.text = AccountManager.display_name(peer_name, _open_code) \
-		if not peer_name.is_empty() else "#" + _open_code
+	var identity_text := AccountManager.display_name(peer_name, _open_code)
+	var code_suffix := " #" + _open_code
+	_peer_label.text = identity_text.trim_suffix(code_suffix)
+	_peer_code_label.text = identity_text.trim_prefix(_peer_label.text).strip_edges()
+	_peer_avatar.texture = Catalog.texture_for(peer_avatar, true)
+	_peer_label.tooltip_text = identity_text
+	if RealtimeService.is_online() and not ChatService.kicked:
+		_status_label.text = _text("● 在线", "● Online") if peer_online else _text("● 离线", "● Offline")
+		_status_label.add_theme_color_override("font_color",
+			Tokens.CYAN if peer_online else Tokens.TEXT_DISABLED)
 
 
 func _render_messages(force_bottom: bool = false) -> void:
@@ -627,6 +807,7 @@ func _render_messages(force_bottom: bool = false) -> void:
 func _bubble(msg: Dictionary, max_width: float) -> Control:
 	var mine := bool(msg.get("from_me", false))
 	var row := HBoxContainer.new()
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.alignment = BoxContainer.ALIGNMENT_END if mine else BoxContainer.ALIGNMENT_BEGIN
 
 	var col := VBoxContainer.new()
@@ -635,9 +816,9 @@ func _bubble(msg: Dictionary, max_width: float) -> Control:
 
 	var panel := PanelContainer.new()
 	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.SURFACE_RAISED if mine else Tokens.SURFACE,
-		Tokens.GOLD_PRESSED if mine else Tokens.BORDER,
-		Tokens.GAP_S))
+		Tokens.GOLD_PRESSED.darkened(0.64) if mine else Tokens.SURFACE_RAISED,
+		Tokens.GOLD_PRESSED.darkened(0.18) if mine else Tokens.BORDER.darkened(0.28),
+		12))
 	col.add_child(panel)
 
 	var label := Label.new()
@@ -652,26 +833,34 @@ func _bubble(msg: Dictionary, max_width: float) -> Control:
 		label.custom_minimum_size = Vector2(max_width, 0)
 	panel.add_child(label)
 
+	var meta := HBoxContainer.new()
+	meta.alignment = BoxContainer.ALIGNMENT_END if mine else BoxContainer.ALIGNMENT_BEGIN
+	meta.add_theme_constant_override("separation", Tokens.GAP_S)
+	col.add_child(meta)
+
 	var caption := Label.new()
 	caption.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
 	caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT if mine else HORIZONTAL_ALIGNMENT_LEFT
 	var state := str(msg.get("state", "sent"))
 	match state:
 		"pending":
-			caption.text = _text("发送中…", "Sending…")
+			caption.text = _text("••• 发送中", "••• Sending")
 			caption.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
 		"failed":
-			caption.text = _text("发送失败：%s", "Not sent: %s") % str(msg.get("error", ""))
+			caption.text = _text("未发送", "Not sent")
+			caption.tooltip_text = str(msg.get("error", ""))
 			caption.add_theme_color_override("font_color", Tokens.DANGER_HOVER)
 		_:
 			caption.text = _format_time(str(msg.get("created_at", "")))
 			caption.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
-	col.add_child(caption)
+	meta.add_child(caption)
 
 	if state == "failed" and not ChatService.kicked:
 		var retry := _button(_text("重发", "Retry"), func() -> void: _deliver(msg))
-		retry.size_flags_horizontal = Control.SIZE_SHRINK_END if mine else Control.SIZE_SHRINK_BEGIN
-		col.add_child(retry)
+		retry.theme_type_variation = Theming.VARIATION_GHOST
+		retry.custom_minimum_size = Vector2(76, Tokens.TOUCH_MIN)
+		retry.size_flags_horizontal = Control.SIZE_SHRINK_END
+		meta.add_child(retry)
 	return row
 
 
@@ -727,11 +916,18 @@ func _set_notice(message: String, bad: bool) -> void:
 
 
 func _hint(message: String) -> Control:
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.SURFACE, Tokens.BORDER.darkened(0.55), Tokens.GAP_M))
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
 	var label := Label.new()
 	label.text = message
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
-	return label
+	panel.add_child(label)
+	return panel
 
 
 # 所有按钮都从这里出：实例化组件，不写 Button.new()（见文件头第 3 条）。

@@ -2,7 +2,7 @@ extends Node
 const Harness = preload("res://tools/CheckHarness.gd")
 const Rules = preload("res://scripts/economy/CarrotEconomy.gd")
 const Ledger = preload("res://scripts/multiplayer/EconomyLedger.gd")
-const Aura = preload("res://effects/vfx3d/modules/FourStarAura3D.gd")
+const Aura = preload("res://effects/vfx3d/modules/FourStarAuraV2_3D.gd")
 var h: RefCounted
 
 func _ready() -> void:
@@ -130,15 +130,15 @@ func _ui_and_visuals(d: Dictionary) -> void:
 	for element in ["sky","land","ren"]:
 		var actor := Node3D.new()
 		add_child(actor)
-		var aura = Aura.sync(actor,1,element)
-		h.expect(aura != null and aura.visible and aura.mode == 1,"ready_aura",element)
+		var aura = Aura.sync(actor,2,element)
+		h.expect(aura != null and aura.visible and aura.configured,"four_star_aura",element)
 		Aura.sync(actor,0,element)
 		h.expect(not aura.visible and not aura.is_processing(),"unready_hidden",element)
 		Aura.sync(actor,2,element,1.0,true)
-		h.expect(aura.burst_age < 0 and not aura.release.visible,"load_without_burst",element)
+		h.expect(aura.burst_age < 0 and not aura.burst_body.visible,"load_without_burst",element)
 		aura.play_upgrade()
-		h.expect(aura.release.visible,"upgrade_burst",element)
+		h.expect(aura.burst_body.visible and aura.burst_mantle.visible,"upgrade_burst",element)
 		aura._process(1.5)
-		h.expect(not aura.release.visible and aura.visible,"burst_settles",element)
+		h.expect(not aura.burst_body.visible and aura.visible,"burst_settles",element)
 		actor.queue_free()
 	await get_tree().process_frame

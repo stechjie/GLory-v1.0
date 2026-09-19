@@ -123,7 +123,7 @@ Boss 战斗实际值 = 基础值 x Boss 整体倍率 x Boss 成长。
 | dark_dragon | pull_sec 1.0，damage_atk_pct 2.2，unique_on_board true |
 | undead_small | 无技能，model `res://assets/models/units/undead_small_animated/undead_small_animated.tscn`，idle/attack/run 动作已接入 |
 | undead_poison | 攻击附带中毒 |
-| undead_parasite | 普攻永久标记目标；标记目标死亡时召唤分身，clone_hp_pct 0.10，clone_atk_def_pct 0.50 |
+| undead_parasite | 普攻击杀非 Boss 目标时召唤分身，clone_hp_pct 0.20，clone_atk_def_pct 0.50 |
 | undead_spike | def_down_pct 0.10，duration 5.0，max_stacks 3 |
 | undead_fly | dodge 0.25，攻击附带中毒 |
 | undead_bomb | damage_atk_pct 2.5 |
@@ -299,7 +299,6 @@ PVE 每回合只会从同一种小怪模板生成一组敌人。
 泡沫术士佣兵 (`merc_pisces_bubble`) 显示模型使用 `merc_pisces_bubble_animated.tscn`，动作映射为 `idle` / `attack` / `run`；佣兵数值与战斗逻辑未修改。
 
 甲壳守卫佣兵 (`merc_cancer_shell`) 显示模型使用 `merc_cancer_shell_animated.tscn`，`idle` / `attack` / `run` 均从第 30 帧开始；佣兵数值与战斗逻辑未修改。
-
 
 
 

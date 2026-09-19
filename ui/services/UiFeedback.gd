@@ -3,16 +3,17 @@ extends RefCounted
 
 # V3 P1-04：按钮的确认音与触觉。
 #
-# **今天这条通道是静音的**，而且是故意的：仓里一个 UI 音效素材都没有
-# （`assets/audio/` 只有 5 首 BGM 和一个从未被播放的 `ui/start_game.mp3`），
-# 音频许可本身还是未闭环的 blocker（`third-party-license-ledger`）。
-# 编一个音效放进去比没有更糟——它会让「音效已完成」这句话变成假的。
-# 所以本批只搭管线：把 CONFIRM_SFX_PATH 填上一个真实文件就会响，不用改代码。
+# **9.17 起这条通道不再静音。** 素材到位（24 条 SFX），确认音与拒绝音都接到
+# `ui/services/SfxService.gd` 的 cue 表上。
+#
+# 本文件只负责**裁决**（该不该发、发几次），不再自己管播放器 ——
+# 9.17 之前它在这里自己建一个 `GloryUiSfx`，那意味着两处静音门、两份音量、
+# 两套重触发保护。现在播放只有 SfxService 一处。
 #
 # 不做 autoload。冷启动 T3 实测 8730–8890 ms（预算 ≤3 s）是未闭环 blocker，
-# 而 autoload 全部在第一个场景之前构造，条条都在那段关键路径上。这里的
-# AudioStreamPlayer 是**首次真正要播的时候**才创建，挂到 get_tree().root——
-# 挂在页面下会被 Main._clear() 中途释放，声音播一半没了。
+# 而 autoload 全部在第一个场景之前构造，条条都在那段关键路径上。
+# SfxService 的播放器同样挂在 `get_tree().root` 下按需创建 —— 挂页面下会被
+# `Main._clear()` 中途释放，声音播一半没了。
 #
 # ## 一次点击只发一次，靠的是锚点，不是事后去重
 #
@@ -24,6 +25,7 @@ extends RefCounted
 # 而且**在 Windows 上看不出来**：桌面只会来鼠标那一路。
 # 这条规则由门禁的源码合同守着，不靠人记。
 
+const SfxService := preload("res://ui/services/SfxService.gd")
 const Presentation := preload("res://effects/runtime/presentation/PresentationSettings.gd")
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Toast := preload("res://ui/components/GloryToast.gd")
@@ -35,12 +37,9 @@ const Toast := preload("res://ui/components/GloryToast.gd")
 # 永远走 false。加一条 Music 总线会让这四处**同时**改走一条从没调过音量的
 # 总线——在一个标题写着「按钮反馈」的提交里偷偷改掉线上 BGM 的路由。
 # BGM 归并是独立的一件事，值得单独评估。
+#
+# 保留这个常量是因为门禁拿它断言「SFX 总线存在」；真正的播放器在 SfxService 里。
 const SFX_BUS := "SFX"
-
-# 确认音资源。空 = 静音。填一个真实文件进来即可生效。
-const CONFIRM_SFX_PATH := ""
-
-const PLAYER_NAME := "GloryUiSfx"
 
 # 门禁用的计数。**在裁决通过之后才 +1**——可断言的是「该不该播」，
 # 而不是「有没有人调用过」。
@@ -76,29 +75,11 @@ static func play_confirm() -> void:
 	if not Presentation.ui_sound_allowed():
 		return
 	_confirm_requests += 1
-	_play(CONFIRM_SFX_PATH)
+	# 发声交给 SfxService 的播放器池。静音门在这里和那边各判一次是**故意**的：
+	# 这里判是为了让 `_confirm_requests` 这个门禁计数与「真的该响」对齐
+	# （ui_feedback_check 的 confirm_ignores_sound_toggle 钉着这一条）。
+	SfxService.play(SfxService.CUE_UI_CONFIRM)
 	vibrate(HAPTIC_CONFIRM_MS)
-
-
-static func _play(path: String) -> void:
-	if path.is_empty():
-		return  # 今天到此为止：没有素材，说清楚比编一个好
-	var tree := Engine.get_main_loop() as SceneTree
-	if tree == null or tree.root == null:
-		return
-	var player := tree.root.get_node_or_null(PLAYER_NAME) as AudioStreamPlayer
-	if player == null or not is_instance_valid(player):
-		player = AudioStreamPlayer.new()
-		player.name = PLAYER_NAME
-		player.bus = SFX_BUS if AudioServer.get_bus_index(SFX_BUS) >= 0 else "Master"
-		# 页面切换、暂停都不该把提示音掐断。
-		player.process_mode = Node.PROCESS_MODE_ALWAYS
-		tree.root.add_child(player)
-	var stream := load(path) as AudioStream
-	if stream == null:
-		return
-	player.stream = stream
-	player.play()
 
 
 # 触觉。桌面上 Input.vibrate_handheld() 本身就是 no-op，但明确挡在这里，
@@ -124,14 +105,18 @@ const SHAKE_SEC := 0.24
 static var _shake_originals := {}
 
 
-# 拒绝一个动作：说明原因 + 抖一下 + 稍长一点的震动。
+# 拒绝一个动作：说明原因 + 抖一下 + 稍长一点的震动 + 拒绝音。
 #
 # **toast 和 shake 是两条独立通道，不能互相顶替。** 抖动是吸引注意力的，
 # 关掉屏震（或开了 reduced motion）的玩家照样要看得见原因文字，
 # 所以 toast 无条件出，shake 才受开关管。门禁钉着这一条。
+#
+# 拒绝音走 SfxService（有自己的静音门），与 toast 无关 —— 同理，音效也不该
+# 成为「原因有没有说出来」的唯一载体。
 static func reject(control: Control, reason: String) -> void:
 	if not reason.is_empty():
 		Toast.show_text(reason)
+	SfxService.play(SfxService.CUE_UI_REJECT)
 	shake(control)
 	vibrate(HAPTIC_REJECT_MS)
 

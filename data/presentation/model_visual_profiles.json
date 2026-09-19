@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "scope": "S1 representative-pilot only; unlisted models retain their current materials",
+  "profiles": {
+    "human_militia": {"pilot_enabled": true, "body_class": "normal", "outline_px": 1.5},
+    "god_guard": {"pilot_enabled": true, "body_class": "heavy", "outline_px": 1.8},
+    "dark_suc": {"pilot_enabled": true, "body_class": "dark", "outline_px": 1.5},
+    "pve_sky_wind_falcon": {"pilot_enabled": true, "body_class": "thin_wing", "outline_px": 1.2},
+    "pve_land_rock_beast": {"pilot_enabled": true, "body_class": "large", "outline_px": 2.0},
+    "boss_twin_gate": {"pilot_enabled": true, "body_class": "boss", "outline_px": 2.4},
+    "pet_mushroom": {"pilot_enabled": true, "body_class": "pet", "outline_px": 1.5},
+    "pet_cat": {"pilot_enabled": true, "body_class": "pet", "outline_px": 1.5},
+    "pet_rabbit": {"pilot_enabled": true, "body_class": "pet", "outline_px": 1.5},
+    "battle_crystal_blue": {"pilot_enabled": true, "body_class": "crystal", "outline_px": 2.4},
+    "battle_crystal_red": {"pilot_enabled": true, "body_class": "crystal", "outline_px": 2.4}
+  }
+}

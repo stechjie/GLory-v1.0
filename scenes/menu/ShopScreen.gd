@@ -1,0 +1,809 @@
+extends Control
+
+# 商城界面（docs/商城系统设计.md）。入口：主菜单右侧「商店」。
+#
+# 网格铺商品卡片，卡片上是模型预览 + 名字 + 价格。已拥有的置灰、写「已拥有」、点不动。
+# 点可买的 -> 确认框 -> POST /v1/shop/orders -> 回执刷新余额与拥有列表。
+#
+# ## 三条纪律
+#
+# 1. **客户端只发意图。** 请求体里只有 client_order_id 和 item_id，没有价格、
+#    没有「我有多少钱」。卡片上那个价格只是显示用的，服务端另算一遍
+#    （docs/P1经济账本RFC.md 第六节）。
+#
+# 2. **client_order_id 生成一次，整笔重试期间复用。** 换一个新的就是新订单，
+#    会再扣一次钱。所以它存在 _pending_order_id 里，成功或明确失败之后才清。
+#
+# 3. **「不在目录里 = 免费」。** 拥有列表里没有某个内容**不代表**玩家没有它 ——
+#    现有 20 张头像都不在归属表里却人人可用。这一页只显示服务端目录里的东西，
+#    所以这里不会踩到；但别把这页的判断逻辑抄去做「有没有资格用」。
+
+signal back_requested
+
+const Tokens := preload("res://ui/theme/GloryTokens.gd")
+const Theming := preload("res://ui/theme/GloryTheme.gd")
+# 9.17 音效。preload 而不是全局类名，理由见 Main.gd 顶上那条注释。
+const SfxService := preload("res://ui/services/SfxService.gd")
+# 9.17 第二批：商城有**自己的独立 BGM**（反馈第 2 条括号里那句
+# 「商城功能自身有独立的 bgm」）。进商城切到这一首，返回主菜单时
+# MainMenu._start_menu_music() 会把 menu_music 切回来 —— 各页各播各的，
+# 播放器是同一个（MusicService），所以不会叠。
+const MusicService := preload("res://ui/services/MusicService.gd")
+const SHOP_MUSIC_PATH := "res://assets/audio/bgm/shop_music.mp3"
+const ConfirmDialog := preload("res://ui/components/GloryConfirmDialog.gd")
+# 新按钮一律实例化组件，不写 Button.new()：procedural_ui_ratchet 按文件只许降。
+const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
+const MENU_BG_TEX := preload("res://assets/ui/main_menu_live/background.png")
+# 货币图标（从整条货币条里裁出来的）与千分位，主菜单 / 商城 / 邮件共用这一份。
+const Currency := preload("res://scripts/account/Currency.gd")
+const PetPreview := preload("res://scripts/pets/PetPreview.gd")
+const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
+
+const CARD_SIZE := Vector2(214, 264)
+const PREVIEW_SIZE := Vector2(176, 118)
+const DETAIL_PREVIEW_SIZE := Vector2(292, 220)
+const DETAIL_WIDTH := 344.0
+const COLUMNS := 3
+
+const CATEGORY_ALL := "all"
+const CATEGORY_PETS := "pet"
+const CATEGORY_AVATARS := "avatar"
+const CATEGORY_FRAMES := "frame"
+
+var _busy := false
+var _loading := true
+var _items: Array = []
+var _owned: Dictionary = {}     # 内容 id -> true
+var _diamond := 0
+var _coin := 0
+var _notice := ""
+var _notice_bad := false
+var _active_category := CATEGORY_ALL
+var _selected_item_id := ""
+
+# 正在进行的那笔购买的幂等键。**重试必须复用它**，见文件头第 2 条。
+var _pending_order_id := ""
+var _pending_item_id := ""
+
+var _grid: GridContainer
+var _detail: VBoxContainer
+var _notice_label: Label
+var _diamond_label: Label
+var _coin_label: Label
+var _empty_label: Label
+var _catalog_count_label: Label
+var _category_buttons: Dictionary = {}
+
+
+func _ready() -> void:
+	theme = Theming.get_theme()
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_build()
+	_render()
+	# 开发截图场景会在进树前灌固定目录与余额；不发网络请求，保证视觉回归图稳定。
+	if has_meta("ui_capture_fixture"):
+		return
+	_reload()
+	# 9.17 第二批：商城独立 BGM。放在 _reload() 之后 —— 它只是一条 play()，
+	# 但排在网络请求后面能保证「进页面先看到东西、再听音乐」，不会反过来。
+	# 返回主菜单时由 MainMenu 负责切回 menu_music，这里不需要收尾。
+	MusicService.play(SHOP_MUSIC_PATH)
+
+
+# --- 骨架 ---------------------------------------------------------------------
+
+func _build() -> void:
+	var bg := TextureRect.new()
+	bg.texture = MENU_BG_TEX
+	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(bg)
+
+	var dim := ColorRect.new()
+	dim.color = Tokens.BACKDROP
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(dim)
+
+	var margin := MarginContainer.new()
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	for side in ["left", "right", "top", "bottom"]:
+		margin.add_theme_constant_override("margin_" + side, Tokens.PAD)
+	add_child(margin)
+
+	var root := VBoxContainer.new()
+	root.add_theme_constant_override("separation", Tokens.GAP_M)
+	margin.add_child(root)
+	root.add_child(_header())
+
+	_notice_label = Label.new()
+	_notice_label.name = "Notice"
+	_notice_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_notice_label.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
+	_notice_label.visible = false
+	root.add_child(_notice_label)
+
+	root.add_child(_category_bar())
+
+	# 商店是「浏览 + 决策」页面：左边快速扫货，右边保留稳定的大预览和唯一的
+	# 购买决策区。卡片仍可直接购买，兼顾熟练玩家；点卡片其余区域则只切详情。
+	var shell := PanelContainer.new()
+	shell.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	shell.add_theme_stylebox_override(
+		"panel", Tokens.panel_box(Tokens.INK_PANEL, Tokens.INK_EDGE, Tokens.GAP_S))
+	root.add_child(shell)
+
+	var split := HBoxContainer.new()
+	split.add_theme_constant_override("separation", Tokens.GAP_S)
+	shell.add_child(split)
+	split.add_child(_catalog_panel())
+
+	var divider := ColorRect.new()
+	divider.custom_minimum_size = Vector2(1, 0)
+	divider.color = Tokens.INK_EDGE.darkened(0.42)
+	divider.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	split.add_child(divider)
+	split.add_child(_detail_panel())
+
+
+func _category_bar() -> Control:
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.SURFACE, Tokens.BORDER.darkened(0.35), Tokens.GAP_S))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", Tokens.GAP_S)
+	panel.add_child(row)
+	for entry in [
+		{"id": CATEGORY_ALL, "zh": "精选", "en": "Featured"},
+		{"id": CATEGORY_PETS, "zh": "宠物", "en": "Pets"},
+		{"id": CATEGORY_AVATARS, "zh": "头像", "en": "Avatars"},
+		{"id": CATEGORY_FRAMES, "zh": "头像框", "en": "Frames"},
+	]:
+		var category := str(entry.id)
+		var button: Button = ACTION_BUTTON.instantiate()
+		button.text = _t(str(entry.zh), str(entry.en))
+		button.custom_minimum_size = Vector2(142, Tokens.TOUCH_MIN)
+		button.pressed.connect(func() -> void: _select_category(category))
+		row.add_child(button)
+		_category_buttons[category] = button
+	return panel
+
+
+func _catalog_panel() -> Control:
+	var panel := PanelContainer.new()
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.SURFACE, Tokens.BORDER.darkened(0.42), Tokens.GAP_S))
+
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", Tokens.GAP_S)
+	panel.add_child(col)
+
+	var head := HBoxContainer.new()
+	head.custom_minimum_size.y = 34
+	col.add_child(head)
+	var title := Label.new()
+	title.text = _t("商品陈列", "Collection")
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.add_theme_font_size_override("font_size", Tokens.FONT_BUTTON)
+	title.add_theme_color_override("font_color", Tokens.GOLD)
+	head.add_child(title)
+	_catalog_count_label = Label.new()
+	_catalog_count_label.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+	_catalog_count_label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	head.add_child(_catalog_count_label)
+
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	col.add_child(scroll)
+	var holder := VBoxContainer.new()
+	holder.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	holder.add_theme_constant_override("separation", Tokens.GAP_M)
+	scroll.add_child(holder)
+
+	_empty_label = Label.new()
+	_empty_label.name = "Empty"
+	_empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_empty_label.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
+	_empty_label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	holder.add_child(_empty_label)
+
+	_grid = GridContainer.new()
+	_grid.name = "Grid"
+	_grid.columns = COLUMNS
+	_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_grid.add_theme_constant_override("h_separation", Tokens.GAP_S)
+	_grid.add_theme_constant_override("v_separation", Tokens.GAP_S)
+	holder.add_child(_grid)
+	return panel
+
+
+func _detail_panel() -> Control:
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(DETAIL_WIDTH, 0)
+	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.SURFACE, Tokens.GOLD_PRESSED.darkened(0.18), Tokens.GAP_M))
+	_detail = VBoxContainer.new()
+	_detail.name = "ItemDetail"
+	_detail.add_theme_constant_override("separation", Tokens.GAP_S)
+	panel.add_child(_detail)
+	return panel
+
+
+func _header() -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", Tokens.GAP_M)
+
+	var back: Button = ACTION_BUTTON.instantiate()
+	back.name = "Back"
+	back.text = _t("← 返回", "← Back")
+	back.custom_minimum_size = Vector2(160, Tokens.TOUCH_MIN)
+	back.pressed.connect(func() -> void: back_requested.emit())
+	var left_side := HBoxContainer.new()
+	left_side.custom_minimum_size = Vector2(360, Tokens.TOUCH_MIN)
+	left_side.add_child(back)
+	row.add_child(left_side)
+
+	var title := Label.new()
+	title.text = _t("荣耀商店", "Glory Shop")
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
+	title.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
+	row.add_child(title)
+
+	# 余额。与主菜单右上角是同一组图标（同一条 gold.png / diamond.png，这里只裁出图标那一段）——
+	# 两处显示同一个数，图不一样会让人以为是两种钱。
+	var purse := HBoxContainer.new()
+	purse.add_theme_constant_override("separation", Tokens.GAP_S)
+	purse.custom_minimum_size = Vector2(360, Tokens.TOUCH_MIN)
+	purse.alignment = BoxContainer.ALIGNMENT_END
+	_coin_label = _purse_entry(purse, Currency.icon("coin"), _t("金币", "Coins"))
+	_diamond_label = _purse_entry(purse, Currency.icon("diamond"), _t("钻石", "Gems"))
+	row.add_child(purse)
+	return row
+
+
+func _purse_entry(parent: HBoxContainer, tex: Texture2D, label_text: String) -> Label:
+	var chip := PanelContainer.new()
+	chip.custom_minimum_size = Vector2(172, Tokens.TOUCH_MIN)
+	chip.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.INK_PANEL, Tokens.INK_EDGE, Tokens.GAP_S))
+	parent.add_child(chip)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", Tokens.GAP_S)
+	chip.add_child(row)
+
+	var icon := TextureRect.new()
+	icon.texture = tex
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.custom_minimum_size = Vector2(32, 32)
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(icon)
+
+	var caption := Label.new()
+	caption.text = label_text
+	caption.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+	caption.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	row.add_child(caption)
+
+	var label := Label.new()
+	label.text = "—"
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
+	label.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
+	row.add_child(label)
+	return label
+
+
+# --- 拉数据 -------------------------------------------------------------------
+
+# 目录、余额、拥有列表一起拉。**三个都到齐才重画** ——
+# 先画目录再补拥有状态的话，已买的商品会先亮一下「可购买」，玩家会去点。
+func _reload() -> void:
+	_loading = true
+	_render()
+	var catalog: Dictionary = await AccountManager.fetch_shop()
+	var wallet: Dictionary = await AccountManager.fetch_wallet()
+	var owned: Dictionary = await AccountManager.fetch_entitlements()
+	if not is_inside_tree():
+		return
+	_loading = false
+
+	if int(catalog.get("code", 0)) / 100 != 2:
+		_set_notice(str(catalog.get("error", _t("商城打不开", "The shop failed to load"))), true)
+		_render()
+		return
+	_items = ((catalog.get("body", {}) as Dictionary).get("items", []) as Array)
+
+	# 余额和拥有列表失败不算致命：目录还能看，只是买不了。
+	# 直接整页报错的话，一次网络抖动就把整个商城变成错误页。
+	if int(wallet.get("code", 0)) / 100 == 2:
+		var w: Dictionary = wallet.get("body", {})
+		# 9.17：进商城时 **不**播代币音。这是拉一次余额，不是一笔收支 ——
+		# 和读档、重开一局同一种性质（那两处也不响）。
+		_diamond = int(w.get("diamond", 0))
+		_coin = int(w.get("coin", 0))
+	if int(owned.get("code", 0)) / 100 == 2:
+		_owned.clear()
+		for id in ((owned.get("body", {}) as Dictionary).get("items", []) as Array):
+			_owned[str(id)] = true
+	_render()
+
+
+# --- 渲染 ---------------------------------------------------------------------
+
+func _render() -> void:
+	if _grid == null:
+		return
+	_diamond_label.text = "—" if _loading else Currency.comma(_diamond)
+	_coin_label.text = "—" if _loading else Currency.comma(_coin)
+
+	_notice_label.visible = not _notice.is_empty()
+	_notice_label.text = _notice
+	_notice_label.add_theme_color_override(
+		"font_color", Tokens.DANGER if _notice_bad else Tokens.GOLD)
+
+	for category in _category_buttons:
+		var category_button := _category_buttons[category] as Button
+		category_button.visible = (_loading or str(category) == CATEGORY_ALL
+			or _category_has_items(str(category)))
+		category_button.theme_type_variation = (Theming.VARIATION_PRIMARY
+			if str(category) == _active_category else Theming.VARIATION_GHOST)
+
+	_clear_children(_grid)
+	_clear_children(_detail)
+
+	if _loading:
+		_empty_label.text = _t("正在载入…", "Loading…")
+		_empty_label.visible = true
+		_catalog_count_label.text = ""
+		_detail.add_child(_detail_hint(_t("正在准备商品…", "Preparing the collection…")))
+		return
+	if _items.is_empty():
+		_empty_label.text = _t("商城暂时没有上架的东西", "Nothing is on sale right now")
+		_empty_label.visible = true
+		_catalog_count_label.text = _t("0 件", "0 items")
+		_detail.add_child(_detail_hint(_t("新的商品正在路上", "New items are on the way")))
+		return
+
+	var visible_items := _visible_items()
+	_catalog_count_label.text = (_t("%d 件商品", "%d items") % visible_items.size())
+	if visible_items.is_empty():
+		_empty_label.text = _t("这个分类暂时没有商品", "No items in this category yet")
+		_empty_label.visible = true
+		_selected_item_id = ""
+		_detail.add_child(_detail_hint(_t("请选择其他分类", "Choose another category")))
+		return
+
+	_empty_label.visible = false
+	if _selected_item(visible_items).is_empty():
+		_selected_item_id = _item_id(visible_items[0] as Dictionary)
+	for raw in visible_items:
+		_grid.add_child(_card(raw as Dictionary))
+	_render_detail(_selected_item(visible_items))
+
+
+func _card(item: Dictionary) -> Control:
+	var grants := str(item.get("grants", ""))
+	var owned := bool(_owned.get(grants, false))
+	var price := int(item.get("price", 0))
+	var currency := str(item.get("currency", "diamond"))
+	var affordable := _balance_of(currency) >= price
+	var selected := _item_id(item) == _selected_item_id
+
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = CARD_SIZE
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	panel.add_theme_stylebox_override(
+		"panel", Tokens.panel_box(
+			Tokens.SURFACE_RAISED,
+			Tokens.GOLD_EDGE if selected else (Tokens.GOLD_PRESSED if owned else Tokens.BORDER),
+			Tokens.GAP_S))
+	panel.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			_select_item(item)
+		elif event is InputEventScreenTouch and event.pressed:
+			_select_item(item))
+
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", Tokens.GAP_S)
+	panel.add_child(box)
+	box.add_child(_preview_stage(item, owned, PREVIEW_SIZE))
+
+	var name_label := Label.new()
+	name_label.text = _item_name(item)
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_label.clip_text = true
+	name_label.tooltip_text = _item_name(item)
+	name_label.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
+	name_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(name_label)
+
+	var price_row := HBoxContainer.new()
+	price_row.custom_minimum_size.y = 28
+	price_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	price_row.add_theme_constant_override("separation", Tokens.GAP_S)
+	price_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(price_row)
+	if owned:
+		var owned_text := Label.new()
+		owned_text.text = _t("收藏中", "In collection")
+		owned_text.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+		owned_text.add_theme_color_override("font_color", Tokens.GOLD)
+		owned_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		price_row.add_child(owned_text)
+	else:
+		var icon := TextureRect.new()
+		icon.texture = Currency.icon(currency)
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.custom_minimum_size = Vector2(28, 28)
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		price_row.add_child(icon)
+		var price_label := Label.new()
+		price_label.text = Currency.comma(price)
+		price_label.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
+		# 买不起就把价格标红。按钮上只写「余额不足」不够 —— 玩家要看到差多少。
+		price_label.add_theme_color_override(
+			"font_color", Tokens.TEXT_PRIMARY if affordable else Tokens.DANGER)
+		price_row.add_child(price_label)
+
+	var button: Button = ACTION_BUTTON.instantiate()
+	button.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+	if owned:
+		button.text = _t("已拥有 ✓", "Owned ✓")
+		button.disabled = true
+	elif not affordable:
+		button.text = _t("余额不足", "Not enough")
+		button.disabled = true
+	else:
+		button.text = _t("购买", "Buy")
+		button.pressed.connect(func() -> void: _confirm_buy(item))
+	box.add_child(button)
+	return panel
+
+
+func _preview_stage(item: Dictionary, owned: bool, preview_size: Vector2) -> Control:
+	var stage := Control.new()
+	stage.custom_minimum_size = Vector2(preview_size.x, preview_size.y + 8.0)
+	stage.mouse_filter = Control.MOUSE_FILTER_PASS
+
+	var well := PanelContainer.new()
+	well.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	well.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	well.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.BG_DEEP, Tokens.BORDER.darkened(0.45), Tokens.GAP_S))
+	stage.add_child(well)
+	var center := CenterContainer.new()
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	well.add_child(center)
+	var preview := _preview(item, false, preview_size)
+	preview.custom_minimum_size = preview_size
+	_ignore_mouse_tree(preview)
+	center.add_child(preview)
+
+	if owned:
+		var badge := Label.new()
+		badge.text = _t("  已拥有  ", "  OWNED  ")
+		badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		badge.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+		badge.position = Vector2(-90, 8)
+		badge.size = Vector2(82, 26)
+		badge.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+		badge.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
+		badge.add_theme_stylebox_override("normal", Tokens.panel_box(
+			Tokens.INK_PANEL, Tokens.GOLD_PRESSED, 2))
+		badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		stage.add_child(badge)
+	return stage
+
+
+# 卡片上的图。宠物只有 3D 模型（pets.json 的 icon 是空的），头像 / 头像框是 2D 图。
+func _preview(item: Dictionary, owned: bool, preview_size: Vector2 = PREVIEW_SIZE) -> Control:
+	var kind := str(item.get("kind", ""))
+	var grants := str(item.get("grants", ""))
+	if kind == "pet":
+		return PetPreview.build(grants, preview_size, owned)
+	var tex := AvatarCatalog.texture_for(grants)
+	if tex == null:
+		return PetPreview.placeholder(preview_size, owned)
+	var rect := TextureRect.new()
+	rect.texture = tex
+	rect.custom_minimum_size = preview_size
+	rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if owned:
+		rect.modulate = Color(0.45, 0.45, 0.45)
+	return rect
+
+
+func _render_detail(item: Dictionary) -> void:
+	if item.is_empty():
+		_detail.add_child(_detail_hint(_t("选择一个商品查看详情", "Select an item to see details")))
+		return
+	var grants := str(item.get("grants", ""))
+	var owned := bool(_owned.get(grants, false))
+	var price := int(item.get("price", 0))
+	var currency := str(item.get("currency", "diamond"))
+	var affordable := _balance_of(currency) >= price
+
+	var eyebrow := Label.new()
+	eyebrow.text = _t("当前选择", "SELECTED ITEM")
+	eyebrow.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+	eyebrow.add_theme_color_override("font_color", Tokens.GOLD)
+	_detail.add_child(eyebrow)
+	_detail.add_child(_preview_stage(item, owned, DETAIL_PREVIEW_SIZE))
+
+	var name_label := Label.new()
+	name_label.text = _item_name(item)
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	name_label.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
+	name_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	_detail.add_child(name_label)
+
+	var kind_label := Label.new()
+	kind_label.text = _kind_label(item)
+	kind_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	kind_label.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+	kind_label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	_detail.add_child(kind_label)
+
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_detail.add_child(spacer)
+
+	var status := Label.new()
+	status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	status.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
+	if owned:
+		status.text = _t("✓ 已加入你的收藏", "✓ Already in your collection")
+		status.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
+	else:
+		status.text = (_t("价格：%s", "Price: %s") % Currency.comma(price))
+		status.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY if affordable else Tokens.DANGER)
+	_detail.add_child(status)
+
+	var buy: Button = ACTION_BUTTON.instantiate()
+	buy.custom_minimum_size = Vector2(0, Tokens.BUTTON_HEIGHT)
+	if owned:
+		buy.text = _t("已拥有 ✓", "Owned ✓")
+		buy.disabled = true
+	elif not affordable:
+		buy.text = _t("余额不足", "Not enough balance")
+		buy.disabled = true
+	else:
+		buy.text = _t("购买", "Buy")
+		buy.theme_type_variation = Theming.VARIATION_PRIMARY
+		buy.pressed.connect(func() -> void: _confirm_buy(item))
+	_detail.add_child(buy)
+
+	if not owned:
+		var balance_hint := Label.new()
+		balance_hint.text = (_t("当前余额：%s", "Balance: %s")
+			% Currency.comma(_balance_of(currency)))
+		balance_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		balance_hint.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+		balance_hint.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+		_detail.add_child(balance_hint)
+
+
+func _detail_hint(text: String) -> Control:
+	var label := Label.new()
+	label.text = text
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	return label
+
+
+func _select_category(category: String) -> void:
+	if _active_category == category:
+		return
+	_active_category = category
+	_selected_item_id = ""
+	_render()
+
+
+func _select_item(item: Dictionary) -> void:
+	var item_id := _item_id(item)
+	if item_id == _selected_item_id:
+		return
+	_selected_item_id = item_id
+	_render()
+
+
+func _visible_items() -> Array:
+	if _active_category == CATEGORY_ALL:
+		return _items.duplicate()
+	var out: Array = []
+	for raw in _items:
+		var item := raw as Dictionary
+		if _item_category(item) == _active_category:
+			out.append(item)
+	return out
+
+
+func _category_has_items(category: String) -> bool:
+	for raw in _items:
+		if _item_category(raw as Dictionary) == category:
+			return true
+	return false
+
+
+func _selected_item(items: Array) -> Dictionary:
+	for raw in items:
+		var item := raw as Dictionary
+		if _item_id(item) == _selected_item_id:
+			return item
+	return {}
+
+
+func _item_id(item: Dictionary) -> String:
+	return str(item.get("id", item.get("grants", "")))
+
+
+func _item_category(item: Dictionary) -> String:
+	var kind := str(item.get("kind", "")).to_lower()
+	if kind.contains("pet"):
+		return CATEGORY_PETS
+	if kind.contains("frame"):
+		return CATEGORY_FRAMES
+	return CATEGORY_AVATARS
+
+
+func _kind_label(item: Dictionary) -> String:
+	match _item_category(item):
+		CATEGORY_PETS:
+			return _t("宠物 · 可在背包设为出战", "PET · Equip it from your Bag")
+		CATEGORY_FRAMES:
+			return _t("头像框 · 个性装饰", "AVATAR FRAME · Cosmetic")
+		_:
+			return _t("头像 · 个人资料装饰", "AVATAR · Profile cosmetic")
+
+
+func _clear_children(parent: Node) -> void:
+	if parent == null:
+		return
+	for child in parent.get_children():
+		parent.remove_child(child)
+		child.queue_free()
+
+
+func _ignore_mouse_tree(node: Node) -> void:
+	if node is Control:
+		(node as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for child in node.get_children():
+		_ignore_mouse_tree(child)
+
+
+# --- 购买 ---------------------------------------------------------------------
+
+func _confirm_buy(item: Dictionary) -> void:
+	if _busy:
+		return
+	var price := int(item.get("price", 0))
+	var currency_name := _t("钻石", "diamonds") if str(item.get("currency", "")) == "diamond" \
+		else _t("金币", "coins")
+	DialogService.confirm({
+		"title": _t("确认购买", "Confirm purchase"),
+		# 中英语序不同，各自格式化 —— 硬凑成一个模板会让参数顺序随语言变，
+		# 那是「改文案顺手改错参数」的经典入口。
+		"body": ("Buy \"%s\" for %d %s?" % [_item_name(item), price, currency_name]
+			if _english()
+			else "花 %d %s 购买「%s」？" % [price, currency_name, _item_name(item)]),
+		"confirm_text": _t("购买", "Buy"),
+		"owner": self,
+		"on_result": func(result: String, _request_id: String) -> void:
+			if result == ConfirmDialog.RESULT_CONFIRMED:
+				await _buy(item),
+	})
+
+
+func _buy(item: Dictionary) -> void:
+	if _busy:
+		return
+	_busy = true
+	var item_id := str(item.get("id", ""))
+	# 🔴 同一件商品重试时复用上一次的幂等键。换新的等于开一张新订单 ——
+	# 上一笔如果其实成功了（只是回执丢在路上），玩家就被扣了两次钱。
+	if _pending_order_id.is_empty() or _pending_item_id != item_id:
+		_pending_order_id = AccountManager.new_client_order_id()
+		_pending_item_id = item_id
+	var result: Dictionary = await AccountManager.place_shop_order(_pending_order_id, item_id)
+	_busy = false
+	if not is_inside_tree():
+		return
+
+	var code := int(result.get("code", 0))
+	if code / 100 == 2:
+		_pending_order_id = ""
+		_pending_item_id = ""
+		var receipt: Dictionary = (result.get("body", {}) as Dictionary).get("receipt", {})
+		var diamond_after := int(receipt.get("diamond", _diamond))
+		var coin_after := int(receipt.get("coin", _coin))
+		# 9.17 钻石/金币收支音。SfxService 的代币监视器只盯 GameState.gold（局内金币），
+		# 盯不到这里的钱包 —— 钻石是服务端钱包（AccountManager.fetch_wallet），
+		# 各页面自己 fetch 自己存，没有中心状态。
+		#
+		# 按**余额变化方向**播，而不是按「购买 = 扣钱」写死：商品里既有花钻石买的
+		# 东西，也有充值钻石的档位，后者是入账。
+		#
+		# 重放的旧回执（replayed）不改余额，所以那段天然不会响。
+		if diamond_after != _diamond:
+			SfxService.play(SfxService.CUE_UI_CURRENCY_GAIN if diamond_after > _diamond else SfxService.CUE_UI_CURRENCY_SPEND)
+		elif coin_after != _coin:
+			SfxService.play(SfxService.CUE_UI_CURRENCY_GAIN if coin_after > _coin else SfxService.CUE_UI_CURRENCY_SPEND)
+		_diamond = diamond_after
+		_coin = coin_after
+		_owned[str(receipt.get("granted", ""))] = true
+		# replayed = 服务端重放了一张旧回执（上一次其实成功了）。不另说一句的话，
+		# 玩家会以为这次又扣了一笔。
+		# 买的是宠物就把归属缓存刷一遍 —— 备战页与出战宠物都读 PlayerProfile，
+		# 不刷的话玩家买完回去发现新宠物不在那儿。
+		if str(item.get("kind", "")) == "pet":
+			await PlayerProfile.refresh_pets()
+		if bool(receipt.get("replayed", false)):
+			_set_notice(_t("这件你刚才已经买到了，没有重复扣费",
+				"You already bought this a moment ago — you were not charged twice"), false)
+		else:
+			_set_notice(_t("购买成功", "Purchased"), false)
+		_render()
+		return
+
+	# 409 / 402 这些是「明确的失败」，服务端一定没扣钱，可以把幂等键丢掉。
+	# 但 0（根本没发出去 / 没收到响应）和 5xx **必须留着** —— 那笔可能已经成交了，
+	# 换个新 id 重试就会变成第二笔订单。
+	if code != 0 and code < 500:
+		_pending_order_id = ""
+		_pending_item_id = ""
+	var message := str(result.get("error", _t("购买失败", "Purchase failed")))
+	if code == 402:
+		message = _t("余额不足", "Not enough balance")
+	elif code == 0 or code >= 500:
+		message = "%s（%s）" % [message,
+			_t("再点一次「购买」会接着这一笔，不会重复扣费",
+				"Tapping Buy again resumes this order — you will not be charged twice")]
+	_set_notice(message, true)
+	# 余额和拥有状态可能已经变了（比如在另一台设备上买过），重新拉一次。
+	await _reload()
+
+
+# --- 小工具 -------------------------------------------------------------------
+
+func _balance_of(currency: String) -> int:
+	return _diamond if currency == "diamond" else _coin
+
+
+func _item_name(item: Dictionary) -> String:
+	var key := "name_en" if _english() else "name"
+	return str(item.get(key, item.get("name", item.get("id", ""))))
+
+
+func _set_notice(text: String, bad: bool) -> void:
+	_notice = text
+	_notice_bad = bad
+
+
+func _english() -> bool:
+	return LocaleManager.get_locale().begins_with("en")
+
+
+func _t(zh: String, en: String) -> String:
+	return en if _english() else zh

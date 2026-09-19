@@ -32,12 +32,21 @@ const BACKEND_URL_FLAG := "--backend-url="
 #   1. 玩家首次启动会**自动注册一个匿名账号**（本地没凭证 → /v1/auth/anonymous）。
 #      账号目前不承载任何东西，所以这只意味着 players 表会开始攒行、
 #      Supabase 的 MAU 额度会被占用。
-#   2. **登录失败对玩家是无感的** —— 只有一条 push_warning，界面上什么都不显示。
-#      现在没有任何东西依赖账号，所以静默失败是对的；但也意味着链路坏了
-#      不会有人发现。等账号真正承载数据时，必须补上失败提示。
+#   2. **2026-09-14 起登录是进游戏的必经之路**：启动画面要等登录成功、并且账号后端
+#      放行（同时在线上限与排队，backend/app/admission.py）才进主界面。登录失败或
+#      连不上账号后端时停在启动画面自动重试，**不放行**（已定：连不上就不让进）。
+#      --no-account 会连这道门一起关掉，只给本机调试用。
 #
 # 单次关闭用 --no-account（关的优先级高于 --account）。
 const AUTO_LOGIN_DEFAULT := true
+
+# 连不上账号服务器的实时连接超过这么久，就当「连不上」。
+#
+# **启动页与主菜单共用这一个数。** 规则只有一条：连不上账号服务器就进不了游戏 ——
+# 启动页据此不放行（Bootstrap.entry_view），进去以后据此送回启动页
+# （Main._watch_account_link）。两处各写一个数的话，迟早会出现
+# 「启动页等 8 秒、主菜单等 30 秒」这种同一件事两种说法。
+const CONNECT_PATIENCE_SEC := 8.0
 const AUTO_LOGIN_ON_FLAG := "--account"
 const AUTO_LOGIN_OFF_FLAG := "--no-account"
 

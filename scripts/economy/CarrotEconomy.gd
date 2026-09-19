@@ -4,9 +4,14 @@ extends RefCounted
 ## No GameState, NetworkService or UI access belongs in this file.
 
 const BASE_PRODUCTION := 3
-const MAX_HARVEST_TECH_LEVEL := 5
-const HARVEST_TECH_PRICES := [100, 200, 400, 800, 1600]
-const HARVEST_TECH_BONUSES := [0, 3, 6, 10, 15, 25]
+# Index 0 is the player-facing Lv.1.  The first four outputs preserve the
+# original progression; Lv.5 onward follows the approved new milestones.
+const HARVEST_TECH_PRODUCTION := [3, 6, 9, 13, 25, 35, 45]
+# Price to buy the next level from the matching zero-based level.  After the
+# listed milestones, collection remains upgradeable at a flat 1600G.
+const HARVEST_TECH_PRICES := [100, 200, 400, 800, 1600, 1600, 1600]
+const HARVEST_TECH_REPEAT_PRICE := 1600
+const HARVEST_TECH_REPEAT_PRODUCTION := 10
 const FARM_THRESHOLDS := [0, 9, 20, 35, 55, 75]
 const FARM_CAPACITIES := [12, 24, 40, 60, 90, 150]
 const FARM_INCOME := [0, 10, 25, 45, 70, 100]
@@ -19,7 +24,20 @@ const FARM_INCOME := [0, 10, 25, 45, 70, 100]
 # 加上之后各级的装满耗时收敛到 4~10 回合，容量上限重新变成一个有意义的
 # 「该花萝卜了」的信号。数值取值参考：装满耗时 ≈ 容量 / (基础 3 + 本表)。
 const FARM_PRODUCTION := [0, 2, 4, 6, 8, 12]
-const STONE_COST := 50
+# Lv.7 onward continues procedurally rather than ending in a hidden table cap.
+# Threshold increments are +35, +45, +55...; capacity increments are +70,
+# +80, +90...; each level grants +2 production and +10G camp income.
+const FARM_REPEAT_THRESHOLD_FIRST_INCREMENT := 35
+const FARM_REPEAT_THRESHOLD_INCREMENT_STEP := 10
+const FARM_REPEAT_CAPACITY_FIRST_INCREMENT := 70
+const FARM_REPEAT_CAPACITY_INCREMENT_STEP := 10
+const FARM_REPEAT_PRODUCTION_INCREMENT := 2
+const FARM_REPEAT_INCOME_INCREMENT := 10
+const STONE_FIRST_COST := 50
+const STONE_COST_INCREMENT := 20
+# Backward-compatible name for the first draw. All transactions must call
+# stone_cost_for_draw() because subsequent draws are player-specific.
+const STONE_COST := STONE_FIRST_COST
 const STONE_DRAW_PER_ROUND := 1
 const STONE_TYPES := ["sky", "land", "ren"]
 const FOUR_STAR_COST_VERSION := 1
@@ -28,13 +46,20 @@ const FOUR_STAR_GOLD := {1: 500, 2: 800, 3: 1100}
 static func four_star_gold(tier: int) -> int:
 	return int(FOUR_STAR_GOLD.get(tier, -1))
 
+static func stone_cost_for_draw(draws_completed: int) -> int:
+	return STONE_FIRST_COST + maxi(0, draws_completed) * STONE_COST_INCREMENT
+
 static func production_for_tech(level: int) -> int:
-	return BASE_PRODUCTION + int(HARVEST_TECH_BONUSES[clampi(level, 0, MAX_HARVEST_TECH_LEVEL)])
+	var safe_level := maxi(0, level)
+	if safe_level < HARVEST_TECH_PRODUCTION.size():
+		return int(HARVEST_TECH_PRODUCTION[safe_level])
+	var repeat_levels := safe_level - (HARVEST_TECH_PRODUCTION.size() - 1)
+	return int(HARVEST_TECH_PRODUCTION.back()) + repeat_levels * HARVEST_TECH_REPEAT_PRODUCTION
 
 static func farm_production_bonus(total: int) -> int:
-	return int(FARM_PRODUCTION[farm_level_for_spent(total)])
+	return farm_production_for_level(farm_level_for_spent(total))
 
-## 每回合总产量 = 基础 + 采集科技加成 + 萝卜田等级加成。
+## 每回合总产量 = 采集科技对应的总产量 + 萝卜田等级加成。
 ## 所有需要「这一回合能产多少萝卜」的地方都必须走这里，不要单独调
 ## production_for_tech() —— 那是只含科技的半个答案，漏掉田等级加成不会报错，
 ## 只会让显示和实发对不上（本作已经为「同一规则两份实现」付过两次学费，
@@ -43,26 +68,61 @@ static func total_production(tech_level: int, spent_total: int) -> int:
 	return production_for_tech(tech_level) + farm_production_bonus(spent_total)
 
 static func tech_price(level: int) -> int:
-	if level < 0 or level >= HARVEST_TECH_PRICES.size():
-		return -1
-	return int(HARVEST_TECH_PRICES[level])
+	var safe_level := maxi(0, level)
+	if safe_level < HARVEST_TECH_PRICES.size():
+		return int(HARVEST_TECH_PRICES[safe_level])
+	return HARVEST_TECH_REPEAT_PRICE
 
 static func farm_level_for_spent(total: int) -> int:
+	var safe_total := maxi(0, total)
 	var result := 0
 	for level in FARM_THRESHOLDS.size():
-		if total >= int(FARM_THRESHOLDS[level]):
+		if safe_total >= int(FARM_THRESHOLDS[level]):
 			result = level
+	var remaining_after_fixed := safe_total - int(FARM_THRESHOLDS.back())
+	var increment := FARM_REPEAT_THRESHOLD_FIRST_INCREMENT
+	while remaining_after_fixed >= increment:
+		remaining_after_fixed -= increment
+		result += 1
+		increment += FARM_REPEAT_THRESHOLD_INCREMENT_STEP
 	return result
 
+static func farm_threshold_for_level(level: int) -> int:
+	var safe_level := maxi(0, level)
+	if safe_level < FARM_THRESHOLDS.size():
+		return int(FARM_THRESHOLDS[safe_level])
+	var repeat_levels := safe_level - (FARM_THRESHOLDS.size() - 1)
+	return int(FARM_THRESHOLDS.back()) + repeat_levels * FARM_REPEAT_THRESHOLD_FIRST_INCREMENT \
+		+ int(FARM_REPEAT_THRESHOLD_INCREMENT_STEP * repeat_levels * (repeat_levels - 1) / 2)
+
+static func farm_capacity_for_level(level: int) -> int:
+	var safe_level := maxi(0, level)
+	if safe_level < FARM_CAPACITIES.size():
+		return int(FARM_CAPACITIES[safe_level])
+	var repeat_levels := safe_level - (FARM_CAPACITIES.size() - 1)
+	return int(FARM_CAPACITIES.back()) + repeat_levels * FARM_REPEAT_CAPACITY_FIRST_INCREMENT \
+		+ int(FARM_REPEAT_CAPACITY_INCREMENT_STEP * repeat_levels * (repeat_levels - 1) / 2)
+
+static func farm_income_for_level(level: int) -> int:
+	var safe_level := maxi(0, level)
+	if safe_level < FARM_INCOME.size():
+		return int(FARM_INCOME[safe_level])
+	return int(FARM_INCOME.back()) + (safe_level - (FARM_INCOME.size() - 1)) * FARM_REPEAT_INCOME_INCREMENT
+
+static func farm_production_for_level(level: int) -> int:
+	var safe_level := maxi(0, level)
+	if safe_level < FARM_PRODUCTION.size():
+		return int(FARM_PRODUCTION[safe_level])
+	return int(FARM_PRODUCTION.back()) + (safe_level - (FARM_PRODUCTION.size() - 1)) * FARM_REPEAT_PRODUCTION_INCREMENT
+
 static func capacity_for_spent(total: int) -> int:
-	return int(FARM_CAPACITIES[farm_level_for_spent(total)])
+	return farm_capacity_for_level(farm_level_for_spent(total))
 
 static func income_for_spent(total: int) -> int:
-	return int(FARM_INCOME[farm_level_for_spent(total)])
+	return farm_income_for_level(farm_level_for_spent(total))
 
 static func next_threshold_for_spent(total: int) -> int:
-	var level := farm_level_for_spent(total)
-	return int(FARM_THRESHOLDS[level + 1]) if level + 1 < FARM_THRESHOLDS.size() else -1
+	return farm_threshold_for_level(farm_level_for_spent(total) + 1)
 
 static func harvest(carrot_balance: int, spent_total: int, tech_level: int) -> Dictionary:
 	var capacity := capacity_for_spent(spent_total)

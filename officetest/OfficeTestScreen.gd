@@ -46,6 +46,12 @@ var _picker_slot := -1
 var _picker_cell := -1
 var _picker_kind := "piece"
 var _picker_star := 1
+# 9.19：编辑态对一个「已摆放的棋子」点开选择器时，额外给「升星」按钮（直接升到 4 星，
+# 方便离线验证四星合成音）。该标志在 _on_grid_pressed 里按是否已有同格棋子置位。
+var _editing_existing_piece := false
+var _upgrade_row: HBoxContainer
+var _upgrade_btn: Button
+var _to4_btn: Button
 
 var _treasure_panel: PanelContainer
 var _treasure_title: Label
@@ -58,6 +64,11 @@ var _summary_text: RichTextLabel
 
 var _detail_panel: PanelContainer
 var _detail_text: RichTextLabel
+
+# 9.14 反馈：演示态（战斗开始后）鼠标停在棋子上要弹「实时数值面板」。
+var _stat_panel: PanelContainer
+var _stat_text: RichTextLabel
+var _hover_unit_id := ""
 
 
 func _tt(cn: String, en: String) -> String:
@@ -84,6 +95,9 @@ func _ready() -> void:
 		return
 	_build_edit_ui()
 	_refresh_visuals()
+	# 9.19：确保音效播放器池已挂到 root，离线自测里「升星」按钮才播得出四星合成音。
+	# install() 幂等（已挂则跳过），与 Main._ready 调的那次不冲突。
+	SfxService.install()
 	_battle_setup_ready = true
 
 
@@ -94,6 +108,9 @@ func _process(delta: float) -> void:
 			_update_grid_layout()
 		return
 	super._process(delta)
+	# 演示态：悬停面板跟着当前帧刷新 —— 生命/护盾/状态剩余时间/层数每帧都在变。
+	if not _hover_unit_id.is_empty():
+		_refresh_stat_panel()
 
 
 # 编辑态下父类跳过按钮不应触发模拟。
@@ -139,6 +156,7 @@ func _build_edit_ui() -> void:
 	_build_treasure_panel()
 	_build_summary_panel()
 	_build_detail_panel()
+	_build_stat_panel()
 
 	# 返回按钮独立于编辑 UI,演示中也可退回自测房间。
 	_back_btn = _make_text_button(_tt("返回房间", "Back"), 18)
@@ -321,6 +339,7 @@ func _on_grid_pressed(slot: int, cell: int) -> void:
 	if not existing.is_empty():
 		_picker_kind = str(existing.get("kind", "piece"))
 		_picker_star = int(existing.get("star", 1))
+	_editing_existing_piece = not existing.is_empty() and str(existing.get("kind", "")) == "piece"
 	_picker_remove_btn.visible = not existing.is_empty()
 	_picker_title.text = "%s · %s %d" % [_slot_display_name(slot), _tt("格", "Cell"), cell]
 	_picker_panel.visible = true
@@ -375,6 +394,19 @@ func _build_picker_panel() -> void:
 		_picker_star_row.add_child(sb_btn)
 		_picker_star_btns.append(sb_btn)
 
+	# 9.19：升星按钮（仅编辑「已摆放棋子」时出现）。无条件 +1★，封顶 MAX_STAR；
+	# 另给「直接到 4★」一步到位，方便离线验证四星合成音。升到 4 星时播合成音。
+	_upgrade_row = HBoxContainer.new()
+	_upgrade_row.add_theme_constant_override("separation", 8)
+	col.add_child(_upgrade_row)
+	_upgrade_row.add_child(_panel_label(_tt("升星:", "Upgrade:"), 15))
+	_upgrade_btn = _make_text_button(_tt("升星 +1★", "Upgrade +1★"), 15)
+	_upgrade_btn.pressed.connect(_on_upgrade_star.bind(1))
+	_upgrade_row.add_child(_upgrade_btn)
+	_to4_btn = _make_text_button(_tt("直接到 4★", "To 4★"), 15)
+	_to4_btn.pressed.connect(_on_upgrade_star.bind(99))
+	_upgrade_row.add_child(_to4_btn)
+
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.custom_minimum_size = Vector2(310, 330)
@@ -406,6 +438,9 @@ func _on_picker_star(star: int) -> void:
 	var existing := OfficeTestSim.placement_at(_config, _picker_slot, _picker_cell)
 	if not existing.is_empty() and str(existing.get("kind", "")) == "piece":
 		OfficeTestSim.set_placement(_config, _picker_slot, _picker_cell, "piece", str(existing.get("unit_id", "")), star)
+		# 9.19：直接选到 4★ 时也播合成音，方便离线验证。
+		if star >= GameConstants.MAX_STAR:
+			SfxService.play(SfxService.star4_cue_for(str(existing.get("unit_id", ""))))
 		_rebuild_edit_preview()
 	_refresh_picker()
 
@@ -415,6 +450,9 @@ func _refresh_picker() -> void:
 		var tab := _picker_tab_btns[kind] as Button
 		tab.modulate = Color(1, 1, 1, 1.0) if str(kind) == _picker_kind else Color(1, 1, 1, 0.55)
 	_picker_star_row.visible = _picker_kind == "piece"
+	# 升星按钮只在「编辑一个已摆放的棋子」时出现；摆新单位或选佣兵/怪兽/Boss/法阵时隐藏。
+	if _upgrade_row != null:
+		_upgrade_row.visible = _editing_existing_piece
 	for i in _picker_star_btns.size():
 		(_picker_star_btns[i] as Button).modulate = Color(1, 1, 1, 1.0) if i + 1 == _picker_star else Color(1, 1, 1, 0.55)
 	for child in _picker_list.get_children():
@@ -439,6 +477,9 @@ func _on_picker_unit(unit_id: String) -> void:
 	if _picker_slot < 0 or _picker_cell < 0 or unit_id.is_empty():
 		return
 	OfficeTestSim.set_placement(_config, _picker_slot, _picker_cell, _picker_kind, unit_id, _picker_star)
+	# 9.19：摆 unit 时若直接选了 4★，也播合成音，方便离线验证。
+	if _picker_kind == "piece" and _picker_star >= GameConstants.MAX_STAR:
+		SfxService.play(SfxService.star4_cue_for(unit_id))
 	_picker_panel.visible = false
 	_rebuild_edit_preview()
 
@@ -449,6 +490,25 @@ func _on_picker_remove() -> void:
 	OfficeTestSim.remove_placement(_config, _picker_slot, _picker_cell)
 	_picker_panel.visible = false
 	_rebuild_edit_preview()
+
+
+# 9.19：编辑态对一个已摆放的棋子「无条件升星」。delta=1 时每次 +1★（可连点直到 4★），
+# delta>=MAX_STAR 时一步到位到 4★。升到 4★ 的瞬间播四星合成音，方便离线验证 9.19
+# 修复后的合成音（不再误用战斗技能素材）。
+func _on_upgrade_star(delta: int) -> void:
+	var existing := OfficeTestSim.placement_at(_config, _picker_slot, _picker_cell)
+	if existing.is_empty() or str(existing.get("kind", "")) != "piece":
+		return
+	var cur := int(existing.get("star", 1))
+	var target := clampi(cur + delta, 1, GameConstants.MAX_STAR) if delta < GameConstants.MAX_STAR else GameConstants.MAX_STAR
+	if target <= cur:
+		return
+	OfficeTestSim.set_placement(_config, _picker_slot, _picker_cell, "piece", str(existing.get("unit_id", "")), target)
+	_picker_star = target
+	if target >= GameConstants.MAX_STAR:
+		SfxService.play(SfxService.star4_cue_for(str(existing.get("unit_id", ""))))
+	_rebuild_edit_preview()
+	_refresh_picker()
 
 
 func _rebuild_edit_preview() -> void:
@@ -567,8 +627,12 @@ func _start_test_demo() -> void:
 		_return_to_edit()
 		return
 	_start_replay(replay)
-	if _battle_music_player != null:
-		_battle_music_player.play()
+	# 9.19：这里原本是 `_battle_music_player.play()`，而那个 AudioStreamPlayer
+	# 在 9.17「BGM 统一走 MusicService、五处页面自带播放器全删」时已被移除 ——
+	# 留下的是一个**已不存在的成员**，导致本脚本整个编译不过、离线自测打不开。
+	# 改调父类的 `_start_battle_music()`（内部走 MusicService.play + 正确的
+	# 战斗 BGM 路径），与正式对战起 BGM 的口径一致。
+	_start_battle_music()
 
 
 func _set_edit_ui_visible(visible_now: bool) -> void:
@@ -597,6 +661,10 @@ func _finish_replay() -> void:
 
 func _return_to_edit() -> void:
 	_summary_panel.visible = false
+	# 悬停面板属于演示态，回编辑态必须收掉，否则会盖在格点上。
+	_hover_unit_id = ""
+	if _stat_panel != null:
+		_stat_panel.visible = false
 	if _result_overlay_lbl != null:
 		_result_overlay_lbl.visible = false
 	_stop_battle_music()
@@ -726,6 +794,141 @@ func _build_detail_panel() -> void:
 	close_btn.custom_minimum_size = Vector2(120, 38)
 	close_btn.pressed.connect(func(): _detail_panel.visible = false)
 	col.add_child(close_btn)
+
+
+# ---------------------------------------------------------------------------
+# 实时数值面板（演示态，鼠标悬停在棋子上）
+# ---------------------------------------------------------------------------
+
+# 9.14 反馈：离线自测要一个「实时数值展示」—— 战斗开始后，鼠标放到棋子上，就显示这枚棋子
+# **当前这一帧**的数值面板；移开即收起。
+#
+# 面板内容全部读父类的 _frame_fighter_by_id：它是 _refresh_visuals() 每帧重建的「本帧存活
+# 单位」快照，hp / shield / statuses / skill_stacks / attack_count / damage_dealt 都是从
+# 回放帧直接灌进来的真值（见 BattleSimulator 的帧结构）。
+#
+# ⚠️ 攻击/攻速/暴击/射程 取的是**星级缩放后的 def 基准值**，不是被增益后的实时值：回放帧
+# 只记录 uid/pos/hp/alive/… 十几个字段，攻击力与攻速都不在其中（模拟器内部才有一份被
+# buff 改过的 fighter.atk）。所以这三行是「面板口径说明」的基准，别当成实时战报。
+func _build_stat_panel() -> void:
+	_stat_panel = PanelContainer.new()
+	_stat_panel.add_theme_stylebox_override("panel", _panel_style())
+	_stat_panel.anchor_left = 0.0
+	_stat_panel.anchor_right = 0.0
+	_stat_panel.anchor_top = 0.5
+	_stat_panel.anchor_bottom = 0.5
+	_stat_panel.offset_left = 12
+	_stat_panel.offset_right = 272
+	_stat_panel.offset_top = -170
+	_stat_panel.offset_bottom = 170
+	# 面板不挡鼠标：鼠标划过它时仍算在棋子上，面板不会因为自己把鼠标“吃掉”而闪没。
+	_stat_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_stat_panel.visible = false
+	_stat_panel.z_index = 205
+	add_child(_stat_panel)
+
+	var col := VBoxContainer.new()
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_theme_constant_override("separation", 6)
+	_stat_panel.add_child(col)
+
+	_stat_text = RichTextLabel.new()
+	_stat_text.bbcode_enabled = true
+	_stat_text.scroll_active = true
+	_stat_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_stat_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_stat_text.add_theme_font_size_override("normal_font_size", 15)
+	_stat_text.add_theme_font_size_override("bold_font_size", 18)
+	_stat_text.add_theme_color_override("default_color", Color(0.95, 0.97, 0.92))
+	col.add_child(_stat_text)
+
+
+# 覆写父类的悬停回调（BattleRenderer._make_unit_node 给每个单位挂了 mouse_entered /
+# mouse_exited）。只在演示态生效；编辑态仍然走「长按格点看详情」那条老路。
+func _on_battle_unit_hover(unit_id: String, entered: bool) -> void:
+	if _edit_mode or _stat_panel == null:
+		return
+	if entered:
+		_hover_unit_id = unit_id
+		_refresh_stat_panel()
+		return
+	if _hover_unit_id == unit_id:
+		_hover_unit_id = ""
+		if _hover_unit_id.is_empty():
+			_stat_panel.visible = false
+
+
+# 9.19：离线自测固定「红 A（slot 0）为自身」，让四星技能音等 self-only 音效
+# 按正式对战口径只响红方，方便逐一验证每个四星单位的技能音。
+# 不依赖 NetworkService.team_local_slot（从组队大厅进来自测时它可能是蓝方槽），
+# 也不改 BattleVfx 的线上逻辑——只在本自测场景覆写。布局上「下面三方(红队)=我方、
+# 上面三方(蓝队)=敌方」由 build_test_state / grid_sim_pos 保证，这里只定「自身」归属。
+func _is_local_owned_unit(sim_uid: String) -> bool:
+	var unit: Dictionary = _cue_unit_snapshot(sim_uid)
+	for side in ["player", "enemy"]:
+		for raw in _state.get(side, []):
+			if raw is Dictionary and str(raw.get("uid", "")) == sim_uid:
+				unit = raw
+	if unit.is_empty():
+		return false
+	var owner := int(unit.get("owner_slot", -1))
+	return owner == 0
+
+
+func _refresh_stat_panel() -> void:
+	if _stat_panel == null or _hover_unit_id.is_empty():
+		return
+	var value = _frame_fighter_by_id.get(_hover_unit_id)
+	if typeof(value) != TYPE_DICTIONARY:
+		# 这枚棋子本帧已经阵亡/离场：不要把上一帧的旧数字留在屏幕上。
+		_stat_panel.visible = false
+		return
+	var f: Dictionary = value
+	var def_value = f.get("def", {})
+	var def: Dictionary = def_value if typeof(def_value) == TYPE_DICTIONARY else {}
+	var color := _fighter_display_color(f)
+	var lines: Array[String] = []
+	lines.append("[color=#%s][b]%s[/b][/color] ★%d" % [
+		color.to_html(false), _fighter_display_name(f), int(f.get("star", def.get("star", 1)))])
+	lines.append("%s  %d / %d" % [_tt("生命", "HP"), int(f.get("hp", 0)), int(f.get("max_hp", 1))])
+	if int(f.get("shield", 0)) > 0:
+		lines.append("%s  %d" % [_tt("护盾", "Shield"), int(f.get("shield", 0))])
+	lines.append("%s  %d   %s  %.2f" % [
+		_tt("攻击", "ATK"), _fighter_atk(f), _tt("攻速", "AS"), float(def.get("attack_speed", 1.0))])
+	lines.append("%s  %d   %s  %.0f%%" % [
+		_tt("防御", "DEF"), int(def.get("def", 0)), _tt("暴击", "Crit"), float(def.get("crit", 0.0)) * 100.0])
+	lines.append("%s  %s   %s  %d" % [
+		_tt("射程", "Range"), str(def.get("range", 1)), _tt("技能层数", "Stacks"), int(f.get("skill_stacks", 0))])
+	lines.append("%s  %d   %s  %d" % [
+		_tt("攻击次数", "Hits"), int(f.get("attack_count", 0)), _tt("已造成伤害", "Damage"), _fighter_damage_dealt(f)])
+	# 技能冷却：skill_ready 是「模拟时钟」上的绝对时刻。回放播放时 _state.elapsed 恒为 0
+	# （只有本地模拟才推进它），所以这里用帧号自己换算当前模拟时刻，否则算出来永远是整段 CD。
+	var sim_time := float(_replay_frame) * SIM_TICK_SEC
+	if float(f.get("skill_ready", 0.0)) > sim_time:
+		lines.append("%s  %.1fs" % [_tt("技能冷却", "Skill CD"), float(f.get("skill_ready", 0.0)) - sim_time])
+	var statuses_value = f.get("statuses", {})
+	var statuses: Dictionary = statuses_value if typeof(statuses_value) == TYPE_DICTIONARY else {}
+	if statuses.is_empty():
+		lines.append(_tt("状态：无", "Statuses: none"))
+	else:
+		lines.append("[b]%s[/b]" % _tt("状态", "Statuses"))
+		var keys := statuses.keys()
+		keys.sort()
+		for key in keys:
+			var status_entry = statuses[key]
+			var remaining := 0.0
+			if typeof(status_entry) == TYPE_DICTIONARY:
+				remaining = float((status_entry as Dictionary).get("remaining", 0.0))
+			elif typeof(status_entry) == TYPE_FLOAT or typeof(status_entry) == TYPE_INT:
+				remaining = float(status_entry)
+			if remaining <= 0.0:
+				continue
+			lines.append("  · %s  %s%s" % [
+				BattleStatsFormat.status_display_name(str(key)),
+				BattleStatsFormat.format_seconds(remaining),
+				"s" if UnitDetailFormat.is_en() else "秒"])
+	_stat_text.text = "\n".join(lines)
+	_stat_panel.visible = true
 
 
 # 长按格点:弹出该棋子的详细数值。数值口径与模拟器一致(走 OfficeTestSim 同一套 def/星级)。

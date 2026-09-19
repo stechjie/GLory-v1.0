@@ -77,6 +77,7 @@ const TEAM_REPLAY_WAIT_TIMEOUT_SEC := 60.0
 
 func _ready() -> void:
 	_setup_fps_overlay()
+	_setup_voice_controls()
 	if GameState.team_mode:
 		var package := GameState.take_pending_battle_package()
 		if str(package.get("mode", "")) == "team_replay":
@@ -174,6 +175,8 @@ func _ready() -> void:
 	await _prepare_battle_models()
 func _exit_tree() -> void:
 	_presentation_director.dispose()
+	if _voice_controls != null:
+		_voice_controls.teardown()
 	_stop_battle_music()
 	# 本回合的敌人资源到此为止；玩家阵容留着，下回合还要用。
 	release_round_assets()
@@ -262,6 +265,9 @@ func _start_replay(replay: Dictionary) -> void:
 	_replay_mode = true
 	_replay_frame = 0
 	_replay_events_applied = -1
+	# 9.19：每局重置「末日守卫技能音已响过」记录，否则同一实例跑第二局（离线自测
+	# 回编辑态后再演示）时那一次也不会响。见 BattleVfx._doom_skill_sfx_played。
+	_doom_skill_sfx_played.clear()
 	# 上一局的胜利收束不能带进这一局，否则镜头会一场比一场紧。
 	reset_battle_camera_framing()
 	_begin_presentation_replay(replay)
@@ -334,7 +340,25 @@ func _prepare_battle_models() -> void:
 	if _battle_3d_root != null:
 		_battle_3d_root.visible = true
 	_battle_setup_ready = true
+	# 9.17：Boss 登场。放在这里而不是 _start_battle_music() 里 ——
+	# 后者在进场景那一刻就会被调一次（BattleScreen.gd:98），那时 replay 还没到、
+	# 单位模型还没建，声音会比画面早一整段读条。
+	#
+	# 这里是「模型全部建完、战斗马上开打」，而且 _prepare_battle_models() 每场
+	# 只跑一次（_start_replay 里那一条调用），天然不会重复。
+	#
+	# 判据用 _effective_kind() 而不是 _kind：3v3 时 _kind 停在占位的 "team"，
+	# 真正的类型要么在 replay 里，要么按回合表算（boss 回合 = 5/10/15/20）。
+	#
+	# 「停掉备战 BGM + 响登场音」打包在 BattleUI._begin_boss_intro() 里：两件事必须
+	# **同一时刻**发生（9.17 第三轮反馈），拆在两个地方迟早漂移。
+	if _effective_kind() == "boss":
+		_begin_boss_intro()
 	_try_start_final_round_intro()
+	# 9.17 反馈第 4 条：登场音播完之后才起 pve 战斗 BGM。
+	# 放在本函数**最末尾**：这是「模型全建完、战斗马上开打」的那一刻，
+	# 也是本函数里唯一保证会走到的收口点（前面几个早退分支都在建模型循环里）。
+	await _resolve_pending_battle_music()
 
 # 顶部一条细进度条，接着备战界面那条蓝线继续走，避免「画面停住」的观感。
 func _make_battle_prepare_bar() -> ProgressBar:
@@ -498,6 +522,33 @@ func _advance_spectate(delta: float) -> void:
 		_spectate_done = true
 
 # B8: lightweight on-screen FPS readout for the battle scene.
+# 组队语音（docs/聊天系统设计.md 第九节 v1.1）：右上角「跳过」（y 12~48）「切镜头」（y 56~92）下面，
+# 竖着放语音与队友两个按钮。只在联机对局里建；档位跨场景保持（VoiceService 是 autoload），
+# 这里只是给玩家一个随手开关。
+const VoiceControls := preload("res://ui/components/VoiceControls.gd")
+const VOICE_BTN_TOP := 100.0
+const VOICE_BTN_SIZE := Vector2(120, 36)
+const VOICE_BTN_STEP := 42.0
+var _voice_controls: VoiceControls = null
+
+func _setup_voice_controls() -> void:
+	if _voice_controls != null or not NetworkService.team_active:
+		return
+	_voice_controls = VoiceControls.new()
+	_voice_controls.build(self, VOICE_BTN_SIZE, VOICE_BTN_SIZE, 14)
+	var top := VOICE_BTN_TOP
+	for button in [_voice_controls.voice_button, _voice_controls.members_button]:
+		var control := button as Button
+		control.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+		control.offset_left = -16.0 - VOICE_BTN_SIZE.x
+		control.offset_right = -16.0
+		control.offset_top = top
+		control.offset_bottom = top + VOICE_BTN_SIZE.y
+		# 同「跳过」按钮：盖在全屏战场之上。
+		control.z_index = 100
+		add_child(control)
+		top += VOICE_BTN_STEP
+
 # Mirrors PrepScreen._setup_fps_overlay; positioned slightly off the top-left
 # corner (see bug report 9.9bug提交及修复08 #8 — old corner spot was hard to
 # see on mobile, "too close to the edge").
@@ -722,10 +773,12 @@ func _finish_replay() -> void:
 	await _await_presentation_drained()
 	await _play_crystal_attack_sequence(_result)
 	# V2 P1-05 第 3 条：镜头轻收束 + 幸存者定格，然后才出胜负字样。
-	# 保持时长由 RESULT_DISPLAY_SECONDS(1.0) 兜住 V2 的"至少 0.8 秒"。
+	# 9.17 反馈第 3 条：停留时长改为「至少等胜负音播完」（见
+	# BattleResult._result_linger_seconds —— 它是 RESULT_DISPLAY_SECONDS
+	# 与胜负音实际时长的 max，所以 V2 那条「至少 0.8 秒」仍然被兜住）。
 	play_victory_finish()
 	_show_result_overlay()
-	await get_tree().create_timer(RESULT_DISPLAY_SECONDS).timeout
+	await get_tree().create_timer(_result_linger_seconds()).timeout
 	battle_finished.emit(_result)
 
 func _skip_animation() -> void:

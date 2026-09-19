@@ -4,10 +4,15 @@ extends Node
 #
 # ## 这条门禁验什么、不验什么
 #
-# **不验发声。** 仓里一个 UI 音效素材都没有，音频许可本身还是未闭环的
-# blocker，本批刻意只搭管线不放音（见 ui/services/UiFeedback.gd 的抬头）。
+# **不验发声。** 这条门禁管的是**裁决与次数**：该不该播、播了几次。
 # 而且 headless 用的是 Dummy 音频驱动，就算有素材也听不见。
-# 所以这里验的是**裁决与次数**：该不该播、播了几次。
+#
+# 2026-09-17 更新：当时「仓里一个 UI 音效素材都没有、本批刻意只搭管线不放音」
+# 的前置条件**已经不成立** —— 24 条 SFX 已落盘并接线，确认音与拒绝音都走
+# `ui/services/SfxService.gd`。本文件仍然**不验发声**，改的是另一条门禁：
+# 「素材在不在、每条 cue 有没有生产调用点、静音门生不生效、金币收支响得对不对」
+# 归 `tools/audio_sfx_check.gd`（96 项）。两边分工是有意的：
+# 这里验「该不该发」，那边验「有没有东西可发、发出来的门生不生效」。
 #
 # 「12 ms 的震动在真机上能不能感觉到」「权限有没有真的进 APK」都是
 # external，写在交接里，不在这里假装验过。
@@ -31,6 +36,7 @@ extends Node
 
 const CheckHarness := preload("res://tools/CheckHarness.gd")
 const Feedback := preload("res://ui/services/UiFeedback.gd")
+const SfxService := preload("res://ui/services/SfxService.gd")
 const Toast := preload("res://ui/components/GloryToast.gd")
 const ModalStackScript := preload("res://ui/services/ModalStack.gd")
 const ProviderScript := preload("res://scripts/tutorial/TutorialTargetProvider.gd")
@@ -66,6 +72,10 @@ func _ready() -> void:
 	await _check_reject()
 	_check_gold_rejections_speak()
 	await _check_disabled_reason()
+	# 收尾：9.17 起确认音/拒绝音都走 SfxService，这一跑会真的建出播放器池。
+	# 拆掉它能把「Node / 流缓存」那部分收干净；混音线程持有的 AudioStreamPlayback
+	# 仍偶发残留（详见 SfxService.shutdown），那部分不影响 CHECK_RESULT。
+	SfxService.shutdown()
 	_h.finish(get_tree())
 
 
@@ -97,6 +107,27 @@ func _check_bus_layout() -> void:
 func _check_confirm_fires_once() -> void:
 	Feedback.install()
 	Feedback.install()  # 幂等：连两次也只能连上一条
+
+	# **显式建立前置条件：开关开 + Master 没静音。**
+	#
+	# 不能指望「环境里本来就是开的」—— `ui_sound` 是落盘持久化的
+	# （PlayerProfile.save_profile），**上一跑的收尾状态就是这一跑的初值**。
+	# 9.17 实测：磁盘里留着 `ui_sound_enabled=false`（某次收尾没走到还原），
+	# 于是这里「成功该发一次」的两条断言红；而更糟的是
+	# `_check_confirm_respects_toggle` 里「关掉就不发」那条**空过**——
+	# 一个恒不发声的实现同样能绿。这是本仓栽过的
+	# 「断言被前置条件满足」的又一种形态，只不过前置来自磁盘不是来自注释。
+	#
+	# 下面的 `_check_no_haptics_on_desktop` 就是显式建前置的写法，这里补齐同款。
+	var sound_before: bool = PlayerProfile.get_presentation_toggle("ui_sound")
+	var master := AudioServer.get_bus_index("Master")
+	var mute_before: bool = AudioServer.is_bus_mute(master) if master >= 0 else false
+	PlayerProfile.set_presentation_toggle("ui_sound", true)
+	if master >= 0:
+		AudioServer.set_bus_mute(master, false)
+	_h.expect(Presentation.ui_sound_allowed(), "ui_sound_precondition_failed",
+		"开关开着、Master 总线没静音，ui_sound_allowed() 却是 false —— 下面几条断言无从谈起")
+
 	_reset()
 
 	var request_id := AsyncActionController.begin("ui_feedback_check",
@@ -126,6 +157,12 @@ func _check_confirm_fires_once() -> void:
 	_h.expect(Feedback.confirm_request_count() == 0,
 		"confirm_played_on_failure",
 		"业务失败之后仍然播了 %d 次确认反馈" % Feedback.confirm_request_count())
+
+	# 还原现场。还原成 `before` 而不是硬写成 true：门禁不该改写玩家的偏好，
+	# 上面那几条断言要的只是「这一刻是开的」。
+	PlayerProfile.set_presentation_toggle("ui_sound", sound_before)
+	if master >= 0:
+		AudioServer.set_bus_mute(master, mute_before)
 
 
 func _check_confirm_respects_toggle() -> void:

@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="VFXProfile3D" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+profile_id = "first_batch_group_heal"
+module_id = "first_batch_skills"
+curve_name = "lift_and_fade"
+dark_color = Color(0.055, 0.040, 0.018, 1)
+main_color = Color(0.92, 0.78, 0.42, 1)
+core_color = Color(1, 0.94, 0.68, 1)
+size = 1.05
+duration = 1.06
+particle_count = 4
+trail_length = 0.32
+emission_energy = 2.0
+ground_aligned = true
+quality_group = "important"
+parameters = {"layer_budget_per_target": 2, "max_visible_targets": 4, "mechanic": "every_fifth_group_heal"}

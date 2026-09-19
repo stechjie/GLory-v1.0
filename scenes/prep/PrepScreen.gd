@@ -8,6 +8,8 @@ const BattleSim = preload("res://scripts/battle/BattleSimulator.gd")
 # 只为拿它的 static 资源缓存（BattleRenderer.gd 没有 class_name）。战斗资源在这里
 # 就绪之后，BattleScreen 那边 _scene_for_model_path 直接命中缓存、不再同步读盘。
 const BattleRendererScript = preload("res://scenes/battle/BattleRenderer.gd")
+# 9.17 第二批：BGM 走常驻的 MusicService。
+const MusicService := preload("res://ui/services/MusicService.gd")
 const BattleLoadingOverlayScene := preload("res://ui/components/GloryLoadingOverlay.tscn")
 const BattleLoadingOverlayScript := preload("res://ui/components/GloryLoadingOverlay.gd")
 
@@ -28,7 +30,6 @@ const BATTLE_ACTION := "start_battle"
 const BATTLE_ACTION_TIMEOUT_MSEC := 90000
 const BATTLE_LOADING_MODAL_PRIORITY := 80
 
-var _prep_music_player: AudioStreamPlayer
 var _fps_label: Label
 var _fps_accum := 0.0
 
@@ -65,14 +66,21 @@ func _ready() -> void:
 	# 不能改成「房主从 room.prep 回灌」：房主买佣兵只扣 GameState.carrots、不动账本，
 	# 回灌会把花掉的萝卜还回来。
 	var carrot_harvest_gain := 0
+	var carrot_harvest_gains: Dictionary = {}
 	var carrot_server_authoritative := NetworkService.team_active and not NetworkService.is_host
 	if not GameState.tutorial_mode and not carrot_server_authoritative:
 		var harvest := GameState.harvest_carrots_for_round(GameState.round_index)
 		if bool(harvest.get("ok", false)):
 			carrot_harvest_gain = int(harvest.get("gain", 0))
+			var local_slot := clampi(NetworkService.team_local_slot, 0, 5) if NetworkService.team_active else 4
+			carrot_harvest_gains[local_slot] = carrot_harvest_gain
 			SaveManager.save_run()
 	elif carrot_server_authoritative and GameState.last_harvest_round == GameState.round_index:
 		carrot_harvest_gain = NetworkService.last_carrot_harvest_gain
+		if NetworkService.team_carrot_harvest_round == GameState.round_index:
+			carrot_harvest_gains = NetworkService.team_carrot_harvest_gains.duplicate(true)
+		if carrot_harvest_gains.is_empty():
+			carrot_harvest_gains[clampi(NetworkService.team_local_slot, 0, 5)] = carrot_harvest_gain
 	# 这套系统的失败模式全是**静默**的：不采集、被覆盖、被幂等挡掉，界面上一模一样，
 	# 都只表现为"萝卜不涨"。留一行 Debug 日志，出问题时一眼能分辨是哪一种，
 	# 不必再靠猜。Release 不打。
@@ -94,11 +102,11 @@ func _ready() -> void:
 	if GameState.shop_offers.is_empty() or GameState.shop_offers[0].is_empty():
 		_roll_shop()
 	await _build(startup_staged)
-	if carrot_harvest_gain > 0:
+	if not carrot_harvest_gains.is_empty():
 		# 记账：客机那条路径（_maybe_play_pending_carrot_harvest）也会在权威采集
 		# 到达时补播，两边共用这个标记保证一回合只播一次。
 		_carrot_feedback_round = GameState.round_index
-		call_deferred("play_carrot_harvest_feedback", carrot_harvest_gain)
+		call_deferred("play_carrot_harvest_feedback", carrot_harvest_gains)
 	# 这条连接必须放在最派生的类里：_connect_treasure_signals 定义在 PrepFlowController，
 	# 而面板的接线在 PrepUI._build() 里 —— 父类看不见子类的方法。
 	if not _treasure.net_signals_needed.is_connected(_connect_treasure_signals):
@@ -118,26 +126,18 @@ func _ready() -> void:
 	startup_ready.emit()
 
 func _start_prep_music() -> void:
-	if _prep_music_player != null:
-		return
 	# 下一回合是 PVP（含最终 PVP）时放专属音乐，否则放普通摆放音乐。
 	var next_kind := PrepRules.next_round_kind()
 	var music_path := PREP_PVP_MUSIC_PATH if next_kind == "pvp" or next_kind == "final" else PREP_MUSIC_PATH
-	# 必须用 load() 走资源系统：Android 导出包只含 mp3 的导入产物、不含原始文件，
-	# FileAccess.get_file_as_bytes 在真机上读到空字节（编辑器里却正常，因为原始
-	# 文件就在磁盘上）。战斗音乐用 load() 所以手机上一直有声，这里保持一致。
-	var stream := load(music_path) as AudioStream
-	if stream == null:
-		push_warning("准备界面音乐读取失败：%s" % music_path)
-		return
-	if stream is AudioStreamMP3:
-		(stream as AudioStreamMP3).loop = true
-	_prep_music_player = AudioStreamPlayer.new()
-	_prep_music_player.name = "PrepMusicPlayer"
-	_prep_music_player.stream = stream
-	_prep_music_player.bus = "Music" if AudioServer.get_bus_index("Music") >= 0 else "Master"
-	add_child(_prep_music_player)
-	_prep_music_player.play()
+	# 9.17 第二批：改走常驻 MusicService（播放器挂 root，不随页面释放）。
+	# 原来这里自建 AudioStreamPlayer 并 add_child 到备战页上；Main._clear() 切页面
+	# 时会把整页释放掉。BGM 由服务统一持有后，「打开子界面音乐断掉」那类问题
+	# 不会再从这一页冒出来。
+	#
+	# 「同一首不重启」由服务内部判等负责：每回合重建备战页时会再调一次这里，
+	# prep_music 不会从 0 秒重头播。load() 的注意事项（Android 导出包只含导入
+	# 产物）也已收进 MusicService._stream_for()。
+	MusicService.play(music_path)
 
 func _setup_fps_overlay() -> void:
 	_fps_label = Label.new()

@@ -464,11 +464,18 @@ func _case_growth_ceiling_exists_at_every_star() -> void:
 			"%s 的 max_stacks 是 %d —— 0 在 _grow_human_king 里等于不封顶" % [uid, base_cap])
 
 
-# --- 11. A raised probability must not quietly starve the tier above it ------
-# unique_death_execute rolls one number and reads it as cumulative bands:
-# tier1 < t1, tier2 < t1+t2, everything else is tier3 (the epic band). Raising
-# t1 without lowering t2 takes the difference straight out of tier3 -- and
-# executing an epic is the whole point of the skill.
+# --- 11. The epic band must be explicit, and must not shrink at 4 star ------
+#
+# 9.14 反馈之前，unique_death_execute 只摇一次并把三段当成累积带：
+# tier1 < t1、tier2 < t1+t2、**其余全算 tier3（史诗档）**。于是数据表里那个
+# tier3_chance 是从未被读的死字段，1~3 星实测史诗率恒为 1-t1-t2（=15%），而文案
+# 承诺的是 10%。母灵的 4★ 又抬高了 t1，把差额再从史诗档里抠走一段。
+#
+# 现在实现改成**三档各自读数据表**（BattleSimTreasures._mother_execute_on）：
+# 史诗档就是 tier3_chance 本身，落在 t1+t2+t3 之外的那一段是设计文档 §3 的「空档」。
+# 所以这条检查也换契约：史诗档直接读 tier3_chance，并守住两件事 ——
+#   1. 4★ 的史诗档不得低于 1~3★（处决史诗是这个技能的最高价值输出）；
+#   2. 三档之和不得超过 100%（超过会把最后一段压成负长度）。
 func _case_execute_epic_band_not_reduced() -> void:
 	for row in _units():
 		var d: Dictionary = row
@@ -476,15 +483,22 @@ func _case_execute_epic_band_not_reduced() -> void:
 			continue
 		var uid := str(d.get("id", "?"))
 		var block: Dictionary = d.get("star4", {})
-		var base_epic := 1.0 - float(d.get("tier1_or_merc_chance", 0.50)) - float(d.get("tier2_chance", 0.35))
-		var four_epic := 1.0 \
-			- float(block.get("tier1_or_merc_chance", d.get("tier1_or_merc_chance", 0.50))) \
-			- float(block.get("tier2_chance", d.get("tier2_chance", 0.35)))
+		var base_epic := float(d.get("tier3_chance", 0.10))
+		var four_epic := float(block.get("tier3_chance", base_epic))
 		_h.expect(four_epic >= base_epic - 0.0001, "execute_epic_band_reduced",
 			"%s 的 4 星处决史诗概率从 %.0f%% 降到 %.0f%% —— 处决史诗是这个技能的最高价值输出"
 				% [uid, base_epic * 100.0, four_epic * 100.0])
-		_h.expect(four_epic >= -0.0001, "execute_bands_overflow",
-			"%s 的 4 星 tier1+tier2 超过 100%%，史诗档变成负数" % uid)
+		for star_label in [["1~3★", d], ["4★", block]]:
+			var label: String = star_label[0]
+			var src: Dictionary = star_label[1]
+			if src.is_empty():
+				src = d
+			var total := float(src.get("tier1_or_merc_chance", d.get("tier1_or_merc_chance", 0.50))) \
+				+ float(src.get("tier2_chance", d.get("tier2_chance", 0.35))) \
+				+ float(src.get("tier3_chance", d.get("tier3_chance", 0.10)))
+			_h.expect(total <= 1.0 + 0.0001, "execute_bands_overflow",
+				"%s 的 %s 三档概率之和 %.2f 超过 100%%，最后一段会被压成负长度"
+					% [uid, label, total])
 
 
 # --- 12. Toxic Armor must scale with the wearer's own defense ----------------

@@ -17,9 +17,17 @@ signal codex_requested          # 「图鉴」按钮：进入图鉴界面
 signal profile_requested        # 左上角名牌：进入玩家资料界面
 signal friends_requested        # 左侧「朋友」按钮：进入好友界面
 signal chat_requested           # 左侧「聊天」按钮：进入私聊界面
+signal announcements_requested  # 右侧「公告 / 活动」：进入公告界面
+signal shop_requested           # 右侧「商店」：进入商城
+signal bag_requested            # 右上角「背包」：进入背包
+signal mail_requested           # 右上角「邮件」：进入邮箱（docs/邮件系统设计.md）
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
+# 9.17：BGM 走常驻服务（播放器挂 root），音效走 SfxService 的播放器池。
+# 两者都不做 autoload，由 Main._ready() 各 install() 一次。
+const MusicService := preload("res://ui/services/MusicService.gd")
+const SfxService := preload("res://ui/services/SfxService.gd")
 const REF_SIZE := Vector2(1672.0, 941.0)
 
 # V3 P0-07：房间面板改由 ModalStack 收口。
@@ -33,6 +41,8 @@ const TEX_PROFILE_AVATAR := preload("res://assets/ui/main_menu_live/profile_avat
 const TEX_GOLD := preload("res://assets/ui/main_menu_live/gold.png")
 const TEX_DIAMOND := preload("res://assets/ui/main_menu_live/diamond.png")
 const TEX_MAIL := preload("res://assets/ui/main_menu_live/mail.png")
+# 千分位与商城、邮件共用这一份（两处显示同一个数，格式不一样很显眼）。
+const Currency := preload("res://scripts/account/Currency.gd")
 const TEX_BAG := preload("res://assets/ui/main_menu_live/bag.png")
 const TEX_SETTINGS := preload("res://assets/ui/main_menu_live/settings.png")
 const TEX_FRIENDS := preload("res://assets/ui/main_menu_live/friends.png")
@@ -66,9 +76,15 @@ const DEBUG_BANDS := [
 var _profile_portrait: TextureRect
 var _profile_name_label: Label
 var _profile_sub_label: Label
+var _coin_label: Label
+var _diamond_label: Label
 # 「聊天」图标右上角的未读红点。显隐只跟 ChatService 走（状态只有一份）。
 var _chat_dot: Label
-var _menu_music_player: AudioStreamPlayer
+# 「朋友」图标右上角的申请红点。显隐只跟 AccountManager 的未读申请集合走。
+var _friends_dot: Label
+# 「公告 / 活动」右上角的红点。显隐只跟 AnnouncementService 走。
+var _news_dot: Label
+var _mail_dot: Label
 var _address_edit: LineEdit
 var _net_status: Label
 # 「敬请期待」不再持有 AcceptDialog 节点：见 _show_coming_soon()。
@@ -95,34 +111,49 @@ func _ready() -> void:
 		AccountManager.profile_changed.connect(_on_account_profile_changed)
 	if not ChatService.unread_changed.is_connected(_on_chat_unread_changed):
 		ChatService.unread_changed.connect(_on_chat_unread_changed)
+	if not AnnouncementService.changed.is_connected(_on_announcements_changed):
+		AnnouncementService.changed.connect(_on_announcements_changed)
+	if not MailService.changed.is_connected(_on_mail_changed):
+		MailService.changed.connect(_on_mail_changed)
 	_refresh_profile_plate()
 	_ensure_profile_loaded()
+	# 钱包**每次回主菜单都重拉**，不像资料那样吃缓存 —— 玩家多半是刚从商城买完东西回来的。
+	_refresh_wallet()
+	# 9.17 反馈第 6 条：朋友申请的红点与提示音。
+	#
+	# ★ 这一行**曾经漏掉了** —— `_refresh_friend_requests()` 连同红点都写好了，却没人调它，
+	# 于是红点永远是 _build() 里的初值 false、提示音一次都没响（「音效不响」与「没红点」
+	# 两条反馈其实是同一个根因）。主菜单每次都是新实例（Main._clear() 会 free 掉旧的），
+	# _ready() 必然重跑 —— 所以这里就是「每次回到主菜单都重新拉一次」的可靠落点。
+	_refresh_friend_requests()
+	# 大厅是停留最久的页面：只靠上面这一次的话，「已经停在大厅时收到的申请」要等下一次
+	# 进出页面才会亮。补一个轻量轮询，把红点与提示音对齐到聊天那种「实时」的观感。
+	_start_friend_request_poll()
 
 func _exit_tree() -> void:
 	if AccountManager.profile_changed.is_connected(_on_account_profile_changed):
 		AccountManager.profile_changed.disconnect(_on_account_profile_changed)
 	if ChatService.unread_changed.is_connected(_on_chat_unread_changed):
 		ChatService.unread_changed.disconnect(_on_chat_unread_changed)
+	if AnnouncementService.changed.is_connected(_on_announcements_changed):
+		AnnouncementService.changed.disconnect(_on_announcements_changed)
+	if MailService.changed.is_connected(_on_mail_changed):
+		MailService.changed.disconnect(_on_mail_changed)
 
 func _on_account_profile_changed(_profile: Dictionary) -> void:
 	_refresh_profile_plate()
 
 func _start_menu_music() -> void:
-	if _menu_music_player != null:
-		return
-	# 与摆放界面同款：必须用 load() 走资源系统，Android 导出包只含 mp3 的导入产物。
-	var stream := load(MENU_MUSIC_PATH) as AudioStream
-	if stream == null:
-		push_warning("主菜单音乐读取失败：%s" % MENU_MUSIC_PATH)
-		return
-	if stream is AudioStreamMP3:
-		(stream as AudioStreamMP3).loop = true
-	_menu_music_player = AudioStreamPlayer.new()
-	_menu_music_player.name = "MenuMusicPlayer"
-	_menu_music_player.stream = stream
-	_menu_music_player.bus = "Music" if AudioServer.get_bus_index("Music") >= 0 else "Master"
-	add_child(_menu_music_player)
-	_menu_music_player.play()
+	# 9.17 反馈第 2 条：菜单 BGM 改为常驻播放，打开图鉴/聊天/朋友/设置时不暂停。
+	#
+	# 原实现在这里自建一个 AudioStreamPlayer 并 add_child 到主菜单上 ——
+	# 而 Main._clear() 每次切子界面都会释放整个页面子树，播放器跟着没，
+	# 于是「开个设置，音乐就断了」。现在播放器挂在 get_tree().root 下
+	# （见 MusicService），不随任何一页生灭。
+	#
+	# 「同一首不重启」由 MusicService 内部判等负责：从子界面返回主菜单会再调
+	# 一次这里，不会把 menu_music 从 0 秒重头播。
+	MusicService.play(MENU_MUSIC_PATH)
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED:
@@ -167,13 +198,25 @@ func _build() -> void:
 	_profile_name_label = _add_label("", Vector2(200, 70), Vector2(330, 35), 24, "left")
 	_profile_sub_label = _add_label("", Vector2(200, 104), Vector2(330, 24), 18, "left")
 	_add_hit(Vector2(18, 12), Vector2(550, 178), _emit_profile, "left")
+	# 这两个数**曾经也是写死的假数据**（"89,450" / "2,350"），同上面名牌那两行。
+	# 现在接的是 GET /v1/me/wallet。拉到之前显示 "—" 而不是 0 ——
+	# 0 是一个**看起来正常的错值**，玩家会以为自己的钱没了。
 	_add_texture(TEX_GOLD, Vector2(645, 35), Vector2(220, 55))
-	_add_label("89,450", Vector2(645, 35), Vector2(220, 55), 24)
+	_coin_label = _add_label("—", Vector2(645, 35), Vector2(220, 55), 24)
 	_add_texture(TEX_DIAMOND, Vector2(885, 35), Vector2(220, 55))
-	_add_label("2,350", Vector2(885, 35), Vector2(220, 55), 24)
+	_diamond_label = _add_label("—", Vector2(885, 35), Vector2(220, 55), 24)
 
 	_add_texture(TEX_FRIENDS, Vector2(28, 300), Vector2(132, 132), "left")
 	_add_label(_menu_text("朋友", "Friends"), Vector2(47, 380), Vector2(94, 30), 21, "left")
+	# 9.17 反馈第 6 条：他人申请加好友时，在「朋友」按键上亮小红点，点进朋友后消失。
+	# 位置照「聊天」那个红点同款偏移（图标左上角 +92/+4），压在图标右上角。
+	# hit 仍然放在最后（顺序 = 绘制层级，见上面那条注释）。
+	_friends_dot = _add_label("●", Vector2(120, 304), Vector2(32, 32), 26, "left")
+	_friends_dot.add_theme_color_override("font_color", Tokens.UNREAD_DOT)
+	_friends_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# 初值先不亮：真实显隐等 _refresh_friend_requests() 拉到申请列表再定。
+	# 先亮再灭会在每次回主菜单时闪一下。
+	_friends_dot.visible = false
 	_add_hit(Vector2(28, 300), Vector2(132, 132), _emit_friends, "left")
 	_add_texture(TEX_CHAT, Vector2(28, 440), Vector2(132, 132), "left")
 	_add_label(_menu_text("聊天", "Chat"), Vector2(47, 520), Vector2(94, 30), 21, "left")
@@ -187,20 +230,30 @@ func _build() -> void:
 	# 右上角背包/邮件/设置、右侧商店/公告：锚定到屏幕右边（edge="right"）
 	_add_texture(TEX_BAG, Vector2(1340, 25), Vector2(100, 100), "right")
 	_add_label(_menu_text("背包", "Bag"), Vector2(1340, 95), Vector2(100, 7), 7, "right")
-	_add_hit(Vector2(1340, 25), Vector2(100, 100), _show_coming_soon, "right")
+	_add_hit(Vector2(1340, 25), Vector2(100, 100), _emit_bag, "right")
 	_add_texture(TEX_MAIL, Vector2(1450, 25), Vector2(100, 100), "right")
 	_add_label(_menu_text("邮件", "Mail"), Vector2(1450, 95), Vector2(100, 7), 7, "right")
-	_add_hit(Vector2(1450, 25), Vector2(100, 100), _show_coming_soon, "right")
+	# 有没读的邮件、或者有没领的附件时亮红点（MailService.needs_attention）。hit 仍然放在最后。
+	_mail_dot = _add_label("●", Vector2(1522, 22), Vector2(32, 32), 26, "right")
+	_mail_dot.add_theme_color_override("font_color", Tokens.UNREAD_DOT)
+	_mail_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_mail_dot.visible = MailService.needs_attention()
+	_add_hit(Vector2(1450, 25), Vector2(100, 100), _emit_mail, "right")
 	_add_texture(TEX_SETTINGS, Vector2(1560, 25), Vector2(100, 100), "right")
 	_add_label(_menu_text("设定", "Setting"), Vector2(1560, 95), Vector2(100, 7), 7, "right")
 	_add_hit(Vector2(1560, 25), Vector2(100, 100), _emit_settings, "right")
 
 	_add_texture(TEX_SHOP, Vector2(1380, 140), Vector2(270, 250), "right")
 	_add_label(_menu_text("商店", "Shop"), Vector2(1380, 150), Vector2(270, 34), 24, "right")
-	_add_hit(Vector2(1380, 140), Vector2(270, 250), _show_coming_soon, "right")
+	_add_hit(Vector2(1380, 140), Vector2(270, 250), _emit_shop, "right")
 	_add_texture(TEX_NEWS, Vector2(1380, 400), Vector2(270, 250), "right")
 	_add_label(_menu_text("公告 / 活动", "News / Events"), Vector2(1380, 407), Vector2(270, 34), 22, "right")
-	_add_hit(Vector2(1380, 400), Vector2(270, 250), _show_coming_soon, "right")
+	# 有没看过的公告时亮红点，同聊天那个。hit 仍然放在最后。
+	_news_dot = _add_label("●", Vector2(1612, 404), Vector2(32, 32), 26, "right")
+	_news_dot.add_theme_color_override("font_color", Tokens.UNREAD_DOT)
+	_news_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_news_dot.visible = AnnouncementService.any_unread()
+	_add_hit(Vector2(1380, 400), Vector2(270, 250), _emit_announcements, "right")
 
 	_add_texture(TEX_PREP, Vector2(215, 690), Vector2(220, 190))
 	_add_texture(TEX_CASUAL, Vector2(455, 690), Vector2(220, 190))
@@ -218,19 +271,24 @@ func _build() -> void:
 	_add_hit(Vector2(1010, 690), Vector2(220, 190), _show_room_overlay)
 	_add_hit(Vector2(1250, 690), Vector2(220, 190), _emit_codex)
 
-	var offline_btn := Button.new()
-	offline_btn.text = _menu_text("离线自测", "Offline")
-	offline_btn.focus_mode = Control.FOCUS_NONE
-	offline_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	var ob_style := Tokens.flat_box(Tokens.INK_PANEL, Tokens.INK_EDGE, 2, 26)
-	offline_btn.add_theme_stylebox_override("normal", ob_style)
-	offline_btn.add_theme_stylebox_override("hover", ob_style)
-	offline_btn.add_theme_stylebox_override("pressed", ob_style)
-	offline_btn.add_theme_color_override("font_color", Color(1.0, 0.90, 0.60))
-	offline_btn.add_theme_font_size_override("font_size", 22)
-	offline_btn.pressed.connect(_emit_offline)
-	add_child(offline_btn)
-	_track(offline_btn, Vector2(40, 876), Vector2(210, 54), 0, "left")
+	# 「离线自测」**只在调试版出现**（编辑器里跑、调试包）。
+	#
+	# 它不经过账号服务器就能打一整局，而规则是「连不上账号服务器就进不了游戏」——
+	# 发布包里留着它，等于给玩家一个绕开这条规则的入口。开发时照样能用。
+	if OS.is_debug_build():
+		var offline_btn := Button.new()
+		offline_btn.text = _menu_text("离线自测", "Offline")
+		offline_btn.focus_mode = Control.FOCUS_NONE
+		offline_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		var ob_style := Tokens.flat_box(Tokens.INK_PANEL, Tokens.INK_EDGE, 2, 26)
+		offline_btn.add_theme_stylebox_override("normal", ob_style)
+		offline_btn.add_theme_stylebox_override("hover", ob_style)
+		offline_btn.add_theme_stylebox_override("pressed", ob_style)
+		offline_btn.add_theme_color_override("font_color", Color(1.0, 0.90, 0.60))
+		offline_btn.add_theme_font_size_override("font_size", 22)
+		offline_btn.pressed.connect(_emit_offline)
+		add_child(offline_btn)
+		_track(offline_btn, Vector2(40, 876), Vector2(210, 54), 0, "left")
 
 	# 游戏重连：放在"开始游戏（自定房间 970,724）"正上方，仅在本地存在重连凭证时显示。
 	# 按它才连回上一场；按开始游戏则放弃旧局开新的一场。
@@ -286,28 +344,19 @@ func _build_room_panel() -> Control:
 	left.add_theme_constant_override("separation", 12)
 	root.add_child(left)
 
+	# 9.14 反馈：Token ID / 输入 Token ID / 生成 / 恢复 四个控件在实测里都没有作用，
+	# 从这里移除（网络侧动作与 Main 的信号处理保持不动，tools/main_team_*_action_check
+	# 直接调 Main 的处理函数，不经过这些按钮）。移除后左栏首项就是「创建房间」，
+	# 与右栏第一个房间行（表头下一行）自然对齐 —— 这正是反馈要求的位置。
 	var title := Label.new()
 	title.text = _menu_text("自定义房间", "Custom Room")
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 30)
 	title.add_theme_color_override("font_color", Color(0.45, 0.27, 0.08))
+	# 与右栏表头（24 号字的标题 + 42 高的刷新按钮 = 一行 42）等高，保证下一项
+	# 「创建房间」与第一个房间行处在同一水平线上。
+	title.custom_minimum_size = Vector2(0, 42)
 	left.add_child(title)
-
-	_token_label = Label.new()
-	_token_label.text = _menu_text("Token ID：", "Token ID: ") + SaveManager.load_public_token()
-	_token_label.add_theme_color_override("font_color", Color(0.45, 0.27, 0.08))
-	left.add_child(_token_label)
-
-	_token_id_edit = LineEdit.new()
-	_token_id_edit.placeholder_text = _menu_text("输入 Token ID", "Enter Token ID")
-	_token_id_edit.text = SaveManager.load_public_token()
-	left.add_child(_token_id_edit)
-
-	var token_row := HBoxContainer.new()
-	token_row.add_theme_constant_override("separation", 8)
-	left.add_child(token_row)
-	token_row.add_child(_dialog_button(_menu_text("生成", "Generate"), _emit_generate_token))
-	token_row.add_child(_dialog_button(_menu_text("恢复", "Resume"), _emit_resume_token))
 
 	left.add_child(_dialog_button(_menu_text("创建房间", "Create Room"), _emit_create_room))
 
@@ -321,6 +370,13 @@ func _build_room_panel() -> Control:
 	_room_status.custom_minimum_size = Vector2(300, 90)
 	_room_status.add_theme_color_override("font_color", Color(0.55, 0.22, 0.12))
 	left.add_child(_room_status)
+
+	# 「关闭」原来靠 Token 那几项把它顶到面板底部；控件移除后如果直接排在状态行后面，
+	# 它会跟着上移。加一个可伸缩的空白把「关闭」重新压在底部，保持原来的位置观感。
+	var close_spacer := Control.new()
+	close_spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	close_spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	left.add_child(close_spacer)
 
 	left.add_child(_dialog_button(_menu_text("关闭", "Close"), _close_room_panel))
 
@@ -403,7 +459,12 @@ func show_room_error(reason: String) -> void:
 		"token_id_unknown":
 			_room_status.text = _menu_text("没有找到可恢复的 Token ID", "No resumable game for this Token ID")
 		_:
-			_room_status.text = reason
+			# 出战名片的各种失败（领不到、过期、验不过…）对玩家是同一件事。
+			# 具体原因在战斗服务器日志里（seat card rejected reason=…），不给玩家看代码。
+			if reason.begins_with("card_"):
+				_room_status.text = _menu_text("暂时进不了对局，请稍后再试", "Can't join a match right now — try again later")
+			else:
+				_room_status.text = reason
 
 func _emit_join() -> void:
 	var address := NetworkConfig.SERVER_IP
@@ -523,6 +584,26 @@ func _on_chat_unread_changed(any_unread: bool) -> void:
 	if _chat_dot != null and is_instance_valid(_chat_dot):
 		_chat_dot.visible = any_unread
 
+
+# 「公告 / 活动」：此前是「敬请期待」（docs/公告系统设计.md）。
+func _emit_announcements() -> void:
+	announcements_requested.emit()
+
+
+func _on_announcements_changed() -> void:
+	if _news_dot != null and is_instance_valid(_news_dot):
+		_news_dot.visible = AnnouncementService.any_unread()
+
+
+# 「邮件」：此前是「敬请期待」（docs/邮件系统设计.md）。
+func _emit_mail() -> void:
+	mail_requested.emit()
+
+
+func _on_mail_changed() -> void:
+	if _mail_dot != null and is_instance_valid(_mail_dot):
+		_mail_dot.visible = MailService.needs_attention()
+
 # 名牌上的昵称与副行。**不自己拼显示名** —— 只从 AccountManager.display_name 出，
 # 那是全仓唯一的拼法。理由：player_name 不唯一（database/001 的设计），
 # 任何一处只显示昵称的地方，改名冒充就成立。
@@ -545,6 +626,101 @@ func _refresh_profile_plate() -> void:
 		str(profile.get("player_name", "")), str(profile.get("friend_code", "")))
 	var days := int(profile.get("days_since_created", 1))
 	_profile_sub_label.text = _menu_text("第 %d 天" % days, "Day %d" % days)
+
+func _emit_shop() -> void:
+	shop_requested.emit()
+
+func _emit_bag() -> void:
+	bag_requested.emit()
+
+# 拉余额。失败就**保持 "—"**，不要退回 0：0 是个看起来正常的错值。
+func _refresh_wallet() -> void:
+	if not AccountManager.is_logged_in():
+		return
+	var result: Dictionary = await AccountManager.fetch_wallet()
+	if not is_inside_tree() or _coin_label == null:
+		return
+	if int(result.get("code", 0)) / 100 != 2:
+		return
+	var body: Dictionary = result.get("body", {})
+	_coin_label.text = Currency.comma(int(body.get("coin", 0)))
+	_diamond_label.text = Currency.comma(int(body.get("diamond", 0)))
+
+# 朋友申请的轮询间隔。与 AccountManager 的 presence 心跳同拍（10 秒）——
+# 朋友申请**没有实时推送**（socket 只推私聊与公告），轮询是唯一的近实时手段。
+const FRIEND_REQUEST_POLL_SEC := 10.0
+
+var _friend_request_poll: Timer
+# 同一时刻只允许一趟在飞：弱网下会堆出一串在途请求，回来的顺序还是乱的。
+var _friend_request_busy := false
+
+# 轮询只在主菜单活着时存在（跟着页面一起被 Main._clear() 释放），不常驻。
+func _start_friend_request_poll() -> void:
+	_friend_request_poll = Timer.new()
+	_friend_request_poll.name = "FriendRequestPoll"
+	_friend_request_poll.wait_time = FRIEND_REQUEST_POLL_SEC
+	_friend_request_poll.autostart = false
+	_friend_request_poll.timeout.connect(_refresh_friend_requests)
+	add_child(_friend_request_poll)
+	_friend_request_poll.start()
+
+# 取数单独一层：无头门禁靠替换它来喂固定响应（同 ProfileScreen._send_friend_request
+# 的先例，friends08_check 就是那样打的桩）。真实现只是转调 AccountManager。
+func _fetch_friend_requests() -> Dictionary:
+	return await AccountManager.fetch_friend_requests()
+
+# 9.17 反馈第 6 条：朋友申请红点。
+#
+# 红点跟 AccountManager 那个**已读集合**走（状态只有一份，同聊天红点的理由）：
+# 「有没有未读申请」由 has_unread_friend_requests() 判，而点进朋友界面时
+# FriendsScreen 会调 mark_friend_requests_seen() —— 回到主菜单这次重拉就
+# 自然不再亮。所以这里不需要自己记「玩家点过没有」。
+#
+# 每次进主菜单都拉一次：朋友申请没有实时推送，主菜单是唯一稳定的轮询点。
+func _refresh_friend_requests() -> void:
+	if _friend_request_busy:
+		return
+	if not AccountManager.is_logged_in():
+		return
+	_friend_request_busy = true
+	var result: Dictionary = await _fetch_friend_requests()
+	_friend_request_busy = false
+	if not is_inside_tree():
+		return
+	if int(result.get("code", 0)) / 100 != 2:
+		# 拉不到就保持现状：宁可留着上一次的红点，也不要在网络抖一下时
+		# 把这个「有人申请加你」的提示抹掉。
+		return
+	var body: Dictionary = result.get("body", {})
+	var incoming: Array = body.get("incoming", [])
+	if _friends_dot != null and is_instance_valid(_friends_dot):
+		_friends_dot.visible = AccountManager.has_unread_friend_requests(incoming)
+	_alert_new_friend_requests(incoming)
+
+# 新申请到的时候响一声（与「聊天新信息」共用同一条 cue，素材就是一条）。
+#
+# **去重放在这里，不只靠 SfxService 的 10 秒节流。** 节流管的是「10 秒内只响
+# 一次」，管不了「同一份申请每次回主菜单都响一遍」；而本函数每次进主菜单都跑。
+# 所以这里按 AccountManager 的申请键记账：同一个键在本次进程内只提醒一次，
+# 之后新到的申请是新键，照常提醒（与聊天音共用一个 10 秒窗口）。
+#
+# 用 static：主菜单每次都是**新建**的实例（Main._clear() 会 free 掉旧的），
+# 记在实例字段上等于每次回主菜单就清零，去重会完全失效。
+static var _alerted_request_keys: Dictionary = {}
+
+func _alert_new_friend_requests(incoming: Array) -> void:
+	for entry in incoming:
+		if not (entry is Dictionary):
+			continue
+		var key := AccountManager.friend_request_key(entry)
+		if key.is_empty() or AccountManager.friend_request_seen.has(key):
+			continue
+		if _alerted_request_keys.has(key):
+			continue
+		_alerted_request_keys[key] = true
+		SfxService.play(SfxService.CUE_CHAT_ALERT)
+		# 一次采样最多一声：同时收到三份申请不该连响三下。
+		return
 
 # 首次进主菜单时拉一次资料，之后吃 AccountManager 的缓存。
 # 每次回主菜单都发一次请求既慢又费流量，而这些字段只有玩家自己能改。

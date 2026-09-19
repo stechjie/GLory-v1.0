@@ -9,10 +9,15 @@ extends Node
 #   阶段 load：新进程起同一个分片 -> 读回来 -> 核对内容
 #
 # 用法：
-#   godot --headless --path <proj> tools/persist_check.tscn -- --persist-phase=save
-#   godot --headless --path <proj> tools/persist_check.tscn -- --persist-phase=load
+#   godot --headless --path <proj> tools/persist_check.tscn -- --persist-phase=save --battle-card-key=user://test_battle_card_public.pem
+#   godot --headless --path <proj> tools/persist_check.tscn -- --persist-phase=load --battle-card-key=user://test_battle_card_public.pem
+#
+# --battle-card-key= 那一段是必须的：专服要出战名片公钥才肯启动，这里现场生成一把、
+# 写到那条测试路径（不碰默认路径，理由见 tools/battle_card_test_keys.gd）。
 #
 # 分片号固定用 7，避开默认端口，不会撞上真在跑的服务器。
+
+const BattleCardTestKeys := preload("res://tools/battle_card_test_keys.gd")
 
 const SHARD := 7
 const PORT := 8087
@@ -22,8 +27,17 @@ const HP_MARK := [33, 29]
 func _ready() -> void:
 	var phase := _arg("--persist-phase", "save")
 	NetworkService._shard_index = SHARD
-	if not NetworkService.start_dedicated_server(PORT):
-		print("[PERSIST] FATAL: cannot listen on %d" % PORT)
+	# 专服没有出战名片公钥就拒绝启动（BattleCard.gd）。这里现场生成一把一次性的；
+	# 服务器启动时读进内存，之后文件就没用了，立刻删。
+	var key_error := BattleCardTestKeys.install_for_server()
+	if not key_error.is_empty():
+		print("[PERSIST] FATAL: %s" % key_error)
+		get_tree().quit(2)
+		return
+	var started := NetworkService.start_dedicated_server(PORT)
+	BattleCardTestKeys.remove_files()
+	if not started:
+		print("[PERSIST] FATAL: cannot start server on %d: %s" % [PORT, NetworkService.last_error])
 		get_tree().quit(2)
 		return
 
@@ -40,6 +54,11 @@ func _do_save() -> void:
 	prep.team_hp = HP_MARK.duplicate()
 	prep.slot_states = ["player", "player", "dummy", "player", "empty", "empty"]
 	prep.leader_slot = 1
+	# 出战种族（协议 28）要活过重启。今天只有四族，合法选择只有一份、和默认一模一样，
+	# 所以 load 阶段核对的是「座位上这个字段还在」，而不是「内容不等于默认」。
+	prep.seat_races = {1: ["god", "dark", "undead", "human"]}
+	# 协议 29 的营地展示宠物同样是座位状态；重启后不能退回错误的默认宠物。
+	prep.seat_pets = {1: "pet_cat"}
 	NetworkService._assign_peer_to_room(7001, prep, "")
 
 	var lobby: Dictionary = NetworkService._new_room()
@@ -88,7 +107,13 @@ func _do_load() -> void:
 				rebased = false
 		detail.append("hp=%s phase=%s peers_cleared=%s reserved=%s deadline_rebased=%s" % [
 			hp_ok, phase_ok, peers_cleared, reserved_ok, rebased])
-		if not (hp_ok and phase_ok and peers_cleared and reserved_ok and rebased):
+		# 出战种族（协议 28）：座位上这个字段要还在，否则重启后回落默认四族
+		var races_ok := str((room.get("seat_races", {}) as Dictionary).get(1, [])) \
+			== str(["god", "dark", "undead", "human"])
+		detail.append("seat_races=%s" % races_ok)
+		var pet_ok := str((room.get("seat_pets", {}) as Dictionary).get(1, "")) == "pet_cat"
+		detail.append("seat_pet=%s" % pet_ok)
+		if not (hp_ok and phase_ok and peers_cleared and reserved_ok and rebased and races_ok and pet_ok):
 			ok = false
 
 	if not found_prep:

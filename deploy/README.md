@@ -136,6 +136,59 @@ sudo bash /opt/glory/src/deploy/update.sh
 
 ---
 
+## 在线人数上限与排队
+
+登录着的玩家超过上限时，新打开游戏的人停在启动画面排队（`backend/app/admission.py`）。
+**默认上限 1000 是暂定值，还没按这台机器的实测容量校准。**
+
+### 改上限（不用重启）
+
+```bash
+echo '{"online_limit": 400}' | sudo tee /opt/glory/admission.json
+```
+
+5 秒内生效，日志里会有一行 `在线上限 1000 -> 400`。删掉这个文件就回到默认值。
+写错格式（不是正整数）会保留原来的上限，并打一条警告。
+
+**不要为了改上限去重启。** 名额表和队列都在进程内存里，重启会清空排队顺序；
+已经在游戏里的玩家重连时照样进得来，排队的人要按重连先后重新排。
+
+### 看现在多少人
+
+```bash
+sudo journalctl -u glory-backend --since "10 min ago" | grep 在线
+```
+
+有人排队时每分钟一行：`在线 N（连着 N）/ 上限 N，排队 N（连着 N）`。
+「连着」之外的那部分是刚断线、名额还在宽限期里的人（180 秒）。
+
+### 部署顺序
+
+账号后端**先**更新，再发带排队的客户端。反过来的话新客户端连上旧后端收不到名额消息，
+会在启动画面等 10 秒后按「旧版服务器」放行 —— 能进，但这段时间没有排队保护。
+
+---
+
+## 公告
+
+管理员在 Supabase 后台改表发公告，操作手册、图片规格和部署步骤全在 `docs/公告系统设计.md`。
+这里只列服务器上要知道的三件事：
+
+**Caddy 配置要手动更新一次**（`update.sh` 不会替你做，它检测到旧配置会打一条提醒）：
+
+```bash
+sudo sed "s|GLORY_API_DOMAIN_PLACEHOLDER|你的域名|" /opt/glory/repo/deploy/Caddyfile | sudo tee /etc/caddy/Caddyfile >/dev/null
+sudo systemctl reload caddy
+```
+
+**维护公告**：账号服务器要停的时候写 `/opt/glory/public/status.json`（格式见设计文档第三节），维护完删掉。
+Caddy 直接给这个文件，账号服务器停了照样读得到。
+
+**公告图片**在 `/var/lib/glory-media`，由 systemd 的 `StateDirectory` 建（账号服务器唯一能写的目录），
+Caddy 从这里直接给 `/media/*`。里面的文件名都是内容哈希，不用手动管，不再被引用的 7 天后自动删。
+
+---
+
 ## 排查
 
 | 症状 | 先看这里 |

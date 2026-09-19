@@ -1,6 +1,20 @@
 class_name SynergyService
 extends RefCounted
 
+# 羁绊档位阈值。**必须与 SynergyPanel._race_entries() 显示的那几档一致** ——
+# 那边是给玩家看的文案表（带 name / detail），这边是判「刚跨过哪一档」用的
+# 纯数字表。两份漂移的症状是「面板写着 7 档、音效在 5 档就响」。
+# tools/audio_sfx_check 会拿这两个函数对一遍，对不上直接红。
+#
+# 取值的来源是 flags_from_counts() 下面那一堆比较：god 1/3/7、dark 1/2/5/7、
+# undead 1/4/7、human 1/2/7。
+const RACE_THRESHOLDS := {
+	"god": [1, 3, 7],
+	"dark": [1, 2, 5, 7],
+	"undead": [1, 4, 7],
+	"human": [1, 2, 7],
+}
+
 static func count_races_from_board() -> Dictionary:
 	var counts := {"god": 0, "dark": 0, "undead": 0, "human": 0}
 	for cell in GameState.board_slots:

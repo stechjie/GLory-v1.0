@@ -1,0 +1,1832 @@
+{
+	"composer_skill_id_count": 69,
+	"entries": [
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "ally",
+			"owner_id": "ally_abyss_beast",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "devour_bite"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "ally",
+			"owner_id": "ally_eternal_night",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "eternal_night"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "ally",
+			"owner_id": "ally_flame_claw",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "burn_claw"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "ally",
+			"owner_id": "ally_hell_inferno",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "hell_burst"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "ally",
+			"owner_id": "ally_soul_chain",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "soul_chain"
+		},
+		{
+			"composer_supported": false,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "boss",
+			"owner_id": "boss_apocalypse",
+			"owner_textures": [
+				{
+					"alpha": 0.82,
+					"delay": 0.0,
+					"duration": 2.0,
+					"exists": true,
+					"particles": 1,
+					"path": "res://assets/vfx/boss/boss_apocalypse_chargeup.png",
+					"role": "cast",
+					"scale": 0.68
+				},
+				{
+					"alpha": 0.82,
+					"delay": 0.18,
+					"duration": 1.45,
+					"exists": true,
+					"particles": 1,
+					"path": "res://assets/vfx/boss/boss_apocalypse_shield.png",
+					"role": "cast",
+					"scale": 0.64
+				},
+				{
+					"alpha": 0.82,
+					"delay": 1.72,
+					"duration": 0.62,
+					"exists": true,
+					"particles": 5,
+					"path": "res://assets/vfx/boss/boss_apocalypse_blast.png",
+					"role": "hit",
+					"scale": 0.78
+				}
+			],
+			"route_status": "OWNER_TEXTURES",
+			"skill_id": "apocalypse_charge"
+		},
+		{
+			"composer_supported": false,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "boss",
+			"owner_id": "boss_blood_demon",
+			"owner_textures": [
+				{
+					"alpha": 0.82,
+					"delay": 0.0,
+					"duration": 1.4,
+					"exists": true,
+					"particles": 1,
+					"path": "res://assets/vfx/boss/boss_blood_rage.png",
+					"role": "cast",
+					"scale": 0.6
+				},
+				{
+					"alpha": 0.82,
+					"delay": 0.18,
+					"duration": 0.58,
+					"exists": true,
+					"particles": 1,
+					"path": "res://assets/vfx/boss/boss_blood_lifesteal.png",
+					"role": "cast",
+					"scale": 0.52
+				},
+				{
+					"alpha": 0.82,
+					"delay": 0.52,
+					"duration": 0.65,
+					"exists": true,
+					"particles": 5,
+					"path": "res://assets/vfx/boss/boss_blood_overflow.png",
+					"role": "hit",
+					"scale": 0.66
+				}
+			],
+			"route_status": "OWNER_TEXTURES",
+			"skill_id": "blood_rage"
+		},
+		{
+			"composer_supported": false,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "boss",
+			"owner_id": "boss_holy_priest",
+			"owner_textures": [
+				{
+					"alpha": 0.82,
+					"delay": 0.0,
+					"duration": 0.85,
+					"exists": true,
+					"particles": 5,
+					"path": "res://assets/vfx/boss/boss_holy_purify.png",
+					"role": "hit",
+					"scale": 0.64
+				},
+				{
+					"alpha": 0.82,
+					"delay": 0.18,
+					"duration": 1.0,
+					"exists": true,
+					"particles": 1,
+					"path": "res://assets/vfx/boss/boss_holy_heal.png",
+					"role": "cast",
+					"scale": 0.58
+				},
+				{
+					"alpha": 0.82,
+					"delay": 0.36,
+					"duration": 1.25,
+					"exists": true,
+					"particles": 1,
+					"path": "res://assets/vfx/boss/boss_holy_shield.png",
+					"role": "cast",
+					"scale": 0.62
+				}
+			],
+			"route_status": "OWNER_TEXTURES",
+			"skill_id": "holy_purify"
+		},
+		{
+			"composer_supported": false,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "boss",
+			"owner_id": "boss_meteor_caster",
+			"owner_textures": [
+				{
+					"alpha": 0.82,
+					"delay": 0.0,
+					"duration": 1.35,
+					"exists": true,
+					"particles": 1,
+					"path": "res://assets/vfx/boss/boss_meteor_warning.png",
+					"role": "cast",
+					"scale": 0.6
+				},
+				{
+					"alpha": 0.82,
+					"delay": 0.42,
+					"duration": 0.82,
+					"exists": true,
+					"particles": 1,
+					"path": "res://assets/vfx/boss/boss_meteor_trail.png",
+					"role": "projectile",
+					"scale": 0.48
+				},
+				{
+					"alpha": 0.82,
+					"delay": 1.18,
+					"duration": 0.62,
+					"exists": true,
+					"particles": 5,
+					"path": "res://assets/vfx/boss/boss_meteor_explosion.png",
+					"role": "hit",
+					"scale": 0.66
+				}
+			],
+			"route_status": "OWNER_TEXTURES",
+			"skill_id": "element_meteor"
+		},
+		{
+			"composer_supported": false,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "boss",
+			"owner_id": "boss_mirror_lord",
+			"owner_textures": [
+				{
+					"alpha": 0.82,
+					"delay": 0.0,
+					"duration": 0.75,
+					"exists": true,
+					"particles": 1,
+					"path": "res://assets/vfx/boss/boss_mirror_split.png",
+					"role": "cast",
+					"scale": 0.64
+				},
+				{
+					"alpha": 0.82,
+					"delay": 0.16,
+					"duration": 1.25,
+					"exists": true,
+					"particles": 1,
+					"path": "res://assets/vfx/boss/boss_mirror_clone.png",
+					"role": "cast",
+					"scale": 0.52
+				},
+				{
+					"alpha": 0.82,
+					"delay": 0.52,
+					"duration": 0.55,
+					"exists": true,
+					"particles": 5,
+					"path": "res://assets/vfx/boss/boss_mirror_slash.png",
+					"role": "hit",
+					"scale": 0.58
+				}
+			],
+			"route_status": "OWNER_TEXTURES",
+			"skill_id": "mirror_clone"
+		},
+		{
+			"composer_supported": false,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "boss",
+			"owner_id": "boss_rage_beast",
+			"owner_textures": [
+				{
+					"alpha": 0.82,
+					"delay": 0.0,
+					"duration": 1.6,
+					"exists": true,
+					"particles": 1,
+					"path": "res://assets/vfx/boss/boss_rage_stack.png",
+					"role": "cast",
+					"scale": 0.54
+				},
+				{
+					"alpha": 0.82,
+					"delay": 0.2,
+					"duration": 1.35,
+					"exists": true,
+					"particles": 1,
+					"path": "res://assets/vfx/boss/boss_rage_aura.png",
+					"role": "cast",
+					"scale": 0.64
+				},
+				{
+					"alpha": 0.82,
+					"delay": 0.56,
+					"duration": 0.65,
+					"exists": true,
+					"particles": 5,
+					"path": "res://assets/vfx/boss/boss_rage_burst.png",
+					"role": "hit",
+					"scale": 0.66
+				}
+			],
+			"route_status": "OWNER_TEXTURES",
+			"skill_id": "rage_stack"
+		},
+		{
+			"composer_supported": false,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "boss",
+			"owner_id": "boss_soul_devourer",
+			"owner_textures": [
+				{
+					"alpha": 0.82,
+					"delay": 0.0,
+					"duration": 1.3,
+					"exists": true,
+					"particles": 1,
+					"path": "res://assets/vfx/boss/boss_soul_devour.png",
+					"role": "cast",
+					"scale": 0.64
+				},
+				{
+					"alpha": 0.82,
+					"delay": 0.22,
+					"duration": 0.6,
+					"exists": true,
+					"particles": 1,
+					"path": "res://assets/vfx/boss/boss_soul_fragment.png",
+					"role": "cast",
+					"scale": 0.42
+				},
+				{
+					"alpha": 0.82,
+					"delay": 0.48,
+					"duration": 1.35,
+					"exists": true,
+					"particles": 1,
+					"path": "res://assets/vfx/boss/boss_soul_growth.png",
+					"role": "cast",
+					"scale": 0.58
+				}
+			],
+			"route_status": "OWNER_TEXTURES",
+			"skill_id": "soul_devour"
+		},
+		{
+			"composer_supported": false,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "boss",
+			"owner_id": "boss_thunder_core",
+			"owner_textures": [
+				{
+					"alpha": 0.82,
+					"delay": 0.0,
+					"duration": 1.4,
+					"exists": true,
+					"particles": 1,
+					"path": "res://assets/vfx/boss/boss_thunder_stack.png",
+					"role": "cast",
+					"scale": 0.56
+				},
+				{
+					"alpha": 0.82,
+					"delay": 0.22,
+					"duration": 0.58,
+					"exists": true,
+					"particles": 5,
+					"path": "res://assets/vfx/boss/boss_thunder_counter.png",
+					"role": "hit",
+					"scale": 0.6
+				},
+				{
+					"alpha": 0.82,
+					"delay": 0.58,
+					"duration": 0.7,
+					"exists": true,
+					"particles": 1,
+					"path": "res://assets/vfx/boss/boss_thunder_overload.png",
+					"role": "cast",
+					"scale": 0.66
+				}
+			],
+			"route_status": "OWNER_TEXTURES",
+			"skill_id": "overload_counter"
+		},
+		{
+			"composer_supported": false,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "boss",
+			"owner_id": "boss_twin_gate",
+			"owner_textures": [
+				{
+					"alpha": 0.82,
+					"delay": 0.0,
+					"duration": 1.6,
+					"exists": true,
+					"particles": 1,
+					"path": "res://assets/vfx/boss/boss_twin_timer.png",
+					"role": "cast",
+					"scale": 0.52
+				},
+				{
+					"alpha": 0.82,
+					"delay": 0.42,
+					"duration": 0.8,
+					"exists": true,
+					"particles": 1,
+					"path": "res://assets/vfx/boss/boss_twin_revive.png",
+					"role": "cast",
+					"scale": 0.62
+				},
+				{
+					"alpha": 0.82,
+					"delay": 0.12,
+					"duration": 1.35,
+					"exists": true,
+					"particles": 1,
+					"path": "res://assets/vfx/boss/boss_twin_link.png",
+					"role": "projectile",
+					"scale": 0.58
+				}
+			],
+			"route_status": "OWNER_TEXTURES",
+			"skill_id": "twin_revive"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "dark_doom",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "shared_hp_link"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "dark_dragon",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "black_hole"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "dark_fear",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "fear"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "dark_imp",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "curse_attack"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "dark_mage",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "silence_bolt"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "dark_queen",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "same_target_damage_stack"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "dark_scythe",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "blink_low_def_backline"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "dark_suc",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "stun"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "god_angel",
+			"owner_textures": [
+				{
+					"alpha": 0.95,
+					"delay": 0.0,
+					"duration": 0.65,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/god_angel/god_angel_immunity_feathers.png",
+					"role": "projectile",
+					"scale": 0.42
+				},
+				{
+					"alpha": 1.0,
+					"delay": 0.07,
+					"duration": 0.65,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/god_angel/god_angel_shelter_wing.png",
+					"role": "cast",
+					"scale": 0.5
+				}
+			],
+			"route_status": "TEXTURE_AND_PROCEDURAL",
+			"skill_id": "nearby_ally_heal_buff"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "god_arbiter",
+			"owner_textures": [
+				{
+					"alpha": 1.0,
+					"delay": 0.0,
+					"duration": 0.42,
+					"exists": true,
+					"particles": 5,
+					"path": "res://assets/vfx/skills/god_arbiter/god_arbiter_verdict_slash_v7.png",
+					"role": "hit",
+					"scale": 0.54
+				},
+				{
+					"alpha": 1.0,
+					"delay": 0.07,
+					"duration": 0.42,
+					"exists": true,
+					"particles": 8,
+					"path": "res://assets/vfx/skills/god_arbiter/god_arbiter_verdict_impact_v7.png",
+					"role": "hit",
+					"scale": 0.54
+				}
+			],
+			"route_status": "TEXTURE_AND_PROCEDURAL",
+			"skill_id": "judgement_strike"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "god_archangel",
+			"owner_textures": [
+				{
+					"alpha": 1.0,
+					"delay": 0.0,
+					"duration": 0.9,
+					"exists": true,
+					"particles": 3,
+					"path": "res://assets/vfx/skills/god_archangel/god_archangel_covenant_sigla.png",
+					"role": "head",
+					"scale": 0.42
+				},
+				{
+					"alpha": 0.95,
+					"delay": 0.07,
+					"duration": 0.7,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/god_archangel/god_archangel_mercy_ribbon.png",
+					"role": "projectile",
+					"scale": 0.42
+				}
+			],
+			"route_status": "TEXTURE_AND_PROCEDURAL",
+			"skill_id": "random_ally_damage_reduction"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "god_aurora",
+			"owner_textures": [
+				{
+					"alpha": 0.95,
+					"delay": 0.0,
+					"duration": 0.4,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/god_aurora/god_aurora_arrow_trail.png",
+					"role": "projectile",
+					"scale": 0.42
+				},
+				{
+					"alpha": 1.0,
+					"delay": 0.07,
+					"duration": 0.4,
+					"exists": true,
+					"particles": 8,
+					"path": "res://assets/vfx/skills/god_aurora/god_aurora_true_hit.png",
+					"role": "hit",
+					"scale": 0.54
+				}
+			],
+			"route_status": "TEXTURE_AND_PROCEDURAL",
+			"skill_id": "true_damage_attack"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "god_guard",
+			"owner_textures": [
+				{
+					"alpha": 1.0,
+					"delay": 0.0,
+					"duration": 0.55,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/god_guard/god_guard_crystal_panel.png",
+					"role": "cast",
+					"scale": 0.5
+				},
+				{
+					"alpha": 1.0,
+					"delay": 0.07,
+					"duration": 0.55,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/god_guard/god_guard_taunt_rune.png",
+					"role": "cast",
+					"scale": 0.5
+				}
+			],
+			"route_status": "TEXTURE_AND_PROCEDURAL",
+			"skill_id": "guardian_shield_taunt"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "god_king",
+			"owner_textures": [
+				{
+					"alpha": 0.95,
+					"delay": 0.0,
+					"duration": 0.5,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/god_king/god_king_judgement_line.png",
+					"role": "projectile",
+					"scale": 0.42
+				},
+				{
+					"alpha": 1.0,
+					"delay": 0.07,
+					"duration": 0.5,
+					"exists": true,
+					"particles": 8,
+					"path": "res://assets/vfx/skills/god_king/god_king_royal_impact.png",
+					"role": "hit",
+					"scale": 0.54
+				}
+			],
+			"route_status": "TEXTURE_AND_PROCEDURAL",
+			"skill_id": "global_divine_blast"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "god_priest",
+			"owner_textures": [
+				{
+					"alpha": 0.82,
+					"delay": 0.0,
+					"duration": 1.2,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/god_priest/god_priest_holy_ring.png",
+					"role": "foot",
+					"scale": 0.62
+				},
+				{
+					"alpha": 1.0,
+					"delay": 0.07,
+					"duration": 0.65,
+					"exists": true,
+					"particles": 8,
+					"path": "res://assets/vfx/skills/god_priest/god_priest_soft_spark.png",
+					"role": "hit",
+					"scale": 0.54
+				}
+			],
+			"route_status": "TEXTURE_AND_PROCEDURAL",
+			"skill_id": "lowest_ally_heal"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "god_priestess",
+			"owner_textures": [
+				{
+					"alpha": 1.0,
+					"delay": 0.0,
+					"duration": 0.65,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/god_priestess/god_priestess_decree.png",
+					"role": "cast",
+					"scale": 0.5
+				},
+				{
+					"alpha": 1.0,
+					"delay": 0.07,
+					"duration": 0.9,
+					"exists": true,
+					"particles": 3,
+					"path": "res://assets/vfx/skills/god_priestess/god_priestess_decree_mark.png",
+					"role": "head",
+					"scale": 0.42
+				}
+			],
+			"route_status": "TEXTURE_AND_PROCEDURAL",
+			"skill_id": "nearest_ally_bless"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "human_archer",
+			"owner_textures": [
+				{
+					"alpha": 0.95,
+					"delay": 0.0,
+					"duration": 0.4,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/human_archer/human_archer_arrow_trail.png",
+					"role": "projectile",
+					"scale": 0.42
+				},
+				{
+					"alpha": 1.0,
+					"delay": 0.07,
+					"duration": 0.4,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/human_archer/human_archer_charge_wind.png",
+					"role": "cast",
+					"scale": 0.5
+				},
+				{
+					"alpha": 1.0,
+					"delay": 0.14,
+					"duration": 0.4,
+					"exists": true,
+					"particles": 5,
+					"path": "res://assets/vfx/skills/human_archer/human_archer_pierce_flash.png",
+					"role": "hit",
+					"scale": 0.54
+				},
+				{
+					"alpha": 0.82,
+					"delay": 0.21,
+					"duration": 1.2,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/human_archer/human_archer_star_crack.png",
+					"role": "foot",
+					"scale": 0.62
+				},
+				{
+					"alpha": 1.0,
+					"delay": 0.28,
+					"duration": 0.4,
+					"exists": true,
+					"particles": 8,
+					"path": "res://assets/vfx/skills/human_archer/human_archer_leaf_spark.png",
+					"role": "hit",
+					"scale": 0.54
+				}
+			],
+			"route_status": "TEXTURE_AND_PROCEDURAL",
+			"skill_id": "every_fourth_combo"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "human_cleric",
+			"owner_textures": [
+				{
+					"alpha": 0.82,
+					"delay": 0.0,
+					"duration": 1.2,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/human_cleric/human_cleric_life_mark.png",
+					"role": "foot",
+					"scale": 0.62
+				},
+				{
+					"alpha": 0.95,
+					"delay": 0.07,
+					"duration": 0.6,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/human_cleric/human_cleric_heal_ribbon.png",
+					"role": "projectile",
+					"scale": 0.42
+				},
+				{
+					"alpha": 1.0,
+					"delay": 0.14,
+					"duration": 0.6,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/human_cleric/human_cleric_prayer_wisp.png",
+					"role": "cast",
+					"scale": 0.5
+				},
+				{
+					"alpha": 1.0,
+					"delay": 0.21,
+					"duration": 0.6,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/human_cleric/cleric_final_contact.png",
+					"role": "cast",
+					"scale": 0.5
+				}
+			],
+			"route_status": "TEXTURE_AND_PROCEDURAL",
+			"skill_id": "every_fifth_group_heal"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "human_death_servant",
+			"owner_textures": [
+				{
+					"alpha": 1.0,
+					"delay": 0.0,
+					"duration": 0.55,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/human_death_servant/human_death_servant_guard_sigils.png",
+					"role": "cast",
+					"scale": 0.5
+				},
+				{
+					"alpha": 1.0,
+					"delay": 0.07,
+					"duration": 0.55,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/human_death_servant/human_death_servant_blood_chain.png",
+					"role": "cast",
+					"scale": 0.5
+				},
+				{
+					"alpha": 0.82,
+					"delay": 0.14,
+					"duration": 1.2,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/human_death_servant/human_death_servant_oath_crack.png",
+					"role": "foot",
+					"scale": 0.62
+				},
+				{
+					"alpha": 1.0,
+					"delay": 0.21,
+					"duration": 0.55,
+					"exists": true,
+					"particles": 8,
+					"path": "res://assets/vfx/skills/human_death_servant/human_death_servant_sacrifice_burst.png",
+					"role": "hit",
+					"scale": 0.54
+				}
+			],
+			"route_status": "TEXTURE_AND_PROCEDURAL",
+			"skill_id": "left_neighbor_sacrifice"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "human_king",
+			"owner_textures": [
+				{
+					"alpha": 0.78,
+					"delay": 0.0,
+					"duration": 0.62,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/human_king/human_king_heaven_sword.png",
+					"role": "hit",
+					"scale": 0.44
+				}
+			],
+			"route_status": "TEXTURE_AND_PROCEDURAL",
+			"skill_id": "unique_king_growth"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "human_mage",
+			"owner_textures": [
+				{
+					"alpha": 1.0,
+					"delay": 0.0,
+					"duration": 0.5,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/human_mage/human_mage_element_orb.png",
+					"role": "cast",
+					"scale": 0.5
+				},
+				{
+					"alpha": 1.0,
+					"delay": 0.07,
+					"duration": 0.5,
+					"exists": true,
+					"particles": 8,
+					"path": "res://assets/vfx/skills/human_mage/human_mage_element_burst.png",
+					"role": "hit",
+					"scale": 0.54
+				},
+				{
+					"alpha": 0.95,
+					"delay": 0.14,
+					"duration": 0.5,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/human_mage/human_mage_element_trail.png",
+					"role": "projectile",
+					"scale": 0.42
+				},
+				{
+					"alpha": 0.82,
+					"delay": 0.21,
+					"duration": 2.5,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/human_mage/human_mage_element_residue.png",
+					"role": "foot",
+					"scale": 0.62
+				}
+			],
+			"route_status": "TEXTURE_AND_PROCEDURAL",
+			"skill_id": "random_attribute_bolt"
+		},
+		{
+			"composer_supported": false,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "human_merchant",
+			"owner_textures": [
+				{
+					"alpha": 1.0,
+					"delay": 0.0,
+					"duration": 0.55,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/human_merchant/human_merchant_contract_slip.png",
+					"role": "cast",
+					"scale": 0.5
+				},
+				{
+					"alpha": 1.0,
+					"delay": 0.07,
+					"duration": 0.55,
+					"exists": true,
+					"particles": 8,
+					"path": "res://assets/vfx/skills/human_merchant/human_merchant_coin_spark.png",
+					"role": "hit",
+					"scale": 0.54
+				},
+				{
+					"alpha": 0.95,
+					"delay": 0.14,
+					"duration": 0.55,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/human_merchant/human_merchant_coin_trail.png",
+					"role": "projectile",
+					"scale": 0.42
+				}
+			],
+			"route_status": "OWNER_TEXTURES",
+			"skill_id": "post_battle_gold_by_star"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "human_militia",
+			"owner_textures": [
+				{
+					"alpha": 1.0,
+					"delay": 0.0,
+					"duration": 0.4,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/human_militia/human_militia_shield_bash.png",
+					"role": "cast",
+					"scale": 0.5
+				},
+				{
+					"alpha": 0.82,
+					"delay": 0.07,
+					"duration": 1.2,
+					"exists": true,
+					"particles": 8,
+					"path": "res://assets/vfx/skills/human_militia/human_militia_impact_ring.png",
+					"role": "foot",
+					"scale": 0.62
+				},
+				{
+					"alpha": 1.0,
+					"delay": 0.14,
+					"duration": 0.4,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/human_militia/human_militia_charge_dust_start.png",
+					"role": "cast",
+					"scale": 0.5
+				}
+			],
+			"route_status": "TEXTURE_AND_PROCEDURAL",
+			"skill_id": "attack_interrupt"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "human_swordsman",
+			"owner_textures": [
+				{
+					"alpha": 0.88,
+					"delay": 0.0,
+					"duration": 0.54,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/human_swordsman/human_swordsman_slash_a.png",
+					"role": "hit",
+					"scale": 0.42
+				},
+				{
+					"alpha": 0.74,
+					"delay": 0.1,
+					"duration": 0.48,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/human_swordsman/human_swordsman_slash_b.png",
+					"role": "hit",
+					"scale": 0.34
+				}
+			],
+			"route_status": "TEXTURE_AND_PROCEDURAL",
+			"skill_id": "front_cone_stun"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "merc",
+			"owner_id": "merc_aquarius_time",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "time_slow"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "merc",
+			"owner_id": "merc_aries_blood",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "blood_rampage"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "merc",
+			"owner_id": "merc_cancer_shell",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "shell_guard"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "merc",
+			"owner_id": "merc_capricorn_steel",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "steel_order"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "merc",
+			"owner_id": "merc_gemini_assassin",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "twin_strike"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "merc",
+			"owner_id": "merc_leo_sun",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "king_aura"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "merc",
+			"owner_id": "merc_libra_judge",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "balance_judge"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "merc",
+			"owner_id": "merc_pisces_bubble",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "bubble_dream"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "merc",
+			"owner_id": "merc_sagittarius_rain",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "arrow_rain"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "merc",
+			"owner_id": "merc_scorpio_death",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "death_hunt"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "merc",
+			"owner_id": "merc_taurus_charge",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "gold_charge"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "merc",
+			"owner_id": "merc_virgo_heal",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "holy_song"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "monster",
+			"owner_id": "pve_land_ancient_tree",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "nature_heal"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "monster",
+			"owner_id": "pve_land_lava_golem",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "lava_burst"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "monster",
+			"owner_id": "pve_land_mountain_giant",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "earth_slam"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "monster",
+			"owner_id": "pve_land_rock_beast",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "stun_impact"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "monster",
+			"owner_id": "pve_land_vein_worm",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "burrow_ambush"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "monster",
+			"owner_id": "pve_land_vine_guard",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "entangle"
+		},
+		{
+			"composer_supported": false,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "monster",
+			"owner_id": "pve_ren_poison_doctor",
+			"owner_textures": [],
+			"route_status": "N_A_NO_ACTIVE_SKILL",
+			"skill_id": "none"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "monster",
+			"owner_id": "pve_ren_shadow_thief",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "backstab"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "monster",
+			"owner_id": "pve_ren_voodoo_witch",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "curse"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "monster",
+			"owner_id": "pve_ren_wandering_swordsman",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "counter_slash"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "monster",
+			"owner_id": "pve_sky_cloud_eagle",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "dive_backline"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "monster",
+			"owner_id": "pve_sky_dome_guard",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "holy_shield_burst"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "monster",
+			"owner_id": "pve_sky_hymn_spirit",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "slow_aura"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "monster",
+			"owner_id": "pve_sky_star_butterfly",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "heal_allies"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "monster",
+			"owner_id": "pve_sky_thunder_spirit",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "chain_lightning"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "monster",
+			"owner_id": "pve_sky_wind_falcon",
+			"owner_textures": [],
+			"route_status": "PROCEDURAL",
+			"skill_id": "wind_bleed"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "undead_bomb",
+			"owner_textures": [
+				{
+					"alpha": 1.0,
+					"delay": 0.0,
+					"duration": 0.48,
+					"exists": true,
+					"particles": 8,
+					"path": "res://assets/vfx/skills/undead_bomb/undead_bomb_core_pop.png",
+					"role": "hit",
+					"scale": 0.54
+				},
+				{
+					"alpha": 0.82,
+					"delay": 0.07,
+					"duration": 1.2,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/undead_bomb/undead_bomb_poison_ring.png",
+					"role": "foot",
+					"scale": 0.62
+				},
+				{
+					"alpha": 1.0,
+					"delay": 0.14,
+					"duration": 0.48,
+					"exists": true,
+					"particles": 8,
+					"path": "res://assets/vfx/skills/undead_bomb/undead_bomb_soul_fragment.png",
+					"role": "cast",
+					"scale": 0.5
+				}
+			],
+			"route_status": "TEXTURE_AND_PROCEDURAL",
+			"skill_id": "death_poison_explosion"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "undead_fly",
+			"owner_textures": [
+				{
+					"alpha": 0.95,
+					"delay": 0.0,
+					"duration": 0.45,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/undead_fly/undead_fly_poison_feather.png",
+					"role": "projectile",
+					"scale": 0.42
+				},
+				{
+					"alpha": 1.0,
+					"delay": 0.07,
+					"duration": 0.45,
+					"exists": true,
+					"particles": 8,
+					"path": "res://assets/vfx/skills/undead_fly/undead_fly_evasion_spark.png",
+					"role": "hit",
+					"scale": 0.54
+				},
+				{
+					"alpha": 1.0,
+					"delay": 0.14,
+					"duration": 0.45,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/undead_fly/undead_fly_dodge_afterimage.png",
+					"role": "cast",
+					"scale": 0.5
+				}
+			],
+			"route_status": "TEXTURE_AND_PROCEDURAL",
+			"skill_id": "poison_attack"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "undead_mother",
+			"owner_textures": [
+				{
+					"alpha": 1.0,
+					"delay": 0.0,
+					"duration": 0.6,
+					"exists": true,
+					"particles": 5,
+					"path": "res://assets/vfx/skills/undead_mother/undead_mother_dark_orb.png",
+					"role": "hit",
+					"scale": 0.54
+				},
+				{
+					"alpha": 1.0,
+					"delay": 0.07,
+					"duration": 0.9,
+					"exists": true,
+					"particles": 3,
+					"path": "res://assets/vfx/skills/undead_mother/undead_mother_dark_book.png",
+					"role": "head",
+					"scale": 0.42
+				},
+				{
+					"alpha": 1.0,
+					"delay": 0.14,
+					"duration": 0.9,
+					"exists": true,
+					"particles": 3,
+					"path": "res://assets/vfx/skills/undead_mother/undead_mother_death_mark.png",
+					"role": "head",
+					"scale": 0.42
+				}
+			],
+			"route_status": "TEXTURE_AND_PROCEDURAL",
+			"skill_id": "unique_death_execute"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "undead_parasite",
+			"owner_textures": [
+				{
+					"alpha": 1.0,
+					"delay": 0.0,
+					"duration": 0.5,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/undead_parasite/undead_parasite_cute_pod.png",
+					"role": "cast",
+					"scale": 0.5
+				},
+				{
+					"alpha": 0.95,
+					"delay": 0.07,
+					"duration": 0.5,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/undead_parasite/undead_parasite_cute_thread.png",
+					"role": "projectile",
+					"scale": 0.42
+				},
+				{
+					"alpha": 1.0,
+					"delay": 0.14,
+					"duration": 0.9,
+					"exists": true,
+					"particles": 3,
+					"path": "res://assets/vfx/skills/undead_parasite/undead_parasite_cute_mark.png",
+					"role": "head",
+					"scale": 0.42
+				}
+			],
+			"route_status": "TEXTURE_AND_PROCEDURAL",
+			"skill_id": "parasite_on_kill"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "undead_poison",
+			"owner_textures": [
+				{
+					"alpha": 1.0,
+					"delay": 0.0,
+					"duration": 0.55,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/undead_poison/undead_poison_miasma_cone.png",
+					"role": "cast",
+					"scale": 0.5
+				},
+				{
+					"alpha": 1.0,
+					"delay": 0.07,
+					"duration": 0.55,
+					"exists": true,
+					"particles": 8,
+					"path": "res://assets/vfx/skills/undead_poison/undead_poison_spore_orb.png",
+					"role": "hit",
+					"scale": 0.54
+				},
+				{
+					"alpha": 0.82,
+					"delay": 0.14,
+					"duration": 1.2,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/undead_poison/undead_poison_puddle.png",
+					"role": "foot",
+					"scale": 0.62
+				}
+			],
+			"route_status": "TEXTURE_AND_PROCEDURAL",
+			"skill_id": "poison_attack"
+		},
+		{
+			"composer_supported": false,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "undead_small",
+			"owner_textures": [],
+			"route_status": "N_A_NO_ACTIVE_SKILL",
+			"skill_id": "none"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "undead_spike",
+			"owner_textures": [
+				{
+					"alpha": 0.95,
+					"delay": 0.0,
+					"duration": 0.42,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/undead_spike/undead_spike_bone_dart.png",
+					"role": "projectile",
+					"scale": 0.14
+				},
+				{
+					"alpha": 1.0,
+					"delay": 0.07,
+					"duration": 0.9,
+					"exists": true,
+					"particles": 3,
+					"path": "res://assets/vfx/skills/undead_spike/undead_spike_armor_break.png",
+					"role": "head",
+					"scale": 0.24
+				},
+				{
+					"alpha": 1.0,
+					"delay": 0.14,
+					"duration": 5.0,
+					"exists": true,
+					"particles": 3,
+					"path": "res://assets/vfx/skills/undead_spike/undead_spike_stack_pin.png",
+					"role": "head",
+					"scale": 0.24
+				}
+			],
+			"route_status": "TEXTURE_AND_PROCEDURAL",
+			"skill_id": "defense_down_attack"
+		},
+		{
+			"composer_supported": true,
+			"formal_consumers": [
+				"res://scenes/battle/BattleVfx.gd",
+				"res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd"
+			],
+			"kind": "unit",
+			"owner_id": "undead_titan",
+			"owner_textures": [
+				{
+					"alpha": 1.0,
+					"delay": 0.0,
+					"duration": 0.5,
+					"exists": true,
+					"particles": 0,
+					"path": "res://assets/vfx/skills/undead_titan/undead_titan_reflect_spike.png",
+					"role": "cast",
+					"scale": 0.5
+				},
+				{
+					"alpha": 1.0,
+					"delay": 0.07,
+					"duration": 0.9,
+					"exists": true,
+					"particles": 3,
+					"path": "res://assets/vfx/skills/undead_titan/undead_titan_armor_plate.png",
+					"role": "head",
+					"scale": 0.42
+				},
+				{
+					"alpha": 1.0,
+					"delay": 0.14,
+					"duration": 5.0,
+					"exists": true,
+					"particles": 3,
+					"path": "res://assets/vfx/skills/undead_titan/undead_titan_stack_badge.png",
+					"role": "head",
+					"scale": 0.42
+				}
+			],
+			"route_status": "TEXTURE_AND_PROCEDURAL",
+			"skill_id": "poison_reflect_armor_stack"
+		}
+	],
+	"fallback_review_required": 0,
+	"generated_utc": "2026-09-12T09:35:52",
+	"missing_texture_count": 0,
+	"missing_textures": [],
+	"owner_entry_count": 74,
+	"schema_version": 1,
+	"skill_id_count": 80
+}

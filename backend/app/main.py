@@ -20,15 +20,19 @@ from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 
-from app import db, maintenance, realtime, single_instance
+from app import admission, announcements, db, mail, maintenance, realtime, single_instance
 from app.config import get_settings
+from app.routes import announcements as announcement_routes
 from app.routes import auth as auth_routes
 from app.routes import chat as chat_routes
 from app.routes import debug as debug_routes
 from app.routes import friends as friends_routes
+from app.routes import loadout as loadout_routes
+from app.routes import mail as mail_routes
 from app.routes import me as me_routes
 from app.routes import presence as presence_routes
 from app.routes import profile as profile_routes
+from app.routes import shop as shop_routes
 from app.routes import ws as ws_routes
 
 # Windows 控制台默认是 cp1252，中文日志会被转义成 以... 甚至直接抛
@@ -99,13 +103,25 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # 定时清理过期私聊会话与好友请求日志（app/maintenance.py）。
     # 单实例保证了它只有一份在跑。
     cleaner = asyncio.create_task(maintenance.loop())
+    # 同时在线上限与排队（app/admission.py）。必须在 yield 之前装好：第一条 WS 连进来
+    # 就要用到它，而且重启预热期从这一刻算起。
+    gate = admission.install(admission.Admission(
+        admission.hub_send, limit=cfg.online_limit, config_path=cfg.admission_file))
+    admitter = asyncio.create_task(admission.loop(gate))
+    # 公告（app/announcements.py）：每 30 秒读一次表、取回并检查图片、推紧急公告。
+    fetcher = announcements.StorageFetcher(cfg.supabase_url, cfg.announcement_bucket)
+    board = announcements.install(announcements.Board.for_production(fetcher, media_dir=cfg.media_dir))
+    notices = asyncio.create_task(announcements.loop(board))
+    # 系统邮件（app/mail.py）：每 30 秒看一次新邮件，推给在线的收件人。
+    postman = asyncio.create_task(mail.loop(mail.Postman.for_production()))
     try:
         yield
     finally:
-        for task in (sweeper, cleaner):
+        for task in (sweeper, cleaner, admitter, notices, postman):
             task.cancel()
             with suppress(asyncio.CancelledError):
                 await task
+        await fetcher.aclose()
         await db.disconnect()
         single_instance.release(lock)
 
@@ -140,6 +156,10 @@ app.include_router(profile_routes.router)
 app.include_router(friends_routes.router)
 app.include_router(presence_routes.router)
 app.include_router(chat_routes.router)
+app.include_router(announcement_routes.router)
+app.include_router(shop_routes.router)
+app.include_router(loadout_routes.router)
+app.include_router(mail_routes.router)
 app.include_router(ws_routes.router)
 
 # 自检接口只在开发环境挂载。生产上它会把表结构和 RLS 状态说得太清楚，

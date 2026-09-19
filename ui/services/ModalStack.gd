@@ -20,6 +20,9 @@ signal modal_opened(id: String)
 signal modal_closed(id: String, reason: String)
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
+# 9.17：弹窗音。这里是「全屏模态的唯一入口」，挂在这一处就覆盖了所有弹窗
+# （DialogService 的确认框、宝物三选一、以及以后新增的任何模态）。
+const SfxService := preload("res://ui/services/SfxService.gd")
 
 const BASE_LAYER := 1000
 
@@ -47,6 +50,9 @@ func _ready() -> void:
 #   priority             int，越大越靠上。同优先级按入栈顺序。
 #   dismiss_on_backdrop  bool，默认 false。危险确认不该点外面就消失。
 #   backdrop_color       Color，默认 Tokens.BACKDROP。
+#   popup_sfx            bool，默认 true。开模态时播一声弹窗音。
+#                       调用方**自带**专属音效时置 false，否则两个音会叠在一起
+#                       （宝物三选一就是这么用的：它有自己那条「进入选宝界面」）。
 #
 # 所有权：push 接管 content。成功时随模态一起销毁；被拒（重复 id）时立即 queue_free。
 # 调用方不需要在失败分支自己收尾 —— 那是最容易漏掉、进而变成节点泄漏的地方。
@@ -105,6 +111,10 @@ func push(content: Control, opts: Dictionary = {}) -> String:
 	backdrop.gui_input.connect(_on_backdrop_input.bind(id))
 	_attach(host)
 	_reindex()
+	# 只在真的推上去了之后才响。上面「同 id 已在栈上」那条早退是重复点击，
+	# 不是新弹窗，在那里响就是连点响一串。
+	if bool(opts.get("popup_sfx", true)):
+		SfxService.play(SfxService.CUE_UI_POPUP)
 	modal_opened.emit(id)
 	return id
 
