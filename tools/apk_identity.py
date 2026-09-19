@@ -33,15 +33,23 @@ SECRET_PRESET_KEYS = {
     "keystore/debug_password",
     "keystore/debug_user",
 }
-# Voice chat (docs/聊天系统设计.md section 9) only works when the GloryVoice Android
-# plugin is compiled into the APK. Whether it is depends on two export-preset keys
-# (gradle_build/use_gradle_build and glory_voice/enabled) that live in the gitignored
-# export_presets.cfg -- so an APK exported on a machine whose preset lacks them ships
-# without voice, and nothing fails: the in-game button just says "voice is not
-# available in this build". That is exactly what happened with the p27-p30 packages
-# (2026-09-17). The check below makes such an APK fail verification instead.
+# Voice chat (docs/语音LiveKit方案.md) only works when the GloryVoice Android bridge and the
+# LiveKit SDK are compiled into the APK. An APK without them installs and runs, and nothing
+# fails: the in-game button just says "voice is not available in this build". That is
+# exactly what happened with the p27-p30 packages (2026-09-17, a gitignored preset switch that
+# has since been removed). The checks below make such an APK fail verification instead.
 VOICE_PLUGIN_CLASS = b"com/glory/voice/GloryVoicePlugin"
+# The bridge is compiled against LiveKit but does not bundle it; the export plugin hands it to
+# the Gradle build as a remote dependency. A bridge without LiveKit crashes on first use.
+LIVEKIT_CLASS = b"io/livekit/android/room/Room"
 VOICE_PERMISSION = "android.permission.RECORD_AUDIO"
+# LiveKit's own manifest brings these; the export plugin removes them (voice only).
+# CAMERA shows up on the Play listing; the media-projection foreground service needs its own
+# Play Console declaration.
+UNWANTED_PERMISSIONS = (
+    "android.permission.CAMERA",
+    "android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION",
+)
 PRESET_CONTRACT_KEYS = (
     "package/unique_name",
     "package/name",
@@ -289,11 +297,9 @@ def inspect_apk(apk: Path, aapt_request: str = "") -> Dict[str, Any]:
             {"path": item.filename, "bytes": item.file_size, "crc32": f"{item.CRC:08x}"}
             for item in sorted(archive.infolist(), key=lambda value: value.filename)
         ]
-        voice_plugin_present = any(
-            VOICE_PLUGIN_CLASS in archive.read(item.filename)
-            for item in archive.infolist()
-            if item.filename.endswith(".dex")
-        )
+        dex_blobs = [archive.read(item.filename) for item in archive.infolist() if item.filename.endswith(".dex")]
+        voice_plugin_present = any(VOICE_PLUGIN_CLASS in blob for blob in dex_blobs)
+        livekit_present = any(LIVEKIT_CLASS in blob for blob in dex_blobs)
     build_info = json.loads(build_bytes.decode("utf-8-sig")) if build_bytes else {}
     manifest = json.loads(manifest_bytes.decode("utf-8-sig")) if manifest_bytes else {}
     bundle = json.loads(bundle_bytes.decode("utf-8-sig")) if bundle_bytes else {}
@@ -322,6 +328,7 @@ def inspect_apk(apk: Path, aapt_request: str = "") -> Dict[str, Any]:
         "android_manifest": android_identity,
         "android_manifest_error": manifest_error,
         "voice_plugin_present": voice_plugin_present,
+        "livekit_present": livekit_present,
         "artifact_mapping_count": len(mappings),
         "artifact_mappings": mappings,
         "apk_entry_inventory_sha256": canonical_sha(entry_rows),
@@ -354,12 +361,17 @@ def verify_report(report: Dict[str, Any], expected: Optional[Dict[str, Any]]) ->
             failures.append("asset_bundle_inventory_mismatch")
     if not report.get("voice_plugin_present"):
         failures.append("voice_plugin_absent")
+    if not report.get("livekit_present"):
+        failures.append("voice_livekit_absent")
     if report.get("android_manifest_error"):
         failures.append(str(report["android_manifest_error"]))
     else:
         android = report.get("android_manifest", {})
         if VOICE_PERMISSION not in android.get("permissions", []):
             failures.append("voice_record_audio_permission_absent")
+        for permission in UNWANTED_PERMISSIONS:
+            if permission in android.get("permissions", []):
+                failures.append("unwanted_permission_" + permission.rsplit(".", 1)[1].lower())
         if embedded:
             for key in ("package_id", "version_code", "version_name"):
                 if str(android.get(key, "")) != str(embedded.get(key, "")):

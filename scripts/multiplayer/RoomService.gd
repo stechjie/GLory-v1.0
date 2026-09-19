@@ -140,6 +140,10 @@ func new_room() -> Dictionary:
 		"reserved": {},          # slot -> {"reserved_at": float}（掉线保留中）
 		"reserve_deadline": {},  # slot -> 宽限截止 unix time
 		"leader_slot": 0,        # 房主座位，掉线顺延
+		# 语音（docs/语音LiveKit方案.md）：语音房间名里的随机串 —— 房间号会被重用，有了它上一局的钥匙
+		# 进不了这一局。voice_used = 这个房间发过语音钥匙（没发过的，换队 / 关房时不用去 LiveKit 请人出去）。
+		"voice_salt": Crypto.new().generate_random_bytes(6).hex_encode(),
+		"voice_used": false,
 		"altar_uses": {},        # slot -> 本回合黄金祭坛已用次数（服务端权威，每回合清零）
 		"tx_log": {},            # slot -> Array[交易回执]（E4 幂等，定长 TX_LOG_PER_SLOT）
 		"prep": {},              # slot -> EconomyLedger 座位账本（P1）

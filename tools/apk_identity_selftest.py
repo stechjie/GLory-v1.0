@@ -38,14 +38,15 @@ def main():
             archive.writestr("assets/example.png.remap",
                              '[remap]\npath="res://.godot/imported/example.ctex"\n')
             archive.writestr("assets/.godot/imported/example.ctex", b"compiled")
-            # A dex that carries the voice plugin class, the way a Gradle export with
-            # glory_voice/enabled produces it.
+            # Dexes that carry the voice bridge and LiveKit, the way a Gradle export produces them.
             archive.writestr("classes.dex", b"dex\n035\x00...Lcom/glory/voice/GloryVoicePlugin;...")
+            archive.writestr("classes2.dex", b"dex\n035\x00...Lio/livekit/android/room/Room;...")
 
         report = identity.inspect_apk(apk)
         assert report["artifact_mapping_count"] == 1
         assert report["artifact_mappings"][0]["source"] == "res://example.png"
         assert report["voice_plugin_present"] is True
+        assert report["livekit_present"] is True
         report["android_manifest_error"] = ""
         report["android_manifest"] = {
             "package_id": "glory.beta001", "version_code": 5, "version_name": "",
@@ -59,8 +60,16 @@ def main():
             archive.writestr("assets/build_info.json", encoded(build))
             archive.writestr("classes.dex", b"dex\n035\x00...Lorg/godotengine/godot/Godot;...")
         assert identity.inspect_apk(silent)["voice_plugin_present"] is False
+        assert identity.inspect_apk(silent)["livekit_present"] is False
         no_voice = dict(report, voice_plugin_present=False)
         assert "voice_plugin_absent" in identity.verify_report(no_voice, build)
+        # The bridge without LiveKit (export plugin lost its dependency): crashes on first use.
+        no_livekit = dict(report, livekit_present=False)
+        assert "voice_livekit_absent" in identity.verify_report(no_livekit, build)
+        # LiveKit's camera / screen-capture permissions must have been removed by the export plugin.
+        camera = dict(report, android_manifest=dict(report["android_manifest"],
+                      permissions=report["android_manifest"]["permissions"] + ["android.permission.CAMERA"]))
+        assert "unwanted_permission_camera" in identity.verify_report(camera, build)
 
         no_mic = dict(report, android_manifest=dict(report["android_manifest"],
                                                     permissions=["android.permission.INTERNET"]))

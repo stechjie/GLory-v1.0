@@ -1,17 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  GloryVoice: voice echo validation plugin (docs/聊天系统设计.md section 9, option 2).
-
-  uses-sdk with an explicit targetSdkVersion is required: a library manifest without one
-  makes the manifest merger add legacy implied permissions (READ_PHONE_STATE,
-  WRITE_EXTERNAL_STORAGE) to the whole app.
+  GloryVoice: team voice bridge over the LiveKit Android SDK (docs/语音LiveKit方案.md 5.1).
 
   The meta-data name is how Godot 4 (plugin v2) finds the plugin class at startup.
--->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.glory.voice">
 
-    <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="36" />
+  No <uses-sdk> and no package attribute: AGP 8 takes the namespace and minSdk from
+  build.gradle.kts and writes <uses-sdk android:minSdkVersion="24"/> into the AAR manifest.
+  That minSdk is what keeps the manifest merger from adding legacy implied permissions
+  (READ_PHONE_STATE, WRITE_EXTERNAL_STORAGE) to the app - tools/voice_check pins it.
+
+  LiveKit's own manifest also brings CAMERA, FOREGROUND_SERVICE(_MEDIA_PROJECTION) and a
+  screen-capture service. Voice needs none of them; they are removed in the app manifest by
+  addons/glory_voice/glory_voice_plugin.gd (tools:node="remove" only works reliably there).
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />

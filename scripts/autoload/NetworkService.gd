@@ -537,7 +537,10 @@ func _on_auth_payload(id: int, data: PackedByteArray) -> void:
 		var code := str(verdict.get("code", "protocol_mismatch"))
 		last_error = tr("net_err_handshake") % code
 		state = SessionState.FAILED
-		reset_peer_only()
+		# 🔴 不能在这里直接关：这是 SceneMultiplayer.poll() 里的认证回调，当场关 peer 引擎会崩
+		# （Godot 4.7.1 实测 signal 11；2026-09-19 本地 31 连线上 30 时两个门禁都崩在这）。
+		# 每次顶协议号，还没更新的旧包连新服务器都走这里 —— 该看到「版本不对」而不是闪退。
+		_close_rejected_peer.call_deferred(multiplayer.multiplayer_peer)
 		session_changed.emit()
 		return
 
@@ -550,6 +553,15 @@ func _on_auth_payload(id: int, data: PackedByteArray) -> void:
 		return
 	scene_mp.send_auth(id, NetworkTransport.auth_accept_bytes())
 	scene_mp.complete_auth(id)
+
+# 被拒之后（认证回调已经返回）再关。这期间玩家若已发起新的连接，只关被拒的那个，不动新的。
+func _close_rejected_peer(rejected: MultiplayerPeer) -> void:
+	if rejected == null:
+		return
+	if multiplayer.multiplayer_peer == rejected:
+		reset_peer_only()
+	else:
+		rejected.close()
 
 func _auth_reject(code: String) -> PackedByteArray:
 	return NetworkTransport.auth_reject_bytes(code)
@@ -583,7 +595,6 @@ func _process(delta: float) -> void:
 		# 每帧排空一点回放队列（C14 节流）。必须在 1 秒累加器**之外**。
 		_tick_replay_send()
 		ServerFlags.poll_reload(proc_now)
-		_voice_stats_tick(delta)
 		_cleanup_elapsed += delta
 		if _cleanup_elapsed >= CLEANUP_INTERVAL_SEC:
 			_cleanup_elapsed = 0.0
@@ -751,6 +762,8 @@ func team_host(port: int = DEFAULT_PORT, dedicated: bool = false) -> bool:
 			session_changed.emit()
 			return false
 		_net_log("battle card key loaded path=%s" % BattleCard.server_key_path())
+		# 语音服务器（LiveKit）的钥匙配置。读不到照常开服，只是不发语音钥匙（docs/语音LiveKit方案.md 3.2）。
+		_voice_setup_server()
 	var p := ENetMultiplayerPeer.new()
 	# 不传 max_channels（B9）：默认就是 ENet 上限 255，传具体数字只会调低上限。
 	var err := p.create_server(port, TEAM_MAX_CLIENTS)
@@ -1125,6 +1138,8 @@ func _release_seat_public_id(room: Dictionary, slot: int) -> void:
 func _room_close(room: Dictionary, reason: String) -> void:
 	room.state = ROOM_CLOSED
 	room.finished_reason = reason
+	# 两队的语音房间一起删（里面的人会被 LiveKit 请出去）。放在清座位之前：要用房间里的语音随机串。
+	_voice_rooms_closed(room)
 	# 房间没了：每个座位上挂的所有东西一并作废（token、短码绑定、加入顺序、进度）。
 	# 房间是这些全局映射条目的最后一个持有者，这里不清就永远没人清了。
 	for slot_i in TEAM_SLOTS:
@@ -1451,6 +1466,8 @@ func _room_do_move(room: Dictionary, peer_id: int, from_slot: int, to_slot: int)
 	if str(states[from_slot]) != "player" or str(states[to_slot]) != "empty":
 		return
 	var was_ready := bool(ready[from_slot])
+	# 语音身份要在座位信息搬走之前取（跨队时要把他从旧队伍的语音房间请出去，见函数末尾）。
+	var voice_identity := _voice_identity(room, from_slot)
 	states[from_slot] = "empty"
 	ready[from_slot] = false
 	states[to_slot] = "player"
@@ -1472,6 +1489,9 @@ func _room_do_move(room: Dictionary, peer_id: int, from_slot: int, to_slot: int)
 	if int(room.get("leader_slot", 0)) == from_slot:
 		room.leader_slot = to_slot
 		_net_log("leader moved with player room=%d %d->%d" % [int(room.get("id", 0)), from_slot, to_slot])
+	# 跨队换座：旧队伍的语音房间里还留着他（钥匙只管进门），请 LiveKit 把他请出去（docs/语音LiveKit方案.md 3.3）。
+	if GameConstants.team_of_slot(from_slot) != GameConstants.team_of_slot(to_slot):
+		_voice_seat_released(room, from_slot, voice_identity)
 	_touch_room(room)
 	# 房主变更、座位变更、凭证都在 room_state 里，一次全量广播就够 —— 不再需要
 	# team_leader / team_assign_slot 两条各发各的（E2）。
@@ -2138,102 +2158,141 @@ func _host_send_text(slot: int, text: String, team_only: bool) -> void:
 	if chat_reaches(slot, team_local_slot, team_only):
 		team_chat_text_received.emit(slot, text, team_only)
 
-# --- 组队语音（docs/聊天系统设计.md 第九节）--------------------------------------
-# 包是安卓插件打好的（Opus 或 ADPCM，格式见 android_plugins/glory_voice 的 VoicePacket），
-# 这里**不解码、不看内容**，只做三件事：大小上限、限流、只转给同队。座位号由服务端从 sender 反查（同自由文字）。
-# 所以包格式改了（v1.1 加了编码字段）也不用顶协议号：服务端从头到尾不解析它。
+# --- 组队语音：LiveKit（docs/语音LiveKit方案.md）-----------------------------------------
 #
-# unreliable_ordered + 独立通道 CH_VOICE：语音丢一个包只是一声咔，重传回来的旧包反而是杂音；
-# ordered 让迟到的包在网络层就被丢掉。
-signal team_voice_received(slot: int, packet: PackedByteArray)
+# 语音**不经过**战斗服务器：客户端直接连同一台机器上的 LiveKit 语音服务器。这里只做两件事 ——
+#
+#   发钥匙  客户端只说「给我钥匙」，**不带任何参数**：谁、哪个房间、哪一队一律从连接反查
+#           （同聊天：带参数就等于能冒充别人）。钥匙只能进「这个对局房间、这一队」的语音房间，
+#           只准发麦克风。敌方拿不到本队的钥匙，也就听不到。
+#   踢人    钥匙只管进门：LiveKit 只在**首次进房**时检查钥匙，进去以后还会自动续。所以玩家
+#           换队、离开、座位被 AI 接管、关房时，要主动让 LiveKit 把人请出去
+#           （_voice_seat_released / _voice_rooms_closed，调用处在各条座位变动路径里）。
+#           对局中掉线、座位保留（_room_reserve_peer）**不踢**：人还在这一队，重连回来接着说。
+#
+# 这台服务器没配语音（没有 livekit_voice.json）时照常开服，钥匙请求回 voice_not_configured。
+# 语音挂了只影响语音：登录、房间、对战、文字聊天都不受影响，开局也不等语音。
 
-# 插件打包时凑到 494 字节就发（VoicePacket.MAX_PACKET_BYTES）。
-# 还要明显低于 ENet 的 MTU：不可靠包一旦被分片，丢一片整包就没了。
-# tools/voice_check 拿 Java 那边的常量对账。
-const VOICE_MAX_PACKET_BYTES := 512
+const LiveKitAuth := preload("res://scripts/voice/LiveKitAuth.gd")
+const LiveKitAdmin := preload("res://scripts/voice/LiveKitAdmin.gd")
 
-# ③ 的语音流量：每分钟打一行日志（这一分钟一个语音包都没有就不打），看带宽和丢包用：
-#   journalctl -u glory-server | grep "voice stats"
-const VOICE_STATS_INTERVAL_SEC := 60.0
-var _voice_stats := {"packets_in": 0, "bytes_in": 0, "relayed": 0, "bytes_out": 0,
-	"drop_size": 0, "drop_rate": 0, "drop_no_room": 0}
-var _voice_stats_elapsed := 0.0
+signal team_voice_token_received(url: String, token: String, room: String, error: String)
 
-# 发一个包。不在房间、没连上、本地房主模式（调试用）都直接丢：语音不需要回执。
-func team_send_voice(packet: PackedByteArray) -> void:
+var _voice_config: Dictionary = {}
+# 踢人 / 删房间的执行者（LiveKitAdmin）。门禁换成记账的假对象，所以不写死类型。
+var _voice_admin: Object = null
+
+
+# 客户端：向战斗服务器要一张本队语音房间的钥匙，回复走 team_voice_token_received。
+# 返回 false = 这会儿根本发不出去（没连上 / 不在房间 / 本地房主调试房没有语音服务器）。
+func team_request_voice_token() -> bool:
 	if not team_active or team_local_slot < 0 or is_host:
-		return
-	if packet.is_empty() or packet.size() > VOICE_MAX_PACKET_BYTES:
-		return
+		return false
 	if multiplayer.multiplayer_peer == null or state != SessionState.READY:
-		return
-	_rpc_team_voice_submit.rpc_id(1, packet)
+		return false
+	_rpc_team_voice_token_request.rpc_id(1)
+	return true
 
-@rpc("any_peer", "call_remote", "unreliable_ordered", NetworkConfig.CH_VOICE)
-func _rpc_team_voice_submit(packet: PackedByteArray) -> void:
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_team_voice_token_request() -> void:
 	if not _dedicated_server:
 		return
 	var sender := multiplayer.get_remote_sender_id()
-	if packet.is_empty() or packet.size() > VOICE_MAX_PACKET_BYTES:
-		_voice_stats["drop_size"] += 1
+	# 软限，不计 strike：客户端连不上时会退避重试，那不是攻击。
+	if not _rate_ok(sender, "voice_token", false):
 		return
-	# 软限，不计 strike：弱网恢复时包会攒成一串一起到，那是网络不是攻击。
-	if not _rate_ok(sender, "voice", false):
-		_voice_stats["drop_rate"] += 1
-		return
-	var room := _room_for_peer(sender)
+	var reply := voice_token_for_peer(_room_for_peer(sender), sender, int(Time.get_unix_time_from_system()))
+	if _peer_connected(sender):
+		_rpc_team_voice_token.rpc_id(sender, str(reply.url), str(reply.token), str(reply.room), str(reply.error))
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_team_voice_token(url: String, token: String, room_name: String, error: String) -> void:
+	team_voice_token_received.emit(url, token, room_name, error)
+
+
+# 给这个 peer 签钥匙。纯逻辑（不碰网络），tools/voice_check 直接调。
+func voice_token_for_peer(room: Dictionary, peer_id: int, now: int) -> Dictionary:
+	if _voice_config.is_empty():
+		return _voice_reply("voice_not_configured")
 	if room.is_empty():
-		_voice_stats["drop_no_room"] += 1
-		return
-	_voice_stats["packets_in"] += 1
-	_voice_stats["bytes_in"] += packet.size()
-	var slot := int((room.get("peer_slot", {}) as Dictionary).get(sender, -1))
-	for peer_id in voice_recipients(room, slot, sender):
-		if _peer_connected(peer_id):
-			_rpc_team_voice.rpc_id(peer_id, slot, packet)
-			_voice_stats["relayed"] += 1
-			_voice_stats["bytes_out"] += packet.size()
+		return _voice_reply("not_in_room")
+	var slot := int((room.get("peer_slot", {}) as Dictionary).get(peer_id, -1))
+	var states: Array = room.get("slot_states", [])
+	if slot < 0 or slot >= TEAM_SLOTS or slot >= states.size() or str(states[slot]) != "player":
+		return _voice_reply("not_seated")
+	var room_name := voice_room_name(room, GameConstants.team_of_slot(slot))
+	if not bool(room.get("voice_used", false)):
+		room["voice_used"] = true
+		_rooms_dirty = true
+	var token := LiveKitAuth.join_token(_voice_config, _voice_identity(room, slot),
+		_voice_display_name(room, slot), room_name, now)
+	return {"url": str(_voice_config.get("client_url", "")), "token": token, "room": room_name, "error": ""}
 
-@rpc("authority", "call_remote", "unreliable_ordered", NetworkConfig.CH_VOICE)
-func _rpc_team_voice(slot: int, packet: PackedByteArray) -> void:
-	if slot < 0 or slot >= TEAM_SLOTS or packet.is_empty() or packet.size() > VOICE_MAX_PACKET_BYTES:
-		return
-	team_voice_received.emit(slot, packet)
 
-# 这个包该转给谁：**同队**、在这个房间里有座位、不是发送者自己。敌方永远收不到 ——
-# 语音里说的是战术。纯函数（不碰网络），tools/voice_check 直接调。
-static func voice_recipients(room: Dictionary, sender_slot: int, sender_peer: int) -> Array[int]:
-	var out: Array[int] = []
-	if sender_slot < 0 or sender_slot >= TEAM_SLOTS:
-		return out
-	var team := GameConstants.team_of_slot(sender_slot)
-	var peer_slot: Dictionary = room.get("peer_slot", {})
-	for peer in peer_slot.keys():
-		var slot := int(peer_slot[peer])
-		if int(peer) == sender_peer or slot < 0 or slot >= TEAM_SLOTS:
-			continue
-		if GameConstants.team_of_slot(slot) == team:
-			out.append(int(peer))
-	return out
+static func _voice_reply(error: String) -> Dictionary:
+	return {"url": "", "token": "", "room": "", "error": error}
 
-# 服务器 _process 每帧调。到点打一行、清零；这一窗口什么都没有就不打（不给日志添噪声）。
-func _voice_stats_tick(delta: float) -> void:
-	_voice_stats_elapsed += delta
-	if _voice_stats_elapsed < VOICE_STATS_INTERVAL_SEC:
+
+# 这个对局房间某一队的语音房间名。随机串建房时就有（RoomService.new_room）；
+# 旧快照里读回来的房间没有，第一次用时补一个并标脏存盘。
+func voice_room_name(room: Dictionary, team: int) -> String:
+	var salt := str(room.get("voice_salt", ""))
+	if salt.is_empty():
+		salt = Crypto.new().generate_random_bytes(6).hex_encode()
+		room["voice_salt"] = salt
+		_rooms_dirty = true
+	return LiveKitAuth.room_name(int(room.get("id", 0)), salt, team)
+
+
+# 座位上的人在语音里的身份：名片里的好友码（账号服务器签过名，可信）。没有名片的测试座位用 seat<N>。
+func _voice_identity(room: Dictionary, slot: int) -> String:
+	var profiles: Dictionary = room.get("seat_profiles", {})
+	var profile: Dictionary = profiles.get(slot, {})
+	var code := str(profile.get("friend_code", "")).strip_edges()
+	return code if not code.is_empty() else "seat%d" % slot
+
+
+func _voice_display_name(room: Dictionary, slot: int) -> String:
+	var profiles: Dictionary = room.get("seat_profiles", {})
+	var profile: Dictionary = profiles.get(slot, {})
+	return str(profile.get("player_name", "")).strip_edges()
+
+
+# 这个人不再属于 slot 所在的那一队了：请 LiveKit 把他从那一队的语音房间请出去（并作废他的钥匙）。
+# 调用方要在清座位**之前**取 identity —— 清完名片就没了。这个房间从没发过语音钥匙就不用去。
+func _voice_seat_released(room: Dictionary, slot: int, identity: String) -> void:
+	if _voice_admin == null or identity.is_empty() or slot < 0 or slot >= TEAM_SLOTS:
 		return
-	var seconds := _voice_stats_elapsed
-	_voice_stats_elapsed = 0.0
-	var total := 0
-	for key in _voice_stats:
-		total += int(_voice_stats[key])
-	if total == 0:
+	if not bool(room.get("voice_used", false)):
 		return
-	_net_log("voice stats window=%ds packets_in=%d kbps_in=%.1f relayed=%d kbps_out=%.1f drop_size=%d drop_rate=%d drop_no_room=%d" % [
-		int(seconds), int(_voice_stats["packets_in"]), float(_voice_stats["bytes_in"]) * 8.0 / 1000.0 / seconds,
-		int(_voice_stats["relayed"]), float(_voice_stats["bytes_out"]) * 8.0 / 1000.0 / seconds,
-		int(_voice_stats["drop_size"]), int(_voice_stats["drop_rate"]), int(_voice_stats["drop_no_room"])])
-	for key in _voice_stats.keys():
-		_voice_stats[key] = 0
+	_voice_admin.remove_participant(voice_room_name(room, GameConstants.team_of_slot(slot)), identity)
+
+
+# 关房：两队的语音房间一起删掉（里面的人会被请出去）。
+func _voice_rooms_closed(room: Dictionary) -> void:
+	if _voice_admin == null or not bool(room.get("voice_used", false)):
+		return
+	for team in [GameConstants.TEAM_RED, GameConstants.TEAM_BLUE]:
+		_voice_admin.delete_room(voice_room_name(room, int(team)))
+
+
+# 专服启动时读语音配置（team_host 调）。读不到照常开服，只是不发钥匙。
+func _voice_setup_server() -> void:
+	_voice_config = {}
+	if _voice_admin is Node and is_instance_valid(_voice_admin):
+		(_voice_admin as Node).queue_free()
+	_voice_admin = null
+	var cfg := LiveKitAuth.load_config()
+	if not bool(cfg.get("ok", false)):
+		_net_log("voice not configured: %s" % str(cfg.get("error", "")))
+		return
+	_voice_config = cfg
+	var admin := LiveKitAdmin.new()
+	admin.name = "LiveKitAdmin"
+	add_child(admin)
+	admin.setup(cfg, _net_log)
+	_voice_admin = admin
+	_net_log("voice configured (LiveKit) path=%s url=%s" % [LiveKitAuth.config_path(), str(cfg.get("client_url", ""))])
 
 # --- 3v3 team board collection (N2) ----------------------------------------
 # After everyone presses "start battle" in prep, each player submits their board
@@ -5189,9 +5248,12 @@ func _room_remove_peer(room: Dictionary, peer_id: int) -> void:
 	if slot >= 0 and slot < TEAM_SLOTS:
 		states[slot] = "empty"
 		ready[slot] = false
+		var voice_identity := _voice_identity(room, slot)
 		# 座位彻底释放：token、短码绑定、加入顺序、对局进度一起清。
 		# 只清一部分就会让后来坐进这个位子的人继承前一个人的 join_seq 或宝物记录。
 		_clear_seat_metadata(room, slot)
+		# 人离开了这一队：也要从这一队的语音房间出去（钥匙只管进门，docs/语音LiveKit方案.md 3.3）。
+		_voice_seat_released(room, slot, voice_identity)
 	peer_slot.erase(peer_id)
 	_peer_room.erase(peer_id)
 	room.slot_states = states
@@ -5273,7 +5335,10 @@ func _tick_reserved_seats() -> void:
 func _room_auto_complete_seat(room: Dictionary, slot: int) -> void:
 	# 状态变更已搬到 ReconnectService.apply_ai_takeover()。留在这里的是发消息与
 	# 阶段推进：广播大厅、按当前阶段决定接下来做什么 —— 那些都要发 RPC。
+	var voice_identity := _voice_identity(room, slot)
 	_reconnect_service.apply_ai_takeover(room, slot)
+	# AI 顶了这个座位：原来的人不再是这一队的玩家，请出语音房间（他重连回来会重新要钥匙）。
+	_voice_seat_released(room, slot, voice_identity)
 	# A takeover keeps the disconnected player's pet when one exists; a legacy
 	# or unconfigured seat receives one stored AI pet exactly once.
 	_ensure_dummy_seat_pet(room, slot)

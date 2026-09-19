@@ -1284,6 +1284,7 @@ FAIL [reset_not_wired] NetworkService.reset() 必须重置信封位置（实际 
 - **Effekseer 的安卓库没进 git**（同事 `b6d91ee` 加的插件，2026-09-14 合并时发现）：`.gitignore` 里 `android/` 没带前导斜杠，会匹配任意层级叫 `android` 的目录（同一个文件里 `assets` 那条注释记过一模一样的坑），于是 `addons/effekseer/bin/android/libeffekseer.*.so` 从来没提交（windows / linux / macos / ios / web 的库都在）。从 git 拉的代码出的安卓包里就没有 Effekseer：目前只有实验性特效 `effects/vfx3d/experimental/undead_from_scratch_v3/` 和调试场景用到它，正式玩法不受影响，但以后正式特效用上它就会在手机上失效。修法：`.gitignore` 改成 `/android/`（根目录的安卓构建模板照样忽略，仓库里别处没有叫 android 的目录），再由同事从他电脑把 `bin/android` 下的 .so 提交上来。同一个提交还带进了 3 个临时文件：`addons/effekseer/bin/windows/~libeffekseer.x86_64.dll` 和两个 `~libeffekseer.x86_64.dll~RF….TMP`（看文件名和大小都是正式 DLL 的临时副本，1538560 字节）。这台跑过 Godot 之后 `~libeffekseer.x86_64.dll` 被删掉了，git 里显示为删除，提交这个删除没问题；两个 .TMP 也该删，并在 `.gitignore` 里加上 `~*.dll` 与 `*.TMP`
 - 内容审核的接入方式与价格、举报由谁审与响应时限、国内合规留存要求
 
+<<<<<<< Updated upstream
 ## 2026-09-18 测试反馈修复
 
 商城按钮状态对齐；改名冷却到期提示；战斗结束停止Boss登场音并取消延迟音乐；仅本人棋子播放人王阵亡音；房主开始按钮下方提示与房间状态一致。详见[9.18bug修复记录](docs/9.18bug修复记录.md)。本地专项12项、音效123项、Boss音乐24项通过；未进行安卓及真实多人听感验收。本次无需更新服务端，客户端需要重新运行源码或重新导出安装包。
@@ -1309,3 +1310,102 @@ FAIL [reset_not_wired] NetworkService.reset() 必须重置信封位置（实际 
 详见[9.19音效分离与离线自测记录](docs/9.19音效分离与离线自测记录.md)。`audio_sfx_check`
 （143 项）、`battle_cue_profile`（169 项）、`battle_presentation_event`（8314 项）、
 `battle_hit_victory`（39 项）全部通过，0 失败；未进行安卓及真机听感验收。
+=======
+## 2026-09-19：语音改用 LiveKit（第 1 阶段，未提交）
+
+方案、理由与五个阶段见 [语音LiveKit方案](docs/语音LiveKit方案.md)；部署见 [deploy/livekit/README.md](deploy/livekit/README.md)。
+语音不再经过战斗服务器：客户端直接连同一台机器上自建的 LiveKit；战斗服务器只负责两件事，**发钥匙**（只能进「本房间本队」的语音房间）和**踢人**（换队、离开、AI 接管、关房）。
+
+**第 1 阶段做了什么**：
+- 服务器端：
+  - LiveKit 部署文件，`deploy/Caddyfile` 加一行 import；
+  - 战斗服务器发钥匙 / 踢人；
+  - 删掉语音转发和 `CH_VOICE`；
+  - 房间多两个存盘字段；
+  - **协议 30 → 31**。
+- 客户端：`VoiceService` 换成「要钥匙 → 桥接进房」；删掉电脑试用版和 `project.godot` 的电脑录音开关。
+- 门禁：`voice_check` 重写，245 项；`chat_check` / `carrot_online_check` 跟到 31。
+- 顺手修了一个旧崩溃：**客户端被服务器以版本不对拒绝时会闪退**。原因是在认证回调里当场关连接，Godot 4.7.1 会 signal 11；用独立小工程复现过。现在推迟到回调之后再关，`network_transport_check` 钉住了，改回去就红。
+
+**🔴 不能单独发**：
+- 现在的手机包里还是旧语音插件，没有 `joinRoom`，所以点语音一定失败。
+- 要和第 2 阶段（安卓 LiveKit 桥接）一起出包、一起部署 p31。
+- p31 服务器一上线，**p30 的旧包连上来会闪退**：上面那个崩溃，旧包里修不了。所以所有人要同时换包。
+
+**部署前他要准备的**：
+- DuckDNS 再申请一个语音子域名，指向同一个 IP；
+- GCP 防火墙放开 tcp:7881、udp:7882。
+
+**验证（2026-09-19，MSI 这台电脑，协议 31）**：
+- 相关门禁 38 项，除下面的红项外全过。其中：
+  - `voice` 245、`chat` 247（新指纹 `726189f3f99715ef`）、`carrot_online` 101；
+  - `room_service` 136、`dedicated_server` 38、`network_transport` 38、`rate_limit` 45；
+  - `reconnect_service` 114、`modal_lifecycle` 433、`responsive_layout` 114、`battle_card` 83、`race_pick` 140；
+  - `export_presets` 6 等。
+- 联机回归 21 项全过。
+- `chat_ui_capture` 出图 13 张：电脑上语音面板显示「电脑版语音还在做」。
+- 红项都不是这次造成的：
+  - `dynamic_call`：按名调用 264 处，这次改动的文件净增 0；
+  - `procedural_ui_ratchet`；
+  - `main_team_create_room_action` / `main_team_join_room_action`：残留重连凭证；
+  - `page_lifecycle`：模型 `.tscn` 解析失败，没跑出结果。
+- **注意**：`modal_lifecycle` 和 `responsive_layout` 会让主菜单真的连线上战斗服务器（`NetworkConfig.SERVER_IP`）。本地协议和线上不一致时，就是它们撞上了上面那个崩溃。
+
+**还没验**：
+- 在服务器上装好 LiveKit 之后，用官方命令行工具拿战斗服务器发的钥匙真进房：
+  - 能进本队；
+  - 进不了对面；
+  - 换队后被请出。
+
+## 2026-09-19：语音第 2 阶段，安卓 LiveKit 桥接（未提交）
+
+做法见 [语音LiveKit方案](docs/语音LiveKit方案.md) 5.1 末尾「09-19 写下来的做法」。
+
+**改了什么**：
+- 旧的自建语音（Java，录音 / 编码 / 抖动缓冲 / 混音，约 2100 行）全部删掉。
+- 换成 `android_plugins/glory_voice/src/com/glory/voice/GloryVoicePlugin.kt`：包一层 LiveKit 安卓开发包 2.28.2，方法照 `VoiceService.BRIDGE_METHODS`。
+- `build_aar.ps1` 改成跑 Gradle（与 Godot 4.7.1 构建模板同一套版本）：
+  - LiveKit 不进插件包，由导出插件交给出包的 Gradle 下载；
+  - 出包的电脑要能连 Maven Central 和 JitPack，第一次约 30 MB。
+- 导出插件在应用清单里去掉 LiveKit 带来的摄像头、屏幕录制前台服务。
+- `VoiceService`：
+  - 只听 / 开麦在安卓上是两种声音模式，只能进房时定，所以换档时退房重进，8 分钟内复用同一把钥匙；
+  - 麦克风被占用时退回只听，并说明原因。
+- 语音面板显示出声设备（外放 / 听筒 / 蓝牙 / 有线）。
+- `tools/apk_identity.py` 出包后多验两项：包里有没有 LiveKit，有没有多出摄像头 / 屏幕录制权限。
+- `THIRD_PARTY_NOTICES.md` 登记了随包分发的库。
+
+**踩到的坑**：
+- 打包脚本用 .NET 的「就地更新」往 aar 里补写指纹，把空的 `R.txt` 写坏了（标成不压缩，却还记着压缩后的 2 字节）。
+- 桌面上的 ZIPReader 读得出来，出包时 Gradle 却解不出清单，导出只报一个路径。
+- 现在改成新建压缩包；`voice_check` 按顺序逐项检查 aar 的内部记录，拿坏包验过会报红。
+
+**验证（2026-09-19，MSI 这台电脑）**：
+- 插件包用 Gradle 打出来 32 KB，里面只有我们的类；LiveKit 在出包时下载，约 30 MB。
+- 调试版 APK `C:\Users\stech\GloryBuild\glory_p31_voice_debug.apk`（733.5 MiB，versionCode 8）：
+  - `apk_identity.py inspect` 通过，726 项映射、0 失败；
+  - 包里有桥接和 LiveKit；摄像头、屏幕录制前台服务都去掉了；
+  - 比 p26 多出两个权限：`BLUETOOTH`（只到安卓 11，安装时自动给，不弹窗）和 androidx 内部的 `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`。
+- 语音带来的体积：WebRTC 原生库 arm64 11.5 MiB + armv7 6.5 MiB，再加约 3 MiB dex，合计约 20 MB。
+- 相关门禁都通过：`voice` 333、`chat` 246、`network_transport` 38、`modal_lifecycle` 433、`responsive_layout` 114、`export_presets` 6、`ui_component` 134、`cold_parse_chain` 25；`chat_ui_capture` 出图 13 张。
+- 签名：命令行导出用环境变量 `GODOT_ANDROID_KEYSTORE_RELEASE_PATH` 指向英文路径下那份签名文件，原因见记忆 / README「签名文件放英文路径」。
+
+**🔴 待拍板：安卓 12 起，开麦时蓝牙耳机用不上**。
+- LiveKit 用来选出声设备的 audioswitch，在安卓 12 起要有「附近的设备」（`BLUETOOTH_CONNECT`）运行时权限，才看得到蓝牙耳机。
+- 我们没申请这个权限。所以开麦（通话模式）时，声音会从手机外放出来，也用手机自己的麦克风，而不是蓝牙耳机。
+- 「只听」走媒体声道，不受影响。
+- 要不要申请这个权限、什么时候申请，等真机确认之后再定。
+
+## 2026-09-19：p31 发布包（语音 LiveKit 第 1 + 2 阶段）
+
+- **语音服务器已装好**（用户 09-19 在 glory-server-2 上跑了 `install_livekit.sh`，7 步全 OK）：
+  - `https://glorytd-voice.duckdns.org` 返回 200；
+  - Caddy 主配置加了 import，原文件备份为 `/etc/caddy/Caddyfile.bak-before-voice-20260919070221`；
+  - 战斗服务器那份配置写到了 `nins17121` 的 Godot 目录。
+- `glory_server_p31.zip`（项目根目录，被 git 忽略）：冷启动冒烟打出 `server started protocol=31`，SHA-256 `67C3F4DB6EC53489…`。
+- `桌面\apk\GLory-p31-livekit-vc13-20260919.apk`（749 MB）：
+  - versionCode **13**：09-18 这台电脑出过一个 versionCode 12 的包，要比它大才装得上；
+  - 正式签名和之前的包相同（证书 SHA-256 `3d8c76f450f418a7…`），可以直接覆盖安装；
+  - `apk_identity.py inspect` 通过；包里有语音桥接和 LiveKit；没有摄像头 / 屏幕录制权限；SHA-256 `2c00bbe8c6c329a7…`。
+- 🔴 **服务器换成 p31 之后，p30 的旧包一连就闪退**（旧包里的 bug，见上面第 1 阶段）。服务器和新包要同时换，所有人都要装新包。
+>>>>>>> Stashed changes

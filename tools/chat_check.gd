@@ -49,9 +49,10 @@ const EXPECTED_IDS := [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 # card 参数，准备 / 开始去掉 races 参数 —— 方法数 60 -> 58、协议 29 -> 30、指纹变了。
 # PINNED_RPC_SIGNATURES：全部 @rpc 方法「@rpc 配置 | 方法名(参数类型,…)」排序后的 SHA-256 前 16 位，
 # 算法见 _rpc_signature_digest。参数只改名字不算（线上不传名字）。
+# 2026-09-19 语音改 LiveKit：删 2 条语音转发、加 2 条发钥匙 → 数量仍是 58，签名指纹变了、30 -> 31。
 const PINNED_RPC_COUNT := 58
-const PINNED_RPC_PROTOCOL := 30
-const PINNED_RPC_SIGNATURES := "03102a543d9ef148"
+const PINNED_RPC_PROTOCOL := 31
+const PINNED_RPC_SIGNATURES := "726189f3f99715ef"
 
 var _h: CheckHarness
 

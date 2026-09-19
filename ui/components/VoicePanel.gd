@@ -6,7 +6,7 @@ extends PanelContainer
 # 走 ModalStack：点外面收起、返回键能关、页面切走（owner 被释放）自动关。
 # 按钮一律实例化 GloryActionButton.tscn，不写 Button.new()（V3 P1-08 棘轮）。
 #
-# 编码 / 输出设备 / 回声消除收在「诊断信息」里，默认不占主界面层级。
+# 连接状态 / 声音模式 / 输出设备 / 回声消除收在「诊断信息」里，默认不占主界面层级。
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
@@ -159,9 +159,12 @@ func _refresh() -> void:
 			else Theming.VARIATION_GHOST
 	var note := ""
 	if not VoiceService.is_supported():
-		note = _text("这个版本没有语音功能（需要带语音插件的安卓包）", "Voice is not available in this build")
+		note = VoiceService.unsupported_reason()
 	elif not VoiceService.in_room():
 		note = _text("进入房间后才能开语音", "Join a room to use voice")
+	elif not VoiceService.last_error().is_empty():
+		# 连不上（服务器没开语音、网络不通……）或开麦失败：原因直接写出来；连接问题 VoiceService 会自己退避重试。
+		note = VoiceService.last_error()
 	_note.text = note
 	_note.visible = not note.is_empty()
 	_state.text = _state_text()
@@ -245,31 +248,36 @@ func _state_color() -> Color:
 	return Tokens.TEXT_SECONDARY
 
 
+# 测试有问题时报这一行，比「声音怪怪的」有用：连没连上、手机在哪种声音模式、从哪出声、谁在做回声消除。
 func _diagnostic_text() -> String:
-	if not VoiceService.is_supported():
+	if not VoiceService.is_supported() or VoiceService.mode == VoiceService.Mode.OFF:
 		return ""
+	var connection := {
+		"connected": _text("已连上", "connected"),
+		"connecting": _text("连接中", "connecting"),
+		"reconnecting": _text("重连中", "reconnecting"),
+		"failed": _text("连不上", "failed"),
+		"disconnected": _text("已断开", "disconnected"),
+	}
+	var audio_mode := {"call": _text("通话", "call"), "media": _text("媒体（只听）", "media (listen only)")}
+	var aec := {"system": _text("系统", "system"), "webrtc": "WebRTC"}
+	var outputs := {
+		"speaker": _text("外放", "speaker"),
+		"earpiece": _text("听筒", "earpiece"),
+		"bluetooth": _text("蓝牙耳机", "Bluetooth"),
+		"wired": _text("有线耳机", "wired headset"),
+		"system": _text("系统决定", "system"),
+	}
+	var state := VoiceService.connection_state()
 	var st := VoiceService.status()
-	if st.is_empty():
-		return ""
 	var caps := VoiceService.capabilities()
-	var aec := _text("可用", "available") if bool(caps.get("aec_available", false)) else _text("无", "none")
-	var device := str(st.get("output_device", "")).strip_edges()
-	if device.is_empty():
-		device = "-"
-	if str(st.get("platform", "")) == "desktop":
-		# 电脑版试用（scripts/voice/DesktopVoiceBackend.gd）：把测试时最容易误判的三件事直接写出来。
-		var line := _text("电脑版 · 编码：ADPCM · 输出：%s · 没有回声消除（外放开麦队友会听到回声）",
-			"PC · Codec: ADPCM · Output: %s · No echo cancellation (speakers will echo)") % device
-		if bool(st.get("mic_silent", false)):
-			line += _text("\n麦克风没有声音：检查 Windows 设置 → 隐私和安全性 → 麦克风，允许桌面应用访问",
-				"\nMic is silent: check Windows Settings → Privacy → Microphone (allow desktop apps)")
-		if bool(st.get("opus_from_teammates", false)):
-			line += _text("\n有队友的手机发的是 Opus，电脑版暂时听不到他",
-				"\nA teammate's phone sends Opus, which the PC build cannot play yet")
-		return line
-	return _text("编码：%s（Opus 自检：%s）· 输出：%s · 系统回声消除：%s",
-		"Codec: %s (Opus self-test: %s) · Output: %s · Echo cancel: %s") % [
-		VoiceService.codec_label(), str(st.get("opus_selftest", "-")), device, aec]
+	var output := str(st.get("output", "")).strip_edges()
+	return _text("连接：%s · 声音模式：%s · 输出：%s · 回声消除：%s",
+		"Connection: %s · Audio mode: %s · Output: %s · Echo cancel: %s") % [
+		str(connection.get(state, state)),
+		str(audio_mode.get(str(st.get("audio_mode", "")), "-")),
+		str(outputs.get(output, output)) if not output.is_empty() else "-",
+		str(aec.get(str(caps.get("aec", "")), _text("无", "none")))]
 
 
 func _toggle_details() -> void:

@@ -132,6 +132,32 @@ Starter_Vfx 在 `effects/vfx3d/vfxv2/reference_packages/`。全路径见机器�
 **因此 D0-D6 与 B4/E3 没有产生任何新的署名义务。** 若将来确实逐行移植 MIT 代码，
 必须在文件头保留原版权声明，并在本节登记来源 commit/tag 与改动文件。
 
+### 随安卓包分发的库：组队语音（2026-09-19 起，docs/语音LiveKit方案.md）
+
+安卓导出插件（`addons/glory_voice/glory_voice_plugin.gd`）会让出包的 Gradle 下载 LiveKit 安卓开发包，**连同它的依赖打进 APK**，所以这些都算我们在分发。
+依赖清单来自 Maven Central 上 `livekit-android-2.28.2.module`，2026-09-19 读取。
+
+| 库 | 版本 | 许可证 | 备注 |
+| --- | --- | --- | --- |
+| `io.livekit:livekit-android` | 2.28.2 | Apache-2.0 | LiveKit 官方安卓开发包 |
+| `io.github.webrtc-sdk:android-prefixed` | 144.7559.14 | BSD-3-Clause（WebRTC 本体）+ 它自带的第三方组件（Opus 等）各自的许可 | 包里最大的一块，约 22 MB（各芯片的原生库） |
+| `com.github.davidliu:audioswitch` | 提交 `039a35a` | Apache-2.0（Twilio audioswitch 的分支） | 只发布在 JitPack |
+| `com.squareup.okhttp3:okhttp`（及 okio） | 4.12.0 | Apache-2.0 | |
+| `org.jetbrains.kotlinx:kotlinx-coroutines-android` / `kotlinx-serialization-json`、Kotlin 标准库 | 1.6.x / 1.5.0 | Apache-2.0 | Godot 模板本来就带 Kotlin 标准库 |
+| `com.google.protobuf:protobuf-javalite` | 3.25.9 | BSD-3-Clause | |
+| `com.google.dagger:dagger` | 2.46 | Apache-2.0 | |
+| `androidx.core:core` / `androidx.annotation:annotation` | 1.13.1 / 1.7.1 | Apache-2.0 | |
+| `com.auth0.android:jwtdecode` | 2.0.2 | MIT | |
+| `com.vdurmont:semver4j` | 3.1.0 | MIT | |
+| `javax.sip:android-jain-sip-ri` | 1.3.0-91 | **待核实** | 没找到能引用的许可文件，不猜 |
+
+**义务（待办）**：
+- Apache-2.0：随发行物附上许可证全文，并保留 NOTICE 文件。
+- BSD / MIT：保留版权声明与许可文本。
+- 游戏里目前没有「开源许可」页面，上架前要补一个，或者放在商店页 / 官网能链接到的地方。
+
+LiveKit **服务器**（`deploy/livekit/`，Apache-2.0）只在我们自己的服务器上跑，不分发给玩家，没有随包署名的义务。
+
 ---
 
 ## 5. `assets/` 盘点结果（2026-08-31 补齐）

@@ -68,3 +68,8 @@ GLORY_API_DOMAIN_PLACEHOLDER {
 		format json
 	}
 }
+
+# 语音服务器（docs/语音LiveKit方案.md、deploy/livekit/README.md）。它的站点写在单独的文件里，
+# 由 deploy/livekit/install_livekit.sh 生成。没装语音时这个文件不存在：import 用的是通配符，
+# 匹配不到文件时 Caddy 只打一条警告、照常启动（写死文件名的话会直接起不来）。
+import /etc/caddy/glory-voice*.caddy

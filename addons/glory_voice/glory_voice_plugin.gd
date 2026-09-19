@@ -1,13 +1,15 @@
 @tool
 extends EditorPlugin
 
-# 游戏内语音插件的导出接线（docs/聊天系统设计.md 第九节方案 ②）。
+# 组队语音安卓桥接的导出接线（docs/语音LiveKit方案.md 5.1）。
 #
-# 插件本体是 addons/glory_voice/bin/GloryVoice.aar，源码与打包脚本在
-# android_plugins/glory_voice/（改了 Java 要重新跑 build_aar.ps1，
-# tools/voice_check 会拿源码指纹对账）。
+# 桥接本体是 addons/glory_voice/bin/GloryVoice.aar（Kotlin，包 LiveKit 安卓开发包），
+# 源码与打包脚本在 android_plugins/glory_voice/（改了要重跑 build_aar.ps1，tools/voice_check 拿源码指纹对账）。
+# aar 里只有我们自己的类；LiveKit 本身由下面的 _get_android_dependencies 交给出包时的 Gradle，
+# 从 Maven Central 下载（它依赖的 audioswitch 只在 JitPack 上）—— **每台出安卓包的电脑都要能上网**，
+# 第一次出包会多下载约 30 MB，之后走 ~/.gradle 缓存。
 #
-# 🔴 **无条件交出 .aar：每个安卓包都必须带语音（2026-09-18）。**
+# 🔴 **无条件交出：每个安卓包都必须带语音（2026-09-18）。**
 #
 # 原来这里有一个 Android 预设勾选项 glory_voice/enabled（默认关）。它两次让语音**悄悄**从包里消失：
 #   - 09-14「只在一台电脑上开」→ 另一台出的 p27–p30 包全都没有语音；
@@ -20,7 +22,7 @@ extends EditorPlugin
 # 报错是有意的：比出一个装上去才发现没语音的包好得多。
 #
 # 所以每台出安卓包的机器都要：勾上 Use Gradle Build、装 4.7.1 安卓构建模板、配好 JDK17 与 SDK。
-# 出包后 tools/apk_identity.py 还会再验一次包里有没有这个插件。
+# 出包后 tools/apk_identity.py 还会再验一次包里有没有桥接和 LiveKit、有没有多出不该有的权限。
 
 var _export_plugin: EditorExportPlugin = null
 
@@ -39,6 +41,19 @@ func _exit_tree() -> void:
 class GloryVoiceExport extends EditorExportPlugin:
 	# 相对 res://addons/（_get_android_libraries 的约定）。
 	const AAR := "glory_voice/bin/GloryVoice.aar"
+	# 与 android_plugins/glory_voice/build.gradle.kts、GloryVoicePlugin.kt 的 LIVEKIT_VERSION 一致（voice_check 对账）。
+	const LIVEKIT := "io.livekit:livekit-android:2.28.2"
+	# LiveKit 依赖的 audioswitch（com.github.davidliu:audioswitch）只发布在这里。
+	const JITPACK := "https://jitpack.io"
+	# LiveKit 自己的清单带着摄像头、屏幕录制前台服务 —— 只用语音，一样都不要：
+	# 摄像头权限会出现在 Google Play 的应用信息里；屏幕录制前台服务还要在 Play 管理中心单独申报。
+	# 必须写在应用自己的清单里才去得掉（库清单之间的 remove 看合并顺序，不可靠）。
+	const REMOVED_PERMISSIONS := [
+		"android.permission.CAMERA",
+		"android.permission.FOREGROUND_SERVICE",
+		"android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION",
+	]
+	const REMOVED_SERVICE := "io.livekit.android.room.track.screencapture.ScreenCaptureService"
 
 	func _get_name() -> String:
 		return "GloryVoice"
@@ -49,3 +64,18 @@ class GloryVoiceExport extends EditorExportPlugin:
 	func _get_android_libraries(_platform: EditorExportPlatform, _debug: bool) -> PackedStringArray:
 		# 🔴 无条件。没有开关可关 —— 见文件头：开关两次让语音悄悄从包里消失。
 		return PackedStringArray([AAR])
+
+	func _get_android_dependencies(_platform: EditorExportPlatform, _debug: bool) -> PackedStringArray:
+		return PackedStringArray([LIVEKIT])
+
+	func _get_android_dependencies_maven_repos(_platform: EditorExportPlatform, _debug: bool) -> PackedStringArray:
+		return PackedStringArray([JITPACK])
+
+	func _get_android_manifest_element_contents(_platform: EditorExportPlatform, _debug: bool) -> String:
+		var lines := PackedStringArray()
+		for permission in REMOVED_PERMISSIONS:
+			lines.append('<uses-permission android:name="%s" tools:node="remove" />' % permission)
+		return "\n".join(lines)
+
+	func _get_android_manifest_application_element_contents(_platform: EditorExportPlatform, _debug: bool) -> String:
+		return '<service android:name="%s" tools:node="remove" />' % REMOVED_SERVICE

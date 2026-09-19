@@ -148,7 +148,14 @@ const USE_DTLS := true
 #      **而且战斗服务器上要先放好名片公钥**（deploy/BATTLE_SERVER_KEY.md「出战名片公钥」），
 #      否则它拒绝启动；**账号服务器要先于二者更新并配好私钥**（发名片的接口在那边）。
 #      确认依据是服务器日志里的 `battle card key loaded` 与 `server started protocol=30`。
-const NETWORK_PROTOCOL_VERSION := 30
+# v31: 语音改用 LiveKit 自建（docs/语音LiveKit方案.md，2026-09-19）。语音不再经过战斗服务器：
+#      删 _rpc_team_voice_submit / _rpc_team_voice 和语音通道 CH_VOICE，
+#      加 _rpc_team_voice_token_request / _rpc_team_voice_token（发只能进本队语音房间的钥匙）。
+#      RPC 数量没变（仍是 58），但方法表变了 —— 与 v26、v28 同一类，两端不一致时方法对不上。
+#      代价同上：**战斗服务器必须重新打包部署到 p31**，和新包一起上。要有语音还得先装好 LiveKit、
+#      放好语音钥匙配置（deploy/livekit/README.md）；没放的话照常开服，只是没有语音。
+#      确认依据是服务器日志里的 `voice configured (LiveKit)` 与 `server started protocol=31`。
+const NETWORK_PROTOCOL_VERSION := 31
 
 # Local phone hosting is debug-only.
 const ALLOW_LOCAL_HOST_DEBUG := false
@@ -170,10 +177,6 @@ const ALLOW_LOCAL_HOST_DEBUG := false
 # 通道号 0 表示"用该 transfer mode 的引擎默认通道"，≥1 才是用户通道。
 const CH_CONTROL := 0
 const CH_BULK := 1
-# 语音（v25，docs/聊天系统设计.md 第九节）：unreliable_ordered 的独立用户通道。
-# 语音是持续的高频小包（每人每秒 25 个），单独一条通道，不和其他流量共用序号；
-# 下面「不要传 max_channels」那条结论保证通道 2 存在（不传时上限 255）。
-const CH_VOICE := 2
 
 # **不要**给 create_server / create_client 传 max_channels。
 # 实测（tools/channel_check.tscn，Godot 4.7）：不传时 ENet host 的 max_channels = 255；

@@ -40,7 +40,8 @@ const MY_SLOT := 0
 # ⚠️ **这个值落后于协议号会让下面那条断言静默失效**：断言判的是
 # 「契约变了但协议号没变」，而它一旦落后，`VERSION != PINNED_PROTOCOL` 就恒为真，
 # 于是改契约不顶号也照样绿。协议号每次顶，这里必须跟。
-const PINNED_PROTOCOL := 30
+# 2026-09-19 跟到 31（语音改 LiveKit：删两条语音转发、加两条发钥匙的 RPC；经济契约没变，指纹不动）。
+const PINNED_PROTOCOL := 31
 const PINNED_CONTRACT := "YOp1apnKGVUXgHng"
 
 var _h: CheckHarness
