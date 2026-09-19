@@ -20,6 +20,9 @@ func _emit_finished() -> void:
 		return
 	_return_emitted = true
 	_stop_battle_music()
+	# 9.19：人王「战斗结束未阵亡·奖励属性」音 + 升级闪光。挂在收尾路径、水晶演出
+	# **之前** —— 赢的那一方棋子会在水晶演出里被逐个带走，挂之后就没有人王可闪。
+	_play_human_king_reward()
 	await _play_crystal_attack_sequence(_result)
 	_show_result_overlay()
 	await get_tree().create_timer(_result_linger_seconds()).timeout

@@ -458,9 +458,28 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 	return "Skill description not yet available."
 
 
+# 数据表不带 `skill_cd`、但实现确实有冷却的技能，在这里登记它们的缺省值。
+#
+# 数值必须与 `BattleSimulator._tick_skills` 里同名分支的
+# `d.get("skill_cd", X)` 缺省值**逐字一致** —— 文案写 5 秒、实现跑 8 秒
+# 是最难被玩家发现、也最难被门禁抓到的一类错。
+#
+# 9.19 反馈（bug 文档第 1 条）：「剑士技能未显示冷却时间，在『盾击』后面增加
+# 冷却时间描述，『盾击（冷却5.0秒）：』」。`front_cone_stun` 在模拟器里是
+# `elapsed + float(d.get("skill_cd", 5.0))`（BattleSimulator.gd `_tick_skills`），
+# 而 `data/units/race_units.json` 里这只棋子根本不带 `skill_cd` 字段 →
+# `skill_cd_text()` 返回空串 → 文案少了一整句冷却说明。
+const IMPLICIT_SKILL_CD := {
+	"black_hole": 8.0,
+	"front_cone_stun": 5.0,
+}
+
+
 static func skill_cd_text(d: Dictionary) -> String:
-	if str(d.get("skill_id", "")) == "black_hole" and not d.has("skill_cd"):
-		return " (CD 8.0s)" if is_en() else "（冷却8.0秒）"
+	var sid := str(d.get("skill_id", ""))
+	if not d.has("skill_cd") and IMPLICIT_SKILL_CD.has(sid):
+		var implicit_cd := float(IMPLICIT_SKILL_CD[sid])
+		return " (CD %.1fs)" % implicit_cd if is_en() else "（冷却%.1f秒）" % implicit_cd
 	if d.has("skill_cd"):
 		if is_en():
 			return " (CD %.1fs)" % float(d.get("skill_cd", 0.0))

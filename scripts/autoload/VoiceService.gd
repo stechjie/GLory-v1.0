@@ -116,10 +116,14 @@ func is_supported() -> bool:
 	return _bridge != null
 
 
-# 没有语音桥接时给玩家看的话。电脑版的桥接在做（docs/语音LiveKit方案.md 第 3 阶段）。
+# 没有语音桥接时给玩家看的话。
+# Windows 版的桥接是 addons/glory_voice/glory_voice.gdextension（docs/语音LiveKit方案.md 5.2）：
+# 在 Windows 上还没有，就是那几个 dll 没加载起来（包里缺了，或者被杀毒软件拦了）。
 func unsupported_reason() -> String:
+	if OS.has_feature("windows"):
+		return _text("语音组件没有加载起来，请重新安装游戏", "Voice component failed to load; please reinstall the game")
 	if OS.has_feature("pc"):
-		return _text("电脑版语音还在做", "Voice on PC is coming soon")
+		return _text("这个系统的电脑版还没有语音", "Voice is not available on this system yet")
 	return _text("这个版本没有语音功能", "Voice is not available in this build")
 
 
@@ -579,6 +583,10 @@ static func explain(code: String) -> String:
 			return "这个账号在别的设备上进了语音"
 		"paused":
 			return "切到后台时语音断开了，正在重连"
+		"audio_device_failed":
+			return "打不开电脑的声音设备（麦克风 / 喇叭），检查一下是否被别的程序占用"
+		"sdk_failed":
+			return "语音组件启动失败"
 	return "语音出错：%s" % code
 
 

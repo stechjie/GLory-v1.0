@@ -1,0 +1,30 @@
+#!/usr/bin/env python
+# 电脑版语音桥接（Windows x86_64）。只由 build_dll.ps1 调用：它把这个目录拷到纯英文的临时目录，
+# 并通过环境变量告诉这里 godot-cpp 与 LiveKit C++ 开发包在哪（都在仓库外，见 build_dll.ps1）。
+import os
+
+godot_cpp = os.environ["GLORY_GODOT_CPP"]
+livekit_sdk = os.environ["GLORY_LIVEKIT_SDK"]
+
+# 🔴 C 运行库必须用动态的（/MD）：livekit.dll 是 /MD 编的，接口里直接传 std::string、std::shared_ptr，
+# 两边运行库不一样的话，一边分配、另一边释放就会崩。godot-cpp 在 Windows 上默认 /MT，这里改掉。
+ARGUMENTS.setdefault("use_static_cpp", "no")
+ARGUMENTS.setdefault("platform", "windows")
+ARGUMENTS.setdefault("arch", "x86_64")
+
+env = Environment(tools=["default"], PLATFORM="")
+# LiveKit 开发包用异常报错（设备打不开、发布失败），godot-cpp 默认关掉异常处理，这里打开。
+env["disable_exceptions"] = False
+api_version = "4.7"
+Export("env", "api_version")
+env = SConscript(os.path.join(godot_cpp, "SConstruct"))
+
+env.Append(CPPPATH=["src", os.path.join(livekit_sdk, "include")])
+env.Append(LIBPATH=[os.path.join(livekit_sdk, "lib")])
+env.Append(LIBS=["livekit"])
+
+library = env.SharedLibrary(
+    "bin/glory_voice.windows.{}.x86_64{}".format(env["target"], env["SHLIBSUFFIX"]),
+    source=Glob("src/*.cpp"),
+)
+Default(library)

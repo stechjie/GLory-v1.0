@@ -2,6 +2,10 @@ extends "res://scenes/battle/BattleRenderer.gd"
 
 const RANGED_ATTACK_MIN_RANGE_PX := 135.0
 const _SkillVFXConfig := preload("res://effects/SkillVFXConfig.gd")
+# 9.19：人王奖励判定要读 `max_stacks` 上限，必须经 `apply_star_stats` 取
+# （star4 覆写：1~3 星 5 层 / 4 星 8 层），与 Main._grow_human_king 同一条路。
+# 本仓惯例是 preload 常量而不是裸全局类名。
+const _UnitFactoryRef := preload("res://scripts/units/UnitFactory.gd")
 
 var _vfx_prev_units: Dictionary = {}
 var _vfx_seeded: bool = false
@@ -393,7 +397,8 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 	# `_is_local_owned_unit`（owner_slot == local_slot，队友是不同 slot 所以天然排除），
 	# 再叠加 `star == 4` 防止低星单位的普攻上升沿误触发。
 	var _sim_uid := str(unit.get("sim_uid", ""))
-	if _is_local_owned_unit(_sim_uid) and _is_star4(_sim_uid):
+	var _owned := _is_local_owned_unit(_sim_uid)
+	if _owned and _is_star4(_sim_uid):
 		# 9.19：末日守卫（`dark_doom`）的技能只响**一次**——它的 `shared_hp_link`
 		# 是一次性技能，`_skill_shared_hp_link()` 命中 `shared_link_spent` 会直接
 		# return，但模拟器末尾仍把 `caster.skill_ready` 推到 `elapsed + 1.0`
@@ -406,6 +411,14 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 			if once_only:
 				_doom_skill_sfx_played[_sim_uid] = true
 			SfxService.play(SfxService.star4_cue_for(uid, true))
+	elif _owned:
+		# 9.19 第二批：佣兵专属技能音（星轨猎人 / 泡沫术士 / 圣愈修女）。
+		# **佣兵升不到四星**（`EconomyLedger._use_upgrade_stone` 会拒），所以
+		# 它们不能并进上面那条 `_is_star4` 门 —— 并进去就是一条永远不响的音。
+		# 这里只判「自身棋子」，队友/敌方天然被 `_is_local_owned_unit` 排除。
+		var merc_cue := SfxService.merc_skill_cue_for(uid)
+		if not merc_cue.is_empty():
+			SfxService.play(merc_cue)
 	var texture_pos: Vector2 = unit.get("cast_pos", Vector2.ZERO)
 	var should_play_texture := true
 	var procedural_played := false
@@ -861,6 +874,9 @@ func _attack_skill_vfx_ready(attack: Dictionary) -> bool:
 
 func _play_attack_unit_procedural(attack:Dictionary,target:Dictionary,current:Dictionary)->void:
 	if not _attack_skill_vfx_ready(attack):return
+	# 9.19：走到这里就说明**这一次普攻真的触发了技能**（上面那一步判的就是
+	# `attack_count % every`），所以技能音挂在这里，而不是每一次普攻都响。
+	_maybe_play_attack_skill_sfx(attack)
 	var sid:=str(attack.get("skill_id",""))
 	var origin:Vector3=attack.get("world_cast",Vector3.ZERO)
 	var target_world:Vector3=target.get("world_hit",target.get("world_foot",Vector3.ZERO))
@@ -875,6 +891,25 @@ func _play_attack_unit_procedural(attack:Dictionary,target:Dictionary,current:Di
 		_play_unit_procedural("unique_king_growth", origin, target_world, context)
 		return
 	_play_unit_procedural(sid,origin,target_world,context)
+
+# 9.19：「攻击触发型」四星技能音（弓箭手额外伤害 / 牧师治疗 / 极光射手真伤）。
+#
+# 只在**自身棋子**且**四星**时响 —— 与 `_play_skill_cast_vfx` 里那条四星音同一
+# 套门控口径（`_is_local_owned_unit` 天然排除队友：队友是别的 owner_slot）。
+# 「这次有没有触发」由调用方保证（已经过了 `_attack_skill_vfx_ready()`），
+# 所以这里不再重复判模。
+#
+# 判据用 `def.id` 而不是名字：名字会被 `DataRegistry.canonicalize_unit_display_names()`
+# 按本地化覆写，id 永远稳定。
+func _maybe_play_attack_skill_sfx(attack: Dictionary) -> void:
+	var unit_id := str(attack.get("unit_id", attack.get("source_id", "")))
+	var cue := SfxService.attack_skill_cue_for(unit_id)
+	if cue.is_empty():
+		return
+	var sim_uid := str(attack.get("id", ""))
+	if not _is_local_owned_unit(sim_uid) or not _is_star4(sim_uid):
+		return
+	SfxService.play(cue)
 
 func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 	var events: Array = state_snapshot.get("visual_events", [])
@@ -931,7 +966,20 @@ func cue_play_basic_attack(source_uid: String, target_uid: String, ranged: bool)
 		"unit_id": str(source.get("unit_id", "")),
 		"skill_id": str(source.get("skill_id", "")),
 		"target_uid": target_uid,
+		# 9.19：「第 N 次普攻触发」类技能（弓箭手额外伤害 / 牧师治疗）靠
+		# `attack_count % every == 0` 判断**这一次**要不要出技能演出与技能音。
+		# 这两个字段原先只存在于 D6 删掉的 snapshot-diff 路径上，cue 这条路漏了
+		# 它们 —— `_attack_skill_vfx_ready()` 于是永远读到缺省值（`0 % every == 0`），
+		# 把每一次普攻都当成触发。补回来之后 VFX 与 9.19 新接的技能音才都只落在
+		# 真正的第 N 击上。（`_collect_vfx_units` 一直在写这两个字段，只是没人读。）
+		"attack_count": int(source.get("attack_count", 0)),
 	}
+	# `every` 用快照里的真实值：四星会改它（弓箭手 4→3、牧师 5→4）。为 0 表示
+	# 这只棋子的 def 里没有 `every`（技能不是这一类），**不写这个键**，
+	# 让 `_attack_skill_vfx_ready()` 走它原本的缺省，行为与改动前一致。
+	var source_every := int(source.get("skill_every", 0))
+	if source_every > 0:
+		attack["skill_every"] = source_every
 	# The event carries the simulator's real target, so unlike the diff path this
 	# never has to guess the victim from nearby damaged units.
 	var target: Dictionary = _cue_unit_snapshot(target_uid)
@@ -1145,6 +1193,94 @@ func _maybe_play_human_king_death_sfx(victim_uid: String) -> void:
 		return
 	_human_king_death_sfx_uids[victim_uid] = true
 	SfxService.play(SfxService.CUE_HUMAN_KING_DEATH)
+
+
+# --- 9.19 人王「战斗结束未阵亡 · 奖励属性」音 + 升级闪光 ----------------------
+
+# 每场只播一次。`battle_finished` 前后有两条收尾路径（本地模拟走
+# BattleResult._emit_finished，replay 走 BattleScreen._finish_replay），
+# 都用 `_return_emitted` 保证只走一次；这个标记是第二道保险。
+# 每局开始由 BattleScreen._start_replay() 清空。
+var _human_king_reward_played := false
+
+
+# 战斗结束那一刻调用。
+#
+# 用户给的两个硬条件**缺一不可**：
+#   ① 本次战斗**自身人王未阵亡** —— 人王的唯一技是「参战且战后仍存活才成长」
+#      （Main._apply_post_battle_unit_outcomes 按 result.player_survivor_slots 判），
+#      阵亡的人王下一回合直接被移出棋盘，成长无从谈起；
+#   ② 本次**还有成长空间**（`king_growth_stacks < max_stacks`）—— 已经到上限
+#      就没有属性加成了，这时响奖励音是在骗玩家。
+#
+# 用户口径：**不要在战后结算面板里响，要在战斗结束那一刻响**，并且要在
+# 自身人王身上出一个只给自己看的闪光升级特效。所以这条挂在收尾路径的
+# 「水晶演出之前」——赢了的那一方棋子随后会被水晶演出逐一出场带走，
+# 挂在那之后就没人王可以闪光了。
+func _play_human_king_reward() -> void:
+	if _human_king_reward_played:
+		return
+	var king := _local_living_human_king()
+	if king.is_empty():
+		return
+	if not _human_king_can_grow():
+		return
+	_human_king_reward_played = true
+	# 升级闪光：3D 程序化 GROWTH_AURA（绿色光环 + 上升粒子，就是「成长」那条
+	# 特效）叠一层同 id 的 2D 光环，落在**人王本体**脚下 —— 用户要的是
+	# 「在自身人王身上」，不是队伍中心。归属判定在 `_local_living_human_king()`
+	# 里做掉了，队友/敌方的人王根本走不到这里。
+	_play_unit_procedural("GROWTH_AURA",
+		king.get("world_foot", Vector3.ZERO),
+		king.get("world_head", king.get("world_foot", Vector3.ZERO)),
+		_unit_target_context(king, king))
+	_spawn_vfx("GROWTH_AURA", king.get("foot_pos", Vector2.ZERO))
+	SfxService.play(SfxService.CUE_HUMAN_KING_REWARD)
+
+
+# 本座位还活着的人王。归属一律走 `_is_local_owned_unit`（owner_slot == local_slot），
+# 队友是别的 slot、敌方更不用说 —— 天然只留自己那只。
+# 用数据表 id（human_king）判定而不是名字：名字会被本地化覆写，id 永远稳定。
+func _local_living_human_king() -> Dictionary:
+	for side in ["player", "enemy"]:
+		for raw in _state.get(side, []):
+			if typeof(raw) != TYPE_DICTIONARY:
+				continue
+			var sim_uid := str(raw.get("uid", ""))
+			if str(raw.get("id", "")) != "human_king" or not bool(raw.get("alive", false)):
+				continue
+			if not _is_local_owned_unit(sim_uid):
+				continue
+			var snap := _cue_unit_snapshot(sim_uid)
+			if not snap.is_empty():
+				return snap
+			# 收尾帧快照可能已经把它剪掉，用手头的位置字段拼一个够用的锚点。
+			var sim_pos := _fighter_sim_pos(raw)
+			return {
+				"foot_pos": _sim_to_arena(sim_pos),
+				"world_foot": _sim_to_world_pos(sim_pos),
+			}
+	return {}
+
+
+# 本座位人王这一局结束**还能不能**拿到成长。false = 已到上限，或棋盘上没有人王。
+#
+# cap 走 `UnitFactory.apply_star_stats`，与 Main._grow_human_king 同源：
+# `max_stacks` 在 star4 里被覆写（1~3 星 5 层 / 4 星 8 层），而 `cell.def` 是
+# 未做星级缩放的原始表项 —— 直接读它会把 4 星的上限读成 5 层，于是人王明明
+# 已经封顶了还在响奖励音。
+func _human_king_can_grow() -> bool:
+	for i in GameState.board_slots.size():
+		var cell = GameState.board_slots[i]
+		if cell == null or str(cell.get("def", {}).get("skill_id", "")) != "unique_king_growth":
+			continue
+		var d: Dictionary = cell.get("def", {})
+		var effective := _UnitFactoryRef.apply_star_stats(d, int(cell.get("star", 1)))
+		var cap := int(effective.get("max_stacks", 0))
+		if cap <= 0:
+			return true
+		return int(cell.get("king_growth_stacks", 0)) < cap
+	return false
 
 
 # 这个 uid 是不是指定的数据表棋子。两条路都试：

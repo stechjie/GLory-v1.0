@@ -1284,7 +1284,6 @@ FAIL [reset_not_wired] NetworkService.reset() 必须重置信封位置（实际 
 - **Effekseer 的安卓库没进 git**（同事 `b6d91ee` 加的插件，2026-09-14 合并时发现）：`.gitignore` 里 `android/` 没带前导斜杠，会匹配任意层级叫 `android` 的目录（同一个文件里 `assets` 那条注释记过一模一样的坑），于是 `addons/effekseer/bin/android/libeffekseer.*.so` 从来没提交（windows / linux / macos / ios / web 的库都在）。从 git 拉的代码出的安卓包里就没有 Effekseer：目前只有实验性特效 `effects/vfx3d/experimental/undead_from_scratch_v3/` 和调试场景用到它，正式玩法不受影响，但以后正式特效用上它就会在手机上失效。修法：`.gitignore` 改成 `/android/`（根目录的安卓构建模板照样忽略，仓库里别处没有叫 android 的目录），再由同事从他电脑把 `bin/android` 下的 .so 提交上来。同一个提交还带进了 3 个临时文件：`addons/effekseer/bin/windows/~libeffekseer.x86_64.dll` 和两个 `~libeffekseer.x86_64.dll~RF….TMP`（看文件名和大小都是正式 DLL 的临时副本，1538560 字节）。这台跑过 Godot 之后 `~libeffekseer.x86_64.dll` 被删掉了，git 里显示为删除，提交这个删除没问题；两个 .TMP 也该删，并在 `.gitignore` 里加上 `~*.dll` 与 `*.TMP`
 - 内容审核的接入方式与价格、举报由谁审与响应时限、国内合规留存要求
 
-<<<<<<< Updated upstream
 ## 2026-09-18 测试反馈修复
 
 商城按钮状态对齐；改名冷却到期提示；战斗结束停止Boss登场音并取消延迟音乐；仅本人棋子播放人王阵亡音；房主开始按钮下方提示与房间状态一致。详见[9.18bug修复记录](docs/9.18bug修复记录.md)。本地专项12项、音效123项、Boss音乐24项通过；未进行安卓及真实多人听感验收。本次无需更新服务端，客户端需要重新运行源码或重新导出安装包。
@@ -1310,7 +1309,6 @@ FAIL [reset_not_wired] NetworkService.reset() 必须重置信封位置（实际 
 详见[9.19音效分离与离线自测记录](docs/9.19音效分离与离线自测记录.md)。`audio_sfx_check`
 （143 项）、`battle_cue_profile`（169 项）、`battle_presentation_event`（8314 项）、
 `battle_hit_victory`（39 项）全部通过，0 失败；未进行安卓及真机听感验收。
-=======
 ## 2026-09-19：语音改用 LiveKit（第 1 阶段，未提交）
 
 方案、理由与五个阶段见 [语音LiveKit方案](docs/语音LiveKit方案.md)；部署见 [deploy/livekit/README.md](deploy/livekit/README.md)。
@@ -1408,4 +1406,49 @@ FAIL [reset_not_wired] NetworkService.reset() 必须重置信封位置（实际 
   - 正式签名和之前的包相同（证书 SHA-256 `3d8c76f450f418a7…`），可以直接覆盖安装；
   - `apk_identity.py inspect` 通过；包里有语音桥接和 LiveKit；没有摄像头 / 屏幕录制权限；SHA-256 `2c00bbe8c6c329a7…`。
 - 🔴 **服务器换成 p31 之后，p30 的旧包一连就闪退**（旧包里的 bug，见上面第 1 阶段）。服务器和新包要同时换，所有人都要装新包。
+<<<<<<< Updated upstream
+
+## 2026-09-19：第二批战斗音效（9 条）+ 剑士技能冷却文案
+
+落 9 条新战斗音效到 `assets/audio/sfx/battle/`（英文名，原素材在 `音乐/0919/战斗、特效/`），
+按「怎么触发」拆成三张派发表：`STAR4_SKILL_CUES`（施法型：剑士 / 法师 / 神侍 / 天使）、
+`STAR4_ATTACK_SKILL_CUES`（攻击型：弓箭手 / 牧师 / 极光射手，挂在「第 N 击真的触发」那一下）、
+`MERC_SKILL_CUES`（佣兵：星轨猎人 / 泡沫术士 / 圣愈修女）—— 佣兵升不到四星，单独成表，
+否则那条音永远不响；音效门禁 cue 数 37→46。
+用户给的两条硬约束：① 以上战斗音效只有**自身棋子**才播（沿用 `_is_local_owned_unit()`，
+队友是别的 `owner_slot` 天然排除）；② 人王「战斗结束未阵亡奖励属性」要同时满足
+「自身人王 · 本场未阵亡 · 还没到成长上限」，在**战斗结束那一刻**（水晶演出之前，否则赢方棋子
+已被淡出）在人王本体上出只有自己看得到的 `GROWTH_AURA` 闪光升级特效并伴播奖励音；
+上限经 `UnitFactory.apply_star_stats()` 取，与 `Main._grow_human_king` 同源（★1~3 五层 / ★4 八层）。
+顺手修两处既有缺陷：① D6 迁移漏字段 —— `cue_play_basic_attack()` 拼的 `attack` 字典没带
+`attack_count` / `skill_every`，使弓箭手 / 牧师技能演出**每次普攻都在放**（应每第 N 击），
+已在 cue 路径补回；② `audio_sfx_check` 的 `indirect_cue_entry_unused` 用不带 `(` 的
+`contains()` 会被前缀骗过（改名成 `..._MUTATED` 仍绿），已收紧为要求真调用。
+bug 文档第 1 条：剑士「盾击」补冷却文案 —— `race_units.json` 里 `human_swordsman` 不带
+`skill_cd`，新增 `UnitDetailFormat.IMPLICIT_SKILL_CD`（`black_hole` 8.0 / `front_cone_stun` 5.0）
+与模拟器缺省值同源，渲染成「盾击（冷却5.0秒）：…」（中英文两支都跟着走），`black_hole`
+既有输出逐字未变。
+详见[9.19第二批战斗音效与剑士冷却文案](docs/9.19第二批战斗音效与剑士冷却文案.md)。
+验证：行为级探针 34 项全过、11 条门禁全 PASS、4 处变异测试全部正确变红后逐字节还原
+（`audio_sfx_check` 163 项）；未进行安卓及真机听感验收。
+=======
+>>>>>>> Stashed changes
+
+## 2026-09-19：语音第 3 阶段，电脑版（Windows）桥接（未提交）
+
+- **做法「甲」**：LiveKit C++ 开发包 1.11.0 自带的系统音频，麦克风、喇叭、回声消除都交给 WebRTC。理由和「乙」的对比见 [语音LiveKit方案](docs/语音LiveKit方案.md) 5.2。
+- **代码与编译**：
+  - 代码在 `native/glory_voice_desktop/`，用 `build_dll.ps1` 编译（要 VS 生成工具，MSI 这台 09-19 装好了）；
+  - 输出 7 个文件到 `addons/glory_voice/bin/windows/`（约 29 MB，含 VC++ 运行库），由 `glory_voice.gdextension` 声明；
+  - **同事和玩家都不用装 VS**，dll 跟着仓库和游戏走。
+- **验证**：
+  - 第一次编译就成功，没有警告；dll 用 /MD 运行库，和 livekit.dll 一致；
+  - `voice_check` 391 项全过；
+  - 安卓导出正常：包里没有 dll，只多一条「没有 arm64 库」的警告，和 Effekseer 一样。
+- 🔴 **MSI 这台开着 Windows「智能应用控制」**，没签名的 dll 一律被拦（Error 4551）：
+  - 所以这台上测不了电脑版语音。**Effekseer 在这台上其实也一直没加载**；
+  - Godot 的 Windows 导出模板本身也没签名，开着智能应用控制的玩家电脑上，**整个电脑版都会被拦**；
+  - 正式发电脑版之前要解决签名：上微软商店（免费，微软代签），或者买 OV 代码签名证书（约 150–300 美元一年）；
+  - 自己做的证书不行，智能应用控制只认可信机构发的证书。
+- 这台导出安卓包时，APK 写完之后 Godot 进程没有退出，等了 10 分钟后手动结束。包是完整的，原因没查。
 >>>>>>> Stashed changes
