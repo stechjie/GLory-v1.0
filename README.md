@@ -1463,3 +1463,47 @@ bug 文档第 1 条：剑士「盾击」补冷却文案 —— `race_units.json`
   - 正式发电脑版之前要解决签名：上微软商店（免费，微软代签），或者买 OV 代码签名证书（约 150–300 美元一年）；
   - 自己做的证书不行，智能应用控制只认可信机构发的证书。
 - 这台导出安卓包时，APK 写完之后 Godot 进程没有退出，等了 10 分钟后手动结束。包是完整的，原因没查。
+
+## 2026-09-20：战斗音效（10 条）+ 战场音效归属放宽「自身 + 友军」+ bug 两条
+
+落 10 条新音频到 `assets/audio/`（原素材 `音乐/0920/`）：`prep/` 三条是**替换**
+（`star4_default` / `star4_god_skill` / `star4_archangel`），`battle/` 七条是**新增**
+（`star4_scythe_skill` 偷袭者 / `star4_priestess_skill` 大祭司 / `star4_dark_casters_skill` 暗影法师·恐惧魔·魅魔三合一 /
+`star4_arbiter_skill` 裁决者 / `star4_parasite_skill` 寄生灵 / `star4_bomb_skill` 自爆灵 /
+`star4_death_servant_skill` 死侍），音效门禁 cue 数 46→53。
+★ 有条陷阱：旧 `star4_god_skill.mp3` 的**字节**被搬去当了新的 `star4_arbiter_skill.mp3`、旧
+`star4_archangel.mp3` 的字节搬去当了新的 `star4_priestess_skill.mp3` —— 别用「某个旧文件变了」判断素材丢失。
+行为改动三项：① 战场四星技音归属由**仅自身**放宽到**自身 + 友军**（新增判据
+`BattleVfx._is_own_or_ally_unit()`，同 `GameConstants.team_of_slot`；单人局自动回落旧判据）；
+② 寄生灵 / 自爆灵 / 死侍三家技能在模拟器里**不产生 `skill_ready` 上升沿**，改为各挂真事件
+（寄生灵＝分身出现那一刻，★ 分身是死者的 `duplicate(true)`、`id`/`owner_slot`/`star` 全是死者的，
+必须按 `team` 回头找**本体**过门控；自爆灵＝死亡爆炸；死侍＝开局绑定到人才响，没绑到不响）；
+③ 人王相关**刻意不跟着放宽**（用户明确反悔；且 `king_growth_stacks` 不在棋盘 payload 里）。
+bug 文档第 1 条：设置页里切成英文必须**当场**变英文 —— 根因不是没人听信号，而是
+`_build()` 里 `text = tr("settings_x")` 拿到的**是已翻译文本、键名丢了**，Godot 自动翻译再也查不回去；
+改为 `locale_changed` 时**整体 `_build()` 重建**（且重建前先 `remove_child()` 再 `queue_free()`，
+否则同帧新旧内容并存）。新增门禁 `tools/settings_locale_live_check`（4 项），修复前 FAIL（残留 16 条中文）。
+bug 文档第 2 条：哀鸣共鸣文案 10%→15% —— 数据 / 代码 / 文本**本来就都是 15%**，只有**卡图 PNG 是旧的**
+（卡面文字烘焙在图里，同 9.13「打断锁链」），改用 PIL 从同款卡图取同字体「5」字形补图，中英两版各一张。
+详见[9.20 战斗音效批次与 bug 修复记录](docs/9.20战斗音效与bug修复记录.md)。
+验证：14 条门禁 PASS（`audio_sfx_check` 177 项、新门禁 4 项、行为探针 59 项全过）；
+4 条红（`dynamic_call` / `asset_manifest` / `procedural_ui_ratchet` / `bootstrap`）全部是既存红且读数
+未被本批推动（`dynamic_call` 的 `unresolved` 仍 265、`asset_manifest` 的 21 条无一条指向本批新文件）；
+另有 `asset_delivery` 从 11 → 13，**多出的 2 条确实来自本批**（补过字的哀鸣共鸣卡图被 PIL 重编码、
+文件小了约 22%，但尺寸/模式/像素逐点核对只差补上去的那个「5」，是无损重压，重打包即消）；
+变异测试把设置页改回旧写法，新门禁正确变红后逐字节还原。
+未进行安卓 / 真机听感验收，未重新导出 EXE / APK。
+
+**同日补充（第三批 · 用户真机实测反馈）**：寄生灵的分身音改成「**首次活着出现**的那一帧响一次」
+—— 原来按「新 uid（`prev.is_empty()`）」判，而回放 roster 会把战斗中段才出生的分身**提前**（`alive=false`）
+塞进 `_state`，于是「进演示第一帧」被误判成召唤时刻（**开局就响**）；反向在真 3v3 里它又会**整场不响**。
+死侍开局绑定音**不是「没绑人」**、是演出端漏播：`_vfx_seeded` / `_vfx_prev_units` 是**实例字段、一局只播种一次**
+（officetest 的编辑态预览先占掉了播种帧），于是播种帧专用的 `_play_opening_unit_vfx()` 整场不再跑；
+新增 `BattleScreen._reseat_vfx_diff_for_new_battle()`，在 `_start_replay()` / `_clear_unit_visuals()` 两个入口重播种
+（并把 `_parasite_spawn_announced` / `_vfx_visual_event_index` 一并归零）。
+新增行为探针 `work/_qa_920/probe_parasite_bind_920`（20 项全过，走真 `_apply_replay_frame` 与 officetest 编辑→演示），
+变异 5 条全红且逐字节还原。
+★ 事故与教训：变异体把函数体替换成**空串**会让 GDScript **解析期报错 → Godot 静默挂死**（不打印、不退出），
+表现为「跑很久」并被 SIGTERM，而脚本 `finally` 没执行 → **工作树一度停在变异态**；
+已固化成三条硬约束（变异体用 `pass`、探针加 180 s 硬超时、动盘前落 `<file>.mutbak` 且启动自愈 + 信号还原）。
+详见[9.20 记录第十节](docs/9.20战斗音效与bug修复记录.md)。

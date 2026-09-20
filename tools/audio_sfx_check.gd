@@ -45,7 +45,12 @@ const CHECK_NAME := "audio_sfx"
 # 9.19 第二批（`音乐/0919/战斗、特效` 9 个素材）= 四星技能音 6 条
 # （剑士 / 弓箭手 / 极光射手 / 法师 / 牧师 / 神侍·天使）+ 佣兵技能音 2 条
 # （星轨猎人、泡沫术士·圣愈修女）+ 人王「战后未阵亡奖励属性」1 条，故 37 → 46。
-const EXPECTED_CUE_COUNT := 46
+#
+# 9.20 第二批（`音乐/0920` 10 个素材）= 3 条**替换**（四星其他棋子合成 / 四星神王技能 /
+# 四星大天使技能 —— 只是文件被覆盖，cue 与路径都没变，所以**不增加**计数）+
+# 7 条**新增**四星技能音（偷袭者 / 大祭司 / 裁决者 / 暗影法师·恐惧魔·魅魔共用 /
+# 寄生灵 / 自爆灵 / 死侍），故 46 → 53。
+const EXPECTED_CUE_COUNT := 53
 
 # 播 SfxService 的生产代码扫描范围。**刻意不含 `res://tools`** ——
 # 门禁自己会调 play()，算进来就等于让门禁给自己的断言当证人
@@ -73,6 +78,12 @@ const INDIRECT_CUES: Array[String] = [
 	# 9.19 第二批：佣兵专属技能音（星轨猎人 / 泡沫术士·圣愈修女）。
 	# 佣兵升不到四星，所以走 merc_skill_cue_for(unit_id)，不叠星级门。
 	"CUE_MERC_ARROW_RAIN_SKILL", "CUE_MERC_BUBBLE_HOLY_SONG_SKILL",
+	# 9.20 第二批：7 条新增四星技能音。**全部**经 star4_cue_for(unit_id, true) 派发 ——
+	# 包括寄生灵 / 自爆灵 / 死侍那三条非施法型：它们的触发点不同，但取值入口同一个
+	# （BattleVfx 各处真事件里调 star4_cue_for(uid, true)），所以豁免名单是同一组。
+	"CUE_STAR4_SCYTHE_SKILL", "CUE_STAR4_PRIESTESS_SKILL", "CUE_STAR4_ARBITER_SKILL",
+	"CUE_STAR4_DARK_CASTERS_SKILL", "CUE_STAR4_PARASITE_SKILL",
+	"CUE_STAR4_BOMB_SKILL", "CUE_STAR4_DEATH_SERVANT_SKILL",
 ]
 # 上面这组 cue 的**派发入口**。每一个都必须在生产代码里有调用点 ——
 # 少了这一条，把整张映射表删空也能全绿（那 8 个名字会被上面的循环全跳过）。

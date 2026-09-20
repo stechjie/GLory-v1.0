@@ -30,7 +30,11 @@ func _build() -> void:
 	theme = Theming.get_theme()
 	_presentation_btns.clear()
 	_presentation_labels.clear()
+	# 先 remove_child 再 queue_free：本函数现在会被 `_on_locale_changed()` 再调一次，
+	# 只 queue_free 的话旧节点要到帧末才真离树，同一帧里 `_build()` 的新旧两套内容会并存。
+	# 与 `CarrotCampPanelV3._on_locale_changed()` 同一写法。
 	for child in get_children():
+		remove_child(child)
 		child.queue_free()
 
 	var bg := ColorRect.new()
@@ -265,5 +269,16 @@ func _refresh_lang_buttons() -> void:
 	_btn_zh.text = _mark_selected("中文", zh_on)
 	_btn_en.text = _mark_selected("English", not zh_on)
 
+# 9.20 bug 文档第 1 条：在设置页里改成英文必须**当场**变英文。
+#
+# ★ 根因不是「没人听信号」，而是**翻译键丢了**：`_build()` 里每一处都是
+#   `text = tr("settings_xxx")`，取到的是**已翻译好的字符串**；Godot 的自动翻译
+#   只会拿节点上现存文本去查表，键名丢了就再也查不回去 —— 于是切到 en 之后
+#   这些 Label 原样停在中文，只有重开设置页（`Main._show_settings()` 会重新
+#   instantiate）才会走一遍新 locale 下的 `_build()`。
+#   本函数此前也只刷了语言按钮的选中态，没管其余文案。
+#
+# 修法沿用本仓既有约定（`CarrotCampPanelV3._on_locale_changed()`）：整个重建。
+# 页面本来就没有需要保留的瞬时状态（开关值都存在 PlayerProfile 里），重建是安全的。
 func _on_locale_changed(_locale: String) -> void:
-	_refresh_lang_buttons()
+	_build()

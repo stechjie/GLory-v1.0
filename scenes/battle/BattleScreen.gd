@@ -274,6 +274,8 @@ func _start_replay(replay: Dictionary) -> void:
 	reset_battle_camera_framing()
 	_begin_presentation_replay(replay)
 	_load_replay_roster(replay)
+	# 9.20：换了一局就必须把 VFX 差分缓存**重新播种**（下面的方法里写清了理由）。
+	_reseat_vfx_diff_for_new_battle()
 	_prefetch_battle_assets()
 	# (4) PvP canonical arrangement puts team A at the bottom. If I'm on team B, flip
 	# the arena vertically so my own units are always the ones at the bottom.
@@ -607,9 +609,30 @@ func _clear_unit_visuals() -> void:
 	_unit_actor_registry.clear()
 	_status_vfx_by_id.clear()
 	# VFX 差分缓存也按 uid 记上一帧血量/存活，不清会在切换瞬间放出假伤害/死亡特效。
+	_reseat_vfx_diff_for_new_battle()
+
+
+# 9.20：把「按 uid 记上一帧」的 VFX 缓存整场重播种。
+#
+# 两个调用点 —— `_start_replay()`（开一局 / 换一局）与 `_clear_unit_visuals()`
+# （切看另一队回放）—— 都是「另一份 uid 空间要开始了」，所以合并成一个定义。
+#
+# 不清的后果有二（两条都在 9.20 用户实测里出现过或差点出现）：
+#   * `BattleVfx._play_opening_unit_vfx()` 是**播种帧专用**（只在 `_vfx_seeded`
+#     还是 false 的那一帧跑）。同一个 BattleScreen 实例上再开一局却不重播种，
+#     它整场都不会跑 —— 凡是「开局就发生」的演出都会静默：死侍开场绑定音/绑定特效、
+#     血契连线、护盾嘲讽。用户报的「死侍开局绑定音不响」就是这一条
+#     （officetest 的编辑态预览先占掉了播种帧）。
+#   * 回放的 roster 会把战斗中途才出生的单位（寄生分身）提前放进 `_state`，
+#     于是第一帧的 diff 会把它们当成「上一帧就在」。
+# `visual_events` 游标同步归零：调用点刚把 `_state.visual_events` 换成空数组
+# （`_load_replay_roster()` / `_switch_active_replay()`），游标若停在上一局的位置，
+# 新一局的前 N 条事件会被静默跳过。
+func _reseat_vfx_diff_for_new_battle() -> void:
 	_vfx_prev_units = {}
 	_vfx_seeded = false
 	_vfx_visual_event_index = 0
+	_parasite_spawn_announced.clear()
 
 func show_settlement_waiting() -> void:
 	_settlement_waiting = true

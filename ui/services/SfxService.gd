@@ -149,6 +149,30 @@ const CUE_MERC_BUBBLE_HOLY_SONG_SKILL := "merc_bubble_holy_song_skill"
 # 人王「战斗结束未阵亡奖励属性」：战斗结束那一刻在自身人王身上响一次。
 const CUE_HUMAN_KING_REWARD := "human_king_reward"
 
+# --- 9.20 第二批（`音乐/0920` 10 个素材）-------------------------------------
+#
+# 用户口径三条：
+#   ① 「四星其他棋子合成（非唯一棋子）」「四星神王技能」「四星大天使技能」
+#      是**替换**既有素材 —— 三个文件就地覆盖，cue 与路径一个都没动；
+#   ② 其余 7 条是**新增**的四星技能音；
+#   ③ 四星唯一棋子的**合成音**维持「只有自己听得见」。原因不是取舍而是通道：
+#      备战期的消息全部经战斗服务端转发，现有通道（team_prep_mercs / room_state
+#      / chat）没有一条能携带「某座位刚合成四星唯一棋子」这种自由格式通知，
+#      要让别人也听见就必须加房间级消息 + 重新部署服务端。本批不做，见
+#      `docs/9.20*记录.md`。
+const CUE_STAR4_SCYTHE_SKILL := "star4_scythe_skill"
+const CUE_STAR4_PRIESTESS_SKILL := "star4_priestess_skill"
+const CUE_STAR4_ARBITER_SKILL := "star4_arbiter_skill"
+# 暗影法师 / 恐惧魔 / 魅魔 三条**共用一个素材** —— 源文件名就是三家并列
+# （「四星暗影法师、四星恐惧魔、四星魅魔技能.mp3」）。
+const CUE_STAR4_DARK_CASTERS_SKILL := "star4_dark_casters_skill"
+# 下面三条的技能在模拟器里**没有 `skill_ready` 边沿**（不是施法型），所以不能靠
+# 上面那条派发路径，各自在 BattleVfx 里挂真事件：寄生灵→寄生分身出现的那一刻；
+# 自爆灵→死亡毒爆；死侍→绑定生效那一下（没绑到人就不响）。
+const CUE_STAR4_PARASITE_SKILL := "star4_parasite_skill"
+const CUE_STAR4_BOMB_SKILL := "star4_bomb_skill"
+const CUE_STAR4_DEATH_SERVANT_SKILL := "star4_death_servant_skill"
+
 const CUES := {
 	CUE_UI_POPUP: "res://assets/audio/sfx/ui/popup.mp3",
 	CUE_UI_CONFIRM: "res://assets/audio/sfx/ui/button_confirm.mp3",
@@ -186,6 +210,14 @@ const CUES := {
 	CUE_STAR4_PRIEST_SKILL: "res://assets/audio/sfx/battle/star4_priest_skill.mp3",
 	CUE_MERC_ARROW_RAIN_SKILL: "res://assets/audio/sfx/battle/merc_arrow_rain_skill.wav",
 	CUE_MERC_BUBBLE_HOLY_SONG_SKILL: "res://assets/audio/sfx/battle/merc_bubble_holy_song_skill.mp3",
+	# 9.20 第二批：7 条新增的四星技能音（素材全在 battle/ 下）。
+	CUE_STAR4_SCYTHE_SKILL: "res://assets/audio/sfx/battle/star4_scythe_skill.mp3",
+	CUE_STAR4_PRIESTESS_SKILL: "res://assets/audio/sfx/battle/star4_priestess_skill.mp3",
+	CUE_STAR4_ARBITER_SKILL: "res://assets/audio/sfx/battle/star4_arbiter_skill.mp3",
+	CUE_STAR4_DARK_CASTERS_SKILL: "res://assets/audio/sfx/battle/star4_dark_casters_skill.mp3",
+	CUE_STAR4_PARASITE_SKILL: "res://assets/audio/sfx/battle/star4_parasite_skill.mp3",
+	CUE_STAR4_BOMB_SKILL: "res://assets/audio/sfx/battle/star4_bomb_skill.mp3",
+	CUE_STAR4_DEATH_SERVANT_SKILL: "res://assets/audio/sfx/battle/star4_death_servant_skill.mp3",
 
 	CUE_MERC_SUMMON: "res://assets/audio/sfx/camp/merc_summon.mp3",
 	CUE_UPGRADE_STONE_DRAW: "res://assets/audio/sfx/camp/upgrade_stone_draw.mp3",
@@ -256,6 +288,20 @@ const STAR4_SKILL_CUES := {
 	"human_mage": CUE_STAR4_MAGE_SKILL,
 	"god_priest": CUE_STAR4_PRIEST_SKILL,
 	"god_angel": CUE_STAR4_PRIEST_SKILL,
+	# 9.20 第二批（`音乐/0920`）。前六条是「施法型」，靠上面那条 skill_ready
+	# 上升沿派发；后三条的技能在模拟器里没有上升沿，由 BattleVfx 的真事件触发
+	# （见 CUE_STAR4_PARASITE_SKILL 那段注释）。三条特殊音放在**同一张表**里，
+	# 是因为它们的归属与星级门控跟施法型完全一致（自身/友军 + 四星），
+	# 差别只在「谁来调 star4_cue_for(uid, true)」。
+	"dark_scythe": CUE_STAR4_SCYTHE_SKILL,
+	"god_priestess": CUE_STAR4_PRIESTESS_SKILL,
+	"god_arbiter": CUE_STAR4_ARBITER_SKILL,
+	"dark_mage": CUE_STAR4_DARK_CASTERS_SKILL,
+	"dark_fear": CUE_STAR4_DARK_CASTERS_SKILL,
+	"dark_suc": CUE_STAR4_DARK_CASTERS_SKILL,
+	"undead_parasite": CUE_STAR4_PARASITE_SKILL,
+	"undead_bomb": CUE_STAR4_BOMB_SKILL,
+	"human_death_servant": CUE_STAR4_DEATH_SERVANT_SKILL,
 }
 
 # 9.19 第二批：**攻击触发型**的四星技能音。
