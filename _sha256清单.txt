@@ -1,27 +1,22 @@
-﻿sha256  <相对工程根目录的路径>  (字节数)
-生成时间：2026-09-20 17:41
+# GLory-work 自定义房间面板改版（方案C「雾林夜幕」） 交付 sha256 清单
+# 生成时间: 2026-09-21 00:58:44
+# 源: C:\Users\WINDOWS\Desktop\GLory-work
+# 备份根: C:\Users\WINDOWS\Desktop\GLory-work_自定义房间面板改版_9.21
+# 行尾约定: MainMenu.gd / GloryTokens.gd / README.md = CRLF；docs 记录与 tools 新文件 = LF
 
-067363b145e21b9e7089d9557cf365896543d60785529ca30b860171db4b3b5b  docs\9.18音效接入记录.md  (10747 bytes)
-fa229c2f8c36b57b571aa84cf9e4730f42c4fbfe90755f8ff682c38bb1726d17  docs\9.19第二批战斗音效与剑士冷却文案.md  (30640 bytes)
-0b452cfe7d44fdda26043460eb7a5dc644437448d3d32daa8dfad871cbfadf3a  docs\9.19音效分离与离线自测记录.md  (12716 bytes)
-ad7371de8507d0965f21178941457ac4f8ed7f3c20e917e7cff2237446dfb3a2  docs\9.20战斗音效与bug修复记录.md  (26683 bytes)
-361740e37f10815caea6be34621c5222b8af9727a5407c18eed8864b61150e7e  docs\CHECKS.md  (201273 bytes)
-4d16862bff832c69607dabb0d3c7157f701935cbc953738f154050b5c29b9121  effects\EffectDatabase.gd  (1183 bytes)
-bc95308641f1bb0b0b6897ee8fe04a571a850592fb60e1cbf301ae00a970e809  effects\ProceduralVFXEffect.gd  (12225 bytes)
-1eb6bbff410738bb0030568cbc6de15bed49320731ca22e8e5a7d3009a294125  effects\scenes\human_king_reward.tscn  (219 bytes)
-dab62dbe3d9cb07f961cfa280a9950fa2add52042be5c33b67f1ab820a7ebbc8  officetest\OfficeTestScreen.gd  (53423 bytes)
-06f869fee7b5b3a6f61ed7153111c86fe9f238b63096e316e5b11ae19c74a9eb  officetest\OfficeTestSim.gd  (14238 bytes)
-b84ad82511faff8cb36cefbc423783fa4c4ef2fd943bfd51eb6b35237a4da2d7  README.md  (212386 bytes)
-923ae8dfe47bc3b5d86cba960a8ee29ee669734c39f3c0f81d61c09542e1f232  scenes\battle\BattleResult.gd  (14012 bytes)
-46725af464320da296bbc8b204fe2daba5e2cd8a7b7e0aa764437380c46227f2  scenes\battle\BattleScreen.gd  (43124 bytes)
-6f5111d6ae94671ab7397999bfc791e1d92e962ac00facff959635aae313987c  scenes\battle\BattleVfx.gd  (86512 bytes)
-c505ad6897b036c036f50c379ce9722553571c3ff187598b99d408bf754b3815  scenes\menu\ProfileScreen.gd  (42321 bytes)
-d3c5934fdc02a68b5b409072c0208c14283f2eaaa46a58dc422b3dd2aa5bfe1d  scenes\menu\SettingsScreen.gd  (12561 bytes)
-554931c5f3ae70a91d8896bf06c43e25e30876731515c4d4991923d801e3228a  scenes\menu\Team3v3Lobby.gd  (53913 bytes)
-049a62759a3c4e3aa70b4aaf3530911d912faae77bb4120e785b63ffc93aa18e  scripts\ui\UnitDetailFormat.gd  (39759 bytes)
-de1b5d41f416b5933a14a92787fac1516c314a34461994913cb2087f7eff4e63  tools\audio_sfx_check.gd  (33473 bytes)
-b21d7e70e867ba54e4cacedb54be7673652b6e32366df913b381bd26c803bcb3  tools\settings_locale_live_check.gd  (3793 bytes)
-46c803a72e7abe00d48c7618fbc8b7781b37924682dbcf410d097f53339968ea  tools\settings_locale_live_check.gd.uid  (20 bytes)
-93be52f3b123e149750437070f4e0c388e6b45fe0023f8526548f8fc2a79480c  tools\settings_locale_live_check.tscn  (196 bytes)
-8a19f04fc39b0992e3be7e819be15d4e36f136314d1a18251d3ec2f52389c5fa  ui\components\VoiceControls.gd  (6919 bytes)
-48471b50a48bcae0b83ee48bec6a1a9039ce8fc2b1bbf85c09fed339887ace8f  ui\services\SfxService.gd  (41485 bytes)
+类型  相对路径                                                               字节  sha256
+改   README.md                                                      215879  d19526ee66ced7512034fcb5389de71cd0cb31b94fc1d2f7bc98c7829dddbbf7
+改   scenes/menu/MainMenu.gd                                         60838  15eecf4478d1907ea6f9ba8bad6d4783b0b4e4332a143a1d9d3dcb4fe02f3ba7
+改   ui/theme/GloryTokens.gd                                          9775  41f0f3857b665ee48c7be5fc7dbb068fb12ad89d6049e953857fc99b9a16e56a
+增   docs/9.21自定义房间面板美化记录.md                                          9395  3bd330f38b723770d89acaebe5df16557c1dd0307c077913095df2fe8535489d
+增   tools/custom_room_ui_capture.gd                                  4049  a9f958be1dd8f9a7149555379fcb217296ca30d2726a702d92f202c30eecdfe3
+增   tools/custom_room_ui_capture.gd.uid                                20  c33e4c8dd84ded39655d7df1a0314844368aff774f66328da8704a49b33ed06b
+增   tools/custom_room_ui_capture.tscn                                 188  9eed476b6adf54fec852b12fb1c24c6811fc06bef1e3250382189891a8c1d732
+增   reports\custom_room\custom_room_empty_en.png                   930120  f4fe8ca89da419a8a006a372d86eb12da4e3a4ee05547394dfd460d00b3599ce
+增   reports\custom_room\custom_room_empty_zh.png                   933619  c85c96ea4eaf36907d3524ff8255b0e7d8625fd60d4f611f604deb54e608b212
+增   reports\custom_room\custom_room_hover_en.png                   935261  7558736e7ba2d04198fdf3e551e19b61f1f872b2ebf2bb309f575c22fb00c5df
+增   reports\custom_room\custom_room_hover_zh.png                   936074  bfe550544ae3158d771305054352d0585221820b0b3de310e0f995060679b952
+增   reports\custom_room\custom_room_rooms_en.png                   934950  d921395865b61475bcf2ee3ce3e3dbe9013608f9ad52772925c08114379f530d
+增   reports\custom_room\custom_room_rooms_zh.png                   936003  cecbbace6a2b2a6cfae50a348afcef59a1ccf527ac41dffe40db91b842832888
+增   reports\custom_room\custom_room_status_en.png                  936556  31fc09980ff2ca543825402d83dfcdd06617929626f5bbb6ed3de2c27868ffe3
+增   reports\custom_room\custom_room_status_zh.png                  937453  bbc740e2bf26059d98e349754b3a5bf2508828ff11efb1d7664385410ae352d4

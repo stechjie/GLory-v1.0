@@ -1,82 +1,26 @@
-最终覆盖上传 · 代码 / 文档
-生成时间：2026-09-20 17:41
+GLory-work 自定义房间面板改版备份（方案 C「雾林夜幕」）
+生成时间: 2026-09-21 00:58:44
 
-【这是什么】
-  「音效 / BGM 接入」这条线从 9.17 以来的**全部代码与文档改动**，按**相同路径**打成一个夹子，
-  方便一次性覆盖上传。按**累积口径**打（上一版两个夹子已不在桌面，推测已上传）。
-  含：9.17 音频接入 + 9.18 音效批 + 9.19 第一批（合成音/技能音分离）+ 9.19 第二批（9 条战斗音效 +
-  剑士冷却文案）+ 9.20 上一批（10 条音频 + 战场音效归属放宽 + bug 两条）
-  + **9.20 第三批（本轮：寄生灵分身音时机 + 死侍开局绑定音 —— 用户真机实测反馈）**。
+背景：主菜单「自定义房间」弹出面板原为羊皮纸浅色卡片，按用户设计稿
+      （桌面/自定义功能界面布局/方案C_设计规范.md）改为深色半透明 + 金色描边夜色风。
+      文案与功能全部保留，只改视觉；未新增字体/贴图/shader；未改 .import 与 project.godot。
 
-【用法】
-  把本夹里的目录按**相同路径**覆盖到工程根目录：
-    scenes\ 、scripts\ 、tools\ 、ui\ 、officetest\ 、effects\ 、docs\ 直接对上；
-    README.md 放工程根目录。
-  本夹的 _说明.txt / _sha256清单.txt 不用拷进工程。
+本目录按「同目录同路径」镜像 GLory-work 的树结构，只放本批改动的文件。
 
-【★ 第三批（本轮）真正需要补传的 —— 本夹 5 个】
-  ★ scenes\battle\BattleVfx.gd      寄生灵分身音判据改成「**首次活着出现**」（不再按「新 uid」）
-                                       + 播种帧补报；新增 _parasite_spawn_announced / _announce_parasite_clone
-  ★ scenes\battle\BattleScreen.gd   新增 _reseat_vfx_diff_for_new_battle()，在 _start_replay() /
-                                       _clear_unit_visuals() 重播种（治「死侍开局绑定音不响」）
-  ★ docs\9.20战斗音效与bug修复记录.md  追加第十节（本批全过程 + 变异脚本被 SIGTERM 的事故教训）
-  ★ docs\CHECKS.md                   门禁登记册：追加「2026-09-20（第三批）」一节
-  ★ README.md                        9.20 小节追加同批补充段
+—— 改动（2 个）——
+  scenes/menu/MainMenu.gd        面板重构：ROOM_* 尺寸常量、_build_room_panel()/_room_* 零件、
+                                 show_room_list() 重写、_dialog_button() 加 variant 参数
+  ui/theme/GloryTokens.gd        新增「雾林夜幕」配色 token 组（MIST_*）
 
-  · 资源夹本轮**无需补传**：本批只改行为、没有新增/替换任何素材，沿用上一版资源夹即可。
+—— 新增（3 + 8 采集产物）——
+  tools/custom_room_ui_capture.gd / .tscn / .gd.uid   真机渲染采集工具
+  reports/custom_room/*.png                            8 张（中/英 × 空态/列表/悬停/状态）
+  docs/9.21自定义房间面板美化记录.md                    本轮记录
 
-【修的什么（第三批，两条现象同源）】
-  ① 寄生灵的音**开局就响** → 判据原按「新 uid（prev.is_empty()）」，而**回放 roster 会把战斗中段才出生的
-     分身提前（alive=false）塞进 _state**，于是「进演示第一帧」被误判成召唤时刻；反向在**真 3v3**里
-     分身早在 prev 里 → **整场不响**。改成按「首次活着出现」报一次。
-  ② 死侍**开局绑定音不响** → **不是「没绑人」**，是演出端漏播：_vfx_seeded / _vfx_prev_units 是
-     **实例字段、一局只播种一次**，同一 BattleScreen 再开一局不重播种 → **播种帧专用**的
-     _play_opening_unit_vfx() 整场不跑（死侍绑定音/绑定特效、血契连线、护盾嘲讽全静默）；
-     officetest 的**编辑态预览先占掉了播种帧**。
+—— 另含 ——
+  README.md                      追加「2026-09-21：自定义房间面板改版」小节
+  _sha256清单.txt                逐文件 sha256，可回源复验
 
-【9.20 上一批需要补传的（若已上传可跳过）—— 本夹 10 个；另有 2 张卡图在**资源夹**】
-  ★ tools\settings_locale_live_check.gd        新门禁：设置页切语言必须当场生效
-  ★ tools\settings_locale_live_check.gd.uid    同上（Godot 4.4+ 的脚本 uid）
-  ★ tools\settings_locale_live_check.tscn      同上
-  ★ scenes\menu\SettingsScreen.gd              修 bug：切成英文不当场变英文（locale_changed 整体重建）
-  ★ ui\services\SfxService.gd                  新增 7 条 cue（cue 数 46 → 53）
-  ★ tools\audio_sfx_check.gd                    EXPECTED_CUE_COUNT 46 → 53
-  ★ scenes\battle\BattleVfx.gd                四星技音归属放宽「自身+友军」+ 寄生灵/自爆灵/死侍三个触发点
-                                                （**第三批又改了它，见上面**）
-  ★ docs\9.20战斗音效与bug修复记录.md            上一批记录（新，**第三批又在末尾追加了第十节**）
-  ★ docs\CHECKS.md                              门禁登记册：新增 settings_locale_live_check 一节
-  ★ README.md                                   追加「2026-09-20：战斗音效（10 条）…」一节
-  ▲ 另有 2 张改过的宝藏卡图在**资源夹**里：assets\ui\treasure_cards\哀鸣共鸣(_en).png
-
-【若上一批已上传可跳过（13 个）】
-    scenes\menu\Team3v3Lobby.gd / scenes\menu\ProfileScreen.gd
-    （SettingsScreen.gd 上一批改过、仍在上面那份里）
-    ui\components\VoiceControls.gd
-    officetest\OfficeTestScreen.gd / officetest\OfficeTestSim.gd
-    scenes\battle\BattleResult.gd
-    （BattleScreen.gd **第三批改过，已移到本轮必传**）
-    scripts\ui\UnitDetailFormat.gd
-    effects\ProceduralVFXEffect.gd / effects\EffectDatabase.gd / effects\scenes\human_king_reward.tscn
-    docs\9.18音效接入记录.md / docs\9.19音效分离与离线自测记录.md /
-    docs\9.19第二批战斗音效与剑士冷却文案.md
-
-【校验】
-  - 本夹 24 个文件与现工程**逐字节相同**（sha256 见 _sha256清单.txt）。
-  - 修复后 sha256：BattleVfx.gd 6f5111d6ae94671ab7397999bfc791e1d92e962ac00facff959635aae313987c
-                    BattleScreen.gd 46725af464320da296bbc8b204fe2daba5e2cd8a7b7e0aa764437380c46227f2
-  - 第三批门禁回归 7 条全 PASS：battle_visual_separation(11) / battle_presentation_event(8314) /
-    audio_sfx_check(177) / four_star_values(684) / synergy_activation_sfx(47) /
-    team_merc_summon_sfx(16) / battle_hit_victory(39)。
-    dynamic_call 仍是**既存红 4**（unresolved 仍 265、上限 191，3 条 callable_method_missing 指向
-    **未动过**的 scenes\prep\PrepUI.gd:1077-1079）→ 本批零贡献。
-  - 第三批行为探针 work/_qa_920/probe_parasite_bind_920：PROBE_DONE **checks=20 fail=0**
-    （走真路径：officetest 编辑→演示 + 镜像核对生产 _apply_replay_frame()）。
-  - 第三批变异 5 条**全红且逐字节还原**：M0 完整回退 9 红 / M1 判据退回 3 红 / M2 重播种空函数 2 红 /
-    M3 删播种帧补报 3 红 / M4 删去重 1 红。
-  - ▲ 上一批的门禁/探针读数（14 条 PASS、probe_audio_920 checks=59、asset_delivery 11 → 13 如实认领）
-    见 docs\9.20战斗音效与bug修复记录.md 第七节。
-  - ★ 事故与教训（已修死）：第一版变异脚本把函数体替换成**空串** → GDScript **空函数体是解析期错误**
-    → Godot **静默挂死**（不打印不退出），被当成「卡住」SIGTERM；脚本 `finally` 没执行 →
-    工作树一度停在变异态。现固化为：变异体用 `pass`、探针加 180 s 硬超时、
-    动盘前落 `<file>.mutbak` + 启动自愈还原 + SIGINT/SIGTERM 还原 + 启动比对 known-good sha256。
-  - ▲ 未做安卓 / 真机听感验收；**未重新导出 EXE / APK**（新代码要重新导出才进包）。
+验收：responsive_layout_check PASS 114；modal_lifecycle_check PASS 433；
+      procedural_ui_ratchet FAIL 2 / asset_manifest FAIL 21 均为既存红、与 9.20 基线逐条一致，
+      本批对 ratchet 计数贡献为 0（MainMenu.gd 基线仍 4 Button + 1 StyleBox）。

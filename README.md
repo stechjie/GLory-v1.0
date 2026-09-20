@@ -1507,3 +1507,33 @@ bug 文档第 2 条：哀鸣共鸣文案 10%→15% —— 数据 / 代码 / 文�
 表现为「跑很久」并被 SIGTERM，而脚本 `finally` 没执行 → **工作树一度停在变异态**；
 已固化成三条硬约束（变异体用 `pass`、探针加 180 s 硬超时、动盘前落 `<file>.mutbak` 且启动自愈 + 信号还原）。
 详见[9.20 记录第十节](docs/9.20战斗音效与bug修复记录.md)。
+
+## 2026-09-21：自定义房间面板改版（方案 C「雾林夜幕」）
+
+按用户提供的设计稿（`桌面/自定义功能界面布局/方案C_设计规范.md` + 三张对照图）把主菜单「自定义房间」弹出
+面板从**羊皮纸浅色卡片**改成**深色半透明 + 金色描边**的夜色风：深墨绿 `#0D1410`@88% 面板底、`#C9A227`
+金描边、主按钮实心金 `#E5C558`。八个文案（自定义房间 / 创建房间 / 输入房间 ID / 加入房间 / 可加入房间 /
+刷新 / 目前没有可加入房间 / 关闭）与四个功能按钮一个不缺、名字不改。改动落在两处：
+`ui/theme/GloryTokens.gd` 新增「雾林夜幕」配色 token 组（`MIST_*`），`scenes/menu/MainMenu.gd` 重写
+`_build_room_panel()` / `show_room_list()` 并把 `_dialog_button()` 升级出 `variant` 参数。
+★ 两个关键约束决定了实现：① `procedural_ui_ratchet` 只许降不许升，`MainMenu.gd` 基线 `4 Button + 1 StyleBox`
+—— 所以本批**一个 StyleBoxFlat.new() 都不新增**，全部走 `Tokens.flat_box(...)`，按钮仍复用原来那 1 个
+`Button.new()`；② 页面不得内联颜色，金/墨绿全部提升为 token。`_dialog_button()` 的默认 `menu` 变体一字未动
+（它还供给主菜单自身的按钮），房间面板配色全走新变体
+`room_primary / room_second / room_ghost_gold / room_ghost / room_row / room_row_full`。
+布局改为「标题行（+ 刷新）→ 金色 1px 分隔线 → 左栏 300（创建 → 输入框 → 加入 → 状态）/ 右栏 fill
+（标题 → 列表 / 空态）→ 底部关闭」，面板 800×540、内边距 32、区块间距 22、列间距 28、行高 46。
+列表三态（常态 / 悬停金描边 / 满员置灰禁用）与空态（44×44 放大镜图标 + 文案，图标用两个 Panel 拼出、
+不新增资源）都做了；空态与 `ScrollContainer` 用两个兄弟节点**互斥显隐**（ScrollContainer 没法「填满且居中」）。
+方案 C §五三个坑按稿处理：金色渐变退化为纯色、毛玻璃用「半透明深色 + 柔和阴影」近似（稿子 2× 的
+y=20 / size=60 折半后再收到 `size=24`）、**不引入中文字体**（项目零中文字体，靠 26 号字号 + 金描边拉层级）。
+★ 一处刻意偏离：面板描边用 2px 而非稿子的 1px —— `_layout_scale ≈ 0.77` 下 1px 会被亚像素糊掉，2px 才稳定可辨。
+验证：新增真机渲染采集工具 `tools/custom_room_ui_capture.gd`（`--headless` 走 dummy 渲染会出空图，
+故不加 `--headless`，落 8 张「中/英 × 空态 / 列表 / 悬停 / 状态」PNG 到 `reports/custom_room/`）；
+`responsive_layout_check` **PASS 114**、`modal_lifecycle_check` **PASS 433**（后者断言面板体内无
+`ColorRect.new()`、返回 `center`、走 `ModalStack`）。两条既存红未被本批推动 —— `procedural_ui_ratchet`
+FAIL 2 与 `asset_manifest` FAIL 21 均与 9.20 基线**逐条一致**，本批对 ratchet 的两个计数贡献都是 0
+（`MainMenu.gd` 基线仍 `4 / 1`）。像素核对：从设计稿 2× 截图反推几何、归一化到 1× 生产输出后逐项对齐
+±2px，面板比例 1.482 ✓、主按钮中心色 `#E5C558` 精确、满员行字 ≈`#8F8468`、悬停金描边出现在预期 Y 位置。
+未重导 EXE / APK（无新资源，`.import` 与 `project.godot` 未变）。详见
+[9.21 自定义房间面板改版记录](docs/9.21自定义房间面板美化记录.md)。
