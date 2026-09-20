@@ -1,14 +1,15 @@
 ﻿sha256  <相对工程根目录的路径>  (字节数)
-生成时间：2026-09-19 17:28
+生成时间：2026-09-20 12:30
 
-2144c16312fba07e3a39acc0665062eef760e3373399e30a49f23be9a83ef582  README.md  (203999 bytes)
+48e5fc6a569fcc9597214a22c68626a0a89c2364a509ae0831b3b094cbe9d9fd  README.md  (207524 bytes)
 067363b145e21b9e7089d9557cf365896543d60785529ca30b860171db4b3b5b  docs\9.18音效接入记录.md  (10747 bytes)
-1b327a9da02279c622e80e1ca1a94edfa5d8a2ad190fbe3ca1a2a84e6f2ab11e  docs\9.19第二批战斗音效与剑士冷却文案.md  (18528 bytes)
+fa229c2f8c36b57b571aa84cf9e4730f42c4fbfe90755f8ff682c38bb1726d17  docs\9.19第二批战斗音效与剑士冷却文案.md  (30640 bytes)
 0b452cfe7d44fdda26043460eb7a5dc644437448d3d32daa8dfad871cbfadf3a  docs\9.19音效分离与离线自测记录.md  (12716 bytes)
-d9464c2858f64099c66794bf85277ef277e4d78ce9d66ee9b7d2936d0a3ccd8b  officetest\OfficeTestScreen.gd  (43027 bytes)
+dab62dbe3d9cb07f961cfa280a9950fa2add52042be5c33b67f1ab820a7ebbc8  officetest\OfficeTestScreen.gd  (53423 bytes)
+06f869fee7b5b3a6f61ed7153111c86fe9f238b63096e316e5b11ae19c74a9eb  officetest\OfficeTestSim.gd  (14238 bytes)
 923ae8dfe47bc3b5d86cba960a8ee29ee669734c39f3c0f81d61c09542e1f232  scenes\battle\BattleResult.gd  (14012 bytes)
 8cbea26ab92f6e8b1aafcfd5a2826dcf80af021c4c81b072600aaee66b49ef46  scenes\battle\BattleScreen.gd  (41562 bytes)
-5d12a322aa954ae75267210292a708669e860e8d4d5d32cb489dd0d443b97f86  scenes\battle\BattleVfx.gd  (77346 bytes)
+94b0bf415d24d279c177ecd418294c7d74c12c1281363c2a52370f555b14c7f9  scenes\battle\BattleVfx.gd  (77580 bytes)
 c505ad6897b036c036f50c379ce9722553571c3ff187598b99d408bf754b3815  scenes\menu\ProfileScreen.gd  (42321 bytes)
 be5989332a39424120f40859306e24b216cfc7548002f182a3f6c8851cd2f4d7  scenes\menu\SettingsScreen.gd  (11406 bytes)
 554931c5f3ae70a91d8896bf06c43e25e30876731515c4d4991923d801e3228a  scenes\menu\Team3v3Lobby.gd  (53913 bytes)
@@ -16,3 +17,6 @@ be5989332a39424120f40859306e24b216cfc7548002f182a3f6c8851cd2f4d7  scenes\menu\Se
 462b1cf8354ce9e5448f38bb1285f4a3870447ea00d643f50c1b7eb4484f3b67  tools\audio_sfx_check.gd  (32554 bytes)
 8a19f04fc39b0992e3be7e819be15d4e36f136314d1a18251d3ec2f52389c5fa  ui\components\VoiceControls.gd  (6919 bytes)
 9b732672622af8d519af386785d4886065c9b643d8479af9b212391ce2719ead  ui\services\SfxService.gd  (38168 bytes)
+bc95308641f1bb0b0b6897ee8fe04a571a850592fb60e1cbf301ae00a970e809  effects\ProceduralVFXEffect.gd  (12225 bytes)
+4d16862bff832c69607dabb0d3c7157f701935cbc953738f154050b5c29b9121  effects\EffectDatabase.gd  (1183 bytes)
+1eb6bbff410738bb0030568cbc6de15bed49320731ca22e8e5a7d3009a294125  effects\scenes\human_king_reward.tscn  (219 bytes)

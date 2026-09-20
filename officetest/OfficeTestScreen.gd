@@ -59,6 +59,22 @@ var _treasure_list_box: VBoxContainer
 var _treasure_slot := 0
 var _treasure_chip_btns: Array = []
 
+# 9.19：人王「战后胜利 · 增加属性」离线验证用的控件与计数。
+# config 的 set_placement 只存 slot/cell/kind/unit_id/star（额外字段会被丢掉），
+# 所以层数记在屏幕上，不往 _config 里塞。
+var _king_row: HBoxContainer
+var _king_grow_btn: Button
+var _king_reset_btn: Button
+var _king_lbl: Label
+# 屏幕上的镜像值（真正的层数记在摆放字典的 `king_growth_stacks` 上，那份才是
+# `def_for_placement` 与奖励门控读的）。留着只是方便调试/探针一眼看到当前层数。
+var _king_growth_stacks := 0
+
+# 离线自测里「自身」= 红 A（slot 0）。与下面 `_is_local_owned_unit()` 覆写**同源**，
+# 改一处必须改另一处。人王奖励那条链的门控读的是它，所以人王摆在红队 1/2 号位
+# （= 队友位）时，正式逻辑按口径**就该不触发**。
+const KING_TEST_SELF_SLOT := 0
+
 var _summary_panel: PanelContainer
 var _summary_text: RichTextLabel
 
@@ -182,7 +198,8 @@ func _build_top_bar() -> void:
 	_top_bar.offset_left = -430
 	_top_bar.offset_right = 430
 	_top_bar.offset_top = 8
-	_top_bar.offset_bottom = 92
+	# 9.19：原来 92（两行）→ 138（多一行「人王·战后胜利」验证按钮）。
+	_top_bar.offset_bottom = 138
 	_edit_root.add_child(_top_bar)
 
 	var col := VBoxContainer.new()
@@ -235,7 +252,202 @@ func _build_top_bar() -> void:
 	_last_result_lbl.add_theme_font_size_override("font_size", 14)
 	_last_result_lbl.add_theme_color_override("font_color", Color(0.72, 0.92, 1.0))
 	info_row.add_child(_last_result_lbl)
+
+	_build_king_test_row(col)
 	_update_last_result_label()
+
+
+# 9.19：离线验证「人王 · 战斗结束未阵亡 ⇒ 增加属性」那一套（金光特效 + 奖励音 + 门控）。
+#
+# 点「属性 +1」走的是**正式那条收尾逻辑** `BattleVfx._play_human_king_reward()`，
+# 所以三个门控（自身人王 / 本场未阵亡 / 还没到上限）、金光、奖励音是一次全试到的；
+# 这里只负责把局面摆成「刚打完一场胜仗、人王该长属性」。
+func _build_king_test_row(parent: VBoxContainer) -> void:
+	_king_row = HBoxContainer.new()
+	_king_row.add_theme_constant_override("separation", 8)
+	parent.add_child(_king_row)
+
+	_king_lbl = Label.new()
+	_king_lbl.add_theme_font_size_override("font_size", 14)
+	_king_lbl.add_theme_color_override("font_color", Color(1.0, 0.88, 0.45))
+	_king_row.add_child(_king_lbl)
+
+	_king_grow_btn = _make_text_button(_tt("人王属性 +1（战后胜利）", "King attr +1 (post-win)"), 14)
+	_king_grow_btn.custom_minimum_size = Vector2(210, 32)
+	_king_grow_btn.pressed.connect(_on_king_grow)
+	_king_row.add_child(_king_grow_btn)
+
+	_king_reset_btn = _make_text_button(_tt("属性归零", "Reset attr"), 14)
+	_king_reset_btn.custom_minimum_size = Vector2(90, 32)
+	_king_reset_btn.pressed.connect(func():
+		var p := _find_own_human_king()
+		if not p.is_empty():
+			OfficeTestSim.set_king_growth(_config, int(p.get("slot", -1)), int(p.get("cell", -1)), 0)
+		_king_growth_stacks = 0
+		_refresh_king_row()
+		_rebuild_edit_preview()
+		_status_hint.text = _tt("人王属性已归零。", "King attribute reset."))
+	_king_row.add_child(_king_reset_btn)
+
+	var tip := Label.new()
+	tip.text = _tt("（我方红队摆人王；每点一次 = 赢一场 + 全属性 ×1.2/1.3，到上限后不该出金光、也不该响）",
+		"(place a King on red; each click = one won battle, +20%/30% all stats; no VFX/sound at cap)")
+	tip.add_theme_font_size_override("font_size", 12)
+	tip.add_theme_color_override("font_color", Color(0.86, 0.92, 1.0))
+	_king_row.add_child(tip)
+
+	_refresh_king_row()
+
+
+func _refresh_king_row() -> void:
+	if _king_lbl == null:
+		return
+	var placement := _find_own_human_king()
+	if placement.is_empty():
+		_king_lbl.text = _tt("人王：未摆放", "King: none")
+		return
+	var star := int(placement.get("star", 1))
+	var cap := _king_stack_cap(star)
+	var slot := int(placement.get("slot", -1))
+	var stacks := int(placement.get("king_growth_stacks", 0))
+	_king_lbl.text = _tt("人王(★%d)：属性 %d/%d%s" % [star, stacks, cap, _king_slot_note(slot)],
+		"King (★%d): attr %d/%d%s" % [star, stacks, cap, _king_slot_note(slot)])
+
+
+# 人王没摆在「自身位（红 A）」时说清楚 —— 正式局里队友的人王**按口径不该出金光**，
+# 自测点按钮时会把它临时按自身处理（见 `_fire_human_king_reward`），这里只做提示。
+func _king_slot_note(slot: int) -> String:
+	if slot < 0 or slot == KING_TEST_SELF_SLOT:
+		return ""
+	return _tt("（队友位槽%d · 自测临时按自身处理）" % slot,
+		" (teammate slot %d; treated as self for this test)" % slot)
+
+
+# 我方(红队 slot 0~2)的人王摆放。用数据表 id 判定 —— 名字会被本地化覆写。
+func _find_own_human_king() -> Dictionary:
+	for p in _config.get("placements", []):
+		if typeof(p) != TYPE_DICTIONARY:
+			continue
+		var slot := int(p.get("slot", -1))
+		if slot < 0 or slot >= 6 or GameConstants.team_of_slot(slot) != GameConstants.TEAM_RED:
+			continue
+		if str(p.get("kind", "")) != "piece" or str(p.get("unit_id", "")) != "human_king":
+			continue
+		return p
+	return {}
+
+
+# 人王技能 `unique_king_growth` 的层数上限。与 `Main._grow_human_king` /
+# `BattleVfx._human_king_can_grow` 同源：一律经 `UnitFactory.apply_star_stats`，
+# 因为 `max_stacks` 在 star4 里被覆写（★1~3 五层 / ★4 八层），`def` 是未缩放的原始表项。
+func _king_stack_cap(star: int) -> int:
+	var d := OfficeTestSim.find_def("piece", "human_king")
+	if d.is_empty():
+		return 0
+	var eff: Dictionary = UnitFactory.apply_star_stats(d, star)
+	return int(eff.get("max_stacks", 0))
+
+
+func _on_king_grow() -> void:
+	var placement := _find_own_human_king()
+	if placement.is_empty():
+		_status_hint.text = _tt("先在我方(红队)摆一个人王，再点这个按钮。",
+			"Place a Human King on your side (red) first.")
+		return
+	var cap := _king_stack_cap(int(placement.get("star", 1)))
+	var stacks := int(placement.get("king_growth_stacks", 0))
+	if cap > 0 and stacks >= cap:
+		_status_hint.text = _tt("人王属性已满(%d/%d)：这时不该出金光、也不该响奖励音。" % [stacks, cap],
+			"King attribute capped (%d/%d): no VFX and no sound expected." % [stacks, cap])
+		_refresh_king_row()
+		return
+	# ★ 不只动计数：把层数写进摆放字典 → `OfficeTestSim.def_for_placement` 按正式口径
+	#   （`Main._grow_human_king` 的 mul，只乘 hp/atk/def）重放，重建预览后属性面板 /
+	#   长按详情看到的就是**真的加成后**的数值。
+	stacks += 1
+	_king_growth_stacks = stacks
+	OfficeTestSim.set_king_growth(_config, int(placement.get("slot", -1)), int(placement.get("cell", -1)), stacks)
+	_rebuild_edit_preview()
+	_fire_human_king_reward(placement)
+
+
+# 临时把输入摆成「刚赢、还没到上限」的那枚人王，交给正式收尾逻辑
+# `BattleVfx._play_human_king_reward()` 跑一遍，然后**立刻还原**。
+#
+# 要临时改两处（两个门控读的是不同的地方）：
+#   · `GameState.board_slots` —— `_human_king_can_grow()`（上限）读它；
+#   · `_state`（战斗模拟态）—— `_local_living_human_king()`（自身 + 存活）读它。
+#   ★ 只会改 board_slots 不改 _state 的话，人王根本找不到 → **点了毫无反应**（9.20 实测踩到）。
+#   ★ `_state` 里人王的 `owner_slot` 会被临时改成 `KING_TEST_SELF_SLOT`：正式局里「自身」
+#     由 `owner_slot == local_slot` 定，离线自测固定「红 A = 自身」；人王摆在红队 1/2 号位
+#     （队友位）时正式逻辑按口径**不该触发**，这里为了让验收顺手，临时按自身处理。
+#   ★ `_human_king_reward_played`（每场一次）先清，否则第二次点就不再响；正式局里
+#     这一下由 `BattleScreen._start_replay()` 做。
+#
+# 触发失败时**不再静默** —— 直接把是哪道门没过打到状态栏上。
+func _fire_human_king_reward(placement: Dictionary) -> void:
+	var saved_slots := GameState.board_slots
+	var saved_state := _state
+	var stacks := int(placement.get("king_growth_stacks", 0))
+	GameState.board_slots = [{
+		"def": OfficeTestSim.find_def("piece", "human_king"),
+		"star": int(placement.get("star", 1)),
+		"king_growth_stacks": stacks,
+	}]
+	_state = _state_with_king_as_self(str(placement.get("unit_id", "human_king")))
+	_human_king_reward_played = false
+
+	# 复用正式门控来判「到底卡在哪一步」，不另抄一份阈值。
+	var no_king := _local_living_human_king().is_empty()
+	var capped := (not no_king) and (not _human_king_can_grow())
+	_play_human_king_reward()
+	var fired := _human_king_reward_played
+
+	GameState.board_slots = saved_slots
+	_state = saved_state
+
+	if fired:
+		_status_hint.text = _tt("战后胜利：人王属性 +1（%d/%d）—— 金光 + 奖励音已触发，全属性已按正式口径加成。"
+			% [stacks, _king_stack_cap(int(placement.get("star", 1)))],
+			"Post-win: King attr +1 (%d/%d) — VFX + sound fired; stats scaled."
+			% [stacks, _king_stack_cap(int(placement.get("star", 1)))])
+	elif no_king:
+		_status_hint.text = _tt("没触发：模拟态里没有「我方存活的人王」。把人王摆到我方(红队 0~2)的格子上再试。",
+			"Not fired: no living King of ours in the sim state. Place one on your side (red 0-2).")
+	elif capped:
+		_status_hint.text = _tt("没触发：属性已到上限（%d/%d）—— 到上限时按口径就不该有金光、也不该响。"
+			% [stacks, _king_stack_cap(int(placement.get("star", 1)))],
+			"Not fired: attribute capped (%d/%d) — no VFX/sound expected at cap."
+			% [stacks, _king_stack_cap(int(placement.get("star", 1)))])
+	else:
+		_status_hint.text = _tt("没触发：原因未知（门控都过了却没生成）。",
+			"Not fired: unknown reason.")
+
+
+# `_state` 的浅拷贝，只把「我方那枚指定棋子」换成 owner_slot = 自身位的副本。
+# 目的见 `_fire_human_king_reward()`；其它单位与数组顺序原样保留，跑完靠调用方还原。
+func _state_with_king_as_self(unit_id: String) -> Dictionary:
+	var st: Dictionary = _state if typeof(_state) == TYPE_DICTIONARY else {}
+	if st.is_empty():
+		return st
+	var out: Dictionary = st.duplicate()
+	for side in ["player", "enemy"]:
+		var arr: Array = st.get(side, [])
+		var patched: Array = []
+		var changed := false
+		for raw in arr:
+			if side == "player" and typeof(raw) == TYPE_DICTIONARY \
+					and str(raw.get("id", "")) == unit_id and bool(raw.get("alive", false)):
+				var f: Dictionary = (raw as Dictionary).duplicate()
+				f["owner_slot"] = KING_TEST_SELF_SLOT
+				f["team"] = "player"
+				patched.append(f)
+				changed = true
+			else:
+				patched.append(raw)
+		if changed:
+			out[side] = patched
+	return out
 
 
 func _make_text_button(text: String, font_size: int) -> Button:
@@ -514,6 +726,7 @@ func _on_upgrade_star(delta: int) -> void:
 func _rebuild_edit_preview() -> void:
 	_state = OfficeTestSim.build_test_state(_config, true)
 	_update_grid_buttons_state()
+	_refresh_king_row()
 	if _battle_setup_ready:
 		_refresh_visuals()
 

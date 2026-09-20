@@ -13,6 +13,7 @@ const EFFECT_SCENES := {
 	"TELEPORT_SLASH": preload("res://effects/scenes/teleport_slash.tscn"),
 	"SOUL_CHAIN": preload("res://effects/scenes/soul_chain.tscn"),
 	"GROWTH_AURA": preload("res://effects/scenes/growth_aura.tscn"),
+	"HUMAN_KING_REWARD": preload("res://effects/scenes/human_king_reward.tscn"),
 	"FEAR_SKULL": preload("res://effects/scenes/fear_skull.tscn"),
 	"SKILL_TEXTURE": preload("res://effects/scenes/skill_texture_vfx.tscn")
 }

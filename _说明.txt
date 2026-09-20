@@ -1,61 +1,91 @@
-最终覆盖上传 · 代码 / 文档
-生成时间：2026-09-19 17:28
+最终覆盖上传 · 代码 / 场景 / 文档
+生成时间：2026-09-20 12:30
 
 【这是什么】
-  2026-09-19 01:44（本轮修改前）以来，与「音效 / BGM 接入」相关的**全部代码与文档改动**，
-  按**相同路径**打成一个夹子，方便你一次性覆盖上传。
-  含：9.18 音效批 + 9.19 第一批（合成音/技能音分离）+ 9.19 第二批（本轮 9 条新战斗音效）。
+  2026-09-19 01:44（音效轮开始前）以来，与「音效 · BGM · 人王战后奖励（特效/属性）」相关的
+  全部**代码 / 场景 / 文档**改动，按**相同路径**打成一份，方便一次性覆盖上传。
+
+【重要 · 本轮（9.20）改了什么】
+  9.20 这一轮做了两件事，**音频本身零改动**：
+    ① 人王「战斗结束未阵亡奖励属性」的特效：**绿色 → 专属金色**；
+    ② 修掉离线自测那个按钮**点了没反应**的问题（顺带把「属性加成」做成真的）。
+  → 相对上一版，本夹里**有新面孔和再次修改的文件共 11 个**（见下 ● A / ● B 组）。
+    ★ 如果你上一版「最终覆盖上传_代码」已经传过，只需要再补这 11 个文件即可。
+    （其余 8 个是上一版就有的，若已上传可跳过。）
 
 【用法】
   把本夹里的目录按**相同路径**覆盖到工程根目录：
-    scenes\ 、ui\ 、scripts\ 、tools\ 、officetest\ 、docs\ 直接对上；
+    scenes\ 、ui\ 、scripts\ 、tools\ 、officetest\ 、effects\ 、docs\ 直接对上；
     README.md 放工程根目录。
   本夹的 _说明.txt / _sha256清单.txt 不用拷进工程。
 
-【文件清单（15 个）】
+【文件清单（19 个）】
 
-  ● 9.18 音效批（4 个，之后未再改动；若上一批已上传可跳过）
+  ● A 组 —— 本轮（9.20）新增进夹的 4 个文件（★首次进夹）
+      effects\ProceduralVFXEffect.gd          2D 特效库：新增 HUMAN_KING_REWARD（金色）分支
+      effects\EffectDatabase.gd               把 human_king_reward 场景登记进 EFFECT_SCENES
+      effects\scenes\human_king_reward.tscn   金色特效场景（Node2D + 上面那个脚本，effect_id 绑定）
+      officetest\OfficeTestSim.gd             离线自测的模拟层：`def_for_placement` 现在会按
+                                              正式口径重放人王成长层数（hp/atk/def）
+
+  ● B 组 —— 本轮（9.20）再次修改的 4 个文件（★需要重传）
+    ★ scenes\battle\BattleVfx.gd            _play_human_king_reward() 改调金色 2D 特效；
+                                            删掉那条**静默无效**的 3D GROWTH_AURA 调用
+    ★ officetest\OfficeTestScreen.gd        离线自测页新增第三行按钮：
+                                            「人王属性 +1（战后胜利）」/「属性归零」+ 状态标签；
+                                            并修掉「点了没反应」（见下「本轮修的两个 bug」）
+    ★ docs\9.19第二批战斗音效与剑士冷却文案.md   追加 §八（金光特效 + 离线自测入口）
+                                            与 §九（按钮点不动的根因与修复）
+    ★ README.md                             同节补充金光特效说明 + 本次修复补记
+
+  ● C 组 —— 音效轮（9.19，上一版已含；若已上传可跳过）11 个
+      ui\services\SfxService.gd           9 条新 cue + 拆三张派发表（施法 / 攻击 / 佣兵），cue 37→46
+      scenes\battle\BattleScreen.gd       replay 收尾播人王奖励音；每局开始重置「已播」标记
+      scenes\battle\BattleResult.gd       本地模拟收尾播人王奖励音（在水晶演出之前）
+      scripts\ui\UnitDetailFormat.gd      IMPLICIT_SKILL_CD：剑士「盾击（冷却5.0秒）」
+      tools\audio_sfx_check.gd            门禁：cue 37→46、8 条间接 cue、收紧 contains 匹配
+      docs\9.19音效分离与离线自测记录.md
+      docs\9.18音效接入记录.md
+
+  ● D 组 —— 9.18 音效批（若上一批已上传可跳过）4 个
       scenes\menu\Team3v3Lobby.gd      房间准备音 / 语音开关音
       scenes\menu\SettingsScreen.gd    设置页「界面音效」开关（写 profile.json，跨启动保留）
       scenes\menu\ProfileScreen.gd     资料页保存音
       ui\components\VoiceControls.gd   语音开关音
 
-  ● 9.19 第一批（1 个；另外 4 个见下，本轮又叠了一层）
-      officetest\OfficeTestScreen.gd   离线自测：升星按钮、红方视为自身、修 9.17 遗留编译错误
+【本轮修的两个 bug】
+  ① **金光不是金的**：之前那个「金光」其实**复用了绿色的 `GROWTH_AURA`**；而且同时调的
+     3D `_play_unit_procedural("GROWTH_AURA")` 是**静默空操作**（3D 特效表只认技能 id，
+     该函数别的调用点传的全是技能 id）。→ 改成**专属金色 2D 特效** `HUMAN_KING_REWARD`
+     （金环 + 金色光盘 + 金色迸发 + 上升金色粒子），删掉那条死调用。
+  ② **离线自测按钮点了没反应**：收尾逻辑的两道门**读的不是同一份数据** ——
+     `_local_living_human_king()`（自身 + 存活）读**战斗模拟态 `_state`**，而
+     `_human_king_can_grow()`（没到上限）读 **`GameState.board_slots`**；按钮第一版只改了后者，
+     模拟态里找不到人王就**静默 return**。再叠加：离线自测把「自身」钉死在红 A（slot 0），
+     人王摆到红队 1/2 号位（队友位）时按口径本就不该触发，界面却仍显示「人王在位」。
+     → 现在按钮**同时**临时改写两处（把人王临时按自身处理，跑完双双还原）、
+       **触发失败不再静默**（把没过的那道门打到状态栏）、并把层数写进摆放字典，
+       按 `Main._grow_human_king` 的口径**真的加成 hp/atk/def**（★3 实测 720/55/7 → 864/66/8）。
 
-  ● 9.19 第二批 —— 本轮改动（★）
-    ★ ui\services\SfxService.gd       新增 9 条 cue + 拆三张派发表（施法 / 攻击 / 佣兵）；cue 数 37→46
-    ★ scenes\battle\BattleVfx.gd      攻击型技能音门控、佣兵派发、人王战后奖励音 + 闪光特效、
-                                      补回 D6 漏掉的 attack_count / skill_every
-    ★ scenes\battle\BattleScreen.gd   replay 收尾播人王奖励音；每局开始重置「已播」标记
-    ★ scenes\battle\BattleResult.gd   本地模拟收尾播人王奖励音（在水晶演出之前）
-    ★ scripts\ui\UnitDetailFormat.gd  IMPLICIT_SKILL_CD：剑士「盾击（冷却5.0秒）」
-    ★ tools\audio_sfx_check.gd        门禁：cue 数 37→46、新增 8 条间接 cue、收紧 contains 匹配
-
-  ● 文档（4 个）
-    ★ docs\9.19第二批战斗音效与剑士冷却文案.md   本轮记录（7 节：约束 / 落盘 / 接线 / 修缺陷 / 验证 / 清单）
-      docs\9.19音效分离与离线自测记录.md
-      docs\9.18音效接入记录.md
-    ★ README.md                       新增「2026-09-19：第二批战斗音效（9 条）+ 剑士技能冷却文案」一节
-
-【顺手清掉的一处历史残渣】
-  README.md 里原本卡着一段没解开的 git 冲突块：
-    第 1287 行 `<<<<<<< Updated upstream` 、第 1313 行 `=======` 、第 1411 行 `>>>>>>> Stashed changes`
-  两侧内容**互不重叠**（一侧是 9.18测试反馈 + 9.19四星分离，另一侧是 9.19 语音 LiveKit 三节），
-  这次只删掉那三行标记、两侧内容**全部保留**，并按时间顺序拼接。
-  改动前的 README 已备份到 %TEMP%\README.before_919b.md。
-  ★ 如果你本来只想留其中一侧，说一声，我按你的口径再改。
+【触发条件（没变）】
+  只有「自身人王 · 本场未阵亡 · 还没到成长上限」时，在战斗结束那一刻、
+  在**自己视角的人王身上**出特效 + 响奖励音。上限经 `UnitFactory.apply_star_stats()` 取
+  （★1-3 = 5 层 / ★4 = 8 层）。
 
 【刻意未纳入】
   - project.godot           与改动前逐字节相同，不需要覆盖。
-  - export_presets.cfg      不属于本次音效改动。
-  - data\units\race_units.json   本轮**只读不改**：剑士缺 skill_cd 是在代码侧补的，没动数据表。
+  - export_presets.cfg      不属于本批改动。
+  - data\units\race_units.json   本轮**只读不改**。
   - assets\audio\ 下的音频  在**资源夹**（最终覆盖上传_资源）里，不在本夹。
+  - work\_qa_919\ / work\_qa_920\ 下的行为探针   留在工程里给后续批次复跑，不属于交付物。
 
 【校验】
-  - 本夹 15 个文件与现工程**逐字节相同**（sha256 见 _sha256清单.txt）。
-  - 门禁：audio_sfx_check 163 项 0 失败；另 10 条相关门禁（synergy_activation_sfx / team_merc_summon_sfx /
-    prep_mute_state / battle_presentation_director / battle_presentation_event / battle_card /
-    prep_detail_overlay / battle_hit_victory / unit_name_consistency / four_star_values）全 PASS。
-  - 行为级探针 34 项全过；4 处变异测试全部正确变红、再逐字节还原。
-  - ▲ 未做安卓 / 真机听感验收：headless 是 Dummy 音频驱动，只能验「登记对、文件在、能解码、门控对」。
+  - 本夹 19 个文件与现工程**逐字节相同**（sha256 见 _sha256清单.txt）。
+  - 金色特效：探针 17 项全过；2 处变异（改 id / 改回绿色）正确变红后逐字节还原。
+  - 离线自测按钮：探针 21 项全过（红队 0/1/2 都触发、蓝队不触发、到上限不触发、数值真的加成）；
+    1 处变异（抽掉 `_state` 改写）→ fail=6 精确复现用户现象，还原后逐字节相同。
+  - 相关门禁全 PASS：release_debug_ui / audio_sfx(163) / four_star_values(684) /
+    unit_name_consistency(63)；OfficeTestSmoke **fails=0**；
+    dynamic_call(265) / asset_manifest(21) / procedural_ui_ratchet 均**既存红、读数不变**。
+  - ▲ 未做安卓 / 真机验收：headless 看不了画面（金色只能靠探针验颜色分量，**落点没肉眼确认**），
+    也听不了音；已导出的 EXE / APK 要**重新导出**才会带上新代码与特效。

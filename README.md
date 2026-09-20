@@ -1406,7 +1406,6 @@ FAIL [reset_not_wired] NetworkService.reset() 必须重置信封位置（实际 
   - 正式签名和之前的包相同（证书 SHA-256 `3d8c76f450f418a7…`），可以直接覆盖安装；
   - `apk_identity.py inspect` 通过；包里有语音桥接和 LiveKit；没有摄像头 / 屏幕录制权限；SHA-256 `2c00bbe8c6c329a7…`。
 - 🔴 **服务器换成 p31 之后，p30 的旧包一连就闪退**（旧包里的 bug，见上面第 1 阶段）。服务器和新包要同时换，所有人都要装新包。
-<<<<<<< Updated upstream
 
 ## 2026-09-19：第二批战斗音效（9 条）+ 剑士技能冷却文案
 
@@ -1418,7 +1417,7 @@ FAIL [reset_not_wired] NetworkService.reset() 必须重置信封位置（实际 
 用户给的两条硬约束：① 以上战斗音效只有**自身棋子**才播（沿用 `_is_local_owned_unit()`，
 队友是别的 `owner_slot` 天然排除）；② 人王「战斗结束未阵亡奖励属性」要同时满足
 「自身人王 · 本场未阵亡 · 还没到成长上限」，在**战斗结束那一刻**（水晶演出之前，否则赢方棋子
-已被淡出）在人王本体上出只有自己看得到的 `GROWTH_AURA` 闪光升级特效并伴播奖励音；
+已被淡出）在人王本体上出只有自己看得到的闪光升级特效并伴播奖励音（起初复用绿色的 `GROWTH_AURA`，后改专用金光 `HUMAN_KING_REWARD`，见本段末）；
 上限经 `UnitFactory.apply_star_stats()` 取，与 `Main._grow_human_king` 同源（★1~3 五层 / ★4 八层）。
 顺手修两处既有缺陷：① D6 迁移漏字段 —— `cue_play_basic_attack()` 拼的 `attack` 字典没带
 `attack_count` / `skill_every`，使弓箭手 / 牧师技能演出**每次普攻都在放**（应每第 N 击），
@@ -1428,11 +1427,24 @@ bug 文档第 1 条：剑士「盾击」补冷却文案 —— `race_units.json`
 `skill_cd`，新增 `UnitDetailFormat.IMPLICIT_SKILL_CD`（`black_hole` 8.0 / `front_cone_stun` 5.0）
 与模拟器缺省值同源，渲染成「盾击（冷却5.0秒）：…」（中英文两支都跟着走），`black_hole`
 既有输出逐字未变。
+人王奖励属性改用**专用金光特效** `HUMAN_KING_REWARD`（金色扩散环 + 地面金色光晕 + 金色迸发 +
+上升金粒子，寿命 0.85s）：原先复用的「成长」那条 `GROWTH_AURA` 是**绿色**，而且那层
+`_play_unit_procedural()` 3D 调用**静默无表现** —— 它是 3D 技能入口，传 2D 特效 id 会一路落到
+`BossSkillVFXComposer3D` 的默认分支，什么都不做；本轮删掉这行死调用，改成专用 2D 特效并登记进
+`EffectDatabase`。离线自测（`officetest/OfficeTestScreen.gd`）顶栏新增「人王属性 +1（战后胜利）／
+属性归零」，走正式收尾逻辑触发，能直接看金光、听奖励音，并当场验证「到上限不出金光、也不响」。
+补记（同日）：该按钮第一版点了**没反应** —— 根因是收尾逻辑两道门**读的不是同一份数据**：
+`_local_living_human_king()` 读战斗模拟态 `_state`，`_human_king_can_grow()` 读 `GameState.board_slots`，
+而按钮当时只改了后者，前者找不到人王就静默 `return`；叠加离线自测把「自身」钉死在红 A（slot 0）——
+人王摆到红队 1/2 号位（队友位）时按口径本就不该触发，界面却仍显示「人王在位」。
+修法：按钮现在**同时**临时改写 `board_slots` 与 `_state`（把人王临时按自身处理，跑完双双还原）、
+**触发失败不再静默**（把没过的那道门打到状态栏）、并把层数写进摆放字典，让
+`OfficeTestSim.def_for_placement()` 按 `Main._grow_human_king` 的口径真的加成 hp/atk/def
+（★3 实测 720/55/7 → 864/66/8）。专项探针 21 项全过，变异（抽掉 `_state` 改写）正确变红后逐字节还原；
+`OfficeTestSmoke` fails=0。
 详见[9.19第二批战斗音效与剑士冷却文案](docs/9.19第二批战斗音效与剑士冷却文案.md)。
 验证：行为级探针 34 项全过、11 条门禁全 PASS、4 处变异测试全部正确变红后逐字节还原
 （`audio_sfx_check` 163 项）；未进行安卓及真机听感验收。
-=======
->>>>>>> Stashed changes
 
 ## 2026-09-19：语音第 3 阶段，电脑版（Windows）桥接（未提交）
 
@@ -1451,4 +1463,3 @@ bug 文档第 1 条：剑士「盾击」补冷却文案 —— `race_units.json`
   - 正式发电脑版之前要解决签名：上微软商店（免费，微软代签），或者买 OV 代码签名证书（约 150–300 美元一年）；
   - 自己做的证书不行，智能应用控制只认可信机构发的证书。
 - 这台导出安卓包时，APK 写完之后 Godot 进程没有退出，等了 10 分钟后手动结束。包是完整的，原因没查。
->>>>>>> Stashed changes

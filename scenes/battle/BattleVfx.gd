@@ -1226,15 +1226,17 @@ func _play_human_king_reward() -> void:
 	if not _human_king_can_grow():
 		return
 	_human_king_reward_played = true
-	# 升级闪光：3D 程序化 GROWTH_AURA（绿色光环 + 上升粒子，就是「成长」那条
-	# 特效）叠一层同 id 的 2D 光环，落在**人王本体**脚下 —— 用户要的是
-	# 「在自身人王身上」，不是队伍中心。归属判定在 `_local_living_human_king()`
-	# 里做掉了，队友/敌方的人王根本走不到这里。
-	_play_unit_procedural("GROWTH_AURA",
-		king.get("world_foot", Vector3.ZERO),
-		king.get("world_head", king.get("world_foot", Vector3.ZERO)),
-		_unit_target_context(king, king))
-	_spawn_vfx("GROWTH_AURA", king.get("foot_pos", Vector2.ZERO))
+	# 升级金光：专用特效 `HUMAN_KING_REWARD`（金色扩散环 + 地面金色光晕 +
+	# 金色迸发 + 上升金粒子），落在**人王本体**脚下 —— 用户要的是「在自身人王
+	# 身上」，不是队伍中心。归属判定在 `_local_living_human_king()` 里做掉了，
+	# 队友 / 敌方的人王根本走不到这里。
+	#
+	# ★ 这里**不再调 `_play_unit_procedural()`**。那是 3D 技能入口，只认
+	#   `BossProceduralVFX3D.UNIT_SKILLS` 与 3D composer 里的技能 id；早先传的是
+	#   2D 特效 id（`GROWTH_AURA`），会一路落到 composer 的默认分支 → **静默无
+	#   表现**，等于白写一行。要加 3D 层的金光，得先在 `BossSkillVFXComposer3D`
+	#   里加一条分支（还没做）。
+	_spawn_vfx("HUMAN_KING_REWARD", king.get("foot_pos", Vector2.ZERO))
 	SfxService.play(SfxService.CUE_HUMAN_KING_REWARD)
 
 

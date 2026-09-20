@@ -40,6 +40,19 @@ func play(config: Dictionary = {}) -> void:
 		"GROWTH_AURA":
 			_play_ring(Color(0.45, 1.0, 0.45, 0.9), 28.0, 64.0, 0.55, 4.0)
 			_play_rise_particles(Color(0.42, 1.0, 0.42), 18)
+		"HUMAN_KING_REWARD":
+			# 9.19 第二批：人王「战斗结束未阵亡 · 奖励属性」的金光升级。
+			# 金色扩散环 + 地面金色光晕 + 金色迸发 + 上升金粒子，四层叠起来读作
+			# 「就地升级」。落在人王本体脚下（由调用方给位置），不是队伍中心。
+			#
+			# ★ 刻意**不调用 `_play_hit()`**：它内部 `_free_after(0.42)` 会把整条
+			#   特效砍到 0.42 秒就收掉。`_free_after` 在一次 play() 里只有**最先
+			#   到期**的那次生效（后到的 generation 已经变了、直接 return），
+			#   所以整条特效的寿命 = 这里最短的那次，也就是 burst 的 0.85 秒。
+			_play_ring(Color(1.0, 0.85, 0.32, 0.95), 26.0, 92.0, 0.8, 6.0)
+			_play_disc(Color(1.0, 0.84, 0.34, 0.22), 64.0, 0.8)
+			_play_burst(Color(1.0, 0.88, 0.42), 26, 1.0)
+			_play_rise_particles(Color(1.0, 0.90, 0.52), 20)
 		"FEAR_SKULL":
 			_play_skull(Color(0.72, 0.25, 1.0, 0.92))
 		_:
