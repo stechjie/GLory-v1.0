@@ -1,22 +1,17 @@
-# GLory-work 自定义房间面板改版（方案C「雾林夜幕」） 交付 sha256 清单
-# 生成时间: 2026-09-21 00:58:44
-# 源: C:\Users\WINDOWS\Desktop\GLory-work
-# 备份根: C:\Users\WINDOWS\Desktop\GLory-work_自定义房间面板改版_9.21
-# 行尾约定: MainMenu.gd / GloryTokens.gd / README.md = CRLF；docs 记录与 tools 新文件 = LF
-
-类型  相对路径                                                               字节  sha256
-改   README.md                                                      215879  d19526ee66ced7512034fcb5389de71cd0cb31b94fc1d2f7bc98c7829dddbbf7
-改   scenes/menu/MainMenu.gd                                         60838  15eecf4478d1907ea6f9ba8bad6d4783b0b4e4332a143a1d9d3dcb4fe02f3ba7
-改   ui/theme/GloryTokens.gd                                          9775  41f0f3857b665ee48c7be5fc7dbb068fb12ad89d6049e953857fc99b9a16e56a
-增   docs/9.21自定义房间面板美化记录.md                                          9395  3bd330f38b723770d89acaebe5df16557c1dd0307c077913095df2fe8535489d
-增   tools/custom_room_ui_capture.gd                                  4049  a9f958be1dd8f9a7149555379fcb217296ca30d2726a702d92f202c30eecdfe3
-增   tools/custom_room_ui_capture.gd.uid                                20  c33e4c8dd84ded39655d7df1a0314844368aff774f66328da8704a49b33ed06b
-增   tools/custom_room_ui_capture.tscn                                 188  9eed476b6adf54fec852b12fb1c24c6811fc06bef1e3250382189891a8c1d732
-增   reports\custom_room\custom_room_empty_en.png                   930120  f4fe8ca89da419a8a006a372d86eb12da4e3a4ee05547394dfd460d00b3599ce
-增   reports\custom_room\custom_room_empty_zh.png                   933619  c85c96ea4eaf36907d3524ff8255b0e7d8625fd60d4f611f604deb54e608b212
-增   reports\custom_room\custom_room_hover_en.png                   935261  7558736e7ba2d04198fdf3e551e19b61f1f872b2ebf2bb309f575c22fb00c5df
-增   reports\custom_room\custom_room_hover_zh.png                   936074  bfe550544ae3158d771305054352d0585221820b0b3de310e0f995060679b952
-增   reports\custom_room\custom_room_rooms_en.png                   934950  d921395865b61475bcf2ee3ce3e3dbe9013608f9ad52772925c08114379f530d
-增   reports\custom_room\custom_room_rooms_zh.png                   936003  cecbbace6a2b2a6cfae50a348afcef59a1ccf527ac41dffe40db91b842832888
-增   reports\custom_room\custom_room_status_en.png                  936556  31fc09980ff2ca543825402d83dfcdd06617929626f5bbb6ed3de2c27868ffe3
-增   reports\custom_room\custom_room_status_zh.png                  937453  bbc740e2bf26059d98e349754b3a5bf2508828ff11efb1d7664385410ae352d4
+# 9.21 批次 代码文件 sha256（修订版：含 BattleArena.gd 真修复 + 命中探针）
+c70e1ac7608a473eea38a0948d7a8e26aca3c0444c15432eca22bca6ebe708d5  ui\services\SfxService.gd
+7c59b15effc54e184d2a8ace8af83c2cd3182a40c12edfc3df04035033e32ee3  scripts\battle\BattleSimulator.gd
+e3f96d19c144e4103de11c924ec94cdb5670defd8cc54bcd5d23edcbccea1536  scenes\menu\Team3v3Lobby.gd
+92bf300f0f8a7abf9b1e3b6aa080499fd9783d954ec1cb54b1925a59bcb69bc2  scripts\ui\UnitDetailFormat.gd
+1cfd305ed0b0541d704f21efb7334250b83f569536d63f87c17a830efc196cd9  scenes\menu\SettingsScreen.gd
+73da9480be04861fb4ac76ad485d4fd2b1cf5b11575a2f28b302fb416d17e1c0  ui\components\VoicePanel.gd
+9b8a7cccc8e9b0877e63928792cbab50f7fe14cceb13f2c038650469866eda1c  scenes\battle\BattleScreen.gd
+4ff4e427e3120da23d3229b33ea47252623d4f1e11351a47a28d86680f2f6fa9  scenes\battle\BattleUI.gd
+7d90eec551b581ce6c373a361088850437041f9296e85039c4d8b27106411443  scenes\battle\BattleVfx.gd
+523d958e51e3d3c9238bff96232034fcc1d11fcaa57e41e9abd68f9c4bd11016  scenes\main\Main.gd
+004a6569ec7506df061a2f56f0bdf61c1fc8f49eef299c36e4f4f007209c7917  scenes\battle\BattleArena.gd
+bab36911ac8a68671428cda0b68b5511ab34bebf6e0bfe99a532b0b8d9dc01d7  tools\audio_sfx_check.gd
+cc497ad7eb373ee654ba36a5d1ef6d15ce30f558afc3aec4286887e277e5739d  tools\audio_0921_check.gd
+aefd59380e54663a5b523d6baa773eaf9d4b29303088bcb176b5a69ac0173f3e  tools\audio_0921_check.tscn
+a7498424a864bb2b822e9017d5fdcdc43b2cb11a247940ee965955fd809e13a5  tools\voice_battle_hit_probe.gd
+8c93234afc2dca2be50ad668dc6f0da700a6b8c945cf5534ce40880f4d524d01  tools\voice_battle_hit_probe.tscn

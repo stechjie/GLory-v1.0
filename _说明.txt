@@ -1,26 +1,61 @@
-GLory-work 自定义房间面板改版备份（方案 C「雾林夜幕」）
-生成时间: 2026-09-21 00:58:44
+===============================================================
+9.21 批次交付 —— 代码部分（同目录同路径镜像）
+===============================================================
 
-背景：主菜单「自定义房间」弹出面板原为羊皮纸浅色卡片，按用户设计稿
-      （桌面/自定义功能界面布局/方案C_设计规范.md）改为深色半透明 + 金色描边夜色风。
-      文案与功能全部保留，只改视觉；未新增字体/贴图/shader；未改 .import 与 project.godot。
+用途
+    把本夹里的文件按**相同的相对路径**覆盖到你工程对应位置即可。
 
-本目录按「同目录同路径」镜像 GLory-work 的树结构，只放本批改动的文件。
+覆盖方法（示例）
+    把  本夹\scenes\battle\BattleArena.gd
+    覆盖 你的工程\scenes\battle\BattleArena.gd
 
-—— 改动（2 个）——
-  scenes/menu/MainMenu.gd        面板重构：ROOM_* 尺寸常量、_build_room_panel()/_room_* 零件、
-                                 show_room_list() 重写、_dialog_button() 加 variant 参数
-  ui/theme/GloryTokens.gd        新增「雾林夜幕」配色 token 组（MIST_*）
+本夹内容：16 个文件
 
-—— 新增（3 + 8 采集产物）——
-  tools/custom_room_ui_capture.gd / .tscn / .gd.uid   真机渲染采集工具
-  reports/custom_room/*.png                            8 张（中/英 × 空态/列表/悬停/状态）
-  docs/9.21自定义房间面板美化记录.md                    本轮记录
+【这一批的核心：bug 3 的真正修复 —— 请务必覆盖这一个】
+    scenes\battle\BattleArena.gd
+        战斗里「队友」按钮点不开 / 语音挡位切不了的**真正原因**在这里：
+        三块全屏 Control（screen_bg / arena_wrap / arena_tint）默认会吃掉兄弟控件的点击，
+        已各加 mouse_filter = IGNORE。
+        ★ 之前那一版只改了 BattleScreen.gd 的 panel_context，**判断是错的、没有修好**，
+          所以那两个文件（BattleScreen.gd）这次也一起给，但真正起作用的是 BattleArena.gd。
 
-—— 另含 ——
-  README.md                      追加「2026-09-21：自定义房间面板改版」小节
-  _sha256清单.txt                逐文件 sha256，可回源复验
+【四项 bug 修复】
+    scenes\battle\BattleArena.gd     bug3 真修复（见上）
+    scripts\battle\BattleSimulator.gd bug1 末日守卫技能目标排除唯一棋子
+    scenes\menu\Team3v3Lobby.gd      bug2 自定义房间空座位只留圆圈内提示
+    scripts\ui\UnitDetailFormat.gd   bug4 佣兵提示补冷却
+    scenes\battle\BattleScreen.gd    语音控件（含初版补的 panel_context，保留）
 
-验收：responsive_layout_check PASS 114；modal_lifecycle_check PASS 433；
-      procedural_ui_ratchet FAIL 2 / asset_manifest FAIL 21 均为既存红、与 9.20 基线逐条一致，
-      本批对 ratchet 计数贡献为 0（MainMenu.gd 基线仍 4 Button + 1 StyleBox）。
+【7 个新音效的接入】
+    ui\services\SfxService.gd        加 7 个 cue 常量 + CUES 登记 + STAR4_PROC_SKILL_CUES
+    scripts\battle\BattleSimulator.gd  四星民兵打断成功时补发 unit_skill_proc 事件
+    scenes\battle\BattleVfx.gd       按事件派发四星民兵技能音（双门控）
+    scenes\battle\BattleUI.gd        「最终回合 PVP 开局音 → 播完 → 再起 PVP BGM」
+    scenes\main\Main.gd              开始游戏成功音：全员延迟等音播完再进备战
+    scenes\menu\Team3v3Lobby.gd      开始游戏失败音：仅房主
+    scenes\menu\SettingsScreen.gd    设置页语言 / 画质切换补音效
+    ui\components\VoicePanel.gd      队友面板关闭 / 只听 / 开麦补音效
+
+【门禁 / 探针（不是产品代码，但建议一起收进来，方便你自己复跑）】
+    tools\audio_sfx_check.gd     音效门禁
+                                 ★ 本版修掉了它一个「自毒」缺陷：原来它会把
+                                   落盘的 ui_sound 开关写成 false，导致**下一跑**
+                                   必然红 12 条（伪装成「播放器池坏了」）。
+                                   现在收尾会把磁盘整块还原，门禁可重复跑。
+    tools\audio_0921_check.gd/.tscn   本批专用探针
+    tools\voice_battle_hit_probe.gd/.tscn
+                                 ★ 新增：行为级命中探针，专门防「点不开」回归。
+                                   它用真实的 Viewport.push_input 走 GUI 命中测试
+                                   （不能用 Input.parse_input_event —— 那个不经过
+                                   命中测试，会给出假结果），并同时钉住
+                                   「修正前必须点不中 / 修正后必须点得开」。
+
+校验
+    _sha256清单.txt 里逐文件列出了 sha256，可自行核对。
+
+注意
+    * 覆盖代码后不需要重新导入资源，但**建议重跑一次**：
+        Godot_v4.7.2-stable_win64_console.exe --headless --path <你的工程> tools/audio_sfx_check.tscn
+      （期望最后一行是 CHECK_RESULT name=audio_sfx status=PASS checked=193 failures=0）
+    * 四条既存红与本次改动无关（voice_check 8 / procedural_ui_ratchet 2 /
+      prep_text_coverage 1 / dynamic_call 4），与 9.20 基线逐条一致。

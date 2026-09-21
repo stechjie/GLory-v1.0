@@ -50,7 +50,15 @@ const CHECK_NAME := "audio_sfx"
 # 四星大天使技能 —— 只是文件被覆盖，cue 与路径都没变，所以**不增加**计数）+
 # 7 条**新增**四星技能音（偷袭者 / 大祭司 / 裁决者 / 暗影法师·恐惧魔·魅魔共用 /
 # 寄生灵 / 自爆灵 / 死侍），故 46 → 53。
-const EXPECTED_CUE_COUNT := 53
+#
+# 9.21 第三批（`音乐/0921` 7 个素材）= 7 条**新增**：
+#   四星民兵技能 1 条（走 proc_skill_cue_for，见 STAR4_PROC_SKILL_CUES）+
+#   佣兵技能 3 条（时空观测者 / 黄金重骑 / 黑钢统帅，走 merc_skill_cue_for）+
+#   最终回合 pvp 开局音 1 条（BattleScreen._begin_final_round_intro 直接 play）+
+#   开始游戏成功 / 失败 2 条（Main / Team3v3Lobby 直接 play），故 53 → 60。
+# 注：`音乐/0921` 里另外两个文件（设置语音·画质切换 / 语音档位切换）与工程内
+# 既有的 settings_switch / voice_switch **逐字节相同**，是覆盖而非新增，不计数。
+const EXPECTED_CUE_COUNT := 60
 
 # 播 SfxService 的生产代码扫描范围。**刻意不含 `res://tools`** ——
 # 门禁自己会调 play()，算进来就等于让门禁给自己的断言当证人
@@ -84,11 +92,21 @@ const INDIRECT_CUES: Array[String] = [
 	"CUE_STAR4_SCYTHE_SKILL", "CUE_STAR4_PRIESTESS_SKILL", "CUE_STAR4_ARBITER_SKILL",
 	"CUE_STAR4_DARK_CASTERS_SKILL", "CUE_STAR4_PARASITE_SKILL",
 	"CUE_STAR4_BOMB_SKILL", "CUE_STAR4_DEATH_SERVANT_SKILL",
+	# 9.21 第三批：三条佣兵技能音，走既有的 merc_skill_cue_for(unit_id)。
+	"CUE_MERC_AQUARIUS_TIME_SKILL", "CUE_MERC_TAURUS_CHARGE_SKILL",
+	"CUE_MERC_CAPRICORN_STEEL_SKILL",
+	# 9.21 第三批：四星民兵。技能 `attack_interrupt` 是**按概率**触发的
+	# （不是「每第 N 次普攻」），所以既不归 STAR4_SKILL_CUES 也不归
+	# STAR4_ATTACK_SKILL_CUES —— 它走新开的 proc_skill_cue_for(skill_id)，
+	# 由 BattleVfx 在 `unit_skill_proc` 事件里按 skill_id 派发。
+	"CUE_STAR4_MILITIA_SKILL",
 ]
 # 上面这组 cue 的**派发入口**。每一个都必须在生产代码里有调用点 ——
 # 少了这一条，把整张映射表删空也能全绿（那 8 个名字会被上面的循环全跳过）。
 const INDIRECT_ENTRIES: Array[String] = [
 	"star4_cue_for", "attack_skill_cue_for", "merc_skill_cue_for",
+	# 9.21：四星民兵那条「概率触发型」技能音的派发入口。
+	"proc_skill_cue_for",
 ]
 
 # 六条 BGM 槽位。team_room_music 是这一批新开的：此前 3v3 组队房间
@@ -363,9 +381,38 @@ func _check_mute_gate() -> void:
 	#   1. 先把现场摆成「开关开 + Master 没静音」，再断言；
 	#   2. 把「开着要发声」放到最前面 —— 它才是这条门禁的主断言，
 	#      「关掉不发声」是它的对照组。反过来的话，环境一偏就只剩对照组了。
-	var sound_before: bool = PlayerProfile.get_presentation_toggle("ui_sound")
+	#
+	# --- 9.21 修正：这条门禁会把整个文件毒死 ---------------------------------
+	#
+	# 上面那个「还原现场」原来写的是「还原成 before」——**这是错的**。
+	#
+	# `before` 就是磁盘上的旧值；如果它是 false（上一次跑完留下的，
+	# 或玩家/手工改过），那么本函数收尾时把 false 又写回磁盘，
+	# 而它下面还有 6 个会真发声的断言（重触发保护、10 秒节流、
+	# 循环音冷启动、代币收支）。它们全部被静音门挡掉 → 计数恒为 0
+	# → 一次红 12 条，且**下一跑依然红**：闸门自己把自己锁死了。
+	#
+	# 9.21 实测就是踩在这上面：日志里 12 条全是「记了 0 次播放 / 没进树 /
+	# 返回 false」，逐条读像是播放器池坏了，实际只是一个落盘开关。
+	# 对照实验：把磁盘上的 ui_sound_enabled 改成 true 再跑，同一条门禁
+	# 立刻 PASS 192 failures=0 —— 代码一行没动。
+	#
+	# 所以：**(a) 收尾一律把开关摆回「开」**，而不是摆回「读到的值」；
+	# **(b) 收尾不再写盘**（见下面 restore_disk_state）。
+	# 门禁不该给下一跑留状态 —— 那和「测试要能重复跑」是矛盾的。
+	#
+	# 反过来说：「门禁不改写玩家偏好」这个原意是对的，但正确做法是
+	# **把磁盘内容原样备份、跑完原样贴回**，而不是「把内存值改成磁盘上
+	# 那个值、再让它落盘」。后者看着对称，实际是把「读到什么」当成
+	# 「该是什么」，一旦读到的是污染值就永远出不来。
+	# 注意这里**故意不读 sound_before**。原来读它只有两个用途：断言前摆好
+	# 前置条件、收尾还原。前者现在硬写成 true（前置条件必须可控），
+	# 后者改成「磁盘整块还原」。留着不用的局部变量只会让下一个读的人
+	# 以为它还参与裁决。
 	var master := AudioServer.get_bus_index("Master")
 	var mute_before: bool = AudioServer.is_bus_mute(master) if master >= 0 else false
+	# 记下磁盘原文，收尾时整块贴回（不经过 PlayerProfile，避免它再落一次盘）。
+	var disk_state := _snapshot_profile_file()
 	PlayerProfile.set_presentation_toggle("ui_sound", true)
 	if master >= 0:
 		AudioServer.set_bus_mute(master, false)
@@ -389,10 +436,62 @@ func _check_mute_gate() -> void:
 	_h.expect(SfxService.total_play_count() == 0, "muted_play_still_counted",
 		"界面音效开关已关，却记了 %d 次播放" % SfxService.total_play_count())
 
-	# 还原现场。还原成 `before` 而不是硬写 true：门禁不改写玩家偏好。
-	PlayerProfile.set_presentation_toggle("ui_sound", sound_before)
+	# 收尾：**必须摆回「开」**，不是摆回 before。
+	#
+	# 本函数下面的 6 条断言都要真发声（重触发保护、10 秒节流、循环音冷启动、
+	# 代币收支）。留 false 就是让它们全红 —— 这正是 9.21 那次 12 红的成因。
+	# 摆回 true 不丢信息：玩家偏好由下面的磁盘还原负责，内存态只要「不挡门禁」。
+	PlayerProfile.set_presentation_toggle("ui_sound", true)
 	if master >= 0:
 		AudioServer.set_bus_mute(master, mute_before)
+	# 磁盘整块还原（不落盘、只贴回原字节）。还原失败不静默 —— 那会让
+	# 「下一跑读到什么」变成不确定，正是这条门禁最怕的事。
+	#
+	# **还原必须是本函数的最后一步。** 之后再调任何会 `save_profile()` 的
+	# setter（包括再写一次 ui_sound）都会把磁盘覆盖回去，还原就白做了。
+	# 内存态与磁盘的差异到此为止：内存是 true（不挡下面的断言），
+	# 磁盘是原样（不污染下一跑）。
+	_h.expect(_restore_profile_file(disk_state), "profile_restore_failed",
+		"收尾没能把 profile.json 还原成跑之前的字节 —— 下一跑的前置条件不再可控")
+
+
+# profile.json 的字节快照。取不到（文件不存在 —— 首次跑）时返回空字典，
+# 那种情况下收尾**不删文件**（删了反而丢玩家的其他字段）。
+func _snapshot_profile_file() -> Dictionary:
+	var path := _profile_path()
+	if path.is_empty():
+		return {}
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return {}
+	var bytes := f.get_buffer(f.get_length())
+	f.close()
+	return {"path": path, "bytes": bytes}
+
+
+func _restore_profile_file(snap: Dictionary) -> bool:
+	if snap.is_empty():
+		return true
+	var path := str(snap.get("path", ""))
+	if path.is_empty():
+		return true
+	var bytes: PackedByteArray = snap.get("bytes", PackedByteArray())
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		return false
+	f.store_buffer(bytes)
+	f.close()
+	return true
+
+
+# `user://profile.json` 的真实磁盘路径。**不能用 `ProjectSettings.globalize_path`
+# 之外的路子凑** —— 拼 `OS.get_user_data_dir()` 也行，但 globalize_path 是
+# Godot 自己认的那个，少一层猜测。
+#
+# 常量名照 PlayerProfile：它叫 `PROFILE_PATH` 且**已经是 `user://` 全路径**，
+# 所以这里不再拼前缀。
+func _profile_path() -> String:
+	return ProjectSettings.globalize_path(str(PlayerProfile.PROFILE_PATH))
 
 
 func _check_retrigger_guard() -> void:

@@ -92,13 +92,21 @@ func _build() -> void:
 	_btn_zh = Button.new()
 	_btn_zh.text = "中文"
 	_btn_zh.custom_minimum_size = Vector2(140, 48)
-	_btn_zh.pressed.connect(func(): PlayerProfile.select_language("zh"))
+	# 9.20 bug 文档第 3 条：语言切换也要有反馈音。
+	# 此前只有无障碍开关（屏震/闪光/hit-stop）和棋盘辅助线挂了 CUE_SETTINGS_SWITCH，
+	# 语言这一排没挂 —— 玩家点「中文 / English」是静音的，切完界面整体重建、更容易
+	# 让人怀疑是不是点空了。与那两个开关用同一条 cue，听感一致。
+	_btn_zh.pressed.connect(func():
+		SfxService.play(SfxService.CUE_SETTINGS_SWITCH)
+		PlayerProfile.select_language("zh"))
 	lang_row.add_child(_btn_zh)
 
 	_btn_en = Button.new()
 	_btn_en.text = "English"
 	_btn_en.custom_minimum_size = Vector2(140, 48)
-	_btn_en.pressed.connect(func(): PlayerProfile.select_language("en"))
+	_btn_en.pressed.connect(func():
+		SfxService.play(SfxService.CUE_SETTINGS_SWITCH)
+		PlayerProfile.select_language("en"))
 	lang_row.add_child(_btn_en)
 
 	_refresh_lang_buttons()
@@ -131,6 +139,8 @@ func _build() -> void:
 		btn.text = tr(str(opt[1]))
 		btn.custom_minimum_size = Vector2(96, 48)
 		btn.pressed.connect(func():
+			# 9.20 bug 文档第 3 条：画质切换也要有反馈音（同上，语言那一排的理由）。
+			SfxService.play(SfxService.CUE_SETTINGS_SWITCH)
 			VFXManager.set_quality_pref(tier_value)
 			_refresh_quality_buttons())
 		quality_row.add_child(btn)

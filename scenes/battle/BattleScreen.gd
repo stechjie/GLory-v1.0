@@ -358,6 +358,18 @@ func _prepare_battle_models() -> void:
 	# **同一时刻**发生（9.17 第三轮反馈），拆在两个地方迟早漂移。
 	if _effective_kind() == "boss":
 		_begin_boss_intro()
+	# 9.21 用户口径第 3 条：最终回合 pvp 战斗场景开局音。
+	#
+	# 位置与 boss 登场音并列，理由相同（见上一段）：这里是「模型全建完、战斗马上
+	# 开打」，不是进场景那一刻。演出顺序是「响开局音 → 播完 → 起 pvp 战斗 BGM」，
+	# 由本函数末尾的 _resolve_pending_battle_music() 收口。
+	#
+	# ★ 判据是 `_effective_kind() == "final"`，**不是** _try_start_final_round_intro()
+	#   的成功与否：后者只在「场上真有阵型盟友」时才演出召唤，而开局音是场景级的
+	#   开场（用户要的是「最终回合时开局播放」）。挂在那个返回值上会让没有阵型
+	#   盟友的最终回合整场没有开场音。
+	if _effective_kind() == "final":
+		_begin_final_round_intro()
 	_try_start_final_round_intro()
 	# 9.17 反馈第 4 条：登场音播完之后才起 pve 战斗 BGM。
 	# 放在本函数**最末尾**：这是「模型全建完、战斗马上开打」的那一刻，
@@ -539,7 +551,11 @@ func _setup_voice_controls() -> void:
 	if _voice_controls != null or not NetworkService.team_active:
 		return
 	_voice_controls = VoiceControls.new()
-	_voice_controls.build(self, VOICE_BTN_SIZE, VOICE_BTN_SIZE, 14)
+	# 9.20 bug 文档第 3 条：战斗界面也要能切语音档位。
+	# 此前这里没传 panel_context，于是「队友」按钮既不计人数、打开的面板也拿不到
+	# 上下文 —— 玩家在战斗里点它，看不出自己当前在哪一档（关 / 只听 / 开麦）。
+	# 与 PrepUI._build_voice_button() 传 "prep" 同一个道理，这里传 "battle"。
+	_voice_controls.build(self, VOICE_BTN_SIZE, VOICE_BTN_SIZE, 14, {"panel_context": "battle"})
 	var top := VOICE_BTN_TOP
 	for button in [_voice_controls.voice_button, _voice_controls.members_button]:
 		var control := button as Button

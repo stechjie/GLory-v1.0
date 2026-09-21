@@ -1049,6 +1049,15 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 			var source := _vfx_unit_by_sim_uid(current, str(event.get("source_uid", "")))
 			var target := _vfx_unit_by_sim_uid(current, str(event.get("target_uid", "")))
 			var skill_id := str(event.get("skill_id", ""))
+			# 9.21：四星民兵（「概率触发型」技能音）。`attack_interrupt` 是
+			# `randf() < interrupt_chance` 触发的，模拟器只在**真的打断成功**时
+			# 才补这条 unit_skill_proc 事件 —— 所以挂在这里就等于「响了 = 打成了」，
+			# 不需要另外判模。门控与其它四星技能音同口径（自身 + 友军 + 四星）。
+			var proc_cue := SfxService.proc_skill_cue_for(skill_id)
+			if not proc_cue.is_empty():
+				var proc_uid := str(event.get("source_uid", ""))
+				if _is_own_or_ally_unit(proc_uid) and _is_star4(proc_uid):
+					SfxService.play(proc_cue)
 			if not skill_id.is_empty() and not source.is_empty() and not target.is_empty():
 				_play_unit_procedural(skill_id, source.get("world_cast", Vector3.ZERO), target.get("world_hit", target.get("world_foot", Vector3.ZERO)), _unit_target_context(source, target))
 		# D6: hit_number is drawn by the Director's adapter, on its timing. The old

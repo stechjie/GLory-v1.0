@@ -1046,17 +1046,32 @@ static func _nearest_non_boss(f: Dictionary, opponents: Array) -> Dictionary:
 	return best
 
 
-# 血链的候选池：末日守卫不在其中（9.14 反馈的隐藏机制）。
-# 两只末日守卫互相连接会把对面整只策反过来，而 shared_hp_link 的「双方共享生命
-# 损失」判定依赖 caster/target 分属两队 —— 互连之后一边白拿一个满编单位，
-# 连接本身也失去意义。这里只剔末日守卫，Boss 仍由 _nearest_non_boss 拦。
+# 血链的候选池：末日守卫与**唯一棋子**都不在其中。
+#
+# 9.14 反馈（末日守卫）：两只末日守卫互相连接会把对面整只策反过来，而
+# shared_hp_link 的「双方共享生命损失」判定依赖 caster/target 分属两队 ——
+# 互连之后一边白拿一个满编单位，连接本身也失去意义。
+#
+# 9.20 bug 文档第 1 条（隐藏限制）：**唯一棋子**（unique_on_board，即神王 /
+# 末日守卫 / 大天使 / 黑龙 / 人王 / 母灵）不能被血链策反。它们每队只能上场
+# 一只、而且都是阵容核心，被一发血链白拿走等于直接判负 —— 这条限制不上文案，
+# 属于隐藏机制。末日守卫本身也是唯一棋子，两条规则在它身上重合，保留本函数的
+# `_is_doom_guard_fighter` 判定是为了在 def 缺失 unique_on_board 时仍能拦住。
+# Boss 不在这里管，仍由 _nearest_non_boss 拦。
 static func _link_targets_without_doom(caster: Dictionary, opponents: Array) -> Array:
 	var out: Array = []
 	for o in opponents:
-		if o == caster or _is_doom_guard_fighter(o):
+		if o == caster or _is_doom_guard_fighter(o) or _is_unique_fighter(o):
 			continue
 		out.append(o)
 	return out
+
+
+# 唯一棋子：def 上带 unique_on_board（与备战阶段的上场限制同一个字段，
+# 见 PrepBoardController._would_exceed_board_limit）。缺字段按 false。
+static func _is_unique_fighter(fighter: Dictionary) -> bool:
+	var d: Dictionary = fighter.get("def", {})
+	return bool(d.get("unique_on_board", false))
 
 
 static func _is_doom_guard_fighter(fighter: Dictionary) -> bool:

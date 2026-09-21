@@ -116,6 +116,10 @@ var _unit_actor_registry = UnitActorRegistryScript.new()
 #
 # boss 登场音与 pve 战斗 BGM 的先后（9.17 反馈第 4 条）用这两个标志协调：
 # 见 _start_battle_music / BattleScreen._prepare_battle_models 末尾。
+#
+# 9.21 起同一个机制也管**最终回合 pvp 开局音**（见 _begin_final_round_intro）：
+# 两者是「开场演出音 → 战斗 BGM」的同一时序问题，所以共用 pending/played 两个标志，
+# 靠 `_pending_intro_cue()` 分辨当前等的是哪一条素材。
 var _boss_intro_pending := false
 var _boss_intro_played := false
 var _battle_audio_generation := 0
@@ -169,6 +173,34 @@ func _begin_boss_intro() -> void:
 	SfxService.play(SfxService.CUE_BOSS_APPEAR)
 
 
+# 最终回合 pvp 的开场演出：**先让备战页那首 BGM 让位，再响开局音。**
+#
+# 9.21 用户口径第 3 条：「最终回合 pvp 战斗场景开局播放，最终回合时开局播放，
+# 播放结束后再开始播放 pvp 战斗场景 bgm。」
+#
+# 与 `_begin_boss_intro()` 是**同一条时序**（开场音 → 等素材放完 → 起战斗 BGM），
+# 所以复用同一对标志与同一个 `_resolve_pending_battle_music()` 收口点，
+# 只是「等多久」换成 `_pending_intro_cue()` 报回来的那一条素材。
+#
+# 同样先停后响：反过来的话开局音的头几毫秒会和备战 BGM 叠在一起。
+func _begin_final_round_intro() -> void:
+	_battle_audio_generation += 1
+	MusicService.stop()
+	_boss_intro_played = true
+	SfxService.play(SfxService.CUE_FINAL_ROUND_PVP_INTRO)
+
+
+# 当前挡在下 pending 里的那条开场音 cue id；没有 pending 时返回空串。
+# 两个开场演出（boss / 最终回合）共用 pending 标志，靠本函数分辨该等哪一条素材的时长。
+func _pending_intro_cue() -> String:
+	match _effective_kind():
+		"boss":
+			return SfxService.CUE_BOSS_APPEAR
+		"final":
+			return SfxService.CUE_FINAL_ROUND_PVP_INTRO
+	return ""
+
+
 func _start_battle_music() -> void:
 	# 9.17 反馈第 4 条：「在 boss 回合战斗场景，先播放 boss 登场音效完毕后，
 	# 再播放 pve 战斗 bgm。」
@@ -183,7 +215,10 @@ func _start_battle_music() -> void:
 	# 用 `_boss_intro_played` 而不是「pending 清掉就不再 defer」：本函数在一场
 	# 战斗里会被调多次（_start_replay 里那一次就在 _prepare_battle_models 之前），
 	# 只靠 pending 会让后一次调用又把 BGM 挡回去，boss 回合整场没有战斗 BGM。
-	if _effective_kind() == "boss" and not _boss_intro_played:
+	#
+	# 9.21：判据从「== boss」放宽成「有开场演出要等」—— 最终回合 pvp 那条
+	# 开局音的时序与 boss 完全相同，共用一个 pending/played 对。
+	if not _pending_intro_cue().is_empty() and not _boss_intro_played:
 		_boss_intro_pending = true
 		return
 	# 「同一首不重启」由 MusicService 内部判等负责：本函数被重复调用是常态。
@@ -192,6 +227,9 @@ func _start_battle_music() -> void:
 func _stop_battle_music() -> void:
 	_battle_audio_generation += 1
 	SfxService.stop_cue(SfxService.CUE_BOSS_APPEAR)
+	# 9.21：最终回合 pvp 的开局音同样要收口 —— 它和 boss 登场音走同一对标志，
+	# 退场时漏停会让它在下一回合的开场重新叠出来。
+	SfxService.stop_cue(SfxService.CUE_FINAL_ROUND_PVP_INTRO)
 	# 停的是「战斗这一首」。不切回菜单那首：离开战斗的下一页（备战/主菜单/
 	# 结算后的路由）都会自己 play 它要的那一首，这里多切一次只会多一次从头播。
 	# pending 也要清掉，否则退场后再也没有人来收口，BGM 会永远不响。
@@ -211,11 +249,13 @@ func _resolve_pending_battle_music() -> void:
 	if not _boss_intro_pending:
 		return
 	_boss_intro_pending = false
-	# 理论上 pending 只会在 boss 回合被置起，这里再判一次是兜底：
+	# 理论上 pending 只会在开场演出回合被置起，这里再判一次是兜底：
 	# 万一 kind 在两次采样之间变了，宁可立刻起 BGM，也不要整场没声音。
-	if _effective_kind() == "boss":
+	# 9.21：等哪条素材由 `_pending_intro_cue()` 决定（boss 登场音 / 最终回合 pvp 开局音）。
+	var cue := _pending_intro_cue()
+	if not cue.is_empty():
 		var generation := _battle_audio_generation
-		var intro_sec := SfxService.cue_length(SfxService.CUE_BOSS_APPEAR)
+		var intro_sec := SfxService.cue_length(cue)
 		if intro_sec > 0.0:
 			await get_tree().create_timer(intro_sec).timeout
 			if not is_inside_tree() or generation != _battle_audio_generation:

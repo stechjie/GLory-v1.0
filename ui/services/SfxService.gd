@@ -173,6 +173,23 @@ const CUE_STAR4_PARASITE_SKILL := "star4_parasite_skill"
 const CUE_STAR4_BOMB_SKILL := "star4_bomb_skill"
 const CUE_STAR4_DEATH_SERVANT_SKILL := "star4_death_servant_skill"
 
+# --- 9.21 第三批（`音乐/0921` 7 个素材）--------------------------------------
+#
+# 用户口径三条：
+#   ① 语音档位切换要覆盖**房间 / 备战 / 战斗**三处（关卡在 VoicePanel 三档按钮，
+#      素材与既有 voice_switch 同一份，见该 cue 的注释）；
+#   ② 「开始游戏成功」点击后**所有人**播放、**播完才进游戏**；「开始游戏失败」
+#      只有**房主**听得见；
+#   ③ 「最终回合 pvp 战斗场景开局播放」在最终回合开局播，**播完再起
+#      pvp_battle_music**（与 boss 出场音 → 战斗 BGM 的时序完全同构）。
+const CUE_STAR4_MILITIA_SKILL := "star4_militia_skill"
+const CUE_MERC_AQUARIUS_TIME_SKILL := "merc_aquarius_time_skill"
+const CUE_MERC_TAURUS_CHARGE_SKILL := "merc_taurus_charge_skill"
+const CUE_MERC_CAPRICORN_STEEL_SKILL := "merc_capricorn_steel_skill"
+const CUE_FINAL_ROUND_PVP_INTRO := "final_round_pvp_intro"
+const CUE_START_GAME_SUCCESS := "start_game_success"
+const CUE_START_GAME_FAIL := "start_game_fail"
+
 const CUES := {
 	CUE_UI_POPUP: "res://assets/audio/sfx/ui/popup.mp3",
 	CUE_UI_CONFIRM: "res://assets/audio/sfx/ui/button_confirm.mp3",
@@ -232,6 +249,22 @@ const CUES := {
 	CUE_PROFILE_SAVE: "res://assets/audio/sfx/ui/profile_save.mp3",
 	CUE_SETTINGS_SWITCH: "res://assets/audio/sfx/ui/settings_switch.mp3",
 	CUE_VOICE_SWITCH: "res://assets/audio/sfx/ui/voice_switch.mp3",
+
+	# 9.21 第三批（见上方 CUE_STAR4_MILITIA_SKILL 那一段注释）。
+	# 四星民兵是**施法型**吗？——不是。它的技能是 `attack_interrupt`（普攻第 N 次
+	# 触发打断，见 race_units.json 的 interrupt_chance），与极光射手 / 剑士那批
+	# 同一类，因此归 STAR4_ATTACK_SKILL_CUES 而不是 STAR4_SKILL_CUES。
+	CUE_STAR4_MILITIA_SKILL: "res://assets/audio/sfx/battle/star4_militia_skill.mp3",
+	# 三条佣兵技能音（时空观测者 / 黄金重骑 / 黑钢统帅），归 MERC_SKILL_CUES。
+	# 素材格式按源文件：时空观测者与黄金重骑是 .wav，黑钢统帅是 .mp3。
+	CUE_MERC_AQUARIUS_TIME_SKILL: "res://assets/audio/sfx/battle/merc_aquarius_time_skill.wav",
+	CUE_MERC_TAURUS_CHARGE_SKILL: "res://assets/audio/sfx/battle/merc_taurus_charge_skill.wav",
+	CUE_MERC_CAPRICORN_STEEL_SKILL: "res://assets/audio/sfx/battle/merc_capricorn_steel_skill.mp3",
+	# 最终回合 pvp 开局音。放 battle/ 下：它是战斗场景的开场演出，不是 UI 提示音。
+	CUE_FINAL_ROUND_PVP_INTRO: "res://assets/audio/sfx/battle/final_round_pvp_intro.mp3",
+	# 开始游戏成功 / 失败。放 ui/ 下：发生在房间（Team3v3Lobby），属房间级 UI 反馈。
+	CUE_START_GAME_SUCCESS: "res://assets/audio/sfx/ui/start_game_success.mp3",
+	CUE_START_GAME_FAIL: "res://assets/audio/sfx/ui/start_game_fail.wav",
 }
 
 # 每条 cue 的最小重触发间隔（毫秒）。缺省是 RETRIGGER_GUARD_MSEC。
@@ -317,6 +350,21 @@ const STAR4_ATTACK_SKILL_CUES := {
 	"god_aurora": CUE_STAR4_AURORA_SKILL,
 }
 
+# 9.21：**「概率触发型」**四星技能音 —— 目前只有四星民兵一条。
+#
+# 单独立表的原因：它的技能 `attack_interrupt` 是**按概率**触发的
+# （BattleSimulator: `RngService.rng.randf() < float(d.get("interrupt_chance", 0.12))`），
+# 既没有 `skill_ready` 上升沿（不是施法型），也不是「每第 N 次普攻」（不是上面那张
+# 表判的 `attack_count % every`），所以**两张表都不能放** ——
+# 放进 STAR4_ATTACK_SKILL_CUES 会被 `_attack_skill_vfx_ready()` 判假而永远不响。
+#
+# 真正的触发点是模拟器打断成功时补发的 `unit_skill_proc` 事件
+# （BattleSimulator.gd:757 那个分支），BattleVfx 在事件循环里按 skill_id 派发，
+# 与母灵「死亡执行」走同一条路。所以这张表只做「skill_id → cue」的映射。
+const STAR4_PROC_SKILL_CUES := {
+	"attack_interrupt": CUE_STAR4_MILITIA_SKILL,
+}
+
 # 9.19 第二批：佣兵专属技能音。
 #
 # **独立成表而不是并进 STAR4_SKILL_CUES**：佣兵永远到不了四星
@@ -327,6 +375,10 @@ const MERC_SKILL_CUES := {
 	"merc_sagittarius_rain": CUE_MERC_ARROW_RAIN_SKILL,
 	"merc_pisces_bubble": CUE_MERC_BUBBLE_HOLY_SONG_SKILL,
 	"merc_virgo_heal": CUE_MERC_BUBBLE_HOLY_SONG_SKILL,
+	# 9.21 第三批：用户点名的三条佣兵技能音。
+	"merc_aquarius_time": CUE_MERC_AQUARIUS_TIME_SKILL,
+	"merc_taurus_charge": CUE_MERC_TAURUS_CHARGE_SKILL,
+	"merc_capricorn_steel": CUE_MERC_CAPRICORN_STEEL_SKILL,
 }
 
 
@@ -556,6 +608,13 @@ static func attack_skill_cue_for(unit_id: String) -> String:
 # 9.19 第二批：佣兵专属技能音。同样返回空串表示这只棋子没有专属素材。
 static func merc_skill_cue_for(unit_id: String) -> String:
 	return str(MERC_SKILL_CUES.get(unit_id, ""))
+
+
+# 9.21：「概率触发型」四星技能音。入参是**模拟器事件里的 skill_id**（不是 unit_id）——
+# 这条路径由 `unit_skill_proc` 事件触发，事件里带的就是 skill_id
+# （见 BattleSimulator 那个分支 append 的字典）。返回空串 = 这条技能没有专属素材。
+static func proc_skill_cue_for(skill_id: String) -> String:
+	return str(STAR4_PROC_SKILL_CUES.get(skill_id, ""))
 
 
 # --- 循环音（9.17 第二批：己方法阵受击）--------------------------------------

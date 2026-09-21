@@ -2415,6 +2415,26 @@ func _on_team3v3_start() -> void:
 	if NetworkService.shared_seed == 0:
 		NetworkService.shared_seed = randi()
 	NetworkService.team_begin_round()
+	# 9.21「开始游戏成功」音效：**所有人**都要听到，且**播完才进备战**。
+	#
+	# 为什么挂在这里而不是 Team3v3Lobby._on_start()：
+	#   * 本函数是所有客户端进新局**唯一的汇合点** —— 房主走
+	#     `Team3v3Lobby.start_requested` → 这里；客机走服务端 `_rpc_team_start`
+	#     → `NetworkService.team_start_requested` → `_on_team_start_requested`
+	#     → `start_requested` → 这里。挂在按按钮那一侧只有房主会响。
+	#   * 「播完再进游戏」= 把 `_show_prep()` 推迟 cue_length 秒。用 cue_length()
+	#     而不是写死常数：换素材时那个常数就对不上了，而且没人会发现
+	#     （见 SfxService.cue_length 的注释，胜负 BGM 用的是同一套）。
+	await _play_start_game_success_then_prep()
+
+func _play_start_game_success_then_prep() -> void:
+	var started := SfxService.play(SfxService.CUE_START_GAME_SUCCESS)
+	var wait := SfxService.cue_length(SfxService.CUE_START_GAME_SUCCESS) if started else 0.0
+	# 音效被静音 / 读不到时长 → wait 为 0，直接进场，不卡住开局。
+	# `+ 0.05` 是留给播放器真正把缓冲吐完的一点余量：cue_length 给的是素材时长，
+	# 恰好在末尾切场景会切掉最后几个采样。
+	if wait > 0.0 and is_inside_tree():
+		await get_tree().create_timer(wait + 0.05).timeout
 	_show_prep()
 
 func _on_team_battle_finished(result: Dictionary) -> void:
