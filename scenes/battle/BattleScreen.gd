@@ -594,6 +594,7 @@ func _switch_active_replay(replay: Dictionary) -> void:
 func _clear_unit_visuals() -> void:
 	# 两份 replay 的 uid 命名会撞车（都是 player_L0_0 这类），
 	# 切换前必须整场清空，否则旧模型会被错认成新阵容复用。
+	reset_visual_position_state()
 	for node in _unit_nodes.values():
 		if node != null and is_instance_valid(node):
 			node.queue_free()
@@ -761,6 +762,9 @@ func _finish_replay() -> void:
 	# 结算永远基于己方 replay：正观战敌方时先切回我方战场收尾。
 	if _watching_rival:
 		_set_watching_rival(false)
+	# The process loop stops refreshing positions once `_finished` is set. Refresh
+	# the authoritative final replay coordinates before the victory pose freezes.
+	_refresh_visuals()
 	# 9.13 #2：这里**不隐藏**「查看另一队」按钮 —— Main 随后会调
 	# show_settlement_waiting()，等待期间玩家要能继续切过去补看另一队。
 	# 按钮最终随本场景一起销毁。
@@ -797,6 +801,10 @@ func _skip_animation() -> void:
 		if not frames.is_empty():
 			_apply_replay_frame(frames.size() - 1)
 		_replay_frame = frames.size()
+		# skip_to_result() cancelled the Director before the final frame was
+		# applied. Death events in that frame are therefore claimed but can no
+		# longer play; release them immediately instead of leaving frozen corpses.
+		cue_release_corpses()
 		_refresh_visuals()
 		_finish_replay()
 		return

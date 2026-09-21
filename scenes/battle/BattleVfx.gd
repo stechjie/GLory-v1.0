@@ -27,6 +27,17 @@ var _doom_skill_sfx_played: Dictionary = {}
 # in-flight action). Claiming the actor at enqueue time is what gives the death
 # animation something to play on.
 var _cue_corpses: Dictionary = {}
+# Actors that already entered the fade. They are tracked separately so skip,
+# seek, restart and scene shutdown can release both queued and playing deaths.
+# Instance id is the key because summons may reuse a uid before the old body has
+# finished fading.
+var _active_death_actors: Dictionary = {}
+# A queued claim normally becomes an active death within one short action beat.
+# If its cue is rejected or cancelled, this watchdog is the final ownership
+# handoff: no claimed body or 2D bar may remain on the battlefield forever.
+const DEATH_CLAIM_WATCHDOG_SEC := 2.0
+var _death_claim_serial := 0
+var _pending_death_claim_tokens: Dictionary = {}
 
 # Floating damage/heal/shield numbers. A fixed pool of Labels is recycled round-
 # robin so fast fights never churn the scene tree (see vfx-mobile-pass).
@@ -1108,7 +1119,9 @@ func cue_claim_corpses(events: Array) -> void:
 		# 2D 层（名字 + 血条）也要在这里扣下来，理由和身体完全一样：
 		# 从入队到 cue_play_death 真正开播之间会经过 _refresh_visuals()，
 		# 那一趟剪枝会把血条当场释放，于是尸体还在淡、血条已经没了。
-		claim_unit_node_for_death(uid)
+		var claimed_unit_node := claim_unit_node_for_death(uid)
+		if claimed != null or claimed_unit_node != null:
+			_arm_death_claim_watchdog(uid)
 
 
 func cue_release_corpses() -> void:
@@ -1117,21 +1130,40 @@ func cue_release_corpses() -> void:
 		if actor != null and is_instance_valid(actor):
 			release_death_actor(str(uid), actor as Node3D)
 	_cue_corpses.clear()
+	for entry_value in _active_death_actors.values():
+		if not (entry_value is Dictionary):
+			continue
+		var entry: Dictionary = entry_value
+		var tween_value = entry.get("tween")
+		if tween_value is Tween and is_instance_valid(tween_value):
+			(tween_value as Tween).kill()
+		var actor_value = entry.get("actor")
+		if actor_value is Node3D and is_instance_valid(actor_value):
+			release_death_actor(str(entry.get("uid", "")), actor_value as Node3D)
+	_active_death_actors.clear()
+	_pending_death_claim_tokens.clear()
 	release_dying_unit_nodes()
 
 
 func cue_play_death(victim_uid: String, duration_sec: float = 0.35) -> bool:
 	_maybe_play_human_king_death_sfx(victim_uid)
+	_pending_death_claim_tokens.erase(victim_uid)
 	var actor: Node3D = _cue_corpses.get(victim_uid)
 	_cue_corpses.erase(victim_uid)
 	if actor == null or not is_instance_valid(actor):
 		actor = detach_actor_for_death(victim_uid)
 	if actor == null or not is_instance_valid(actor):
+		_release_dying_unit_node(victim_uid)
 		return false
 	# The profile owns the length so a low quality tier can shorten the fade
 	# without ever removing it (checklist 6: death must never just disappear).
 	var fade := maxf(0.08, duration_sec * 0.92)
 	var tween := create_tween()
+	_active_death_actors[actor.get_instance_id()] = {
+		"uid": victim_uid,
+		"actor": actor,
+		"tween": tween,
+	}
 	tween.set_parallel(true)
 	var sink := actor.position + Vector3(0.0, -0.35, 0.0)
 	tween.tween_property(actor, "position", sink, fade).set_ease(Tween.EASE_IN)
@@ -1147,8 +1179,36 @@ func cue_play_death(victim_uid: String, duration_sec: float = 0.35) -> bool:
 	# 2D 的血条/名字层必须**跟着一起淡**，不能在尸体还在的时候就消失。
 	# V2 第 2 条原话："血条和状态图标同步，不突然消失"。
 	_play_unit_node_death_fade(victim_uid, fade)
-	tween.chain().tween_callback(func() -> void: release_death_actor(victim_uid, actor))
+	tween.chain().tween_callback(func() -> void: _finish_death_actor(victim_uid, actor))
 	return true
+
+
+func _finish_death_actor(uid: String, actor: Node3D) -> void:
+	if actor != null:
+		_active_death_actors.erase(actor.get_instance_id())
+	release_death_actor(uid, actor)
+
+
+func _arm_death_claim_watchdog(uid: String) -> void:
+	_death_claim_serial += 1
+	var token := _death_claim_serial
+	_pending_death_claim_tokens[uid] = token
+	var tree := get_tree()
+	if tree == null:
+		return
+	var timer := tree.create_timer(DEATH_CLAIM_WATCHDOG_SEC)
+	timer.timeout.connect(_release_stale_death_claim.bind(uid, token))
+
+
+func _release_stale_death_claim(uid: String, token: int) -> void:
+	if int(_pending_death_claim_tokens.get(uid, -1)) != token:
+		return
+	_pending_death_claim_tokens.erase(uid)
+	var actor = _cue_corpses.get(uid)
+	_cue_corpses.erase(uid)
+	if actor is Node3D and is_instance_valid(actor):
+		release_death_actor(uid, actor as Node3D)
+	_release_dying_unit_node(uid)
 
 
 # 整棵子树里所有能调 transparency 的节点。

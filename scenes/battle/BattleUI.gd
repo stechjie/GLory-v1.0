@@ -42,12 +42,12 @@ const BATTLE_ARENA_FOREST_ALBEDO := Color(0.38, 0.58, 0.30)
 const BATTLE_ARENA_FOREST_BLEND := 0.62
 const BATTLE_3D_WIDTH := 22.0
 const BATTLE_3D_DEPTH := 12.4
-# Display-only crowd spacing. The simulator still owns targeting, range and
-# movement; these values only keep the rendered actors readable in a melee.
-const MODEL_SEPARATION_RADIUS := 92.0
-const MODEL_SEPARATION_ITERATIONS := 3
-const MODEL_SEPARATION_MAX_OFFSET := 128.0
-const MODEL_SEPARATION_SMOOTH_SPEED := 14.0
+# Display-only personal footprints. The selected slot is immutable for the
+# actor's lifetime; no crowd solver is allowed to move it during battle.
+const MODEL_FIXED_SLOT_COUNT := 8
+const MODEL_FIXED_SLOT_COLUMNS := 4
+const MODEL_FIXED_SLOT_X_STEP := 64.0
+const MODEL_FIXED_SLOT_Y_STEP := 64.0
 const BATTLE_CAMERA_SIZE := 7.2
 const BATTLE_CAMERA_POS := Vector3(0.0, 7.4, 7.0)
 const BATTLE_PLAYABLE_WIDTH := 14.5

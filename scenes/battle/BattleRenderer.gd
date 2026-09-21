@@ -8,19 +8,18 @@ const UnitContactShadowScript := preload("res://effects/runtime/presentation/Uni
 const UNIT_TEAM_RING_SHADER := preload("res://shaders/unit_team_ring.gdshader")
 const FOUR_STAR_AURA := preload("res://effects/vfx3d/modules/FourStarAuraV2_3D.gd")
 
-# Per-frame visual caches: the separation pass is O(N) per unit over the living
-# set, and several call sites ask for the same unit's position within one frame.
-# Rebuilt at the top of every _refresh_visuals — never carried across frames.
+# Per-frame actor lookup and memoized visual positions. The immutable personal
+# slot is stored separately; these frame tables are rebuilt by _refresh_visuals.
 var _frame_living_ids: PackedStringArray = PackedStringArray()
 var _frame_living_pos: PackedVector2Array = PackedVector2Array()
 # id -> fighter dict for this frame. Facing needs to resolve a target uid back
 # to a unit; holding the references costs nothing and keeps the lookup O(1).
 var _frame_fighter_by_id: Dictionary = {}
 var _visual_pos_cache: Dictionary = {}
-# Persistent display offsets are smoothed independently of the raw simulator
-# position. Units therefore keep the simulator's exact movement while crowd
-# spacing eases in and out without shaking or changing combat outcomes.
-var _visual_offset_by_id: Dictionary = {}
+# One immutable display offset per actor. It is chosen once when the actor first
+# enters the battle and never re-solved from neighbours, so presentation cannot
+# add sideways drift, catch-up motion, or a second "settle" after stopping.
+var _fixed_visual_offset_by_id: Dictionary = {}
 var _status_vfx_by_id: Dictionary = {}
 # HpFill refs cached at node creation so the per-frame HP sync never walks the tree.
 var _hp_fill_by_id: Dictionary = {}
@@ -203,6 +202,12 @@ func claim_unit_node_for_death(uid: String) -> Control:
 	var node_value = _unit_nodes.get(uid)
 	if not (node_value is Control) or not is_instance_valid(node_value):
 		return null
+	# The node leaves the normal per-frame HP sync as soon as the death cue is
+	# claimed. Zero the fill first; otherwise it keeps the pre-death sliver for
+	# the whole fade (or forever when a queued cue is cancelled).
+	var hp_fill_value = _hp_fill_by_id.get(uid)
+	if hp_fill_value is ColorRect and is_instance_valid(hp_fill_value):
+		(hp_fill_value as ColorRect).scale.x = 0.0
 	_unit_nodes.erase(uid)
 	_hp_fill_by_id.erase(uid)
 	_dying_unit_nodes[uid] = node_value
@@ -931,7 +936,7 @@ func _setup_model_animation_state(pivot: Node3D, model: Node3D, unit_def: Dictio
 
 func _setup_animation_tracking_meta(pivot: Node3D, unit_def: Dictionary, f: Dictionary) -> void:
 	pivot.set_meta("last_animation_position", pivot.position)
-	pivot.set_meta("last_visual_sim_pos", _visual_sim_pos_for_fighter(f))
+	pivot.set_meta("last_animation_raw_pos", Vector2(float(f.pos.x), float(f.pos.y)))
 	pivot.set_meta("attack_sync_seek", float(unit_def.get("model_attack_sync_seek", 0.0)))
 	pivot.set_meta("attack_lock_time", float(unit_def.get("model_attack_lock_time", 0.45)))
 	pivot.set_meta("attack_lock_left", 0.0)
@@ -1010,13 +1015,15 @@ func _update_model_animation_state(model_node: Node3D, f: Dictionary) -> void:
 	var attack_name := str(model_node.get_meta("attack_animation", ""))
 	var run_name := str(model_node.get_meta("run_animation", ""))
 	var visual_now := float(Time.get_ticks_msec()) * 0.001
-	var current_sim_pos := _visual_sim_pos_for_fighter(f)
-	var raw_last_sim_pos = model_node.get_meta("last_visual_sim_pos", current_sim_pos)
+	# The fixed display slot never moves relative to the simulator, so only the
+	# authoritative combat position may start or sustain the run animation.
+	var current_sim_pos := Vector2(float(f.pos.x), float(f.pos.y))
+	var raw_last_sim_pos = model_node.get_meta("last_animation_raw_pos", current_sim_pos)
 	var last_sim_pos := current_sim_pos
 	if raw_last_sim_pos is Vector2:
 		last_sim_pos = raw_last_sim_pos
-	var moved := current_sim_pos.distance_to(last_sim_pos) > 1.0
-	model_node.set_meta("last_visual_sim_pos", current_sim_pos)
+	var moved := current_sim_pos.distance_to(last_sim_pos) > MODEL_FACING_MOVE_EPS_SIM
+	model_node.set_meta("last_animation_raw_pos", current_sim_pos)
 	var attack_count := int(f.get("attack_count", 0))
 	var last_attack_count := int(model_node.get_meta("last_attack_count", attack_count))
 	var attack_triggered := attack_count > last_attack_count
@@ -1363,13 +1370,12 @@ func _update_model_facing(model_node: Node3D, f: Dictionary, world_pos: Vector3,
 # stands and swings. Returns ZERO to mean "keep the current facing".
 func _model_aim_dir(model_node: Node3D, f: Dictionary, world_pos: Vector3) -> Vector2:
 	var here := Vector2(world_pos.x, world_pos.z)
-	# Movement is measured on the raw simulation position rather than the on-screen
-	# one: the separation pass keeps nudging idle models as their neighbours shift,
-	# and that must never read as "this unit is running somewhere".
+	# Fixed display slots are translations, never motion. Face only the combat
+	# route so neighbour changes can neither rotate nor slide a stationary actor.
 	var sim_now := Vector2(float(f.pos.x), float(f.pos.y))
-	if not model_node.has_meta("facing_last_sim_pos"):
-		model_node.set_meta("facing_last_sim_pos", sim_now)
-	var raw_last: Variant = model_node.get_meta("facing_last_sim_pos")
+	if not model_node.has_meta("facing_last_raw_pos"):
+		model_node.set_meta("facing_last_raw_pos", sim_now)
+	var raw_last: Variant = model_node.get_meta("facing_last_raw_pos")
 	var sim_last := sim_now
 	if raw_last is Vector2:
 		sim_last = raw_last
@@ -1377,7 +1383,7 @@ func _model_aim_dir(model_node: Node3D, f: Dictionary, world_pos: Vector3) -> Ve
 	# slow crawl still accumulates into a heading while a unit standing still
 	# never spins on sub-pixel noise.
 	if sim_now.distance_to(sim_last) >= MODEL_FACING_MOVE_EPS_SIM:
-		model_node.set_meta("facing_last_sim_pos", sim_now)
+		model_node.set_meta("facing_last_raw_pos", sim_now)
 		var from_world := _sim_to_world_pos(sim_last)
 		var to_world := _sim_to_world_pos(sim_now)
 		var travel := Vector2(to_world.x - from_world.x, to_world.z - from_world.z)
@@ -1451,9 +1457,10 @@ func _apply_formation_intro_visibility(id: String, fighter: Dictionary) -> void:
 	if model_node != null and is_instance_valid(model_node):
 		model_node.visible = should_show
 
-# Rebuilds the per-frame snapshot of living units (ids + raw sim positions) and
-# clears the memoized visual positions. Display-only: never writes to _state.
-func _begin_visual_frame(living: Array, delta: float = 0.0) -> void:
+# Rebuild the per-frame lookup. Each actor receives one personal display slot on
+# its first frame. No neighbour query, interpolation, easing, or later reflow is
+# allowed: displayed_delta must always equal simulator_delta.
+func _begin_visual_frame(living: Array, _delta: float = 0.0) -> void:
 	_visual_pos_cache.clear()
 	_frame_living_ids.clear()
 	_frame_living_pos.clear()
@@ -1463,111 +1470,58 @@ func _begin_visual_frame(living: Array, delta: float = 0.0) -> void:
 		if typeof(f) != TYPE_DICTIONARY:
 			continue
 		var id := _visual_id(f)
+		var raw := Vector2(float(f.pos.x), float(f.pos.y))
+		if not _fixed_visual_offset_by_id.has(id):
+			_fixed_visual_offset_by_id[id] = _make_fixed_visual_offset(f, id, raw)
+		var offset_value = _fixed_visual_offset_by_id.get(id, Vector2.ZERO)
+		var offset := offset_value as Vector2 if offset_value is Vector2 else Vector2.ZERO
 		_frame_living_ids.append(id)
-		_frame_living_pos.append(Vector2(float(f.pos.x), float(f.pos.y)))
+		_frame_living_pos.append(raw)
 		_frame_fighter_by_id[id] = f
+		_visual_pos_cache[id] = _clamp_visual_sim_pos(raw + offset)
 		living_ids[id] = true
-	for stale_id in _visual_offset_by_id.keys():
+	for stale_id in _fixed_visual_offset_by_id.keys():
 		if not living_ids.has(stale_id):
-			_visual_offset_by_id.erase(stale_id)
-	_solve_visual_positions(delta)
+			_fixed_visual_offset_by_id.erase(stale_id)
+
 
 func _visual_sim_pos_for_fighter(f: Dictionary) -> Vector2:
 	var id := _visual_id(f)
 	var cached: Variant = _visual_pos_cache.get(id)
 	if cached is Vector2:
 		return cached as Vector2
-	# A one-off caller may ask for a fighter outside the frame snapshot. Fall back
-	# to its unmodified simulation position rather than inventing a new offset.
 	return _clamp_visual_sim_pos(Vector2(float(f.pos.x), float(f.pos.y)))
 
 
-# Resolve the whole crowd together. Every overlap pushes both actors by the same
-# amount in opposite directions, then repeats a few cheap iterations so the
-# final positions — not only the raw simulator positions — satisfy the spacing.
-# This stays render-only and deterministic; `_state` is never written.
-func _solve_visual_positions(delta: float) -> void:
-	var count := _frame_living_ids.size()
-	if count <= 0:
-		return
-	var solved: Array[Vector2] = []
-	for raw_pos in _frame_living_pos:
-		solved.append(raw_pos)
-	_seed_exact_position_clusters(solved)
-	for _iteration in MODEL_SEPARATION_ITERATIONS:
-		for i in count:
-			for j in range(i + 1, count):
-				var apart := solved[i] - solved[j]
-				var distance := apart.length()
-				if distance < 0.01:
-					apart = _stable_pair_spread_dir(_frame_living_ids[i], _frame_living_ids[j])
-					distance = 0.0
-				if distance >= MODEL_SEPARATION_RADIUS:
-					continue
-				var direction := apart.normalized()
-				var correction := direction * (MODEL_SEPARATION_RADIUS - distance) * 0.5
-				solved[i] += correction
-				solved[j] -= correction
-		for i in count:
-			var displacement := solved[i] - _frame_living_pos[i]
-			if displacement.length() > MODEL_SEPARATION_MAX_OFFSET:
-				displacement = displacement.normalized() * MODEL_SEPARATION_MAX_OFFSET
-			solved[i] = _clamp_visual_sim_pos(_frame_living_pos[i] + displacement)
-
-	var smoothing := 1.0 - exp(-MODEL_SEPARATION_SMOOTH_SPEED * maxf(0.0, delta))
-	if delta <= 0.0:
-		smoothing = 1.0
-	for i in count:
-		var id := _frame_living_ids[i]
-		var target_offset := solved[i] - _frame_living_pos[i]
-		var current_offset := target_offset
-		var previous: Variant = _visual_offset_by_id.get(id)
-		if previous is Vector2:
-			current_offset = (previous as Vector2).lerp(target_offset, smoothing)
-		_visual_offset_by_id[id] = current_offset
-		_visual_pos_cache[id] = _clamp_visual_sim_pos(_frame_living_pos[i] + current_offset)
+# Eight standard board slots form a compact fixed 4x2 footprint. Both teams use
+# the same slot geometry, so equal opposing offsets preserve their authoritative
+# attack distance instead of visually crossing each other. Bosses stay centred.
+func _make_fixed_visual_offset(f: Dictionary, id: String, raw: Vector2) -> Vector2:
+	var definition_value = f.get("def", {})
+	var definition: Dictionary = definition_value if typeof(definition_value) == TYPE_DICTIONARY else {}
+	var fighter_id := str(f.get("id", definition.get("id", "")))
+	if bool(definition.get("is_boss", false)) or fighter_id.begins_with("boss_"):
+		return Vector2.ZERO
+	var slot := int(f.get("slot", -1))
+	if slot < 0 or slot >= MODEL_FIXED_SLOT_COUNT:
+		slot = posmod(id.hash(), MODEL_FIXED_SLOT_COUNT)
+	var column := slot % MODEL_FIXED_SLOT_COLUMNS
+	var row := slot / MODEL_FIXED_SLOT_COLUMNS
+	var offset_x := (float(column) - 1.5) * MODEL_FIXED_SLOT_X_STEP
+	var offset_y := (float(row) - 0.5) * MODEL_FIXED_SLOT_Y_STEP
+	var desired := Vector2(offset_x, offset_y)
+	# Fit the slot once at entry. Keeping this fitted value (rather than clamping
+	# the offset anew every frame) prevents an edge unit from gradually acquiring
+	# extra sideways displacement as it walks back toward the arena centre.
+	return _clamp_visual_sim_pos(raw + desired) - raw
 
 
-# Units can converge on the exact same simulator point. Pairwise corrections
-# alone have no natural ordering there and can place two members on nearly the
-# same side of the crowd. Seed each exact-position cluster on a stable ring,
-# then let the general solver handle neighbours that are merely close.
-func _seed_exact_position_clusters(solved: Array[Vector2]) -> void:
-	var clusters := {}
-	for i in _frame_living_pos.size():
-		var raw := _frame_living_pos[i]
-		var indices: Array = clusters.get(raw, [])
-		indices.append(i)
-		clusters[raw] = indices
-	for value in clusters.values():
-		var indices: Array = value
-		if indices.size() <= 1:
-			continue
-		indices.sort_custom(func(a: int, b: int) -> bool:
-			return _frame_living_ids[a] < _frame_living_ids[b])
-		var ring_radius := MODEL_SEPARATION_RADIUS * 0.5
-		if indices.size() > 2:
-			ring_radius = MODEL_SEPARATION_RADIUS / (2.0 * sin(PI / float(indices.size())))
-		# Leave a little headroom for the later pair pass and arena-edge clamping.
-		ring_radius = minf(ring_radius, MODEL_SEPARATION_MAX_OFFSET * 0.94)
-		var first_id := _frame_living_ids[int(indices[0])]
-		var rotation := deg_to_rad(float(absi(first_id.hash()) % 360))
-		for rank in indices.size():
-			var index := int(indices[rank])
-			var angle := rotation + TAU * float(rank) / float(indices.size())
-			solved[index] = _frame_living_pos[index] + Vector2(cos(angle), sin(angle)) * ring_radius
-
-
-# When two simulator positions are identical there is no geometric direction to
-# push along. A sorted UID pair produces one stable axis and opposite directions
-# for its two members, avoiding random jitter and replay-to-replay differences.
-func _stable_pair_spread_dir(id_a: String, id_b: String) -> Vector2:
-	var low := id_a if id_a < id_b else id_b
-	var high := id_b if id_a < id_b else id_a
-	var degrees := absi((low + "|" + high).hash()) % 360
-	var angle := deg_to_rad(float(degrees))
-	var direction := Vector2(cos(angle), sin(angle))
-	return direction if id_a == low else -direction
+func reset_visual_position_state() -> void:
+	_visual_pos_cache.clear()
+	_fixed_visual_offset_by_id.clear()
+	_frame_living_ids.clear()
+	_frame_living_pos.clear()
+	_frame_fighter_by_id.clear()
 
 func _display_unit_def_for_fighter(f: Dictionary) -> Dictionary:
 	return UnitVisualResolverScript.resolve_for_fighter(f)
