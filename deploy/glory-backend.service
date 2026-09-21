@@ -29,6 +29,13 @@ Environment=GLORY_ADMISSION_FILE=/opt/glory/admission.json
 # 这把可以重新生成（轮换），与战斗服务器那把不可重生成的 DTLS 私钥是两回事。
 Environment=GLORY_BATTLE_CARD_KEY_FILE=/opt/glory/battle_card_key.pem
 
+# 战报的验章**公钥**（backend/app/battle_report.py）。注意是**公钥**，方向与上面那把相反：
+# 战报由战斗服务器用它的私钥签，这边只验。所以这个文件不保密（644 即可），
+# 被拿下也伪造不了战报。生成工具 deploy/make_battle_report_key.py。
+# 文件不存在 = 交战报的接口回 503，**对局照常，只是不记历史**（docs/排位系统设计.md 第七节）。
+# 按 mtime 热加载：轮换时换文件即可，不用重启。
+Environment=GLORY_BATTLE_REPORT_PUBLIC_KEY_FILE=/opt/glory/battle_report_public.pem
+
 # 公告图片（backend/app/announcements.py）。systemd 建目录 /var/lib/glory-media、属主 glory、
 # 权限 755；下面 ProtectSystem=strict + ReadWritePaths= 空着时，这是本进程**唯一**能写的地方。
 # Caddy 直接从这个目录给 /media/*（deploy/Caddyfile），两处路径必须一致（有测试钉着）。

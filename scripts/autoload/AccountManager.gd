@@ -549,6 +549,20 @@ func remove_friend(code: String) -> Dictionary:
 		"/v1/me/friends/%s" % normalize_friend_code(code), null, true)
 
 
+# 交一份战斗服务器签过章的战报（docs/排位系统设计.md 第七节）。
+#
+# 客户端**不解析、不改** —— 它只是个搬运工，报文是不透明字符串。
+# 一份战报里有全场六个座位的结果，所以六个人里只要有一个交上来就够；
+# 账号服务器按 match_uid 去重，第二份起回 `recorded=false`，**那是成功不是失败**。
+func submit_battle_report(report: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/battle/report", {"report": report}, true)
+
+
+# 我打过的局（新的在前）。战绩页用。
+func fetch_matches(limit: int = 20) -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/me/matches?limit=%d" % limit, null, true)
+
+
 # 最近一起玩过、但还不是好友的人。**不是战绩** ——
 # 它是靠「同一时间报了同一个房间号」关联出来的，只用于加人。
 func fetch_recent_players() -> Dictionary:

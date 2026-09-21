@@ -24,6 +24,7 @@ from app import admission, announcements, db, mail, maintenance, realtime, singl
 from app.config import get_settings
 from app.routes import announcements as announcement_routes
 from app.routes import auth as auth_routes
+from app.routes import battle_report as battle_report_routes
 from app.routes import chat as chat_routes
 from app.routes import debug as debug_routes
 from app.routes import friends as friends_routes
@@ -160,6 +161,7 @@ app.include_router(announcement_routes.router)
 app.include_router(shop_routes.router)
 app.include_router(loadout_routes.router)
 app.include_router(mail_routes.router)
+app.include_router(battle_report_routes.router)
 app.include_router(ws_routes.router)
 
 # 自检接口只在开发环境挂载。生产上它会把表结构和 RLS 状态说得太清楚，

@@ -59,6 +59,13 @@ const PERSISTED_ROOM_FIELDS := [
 	# 语音房间名的随机串（docs/语音LiveKit方案.md）：重启后变了的话，已经在语音里的人
 	# 和之后新发的钥匙就不在同一个语音房间了；voice_used 决定换队 / 关房时要不要去 LiveKit 请人出去。
 	"voice_salt", "voice_used",
+	# 战报（docs/排位系统设计.md 第七节）。三样都必须活过进程重启：
+	#   match_uid          重启后重新摇一个的话，同一局会在历史里变成两行（或者干脆记不上）
+	#   match_started_wall 墙钟开局时间。room 里其它时间都是单调时钟，重启归零
+	#   seat_pid           座位是谁。名片只在**入座**时交一次，重连不带名片 ——
+	#                      丢了就等于这一局所有座位都认不出人，整局历史变成六个 AI
+	#   seat_ai_rounds     AI 代打了几回合。逐回合累加的量，不存就从零重来
+	"match_uid", "match_started_wall", "seat_pid", "seat_ai_rounds",
 ]
 # 时间字段一律存**相对量**，不存单调时钟的绝对值：单调时钟跨进程重启就归零，
 # 存绝对值等于重启后所有 TTL 立刻到期或永不到期（见 C20 的说明）。

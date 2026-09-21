@@ -1464,6 +1464,18 @@ bug 文档第 1 条：剑士「盾击」补冷却文案 —— `race_units.json`
   - 自己做的证书不行，智能应用控制只认可信机构发的证书。
 - 这台导出安卓包时，APK 写完之后 Godot 进程没有退出，等了 10 分钟后手动结束。包是完整的，原因没查。
 
+## 2026-09-19 晚：vc15 包与服务器包（同一份代码 `ac0bda0`）
+
+- **编辑器里导出报「Release Username and/or Password is invalid」，原因不是账号密码**：
+  - 导出窗口的 Release 签名文件指着 `桌面\key\`，这台电脑上的 Java 打不开带中文的路径；
+  - 用不带密码的 `keytool -list` 复现：中文路径报 `Bad pathname`，英文路径 `C:\Users\stech\GloryKey\glory-release.keystore` 能打开，两份文件逐字节相同。
+  - **修法：导出窗口里把 Release 改指英文路径那份。**
+- `桌面\apk\GLory-p31-vc15-20260919.apk`：versionCode 15，正式签名 `3d8c76f4…`，`apk_identity.py inspect` 通过（726 项、0 失败，代码干净），SHA-256 `a7ccb3a94ade874f…`。
+- `glory_server_p31.zip`：冷启动 OK，SHA-256 `34D0991E1AA473DE…`。
+  - 比线上那份多了同事的「血契流血不致死」修复（`BattleSimTreasures` / `StatusEffectService`）；
+  - 对局战斗是服务器算的，**不部署的话这个修复不生效**；
+  - 协议仍是 31，新包、旧包和新旧服务器都互相兼容。
+
 ## 2026-09-20：战斗音效（10 条）+ 战场音效归属放宽「自身 + 友军」+ bug 两条
 
 落 10 条新音频到 `assets/audio/`（原素材 `音乐/0920/`）：`prep/` 三条是**替换**

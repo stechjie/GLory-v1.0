@@ -134,6 +134,7 @@ const ShopRoll := preload("res://scripts/economy/ShopRoll.gd")
 const RacePick := preload("res://scripts/units/RacePick.gd")
 const CarrotEconomy := preload("res://scripts/economy/CarrotEconomy.gd")
 const BattleCard := preload("res://scripts/multiplayer/BattleCard.gd")
+const BattleReport := preload("res://scripts/multiplayer/BattleReport.gd")
 
 # --- 出战名片的状态（见 BattleCard.gd 文件头）---------------------------------
 #
@@ -762,6 +763,14 @@ func team_host(port: int = DEFAULT_PORT, dedicated: bool = false) -> bool:
 			session_changed.emit()
 			return false
 		_net_log("battle card key loaded path=%s" % BattleCard.server_key_path())
+		# 战报的私钥（BattleReport.gd）。**读不到照常开服** —— 和上面那把公钥
+		# 刻意不一样：名片缺了谁都入不了座，战报缺了只是不记历史，对局照常打完。
+		# 但它会**静默少记**，所以这里和每一局结束时各留一条日志。
+		var report_key := BattleReport.load_signing_key()
+		if report_key.get("key") == null:
+			_net_log("⚠ 战报私钥不可用，本进程的对局都不会记历史：%s" % str(report_key.get("error", "")))
+		else:
+			_net_log("battle report key loaded path=%s" % BattleReport.key_path())
 		# 语音服务器（LiveKit）的钥匙配置。读不到照常开服，只是不发语音钥匙（docs/语音LiveKit方案.md 3.2）。
 		_voice_setup_server()
 	var p := ENetMultiplayerPeer.new()
@@ -1128,6 +1137,11 @@ func _clear_seat_metadata(room: Dictionary, slot: int) -> void:
 	seat_pets.erase(slot)
 	seat_pets.erase(str(slot))
 	room["seat_pets"] = seat_pets
+	# 名片上的 player_id 跟着座位走。离座不清的话，后坐进来的人会顶着前一个人的
+	# 账号 id 进战报 —— 历史里记成别人打的，而且不报错。
+	var seat_pids: Dictionary = room.get("seat_pid", {})
+	seat_pids.erase(slot)
+	room["seat_pid"] = seat_pids
 # 释放一个座位绑定的公开短码。
 # compare-and-delete：只有当这条映射**仍指向本座位的 token** 时才删。
 # 无条件删会在短码碰撞（同一 id 被另一个座位重新绑定）时，让先离开的人把后来者的
@@ -1631,7 +1645,16 @@ func _room_start_authoritative(room: Dictionary) -> void:
 	if not _room_all_ready(room):
 		return
 	_touch_room(room)
-	_set_room_state(room, ROOM_PREP)
+	# 本局的唯一标识与开局墙钟时间 —— 战报要用（docs/排位系统设计.md 第七节）。
+	#
+	# 在这里生成而不是建房时：一个房间可以连着开好几局（打完回大厅再开），
+	# 每一局都该是历史里独立的一行。这个函数是唯一的 LOBBY → PREP 入口，
+	# 上面那道守卫保证它只在 LOBBY 触发，所以「一次开局一个 uid」成立。
+	#
+	# 墙钟要单独记：room 里其它时间字段都是单调时钟，跨进程重启会归零
+	# （C20），拿它算不出「这局是几点打的」。
+	room["match_uid"] = BattleReport.new_match_uid()
+	room["match_started_wall"] = int(_wall_now())
 	var ready: Array = room.get("ready", [])
 	var states: Array = room.get("slot_states", [])
 	if _economy_action_enabled("upgrade_harvest_tech"):
@@ -3250,10 +3273,100 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 			"pending_treasure": _server_pending_treasure(room, slot, completed_round),
 		}
 	room.slot_gold = slot_gold
+	# AI 代打回合数：这一轮结算时仍是 dummy 的座位 +1。
+	# 排位的跑路分级以后可能要用（docs/排位系统设计.md 第四节），**现在只记不判**。
+	var ai_rounds: Dictionary = room.get("seat_ai_rounds", {})
+	var seat_states: Array = room.get("slot_states", [])
+	for slot in TEAM_SLOTS:
+		if slot < seat_states.size() and str(seat_states[slot]) == "dummy":
+			ai_rounds[slot] = int(ai_rounds.get(slot, 0)) + 1
+	room["seat_ai_rounds"] = ai_rounds
+	# 对局结束：签一份战报塞进这一轮的 match_state（docs/排位系统设计.md 第七节）。
+	#
+	# **不新开 RPC、不顶协议号** —— _rpc_receive_match_state 收的是 Dictionary，
+	# 没有严格 schema，老客户端看不懂这个 key 就忽略，新客户端连老服务器就是收不到。
+	# 只有最后一轮带，所以 match_state 只在这一次从几百字节涨到 ~14 KB
+	# （实测值见 tools/battle_report_check.gd），相比同批发的 replay（压缩后单边
+	# 61.8 KB）不算什么。
+	if run_over:
+		var report := _room_sign_report(room, completed_round, outcome, hp_a, hp_b)
+		if not report.is_empty():
+			for slot in TEAM_SLOTS:
+				if out.has(slot):
+					(out[slot] as Dictionary)["battle_report"] = report
 	_net_log("official match_state generated room=%d round=%d hp=%s gold=%s run_over=%s outcome=%s" % [
 		int(room.get("id", 0)), completed_round, str(room.team_hp), str(slot_gold), str(run_over),
 		["team_a", "team_b", "draw"][outcome]])
 	return out
+
+# 对局结束时签一份战报（docs/排位系统设计.md 第七节）。
+# 返回线格式；没私钥、签不出来都返回空串 —— **对局本身不受任何影响**，只是不记历史。
+#
+# 为什么这里不 fail loud：战报是记账，不是对局的一部分。为它让一整局崩掉，
+# 是把故障面放大。代价是它会静默少记，所以每一局都留一条日志。
+func _room_sign_report(room: Dictionary, rounds: int, outcome: int, hp_a: int, hp_b: int) -> String:
+	var loaded := BattleReport.load_signing_key()
+	var key: CryptoKey = loaded.get("key")
+	if key == null:
+		_net_log("battle report skipped room=%d: %s" % [
+			int(room.get("id", 0)), str(loaded.get("error", ""))])
+		return ""
+	var match_uid := str(room.get("match_uid", ""))
+	if match_uid.is_empty():
+		# 进程重启前开的局，快照里没有 match_uid（013 之前的版本）。补摇一个会让
+		# 同一局在历史里变成两行，所以宁可这一局不记。
+		_net_log("battle report skipped room=%d: 没有 match_uid（013 之前开的局）" % int(room.get("id", 0)))
+		return ""
+
+	var states: Array = room.get("slot_states", [])
+	var boards: Dictionary = room.get("boards", {})
+	var pids: Dictionary = room.get("seat_pid", {})
+	var ai_rounds: Dictionary = room.get("seat_ai_rounds", {})
+	var slot_gold: Array = room.get("slot_gold", [])
+	# 结束那一刻谁还连着。**这就是排位的跑路判定线** —— 不是「有没有转过 AI」
+	# （座位断线 20 秒就转 AI，但转了之后 _resume_seat 还能回来）。
+	var online_slots := {}
+	for peer_id in (room.get("peer_slot", {}) as Dictionary).keys():
+		online_slots[int((room.get("peer_slot", {}) as Dictionary)[peer_id])] = true
+
+	var seats := []
+	for slot in TEAM_SLOTS:
+		var snap: Dictionary = boards.get(slot, {})
+		var prep: Dictionary = _room_prep(room, slot)
+		seats.append({
+			"pid": str(pids.get(slot, "")),
+			"was_ai": slot < states.size() and str(states[slot]) == "dummy",
+			"online_at_end": online_slots.has(slot),
+			"ai_rounds": int(ai_rounds.get(slot, 0)),
+			# ⚠️ 这个数的可信度等于客户端（影子期 gold_after 的种子是 snap.gold）。
+			# 战报里的 gold_auth 字段如实标明，见 database/013_match_history.sql。
+			"gold": int(slot_gold[slot]) if slot < slot_gold.size() and slot_gold[slot] != null else 0,
+			# 萝卜是真的服务端权威（carrot_economy_enabled 默认开）。
+			"carrots": int(prep.get("carrots", 0)),
+			"carrots_spent": int(prep.get("merc_carrots_spent_total", 0)),
+			"board": snap.get("board", []),
+			"mercenaries": snap.get("mercenaries", []),
+			# 服务端记录的持有列表，不是客户端自报的 snap.treasures
+			# （后者只用于影子比对，见 _room_owned_treasures）。
+			"treasures": _room_owned_treasures(room, slot),
+		})
+
+	return BattleReport.sign(BattleReport.build({
+		"match_uid": match_uid,
+		# 第 1 步只有自定义房间。休闲 / 排位是第 4 步以后的事。
+		"mode": "custom",
+		"protocol": NetworkConfig.NETWORK_PROTOCOL_VERSION,
+		"server_epoch": _server_epoch,
+		"room_id": int(room.get("id", 0)),
+		"started_at": int(room.get("match_started_wall", 0)),
+		"ended_at": int(_wall_now()),
+		"rounds": rounds,
+		"outcome": ["team_a", "team_b", "draw"][outcome],
+		"team_hp": [hp_a, hp_b],
+		"gold_authoritative": economy_authoritative(),
+		"carrot_authoritative": carrot_economy_enabled(),
+		"seats": seats,
+	}), key)
 
 # 专用服务器的权威结算：与本地/房主的 Main._on_team_battle_finished 共用
 # EconomyService.settle_post_battle_gold，两处不能再各写各的。
@@ -4409,6 +4522,9 @@ func _room_store_seat_card(room: Dictionary, slot: int, card: Dictionary) -> voi
 	var ai_pets: Dictionary = room.get("seat_ai_pets", {})
 	ai_pets.erase(slot)
 	room["seat_ai_pets"] = ai_pets
+	var pids: Dictionary = room.get("seat_pid", {})
+	pids.erase(slot)
+	room["seat_pid"] = pids
 	# 进程内门禁直接调 _assign_peer_to_room、不带名片：座位照常建，只是没有这三样
 	# （宠物空、种族回落默认、名字按座位号显示）。线上入座请求一定带着验过的名片。
 	if card.is_empty():
@@ -4417,6 +4533,18 @@ func _room_store_seat_card(room: Dictionary, slot: int, card: Dictionary) -> voi
 	if not identity.is_empty():
 		profiles[slot] = identity
 		room["seat_profiles"] = profiles
+	# 🔴 名片上的 player_id 单独存一份，**绝不能放进 seat_profiles**。
+	#
+	# seat_profiles 会随 room_state 广播给同房间所有人（_room_public_state），
+	# 塞进去等于把每个人的账号 id 发给全房间。seat_pid 只在服务器进程内用，
+	# 唯一的出口是战报（BattleReport.build），而战报是签过章交给账号服务器的。
+	#
+	# 战报要它来认人：seat_profiles 里只有好友码，而 013 的外键指着 players(player_id)。
+	# pids 就是上面那段清旧值时拿到的同一份，直接往里写。
+	var pid := str(card.get("pid", ""))
+	if not pid.is_empty():
+		pids[slot] = pid
+		room["seat_pid"] = pids
 	_store_room_seat_pet(room, slot, BattleCard.pet_of(card))
 	# 不合规则（不是正好 4 个、有这边不认识的族）就不存 —— _room_seat_races 取不到时
 	# 回落默认并留日志。账号服务器只管「有没有资格」，组合规则归这边。
@@ -5552,7 +5680,34 @@ func _rpc_receive_match_state(state_payload: Dictionary) -> void:
 	# RPC 载荷是引擎刚反序列化出来的独立字典，没有其他引用，无需拷贝。
 	latest_match_state = state_payload
 	_net_log("client received match_state round=%d slot=%d" % [int(state_payload.get("completed_round", 0)), int(state_payload.get("slot", -1))])
+	# 对局结束那一份里带着战报，转交给账号服务器（docs/排位系统设计.md 第七节）。
+	# 不 await：结算界面不该为一次记账的网络往返等着。
+	var report := str(state_payload.get("battle_report", ""))
+	if not report.is_empty():
+		_submit_battle_report(report)
 	match_state_received.emit(latest_match_state)
+
+# 把战报交给账号服务器。**纯搬运** —— 客户端不解析、不改，报文是不透明字符串。
+#
+# 一份战报有全场六个座位的结果，六个人里只要有一个交上来就够。所以这里
+# **失败了也不必大动干戈**：重试两次兜住「刚打完网络还没稳」，就到此为止。
+# 不落盘、不跨进程重试 —— 那要一套本地队列，而收益只有「六个人同时交不上」
+# 这一种情况，代价远大于收益。
+func _submit_battle_report(report: String) -> void:
+	for attempt in 3:
+		var res: Dictionary = await AccountManager.submit_battle_report(report)
+		var code := int(res.get("code", 0))
+		if code >= 200 and code < 300:
+			# recorded=false = 同房间的别人先交了。是成功，不是重复提交。
+			_net_log("battle report submitted recorded=%s" % str((res.get("body", {}) as Dictionary).get("recorded", false)))
+			return
+		# 4xx 是这份报文本身的问题（签名、格式、版本），重试多少次都一样。
+		if code >= 400 and code < 500:
+			_net_log("battle report rejected code=%d %s" % [code, str(res.get("error", ""))])
+			return
+		if attempt < 2:
+			await get_tree().create_timer(2.0 * (attempt + 1)).timeout
+	_net_log("battle report give up（同房间其他人多半已经交上去了）")
 
 func _store_room_seat_pet(room: Dictionary, slot: int, pet_id: String) -> void:
 	if slot < 0 or slot >= TEAM_SLOTS or PetService.model_path(pet_id).is_empty():
