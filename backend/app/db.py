@@ -110,6 +110,14 @@ EXPECTED_TABLES: tuple[str, ...] = (
     # 013（对局历史）
     "match_records",
     "match_seats",
+    # 014（排位分 / 信誉分）
+    "player_ranked",
+    "player_credit",
+    "credit_events",
+    # 015（赛季）
+    "ranked_seasons",
+    "ranked_season_rewards",
+    "player_ranked_history",
 )
 
 

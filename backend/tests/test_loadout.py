@@ -182,10 +182,19 @@ def test_max_size_card_fits_what_the_battle_server_accepts(card_key) -> None:
 
 def test_card_fields_match_the_battle_server() -> None:
     """字段名是两边的约定。这边改了名、那边还在取旧名，取到的是空串 ——
-    表现是宠物、头像全部消失，而且不报错。"""
+    表现是宠物、头像全部消失，而且不报错。
+
+    ⚠️ `match` / `team` 是**匹配出来的对局才有**的（协议 32，app/matchmaking.py）。
+    自己建房那条路的名片没有它们，所以要拿**带分配的**那一份来比 ——
+    只比基础那一份的话，这条断言会把「可选字段」误报成「漏发」。
+    """
     text_fields = set(re.findall(r'"(\w+)":\s*\d+', CARD_GD.split("const MAX_TEXT", 1)[1].split("}", 1)[0]))
-    payload = set(loadout.card_payload(_loadout()))
+    payload = set(loadout.card_payload(_loadout(), match_uid="a" * 32, team=0))
     assert text_fields <= payload, "战斗服务器取的字段账号服务器没发：%s" % sorted(text_fields - payload)
+    # 反过来也要钉住：没有分配时那两个字段**必须不出现**。
+    # 出现了（哪怕是空串）会让战斗服务器把一张普通名片当成匹配对局的名片。
+    base = set(loadout.card_payload(_loadout()))
+    assert "match" not in base and "team" not in base
     for field in ("races", "exp", "iat", "v"):
         assert field in payload
     assert "races" in CARD_GD and '"exp"' in CARD_GD and '"iat"' in CARD_GD
@@ -200,11 +209,17 @@ def test_card_version_matches_the_battle_server() -> None:
 
 
 class _FakeConn:
-    def __init__(self, row: dict | None) -> None:
+    def __init__(self, row: dict | None, ranked_row: dict | None = None) -> None:
         self.row = row
+        # None = 没打过排位。带段位的名片在 test_ranked / test_matchmaking 里验。
+        self.ranked_row = ranked_row
         self.executed: list[tuple] = []
 
     async def fetchrow(self, sql, *args):
+        # build_loadout 现在还会查一次段位（第 6 步）。这里返回 None =
+        # 「没打过排位」，名片上就不带 tier —— 本文件验的是资格过滤，不是段位。
+        if "player_ranked" in sql:
+            return self.ranked_row
         return self.row
 
     async def fetchval(self, sql, *args):
@@ -392,7 +407,7 @@ def test_card_requires_login(wired) -> None:
 
 def test_card_without_key_is_503_not_500(wired, monkeypatch: pytest.MonkeyPatch) -> None:
     """没配私钥是服务器配置问题。回 500 的话客户端分不出「服务器坏了」和「稍后再试」。"""
-    async def _no_key(_pid):
+    async def _no_key(_pid, **_kw):
         raise loadout.CardKeyMissing("没有配置")
 
     monkeypatch.setattr(loadout, "issue_card", _no_key)
@@ -403,7 +418,7 @@ def test_card_without_key_is_503_not_500(wired, monkeypatch: pytest.MonkeyPatch)
 
 
 def test_card_response_shape(wired, monkeypatch: pytest.MonkeyPatch) -> None:
-    async def _card(_pid):
+    async def _card(_pid, **_kw):
         return "Ym9keQ==.c2ln"
 
     monkeypatch.setattr(loadout, "issue_card", _card)

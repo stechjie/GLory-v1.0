@@ -43,7 +43,7 @@ import pathlib
 import re
 import uuid
 
-from app import db
+from app import db, ranked
 
 log = logging.getLogger("glory.battle_report")
 
@@ -341,6 +341,13 @@ async def record(report: dict) -> bool:
             """,
             rows,
         )
+        # 排位分与信誉分（app/ranked.py，第 5a 步）。
+        #
+        # 🔴 **在同一个事务里** —— 这样 013 的 match_uid 主键顺带保证了
+        # 「一局只结算一次」：六个人各交一份战报，第二份起走的是上面那个
+        # `on conflict do nothing`，根本到不了这里。别在 ranked.py 里再加一套去重，
+        # 两套幂等机制意味着两处会分叉。
+        await ranked.settle(conn, report)
     return True
 
 

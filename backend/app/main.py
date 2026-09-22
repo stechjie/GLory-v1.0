@@ -20,7 +20,8 @@ from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 
-from app import admission, announcements, db, mail, maintenance, realtime, single_instance
+from app import (admission, announcements, db, mail, maintenance, matchmaking,
+                 realtime, seasons, single_instance)
 from app.config import get_settings
 from app.routes import announcements as announcement_routes
 from app.routes import auth as auth_routes
@@ -30,6 +31,7 @@ from app.routes import debug as debug_routes
 from app.routes import friends as friends_routes
 from app.routes import loadout as loadout_routes
 from app.routes import mail as mail_routes
+from app.routes import matchmaking as matchmaking_routes
 from app.routes import me as me_routes
 from app.routes import presence as presence_routes
 from app.routes import profile as profile_routes
@@ -115,10 +117,17 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     notices = asyncio.create_task(announcements.loop(board))
     # 系统邮件（app/mail.py）：每 30 秒看一次新邮件，推给在线的收件人。
     postman = asyncio.create_task(mail.loop(mail.Postman.for_production()))
+    # 匹配队列（app/matchmaking.py）。与 admission 同一个前提：进程内状态、单实例。
+    # 重启 = 队列清空、待确认的对局作废 —— 高峰期别部署。
+    matcher = asyncio.create_task(matchmaking.loop(matchmaking.install(
+        matchmaking.Matchmaker(matchmaking.hub_send))))
+    # 赛季结算（app/seasons.py）：每 5 分钟看一眼有没有到点的赛季。
+    # 幂等不靠这个循环 —— 在 database/015 的 settle_season() 里认领 settled_at。
+    seasonal = asyncio.create_task(seasons.loop())
     try:
         yield
     finally:
-        for task in (sweeper, cleaner, admitter, notices, postman):
+        for task in (sweeper, cleaner, admitter, notices, postman, matcher, seasonal):
             task.cancel()
             with suppress(asyncio.CancelledError):
                 await task
@@ -162,6 +171,8 @@ app.include_router(shop_routes.router)
 app.include_router(loadout_routes.router)
 app.include_router(mail_routes.router)
 app.include_router(battle_report_routes.router)
+app.include_router(matchmaking_routes.router)
+app.include_router(matchmaking_routes.me_router)
 app.include_router(ws_routes.router)
 
 # 自检接口只在开发环境挂载。生产上它会把表结构和 RLS 状态说得太清楚，

@@ -32,7 +32,7 @@ import re
 from fastapi import APIRouter
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from app import admission, db, players, realtime
+from app import admission, db, matchmaking, players, realtime
 from app.config import get_settings
 from app.jwt_verify import TokenError
 from app.realtime import Connection
@@ -124,6 +124,10 @@ async def realtime_endpoint(websocket: WebSocket) -> None:
         hub.unregister(conn)
         # 同样只认自己那条；名额进宽限期，不是立刻收回（见 admission 顶部）。
         gate.leave(conn)
+        # 排队中的人进掉线宽限（不立刻踢出队列，手机切后台是常态）；
+        # 待确认阶段断线则当场解散那一桌 —— 让另外五个人早点回队列，
+        # 比陪着一个已经不在的人干等 30 秒强（app/matchmaking.py）。
+        matchmaking.current().on_disconnect(conn.player_id)
         log.info("WS 断开 player=%s 在线连接=%d", conn.player_id, hub.connection_count())
 
 

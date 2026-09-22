@@ -295,23 +295,43 @@ def test_gdscript_does_not_put_uid_in_the_report() -> None:
 
 
 class _FakeConn:
+    """够 record() 用的最小假连接。
+
+    ⚠️ record() 在同一个事务里还会调 ranked.settle()（第 5a 步），所以这里也要
+    应付它的那几条 SQL —— 不然「战报入库」的用例会因为**结算**那一半报错，
+    而失败信息完全指不到真正的原因。
+    """
+
     def __init__(self, existing: set[str], known: set[uuid.UUID]) -> None:
         self.existing = existing
         self.known = known
         self.seat_rows: list[tuple] = []
 
     async def fetchval(self, sql, *args):
+        if "credit_events" in sql:
+            return 1               # ranked.settle 数「7 天内第几次」
         uid = args[0]
         if uid in self.existing:
             return None            # on conflict do nothing -> 没有 returning
         self.existing.add(uid)
         return uid
 
+    async def fetchrow(self, sql, *args):
+        if "player_credit" in sql:
+            return {"score": 100, "banned_until": None, "last_daily_grant": dt.date.today()}
+        return None
+
     async def fetch(self, sql, *args):
+        if "player_ranked" in sql:
+            return [{"player_id": p, "score": 0, "win_streak": 0} for p in args[0]]
         return [{"player_id": p} for p in args[0] if p in self.known]
 
+    async def execute(self, sql, *args):
+        return "UPDATE 1"
+
     async def executemany(self, sql, rows):
-        self.seat_rows.extend(rows)
+        if "match_seats" in sql:
+            self.seat_rows.extend(rows)
 
     def transaction(self):
         class _T:

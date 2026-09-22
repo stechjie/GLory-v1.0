@@ -359,6 +359,20 @@ func room_next_free_slot(room: Dictionary) -> int:
 	return -1
 
 
+# 指定队伍里的空位（协议 32：匹配出来的对局按名片上的 team 落座）。
+#
+# team 0 = 座位 0~2，team 1 = 座位 3~5。和 GameConstants.team_of_slot 同一条线，
+# 那边是「座位 → 队伍」，这里是反过来。两边都改才叫改，只改一边是静默的串队。
+func room_next_free_slot_on_team(room: Dictionary, team: int) -> int:
+	var states: Array = room.get("slot_states", [])
+	var side := int(_cfg.get("team_slots", 6)) / 2
+	var first := 0 if team == 0 else side
+	for i in range(first, first + side):
+		if i < states.size() and str(states[i]) == "empty":
+			return i
+	return -1
+
+
 func room_player_count(room: Dictionary) -> int:
 	var count := 0
 	for st in (room.get("slot_states", []) as Array):
@@ -397,6 +411,14 @@ func public_room_list() -> Array:
 			continue
 		# suspended 的房间正在等原班人马回来，不该被路人加入（B11）
 		if bool(room.get("suspended", false)):
+			continue
+		# 🔴 匹配出来的房间不进列表、也不能按房间号加入（协议 32）。
+		# 那六个座位是账号服务器分配好的；放一个路人进去，等于把某个已经确认过的人
+		# 挤掉 —— 而他手里还拿着一张指向这个房间的名片。
+		#
+		# 判据用独立的 matched 标记，**不用 match_uid 非空** ——
+		# 自定义房间开局时也会有 match_uid（战报要用，见第 1 步），两件事不能混。
+		if bool(room.get("matched", false)):
 			continue
 		out.append({
 			"id": int(room.get("id", 0)),

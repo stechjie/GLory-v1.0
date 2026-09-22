@@ -65,7 +65,10 @@ const PERSISTED_ROOM_FIELDS := [
 	#   seat_pid           座位是谁。名片只在**入座**时交一次，重连不带名片 ——
 	#                      丢了就等于这一局所有座位都认不出人，整局历史变成六个 AI
 	#   seat_ai_rounds     AI 代打了几回合。逐回合累加的量，不存就从零重来
-	"match_uid", "match_started_wall", "seat_pid", "seat_ai_rounds",
+	#   matched / mode     这是不是匹配出来的房间、什么模式。丢了的话重启后它会
+	#                      变成一个能被路人按房间号加入的普通房间，而且战报里的
+	#                      mode 会退回 custom（协议 32）
+	"match_uid", "match_started_wall", "seat_pid", "seat_ai_rounds", "matched", "mode",
 ]
 # 时间字段一律存**相对量**，不存单调时钟的绝对值：单调时钟跨进程重启就归零，
 # 存绝对值等于重启后所有 TTL 立刻到期或永不到期（见 C20 的说明）。

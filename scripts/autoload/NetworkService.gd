@@ -42,7 +42,14 @@ static func public_seat_identity(profile_data: Dictionary) -> Dictionary:
 	var code := str(profile_data.get("friend_code", ""))
 	if code.length() != 8:
 		return {}
-	return {"friend_code": code, "player_name": str(profile_data.get("player_name", "")).left(64), "avatar": str(profile_data.get("avatar", "")).left(128)}
+	var out := {"friend_code": code, "player_name": str(profile_data.get("player_name", "")).left(64), "avatar": str(profile_data.get("avatar", "")).left(128)}
+	# 段位（第 6 步）。没打过排位的名片不带这个字段，这里也就不加 —— 界面据此不画徽章。
+	# 🔴 **能进这里的只有「给别人看的」东西。** player_id 之类绝不能加进来：
+	# 这个字典随 room_state 广播给同房间所有人（见 _room_store_seat_card 的注释）。
+	var tier := int(profile_data.get("tier", -1))
+	if tier >= 0 and tier <= 7:
+		out["tier"] = tier
+	return out
 
 const ACTIVE_MATCH_HINT := "正在对局中，请进行游戏重连"
 var _match_check_busy := false
@@ -161,6 +168,10 @@ const LOBBY_EMPTY_TTL_SEC := 60.0
 # 任一有效 token 重连即取消；到期则关房并清理 token / 短码 / 缓存映射。
 # 依赖 C20 的单调时钟 —— 用墙钟的话一次 NTP 校时就能让它提前或永不到期。
 const ROOM_SUSPEND_GRACE_SEC := 30.0
+# 匹配房间等人坐满的时限（协议 32）。六个人都在账号服务器点过确认了，
+# 所以没连上来是异常；到点用 AI 补满开打，见 _cleanup_matched_rooms。
+# 给 90 秒：够一次「点完确认 → 过加载界面 → DTLS 握手」，再留一点弱网余量。
+const MATCHED_FILL_TIMEOUT_SEC := 90.0
 const PREP_TIMEOUT_SEC := 30.0 * 60.0
 const BATTLE_TIMEOUT_SEC := 5.0 * 60.0
 const RESULT_TIMEOUT_SEC := 10.0 * 60.0
@@ -365,6 +376,12 @@ var _token_seat: Dictionary:              # token -> {"room_id": int, "slot": in
 	set(value):
 		_reconnect_service.token_seat = value
 var _peer_last_ping: Dictionary = {}      # peer_id -> unix time
+# 会合键 -> 房间号（协议 32）。匹配出来的六个人靠它认亲进同一间。
+#
+# 🔴 **不持久化。** 进程重启时房间表会从快照恢复，这张索引则在
+# _rebuild_matched_index() 里按房间上的 match_uid 重建 —— 两份状态存两遍
+# 早晚对不上，而它本来就是房间表的一个派生视图。
+var _matched_rooms: Dictionary = {}
 var _reserve_tick_accum := 0.0
 # --- 限流（服务器） ---
 # 四个维度，严格程度递减：per-peer 最严 -> per-token -> per-IP（只记录不拦截）->
@@ -876,6 +893,22 @@ func team_request_join_room(room_id: int) -> void:
 		return
 	_rpc_team_join_room.rpc_id(1, room_id, public_token_id, card)
 
+# 匹配出来的对局入座（协议 32）。
+#
+# **这里一个参数都不带房间信息** —— 去哪个房间、坐哪个座位全写在名片上，
+# 由账号服务器决定。客户端只是递名片的那只手。
+#
+# 名片同样是**现领**：从点完确认到这一刻可能过了一分多钟（加载界面、握手），
+# 而名片只有 60 秒有效期。账号服务器那边的分配留了 5 分钟
+# （matchmaking.ASSIGNMENT_TTL_SEC），所以现领拿到的仍然带着会合键。
+func team_request_join_matched() -> void:
+	if not _can_send_room_request("join_room"):
+		return
+	var card := await _fetch_seat_card("join_matched")
+	if card.is_empty() or not _can_send_room_request("join_room"):
+		return
+	_rpc_team_join_matched.rpc_id(1, public_token_id, card)
+
 # 入座前领一张出战名片（BattleCard.gd）。**在入座这一刻才领**，不在连接时领 ——
 # 玩家可以在房间列表里待很久、中途去换了宠物，连接时领的名片早就过时了。
 #
@@ -1170,6 +1203,42 @@ func _room_close(room: Dictionary, reason: String) -> void:
 # _room_begin_next_prep 要广播新回合 —— RoomService 是 RefCounted，够不着 multiplayer。
 func _cleanup_rooms() -> void:
 	_room_service.cleanup_rooms(_room_close, _room_begin_next_prep)
+	_cleanup_matched_rooms()
+
+# 匹配房间坐不满的兜底（协议 32）。
+#
+# 六个人都在账号服务器的确认框里点过「确认」了，所以有人没连上来是异常 ——
+# 确认完到连上之间崩了，或者装了个需要更新的包。等 MATCHED_FILL_TIMEOUT_SEC。
+#
+# 🔴 到点**用 AI 补满并开打**，不是关房。
+#
+# 关房等于拿一个人的意外去罚另外五个 —— 他们已经等过排队、等过确认框了。
+# 休闲局用 AI 补是可接受的；**排位不能这么做**（docs/排位系统设计.md 第五节
+# 「排位绝不填 AI」），那条到第 5 步开排位时要在这里分叉。
+func _cleanup_matched_rooms() -> void:
+	var now := _now()
+	for uid in _matched_rooms.keys():
+		var room: Dictionary = _rooms.get(int(_matched_rooms[uid]), {})
+		if room.is_empty() or str(room.get("state", "")) == ROOM_CLOSED:
+			_matched_rooms.erase(uid)
+			continue
+		if str(room.get("state", "")) != ROOM_LOBBY:
+			continue
+		if now - float(room.get("created_at", now)) < MATCHED_FILL_TIMEOUT_SEC:
+			continue
+		var states: Array = room.get("slot_states", [])
+		var filled := 0
+		for i in TEAM_SLOTS:
+			if i < states.size() and str(states[i]) == "empty":
+				states[i] = "dummy"
+				_ensure_dummy_seat_pet(room, i)
+				filled += 1
+		if filled <= 0:
+			continue
+		room.slot_states = states
+		_net_log("matched room fill timeout id=%d match=%s -> %d AI 补位" % [
+			int(room.get("id", 0)), uid, filled])
+		_matched_try_start(room)
 
 # --- 结算确认（E3，对应 C7 / B15）--------------------------------------------
 # 此前**任意一个玩家**按下准备就能把全房推进下一回合 —— 别人还在看回放就被拽走。
@@ -1645,6 +1714,11 @@ func _room_start_authoritative(room: Dictionary) -> void:
 	if not _room_all_ready(room):
 		return
 	_touch_room(room)
+	# 🔴 大厅 → 备战。**这一行是整个开局的关键**：少了它服务器停在 LOBBY，
+	# 而下面的 _rpc_team_start 已经广播出去 —— 客户端进了对局，服务器以为还在大厅。
+	# 2026-09-22 第 1 步加 match_uid 时手滑删掉过一次，门禁没覆盖大厅→备战所以一路绿；
+	# tools/matchmaking_check 现在钉着它。
+	_set_room_state(room, ROOM_PREP)
 	# 本局的唯一标识与开局墙钟时间 —— 战报要用（docs/排位系统设计.md 第七节）。
 	#
 	# 在这里生成而不是建房时：一个房间可以连着开好几局（打完回大厅再开），
@@ -1653,8 +1727,12 @@ func _room_start_authoritative(room: Dictionary) -> void:
 	#
 	# 墙钟要单独记：room 里其它时间字段都是单调时钟，跨进程重启会归零
 	# （C20），拿它算不出「这局是几点打的」。
-	room["match_uid"] = BattleReport.new_match_uid()
-	room["match_started_wall"] = int(_wall_now())
+	#
+	# ⚠️ **匹配出来的房间已经有 match_uid 了**（会合键就是它，协议 32）。
+	# 在这里再摇一个的话，同一局在账号服务器的匹配日志和对局历史里会是两个编号。
+	if str(room.get("match_uid", "")).is_empty():
+		room["match_uid"] = BattleReport.new_match_uid()
+		room["match_started_wall"] = int(_wall_now())
 	var ready: Array = room.get("ready", [])
 	var states: Array = room.get("slot_states", [])
 	if _economy_action_enabled("upgrade_harvest_tech"):
@@ -3353,8 +3431,9 @@ func _room_sign_report(room: Dictionary, rounds: int, outcome: int, hp_a: int, h
 
 	return BattleReport.sign(BattleReport.build({
 		"match_uid": match_uid,
-		# 第 1 步只有自定义房间。休闲 / 排位是第 4 步以后的事。
-		"mode": "custom",
+		# 匹配出来的房间在建房时写了 mode（协议 32）；自定义房间没写，回落 custom。
+		# 这个值会进 match_records.mode，013 的 check 约束只认三个。
+		"mode": str(room.get("mode", "custom")),
 		"protocol": NetworkConfig.NETWORK_PROTOCOL_VERSION,
 		"server_epoch": _server_epoch,
 		"room_id": int(room.get("id", 0)),
@@ -3938,6 +4017,12 @@ func _rpc_team_join_room(room_id: int, public_id: String = "", card: String = ""
 	if room.is_empty():
 		_rpc_team_action_failed.rpc_id(sender, "room_not_found")
 		return
+	# 🔴 匹配出来的房间不能按房间号加入（协议 32）。六个座位是账号服务器分配好的，
+	# 放一个路人进去等于挤掉一个已经确认过、手里还拿着名片的人。
+	# 回 room_not_found 而不是别的原因：房间号是猜得出来的，不该反馈「猜中了」。
+	if bool(room.get("matched", false)):
+		_rpc_team_action_failed.rpc_id(sender, "room_not_found")
+		return
 	if str(room.get("state", "")) != ROOM_LOBBY:
 		_rpc_team_action_failed.rpc_id(sender, "room_started")
 		return
@@ -3945,6 +4030,106 @@ func _rpc_team_join_room(room_id: int, public_id: String = "", card: String = ""
 		_rpc_team_action_failed.rpc_id(sender, "room_full")
 		return
 	_assign_peer_to_room(sender, room, _sanitize_public_id(public_id), seat_card)
+
+# 匹配出来的对局入座（协议 32，docs/排位系统设计.md 第五、九节）。
+#
+# 与建房 / 按房间号加入的区别只有一条：**去哪个房间、坐哪个座位，全由名片说了算**。
+# 客户端连一个参数都决定不了 —— 它只是把账号服务器签好的名片递过来。
+#
+# 谁先到谁建房，后到的按同一个会合键进同一间。这是「账号服务器说不出去几号房」
+# 那个约束的解法（backend/app/matchmaking.py 顶部）。
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_team_join_matched(public_id: String = "", card: String = "") -> void:
+	if not _dedicated_server:
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if not _rate_ok(sender, "join_room"):
+		return
+	if not _active_match_for_token(str(_public_token_seat.get(_sanitize_public_id(public_id), ""))).is_empty():
+		_rpc_team_action_failed.rpc_id(sender, ACTIVE_MATCH_HINT)
+		return
+	# 名片先验（同 _rpc_team_join_room：必须在任何改状态的操作之前）。
+	var seat_card := _accept_seat_card(sender, card)
+	if seat_card.is_empty():
+		return
+	var match_uid := BattleCard.match_of(seat_card)
+	var team := BattleCard.team_of(seat_card)
+	if match_uid.is_empty() or team < 0:
+		# 名片上没有分配就走这条路 = 客户端搞错了（或者有人在试）。
+		_rpc_team_action_failed.rpc_id(sender, "no_match_assignment")
+		return
+
+	var existing := _room_for_peer(sender)
+	if not existing.is_empty():
+		if str(existing.get("match_uid", "")) == match_uid:
+			return                                 # 已经在这一局里，忽略重复请求
+		if str(existing.get("state", ROOM_LOBBY)) == ROOM_LOBBY:
+			_room_remove_peer(existing, sender)
+		else:
+			_rpc_team_action_failed.rpc_id(sender, "already_in_match")
+			return
+
+	var room := _matched_room_for(match_uid)
+	if room.is_empty():
+		_rpc_team_action_failed.rpc_id(sender, "server_busy")
+		return
+	if str(room.get("state", "")) != ROOM_LOBBY:
+		# 这一局已经开打了（他确认完之后卡了很久才连上来）。
+		# 不是错误路径的终点：座位还留着的话，客户端会走重连那条路。
+		_rpc_team_action_failed.rpc_id(sender, "room_started")
+		return
+	# 显式写类型：_room_service 是 RefCounted 变量，方法调用返回 Variant。
+	var slot := int(_room_service.room_next_free_slot_on_team(room, team))
+	if slot < 0:
+		# 这一队满了。只可能是账号服务器分配错了，或者有人拿别人的名片来试。
+		_net_log("matched join refused room=%d match=%s team=%d (team full)" % [
+			int(room.get("id", 0)), match_uid, team])
+		_rpc_team_action_failed.rpc_id(sender, "room_full")
+		return
+	_assign_peer_to_room(sender, room, _sanitize_public_id(public_id), seat_card, slot)
+	# 六个人都到齐就自己开打。
+	#
+	# 🔴 **匹配对局没有「准备」这一步。** 他们已经在账号服务器的确认框里点过一次了；
+	# 再要一次「准备」就是把「一个人不点、其他五个干等」这个洞重新开一遍，
+	# 而这一版没有备战倒计时（第二节）。
+	_matched_try_start(room)
+
+# 会合键对应的房间；没有就新建一个。满了 / 到达全服房间上限时返回空字典。
+func _matched_room_for(match_uid: String) -> Dictionary:
+	var room_id := int(_matched_rooms.get(match_uid, 0))
+	if room_id > 0:
+		var existing: Dictionary = _rooms.get(room_id, {})
+		if not existing.is_empty() and str(existing.get("state", "")) != ROOM_CLOSED:
+			return existing
+		# 房间没了（打完回收 / 重启）：把索引里的孤儿条目清掉再建新的。
+		_matched_rooms.erase(match_uid)
+	if _rooms.size() >= MAX_ROOMS:
+		_net_log("room cap reached (%d) -> refusing matched room %s" % [MAX_ROOMS, match_uid])
+		return {}
+	var room := _new_room()
+	# 🔴 会合键就是这一局的 match_uid，**不再自己摇一个**（第 1 步是自己摇的）。
+	# 摇新的话，同一局在账号服务器的匹配日志和对局历史里会是两个编号，对不上。
+	room["match_uid"] = match_uid
+	room["match_started_wall"] = int(_wall_now())
+	room["matched"] = true
+	# 战报里的 mode。第 4b 步只开休闲；排位等第 5 步。
+	room["mode"] = "casual"
+	_matched_rooms[match_uid] = int(room.get("id", 0))
+	_net_log("matched room created id=%d match=%s" % [int(room.get("id", 0)), match_uid])
+	return room
+
+# 匹配房间坐满就开打。没坐满时什么都不做 —— 超时兜底在 _cleanup_matched_rooms。
+func _matched_try_start(room: Dictionary) -> void:
+	var states: Array = room.get("slot_states", [])
+	var ready: Array = room.get("ready", [])
+	for i in TEAM_SLOTS:
+		if i >= states.size() or str(states[i]) != "player":
+			return
+		ready[i] = true
+	room.ready = ready
+	_net_log("matched room full -> starting id=%d match=%s" % [
+		int(room.get("id", 0)), str(room.get("match_uid", ""))])
+	_room_start_authoritative(room)
 
 @rpc("any_peer", "call_remote", "reliable")
 func _rpc_public_resume_request(public_id: String) -> void:
@@ -4043,6 +4228,23 @@ func _save_rooms_snapshot() -> void:
 
 func _load_rooms_snapshot() -> void:
 	_server_service.load_snapshot()
+	_rebuild_matched_index()
+
+# 会合键 -> 房间号 的索引（协议 32）。它是房间表的派生视图，所以**不持久化**、
+# 重启后按房间上的 match_uid 重建 —— 两份状态存两遍早晚对不上。
+#
+# 只认 matched 标记的房间：自定义房间开局时也会有 match_uid（战报要用），
+# 把它们编进索引等于让一张伪造的名片能挤进别人的自定义房间。
+func _rebuild_matched_index() -> void:
+	_matched_rooms.clear()
+	for room in _rooms.values():
+		if not bool((room as Dictionary).get("matched", false)):
+			continue
+		var uid := str((room as Dictionary).get("match_uid", ""))
+		if not uid.is_empty():
+			_matched_rooms[uid] = int((room as Dictionary).get("id", 0))
+	if not _matched_rooms.is_empty():
+		_net_log("matched index rebuilt entries=%d" % _matched_rooms.size())
 
 func _tick_heartbeat_timeouts() -> void:
 	# 判定在 ConnectionHealth（纯函数、有用例）；断开留在这里（要碰 multiplayer）。
@@ -4558,10 +4760,15 @@ func _room_seat_pet(room: Dictionary, slot: int) -> String:
 	return str(pets.get(slot, pets.get(str(slot), "")))
 
 
-func _assign_peer_to_room(peer_id: int, room: Dictionary = {}, public_id: String = "", card: Dictionary = {}) -> void:
+# forced_slot >= 0 = 坐指定座位（协议 32：匹配出来的对局按名片上的 team 落座）。
+# 其余路径传 -1，照旧取第一个空位。
+func _assign_peer_to_room(peer_id: int, room: Dictionary = {}, public_id: String = "",
+		card: Dictionary = {}, forced_slot: int = -1) -> void:
 	if room.is_empty():
 		room = _find_or_create_room()
-	var slot := _room_next_free_slot(room)
+	# 显式写类型：_room_next_free_slot 转发给注入的服务，返回值是 Variant，
+	# 三元里推不出类型（GDScript 会直接报解析错误）。
+	var slot: int = forced_slot if forced_slot >= 0 else int(_room_next_free_slot(room))
 	if slot < 0:
 		_rpc_team_action_failed.rpc_id(peer_id, "room_full")
 		return

@@ -25,6 +25,8 @@ const TouchChoice := preload("res://ui/components/TouchChoiceButton.gd")
 # —— 判断永远为假，玩家第一次设生日点了确认什么都不会发生，且不报任何错。
 # 仓库里 TutorialMode 就是引用常量的（SkipDialog.RESULT_CONFIRMED）。
 const ConfirmDialog := preload("res://ui/components/GloryConfirmDialog.gd")
+const MatchHistory := preload("res://scenes/menu/MatchHistoryPanel.gd")
+const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
 const MENU_BG_TEX := preload("res://assets/ui/main_menu_live/background.png")
 
 signal back_requested
@@ -32,6 +34,12 @@ signal back_requested
 enum Mode { SELF, PUBLIC }
 
 const PICKER_MODAL_ID := "profile_avatar_picker"
+const HISTORY_MODAL_ID := "profile_match_history"
+
+# 「战绩」块里三个要异步填的值标签（_load_ranked）。
+var _rank_value: Label
+var _record_value: Label
+var _credit_value: Label
 # 与主菜单房间面板同档：都是页面级面板。
 const PICKER_PRIORITY := 40
 
@@ -107,9 +115,11 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
-	# 页面被关掉时把选择器一起收走，否则它会留在 ModalStack 上盖住主菜单。
+	# 页面被关掉时把浮层一起收走，否则它会留在 ModalStack 上盖住主菜单。
 	if ModalStack.has(PICKER_MODAL_ID):
 		ModalStack.pop(PICKER_MODAL_ID)
+	if ModalStack.has(HISTORY_MODAL_ID):
+		ModalStack.pop(HISTORY_MODAL_ID)
 
 
 # --- 骨架 ---------------------------------------------------------------------
@@ -165,10 +175,7 @@ func _build() -> void:
 		]))
 		columns.add_child(_column(440, [_bio_section()]))
 		columns.add_child(_column(340, [
-			_placeholder_block(
-				_text("战绩", "Record"),
-				[_text("等级", "Level"), _text("段位", "Rank"),
-					_text("场次 / 胜率", "Matches / Winrate")]),
+			_record_block(),
 			_placeholder_block(
 				_text("收藏", "Collection"),
 				[_text("图鉴进度", "Codex"), _text("拥有宠物", "Pets"),
@@ -522,6 +529,112 @@ func _friend_request_button() -> Control:
 
 
 # --- 占位与入口位 -------------------------------------------------------------
+
+
+# 段位名。第 0..7 段，**这是唯一一份**；服务器只发数字（tier），名字归客户端。
+#
+# 分成两份的理由很实在：改一个段位名不该要改后端、不该要重启账号服务器。
+# 而「分数 → 段位」那个换算**只在服务器**（backend/app/ranked.py 的 tier_of）——
+# 客户端自己再除一遍就是第二个真相。
+const TIER_NAMES_ZH := ["黑铁", "青铜", "白银", "黄金", "铂金", "钻石", "星耀", "王者"]
+const TIER_NAMES_EN := ["Iron", "Bronze", "Silver", "Gold", "Platinum", "Diamond", "Master", "Champion"]
+
+
+# 「战绩」块。**半真半占位** —— 这是它与 _placeholder_block 的区别。
+#
+# 段位 / 场次 / 信誉分是真数据（第 5 步）；「等级」系统仍然不存在，照旧「敬请期待」。
+# 对局历史是个真入口（第 2 步）。
+#
+# ⚠️ **这里预取一次 /v1/me/ranked。** 第 2 步时我刻意不预取历史（那是一整页
+# 二十局的数据，为角落一行汇总让所有人多等一趟不划算）；段位不一样 ——
+# 它**就是这个块存在的理由**，而且响应只有十来个数字。
+#
+# 同 _placeholder_block：**只在 SELF 模式出现**。PUBLIC 看不到别人的段位 ——
+# 后端只有 /v1/me/ranked，压根没有「看别人段位」这个接口。
+# 信誉分更是只给自己看（docs/排位系统设计.md 第四节：公开等于发一个新的骂人理由）。
+func _record_block() -> Control:
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SURFACE, Tokens.GOLD_EDGE, Tokens.GAP_M))
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", Tokens.GAP_S)
+	panel.add_child(column)
+	column.add_child(_section_title(_text("战绩", "Record")))
+
+	_rank_value = _record_line(column, _text("段位", "Rank"), "—")
+	_record_value = _record_line(column, _text("场次 / 胜", "Matches / Wins"), "—")
+	_credit_value = _record_line(column, _text("信誉分", "Credit"), "—")
+	# 「等级」系统仍然不存在。**不放假数据** —— 见 docs/玩家资料系统设计.md 的那条。
+	_record_line(column, _text("等级", "Level"), _text("敬请期待", "Coming soon"), true)
+	_load_ranked()
+
+	# 按钮实例化 GloryActionButton.tscn，不用 Button.new() ——
+	# tools/procedural_ui_ratchet_check 的单文件计数只许降（本文件基线 11）。
+	var open := ACTION_BUTTON.instantiate() as Button
+	open.text = _text("查看对局历史", "Match History")
+	open.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+	open.pressed.connect(_open_match_history)
+	column.add_child(open)
+	return panel
+
+
+# 战绩块里的一行。返回右边那个值标签，供 _load_ranked 填。
+func _record_line(column: VBoxContainer, name_text: String, value_text: String,
+		dim: bool = false) -> Label:
+	var line := HBoxContainer.new()
+	var name_label := Label.new()
+	name_label.text = name_text
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	line.add_child(name_label)
+	var value := Label.new()
+	value.text = value_text
+	value.add_theme_color_override("font_color",
+		Tokens.TEXT_DISABLED if dim else Tokens.TEXT_PRIMARY)
+	line.add_child(value)
+	column.add_child(line)
+	return value
+
+
+# 拉一次排位数据。失败就留「—」——
+# **不要显示 0**：0 分是一个看起来正常的错值，玩家会以为自己掉段了。
+# 同主菜单名牌那两个货币位的做法（MainMenu 里那段注释）。
+func _load_ranked() -> void:
+	var result: Dictionary = await AccountManager.fetch_ranked()
+	if not is_inside_tree() or int(result.get("code", 0)) != 200:
+		return
+	var body: Dictionary = result.get("body", {})
+	var tier := clampi(int(body.get("tier", 0)), 0, TIER_NAMES_ZH.size() - 1)
+	var names: Array = TIER_NAMES_EN if _is_en() else TIER_NAMES_ZH
+	# 段位名后面跟本段进度。第 8 段（王者）**不封顶**，进度是溢出量 ——
+	# 那时候显示总分更有意义（高手之间只能靠分数区分，第三节）。
+	if tier >= TIER_NAMES_ZH.size() - 1:
+		_rank_value.text = "%s %d" % [str(names[tier]), int(body.get("score", 0))]
+	else:
+		_rank_value.text = "%s %d/100" % [str(names[tier]), int(body.get("tier_progress", 0))]
+	_record_value.text = "%d / %d" % [int(body.get("games", 0)), int(body.get("wins", 0))]
+
+	var credit := int(body.get("credit", 100))
+	_credit_value.text = str(credit)
+	# <85 是警告线（第四节）。禁赛中另说，那个更要紧。
+	if int(body.get("banned_sec", 0)) > 0:
+		_credit_value.text = "%d %s" % [credit, _text("（禁排位中）", "(suspended)")]
+		_credit_value.add_theme_color_override("font_color", Tokens.DANGER)
+	elif bool(body.get("credit_warn", false)):
+		_credit_value.add_theme_color_override("font_color", Tokens.DANGER)
+
+
+func _open_match_history() -> void:
+	if ModalStack.has(HISTORY_MODAL_ID):
+		return
+	SfxService.play(SfxService.CUE_UI_POPUP)
+	var panel := MatchHistory.new() as Control
+	panel.connect("dismissed", func() -> void: ModalStack.pop(HISTORY_MODAL_ID))
+	ModalStack.push(panel, {
+		"id": HISTORY_MODAL_ID,
+		"owner": self,
+		"priority": PICKER_PRIORITY,
+		"dismiss_on_backdrop": true,
+	})
 
 
 func _placeholder_block(title: String, rows: Array) -> Control:
@@ -1025,4 +1138,9 @@ func _set_status(text_value: String) -> void:
 
 
 func _text(zh: String, en: String) -> String:
-	return en if TranslationServer.get_locale().begins_with("en") else zh
+	return en if _is_en() else zh
+
+
+# 段位名要按语言取整个数组，_text 那种「两句里挑一句」不够用。
+func _is_en() -> bool:
+	return TranslationServer.get_locale().begins_with("en")

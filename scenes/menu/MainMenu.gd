@@ -12,6 +12,8 @@ signal public_token_generate_requested
 signal public_token_resume_requested(token_id: String)
 signal team_offline_requested   # 不联网，本地单人 vs AI 自测
 signal team_reconnect_requested # 手动重连回上一场对局
+signal casual_requested         # 「休闲」按钮：进匹配队列（协议 32，docs/排位系统设计.md 第五节）
+signal ranked_requested         # 「排位」按钮：进排位队列。窗口 / 信誉分的闸在服务器那边
 signal prep_requested           # 「备战」按钮：进入备战界面（暂时只有宠物系统）
 signal codex_requested          # 「图鉴」按钮：进入图鉴界面
 signal profile_requested        # 左上角名牌：进入玩家资料界面
@@ -299,7 +301,7 @@ func _build() -> void:
 	_add_label(_menu_text("自定义", "Custom"), Vector2(1010, 809), Vector2(220, 36), 26)
 	_add_label(_menu_text("图鉴", "Gallery"), Vector2(1250, 807), Vector2(220, 36), 26)
 	_add_hit(Vector2(200, 690), Vector2(220, 190), _emit_prep)
-	_add_hit(Vector2(440, 690), Vector2(220, 190), _show_coming_soon)
+	_add_hit(Vector2(440, 690), Vector2(220, 190), _on_casual)
 	_add_hit(Vector2(680, 650), Vector2(310, 260), _on_ranked)
 	_add_hit(Vector2(1010, 690), Vector2(220, 190), _show_room_overlay)
 	_add_hit(Vector2(1250, 690), Vector2(220, 190), _emit_codex)
@@ -711,9 +713,22 @@ func _emit_offline() -> void:
 func _emit_reconnect() -> void:
 	team_reconnect_requested.emit()
 
+# 「休闲」：进匹配队列（协议 32）。
+#
+# 先过 allow_new_match —— 上一局还没打完时不该让他去排新的队，
+# 同「排位」和「开始游戏」那两条。
+func _on_casual() -> void:
+	if await NetworkService.allow_new_match():
+		casual_requested.emit()
+
+# 「排位」：进排位队列（第 5 步起开放）。
+#
+# ⚠️ **窗口外 / 信誉分不够 / 被禁赛时，拒绝是服务器给的**，不是这里判的 ——
+# 客户端改系统时区就能绕过本地判断，而排位是发分的（docs/排位系统设计.md 第二节）。
+# 这里照常进队列面板，面板把服务器给的原因显示出来。
 func _on_ranked() -> void:
 	if await NetworkService.allow_new_match():
-		_show_coming_soon()
+		ranked_requested.emit()
 
 func _refresh_saved_match() -> void:
 	while is_inside_tree() and not SaveManager.load_resumable_reconnect().is_empty():
