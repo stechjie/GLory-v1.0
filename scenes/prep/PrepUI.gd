@@ -10,6 +10,7 @@ const TutorialTargetProviderScript := preload("res://scripts/tutorial/TutorialTa
 const GloryToastScript := preload("res://ui/components/GloryToast.gd")
 const GloryTheme := preload("res://ui/theme/GloryTheme.gd")
 const GloryTokens := preload("res://ui/theme/GloryTokens.gd")
+const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
 # 右上角那个静音键要读「设置页的背景音乐开关」，裁决只在 PresentationSettings 一处
 # （同 SfxService / MusicService / UiFeedback 的写法，用 preload 常量而不是全局类名）。
 const Presentation := preload("res://effects/runtime/presentation/PresentationSettings.gd")
@@ -1808,7 +1809,7 @@ func show_message(text: String) -> void:
 
 func _build_ready_indicator() -> void:
 	# 3v3 准备状态：上排=敌队 3 个、下排=自己队 3 个（自己队永远在下，和战斗演示一致）。
-	# _ready_dots 按「位置」存：0-2=上排左中右、3-5=下排左中右；刷新时再映射到对应 slot。
+	# _ready_dots 按「位置」存头像徽章：0-2=上排左中右、3-5=下排左中右；刷新时再映射到对应 slot。
 	_ready_indicator = VBoxContainer.new()
 	# (7) Ready checks live in the empty TOP-LEFT corner, not the right side.
 	_ready_indicator.anchor_left = 0.0
@@ -1816,9 +1817,9 @@ func _build_ready_indicator() -> void:
 	_ready_indicator.anchor_top = 0.0
 	_ready_indicator.anchor_bottom = 0.0
 	_ready_indicator.offset_left = 16
-	_ready_indicator.offset_right = 16 + 92
+	_ready_indicator.offset_right = 16 + 128
 	_ready_indicator.offset_top = 8
-	_ready_indicator.offset_bottom = 8 + 56
+	_ready_indicator.offset_bottom = 8 + 84
 	_ready_indicator.add_theme_constant_override("separation", 4)
 	_ready_indicator.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ready_indicator.z_index = 25
@@ -1831,17 +1832,77 @@ func _build_ready_indicator() -> void:
 		row_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_ready_indicator.add_child(row_box)
 		for col in 3:
-			var dot := Label.new()
-			dot.custom_minimum_size = Vector2(24, 24)
-			dot.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			dot.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-			dot.add_theme_font_size_override("font_size", 20)
-			dot.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
-			dot.add_theme_constant_override("outline_size", 3)
-			dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			row_box.add_child(dot)
-			_ready_dots.append(dot)
+			var badge := _create_ready_avatar_badge()
+			row_box.add_child(badge)
+			_ready_dots.append(badge)
 	_refresh_ready_indicator()
+
+
+func _create_ready_avatar_badge() -> Control:
+	var badge := Control.new()
+	badge.custom_minimum_size = Vector2(40, 40)
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	# 当前默认框的圆心是不透明的，和主菜单一样先画框，再把头像裁圆后画在上面。
+	# 头像缩进在金环内，不会盖住框；未来换框只需更新 avatars.json。
+	var frame := TextureRect.new()
+	frame.name = "Frame"
+	frame.texture = AvatarCatalog.frame_texture_for("")
+	frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge.add_child(frame)
+
+	var mask := Panel.new()
+	mask.name = "PortraitMask"
+	mask.clip_children = CanvasItem.CLIP_CHILDREN_ONLY
+	mask.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	mask.offset_left = 7
+	mask.offset_top = 7
+	mask.offset_right = -7
+	mask.offset_bottom = -7
+	mask.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var circle := StyleBoxFlat.new()
+	circle.bg_color = Color.WHITE
+	circle.set_corner_radius_all(26)
+	mask.add_theme_stylebox_override("panel", circle)
+	badge.add_child(mask)
+
+	var portrait := TextureRect.new()
+	portrait.name = "Portrait"
+	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	portrait.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mask.add_child(portrait)
+
+	var check := Label.new()
+	check.name = "ReadyCheck"
+	check.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	check.offset_left = -20
+	check.offset_top = -22
+	check.offset_right = 2
+	check.offset_bottom = 0
+	check.text = "✓"
+	check.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	check.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	check.add_theme_font_size_override("font_size", 19)
+	check.add_theme_color_override("font_color", Color(0.34, 1.0, 0.28))
+	check.add_theme_color_override("font_outline_color", Color(0.02, 0.08, 0.01, 1.0))
+	check.add_theme_constant_override("outline_size", 4)
+	check.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	check.visible = false
+	badge.add_child(check)
+	return badge
+
+
+func _ready_slot_identity(slot: int) -> Dictionary:
+	if slot == int(NetworkService.team_local_slot):
+		return AccountManager.profile
+	var profiles: Dictionary = NetworkService.team_seat_profiles
+	return profiles.get(slot, profiles.get(str(slot), {})) as Dictionary
+
 
 func _refresh_ready_indicator() -> void:
 	if _ready_indicator == null or _ready_dots.size() < 6:
@@ -1857,16 +1918,20 @@ func _refresh_ready_indicator() -> void:
 	var enemy_slots: Array = [3, 4, 5] if local_fire else [0, 1, 2]
 	var pos_to_slot: Array = enemy_slots + own_slots   # 位置 0-2=上排(敌)、3-5=下排(自己)
 	for pos in 6:
-		var dot: Label = _ready_dots[pos]
+		var badge: Control = _ready_dots[pos]
 		var slot: int = int(pos_to_slot[pos])
 		var st := str(states[slot]) if slot < states.size() else "empty"
+		badge.visible = st != "empty"
 		if st == "empty":
-			dot.text = ""   # 空位保留占位，保持上下 3×3 对齐
 			continue
-		var col := GameConstants.team_slot_color(slot)
+		var identity := _ready_slot_identity(slot)
+		var portrait := badge.get_node("PortraitMask/Portrait") as TextureRect
+		var frame := badge.get_node("Frame") as TextureRect
+		portrait.texture = AvatarCatalog.texture_for(str(identity.get("avatar", "")))
+		frame.texture = AvatarCatalog.frame_texture_for(str(identity.get("avatar_frame", "")))
 		var is_ready := st == "dummy" or (slot < ready_arr.size() and bool(ready_arr[slot]))
-		dot.text = "✓" if is_ready else "○"
-		dot.add_theme_color_override("font_color", col if is_ready else Color(col.r, col.g, col.b, 0.5))
+		var check := badge.get_node("ReadyCheck") as Label
+		check.visible = is_ready
 
 func _create_bench_portrait_card(index: int) -> BenchCellButton:
 	var card := BenchCellButton.new()

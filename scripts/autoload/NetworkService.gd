@@ -36,13 +36,18 @@ var team_carrot_harvest_round := -1
 # 现在名片在 _room_store_seat_card 里一次性写进座位，之后谁也改不了；
 # 重连回同一个座位，名片还在。
 
-# 房间里给别人看的名字头像。只留这三项 —— 生日、签名这些私密资料绝不进 room_state
+# 房间里给别人看的名字、头像与头像框。只留这些公开项 —— 生日、签名这些私密资料绝不进 room_state
 # （tools/profile_bug03_check 钉着）。名片那边传进来的也要过这一道。
 static func public_seat_identity(profile_data: Dictionary) -> Dictionary:
 	var code := str(profile_data.get("friend_code", ""))
 	if code.length() != 8:
 		return {}
-	var out := {"friend_code": code, "player_name": str(profile_data.get("player_name", "")).left(64), "avatar": str(profile_data.get("avatar", "")).left(128)}
+	var out := {
+		"friend_code": code,
+		"player_name": str(profile_data.get("player_name", "")).left(64),
+		"avatar": str(profile_data.get("avatar", "")).left(128),
+		"avatar_frame": str(profile_data.get("avatar_frame", "")).left(128),
+	}
 	# 段位（第 6 步）。没打过排位的名片不带这个字段，这里也就不加 —— 界面据此不画徽章。
 	# 🔴 **能进这里的只有「给别人看的」东西。** player_id 之类绝不能加进来：
 	# 这个字典随 room_state 广播给同房间所有人（见 _room_store_seat_card 的注释）。

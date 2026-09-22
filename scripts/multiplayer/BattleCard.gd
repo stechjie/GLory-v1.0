@@ -190,18 +190,19 @@ static func tier_of(card: Dictionary) -> int:
 	return tier if tier >= 0 and tier <= 7 else -1
 
 
-# 房间里给别人看的名片（名字、好友码、头像、段位）。
+# 房间里给别人看的名片（名字、好友码、头像、头像框、段位）。
 #
-# ⚠️ 加 tier 这一项**不用顶协议号**：seat_profiles 随 room_state 下发，那是个
+# ⚠️ 加公开展示字段**不用顶协议号**：seat_profiles 随 room_state 下发，那是个
 # Dictionary，老客户端看不懂这个 key 就忽略。同名片加字段不升 CARD_VERSION 那条。
 #
-# 🔴 **这里只加段位，不加别的。** seat_profiles 是广播给同房间所有人的 ——
-# player_id 之类的东西绝不能进来（那条写在 NetworkService._room_store_seat_card）。
+# 🔴 **这里只加公开展示数据。** seat_profiles 是广播给同房间所有人的 —— player_id
+# 之类的东西绝不能进来（那条写在 NetworkService._room_store_seat_card）。
 static func profile_of(card: Dictionary) -> Dictionary:
 	var out := {
 		"friend_code": str(card.get("code", "")),
 		"player_name": str(card.get("name", "")),
 		"avatar": str(card.get("avatar", "")),
+		"avatar_frame": str(card.get("frame", "")),
 	}
 	var tier := tier_of(card)
 	if tier >= 0:
