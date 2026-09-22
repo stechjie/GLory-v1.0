@@ -443,6 +443,15 @@ func _refresh() -> void:
 			if not identity.is_empty():
 				name_lbl.text = AccountManager.display_name(str(identity.get("player_name", "")), str(identity.get("friend_code", "")))
 			name_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		elif state == "empty":
+			# 9.20 bug 文档第 2 条：空位只留**圈内**那一个「空位」提示。
+			# 圈外这条大标签（上排「空位 A/B/C」、下排「空位 1/2/3」）清空 ——
+			# 圈里的 status_lbl 已经写了「空位」，两处重复且圈外那条压着席位底板。
+			name_lbl.text = ""
+		else:
+			# 假想敌座位保留圈外标签（要写出它在这一侧的身份），只清掉上一轮的
+			# 省略号行为：假想敌名字是定长文案，不需要按玩家昵称那样截断。
+			name_lbl.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
 		var is_me := state == "player" and i == my_slot
 		if is_me:
 			var suffix := _room_text("（我）", " (Me)")
@@ -570,6 +579,12 @@ func _on_start() -> void:
 	# 有阻止原因就显示到状态栏、不开始
 	var reason := _start_block_reason(true)
 	if not reason.is_empty():
+		# 9.21「开始游戏失败」音效：**只有房主听得见**。
+		# 这条分支天然只走房主 —— 非房主按的是「准备」按钮（_refresh 里
+		# _start_lbl 走 lobby_ready / lobby_ready_done），根本到不了这里；
+		# 联机时又只有 can_control_room() 的座位能控制房间。所以不做额外身份判断，
+		# 耦合在「谁能按到开始」这一条真实闸门上，比另写一个 is_host 判定更不容易分叉。
+		SfxService.play(SfxService.CUE_START_GAME_FAIL)
 		_refresh()
 		return
 	if _online():

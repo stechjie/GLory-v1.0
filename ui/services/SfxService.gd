@@ -149,6 +149,47 @@ const CUE_MERC_BUBBLE_HOLY_SONG_SKILL := "merc_bubble_holy_song_skill"
 # 人王「战斗结束未阵亡奖励属性」：战斗结束那一刻在自身人王身上响一次。
 const CUE_HUMAN_KING_REWARD := "human_king_reward"
 
+# --- 9.20 第二批（`音乐/0920` 10 个素材）-------------------------------------
+#
+# 用户口径三条：
+#   ① 「四星其他棋子合成（非唯一棋子）」「四星神王技能」「四星大天使技能」
+#      是**替换**既有素材 —— 三个文件就地覆盖，cue 与路径一个都没动；
+#   ② 其余 7 条是**新增**的四星技能音；
+#   ③ 四星唯一棋子的**合成音**维持「只有自己听得见」。原因不是取舍而是通道：
+#      备战期的消息全部经战斗服务端转发，现有通道（team_prep_mercs / room_state
+#      / chat）没有一条能携带「某座位刚合成四星唯一棋子」这种自由格式通知，
+#      要让别人也听见就必须加房间级消息 + 重新部署服务端。本批不做，见
+#      `docs/9.20*记录.md`。
+const CUE_STAR4_SCYTHE_SKILL := "star4_scythe_skill"
+const CUE_STAR4_PRIESTESS_SKILL := "star4_priestess_skill"
+const CUE_STAR4_ARBITER_SKILL := "star4_arbiter_skill"
+# 暗影法师 / 恐惧魔 / 魅魔 三条**共用一个素材** —— 源文件名就是三家并列
+# （「四星暗影法师、四星恐惧魔、四星魅魔技能.mp3」）。
+const CUE_STAR4_DARK_CASTERS_SKILL := "star4_dark_casters_skill"
+# 下面三条的技能在模拟器里**没有 `skill_ready` 边沿**（不是施法型），所以不能靠
+# 上面那条派发路径，各自在 BattleVfx 里挂真事件：寄生灵→寄生分身出现的那一刻；
+# 自爆灵→死亡毒爆；死侍→绑定生效那一下（没绑到人就不响）。
+const CUE_STAR4_PARASITE_SKILL := "star4_parasite_skill"
+const CUE_STAR4_BOMB_SKILL := "star4_bomb_skill"
+const CUE_STAR4_DEATH_SERVANT_SKILL := "star4_death_servant_skill"
+
+# --- 9.21 第三批（`音乐/0921` 7 个素材）--------------------------------------
+#
+# 用户口径三条：
+#   ① 语音档位切换要覆盖**房间 / 备战 / 战斗**三处（关卡在 VoicePanel 三档按钮，
+#      素材与既有 voice_switch 同一份，见该 cue 的注释）；
+#   ② 「开始游戏成功」点击后**所有人**播放、**播完才进游戏**；「开始游戏失败」
+#      只有**房主**听得见；
+#   ③ 「最终回合 pvp 战斗场景开局播放」在最终回合开局播，**播完再起
+#      pvp_battle_music**（与 boss 出场音 → 战斗 BGM 的时序完全同构）。
+const CUE_STAR4_MILITIA_SKILL := "star4_militia_skill"
+const CUE_MERC_AQUARIUS_TIME_SKILL := "merc_aquarius_time_skill"
+const CUE_MERC_TAURUS_CHARGE_SKILL := "merc_taurus_charge_skill"
+const CUE_MERC_CAPRICORN_STEEL_SKILL := "merc_capricorn_steel_skill"
+const CUE_FINAL_ROUND_PVP_INTRO := "final_round_pvp_intro"
+const CUE_START_GAME_SUCCESS := "start_game_success"
+const CUE_START_GAME_FAIL := "start_game_fail"
+
 const CUES := {
 	CUE_UI_POPUP: "res://assets/audio/sfx/ui/popup.mp3",
 	CUE_UI_CONFIRM: "res://assets/audio/sfx/ui/button_confirm.mp3",
@@ -186,6 +227,14 @@ const CUES := {
 	CUE_STAR4_PRIEST_SKILL: "res://assets/audio/sfx/battle/star4_priest_skill.mp3",
 	CUE_MERC_ARROW_RAIN_SKILL: "res://assets/audio/sfx/battle/merc_arrow_rain_skill.wav",
 	CUE_MERC_BUBBLE_HOLY_SONG_SKILL: "res://assets/audio/sfx/battle/merc_bubble_holy_song_skill.mp3",
+	# 9.20 第二批：7 条新增的四星技能音（素材全在 battle/ 下）。
+	CUE_STAR4_SCYTHE_SKILL: "res://assets/audio/sfx/battle/star4_scythe_skill.mp3",
+	CUE_STAR4_PRIESTESS_SKILL: "res://assets/audio/sfx/battle/star4_priestess_skill.mp3",
+	CUE_STAR4_ARBITER_SKILL: "res://assets/audio/sfx/battle/star4_arbiter_skill.mp3",
+	CUE_STAR4_DARK_CASTERS_SKILL: "res://assets/audio/sfx/battle/star4_dark_casters_skill.mp3",
+	CUE_STAR4_PARASITE_SKILL: "res://assets/audio/sfx/battle/star4_parasite_skill.mp3",
+	CUE_STAR4_BOMB_SKILL: "res://assets/audio/sfx/battle/star4_bomb_skill.mp3",
+	CUE_STAR4_DEATH_SERVANT_SKILL: "res://assets/audio/sfx/battle/star4_death_servant_skill.mp3",
 
 	CUE_MERC_SUMMON: "res://assets/audio/sfx/camp/merc_summon.mp3",
 	CUE_UPGRADE_STONE_DRAW: "res://assets/audio/sfx/camp/upgrade_stone_draw.mp3",
@@ -200,6 +249,22 @@ const CUES := {
 	CUE_PROFILE_SAVE: "res://assets/audio/sfx/ui/profile_save.mp3",
 	CUE_SETTINGS_SWITCH: "res://assets/audio/sfx/ui/settings_switch.mp3",
 	CUE_VOICE_SWITCH: "res://assets/audio/sfx/ui/voice_switch.mp3",
+
+	# 9.21 第三批（见上方 CUE_STAR4_MILITIA_SKILL 那一段注释）。
+	# 四星民兵是**施法型**吗？——不是。它的技能是 `attack_interrupt`（普攻第 N 次
+	# 触发打断，见 race_units.json 的 interrupt_chance），与极光射手 / 剑士那批
+	# 同一类，因此归 STAR4_ATTACK_SKILL_CUES 而不是 STAR4_SKILL_CUES。
+	CUE_STAR4_MILITIA_SKILL: "res://assets/audio/sfx/battle/star4_militia_skill.mp3",
+	# 三条佣兵技能音（时空观测者 / 黄金重骑 / 黑钢统帅），归 MERC_SKILL_CUES。
+	# 素材格式按源文件：时空观测者与黄金重骑是 .wav，黑钢统帅是 .mp3。
+	CUE_MERC_AQUARIUS_TIME_SKILL: "res://assets/audio/sfx/battle/merc_aquarius_time_skill.wav",
+	CUE_MERC_TAURUS_CHARGE_SKILL: "res://assets/audio/sfx/battle/merc_taurus_charge_skill.wav",
+	CUE_MERC_CAPRICORN_STEEL_SKILL: "res://assets/audio/sfx/battle/merc_capricorn_steel_skill.mp3",
+	# 最终回合 pvp 开局音。放 battle/ 下：它是战斗场景的开场演出，不是 UI 提示音。
+	CUE_FINAL_ROUND_PVP_INTRO: "res://assets/audio/sfx/battle/final_round_pvp_intro.mp3",
+	# 开始游戏成功 / 失败。放 ui/ 下：发生在房间（Team3v3Lobby），属房间级 UI 反馈。
+	CUE_START_GAME_SUCCESS: "res://assets/audio/sfx/ui/start_game_success.mp3",
+	CUE_START_GAME_FAIL: "res://assets/audio/sfx/ui/start_game_fail.wav",
 }
 
 # 每条 cue 的最小重触发间隔（毫秒）。缺省是 RETRIGGER_GUARD_MSEC。
@@ -256,6 +321,20 @@ const STAR4_SKILL_CUES := {
 	"human_mage": CUE_STAR4_MAGE_SKILL,
 	"god_priest": CUE_STAR4_PRIEST_SKILL,
 	"god_angel": CUE_STAR4_PRIEST_SKILL,
+	# 9.20 第二批（`音乐/0920`）。前六条是「施法型」，靠上面那条 skill_ready
+	# 上升沿派发；后三条的技能在模拟器里没有上升沿，由 BattleVfx 的真事件触发
+	# （见 CUE_STAR4_PARASITE_SKILL 那段注释）。三条特殊音放在**同一张表**里，
+	# 是因为它们的归属与星级门控跟施法型完全一致（自身/友军 + 四星），
+	# 差别只在「谁来调 star4_cue_for(uid, true)」。
+	"dark_scythe": CUE_STAR4_SCYTHE_SKILL,
+	"god_priestess": CUE_STAR4_PRIESTESS_SKILL,
+	"god_arbiter": CUE_STAR4_ARBITER_SKILL,
+	"dark_mage": CUE_STAR4_DARK_CASTERS_SKILL,
+	"dark_fear": CUE_STAR4_DARK_CASTERS_SKILL,
+	"dark_suc": CUE_STAR4_DARK_CASTERS_SKILL,
+	"undead_parasite": CUE_STAR4_PARASITE_SKILL,
+	"undead_bomb": CUE_STAR4_BOMB_SKILL,
+	"human_death_servant": CUE_STAR4_DEATH_SERVANT_SKILL,
 }
 
 # 9.19 第二批：**攻击触发型**的四星技能音。
@@ -271,6 +350,21 @@ const STAR4_ATTACK_SKILL_CUES := {
 	"god_aurora": CUE_STAR4_AURORA_SKILL,
 }
 
+# 9.21：**「概率触发型」**四星技能音 —— 目前只有四星民兵一条。
+#
+# 单独立表的原因：它的技能 `attack_interrupt` 是**按概率**触发的
+# （BattleSimulator: `RngService.rng.randf() < float(d.get("interrupt_chance", 0.12))`），
+# 既没有 `skill_ready` 上升沿（不是施法型），也不是「每第 N 次普攻」（不是上面那张
+# 表判的 `attack_count % every`），所以**两张表都不能放** ——
+# 放进 STAR4_ATTACK_SKILL_CUES 会被 `_attack_skill_vfx_ready()` 判假而永远不响。
+#
+# 真正的触发点是模拟器打断成功时补发的 `unit_skill_proc` 事件
+# （BattleSimulator.gd:757 那个分支），BattleVfx 在事件循环里按 skill_id 派发，
+# 与母灵「死亡执行」走同一条路。所以这张表只做「skill_id → cue」的映射。
+const STAR4_PROC_SKILL_CUES := {
+	"attack_interrupt": CUE_STAR4_MILITIA_SKILL,
+}
+
 # 9.19 第二批：佣兵专属技能音。
 #
 # **独立成表而不是并进 STAR4_SKILL_CUES**：佣兵永远到不了四星
@@ -281,6 +375,10 @@ const MERC_SKILL_CUES := {
 	"merc_sagittarius_rain": CUE_MERC_ARROW_RAIN_SKILL,
 	"merc_pisces_bubble": CUE_MERC_BUBBLE_HOLY_SONG_SKILL,
 	"merc_virgo_heal": CUE_MERC_BUBBLE_HOLY_SONG_SKILL,
+	# 9.21 第三批：用户点名的三条佣兵技能音。
+	"merc_aquarius_time": CUE_MERC_AQUARIUS_TIME_SKILL,
+	"merc_taurus_charge": CUE_MERC_TAURUS_CHARGE_SKILL,
+	"merc_capricorn_steel": CUE_MERC_CAPRICORN_STEEL_SKILL,
 }
 
 
@@ -510,6 +608,13 @@ static func attack_skill_cue_for(unit_id: String) -> String:
 # 9.19 第二批：佣兵专属技能音。同样返回空串表示这只棋子没有专属素材。
 static func merc_skill_cue_for(unit_id: String) -> String:
 	return str(MERC_SKILL_CUES.get(unit_id, ""))
+
+
+# 9.21：「概率触发型」四星技能音。入参是**模拟器事件里的 skill_id**（不是 unit_id）——
+# 这条路径由 `unit_skill_proc` 事件触发，事件里带的就是 skill_id
+# （见 BattleSimulator 那个分支 append 的字典）。返回空串 = 这条技能没有专属素材。
+static func proc_skill_cue_for(skill_id: String) -> String:
+	return str(STAR4_PROC_SKILL_CUES.get(skill_id, ""))
 
 
 # --- 循环音（9.17 第二批：己方法阵受击）--------------------------------------

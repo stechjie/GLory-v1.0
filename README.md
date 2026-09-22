@@ -1406,7 +1406,6 @@ FAIL [reset_not_wired] NetworkService.reset() 必须重置信封位置（实际 
   - 正式签名和之前的包相同（证书 SHA-256 `3d8c76f450f418a7…`），可以直接覆盖安装；
   - `apk_identity.py inspect` 通过；包里有语音桥接和 LiveKit；没有摄像头 / 屏幕录制权限；SHA-256 `2c00bbe8c6c329a7…`。
 - 🔴 **服务器换成 p31 之后，p30 的旧包一连就闪退**（旧包里的 bug，见上面第 1 阶段）。服务器和新包要同时换，所有人都要装新包。
-<<<<<<< Updated upstream
 
 ## 2026-09-19：第二批战斗音效（9 条）+ 剑士技能冷却文案
 
@@ -1418,7 +1417,7 @@ FAIL [reset_not_wired] NetworkService.reset() 必须重置信封位置（实际 
 用户给的两条硬约束：① 以上战斗音效只有**自身棋子**才播（沿用 `_is_local_owned_unit()`，
 队友是别的 `owner_slot` 天然排除）；② 人王「战斗结束未阵亡奖励属性」要同时满足
 「自身人王 · 本场未阵亡 · 还没到成长上限」，在**战斗结束那一刻**（水晶演出之前，否则赢方棋子
-已被淡出）在人王本体上出只有自己看得到的 `GROWTH_AURA` 闪光升级特效并伴播奖励音；
+已被淡出）在人王本体上出只有自己看得到的闪光升级特效并伴播奖励音（起初复用绿色的 `GROWTH_AURA`，后改专用金光 `HUMAN_KING_REWARD`，见本段末）；
 上限经 `UnitFactory.apply_star_stats()` 取，与 `Main._grow_human_king` 同源（★1~3 五层 / ★4 八层）。
 顺手修两处既有缺陷：① D6 迁移漏字段 —— `cue_play_basic_attack()` 拼的 `attack` 字典没带
 `attack_count` / `skill_every`，使弓箭手 / 牧师技能演出**每次普攻都在放**（应每第 N 击），
@@ -1428,11 +1427,24 @@ bug 文档第 1 条：剑士「盾击」补冷却文案 —— `race_units.json`
 `skill_cd`，新增 `UnitDetailFormat.IMPLICIT_SKILL_CD`（`black_hole` 8.0 / `front_cone_stun` 5.0）
 与模拟器缺省值同源，渲染成「盾击（冷却5.0秒）：…」（中英文两支都跟着走），`black_hole`
 既有输出逐字未变。
+人王奖励属性改用**专用金光特效** `HUMAN_KING_REWARD`（金色扩散环 + 地面金色光晕 + 金色迸发 +
+上升金粒子，寿命 0.85s）：原先复用的「成长」那条 `GROWTH_AURA` 是**绿色**，而且那层
+`_play_unit_procedural()` 3D 调用**静默无表现** —— 它是 3D 技能入口，传 2D 特效 id 会一路落到
+`BossSkillVFXComposer3D` 的默认分支，什么都不做；本轮删掉这行死调用，改成专用 2D 特效并登记进
+`EffectDatabase`。离线自测（`officetest/OfficeTestScreen.gd`）顶栏新增「人王属性 +1（战后胜利）／
+属性归零」，走正式收尾逻辑触发，能直接看金光、听奖励音，并当场验证「到上限不出金光、也不响」。
+补记（同日）：该按钮第一版点了**没反应** —— 根因是收尾逻辑两道门**读的不是同一份数据**：
+`_local_living_human_king()` 读战斗模拟态 `_state`，`_human_king_can_grow()` 读 `GameState.board_slots`，
+而按钮当时只改了后者，前者找不到人王就静默 `return`；叠加离线自测把「自身」钉死在红 A（slot 0）——
+人王摆到红队 1/2 号位（队友位）时按口径本就不该触发，界面却仍显示「人王在位」。
+修法：按钮现在**同时**临时改写 `board_slots` 与 `_state`（把人王临时按自身处理，跑完双双还原）、
+**触发失败不再静默**（把没过的那道门打到状态栏）、并把层数写进摆放字典，让
+`OfficeTestSim.def_for_placement()` 按 `Main._grow_human_king` 的口径真的加成 hp/atk/def
+（★3 实测 720/55/7 → 864/66/8）。专项探针 21 项全过，变异（抽掉 `_state` 改写）正确变红后逐字节还原；
+`OfficeTestSmoke` fails=0。
 详见[9.19第二批战斗音效与剑士冷却文案](docs/9.19第二批战斗音效与剑士冷却文案.md)。
 验证：行为级探针 34 项全过、11 条门禁全 PASS、4 处变异测试全部正确变红后逐字节还原
 （`audio_sfx_check` 163 项）；未进行安卓及真机听感验收。
-=======
->>>>>>> Stashed changes
 
 ## 2026-09-19：语音第 3 阶段，电脑版（Windows）桥接（未提交）
 
@@ -1451,4 +1463,89 @@ bug 文档第 1 条：剑士「盾击」补冷却文案 —— `race_units.json`
   - 正式发电脑版之前要解决签名：上微软商店（免费，微软代签），或者买 OV 代码签名证书（约 150–300 美元一年）；
   - 自己做的证书不行，智能应用控制只认可信机构发的证书。
 - 这台导出安卓包时，APK 写完之后 Godot 进程没有退出，等了 10 分钟后手动结束。包是完整的，原因没查。
->>>>>>> Stashed changes
+
+## 2026-09-19 晚：vc15 包与服务器包（同一份代码 `ac0bda0`）
+
+- **编辑器里导出报「Release Username and/or Password is invalid」，原因不是账号密码**：
+  - 导出窗口的 Release 签名文件指着 `桌面\key\`，这台电脑上的 Java 打不开带中文的路径；
+  - 用不带密码的 `keytool -list` 复现：中文路径报 `Bad pathname`，英文路径 `C:\Users\stech\GloryKey\glory-release.keystore` 能打开，两份文件逐字节相同。
+  - **修法：导出窗口里把 Release 改指英文路径那份。**
+- `桌面\apk\GLory-p31-vc15-20260919.apk`：versionCode 15，正式签名 `3d8c76f4…`，`apk_identity.py inspect` 通过（726 项、0 失败，代码干净），SHA-256 `a7ccb3a94ade874f…`。
+- `glory_server_p31.zip`：冷启动 OK，SHA-256 `34D0991E1AA473DE…`。
+  - 比线上那份多了同事的「血契流血不致死」修复（`BattleSimTreasures` / `StatusEffectService`）；
+  - 对局战斗是服务器算的，**不部署的话这个修复不生效**；
+  - 协议仍是 31，新包、旧包和新旧服务器都互相兼容。
+
+## 2026-09-20：战斗音效（10 条）+ 战场音效归属放宽「自身 + 友军」+ bug 两条
+
+落 10 条新音频到 `assets/audio/`（原素材 `音乐/0920/`）：`prep/` 三条是**替换**
+（`star4_default` / `star4_god_skill` / `star4_archangel`），`battle/` 七条是**新增**
+（`star4_scythe_skill` 偷袭者 / `star4_priestess_skill` 大祭司 / `star4_dark_casters_skill` 暗影法师·恐惧魔·魅魔三合一 /
+`star4_arbiter_skill` 裁决者 / `star4_parasite_skill` 寄生灵 / `star4_bomb_skill` 自爆灵 /
+`star4_death_servant_skill` 死侍），音效门禁 cue 数 46→53。
+★ 有条陷阱：旧 `star4_god_skill.mp3` 的**字节**被搬去当了新的 `star4_arbiter_skill.mp3`、旧
+`star4_archangel.mp3` 的字节搬去当了新的 `star4_priestess_skill.mp3` —— 别用「某个旧文件变了」判断素材丢失。
+行为改动三项：① 战场四星技音归属由**仅自身**放宽到**自身 + 友军**（新增判据
+`BattleVfx._is_own_or_ally_unit()`，同 `GameConstants.team_of_slot`；单人局自动回落旧判据）；
+② 寄生灵 / 自爆灵 / 死侍三家技能在模拟器里**不产生 `skill_ready` 上升沿**，改为各挂真事件
+（寄生灵＝分身出现那一刻，★ 分身是死者的 `duplicate(true)`、`id`/`owner_slot`/`star` 全是死者的，
+必须按 `team` 回头找**本体**过门控；自爆灵＝死亡爆炸；死侍＝开局绑定到人才响，没绑到不响）；
+③ 人王相关**刻意不跟着放宽**（用户明确反悔；且 `king_growth_stacks` 不在棋盘 payload 里）。
+bug 文档第 1 条：设置页里切成英文必须**当场**变英文 —— 根因不是没人听信号，而是
+`_build()` 里 `text = tr("settings_x")` 拿到的**是已翻译文本、键名丢了**，Godot 自动翻译再也查不回去；
+改为 `locale_changed` 时**整体 `_build()` 重建**（且重建前先 `remove_child()` 再 `queue_free()`，
+否则同帧新旧内容并存）。新增门禁 `tools/settings_locale_live_check`（4 项），修复前 FAIL（残留 16 条中文）。
+bug 文档第 2 条：哀鸣共鸣文案 10%→15% —— 数据 / 代码 / 文本**本来就都是 15%**，只有**卡图 PNG 是旧的**
+（卡面文字烘焙在图里，同 9.13「打断锁链」），改用 PIL 从同款卡图取同字体「5」字形补图，中英两版各一张。
+详见[9.20 战斗音效批次与 bug 修复记录](docs/9.20战斗音效与bug修复记录.md)。
+验证：14 条门禁 PASS（`audio_sfx_check` 177 项、新门禁 4 项、行为探针 59 项全过）；
+4 条红（`dynamic_call` / `asset_manifest` / `procedural_ui_ratchet` / `bootstrap`）全部是既存红且读数
+未被本批推动（`dynamic_call` 的 `unresolved` 仍 265、`asset_manifest` 的 21 条无一条指向本批新文件）；
+另有 `asset_delivery` 从 11 → 13，**多出的 2 条确实来自本批**（补过字的哀鸣共鸣卡图被 PIL 重编码、
+文件小了约 22%，但尺寸/模式/像素逐点核对只差补上去的那个「5」，是无损重压，重打包即消）；
+变异测试把设置页改回旧写法，新门禁正确变红后逐字节还原。
+未进行安卓 / 真机听感验收，未重新导出 EXE / APK。
+
+**同日补充（第三批 · 用户真机实测反馈）**：寄生灵的分身音改成「**首次活着出现**的那一帧响一次」
+—— 原来按「新 uid（`prev.is_empty()`）」判，而回放 roster 会把战斗中段才出生的分身**提前**（`alive=false`）
+塞进 `_state`，于是「进演示第一帧」被误判成召唤时刻（**开局就响**）；反向在真 3v3 里它又会**整场不响**。
+死侍开局绑定音**不是「没绑人」**、是演出端漏播：`_vfx_seeded` / `_vfx_prev_units` 是**实例字段、一局只播种一次**
+（officetest 的编辑态预览先占掉了播种帧），于是播种帧专用的 `_play_opening_unit_vfx()` 整场不再跑；
+新增 `BattleScreen._reseat_vfx_diff_for_new_battle()`，在 `_start_replay()` / `_clear_unit_visuals()` 两个入口重播种
+（并把 `_parasite_spawn_announced` / `_vfx_visual_event_index` 一并归零）。
+新增行为探针 `work/_qa_920/probe_parasite_bind_920`（20 项全过，走真 `_apply_replay_frame` 与 officetest 编辑→演示），
+变异 5 条全红且逐字节还原。
+★ 事故与教训：变异体把函数体替换成**空串**会让 GDScript **解析期报错 → Godot 静默挂死**（不打印、不退出），
+表现为「跑很久」并被 SIGTERM，而脚本 `finally` 没执行 → **工作树一度停在变异态**；
+已固化成三条硬约束（变异体用 `pass`、探针加 180 s 硬超时、动盘前落 `<file>.mutbak` 且启动自愈 + 信号还原）。
+详见[9.20 记录第十节](docs/9.20战斗音效与bug修复记录.md)。
+
+## 2026-09-21：自定义房间面板改版（方案 C「雾林夜幕」）
+
+按用户提供的设计稿（`桌面/自定义功能界面布局/方案C_设计规范.md` + 三张对照图）把主菜单「自定义房间」弹出
+面板从**羊皮纸浅色卡片**改成**深色半透明 + 金色描边**的夜色风：深墨绿 `#0D1410`@88% 面板底、`#C9A227`
+金描边、主按钮实心金 `#E5C558`。八个文案（自定义房间 / 创建房间 / 输入房间 ID / 加入房间 / 可加入房间 /
+刷新 / 目前没有可加入房间 / 关闭）与四个功能按钮一个不缺、名字不改。改动落在两处：
+`ui/theme/GloryTokens.gd` 新增「雾林夜幕」配色 token 组（`MIST_*`），`scenes/menu/MainMenu.gd` 重写
+`_build_room_panel()` / `show_room_list()` 并把 `_dialog_button()` 升级出 `variant` 参数。
+★ 两个关键约束决定了实现：① `procedural_ui_ratchet` 只许降不许升，`MainMenu.gd` 基线 `4 Button + 1 StyleBox`
+—— 所以本批**一个 StyleBoxFlat.new() 都不新增**，全部走 `Tokens.flat_box(...)`，按钮仍复用原来那 1 个
+`Button.new()`；② 页面不得内联颜色，金/墨绿全部提升为 token。`_dialog_button()` 的默认 `menu` 变体一字未动
+（它还供给主菜单自身的按钮），房间面板配色全走新变体
+`room_primary / room_second / room_ghost_gold / room_ghost / room_row / room_row_full`。
+布局改为「标题行（+ 刷新）→ 金色 1px 分隔线 → 左栏 300（创建 → 输入框 → 加入 → 状态）/ 右栏 fill
+（标题 → 列表 / 空态）→ 底部关闭」，面板 800×540、内边距 32、区块间距 22、列间距 28、行高 46。
+列表三态（常态 / 悬停金描边 / 满员置灰禁用）与空态（44×44 放大镜图标 + 文案，图标用两个 Panel 拼出、
+不新增资源）都做了；空态与 `ScrollContainer` 用两个兄弟节点**互斥显隐**（ScrollContainer 没法「填满且居中」）。
+方案 C §五三个坑按稿处理：金色渐变退化为纯色、毛玻璃用「半透明深色 + 柔和阴影」近似（稿子 2× 的
+y=20 / size=60 折半后再收到 `size=24`）、**不引入中文字体**（项目零中文字体，靠 26 号字号 + 金描边拉层级）。
+★ 一处刻意偏离：面板描边用 2px 而非稿子的 1px —— `_layout_scale ≈ 0.77` 下 1px 会被亚像素糊掉，2px 才稳定可辨。
+验证：新增真机渲染采集工具 `tools/custom_room_ui_capture.gd`（`--headless` 走 dummy 渲染会出空图，
+故不加 `--headless`，落 8 张「中/英 × 空态 / 列表 / 悬停 / 状态」PNG 到 `reports/custom_room/`）；
+`responsive_layout_check` **PASS 114**、`modal_lifecycle_check` **PASS 433**（后者断言面板体内无
+`ColorRect.new()`、返回 `center`、走 `ModalStack`）。两条既存红未被本批推动 —— `procedural_ui_ratchet`
+FAIL 2 与 `asset_manifest` FAIL 21 均与 9.20 基线**逐条一致**，本批对 ratchet 的两个计数贡献都是 0
+（`MainMenu.gd` 基线仍 `4 / 1`）。像素核对：从设计稿 2× 截图反推几何、归一化到 1× 生产输出后逐项对齐
+±2px，面板比例 1.482 ✓、主按钮中心色 `#E5C558` 精确、满员行字 ≈`#8F8468`、悬停金描边出现在预期 Y 位置。
+未重导 EXE / APK（无新资源，`.import` 与 `project.godot` 未变）。详见
+[9.21 自定义房间面板改版记录](docs/9.21自定义房间面板美化记录.md)。

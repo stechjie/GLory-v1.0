@@ -12,6 +12,8 @@ signal public_token_generate_requested
 signal public_token_resume_requested(token_id: String)
 signal team_offline_requested   # 不联网，本地单人 vs AI 自测
 signal team_reconnect_requested # 手动重连回上一场对局
+signal casual_requested         # 「休闲」按钮：进匹配队列（协议 32，docs/排位系统设计.md 第五节）
+signal ranked_requested         # 「排位」按钮：进排位队列。窗口 / 信誉分的闸在服务器那边
 signal prep_requested           # 「备战」按钮：进入备战界面（暂时只有宠物系统）
 signal codex_requested          # 「图鉴」按钮：进入图鉴界面
 signal profile_requested        # 左上角名牌：进入玩家资料界面
@@ -35,6 +37,33 @@ const REF_SIZE := Vector2(1672.0, 941.0)
 # 低于 pvp_warning 60 < 战斗加载 80 < 重连 90 < DialogService 100。
 const ROOM_MODAL_ID := "main_menu_room_panel"
 const ROOM_MODAL_PRIORITY := 40
+
+# ── 自定义房间面板：方案C「雾林夜幕」尺寸表 ──────────────────────────
+# 设计稿与截图在 桌面\自定义功能界面布局\（方案C_设计规范.md + c_empty/c_rooms/c_spec.png）。
+# 这些数字是从**截图逐像素量出来的**，不是照抄稿子里的意图描述 —— 稿子写「左栏 300、
+# 按钮高 52、行高 46、行距 8」，实测面板 800×540、内边距 32、标题行 46、主区块间距 22、
+# 分隔线 1px、左右栏间距 28、左栏 300、按钮 52、输入框 46、行 46 + 行距 8（三行文字实测
+# 中心距 54 = 46 + 8），全部吻合。唯一的偏差点是面板描边：稿子里是 1px，这里用 2px ——
+# 面板在 1672×941 画布上按 _layout_scale≈0.77 输出，1px 逻辑描边落地不到 1 个设备像素，
+# 金色描边会糊掉；2px 才稳。
+const ROOM_PANEL_SIZE := Vector2(800, 540)
+const ROOM_PAD := 32
+const ROOM_GAP_SECTION := 22
+const ROOM_GAP_COLUMN := 28
+const ROOM_GAP_LEFT_COLUMN := 18
+const ROOM_COLUMN_LEFT := 300
+const ROOM_TITLE_ROW_H := 46
+const ROOM_BUTTON_H := 52
+const ROOM_INPUT_H := 46
+const ROOM_ROW_H := 46
+const ROOM_ROW_GAP := 8
+const ROOM_RADIUS := 8
+const ROOM_RADIUS_PANEL := 16
+const ROOM_FONT_TITLE := 26
+const ROOM_FONT_HEAD := 18
+const ROOM_FONT_BODY := 15
+const ROOM_FONT_HINT := 13
+const ROOM_ICON_SIZE := 44
 const TEX_BACKGROUND := preload("res://assets/ui/main_menu_live/background.png")
 const TEX_PROFILE_PANEL := preload("res://assets/ui/main_menu_live/profile_panel.png")
 const TEX_PROFILE_AVATAR := preload("res://assets/ui/main_menu_live/profile_avatar.png")
@@ -93,6 +122,12 @@ var _net_status: Label
 var _room_list_box: VBoxContainer
 var _room_id_edit: LineEdit
 var _room_status: Label
+# 方案C：空列表态与房间列表**互斥显示**。设计稿里空态是一个铺满列表区的大圆角块
+# （实测 x=右栏整宽、y=列表区上下沿），塞在 ScrollContainer 里做不到「铺满」——
+# ScrollContainer 的滚动轴只按子节点 min size 给高度。所以两者并列，谁可见由
+# show_room_list() 决定。
+var _room_scroll: ScrollContainer
+var _room_empty_box: Control
 var _token_id_edit: LineEdit
 var _token_label: Label
 var _placed: Array[Dictionary] = []
@@ -266,7 +301,7 @@ func _build() -> void:
 	_add_label(_menu_text("自定义", "Custom"), Vector2(1010, 809), Vector2(220, 36), 26)
 	_add_label(_menu_text("图鉴", "Gallery"), Vector2(1250, 807), Vector2(220, 36), 26)
 	_add_hit(Vector2(200, 690), Vector2(220, 190), _emit_prep)
-	_add_hit(Vector2(440, 690), Vector2(220, 190), _show_coming_soon)
+	_add_hit(Vector2(440, 690), Vector2(220, 190), _on_casual)
 	_add_hit(Vector2(680, 650), Vector2(310, 260), _on_ranked)
 	_add_hit(Vector2(1010, 690), Vector2(220, 190), _show_room_overlay)
 	_add_hit(Vector2(1250, 690), Vector2(220, 190), _emit_codex)
@@ -330,78 +365,220 @@ func _build_room_panel() -> Control:
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(920, 560)
-	var style := Tokens.flat_box(Tokens.PARCHMENT, Tokens.PARCHMENT_EDGE, 4, 24)
-	panel.add_theme_stylebox_override("panel", style)
+	panel.custom_minimum_size = ROOM_PANEL_SIZE
+	panel.add_theme_stylebox_override("panel", _room_panel_box())
 	center.add_child(panel)
 
-	var root := HBoxContainer.new()
-	root.add_theme_constant_override("separation", 28)
-	panel.add_child(root)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", ROOM_GAP_SECTION)
+	panel.add_child(column)
+
+	column.add_child(_room_title_row())
+	column.add_child(_room_divider())
+
+	var body := HBoxContainer.new()
+	body.add_theme_constant_override("separation", ROOM_GAP_COLUMN)
+	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	column.add_child(body)
 
 	var left := VBoxContainer.new()
-	left.custom_minimum_size = Vector2(330, 0)
-	left.add_theme_constant_override("separation", 12)
-	root.add_child(left)
+	left.custom_minimum_size = Vector2(ROOM_COLUMN_LEFT, 0)
+	left.add_theme_constant_override("separation", ROOM_GAP_LEFT_COLUMN)
+	body.add_child(left)
 
 	# 9.14 反馈：Token ID / 输入 Token ID / 生成 / 恢复 四个控件在实测里都没有作用，
 	# 从这里移除（网络侧动作与 Main 的信号处理保持不动，tools/main_team_*_action_check
-	# 直接调 Main 的处理函数，不经过这些按钮）。移除后左栏首项就是「创建房间」，
-	# 与右栏第一个房间行（表头下一行）自然对齐 —— 这正是反馈要求的位置。
-	var title := Label.new()
-	title.text = _menu_text("自定义房间", "Custom Room")
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 30)
-	title.add_theme_color_override("font_color", Color(0.45, 0.27, 0.08))
-	# 与右栏表头（24 号字的标题 + 42 高的刷新按钮 = 一行 42）等高，保证下一项
-	# 「创建房间」与第一个房间行处在同一水平线上。
-	title.custom_minimum_size = Vector2(0, 42)
-	left.add_child(title)
-
-	left.add_child(_dialog_button(_menu_text("创建房间", "Create Room"), _emit_create_room))
+	# 直接调 Main 的处理函数，不经过这些按钮）。移除后左栏首项就是「创建房间」。
+	left.add_child(_dialog_button(_menu_text("创建房间", "Create Room"), _emit_create_room, "room_primary"))
 
 	_room_id_edit = LineEdit.new()
 	_room_id_edit.placeholder_text = _menu_text("输入房间 ID", "Enter Room ID")
+	_room_id_edit.custom_minimum_size = Vector2(0, ROOM_INPUT_H)
+	_room_id_edit.add_theme_stylebox_override("normal", _room_input_box(false))
+	_room_id_edit.add_theme_stylebox_override("focus", _room_input_box(true))
+	_room_id_edit.add_theme_color_override("font_color", Tokens.MIST_TEXT)
+	_room_id_edit.add_theme_color_override("font_placeholder_color", Tokens.MIST_PLACEHOLDER)
+	_room_id_edit.add_theme_color_override("caret_color", Tokens.MIST_GOLD_BRIGHT)
+	_room_id_edit.add_theme_font_size_override("font_size", ROOM_FONT_BODY)
 	left.add_child(_room_id_edit)
-	left.add_child(_dialog_button(_menu_text("加入房间", "Join Room"), _emit_join_room))
+
+	left.add_child(_dialog_button(_menu_text("加入房间", "Join Room"), _emit_join_room, "room_second"))
 
 	_room_status = Label.new()
 	_room_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_room_status.custom_minimum_size = Vector2(300, 90)
-	_room_status.add_theme_color_override("font_color", Color(0.55, 0.22, 0.12))
+	_room_status.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_room_status.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	_room_status.add_theme_color_override("font_color", Tokens.MIST_ACCENT)
+	_room_status.add_theme_font_size_override("font_size", ROOM_FONT_HINT)
 	left.add_child(_room_status)
 
-	# 「关闭」原来靠 Token 那几项把它顶到面板底部；控件移除后如果直接排在状态行后面，
-	# 它会跟着上移。加一个可伸缩的空白把「关闭」重新压在底部，保持原来的位置观感。
-	var close_spacer := Control.new()
-	close_spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	close_spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	left.add_child(close_spacer)
-
-	left.add_child(_dialog_button(_menu_text("关闭", "Close"), _close_room_panel))
-
 	var right := VBoxContainer.new()
-	right.custom_minimum_size = Vector2(500, 0)
-	right.add_theme_constant_override("separation", 10)
-	root.add_child(right)
+	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right.add_theme_constant_override("separation", 16)
+	body.add_child(right)
 
-	var list_head := HBoxContainer.new()
-	right.add_child(list_head)
 	var list_title := Label.new()
 	list_title.text = _menu_text("可加入房间", "Open Rooms")
-	list_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	list_title.add_theme_font_size_override("font_size", 24)
-	list_title.add_theme_color_override("font_color", Color(0.45, 0.27, 0.08))
-	list_head.add_child(list_title)
-	list_head.add_child(_dialog_button(_menu_text("刷新", "Refresh"), _emit_room_list))
+	list_title.add_theme_font_size_override("font_size", ROOM_FONT_HEAD)
+	list_title.add_theme_color_override("font_color", Tokens.MIST_TEXT)
+	right.add_child(list_title)
 
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	right.add_child(scroll)
+	_room_scroll = ScrollContainer.new()
+	_room_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_room_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	right.add_child(_room_scroll)
 	_room_list_box = VBoxContainer.new()
-	_room_list_box.add_theme_constant_override("separation", 8)
-	scroll.add_child(_room_list_box)
+	_room_list_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_room_list_box.add_theme_constant_override("separation", ROOM_ROW_GAP)
+	_room_scroll.add_child(_room_list_box)
+
+	_room_empty_box = _room_empty_state()
+	_room_empty_box.visible = false
+	right.add_child(_room_empty_box)
+
+	column.add_child(_room_footer_row())
 	return center
+
+# --- 方案C 的样式与零件 ---------------------------------------------------
+#
+# 刻意**不**碰 _dialog_button 的默认配色：那个工厂还供给主菜单自己的按钮
+# （_add_text_button），改成深色会把羊皮纸菜单一起带进去。房间面板走 variant。
+#
+# 所有 StyleBox 都来自 GloryTokens.flat_box()，本文件不新增 StyleBoxFlat.new()
+# —— procedural_ui_ratchet 盯的就是这个计数（当前 4 Button + 1 StyleBox，只许降不许升）。
+
+func _room_panel_box() -> StyleBoxFlat:
+	var box := Tokens.flat_box(Tokens.MIST_PANEL, Tokens.MIST_GOLD, 2, ROOM_RADIUS_PANEL)
+	box.set_content_margin_all(ROOM_PAD)
+	# 设计稿的毛玻璃（BACKGROUND_BLUR）Godot 4 没有内置（方案C §五.2），用大范围柔和
+	# 阴影近似。稿子写 y=20 / size=60，那是 2× 设计稿像素，折半成 y=10 / size=30；
+	# 这里再收到 24，避免大面积阴影在低端机上采样过重。
+	box.shadow_color = Color(0, 0, 0, 0.6)
+	box.shadow_size = 24
+	box.shadow_offset = Vector2(0, 10)
+	return box
+
+func _room_divider() -> Control:
+	# 1px 金 @40% 细分隔线。用 Panel + 扁 StyleBox 画，不用 ColorRect ——
+	# modal_lifecycle_check 断言 _build_room_panel 的函数体里不得出现 ColorRect.new()
+	# （那是「面板自建 dim」的痕迹，会和 ModalStack 的 backdrop 叠成两层黑）。
+	var line := Panel.new()
+	line.custom_minimum_size = Vector2(0, 1)
+	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	line.add_theme_stylebox_override("panel",
+		Tokens.flat_box(Tokens.MIST_LINE_GOLD, Tokens.MIST_NONE, 0, 0))
+	return line
+
+func _room_title_row() -> Control:
+	var row := HBoxContainer.new()
+	row.custom_minimum_size = Vector2(0, ROOM_TITLE_ROW_H)
+	row.add_theme_constant_override("separation", 16)
+	var title := Label.new()
+	title.text = _menu_text("自定义房间", "Custom Room")
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", ROOM_FONT_TITLE)
+	title.add_theme_color_override("font_color", Tokens.MIST_TEXT)
+	row.add_child(title)
+	row.add_child(_dialog_button(_menu_text("刷新", "Refresh"), _emit_room_list, "room_ghost_gold"))
+	return row
+
+func _room_footer_row() -> Control:
+	var row := HBoxContainer.new()
+	row.custom_minimum_size = Vector2(0, ROOM_BUTTON_H)
+	row.add_child(_dialog_button(_menu_text("关闭", "Close"), _close_room_panel, "room_ghost"))
+	return row
+
+func _room_input_box(focused: bool) -> StyleBoxFlat:
+	var edge := Tokens.MIST_GOLD if focused else Tokens.MIST_LINE_GOLD
+	var box := Tokens.flat_box(Tokens.MIST_INPUT_BG, edge, 2, ROOM_RADIUS)
+	box.set_content_margin_all(14)
+	return box
+
+func _room_label(text: String, size_px: int, color: Color) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.add_theme_font_size_override("font_size", size_px)
+	label.add_theme_color_override("font_color", color)
+	return label
+
+# 空列表态：铺满列表区的圆角块 + 居中「图标 + 文案」。
+# 图标**不引入新素材** —— 稿子 §五.3 明确要求不要为这套 UI 临时加资源（会牵动
+# --import 与已导出 EXE/APK 重导）。这里用「圆角圆环 + 45° 短条」拼一个放大镜：
+# StyleBoxFlat 的圆角给到半径值就是正圆，所以 26×26 + radius 13 + 2px 描边 = 圆环。
+func _room_empty_state() -> Control:
+	var box := PanelContainer.new()
+	box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.add_theme_stylebox_override("panel",
+		Tokens.flat_box(Tokens.MIST_EMPTY_BG, Tokens.MIST_NONE, 0, 12))
+	var column := VBoxContainer.new()
+	column.alignment = BoxContainer.ALIGNMENT_CENTER
+	column.add_theme_constant_override("separation", 12)
+	box.add_child(column)
+	column.add_child(_room_empty_icon())
+	var hint := _room_label(_menu_text("目前没有可加入房间", "No open rooms"),
+		ROOM_FONT_BODY, Tokens.MIST_TEXT_MUTED)
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	column.add_child(hint)
+	return box
+
+func _room_empty_icon() -> Control:
+	var wrap := Control.new()
+	wrap.custom_minimum_size = Vector2(ROOM_ICON_SIZE, ROOM_ICON_SIZE)
+	wrap.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	wrap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var ring := Panel.new()
+	ring.position = Vector2(6, 4)
+	ring.size = Vector2(26, 26)
+	ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ring.add_theme_stylebox_override("panel",
+		Tokens.flat_box(Tokens.MIST_NONE, Tokens.MIST_TEXT_MUTED, 2, 13))
+	wrap.add_child(ring)
+	var handle := Panel.new()
+	handle.position = Vector2(28, 26)
+	handle.size = Vector2(12, 4)
+	# 绕左端中点转 45°，接在圆环的右下 —— 静止的短横会被读成下划线，不是手柄。
+	handle.pivot_offset = Vector2(1, 2)
+	handle.rotation = deg_to_rad(45)
+	handle.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	handle.add_theme_stylebox_override("panel",
+		Tokens.flat_box(Tokens.MIST_TEXT_MUTED, Tokens.MIST_NONE, 0, 2))
+	wrap.add_child(handle)
+	return wrap
+
+# 房间行。三态（常态 / 悬停 / 满员）在稿子里是「底色透明度 + 描边 + 人数颜色」三处
+# 同时变，所以三处一起给：底色与描边走 stylebox，人数颜色靠 mouse_entered/exited 切。
+# ★ 满员行 `disabled = true`（稿子 §四.5 的建议）：榜单里已经知道满员的房间不该还能点。
+#   服务端的 room_full 仍然守得住，而且「列表发出后才满上」那条路照样会走到
+#   show_room_error("room_full")，不是把反馈路径删掉。
+func _room_row(room_id: int, players: int, max_players: int, full: bool) -> Button:
+	var row := _dialog_button("", func(rid := room_id): team_room_join_requested.emit(rid),
+		"room_row_full" if full else "room_row")
+	row.custom_minimum_size = Vector2(0, ROOM_ROW_H)
+	var line := HBoxContainer.new()
+	line.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	line.offset_left = 16
+	line.offset_right = -16
+	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(line)
+	var name_label := _room_label(_menu_text("房间 %d", "Room %d") % room_id,
+		ROOM_FONT_BODY, Tokens.MIST_TEXT_MUTED if full else Tokens.MIST_ROW_NAME)
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	line.add_child(name_label)
+	var count_label := _room_label("%d/%d" % [players, max_players],
+		ROOM_FONT_BODY, Tokens.MIST_TEXT_MUTED)
+	line.add_child(count_label)
+	if full:
+		row.disabled = true
+		return row
+	count_label.add_theme_color_override("font_color", Tokens.MIST_TEXT_MUTED)
+	row.mouse_entered.connect(func() -> void:
+		count_label.add_theme_color_override("font_color", Tokens.MIST_GOLD_BRIGHT))
+	row.mouse_exited.connect(func() -> void:
+		count_label.add_theme_color_override("font_color", Tokens.MIST_TEXT_MUTED))
+	return row
 
 func show_connecting() -> void:
 	if _net_status == null:
@@ -429,22 +606,24 @@ func show_room_list(rooms: Array) -> void:
 	if _room_list_box == null:
 		return
 	for child in _room_list_box.get_children():
+		# 只 queue_free 的话旧行要到帧末才真离树，同一帧里新旧两套会并存 ——
+		# 先 remove_child 摘出去，刷新的当帧列表就只剩新内容（同 SettingsScreen._build）。
+		_room_list_box.remove_child(child)
 		child.queue_free()
-	if rooms.is_empty():
-		var empty := Label.new()
-		empty.text = _menu_text("目前没有可加入房间", "No open rooms")
-		empty.add_theme_color_override("font_color", Color(0.45, 0.27, 0.08))
-		_room_list_box.add_child(empty)
+	var empty := rooms.is_empty()
+	if _room_scroll != null:
+		_room_scroll.visible = not empty
+	if _room_empty_box != null:
+		_room_empty_box.visible = empty
+	if empty:
 		return
 	for entry in rooms:
 		var d := entry as Dictionary
 		var id := int(d.get("id", 0))
 		var players := int(d.get("players", 0))
 		var max_players := int(d.get("max", 6))
-		var text := _menu_text("房间 %d    %d/%d", "Room %d    %d/%d") % [id, players, max_players]
-		var btn := _dialog_button(text, func(room_id := id): team_room_join_requested.emit(room_id))
-		btn.custom_minimum_size = Vector2(460, 46)
-		_room_list_box.add_child(btn)
+		var full := max_players > 0 and players >= max_players
+		_room_list_box.add_child(_room_row(id, players, max_players, full))
 
 func show_room_error(reason: String) -> void:
 	if _room_status == null:
@@ -494,6 +673,8 @@ func _show_room_overlay() -> void:
 		# content 已被 push 收走，不能再 free，只清引用。
 		_room_status = null
 		_room_list_box = null
+		_room_scroll = null
+		_room_empty_box = null
 		return
 	if _room_status != null:
 		_room_status.text = ""
@@ -532,9 +713,22 @@ func _emit_offline() -> void:
 func _emit_reconnect() -> void:
 	team_reconnect_requested.emit()
 
+# 「休闲」：进匹配队列（协议 32）。
+#
+# 先过 allow_new_match —— 上一局还没打完时不该让他去排新的队，
+# 同「排位」和「开始游戏」那两条。
+func _on_casual() -> void:
+	if await NetworkService.allow_new_match():
+		casual_requested.emit()
+
+# 「排位」：进排位队列（第 5 步起开放）。
+#
+# ⚠️ **窗口外 / 信誉分不够 / 被禁赛时，拒绝是服务器给的**，不是这里判的 ——
+# 客户端改系统时区就能绕过本地判断，而排位是发分的（docs/排位系统设计.md 第二节）。
+# 这里照常进队列面板，面板把服务器给的原因显示出来。
 func _on_ranked() -> void:
 	if await NetworkService.allow_new_match():
-		_show_coming_soon()
+		ranked_requested.emit()
 
 func _refresh_saved_match() -> void:
 	while is_inside_tree() and not SaveManager.load_resumable_reconnect().is_empty():
@@ -862,20 +1056,106 @@ func _add_text_button(text: String, pos: Vector2, size: Vector2, cb: Callable) -
 	_track(btn, pos, size)
 	return btn
 
-func _dialog_button(text: String, cb: Callable) -> Button:
+# 主菜单的通用按钮工厂。本文件只有两处 Button.new()（另一处是 _add_hit 的隐形热区），
+# 所以房间面板那四种形态也必须从这里出来 —— 各自 new 一个会让
+# procedural_ui_ratchet 的单文件计数上涨，棘轮立刻转红。
+#
+# variant（默认 "menu" = 原羊皮纸外观，主菜单自己的按钮走这条，观感不变）：
+#   "room_primary"    实心金，主操作（创建房间）
+#   "room_second"     透明底 + 金描边，次操作（加入房间）
+#   "room_ghost_gold" 幽灵，金 1px 描边（刷新）
+#   "room_ghost"      幽灵，低对比描边（关闭）
+#   "room_row"        房间列表行，常态
+#   "room_row_full"   房间列表行，满员（禁用）
+func _dialog_button(text: String, cb: Callable, variant: String = "menu") -> Button:
 	var btn := Button.new()
 	btn.text = text
 	btn.focus_mode = Control.FOCUS_NONE
 	btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	btn.custom_minimum_size = Vector2(150, 42)
-	var style := Tokens.flat_box(Tokens.PARCHMENT_BUTTON, Tokens.PARCHMENT_EDGE, 2, 18)
-	btn.add_theme_stylebox_override("normal", style)
-	btn.add_theme_stylebox_override("hover", style)
-	btn.add_theme_stylebox_override("pressed", style)
-	btn.add_theme_color_override("font_color", Color(0.45, 0.27, 0.08))
-	btn.add_theme_font_size_override("font_size", 20)
 	btn.pressed.connect(cb)
+	match variant:
+		"room_primary":
+			_style_room_button(btn, Tokens.MIST_GOLD_BRIGHT, Tokens.MIST_GOLD_BRIGHT,
+				Tokens.MIST_ON_GOLD, ROOM_BUTTON_H, Tokens.MIST_NONE)
+		"room_second":
+			_style_room_button(btn, Tokens.MIST_NONE, Tokens.MIST_GOLD,
+				Tokens.MIST_GOLD_BRIGHT, ROOM_BUTTON_H, Tokens.MIST_HOVER_TINT, 2)
+		"room_ghost_gold":
+			_style_room_button(btn, Tokens.MIST_NONE, Tokens.MIST_GOLD,
+				Tokens.MIST_GOLD_BRIGHT, ROOM_TITLE_ROW_H, Tokens.MIST_GHOST_HOVER, 1)
+		"room_ghost":
+			_style_room_button(btn, Tokens.MIST_NONE, Tokens.MIST_GHOST_EDGE,
+				Tokens.MIST_TEXT_SOFT, ROOM_BUTTON_H, Tokens.MIST_GHOST_HOVER, 1)
+		"room_row":
+			_style_room_row(btn, Tokens.MIST_ROW_IDLE, Tokens.MIST_LINE, Tokens.MIST_ROW_HOVER, Tokens.MIST_GOLD)
+		"room_row_full":
+			_style_room_row(btn, Tokens.MIST_ROW_FULL, Tokens.MIST_LINE, Tokens.MIST_ROW_FULL, Tokens.MIST_LINE)
+		_:
+			btn.custom_minimum_size = Vector2(150, 42)
+			var style := Tokens.flat_box(Tokens.PARCHMENT_BUTTON, Tokens.PARCHMENT_EDGE, 2, 18)
+			btn.add_theme_stylebox_override("normal", style)
+			btn.add_theme_stylebox_override("hover", style)
+			btn.add_theme_stylebox_override("pressed", style)
+			btn.add_theme_color_override("font_color", Color(0.45, 0.27, 0.08))
+			btn.add_theme_font_size_override("font_size", 20)
 	return btn
+
+func _room_button_box(bg: Color, edge: Color, border: int) -> StyleBoxFlat:
+	var box := Tokens.flat_box(bg, edge, border, ROOM_RADIUS)
+	box.content_margin_left = 16
+	box.content_margin_right = 16
+	box.content_margin_top = 8
+	box.content_margin_bottom = 8
+	return box
+
+# 房间面板四种按钮形态的共用上色。三档（normal / hover / pressed）必须**分别**给，
+# 否则按下没有反馈；文字色也要给 hover / pressed / focus 三档，不然鼠标一悬停
+# 文字会掉回主题默认色（深色底上几乎看不见）。
+func _style_room_button(
+	btn: Button, bg: Color, edge: Color, fg: Color,
+	height: int, hover_tint: Color, border: int = 2
+) -> void:
+	btn.custom_minimum_size = Vector2(0, height)
+	var transparent := bg == Tokens.MIST_NONE
+	var normal_box := _room_button_box(bg, edge, border)
+	if not transparent:
+		# 主按钮的「金色外发光」（稿子 §四.1）。只给实心金这一种加 —— 四个按钮都发光
+		# 就等于没有主次。稿子的 size=16 是 2× 设计稿像素，这里取 10。
+		var glow := Tokens.MIST_GOLD
+		glow.a = 0.35
+		normal_box.shadow_color = glow
+		normal_box.shadow_size = 10
+		normal_box.shadow_offset = Vector2(0, 2)
+	btn.add_theme_stylebox_override("normal", normal_box)
+	if transparent:
+		# 透明底：hover 用传入的淡色，pressed 再往描边色压一档，才有「按下去」的手感。
+		btn.add_theme_stylebox_override("hover", _room_button_box(hover_tint, edge, border))
+		btn.add_theme_stylebox_override("pressed",
+			_room_button_box(hover_tint.lerp(edge, 0.35), edge, border))
+	else:
+		btn.add_theme_stylebox_override("hover",
+			_room_button_box(Tokens.MIST_GOLD_HOVER, edge, border))
+		btn.add_theme_stylebox_override("pressed",
+			_room_button_box(Tokens.MIST_GOLD_PRESSED, edge, border))
+	btn.add_theme_stylebox_override("focus",
+		Tokens.flat_box(Tokens.MIST_NONE, Tokens.MIST_GOLD_BRIGHT, 2, ROOM_RADIUS))
+	btn.add_theme_color_override("font_color", fg)
+	btn.add_theme_color_override("font_hover_color", fg)
+	btn.add_theme_color_override("font_pressed_color", fg)
+	btn.add_theme_color_override("font_focus_color", fg)
+	btn.add_theme_font_size_override("font_size", 20)
+
+func _style_room_row(btn: Button, bg: Color, edge: Color, hover_bg: Color, hover_edge: Color) -> void:
+	# 行内文字由 _room_row 用两个 Label 画（房间名与人数颜色不同），所以这里只管
+	# 底板三态。disabled 与 normal 同款：满员行的「不可用」靠更低的底色 + 更灰的
+	# 文字表达，不做额外的灰化处理。
+	var idle := Tokens.flat_box(bg, edge, 1, ROOM_RADIUS)
+	btn.add_theme_stylebox_override("normal", idle)
+	btn.add_theme_stylebox_override("disabled", idle)
+	btn.add_theme_stylebox_override("hover", Tokens.flat_box(hover_bg, hover_edge, 1, ROOM_RADIUS))
+	btn.add_theme_stylebox_override("pressed", Tokens.flat_box(hover_bg, hover_edge, 1, ROOM_RADIUS))
+	btn.add_theme_stylebox_override("focus",
+		Tokens.flat_box(Tokens.MIST_NONE, Tokens.MIST_GOLD, 1, ROOM_RADIUS))
 
 func _track(node: Control, pos: Vector2, size: Vector2, font_size: int = 0, edge: String = "") -> void:
 	_placed.append({"node": node, "pos": pos, "size": size, "font_size": font_size, "edge": edge})

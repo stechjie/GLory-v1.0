@@ -21,6 +21,11 @@ var _persistent_unit_vfx: Dictionary = {}
 # 这里按 sim_uid 记「这一只已经响过」，后续链接/续期不再播。
 # 每局开始由 BattleScreen._start_replay() 清空。
 var _doom_skill_sfx_played: Dictionary = {}
+# 9.20 第三批：寄生灵的分身（uid 形如 `player_parasite_3`）**只在它首次活着出现**
+# 的那一帧报一次。不能只判「新 uid」—— 回放的 roster 会把战斗中段才出生的分身
+# 提前塞进 `_state`（alive=false），于是「进演示的第一帧」会被误判成召唤时刻
+# （用户实测：寄生灵的音在开局就响）。每局开始由 BattleScreen 清空。
+var _parasite_spawn_announced: Dictionary = {}
 # D4: bodies of slice units whose death cue has been enqueued but not played yet.
 # The renderer prunes a dead model on the next refresh, which is faster than the
 # death cue can be reached when the victim was mid-swing (checklist 4.3 keeps the
@@ -78,6 +83,12 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 	for id: String in current.keys():
 		var now: Dictionary = current[id]
 		var prev: Dictionary = _vfx_prev_units.get(id, {})
+		# 9.20：寄生灵的分身在**它首次活着出现**的那一帧报一次。
+		# 放在 `prev.is_empty()` 判断**之外**：回放的 roster 会把分身提前放进
+		# `_state`（alive=false），所以它「真正出生」那一帧的 prev 并不为空，
+		# 按「新 uid」判会漏；反过来按这个判则不会被「进演示第一帧」骗到。
+		if id.contains("_parasite_"):
+			_announce_parasite_clone(id, now)
 		if prev.is_empty():
 			if _vfx_seeded and str(now.get("skill_id", "")) == "twin_revive":
 				_play_boss_procedural("twin_revive", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO))
@@ -167,6 +178,12 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 			_spawn_vfx("DEATH_EXPLOSION", now.get("foot_pos", Vector2.ZERO))
 			if sid_now == "death_poison_explosion":
 				_play_unit_procedural("death_poison_explosion", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO), _unit_target_context(now, now))
+				# 9.20：自爆灵（`undead_bomb`）的四星技能音 —— 用户口径
+				# 「死亡爆炸时」响，所以挂在这条死亡爆炸分支里（它的技能就是这一爆，
+				# 模拟器里没有 skill_ready 边沿可挂）。归属与星级门控在这里判：
+				# `id` 是这只自爆灵自己的 sim uid，此刻它还在 `current` 里，
+				# 所以 `_is_own_or_ally_unit` 的快照一路能查到它的 owner_slot。
+				_maybe_play_bomb_skill_sfx(id)
 
 	for id: String in _vfx_prev_units.keys():
 		if current.has(id):
@@ -403,12 +420,14 @@ func _floor_target_for(source: Dictionary) -> Dictionary:
 func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events: Array[Dictionary], current: Dictionary) -> void:
 	var sid := str(unit.get("skill_id", ""))
 	var uid := str(unit.get("unit_id", ""))
-	# 9.18：四星单位施放专属技能时的音效。**仅自身棋子（不含队友）才响** ——
-	# 用户硬性要求「战斗、特效里的音效只能听见自身棋子造成的」。判定口径复用
-	# `_is_local_owned_unit`（owner_slot == local_slot，队友是不同 slot 所以天然排除），
-	# 再叠加 `star == 4` 防止低星单位的普攻上升沿误触发。
+	# 9.18：四星单位施放专属技能时的音效。
+	#
+	# ★ 9.20 口径变更：此前是**仅自身棋子（不含队友）**才响，用户要求放宽到
+	#   **自身 + 友军**。判定入口由 `_is_local_owned_unit`（owner_slot == local_slot）
+	#   换成 `_is_own_or_ally_unit`（owner 与 local_slot 同队），再叠加 `star == 4`
+	#   防止低星单位的普攻上升沿误触发。
 	var _sim_uid := str(unit.get("sim_uid", ""))
-	var _owned := _is_local_owned_unit(_sim_uid)
+	var _owned := _is_own_or_ally_unit(_sim_uid)
 	if _owned and _is_star4(_sim_uid):
 		# 9.19：末日守卫（`dark_doom`）的技能只响**一次**——它的 `shared_hp_link`
 		# 是一次性技能，`_skill_shared_hp_link()` 命中 `shared_link_spent` 会直接
@@ -426,7 +445,7 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 		# 9.19 第二批：佣兵专属技能音（星轨猎人 / 泡沫术士 / 圣愈修女）。
 		# **佣兵升不到四星**（`EconomyLedger._use_upgrade_stone` 会拒），所以
 		# 它们不能并进上面那条 `_is_star4` 门 —— 并进去就是一条永远不响的音。
-		# 这里只判「自身棋子」，队友/敌方天然被 `_is_local_owned_unit` 排除。
+		# 9.20 起门控与上面同一口径：自身 + 友军（敌方天然被排除）。
 		var merc_cue := SfxService.merc_skill_cue_for(uid)
 		if not merc_cue.is_empty():
 			SfxService.play(merc_cue)
@@ -721,6 +740,13 @@ func _model_height_of(node:Variant)->float:
 func _play_opening_unit_vfx(current:Dictionary)->void:
 	for id:String in current.keys():
 		var unit:Dictionary=current[id]
+		# 寄生分身如果在这「播种帧」已经活着（播种帧可能落在回放中途 ——
+		# 新实例的头几次 `_refresh_visuals()` 发生在 `_prepare_battle_models()` 的
+		# 分帧等待里，那时回放已经推进过若干帧），补报一次。
+		# 播种帧在下面提前 return，进不到 `_refresh_battle_vfx` 的逐单位循环。
+		if id.contains("_parasite_"):
+			_announce_parasite_clone(id, unit)
+			continue
 		if not bool(unit.get("alive",false)):continue
 		var sid:=str(unit.get("skill_id",""))
 		if sid=="guardian_shield_taunt":
@@ -729,6 +755,12 @@ func _play_opening_unit_vfx(current:Dictionary)->void:
 			var target:=_exact_skill_target(unit,current)
 			if not target.is_empty():
 				_play_unit_procedural(sid,unit.get("world_foot",Vector3.ZERO),target.get("world_foot",Vector3.ZERO),_unit_target_context(unit,target))
+				# 9.20：死侍（`human_death_servant`）「左邻替死」的**绑定音**。
+				# 用户口径：在**开始绑定棋子时**响，**没绑到人就不响** —— 所以挂在
+				# 这条「目标已解析出来」的分支里，而不是无条件播。
+				# 绑定发生在开战首帧之前（`BattleSimulator._apply_opening_unit_skills`），
+				# 而首帧是「播种帧」、正常 diff 被整段跳过，所以只能在这里补。
+				_maybe_play_death_servant_bind_sfx(str(unit.get("id","")))
 		elif sid=="shared_hp_link":
 			# 血契连线在开战首帧就建立（dark_doom 一上来就转化并绑定一个敌人），
 			# 而首帧是"播种帧"、正常 diff 被跳过，所以连线特效要在这里补建，
@@ -905,8 +937,9 @@ func _play_attack_unit_procedural(attack:Dictionary,target:Dictionary,current:Di
 
 # 9.19：「攻击触发型」四星技能音（弓箭手额外伤害 / 牧师治疗 / 极光射手真伤）。
 #
-# 只在**自身棋子**且**四星**时响 —— 与 `_play_skill_cast_vfx` 里那条四星音同一
-# 套门控口径（`_is_local_owned_unit` 天然排除队友：队友是别的 owner_slot）。
+# 只在**自身或友军**且**四星**时响 —— 与 `_play_skill_cast_vfx` 里那条四星音同一
+# 套门控口径（9.20 起由 `_is_own_or_ally_unit` 判定：owner 与 local_slot 同队，
+# 敌方天然排除）。
 # 「这次有没有触发」由调用方保证（已经过了 `_attack_skill_vfx_ready()`），
 # 所以这里不再重复判模。
 #
@@ -918,9 +951,82 @@ func _maybe_play_attack_skill_sfx(attack: Dictionary) -> void:
 	if cue.is_empty():
 		return
 	var sim_uid := str(attack.get("id", ""))
-	if not _is_local_owned_unit(sim_uid) or not _is_star4(sim_uid):
+	if not _is_own_or_ally_unit(sim_uid) or not _is_star4(sim_uid):
 		return
 	SfxService.play(cue)
+
+
+# --- 9.20：三条「非施法型」四星技能音的触发点 --------------------------------
+#
+# 这三家的技能在模拟器里**不产生 `skill_ready` 上升沿**，所以不能走
+# `_play_skill_cast_vfx` 那条统一派发路径，各自挂在自己的真事件上。
+# 触发时刻是用户逐条指定的：
+#   * 寄生灵 → 「召唤敌人分身的时候」；
+#   * 自爆灵 → 「死亡爆炸时」；
+#   * 死侍   → 「开始绑定棋子时（无绑定就不播放）」。
+#
+# 归属与星级门控与施法型完全一致（自身 + 友军，且四星），取值入口也同一个
+# （`star4_cue_for(uid, true)`），只是调用点不同 —— 所以 7 条新 cue 在
+# `audio_sfx_check` 的豁免名单里是同一组。
+
+# 寄生分身的「出生」登记：同一个 uid 只报一次，且必须**真的活着**。
+#
+# 判据从「新 uid」改成「首次 alive」是 9.20 第三批的修正 —— 回放的 roster 会在
+# 第 0 帧就把分身放进 `_state`（alive=false），
+#   * 旧判据：进演示的第一帧 = 「新 uid」→ 开局就响（用户实测）；
+#   * 真实 3v3 路径：播种帧已把分身记进 `prev`（即使它还是死的）→ 等它真的出生时
+#     又不再是「新 uid」→ **一次都不响**。
+# 两个方向都由这一条判据收口。
+func _announce_parasite_clone(uid: String, unit: Dictionary) -> void:
+	if not bool(unit.get("alive", false)) or _parasite_spawn_announced.has(uid):
+		return
+	_parasite_spawn_announced[uid] = true
+	_maybe_play_parasite_skill_sfx(unit)
+
+
+# 寄生灵：击杀敌人后生成寄生分身的那一刻。
+#
+# ★ **不能拿分身自己判归属与星级。** 分身是死者的 `duplicate(true)`
+#   （`_maybe_spawn_parasite_clone`），它的 `id` / `owner_slot` / `star` 全都还是
+#   **死者的**（`id` 甚至是死者的单位 id，不是 `undead_parasite`）—— 只有 `team`
+#   被改写成击杀者那一方。所以这里按「分身所在的那一方」回头找**本体**：
+#   扫 `_state` 里 `team` 相同、`id == "undead_parasite"` 且还活着的棋子。
+#
+# 找不到就什么都不播（宁可少响一声，也不要把它算到别人头上）。
+func _maybe_play_parasite_skill_sfx(clone: Dictionary) -> void:
+	var team := str(clone.get("team", ""))
+	if team.is_empty():
+		return
+	for side in ["player", "enemy"]:
+		for raw in _state.get(side, []):
+			if typeof(raw) != TYPE_DICTIONARY:
+				continue
+			var f: Dictionary = raw
+			if str(f.get("team", "")) != team:
+				continue
+			if str(f.get("id", "")) != "undead_parasite" or not bool(f.get("alive", false)):
+				continue
+			var sim_uid := str(f.get("uid", ""))
+			if not _is_own_or_ally_unit(sim_uid) or not _is_star4(sim_uid):
+				continue
+			SfxService.play(SfxService.star4_cue_for("undead_parasite", true))
+			return
+
+
+# 自爆灵：死亡毒爆那一刻。挂在 `_refresh_battle_vfx` 的死亡分支里，
+# `sim_uid` 就是这只自爆灵自己的 uid。
+func _maybe_play_bomb_skill_sfx(sim_uid: String) -> void:
+	if not _is_own_or_ally_unit(sim_uid) or not _is_star4(sim_uid):
+		return
+	SfxService.play(SfxService.star4_cue_for("undead_bomb", true))
+
+
+# 死侍：绑定生效那一下。调用点已经保证了「绑到了人才走到这里」，
+# 所以这里只做归属与星级门控（星级的判据见 `_is_star4`）。
+func _maybe_play_death_servant_bind_sfx(sim_uid: String) -> void:
+	if not _is_own_or_ally_unit(sim_uid) or not _is_star4(sim_uid):
+		return
+	SfxService.play(SfxService.star4_cue_for("human_death_servant", true))
 
 func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 	var events: Array = state_snapshot.get("visual_events", [])
@@ -940,9 +1046,10 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 			if mother.is_empty():
 				mother=_vfx_unit_by_sim_uid(_vfx_prev_units,str(event.get("source_uid","")))
 			if not mother.is_empty():
-				# 9.18：母灵（undead_mother）四星专属技「死亡执行」音效。仅自身棋子才响。
+				# 9.18：母灵（undead_mother）四星专属技「死亡执行」音效。
+				# 9.20 起门控放宽为「自身 + 友军」（原为仅自身）。
 				var _msim := str(event.get("source_uid", ""))
-				if _is_local_owned_unit(_msim) and _is_star4(_msim):
+				if _is_own_or_ally_unit(_msim) and _is_star4(_msim):
 					SfxService.play(SfxService.star4_cue_for("undead_mother", true))
 				var victim:=_vfx_unit_by_sim_uid(current,str(event.get("target_uid","")))
 				var has_victim:=not victim.is_empty()
@@ -953,6 +1060,15 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 			var source := _vfx_unit_by_sim_uid(current, str(event.get("source_uid", "")))
 			var target := _vfx_unit_by_sim_uid(current, str(event.get("target_uid", "")))
 			var skill_id := str(event.get("skill_id", ""))
+			# 9.21：四星民兵（「概率触发型」技能音）。`attack_interrupt` 是
+			# `randf() < interrupt_chance` 触发的，模拟器只在**真的打断成功**时
+			# 才补这条 unit_skill_proc 事件 —— 所以挂在这里就等于「响了 = 打成了」，
+			# 不需要另外判模。门控与其它四星技能音同口径（自身 + 友军 + 四星）。
+			var proc_cue := SfxService.proc_skill_cue_for(skill_id)
+			if not proc_cue.is_empty():
+				var proc_uid := str(event.get("source_uid", ""))
+				if _is_own_or_ally_unit(proc_uid) and _is_star4(proc_uid):
+					SfxService.play(proc_cue)
 			if not skill_id.is_empty() and not source.is_empty() and not target.is_empty():
 				_play_unit_procedural(skill_id, source.get("world_cast", Vector3.ZERO), target.get("world_hit", target.get("world_foot", Vector3.ZERO)), _unit_target_context(source, target))
 		# D6: hit_number is drawn by the Director's adapter, on its timing. The old
@@ -1243,6 +1359,12 @@ func _cue_unit_snapshot(sim_uid: String) -> Dictionary:
 # 那层虽然有 _seen_event_keys 去重，但它只覆盖 replay 那条路。
 #
 # 按 uid 去重；仅本座位的人王通过下面的归属检查，队友及敌方不播放。
+#
+# ★ 9.20 明确：人王这一类**不参与**「放宽到友军」那次改动（见 `_is_own_or_ally_unit`）。
+#   用户原话是「包括人王升级时的特效表现也能被友军看见」，但在追问后改口：
+#   拿不到队友人王的成长层数，无法判断它是否还该升级 ——「那就改为人王的音效和
+#   特效都不被友军看见」。所以本函数与 `_local_living_human_king` 一律继续用
+#   `_is_local_owned_unit`（仅自身）。
 var _human_king_death_sfx_uids: Dictionary = {}
 
 
@@ -1286,20 +1408,27 @@ func _play_human_king_reward() -> void:
 	if not _human_king_can_grow():
 		return
 	_human_king_reward_played = true
-	# 升级闪光：3D 程序化 GROWTH_AURA（绿色光环 + 上升粒子，就是「成长」那条
-	# 特效）叠一层同 id 的 2D 光环，落在**人王本体**脚下 —— 用户要的是
-	# 「在自身人王身上」，不是队伍中心。归属判定在 `_local_living_human_king()`
-	# 里做掉了，队友/敌方的人王根本走不到这里。
-	_play_unit_procedural("GROWTH_AURA",
-		king.get("world_foot", Vector3.ZERO),
-		king.get("world_head", king.get("world_foot", Vector3.ZERO)),
-		_unit_target_context(king, king))
-	_spawn_vfx("GROWTH_AURA", king.get("foot_pos", Vector2.ZERO))
+	# 升级金光：专用特效 `HUMAN_KING_REWARD`（金色扩散环 + 地面金色光晕 +
+	# 金色迸发 + 上升金粒子），落在**人王本体**脚下 —— 用户要的是「在自身人王
+	# 身上」，不是队伍中心。归属判定在 `_local_living_human_king()` 里做掉了，
+	# 队友 / 敌方的人王根本走不到这里。
+	#
+	# ★ 这里**不再调 `_play_unit_procedural()`**。那是 3D 技能入口，只认
+	#   `BossProceduralVFX3D.UNIT_SKILLS` 与 3D composer 里的技能 id；早先传的是
+	#   2D 特效 id（`GROWTH_AURA`），会一路落到 composer 的默认分支 → **静默无
+	#   表现**，等于白写一行。要加 3D 层的金光，得先在 `BossSkillVFXComposer3D`
+	#   里加一条分支（还没做）。
+	_spawn_vfx("HUMAN_KING_REWARD", king.get("foot_pos", Vector2.ZERO))
 	SfxService.play(SfxService.CUE_HUMAN_KING_REWARD)
 
 
-# 本座位还活着的人王。归属一律走 `_is_local_owned_unit`（owner_slot == local_slot），
-# 队友是别的 slot、敌方更不用说 —— 天然只留自己那只。
+# 本座位还活着的人王。归属一律走 `_is_local_owned_unit`（owner_slot == local_slot）。
+#
+# ★ 9.20：**刻意不用 `_is_own_or_ally_unit`。** 用户先要求「人王升级时的特效
+#   友军也能看见」，追问后改口「人王的音效和特效都不被友军看见」——原因是本地
+#   拿不到队友人王的成长层数（`NetProtocol._minimal_slots` 的棋盘提交载荷里
+#   没有 `king_growth_stacks`），判不出它是否已封顶，宁可不播也不误播。
+#   所以人王这一路（阵亡音 / 奖励音 / 升级金光）全部保持**仅自身**。
 # 用数据表 id（human_king）判定而不是名字：名字会被本地化覆写，id 永远稳定。
 func _local_living_human_king() -> Dictionary:
 	for side in ["player", "enemy"]:
@@ -1353,18 +1482,55 @@ func _human_king_can_grow() -> bool:
 # 而 data/units/race_units.json 里的 id 永远稳定。两条路都查不到就返回 false ——
 # 宁可少响一声，也不要把别人的阵亡音播给人王。
 func _is_local_owned_unit(sim_uid: String) -> bool:
+	var unit := _state_unit_for(sim_uid)
+	if unit.is_empty():
+		return false
+	if NetworkService.team_active or GameState.team_mode:
+		var local_slot := NetworkService.team_local_slot if NetworkService.team_active else 0
+		return local_slot >= 0 and int(unit.get("owner_slot", -1)) == local_slot
+	return str(unit.get("team", "")) == "player" and int(unit.get("owner_slot", -1)) <= 0
+
+
+# sim_uid -> `_state` 里那份原始棋子字典。
+#
+# 两条路都试：`_cue_unit_snapshot` 那份快照最省事，但它按「本帧还在不在」剪枝，
+# 某个时序下可能已经没了；再直接扫 `_state` 的双方单位表兜底。
+#
+# 抽出来是因为 9.20 起有三个判据（自身 / 自身+友军 / 星级）共用同一套查找 ——
+# 原来这段在三处各抄了一遍。
+func _state_unit_for(sim_uid: String) -> Dictionary:
 	var unit: Dictionary = _cue_unit_snapshot(sim_uid)
 	for side in ["player", "enemy"]:
 		for raw in _state.get(side, []):
 			if raw is Dictionary and str(raw.get("uid", "")) == sim_uid:
 				unit = raw
+	return unit
+
+
+# 9.20：归属判据的**放宽版** —— 「自身 + 友军」。
+#
+# 用户口径：战场上的音效此前只能听见**自己**的棋子，现在要能听见**自己和友军**的。
+# 3v3 里队友是**另外两个 owner_slot**（`GameConstants.TEAM_SIDE_SIZE` = 3，
+# 红队 0-2 / 蓝队 3-5），所以判据从 `owner == local_slot` 变成
+# 「owner 与 local_slot 同队」。
+#
+# **单机下的行为不变**：离线单人局里 `team_mode` 为真、local_slot 恒为 0，
+# 而自己那一队只有 0 号位是真人棋盘，1/2 号位是空位或自己加的假想敌 ——
+# 也就是说单机没有「友军」可言，放宽前后等价。
+#
+# ★ 人王相关的三处（阵亡音、战后奖励音、升级金光）**刻意不用本函数**：
+#   用户明确要求人王的音效与特效都保持只给自己看，见 `_local_living_human_king`。
+func _is_own_or_ally_unit(sim_uid: String) -> bool:
+	var unit := _state_unit_for(sim_uid)
 	if unit.is_empty():
 		return false
-	var owner := int(unit.get("owner_slot", -1))
 	if NetworkService.team_active or GameState.team_mode:
 		var local_slot := NetworkService.team_local_slot if NetworkService.team_active else 0
-		return local_slot >= 0 and owner == local_slot
-	return str(unit.get("team", "")) == "player" and owner <= 0
+		var owner := int(unit.get("owner_slot", -1))
+		if local_slot < 0 or owner < 0:
+			return false
+		return GameConstants.team_of_slot(owner) == GameConstants.team_of_slot(local_slot)
+	return _is_local_owned_unit(sim_uid)
 
 
 # 9.18：该 sim_uid 对应单位是否四星。快照不存 star，所以直接扫 `_state` 双方表

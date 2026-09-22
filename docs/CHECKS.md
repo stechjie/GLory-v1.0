@@ -3202,3 +3202,79 @@ root 下节点数 1、两帧后 `loop_player_ready()` 也是 true（那时播放
   断言它会跟着「本机没导入新音频」一起红（09-17 就这样误判过一次，以为是文件没进仓库）。音效的登记与调用点归 `audio_sfx_check`。
 - 这版 FastAPI 把 `include_router` 包成 `_IncludedRouter`，`app.routes` 里看不到子路由的 path。
   要检查某个模块的接口清单，直接看那个模块的 `router.routes`。
+
+## 2026-09-20：战场音效归属放宽 + 三个非施法触发点 + 设置页语言实时切换（新门禁）
+
+- `tools/audio_sfx_check`：`EXPECTED_CUE_COUNT` **46 → 53**（+7 条新 `battle/star4_*_skill`），
+  本机跑 **`checked=177 failures=0`**。
+- **新增门禁 `tools/settings_locale_live_check`（4 项）** —— 它管的是「设置页里切语言是不是**当场**生效」：
+  切到 en 后页面里**残留 CJK 必须为 0**（排除语种名 `中文` / `English` / `✓ …`）、不出现未翻译的
+  `settings_*` / `menu_*` 字面键、切回 zh 中文必须回来。
+  - ★ 它抓的**不是「有没有人听信号」**，而是「翻译键有没有丢」：`_build()` 里 `text = tr("settings_x")`
+    返回的是已翻译文本、**键名丢了**，Godot 自动翻译只拿节点上现存文本查表，就再也查不回去。
+  - 变异：把 `SettingsScreen._on_locale_changed()` 换回 `_refresh_lang_buttons()` → 门禁 **FAIL（残留 16 条中文）**；
+    还原成 `_build()` → PASS。**首跑绿不算数，这条是变异测过的。**
+  - ★ 重建整页时 `_build()` 开头要**先 `remove_child()` 再 `queue_free()`**，只 `queue_free()` 的话旧节点
+    帧末才离树，**同一帧里新旧两套内容并存**。
+- `tools/audio_sfx_check` 的计数只说明「素材在不在、cue 有没有调用点」，**「音在对的时机响没响」由行为探针
+  `work/_qa_920/probe_audio_920` 负责**（`PROBE_DONE checks=59 fail=0`）：真喂 `_state` 再触发，
+  用 `SfxService.play_count(cue)` 数真实次数 —— 自身 / 友军 1 / 友军 2 的 ★4 自爆各响 1 次、敌方与 ★3 不响、
+  寄生灵按**本体**过门控、死侍**绑到人才响**。
+  ★ 两个坑：**换场景必须重新 `set("_state", …)`**；两次触发要间隔 **> 40 ms**（`RETRIGGER_GUARD_MSEC`）。
+- 回归 14 条 PASS（`checked` 分别 177 / 4 / 47 / 16 / 26 / 684 / 63 / 11 / 29 / 39 / 8314 / 32 / 9）。
+  4 条既存红读数**未被本批推动**：`dynamic_call` `unresolved` 仍 **265**（上限 191）；
+  `asset_manifest` **21** 条无一条指向本批新文件；`procedural_ui_ratchet` **2**（`FourStarUpgradePanel.gd`）；
+  `bootstrap` **3**。
+- ★ 教训：**要跑的 `tools/*.tscn` 名字照目录列，别凭印象猜** —— `four_star_values.tscn` 实际叫
+  `four_star_values_check.tscn`，第一版批量脚本里 4 个名字全是错的，白跑一轮。
+- ★ **`tools/asset_delivery_check`：11 → 13，多出的 2 条是本批造成的（如实认领）。** 它是拿工程与
+  `assets.bundle.json` 对尺寸的门禁，`missing=0 extras=0 hash_mismatch=0`、13 条全是 `size_mismatch`。
+  其中 11 条既存（5 条 9.17 BGM + `battlefield_jungle_pve.png.import` + `DarkQueenAnimated.gd` +
+  `打断锁链.png` / `打断锁链_en.png` / `treasure_logos/打断锁链.png` / `treasure_logos/腐蚀毒针.png`）；
+  多出的 2 条是 `assets/ui/treasure_cards/哀鸣共鸣.png` 与 `哀鸣共鸣_en.png` —— 本批为了把文案从 10%
+  改成 15%，用 PIL 补了字形并**整张重存**，zlib 压缩策略变了所以文件小了约 22%。
+  **归属证明**：改前备份的字节数（2526982 / 2535168）与 bundle 期望**一模一样** → 改前是不红的。
+  **不是画质问题**：尺寸 1086×1448、模式 RGBA、像素缓冲 6290112 三项未变，逐像素只差 623（0.0396%）
+  与 443（0.0282%）个点，即那个「5」；PNG 无损。副作用仅原图的 `dpi`/`gamma` 元数据块丢失，
+  Godot 导入器不读、不进 `.ctex`。**重打包（重建 `assets.bundle.json`）后这条红自动消失**，
+  处置方式同 9.17 那 5 条 BGM。
+
+## 2026-09-20（第三批）：寄生灵分身音时机 + 死侍开局绑定音
+
+- 新增**行为探针** `work/_qa_920/probe_parasite_bind_920`（**20 项**，`PROBE_DONE checks=20 fail=0`）。
+  与 `probe_audio_920` 不同，它**不直接调 `_maybe_play_*`**，而是走真路径：
+  `[officetest]` 用 `OfficeTestScreen`（extends BattleScreen）跑**编辑→演示**；
+  `[镜像核对]` 断言生产 `_apply_replay_frame()` 与探针镜像读数**逐键相等**；
+  另加 `[3v3]` / `[late-seed]` / `[dedupe]` 三组，以及结构断言（两处都调了 `_announce_parasite_clone`、
+  旧的「新 uid 判分身」写法已删除）。
+  - ★ 继承链 `BattleUI → BattleArena → BattleRenderer → BattleVfx → BattleResult → BattleScreen`：
+    **BattleVfx 在 BattleScreen 之下** —— 要调 `_load_replay_roster` / `_apply_replay_frame`
+    得实例化 `officetest/OfficeTestScreen.gd`，不是 BattleVfx。
+  - ★ `_apply_replay_frame(i)` 读的是 `_replay`（在 `_start_replay` 里赋值），**不是传进来的参数**。
+- 修的什么：
+  - **寄生灵**：判据从「新 uid（`prev.is_empty()`）」改成「**首次活着出现**」（新 `_announce_parasite_clone`），
+    逐单位循环（放 `prev.is_empty()` **之外**）+ 播种帧两处调用。回放 roster 会把战斗中段才出生的分身
+    **提前**（`alive=false`）塞进 `_state` → 按「新 uid」判会「**开局就响**」；反向在真 3v3 里又会**整场不响**。
+  - **死侍**：开局绑定音漏播的共因是 `_vfx_seeded` / `_vfx_prev_units` **一局只播种一次** ——
+    同一 BattleScreen 实例再开一局时，播种帧专用的 `_play_opening_unit_vfx()` **整场不再跑**
+    （officetest 的编辑态预览先占掉了播种帧）。新增 `BattleScreen._reseat_vfx_diff_for_new_battle()`，
+    在 `_start_replay()` / `_clear_unit_visuals()` 两个入口重播种（同时清 `_vfx_visual_event_index` /
+    `_parasite_spawn_announced`）。
+- **变异 5 条全红 + 逐字节还原**（`work/_qa_920/mutate_parasite_bind_920.py`）：
+  M0 完整回退 **9 红** / M1 判据退回「只判新 uid」**3 红** / M2 重播种变空函数 **2 红** /
+  M3 删播种帧补报 **3 红** / M4 删去重 **1 红（连刷 4 帧响了 4 次）**。
+- ★★ **教训（已固化成硬约束）：变异体是解析期错误时 Godot 会静默挂死。**
+  第一版把 `_reseat_vfx_diff_for_new_battle()` 的函数体替换成**空串** —— GDScript **空函数体是解析期错误**，
+  于是探针**不打印、不退出**（同本仓既定坑「门禁解析期报错 = 静默挂死」），表现为「跑很久」被 SIGTERM；
+  而脚本是「先写变异体 → 跑探针 → `finally` 还原」，硬杀时 `finally` 不执行 → **工作树一度停在变异态**。
+  三条修法：① 变异体不许产生空函数体，改用 **`pass`**；② 探针调用加 **180 s 硬超时**，超时记一行 `TIMEOUT`
+  并按「变红」处理，**基线 TIMEOUT 直接判「无法判定」中止**；③ 动盘前落 **`<file>.mutbak`**，
+  脚本**启动先检查残留并自愈还原**，另注册 `SIGINT` / `SIGTERM` 还原，且启动时把当前 sha256 与 known-good
+  比对，**不一致就拒绝开跑**。
+- 回归：`battle_visual_separation_check` **11** / `battle_presentation_event_check` **8314** /
+  `audio_sfx_check` **177** / `four_star_values_check` **684** / `synergy_activation_sfx_check` **47** /
+  `team_merc_summon_sfx_check` **16** / `battle_hit_victory_check` **39** —— **全 PASS**。
+  既存红 `dynamic_call` `failures=4` / `unresolved` 仍 **265**（上限 191），3 条 `callable_method_missing`
+  指向**未动过**的 `scenes/prep/PrepUI.gd:1077-1079` → **本批零贡献**（数字没动即是证明）。
+- 修复后 sha256：`BattleVfx.gd` `6f5111d6ae94671ab7397999bfc791e1d92e962ac00facff959635aae313987c`、
+  `BattleScreen.gd` `46725af464320da296bbc8b204fe2daba5e2cd8a7b7e0aa764437380c46227f2`。

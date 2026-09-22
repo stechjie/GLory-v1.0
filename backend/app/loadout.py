@@ -50,7 +50,7 @@ import secrets
 import time
 import uuid
 
-from app import avatar_catalog, db, shop
+from app import avatar_catalog, db, ranked, shop
 
 log = logging.getLogger("glory.loadout")
 
@@ -138,6 +138,9 @@ class Loadout:
     avatar_frame: str
     pet: str
     races: list[str]
+    # 段位（0..7）。**-1 = 没打过排位**，不是 0 —— 0 是第一段（黑铁），
+    # 默认成 0 会让所有新玩家在房间里顶着一个没打过的段位。
+    tier: int = -1
 
 
 async def build_loadout(player_id: uuid.UUID) -> Loadout:
@@ -153,6 +156,10 @@ async def build_loadout(player_id: uuid.UUID) -> Loadout:
             " from players where player_id = $1",
             player_id,
         )
+        # 段位（第 6 步）。**打过至少一局排位才带** —— 一局没打就顶着「黑铁」
+        # 在房间里被人看见，是把「还没开始」显示成「打得很差」。
+        rank_row = await conn.fetchrow(
+            "select score, games from player_ranked where player_id = $1", player_id)
     if row is None:
         raise LoadoutRejected("player_not_found", "该身份没有对应的玩家，请重新登录")
     owned = set(await shop.read_entitlements(player_id))
@@ -185,13 +192,30 @@ async def build_loadout(player_id: uuid.UUID) -> Loadout:
         avatar_frame=frame,
         pet=pet,
         races=races,
+        # 换算口径只有一处：ranked.tier_of。客户端和这里都不许再除一遍。
+        tier=ranked.tier_of(int(rank_row["score"]))
+            if rank_row is not None and int(rank_row["games"]) > 0 else -1,
     )
 
 
-def card_payload(loadout: Loadout, now: float | None = None) -> dict:
-    """名片的 JSON 结构。字段名与 BattleCard.gd 一一对应（test_loadout 钉着）。"""
+def card_payload(
+    loadout: Loadout,
+    now: float | None = None,
+    match_uid: str = "",
+    team: int = -1,
+) -> dict:
+    """名片的 JSON 结构。字段名与 BattleCard.gd 一一对应（test_loadout 钉着）。
+
+    `match_uid` / `team` 是**匹配出来的对局**才有的（app/matchmaking.py）。
+    自己建房、加房间号进去的那条路不带它们，字段根本不出现 ——
+    战斗服务器按名取、缺了就走原来的自定义房间那条路。
+
+    🔴 **加字段不升 CARD_VERSION。** 见上面那条常量的注释：战斗服务器按名取、
+    缺了用默认，所以加字段是向后兼容的。升版本会让**旧战斗服务器拒掉所有新名片**
+    —— 那才是真正的破坏性变更，留给「改某个字段的含义」时用。
+    """
     issued = int(time.time() if now is None else now)
-    return {
+    payload = {
         "v": CARD_VERSION,
         "pid": loadout.player_id,
         "code": loadout.friend_code,
@@ -206,6 +230,16 @@ def card_payload(loadout: Loadout, now: float | None = None) -> dict:
         # 被截走的名片不能拿去再占一个座位。
         "jti": secrets.token_hex(12),
     }
+    # 段位：房间里给别人看的（协议 32 起，第 6 步）。没打过排位就不带这个字段，
+    # 战斗服务器按名取、缺了不显示徽章。
+    if loadout.tier >= 0:
+        payload["tier"] = int(loadout.tier)
+    if match_uid and team >= 0:
+        # 会合键：六个人拿着同一个 match 各自连上去，谁先到谁建房，后到的进同一间。
+        # 账号服务器说不出「去几号房」—— 房间是客户端连上去才建的（第 4a 步的发现）。
+        payload["match"] = match_uid
+        payload["team"] = int(team)
+    return payload
 
 
 # --- 签名 ---------------------------------------------------------------------
@@ -254,5 +288,5 @@ def sign(payload: dict) -> str:
     )
 
 
-async def issue_card(player_id: uuid.UUID) -> str:
-    return sign(card_payload(await build_loadout(player_id)))
+async def issue_card(player_id: uuid.UUID, match_uid: str = "", team: int = -1) -> str:
+    return sign(card_payload(await build_loadout(player_id), match_uid=match_uid, team=team))
