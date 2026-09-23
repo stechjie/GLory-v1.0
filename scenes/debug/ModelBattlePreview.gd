@@ -52,6 +52,7 @@ const VFX_FOUR_STAR_AURA_V2 := preload("res://effects/vfx3d/modules/FourStarAura
 const BOSS_SKILL_COMPOSER := preload("res://effects/vfx3d/boss/BossSkillVFXComposer3D.gd")
 const UNIT_SKILL_COMPOSER := preload("res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd")
 const OGA_CHESS_CATALOG := preload("res://effects/vfx3d/units/OgaChessVFXCatalog.gd")
+const OGA_SKILL_CATALOG := preload("res://effects/vfx3d/units/OgaSkillVFXCatalog.gd")
 const VFX_OGA_PROJECTILE := preload("res://effects/vfx3d/modules/VFXFlipbookProjectile3D.gd")
 const VFX_ANGEL_GUARD := preload("res://effects/vfx3d/modules/VFXAngelGuard3D.gd")
 const VFX_COMPOSITION := preload("res://effects/vfx3d/core/VFXComposition3D.gd")
@@ -576,6 +577,7 @@ func _build_vfx_test_panel() -> void:
 	vfx_select.add_item("OGA 独立弹道: 12 棋子轮播", 2020)
 	vfx_select.add_item("OGA 近战: 三种挥砍候选", 2100)
 	vfx_select.add_item("OGA 技能: 护盾/黑洞/冲击", 2200)
+	vfx_select.add_item("OGA 技能包: 圣光/血法/暗影/毒素/元素", 2300)
 	vfx_select.add_item("Ascension: Sky", 100)
 	vfx_select.add_item("Ascension: Land", 101)
 	vfx_select.add_item("Ascension: Human", 102)
@@ -737,7 +739,7 @@ func _play_oga_projectile_gallery() -> void:
 		await get_tree().create_timer(0.72).timeout
 
 func _play_oga_melee_preview() -> void:
-	var positions := [Vector3(-1.15, 0.62, 0.0), Vector3(0.0, 0.62, 0.0), Vector3(1.15, 0.62, 0.0)]
+	var positions := [Vector3(-1.65, 0.62, 0.0), Vector3(-0.55, 0.62, 0.0), Vector3(0.55, 0.62, 0.0), Vector3(1.65, 0.62, 0.0)]
 	for index in OGA_CHESS_CATALOG.MELEE_PREVIEWS.size():
 		var spec: Dictionary = OGA_CHESS_CATALOG.MELEE_PREVIEWS[index]
 		var texture := load(str(spec.get("path", ""))) as Texture2D
@@ -751,7 +753,7 @@ func _play_oga_melee_preview() -> void:
 			"color":spec.get("color", Color.WHITE), "size":Vector2(0.92, 1.02),
 			"position_offset":Vector3.ZERO,
 		})
-	vfx_status_label.text = "OGA 近战候选：金弧 / 蓝弧 / 紫弧（未接入正式战斗）"
+	vfx_status_label.text = "OGA 正式近战：金弧 / 蓝弧 / 紫弧 / 火弧"
 
 func _play_oga_skill_preview() -> void:
 	var positions := [Vector3(-1.15, 0.58, 0.0), Vector3(0.0, 0.58, 0.0), Vector3(1.15, 0.58, 0.0)]
@@ -771,6 +773,16 @@ func _play_oga_skill_preview() -> void:
 		})
 	vfx_status_label.text = "OGA 技能候选：天使护盾 / 黑洞 / 大地冲击（未接入正式战斗）"
 
+func _play_oga_pack_skill_preview() -> void:
+	var composer:=UNIT_SKILL_COMPOSER.new() as UnitSkillVFXComposer3D
+	composer.name="OgaPackSkillPreview"
+	vfx_preview_root.add_child(composer)
+	vfx_preview_effect=composer
+	composer.play_skill("black_hole",Vector3(-1.35,0.0,0.0),Vector3(-1.35,0.0,0.0),{})
+	composer.play_skill("same_target_damage_stack",Vector3.ZERO,Vector3(0.0,0.0,0.0),{})
+	composer.play_skill("poison_reflect_armor_stack",Vector3(1.35,0.0,0.0),Vector3(1.35,0.0,0.0),{})
+	vfx_status_label.text="OGA 新技能包：暗影 / 血法 / 毒素（正式接线同一模块）"
+
 func _on_vfx_play_pressed() -> void:
 	_clear_all_preview_nodes()
 	if vfx_select == null:
@@ -788,6 +800,9 @@ func _on_vfx_play_pressed() -> void:
 		return
 	if selected_id == 2200:
 		_play_oga_skill_preview()
+		return
+	if selected_id == 2300:
+		_play_oga_pack_skill_preview()
 		return
 	match selected_id:
 		103, 104, 105:

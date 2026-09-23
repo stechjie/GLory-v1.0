@@ -26,7 +26,7 @@ func play_spec(origin: Vector3, target: Vector3, spec: Dictionary, context: Dict
 		"columns":int(spec.get("columns", 1)),
 		"rows":int(spec.get("rows", 1)),
 		"frame_count":int(spec.get("frame_count", 1)),
-		"loop":true,
+		"loop":bool(spec.get("loop", false)),
 		"random_start":false,
 		"speed_min":float(spec.get("fps", 14.0)),
 		"speed_max":float(spec.get("fps", 14.0)),
@@ -36,6 +36,9 @@ func play_spec(origin: Vector3, target: Vector3, spec: Dictionary, context: Dict
 		"size":spec.get("size", Vector2(0.72, 0.72)),
 		"position_offset":Vector3.ZERO,
 		"rotation_radians":_screen_facing(origin, target),
+		"fade_in":0.02,
+		"fade_out":0.0,
+		"emission_scale":float(spec.get("emission_scale", 0.82)),
 	})
 	var elapsed := 0.0
 	var arc_height := maxf(0.0, float(spec.get("arc_height", 0.0)))
@@ -80,6 +83,9 @@ func _play_impact(at: Vector3, spec: Dictionary) -> void:
 		"color":spec.get("impact_color", spec.get("color", Color.WHITE)),
 		"size":spec.get("impact_size", Vector2(0.82, 0.82)),
 		"position_offset":Vector3.ZERO,
+		"fade_in":0.015,
+		"fade_out":0.14,
+		"emission_scale":float(spec.get("impact_emission_scale", spec.get("emission_scale", 0.74))),
 	})
 
 func _bind_target(node_value: Variant, target: Vector3) -> void:

@@ -473,16 +473,8 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 				procedural_played = true
 		"random_attribute_bolt", "silence_bolt":
 			should_play_texture = false
-			if sid == "random_attribute_bolt":
-				var target_bolt := _nearest_enemy_target(unit, damage_events, current)
-				if target_bolt.is_empty():
-					target_bolt = _floor_target_for(unit)
-				texture_pos = target_bolt.get("hit_pos", target_bolt.get("pos", texture_pos))
-				_spawn_skill_textures_for_role(uid, "cast", unit.get("cast_pos", Vector2.ZERO))
-				_spawn_skill_textures_for_role(uid, "hit", texture_pos)
-			# The composer's four authored layers (gather / spike / seal / wrap)
-			# are the whole silence presentation now; the old
-			# dark_mage_magic_bolt and silence_mark plates no longer stack on top.
+			# The OGA projectile/pack composer owns cast, travel and hit. Do not
+			# add the retired role textures underneath it.
 		"bubble_dream", "balance_judge", "gold_charge", "twin_strike", "arrow_rain", "blood_rampage", "steel_order", "time_slow", "death_hunt":
 			should_play_texture = false
 		"king_aura":
@@ -490,30 +482,23 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 			should_play_texture = false
 		"judgement_strike":
 			should_play_texture = false
-			var target_judgement := _nearest_enemy_target(unit, damage_events, current)
-			if not target_judgement.is_empty():
-				_spawn_skill_roles_at_target(uid, unit, target_judgement, true)
 		"global_divine_blast":
 			should_play_texture = false
-			for event: Dictionary in _enemy_damage_events(unit, damage_events):
-				_spawn_skill_roles_at_target(uid, unit, event)
 		"front_cone_stun":
 			should_play_texture = false
-			var target_control := _nearest_enemy_target(unit, damage_events, current)
-			if not target_control.is_empty():
-				# The swordsman uses only the two authored, compact slash masks
-				# at the confirmed hit target; no caster/ground fallback layers.
-				_spawn_skill_textures_for_role(uid, "hit", target_control.get("hit_pos", target_control.get("pos", texture_pos)))
 		"fear", "stun", "blink_low_def_backline":
 			# Fear Demon, Succubus and Ambusher moved to authored layers; the
 			# composer owns them and no legacy plate is added.
 			should_play_texture = false
 		"black_hole":
 			should_play_texture = false
-		"lowest_ally_heal", "nearby_ally_heal_buff", "holy_song", "holy_purify":
+		"lowest_ally_heal", "nearest_ally_bless", "nearby_ally_heal_buff", "guardian_shield_taunt", "holy_song", "holy_purify":
 			should_play_texture = false
-			# The 3D composer owns the heal presentation; the legacy 2D
-			# HOLY_HEAL effect is intentionally disabled.
+			# The OGA light/shield pack owns the presentation; legacy holy plates
+			# and HOLY_HEAL/HOLY_SHIELD overlays stay disabled.
+		"curse_attack", "same_target_damage_stack", "poison_attack", "death_poison_explosion", "poison_reflect_armor_stack":
+			should_play_texture = false
+			# Blood/nature/explosion pack route is exclusive: no old role texture.
 		"random_ally_damage_reduction":
 			# Angel's Guard is now fully owned by VFXAngelGuard3D.  The legacy
 			# HOLY_SHIELD 2D scene must not be layered over the new-material route.
@@ -590,6 +575,11 @@ func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictio
 		target=_nearest_enemy_target(unit,damage_events,current)
 	var target_world:Vector3=target.get("world_hit",target.get("world_foot",unit.get("world_foot",Vector3.ZERO)))
 	var context:=_unit_target_context(unit,target)
+	if sid=="random_attribute_bolt":
+		# Visual-only selection. Never touch the simulator/RNG stream: cycle the
+		# four authored elemental bodies from the already-rendered attack counter.
+		var visual_elements:PackedStringArray=["fire","ice","thunder","poison"]
+		context["attribute"]=visual_elements[posmod(int(unit.get("attack_count",0)),visual_elements.size())]
 	if sid=="black_hole" and str(unit.get("unit_id",""))!="dark_dragon":
 		return
 	if sid=="shared_hp_link":
@@ -722,6 +712,7 @@ func _unit_target_context(source:Dictionary,target:Dictionary,extra:Dictionary={
 	var context:=extra.duplicate(false)
 	context["source_unit_id"] = str(source.get("unit_id", source.get("id", "")))
 	context["target_unit_id"] = str(target.get("unit_id", target.get("id", "")))
+	context["target_foot"] = target.get("world_foot", target.get("world_hit", Vector3.ZERO))
 	if source.has("stun_sec"):
 		context["status_duration"] = float(source.get("stun_sec",1.18))
 	var source_node=source.get("model_node")

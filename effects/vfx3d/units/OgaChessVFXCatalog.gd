@@ -3,9 +3,9 @@ class_name OgaChessVFXCatalog
 
 # Formal OpenGameArt replacement catalogue for player chess pieces.
 # Every ranged chess piece owns a different projectile atlas, motion profile and
-# impact atlas. Player melee attacks and the three approved semantic skill
-# replacements are also routed here so the formal composer can bypass the old
-# effect rather than stacking both versions.
+# impact atlas. Only signature weapon users receive a basic-attack slash; the
+# remaining melee pieces rely on their authored model attack and damage readout
+# so a crowded board does not become a wall of identical crescents.
 
 const PLAYER_CHESS_UNITS: Array[String] = [
 	"god_priest", "god_priestess", "god_guard", "god_aurora", "god_angel", "god_arbiter", "god_archangel", "god_king",
@@ -20,6 +20,14 @@ const RANGED_UNIT_ORDER: Array[String] = [
 	"human_archer", "human_cleric", "human_mage",
 	"undead_spike", "undead_mother",
 ]
+
+const MELEE_UNIT_RACE := {
+	"god_arbiter":"god",
+	"god_king":"god",
+	"dark_scythe":"dark",
+	"human_swordsman":"human",
+	"human_king":"human",
+}
 
 const DISPLAY_NAMES := {
 	"god_priest": "神侍",
@@ -49,23 +57,27 @@ const PROJECTILES := {
 	},
 	"god_angel": {
 		"path":"res://assets/vfx/oga/projectiles/god_angel_wing.png", "columns":5, "rows":1, "frame_count":5,
-		"fps":16.0, "size":Vector2(0.84,0.62), "speed":7.5, "arc_height":0.26, "wobble":0.035,
-		"impact_path":"res://assets/vfx/oga/impacts/god_angel_hit.png", "impact_columns":5, "impact_rows":1, "impact_frames":5, "impact_fps":18.0, "impact_size":Vector2(0.92,0.92),
+		"fps":16.0, "size":Vector2(0.70,0.52), "speed":7.5, "arc_height":0.26, "wobble":0.035,
+		"color":Color(1.0,0.88,0.62,0.92), "emission_scale":0.62,
+		"impact_path":"res://assets/vfx/oga/impacts/god_angel_hit.png", "impact_columns":5, "impact_rows":1, "impact_frames":5, "impact_fps":18.0, "impact_size":Vector2(0.72,0.72), "impact_color":Color(1.0,0.90,0.68,0.90), "impact_emission_scale":0.58,
 	},
 	"god_archangel": {
 		"path":"res://assets/vfx/oga/projectiles/god_archangel_seraph_orb.png", "columns":5, "rows":1, "frame_count":5,
-		"fps":10.0, "size":Vector2(0.62,0.62), "speed":6.2, "arc_height":0.06, "wobble":0.012,
-		"impact_path":"res://assets/vfx/oga/impacts/god_archangel_hit.png", "impact_columns":5, "impact_rows":1, "impact_frames":5, "impact_fps":13.0, "impact_size":Vector2(0.76,0.76),
+		"fps":10.0, "size":Vector2(0.48,0.48), "speed":6.2, "arc_height":0.06, "wobble":0.012,
+		"color":Color(0.88,0.94,1.0,0.92), "emission_scale":0.60,
+		"impact_path":"res://assets/vfx/oga/impacts/god_archangel_hit.png", "impact_columns":5, "impact_rows":1, "impact_frames":5, "impact_fps":13.0, "impact_size":Vector2(0.62,0.62), "impact_emission_scale":0.62,
 	},
 	"god_aurora": {
 		"path":"res://assets/vfx/oga/projectiles/god_aurora_light_spear.png", "columns":5, "rows":1, "frame_count":5,
-		"fps":18.0, "size":Vector2(0.94,0.48), "speed":10.5, "arc_height":0.02, "wobble":0.0,
-		"impact_path":"res://assets/vfx/oga/impacts/god_aurora_hit.png", "impact_columns":4, "impact_rows":4, "impact_frames":16, "impact_fps":22.0, "impact_size":Vector2(0.70,0.70),
+		"fps":18.0, "size":Vector2(0.78,0.34), "speed":10.5, "arc_height":0.02, "wobble":0.0,
+		"color":Color(0.52,0.78,1.0,0.94), "emission_scale":0.60,
+		"impact_path":"res://assets/vfx/oga/impacts/god_aurora_hit.png", "impact_columns":4, "impact_rows":4, "impact_frames":16, "impact_fps":22.0, "impact_size":Vector2(0.58,0.58), "impact_emission_scale":0.64,
 	},
 	"dark_mage": {
-		"path":"res://assets/vfx/oga/projectiles/dark_mage_arcane_skull.png", "columns":7, "rows":1, "frame_count":7,
-		"fps":14.0, "size":Vector2(0.78,0.66), "speed":6.0, "arc_height":0.12, "wobble":0.055,
-		"impact_path":"res://assets/vfx/oga/impacts/dark_mage_hit.png", "impact_columns":7, "impact_rows":1, "impact_frames":7, "impact_fps":16.0, "impact_size":Vector2(0.82,0.82),
+		"path":"res://assets/vfx/oga/skill_packs/cosmic_orb.png", "columns":5, "rows":1, "frame_count":5,
+		"fps":12.0, "size":Vector2(0.54,0.54), "speed":6.4, "arc_height":0.10, "wobble":0.038,
+		"color":Color(0.58,0.34,0.90,0.92), "emission_scale":0.72,
+		"impact_path":"res://assets/vfx/oga/skill_packs/cosmic_seal.png", "impact_columns":5, "impact_rows":1, "impact_frames":5, "impact_fps":15.0, "impact_size":Vector2(0.64,0.64), "impact_color":Color(0.68,0.40,0.96,0.90), "impact_emission_scale":0.66,
 	},
 	"dark_queen": {
 		"path":"res://assets/vfx/oga/projectiles/dark_queen_blood_thorn.png", "columns":5, "rows":1, "frame_count":5,
@@ -84,13 +96,15 @@ const PROJECTILES := {
 	},
 	"human_mage": {
 		"path":"res://assets/vfx/oga/projectiles/human_mage_arcane_satellites.png", "columns":7, "rows":1, "frame_count":7,
-		"fps":13.0, "size":Vector2(0.72,0.72), "speed":6.6, "arc_height":0.16, "wobble":0.070,
-		"impact_path":"res://assets/vfx/oga/impacts/human_mage_hit.png", "impact_columns":7, "impact_rows":1, "impact_frames":7, "impact_fps":15.0, "impact_size":Vector2(0.86,0.86),
+		"fps":13.0, "size":Vector2(0.54,0.54), "speed":6.6, "arc_height":0.16, "wobble":0.070,
+		"color":Color(0.48,0.62,1.0,0.92), "emission_scale":0.62,
+		"impact_path":"res://assets/vfx/oga/impacts/human_mage_hit.png", "impact_columns":7, "impact_rows":1, "impact_frames":7, "impact_fps":15.0, "impact_size":Vector2(0.64,0.64), "impact_color":Color(0.52,0.66,1.0,0.90), "impact_emission_scale":0.58,
 	},
 	"undead_spike": {
 		"path":"res://assets/vfx/oga/projectiles/undead_spike_bone_fan.png", "columns":5, "rows":1, "frame_count":5,
-		"fps":19.0, "size":Vector2(0.92,0.44), "speed":9.3, "arc_height":0.0, "wobble":0.010,
-		"impact_path":"res://assets/vfx/oga/impacts/undead_spike_hit.png", "impact_columns":5, "impact_rows":1, "impact_frames":5, "impact_fps":16.0, "impact_size":Vector2(0.78,0.78),
+		"fps":19.0, "size":Vector2(0.78,0.34), "speed":9.3, "arc_height":0.0, "wobble":0.010,
+		"color":Color(0.78,0.74,0.62,0.94), "emission_scale":0.52,
+		"impact_path":"res://assets/vfx/oga/impacts/undead_spike_hit.png", "impact_columns":5, "impact_rows":1, "impact_frames":5, "impact_fps":16.0, "impact_size":Vector2(0.62,0.62),
 	},
 	"undead_mother": {
 		"path":"res://assets/vfx/oga/projectiles/undead_mother_blood_lance.png", "columns":5, "rows":1, "frame_count":5,
@@ -100,35 +114,36 @@ const PROJECTILES := {
 }
 
 const MELEE_PREVIEWS := [
-	{"label":"神族金弧", "path":"res://assets/vfx/oga/melee/god_gold_arc.png", "columns":6, "frames":6, "color":Color.WHITE},
-	{"label":"人族蓝弧", "path":"res://assets/vfx/oga/melee/human_blue_arc.png", "columns":6, "frames":6, "color":Color.WHITE},
-	{"label":"暗族紫弧", "path":"res://assets/vfx/oga/melee/dark_purple_arc.png", "columns":6, "frames":6, "color":Color.WHITE},
+	{"label":"神族金弧", "path":"res://assets/vfx/oga/skill_packs/slash_gold.png", "columns":6, "frames":6, "color":Color.WHITE},
+	{"label":"人族蓝弧", "path":"res://assets/vfx/oga/skill_packs/slash_blue.png", "columns":6, "frames":6, "color":Color.WHITE},
+	{"label":"暗族紫弧", "path":"res://assets/vfx/oga/skill_packs/slash_purple.png", "columns":6, "frames":6, "color":Color.WHITE},
+	{"label":"灵族火弧", "path":"res://assets/vfx/oga/skill_packs/slash_fire.png", "columns":6, "frames":6, "color":Color.WHITE},
 ]
 
 const MELEE_BY_RACE := {
 	"god": {
-		"path":"res://assets/vfx/oga/melee/god_gold_arc.png", "columns":6, "rows":1, "frame_count":6,
-		"fps":18.0, "size":Vector2(1.12,1.10), "duration":0.42, "impact_delay":0.10,
-		"impact_path":"res://assets/vfx/oga/impacts/god_angel_hit.png", "impact_columns":5, "impact_rows":1,
-		"impact_frames":5, "impact_fps":18.0, "impact_size":Vector2(0.78,0.78), "impact_duration":0.36,
+		"path":"res://assets/vfx/oga/skill_packs/slash_gold.png", "columns":6, "rows":1, "frame_count":6,
+		"fps":18.0, "size":Vector2(0.88,0.78), "duration":0.38, "impact_delay":0.09, "height_ratio":0.40,
+		"impact_path":"res://assets/vfx/oga/skill_packs/earth_crack.png", "impact_columns":5, "impact_rows":1,
+		"impact_frames":5, "impact_fps":16.0, "impact_size":Vector2(0.62,0.62), "impact_duration":0.34,
 	},
 	"human": {
-		"path":"res://assets/vfx/oga/melee/human_blue_arc.png", "columns":6, "rows":1, "frame_count":6,
-		"fps":19.0, "size":Vector2(1.08,1.04), "duration":0.40, "impact_delay":0.09,
-		"impact_path":"res://assets/vfx/oga/impacts/human_archer_hit.png", "impact_columns":4, "impact_rows":4,
-		"impact_frames":16, "impact_fps":24.0, "impact_size":Vector2(0.64,0.64), "impact_duration":0.40,
+		"path":"res://assets/vfx/oga/skill_packs/slash_blue.png", "columns":6, "rows":1, "frame_count":6,
+		"fps":19.0, "size":Vector2(0.84,0.74), "duration":0.36, "impact_delay":0.08, "height_ratio":0.40,
+		"impact_path":"res://assets/vfx/oga/skill_packs/earth_crack.png", "impact_columns":5, "impact_rows":1,
+		"impact_frames":5, "impact_fps":16.0, "impact_size":Vector2(0.56,0.56), "impact_duration":0.32,
 	},
 	"dark": {
-		"path":"res://assets/vfx/oga/melee/dark_purple_arc.png", "columns":6, "rows":1, "frame_count":6,
-		"fps":18.0, "size":Vector2(1.16,1.08), "duration":0.43, "impact_delay":0.10,
-		"impact_path":"res://assets/vfx/oga/impacts/dark_mage_hit.png", "impact_columns":7, "impact_rows":1,
-		"impact_frames":7, "impact_fps":17.0, "impact_size":Vector2(0.78,0.78), "impact_duration":0.42,
+		"path":"res://assets/vfx/oga/skill_packs/slash_purple.png", "columns":6, "rows":1, "frame_count":6,
+		"fps":18.0, "size":Vector2(0.90,0.76), "duration":0.39, "impact_delay":0.09, "height_ratio":0.40,
+		"impact_path":"res://assets/vfx/oga/skill_packs/earth_smoke.png", "impact_columns":5, "impact_rows":1,
+		"impact_frames":5, "impact_fps":14.0, "impact_size":Vector2(0.60,0.60), "impact_duration":0.36, "impact_color":Color(0.54,0.28,0.78,0.78),
 	},
 	"undead": {
-		"path":"res://assets/vfx/oga/melee/dark_purple_arc.png", "columns":6, "rows":1, "frame_count":6,
+		"path":"res://assets/vfx/oga/skill_packs/slash_fire.png", "columns":6, "rows":1, "frame_count":6,
 		"fps":17.0, "size":Vector2(1.12,1.06), "duration":0.44, "impact_delay":0.11,
-		"impact_path":"res://assets/vfx/oga/impacts/undead_spike_hit.png", "impact_columns":5, "impact_rows":1,
-		"impact_frames":5, "impact_fps":16.0, "impact_size":Vector2(0.76,0.76), "impact_duration":0.40,
+		"impact_path":"res://assets/vfx/oga/skill_packs/earth_debris.png", "impact_columns":5, "impact_rows":1,
+		"impact_frames":5, "impact_fps":16.0, "impact_size":Vector2(0.76,0.76), "impact_duration":0.40, "impact_color":Color(0.56,0.86,0.58,0.88),
 	},
 }
 
@@ -161,10 +176,14 @@ const FORMAL_SKILLS := {
 static func projectile_for(unit_id: String) -> Dictionary:
 	return (PROJECTILES.get(unit_id, {}) as Dictionary).duplicate(true)
 
-static func melee_for(unit_id: String, race: String) -> Dictionary:
-	if not unit_id in PLAYER_CHESS_UNITS or unit_id in RANGED_UNIT_ORDER:
+static func is_player_chess(unit_id: String) -> bool:
+	return unit_id in PLAYER_CHESS_UNITS
+
+static func melee_for(unit_id: String, _race: String) -> Dictionary:
+	var melee_race := str(MELEE_UNIT_RACE.get(unit_id, ""))
+	if melee_race.is_empty():
 		return {}
-	return (MELEE_BY_RACE.get(race, {}) as Dictionary).duplicate(true)
+	return (MELEE_BY_RACE.get(melee_race, {}) as Dictionary).duplicate(true)
 
 static func formal_skill_for(skill_id: String) -> Dictionary:
 	return (FORMAL_SKILLS.get(skill_id, {}) as Dictionary).duplicate(true)

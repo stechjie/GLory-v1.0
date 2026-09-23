@@ -12,6 +12,7 @@ uniform vec4 tint : source_color = vec4(1.0);
 uniform float opacity = 1.0;
 uniform float billboard_enabled = 1.0;
 uniform float uv_rotation = 0.0;
+uniform float emission_scale = 1.0;
 void vertex() {
     if (billboard_enabled > 0.5) {
         MODELVIEW_MATRIX = VIEW_MATRIX * mat4(INV_VIEW_MATRIX[0], INV_VIEW_MATRIX[1], INV_VIEW_MATRIX[2], MODEL_MATRIX[3]);
@@ -34,7 +35,7 @@ void fragment() {
     float card_fade = smoothstep(1.0, 0.72, max(p.x, p.y));
     float alpha = tex.a * card_fade * opacity * inside_card;
     ALBEDO = tex.rgb * tint.rgb;
-    EMISSION = ALBEDO * (1.5 + tex.a * 1.8);
+    EMISSION = ALBEDO * (1.5 + tex.a * 1.8) * emission_scale;
     ALPHA = alpha * tint.a;
 }
 """
@@ -44,9 +45,12 @@ var _source_frame_count := 16
 var _display_frame_count := 16
 var _frame_rate := 18.0
 var _elapsed := 0.0
+var _age := 0.0
 var _loop := false
 var _playing := false
 var _duration := 0.9
+var _fade_in := 0.0
+var _fade_out := 0.12
 
 func play_profile(profile: VFXProfile3D, context: Dictionary) -> void:
 	var params: Dictionary = profile.parameters if profile != null else {}
@@ -84,8 +88,11 @@ func play_flipbook_advanced(at: Vector3, texture: Texture2D, config: Dictionary)
 	_display_frame_count = maxi(1, QUALITY_BUDGET.flipbook_frame_limit(frame_count))
 	_frame_rate = randf_range(speed_min, speed_max)
 	_elapsed = randf_range(0.0, float(_source_frame_count) / _frame_rate) if random_start else 0.0
+	_age = 0.0
 	_loop = bool(config.get("loop", false))
 	_duration = maxf(float(config.get("duration", 0.9)), 0.05)
+	_fade_in = clampf(float(config.get("fade_in", 0.02)), 0.0, _duration * 0.45)
+	_fade_out = clampf(float(config.get("fade_out", 0.12)), 0.0, _duration * 0.55)
 	var quad := QuadMesh.new()
 	var configured_size: Variant = config.get("size", Vector2.ONE)
 	quad.size = configured_size if configured_size is Vector2 else Vector2.ONE * float(configured_size)
@@ -101,6 +108,7 @@ func play_flipbook_advanced(at: Vector3, texture: Texture2D, config: Dictionary)
 	_material.set_shader_parameter("opacity", vfx_alpha)
 	_material.set_shader_parameter("billboard_enabled", 1.0 if bool(config.get("billboard", true)) else 0.0)
 	_material.set_shader_parameter("uv_rotation", float(config.get("rotation_radians", 0.0)))
+	_material.set_shader_parameter("emission_scale", maxf(0.0, float(config.get("emission_scale", 1.0))))
 	node.material_override = _material
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(node)
@@ -115,6 +123,7 @@ func _process(delta: float) -> void:
 	if not _playing or _material == null:
 		return
 	_elapsed += delta
+	_age += delta
 	var display_index := int(floor(_elapsed * _frame_rate))
 	if _loop:
 		display_index %= _display_frame_count
@@ -124,6 +133,13 @@ func _process(delta: float) -> void:
 	if _display_frame_count > 1 and _display_frame_count != _source_frame_count:
 		source_index = int(round(float(display_index) * float(_source_frame_count - 1) / float(_display_frame_count - 1)))
 	_material.set_shader_parameter("frame", float(source_index))
+	if not _loop:
+		var life_alpha := 1.0
+		if _fade_in > 0.0 and _age < _fade_in:
+			life_alpha *= smoothstep(0.0, _fade_in, _age)
+		if _fade_out > 0.0 and _age > _duration - _fade_out:
+			life_alpha *= 1.0 - smoothstep(_duration - _fade_out, _duration, _age)
+		_material.set_shader_parameter("opacity", vfx_alpha * clampf(life_alpha, 0.0, 1.0))
 
 func set_uv_rotation(value: float) -> void:
 	if _material != null:

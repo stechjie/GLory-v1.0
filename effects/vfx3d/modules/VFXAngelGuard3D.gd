@@ -74,6 +74,8 @@ var _fragment_nodes: Array[MeshInstance3D] = []
 var _fragment_materials: Array[ShaderMaterial] = []
 var _persistent_crest: MeshInstance3D = null
 var _persistent_crest_material: ShaderMaterial = null
+var _persistent_shadow: MeshInstance3D = null
+var _persistent_shadow_material: ShaderMaterial = null
 
 func play_profile(profile: VFXProfile3D, context: Dictionary) -> void:
 	play_guard(context.get("target", Vector3.ZERO), profile, context)
@@ -105,7 +107,10 @@ func _process(delta: float) -> void:
 	var breathe := 0.965 + 0.035 * sin(_elapsed * TAU * _pulse_speed)
 	if is_instance_valid(_persistent_crest) and _persistent_crest_material != null:
 		_persistent_crest.scale = Vector3.ONE * formed * breathe
-		_persistent_crest_material.set_shader_parameter("opacity", fade * (0.43 + 0.045 * sin(_elapsed * TAU * _pulse_speed)))
+		_persistent_crest_material.set_shader_parameter("opacity", fade * (0.60 + 0.05 * sin(_elapsed * TAU * _pulse_speed)))
+	if is_instance_valid(_persistent_shadow) and _persistent_shadow_material != null:
+		_persistent_shadow.scale = Vector3.ONE * formed * breathe * 1.07
+		_persistent_shadow_material.set_shader_parameter("opacity", fade * 0.40)
 	for index in range(_fragment_nodes.size()):
 		var node := _fragment_nodes[index]
 		if not is_instance_valid(node):
@@ -135,6 +140,23 @@ func _spawn_persistent_crest(profile: VFXProfile3D) -> void:
 		return
 	var quad := QuadMesh.new()
 	quad.size = profile.size * Vector2(0.96, 0.92)
+	var shadow_node := MeshInstance3D.new()
+	shadow_node.name = "AngelGuardWhiteCrossShadow"
+	shadow_node.mesh = quad
+	shadow_node.position = VFXBlockRoot.vfx_toward_camera(0.018)
+	shadow_node.scale = Vector3.ONE * 0.04
+	shadow_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var shadow_material := ShaderMaterial.new()
+	shadow_material.shader = SHADER_CACHE.get_shader(CREST_SHADER)
+	shadow_material.set_shader_parameter("atlas_texture", texture)
+	shadow_material.set_shader_parameter("atlas_frame", float(profile.parameters.get("crest_white_frame", 16)))
+	shadow_material.set_shader_parameter("tint", Color(0.035, 0.10, 0.24, 1.0))
+	shadow_material.set_shader_parameter("opacity", 0.0)
+	shadow_material.set_shader_parameter("reveal", 0.94)
+	shadow_node.material_override = shadow_material
+	add_child(shadow_node)
+	_persistent_shadow = shadow_node
+	_persistent_shadow_material = shadow_material
 	var node := MeshInstance3D.new()
 	node.name = "AngelGuardPersistentWingShield"
 	node.mesh = quad

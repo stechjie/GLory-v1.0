@@ -19,9 +19,12 @@ const VFX_RACE_BASIC_ATTACK:=preload("res://effects/vfx3d/modules/VFXRaceBasicAt
 const VFX_OGA_PROJECTILE:=preload("res://effects/vfx3d/modules/VFXFlipbookProjectile3D.gd")
 const VFX_OGA_MELEE:=preload("res://effects/vfx3d/modules/VFXFlipbookMelee3D.gd")
 const VFX_OGA_SKILL:=preload("res://effects/vfx3d/modules/VFXFlipbookSkill3D.gd")
+const VFX_OGA_PACK_SKILL:=preload("res://effects/vfx3d/modules/VFXPackSkill3D.gd")
+const VFX_OGA_BLOOD_LINK:=preload("res://effects/vfx3d/modules/VFXPackBloodLink3D.gd")
 const VFX_ANGEL_GUARD:=preload("res://effects/vfx3d/modules/VFXAngelGuard3D.gd")
 const PROFILE_ANGEL_GUARD:=preload("res://effects/vfx3d/profiles/examples/angel_guard_example.tres")
 const OGA_CHESS_CATALOG:=preload("res://effects/vfx3d/units/OgaChessVFXCatalog.gd")
+const OGA_SKILL_CATALOG:=preload("res://effects/vfx3d/units/OgaSkillVFXCatalog.gd")
 const BASIC_GOD:=preload("res://effects/vfx3d/profiles/examples/basic_attack_god.tres")
 const BASIC_HUMAN:=preload("res://effects/vfx3d/profiles/examples/basic_attack_human.tres")
 const BASIC_DARK:=preload("res://effects/vfx3d/profiles/examples/basic_attack_dark.tres")
@@ -119,30 +122,30 @@ var _poison_residue_nodes:Dictionary = {}
 func play_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary={})->Node3D:
 	last_spawned=null
 	match skill_id:
-		"lowest_ally_heal":_holy_heal(target,context)
-		"nearest_ally_bless":_ally_bless(origin,target,context)
-		"nearby_ally_heal_buff":_holy_group_v2(origin,context)
-		"random_attribute_bolt":_attribute_bolt(origin,target,context)
-		"judgement_strike":_oga_formal_skill("judgement_strike",origin,target,context)
+		"lowest_ally_heal":_oga_pack_skill("lowest_ally_heal",origin,target,context)
+		"nearest_ally_bless":_oga_pack_skill("nearest_ally_bless",origin,target,context)
+		"nearby_ally_heal_buff":_oga_pack_group_skill("nearby_ally_heal_buff",origin,context)
+		"random_attribute_bolt":_oga_element_projectile(origin,target,context)
+		"judgement_strike":_oga_pack_melee("judgement_strike",origin,target,context)
 		"random_ally_damage_reduction":_angel_guard(target,context)
-		"global_divine_blast":_global_divine(target,context)
-		"silence_bolt":_silence_bolt(origin,target,context)
+		"global_divine_blast":_oga_pack_multi_melee("global_divine_blast",origin,target,context)
+		"silence_bolt":_oga_pack_skill("silence_bolt",origin,target,context)
 		"fear":_fear_hit(origin,target,context)
 		"stun":_stun_hit(origin,target,context)
-		"black_hole":_oga_formal_skill("black_hole",origin,target,context)
+		"black_hole":_oga_pack_skill("black_hole",origin,origin,context)
 		"blink_low_def_backline":_blink_slash(origin,target,context)
-		"shared_hp_link":_doom_blood_link(origin,target,context)
-		"front_cone_stun":_front_stun(origin,target,context)
-		"guardian_shield_taunt":_guardian_shield_taunt(origin,context)
+		"shared_hp_link":_oga_blood_link(origin,target,context)
+		"front_cone_stun":_oga_pack_melee("front_cone_stun",origin,target,context)
+		"guardian_shield_taunt":_oga_pack_skill("guardian_shield_taunt",origin,origin,context)
 		"true_damage_attack":_true_damage_hit(target)
-		"curse_attack":_imp_curse(origin,target,context)
-		"same_target_damage_stack":_stack_pulse(origin,target,context)
-		"poison_attack":_poison_attack(origin,target,context)
+		"curse_attack":_oga_pack_skill("curse_attack",origin,target,context)
+		"same_target_damage_stack":_oga_pack_skill("same_target_damage_stack",origin,target,context)
+		"poison_attack":_oga_pack_skill("poison_attack",origin,target,context)
 		"defense_down_attack":_defense_down_hit(target,context)
 		"every_fourth_combo":_combo_hit(origin,target,context)
 		"every_fifth_group_heal":_holy_group(origin,context)
-		"death_poison_explosion":_poison_death(origin)
-		"poison_reflect_armor_stack":_poison_reflect_stack(origin)
+		"death_poison_explosion":_oga_pack_skill("death_poison_explosion",origin,origin,context)
+		"poison_reflect_armor_stack":_oga_pack_skill("poison_reflect_armor_stack",origin,origin,context)
 		"parasite_on_kill":_summon(target)
 		"left_neighbor_sacrifice":_tracked_link(origin,target,context,_blood_profile(.76,2.0))
 		"attack_interrupt":_interrupt_hit(target)
@@ -209,7 +212,9 @@ func _basic_attack(origin:Vector3,target:Vector3,race:String,mode:String,context
 			var projectile:=_block(VFX_OGA_PROJECTILE) as VFXFlipbookProjectile3D
 			if projectile!=null:
 				last_spawned=projectile
-				projectile.play_spec(origin,target,projectile_spec,{"target_node":context.get("target_node")})
+				projectile.play_spec(origin,target,projectile_spec,context)
+			return
+		if OGA_CHESS_CATALOG.is_player_chess(uid):
 			return
 	else:
 		var melee_spec:Dictionary=OGA_CHESS_CATALOG.melee_for(uid,race)
@@ -217,7 +222,11 @@ func _basic_attack(origin:Vector3,target:Vector3,race:String,mode:String,context
 			var melee:=_block(VFX_OGA_MELEE) as VFXFlipbookMelee3D
 			if melee!=null:
 				last_spawned=melee
-				melee.play_spec(origin,target,melee_spec,{"target_node":context.get("target_node")})
+				melee.play_spec(origin,target,melee_spec,context)
+			return
+		# Non-signature player melee pieces intentionally have no generic slash.
+		# Returning here also prevents the retired race effect from resurfacing.
+		if OGA_CHESS_CATALOG.is_player_chess(uid):
 			return
 	var profile:=_basic_profile_for(uid,race)
 	# 有专属 PNG 箭矢的单位（弓箭手/极光射手），远程普攻用它自己的图当弹体；
@@ -244,6 +253,89 @@ func _oga_formal_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dic
 		return
 	last_spawned=effect
 	effect.play_spec(anchor,spec,{"track_node":track_node})
+
+func _oga_pack_points(origin:Vector3,target:Vector3,context:Dictionary)->Dictionary:
+	var oh:=_uh(context,"origin_height")
+	var th:=_uh(context)
+	return {
+		"origin_ground":_lvl(origin,oh,LEVEL_FOOT,0.0),
+		"origin_body":_lvl(origin,oh,LEVEL_BODY),
+		"origin_head":_lvl(origin,oh,LEVEL_HEAD),
+		"target_ground":_lvl(target,th,LEVEL_FOOT,0.0),
+		"target_body":_lvl(target,th,LEVEL_BODY),
+		"target_head":_lvl(target,th,LEVEL_HEAD),
+	}
+
+func _oga_pack_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary)->void:
+	# Exclusive formal route: the old painted/procedural function is intentionally
+	# not called, so the replacement can never stack with the retired effect.
+	var spec:Dictionary=OGA_SKILL_CATALOG.skill_for(skill_id)
+	if spec.is_empty():
+		return
+	var critical:=skill_id in ["guardian_shield_taunt","black_hole","death_poison_explosion"]
+	var effect:=(_block_forced(VFX_OGA_PACK_SKILL) if critical else _block(VFX_OGA_PACK_SKILL)) as VFXPackSkill3D
+	if effect==null:
+		return
+	last_spawned=effect
+	effect.play_spec(_oga_pack_points(origin,target,context),spec,context)
+
+func _oga_pack_group_skill(skill_id:String,origin:Vector3,context:Dictionary)->void:
+	var spec:Dictionary=OGA_SKILL_CATALOG.skill_for(skill_id)
+	if spec.is_empty():
+		return
+	var cast_spec:=spec.duplicate(true)
+	cast_spec.erase("target_layers")
+	_oga_pack_skill_from_spec(origin,origin,context,cast_spec)
+	var target_layers:Array=spec.get("target_layers",[])
+	for value:Variant in _capped_targets(context.get("targets",[])).slice(0,4):
+		if not value is Vector3:
+			continue
+		_oga_pack_skill_from_spec(origin,value,context,{"layers":target_layers})
+
+func _oga_pack_skill_from_spec(origin:Vector3,target:Vector3,context:Dictionary,spec:Dictionary)->void:
+	var effect:=_block(VFX_OGA_PACK_SKILL) as VFXPackSkill3D
+	if effect==null:
+		return
+	last_spawned=effect
+	effect.play_spec(_oga_pack_points(origin,target,context),spec,context)
+
+func _oga_pack_melee(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary)->void:
+	var spec:Dictionary=OGA_SKILL_CATALOG.melee_for(skill_id)
+	if spec.is_empty():
+		return
+	var melee:=(_block_forced(VFX_OGA_MELEE) if skill_id=="judgement_strike" else _block(VFX_OGA_MELEE)) as VFXFlipbookMelee3D
+	if melee==null:
+		return
+	last_spawned=melee
+	melee.play_spec(_lvl(origin,_uh(context,"origin_height"),LEVEL_BODY),_lvl(target,_uh(context),LEVEL_BODY),spec,context)
+
+func _oga_pack_multi_melee(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary)->void:
+	var targets:Array=_capped_targets(context.get("targets",[]))
+	if targets.is_empty():
+		targets=[target]
+	for i in range(targets.size()):
+		if i>0:
+			await get_tree().create_timer(0.07).timeout
+		var target_context:=context.duplicate(false)
+		target_context.erase("target_node")
+		target_context["target_foot"]=targets[i]
+		_oga_pack_melee(skill_id,origin,targets[i],target_context)
+
+func _oga_element_projectile(origin:Vector3,target:Vector3,context:Dictionary)->void:
+	var element:=str(context.get("attribute",context.get("element","arcane"))).to_lower()
+	var spec:Dictionary=OGA_SKILL_CATALOG.projectile_for_element(element)
+	var projectile:=_block(VFX_OGA_PROJECTILE) as VFXFlipbookProjectile3D
+	if projectile==null:
+		return
+	last_spawned=projectile
+	projectile.play_spec(_lvl(origin,_uh(context,"origin_height"),LEVEL_BODY),_lvl(target,_uh(context),LEVEL_BODY),spec,context)
+
+func _oga_blood_link(origin:Vector3,target:Vector3,context:Dictionary)->void:
+	var link:=_block_forced(VFX_OGA_BLOOD_LINK) as VFXPackBloodLink3D
+	if link==null:
+		return
+	last_spawned=link
+	link.play_link(_lvl(origin,_uh(context,"origin_height"),LEVEL_BODY),_lvl(target,_uh(context),LEVEL_BODY),context)
 
 func _angel_guard(target:Vector3,context:Dictionary)->void:
 	# Dedicated new-material route. Do not call the generic barrier, the old

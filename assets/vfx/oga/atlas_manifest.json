@@ -1,4 +1,4 @@
-﻿{
+{
     "schema":  "glory.oga_vfx_atlas_manifest/1",
     "generated_from":  "C:\\Users\\Leno\\Desktop\\vfx 1.0",
     "formal_battle_integration":  true,
@@ -23,7 +23,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     },
                     {
                         "id":  "god_priestess_halo_disc",
@@ -45,7 +45,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     },
                     {
                         "id":  "god_angel_wing",
@@ -67,7 +67,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     },
                     {
                         "id":  "god_archangel_seraph_orb",
@@ -89,7 +89,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     },
                     {
                         "id":  "god_aurora_light_spear",
@@ -111,7 +111,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     },
                     {
                         "id":  "dark_mage_arcane_skull",
@@ -135,7 +135,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     },
                     {
                         "id":  "dark_queen_blood_thorn",
@@ -157,7 +157,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     },
                     {
                         "id":  "human_archer_blue_wind_arrow",
@@ -180,7 +180,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     },
                     {
                         "id":  "human_cleric_nature_seed",
@@ -202,7 +202,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     },
                     {
                         "id":  "human_mage_arcane_satellites",
@@ -226,7 +226,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     },
                     {
                         "id":  "undead_spike_bone_fan",
@@ -248,7 +248,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     },
                     {
                         "id":  "undead_mother_blood_lance",
@@ -270,7 +270,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     },
                     {
                         "id":  "god_priest_hit",
@@ -292,7 +292,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     },
                     {
                         "id":  "god_priestess_hit",
@@ -314,7 +314,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     },
                     {
                         "id":  "god_angel_hit",
@@ -336,7 +336,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     },
                     {
                         "id":  "god_archangel_hit",
@@ -358,7 +358,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     },
                     {
                         "id":  "god_aurora_hit",
@@ -376,7 +376,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     },
                     {
                         "id":  "dark_mage_hit",
@@ -400,7 +400,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     },
                     {
                         "id":  "dark_queen_hit",
@@ -422,7 +422,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     },
                     {
                         "id":  "human_archer_hit",
@@ -440,7 +440,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     },
                     {
                         "id":  "human_cleric_hit",
@@ -464,7 +464,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     },
                     {
                         "id":  "human_mage_hit",
@@ -488,7 +488,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     },
                     {
                         "id":  "undead_spike_hit",
@@ -510,7 +510,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     },
                     {
                         "id":  "undead_mother_hit",
@@ -532,7 +532,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     },
                     {
                         "id":  "melee_god_gold_arc",
@@ -555,7 +555,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     },
                     {
                         "id":  "melee_human_blue_arc",
@@ -578,7 +578,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     },
                     {
                         "id":  "melee_dark_purple_arc",
@@ -601,7 +601,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     },
                     {
                         "id":  "skill_angel_shield",
@@ -638,7 +638,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     },
                     {
                         "id":  "skill_black_hole",
@@ -660,7 +660,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     },
                     {
                         "id":  "skill_earth_impact",
@@ -682,7 +682,7 @@
                                            ],
                         "license":  "CC0",
                         "attribution_required":  false,
-                        "integration":  "isolated_preview"
+                        "integration":  "formal_battle"
                     }
                 ]
 }

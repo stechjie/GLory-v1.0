@@ -1,8 +1,8 @@
 # OpenGameArt VFX source ledger
 
-These atlases are pixel-preserving repacks of selected frames. They are present
-only in `ModelBattlePreview` until visual approval; `atlas_manifest.json` records
-the exact source entries used by every generated atlas.
+These atlases are pixel-preserving repacks of selected frames. Approved entries
+are integrated through the formal `BattleScreen` VFX routes; `atlas_manifest.json`
+records the exact source entries used by every generated atlas.
 
 | Source pack | Author | License | Source page | Runtime use in this batch |
 | --- | --- | --- | --- | --- |

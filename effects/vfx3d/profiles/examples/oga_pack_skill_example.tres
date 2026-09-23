@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="VFXProfile3D" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+profile_id = "oga_pack_skill_example"
+module_id = "oga_pack_skill"
+curve_name = "fast_attack_slow_decay"
+dark_color = Color(0.08, 0.03, 0.12, 1)
+main_color = Color(0.52, 0.24, 0.82, 1)
+core_color = Color(0.92, 0.78, 1, 1)
+size = 1.0
+duration = 0.9
+particle_count = 12
+emission_energy = 2.4
+parameters = {"preview_skill_id": "black_hole", "mobile_layers": 3}
+

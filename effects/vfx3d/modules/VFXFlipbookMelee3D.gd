@@ -13,12 +13,16 @@ func play_spec(origin: Vector3, target: Vector3, spec: Dictionary, context: Dict
 		push_warning("OGA melee texture missing: %s" % str(spec.get("path", "")))
 		finish()
 		return
-	_bind_target(context.get("target_node"), target)
+	var target_height := maxf(0.36, float(context.get("target_height", 0.72)))
+	var height_ratio := clampf(float(spec.get("height_ratio", 0.40)), 0.28, 0.56)
+	var target_foot: Vector3 = context.get("target_foot", target - Vector3(0.0, target_height * height_ratio, 0.0))
+	var slash_anchor := target_foot + Vector3(0.0, target_height * height_ratio, 0.0)
+	_bind_target(context.get("target_node"), slash_anchor)
 	var slash := FLIPBOOK.new() as VFXSpriteFlipbook3D
 	slash.name = "OgaMeleeSlash"
 	add_child(slash)
-	var slash_offset := Vector3(0.0, 0.18, 0.0) + vfx_toward_camera(0.13)
-	var current_target := _tracked_target(target)
+	var slash_offset := vfx_toward_camera(0.10)
+	var current_target := _tracked_target(slash_anchor)
 	slash.play_flipbook_advanced(current_target + slash_offset, slash_texture, {
 		"columns":int(spec.get("columns", 6)),
 		"rows":int(spec.get("rows", 1)),
@@ -33,6 +37,9 @@ func play_spec(origin: Vector3, target: Vector3, spec: Dictionary, context: Dict
 		"size":spec.get("size", Vector2(1.10, 1.06)),
 		"position_offset":Vector3.ZERO,
 		"rotation_radians":_screen_facing(origin, current_target),
+		"fade_in":0.025,
+		"fade_out":0.10,
+		"emission_scale":float(spec.get("emission_scale", 0.82)),
 	})
 	var impact_delay := maxf(0.0, float(spec.get("impact_delay", 0.10)))
 	var elapsed := 0.0
@@ -42,9 +49,10 @@ func play_spec(origin: Vector3, target: Vector3, spec: Dictionary, context: Dict
 			return
 		elapsed += get_process_delta_time()
 		if is_instance_valid(slash):
-			current_target = _tracked_target(target)
+			current_target = _tracked_target(slash_anchor)
 			slash.position = current_target + slash_offset
-	_play_impact(_tracked_target(target), spec)
+	var tracked_ground := _tracked_target(slash_anchor) - Vector3(0.0, target_height * height_ratio, 0.0)
+	_play_impact(tracked_ground, spec)
 	var total_duration := maxf(float(spec.get("duration", 0.42)), impact_delay + float(spec.get("impact_duration", 0.40)))
 	await get_tree().create_timer(maxf(0.05, total_duration - impact_delay)).timeout
 	if not _finished:
@@ -57,7 +65,7 @@ func _play_impact(at: Vector3, spec: Dictionary) -> void:
 	var impact := FLIPBOOK.new() as VFXSpriteFlipbook3D
 	impact.name = "OgaMeleeImpact"
 	add_child(impact)
-	impact.play_flipbook_advanced(at + Vector3(0.0, 0.20, 0.0) + vfx_toward_camera(0.15), texture, {
+	impact.play_flipbook_advanced(at + vfx_toward_camera(0.025), texture, {
 		"columns":int(spec.get("impact_columns", 1)),
 		"rows":int(spec.get("impact_rows", 1)),
 		"frame_count":int(spec.get("impact_frames", 1)),
@@ -65,12 +73,16 @@ func _play_impact(at: Vector3, spec: Dictionary) -> void:
 		"random_start":false,
 		"speed_min":float(spec.get("impact_fps", 16.0)),
 		"speed_max":float(spec.get("impact_fps", 16.0)),
-		"billboard":true,
+		"billboard":false,
 		"duration":float(spec.get("impact_duration", 0.40)),
 		"color":spec.get("impact_color", Color.WHITE),
 		"size":spec.get("impact_size", Vector2(0.76, 0.76)),
 		"position_offset":Vector3.ZERO,
+		"fade_in":0.02,
+		"fade_out":0.12,
+		"emission_scale":float(spec.get("impact_emission_scale", 0.58)),
 	})
+	impact.rotation.x = -PI * 0.5
 
 func _bind_target(node_value: Variant, target: Vector3) -> void:
 	_target_ref = null
