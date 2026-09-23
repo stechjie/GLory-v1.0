@@ -1,0 +1,688 @@
+﻿{
+    "schema":  "glory.oga_vfx_atlas_manifest/1",
+    "generated_from":  "C:\\Users\\Leno\\Desktop\\vfx 1.0",
+    "formal_battle_integration":  true,
+    "entries":  [
+                    {
+                        "id":  "god_priest_star_lance",
+                        "path":  "res://assets/vfx/oga/projectiles/god_priest_star_lance.png",
+                        "columns":  5,
+                        "rows":  1,
+                        "frame_count":  5,
+                        "cell":  [
+                                     192,
+                                     192
+                                 ],
+                        "source_pack":  "Light - Magic Effect",
+                        "source_entries":  [
+                                               "LightEffect_21.png",
+                                               "LightEffect_22.png",
+                                               "LightEffect_23.png",
+                                               "LightEffect_24.png",
+                                               "LightEffect_25.png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    },
+                    {
+                        "id":  "god_priestess_halo_disc",
+                        "path":  "res://assets/vfx/oga/projectiles/god_priestess_halo_disc.png",
+                        "columns":  5,
+                        "rows":  1,
+                        "frame_count":  5,
+                        "cell":  [
+                                     192,
+                                     192
+                                 ],
+                        "source_pack":  "Light - Magic Effect",
+                        "source_entries":  [
+                                               "LightEffect_16.png",
+                                               "LightEffect_17.png",
+                                               "LightEffect_18.png",
+                                               "LightEffect_19.png",
+                                               "LightEffect_20.png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    },
+                    {
+                        "id":  "god_angel_wing",
+                        "path":  "res://assets/vfx/oga/projectiles/god_angel_wing.png",
+                        "columns":  5,
+                        "rows":  1,
+                        "frame_count":  5,
+                        "cell":  [
+                                     192,
+                                     192
+                                 ],
+                        "source_pack":  "Pure Projectile - Magic Effect",
+                        "source_entries":  [
+                                               "Files/Pure_16.png",
+                                               "Files/Pure_17.png",
+                                               "Files/Pure_18.png",
+                                               "Files/Pure_19.png",
+                                               "Files/Pure_20.png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    },
+                    {
+                        "id":  "god_archangel_seraph_orb",
+                        "path":  "res://assets/vfx/oga/projectiles/god_archangel_seraph_orb.png",
+                        "columns":  5,
+                        "rows":  1,
+                        "frame_count":  5,
+                        "cell":  [
+                                     192,
+                                     192
+                                 ],
+                        "source_pack":  "Light - Magic Effect",
+                        "source_entries":  [
+                                               "LightEffect_01.png",
+                                               "LightEffect_02.png",
+                                               "LightEffect_03.png",
+                                               "LightEffect_04.png",
+                                               "LightEffect_05.png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    },
+                    {
+                        "id":  "god_aurora_light_spear",
+                        "path":  "res://assets/vfx/oga/projectiles/god_aurora_light_spear.png",
+                        "columns":  5,
+                        "rows":  1,
+                        "frame_count":  5,
+                        "cell":  [
+                                     192,
+                                     192
+                                 ],
+                        "source_pack":  "Pure Projectile - Magic Effect",
+                        "source_entries":  [
+                                               "Files/Pure_11.png",
+                                               "Files/Pure_12.png",
+                                               "Files/Pure_13.png",
+                                               "Files/Pure_14.png",
+                                               "Files/Pure_15.png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    },
+                    {
+                        "id":  "dark_mage_arcane_skull",
+                        "path":  "res://assets/vfx/oga/projectiles/dark_mage_arcane_skull.png",
+                        "columns":  7,
+                        "rows":  1,
+                        "frame_count":  7,
+                        "cell":  [
+                                     160,
+                                     160
+                                 ],
+                        "source_pack":  "Arcane Magic Effect",
+                        "source_entries":  [
+                                               "04/Arcane_Effect_1.png",
+                                               "04/Arcane_Effect_2.png",
+                                               "04/Arcane_Effect_3.png",
+                                               "04/Arcane_Effect_4.png",
+                                               "04/Arcane_Effect_5.png",
+                                               "04/Arcane_Effect_6.png",
+                                               "04/Arcane_Effect_7.png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    },
+                    {
+                        "id":  "dark_queen_blood_thorn",
+                        "path":  "res://assets/vfx/oga/projectiles/dark_queen_blood_thorn.png",
+                        "columns":  5,
+                        "rows":  1,
+                        "frame_count":  5,
+                        "cell":  [
+                                     192,
+                                     192
+                                 ],
+                        "source_pack":  "Blood - Magic Effect",
+                        "source_entries":  [
+                                               "Blood-Magic-Effect_06.png",
+                                               "Blood-Magic-Effect_07.png",
+                                               "Blood-Magic-Effect_08.png",
+                                               "Blood-Magic-Effect_09.png",
+                                               "Blood-Magic-Effect_10.png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    },
+                    {
+                        "id":  "human_archer_blue_wind_arrow",
+                        "path":  "res://assets/vfx/oga/projectiles/human_archer_blue_wind_arrow.png",
+                        "columns":  6,
+                        "rows":  1,
+                        "frame_count":  6,
+                        "cell":  [
+                                     160,
+                                     176
+                                 ],
+                        "source_pack":  "Weapon Slash - Effect",
+                        "source_entries":  [
+                                               "Alternative 2/4/Alternative_2_19.png",
+                                               "Alternative 2/4/Alternative_2_20.png",
+                                               "Alternative 2/4/Alternative_2_21.png",
+                                               "Alternative 2/4/Alternative_2_22.png",
+                                               "Alternative 2/4/Alternative_2_23.png",
+                                               "Alternative 2/4/Alternative_2_24.png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    },
+                    {
+                        "id":  "human_cleric_nature_seed",
+                        "path":  "res://assets/vfx/oga/projectiles/human_cleric_nature_seed.png",
+                        "columns":  5,
+                        "rows":  1,
+                        "frame_count":  5,
+                        "cell":  [
+                                     224,
+                                     192
+                                 ],
+                        "source_pack":  "Nature - Magic Effect",
+                        "source_entries":  [
+                                               "3-1.png",
+                                               "3-2.png",
+                                               "3-3.png",
+                                               "3-4.png",
+                                               "3-5.png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    },
+                    {
+                        "id":  "human_mage_arcane_satellites",
+                        "path":  "res://assets/vfx/oga/projectiles/human_mage_arcane_satellites.png",
+                        "columns":  7,
+                        "rows":  1,
+                        "frame_count":  7,
+                        "cell":  [
+                                     160,
+                                     160
+                                 ],
+                        "source_pack":  "Arcane Magic Effect",
+                        "source_entries":  [
+                                               "03/Arcane_Effect_1.png",
+                                               "03/Arcane_Effect_2.png",
+                                               "03/Arcane_Effect_3.png",
+                                               "03/Arcane_Effect_4.png",
+                                               "03/Arcane_Effect_5.png",
+                                               "03/Arcane_Effect_6.png",
+                                               "03/Arcane_Effect_7.png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    },
+                    {
+                        "id":  "undead_spike_bone_fan",
+                        "path":  "res://assets/vfx/oga/projectiles/undead_spike_bone_fan.png",
+                        "columns":  5,
+                        "rows":  1,
+                        "frame_count":  5,
+                        "cell":  [
+                                     192,
+                                     192
+                                 ],
+                        "source_pack":  "Pure Projectile - Magic Effect",
+                        "source_entries":  [
+                                               "Files/Pure_06.png",
+                                               "Files/Pure_07.png",
+                                               "Files/Pure_08.png",
+                                               "Files/Pure_09.png",
+                                               "Files/Pure_10.png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    },
+                    {
+                        "id":  "undead_mother_blood_lance",
+                        "path":  "res://assets/vfx/oga/projectiles/undead_mother_blood_lance.png",
+                        "columns":  5,
+                        "rows":  1,
+                        "frame_count":  5,
+                        "cell":  [
+                                     192,
+                                     192
+                                 ],
+                        "source_pack":  "Blood - Magic Effect",
+                        "source_entries":  [
+                                               "Blood-Magic-Effect_21.png",
+                                               "Blood-Magic-Effect_22.png",
+                                               "Blood-Magic-Effect_23.png",
+                                               "Blood-Magic-Effect_24.png",
+                                               "Blood-Magic-Effect_25.png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    },
+                    {
+                        "id":  "god_priest_hit",
+                        "path":  "res://assets/vfx/oga/impacts/god_priest_hit.png",
+                        "columns":  5,
+                        "rows":  1,
+                        "frame_count":  5,
+                        "cell":  [
+                                     192,
+                                     192
+                                 ],
+                        "source_pack":  "Light - Magic Effect",
+                        "source_entries":  [
+                                               "LightEffect_06.png",
+                                               "LightEffect_07.png",
+                                               "LightEffect_08.png",
+                                               "LightEffect_09.png",
+                                               "LightEffect_10.png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    },
+                    {
+                        "id":  "god_priestess_hit",
+                        "path":  "res://assets/vfx/oga/impacts/god_priestess_hit.png",
+                        "columns":  5,
+                        "rows":  1,
+                        "frame_count":  5,
+                        "cell":  [
+                                     192,
+                                     192
+                                 ],
+                        "source_pack":  "Cosmic Time - Magic Effect",
+                        "source_entries":  [
+                                               "4/Cosmic_16.png",
+                                               "4/Cosmic_17.png",
+                                               "4/Cosmic_18.png",
+                                               "4/Cosmic_19.png",
+                                               "4/Cosmic_20.png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    },
+                    {
+                        "id":  "god_angel_hit",
+                        "path":  "res://assets/vfx/oga/impacts/god_angel_hit.png",
+                        "columns":  5,
+                        "rows":  1,
+                        "frame_count":  5,
+                        "cell":  [
+                                     192,
+                                     192
+                                 ],
+                        "source_pack":  "Pure Projectile - Magic Effect",
+                        "source_entries":  [
+                                               "Files/Pure_21.png",
+                                               "Files/Pure_22.png",
+                                               "Files/Pure_23.png",
+                                               "Files/Pure_24.png",
+                                               "Files/Pure_25.png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    },
+                    {
+                        "id":  "god_archangel_hit",
+                        "path":  "res://assets/vfx/oga/impacts/god_archangel_hit.png",
+                        "columns":  5,
+                        "rows":  1,
+                        "frame_count":  5,
+                        "cell":  [
+                                     192,
+                                     192
+                                 ],
+                        "source_pack":  "Light - Magic Effect",
+                        "source_entries":  [
+                                               "LightEffect_11.png",
+                                               "LightEffect_12.png",
+                                               "LightEffect_13.png",
+                                               "LightEffect_14.png",
+                                               "LightEffect_15.png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    },
+                    {
+                        "id":  "god_aurora_hit",
+                        "path":  "res://assets/vfx/oga/impacts/god_aurora_hit.png",
+                        "columns":  4,
+                        "rows":  4,
+                        "frame_count":  16,
+                        "cell":  [
+                                     128,
+                                     128
+                                 ],
+                        "source_pack":  "70 Animated 2D Game Effects!",
+                        "source_entries":  [
+                                               "70_Effects/explosion7 (2).png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    },
+                    {
+                        "id":  "dark_mage_hit",
+                        "path":  "res://assets/vfx/oga/impacts/dark_mage_hit.png",
+                        "columns":  7,
+                        "rows":  1,
+                        "frame_count":  7,
+                        "cell":  [
+                                     160,
+                                     160
+                                 ],
+                        "source_pack":  "Arcane Magic Effect",
+                        "source_entries":  [
+                                               "06/Arcane_Effect_1.png",
+                                               "06/Arcane_Effect_2.png",
+                                               "06/Arcane_Effect_3.png",
+                                               "06/Arcane_Effect_4.png",
+                                               "06/Arcane_Effect_5.png",
+                                               "06/Arcane_Effect_6.png",
+                                               "06/Arcane_Effect_7.png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    },
+                    {
+                        "id":  "dark_queen_hit",
+                        "path":  "res://assets/vfx/oga/impacts/dark_queen_hit.png",
+                        "columns":  5,
+                        "rows":  1,
+                        "frame_count":  5,
+                        "cell":  [
+                                     192,
+                                     192
+                                 ],
+                        "source_pack":  "Blood - Magic Effect",
+                        "source_entries":  [
+                                               "Blood-Magic-Effect_11.png",
+                                               "Blood-Magic-Effect_12.png",
+                                               "Blood-Magic-Effect_13.png",
+                                               "Blood-Magic-Effect_14.png",
+                                               "Blood-Magic-Effect_15.png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    },
+                    {
+                        "id":  "human_archer_hit",
+                        "path":  "res://assets/vfx/oga/impacts/human_archer_hit.png",
+                        "columns":  4,
+                        "rows":  4,
+                        "frame_count":  16,
+                        "cell":  [
+                                     128,
+                                     128
+                                 ],
+                        "source_pack":  "70 Animated 2D Game Effects!",
+                        "source_entries":  [
+                                               "70_Effects/explosion32.png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    },
+                    {
+                        "id":  "human_cleric_hit",
+                        "path":  "res://assets/vfx/oga/impacts/human_cleric_hit.png",
+                        "columns":  7,
+                        "rows":  1,
+                        "frame_count":  7,
+                        "cell":  [
+                                     224,
+                                     192
+                                 ],
+                        "source_pack":  "Nature - Magic Effect",
+                        "source_entries":  [
+                                               "1-1.png",
+                                               "1-2.png",
+                                               "1-3.png",
+                                               "1-4.png",
+                                               "1-5.png",
+                                               "1-6.png",
+                                               "1-7.png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    },
+                    {
+                        "id":  "human_mage_hit",
+                        "path":  "res://assets/vfx/oga/impacts/human_mage_hit.png",
+                        "columns":  7,
+                        "rows":  1,
+                        "frame_count":  7,
+                        "cell":  [
+                                     160,
+                                     160
+                                 ],
+                        "source_pack":  "Arcane Magic Effect",
+                        "source_entries":  [
+                                               "05/Arcane_Effect_1.png",
+                                               "05/Arcane_Effect_2.png",
+                                               "05/Arcane_Effect_3.png",
+                                               "05/Arcane_Effect_4.png",
+                                               "05/Arcane_Effect_5.png",
+                                               "05/Arcane_Effect_6.png",
+                                               "05/Arcane_Effect_7.png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    },
+                    {
+                        "id":  "undead_spike_hit",
+                        "path":  "res://assets/vfx/oga/impacts/undead_spike_hit.png",
+                        "columns":  5,
+                        "rows":  1,
+                        "frame_count":  5,
+                        "cell":  [
+                                     192,
+                                     192
+                                 ],
+                        "source_pack":  "Earth Impact - Magic Effect",
+                        "source_entries":  [
+                                               "3/Earth-Impact_11.png",
+                                               "3/Earth-Impact_12.png",
+                                               "3/Earth-Impact_13.png",
+                                               "3/Earth-Impact_14.png",
+                                               "3/Earth-Impact_15.png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    },
+                    {
+                        "id":  "undead_mother_hit",
+                        "path":  "res://assets/vfx/oga/impacts/undead_mother_hit.png",
+                        "columns":  5,
+                        "rows":  1,
+                        "frame_count":  5,
+                        "cell":  [
+                                     192,
+                                     192
+                                 ],
+                        "source_pack":  "Blood - Magic Effect",
+                        "source_entries":  [
+                                               "Blood-Magic-Effect_16.png",
+                                               "Blood-Magic-Effect_17.png",
+                                               "Blood-Magic-Effect_18.png",
+                                               "Blood-Magic-Effect_19.png",
+                                               "Blood-Magic-Effect_20.png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    },
+                    {
+                        "id":  "melee_god_gold_arc",
+                        "path":  "res://assets/vfx/oga/melee/god_gold_arc.png",
+                        "columns":  6,
+                        "rows":  1,
+                        "frame_count":  6,
+                        "cell":  [
+                                     160,
+                                     176
+                                 ],
+                        "source_pack":  "Weapon Slash - Effect",
+                        "source_entries":  [
+                                               "Classic/1/Classic_01.png",
+                                               "Classic/1/Classic_02.png",
+                                               "Classic/1/Classic_03.png",
+                                               "Classic/1/Classic_04.png",
+                                               "Classic/1/Classic_05.png",
+                                               "Classic/1/Classic_06.png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    },
+                    {
+                        "id":  "melee_human_blue_arc",
+                        "path":  "res://assets/vfx/oga/melee/human_blue_arc.png",
+                        "columns":  6,
+                        "rows":  1,
+                        "frame_count":  6,
+                        "cell":  [
+                                     160,
+                                     176
+                                 ],
+                        "source_pack":  "Weapon Slash - Effect",
+                        "source_entries":  [
+                                               "Alternative 2/2/Alternative_2_07.png",
+                                               "Alternative 2/2/Alternative_2_08.png",
+                                               "Alternative 2/2/Alternative_2_09.png",
+                                               "Alternative 2/2/Alternative_2_10.png",
+                                               "Alternative 2/2/Alternative_2_11.png",
+                                               "Alternative 2/2/Alternative_2_12.png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    },
+                    {
+                        "id":  "melee_dark_purple_arc",
+                        "path":  "res://assets/vfx/oga/melee/dark_purple_arc.png",
+                        "columns":  6,
+                        "rows":  1,
+                        "frame_count":  6,
+                        "cell":  [
+                                     160,
+                                     176
+                                 ],
+                        "source_pack":  "Weapon Slash - Effect",
+                        "source_entries":  [
+                                               "Alternative 1/3/Alternative_1_13.png",
+                                               "Alternative 1/3/Alternative_1_14.png",
+                                               "Alternative 1/3/Alternative_1_15.png",
+                                               "Alternative 1/3/Alternative_1_16.png",
+                                               "Alternative 1/3/Alternative_1_17.png",
+                                               "Alternative 1/3/Alternative_1_18.png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    },
+                    {
+                        "id":  "skill_angel_shield",
+                        "path":  "res://assets/vfx/oga/skills/angel_shield.png",
+                        "columns":  5,
+                        "rows":  4,
+                        "frame_count":  20,
+                        "cell":  [
+                                     200,
+                                     176
+                                 ],
+                        "source_pack":  "Angel Shield Effect",
+                        "source_entries":  [
+                                               "AngelShieldEffect_01.png",
+                                               "AngelShieldEffect_02.png",
+                                               "AngelShieldEffect_03.png",
+                                               "AngelShieldEffect_04.png",
+                                               "AngelShieldEffect_05.png",
+                                               "AngelShieldEffect_06.png",
+                                               "AngelShieldEffect_07.png",
+                                               "AngelShieldEffect_08.png",
+                                               "AngelShieldEffect_09.png",
+                                               "AngelShieldEffect_10.png",
+                                               "AngelShieldEffect_11.png",
+                                               "AngelShieldEffect_12.png",
+                                               "AngelShieldEffect_13.png",
+                                               "AngelShieldEffect_14.png",
+                                               "AngelShieldEffect_15.png",
+                                               "AngelShieldEffect_16.png",
+                                               "AngelShieldEffect_17.png",
+                                               "AngelShieldEffect_18.png",
+                                               "AngelShieldEffect_19.png",
+                                               "AngelShieldEffect_20.png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    },
+                    {
+                        "id":  "skill_black_hole",
+                        "path":  "res://assets/vfx/oga/skills/black_hole.png",
+                        "columns":  5,
+                        "rows":  1,
+                        "frame_count":  5,
+                        "cell":  [
+                                     192,
+                                     192
+                                 ],
+                        "source_pack":  "Cosmic Time - Magic Effect",
+                        "source_entries":  [
+                                               "5/Cosmic_21.png",
+                                               "5/Cosmic_22.png",
+                                               "5/Cosmic_23.png",
+                                               "5/Cosmic_24.png",
+                                               "5/Cosmic_25.png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    },
+                    {
+                        "id":  "skill_earth_impact",
+                        "path":  "res://assets/vfx/oga/skills/earth_impact.png",
+                        "columns":  5,
+                        "rows":  1,
+                        "frame_count":  5,
+                        "cell":  [
+                                     192,
+                                     192
+                                 ],
+                        "source_pack":  "Earth Impact - Magic Effect",
+                        "source_entries":  [
+                                               "3/Earth-Impact_11.png",
+                                               "3/Earth-Impact_12.png",
+                                               "3/Earth-Impact_13.png",
+                                               "3/Earth-Impact_14.png",
+                                               "3/Earth-Impact_15.png"
+                                           ],
+                        "license":  "CC0",
+                        "attribution_required":  false,
+                        "integration":  "isolated_preview"
+                    }
+                ]
+}

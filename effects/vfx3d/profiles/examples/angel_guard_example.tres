@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="VFXProfile3D" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+profile_id = "angel_guard_new"
+module_id = "angel_guard"
+curve_name = "ease_out_back"
+dark_color = Color(0.025, 0.070, 0.18, 1)
+main_color = Color(0.38, 0.68, 1, 1)
+core_color = Color(0.98, 1, 1, 1)
+size = 1.05
+duration = 6.0
+particle_count = 6
+emission_energy = 2.5
+parameters = {"crest_white_frame": 16, "fade_time": 0.48, "form_time": 0.32, "pulse_speed": 1.35}
