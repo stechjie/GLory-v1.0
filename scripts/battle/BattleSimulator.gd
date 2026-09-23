@@ -669,6 +669,11 @@ static func _perform_attack(attacker: Dictionary, target: Dictionary, state: Dic
 		base *= 1.0 + SynergyService.safe_factor(syn, "dark_damage_bonus") + float(_attacker_dark_stacks(attacker, state)) * 0.06
 	if str(d.get("skill_id", "")) == "balance_judge" and int(target.hp) > int(attacker.hp):
 		base *= 1.0 + float(d.get("bonus_vs_higher_hp", 0.40))
+		# 9.22：审判剑士（佣兵 `merc_libra_judge`）的「技能增伤」触发音。
+		# 触发条件就是上面那一行 —— 这次普攻真的吃到了增伤，才响。
+		# 挂在 `_perform_attack` 而不是 `_apply_attack_statuses`：`balance_judge`
+		# 不改状态（没有 poison/burn 之类可挂的边沿），它改的是这一击的伤害。
+		_emit_sfx_proc(state, "balance_judge", attacker, target)
 	if str(d.get("skill_id", "")) == "blood_rampage":
 		base *= _blood_rampage_damage_multiplier(attacker, d)
 	if str(d.get("skill_id", "")) == "same_target_damage_stack" and str(attacker.get("linked_target_uid", "")) == str(target.get("uid", "")):
@@ -706,8 +711,19 @@ static func _perform_attack(attacker: Dictionary, target: Dictionary, state: Dic
 	BattleSimTreasures._apply_attack_treasure_effects(attacker, target, state)
 	BattleSimTreasures._maybe_control_set_extra_debuff(attacker, target, state, before_status_count)
 	BattleSimTreasures._apply_defender_reaction(attacker, target, dealt)
+	# 9.22：四星巨甲灵「反弹使攻击者中毒」的触发音。判据与上面那一步内部
+	# （`poison_reflect_armor_stack` + dealt > 0 + 自己还活着，见
+	# BattleSimTreasures.gd:448）**逐条一致**。
+	#
+	# ★ 不能改用「护甲层数涨了」当判据：层数有 max_stacks(10) 封顶，封顶之后
+	#   反弹照旧生效，按层数判就是「第 11 次起没声音」。
+	# ★ `source` 传 **target**（巨甲灵自己）：反弹是它的技能，不是攻击者的。
+	if dealt > 0 and bool(target.get("alive", false)):
+		var titan_def: Dictionary = target.get("def", {})
+		if str(titan_def.get("skill_id", "")) == "poison_reflect_armor_stack":
+			_emit_sfx_proc(state, "poison_reflect_armor_stack", target, attacker)
 	BattleSimTreasures._apply_defender_treasure_reaction(target, attacker, state, dealt)
-	BattleSimTreasures._apply_boss_attacker_passives(attacker)
+	BattleSimTreasures._apply_boss_attacker_passives(attacker, state)
 	BattleSimTreasures._apply_post_damage_treasures(attacker, target, state, dealt)
 	BattleSimTreasures._apply_blood_rampage_lifesteal(attacker, d, dealt)
 	BattleSimTreasures._apply_boss_attack_lifesteal(attacker, d, dealt)
@@ -732,6 +748,7 @@ static func _apply_attack_statuses(attacker: Dictionary, target: Dictionary, sta
 	if sid == "curse_attack":
 		StatusEffectService.add_status(target, "attack_down", float(d.get("duration", 4.0)) * duration_bonus, {"pct": float(d.get("attack_down", 0.08)) * strength})
 		StatusEffectService.add_status(target, "slow", float(d.get("duration", 4.0)) * duration_bonus, {"attack_speed_pct": float(d.get("aspd_down", 0.08)) * strength, "move_pct": 0.0})
+		_emit_sfx_proc(state, sid, attacker, target)
 	elif sid == "burn_claw":
 		StatusEffectService.add_poison(target, float(d.get("burn_duration", 3.0)), 0.0, 0.0)
 		StatusEffectService.add_status(target, "burn", float(d.get("burn_duration", 3.0)), {"dps": float(d.get("burn_dps", 36.0)), "tick_left": 0.0})
@@ -749,8 +766,12 @@ static func _apply_attack_statuses(attacker: Dictionary, target: Dictionary, sta
 			float(d.get("poison_duration", 4.0)) * duration_bonus,
 			float(d.get("poison_pct_max_hp", 0.03)),
 			SynergyService.safe_factor(syn, "undead_poison_bonus"))
+		# 9.22：四星毒灵 / 四星飞灵共用这一条（两只棋子的 skill_id 都是 `poison_attack`）。
+		_emit_sfx_proc(state, sid, attacker, target)
 	elif sid == "defense_down_attack":
 		StatusEffectService.add_status(target, "defense_down", float(d.get("duration", 5.0)) * duration_bonus, {"pct": float(d.get("def_down_pct", 0.10)) * strength})
+		# 9.22：四星刺灵。
+		_emit_sfx_proc(state, sid, attacker, target)
 	elif sid == "death_hunt":
 		StatusEffectService.add_status(target, "defense_flat_down", float(d.get("duration", 4.0)), {"amount": int(d.get("armor_break", 8))})
 		StatusEffectService.add_status(target, "heal_reduction", float(d.get("duration", 4.0)), {"pct": float(d.get("heal_reduction", 0.50))})
@@ -774,6 +795,11 @@ static func _apply_attack_statuses(attacker: Dictionary, target: Dictionary, sta
 		state["visual_events"] = visual_events
 	elif sid == "random_attribute_attack":
 		_apply_attribute_effect(["fire", "ice", "thunder", "poison"][RngService.rng.randi() % 4], attacker, target)
+
+
+# `_emit_sfx_proc()`（「只出声」的技能触发事件）9.23 第五批起定义在 `BattleSimShared`，
+# 见那里的说明 —— boss 技能的触发点分散在三个兄弟模块里，放基类才不必互相反向引用。
+# 本文件里那 5 处调用点不变（静态继承，仍按老写法 `_emit_sfx_proc(...)` 调）。
 
 
 static func _apply_opening_unit_skills(player: Array, enemy: Array, event_log: Array[String], state: Dictionary) -> void:
@@ -906,10 +932,19 @@ static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) ->
 				BattleSimSkills._skill_holy_purify(caster, casters, d)
 				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 8.0))
 			"apocalypse_charge":
-				BattleSimSkills._skill_apocalypse_charge(caster, state, d)
+				# 9.23 第五批：蓄力**真的开始**的那一次补事件（用户口径「开始蓄力的音效
+				# 仅播放一次」）。返回值就是「这次真的开始了」—— `_skill_apocalypse_charge`
+				# 在「已经在蓄力」时会提前 return false，那一次不该再响。
+				if BattleSimSkills._skill_apocalypse_charge(caster, state, d):
+					_emit_sfx_proc(state, "apocalypse_charge", caster, caster)
 				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 10.0))
 			"mirror_clone":
-				BattleSimSkills._skill_mirror_clone(caster, state, d)
+				# 9.23 第五批：**真的召唤出分身**的那一次补事件。该技能每秒都会被
+				# `_tick_skills` 调到一次（`skill_ready = elapsed + 1.0`），
+				# 但只有分身数量变化的那一次才该响 —— 原来挂在施法边沿上，
+				# 于是每秒重响一次，用户原话是「一直播放」。
+				if BattleSimSkills._skill_mirror_clone(caster, state, d) > 0:
+					_emit_sfx_proc(state, "mirror_clone", caster, caster)
 				caster.skill_ready = float(state.elapsed) + 1.0
 			"shell_guard":
 				BattleSimSkills._skill_shell_guard(caster, d)
@@ -970,6 +1005,11 @@ static func _on_unit_killed(killer: Dictionary, victim: Dictionary, state: Dicti
 	if str(killer.get("def", {}).get("skill_id", "")) == "soul_devour":
 		_heal_unit(killer, maxi(1, int(round(float(killer.max_hp) * float(killer.get("def", {}).get("kill_heal_pct", 0.15))))))
 		killer.atk = maxi(1, int(round(float(killer.atk) * (1.0 + float(killer.get("def", {}).get("atk_stack", 0.10))))))
+		# 9.23 第五批：噬魂领主（skills_devour）的技能音。用户口径：「应该在**击杀单位后**
+		# 播放」。补在**这里**而不是挂施法边沿：`soul_devour` 根本不在 `_tick_skills`
+		# 的 match 里（它的技能就是上面这两行击杀收益），压根没有 `skill_ready` 边沿 ——
+		# 挂在施法边沿上就是用户报的「音效未生效」。
+		_emit_sfx_proc(state, "soul_devour", killer, victim)
 	BattleSimTreasures._queue_twin_revive(victim, state)
 	BattleSimTreasures._queue_phoenix_revive(victim, state)
 	BattleSimTreasures._apply_soul_counter_treasure(killer, victim)
@@ -1197,19 +1237,32 @@ static func _process_boss_charges(state: Dictionary) -> void:
 		if int(caster.get("shield", 0)) <= 0:
 			caster.erase("apocalypse_due")
 			state.log.append(TranslationServer.translate("log_arbiter_interrupted"))
+			# 9.23 第五批：蓄力被打断 —— 只收口蓄力音，不补音
+			# （用户口径：「蓄力时的音效暂停播放」）。
+			_emit_sfx_proc(state, "apocalypse_stop", caster, caster)
 			continue
 		if float(state.elapsed) < float(caster.apocalypse_due):
 			continue
 		var opponents: Array = state.player if str(caster.team) == "enemy" else state.enemy
 		DamageService.begin_stat_context(state, caster)
+		var hit_any := false
 		for o in opponents:
 			if bool(o.get("alive", false)) and _can_target(caster, o, opponents):
-				DamageService.apply_damage(o, maxi(1, int(round(float(caster.atk) * float(caster.get("apocalypse_damage_atk_pct", 2.5))))), bool(caster.get("apocalypse_ignore_def", true)))
+				var charged := DamageService.apply_damage(o, maxi(1, int(round(float(caster.atk) * float(caster.get("apocalypse_damage_atk_pct", 2.5))))), bool(caster.get("apocalypse_ignore_def", true)))
+				if charged > 0:
+					hit_any = true
 		DamageService.clear_stat_context()
 		state.log.append(TranslationServer.translate("log_arbiter_charged"))
 		caster.erase("apocalypse_due")
 		caster.erase("apocalypse_damage_atk_pct")
 		caster.erase("apocalypse_ignore_def")
+		# 9.23 第五批：蓄力窗口结束。分两档，与用户在 BattleVfx 那边的旧口径一致：
+		#   * 真的打出了全场伤害 → 先收口蓄力音，再放「蓄力完成」音；
+		#   * 蓄力完成了但这一下**没打到任何人**（那条线上的目标已经死光 / 打不动）
+		#     → 只收口，不补完成音。
+		# 两档都收口是有意的：蓄力音是 2 秒的一次性音，漏收口就会在「已经打完了」
+		# 之后再响一小段，与画面错位（9.22 的 stop_cue 排在两个分支之前就是这个原因）。
+		_emit_sfx_proc(state, "apocalypse_impact" if hit_any else "apocalypse_stop", caster, caster)
 
 
 static func _add_team_final_formation_allies(player: Array, enemy: Array) -> void:

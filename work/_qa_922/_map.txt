@@ -1,0 +1,16 @@
+OK|boss技能/镜像魔君技能.mp3|boss_mirror_lord_skill.mp3|boss_mirror_lord_skill|84680|镜像魔君 boss_mirror_lord / mirror_clone
+OK|boss技能/雷怒核心技能.mp3|boss_thunder_core_skill.mp3|boss_thunder_core_skill|56004|雷怒核心 boss_thunder_core / overload_counter
+OK|boss技能/灭世裁决者技能蓄力2秒.mp3|boss_apocalypse_charge.mp3|boss_apocalypse_charge|82619|灭世裁决者蓄力开始（被打断则 stop_cue）
+OK|boss技能/灭世裁决者技能蓄力完成后的全场伤害.mp3|boss_apocalypse_impact.mp3|boss_apocalypse_impact|23555|灭世裁决者蓄力完成 + 打出全场伤害
+OK|boss技能/圣愈祭司技能.mp3|boss_holy_priest_skill.mp3|boss_holy_priest_skill|17180|圣愈祭司 boss_holy_priest / holy_purify
+OK|boss技能/噬魂领主技能.mp3|boss_soul_devourer_skill.mp3|boss_soul_devourer_skill|25122|噬魂领主 boss_soul_devourer / soul_devour
+OK|boss技能/双生守门人复活.mp3|boss_twin_gate_revive.mp3|boss_twin_gate_revive|84680|双生守门人复活那一帧
+OK|boss技能/天罚投星者技能.mp3|boss_meteor_caster_skill.mp3|boss_meteor_caster_skill|97219|天罚投星者 boss_meteor_caster / element_meteor
+OK|boss技能/血怒魔王技能.mp3|boss_blood_demon_skill.mp3|boss_blood_demon_skill|34738|血怒魔王 boss_blood_demon / blood_rage
+OK|战斗、特效/镜像刺客技能.mp3|merc_gemini_assassin_skill.mp3|merc_gemini_assassin_skill|84680|佣兵镜像刺客 merc_gemini_assassin / twin_strike
+OK|战斗、特效/审判剑士技能触发.mp3|merc_libra_judge_proc.mp3|merc_libra_judge_proc|17280|佣兵审判剑士 balance_judge 增伤那次普攻
+OK|战斗、特效/四星刺灵技能触发.mp3|star4_spike_proc.mp3|star4_spike_proc|17280|四星刺灵 defense_down_attack 破防那次普攻
+OK|战斗、特效/四星毒灵、四星飞灵技能触发.mp3|star4_poison_proc.mp3|star4_poison_proc|41280|四星毒灵 / 四星飞灵 poison_attack 中毒那次普攻
+OK|战斗、特效/四星巨甲灵技能触发.mp3|star4_titan_proc.mp3|star4_titan_proc|41280|四星巨甲灵 poison_reflect_armor_stack 反弹
+OK|战斗、特效/四星魔童技能触发.mp3|star4_motong_proc.mp3|star4_motong_proc|43200|四星魔童 curse_attack 减速那次普攻
+OK|战斗、特效/最终回合pvp战斗场景开局播放.mp3|final_round_pvp_intro.mp3|final_round_pvp_intro|94080|替换既有最终回合 pvp 开局音（覆盖同路径文件）  [已存在，原件存入 prechange]

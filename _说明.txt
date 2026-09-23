@@ -1,61 +1,99 @@
-===============================================================
-9.21 批次交付 —— 代码部分（同目录同路径镜像）
-===============================================================
+========================================================================
+9.23 批次交付 —— 代码部分（同目录同路径镜像）
+========================================================================
 
 用途
     把本夹里的文件按**相同的相对路径**覆盖到你工程对应位置即可。
 
-覆盖方法（示例）
-    把  本夹\scenes\battle\BattleArena.gd
-    覆盖 你的工程\scenes\battle\BattleArena.gd
+本夹内容：37 个文件
 
-本夹内容：16 个文件
+【本批的核心 —— 请务必覆盖这两个】
+    scenes\prep\PrepBoardController.gd
+        bug 文档第 1 条「两个同星级人王交换无效」的修复。
+        现场：两只**同星**人王**都在备战区**，互换位置无效；**不同星**的能换 ——
+        变量是**星级**，不是「在不在场上」。
+        根因：`elif can_merge_cells(...): if not _merge_copies_into_cell(...): return`
+        —— `can_merge_cells` 判的是「同 id + 同星 + 未满星」，两只同星人王满足它；
+        可「满足它」不等于「这一下合得成」：升星要几份看
+        `STAR_UPGRADE_COPIES = {1: 2, 2: 3}`，**2 星还得再凑第 3 份**。
+        两只人王互换时凑不出第 3 份 → 返回 false → **静默 return**，既不合成也不交换。
+        星级边界正好解释「不同星级可以换」：1 星只要 2 份、旧写法真的**合成**；
+        2 星缺第 3 份 → **交换无效**；3 星已到合成上限（`MAX_MERGE_STAR = 3`）、
+        `can_merge_cells` 为假 → 本来就走交换。
+        → 改成 `elif can_merge_cells(...) and _merge_copies_into_cell(...):`，合不成就落到交换分支。
+        四个 handler 都改了（一个 handler 只覆盖一种拖动方向）。
+    ui\services\SfxService.gd
+        15 条新 cue + 3 张派发表 + 按 cue 的音量覆盖表（黄金重骑 +6dB）。
 
-【这一批的核心：bug 3 的真正修复 —— 请务必覆盖这一个】
-    scenes\battle\BattleArena.gd
-        战斗里「队友」按钮点不开 / 语音挡位切不了的**真正原因**在这里：
-        三块全屏 Control（screen_bg / arena_wrap / arena_tint）默认会吃掉兄弟控件的点击，
-        已各加 mouse_filter = IGNORE。
-        ★ 之前那一版只改了 BattleScreen.gd 的 panel_context，**判断是错的、没有修好**，
-          所以那两个文件（BattleScreen.gd）这次也一起给，但真正起作用的是 BattleArena.gd。
-
-【四项 bug 修复】
-    scenes\battle\BattleArena.gd     bug3 真修复（见上）
-    scripts\battle\BattleSimulator.gd bug1 末日守卫技能目标排除唯一棋子
-    scenes\menu\Team3v3Lobby.gd      bug2 自定义房间空座位只留圆圈内提示
-    scripts\ui\UnitDetailFormat.gd   bug4 佣兵提示补冷却
-    scenes\battle\BattleScreen.gd    语音控件（含初版补的 panel_context，保留）
-
-【7 个新音效的接入】
-    ui\services\SfxService.gd        加 7 个 cue 常量 + CUES 登记 + STAR4_PROC_SKILL_CUES
-    scripts\battle\BattleSimulator.gd  四星民兵打断成功时补发 unit_skill_proc 事件
-    scenes\battle\BattleVfx.gd       按事件派发四星民兵技能音（双门控）
-    scenes\battle\BattleUI.gd        「最终回合 PVP 开局音 → 播完 → 再起 PVP BGM」
-    scenes\main\Main.gd              开始游戏成功音：全员延迟等音播完再进备战
-    scenes\menu\Team3v3Lobby.gd      开始游戏失败音：仅房主
-    scenes\menu\SettingsScreen.gd    设置页语言 / 画质切换补音效
-    ui\components\VoicePanel.gd      队友面板关闭 / 只听 / 开麦补音效
+【16 个音效的接线】
+    ui\services\SfxService.gd
+        ★ 核心：15 条新 cue 常量 + `CUES` 登记 + `BOSS_SKILL_CUES`（7 条，狂战灾兽故意不在）+ `MERC_PROC_SKILL_CUES` + `STAR4_PROC_SKILL_CUES` 扩 4 条 + `boss_skill_cue_for()` / `merc_proc_cue_for()` + **按 cue 的音量覆盖表 `CUE_VOLUME_DB`**（黄金重骑 +6dB）；`play()` 里 `voice.volume_db = volume_db + cue_volume_db(cue)`
+    scenes\battle\BattleVfx.gd
+        ★ boss 技能音派发（**不做归属门控**，缩进在函数体层级）+ 灭世裁决者三拍（蓄力上升沿播 / `apocalypse_ended` 里先 stop 再分两支 / 完成支播全场伤害音）+ 新事件类型 `sfx_proc` 的派发 `_maybe_play_sfx_proc()`（**只出声，不加特效**）
+    scripts\battle\BattleSimulator.gd
+        5 处 `_emit_sfx_proc()`：`_perform_attack` 的 `balance_judge` 支、`_apply_attack_statuses` 的 `curse_attack` / `poison_attack` / `defense_down_attack` 三支、`_apply_defender_reaction` 里巨甲灵那条；外加静态方法 `_emit_sfx_proc()`
+    scripts\battle\BattleSimShared.gd
+        ★ 9.23 第五批：`_emit_sfx_proc()` **搬到这里**（原本在 BattleSimulator，但 SimSkills / SimTreasures 两个兄弟模块也要用；放在共享基类上避免循环依赖）。另外它是 `sfx_proc` 事件穿过**回放边界**的起点 —— 事件进 `state.visual_events`，回放采集时进 `frame_events`，所以真机（播回放）路径上音效派发才成立
+    scripts\battle\BattleSimSkills.gd
+        ★ 9.23 第五批：`_skill_apocalypse_charge` 返回类型 `void` → `bool`（true = 这次真的开始蓄力，不是「已经在蓄力」）；`_skill_mirror_clone` 返回类型 `void` → `int`（这次真的召唤出几个分身）。两个返回值就是调用方补事件的**判据** —— 没有它，「开始蓄力响一次」会退化成「每次 match 都响」、镜像魔君会退化成「每秒响一次」
+    scripts\battle\BattleSimTreasures.gd
+        ★ 9.23 第五批：`_apply_boss_attacker_passives(attacker, state)` 加 `state` 形参；`blood_rage` 支里补 `sfx_proc` 事件 —— 挂在 `not blood_rage_active` 这个守卫**里面**，所以「进入暴走的那一次、且仅一次」由代码结构保证，不是靠调用方自觉
+    scripts\battle\BattlePresentationEvent.gd
+        `KNOWN_TYPES` 登记 `sfx_proc` + `_default_visibility()` 给它 `VISIBILITY_IMPORTANT`（不登记会产生 `unknown_type:` 校验错）
+    scenes\prep\PrepBoardController.gd
+        ★ **bug 修复主文件**：四个搬运 handler 的「合不成就退回交换」（`elif can_merge_cells(...) and _merge_copies_into_cell(...):`）—— 修掉「两个同星级人王交换无效」
+    tools\audio_sfx_check.gd
+        cue 计数 60 → 75；`INDIRECT_CUES` 补 15 条新 cue + 9.23 第五批再补 `CUE_BOSS_APOCALYPSE_CHARGE/IMPACT`；`INDIRECT_ENTRIES` 把 `boss_skill_cue_for` 换成 `boss_cast_edge_cue_for` / `boss_event_action_for`（派发入口一拆为二，旧入口已不再是派发表）
+    tools\ui_feedback_check.gd
+        ★ 9.23 第五批：`_check_reject` 除 `screen_shake` 外**快照并按需关掉 `reduced_motion`**、收尾一并还原。原来只快照 screen_shake，于是「降低动态效果」开着的机器上必红（环境态，不是回归）；更要紧的是它同时制造假绿 —— `shake()` 提前返回 false 时不建 tween、不动控件，三条还原类断言「什么都没抖所以什么都没坏」全部通过
+    tools\audio_0921_check.gd
+        `vfx_proc_wrong_branch` 断言由「按顺序」改成「按区间」（新的 `sfx_proc` 派发排在 `unit_skill_proc` 之前，旧判据会被自己的新代码判红）
+    tools\audio_0922_check.gd
+        ★ 本批新增行为探针（**104 项**），断言见 `docs/CHECKS.md`
+    tools\prep_swap_check.gd
+        ★ 本批新增行为探针（**30 项**）：四条搬运路径上「同星人王合不成就该交换」，另含**星级边界**用例（1 星该合成 / 3 星该交换）
+    tools\cold_parse_chain_check.gd
+        ★★ **加厚**：战斗继承链每一层单列成 target；script 类判据从「`load()` 非 null」升级为 **`can_instantiate()`**（解析失败的 GDScript 也是非 null 的，只有它能判出来）。读数 25 → 41
 
 【门禁 / 探针（不是产品代码，但建议一起收进来，方便你自己复跑）】
-    tools\audio_sfx_check.gd     音效门禁
-                                 ★ 本版修掉了它一个「自毒」缺陷：原来它会把
-                                   落盘的 ui_sound 开关写成 false，导致**下一跑**
-                                   必然红 12 条（伪装成「播放器池坏了」）。
-                                   现在收尾会把磁盘整块还原，门禁可重复跑。
-    tools\audio_0921_check.gd/.tscn   本批专用探针
-    tools\voice_battle_hit_probe.gd/.tscn
-                                 ★ 新增：行为级命中探针，专门防「点不开」回归。
-                                   它用真实的 Viewport.push_input 走 GUI 命中测试
-                                   （不能用 Input.parse_input_event —— 那个不经过
-                                   命中测试，会给出假结果），并同时钉住
-                                   「修正前必须点不中 / 修正后必须点得开」。
+    tools\audio_0922_check.gd / .tscn / .gd.uid  本批专用行为探针（104 项）
+    tools\prep_swap_check.gd / .tscn / .gd.uid   人王交换修复的探针（30 项，含星级边界）
+    tools\cold_parse_chain_check.gd              ★ 已加厚：script 类判据改用 can_instantiate()
+    tools\audio_sfx_check.gd                     音效门禁（cue 计数 60 → 75）
+    tools\audio_0921_check.gd                    上一批探针，本批改了它的 proc 分支断言
+    work\_qa_922\*                              批跑脚本 / 变异脚本 / 归因脚本 / 映射表
+
+【文档】
+    docs\9.23第四批战斗音效与人王交换bug修复记录.md
+    docs\CHECKS.md     门禁变更日志
+    README.md          追加了「2026-09-23」小节
+
+★ 订正（2026-09-23 同日，用户指出方向有误后）
+    第一版把现场写成「人王 unique_on_board，所以两只同星必然一只在场一只在待命区」，
+    并据此归因到唯一性 —— **错了**：唯一性限的是场上，备战区不限；
+    这个洞跟唯一性无关，跟**星级**有关（见上「星级边界」）。
+    已订正四处：源码注释、`tools/prep_swap_check.gd` 文件头、
+    `docs\9.23...记录.md` 第七节、本工程 README 的 2026-09-23 小节。
+    同时给 `prep_swap_check` 补了**星级边界用例**（1 星该合成 / 3 星该交换），
+    把「为什么只在 2 星暴露」钉成可执行断言（读数 26 → 30）。
+
+★ 一处必须知道的坑（本轮自己踩的）
+    加 boss 派发时曾把 `elif _owned:` 的语句体整段抬出缩进，只剩注释 ——
+    GDScript 里这是**解析期错误**，整份 BattleVfx.gd 加载失败，沿继承链把
+    BattleResult / BattleScreen 一起带塌。**已修好**，并且给族里补了防线：
+      · `cold_parse_chain_check` 已进批跑，且判据从「load() 非 null」换成 `can_instantiate()`
+        （实测解析失败的脚本 `load()` 照样返回非 null 对象，只有它能判出来）
+      · `audio_0922_check` 补了 `vfx_merc_dispatch_dedented`（缩进判据）
 
 校验
     _sha256清单.txt 里逐文件列出了 sha256，可自行核对。
 
 注意
-    * 覆盖代码后不需要重新导入资源，但**建议重跑一次**：
-        Godot_v4.7.2-stable_win64_console.exe --headless --path <你的工程> tools/audio_sfx_check.tscn
-      （期望最后一行是 CHECK_RESULT name=audio_sfx status=PASS checked=193 failures=0）
-    * 四条既存红与本次改动无关（voice_check 8 / procedural_ui_ratchet 2 /
-      prep_text_coverage 1 / dynamic_call 4），与 9.20 基线逐条一致。
+    * 覆盖代码后**建议重跑**这几条：
+        Godot_v4.7.2-stable_win64_console.exe --headless --path <你的工程> tools\cold_parse_chain_check.tscn
+        Godot_v4.7.2-stable_win64_console.exe --headless --path <你的工程> tools\audio_0922_check.tscn
+        Godot_v4.7.2-stable_win64_console.exe --headless --path <你的工程> tools\prep_swap_check.tscn
+      期望最后一行分别是 PASS 41、PASS 104、PASS 30。
+    * 五条既存红与本次改动无关（voice 8 / ui_feedback 1 / procedural_ui_ratchet 3 /
+      prep_text_coverage 1 / dynamic_call 4），逐条归因见 docs 记录第十节。
+    * 本批 `project.godot` **逐字节未变**。

@@ -478,11 +478,36 @@ func _move_or_merge_board(from_index: int, to_index: int) -> void:
 	if to_cell == null:
 		GameState.board_slots[to_index] = from_cell
 		GameState.board_slots[from_index] = null
-	elif PrepRules.can_merge_cells(to_cell, from_cell):
-		if not _merge_copies_into_cell(to_cell, from_cell, [from_index, to_index], []):
-			_board_hud._selected_board = -1
-			_refresh_all()
-			return
+	# 9.22 bug 修复（用户提交）：「两个同星级人王交换无效」。
+	#
+	# 现场（用户口径）：两只**同星**人王**都在备战区**，把它们的位置互换 —— 换不动；
+	# 而**不同星**的两只人王能换。关键变量是**星级**，不是「在不在场上」。
+	#
+	# 根因：`can_merge_cells` 为真 与 「这一下合得成」是两件事。升星要几份见
+	# `GameConstants.STAR_UPGRADE_COPIES = {1: 2, 2: 3}` —— 1 星靠待合成的那两份就够，
+	# **2 星还要再凑第 3 份同名同星**（`_merge_copies_into_cell` 里的 extra），
+	# 凑不出来时它返回 false。旧写法在这条路上直接 `return`，
+	# 于是整个操作**什么都不发生** —— 玩家看到的就是「交换无效」。
+	#
+	# 星级边界（`MAX_MERGE_STAR = 3`）正好对上「不同星级的却可以」：
+	#   1 星 → 2 份够用 → 旧写法是**合成**（升 2 星），不叫「无效」，看不出这个洞；
+	#   2 星 → 缺第 3 份 → 静默 return → **交换无效**（用户报的就是这段）；
+	#   3 星 → `star < MAX_MERGE_STAR` 不成立 → `can_merge_cells` 为假 → 走 else 交换，
+	#          旧写法本来就是好的。
+	#
+	# 为什么偏偏是人王暴露出来：人王 `unique_on_board` 限的是**场上**（上限 1），
+	# **备战区仍可放多只**，两只同星人王同时在备战区是常态；而每只的成长层数
+	# （`king_growth_stacks`）各自独立，所以「换位置」是玩家真会做、且一眼能看出没生效的操作。
+	# 普通棋子同样中招，只是两只同星凑不出第三份时等价、换不换看不出来，故一直没被报。
+	#
+	# 修法：把「能合」与「合得成」并成一个条件，**合不成就落到下面的交换分支**。
+	# 安全性：`_merge_copies_into_cell` 在失败路径上不改任何状态 ——
+	# extra 找不到就直接返回空字典（`_take_extra_merge_piece` 只在真的取到时才清格子），
+	# 所以把它并进 `and` 里是安全的，不存在「合了一半又去交换」。
+	#
+	# 变异证据见 `tools/prep_swap_check.gd` 文件头与 `work/_qa_922/mutate_swap_fix.py`。
+	elif PrepRules.can_merge_cells(to_cell, from_cell) \
+			and _merge_copies_into_cell(to_cell, from_cell, [from_index, to_index], []):
 		_shadow_report_merge()
 		GameState.board_slots[from_index] = null
 	else:
@@ -505,11 +530,10 @@ func _move_or_merge_board_to_bench(from_index: int, bench_index: int) -> void:
 	if to_cell == null:
 		GameState.bench_slots[bench_index] = from_cell
 		GameState.board_slots[from_index] = null
-	elif PrepRules.can_merge_cells(to_cell, from_cell):
-		if not _merge_copies_into_cell(to_cell, from_cell, [from_index], [bench_index]):
-			_board_hud._selected_board = -1
-			_refresh_all()
-			return
+	# 9.22：合不成就退回交换，理由与根因见 `_move_or_merge_board` 上方的长注释
+	# （「两个同星级人王交换无效」的修复）。四个 handler 是同一个改法。
+	elif PrepRules.can_merge_cells(to_cell, from_cell) \
+			and _merge_copies_into_cell(to_cell, from_cell, [from_index], [bench_index]):
 		_shadow_report_merge()
 		GameState.board_slots[from_index] = null
 	else:
@@ -551,16 +575,17 @@ func _move_or_merge_bench_to_board(from_index: int, board_index: int) -> void:
 			return
 		GameState.board_slots[board_index] = from_cell
 		GameState.bench_slots[from_index] = null
-	elif PrepRules.can_merge_cells(to_cell, from_cell):
-		if not _merge_copies_into_cell(to_cell, from_cell, [board_index], [from_index]):
-			_board_hud._selected_bench = -1
-			_refresh_all()
-			return
+	elif PrepRules.can_merge_cells(to_cell, from_cell) \
+			and _merge_copies_into_cell(to_cell, from_cell, [board_index], [from_index]):
 		_shadow_report_merge()
 		GameState.bench_slots[from_index] = null
 	else:
 		# Occupied by a different unit -> swap the two (bench piece goes on the
 		# board, the board piece returns to that bench slot).
+		#
+		# 9.22：这条路也踩同一个洞（它天然是一个在场、一个在待命区）：两只同星人王
+		# 时 `can_merge_cells` 为真、而第三份凑不出来，旧写法在这里静默 return。
+		# 现在落到这个分支正常交换。
 		var from_def: Dictionary = from_cell.get("def", {})
 		if bool(from_def.get("unique_on_board", false)) and PrepRules.has_unique_board_unit(str(from_cell.get("id", "")), PrepRules.board_limit_for_def(from_def), board_index):
 			show_message(tr("toast_unique_limit"))
@@ -586,11 +611,11 @@ func _move_or_merge_bench(from_index: int, to_index: int) -> void:
 	if to_cell == null:
 		GameState.bench_slots[to_index] = from_cell
 		GameState.bench_slots[from_index] = null
-	elif PrepRules.can_merge_cells(to_cell, from_cell):
-		if not _merge_copies_into_cell(to_cell, from_cell, [], [from_index, to_index]):
-			_board_hud._selected_bench = -1
-			_refresh_all()
-			return
+	# 9.22：**用户报的现场就在这条路上** —— 两只同星（2 星）人王都在备战区，
+	# 互换位置。旧写法在这里静默 return（根因与星级边界见 `_move_or_merge_board`
+	# 上方的长注释），现在合不成就落到 else 正常交换。
+	elif PrepRules.can_merge_cells(to_cell, from_cell) \
+			and _merge_copies_into_cell(to_cell, from_cell, [], [from_index, to_index]):
 		_shadow_report_merge()
 		GameState.bench_slots[from_index] = null
 	else:

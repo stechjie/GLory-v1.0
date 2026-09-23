@@ -608,7 +608,13 @@ static func _pick_execute_target(candidates: Array, wanted_tier: int) -> Diction
 	return candidates[RngService.rng.randi() % candidates.size()]
 
 
-static func _apply_boss_attacker_passives(attacker: Dictionary) -> void:
+# 9.23 第五批：多了个 `state` 入参，只为在血怒魔王**进入暴走的那一次**补音效事件。
+#
+# 为什么入参要挪进签名，而不是回到调用方（BattleSimulator）那边补事件：
+# 「进入暴走」的判据（HP 比例 ≤ trigger_hp_pct 且 `blood_rage_active` 还是假）
+# 就在下面这一行里，回到调用方补就得把那套判据抄一遍 —— 而判据一抄就会走样
+# （本仓在「按层数判反弹」那条上踩过同一个坑）。
+static func _apply_boss_attacker_passives(attacker: Dictionary, state: Dictionary) -> void:
 	var d: Dictionary = attacker.get("def", {})
 	if str(d.get("skill_id", "")) == "rage_stack":
 		var old_stacks := int(attacker.get("skill_stacks", 0))
@@ -621,6 +627,10 @@ static func _apply_boss_attacker_passives(attacker: Dictionary) -> void:
 		attacker.blood_rage_active = true
 		attacker.atk = maxi(1, int(round(float(attacker.atk) * (1.0 + float(d.get("atk_bonus", 0.40))))))
 		attacker.attack_speed = clampf(float(attacker.attack_speed) + float(d.get("aspd_bonus", 0.30)), 0.25, 2.5)
+		# 用户口径：「应该在生命值降至 35% 以下**触发技能进入暴走时**播放**一次**该音效」。
+		# 「一次」由上面那个 `not blood_rage_active` 前置条件天然保证 ——
+		# 标记一置真这条 `elif` 就再也不成立了。
+		_emit_sfx_proc(state, "blood_rage", attacker, attacker)
 
 
 static func _apply_boss_attack_lifesteal(attacker: Dictionary, d: Dictionary, dealt: int) -> void:
