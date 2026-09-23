@@ -86,8 +86,10 @@ func _run() -> void:
 		await RenderingServer.frame_post_draw
 		get_viewport().get_texture().get_image().save_png("res://work/bug0909-03-review/lobby.png")
 	h.expect(lobby._slot_status_lbls[1].text in ["准备", "Ready"], "ready_status", "Ready status missing")
-	var public_data := NetworkService.public_seat_identity({"friend_code": "ABCDEFGH", "player_name": "Me", "avatar": "preset:avatar_001", "birth_day": 31, "signature": "private", "access_token": "secret"})
-	h.expect(public_data.size() == 3 and not public_data.has("birth_day") and not public_data.has("access_token"), "privacy", "Private fields leaked into lobby snapshot")
+	var public_data := NetworkService.public_seat_identity({"friend_code": "ABCDEFGH", "player_name": "Me", "avatar": "preset:avatar_001", "avatar_frame": "preset:frame_default", "birth_day": 31, "signature": "private", "access_token": "secret"})
+	h.expect(public_data.size() == 4 and public_data.get("avatar_frame") == "preset:frame_default"
+		and not public_data.has("birth_day") and not public_data.has("access_token"),
+		"privacy", "Private fields leaked into lobby snapshot")
 	var tokens := Tokens.new()
 	tokens.configure(func(): return 1.0, func(_s): pass, {})
 	var rooms := Rooms.new()

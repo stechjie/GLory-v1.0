@@ -78,6 +78,20 @@ class Settings(BaseSettings):
     # 空 = 没配置，发名片的接口回 503。
     battle_card_key_file: str = ""
 
+    # --- 战报（app/battle_report.py，docs/排位系统设计.md 第七节）----------------
+    #
+    # 验战报用的 RSA **公钥**文件（PEM）。和上面那把名片私钥**方向正好相反**：
+    # 名片是这边签、战斗服务器验；战报是战斗服务器签、这边验。
+    # 所以战报的**私钥在战斗服务器那台机器上**，这边只有公钥，被拿下也伪造不了战报。
+    #
+    # 生成工具 deploy/make_battle_report_key.py 在**战斗服务器**上跑，
+    # 把它打印出来的公钥送到这边。
+    #
+    # 空 = 没配置，交战报的接口回 503。此时对局照常进行，只是不记历史 ——
+    # 战斗服务器那边缺私钥也是同样的态度（scripts/multiplayer/BattleReport.gd 的
+    # 「没有钥匙不拒绝启动」一节）。
+    battle_report_public_key_file: str = ""
+
     # --- 公告（app/announcements.py，docs/公告系统设计.md）-----------------------
     #
     # 公告图片所在的 Supabase Storage 桶。**必须设成公开**：服务器按公开地址取图，不带任何密钥。

@@ -105,6 +105,9 @@ func _build() -> void:
 	var screen_bg := ColorRect.new()
 	screen_bg.color = Color(0.018, 0.026, 0.022)
 	screen_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# 同 arena_wrap：全屏纯色底板不能吃点击（ColorRect 默认 mouse_filter=STOP），
+	# 它是 _build() 里**第一个** add_child 的兄弟，会压住 _ready() 里先建的语音/队友按钮。
+	screen_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(screen_bg)
 	screen_bg.z_index = -20
 
@@ -112,6 +115,14 @@ func _build() -> void:
 	var arena_wrap := Control.new()
 	arena_wrap.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	arena_wrap.clip_contents = true
+	# ★ 9.21：必须 IGNORE，否则这块全屏底板（Control 默认 mouse_filter=STOP）会把
+	# **后加进来的兄弟控件**的点击全吃掉 —— 它是 _build() 里第一个 add_child 的，
+	# 而 BattleScreen 的语音 / 队友按钮（z_index=100）是 _ready() 里**先**加的兄弟，
+	# 两者重叠时 Godot 的 GUI 命中测试按树序取后者，z_index 不参与这个裁决。
+	# 症状：战斗里「队友」按钮点不开、语音按钮切不了档（9.21 截图反馈）。
+	# 底板本身纯装饰，不需要接收任何输入；子节点（单位命中区 _make_unit_node、
+	# 水晶血条）不受影响 —— IGNORE 只作用于本节点自身，不阻断子节点。
+	arena_wrap.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(arena_wrap)
 	_arena = arena_wrap
 
@@ -126,6 +137,10 @@ func _build() -> void:
 	else:
 		arena_tint.color = Color(0.012, 0.030, 0.022, 0.08)
 	arena_tint.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# 同前：全屏色罩只负责染色，不能吃点击。它虽然挂在 arena_wrap 下（父级已 IGNORE），
+	# 但 IGNORE 不阻断子节点 —— 它自己仍是 STOP，会盖住同在 arena_wrap 下的
+	# 单位命中区（_make_unit_node 挂在 _arena 下）。一并关掉，避免单位点不中。
+	arena_tint.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	arena_wrap.add_child(arena_tint)
 	arena_tint.z_index = -10
 

@@ -16,7 +16,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app import db, loadout, players
+from app import db, loadout, matchmaking, players
 from app.jwt_verify import Claims
 from app.rate_limit import RateLimited, SlidingWindowLimiter
 from app.routes.me import current_claims
@@ -107,8 +107,16 @@ async def battle_card(claims: Annotated[Claims, Depends(current_claims)]) -> Car
             detail="操作太快了，%d 秒后再试" % exc.retry_after,
             headers={"Retry-After": str(exc.retry_after)},
         ) from None
+    # 匹配出来的对局：名片要带上会合键（match）与队伍（app/matchmaking.py）。
+    #
+    # 🔴 **在这里取、不在匹配成功时发。** 名片有效期只有 60 秒，而玩家从点完确认到
+    # 真的连上战斗服务器还要过加载界面。匹配那边只登记一份分配（5 分钟），
+    # 客户端在要连的那一刻来领，有效期才是从那一刻算起。
+    assignment = matchmaking.current().assignment_for(me.player_id)
+    match_uid = assignment.match_uid if assignment is not None else ""
+    team = assignment.team if assignment is not None else -1
     try:
-        card = await loadout.issue_card(me.player_id)
+        card = await loadout.issue_card(me.player_id, match_uid=match_uid, team=team)
     except loadout.CardKeyMissing as exc:
         # 日志里留原因，给玩家的只有一句「稍后再试」—— 路径不外传。
         log.error("发不了出战名片：%s", exc)

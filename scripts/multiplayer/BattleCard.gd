@@ -78,6 +78,13 @@ const SIGNATURE_BYTES := 256
 # 这里是防御性截断，不是业务校验（业务校验在签发时已经做过）。
 const MAX_TEXT := {
 	"pid": 64, "code": 16, "name": 64, "avatar": 128, "frame": 128, "pet": 64, "jti": 64,
+	# 匹配出来的对局才有（协议 32）。自己建房 / 输房间号进来的名片没有这个字段，
+	# 清洗后是空串 —— 空 = 走原来的自定义房间那条路。
+	#
+	# ⚠️ **故意比 32 大。** 截断到 32 的话，一个 34 位的错值会被悄悄切成一个
+	# **合法的** 32 位会合键，然后六个人各自切出同一个值、进了一间谁也没打算去的房间。
+	# 留到 40：超长的值保持超长，match_of 的正则就会拒掉它。
+	"match": 40,
 }
 const MAX_RACES := 16
 const MAX_RACE_ID := 32
@@ -177,14 +184,30 @@ static func pet_of(card: Dictionary) -> String:
 	return pet
 
 
-# 房间里给别人看的名片（名字、好友码、头像）。形状与原来 _rpc_lobby_identity
-# 写进 seat_profiles 的一致，客户端不用改。
+# 名片上的段位。-1 = 没打过排位（不显示徽章）。
+static func tier_of(card: Dictionary) -> int:
+	var tier := int(card.get("tier", -1))
+	return tier if tier >= 0 and tier <= 7 else -1
+
+
+# 房间里给别人看的名片（名字、好友码、头像、头像框、段位）。
+#
+# ⚠️ 加公开展示字段**不用顶协议号**：seat_profiles 随 room_state 下发，那是个
+# Dictionary，老客户端看不懂这个 key 就忽略。同名片加字段不升 CARD_VERSION 那条。
+#
+# 🔴 **这里只加公开展示数据。** seat_profiles 是广播给同房间所有人的 —— player_id
+# 之类的东西绝不能进来（那条写在 NetworkService._room_store_seat_card）。
 static func profile_of(card: Dictionary) -> Dictionary:
-	return {
+	var out := {
 		"friend_code": str(card.get("code", "")),
 		"player_name": str(card.get("name", "")),
 		"avatar": str(card.get("avatar", "")),
+		"avatar_frame": str(card.get("frame", "")),
 	}
+	var tier := tier_of(card)
+	if tier >= 0:
+		out["tier"] = tier
+	return out
 
 
 static func _clean(raw: Dictionary) -> Dictionary:
@@ -201,7 +224,47 @@ static func _clean(raw: Dictionary) -> Dictionary:
 			races.append(str(value).left(MAX_RACE_ID))
 	out["races"] = races
 	out["exp"] = int(raw.get("exp", 0))
+	# 队伍号。**-1 = 没有分配**，不是 0 —— 0 是 A 队，写错这个默认值会让所有
+	# 没分配的名片都被当成「A 队的匹配对局」。
+	out["team"] = int(raw.get("team", -1))
+	# 段位（第 6 步）。同理 **-1 = 没打过排位**，不是 0 —— 0 是第一段。
+	# 默认成 0 会让每个新玩家在房间里顶着一个没打过的段位。
+	out["tier"] = int(raw.get("tier", -1))
 	return out
+
+
+# --- 匹配出来的对局（协议 32）---------------------------------------------------
+#
+# 账号服务器匹配好六个人之后，给每人签的名片上多两个字段：
+#
+#   match  会合键（32 位十六进制）。六个人拿到的是同一个
+#   team   0 = A 队（座位 0~2）/ 1 = B 队（座位 3~5）
+#
+# 战斗服务器**说不出「去几号房」** —— 房间是客户端连上来才建的。所以靠这个键认亲：
+# 谁先到谁建房，后到的按同一个键进同一间（NetworkService._rpc_team_join_matched）。
+#
+# 为什么不是新开一种票：见 backend/app/matchmaking.py 顶部那一节。
+
+# 会合键的格式。与 backend/app/matchmaking.new_match_uid() 和
+# database/013_match_history.sql 的 match_uid_format 约束一致。
+const MATCH_UID_RE := "^[0-9a-f]{32}$"
+
+
+# 这张名片带的会合键。空串 = 不是匹配出来的对局（自定义房间那条路）。
+#
+# **格式不对一律当作没有**，不当作错误：名片是账号服务器签的，格式不对说明它那边
+# 有 bug —— 那时候让玩家进自定义房间的流程，比把他挡在门外强。
+static func match_of(card: Dictionary) -> String:
+	var value := str(card.get("match", ""))
+	var re := RegEx.new()
+	re.compile(MATCH_UID_RE)
+	return value if re.search(value) != null else ""
+
+
+# 这张名片指定的队伍。-1 = 没有分配。
+static func team_of(card: Dictionary) -> int:
+	var team := int(card.get("team", -1))
+	return team if team == 0 or team == 1 else -1
 
 
 # 公钥解析一次就缓存。每个入座请求都要验，没必要每次都解析 PEM。

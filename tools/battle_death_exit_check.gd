@@ -44,6 +44,8 @@ func _run() -> void:
 	_check_fade_targets_reach_the_mesh()
 	_check_status_icons_are_reachable()
 	_check_dead_unit_nodes_are_not_recreated()
+	await _check_claim_zeroes_hp_and_watchdog_releases()
+	await _check_release_cleans_playing_death()
 	_check_source_contract()
 	_h.finish(get_tree())
 
@@ -208,6 +210,66 @@ func _check_dead_unit_nodes_are_not_recreated() -> void:
 	renderer.queue_free()
 
 
+func _death_claim_probe(vfx: Node, uid: String) -> Dictionary:
+	var actor := Node3D.new()
+	actor.name = "Actor_%s" % uid
+	vfx.add_child(actor)
+	vfx._battle_3d_models[uid] = actor
+	var unit_node := Control.new()
+	unit_node.name = "UnitNode_%s" % uid
+	var hp_fill := ColorRect.new()
+	hp_fill.name = "HpFill"
+	hp_fill.scale.x = 0.08
+	unit_node.add_child(hp_fill)
+	vfx.add_child(unit_node)
+	vfx._unit_nodes[uid] = unit_node
+	vfx._hp_fill_by_id[uid] = hp_fill
+	return {"actor": actor, "unit_node": unit_node, "hp_fill": hp_fill}
+
+
+# Claim happens before the Director starts the cue. The bar must become empty at
+# that boundary, and an unplayed/cancelled cue must eventually release ownership.
+func _check_claim_zeroes_hp_and_watchdog_releases() -> void:
+	var vfx := BattleVfxScript.new()
+	add_child(vfx)
+	var uid := "watchdog_probe"
+	var probe := _death_claim_probe(vfx, uid)
+	vfx.cue_claim_corpses([{"type": "death", "source_uid": uid}])
+	_h.expect(is_zero_approx(float((probe.hp_fill as ColorRect).scale.x)),
+		"claimed_hp_not_zero", "死亡接管后血条仍保留最后一小格")
+	_h.expect(vfx._cue_corpses.has(uid) and vfx._dying_unit_nodes.has(uid),
+		"death_claim_not_owned", "死亡模型或 2D 层没有进入待播放接管表")
+	await get_tree().create_timer(vfx.DEATH_CLAIM_WATCHDOG_SEC + 0.1).timeout
+	await get_tree().process_frame
+	_h.expect(not vfx._cue_corpses.has(uid) and not vfx._dying_unit_nodes.has(uid)
+		and not vfx._pending_death_claim_tokens.has(uid),
+		"unplayed_claim_not_released", "未播放的死亡 cue 超时后仍占有模型或血条")
+	_h.expect(not is_instance_valid(probe.actor) and not is_instance_valid(probe.unit_node),
+		"unplayed_nodes_still_alive", "未播放死亡 cue 的场景节点没有被释放")
+	vfx.queue_free()
+
+
+# cue_release_corpses is used by skip/seek/restart. It must also own a death that
+# has already left the pending table and entered its fade tween.
+func _check_release_cleans_playing_death() -> void:
+	var vfx := BattleVfxScript.new()
+	add_child(vfx)
+	var uid := "active_probe"
+	var probe := _death_claim_probe(vfx, uid)
+	vfx.cue_claim_corpses([{"type": "death", "source_uid": uid}])
+	_h.expect(vfx.cue_play_death(uid, 3.0), "active_death_did_not_start",
+		"合成死亡 cue 没有进入播放状态")
+	_h.expect(vfx._active_death_actors.size() == 1,
+		"active_death_not_tracked", "播放中的死亡模型没有进入活动回收表")
+	vfx.cue_release_corpses()
+	await get_tree().process_frame
+	_h.expect(vfx._active_death_actors.is_empty() and vfx._dying_unit_nodes.is_empty(),
+		"active_death_not_released", "跳过/重开清场后仍保留播放中的尸体或血条")
+	_h.expect(not is_instance_valid(probe.actor) and not is_instance_valid(probe.unit_node),
+		"active_nodes_still_alive", "跳过/重开没有释放播放中的死亡节点")
+	vfx.queue_free()
+
+
 # 第 2 条：2D 层必须和身体走同一条接管路径。
 #
 # 这条只能看源码：血条的接管发生在 BattleScreen 的回放循环里，
@@ -216,8 +278,9 @@ func _check_dead_unit_nodes_are_not_recreated() -> void:
 func _check_source_contract() -> void:
 	var renderer := FileAccess.get_file_as_string("res://scenes/battle/BattleRenderer.gd")
 	var vfx := FileAccess.get_file_as_string("res://scenes/battle/BattleVfx.gd")
-	if not _h.expect(not renderer.is_empty() and not vfx.is_empty(),
-		"source_unreadable", "读不到 BattleRenderer.gd / BattleVfx.gd"):
+	var screen := FileAccess.get_file_as_string("res://scenes/battle/BattleScreen.gd")
+	if not _h.expect(not renderer.is_empty() and not vfx.is_empty() and not screen.is_empty(),
+		"source_unreadable", "读不到 BattleRenderer.gd / BattleVfx.gd / BattleScreen.gd"):
 		return
 
 	# 接管必须和身体在同一处、同一时机发生，否则中间那趟剪枝照样会释放血条。
@@ -230,6 +293,14 @@ func _check_source_contract() -> void:
 	_h.expect(vfx.contains("release_dying_unit_nodes()"),
 		"dying_nodes_never_released",
 		"cue_release_corpses() 没有收掉还在淡的 2D 层 —— seek/重开会漏节点")
+	_h.expect(vfx.contains("_arm_death_claim_watchdog(uid)"),
+		"unplayed_death_has_no_watchdog",
+		"待播放的死亡 cue 没有兜底超时回收")
+	var skip_at := screen.find("func _skip_animation")
+	var skip_block := screen.substr(skip_at, 1000) if skip_at >= 0 else ""
+	_h.expect(skip_block.contains("cue_release_corpses()"),
+		"skip_does_not_release_corpses",
+		"跳过战斗在应用末帧后没有释放已取消的死亡接管")
 
 	# 用**同一个** fade 变量驱动两边，两个常量会各自漂移。
 	_h.expect(renderer.contains("func _play_unit_node_death_fade(uid: String, seconds: float)"),

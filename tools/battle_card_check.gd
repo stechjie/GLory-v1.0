@@ -149,7 +149,8 @@ func _case_verify_good() -> void:
 		"races_of 应当原样给出合规的四族，实际 %s" % str(BattleCard.races_of(card)))
 	_h.expect(BattleCard.pet_of(card) == CARD_PET, "pet_of", "pet_of 应为 %s" % CARD_PET)
 	var profile := BattleCard.profile_of(card)
-	_h.expect(str(profile.get("player_name")) == "阿明" and str(profile.get("friend_code")) == "TESTCODE",
+	_h.expect(str(profile.get("player_name")) == "阿明" and str(profile.get("friend_code")) == "TESTCODE"
+			and str(profile.get("avatar_frame")) == str(card.get("frame")),
 		"profile_of", "profile_of 形状不对：%s" % str(profile))
 
 

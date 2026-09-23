@@ -881,6 +881,8 @@ func _show_menu() -> void:
 	if not _menu.team_reconnect_requested.is_connected(_on_team_reconnect_requested):
 		_menu.team_reconnect_requested.connect(_on_team_reconnect_requested)
 	_menu.settings_requested.connect(_show_settings)
+	_menu.casual_requested.connect(_show_casual_queue)
+	_menu.ranked_requested.connect(_show_ranked_queue)
 	_menu.prep_requested.connect(_show_pet_screen)
 	_menu.codex_requested.connect(_show_codex_screen)
 	_menu.profile_requested.connect(_show_profile_screen)
@@ -1396,6 +1398,98 @@ func _show_starter_pet_gate() -> void:
 	var pet_screen := _instantiate_screen("res://scenes/menu/PetScreen.tscn")
 	pet_screen.starter_picked.connect(_show_menu)
 	add_child(pet_screen)
+
+# --- 匹配队列（协议 32，docs/排位系统设计.md 第五、九节）---------------------------
+#
+# 排队、确认框、状态机全在 MatchQueuePanel 身上；这里只管两件事：
+# 把它推上 ModalStack，以及拿到 ready 之后去连战斗服务器。
+#
+# 连接流程照 _start_create_room_action 那条，但**不走 AsyncActionController** ——
+# 面板自己在显示进度，而且它是模态的，玩家点不到第二次。
+const MATCH_QUEUE_MODAL_ID := "main_menu_match_queue"
+const MatchQueuePanel := preload("res://scenes/menu/MatchQueuePanel.gd")
+
+
+func _show_casual_queue() -> void:
+	_show_match_queue("casual")
+
+
+# 排位。窗口 / 信誉分 / 禁赛的闸全在服务器（`ranked.queue_gate`）——
+# 客户端改系统时区就能绕过本地判断，而排位是发分的。
+# 这里照常开面板，面板把服务器给的原因显示出来。
+func _show_ranked_queue() -> void:
+	_show_match_queue("ranked")
+
+
+func _show_match_queue(mode: String) -> void:
+	if ModalStack.has(MATCH_QUEUE_MODAL_ID):
+		return
+	var panel := MatchQueuePanel.new() as Control
+	panel.call("configure", mode)
+	panel.connect("match_ready", _on_match_ready)
+	panel.connect("dismissed", func() -> void: ModalStack.pop(MATCH_QUEUE_MODAL_ID))
+	ModalStack.push(panel, {
+		"id": MATCH_QUEUE_MODAL_ID,
+		"owner": self,
+		"priority": 40,
+		# 🔴 **不许点背景关掉。** 确认框那 30 秒里误触一下背景就等于拒绝，
+		# 而拒绝会把自己移出队列、还拆掉另外五个人那一桌。
+		"dismiss_on_backdrop": false,
+	})
+
+
+func _on_match_ready() -> void:
+	ModalStack.pop(MATCH_QUEUE_MODAL_ID)
+	var target_port := NetworkService.DEFAULT_PORT
+	if NetworkService.team_active and NetworkService.remote_port != target_port:
+		NetworkService.disconnect_session()
+	elif NetworkService.team_active 			and NetworkService.state == NetworkService.SessionState.READY 			and NetworkService.team_local_slot < 0:
+		NetworkService.team_request_join_matched()
+		_watch_matched_lobby()
+		return
+	if NetworkService.team_active and NetworkService.team_local_slot >= 0:
+		NetworkService.disconnect_session()
+	if not NetworkService.team_join(NetworkService.DEFAULT_HOST, target_port):
+		if is_instance_valid(_menu):
+			_menu.show_connection_error(NetworkService.last_error)
+		return
+	if not NetworkService.session_changed.is_connected(_on_matched_session_changed):
+		NetworkService.session_changed.connect(_on_matched_session_changed)
+
+
+func _on_matched_session_changed() -> void:
+	match NetworkService.state:
+		NetworkService.SessionState.READY:
+			_disconnect_matched_handlers()
+			NetworkService.team_request_join_matched()
+			_watch_matched_lobby()
+		NetworkService.SessionState.FAILED, NetworkService.SessionState.OFFLINE:
+			_disconnect_matched_handlers()
+			if is_instance_valid(_menu):
+				var message := NetworkService.last_error if NetworkService.last_error != "" else tr("net_err_connect_generic")
+				_menu.show_connection_error(message)
+
+
+func _watch_matched_lobby() -> void:
+	if not NetworkService.team_lobby_changed.is_connected(_on_matched_lobby_changed):
+		NetworkService.team_lobby_changed.connect(_on_matched_lobby_changed)
+
+
+func _on_matched_lobby_changed() -> void:
+	if NetworkService.team_local_slot < 0:
+		return
+	_disconnect_matched_handlers()
+	# 进 3v3 大厅。匹配对局没有「准备」按钮那一步 —— 六个人到齐服务器自己开打
+	# （NetworkService._matched_try_start），玩家在这里只会看到座位一个个填满。
+	_show_team3v3_lobby()
+
+
+func _disconnect_matched_handlers() -> void:
+	if NetworkService.session_changed.is_connected(_on_matched_session_changed):
+		NetworkService.session_changed.disconnect(_on_matched_session_changed)
+	if NetworkService.team_lobby_changed.is_connected(_on_matched_lobby_changed):
+		NetworkService.team_lobby_changed.disconnect(_on_matched_lobby_changed)
+
 
 func _show_team3v3_lobby() -> void:
 	_clear()
@@ -2415,6 +2509,26 @@ func _on_team3v3_start() -> void:
 	if NetworkService.shared_seed == 0:
 		NetworkService.shared_seed = randi()
 	NetworkService.team_begin_round()
+	# 9.21「开始游戏成功」音效：**所有人**都要听到，且**播完才进备战**。
+	#
+	# 为什么挂在这里而不是 Team3v3Lobby._on_start()：
+	#   * 本函数是所有客户端进新局**唯一的汇合点** —— 房主走
+	#     `Team3v3Lobby.start_requested` → 这里；客机走服务端 `_rpc_team_start`
+	#     → `NetworkService.team_start_requested` → `_on_team_start_requested`
+	#     → `start_requested` → 这里。挂在按按钮那一侧只有房主会响。
+	#   * 「播完再进游戏」= 把 `_show_prep()` 推迟 cue_length 秒。用 cue_length()
+	#     而不是写死常数：换素材时那个常数就对不上了，而且没人会发现
+	#     （见 SfxService.cue_length 的注释，胜负 BGM 用的是同一套）。
+	await _play_start_game_success_then_prep()
+
+func _play_start_game_success_then_prep() -> void:
+	var started := SfxService.play(SfxService.CUE_START_GAME_SUCCESS)
+	var wait := SfxService.cue_length(SfxService.CUE_START_GAME_SUCCESS) if started else 0.0
+	# 音效被静音 / 读不到时长 → wait 为 0，直接进场，不卡住开局。
+	# `+ 0.05` 是留给播放器真正把缓冲吐完的一点余量：cue_length 给的是素材时长，
+	# 恰好在末尾切场景会切掉最后几个采样。
+	if wait > 0.0 and is_inside_tree():
+		await get_tree().create_timer(wait + 0.05).timeout
 	_show_prep()
 
 func _on_team_battle_finished(result: Dictionary) -> void:

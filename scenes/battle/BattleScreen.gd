@@ -274,6 +274,8 @@ func _start_replay(replay: Dictionary) -> void:
 	reset_battle_camera_framing()
 	_begin_presentation_replay(replay)
 	_load_replay_roster(replay)
+	# 9.20：换了一局就必须把 VFX 差分缓存**重新播种**（下面的方法里写清了理由）。
+	_reseat_vfx_diff_for_new_battle()
 	_prefetch_battle_assets()
 	# (4) PvP canonical arrangement puts team A at the bottom. If I'm on team B, flip
 	# the arena vertically so my own units are always the ones at the bottom.
@@ -356,6 +358,18 @@ func _prepare_battle_models() -> void:
 	# **同一时刻**发生（9.17 第三轮反馈），拆在两个地方迟早漂移。
 	if _effective_kind() == "boss":
 		_begin_boss_intro()
+	# 9.21 用户口径第 3 条：最终回合 pvp 战斗场景开局音。
+	#
+	# 位置与 boss 登场音并列，理由相同（见上一段）：这里是「模型全建完、战斗马上
+	# 开打」，不是进场景那一刻。演出顺序是「响开局音 → 播完 → 起 pvp 战斗 BGM」，
+	# 由本函数末尾的 _resolve_pending_battle_music() 收口。
+	#
+	# ★ 判据是 `_effective_kind() == "final"`，**不是** _try_start_final_round_intro()
+	#   的成功与否：后者只在「场上真有阵型盟友」时才演出召唤，而开局音是场景级的
+	#   开场（用户要的是「最终回合时开局播放」）。挂在那个返回值上会让没有阵型
+	#   盟友的最终回合整场没有开场音。
+	if _effective_kind() == "final":
+		_begin_final_round_intro()
 	_try_start_final_round_intro()
 	# 9.17 反馈第 4 条：登场音播完之后才起 pve 战斗 BGM。
 	# 放在本函数**最末尾**：这是「模型全建完、战斗马上开打」的那一刻，
@@ -537,7 +551,11 @@ func _setup_voice_controls() -> void:
 	if _voice_controls != null or not NetworkService.team_active:
 		return
 	_voice_controls = VoiceControls.new()
-	_voice_controls.build(self, VOICE_BTN_SIZE, VOICE_BTN_SIZE, 14)
+	# 9.20 bug 文档第 3 条：战斗界面也要能切语音档位。
+	# 此前这里没传 panel_context，于是「队友」按钮既不计人数、打开的面板也拿不到
+	# 上下文 —— 玩家在战斗里点它，看不出自己当前在哪一档（关 / 只听 / 开麦）。
+	# 与 PrepUI._build_voice_button() 传 "prep" 同一个道理，这里传 "battle"。
+	_voice_controls.build(self, VOICE_BTN_SIZE, VOICE_BTN_SIZE, 14, {"panel_context": "battle"})
 	var top := VOICE_BTN_TOP
 	for button in [_voice_controls.voice_button, _voice_controls.members_button]:
 		var control := button as Button
@@ -594,6 +612,7 @@ func _switch_active_replay(replay: Dictionary) -> void:
 func _clear_unit_visuals() -> void:
 	# 两份 replay 的 uid 命名会撞车（都是 player_L0_0 这类），
 	# 切换前必须整场清空，否则旧模型会被错认成新阵容复用。
+	reset_visual_position_state()
 	for node in _unit_nodes.values():
 		if node != null and is_instance_valid(node):
 			node.queue_free()
@@ -607,9 +626,30 @@ func _clear_unit_visuals() -> void:
 	_unit_actor_registry.clear()
 	_status_vfx_by_id.clear()
 	# VFX 差分缓存也按 uid 记上一帧血量/存活，不清会在切换瞬间放出假伤害/死亡特效。
+	_reseat_vfx_diff_for_new_battle()
+
+
+# 9.20：把「按 uid 记上一帧」的 VFX 缓存整场重播种。
+#
+# 两个调用点 —— `_start_replay()`（开一局 / 换一局）与 `_clear_unit_visuals()`
+# （切看另一队回放）—— 都是「另一份 uid 空间要开始了」，所以合并成一个定义。
+#
+# 不清的后果有二（两条都在 9.20 用户实测里出现过或差点出现）：
+#   * `BattleVfx._play_opening_unit_vfx()` 是**播种帧专用**（只在 `_vfx_seeded`
+#     还是 false 的那一帧跑）。同一个 BattleScreen 实例上再开一局却不重播种，
+#     它整场都不会跑 —— 凡是「开局就发生」的演出都会静默：死侍开场绑定音/绑定特效、
+#     血契连线、护盾嘲讽。用户报的「死侍开局绑定音不响」就是这一条
+#     （officetest 的编辑态预览先占掉了播种帧）。
+#   * 回放的 roster 会把战斗中途才出生的单位（寄生分身）提前放进 `_state`，
+#     于是第一帧的 diff 会把它们当成「上一帧就在」。
+# `visual_events` 游标同步归零：调用点刚把 `_state.visual_events` 换成空数组
+# （`_load_replay_roster()` / `_switch_active_replay()`），游标若停在上一局的位置，
+# 新一局的前 N 条事件会被静默跳过。
+func _reseat_vfx_diff_for_new_battle() -> void:
 	_vfx_prev_units = {}
 	_vfx_seeded = false
 	_vfx_visual_event_index = 0
+	_parasite_spawn_announced.clear()
 
 func show_settlement_waiting() -> void:
 	_settlement_waiting = true
@@ -761,6 +801,9 @@ func _finish_replay() -> void:
 	# 结算永远基于己方 replay：正观战敌方时先切回我方战场收尾。
 	if _watching_rival:
 		_set_watching_rival(false)
+	# The process loop stops refreshing positions once `_finished` is set. Refresh
+	# the authoritative final replay coordinates before the victory pose freezes.
+	_refresh_visuals()
 	# 9.13 #2：这里**不隐藏**「查看另一队」按钮 —— Main 随后会调
 	# show_settlement_waiting()，等待期间玩家要能继续切过去补看另一队。
 	# 按钮最终随本场景一起销毁。
@@ -797,6 +840,10 @@ func _skip_animation() -> void:
 		if not frames.is_empty():
 			_apply_replay_frame(frames.size() - 1)
 		_replay_frame = frames.size()
+		# skip_to_result() cancelled the Director before the final frame was
+		# applied. Death events in that frame are therefore claimed but can no
+		# longer play; release them immediately instead of leaving frozen corpses.
+		cue_release_corpses()
 		_refresh_visuals()
 		_finish_replay()
 		return

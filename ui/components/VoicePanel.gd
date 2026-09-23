@@ -11,6 +11,7 @@ extends PanelContainer
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
+const SfxService := preload("res://ui/services/SfxService.gd")
 
 const MODAL_ID := "voice_panel"
 # 与 ChatInputBar 同档：高于页面级面板（40），低于 DialogService（100）—— 开麦前的用途说明要盖在它上面。
@@ -136,6 +137,16 @@ func _exit_tree() -> void:
 
 
 func _on_mode_pressed(target: int) -> void:
+	# 9.20 bug 文档第 3 条：语音**档位**切换反馈音在这里。
+	#
+	# 此前只有 VoiceControls._on_voice_pressed()（那个小语音按钮）会响，从「队友」
+	# 按钮打开本面板、再点「关闭 / 只听 / 开麦」是**完全没有声音**的 —— 而面板
+	# 恰恰是三档选择的主入口（按钮那一路只是循环切档）。面板与按钮共用同一条
+	# CUE_VOICE_SWITCH，两处听感一致。
+	#
+	# 放在最前面：点「开麦」且当前没权限时会走 _on_talk_requested（弹用途说明），
+	# 那条路径也要有按下的反馈 —— 与 VoiceControls._on_voice_pressed() 同一个顺序。
+	SfxService.play(SfxService.CUE_VOICE_SWITCH)
 	if target == VoiceService.Mode.TALK and _on_talk_requested.is_valid():
 		_on_talk_requested.call()
 	else:

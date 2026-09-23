@@ -89,6 +89,16 @@ static func set_placement(config: Dictionary, slot: int, cell: int, kind: String
 	placements.append({"slot": slot, "cell": cell, "kind": kind, "unit_id": unit_id, "star": clampi(star, 1, GameConstants.MAX_STAR)})
 
 
+# 人王「战后存活 ⇒ 增加属性」的层数，记在摆放字典上（就地改，位置不动）。
+# ★ 重摆 / 改星会经过 `set_placement` 重建字典 → 层数归零，这是有意的：
+#   星变了两套上限也不同（1~3 星 5 层 / 4 星 8 层），沿用旧层数会算错。
+static func set_king_growth(config: Dictionary, slot: int, cell: int, stacks: int) -> void:
+	var p := placement_at(config, slot, cell)
+	if p.is_empty():
+		return
+	p["king_growth_stacks"] = maxi(0, stacks)
+
+
 static func side_unit_count(config: Dictionary, team_a: bool) -> int:
 	var n := 0
 	for p in config.get("placements", []):
@@ -134,6 +144,23 @@ static func def_for_placement(p: Dictionary) -> Dictionary:
 			# 同 BattleSimShared._formation_ally_def_for_hp:tier 4、cost 0。
 			def.tier = 4
 			def.cost = 0
+	# 人王「战后存活 ⇒ 全属性成长」的层数重放。
+	#
+	# 正式局走在 `Main._grow_human_king`：`mul = 1 + post_battle_all_stat_growth`
+	# （★1~3 走 top-level、★4 走 star4 覆写），**只乘 hp / atk / def**，每层复利一次。
+	# 离线自测把层数记在摆放字典上，这里按同一口径重放 —— 这样属性面板 / 长按详情
+	# 看到的才是真的加成后的数值，而不是只有计数在动。
+	#
+	# ★ 两个数（上限与倍率）都要经 `UnitFactory.apply_star_stats` —— 读原始 `def`
+	#   会把 ★4 的倍率读成 ★1~3 的（9.14 踩过的半接线坑）。
+	var stacks := int(p.get("king_growth_stacks", 0))
+	if stacks > 0 and str(def.get("skill_id", "")) == "unique_king_growth":
+		var eff: Dictionary = UnitFactory.apply_star_stats(def, star_for_placement(p))
+		var mul := 1.0 + float(eff.get("post_battle_all_stat_growth", 0.20))
+		for _i in stacks:
+			for key in ["hp", "atk", "def"]:
+				if def.has(key):
+					def[key] = maxi(1, int(round(float(def[key]) * mul)))
 	return def
 
 

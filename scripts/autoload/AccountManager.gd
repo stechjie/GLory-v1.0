@@ -549,6 +549,56 @@ func remove_friend(code: String) -> Dictionary:
 		"/v1/me/friends/%s" % normalize_friend_code(code), null, true)
 
 
+# --- 匹配队列（docs/排位系统设计.md 第五节，backend/app/routes/matchmaking.py）----
+#
+# 四个接口的返回都是同一个形状：`{"state": {...}}`，而里面那份与 WebSocket 推的
+# `t: "match"` 消息**一模一样**。推送是主路径，这几个是 WS 正好断着时的兜底 ——
+# 两边形状一致，客户端才只需要写一套解析。
+
+func join_match_queue(mode: String = "casual") -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/match/queue", {"mode": mode}, true)
+
+
+func leave_match_queue() -> Dictionary:
+	return await _request(HTTPClient.METHOD_DELETE, "/v1/match/queue", null, true)
+
+
+func fetch_match_state() -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/match/state", null, true)
+
+
+# 确认。**重复确认不是错误** —— 弱网下客户端会重发，玩家也会点两下。
+func accept_match() -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/match/accept", null, true)
+
+
+# 交一份战斗服务器签过章的战报（docs/排位系统设计.md 第七节）。
+#
+# 客户端**不解析、不改** —— 它只是个搬运工，报文是不透明字符串。
+# 一份战报里有全场六个座位的结果，所以六个人里只要有一个交上来就够；
+# 账号服务器按 match_uid 去重，第二份起回 `recorded=false`，**那是成功不是失败**。
+func submit_battle_report(report: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/battle/report", {"report": report}, true)
+
+
+# 我的排位分、段位与信誉分。资料页「战绩」块用（docs/排位系统设计.md 第三、四节）。
+#
+# 段位是服务器按分数算好发下来的（tier / tier_progress），**客户端别自己再除一遍**
+# —— 那就是第二个真相，改段位宽窄时两边会分叉。
+func fetch_ranked() -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/me/ranked", null, true)
+
+
+# 排位时间窗口。**不要登录** —— 按钮上要显示「还有多久开」。
+func fetch_ranked_window() -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/match/window", null, false)
+
+
+# 我打过的局（新的在前）。战绩页用。
+func fetch_matches(limit: int = 20) -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/me/matches?limit=%d" % limit, null, true)
+
+
 # 最近一起玩过、但还不是好友的人。**不是战绩** ——
 # 它是靠「同一时间报了同一个房间号」关联出来的，只用于加人。
 func fetch_recent_players() -> Dictionary:

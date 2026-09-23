@@ -370,3 +370,115 @@ journalctl -u glory-server -n 30 --no-pager | grep -E "battle card|server start"
 
 `make_server_zip.ps1` 的冷启动测试不用线上公钥：它用包里的 `tools/make_smoke_card_key.gd`
 现场生成一把一次性公钥（私钥不落盘），测完随解压目录一起删。所以打包机上不需要放任何名片钥匙。
+
+---
+
+# 战报私钥（对局历史，排位第 1 步）
+
+设计见 `docs/排位系统设计.md` 第七节。
+
+## 🔴 方向和上面那把**正好相反**
+
+| | 私钥在哪 | 公钥在哪 | 谁签 | 谁验 |
+|---|---|---|---|---|
+| DTLS | 战斗服务器 | 打进 APK | —— | 客户端 pin |
+| 出战名片 | 账号服务器 | 战斗服务器 | 账号服务器 | 战斗服务器 |
+| **战报** | **战斗服务器** | **账号服务器** | **战斗服务器** | **账号服务器** |
+
+两把「名片 / 战报」很容易搞混。记一条就够：**谁签，私钥就在谁那台机器上。**
+
+## 缺了会怎样：对局照常，只是不记历史
+
+和名片刻意不一样 —— 名片公钥缺失时专服**拒绝启动**（谁都入不了座）；
+战报私钥缺失时专服**照常启动**，只是每局结束时不签战报。
+
+这是有意的：战报是记账，不是对局的一部分。而且上线顺序上也说不通 ——
+战斗服务器得先更新代码、再放钥匙，中间那段必然是「新代码 + 没钥匙」。
+
+代价是它会**静默少记**，所以有两条日志兜着：
+- 启动时：`⚠ 战报私钥不可用，本进程的对局都不会记历史：...`
+- 每局结束：`battle report skipped room=... : ...`
+
+## 1. 生成（只做一次）
+
+战斗服务器是 Godot headless，没有 Python 环境。在**账号服务器**那台上生成，
+然后把私钥拷走、**立刻删掉本地那份**：
+
+```bash
+# 账号服务器上
+sudo /opt/glory/venv/bin/python /opt/glory/repo/deploy/make_battle_report_key.py \
+    /tmp/battle_report_key.pem
+```
+
+它会写出 `/tmp/battle_report_key.pem`（私钥，600）和
+`/tmp/battle_report_public.pem`（公钥，644），并把公钥打印出来。
+
+## 2. 私钥送到战斗服务器
+
+放到跑 glory-server 那个用户的 Godot 用户目录下，文件名 `battle_report_key.pem`
+（`BattleReport.DEFAULT_KEY_PATH` 是 `user://battle_report_key.pem`），
+或者用 `--battle-report-key=<绝对路径>` 指到别处。位置与名片公钥同一个目录，
+查法见上面「出战名片公钥」的第 2 步。
+
+⚠️ **不要放进项目的 `tools/`** —— `make_server_zip.ps1` 会把整个 `tools/`
+打进战斗服务器包，等于把私钥发给每一个拿到包的人。
+
+```bash
+# 战斗服务器上
+sudo chown glory:glory <目录>/battle_report_key.pem
+sudo chmod 600 <目录>/battle_report_key.pem
+sudo systemctl restart glory-server
+```
+
+## 3. 公钥送到账号服务器
+
+```bash
+sudo install -o glory -g glory -m 644 /tmp/battle_report_public.pem \
+    /opt/glory/battle_report_public.pem
+sudo rm -f /tmp/battle_report_key.pem /tmp/battle_report_public.pem
+```
+
+`glory-backend.service` 里已经有
+`Environment=GLORY_BATTLE_REPORT_PUBLIC_KEY_FILE=/opt/glory/battle_report_public.pem`。
+**公钥按 mtime 热加载，换文件不用重启账号服务器。**
+
+## 4. 验证
+
+战斗服务器日志里应该有：
+
+```
+battle report key loaded path=...
+```
+
+打完一局之后，账号服务器日志里应该有：
+
+```
+记下一局 match=<32 位十六进制> mode=custom rounds=21 outcome=team_a by=<player_id>
+```
+
+数据库里对上：
+
+```sql
+select match_uid, mode, rounds, outcome, ended_at from match_records order by ended_at desc limit 5;
+select slot, player_id, was_ai, online_at_end, gold, carrots_spent from match_seats
+ where match_uid = '<上面那个>' order by slot;
+```
+
+六个座位应该都在。`player_id` 为 null 的是房主加的 AI，或者入座时没带名片的。
+
+## 换钥匙（轮换）
+
+1. 重跑第 1 步那条命令，加 `--force`
+2. 新私钥换到战斗服务器 → `sudo systemctl restart glory-server`
+3. 新公钥换到账号服务器（**不用重启**）
+
+两步之间交上来的战报会被拒（`report_bad_signature`），
+**对局本身不受影响，只是那几局不记历史。**
+
+⚠️ 顺序别反：先换战斗服务器。反过来的话，旧私钥签的战报立刻全被新公钥拒掉，
+而战斗服务器还在签一堆没人要的。
+
+## 打包的冷启动测试
+
+不需要放任何战报钥匙。冷启动测试只验「起得来」，而战报私钥缺失本来就不挡启动。
+`tools/battle_report_check.tscn` 用的钥匙也是运行时现场生成的。

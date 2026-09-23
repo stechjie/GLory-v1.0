@@ -39,8 +39,16 @@ static func avatars() -> Array:
 	return _catalog().get("avatars", [])
 
 
+static func frames() -> Array:
+	return _catalog().get("frames", [])
+
+
 static func default_avatar() -> String:
 	return "preset:%s" % str(_catalog().get("default_id", "avatar_001"))
+
+
+static func default_frame() -> String:
+	return "preset:%s" % str(_catalog().get("default_frame_id", "frame_default"))
 
 
 # 选择器用的小图。缩略图由 tools/make_avatar_thumbs.py 生成 ——
@@ -55,6 +63,13 @@ static func thumb_path(avatar_id: String) -> String:
 static func source_path(avatar_id: String) -> String:
 	for entry in avatars():
 		if str((entry as Dictionary).get("id", "")) == avatar_id:
+			return str((entry as Dictionary).get("source", ""))
+	return ""
+
+
+static func frame_source_path(frame_id: String) -> String:
+	for entry in frames():
+		if str((entry as Dictionary).get("id", "")) == frame_id:
 			return str((entry as Dictionary).get("source", ""))
 	return ""
 
@@ -86,6 +101,18 @@ static func texture_for(value: String, thumb: bool = false) -> Texture2D:
 		# 缩略图没生成（忘了跑 make_avatar_thumbs.py）时退回原图，
 		# 慢一点但画得出来。两个都没有才是真缺资源。
 		path = source_path(id)
+	if path.is_empty() or not ResourceLoader.exists(path):
+		return null
+	return load(path) as Texture2D
+
+
+static func frame_texture_for(value: String) -> Texture2D:
+	var id := id_from_value(value)
+	if id.is_empty():
+		id = str(_catalog().get("default_frame_id", "frame_default"))
+	var path := frame_source_path(id)
+	if path.is_empty() or not ResourceLoader.exists(path):
+		path = frame_source_path(str(_catalog().get("default_frame_id", "frame_default")))
 	if path.is_empty() or not ResourceLoader.exists(path):
 		return null
 	return load(path) as Texture2D

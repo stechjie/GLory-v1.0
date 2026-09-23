@@ -249,7 +249,9 @@ static func format_skill_detail(d: Dictionary) -> String:
 		"bubble_dream":
 			return "泡沫梦境%s：治疗最低血友军%d点，并使最近敌人减速%s、受到%d点真实伤害。" % [cd, int(d.get("heal", 80)), pct(float(d.get("slow_pct", 0.30))), int(d.get("burst_damage", 70))]
 		"shell_guard":
-			return "甲壳守护：获得%s减伤，持续%.1f秒。" % [pct(float(d.get("reduction", 0.50))), float(d.get("duration", 5.0))]
+			# 9.20 bug 文档第 4 条：补上冷却。cd 走 skill_cd_text()，取的是
+			# IMPLICIT_SKILL_CD 里的 6.0（佣兵 JSON 无 skill_cd，见那份常量的注释）。
+			return "甲壳守护%s：获得%s减伤，持续%.1f秒。" % [cd, pct(float(d.get("reduction", 0.50))), float(d.get("duration", 5.0))]
 		"gold_charge":
 			return "黄金冲锋%s：冲向最近敌人，造成%d点真实伤害并眩晕%.1f秒。" % [cd, int(d.get("skill_damage", 120)), float(d.get("stun_sec", 1.2))]
 		"holy_song":
@@ -472,6 +474,14 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 const IMPLICIT_SKILL_CD := {
 	"black_hole": 8.0,
 	"front_cone_stun": 5.0,
+	# 9.20 bug 文档第 4 条：佣兵「甲壳守卫」的冷却没写进详情。
+	# 与 front_cone_stun 同一种情况 —— 模拟器里是硬编码的常数
+	# （BattleSimulator._tick_skills: `caster.skill_ready = float(state.elapsed) + 6.0`），
+	# 而 data/mercenary/mercenaries.json 的 merc_cancer_shell 不带 skill_cd 字段，
+	# 于是 skill_cd_text() 返回空串、文案少了一整句冷却说明。
+	"shell_guard": 6.0,
+	# 9.20 bug 文档第 4 条：佣兵「黄金重骑」同上，硬编码 `+ 7.0`、JSON 无 skill_cd。
+	"gold_charge": 7.0,
 }
 
 

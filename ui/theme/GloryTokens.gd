@@ -55,6 +55,39 @@ const PARCHMENT_EDGE_SOFT := Color(0.57, 0.38, 0.13)
 const INK_PANEL := Color(0.11, 0.075, 0.035, 0.95)
 const INK_EDGE := Color(0.78, 0.56, 0.24)
 
+# --- 方案C「雾林夜幕」：自定义房间面板（桌面\自定义功能界面布局\方案C_设计规范.md）---
+# 与羊皮纸浅色卡片**并存**而不是替换：这套只用于主菜单里的「自定义房间」弹层
+# （深色半透明 + 金色描边，与暗色丛林背景融为一体）。主菜单本身的羊皮纸不动，
+# 所以这些是新增 token，不是把 PARCHMENT_* 改掉。
+const MIST_PANEL := Color(0.051, 0.078, 0.063, 0.88)        # #0D1410 @88%
+const MIST_GOLD := Color(0.788, 0.635, 0.153, 1.0)          # #C9A227 描边 / 强调
+const MIST_GOLD_BRIGHT := Color(0.898, 0.773, 0.345, 1.0)   # #E5C558 标题 / 主按钮底
+const MIST_GOLD_HOVER := Color(0.941, 0.831, 0.439, 1.0)    # #F0D470
+const MIST_GOLD_PRESSED := Color(0.722, 0.549, 0.161, 1.0)  # #B88C29
+const MIST_TEXT := Color(0.949, 0.890, 0.722, 1.0)          # #F2E3B8 正文米白
+const MIST_TEXT_SOFT := Color(0.788, 0.761, 0.651, 1.0)     # #C9C2A6 弱文字（关闭）
+const MIST_TEXT_MUTED := Color(0.561, 0.518, 0.408, 1.0)    # #8F8468 次要 / 空态
+const MIST_ROW_NAME := Color(0.910, 0.878, 0.776, 1.0)      # #E8E0C6 房间名
+const MIST_PLACEHOLDER := Color(0.725, 0.667, 0.494, 1.0)   # #B9AA7E 输入框占位
+const MIST_ACCENT := Color(0.624, 0.690, 0.541, 1.0)        # #9FB08A 辅助提示
+const MIST_ON_GOLD := Color(0.102, 0.071, 0.024, 1.0)       # #1A1206 金底上的深色字
+const MIST_LINE := Color(0.169, 0.196, 0.149, 1.0)          # #2B3226 弱分隔 / 行描边
+const MIST_GHOST_EDGE := Color(0.290, 0.333, 0.267, 1.0)    # #4A5544 「关闭」描边
+
+# 半透明叠加层。设计稿把「白 @6/8/11%」当三档透明度用 —— 它们各自有明确语义
+# （常态行 / 输入框 / 悬停行），所以逐个做成 token 而不是让页面自己算 alpha。
+const MIST_LINE_GOLD := Color(0.788, 0.635, 0.153, 0.40)    # 金色分隔线 / 输入框描边 @40%
+const MIST_ROW_IDLE := Color(1.0, 1.0, 1.0, 0.06)
+const MIST_ROW_HOVER := Color(1.0, 1.0, 1.0, 0.11)
+const MIST_ROW_FULL := Color(1.0, 1.0, 1.0, 0.04)
+const MIST_INPUT_BG := Color(1.0, 1.0, 1.0, 0.08)
+const MIST_EMPTY_BG := Color(1.0, 1.0, 1.0, 0.05)
+const MIST_HOVER_TINT := Color(0.898, 0.773, 0.345, 0.10)   # 次按钮 hover 底 @10%
+const MIST_GHOST_HOVER := Color(1.0, 1.0, 1.0, 0.08)
+# 完全透明。flat_box 需要「无底色 / 无描边」时传它 —— 比各页面自己写
+# Color(0,0,0,0) 好认，也符合「取色只在 GloryTokens」的约定。
+const MIST_NONE := Color(0.0, 0.0, 0.0, 0.0)
+
 # --- 遮罩 ---------------------------------------------------------------------
 # V3 P1-02 要求 80–88%：太浅看不出模态，太深会把背景战场吃掉。
 const BACKDROP := Color(0.008, 0.016, 0.031, 0.84)
