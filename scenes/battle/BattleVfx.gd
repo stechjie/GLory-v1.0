@@ -153,16 +153,53 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 			var overload_target := _nearest_enemy_target(now, damage_events, current)
 			var overload_world: Vector3 = overload_target.get("world_foot", now.get("world_foot", Vector3.ZERO))
 			_play_boss_procedural("overload_counter", now.get("world_cast", Vector3.ZERO), overload_world, _boss_target_context(overload_target))
+			# 9.23 第五批：雷怒核心的技能音 —— 用户口径「**触发技能造成伤害时**播放音效，
+			# 而不是开局播放」。
+			#
+			# 判据就是这一格：层数（`skill_stacks`）由 8 落回 0。`_apply_defender_reaction`
+			# 里那条反击是**唯一**会把层数清零的地方（见 BattleSimTreasures.gd 的
+			# `target.skill_stacks = 0`，紧跟着 `apply_damage(attacker, skill_damage)`），
+			# 所以「落回 0」≡「反击真的打出去了」。
+			#
+			# ★ 为什么这一条不走模拟器的 `sfx_proc` 事件：层数本来就会过回放边界
+			#   （`_replay_capture_frame` 的第 9 列 = skill_stacks），这一格已经是
+			#   精确时刻，再补一条事件是重复信息。
+			# ★ 事件沿用 `_maybe_play_boss_skill_proc()` 这一个消费口（而不是在这里直接
+			#   查表 / 直接 play），免得「boss 真事件音」出现第二个派发点。
+			_maybe_play_boss_skill_proc({
+				"type": "sfx_proc", "skill_id": "overload_counter",
+				"source_uid": str(now.get("sim_uid", "")),
+			})
 		var prev_ratio := float(prev.get("hp", 0)) / float(maxi(1, int(prev.get("max_hp", 1))))
 		var now_ratio := float(now.get("hp", 0)) / float(maxi(1, int(now.get("max_hp", 1))))
 		if sid_now == "blood_rage" and prev_ratio > 0.35 and now_ratio <= 0.35:
 			_play_boss_procedural("blood_rage", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO))
 		if sid_now == "twin_revive" and not bool(prev.get("alive", true)) and bool(now.get("alive", false)):
 			_play_boss_procedural("twin_revive", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO))
+			# 9.23 第五批：双生守门人**复活**那一帧的音（用户没点名，但它是同一类
+			# 「登记了素材、却挂在一个不存在的边沿上」的死音：`twin_revive` 同样不在
+			# `_tick_skills` 的 match 里，所以 9.22 那条施法边沿派发对它也从没生效过）。
+			# 触发点与上面那行演出**同一格**（`alive` 由假转真），`alive` 过回放边界。
+			_maybe_play_boss_skill_proc({
+				"type": "sfx_proc", "skill_id": "twin_revive",
+				"source_uid": str(now.get("sim_uid", "")),
+			})
 		var prev_apocalypse := bool(prev.get("apocalypse_charging", false))
 		var now_apocalypse := bool(now.get("apocalypse_charging", false))
 		if sid_now == "apocalypse_charge" and not prev_apocalypse and now_apocalypse:
 			_play_boss_procedural("apocalypse_charge", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO))
+			# 9.23 第五批：**音效搬走了**。整段 apocalypse 判据（含下面那个收口）
+			# 依赖 `apocalypse_charging`，而它 = `f.has("apocalypse_due")` ——
+			# `apocalypse_due` **不过回放边界**（`_replay_capture_frame` 只打包 13 个
+			# 数值列，`_load_replay_roster` 也只建固定那一组键），所以整段在真实
+			# 3v3 路径（回放播放）上是**死代码**：9.22 那三条音一次都没响过，
+			# 用户报的「灭世裁决者技能音效未生效」正是这一条。
+			# 蓄力/完成/打断三拍现在由模拟器在 `_process_boss_charges` /
+			# `_tick_skills` 里补 `sfx_proc` 事件（skill_id = apocalypse_charge /
+			# apocalypse_impact / apocalypse_stop），过回放边界，由
+			# `_maybe_play_boss_skill_proc()` 消费。
+			# ★ 这里**只留演出**，不要再往这一格加 play/stop —— 那会变成第二条派发路径。
+			#   （演出本身在回放路径上也是死的，属另一个待办，见 docs 记录。）
 		elif sid_now == "apocalypse_charge" and prev_apocalypse and not now_apocalypse:
 			var apocalypse_result := now.duplicate(true)
 			apocalypse_result["charge_completed"] = float(state_snapshot.get("elapsed", 0.0)) + 0.05 >= float(prev.get("apocalypse_due", INF))
@@ -197,6 +234,13 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 
 	for apocalypse: Dictionary in apocalypse_ended:
 		var affected := _boss_damage_events_for_lane(apocalypse, damage_events)
+		# 9.23 第五批：这里原本有 `stop_cue(蓄力音)` + 「完成」那一支的 play。
+		# 三条音全部搬到 `sfx_proc` 事件通道了（理由见上面蓄力那一格的注释）：
+		# 收口在 `BOSS_EVENT_ACTIONS["apocalypse_stop"] / ["apocalypse_impact"]` 的
+		# `stop` 字段里表达，比这里「放在两个 if 之前」的位置约定更结实 ——
+		# 那条约定的目的是「蓄力完成了但没打到人」那一档也要收口，
+		# 而模拟器现在分得清「打了人」（apocalypse_impact）与「没打到人」
+		# （apocalypse_stop），两档都带 `stop`，不再依赖 if 的排列。
 		if not bool(apocalypse.get("charge_completed", false)):
 			_play_boss_procedural("apocalypse_interrupt", apocalypse.get("world_foot", Vector3.ZERO), apocalypse.get("world_foot", Vector3.ZERO))
 		elif not affected.is_empty():
@@ -451,6 +495,31 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 		var merc_cue := SfxService.merc_skill_cue_for(uid)
 		if not merc_cue.is_empty():
 			SfxService.play(merc_cue)
+	# 9.22：boss 技能音 —— **只剩施法边沿这一条通道**。
+	#
+	# ★ **不做归属门控。** 用户口径：「boss 技能音效播放，我方队友都能听见」。
+	#   boss 在 3v3 里固定在场上、不属于任何玩家的 owner_slot，所以这一条独立于
+	#   上面的 `_owned`（`_is_own_or_ally_unit`）与 `_is_star4` 两个分支 ——
+	#   套上它们只会让它变成「永远不响」，而不是「更精确」。
+	#
+	# ★★ 9.23 第五批：这里改成 `boss_cast_edge_cue_for()`，**只有两只** boss 走这条路
+	#   （圣愈祭司 / 天罚投星者：它们的技能确实产生 `skill_ready` 上升沿，且「施法这一下」
+	#   就是用户要的那一声）。
+	#
+	#   其余 6 只**不能**挂在这里，9.22 的写法对它们全是错的：
+	#     · 雷怒核心（overload_counter）—— 用户要的是「触发反击造成伤害时」（下面
+	#       `stack_delta < 0` 那一格）；而且它不在 `_tick_skills` 的 match 里，没有上升沿；
+	#     · 镜像魔君（mirror_clone）—— 要的是「召唤分身时」；它的
+	#       `skill_ready = elapsed + 1.0`，挂这里就是**每秒重响一次**（用户原话「一直播放」）；
+	#     · 噬魂领主（soul_devour）—— 要的是「击杀单位后」；没有上升沿；
+	#     · 血怒魔王（blood_rage）—— 要的是「进入暴走那一次」；没有上升沿；
+	#     · 双生守门人（twin_revive）—— 要的是「复活那一帧」（下面 alive 上升沿那条）；没有上升沿；
+	#     · 灭世裁决者（apocalypse_charge）—— 蓄力/完成/打断三拍，走模拟器事件。
+	#   这 6 只的音效在 SfxService.BOSS_EVENT_ACTIONS 里，由模拟器补 `sfx_proc` 事件、
+	#   本文件的 `_maybe_play_boss_skill_proc()` 消费（理由见那张表上面的注释）。
+	var boss_cue := SfxService.boss_cast_edge_cue_for(uid)
+	if not boss_cue.is_empty():
+		SfxService.play(boss_cue)
 	var texture_pos: Vector2 = unit.get("cast_pos", Vector2.ZERO)
 	var should_play_texture := true
 	var procedural_played := false
@@ -959,6 +1028,76 @@ func _maybe_play_attack_skill_sfx(attack: Dictionary) -> void:
 	SfxService.play(cue)
 
 
+# --- 9.22：四星「普攻附状态」型 + 佣兵「普攻增伤」型的技能音 -------------------
+#
+# 触发点在模拟器：`BattleSimulator._apply_attack_statuses` 的四个分支
+# （破防 / 中毒 / 减速 / 反弹）与 `_perform_attack` 的增伤分支，各自补一条
+# `sfx_proc` 事件；这里按 skill_id 取 cue。
+#
+# 门控口径：
+#   * 四星那四条（刺灵 / 毒灵·飞灵 / 魔童 / 巨甲灵）—— 自身 + 友军 **且四星**，
+#     与其它四星技能音完全同一口径；
+#   * 审判剑士（`balance_judge`）—— 只判自身 + 友军。它是**佣兵**，永远到不了
+#     四星，叠 `_is_star4` 就是一条永远不响的音（同 MERC_PROC_SKILL_CUES 的注释）。
+#
+# `source_uid` 恒为「触发技能的那只棋子」：巨甲灵那条填的是巨甲灵自己
+# （反弹是它的技能，不是打它的那只攻击者的），这样归属门控才判得对。
+func _maybe_play_sfx_proc(event: Dictionary) -> void:
+	var skill_id := str(event.get("skill_id", ""))
+	var source_uid := str(event.get("source_uid", ""))
+	if skill_id.is_empty() or source_uid.is_empty():
+		return
+	if not _is_own_or_ally_unit(source_uid):
+		return
+	var cue := SfxService.proc_skill_cue_for(skill_id)
+	if not cue.is_empty():
+		if _is_star4(source_uid):
+			SfxService.play(cue)
+		return
+	var merc_cue := SfxService.merc_proc_cue_for(skill_id)
+	if not merc_cue.is_empty():
+		SfxService.play(merc_cue)
+
+
+# --- 9.23 第五批：boss 技能音的**真事件**通道（消费端）--------------------------
+#
+# 用户逐条点名的触发时刻，一张动作表在 SfxService.BOSS_EVENT_ACTIONS：
+#   雷怒核心   = 触发反击造成伤害那一帧（本文件 diff：层数由 8 落回 0）
+#   镜像魔君   = 真的召唤出分身那一帧（模拟器 `_skill_mirror_clone` 返回 > 0）
+#   噬魂领主   = 击杀单位后（模拟器 `_on_unit_killed`）
+#   血怒魔王   = 进入暴走那一次（模拟器 `_apply_boss_attacker_passives`）
+#   双生守门人 = 复活那一帧（本文件 diff：`alive` 由假转真）
+#   灭世裁决者 = 蓄力开始 / 蓄力完成 / 蓄力被收口（模拟器 `_tick_skills` 与 `_process_boss_charges`）
+#
+# 事件统一是 `sfx_proc`（只出声，不带特效），由模拟器经
+# `BattleSimShared._emit_sfx_proc` 补进 `state.visual_events`，再经
+# `frame_events` 过回放边界 —— 这正是「skill 音的判据必须跟着事件走、
+# 不能依赖回放帧里不存在的那几个字段」的落点。
+#
+# ★ **不做归属门控**（与施法边沿那条同口径）：boss 固定是敌方单位、不属于任何
+#   owner_slot，用户口径是「boss 技能音效播放，我方队友都能听见」。
+#   所以这一支**不能**并进 `_maybe_play_sfx_proc` —— 那一条开头就是
+#   `_is_own_or_ally_unit(source_uid)`，boss 永远过不了，并进去就是用户报的
+#   「音效未生效」。
+#
+# 返回值 = 这条事件是不是 boss 真事件。调用方据此决定要不要继续走
+# 四星 / 佣兵那两条普攻触发型分支 —— 一条事件只该响一声。
+func _maybe_play_boss_skill_proc(event: Dictionary) -> bool:
+	var skill_id := str(event.get("skill_id", ""))
+	var action: Dictionary = SfxService.boss_event_action_for(skill_id)
+	if action.is_empty():
+		return false
+	# 「先收口、再放音」的顺序由表里的 `stop` / `cue` 两个字段表达：
+	# 灭世裁决者的完成那一档要先把 2 秒的蓄力音掐掉，否则两声会叠在一起。
+	var stop_cue := str(action.get("stop", ""))
+	if not stop_cue.is_empty():
+		SfxService.stop_cue(stop_cue)
+	var cue := str(action.get("cue", ""))
+	if not cue.is_empty():
+		SfxService.play(cue)
+	return true
+
+
 # --- 9.20：三条「非施法型」四星技能音的触发点 --------------------------------
 #
 # 这三家的技能在模拟器里**不产生 `skill_ready` 上升沿**，所以不能走
@@ -1074,6 +1213,20 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 					SfxService.play(proc_cue)
 			if not skill_id.is_empty() and not source.is_empty() and not target.is_empty():
 				_play_unit_procedural(skill_id, source.get("world_cast", Vector3.ZERO), target.get("world_hit", target.get("world_foot", Vector3.ZERO)), _unit_target_context(source, target))
+		elif str(event.get("type", "")) == "sfx_proc":
+			# 9.22：**只出声、不出特效**的普攻触发型技能音。
+			#
+			# 为什么不复用上面那条 `unit_skill_proc`：那一条在派发完音效后还会顺带调
+			# `_play_unit_procedural(skill_id, ...)` 去放程序化特效，而
+			# poison_attack / defense_down_attack / curse_attack / balance_judge
+			# 这几个 skill_id 原本**没有**对应的程序化演出 —— 走那条路等于给它们
+			# 凭空叠一层特效，把「加音效」做成了「加演出」。
+			# 9.23 第五批：boss 技能音走的是**同一条事件通道**（`sfx_proc` + skill_id），
+			# 但它的门控口径完全不同（不做归属门控，见 `_maybe_play_boss_skill_proc`
+			# 的说明），所以先问 boss 那一支；它接了就结束，免得同一条事件被
+			# 四星 / 佣兵那两支按 skill_id 再判一遍。
+			if not _maybe_play_boss_skill_proc(event):
+				_maybe_play_sfx_proc(event)
 		# D6: hit_number is drawn by the Director's adapter, on its timing. The old
 		# branch here would have been a second, untimed copy of the same number.
 

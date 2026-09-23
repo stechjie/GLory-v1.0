@@ -225,13 +225,26 @@ func _check_merc_and_militia_dispatch(h) -> void:
 		"BattleVfx 取到 merc_cue 之后没有 play() —— 一条永远不会响的音")
 
 	# 民兵那条必须在 unit_skill_proc 分支里（真正触发的那一刻），不是普攻节拍分支。
+	#
+	# 9.22 修正：原判据是「第一个 `proc_skill_cue_for` 出现在 `unit_skill_proc` 之后」，
+	# 这依赖**文件里的定义顺序**。本轮新增的事件类型 `sfx_proc`（四星刺灵/毒灵/飞灵/
+	# 巨甲灵那四条普攻附状态音）走的也是 `proc_skill_cue_for`，而它的派发实现
+	# （BattleVfx._maybe_play_sfx_proc）按文件顺序排在 `_play_visual_events` **之前**
+	# —— 原判据会把这段新代码误判成「民兵的音挂错了分支」。
+	#
+	# 现在改成**区间判定**：cue 的取值与播放都必须落在 `unit_skill_proc` 那个分支里
+	# （区间 = 分支标签 → 下一个事件类型分支）。意图完全不变 ——
+	# 「在真正触发的那一刻取值并播出去」—— 只是不再被文件的定义顺序左右。
 	var proc_at := vfx.find('== "unit_skill_proc"')
-	var lookup_at := vfx.find("SfxService.proc_skill_cue_for(skill_id)")
-	var play_at := vfx.find("SfxService.play(proc_cue)")
-	h.expect(proc_at >= 0 and lookup_at > proc_at, "vfx_proc_wrong_branch",
+	var proc_branch_end := vfx.find('== "sfx_proc"', proc_at + 1)
+	h.expect(proc_at >= 0 and proc_branch_end > proc_at, "vfx_proc_branch_bounds",
+		"定位不到 unit_skill_proc 分支的边界（BattleVfx 结构变了，下面的断言无从谈起）")
+	var lookup_at := vfx.find("SfxService.proc_skill_cue_for(skill_id)", proc_at)
+	var play_at := vfx.find("SfxService.play(proc_cue)", maxi(lookup_at, 0))
+	h.expect(lookup_at > proc_at and lookup_at < proc_branch_end, "vfx_proc_wrong_branch",
 		"proc_skill_cue_for 不在 unit_skill_proc 分支里（民兵的音不会真的触发）")
-	h.expect(lookup_at >= 0 and play_at > lookup_at, "vfx_proc_play_order",
-		"play(proc_cue) 没跟在取值之后")
+	h.expect(play_at > lookup_at and play_at < proc_branch_end, "vfx_proc_play_order",
+		"play(proc_cue) 没跟在取值之后（或跑到别的分支里了）")
 
 	# 门控：民兵是四星才响，且只算自身 + 友军。少了这两条，敌方或低星也会响。
 	var branch_at := vfx.find("var proc_cue := SfxService.proc_skill_cue_for(skill_id)")

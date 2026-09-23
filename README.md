@@ -1549,3 +1549,152 @@ FAIL 2 与 `asset_manifest` FAIL 21 均与 9.20 基线**逐条一致**，本批�
 ±2px，面板比例 1.482 ✓、主按钮中心色 `#E5C558` 精确、满员行字 ≈`#8F8468`、悬停金描边出现在预期 Y 位置。
 未重导 EXE / APK（无新资源，`.import` 与 `project.godot` 未变）。详见
 [9.21 自定义房间面板改版记录](docs/9.21自定义房间面板美化记录.md)。
+
+## 2026-09-23：第四批战斗音效接入 + 「同星人王交换无效」修复
+
+用户给了 16 个音频（`桌面/音乐/0922/`）与一份 bug 文档（客户端版本 `GloryBeta0923`），要求**先把音效
+放到工程里的正确位置并让它生效，再修掉文档里的 bug**，最后按「资源 / 代码」分两个同路径镜像备份夹。
+
+**16 个音频**统一改成英文 snake_case 落进 `assets/audio/sfx/battle/`（映射表 `work/_qa_922/_map.txt`）：
+9 只 boss 技能音、4 条四星触发音、佣兵镜像刺客与审判剑士各 1 条、1 条**覆盖**既有的最终回合 PVP 开局音。
+★ 其中 6 组素材是**逐字节相同的重复文件**，**没有做去重** —— 语义上是「不同棋子各一段」，
+将来换素材不会互相牵连。★ 狂战灾兽按用户口径**先留空、不播放**，它**故意不进** `BOSS_SKILL_CUES`
+（探针有反断言看着，防止有人"顺手补一个别的音"）。
+
+**boss 技能音不做归属门控**（用户口径「我方队友都能听见」）。★ 理由：boss 在 3v3 里固定在场上、
+不属于任何玩家的 `owner_slot`，塞进 `_is_own_or_ally_unit` 只会变成「永远不响」而不是「更精确」。
+探针用**缩进判据**（`boss_indent == 1`）钉死这一点 —— 单靠 `contains` 判据，把它挪进门控里照样全绿。
+
+**灭世裁决者三段**：蓄力上升沿播蓄力音；`apocalypse_ended` 里**先无条件 `stop_cue`、再分「打断 / 完成」两支**
+（顺序是这个功能的全部难点，放反了两条音会叠着响）；完成支播全场伤害音。
+
+**触发型普攻音新增事件类型 `sfx_proc`**：5 个触发点散在 `BattleSimulator` 三个函数里，而播放统一在
+`BattleVfx`。复用既有 `unit_skill_proc` 会让 `_play_unit_procedural()` **给本来没有特效的棋子凭空加一层特效**，
+所以新开一条**只出声、不加特效**的通道（`BattlePresentationEvent.KNOWN_TYPES` 必须登记，否则产生
+`unknown_type:` 校验错）。审判剑士是**佣兵不是四星**，走 `MERC_PROC_SKILL_CUES`，不能并进 `STAR4_PROC_SKILL_CUES`。
+
+**最终回合开局音本轮只换素材、没改代码** —— 时序机制 9.21 已建好且正合本条口径：调用点在
+`_prepare_battle_models()` 末尾（模型全建完、战斗马上开打），`_resolve_pending_battle_music()` 里
+`await ... cue_length(cue)`，而 `BattleScreen` 在 175/294 两处 `await _prepare_battle_models()` ——
+**这条 await 链就是「音播完 → 棋子才行动」**。★ 等的是素材**真实长度**而不是写死秒数，所以换素材不必动一行代码。
+
+**黄金重骑音量**：`SfxService` 新增按 cue 的覆盖表 `CUE_VOLUME_DB = { CUE_MERC_TAURUS_CHARGE_SKILL: 6.0 }`
+（用户口径 6dB ≈ 2 倍响度），`play()` 里 `voice.volume_db = volume_db + cue_volume_db(cue)`。
+★ 做成表 + 函数而不是在调用点写 `play(cue, 6.0)`：「这只棋子这条音该多响」是音频侧的知识，放调用点会散掉。
+探针有一条**顺序断言**：音量赋值必须排在 `voice.play()` 之前，否则这一声还是按旧音量走。
+
+**bug 文档第 1 条「两个同星级人王交换无效」**：四个搬运 handler 原来都是
+`elif can_merge_cells(...): if not _merge_copies_into_cell(...): return` —— 而 `can_merge_cells` 判的是
+「同 id + 同星 + 未满星」，**两只同星人王满足它**；可「满足 `can_merge_cells`」与「这一下合得成」
+是两件事：升星要几份看 `STAR_UPGRADE_COPIES = {1: 2, 2: 3}`，**2 星还得再凑第 3 份**，
+两只人王互换时凑不出来 → `_merge_copies_into_cell` 返回 false → **静默 return**，既不合成也不交换。
+现场是**两只同星人王都在备战区**、互换位置无效；**不同星级**的能换 —— 关键变量是**星级**。
+星级边界正好解释这一点：**1 星**（只要 2 份）旧写法真的**合成**，不叫「无效」；
+**2 星**（缺第 3 份）静默 return = **交换无效**；**3 星**已到合成封顶（`MAX_MERGE_STAR = 3`）
+`can_merge_cells` 为假 → 本来就走交换。**为什么只有人王让人察觉**：人王 `unique_on_board` 限的是**场上**、
+备战区不限，两只同星人王同时在备战区是常态；而每只的 `king_growth_stacks` 各自独立，
+**换位置是有意义的**；普通棋子同样中招，只是两只同星等价、换不换看不出来。
+改法是把「能合」与「合得成」并成一个条件 `elif can_merge_cells(...) and _merge_copies_into_cell(...):`，
+合不成就落到下面的交换分支；四处 handler 都要改（一个 handler 只覆盖一种拖动方向）。
+★ 安全性：`_merge_copies_into_cell()` 在失败路径上**不改任何状态**（`_take_extra_merge_piece` 只在真取到时才清格子），
+所以并进 `and` 不会出现「合了一半又去交换」——已写进代码注释。
+★ 订正（同日）：第一版记录把现场写成「一只在场、一只在待命区」并归因到 `unique_on_board`，
+**用户指出方向有误**后已按上表重写；`prep_swap_check` 同时补了「星级边界」用例（1 星合成 / 3 星交换）钉死这条推导。
+
+★ **本轮过程事故（教训已固化）**：加 boss 派发时我把 `elif _owned:` 的 merc 三行**整段抬出了缩进**，
+于是 `elif _owned:` **只剩注释** —— GDScript 里这是**解析期错误**，整份 `BattleVfx.gd` 加载失败，
+沿继承链把 `BattleResult` / `BattleScreen` 一起带塌。三条教训：① **读源码文本的探针看不见解析错误**
+（我那些缩进 / `contains` 判据当时全绿），已补一条 `vfx_merc_dispatch_dedented`；
+② **全量批跑里没有 `cold_parse_chain_check` 是最大的漏洞** —— 这条门禁本来是有效的（变异测试证明能判红），
+只是我第一轮 19 条里没它，是 `voice_check` 顺手抓出来的；现已加进批跑（20 条）**并加厚**
+（战斗继承链每一层单列成一个 target；script 类判据从「`load()` 非 null」升级为 `can_instantiate()` ——
+实测解析失败的 GDScript，`load()` 照样返回非 null 对象）；③ **变异脚本必须单次调用内自还原 + 二进制读写**
+（两阶段脚本被无脑重跑 `backup` 会把 `.mutbak` 覆盖成变异后的内容；文本模式还会把 CRLF 悄悄变成 LF），
+两个变异脚本都已重写成同一套纪律。
+
+验证：门禁批跑 **20 条 / 15 PASS / 5 FAIL**。本批新增与直接命中全绿 —— `audio_0922` **104**、`prep_swap` **26**、
+`cold_parse_chain` **41**、`audio_sfx` **225**（cue 计数 60→75）、`audio_0921` **80**、`battle_presentation_event` **8314**、
+`merge_rule_parity` **29**、`boss_battle_bgm` **24**、`four_star_values` **684**、`synergy_activation_sfx` **47**、
+`team_merc_summon_sfx` **16**、`battle_cue_profile` **169**、`settings_locale_live` **4**、`prep_detail_overlay` **32**。
+五条红**逐条归因、全部与本批代码无关**：`voice` **8**（既存红，★ 本轮一度涨到 9 = 那个解析错误，修完回到 8）、
+`ui_feedback` **1**（**环境态**：落盘 `profile.json` 的 `reduced_motion_enabled=true` 让 `shake()` 按设计返回 false；
+**已做对照实验**，改 false 立刻转绿 PASS 40，改回后字节级还原）、
+`procedural_ui_ratchet` **3**（全部落在 `FourStarUpgradePanel.gd` 的 `0→1 / 0→3`，**本批一个字没动那个文件**，
+总线数正好涨 1 与 3，算术闭合）、`prep_text_coverage` **1**（既存红）、
+`dynamic_call` **4**（3 条指向未动过的 `PrepUI.gd:1078-1080`；本批 5 个文件对 `unresolved` 贡献 **0**）。
+变异测试三组全红并逐字节还原：`mutate_audio_fix` **6 红**、`mutate_swap_fix` **3 红**、`mutate_cold_parse_922` **1 红**。
+`project.godot` sha256 全程 `867967a77294166c…` 未变。交付两个同路径镜像夹
+（`9.23交付_01_音效BGM资源_同路径备份` / `9.23交付_02_代码修改_同路径备份`）。
+未做安卓 / 真机听感验收，未重新导出 EXE / APK。详见
+[9.23 第四批战斗音效与人王交换 bug 修复记录](docs/9.23第四批战斗音效与人王交换bug修复记录.md)。
+
+## 2026-09-23：第五批 —— boss 技能音「挂错时刻」订正（双通道）
+
+第四批把 16 条音频接上之后，用户逐条点名 5 只 boss 的技能音**时刻不对**：
+雷怒核心应在「触发反击**造成伤害**时」（不是开局）、镜像魔君应在「**召唤分身时**」（不是一直播放）、
+噬魂领主应在「**击杀单位后**」、血怒魔王应在「**进入暴走状态时**」且**仅一次**、灭世裁决者「**未生效**」。
+
+**根因一：第四批把 7 只 boss 全挂在同一条边沿上。** 派发点是 `skill_ready` 的上升沿，
+而 `overload_counter` / `soul_devour` / `blood_rage` / `twin_revive` **根本不在 `_tick_skills` 的
+`match` 里、没有这条边沿** → 一次都不响；`mirror_clone` 在 `match` 里但 `skill_ready = elapsed + 1.0`
+→ **每秒重响一次**，正是用户说的「一直播放」。只有圣愈祭司 / 天罚投星者的「施法这一下」等于用户要的那一声。
+
+**根因二（更要紧）：那两条「看起来对」的判据过不了回放边界。** 真实 3v3 打的**不是本地模拟**，
+而是 `BattleScreen._start_replay` → `_apply_replay_frame` **播回放**；回放帧只打包 **13 个数值列**
+（`_replay_capture_frame`），`_state` 里的单位字典也只按 `_load_replay_roster` 那一组**固定键**重建。
+于是 `apocalypse_due` / `blood_rage_active` / `killer_uid` 这类字段**在回放侧根本不存在** ——
+`apocalypse_charging = f.has("apocalypse_due")` 恒为 false，BattleVfx 里整段蓄力音派发是**死代码**。
+这就是用户报的「音效未生效」，也解释了为什么源码里「明明写了、素材也在、门禁全绿」却一声不响。
+★ 结论已写进探针头部：**音效的判据必须跟着「会过回放边界的数据」走。**
+
+**改法：拆成两条通道。** ① **施法边沿** `SfxService.boss_cast_edge_cue_for(boss_id)` —— 只剩
+圣愈祭司 / 天罚投星者两只，触发点仍是 `_play_skill_cast_vfx`。② **真事件**
+`SfxService.BOSS_EVENT_ACTIONS`（**键是 `skill_id`**，值 `{cue, stop}`；`stop` 非空则「先收口再放音」）——
+其余 6 只。消费端 `BattleVfx._maybe_play_boss_skill_proc(event)` 挂在 `sfx_proc` 分支上，
+**先问 boss 那一支、接了就结束**（免得同一条事件被四星 / 佣兵那两支再按 `skill_id` 判一遍），
+且**不做归属门控**（boss 固定是敌方单位，并进 `_maybe_play_sfx_proc` 就是永远不响）。
+
+**事件从哪来，分两类。** 一类**模拟器补**（经 `BattleSimShared._emit_sfx_proc` → `state.visual_events`
+→ 回放采集进 `frame_events`，**过得了回放边界**）：`mirror_clone`（`_tick_skills` 里
+`_skill_mirror_clone(...) > 0`）、`soul_devour`（`_on_unit_killed`）、`blood_rage`
+（`_apply_boss_attacker_passives`，**挂在 `not blood_rage_active` 守卫里面** → 「仅一次」由代码结构保证）、
+灭世裁决者三拍（`_tick_skills` 与 `_process_boss_charges`）。另一类**BattleVfx 就地构造**
+（判据本来就会过回放边界）：雷怒核心（过载层数 `stack_delta < 0`，= 反击真的打出去了）、
+双生守门人（`alive` 由假转真，复活那一帧）。
+
+**三处实现细节值得单记。** ① `_emit_sfx_proc` **搬到 `BattleSimShared`** ——
+`BattleSimulator` / `BattleSimSkills` / `BattleSimTreasures` 三个兄弟模块都要用，放共享基类上避免循环依赖。
+② 两个技能函数补返回值：`_skill_apocalypse_charge` `void → bool`、`_skill_mirror_clone` `void → int`；
+**没有返回值这两条音就会退化**成「每次 match 都响」/「每秒响一次」。③ `_process_boss_charges` **两档都收口**，
+且 `apocalypse_impact` **先 stop 再 play**（表里的 `stop` 字段），否则 2 秒的蓄力一次性音与完成音叠着响；
+BattleVfx 里那三条旧调用点**删干净**（挂 `apocalypse_charging`，回放侧恒为假 → 留着既不会响、又会叠音）。
+
+**★ 本轮探针自己制造过一次假绿，值得单记。** `_check_blood_rage_emitter` 的一条提示串写成
+`"…掉到 30% 血…（实际 %d 条）" % hits.size()` —— `30%` 后面是**裸百分号**。GDScript 报
+`String formatting error: unsupported format character`，**该函数当场中断、它后面所有断言一条都不执行**，
+而整体只表现为「失败数没变多」，看上去像全绿（被跳过的正好含用户明确要求的「仅播放一次」）。
+必须写 `30%% 血`。**只有变异测试能发现「整段断言根本没跑」** —— `contains` 类判据全绿。
+另记一坑：同一个 `.gd` 在一次消息里连发两条 `Edit` 会**互相覆盖**（后一条按旧快照重写文件，
+先前那条静默丢失），三条变异第一次只生效了两条。**改同一份文件要一次一条。**
+
+**顺手修好 `ui_feedback_check` 的一个环境依赖。** 它只快照 `screen_shake`，而
+`UiFeedback.shake()` 还会看 `Tokens.reduced_motion()`（设置页「降低动态效果」）—— 为真时直接归零返回 false。
+落盘 `profile.json` 里 `reduced_motion_enabled=true` 时它**必红**（第四批已归因为环境态）；
+更要紧的是它同时在**制造假绿**：`shake()` 提前返回 false 时不建 tween、不动控件，
+于是 `shake_does_not_restore_rotation` / `shake_does_not_restore_pivot` / `shake_leaks_tracking`
+三条「什么都没抖所以什么都没坏」全部通过。现在两个开关都纳入快照、测抖动那段强制关掉
+`reduced_motion`、收尾一并还原并断言还原成功。**门禁不许读自己没快照过的持久化 `user://` 状态。**
+
+验证：门禁批跑 20 条，本批相关 **8 条全 PASS** —— `audio_0922` **174**（104 → 174）、
+`prep_swap` **30**、`cold_parse_chain` **41**、`audio_sfx` **226**、`audio_0921` **80**、
+`battle_presentation_event` **8314**、`ui_feedback` **41**（40 → 41）、`boss_battle_bgm` **24**。
+既存红 4 条（`voice` **8** / `prep_text_coverage` **1** / `dynamic_call` **4** /
+`procedural_ui_ratchet` **3**，最后一条全落在本批一个字没动过的 `FourStarUpgradePanel.gd`；
+⚠️ **不许用 `--update-baseline` 刷绿** —— 那正是棘轮禁止的自愈松棘轮）。
+★ **变异测试（本批的过门条件）**：新探针第一次跑就全绿，所以故意改坏产品代码确认对应判据**真的会红** ——
+`BOSS_EVENT_ACTIONS[mirror_clone].cue` 改错（1 红）、去掉 `apocalypse_impact`/`apocalypse_stop` 分档（3 红）、
+`_skill_mirror_clone(...) > 0` 改 `>= 0`（3 红），合计 **FAIL 7**；还原后三条文件 sha256 与变异前逐字节一致
+（`SfxService.gd` `0B98E5A2…` / `BattleSimulator.gd` `1806AB80…` / `BattleVfx.gd` `C4FB5136…`）。
+交付夹按同一份清单 **restage 覆盖**（新增进清单：`BattleSimShared.gd` / `BattleSimSkills.gd` /
+`BattleSimTreasures.gd` / `ui_feedback_check.gd` 与本批 doc）。未做安卓 / 真机听感验收，未重新导出 EXE / APK。
+详见[9.23 第五批 boss 技能音双通道订正记录](docs/9.23第五批boss技能音双通道订正记录.md)。

@@ -190,6 +190,30 @@ const CUE_FINAL_ROUND_PVP_INTRO := "final_round_pvp_intro"
 const CUE_START_GAME_SUCCESS := "start_game_success"
 const CUE_START_GAME_FAIL := "start_game_fail"
 
+# 9.22 第四批（素材来自 `音乐/0922`）。三段：
+#   ① boss 技能音 9 条。其中 7 条进 `BOSS_SKILL_CUES`，按 **boss id** 派发；
+#      灭世裁决者的蓄力 / 完成两条**不在这张表里** —— 它的技能有「蓄力被打断」
+#      这一档，派发表只能表达「响一声」，表达不了「中途停播」，
+#      所以那两条在 BattleVfx 里直接 play / stop（见 CUE_BOSS_APOCALYPSE_CHARGE）。
+#   ② 佣兵技能音 1 条（镜像刺客，走既有的 merc_skill_cue_for）。
+#   ③ 普攻触发型技能音 5 条（1 条佣兵 + 4 条四星灵），走 `unit_skill_proc` 之外的
+#      一条新事件 `sfx_proc`（理由见 STAR4_PROC_SKILL_CUES 上方的说明）。
+const CUE_BOSS_MIRROR_LORD_SKILL := "boss_mirror_lord_skill"
+const CUE_BOSS_THUNDER_CORE_SKILL := "boss_thunder_core_skill"
+const CUE_BOSS_APOCALYPSE_CHARGE := "boss_apocalypse_charge"
+const CUE_BOSS_APOCALYPSE_IMPACT := "boss_apocalypse_impact"
+const CUE_BOSS_HOLY_PRIEST_SKILL := "boss_holy_priest_skill"
+const CUE_BOSS_SOUL_DEVOURER_SKILL := "boss_soul_devourer_skill"
+const CUE_BOSS_TWIN_GATE_REVIVE := "boss_twin_gate_revive"
+const CUE_BOSS_METEOR_CASTER_SKILL := "boss_meteor_caster_skill"
+const CUE_BOSS_BLOOD_DEMON_SKILL := "boss_blood_demon_skill"
+const CUE_MERC_GEMINI_ASSASSIN_SKILL := "merc_gemini_assassin_skill"
+const CUE_MERC_LIBRA_JUDGE_PROC := "merc_libra_judge_proc"
+const CUE_STAR4_SPIKE_PROC := "star4_spike_proc"
+const CUE_STAR4_POISON_PROC := "star4_poison_proc"
+const CUE_STAR4_TITAN_PROC := "star4_titan_proc"
+const CUE_STAR4_MOTONG_PROC := "star4_motong_proc"
+
 const CUES := {
 	CUE_UI_POPUP: "res://assets/audio/sfx/ui/popup.mp3",
 	CUE_UI_CONFIRM: "res://assets/audio/sfx/ui/button_confirm.mp3",
@@ -265,6 +289,25 @@ const CUES := {
 	# 开始游戏成功 / 失败。放 ui/ 下：发生在房间（Team3v3Lobby），属房间级 UI 反馈。
 	CUE_START_GAME_SUCCESS: "res://assets/audio/sfx/ui/start_game_success.mp3",
 	CUE_START_GAME_FAIL: "res://assets/audio/sfx/ui/start_game_fail.wav",
+
+	# 9.22 第四批。素材放 battle/ 下：全部是战斗场景内的单位 / boss 演出。
+	# 命名沿用素材语义（boss_* / merc_* / star4_*_proc），与源目录的中文名一一对应，
+	# 对照表在 work/_qa_922/_map.txt。
+	CUE_BOSS_MIRROR_LORD_SKILL: "res://assets/audio/sfx/battle/boss_mirror_lord_skill.mp3",
+	CUE_BOSS_THUNDER_CORE_SKILL: "res://assets/audio/sfx/battle/boss_thunder_core_skill.mp3",
+	CUE_BOSS_APOCALYPSE_CHARGE: "res://assets/audio/sfx/battle/boss_apocalypse_charge.mp3",
+	CUE_BOSS_APOCALYPSE_IMPACT: "res://assets/audio/sfx/battle/boss_apocalypse_impact.mp3",
+	CUE_BOSS_HOLY_PRIEST_SKILL: "res://assets/audio/sfx/battle/boss_holy_priest_skill.mp3",
+	CUE_BOSS_SOUL_DEVOURER_SKILL: "res://assets/audio/sfx/battle/boss_soul_devourer_skill.mp3",
+	CUE_BOSS_TWIN_GATE_REVIVE: "res://assets/audio/sfx/battle/boss_twin_gate_revive.mp3",
+	CUE_BOSS_METEOR_CASTER_SKILL: "res://assets/audio/sfx/battle/boss_meteor_caster_skill.mp3",
+	CUE_BOSS_BLOOD_DEMON_SKILL: "res://assets/audio/sfx/battle/boss_blood_demon_skill.mp3",
+	CUE_MERC_GEMINI_ASSASSIN_SKILL: "res://assets/audio/sfx/battle/merc_gemini_assassin_skill.mp3",
+	CUE_MERC_LIBRA_JUDGE_PROC: "res://assets/audio/sfx/battle/merc_libra_judge_proc.mp3",
+	CUE_STAR4_SPIKE_PROC: "res://assets/audio/sfx/battle/star4_spike_proc.mp3",
+	CUE_STAR4_POISON_PROC: "res://assets/audio/sfx/battle/star4_poison_proc.mp3",
+	CUE_STAR4_TITAN_PROC: "res://assets/audio/sfx/battle/star4_titan_proc.mp3",
+	CUE_STAR4_MOTONG_PROC: "res://assets/audio/sfx/battle/star4_motong_proc.mp3",
 }
 
 # 每条 cue 的最小重触发间隔（毫秒）。缺省是 RETRIGGER_GUARD_MSEC。
@@ -275,6 +318,19 @@ const CUES := {
 # 散出去的结果是私聊一处、朋友申请另一处，两处各响一遍，10 秒内听两下。
 const THROTTLE_MSEC_BY_CUE := {
 	CUE_CHAT_ALERT: 10_000,
+}
+
+# 每条 cue 的音量偏移（dB）。缺省 0.0 —— 不写照旧。
+#
+# 9.22 第四批新增。为什么需要这张表：音效之间会**互相遮挡**，而这件事只在
+# 真实播放时才暴露 —— 门禁只能证明「响了」，证明不了「听得清」。
+# 黄金重骑的技能音在 `pvp_battle_music` 之下被 BGM 压住（用户实测听不清），
+# 修法不是去动 BGM（那是全局的），而是把这一条 cue 单独抬起来。
+#
+# 表在 `play()` 里以**相加**的方式生效（见那里的注释），所以这既覆盖
+# 「调用方没传音量」的常规情况，也不会把调用方自己传的值吃掉。
+const VOLUME_DB_BY_CUE := {
+	CUE_MERC_TAURUS_CHARGE_SKILL: 6.0,
 }
 
 # 四星音效按棋子分流。9.17 起是 5 条（人王 / 神王·大天使共用 / 母灵 /
@@ -363,6 +419,115 @@ const STAR4_ATTACK_SKILL_CUES := {
 # 与母灵「死亡执行」走同一条路。所以这张表只做「skill_id → cue」的映射。
 const STAR4_PROC_SKILL_CUES := {
 	"attack_interrupt": CUE_STAR4_MILITIA_SKILL,
+	# 9.22 第四批：四条「普攻附状态」型。它们的共同点是**每一次普攻都会生效**
+	# （中毒 / 破防 / 减速都是无条件挂上去的），所以「触发」= 这次普攻真的打了出去
+	# 并且目标吃到了状态 —— 模拟器在 `_apply_attack_statuses` 的对应分支里补一条
+	# `sfx_proc` 事件，BattleVfx 按 skill_id 取 cue。
+	#
+	# ⚠️ 不能用 `_play_attack_unit_procedural` 那条路（STAR4_ATTACK_SKILL_CUES 走的那条）：
+	# 那条路的前提是 `attack_count % every == 0`，也就是「每第 N 次才触发」；
+	# 这四家的技能是**每次**都触发的，`_attack_skill_vfx_ready()` 对它们恒真，
+	# 挂上去就变成「每次普攻都响」。
+	"defense_down_attack": CUE_STAR4_SPIKE_PROC,
+	"poison_attack": CUE_STAR4_POISON_PROC,
+	"curse_attack": CUE_STAR4_MOTONG_PROC,
+	"poison_reflect_armor_stack": CUE_STAR4_TITAN_PROC,
+}
+
+# 9.22 第四批：**佣兵**的普攻触发型技能音。
+#
+# 单独立表而不是并进上面的 STAR4_PROC_SKILL_CUES：审判剑士是佣兵，而佣兵永远
+# 到不了四星（`EconomyLedger._use_upgrade_stone` 会拒），上面那条路径会叠一个
+# 永远为假的 `star == 4` 门控 —— 并进去就是一条永远不响的音。
+# 与 MERC_SKILL_CUES 分开是因为键不同：那里是 unit_id，这里是 skill_id。
+const MERC_PROC_SKILL_CUES := {
+	"balance_judge": CUE_MERC_LIBRA_JUDGE_PROC,
+}
+
+# 9.22 第四批：boss 技能音。
+#
+# ★ **不做归属门控。** 用户口径：「boss 技能音效播放，我方队友都能听见」。
+#   3v3 里 boss 固定出现在场上、不属于任何玩家，所以这条分支独立于
+#   `_is_own_or_ally_unit` / `_is_star4` —— 加门控只会让它变成「只有某一台听得见」。
+#
+# ★★ 9.23 第五批：拆成**两条触发通道**（第一版把 7 只全挂在同一个时刻上，
+#   用户逐条点名后才发现那条路对其中 6 只根本不成立）。两张表 + 一张全量表：
+#
+#   ① 施法边沿 —— `BOSS_CAST_EDGE_CUES`，键 **boss id**。
+#      技能在模拟器里真的产生 `skill_ready` 上升沿（`_tick_skills` 的 match 里有它），
+#      而且「施法这一下」就是用户要的那一声。只剩两只：
+#      圣愈祭司（群体净化）与天罚投星者（陨石）。
+#
+#   ② 真事件 —— `BOSS_EVENT_SKILL_CUES`，键 **skill_id**。
+#      用户点名的是技能**造成的后果**那一帧，不是施法那一帧。更要紧的是：
+#      雷怒核心 / 镜像魔君 / 噬魂领主 / 血怒魔王 / 双生守门人 / 灭世裁决者
+#      这 6 只里，前面几只**压根没有 `skill_ready` 边沿**
+#      （`overload_counter` / `soul_devour` / `blood_rage` / `twin_revive`
+#        都不在 `_tick_skills` 的 match 里，见 BattleSimulator.gd），
+#      挂在施法边沿上就等于「一次都不响」—— 用户报的「未生效」正是这一条。
+#      现在改由模拟器在真事件处补 `sfx_proc` 事件
+#      （`BattleSimulator._emit_sfx_proc`，跨回放边界），消费端
+#      `BattleVfx._maybe_play_boss_skill_proc`。
+#
+#   ③ `BOSS_SKILL_CUES` 是上面两条的**并集（全量素材表，按 boss id）**，
+#      不参与派发 —— 留给诊断与门禁用。`boss_skill_cue_for()` 的结果因此与
+#      9.22 完全一致，只是它不再等于「谁能响」。
+#
+# 狂战灾兽（boss_rage_beast）仍然留空：`音乐/0922` 里没有给它素材
+# （用户确认先留空）。将来补素材只需在表里加一行。
+const BOSS_CAST_EDGE_CUES := {
+	"boss_holy_priest": CUE_BOSS_HOLY_PRIEST_SKILL,
+	"boss_meteor_caster": CUE_BOSS_METEOR_CASTER_SKILL,
+}
+
+# 真事件通道。键是 skill_id；值是一张**动作**表而不是一条 cue —— 因为灭世裁决者
+# 多一个维度（「先收口蓄力音、再放完成音」），纯 cue 映射表达不了。
+#   * `cue`  —— 要放的素材（可为空 = 这一条只收口，不放音）
+#   * `stop` —— 放音前要先 stop_cue 掉的那条（可为空）
+#
+# 每一行右边的注释就是用户点名的触发时刻，也是模拟器补事件的位置。
+const BOSS_EVENT_ACTIONS := {
+	# 雷怒核心：触发反击**造成伤害**的那一帧（受击攒到 8 层 → 反击并清零）。
+	# 这一条的派发点在 BattleVfx 而不是模拟器 —— 它的层数（`skill_stacks`）
+	# 本来就会过回放边界，`stack_delta < 0` 那一格就是反击发生的那一格，
+	# 不必再补一条事件。
+	"overload_counter": {"cue": CUE_BOSS_THUNDER_CORE_SKILL},
+	# 镜像魔君：**真的召唤出分身**那一帧（`_skill_mirror_clone` 里 append 了分身）。
+	# 不能挂施法边沿：该技能 `skill_ready = elapsed + 1.0`，每秒都会走一次 match，
+	# 挂上去就是「一直播放」（用户原话）。
+	"mirror_clone": {"cue": CUE_BOSS_MIRROR_LORD_SKILL},
+	# 噬魂领主：**击杀单位后**（`_on_unit_killed` 里那条回血 + 加攻）。
+	"soul_devour": {"cue": CUE_BOSS_SOUL_DEVOURER_SKILL},
+	# 血怒魔王：HP 掉到 35% 以下**进入暴走**的那**一次**
+	# （`_apply_boss_attacker_passives` 里 `blood_rage_active` 由假转真）。
+	"blood_rage": {"cue": CUE_BOSS_BLOOD_DEMON_SKILL},
+	# 双生守门人：**复活**那一帧（死掉的守门人 `alive` 由假转真）。
+	# 同样没有施法边沿 —— `twin_revive` 也不在 `_tick_skills` 的 match 里。
+	# 事件由 BattleVfx 的 alive 上升沿那一格就地构造（不必过模拟器：
+	# `alive` 本来就会过回放边界）。
+	"twin_revive": {"cue": CUE_BOSS_TWIN_GATE_REVIVE},
+	# 灭世裁决者：技能是「蓄力 2 秒 → 期间可能被打断 → 完成则全场伤害」，
+	# 「起播 / 停播 / 完成」是三个时刻，一条 cue 表达不了。
+	#   蓄力开始 → 放 2 秒的蓄力音（素材本身 2 秒，与 `charge_sec` 对齐）。
+	"apocalypse_charge": {"cue": CUE_BOSS_APOCALYPSE_CHARGE},
+	#   蓄力完成并真的打出了全场伤害 → 先收口蓄力音，再放完成音。
+	"apocalypse_impact": {"cue": CUE_BOSS_APOCALYPSE_IMPACT, "stop": CUE_BOSS_APOCALYPSE_CHARGE},
+	#   蓄力被打断、或蓄力完成了但这一下没打到任何人 → **只收口，不补音**
+	#   （用户口径：「蓄力时的音效暂停播放」）。
+	"apocalypse_stop": {"stop": CUE_BOSS_APOCALYPSE_CHARGE},
+}
+
+# 全量素材表（按 boss id）= 施法边沿表 ∪ 真事件表（真事件表按 skill_id 反查 boss id）。
+# **只给诊断与门禁用。** 派发一律走上面两张表，别拿这张表去放音 ——
+# 那正是第一版「6 只永远不响」的写法。
+const BOSS_SKILL_CUES := {
+	"boss_mirror_lord": CUE_BOSS_MIRROR_LORD_SKILL,
+	"boss_thunder_core": CUE_BOSS_THUNDER_CORE_SKILL,
+	"boss_holy_priest": CUE_BOSS_HOLY_PRIEST_SKILL,
+	"boss_soul_devourer": CUE_BOSS_SOUL_DEVOURER_SKILL,
+	"boss_twin_gate": CUE_BOSS_TWIN_GATE_REVIVE,
+	"boss_meteor_caster": CUE_BOSS_METEOR_CASTER_SKILL,
+	"boss_blood_demon": CUE_BOSS_BLOOD_DEMON_SKILL,
 }
 
 # 9.19 第二批：佣兵专属技能音。
@@ -379,6 +544,8 @@ const MERC_SKILL_CUES := {
 	"merc_aquarius_time": CUE_MERC_AQUARIUS_TIME_SKILL,
 	"merc_taurus_charge": CUE_MERC_TAURUS_CHARGE_SKILL,
 	"merc_capricorn_steel": CUE_MERC_CAPRICORN_STEEL_SKILL,
+	# 9.22 第四批：镜像刺客（`twin_strike`，施法型，走既有那条 skill_ready 路径）。
+	"merc_gemini_assassin": CUE_MERC_GEMINI_ASSASSIN_SKILL,
 }
 
 
@@ -480,7 +647,12 @@ static func play(cue: String, volume_db := 0.0) -> bool:
 	_play_counts[cue] = int(_play_counts.get(cue, 0)) + 1
 	voice.stream = stream
 	voice.set_meta("sfx_cue", cue)
-	voice.volume_db = volume_db
+	# 加 cue 级音量偏移（VOLUME_DB_BY_CUE）。写成**相加**而不是「覆盖」：
+	# 调用方传的 volume_db 照旧生效，没传（默认 0.0）时结果正好等于覆盖值；
+	# 放在这里而不是散到各调用点，是为了让「抬音量」这件事无法被漏掉 ——
+	# 9.22 黄金重骑那一声就是典型：素材没问题，是被 BGM 压住了，
+	# 只要有一个调用点忘了带音量参数，声音就还是听不见。
+	voice.volume_db = volume_db + cue_volume_db(cue)
 	voice.play()
 	return true
 
@@ -615,6 +787,41 @@ static func merc_skill_cue_for(unit_id: String) -> String:
 # （见 BattleSimulator 那个分支 append 的字典）。返回空串 = 这条技能没有专属素材。
 static func proc_skill_cue_for(skill_id: String) -> String:
 	return str(STAR4_PROC_SKILL_CUES.get(skill_id, ""))
+
+
+# 9.22 第四批：**佣兵**普攻触发型技能音。入参同 proc_skill_cue_for —— 也是
+# 模拟器事件里的 skill_id，不是 unit_id。返回空串 = 这条技能没有专属素材。
+static func merc_proc_cue_for(skill_id: String) -> String:
+	return str(MERC_PROC_SKILL_CUES.get(skill_id, ""))
+
+
+# 9.22 第四批：boss 技能音全量素材表查询。入参是 **boss id**（不是 sim uid）。
+# 返回空串 = 该 boss 没有登记素材（例如狂战灾兽，见 BOSS_SKILL_CUES 的注释）。
+#
+# ★ 9.23 第五批起，这张表**只用于诊断与门禁**，不再是「谁该响」的判据 ——
+#   派发有两条通道（`boss_cast_edge_cue_for` / `boss_event_action_for`），
+#   理由见 BOSS_SKILL_CUES 上面那段。
+static func boss_skill_cue_for(boss_id: String) -> String:
+	return str(BOSS_SKILL_CUES.get(boss_id, ""))
+
+
+# 9.23 第五批：**施法边沿**通道。入参是 boss id。
+# 返回空串 = 这只 boss 的技能音不走施法边沿（改走真事件），调用方必须跳过 ——
+# 不要退回 boss_skill_cue_for()，那样会把它按「施法这一下」重播一遍。
+static func boss_cast_edge_cue_for(boss_id: String) -> String:
+	return str(BOSS_CAST_EDGE_CUES.get(boss_id, ""))
+
+
+# 9.23 第五批：**真事件**通道。入参是事件里的 skill_id（同 proc_skill_cue_for）。
+# 返回空字典 = 这条 skill_id 不是 boss 真事件，调用方继续走别的分支。
+static func boss_event_action_for(skill_id: String) -> Dictionary:
+	var action: Variant = BOSS_EVENT_ACTIONS.get(skill_id, {})
+	return action if action is Dictionary else {}
+
+
+# 某条 cue 的音量偏移（dB），缺省 0.0。见 VOLUME_DB_BY_CUE。
+static func cue_volume_db(cue: String) -> float:
+	return float(VOLUME_DB_BY_CUE.get(cue, 0.0))
 
 
 # --- 循环音（9.17 第二批：己方法阵受击）--------------------------------------

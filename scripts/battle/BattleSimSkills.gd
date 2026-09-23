@@ -191,23 +191,35 @@ static func _skill_holy_purify(_caster: Dictionary, allies: Array, d: Dictionary
 		a.shield = int(a.get("shield", 0)) + maxi(1, int(round(float(a.max_hp) * float(d.get("shield_pct", 0.10)))))
 
 
-static func _skill_apocalypse_charge(caster: Dictionary, state: Dictionary, d: Dictionary) -> void:
+# 9.23 第五批：返回值改成 bool = 「这一下真的开始蓄力了」。
+#
+# 调用方（BattleSimulator._tick_skills）据此补 `apocalypse_charge` 事件 —— 用户口径
+# 「技能开始蓄力的音效**仅播放一次**」。用返回值而不是让本函数自己发事件：
+# 本函数与 `BattleSimulator` 是兄弟模块，反向引用会形成类级循环依赖。
+static func _skill_apocalypse_charge(caster: Dictionary, state: Dictionary, d: Dictionary) -> bool:
 	if caster.has("apocalypse_due"):
-		return
+		return false
 	var shield := maxi(1, int(round(float(caster.max_hp) * float(d.get("charge_shield_pct", 0.10)))))
 	caster.shield = int(caster.get("shield", 0)) + shield
 	caster.apocalypse_due = float(state.elapsed) + float(d.get("charge_sec", 2.0))
 	caster.apocalypse_damage_atk_pct = float(d.get("damage_atk_pct", 2.5))
 	caster.apocalypse_ignore_def = bool(d.get("ignore_def", true))
 	state.log.append(TranslationServer.translate("log_arbiter_charging"))
+	return true
 
 
-static func _skill_mirror_clone(caster: Dictionary, state: Dictionary, d: Dictionary) -> void:
+# 9.23 第五批：返回值改成 int = 「这一下真的召唤出了几个分身」。
+#
+# 用户口径：「镜像魔君的技能是在**召唤分身时**播放音效，而不是一直播放」。
+# 该技能 `skill_ready = elapsed + 1.0`（调用方设的），也就是每秒都会被调用一次，
+# 但绝大多数调用都被下面这个 `should_have <= have` 提前返回 —— 真正「召唤」的只有
+# 分身数量变化的那一次。返回值就是那次判定的结果，调用方据此补 `mirror_clone` 事件。
+static func _skill_mirror_clone(caster: Dictionary, state: Dictionary, d: Dictionary) -> int:
 	var missing := 1.0 - (float(caster.hp) / float(maxi(1, int(caster.max_hp))))
 	var should_have := int(floor(missing / float(d.get("clone_per_missing_hp_pct", 0.25))))
 	var have := int(caster.get("mirror_clones_spawned", 0))
 	if should_have <= have:
-		return
+		return 0
 	for idx in range(have + 1, should_have + 1):
 		var clone := caster.duplicate(true)
 		clone.uid = "%s_mirror_%d" % [str(caster.team), idx]
@@ -223,6 +235,7 @@ static func _skill_mirror_clone(caster: Dictionary, state: Dictionary, d: Dictio
 		else:
 			state.player.append(clone)
 	caster.mirror_clones_spawned = should_have
+	return should_have - have
 
 
 static func _skill_bubble_dream(caster: Dictionary, allies: Array, opponents: Array, d: Dictionary) -> void:

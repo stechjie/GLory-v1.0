@@ -355,6 +355,23 @@ func _check_toast() -> void:
 
 func _check_reject() -> void:
 	var shake_before: bool = PlayerProfile.get_presentation_toggle("screen_shake")
+	# ★★ 9.23 第五批：`screen_shake` **不是唯一的门**。
+	#
+	# `UiFeedback.shake()` 里还有一道：`Tokens.reduced_motion()`（设置页的
+	# 「降低动态效果」）为真时把幅度直接归零、返回 false。这条检查只快照了
+	# `screen_shake`，于是**凡是把「降低动态效果」开着的机器上它必红**
+	# ——本批实测：`user://profile.json` 里 `reduced_motion_enabled=true`，
+	# 唯一那条失败就是 `shake_did_not_start`，看起来像产品回归，其实是环境。
+	#
+	# 更要紧的是**它同时制造了一批假绿**：`shake()` 提前返回 false 时不建 tween、
+	# 不动控件，于是下面 `shake_does_not_restore_rotation` /
+	# `shake_does_not_restore_pivot` / `shake_leaks_tracking` 三条全部「通过」——
+	# 什么都没抖，当然什么都没坏。真出了「抖完不回原值」的 bug 也照样绿。
+	#
+	# 门禁不许依赖「自己没管过的持久化状态」：把两个开关都纳入快照，
+	# 测抖动那一段强制关掉 reduced_motion，收尾老实还原。
+	var motion_before: bool = PlayerProfile.get_presentation_toggle("reduced_motion")
+	PlayerProfile.set_presentation_toggle("reduced_motion", false)
 	var host := Control.new()
 	host.size = Vector2(200, 56)
 	add_child(host)
@@ -416,6 +433,13 @@ func _check_reject() -> void:
 			% [btn.rotation, str(btn.pivot_offset)])
 
 	PlayerProfile.set_presentation_toggle("screen_shake", shake_before)
+	# 两个开关都要还原。**只还原 screen_shake 是本条检查原来那个坑的另一半**：
+	# 留着 reduced_motion=false 不动，就是把「降低动态效果」这个无障碍偏好
+	# 悄悄改掉 —— 后面的门禁、乃至用户下次进设置页看到的状态都跟着变。
+	PlayerProfile.set_presentation_toggle("reduced_motion", motion_before)
+	_h.expect(PlayerProfile.get_presentation_toggle("reduced_motion") == motion_before,
+		"reduced_motion_not_restored",
+		"这条检查改过「降低动态效果」却没还原回 %s —— 会毒到后面跑的门禁" % str(motion_before))
 	Toast.dismiss()
 	host.queue_free()
 	await get_tree().process_frame

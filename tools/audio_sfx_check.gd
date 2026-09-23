@@ -58,7 +58,7 @@ const CHECK_NAME := "audio_sfx"
 #   开始游戏成功 / 失败 2 条（Main / Team3v3Lobby 直接 play），故 53 → 60。
 # 注：`音乐/0921` 里另外两个文件（设置语音·画质切换 / 语音档位切换）与工程内
 # 既有的 settings_switch / voice_switch **逐字节相同**，是覆盖而非新增，不计数。
-const EXPECTED_CUE_COUNT := 60
+const EXPECTED_CUE_COUNT := 75
 
 # 播 SfxService 的生产代码扫描范围。**刻意不含 `res://tools`** ——
 # 门禁自己会调 play()，算进来就等于让门禁给自己的断言当证人
@@ -100,6 +100,34 @@ const INDIRECT_CUES: Array[String] = [
 	# STAR4_ATTACK_SKILL_CUES —— 它走新开的 proc_skill_cue_for(skill_id)，
 	# 由 BattleVfx 在 `unit_skill_proc` 事件里按 skill_id 派发。
 	"CUE_STAR4_MILITIA_SKILL",
+	# 9.22 第四批：15 条新 cue。三段各自只经一个派发入口：
+	#   * 7 条 boss 技能音 —— boss_skill_cue_for(boss_id)，由
+	#     BattleVfx._play_skill_cast_vfx 在 boss 的 skill_ready 上升沿派发。
+	#     ★ 9.23 第五批订正：这条「全部挂施法边沿」的写法对其中 6 只是错的
+	#     （4 只压根没有 skill_ready 上升沿 → 一次都不响；镜像魔君每秒一次
+	#     → 「一直播放」）。现在 boss 技能音拆成**两条通道**，派发入口也跟着
+	#     分成 `boss_cast_edge_cue_for(boss_id)`（只剩 2 只）与
+	#     `boss_event_action_for(skill_id)`（其余 6 只按真事件），两者都记在
+	#     下面的 INDIRECT_ENTRIES 里。
+	#   * 1 条佣兵技能音 —— merc_skill_cue_for(merc_gemini_assassin)。
+	#   * 1 条佣兵「普攻增伤」音 —— 新入口 merc_proc_cue_for(balance_judge)。
+	#   * 4 条四星「普攻附状态」音 —— proc_skill_cue_for(skill_id)，走 sfx_proc 事件。
+	# ★ 灭世裁决者的蓄力 / 完成两条：9.22 它们**有**显式调用点（BattleVfx 直接
+	#   play / stop_cue，为了蓄力中途能停播），所以不在这一组。9.23 第五批改由
+	#   模拟器补 `apocalypse_charge` / `apocalypse_impact` / `apocalypse_stop`
+	#   事件、经 BOSS_EVENT_ACTIONS 查表派发 —— 显式调用点没了，随之下沉到这里。
+	#   为什么必须改：那两条旧调用点挂在 `apocalypse_charging`
+	#   （= `f.has("apocalypse_due")`）上，而 `apocalypse_due` **不过回放边界**，
+	#   真实 3v3（播回放）路径上那段是死代码 —— 表对、文件对、门禁全绿、手里不响。
+	"CUE_BOSS_MIRROR_LORD_SKILL", "CUE_BOSS_THUNDER_CORE_SKILL",
+	"CUE_BOSS_HOLY_PRIEST_SKILL", "CUE_BOSS_SOUL_DEVOURER_SKILL",
+	"CUE_BOSS_TWIN_GATE_REVIVE", "CUE_BOSS_METEOR_CASTER_SKILL",
+	"CUE_BOSS_BLOOD_DEMON_SKILL",
+	"CUE_BOSS_APOCALYPSE_CHARGE", "CUE_BOSS_APOCALYPSE_IMPACT",
+	"CUE_MERC_GEMINI_ASSASSIN_SKILL",
+	"CUE_MERC_LIBRA_JUDGE_PROC",
+	"CUE_STAR4_SPIKE_PROC", "CUE_STAR4_POISON_PROC",
+	"CUE_STAR4_TITAN_PROC", "CUE_STAR4_MOTONG_PROC",
 ]
 # 上面这组 cue 的**派发入口**。每一个都必须在生产代码里有调用点 ——
 # 少了这一条，把整张映射表删空也能全绿（那 8 个名字会被上面的循环全跳过）。
@@ -107,6 +135,17 @@ const INDIRECT_ENTRIES: Array[String] = [
 	"star4_cue_for", "attack_skill_cue_for", "merc_skill_cue_for",
 	# 9.21：四星民兵那条「概率触发型」技能音的派发入口。
 	"proc_skill_cue_for",
+	# 9.22：佣兵普攻触发音的派发入口。
+	"merc_proc_cue_for",
+	# ★★ 9.23 第五批：boss 技能音的派发入口**一拆为二**（见 INDIRECT_CUES 的说明）。
+	#   · boss_cast_edge_cue_for —— 走施法边沿的那 2 只（BattleVfx._play_skill_cast_vfx）；
+	#   · boss_event_action_for  —— 走真事件的那 6 只，按键是 skill_id
+	#     （BattleVfx._maybe_play_boss_skill_proc）。
+	#   旧入口 `boss_skill_cue_for` **已从这一组移除**：它现在只是「7 只 boss 的
+	#   素材全量表」（供排障与门禁查询），不再是任何一条音的派发表。
+	#   留着它等于要求一个**已经不存在**的生产调用点 —— 那会让这条门禁永远红，
+	#   而正确的反应不是去补一个假调用点，是承认派发入口变了。
+	"boss_cast_edge_cue_for", "boss_event_action_for",
 ]
 
 # 六条 BGM 槽位。team_room_music 是这一批新开的：此前 3v3 组队房间

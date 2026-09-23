@@ -3278,3 +3278,121 @@ root 下节点数 1、两帧后 `loop_player_ready()` 也是 true（那时播放
   指向**未动过**的 `scenes/prep/PrepUI.gd:1077-1079` → **本批零贡献**（数字没动即是证明）。
 - 修复后 sha256：`BattleVfx.gd` `6f5111d6ae94671ab7397999bfc791e1d92e962ac00facff959635aae313987c`、
   `BattleScreen.gd` `46725af464320da296bbc8b204fe2daba5e2cd8a7b7e0aa764437380c46227f2`。
+
+## 2026-09-23（第四批）：门禁增补与加厚
+
+- **新增** `tools/audio_0922_check.gd/.tscn`（**104 项**）—— 本批专用：boss cue 查表、proc cue 分表、
+  boss 派发**不做归属门控**（缩进判据）、灭世裁决者三拍（`stop_cue` 必须排在两个分支**之前**）、
+  音量覆盖已生效且**赋值顺序**在 `voice.play()` 之前、`sfx_proc` 类型已登记、
+  模拟器对 curse / poison / spike / balance_judge / titan 真的补了 `sfx_proc`（且对普通剑士**不补**）、
+  10 条新 cue 的运行时播放。
+- **新增** `tools/prep_swap_check.gd/.tscn`（**26 项**）—— 四条搬运路径上「同星人王合不成就该交换」，
+  外加「能合时必须仍然合成」与「不同棋子不受影响」两条回归。
+- **新增** `work/_qa_922/run_gates.py`（20 条批跑）+ `gate_results.json` + `logs/`。
+- ★★ **`tools/cold_parse_chain_check.gd` 加厚（本轮事故直接产物）**：加 boss 派发时把 `elif _owned:` 的
+  merc 三行抬出缩进 → 该 `elif` 只剩注释 → **解析期错误**，`BattleVfx` 沿继承链把 `BattleResult` /
+  `BattleScreen` 一起带塌。这条门禁**本来是有效的**（变异测试证明能判红），**只是不在第一轮批跑的 19 条里**。
+  两处加厚：① `TARGETS` 把战斗继承链 `BattleUI / BattleArena / BattleRenderer / BattleVfx / BattleResult`
+  **每一层单列**（原来只有 `BattleResult.gd`，坏了要靠上层**连带**才抓得到）；② script 类判据从
+  「`ResourceLoader.load()` 非 null」升级为 **`can_instantiate()`** ——
+  ★ 实测：一个**解析失败**的 GDScript，`load()` 照样返回**非 null** 对象（`res == null` 为 false、
+  `res is Script` 为 true），但 `can_instantiate()` 为 **false**、`get_script_method_list()` 为 **0 条**。
+  所以「load 拿到东西」**证明不了**「这份脚本是好的」。读数 25 → **41**。
+  已写进批跑注释：凡改动 `scenes/battle/**` 或任何被继承的脚本，这条必跑。
+- **`tools/audio_sfx_check.gd`**：cue 计数 `EXPECTED_CUE_COUNT` **60 → 75**；`INDIRECT_CUES` 补 15 条新 cue；
+  `INDIRECT_ENTRIES` 补 `boss_skill_cue_for` / `merc_proc_cue_for`。读数 225。
+- **`tools/audio_0921_check.gd`**：`vfx_proc_wrong_branch` 断言从**按顺序**（`proc_at >= 0 and lookup_at > proc_at`）
+  改成**按区间**（`proc_at` … `proc_branch_end`，且 `proc_branch_end` 必须落在 `== "sfx_proc"` 上）——
+  因为新的 `sfx_proc` 派发在文件顺序上排在 `unit_skill_proc` **之前**，旧判据会被自己的新代码判红。
+- ★ **`tools/audio_0922_check.gd` 补 `vfx_merc_dispatch_dedented`**：断言 merc 那条派发的缩进必须是
+  **2**（= 留在 `elif _owned:` 分支里）。**为什么必须有这一条**：本探针其余判据全是 `String.find` 级别的
+  文本断言，**解析期错误它一条都看不见** —— 事故当时它们**全绿**。这是文本探针能识别「被抬出分支」的
+  最低成本办法（真正兜底的是 `cold_parse_chain_check`）。读数 103 → **104**。
+- 三组变异测试脚本统一改成**单次调用内自还原 + 二进制读写 + 探针硬超时 + 启动自愈 `.mutbak` + sha256 验收**
+  （原因见上一条事故与 `docs/9.23…记录.md` 第八节）：
+  `work/_qa_922/mutate_audio_fix.py`（6 红）/ `mutate_swap_fix.py`（3 红）/ `mutate_cold_parse_922.py`（1 红）。
+  另新增 `work/_qa_922/attribute_ui_feedback_922.py`（用「改磁盘 → 跑门禁 → 字节级还原」证明
+  `ui_feedback` 那条红是**环境态**而非代码回归）与 `work/_qa_922/restore_prep_swap_922.py`。
+
+### 同日订正：`prep_swap_check` 26 → 30，「星级边界」用例
+
+用户指出第七节对「同星人王交换无效」的**现场描述有误**（不是「一只在场一只在待命区」，
+而是**两只都在备战区**；变量是**星级**不是所在区域）。订正后重推根因，结论是
+**升星份数**决定的（`STAR_UPGRADE_COPIES = {1: 2, 2: 3}`、`MAX_MERGE_STAR = 3`）：
+
+| 星级 | 需要份数 | 旧写法 | 观感 |
+|---|---|---|---|
+| 1 星 | 2（这 2 份就够） | 真的**合成**（升 2 星） | 不是「无效」，看不出这个洞 |
+| **2 星** | 3（缺第 3 份） | 静默 `return` | **交换无效** ← 用户报的 |
+| 3 星 | — `star < MAX_MERGE_STAR` 不成立 → `can_merge_cells` 假 | 走 `else` 交换 | 本来就好 |
+
+于是给 `tools/prep_swap_check.gd` **补一条 `_case_bench_swap_star_boundary()`**（3 个断言）：
+两只 **1 星**人王在备战区必须**合成**成 1 只 2 星；两只 **3 星**人王必须**交换**（且不被合掉）。
+读数 **26 → 30**（另 +1 是新增一次 `_spawn()` 的 `scene_load_failed` 判据）。
+
+★ 这条新用例对修复是**不变**的 —— 它在旧写法下也通过。它的价值是
+**把「为什么只在 2 星暴露」钉成可执行断言**，同时充当「改动没有波及 1 星 / 满星」的回归控制。
+`mutate_swap_fix.py` 里可见证据：把 `_move_or_merge_bench` 改回旧写法后门禁 **FAIL 1**
+（恰好只有 `bench_to_bench_no_swap` 一条红），而星级边界那三条**照样通过**。
+
+★ `work/_qa_922/mutate_swap_fix.py` 同时扩成**两条变异**（原来只覆盖 `_move_or_merge_board_to_bench`）：
+新增对 `_move_or_merge_bench`（**用户报的备战区↔备战区**）的变异，并把结构改成列表驱动（`MUTATIONS`）。
+变异用的 FIXED/OLD 片段改为**逐字节**取自工作树 —— 先用新增的 `probe_bench_bytes.py`
+打印 588~614 行（`<TAB>` 可视 + CRLF 计数）确认行尾与缩进，再写片段，避免又一次 CRLF 事故。
+★ 顺带记一条 `edsdk` 的坑：`save_file` 对**由前端注册**的实例（pool 里 `file_path` 为空）
+必须显式传 `file_path`，否则报 `no original path registered for file_id`。
+
+## 2026-09-23（第五批）：boss 技能音「挂错时刻」的门禁加厚
+
+背景：用户逐条点名 5 只 boss 的技能音时刻不对（雷怒核心 / 镜像魔君 / 噬魂领主 /
+血怒魔王 / 灭世裁决者）。根因与改法见 `docs/9.23第五批boss技能音双通道订正记录.md`。
+
+- ★★ **`tools/audio_0922_check.gd` 加厚，读数 104 → 174**。新增四条：
+  `_check_boss_channels`（哪只 boss 走哪条通道：2 只施法边沿 / 6 只真事件；
+  含**反证**：那 6 只**必须**取不到施法边沿的 cue；`BOSS_EVENT_ACTIONS` 的
+  `cue` / `stop` 逐条核对；未登记的 `skill_id` 不得借到动作）、
+  `_check_apocalypse_event_beats`（三拍改钉**事件**通道：`_skill_apocalypse_charge`
+  返回 `bool`、`hit_any` 分档、消费支 `_maybe_play_boss_skill_proc` 已接线）、
+  `_check_boss_diff_triggers`（两条**就地构造**的触发点用「位置落在两行之间」判，
+  不是 `contains`：雷怒 `stack_delta < 0` / 双生 `alive` 上升沿）、
+  `_check_boss_event_emitters`（★ **真的跑模拟器**，断言事件的**触发时刻**：
+  血怒 60% 不补 / 30% 恰好 1 条 / 再打 3 次仍是 1 条；噬魂击杀补 1 条、非噬魂击杀不补；
+  灭世蓄力补 1 条不重复 / 中途不补收口 / 完成补 impact / 未命中只 stop / 打断补 stop；
+  镜像满血不补 / 50% 补 1 条 / 再来 match 不重复）。
+  另加一条**回归守卫**：`_play_skill_cast_vfx` 里不得再出现
+  `SfxService.boss_skill_cue_for(uid)`（= 回退成 9.22「7 只全挂上升沿」的写法）。
+- **`tools/audio_sfx_check.gd`**：`INDIRECT_CUES` 补 `CUE_BOSS_APOCALYPSE_CHARGE` /
+  `CUE_BOSS_APOCALYPSE_IMPACT`（它们原来**有**显式调用点，本批改成查表派发后没了）；
+  `INDIRECT_ENTRIES` 把 `boss_skill_cue_for` 换成 `boss_cast_edge_cue_for` +
+  `boss_event_action_for`。★ 这不是把断言改松：旧入口已**不再是派发表**
+  （退化为「7 只 boss 的素材全量表」），继续要求它有生产调用点就是在要求一个
+  **不存在**的东西，正确反应是承认派发入口变了，而不是补一个假调用点。读数 225 → 226。
+- ★ **`tools/ui_feedback_check.gd`**：`_check_reject` 除 `screen_shake` 外
+  **快照并按需关掉 `reduced_motion`**，收尾一并还原并断言还原成功
+  （新判据 `reduced_motion_not_restored`）。读数 40 → 41。
+  **两个理由**：① 它原来会在「降低动态效果」开着的机器上**必红**（`shake()` 按设计
+  返回 false），而那是环境态不是回归；② 更要紧的是它同时**制造假绿** —— `shake()`
+  提前返回 false 时不建 tween、不动控件，于是 `shake_does_not_restore_rotation` /
+  `shake_does_not_restore_pivot` / `shake_leaks_tracking` 三条「什么都没抖所以
+  什么都没坏」全部通过。**门禁不许读自己没快照过的持久化 `user://` 状态。**
+- ★★ **变异测试（本批的过门条件）**：新探针第一次跑就全绿，而这一仓栽过太多假绿，
+  所以故意改坏产品代码确认对应判据**真的会红**：
+  `BOSS_EVENT_ACTIONS[mirror_clone].cue` 改错 → `boss_event_cue_wrong_mirror_clone`；
+  去掉 `apocalypse_impact` / `apocalypse_stop` 的分档 → 3 条红；
+  `_skill_mirror_clone(...) > 0` 改 `>= 0` → 3 条红。合计 **FAIL 7**，
+  还原后三条文件 sha256 与变异前逐字节一致。
+- ★★ **探针自己制造过一次假绿，记在这里**：`_check_blood_rage_emitter` 的一条提示串
+  写成 `"…掉到 30% 血…（实际 %d 条）" % hits.size()` —— `30%` 后面是**裸百分号**。
+  GDScript 报 `String formatting error: unsupported format character`，
+  **该函数当场中断，它后面所有断言一条都不执行**，而整体只表现为「失败数没变多」，
+  看上去像全绿（被跳过的正好含用户明确要求的「仅播放一次」）。必须写 `30%% 血`。
+  **只有变异测试能发现「整段断言根本没跑」** —— `contains` 类判据全绿。
+  另：同一个 `.gd` 在一次消息里连发两条 `Edit` 会**互相覆盖**（后一条按旧快照重写文件，
+  先前那条静默丢失），三条变异第一次只生效了两条 —— 改同一份文件要**一次一条**。
+- 批跑 `work/_qa_922/run_gates.py` 20 条：本批相关 8 条全 PASS
+  （`audio_0922` 174 / `prep_swap` 30 / `cold_parse_chain` 41 / `audio_sfx` 226 /
+  `audio_0921` 80 / `battle_presentation_event` 8314 / `ui_feedback` 41 / `boss_battle_bgm` 24）。
+  既存红 4 条（`voice` 8 / `prep_text_coverage` 1 / `dynamic_call` 4 / `procedural_ui_ratchet` 3）。
+  ⚠️ `procedural_ui_ratchet` 第 3 条是 `scenes/prep/FourStarUpgradePanel.gd` 的既存漂移，
+  **本批改动面外**；**不许用 `--update-baseline` 刷绿**（那正是棘轮禁止的自愈松棘轮）。
+

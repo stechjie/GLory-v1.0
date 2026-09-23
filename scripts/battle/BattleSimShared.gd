@@ -841,6 +841,39 @@ static func _add_visual_event(state: Dictionary, event_type: String, caster: Dic
 	})
 
 
+# 9.22 第四批：补一条「只出声」的技能触发事件（消费端 BattleVfx._maybe_play_sfx_proc
+# 与 9.23 第五批的 BattleVfx._maybe_play_boss_skill_proc）。
+#
+# 用 `sfx_proc` 而不是复用 `unit_skill_proc`：后者在 BattleVfx 里派发完音效之后还会
+# 顺带调 `_play_unit_procedural(skill_id, ...)` 放程序化特效，而 poison_attack /
+# defense_down_attack / curse_attack / balance_judge / poison_reflect_armor_stack
+# 这几个 skill_id 原本**没有**对应演出 —— 复用等于把「加音效」做成了「加特效」。
+#
+# `type` 必须登记在 BattlePresentationEvent.KNOWN_TYPES 里，否则回放采集时
+# 每条都会被记成 unknown（每只棋子每次普攻一条）。见那张表的注释。
+#
+# `time` 与既有的 `unit_skill_proc` 同口径，便于排障时对齐时间轴。
+#
+# ★ 9.23 第五批：本函数从 BattleSimulator 挪到 BattleSimShared。
+#   boss 技能的触发点落在三个兄弟模块里（BattleSimulator 的击杀/蓄力、
+#   BattleSimSkills 的分身、BattleSimTreasures 的暴走），而这三个都继承本类。
+#   留在 BattleSimulator 就得让那两个模块反向引用 BattleSimulator —— 那是一条
+#   不必要的类级循环依赖，GDScript 在互相引用时容易变成「解析期整族加载失败」。
+static func _emit_sfx_proc(state: Dictionary, skill_id: String, source: Dictionary, target: Dictionary) -> void:
+	var source_uid := str(source.get("uid", ""))
+	if skill_id.is_empty() or source_uid.is_empty():
+		return
+	var events: Array = state.get("visual_events", [])
+	events.append({
+		"type": "sfx_proc",
+		"skill_id": skill_id,
+		"source_uid": source_uid,
+		"target_uid": str(target.get("uid", "")),
+		"time": float(state.get("elapsed", 0.0)),
+	})
+	state["visual_events"] = events
+
+
 static func _lowest_targetable_hp_ratio(attacker: Dictionary, units: Array) -> Dictionary:
 	var best: Dictionary = {}
 	var best_ratio := INF

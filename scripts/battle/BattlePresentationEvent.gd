@@ -25,6 +25,15 @@ const KNOWN_TYPES := {
 	"mother_execute": true,
 	"buff_apply": true,
 	"summon": true,
+	# 9.22：**只出声**的技能触发事件（四星刺灵/毒灵/飞灵/巨甲灵/魔童 + 佣兵审判剑士）。
+	# 与 `unit_skill_proc` 分开是因为那一条还带着程序化特效的语义
+	# （BattleVfx 会在派发完音效后调 `_play_unit_procedural`），而这几个 skill_id
+	# 本来没有演出 —— 复用会把「加音效」做成「加特效」。
+	#
+	# 必须登记在这张表里：未登记的 type 会被 `_warn_unknown_type_once` 记一笔，
+	# 而 `validate()` 会报 `unknown_type:`。这些事件**每只棋子的每次普攻**都会产生，
+	# 不登记就是每局几十条 warning + 校验错误。
+	"sfx_proc": true,
 }
 
 const CORE_FIELD_ORDER := [
@@ -181,6 +190,11 @@ static func _default_visibility(event_type: String, is_crit: bool, is_lethal: bo
 	if event_type == "attack_start" or event_type == "projectile_spawn":
 		return VISIBILITY_IMPORTANT
 	if event_type == "skill_shake" or event_type == "unit_skill_proc" or event_type == "skill_cast":
+		return VISIBILITY_IMPORTANT
+	# 9.22：`sfx_proc` 与 `unit_skill_proc` 同级。它本身只驱动音效，但归到 ambient
+	# 会被 DRAINING 阶段的合并/丢弃规则吃掉 —— 那是给「不重要的画面」准备的通道，
+	# 不该拿它决定「这一声技能音还响不响」。
+	if event_type == "sfx_proc":
 		return VISIBILITY_IMPORTANT
 	if event_type == "heal" or event_type == "shield" or str(raw_event.get("kind", "")) == "heal" or is_crit:
 		return VISIBILITY_IMPORTANT
