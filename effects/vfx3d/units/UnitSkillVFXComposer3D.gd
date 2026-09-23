@@ -16,6 +16,12 @@ const VFX_LIGHT_PULSE:=preload("res://effects/vfx3d/modules/VFXLightPulse3D.gd")
 const VFX_ENERGY_BURST:=preload("res://effects/vfx3d/modules/VFXEnergyBurst3D.gd")
 const VFX_IMPACT_FLASH:=preload("res://effects/vfx3d/modules/VFXImpactFlash3D.gd")
 const VFX_RACE_BASIC_ATTACK:=preload("res://effects/vfx3d/modules/VFXRaceBasicAttack3D.gd")
+const VFX_OGA_PROJECTILE:=preload("res://effects/vfx3d/modules/VFXFlipbookProjectile3D.gd")
+const VFX_OGA_MELEE:=preload("res://effects/vfx3d/modules/VFXFlipbookMelee3D.gd")
+const VFX_OGA_SKILL:=preload("res://effects/vfx3d/modules/VFXFlipbookSkill3D.gd")
+const VFX_ANGEL_GUARD:=preload("res://effects/vfx3d/modules/VFXAngelGuard3D.gd")
+const PROFILE_ANGEL_GUARD:=preload("res://effects/vfx3d/profiles/examples/angel_guard_example.tres")
+const OGA_CHESS_CATALOG:=preload("res://effects/vfx3d/units/OgaChessVFXCatalog.gd")
 const BASIC_GOD:=preload("res://effects/vfx3d/profiles/examples/basic_attack_god.tres")
 const BASIC_HUMAN:=preload("res://effects/vfx3d/profiles/examples/basic_attack_human.tres")
 const BASIC_DARK:=preload("res://effects/vfx3d/profiles/examples/basic_attack_dark.tres")
@@ -117,13 +123,13 @@ func play_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary
 		"nearest_ally_bless":_ally_bless(origin,target,context)
 		"nearby_ally_heal_buff":_holy_group_v2(origin,context)
 		"random_attribute_bolt":_attribute_bolt(origin,target,context)
-		"judgement_strike":_judgement(origin,target)
-		"random_ally_damage_reduction":_barrier(target,_holy_profile(.72,1.25),context)
+		"judgement_strike":_oga_formal_skill("judgement_strike",origin,target,context)
+		"random_ally_damage_reduction":_angel_guard(target,context)
 		"global_divine_blast":_global_divine(target,context)
 		"silence_bolt":_silence_bolt(origin,target,context)
 		"fear":_fear_hit(origin,target,context)
 		"stun":_stun_hit(origin,target,context)
-		"black_hole":_black_hole(origin,context)
+		"black_hole":_oga_formal_skill("black_hole",origin,target,context)
 		"blink_low_def_backline":_blink_slash(origin,target,context)
 		"shared_hp_link":_doom_blood_link(origin,target,context)
 		"front_cone_stun":_front_stun(origin,target,context)
@@ -194,11 +200,67 @@ func play_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary
 
 func _basic_attack(origin:Vector3,target:Vector3,race:String,mode:String,context:Dictionary)->void:
 	var uid:=str(context.get("source_unit_id",""))
+	# Formal OGA player-chess routes are exclusive. Returning here is intentional:
+	# the old race bolt/slash, trail, shards and impact must never be layered under
+	# the newly approved flipbook effect.
+	if mode=="ranged":
+		var projectile_spec:Dictionary=OGA_CHESS_CATALOG.projectile_for(uid)
+		if not projectile_spec.is_empty():
+			var projectile:=_block(VFX_OGA_PROJECTILE) as VFXFlipbookProjectile3D
+			if projectile!=null:
+				last_spawned=projectile
+				projectile.play_spec(origin,target,projectile_spec,{"target_node":context.get("target_node")})
+			return
+	else:
+		var melee_spec:Dictionary=OGA_CHESS_CATALOG.melee_for(uid,race)
+		if not melee_spec.is_empty():
+			var melee:=_block(VFX_OGA_MELEE) as VFXFlipbookMelee3D
+			if melee!=null:
+				last_spawned=melee
+				melee.play_spec(origin,target,melee_spec,{"target_node":context.get("target_node")})
+			return
 	var profile:=_basic_profile_for(uid,race)
 	# 有专属 PNG 箭矢的单位（弓箭手/极光射手），远程普攻用它自己的图当弹体；
 	# 走同一套弹道系统，所以会跟着飞行方向朝向目标（不再横着）。
 	var bolt_tex:=str(PROJECTILE_TEX_BY_UNIT.get(uid,"")) if mode=="ranged" else ""
 	_spawn(VFX_RACE_BASIC_ATTACK,profile,{"origin":origin,"target":target,"target_node":context.get("target_node"),"race":race,"mode":mode,"bolt_kind":_bolt_kind_for(uid),"melee_kind":_melee_kind_for(uid),"bolt_tex":bolt_tex})
+
+func _oga_formal_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary)->void:
+	var spec:Dictionary=OGA_CHESS_CATALOG.formal_skill_for(skill_id)
+	if spec.is_empty():
+		return
+	var anchor:=target
+	var track_node:Variant=context.get("target_node")
+	match str(spec.get("anchor","target_body")):
+		"origin_ground":
+			anchor=_lvl(origin,_uh(context,"origin_height"),LEVEL_FOOT,0.0)
+			track_node=context.get("origin_node")
+		"target_ground":
+			anchor=_lvl(target,_uh(context),LEVEL_FOOT,0.0)
+		_:
+			anchor=_lvl(target,_uh(context),LEVEL_BODY)
+	var effect:=_block(VFX_OGA_SKILL) as VFXFlipbookSkill3D
+	if effect==null:
+		return
+	last_spawned=effect
+	effect.play_spec(anchor,spec,{"track_node":track_node})
+
+func _angel_guard(target:Vector3,context:Dictionary)->void:
+	# Dedicated new-material route. Do not call the generic barrier, the old
+	# HOLY_SHIELD scene, or any god_archangel texture from assets/vfx/skills.
+	var active:=PROFILE_ANGEL_GUARD.duplicate_runtime()
+	active.duration=maxf(0.9,float(context.get("status_duration",active.duration)))
+	var anchor:=_lvl(target,_uh(context),LEVEL_BODY)
+	# This is a six-to-eight-second gameplay state, not a disposable hit spark.
+	# Spawn it through the critical lane so a crowded battle cannot silently drop
+	# the only protection readout for the selected ally.
+	var guard:=_block_forced(VFX_ANGEL_GUARD) as VFXAngelGuard3D
+	if guard!=null:
+		last_spawned=guard
+		var guard_context:=context.duplicate(false)
+		guard_context["target"]=anchor
+		guard_context["status_duration"]=active.duration
+		guard.play_guard(anchor,active,guard_context)
 
 # 普攻用的着色 profile：怪物/Boss/佣兵统一灰色中性弹道，和玩家种族区分开；
 # 玩家种族按种族色。

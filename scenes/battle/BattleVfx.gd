@@ -124,7 +124,9 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 				# legacy 2D HOLY_HEAL ring on top of it.
 				pass
 		if shield_delta > 0:
-			_spawn_vfx("HOLY_SHIELD", now.get("head_pos", Vector2.ZERO))
+			# The legacy 2D HOLY_SHIELD overlay is retired. Shield presentation is
+			# owned by the new-material status/skill routes, so the old blue disc
+			# can never be layered over them.
 			# Shield gain is unambiguous from the HP-diff (shield only rises on grant),
 			# so its number comes straight off the delta rather than a sim event.
 			_spawn_hit_number(now.get("head_pos", Vector2.ZERO), shield_delta, "shield", false, false)
@@ -581,10 +583,14 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 			should_play_texture = false
 			# The 3D composer owns the heal presentation; the legacy 2D
 			# HOLY_HEAL effect is intentionally disabled.
-		"random_ally_damage_reduction", "shell_guard", "apocalypse_charge":
+		"random_ally_damage_reduction":
+			# Angel's Guard is now fully owned by VFXAngelGuard3D.  The legacy
+			# HOLY_SHIELD 2D scene must not be layered over the new-material route.
 			should_play_texture = false
-			if not uid.begins_with("merc_"):
-				_spawn_vfx("HOLY_SHIELD", unit.get("head_pos", Vector2.ZERO))
+		"shell_guard", "apocalypse_charge":
+			should_play_texture = false
+			# Do not fall back to the retired HOLY_SHIELD overlay. These skills keep
+			# their own 3D composer presentation only.
 		"shared_hp_link":
 			should_play_texture = false
 		_:
@@ -684,6 +690,12 @@ func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictio
 		for event:Dictionary in _enemy_damage_events(unit,damage_events):
 			pulled_positions.append(event.get("world_foot",Vector3.ZERO))
 		context["targets"]=pulled_positions
+	elif sid=="random_ally_damage_reduction":
+		# The presentation follows the simulator's real remaining status time, so
+		# 1-3 star (6s) and 4-star (8s) guards do not share a fake visual duration.
+		var statuses:Dictionary=target.get("statuses",{})
+		var reduction:Dictionary=statuses.get("damage_reduction",{})
+		context["status_duration"]=maxf(0.9,float(reduction.get("remaining",6.0)))
 	elif sid=="bubble_dream":
 		var heal_target:=_lowest_living_team_target(unit,current)
 		context["heal_target"]=heal_target.get("world_foot",unit.get("world_foot",Vector3.ZERO))

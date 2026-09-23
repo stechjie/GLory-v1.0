@@ -1,15 +1,15 @@
 extends Node3D
 
 const VFX_STATUS_EFFECT:=preload("res://effects/vfx3d/modules/VFXStatusEffect3D.gd")
-const SHIELD_EVENT_TEXTURE := preload("res://assets/vfx/status/status_shield_aura.png")
-const SHIELD_STEADY_TEXTURE := preload("res://assets/vfx/skills/distinct_v2/guardian_gold_shield_v2.png")
+const SHIELD_EVENT_TEXTURE := preload("res://assets/vfx/oga/skills/angel_shield_event_frame.tres")
+const SHIELD_STEADY_TEXTURE := preload("res://assets/vfx/oga/skills/angel_shield_steady_frame.tres")
 # Status icons are persistent gameplay state, not one-shot hit bursts.  Keep
 # them on the existing readable logo textures so players can identify them at
 # the current distant camera angle.
 const PROCEDURAL_STATUS_ANCHORS:={}
 
 const EFFECTS := {
-	"shield": {"anchor": "BodyAnchor", "path": "res://assets/vfx/status/status_shield_aura.png", "scale": Vector3(0.86, 0.86, 0.86), "alpha": 0.62, "rot": 0.0, "bob": 0.035, "pulse": 0.035},
+	"shield": {"anchor": "BodyAnchor", "path": "res://assets/vfx/oga/skills/angel_shield.png", "scale": Vector3(0.86, 0.86, 0.86), "alpha": 0.62, "rot": 0.0, "bob": 0.035, "pulse": 0.035},
 	"stun": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_stun_icon_v2.png", "scale": Vector3(0.50, 0.50, 0.50), "alpha": 1.0, "rot": 0.0, "bob": 0.018, "pulse": 0.045},
 	"poison": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_poison_icon_v2.png", "scale": Vector3(0.66, 0.66, 0.66), "alpha": 1.0, "rot": 0.0, "bob": 0.035, "pulse": 0.075},
 	"burn": {"anchor": "HeadAnchor", "path": "res://assets/vfx/status/status_burn_icon_v2.png", "scale": Vector3(0.58, 0.58, 0.58), "alpha": 1.0, "rot": 0.0, "bob": 0.025, "pulse": 0.07},
@@ -82,11 +82,6 @@ const SHIELD_BREAK_ALPHA := 1.0
 const SHIELD_BREAK_SEC := 0.28
 # 破盾时泡泡放大着消散，读作"被撑破"而不是"渐隐消失"。
 const SHIELD_BREAK_SCALE := 1.35
-# The steady ring is 512 px while the event bubble is 1254 px. Compensate for
-# that source-size difference so switching textures keeps the same outer world
-# footprint instead of making the steady state unreadably tiny.
-const SHIELD_STEADY_TEXTURE_SCALE := 1254.0 / 512.0
-
 var _sprites := {}
 var _procedural_statuses:={}
 var _phase := randf() * TAU
@@ -212,8 +207,7 @@ func _process(delta: float) -> void:
 			var desired_texture: Texture2D = SHIELD_STEADY_TEXTURE if steady else SHIELD_EVENT_TEXTURE
 			if sprite.texture != desired_texture:
 				sprite.texture = desired_texture
-			var texture_scale := SHIELD_STEADY_TEXTURE_SCALE if steady else 1.0
-			sprite.scale = (cfg.scale as Vector3) * visual.y * texture_scale
+			sprite.scale = (cfg.scale as Vector3) * visual.y
 			sprite.position.x = 0.0
 			sprite.position.y = 0.0
 			sprite.modulate.a = visual.x
@@ -307,7 +301,9 @@ func _make_sprite(kind: String) -> Sprite3D:
 	sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	# Keep the icon head-mounted and readable in the 1280x720 distant camera;
 	# it is still much smaller than a unit and never becomes a world burst.
-	sprite.pixel_size = 0.00160 if kind == "stun" else 0.00145
+	# Each selected OGA shield cell is 200x176 px. Its larger pixel size keeps
+	# the same readable world footprint as the retired 1254px event bubble.
+	sprite.pixel_size = 0.0076 if kind == "shield" else (0.00160 if kind == "stun" else 0.00145)
 	sprite.modulate = Color(1, 1, 1, float(cfg.alpha))
 	sprite.scale = cfg.scale
 	sprite.transparent = true

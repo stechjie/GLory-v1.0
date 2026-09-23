@@ -80,6 +80,19 @@ Starter_Vfx 在 `effects/vfx3d/vfxv2/reference_packages/`。全路径见机器�
 | `reference_packages/Starter_Vfx` | 80 | 5.2 MiB | ⛔ **包内无任何许可证文件** | ⛔ 未确认 | **`starter_explosion`、`starter_hit_02`、`starter_muzzle`** | `starter_fire`、`starter_hit_01`、`starter_loot_01`、`starter_loot_02`、`starter_smoke_01`、`starter_smoke_02` |
 | `reference_packages/Demo_GodotVFX` | 46 | 0.2 MiB | ⛔ 无许可证文件 | ⛔ 未确认 | — | `demo_orb_03`、`demo_orb_04`。已在 `export_presets` 的 `exclude_filter` 里（`*/Demo_GodotVFX/*`） |
 
+### OpenGameArt 棋子 VFX 候选（2026-09-22）
+
+`assets/vfx/oga/` 新增 30 张轻量序列帧图集，目前只连接
+`ModelBattlePreview`，**尚未连接正式战斗**。全部来自已核对为 CC0 的下载包：
+
+- Cethiel：Angel Shield、Light、Pure Projectile、Weapon Slash、Cosmic Time、
+  Earth Impact、Blood、Arcane、Nature Magic Effect。
+- IndieDevs：70 Animated 2D Game Effects（仅选用两张二级命中图集）。
+
+每张生成图集使用的精确 ZIP 条目、网格与帧数记录在
+`assets/vfx/oga/atlas_manifest.json`；作者、许可证和原始链接记录在
+`assets/vfx/oga/SOURCE_LICENSES.md`。本批没有导入 CC-BY 的 Leaf spell animation。
+
 ### 「仅 debug 路径」是什么意思
 
 `scripts/assets/BattleAssetManifest.gd:19-21` 写明：注册表里有 17 个外部 VFX，

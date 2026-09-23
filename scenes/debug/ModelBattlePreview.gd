@@ -51,7 +51,9 @@ const VFX_MOTHER_EXECUTE := preload("res://effects/vfx3d/modules/VFXMotherExecut
 const VFX_FOUR_STAR_AURA_V2 := preload("res://effects/vfx3d/modules/FourStarAuraV2_3D.gd")
 const BOSS_SKILL_COMPOSER := preload("res://effects/vfx3d/boss/BossSkillVFXComposer3D.gd")
 const UNIT_SKILL_COMPOSER := preload("res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd")
-const VFX_ARCHANGEL_COVENANT := preload("res://effects/vfx3d/units/VFXArchangelCovenant3D.gd")
+const OGA_CHESS_CATALOG := preload("res://effects/vfx3d/units/OgaChessVFXCatalog.gd")
+const VFX_OGA_PROJECTILE := preload("res://effects/vfx3d/modules/VFXFlipbookProjectile3D.gd")
+const VFX_ANGEL_GUARD := preload("res://effects/vfx3d/modules/VFXAngelGuard3D.gd")
 const VFX_COMPOSITION := preload("res://effects/vfx3d/core/VFXComposition3D.gd")
 const VFX_PREVIEW_RECORDER := preload("res://effects/vfx3d/preview/VFXPreviewRecorder.gd")
 const VFX_VALIDATION := preload("res://effects/vfx3d/core/VFXValidationReport.gd")
@@ -73,6 +75,7 @@ const PROFILE_PORTAL := preload("res://effects/vfx3d/profiles/examples/portal_ve
 const PROFILE_PROJECTILE_3D := preload("res://effects/vfx3d/profiles/examples/projectile_fire_example.tres")
 const PROFILE_METEOR_STRIKE := preload("res://effects/vfx3d/profiles/examples/meteor_strike_example.tres")
 const PROFILE_BARRIER_SHIELD := preload("res://effects/vfx3d/profiles/examples/barrier_shield_example.tres")
+const PROFILE_ANGEL_GUARD := preload("res://effects/vfx3d/profiles/examples/angel_guard_example.tres")
 const PROFILE_FALLING_PILLAR := preload("res://effects/vfx3d/profiles/examples/falling_pillar_example.tres")
 const PROFILE_ROAR_CONE := preload("res://effects/vfx3d/profiles/examples/roar_cone_example.tres")
 const PROFILE_STATUS_STUN := preload("res://effects/vfx3d/profiles/examples/status_stun_example.tres")
@@ -141,6 +144,7 @@ var vfx_select: OptionButton
 var vfx_status_label: Label
 var vfx_preview_root: Node3D
 var vfx_preview_effect: Node3D
+var oga_preview_serial := 0
 var lane_barrier_preview_nodes: Array[Node2D] = []
 var vfx_recorder: VFXPreviewRecorder
 var vfx_v2_select: OptionButton
@@ -183,6 +187,32 @@ func _ready() -> void:
 	_update_auto_button()
 	_ensure_preview_camera_current()
 	_load_selected_pair()
+	_try_run_oga_capture_cli()
+
+func _try_run_oga_capture_cli() -> void:
+	for argument in OS.get_cmdline_user_args():
+		if argument.begins_with("--oga-preview="):
+			var preview_id := argument.trim_prefix("--oga-preview=")
+			if preview_id in OGA_CHESS_CATALOG.RANGED_UNIT_ORDER or preview_id in ["melee", "skills"]:
+				_run_oga_capture_cli.call_deferred(preview_id)
+			return
+
+func _run_oga_capture_cli(preview_id: String) -> void:
+	await get_tree().process_frame
+	_clear_all_preview_nodes()
+	var capture_delay := 0.16
+	match preview_id:
+		"melee":
+			_play_oga_melee_preview()
+			capture_delay = 0.14
+		"skills":
+			_play_oga_skill_preview()
+			capture_delay = 0.22
+		_:
+			_play_oga_projectile_preview(preview_id)
+	var capture_path := await vfx_recorder.capture_at_time(get_viewport(), capture_delay, "oga_%s" % preview_id)
+	print("OGA_CAPTURE %s" % ProjectSettings.globalize_path(capture_path))
+	get_tree().quit(0 if not capture_path.is_empty() else 1)
 
 func _process(delta: float) -> void:
 	phase_time += delta
@@ -540,6 +570,12 @@ func _build_vfx_test_panel() -> void:
 	vfx_select.add_item("Custom: Lane Barrier Static")
 	vfx_select.add_item("Custom: Lane Barrier Release")
 	vfx_select.add_item("Custom: Final Two Light Walls")
+	for index in OGA_CHESS_CATALOG.RANGED_UNIT_ORDER.size():
+		var unit_id: String = OGA_CHESS_CATALOG.RANGED_UNIT_ORDER[index]
+		vfx_select.add_item("OGA 独立弹道: %s" % OGA_CHESS_CATALOG.display_name(unit_id), 2000 + index)
+	vfx_select.add_item("OGA 独立弹道: 12 棋子轮播", 2020)
+	vfx_select.add_item("OGA 近战: 三种挥砍候选", 2100)
+	vfx_select.add_item("OGA 技能: 护盾/黑洞/冲击", 2200)
 	vfx_select.add_item("Ascension: Sky", 100)
 	vfx_select.add_item("Ascension: Land", 101)
 	vfx_select.add_item("Ascension: Human", 102)
@@ -665,6 +701,7 @@ func _clear_vfx_v2_preview() -> void:
 	_clear_all_preview_nodes()
 
 func _clear_all_preview_nodes() -> void:
+	oga_preview_serial += 1
 	for barrier in lane_barrier_preview_nodes:
 		if barrier != null and is_instance_valid(barrier):
 			barrier.queue_free()
@@ -678,12 +715,81 @@ func _clear_all_preview_nodes() -> void:
 	vfx_preview_effect = null
 	vfx_v2_preview_effect = null
 
+func _play_oga_projectile_preview(unit_id: String) -> void:
+	var spec: Dictionary = OGA_CHESS_CATALOG.projectile_for(unit_id)
+	if spec.is_empty():
+		vfx_status_label.text = "OGA projectile config missing: %s" % unit_id
+		return
+	var projectile := VFX_OGA_PROJECTILE.new() as VFXFlipbookProjectile3D
+	projectile.name = "OgaProjectile_%s" % unit_id
+	vfx_preview_root.add_child(projectile)
+	vfx_preview_effect = projectile
+	projectile.play_spec(Vector3(-1.38, 0.78, 0.0), Vector3(1.38, 0.72, 0.0), spec)
+	vfx_status_label.text = "OGA 独立弹道预览：%s（未接入正式战斗）" % OGA_CHESS_CATALOG.display_name(unit_id)
+
+func _play_oga_projectile_gallery() -> void:
+	var serial := oga_preview_serial
+	vfx_status_label.text = "OGA 12 个远程棋子逐一预览（每个弹体与命中层均不同）"
+	for unit_id in OGA_CHESS_CATALOG.RANGED_UNIT_ORDER:
+		if serial != oga_preview_serial or not is_inside_tree():
+			return
+		_play_oga_projectile_preview(unit_id)
+		await get_tree().create_timer(0.72).timeout
+
+func _play_oga_melee_preview() -> void:
+	var positions := [Vector3(-1.15, 0.62, 0.0), Vector3(0.0, 0.62, 0.0), Vector3(1.15, 0.62, 0.0)]
+	for index in OGA_CHESS_CATALOG.MELEE_PREVIEWS.size():
+		var spec: Dictionary = OGA_CHESS_CATALOG.MELEE_PREVIEWS[index]
+		var texture := load(str(spec.get("path", ""))) as Texture2D
+		var flipbook := VFX_SPRITE_FLIPBOOK.new() as VFXSpriteFlipbook3D
+		flipbook.name = "OgaMelee_%d" % index
+		vfx_preview_root.add_child(flipbook)
+		flipbook.play_flipbook_advanced(positions[index], texture, {
+			"columns":int(spec.get("columns", 6)), "rows":1,
+			"frame_count":int(spec.get("frames", 6)), "loop":false, "random_start":false,
+			"speed_min":18.0, "speed_max":18.0, "billboard":true, "duration":0.58,
+			"color":spec.get("color", Color.WHITE), "size":Vector2(0.92, 1.02),
+			"position_offset":Vector3.ZERO,
+		})
+	vfx_status_label.text = "OGA 近战候选：金弧 / 蓝弧 / 紫弧（未接入正式战斗）"
+
+func _play_oga_skill_preview() -> void:
+	var positions := [Vector3(-1.15, 0.58, 0.0), Vector3(0.0, 0.58, 0.0), Vector3(1.15, 0.58, 0.0)]
+	for index in OGA_CHESS_CATALOG.SKILL_PREVIEWS.size():
+		var spec: Dictionary = OGA_CHESS_CATALOG.SKILL_PREVIEWS[index]
+		var texture := load(str(spec.get("path", ""))) as Texture2D
+		var flipbook := VFX_SPRITE_FLIPBOOK.new() as VFXSpriteFlipbook3D
+		flipbook.name = "OgaSkill_%d" % index
+		vfx_preview_root.add_child(flipbook)
+		var duration := maxf(0.48, float(spec.get("frames", 5)) / float(spec.get("fps", 14.0)))
+		flipbook.play_flipbook_advanced(positions[index], texture, {
+			"columns":int(spec.get("columns", 5)), "rows":int(spec.get("rows", 1)),
+			"frame_count":int(spec.get("frames", 5)), "loop":false, "random_start":false,
+			"speed_min":float(spec.get("fps", 14.0)), "speed_max":float(spec.get("fps", 14.0)),
+			"billboard":true, "duration":duration, "color":Color.WHITE,
+			"size":spec.get("size", Vector2(0.9, 0.9)), "position_offset":Vector3.ZERO,
+		})
+	vfx_status_label.text = "OGA 技能候选：天使护盾 / 黑洞 / 大地冲击（未接入正式战斗）"
+
 func _on_vfx_play_pressed() -> void:
 	_clear_all_preview_nodes()
 	if vfx_select == null:
 		return
 	var target := Vector3(0.0, 0.18, 0.0)
-	match vfx_select.get_selected_id():
+	var selected_id := vfx_select.get_selected_id()
+	if selected_id >= 2000 and selected_id < 2000 + OGA_CHESS_CATALOG.RANGED_UNIT_ORDER.size():
+		_play_oga_projectile_preview(OGA_CHESS_CATALOG.RANGED_UNIT_ORDER[selected_id - 2000])
+		return
+	if selected_id == 2020:
+		_play_oga_projectile_gallery()
+		return
+	if selected_id == 2100:
+		_play_oga_melee_preview()
+		return
+	if selected_id == 2200:
+		_play_oga_skill_preview()
+		return
+	match selected_id:
 		103, 104, 105:
 			auto_fight_enabled = false
 			var aura_v2 := VFX_FOUR_STAR_AURA_V2.new()
@@ -2174,12 +2280,14 @@ func _on_unit_browser_skill_pressed() -> void:
 		# cleanse branch, so the new ComfyUI-authored residue can be judged.
 		context["cleanse_triggered"] = true
 	if skill_id == "random_ally_damage_reduction":
-		var covenant: Node3D = VFX_ARCHANGEL_COVENANT.new() as Node3D
-		vfx_preview_root.add_child(covenant)
-		vfx_preview_effect = covenant
-		covenant.call("play_covenant", origin, target, right_slot, true)
+		var guard := VFX_ANGEL_GUARD.new() as VFXAngelGuard3D
+		vfx_preview_root.add_child(guard)
+		vfx_preview_effect = guard
+		var guard_context:=context.duplicate(false)
+		guard_context["status_duration"]=6.0
+		guard.play_guard(target,PROFILE_ANGEL_GUARD,guard_context)
 		if unit_browser_info_label != null:
-			unit_browser_info_label.text = "%s\nSkill: %s\nTarget: fixed dummy (target-bound guard)" % [str(unit.get("name", unit.get("id", "Piece"))), skill_id]
+			unit_browser_info_label.text = "%s\nSkill: %s\nTarget: new-material wing guard (6s target-bound)" % [str(unit.get("name", unit.get("id", "Piece"))), skill_id]
 		return
 	var composer := UNIT_SKILL_COMPOSER.new()
 	composer.name = "UnitBrowserSkill_%s" % skill_id
