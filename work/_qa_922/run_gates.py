@@ -39,6 +39,16 @@ GATES = [
     "team_merc_summon_sfx_check",
     "ui_feedback_check",
     "battle_cue_profile_check",
+    # ★ 9.24 订正 #2 新增：钉住「玩家棋子普攻弹体的权威表是 OGA 目录」这个 precedence，
+    #   以及神侍↔极光射手「只换模型、不换飞行速度」的口径。
+    #   加它的理由：第一版把对换写在了死表上，编译通过 + 全批绿 + 用户肉眼无变化，
+    #   **没有任何既有门禁会红**。这条就是补上的那道闸。
+    "oga_projectile_swap_check",
+    # ★ 9.24 第三轮新增：行为探针（先红后绿）。
+    #   钉住两条用户回执：① 神王技能落雷（与裁决者同一实现，逐目标各落一道）；
+    #   ② 血之契约策反**跨回放边界**后血条必须变己方色（回放帧里没有 team 列，
+    #   只能靠锁存）。仓里有 4 个变异证明它真的会红，见 mutate_doom_thunder_924.py。
+    "probe_doom_thunder_924",
     "voice_check",
     "settings_locale_live_check",
     "prep_detail_overlay_check",
@@ -48,10 +58,25 @@ GATES = [
 ]
 
 
+def _scene_for(name: str) -> str:
+    """门禁场景的解析：`tools/` 优先，找不到再看 `work/_qa_922/`。
+
+    为什么允许探针进批跑：行为探针（先红后绿那种）和门禁一样是**判据**，
+    分两个地方跑就等于总有一条会被忘掉。本仓已经吃过一次亏 ——
+    探针只在手工跑，于是"接线还在不在"没人守。
+    `work/_qa_922` 下的探针用 `PROBE_DONE checks=N fail=0` 作为通过行，
+    `run_one` 本来就会把它捞出来，所以这里只需解决路径。
+    """
+    local = os.path.join(PROJ, "work", "_qa_922", "%s.tscn" % name)
+    if os.path.isfile(local):
+        return "work/_qa_922/%s.tscn" % name
+    return "tools/%s.tscn" % name
+
+
 def run_one(name: str, timeout: int = 300):
     env = dict(os.environ)
     env["PATH"] = ENV_PATH
-    scene = "tools/%s.tscn" % name
+    scene = _scene_for(name)
     cmd = [EXE, "--headless", "--path", PROJ, scene]
     t0 = time.time()
     try:

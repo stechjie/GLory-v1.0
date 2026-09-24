@@ -11,6 +11,43 @@ var _vfx_prev_units: Dictionary = {}
 var _vfx_seeded: bool = false
 var _vfx_visual_event_index := 0
 var _persistent_unit_vfx: Dictionary = {}
+# 9.24 #7（订正）：**取消了「血条染契约色」的做法。**
+#
+# 上一版把被连接双方的血条染成暗红（Color(0.74,0.17,0.40)），并把颜色绑在
+# 「连线是否还活着」上。用户实测回执说明这是错的：
+#
+#   * 契约的语义是把这个目标**永久**变成我方棋子（模拟层
+#     BattleSimulator._convert_link_target_to_caster_team 只改不还），
+#     而"我方棋子应该以绿色血条表示"；
+#   * 把颜色绑在连线上，等于**守卫一死颜色就跟着没了** —— 恰恰是用户报的
+#     "这种变化不会随末日守卫死亡而停止"。
+#
+# 现在血条颜色由**当前队伍**唯一裁决（每帧在 BattleRenderer._refresh_visuals
+# 里按 `_hp_color_for_team(_display_team(f))` 同步），被策反即常绿，与连线生死无关。
+# 连线那根绳子本身仍按"双方任意一方死亡即消失"处理，见 _sync_persistent_unit_vfx。
+
+# 9.24 #5：播种帧要补演「**基线之前就已经施过法**」的技能。
+#
+# 为什么需要：回放的 `frames[0]` 是 **step 过一次之后**的状态（`_replay_capture_frame`
+# 在 `step_state` 之后才写），而播种帧拿它当基线（`_vfx_prev_units = current`）。
+# 于是「第 0 tick 就施法」的单位的 skill_ready 上升沿整段落在基线之前 ——
+# 逐单位循环里那句 `now.skill_ready > prev.skill_ready + 0.1` 永远看不到它，
+# 施法的弹道与音效在实时与回放里都**一次都不出现**（用户报的就是这条）。
+#
+# 表：skill_id -> 「施法残留痕迹」的字段名。判据必须是**施法才会写**的痕迹，
+# **不能用 skill_ready**：
+#   · 带 `opening_cd` 的单位（race_units.json / formation_allies.json）开场就把
+#     skill_ready 抬起来，但根本没有施法；
+#   · 镜像魔君的分身固定 `skill_ready = 9999.0`（BattleSimTreasures.gd），
+#     那是「永不施法」的哨兵值。
+# 法师的 `random_attribute_bolt` 满足条件：模拟器施法时同步 `attack_count += 1`
+# （BattleSimulator.gd `_tick_skills` 的 random_attribute_bolt 分支），所以
+# attack_count 就是它的施法计数。它是**目前唯一**会在 frames[0] 之前施法的单位 ——
+# range = 4（288px）已覆盖开战站位距离，探针实测整个阵容里只有它一个
+# （work/_qa_922/probe_mage_cast_924）。
+const SEED_ALREADY_CAST_TRACE := {
+	"random_attribute_bolt": "attack_count",
+}
 # 9.19：四星末日守卫（skill_id = shared_hp_link 血契连线）的技能音**只在开始释放时播一次**。
 #
 # 该技能是一次性的（命中后 `_skill_shared_hp_link` 置 `shared_link_spent` 后直接 return），
@@ -486,7 +523,13 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 		if not once_only or not _doom_skill_sfx_played.has(_sim_uid):
 			if once_only:
 				_doom_skill_sfx_played[_sim_uid] = true
-			SfxService.play(SfxService.star4_cue_for(uid, true))
+			# 9.24 #4：沉默箭（dark_mage）的命中音挪到「封印落到目标」那一刻
+			# （SilenceSeal 层 delay=0.28s），不再在施法瞬间响。其余四星技能音
+			# 仍在施法边沿立刻播放。
+			if sid == "silence_bolt":
+				_play_sfx_delayed(SfxService.star4_cue_for(uid, true), cue_silence_hit_delay(_sim_uid, str(unit.get("skill_target_uid", ""))))
+			else:
+				SfxService.play(SfxService.star4_cue_for(uid, true))
 	elif _owned:
 		# 9.19 第二批：佣兵专属技能音（星轨猎人 / 泡沫术士 / 圣愈修女）。
 		# **佣兵升不到四星**（`EconomyLedger._use_upgrade_stone` 会拒），所以
@@ -549,9 +592,9 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 		"king_aura":
 			# Visual-only procedural aura; never spawn the obsolete legacy PNG layer.
 			should_play_texture = false
-		"judgement_strike":
-			should_play_texture = false
-		"global_divine_blast":
+		"judgement_strike", "global_divine_blast":
+			# 9.24 #3：裁决者（单体）与神王（全体）的落雷都由 composer 的
+			# _aoe_thunder 全权负责，旧的贴图层一律不再叠加。
 			should_play_texture = false
 		"front_cone_stun":
 			should_play_texture = false
@@ -609,8 +652,16 @@ func _sync_persistent_unit_vfx(current:Dictionary)->void:
 		var record:Dictionary=_persistent_unit_vfx.get(id,{})
 		var node:Variant=record.get("node")
 		var uid:=str(unit.get("skill_target_uid",""))
-		var active:=not unit.is_empty() and bool(unit.get("alive",false)) and str(unit.get("skill_id",""))=="shared_hp_link" and not uid.is_empty()
-		if active and uid==str(record.get("target_uid","")):
+		var bound_target:=str(record.get("target_uid",""))
+		# 9.24 #7：连接特效要「双方任意一方死亡即消失」。原判据只看了守卫自身，
+		# 被连接的敌方先倒下时线条仍挂着（用户报的 bug）。这里补上目标存活检查：
+		# 目标已不在 current 里（阵亡后被剪枝）或 alive=false 都算失效。
+		var target_alive:=bool((current.get(bound_target,{}) as Dictionary).get("alive",false))
+		var active:=not unit.is_empty() and bool(unit.get("alive",false)) and str(unit.get("skill_id",""))=="shared_hp_link" and not uid.is_empty() and not bound_target.is_empty() and target_alive
+		if active and uid==bound_target:
+			# 9.24 #7：连接生效中 —— 绳子留着。
+			# 血条配色**不在**这里做了：那已由 BattleRenderer._refresh_visuals 每帧按
+			# 「当前队伍」裁决（见本文件顶部 9.24 #7（订正）那段），这里再插一手只会打架。
 			continue
 		if is_instance_valid(node) and node is Node3D and node.has_method("release_link"):
 			node.release_link()
@@ -664,13 +715,24 @@ func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictio
 		context["targets"]=_living_team_world_positions(unit,current)
 		target_world=unit.get("world_foot",Vector3.ZERO)
 	elif sid=="global_divine_blast":
-		var enemy_targets:Array=[]
-		for event in _enemy_damage_events(unit,damage_events):enemy_targets.append(event.get("world_foot",Vector3.ZERO))
-		if enemy_targets.is_empty():
-			for candidate_id:String in current.keys():
-				var candidate:Dictionary=current[candidate_id]
-				if bool(candidate.get("alive",false)) and str(candidate.get("team",""))!=str(unit.get("team","")):
-					enemy_targets.append(candidate.get("world_foot",Vector3.ZERO))
+		# 9.24 第四轮订正：目标集合**以模拟器记录为准**（`BattleSimSkills._skill_god_king`
+		# 里的 `_mark_vfx_targets`），不再自己按队伍猜。
+		#
+		# 旧写法有两个来源，**两个都不对**（用户报「非技能目标也出现了落雷」）：
+		#   ① 本帧的伤害事件 —— 那是**帧级**的，里面混着其它单位打出来的伤害。
+		#      别条路上的敌人被别人打掉血，也会在它头上落一道雷；
+		#   ② 取不到就退回「全部存活敌人」—— 完全无视 `_can_target` 的**路数限制**
+		#      （team_mode 下只打自己这一路），多目标技直接变成全屏技。
+		# 现在只认模拟器真正选中的那几只（含被闪避 / 被护盾全吸收的，见那边的注释）。
+		var recorded:=str(unit.get("skill_target_uid",""))
+		var enemy_targets:Array=resolve_skill_target_positions(current,recorded)
+		# ★ 退回旧口径**只在「根本没有记录」时**发生（老回放 / 该技能没记录）。
+		# 有记录却解析为空（目标已离场）时**不许**退 —— 那正是「非技能目标也落雷」的
+		# 成因：一退就等于把别处的敌人当成技能目标劈了。宁可少放一道雷。
+		if recorded.is_empty():
+			for event in _enemy_damage_events(unit,damage_events):enemy_targets.append(event.get("world_foot",Vector3.ZERO))
+			if enemy_targets.is_empty():
+				enemy_targets=_living_enemy_world_positions(unit,current)
 		context["targets"]=enemy_targets
 	elif sid=="black_hole":
 		target_world=unit.get("world_foot",Vector3.ZERO)
@@ -844,6 +906,27 @@ func _play_opening_unit_vfx(current:Dictionary)->void:
 				var spawned:=_play_unit_procedural(sid,unit.get("world_cast",unit.get("world_foot",Vector3.ZERO)),link_target.get("world_hit",link_target.get("world_foot",Vector3.ZERO)),context)
 				if spawned!=null:
 					_persistent_unit_vfx[str(unit.get("id",""))]={"node":spawned,"target_uid":str(unit.get("skill_target_uid",""))}
+		# 9.24 #5：法师（human_mage）的 random_attribute_bolt。它的 range = 4（288px）
+		# 已覆盖开战站位距离，所以第 0 tick 就会施法；而 frames[0] 已经是施法之后
+		# 的状态，skill_ready 上升沿落在基线之前 → 首次施法的弹道与技能音全丢
+		# （用户报的「首次发动技能不播放技能音效，也没有技能弹道，只造成伤害」）。
+		# 这里按「施法残留痕迹」补演一次；判据与理由见 SEED_ALREADY_CAST_TRACE。
+		#
+		# `previous` 传 `unit` 自身：播种帧没有上一帧可比。这对目标解析没有影响
+		# （`_exact_skill_target` 读的是快照里的 skill_target_uid，施法时由
+		# `_mark_vfx_target` 写好并一直留着）；`shared_hp_link` 那一支正是因为
+		# 「now_uid == previous.skill_target_uid」会直接 return，天然不会与上面
+		# 那条血契分支重复播放。
+		if _seed_cast_already_fired(unit):
+			_play_skill_cast_vfx(unit,unit,[],current)
+
+# 9.24 #5：这个单位在播种帧基线之前就已经施过法了吗。
+# 只认表里登记的 skill_id + 字段；表为空/字段为 0 一律返回 false，宁可不补
+# 也不凭空播一次不该有的施法演出。
+func _seed_cast_already_fired(unit:Dictionary)->bool:
+	var trace:=str(SEED_ALREADY_CAST_TRACE.get(str(unit.get("skill_id","")),""))
+	if trace.is_empty():return false
+	return int(unit.get(trace,0))>0
 
 func _boss_world_position(value: Variant) -> Vector3:
 	if value is Vector3:
@@ -1316,6 +1399,44 @@ const IMPACT_SHAKE_SEC := 0.09
 # 所以暴击的强调就是把同一套演出乘上这个系数，而不是另加一层全屏效果。
 const CRIT_EMPHASIS_SCALE := 1.28
 
+# 9.24 #1：与 UnitSkillVFXComposer3D.BOLT_KIND_BY_UNIT / VFXRaceBasicAttack3D.BOLT_SPEED
+# 平行的、纯表现的查表。仅用于把远程普攻的 impact / 命中数字 cue 推迟到弹道真正
+# 落地（不改模拟结算）。若 composer 的映射有变更，这里需手动同步。
+const _RANGED_BOLT_SPEED := {
+	"arrow": 10.0, "dart": 8.8, "lance": 7.6, "orb": 6.4, "holy": 6.4,
+	"dark": 6.8, "star": 7.2, "thunder": 11.0, "crescent": 7.2,
+	"star_prayer": 5.8, "priestess_ring": 5.8, "shadow_sickle": 6.8, "thorn_lash": 8.0,
+}
+const _RANGED_BOLT_KIND_BY_UNIT := {
+	"human_archer": "arrow", "god_aurora": "arrow", "merc_sagittarius_rain": "arrow",
+	"pve_sky_wind_falcon": "arrow",
+	"human_mage": "orb", "merc_pisces_bubble": "orb", "merc_aquarius_time": "orb",
+	"pve_ren_voodoo_witch": "orb", "boss_meteor_caster": "orb",
+	"dark_mage": "shadow_sickle",
+	"pve_ren_poison_doctor": "dart", "undead_spike": "dart", "undead_mother": "dart",
+	"god_archangel": "holy",
+	"god_priest": "star_prayer", "god_priestess": "priestess_ring",
+	"human_cleric": "holy", "boss_holy_priest": "holy", "merc_virgo_heal": "holy",
+	"pve_sky_hymn_spirit": "holy", "pve_sky_star_butterfly": "holy", "pve_land_ancient_tree": "holy",
+	"god_angel": "star",
+	"ally_soul_chain": "dark", "ally_hell_inferno": "dark",
+	"dark_queen": "thorn_lash",
+	"boss_thunder_core": "thunder", "pve_sky_thunder_spirit": "thunder",
+}
+const _RANGED_MIN_TRAVEL := 0.28
+const _RANGED_MAX_TRAVEL := 0.80
+
+# 9.24 订正 #2：**玩家棋子的远程普攻并不走上面 `_RANGED_BOLT_KIND_BY_UNIT`** ——
+# `UnitSkillVFXComposer3D._basic_attack` 会先查 OGA 目录并**命中即 return**。
+# 所以计时也必须优先用 OGA 那条 spec 的 `speed`，否则算出的飞行时长和真正在飞的弹体
+# 对不上（例：神侍真实 speed=5.6，而 bolt_kind 表里按 "star_prayer" 记的是 5.8、
+# 按 "arrow" 记的是 10.0 —— 差得越多，①「命中后才结算」就越不准）。
+# ★ 限幅取 VFXFlipbookProjectile3D 的 MIN/MAX_TRAVEL_TIME，两边必须一致，
+#   否则延迟与弹体落地时刻会系统性错开。
+const OGA_CHESS_CATALOG := preload("res://effects/vfx3d/units/OgaChessVFXCatalog.gd")
+const _RANGED_OGA_MIN_TRAVEL := 0.24
+const _RANGED_OGA_MAX_TRAVEL := 0.82
+
 
 func cue_play_attack_lunge(source_uid: String, target_uid: String, ranged: bool) -> bool:
 	var actor_value = _battle_3d_models.get(source_uid)
@@ -1373,6 +1494,52 @@ func _lunge_direction(actor: Node3D, target_uid: String) -> Vector3:
 func cue_play_impact_feedback(_target_uid: String, crit: bool) -> void:
 	var strength := IMPACT_SHAKE_STRENGTH * (CRIT_EMPHASIS_SCALE if crit else 1.0)
 	_screen_shake(strength, IMPACT_SHAKE_SEC)
+
+# 9.24 #1：远程普攻弹道的飞行时长（与 VFXRaceBasicAttack3D._play_ranged 同公式）。
+# LegacyBattleVfxAdapter 用它把 impact / 命中数字 推迟到弹体真正落地那一刻才播放，
+# 实现「命中后结算状态和伤害」的纯表现层延迟（模拟结算不变）。
+# 距离取世界坐标的地面平面（x,z）投影，弹速按施法者兵种原型查表。
+func cue_ranged_flight_time(source_uid: String, target_uid: String) -> float:
+	var s := _cue_unit_snapshot(source_uid)
+	var t := _cue_unit_snapshot(target_uid)
+	if s.is_empty() or t.is_empty():
+		return 0.4
+	var a: Vector3 = s.get("world_cast", Vector3.ZERO)
+	var bw: Vector3 = t.get("world_hit", t.get("world_foot", Vector3.ZERO))
+	var dist := Vector2(a.x, a.z).distance_to(Vector2(bw.x, bw.z))
+	var uid := str(s.get("unit_id", ""))
+	# 9.24 订正 #2：玩家棋子以 OGA 弹体 spec 的 speed 为准 —— 那才是屏幕上真正在飞的那个弹体。
+	var oga_spec: Dictionary = OGA_CHESS_CATALOG.projectile_for(uid)
+	if not oga_spec.is_empty():
+		var oga_speed := maxf(0.5, float(oga_spec.get("speed", 7.0)))
+		return clampf(dist / oga_speed, _RANGED_OGA_MIN_TRAVEL, _RANGED_OGA_MAX_TRAVEL)
+	var kind := str(_RANGED_BOLT_KIND_BY_UNIT.get(uid, "lance"))
+	var speed := float(_RANGED_BOLT_SPEED.get(kind, 7.6))
+	return clampf(dist / maxf(0.5, speed), _RANGED_MIN_TRAVEL, _RANGED_MAX_TRAVEL)
+
+# 9.24 #4：把一条 cue 延后 delay 秒再播（用于把命中音对齐弹体落地 / 封印落点）。
+# 纯表现层：只延后播放时刻，不改任何模拟结算。
+func _play_sfx_delayed(cue: String, delay: float) -> void:
+	if cue.is_empty():
+		return
+	if delay <= 0.0 or not is_inside_tree():
+		SfxService.play(cue)
+		return
+	await get_tree().create_timer(delay).timeout
+	if is_inside_tree():
+		SfxService.play(cue)
+
+# 9.24 #4：沉默箭弹体的飞行时长（与 VFXFlipbookProjectile3D 同公式：dist/speed 限幅，
+# speed 取 OgaSkillVFXCatalog「silence」条目的 9.0）。命中音据此对齐箭体落地那一刻。
+func cue_silence_hit_delay(source_uid: String, target_uid: String) -> float:
+	var s := _cue_unit_snapshot(source_uid)
+	var t := _cue_unit_snapshot(target_uid)
+	if s.is_empty() or t.is_empty():
+		return 0.4
+	var a: Vector3 = s.get("world_cast", Vector3.ZERO)
+	var bw: Vector3 = t.get("world_hit", t.get("world_foot", Vector3.ZERO))
+	var dist := Vector2(a.x, a.z).distance_to(Vector2(bw.x, bw.z))
+	return clampf(dist / 9.0, 0.24, 0.82)
 
 
 func cue_claim_corpses(events: Array) -> void:
@@ -1717,6 +1884,48 @@ func _vfx_unit_by_sim_uid(current:Dictionary,sim_uid:String)->Dictionary:
 		var unit:Dictionary=current[id]
 		if str(unit.get("sim_uid",""))==sim_uid:return unit
 	return {}
+
+# 9.24 第四轮：解析模拟器记录下来的技能目标。
+#
+# `vfx_skill_target_uid` 这个字段有**两种写法**，都从这里读，调用方不必分辨：
+#   · 单目标技：一个 uid（历史写法，`_mark_vfx_target`）；
+#   · 多目标技：逗号连接的 uid 列表（`_mark_vfx_targets`，神王全体落雷）。
+# uid 由模拟器生成，不含逗号，所以逗号是安全分隔符。
+# 空串 -> 空数组，调用方据此退回旧口径（老回放 / 没有记录）。
+static func _vfx_target_uids(raw:String)->PackedStringArray:
+	if raw.is_empty():
+		return PackedStringArray()
+	return raw.split(",", false)
+
+# 把模拟器记下来的技能目标 uid 列表映射成**落点集合**（世界坐标）。
+#
+# static 纯函数，理由同上一轮的 `apply_latched_team`：文本断言挡不住
+# `if false and ...` 这类变异，判据必须能落在**行为**上 —— 探针直接调这个函数，
+# 给一份假的 `current` 就能验「活着的才落雷 / 认不得的 uid 要跳过 / 顺序要保住」。
+#
+# ★ 只要求「这一只在 current 里能找到」，**不**要求它还活着 —— 这一点很关键。
+#
+# 记录是在**选目标的时候**写下的，那时它一定活着（`_skill_god_king` 里
+# `_can_target` + `alive` 都过了一遍）。反过来推：能出现在记录里的，必然是本技能
+# 认下的目标。同一帧里它可能已经被**本技能的雷**打死 —— 那雷恰恰是最该看见的一道。
+# 早先按 `alive` 过滤，等于把「劈死目标的那道雷」删掉：目标无声倒下、头顶没雷。
+# 而且 `alive=false` 的单位**不会**被移出 `state.player/enemy`（模拟器只标记不删），
+# 所以它在 current 里始终找得到、`world_foot` 也仍然有效，落雷点就在它倒下的位置。
+#
+# 认不得的 uid（老回放里没有这只 / 已离场）才跳过。
+static func resolve_skill_target_positions(current:Dictionary, raw:String) -> Array:
+	var out:Array=[]
+	for tid in _vfx_target_uids(raw):
+		var hit:Dictionary={}
+		for id:String in current.keys():
+			var unit:Dictionary=current[id]
+			if str(unit.get("sim_uid",""))==tid:
+				hit=unit
+				break
+		if hit.is_empty():
+			continue
+		out.append(hit.get("world_foot",Vector3.ZERO))
+	return out
 
 func _ensure_hit_number_layer() -> void:
 	if _hit_number_layer != null and is_instance_valid(_hit_number_layer):

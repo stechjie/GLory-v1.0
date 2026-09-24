@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://work/_qa_922/probe_mage_cast_924.gd" id="1"]
+
+[node name="ProbeMageCast924" type="Node"]
+script = ExtResource("1")

@@ -38,6 +38,20 @@ const VFX_DOOM_LINK:=preload("res://effects/vfx3d/units/VFXDoomBloodLink3D.gd")
 const VFX_SHOCKWAVE:=preload("res://effects/vfx3d/modules/VFXShockwave3D.gd")
 const VFX_GROUND_SIGIL:=preload("res://effects/vfx3d/modules/VFXGroundSigil3D.gd")
 const VFX_LIGHTNING_ARC:=preload("res://effects/vfx3d/VFXLightningArc.gd")
+# 9.24 #3：神圣落雷配色（白芯 + 暖金边）。取自桌面设计稿《落雷技能特效设计》：
+# 核心 #FFFFFF、边缘 #E0A040(rgb 224,160,64)，与游戏既有暖金 glow 语言同调。
+# 明确禁用冷蓝/青蓝 —— 那会脱离战场暖橄榄绿基调，显得格格不入。
+const HOLY_THUNDER_PALETTE := {
+	"guide": Color(0.878, 0.627, 0.251),
+	"outer": Color(0.600, 0.380, 0.110),
+	"middle": Color(0.945, 0.710, 0.330),
+	"core": Color(1.0, 1.0, 1.0),
+	"branch_a": Color(0.900, 0.660, 0.280),
+	"branch_b": Color(0.980, 0.870, 0.560),
+	"impact": Color(1.0, 0.955, 0.800),
+	"spark": Color(1.0, 0.940, 0.740),
+	"ground": Color(0.860, 0.620, 0.250),
+}
 const STAR_PRAYER_SIGIL_TEXTURE:="res://assets/vfx/skills/god_priest_star_prayer/starlight_prayer_sigil.png"
 const STAR_PRAYER_DESCENT_TEXTURE:="res://assets/vfx/skills/god_priest_star_prayer/starlight_prayer_descent.png"
 const STAR_PRAYER_IMPACT_TEXTURE:="res://assets/vfx/skills/god_priest_star_prayer/starlight_prayer_impact.png"
@@ -126,15 +140,26 @@ func play_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary
 		"nearest_ally_bless":_oga_pack_skill("nearest_ally_bless",origin,target,context)
 		"nearby_ally_heal_buff":_oga_pack_group_skill("nearby_ally_heal_buff",origin,context)
 		"random_attribute_bolt":_oga_element_projectile(origin,target,context)
-		"judgement_strike":_oga_pack_melee("judgement_strike",origin,target,context)
+		# 9.24 #3：裁决者「裁决之击」= 单体落雷（目标是 1 个 → 只落 1 道）。
+		# 与神王的全体落雷**共用** _aoe_thunder，所以两者字面上是同一套特效与配色。
+		# 保留基础普攻不受影响。
+		"judgement_strike":_aoe_thunder(origin,target,{})
 		"random_ally_damage_reduction":_angel_guard(target,context)
-		"global_divine_blast":_oga_pack_multi_melee("global_divine_blast",origin,target,context)
-		"silence_bolt":_oga_pack_skill("silence_bolt",origin,target,context)
+		# 9.24 #3 订正：神王（god_king，skill_id = global_divine_blast）的**技能**改为
+		# 全体落雷 —— 与裁决者同一套 VFXLightningArc + 同一配色，逐个技能目标各落一道。
+		# 上一版把「神王」错认成了 human_king（人王）的 unique_king_growth，见文件末的
+		# 订正说明；人王那条已还原，这里才是 docx 指的「神王的全体攻击」。
+		"global_divine_blast":_aoe_thunder(origin,target,context)
+		# 9.24 #4：沉默箭改成真正会飞的投射物（发射 → 命中 → 落封印）。
+		"silence_bolt":_oga_silence_bolt(origin,target,context)
 		"fear":_fear_hit(origin,target,context)
 		"stun":_stun_hit(origin,target,context)
 		"black_hole":_oga_pack_skill("black_hole",origin,origin,context)
 		"blink_low_def_backline":_blink_slash(origin,target,context)
-		"shared_hp_link":_oga_blood_link(origin,target,context)
+		# 9.24 #7：末日守卫「血之契约」改用专属血链（VFXDoomBloodLink3D）——暗红/黑紫
+		# 手绘绳体 + 两端结 + 断裂时从中段撕裂；旧路由走的是通用发光缎带
+		# （VFXPackBloodLink3D），没有重量、没有端点结。专属模块本就为它而写。
+		"shared_hp_link":_doom_blood_link(origin,target,context)
 		"front_cone_stun":_oga_pack_melee("front_cone_stun",origin,target,context)
 		"guardian_shield_taunt":_oga_pack_skill("guardian_shield_taunt",origin,origin,context)
 		"true_damage_attack":_true_damage_hit(target)
@@ -172,6 +197,11 @@ func play_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary
 		"unique_death_execute":
 			# 强制生成：书是玩家必须读到的关键事件，跳过并发上限，不被特效密集回合饿死。
 			_spawn_forced(VFX_MOTHER_EXECUTE,MOTHER_EXECUTE_PROFILE,{"origin":origin,"target":target,"origin_node":context.get("origin_node"),"target_node":context.get("target_node")})
+		# 人王（human_king）的普攻表现：目标头顶竖直落下的金色天剑。
+		# ⚠️ 9.24 订正：这个 skill_id 属于**人王**（human_king），不是神王。人王没有
+		# skill_cd，它是被动成长技，这个分支实际只服务**人王的普通攻击**
+		# （BattleVfx._play_attack_unit_procedural 里 human_king 直连到这里）。
+		# 上一版误把它当成「神王技能」改成落雷 → 人王每次普攻都变成一道雷。
 		"unique_king_growth":_king_attack(origin,target,context)
 		# ── PVE 怪物 ──────────────────────────────────────
 		"chain_lightning":_chain_lightning(origin,target,context)
@@ -321,9 +351,46 @@ func _oga_pack_multi_melee(skill_id:String,origin:Vector3,target:Vector3,context
 		target_context["target_foot"]=targets[i]
 		_oga_pack_melee(skill_id,origin,targets[i],target_context)
 
+# 9.24 #3 订正：落雷的**唯一实现**（裁决者单体 / 神王全体都走这里）。
+#
+# 与裁决者共用同一套构件：VFXLightningArc（自天而降的竖直锯齿电弧 + 落点闪光 +
+# 地表残弧，模块自带清理）+ 同一配色 HOLY_THUNDER_PALETTE（白芯 + 暖金）。
+# 两者唯一的区别就是 `context["targets"]` 里有几个落点 —— 裁决者 1 个（单体），
+# 神王 N 个（全体）。所以「神王和裁决者用同一落雷特效」这条不是靠两处参数抄一致
+# 来维持的，而是字面上同一段代码。
+#
+# 约束（用户明确要求）：不夸张、不挡视野、不视觉疲劳 —— 复用既有模块、不新增美术；
+# 每道弧只占目标脚下一小片，多目标时是 N 道细弧而不是一整个雷云罩全场。
+func _aoe_thunder(_origin:Vector3,target:Vector3,context:Dictionary)->void:
+	var targets:Array=_capped_targets(context.get("targets",[]))
+	if targets.is_empty():
+		targets=[target]
+	last_spawned=null
+	for value:Variant in targets:
+		if not value is Vector3:
+			continue
+		var at:Vector3=value
+		var arc:VFXLightningArc=VFX_LIGHTNING_ARC.new()
+		arc.name="DivineThunder"
+		add_child(arc)
+		arc.play_arc(at + Vector3(0.0, 2.85, 0.0), at, HOLY_THUNDER_PALETTE)
+		last_spawned=arc
+
 func _oga_element_projectile(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var element:=str(context.get("attribute",context.get("element","arcane"))).to_lower()
 	var spec:Dictionary=OGA_SKILL_CATALOG.projectile_for_element(element)
+	var projectile:=_block(VFX_OGA_PROJECTILE) as VFXFlipbookProjectile3D
+	if projectile==null:
+		return
+	last_spawned=projectile
+	projectile.play_spec(_lvl(origin,_uh(context,"origin_height"),LEVEL_BODY),_lvl(target,_uh(context),LEVEL_BODY),spec,context)
+
+# 9.24 #4：暗影法师「沉默箭」——一枚会飞的暗紫箭体，命中目标时在目标身上落封印。
+# 复用 OGA 弹道模块（VFXFlipbookProjectile3D）+ 既有 cosmic_orb / cosmic_seal 贴图；
+# 不再只有「聚气 + 凭空出现封印」。飞行时长由 spec.speed 决定（见 OgaSkillVFXCatalog
+# 的 "silence" 条目，speed=9.0），BattleVfx 的命中音用同一公式对齐。
+func _oga_silence_bolt(origin:Vector3,target:Vector3,context:Dictionary)->void:
+	var spec:Dictionary=OGA_SKILL_CATALOG.projectile_for_element("silence")
 	var projectile:=_block(VFX_OGA_PROJECTILE) as VFXFlipbookProjectile3D
 	if projectile==null:
 		return
@@ -372,19 +439,35 @@ func _basic_profile_for(uid:String,race:String)->VFXProfile3D:
 		"undead":return BASIC_UNDEAD
 	return BASIC_HUMAN
 
-# 专属 PNG 弹道贴图（普攻用）。这些单位本就有画好的箭矢图；走弹道系统的
-# 贴图弹体路径，会跟随飞行方向朝向目标。将来别的单位出了 PNG 也填这里。
-const PROJECTILE_TEX_BY_UNIT := {
-	"human_archer":"res://assets/vfx/skills/human_archer/human_archer_arrow_trail.png",
-	"god_aurora":"res://assets/vfx/skills/god_aurora/god_aurora_arrow_trail.png",
-}
+# 专属 PNG 弹道贴图（普攻用）—— **目前为空，而且这是刻意的**。
+#
+# ⚠️⚠️ 玩家棋子（32 只，含 god_priest / god_aurora / human_archer）**全部不走这张表**：
+#   `_basic_attack` 开头就查 `OGA_CHESS_CATALOG.projectile_for(uid)` 并**命中即 return**，
+#   权威弹体表是 effects/vfx3d/units/OgaChessVFXCatalog.gd 的 `PROJECTILES`
+#   （弹体贴图 + 命中特效都在那一条 spec 里）。
+#
+#   9.24 之前本表里的 god_aurora / human_archer 两条**本来就是死条目**：
+#   编译通过、批跑全绿、运行时毫无作用 —— 这也正是 9.24 #2「神侍 ↔ 极光射手对换」
+#   第一版改完用户肉眼毫无变化的原因（用户报的「未对换完成」）。
+#   ★ 判据已机器化：tools/oga_projectile_swap_check.gd 断言 OGA 查询必须排在 race bolt 之前。
+#
+#   所以：改玩家棋子的普攻弹体 → 改 OGA 目录；本表只对**非玩家棋子**
+#   （佣兵 / PVE 怪物 / 阵型盟友）生效，将来这类单位有了贴图弹体再往这里填。
+const PROJECTILE_TEX_BY_UNIT := {}
 
 # 远程普攻的弹道原型：按施法者 unit_id 归类到 6 种形状之一。
 # 近战单位不会走到这里（前端按 range_px 分流），所以只列远程单位。
 # 未列出的远程单位回落到默认 "lance"（针/矛）。
+#
+# ⚠️ 同 `PROJECTILE_TEX_BY_UNIT`：**玩家棋子不走本表**（`_basic_attack` 先查 OGA 目录并 return）。
+#    改 god_priest / god_aurora / human_archer 这些棋子的普攻弹体，请改
+#    effects/vfx3d/units/OgaChessVFXCatalog.gd 的 `PROJECTILES`。
+#    本表只对**非玩家棋子**（佣兵 / PVE 怪物 / 阵型盟友）生效。
 const BOLT_KIND_BY_UNIT := {
 	# 🏹 箭矢
-	"human_archer":"arrow", "god_aurora":"arrow", "merc_sagittarius_rain":"arrow",
+	# 9.24 订正 #6：弓箭手的金属箭**不在这里** —— 它是玩家棋子，走 OGA 目录的
+	# human_archer_metal_arrow.png。本行只是它在非玩家路由下的兜底形状。
+	"human_archer":"arrow", "god_priest":"arrow", "merc_sagittarius_rain":"arrow",
 	"pve_sky_wind_falcon":"arrow",
 	# 🔮 法球
 	"human_mage":"orb", "merc_pisces_bubble":"orb",
@@ -396,7 +479,7 @@ const BOLT_KIND_BY_UNIT := {
 	# ✨ 圣光弹
 	"god_archangel":"holy",
 	# 神侍与大祭司使用各自的手绘白金弹道，其他神族继续使用通用圣光弹。
-	"god_priest":"star_prayer", "god_priestess":"priestess_ring",
+	"god_aurora":"star_prayer", "god_priestess":"priestess_ring",
 	"human_cleric":"holy", "boss_holy_priest":"holy", "merc_virgo_heal":"holy",
 	"pve_sky_hymn_spirit":"holy", "pve_sky_star_butterfly":"holy", "pve_land_ancient_tree":"holy",
 	# ✦ 四芒星光羽（天使，避开太圆的圣光弹）
@@ -909,8 +992,11 @@ func _doom_blood_link(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	# Doom Guard's blood pact: a painted rope body with a knot at each end that
 	# tears apart in the middle when it breaks.  The generic TrackedLink is a
 	# glowing ribbon - no weight, no endpoint knots.
+	#
+	# 9.24 #7：走 forced 通道 —— 这是一条持续数秒的玩法状态（共享血量），
+	# 在特效密集的回合里被并发上限静默丢弃就等于「连线没出现」。
 	var p:=_profile(Color(.16,.06,.14),Color(1.0,.88,.94),Color(1.0,.72,.84),1.0,2.4,1.6,6)
-	_spawn(VFX_DOOM_LINK,p,{
+	_spawn_forced(VFX_DOOM_LINK,p,{
 		"origin":origin,"target":target,
 		"origin_node":context.get("origin_node"),"target_node":context.get("target_node"),
 		"persistent":bool(context.get("persistent",false))

@@ -43,6 +43,20 @@ var _replay_frame := 0
 # 已灌入 visual_events 的最高回放帧号，避免重复播放同一帧的视觉事件。
 var _replay_events_applied := -1
 var _replay_by_uid: Dictionary = {}
+# 9.24 #7（订正）：末日守卫「血之契约」把被连接目标**永久**变成我方棋子。
+#
+# 模拟层就是这么做的 —— BattleSimulator._convert_link_target_to_caster_team 只把
+# target.team 改掉并把它从对方数组搬到己方数组，**没有任何回退路径**（守卫死了也不还）。
+# 但这一条跨不过回放边界：roster 是**首帧快照**，而 13 列 frame 里**没有 team 列**，
+# 于是表现层永远把它当敌方 —— 血条一直是红的（用户实测："末日守卫先死亡，而被连接方
+# 无特殊标志" / "我方棋子应该以绿色血条表示"）。
+#
+# 修法：**见到即锁存**（uid -> 策反后所属队伍）。契约一生效就把目标记下来，此后整局有效，
+# 与模拟层"不再回退"的语义逐字对应；连线那根绳子断掉不影响这条记录。
+#
+# 为什么不直接往 frame 里加一列 team：frames 属于 ReplayDigest.SIMULATION_TOP_FIELDS，
+# 加列会让 D0-D6 的**冻结哈希**漂移。表现层能自洽解决的问题，不去动模拟身份。
+var _converted_ally_ids: Dictionary = {}
 var _battle_setup_ready := false
 var _final_round_intro_active := false
 var _final_round_intro_started := false
@@ -450,6 +464,8 @@ func _finish_final_round_intro_after_delay() -> void:
 
 func _load_replay_roster(replay: Dictionary) -> void:
 	_replay_by_uid = {}
+	# 9.24 #7：策反锁存是**每局**的，换局必须清空，否则上一局被策反过的 uid 会带到下一局。
+	_converted_ally_ids = {}
 	var players: Array = []
 	var enemies: Array = []
 	var roster: Dictionary = replay.get("roster", {})
@@ -754,6 +770,12 @@ func _apply_replay_frame(i: int) -> void:
 		f.alive = false
 	if typeof(frames[i]) != TYPE_ARRAY:
 		return
+	# 9.24 #7：先整帧扫一遍，把「血之契约已锁定目标」的策反关系**锁存**下来。
+	# 必须**先扫后解码**：守卫会把目标从对方数组搬到己方数组**尾部**，所以同一帧里
+	# 目标可能排在守卫前面；边扫边应用的话，顺序一变就会漏掉几帧的红→绿切换。
+	var frame_conversions := latched_conversions_in_frame(frames[i], _replay_by_uid)
+	for linked_uid in frame_conversions:
+		_converted_ally_ids[linked_uid] = frame_conversions[linked_uid]
 	for entry in frames[i]:
 		if typeof(entry) != TYPE_ARRAY or (entry as Array).size() < 5:
 			continue
@@ -781,6 +803,52 @@ func _apply_replay_frame(i: int) -> void:
 			f.vfx_attack_target_uid = str(entry[11])
 		if entry.size() > 12:
 			f.vfx_skill_target_uid = str(entry[12])
+		# 9.24 #7：被策反过的单位，队伍以锁存为准 —— 回放的 team 不会自己变，
+		# 而模拟层是**永久**改掉的（守卫死了也不还）。这里补齐这一条跨不过边界的变更，
+		# 之后血条配色 / 敌方目标集合 / 存活计数就全都跟着对了。
+		apply_latched_team(f, str(entry[0]), _converted_ally_ids)
+
+# 9.24 #7：从**一帧回放**里抽出「本帧有哪些血之契约锁定了哪个目标」。
+#
+# 为什么写成不带任何实例状态的 `static`：这条修复的全部价值都落在"回放里到底能不能
+# 把策反还原出来"这个**可证伪**的问题上。所以它必须能被探针**直接调用生产实现**来验证，
+# 而不是靠探针自己复刻一份（复刻会随生产漂移 —— 老探针 probe_audio_920 正是这么瞎的），
+# 也不是靠源码文本断言（那只能证"写了"，证不了"对"）。
+#
+# 输入：frame = 某一帧的 entry 数组；by_uid = uid -> roster 字典（只为读 def.skill_id）。
+# 输出：uid(被策反者) -> 策反后所属队伍。
+static func latched_conversions_in_frame(frame: Array, by_uid: Dictionary) -> Dictionary:
+	var out: Dictionary = {}
+	if typeof(frame) != TYPE_ARRAY:
+		return out
+	for entry in frame:
+		# 需要第 12 列（vfx_skill_target_uid）。列数不足说明不是本格式，跳过。
+		if typeof(entry) != TYPE_ARRAY or (entry as Array).size() < 13:
+			continue
+		var caster: Dictionary = by_uid.get(str(entry[0]), {})
+		if caster.is_empty():
+			continue
+		var caster_def: Dictionary = caster.get("def", {})
+		if str(caster_def.get("skill_id", "")) != "shared_hp_link":
+			continue
+		var linked_uid := str(entry[12])
+		if linked_uid.is_empty():
+			continue
+		out[linked_uid] = str(caster.get("team", "player"))
+	return out
+
+
+# 9.24 #7：把锁存到的队伍写回一条解码结果。同样抽成 `static` 以便被探针直接跑。
+#
+# 为什么值得单独抽出来：第一版把这两行内联在 `_apply_replay_frame` 里，于是"接线有没有
+# 真的生效"只能靠**源码文本断言**兜底 —— 而文本断言挡不住 `if false and ...` 这种改法
+# （变异测试实测：改坏之后探针照样全绿）。做成纯函数后，判据就能落在**行为**上：
+# 给一个 team="enemy" 的 fighter，调用后它必须变成守卫的队伍。
+static func apply_latched_team(f: Dictionary, uid: String, conversions: Dictionary) -> void:
+	var converted_team := str(conversions.get(uid, ""))
+	if not converted_team.is_empty():
+		f["team"] = converted_team
+
 
 func _fail_team_replay(reason: String) -> void:
 	if _return_emitted:

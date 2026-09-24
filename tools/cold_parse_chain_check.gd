@@ -19,6 +19,11 @@ const TARGETS: Array[Dictionary] = [
 	{"kind": "script", "path": "res://scenes/battle/BattleRenderer.gd"},
 	{"kind": "script", "path": "res://scenes/battle/BattleVfx.gd"},
 	{"kind": "script", "path": "res://scenes/battle/BattleResult.gd"},
+	# ★ 9.24 补齐：链的**最上一层 BattleScreen.gd 本身**之前只是靠 BattleScreen.tscn
+	#   连带覆盖的。同 9.22 那条教训（"把链上每一层都单列出来，才是谁坏了就指谁"）——
+	#   9.24 这一批真的改了 BattleScreen.gd（回放解码里补"策反锁存"），
+	#   而它若解析失败，只能寄希望于 .tscn 连带报错，那就又回到靠侥幸。
+	{"kind": "script", "path": "res://scenes/battle/BattleScreen.gd"},
 	{"kind": "scene", "path": "res://scenes/battle/BattleScreen.tscn"},
 	{"kind": "scene", "path": "res://scenes/prep/PrepScreen.tscn"},
 	{"kind": "script", "path": "res://scripts/tutorial/TutorialMode.gd"},
