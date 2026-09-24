@@ -5,6 +5,34 @@ static func _mark_vfx_target(caster: Dictionary, target: Dictionary) -> void:
 	# Visual metadata only. Combat selection and damage remain unchanged.
 	caster.vfx_skill_target_uid = str(target.get("uid", ""))
 
+
+# 多目标版的 `_mark_vfx_target`。同样是**纯表现元数据**，不参与任何战斗判定。
+#
+# 为什么需要它（9.24 第四轮，用户报「非技能目标也出现了落雷」）：
+# 多目标技的演出过去由表现层自己猜目标集合，猜法有两个来源：
+#   ① 本帧的伤害事件 —— 那是**帧级**的，混着其它单位打出的伤害；
+#   ② 取不到就退回「全部存活敌人」—— 完全无视 `_can_target` 的路数限制。
+# 两者都与模拟器实际选中的目标不一致，于是雷落在非技能目标身上。
+# 正确做法是在**判定发生的地方**把结果记下来，表现层照抄。
+#
+# 写在既有的 `vfx_skill_target_uid` 字段里（逗号连接）：该字段是纯表现列，
+# 已过回放边界（见 `BattleSimulator._replay_capture_frame` 的第 12 列），
+# 所以**不需要新增列** —— 也就不会让 ReplayDigest 的玩法摘要漂移
+# （`SIMULATION_TOP_FIELDS` 含 `frames`，加列必然改哈希）。
+# uid 由模拟器生成（形如 `player_ember_3` / `enemy_boss_x`），**不含逗号**，
+# 所以逗号是安全分隔符。读侧统一走 `BattleVfx._vfx_target_uids()`，
+# 单目标（一个 uid）与多目标（逗号连接）两种写法它都吃。
+static func _mark_vfx_targets(caster: Dictionary, targets: Array) -> void:
+	var uids := PackedStringArray()
+	for t in targets:
+		var uid := str((t as Dictionary).get("uid", "")) if typeof(t) == TYPE_DICTIONARY else str(t)
+		if uid.is_empty() or uids.has(uid):
+			continue
+		uids.append(uid)
+	if uids.is_empty():
+		return
+	caster.vfx_skill_target_uid = ",".join(uids)
+
 static func _apply_death_servant_aura(servant: Dictionary, team_units: Array, d: Dictionary) -> void:
 	var duration := float(d.get("ally_def_duration", 5.0))
 	if duration <= 0.0:
@@ -102,10 +130,17 @@ static func _skill_archangel(caster: Dictionary, allies: Array, d: Dictionary) -
 
 
 static func _skill_god_king(caster: Dictionary, opponents: Array, d: Dictionary) -> void:
+	var struck := []
 	for o in opponents:
 		if not bool(o.get("alive", false)) or not _can_target(caster, o, opponents): continue
 		var dmg := int(float(caster.atk) * float(d.get("damage_atk_pct", 1.6))) + int(float(o.max_hp) * float(d.get("max_hp_bonus_pct", 0.08)))
 		DamageService.apply_damage(o, maxi(1, dmg), false)
+		struck.append(o)
+	# 9.24 第四轮：把**这一发真正选中的目标**交给表现层逐目标落雷。
+	# 记的是 `_can_target` 判定通过的目标，**不是**"打掉血的" —— 被闪避 / 被护盾
+	# 全吸收的目标同样是技能目标，雷照样要落在它头上（用户口径：
+	# 「在所有技能目标身上均触发落雷特效」）。
+	_mark_vfx_targets(caster, struck)
 
 
 static func _skill_silence_bolt(caster: Dictionary, opponents: Array, d: Dictionary, state: Dictionary) -> void:
@@ -124,7 +159,10 @@ static func _skill_fear(caster: Dictionary, opponents: Array, d: Dictionary, sta
 	var dur := _dark_duration(float(d.get("fear_sec", 1.5)), caster, state)
 	StatusEffectService.add_status(target, "stun", dur, {})
 	var away: Vector2 = (target.pos - caster.pos).normalized()
-	target.pos += away * 90.0
+	# 9.24：推离不超过战场边界；目标已被推到边缘时不再继续推离，
+	# 避免被推出场或与其它单位重叠（原实现直接 +90 无边界判断）。
+	var pushed: Vector2 = Vector2(target.pos.x, target.pos.y) + away * 90.0
+	target.pos = Vector2(clampf(pushed.x, 80.0, ARENA_W - 80.0), clampf(pushed.y, 60.0, ARENA_H - 60.0))
 
 
 static func _skill_stun(caster: Dictionary, opponents: Array, d: Dictionary, state: Dictionary) -> void:

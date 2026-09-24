@@ -1,99 +1,127 @@
 ========================================================================
-9.23 批次交付 —— 代码部分（同目录同路径镜像）
+9.24 批次交付 —— 代码 / 文档 / 门禁（同目录同路径镜像）
 ========================================================================
 
-用途
-    把本夹里的文件按**相同的相对路径**覆盖到你工程对应位置即可。
+本轮（同日第四轮订正）改了什么
+    用户第三次回执：**神王的技能落雷特效是否有显示错误，非技能目标也出现了落雷。**
 
-本夹内容：37 个文件
+    根因**不是模块接错，而是「打谁」是表现层自己猜的**。
+    第二版 context["targets"] 的两条来源都不是模拟器的真实选择：
+      先取「本帧所有伤害事件的目标」，空了再退回「当场所有存活敌人」。
+    而神王的真实规则是 range = 1（**只在同一 lane 内选目标**），他路敌人本不该落雷。
+    更糟的是第二条兜底在 global_divine_blast 上**几乎必然触发**：
+    技能把目标劈死之后存活敌人集合立刻收敛，退回分支就把"剩下的活人"全劈一遍。
 
-【本批的核心 —— 请务必覆盖这两个】
-    scenes\prep\PrepBoardController.gd
-        bug 文档第 1 条「两个同星级人王交换无效」的修复。
-        现场：两只**同星**人王**都在备战区**，互换位置无效；**不同星**的能换 ——
-        变量是**星级**，不是「在不在场上」。
-        根因：`elif can_merge_cells(...): if not _merge_copies_into_cell(...): return`
-        —— `can_merge_cells` 判的是「同 id + 同星 + 未满星」，两只同星人王满足它；
-        可「满足它」不等于「这一下合得成」：升星要几份看
-        `STAR_UPGRADE_COPIES = {1: 2, 2: 3}`，**2 星还得再凑第 3 份**。
-        两只人王互换时凑不出第 3 份 → 返回 false → **静默 return**，既不合成也不交换。
-        星级边界正好解释「不同星级可以换」：1 星只要 2 份、旧写法真的**合成**；
-        2 星缺第 3 份 → **交换无效**；3 星已到合成上限（`MAX_MERGE_STAR = 3`）、
-        `can_merge_cells` 为假 → 本来就走交换。
-        → 改成 `elif can_merge_cells(...) and _merge_copies_into_cell(...):`，合不成就落到交换分支。
-        四个 handler 都改了（一个 handler 只覆盖一种拖动方向）。
-    ui\services\SfxService.gd
-        15 条新 cue + 3 张派发表 + 按 cue 的音量覆盖表（黄金重骑 +6dB）。
+    修法：**在判定发生的地方就把结果记下来**。
+      * BattleSimSkills 新增 _mark_vfx_targets()，_skill_god_king 把每个通过 _can_target
+        的目标 uid 写进既有字段 vfx_skill_target_uid（逗号分隔）；
+      * 该字段**走既有的回放第 12 列、不新增列**（ReplayDigest 的 SIMULATION_TOP_FIELDS
+        含 frames，加列会改掉已冻结的回放哈希）；
+      * BattleVfx 新增 _vfx_target_uids() + resolve_skill_target_positions()（都是 static
+        纯函数），global_divine_blast 分支改为**只认这份记录**；退回旧口径被
+        recorded.is_empty() 锁死 —— 否则用户报的现象会原地复活。
+    ★ 解析时**不能按 alive 过滤**：神王逐个 apply_damage，排在前面的目标可能已被这道雷劈死；
+      而阵亡单位**不会被剪枝出 state 数组**（只翻 alive 标志），位置仍拿得到。
+      按 alive 过滤，**恰恰是"被这道雷劈死的那几只"不落雷** —— 正好反了。
 
-【16 个音效的接线】
-    ui\services\SfxService.gd
-        ★ 核心：15 条新 cue 常量 + `CUES` 登记 + `BOSS_SKILL_CUES`（7 条，狂战灾兽故意不在）+ `MERC_PROC_SKILL_CUES` + `STAR4_PROC_SKILL_CUES` 扩 4 条 + `boss_skill_cue_for()` / `merc_proc_cue_for()` + **按 cue 的音量覆盖表 `CUE_VOLUME_DB`**（黄金重骑 +6dB）；`play()` 里 `voice.volume_db = volume_db + cue_volume_db(cue)`
-    scenes\battle\BattleVfx.gd
-        ★ boss 技能音派发（**不做归属门控**，缩进在函数体层级）+ 灭世裁决者三拍（蓄力上升沿播 / `apocalypse_ended` 里先 stop 再分两支 / 完成支播全场伤害音）+ 新事件类型 `sfx_proc` 的派发 `_maybe_play_sfx_proc()`（**只出声，不加特效**）
-    scripts\battle\BattleSimulator.gd
-        5 处 `_emit_sfx_proc()`：`_perform_attack` 的 `balance_judge` 支、`_apply_attack_statuses` 的 `curse_attack` / `poison_attack` / `defense_down_attack` 三支、`_apply_defender_reaction` 里巨甲灵那条；外加静态方法 `_emit_sfx_proc()`
-    scripts\battle\BattleSimShared.gd
-        ★ 9.23 第五批：`_emit_sfx_proc()` **搬到这里**（原本在 BattleSimulator，但 SimSkills / SimTreasures 两个兄弟模块也要用；放在共享基类上避免循环依赖）。另外它是 `sfx_proc` 事件穿过**回放边界**的起点 —— 事件进 `state.visual_events`，回放采集时进 `frame_events`，所以真机（播回放）路径上音效派发才成立
-    scripts\battle\BattleSimSkills.gd
-        ★ 9.23 第五批：`_skill_apocalypse_charge` 返回类型 `void` → `bool`（true = 这次真的开始蓄力，不是「已经在蓄力」）；`_skill_mirror_clone` 返回类型 `void` → `int`（这次真的召唤出几个分身）。两个返回值就是调用方补事件的**判据** —— 没有它，「开始蓄力响一次」会退化成「每次 match 都响」、镜像魔君会退化成「每秒响一次」
-    scripts\battle\BattleSimTreasures.gd
-        ★ 9.23 第五批：`_apply_boss_attacker_passives(attacker, state)` 加 `state` 形参；`blood_rage` 支里补 `sfx_proc` 事件 —— 挂在 `not blood_rage_active` 这个守卫**里面**，所以「进入暴走的那一次、且仅一次」由代码结构保证，不是靠调用方自觉
-    scripts\battle\BattlePresentationEvent.gd
-        `KNOWN_TYPES` 登记 `sfx_proc` + `_default_visibility()` 给它 `VISIBILITY_IMPORTANT`（不登记会产生 `unknown_type:` 校验错）
-    scenes\prep\PrepBoardController.gd
-        ★ **bug 修复主文件**：四个搬运 handler 的「合不成就退回交换」（`elif can_merge_cells(...) and _merge_copies_into_cell(...):`）—— 修掉「两个同星级人王交换无效」
-    tools\audio_sfx_check.gd
-        cue 计数 60 → 75；`INDIRECT_CUES` 补 15 条新 cue + 9.23 第五批再补 `CUE_BOSS_APOCALYPSE_CHARGE/IMPACT`；`INDIRECT_ENTRIES` 把 `boss_skill_cue_for` 换成 `boss_cast_edge_cue_for` / `boss_event_action_for`（派发入口一拆为二，旧入口已不再是派发表）
-    tools\ui_feedback_check.gd
-        ★ 9.23 第五批：`_check_reject` 除 `screen_shake` 外**快照并按需关掉 `reduced_motion`**、收尾一并还原。原来只快照 screen_shake，于是「降低动态效果」开着的机器上必红（环境态，不是回归）；更要紧的是它同时制造假绿 —— `shake()` 提前返回 false 时不建 tween、不动控件，三条还原类断言「什么都没抖所以什么都没坏」全部通过
-    tools\audio_0921_check.gd
-        `vfx_proc_wrong_branch` 断言由「按顺序」改成「按区间」（新的 `sfx_proc` 派发排在 `unit_skill_proc` 之前，旧判据会被自己的新代码判红）
-    tools\audio_0922_check.gd
-        ★ 本批新增行为探针（**104 项**），断言见 `docs/CHECKS.md`
-    tools\prep_swap_check.gd
-        ★ 本批新增行为探针（**30 项**）：四条搬运路径上「同星人王合不成就该交换」，另含**星级边界**用例（1 星该合成 / 3 星该交换）
-    tools\cold_parse_chain_check.gd
-        ★★ **加厚**：战斗继承链每一层单列成 target；script 类判据从「`load()` 非 null」升级为 **`can_instantiate()`**（解析失败的 GDScript 也是非 null 的，只有它能判出来）。读数 25 → 41
+    ----（以下为上一轮（第三轮）的回执与订正，仍包含在本版里，留作对照）----
+    用户第二次回执：
+      1) 神王的技能特效无显示 —— 希望和裁决者用同一落雷特效，
+         区别在于神王的目标是多个敌人，在所有技能目标身上均触发落雷；
+      2) 末日守卫技能把被连接目标变为我方棋子，这种变化**不随守卫死亡而停止**，
+         而我方棋子应该以**绿色血条**表示。
 
-【门禁 / 探针（不是产品代码，但建议一起收进来，方便你自己复跑）】
-    tools\audio_0922_check.gd / .tscn / .gd.uid  本批专用行为探针（104 项）
-    tools\prep_swap_check.gd / .tscn / .gd.uid   人王交换修复的探针（30 项，含星级边界）
-    tools\cold_parse_chain_check.gd              ★ 已加厚：script 类判据改用 can_instantiate()
-    tools\audio_sfx_check.gd                     音效门禁（cue 计数 60 → 75）
-    tools\audio_0921_check.gd                    上一批探针，本批改了它的 proc 分支断言
-    work\_qa_922\*                              批跑脚本 / 变异脚本 / 归因脚本 / 映射表
+    两条都出在上一轮的实现上，且都属同一大类：**改动落在了一条走不到的路上**。
 
-【文档】
-    docs\9.23第四批战斗音效与人王交换bug修复记录.md
-    docs\CHECKS.md     门禁变更日志
-    README.md          追加了「2026-09-23」小节
+    ① 神王：上一轮**认错了单位**。
+         god_king       -> skill_id = global_divine_blast   （用户要改的那只）
+         god_arbiter    -> judgement_strike
+         human_king     -> unique_king_growth               （上一轮误当成神王）
+       后果是一错两伤：神王什么也没发生；而**人王的普攻被悄悄变成了落雷**。
+       订正：两只都接到**字面上同一个函数** _aoe_thunder()（裁决者传空 context -> 1 道；
+       神王传 context["targets"] -> 逐敌各一道），人王还原为 _king_attack（天剑）。
+       ★ 用户要的「同一特效、只差目标个数」不靠"两处参数抄一致"来满足 ——
+         结构上同一段代码，才不会两个人各改一处就漂移。
 
-★ 订正（2026-09-23 同日，用户指出方向有误后）
-    第一版把现场写成「人王 unique_on_board，所以两只同星必然一只在场一只在待命区」，
-    并据此归因到唯一性 —— **错了**：唯一性限的是场上，备战区不限；
-    这个洞跟唯一性无关，跟**星级**有关（见上「星级边界」）。
-    已订正四处：源码注释、`tools/prep_swap_check.gd` 文件头、
-    `docs\9.23...记录.md` 第七节、本工程 README 的 2026-09-23 小节。
-    同时给 `prep_swap_check` 补了**星级边界用例**（1 星该合成 / 3 星该交换），
-    把「为什么只在 2 星暴露」钉成可执行断言（读数 26 → 30）。
+    ② 末日守卫：策反在**模拟层是永久的**（BattleSimulator._convert_link_target_to_caster_team
+       直接 `target.team = caster.team`，没有任何回退分支），但**表现层根本看不到**：
+         * 回放 frames 是 13 列、**没有 team 列**；
+         * roster 是**首帧快照**，对被策反单位永远说原队伍；
+         * 唯一线索是第 12 列 vfx_skill_target_uid（守卫那一行带着"我锁了谁"）。
+       上一轮把血条颜色绑在**连线的存活**上、染的是**契约色** —— 正好和用户要求相反。
+       订正三步：
+         1) BattleScreen.latched_conversions_in_frame() —— 纯 static，从一帧里还原策反关系；
+         2) BattleScreen.apply_latched_team()           —— 纯 static，把队伍写回；
+            _apply_replay_frame 先整帧扫、后逐条解码（守卫会把目标搬到己方数组**尾部**，
+            边扫边应用会漏帧），锁存表每局清空；
+         3) BattleRenderer 每帧按**当前队伍**重算血条颜色（同帧直切，不做渐变）。
+       旧的契约色整套（SHARED_LINK_BAR_COLOR / _hp_bar_base_colors /
+       _apply_shared_link_bar_tint）**已删除** —— 留着只会和队伍色打架。
+       **没有给回放帧加 team 列**：ReplayDigest 把 frames 算进被冻结的模拟摘要
+       （SIMULATION_TOP_FIELDS 含 frames），加列会改掉已冻结的回放哈希。
 
-★ 一处必须知道的坑（本轮自己踩的）
-    加 boss 派发时曾把 `elif _owned:` 的语句体整段抬出缩进，只剩注释 ——
-    GDScript 里这是**解析期错误**，整份 BattleVfx.gd 加载失败，沿继承链把
-    BattleResult / BattleScreen 一起带塌。**已修好**，并且给族里补了防线：
-      · `cold_parse_chain_check` 已进批跑，且判据从「load() 非 null」换成 `can_instantiate()`
-        （实测解析失败的脚本 `load()` 照样返回非 null 对象，只有它能判出来）
-      · `audio_0922_check` 补了 `vfx_merc_dispatch_dedented`（缩进判据）
+本轮新增 / 变动的门禁与探针
+    tools/cold_parse_chain_check.gd      清单补入 scenes/battle/BattleScreen.gd
+        —— 上一轮改了 BattleScreen.gd 却**不在解析链清单里**，于是「改 scenes/battle/**
+        必跑解析链」这条自定规矩对我改的那个文件**根本没生效**（当时是假绿）。checked 41 -> 44。
+    work/_qa_922/probe_doom_thunder_924.gd / .tscn
+        行为探针，**57 条读数**（第三轮 38 + 第四轮 19），**已并入批跑**。
+        Part 5 跑**生产实现 _skill_god_king** + 真实 state：神王占 0 路、敌方三路各一只，
+        期望值**由 lane 独立算出、不借 _can_target 自证**，实测记录 ["test_s3_c2"]（只有本路一只）；
+        Part 6 直调纯函数 resolve_skill_target_positions：1 个记录 uid -> **只准出 1 个落点**
+        （用户截图现象本身）、顺序保持、未知 uid 跳过、**被劈死的目标仍出落点**。
+    work/_qa_922/mutate_doom_thunder_924.py
+        **10 个变异**（A–F 管上一轮 ③⑦；G–J 管本轮的目标集合），证明探针真的会红；
+        还原后逐字节 sha256 一致。
+        ★ 本轮变异 I（把"没有记录才退回"的开关放开）**只有结构断言能抓** ——
+          Part 6 直接调纯函数，**绕过了那个开关**。上一轮的教训是「只有一类断言时必然漏」，
+          这一轮坐实：**行为断言 + 结构断言两类都要有，缺哪类就有哪类的盲区。**
+    work/_qa_922/run_gates.py
+        新增 _scene_for()：tools/<name>.tscn 找不到时回落到 work/_qa_922/<name>.tscn，
+        **让行为探针也能进批跑**（分两处跑就等于总有一条会被忘掉）。
+        批跑清单 19 -> 21 条（+ oga_projectile_swap_check、+ probe_doom_thunder_924）。
 
-校验
-    _sha256清单.txt 里逐文件列出了 sha256，可自行核对。
+★★ 这轮变异测试真正买到的东西不是「通过了」，而是「第一次没过」
+    变异 C（把写回条件改成 `if false and ...`）与 E（把写回调用点整行**注释掉**）
+    最初**都没被抓到** —— 因为判据当时是**源码文本** src.contains(...)，
+    而改坏之后**源码里那两行一个字都没变**，于是照样绿。
+    修法：把写回逻辑抽成**纯函数** apply_latched_team() 让探针直接调（C 的判据落到**行为**上）；
+          把文本断言换成**注释感知**的 _has_live_code()（E 的判据能看穿 #）。
+    通用教训：**文本断言必须能看穿注释；能做成行为断言的就别用文本断言。**
 
-注意
-    * 覆盖代码后**建议重跑**这几条：
-        Godot_v4.7.2-stable_win64_console.exe --headless --path <你的工程> tools\cold_parse_chain_check.tscn
-        Godot_v4.7.2-stable_win64_console.exe --headless --path <你的工程> tools\audio_0922_check.tscn
-        Godot_v4.7.2-stable_win64_console.exe --headless --path <你的工程> tools\prep_swap_check.tscn
-      期望最后一行分别是 PASS 41、PASS 104、PASS 30。
-    * 五条既存红与本次改动无关（voice 8 / ui_feedback 1 / procedural_ui_ratchet 3 /
-      prep_text_coverage 1 / dynamic_call 4），逐条归因见 docs 记录第十节。
-    * 本批 `project.godot` **逐字节未变**。
+怎么复跑
+    1) 批跑全部门禁（21 条）：
+         <python> work/_qa_922/run_gates.py        # 由 python 调 godot 跑，见文件头注释
+    2) 单跑本批新门禁 / 探针：
+         <godot> --headless --path <工程> tools/oga_projectile_swap_check.tscn
+         <godot> --headless --path <工程> tools/cold_parse_chain_check.tscn
+         <godot> --headless --path <工程> work/_qa_922/probe_doom_thunder_924.tscn
+    3) 复现贴图：python work/_qa_922/make_metal_arrow_924.py
+    4) 复现变异证据：python work/_qa_922/mutate_oga_swap_924.py
+                      python work/_qa_922/mutate_archer_924.py
+                      python work/_qa_922/mutate_doom_thunder_924.py
+       （三者都 try/finally 还原，并逐字节比对 sha256 后才退出）
+
+需要留意的四点
+    1) 本机**没有可用的 git.exe**，所以「改动清单」是靠文件 mtime + 本轮实际编辑动作反推的；
+       project.godot 只能说明「本批没碰它」，不等于与某个基线 commit 逐字节相同。
+    2) 另有既存红 4 条（voice 8 / prep_text_coverage 1 / dynamic_call 4 /
+       procedural_ui_ratchet 3），均**不是本批引入**，归因见 docs 记录 11.2；
+       **没有**用 --update-baseline 刷绿。
+    3) ★ **批跑清单之外还有一条红的：asset_manifest_check**
+       （checked=3112 failures=6 allowed=4，rc=1）。它**不在** run_gates.py 的 21 条里，
+       所以「17 PASS / 4 FAIL」这个口径**没有涵盖它** —— 不主动说就是漏报。
+       本批新增了 human_archer_metal_arrow.png，故单跑核对过一次：
+       6 条 FAIL[missing_asset] 全是既存（work/bug09xx* 截图与 assets/ui/avatars/thumb，
+       引用方是本批没碰的 tools/bug09xx_check.gd / data/avatars.json）；
+       **新增的金属箭贴图不在任何失败项里**。
+       **没有**跑 tools/update_asset_manifest.ps1 刷新基准 —— 该仓 dirty_tracked_files=54，
+       刷基准会把另外 53 个无关脏文件一起吞进基准、掩盖它们的漂移（与 --update-baseline 同类错误）。
+    4) **未做真机 / 安卓观感验收**。本轮两条（神王落雷覆盖 / 血条变绿）的观感都**没有**真机确认；
+       探针能证明「神王每个目标各落一道雷、与裁决者同一函数同一配色表」和「策反后 f.team 真的变了、
+       血条真的按当前队伍重算」，**证明不了你屏幕上看着对**。
+       另外 **3D 脚下的队伍色环不跟随策反**（_actor_team_color 仍是建节点时定死）——
+       用户这轮只提"血条"，未擅自扩大改动面。
+
+小提示：本夹里的 _说明.txt 与 _sha256清单.txt 是**由生成器脚本重写的** ——
+想改说明请改 work/_qa_922/make_delivery_924.py 再重跑，直接手改本文件会在下次重跑时被静默还原。

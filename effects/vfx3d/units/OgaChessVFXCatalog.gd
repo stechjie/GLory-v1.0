@@ -45,9 +45,20 @@ const DISPLAY_NAMES := {
 }
 
 const PROJECTILES := {
+	# 9.24 订正 #2：神侍 ↔ 极光射手普攻投射物对换。
+	#
+	# ⚠️ 这张表才是**玩家棋子远程普攻的真正入口**。`UnitSkillVFXComposer3D._basic_attack`
+	# 一开头就 `OGA_CHESS_CATALOG.projectile_for(uid)`，命中就 `return` ——
+	# 同一文件里的 `BOLT_KIND_BY_UNIT` / `PROJECTILE_TEX_BY_UNIT` 对**玩家棋子根本不生效**。
+	# 上一版把对换写在那边 = 白改（用户报的「未对换完成」就是这个）。
+	#
+	# 用户口径：**只对换模型，飞行速度不变**。所以这里只换「模型」那一组字段
+	# （path / columns / rows / frame_count / fps / size / color / emission_scale），
+	# `speed` / `arc_height` / `wobble` 与 `impact_*` 全部**留在原主身上**不动。
 	"god_priest": {
-		"path":"res://assets/vfx/oga/projectiles/god_priest_star_lance.png", "columns":5, "rows":1, "frame_count":5,
-		"fps":13.0, "size":Vector2(0.72,0.72), "speed":5.6, "arc_height":0.10, "wobble":0.015,
+		"path":"res://assets/vfx/oga/projectiles/god_aurora_light_spear.png", "columns":5, "rows":1, "frame_count":5,
+		"fps":18.0, "size":Vector2(0.78,0.34), "speed":5.6, "arc_height":0.10, "wobble":0.015,
+		"color":Color(0.52,0.78,1.0,0.94), "emission_scale":0.60,
 		"impact_path":"res://assets/vfx/oga/impacts/god_priest_hit.png", "impact_columns":5, "impact_rows":1, "impact_frames":5, "impact_fps":15.0, "impact_size":Vector2(0.74,0.74),
 	},
 	"god_priestess": {
@@ -67,10 +78,11 @@ const PROJECTILES := {
 		"color":Color(0.88,0.94,1.0,0.92), "emission_scale":0.60,
 		"impact_path":"res://assets/vfx/oga/impacts/god_archangel_hit.png", "impact_columns":5, "impact_rows":1, "impact_frames":5, "impact_fps":13.0, "impact_size":Vector2(0.62,0.62), "impact_emission_scale":0.62,
 	},
+	# 9.24 订正 #2：接过神侍原本的「星矛」模型（模型对换的另一半）。
+	# 速度/弧线/摆动/命中依旧属于极光射手自己（10.5 / 0.02 / 0.0 / god_aurora_hit）。
 	"god_aurora": {
-		"path":"res://assets/vfx/oga/projectiles/god_aurora_light_spear.png", "columns":5, "rows":1, "frame_count":5,
-		"fps":18.0, "size":Vector2(0.78,0.34), "speed":10.5, "arc_height":0.02, "wobble":0.0,
-		"color":Color(0.52,0.78,1.0,0.94), "emission_scale":0.60,
+		"path":"res://assets/vfx/oga/projectiles/god_priest_star_lance.png", "columns":5, "rows":1, "frame_count":5,
+		"fps":13.0, "size":Vector2(0.72,0.72), "speed":10.5, "arc_height":0.02, "wobble":0.0,
 		"impact_path":"res://assets/vfx/oga/impacts/god_aurora_hit.png", "impact_columns":4, "impact_rows":4, "impact_frames":16, "impact_fps":22.0, "impact_size":Vector2(0.58,0.58), "impact_emission_scale":0.64,
 	},
 	"dark_mage": {
@@ -84,8 +96,23 @@ const PROJECTILES := {
 		"fps":17.0, "size":Vector2(0.88,0.50), "speed":8.2, "arc_height":0.03, "wobble":0.020,
 		"impact_path":"res://assets/vfx/oga/impacts/dark_queen_hit.png", "impact_columns":5, "impact_rows":1, "impact_frames":5, "impact_fps":16.0, "impact_size":Vector2(0.88,0.88),
 	},
+	# 9.24 订正 #6：弓箭手普攻投射物「形态和角色不符」→ 改成金属箭矢。
+	#
+	# ⚠️ 这条**只能改在这里**。9.24 第一版把 `BOLT_KIND_BY_UNIT` 改成 "metal_arrow"
+	# 并给 `VFXRaceBasicAttack3D` 加了一个程序化金属箭网格体 —— 那是**死代码**：
+	# 弓箭手是玩家棋子，`_basic_attack` 会先命中本表并 return，永远走不到 race bolt。
+	#
+	# 为什么最终没有走「程序化网格箭体」而是换一张手绘贴图：
+	#   ① 本表自带 `impact_path` = human_archer_hit.png（4x4 / 16 帧的专属命中爆）。
+	#      一旦改走程序化弹体路径，命中特效会被一并换成通用 `_spawn_linear_hit` ——
+	#      而这条需求只要求改「投射物形态」，命中特效属于误伤。
+	#   ② 12 只玩家棋子的弹道全是手绘贴图，插一个硬边网格体会「不贴合画风」。
+	#   ③ 换贴图的影响面最小：speed / fps / size / impact_* 全部不动。
+	#
+	# 新图由 work/_qa_922/make_metal_arrow_924.py 依**原图实测的 45° 前向轴**生成
+	# （960x176 = 6x160x176，与原图同分格），无需向美术要新资源。
 	"human_archer": {
-		"path":"res://assets/vfx/oga/projectiles/human_archer_blue_wind_arrow.png", "columns":6, "rows":1, "frame_count":6,
+		"path":"res://assets/vfx/oga/projectiles/human_archer_metal_arrow.png", "columns":6, "rows":1, "frame_count":6,
 		"fps":20.0, "size":Vector2(0.92,0.40), "speed":11.5, "arc_height":0.05, "wobble":0.0,
 		"impact_path":"res://assets/vfx/oga/impacts/human_archer_hit.png", "impact_columns":4, "impact_rows":4, "impact_frames":16, "impact_fps":24.0, "impact_size":Vector2(0.58,0.58),
 	},

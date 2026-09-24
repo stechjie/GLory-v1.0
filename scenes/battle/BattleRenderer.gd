@@ -90,6 +90,13 @@ func _refresh_visuals() -> void:
 		var hp_bar: ColorRect = _hp_fill_by_id.get(_visual_id(f))
 		if hp_bar != null and is_instance_valid(hp_bar):
 			hp_bar.scale.x = clampf(float(f.hp) / float(maxi(1, f.max_hp)), 0.0, 1.0)
+			# 9.24 #7：血条颜色要跟着**当前**队伍走，不能像原来那样只在建节点时定死。
+			# 末日守卫的血之契约会把敌方目标永久策反成我方棋子，颜色必须同帧变绿
+			# （绿=我方 / 红=敌方，见 _hp_color_for_team）。这里改的是同一帧的填充色，
+			# 不做动画 —— 用户要的是"同步改变"，不是渐变。
+			var want_color: Color = _hp_color_for_team(_display_team(f))
+			if hp_bar.color != want_color:
+				hp_bar.color = want_color
 	_update_3v3_dividers()
 	_sync_battle_readability_static_geometry()
 	_update_battle_readability_focus()

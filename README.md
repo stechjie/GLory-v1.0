@@ -1698,3 +1698,203 @@ BattleVfx 里那三条旧调用点**删干净**（挂 `apocalypse_charging`，�
 交付夹按同一份清单 **restage 覆盖**（新增进清单：`BattleSimShared.gd` / `BattleSimSkills.gd` /
 `BattleSimTreasures.gd` / `ui_feedback_check.gd` 与本批 doc）。未做安卓 / 真机听感验收，未重新导出 EXE / APK。
 详见[9.23 第五批 boss 技能音双通道订正记录](docs/9.23第五批boss技能音双通道订正记录.md)。
+
+## 2026-09-24：技能与弹道 10 条（命中后结算 / 落雷重设计 / 沉默箭 / 血契连线 / 法师首技能 / 弓箭手金属箭）
+
+依据用户《技能及弹道效果问题提交及修复.docx》（客户端 `GloryBeta0924`）的 **10 条**投射物与技能表现问题。
+用户给的三条约束：① 命中 ≥2 距离的远程单位要在**命中之后**再结算状态 + 伤害 + 播命中音（**纯表现层**）；
+② 沉默箭 = 发投射物 → 命中 → 结算沉默 + 伤害；③ 4 个程序化特效（神王落雷 / 裁决者落雷 / 沉默箭 /
+弓箭手金属箭）要贴合画风、**不夸张、不挡视野、不视觉疲劳**。另经问答锁定：延迟范围取**全量延迟**
+（飘字 + 状态图标 + 命中音 + 命中闪光一起延到弹体落地）；素材取**复用现有模块** ——
+落雷复用 `VFXLightningArc`、沉默箭复用 `cosmic_orb` / `cosmic_seal`、血链复用既有的
+`VFXDoomBloodLink3D`。唯一新增的资源文件是 ⑩ 的金属箭贴图，且它是**由代码生成**的
+（`make_metal_arrow_924.py`，不向美术要图），原因与取舍见下方 ⑩ 条目。
+
+★ **用户回执共四轮，每轮都推翻了我一部分实现。四轮的共同根因是同一个：改动落在了一条
+走不到、或语义理解错的路上，而当时没有任何判据会红。** 前两轮见下方的 ② 与 ⑩，
+第三轮见本节末尾的「③ 认错单位 / ⑦ 策反跨不过回放边界」，
+第四轮见紧随其后的「③ 落雷劈到了非技能目标」。
+
+**① 的根因不在弹体，在 cue 的节拍。** 3D 弹体 `VFXRaceBasicAttack3D._play_ranged` 早就按
+`clampf(距离/弹速, 0.28, 0.80)` 正确落地；错的是 `LegacyBattleVfxAdapter` 里
+`projectile_spawn` 用**写死的 0.10s 短节拍**收尾，于是 `impact`（屏震）与 `hit_number`（伤害飘字）
+在弹体还在飞时就打出去了。改法：`BattleVfx` 新增 `_RANGED_BOLT_SPEED` / `_RANGED_BOLT_KIND_BY_UNIT`
+纯表现查表与 `cue_ranged_flight_time()`（与 `_play_ranged` **同公式**，距离取世界坐标 x/z 投影），
+adapter 的 `_play_projectile` 改按这个真实飞行时长完成 cue（`has_method` + `> 0.0` 双层兜底，
+查表缺失即退回原节拍）。**模拟器的结算顺序一个字没动** → 数值 / 暴击 / 胜负与回放兼容。
+
+**★★ ② 第一版改在了死代码上（用户回执「未对换完成」）。** 第一版把对换写在
+`UnitSkillVFXComposer3D` 的 `BOLT_KIND_BY_UNIT` + `PROJECTILE_TEX_BY_UNIT` 上 ——
+**这两张表对玩家棋子根本不生效**：`_basic_attack` 开头就 `OGA_CHESS_CATALOG.projectile_for(uid)`
+并**命中即 return**，权威表是 `OgaChessVFXCatalog.PROJECTILES`。
+（顺带查明：那两张表里的 `god_aurora` / `human_archer` 条目**本来就是死条目**。）
+正确落点：只换「模型」那一组字段（path / columns / rows / frame_count / fps / size / color /
+emission_scale），`speed` / `arc_height` / `wobble` / `impact_*` 留在原主身上 ——
+落实用户口径**「只对换模型，飞行速度不变」**（神侍仍 5.6、极光仍 10.5）。
+「谁先谁后」是这条的要害，所以判据用**源码文本顺序**断言：`oga_projectile_swap_check` 要求
+OGA 目录查询必须排在 race bolt 之前，并已用变异测试证明「把对换撤回去」会红。
+★ 同一处路由也修正了 ① 的计时：玩家棋子改按 **OGA spec 的 `speed`** 算飞行时长
+（否则神侍真实 5.6 会被按 10.0 估，①「命中后才结算」就越算越不准），限幅同步
+`VFXFlipbookProjectile3D` 的 `[0.24, 0.82]`。
+
+**③ 落雷：复用模块 ≠ 照搬外观；而且第一版还认错了单位。** 第一版直接复用 `VFXLightningArc` ——
+但它**默认冷蓝**，而用户随文档附上的设计稿（`桌面/落雷技能特效设计/`）**明确要求白芯 + 暖金边、
+并点名不要冷蓝**。于是给 `play_arc(origin, target, palette := {})` 加**可选配色**（不传 = 保持原冷蓝，
+既有调用方如雷怒核心行为不变），把引导线 / 主弧三层 / 两条支叉 / 命中闪光 / 地表残弧全改为查 `pal`；
+composer 新增 `HOLY_THUNDER_PALETTE` 白芯暖金。
+★★ **但第一版接错了技能 id**：`unique_king_growth` 属于 **`human_king`（人王）**，
+神王（`god_king`）的技能 id 是 **`global_divine_blast`**。后果是**一错两伤**：
+神王（用户真正要改的那只）什么也没发生，而**人王的普攻被悄悄变成了落雷**（我引入的新回归）。
+第三轮订正：两只都接到**字面上同一个函数** `_aoe_thunder()` —— 用户要的「和裁决者用同一落雷特效，
+区别只在于目标是多个敌人」**不靠"两处参数抄一致"来满足**（那样两个人各改一处就会漂移），
+而是结构上成立：裁决者传空 context → 退回 `[target]` 一道；神王传 `context["targets"]`（当场所有敌人）→ N 道。
+`unique_king_growth` 已还原为 `_king_attack`（人王的天剑）。**两家的基础普攻都不动。**
+
+★★★ **③ 第四轮订正（用户回执：「非技能目标也出现了落雷」）。模块接对了，但"打谁"是表现层自己猜的。**
+第二版的 `context["targets"]` 有两条来源都不是模拟器的真实选择：先取「本帧所有伤害事件的目标」，
+空了再退回「当场所有存活敌人」。于是**雷劈到了神王这轮没选中的敌人身上** ——
+而神王的真实规则是 `range = 1`，**只在同一路（lane）内选目标**，他路敌人本不该落雷。
+更糟的是第二条兜底在 `global_divine_blast` 上**几乎必然触发**：技能把目标劈死之后，
+存活敌人集合立刻收敛，退回分支就会把"剩下的活人"全劈一遍。
+修法：**在判定发生的地方就把结果记下来** —— `BattleSimSkills` 新增 `_mark_vfx_targets()`，
+`_skill_god_king` 把每个通过 `_can_target` 的目标 uid 写进 `caster.vfx_skill_target_uid`（逗号连接）。
+该字段**走既有的第 12 列**，不新增回放列（`ReplayDigest` 把 `frames` 算进了冻结摘要，加列会改哈希）。
+表现侧新增 `_vfx_target_uids()` + `resolve_skill_target_positions()`（都是 **static 纯函数**，
+供探针直接驱动），`global_divine_blast` 分支改为**只认这份记录**；退回旧口径被
+`recorded.is_empty()` 锁死 —— **只有拿不到记录（老回放 / 记录为空）才允许退回**，
+否则用户报的现象会原地复活。
+★ 一个反直觉但必须做对的细节：解析时**不能按 `alive` 过滤**。神王是逐个 `apply_damage` 的，
+排在前面的目标可能已经被这道雷劈死；阵亡单位**不会被剪枝出 state 数组**（`alive` 只翻标志），
+所以位置仍然拿得到。按 `alive` 过滤的话，**恰恰是"被这道雷劈死的那几只"不会落雷** —— 正好反了。
+
+**④ 沉默箭原本真的没有箭体。** `silence_bolt` 走的是「聚气 + **凭空落封印**」的 pack 技能。
+改：`OgaSkillVFXCatalog.PROJECTILES` 新增 `"silence"`（箭体复用 `cosmic_orb.png`、命中复用
+`cosmic_seal.png`，`speed = 9.0`，且把 `arc_height` 压到 0.05 / `wobble` 0.012 让它**贴地平飞**），
+composer 新增 `_oga_silence_bolt()` 走 `VFXFlipbookProjectile3D` —— 该模块**自带「抵达时播 impact」**，
+所以命中这一下是模块保证的。命中音据 `cue_silence_hit_delay()`（`dist / 9.0`，限幅 [0.24, 0.82]）+
+新增的 `_play_sfx_delayed()` 对齐到箭体落地。**沉默状态的模拟结算时刻不变**，只挪音效与封印动画。
+
+**⑤ 恐惧魔推离**原本**无条件 +90**，目标贴边就被推出场外、再被拉回最近合法点、和推它的单位叠一起 ——
+正是用户报的「双方重叠」。改为 `clampf` 到战场边界（`80 ~ ARENA_W-80` / `60 ~ ARENA_H-60`），
+到边缘不再继续推。★ 附带修掉一个**类型推断坑**：`target.pos` 是 Variant，直接参加算术会
+`Parse Error` 并**连带污染 `BattleSimulator.gd` 与 `NetworkService.gd`**（三个文件一起红），
+必须先 `Vector2(target.pos.x, target.pos.y)` 显式取值。
+
+**⑦ 末日守卫血之契约（用户报的两个不对称毛病）。** 被连接方先死特效还挂着 / 守卫先死被连接方没标志。
+连线本体改用**本就为它而写、却一直是死代码**的 `VFXDoomBloodLink3D`（暗红黑紫手绘绳体 + 两端结 +
+**断裂时从中段撕裂**），并改走 **forced 通道**——持续数秒的玩法状态被并发上限静默丢弃就等于「连线没出现」。
+★ 真因在 `_sync_persistent_unit_vfx` **只看了守卫自身**：补上 `target_alive` 检查
+（目标阵亡会被剪枝 → 取回空字典 → `alive=false` → 失效 → `release_link()`），两个方向才对称。
+音效仍保留「只在开始释放时播一次」的语义（`shared_hp_link` 是一次性技能，但模拟器每轮
+`skill_ready = elapsed + 1.0` 会让上升沿**每秒再满足**，不记 `_doom_skill_sfx_played` 就会每秒重响）。
+
+★★ **血条那条第一版也做错了，第三轮订正（用户回执：策反「不会随守卫死亡而停止」，
+我方棋子应「以绿色血条表示」）。** 先把模拟层语义读清楚：`shared_hp_link` 触发的是
+`BattleSimulator._convert_link_target_to_caster_team` —— `target.team = caster.team`，**永久改写、
+没有任何回退分支**。也就是**策反不是"被绑住"，而是"变成我方棋子"，守卫死了也不还**。
+第一版把它当成「两者之间的契约」：给**双方**染一条暗红契约色（`SHARED_LINK_BAR_COLOR`），
+且存活判据跟着**连线**走 —— 正好和用户强调的"不随死亡停止"相反，颜色也不是用户要的。
+而且**表现层根本看不到策反**：回放 `frames` 是 **13 列、没有 `team` 列**，
+`roster` 是**首帧快照**（对被策反单位永远说原队伍）；唯一线索是第 12 列 `vfx_skill_target_uid`
+（守卫那一行带着"我锁了谁"）。
+第三轮改为三步：① `BattleScreen.latched_conversions_in_frame()`（**纯 static**，从一帧里还原策反关系）；
+② `BattleScreen.apply_latched_team()`（**纯 static**，把队伍写回）；`_apply_replay_frame` 里
+**先整帧扫、后逐条解码**（守卫会把目标搬到己方数组**尾部**，边扫边应用会漏帧），锁存表每局清空；
+③ `BattleRenderer` 每帧按**当前队伍**重算血条颜色（同一帧直切，不做渐变）。
+旧的契约色整套（`SHARED_LINK_BAR_COLOR` / `_hp_bar_base_colors` / `_apply_shared_link_bar_tint`）**已删除** ——
+留着只会和队伍色打架。**没有给回放帧加 `team` 列**：`ReplayDigest` 把 `frames` 算进被冻结的模拟摘要
+（`SIMULATION_TOP_FIELDS` 含 `frames`），加列会改掉已冻结的回放哈希，破坏面远大于本次修复。
+
+**⑨ 法师首技能「无声无弹道只掉血」—— 根因是播种帧吃掉了上升沿。** 先排除了 SFX 表缺项，
+写了**行为级探针** `probe_mage_cast_924`（离散 tick 路径 + **回放**路径双路实测）：离散路径正常，
+回放路径首次施法整段丢失。因为真实 3v3 播的是**回放**，而 `_replay_capture_frame` 在 `step_state`
+**之后**才写帧 → `frames[0]` 已是「step 过一次」的状态，播种帧却拿它当基线 `_vfx_prev_units = current`；
+法师 `range = 4`（288px）**覆盖了开战站位距离**，第 0 tick 就施法，其 `skill_ready` 上升沿
+**整段落在基线之前** → 那句 `now.skill_ready > prev.skill_ready + 0.1` 永远看不到它。
+**用户说的「只造成伤害」是准确的**：伤害在模拟里照算（血在掉），丢的是表现层的弹道与技能音。
+修法：`SEED_ALREADY_CAST_TRACE` 表 + `_seed_cast_already_fired()`，播种帧补演。
+★ **判据必须是「施法才会写的痕迹」，不能用 `skill_ready`**：带 `opening_cd` 的单位开场就把
+`skill_ready` 抬起来却没施法，镜像魔君的分身更是固定 `9999.0`（**永不施法**的哨兵值）。
+法师的 `random_attribute_bolt` 施法时同步 `attack_count += 1`，所以用它。表为空 / 字段为 0
+一律返回 false —— **宁可不补，也不凭空播一次不该有的施法演出**；目前表里**只有法师一条**。
+
+**⑩ 弓箭手金属箭（第二轮订正）。** 第一版和 ② 犯的是**同一个错**：弓箭手也是玩家棋子，
+所以「改 `BOLT_KIND_BY_UNIT → "metal_arrow"` + 新写 `_body_metal_arrow()` 程序化网格箭体」
+**全是死代码**（这一版的死代码已删除）。第二轮改为**只换弹体那一张贴图**：
+`OgaChessVFXCatalog.PROJECTILES["human_archer"].path` → 新生成的
+`human_archer_metal_arrow.png`（960×176 = 6×160×176，与原图同尺寸同分格），
+内容为深钢箭杆 + 三角金属镞（前缘高光 + 中脊）+ 两片后掠箭羽 + 柔光 halo + 尾部动能残影，
+由 `work/_qa_922/make_metal_arrow_924.py` 生成（可复现），已 `--import` 重导
+（新 `.import` 与同目录 11 张图**参数逐行一致**）。
+**为什么最终没用网格箭体**：① 会连带把弓箭手的 `human_archer_hit.png`（**16 帧专属命中爆**）
+换成程序化路径的通用 `_spawn_linear_hit` —— 而用户这条只要求改「投射物形态」，命中属误伤；
+② 12 只玩家棋子的弹道贴图全是手绘贴图，插一个硬边网格体**不贴合画风**（用户的硬要求之一）。
+`speed`(11.5) / `fps`(20) / `size`(0.92,0.40) / `impact_*` **全部不动**，影响面最小。
+★ **朝向是这里的暗坑**：flipbook 用 `set_uv_rotation(_screen_facing())` 把贴图转向目标，
+前提是贴图自身朝**右上 45°**（原图 alpha 主轴实测 44.0~46.3°）；若换成一张「朝右」的箭，
+飞行时整支箭会歪 45°。新图按同一 45° 轴绘制，门禁实测 **45.0°**。
+（判据用 **alpha 加权主成分轴**，不是「离重心最远的点」—— 箭镞质量大会把重心整体拉向前方，
+最远点恒落在箭尾，第一版就这么写错、实测反向误报 -136.5°。）
+
+⑥⑧ 两条纯文案（偷袭者补「冷却时间5.0秒」、寄生灵改「普攻标记非 Boss 敌人，被标记敌人死亡时」）
+落在 `scripts/ui/UnitDetailFormat.gd`，不动任何数值与判定。
+
+**验证（第四轮后最终口径）：批跑 21 条 → 17 PASS / 4 FAIL，4 条红全部核对过原始判据、确认为既存、归因明确。**
+相关门禁全绿且计数与 9.23 持平（`cold_parse_chain` **44** / `audio_sfx` **226** / `audio_0922` **174** /
+`audio_0921` **80** / `battle_presentation_event` **8314** / `battle_cue_profile` **169** / `ui_feedback` **41** /
+`prep_swap` **30** / `merge_rule_parity` **29**；新增 `oga_projectile_swap` **65**、新增行为探针
+`probe_doom_thunder` **57**）。`cold_parse_chain` 的 41→44 不是"多查了几条无关的"，是**补掉一个真窟窿**：
+上一轮我改了 `BattleScreen.gd`，而它**不在**解析链清单里 ——
+「改 `scenes/battle/**` 必跑解析链」这条自定规矩对我改的那个文件**根本没生效**（当时是假绿），本轮已补进清单。
+既存红：`voice` **8**、`prep_text_coverage` **1**
+（`FAIL [detail_margin_too_small]`，**布局内边距**问题，本批对该文件只改了文案字符串）、`dynamic_call` **4**
+（3 条既存 `PrepUI.gd:1078/1079/1080` Callable + 1 条 `unresolved_grew` 棘轮，277 → **280**，
+**本轮计数未再增长**；试过给新加局部变量补类型标注，**实测没有下降**，增量来自无法避免的鸭子类型调用点）、
+`procedural_ui_ratchet` **3**
+（`StyleBoxFlat.new() 29→30` / `Button.new() 89→92`，**全落在本批一个字没动过的 `FourStarUpgradePanel.gd`**）。
+⚠️ **没有用 `--update-baseline` 刷绿** —— 那正是棘轮禁止的自愈松棘轮。
+★ **批跑之外还有一条红的，主动报上**：`asset_manifest_check`（`checked=3112 failures=6 allowed=4`）**不在
+`run_gates.py` 的 21 条清单里**，所以上面的「17 PASS / 4 FAIL」口径**并未涵盖它**。本批新增了一张贴图，
+故单独跑了一次核对：6 条 `FAIL [missing_asset]` 全是既存（`work/bug09xx*` 的截图与
+`assets/ui/avatars/thumb`，引用方是本批没碰的 `tools/bug09xx_check.gd` / `data/avatars.json`），
+**新增的金属箭贴图没有出现在任何失败项里**。**没有**跑 `tools/update_asset_manifest.ps1` 刷基准 ——
+该仓 `dirty_tracked_files=54`，刷基准会把另外 53 个无关脏文件一起吞掉、掩盖其漂移。
+★ **必须读 raw stdout**：`run_gates.py` 只打印含 `CHECK_RESULT` / `PROBE_DONE` 的行，`SCRIPT ERROR` / `Parse Error`
+**不在其中**（9.22 就因此漏掉过 `BattleVfx.gd` 的解析期错误，进程静默挂死而汇总照样 PASS）；
+本批用 `run_cold_parse_924.py` 单独捕获原始输出落盘（`cold_parse_924_raw.txt`）再核查，确认无 `SCRIPT ERROR`。
+
+**★ 本批的验证强度要说清楚，不粉饰。** 10 条里有**可证伪演示的是 ⑨ / ② / ⑩ / ③⑦ 四条**：
+⑨ 用行为级探针拿到「修复**前 3 项全红** → 修复**后 3/3 PASS**」（播种帧 `composer=1 / sfx=1`）；
+② 与 ⑩ 由新增门禁 `oga_projectile_swap_check`（**PASS 65**）覆盖，并做了**四个变异测试**证明它会红 ——
+撤销 ② 对换 → `model_not_swapped`；改 ② 速度 → `speed_changed`；⑩ 贴图改回风之箭 →
+`archer_not_metal_arrow`；⑩ 贴图换成**朝右(0°)** 的箭（**真换像素 + 重导**才能证明朝向判据）→
+`archer_sheet_orientation`。四个变异全部 `try/finally` 还原且**逐字节 sha256 相同**（⑩ 连 `.ctex` 也比对），
+还原后基线重新转绿。
+③⑦ 由**已并入批跑**的行为探针 `probe_doom_thunder_924`（**PASS 57**）覆盖，**10/10 个针对它的变异都会被它抓红**
+（全批共 14 个变异 = ②⑩ 的 4 个 + 本探针的 10 个，分别由 `oga_projectile_swap_check` 与本探针兜住）：
+神王 3 目标 → 3 道雷、裁决者 3 目标 → 1 道且都是 `VFXLightningArc`；真实 state 里策反后 `team` 翻转、
+进出数组对调，并**直接把守卫打到 0 血**验证策反**不回退**；真实 replay 逐帧跑生产锁存函数，
+实测 roster 与真实归属**不一致**、帧只有 13 列**没有 team 列**。
+④ 第四轮新增的 4 个变异（G 撤掉记录、H 记成"全部存活敌人"、I 放开退回开关、J 解析按 `alive` 过滤）
+全部 **RED**；其中第四轮的 Part 5 用**真实 state + 生产实现 `_skill_god_king`**，
+让神王与敌方三路交战，实测记录为 `["test_s3_c2"]` —— **只有本路那一只入册**，
+且期望值由 **`lane` 独立算出，不借 `_can_target` 自证**（避免"拿实现验证实现"）。
+★ **变异测试两轮真正买到的东西都不是"通过了"，而是"第一次没过"**：
+变异 C（写回条件改成 `if false and ...`）与 E（调用点整行**注释掉**）**都没被抓到** ——
+因为判据当时是**源码文本** `src.contains(...)`，而改坏之后**文本一个字都没变**，于是照样绿；
+第四轮的变异 I 又是同类：它**只有结构断言能抓**，纯函数的行为断言绕过了那个开关。
+修法：把写回逻辑抽成**纯函数**让探针直接调（判据落到**行为**上）、
+文本断言换成**注释感知**的 `_has_live_code()`。
+通用教训：**文本断言必须能看穿注释；能做成行为断言的就别用文本断言；两类断言都要有。**
+**其余若干条没有任何自动化门禁覆盖**，现有门禁全绿**只证明了不回归、不证明改对了**；
+它们依靠代码走查 + 上述根因分析。**未做安卓 / 真机听感与观感验收，未重新导出 EXE / APK**；
+**③ 与 ⑦ 的观感（神王落雷覆盖 / 血条变绿）均未真机确认**；第四轮只改了「怎么得到目标集合」，
+**没有碰落雷本身的观感**（道数上限 / 竖直高度 2.85 / 白芯暖金配色都与第三轮一致）；
+⑩ 的金属箭是**代码生成的贴图**，
+真机观感可能还需微调明暗/尺寸；落雷配色是按设计稿「白芯 + 暖金」描述的**近似值**，真机对比后可能还要微调；
+**3D 脚下的队伍色环不跟随策反**（`_actor_team_color` 仍是建节点时定死，用户只提"血条"，
+未擅自扩大改动面）；**`_mark_vfx_targets` 目前只接线到神王**，
+其它多目标技（`arrow_rain` / `black_hole` / `steel_order` 等）仍走旧路径，
+它们若也有"表演目标与真实目标不一致"的毛病需要各自接线（**本轮未做，也未声称做了**）；
+血条队伍色只在**战斗内**生效，备战 / 详情页未同步。
+详见[9.24 技能与弹道问题修复记录](docs/9.24技能及弹道问题修复记录.md)。

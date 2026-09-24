@@ -3396,3 +3396,148 @@ root 下节点数 1、两帧后 `loop_player_ready()` 也是 true（那时播放
   ⚠️ `procedural_ui_ratchet` 第 3 条是 `scenes/prep/FourStarUpgradePanel.gd` 的既存漂移，
   **本批改动面外**；**不许用 `--update-baseline` 刷绿**（那正是棘轮禁止的自愈松棘轮）。
 
+## 2026-09-24：玩家棋子弹道「改错表」与「换图朝向」两道闸 —— `oga_projectile_swap_check`
+
+### 为什么值得单开一条门禁：一次**全绿但没改到**的事故
+
+用户报「神侍 ↔ 极光射手普攻投射物对换**未完成**」。查下来不是改反了，是**改在了死代码上**：
+
+- 玩家棋子（`PLAYER_CHESS_UNITS`，32 只）的远程普攻**不走**
+  `UnitSkillVFXComposer3D` 的 `BOLT_KIND_BY_UNIT` / `PROJECTILE_TEX_BY_UNIT`；
+- `_basic_attack` 开头就 `OGA_CHESS_CATALOG.projectile_for(uid)`，**命中即 `return`**；
+  权威表是 `OgaChessVFXCatalog.PROJECTILES`。
+
+于是第一版「编译通过、批跑 19 条全绿（4 条既存红除外）、用户肉眼毫无变化」。
+**这正是"假绿"最贵的一种：门禁不红，是因为根本没有门禁盯着那张表。**
+
+### 新增 `tools/oga_projectile_swap_check`（52 → 65 项）
+
+| 断言 | 挡住的错误 |
+|------|-----------|
+| `catalog_after_race_bolt` / `bolt_tex_before_catalog` | **precedence 反了**（玩家棋子被 race bolt 或贴图表截走）—— 用**源码文本顺序**断言，因为这是"谁先谁后"的问题，运行期两跳之外看不出来 |
+| `model_not_swapped` / `same_model` | 对换被撤销 / 换反 / 两只拿到同一张图 |
+| `speed_changed` | 用户口径「**只对换模型，飞行速度不变**」被破坏 |
+| `archer_not_metal_arrow` | 弓箭手贴图被改回风之箭（撤销 #6） |
+| `archer_sheet_orientation` | **换图时朝向约定搞错** |
+| `archer_impact_degraded` | 改弹体时误伤命中特效（把 16 帧专属爆换成通用命中） |
+| `duplicate_path` | 两只单位共用同一张贴图 |
+
+### ★ 朝向判据：主成分轴，**不是**「离重心最远的点」
+
+flipbook 走 `VFXFlipbookProjectile3D` → `set_uv_rotation(_screen_facing(...))`，
+前提是**贴图自身朝右上 45°**（原图 alpha 主轴实测 44.0~46.3°）。
+换成一张"朝右"的箭，飞行时整支箭会歪 45° —— 而这个错误**任何既有门禁都不看**。
+
+第一版判据写成"离重心最远的**实心**像素 = 箭尖"，实测报 **-136.5°**（反向）。
+根因：**箭镞质量大，会把 alpha 重心整体拉向前方**，于是"最远点"恒落在**箭尾**。
+正解是 **alpha 加权协方差矩阵的主特征向量**（对 180° 反向不敏感，而我们要分辨的正是
+45° / 0°(朝右) / 90°(朝上) 三类约定错误）。实测 45.0°。
+
+另：像素读取必须走 `load()` → `Texture2D.get_image()`，**不要用 `Image.load_from_file()`** ——
+后者在 `res://` 上会告警 `this will not work on export`，而且**绕过 `.import`**，
+就查不出「换了图没重导」这个高频事故。
+
+### 变异测试（4 处全被抓，全部逐字节还原）
+
+| 变异 | 期望判据 | 结果 |
+|------|----------|------|
+| A 撤销对换（两把 path 换回） | `model_not_swapped` | RED ✓ |
+| B `god_priest` speed 5.6 → 6.4 | `speed_changed` | RED ✓ |
+| C 弓箭手贴图改回风之箭 | `archer_not_metal_arrow` | RED ✓ |
+| D 弓箭手贴图换成**朝右(0°)** 的箭 | `archer_sheet_orientation` | RED ✓（实测主轴 0.0°） |
+
+★ **变异 D 必须真的换像素 + 重导 `--import`** —— 门禁是从 `.ctex` 读像素的，
+只改 `.gd` 证明不了朝向判据。还原时 `try/finally` 连 `.ctex` 一起还原并比对 sha256。
+脚本：`work/_qa_922/mutate_oga_swap_924.py`（A/B）、`work/_qa_922/mutate_archer_924.py`（C/D）。
+
+### 新增 `probe_doom_thunder_924`（行为探针，第三轮 38 项 → 第四轮 57 项；**第三轮起并入批跑**）
+
+管第三轮的两条订正：③ 神王落雷（认错单位）与 ⑦ 血之契约策反（跨不过回放边界）。详见
+`docs/9.24技能及弹道问题修复记录.md` §13。要点是**五段读数**：composer 直调（落雷计数与模块类型）、
+真实 state 逐步推进（策反 + **强制打死守卫**验不回退）、真实 replay 逐帧跑生产锁存函数、
+**写回行为**（直接调纯函数）、接线文本断言。
+
+### ★★ 文本断言必须能看穿注释；能做成行为断言的就别用文本断言
+
+本轮变异测试抓到**两个假绿**，两次都不是"门禁没红"，而是"**门禁不该绿却绿了**"：
+
+| 变异 | 为什么没被抓到 | 修法 |
+|------|---------------|------|
+| C：把写回条件改成 `if false and ...` | 判据是源码文本 `contains("f.team = converted_team")`，而改坏后**源码里那两行一个字都没变** | 把写回抽成**纯函数** `apply_latched_team()`，探针**直接调它**，判据落到**行为**上 |
+| E：把写回调用点整行**注释掉** | 裸 `src.contains("apply_latched_team(...)")` 连 `# apply_latched_team(...)` 也算数 | 换成**注释感知**的 `_has_live_code(src, needle)`：含该子串的行若 `strip_edges().begins_with("#")` 则不算 |
+
+**通用规则**：文本断言只配用来补"调用点有没有被删掉/注释掉"这类**存在性**，
+且**必须剔除注释行**；"这段逻辑对不对"一律做成**行为断言**（调纯函数 / 跑真实数据）。
+另外：被断言的函数**要抽成 `static` 纯函数**，否则探针只能靠文本 —— 这就是 C 的根因。
+
+### 变异测试（第三轮 6 处，全被抓，全部逐字节还原）
+
+脚本 `work/_qa_922/mutate_doom_thunder_924.py`：
+
+| 变异 | 期望判据 | 结果 |
+|------|----------|------|
+| A 神王退回 `_oga_pack_multi_melee` | 落雷计数 | RED ✓ |
+| B 锁存函数认错 `skill_id` | 回放还原不出策反 | RED ✓ |
+| C 写回退化成 `if false and ...` | **写回行为** | RED ✓（★ 第一版漏抓） |
+| D 血条颜色退回建节点时定死 | 每帧重算配色 | RED ✓ |
+| E 写回调用点被**注释掉** | 注释感知的调用点断言 | RED ✓（★ 第一版漏抓） |
+| F 锁存调用点被摘掉 | 调用点断言 | RED ✓ |
+
+⚠️ **多行锚点在 CRLF 仓库里必须换算换行**（`old.replace("\n", "\r\n")`）—— 否则永远"锚点找不到"，
+而"找不到"若被当成 SKIP，**变异测试就静默失效、变成假绿**。
+⚠️ Python `%` 格式化的参数**必须是 tuple**，传 list 会 `TypeError`（本轮踩过，脚本直接崩）。
+
+### 第四轮：探针 38 → 57 项、变异 6 → 10 个（③ 神王落雷**劈到了非技能目标**）
+
+用户报「非技能目标也出现了落雷」。根因不是模块接错，而是**目标集合是表现层猜的**：
+`context["targets"]` 先取「本帧所有伤害事件的目标」，空了再退回「当场所有存活敌人」；
+而神王真实规则是 `range = 1`（**只在同一 lane 内选目标**），他路敌人本不该落雷 ——
+第二条兜底在 `global_divine_blast` 上还**几乎必然触发**（技能把目标劈死后存活集合立刻收敛，
+退回分支就把"剩下的活人"全劈一遍）。
+
+修法：**在判定发生的地方把结果记下来**。`BattleSimSkills` 新增 `_mark_vfx_targets()`，
+`_skill_god_king` 把每个通过 `_can_target` 的 uid 写进既有字段 `vfx_skill_target_uid`（逗号分隔），
+**走既有的回放第 12 列、不新增列**（`ReplayDigest` 的 `SIMULATION_TOP_FIELDS` 含 `frames`，
+加列会改冻结哈希）。表现侧新增两个 `static` 纯函数 `_vfx_target_uids()` /
+`resolve_skill_target_positions()`，分支改为**只认记录**；退回旧口径被 `recorded.is_empty()` 锁死。
+
+★ **解析时不能按 `alive` 过滤**（反直觉但必须做对）：神王逐个 `apply_damage`，
+排前面的目标可能已被这道雷劈死；而阵亡单位**不会被剪枝出 state 数组**（只翻 `alive` 标志），
+位置仍拿得到。按 `alive` 过滤，**恰恰是"被这道雷劈死的那几只"不落雷** —— 正好反了。
+
+新增断言要点（**判据不得自证**）：Part 5 跑**生产实现 `_skill_god_king`** + 真实 state，
+让神王占 0 路、敌方三路各一只，期望值**由 `lane` 独立算出、不借 `_can_target`**，
+实测记录 `["test_s3_c2"]`（只有本路一只）；反面断言「本路清空后仍跨路选目标」，
+防止顺手把既有回退改坏。Part 6 直调纯函数 `resolve_skill_target_positions`：
+1 个记录 uid → **只准出 1 个落点**（用户截图现象本身）、顺序保持、未知 uid 跳过、
+**被劈死的目标仍出落点**。
+
+| 变异 | 期望判据 | 结果 |
+|------|----------|------|
+| G 撤掉 `_mark_vfx_targets(caster, struck)` | `[record] 生产实现确实写下了技能目标` | RED ✓ |
+| H 记成 `opponents`（退回「全部存活敌人」） | `记录的每个目标都在神王那一路` | RED ✓ |
+| I 退回开关放开（`recorded.is_empty()` → `if true:`） | `只有**没有记录**时才退回旧口径` | RED ✓ |
+| J 解析重新按 `alive` 过滤 | `被劈死的目标仍出落点` | RED ✓ |
+
+★ **变异 I 是本轮的新教训**：它**只有结构断言（Part 7 的 `_has_live_code`）能抓** ——
+Part 6 直接调纯函数，**绕过了那个开关**。上一轮的教训是「只有一类断言时必然漏」，
+这一轮把它坐实了：**行为断言 + 结构断言两类都要有，缺哪类就有哪类的盲区。**
+
+⚠️ **`_mark_vfx_targets` 目前只接线到神王（`global_divine_blast`）。**
+其它多目标技（`arrow_rain` / `black_hole` / `steel_order` 等）仍走各自的旧路径 ——
+它们若也有"表演目标与真实目标不一致"的毛病，需要各自接线（**本轮未做，勿误读为已覆盖**）。
+
+### 套件清单
+
+`work/_qa_922/run_gates.py` **19 → 21 条**（并入 `oga_projectile_swap_check` 与探针 `probe_doom_thunder_924`）。
+`run_gates.py` 新增 `_scene_for()`：`tools/<name>.tscn` 找不到时回落到 `work/_qa_922/<name>.tscn` ——
+**让行为探针也能进批跑**（分两处跑就等于总有一条会被忘掉；本仓已吃过一次亏）。
+`tools/cold_parse_chain_check.gd` 的清单补入 `scenes/battle/BattleScreen.gd`
+（此前改这个文件时解析链**根本没覆盖它**，是假绿）。
+
+回归（2026-09-24 第四轮）：**17 PASS / 4 FAIL**，4 条红为既存
+（`voice` 8 / `prep_text_coverage` 1 / `dynamic_call` 4 / `procedural_ui_ratchet` 3），归因逐条核对过原始判据。
+新增/并入的判据读数：`oga_projectile_swap` **65**、`probe_doom_thunder` **57**（第三轮 38 + 第四轮 19）、
+`cold_parse_chain` **44**。
+另有一条**批跑之外**的既存红 `asset_manifest_check`（`failures=6`，全为既存 `missing_asset`），主动记录。
+

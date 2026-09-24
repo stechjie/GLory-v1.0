@@ -128,7 +128,14 @@ func _play_projectile(event: Dictionary, source_uid: String, completion: Callabl
 	_with_cue_priority(event, func() -> void:
 		_host.call("cue_play_basic_attack", source_uid, _first_target(event), true))
 	_count("projectile_spawn")
-	return _finish_after(_beat_seconds(event, PROJECTILE_SEC) / speed, completion, "projectile_spawn")
+	# 9.24 #1：远程普攻把 impact / 命中数字 推迟到弹道真正落地（全量延迟，不改模拟）。
+	# 飞行时长与 VFXRaceBasicAttack3D 同公式；这样伤害数字 / 命中闪光不再早于弹体到达。
+	var flight := _beat_seconds(event, PROJECTILE_SEC)
+	if _host.has_method("cue_ranged_flight_time"):
+		var computed := float(_host.call("cue_ranged_flight_time", source_uid, _first_target(event)))
+		if computed > 0.0:
+			flight = computed
+	return _finish_after(flight / speed, completion, "projectile_spawn")
 
 
 func _play_hit_number(event: Dictionary, completion: Callable) -> bool:

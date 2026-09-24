@@ -65,6 +65,11 @@ const PROJECTILES := {
 	"thunder": {"path":ROOT+"mage_lightning.png", "columns":6, "rows":4, "frame_count":20, "fps":28.0, "size":Vector2(0.68,0.78), "speed":10.5, "arc_height":0.04, "wobble":0.0, "impact_path":ROOT+"mage_lightning.png", "impact_columns":6, "impact_rows":4, "impact_frames":20, "impact_fps":30.0, "impact_size":Vector2(0.86,0.86), "impact_duration":0.44},
 	"poison": {"path":ROOT+"nature_cast.png", "columns":5, "rows":1, "frame_count":5, "fps":14.0, "size":Vector2(0.74,0.54), "speed":6.4, "arc_height":0.24, "wobble":0.045, "impact_path":ROOT+"nature_poison.png", "impact_columns":7, "impact_rows":1, "impact_frames":7, "impact_fps":17.0, "impact_size":Vector2(0.90,0.66), "impact_duration":0.52},
 	"arcane": {"path":ROOT+"mage_arcane.png", "columns":7, "rows":1, "frame_count":7, "fps":17.0, "size":Vector2(0.68,0.60), "speed":7.0, "arc_height":0.14, "wobble":0.055, "impact_path":ROOT+"cosmic_orb.png", "impact_columns":5, "impact_rows":1, "impact_frames":5, "impact_fps":15.0, "impact_size":Vector2(0.82,0.82), "impact_duration":0.50},
+	# 9.24 #4：暗影法师「沉默箭」的投射物本体。原版只有「聚气 + 凭空落封印」，
+	# 没有真正飞出去的箭体。这里用既有 cosmic_orb（暗紫箭体）+ cosmic_seal（封印）
+	# 拼一条会飞的沉默箭：发射 → 命中目标 → 落封印。speed 与 BattleVfx 的
+	# cue_silence_hit_delay 对齐（9.0），命中音才能卡在箭体落地那一刻。
+	"silence": {"path":ROOT+"cosmic_orb.png", "columns":5, "rows":1, "frame_count":5, "fps":16.0, "size":Vector2(0.60,0.60), "speed":9.0, "arc_height":0.05, "wobble":0.012, "color":Color(0.62,0.36,0.92,0.96), "emission_scale":0.84, "impact_path":ROOT+"cosmic_seal.png", "impact_columns":5, "impact_rows":1, "impact_frames":5, "impact_fps":12.0, "impact_size":Vector2(0.78,0.78), "impact_color":Color(0.78,0.54,1.0,0.92), "impact_duration":0.72},
 }
 
 const BLOOD_LINK_PROJECTILE := {"path":ROOT+"blood_link.png", "columns":5, "rows":1, "frame_count":5, "fps":15.0, "size":Vector2(1.04,0.48), "speed":5.2, "arc_height":0.04, "wobble":0.02, "impact_path":ROOT+"blood_bloom.png", "impact_columns":5, "impact_rows":1, "impact_frames":5, "impact_fps":13.0, "impact_size":Vector2(0.92,0.92), "impact_duration":0.62}

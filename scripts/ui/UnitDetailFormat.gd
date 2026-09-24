@@ -172,7 +172,7 @@ static func format_skill_detail(d: Dictionary) -> String:
 		"same_target_damage_stack":
 			return "痛苦凝视：持续攻击同一目标时，每层伤害+%s，最多%d层；换目标重置。" % [pct(float(d.get("stack_damage", 0.06))), int(d.get("max_stacks", 5))]
 		"blink_low_def_backline":
-			return "暗影突袭%s：瞬移到低防后排敌人身边，造成自身攻击%s伤害；击杀后刷新冷却。" % [cd, pct(float(d.get("damage_atk_pct", 2.0)))]
+			return "暗影突袭（冷却时间5.0秒）：瞬移到低防后排敌人身边，造成自身攻击%s伤害；击杀后刷新冷却。" % [pct(float(d.get("damage_atk_pct", 2.0)))]
 		"stun":
 			return "暗影击晕%s：眩晕最近敌人%.1f秒；暗7会延长持续时间。" % [cd, float(d.get("stun_sec", 1.0))]
 		"shared_hp_link":
@@ -186,7 +186,7 @@ static func format_skill_detail(d: Dictionary) -> String:
 		"poison_attack":
 			return "毒击：普通攻击附带中毒，每秒造成目标最大生命%s伤害，持续%.1f秒；灵4毒伤x2。" % [pct(float(d.get("poison_pct_max_hp", 0.03))), float(d.get("poison_duration", 4.0))]
 		"parasite_on_kill":
-			return "寄生：普攻击杀非 Boss 敌人时，召唤该敌人的分身，生命为原目标%s，攻防为原目标%s。" % [pct(float(d.get("clone_hp_pct", 0.10))), pct(float(d.get("clone_atk_def_pct", 0.50)))]
+			return "寄生：普攻标记非 Boss 敌人，被标记敌人死亡时，召唤该敌人的分身，生命为原目标%s，攻防为原目标%s。" % [pct(float(d.get("clone_hp_pct", 0.10))), pct(float(d.get("clone_atk_def_pct", 0.50)))]
 		"defense_down_attack":
 			return "腐蚀攻击：普通攻击降低目标防御%s，持续%.1f秒；暗5/暗7会增强。" % [pct(float(d.get("def_down_pct", 0.10))), float(d.get("duration", 5.0))]
 		"death_poison_explosion":
