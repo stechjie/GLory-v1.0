@@ -34,30 +34,18 @@ static func prepare_tutorial_state(kind: String) -> Dictionary:
 				f.defense = maxi(0, int(round(float(f.defense) * 1.30)))
 				f.dodge = float(f.get("dodge", 0.0)) + 0.15
 		battle_log.append(TranslationServer.translate("log_defense_set"))
-	if bool(player_syn.get("god_invulnerable_opening", false)):
-		for f in player:
-			if not _ignores_treasure(f):
-				DamageService.begin_stat_context(state, f)
-				StatusEffectService.add_status(f, "invulnerable", 1.5, {})
-				DamageService.clear_stat_context()
-		battle_log.append(TranslationServer.translate("log_god_invuln"))
 	if bool(player_syn.get("human_shield", false)):
 		for f in player:
 			if not _ignores_treasure(f):
 				f.shield = maxi(1, int(float(f.max_hp) * 0.08))
 		battle_log.append(TranslationServer.translate("log_human_shield"))
-	if bool(enemy_syn.get("god_invulnerable_opening", false)):
-		for f in enemy:
-			if not _ignores_treasure(f):
-				DamageService.begin_stat_context(state, f)
-				StatusEffectService.add_status(f, "invulnerable", 1.5, {})
-				DamageService.clear_stat_context()
 	if bool(enemy_syn.get("human_shield", false)):
 		for f in enemy:
 			if not _ignores_treasure(f):
 				f.shield = maxi(1, int(float(f.max_hp) * 0.08))
 	_apply_opening_unit_skills(player, enemy, battle_log, state)
 	BattleSimTreasures._apply_opening_treasures(player, battle_log)
+	_snapshot_base_stats(player + enemy)
 	return state
 
 # --- 3v3 team mode (prototype) ---------------------------------------------
@@ -190,9 +178,6 @@ static func prepare_team_state(forced_team: int = -1) -> Dictionary:
 		# (7) human opening shield: only the owner's own units.
 		if bool(_f_syn(f).get("human_shield", false)):
 			f.shield = maxi(int(f.get("shield", 0)), int(float(f.get("max_hp", 1)) * 0.08))
-		# (6) god opening invulnerability: only the owner's own units.
-		if bool(_f_syn(f).get("god_invulnerable_opening", false)):
-			StatusEffectService.add_status(f, "invulnerable", 1.5, {})
 	_init_unit_stats(state)
 	DamageService.set_stat_state(state)
 	_apply_opening_unit_skills(player, enemy, battle_log, state)
@@ -201,6 +186,7 @@ static func prepare_team_state(forced_team: int = -1) -> Dictionary:
 	# the skills just set.
 	BattleSimTreasures._apply_opening_treasures(player, battle_log)
 	BattleSimTreasures._apply_opening_treasures(enemy, battle_log)
+	_snapshot_base_stats(player + enemy)
 	return state
 
 # --- B: host computes the whole battle and records a replay -----------------
@@ -399,7 +385,6 @@ static func step_state(state: Dictionary) -> void:
 	BattleSimTreasures._process_temporary_deaths(state)
 	var p_alive := _alive(player)
 	var e_alive := _alive(enemy)
-	BattleSimTreasures._apply_human_last_stand(state, p_alive)
 	if p_alive.is_empty() or (e_alive.is_empty() and state.get("revive_queue", []).is_empty()) or float(state.elapsed) >= HARD_TIMEOUT_SEC:
 		state.finished = true
 		return
@@ -408,6 +393,8 @@ static func step_state(state: Dictionary) -> void:
 		state.finished = true
 		return
 	_tick_statuses(p_alive + e_alive, state)
+	# 神7：放在状态结算之后挂，挂上的 1 秒无敌正好覆盖本 tick 起的 10 个 tick。
+	BattleSimTreasures._apply_god_divine_pulse(state, p_alive + e_alive)
 	_tick_skills(p_alive, e_alive, state)
 	_tick_skills(e_alive, p_alive, state)
 	_process_boss_charges(state)
@@ -637,6 +624,9 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 				var combo_alive := bool(target.get("alive", false))
 				DamageService.apply_damage(target, maxi(1, int(round(float(f.atk) * float(f.get("def", {}).get("combo_atk_pct", 0.70))))), false)
 				_handle_attack_kill(f, target, state, team_units, opponents, combo_alive)
+			# 4 控制套装（9.24 改）：普攻（含连击）打出最后一下 → 技能冷却立刻清零。
+			if was_alive and not bool(target.get("alive", false)):
+				BattleSimTreasures._control_set_refresh_on_kill(f, state)
 			if str(f.get("def", {}).get("skill_id", "")) == "every_fifth_group_heal" and int(f.get("attack_count", 0)) % int(f.get("def", {}).get("every", 5)) == 0:
 				_group_heal(f, team_units, float(f.get("def", {}).get("heal_pct", 0.05)))
 			var aspd := clampf(float(f.attack_speed) * StatusEffectService.attack_speed_multiplier(f) * _dynamic_attack_speed_multiplier(f), 0.25, 2.5)
@@ -686,7 +676,10 @@ static func _perform_attack(attacker: Dictionary, target: Dictionary, state: Dic
 		is_crit = true
 	if is_crit:
 		base *= float(d.get("crit_dmg", 1.5)) + float(attacker.get("crit_dmg_bonus", 0.0))
-	var before_status_count := _status_count(target)
+	# 9.24 羁绊：判定用「这一下打之前」目标身上的状态（本次普攻新挂的不算）。
+	StatusEffectService.ensure_status(target)
+	var target_was_poisoned := StatusEffectService.has_status(target, "poison")
+	var target_was_debuffed := _has_negative_status(target)
 	# Only the crit base hit surfaces a floating number; the true-damage rider,
 	# combo strikes and treasure reactions below stay silent.
 	var basic_skill_id := "basic_ranged" if float(d.get("range", 1.0)) > 1.0 else "basic_melee"
@@ -707,9 +700,13 @@ static func _perform_attack(attacker: Dictionary, target: Dictionary, state: Dic
 		if bool(d.get("third_hit_double", false)) and int(attacker.get("attack_count", 0)) % 3 == 0:
 			true_pct *= 2.0
 		dealt += DamageService.apply_damage(target, maxi(1, int(round(float(attacker.atk) * true_pct))), true)
+	# 4 攻击套装（9.24 改）：这一下打完目标血量 ≤10% → 斩杀（Boss 不吃，无敌挡不住）。
+	dealt += BattleSimTreasures._try_attack_set_execute(attacker, target, state)
+	# 灵7 / 暗7（9.24 改）。
+	BattleSimTreasures._apply_undead_poison_heal(attacker, state, target_was_poisoned)
+	BattleSimTreasures._apply_dark_sap(attacker, target, state, target_was_debuffed)
 	_apply_attack_statuses(attacker, target, state)
 	BattleSimTreasures._apply_attack_treasure_effects(attacker, target, state)
-	BattleSimTreasures._maybe_control_set_extra_debuff(attacker, target, state, before_status_count)
 	BattleSimTreasures._apply_defender_reaction(attacker, target, dealt)
 	# 9.22：四星巨甲灵「反弹使攻击者中毒」的触发音。判据与上面那一步内部
 	# （`poison_reflect_armor_stack` + dealt > 0 + 自己还活着，见

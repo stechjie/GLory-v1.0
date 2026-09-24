@@ -5,6 +5,9 @@ const MIN_HP_DAMAGE := 1
 
 static var _stat_state: Dictionary = {}
 static var _stat_source_uid := ""
+# 9.24 神7：StatusEffectService._apply_dot_damage 结算中毒 / 流血 / 灼烧期间置 true。
+# 带 dot_pass 的无敌（神族每 5 秒那 1 秒）只挡普攻与技能，这类持续伤害照样打进来。
+static var _dot_damage_active := false
 
 # Floating hit-number context. Callers tag the current damage so the central
 # emit in apply_damage can decide whether it surfaces a number. Only crit basics
@@ -250,7 +253,8 @@ static func apply_damage(target: Dictionary, amount: int, ignore_defense: bool =
 
 	StatusEffectService.ensure_status(target)
 	if target.statuses.has("invulnerable"):
-		return 0
+		if not (_dot_damage_active and bool(target.statuses.invulnerable.get("dot_pass", false))):
+			return 0
 	var dodge_chance := float(target.get("dodge", 0.0))
 	if target.statuses.has("dodge_bonus"):
 		dodge_chance += float(target.statuses.dodge_bonus.get("pct", 0.0))

@@ -141,26 +141,26 @@ func _race_entries(race: String) -> Array:
 			return [
 				{"threshold": 1, "name": "神族特性·净化", "detail": "友方单位死亡时，随机一名存活友军清除所有负面状态。"},
 				{"threshold": 3, "name": "神3·吸血", "detail": "神族单位造成伤害时回复实际伤害 20% 生命。"},
-				{"threshold": 7, "name": "神7·无敌", "detail": "神族单位开战时无敌 1.5 秒。"},
+				{"threshold": 7, "name": "神7·神佑", "detail": "开战 1 秒后起，每 5 秒全队无敌 1 秒（只免普攻与技能伤害，中毒/流血照常受伤）。"},
 			]
 		"dark":
 			return [
 				{"threshold": 1, "name": "暗族特性·击杀叠层", "detail": "每 3 个敌人死亡，暗族单位获得 1 层 +6% 伤害。"},
 				{"threshold": 2, "name": "暗2·负面强化", "detail": "暗族负面效果（减攻、减速、破甲）强度 +25%。"},
 				{"threshold": 5, "name": "暗5·伤害", "detail": "暗族单位伤害 +25%。"},
-				{"threshold": 7, "name": "暗7·负面延时", "detail": "暗族负面效果持续时间 +50%。"},
+				{"threshold": 7, "name": "暗7·蚀魂", "detail": "暗族单位攻击带有负面状态的敌人时，每次使其攻击/防御/攻速 -3%，自身攻击/防御/攻速 +2%（各最多 15 层）。"},
 			]
 		"undead":
 			return [
 				{"threshold": 1, "name": "灵族特性·亡者召唤", "detail": "累计 30 次死亡时，每个灵族单位以 40% 属性召唤一个随机死亡单位的复制体。"},
 				{"threshold": 4, "name": "灵4·剧毒", "detail": "灵族中毒伤害翻倍。"},
-				{"threshold": 7, "name": "灵7·降低阈值", "detail": "灵族触发阈值降低：鬼母每 4 次死亡触发（原 5）；召唤在 23 次死亡（原 30）。"},
+				{"threshold": 7, "name": "灵7·噬毒", "detail": "灵族单位攻击已中毒的敌人时，每次回复自身 15% 最大生命。"},
 			]
 		"human":
 			return [
 				{"threshold": 1, "name": "人族特性·三连暴击", "detail": "人族单位每第 3 次攻击必定暴击。"},
 				{"threshold": 2, "name": "人2·护盾", "detail": "开战时普通棋子获得等于 8% 最大生命的护盾。"},
-				{"threshold": 7, "name": "人7·狂战士", "detail": "仅剩 1 个普通棋子时触发一次：最大生命 ×2、防御 ×2、攻击 ×2、攻速 ×2、暴击 +100%、暴击伤害 +50%，并回复 50% 生命。"},
+				{"threshold": 7, "name": "人7·哀兵", "detail": "己方每阵亡 1 个棋子，存活棋子获得 1 层：最大生命/攻击/防御/攻速 +20%、暴击 +20%、暴击伤害 +10%，并回复 20% 生命（可无限叠加）。"},
 			]
 	return []
 
@@ -173,26 +173,26 @@ func _race_entries_en(race: String) -> Array:
 			return [
 				{"threshold": 1, "name": "God Trait: Cleanse", "detail": "When a friendly unit dies, one random surviving ally removes all debuffs."},
 				{"threshold": 3, "name": "God 3: Lifesteal", "detail": "God units restore 20% of actual damage dealt as HP."},
-				{"threshold": 7, "name": "God 7: Invincible", "detail": "God units become invincible for 1.5s at battle start."},
+				{"threshold": 7, "name": "God 7: Divine Pulse", "detail": "From 1s into battle, every 5s your whole team is invincible for 1s (blocks attacks and skills; poison/bleed still hurt)."},
 			]
 		"dark":
 			return [
 				{"threshold": 1, "name": "Dark Trait: Kill Stack", "detail": "Every 3 enemy deaths, Dark units gain 1 stack of +6% damage."},
 				{"threshold": 2, "name": "Dark 2: Debuff Power", "detail": "Dark debuffs (ATK down, slow, DEF down) are 25% stronger."},
 				{"threshold": 5, "name": "Dark 5: Damage", "detail": "Dark units deal +25% damage."},
-				{"threshold": 7, "name": "Dark 7: Debuff Duration", "detail": "Dark debuffs last 50% longer."},
+				{"threshold": 7, "name": "Dark 7: Soul Sap", "detail": "When Dark units hit a debuffed enemy, each hit reduces its ATK/DEF/AS by 3% and raises their own by 2% (up to 15 stacks each)."},
 			]
 		"undead":
 			return [
 				{"threshold": 1, "name": "Undead Trait: Death Summon", "detail": "At 30 total deaths, each of your Undead units summons a clone of a random dead unit at 40% stats."},
 				{"threshold": 4, "name": "Undead 4: Poison", "detail": "Undead poison deals double damage."},
-				{"threshold": 7, "name": "Undead 7: Lower Thresholds", "detail": "Undead trigger thresholds reduced: Matron triggers every 4 deaths (was 5); summon at 23 deaths (was 30)."},
+				{"threshold": 7, "name": "Undead 7: Venom Feast", "detail": "When Undead units hit a poisoned enemy, they restore 15% of their max HP per hit."},
 			]
 		"human":
 			return [
 				{"threshold": 1, "name": "Human Trait: Triple Crit", "detail": "Every 3rd attack from a Human unit is a guaranteed critical hit."},
 				{"threshold": 2, "name": "Human 2: Shield", "detail": "At battle start, normal units gain a shield equal to 8% max HP."},
-				{"threshold": 7, "name": "Human 7: Berserker", "detail": "Triggers once when only 1 normal unit remains: max HP ×2, DEF ×2, ATK ×2, AS ×2, Crit +100%, CritDmg +50%, and restore 50% HP."},
+				{"threshold": 7, "name": "Human 7: Vengeance", "detail": "Each time one of your units dies, survivors gain a stack: max HP/ATK/DEF/AS +20%, Crit +20%, CritDmg +10%, and heal 20% HP (no stack limit)."},
 			]
 	return []
 

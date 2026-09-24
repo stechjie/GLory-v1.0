@@ -164,17 +164,17 @@ static func format_skill_detail(d: Dictionary) -> String:
 		"global_divine_blast":
 			return "神王裁决%s：攻击全场敌人，造成自身攻击%s加目标最大生命%s的伤害。" % [cd, pct(float(d.get("damage_atk_pct", 1.6))), pct(float(d.get("max_hp_bonus_pct", 0.08)))]
 		"curse_attack":
-			return "诅咒攻击：普通攻击附带减攻%s与攻速降低%s，持续%.1f秒；暗5/暗7会增强。" % [pct(float(d.get("attack_down", 0.08))), pct(float(d.get("aspd_down", 0.08))), float(d.get("duration", 4.0))]
+			return "诅咒攻击：普通攻击附带减攻%s与攻速降低%s，持续%.1f秒；暗2会增强效果。" % [pct(float(d.get("attack_down", 0.08))), pct(float(d.get("aspd_down", 0.08))), float(d.get("duration", 4.0))]
 		"silence_bolt":
-			return "沉默箭%s：沉默最近敌人%.1f秒，并造成自身攻击%s伤害；暗7会延长持续时间。" % [cd, float(d.get("silence_sec", 1.2)), pct(float(d.get("damage_atk_pct", 1.7)))]
+			return "沉默箭%s：沉默最近敌人%.1f秒，并造成自身攻击%s伤害。" % [cd, float(d.get("silence_sec", 1.2)), pct(float(d.get("damage_atk_pct", 1.7)))]
 		"fear":
-			return "恐惧%s：使最近敌人恐惧/眩晕%.1f秒并推离；暗7会延长持续时间。" % [cd, float(d.get("fear_sec", 1.5))]
+			return "恐惧%s：使最近敌人恐惧/眩晕%.1f秒并推离。" % [cd, float(d.get("fear_sec", 1.5))]
 		"same_target_damage_stack":
 			return "痛苦凝视：持续攻击同一目标时，每层伤害+%s，最多%d层；换目标重置。" % [pct(float(d.get("stack_damage", 0.06))), int(d.get("max_stacks", 5))]
 		"blink_low_def_backline":
 			return "暗影突袭（冷却时间5.0秒）：瞬移到低防后排敌人身边，造成自身攻击%s伤害；击杀后刷新冷却。" % [pct(float(d.get("damage_atk_pct", 2.0)))]
 		"stun":
-			return "暗影击晕%s：眩晕最近敌人%.1f秒；暗7会延长持续时间。" % [cd, float(d.get("stun_sec", 1.0))]
+			return "暗影击晕%s：眩晕最近敌人%.1f秒。" % [cd, float(d.get("stun_sec", 1.0))]
 		"shared_hp_link":
 			# 9.14 反馈：4 星连接期间会按每秒 3% 最大生命回血，但文案没写。link_regen_pct
 			# 只在 4 星的 star4 覆写里有，1~3 星回血为 0，文案自然不带那句。
@@ -182,28 +182,26 @@ static func format_skill_detail(d: Dictionary) -> String:
 			var regen_clause := "；连接期间每秒回%s最大生命" % pct(link_regen) if link_regen > 0.0 else ""
 			return "血链%s：连接最近非Boss敌人并使其变为我方棋子；双方共享受到的生命损失%s。任一方死亡后清除连接，本回合不再释放。Boss免疫。" % [cd, regen_clause]
 		"black_hole":
-			return "黑洞%s：牵引周围敌人，眩晕%.1f秒，并造成自身攻击%s伤害；暗7会延长控制。" % [cd, float(d.get("pull_sec", 2.0)), pct(float(d.get("damage_atk_pct", 2.2)))]
+			return "黑洞%s：牵引周围敌人，眩晕%.1f秒，并造成自身攻击%s伤害。" % [cd, float(d.get("pull_sec", 2.0)), pct(float(d.get("damage_atk_pct", 2.2)))]
 		"poison_attack":
 			return "毒击：普通攻击附带中毒，每秒造成目标最大生命%s伤害，持续%.1f秒；灵4毒伤x2。" % [pct(float(d.get("poison_pct_max_hp", 0.03))), float(d.get("poison_duration", 4.0))]
 		"parasite_on_kill":
 			return "寄生：普攻标记非 Boss 敌人，被标记敌人死亡时，召唤该敌人的分身，生命为原目标%s，攻防为原目标%s。" % [pct(float(d.get("clone_hp_pct", 0.10))), pct(float(d.get("clone_atk_def_pct", 0.50)))]
 		"defense_down_attack":
-			return "腐蚀攻击：普通攻击降低目标防御%s，持续%.1f秒；暗5/暗7会增强。" % [pct(float(d.get("def_down_pct", 0.10))), float(d.get("duration", 5.0))]
+			return "腐蚀攻击：普通攻击降低目标防御%s，持续%.1f秒；暗2会增强效果。" % [pct(float(d.get("def_down_pct", 0.10))), float(d.get("duration", 5.0))]
 		"death_poison_explosion":
 			return "死亡毒爆：死亡时对周围敌人造成自身攻击%s真实伤害，并施加中毒。" % pct(float(d.get("damage_atk_pct", 2.5)))
 		"poison_reflect_armor_stack":
 			return "毒甲：受伤后反弹本次伤害%s真实伤害并使攻击者中毒；自身防御每次+%s，最多%d层。" % [pct(float(d.get("reflect_taken_damage_pct", 0.12))), pct(float(d.get("armor_per_hit_pct", 0.14))), int(d.get("max_stacks", 10))]
 		"unique_death_execute":
 			# 9.14：文案把所有可调数值都改成读 def，1~3 星与 4 星自动显示各自那一份。
-			# 灵7 的阈值 = ceil(阈值 × 0.75)（SynergyService.undead_threshold_mul），
-			# 所以 1~3 星 5 死→4 死、4 星 4 死→3 死，与实测一致。
+			# 9.24：灵7 已改为「普攻中毒目标回血」，不再降低母灵阈值。
 			var m_th := int(d.get("death_threshold", 5))
 			var m_t1 := float(d.get("tier1_or_merc_chance", 0.5))
 			var m_t2 := float(d.get("tier2_chance", 0.35))
 			var m_t3 := float(d.get("tier3_chance", 0.1))
 			var m_boss := float(d.get("boss_max_hp_damage", 0.2))
-			var m_u7 := int(ceil(float(m_th) * 0.75))
-			return "母灵：每名玩家最多1只；3v3中多个玩家的母灵可同时生效且各自独立计数。每%d个非母灵处决造成的敌军死亡触发一次；1阶/佣兵%s、2阶%s、3阶%s即死，Boss改为%s最大生命伤害。灵7改为每%d个死亡触发。" % [m_th, pct(m_t1), pct(m_t2), pct(m_t3), pct(m_boss), m_u7]
+			return "母灵：每名玩家最多1只；3v3中多个玩家的母灵可同时生效且各自独立计数。每%d个非母灵处决造成的敌军死亡触发一次；1阶/佣兵%s、2阶%s、3阶%s即死，Boss改为%s最大生命伤害。" % [m_th, pct(m_t1), pct(m_t2), pct(m_t3), pct(m_boss)]
 		"attack_interrupt":
 			# 9.14：4 星把「打断」（锁普攻 1 秒）换成「眩晕」0.5 秒 —— stun_sec 只写在
 			# 4 星 star4 覆写里。文案按有无 stun_sec 分两支，与 BattleSimulator 的实现同源。
@@ -330,17 +328,17 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"global_divine_blast":
 			return "Divine Judgement%s: Strike all enemies for %s ATK + %s of their max HP as damage." % [cd, pct(float(d.get("damage_atk_pct", 1.6))), pct(float(d.get("max_hp_bonus_pct", 0.08)))]
 		"curse_attack":
-			return "Curse Strike: Normal attacks reduce target ATK by %s and AS by %s for %.1fs. Dark 5/7 amplify these debuffs." % [pct(float(d.get("attack_down", 0.08))), pct(float(d.get("aspd_down", 0.08))), float(d.get("duration", 4.0))]
+			return "Curse Strike: Normal attacks reduce target ATK by %s and AS by %s for %.1fs. Dark 2 amplifies these debuffs." % [pct(float(d.get("attack_down", 0.08))), pct(float(d.get("aspd_down", 0.08))), float(d.get("duration", 4.0))]
 		"silence_bolt":
-			return "Silence Bolt%s: Silence the nearest enemy for %.1fs and deal %s ATK damage. Dark 7 extends duration." % [cd, float(d.get("silence_sec", 1.2)), pct(float(d.get("damage_atk_pct", 1.7)))]
+			return "Silence Bolt%s: Silence the nearest enemy for %.1fs and deal %s ATK damage." % [cd, float(d.get("silence_sec", 1.2)), pct(float(d.get("damage_atk_pct", 1.7)))]
 		"fear":
-			return "Fear%s: Frighten/stun the nearest enemy for %.1fs and knock them back. Dark 7 extends duration." % [cd, float(d.get("fear_sec", 1.5))]
+			return "Fear%s: Frighten/stun the nearest enemy for %.1fs and knock them back." % [cd, float(d.get("fear_sec", 1.5))]
 		"same_target_damage_stack":
 			return "Agonizing Gaze: Consecutive attacks on the same target deal +%s damage per stack (max %d stacks). Resets on target switch." % [pct(float(d.get("stack_damage", 0.06))), int(d.get("max_stacks", 5))]
 		"blink_low_def_backline":
 			return "Shadow Ambush%s: Blink to the lowest-DEF backline enemy and deal %s ATK damage. Cooldown resets on kill." % [cd, pct(float(d.get("damage_atk_pct", 2.0)))]
 		"stun":
-			return "Shadow Stun%s: Stun the nearest enemy for %.1fs. Dark 7 extends duration." % [cd, float(d.get("stun_sec", 1.0))]
+			return "Shadow Stun%s: Stun the nearest enemy for %.1fs." % [cd, float(d.get("stun_sec", 1.0))]
 		"shared_hp_link":
 			# 9.14: 4-star regenerates 3% max HP/s while linked; only 4-star sets
 			# link_regen_pct, so 1-3 star text stays without the clause.
@@ -348,13 +346,13 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 			var regen_clause := "; regenerate %s max HP per second while linked" % pct(link_regen) if link_regen > 0.0 else ""
 			return "Blood Chain%s: Link to the nearest non-Boss enemy and convert them to your side. Both share HP loss%s. Link breaks on either death and will not reactivate this round. Boss immune." % [cd, regen_clause]
 		"black_hole":
-			return "Black Hole%s: Pull surrounding enemies, stun for %.1fs, and deal %s ATK damage. Dark 7 extends the stun." % [cd, float(d.get("pull_sec", 2.0)), pct(float(d.get("damage_atk_pct", 2.2)))]
+			return "Black Hole%s: Pull surrounding enemies, stun for %.1fs, and deal %s ATK damage." % [cd, float(d.get("pull_sec", 2.0)), pct(float(d.get("damage_atk_pct", 2.2)))]
 		"poison_attack":
 			return "Poison Strike: Normal attacks apply poison — %s max HP per second for %.1fs. Undead 4 doubles poison damage." % [pct(float(d.get("poison_pct_max_hp", 0.03))), float(d.get("poison_duration", 4.0))]
 		"parasite_on_kill":
 			return "Parasite: When a basic attack kills a non-Boss enemy, summon its clone at %s HP and %s ATK/DEF." % [pct(float(d.get("clone_hp_pct", 0.10))), pct(float(d.get("clone_atk_def_pct", 0.50)))]
 		"defense_down_attack":
-			return "Corrosive Strike: Normal attacks reduce target DEF by %s for %.1fs. Dark 5/7 amplify this effect." % [pct(float(d.get("def_down_pct", 0.10))), float(d.get("duration", 5.0))]
+			return "Corrosive Strike: Normal attacks reduce target DEF by %s for %.1fs. Dark 2 amplifies this effect." % [pct(float(d.get("def_down_pct", 0.10))), float(d.get("duration", 5.0))]
 		"death_poison_explosion":
 			return "Death Poison Burst: On death, deal %s ATK true damage to surrounding enemies and apply poison." % pct(float(d.get("damage_atk_pct", 2.5)))
 		"poison_reflect_armor_stack":
@@ -365,8 +363,7 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 			var m_t2 := float(d.get("tier2_chance", 0.35))
 			var m_t3 := float(d.get("tier3_chance", 0.1))
 			var m_boss := float(d.get("boss_max_hp_damage", 0.2))
-			var m_u7 := int(ceil(float(m_th) * 0.75))
-			return "Matron: each player can field 1; in 3v3, each player's Matron works at the same time and counts independently. Every %d enemy deaths not caused by Matron execute: Tier 1/Merc %s, Tier 2 %s, Tier 3 %s; vs Boss deal %s max HP instead. Undead 7: every %d deaths." % [m_th, pct(m_t1), pct(m_t2), pct(m_t3), pct(m_boss), m_u7]
+			return "Matron: each player can field 1; in 3v3, each player's Matron works at the same time and counts independently. Every %d enemy deaths not caused by Matron execute: Tier 1/Merc %s, Tier 2 %s, Tier 3 %s; vs Boss deal %s max HP instead." % [m_th, pct(m_t1), pct(m_t2), pct(m_t3), pct(m_boss)]
 		"attack_interrupt":
 			var militia_stun := float(d.get("stun_sec", 0.0))
 			if militia_stun > 0.0:

@@ -22,6 +22,8 @@ static func _process_single_race_death(state: Dictionary, victim: Dictionary) ->
 		return
 	processed[uid] = true
 	state.race_trait_processed_deaths = processed
+	# 人7（9.24 改）放在母灵处决早退之前：被处决也算「己方死了一个」。
+	_owner_human_rally(state, victim)
 	if bool(victim.get("mother_execute_kill", false)):
 		return
 	state.field_death_count = int(state.get("field_death_count", 0)) + 1
@@ -639,39 +641,21 @@ static func _apply_boss_attack_lifesteal(attacker: Dictionary, d: Dictionary, de
 	_heal_unit(attacker, maxi(1, int(round(float(dealt) * float(d.get("lifesteal", 0.10))))))
 
 
-static func _maybe_control_set_extra_debuff(attacker: Dictionary, target: Dictionary, _state: Dictionary, before_count: int) -> void:
-	if not _f_has_set(attacker, "control"):
+# 9.24：4 控制套装旧效果「普攻成功挂状态后再随机追加一个负面」已删除，
+# 改为「普攻最后一下击杀 → 技能冷却清零」（_control_set_refresh_on_kill）。
+# 保留空函数只为兼容可能仍在调用它的外部工具脚本。
+static func _maybe_control_set_extra_debuff(_attacker: Dictionary, _target: Dictionary, _state: Dictionary, _before_count: int) -> void:
+	pass
+
+
+static func _control_set_refresh_on_kill(killer: Dictionary, state: Dictionary) -> void:
+	if _ignores_treasure(killer) or not _f_has_set(killer, "control"):
 		return
-	var after_count := _status_count(target)
-	if after_count > before_count:
-		_apply_control_set_random_debuff(target)
-
-
-static func _apply_control_set_random_debuff(target: Dictionary) -> void:
-	StatusEffectService.ensure_status(target)
-	var choices: Array[String] = []
-	for kind in StatusEffectService.DEBUFF_POOL:
-		if not target.statuses.has(kind):
-			choices.append(kind)
-	if choices.is_empty():
-		choices.assign(StatusEffectService.DEBUFF_POOL)
-	var picked := choices[RngService.rng.randi() % choices.size()]
-	match picked:
-		"slow":
-			StatusEffectService.add_status(target, "slow", 2.0, {"move_pct": 0.20, "attack_speed_pct": 0.20})
-		"attack_down":
-			StatusEffectService.add_status(target, "attack_down", 2.0, {"pct": 0.12})
-		"silence":
-			StatusEffectService.add_status(target, "silence", 1.0, {})
-		"stun":
-			StatusEffectService.add_status(target, "stun", 0.5, {})
-		"poison":
-			StatusEffectService.add_poison(target)
-		"interrupt":
-			StatusEffectService.interrupt(target)
-		"bleed":
-			StatusEffectService.add_bleed(target, 3.0, 0.06)
-
+	# 克隆体 / 寄生体等「不放技能」的单位 skill_ready 被设成 9999，不能被刷新出技能。
+	if float(killer.get("skill_ready", 0.0)) >= 9000.0:
+		return
+	if float(killer.get("skill_ready", 0.0)) > float(state.elapsed):
+		killer.skill_ready = float(state.elapsed)
 
 
 static func _process_revives(state: Dictionary) -> void:
@@ -749,64 +733,165 @@ static func _cancel_twin_group_revives(state: Dictionary, group_id: String) -> v
 	state.revive_queue = keep
 
 
-static func _apply_human_last_stand(state: Dictionary, _p_alive: Array) -> void:
-	# (5) 人族·背水一战: per OWNER. Counts only the owner's own normal units, so
-	# it fires when a single player is down to their last unit (allies ignored).
-	if state.has("owner_syn_by_key"):
-		for lane in 3:
-			_owner_last_stand(state, "player", lane)
-			if str(state.get("kind", "")) == "pvp":
-				_owner_last_stand(state, "enemy", lane)
-		return
-	_team_last_stand_1v1(state, "player")
-	_team_last_stand_1v1(state, "enemy")
+# ---------------------------------------------------------------------------
+# 人族 7（9.24 改）：己方棋盘每死 1 个普通棋子，同一棋盘上活着的普通棋子全部 +1 档。
+# 每档（都按开战基础值，不复利）：最大生命 +20% 并回复 20% 基础生命、攻击 / 防御 /
+# 攻速 各 +20%、暴击率 +20%、暴伤 +10%。死满 5 个 = 旧版「背水一战」的完整数值，
+# 7~9 人上场时最后的人可以超过旧版。
+# 计数口径：死侍献祭、被处决都算；凤凰涅槃的第一次倒下（马上会复活）不算，复活体
+# 3 秒后的强制真死算；佣兵 / 法阵友军 / 亡灵羁绊克隆体既不计数也不吃加成。
+const HUMAN_RALLY_STEP := 0.20
+
+# 旧入口保留为空函数，兼容外部工具脚本。
+static func _apply_human_last_stand(_state: Dictionary, _p_alive: Array) -> void:
+	pass
 
 
-static func _team_last_stand_1v1(state: Dictionary, team: String) -> void:
-	var syn: Dictionary = _team_syn(state, team)
-	var used_key := "human_last_stand_used" if team == "player" else "enemy_human_last_stand_used"
-	if not bool(syn.get("human_last_stand", false)) or bool(state.get(used_key, false)):
+static func _is_board_piece(f: Dictionary) -> bool:
+	if _ignores_treasure(f) or bool(f.get("is_race_trait_clone", false)):
+		return false
+	# 技能召唤出来的分身（寄生 / 镜像 / 双生）不是棋盘上的棋子。
+	# uid 格式见 _maybe_spawn_parasite_clone / _skill_mirror_clone（"<team>_parasite_N" /
+	# "<team>_mirror_N"）与 _skill_twin_strike（"<本体uid>_twin_N"）。注意不能只查
+	# contains("_parasite_")：棋子「寄生灵」本身的 uid 就是 "player_undead_parasite_3"。
+	var uid := str(f.get("uid", ""))
+	var team := str(f.get("team", ""))
+	return not (uid.begins_with(team + "_parasite_") or uid.begins_with(team + "_mirror_") or uid.contains("_twin_"))
+
+
+static func _phoenix_revive_pending(state: Dictionary, victim: Dictionary) -> bool:
+	var prefix := "%s_phoenix_" % str(victim.get("uid", ""))
+	for item in state.get("revive_queue", []):
+		var queued: Dictionary = item.get("fighter", {})
+		if str(queued.get("uid", "")).begins_with(prefix):
+			return true
+	return false
+
+
+static func _owner_human_rally(state: Dictionary, victim: Dictionary) -> void:
+	if not _is_board_piece(victim):
 		return
-	var side: Array = state.get("player", []) if team == "player" else state.get("enemy", [])
-	var normals := []
+	if not bool(_resolve_syn(victim, state).get("human_death_rally", false)):
+		return
+	if _phoenix_revive_pending(state, victim):
+		return
+	var side: Array = state.get("player", []) if str(victim.get("team", "")) == "player" else state.get("enemy", [])
+	var buffed := 0
 	for f in side:
-		if bool(f.get("alive", false)) and int(f.get("hp", 0)) > 0 and not _ignores_treasure(f):
-			normals.append(f)
-	if normals.size() != 1:
-		return
-	_trigger_last_stand(state, normals[0])
-	state[used_key] = true
+		if not bool(f.get("alive", false)) or int(f.get("hp", 0)) <= 0:
+			continue
+		if not _is_board_piece(f) or not _same_owner(f, victim, state):
+			continue
+		_apply_human_rally_step(state, f)
+		buffed += 1
+	if buffed > 0:
+		state.log.append(TranslationServer.translate("log_human_rally") % buffed)
 
 
-static func _owner_last_stand(state: Dictionary, team: String, lane: int) -> void:
-	var key := "%s_%d" % [team, lane]
-	if not bool(_owner_syn(state, key).get("human_last_stand", false)):
-		return
-	var os := _owner_state(state, key)
-	if bool(os.get("last_stand_used", false)):
-		return
-	var side: Array = state.get("player", []) if team == "player" else state.get("enemy", [])
-	var normals := []
-	for f in side:
-		if bool(f.get("alive", false)) and int(f.get("hp", 0)) > 0 and int(f.get("lane", -1)) == lane and not _ignores_treasure(f):
-			normals.append(f)
-	if normals.size() != 1:
-		return
-	_trigger_last_stand(state, normals[0])
-	os.last_stand_used = true
-
-
-static func _trigger_last_stand(state: Dictionary, last: Dictionary) -> void:
-	last.max_hp = maxi(1, int(round(float(last.max_hp) * 2.0)))
-	DamageService.begin_stat_context(state, last)
-	_heal_unit(last, maxi(1, int(round(float(last.max_hp) * 0.50))))
+static func _apply_human_rally_step(state: Dictionary, f: Dictionary) -> void:
+	_ensure_base_stats(f)
+	f.human_rally_stacks = int(f.get("human_rally_stacks", 0)) + 1
+	var hp_gain := maxi(1, int(round(float(f.base_max_hp) * HUMAN_RALLY_STEP)))
+	f.max_hp = int(f.max_hp) + hp_gain
+	DamageService.begin_stat_context(state, f)
+	_heal_unit(f, hp_gain)
 	DamageService.clear_stat_context()
-	last.defense = maxi(0, int(round(float(last.get("defense", last.get("def", 0))) * 2.0)))
-	last.atk = maxi(1, int(round(float(last.atk) * 2.0)))
-	last.attack_speed = clampf(float(last.attack_speed) * 2.0, 0.25, 2.5)
-	last.crit_bonus = maxf(float(last.get("crit_bonus", 0.0)), 1.0)
-	last.crit_dmg_bonus = maxf(float(last.get("crit_dmg_bonus", 0.0)), 0.50)
-	state.log.append(TranslationServer.translate("log_last_stand") % str(last.get("name", TranslationServer.translate("name_last_unit"))))
+	_add_base_pct_stats(f, HUMAN_RALLY_STEP)
+	f.crit_bonus = float(f.get("crit_bonus", 0.0)) + HUMAN_RALLY_STEP
+	f.crit_dmg_bonus = float(f.get("crit_dmg_bonus", 0.0)) + 0.10
+
+
+# ---------------------------------------------------------------------------
+# 神族 7（9.24 改）：第 1 秒起每 5 秒，全队（不含佣兵 / 法阵友军）无敌 1 秒。
+# 只免普攻与技能伤害；中毒 / 流血 / 灼烧照吃（invulnerable 带 dot_pass，见 DamageService）。
+const GOD_PULSE_FIRST_TICK := 10    # 1.0 秒
+const GOD_PULSE_PERIOD_TICKS := 50  # 5.0 秒
+const GOD_PULSE_DURATION := 1.0
+
+static func _apply_god_divine_pulse(state: Dictionary, alive: Array) -> void:
+	var tick := int(round(float(state.elapsed) / TICK_SEC))
+	if tick < GOD_PULSE_FIRST_TICK or (tick - GOD_PULSE_FIRST_TICK) % GOD_PULSE_PERIOD_TICKS != 0:
+		return
+	var any := false
+	for f in alive:
+		if _ignores_treasure(f) or not bool(_resolve_syn(f, state).get("god_divine_pulse", false)):
+			continue
+		StatusEffectService.ensure_status(f)
+		var existing: Dictionary = f.statuses.get("invulnerable", {})
+		# 已经有更强的完全无敌（凤凰复活的 3 秒）且还剩 ≥1 秒：不降级它。
+		if not existing.is_empty() and not bool(existing.get("dot_pass", false)) and float(existing.get("remaining", 0.0)) >= GOD_PULSE_DURATION:
+			continue
+		f.statuses.erase("invulnerable")
+		DamageService.begin_stat_context(state, f)
+		StatusEffectService.add_status(f, "invulnerable", GOD_PULSE_DURATION, {"dot_pass": true})
+		DamageService.clear_stat_context()
+		any = true
+	if any:
+		state.log.append(TranslationServer.translate("log_god_pulse") % float(state.elapsed))
+
+
+# ---------------------------------------------------------------------------
+# 灵族 7（9.24 改）：灵族棋子普攻时，目标在这一下之前已中毒 → 回复自身最大生命 15%。
+static func _apply_undead_poison_heal(attacker: Dictionary, state: Dictionary, target_was_poisoned: bool) -> void:
+	if not target_was_poisoned or not bool(attacker.get("alive", false)):
+		return
+	if str(attacker.get("def", {}).get("race", "")) != "undead":
+		return
+	var pct := SynergyService.safe_factor(_resolve_syn(attacker, state), "undead_poison_heal", 1.0)
+	if pct <= 0.0:
+		return
+	_heal_unit(attacker, maxi(1, int(round(float(attacker.max_hp) * pct))))
+
+
+# ---------------------------------------------------------------------------
+# 暗族 7（9.24 改）：暗族棋子普攻时，目标在这一下之前身上有任意负面状态 →
+# 目标 攻击 / 防御 / 攻速 各 -3%（按目标开战基础值），目标身上最多 15 层（多个暗族共用）；
+# 攻击者自己 各 +2%（按自身开战基础值），最多 15 层。
+const DARK_SAP_TARGET_PCT := 0.03
+const DARK_SAP_SELF_PCT := 0.02
+const DARK_SAP_MAX_STACKS := 15
+
+static func _apply_dark_sap(attacker: Dictionary, target: Dictionary, state: Dictionary, target_was_debuffed: bool) -> void:
+	if not target_was_debuffed:
+		return
+	if str(attacker.get("def", {}).get("race", "")) != "dark":
+		return
+	if not bool(_resolve_syn(attacker, state).get("dark_sap", false)):
+		return
+	if int(target.get("dark_sap_taken", 0)) < DARK_SAP_MAX_STACKS:
+		target.dark_sap_taken = int(target.get("dark_sap_taken", 0)) + 1
+		_add_base_pct_stats(target, -DARK_SAP_TARGET_PCT)
+	if bool(attacker.get("alive", false)) and int(attacker.get("dark_sap_gained", 0)) < DARK_SAP_MAX_STACKS:
+		attacker.dark_sap_gained = int(attacker.get("dark_sap_gained", 0)) + 1
+		_add_base_pct_stats(attacker, DARK_SAP_SELF_PCT)
+
+
+# ---------------------------------------------------------------------------
+# 4 攻击套装（9.24 改）：持有者的棋子普攻打完，目标血量 ≤10% 最大生命 → 直接斩杀。
+# Boss 不吃；无敌挡不住（绕过 apply_damage）；死侍的「替死」仍然生效。
+# 返回斩杀扣掉的血量（计入本次普攻的 dealt）。
+const ATTACK_SET_EXECUTE_PCT := 0.10
+
+static func _try_attack_set_execute(attacker: Dictionary, target: Dictionary, state: Dictionary) -> int:
+	if _ignores_treasure(attacker) or not _f_has_set(attacker, "attack"):
+		return 0
+	if not bool(target.get("alive", false)) or int(target.get("hp", 0)) <= 0:
+		return 0
+	if StatusEffectService._is_boss(target):
+		return 0
+	if float(target.hp) > float(target.max_hp) * ATTACK_SET_EXECUTE_PCT:
+		return 0
+	var hp_before := int(target.hp)
+	if DamageService._try_sacrifice_revive(target):
+		DamageService.record_forced_hp_loss(target, hp_before)
+		return hp_before
+	DamageService.record_forced_hp_loss(target, hp_before)
+	target.hp = 0
+	target.alive = false
+	target["killer_uid"] = str(attacker.get("uid", ""))
+	DamageService.emit_death(target)
+	state.log.append(TranslationServer.translate("log_attack_execute") % [str(attacker.get("name", "?")), str(target.get("name", "?"))])
+	return hp_before
 
 
 static func _apply_blood_rampage_lifesteal(attacker: Dictionary, d: Dictionary, dealt: int) -> void:

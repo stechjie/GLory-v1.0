@@ -161,7 +161,11 @@ func _case_forged_syn() -> void:
 	var uid := str((units[0] as Dictionary).get("id", ""))
 	var evil := {
 		"god_invulnerable_opening": true,
+		"god_divine_pulse": true,
 		"human_last_stand": true,
+		"human_death_rally": true,
+		"dark_sap": true,
+		"undead_poison_heal": 1.0e9,
 		"dark_damage_bonus": 1.0e9,
 		"god_lifesteal": 1.0e9,
 		"dark_debuff_strength": 1.0e9,
@@ -182,7 +186,8 @@ func _case_forged_syn() -> void:
 	var out: Dictionary = res.get("snapshot", {})
 	var got: Dictionary = out.get("syn", {})
 	# 通过条件：伪造值没有原样进入合法快照（被丢弃或被服务端重算覆盖）
-	var neutralized := float(got.get("god_lifesteal", 0.0)) < 1.0 and not bool(got.get("god_invulnerable_opening", false))
+	var neutralized := float(got.get("god_lifesteal", 0.0)) < 1.0 and not bool(got.get("god_invulnerable_opening", false)) \
+		and not bool(got.get("god_divine_pulse", false)) and float(got.get("undead_poison_heal", 0.0)) < 1.0
 	_record("forged_syn", neutralized,
 		"god_lifesteal=%s invuln=%s (expect server-rebuilt)" % [str(got.get("god_lifesteal", 0.0)), str(got.get("god_invulnerable_opening", false))])
 

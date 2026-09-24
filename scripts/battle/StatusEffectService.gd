@@ -118,7 +118,9 @@ static func _apply_dot_damage(fighter: Dictionary, amount: int, params: Dictiona
 	var source := str(params.get("source_uid", ""))
 	if not source.is_empty():
 		DamageService.set_stat_source_uid(source)
+	DamageService._dot_damage_active = true
 	DamageService.apply_damage(fighter, amount, true)
+	DamageService._dot_damage_active = false
 	DamageService.set_stat_source_uid(previous)
 
 static func interrupt(fighter: Dictionary) -> void:

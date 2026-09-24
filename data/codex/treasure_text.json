@@ -306,16 +306,16 @@
    "name_en": "4 Control",
    "requires_text": "任意 4 件控制宝藏",
    "requires_text_en": "Any 4 Control treasures",
-   "effect": "普通棋子普攻让目标新增负面状态时，再随机附加一种：减速/减攻/沉默/眩晕/中毒/缴械/失血（优先挑目标身上没有的）。",
-   "effect_en": "When a normal unit's attack applies a new debuff, one more random debuff follows: slow / ATK down / silence / stun / poison / disarm / bleed (preferring ones the target lacks)."
+   "effect": "普通棋子用普攻打出最后一击击杀敌人时，该棋子技能冷却立刻刷新（技能击杀不算）。",
+   "effect_en": "When a normal unit lands the killing blow with a basic attack, its skill cooldown resets immediately (skill kills don't count)."
   },
   "set_attack": {
    "name": "4攻击",
    "name_en": "4 Attack",
    "requires_text": "任意 4 件攻击宝藏",
    "requires_text_en": "Any 4 Attack treasures",
-   "effect": "普通棋子优先攻击生命比例最低的敌人（仍先清自己这一路）。",
-   "effect_en": "Normal units target the enemy with the lowest HP ratio (still clearing their own lane first)."
+   "effect": "普通棋子普攻命中后，若目标生命 ≤10% 则直接斩杀（Boss 不受影响，无敌也挡不住）。",
+   "effect_en": "After a normal unit's basic attack, a target at or below 10% HP is executed outright (not Bosses; ignores invincibility)."
   },
   "set_money": {
    "name": "4金钱",

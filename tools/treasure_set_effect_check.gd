@@ -4,8 +4,8 @@ extends Node
 # 只有新手教学不是）。每项都对比「凑齐 4 件」与「同类只有 3 件」，全部调用真实的
 # 战斗 / 账本代码，不复制判定逻辑。
 #
-# 4 攻击曾经在组队模式下完全不生效：_select_target 先 return 了组队分支，
-# 低血优先的判定写在后面，永远轮不到（冥界执行者 death_hunt 同一个坑）。
+# 9.24：4 攻击改为「≤10% 斩杀」，4 控制改为「普攻补刀刷新技能」；本脚本同步改了
+# 对应两段探针，并加了目标锁定的探针。冥界执行者 death_hunt 仍验证低血优先。
 
 const Harness := preload("res://tools/CheckHarness.gd")
 const TreasureChoicePanelScript := preload("res://scenes/prep/panels/TreasureChoicePanel.gd")
@@ -134,7 +134,9 @@ func _probe_defense() -> void:
 		_h.expect(absf(dodge_delta - 0.15) < 0.001, "defense_dodge", "%s dodge +%.3f" % [str(a.uid), dodge_delta])
 
 
-# --- 4 attack: target selection ------------------------------------------------
+# --- 4 attack: execute (9.24 改版) ----------------------------------------------
+# 旧版「优先打生命比例最低」已删除，改为：普攻打完目标 ≤10% 生命 → 斩杀；
+# Boss 不吃；无敌挡不住。另外顺带验证 9.24 的目标锁定。
 
 func _pick_with(attacker: Dictionary) -> String:
 	var near := _target("enemy", 0, "near_full_hp", 3000, 3000, Vector2(500.0, 340.0))
@@ -143,13 +145,41 @@ func _pick_with(attacker: Dictionary) -> String:
 	return str(BattleSimShared._select_target(attacker, [near, far]).get("uid", ""))
 
 
+func _hit_once(treasures: Array, target_hp: int, boss: bool, invulnerable: bool) -> Dictionary:
+	RngService.rng.seed = 91
+	var a := _fighter(_plain_def("probe_atk", 100), "player", 0, treasures)
+	a.pos = Vector2(500.0, 330.0)
+	var tgt := _target("enemy", 0, "target", 3000, target_hp, Vector2(500.0, 300.0))
+	if boss:
+		tgt.def["is_boss"] = true
+	if invulnerable:
+		StatusEffectService.add_status(tgt, "invulnerable", 5.0, {})
+	var st := _state([a], [tgt])
+	DamageService.begin_stat_context(st, a)
+	BattleSimulator._perform_attack(a, tgt, st)
+	DamageService.clear_stat_context()
+	return tgt
+
+
 func _probe_attack_targeting() -> void:
 	GameState.team_mode = true
-	var p3 := _pick_with(_fighter(_plain_def("probe_atk", 100), "player", 0, ATK_3))
+	# 350 血挨 100 → 250（≤300 = 10%）
+	var t3 := _hit_once(ATK_3, 350, false, false)
+	var t4 := _hit_once(ATK_4, 350, false, false)
+	var tb := _hit_once(ATK_4, 350, true, false)
+	var ti := _hit_once(ATK_4, 200, false, true)
+	var th := _hit_once(ATK_4, 1000, false, false)
+	print("[attack] 3 treasures hp=%d alive=%s ; 4 treasures hp=%d alive=%s ; boss alive=%s ; invulnerable alive=%s ; 1000hp target hp=%d" % [
+		int(t3.hp), str(t3.alive), int(t4.hp), str(t4.alive), str(tb.alive), str(ti.alive), int(th.hp)])
+	_h.expect(bool(t3.alive) and int(t3.hp) == 250, "attack_baseline", "without the set the target should survive at 250, got %d" % int(t3.hp))
+	_h.expect(not bool(t4.alive) and int(t4.hp) == 0, "attack_set_execute", "with the set a <=10%% target should be executed, hp=%d" % int(t4.hp))
+	_h.expect(bool(tb.alive), "attack_set_boss", "bosses must not be executed")
+	_h.expect(not bool(ti.alive), "attack_set_invulnerable", "invulnerability must not block the execute")
+	_h.expect(bool(th.alive) and int(th.hp) == 900, "attack_set_threshold", "a target above 10%% must just take damage, hp=%d" % int(th.hp))
+
+	# 4 攻击不再改选敌：凑齐 4 件也选最近的。
 	var p4 := _pick_with(_fighter(_plain_def("probe_atk", 100), "player", 0, ATK_4))
-	print("[attack] team_mode 3 attack treasures -> %s ; 4 attack treasures -> %s" % [p3, p4])
-	_h.expect(p3 == "near_full_hp", "attack_baseline", "without the set the nearest target should be picked, got %s" % p3)
-	_h.expect(p4 == "far_low_hp", "attack_set", "with the 4-attack set the low-HP target should be picked, got %s" % p4)
+	_h.expect(p4 == "near_full_hp", "attack_set_no_retarget", "4 attack set should no longer change targeting, got %s" % p4)
 
 	var merc_def: Dictionary = {}
 	for m in DataRegistry.get_table("mercenaries").get("mercenaries", []):
@@ -162,21 +192,20 @@ func _probe_attack_targeting() -> void:
 	print("[attack] team_mode death_hunt mercenary (%s) -> %s" % [str(merc_def.get("id", "")), pm])
 	_h.expect(pm == "far_low_hp", "death_hunt", "death_hunt mercenary should pick the low-HP target, got %s" % pm)
 
-	# Same thing through the real tick loop: who does the attacker actually hit first?
-	var a := _fighter(_plain_def("probe_atk", 100), "player", 0, ATK_4)
-	a.uid = "attacker"
-	a.pos = Vector2(500.0, 420.0)
-	var near := _target("enemy", 0, "near_full_hp", 3000, 3000, Vector2(500.0, 340.0))
-	var far := _target("enemy", 0, "far_low_hp", 3000, 300, Vector2(500.0, 160.0))
-	var st := _state([a], [near, far])
-	var first_hit := ""
-	for _i in 400:
-		BattleSimulator.step_state(st)
-		first_hit = str(a.get("vfx_attack_target_uid", ""))
-		if not first_hit.is_empty():
-			break
-	print("[attack] step_state with 4 attack treasures: first attack lands on %s" % first_hit)
-	_h.expect(first_hit == "far_low_hp", "attack_set_live", "first real attack landed on %s" % first_hit)
+	# 目标锁定：选定后，另一个敌人走得更近也不换；锁定目标死了才换。
+	var att := _fighter(_plain_def("probe_lock", 100), "player", 0, [])
+	att.pos = Vector2(500.0, 420.0)
+	var e1 := _target("enemy", 0, "first", 3000, 3000, Vector2(500.0, 340.0))
+	var e2 := _target("enemy", 0, "second", 3000, 3000, Vector2(500.0, 160.0))
+	var pick1 := str(BattleSimShared._select_target(att, [e1, e2]).get("uid", ""))
+	e2.pos = Vector2(500.0, 400.0)
+	var pick2 := str(BattleSimShared._select_target(att, [e1, e2]).get("uid", ""))
+	e1.alive = false
+	e1.hp = 0
+	var pick3 := str(BattleSimShared._select_target(att, [e1, e2]).get("uid", ""))
+	print("[lock] first pick %s ; after other moves closer %s ; after first dies %s" % [pick1, pick2, pick3])
+	_h.expect(pick1 == "first" and pick2 == "first", "target_lock", "target should stay locked, got %s -> %s" % [pick1, pick2])
+	_h.expect(pick3 == "second", "target_lock_release", "target should switch after death, got %s" % pick3)
 
 
 # --- 4 element: AoE burst on a bystander -----------------------------------------
@@ -214,38 +243,30 @@ func _probe_element() -> void:
 	_h.expect(int(r4.bursts) >= 150 and int(r4.bursts) <= 250, "element_set", "bursts with the set: %d (expect ~200)" % int(r4.bursts))
 
 
-# --- 4 control: extra random debuff -----------------------------------------------
+# --- 4 control: basic-attack kill refreshes the skill (9.24 改版) -----------------
 
-func _control_extras(treasures: Array) -> Dictionary:
+func _control_refresh(treasures: Array, kill: bool) -> float:
 	RngService.rng.seed = 777
 	var a := _fighter(_plain_def("probe_ctrl", 100), "player", 0, treasures)
 	a.pos = Vector2(500.0, 330.0)
-	var tgt := _target("enemy", 0, "target", 3000, 50000000, Vector2(500.0, 300.0))
+	a.skill_ready = 50.0
+	a.next_attack = 0.0
+	var tgt := _target("enemy", 0, "target", 3000, 50 if kill else 3000, Vector2(500.0, 300.0))
 	var st := _state([a], [tgt])
-	DamageService.begin_stat_context(st, a)
-	# The four control treasures never apply these; only the set's random pool does.
-	var set_only := ["silence", "attack_down", "poison"]
-	var seen := {}
-	for _i in 400:
-		StatusEffectService.ensure_status(tgt)
-		var before: Array = (tgt.statuses as Dictionary).keys()
-		BattleSimulator._perform_attack(a, tgt, st)
-		for k in (tgt.statuses as Dictionary).keys():
-			if str(k) in set_only and not before.has(k):
-				seen[str(k)] = int(seen.get(str(k), 0)) + 1
-		st.elapsed = float(st.elapsed) + 1.0
-		StatusEffectService.tick(tgt, 1.0)
-	DamageService.clear_stat_context()
-	return seen
+	st.elapsed = 3.0
+	BattleSimulator._step_team([a], [tgt], 3.0, st)
+	return float(a.skill_ready)
 
 
 func _probe_control() -> void:
 	GameState.team_mode = true
-	var r3 := _control_extras(CTRL_3)
-	var r4 := _control_extras(CTRL_4)
-	print("[control] 400 attacks, statuses only the set can add: 3 treasures %s ; 4 treasures %s" % [str(r3), str(r4)])
-	_h.expect(r3.is_empty(), "control_baseline", "set-only statuses without the set: %s" % str(r3))
-	_h.expect(r4.size() == 3, "control_set", "set-only statuses with the set: %s" % str(r4))
+	var r3 := _control_refresh(CTRL_3, true)
+	var r4 := _control_refresh(CTRL_4, true)
+	var r4n := _control_refresh(CTRL_4, false)
+	print("[control] skill_ready after basic-attack kill: 3 treasures %.1f ; 4 treasures %.1f ; 4 treasures no kill %.1f" % [r3, r4, r4n])
+	_h.expect(is_equal_approx(r3, 50.0), "control_baseline", "without the set cooldown must stay 50, got %.1f" % r3)
+	_h.expect(is_equal_approx(r4, 3.0), "control_set", "with the set a kill must reset cooldown to now (3.0), got %.1f" % r4)
+	_h.expect(is_equal_approx(r4n, 50.0), "control_set_no_kill", "no kill, no refresh, got %.1f" % r4n)
 
 
 # --- 4 money: server ledger refresh costs ---------------------------------------

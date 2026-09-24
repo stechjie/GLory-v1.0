@@ -15,8 +15,8 @@
                       ],
     "sets":  {
                  "defense":  "normal units hp+30 def+30 dodge+15",
-                 "control":  "extra debuff from slow/attack_down/silence/stun/poison/interrupt/bleed",
-                 "attack":  "normal units prefer lowest hp target",
+                 "control":  "basic-attack last hit refreshes the killer's skill cooldown",
+                 "attack":  "basic attack executes non-boss target at or below 10% hp (ignores invulnerable)",
                  "money":  "shop and treasure refresh free",
                  "element":  "20% attack proc, radius 180, enemies take 10% max hp"
              },

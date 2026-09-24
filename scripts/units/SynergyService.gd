@@ -34,16 +34,25 @@ static func flags_from_counts(counts: Dictionary) -> Dictionary:
 		"counts": counts,
 		"god_death_cleanse": god > 0,
 		"god_lifesteal": 0.20 if god >= 3 else 0.0,
-		"god_invulnerable_opening": god >= 7,
+		# 神7（9.24 改）：开场 1 秒后起每 5 秒全队无敌 1 秒（只免普攻与技能，DoT 照吃）。
+		# 旧的「开场无敌 1.5 秒」(god_invulnerable_opening) 已删除。
+		"god_divine_pulse": god >= 7,
 		"dark_death_stack_enabled": dark > 0,
 		"dark_damage_bonus": 0.25 if dark >= 5 else 0.0,
 		"dark_debuff_strength": 0.25 if dark >= 2 else 0.0,
-		"dark_debuff_duration": 0.50 if dark >= 7 else 0.0,
+		# 暗7（9.24 改）：普攻带负面的目标 → 目标攻/防/攻速 -3%、自己 +2%，各最多 15 层。
+		# 旧的「负面时长 +50%」(dark_debuff_duration) 已删除，_dark_duration 读不到即为 0。
+		"dark_sap": dark >= 7,
 		"undead_poison_bonus": 1.0 if undead >= 4 else 0.0,
-		"undead_threshold_mul": 0.75 if undead >= 7 else 1.0,
-		"undead_death_clone_threshold": int(ceil(30.0 * (0.75 if undead >= 7 else 1.0))) if undead > 0 else 0,
+		# 灵7（9.24 改）：灵族普攻已中毒的目标 → 回复自身最大生命 15%。
+		# 旧的「克隆/母灵阈值 ×0.75」已删除，undead_threshold_mul 恒为 1.0。
+		"undead_poison_heal": 0.15 if undead >= 7 else 0.0,
+		"undead_threshold_mul": 1.0,
+		"undead_death_clone_threshold": 30 if undead > 0 else 0,
 		"human_shield": human >= 2,
-		"human_last_stand": human >= 7,
+		# 人7（9.24 改）：己方棋盘每死 1 个，活着的全部 +1 档（每档 +20%，见 BattleSimTreasures._owner_human_rally）。
+		# 旧的「只剩最后 1 个时属性翻倍」已删除。
+		"human_death_rally": human >= 7,
 	}
 
 static func current_player_flags() -> Dictionary:

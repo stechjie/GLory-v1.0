@@ -617,12 +617,39 @@ static func _effective_attack_distance(attacker: Dictionary, target: Dictionary)
 	return float(attacker.get("range_px", ATTACK_RANGE_SCALE)) + attacker_extra + target_extra
 
 static func _select_target(f: Dictionary, opponents: Array) -> Dictionary:
+	# 嘲讽永远优先，但不覆盖锁定：嘲讽结束后回去打原来的目标（若还有效）。
 	var taunter := _nearest_taunter(f, opponents)
 	if not taunter.is_empty():
 		return taunter
-	# 4 攻击套装与冥界执行者（death_hunt）优先打血量比例最低的敌人。
+	# 9.24 目标锁定：原先每 0.1 秒都重新选「最近的敌人」，大家一移动最近的就换人，
+	# 距离相近时还会来回抖（玩家反馈「打着打着突然换目标」）。现在锁定当前目标，
+	# 只有它死了 / 按分路规则打不到了 / 被转到我方（不在 opponents 里）才重选。
+	var locked := _locked_target(f, opponents)
+	if not locked.is_empty():
+		return locked
+	var picked := _pick_new_target(f, opponents)
+	f.locked_target_uid = str(picked.get("uid", ""))
+	return picked
+
+
+static func _locked_target(f: Dictionary, opponents: Array) -> Dictionary:
+	var uid := str(f.get("locked_target_uid", ""))
+	if uid.is_empty():
+		return {}
+	for o in opponents:
+		if str(o.get("uid", "")) != uid:
+			continue
+		if bool(o.get("alive", false)) and int(o.get("hp", 0)) > 0 and _can_target(f, o, opponents):
+			return o
+		break
+	return {}
+
+
+static func _pick_new_target(f: Dictionary, opponents: Array) -> Dictionary:
+	# 冥界执行者（death_hunt）重选时优先打血量比例最低的敌人。
+	# （9.24：4 攻击套装已改为斩杀，不再改选敌。）
 	# 必须在组队分支之前判定：线上 3v3 与离线自测全走组队分支，判定写在它后面就永远轮不到。
-	var prefer_low_hp := str(f.get("def", {}).get("skill_id", "")) == "death_hunt" or _f_has_set(f, "attack")
+	var prefer_low_hp := str(f.get("def", {}).get("skill_id", "")) == "death_hunt"
 	if GameState.team_mode:
 		return _team_select_target(f, opponents, prefer_low_hp)
 	if prefer_low_hp:
@@ -1010,3 +1037,51 @@ static func _heal_unit(unit: Dictionary, amount: int) -> void:
 	DamageService.record_heal(unit, healed)
 	DamageService.emit_heal_number(unit, healed)
 
+
+
+# ---------------------------------------------------------------------------
+# 9.24 羁绊改版共用：开战基础属性快照。
+# 人7（每死一个 +20%）与暗7（每下 ±3%/2%）都按「开战时」的数值算增量，不复利、
+# 也不会被战斗中其它加减益污染。快照在 prepare_*_state 末尾（开场宝藏之后）拍；
+# 战斗中途才出现的单位（复活体 / 克隆 / 寄生体）在第一次用到时补拍。
+static func _snapshot_base_stats(fighters: Array) -> void:
+	for f in fighters:
+		_ensure_base_stats(f)
+
+
+static func _ensure_base_stats(f: Dictionary) -> void:
+	# duplicate() 出来的单位（镜像 / 双生 / 寄生 / 凤凰复活体）会带着本体的快照，
+	# 所以按 uid 校验：uid 不同就按它自己当前的数值重拍。
+	if f.has("base_atk") and str(f.get("base_uid", "")) == str(f.get("uid", "")):
+		return
+	f.base_uid = str(f.get("uid", ""))
+	f.base_atk = int(f.get("atk", 1))
+	f.base_defense = int(f.get("defense", f.get("def", 0)))
+	f.base_attack_speed = float(f.get("attack_speed", 1.0))
+	f.base_max_hp = int(f.get("max_hp", 1))
+
+
+# 目标身上有没有任意一个负面状态（暗7 的触发条件）。
+static func _has_negative_status(f: Dictionary) -> bool:
+	StatusEffectService.ensure_status(f)
+	for kind in f.statuses.keys():
+		if StatusEffectService._is_negative_status(str(kind)) and float(f.statuses[kind].get("remaining", 0.0)) > 0.0:
+			return true
+	return false
+
+
+# 同一「棋盘主人」：3v3 = 同队同路；1v1 = 同队。
+static func _same_owner(a: Dictionary, b: Dictionary, state: Dictionary) -> bool:
+	if str(a.get("team", "")) != str(b.get("team", "")):
+		return false
+	if state.has("owner_syn_by_key"):
+		return int(a.get("lane", -1)) == int(b.get("lane", -1))
+	return true
+
+
+# 按开战基础值给单位加/减攻击、防御、攻速（pct 可为负）。
+static func _add_base_pct_stats(f: Dictionary, pct: float) -> void:
+	_ensure_base_stats(f)
+	f.atk = maxi(1, int(f.atk) + int(round(float(f.base_atk) * pct)))
+	f.defense = maxi(0, int(f.get("defense", 0)) + int(round(float(f.base_defense) * pct)))
+	f.attack_speed = clampf(float(f.attack_speed) + float(f.base_attack_speed) * pct, 0.05, 5.0)
