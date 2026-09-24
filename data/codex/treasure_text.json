@@ -1,5 +1,5 @@
 {
- "_source": "Chinese fields parsed from docs/宝藏效果总表.md. The *_en fields are hand-written for the codex and are NOT produced by the parser — regenerating this file from the balance table will drop them, so merge instead of overwrite.",
+ "_source": "Chinese fields were first parsed from docs/宝藏效果总表.md; that parser is not in the repo, so this file is now maintained by hand — keep it and the doc in sync. The *_en fields are hand-written. The sets section is the only copy of the set bonus text: the codex and the prep treasure detail both read it.",
  "treasures": {
   "def_iron_wall": {
    "name": "铁壁之护",
@@ -232,7 +232,7 @@
    "name_en": "Paralysis Shackles",
    "requires_text": "打断锁链 + 冰封霜刃",
    "requires_text_en": "Interrupt Chain + Frost Blade",
-   "effect": "打断锁链成功打断后，额外触发冰属性效果，并使目标获得冰易伤：受伤 +15%，持续 3 秒",
+   "effect": "打断锁链成功缴械后，额外触发冰属性效果，并使目标获得冰易伤：受伤 +15%，持续 3 秒",
    "effect_en": "A successful Interrupt Chain also fires the ice effect and leaves the target ice-vulnerable: +15% damage taken for 3s"
   },
   "link_oppression_counter": {
@@ -290,6 +290,48 @@
    "requires_text_en": "Life Monument + Formation Heal + Shockwave + Blood Pact + Fury Roster",
    "effect": "五件全部拥有时激活：生命丰碑 +40%、法阵回春 +2、震荡余波眩晕 2 秒、血契之刃 ATK x1.50、狂怒阵容上限提高至9；冷却、概率、次数与负面代价不变",
    "effect_en": "Active while all five are held: Life Monument +40%, Formation Heal +2, Shockwave stuns 2s, Blood Pact ATK ×1.50, Fury Roster raises the unit cap to 9. Cooldowns, chances, use counts and drawbacks are unchanged"
+  }
+ },
+ "sets": {
+  "set_defense": {
+   "name": "4防御",
+   "name_en": "4 Defense",
+   "requires_text": "任意 4 件防御宝藏",
+   "requires_text_en": "Any 4 Defense treasures",
+   "effect": "普通棋子开战 HP/DEF +30%，闪避 +15%。",
+   "effect_en": "Normal units gain HP/DEF +30% and Dodge +15% at battle start."
+  },
+  "set_control": {
+   "name": "4控制",
+   "name_en": "4 Control",
+   "requires_text": "任意 4 件控制宝藏",
+   "requires_text_en": "Any 4 Control treasures",
+   "effect": "普通棋子普攻让目标新增负面状态时，再随机附加一种：减速/减攻/沉默/眩晕/中毒/缴械/失血（优先挑目标身上没有的）。",
+   "effect_en": "When a normal unit's attack applies a new debuff, one more random debuff follows: slow / ATK down / silence / stun / poison / disarm / bleed (preferring ones the target lacks)."
+  },
+  "set_attack": {
+   "name": "4攻击",
+   "name_en": "4 Attack",
+   "requires_text": "任意 4 件攻击宝藏",
+   "requires_text_en": "Any 4 Attack treasures",
+   "effect": "普通棋子优先攻击生命比例最低的敌人（仍先清自己这一路）。",
+   "effect_en": "Normal units target the enemy with the lowest HP ratio (still clearing their own lane first)."
+  },
+  "set_money": {
+   "name": "4金钱",
+   "name_en": "4 Money",
+   "requires_text": "任意 4 件金钱宝藏",
+   "requires_text_en": "Any 4 Money treasures",
+   "effect": "商店刷新和宝藏刷新免费。",
+   "effect_en": "Shop refresh and treasure refresh are free."
+  },
+  "set_element": {
+   "name": "4元素",
+   "name_en": "4 Element",
+   "requires_text": "4 件元素宝藏",
+   "requires_text_en": "All 4 Element treasures",
+   "effect": "普通棋子攻击 20% 概率触发 180 范围元素爆发，对范围敌人造成最大生命 10% 真实伤害。",
+   "effect_en": "Normal units' attacks have a 20% chance to trigger an AoE (radius 180) elemental burst dealing 10% max HP true damage."
   }
  }
 }

@@ -33,6 +33,7 @@ func _pick_treasure(tid: String) -> void:
 		_connect_treasure_signals()
 		NetworkService.request_treasure_choice(tid)
 		return
+	var bonus_before := _active_bonus_ids()
 	if not TreasureService.claim_local_choice(tid):
 		_treasure.clear_pick_pending()
 		if bool(GameState.pending_treasure.get("active", false)):
@@ -43,6 +44,7 @@ func _pick_treasure(tid: String) -> void:
 	GameState.pending_treasure.active = false
 	SaveManager.save_run()
 	_refresh_all()
+	_queue_bonus_fx(bonus_before)
 	if GameState.tutorial_mode:
 		TutorialMode.sync()
 
@@ -60,6 +62,7 @@ func _on_treasure_granted(tid: String, owned: Array) -> void:
 	# 以服务端列表为准同步（helper 内部走 add_owned，保留图鉴/联动副作用）。
 	# 不要只 add_owned(tid)：那样本地多出来的项永远裁不掉，两边会一直漂。
 	var before := GameState.owned_treasures.size()
+	var bonus_before := _active_bonus_ids()
 	TreasureService.sync_owned_from_server(owned)
 	if before + 1 != GameState.owned_treasures.size():
 		# 本地曾经存在一条没走 intent 的入袋路径（单机/教学代码漏进联机分支），
@@ -72,6 +75,7 @@ func _on_treasure_granted(tid: String, owned: Array) -> void:
 	_treasure.clear_pick_pending()
 	SaveManager.save_run()
 	_refresh_all()
+	_queue_bonus_fx(bonus_before)
 	# 宝物入袋（折扣令牌/慷慨命运等）会改变左侧羁绊面板或商店内容，棋盘随之平移。
 	# 主动重新对齐 3D 投影的棋盘圆圈，避免「绿/红圈偏移石台」的 bug 复现
 	# （进下一轮对战后回正，正是重建 PrepUI 时重新跑了这次对齐）。

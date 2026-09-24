@@ -620,22 +620,21 @@ static func _select_target(f: Dictionary, opponents: Array) -> Dictionary:
 	var taunter := _nearest_taunter(f, opponents)
 	if not taunter.is_empty():
 		return taunter
+	# 4 攻击套装与冥界执行者（death_hunt）优先打血量比例最低的敌人。
+	# 必须在组队分支之前判定：线上 3v3 与离线自测全走组队分支，判定写在它后面就永远轮不到。
+	var prefer_low_hp := str(f.get("def", {}).get("skill_id", "")) == "death_hunt" or _f_has_set(f, "attack")
 	if GameState.team_mode:
-		return _team_select_target(f, opponents)
-	if str(f.get("def", {}).get("skill_id", "")) == "death_hunt":
-		var low2 := _lowest_targetable_hp_ratio(f, opponents)
-		if not low2.is_empty():
-			return low2
-	if _f_has_set(f, "attack"):
+		return _team_select_target(f, opponents, prefer_low_hp)
+	if prefer_low_hp:
 		var low := _lowest_targetable_hp_ratio(f, opponents)
 		if not low.is_empty():
 			return low
 	return _nearest(f, opponents)
 
 
-static func _team_select_target(f: Dictionary, opponents: Array) -> Dictionary:
+static func _team_select_target(f: Dictionary, opponents: Array, prefer_low_hp: bool = false) -> Dictionary:
 	# Fight your own lane first; when it is clear, help the LEFT lane (lower
-	# index) before the RIGHT lane.
+	# index) before the RIGHT lane. Within a lane: nearest, or lowest HP ratio.
 	var my_lane := int(f.get("lane", 0))
 	var lane_order: Array = [my_lane]
 	for l in range(my_lane - 1, -1, -1):
@@ -644,13 +643,17 @@ static func _team_select_target(f: Dictionary, opponents: Array) -> Dictionary:
 		lane_order.append(l)
 	for lane in lane_order:
 		var best: Dictionary = {}
-		var best_dist := INF
+		var best_score := INF
 		for o in opponents:
 			if not bool(o.get("alive", false)) or int(o.get("lane", -1)) != lane or not _can_target(f, o, opponents):
 				continue
-			var dist: float = float(f.pos.distance_squared_to(o.pos))
-			if dist < best_dist:
-				best_dist = dist
+			var score: float
+			if prefer_low_hp:
+				score = float(o.hp) / float(maxi(1, int(o.max_hp)))
+			else:
+				score = float(f.pos.distance_squared_to(o.pos))
+			if score < best_score:
+				best_score = score
 				best = o
 		if not best.is_empty():
 			return best

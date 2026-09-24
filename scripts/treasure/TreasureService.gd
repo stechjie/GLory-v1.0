@@ -1,11 +1,6 @@
 ﻿class_name TreasureService
 extends RefCounted
 
-# 9.17：音效走 SfxService（preload 而不是全局类名 —— headless 跑检查场景时不走
-# 导入，global_script_class_cache 里没有新登记的 class_name，写全局名会
-# 「Identifier not declared」，Main.gd 里采过这个坑）。
-const SfxService := preload("res://ui/services/SfxService.gd")
-
 const MAX_OWNED := 5
 const REFRESH_COSTS := [50, 100, 200, 400]
 
@@ -46,24 +41,31 @@ static func claim_local_choice(tid: String) -> bool:
 	add_owned(tid)
 	return tid in GameState.owned_treasures
 
-# 用服务端权威持有列表覆盖本地（联机 resume / grant 用）。
+# 用服务端权威持有列表覆盖本地（联机 resume / grant 用，每次 _on_treasure_granted
+# 都会调，不止重连）。
 # 不能直接 `GameState.owned_treasures = server_owned`：那会绕过 add_owned 里的
 # PlayerProfile.mark_seen 与联动解锁，玩家重连一次就少解锁一批图鉴条目。
-# 这里先算差集、逐个走 add_owned 拿到副作用，再按服务端列表裁掉本地多出来的项
-# （服务端说没有就是没有——本地多出来的只可能来自过期存档或未走 intent 的路径）。
+# 这里先按服务端列表裁掉本地多出来的项（服务端说没有就是没有——本地多出来的
+# 只可能来自过期存档或未走 intent 的路径），腾出名额之后再逐个走 add_owned
+# 补齐、拿到副作用。
 static func sync_owned_from_server(server_owned: Array) -> void:
 	var authoritative: Array = []
 	for value in server_owned:
 		var tid := str(value)
 		if not tid.is_empty() and not authoritative.has(tid):
 			authoritative.append(tid)
-	for tid in authoritative:
-		if tid not in GameState.owned_treasures:
-			add_owned(tid)
-	# 裁掉服务端不认的条目。就地改数组而不是整体替换，避免别处持有的引用失效。
+	# 🔴 必须先裁、后补，不能反过来。add_owned() 卡着 MAX_OWNED=5：
+	# 如果先补，本地一条服务端已经不认的过期条目还占着名额，新条目会被
+	# add_owned 的容量检查静默挡回去、永远补不回来——而这条过期条目随后
+	# 才在裁剪步骤里被删掉，玩家净亏一件，且不报错（只有 size 对不上时
+	# _on_treasure_granted 那条 push_warning 会响，但看不出真正原因）。
+	# 就地改数组而不是整体替换，避免别处持有的引用失效。
 	for i in range(GameState.owned_treasures.size() - 1, -1, -1):
 		if str(GameState.owned_treasures[i]) not in authoritative:
 			GameState.owned_treasures.remove_at(i)
+	for tid in authoritative:
+		if tid not in GameState.owned_treasures:
+			add_owned(tid)
 
 static func tag_counts() -> Dictionary:
 	var counts := {"defense": 0, "control": 0, "attack": 0, "money": 0, "element": 0}
@@ -79,6 +81,43 @@ static func tag_counts() -> Dictionary:
 
 static func has_set(category: String) -> bool:
 	return int(tag_counts().get(category, 0)) >= 4
+
+# 五个 4 件套装。图鉴条目 id 是 set_<类别>，与宝藏 / 联动 id 不会撞。
+const SET_CATEGORIES := ["defense", "control", "attack", "money", "element"]
+
+static func set_id(category: String) -> String:
+	return "set_" + category
+
+static func active_set_ids() -> Array[String]:
+	var out: Array[String] = []
+	for category in SET_CATEGORIES:
+		if has_set(category):
+			out.append(set_id(category))
+	return out
+
+# set_<类别> → 类别；不是套装 id 时返回空串。
+static func set_category_of(bonus_id: String) -> String:
+	if not bonus_id.begins_with("set_"):
+		return ""
+	var category := bonus_id.trim_prefix("set_")
+	return category if category in SET_CATEGORIES else ""
+
+# 促成这条联动 / 这个套装的那几件宝藏（联动特效的光线从它们射出）。
+# 联动取 requires；套装取 owned 里该类别的全部。
+static func bonus_sources(bonus_id: String, owned: Array) -> Array[String]:
+	var out: Array[String] = []
+	var category := set_category_of(bonus_id)
+	if not category.is_empty():
+		for tid in owned:
+			if str(treasure_by_id(str(tid)).get("category", "")) == category:
+				out.append(str(tid))
+		return out
+	for raw in DataRegistry.get_table("treasures").get("linkages", []):
+		var d := raw as Dictionary
+		if d != null and str(d.get("id", "")) == bonus_id:
+			for r in d.get("requires", []):
+				out.append(str(r))
+	return out
 
 static func has_linkage(link_id: String) -> bool:
 	return has_linkage_in(GameState.owned_treasures, link_id)
@@ -143,29 +182,23 @@ static func treasure_by_id(tid: String) -> Dictionary:
 static func add_owned(tid: String) -> void:
 	if tid.is_empty() or tid in GameState.owned_treasures or GameState.owned_treasures.size() >= MAX_OWNED:
 		return
-	# 9.17 联动激活音要在**入袋之前**取基线：联动没有自己的拾取动作，它的判据
-	# 就是「要求的那几件都到手」，所以只有比入袋前后才分得出「刚激活」和
-	# 「早就激活了」。
-	#
-	# 拿 PlayerProfile.mark_seen(link_id) 反推是不行的：那会把音效和**图鉴的
-	# 已读状态**耦合起来 —— 读一次带联动的旧档之后，那个联动永远判不出「新」。
-	# 这里要的是「这一次调用引起的激活」，不是「玩家有没有见过」。
-	var active_before := active_linkage_ids()
+	# 联动激活的音效与特效不在这里：这个函数也被断线重连的补同步调用，
+	# 在这里放会在重连时乱响。备战界面在领宝前后各取一次 active_*_ids()，
+	# 差集才是「这一次领宝引起的激活」（PrepUI._queue_bonus_fx）。
 	GameState.owned_treasures.append(tid)
 	PlayerProfile.mark_seen(tid)
 	# A linkage has no pickup of its own: it activates the moment its two treasures
-	# are both owned, so that is when it enters the codex.
+	# are both owned, so that is when it enters the codex. A set likewise enters
+	# the codex the first time a fourth treasure of its category is owned.
 	_mark_active_linkages()
-	for link_id in active_linkage_ids():
-		if not active_before.has(link_id):
-			SfxService.play(SfxService.CUE_TREASURE_LINKAGE)
-			break
+	var sets_now := active_set_ids()
+	if not sets_now.is_empty():
+		PlayerProfile.mark_seen_many(sets_now)
 
 
 # 当前已满足条件的联动 id。顺序跟数据表一致，所以「哪一条先激活」是可预期的。
 #
-# _mark_active_linkages() 用它算该写进图鉴的集合；add_owned() 用它做前后差集
-# 判「刚激活」。两处都从这一个函数读，免得各写一份遍历。
+# _mark_active_linkages() 用它算该写进图鉴的集合；备战界面用它做领宝前后的差集。
 static func active_linkage_ids() -> Array[String]:
 	var out: Array[String] = []
 	for raw in DataRegistry.get_table("treasures").get("linkages", []):

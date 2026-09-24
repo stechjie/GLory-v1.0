@@ -489,23 +489,14 @@ func linkage_status(tid: String) -> Array[String]:
 
 
 
-# 原 _treasure_set_effect_text（PrepDetails.gd）
+# 套装文字只在 data/codex/treasure_text.json 的 sets 段里写一份，图鉴读的也是它。
 func set_effect_text(category: String) -> String:
-	if PrepWidgets.is_en():
-		match category:
-			"defense": return "4 Defense: Normal units gain HP/DEF +30% and Dodge +15% at battle start."
-			"control": return "4 Control: Each debuff application randomly triggers one of: slow / ATK down / silence / stun / poison / disarm / bleed."
-			"attack":  return "4 Attack: Normal units prioritize the lowest-HP enemy."
-			"money":   return "4 Money: Shop refresh and treasure refresh are free."
-			"element": return "4 Element: Normal units' attacks have a 20% chance to trigger an AoE (radius 180) elemental burst dealing 10% max HP true damage."
+	var entry := CodexService.set_text(category)
+	if entry.is_empty():
 		return ""
-	match category:
-		"defense": return "4防御：普通棋子开战 HP/DEF +30%，闪避 +15%。"
-		"control": return "4控制：每次触发负面效果，随机再触发减速/减攻/沉默/眩晕/中毒/缴械/失血之一。"
-		"attack":  return "4攻击：普通棋子优先攻击当前低血敌人。"
-		"money":   return "4金钱：商店刷新和宝藏刷新免费。"
-		"element": return "4元素：普通棋子攻击 20% 概率触发 180 范围元素爆发，对范围敌人造成最大生命 10% 真实伤害。"
-	return ""
+	if PrepWidgets.is_en():
+		return "%s: %s" % [str(entry.get("name_en", "")), str(entry.get("effect_en", ""))]
+	return "%s：%s" % [str(entry.get("name", "")), str(entry.get("effect", ""))]
 
 
 
@@ -562,7 +553,7 @@ func effect_text_en(tid: String) -> String:
 		"atk_burst_core":       return "At battle start, friendly normal units gain Crit +25%."
 		"atk_wail_resonance":   return "On kill, deal 15% of the target's max HP as true damage to all enemies within radius 180."
 		"atk_frenzy_assault":   return "Attacking the same target stacks own AS ×1.15 (stackable); resets on target switch."
-		"money_compound":       return "After battle, gain bonus interest equal to +5% of current gold. Synergy with Thunder Haste: chance to earn 1G on damage."
+		"money_compound":       return "After battle, gain bonus interest equal to +5% of current gold. Synergy with Thunder Haste: 10% chance to gain +10G on damage."
 		"money_generous_fate":  return "Once per prep phase, gamble: 50% chance to double current gold; 50% chance to lose 80% of current gold. Synergy with Phantom Step: becomes 60%/40% with 50% loss."
 		"money_discount":       return "Shop unit prices -20%. Synergy with Fury Roster: -40%."
 		"money_golden_altar":   return "Adds a Golden Altar button during prep: spend 1 Formation HP to gain +50G (max 3 times per round; unavailable at HP ≤10)."

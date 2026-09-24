@@ -917,7 +917,14 @@ func _on_save_bio_pressed() -> void:
 	var payload := _bio_payload()
 	# 生日只能设一次，所以第一次设置要二次确认 —— 手滑填错会永久顶着错生日，
 	# 而那必然产生客服工单。已经设过的不再问（后端会保留原值）。
-	var first_time := _field_int("birth_month") == 0 and int(payload.get("birth_month", 0)) > 0
+	#
+	# ⚠️ 没选生日时 payload["birth_month"] 这个 key 是存在的、值是 null
+	# （_bio_payload 里 `month if has_birth else null`）—— Dictionary.get() 的默认值
+	# 只在 key 不存在时才生效，key 存在但值是 null 时还是返回 null。
+	# 之前直接 int(payload.get("birth_month", 0)) 在 null 上炸了
+	# （Nonexistent 'int' constructor），所以要先判 null 再转。
+	var payload_month: Variant = payload.get("birth_month")
+	var first_time := _field_int("birth_month") == 0 and payload_month != null and int(payload_month) > 0
 	if first_time:
 		DialogService.confirm({
 			"owner": self,

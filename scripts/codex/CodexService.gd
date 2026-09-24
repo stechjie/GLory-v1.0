@@ -63,6 +63,17 @@ const LINK_ART_NAME := {
 	"link_hu_pai_master": "胡牌手",
 }
 
+# Set art was delivered as "4<类别>", and the defense one says 防卫 where the game
+# says 防御. The files are listed (with hashes) in assets.manifest.json, so the codex
+# maps names here instead of renaming them.
+const SET_ART_NAME := {
+	"defense": "4防卫",
+	"control": "4控制",
+	"attack": "4攻击",
+	"money": "4金钱",
+	"element": "4元素",
+}
+
 # Pet art was delivered under nicknames that do not match the data table ids.
 const PET_ART_NAME := {
 	"pet_mushroom": "小菇",
@@ -91,7 +102,12 @@ static func entries_for(category_key: String) -> Array[Dictionary]:
 		"unit": return _units(str(meta.get("race", "")))
 		"merc": return _mercs()
 		"treasure": return _treasures()
-		"link": return _linkages()
+		"link":
+			# The four-piece sets share the linkage tab: both are bonuses you
+			# unlock by holding the right combination of treasures.
+			var links := _linkages()
+			links.append_array(_sets())
+			return links
 		"monster": return _monsters()
 		"boss": return _bosses()
 		"ally": return _allies()
@@ -265,6 +281,32 @@ static func _linkages() -> Array[Dictionary]:
 			"collectible": true,
 		})
 	return out
+
+static func _sets() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for category in TreasureService.SET_CATEGORIES:
+		var entry := set_text(category)
+		out.append({
+			"id": TreasureService.set_id(category),
+			"name": str(entry.get("name", "")),
+			"name_en": str(entry.get("name_en", "")),
+			"portrait": TREASURE_ICON_DIR + str(SET_ART_NAME.get(category, "")) + ".png",
+			"icon_art": true,
+			"effect": _localised(entry, "effect"),
+			"requires_text": _localised(entry, "requires_text"),
+			"collectible": true,
+		})
+	return out
+
+# Set copy lives only in the codex text table; the prep screen's treasure detail
+# reads it from here as well, so the two pages cannot drift apart.
+static func set_text(category: String) -> Dictionary:
+	var sets: Dictionary = _text_table().get("sets", {})
+	return sets.get(TreasureService.set_id(category), {})
+
+static func link_text(link_id: String) -> Dictionary:
+	var links: Dictionary = _text_table().get("linkages", {})
+	return links.get(link_id, {})
 
 static func _pets() -> Array[Dictionary]:
 	var out: Array[Dictionary] = []

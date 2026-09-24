@@ -90,6 +90,10 @@ const TREASURE_LINKAGE_LOGOS := {
 	"link_clearance_sale": "清仓特卖",
 	"link_hu_pai_master": "胡牌手",
 }
+const LinkageFx := preload("res://scenes/prep/fx/LinkageFx.gd")
+# 联动 / 套装激活特效的图层：盖在备战界面（画布 0 层）上，
+# 但在返回提示（250）、弹窗（1000 起）、公告（1400）和提示条（1500）之下。
+const BONUS_FX_LAYER := 200
 const PVP_WARNING_FRAME_PATH := "res://assets/ui/pvp_warning_frame.png"
 # 稳定 id：同 id 重复 push 会被 ModalStack 拒绝，这就是 2 秒内重复触发的去重机制。
 const PVP_WARNING_MODAL_ID := "pvp_warning"
@@ -148,6 +152,12 @@ var _shop_refresh_burn: PrepShopRefreshBurn
 # 签名没变的分区直接跳过重建。签名必须覆盖该分区渲染的全部数据，漏字段 = UI 不刷新。
 var _owned_logos_signature := "unset"
 var _merc_overlay_signature := "unset"
+# 宝藏栏按钮：宝藏 id / 联动 id / 套装 id → 按钮。联动特效靠它找光线起点和落位格子。
+var _tray_buttons: Dictionary = {}
+# 一次领宝可能同时成立好几条（例如第 4 件攻击宝藏同时凑齐套装和一条联动），依次播。
+var _bonus_fx_queue: Array[String] = []
+var _bonus_fx_busy := false
+var _bonus_fx_layer: CanvasLayer
 # 棋盘 caption 位置（待命的不受影响）：
 # DROP=相对格子底往下的【比例】（用格子高度比例、不是固定像素，才能补透视——不同排格子大小不同，
 #   固定像素会"越往上越偏"）。负=往上、正=往下；太高调大、太低调小。
@@ -2798,29 +2808,38 @@ func _make_team_mercs_plate(slot: int, pos: Vector3) -> MeshInstance3D:
 func _refresh_owned_treasure_logos() -> void:
 	if _treasure._owned_treasure_box == null:
 		return
-	# 联动 logo 完全由已拥有宝物推导，所以签名只需 owned_treasures。
+	# 联动与套装的 logo 完全由已拥有宝物推导，所以签名只需 owned_treasures。
 	var sig := JSON.stringify(GameState.owned_treasures)
 	if sig == _owned_logos_signature:
 		return
 	_owned_logos_signature = sig
 	for child in _treasure._owned_treasure_box.get_children():
 		child.queue_free()
+	_tray_buttons.clear()
 	# Owned treasures.
 	for tid in GameState.owned_treasures:
 		var tid_str := str(tid)
 		var t := TreasureService.treasure_by_id(tid)
-		_add_owned_treasure_logo(str(t.get("name", tid_str)), _treasure.show_detail.bind(tid_str))
+		_add_owned_treasure_logo(tid_str, str(t.get("name", tid_str)), _treasure.show_detail.bind(tid_str))
 	# Active linkages (their required treasures are all owned) get their own logo too.
 	var links: Array = DataRegistry.get_table("treasures").get("linkages", [])
 	for link in links:
 		var lid := str(link.get("id", ""))
 		if TREASURE_LINKAGE_LOGOS.has(lid) and TreasureService.has_linkage(lid):
-			_add_owned_treasure_logo(str(TREASURE_LINKAGE_LOGOS[lid]), _show_linkage_detail.bind(lid))
+			_add_owned_treasure_logo(lid, str(TREASURE_LINKAGE_LOGOS[lid]), _show_linkage_detail.bind(lid))
+	# 凑齐 4 件的套装排在联动后面（与图鉴「联动」分类同序）。
+	# 5 件持有上限下，套装最多再伴随 1 条联动，栏位最多 7 格，放得下两行 4 格。
+	for category in TreasureService.SET_CATEGORIES:
+		if TreasureService.has_set(category):
+			var art := str(CodexService.SET_ART_NAME.get(category, ""))
+			var set_name := str(CodexService.set_text(category).get("name", art))
+			_add_owned_treasure_logo(TreasureService.set_id(category), art,
+				_show_set_detail.bind(category), set_name)
 
-func _add_owned_treasure_logo(logo_name: String, detail: Callable) -> void:
+func _add_owned_treasure_logo(key: String, logo_name: String, detail: Callable, tooltip: String = "") -> void:
 	var b := Button.new()
 	b.text = ""
-	b.tooltip_text = logo_name
+	b.tooltip_text = tooltip if not tooltip.is_empty() else logo_name
 	b.custom_minimum_size = Vector2(66, 66)
 	b.focus_mode = Control.FOCUS_NONE
 	PrepWidgets.apply_empty_button_styles(b)
@@ -2830,11 +2849,128 @@ func _add_owned_treasure_logo(logo_name: String, detail: Callable) -> void:
 	logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	logo.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	logo.texture = PrepWidgets.cached_texture("%s/%s.png" % [TREASURE_LOGO_DIRECTORY, logo_name])
+	var logo_path := "%s/%s.png" % [TREASURE_LOGO_DIRECTORY, logo_name]
+	var logo_tex := PrepWidgets.cached_texture(logo_path)
+	logo.texture = logo_tex
 	b.add_child(logo)
+	# 同 TreasureChoicePanel 三选一卡片的规矩：贴图缺失时绝不能让按钮看起来是空的
+	# （玩家分不清"没这个联动"和"图丢了"）。之前这里没有兜底，缺图会完全静默——
+	# 不报错、不留痕迹，排查只能靠肉眼比对文件名。现在缺图时既留日志、也留文字。
+	if logo_tex == null:
+		push_warning("PrepUI: treasure/linkage logo texture missing at %s" % logo_path)
+		var fallback := Label.new()
+		fallback.text = logo_name
+		fallback.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		fallback.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		fallback.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		fallback.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		fallback.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		fallback.add_theme_font_size_override("font_size", 14)
+		fallback.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
+		fallback.add_theme_constant_override("outline_size", 3)
+		b.add_child(fallback)
 	if detail.is_valid():
 		b.pressed.connect(detail)
 	_treasure._owned_treasure_box.add_child(b)
+	_tray_buttons[key] = b
+
+
+func _show_set_detail(category: String) -> void:
+	var status := _treasure.set_status(category)
+	if status.is_empty():
+		return
+	var entry := CodexService.set_text(category)
+	var title := str(entry.get("name_en", "")) if PrepWidgets.is_en() else str(entry.get("name", ""))
+	_overlay.show_text("%s\n%s" % [title, status])
+
+
+# --- 联动 / 套装激活特效 --------------------------------------------------------
+#
+# 领宝的两条路（单机 _pick_treasure、联机 _on_treasure_granted）在入袋前取一次
+# _active_bonus_ids()，_refresh_all() 之后把它交给 _queue_bonus_fx() 求差集。
+# 断线重连的补同步不走这两条路，所以重连时不会补播。
+
+func _active_bonus_ids() -> Array[String]:
+	var out := TreasureService.active_linkage_ids()
+	out.append_array(TreasureService.active_set_ids())
+	return out
+
+
+func _queue_bonus_fx(before: Array[String]) -> void:
+	for id in _active_bonus_ids():
+		if before.has(id) or _bonus_fx_queue.has(id):
+			continue
+		_bonus_fx_queue.append(id)
+		# 新格子这一帧就会画出来，先藏住，等特效里的图标飞到再显示。
+		var slot: Control = _tray_buttons.get(id, null)
+		if slot != null:
+			slot.modulate.a = 0.0
+	if not _bonus_fx_busy:
+		_play_next_bonus_fx()
+
+
+func _play_next_bonus_fx() -> void:
+	if _bonus_fx_queue.is_empty() or not is_inside_tree():
+		_bonus_fx_busy = false
+		return
+	_bonus_fx_busy = true
+	var id: String = _bonus_fx_queue.pop_front()
+	# 旧按钮是 queue_free 的，要等它们真正释放、栅格重新排版，新按钮的位置才是真的。
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if not is_inside_tree():
+		return
+	var sources: Array = []
+	for tid in TreasureService.bonus_sources(id, GameState.owned_treasures):
+		var icon: Control = _tray_buttons.get(tid, null)
+		if icon != null and is_instance_valid(icon):
+			sources.append({
+				"rect": _screen_rect(icon),
+				"category": str(TreasureService.treasure_by_id(tid).get("category", "")),
+			})
+	var slot: Control = _tray_buttons.get(id, null)
+	var target := Rect2()
+	if slot != null and is_instance_valid(slot):
+		target = _screen_rect(slot)
+	var fx: LinkageFx = LinkageFx.new()
+	_bonus_fx_host().add_child(fx)
+	fx.landed.connect(func() -> void:
+		if is_instance_valid(slot):
+			slot.modulate.a = 1.0)
+	fx.finished.connect(_play_next_bonus_fx)
+	fx.play(sources, _bonus_logo(id), _bonus_title(id), target)
+
+
+func _bonus_fx_host() -> CanvasLayer:
+	if _bonus_fx_layer == null or not is_instance_valid(_bonus_fx_layer):
+		_bonus_fx_layer = CanvasLayer.new()
+		_bonus_fx_layer.name = "BonusFxLayer"
+		_bonus_fx_layer.layer = BONUS_FX_LAYER
+		add_child(_bonus_fx_layer)
+	return _bonus_fx_layer
+
+
+# 宝藏栏在画布 0 层、特效在自己的图层：用带画布变换的矩形换到同一个屏幕坐标里。
+func _screen_rect(c: Control) -> Rect2:
+	var xf := c.get_global_transform_with_canvas()
+	return Rect2(xf.origin, c.size * xf.get_scale())
+
+
+func _bonus_logo(id: String) -> Texture2D:
+	var category := TreasureService.set_category_of(id)
+	var art := str(TREASURE_LINKAGE_LOGOS.get(id, ""))
+	if not category.is_empty():
+		art = str(CodexService.SET_ART_NAME.get(category, ""))
+	return PrepWidgets.cached_texture("%s/%s.png" % [TREASURE_LOGO_DIRECTORY, art])
+
+
+func _bonus_title(id: String) -> String:
+	var category := TreasureService.set_category_of(id)
+	var entry := CodexService.set_text(category) if not category.is_empty() else CodexService.link_text(id)
+	var bonus_name := str(entry.get("name_en", "")) if PrepWidgets.is_en() else str(entry.get("name", ""))
+	if bonus_name.is_empty():
+		bonus_name = str(TREASURE_LINKAGE_LOGOS.get(id, id))
+	return tr("ui_set_fx_banner" if not category.is_empty() else "ui_linkage_fx_banner") % bonus_name
 
 func _maybe_show_pvp_warning(kind: String) -> void:
 	if kind != "pvp" and kind != "final":
