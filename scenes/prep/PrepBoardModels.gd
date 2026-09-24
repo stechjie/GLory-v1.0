@@ -12,7 +12,7 @@ const UnitActor3DScript := preload("res://effects/runtime/presentation/UnitActor
 const UnitVisualResolverScript := preload("res://effects/runtime/presentation/UnitVisualResolver.gd")
 const UnitContactShadowScript := preload("res://effects/runtime/presentation/UnitContactShadow.gd")
 const FOUR_STAR_READY_AURA := preload("res://effects/vfx3d/modules/FourStarAura3D.gd")
-const FOUR_STAR_AURA := preload("res://effects/vfx3d/modules/FourStarAuraV2_3D.gd")
+const FOUR_STAR_AURA := preload("res://effects/vfx3d/modules/FourStarAuraV3_3D.gd")
 var _four_star_visual_poll := 0.0
 
 func refresh_four_star_visuals(delta: float) -> void:
@@ -53,7 +53,10 @@ func _sync_four_star_actor(actor: Node3D, cell: Dictionary) -> void:
 	var aura := FOUR_STAR_AURA.sync(actor, 2 if state == 2 else 0, affinity, 1.0)
 	if aura != null and state == 2 and actor.is_inside_tree():
 		if not actor.has_meta("four_star_aura_v2_transform") and bool(actor.get_meta("prep_model_centered", false)):
-			FOUR_STAR_AURA.fit_to_actor(aura, actor, 0.24)
+			# Prep units have no Foot/HeadAnchor; 0.32 matches the rendered prep model
+			# height. 0.20 = world radius of the ring drawn in board_cell_mark.png, so the
+			# four-star ring sits on the cell circle instead of spreading outward.
+			FOUR_STAR_AURA.fit_to_actor(aura, actor, 0.32, 0.20)
 			actor.set_meta("four_star_aura_v2_transform", aura.transform)
 		if actor.has_meta("four_star_aura_v2_transform"):
 			aura.transform = actor.get_meta("four_star_aura_v2_transform")

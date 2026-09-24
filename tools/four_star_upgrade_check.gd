@@ -2,7 +2,7 @@ extends Node
 const Harness = preload("res://tools/CheckHarness.gd")
 const Rules = preload("res://scripts/economy/CarrotEconomy.gd")
 const Ledger = preload("res://scripts/multiplayer/EconomyLedger.gd")
-const Aura = preload("res://effects/vfx3d/modules/FourStarAuraV2_3D.gd")
+const Aura = preload("res://effects/vfx3d/modules/FourStarAuraV3_3D.gd")
 var h: RefCounted
 
 func _ready() -> void:
@@ -135,10 +135,8 @@ func _ui_and_visuals(d: Dictionary) -> void:
 		Aura.sync(actor,0,element)
 		h.expect(not aura.visible and not aura.is_processing(),"unready_hidden",element)
 		Aura.sync(actor,2,element,1.0,true)
-		h.expect(aura.burst_age < 0 and not aura.burst_body.visible,"load_without_burst",element)
+		h.expect(aura.visible and aura.in_battle and aura.particles.size() == 2,"battle_aura",element)
 		aura.play_upgrade()
-		h.expect(aura.burst_body.visible and aura.burst_mantle.visible,"upgrade_burst",element)
-		aura._process(1.5)
-		h.expect(not aura.burst_body.visible and aura.visible,"burst_settles",element)
+		h.expect(aura.visible and aura.ring != null,"upgrade_no_burst",element)
 		actor.queue_free()
 	await get_tree().process_frame

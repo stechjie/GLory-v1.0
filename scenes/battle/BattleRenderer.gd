@@ -6,7 +6,7 @@ const UnitVisualResolverScript := preload("res://effects/runtime/presentation/Un
 const ModelRootMotionPolicyScript := preload("res://effects/runtime/presentation/ModelRootMotionPolicy.gd")
 const UnitContactShadowScript := preload("res://effects/runtime/presentation/UnitContactShadow.gd")
 const UNIT_TEAM_RING_SHADER := preload("res://shaders/unit_team_ring.gdshader")
-const FOUR_STAR_AURA := preload("res://effects/vfx3d/modules/FourStarAuraV2_3D.gd")
+const FOUR_STAR_AURA := preload("res://effects/vfx3d/modules/FourStarAuraV3_3D.gd")
 
 # Per-frame actor lookup and memoized visual positions. The immutable personal
 # slot is stored separately; these frame tables are rebuilt by _refresh_visuals.
