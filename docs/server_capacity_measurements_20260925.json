@@ -1,0 +1,630 @@
+[
+  {
+    "experiment": "split_process",
+    "case": "capacity-16p-4r-synchronous",
+    "functional_runtime_passed": false,
+    "strict_passed": false,
+    "runtime_error_count": 242,
+    "engine_error_count": 257,
+    "client_error_count": 18,
+    "measurements": [
+      {
+        "connected": 16,
+        "delivered": 0,
+        "delivery_p95_ms": 0.0,
+        "expected_deliveries": 0,
+        "failed_replays": 0,
+        "heartbeat_max_ms": 17.702,
+        "heartbeat_p95_ms": 17.15,
+        "phase": "idle",
+        "ready_p95_ms": 0.0,
+        "replay_bytes": 0,
+        "reports": 16,
+        "server_frame_max_ms": 0.402,
+        "server_gap_max_ms": 18.225,
+        "server_static_memory_peak_bytes": 54657042,
+        "wall_ms": 10016.133
+      },
+      {
+        "connected": 8,
+        "delivered": 9,
+        "delivery_p95_ms": 23216.333,
+        "expected_deliveries": 16,
+        "failed_replays": 0,
+        "heartbeat_max_ms": 4176.246,
+        "heartbeat_p95_ms": 3657.626,
+        "phase": "battle",
+        "ready_p95_ms": 13432.022,
+        "replay_bytes": 5681724,
+        "reports": 9,
+        "server_frame_max_ms": 4323.822,
+        "server_gap_max_ms": 4330.819,
+        "server_static_memory_peak_bytes": 56657074,
+        "wall_ms": 23154.281
+      }
+    ],
+    "source_tree_sha256": "7240d8ddc7531d09c0da1e731a60315121daa03461ca4d94d352e5c397adba42",
+    "harness_sha256": {
+      "server_capacity_check.gd": "8e2f7c5c5828e7def003c3af729cb072efb9a5ac8b6b7491ede7841b181089d2",
+      "server_capacity_peer.gd": "08286cc23d7b3a512a195bb4c7664e9cfff2600e2e5563d6722a8963b1d5823a",
+      "server_capacity_split_check.gd": "e8b065f6a9d0b425a9fc93a563f68174ab4229c4a719fbee8ba1c8433ddd9b5b"
+    }
+  },
+  {
+    "experiment": "split_process",
+    "case": "capacity-16p-4r-cooperative",
+    "functional_runtime_passed": true,
+    "strict_passed": false,
+    "runtime_error_count": 0,
+    "engine_error_count": 3,
+    "client_error_count": 0,
+    "measurements": [
+      {
+        "connected": 16,
+        "delivered": 0,
+        "delivery_p95_ms": 0.0,
+        "expected_deliveries": 0,
+        "failed_replays": 0,
+        "heartbeat_max_ms": 17.661,
+        "heartbeat_p95_ms": 17.168,
+        "phase": "idle",
+        "ready_p95_ms": 0.0,
+        "replay_bytes": 0,
+        "reports": 16,
+        "server_frame_max_ms": 0.342,
+        "server_gap_max_ms": 17.947,
+        "server_static_memory_peak_bytes": 54657042,
+        "wall_ms": 10016.831
+      },
+      {
+        "connected": 16,
+        "delivered": 16,
+        "delivery_p95_ms": 15925.251,
+        "expected_deliveries": 16,
+        "failed_replays": 0,
+        "heartbeat_max_ms": 1544.697,
+        "heartbeat_p95_ms": 350.924,
+        "phase": "battle",
+        "ready_p95_ms": 7555.342,
+        "replay_bytes": 5681724,
+        "reports": 16,
+        "server_frame_max_ms": 34.924,
+        "server_gap_max_ms": 35.229,
+        "server_static_memory_peak_bytes": 197822929,
+        "wall_ms": 15869.898
+      }
+    ],
+    "source_tree_sha256": "7240d8ddc7531d09c0da1e731a60315121daa03461ca4d94d352e5c397adba42",
+    "harness_sha256": {
+      "server_capacity_check.gd": "8e2f7c5c5828e7def003c3af729cb072efb9a5ac8b6b7491ede7841b181089d2",
+      "server_capacity_peer.gd": "08286cc23d7b3a512a195bb4c7664e9cfff2600e2e5563d6722a8963b1d5823a",
+      "server_capacity_split_check.gd": "e8b065f6a9d0b425a9fc93a563f68174ab4229c4a719fbee8ba1c8433ddd9b5b"
+    }
+  },
+  {
+    "experiment": "split_process",
+    "case": "capacity-32p-8r-cooperative",
+    "functional_runtime_passed": true,
+    "strict_passed": false,
+    "runtime_error_count": 0,
+    "engine_error_count": 3,
+    "client_error_count": 0,
+    "measurements": [
+      {
+        "connected": 32,
+        "delivered": 0,
+        "delivery_p95_ms": 0.0,
+        "expected_deliveries": 0,
+        "failed_replays": 0,
+        "heartbeat_max_ms": 17.992,
+        "heartbeat_p95_ms": 17.445,
+        "phase": "idle",
+        "ready_p95_ms": 0.0,
+        "replay_bytes": 0,
+        "reports": 32,
+        "server_frame_max_ms": 0.345,
+        "server_gap_max_ms": 21.48,
+        "server_static_memory_peak_bytes": 58954006,
+        "wall_ms": 10016.472
+      },
+      {
+        "connected": 32,
+        "delivered": 32,
+        "delivery_p95_ms": 24943.489,
+        "expected_deliveries": 32,
+        "failed_replays": 0,
+        "heartbeat_max_ms": 3357.009,
+        "heartbeat_p95_ms": 758.576,
+        "phase": "battle",
+        "ready_p95_ms": 17872.297,
+        "replay_bytes": 11394640,
+        "reports": 32,
+        "server_frame_max_ms": 71.71,
+        "server_gap_max_ms": 76.442,
+        "server_static_memory_peak_bytes": 204621950,
+        "wall_ms": 25344.691
+      }
+    ],
+    "source_tree_sha256": "7240d8ddc7531d09c0da1e731a60315121daa03461ca4d94d352e5c397adba42",
+    "harness_sha256": {
+      "server_capacity_check.gd": "8e2f7c5c5828e7def003c3af729cb072efb9a5ac8b6b7491ede7841b181089d2",
+      "server_capacity_peer.gd": "08286cc23d7b3a512a195bb4c7664e9cfff2600e2e5563d6722a8963b1d5823a",
+      "server_capacity_split_check.gd": "e8b065f6a9d0b425a9fc93a563f68174ab4229c4a719fbee8ba1c8433ddd9b5b"
+    }
+  },
+  {
+    "experiment": "split_process",
+    "case": "capacity-64p-16r-cooperative",
+    "functional_runtime_passed": false,
+    "strict_passed": false,
+    "runtime_error_count": 0,
+    "engine_error_count": 3,
+    "client_error_count": 0,
+    "measurements": [
+      {
+        "connected": 64,
+        "delivered": 0,
+        "delivery_p95_ms": 0.0,
+        "expected_deliveries": 0,
+        "failed_replays": 0,
+        "heartbeat_max_ms": 18.563,
+        "heartbeat_p95_ms": 17.68,
+        "phase": "idle",
+        "ready_p95_ms": 0.0,
+        "replay_bytes": 0,
+        "reports": 64,
+        "server_frame_max_ms": 0.253,
+        "server_gap_max_ms": 22.415,
+        "server_static_memory_peak_bytes": 67546914,
+        "wall_ms": 10014.054
+      },
+      {
+        "connected": 64,
+        "delivered": 60,
+        "delivery_p95_ms": 42167.691,
+        "expected_deliveries": 64,
+        "failed_replays": 0,
+        "heartbeat_max_ms": 3218.1,
+        "heartbeat_p95_ms": 1618.792,
+        "phase": "battle",
+        "ready_p95_ms": 36143.053,
+        "replay_bytes": 22388728,
+        "reports": 64,
+        "server_frame_max_ms": 73.104,
+        "server_gap_max_ms": 77.308,
+        "server_static_memory_peak_bytes": 217438665,
+        "wall_ms": 47160.069
+      }
+    ],
+    "source_tree_sha256": "7240d8ddc7531d09c0da1e731a60315121daa03461ca4d94d352e5c397adba42",
+    "harness_sha256": {
+      "server_capacity_check.gd": "8e2f7c5c5828e7def003c3af729cb072efb9a5ac8b6b7491ede7841b181089d2",
+      "server_capacity_peer.gd": "08286cc23d7b3a512a195bb4c7664e9cfff2600e2e5563d6722a8963b1d5823a",
+      "server_capacity_split_check.gd": "e8b065f6a9d0b425a9fc93a563f68174ab4229c4a719fbee8ba1c8433ddd9b5b"
+    }
+  },
+  {
+    "experiment": "split_process",
+    "case": "capacity-128p-32r-cooperative",
+    "functional_runtime_passed": false,
+    "strict_passed": false,
+    "runtime_error_count": 3,
+    "engine_error_count": 3,
+    "client_error_count": 0,
+    "measurements": [],
+    "source_tree_sha256": "7240d8ddc7531d09c0da1e731a60315121daa03461ca4d94d352e5c397adba42",
+    "harness_sha256": {
+      "server_capacity_check.gd": "8e2f7c5c5828e7def003c3af729cb072efb9a5ac8b6b7491ede7841b181089d2",
+      "server_capacity_peer.gd": "08286cc23d7b3a512a195bb4c7664e9cfff2600e2e5563d6722a8963b1d5823a",
+      "server_capacity_split_check.gd": "e8b065f6a9d0b425a9fc93a563f68174ab4229c4a719fbee8ba1c8433ddd9b5b"
+    }
+  },
+  {
+    "experiment": "paced_experiment_rejected",
+    "case": "capacity-16p-4r-cooperative",
+    "functional_runtime_passed": true,
+    "strict_passed": false,
+    "runtime_error_count": 0,
+    "engine_error_count": 3,
+    "client_error_count": 0,
+    "measurements": [
+      {
+        "connected": 16,
+        "delivered": 0,
+        "delivery_p95_ms": 0.0,
+        "expected_deliveries": 0,
+        "failed_replays": 0,
+        "heartbeat_max_ms": 17.463,
+        "heartbeat_p95_ms": 17.099,
+        "phase": "idle",
+        "ready_p95_ms": 0.0,
+        "replay_bytes": 0,
+        "reports": 16,
+        "server_frame_max_ms": 0.525,
+        "server_gap_max_ms": 17.62,
+        "server_static_memory_peak_bytes": 54650678,
+        "wall_ms": 10017.111
+      },
+      {
+        "connected": 16,
+        "delivered": 16,
+        "delivery_p95_ms": 14179.543,
+        "expected_deliveries": 16,
+        "failed_replays": 0,
+        "heartbeat_max_ms": 1616.049,
+        "heartbeat_p95_ms": 378.221,
+        "phase": "battle",
+        "ready_p95_ms": 6908.393,
+        "replay_bytes": 5681724,
+        "reports": 16,
+        "server_frame_max_ms": 34.266,
+        "server_gap_max_ms": 34.561,
+        "server_static_memory_peak_bytes": 203759369,
+        "wall_ms": 14118.795
+      }
+    ],
+    "source_tree_sha256": "7240d8ddc7531d09c0da1e731a60315121daa03461ca4d94d352e5c397adba42",
+    "harness_sha256": {
+      "server_capacity_check.gd": "8e2f7c5c5828e7def003c3af729cb072efb9a5ac8b6b7491ede7841b181089d2",
+      "server_capacity_peer.gd": "08286cc23d7b3a512a195bb4c7664e9cfff2600e2e5563d6722a8963b1d5823a",
+      "server_capacity_split_check.gd": "f3546e8a57b881da4d2af9ae72cf3eadcc4e598841641d89945281e6bf869589"
+    }
+  },
+  {
+    "experiment": "paced_experiment_rejected",
+    "case": "capacity-32p-8r-cooperative",
+    "functional_runtime_passed": false,
+    "strict_passed": false,
+    "runtime_error_count": 3,
+    "engine_error_count": 6,
+    "client_error_count": 0,
+    "measurements": [
+      {
+        "connected": 32,
+        "delivered": 0,
+        "delivery_p95_ms": 0.0,
+        "expected_deliveries": 0,
+        "failed_replays": 0,
+        "heartbeat_max_ms": 34.091,
+        "heartbeat_p95_ms": 33.58,
+        "phase": "idle",
+        "ready_p95_ms": 0.0,
+        "replay_bytes": 0,
+        "reports": 32,
+        "server_frame_max_ms": 0.631,
+        "server_gap_max_ms": 18.895,
+        "server_static_memory_peak_bytes": 58947030,
+        "wall_ms": 10016.089
+      },
+      {
+        "connected": 29,
+        "delivered": 29,
+        "delivery_p95_ms": 22362.393,
+        "expected_deliveries": 32,
+        "failed_replays": 0,
+        "heartbeat_max_ms": 2894.614,
+        "heartbeat_p95_ms": 34.262,
+        "phase": "battle",
+        "ready_p95_ms": 15983.701,
+        "replay_bytes": 11394640,
+        "reports": 29,
+        "server_frame_max_ms": 53.497,
+        "server_gap_max_ms": 56.949,
+        "server_static_memory_peak_bytes": 207144137,
+        "wall_ms": 30542.262
+      }
+    ],
+    "source_tree_sha256": "7240d8ddc7531d09c0da1e731a60315121daa03461ca4d94d352e5c397adba42",
+    "harness_sha256": {
+      "server_capacity_check.gd": "8e2f7c5c5828e7def003c3af729cb072efb9a5ac8b6b7491ede7841b181089d2",
+      "server_capacity_peer.gd": "08286cc23d7b3a512a195bb4c7664e9cfff2600e2e5563d6722a8963b1d5823a",
+      "server_capacity_split_check.gd": "f3546e8a57b881da4d2af9ae72cf3eadcc4e598841641d89945281e6bf869589"
+    }
+  },
+  {
+    "experiment": "paced_experiment_rejected",
+    "case": "capacity-64p-16r-cooperative",
+    "functional_runtime_passed": false,
+    "strict_passed": false,
+    "runtime_error_count": 3,
+    "engine_error_count": 6,
+    "client_error_count": 0,
+    "measurements": [
+      {
+        "connected": 64,
+        "delivered": 0,
+        "delivery_p95_ms": 0.0,
+        "expected_deliveries": 0,
+        "failed_replays": 0,
+        "heartbeat_max_ms": 19.393,
+        "heartbeat_p95_ms": 17.817,
+        "phase": "idle",
+        "ready_p95_ms": 0.0,
+        "replay_bytes": 0,
+        "reports": 64,
+        "server_frame_max_ms": 0.816,
+        "server_gap_max_ms": 20.671,
+        "server_static_memory_peak_bytes": 67540858,
+        "wall_ms": 10016.19
+      },
+      {
+        "connected": 61,
+        "delivered": 61,
+        "delivery_p95_ms": 41564.117,
+        "expected_deliveries": 64,
+        "failed_replays": 0,
+        "heartbeat_max_ms": 5302.141,
+        "heartbeat_p95_ms": 1369.928,
+        "phase": "battle",
+        "ready_p95_ms": 33788.077,
+        "replay_bytes": 22388728,
+        "reports": 61,
+        "server_frame_max_ms": 78.354,
+        "server_gap_max_ms": 78.82,
+        "server_static_memory_peak_bytes": 214173126,
+        "wall_ms": 42689.063
+      }
+    ],
+    "source_tree_sha256": "7240d8ddc7531d09c0da1e731a60315121daa03461ca4d94d352e5c397adba42",
+    "harness_sha256": {
+      "server_capacity_check.gd": "8e2f7c5c5828e7def003c3af729cb072efb9a5ac8b6b7491ede7841b181089d2",
+      "server_capacity_peer.gd": "08286cc23d7b3a512a195bb4c7664e9cfff2600e2e5563d6722a8963b1d5823a",
+      "server_capacity_split_check.gd": "9fd0ee6039a303a2b3d1810e06b6165d5bc4c52dd678db78945d162f72e15fb3"
+    }
+  },
+  {
+    "experiment": "final_ramp",
+    "case": "capacity-4p-1r-cooperative",
+    "functional_runtime_passed": true,
+    "strict_passed": false,
+    "runtime_error_count": 0,
+    "engine_error_count": 3,
+    "client_error_count": 0,
+    "measurements": [
+      {
+        "connected": 4,
+        "delivered": 0,
+        "delivery_p95_ms": 0.0,
+        "expected_deliveries": 0,
+        "failed_replays": 0,
+        "heartbeat_max_ms": 17.164,
+        "heartbeat_p95_ms": 16.942,
+        "phase": "idle",
+        "ready_p95_ms": 0.0,
+        "replay_bytes": 0,
+        "reports": 4,
+        "server_frame_max_ms": 0.305,
+        "server_gap_max_ms": 17.369,
+        "server_static_memory_peak_bytes": 51430569,
+        "wall_ms": 10016.489
+      },
+      {
+        "connected": 4,
+        "delivered": 4,
+        "delivery_p95_ms": 3540.164,
+        "expected_deliveries": 4,
+        "failed_replays": 0,
+        "heartbeat_max_ms": 16.721,
+        "heartbeat_p95_ms": 16.716,
+        "phase": "battle",
+        "ready_p95_ms": 1713.339,
+        "replay_bytes": 1463324,
+        "reports": 4,
+        "server_frame_max_ms": 23.639,
+        "server_gap_max_ms": 23.917,
+        "server_static_memory_peak_bytes": 107662292,
+        "wall_ms": 3467.003
+      }
+    ],
+    "source_tree_sha256": "7240d8ddc7531d09c0da1e731a60315121daa03461ca4d94d352e5c397adba42",
+    "harness_sha256": {
+      "server_capacity_check.gd": "8e2f7c5c5828e7def003c3af729cb072efb9a5ac8b6b7491ede7841b181089d2",
+      "server_capacity_peer.gd": "08286cc23d7b3a512a195bb4c7664e9cfff2600e2e5563d6722a8963b1d5823a",
+      "server_capacity_split_check.gd": "9fd0ee6039a303a2b3d1810e06b6165d5bc4c52dd678db78945d162f72e15fb3"
+    }
+  },
+  {
+    "experiment": "final_ramp",
+    "case": "capacity-8p-2r-cooperative",
+    "functional_runtime_passed": true,
+    "strict_passed": false,
+    "runtime_error_count": 0,
+    "engine_error_count": 3,
+    "client_error_count": 0,
+    "measurements": [
+      {
+        "connected": 8,
+        "delivered": 0,
+        "delivery_p95_ms": 0.0,
+        "expected_deliveries": 0,
+        "failed_replays": 0,
+        "heartbeat_max_ms": 17.181,
+        "heartbeat_p95_ms": 17.047,
+        "phase": "idle",
+        "ready_p95_ms": 0.0,
+        "replay_bytes": 0,
+        "reports": 8,
+        "server_frame_max_ms": 0.589,
+        "server_gap_max_ms": 20.138,
+        "server_static_memory_peak_bytes": 52504058,
+        "wall_ms": 10016.31
+      },
+      {
+        "connected": 8,
+        "delivered": 8,
+        "delivery_p95_ms": 7712.848,
+        "expected_deliveries": 8,
+        "failed_replays": 0,
+        "heartbeat_max_ms": 666.278,
+        "heartbeat_p95_ms": 283.4,
+        "phase": "battle",
+        "ready_p95_ms": 3791.386,
+        "replay_bytes": 2940452,
+        "reports": 8,
+        "server_frame_max_ms": 22.973,
+        "server_gap_max_ms": 23.176,
+        "server_static_memory_peak_bytes": 144698151,
+        "wall_ms": 7634.189
+      }
+    ],
+    "source_tree_sha256": "7240d8ddc7531d09c0da1e731a60315121daa03461ca4d94d352e5c397adba42",
+    "harness_sha256": {
+      "server_capacity_check.gd": "8e2f7c5c5828e7def003c3af729cb072efb9a5ac8b6b7491ede7841b181089d2",
+      "server_capacity_peer.gd": "08286cc23d7b3a512a195bb4c7664e9cfff2600e2e5563d6722a8963b1d5823a",
+      "server_capacity_split_check.gd": "9fd0ee6039a303a2b3d1810e06b6165d5bc4c52dd678db78945d162f72e15fb3"
+    }
+  },
+  {
+    "experiment": "final_ramp",
+    "case": "capacity-16p-4r-cooperative",
+    "functional_runtime_passed": true,
+    "strict_passed": false,
+    "runtime_error_count": 0,
+    "engine_error_count": 3,
+    "client_error_count": 0,
+    "measurements": [
+      {
+        "connected": 16,
+        "delivered": 0,
+        "delivery_p95_ms": 0.0,
+        "expected_deliveries": 0,
+        "failed_replays": 0,
+        "heartbeat_max_ms": 17.374,
+        "heartbeat_p95_ms": 17.118,
+        "phase": "idle",
+        "ready_p95_ms": 0.0,
+        "replay_bytes": 0,
+        "reports": 16,
+        "server_frame_max_ms": 0.757,
+        "server_gap_max_ms": 22.11,
+        "server_static_memory_peak_bytes": 54651050,
+        "wall_ms": 10016.318
+      },
+      {
+        "connected": 16,
+        "delivered": 16,
+        "delivery_p95_ms": 17253.516,
+        "expected_deliveries": 16,
+        "failed_replays": 0,
+        "heartbeat_max_ms": 1893.238,
+        "heartbeat_p95_ms": 18.233,
+        "phase": "battle",
+        "ready_p95_ms": 7198.706,
+        "replay_bytes": 5681724,
+        "reports": 16,
+        "server_frame_max_ms": 39.901,
+        "server_gap_max_ms": 45.389,
+        "server_static_memory_peak_bytes": 202932729,
+        "wall_ms": 17195.222
+      }
+    ],
+    "source_tree_sha256": "7240d8ddc7531d09c0da1e731a60315121daa03461ca4d94d352e5c397adba42",
+    "harness_sha256": {
+      "server_capacity_check.gd": "8e2f7c5c5828e7def003c3af729cb072efb9a5ac8b6b7491ede7841b181089d2",
+      "server_capacity_peer.gd": "08286cc23d7b3a512a195bb4c7664e9cfff2600e2e5563d6722a8963b1d5823a",
+      "server_capacity_split_check.gd": "9fd0ee6039a303a2b3d1810e06b6165d5bc4c52dd678db78945d162f72e15fb3"
+    }
+  },
+  {
+    "experiment": "final_ramp",
+    "case": "capacity-128p-0r-cooperative",
+    "functional_runtime_passed": true,
+    "strict_passed": false,
+    "runtime_error_count": 0,
+    "engine_error_count": 3,
+    "client_error_count": 0,
+    "measurements": [
+      {
+        "connected": 128,
+        "delivered": 0,
+        "delivery_p95_ms": 0.0,
+        "expected_deliveries": 0,
+        "failed_replays": 0,
+        "heartbeat_max_ms": 37.199,
+        "heartbeat_p95_ms": 18.656,
+        "phase": "idle",
+        "ready_p95_ms": 0.0,
+        "replay_bytes": 0,
+        "reports": 128,
+        "server_frame_max_ms": 0.741,
+        "server_gap_max_ms": 40.685,
+        "server_static_memory_peak_bytes": 84986142,
+        "wall_ms": 60000.102
+      }
+    ],
+    "source_tree_sha256": "7240d8ddc7531d09c0da1e731a60315121daa03461ca4d94d352e5c397adba42",
+    "harness_sha256": {
+      "server_capacity_check.gd": "8e2f7c5c5828e7def003c3af729cb072efb9a5ac8b6b7491ede7841b181089d2",
+      "server_capacity_peer.gd": "08286cc23d7b3a512a195bb4c7664e9cfff2600e2e5563d6722a8963b1d5823a",
+      "server_capacity_split_check.gd": "9fd0ee6039a303a2b3d1810e06b6165d5bc4c52dd678db78945d162f72e15fb3"
+    }
+  },
+  {
+    "experiment": "final_ramp",
+    "case": "capacity-256p-0r-cooperative",
+    "functional_runtime_passed": true,
+    "strict_passed": false,
+    "runtime_error_count": 0,
+    "engine_error_count": 3,
+    "client_error_count": 0,
+    "measurements": [
+      {
+        "connected": 256,
+        "delivered": 0,
+        "delivery_p95_ms": 0.0,
+        "expected_deliveries": 0,
+        "failed_replays": 0,
+        "heartbeat_max_ms": 92.467,
+        "heartbeat_p95_ms": 46.551,
+        "phase": "idle",
+        "ready_p95_ms": 0.0,
+        "replay_bytes": 0,
+        "reports": 256,
+        "server_frame_max_ms": 2.029,
+        "server_gap_max_ms": 88.256,
+        "server_static_memory_peak_bytes": 119273882,
+        "wall_ms": 60029.878
+      }
+    ],
+    "source_tree_sha256": "7240d8ddc7531d09c0da1e731a60315121daa03461ca4d94d352e5c397adba42",
+    "harness_sha256": {
+      "server_capacity_check.gd": "8e2f7c5c5828e7def003c3af729cb072efb9a5ac8b6b7491ede7841b181089d2",
+      "server_capacity_peer.gd": "08286cc23d7b3a512a195bb4c7664e9cfff2600e2e5563d6722a8963b1d5823a",
+      "server_capacity_split_check.gd": "9fd0ee6039a303a2b3d1810e06b6165d5bc4c52dd678db78945d162f72e15fb3"
+    }
+  },
+  {
+    "experiment": "final_ramp",
+    "case": "capacity-512p-0r-cooperative",
+    "functional_runtime_passed": true,
+    "strict_passed": false,
+    "runtime_error_count": 0,
+    "engine_error_count": 3,
+    "client_error_count": 0,
+    "measurements": [
+      {
+        "connected": 512,
+        "delivered": 0,
+        "delivery_p95_ms": 0.0,
+        "expected_deliveries": 0,
+        "failed_replays": 0,
+        "heartbeat_max_ms": 1010.031,
+        "heartbeat_p95_ms": 176.234,
+        "phase": "idle",
+        "ready_p95_ms": 0.0,
+        "replay_bytes": 0,
+        "reports": 512,
+        "server_frame_max_ms": 1.144,
+        "server_gap_max_ms": 128.523,
+        "server_static_memory_peak_bytes": 187957562,
+        "wall_ms": 60043.252
+      }
+    ],
+    "source_tree_sha256": "7240d8ddc7531d09c0da1e731a60315121daa03461ca4d94d352e5c397adba42",
+    "harness_sha256": {
+      "server_capacity_check.gd": "8e2f7c5c5828e7def003c3af729cb072efb9a5ac8b6b7491ede7841b181089d2",
+      "server_capacity_peer.gd": "08286cc23d7b3a512a195bb4c7664e9cfff2600e2e5563d6722a8963b1d5823a",
+      "server_capacity_split_check.gd": "9fd0ee6039a303a2b3d1810e06b6165d5bc4c52dd678db78945d162f72e15fb3"
+    }
+  }
+]

@@ -54,11 +54,15 @@ func _ready() -> void:
 	if _arg("--probe-arm") != "readonly":
 		_finish(false, "explicit_readonly_arm_required")
 		return
-	NetworkService.session_changed.connect(_on_session_changed)
 	NetworkService.team_room_list_received.connect(_on_room_list)
 	_connect_deadline = _now() + CONNECT_TIMEOUT_SEC
 	if not NetworkService.team_join(_host, _port):
 		_finish(false, "connect_setup_failed")
+		return
+	# team_join resets the previous session synchronously before entering JOINING.
+	# Subscribe after setup so that initial OFFLINE reset is not a disconnect.
+	NetworkService.session_changed.connect(_on_session_changed)
+	_on_session_changed()
 
 func _process(_delta: float) -> void:
 	if _done or _connect_deadline == 0.0:
