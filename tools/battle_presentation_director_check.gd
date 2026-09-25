@@ -188,7 +188,7 @@ func _run() -> void:
 	_h = CheckHarness.new("battle_presentation_director")
 	_check_lifecycle_and_null_adapter()
 	_check_serial_and_parallel_tracks()
-	_check_death_cancels_unstarted_attacks()
+	_check_death_preserves_accepted_attacks()
 	_check_invalid_and_duplicate_events()
 	_check_pause_seek_skip_and_drain()
 	_check_battle_restart_cleanup()
@@ -268,7 +268,7 @@ func _check_serial_and_parallel_tracks() -> void:
 		"different_uid_parallel", "different source uids must be allowed to start in parallel")
 
 
-func _check_death_cancels_unstarted_attacks() -> void:
+func _check_death_preserves_accepted_attacks() -> void:
 	var adapter := FakeAdapter.new()
 	var director: RefCounted = DirectorScript.new()
 	var drops: Array[Dictionary] = []
@@ -282,17 +282,24 @@ func _check_death_cancels_unstarted_attacks() -> void:
 		_event("d2:death", 0, 2, "impact", "unit_dead", [], "important"),
 		_event("d2:death", 0, 3, "death", "unit_dead", [], "critical"),
 	])
-	_h.expect(adapter.started.size() == 1 and director.pending_cue_count() == 1,
-		"death_cancel_queue", "death must keep the active action, cancel two unstarted attacks, and queue death")
-	var source_dead_drops := 0
-	for drop in drops:
-		if str(drop.reason) == "source_dead":
-			source_dead_drops += 1
-	_h.expect(source_dead_drops == 2,
-		"death_drop_count", "death must report each cancelled unstarted attack exactly once")
+	_h.expect(adapter.started.size() == 1 and director.pending_cue_count() == 3,
+		"death_preserve_queue", "death must preserve all server-accepted cues ahead of it")
+	_h.expect(drops.is_empty(), "death_no_valid_drop", "death cancelled an already accepted attack")
 	adapter.complete("d2:death:0:0")
-	_h.expect(adapter.started.size() == 2 and str(adapter.started[1].type) == "death",
-		"death_after_active", "death cue must start after the already-active action completes")
+	adapter.complete("d2:death:0:1")
+	adapter.complete("d2:death:0:2")
+	_h.expect(adapter.started.size() == 4 and str(adapter.started[3].type) == "death",
+		"death_after_accepted", "death cue must follow the accepted attacks in server order")
+	director.enqueue_tick(1, [
+		_event("d2:death", 1, 0, "attack_start", "unit_dead", [], "important"),
+		_event("d2:death", 1, 1, "projectile_spawn", "unit_dead", [], "important"),
+		_event("d2:death", 1, 2, "impact", "unit_dead", [], "important"),
+	])
+	_h.expect(drops.size() == 3 and director.pending_cue_count() == 0,
+		"new_dead_attacks_rejected", "genuinely new attacks after death must still be rejected")
+	adapter.complete("d2:death:0:3")
+	_h.expect(adapter.started.size() == 4 and director.active_cue_count() == 0,
+		"death_does_not_replay", "death must neither create nor replay attacks")
 
 
 func _check_invalid_and_duplicate_events() -> void:
@@ -376,11 +383,15 @@ func _check_pause_seek_skip_and_drain() -> void:
 	director.enqueue_tick(0, [
 		_event("d2:drain", 0, 0, "attack_start", "unit_a", [], "important"),
 		_event("d2:drain", 0, 1, "hit_number", "unit_b", [], "ambient"),
+		_event("d2:drain", 0, 2, "skill_shake", "unit_c", [], "ambient"),
 	])
 	director.begin_draining()
 	_h.expect(director.get_lifecycle() == DirectorScript.Lifecycle.DRAINING and director.has_blocking_cues(),
 		"draining_waits", "DRAINING must wait for critical/important cues")
 	adapter.complete("d2:drain:0:0")
+	_h.expect(director.get_lifecycle() == DirectorScript.Lifecycle.DRAINING,
+		"draining_waits_for_number", "final hit numbers must finish even with ambient priority")
+	adapter.complete("d2:drain:0:1")
 	_h.expect(director.get_lifecycle() == DirectorScript.Lifecycle.FINISHED and drained[0] == 1,
 		"draining_finished", "Director did not finish after its final blocking cue")
 	_h.expect(director.active_cue_count() == 0 and director.pending_cue_count() == 0,

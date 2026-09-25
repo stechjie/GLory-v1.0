@@ -388,6 +388,7 @@ var _peer_last_ping: Dictionary = {}      # peer_id -> unix time
 # 早晚对不上，而它本来就是房间表的一个派生视图。
 var _matched_rooms: Dictionary = {}
 var _reserve_tick_accum := 0.0
+var _replay_retry_accum := 0.0
 # --- 限流（服务器） ---
 # 四个维度，严格程度递减：per-peer 最严 -> per-token -> per-IP（只记录不拦截）->
 # 全服熔断。per-IP 不拦截是刻意的：手机 4G/校园网走运营商级 NAT，一个公网 IP 后面
@@ -412,6 +413,8 @@ const RateLimitService := preload("res://scripts/multiplayer/RateLimitService.gd
 var _rate_limiter: RefCounted = RateLimitService.new()
 
 const ReplayTransferService := preload("res://scripts/multiplayer/ReplayTransferService.gd")
+const ReplaySendQueue := preload("res://scripts/multiplayer/ReplaySendQueue.gd")
+const ReplayValidation := preload("res://scripts/battle/BattleReplayUtil.gd")
 var _replay_transfer: RefCounted = ReplayTransferService.new()
 
 const ClientLogService := preload("res://scripts/multiplayer/ClientLogService.gd")
@@ -429,6 +432,7 @@ const ReconnectService := preload("res://scripts/multiplayer/ReconnectService.gd
 var _reconnect_service: RefCounted = ReconnectService.new()
 const DedicatedServerService := preload("res://scripts/multiplayer/DedicatedServerService.gd")
 var _server_service: RefCounted = DedicatedServerService.new()
+const BattleReplayJob := preload("res://scripts/multiplayer/BattleReplayJob.gd")
 const NetworkTransport := preload("res://scripts/multiplayer/NetworkTransport.gd")
 
 # 传输层 DTLS（C14）。三个建 peer 的入口都必须过它，见各处调用点的注释。
@@ -604,19 +608,20 @@ func _process(delta: float) -> void:
 	# 冻结宽恕（双端）：进程刚被卡住过（服务器 CPU 被限速时实测冻 10~22 秒），
 	# 时钟一跳所有心跳计时全部失真——重置计时，不许拿自己的卡顿判别人超时。
 	var proc_now := _now()
-	if _last_process_at > 0.0 and proc_now - _last_process_at >= FREEZE_FORGIVE_SEC:
-		_net_log("process freeze %.1fs -> heartbeat timers reset" % (proc_now - _last_process_at))
-		for pid in _peer_last_ping.keys():
-			_peer_last_ping[pid] = proc_now
-		if _last_pong_at > 0.0:
-			_last_pong_at = proc_now
+	_forgive_process_stall(proc_now)
 	_last_process_at = proc_now
-	if _dedicated_server:
-		# 排在最前：本帧要算的战斗先算完，后面的心跳/清理才是基于最新状态的。
-		# 每帧最多一个房间（见 _drain_finalize_queue 的说明）。
-		_drain_finalize_queue()
-		# 每帧排空一点回放队列（C14 节流）。必须在 1 秒累加器**之外**。
+	if not _dedicated_server and (not _simulation_jobs.is_empty() or not _finalize_queue.is_empty()):
+		_cancel_pending_simulations()
+	_poll_retired_simulations()
+	# Local room hosts enqueue exactly like dedicated hosts. Both must keep
+	# servicing bulk delivery and its ACK timeout for the life of the session.
+	if is_host or _dedicated_server:
 		_tick_replay_send()
+		_replay_retry_accum += delta
+		if _replay_retry_accum >= 1.0:
+			_replay_retry_accum = 0.0
+			_tick_replay_retry(delta)
+	if _dedicated_server:
 		ServerFlags.poll_reload(proc_now)
 		_cleanup_elapsed += delta
 		if _cleanup_elapsed >= CLEANUP_INTERVAL_SEC:
@@ -630,12 +635,14 @@ func _process(delta: float) -> void:
 		if _reserve_tick_accum >= 1.0:
 			_reserve_tick_accum = 0.0
 			_tick_reserved_seats()
-			_tick_heartbeat_timeouts()
+			_tick_heartbeat_timeouts(proc_now)
 			_reap_zombie_peers()
 			_tick_board_watchdog()
 			_tick_idle_peers()
 			_tick_leave_tombstones()
-			_tick_replay_retry(delta)
+		# Network maintenance goes first. Simulation cooperatively uses only its
+		# configured wall-clock budget; serialization happens on a data-only worker.
+		_drain_finalize_queue()
 	# 客户端心跳：比干等 ENet 超时更快发现半开连接
 	if team_active and not is_host and state == SessionState.READY and multiplayer.multiplayer_peer != null:
 		_ping_accum += delta
@@ -748,8 +755,10 @@ func start_dedicated_server(port: int = DEFAULT_PORT) -> bool:
 	_dedicated_server = true
 	# 关键：无画面 Godot 默认不限帧，_process 每秒空转数千次会把一个 CPU 核打满，
 	# 小机型(GCP 突发积分)积分耗尽后被限速到卡死、连 SSH 都进不去、只能 reset。
-	# 服务器只跑房间/心跳/清理，30 FPS 绰绰有余，限帧后 CPU 占用降到几乎为 0。
-	Engine.max_fps = 30
+	# Keep an explicit cap; bounded simulation now shares frames with networking.
+	Engine.max_fps = clampi(_cmdline_int("--server-fps", 60), 30, 120)
+	_simulation_budget_usec = clampi(_cmdline_int("--sim-budget-usec", SIMULATION_BUDGET_USEC), 1000, 20000)
+	_simulation_slice_usec = clampi(_cmdline_int("--sim-slice-usec", SIMULATION_SLICE_USEC), 250, _simulation_budget_usec)
 	# dtls= 与 key= 一起打出来，是部署之后**唯一能从外面确认加密真的开了**的地方
 	# （C14）。journalctl -u glory-server 里看这一行；key 路径同时能证明
 	# --tls-key= 有没有被吃掉。私钥内容当然不打。
@@ -759,6 +768,8 @@ func start_dedicated_server(port: int = DEFAULT_PORT) -> bool:
 		NetTLS.server_key_path() if NetworkConfig.USE_DTLS else "-",
 		_shard_index * NetworkConfig.SHARD_ID_STRIDE + 100000,
 		_shard_index * NetworkConfig.SHARD_ID_STRIDE + 999999])
+	_net_log("server simulation scheduler budget_usec=%d slice_usec=%d active_limit=%d" % [
+		_simulation_budget_usec, _simulation_slice_usec, MAX_ACTIVE_SIMULATIONS])
 	return team_host(port, true)
 
 # --- 3v3 team lobby --------------------------------------------------------
@@ -1209,6 +1220,19 @@ func _room_close(room: Dictionary, reason: String) -> void:
 func _cleanup_rooms() -> void:
 	_room_service.cleanup_rooms(_room_close, _room_begin_next_prep)
 	_cleanup_matched_rooms()
+	_tick_result_ack_deadlines()
+
+func _tick_result_ack_deadlines() -> void:
+	# A deadline must be serviced without waiting for another client RPC. The
+	# generic room cleanup's 600s RESULT TTL is longer than this playback bound.
+	var now := _now()
+	for room in _rooms.values():
+		if str(room.get("state", "")) != ROOM_RESULT or bool(room.get("suspended", false)) \
+				or bool(room.get("run_over", false)):
+			continue
+		var deadline := float(room.get("result_ack_deadline", 0.0))
+		if deadline > 0.0 and now >= deadline and _room_result_acks_complete(room):
+			_room_begin_next_prep(room)
 
 # 匹配房间坐不满的兜底（协议 32）。
 #
@@ -1255,17 +1279,55 @@ func _cleanup_matched_rooms() -> void:
 #
 # AI 席位与空席由服务器自己算作已确认，**不伪造客户端 ACK**。
 const RESULT_ACK_TIMEOUT_SEC := 60.0
+# Playback completes before the client ACKs. Match BattleScreen's total cold
+# preparation bound (120s), replay receive bound (60s), and presentation drain
+# (3s); allow 15s for frame jitter/result UI/control ACK. These are ceilings,
+# not delays: all online human ACKs still advance the room immediately.
+const RESULT_PREPARE_GRACE_SEC := 120.0
+const RESULT_DELIVERY_GRACE_SEC := 60.0
+const RESULT_PRESENTATION_GRACE_SEC := 18.0
+# The simulator itself stops at 180s (BattleSimShared.HARD_TIMEOUT_SEC).
+# 480s contains its full playback + bounded preparation/delivery and one
+# bounded resume allowance. Repeated reconnects cannot renew this hard limit.
+const RESULT_ACK_HARD_LIMIT_SEC := 480.0
+
+func _room_start_result_ack_wait(room: Dictionary, frames_a: int, frames_b: int, replay_available: bool) -> void:
+	var now := _now()
+	var playback := float(maxi(frames_a, frames_b)) * BattleSimulator.TICK_SEC
+	# Short battles may be slowed down to the client's 5s/8s readable window.
+	# Use 8s for both sides: PvE and boss share this path and the difference is
+	# only spare grace, never a mandatory wait after the ACKs have arrived.
+	playback = maxf(playback, 8.0) if replay_available else 0.0
+	var grace := RESULT_DELIVERY_GRACE_SEC + RESULT_PRESENTATION_GRACE_SEC
+	if replay_available:
+		grace += RESULT_PREPARE_GRACE_SEC + playback
+	room.result_playback_sec = playback
+	room.result_ack_window_sec = minf(grace, RESULT_ACK_HARD_LIMIT_SEC)
+	room.result_ack_deadline = now + float(room.result_ack_window_sec)
+	room.result_ack_hard_deadline = now + RESULT_ACK_HARD_LIMIT_SEC
+	room.result_resume_grace_used = false
+	room.result_ack_timeout_logged = false
+
+func _room_extend_result_ack_for_resume(room: Dictionary) -> void:
+	if bool(room.get("result_resume_grace_used", false)) or (room.get("last_match_state", {}) as Dictionary).is_empty():
+		return
+	var kept: Dictionary = room.get("replay_packed", {})
+	if (kept.get("a", PackedByteArray()) as PackedByteArray).is_empty() \
+			or (kept.get("b", PackedByteArray()) as PackedByteArray).is_empty():
+		return
+	var hard := float(room.get("result_ack_hard_deadline", 0.0))
+	if hard <= 0.0:
+		return
+	var extended := minf(hard, _now() + float(room.get("result_ack_window_sec", RESULT_ACK_TIMEOUT_SEC)))
+	room.result_ack_deadline = maxf(float(room.get("result_ack_deadline", 0.0)), extended)
+	room.result_resume_grace_used = true
 
 func _room_result_acks_complete(room: Dictionary) -> bool:
 	var battle_id := str(room.get("battle_id", ""))
 	if battle_id.is_empty():
 		return true   # 没有待确认的战斗（例如刚建房），不阻塞
-	# 兜底：某个在线真人的客户端卡死时，不能让全房无限等。
-	# 这不是"正常同步机制"，只是保险 —— 正常路径应该在几秒内全部 ACK。
-	if _now() - float(room.get("state_started_at", 0.0)) >= RESULT_ACK_TIMEOUT_SEC:
-		_net_log("result ack timeout room=%d battle=%s -> advancing anyway" % [
-			int(room.get("id", 0)), battle_id])
-		return true
+	if (room.get("last_match_state", {}) as Dictionary).is_empty():
+		return false  # Queued/running simulation has not produced this result yet.
 	var acks: Dictionary = room.get("result_acks", {})
 	var peer_slot: Dictionary = room.get("peer_slot", {})
 	var online_slots := {}
@@ -1278,7 +1340,16 @@ func _room_result_acks_complete(room: Dictionary) -> bool:
 		if not online_slots.has(i):
 			continue          # 掉线：不等（已确认的产品规则）
 		if str(acks.get(i, "")) != battle_id:
-			return false
+			var deadline := float(room.get("result_ack_deadline",
+				float(room.get("state_started_at", 0.0)) + RESULT_ACK_TIMEOUT_SEC))
+			if _now() < deadline:
+				return false
+			if not bool(room.get("result_ack_timeout_logged", false)):
+				room.result_ack_timeout_logged = true
+				_net_log("result ack timeout room=%d battle=%s playback_sec=%.1f window_sec=%.1f -> advancing anyway" % [
+					int(room.get("id", 0)), battle_id, float(room.get("result_playback_sec", 0.0)),
+					float(room.get("result_ack_window_sec", RESULT_ACK_TIMEOUT_SEC))])
+			return true
 	return true
 
 func send_result_ack(battle_id: String) -> void:
@@ -1336,6 +1407,8 @@ func _room_begin_next_prep(room: Dictionary) -> void:
 	# ROOM_RESULT 下补发）。不清的话每个房间会带着约 196 KB 熝到下一场。
 	room.replay_packed = {}
 	room.prep_mercs = {}
+	room.replay_pending = false
+	room.replay_error = ""
 	room.altar_uses = {}   # 祭坛次数按回合重置，和客户端 reset_shop_refreshes 同步
 	# round_index 封顶到 FINAL_ROUND，和客户端一致（客户端从 match_state 拿的是 min(+1, 21)）。
 	# 提前算出来：下面摇的商店属于**即将开始的那一轮**，而档位曲线是按回合走的，
@@ -1822,10 +1895,18 @@ func _build_room_state(room: Dictionary, slot: int) -> Dictionary:
 	if str(room.get("state", "")) == ROOM_RESULT:
 		round_id = mini(round_id + 1, GameState.FINAL_ROUND)
 	var streak: Array = room.get("team_loss_streak", [0, 0])
+	var replays: Dictionary = room.get("replay_packed", {})
+	var replay_available := not (replays.get("a", PackedByteArray()) as PackedByteArray).is_empty() \
+		and not (replays.get("b", PackedByteArray()) as PackedByteArray).is_empty()
 	return {
 		# --- 房间 ---
 		"phase": str(room.get("state", ROOM_LOBBY)),
 		"round_id": round_id,
+		"battle_id": str(room.get("battle_id", "")),
+		"battle_round": int(room.get("round_index", 1)),
+		"replay_pending": str(room.get("state", "")) == ROOM_BATTLE or bool(room.get("replay_pending", false)),
+		"replay_available": replay_available,
+		"replay_error": str(room.get("replay_error", "")),
 		"leader_slot": int(room.get("leader_slot", 0)),
 		"slot_states": (room.get("slot_states", []) as Array).duplicate(),
 		"seat_profiles": (room.get("seat_profiles", {}) as Dictionary).duplicate(true),
@@ -2406,6 +2487,10 @@ func _voice_setup_server() -> void:
 # per-slot set (+ shared seed) so every client builds the same battle.
 signal team_boards_ready
 signal team_replay_received
+signal team_replay_failed(battle_id: String, reason: String)
+
+var current_battle_id := ""
+var team_replay_battle_id := ""
 
 var team_boards: Dictionary = {}          # slot(int) -> snapshot Dictionary (after broadcast)
 var _team_boards_collecting: Dictionary = {}
@@ -2439,8 +2524,7 @@ func shop_refresh_error_text(reason: String) -> String:
 func team_begin_round() -> void:
 	team_boards = {}
 	_team_boards_collecting = {}
-	team_replay = {}
-	team_replay_rival = {}
+	_set_current_replay_battle("")
 	team_prep_mercs = {}
 	# 权威回合对齐：本地回合号落后服务器（重连/漏包后遗症）时，提交棋盘会被
 	# wrong_round 拒收、整轮卡死。进新回合是安全的对齐时机（不会打断战斗播放）。
@@ -2483,8 +2567,9 @@ func team_broadcast_replays(replay_a: Dictionary, replay_b: Dictionary) -> void:
 	if not is_host:
 		return
 	# 打包一次、所有人复用（见 _pack_replay 的说明）
-	var packed_a := _pack_replay(replay_a)
-	var packed_b := _pack_replay(replay_b)
+	var battle_id := "host:%d" % GameState.round_index
+	var packed_a := _pack_replay(replay_a, battle_id)
+	var packed_b := _pack_replay(replay_b, battle_id)
 	for peer_id in _team_peer_slot:
 		var slot: int = _team_peer_slot[peer_id]
 		# 本地房主模式没有 room 字典，用回合号当 battle_id —— 分块只需要它能
@@ -2512,8 +2597,8 @@ func team_broadcast_replays(replay_a: Dictionary, replay_b: Dictionary) -> void:
 # MAX_UNCOMPRESSED_BYTES / pack / unpack）。这两个函数保留为门面薄包装：
 # tools/adversarial_client_node.gd 与 tools/channel_check_node.gd 共 7 处直接调用它们
 # （往返、空包、损坏包、解压炸弹、假长度头），保住包装就保住了这些用例。
-func _pack_replay(replay: Dictionary) -> PackedByteArray:
-	return _replay_transfer.pack(replay)
+func _pack_replay(replay: Dictionary, battle_id: String = "") -> PackedByteArray:
+	return _replay_transfer.pack(replay, battle_id)
 
 func _unpack_replay(packed: PackedByteArray) -> Dictionary:
 	return _replay_transfer.unpack(packed)
@@ -2543,21 +2628,23 @@ const REPLAY_MAX_RETRIES := 3
 # 服务端：peer_id -> {battle_id, kinds, payloads:{kind:PackedByteArray}, done:{kind:true},
 #                    deadline: float, tries: int}
 var _replay_out: Dictionary = {}
-# 客户端：battle_id -> {kinds:int, done:{kind:PackedByteArray}}
+# 客户端：battle_id -> {kinds:int, done:{kind:validated Dictionary}}
 # 重组本身在 ReplayTransferService 里，这里只记"哪几种收齐了"。
 var _replay_in: Dictionary = {}
+var _replay_completed: Dictionary = {}
+var _replay_ack_times: Dictionary = {}
 # 只给门禁与真机测试用：把生产里走不到的分块路径强制走一遍。
 var _force_replay_chunking := false
 
-# 待发的回放块，按 FIFO 排。每项 {peer_id, battle_id, kind, idx, total, kinds, data}。
+# 按连接轮转，每个连接每帧最多 16 KiB；全局另有字节和 CPU 上限。
 #
 # **为什么不直接 rpc_id 发完**：见 _tick_replay_send。一句话版本 ——
 # 加密链路上一帧灌进去太多字节，接收端 UDP 缓冲会溢出丢包，然后 ENet 重传，
 # 62 KB 的回放在零丢包的本机回环上要跑 2.7 秒。
-var _replay_send_queue: Array = []
+var _replay_send_queue: RefCounted = ReplaySendQueue.new()
 
-# 每帧允许送出的回放字节数。实测已知 32 KB/帧 可以、48 KB/帧 会塌，取 16 KB
-# 留一倍余量。明文链路不受影响（那边阈值高，压根不会走到分块路径）。
+# Per-peer average rate; the queue accumulates credit for legacy-compatible
+# 32/48 KiB blocks only when the old receiver's 85-block limit requires it.
 const REPLAY_SEND_BUDGET_BYTES := 16 * 1024
 
 
@@ -2566,12 +2653,15 @@ func set_force_replay_chunking(on: bool) -> void:
 	_net_log("replay chunking forced=%s" % str(on))
 
 
-# 给一个 peer 发一份回放。低于阈值走原来的单包 _rpc_team_replay（一个字节都不变），
-# 超过阈值才走分块。两个发送点和重连补发都从这里过。
+# 给一个 peer 发一份回放。所有大小都进入公平队列，单包 RPC 仍保留为兼容接收入口。
+# 两个发送点和重连补发都从这里过，替换战斗时立即撤销旧队列。
 func _send_replay_to_peer(peer_id: int, battle_id: String, own: PackedByteArray, rival: PackedByteArray) -> void:
-	if not (_replay_transfer.should_chunk(own, _force_replay_chunking)
-			or _replay_transfer.should_chunk(rival, _force_replay_chunking)):
-		_rpc_team_replay.rpc_id(peer_id, own, rival)
+	_replay_forget_peer(peer_id)
+	if battle_id.is_empty() or own.size() <= ReplayTransferService.PACK_HEADER_BYTES:
+		_replay_delivery_error(peer_id, battle_id, "empty_payload")
+		return
+	if own.size() > ReplayTransferService.MAX_TRANSFER_BYTES or rival.size() > ReplayTransferService.MAX_TRANSFER_BYTES:
+		_replay_delivery_error(peer_id, battle_id, "packed_limit")
 		return
 
 	var payloads := {}
@@ -2581,12 +2671,16 @@ func _send_replay_to_peer(peer_id: int, battle_id: String, own: PackedByteArray,
 	if rival.size() > ReplayTransferService.PACK_HEADER_BYTES:
 		payloads[ReplayTransferService.CHUNK_KIND_RIVAL] = rival
 
+	var queue_error: String = _replay_send_queue.begin(peer_id, battle_id, payloads)
+	if not queue_error.is_empty():
+		_replay_delivery_error(peer_id, battle_id, queue_error)
+		return
 	_replay_out[peer_id] = {
 		"battle_id": battle_id,
 		"kinds": payloads.size(),
 		"payloads": payloads,
 		"done": {},
-		"deadline": _now() + REPLAY_ACK_TIMEOUT_SEC,
+		"deadline": 0.0, # Start only after this connection's final queued block is sent.
 		"tries": 0,
 	}
 	_net_log("replay chunked send peer=%d battle=%s kinds=%d bytes=%d/%d" % [
@@ -2594,41 +2688,31 @@ func _send_replay_to_peer(peer_id: int, battle_id: String, own: PackedByteArray,
 	_send_replay_chunks(peer_id, PackedInt32Array(), "")
 
 
+func _replay_delivery_error(peer_id: int, battle_id: String, reason: String) -> void:
+	_net_log("replay delivery failed peer=%d battle=%s reason=%s" % [peer_id, battle_id, reason])
+	var room := _room_for_peer(peer_id)
+	if room.is_empty() or str(room.get("battle_id", "")) != battle_id or not _peer_connected(peer_id):
+		return
+	var slot := int((room.get("peer_slot", {}) as Dictionary).get(peer_id, -1))
+	if slot < 0:
+		return
+	var payload := _build_room_state(room, slot)
+	payload.replay_pending = false
+	payload.replay_available = false
+	payload.replay_error = reason
+	_rpc_room_state.rpc_id(peer_id, {"protocol": NetworkConfig.NETWORK_PROTOCOL_VERSION,
+		"server_epoch": _server_epoch, "room_id": int(room.get("id", 0)),
+		"state_seq": _bump_room_seq(room), "message_type": "room_state", "payload": payload})
+
+
 # 发块。missing 为空 = 全发；否则只补这一 kind 缺的那几块（重试路径）。
 func _send_replay_chunks(peer_id: int, missing: PackedInt32Array, only_kind: String) -> void:
 	var pending: Dictionary = _replay_out.get(peer_id, {})
 	if pending.is_empty():
 		return
-	var battle_id := str(pending.get("battle_id", ""))
-	var kinds := int(pending.get("kinds", 0))
-	var payloads: Dictionary = pending.get("payloads", {})
-	var done: Dictionary = pending.get("done", {})
-	for kind in payloads.keys():
-		if not only_kind.is_empty() and str(kind) != only_kind:
-			continue
-		if done.has(kind):
-			continue          # 这一种对方已经确认收齐，别再发
-		var chunks: Array = _replay_transfer.split(payloads[kind], battle_id, str(kind))
-		if chunks.is_empty():
-			# split 拒绝了（超过单次传输上限）。这一份发不出去，如实记下来 ——
-			# 静默丢弃的话玩家只会看到"回放不来"，日志里什么都没有。
-			_net_log("replay chunk send aborted peer=%d kind=%s bytes=%d (split refused)" % [
-				peer_id, str(kind), (payloads[kind] as PackedByteArray).size()])
-			continue
-		for env in chunks:
-			var idx := int((env as Dictionary).get("idx", 0))
-			if missing.size() > 0 and not missing.has(idx):
-				continue
-			# 入队，不直接发 —— 节流在 _tick_replay_send 里按字节预算放行。
-			_replay_send_queue.append({
-				"peer_id": peer_id,
-				"battle_id": battle_id,
-				"kind": str(kind),
-				"idx": idx,
-				"total": int((env as Dictionary).get("total", 0)),
-				"kinds": kinds,
-				"data": (env as Dictionary).get("data", PackedByteArray()),
-			})
+	_replay_send_queue.enqueue(peer_id, only_kind, missing)
+	if _replay_send_queue.has_queued(peer_id):
+		pending["deadline"] = 0.0
 
 
 # 服务端下发的分块。authority：只有服务器能发，客户端这边照收。
@@ -2638,10 +2722,22 @@ func _send_replay_chunks(peer_id: int, missing: PackedInt32Array, only_kind: Str
 @rpc("authority", "call_remote", "reliable", NetworkConfig.CH_BULK)
 func _rpc_team_replay_chunk(battle_id: String, kind: String, idx: int, total: int,
 		kinds: int, data: PackedByteArray) -> void:
-	if battle_id.length() > MAX_TREASURE_ID_LEN:
+	if not _replay_battle_can_buffer(battle_id):
 		return
-	if kinds <= 0 or kinds > 2:
+	if kinds <= 0 or kinds > 2 or kind not in ["own", "rival"] or (kinds == 1 and kind != "own"):
 		return
+	if _replay_completed.has(battle_id):
+		# ACK loss may replay the same final block. Do not allocate/decode/emit twice.
+		_ack_valid_replay_kind(battle_id, kind)
+		return
+	var slot_in: Dictionary = _replay_in.get(battle_id, {"kinds": kinds, "done": {}})
+	if int(slot_in.kinds) != kinds:
+		_replay_receive_error(battle_id, "kind_count_changed")
+		return
+	if (slot_in.done as Dictionary).has(kind):
+		_ack_valid_replay_kind(battle_id, kind)
+		return
+	_replay_in[battle_id] = slot_in
 	var out: Dictionary = _replay_transfer.accept_chunk({
 		"battle_id": battle_id, "kind": kind, "idx": idx, "total": total, "data": data,
 	})
@@ -2650,23 +2746,142 @@ func _rpc_team_replay_chunk(battle_id: String, kind: String, idx: int, total: in
 	if not bool(out.get("complete", false)):
 		return
 
-	# 这一种收齐了：记下来并向服务端确认（missing 为空 = 收齐）。
-	var slot_in: Dictionary = _replay_in.get(battle_id, {"kinds": kinds, "done": {}})
-	(slot_in["done"] as Dictionary)[kind] = out.get("packed", PackedByteArray())
-	slot_in["kinds"] = kinds
+	# ACK only a successfully decoded, structurally valid replay of this battle.
+	var replay := _unpack_replay(out.get("packed", PackedByteArray()))
+	if not _valid_received_replay(replay, battle_id):
+		_replay_receive_error(battle_id, "invalid_replay")
+		return
+	(slot_in["done"] as Dictionary)[kind] = replay
 	_replay_in[battle_id] = slot_in
-	_rpc_replay_ack.rpc_id(1, battle_id, kind, PackedInt32Array())
+	_ack_valid_replay_kind(battle_id, kind)
 
 	if (slot_in["done"] as Dictionary).size() < kinds:
 		return
 
 	# 全部收齐：走和单包路径**完全一样**的落地动作，否则两条路径会有行为差。
-	var done_map: Dictionary = slot_in["done"]
-	team_replay = _unpack_replay(done_map.get(ReplayTransferService.CHUNK_KIND_OWN, PackedByteArray()))
-	team_replay_rival = _unpack_replay(done_map.get(ReplayTransferService.CHUNK_KIND_RIVAL, PackedByteArray()))
+	_try_apply_buffered_replay(battle_id)
+
+
+func _replay_identity_is_current(battle_id: String) -> bool:
+	return not battle_id.is_empty() and battle_id.length() <= MAX_TREASURE_ID_LEN \
+		and battle_id == current_battle_id
+
+
+func _valid_received_replay(replay: Dictionary, battle_id: String) -> bool:
+	return _replay_battle_can_buffer(battle_id) \
+		and _replay_payload_identity(replay) == battle_id \
+		and ReplayValidation.valid_team_replay(replay)
+
+
+func _replay_payload_identity(replay: Dictionary) -> String:
+	var transport_id := str(replay.get("battle_id", ""))
+	if not transport_id.is_empty():
+		return transport_id
+	# Protocol 32 predecessors put identity in presentation events, not the
+	# outer dictionary. Every nonempty event ID must agree; no identity is not
+	# proof of the current battle, including on the single-packet path.
+	var found := ""
+	for bucket in replay.get("frame_events", []):
+		if not bucket is Array:
+			continue
+		for event in bucket:
+			if not event is Dictionary:
+				continue
+			var event_id := str(event.get("battle_id", "")).trim_suffix(":team0").trim_suffix(":team1")
+			if event_id.is_empty():
+				continue
+			if not found.is_empty() and found != event_id:
+				return ""
+			found = event_id
+	if team_room_id <= 0 and found.begins_with("local:"):
+		var local_parts := found.split(":")
+		if local_parts.size() == 4 and local_parts[1].is_valid_int() and local_parts[2].is_valid_int() \
+				and int(local_parts[1]) == shared_seed and int(local_parts[2]) == GameState.round_index:
+			return "host:%d" % GameState.round_index
+	return found
+
+
+func _replay_battle_can_buffer(battle_id: String) -> bool:
+	if _replay_identity_is_current(battle_id):
+		return true
+	if battle_id.length() > MAX_TREASURE_ID_LEN or _replay_in.size() >= 2 and not _replay_in.has(battle_id):
+		return false
+	# Control and bulk channels can arrive out of order. Admit only the same
+	# room's current/next round, then wait for authoritative control before emit.
+	var parts := battle_id.split(":")
+	if parts.size() == 2 and parts[0] == "host" and parts[1].is_valid_int():
+		return team_room_id <= 0 and team_active and int(parts[1]) == GameState.round_index
+	if parts.size() != 3 or not parts[0].is_valid_int() or not parts[1].is_valid_int() or not parts[2].is_valid_int():
+		return false
+	if team_room_id <= 0 or int(parts[0]) != team_room_id:
+		return false
+	var round_id := int(parts[1])
+	var earliest_round := server_round_index - 1 if server_phase == ROOM_RESULT else server_round_index
+	if round_id < earliest_round or round_id > server_round_index + 1:
+		return false
+	var current := current_battle_id.split(":")
+	if current.size() == 3 and int(parts[0]) == int(current[0]):
+		if round_id < int(current[1]) or (round_id == int(current[1]) and int(parts[2]) <= int(current[2])):
+			return false
+	return true
+
+
+func _try_apply_buffered_replay(battle_id: String) -> void:
+	if current_battle_id.is_empty() and battle_id.begins_with("host:") and _replay_battle_can_buffer(battle_id):
+		_set_current_replay_battle(battle_id)
+		return
+	if not _replay_identity_is_current(battle_id):
+		return
+	var buffered: Dictionary = _replay_in.get(battle_id, {})
+	var done: Dictionary = buffered.get("done", {})
+	if done.has("own") and done.size() == int(buffered.get("kinds", 0)):
+		_apply_received_replay(battle_id, done.get("own", {}), done.get("rival", {}))
+
+
+func _ack_valid_replay_kind(battle_id: String, kind: String) -> void:
+	# A delayed ACK may cause a full retry. Re-ACKing every 30 Hz block would
+	# trip the existing 20-per-10s replay_ack limiter and disconnect a healthy peer.
+	var key := battle_id + "|" + kind
+	var now := _now()
+	if now - float(_replay_ack_times.get(key, -2.0)) < 1.25:
+		return
+	_replay_ack_times[key] = now
+	if multiplayer.multiplayer_peer != null:
+		_rpc_replay_ack.rpc_id(1, battle_id, kind, PackedInt32Array())
+
+
+func _apply_received_replay(battle_id: String, own: Dictionary, rival: Dictionary) -> void:
+	if _replay_completed.has(battle_id) or not _replay_identity_is_current(battle_id) or not _valid_received_replay(own, battle_id):
+		return
+	team_replay = own
+	team_replay_rival = rival
+	team_replay_battle_id = battle_id
 	_replay_in.erase(battle_id)
-	_net_log("client received chunked replay battle=%s kinds=%d" % [battle_id, kinds])
+	_replay_completed[battle_id] = true
+	_net_log("client received validated replay battle=%s kinds=%d" % [battle_id, 1 if rival.is_empty() else 2])
 	team_replay_received.emit()
+
+
+func _replay_receive_error(battle_id: String, reason: String) -> void:
+	_net_log("replay receive failed battle=%s reason=%s" % [battle_id, reason])
+	team_replay_failed.emit(battle_id, reason)
+
+
+func _set_current_replay_battle(battle_id: String) -> void:
+	if battle_id == current_battle_id and not battle_id.is_empty():
+		return
+	current_battle_id = battle_id
+	team_replay_battle_id = ""
+	var buffered: Dictionary = _replay_in.get(battle_id, {})
+	_replay_in.clear()
+	if not buffered.is_empty():
+		_replay_in[battle_id] = buffered
+	_replay_completed.clear()
+	_replay_ack_times.clear()
+	team_replay = {}
+	team_replay_rival = {}
+	_replay_transfer.retain_inflight_battle(battle_id)
+	_try_apply_buffered_replay(battle_id)
 
 
 # 客户端 -> 服务端的确认 / 缺块上报。
@@ -2679,6 +2894,10 @@ func _rpc_replay_ack(battle_id: String, kind: String, missing: PackedInt32Array)
 	var sender := multiplayer.get_remote_sender_id()
 	if not _rate_ok(sender, "replay_ack"):
 		return
+	_handle_replay_ack(sender, battle_id, kind, missing)
+
+
+func _handle_replay_ack(sender: int, battle_id: String, kind: String, missing: PackedInt32Array) -> void:
 	if battle_id.length() > MAX_TREASURE_ID_LEN:
 		return
 	var pending: Dictionary = _replay_out.get(sender, {})
@@ -2694,18 +2913,20 @@ func _rpc_replay_ack(battle_id: String, kind: String, missing: PackedInt32Array)
 
 	if missing.is_empty():
 		(pending["done"] as Dictionary)[kind] = true
+		_replay_send_queue.complete_kind(sender, kind)
 		if (pending["done"] as Dictionary).size() >= int(pending.get("kinds", 0)):
-			_replay_out.erase(sender)
+			_replay_forget_peer(sender)
 			_net_log("replay delivery complete peer=%d battle=%s" % [sender, battle_id])
 			return
 		_replay_out[sender] = pending
+		_replay_mark_queue_drained(sender)
 		return
 
 	# 缺块上报：只补缺的那几块，并把超时往后推——对方在动，不该被当成卡死。
 	if missing.size() > ReplayTransferService.MAX_CHUNKS:
 		return
-	pending["deadline"] = _now() + REPLAY_ACK_TIMEOUT_SEC
-	_replay_out[sender] = pending
+	if (pending["done"] as Dictionary).has(kind):
+		return
 	_net_log("replay nack peer=%d battle=%s kind=%s missing=%d" % [
 		sender, battle_id, kind, missing.size()])
 	_send_replay_chunks(sender, missing, kind)
@@ -2721,82 +2942,86 @@ func _tick_replay_retry(_delta: float) -> void:
 	var now := _now()
 	for peer_id in _replay_out.keys():
 		var pending: Dictionary = _replay_out[peer_id]
+		# Queueing time is not network/ACK time. Never retransmit unsent data.
+		if _replay_send_queue.has_queued(int(peer_id)) or float(pending.get("deadline", 0.0)) <= 0.0:
+			continue
 		if now < float(pending.get("deadline", 0.0)):
 			continue
 		if not _peer_connected(int(peer_id)):
 			# 人已经掉了。留着只是占内存 —— 他重连回来时走 _resume_seat 补发。
-			_replay_out.erase(peer_id)
+			_replay_forget_peer(int(peer_id))
 			continue
 		if int(pending.get("tries", 0)) >= REPLAY_MAX_RETRIES:
 			# 放弃。回放只是播放素材，收不到不该阻塞任何东西：权威结算走的是
 			# match_state / room_state，那两条都不经过这里。
 			_net_log("replay give up peer=%d battle=%s tries=%d (replay only, settlement unaffected)" % [
 				int(peer_id), str(pending.get("battle_id", "")), int(pending.get("tries", 0))])
-			_replay_out.erase(peer_id)
+			_replay_delivery_error(int(peer_id), str(pending.get("battle_id", "")), "ack_timeout")
+			_replay_forget_peer(int(peer_id))
 			continue
 		pending["tries"] = int(pending.get("tries", 0)) + 1
-		pending["deadline"] = now + REPLAY_ACK_TIMEOUT_SEC
+		pending["deadline"] = 0.0
 		_replay_out[peer_id] = pending
 		_net_log("replay retry peer=%d battle=%s try=%d" % [
 			int(peer_id), str(pending.get("battle_id", "")), int(pending["tries"])])
 		_send_replay_chunks(int(peer_id), PackedInt32Array(), "")
 
 
-# 按字节预算把排队的回放块发出去。**每帧都要跑**，不能挂在那个 1 秒的
-# 累加器下面 —— 节流的全部意义就是把字节摊到多帧上。
-#
-# 这是 C14 能不能上线的前提，不是优化。DTLS 垫在 ENet 底下之后，ENet 一帧内
-# 轰出去的分片会把接收端 UDP 缓冲挤爆，丢了再重传。实测（Godot 4.7.1，零丢包
-# 本机回环）62 KB 单包从 20 ms 变成 2686 ms；同样的字节数摊成一帧 16 KB 之后
-# 是 35 ms。决定成败的是「两次 poll 之间灌进去多少字节」。
-#
-# 至少放行一块：块大小若超过预算，一块也不发就是永远发不出去。
+# Run every frame for dedicated and local hosts. Small transfers keep 16 KiB
+# blocks; old protocol-32 receivers require 32/48 KiB blocks for large payloads.
+# Credit preserves 16 KiB/peer/frame average with a bounded 48 KiB burst, while
+# the independent global byte/time limits leave room for control and simulation.
 func _tick_replay_send() -> void:
-	if _replay_send_queue.is_empty():
-		return
-	var budget := REPLAY_SEND_BUDGET_BYTES
-	while not _replay_send_queue.is_empty():
-		var item: Dictionary = _replay_send_queue[0]
-		var peer_id := int(item.get("peer_id", 0))
-		# 这一场已经确认收齐 / 对方掉线 / 已放弃 —— 队里的残块直接丢掉，
-		# 不然会给一个不存在的传输继续发包。
-		if not _replay_out.has(peer_id):
-			_replay_send_queue.pop_front()
-			continue
-		var data: PackedByteArray = item.get("data", PackedByteArray())
-		if data.size() > budget and budget < REPLAY_SEND_BUDGET_BYTES:
-			return          # 本帧预算用得差不多了，剩下的下一帧再说
-		_replay_send_queue.pop_front()
-		_rpc_team_replay_chunk.rpc_id(peer_id, str(item.get("battle_id", "")),
-			str(item.get("kind", "")), int(item.get("idx", 0)),
-			int(item.get("total", 0)), int(item.get("kinds", 0)), data)
-		budget -= data.size()
-		if budget <= 0:
-			return
+	var sent: Dictionary = _replay_send_queue.drain(_send_queued_replay_chunk)
+	for peer_id in sent.get("peers", []):
+		_replay_mark_queue_drained(int(peer_id))
+
+
+func _send_queued_replay_chunk(item: Dictionary) -> bool:
+	var peer_id := int(item.peer_id)
+	var pending: Dictionary = _replay_out.get(peer_id, {})
+	if pending.is_empty() or not _peer_connected(peer_id):
+		_replay_forget_peer(peer_id)
+		return false
+	if str(pending.battle_id) != str(item.battle_id) or (pending.done as Dictionary).has(item.kind):
+		return false
+	_rpc_team_replay_chunk.rpc_id(peer_id, str(item.battle_id), str(item.kind),
+		int(item.idx), int(item.total), int(item.kinds), item.data)
+	return true
+
+
+func _replay_mark_queue_drained(peer_id: int) -> void:
+	var pending: Dictionary = _replay_out.get(peer_id, {})
+	if not pending.is_empty() and not _replay_send_queue.has_queued(peer_id) \
+			and float(pending.get("deadline", 0.0)) <= 0.0:
+		pending["deadline"] = _now() + REPLAY_ACK_TIMEOUT_SEC
 
 
 # 断线时把这个 peer 的下发状态丢掉。不清的话每个掉线的人都留一份几十 KB 的
 # payloads 在 _replay_out 里，而他重连回来走的是 _resume_seat 补发那条路。
 func _replay_forget_peer(peer_id: int) -> void:
 	_replay_out.erase(peer_id)
-	# 队里可能还压着这个人的块。不清就是给一个已经没了的连接继续排队。
-	if _replay_send_queue.is_empty():
-		return
-	var kept: Array = []
-	for item in _replay_send_queue:
-		if int((item as Dictionary).get("peer_id", 0)) != peer_id:
-			kept.append(item)
-	_replay_send_queue = kept
+	_replay_send_queue.forget(peer_id)
 
 # B9：replay 走独立可靠通道 CH_BULK。它内部仍然有序、仍然可靠，
 # 但**压不到控制流**——房间状态、结算、交易、握手都在 CH_CONTROL 上各走各的。
 @rpc("authority", "call_remote", "reliable", NetworkConfig.CH_BULK)
 func _rpc_team_replay(packed: PackedByteArray, packed_rival: PackedByteArray = PackedByteArray()) -> void:
-	team_replay = _unpack_replay(packed)
-	team_replay_rival = _unpack_replay(packed_rival)
-	_net_log("client received replay round=%d kind=%s bytes=%d/%d" % [
-		GameState.round_index, str(team_replay.get("kind", "")), packed.size(), packed_rival.size()])
-	team_replay_received.emit()
+	var own := _unpack_replay(packed)
+	var battle_id := _replay_payload_identity(own)
+	if not _valid_received_replay(own, battle_id):
+		_replay_receive_error(battle_id, "invalid_or_stale_single_replay")
+		return
+	if _replay_completed.has(battle_id):
+		return
+	var rival := _unpack_replay(packed_rival) if not packed_rival.is_empty() else {}
+	if not packed_rival.is_empty() and not _valid_received_replay(rival, battle_id):
+		_replay_receive_error(battle_id, "invalid_rival_replay")
+		return
+	_replay_in[battle_id] = {"kinds": 1 if rival.is_empty() else 2, "done": {"own": own}}
+	if not rival.is_empty():
+		_replay_in[battle_id].done["rival"] = rival
+	_try_apply_buffered_replay(battle_id)
 
 func team_submit_board(snapshot: Dictionary) -> void:
 	if not team_active or team_local_slot < 0:
@@ -3007,106 +3232,149 @@ func _room_try_finalize_boards(room: Dictionary) -> void:
 	# 本地房主调试路径仍走 _team_try_finalize_boards 里的广播，不受影响。
 	_enqueue_finalize(room)
 
-# --- 结算并发闸（B4 前半）-----------------------------------------------------
-# 实测：一房一回合的两场战斗，最坏（第 21 回合满配）合计 1162 ms。
-# 而多个房间的最后一份棋盘可能落在同一帧里（RPC 批量到达、或看门狗一次扫出好几个），
-# 于是 N 个房间的战斗在**同一个调用栈里**连着算完 —— 20 个房间 = 23 秒，
-# 这段时间 _process 一次都不跑：心跳不回、pong 不发，全服客户端一起判超时。
-#
-# 这道闸把「N 个房间挤一帧」摊成「每帧一个房间」。
-#
-# ⚠️ 它买到的**不是**总耗时变短 —— 20 个房间还是 23 秒。
-# 买到的是**每两场战斗之间 _process 会跑一次**，心跳和 pong 挤得进去。
-# 「单场 581 ms 本身就阻塞 17 帧」这件事它解决不了，那只能靠
-# BattleContext 去全局化之后换 compute_team_replay_async（B4 后半）。
-const FINALIZE_PER_FRAME := 1
-
-var _finalize_queue: Array = []   # room_id，先进先出
+# Server simulation uses a wall-clock frame budget and a fair per-job quantum.
+# At 60 Hz, the default permits about 72% of one core for simulation while
+# preserving a transport poll between slices. Deployment can tune both values.
+const SIMULATION_BUDGET_USEC := 12000
+const SIMULATION_SLICE_USEC := 2000
+const MAX_ACTIVE_SIMULATIONS := 4
+var _simulation_budget_usec := SIMULATION_BUDGET_USEC
+var _simulation_slice_usec := SIMULATION_SLICE_USEC
+var _finalize_queue: Array = [] # {room_id, battle_id, enqueued_at_usec, inputs}
+var _simulation_jobs: Array = []
+var _retired_simulation_jobs: Array = []
+var _simulation_cursor := 0
+var _simulation_last_frame_usec := 0
+var _simulation_max_frame_usec := 0
+var _simulation_max_enqueue_usec := 0
 
 func _enqueue_finalize(room: Dictionary) -> void:
 	var rid := int(room.get("id", 0))
-	if _finalize_queue.has(rid):
-		return
-	_finalize_queue.append(rid)
+	var battle_id := str(room.get("battle_id", ""))
+	for entry in _finalize_queue:
+		if int(entry.room_id) == rid and str(entry.battle_id) == battle_id:
+			return
+	for job in _simulation_jobs:
+		if int(job.room_id) == rid and str(job.battle_id) == battle_id:
+			return
+	# RESULT now includes queued computation. Neither resume nor an early ACK may
+	# observe the previous round's cached settlement during this interval.
+	room.last_match_state = {}
+	room.replay_packed = {}
+	room.replay_pending = true
+	room.replay_error = ""
+	# Lock inputs now, before a queued room's reserved seats can expire/resume.
+	# Only compact board inputs are copied here; replay arrays do not exist yet.
+	var queued_at := Time.get_ticks_usec()
+	var inputs := BattleReplayJob.snapshot_room_inputs(room)
+	_simulation_max_enqueue_usec = maxi(_simulation_max_enqueue_usec, Time.get_ticks_usec() - queued_at)
+	_finalize_queue.append({"room_id": rid, "battle_id": battle_id, "enqueued_at_usec": queued_at, "inputs": inputs})
+
+func _simulation_is_current(rid: int, battle_id: String) -> bool:
+	var room: Dictionary = _rooms.get(rid, {})
+	return not room.is_empty() and str(room.get("state", "")) == ROOM_RESULT \
+		and str(room.get("battle_id", "")) == battle_id
+
+func _cancel_pending_simulations() -> void:
+	_finalize_queue.clear()
+	for job in _simulation_jobs:
+		job.cancel()
+		_retired_simulation_jobs.append(job)
+	_simulation_jobs.clear()
+	_poll_retired_simulations()
+
+func _poll_retired_simulations() -> void:
+	# Autoload processing continues after a peer reset or switch to client mode.
+	# Keep cancelled tasks alive until a nonblocking completion poll can reap them.
+	for index in range(_retired_simulation_jobs.size() - 1, -1, -1):
+		if _retired_simulation_jobs[index].poll_worker():
+			_retired_simulation_jobs.remove_at(index)
 
 func _drain_finalize_queue() -> void:
-	var budget := FINALIZE_PER_FRAME
-	while budget > 0 and not _finalize_queue.is_empty():
-		var rid := int(_finalize_queue.pop_front())
-		var room: Dictionary = _rooms.get(rid, {})
-		# 排队期间房间可能已经被回收/关闭/推进了阶段 —— 静默跳过，不补算。
-		if room.is_empty() or str(room.get("state", "")) != ROOM_RESULT:
+	var started := Time.get_ticks_usec()
+	var deadline := started + _simulation_budget_usec
+	# Reap workers only after they report completion; an unfinished task never
+	# causes a blocking join, even when its room was closed or changed rounds.
+	for index in range(_simulation_jobs.size() - 1, -1, -1):
+		var job: RefCounted = _simulation_jobs[index]
+		if not _simulation_is_current(job.room_id, job.battle_id):
+			job.cancel()
+		job.poll_worker()
+		if not bool(job.completed):
 			continue
-		budget -= 1
-		_room_compute_and_broadcast_replays(room)
+		_simulation_jobs.remove_at(index)
+		if not bool(job.cancelled) and _simulation_is_current(job.room_id, job.battle_id):
+			_room_publish_replays(_rooms[job.room_id], job)
+		if Time.get_ticks_usec() >= deadline:
+			break
+	while _simulation_jobs.size() < MAX_ACTIVE_SIMULATIONS and not _finalize_queue.is_empty() \
+			and Time.get_ticks_usec() < deadline:
+		var entry: Dictionary = _finalize_queue.pop_front()
+		if not _simulation_is_current(int(entry.room_id), str(entry.battle_id)):
+			continue
+		var job := BattleReplayJob.new(entry.inputs, int(entry.enqueued_at_usec))
+		_simulation_jobs.append(job)
+		_net_log("server battle simulation started room=%d round=%d queue_wait_ms=%.1f active=%d" % [
+			job.room_id, job.round_index, (Time.get_ticks_usec() - job.enqueued_at_usec) / 1000.0, _simulation_jobs.size()])
+	var idle_jobs := 0
+	while not _simulation_jobs.is_empty() and Time.get_ticks_usec() < deadline:
+		_simulation_cursor %= _simulation_jobs.size()
+		var job: RefCounted = _simulation_jobs[_simulation_cursor]
+		_simulation_cursor = (_simulation_cursor + 1) % _simulation_jobs.size()
+		if bool(job.cancelled) or bool(job.completed) or job.is_packing():
+			idle_jobs += 1
+			if idle_jobs >= _simulation_jobs.size():
+				break
+			continue
+		idle_jobs = 0
+		job.advance(mini(_simulation_slice_usec, deadline - Time.get_ticks_usec()))
+	_simulation_last_frame_usec = Time.get_ticks_usec() - started
+	_simulation_max_frame_usec = maxi(_simulation_max_frame_usec, _simulation_last_frame_usec)
+	if _simulation_last_frame_usec > maxi(50000, _simulation_budget_usec * 3):
+		_net_log("server simulation budget overrun elapsed_usec=%d budget_usec=%d active=%d queued=%d" % [
+			_simulation_last_frame_usec, _simulation_budget_usec, _simulation_jobs.size(), _finalize_queue.size()])
 
+# Kept as the existing entry point for tools; computation is always scheduled.
 func _room_compute_and_broadcast_replays(room: Dictionary) -> void:
-	_net_log("server battle simulation started room=%d round=%d" % [int(room.get("id", 0)), int(room.get("round_index", 1))])
-	GameState.team_mode = true
-	GameState.team_slot_states = (room.get("slot_states", []) as Array).duplicate()
-	GameState.round_index = int(room.get("round_index", 1))
-	GameState.pve_completed = int(room.get("pve_completed", 0))
-	GameState.boss_completed = int(room.get("boss_completed", 0))
-	# 让 schedule_kind_for_round 在服务器算战斗时用 room 权威的 final 状态，
-	# 保证服务器和客户端对"第21回合是不是 final"判断一致（掐断 kind 不对称）。
-	# C8：这两个是**不同的东西**，此前共用 `final_battle_complete` 一个名字。
-	#   room.run_over            服务端义：对局已结束（不再开新回合、不再可 resume）
-	#   GameState.final_round_played  客户端义：第 21 战已经打过（RoundService 据此
-	#                                 决定第 21 回合还算不算 "final" 编队）
-	# 这里用 run_over 当保守代理：对局一旦结束就不会再算战斗，所以"不要再把第 21
-	# 回合当 final 重算"这个效果是对的。名字分开后，读的人不会再以为两者同义。
-	GameState.final_round_played = bool(room.get("run_over", false))
-	# 第21回合法阵友军按血量区间召唤（_add_team_final_formation_allies 读
-	# GameState.team_hp / enemy_team_hp）。服务器进程这两个全局从没人写过，
-	# 恒为初始 50，导致双方永远召出最后一档厄夜；必须从 room 权威血量同步。
-	# final 棋局是规范化的："player" 侧恒为 A 队，所以 [0]=A / [1]=B 两次
-	# compute_team_replay 都成立。
-	var room_hp: Array = room.get("team_hp", [GameState.START_FORMATION_HP, GameState.START_FORMATION_HP])
-	GameState.team_hp = int(room_hp[0])
-	GameState.enemy_team_hp = int(room_hp[1])
-	team_slot_states = (room.get("slot_states", []) as Array).duplicate()
-	team_ready = (room.get("ready", []) as Array).duplicate()
-	team_boards = (room.get("boards", {}) as Dictionary).duplicate(true)
-	shared_seed = int(room.get("shared_seed", 0))
-	# 故意用同步版：房间路径在计算前直接改 team_boards/shared_seed 等全局，
-	# 分帧 await 会让其他房间的收尾插进来污染这份上下文。服务器冻结无所谓。
-	var replay_a := BattleSim.compute_team_replay(0, str(room.get("battle_id", "")))
-	var replay_b := BattleSim.compute_team_replay(1, str(room.get("battle_id", "")))
-	BattleSim.stamp_team_round_damages(replay_a, replay_b)
+	_enqueue_finalize(room)
+
+func _room_publish_replays(room: Dictionary, job: RefCounted) -> void:
+	var replay_a: Dictionary = job.result.a
+	var replay_b: Dictionary = job.result.b
 	var match_states := _room_build_match_states(room, replay_a, replay_b)
 	room.last_match_state = match_states
-	_net_log("server replay/result generated room=%d round=%d" % [int(room.get("id", 0)), int(room.get("round_index", 1))])
-	# 序列化 + 压缩各做一次，六个 peer 复用同一份字节。
-	# 此前是逐个 peer 发 Dictionary，同一份 replay 被序列化 6 次（实测 25.7 ms × 6
-	# ≈ 154 ms 白烧在主循环上），而且完全没压缩（每人 7.3 MB，六人一轮 43 MB）。
-	var pack_t0 := Time.get_ticks_usec()
-	var packed_a := _pack_replay(replay_a)
-	var packed_b := _pack_replay(replay_b)
-	var pack_us := Time.get_ticks_usec() - pack_t0
-	_net_log("replay packed room=%d round=%d a=%d B b=%d B pack_usec=%d" % [
-		int(room.get("id", 0)), int(room.get("round_index", 1)), packed_a.size(), packed_b.size(), pack_us])
-	_metrics_log_payloads(room, replay_a, packed_a.size(), packed_b.size(), match_states)
+	room.replay_pending = false
+	room.replay_error = str(job.result.get("error", ""))
+	var packed_a: PackedByteArray = job.result.packed_a
+	var packed_b: PackedByteArray = job.result.packed_b
+	room.replay_packed = {"a": packed_a, "b": packed_b}
+	# Start the result ACK grace when the result exists, not when it joined a queue.
+	room.state_started_at = _now()
+	_room_start_result_ack_wait(room, int(job.result.frames_a), int(job.result.frames_b),
+		not packed_a.is_empty() and not packed_b.is_empty())
+	_rooms_dirty = true
+	_net_log("server replay/result generated room=%d round=%d elapsed_ms=%.1f compute_usec=%d max_slice_usec=%d prepare_usec=%d enqueue_max_usec=%d" % [
+		job.room_id, job.round_index, (Time.get_ticks_usec() - job.enqueued_at_usec) / 1000.0,
+		job.compute_usec, job.max_slice_usec, job.prepare_usec, _simulation_max_enqueue_usec])
+	_net_log("replay packed room=%d round=%d a=%d B b=%d B pack_usec=%d error=%s" % [
+		job.room_id, job.round_index, packed_a.size(), packed_b.size(), int(job.result.pack_usec), str(room.replay_error)])
+	if ServerFlags.should_sample_battle():
+		_net_log("metrics room=%d round=%d frames=%d replay_a_raw=%d replay_b_raw=%d ser_usec=%d" % [
+			job.room_id, job.round_index, int(job.result.frames_a), int(job.result.raw_sizes[0]),
+			int(job.result.raw_sizes[1]), int(job.result.serialize_usec)])
+	# Publish identity and replay availability on the existing control channel
+	# before sending either the settlement or its bulk playback data.
+	_broadcast_room_lobby(room)
 	for peer_id in (room.get("peer_slot", {}) as Dictionary).keys():
 		if not _peer_connected(int(peer_id)):
 			continue
 		var slot := int((room.get("peer_slot", {}) as Dictionary)[peer_id])
-		# 顺序要紧：match_state（几百字节，权威结算）必须排在 replay 之前。
-		# 反过来时结算状态被压在大包后面，弱网重传期间玩家就卡在「战斗打完但结算不来」——
-		# 这正是 match_state 超时的直接成因。replay 只是播放素材，晚到无所谓。
 		_rpc_receive_match_state.rpc_id(int(peer_id), match_states.get(slot, {}))
-		# 两队 replay 一律全发（已确认的产品规则：玩家要能随时切镜头看另一队）。
-		# 旧的 send_rival_replay 开关与这条规则冲突，已废除 —— 压缩后一份才 62 KB，
-		# 当初"关掉它省带宽"的理由也不再成立。
-		_send_replay_to_peer(int(peer_id), str(room.get("battle_id", "")),
-			packed_a if slot < 3 else packed_b,
-			packed_b if slot < 3 else packed_a)
-		_net_log("match_state/replay sent room=%d round=%d peer=%d slot=%d" % [int(room.get("id", 0)), int(room.get("round_index", 1)), int(peer_id), slot])
-	# 留一份给重连的人补看（已确认的产品规则：重连回来的人应该补看那一场的回放）。
-	# **只留内存，不进快照** —— DedicatedServerService.PERSISTED_ROOM_FIELDS 白名单
-	# 刻意排除了 boards/last_board 这类缓存大字段，回放（两份约 196 KB）同理：
-	# 快照是每 5 秒全量序列化写盘的，无脑塞进去就是给自己造一个新的冻结源。
-	# 代价如实记：服务器重启后这一场的回放没了，重连者仍只能看到结算结果。
-	room.replay_packed = {"a": packed_a, "b": packed_b}
+		if not packed_a.is_empty() and not packed_b.is_empty():
+			_send_replay_to_peer(int(peer_id), str(room.get("battle_id", "")),
+				packed_a if slot < 3 else packed_b, packed_b if slot < 3 else packed_a)
+		_net_log("match_state/replay sent room=%d round=%d peer=%d slot=%d" % [
+			job.room_id, job.round_index, int(peer_id), slot])
 	room.boards = {}
 
 # 影子审计：只记录、不拦截。上线前必须先知道自己的误判率——直接开拦截会把
@@ -3737,12 +4005,22 @@ func disconnect_session() -> void:
 	request_user_leave()
 
 func reset_peer_only() -> void:
+	_cancel_pending_simulations()
+	_replay_retry_accum = 0.0
+	_replay_out.clear()
+	_replay_send_queue.clear()
 	if multiplayer.multiplayer_peer != null:
 		multiplayer.multiplayer_peer.close()
 	multiplayer.multiplayer_peer = null
 	_peer = null
+	_replay_in.clear()
+	_replay_ack_times.clear()
+	_replay_transfer.retain_inflight_battle("")
 
 func reset() -> void:
+	_set_current_replay_battle("")
+	_replay_out.clear()
+	_replay_send_queue.clear()
 	server_four_star_cost_version = 0
 	four_star_request_id = ""
 	four_star_request_uid = ""
@@ -4251,9 +4529,22 @@ func _rebuild_matched_index() -> void:
 	if not _matched_rooms.is_empty():
 		_net_log("matched index rebuilt entries=%d" % _matched_rooms.size())
 
-func _tick_heartbeat_timeouts() -> void:
+func _forgive_process_stall(now: float) -> void:
+	if _last_process_at <= 0.0 or now - _last_process_at < FREEZE_FORGIVE_SEC:
+		return
+	_net_log("process freeze %.1fs -> heartbeat timers reset" % (now - _last_process_at))
+	for pid in _peer_last_ping.keys():
+		_peer_last_ping[pid] = now
+	if _last_pong_at > 0.0:
+		_last_pong_at = now
+
+
+func _tick_heartbeat_timeouts(observed_at: float = -1.0) -> void:
 	# 判定在 ConnectionHealth（纯函数、有用例）；断开留在这里（要碰 multiplayer）。
-	var stale: Array = _conn_health.timed_out_peers(_peer_last_ping, _now())
+	# Use the time observed after the last transport poll. Work in this frame
+	# cannot turn an unread, already-arrived ping into an apparent timeout.
+	var now := observed_at if observed_at >= 0.0 else _now()
+	var stale: Array = _conn_health.timed_out_peers(_peer_last_ping, now)
 	for peer_id in stale:
 		_net_log("heartbeat timeout peer=%d -> force disconnect" % int(peer_id))
 		_peer_last_ping.erase(peer_id)
@@ -4438,6 +4729,7 @@ func _resume_seat(sender: int, token: String) -> void:
 	# 顺序跟广播路径一致：match_state（几百字节、权威结算）必须排在 replay 之前，
 	# 否则结算状态被压在大包后面，玩家卡在“战斗打完但结算不来”。
 	if str(room.get("state", "")) == ROOM_RESULT:
+		_room_extend_result_ack_for_resume(room)
 		var ms: Dictionary = (room.get("last_match_state", {}) as Dictionary).get(slot, {})
 		if not ms.is_empty():
 			_rpc_receive_match_state.rpc_id(sender, ms)
@@ -4524,6 +4816,15 @@ func _rpc_room_state(envelope: Dictionary) -> void:
 	team_ready = (payload.get("ready", []) as Array).duplicate()
 	server_round_index = int(payload.get("round_id", 0))
 	server_phase = str(payload.get("phase", ""))
+	if payload.has("battle_id"):
+		_set_current_replay_battle(str(payload.battle_id))
+	elif server_phase in [ROOM_LOBBY, ROOM_PREP, ROOM_CLOSED]:
+		# Old protocol-32 snapshots omit battle_id. RESULT broadcasts must not
+		# erase identity already learned from match_state or presentation events.
+		_set_current_replay_battle("")
+	var replay_error := str(payload.get("replay_error", ""))
+	if not replay_error.is_empty():
+		_replay_receive_error(current_battle_id, replay_error)
 	# 服务器确认了在途的 ready 请求 -> 撤销本地意图（C24）
 	if _pending_ready >= 0 and team_local_slot >= 0 and team_local_slot < team_ready.size():
 		if bool(team_ready[team_local_slot]) == (_pending_ready == 1):
@@ -5889,6 +6190,15 @@ func _rpc_team_start() -> void:
 func _rpc_receive_match_state(state_payload: Dictionary) -> void:
 	if is_host:
 		return
+	var incoming_round := int(state_payload.get("completed_round", 0))
+	if incoming_round < int(latest_match_state.get("completed_round", 0)):
+		return
+	var incoming_battle := str(state_payload.get("battle_id", ""))
+	if not incoming_battle.is_empty():
+		if incoming_battle != current_battle_id:
+			if not current_battle_id.is_empty() and not _replay_battle_can_buffer(incoming_battle):
+				return
+			_set_current_replay_battle(incoming_battle)
 	# RPC 载荷是引擎刚反序列化出来的独立字典，没有其他引用，无需拷贝。
 	latest_match_state = state_payload
 	_net_log("client received match_state round=%d slot=%d" % [int(state_payload.get("completed_round", 0)), int(state_payload.get("slot", -1))])

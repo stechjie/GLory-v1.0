@@ -1,11 +1,14 @@
 extends "res://scenes/battle/BattleResult.gd"
 
 const BattleReplayUtil = preload("res://scripts/battle/BattleReplayUtil.gd")
+const PlaybackRecovery := preload("res://scripts/battle/BattlePlaybackRecovery.gd")
+const RenderWarmup := preload("res://scripts/assets/BattleRenderWarmup.gd")
 const BattlePresentationDirectorScript := preload("res://effects/runtime/presentation/BattlePresentationDirector.gd")
 const LegacyBattleVfxAdapterScript := preload("res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd")
 const VfxProfileResolverScript := preload("res://effects/runtime/presentation/VfxProfileResolver.gd")
 
-# Upper bound on how long the result page may wait for presentation cues.
+# Diagnostic threshold for unexpectedly slow presentation draining. It must not
+# discard valid attacks merely because the main thread was temporarily stalled.
 const PRESENTATION_DRAIN_TIMEOUT_SEC := 3.0
 
 # --- V2 P1-01：最短可读演出时长 -----------------------------------------------
@@ -40,6 +43,8 @@ const FINAL_ROUND_INTRO_SEC := 2.05
 var _replay: Dictionary = {}
 var _replay_mode := false
 var _replay_frame := 0
+var _replay_round := -1
+var _battle_result_reported := false
 # 已灌入 visual_events 的最高回放帧号，避免重复播放同一帧的视觉事件。
 var _replay_events_applied := -1
 var _replay_by_uid: Dictionary = {}
@@ -58,6 +63,10 @@ var _replay_by_uid: Dictionary = {}
 # 加列会让 D0-D6 的**冻结哈希**漂移。表现层能自洽解决的问题，不去动模拟身份。
 var _converted_ally_ids: Dictionary = {}
 var _battle_setup_ready := false
+const BATTLE_PREPARE_TIMEOUT_MSEC := 120000
+var _battle_prepare_deadline_msec := 0
+var battle_preparation_report: Dictionary = {}
+var _battle_prepare_started_msec := 0
 var _final_round_intro_active := false
 var _final_round_intro_started := false
 # 切镜头观战：_replay 永远是"正在播放"的那份；自己队伍的原始 replay 存在
@@ -270,10 +279,17 @@ func _start_replay(replay: Dictionary) -> void:
 	if not _valid_team_replay(replay):
 		_show_team_waiting()
 		return
+	_battle_setup_ready = false
+	_sim_accumulator = 0.0
+	_battle_prepare_started_msec = Time.get_ticks_msec()
+	battle_preparation_report = {"budget_ms": BATTLE_PREPARE_TIMEOUT_MSEC, "started_msec": _battle_prepare_started_msec}
+	_battle_prepare_deadline_msec = _battle_prepare_started_msec + BATTLE_PREPARE_TIMEOUT_MSEC
 	if _result_overlay_lbl != null:
 		_result_overlay_lbl.visible = false
 	_replay = replay
 	_replay_own = replay
+	_replay_round = GameState.round_index
+	_battle_result_reported = false
 	_replay_rival = NetworkService.team_replay_rival if _valid_team_replay(NetworkService.team_replay_rival) else {}
 	_watching_rival = false
 	_replay_mode = true
@@ -291,6 +307,10 @@ func _start_replay(replay: Dictionary) -> void:
 	# 9.20：换了一局就必须把 VFX 差分缓存**重新播种**（下面的方法里写清了理由）。
 	_reseat_vfx_diff_for_new_battle()
 	_prefetch_battle_assets()
+	if not await _prepare_replay_assets():
+		return
+	if not is_inside_tree() or _finished:
+		return
 	# (4) PvP canonical arrangement puts team A at the bottom. If I'm on team B, flip
 	# the arena vertically so my own units are always the ones at the bottom.
 	var my_slot := NetworkService.team_local_slot if NetworkService.team_active else 0
@@ -306,9 +326,84 @@ func _start_replay(replay: Dictionary) -> void:
 		_setup_view_toggle()
 		_start_battle_music()
 		await _prepare_battle_models()
+		if not is_inside_tree() or _finished:
+			return
 		# Actors are registered now, so queued cues may resolve their anchors.
 		_readable_speed = _compute_readable_speed()
 		_presentation_director.set_playback_speed(PLAYBACK_SPEED * _readable_speed)
+
+
+# Normal Prep already owns these resources. Cold recovery and QA can enter the
+# battle directly; wait for this round's full roster before the first event.
+func _prepare_replay_assets() -> bool:
+	var model_paths: Array[String] = []
+	var texture_paths: Array[String] = []
+	for replay in [_replay_own, _replay_rival]:
+		for path in BattleAssetManifest.replay_paths(replay):
+			if not model_paths.has(path):
+				model_paths.append(path)
+		for raw_path in BattleAssetManifest.replay_texture_paths(replay):
+			var path := str(raw_path)
+			if not path.is_empty() and not texture_paths.has(path):
+				texture_paths.append(path)
+	var missing: Array[String] = []
+	for path in model_paths + texture_paths:
+		if not ResourceLoader.exists(path):
+			missing.append(path)
+	if not missing.is_empty():
+		push_warning("[BATTLE_ASSET_FAILED] missing=%s" % str(missing))
+		_fail_team_replay("battle_assets_missing")
+		return false
+	BattleAssetService.acquire_many(model_paths, BattleAssetService.OWNER_BATTLE)
+	BattleAssetService.promote_future_to_battle(GameState.round_index)
+	VFXManager.preload_textures(texture_paths)
+	var started := Time.get_ticks_msec()
+	var deadline := started + 15000
+	var total := model_paths.size() + texture_paths.size()
+	var bar: ProgressBar = null
+	while is_inside_tree() and not _finished:
+		BattleAssetService.harvest()
+		var done := BattleAssetService.ready_count(model_paths) + VFXManager.ready_texture_count(texture_paths)
+		if done == total:
+			if is_instance_valid(bar):
+				bar.queue_free()
+			battle_preparation_report["assets"] = {"models": model_paths.size(), "textures": texture_paths.size(), "elapsed_ms": Time.get_ticks_msec() - started}
+			print("[BATTLE_ASSET_READY] models=%d textures=%d elapsed_ms=%d" % [
+				model_paths.size(), texture_paths.size(), Time.get_ticks_msec() - started])
+			return true
+		if bar == null:
+			bar = _make_battle_prepare_bar()
+		bar.value = 100.0 * float(done) / float(maxi(1, total))
+		var failed: Array[String] = []
+		for path in model_paths + texture_paths:
+			if BattleAssetService.ready_count([path]) + VFXManager.ready_texture_count([path]) > 0:
+				continue
+			var status := ResourceLoader.load_threaded_get_status(path)
+			if status in [ResourceLoader.THREAD_LOAD_FAILED, ResourceLoader.THREAD_LOAD_INVALID_RESOURCE]:
+				failed.append(path)
+		if not failed.is_empty() or Time.get_ticks_msec() >= deadline:
+			bar.queue_free()
+			push_warning("[BATTLE_ASSET_FAILED] ready=%d/%d failed=%s elapsed_ms=%d" % [
+				done, total, str(failed), Time.get_ticks_msec() - started])
+			_fail_team_replay("battle_assets_failed" if not failed.is_empty() else "battle_assets_timeout")
+			return false
+		await get_tree().process_frame
+	if is_instance_valid(bar):
+		bar.queue_free()
+	return false
+
+
+func can_resume_playback(payload: Dictionary) -> bool:
+	return _replay_mode and PlaybackRecovery.same_battle(
+		PlaybackRecovery.replay_battle_id(_replay_own), _replay_round, payload)
+
+
+func has_reported_battle_result() -> bool:
+	return _battle_result_reported
+
+
+func completed_replay_result() -> Dictionary:
+	return _result
 
 
 # 每帧最多建几个单位模型。3 个是折中：太小则读条拖长，太大则单帧又开始卡。
@@ -327,6 +422,11 @@ const MODELS_PER_FRAME := 3
 #
 # 必须「建完才开打」——否则 _apply_replay_frame 会去定位还不存在的单位。
 func _prepare_battle_models() -> void:
+	var models_started := Time.get_ticks_msec()
+	if _battle_prepare_started_msec <= 0:
+		_battle_prepare_started_msec = models_started
+	if _battle_prepare_deadline_msec <= 0:
+		_battle_prepare_deadline_msec = Time.get_ticks_msec() + BATTLE_PREPARE_TIMEOUT_MSEC
 	var living: Array = []
 	for f in (_state.get("player", []) + _state.get("enemy", [])):
 		if typeof(f) == TYPE_DICTIONARY and bool(f.get("alive", false)):
@@ -334,7 +434,7 @@ func _prepare_battle_models() -> void:
 	var total := living.size()
 	if _battle_3d_root != null:
 		_battle_3d_root.visible = false
-	var bar := _make_battle_prepare_bar() if total > MODELS_PER_FRAME else null
+	var bar := _make_battle_prepare_bar()
 	var done := 0
 	for f in living:
 		# 只建不删（prune=false）：_sync_3d_model_nodes 的收尾会清掉「不在传入列表里」
@@ -347,17 +447,70 @@ func _prepare_battle_models() -> void:
 			if bar != null:
 				bar.value = 100.0 * float(done) / float(maxi(1, total))
 			await get_tree().process_frame
-			if not is_inside_tree() or _finished:
+			if not is_inside_tree() or _finished or _prepare_deadline_expired():
 				# 中途退出也要把根恢复可见，否则这个节点被复用时棋盘是空的。
 				if _battle_3d_root != null:
 					_battle_3d_root.visible = true
+				if is_instance_valid(bar):
+					bar.queue_free()
 				return
-	if bar != null and is_instance_valid(bar):
+	battle_preparation_report["models"] = {"count": total, "elapsed_ms": Time.get_ticks_msec() - models_started}
+	var warmup := RenderWarmup.new()
+	add_child(warmup)
+	var render_report: Dictionary = await warmup.prepare_replays([_replay_own, _replay_rival], _battle_3d_viewport,
+		func(ready: int, count: int):
+			if is_instance_valid(bar):
+				bar.value = 100.0 * float(ready) / float(maxi(1, count)),
+		func() -> bool: return is_inside_tree() and not _finished and not _return_emitted,
+		_battle_prepare_deadline_msec)
+	battle_preparation_report["effects"] = render_report.duplicate(true)
+	warmup.queue_free()
+	if not is_inside_tree() or _finished or _return_emitted or _prepare_deadline_expired():
+		if is_instance_valid(bar):
+			bar.queue_free()
+		if is_instance_valid(_battle_3d_root):
+			_battle_3d_root.visible = true
+		return
+	if not bool(render_report.get("ok", false)):
 		bar.queue_free()
+		_fail_team_replay(str(render_report.get("error", "battle_render_prepare_failed")))
+		return
 	_refresh_visuals()
 	if _battle_3d_root != null:
 		_battle_3d_root.visible = true
-	_battle_setup_ready = true
+	# Group heals pair nearby geometry with Omni lights. GLES creates a
+	# separate specialization even for many unshaded materials, so warm both
+	# the ordinary and lit variants on these exact current-round models.
+	if DisplayServer.get_name() != "headless":
+		var first_draw_started := Time.get_ticks_msec()
+		var point_light := OmniLight3D.new()
+		point_light.name = "CurrentReplayModelOmniVariant"
+		point_light.omni_range = 128.0
+		point_light.light_energy = 0.001
+		point_light.shadow_enabled = false
+		_battle_3d_root.add_child(point_light)
+		for lighting_pass in 2:
+			point_light.visible = lighting_pass == 1
+			for frame in 2:
+				await RenderingServer.frame_post_draw
+				if not is_inside_tree() or _finished or _prepare_deadline_expired():
+					point_light.queue_free()
+					if is_instance_valid(bar):
+						bar.queue_free()
+					return
+				await get_tree().process_frame
+				if not is_inside_tree() or _finished:
+					point_light.queue_free()
+					if is_instance_valid(bar):
+						bar.queue_free()
+					return
+		point_light.queue_free()
+		battle_preparation_report["model_draw_ms"] = Time.get_ticks_msec() - first_draw_started
+		battle_preparation_report["model_lighting_variants"] = ["directional_only", "with_omni"]
+		print("[BATTLE_MODEL_DRAW_READY] elapsed_ms=%d" % (Time.get_ticks_msec() - first_draw_started))
+
+	if is_instance_valid(bar):
+		bar.queue_free()
 	# 9.17：Boss 登场。放在这里而不是 _start_battle_music() 里 ——
 	# 后者在进场景那一刻就会被调一次（BattleScreen.gd:98），那时 replay 还没到、
 	# 单位模型还没建，声音会比画面早一整段读条。
@@ -388,7 +541,27 @@ func _prepare_battle_models() -> void:
 	# 9.17 反馈第 4 条：登场音播完之后才起 pve 战斗 BGM。
 	# 放在本函数**最末尾**：这是「模型全建完、战斗马上开打」的那一刻，
 	# 也是本函数里唯一保证会走到的收口点（前面几个早退分支都在建模型循环里）。
-	await _resolve_pending_battle_music()
+	# Audio ordering is independent of combat readiness: some Boss intro clips
+	# last 15s. Their generation-guarded coroutine starts BGM when audio ends;
+	# neither replay frames nor the Director wait for that sound track.
+	_resolve_pending_battle_music()
+	# The actual final-round summon animation still gates both timelines.
+	while _final_round_intro_active:
+		await get_tree().process_frame
+		if not is_inside_tree() or _finished or _prepare_deadline_expired():
+			return
+	if is_inside_tree() and not _finished:
+		battle_preparation_report["total_ms"] = Time.get_ticks_msec() - _battle_prepare_started_msec
+		battle_preparation_report["ready"] = true
+		_battle_setup_ready = true
+		if is_instance_valid(_view_toggle_btn):
+			_view_toggle_btn.disabled = false
+
+func _prepare_deadline_expired() -> bool:
+	if _battle_prepare_deadline_msec > 0 and Time.get_ticks_msec() > _battle_prepare_deadline_msec:
+		_fail_team_replay("battle_prepare_timeout")
+		return true
+	return false
 
 # 顶部一条细进度条，接着备战界面那条蓝线继续走，避免「画面停住」的观感。
 func _make_battle_prepare_bar() -> ProgressBar:
@@ -506,6 +679,7 @@ func _setup_view_toggle() -> void:
 	if kind == "pvp" or kind == "final":
 		return
 	_view_toggle_btn = Button.new()
+	_view_toggle_btn.disabled = not _battle_setup_ready
 	_view_toggle_btn.text = tr("battle_view_rival")
 	_view_toggle_btn.custom_minimum_size = Vector2(120, 36)
 	_view_toggle_btn.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
@@ -518,6 +692,8 @@ func _setup_view_toggle() -> void:
 	add_child(_view_toggle_btn)
 
 func _on_view_toggle_pressed() -> void:
+	if not _battle_setup_ready:
+		return
 	# 正常对局中 _return_emitted 之前都能切；进入结算等待后（_settlement_waiting）
 	# 虽然 _return_emitted 已经是 true，仍然允许切过去补看另一队（9.13 #2）。
 	if _return_emitted and not _settlement_waiting:
@@ -877,7 +1053,7 @@ func _finish_replay() -> void:
 	# 按钮最终随本场景一起销毁。
 	# D4: with a real adapter the cues are asynchronous, so DRAINING actually has
 	# something to wait for. Checklist 4.6: hold the result page for the
-	# critical/important cues, but never past the cap.
+	# critical/important cues, including already airborne projectile tails.
 	_presentation_director.begin_draining()
 	_finished = true
 	_result = _replay.get("result", {})
@@ -887,7 +1063,11 @@ func _finish_replay() -> void:
 	# 本地模拟那条路在 BattleResult._emit_finished 里调，这里是 replay/组队那条。
 	_play_human_king_reward()
 	await _await_presentation_drained()
+	if not is_inside_tree():
+		return
 	await _play_crystal_attack_sequence(_result)
+	if not is_inside_tree():
+		return
 	# V2 P1-05 第 3 条：镜头轻收束 + 幸存者定格，然后才出胜负字样。
 	# 9.17 反馈第 3 条：停留时长改为「至少等胜负音播完」（见
 	# BattleResult._result_linger_seconds —— 它是 RESULT_DISPLAY_SECONDS
@@ -895,11 +1075,19 @@ func _finish_replay() -> void:
 	play_victory_finish()
 	_show_result_overlay()
 	await get_tree().create_timer(_result_linger_seconds()).timeout
+	if not is_inside_tree():
+		return
+	_battle_result_reported = true
 	battle_finished.emit(_result)
 
 func _skip_animation() -> void:
 	if _replay_mode:
 		if _return_emitted:
+			# A missing adapter completion must not trap the player after the
+			# timeline ends. The existing explicit Skip button also cancels drain.
+			if not _battle_result_reported and _presentation_director.has_blocking_cues():
+				_presentation_director.skip_to_result()
+				cue_release_corpses()
 			return
 		if _watching_rival:
 			_set_watching_rival(false)
@@ -948,7 +1136,11 @@ func _compute_readable_speed() -> float:
 
 func _await_presentation_drained() -> void:
 	var deadline := Time.get_ticks_msec() + int(PRESENTATION_DRAIN_TIMEOUT_SEC * 1000.0)
-	while _presentation_director.has_blocking_cues() and Time.get_ticks_msec() < deadline:
+	var reported_slow_drain := false
+	while _presentation_director.has_blocking_cues():
+		if not reported_slow_drain and Time.get_ticks_msec() >= deadline:
+			reported_slow_drain = true
+			push_warning("[BATTLE_PLAYBACK] slow presentation drain; waiting for pending attacks")
 		await get_tree().process_frame
 		if not is_inside_tree():
 			return

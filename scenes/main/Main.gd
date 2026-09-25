@@ -1,4 +1,5 @@
 extends Control
+const PlaybackRecovery := preload("res://scripts/battle/BattlePlaybackRecovery.gd")
 const CarrotEconomy := preload("res://scripts/economy/CarrotEconomy.gd")
 
 signal public_token_request_check_requested(request_id: String)
@@ -96,6 +97,9 @@ const RECONNECT_BACKDROP_COLOR := Color(0.0, 0.0, 0.0, 0.72)
 var _menu: Control
 var _prep: Control
 var _battle: Control
+var _resume_replay_pending: Dictionary = {}
+var _resume_replay_generation := 0
+var _battle_settlement_generation := 0
 # 迁移后这三个都是**瞬时**节点：ModalStack 每次开层现建、关层销毁。
 # 根不再是自建的 CanvasLayer（layer=100），而是一块透明的全屏 Control；
 # 层级与 0.72 变暗都交给 ModalStack。
@@ -154,6 +158,9 @@ func _ready() -> void:
 		NetworkService.session_changed.connect(_on_global_session_changed)
 	if not NetworkService.resume_completed.is_connected(_on_resume_completed):
 		NetworkService.resume_completed.connect(_on_resume_completed)
+	if not NetworkService.team_replay_failed.is_connected(_on_team_replay_failed):
+		# room_state finishes committing READY before a receive error starts recovery.
+		NetworkService.team_replay_failed.connect(_on_team_replay_failed, CONNECT_DEFERRED)
 	if not NetworkService.resume_failed.is_connected(_on_resume_failed):
 		NetworkService.resume_failed.connect(_on_resume_failed)
 	if not NetworkService.team_room_list_received.is_connected(_on_team_room_list_received):
@@ -208,6 +215,7 @@ func _start_vfx_warmup() -> void:
 
 func _on_global_session_changed() -> void:
 	if NetworkService.state == NetworkService.SessionState.RECONNECTING:
+		_battle_settlement_generation += 1
 		_show_reconnect_overlay()
 	else:
 		_hide_reconnect_overlay()
@@ -354,6 +362,23 @@ func _on_resume_completed(payload: Dictionary) -> void:
 			return
 	_hide_reconnect_overlay()
 	GameState.team_mode = true
+	if str(payload.get("replay_error", "")).is_empty() and PlaybackRecovery.needs_replay(payload):
+		var resolved := PlaybackRecovery.resolve_resume(payload, NetworkService.latest_match_state)
+		if resolved.is_empty():
+			_begin_resume_identity_wait(payload)
+			return
+		payload = resolved
+	# A live recovery retains the already decoded timeline and its cursor.
+	# Applying the settlement snapshot here would advance HP/round before playback.
+	if is_instance_valid(_battle) and _battle.is_inside_tree() \
+			and bool(_battle.call("can_resume_playback", payload)):
+		if bool(_battle.call("has_reported_battle_result")):
+			_on_team_battle_finished(_battle.call("completed_replay_result"))
+		return
+	var replay_error := str(payload.get("replay_error", ""))
+	if not replay_error.is_empty():
+		_fail_resume_replay(replay_error)
+		return
 	# 只有内存里没有对局数据（app 重开导致 GameState 全新）才从磁盘恢复棋盘/备战席；
 	# 活着的重连（网络抖动）内存就是最新状态，不能用可能过期的磁盘存档覆盖它。
 	if _team_run_state_is_fresh():
@@ -361,7 +386,8 @@ func _on_resume_completed(payload: Dictionary) -> void:
 	# 服务器权威数值覆盖本地
 	# 键名跟着状态信封走（E2）：round_index -> round_id、enemy_team_hp -> rival_team_hp。
 	# 快照现在还多带了连败与 PVE/Boss 计数（C5 缺的那几项）。
-	GameState.round_index = int(payload.get("round_id", GameState.round_index))
+	GameState.round_index = int(payload.get("battle_round", payload.get("round_id", GameState.round_index))) \
+		if PlaybackRecovery.needs_replay(payload) else int(payload.get("round_id", GameState.round_index))
 	GameState.team_hp = int(payload.get("team_hp", GameState.team_hp))
 	GameState.enemy_team_hp = int(payload.get("rival_team_hp", GameState.enemy_team_hp))
 	# 金币同步：默认（经济账本未开启权威）配置下金币由客户端权威维护——备战阶段每一笔
@@ -410,9 +436,104 @@ func _on_resume_completed(payload: Dictionary) -> void:
 	if str(payload.get("phase", "prep")) == NetworkService.ROOM_LOBBY:
 		_show_team3v3_lobby()
 		return
-	# prep/battle/result 一律落回备战：battle 阶段等本回合 match_state 到达后
-	# 由全局处理器直接推进（= 跳过战斗），result 阶段服务器已补发 match_state。
+	if PlaybackRecovery.needs_replay(payload):
+		_begin_resume_replay(payload)
+		return
 	_show_prep()
+
+# Keep a live battle (and its cursor) while an older server's room_state is
+# waiting for the separately delivered authoritative battle identity.
+func _begin_resume_identity_wait(payload: Dictionary) -> void:
+	_resume_replay_generation += 1
+	_resume_replay_pending = {"identity_payload": payload.duplicate(true)}
+	_wait_for_resume_identity(_resume_replay_generation)
+
+
+func _wait_for_resume_identity(generation: int) -> void:
+	var deadline := Time.get_ticks_msec() + int(NetworkService.REPLAY_TIMEOUT_SEC * 1000.0)
+	while generation == _resume_replay_generation and _resume_replay_pending.has("identity_payload"):
+		if not NetworkService.team_active or NetworkService.state == NetworkService.SessionState.RECONNECTING:
+			return
+		var resolved := PlaybackRecovery.resolve_resume(_resume_replay_pending.identity_payload,
+			NetworkService.latest_match_state)
+		if not resolved.is_empty():
+			_resume_replay_pending.clear()
+			_on_resume_completed(resolved)
+			return
+		if Time.get_ticks_msec() >= deadline:
+			_fail_resume_replay("replay_timeout")
+			return
+		await get_tree().create_timer(0.1).timeout
+		if not is_inside_tree():
+			return
+
+
+# Cold recovery waits for a complete replay paired with its authoritative result.
+# Establish this guard synchronously before the next match_state RPC can arrive.
+func _begin_resume_replay(payload: Dictionary) -> void:
+	_clear()
+	_enter_match_flow()
+	_resume_replay_pending = {
+		"battle_id": str(payload.get("battle_id", "")),
+		"round": int(payload.get("battle_round", payload.get("round_id", GameState.round_index))),
+	}
+	var waiting := Label.new()
+	waiting.text = tr("battle_preparing")
+	waiting.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	waiting.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	waiting.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(waiting)
+	_wait_for_resume_replay(_resume_replay_generation)
+
+
+# A transfer failure cannot be presented as a successfully completed battle.
+# Ignore a resend failure only when the live scene already owns that exact replay.
+func _on_team_replay_failed(battle_id: String, reason: String) -> void:
+	if not NetworkService.team_active or battle_id != NetworkService.current_battle_id:
+		return
+	if is_instance_valid(_battle) and _battle.is_inside_tree() and bool(_battle.call(
+			"can_resume_playback", {"battle_id": battle_id, "battle_round": GameState.round_index})):
+		return
+	var awaiting_replay := not _resume_replay_pending.is_empty()
+	awaiting_replay = awaiting_replay or (is_instance_valid(_battle) and _battle.is_inside_tree())
+	awaiting_replay = awaiting_replay or (is_instance_valid(_prep) and _prep.has_method("is_committing_to_battle")
+		and bool(_prep.call("is_committing_to_battle")))
+	if awaiting_replay:
+		_fail_resume_replay(reason)
+
+
+func _fail_resume_replay(reason: String) -> void:
+	_resume_replay_generation += 1
+	_resume_replay_pending.clear()
+	NetworkService.enter_recoverable_failure(reason)
+
+
+func _wait_for_resume_replay(generation: int) -> void:
+	var deadline := Time.get_ticks_msec() + int(NetworkService.REPLAY_TIMEOUT_SEC * 1000.0)
+	while generation == _resume_replay_generation and not _resume_replay_pending.is_empty():
+		if not NetworkService.team_active or NetworkService.state == NetworkService.SessionState.RECONNECTING:
+			return
+		var received_id_value: Variant = NetworkService.get("team_replay_battle_id")
+		var received_id := str(received_id_value) if received_id_value is String else ""
+		var round_id := int(_resume_replay_pending.get("round", -1))
+		if _has_team_match_state(round_id) and PlaybackRecovery.ready(
+				str(_resume_replay_pending.get("battle_id", "")), round_id, received_id,
+				NetworkService.team_replay, NetworkService.latest_match_state):
+			GameState.set_pending_battle_package({
+				"mode": "team_replay", "round_index": round_id,
+				"replay": NetworkService.team_replay,
+			})
+			GameState.round_index = round_id
+			_resume_replay_pending.clear()
+			_show_battle()
+			return
+		if Time.get_ticks_msec() >= deadline:
+			_fail_resume_replay("replay_timeout")
+			return
+		await get_tree().create_timer(0.1).timeout
+		if not is_inside_tree():
+			return
+
 
 func _team_run_state_is_fresh() -> bool:
 	for cell in GameState.board_slots:
@@ -543,6 +664,9 @@ func _return_to_login(reason := "") -> void:
 
 
 func _clear() -> void:
+	_resume_replay_generation += 1
+	_resume_replay_pending.clear()
+	_battle_settlement_generation += 1
 	# 先清路由：下一页要么自己设一个，要么就该没有。留着上一页的会让返回键
 	# 把玩家送回一个已经不在树上的界面。
 	_page_back_route = Callable()
@@ -2539,6 +2663,8 @@ func _play_start_game_success_then_prep() -> void:
 	_show_prep()
 
 func _on_team_battle_finished(result: Dictionary) -> void:
+	if _resume_replay_pending.has("identity_payload"):
+		return
 	if NetworkService.team_active and not NetworkService.is_host:
 		await _finish_server_authoritative_team_battle(result)
 		return
@@ -2635,6 +2761,8 @@ func _on_team_battle_finished(result: Dictionary) -> void:
 	_show_prep()
 
 func _finish_server_authoritative_team_battle(result: Dictionary) -> void:
+	_battle_settlement_generation += 1
+	var generation := _battle_settlement_generation
 	if result.has("error"):
 		# **技术失败，不是玩家退出**（B8/E3）：replay 没等到、解包失败之类。
 		# 此前这里调 disconnect_session()，等于清掉重连凭证 —— 而服务器那边
@@ -2649,6 +2777,8 @@ func _finish_server_authoritative_team_battle(result: Dictionary) -> void:
 	var waited := 0.0
 	while not _has_team_match_state(completed_round) and waited < NetworkService.REPLAY_TIMEOUT_SEC:
 		await get_tree().create_timer(0.1).timeout
+		if generation != _battle_settlement_generation:
+			return
 		waited += 0.1
 	if not _has_team_match_state(completed_round):
 		# 正在重连：不要拆会话回菜单，恢复流程会接管导航（resume 后落回备战）
@@ -2670,6 +2800,8 @@ func _finish_server_authoritative_team_battle(result: Dictionary) -> void:
 			if not NetworkService.team_active or NetworkService.state == NetworkService.SessionState.RECONNECTING:
 				return
 			await get_tree().create_timer(0.1).timeout
+			if generation != _battle_settlement_generation:
+				return
 	_apply_team_match_state_payload(state_payload, result)
 	print("[NET] client applied match_state round=%d next=%d gold=%d hp=%d" % [completed_round, GameState.round_index, GameState.gold, GameState.team_hp])
 	if bool(state_payload.get("run_over", false)):
@@ -2792,6 +2924,8 @@ func _last_battle_result() -> Dictionary:
 	return {}
 
 func _on_network_match_state_received(state_payload: Dictionary) -> void:
+	if not _resume_replay_pending.is_empty():
+		return
 	if _battle != null and is_instance_valid(_battle):
 		return
 	# 内嵌服务器会在本回合刚就绪时立刻把战后 match_state 发回，此刻玩家可能还在

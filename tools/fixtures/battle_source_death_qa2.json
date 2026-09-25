@@ -1,0 +1,1371 @@
+{
+  "provenance": "vivo QA2 seed 20260807 rounds 1,20,21; actual event identities and order; presentation-only regression",
+  "cases": [
+    {
+      "round": 1,
+      "source_uid": "enemy_L0_m2",
+      "source_sha256": "77f5682036f98d1f9dc3112bf2ffefc176b20267f1597fac8cfabfdf3694f2c1",
+      "events": [
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:1:pve:team0",
+          "event_key": "local:20260807:1:pve:team0:39:0",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 0,
+          "presentation_seed": 1866190354,
+          "schema_version": 1,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L0_m2",
+          "target_uid": "player_L0_3",
+          "target_uids": [
+            "player_L0_3"
+          ],
+          "tick": 39,
+          "time": 3.900000000000002,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "attack_start",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:1:pve:team0",
+          "event_key": "local:20260807:1:pve:team0:39:1",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 1,
+          "presentation_seed": 655838639,
+          "schema_version": 1,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L0_m2",
+          "target_uid": "player_L0_3",
+          "target_uids": [
+            "player_L0_3"
+          ],
+          "tick": 39,
+          "time": 3.900000000000002,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "projectile_spawn",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:1:pve:team0",
+          "event_key": "local:20260807:1:pve:team0:39:2",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 2,
+          "presentation_seed": 73779407,
+          "schema_version": 1,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L0_m2",
+          "target_uid": "player_L0_3",
+          "target_uids": [
+            "player_L0_3"
+          ],
+          "tick": 39,
+          "time": 3.900000000000002,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "impact",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:1:pve:team0",
+          "event_key": "local:20260807:1:pve:team0:40:4",
+          "is_crit": false,
+          "is_lethal": true,
+          "killer_uid": "player_L0_2",
+          "ordinal": 4,
+          "presentation_seed": 1677934901,
+          "schema_version": 1,
+          "skill_id": "death",
+          "source_uid": "enemy_L0_m2",
+          "target_uids": [],
+          "tick": 40,
+          "time": 4.000000000000002,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "death",
+          "visibility_priority": "critical"
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "source_uid": "enemy_L2_m2",
+      "source_sha256": "77f5682036f98d1f9dc3112bf2ffefc176b20267f1597fac8cfabfdf3694f2c1",
+      "events": [
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:1:pve:team0",
+          "event_key": "local:20260807:1:pve:team0:39:3",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 3,
+          "presentation_seed": 1489943943,
+          "schema_version": 1,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L2_m2",
+          "target_uid": "player_L2_3",
+          "target_uids": [
+            "player_L2_3"
+          ],
+          "tick": 39,
+          "time": 3.900000000000002,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "attack_start",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:1:pve:team0",
+          "event_key": "local:20260807:1:pve:team0:39:4",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 4,
+          "presentation_seed": 1866607409,
+          "schema_version": 1,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L2_m2",
+          "target_uid": "player_L2_3",
+          "target_uids": [
+            "player_L2_3"
+          ],
+          "tick": 39,
+          "time": 3.900000000000002,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "projectile_spawn",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:1:pve:team0",
+          "event_key": "local:20260807:1:pve:team0:39:5",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 5,
+          "presentation_seed": 769160995,
+          "schema_version": 1,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L2_m2",
+          "target_uid": "player_L2_3",
+          "target_uids": [
+            "player_L2_3"
+          ],
+          "tick": 39,
+          "time": 3.900000000000002,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "impact",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:1:pve:team0",
+          "event_key": "local:20260807:1:pve:team0:40:9",
+          "is_crit": false,
+          "is_lethal": true,
+          "killer_uid": "player_L2_2",
+          "ordinal": 9,
+          "presentation_seed": 260475963,
+          "schema_version": 1,
+          "skill_id": "death",
+          "source_uid": "enemy_L2_m2",
+          "target_uids": [],
+          "tick": 40,
+          "time": 4.000000000000002,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "death",
+          "visibility_priority": "critical"
+        }
+      ]
+    },
+    {
+      "round": 20,
+      "source_uid": "enemy_L1_m7",
+      "source_sha256": "972a86986ded9d3aaf821501983a9f039c927411720ca229a3b187e00ba8b232",
+      "events": [
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:20:boss:team0",
+          "event_key": "local:20260807:20:boss:team0:104:43",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 43,
+          "presentation_seed": 1735823522,
+          "schema_version": 1,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L1_m7",
+          "target_uid": "player_L1_1",
+          "target_uids": [
+            "player_L1_1"
+          ],
+          "tick": 104,
+          "time": 10.399999999999979,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "attack_start",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:20:boss:team0",
+          "event_key": "local:20260807:20:boss:team0:104:44",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 44,
+          "presentation_seed": 1161632541,
+          "schema_version": 1,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L1_m7",
+          "target_uid": "player_L1_1",
+          "target_uids": [
+            "player_L1_1"
+          ],
+          "tick": 104,
+          "time": 10.399999999999979,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "projectile_spawn",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:20:boss:team0",
+          "event_key": "local:20260807:20:boss:team0:104:45",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 45,
+          "presentation_seed": 644203483,
+          "schema_version": 1,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L1_m7",
+          "target_uid": "player_L1_1",
+          "target_uids": [
+            "player_L1_1"
+          ],
+          "tick": 104,
+          "time": 10.399999999999979,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "impact",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 16,
+          "battle_id": "local:20260807:20:boss:team0",
+          "crit": false,
+          "event_key": "local:20260807:20:boss:team0:104:46",
+          "is_crit": false,
+          "is_lethal": false,
+          "kind": "dmg",
+          "ordinal": 46,
+          "presentation_seed": 940356306,
+          "race": "",
+          "schema_version": 1,
+          "skill": false,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L1_m7",
+          "target_uid": "player_L1_1",
+          "target_uids": [
+            "player_L1_1"
+          ],
+          "tick": 104,
+          "time": 10.399999999999979,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "hit_number",
+          "visibility_priority": "ambient"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:20:boss:team0",
+          "event_key": "local:20260807:20:boss:team0:105:7",
+          "is_crit": false,
+          "is_lethal": true,
+          "killer_uid": "player_L1_0",
+          "ordinal": 7,
+          "presentation_seed": 1923705330,
+          "schema_version": 1,
+          "skill_id": "death",
+          "source_uid": "enemy_L1_m7",
+          "target_uids": [],
+          "tick": 105,
+          "time": 10.499999999999979,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "death",
+          "visibility_priority": "critical"
+        }
+      ]
+    },
+    {
+      "round": 20,
+      "source_uid": "enemy_L1_m14",
+      "source_sha256": "972a86986ded9d3aaf821501983a9f039c927411720ca229a3b187e00ba8b232",
+      "events": [
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:20:boss:team0",
+          "event_key": "local:20260807:20:boss:team0:105:32",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 32,
+          "presentation_seed": 538100013,
+          "schema_version": 1,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L1_m14",
+          "target_uid": "player_L1_1",
+          "target_uids": [
+            "player_L1_1"
+          ],
+          "tick": 105,
+          "time": 10.499999999999979,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "attack_start",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:20:boss:team0",
+          "event_key": "local:20260807:20:boss:team0:105:33",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 33,
+          "presentation_seed": 1906433624,
+          "schema_version": 1,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L1_m14",
+          "target_uid": "player_L1_1",
+          "target_uids": [
+            "player_L1_1"
+          ],
+          "tick": 105,
+          "time": 10.499999999999979,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "projectile_spawn",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:20:boss:team0",
+          "event_key": "local:20260807:20:boss:team0:105:34",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 34,
+          "presentation_seed": 10074152,
+          "schema_version": 1,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L1_m14",
+          "target_uid": "player_L1_1",
+          "target_uids": [
+            "player_L1_1"
+          ],
+          "tick": 105,
+          "time": 10.499999999999979,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "impact",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 16,
+          "battle_id": "local:20260807:20:boss:team0",
+          "crit": false,
+          "event_key": "local:20260807:20:boss:team0:105:35",
+          "is_crit": false,
+          "is_lethal": false,
+          "kind": "dmg",
+          "ordinal": 35,
+          "presentation_seed": 132002800,
+          "race": "",
+          "schema_version": 1,
+          "skill": false,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L1_m14",
+          "target_uid": "player_L1_1",
+          "target_uids": [
+            "player_L1_1"
+          ],
+          "tick": 105,
+          "time": 10.499999999999979,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "hit_number",
+          "visibility_priority": "ambient"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:20:boss:team0",
+          "event_key": "local:20260807:20:boss:team0:106:3",
+          "is_crit": false,
+          "is_lethal": true,
+          "killer_uid": "player_L1_2",
+          "ordinal": 3,
+          "presentation_seed": 1919662310,
+          "schema_version": 1,
+          "skill_id": "death",
+          "source_uid": "enemy_L1_m14",
+          "target_uids": [],
+          "tick": 106,
+          "time": 10.599999999999978,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "death",
+          "visibility_priority": "critical"
+        }
+      ]
+    },
+    {
+      "round": 20,
+      "source_uid": "enemy_L0_m5",
+      "source_sha256": "972a86986ded9d3aaf821501983a9f039c927411720ca229a3b187e00ba8b232",
+      "events": [
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:20:boss:team0",
+          "event_key": "local:20260807:20:boss:team0:156:0",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 0,
+          "presentation_seed": 982639872,
+          "schema_version": 1,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L0_m5",
+          "target_uid": "player_L0_3",
+          "target_uids": [
+            "player_L0_3"
+          ],
+          "tick": 156,
+          "time": 15.59999999999996,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "attack_start",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:20:boss:team0",
+          "event_key": "local:20260807:20:boss:team0:156:1",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 1,
+          "presentation_seed": 1258895035,
+          "schema_version": 1,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L0_m5",
+          "target_uid": "player_L0_3",
+          "target_uids": [
+            "player_L0_3"
+          ],
+          "tick": 156,
+          "time": 15.59999999999996,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "projectile_spawn",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:20:boss:team0",
+          "event_key": "local:20260807:20:boss:team0:156:2",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 2,
+          "presentation_seed": 620404468,
+          "schema_version": 1,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L0_m5",
+          "target_uid": "player_L0_3",
+          "target_uids": [
+            "player_L0_3"
+          ],
+          "tick": 156,
+          "time": 15.59999999999996,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "impact",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 16,
+          "battle_id": "local:20260807:20:boss:team0",
+          "crit": false,
+          "event_key": "local:20260807:20:boss:team0:156:3",
+          "is_crit": false,
+          "is_lethal": false,
+          "kind": "dmg",
+          "ordinal": 3,
+          "presentation_seed": 2094130303,
+          "race": "",
+          "schema_version": 1,
+          "skill": false,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L0_m5",
+          "target_uid": "player_L0_3",
+          "target_uids": [
+            "player_L0_3"
+          ],
+          "tick": 156,
+          "time": 15.59999999999996,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "hit_number",
+          "visibility_priority": "ambient"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:20:boss:team0",
+          "event_key": "local:20260807:20:boss:team0:157:3",
+          "is_crit": false,
+          "is_lethal": true,
+          "killer_uid": "player_L1_2",
+          "ordinal": 3,
+          "presentation_seed": 1958577491,
+          "schema_version": 1,
+          "skill_id": "death",
+          "source_uid": "enemy_L0_m5",
+          "target_uids": [],
+          "tick": 157,
+          "time": 15.69999999999996,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "death",
+          "visibility_priority": "critical"
+        }
+      ]
+    },
+    {
+      "round": 20,
+      "source_uid": "enemy_L0_m15",
+      "source_sha256": "972a86986ded9d3aaf821501983a9f039c927411720ca229a3b187e00ba8b232",
+      "events": [
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:20:boss:team0",
+          "event_key": "local:20260807:20:boss:team0:170:25",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 25,
+          "presentation_seed": 587665527,
+          "schema_version": 1,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L0_m15",
+          "target_uid": "player_L0_0",
+          "target_uids": [
+            "player_L0_0"
+          ],
+          "tick": 170,
+          "time": 16.99999999999997,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "attack_start",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:20:boss:team0",
+          "event_key": "local:20260807:20:boss:team0:170:26",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 26,
+          "presentation_seed": 1291328496,
+          "schema_version": 1,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L0_m15",
+          "target_uid": "player_L0_0",
+          "target_uids": [
+            "player_L0_0"
+          ],
+          "tick": 170,
+          "time": 16.99999999999997,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "projectile_spawn",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:20:boss:team0",
+          "event_key": "local:20260807:20:boss:team0:170:27",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 27,
+          "presentation_seed": 916832143,
+          "schema_version": 1,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L0_m15",
+          "target_uid": "player_L0_0",
+          "target_uids": [
+            "player_L0_0"
+          ],
+          "tick": 170,
+          "time": 16.99999999999997,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "impact",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 18,
+          "battle_id": "local:20260807:20:boss:team0",
+          "crit": false,
+          "event_key": "local:20260807:20:boss:team0:170:28",
+          "is_crit": false,
+          "is_lethal": false,
+          "kind": "dmg",
+          "ordinal": 28,
+          "presentation_seed": 151541643,
+          "race": "",
+          "schema_version": 1,
+          "skill": false,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L0_m15",
+          "target_uid": "player_L0_0",
+          "target_uids": [
+            "player_L0_0"
+          ],
+          "tick": 170,
+          "time": 16.99999999999997,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "hit_number",
+          "visibility_priority": "ambient"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:20:boss:team0",
+          "event_key": "local:20260807:20:boss:team0:171:8",
+          "is_crit": false,
+          "is_lethal": true,
+          "killer_uid": "player_L1_0",
+          "ordinal": 8,
+          "presentation_seed": 482007844,
+          "schema_version": 1,
+          "skill_id": "death",
+          "source_uid": "enemy_L0_m15",
+          "target_uids": [],
+          "tick": 171,
+          "time": 17.099999999999973,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "death",
+          "visibility_priority": "critical"
+        }
+      ]
+    },
+    {
+      "round": 20,
+      "source_uid": "enemy_L0_m9",
+      "source_sha256": "972a86986ded9d3aaf821501983a9f039c927411720ca229a3b187e00ba8b232",
+      "events": [
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:20:boss:team0",
+          "event_key": "local:20260807:20:boss:team0:196:0",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 0,
+          "presentation_seed": 818198718,
+          "schema_version": 1,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L0_m9",
+          "target_uid": "player_L0_1",
+          "target_uids": [
+            "player_L0_1"
+          ],
+          "tick": 196,
+          "time": 19.60000000000001,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "attack_start",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:20:boss:team0",
+          "event_key": "local:20260807:20:boss:team0:196:1",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 1,
+          "presentation_seed": 811154212,
+          "schema_version": 1,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L0_m9",
+          "target_uid": "player_L0_1",
+          "target_uids": [
+            "player_L0_1"
+          ],
+          "tick": 196,
+          "time": 19.60000000000001,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "projectile_spawn",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:20:boss:team0",
+          "event_key": "local:20260807:20:boss:team0:196:2",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 2,
+          "presentation_seed": 530065620,
+          "schema_version": 1,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L0_m9",
+          "target_uid": "player_L0_1",
+          "target_uids": [
+            "player_L0_1"
+          ],
+          "tick": 196,
+          "time": 19.60000000000001,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "impact",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 7,
+          "battle_id": "local:20260807:20:boss:team0",
+          "crit": false,
+          "event_key": "local:20260807:20:boss:team0:196:3",
+          "is_crit": false,
+          "is_lethal": false,
+          "kind": "dmg",
+          "ordinal": 3,
+          "presentation_seed": 152593672,
+          "race": "",
+          "schema_version": 1,
+          "skill": false,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L0_m9",
+          "target_uid": "player_L0_1",
+          "target_uids": [
+            "player_L0_1"
+          ],
+          "tick": 196,
+          "time": 19.60000000000001,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "hit_number",
+          "visibility_priority": "ambient"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:20:boss:team0",
+          "event_key": "local:20260807:20:boss:team0:197:3",
+          "is_crit": false,
+          "is_lethal": true,
+          "killer_uid": "player_L1_2",
+          "ordinal": 3,
+          "presentation_seed": 2138206194,
+          "schema_version": 1,
+          "skill_id": "death",
+          "source_uid": "enemy_L0_m9",
+          "target_uids": [],
+          "tick": 197,
+          "time": 19.70000000000001,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "death",
+          "visibility_priority": "critical"
+        }
+      ]
+    },
+    {
+      "round": 20,
+      "source_uid": "enemy_L2_m10",
+      "source_sha256": "972a86986ded9d3aaf821501983a9f039c927411720ca229a3b187e00ba8b232",
+      "events": [
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:20:boss:team0",
+          "event_key": "local:20260807:20:boss:team0:209:15",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 15,
+          "presentation_seed": 595328701,
+          "schema_version": 1,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L2_m10",
+          "target_uid": "player_L2_2",
+          "target_uids": [
+            "player_L2_2"
+          ],
+          "tick": 209,
+          "time": 20.900000000000027,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "attack_start",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:20:boss:team0",
+          "event_key": "local:20260807:20:boss:team0:209:16",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 16,
+          "presentation_seed": 1745736531,
+          "schema_version": 1,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L2_m10",
+          "target_uid": "player_L2_2",
+          "target_uids": [
+            "player_L2_2"
+          ],
+          "tick": 209,
+          "time": 20.900000000000027,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "projectile_spawn",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:20:boss:team0",
+          "event_key": "local:20260807:20:boss:team0:209:17",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 17,
+          "presentation_seed": 1559689058,
+          "schema_version": 1,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L2_m10",
+          "target_uid": "player_L2_2",
+          "target_uids": [
+            "player_L2_2"
+          ],
+          "tick": 209,
+          "time": 20.900000000000027,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "impact",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 14,
+          "battle_id": "local:20260807:20:boss:team0",
+          "crit": false,
+          "event_key": "local:20260807:20:boss:team0:209:18",
+          "is_crit": false,
+          "is_lethal": false,
+          "kind": "dmg",
+          "ordinal": 18,
+          "presentation_seed": 1382903514,
+          "race": "",
+          "schema_version": 1,
+          "skill": false,
+          "skill_id": "basic_ranged",
+          "source_uid": "enemy_L2_m10",
+          "target_uid": "player_L2_2",
+          "target_uids": [
+            "player_L2_2"
+          ],
+          "tick": 209,
+          "time": 20.900000000000027,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "hit_number",
+          "visibility_priority": "ambient"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:20:boss:team0",
+          "event_key": "local:20260807:20:boss:team0:210:8",
+          "is_crit": false,
+          "is_lethal": true,
+          "killer_uid": "player_L2_2",
+          "ordinal": 8,
+          "presentation_seed": 1529988142,
+          "schema_version": 1,
+          "skill_id": "death",
+          "source_uid": "enemy_L2_m10",
+          "target_uids": [],
+          "tick": 210,
+          "time": 21.00000000000003,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "death",
+          "visibility_priority": "critical"
+        }
+      ]
+    },
+    {
+      "round": 21,
+      "source_uid": "enemy_team_final_ally",
+      "source_sha256": "46d3bb6e99c8346ec61afc81179843363222e263ba75be9c3604d53f4db52b36",
+      "events": [
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:21:pvp:team0",
+          "event_key": "local:20260807:21:pvp:team0:49:6",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 6,
+          "presentation_seed": 1784567989,
+          "schema_version": 1,
+          "skill_id": "basic_melee",
+          "source_uid": "enemy_team_final_ally",
+          "target_uid": "player_L1_1",
+          "target_uids": [
+            "player_L1_1"
+          ],
+          "tick": 49,
+          "time": 4.899999999999999,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "attack_start",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:21:pvp:team0",
+          "event_key": "local:20260807:21:pvp:team0:49:7",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 7,
+          "presentation_seed": 992368347,
+          "schema_version": 1,
+          "skill_id": "basic_melee",
+          "source_uid": "enemy_team_final_ally",
+          "target_uid": "player_L1_1",
+          "target_uids": [
+            "player_L1_1"
+          ],
+          "tick": 49,
+          "time": 4.899999999999999,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "impact",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 113,
+          "battle_id": "local:20260807:21:pvp:team0",
+          "crit": false,
+          "event_key": "local:20260807:21:pvp:team0:49:8",
+          "is_crit": false,
+          "is_lethal": false,
+          "kind": "dmg",
+          "ordinal": 8,
+          "presentation_seed": 423684602,
+          "race": "",
+          "schema_version": 1,
+          "skill": false,
+          "skill_id": "basic_melee",
+          "source_uid": "enemy_team_final_ally",
+          "target_uid": "player_L1_1",
+          "target_uids": [
+            "player_L1_1"
+          ],
+          "tick": 49,
+          "time": 4.899999999999999,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "hit_number",
+          "visibility_priority": "ambient"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:21:pvp:team0",
+          "event_key": "local:20260807:21:pvp:team0:50:3",
+          "is_crit": false,
+          "is_lethal": true,
+          "killer_uid": "player_team_final_ally",
+          "ordinal": 3,
+          "presentation_seed": 1501581842,
+          "schema_version": 1,
+          "skill_id": "death",
+          "source_uid": "enemy_team_final_ally",
+          "target_uids": [],
+          "tick": 50,
+          "time": 4.999999999999998,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "death",
+          "visibility_priority": "critical"
+        }
+      ]
+    },
+    {
+      "round": 21,
+      "source_uid": "player_L0_1",
+      "source_sha256": "46d3bb6e99c8346ec61afc81179843363222e263ba75be9c3604d53f4db52b36",
+      "events": [
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:21:pvp:team0",
+          "event_key": "local:20260807:21:pvp:team0:71:0",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 0,
+          "presentation_seed": 1498323097,
+          "schema_version": 1,
+          "skill_id": "basic_melee",
+          "source_uid": "player_L0_1",
+          "target_uid": "enemy_L0_1",
+          "target_uids": [
+            "enemy_L0_1"
+          ],
+          "tick": 71,
+          "time": 7.099999999999991,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "attack_start",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:21:pvp:team0",
+          "event_key": "local:20260807:21:pvp:team0:71:1",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 1,
+          "presentation_seed": 49682397,
+          "schema_version": 1,
+          "skill_id": "basic_melee",
+          "source_uid": "player_L0_1",
+          "target_uid": "enemy_L0_1",
+          "target_uids": [
+            "enemy_L0_1"
+          ],
+          "tick": 71,
+          "time": 7.099999999999991,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "impact",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 199,
+          "battle_id": "local:20260807:21:pvp:team0",
+          "crit": false,
+          "event_key": "local:20260807:21:pvp:team0:71:2",
+          "is_crit": false,
+          "is_lethal": false,
+          "kind": "dmg",
+          "ordinal": 2,
+          "presentation_seed": 1611571863,
+          "race": "human",
+          "schema_version": 1,
+          "skill": false,
+          "skill_id": "basic_melee",
+          "source_uid": "player_L0_1",
+          "target_uid": "enemy_L0_1",
+          "target_uids": [
+            "enemy_L0_1"
+          ],
+          "tick": 71,
+          "time": 7.099999999999991,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "hit_number",
+          "visibility_priority": "ambient"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:21:pvp:team0",
+          "event_key": "local:20260807:21:pvp:team0:72:3",
+          "is_crit": false,
+          "is_lethal": true,
+          "killer_uid": "enemy_L0_1",
+          "ordinal": 3,
+          "presentation_seed": 1269204892,
+          "schema_version": 1,
+          "skill_id": "death",
+          "source_uid": "player_L0_1",
+          "target_uids": [],
+          "tick": 72,
+          "time": 7.19999999999999,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "death",
+          "visibility_priority": "critical"
+        }
+      ]
+    },
+    {
+      "round": 21,
+      "source_uid": "player_L2_2",
+      "source_sha256": "46d3bb6e99c8346ec61afc81179843363222e263ba75be9c3604d53f4db52b36",
+      "events": [
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:21:pvp:team0",
+          "event_key": "local:20260807:21:pvp:team0:125:2",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 2,
+          "presentation_seed": 206872591,
+          "schema_version": 1,
+          "skill_id": "basic_ranged",
+          "source_uid": "player_L2_2",
+          "target_uid": "enemy_L2_2",
+          "target_uids": [
+            "enemy_L2_2"
+          ],
+          "tick": 125,
+          "time": 12.499999999999972,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "attack_start",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:21:pvp:team0",
+          "event_key": "local:20260807:21:pvp:team0:125:3",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 3,
+          "presentation_seed": 1216941964,
+          "schema_version": 1,
+          "skill_id": "basic_ranged",
+          "source_uid": "player_L2_2",
+          "target_uid": "enemy_L2_2",
+          "target_uids": [
+            "enemy_L2_2"
+          ],
+          "tick": 125,
+          "time": 12.499999999999972,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "projectile_spawn",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:21:pvp:team0",
+          "event_key": "local:20260807:21:pvp:team0:125:4",
+          "is_crit": false,
+          "is_lethal": false,
+          "ordinal": 4,
+          "presentation_seed": 516821278,
+          "schema_version": 1,
+          "skill_id": "basic_ranged",
+          "source_uid": "player_L2_2",
+          "target_uid": "enemy_L2_2",
+          "target_uids": [
+            "enemy_L2_2"
+          ],
+          "tick": 125,
+          "time": 12.499999999999972,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "impact",
+          "visibility_priority": "important"
+        },
+        {
+          "amount": 102,
+          "battle_id": "local:20260807:21:pvp:team0",
+          "crit": false,
+          "event_key": "local:20260807:21:pvp:team0:125:5",
+          "is_crit": false,
+          "is_lethal": false,
+          "kind": "dmg",
+          "ordinal": 5,
+          "presentation_seed": 37614655,
+          "race": "god",
+          "schema_version": 1,
+          "skill": false,
+          "skill_id": "basic_ranged",
+          "source_uid": "player_L2_2",
+          "target_uid": "enemy_L2_2",
+          "target_uids": [
+            "enemy_L2_2"
+          ],
+          "tick": 125,
+          "time": 12.499999999999972,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "hit_number",
+          "visibility_priority": "ambient"
+        },
+        {
+          "amount": 0,
+          "battle_id": "local:20260807:21:pvp:team0",
+          "event_key": "local:20260807:21:pvp:team0:125:6",
+          "is_crit": false,
+          "is_lethal": true,
+          "killer_uid": "enemy_L2_2",
+          "ordinal": 6,
+          "presentation_seed": 1867526886,
+          "schema_version": 1,
+          "skill_id": "death",
+          "source_uid": "player_L2_2",
+          "target_uids": [],
+          "tick": 125,
+          "time": 12.499999999999972,
+          "timing_hint": {
+            "impact_ms": 0,
+            "recovery_ms": 0,
+            "windup_ms": 0
+          },
+          "type": "death",
+          "visibility_priority": "critical"
+        }
+      ]
+    }
+  ]
+}

@@ -1,3 +1,5 @@
+# Frozen protocol 32 receiver from commit a8dbefce367e5ae9fe86d1b87f857f028d7da260
+# Source: scripts/multiplayer/ReplayTransferService.gd. Do not modernize this fixture.
 extends RefCounted
 
 # D1 第 2 刀：从 NetworkService 抽出的回放传输（存放 + 压缩编解码）。
@@ -39,56 +41,23 @@ func clear() -> void:
 	_inflight.clear()
 
 
-func retain_inflight_battle(battle_id: String) -> void:
-	for key in _inflight.keys():
-		if battle_id.is_empty() or not str(key).begins_with(battle_id + "|"):
-			_inflight.erase(key)
-
-
 # 包格式：[8 字节 小端 u64 原始长度][zstd 压缩数据]
 # 长度头是必需的：`decompress()` 要求预先知道输出大小，而 `decompress_dynamic()`
 # 只支持 brotli/gzip/deflate、**不支持 ZSTD**（实测踩过）。
 # 头同时充当防护门：解压前先看这个数，超限直接拒 —— 不解压、不分配。
-func pack(replay: Dictionary, battle_id: String = "") -> PackedByteArray:
-	return pack_with_metrics(replay, battle_id)["packed"]
-
-
-# Worker-safe when no logger is configured. Transport identity is added to a
-# shallow copy; combat state and the simulator's deterministic payload stay intact.
-func pack_with_metrics(replay: Dictionary, battle_id: String = "") -> Dictionary:
-	var metrics := {"packed": PackedByteArray(), "raw_bytes": 0,
-		"serialize_usec": 0, "pack_usec": 0, "error": ""}
+func pack(replay: Dictionary) -> PackedByteArray:
 	if replay.is_empty():
-		metrics.error = "empty_replay"
-		return metrics
-	var payload := replay
-	if not battle_id.is_empty():
-		payload = replay.duplicate(false)
-		payload["battle_id"] = battle_id
-	var started := Time.get_ticks_usec()
-	var raw := var_to_bytes(payload)
-	metrics.serialize_usec = Time.get_ticks_usec() - started
-	metrics.raw_bytes = raw.size()
-	if raw.size() > MAX_UNCOMPRESSED_BYTES:
-		metrics.error = "raw_limit"
-		_log("replay pack rejected: raw=%d cap=%d" % [raw.size(), MAX_UNCOMPRESSED_BYTES])
-		return metrics
-	started = Time.get_ticks_usec()
+		return PackedByteArray()
+	var raw := var_to_bytes(replay)
 	var out := PackedByteArray()
 	out.resize(PACK_HEADER_BYTES)
 	out.encode_u64(0, raw.size())
 	out.append_array(raw.compress(FileAccess.COMPRESSION_ZSTD))
-	metrics.pack_usec = Time.get_ticks_usec() - started
-	if out.size() > MAX_TRANSFER_BYTES:
-		metrics.error = "packed_limit"
-		_log("replay pack rejected: packed=%d cap=%d" % [out.size(), MAX_TRANSFER_BYTES])
-		return metrics
-	metrics.packed = out
-	return metrics
+	return out
 
 
 func unpack(packed: PackedByteArray) -> Dictionary:
-	if packed.size() <= PACK_HEADER_BYTES or packed.size() > MAX_TRANSFER_BYTES:
+	if packed.size() <= PACK_HEADER_BYTES:
 		return {}
 	var declared := int(packed.decode_u64(0))
 	# 防解压炸弹：只看头 8 字节就能判掉「几 KB 压缩包声称解出几 GB」，
@@ -98,7 +67,7 @@ func unpack(packed: PackedByteArray) -> Dictionary:
 			declared, MAX_UNCOMPRESSED_BYTES, packed.size()])
 		return {}
 	var raw := packed.slice(PACK_HEADER_BYTES).decompress(declared, FileAccess.COMPRESSION_ZSTD)
-	if raw.size() != declared or raw.size() < 4:
+	if raw.size() != declared:
 		# 头和实际内容对不上：损坏、截断、或者头被改过。安静失败，不崩。
 		_log("replay unpack failed: got=%d declared=%d" % [raw.size(), declared])
 		return {}
@@ -262,9 +231,7 @@ func accept_chunk(env: Dictionary) -> Dictionary:
 		return _chunk_error("bad_total=%d" % total)
 	if idx < 0 or idx >= total:
 		return _chunk_error("bad_idx=%d/%d" % [idx, total])
-	# Sender pacing/DTLS preferences do not change protocol 32's wire ceiling.
-	# Large legacy-compatible transfers need 32/48 KiB blocks even over DTLS.
-	if data.is_empty() or data.size() > CHUNK_PAYLOAD_BYTES:
+	if data.size() > CHUNK_PAYLOAD_BYTES:
 		return _chunk_error("chunk_too_large=%d" % data.size())
 
 	var key := _chunk_key(battle_id, kind)
@@ -272,11 +239,9 @@ func accept_chunk(env: Dictionary) -> Dictionary:
 	if entry.is_empty():
 		if _inflight.size() >= MAX_INFLIGHT_TRANSFERS:
 			return _chunk_error("too_many_inflight")
-		# The wire has no chunk-width field. Both 16 KiB (paced / DTLS) and
-		# 48 KiB senders are valid; multiplying total by 48 KiB rejects legal
-		# 2 MiB / 128-chunk transfers. Bound count by the smallest supported
-		# sender width, then enforce the exact accumulated byte limit below.
-		if total > int(ceil(float(MAX_TRANSFER_BYTES) / CHUNK_PAYLOAD_ENCRYPTED_BYTES)):
+		# 按声称的 total 先算一遍最坏体积，超限的话一块都不收 ——
+		# 「先收着再说」正是解压炸弹那类问题的成因。
+		if total * CHUNK_PAYLOAD_BYTES > MAX_TRANSFER_BYTES:
 			return _chunk_error("declared_too_large=%d" % total)
 		entry = {"total": total, "chunks": {}, "bytes": 0, "age": 0.0}
 		_inflight[key] = entry
@@ -289,9 +254,6 @@ func accept_chunk(env: Dictionary) -> Dictionary:
 	if chunks.has(idx):
 		# 重复块（重试会造成）：幂等收下，但**不重复计字节**，否则总量记账会虚高。
 		return {"complete": false, "packed": PackedByteArray(), "error": ""}
-	if int(entry.get("bytes", 0)) + data.size() > MAX_TRANSFER_BYTES:
-		_inflight.erase(key)
-		return _chunk_error("transfer_budget")
 	if _total_bytes() + data.size() > MAX_REASSEMBLY_BYTES:
 		return _chunk_error("reassembly_budget")
 

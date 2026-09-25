@@ -54,6 +54,9 @@ var _inter_round_frames := 0
 
 var _perf_samples: Array[Dictionary] = []
 var _perf_deltas_ms: Array[float] = []
+var _wall_frame_ms: Array[float] = []
+var _last_process_usec := 0
+var _wall_delta_ms := 0.0
 var _peak_video_mb := 0.0
 var _peak_texture_mb := 0.0
 var _peak_buffer_mb := 0.0
@@ -111,6 +114,12 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	# Engine delta can be capped during a long stall. Measure the interval with
+	# a monotonic clock as well, so a multi-second freeze is never reported as
+	# merely a 150 ms frame. Screenshot-induced intervals are excluded below.
+	var now_usec := Time.get_ticks_usec()
+	_wall_delta_ms = float(now_usec - _last_process_usec) / 1000.0 if _last_process_usec > 0 else 0.0
+	_last_process_usec = now_usec
 	if _screen == null:
 		if _inter_round_frames > 0:
 			_inter_round_frames -= 1
@@ -126,6 +135,12 @@ func _process(delta: float) -> void:
 	if not _setup_seen:
 		if bool(_screen.get("_battle_setup_ready")):
 			_setup_seen = true
+			_current_summary["preparation"] = _screen.battle_preparation_report.duplicate(true)
+			_current_summary["preparation"]["shader_sources"] = _shader_source_inventory()
+			_current_summary["preparation"]["shader_cache_files"] = _shader_cache_inventory()
+			_current_summary["preparation"]["shader_cache_details"] = _shader_cache_details(_current_summary["preparation"]["shader_cache_files"])
+			_current_summary["preparation"]["harness_elapsed_ms"] = Time.get_ticks_msec() - _round_started_msec
+			_write_json(_round_dir.path_join("preparation.json"), _current_summary["preparation"])
 			_render_frame = 0
 			_actor_audit = _audit_actors()
 			if int(_actor_audit.get("blank_uid_count", 0)) > 0:
@@ -407,6 +422,9 @@ func _finish_current_round() -> void:
 	if played.is_empty():
 		_record_failure("slice_played_nothing",
 			"The D4 slice adapter played no cue at all; an empty slice cannot be read as a pass")
+	_current_summary["shader_sources_after_playback"] = _shader_source_inventory()
+	_current_summary["shader_cache_files_after_playback"] = _shader_cache_inventory()
+	_current_summary["shader_cache_details_after_playback"] = _shader_cache_details(_current_summary["shader_cache_files_after_playback"])
 	_current_summary["performance"] = performance
 	_current_summary["screenshots"] = _screenshots.duplicate(true)
 	_current_summary["viewport"] = _viewport_metadata()
@@ -437,7 +455,7 @@ func _finish_all() -> void:
 		"os": OS.get_name(),
 		"processor": OS.get_processor_name(),
 		"video_adapter": RenderingServer.get_video_adapter_name(),
-		"rendering_method": str(ProjectSettings.get_setting("rendering/renderer/rendering_method", "")),
+		"rendering_method": RenderingServer.get_current_rendering_method(),
 		"seed": _seed,
 		"rounds_requested": _rounds,
 		"locale": _locale,
@@ -447,7 +465,7 @@ func _finish_all() -> void:
 		"residue_samples": _residue_samples.duplicate(true),
 		"failures": _failures,
 		"passed": _failures.is_empty() and _round_summaries.size() == _rounds.size(),
-		"android": "DEFERRED_BY_USER",
+		"android": "EXECUTED" if OS.get_name() == "Android" else "NOT_RUN_ON_ANDROID",
 	}
 	_write_json(_out_dir.path_join("manifest.json"), manifest)
 	_write_text(_out_dir.path_join("D0_DESKTOP_BASELINE_SUMMARY.md"), _summary_markdown(manifest))
@@ -474,6 +492,9 @@ func _reset_round_metrics() -> void:
 	_exclude_next_perf_sample = false
 	_perf_samples.clear()
 	_perf_deltas_ms.clear()
+	_wall_frame_ms.clear()
+	_last_process_usec = 0
+	_wall_delta_ms = 0.0
 	_peak_video_mb = 0.0
 	_peak_texture_mb = 0.0
 	_peak_buffer_mb = 0.0
@@ -659,7 +680,7 @@ func _audit_actors() -> Dictionary:
 
 
 func _record_performance_sample(delta: float, replay_frame: int) -> void:
-	if delta <= 0.0 or delta > 1.0:
+	if delta <= 0.0:
 		return
 	var delta_ms := delta * 1000.0
 	var video_mb := _monitor_mb(Performance.RENDER_VIDEO_MEM_USED)
@@ -682,10 +703,13 @@ func _record_performance_sample(delta: float, replay_frame: int) -> void:
 	_peak_tweens = maxi(_peak_tweens, tweens)
 	_sample_particles()
 	_perf_deltas_ms.append(delta_ms)
+	if _wall_delta_ms > 0.0:
+		_wall_frame_ms.append(_wall_delta_ms)
 	_perf_samples.append({
 		"render_frame": _render_frame,
 		"replay_frame": replay_frame,
 		"delta_ms": delta_ms,
+		"wall_frame_ms": _wall_delta_ms,
 		"instant_fps": 1.0 / delta,
 		"engine_fps": Engine.get_frames_per_second(),
 		"process_ms": Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
@@ -756,6 +780,7 @@ func _performance_summary() -> Dictionary:
 		"p95_frame_time_ms": float(sorted_asc[p95_index]),
 		"p99_frame_time_ms": float(sorted_asc[p99_index]),
 		"max_frame_time_ms": float(sorted_desc[0]),
+		"wall_clock": _wall_time_summary(),
 		"frames_over_16_7ms": over_16_7,
 		"frames_over_33ms": over_33,
 		"frames_over_50ms": over_50,
@@ -782,9 +807,39 @@ func _performance_summary() -> Dictionary:
 	}
 
 
+func _wall_time_summary() -> Dictionary:
+	if _wall_frame_ms.is_empty():
+		return {"sample_count": 0}
+	var ordered := _wall_frame_ms.duplicate()
+	ordered.sort()
+	var total_ms := 0.0
+	var over_100 := 0
+	var over_250 := 0
+	var over_1000 := 0
+	for value in ordered:
+		total_ms += value
+		if value > 100.0:
+			over_100 += 1
+		if value > 250.0:
+			over_250 += 1
+		if value > 1000.0:
+			over_1000 += 1
+	return {
+		"sample_count": ordered.size(),
+		"average_fps": float(ordered.size()) * 1000.0 / maxf(0.001, total_ms),
+		"p95_frame_time_ms": ordered[maxi(0, int(ceil(ordered.size() * 0.95)) - 1)],
+		"p99_frame_time_ms": ordered[maxi(0, int(ceil(ordered.size() * 0.99)) - 1)],
+		"max_frame_time_ms": ordered[-1],
+		"frames_over_100ms": over_100,
+		"frames_over_250ms": over_250,
+		"frames_over_1000ms": over_1000,
+		"measurement_window_sec": total_ms / 1000.0,
+	}
+
+
 func _write_perf_csv(path: String) -> void:
 	var headers := [
-		"render_frame", "replay_frame", "delta_ms", "instant_fps", "engine_fps",
+		"render_frame", "replay_frame", "delta_ms", "wall_frame_ms", "instant_fps", "engine_fps",
 		"process_ms", "physics_ms", "video_mb", "texture_mb", "buffer_mb", "static_mb",
 		"objects", "nodes", "orphans", "draw_calls", "tweens",
 	]
@@ -1008,7 +1063,7 @@ func _summary_markdown(manifest: Dictionary) -> String:
 		"- Locale: `%s`" % _locale,
 		"- Godot: `%s`" % str((manifest.get("godot", {}) as Dictionary).get("string", "")),
 		"- Renderer: `%s`" % str(manifest.get("rendering_method", "")),
-		"- Android: `DEFERRED_BY_USER`",
+		"- Android: `%s`" % ("EXECUTED" if OS.get_name() == "Android" else "NOT_RUN_ON_ANDROID"),
 		"- Tool pass: `%s`" % str(bool(manifest.get("passed", false))),
 		"",
 		"",
@@ -1105,3 +1160,58 @@ func _parse_arguments() -> void:
 				index += 1
 				continue
 		index += 2
+
+
+# Diagnostic snapshots occur outside the measured playback window. They show
+# whether a later first-use shader was absent from actual render preparation.
+func _shader_source_inventory() -> Array:
+	var result: Array = []
+	for source in VFXShaderCache._shaders.keys():
+		result.append(str(source).sha256_text())
+	result.sort()
+	return result
+
+func _shader_cache_inventory() -> Array:
+	var result: Array = []
+	var pending: Array[String] = ["user://shader_cache"]
+	while not pending.is_empty():
+		var path: String = pending.pop_back()
+		var dir := DirAccess.open(path)
+		if dir == null:
+			continue
+		for child in dir.get_directories():
+			pending.append(path.path_join(child))
+		for child in dir.get_files():
+			result.append(path.path_join(child).trim_prefix("user://shader_cache/"))
+	result.sort()
+	return result
+
+
+# Godot 4.7 GLES cache v3 stores extra light specializations inside the same
+# file. File names alone therefore miss a synchronous first-light compile.
+func _shader_cache_details(paths: Array) -> Dictionary:
+	var result := {}
+	for path in paths:
+		var file := FileAccess.open("user://shader_cache/" + str(path), FileAccess.READ)
+		if file == null or file.get_length() < 12:
+			continue
+		if file.get_buffer(4).get_string_from_ascii() != "GLSC" or file.get_32() != 3:
+			continue
+		var variant_count := file.get_32()
+		if variant_count > 64:
+			continue
+		var variants: Array = []
+		for variant in variant_count:
+			var keys: Array = []
+			var count := file.get_32()
+			if count > 128:
+				break
+			for index in count:
+				var key := file.get_64()
+				var size := file.get_32()
+				keys.append(key)
+				if size > 0:
+					file.seek(mini(file.get_length(), file.get_position() + 4 + size))
+			variants.append(keys)
+		result[str(path)] = {"bytes": file.get_length(), "variants": variants}
+	return result

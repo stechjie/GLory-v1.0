@@ -752,7 +752,7 @@ static func _is_board_piece(f: Dictionary) -> bool:
 		return false
 	# 技能召唤出来的分身（寄生 / 镜像 / 双生）不是棋盘上的棋子。
 	# uid 格式见 _maybe_spawn_parasite_clone / _skill_mirror_clone（"<team>_parasite_N" /
-	# "<team>_mirror_N"）与 _skill_twin_strike（"<本体uid>_twin_N"）。注意不能只查
+	# "<team>_mirror_<本体uid>_N"）与 _skill_twin_strike（"<本体uid>_twin_N"）。注意不能只查
 	# contains("_parasite_")：棋子「寄生灵」本身的 uid 就是 "player_undead_parasite_3"。
 	var uid := str(f.get("uid", ""))
 	var team := str(f.get("team", ""))

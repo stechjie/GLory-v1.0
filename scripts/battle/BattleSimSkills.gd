@@ -260,7 +260,9 @@ static func _skill_mirror_clone(caster: Dictionary, state: Dictionary, d: Dictio
 		return 0
 	for idx in range(have + 1, should_have + 1):
 		var clone := caster.duplicate(true)
-		clone.uid = "%s_mirror_%d" % [str(caster.team), idx]
+		# Every lane has its own boss. Keep the summon prefix for treasure rules,
+		# but include the caster identity so one lane's death cannot own another.
+		clone.uid = "%s_mirror_%s_%d" % [str(caster.team), str(caster.uid), idx]
 		clone.hp = maxi(1, int(round(float(caster.max_hp) * float(d.get("clone_hp_pct", 0.30)))))
 		clone.max_hp = clone.hp
 		clone.atk = maxi(1, int(round(float(caster.atk) * float(d.get("clone_atk_pct", 0.40)))))
@@ -298,8 +300,12 @@ static func _skill_holy_song(_caster: Dictionary, allies: Array, d: Dictionary) 
 
 
 static func _skill_twin_strike(caster: Dictionary, state: Dictionary, d: Dictionary) -> void:
+	# A second cooldown can elapse without any deaths. A per-caster sequence is
+	# unique in that case; total_deaths alone reused a still-living twin's UID.
+	var summon_index := int(caster.get("twin_clones_spawned", 0)) + 1
+	caster.twin_clones_spawned = summon_index
 	var clone := caster.duplicate(true)
-	clone.uid = "%s_twin_%d" % [str(caster.uid), int(state.get("total_deaths", 0))]
+	clone.uid = "%s_twin_%d" % [str(caster.uid), summon_index]
 	clone.hp = maxi(1, int(round(float(caster.max_hp) * float(d.get("clone_hp_pct", 0.30)))))
 	clone.max_hp = clone.hp
 	clone.atk = maxi(1, int(round(float(caster.atk) * float(d.get("clone_atk_pct", 0.40)))))

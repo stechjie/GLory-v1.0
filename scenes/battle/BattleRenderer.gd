@@ -1185,8 +1185,9 @@ func _prefetch_one_fighter(f: Dictionary, texture_paths: Array, persistent: bool
 	if not idle_path.is_empty() and _model_path_available(idle_path):
 		BattleAssetService.acquire(idle_path, owner)
 	var unit_id := str(unit_def.get("id", f.get("id", "")))
-	for tex_cfg in SkillVFXConfig.get_textures(unit_id):
-		texture_paths.append(str(tex_cfg.get("path", "")))
+	for path in BattleAssetManifest.fighter_texture_paths(unit_id, unit_def):
+		if not texture_paths.has(path):
+			texture_paths.append(path)
 
 # 回合结束调用：放掉本回合的怪 / Boss / PVP 对手，保留玩家阵容。
 #

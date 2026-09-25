@@ -11,6 +11,9 @@ extends RefCounted
 # 所以 seed 一到，整局名单就是确定的，可以提前几轮加载。
 
 const LOOKAHEAD_ROUNDS := 3
+const OGA_CHESS := preload("res://effects/vfx3d/units/OgaChessVFXCatalog.gd")
+const OGA_SKILLS := preload("res://effects/vfx3d/units/OgaSkillVFXCatalog.gd")
+const DOOM_LINK := preload("res://effects/vfx3d/units/VFXDoomBloodLink3D.gd")
 
 # --- seed 无关：进大厅就能开始加载 ---------------------------------------------
 
@@ -76,11 +79,53 @@ static func replay_texture_paths(replay: Dictionary) -> Array:
 	var out: Array = []
 	if typeof(replay) != TYPE_DICTIONARY:
 		return out
+	# The roster includes units summoned later, not just the first visible frame.
 	for uid in replay.get("roster", {}):
 		var r: Dictionary = replay["roster"][uid]
-		for cfg in SkillVFXConfig.get_textures(str(r.get("id", ""))):
-			out.append(str(cfg.get("path", "")))
+		for path in fighter_texture_paths(str(r.get("id", "")), r.get("def", {})):
+			_append_texture_path(str(path), out)
 	return out
+
+# Keep the direct Battle entry and PrepScreen resource stage on the same list.
+# These catalogs are the actual playback routes, including projectile impacts
+# and delayed nested skill layers. Loading only SkillVFXConfig leaves OGA cold.
+static func fighter_texture_paths(unit_id: String, unit_def: Dictionary = {}) -> Array:
+	var out: Array = []
+	if unit_id.is_empty():
+		return out
+	for cfg in SkillVFXConfig.get_textures(unit_id):
+		_append_texture_path(str(cfg.get("path", "")), out)
+	_append_texture_spec(OGA_CHESS.projectile_for(unit_id), out)
+	_append_texture_spec(OGA_CHESS.melee_for(unit_id, str(unit_def.get("race", ""))), out)
+	var skill := str(unit_def.get("skill_id", ""))
+	_append_texture_spec(OGA_CHESS.formal_skill_for(skill), out)
+	_append_texture_spec(OGA_SKILLS.skill_for(skill), out)
+	_append_texture_spec(OGA_SKILLS.melee_for(skill), out)
+	if skill == "random_attribute_bolt":
+		# This fighter may choose any of these elements during the fixed replay.
+		for element in ["fire", "ice", "thunder", "poison", "arcane"]:
+			_append_texture_spec(OGA_SKILLS.projectile_for_element(element), out)
+	elif skill == "silence_bolt":
+		_append_texture_spec(OGA_SKILLS.projectile_for_element("silence"), out)
+	elif skill == "shared_hp_link":
+		# The current route is Doom's authored chain, not the retired OGA link.
+		for path in [DOOM_LINK.CHAIN_TEXTURE, DOOM_LINK.KNOT_TEXTURE, DOOM_LINK.TEAR_TEXTURE]:
+			_append_texture_path(path, out)
+	return out
+
+static func _append_texture_spec(value: Variant, out: Array) -> void:
+	if value is Dictionary:
+		for child in value.values():
+			_append_texture_spec(child, out)
+	elif value is Array:
+		for child in value:
+			_append_texture_spec(child, out)
+	elif value is String and value.begins_with("res://"):
+		_append_texture_path(value, out)
+
+static func _append_texture_path(path: String, out: Array) -> void:
+	if not path.is_empty() and not out.has(path):
+		out.append(path)
 
 static func _append_model_paths(def: Dictionary, out: Array[String]) -> void:
 	for key in ["model", "model_idle_animation"]:

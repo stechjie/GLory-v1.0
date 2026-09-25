@@ -46,21 +46,12 @@ func complete_active(event_key: String) -> Dictionary:
 	return completed
 
 
-func mark_source_dead() -> Array[Dictionary]:
+func mark_source_dead() -> void:
+	# The authoritative stream already accepted every cue currently in this
+	# queue. A 120ms visual windup can still be active when the next 100ms tick
+	# reports death: cancelling its queued projectile/impact loses a real hit.
+	# Preserve that stream order, then refuse any new attack enqueued after death.
 	_source_dead = true
-	return cancel_pending_attacks()
-
-
-func cancel_pending_attacks() -> Array[Dictionary]:
-	var cancelled: Array[Dictionary] = []
-	var kept: Array[Dictionary] = []
-	for event in _pending:
-		if is_attack_event(event):
-			cancelled.append(event)
-		else:
-			kept.append(event)
-	_pending = kept
-	return cancelled
 
 
 func cancel_all() -> Array[Dictionary]:

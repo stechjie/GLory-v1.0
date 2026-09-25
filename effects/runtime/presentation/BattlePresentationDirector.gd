@@ -101,7 +101,12 @@ func configure(registry: Variant, resolver: Variant, budget: Variant, adapter: V
 	_registry = registry
 	_resolver = resolver
 	_budget = budget
+	if _adapter != null and _adapter.has_signal("pending_cues_changed") \
+			and _adapter.is_connected("pending_cues_changed", _check_drained):
+		_adapter.disconnect("pending_cues_changed", _check_drained)
 	_adapter = adapter
+	if _adapter != null and _adapter.has_signal("pending_cues_changed"):
+		_adapter.connect("pending_cues_changed", _check_drained)
 
 
 func begin_battle(context: Dictionary) -> void:
@@ -207,6 +212,11 @@ func skip_to_result() -> void:
 
 
 func has_blocking_cues() -> bool:
+	# Released source tracks can still own airborne projectiles and their impact
+	# callbacks. Result presentation must wait for those tails as well.
+	if _adapter != null and _adapter.has_method("has_pending_cues") \
+			and bool(_adapter.call("has_pending_cues")):
+		return true
 	for track_value in _tracks.values():
 		var track: RefCounted = track_value
 		var active: Dictionary = track.call("active_event")
@@ -231,6 +241,9 @@ func dispose() -> void:
 	_registry = null
 	_resolver = null
 	_budget = null
+	if _adapter != null and _adapter.has_signal("pending_cues_changed") \
+			and _adapter.is_connected("pending_cues_changed", _check_drained):
+		_adapter.disconnect("pending_cues_changed", _check_drained)
 	_adapter = null
 	_lifecycle = Lifecycle.DISPOSED
 
@@ -273,9 +286,7 @@ func _enqueue_event(event: Dictionary) -> void:
 	var source_uid := str(event.get("source_uid", ""))
 	var track := _track_for(source_uid)
 	if str(event.get("type", "")) == "death":
-		var cancelled: Array[Dictionary] = track.call("mark_source_dead")
-		for cancelled_event in cancelled:
-			_emit_drop_once(str(cancelled_event.get("event_key", "")), "source_dead")
+		track.call("mark_source_dead")
 	if not bool(track.call("enqueue", event)):
 		_emit_drop_once(str(event.get("event_key", "")), "source_dead")
 		return
@@ -615,6 +626,11 @@ func _cancel_adapter_transients() -> void:
 func _is_blocking(event: Dictionary) -> bool:
 	if event.is_empty():
 		return false
+	# Numbers are ambient for visual budgeting, but still carry an authoritative
+	# hit. In the final tick they may be queued behind a windup; drain must let
+	# the adapter bind them to that projectile before clearing ambient decoration.
+	if str(event.get("type", "")) == "hit_number":
+		return true
 	var priority := str(event.get("visibility_priority", EventSchema.VISIBILITY_AMBIENT))
 	return priority == EventSchema.VISIBILITY_CRITICAL or priority == EventSchema.VISIBILITY_IMPORTANT
 

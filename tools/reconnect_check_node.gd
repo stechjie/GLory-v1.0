@@ -29,7 +29,9 @@ func _ready() -> void:
 	# --- B: 宽限到期 -> 自动完成整轮 ---
 	(room.reserve_deadline as Dictionary)[0] = NetworkService._now() - 1.0
 	NetworkService._tick_reserved_seats()
-	await get_tree().process_frame
+	var result_deadline := Time.get_ticks_msec() + 10000
+	while (room.last_match_state as Dictionary).is_empty() and Time.get_ticks_msec() < result_deadline:
+		await get_tree().process_frame
 	var state_ok: bool = str(room.state) == NetworkService.ROOM_RESULT
 	var board_ok: bool = (room.boards as Dictionary).is_empty()  # 计算完会清空 boards
 	var result_ok: bool = not (room.last_match_state as Dictionary).is_empty() and (room.last_match_state as Dictionary).has(0)

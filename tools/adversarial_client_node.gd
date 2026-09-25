@@ -1164,6 +1164,7 @@ func _case_result_ack_and_leave() -> void:
 	room.slot_states = ["player", "player", "dummy", "player", "empty", "empty"]
 	room.battle_id = "test:1:1"
 	room.result_acks = {}
+	room.last_match_state = {0: {"battle_id": "test:1:1"}} # This case starts after result publication.
 	# slot 0 和 1 在线，slot 3 掉线（不在 peer_slot 里）
 	room.peer_slot = {8101: 0, 8102: 1}
 	ns._peer_room[8101] = int(room.id)

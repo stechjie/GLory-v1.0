@@ -1,6 +1,8 @@
 class_name LegacyBattleVfxAdapter
 extends RefCounted
 
+signal pending_cues_changed()
+
 # Migration-period adapter (checklist section 2, "adapters/LegacyBattleVfxAdapter.gd").
 #
 # It turns BattlePresentationDirector cues into calls on the BattleVfx capabilities
@@ -44,6 +46,10 @@ var _host: Node = null
 var _pending_timers: Array[SceneTreeTimer] = []
 var _played_by_type: Dictionary = {}
 var _profiles_seen: Dictionary = {}
+# A projectile's flight belongs to the attack that emitted it. It must not
+# occupy the caster's action track: a legal 2.5/s shooter can fire again while
+# its previous 0.8s projectile is still airborne.
+var _source_flights: Dictionary = {}
 
 
 func _init(host: Node = null) -> void:
@@ -73,8 +79,11 @@ func play_cue(event: Dictionary, completion: Callable, playback_speed: float) ->
 		"impact":
 			# V2 P1-05 第 1 条：命中要有一次小屏震；暴击只把它乘 20%-35%，
 			# 不另加全屏效果。is_crit 由 DamageService.emit_impact() 带过来。
-			_host.call("cue_play_impact_feedback", _first_target(event),
-				bool(event.get("is_crit", false)))
+			if _defer_flight_tail(event, completion, func() -> void:
+				_host.call("cue_play_impact_feedback", _first_target(event),
+					bool(event.get("is_crit", false)))):
+				return true
+			_host.call("cue_play_impact_feedback", _first_target(event), bool(event.get("is_crit", false)))
 			return _finish_after(_beat_seconds(event, IMPACT_SEC) / speed, completion, "impact")
 		"hit_number":
 			return _play_hit_number(event, completion)
@@ -95,6 +104,11 @@ func cancel_all_transient() -> void:
 			for connection in timer.timeout.get_connections():
 				timer.timeout.disconnect(connection.callable)
 	_pending_timers.clear()
+	_source_flights.clear()
+
+
+func has_pending_cues() -> bool:
+	return not _pending_timers.is_empty()
 
 
 func stats() -> Dictionary:
@@ -111,6 +125,10 @@ func reset_stats() -> void:
 
 
 func _play_attack_start(event: Dictionary, source_uid: String, completion: Callable, speed: float) -> bool:
+	_source_flights[source_uid] = {
+		"attack_key": str(event.get("event_key", "")),
+		"tick": int(event.get("tick", -1)), "deadline_usec": 0,
+	}
 	var ranged := str(event.get("skill_id", "")) == "basic_ranged"
 	if not ranged:
 		# Melee draws its slash on the windup beat; ranged waits for the projectile
@@ -135,10 +153,24 @@ func _play_projectile(event: Dictionary, source_uid: String, completion: Callabl
 		var computed := float(_host.call("cue_ranged_flight_time", source_uid, _first_target(event)))
 		if computed > 0.0:
 			flight = computed
-	return _finish_after(flight / speed, completion, "projectile_spawn")
+	var attack: Dictionary = _source_flights.get(source_uid, {}).duplicate()
+	attack["deadline_usec"] = Time.get_ticks_usec() + int(flight / speed * 1000000.0)
+	_source_flights[source_uid] = attack
+	# Impact and number retain this attack's deadline when they are dispatched
+	# below. Release the source track now so flight time never changes fire rate.
+	completion.call()
+	return true
 
 
 func _play_hit_number(event: Dictionary, completion: Callable) -> bool:
+	if _defer_flight_tail(event, completion, func() -> void: _show_hit_number(event)):
+		return true
+	_show_hit_number(event)
+	completion.call()
+	return true
+
+
+func _show_hit_number(event: Dictionary) -> void:
 	var target_uid := _first_target(event)
 	if not target_uid.is_empty():
 		_host.call(
@@ -151,8 +183,23 @@ func _play_hit_number(event: Dictionary, completion: Callable) -> bool:
 			str(event.get("race", ""))
 		)
 		_count("hit_number")
-	# Numbers are fire-and-forget: they animate on their own layer and must not
-	# hold up the attacker's action track.
+
+
+# The deadline is copied before the source starts another attack. Both callbacks
+# therefore remain attached to this projectile even if another shot supersedes
+# _source_flights[source_uid]. Timers are owned/cancelled with the battle adapter.
+func _defer_flight_tail(event: Dictionary, completion: Callable, present: Callable) -> bool:
+	var attack: Dictionary = _source_flights.get(str(event.get("source_uid", "")), {})
+	# A later DOT/skill event from this caster is not a tail of its previous
+	# basic attack. The producer emits each basic chain inside one replay tick.
+	if int(attack.get("tick", -2)) != int(event.get("tick", -1)) or bool(event.get("skill", false)):
+		return false
+	var delay_usec := int(attack.get("deadline_usec", 0)) - Time.get_ticks_usec()
+	if delay_usec <= 0:
+		return false
+	_finish_after(float(delay_usec) / 1000000.0, func() -> void:
+		if _host_ready():
+			present.call(), str(attack.get("attack_key", "flight_tail")))
 	completion.call()
 	return true
 
@@ -199,7 +246,8 @@ func _finish_after(seconds: float, completion: Callable, label: String) -> bool:
 	_pending_timers.append(timer)
 	timer.timeout.connect(func() -> void:
 		_pending_timers.erase(timer)
-		completion.call())
+		completion.call()
+		pending_cues_changed.emit(), CONNECT_ONE_SHOT)
 	return true
 
 
