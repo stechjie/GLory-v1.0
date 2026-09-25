@@ -7,6 +7,17 @@ extends Node
 # this world. Never restore the old all-catalog, single-frame warm_draw.
 const PROCEDURAL := preload("res://effects/BossProceduralVFX3D.gd")
 const CHESS := preload("res://effects/vfx3d/units/OgaChessVFXCatalog.gd")
+const SKILLS := preload("res://effects/vfx3d/units/OgaSkillVFXCatalog.gd")
+const OGA_PROJECTILE := preload("res://effects/vfx3d/modules/VFXFlipbookProjectile3D.gd")
+const OGA_MELEE := preload("res://effects/vfx3d/modules/VFXFlipbookMelee3D.gd")
+const OGA_PACK := preload("res://effects/vfx3d/modules/VFXPackSkill3D.gd")
+const OGA_CARD := preload("res://effects/vfx3d/modules/VFXSpriteFlipbook3D.gd")
+# These are the exclusive standard-card routes in UnitSkillVFXComposer3D.
+# A catalogue entry alone is insufficient: e.g. judgement_strike and the angel
+# guard now use procedural geometry and must still run their complete composer.
+const DIRECT_PACK_ROUTES := ["lowest_ally_heal", "nearest_ally_bless", "nearby_ally_heal_buff",
+	"black_hole", "guardian_shield_taunt", "curse_attack", "same_target_damage_stack",
+	"poison_attack", "death_poison_explosion", "poison_reflect_armor_stack"]
 const MAX_JOBS := 256
 const MAX_CACHED_JOBS := 512
 const MAX_TOTAL_MSEC := 90000
@@ -100,7 +111,7 @@ func prepare_replays(replays: Array, template: SubViewport, progress: Callable =
 	var rendered := 0
 	var max_draw_frame_ms := 0
 	var costs: Array[Dictionary] = []
-	var format_key := "omni-v1|%s|%d|%d|%s|" % [RenderingServer.get_current_rendering_method(), template.msaa_3d, VFXManager.get_quality_tier(), str(template.transparent_bg)]
+	var format_key := "oga-direct-omni-v2|%s|%d|%d|%s|" % [RenderingServer.get_current_rendering_method(), template.msaa_3d, VFXManager.get_quality_tier(), str(template.transparent_bg)]
 	for index in jobs.size():
 		if _cancelled(can_continue) or Time.get_ticks_msec() > deadline:
 			viewport.queue_free()
@@ -113,17 +124,20 @@ func prepare_replays(replays: Array, template: SubViewport, progress: Callable =
 			progress.call(index, jobs.size())
 		var item_started := Time.get_ticks_msec()
 		point_light.visible = false
-		var holder := _spawn(viewport, job)
+		var direct := _direct_oga_route(job)
+		var holder := _spawn_direct_oga(viewport, direct) if not direct.is_empty() else _spawn(viewport, job)
 		var materials := {}
 		_retain_draw_materials(holder, materials)
 		# Basic projectile impact appears after >=0.24s. Skill composers also
 		# create delayed layers up to 0.68s; two immediate draws would miss them.
 		var duration := 0.40 if str(job.effect).begins_with("basic_attack_") else 0.85
+		if not direct.is_empty():
+			duration = 0.0
 		var elapsed := 0.0
 		var draw_frames := 0
 		var link_released := false
 		var previous_draw := Time.get_ticks_msec()
-		while elapsed < duration or draw_frames < 2:
+		while elapsed < duration or draw_frames < 4:
 			await get_tree().process_frame
 			if _cancelled(can_continue) or Time.get_ticks_msec() > deadline:
 				viewport.queue_free()
@@ -145,7 +159,9 @@ func prepare_replays(replays: Array, template: SubViewport, progress: Callable =
 			max_draw_frame_ms = maxi(max_draw_frame_ms, now - previous_draw)
 			previous_draw = now
 			draw_frames += 1
-		costs.append({"key": job.key, "ms": Time.get_ticks_msec() - item_started, "draw_frames": draw_frames, "retained_materials": materials.size()})
+		costs.append({"key": job.key, "ms": Time.get_ticks_msec() - item_started, "draw_frames": draw_frames,
+			"mode": "oga_direct" if not direct.is_empty() else "full_composer",
+			"retained_materials": materials.size(), "drawn_texture_paths": _material_texture_paths(materials)})
 		holder.queue_free()
 		# Release every block before the next item so the live effect budget
 		# cannot silently suppress preparation. Network processing keeps running.
@@ -216,6 +232,83 @@ func _spawn(viewport: SubViewport, job: Dictionary) -> Node3D:
 		"attribute": str(job.element), "stacks": 2, "persistent": true}
 	visual.play(str(job.effect), origin.position, target.position, context)
 	return holder
+
+# Use the original module factories, including their exact shader and material
+# parameters. Only the isolated preparation copy changes timing. No simulation,
+# live effect, global clock, or audio route is accelerated.
+static func _direct_oga_route(job: Dictionary) -> Dictionary:
+	var effect := str(job.effect)
+	var spec := {}
+	var kind := ""
+	if effect.begins_with("basic_attack_ranged_"):
+		spec = CHESS.projectile_for(str(job.unit))
+		kind = "projectile"
+	elif effect.begins_with("basic_attack_melee_"):
+		spec = CHESS.melee_for(str(job.unit), _visual_race(str(job.unit)))
+		kind = "melee"
+	elif effect == "random_attribute_bolt" or effect == "silence_bolt":
+		spec = SKILLS.projectile_for_element("silence" if effect == "silence_bolt" else str(job.element))
+		kind = "projectile"
+	elif effect == "front_cone_stun":
+		spec = SKILLS.melee_for(effect)
+		kind = "melee"
+	elif effect in DIRECT_PACK_ROUTES:
+		spec = SKILLS.skill_for(effect)
+		kind = "pack"
+	return {"kind": kind, "spec": spec} if not spec.is_empty() else {}
+
+func _spawn_direct_oga(viewport: SubViewport, route: Dictionary) -> Node3D:
+	var holder := Node3D.new()
+	viewport.add_child(holder)
+	var spec: Dictionary = route.spec.duplicate(true)
+	var origin := Vector3(-0.4, 0.5, 0.0)
+	var target := Vector3(0.4, 0.5, 0.0)
+	if str(route.kind) == "pack":
+		var pack := OGA_PACK.new()
+		holder.add_child(pack)
+		pack.begin()
+		var points := {"origin_body": origin, "origin_ground": Vector3(-0.4, 0.03, 0.0),
+			"origin_head": origin, "target_body": target, "target_head": target,
+			"target_ground": Vector3(0.4, 0.03, 0.0)}
+		# Group casts have a second array; render every layer once, even those
+		# delayed beyond the old 0.85s window. Instance count doesn't add a shader.
+		var layers: Array = spec.get("layers", []).duplicate(true)
+		layers.append_array(spec.get("target_layers", []))
+		for original in layers:
+			var layer: Dictionary = original.duplicate(true)
+			layer["delay"] = 0.0
+			pack._spawn_layer_after(points, layer, {})
+	else:
+		var module: Node3D = OGA_PROJECTILE.new() if str(route.kind) == "projectile" else OGA_MELEE.new()
+		holder.add_child(module)
+		module.play_spec(origin, target, spec, {})
+		# The body/slash exists before play_spec's first await. Cancel only its
+		# travel coroutine, then invoke the same production impact factory now.
+		module.set("_finished", true)
+		module._play_impact(target if str(route.kind) == "projectile" else Vector3(0.4, 0.03, 0.0), spec)
+	_freeze_oga_cards(holder)
+	return holder
+
+func _freeze_oga_cards(node: Node) -> void:
+	if node is OGA_CARD:
+		# First cold compilation can take longer than a whole effect lifetime.
+		# Keep these temporary cards alive and opaque until both masks are drawn.
+		# Their timer checks _loop before freeing; no live card is ever touched.
+		node.set("_loop", true)
+		node.set_process(false)
+		(node.get("_material") as ShaderMaterial).set_shader_parameter("opacity", 1.0)
+	for child in node.get_children():
+		_freeze_oga_cards(child)
+
+static func _material_texture_paths(materials: Dictionary) -> Array[String]:
+	var paths: Array[String] = []
+	for material in materials.values():
+		if material is ShaderMaterial:
+			var texture: Variant = material.get_shader_parameter("atlas_texture")
+			if texture is Texture2D and not texture.resource_path.is_empty() and texture.resource_path not in paths:
+				paths.append(texture.resource_path)
+	paths.sort()
+	return paths
 
 func _release_links(node: Node) -> void:
 	if node.has_method("release_link"):
