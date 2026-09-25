@@ -175,7 +175,7 @@ class PasswordLogin:
 @dataclass(frozen=True)
 class Enrollment:
     factor_id: str
-    qr_code: str   # data:image/svg+xml;… 直接放进 <img src>
+    qr_code: str   # data:image/svg+xml;base64,… 直接放进 <img src>（见 qr_data_uri）
     secret: str    # 扫不了码时手动输入
 
 
@@ -187,6 +187,26 @@ def jwt_claim(token: str, name: str) -> str:
         return str(json.loads(base64.urlsafe_b64decode(payload)).get(name, ""))
     except (IndexError, ValueError):
         return ""
+
+
+_SVG_URI_PREFIX = "data:image/svg+xml;utf-8,"
+
+
+def qr_data_uri(qr_code: str) -> str:
+    """Supabase 给的二维码 → 能直接放进 <img src> 的地址。
+
+    🔴 Supabase 的接口直接回**原始 SVG 代码**（`<svg …>`），「前面拼上 data:image/svg+xml;utf-8,」
+    是它的 JS 客户端库自己做的 —— 我们不走那个库，拿到的就是裸代码，直接当图片地址 = 显示不出来
+    （2026-09-25 第一次连真 Supabase 踩到，假服务回的是带前缀的）。
+    就算带了那个前缀也不能直接用：SVG 里的颜色写法 `#000` 在图片地址里会被当成「#」后面的锚点截掉。
+    所以一律转成 base64 形式，两种回法都能显示。
+    """
+    raw = qr_code.strip()
+    if raw.startswith("data:image/svg+xml;base64,"):
+        return raw
+    if raw.startswith(_SVG_URI_PREFIX):
+        raw = raw[len(_SVG_URI_PREFIX):]
+    return "data:image/svg+xml;base64," + base64.b64encode(raw.encode("utf-8")).decode("ascii")
 
 
 class SupabaseAdminAuth(SupabaseAuth):
@@ -240,7 +260,7 @@ class SupabaseAdminAuth(SupabaseAuth):
         factor_id = str(payload.get("id") or "")
         if not factor_id or not totp.get("qr_code"):
             raise AuthError("Supabase 没有返回验证器的二维码（项目里可能没开 MFA 的 TOTP）")
-        return Enrollment(factor_id, str(totp.get("qr_code")), str(totp.get("secret") or ""))
+        return Enrollment(factor_id, qr_data_uri(str(totp.get("qr_code"))), str(totp.get("secret") or ""))
 
     async def verify_totp(self, access_token: str, factor_id: str, code: str) -> str:
         """出一道题再用验证码答它。返回过了两步验证（aal2）的 access token。"""

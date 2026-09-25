@@ -226,12 +226,15 @@ function codeView(answer) {
       h("p", { class: "hint" }, "用手机上的验证器 App（Google Authenticator、Microsoft Authenticator 都行）扫下面的码，"
         + "然后输入 App 里显示的 6 位数字。以后每次登录都要这一步。"),
       h("img", { class: "qr", src: answer.qr_code, alt: "验证器二维码" }),
-      h("p", { class: "hint" }, "扫不了码就手动输入这串：", h("span", { class: "mono" }, answer.secret)));
+      h("p", { class: "hint" }, "扫不了码就手动输入这串密钥：", h("b", { class: "mono" }, answer.secret)),
+      h("p", { class: "hint" }, "手动输入：Google Authenticator 右下角「+」→「输入设置密钥」→ 账号随便填（例如 Glory后台），"
+        + "密钥填上面那串，类型选「基于时间」→ 添加。"));
   } else {
-    parts.push(h("p", { class: "hint" }, "打开手机上的验证器 App，输入 Glory 运营后台那一行的 6 位数字。"));
+    parts.push(h("p", { class: "hint" }, "打开手机上的验证器 App，输入 Glory 后台那一行的 6 位数字。"));
   }
   const form = h("form", { class: "card login" }, parts, field("6 位验证码", code, true), submit,
-    h("p", { class: "hint" }, "5 分钟内有效。过期了要重新输入邮箱密码。"), box);
+    h("p", { class: "hint" }, "10 分钟内有效。过期了要重新输入邮箱密码"
+      + (answer.step === "enroll" ? "，那时密钥会换一串新的，手机里要按新的重新添加。" : "。")), box);
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     submit.disabled = true;

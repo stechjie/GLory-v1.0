@@ -7,7 +7,8 @@
   2. 手机验证器 6 位码 → Supabase 验，拿到两步验证级别（aal2）的令牌才算登录。
      第一次登录还没绑验证器：先出二维码让他扫，扫完输一次码就绑上了。
 
-两步之间的状态（第一步拿到的半个会话）存在进程内存里，5 分钟过期。
+两步之间的状态（第一步拿到的半个会话）存在进程内存里，10 分钟过期
+（第一次绑验证器要在手机上手动输密钥时，5 分钟太紧）。
 
 ## 会话
 
@@ -49,7 +50,7 @@ COOKIE_PATH = "/admin"
 WRITE_HEADER = "x-glory-admin"
 
 SESSION_TTL_SEC = 12 * 3600.0
-PENDING_TTL_SEC = 300.0
+PENDING_TTL_SEC = 600.0
 
 # 登录尝试：每个来源 IP 15 分钟 10 次（密码和验证码合计）。
 _login_limiter = SlidingWindowLimiter(10, 900.0)

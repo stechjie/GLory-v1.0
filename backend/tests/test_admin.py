@@ -37,6 +37,9 @@ ADMIN_UID = uuid.UUID("aaaaaaaa-0000-0000-0000-000000000001")
 SOLD = [i.grants for i in shop.items()]
 
 
+QR_SVG = '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><rect fill="#000000"/></svg>'
+
+
 def _jwt(claims: dict) -> str:
     body = base64.urlsafe_b64encode(json.dumps(claims).encode()).decode().rstrip("=")
     return "e30." + body + ".sig"
@@ -66,8 +69,8 @@ class FakeGoTrue:
             return httpx.Response(200, json={})
         if path == "/auth/v1/factors":
             self.enrolled = True
-            return httpx.Response(200, json={"id": "f1", "totp": {"qr_code": "data:image/svg+xml;utf-8,<svg/>",
-                                                                   "secret": "SECRET"}})
+            # 真 Supabase 回的是**裸 SVG 代码**，颜色里带「#」（2026-09-25 第一次连真库时二维码就坏在这）。
+            return httpx.Response(200, json={"id": "f1", "totp": {"qr_code": QR_SVG, "secret": "SECRET"}})
         if path == "/auth/v1/factors/f1/challenge":
             return httpx.Response(200, json={"id": "c1"})
         if path == "/auth/v1/factors/f1/verify":
@@ -129,9 +132,24 @@ def test_first_login_enrolls_an_authenticator_and_clears_half_done_ones(web, mon
     gotrue.has_factor = False
     r = client.post("/admin/api/login", json={"email": "ops@glory.test", "password": "right"})
     assert r.json()["step"] == "enroll"
-    assert r.json()["qr_code"].startswith("data:image/svg+xml")
+    qr = r.json()["qr_code"]
+    assert qr.startswith("data:image/svg+xml;base64,")
+    assert base64.b64decode(qr.split(",", 1)[1]).decode() == QR_SVG
     assert gotrue.deleted == ["old-half"] and gotrue.enrolled
     assert client.post("/admin/api/login/code", json={"code": "123456"}).status_code == 200
+
+
+def test_qr_code_becomes_an_image_address_whatever_supabase_sends() -> None:
+    """裸 SVG、带 utf-8 前缀的、已经是 base64 的，都要变成 <img> 能直接显示的地址。
+    「#」不能留在地址里：浏览器会把它后面当成锚点截掉，图就坏了。"""
+    from app.supabase_auth import qr_data_uri
+
+    for given in (QR_SVG, "data:image/svg+xml;utf-8," + QR_SVG):
+        out = qr_data_uri(given)
+        assert out.startswith("data:image/svg+xml;base64,") and "#" not in out
+        assert base64.b64decode(out.split(",", 1)[1]).decode() == QR_SVG
+    already = qr_data_uri(QR_SVG)
+    assert qr_data_uri(already) == already
 
 
 def test_wrong_password_and_non_admins_get_the_same_answer(web) -> None:
