@@ -1500,28 +1500,11 @@ func _visual_sim_pos_for_fighter(f: Dictionary) -> Vector2:
 	return _clamp_visual_sim_pos(Vector2(float(f.pos.x), float(f.pos.y)))
 
 
-# Eight standard board slots form a compact fixed 4x2 footprint. Both teams use
-# the same slot geometry, so equal opposing offsets preserve their authoritative
-# attack distance instead of visually crossing each other. Bosses stay centred.
-func _make_fixed_visual_offset(f: Dictionary, id: String, raw: Vector2) -> Vector2:
-	var definition_value = f.get("def", {})
-	var definition: Dictionary = definition_value if typeof(definition_value) == TYPE_DICTIONARY else {}
-	var fighter_id := str(f.get("id", definition.get("id", "")))
-	if bool(definition.get("is_boss", false)) or fighter_id.begins_with("boss_"):
-		return Vector2.ZERO
-	var slot := int(f.get("slot", -1))
-	if slot < 0 or slot >= MODEL_FIXED_SLOT_COUNT:
-		slot = posmod(id.hash(), MODEL_FIXED_SLOT_COUNT)
-	var column := slot % MODEL_FIXED_SLOT_COLUMNS
-	var row := slot / MODEL_FIXED_SLOT_COLUMNS
-	var offset_x := (float(column) - 1.5) * MODEL_FIXED_SLOT_X_STEP
-	var offset_y := (float(row) - 0.5) * MODEL_FIXED_SLOT_Y_STEP
-	var desired := Vector2(offset_x, offset_y)
-	# Fit the slot once at entry. Keeping this fitted value (rather than clamping
-	# the offset anew every frame) prevents an edge unit from gradually acquiring
-	# extra sideways displacement as it walks back toward the arena centre.
-	return _clamp_visual_sim_pos(raw + desired) - raw
-
+# 9.25：模拟坐标已经按准备阶段的 4×4 真实间距摆放（BattleSimShared.board_cell_pos），
+# 画面直接显示模拟位置，不再额外加偏移。旧版按 4×2 = 8 格写的偏移只照顾前两行，
+# 第 3、4 行的棋子按 id 哈希乱塞，敌方行序也是反的，画面距离和伤害判定距离对不上。
+func _make_fixed_visual_offset(_f: Dictionary, _id: String, _raw: Vector2) -> Vector2:
+	return Vector2.ZERO
 
 func reset_visual_position_state() -> void:
 	_visual_pos_cache.clear()

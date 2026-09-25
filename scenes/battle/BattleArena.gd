@@ -993,9 +993,13 @@ func _clamp_visual_sim_pos(sim_pos: Vector2) -> Vector2:
 func _sim_to_world_pos(sim_pos: Vector2, apply_down_shift: bool = true) -> Vector3:
 	sim_pos = _clamp_visual_sim_pos(sim_pos)
 	var ny := sim_pos.y / SIM_H
+	var nx := sim_pos.x / SIM_W
 	if _arena_flip_y:
 		ny = 1.0 - ny
-	var x := (sim_pos.x / SIM_W - 0.5) * BATTLE_PLAYABLE_WIDTH * BATTLE_VISUAL_SPACE_SCALE + BATTLE_PLAYABLE_OFFSET.x
+		# 9.25：敌方棋盘在模拟里是左右镜像摆的（面对面）。从另一边看时整张图
+		# 转 180°（x 也翻），对方看到的自己的棋盘才是他摆的样子。
+		nx = 1.0 - nx
+	var x := (nx - 0.5) * BATTLE_PLAYABLE_WIDTH * BATTLE_VISUAL_SPACE_SCALE + BATTLE_PLAYABLE_OFFSET.x
 	var z := (ny - 0.5) * BATTLE_PLAYABLE_DEPTH * BATTLE_VISUAL_SPACE_SCALE + BATTLE_PLAYABLE_OFFSET.z
 	if apply_down_shift:
 		z += BATTLE_PLAYABLE_DEPTH * BATTLE_VISUAL_DOWN_SHIFT_RATIO

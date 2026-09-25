@@ -217,7 +217,7 @@ static func _spawn_undead_trait_clone(state: Dictionary, summoner: Dictionary, s
 	cloned_def.atk = int(clone.atk)
 	cloned_def.def = int(clone.defense)
 	clone.attack_speed = float(source.get("attack_speed", cloned_def.get("attack_speed", 1.0)))
-	clone.range_px = float(source.get("range_px", float(cloned_def.get("range", 1)) * ATTACK_RANGE_SCALE))
+	clone.range_px = float(source.get("range_px", range_px_for(float(cloned_def.get("range", 1)))))
 	clone.move_speed_px = float(source.get("move_speed_px", float(cloned_def.get("move_speed", 3.0)) * 55.0))
 	var offset_x := (float(idx % GameConstants.BOARD_COLUMNS) - (float(GameConstants.BOARD_COLUMNS) - 1.0) * 0.5) * 18.0
 	var offset_y := float(floori(float(idx) / float(GameConstants.BOARD_COLUMNS)) + 1) * 18.0

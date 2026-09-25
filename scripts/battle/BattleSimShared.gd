@@ -2,6 +2,7 @@ class_name BattleSimShared
 extends RefCounted
 
 const BotBudget := preload("res://scripts/economy/BotEconomyBudget.gd")
+const BotPlayer := preload("res://scripts/economy/BotPlayer.gd")
 const ShopRoll := preload("res://scripts/economy/ShopRoll.gd")
 
 const DECAY_START_SEC := 10.0
@@ -15,7 +16,63 @@ const ATTACK_RANGE_SCALE := 72.0
 # Tolerance so a unit sitting exactly on the edge of its attack range counts as
 # "in range" and attacks, instead of jittering sub-pixel forever due to float
 # error in distance_to (which would freeze it just outside range).
-const ATTACK_RANGE_EPS := 1.0
+const ATTACK_RANGE_EPS := 4.0
+
+# --- 9.25 站位与距离（近战改 B）----------------------------------------------
+# 准备阶段 4×4 格子 = 模拟坐标 = 画面位置，三者一致；画面不再额外加偏移
+# （BattleRenderer._make_fixed_visual_offset 已归零）。
+# 旧版列距 24 / 行距 40 挤成一团，画面再拉开 64px，于是「看到的距离」和
+# 「判定打不打得到的距离」不是同一个；近战 72px 的手长又是站位间距的 2~3 倍，
+# 看起来就是隔空打人。
+const BOARD_COL_SPACING := 56.0   # 列距（≈0.71 世界单位，棋子约 0.4 高）
+const BOARD_ROW_SPACING := 44.0   # 行距（后排刚好落在画面可视范围 68~452 内）
+const FRONT_ROW_GAP := 110.0      # 开场双方前排之间的距离
+const ARENA_MID_Y := 260.0
+# 射程：近战 = 两个身体刚好碰到；每多 1 点射程 +72px（与旧版步长相同）。
+# range 4 → 248px（旧 288），range 1.5 → 68，range 2 → 104。
+const MELEE_RANGE_PX := 32.0
+const RANGE_STEP_PX := 72.0
+# 身体半径：推开逻辑用。体型大（footprint_cells>1）的按格数放大。
+const BODY_RADIUS_PX := 15.0
+# 小怪密集方阵的间距（略大于身体直径，开打后由推开逻辑散开）。
+const MONSTER_SPACING := 34.0
+
+
+static func range_px_for(range_value: float) -> float:
+	return MELEE_RANGE_PX + maxf(0.0, range_value - 1.0) * RANGE_STEP_PX
+
+
+# 4×4 格子 → 模拟坐标。row 0 = 前排（面向敌人）。
+# 敌方左右镜像（云顶之弈式面对面）：对手视角的左边 = 我方屏幕的右边。
+static func board_cell_pos(slot: int, team: String, center_x: float, mirror_enemy: bool = true) -> Vector2:
+	var col := slot % GameConstants.BOARD_COLUMNS
+	var row := floori(float(slot) / float(GameConstants.BOARD_COLUMNS))
+	var dx := (float(col) - (float(GameConstants.BOARD_COLUMNS) - 1.0) * 0.5) * BOARD_COL_SPACING
+	var y: float
+	if team == "enemy":
+		if mirror_enemy:
+			dx = -dx
+		y = ARENA_MID_Y - FRONT_ROW_GAP * 0.5 - float(row) * BOARD_ROW_SPACING
+	else:
+		y = ARENA_MID_Y + FRONT_ROW_GAP * 0.5 + float(row) * BOARD_ROW_SPACING
+	return Vector2(clampf(center_x + dx, 60.0, ARENA_W - 60.0), clampf(y, 45.0, ARENA_H - 45.0))
+
+
+# 佣兵填进主人棋盘的空格：后排优先，同一排中间两列优先。
+const FILL_COLUMN_ORDER := [1, 2, 0, 3]
+
+static func free_board_cells(occupied: Dictionary) -> Array[int]:
+	var out: Array[int] = []
+	for row in range(GameConstants.BOARD_ROWS - 1, -1, -1):
+		for col in FILL_COLUMN_ORDER:
+			var slot := row * GameConstants.BOARD_COLUMNS + int(col)
+			if not occupied.has(slot):
+				out.append(slot)
+	return out
+
+
+static func body_radius(f: Dictionary) -> float:
+	return BODY_RADIUS_PX * float(maxi(1, int(f.get("footprint_cells", 1))))
 const TEAM_LANE_CENTERS := [230.0, 500.0, 770.0]
 # Both sides spawn pushed back from the centre line by this much, so the opening
 # reads as two armies closing rather than an instant melee. Front rows end up
@@ -46,11 +103,8 @@ static func _count_units(board: Array) -> int:
 
 
 static func _place_in_lane(f: Dictionary, slot: int, team: String, lane: int) -> void:
-	var col := slot % GameConstants.BOARD_COLUMNS
-	var row := floori(float(slot) / float(GameConstants.BOARD_COLUMNS))
-	var lane_x: float = TEAM_LANE_CENTERS[lane] + (float(col) - 1.5) * 24.0
-	var y := _opening_y(team, 300.0 + float(row) * 40.0 if team == "player" else 220.0 - float(row) * 40.0)
-	f.pos = Vector2(clampf(lane_x, 80.0, ARENA_W - 80.0), clampf(y, 60.0, ARENA_H - 60.0))
+	f.pos = board_cell_pos(slot, team, float(TEAM_LANE_CENTERS[lane]))
+	f["board_cell"] = slot
 	f["lane"] = lane
 
 
@@ -160,10 +214,19 @@ static func _team_owner_ctx_for_slot(slot_idx: int) -> Dictionary:
 			var snap = NetworkService.team_boards.get(slot_idx, {})
 			if snap is Dictionary and not (snap as Dictionary).is_empty():
 				return {"treasures": NetProtocol.extract_treasures(snap), "syn": NetProtocol.extract_syn(snap), "pet": NetProtocol.extract_pet(snap)}
-		return {"treasures": [], "syn": {}, "pet": ""}
+		return _dummy_owner_ctx(slot_idx)
 	if slot_idx == 0:
 		return {"treasures": GameState.owned_treasures.duplicate(), "syn": SynergyService.current_player_flags(), "pet": PlayerProfile.get_active()}
-	return {"treasures": [], "syn": {}, "pet": ""}
+	return _dummy_owner_ctx(slot_idx)
+
+
+# 9.25：假想敌的宝藏与种族羁绊。以前这里直接返回空 —— 假想敌棋盘凑齐了
+# 4 灵 / 5 暗，战斗里也一点加成都没有。现在读 BotPlayer 推演出来的结果。
+static func _dummy_owner_ctx(slot_idx: int) -> Dictionary:
+	if _team_slot_state(slot_idx) != "dummy":
+		return {"treasures": [], "syn": {}, "pet": ""}
+	var bot := BotPlayer.state_for(NetworkService.shared_seed, slot_idx, GameState.round_index)
+	return {"treasures": (bot.get("treasures", []) as Array).duplicate(), "syn": (bot.get("syn", {}) as Dictionary).duplicate(true), "pet": ""}
 
 
 static func _round_pick_index(size: int, salt: String, round_index: int = -1) -> int:
@@ -230,9 +293,10 @@ static func _append_lane_monsters(out: Array, lane: int, count: int, template: D
 		d.atk = maxi(1, int(round(float(d.get("atk", 1)) * float(growth.atk))))
 		d.def = maxi(0, int(round(float(d.get("def", 0)) * float(growth.def))))
 		var f := _fighter_from_def(d, 2 + n, "enemy", n, count)
-		var lane_x: float = TEAM_LANE_CENTERS[lane] + (float(n % 3) - 1.0) * 30.0
-		var y := _opening_y("enemy", 200.0 - float(n / 3) * 38.0)
-		f.pos = Vector2(clampf(lane_x, 80.0, ARENA_W - 80.0), clampf(y, 60.0, ARENA_H - 60.0))
+		# 密集方阵：每排 4 只，间距略大于身体直径，开打后由推开逻辑散开。
+		var lane_x: float = TEAM_LANE_CENTERS[lane] + (float(n % 4) - 1.5) * MONSTER_SPACING
+		var y := ARENA_MID_Y - FRONT_ROW_GAP * 0.5 - float(n / 4) * MONSTER_SPACING
+		f.pos = Vector2(clampf(lane_x, 60.0, ARENA_W - 60.0), clampf(y, 45.0, ARENA_H - 45.0))
 		f.uid = "enemy_L%d_m%d" % [lane, n]
 		f["lane"] = lane
 		out.append(f)
@@ -250,7 +314,7 @@ static func _append_lane_boss(out: Array, lane: int, template: Dictionary) -> vo
 	if d.has("skill_damage"):
 		d.skill_damage = maxi(1, int(round(float(d.get("skill_damage", 0)) * float(growth.skill_damage) * boss_mul)))
 	var f := _fighter_from_def(d, 12, "enemy", 0, 1)
-	f.pos = Vector2(TEAM_LANE_CENTERS[lane], _opening_y("enemy", 180.0))
+	f.pos = Vector2(TEAM_LANE_CENTERS[lane], ARENA_MID_Y - FRONT_ROW_GAP * 0.5 - BOARD_ROW_SPACING)
 	f.uid = "enemy_L%d_boss" % lane
 	f["lane"] = lane
 	out.append(f)
@@ -291,15 +355,22 @@ static func _dummy_merc_slots(_rng: RandomNumberGenerator) -> Array:
 
 
 static func _append_lane_mercenaries(out: Array, merc_slots: Array, team: String, lane: int, owner_slot: int = -1) -> void:
+	# 佣兵填进这一路这一方棋盘的空格（后排优先）。空格用完（极少见：同一路
+	# 棋子 + 佣兵超过 16）就叠在最后一排中间，由推开逻辑分开。
+	var occupied := {}
+	for existing in out:
+		if str(existing.get("team", "")) == team and int(existing.get("lane", -1)) == lane and existing.has("board_cell"):
+			occupied[int(existing.board_cell)] = true
+	var free := free_board_cells(occupied)
 	var idx := 0
 	for i in merc_slots.size():
 		var cell = merc_slots[i]
 		if cell == null or typeof(cell) != TYPE_DICTIONARY:
 			continue
 		var f := _fighter_from_cell(cell, GameConstants.CELL_COUNT + i, team)
-		var lane_x: float = TEAM_LANE_CENTERS[lane] + (float(idx % 3) - 1.0) * 28.0
-		var y := _opening_y(team, 360.0 + float(idx / 3) * 34.0 if team == "player" else 150.0 - float(idx / 3) * 34.0)
-		f.pos = Vector2(clampf(lane_x, 80.0, ARENA_W - 80.0), clampf(y, 60.0, ARENA_H - 60.0))
+		var board_slot: int = free[idx] if idx < free.size() else (GameConstants.CELL_COUNT - 3)
+		f.pos = board_cell_pos(board_slot, team, float(TEAM_LANE_CENTERS[lane]))
+		f["board_cell"] = board_slot
 		f.uid = "%s_L%d_merc%d" % [team, lane, i]
 		f["lane"] = lane
 		f["owner_treasures"] = []
@@ -333,13 +404,13 @@ static func _team_board_for_slot(slot_idx: int, rng: RandomNumberGenerator) -> A
 				return NetProtocol.extract_board(snap)
 			return []
 		if st == "dummy":
-			return build_dummy_board(rng)
+			return _dummy_board_for_slot(slot_idx)
 		return []
 	# Offline: slot 0 = my board; only explicitly checked dummy slots spawn AI boards.
 	if slot_idx == 0:
 		return GameState.board_slots
 	var st2 := _team_slot_state(slot_idx)
-	return build_dummy_board(rng) if st2 == "dummy" else []
+	return _dummy_board_for_slot(slot_idx) if st2 == "dummy" else []
 
 
 static func _team_mercs_for_slot(slot_idx: int, rng: RandomNumberGenerator) -> Array:
@@ -351,16 +422,32 @@ static func _team_mercs_for_slot(slot_idx: int, rng: RandomNumberGenerator) -> A
 				return NetProtocol.extract_mercenaries(snap)
 			return []
 		if st == "dummy":
-			return _dummy_merc_slots(rng)
+			return _dummy_mercs_for_slot(slot_idx)
 		return []
 	# Offline: slot 0 = my mercs; only explicitly checked dummy slots send AI mercs.
 	if slot_idx == 0:
 		return GameState.mercenary_slots
 	var st2 := _team_slot_state(slot_idx)
-	return _dummy_merc_slots(rng) if st2 == "dummy" else []
+	return _dummy_mercs_for_slot(slot_idx) if st2 == "dummy" else []
 
 
-# --- AI ("假想敌") economy ----------------------------------------------------
+# --- AI ("假想敌") ------------------------------------------------------------
+# 9.25：假想敌改由 BotPlayer 按真人规则从第 1 回合推演到当前回合（经济、商店、
+# 合成、宝藏、升级石与 4 星、种族羁绊、按射程站位）。推演只依赖
+# shared_seed + 座位号 + 回合号，所有客户端算出同一个结果，也不消耗
+# RngService.rng（战斗随机流不受影响）。下面旧的 legacy 预算模型保留给审计工具。
+
+static func _dummy_board_for_slot(slot_idx: int) -> Array:
+	var bot := BotPlayer.state_for(NetworkService.shared_seed, slot_idx, GameState.round_index)
+	return (bot.get("board", []) as Array).duplicate(true)
+
+
+static func _dummy_mercs_for_slot(slot_idx: int) -> Array:
+	var bot := BotPlayer.state_for(NetworkService.shared_seed, slot_idx, GameState.round_index)
+	return (bot.get("mercs", []) as Array).duplicate(true)
+
+
+# --- 旧版假想敌经济（legacy_estimate_v1，已不驱动阵容）------------------------
 # The dummy opponent no longer spawns random units. It follows the normal
 # economy: it starts with the same gold, earns income every round (win gold +
 # interest + base), then spends that budget buying units it can afford and
@@ -562,7 +649,7 @@ static func _fighter_from_cell(cell: Dictionary, slot: int, team: String, mirror
 static func _fighter_from_def(d: Dictionary, slot: int, team: String, order: int, total: int, star: int = 1, is_mercenary: bool = false, is_formation_ally: bool = false, mirror_enemy_slot: bool = false) -> Dictionary:
 	var pos := _slot_to_pos(slot, team, order, total, mirror_enemy_slot)
 	var hp := int(d.get("hp", 1))
-	return {"uid": "%s_%s_%d" % [team, str(d.get("id", "unit")), order], "id": str(d.get("id", "unit")), "name": str(d.get("name", d.get("id", "unit"))), "name_en": str(d.get("name_en", _english_name_from_def(d))), "team": team, "slot": slot, "def": d, "star": star, "is_mercenary": is_mercenary or bool(d.get("is_mercenary", false)), "is_formation_ally": is_formation_ally, "footprint_cells": maxi(1, int(d.get("footprint_cells", 1))), "hp": hp, "max_hp": hp, "atk": int(d.get("atk", 1)), "defense": int(d.get("def", d.get("defense", 0))), "attack_speed": float(d.get("attack_speed", 1.0)), "range_px": float(d.get("range", 1)) * ATTACK_RANGE_SCALE, "move_speed_px": float(d.get("move_speed", 3.0)) * 55.0, "pos": pos, "next_attack": 0.0, "alive": true, "shield": 0, "attack_count": 0, "skill_ready": 0.0, "skill_stacks": 0, "linked_target_uid": "", "statuses": {}, "dodge": float(d.get("dodge", 0.0)), "revives_left": int(d.get("revives_per_twin", 0)), "treasure_cd": {}}
+	return {"uid": "%s_%s_%d" % [team, str(d.get("id", "unit")), order], "id": str(d.get("id", "unit")), "name": str(d.get("name", d.get("id", "unit"))), "name_en": str(d.get("name_en", _english_name_from_def(d))), "team": team, "slot": slot, "def": d, "star": star, "is_mercenary": is_mercenary or bool(d.get("is_mercenary", false)), "is_formation_ally": is_formation_ally, "footprint_cells": maxi(1, int(d.get("footprint_cells", 1))), "hp": hp, "max_hp": hp, "atk": int(d.get("atk", 1)), "defense": int(d.get("def", d.get("defense", 0))), "attack_speed": float(d.get("attack_speed", 1.0)), "range_px": range_px_for(float(d.get("range", 1))), "move_speed_px": float(d.get("move_speed", 3.0)) * 55.0, "pos": pos, "next_attack": 0.0, "alive": true, "shield": 0, "attack_count": 0, "skill_ready": 0.0, "skill_stacks": 0, "linked_target_uid": "", "statuses": {}, "dodge": float(d.get("dodge", 0.0)), "revives_left": int(d.get("revives_per_twin", 0)), "treasure_cd": {}}
 
 
 static func _english_name_from_def(d: Dictionary) -> String:
@@ -581,34 +668,20 @@ static func _english_name_from_def(d: Dictionary) -> String:
 
 
 static func _slot_to_pos(slot: int, team: String, order: int, total: int, mirror_enemy_slot: bool = false) -> Vector2:
-	var column := slot % GameConstants.BOARD_COLUMNS
-	var row := floori(float(slot) / float(GameConstants.BOARD_COLUMNS))
-	var base_x := ARENA_W * 0.5 + (float(column) - (float(GameConstants.BOARD_COLUMNS) - 1.0) * 0.5) * CELL_SPACING
-	var base_y := _opening_y("player", 272.0 + float(row) * CELL_SPACING)
-	var x := base_x
-	var y := base_y
-	if team == "enemy":
-		if mirror_enemy_slot:
-			x = ARENA_W - base_x
-			y = _opening_y("enemy", ARENA_H - (272.0 + float(row) * CELL_SPACING))
-		else:
-			y = _opening_y("enemy", 80.0 + float(order % maxi(1, total)) * 42.0)
-			x = ARENA_W * 0.5 + (float(order % GameConstants.BOARD_COLUMNS) - (float(GameConstants.BOARD_COLUMNS) - 1.0) * 0.5) * CELL_SPACING
-	return Vector2(clampf(x, 80.0, ARENA_W - 80.0), clampf(y, 45.0, ARENA_H - 45.0))
+	# 1v1 / 教学：与 3v3 同一套 4×4 几何，居中摆放。
+	# 敌方有真实棋盘（mirror_enemy_slot）→ 按它的格子镜像摆；
+	# 没有棋盘的敌人（怪、教学假人）→ 按出场顺序排成方阵。
+	if team == "enemy" and not mirror_enemy_slot:
+		var cells := maxi(1, total)
+		return board_cell_pos(order % cells, team, ARENA_W * 0.5)
+	return board_cell_pos(slot, team, ARENA_W * 0.5)
 
 
 static func _mercenary_slot_to_pos(index: int, team: String, mirror_enemy_slot: bool = false) -> Vector2:
-	var col := index % 3
-	var row := floori(float(index) / 3.0)
-	var x := 314.0 + float(col) * 186.0
-	var y := _opening_y("player", 424.0 + float(row) * 54.0)
-	if team == "enemy":
-		if mirror_enemy_slot:
-			x = ARENA_W - x
-			y = _opening_y("enemy", ARENA_H - (424.0 + float(row) * 54.0))
-		else:
-			y = _opening_y("enemy", 96.0 + float(row) * 54.0)
-	return Vector2(clampf(x, 80.0, ARENA_W - 80.0), clampf(y, 45.0, ARENA_H - 45.0))
+	# 1v1：佣兵从后排往前按空格顺序摆（与 3v3 同一几何）；和棋子重叠时由推开逻辑分开。
+	var fill := free_board_cells({})
+	return board_cell_pos(fill[index % fill.size()], team, ARENA_W * 0.5, mirror_enemy_slot or team == "enemy")
+
 
 
 static func _effective_attack_distance(attacker: Dictionary, target: Dictionary) -> float:
