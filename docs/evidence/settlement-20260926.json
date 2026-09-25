@@ -1,0 +1,403 @@
+{
+  "runtime_commit": "a8930aa98d897c04d387d17f4bd0ce32d30d760d",
+  "public": {
+    "baseline": {
+      "rooms": 20,
+      "peers": 80,
+      "waves": 1,
+      "passed": true,
+      "checks": [
+        "CHECK_RESULT name=server_capacity_split status=PASS checked=12 failures=0 allowed=0 stale=0",
+        "CHECK_RESULT name=server_capacity_split status=PASS checked=41 failures=0 allowed=0 stale=0",
+        "CHECK_RESULT name=server_capacity_split status=PASS checked=41 failures=0 allowed=0 stale=0",
+        "CHECK_RESULT name=server_capacity_split status=PASS checked=41 failures=0 allowed=0 stale=0",
+        "CHECK_RESULT name=server_capacity_split status=PASS checked=41 failures=0 allowed=0 stale=0"
+      ],
+      "measurements": [
+        {
+          "client_disconnects": 0,
+          "connected": 80,
+          "delivered": 0,
+          "delivery_p95_ms": 0.0,
+          "disconnects": 0,
+          "expected_deliveries": 0,
+          "failed_replays": 0,
+          "heartbeat_gap_max_ms": 578.044,
+          "heartbeat_max_ms": 412.291,
+          "heartbeat_p95_ms": 217.48,
+          "heartbeat_timeouts": 0,
+          "peers_without_pong": 0,
+          "phase": "idle",
+          "probe_lifetime_gap_max_ms": 578.044,
+          "ready_p95_ms": 0.0,
+          "real_heartbeat_gap_max_ms": 3104.674,
+          "replay_bytes": 0,
+          "reports": 80,
+          "server_frame_max_ms": 0.702,
+          "server_gap_max_ms": 21.861,
+          "server_static_memory_peak_bytes": 72003923,
+          "wall_ms": 10015.894
+        },
+        {
+          "client_disconnects": 0,
+          "connected": 80,
+          "delivered": 80,
+          "delivery_p95_ms": 41584.862,
+          "disconnects": 0,
+          "expected_deliveries": 80,
+          "failed_replays": 0,
+          "heartbeat_gap_max_ms": 581.112,
+          "heartbeat_max_ms": 568.162,
+          "heartbeat_p95_ms": 269.311,
+          "heartbeat_timeouts": 0,
+          "peers_without_pong": 0,
+          "phase": "battle_01",
+          "probe_lifetime_gap_max_ms": 581.112,
+          "ready_p95_ms": 40680.75,
+          "real_heartbeat_gap_max_ms": 3263.426,
+          "replay_bytes": 26261912,
+          "reports": 80,
+          "server_frame_max_ms": 69.407,
+          "server_gap_max_ms": 74.127,
+          "server_static_memory_peak_bytes": 225742411,
+          "wall_ms": 41965.532
+        }
+      ],
+      "resources": [
+        {
+          "user_cpu_seconds": 52.187986,
+          "system_cpu_seconds": 2.8379630000000002,
+          "rss_kib": 377132
+        }
+      ],
+      "runtime_errors": [],
+      "teardown_diagnostics": [
+        "ERROR: Parameter \"p_mutex->mutex\" is null.",
+        "ERROR: Parameter \"p_mutex->mutex\" is null.",
+        "ERROR: Parameter \"p_mutex->mutex\" is null."
+      ]
+    },
+    "candidate": {
+      "rooms": 20,
+      "peers": 80,
+      "waves": 5,
+      "passed": true,
+      "checks": [
+        "CHECK_RESULT name=server_capacity_split status=PASS checked=32 failures=0 allowed=0 stale=0",
+        "CHECK_RESULT name=server_capacity_split status=PASS checked=41 failures=0 allowed=0 stale=0",
+        "CHECK_RESULT name=server_capacity_split status=PASS checked=41 failures=0 allowed=0 stale=0",
+        "CHECK_RESULT name=server_capacity_split status=PASS checked=41 failures=0 allowed=0 stale=0",
+        "CHECK_RESULT name=server_capacity_split status=PASS checked=41 failures=0 allowed=0 stale=0"
+      ],
+      "measurements": [
+        {
+          "client_disconnects": 0,
+          "connected": 80,
+          "delivered": 0,
+          "delivery_p95_ms": 0.0,
+          "disconnects": 0,
+          "expected_deliveries": 0,
+          "failed_replays": 0,
+          "heartbeat_gap_max_ms": 478.497,
+          "heartbeat_max_ms": 345.177,
+          "heartbeat_p95_ms": 147.863,
+          "heartbeat_timeouts": 0,
+          "peers_without_pong": 0,
+          "phase": "idle",
+          "probe_lifetime_gap_max_ms": 478.497,
+          "ready_p95_ms": 0.0,
+          "real_heartbeat_gap_max_ms": 6037.866,
+          "replay_bytes": 0,
+          "reports": 80,
+          "server_frame_max_ms": 0.369,
+          "server_gap_max_ms": 20.706,
+          "server_static_memory_peak_bytes": 72034388,
+          "wall_ms": 10014.879
+        },
+        {
+          "client_disconnects": 0,
+          "connected": 80,
+          "delivered": 80,
+          "delivery_p95_ms": 34878.269,
+          "disconnects": 0,
+          "expected_deliveries": 80,
+          "failed_replays": 0,
+          "heartbeat_gap_max_ms": 551.116,
+          "heartbeat_max_ms": 487.39,
+          "heartbeat_p95_ms": 270.255,
+          "heartbeat_timeouts": 0,
+          "peers_without_pong": 0,
+          "phase": "battle_01",
+          "probe_lifetime_gap_max_ms": 551.116,
+          "ready_p95_ms": 33253.251,
+          "real_heartbeat_gap_max_ms": 6111.189,
+          "replay_bytes": 26261912,
+          "reports": 80,
+          "server_frame_max_ms": 45.767,
+          "server_gap_max_ms": 55.092,
+          "server_static_memory_peak_bytes": 223878261,
+          "wall_ms": 35107.011
+        },
+        {
+          "client_disconnects": 0,
+          "connected": 80,
+          "delivered": 80,
+          "delivery_p95_ms": 37635.544,
+          "disconnects": 0,
+          "expected_deliveries": 80,
+          "failed_replays": 0,
+          "heartbeat_gap_max_ms": 602.164,
+          "heartbeat_max_ms": 446.161,
+          "heartbeat_p95_ms": 184.003,
+          "heartbeat_timeouts": 0,
+          "peers_without_pong": 0,
+          "phase": "battle_02",
+          "probe_lifetime_gap_max_ms": 602.164,
+          "ready_p95_ms": 36840.402,
+          "real_heartbeat_gap_max_ms": 6111.189,
+          "replay_bytes": 25847104,
+          "reports": 80,
+          "server_frame_max_ms": 90.142,
+          "server_gap_max_ms": 93.546,
+          "server_static_memory_peak_bytes": 239960419,
+          "wall_ms": 38866.576
+        },
+        {
+          "client_disconnects": 0,
+          "connected": 80,
+          "delivered": 80,
+          "delivery_p95_ms": 33737.242,
+          "disconnects": 0,
+          "expected_deliveries": 80,
+          "failed_replays": 0,
+          "heartbeat_gap_max_ms": 633.457,
+          "heartbeat_max_ms": 434.466,
+          "heartbeat_p95_ms": 227.321,
+          "heartbeat_timeouts": 0,
+          "peers_without_pong": 0,
+          "phase": "battle_03",
+          "probe_lifetime_gap_max_ms": 633.457,
+          "ready_p95_ms": 32856.992,
+          "real_heartbeat_gap_max_ms": 6111.189,
+          "replay_bytes": 26462296,
+          "reports": 80,
+          "server_frame_max_ms": 66.51,
+          "server_gap_max_ms": 73.426,
+          "server_static_memory_peak_bytes": 229139974,
+          "wall_ms": 34109.027
+        },
+        {
+          "client_disconnects": 0,
+          "connected": 80,
+          "delivered": 80,
+          "delivery_p95_ms": 32288.159,
+          "disconnects": 0,
+          "expected_deliveries": 80,
+          "failed_replays": 0,
+          "heartbeat_gap_max_ms": 549.56,
+          "heartbeat_max_ms": 431.614,
+          "heartbeat_p95_ms": 207.778,
+          "heartbeat_timeouts": 0,
+          "peers_without_pong": 0,
+          "phase": "battle_04",
+          "probe_lifetime_gap_max_ms": 633.457,
+          "ready_p95_ms": 31385.082,
+          "real_heartbeat_gap_max_ms": 6111.189,
+          "replay_bytes": 26060196,
+          "reports": 80,
+          "server_frame_max_ms": 54.619,
+          "server_gap_max_ms": 61.174,
+          "server_static_memory_peak_bytes": 232141819,
+          "wall_ms": 32577.816
+        },
+        {
+          "client_disconnects": 0,
+          "connected": 80,
+          "delivered": 80,
+          "delivery_p95_ms": 32025.502,
+          "disconnects": 0,
+          "expected_deliveries": 80,
+          "failed_replays": 0,
+          "heartbeat_gap_max_ms": 555.95,
+          "heartbeat_max_ms": 377.326,
+          "heartbeat_p95_ms": 183.993,
+          "heartbeat_timeouts": 0,
+          "peers_without_pong": 0,
+          "phase": "battle_05",
+          "probe_lifetime_gap_max_ms": 633.457,
+          "ready_p95_ms": 31207.11,
+          "real_heartbeat_gap_max_ms": 6111.189,
+          "replay_bytes": 26050284,
+          "reports": 80,
+          "server_frame_max_ms": 57.388,
+          "server_gap_max_ms": 67.89,
+          "server_static_memory_peak_bytes": 224742245,
+          "wall_ms": 32814.452
+        }
+      ],
+      "resources": [
+        {
+          "user_cpu_seconds": 198.651211,
+          "system_cpu_seconds": 5.379435,
+          "rss_kib": 391488
+        }
+      ],
+      "runtime_errors": [],
+      "teardown_diagnostics": [
+        "ERROR: Parameter \"p_mutex->mutex\" is null.",
+        "ERROR: Parameter \"p_mutex->mutex\" is null.",
+        "ERROR: Parameter \"p_mutex->mutex\" is null."
+      ]
+    }
+  },
+  "phone": {
+    "old_warm": {
+      "round": 21,
+      "seed": 20260807,
+      "roster_count": 26,
+      "wall_clock": {
+        "average_fps": 60.15375953135739,
+        "frames_over_1000ms": 0,
+        "frames_over_100ms": 0,
+        "frames_over_250ms": 0,
+        "max_frame_time_ms": 55.415,
+        "measurement_window_sec": 17.172658999999996,
+        "p95_frame_time_ms": 19.142,
+        "p99_frame_time_ms": 21.441,
+        "sample_count": 1033
+      },
+      "prepare_total_ms": 18678,
+      "effect_prepare_ms": 15556,
+      "replay_payload_sha256": "70990b735c8c6af18e092a99428f00f36b2a75458f2c6843142302d7c370ca16",
+      "new_shader_sources_during_playback": []
+    },
+    "new_warm": {
+      "round": 21,
+      "seed": 20260807,
+      "roster_count": 26,
+      "wall_clock": {
+        "average_fps": 60.183930948697984,
+        "frames_over_1000ms": 0,
+        "frames_over_100ms": 0,
+        "frames_over_250ms": 0,
+        "max_frame_time_ms": 40.046,
+        "measurement_window_sec": 17.164050000000007,
+        "p95_frame_time_ms": 19.379,
+        "p99_frame_time_ms": 21.953,
+        "sample_count": 1033
+      },
+      "prepare_total_ms": 15593,
+      "effect_prepare_ms": 12499,
+      "replay_payload_sha256": "70990b735c8c6af18e092a99428f00f36b2a75458f2c6843142302d7c370ca16",
+      "new_shader_sources_during_playback": []
+    },
+    "new_cold": {
+      "round": 21,
+      "seed": 20260807,
+      "roster_count": 26,
+      "wall_clock": {
+        "average_fps": 60.07609211022612,
+        "frames_over_1000ms": 0,
+        "frames_over_100ms": 0,
+        "frames_over_250ms": 0,
+        "max_frame_time_ms": 58.447,
+        "measurement_window_sec": 17.161568999999982,
+        "p95_frame_time_ms": 19.615,
+        "p99_frame_time_ms": 24.081,
+        "sample_count": 1031
+      },
+      "prepare_total_ms": 20958,
+      "effect_prepare_ms": 15859,
+      "replay_payload_sha256": "70990b735c8c6af18e092a99428f00f36b2a75458f2c6843142302d7c370ca16",
+      "new_shader_sources_during_playback": []
+    }
+  },
+  "linux_checks": [
+    {
+      "case": "server_battle_scheduler_transport",
+      "passed": true,
+      "markers": [
+        "CHECK_RESULT name=server_battle_scheduler_transport status=PASS checked=25 failures=0 allowed=0 stale=0"
+      ],
+      "returncode": 0,
+      "source_tree_sha256": "3465f5cfceff0ac74aeb35cc4cdd838176099ce9ef137768a69d3b3442537816",
+      "archive_sha256": "4d72f1f30a423a8c635b73da949e79b987c49917c9bb81d7c428055875022245",
+      "engine_errors": []
+    },
+    {
+      "case": "server_battle_scheduler",
+      "passed": true,
+      "markers": [
+        "CHECK_RESULT name=server_battle_scheduler status=PASS checked=315 failures=0 allowed=0 stale=0"
+      ],
+      "returncode": 0,
+      "source_tree_sha256": "3465f5cfceff0ac74aeb35cc4cdd838176099ce9ef137768a69d3b3442537816",
+      "archive_sha256": "4d72f1f30a423a8c635b73da949e79b987c49917c9bb81d7c428055875022245",
+      "engine_errors": []
+    },
+    {
+      "case": "server_result_ack",
+      "passed": true,
+      "markers": [
+        "CHECK_RESULT name=server_result_ack status=PASS checked=21 failures=0 allowed=0 stale=0"
+      ],
+      "returncode": 0,
+      "source_tree_sha256": "3465f5cfceff0ac74aeb35cc4cdd838176099ce9ef137768a69d3b3442537816",
+      "archive_sha256": "4d72f1f30a423a8c635b73da949e79b987c49917c9bb81d7c428055875022245",
+      "engine_errors": []
+    },
+    {
+      "case": "battle_body_contact",
+      "passed": true,
+      "markers": [
+        "CHECK_RESULT name=battle_body_contact status=PASS checked=55 failures=0 allowed=0 stale=0"
+      ],
+      "returncode": 0,
+      "source_tree_sha256": "3465f5cfceff0ac74aeb35cc4cdd838176099ce9ef137768a69d3b3442537816",
+      "archive_sha256": "4d72f1f30a423a8c635b73da949e79b987c49917c9bb81d7c428055875022245",
+      "engine_errors": []
+    },
+    {
+      "case": "battle_target_index",
+      "passed": true,
+      "markers": [
+        "CHECK_RESULT name=battle_target_index status=PASS checked=4816 failures=0 allowed=0 stale=0"
+      ],
+      "returncode": 0,
+      "source_tree_sha256": "3465f5cfceff0ac74aeb35cc4cdd838176099ce9ef137768a69d3b3442537816",
+      "archive_sha256": "4d72f1f30a423a8c635b73da949e79b987c49917c9bb81d7c428055875022245",
+      "engine_errors": []
+    },
+    {
+      "case": "replay_delivery",
+      "passed": true,
+      "markers": [
+        "CHECK_RESULT name=replay_delivery status=PASS checked=122 failures=0 allowed=0 stale=0"
+      ],
+      "returncode": 0,
+      "source_tree_sha256": "3465f5cfceff0ac74aeb35cc4cdd838176099ce9ef137768a69d3b3442537816",
+      "archive_sha256": "4d72f1f30a423a8c635b73da949e79b987c49917c9bb81d7c428055875022245",
+      "engine_errors": []
+    }
+  ],
+  "live_health": {
+    "account_logged_in": false,
+    "connected": true,
+    "connected_seconds": 30.007,
+    "dtls": true,
+    "error": "",
+    "host": "34.142.168.170",
+    "list_requested": true,
+    "max_pong_gap_seconds": 3.059,
+    "observed_pings": 9,
+    "observed_pongs": 9,
+    "passed": true,
+    "port": 8080,
+    "protocol": 32,
+    "public_room_count": 0,
+    "reason": "completed",
+    "transport_closed": true,
+    "unseated": true,
+    "user_data_dir": "/Users/luolijing/Library/Application Support/GloryLiveReadOnly-d3d34fd71f0641da96744fa270f232b2"
+  }
+}
