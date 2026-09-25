@@ -12,6 +12,14 @@ func penetration(units: Array) -> float:
 	return worst
 func _ready() -> void:
 	h = H.new("battle_body_contact")
+	var allies: Array = DataRegistry.get_table("formation_allies").get("allies", [])
+	for definition in allies:
+		var cells := int(definition.get("footprint_cells", 1))
+		h.expect(cells >= 3, "formation_ally_body", "Large formation allies need an explicit simulation footprint")
+		var giant := Sim._fighter_from_def(definition, 0, "player", 0, 26, 1, false, true)
+		var small := fighter("small", Vector2(500,260))
+		h.expect(Sim.body_radius(giant) >= 45.0, "formation_radius", "Formation body must not fall back to a normal 15px radius")
+		h.expect(Sim._effective_attack_distance(giant, small) >= Sim.body_radius(giant) + Sim.body_radius(small), "formation_reach", "A large melee body must still be able to reach its opponent")
 	var pair := [fighter("a", Vector2(500,260),2),fighter("b",Vector2(501,260),2)]
 	for tick in 4: Sim._separate_units(pair, [])
 	h.expect(penetration(pair) <= 0.1, "large_pair", "Two large units must not remain permanently interpenetrating")
