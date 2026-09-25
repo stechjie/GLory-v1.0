@@ -25,3 +25,9 @@ still includes the font.
 Reproduction and regression check: `tools/font_fallback_check.gd` disables system
 font fallback while checking Chinese glyphs in the default theme and all locale
 strings. It also checks that Latin text metrics remain unchanged.
+
+The regression check additionally shapes the mixed Chinese/Latin lobby strings
+and fullwidth `：（）｜` punctuation in all default theme font variants. It first
+removes the bundled fallback to prove that the missing-glyph condition is detected,
+then restores it and checks 52 shaped runs with system fallback disabled. This
+does not replace screenshot and logcat verification on the target emulator.
