@@ -13,6 +13,8 @@ _redact() 负责这件事，改动本文件时先看它。
 
 from __future__ import annotations
 
+import base64
+import json
 import logging
 from dataclasses import dataclass
 
@@ -150,3 +152,104 @@ class SupabaseAuth:
                 resp.status_code,
             )
         return self._to_session(resp.json())
+
+
+# --- 网页后台：邮箱密码 + 手机验证器（docs/运营后台设计.md 第四节）------------------------
+#
+# 只给管理员用。玩家从来不走这几条 —— 玩家是匿名账号。
+# 这几个调用拿的都是**管理员自己的**会话令牌，不是 secret key。
+
+
+@dataclass(frozen=True)
+class PasswordLogin:
+    """密码对了之后的一半会话（aal1）。还要过手机验证器才算登录。"""
+
+    auth_uid: str
+    access_token: str
+    # 已经绑好的手机验证器（TOTP）的 factor id。空 = 还没绑。
+    verified_factor: str
+    # 绑到一半（扫了码没输对）留下的，重新绑之前要删掉。
+    unverified_factors: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class Enrollment:
+    factor_id: str
+    qr_code: str   # data:image/svg+xml;… 直接放进 <img src>
+    secret: str    # 扫不了码时手动输入
+
+
+def jwt_claim(token: str, name: str) -> str:
+    """读 JWT 里的一个字段，**不验签**。只用在刚从 Supabase 直接拿回来的令牌上。"""
+    try:
+        payload = token.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        return str(json.loads(base64.urlsafe_b64decode(payload)).get(name, ""))
+    except (IndexError, ValueError):
+        return ""
+
+
+class SupabaseAdminAuth(SupabaseAuth):
+    def _as_user(self, access_token: str) -> dict[str, str]:
+        return {"apikey": self._key, "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"}
+
+    async def _post_json(self, path: str, headers: dict, body: dict, what: str,
+                         params: dict | None = None) -> dict:
+        async with self._client() as client:
+            resp = await client.post(f"{self._base}{path}", headers=headers, json=body, params=params)
+        if resp.status_code >= 400:
+            # 不把请求体拼进错误：里面有密码 / 验证码。
+            raise AuthError(f"{what}被拒绝（HTTP {resp.status_code}）：{_redact(resp.text)}", resp.status_code)
+        return resp.json()
+
+    async def sign_in_password(self, email: str, password: str) -> PasswordLogin:
+        payload = await self._post_json(
+            "/auth/v1/token", self._headers(), {"email": email, "password": password}, "邮箱密码登录",
+            params={"grant_type": "password"})
+        user = payload.get("user") or {}
+        verified = ""
+        unverified: list[str] = []
+        for factor in user.get("factors") or []:
+            if str(factor.get("factor_type", "")) != "totp":
+                continue
+            if str(factor.get("status", "")) == "verified":
+                verified = verified or str(factor.get("id", ""))
+            else:
+                unverified.append(str(factor.get("id", "")))
+        access = str(payload.get("access_token") or "")
+        uid = str(user.get("id") or "")
+        if not (access and uid):
+            raise AuthError("Supabase 返回的登录结果缺少 access_token 或 user.id")
+        return PasswordLogin(uid, access, verified, tuple(u for u in unverified if u))
+
+    async def unenroll(self, access_token: str, factor_id: str) -> None:
+        async with self._client() as client:
+            resp = await client.delete(f"{self._base}/auth/v1/factors/{factor_id}",
+                                       headers=self._as_user(access_token))
+        if resp.status_code >= 400 and resp.status_code != 404:
+            raise AuthError(f"清理没绑完的验证器被拒绝（HTTP {resp.status_code}）：{_redact(resp.text)}",
+                            resp.status_code)
+
+    async def enroll_totp(self, access_token: str, friendly_name: str) -> Enrollment:
+        payload = await self._post_json(
+            "/auth/v1/factors", self._as_user(access_token),
+            {"factor_type": "totp", "friendly_name": friendly_name, "issuer": "Glory 运营后台"},
+            "绑定手机验证器")
+        totp = payload.get("totp") or {}
+        factor_id = str(payload.get("id") or "")
+        if not factor_id or not totp.get("qr_code"):
+            raise AuthError("Supabase 没有返回验证器的二维码（项目里可能没开 MFA 的 TOTP）")
+        return Enrollment(factor_id, str(totp.get("qr_code")), str(totp.get("secret") or ""))
+
+    async def verify_totp(self, access_token: str, factor_id: str, code: str) -> str:
+        """出一道题再用验证码答它。返回过了两步验证（aal2）的 access token。"""
+        challenge = await self._post_json(
+            f"/auth/v1/factors/{factor_id}/challenge", self._as_user(access_token), {}, "验证器出题")
+        payload = await self._post_json(
+            f"/auth/v1/factors/{factor_id}/verify", self._as_user(access_token),
+            {"challenge_id": str(challenge.get("id") or ""), "code": code}, "验证码")
+        token = str(payload.get("access_token") or "")
+        if jwt_claim(token, "aal") != "aal2":
+            raise AuthError("验证码通过了，但 Supabase 返回的令牌不是两步验证级别（aal2）")
+        return token

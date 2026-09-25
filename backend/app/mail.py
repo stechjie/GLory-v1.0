@@ -198,9 +198,9 @@ class ClaimResult:
 async def _claim_locked(
     conn: asyncpg.Connection, player_id: uuid.UUID, mail: Mail,
 ) -> tuple[list[str], list[str], shop.Wallet | None] | None:
-    """在事务里领一封。已经领过返回 None。
+    """在事务里领一封。已经领过返回 None；这期间被撤回 / 过期了抛 MailRejected。
 
-    🔴 顺序：锁状态行 → 发钱 → 发东西 → 记 claimed_at。见模块开头。
+    🔴 顺序：锁状态行 → 确认邮件还在 → 发钱 → 发东西 → 记 claimed_at。见模块开头。
     """
     # 先保证有行，for update 才锁得到东西（同 shop._lock_wallet 的理由）。
     await conn.execute(
@@ -213,6 +213,17 @@ async def _claim_locked(
     )
     if state["claimed_at"] is not None:
         return None
+    # 🔴 在事务里再确认一次这封还在。调用方的可见性检查（_visible / list_mail）在事务外，
+    # 两步之间管理员撤回、或者刚好过期，不再查就会照样发出去。
+    #
+    # for share 与 withdraw_mail 的 update 互斥：撤回先提交，这里读到的是撤回后的行；
+    # 这里先锁住，撤回等这笔领完再生效 —— 已经领走的本来就收不回，两种结果都对得上账。
+    live = await conn.fetchval(
+        "select withdrawn_at is null and expires_at > now() from mails where mail_id = $1 for share",
+        mail.mail_id,
+    )
+    if not live:
+        raise MailRejected(*NOT_FOUND)
 
     wallet: shop.Wallet | None = None
     changes: dict[str, int] = {}
@@ -276,8 +287,11 @@ async def claim_all(player_id: uuid.UUID) -> ClaimResult:
     skipped: list[str] = []
     async with db.pool().acquire() as conn:
         for mail in pending:
-            async with conn.transaction():
-                done = await _claim_locked(conn, player_id, mail)
+            try:
+                async with conn.transaction():
+                    done = await _claim_locked(conn, player_id, mail)
+            except MailRejected:
+                continue   # 列表拉出来之后被撤回 / 过期了，这一封的事务已回滚
             if done is None:
                 continue   # 另一台设备刚领走
             ids.append(mail.mail_id)

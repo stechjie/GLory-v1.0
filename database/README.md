@@ -73,6 +73,15 @@ Supabase Dashboard → SQL Editor，按编号顺序逐个执行。
 | `010_shop.sql` | 商城归属与订单。归属存**内容 id**不存商品 id；订单幂等键 `(player_id, client_order_id)`；`external_id` 唯一索引留给充值去重 |
 | `011_loadout.sql` | 出战种族搬到账号服务器（`players.selected_races`）。出战名片要给它盖章，账号服务器得先知道它。只管格式，「必须几个」归战斗服务器 |
 | `012_mail.sql` | 系统邮件。一封群发只存一行，读 / 领 / 删才在 `mail_states` 落行；`wallet_ledger` 加 `mail_id`。附 `send_mail()` / `send_mail_all()` / `withdraw_mail()`，**管理员只走这三个函数**。邮件行不删 |
+| `013_match_history.sql` | 对局历史。战斗服务器签名的战报，按 `match_uid` 去重；一局六个座位 |
+| `014_ranked.sql` | 排位分、信誉分与信誉事件。段位不存，是分数切片 |
+| `015_ranked_seasons.sql` | 赛季、赛季奖励、赛季归档。附 `settle_season()`，幂等靠认领 `settled_at` |
+| `016_bans.sql` | 封号。附 `ban_player()` / `unban_player()`（按好友码）；`ban_refresh_handoff` 寄存被封期间续期换出来的凭证（为什么见文件内）。设计见 `docs/运营后台设计.md` |
+| `017_account_deletion.sql` | 注销 = 删资料、留账目。`erase_player()` 删资料与社交、换好友码，账目保留；`players.deleted_at` |
+| `018_admin.sql` | 网页运营后台：管理员名单、发钱的审批、只追加的操作记录；附 `grant_coin()` |
+
+**真库测试**：`backend/tests/pg_harness.py` 能在本机 PostgreSQL 上把这里全部文件跑一遍再测（设 `GLORY_TEST_PG`，只许本机）。
+见 `docs/运营后台设计.md` 第七节。
 
 ## 一条硬规则
 

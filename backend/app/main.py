@@ -18,11 +18,13 @@ import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
-from app import (admission, announcements, db, mail, maintenance, matchmaking,
+from app import (admin, admission, announcements, bans, db, mail, maintenance, matchmaking,
                  realtime, seasons, single_instance)
 from app.config import get_settings
+from app.routes import admin as admin_routes
 from app.routes import announcements as announcement_routes
 from app.routes import auth as auth_routes
 from app.routes import battle_report as battle_report_routes
@@ -124,10 +126,12 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # 赛季结算（app/seasons.py）：每 5 分钟看一眼有没有到点的赛季。
     # 幂等不靠这个循环 —— 在 database/015 的 settle_season() 里认领 settled_at。
     seasonal = asyncio.create_task(seasons.loop())
+    # 封号（app/bans.py）：每 10 秒看一眼在线的人里有没有刚被封的，有就踢下线。
+    banhammer = asyncio.create_task(bans.loop())
     try:
         yield
     finally:
-        for task in (sweeper, cleaner, admitter, notices, postman, matcher, seasonal):
+        for task in (sweeper, cleaner, admitter, notices, postman, matcher, seasonal, banhammer):
             task.cancel()
             with suppress(asyncio.CancelledError):
                 await task
@@ -160,6 +164,27 @@ app = FastAPI(
     **doc_urls(settings.is_dev),
 )
 
+
+@app.exception_handler(bans.AccountBanned)
+async def account_banned(_request: Request, exc: bans.AccountBanned) -> JSONResponse:
+    """被封的玩家调任何接口都走到这里（app/bans.py）。
+
+    🔴 **403，不是 401** —— 旧版客户端收到 401 会清凭证、自动注册新号。
+    detail 是一句完整的话：旧版客户端只会原样显示 detail。新版看 code 与 ban 自己排版。
+    """
+    return JSONResponse(status_code=403, content={
+        "detail": exc.ban.message(),
+        "code": bans.ERROR_CODE,
+        "ban": exc.ban.to_client(),
+    })
+
+
+@app.exception_handler(admin.AdminRejected)
+async def admin_rejected(_request: Request, exc: admin.AdminRejected) -> JSONResponse:
+    """网页后台的业务拒绝（app/admin.py）。message 直接显示在后台页面上。"""
+    return admin_routes.rejected_response(exc)
+
+
 app.include_router(auth_routes.router)
 app.include_router(me_routes.router)
 app.include_router(profile_routes.router)
@@ -174,6 +199,8 @@ app.include_router(battle_report_routes.router)
 app.include_router(matchmaking_routes.router)
 app.include_router(matchmaking_routes.me_router)
 app.include_router(ws_routes.router)
+# 网页运营后台（docs/运营后台设计.md）。只认后台自己的会话，不收玩家令牌。
+app.include_router(admin_routes.router)
 
 # 自检接口只在开发环境挂载。生产上它会把表结构和 RLS 状态说得太清楚，
 # 而且没有任何生产用途 —— 少一个入口就少一个面。

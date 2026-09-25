@@ -17,6 +17,7 @@ const ERROR_ENTRY_LOGIN := "BOOT-ENTRY-LOGIN"
 const ERROR_ENTRY_CONNECT := "BOOT-ENTRY-CONNECT"
 const ERROR_ENTRY_KICKED := "BOOT-ENTRY-KICKED"
 const ERROR_ENTRY_MAINTENANCE := "BOOT-ENTRY-MAINTENANCE"
+const ERROR_ENTRY_BANNED := "BOOT-ENTRY-BANNED"
 
 # 看门狗三级（V3 P0-10）。计时器由**进度**驱动而不只是阶段：慢但在推进的
 # 载入不该被叫做卡住，而阶段不变、进度也不动才是真的没动静。
@@ -335,6 +336,9 @@ func _drive_entry() -> void:
 			AccountManager.State.IDLE:
 				AccountManager.login()
 			AccountManager.State.FAILED:
+				# 被封：自动重试只会一遍遍被拒。解封了玩家自己点「重试」。
+				if AccountManager.is_banned():
+					return
 				if _entry_login_retry_at < 0.0:
 					_entry_login_retry_at = _entry_elapsed + _entry_login_backoff()
 				elif _entry_elapsed >= _entry_login_retry_at:
@@ -403,6 +407,7 @@ func _entry_facts() -> Dictionary:
 		login = "failed"
 	return {
 		"login": login,
+		"banned": AccountManager.is_banned(),
 		"rate_limited": AccountManager.last_failure == AccountManager.Failure.RATE_LIMITED,
 		"login_retry_in": _entry_login_retry_at - _entry_elapsed if _entry_login_retry_at >= 0.0 else -1.0,
 		"kicked": RealtimeService.is_kicked(),
@@ -419,6 +424,9 @@ func _entry_facts() -> Dictionary:
 # 这一步显示什么、放不放行。**纯函数** —— tools/bootstrap_check 直接喂事实表测它，
 # 不用真的去连账号后端。state 是稳定标识，文案在 _show_entry 里按它拼。
 static func entry_view(facts: Dictionary) -> Dictionary:
+	# 被封压过一切，包括「放行过」—— 游戏中被封回到这里时，名额那一侧还记着放行过。
+	if bool(facts.get("banned", false)):
+		return {"state": "banned", "actions": true}
 	if bool(facts.get("admitted", false)):
 		return {"state": "pass", "pass": true}
 	match str(facts.get("login", "working")):
@@ -474,6 +482,10 @@ func _show_entry(view: Dictionary) -> void:
 			if retry_in >= 0:
 				countdown = _tr_text("%d 秒后自动重试。" % retry_in, "Retrying in %d s." % retry_in)
 			error = _entry_error(reason + countdown, ERROR_ENTRY_LOGIN)
+		"banned":
+			title = _tr_text("账号已被封禁", "Account suspended")
+			error = _entry_error(ban_text(AccountManager.ban_info, LocaleManager.get_locale().begins_with("en")),
+				ERROR_ENTRY_BANNED)
 		"kicked":
 			title = _tr_text("账号在另一台设备登录", "Signed in elsewhere")
 			error = _entry_error(_tr_text("你的账号正在另一台设备上使用。在这台设备上继续，会让另一台设备下线。",
@@ -515,6 +527,30 @@ func _show_entry(view: Dictionary) -> void:
 		_error_text.text = error
 		_retry_button.text = _tr_text("在这台设备上继续", "Continue here") if _entry_state == "kicked" \
 			else _tr_text("重试", "Retry")
+
+
+# 被封的说明：原因 + 到什么时候。**纯函数**，tools/bootstrap_check 直接测。
+# ends_at 是后端给的 UTC 时间（backend/app/bans.py 的 to_client），这里换成本机时区显示。
+static func ban_text(info: Dictionary, english: bool, zone_bias_min: int = -99999) -> String:
+	var reason := str(info.get("reason", "")).strip_edges()
+	var ends_at: Variant = info.get("ends_at")
+	var until := ""
+	if ends_at == null or str(ends_at).is_empty():
+		until = "Permanent." if english else "永久封禁。"
+	else:
+		var unix := ServiceStatus.parse_iso_utc(str(ends_at))
+		if unix > 0:
+			if zone_bias_min == -99999:
+				zone_bias_min = int(Time.get_time_zone_from_system().get("bias", 0))
+			var local := Time.get_datetime_string_from_unix_time(unix + zone_bias_min * 60, true).substr(0, 16)
+			until = ("Until %s." % local) if english else ("封禁到 %s。" % local)
+	var lines: PackedStringArray = []
+	if not reason.is_empty():
+		lines.append(("Reason: %s" % reason) if english else ("原因：%s" % reason))
+	if not until.is_empty():
+		lines.append(until)
+	lines.append("If you think this is a mistake, contact support." if english else "如有疑问请联系客服。")
+	return "\n".join(lines)
 
 
 func _entry_error(message: String, code: String) -> String:

@@ -118,6 +118,13 @@ EXPECTED_TABLES: tuple[str, ...] = (
     "ranked_seasons",
     "ranked_season_rewards",
     "player_ranked_history",
+    # 016（封号）
+    "player_bans",
+    "ban_refresh_handoff",
+    # 018（网页运营后台）
+    "admin_users",
+    "admin_requests",
+    "admin_audit",
 )
 
 

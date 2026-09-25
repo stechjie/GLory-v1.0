@@ -16,7 +16,7 @@ import uuid
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app import db, players
+from app import bans, db, players
 from app.config import get_settings
 from app.rate_limit import RateLimited, SlidingWindowLimiter
 from app.supabase_auth import AuthError, Session, SupabaseAuth
@@ -192,11 +192,27 @@ async def refresh(body: RefreshRequest, request: Request) -> SessionResponse:
     _enforce(_refresh_limiter, request)
     _require_db()
     client = _auth_client()
+    # 🔴 被封期间换出来的新凭证寄存在这里（database/016 的 ban_refresh_handoff，为什么见那里）。
+    # 还封着就直接 403，**不碰 Supabase** —— 拿旧凭证再去续会被当成重放，整条会话作废。
+    handoff = await bans.find_handoff(body.refresh_token)
+    if handoff is not None:
+        await bans.ensure_not_banned(handoff.player_id)
+    token = body.refresh_token if handoff is None else handoff.next_token
     try:
-        session = await client.refresh(body.refresh_token)
+        session = await client.refresh(token)
     except AuthError as exc:
         # 401：这个 refresh token 不能用了（过期、已轮换、被吊销）。
         # 客户端收到 401 应当丢掉本地凭证、重新走 /anonymous。
         status = 401 if exc.status in (400, 401, 403) else 502
         raise HTTPException(status_code=status, detail=str(exc)) from None
-    return await _respond(session, None)
+    try:
+        response = await _respond(session, None)
+    except bans.AccountBanned as exc:
+        # Supabase 已经把玩家手上那张换掉了，新的这张不能丢（见上）。
+        await bans.hold_handoff(body.refresh_token, exc.ban.player_id, session.refresh_token)
+        raise
+    if handoff is not None:
+        # 解封后第一次回来。**不删行、改存最新的一张**：这次的回复要是没送到，
+        # 客户端还会拿同一张旧凭证来，那时还能接上。玩家一续期，存着的这张就作废了。
+        await bans.hold_handoff(body.refresh_token, handoff.player_id, session.refresh_token)
+    return response

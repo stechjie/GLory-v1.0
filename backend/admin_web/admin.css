@@ -1,0 +1,107 @@
+/* Glory 运营后台。内部工具：清楚、密一点、危险操作显眼。 */
+
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --line: #dde1e7;
+  --text: #1d2330;
+  --muted: #667085;
+  --accent: #2f5bd3;
+  --accent-soft: #e8eefc;
+  --danger: #c0352b;
+  --danger-soft: #fdecea;
+  --ok: #1d7a46;
+  --ok-soft: #e6f4ec;
+  --warn: #9a6200;
+  --warn-soft: #fff4dc;
+  --radius: 8px;
+  font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  color: var(--text);
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); }
+.boot { padding: 40px; color: var(--muted); }
+
+/* --- 顶栏 --- */
+.topbar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 20px; background: var(--surface); border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; z-index: 5;
+}
+.topbar h1 { font-size: 16px; margin: 0 8px 0 0; }
+.env { padding: 3px 10px; border-radius: 999px; font-weight: 600; font-size: 12px; }
+.env.prod { background: var(--danger); color: #fff; }
+.env.dev { background: var(--warn-soft); color: var(--warn); }
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; flex: 1; }
+.tabs button { background: none; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; color: var(--muted); font-size: 14px; }
+.tabs button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.badge { display: inline-block; min-width: 18px; padding: 0 6px; margin-left: 4px; border-radius: 999px; background: var(--danger); color: #fff; font-size: 12px; line-height: 18px; text-align: center; }
+.who { color: var(--muted); }
+
+main { max-width: 1180px; margin: 0 auto; padding: 20px; }
+
+/* --- 卡片与表单 --- */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px; }
+.card h2 { font-size: 15px; margin: 0 0 12px; }
+.card h3 { font-size: 14px; margin: 14px 0 8px; }
+.hint { color: var(--muted); font-size: 13px; margin: 4px 0 10px; line-height: 1.5; }
+.row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; min-width: 140px; }
+.field.grow { flex: 1; min-width: 220px; }
+.field > span { font-size: 12px; color: var(--muted); }
+input, select, textarea {
+  font: inherit; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--text);
+}
+textarea { min-height: 72px; resize: vertical; }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+label.check { display: flex; gap: 6px; align-items: center; margin: 4px 12px 10px 0; }
+
+button.btn {
+  font: inherit; padding: 7px 14px; border-radius: 6px; border: 1px solid var(--line); background: #fff; cursor: pointer;
+}
+button.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+button.btn.small { padding: 3px 9px; font-size: 13px; }
+button.btn:disabled { opacity: .45; cursor: not-allowed; }
+
+.notice { padding: 10px 12px; border-radius: 6px; margin: 8px 0 12px; line-height: 1.5; }
+.notice.error { background: var(--danger-soft); color: var(--danger); }
+.notice.ok { background: var(--ok-soft); color: var(--ok); }
+.notice.warn { background: var(--warn-soft); color: var(--warn); }
+
+/* --- 表格 --- */
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 500; white-space: nowrap; }
+tr.click { cursor: pointer; }
+tr.click:hover td { background: var(--accent-soft); }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.pos { color: var(--ok); }
+.neg { color: var(--danger); }
+.muted { color: var(--muted); }
+.mono { font-family: Consolas, "SF Mono", monospace; font-size: 12px; }
+.tag { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 12px; background: var(--bg); border: 1px solid var(--line); }
+.tag.red { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
+.tag.green { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
+.tag.yellow { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+
+/* --- 玩家详情 --- */
+.facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px 16px; }
+.facts div > span { display: block; font-size: 12px; color: var(--muted); }
+.money { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.money div { background: var(--bg); border-radius: 6px; padding: 8px 14px; }
+.money b { font-size: 18px; font-variant-numeric: tabular-nums; }
+.money span { display: block; font-size: 12px; color: var(--muted); }
+.banned { border: 2px solid var(--danger); }
+
+/* --- 登录 --- */
+.login { max-width: 380px; margin: 80px auto; }
+.login img.qr { width: 200px; height: 200px; display: block; margin: 8px auto; background: #fff; }
+
+@media (max-width: 640px) {
+  main { padding: 12px; }
+  .topbar { padding: 8px 12px; }
+}

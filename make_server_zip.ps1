@@ -232,8 +232,11 @@ try {
         # 线上用的是账号服务器那把的公钥，见 deploy/BATTLE_SERVER_KEY.md「出战名片公钥」。
         # 路径不能带空格：Start-Process 的 -ArgumentList 在 5.1 里不给参数加引号。
         $smokeCardKey = Join-Path $smokeDir "smoke_battle_card_public.pem"
+        # --dedicated-server：让各 autoload 按专服跳过客户端的事（字体回退、公告、邮件……）。
+        # 不加的话字体回退会在没有导入数据的包里加载字体，刷 3 行无害但吓人的红色 ERROR。
+        # 它不会起服：起服只看 ServerMain 场景，这里跑的是单独的 --script。
         $keyProc = Start-Process -FilePath $Godot -PassThru -NoNewWindow `
-            -ArgumentList @("--headless", "--path", $smokeDir, "--script", "res://tools/make_smoke_card_key.gd",
+            -ArgumentList @("--headless", "--path", $smokeDir, "--dedicated-server", "--script", "res://tools/make_smoke_card_key.gd",
                             "--", "--out=$smokeCardKey")
         if (-not $keyProc.WaitForExit(60000)) { $keyProc.Kill(); $keyProc.WaitForExit() }
         if (-not (Test-Path $smokeCardKey)) {

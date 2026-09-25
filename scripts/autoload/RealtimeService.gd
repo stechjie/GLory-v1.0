@@ -33,6 +33,9 @@ enum State { OFFLINE, CONNECTING, ONLINE }
 # 对不上的症状是「弱网玩家成片掉线」或「幽灵连接清不掉」，两种都不会报错。
 const CLOSE_KICKED := 4001
 const CLOSE_IDLE := 4002
+# 账号被封（backend/app/bans.py）。服务端先发一条 BANNED_PUSH_TYPE 说明原因，再用这个码关。
+const CLOSE_BANNED := 4003
+const BANNED_PUSH_TYPE := "banned"
 # 服务端在 ready 里下发真实值，这个只是它还没到之前的兜底。
 const DEFAULT_PING_INTERVAL_SEC := 30.0
 
@@ -285,11 +288,17 @@ func _on_closed() -> void:
 		# 而"被顶号却当成掉线一直重连"正是最不能出的错。
 		_mark_kicked()
 		return
+	if code == CLOSE_BANNED:
+		# 同上：说明原因的那条消息弱网下可能没读到，关闭码兜底。
+		_mark_banned({})
+		return
 	_schedule_reconnect()
 
 
 func _drain_packets() -> void:
-	while _socket.get_available_packet_count() > 0:
+	# _socket != null：kicked / banned 在 _handle 里就把连接关掉、置空了，
+	# 不判的话下一轮循环在空对象上取包，脚本报错中断。
+	while _socket != null and _socket.get_available_packet_count() > 0:
 		var raw := _socket.get_packet().get_string_from_utf8()
 		var parsed: Variant = JSON.parse_string(raw)
 		if typeof(parsed) != TYPE_DICTIONARY:
@@ -316,6 +325,9 @@ func _handle(payload: Dictionary) -> void:
 			pass
 		"kicked":
 			_mark_kicked()
+		BANNED_PUSH_TYPE:
+			var ban: Variant = payload.get("ban", {})
+			_mark_banned(ban if ban is Dictionary else {})
 		ADMISSION_TYPE:
 			_apply_admission(payload)
 		_:
@@ -351,6 +363,16 @@ func _mark_kicked() -> void:
 	# 在玩家眼里就是崩溃或掉线，他会去截图报 bug，而不会想到"号被别人登了"。
 	# 谁弹、什么时候弹由界面层决定（对局中先挂提示，回主界面再弹）。
 	kicked_by_other_device.emit()
+
+
+# 账号被封：不再重连（重连也只会被拒），状态交给 AccountManager —— 它是「封没封」的唯一出处，
+# Main 看它决定回启动页，启动页看它显示原因。解封后重新登录成功会走 start() 再连。
+func _mark_banned(info: Dictionary) -> void:
+	_want_connection = false
+	_close_socket(1000)
+	state = State.OFFLINE
+	set_process(false)
+	AccountManager.note_banned(info)
 
 
 # --- 设备标识 -----------------------------------------------------------------

@@ -423,10 +423,18 @@ sudo /opt/glory/venv/bin/python /opt/glory/repo/deploy/make_battle_report_key.py
 ⚠️ **不要放进项目的 `tools/`** —— `make_server_zip.ps1` 会把整个 `tools/`
 打进战斗服务器包，等于把私钥发给每一个拿到包的人。
 
+属主是**跑 glory-server 的那个用户**（上文 DTLS 第 0 步查到的 `User=`），**不是** `glory` ——
+`glory` 是账号服务器的用户。写成 `glory:glory` 的话私钥是 600、战斗服务器读不到，
+启动日志照样是「战报私钥不可用」（这里原来就写错成 `glory:glory`，2026-09-24 改正）。
+
+glory-server-2 上两个服务在同一台机器，第 1 步生成在 `/tmp` 的私钥直接 `mv` 过去，不用上传下载：
+
 ```bash
-# 战斗服务器上
-sudo chown glory:glory <目录>/battle_report_key.pem
-sudo chmod 600 <目录>/battle_report_key.pem
+# glory-server-2（User=nins17121）
+D="/home/nins17121/.local/share/godot/app_userdata/Glory Beta 0.04"
+sudo mv /tmp/battle_report_key.pem "$D/battle_report_key.pem"
+sudo chown nins17121:nins17121 "$D/battle_report_key.pem"
+sudo chmod 600 "$D/battle_report_key.pem"
 sudo systemctl restart glory-server
 ```
 

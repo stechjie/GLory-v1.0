@@ -500,6 +500,11 @@ func _watch_account_link(delta: float) -> void:
 	if not _should_watch_account_link():
 		_account_offline_sec = 0.0
 		return
+	# 被封：不等耐心值，直接回启动页显示原因（backend/app/bans.py）。
+	# 对局中不走这里（上面那道已经挡住）—— 在打的那一局照常打完，打完回菜单时再回。
+	if AccountManager.is_banned():
+		_return_to_login("账号被封")
+		return
 	if RealtimeService.is_online():
 		_account_offline_sec = 0.0
 		return
@@ -523,11 +528,13 @@ func _should_watch_account_link() -> bool:
 	return true
 
 
-func _return_to_login() -> void:
+func _return_to_login(reason := "") -> void:
 	if _returning_to_login:
 		return
 	_returning_to_login = true
-	push_warning("[MAIN] 账号服务器连不上已超过 %.0f 秒，回启动页" % AccountConfig.CONNECT_PATIENCE_SEC)
+	if reason.is_empty():
+		reason = "账号服务器连不上已超过 %.0f 秒" % AccountConfig.CONNECT_PATIENCE_SEC
+	push_warning("[MAIN] %s，回启动页" % reason)
 	# 启动页会重新 start()（它在连着时是空操作），并按现有流程显示
 	# 「连接中 / 连不上 / 维护中」。这里不 stop()：留着自动重连，
 	# 服务器一回来启动页就能直接放行，玩家不用多等一轮。
