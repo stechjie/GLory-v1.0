@@ -24,8 +24,15 @@ const STEP_TARGETS := {
 	TutorialScript.Step.UPGRADE_OTHERS: ProviderScript.TARGET_UPGRADE_UNIT,
 	TutorialScript.Step.BOND_HINT: ProviderScript.TARGET_BOND_ROW,
 	TutorialScript.Step.VIEW_TREASURE: ProviderScript.TARGET_TREASURE_LOGO,
+	# 9.25 萝卜 / 四星教学：营地关着时（默认状态）这几步都先指营地入口，
+	# 收获萝卜那一步指萝卜数量。营地打开后的逐级目标见 _check_carrot_sub_targets()。
+	TutorialScript.Step.CARROT_CAMP: ProviderScript.TARGET_CARROT_CAMP,
+	TutorialScript.Step.HARVEST_UPGRADE: ProviderScript.TARGET_CARROT_CAMP,
 	TutorialScript.Step.START_BOSS: ProviderScript.TARGET_START_BATTLE,
 	TutorialScript.Step.TAKE_TREASURE_2: ProviderScript.TARGET_TREASURE_CHOICE,
+	TutorialScript.Step.CARROT_HARVEST: ProviderScript.TARGET_CARROT_COUNTER,
+	TutorialScript.Step.DRAW_STONE: ProviderScript.TARGET_CARROT_CAMP,
+	TutorialScript.Step.FOUR_STAR: ProviderScript.TARGET_CARROT_CAMP,
 	TutorialScript.Step.HIRE_MERC: ProviderScript.TARGET_HIRE_MERCENARY,
 	TutorialScript.Step.FILL_7: ProviderScript.TARGET_FILL_SEVEN,
 	TutorialScript.Step.FORMATION_HP: ProviderScript.TARGET_FORMATION_HP,
@@ -104,6 +111,8 @@ func _check_fake_provider_contract() -> void:
 		_h.expect(str(request.get("provider", "")) == "FakeProvider",
 			"provider_name_missing", "目标请求没有记录 provider")
 
+	_check_carrot_sub_targets(tutorial, fake)
+
 	_h.expect(fake.request_action(ProviderScript.ACTION_CLOSE_MERCENARY),
 		"close_action_unbound", "关闭佣兵动作没有绑定")
 	_h.expect(fake.request_action(ProviderScript.ACTION_REFRESH_VIEW),
@@ -170,6 +179,37 @@ func _check_live_prep_adapter() -> void:
 				"Prep provider 的语义目标 %s 在实屏上解析不到 Control" % str(target_id))
 	prep.queue_free()
 	await get_tree().process_frame
+
+
+# 营地打开之后，一个步骤里按「营地开合 / 当前页签 / 是否已完成」依次换目标。
+# 直接写 TutorialMode 的界面状态字段：走 record_carrot_camp_state() 会触发 sync()
+# 把步骤往前推，这里只验「状态 -> 目标」的映射。
+func _check_carrot_sub_targets(tutorial: TutorialScript, fake: ProviderScript) -> void:
+	var saved_level := GameState.harvest_tech_level
+	var cases := [
+		[TutorialScript.Step.HARVEST_UPGRADE, true, TutorialScript.CAMP_PAGE_STONE, 0, ProviderScript.TARGET_CARROT_CAMP_TAB],
+		[TutorialScript.Step.HARVEST_UPGRADE, true, TutorialScript.CAMP_PAGE_CAMP, 0, ProviderScript.TARGET_HARVEST_UPGRADE],
+		[TutorialScript.Step.HARVEST_UPGRADE, true, TutorialScript.CAMP_PAGE_CAMP, 1, ProviderScript.TARGET_CARROT_CLOSE],
+		[TutorialScript.Step.DRAW_STONE, true, TutorialScript.CAMP_PAGE_CAMP, 1, ProviderScript.TARGET_CARROT_STONE_TAB],
+		[TutorialScript.Step.DRAW_STONE, true, TutorialScript.CAMP_PAGE_STONE, 1, ProviderScript.TARGET_STONE_DRAW],
+		[TutorialScript.Step.FOUR_STAR, true, TutorialScript.CAMP_PAGE_CAMP, 1, ProviderScript.TARGET_CARROT_STONE_TAB],
+		[TutorialScript.Step.FOUR_STAR, true, TutorialScript.CAMP_PAGE_STONE, 1, ProviderScript.TARGET_FOUR_STAR_ROW],
+	]
+	for c in cases:
+		tutorial.step = int(c[0])
+		tutorial._camp_open = bool(c[1])
+		tutorial._camp_page = int(c[2])
+		GameState.harvest_tech_level = int(c[3])
+		tutorial.update_overlay()
+		var request := fake.last_request_snapshot()
+		_h.item()
+		_h.expect(str(request.get("target", "")) == str(c[4]), "wrong_carrot_sub_target",
+			"步骤 %s（营地开=%s 页=%d 采集=%d）请求了 %s，期望 %s" % [
+				str(TutorialScript.Step.keys()[int(c[0])]), str(c[1]), int(c[2]), int(c[3]),
+				str(request.get("target", "")), str(c[4])])
+	tutorial._camp_open = false
+	tutorial._camp_page = TutorialScript.CAMP_PAGE_CAMP
+	GameState.harvest_tech_level = saved_level
 
 
 func _return_control(control: Control) -> Control:

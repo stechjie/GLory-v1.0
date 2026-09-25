@@ -10,6 +10,11 @@ const TutorialArrowScript := preload("res://scripts/tutorial/TutorialArrow.gd")
 const GOLD_TEXT := "∞"
 const TUTORIAL_GOLD := 9999
 const TUTORIAL_HP := 10
+# 9.25：萝卜教学在 Boss 后一次性送出的萝卜。够抽一次升级石（50）再雇两个佣兵。
+const TUTORIAL_CARROT_GIFT := 100
+# 萝卜营地面板的两个页签（CarrotCampPanelV3._show_page 的下标）。
+const CAMP_PAGE_CAMP := 0
+const CAMP_PAGE_STONE := 1
 
 enum Step {
 	BUY_3,
@@ -22,8 +27,15 @@ enum Step {
 	UPGRADE_OTHERS,
 	BOND_HINT,
 	VIEW_TREASURE,
+	# 9.25 萝卜 / 四星教学（方案 B）：Boss 前先开营地、升级采集；
+	# Boss 后看到升级带来的收获，再领萝卜 → 抽升级石 → 升四星 → 用萝卜雇佣兵。
+	CARROT_CAMP,
+	HARVEST_UPGRADE,
 	START_BOSS,
 	TAKE_TREASURE_2,
+	CARROT_HARVEST,
+	DRAW_STONE,
+	FOUR_STAR,
 	HIRE_MERC,
 	FILL_7,
 	FORMATION_HP,
@@ -46,8 +58,13 @@ const STEP_SEQUENCE: Array = [
 	Step.BOND_HINT,
 	Step.VIEW_TREASURE,
 	Step.FORMATION_HP,
+	Step.CARROT_CAMP,
+	Step.HARVEST_UPGRADE,
 	Step.START_BOSS,
 	Step.TAKE_TREASURE_2,
+	Step.CARROT_HARVEST,
+	Step.DRAW_STONE,
+	Step.FOUR_STAR,
 	Step.HIRE_MERC,
 	Step.FILL_7,
 	Step.FORMATION_HP,
@@ -114,6 +131,17 @@ var _fill_shop_open := false
 var _fill_compensated := 0
 # 进度条指针，指向 STEP_SEQUENCE 的下标；只增不减。
 var _progress_index := 0
+
+# --- 萝卜 / 四星教学状态（9.25）------------------------------------------------
+# 营地开合与当前页签由 PrepUI 在真实开合/切页时经 record_carrot_camp_state() 上报，
+# 与 record_shop_toggled() 同一种接线：不轮询面板可见性、不伸手读 PrepScreen 的字段。
+# 这两项是纯界面状态，不进断点（重建备战页时营地一定是关着的，见 attach()）。
+var _camp_open := false
+var _camp_page := CAMP_PAGE_CAMP
+# 教学里只收获一次（Boss 后）。收获与领奖都要幂等：sync() 会被反复调用。
+var _carrot_harvested := false
+var _carrot_harvest_gain := 0
+var _carrot_gift_claimed := false
 # 教学 PVP 步的伪造对手棋盘（原先借用 NetworkService.opponent_board_snapshot，
 # 1v1 联机删除后由教学模式自持，BattleSimulator 的教学 PVP 路径从这里读）。
 var opponent_snapshot: Dictionary = {}
@@ -160,6 +188,7 @@ func start() -> void:
 	bought_units = 0
 	_progress_index = 0
 	_end_fill_step()
+	_reset_carrot_tutorial()
 	# 重新开始教程：旧断点必须先清掉，否则下次启动会把玩家拽回上一局的进度。
 	clear_checkpoint()
 	GameState.reset_run()
@@ -183,6 +212,9 @@ func attach(provider: TutorialTargetProviderScript) -> void:
 	if not active:
 		return
 	_target_provider = provider
+	# 每次挂到新建的备战页上，萝卜营地都是关着的、停在「营地」页。
+	_camp_open = false
+	_camp_page = CAMP_PAGE_CAMP
 	_ensure_overlay()
 	sync()
 	update_overlay()
@@ -227,8 +259,27 @@ func sync() -> void:
 		_refresh_prep()
 	if step == Step.UPGRADE_OTHERS and _unit_star("human_archer") >= 2 and _unit_star("human_merchant") >= 2:
 		_advance_to(Step.BOND_HINT)
+	# --- 9.25 萝卜 / 四星教学 ---
+	if step == Step.CARROT_CAMP and _camp_open:
+		_advance_to(Step.HARVEST_UPGRADE)
+	# 升级完还要玩家自己关掉营地（营地盖住了「开始战斗」），关掉才进 Boss。
+	if step == Step.HARVEST_UPGRADE and GameState.harvest_tech_level >= 1 and not _camp_open:
+		_advance_to(Step.START_BOSS)
 	if step == Step.TAKE_TREASURE_2 and GameState.owned_treasures.size() >= 2:
-		_advance_to(Step.HIRE_MERC)
+		_advance_to(Step.CARROT_HARVEST)
+	if step == Step.CARROT_HARVEST and not _carrot_harvested:
+		_run_tutorial_harvest()
+	if step == Step.DRAW_STONE:
+		_ensure_four_star_candidate()
+		_ensure_draw_budget()
+		if _stone_count() > 0:
+			_advance_to(Step.FOUR_STAR)
+	if step == Step.FOUR_STAR:
+		if _max_normal_star() >= GameState.MAX_UNIT_STAR:
+			_advance_to(Step.HIRE_MERC)
+			_refresh_prep()
+		else:
+			_ensure_four_star_path()
 	if step == Step.HIRE_MERC and _mercenary_count() >= 2:
 		if _target_provider != null:
 			_target_provider.request_action(
@@ -360,8 +411,21 @@ func current_text() -> String:
 			return _t("阵容变强了，点击开始战斗挑战 Boss。", "Your team is stronger. Start battle to challenge the Boss.")
 		Step.TAKE_TREASURE_2:
 			return _t("Boss 打完后，再选择一个宝藏强化阵容。", "After the Boss, choose another treasure to strengthen your team.")
+		Step.CARROT_CAMP:
+			return _t("新资源「萝卜」来了！点击右侧的「萝卜营地」。宠物每回合会自动收获萝卜，萝卜用来雇佣兵和抽升级石。",
+				"New resource: carrots! Tap Carrot Camp on the right. Your pet harvests carrots every round — spend them on mercenaries and upgrade stones.")
+		Step.HARVEST_UPGRADE:
+			return _harvest_upgrade_text()
+		Step.CARROT_HARVEST:
+			return _t("新回合开始，宠物自动收获了 %d 萝卜——升级后的采集生效了。点一下，领取教学奖励 %d 萝卜。" % [_carrot_harvest_gain, TUTORIAL_CARROT_GIFT],
+				"A new round: your pet harvested %d carrots — your harvest upgrade is working. Tap to claim a %d-carrot tutorial bonus." % [_carrot_harvest_gain, TUTORIAL_CARROT_GIFT])
+		Step.DRAW_STONE:
+			return _draw_stone_text()
+		Step.FOUR_STAR:
+			return _four_star_text()
 		Step.HIRE_MERC:
-			return _t("打开佣兵面板，召唤 2 个佣兵。佣兵是额外战力，但不算羁绊。", "Open the mercenary panel and hire 2 mercenaries. They are extra power but do not count for bonds.")
+			return _t("打开佣兵面板，用萝卜召唤 2 个佣兵。花掉的萝卜会让萝卜营地升级（容量、产量、金币收益都会提高）。佣兵是额外战力，但不算羁绊。",
+				"Open the mercenary panel and hire 2 mercenaries with carrots. Spending carrots levels up Carrot Camp (more capacity, yield and gold). Mercenaries add power but do not count for bonds.")
 		Step.FILL_7:
 			return _fill_step_text()
 		Step.FORMATION_HP:
@@ -512,6 +576,16 @@ func step_display_name() -> String:
 			return _t("挑战首领", "Boss Battle")
 		Step.TAKE_TREASURE_2:
 			return _t("再选宝藏", "Choose Again")
+		Step.CARROT_CAMP:
+			return _t("萝卜营地", "Carrot Camp")
+		Step.HARVEST_UPGRADE:
+			return _t("升级采集", "Upgrade Harvest")
+		Step.CARROT_HARVEST:
+			return _t("收获萝卜", "Carrot Harvest")
+		Step.DRAW_STONE:
+			return _t("抽升级石", "Draw a Stone")
+		Step.FOUR_STAR:
+			return _t("升到四星", "Reach 4-Star")
 		Step.HIRE_MERC:
 			return _t("召唤佣兵", "Hire Mercenaries")
 		Step.FILL_7:
@@ -543,6 +617,19 @@ func _update_progress() -> void:
 # 箭头朝向：目标在屏幕上方（开始战斗按钮、法阵水晶）要从下往上指，
 # 左侧面板（羁绊、已获宝藏）从右往左指，其余目标（商店、棋盘、待命区）从上往下指。
 func _arrow_dir() -> int:
+	# 萝卜 / 四星教学的几个目标按控件位置定朝向：
+	#   页签在营地面板顶部 -> 从上往下指；四星那一行的按钮在面板右缘 -> 从右往左指；
+	#   其余（右侧营地入口、萝卜数量、面板底部的升级/抽取按钮、右上角 ×）-> 从下往上指。
+	var carrot_target := _carrot_target_id()
+	if not carrot_target.is_empty():
+		match carrot_target:
+			TutorialTargetProviderScript.TARGET_CARROT_CAMP_TAB, \
+			TutorialTargetProviderScript.TARGET_CARROT_STONE_TAB:
+				return ArrowDir.DOWN
+			TutorialTargetProviderScript.TARGET_FOUR_STAR_ROW:
+				return ArrowDir.LEFT
+			_:
+				return ArrowDir.UP
 	match step:
 		Step.BOND_HINT, Step.VIEW_TREASURE:
 			return ArrowDir.LEFT
@@ -596,8 +683,8 @@ func _position_hotspot(rect: Rect2) -> void:
 			var pad := 10.0
 			_hotspot.position = rect.position - Vector2(pad, pad)
 			_hotspot.size = rect.size + Vector2(pad, pad) * 2.0
-		Step.FORMATION_HP:
-			# 讲解 HP 后，点屏幕任意处一次即可继续。
+		Step.FORMATION_HP, Step.CARROT_HARVEST:
+			# 讲解 HP / 收获萝卜之后，点屏幕任意处一次即可继续。
 			_hotspot.visible = true
 			_hotspot.position = Vector2.ZERO
 			_hotspot.size = _overlay.size
@@ -649,7 +736,24 @@ func _on_hotspot_pressed() -> void:
 		Step.VIEW_TREASURE:
 			_advance_to(Step.FORMATION_HP)
 		Step.FORMATION_HP:
-			_advance_to(Step.START_PVP if GameState.normal_unit_count() >= 7 and _mercenary_count() >= 2 else Step.START_BOSS)
+			if GameState.normal_unit_count() >= 7 and _mercenary_count() >= 2:
+				_advance_to(Step.START_PVP)
+			elif GameState.harvest_tech_level < 1:
+				# 第一次讲完法阵 HP：Boss 之前先认识萝卜营地（萝卜入口此刻才出现）。
+				_advance_to(Step.CARROT_CAMP)
+				_refresh_prep()
+			else:
+				_advance_to(Step.START_BOSS)
+		Step.CARROT_HARVEST:
+			if not _carrot_harvested:
+				_run_tutorial_harvest()
+			# 奖励必须在 _advance_to() 之前落到状态上：推进会立刻写断点。
+			if not _carrot_gift_claimed:
+				GameState.carrots += TUTORIAL_CARROT_GIFT
+				_carrot_gift_claimed = true
+			_ensure_four_star_candidate()
+			_advance_to(Step.DRAW_STONE)
+			_refresh_prep()
 		_:
 			return
 	update_overlay()
@@ -661,7 +765,10 @@ func _on_hotspot_pressed() -> void:
 # 回来必然从 BUY_3 重来 —— 这正是 R-10 记录的现象。
 #
 # 断点只存**语义步骤与可重建的数据**，不存任何 Node 引用（MD 要求「幂等、可恢复」）。
-const CHECKPOINT_VERSION := 1
+# 2（9.25）：Step 枚举中间插入了萝卜 / 四星教学的 5 步，旧断点里的步骤编号全部错位。
+# 版本不符时 restore_checkpoint() 返回 false，调用方回到「从头开始教程」，
+# 绝不把旧编号套进新枚举里恢复出一个错步的状态。
+const CHECKPOINT_VERSION := 2
 
 # 写盘节流用的进度签名。sync() 每次 _refresh_all() 都会跑，
 # 不加签名就会变成每帧写文件。
@@ -712,8 +819,12 @@ func save_checkpoint(force: bool = false) -> void:
 		},
 		"round_index": GameState.round_index,
 		"gold": GameState.gold,
-		# 教学仍使用金币雇佣佣兵，但把新增字段一并写入断点，避免从旧/新
-		# 断点恢复时把上一种模式的萝卜状态带进来。
+		# 9.25 起教学也用萝卜雇佣兵、抽升级石、升四星，这几项都是教学进度的一部分。
+		"carrot_tutorial": {
+			"harvested": _carrot_harvested,
+			"harvest_gain": _carrot_harvest_gain,
+			"gift_claimed": _carrot_gift_claimed,
+		},
 		"carrots": GameState.carrots,
 		"harvest_tech_level": GameState.harvest_tech_level,
 		"merc_carrots_spent_total": GameState.merc_carrots_spent_total,
@@ -738,13 +849,16 @@ func save_checkpoint(force: bool = false) -> void:
 
 # 进度签名只取「玩家实际推进了什么」，不取金币这类每帧会被 sync() 重置的量。
 func _checkpoint_progress_signature() -> String:
-	return "%d|%d|%d|%s|%d|%d|%d|%d|%d|%d" % [
+	return "%d|%d|%d|%s|%d|%d|%d|%d|%d|%d|%d|%d|%s|%s|%d" % [
 		step, _progress_index, bought_units,
 		# _fill_started 也算进来：BUY 相位与 bought=0 在「还没开始」和
 		# 「刚开始」两种状态下取值相同，只看那两个会漏掉这次转变。
 		str(_fill_started), _fill_phase, _fill_bought,
 		_owned_normal_count(), GameState.normal_unit_count(),
 		_mercenary_count(), GameState.owned_treasures.size(),
+		# 萝卜 / 四星教学：采集等级、升级石、收获与领奖、四星都是玩家实际推进的东西。
+		GameState.harvest_tech_level, _stone_count(),
+		str(_carrot_harvested), str(_carrot_gift_claimed), _max_normal_star(),
 	]
 
 
@@ -782,6 +896,13 @@ func restore_checkpoint() -> bool:
 	_fill_shop_open = bool(fill.get("shop_open", false))
 	_fill_compensated = int(fill.get("compensated", 0))
 
+	var carrot: Dictionary = data.get("carrot_tutorial", {}) if data.get("carrot_tutorial", {}) is Dictionary else {}
+	_carrot_harvested = bool(carrot.get("harvested", false))
+	_carrot_harvest_gain = int(carrot.get("harvest_gain", 0))
+	_carrot_gift_claimed = bool(carrot.get("gift_claimed", false))
+	_camp_open = false
+	_camp_page = CAMP_PAGE_CAMP
+
 	GameState.round_index = int(data.get("round_index", 1))
 	GameState.gold = int(data.get("gold", TUTORIAL_GOLD))
 	GameState.carrots = maxi(0, int(data.get("carrots", 0)))
@@ -792,7 +913,13 @@ func restore_checkpoint() -> bool:
 	GameState.stone_draw_count = maxi(0, int(data.get("stone_draw_count", 0)))
 	var saved_stones: Variant = data.get("team_upgrade_stones", {})
 	if saved_stones is Dictionary:
-		GameState.team_upgrade_stones = (saved_stones as Dictionary).duplicate(true)
+		# 断点走 JSON，整数会读回成浮点（1 -> 1.0）。9.25 起教学真的会用到升级石，
+		# 这里按三种石头逐个取整，恢复出来的库存与存盘前逐值相等。
+		var stones := CarrotEconomy.empty_stones()
+		for key in (saved_stones as Dictionary).keys():
+			if CarrotEconomy.valid_stone_type(str(key)):
+				stones[str(key)] = maxi(0, int((saved_stones as Dictionary)[key]))
+		GameState.team_upgrade_stones = stones
 	GameState.player_formation_hp = int(data.get("player_formation_hp", TUTORIAL_HP))
 	GameState.enemy_formation_hp = int(data.get("enemy_formation_hp", TUTORIAL_HP))
 	_restore_slots(GameState.board_slots, data.get("board_slots", []))
@@ -1221,6 +1348,9 @@ func _target_control() -> Control:
 			target_id = TutorialTargetProviderScript.TARGET_BOND_ROW
 		Step.VIEW_TREASURE:
 			target_id = TutorialTargetProviderScript.TARGET_TREASURE_LOGO
+		Step.CARROT_CAMP, Step.HARVEST_UPGRADE, Step.CARROT_HARVEST, \
+		Step.DRAW_STONE, Step.FOUR_STAR:
+			target_id = _carrot_target_id()
 	if target_id.is_empty():
 		return null
 	return _target_provider.resolve_target(
@@ -1467,6 +1597,227 @@ func _mercenary_count() -> int:
 		if cell != null:
 			count += 1
 	return count
+
+# --- 萝卜 / 四星教学（9.25）-----------------------------------------------------
+
+func _reset_carrot_tutorial() -> void:
+	_camp_open = false
+	_camp_page = CAMP_PAGE_CAMP
+	_carrot_harvested = false
+	_carrot_harvest_gain = 0
+	_carrot_gift_claimed = false
+
+
+# 萝卜营地开合 / 切页的生产事件（PrepUI._toggle_carrot_camp / _close_carrot_camp /
+# CarrotCampPanelV3.page_changed）。教学步骤靠它推进，不靠轮询面板可见性。
+func record_carrot_camp_state(is_open: bool, page: int) -> void:
+	if not active:
+		return
+	if is_open == _camp_open and page == _camp_page:
+		return
+	_camp_open = is_open
+	_camp_page = page
+	sync()
+
+
+func carrot_camp_open() -> bool:
+	return _camp_open
+
+
+func carrot_camp_page() -> int:
+	return _camp_page
+
+
+# 萝卜入口（营地按钮 + 萝卜数量）从萝卜教学开始才出现；之前的步骤里它只会分散注意力。
+func carrot_ui_unlocked() -> bool:
+	if not active:
+		return false
+	if step == Step.DONE:
+		return true
+	var intro := STEP_SEQUENCE.find(Step.CARROT_CAMP)
+	return intro >= 0 and _progress_index >= intro
+
+
+# 教学里萝卜相关操作「现在能不能做」。只在箭头指着它的那一步放行 ——
+# 这是「强制按顺序点」的业务侧保证：箭头之外的同类按钮即使点到也不会生效。
+func allows_carrot_action(action: String) -> bool:
+	if not active:
+		return false
+	match action:
+		"harvest_upgrade":
+			return step == Step.HARVEST_UPGRADE and GameState.harvest_tech_level < 1
+		"draw_stone":
+			return step == Step.DRAW_STONE
+		"four_star":
+			return step == Step.FOUR_STAR
+		"hire_merc":
+			# 佣兵从 HIRE_MERC 这一步起才开放：更早雇会把抽升级石要用的萝卜花掉。
+			var hire_at := STEP_SEQUENCE.find(Step.HIRE_MERC)
+			return step == Step.DONE or (hire_at >= 0 and _progress_index >= hire_at)
+	return false
+
+
+func last_harvest_gain() -> int:
+	return _carrot_harvest_gain
+
+
+# 教学抽石头固定出「与 3 星棋子同属性」的那一种，四星那一步才一定接得上。
+# 优先看民兵（教学第 7 步升到 3 星的就是它，地属性）。
+func forced_stone_type() -> String:
+	var cell := _four_star_candidate_cell()
+	var element := str((cell.get("def", {}) as Dictionary).get("element", "")) if not cell.is_empty() else ""
+	return element if CarrotEconomy.valid_stone_type(element) else "land"
+
+
+func _carrot_target_id() -> String:
+	match step:
+		Step.CARROT_CAMP:
+			return TutorialTargetProviderScript.TARGET_CARROT_CAMP
+		Step.HARVEST_UPGRADE:
+			if not _camp_open:
+				return TutorialTargetProviderScript.TARGET_CARROT_CAMP
+			if GameState.harvest_tech_level >= 1:
+				return TutorialTargetProviderScript.TARGET_CARROT_CLOSE
+			if _camp_page != CAMP_PAGE_CAMP:
+				return TutorialTargetProviderScript.TARGET_CARROT_CAMP_TAB
+			return TutorialTargetProviderScript.TARGET_HARVEST_UPGRADE
+		Step.CARROT_HARVEST:
+			return TutorialTargetProviderScript.TARGET_CARROT_COUNTER
+		Step.DRAW_STONE:
+			if not _camp_open:
+				return TutorialTargetProviderScript.TARGET_CARROT_CAMP
+			if _camp_page != CAMP_PAGE_STONE:
+				return TutorialTargetProviderScript.TARGET_CARROT_STONE_TAB
+			return TutorialTargetProviderScript.TARGET_STONE_DRAW
+		Step.FOUR_STAR:
+			if not _camp_open:
+				return TutorialTargetProviderScript.TARGET_CARROT_CAMP
+			if _camp_page != CAMP_PAGE_STONE:
+				return TutorialTargetProviderScript.TARGET_CARROT_STONE_TAB
+			return TutorialTargetProviderScript.TARGET_FOUR_STAR_ROW
+	return ""
+
+
+func _harvest_upgrade_text() -> String:
+	var before := CarrotEconomy.production_for_tech(0)
+	var after := CarrotEconomy.production_for_tech(1)
+	if not _camp_open:
+		return _t("点击「萝卜营地」打开营地。", "Tap Carrot Camp to open it.")
+	if GameState.harvest_tech_level >= 1:
+		return _t("采集升级了：每回合产量 %d → %d，下回合生效。点右上角「×」关闭营地，去挑战 Boss。" % [before, after],
+			"Harvest upgraded: yield per round %d → %d, starting next round. Tap × at the top-right to close the camp and face the Boss." % [before, after])
+	if _camp_page != CAMP_PAGE_CAMP:
+		return _t("点「营地」页签。", "Tap the Camp tab.")
+	var price := CarrotEconomy.tech_price(0)
+	return _t("点「升级采集」，花 %d 金币把每回合产量从 %d 提到 %d。升级在下回合生效。" % [price, before, after],
+		"Tap Upgrade Harvest: %d gold raises the yield per round from %d to %d, starting next round." % [price, before, after])
+
+
+func _draw_stone_text() -> String:
+	if not _camp_open:
+		return _t("打开「萝卜营地」，用萝卜抽一颗升级石。", "Open Carrot Camp and spend carrots on an upgrade stone.")
+	if _camp_page != CAMP_PAGE_STONE:
+		return _t("点「升级石」页签。", "Tap the Upgrade Stones tab.")
+	var cost := GameState.upgrade_stone_draw_cost()
+	return _t("点「抽取一次」，花 %d 萝卜抽一颗升级石。教学奖励的萝卜可以超过容量；平时每回合自动收获，最多收到容量上限。" % cost,
+		"Tap Draw Once: %d carrots for one upgrade stone. Tutorial bonus carrots may exceed capacity; normally each round's harvest stops at the cap." % cost)
+
+
+func _four_star_text() -> String:
+	var cell := _four_star_candidate_cell()
+	var en := LocaleManager.get_locale() == "en"
+	var unit_name := DataRegistry.unit_display_name(cell.get("def", {}), en) if not cell.is_empty() else _t("棋子", "unit")
+	if not _camp_open:
+		return _t("打开「萝卜营地」→「升级石」，把 3 星%s升到四星。" % unit_name,
+			"Open Carrot Camp → Upgrade Stones and take your 3-star %s to 4 stars." % unit_name)
+	if _camp_page != CAMP_PAGE_STONE:
+		return _t("点「升级石」页签。", "Tap the Upgrade Stones tab.")
+	var stone := forced_stone_type()
+	var stone_name := str(({"sky": "Sky", "land": "Land", "ren": "Ren"} if en \
+		else {"sky": "天", "land": "地", "ren": "人"}).get(stone, stone))
+	return _t("抽到的%s石正好配 3 星%s。点它这一行的「升至四星」，再在弹出的详情里点「升级至四星」→「确认升级」。" % [stone_name, unit_name],
+		"Your %s Stone matches the 3-star %s. Tap Upgrade to 4 Stars on its row, then Upgrade → Confirm in the details." % [stone_name, unit_name])
+
+
+# 教学里唯一的一次萝卜收获（Boss 后）。与正式局同一条规则：GameState.harvest_carrots_for_round。
+# 回合号取「当前回合」与「上次收获回合 + 1」中较大的那个 —— 不依赖教学局的回合怎么推进，
+# 同时保留该函数「同一回合只收一次」的幂等语义。
+func _run_tutorial_harvest() -> void:
+	if _carrot_harvested:
+		return
+	var round_number := maxi(maxi(1, GameState.round_index), GameState.last_harvest_round + 1)
+	var result := GameState.harvest_carrots_for_round(round_number)
+	_carrot_harvest_gain = int(result.get("gain", 0))
+	_carrot_harvested = true
+	if _target_provider != null:
+		_target_provider.request_action(TutorialTargetProviderScript.ACTION_PLAY_CARROT_HARVEST)
+	_refresh_prep()
+
+
+func _stone_count() -> int:
+	var total := 0
+	for stone_type in CarrotEconomy.STONE_TYPES:
+		total += int(GameState.team_upgrade_stones.get(stone_type, 0))
+	return total
+
+
+func _max_normal_star() -> int:
+	var best := 0
+	for cell in GameState.board_slots + GameState.bench_slots:
+		if typeof(cell) == TYPE_DICTIONARY and not bool((cell as Dictionary).get("is_mercenary", false)):
+			best = maxi(best, int((cell as Dictionary).get("star", 1)))
+	return best
+
+
+# 能升四星的那枚 3 星棋子：优先民兵，其次任意 3 星普通棋子。
+func _four_star_candidate_cell() -> Dictionary:
+	var fallback: Dictionary = {}
+	for cell in GameState.board_slots + GameState.bench_slots:
+		if typeof(cell) != TYPE_DICTIONARY:
+			continue
+		var c: Dictionary = cell
+		if bool(c.get("is_mercenary", false)) or int(c.get("star", 1)) != GameState.MAX_MERGE_STAR:
+			continue
+		if str(c.get("id", "")) == "human_militia":
+			return c
+		if fallback.is_empty():
+			fallback = c
+	return fallback
+
+
+# 防卡死：进抽石头这一步时手里必须有一枚 3 星（玩家可能把民兵卖了）。
+# 没有就补一枚 3 星民兵到待命区 —— 与 FILL_7 的补偿同一个思路：只补材料，不替玩家操作。
+func _ensure_four_star_candidate() -> void:
+	if _max_normal_star() >= GameState.MAX_UNIT_STAR:
+		return
+	if not _four_star_candidate_cell().is_empty():
+		return
+	_grant_units("human_militia", 1, GameState.MAX_MERGE_STAR)
+	_refresh_prep()
+
+
+# 防卡死：抽石头之前萝卜必须够。正常流程送的 100 萝卜一定够；这里兜住断点异常等情况。
+func _ensure_draw_budget() -> void:
+	if _stone_count() > 0:
+		return
+	if not GameState.can_draw_upgrade_stone(GameState.round_index):
+		GameState.stone_draw_used_round = -1
+	var cost := GameState.upgrade_stone_draw_cost()
+	if GameState.carrots < cost:
+		GameState.carrots = cost
+
+
+# 防卡死：四星这一步必须存在「3 星棋子 + 同属性石头」这一对。
+func _ensure_four_star_path() -> void:
+	_ensure_four_star_candidate()
+	var cell := _four_star_candidate_cell()
+	if cell.is_empty():
+		return
+	var stone := str((cell.get("def", {}) as Dictionary).get("element", ""))
+	if CarrotEconomy.valid_stone_type(stone) and int(GameState.team_upgrade_stones.get(stone, 0)) <= 0:
+		GameState.apply_team_stone(stone)
+		_refresh_prep()
+
 
 func _t(zh: String, en: String) -> String:
 	return en if LocaleManager.get_locale() == "en" else zh

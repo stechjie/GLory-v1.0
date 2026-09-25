@@ -14,9 +14,21 @@ const TARGET_HIRE_MERCENARY := "hire_mercenary"
 const TARGET_FILL_SEVEN := "fill_seven"
 const TARGET_BOND_ROW := "bond_row"
 const TARGET_TREASURE_LOGO := "treasure_logo"
+# 9.25 萝卜营地 / 升级石 / 四星教学。一个教学步骤会按营地开合、当前页签
+# 依次指向下面几个控件；选哪一个由 TutorialMode 按自己记录的显式状态决定。
+const TARGET_CARROT_CAMP := "carrot_camp"
+const TARGET_CARROT_COUNTER := "carrot_counter"
+const TARGET_CARROT_CLOSE := "carrot_close"
+const TARGET_CARROT_CAMP_TAB := "carrot_camp_tab"
+const TARGET_CARROT_STONE_TAB := "carrot_stone_tab"
+const TARGET_HARVEST_UPGRADE := "harvest_upgrade"
+const TARGET_STONE_DRAW := "stone_draw"
+const TARGET_FOUR_STAR_ROW := "four_star_row"
 
 const ACTION_CLOSE_MERCENARY := "close_mercenary"
 const ACTION_REFRESH_VIEW := "refresh_view"
+# 教学里的那一次萝卜收获：播放宠物挖萝卜 + 「+N」飘字（与正式局同一段表现）。
+const ACTION_PLAY_CARROT_HARVEST := "play_carrot_harvest"
 
 const REQUIRED_TARGETS := [
 	TARGET_BUY_UNIT,
@@ -29,6 +41,14 @@ const REQUIRED_TARGETS := [
 	TARGET_FILL_SEVEN,
 	TARGET_BOND_ROW,
 	TARGET_TREASURE_LOGO,
+	TARGET_CARROT_CAMP,
+	TARGET_CARROT_COUNTER,
+	TARGET_CARROT_CLOSE,
+	TARGET_CARROT_CAMP_TAB,
+	TARGET_CARROT_STONE_TAB,
+	TARGET_HARVEST_UPGRADE,
+	TARGET_STONE_DRAW,
+	TARGET_FOUR_STAR_ROW,
 ]
 
 var _provider_name := "unbound"

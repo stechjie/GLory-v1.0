@@ -85,6 +85,8 @@ func _check_resolution(entry: Dictionary) -> void:
 	for step in _walkable_steps():
 		TutorialMode.step = step
 		TutorialMode.update_overlay()
+		# 萝卜入口从萝卜教学起才显示（显隐随备战页刷新走），直接摆步骤时手动刷一次。
+		prep._refresh_carrot_counter()
 		await _settle(1)
 		var step_key := TutorialMode.step_key()
 		var target := TutorialMode._target_control()
@@ -210,7 +212,11 @@ func _walkable_steps() -> Array:
 		TutorialScript.Step.START_PVE_2, TutorialScript.Step.TAKE_TREASURE_1,
 		TutorialScript.Step.UPGRADE_3, TutorialScript.Step.UPGRADE_OTHERS,
 		TutorialScript.Step.BOND_HINT, TutorialScript.Step.VIEW_TREASURE,
+		# 9.25：萝卜教学里指向常驻控件的两步（营地入口、萝卜数量）。
+		# 其余三步的目标在营地面板里，要先开面板，按 target==null / 不可见自然过滤。
+		TutorialScript.Step.CARROT_CAMP,
 		TutorialScript.Step.START_BOSS, TutorialScript.Step.TAKE_TREASURE_2,
+		TutorialScript.Step.CARROT_HARVEST,
 		TutorialScript.Step.HIRE_MERC, TutorialScript.Step.FILL_7,
 		TutorialScript.Step.FORMATION_HP, TutorialScript.Step.START_PVP,
 	]:

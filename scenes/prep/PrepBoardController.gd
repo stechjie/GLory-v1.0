@@ -156,21 +156,14 @@ func _hire_mercenary_to_slot(index: int, mercenary_index: int) -> void:
 			"merc_slot": mercenary_index,
 		})
 		return
-	var cost := int(m.get("cost", 0))
 	var carrot_cost := int(m.get("carrot_cost", -1))
-	if GameState.tutorial_mode:
-		if GameState.gold < cost:
-			show_message(tr("ui_not_enough_gold"))
-			# 9.17：买不起 = 按钮被拒绝。
-			SfxService.play(SfxService.CUE_UI_REJECT)
-			return
-		GameState.gold -= cost
-	else:
-		if carrot_cost < 0 or GameState.carrots < carrot_cost:
-			show_message("萝卜不足")
-			return
-		GameState.carrots -= carrot_cost
-		GameState.record_merc_carrot_spend(carrot_cost)
+	# 9.25：教学与正式局一样用萝卜雇佣兵（原先教学扣金币，教的是一套正式局用不上的规则）。
+	# 花掉的萝卜照常计入营地成长，教学里就能看到营地升级。
+	if carrot_cost < 0 or GameState.carrots < carrot_cost:
+		show_message("萝卜不足")
+		return
+	GameState.carrots -= carrot_cost
+	GameState.record_merc_carrot_spend(carrot_cost)
 	var def := m.duplicate(true)
 	def["is_mercenary"] = true
 	GameState.mercenary_slots[mercenary_index] = {"id": def.id, "uid": GameState.mint_piece_uid(), "star": 1, "def": def, "is_mercenary": true}
@@ -193,10 +186,14 @@ func _hire_mercenary_to_slot(index: int, mercenary_index: int) -> void:
 	refresh_carrot_gathering()
 
 func request_carrot_harvest_upgrade() -> void:
-	if GameState.round_index < 2:
-		show_message("下一回合解锁升级")
-		return
+	# 9.25：教学里在「升级采集」那一步放行（不受第 2 回合才解锁的限制），其余步骤不放行。
 	if GameState.tutorial_mode:
+		if not TutorialMode.allows_carrot_action("harvest_upgrade"):
+			show_message(TutorialMode.follow_arrow_hint())
+			SfxService.play(SfxService.CUE_UI_REJECT)
+			return
+	elif GameState.round_index < 2:
+		show_message("下一回合解锁升级")
 		return
 	if NetworkService.team_active and not NetworkService.is_host:
 		if not NetworkService.carrot_economy_enabled():
@@ -216,7 +213,10 @@ func request_carrot_harvest_upgrade() -> void:
 	_refresh_all()
 
 func request_upgrade_stone_draw() -> void:
-	if GameState.tutorial_mode:
+	# 9.25：教学里在「抽升级石」那一步放行。
+	if GameState.tutorial_mode and not TutorialMode.allows_carrot_action("draw_stone"):
+		show_message(TutorialMode.follow_arrow_hint())
+		SfxService.play(SfxService.CUE_UI_REJECT)
 		return
 	if not GameState.can_draw_upgrade_stone(GameState.round_index):
 		show_message("本回合已经抽取过升级石")
@@ -225,7 +225,8 @@ func request_upgrade_stone_draw() -> void:
 	if GameState.carrots < stone_cost:
 		show_message("萝卜不足：需要%d萝卜" % stone_cost)
 		return
-	if GameState.carrot_capacity() < stone_cost:
+	# 教学送的萝卜可以超过容量（教学文案里讲了），所以教学不卡容量门槛。
+	if GameState.carrot_capacity() < stone_cost and not GameState.tutorial_mode:
 		show_message("萝卜田容量不足：需要能储存%d萝卜" % stone_cost)
 		return
 	if NetworkService.team_active and not NetworkService.is_host:
@@ -241,7 +242,9 @@ func request_upgrade_stone_draw() -> void:
 	GameState.carrots -= stone_cost
 	GameState.stone_draw_used_round = GameState.round_index
 	GameState.stone_draw_count += 1
-	var stone_type := CarrotEconomy.draw_type_from_roll(randf())
+	# 教学固定抽到与 3 星棋子同属性的石头，下一步升四星才一定接得上。
+	var stone_type := TutorialMode.forced_stone_type() if GameState.tutorial_mode \
+		else CarrotEconomy.draw_type_from_roll(randf())
 	GameState.apply_team_stone(stone_type)
 	SaveManager.save_run()
 	show_message("获得%s石" % {"sky": "天", "land": "地", "ren": "人"}.get(stone_type, stone_type))
@@ -270,7 +273,9 @@ func _commit_four_star_uid(uid: String) -> void:
 				return
 
 func _execute_four_star_upgrade(where: String, index: int) -> void:
-	if GameState.tutorial_mode:
+	# 9.25：教学里在「升到四星」那一步放行（本地结算，与单机同一条路径）。
+	if GameState.tutorial_mode and not TutorialMode.allows_carrot_action("four_star"):
+		show_message(TutorialMode.follow_arrow_hint())
 		return
 	var slots: Array = GameState.board_slots if where == "board" else GameState.bench_slots
 	if index < 0 or index >= slots.size():

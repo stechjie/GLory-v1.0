@@ -171,9 +171,10 @@ static func can_hire_mercenary(index: int) -> bool:
 	if first_empty_mercenary_slot() < 0:
 		return false
 	var merc: Dictionary = mercs[index]
-	# 教学流程仍使用旧金币教程；正式对局的佣兵统一使用萝卜。
-	if GameState.tutorial_mode:
-		return GameState.gold >= int(merc.get("cost", 0))
+	# 9.25：教学也用萝卜雇佣兵（与正式局一致），并且从「召唤佣兵」那一步起才开放 ——
+	# 更早雇会把抽升级石要用的萝卜花掉。
+	if GameState.tutorial_mode and not TutorialMode.allows_carrot_action("hire_merc"):
+		return false
 	var carrot_cost := int(merc.get("carrot_cost", -1))
 	return carrot_cost >= 0 and GameState.carrots >= carrot_cost
 

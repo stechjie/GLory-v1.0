@@ -119,7 +119,8 @@ func refresh() -> void:
 		else "%s升级石 × %d  ·  队伍共享\n金币：%d / %d") % [stone_name, count, GameState.gold, maxi(0, cost)]
 	var check := GameState.four_star_check(cell if not cell.is_empty() else null)
 	var error := str(check.get("error", ""))
-	if GameState.tutorial_mode:
+	# 9.25：教学里四星在「升到四星」那一步开放（萝卜 / 四星教学），其余步骤仍然锁着。
+	if GameState.tutorial_mode and not TutorialMode.allows_carrot_action("four_star"):
 		error = "tutorial"
 	if not NetworkService.four_star_upgrade_available():
 		error = "server_update"
@@ -129,7 +130,7 @@ func refresh() -> void:
 	if action.disabled:
 		confirming = false
 	var messages := {
-		"tutorial": ["教学结束后开放四星升级", "Available after the tutorial"],
+		"tutorial": ["教学到「升到四星」这一步再升级", "Available at the 4-Star tutorial step"],
 		"empty_cell": ["棋子已移除", "Unit no longer available"],
 		"need_three_star": ["需要先合成三星", "Requires a three-star unit"],
 		"already_max": ["已达最高星级", "Maximum star level"],
@@ -141,6 +142,11 @@ func refresh() -> void:
 	}
 	reason.text = str(messages.get(error, ["无法升级", "Upgrade unavailable"])[1 if en else 0]) \
 		if not error.is_empty() else (("Consume 1 team stone + %d gold" if en else "消耗队伍升级石 ×1 ＋ %d 金币") % cost)
+	# 教学（9.25）：详情弹窗是独立窗口，教学箭头画不到它上面（PrepScreen 会在弹窗
+	# 打开期间把教学浮层隐藏）。所以这两下点击的指引直接写在弹窗里。
+	if GameState.tutorial_mode and error.is_empty():
+		reason.text += "\n" + (("Tutorial: tap Confirm upgrade to finish." if en else "教学：再点「确认升级」完成四星。") \
+			if confirming else ("Tutorial: tap Upgrade to ★★★★ below." if en else "教学：点下方「升级至四星」。"))
 	action.text = ("Confirm upgrade" if en else "确认升级") if confirming else ("Upgrade to ★★★★" if en else "升级至 ★★★★")
 	if error == "already_max":
 		action.text = "★★★★"

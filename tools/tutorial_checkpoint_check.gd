@@ -27,7 +27,9 @@ const CHECK_NAME := "tutorial_checkpoint"
 const PREP_SCENE := "res://scenes/prep/PrepScreen.tscn"
 
 # MD 点名的四个断点。用序列位置（1 起）而不是枚举值，与进度条口径一致。
-const CHECKPOINT_STEPS := [1, 6, 10, 15]
+# 9.25：再加第 18 步（FOUR_STAR）—— 萝卜、升级石、采集等级、收获/领奖标记
+# 都要从断点里原样恢复，四星那一步才接得上。
+const CHECKPOINT_STEPS := [1, 6, 10, 15, 18]
 # 教程里只增不减的三样。断点里它们回退就说明写进去的是过期快照。
 const MONOTONE_FIELDS := ["宝藏", "佣兵", "采购"]
 const ACTION_BUDGET := 60
@@ -145,6 +147,12 @@ func _snapshot_state() -> Dictionary:
 		"fill_phase": TutorialMode.fill_phase(),
 		"fill_bought": int(TutorialMode.fill_buy_progress()[0]),
 		"round_index": GameState.round_index,
+		# 9.25 萝卜 / 四星教学
+		"carrots": GameState.carrots,
+		"harvest_tech_level": GameState.harvest_tech_level,
+		"stones": GameState.team_upgrade_stones.duplicate(true),
+		"carrot_spent": GameState.merc_carrots_spent_total,
+		"harvest_gain": TutorialMode.last_harvest_gain(),
 	}
 
 
@@ -334,6 +342,11 @@ func _drive_current_step(prep: PrepScript) -> void:
 			await _tap_continue()
 		TutorialScript.Step.HIRE_MERC:
 			await _hire_merc(prep)
+		TutorialScript.Step.CARROT_CAMP, TutorialScript.Step.HARVEST_UPGRADE, \
+		TutorialScript.Step.DRAW_STONE, TutorialScript.Step.FOUR_STAR:
+			await _drive_carrot_step(prep)
+		TutorialScript.Step.CARROT_HARVEST:
+			await _tap_continue()
 		TutorialScript.Step.FILL_7:
 			await _drive_fill(prep)
 		_:
@@ -435,6 +448,53 @@ func _hire_merc(prep: PrepScript) -> void:
 		prep._on_hire_mercenary(i)
 		await _settle(1)
 	TutorialMode.sync()
+	await _settle(2)
+
+
+# --- 9.25 萝卜 / 四星教学：全部走真实控件 ---------------------------------------
+#   营地开合 -> 右侧 `_carrot_button.pressed` / 面板右上角 × 的 pressed
+#   切页签   -> 面板的 `_camp_tab` / `_stone_tab` 的 pressed
+#   升级采集 -> `_tech_button.pressed`；抽石头 -> `_draw_button.pressed`
+#   升四星   -> 四星列表那一行的「升至四星」pressed，再在详情弹窗里
+#              `upgrade_panel.action.pressed` 两次（升级至四星 -> 确认升级）
+# 成不成交仍由宿主的教学步骤门槛、萝卜、石头、金币判断决定。
+func _drive_carrot_step(prep: PrepScript) -> void:
+	var panel = prep._carrot_panel
+	if panel == null or not is_instance_valid(panel):
+		await _settle(1)
+		return
+	if not panel.visible:
+		prep._carrot_button.pressed.emit()
+		await _settle(2)
+		return
+	match TutorialMode.step:
+		TutorialScript.Step.HARVEST_UPGRADE:
+			if GameState.harvest_tech_level >= 1:
+				panel.tutorial_close_button().pressed.emit()
+			elif panel.current_page() != TutorialScript.CAMP_PAGE_CAMP:
+				panel.tutorial_camp_tab().pressed.emit()
+			else:
+				panel.tutorial_harvest_button().pressed.emit()
+		TutorialScript.Step.DRAW_STONE:
+			if panel.current_page() != TutorialScript.CAMP_PAGE_STONE:
+				panel.tutorial_stone_tab().pressed.emit()
+			else:
+				panel.tutorial_draw_button().pressed.emit()
+		TutorialScript.Step.FOUR_STAR:
+			if panel.current_page() != TutorialScript.CAMP_PAGE_STONE:
+				panel.tutorial_stone_tab().pressed.emit()
+			else:
+				var row := panel.tutorial_four_star_target() as Button
+				if row != null and not row.disabled:
+					row.pressed.emit()
+					await _settle(2)
+					var upgrade = prep._overlay.upgrade_panel
+					if upgrade != null:
+						upgrade.action.pressed.emit()
+						await _settle(1)
+						upgrade.action.pressed.emit()
+		_:
+			pass
 	await _settle(2)
 
 

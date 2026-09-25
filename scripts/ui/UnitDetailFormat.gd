@@ -21,7 +21,8 @@ static func unique_suffix(d: Dictionary) -> String:
 	return " (Unique)" if is_en() else "（唯一）"
 
 static func purchase_price_text(d: Dictionary) -> String:
-	if d.has("carrot_cost") and not GameState.tutorial_mode:
+	# 9.25：教学也用萝卜雇佣兵，佣兵详情统一按萝卜标价。
+	if d.has("carrot_cost"):
 		return ("%d carrots" if is_en() else "%d萝卜") % int(d.get("carrot_cost", 0))
 	return ("%d G" if is_en() else "%d金") % int(d.get("cost", 0))
 

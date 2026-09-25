@@ -30,9 +30,9 @@ func _ready() -> void:
 		GameState.tutorial_mode = false
 		var carrot_text := ("%d carrots" if Format.is_en() else "%d萝卜") % int(merc.carrot_cost)
 		h.expect(Format.format_unit_def(merc).contains(carrot_text), "merc_carrots", "普通对局佣兵详情显示萝卜：" + str(merc.id))
+		# 9.25：教学也用萝卜雇佣兵，详情同样按萝卜标价（原先教学显示金币）。
 		GameState.tutorial_mode = true
-		var gold_text := ("%d G" if Format.is_en() else "%d金") % int(merc.cost)
-		h.expect(Format.format_unit_def(merc).contains(gold_text), "tutorial_gold", "引导佣兵详情保持金币：" + str(merc.id))
+		h.expect(Format.format_unit_def(merc).contains(carrot_text), "tutorial_carrots", "引导佣兵详情也显示萝卜：" + str(merc.id))
 	GameState.tutorial_mode = false
 	h.expect(Format.purchase_price_text({"cost": 25}) == ("25 G" if Format.is_en() else "25金"), "unit_gold", "普通棋子保持金币")
 	GameState.round_index = saved[0]

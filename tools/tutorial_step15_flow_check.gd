@@ -10,7 +10,9 @@ extends Node
 #   * 继续     -> 教学气泡自己的透明热区 `TutorialMode._hotspot.pressed`
 #   * 战斗     -> `TutorialMode.begin_battle()` + `after_battle({})`，无需服务器
 #
-# **覆盖范围**：完整 17 个实际到访步骤（不是只跑 HIRE_MERC→DONE）。
+# **覆盖范围**：完整 22 个实际到访步骤（不是只跑 HIRE_MERC→DONE）。
+# 9.25 起包含萝卜 / 四星教学的 5 步（开营地、升级采集、收获萝卜、抽升级石、升四星），
+# 它们同样只点真实控件，见 _drive_carrot_step()。
 # 之所以能做到，是因为战斗步不依赖网络：`begin_battle()` 只校验 `can_start_battle()`，
 # `after_battle()` 只按当前步推进并派发下一批商店/宝藏。
 
@@ -51,15 +53,16 @@ func _ready() -> void:
 	_h.finish(get_tree())
 
 
-# --- 17 步没有被删减（序列合同）------------------------------------------------
+# --- 22 步没有被删减（序列合同）------------------------------------------------
 
 func _check_sequence_contract() -> void:
-	_h.expect(TutorialScript.STEP_SEQUENCE.size() == 17, "sequence_size_changed",
-		"STEP_SEQUENCE 现在是 %d 步，本门禁按 17 个实际到访步骤写"
+	_h.expect(TutorialScript.STEP_SEQUENCE.size() == 22, "sequence_size_changed",
+		"STEP_SEQUENCE 现在是 %d 步，本门禁按 22 个实际到访步骤写"
 			% TutorialScript.STEP_SEQUENCE.size())
-	_h.expect(int(TutorialScript.STEP_SEQUENCE[14]) == TutorialScript.Step.FILL_7,
-		"fill7_not_fifteenth",
-		"第 15 个到访步骤不再是 FILL_7 —— 本任务按稳定的步骤状态表达，不写 step==15 特判，"
+	# 9.25 插入萝卜 / 四星教学后，FILL_7 从第 15 个到访步骤变成第 20 个。
+	_h.expect(int(TutorialScript.STEP_SEQUENCE[19]) == TutorialScript.Step.FILL_7,
+		"fill7_position_changed",
+		"第 20 个到访步骤不再是 FILL_7 —— 本任务按稳定的步骤状态表达，不写 step==20 特判，"
 		+ "但门禁要能发现序列被改动")
 	_h.expect(TutorialScript.FILL_TARGET_UNITS == GameConstants.NORMAL_UNIT_CAP,
 		"fill_target_detached",
@@ -101,8 +104,8 @@ func _check_twenty_runs() -> void:
 				regressed = true
 		_h.expect(not regressed, "buy_progress_regressed",
 			"第 %d 轮购买进度倒退了：%s" % [i + 1, str(bought)])
-		_h.expect(int(r.get("visited", 0)) == 17, "not_all_steps_visited",
-			"第 %d 轮只走到 %d 个实际步骤，应为 17" % [i + 1, int(r.get("visited", 0))])
+		_h.expect(int(r.get("visited", 0)) == 22, "not_all_steps_visited",
+			"第 %d 轮只走到 %d 个实际步骤，应为 22" % [i + 1, int(r.get("visited", 0))])
 
 	_h.expect(completed == RUNS, "completion_rate_below_100",
 		"%d/%d 轮跑到 DONE，完成率不是 100%%（首个失败原因：%s）"
@@ -138,7 +141,7 @@ func _run_once(index: int, trace: bool) -> Dictionary:
 		guard += 1
 		var before_step: int = TutorialMode.step
 		# 记的是**序列位置**而不是枚举值：FORMATION_HP 在 STEP_SEQUENCE 里出现两次，
-		# 按枚举去重永远只有 16 个。
+		# 按枚举去重永远只有 21 个。
 		var pos := TutorialMode.step_number()
 		if not visited.has(pos):
 			visited.append(pos)
@@ -192,6 +195,11 @@ func _drive_current_step(prep: PrepScript) -> void:
 			await _tap_continue(prep)
 		TutorialScript.Step.HIRE_MERC:
 			await _hire_merc(prep)
+		TutorialScript.Step.CARROT_CAMP, TutorialScript.Step.HARVEST_UPGRADE, \
+		TutorialScript.Step.DRAW_STONE, TutorialScript.Step.FOUR_STAR:
+			await _drive_carrot_step(prep)
+		TutorialScript.Step.CARROT_HARVEST:
+			await _tap_continue(prep)
 		TutorialScript.Step.FILL_7:
 			await _drive_fill_step(prep)
 		_:
@@ -299,6 +307,53 @@ func _hire_merc(prep: PrepScript) -> void:
 		prep._on_hire_mercenary(i)
 		await _settle(1)
 	TutorialMode.sync()
+	await _settle(2)
+
+
+# --- 9.25 萝卜 / 四星教学：全部走真实控件 ---------------------------------------
+#   营地开合 -> 右侧 `_carrot_button.pressed` / 面板右上角 × 的 pressed
+#   切页签   -> 面板的 `_camp_tab` / `_stone_tab` 的 pressed
+#   升级采集 -> `_tech_button.pressed`；抽石头 -> `_draw_button.pressed`
+#   升四星   -> 四星列表那一行的「升至四星」pressed，再在详情弹窗里
+#              `upgrade_panel.action.pressed` 两次（升级至四星 -> 确认升级）
+# 成不成交仍由宿主的教学步骤门槛、萝卜、石头、金币判断决定。
+func _drive_carrot_step(prep: PrepScript) -> void:
+	var panel = prep._carrot_panel
+	if panel == null or not is_instance_valid(panel):
+		await _settle(1)
+		return
+	if not panel.visible:
+		prep._carrot_button.pressed.emit()
+		await _settle(2)
+		return
+	match TutorialMode.step:
+		TutorialScript.Step.HARVEST_UPGRADE:
+			if GameState.harvest_tech_level >= 1:
+				panel.tutorial_close_button().pressed.emit()
+			elif panel.current_page() != TutorialScript.CAMP_PAGE_CAMP:
+				panel.tutorial_camp_tab().pressed.emit()
+			else:
+				panel.tutorial_harvest_button().pressed.emit()
+		TutorialScript.Step.DRAW_STONE:
+			if panel.current_page() != TutorialScript.CAMP_PAGE_STONE:
+				panel.tutorial_stone_tab().pressed.emit()
+			else:
+				panel.tutorial_draw_button().pressed.emit()
+		TutorialScript.Step.FOUR_STAR:
+			if panel.current_page() != TutorialScript.CAMP_PAGE_STONE:
+				panel.tutorial_stone_tab().pressed.emit()
+			else:
+				var row := panel.tutorial_four_star_target() as Button
+				if row != null and not row.disabled:
+					row.pressed.emit()
+					await _settle(2)
+					var upgrade = prep._overlay.upgrade_panel
+					if upgrade != null:
+						upgrade.action.pressed.emit()
+						await _settle(1)
+						upgrade.action.pressed.emit()
+		_:
+			pass
 	await _settle(2)
 
 

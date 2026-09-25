@@ -185,7 +185,9 @@ func harvest_carrots_for_round(round_number: int) -> Dictionary:
 		"capacity": int(result.capacity), "production": int(result.production)}
 
 func upgrade_harvest_tech() -> Dictionary:
-	if round_index < 2:
+	# 教学（9.25）：「升级采集」那一步不受第 2 回合才解锁的限制 —— 教学局的回合推进
+	# 与正式局不同。放不放行由调用方（PrepBoardController）按教学步骤把关。
+	if round_index < 2 and not tutorial_mode:
 		return {"ok": false, "error": "harvest_locked_first_round"}
 	var price := CarrotEconomyRules.tech_price(harvest_tech_level)
 	if price < 0:

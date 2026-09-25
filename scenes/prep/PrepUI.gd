@@ -125,6 +125,8 @@ var _carrot_panel
 var _carrot_button: Button
 var _carrot_button_label: Label
 var _carrot_counter_label: Label
+# 萝卜数量那块底板。教学里要指着它（收获萝卜那一步），也要跟入口按钮一起显隐。
+var _carrot_counter_panel: PanelContainer
 var _carrot_dimmer: ColorRect
 var _tutorial_target_provider: TutorialTargetProviderScript
 
@@ -193,10 +195,29 @@ func tutorial_target_provider() -> TutorialTargetProviderScript:
 		_tutorial_target_bond_row)
 	provider.bind_target(TutorialTargetProviderScript.TARGET_TREASURE_LOGO,
 		_tutorial_target_treasure_logo)
+	# 9.25 萝卜 / 四星教学。
+	provider.bind_target(TutorialTargetProviderScript.TARGET_CARROT_CAMP,
+		_tutorial_target_carrot_camp)
+	provider.bind_target(TutorialTargetProviderScript.TARGET_CARROT_COUNTER,
+		_tutorial_target_carrot_counter)
+	provider.bind_target(TutorialTargetProviderScript.TARGET_CARROT_CLOSE,
+		_tutorial_target_carrot_close)
+	provider.bind_target(TutorialTargetProviderScript.TARGET_CARROT_CAMP_TAB,
+		_tutorial_target_carrot_camp_tab)
+	provider.bind_target(TutorialTargetProviderScript.TARGET_CARROT_STONE_TAB,
+		_tutorial_target_carrot_stone_tab)
+	provider.bind_target(TutorialTargetProviderScript.TARGET_HARVEST_UPGRADE,
+		_tutorial_target_harvest_upgrade)
+	provider.bind_target(TutorialTargetProviderScript.TARGET_STONE_DRAW,
+		_tutorial_target_stone_draw)
+	provider.bind_target(TutorialTargetProviderScript.TARGET_FOUR_STAR_ROW,
+		_tutorial_target_four_star_row)
 	provider.bind_action(TutorialTargetProviderScript.ACTION_CLOSE_MERCENARY,
 		_close_merc_picker)
 	provider.bind_action(TutorialTargetProviderScript.ACTION_REFRESH_VIEW,
 		_tutorial_refresh_view)
+	provider.bind_action(TutorialTargetProviderScript.ACTION_PLAY_CARROT_HARVEST,
+		_tutorial_play_carrot_harvest)
 	provider.bind_feedback(show_message)
 	# V2 P1-09：教程气泡不得压住这几块。走 provider 的可选合同，
 	# 让 TutorialMode 不必再认识备战页的私有字段（那正是 P1-10 拆掉的耦合）。
@@ -405,6 +426,78 @@ func _tutorial_owned_normal_count() -> int:
 
 func _tutorial_refresh_view() -> void:
 	_refresh_all.call_deferred()
+
+
+# --- 萝卜 / 四星教学的目标（9.25）----------------------------------------------
+# 面板控件由 CarrotCampPanelV3 自己暴露（tutorial_* 取值函数），这里只做转交；
+# 营地关着时这些控件仍然有效（只是不可见），所以语义目标在实屏上总能解析出来。
+
+func _tutorial_carrot_panel() -> CarrotCampPanelScript:
+	if _carrot_panel == null or not is_instance_valid(_carrot_panel):
+		return null
+	return _carrot_panel as CarrotCampPanelScript
+
+
+func _tutorial_target_carrot_camp() -> Control:
+	return _carrot_button
+
+
+func _tutorial_target_carrot_counter() -> Control:
+	if _carrot_counter_panel != null and is_instance_valid(_carrot_counter_panel):
+		return _carrot_counter_panel
+	return _carrot_button
+
+
+func _tutorial_target_carrot_close() -> Control:
+	var panel := _tutorial_carrot_panel()
+	return panel.tutorial_close_button() if panel != null else _carrot_button
+
+
+func _tutorial_target_carrot_camp_tab() -> Control:
+	var panel := _tutorial_carrot_panel()
+	return panel.tutorial_camp_tab() if panel != null else _carrot_button
+
+
+func _tutorial_target_carrot_stone_tab() -> Control:
+	var panel := _tutorial_carrot_panel()
+	return panel.tutorial_stone_tab() if panel != null else _carrot_button
+
+
+func _tutorial_target_harvest_upgrade() -> Control:
+	var panel := _tutorial_carrot_panel()
+	return panel.tutorial_harvest_button() if panel != null else _carrot_button
+
+
+func _tutorial_target_stone_draw() -> Control:
+	var panel := _tutorial_carrot_panel()
+	return panel.tutorial_draw_button() if panel != null else _carrot_button
+
+
+func _tutorial_target_four_star_row() -> Control:
+	var panel := _tutorial_carrot_panel()
+	return panel.tutorial_four_star_target() if panel != null else _carrot_button
+
+
+# 教学那一次收获的表现：与正式局进备战时同一段（宠物挖萝卜 + 「+N」）。
+# 单机只有 4 号位一只宠物（见 _carrot_pet_entries）。
+func _tutorial_play_carrot_harvest() -> void:
+	var gain := TutorialMode.last_harvest_gain()
+	_refresh_carrot_counter()
+	play_carrot_harvest_feedback.call_deferred({4: gain})
+
+
+# 萝卜入口在教学里从萝卜那一步才出现（TutorialMode.carrot_ui_unlocked）。
+func _carrot_ui_visible() -> bool:
+	return not GameState.tutorial_mode or TutorialMode.carrot_ui_unlocked()
+
+
+func _report_carrot_camp_state() -> void:
+	if not GameState.tutorial_mode:
+		return
+	var panel := _tutorial_carrot_panel()
+	if panel == null:
+		return
+	TutorialMode.record_carrot_camp_state(panel.visible, panel.current_page())
 
 
 func _build(staged: bool = false) -> void:
@@ -1016,7 +1109,7 @@ func _build_top_actions() -> void:
 	carrot_lbl.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.95))
 	carrot_lbl.add_theme_constant_override("outline_size", 3)
 	carrot_btn.add_child(carrot_lbl)
-	carrot_btn.visible = not GameState.tutorial_mode
+	carrot_btn.visible = _carrot_ui_visible()
 	side_col.add_child(carrot_btn)
 
 	# 萝卜持有量常驻在入口下方，玩家无需打开营地即可查看。
@@ -1024,7 +1117,8 @@ func _build_top_actions() -> void:
 	carrot_counter.name = "CarrotResourceCounter"
 	carrot_counter.custom_minimum_size = Vector2(MERC_BTN_SIZE.x, 32)
 	carrot_counter.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	carrot_counter.visible = not GameState.tutorial_mode
+	carrot_counter.visible = _carrot_ui_visible()
+	_carrot_counter_panel = carrot_counter
 	var counter_style := StyleBoxFlat.new()
 	counter_style.bg_color = Color(0.075, 0.095, 0.055, 0.94)
 	counter_style.border_color = Color(0.78, 0.57, 0.20, 0.92)
@@ -1089,6 +1183,7 @@ func _build_top_actions() -> void:
 		Callable(self, "request_upgrade_stone_draw"),
 		Callable(self, "request_four_star_upgrade"))
 	_carrot_panel.closed.connect(_close_carrot_camp)
+	_carrot_panel.page_changed.connect(func(_page: int): _report_carrot_camp_state())
 	add_child(_carrot_panel)
 
 	_build_chat_entry()
@@ -1576,12 +1671,14 @@ func _toggle_carrot_camp() -> void:
 	if _carrot_panel.visible:
 		_close_team_mercs_picker()
 		_close_merc_picker()
+	_report_carrot_camp_state()
 
 func _close_carrot_camp() -> void:
 	if _carrot_panel != null and is_instance_valid(_carrot_panel):
 		_carrot_panel.visible = false
 	if _carrot_dimmer != null and is_instance_valid(_carrot_dimmer):
 		_carrot_dimmer.visible = false
+	_report_carrot_camp_state()
 
 func _on_carrot_dimmer_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed:
@@ -1660,6 +1757,12 @@ func _unit_id_for_uid(uid: String) -> String:
 	return ""
 
 func _refresh_carrot_counter() -> void:
+	# 教学推进到萝卜那一步时入口才出现 —— 显隐要跟着每次刷新走，不只在建页面时定一次。
+	var carrot_visible := _carrot_ui_visible()
+	if _carrot_button != null and is_instance_valid(_carrot_button):
+		_carrot_button.visible = carrot_visible
+	if _carrot_counter_panel != null and is_instance_valid(_carrot_counter_panel):
+		_carrot_counter_panel.visible = carrot_visible
 	if _carrot_counter_label == null or not is_instance_valid(_carrot_counter_label):
 		return
 	var amount := int(GameState.carrots)
@@ -1969,12 +2072,11 @@ func _mercenary_purchase_reason(index: int) -> String:
 	if PrepRules.first_empty_mercenary_slot() < 0:
 		return tr("ui_merc_full")
 	var mercenary: Dictionary = mercenaries[index]
-	if GameState.tutorial_mode:
-		if GameState.gold < int(mercenary.get("cost", 0)):
-			return tr("ui_not_enough_gold")
-	else:
-		if GameState.carrots < int(mercenary.get("carrot_cost", 0)):
-			return "Not enough carrots" if LocaleManager.get_locale().begins_with("en") else "萝卜不足"
+	# 9.25：教学也用萝卜雇佣兵（与正式局一致），并且从「召唤佣兵」那一步起才开放。
+	if GameState.tutorial_mode and not TutorialMode.allows_carrot_action("hire_merc"):
+		return TutorialMode.follow_arrow_hint()
+	if GameState.carrots < int(mercenary.get("carrot_cost", 0)):
+		return "Not enough carrots" if LocaleManager.get_locale().begins_with("en") else "萝卜不足"
 	return ""
 
 func _on_portrait_card_hover(card: Control, hovered: bool) -> void:
@@ -2006,9 +2108,8 @@ func _create_mercenary_purchase_card(mercenary: Dictionary, index: int) -> DragB
 	card.clip_contents = false
 	card.text = ""
 	card.drag_enabled = false
-	var price_text := tr("ui_gold_format") % int(mercenary.get("cost", 0))
-	if not GameState.tutorial_mode:
-		price_text = ("Carrots %d" if LocaleManager.get_locale().begins_with("en") else "萝卜 %d") % int(mercenary.get("carrot_cost", 0))
+	# 9.25：教学与正式局一样按萝卜标价。
+	var price_text := ("Carrots %d" if LocaleManager.get_locale().begins_with("en") else "萝卜 %d") % int(mercenary.get("carrot_cost", 0))
 	card.set_meta("drag_preview_text", "%s\n%s" % [str(mercenary.get("name", tr("ui_mercenary"))), price_text])
 	var purchase_reason := _mercenary_purchase_reason(index)
 	var can_purchase := purchase_reason.is_empty()
@@ -2319,6 +2420,8 @@ func _refresh_mercenary_overlay() -> void:
 		GameState.carrots,
 		GameState.mercenary_slots,
 		GameState.tutorial_mode,
+		# 教学里佣兵是否开放随步骤变化（allows_carrot_action("hire_merc")），也要进签名。
+		GameState.tutorial_mode and TutorialMode.allows_carrot_action("hire_merc"),
 		LocaleManager.get_locale(),
 	])
 	if sig == _merc_overlay_signature:

@@ -17,6 +17,8 @@ const MUTED := Color(0.72, 0.72, 0.62)
 const GREEN := Color(0.74, 0.90, 0.59)
 
 signal closed
+# 切页签的事件。教学（9.25 萝卜 / 四星教学）靠它知道玩家现在在哪一页。
+signal page_changed(index: int)
 
 var _upgrade_callback: Callable
 var _draw_callback: Callable
@@ -52,6 +54,10 @@ var _last_stones := {"sky": 0, "land": 0, "ren": 0}
 var _stones_initialized := false
 var _reveal_serial := 0
 var _action_locked := false
+var _close_button: Button
+var _current_page := 0
+# 四星列表每行的「升至四星」按钮（每次 refresh 重建）。教学箭头要指着它。
+var _four_star_buttons: Array[Button] = []
 
 # 只收面板真正会调用的三个回调。
 #
@@ -142,6 +148,7 @@ func _build_header(parent: VBoxContainer) -> void:
 	close.add_theme_font_size_override("font_size", 22)
 	close.pressed.connect(_close)
 	header.add_child(close)
+	_close_button = close
 
 func _build_tabs(parent: VBoxContainer) -> void:
 	var tabs := HBoxContainer.new()
@@ -357,6 +364,50 @@ func _show_page(index: int) -> void:
 	_stone_page.visible = index == 1
 	_set_tab(_camp_tab, index == 0)
 	_set_tab(_stone_tab, index == 1)
+	_current_page = index
+	page_changed.emit(index)
+
+
+func current_page() -> int:
+	return _current_page
+
+
+# --- 教学取值（9.25）：只读暴露控件，给 PrepUI 的教学目标适配层用 -------------------
+
+func tutorial_close_button() -> Control:
+	return _close_button
+
+
+func tutorial_camp_tab() -> Control:
+	return _camp_tab
+
+
+func tutorial_stone_tab() -> Control:
+	return _stone_tab
+
+
+func tutorial_harvest_button() -> Control:
+	return _tech_button
+
+
+func tutorial_draw_button() -> Control:
+	return _draw_button
+
+
+# 第一枚可点的「升至四星」；一枚都不可点时退回第一枚，列表为空时退回列表容器。
+func tutorial_four_star_target() -> Control:
+	for button in _four_star_buttons:
+		if is_instance_valid(button) and not button.disabled:
+			return button
+	for button in _four_star_buttons:
+		if is_instance_valid(button):
+			return button
+	return _four_star_list
+
+
+# 教学里某个萝卜操作此刻是否放行。非教学恒为 true。
+func _tutorial_allows(action: String) -> bool:
+	return not GameState.tutorial_mode or TutorialMode.allows_carrot_action(action)
 
 func refresh() -> void:
 	if _carrot_balance == null:
@@ -391,8 +442,11 @@ func refresh() -> void:
 	_tech_next.text = str(next_production)
 	_tech_button.text = _t("升级采集\n%d 金币", "Upgrade Harvest\n%d Gold") % price
 	var online_blocked := NetworkService.team_active and not NetworkService.is_host and not NetworkService.carrot_economy_enabled()
-	_tech_button.disabled = GameState.round_index < 2 or _action_locked or GameState.gold < price or online_blocked
-	if GameState.round_index < 2:
+	# 教学（9.25）：不受「第 2 回合才解锁」限制，但只在箭头指着它的那一步可点。
+	var tech_round_locked := GameState.round_index < 2 and not GameState.tutorial_mode
+	var tech_tutorial_locked := not _tutorial_allows("harvest_upgrade")
+	_tech_button.disabled = tech_round_locked or tech_tutorial_locked or _action_locked or GameState.gold < price or online_blocked
+	if tech_round_locked:
 		_tech_note.text = _t("下一回合解锁升级", "Unlocks next round")
 	elif GameState.gold < price:
 		_tech_note.text = _t("金币不足 · 还差 %d", "Not enough gold · need %d") % (price - GameState.gold)
@@ -406,10 +460,12 @@ func refresh() -> void:
 
 	var draw_available := GameState.can_draw_upgrade_stone(GameState.round_index)
 	var stone_cost := GameState.upgrade_stone_draw_cost()
-	var unlocked := capacity >= stone_cost
+	# 教学（9.25）：送的萝卜可以超过容量，抽石头不看容量门槛；但只在抽石头那一步可点。
+	var unlocked := capacity >= stone_cost or GameState.tutorial_mode
+	var draw_tutorial_locked := not _tutorial_allows("draw_stone")
 	_draw_status.text = _t("本回合剩余 1 次", "1 draw remaining") if draw_available else _t("本回合已抽取 · 下回合恢复", "Draw used · resets next round")
 	_draw_button.text = _t("抽取一次\n%d 萝卜", "Draw Once\n%d Carrots") % stone_cost if draw_available else _t("下回合恢复", "Resets next round")
-	_draw_button.disabled = _action_locked or not draw_available or not unlocked or GameState.carrots < stone_cost or online_blocked
+	_draw_button.disabled = _action_locked or draw_tutorial_locked or not draw_available or not unlocked or GameState.carrots < stone_cost or online_blocked
 	if not unlocked:
 		_draw_result.text = _t("容量不足 · 需要储存 %d 萝卜", "Capacity too low · store %d carrots") % stone_cost
 	elif GameState.carrots < stone_cost and draw_available:
@@ -436,6 +492,7 @@ func _refresh_four_star_list() -> void:
 	for child in _four_star_list.get_children():
 		_four_star_list.remove_child(child)
 		child.queue_free()
+	_four_star_buttons.clear()
 	var rows := 0
 	for source in [["board", GameState.board_slots], ["bench", GameState.bench_slots]]:
 		var where := str(source[0])
@@ -469,9 +526,11 @@ func _refresh_four_star_list() -> void:
 			action.custom_minimum_size = Vector2(90,44)
 			action.add_theme_font_size_override("font_size", 14)
 			action.add_theme_stylebox_override("normal", _secondary_button_style())
-			action.disabled = _action_locked or not bool(check.get("ok", false)) or not NetworkService.four_star_upgrade_available() or not NetworkService.four_star_request_id.is_empty()
+			action.disabled = _action_locked or not bool(check.get("ok", false)) or not NetworkService.four_star_upgrade_available() or not NetworkService.four_star_request_id.is_empty() \
+				or not _tutorial_allows("four_star")
 			action.pressed.connect(_on_four_star.bind(where, index))
 			row_content.add_child(action)
+			_four_star_buttons.append(action)
 	if rows == 0:
 		var empty := VBoxContainer.new()
 		empty.alignment = BoxContainer.ALIGNMENT_CENTER

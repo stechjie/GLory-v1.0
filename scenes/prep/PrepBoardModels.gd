@@ -34,7 +34,7 @@ func _sync_four_star_actor(actor: Node3D, cell: Dictionary) -> void:
 	if not bool(cell.get("is_mercenary", false)):
 		if int(cell.get("star", 1)) == GameState.MAX_UNIT_STAR:
 			state = 2
-		elif not GameState.tutorial_mode and NetworkService.four_star_upgrade_available() and NetworkService.four_star_request_id.is_empty() and bool(GameState.four_star_check(cell).get("ok", false)):
+		elif (not GameState.tutorial_mode or TutorialMode.allows_carrot_action("four_star")) and NetworkService.four_star_upgrade_available() and NetworkService.four_star_request_id.is_empty() and bool(GameState.four_star_check(cell).get("ok", false)):
 			state = 1
 	var affinity := str(def.get("element", ""))
 	# Keep the established gold readiness hint for eligible three-star pieces.
