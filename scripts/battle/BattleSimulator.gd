@@ -660,14 +660,30 @@ static func _separate_units(player: Array, enemy: Array) -> void:
 		remaining.append(SEPARATION_MAX_TRAVEL)
 		var cells := maxi(1, int(f.get("footprint_cells", 1)))
 		inverse_mass.append(1.0 / float(cells * cells))
+	# Conservative broad phase: each body can travel at most 20px this tick.
+	# Pairs farther apart than both travel budgets cannot come into contact.
+	# Keep UID traversal order unchanged so pruning cannot alter the solution.
+	var neighbors: Array = []
+	for i in live.size(): neighbors.append(PackedInt32Array())
+	for i in live.size():
+		for j in range(i + 1, live.size()):
+			var margin := radii[i] + radii[j] + 2.0 * SEPARATION_MAX_TRAVEL
+			var delta: Vector2 = live[j].pos - live[i].pos
+			if absf(delta.x) > margin or absf(delta.y) > margin:
+				continue
+			neighbors[i].append(j)
+			neighbors[j].append(i)
 	for _pass in SEPARATION_PASSES:
 		var worst := 0.0
 		var moved := false
 		# Alternate traversal to avoid a persistent UID-order shove through a crowd.
 		for first in live.size():
 			var i := first if _pass % 2 == 0 else live.size() - 1 - first
-			for second in range(first + 1, live.size()):
-				var j := second if _pass % 2 == 0 else live.size() - 1 - second
+			var adjacent: PackedInt32Array = neighbors[i]
+			for second in adjacent.size():
+				var j := adjacent[second] if _pass % 2 == 0 else adjacent[adjacent.size() - 1 - second]
+				if (_pass % 2 == 0 and j <= i) or (_pass % 2 != 0 and j >= i):
+					continue
 				var a: Dictionary = live[i]
 				var b: Dictionary = live[j]
 				var minimum := radii[i] + radii[j]
