@@ -652,10 +652,12 @@ static func _separate_units(player: Array, enemy: Array) -> void:
 	if live.size() < 2:
 		return
 	live.sort_custom(func(a, b): return str(a.get("uid", "")) < str(b.get("uid", "")))
+	var positions := PackedVector2Array()
 	var radii := PackedFloat32Array()
 	var inverse_mass := PackedFloat32Array()
 	var remaining := PackedFloat32Array()
 	for f in live:
+		positions.append(f.pos)
 		radii.append(body_radius(f))
 		remaining.append(SEPARATION_MAX_TRAVEL)
 		var cells := maxi(1, int(f.get("footprint_cells", 1)))
@@ -664,30 +666,29 @@ static func _separate_units(player: Array, enemy: Array) -> void:
 	# Pairs farther apart than both travel budgets cannot come into contact.
 	# Keep UID traversal order unchanged so pruning cannot alter the solution.
 	var neighbors: Array = []
-	for i in live.size(): neighbors.append(PackedInt32Array())
+	var predecessors: Array = []
+	for i in live.size():
+		neighbors.append(PackedInt32Array())
+		predecessors.append(PackedInt32Array())
 	for i in live.size():
 		for j in range(i + 1, live.size()):
 			var margin := radii[i] + radii[j] + 2.0 * SEPARATION_MAX_TRAVEL
-			var delta: Vector2 = live[j].pos - live[i].pos
+			var delta: Vector2 = positions[j] - positions[i]
 			if absf(delta.x) > margin or absf(delta.y) > margin:
 				continue
 			neighbors[i].append(j)
-			neighbors[j].append(i)
+			predecessors[j].append(i)
 	for _pass in SEPARATION_PASSES:
 		var worst := 0.0
 		var moved := false
 		# Alternate traversal to avoid a persistent UID-order shove through a crowd.
 		for first in live.size():
 			var i := first if _pass % 2 == 0 else live.size() - 1 - first
-			var adjacent: PackedInt32Array = neighbors[i]
+			var adjacent: PackedInt32Array = neighbors[i] if _pass % 2 == 0 else predecessors[i]
 			for second in adjacent.size():
 				var j := adjacent[second] if _pass % 2 == 0 else adjacent[adjacent.size() - 1 - second]
-				if (_pass % 2 == 0 and j <= i) or (_pass % 2 != 0 and j >= i):
-					continue
-				var a: Dictionary = live[i]
-				var b: Dictionary = live[j]
 				var minimum := radii[i] + radii[j]
-				var d: Vector2 = b.pos - a.pos
+				var d: Vector2 = positions[j] - positions[i]
 				if absf(d.x) >= minimum or absf(d.y) >= minimum:
 					continue
 				var distance := d.length()
@@ -698,19 +699,24 @@ static func _separate_units(player: Array, enemy: Array) -> void:
 				var direction := d / distance if distance > 0.001 else Vector2.RIGHT.rotated(float(i * 7 + j) * 0.9)
 				var share := inverse_mass[i] / (inverse_mass[i] + inverse_mass[j])
 				var correction := minf(overlap, SEPARATION_MAX_STEP)
-				var old_a: Vector2 = a.pos
-				var old_b: Vector2 = b.pos
+				var old_a: Vector2 = positions[i]
+				var old_b: Vector2 = positions[j]
 				var ap: Vector2 = old_a - direction * minf(correction * share, remaining[i])
 				var bp: Vector2 = old_b + direction * minf(correction * (1.0 - share), remaining[j])
-				a.pos = Vector2(clampf(ap.x, 45.0, ARENA_W - 45.0), clampf(ap.y, 40.0, ARENA_H - 40.0))
-				b.pos = Vector2(clampf(bp.x, 45.0, ARENA_W - 45.0), clampf(bp.y, 40.0, ARENA_H - 40.0))
-				var a_travel := old_a.distance_to(a.pos)
-				var b_travel := old_b.distance_to(b.pos)
+				positions[i] = Vector2(clampf(ap.x, 45.0, ARENA_W - 45.0), clampf(ap.y, 40.0, ARENA_H - 40.0))
+				positions[j] = Vector2(clampf(bp.x, 45.0, ARENA_W - 45.0), clampf(bp.y, 40.0, ARENA_H - 40.0))
+				var a_travel := old_a.distance_to(positions[i])
+				var b_travel := old_b.distance_to(positions[j])
 				remaining[i] = maxf(0.0, remaining[i] - a_travel)
 				remaining[j] = maxf(0.0, remaining[j] - b_travel)
 				moved = moved or a_travel > 0.0001 or b_travel > 0.0001
 		if worst <= SEPARATION_EPS or not moved:
 			break
+
+	# Publish once after the deterministic solve; inner loops avoid Dictionary
+	# property access for every contact in every pass. Vector2 remains float32.
+	for i in live.size():
+		live[i].pos = positions[i]
 
 
 static func _handle_attack_kill(killer: Dictionary, target: Dictionary, state: Dictionary, killer_team: Array, victim_team: Array, was_alive: bool) -> void:

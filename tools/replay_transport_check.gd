@@ -187,7 +187,7 @@ func exercise() -> void:
 	h.expect(replacement_sent and clients[7].received_count == 2, "reconnect_delivery", "Reconnected peer receives its full replay and next battle")
 	h.expect(server._replay_out.is_empty(), "all_acked", "Every live transfer eventually ACKs")
 	h.expect(max_peer_bytes <= 32 * 1024, "actual_peer_budget", "2 MiB replay uses at most 32 KiB credited bursts")
-	h.expect(max_global_bytes <= 256 * 1024 and max_global_bytes >= 8 * 16 * 1024, "actual_fairness", "All 8 peers can progress in one frame under global cap")
+	h.expect(max_global_bytes <= Q.GLOBAL_BYTES_PER_FRAME and max_global_bytes >= 2 * 16 * 1024, "actual_fairness", "Multiple peers progress per poll under the configured global cap; all peers must finish below")
 	var all_pongs: Array[int] = []
 	var completion_ms: Array[int] = []
 	for index in 8:

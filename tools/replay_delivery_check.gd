@@ -32,7 +32,7 @@ func check_queue() -> void:
 		q.enqueue(peer)
 	var sent: Array[Dictionary] = []
 	var fn := func(item: Dictionary) -> bool: sent.append(item); return true
-	var first: Dictionary = q.drain(fn, Q.GLOBAL_BYTES_PER_FRAME, 1000000)
+	var first: Dictionary = q.drain(fn, 256 * 1024, 1000000)
 	h.expect(int(first.bytes) == 256 * 1024 and int(first.chunks) == 16, "global_budget", "Exactly 16 peers served under 256 KiB cap")
 	var seen := {}
 	for item in sent:

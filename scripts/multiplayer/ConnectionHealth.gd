@@ -69,3 +69,15 @@ func should_log_rtt(rtt_ms: int) -> bool:
 # 距上次 ping 已过 accum 秒，是否该再发一次。
 func should_send_ping(accum_sec: float) -> bool:
 	return accum_sec >= HEARTBEAT_INTERVAL_SEC
+
+
+# This transport uses unreliable RPCs only for low-rate ping/pong. ENet's
+# default adaptive unreliable throttle can discard several consecutive heartbeats
+# after a reliable replay burst even while the socket is healthy. Keep those
+# control packets eligible for sending; reliable windows, replay queue budgets
+# and the application timeout continue to enforce backpressure and liveness.
+func configure_peer(peer: ENetPacketPeer) -> void:
+	if peer == null:
+		return
+	peer.set_timeout(64, 15000, 45000)
+	peer.throttle_configure(1000, ENetPacketPeer.PACKET_THROTTLE_SCALE, 0)

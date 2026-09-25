@@ -35,10 +35,12 @@ def args(project, role):
             'res://tools/server_capacity_split_check.tscn', '--', '--role=' + role,
             '--peers=' + peers, '--rooms=' + rooms, '--mode=' + mode,
             '--idle-ms=' + os.environ.get('GLORY_CAPACITY_IDLE_MS', '10000'),
+            '--waves=' + os.environ.get('GLORY_CAPACITY_WAVES', '1'),
             '--rendezvous=' + str(ready)]
 server = subprocess.Popen(args(server_project, 'server'))
 client = None
-peak = {'server_rss_kib': 0, 'client_rss_kib': 0}
+peak = {'server_rss_kib': 0, 'client_rss_kib': 0, 'server_cpu_seconds': 0.0, 'client_cpu_seconds': 0.0}
+clock_ticks = os.sysconf('SC_CLK_TCK')
 try:
     until = time.monotonic() + 30
     while not ready.exists() and time.monotonic() < until and server.poll() is None:
@@ -47,7 +49,7 @@ try:
         raise RuntimeError('Server did not publish local handshake coordinates')
     with open(client_log, 'w') as output:
         client = subprocess.Popen(args(client_project, 'clients'), stdout=output, stderr=subprocess.STDOUT)
-        until = time.monotonic() + 270
+        until = time.monotonic() + 100 + int(os.environ.get('GLORY_CAPACITY_WAVES', '1')) * 190
         server_finished_at = None
         while time.monotonic() < until and (server.poll() is None or client.poll() is None):
             if server.poll() is not None:
@@ -61,6 +63,9 @@ try:
                     lines = Path('/proc/' + str(process.pid) + '/status').read_text().splitlines()
                     rss = int(next(line for line in lines if line.startswith('VmRSS:')).split()[1])
                     peak[label + '_rss_kib'] = max(peak[label + '_rss_kib'], rss)
+                    stat = Path('/proc/' + str(process.pid) + '/stat').read_text().rsplit(')', 1)[1].split()
+                    cpu = (int(stat[11]) + int(stat[12])) / clock_ticks
+                    peak[label + '_cpu_seconds'] = max(peak[label + '_cpu_seconds'], cpu)
                 except (OSError, StopIteration):
                     pass
             time.sleep(.25)

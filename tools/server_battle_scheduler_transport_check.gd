@@ -65,6 +65,9 @@ func _ready() -> void:
 		return
 	var fixture := Fixture.new()
 	var peer_id := client_peer.get_unique_id()
+	NetworkService._conn_health.configure_peer(client_peer.get_peer(1))
+	NetworkService._conn_health.configure_peer(server_peer.get_peer(peer_id))
+	_h.expect(int(client_peer.get_peer(1).get_statistic(ENetPacketPeer.PEER_PACKET_THROTTLE_DECELERATION)) == 0, "heartbeat_no_local_discard", "Heartbeat-only unreliable control must not be locally throttled")
 	await _exercise("idle_before", client_pulse, server_peer, client_peer, fixture, 3500000)
 	for index in 16:
 		var room: Dictionary = fixture._fixture(730000 + index, 21, true)

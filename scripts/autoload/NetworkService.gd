@@ -4925,7 +4925,7 @@ func _tune_peer_timeout(peer_id: int) -> void:
 		return
 	var ep := enet.get_peer(peer_id)
 	if ep != null:
-		ep.set_timeout(64, 15000, 45000)
+		_conn_health.configure_peer(ep)
 
 func _on_peer_connected(id: int) -> void:
 	_net_log("client connected peer=%d protocol=%d" % [id, NetworkConfig.NETWORK_PROTOCOL_VERSION])
