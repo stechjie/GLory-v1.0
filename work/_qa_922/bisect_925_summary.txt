@@ -1,0 +1,18 @@
+[backup] 2f2766fc536370ad -> C:\Users\WINDOWS\Desktop\GLory-work\work\_qa_922\_bisect_925_backup.gd
+
+=== baseline（本轮全部改动在位）rc=0 PROBE_DONE checks=57 fail=0
+
+=== 撤销 R1 relink 守卫 之后 rc=0 PROBE_DONE checks=57 fail=0
+
+=== 撤销 R2 _nearest_non_boss 跳过条件 之后 rc=0 PROBE_DONE checks=57 fail=0
+
+=== 撤销 R3 _link_targets_without_doom 过滤 之后 rc=0 PROBE_DONE checks=57 fail=0
+
+[restore] sha256 一致 = True（2f2766fc536370ad）
+[restore] 已删除临时备份
+
+==== 汇总 ====
+baseline                                 rc=0 PROBE_DONE checks=57 fail=0
+R1 relink 守卫                             rc=0 PROBE_DONE checks=57 fail=0
+R2 _nearest_non_boss 跳过条件                rc=0 PROBE_DONE checks=57 fail=0
+R3 _link_targets_without_doom 过滤         rc=0 PROBE_DONE checks=57 fail=0

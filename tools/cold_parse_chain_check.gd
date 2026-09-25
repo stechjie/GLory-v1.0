@@ -25,8 +25,30 @@ const TARGETS: Array[Dictionary] = [
 	#   而它若解析失败，只能寄希望于 .tscn 连带报错，那就又回到靠侥幸。
 	{"kind": "script", "path": "res://scenes/battle/BattleScreen.gd"},
 	{"kind": "scene", "path": "res://scenes/battle/BattleScreen.tscn"},
+	# ★ 9.25 补齐：这一批改了 BattleSimulator.gd（血链）、UnitDetailFormat.gd（技能文案）、
+	#   PrepFlowController.gd / PrepBoardController.gd / ShopPanel.gd（教学开战门槛、
+	#   商店刷新免费口径）。按 9.24 的教训「改的每个文件都要在清单里，谁坏了就指谁」，
+	#   逐个单列 —— 只靠 PrepScreen.tscn 连带实例化等于把判据押在别人身上。
+	{"kind": "script", "path": "res://scripts/battle/BattleSimulator.gd"},
+	{"kind": "script", "path": "res://scripts/ui/UnitDetailFormat.gd"},
+	{"kind": "script", "path": "res://scenes/prep/PrepFlowController.gd"},
+	{"kind": "script", "path": "res://scenes/prep/PrepBoardController.gd"},
+	{"kind": "script", "path": "res://scenes/prep/panels/ShopPanel.gd"},
 	{"kind": "scene", "path": "res://scenes/prep/PrepScreen.tscn"},
 	{"kind": "script", "path": "res://scripts/tutorial/TutorialMode.gd"},
+	# ★ 9.25 第二批：改门禁本身也要在清单里。tutorial_text_leak_check.gd 的无效点击
+	#   判据这轮换了口径（用户 ③(1)），新探针是这轮新增的行为判据 —— 它们各自都是
+	#   直接以主场景加载的，解析失败时确实会自己报错，但按同一条教训还是单列出来，
+	#   免得以后有人只跑批跑、看到"全绿"却不知道这两条根本没被解析过。
+	{"kind": "script", "path": "res://tools/tutorial_text_leak_check.gd"},
+	{"kind": "script", "path": "res://work/_qa_922/probe_blood_link_boss_immune_925.gd"},
+	# ★ 9.25 追加订正：预备阶段又被改了（PrepUI.gd 的刷新按钮判定）。按「改的每个文件
+	#   都要在清单里」补进来 —— PrepUI.gd 处在 PrepScreen 继承链的底层
+	#   （PrepScreen → PrepBoardController → PrepFlowController → PrepUI → PrepBoardModels
+	#   → PrepShared），解析失败会连带整条链；单列才是「谁坏了就指谁」。
+	{"kind": "script", "path": "res://scenes/prep/PrepUI.gd"},
+	# 新门禁自身也在清单里（同 9.25 第二批的理由：改门禁也要被解析过）。
+	{"kind": "script", "path": "res://tools/shop_refresh_free_source_check.gd"},
 ]
 
 

@@ -2094,7 +2094,14 @@ func _on_portrait_card_hover(card: Control, hovered: bool) -> void:
 func _on_refresh_shop_control_pressed() -> void:
 	if _shop_refresh_burn == null or _shop_refresh_burn.is_playing():
 		return
-	var all_free := TreasureService.has_set("money")
+	# 9.25 订正：本函数是刷新按钮的**前置**判定（决定放不放燃烧动画），原先只抄了
+	# TreasureService.has_set("money")，漏掉教学分支。教程里 shop_refresh_all_free()
+	# 恒真 ⇒ cost 恒 0；漏抄后 cost 按 shop_refresh_uses_this_round 递增
+	# （EconomyService.shop_refresh_cost 在 all_free=false 且 uses>0 时走递增价），
+	# 刷几次就超过金币，这里静默 return —— 表现正是「按钮写着免费（ShopPanel 那边
+	# 用的是正确判定）、点下去毫无反应」。判定只能接 TutorialMode.shop_refresh_all_free()
+	# 这一处，与 PrepBoardController._on_refresh_shop / ShopPanel.refresh 同源。
+	var all_free := TutorialMode.shop_refresh_all_free()
 	var refresh_cost := EconomyService.shop_refresh_cost(GameState.shop_refresh_uses_this_round, all_free)
 	if GameState.gold < refresh_cost:
 		return

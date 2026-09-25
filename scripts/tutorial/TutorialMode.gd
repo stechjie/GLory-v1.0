@@ -171,10 +171,22 @@ var _last_keep_clear_rects: Array[Rect2] = []
 # 跳过确认框不再由本文件持有节点：见 _show_skip_confirm()。
 
 const START_SHOP := ["human_militia", "human_archer", "human_merchant", "human_swordsman"]
-const FILL_SHOP := ["human_swordsman", "human_mage", "human_cleric", "human_death_servant"]
+# FILL_7 铺货（买齐 7 个上阵）。**9.25 教程优化第 3 条：不出死侍**，
+# 所以这里把 human_death_servant 拿掉、只留三种。
+# 三种而不是四种没关系：_apply_shop() 按 `offers[i % size]` 循环填满 4 个卡位，
+# 刷新（_roll_shop -> tutorial_shop_ids -> 本表）也走同一张表，
+# 于是「不再出现、也不再刷新出死侍」两条由同一处保证。
+# 这几种都是「场上还没有的棋子」——若有同名在场，买入会立刻自动合成、
+# 可上阵数不增，_fill_buy_target 就永远凑不满（见 _compensate_fill_shortfall）。
+const FILL_SHOP := ["human_swordsman", "human_mage", "human_cleric"]
 
 # PVP 前要凑满的上阵数。取生产常量而不是写死 7 —— 规则改了这里跟着走。
 const FILL_TARGET_UNITS := GameConstants.NORMAL_UNIT_CAP
+# 开战前的最低上阵数（board_slots 上的普通棋子，即 GameState.normal_unit_count）。
+# 与 PLACE_3 的完成条件、battle_board_gate_message() 共用同一个值。
+# 注意别和 _owned_normal_count() 混：那个数是「棋盘 + 待命区」的持有数，
+# 教学里同样是 3，但口径不同（BUY_3 用它）。
+const EARLY_DEPLOY_UNITS := 3
 # 升星步：商店铺满玩家要凑的同名棋子，让玩家自己买 + 刷新
 const UPGRADE_2_SHOP := ["human_militia", "human_militia", "human_militia", "human_militia"]
 const UPGRADE_OTHERS_SHOP := ["human_archer", "human_archer", "human_merchant", "human_merchant"]
@@ -242,7 +254,7 @@ func sync() -> void:
 	# CLOSE_SHOP 子阶段共用 record_shop_toggled() 的生产事件，不轮询、不猜。
 	if step == Step.BUY_3 and _owned_normal_count() >= 3 and not _fill_shop_open:
 		_advance_to(Step.PLACE_3)
-	if step == Step.PLACE_3 and GameState.normal_unit_count() >= 3:
+	if step == Step.PLACE_3 and GameState.normal_unit_count() >= EARLY_DEPLOY_UNITS:
 		_advance_to(Step.START_PVE_1)
 	if step == Step.UPGRADE_2 and _unit_star("human_militia") >= 2:
 		_advance_to(Step.START_PVE_2)
@@ -262,6 +274,19 @@ func sync() -> void:
 	# --- 9.25 萝卜 / 四星教学 ---
 	if step == Step.CARROT_CAMP and _camp_open:
 		_advance_to(Step.HARVEST_UPGRADE)
+		# 9.25 教程优化第 2 条：必须在这里刷一次视图。
+		#
+		# 营地面板的「升级采集」按钮 disabled 里有一项 `not allows_carrot_action(
+		# "harvest_upgrade")`，而它只在 step==HARVEST_UPGRADE 时为假。玩家点营地
+		# 打开面板那一刻，PrepUI._toggle_carrot_camp 的顺序是「toggle() 先 refresh()
+		# 一次 → 再上报状态」，于是那一次 refresh 看到的是**还没推进的 CARROT_CAMP**，
+		# 按钮被算成禁用（灰）；状态上报触发 sync() 推进到 HARVEST_UPGRADE 之后又没人
+		# 再刷新，按钮就一直灰着，玩家只能关掉营地再打开（第二次 toggle 时 step 已经是
+		# HARVEST_UPGRADE，才亮起来）——提交截图 image6（灰）/image7（关营地）/image8
+		# （重开后亮）就是这个来回。本项目的既有做法就是「推进改变面板内容的步骤后
+		# 请求一次 ACTION_REFRESH_VIEW」（见 UPGRADE_2 / UPGRADE_3 / FORMATION_HP 等
+		# 分支），这里漏了，补上即可：按钮在营地打开的同一帧内就变亮。
+		_refresh_prep()
 	# 升级完还要玩家自己关掉营地（营地盖住了「开始战斗」），关掉才进 Boss。
 	if step == Step.HARVEST_UPGRADE and GameState.harvest_tech_level >= 1 and not _camp_open:
 		_advance_to(Step.START_BOSS)
@@ -302,15 +327,38 @@ func sync() -> void:
 func can_start_battle() -> bool:
 	return step in [Step.START_PVE_1, Step.START_PVE_2, Step.START_BOSS, Step.START_PVP]
 
+
+# 9.25 教程优化第 4/5 条：开战前的最低上阵人数门槛。
+#
+# 文档里的「步骤 3 / 5 / 14 / 22」是 STEP_SEQUENCE 的 1-based 序号（也就是气泡右上角
+# 那个「步 N/22」），逐条对上：
+#   3  = START_PVE_1 、5  = START_PVE_2 、14 = START_BOSS  -> 至少 3 个
+#   22 = START_PVP                                          -> 至少 7 个（FILL_TARGET_UNITS）
+# 上阵数一律取 GameState.normal_unit_count()：那是 board_slots 上的**普通**棋子数，
+# 与 PLACE_3 / FILL_7 的完成条件同一口径（佣兵在 mercenary_slots，不算）。
+#
+# 返回空串 = 放行；非空 = 要弹给玩家的拦截提示。文案按要求固定为「上阵棋子数目少于N」，
+# 与 follow_arrow_hint() 的「请先完成前置任务」走同一个出口（PrepFlowController 的
+# show_message），因此样式天然一致。
+func battle_board_gate_message() -> String:
+	var need := 0
+	if step in [Step.START_PVE_1, Step.START_PVE_2, Step.START_BOSS]:
+		need = EARLY_DEPLOY_UNITS
+	elif step == Step.START_PVP:
+		need = FILL_TARGET_UNITS
+	if need <= 0 or GameState.normal_unit_count() >= need:
+		return ""
+	return _t("上阵棋子数目少于%d" % need, "Deploy at least %d units first" % need)
+
 # 无效点击的反馈（V3 P1-10）。
 #
 # 原来无论在哪一步都只回一句「先完成箭头指示的操作」。那句话有两个问题：
 # 它没说要做什么，而且箭头指的地方**可能正被商店盖住** —— 玩家照着看，
 # 看到的是商店，于是在商店里反复找。
 #
-# 现在说清两件事：商店开着就先让它关掉，然后复述这一步的目标。
-# 目标直接取 current_text() 的首行，不另建一张会漂移的文案表 ——
-# 那张表还会成为第二处可能泄漏 enum key 的地方。
+# 现在说清两件事：商店开着就先让它关掉；否则统一回一句「请先完成前置任务」。
+# 商店那条要复述这一步的目标，目标直接取 current_text() 的首行，不另建一张会漂移的
+# 文案表 —— 那张表还会成为第二处可能泄漏 enum key 的地方。
 func follow_arrow_hint() -> String:
 	var objective := current_text().split("
 ")[0].strip_edges()
@@ -320,10 +368,11 @@ func follow_arrow_hint() -> String:
 				"The shop is covering the target. Close it first.")
 		return _t("商店挡住了要点的地方。先关掉商店，然后：%s" % objective,
 			"The shop is covering the target. Close it first, then: %s" % objective)
-	if objective.is_empty():
-		return _t("先完成箭头指示的操作。", "Follow the arrow first.")
-	return _t("这一步还没完成：%s" % objective,
-		"This step is not done yet: %s" % objective)
+	# 9.25 教程优化第 1 条：原来这里回「这一步还没完成：<整段目标文案>」。
+	# 目标文案本身就长，玩家在商店里连点卡片时同一句会堆满整个屏幕（见提交截图
+	# image4）。改成一句短的，与 ③(4)/(5) 的「上阵棋子数目少于 N」同为纯 `show_message`
+	# 提示（同一个出口、同一种样式）。
+	return _t("请先完成前置任务", "Finish the previous task first")
 
 
 # 这一步的目标本来就在商店里时，不该让玩家去关商店。
@@ -450,6 +499,11 @@ func update_overlay() -> void:
 		var to_overlay := _overlay.get_global_transform_with_canvas().affine_inverse() \
 			* target.get_global_transform_with_canvas()
 		rect = to_overlay * Rect2(Vector2.ZERO, target.size)
+	elif _last_target_rect.size.x > 0.0 and _last_target_rect.size.y > 0.0:
+		# 9.25 教程优化第 6 条（配套）：目标这一刻解析不出来（上面的空反馈）时，
+		# **沿用上一次的位置**，不要让箭头掉到屏幕中央那个占位矩形上去。
+		# 这样 transient 的空目标对玩家完全不可见：箭头原地不动，下一帧目标回来了自然对上。
+		rect = _last_target_rect
 	var dir := _arrow_dir()
 	var next_text := current_text()
 	if _text.text != next_text:
@@ -1353,11 +1407,20 @@ func _target_control() -> Control:
 			target_id = _carrot_target_id()
 	if target_id.is_empty():
 		return null
-	return _target_provider.resolve_target(
-		target_id,
-		step_key(),
-		_t("教学目标暂时不可用，请关闭当前面板后重试。",
-			"The tutorial target is temporarily unavailable. Close the current panel and try again."))
+	# 9.25 教程优化第 6 条：这里**不再请求玩家反馈**（原来传的是「教学目标暂时不可用，
+	# 请关闭当前面板后重试。」）。
+	#
+	# 有些目标是随界面瞬时状态而变的，解析不出来并不代表出错：UPGRADE_3 那一步的箭头
+	# 指着「商店里第一个还能买的卡位」，4 个卡位全买光（或商店正在重建）时
+	# _tutorial_first_available_shop() 就返回 null；提交截图（image16，步骤 6「升到3星」）
+	# 就是这时候弹了一条「教学目标暂时不可用」。玩家什么都没做错，这句话只会让人以为
+	# 关卡坏了。
+	#
+	# 传空串 -> TutorialTargetProvider.show_feedback("") 直接返回 false，不弹任何东西；
+	# provider 那边的 push_warning 诊断不受影响（仍会记 last_missing_snapshot）。
+	# 注意保留「未绑定 / resolver 无效」那两类**代码错误**的反馈：tutorial_target_check
+	# 要求缺目标时给玩家可恢复的反馈，那是自测用的假 provider 主动传的文本，不经过这里。
+	return _target_provider.resolve_target(target_id, step_key(), "")
 
 func _ensure_overlay() -> void:
 	if _overlay != null and is_instance_valid(_overlay):
@@ -1547,6 +1610,20 @@ func _on_continue_pressed() -> void:
 func _refresh_prep() -> void:
 	if _target_provider != null:
 		_target_provider.request_action(TutorialTargetProviderScript.ACTION_REFRESH_VIEW)
+
+
+# 9.25 教程优化第 3 条：教学里商店刷新「无限制次数 + 一直免费」。
+#
+# 这两件事是同一件事：EconomyService.shop_refresh_cost() 在 all_free 为真时恒返回 0，
+# 而 0 费用既不会扣钱也不会随 `shop_refresh_uses_this_round` 递增（那个计数只喂给
+# 递增价公式），所以「免费」自然等于「无限次」。
+#
+# **判定必须只在这一处**：PrepBoardController._on_refresh_shop（真正扣钱的那边）和
+# ShopPanel.refresh（画按钮、写「免费」标签的那边）各算一遍的话，两处一旦漂移就会出现
+# 「按钮写着免费、点下去照扣」这类只在一处生效的错。非教学仍然回落到「金币」套装
+# (money) 的原有口径。
+func shop_refresh_all_free() -> bool:
+	return GameState.tutorial_mode or TreasureService.has_set("money")
 
 func _start_treasure(ids: Array) -> void:
 	GameState.pending_treasure = {"active": true, "round": GameState.round_index, "candidates": TreasureService.available_candidates(ids), "refresh_index": 0}

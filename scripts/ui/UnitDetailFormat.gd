@@ -179,9 +179,12 @@ static func format_skill_detail(d: Dictionary) -> String:
 		"shared_hp_link":
 			# 9.14 反馈：4 星连接期间会按每秒 3% 最大生命回血，但文案没写。link_regen_pct
 			# 只在 4 星的 star4 覆写里有，1~3 星回血为 0，文案自然不带那句。
+			# 9.25 反馈第 2 条：目标口径补上「非唯一棋子」（唯一棋子是隐藏限制，见
+			# BattleSimulator._is_unique_fighter），并去掉尾部「Boss免疫。」——
+			# Boss 免疫改由「非Boss」这一处表述承担，不再重复声明。
 			var link_regen := float(d.get("link_regen_pct", 0.0))
 			var regen_clause := "；连接期间每秒回%s最大生命" % pct(link_regen) if link_regen > 0.0 else ""
-			return "血链%s：连接最近非Boss敌人并使其变为我方棋子；双方共享受到的生命损失%s。任一方死亡后清除连接，本回合不再释放。Boss免疫。" % [cd, regen_clause]
+			return "血链%s：连接最近非Boss，非唯一棋子敌人并使其变为我方棋子；双方共享受到的生命损失%s。任一方死亡后清除连接，本回合不再释放。" % [cd, regen_clause]
 		"black_hole":
 			return "黑洞%s：牵引周围敌人，眩晕%.1f秒，并造成自身攻击%s伤害。" % [cd, float(d.get("pull_sec", 2.0)), pct(float(d.get("damage_atk_pct", 2.2)))]
 		"poison_attack":
@@ -343,9 +346,13 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"shared_hp_link":
 			# 9.14: 4-star regenerates 3% max HP/s while linked; only 4-star sets
 			# link_regen_pct, so 1-3 star text stays without the clause.
+			# 9.25 (#2): add "non-unique" to the target wording (unique units are a
+			# hidden limit, see BattleSimulator._is_unique_fighter) and drop the
+			# trailing "Boss immune." — immunity is now carried solely by
+			# "nearest non-Boss". Kept in lockstep with the zh branch above.
 			var link_regen := float(d.get("link_regen_pct", 0.0))
 			var regen_clause := "; regenerate %s max HP per second while linked" % pct(link_regen) if link_regen > 0.0 else ""
-			return "Blood Chain%s: Link to the nearest non-Boss enemy and convert them to your side. Both share HP loss%s. Link breaks on either death and will not reactivate this round. Boss immune." % [cd, regen_clause]
+			return "Blood Chain%s: Link to the nearest non-Boss, non-unique enemy and convert them to your side. Both share HP loss%s. Link breaks on either death and will not reactivate this round." % [cd, regen_clause]
 		"black_hole":
 			return "Black Hole%s: Pull surrounding enemies, stun for %.1fs, and deal %s ATK damage." % [cd, float(d.get("pull_sec", 2.0)), pct(float(d.get("damage_atk_pct", 2.2)))]
 		"poison_attack":

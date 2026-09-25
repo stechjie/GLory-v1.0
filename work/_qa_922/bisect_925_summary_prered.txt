@@ -1,0 +1,26 @@
+### 本文件是**订正前**的 9.24 探针跑出来的，用于记录「红」这一侧的原始证据。
+### 探针订正后（走生产死亡路径）再跑 bisect 会 4/4 全绿，那时它就不再能区分
+### 「是否本轮改动引起」，所以必须在订正前跑。
+
+[backup] 2f2766fc536370ad -> C:\Users\WINDOWS\Desktop\GLory-work\work\_qa_922\_bisect_925_backup.gd
+
+=== baseline（本轮全部改动在位）rc=1 PROBE_DONE checks=56 fail=1
+      FAIL [live] 守卫确实处于阵亡状态（否则下一条会空过）                                got=false want=true
+
+=== 撤销 R1 relink 守卫 之后 rc=1 PROBE_DONE checks=56 fail=1
+      FAIL [live] 守卫确实处于阵亡状态（否则下一条会空过）                                got=false want=true
+
+=== 撤销 R2 _nearest_non_boss 跳过条件 之后 rc=1 PROBE_DONE checks=56 fail=1
+      FAIL [live] 守卫确实处于阵亡状态（否则下一条会空过）                                got=false want=true
+
+=== 撤销 R3 _link_targets_without_doom 过滤 之后 rc=1 PROBE_DONE checks=56 fail=1
+      FAIL [live] 守卫确实处于阵亡状态（否则下一条会空过）                                got=false want=true
+
+[restore] sha256 一致 = True（2f2766fc536370ad）
+[restore] 已删除临时备份
+
+==== 汇总 ====
+baseline                                 rc=1 PROBE_DONE checks=56 fail=1
+R1 relink 守卫                             rc=1 PROBE_DONE checks=56 fail=1
+R2 _nearest_non_boss 跳过条件                rc=1 PROBE_DONE checks=56 fail=1
+R3 _link_targets_without_doom 过滤         rc=1 PROBE_DONE checks=56 fail=1

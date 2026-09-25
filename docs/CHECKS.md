@@ -3541,3 +3541,146 @@ Part 6 直接调纯函数，**绕过了那个开关**。上一轮的教训是「
 `cold_parse_chain` **44**。
 另有一条**批跑之外**的既存红 `asset_manifest_check`（`failures=6`，全为既存 `missing_asset`），主动记录。
 
+
+## 2026-09-25：`tutorial_text_leak` 无效点击反馈**口径变更**（用户 ③⑴ 覆盖 V3 P1-10）
+
+★ **这是本仓第一次由用户需求直接推翻一条既有判据的设计前提**，所以单列一节，
+把"为什么这不是把门禁改松"讲清楚，便于日后复核时不必重新推一遍。
+
+**旧口径（V3 P1-10，2026-08-23 引入）**：无效点击的反馈要"说明原因"，
+因此要求 `follow_arrow_hint()` 在 22 个步骤里至少有 **5 种不同说法**，
+断言名 `invalid_tap_hint_is_one_size_fits_all`；同时要求商店遮挡场景复述本步目标
+（取 `current_text()` 首行）。
+
+**新需求（9.25 提交文档 ③⑴）**：那句"这一步还没完成：<整段目标文案>"**过于冗长** ——
+提交截图 `image4` 里玩家在商店连点卡片，同一句长文案铺满整个屏幕。
+要求统一收敛成一句短的 **「请先完成前置任务」**，并且 ③⑷/⑸ 的
+「上阵棋子数目少于 N」与它**走同一个出口**（`PrepFlowController.show_message`），格式天然一致。
+
+两条要求**不能同时满足**：「请先完成前置任务」就是唯一那句，
+"至少有 5 种说法"必然红（实测 `[zh]`/`[en]` 各 1 条）。
+
+**处理：换口径，不放松。** 断言从"计数 ≥5"改为"**逐字等于那句收敛短句**"：
+
+| 断言 | 变化 | 强度 |
+|------|------|------|
+| `invalid_tap_hint_empty`（非空） | 保留 | 不变 |
+| `invalid_tap_hint_leaks_key`（无枚举名） | 保留 | 不变 |
+| `invalid_tap_hint_has_internal_token`（无内部标识） | 保留 | 不变 |
+| `invalid_tap_hint_is_one_size_fits_all`（**≥5 种说法**） | **删除** | —— |
+| `invalid_tap_hint_not_short_sanctioned`（**逐字 == 收敛短句**） | 新增 | 更强：钉住具体文案，防止漂移回长句 |
+| `invalid_tap_hint_not_single_short_text`（`seen.size() <= 1`） | 新增 | 记录口径（出现第二种就说明有人又塞回了分支） |
+| `shop_occlusion_not_mentioned` / `shop_occlusion_hint_missing_shop` | 保留 | 不变 |
+| `shop_hint_fires_on_shop_steps`（采购步不得叫玩家关商店） | 保留 | 不变 |
+
+新增的两条**不是"把 ≥5 换成 ≤1 的弱化"**：旧断言只约束"种类数"，
+新断言额外约束了**内容**（必须逐字是「请先完成前置任务」/「Finish the previous task first」）。
+任何"把长句塞回来"或"再拆出别的分支"的改动都会立刻转红。
+
+**反向验证**：改回长句 → `invalid_tap_hint_not_short_sanctioned` 马上红（已实测，
+即 9.25 第一次批跑时这条就是红的，属"先红后绿"）。
+
+### 套件清单
+
+`work/_qa_922/run_gates.py` **21 → 31 条**：新增行为探针 `probe_blood_link_boss_immune_925`；
+并把 6 条教学门禁（`tutorial_text_leak` / `tutorial_step15_flow` / `tutorial_checkpoint` /
+`tutorial_overlay_layout` / `tutorial_target` / `tutorial_carrot_flow`）并入批跑 ——
+本轮改了 `TutorialMode.gd` 的步骤机与文案，而这 6 条此前**只在手工跑**。
+`tools/cold_parse_chain_check.gd` 的 `TARGETS` **+7**（本批改的 5 个脚本 + 改动的门禁脚本
++ 新增探针脚本），计数 44 → **65**。
+
+回归（2026-09-25）：**27 PASS / 4 FAIL**，4 条红全部为既存、计数与 9.24 一致
+（`voice` 8 / `dynamic_call` 4 / `procedural_ui_ratchet` 3 / `prep_text_coverage` 1）。
+`probe_doom_thunder_924` 57、`probe_blood_link_boss_immune_925` 46、`tutorial_text_leak` 93486。
+
+⚠️ **批跑之外**：`asset_manifest_check` 仍不在清单里且长期红（既存 6 条 `missing_asset`），
+本轮未新增资源故未单跑；`tutorial_arrow_alignment_check` 要求独立 custom user dir，
+在本工程根直接跑必 `rc=2`（脚本第 17-19 行显式检查），本轮未运行。
+
+---
+
+## 2026-09-25（追加）：`shop_refresh_free_source_check` —— 「教学免费 = 无限次」的判据必须**同源**
+
+**事故**（用户当天下午截图回执）：教程里商店刷新刷几次之后就点不动 —— 按钮还在、标着免费，
+按下去**毫无反应**。注意不是"扣了钱"，是**完全无响应**。
+
+**根因**：上一批（同日早些时候）引入 `TutorialMode.shop_refresh_all_free()` 时，
+"唯一判定源"只改了**两处**，而实际有**三处**：
+
+| # | 位置 | 作用 | 是否接同源 |
+|---|------|------|-----------|
+| 1 | `ShopPanel.refresh()` | 画按钮、把 cost 写成「免费」 | ✅ |
+| 2 | `PrepBoardController._on_refresh_shop()` | 真正扣钱 / 摇牌 | ✅ |
+| 3 | `PrepUI._on_refresh_shop_control_pressed()` | 决定放不放燃烧动画 | ❌ **漏了** |
+
+第 3 处留着旧的 `var all_free := TreasureService.has_set("money")`（少了 `GameState.tutorial_mode`）。
+于是按钮由**正确**判定置成"免费可点"，点下去先撞上**错误**判定：
+`all_free=false` ⇒ `cost = escalating_unit_price(uses)` 递增 ⇒ 超过金币 ⇒ 静默 `return`。
+"刷几次之后才失效"是 `shop_refresh_cost` 在 `uses<=0` 时短路返 0 造成的（**第一次永远免费**），
+从 `uses=1` 起 10 → 20 → 40 递增，金币被吃干的那一刻按钮就"死"了。
+
+### 为什么以前没有判据守着
+
+上一批那句「判定必须只在这一处」写在 `shop_refresh_all_free()` 的注释里 ——
+**是约定，不是判据**。行为层面只测了"费用是不是 0"，**没有任何断言检查"这个函数被谁调用"**。
+本仓此前已有"文本断言必须能看穿注释"的教训，这条是它的**结构版**：
+**"只留一处"这种设计要求，必须由结构断言来钉，否则第 N+1 个调用点天然漏网。**
+
+### 新增门禁（19 项，`tools/shop_refresh_free_source_check.gd`）
+
+| 组 | 条数 | 判据 |
+|----|------|------|
+| A 费用档位 | 6 | `(0,false)==0`、`(1,false)>0`、`(12,false)>0`、`(1,true)==0`、`(999,true)==0`、严格递增 |
+| B 教程恒免费 | 2 | 置 `tutorial_mode=true` ⇒ `all_free` 为真；刷 **999** 次费用仍 0（改前先存、改后整块还原） |
+| C **调用点同源** | 7 | 递归扫 `res://scenes` 下每个 `.gd`，对每处 `shop_refresh_cost(` 回溯所属函数体：① 体内须有 `TutorialMode.shop_refresh_all_free()`；② 不得有手抄的 `all_free := TreasureService.has_set("money")`；③ `call_site_count >= 3` 兜底防空集假绿 |
+| D 服务端分层（**反向**） | 3 | `EconomyLedger._shop_refresh` 的 free 须来自 payload（`TreasureService.has_set_in`），且**不得**读 `GameState.tutorial_mode` |
+
+**C 是唯一能抓住本次事故的一组**；A / B 只管"费用语义对不对"，不管"三处是否同源"。
+
+### ★ 判据范围：为什么只扫 `res://scenes`，不含 `scripts/multiplayer`
+
+第一版扫 `res://scenes + res://scripts`，在 `EconomyLedger.gd:489` 上**误报**。
+查证后确认那是**权威分层**，不是"同一件事抄两遍"：服务端账本按 `ctx["owned_treasures"]`
+判 free（客户端随意图上报、服务端自行判定），而**教学是纯本地流程、根本不走服务端**，
+它也不该/不能读 `GameState.tutorial_mode`。于是把服务端从"同源"判据里摘出，
+改用 D 组**反向**钉住这份分层 —— 防止有人"顺手"把客户端教学状态塞进权威层。
+
+### 变异测试（先红后绿，逐字节还原）
+
+`work/_qa_922/mutate_shop_refresh_925.py`：把第 3 处退回旧写法 →
+
+```
+FAIL [call_site_missing_same_source] res://scenes/prep/PrepUI.gd:2105 所在的
+     `func _on_refresh_shop_control_pressed() -> void:` 里没有 TutorialMode.shop_refresh_all_free()
+FAIL [call_site_stale_all_free]     同处里还在用手抄的 `all_free := TreasureService.has_set("money")`
+MUTATION_VERDICT OK red=True green=True restored=True
+```
+
+**踩到的三个坑**（都写进了门禁注释）：
+
+1. **`_func_start` 必须连 `static func` 一起认。** 第一版只认 `func `，而 `EconomyLedger.gd`
+   全篇是 `static func` —— 回溯找不到函数头，直接返回到文件首行的 `class_name EconomyLedger`，
+   **报出来的"所在函数"是假的**，第一轮排查被它误导。
+2. **`escalating_unit_price(999)` 会整数溢出**（`10 * 2^998`，int64 第 60 次就翻）。
+   所以不许用 `999` 去验 `all_free=false` 侧的 `>0`（改用 12）；`all_free=true` 侧因短路返 0，
+   用多大都安全 —— 这个**不对称**必须在用例里区分开。
+3. **变异脚本用二进制读写、不留 `.mutbak`**：文本模式会把 CRLF 归一成 LF，
+   "还原"就不再逐字节；而留 `.mutbak` 会给别的脚本的"启动自愈"递刀（见本文件上面那条陈旧备份记录）。
+
+### 套件清单
+
+`work/_qa_922/run_gates.py` **31 → 32 条**（新增 `shop_refresh_free_source_check`）。
+`tools/cold_parse_chain_check.gd` 的 `TARGETS` **+2**：本轮改的 `PrepUI.gd`
+（它在 `PrepScreen` 继承链底层：`PrepScreen → PrepBoardController → PrepFlowController →
+PrepUI → PrepBoardModels → PrepShared`）与新门禁脚本本身；每条 target 计 3 项，读数 **65 → 71**。
+
+回归（2026-09-25 追加）：**28 PASS / 4 FAIL**，4 条红全部为既存、计数与上一批一致
+（`voice` 8 / `dynamic_call` 4 / `procedural_ui_ratchet` 3 / `prep_text_coverage` 1）。
+相关读数：`shop_refresh_free_source` **19**、`probe_doom_thunder_924` 57、
+`probe_blood_link_boss_immune_925` 46、`tutorial_text_leak` 93486、`cold_parse_chain` **71**。
+
+⚠️ **批跑之外**（本口径未涵盖）：`asset_manifest_check` 仍不在清单里且长期红；
+`tutorial_arrow_alignment_check` 须独立 custom user dir，在本工程根直接跑必 `rc=2`，本轮未跑。
+**本轮仍未做真机/观感验收** —— 判据只证"费用算得对 + 判定同源"，**不证**
+"点下去按钮真的动了、燃烧动画真的播了、商店真的重新上货了"。
+

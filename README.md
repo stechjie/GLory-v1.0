@@ -1898,3 +1898,162 @@ composer 新增 `_oga_silence_bolt()` 走 `VFXFlipbookProjectile3D` —— 该�
 它们若也有"表演目标与真实目标不一致"的毛病需要各自接线（**本轮未做，也未声称做了**）；
 血条队伍色只在**战斗内**生效，备战 / 详情页未同步。
 详见[9.24 技能与弹道问题修复记录](docs/9.24技能及弹道问题修复记录.md)。
+
+## 2026-09-25：末日守卫血链「法阵 boss 免疫」+ 技能文案 + 新手教程 6 项优化
+
+用户提交《9.25bug提交及修复.docx》：2 条玩法问题 + 新手教程 6 项优化。
+另经问答锁定一条口径：**①「法阵 boss」= `boss_*` 与 `ally_*` 两者都要免疫**
+（法阵守护者 id 前缀是 `ally_`，不是 `boss_` —— 只按名字里的"boss"理解会漏掉一半）；
+**② 技能文案保留星级差异**（1~3 星不带回血句、4 星带），只去掉尾部「Boss免疫。」。
+
+**① 血链不能策反 `boss_*` / `ally_*`。** 旧代码的排除判据散在三处且口径不一致：
+`_nearest_non_boss` 只认 `_is_boss_fighter`（`boss_` 前缀 / `is_boss` 字段），
+`ally_*` 一个都抓不到；`_link_targets_without_doom` 连 boss 都没排；
+重连守卫也只判 boss。新增**一条**谓词 `_is_formation_ally_fighter()`（读
+`BattleSimShared._fighter_from_def` 写入的 `is_formation_ally` 字段 + `ally_` 前缀兜底），
+三个调用点接同一个函数，不各抄一份判据。法阵守护者 1400~5200 血、77~160 攻，
+被一发血链白拿走等于直接判负 —— 与既有「Boss 免疫」同类，所以候选池必须显式排除。
+
+★ **新探针当场抓出一个"我以为改完了"的漏**：`probe_blood_link_boss_immune_925`
+第一次跑就是 **44 PASS / 2 FAIL** —— `_link_targets_without_doom` 里还留着 boss。
+行为上没酿成错（该函数只有一个调用点，结果直接喂给 `_nearest_non_boss`，那里排 boss），
+但函数名承诺的是"可连目标池"，留一只 boss 在里面，第二个调用方一出现就会踩坑。
+补上 `_is_boss_fighter(o)` 后 46/46 全绿。**这是本批唯一一处"写完又回头补"，且是被判据抓出来的。**
+
+**② 技能文案。** `UnitDetailFormat.gd` 中文改为
+「血链%s：连接最近非Boss，非唯一棋子敌人并使其变为我方棋子；双方共享受到的生命损失%s。
+任一方死亡后清除连接，本回合不再释放。」——去掉尾部「Boss免疫。」（免疫改由「非Boss」承担），
+补上「非唯一棋子」（本来就有的隐藏限制，这次写进文案）。
+**英文分支同步改**：原文尾部 `Boss immune.` 一并删除、补 `non-unique`。
+用户只给了中文原文，但两个语种共用同一份 `format_skill_detail()`，只改中文会让英文玩家
+读到一条已经不成立、且与中文互相矛盾的规则。全仓 grep 确认这段文案只存在这一处。
+`regen_clause` 一行未动，4 星/1~3 星的差异照旧。
+
+**③⑴「前置任务」提示缩短 —— 这条改动了门禁口径，是本批唯一一次。**
+`follow_arrow_hint()` 的兜底原是 `"这一步还没完成：%s" % <整段目标文案>`；
+提交截图 `image3`/`image4` 里玩家在商店连点卡片，同一句长文案铺满整个屏幕。
+现统一收敛为 **「请先完成前置任务」**（商店遮挡那条分支保持原样）。
+★ 这与既存门禁 `tutorial_text_leak` 的 V3 P1-10 断言
+`invalid_tap_hint_is_one_size_fits_all`（**22 个步骤至少 5 种说法**）**正面冲突** ——
+P1-10 当年特意让它复述目标，理由正是"只回一句等于没说明原因"，9.25 文档反过来判定它太长。
+两条不能同时满足，**处理方式是换口径不放松**：删除"≥5 种说法"，
+换成**逐字等于那句收敛短句**（`invalid_tap_hint_not_short_sanctioned`）
++ 只有一种说法（`invalid_tap_hint_not_single_short_text`）。
+非空 / 无枚举名泄漏 / 无内部标识 / 商店遮挡须提到「商店」/ 采购步不得提示关商店 ——
+**五条一条都没放宽**；新断言额外钉住了**内容**，任何"把长句塞回来"的改动会立刻转红
+（9.25 第一次批跑时它就是红的，属先红后绿）。已按仓规追加到 `docs/CHECKS.md`。
+
+**③⑵ 萝卜营地删步骤 + 升级按钮当场亮起。** 先要弄清"第三、第四步"是什么 ——
+用 Windows OCR 读 docx 内嵌图片（`image5`~`image9`，气泡均为 `步 13/22`）确认：
+那 4 张图是**同一个步骤的中间态**，不是 4 个独立步骤。玩家实际路径是
+"开营地 → 按钮**灰** → 关掉营地 → 再开一次 → 按钮才亮"。根因是**视图刷新早于步骤推进**：
+`PrepUI._toggle_carrot_camp()` 先 `toggle()`（内部 `refresh()` 一次，此刻 `step` 还是
+`CARROT_CAMP`，按钮因 `not allows_carrot_action("harvest_upgrade")` 被算成禁用），
+之后上报状态触发 `sync()` 推进到 `HARVEST_UPGRADE`，**推完之后没有人再刷视图**。
+修法沿用本项目既有做法（`UPGRADE_2` / `UPGRADE_3` / `FORMATION_HP` 等分支都这么写）：
+在 `CARROT_CAMP` 分支推完补一次 `_refresh_prep()`，按钮在营地打开的**同一帧内**亮起，
+image7 那个"白关一次再开一次"的来回自然消失。**没有删任何 `STEP_SEQUENCE` 条目** ——
+第 3、4 步本来就是同一步的中间态，删掉只会让"营地没开/页签不对"失去指引。
+
+**③⑶ 商店刷新无限次 + 永久免费 + 不出死侍。** "免费"和"无限次"**是同一件事**：
+`EconomyService.shop_refresh_cost()` 在 `all_free` 为真时恒返回 0，而 0 费用既不扣钱、
+也不让 `shop_refresh_uses_this_round` 递增（那个计数只喂给递增价公式），所以不需要另加计数器。
+新增**唯一判定源** `TutorialMode.shop_refresh_all_free()`，两个使用点
+（`PrepBoardController._on_refresh_shop` 真正扣钱的那边、`ShopPanel.refresh` 画按钮写"免费"标签的那边）
+都改读它 —— 两处各算一遍的话，一旦漂移就会出现"按钮写着免费、点下去照扣"这种只在一处生效的错。
+死侍：`FILL_SHOP` 去掉 `human_death_servant`；`_apply_shop()` 按 `offers[i % size]`
+循环填满 4 个卡位、刷新也走同一张表，所以**"不再出现"和"不再刷新出"由同一处保证**。
+
+★ **追加订正（用户当天下午截图回执：教程里刷新刷几次就点不动了）。** 上面那句"唯一判定源"
+当时只点名了**两处**，实际有**三处** —— 漏掉的是 `PrepUI._on_refresh_shop_control_pressed()`
+（刷新按钮的前置判定，决定放不放燃烧动画），它保留着旧的
+`var all_free := TreasureService.has_set("money")`（少了 `GameState.tutorial_mode`）。
+于是形成两套判定的正面冲突：按钮由**正确**判定置成"免费、可点"，点下去先撞上**错误**判定 ——
+教程里 `all_free=false` ⇒ `cost = escalating_unit_price(uses)` 递增 ⇒ 超过金币就 `return`
+（静默返回：不播动画、不刷新、不滚动）。"刷几次之后才失效"正是因为在 `uses<=0` 时
+`shop_refresh_cost` 短路返 0（**第一次永远成功**），从 `uses=1` 起按 10 → 20 → 40 … 递增，
+金币被递增价吃干的那一刻按钮就"死"了。改法是把第三处接**同一个函数**
+（不是照抄同一串条件）。
+★ 这条**以前没有任何判据守着** —— 当时那句"判定必须只在这一处"是**约定**，不是判据，
+约定管不住第三个调用点。现新增门禁 `tools/shop_refresh_free_source_check`（19 条）：
+A 费用档位 / B 教程恒免费（刷 **999 次**仍为 0）/ C **递归扫 `res://scenes` 下每一处
+`EconomyService.shop_refresh_cost(` 调用点，要求其所属函数体内出现
+`TutorialMode.shop_refresh_all_free()`**（唯一能抓住本次事故的一条）/ D **反向**钉住服务端分层
+（`EconomyLedger._shop_refresh` 的 free 只能来自 payload 的 `owned_treasures`，
+**不得**读 `GameState.tutorial_mode` —— 教学是纯本地流程，权威层不吃客户端状态）。
+变异实证：把第三处退回旧写法 → 立刻红 2 条并**指名到函数**
+（`work/_qa_922/mutate_shop_refresh_925.py`，二进制读写 + sha256 逐字节还原）。
+详见 `docs/9.25末日守卫血链与新手教程优化记录.md` §14。
+
+**③⑷⑸ 开战前的最低上阵数门槛。** 先用 OCR 确认 docx 说的"步骤 3/5/14/22"就是气泡的
+「步 N/22」，也就是 `STEP_SEQUENCE` 的 1-based 序号：3=`START_PVE_1`、5=`START_PVE_2`、
+14=`START_BOSS` → 至少 3 个；22=`START_PVP` → 至少 7 个。新增
+`battle_board_gate_message()`，上阵数一律取 `GameState.normal_unit_count()`
+（与 `PLACE_3` / `FILL_7` 同一口径，佣兵不算）；`EARLY_DEPLOY_UNITS := 3` 是共享常量，
+`FILL_TARGET_UNITS` 取 `GameConstants.NORMAL_UNIT_CAP` 而不是写死 7。
+拦截点在 `PrepFlowController._on_start_battle()`。**"文本格式与完成前置任务的提示文本一致"**
+是靠两个提示走**同一个出口**（`PrepFlowController.show_message`）来满足的，没有新建提示控件。
+
+**③⑹ 不再弹「教学目标暂时不可用」。** 触发条件是目标随界面瞬时状态而变：
+`UPGRADE_3` 那一步箭头指着"商店里第一个还能买的卡位"，**4 个卡位全买光**时
+`_tutorial_first_available_shop()` 返回 null（提交截图 `image16`）。现在
+`_target_control()` 传空串给 `resolve_target()` → `show_feedback("")` 直接返回 false，不弹东西；
+配套让 `update_overlay()` 在目标解析不出来时**沿用上一次的位置**（`_last_target_rect`），
+否则箭头会掉到屏幕中央那个占位矩形上。**保留**「未绑定 / resolver 无效」那两类真正的代码错误反馈。
+
+**★ 9.24 探针由红转绿（不是本轮改动引起的，附完整定位过程）。**
+并入批跑后 `probe_doom_thunder_924` 报 `checks=56 fail=1`（9.24 记录是 57/0）：
+`FAIL [live] 守卫确实处于阵亡状态`。写了 `work/_qa_922/bisect_925_regression.py`
+把本轮对 `BattleSimulator.gd` 的 3 处代码改动**逐条反向撤销**再跑，
+**三条全撤销照样红 ⇒ 与本轮血链改动无关**（连续单跑 3 次也都是红的，不是随机漂移）。
+真因是那条断言**从第一版起就没真正构造出"守卫已死"**：`alive=false` 在模拟器里
+**只在 `DamageService.apply_damage()` 内锁存**（`DamageService.gd:280-282`），
+外部写 `g["hp"] = 0` 只把血条改到 0、单位仍 `alive=true`，而 4 星末日守卫在连接期间
+每 tick 回 `round(max_hp * 3% * 0.1)`（本例 17）血，下一个 `_process_shared_links()`
+就把它从 0 抬回来 —— 于是那条断言实际等价于"21 tick 内刚好有个敌人打出致命一击且没被闪避"，
+**和第一版被否掉的"等自然死"是同一个形状**，只是把血先压低，所以会随平衡/站位漂移忽红忽绿。
+订正为**走生产死亡路径**（`apply_damage(g, max_hp*4, true)`，并把 `dodge`/`shield`/`statuses`
+显式摆平，免得又变成"断言被前置条件满足"的假绿），实测 `hp=0 alive=false`，57/57 全绿。
+★ 什么把它推过临界点：**不是本轮改动**。今天 10:24 工作区收到过一次**批量文件同步**
+（`DamageService.gd` / `BattleSimShared.gd` / `StatusEffectService.gd` / `BattleSimTreasures.gd` /
+`data/formation/formation_allies.json` 等约 70 个文件 mtime 被统一改写），
+命中目标集与站位都由这些文件决定；**本机没有可用的 git.exe**，无法把这次同步 diff 出来逐条归因，
+所以只记"落点在 10:24 那次同步"，**不编造具体提交**。
+
+**★ 附带发现：三个过时的 `.mutbak` 变异备份（已隔离）。**
+排查时发现源码树里躺着 2026-09-23 14:24 的 `BattleVfx.gd.mutbak` / `BattleSimulator.gd.mutbak` /
+`SfxService.gd.mutbak`。前两个**逐字节比对确认是 9.23 快照**（里面既没有 `_aoe_thunder` /
+`apply_latched_team`，也没有 `_is_formation_ally_fighter`）。**这是雷**：
+`mutate_cold_parse_922.py` / `mutate_audio_fix.py` 这类脚本带**启动自愈**（"发现残留 `.mutbak`，先还原"），
+只要有人再跑一次，这两个文件会被**静默回退到 9.23**、9.24+9.25 两轮修复全部消失。
+已**移动（不是删除）**到 `work/_qa_922/stale_mutbak_923/`，源码树里已无 `.mutbak`，
+内容全部可回溯，同时让自愈分支回到正确行为（没有备份 → 不还原，改为对**当前**内容做备份）。
+**本轮没有跑任何变异脚本**，所以这个雷没有被触发。
+
+**验证：批跑 31 条 → 27 PASS / 4 FAIL。** 4 条红全部为**既存**、计数与 9.24 完全一致：
+`voice` **8**、`dynamic_call` **4**、`procedural_ui_ratchet` **3**
+（仍全落在本批一个字没动过的 `FourStarUpgradePanel.gd`）、
+`prep_text_coverage` **1**（`detail_margin_too_small`，**布局内边距**问题，本批对该文件只改了文案字符串）。
+**没有用 `--update-baseline` 刷绿。** 相关读数：新增行为探针
+`probe_blood_link_boss_immune_925` **46**、`probe_doom_thunder_924` **57**、
+`cold_parse_chain` 44 → **65**（本批改的每个文件都进了清单）、`tutorial_text_leak` **93486**、
+`tutorial_step15_flow` 217 / `tutorial_checkpoint` 264 / `tutorial_overlay_layout` 608 /
+`tutorial_target` 150 / `tutorial_carrot_flow` PASS。
+★★ **批跑清单 ≠ 全部门禁**：`asset_manifest_check` 仍不在清单里且长期红
+（既存 6 条 `missing_asset`，本轮未新增资源故未单跑）；
+`tutorial_arrow_alignment_check` 要求独立 custom user dir，在本工程根直接跑必 `rc=2`，
+本轮未运行。**上述"27 PASS"的口径没有涵盖这两条。**
+★ 本批里**判据最硬的是 ①**（行为探针 46 条，含"先红后绿"实证）；
+**② / ③⑵ / ③⑷⑸ / ③⑹ 没有专门的自动化判据** ——
+`tutorial_*` 全绿只证明**不回归**，不证明"按钮真的亮了""提示真的不弹了"；
+③⑵ 的理由链（刷新早于推进）来自源码走查，③⑷⑸ 的"格式一致"是按"同一个 `show_message` 出口"
+论证的，**没有对比两张实际截图的字体/位置**。
+**未做真机 / 观感验收，未重新导出 EXE / APK。**
+
+**★ 追加订正后的最终口径（§14）：批跑 31 → 32 条，28 PASS / 4 FAIL**（仍是上面那 4 条既存红，
+一条不多）。新增门禁 `shop_refresh_free_source_check` **19 项全过**；`cold_parse_chain` 65 → **71**
+（`TARGETS +2`：`PrepUI.gd` + 新门禁脚本）；变异实证：把遗漏那处退回旧写法 → 立刻红 2 条
+并**指名到** `PrepUI.gd:2105` 的函数。**⚠ 追加订正同样没有真机验收** ——
+§14 的判据只证"费用算得对 + 判定同源"，不证"点下去按钮真的动了、商店真的重新上货了"。
+
+详见[9.25 末日守卫血链与新手教程优化记录](docs/9.25末日守卫血链与新手教程优化记录.md)。

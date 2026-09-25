@@ -114,6 +114,14 @@ func _on_start_battle() -> void:
 	if GameState.tutorial_mode and not TutorialMode.can_start_battle():
 		show_message(TutorialMode.follow_arrow_hint())
 		return
+	# 9.25 教程优化第 4/5 条：步骤 3/5/14 要至少 3 个上阵棋子、步骤 22 要至少 7 个。
+	# 不够时同样直接 return（理由同上：不能烧掉一次性发射锁）。判据在 TutorialMode 里，
+	# 这里只负责把提示弹出来。
+	if GameState.tutorial_mode:
+		var gate := TutorialMode.battle_board_gate_message()
+		if not gate.is_empty():
+			show_message(gate)
+			return
 	RaceRelationService.finalize_for_battle(GameState.board_slots, GameState.bench_slots)
 	SaveManager.save_run()
 	if NetworkService.team_active and not GameState.tutorial_mode:

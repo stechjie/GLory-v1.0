@@ -1,0 +1,89 @@
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+GLORY_STARTUP {"base":"engine_init","mark":"t0_trace_ready","meta":{"note":"engine boot; no game code has run before this"},"ms":2487,"since_previous_ms":0}
+GLORY_BUILD {"asset_inventory_sha256":"7a1d6bf01af99c542a42be4c2532e7259eb66d672525b7cf58168a9160514a6f","available":true,"build_utc":"2026-08-31T07:59:44Z","dirty_tracked_files":54,"git_commit":"478026297a76e8f7f2562d8263d027dad6f81371","git_commit_short":"4780262","godot_version":"4.7.stable.official.5b4e0cb0f","package_id":"glory.beta001","preset":"Android","preset_template_sha256":"220b5d47bcdca15ca1f0b83a6b2cec46f2cddcb692987135b2ff0b1420044257","schema_version":1,"version_code":5,"version_name":""}
+GLORY_STARTUP {"base":"engine_init","mark":"data_registry_loaded","meta":{"elapsed_ms":2.9,"failed":0,"files":8,"reads":8},"ms":2512,"since_previous_ms":25}
+[PERFLOG] started interval=0.5s
+[DEVICE_HARNESS] 未接管：命令行无 --device-baseline，且 user://device_harness.json 不存在
+=== Part 1: 落雷（神王全员 / 裁决者单体）—— 直接跑 composer ===
+  [diag] 神王 3 目标 -> 3 道雷（期望 3，画质档上限）
+  PASS 神王：3 个技能目标 -> 每个目标各落一道雷（不是只放一次）                            got=3 want=3
+  PASS 神王落雷用的是 VFXLightningArc 模块                                 got=true want=true
+  PASS 神王：只有 1 个技能目标 -> 只落 1 道                                    got=1 want=1
+  PASS 裁决者：即使给 3 个目标也只落 1 道（单体）                                   got=1 want=1
+  PASS 裁决者落雷用的是同一个 VFXLightningArc 模块                             got=true want=true
+  PASS 神王(god_king) 的技能 id                                        got=global_divine_blast want=global_divine_blast
+  PASS 裁决者(god_arbiter) 的技能 id                                    got=judgement_strike want=judgement_strike
+  PASS 人王(human_king) 的技能 id —— 上一轮把它误当成神王                        got=unique_king_growth want=unique_king_growth
+
+=== Part 2: 血之契约策反 —— 真实 state 逐步推进 ===
+  PASS [live] 场上有末日守卫                                             got=true want=true
+  [diag] 守卫 team=player uid=test_s0_c2 契约目标 uid=test_s3_c1
+  PASS [live] 守卫锁定了契约目标                                           got=true want=true
+  PASS [live] 目标还在场上                                              got=true want=true
+  [diag] 被策反单位 id=human_militia team=player
+  PASS [live] 目标队伍已被改成与守卫同队                                       got=player want=player
+  PASS [live] 本例守卫在己方 -> 策反后应为 player                             got=player want=player
+  PASS [live] 目标已进入 player 数组                                     got=true want=true
+  PASS [live] 目标已从 enemy 数组移除                                     got=false want=false
+  [diag] 致死伤害后：hp=0 alive=false；被策反单位 team=player
+  PASS [live] 守卫确实处于阵亡状态（否则下一条会空过）                                got=true want=true
+  PASS [live] ★ 守卫死亡后策反**不回退**（用户口径：这种变化不随死亡停止）                   got=player want=player
+
+=== Part 3: 策反跨回放边界 —— 真实 replay ===
+  PASS [replay] 拿到回放帧                                             got=true want=true
+  PASS [replay] roster 里有末日守卫                                     got=true want=true
+  PASS [replay] 从回放里还原出策反关系（生产实现 latched_conversions_in_frame）    got=true want=true
+  [diag] 回放第 5 帧还原出策反：test_s3_c1 -> player
+  PASS [replay] 策反后队伍 == 守卫队伍                                     got=player want=player
+  [diag] roster 对该单位的说法 team=enemy（首帧快照，永不更新）
+  PASS [replay] ★ roster 与真实归属**不一致** —— 证明「只看 roster 的配色」必然错     got=true want=true
+  [diag] 末帧 entry 列数集合=[13]
+  PASS [replay] ★ frame 仍是 13 列、**没有 team 列** —— 所以策反必须靠锁存，不能靠新增列 got=true want=true
+
+=== Part 4: 写回行为（直接跑生产实现 apply_latched_team）===
+  PASS 写回行为：被策反后 team 由 enemy 变 player（直接调生产实现）                   got=player want=player
+  PASS 写回行为：重复调用幂等                                                got=player want=player
+  PASS 写回行为：未被策反的单位队伍原样不动                                         got=enemy want=enemy
+  PASS 写回行为：空锁存表 = 不改任何队伍                                         got=enemy want=enemy
+  PASS 写回行为：空 uid 不会被误写                                           got=enemy want=enemy
+
+=== Part 5: 神王目标集合 —— 跑生产实现 _skill_god_king ===
+  PASS [record] 场上有神王(god_king)                                   got=true want=true
+  [diag] 神王 lane=0；敌方本路活敌=1，他路活敌=2
+  PASS [record] 本例敌方**跨了多路**（前提：否则跨路判据无意义）                        got=true want=true
+  PASS [record] 本路也有活敌（前提：否则会走跨路回退）                               got=true want=true
+  [diag] 记录到 1 个目标：["test_s3_c2"]
+  PASS [record] 生产实现确实写下了技能目标                                     got=true want=true
+  PASS [record] ★ 记录的每个目标都在神王那一路（非技能目标不得入册）                       got=0 want=0
+  PASS [record] 记录条数 == 本路存活敌人数（不多不少）                             got=1 want=1
+  PASS [record] 被闪避的目标仍然入册（口径是「技能目标」而不是「掉血的」）                     got=1 want=1
+  [diag] 本路清空后记录到 2 个目标（期望 >0：跨路回退仍生效）
+  PASS [record] 本路无活敌时仍会跨路选目标（既有回退未被破坏）                           got=true want=true
+
+=== Part 6: 目标解析（直接跑生产实现 resolve_skill_target_positions）===
+  PASS 解析：记录 1 个 uid → 只出 1 个落点（非技能目标不得落雷）                        got=1 want=1
+  PASS 解析：落点取该目标自己的 world_foot                                    got=(1.0, 0.0, 1.0) want=(1.0, 0.0, 1.0)
+  PASS 解析：逗号连接的多目标记录 → 两个落点                                       got=2 want=2
+  PASS 解析：落点顺序与记录顺序一致                                             got=true want=true
+  PASS 解析：认不得的 uid 跳过                                             got=1 want=1
+  PASS 解析：尾随逗号不产生空目标                                              got=1 want=1
+  PASS 解析：空记录 → 无落点                                               got=0 want=0
+  PASS 解析：★ 被劈死的目标仍出落点（劈死它的那道雷不能消失）                               got=1 want=1
+
+=== Part 7: 接线文本断言（只证「写了」，不证「对」）===
+  PASS composer：神王技能接到 _aoe_thunder                               got=true want=true
+  PASS composer：裁决者技能接到 _aoe_thunder                              got=true want=true
+  PASS composer：落雷用白芯暖金配色（不是默认冷蓝）                                 got=true want=true
+  PASS composer：人王的技能/普攻表现已还原成天剑（不再是落雷）                           got=true want=true
+  PASS BattleScreen：解码时调用锁存函数                                     got=true want=true
+  PASS BattleScreen：解码时把锁存队伍写回（调用点存在且**未被注释**）                    got=true want=true
+  PASS BattleScreen：锁存结果真的写进 _converted_ally_ids（未被注释）            got=true want=true
+  PASS BattleRenderer：每帧按当前队伍重算血条颜色                               got=true want=true
+  PASS BattleVfx：旧的「血条染契约色」已删除（它会和队伍色打架）                          got=false want=false
+  PASS BattleVfx：旧的契约色缓存已删除                                       got=false want=false
+  PASS BattleSimSkills：神王技能把**真实选中**的目标记进 vfx_skill_target_uid（未被注释） got=true want=true
+  PASS BattleVfx：神王分支的目标集合来自**记录**，不再自己猜（未被注释）                    got=true want=true
+  PASS BattleVfx：只有**没有记录**时才退回旧口径（有记录时不许退）                       got=true want=true
+
+PROBE_DONE checks=57 fail=0

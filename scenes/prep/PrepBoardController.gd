@@ -972,7 +972,10 @@ func _on_refresh_shop() -> void:
 	if not GameState.tutorial_mode and NetworkService.team_active and not NetworkService.is_host and not NetworkService.server_shop.is_empty():
 		NetworkService.request_shop_refresh()
 		return
-	var all_free := TreasureService.has_set("money")
+	# 9.25 教程优化第 3 条：教学里刷新无限次 + 永久免费。口径只能取一处
+	# （TutorialMode.shop_refresh_all_free），别在这里再抄一遍 TutorialMode/
+	# TreasureService 的组合条件 —— ShopPanel.refresh 是同一个判定的另一半。
+	var all_free := TutorialMode.shop_refresh_all_free()
 	var cost := EconomyService.shop_refresh_cost(GameState.shop_refresh_uses_this_round, all_free)
 	if GameState.gold < cost:
 		show_message(tr("ui_not_enough_gold"))

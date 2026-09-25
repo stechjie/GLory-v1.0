@@ -1,0 +1,57 @@
+audio_0922_check                   PASS   rc=0     1.8s
+      CHECK_RESULT name=audio_0922 status=PASS checked=174 failures=0 allowed=0 stale=0
+prep_swap_check                    PASS   rc=0     5.6s
+      CHECK_RESULT name=prep_swap status=PASS checked=30 failures=0 allowed=0 stale=0
+cold_parse_chain_check             PASS   rc=0     5.9s
+      CHECK_RESULT name=cold_parse_chain status=PASS checked=65 failures=0 allowed=0 stale=0
+audio_sfx_check                    PASS   rc=0     4.9s
+      CHECK_RESULT name=audio_sfx status=PASS checked=226 failures=0 allowed=0 stale=0
+audio_0921_check                   PASS   rc=0     1.7s
+      CHECK_RESULT name=audio_0921 status=PASS checked=80 failures=0 allowed=0 stale=0
+battle_presentation_event_check    PASS   rc=0     2.3s
+      CHECK_RESULT name=battle_presentation_event status=PASS checked=9634 failures=0 allowed=0 stale=0
+merge_rule_parity_check            PASS   rc=0     4.3s
+      CHECK_RESULT name=merge_rule_parity status=PASS checked=29 failures=0 allowed=0 stale=0
+boss_battle_bgm_check              PASS   rc=0     16.9s
+      CHECK_RESULT name=boss_battle_bgm status=PASS checked=24 failures=0 allowed=0 stale=0
+four_star_values_check             PASS   rc=0     1.9s
+      CHECK_RESULT name=four_star_values status=PASS checked=684 failures=0 allowed=0 stale=0
+synergy_activation_sfx_check       PASS   rc=0     6.2s
+      CHECK_RESULT name=synergy_activation_sfx status=PASS checked=47 failures=0 allowed=0 stale=0
+team_merc_summon_sfx_check         PASS   rc=0     4.5s
+      CHECK_RESULT name=team_merc_summon_sfx status=PASS checked=16 failures=0 allowed=0 stale=0
+ui_feedback_check                  PASS   rc=0     3.5s
+      CHECK_RESULT name=ui_feedback status=PASS checked=41 failures=0 allowed=0 stale=0
+battle_cue_profile_check           PASS   rc=0     1.7s
+      CHECK_RESULT name=battle_cue_profile status=PASS checked=169 failures=0 allowed=0 stale=0
+oga_projectile_swap_check          PASS   rc=0     1.7s
+      CHECK_RESULT name=oga_projectile_swap status=PASS checked=65 failures=0 allowed=0 stale=0
+probe_doom_thunder_924             FAIL   rc=1     2.8s
+      PROBE_DONE checks=56 fail=1
+probe_blood_link_boss_immune_925   PASS   rc=0     1.8s
+      PROBE_DONE checks=46 fail=0
+voice_check                        FAIL   rc=1     4.5s
+      CHECK_RESULT name=voice status=FAIL checked=391 failures=8 allowed=0 stale=0
+settings_locale_live_check         PASS   rc=0     1.8s
+      CHECK_RESULT status=PASS checked=4 failures=0
+prep_detail_overlay_check          PASS   rc=0     4.2s
+      CHECK_RESULT name=prep_detail_overlay status=PASS checked=32 failures=0 allowed=0 stale=0
+procedural_ui_ratchet_check        FAIL   rc=1     1.7s
+      CHECK_RESULT name=procedural_ui_ratchet status=FAIL checked=7 failures=3 allowed=0 stale=0
+prep_text_coverage_check           FAIL   rc=1     4.3s
+      CHECK_RESULT name=prep_text_coverage status=FAIL checked=127 failures=1 allowed=0 stale=0
+dynamic_call_check                 FAIL   rc=1     2.2s
+      CHECK_RESULT name=dynamic_call status=FAIL checked=301 failures=4 allowed=0 stale=0
+tutorial_text_leak_check           PASS   rc=0     4.5s
+      CHECK_RESULT name=tutorial_text_leak status=PASS checked=93486 failures=0 allowed=0 stale=0
+tutorial_step15_flow_check         PASS   rc=0     98.3s
+      CHECK_RESULT name=tutorial_step15_flow status=PASS checked=217 failures=0 allowed=0 stale=0
+tutorial_checkpoint_check          PASS   rc=0     18.6s
+      CHECK_RESULT name=tutorial_checkpoint status=PASS checked=264 failures=0 allowed=0 stale=0
+tutorial_overlay_layout_check      PASS   rc=0     9.4s
+      CHECK_RESULT name=tutorial_overlay_layout status=PASS checked=608 failures=0 allowed=0 stale=0
+tutorial_target_check              PASS   rc=0     4.2s
+      CHECK_RESULT name=tutorial_target status=PASS checked=150 failures=0 allowed=0 stale=0
+tutorial_carrot_flow_check         PASS   rc=0     6.8s
+
+WROTE C:\Users\WINDOWS\Desktop\GLory-work\work\_qa_922\gate_results.json

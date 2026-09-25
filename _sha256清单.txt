@@ -1,40 +1,39 @@
-9.24 批次 —— 代码 / 文档 / 门禁 部分 sha256 清单
-基准：C:\Users\WINDOWS\Desktop\GLory-work
-校验：本清单逐行 = sha256 + 字节数 + 相对路径；镜像后已重新读盘比对，两边逐字节相同。
+9.25 交付 sha256 清单（相对 GLory-work 工程根）
+==============================================================
 
-【源码】
-747d26b323691e9c96d098eebd35ae5cbc44f6b1f68ae81b03ce9f546c6c9e64    113333  scenes/battle/BattleVfx.gd
-45aeea069d9505946f8ee28d052fb84570adc8d2ac54ddcb6678e6c17eb465cc     49213  scenes/battle/BattleScreen.gd
-45a93742fcc5240dfcda72ff0eb9a0a70e4eb3f0ce9d2e41aa268cec41b72639     73938  scenes/battle/BattleRenderer.gd
-cc5f60ba698b4b02372e6b36f2e3a19f1b8220627fd37ed1b1e3de2cddc34bcf      9023  effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd
-713fed1051a517ead85e4664ab6db404c1f28f965c082a64b7343cf673626e41    121836  effects/vfx3d/units/UnitSkillVFXComposer3D.gd
-6d4088c5d9106f86d48a39ecade8bc664eb70282f7334feb51e608b92b1104f4     14518  effects/vfx3d/units/OgaChessVFXCatalog.gd
-9a0386954bd96db644947ec0073297a496443b0746518a02fd10c69fa5d884af     11610  effects/vfx3d/units/OgaSkillVFXCatalog.gd
-567af3e0bdae29b21ecfe136c9f6b439bb1c74fbfa9016f8aae2883439835462      5308  effects/vfx3d/VFXLightningArc.gd
-4cd00555ecbe5cb99360dd93e21e5c9ee60d5c7d028648e452e2538f8b347db0     48626  effects/vfx3d/modules/VFXRaceBasicAttack3D.gd
-1c8074134958d2f419ca1656f214c4c2b0d1420586cec81925fb02e0b681bce8     23522  scripts/battle/BattleSimSkills.gd
-33654e483ee40e2c11df62ce76e25465b1d6bd7846a7ada5d05124055eeccbc3     40558  scripts/ui/UnitDetailFormat.gd
-1cf8381e37635fd7c7dba3e1ccad78ff2bb593ab2304578b6ca6c56a118db5ed     12600  tools/oga_projectile_swap_check.gd
-8c3fa6a8e4fd91b58575001b0a524966a2bd5edf0debfcc56692f1b19a768bad       194  tools/oga_projectile_swap_check.tscn
-bfeb632453dddb385f4a461116211de5b622876ce6883a2289878981f995d97b      3991  tools/cold_parse_chain_check.gd
-
-【文档】
-3c92334f537fa58e1e10f7c686911bf5cd64e6490f62d9795e0bb9c9abf93565     62697  docs/9.24技能及弹道问题修复记录.md
-0eea17fa1c0ab84f3557ad539e900bf21386b199f3c969308ac11c404f5bb7bd    219987  docs/CHECKS.md
-c74fdef96d12de92303e0c5aa98c55abb05de66e1df49787e90af964cd77b6f7    253857  README.md
-
-【门禁 / 探针 / 生成器】
-c32ecaa438a60d233be43e2d55f1a762d667c464669d754b53f0fe720d7a50dd      4994  work/_qa_922/run_gates.py
-1be0e53dd946c5cba3bd468288062c50e85849624de6e8015c38c1fa29a481c2      1024  work/_qa_922/run_cold_parse_924.py
-5008867863204505408a9463aa35c2a4763a39b6652b7956f0d7756e8630923a       708  work/_qa_922/run_gate_raw_924.py
-80b2a0ce4858fd7375654ad096602bf3d26097010d6af7179e549019a425ef91      1061  work/_qa_922/run_probe_raw_924.py
-45fca295e4a41dad6e1fdc70c332c861573fe61976a5774959e4bf2ec888b0f4     12415  work/_qa_922/probe_mage_cast_924.gd
-f8f837d38fa8643e2a85f807b9bb3c704dcb30b287edaf6db6182a66d9be4cb9       189  work/_qa_922/probe_mage_cast_924.tscn
-20574de6ecdc157a545b42689ac3e8ba1fd8d461c54aac8cdbd41bb20b1f677e     28105  work/_qa_922/probe_doom_thunder_924.gd
+390235bcd02b06ee666186485b8ce5876df0d78499c04ec6bafea464668d14d9    266616  README.md
+c0822d874b27b0142bc568b1d0f95b5198d22467d4a039abe8f6670145677d08     40719  docs/9.25末日守卫血链与新手教程优化记录.md
+2f20fb63eb2bc869b885d436e599df63457e3cf53278657751658bd9b92f0c4e    229866  docs/CHECKS.md
+eddfb5fae6eeebf756e50dc12b8980962c2430148711a507645554c9da6aa234     53198  scenes/prep/PrepBoardController.gd
+30ed5857fc2df7d544bd1f00d8afcdee7ad7fb52dc1121555f9d9b5a03caaf7c     13226  scenes/prep/PrepFlowController.gd
+de6c6917ffc60527ccd5cd28d82a4d39ffaaf7e7bdac33eb68db9bc6ed6a712d    160497  scenes/prep/PrepUI.gd
+367496bdd419343cdcc5e7f255ed5dd7ba68ed16244485f93af258b8eb997d8d     37265  scenes/prep/panels/ShopPanel.gd
+2f2766fc536370ad56bd48b34435aafc923d831578b0b77e3e4ffe90414557ce     73961  scripts/battle/BattleSimulator.gd
+391de9f2ce020c591fa8a2b641564208a74a6a2af6736cb4e8ae1c4c444b826b     84363  scripts/tutorial/TutorialMode.gd
+b3f40235257b4e1c6dd8c35243359813f9edab911e175b4dc0286901afeeb32d     40722  scripts/ui/UnitDetailFormat.gd
+10a7fcd8c8d79a623156cb543fd769915e06aeff7ecbb5154ae45d938fb6a473      6025  tools/cold_parse_chain_check.gd
+bef6bd81476aa2ffda0d9bba3771129de352024101a49fb40be2d50abacb1445     10739  tools/shop_refresh_free_source_check.gd
+b95031a7b41f724413808d99043b5fc91ac01127b136330576ff428b166724f5       203  tools/shop_refresh_free_source_check.tscn
+addcfd90984209a6dec1ca7a1832cafec06090272a58140e0471b2c31606efd9     14464  tools/tutorial_text_leak_check.gd
+b6c87d913918a00fa41af44bbefb72b302b76266062723eabedb4eec01f8c1f7      4039  work/_qa_922/bisect_925_regression.py
+b1e1cee4c721064bff327ef883f1c48b077581ed1678007282c5342ef87a9bed       854  work/_qa_922/bisect_925_summary.txt
+ed02a6334b8cc1f8e79dbe6b34960e8fbc35bf281c4baec67ae45e679062c52c      1686  work/_qa_922/bisect_925_summary_prered.txt
+31f44232b4331588e4b4f5874aca0ca93172fdd6558b4e7bf53656feb3573ba0      4072  work/_qa_922/gates_925_full.txt
+1809213549a3d1d5060ad06094617ab68a5ca1734a6b068cf709e10ecd5f860e      4072  work/_qa_922/gates_925_full2.txt
+40f5d36f80e996c54e0da6e20eb62df20cf401b6f3027ead6b4c9a9629929d75      4231  work/_qa_922/gates_925c.txt
+79495f21a27529217375cf3590df1410e719478503de312af209e2b86075af61      3181  work/_qa_922/mutate_shop_refresh_925.py
+9561d73dd435a347d343c06f31e75851c6c176e6a087123703b9d07e67ac3acb      8857  work/_qa_922/probe924_run1.txt
+af215221fd6a24b7b9177e6447f7a4e0f82420e078adcb92965a7df9829875ef      8857  work/_qa_922/probe924_run2.txt
+659e66ee9b8fc6e3be76ec6cbcbd0bc71741c3c2e98e32dab000051282bc04d6      8857  work/_qa_922/probe924_run3.txt
+dee5e45039880b86fefcc9ddbe758c222708ca6b1f190f8decf23a273f7352d6     14596  work/_qa_922/probe_blood_link_boss_immune_925.gd
+c7de64fd19c25c922b9d7991f55e8854cb43524bb292b1ea2cd583cd7c77e76f       213  work/_qa_922/probe_blood_link_boss_immune_925.tscn
+02b0ca17052c41509f06a991e1936a407c7dc5451b23f1409eb46319bc5493f4     29146  work/_qa_922/probe_doom_thunder_924.gd
 0614e8ae8b3bd8722a14a8e7cd58d3a52ca63ebccfbcdae0a7a74d122d789f43       195  work/_qa_922/probe_doom_thunder_924.tscn
-3ac737868558cb2eb8f8bae11bc1c9e9dd8a4bf250dde00346bd7768c3c16cd3      7920  work/_qa_922/make_metal_arrow_924.py
-95925e32ee2d7c88a7eef38db0a3554a1a68556f6047dd25d16d74ba57610741      4727  work/_qa_922/mutate_oga_swap_924.py
-a67f35d5d170d92972e781e4977174a226aa52c3c0d3589947a4af6ec446ac12      7377  work/_qa_922/mutate_archer_924.py
-091270dd2f7de2510228511962c03c75776e7589b9e9df9e751c7b9df5e98984      8706  work/_qa_922/mutate_doom_thunder_924.py
+0d1fbfb96886a4e13a53a01429856fe016a7c30e7ea2b8242d8f8594de483439      6971  work/_qa_922/raw_probe_blood_link_925.txt
+b5e3a2a860e7759f652f5cd0234c88c5f10f1a5bbc0c179ccccac46dea9146a9      9002  work/_qa_922/raw_probe_doom_thunder_924.txt
+da6a66960f14b34266af3293377aab59699679f000efa80036e91029917b87b1      6306  work/_qa_922/run_gates.py
+1806ab806aac5b34fb6c767f3450423bd4f97fa59a4fefe747b7a42e3c8259da     72277  work/_qa_922/stale_mutbak_923/BattleSimulator__battle.gd.mutbak
+c4fb51364c2ff24093530a0fa7ffb029b21e0fecadc8115f1f49d7e4a2ce0ea8     99649  work/_qa_922/stale_mutbak_923/BattleVfx__battle.gd.mutbak
+0b98e5a26f57edbc4b472896a9bed14e51a9147c33231a213617fbb75b443f8d     59096  work/_qa_922/stale_mutbak_923/SfxService__services.gd.mutbak
 
-合计 29 个文件
+共 34 个文件。逐字节比对：镜像后重新读取两边字节，sha256 全部一致。

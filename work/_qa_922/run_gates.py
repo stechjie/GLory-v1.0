@@ -49,12 +49,31 @@ GATES = [
     #   ② 血之契约策反**跨回放边界**后血条必须变己方色（回放帧里没有 team 列，
     #   只能靠锁存）。仓里有 4 个变异证明它真的会红，见 mutate_doom_thunder_924.py。
     "probe_doom_thunder_924",
+    # ★ 9.25 新增行为探针（先红后绿）。钉住提交文档第 1 条：
+    #   末日守卫的血链不能把 boss_* / ally_*（法阵 boss）策反过来。
+    #   仓里有实证：`_link_targets_without_doom` 少一个 `_is_boss_fighter(o)`
+    #   时，探针 Part 2 立刻红 2 条（候选池里还留着 boss）。见报告 §1。
+    "probe_blood_link_boss_immune_925",
+    # ★ 9.25 追加订正（用户回执：教程里刷新刷几次就点不动了）。这条钉的是**判据同源**：
+    #   凡是算 shop 刷新费用的地方都只能接 TutorialMode.shop_refresh_all_free()。
+    #   它是唯一能抓住「第三处手抄条件漂移」的判据 —— A/B 两组行为断言都不管同源。
+    #   仓里有变异实证：把 PrepUI 那行退回旧写法，立刻红 2 条并指名到函数。
+    #   见 work/_qa_922/mutate_shop_refresh_925.py。
+    "shop_refresh_free_source_check",
     "voice_check",
     "settings_locale_live_check",
     "prep_detail_overlay_check",
     "procedural_ui_ratchet_check",
     "prep_text_coverage_check",
     "dynamic_call_check",
+    # ★ 9.25 相关性：这一批改了 TutorialMode.gd 的文案与步骤机，这几条教学门禁
+    #   直接命中，必须进批跑（此前它们只在手工跑）。
+    "tutorial_text_leak_check",
+    "tutorial_step15_flow_check",
+    "tutorial_checkpoint_check",
+    "tutorial_overlay_layout_check",
+    "tutorial_target_check",
+    "tutorial_carrot_flow_check",
 ]
 
 

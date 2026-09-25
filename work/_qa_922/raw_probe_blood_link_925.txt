@@ -1,0 +1,70 @@
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+GLORY_STARTUP {"base":"engine_init","mark":"t0_trace_ready","meta":{"note":"engine boot; no game code has run before this"},"ms":1506,"since_previous_ms":0}
+GLORY_BUILD {"asset_inventory_sha256":"7a1d6bf01af99c542a42be4c2532e7259eb66d672525b7cf58168a9160514a6f","available":true,"build_utc":"2026-08-31T07:59:44Z","dirty_tracked_files":54,"git_commit":"478026297a76e8f7f2562d8263d027dad6f81371","git_commit_short":"4780262","godot_version":"4.7.stable.official.5b4e0cb0f","package_id":"glory.beta001","preset":"Android","preset_template_sha256":"220b5d47bcdca15ca1f0b83a6b2cec46f2cddcb692987135b2ff0b1420044257","schema_version":1,"version_code":5,"version_name":""}
+GLORY_STARTUP {"base":"engine_init","mark":"data_registry_loaded","meta":{"elapsed_ms":2.8,"failed":0,"files":8,"reads":8},"ms":1532,"since_previous_ms":26}
+[PERFLOG] started interval=0.5s
+[DEVICE_HARNESS] 未接管：命令行无 --device-baseline，且 user://device_harness.json 不存在
+=== Part 1: 谓词（真棋子，非手搓字典）—— boss_* / ally_* 都要被抓到 ===
+  PASS [pred] 四只单位都造出来了                                           got=true want=true
+  [diag] boss id=boss_thunder_core is_formation_ally=false | ally id=ally_flame_claw is_formation_ally=true
+  PASS [pred] boss 的 id 确实以 boss_ 开头                              got=true want=true
+  PASS [pred] ally 的 id **不是** boss_ 开头                           got=false want=false
+  PASS [pred] ally 的 id 以 ally_ 开头                                got=true want=true
+  PASS [pred] _is_boss_fighter(boss) = true                       got=true want=true
+  PASS [pred] _is_boss_fighter(ally) = false（旧代码就栽在这）             got=false want=false
+  PASS [pred] _is_formation_ally_fighter(boss) = false            got=false want=false
+  PASS [pred] _is_formation_ally_fighter(ally) = true             got=true want=true
+  PASS [pred] 普通棋子不是法阵友军                                          got=false want=false
+  PASS [pred] 末日守卫本身不是法阵友军                                        got=false want=false
+
+=== Part 2: 候选池与最近目标（直接跑生产实现）===
+  PASS [pool] 守卫与民兵都在场                                            got=true want=true
+  PASS [pool] 敌方共 3 只（boss + ally + 民兵）                           got=3 want=3
+  [diag] 候选池 ids=["human_militia"]
+  PASS [pool] 候选池只剩 1 只（boss 与 ally 都被排除）                         got=1 want=1
+  PASS [pool] 候选池里就是那只民兵                                          got=["human_militia"] want=["human_militia"]
+  [diag] 最近合法目标 id=human_militia（敌方三只的独立判定：boss_ 前缀 / ally_ 前缀）
+  PASS [pool] 最近目标就是那只民兵（不是 boss、也不是 ally）                        got=human_militia want=human_militia
+
+=== Part 3: 只放 boss / 只放 ally —— 技能跑过之后一条链都不许有 ===
+  PASS [boss] 守卫与目标(boss_thunder_core)都在场                         got=true want=true
+  PASS [boss] 敌方只有 1 只（boss_thunder_core）                         got=1 want=1
+  PASS [boss] 守卫仍存活（前提：否则下面的否定断言会空过）                              got=true want=true
+  [diag] [boss] 守卫 shared_link_uid=；目标 team=enemy shared_link_uid=
+  PASS [boss] ★ 守卫没有连上任何目标（只有应免疫单位可连）                             got= want=
+  PASS [boss] ★ 目标身上没有链（没被当成连接对象）                                 got= want=
+  PASS [boss] ★ 目标仍在敌方（没被策反）                                      got=enemy want=enemy
+  PASS [boss] 守卫仍在己方                                              got=player want=player
+  PASS [ally] 守卫与目标(ally_flame_claw)都在场                           got=true want=true
+  PASS [ally] 敌方只有 1 只（ally_flame_claw）                           got=1 want=1
+  PASS [ally] 守卫仍存活（前提：否则下面的否定断言会空过）                              got=true want=true
+  [diag] [ally] 守卫 shared_link_uid=；目标 team=enemy shared_link_uid=
+  PASS [ally] ★ 守卫没有连上任何目标（只有应免疫单位可连）                             got= want=
+  PASS [ally] ★ 目标身上没有链（没被当成连接对象）                                 got= want=
+  PASS [ally] ★ 目标仍在敌方（没被策反）                                      got=enemy want=enemy
+  PASS [ally] 守卫仍在己方                                              got=player want=player
+
+=== Part 4: 混编（boss + ally + 1 个合法目标）—— 链只能落在合法目标上 ===
+  PASS [live] 场上有末日守卫                                             got=true want=true
+  [diag] 守卫 lane=0 uid=test_s0_c2；boss=test_s3_c2 ally=test_s3_c1 民兵=test_s3_c0；契约 uid=test_s3_c0
+  PASS [live] 守卫锁定了契约目标（真的连上了，不是空场景）                              got=true want=true
+  PASS [live] ★ 契约目标就是那只普通民兵（不是 boss、不是 ally）                     got=test_s3_c0 want=test_s3_c0
+  PASS [live] ★ 契约目标不是 boss                                       got=false want=false
+  PASS [live] ★ 契约目标不是法阵友军                                        got=false want=false
+  PASS [live] boss 身上没有链                                          got= want=
+  PASS [live] ally 身上没有链                                          got= want=
+  PASS [live] boss 仍在敌方                                           got=enemy want=enemy
+  PASS [live] ally 仍在敌方                                           got=enemy want=enemy
+  PASS [live] boss 没被挪进 player 数组                                 got=false want=false
+  PASS [live] ally 没被挪进 player 数组                                 got=false want=false
+
+=== Part 5: 接线文本断言（只证「写了且没被注释」，行为由上面几条验）===
+  PASS wiring：_nearest_non_boss 里 boss/法阵友军都在跳过条件里                got=true want=true
+  PASS wiring：_link_targets_without_doom 里 boss/法阵友军都排除了（防御性重复）   got=true want=true
+  PASS wiring：重连守卫会把已连上的 boss/法阵友军断开                              got=true want=true
+  PASS wiring：_is_formation_ally_fighter 定义还在                     got=true want=true
+  PASS wiring：谓词读 is_formation_ally 字段                            got=true want=true
+  PASS wiring：谓词补了 ally_ 前缀兜底                                     got=true want=true
+
+PROBE_DONE checks=46 fail=0

@@ -1,127 +1,106 @@
-========================================================================
-9.24 批次交付 —— 代码 / 文档 / 门禁（同目录同路径镜像）
-========================================================================
+9.25 批次交付说明（客户端 GloryBeta0925）
+================================================
 
-本轮（同日第四轮订正）改了什么
-    用户第三次回执：**神王的技能落雷特效是否有显示错误，非技能目标也出现了落雷。**
+来源：桌面《9.25bug提交及修复.docx》—— 2 条玩法问题 + 新手教程 6 项优化。
+用户另经问答锁定：① 「法阵 boss」= boss_* 与 ally_* 两者都免疫；
+② 技能文案保留星级差异（1~3 星不带回血句、4 星带），只去掉尾部「Boss免疫。」。
 
-    根因**不是模块接错，而是「打谁」是表现层自己猜的**。
-    第二版 context["targets"] 的两条来源都不是模拟器的真实选择：
-      先取「本帧所有伤害事件的目标」，空了再退回「当场所有存活敌人」。
-    而神王的真实规则是 range = 1（**只在同一 lane 内选目标**），他路敌人本不该落雷。
-    更糟的是第二条兜底在 global_divine_blast 上**几乎必然触发**：
-    技能把目标劈死之后存活敌人集合立刻收敛，退回分支就把"剩下的活人"全劈一遍。
+夹结构
+------
+  9.25交付_01_代码/   本批改动/新增的源码与门禁脚本（11 个文件）
+  9.25交付_02_文档/   文档 + 可复跑的判据脚本 + 原始读数（证据）
 
-    修法：**在判定发生的地方就把结果记下来**。
-      * BattleSimSkills 新增 _mark_vfx_targets()，_skill_god_king 把每个通过 _can_target
-        的目标 uid 写进既有字段 vfx_skill_target_uid（逗号分隔）；
-      * 该字段**走既有的回放第 12 列、不新增列**（ReplayDigest 的 SIMULATION_TOP_FIELDS
-        含 frames，加列会改掉已冻结的回放哈希）；
-      * BattleVfx 新增 _vfx_target_uids() + resolve_skill_target_positions()（都是 static
-        纯函数），global_divine_blast 分支改为**只认这份记录**；退回旧口径被
-        recorded.is_empty() 锁死 —— 否则用户报的现象会原地复活。
-    ★ 解析时**不能按 alive 过滤**：神王逐个 apply_damage，排在前面的目标可能已被这道雷劈死；
-      而阵亡单位**不会被剪枝出 state 数组**（只翻 alive 标志），位置仍拿得到。
-      按 alive 过滤，**恰恰是"被这道雷劈死的那几只"不落雷** —— 正好反了。
+两个夹里都**保留工程内相对路径**（同目录同路径），直接对应回 GLory-work 工程。
+本批**没有新增或修改任何资源文件**，所以没有「_资源」夹。
 
-    ----（以下为上一轮（第三轮）的回执与订正，仍包含在本版里，留作对照）----
-    用户第二次回执：
-      1) 神王的技能特效无显示 —— 希望和裁决者用同一落雷特效，
-         区别在于神王的目标是多个敌人，在所有技能目标身上均触发落雷；
-      2) 末日守卫技能把被连接目标变为我方棋子，这种变化**不随守卫死亡而停止**，
-         而我方棋子应该以**绿色血条**表示。
+改了什么（逐条）
+----------------
+① 血链不能策反 boss_* / ally_*
+   scripts/battle/BattleSimulator.gd
+   - 新增谓词 _is_formation_ally_fighter()（读 is_formation_ally 字段 + ally_ 前缀兜底）
+   - _nearest_non_boss / _link_targets_without_doom / _skill_shared_hp_link 三处接同一个谓词
+   - ★ 探针第一次跑就是 44/2：_link_targets_without_doom 里还留着 boss，已补 _is_boss_fighter(o)
 
-    两条都出在上一轮的实现上，且都属同一大类：**改动落在了一条走不到的路上**。
+② 技能文案
+   scripts/ui/UnitDetailFormat.gd（zh + en 两处；英文同步删掉 "Boss immune."、补 non-unique）
 
-    ① 神王：上一轮**认错了单位**。
-         god_king       -> skill_id = global_divine_blast   （用户要改的那只）
-         god_arbiter    -> judgement_strike
-         human_king     -> unique_king_growth               （上一轮误当成神王）
-       后果是一错两伤：神王什么也没发生；而**人王的普攻被悄悄变成了落雷**。
-       订正：两只都接到**字面上同一个函数** _aoe_thunder()（裁决者传空 context -> 1 道；
-       神王传 context["targets"] -> 逐敌各一道），人王还原为 _king_attack（天剑）。
-       ★ 用户要的「同一特效、只差目标个数」不靠"两处参数抄一致"来满足 ——
-         结构上同一段代码，才不会两个人各改一处就漂移。
+③ 新手教程 6 项
+   ⑴ 前置任务提示 -> 「请先完成前置任务」（TutorialMode.follow_arrow_hint）
+      ★ 与既存门禁 V3 P1-10「至少 5 种说法」正面冲突，已换成逐字断言（见 docs/CHECKS.md）
+   ⑵ 萝卜营地：在 CARROT_CAMP 分支推完补 _refresh_prep()，升级按钮同一帧亮起
+      （根因：PrepUI._toggle_carrot_camp 先 refresh 再上报状态，推进后没人再刷视图）
+   ⑶ 商店刷新无限次+永久免费：新增唯一判定源 TutorialMode.shop_refresh_all_free()，
+      两个使用点都改读它；FILL_SHOP 去掉 human_death_servant
+   ⑷⑸ 开战门槛：新增 battle_board_gate_message()（3 / 7），
+        拦截点在 PrepFlowController._on_start_battle()
+   ⑹ 不再弹「教学目标暂时不可用」：_target_control() 传空串；update_overlay() 沿用上次位置
 
-    ② 末日守卫：策反在**模拟层是永久的**（BattleSimulator._convert_link_target_to_caster_team
-       直接 `target.team = caster.team`，没有任何回退分支），但**表现层根本看不到**：
-         * 回放 frames 是 13 列、**没有 team 列**；
-         * roster 是**首帧快照**，对被策反单位永远说原队伍；
-         * 唯一线索是第 12 列 vfx_skill_target_uid（守卫那一行带着"我锁了谁"）。
-       上一轮把血条颜色绑在**连线的存活**上、染的是**契约色** —— 正好和用户要求相反。
-       订正三步：
-         1) BattleScreen.latched_conversions_in_frame() —— 纯 static，从一帧里还原策反关系；
-         2) BattleScreen.apply_latched_team()           —— 纯 static，把队伍写回；
-            _apply_replay_frame 先整帧扫、后逐条解码（守卫会把目标搬到己方数组**尾部**，
-            边扫边应用会漏帧），锁存表每局清空；
-         3) BattleRenderer 每帧按**当前队伍**重算血条颜色（同帧直切，不做渐变）。
-       旧的契约色整套（SHARED_LINK_BAR_COLOR / _hp_bar_base_colors /
-       _apply_shared_link_bar_tint）**已删除** —— 留着只会和队伍色打架。
-       **没有给回放帧加 team 列**：ReplayDigest 把 frames 算进被冻结的模拟摘要
-       （SIMULATION_TOP_FIELDS 含 frames），加列会改掉已冻结的回放哈希。
+附带（排查中发现，非用户提交项）
+--------------------------------
+★ 9.24 探针 probe_doom_thunder_924 并入批跑后转红（checks=56 fail=1）。
+  bisect_925_regression.py 证明**与本轮血链改动无关**（3 处改动全部撤销仍红）。
+  真因：断言用 g["hp"]=0 并不足以让单位阵亡 —— 模拟器里 alive=false 只在
+  DamageService.apply_damage() 内锁存（DamageService.gd:280-282），
+  而 4 星末日守卫连接期间每 tick 回血，下一 tick 就把 0 抬回来。
+  已订正为走生产死亡路径，57/57 全绿。定位过程见 02_文档 里的
+  bisect_925_summary_prered.txt（订正前跑 -> 4/4 红）与 probe924_run1~3.txt（3/3 红）。
+★ 源码树里发现三个 2026-09-23 的过时 .mutbak（BattleVfx / BattleSimulator / SfxService）。
+  变异脚本带「发现残留 .mutbak 先还原」的启动自愈 —— 再跑一次就会把这两个文件
+  静默回退到 9.23、9.24+9.25 两轮修复全没。已**移动（不是删除）**到
+  work/_qa_922/stale_mutbak_923/，随本批一并交付可回溯。
 
-本轮新增 / 变动的门禁与探针
-    tools/cold_parse_chain_check.gd      清单补入 scenes/battle/BattleScreen.gd
-        —— 上一轮改了 BattleScreen.gd 却**不在解析链清单里**，于是「改 scenes/battle/**
-        必跑解析链」这条自定规矩对我改的那个文件**根本没生效**（当时是假绿）。checked 41 -> 44。
-    work/_qa_922/probe_doom_thunder_924.gd / .tscn
-        行为探针，**57 条读数**（第三轮 38 + 第四轮 19），**已并入批跑**。
-        Part 5 跑**生产实现 _skill_god_king** + 真实 state：神王占 0 路、敌方三路各一只，
-        期望值**由 lane 独立算出、不借 _can_target 自证**，实测记录 ["test_s3_c2"]（只有本路一只）；
-        Part 6 直调纯函数 resolve_skill_target_positions：1 个记录 uid -> **只准出 1 个落点**
-        （用户截图现象本身）、顺序保持、未知 uid 跳过、**被劈死的目标仍出落点**。
-    work/_qa_922/mutate_doom_thunder_924.py
-        **10 个变异**（A–F 管上一轮 ③⑦；G–J 管本轮的目标集合），证明探针真的会红；
-        还原后逐字节 sha256 一致。
-        ★ 本轮变异 I（把"没有记录才退回"的开关放开）**只有结构断言能抓** ——
-          Part 6 直接调纯函数，**绕过了那个开关**。上一轮的教训是「只有一类断言时必然漏」，
-          这一轮坐实：**行为断言 + 结构断言两类都要有，缺哪类就有哪类的盲区。**
-    work/_qa_922/run_gates.py
-        新增 _scene_for()：tools/<name>.tscn 找不到时回落到 work/_qa_922/<name>.tscn，
-        **让行为探针也能进批跑**（分两处跑就等于总有一条会被忘掉）。
-        批跑清单 19 -> 21 条（+ oga_projectile_swap_check、+ probe_doom_thunder_924）。
+★ 9.25 追加订正（当天下午，用户截图回执）：教程商店刷新「免费」只生效了一半。
+--------------------------------
+现象：教程里刷新刷几次之后就点不动 —— 按钮在、标着免费，按下去毫无反应（不是扣钱，是无响应）。
+根因：刷新费用在客户端被算了**三遍**，「唯一判定源」当时只改了**两处**，漏了第三处
+  scenes/prep/PrepUI.gd::_on_refresh_shop_control_pressed()（刷新按钮的前置判定）。
+  它留着旧的 all_free := TreasureService.has_set("money")（少了 GameState.tutorial_mode）
+  -> 教程里 cost 按 escalating_unit_price(uses) 递增 -> 超过金币就**静默 return**
+  （不播燃烧动画、不刷新）。"刷几次才失效"是因为 shop_refresh_cost 在 uses<=0 时短路返 0
+  （第一次永远免费），之后 10 -> 20 -> 40 递增，金币吃干即"死"。
+改法：第三处接**同一个函数** TutorialMode.shop_refresh_all_free()（不是照抄同一串条件）。
+新增门禁：tools/shop_refresh_free_source_check.gd/.tscn（19 项）
+  A 费用档位 6 / B 教程恒免费 2（刷 999 次仍 0）/ **C 调用点同源 7（唯一能抓本次事故的一组）**
+  / D 服务端分层反向哨兵 3。
+  ★ C 递归扫 res://scenes 下**每一处** shop_refresh_cost( 调用点，要求所属函数体内出现
+    共享谓词 —— 写死文件清单等于提前豁免下一次同类错。
+  ★ 范围只到客户端层：服务端 EconomyLedger._shop_refresh 的 free 来自 payload 的
+    owned_treasures（权威分层，不是重复），教学不走服务端，改用 D 组反向钉住。
+变异实证：work/_qa_922/mutate_shop_refresh_925.py
+  退回旧写法 -> 立刻红 2 条并**指名到** PrepUI.gd:2105 的 func，
+  MUTATION_VERDICT OK red=True green=True restored=True（二进制读写 + sha256 逐字节还原）。
+  ★ 排查中两个坑：① _func_start 只认 "func " 不认 "static func" -> 对全 static func 的文件
+    回溯到文件头 class_name 行，报出的"所在函数"是假的；② escalating_unit_price(999) =
+    10*2^998 **int64 溢出**，判据别用超大数验递增侧（all_free=true 侧短路返 0，用多大都安全）。
 
-★★ 这轮变异测试真正买到的东西不是「通过了」，而是「第一次没过」
-    变异 C（把写回条件改成 `if false and ...`）与 E（把写回调用点整行**注释掉**）
-    最初**都没被抓到** —— 因为判据当时是**源码文本** src.contains(...)，
-    而改坏之后**源码里那两行一个字都没变**，于是照样绿。
-    修法：把写回逻辑抽成**纯函数** apply_latched_team() 让探针直接调（C 的判据落到**行为**上）；
-          把文本断言换成**注释感知**的 _has_live_code()（E 的判据能看穿 #）。
-    通用教训：**文本断言必须能看穿注释；能做成行为断言的就别用文本断言。**
+验证口径（请连口径一起看）
+--------------------------
+* 批跑 **32 条 -> 28 PASS / 4 FAIL**（31 条是追加订正前的读数；+1 = 新增
+  shop_refresh_free_source_check）；4 条红全部为既存，计数与 9.24 一致：
+  voice 8 / dynamic_call 4 / procedural_ui_ratchet 3 / prep_text_coverage 1。
+  **一条都没多。** 没有用 --update-baseline 刷绿。
+* cold_parse_chain 读数 44 -> 65 ->（§14）**71**（TARGETS 再 +2：PrepUI.gd + 新门禁脚本）。
+  shop_refresh_free_source **19** / probe_doom_thunder_924 57 / probe_blood_link_boss_immune_925 46。
+* ★ 批跑清单 != 全部门禁。asset_manifest_check 不在清单里且长期红（既存 6 条
+  missing_asset，本轮未新增资源故未单跑）；tutorial_arrow_alignment_check 要求独立
+  custom user dir，在本工程根直接跑必 rc=2，本轮未运行。
+  「27 PASS」这个口径没有涵盖这两条。
+* ★ 判据最硬的是 ①（行为探针 46 条，含先红后绿实证）。
+  ② / ③⑵ / ③⑷⑸ / ③⑹ **没有专门的自动化判据** —— tutorial_* 全绿只证明不回归，
+  不证明「按钮真的亮了」「提示真的不弹了」。
+* 未做真机 / 观感验收，未重新导出 EXE / APK。
 
-怎么复跑
-    1) 批跑全部门禁（21 条）：
-         <python> work/_qa_922/run_gates.py        # 由 python 调 godot 跑，见文件头注释
-    2) 单跑本批新门禁 / 探针：
-         <godot> --headless --path <工程> tools/oga_projectile_swap_check.tscn
-         <godot> --headless --path <工程> tools/cold_parse_chain_check.tscn
-         <godot> --headless --path <工程> work/_qa_922/probe_doom_thunder_924.tscn
-    3) 复现贴图：python work/_qa_922/make_metal_arrow_924.py
-    4) 复现变异证据：python work/_qa_922/mutate_oga_swap_924.py
-                      python work/_qa_922/mutate_archer_924.py
-                      python work/_qa_922/mutate_doom_thunder_924.py
-       （三者都 try/finally 还原，并逐字节比对 sha256 后才退出）
-
-需要留意的四点
-    1) 本机**没有可用的 git.exe**，所以「改动清单」是靠文件 mtime + 本轮实际编辑动作反推的；
-       project.godot 只能说明「本批没碰它」，不等于与某个基线 commit 逐字节相同。
-    2) 另有既存红 4 条（voice 8 / prep_text_coverage 1 / dynamic_call 4 /
-       procedural_ui_ratchet 3），均**不是本批引入**，归因见 docs 记录 11.2；
-       **没有**用 --update-baseline 刷绿。
-    3) ★ **批跑清单之外还有一条红的：asset_manifest_check**
-       （checked=3112 failures=6 allowed=4，rc=1）。它**不在** run_gates.py 的 21 条里，
-       所以「17 PASS / 4 FAIL」这个口径**没有涵盖它** —— 不主动说就是漏报。
-       本批新增了 human_archer_metal_arrow.png，故单跑核对过一次：
-       6 条 FAIL[missing_asset] 全是既存（work/bug09xx* 截图与 assets/ui/avatars/thumb，
-       引用方是本批没碰的 tools/bug09xx_check.gd / data/avatars.json）；
-       **新增的金属箭贴图不在任何失败项里**。
-       **没有**跑 tools/update_asset_manifest.ps1 刷新基准 —— 该仓 dirty_tracked_files=54，
-       刷基准会把另外 53 个无关脏文件一起吞进基准、掩盖它们的漂移（与 --update-baseline 同类错误）。
-    4) **未做真机 / 安卓观感验收**。本轮两条（神王落雷覆盖 / 血条变绿）的观感都**没有**真机确认；
-       探针能证明「神王每个目标各落一道雷、与裁决者同一函数同一配色表」和「策反后 f.team 真的变了、
-       血条真的按当前队伍重算」，**证明不了你屏幕上看着对**。
-       另外 **3D 脚下的队伍色环不跟随策反**（_actor_team_color 仍是建节点时定死）——
-       用户这轮只提"血条"，未擅自扩大改动面。
-
-小提示：本夹里的 _说明.txt 与 _sha256清单.txt 是**由生成器脚本重写的** ——
-想改说明请改 work/_qa_922/make_delivery_924.py 再重跑，直接手改本文件会在下次重跑时被静默还原。
+怎么自己复跑
+------------
+  1. 把 01_代码 / 02_文档 里的文件按相对路径覆盖回工程（或直接对比 sha256）。
+  2. 批跑：python work/_qa_922/run_gates.py
+  3. 单跑新探针：
+     <godot>_console.exe --headless --path <工程> work/_qa_922/probe_blood_link_boss_immune_925.tscn
+     通过行：PROBE_DONE checks=46 fail=0
+  4. 回归定位（会临时改源码再按 sha256 还原，请先自行备份）：
+     python work/_qa_922/bisect_925_regression.py
+  5. 单跑 §14 新门禁：
+     <godot>_console.exe --headless --path <工程> tools/shop_refresh_free_source_check.tscn
+     通过行：CHECK_RESULT name=shop_refresh_free_source status=PASS checked=19 failures=0
+  6. §14 变异实证（临时改 PrepUI.gd 再按 sha256 还原，结尾打印 MUTATION_VERDICT）：
+     python work/_qa_922/mutate_shop_refresh_925.py

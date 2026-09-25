@@ -260,11 +260,15 @@ func _collect_text(node: Node, out: Array[String]) -> void:
 		_collect_text(child, out)
 
 
-# V3 P1-10：无效点击必须说明原因。
+# V3 P1-10：无效点击必须说明原因（9.25 按用户口径改过一次，见下面 ★）。
 #
 # 原来无论在哪一步都只回一句「先完成箭头指示的操作」。那句话有两个问题：
 # 它没说要做什么，而且箭头指的地方**可能正被商店盖住** —— 玩家照着看，
 # 看到的是商店，于是在商店里反复找。
+#
+# P1-10 的修法是「商店开着就先让它关掉，否则复述这一步的目标」。9.25 提交文档
+# ③(1) 把后半句又否掉了：复述目标 = 又把整段文案倒出来，太冗长。现在收敛成
+# 一句短的「请先完成前置任务」；下面的断言已同步换口径。商店遮挡那条保留。
 func _check_invalid_tap_explains_why() -> void:
 	var probe: TutorialScript = TutorialScript.new()
 	add_child(probe)
@@ -272,8 +276,21 @@ func _check_invalid_tap_explains_why() -> void:
 	var keys: Array = _step_keys()
 	var internal := RegEx.create_from_string(INTERNAL_TOKEN)
 
+	# ★ 9.25 口径变更（用户明确要求，见提交文档 ③(1)）。
+	#
+	# 这里原来要求「≥5 种不同说法」，理由是「每一步都回同一句话 = 没说明原因」。
+	# 提交文档反过来指出原实现的那个「说明原因」太长 —— 它复述整段目标文案，
+	# 玩家在商店里连点卡片时同一句会堆满整个屏幕（提交截图 image4）。
+	# 现在按用户口径收敛成一句短的「请先完成前置任务」，并且 ③(4)/(5) 的
+	# 「上阵棋子数目少于 N」与它走同一个 `show_message` 出口，格式天然一致。
+	#
+	# 所以断言**换口径但不放松**：从「至少 5 种」改成「逐字等于那句公认短句」。
+	# 新断言同时钉住两件事 ——（a）确实是那句收敛后的文案（防止漂移回长句）；
+	# （b）不再复述整段目标（只要有人把长句塞回来，这里立刻转红）。
+	# 商店遮挡那条不受影响，仍在下面单独断言。
 	for locale in ["zh", "en"]:
 		LocaleManager.set_locale(locale)
+		var want := "请先完成前置任务" if locale == "zh" else "Finish the previous task first"
 		var seen := {}
 		for i in keys.size():
 			probe.step = i
@@ -286,11 +303,14 @@ func _check_invalid_tap_explains_why() -> void:
 			var m := internal.search(hint)
 			_h.expect(m == null, "invalid_tap_hint_has_internal_token",
 				"[%s] 无效点击反馈里含有内部标识：%s" % [locale, hint])
+			_h.expect(hint == want, "invalid_tap_hint_not_short_sanctioned",
+				"[%s] 步骤 %s 的无效点击反馈不是收敛后的短句「%s」：%s"
+					% [locale, str(keys[i]), want, hint])
 			seen[hint] = true
-		# 每一步都回同一句话 = 没有说明原因，只是换了个说法的「再试一次」。
-		_h.expect(seen.size() >= 5, "invalid_tap_hint_is_one_size_fits_all",
-			"[%s] %d 个步骤的无效点击反馈只有 %d 种说法 —— 等于没说明原因"
-				% [locale, keys.size(), seen.size()])
+		# 非商店步骤应当**只有这一种**说法；出现第二种就说明有人又塞回了分支。
+		_h.expect(seen.size() <= 1, "invalid_tap_hint_not_single_short_text",
+			"[%s] 非商店步骤的无效点击反馈出现了 %d 种说法（应为 1）"
+				% [locale, seen.size()])
 
 	# 商店盖住目标时必须先让玩家关商店。箭头指的地方在商店后面，
 	# 照着箭头看只会看到商店。

@@ -530,7 +530,8 @@ func refresh() -> void:
 		_closed_gold_label.text = gold_text
 	overlay.refresh_gold_interest(format_gold_interest_detail())
 	if refresh_button != null:
-		var all_free := TreasureService.has_set("money")
+		# 与 PrepBoardController._on_refresh_shop 共用同一个判定（教学里恒免费）。
+		var all_free := TutorialMode.shop_refresh_all_free()
 		var refresh_cost := EconomyService.shop_refresh_cost(GameState.shop_refresh_uses_this_round, all_free)
 		refresh_button.disabled = GameState.gold < refresh_cost
 		refresh_icon.modulate = Color(0.46, 0.46, 0.46) if refresh_button.disabled else Color.WHITE

@@ -188,20 +188,36 @@ func _part_convert_live() -> void:
 
 	# ★ 核心：守卫死亡**不**回退策反。
 	#
-	# 这里**直接把守卫打到 0 血**，而不是"等一场战斗自然把它打死"：
-	#   * 第一版就是等的 —— 结果一场 6000 tick 的仗打完守卫还活着，于是
-	#     "策反不回退"这条**空过**了（守卫根本没死，当然不回退）。假绿比红更危险。
-	#   * 要验证的是「守卫死亡」这个**状态**下的行为，不是"某场特定对局会打死它"。
+	# 这里要构造的是「守卫死亡」这个**状态**，不是"某场特定对局会打死它"。
+	#
+	# ★★ 9.25 订正：本探针第一/二版都是 `g["hp"] = 0` 然后 step，**这条仍然不够**。
+	#   模拟器里 `alive = false` 只在 `DamageService.apply_damage()` 内锁存
+	#   （DamageService.gd:280-282）；外部把 hp 改到 0，单位依旧是 `alive = true`，
+	#   而 4 星末日守卫在连接期间每 tick 回 `round(max_hp * 3% * 0.1)`（本例 17）血，
+	#   下一个 `_process_shared_links` 就把它从 0 抬回来。
+	#   于是这条断言实际等价于「21 tick 内刚好有个敌人对它打出致命一击、且没被闪避」——
+	#   还是第一版那条"等自然死"，只是把血先压低，所以会随平衡漂移忽红忽绿。
+	#   9.25 批跑实测转红；`work/_qa_922/bisect_925_regression.py` 已证明**与本轮血链
+	#   改动无关**（三条改动全部撤销后照样红），所以这里改判据本身。
+	#   改法：走**生产死亡路径**（真致死伤害），并把前置条件显式摆平 + 断言，
+	#   免得又变成"断言被前置条件满足"的假绿。
 	var g: Dictionary = _find_by_id(state, DOOM)
-	g["hp"] = 0
+	g["dodge"] = 0.0          # 闪避是概率项，会让这条断言不可复现
+	g["shield"] = 0
+	g["statuses"] = {}
+	DamageService.apply_damage(g, maxi(1, int(g.get("max_hp", 1))) * 4, true)
 	BattleSimulator.step_state(state)
 	for i in 20:
 		BattleSimulator.step_state(state)
 	var guard_now := _find_by_id(state, DOOM)
 	var guard_dead := guard_now.is_empty() or not bool(guard_now.get("alive", false))
-	print("  [diag] 强制守卫阵亡后：alive=%s；被策反单位 team=%s"
-		% [str(false if guard_now.is_empty() else guard_now.get("alive", false)),
-			str(_find_uid(state, linked).get("team", ""))])
+	var guard_hp := -1
+	var guard_alive := false
+	if not guard_now.is_empty():
+		guard_hp = int(guard_now.get("hp", -1))
+		guard_alive = bool(guard_now.get("alive", false))
+	print("  [diag] 致死伤害后：hp=%d alive=%s；被策反单位 team=%s"
+		% [guard_hp, str(guard_alive), str(_find_uid(state, linked).get("team", ""))])
 	if not _expect(guard_dead, true, "[live] 守卫确实处于阵亡状态（否则下一条会空过）"):
 		return
 	var after := str(_find_uid(state, linked).get("team", ""))
