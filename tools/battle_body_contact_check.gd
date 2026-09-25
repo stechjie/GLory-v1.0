@@ -16,6 +16,12 @@ func _ready() -> void:
 	for tick in 4: Sim._separate_units(pair, [])
 	h.expect(penetration(pair) <= 0.1, "large_pair", "Two large units must not remain permanently interpenetrating")
 	var crowd: Array = []
+	var pile: Array = []
+	for i in 16: pile.append(fighter("pile_%02d" % i, Vector2(500,260)))
+	Sim._separate_units(pile, [])
+	for unit in pile:
+		h.expect(unit.pos.distance_to(Vector2(500,260)) <= 20.001,
+			"tick_travel_bound", "Crowd correction must not throw an actor across the arena")
 	for i in 16: crowd.append(fighter("crowd_%02d" % i, Vector2(460+(i%4)*20,220+(i/4)*20)))
 	var reverse := crowd.duplicate(true)
 	reverse.reverse()

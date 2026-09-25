@@ -642,6 +642,7 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 const SEPARATION_MAX_STEP := 10.0
 const SEPARATION_PASSES := 8
 const SEPARATION_EPS := 0.05
+const SEPARATION_MAX_TRAVEL := 20.0 # Entire tick, matching the old two 10px passes.
 
 static func _separate_units(player: Array, enemy: Array) -> void:
 	var live: Array = []
@@ -653,14 +654,20 @@ static func _separate_units(player: Array, enemy: Array) -> void:
 	live.sort_custom(func(a, b): return str(a.get("uid", "")) < str(b.get("uid", "")))
 	var radii := PackedFloat32Array()
 	var inverse_mass := PackedFloat32Array()
+	var remaining := PackedFloat32Array()
 	for f in live:
 		radii.append(body_radius(f))
+		remaining.append(SEPARATION_MAX_TRAVEL)
 		var cells := maxi(1, int(f.get("footprint_cells", 1)))
 		inverse_mass.append(1.0 / float(cells * cells))
 	for _pass in SEPARATION_PASSES:
 		var worst := 0.0
-		for i in live.size():
-			for j in range(i + 1, live.size()):
+		var moved := false
+		# Alternate traversal to avoid a persistent UID-order shove through a crowd.
+		for first in live.size():
+			var i := first if _pass % 2 == 0 else live.size() - 1 - first
+			for second in range(first + 1, live.size()):
+				var j := second if _pass % 2 == 0 else live.size() - 1 - second
 				var a: Dictionary = live[i]
 				var b: Dictionary = live[j]
 				var minimum := radii[i] + radii[j]
@@ -675,11 +682,18 @@ static func _separate_units(player: Array, enemy: Array) -> void:
 				var direction := d / distance if distance > 0.001 else Vector2.RIGHT.rotated(float(i * 7 + j) * 0.9)
 				var share := inverse_mass[i] / (inverse_mass[i] + inverse_mass[j])
 				var correction := minf(overlap, SEPARATION_MAX_STEP)
-				var ap: Vector2 = a.pos - direction * correction * share
-				var bp: Vector2 = b.pos + direction * correction * (1.0 - share)
+				var old_a: Vector2 = a.pos
+				var old_b: Vector2 = b.pos
+				var ap: Vector2 = old_a - direction * minf(correction * share, remaining[i])
+				var bp: Vector2 = old_b + direction * minf(correction * (1.0 - share), remaining[j])
 				a.pos = Vector2(clampf(ap.x, 45.0, ARENA_W - 45.0), clampf(ap.y, 40.0, ARENA_H - 40.0))
 				b.pos = Vector2(clampf(bp.x, 45.0, ARENA_W - 45.0), clampf(bp.y, 40.0, ARENA_H - 40.0))
-		if worst <= SEPARATION_EPS:
+				var a_travel := old_a.distance_to(a.pos)
+				var b_travel := old_b.distance_to(b.pos)
+				remaining[i] = maxf(0.0, remaining[i] - a_travel)
+				remaining[j] = maxf(0.0, remaining[j] - b_travel)
+				moved = moved or a_travel > 0.0001 or b_travel > 0.0001
+		if worst <= SEPARATION_EPS or not moved:
 			break
 
 
