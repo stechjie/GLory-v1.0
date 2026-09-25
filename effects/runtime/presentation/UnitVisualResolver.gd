@@ -31,6 +31,7 @@ const VISUAL_FIELDS := [
 	"model_attack_sync_seek",
 	"model_attack_lock_time",
 	"model_run_animation_name",
+	"model_in_place_actions",
 	"model_by_element",
 	"tier",
 ]

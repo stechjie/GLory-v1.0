@@ -37,7 +37,10 @@ const LOCK_EPS := 0.001
 # **19 条 attack + 8 条 idle**，两者都可能是故意设计的位移
 # （扑击、飘浮），必须逐个人工判断，不能批量登记。
 # 每处理一条就把这个数字调低；新增带根位移的模型会立刻顶破这条线。
-const MAX_UNREGISTERED := 27
+# 2026-09-25: restore 32 missing run registrations and the hymn attack policy;
+# register 14 measured non-returning attack/idle clips. Keep the 13 returning
+# lunges/sways authored by the artist; they are not locomotion bugs.
+const MAX_UNREGISTERED := 13
 
 const POLICY_KEY := "model_in_place_actions"
 

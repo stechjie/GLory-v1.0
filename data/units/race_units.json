@@ -40,6 +40,7 @@
                   },
                   {
                       "id":  "god_priestess",
+                      "model_in_place_actions": ["run"],
                       "star4":  {
                           "atk_bonus":  0.32,
                           "aspd_bonus":  0.45,
@@ -103,6 +104,7 @@
                   },
                   {
                       "id":  "god_aurora",
+                      "model_in_place_actions": ["run"],
                       "star4":  {
                           "third_hit_double":  true,
                           "true_damage_pct":  0.45
@@ -164,6 +166,7 @@
                   },
                   {
                       "id":  "god_arbiter",
+                      "model_in_place_actions": ["run"],
                       "star4":  {
                           "damage_atk_pct":  4.4,
                           "def_stack_pct":  0.2,
@@ -381,6 +384,7 @@
                   },
                   {
                       "id":  "dark_scythe",
+                      "model_in_place_actions": ["idle"],
                       "star4":  {
                           "def_down_pct":  0.25,
                           "damage_atk_pct":  5
@@ -442,6 +446,7 @@
                   },
                   {
                       "id":  "dark_doom",
+                      "model_in_place_actions": ["run"],
                       "star4":  {
                           "link_regen_pct":  0.03
                       },
@@ -469,6 +474,7 @@
                   },
                   {
                       "id":  "dark_dragon",
+                      "model_in_place_actions": ["idle"],
                       "star4":  {
                           "pull_sec":  2,
                           "damage_atk_pct":  4.4
@@ -503,6 +509,7 @@
                   },
                   {
                       "id":  "undead_small",
+                      "model_in_place_actions": ["attack", "idle"],
                       "name":  "小灵",
                       "race":  "undead",
                       "element":  "sky",
@@ -559,6 +566,7 @@
                   },
                   {
                       "id":  "undead_parasite",
+                      "model_in_place_actions": ["run"],
                       "star4":  {
                           "clone_hp_pct":  0.5,
                           "clone_atk_def_pct":  0.75
@@ -616,6 +624,7 @@
                   },
                   {
                       "id":  "undead_fly",
+                      "model_in_place_actions": ["run"],
                       "poison_pct_max_hp":  0.03,
                       "poison_duration":  4,
                       "star4":  {
@@ -646,6 +655,7 @@
                   },
                   {
                       "id":  "undead_bomb",
+                      "model_in_place_actions": ["run"],
                       "star4":  {
                           "damage_atk_pct":  5
                       },
@@ -735,6 +745,7 @@
                   },
                   {
                       "id":  "human_militia",
+                      "model_in_place_actions": ["run"],
                       "star4":  {
                           "stun_sec":  0.5,
                           "interrupt_chance":  0.2
@@ -767,6 +778,7 @@
                   },
                   {
                       "id":  "human_merchant",
+                      "model_in_place_actions": ["run", "idle"],
                       "name":  "商人",
                       "race":  "human",
                       "element":  "ren",
@@ -822,6 +834,7 @@
                   },
                   {
                       "id":  "human_swordsman",
+                      "model_in_place_actions": ["run"],
                       "star4":  {
                           "damage_atk_pct":  3,
                           "stun_sec":  2
@@ -908,6 +921,7 @@
                   },
                   {
                       "id":  "human_death_servant",
+                      "model_in_place_actions": ["run", "attack", "idle"],
                       "star4":  {
                           "ally_def_pct":  0.3,
                           "ally_def_duration":  8

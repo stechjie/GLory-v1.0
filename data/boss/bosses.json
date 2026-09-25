@@ -4,7 +4,7 @@
   "win_rewards": {"5":100, "10":150, "15":250, "20":400},
   "bosses": [
     {
-      "id": "boss_meteor_caster",
+      "id": "boss_meteor_caster", "model_in_place_actions": ["run"],
       "name": "天罚投星者",
       "name_en": "Starfall Caster",
       "element": "sky",
@@ -29,7 +29,7 @@
       "model_run_animation_name": "run"
     },
     {
-      "id": "boss_thunder_core",
+      "id": "boss_thunder_core", "model_in_place_actions": ["run"],
       "name": "雷怒核心",
       "name_en": "Thunder Wrath Core",
       "element": "sky",
@@ -55,7 +55,7 @@
       "model_run_animation_name": "run"
     },
     {
-      "id": "boss_mirror_lord",
+      "id": "boss_mirror_lord", "model_in_place_actions": ["run"],
       "name": "镜像魔君",
       "name_en": "Mirror Lord",
       "element": "ren",
@@ -82,7 +82,7 @@
       "model_run_animation_name": "run"
     },
     {
-      "id": "boss_holy_priest",
+      "id": "boss_holy_priest", "model_in_place_actions": ["run"],
       "name": "圣愈祭司",
       "name_en": "Sacred Mender",
       "element": "ren",
@@ -108,7 +108,7 @@
       "model_run_animation_name": "run"
     },
     {
-      "id": "boss_rage_beast",
+      "id": "boss_rage_beast", "model_in_place_actions": ["run"],
       "name": "狂战灾兽",
       "name_en": "Rampage Beast",
       "element": "land",
@@ -134,7 +134,7 @@
       "model_run_animation_name": "run"
     },
     {
-      "id": "boss_blood_demon",
+      "id": "boss_blood_demon", "model_in_place_actions": ["run"],
       "name": "血怒魔王",
       "name_en": "Bloodrage Demon",
       "element": "ren",
@@ -161,7 +161,7 @@
       "model_run_animation_name": "run"
     },
     {
-      "id": "boss_soul_devourer",
+      "id": "boss_soul_devourer", "model_in_place_actions": ["run"],
       "name": "噬魂领主",
       "name_en": "Soul Devourer",
       "element": "ren",
@@ -186,7 +186,7 @@
       "model_run_animation_name": "run"
     },
     {
-      "id": "boss_twin_gate",
+      "id": "boss_twin_gate", "model_in_place_actions": ["run"],
       "name": "双生守门人",
       "name_en": "Twin Gatekeepers",
       "element": "land",
@@ -218,7 +218,7 @@
       "model_run_animation_name": "run"
     },
     {
-      "id": "boss_apocalypse",
+      "id": "boss_apocalypse", "model_in_place_actions": ["run"],
       "name": "灭世裁决者",
       "name_en": "Apocalypse Arbiter",
       "element": "sky",

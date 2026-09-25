@@ -1,6 +1,6 @@
 extends Node
 
-# Fixed visual slots reduce dense overlap without changing the simulator path.
+# Body contacts are resolved in the simulator; the renderer must not add offsets.
 # The central invariant is strict: displayed_delta == raw_delta for every actor.
 # Run with:
 # Godot_v4.7-stable_win64_console.exe --headless --path . tools/battle_visual_separation_check.tscn
@@ -9,14 +9,13 @@ const CheckHarness := preload("res://tools/CheckHarness.gd")
 const BattleRendererScript := preload("res://scenes/battle/BattleRenderer.gd")
 
 const CHECK_NAME := "battle_visual_separation"
-const MIN_READABLE_DISTANCE := 60.0
 
 var _h: CheckHarness
 
 
 func _ready() -> void:
 	_h = CheckHarness.new(CHECK_NAME)
-	_case_eight_stacked_units_have_fixed_readable_slots()
+	_case_renderer_preserves_authoritative_contacts()
 	_case_fixed_slots_are_deterministic()
 	_case_displayed_path_exactly_matches_raw_path()
 	_case_neighbour_changes_never_move_survivors()
@@ -39,7 +38,7 @@ func _fighter(uid: String, pos: Vector2, slot: int, team := "player") -> Diction
 	}
 
 
-func _case_eight_stacked_units_have_fixed_readable_slots() -> void:
+func _case_renderer_preserves_authoritative_contacts() -> void:
 	var renderer := BattleRendererScript.new()
 	var raw := Vector2(500.0, 260.0)
 	var fighters: Array = []
@@ -53,12 +52,9 @@ func _case_eight_stacked_units_have_fixed_readable_slots() -> void:
 		_h.expect((fighter as Dictionary).pos == raw, "sim_position_mutated_%s" % str(fighter.uid),
 			"固定显示槽改写了 %s 的模拟坐标" % str(fighter.uid))
 
-	var closest := INF
-	for i in positions.size():
-		for j in range(i + 1, positions.size()):
-			closest = minf(closest, positions[i].distance_to(positions[j]))
-	_h.expect(closest >= MIN_READABLE_DISTANCE, "dense_stack_still_overlaps",
-		"8 个同点单位的固定槽最近距离只有 %.2f" % closest)
+	for position in positions:
+		_h.expect(position == raw, "renderer_added_collision_offset",
+			"表现层不能另外推开模型，否则血条/伤害判定与服务器坐标分离")
 	renderer.free()
 
 

@@ -12,6 +12,12 @@ var _h: CheckHarness
 
 func _ready() -> void:
 	_h = CheckHarness.new(CHECK_NAME)
+	var legacy := {"id": "human_swordsman", "hp": 12345, "model_in_place_actions": []}
+	var current := UnitVisualResolverScript.resolve_definition("human_swordsman", legacy)
+	_h.expect((current.get("model_in_place_actions", []) as Array).has("run"),
+		"legacy_root_motion_policy", "旧回放/存档必须使用客户端最新的原地动画配置")
+	_h.expect(int(current.hp) == 12345 and legacy.model_in_place_actions.is_empty(),
+		"visual_refresh_mutated_combat", "刷新视觉配置不能修改战斗属性或输入快照")
 	var entries := UnitVisualResolverScript.all_combat_entries()
 	_h.expect(entries.size() == 74, "combat_count", "可战斗单位应为 74，实际 %d" % entries.size())
 	var ids: Dictionary = {}

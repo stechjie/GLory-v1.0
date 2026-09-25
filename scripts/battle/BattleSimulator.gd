@@ -404,8 +404,7 @@ static func step_state(state: Dictionary) -> void:
 		state.next_decay = float(state.next_decay) + DECAY_INTERVAL_SEC
 	_step_team(player, e_alive, float(state.elapsed), state)
 	_step_team(enemy, p_alive, float(state.elapsed), state)
-	# 两遍：人多挤成一团时一遍推不干净。
-	_separate_units(player, enemy)
+	# Solve crowd contacts once with a bounded iterative constraint pass.
 	_separate_units(player, enemy)
 	_process_shared_links(state)
 	# 本 tick 所有伤害都结算完了，再补发非普攻致死的击杀金（必须在 _step_team 之后）。
@@ -637,73 +636,51 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 			DamageService.clear_stat_context()
 
 
-# 9.25 推开逻辑：两个身体重叠就沿连线互相推开（敌我都算），近战才能贴身
-# 砍而不叠在一起。确定性：按 x 排序、同 x 用 uid 决胜，结果与平台无关，
-# 回放/多端一致。体型大（footprint_cells>1，Boss）的不被推，只推别人。
-const SEPARATION_MAX_STEP := 10.0  # 每 tick 单个单位最多被推多远，避免抖动
+# Deterministic body constraints, solved against the updated positions rather
+# than summing opposing pushes from an obsolete snapshot. Dense crowds need
+# several bounded passes; a large footprint is heavier, not infinitely pinned.
+const SEPARATION_MAX_STEP := 10.0
+const SEPARATION_PASSES := 8
+const SEPARATION_EPS := 0.05
 
 static func _separate_units(player: Array, enemy: Array) -> void:
 	var live: Array = []
 	for f in player + enemy:
 		if bool(f.get("alive", false)) and int(f.get("hp", 0)) > 0:
 			live.append(f)
-	var n := live.size()
-	if n < 2:
+	if live.size() < 2:
 		return
-	live.sort_custom(func(a, b):
-		var ax: float = float(a.pos.x)
-		var bx: float = float(b.pos.x)
-		if ax != bx:
-			return ax < bx
-		return str(a.get("uid", "")) < str(b.get("uid", ""))
-	)
-	var max_r := 0.0
+	live.sort_custom(func(a, b): return str(a.get("uid", "")) < str(b.get("uid", "")))
 	var radii := PackedFloat32Array()
-	radii.resize(n)
-	for i in n:
-		radii[i] = body_radius(live[i])
-		max_r = maxf(max_r, radii[i])
-	var push: Array[Vector2] = []
-	push.resize(n)
-	for i in n:
-		push[i] = Vector2.ZERO
-	for i in n:
-		var a: Dictionary = live[i]
-		var ap: Vector2 = a.pos
-		for j in range(i + 1, n):
-			var b: Dictionary = live[j]
-			var bp: Vector2 = b.pos
-			if bp.x - ap.x >= radii[i] + max_r:
-				break
-			var min_d := radii[i] + radii[j]
-			var d := bp - ap
-			var dist := d.length()
-			if dist >= min_d:
-				continue
-			var dir: Vector2
-			if dist > 0.001:
-				dir = d / dist
-			else:
-				# 完全重合：按排序序号给一个固定方向，保证确定性。
-				dir = Vector2.RIGHT.rotated(float(i * 7 + j) * 0.9)
-			var overlap := min_d - dist
-			var a_fixed := int(a.get("footprint_cells", 1)) > 1
-			var b_fixed := int(b.get("footprint_cells", 1)) > 1
-			if a_fixed and b_fixed:
-				continue
-			var a_share := 0.0 if a_fixed else (1.0 if b_fixed else 0.5)
-			var b_share := 0.0 if b_fixed else (1.0 if a_fixed else 0.5)
-			push[i] -= dir * overlap * a_share
-			push[j] += dir * overlap * b_share
-	for i in n:
-		var p: Vector2 = push[i]
-		if p == Vector2.ZERO:
-			continue
-		if p.length() > SEPARATION_MAX_STEP:
-			p = p.normalized() * SEPARATION_MAX_STEP
-		var f: Dictionary = live[i]
-		var np: Vector2 = f.pos + p
-		f.pos = Vector2(clampf(np.x, 45.0, ARENA_W - 45.0), clampf(np.y, 40.0, ARENA_H - 40.0))
+	var inverse_mass := PackedFloat32Array()
+	for f in live:
+		radii.append(body_radius(f))
+		var cells := maxi(1, int(f.get("footprint_cells", 1)))
+		inverse_mass.append(1.0 / float(cells * cells))
+	for _pass in SEPARATION_PASSES:
+		var worst := 0.0
+		for i in live.size():
+			for j in range(i + 1, live.size()):
+				var a: Dictionary = live[i]
+				var b: Dictionary = live[j]
+				var minimum := radii[i] + radii[j]
+				var d: Vector2 = b.pos - a.pos
+				if absf(d.x) >= minimum or absf(d.y) >= minimum:
+					continue
+				var distance := d.length()
+				var overlap := minimum - distance
+				if overlap <= SEPARATION_EPS:
+					continue
+				worst = maxf(worst, overlap)
+				var direction := d / distance if distance > 0.001 else Vector2.RIGHT.rotated(float(i * 7 + j) * 0.9)
+				var share := inverse_mass[i] / (inverse_mass[i] + inverse_mass[j])
+				var correction := minf(overlap, SEPARATION_MAX_STEP)
+				var ap: Vector2 = a.pos - direction * correction * share
+				var bp: Vector2 = b.pos + direction * correction * (1.0 - share)
+				a.pos = Vector2(clampf(ap.x, 45.0, ARENA_W - 45.0), clampf(ap.y, 40.0, ARENA_H - 40.0))
+				b.pos = Vector2(clampf(bp.x, 45.0, ARENA_W - 45.0), clampf(bp.y, 40.0, ARENA_H - 40.0))
+		if worst <= SEPARATION_EPS:
+			break
 
 
 static func _handle_attack_kill(killer: Dictionary, target: Dictionary, state: Dictionary, killer_team: Array, victim_team: Array, was_alive: bool) -> void:
