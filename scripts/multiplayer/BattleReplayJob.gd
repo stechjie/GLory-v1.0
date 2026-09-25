@@ -6,6 +6,7 @@ extends RefCounted
 const Sim := preload("res://scripts/battle/BattleSimulator.gd")
 const Transfer := preload("res://scripts/multiplayer/ReplayTransferService.gd")
 const Event := preload("res://scripts/battle/BattlePresentationEvent.gd")
+const Bot := preload("res://scripts/economy/BotPlayer.gd")
 const GAME_FIELDS := [
 	"team_mode", "team_slot_states", "round_index", "pve_completed", "boss_completed",
 	"final_round_played", "team_hp", "enemy_team_hp", "player_formation_hp",
@@ -21,6 +22,9 @@ var cancelled := false
 var completed := false
 var advances := 0
 var prepare_usec := 0
+var bot_warmup_usec := 0
+var max_bot_warmup_usec := 0
+var bot_warmup_calls := 0
 var max_slice_usec := 0
 var compute_usec := 0
 var enqueued_at_usec := 0
@@ -40,6 +44,7 @@ var _frames: Array = []
 var _events: Array = []
 var _replays: Array = []
 var _shared_pvp := false
+var _bot_slots: Array[int] = []
 var _worker_task := -1
 var _worker_result: Dictionary = {}
 
@@ -75,6 +80,11 @@ func _init(room: Dictionary, queued_at: int = 0) -> void:
 		"team_boards": (room.get("boards", {}) as Dictionary).duplicate(true),
 		"shared_seed": int(room.get("shared_seed", 0)),
 	}
+	# prepare_team_state reads owner context for BOTH sides in every round kind.
+	# Only explicit dummy seats use BotPlayer; a missing human board stays empty.
+	for slot in mini(6, _net.team_slot_states.size()):
+		if str(_net.team_slot_states[slot]) == "dummy":
+			_bot_slots.append(slot)
 	_damage = {"state": {}, "source": "", "dot": false, "kind": "", "crit": false, "race": "", "skill": ""}
 
 
@@ -92,6 +102,10 @@ func advance(budget_usec: int) -> void:
 	var previous := enter_context()
 	while Time.get_ticks_usec() - started < maxi(1, budget_usec):
 		if not _prepared:
+			if _warm_one_missing_bot():
+				# One cold economy simulation is indivisible. Recheck the slice
+				# deadline before another seat or the remaining roster preparation.
+				continue
 			var preparation_started := Time.get_ticks_usec()
 			_state = Sim.prepare_team_state(_team)
 			_state["_presentation_battle_id"] = Sim._presentation_battle_id(_state, _team, battle_id)
@@ -133,6 +147,25 @@ func advance(budget_usec: int) -> void:
 	max_slice_usec = maxi(max_slice_usec, elapsed)
 	if _team >= 2:
 		_start_worker(true)
+
+
+func _warm_one_missing_bot() -> bool:
+	# The shared cache clears at 64 entries. Recheck every required key before
+	# each prepare, since another room can evict a previous slice's warmup. With
+	# all keys present, prepare runs synchronously without another job intervening.
+	# Keep BotPlayer.state_for's cache policy, inputs and independent RNG intact.
+	for slot in _bot_slots:
+		var key := "%s/%d/%d" % [str(_net.shared_seed), slot, round_index]
+		if Bot._cache.has(key):
+			continue
+		var started := Time.get_ticks_usec()
+		Bot.state_for(_net.shared_seed, slot, round_index)
+		var elapsed := Time.get_ticks_usec() - started
+		bot_warmup_usec += elapsed
+		max_bot_warmup_usec = maxi(max_bot_warmup_usec, elapsed)
+		bot_warmup_calls += 1
+		return true
+	return false
 
 
 func cancel() -> void:

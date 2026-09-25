@@ -149,8 +149,10 @@ func _check_interleaved(rooms: Array, expected: Array, check_cold_bots: bool = f
 		if check_cold_bots:
 			_h.expect(job.max_slice_usec < 100000, "cold_bot_slice_blocked", "Cold AI preparation/tick kept one slice over 100 ms: room=%d prepare_usec=%d max_slice_usec=%d" % [job.room_id, job.prepare_usec, job.max_slice_usec])
 	if check_cold_bots:
-		_h.expect(_percentile(frame_work, 1.0) < 100000, "cold_bot_frame_blocked", "Interleaved cold AI work kept the main thread over 100 ms")
-		_h.note("cold-bot interleaved frame_max_usec=%d cache_entries=%d" % [_percentile(frame_work, 1.0), Bot._cache.size()])
+		# This loop deliberately advances both jobs to stress context isolation;
+		# it has no global frame budget. Measure production frames separately via
+		# NetworkService._drain_finalize_queue below, retaining the 100ms ceiling.
+		_h.note("cold-bot direct interleave (no frame budget) combined_max_usec=%d cache_entries=%d" % [_percentile(frame_work, 1.0), Bot._cache.size()])
 	DamageService.clear_stat_context()
 	DamageService._dot_damage_active = false
 	DamageService._stat_state = {}
@@ -187,6 +189,49 @@ func _check_mixed_bots() -> void:
 			var fresh := Bot.state_for(room.shared_seed, slot, room.round_index)
 			_h.expect(cached_hashes.get(key, "") == _hash(var_to_bytes(fresh)), "bot_cached_state_mutated", "Battle simulation mutated a cached bot board, treasure or synergy: %s" % key)
 	Bot.clear_cache()
+	await _check_bot_cache_eviction(rooms[0])
+	Bot.clear_cache()
+	# Same independent cold oracles, now driven by the actual production budget.
+	await _check_scheduler(rooms.size(), true, 12000, 60, rooms, expected)
+	Bot.clear_cache()
+
+
+func _check_bot_cache_eviction(room: Dictionary) -> void:
+	var job := Job.new(room)
+	# Validate one-slot work units without requiring a fast machine to take more
+	# than 2ms per bot. The production scheduler below checks the wall-time budget.
+	_h.expect(_warm_bot_for_test(job) and job.bot_warmup_calls == 1 and not job._prepared,
+		"bot_warmup_not_sliced", "One warmup operation must generate only one cold dummy seat")
+	_h.expect(job._bot_slots == [1, 4] and Bot._cache.size() == 1,
+		"bot_warmup_wrong_seats", "Human/missing/empty boards must not create bot cache entries")
+	# Exercise state_for's REAL full-cache clear between two slices; filler keys
+	# are never consumed as bot data. The job must notice its earlier key vanished.
+	while Bot._cache.size() < Bot.CACHE_LIMIT:
+		Bot._cache["unused-fixture/%d" % Bot._cache.size()] = {}
+	Bot.state_for(room.shared_seed, 0, 1)
+	_h.expect(Bot._cache.size() == 1, "bot_cache_churn_fixture", "Bot state_for no longer cleared its full cache")
+	_h.expect(_warm_bot_for_test(job) and job.bot_warmup_calls == 2 and not job._prepared,
+		"bot_warmup_evicted_key", "An evicted earlier seat must be regenerated before preparing")
+	_h.expect(_warm_bot_for_test(job) and job.bot_warmup_calls == 3 and not job._prepared,
+		"bot_warmup_remaining_seat", "The second cold seat must get its own budget check")
+	var warm_calls: int = job.bot_warmup_calls
+	job.advance(2000)
+	_h.expect(job._prepared and job.bot_warmup_calls == warm_calls,
+		"bot_warmup_prepare_not_hot", "Preparation must begin only after all required seats are cached")
+	_h.note("cold-bot eviction warmup_calls=%d bot_total_usec=%d bot_max_usec=%d hot_prepare_usec=%d" % [
+		job.bot_warmup_calls, job.bot_warmup_usec, job.max_bot_warmup_usec, job.prepare_usec])
+	job.cancel()
+	var deadline := Time.get_ticks_msec() + 10000
+	while not job.poll_worker() and Time.get_ticks_msec() < deadline:
+		await get_tree().process_frame
+	_h.expect(job.completed and job.result.is_empty(), "bot_warmup_cancelled", "Cancelled warmup must be reaped without publication")
+
+
+func _warm_bot_for_test(job: RefCounted) -> bool:
+	var previous: Dictionary = job.enter_context()
+	var warmed: bool = job._warm_one_missing_bot()
+	job.exit_context(previous)
+	return warmed
 
 
 func _varied_boards(room: Dictionary, variant: int) -> void:
@@ -239,7 +284,7 @@ func _check_watchdog_budget() -> void:
 		"watchdog_hard_ceiling", "No measured slowdown can raise the 180-second cap")
 
 
-func _check_scheduler(count: int, two_vs_two: bool, budget: int = 12000, fps: int = 60) -> void:
+func _check_scheduler(count: int, two_vs_two: bool, budget: int = 12000, fps: int = 60, fixtures: Array = [], baselines: Array = []) -> void:
 	Engine.max_fps = fps
 	NetworkService._simulation_budget_usec = budget
 	NetworkService._simulation_jobs.clear()
@@ -247,10 +292,11 @@ func _check_scheduler(count: int, two_vs_two: bool, budget: int = 12000, fps: in
 	NetworkService._rooms.clear()
 	var ids: Array = []
 	var expected := {}
+	var scheduled_jobs := {}
 	var measured_cpu_usec := 0
 	for index in count:
-		var room := _fixture(710000 + index, 21 if not two_vs_two else 5, two_vs_two)
-		expected[room.id] = _baseline(room)
+		var room: Dictionary = _fixture(710000 + index, 21 if not two_vs_two else 5, two_vs_two) if fixtures.is_empty() else fixtures[index].duplicate(true)
+		expected[room.id] = _baseline(room) if baselines.is_empty() else baselines[index]
 		measured_cpu_usec += int(_baseline_compute_usec[room.id])
 		NetworkService._rooms[room.id] = room
 		ids.append(room.id)
@@ -275,6 +321,7 @@ func _check_scheduler(count: int, two_vs_two: bool, budget: int = 12000, fps: in
 		NetworkService._drain_finalize_queue()
 		frame_times.append(NetworkService._simulation_last_frame_usec)
 		for job in NetworkService._simulation_jobs:
+			scheduled_jobs[job.room_id] = job
 			if job.advances > 0 and not seen_progress.has(job.room_id):
 				seen_progress[job.room_id] = true
 				queue_times.append(job.started_at_usec - job.enqueued_at_usec)
@@ -297,10 +344,15 @@ func _check_scheduler(count: int, two_vs_two: bool, budget: int = 12000, fps: in
 	# accidentally returning to hundreds of milliseconds per battle on the loop.
 	_h.expect(_percentile(frame_times, 1.0) < 100000, "network_loop_blocked", "Simulation kept the main thread over 100 ms")
 	_h.note("scheduler rooms=%d mode=%s fps=%d budget_usec=%d wall_ms=%.1f frame_p95_usec=%d frame_max_usec=%d gap_p95_usec=%d queue_p95_ms=%.1f ready_p95_ms=%.1f enqueue_max_usec=%d" % [
-		count, "2v2" if two_vs_two else "3v3-full", Engine.max_fps, NetworkService._simulation_budget_usec,
+		count, ("2v2" if two_vs_two else "3v3-full") if fixtures.is_empty() else "mixed-cold-bot", Engine.max_fps, NetworkService._simulation_budget_usec,
 		(Time.get_ticks_usec() - started) / 1000.0, _percentile(frame_times, 0.95), _percentile(frame_times, 1.0),
 		_percentile(frame_gaps, 0.95), _percentile(queue_times, 0.95) / 1000.0, _percentile(ready_times, 0.95) / 1000.0, NetworkService._simulation_max_enqueue_usec])
 	for id in ids:
+		if not fixtures.is_empty() and scheduled_jobs.has(id):
+			var job: RefCounted = scheduled_jobs[id]
+			_h.expect(job.bot_warmup_calls >= 2, "scheduler_bot_cache_warm", "Production cold fixture did not generate both dummy seats")
+			_h.note("cold-bot scheduled room=%d warmup_calls=%d bot_total_usec=%d bot_max_usec=%d hot_prepare_usec=%d max_slice_usec=%d" % [
+				id, job.bot_warmup_calls, job.bot_warmup_usec, job.max_bot_warmup_usec, job.prepare_usec, job.max_slice_usec])
 		# An unfinished room already fails scheduler_incomplete. Its absent output
 		# is not a corrupt replay: keep exact identity/SHA checks for every result
 		# that actually exists, without reporting four misleading hash failures.
