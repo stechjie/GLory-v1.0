@@ -49,6 +49,7 @@ func _run() -> void:
 		var cancelled: Dictionary = await warmup.prepare_replays([cancel_replay], template, Callable(), func() -> bool: return keep_running.value)
 		h.expect(str(cancelled.get("error", "")) == "render_warmup_cancelled", "cancel_during_draw", "Skip/scene cancellation stops active preparation before the remaining routes render")
 		await _compare_standard_routes(h, warmup, template)
+		await _compare_short_windows(h, warmup, template)
 	else:
 		h.expect(bool(report.get("headless", false)), "headless_explicit", "Headless completion explicitly does not claim real renderer evidence")
 	var declined: Dictionary = await warmup.prepare_replays([replay], template, Callable(), func() -> bool: return false)
@@ -117,3 +118,81 @@ func _compare_standard_routes(h: RefCounted, warmup: Node, template: SubViewport
 		await get_tree().process_frame
 	viewport.queue_free()
 	print("[OGA_DIRECT_COVERAGE] %s" % JSON.stringify(evidence))
+
+func _visible_materials(node: Node, materials: Dictionary) -> void:
+	if node is Node3D and not node.is_visible_in_tree():
+		return
+	if node is MeshInstance3D:
+		if node.material_override != null:
+			materials[node.material_override.get_instance_id()] = node.material_override
+		if node.material_overlay != null:
+			materials[node.material_overlay.get_instance_id()] = node.material_overlay
+		if node.mesh != null:
+			for i in node.mesh.get_surface_count():
+				var material: Material = node.get_active_material(i)
+				if material != null:
+					materials[material.get_instance_id()] = material
+	for child in node.get_children():
+		_visible_materials(child, materials)
+
+func _pipeline_signatures(materials: Dictionary) -> Array[String]:
+	var signatures: Array[String] = []
+	for material in materials.values():
+		var key := str(material.get_class())
+		if material is ShaderMaterial:
+			key += "|" + material.shader.code.sha256_text()
+			for uniform in material.shader.get_shader_uniform_list():
+				var value: Variant = material.get_shader_parameter(uniform.name)
+				if value is Texture2D:
+					key += "|%s=%s" % [uniform.name, value.resource_path]
+		elif material is BaseMaterial3D:
+			key += "|%d|%d|%d|%s|%s" % [material.transparency, material.shading_mode,
+				material.billboard_mode, str(material.vertex_color_use_as_albedo), str(material.no_depth_test)]
+		if key not in signatures:
+			signatures.append(key)
+	signatures.sort()
+	return signatures
+
+func _compare_short_windows(h: RefCounted, warmup: Node, template: SubViewport) -> void:
+	var jobs := [
+		{"unit":"human_militia", "effect":"attack_interrupt", "element":""},
+		{"unit":"human_cleric", "effect":"every_fifth_group_heal", "element":""},
+		{"unit":"human_king", "effect":"unique_king_growth", "element":""},
+		{"unit":"god_aurora", "effect":"true_damage_attack", "element":""},
+		{"unit":"human_archer", "effect":"every_fourth_combo", "element":""},
+		{"unit":"god_king", "effect":"global_divine_blast", "element":""},
+		{"unit":"god_arbiter", "effect":"judgement_strike", "element":""},
+	]
+	var viewport: SubViewport = warmup._make_viewport(template)
+	var omni := OmniLight3D.new()
+	omni.omni_range = 64.0
+	omni.light_energy = 0.001
+	viewport.add_child(omni)
+	for job in jobs:
+		var observations: Array = []
+		for duration in [0.90, Warmup.composer_warmup_duration(job.effect)]:
+			var holder: Node3D = warmup._spawn(viewport, job)
+			var variants := [{}, {}]
+			var elapsed := 0.0
+			var frames := 0
+			while elapsed < duration or frames < 4:
+				await get_tree().process_frame
+				elapsed += get_process_delta_time()
+				warmup._set_omni_visibility(viewport, frames % 2 == 1)
+				await RenderingServer.frame_post_draw
+				_visible_materials(holder, variants[frames % 2])
+				frames += 1
+			observations.append([_pipeline_signatures(variants[0]), _pipeline_signatures(variants[1])])
+			holder.queue_free()
+			await get_tree().process_frame
+		# A sub-frame flash may be observed under an extra lighting state in
+		# the short run; extra coverage is safe, missing coverage is not.
+		var covered: bool = not observations[0][0].is_empty()
+		for variant in 2:
+			for signature in observations[0][variant]:
+				covered = covered and signature in observations[1][variant]
+		h.expect(covered,
+			"short_window_" + job.effect, "Short preparation must draw every full-composer shader/texture pipeline with both light states")
+		print("[SHORT_WARMUP_COVERAGE] ", JSON.stringify({"effect":job.effect,"full":observations[0],"short":observations[1]}))
+	viewport.queue_free()
+	await get_tree().process_frame

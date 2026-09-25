@@ -705,6 +705,35 @@ static func _select_target(f: Dictionary, opponents: Array) -> Dictionary:
 	return picked
 
 
+# Built for one attack pass only, never shared between rooms or simulation
+# slices. References stay live: deaths, HP changes and taunt movement must be
+# checked at selection time. Skills (which can convert/summon) use the uncached
+# selector; each later attack pass rebuilds from its current opponent array.
+static func _attack_target_index(opponents: Array) -> Dictionary:
+	var by_uid := {}
+	var taunters: Array = []
+	for opponent: Dictionary in opponents:
+		var uid := str(opponent.get("uid", ""))
+		if not by_uid.has(uid):
+			by_uid[uid] = opponent
+		if bool(opponent.get("taunt_active", false)):
+			taunters.append(opponent)
+	return {"by_uid": by_uid, "taunters": taunters}
+
+
+static func _select_attack_target(f: Dictionary, opponents: Array, index: Dictionary) -> Dictionary:
+	var taunter := _nearest_taunter_in(f, index.taunters, opponents)
+	if not taunter.is_empty():
+		return taunter
+	var uid := str(f.get("locked_target_uid", ""))
+	var locked: Dictionary = index.by_uid.get(uid, {}) if not uid.is_empty() else {}
+	if not locked.is_empty() and bool(locked.get("alive", false)) and int(locked.get("hp", 0)) > 0 and _can_target(f, locked, opponents):
+		return locked
+	var picked := _pick_new_target(f, opponents)
+	f.locked_target_uid = str(picked.get("uid", ""))
+	return picked
+
+
 static func _locked_target(f: Dictionary, opponents: Array) -> Dictionary:
 	var uid := str(f.get("locked_target_uid", ""))
 	if uid.is_empty():
@@ -800,10 +829,14 @@ static func _teams_have_valid_target_pair(player_units: Array, enemy_units: Arra
 
 
 static func _nearest_taunter(f: Dictionary, opponents: Array) -> Dictionary:
+	return _nearest_taunter_in(f, opponents, opponents)
+
+
+static func _nearest_taunter_in(f: Dictionary, candidates: Array, opponents: Array) -> Dictionary:
 	var best: Dictionary = {}
 	var best_dist := INF
-	for o in opponents:
-		if not bool(o.get("alive", false)) or not bool(o.get("taunt_active", false)) or not _can_target(f, o, opponents):
+	for o: Dictionary in candidates:
+		if not bool(o.get("taunt_active", false)) or not bool(o.get("alive", false)) or not _can_target(f, o, opponents):
 			continue
 		var dist: float = float(f.pos.distance_squared_to(o.pos))
 		var radius := float(o.get("taunt_radius", 180.0))

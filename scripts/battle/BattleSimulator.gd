@@ -269,11 +269,13 @@ static func _replay_capture_frame(state: Dictionary, frames: Array, frame_events
 	frame_events.append(new_events)
 	var frame_stats: Dictionary = state.get("unit_stats", {})
 	var frame: Array = []
-	for f in (state.get("player", []) + state.get("enemy", [])):
+	for f: Dictionary in (state.get("player", []) + state.get("enemy", [])):
+		var uid := str(f.get("uid", ""))
+		var position: Vector2 = f.pos
 		frame.append([
-			str(f.get("uid", "")),
-			float(f.pos.x),
-			float(f.pos.y),
+			uid,
+			float(position.x),
+			float(position.y),
 			int(f.get("hp", 0)),
 			bool(f.get("alive", false)),
 			int(f.get("attack_count", 0)),
@@ -281,7 +283,7 @@ static func _replay_capture_frame(state: Dictionary, frames: Array, frame_events
 			int(f.get("shield", 0)),
 			int(f.get("skill_stacks", 0)),
 			_replay_statuses(f),
-			int((frame_stats.get(str(f.get("uid", "")), {}) as Dictionary).get("damage_dealt", 0)),
+			int((frame_stats.get(uid, {}) as Dictionary).get("damage_dealt", 0)),
 			str(f.get("vfx_attack_target_uid", "")),
 			str(f.get("vfx_skill_target_uid", "")),
 		])
@@ -590,12 +592,13 @@ static func _add_mercenary_fighters(out: Array, mercenary_slots: Array, team: St
 
 
 static func _step_team(team_units: Array, opponents: Array, elapsed: float, state: Dictionary) -> void:
-	for f in team_units:
+	var target_index := _attack_target_index(opponents)
+	for f: Dictionary in team_units:
 		if not bool(f.get("alive", false)):
 			continue
 		if StatusEffectService.is_stunned(f):
 			continue
-		var target := _select_target(f, opponents)
+		var target := _select_attack_target(f, opponents, target_index)
 		if str(f.get("frenzy_target_uid", "")) != str(target.get("uid", "")):
 			f.frenzy_stacks = 0
 			f.frenzy_target_uid = str(target.get("uid", ""))
@@ -887,7 +890,7 @@ static func _apply_attack_statuses(attacker: Dictionary, target: Dictionary, sta
 static func _apply_opening_unit_skills(player: Array, enemy: Array, event_log: Array[String], state: Dictionary) -> void:
 	var all_teams := [player, enemy]
 	for team_units in all_teams:
-		for f in team_units:
+		for f: Dictionary in team_units:
 			DamageService.begin_stat_context(state, f)
 			var d: Dictionary = f.get("def", {})
 			var sid := str(d.get("skill_id", ""))
@@ -937,7 +940,7 @@ static func _skill_target_in_range(caster: Dictionary, opponents: Array) -> bool
 	return caster_pos.distance_to(target_pos) <= _effective_attack_distance(caster, target) + ATTACK_RANGE_EPS
 
 static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) -> void:
-	for caster in casters:
+	for caster: Dictionary in casters:
 		if not bool(caster.get("alive", false)):
 			continue
 		var d: Dictionary = caster.get("def", {})

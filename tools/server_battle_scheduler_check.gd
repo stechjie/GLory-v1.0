@@ -144,6 +144,11 @@ func _check_interleaved(rooms: Array, expected: Array, check_cold_bots: bool = f
 				for slot in bot_slots:
 					_h.expect(owners.has(slot), "dummy_not_simulated", "room=%d team=%d has no fighters from dummy slot=%d" % [job.room_id, team, slot])
 				_h.expect(not owners.has(2) and not owners.has(5), "empty_slot_spawned", "Empty slots unexpectedly acquired a board")
+		_h.expect(job.enqueued_at_usec <= job.started_at_usec and job.started_at_usec <= job.packing_queued_at_usec
+			and job.packing_queued_at_usec <= int(job.result.pack_started_at_usec)
+			and int(job.result.pack_started_at_usec) <= int(job.result.pack_finished_at_usec)
+			and int(job.result.pack_finished_at_usec) <= Time.get_ticks_usec(),
+			"phase_clock_order", "Settlement phase timestamps must share one monotonic clock")
 		_h.expect(job.advances > 2, "no_yield", "Full battle executed in one slice")
 		_h.note("interleaved room=%d advances=%d max_slice_usec=%d prepare_usec=%d compute_usec=%d worker_pack_usec=%d" % [job.room_id, job.advances, job.max_slice_usec, job.prepare_usec, job.compute_usec, int(job.result.pack_usec)])
 		if check_cold_bots:

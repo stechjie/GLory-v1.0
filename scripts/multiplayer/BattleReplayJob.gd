@@ -29,6 +29,7 @@ var max_slice_usec := 0
 var compute_usec := 0
 var enqueued_at_usec := 0
 var started_at_usec := 0
+var packing_queued_at_usec := 0
 var result: Dictionary = {}
 
 var _game: Dictionary = {}
@@ -246,6 +247,7 @@ static func _apply_damage(context: Dictionary) -> void:
 
 
 func _start_worker(pack: bool) -> void:
+	packing_queued_at_usec = Time.get_ticks_usec()
 	_worker_task = WorkerThreadPool.add_task(_pack_and_release.bind(pack), false, "battle replay serialization")
 
 
@@ -289,6 +291,7 @@ func _pack_and_release(pack: bool) -> void:
 			"frames_a": (_replays[0].frames as Array).size(),
 			"frames_b": (_replays[1].frames as Array).size(),
 			"serialize_usec": serialize_usec, "pack_usec": Time.get_ticks_usec() - started,
+			"pack_started_at_usec": started, "pack_finished_at_usec": Time.get_ticks_usec(),
 			"error": ",".join(errors),
 		}
 	_replays.clear()

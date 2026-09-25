@@ -130,7 +130,7 @@ func prepare_replays(replays: Array, template: SubViewport, progress: Callable =
 		_retain_draw_materials(holder, materials)
 		# Basic projectile impact appears after >=0.24s. Skill composers also
 		# create delayed layers up to 0.68s; two immediate draws would miss them.
-		var duration := 0.40 if str(job.effect).begins_with("basic_attack_") else 0.85
+		var duration := composer_warmup_duration(str(job.effect))
 		if not direct.is_empty():
 			duration = 0.0
 		var elapsed := 0.0
@@ -181,6 +181,24 @@ func prepare_replays(replays: Array, template: SubViewport, progress: Callable =
 		"lighting_variants": ["directional_only", "with_omni"], "items": costs}
 	print("[BATTLE_RENDER_READY] %s" % JSON.stringify(report))
 	return report
+
+# Keep delayed layers, but do not wait for every already-drawn effect to fade
+# out. These windows include the last authored spawn plus multiple real draws
+# for both lighting variants. Unknown/new routes retain the conservative 0.85s.
+# Coverage is checked against an independent full-duration composer run.
+static func composer_warmup_duration(effect: String) -> float:
+	match effect:
+		"attack_interrupt", "every_fifth_group_heal":
+			return 0.20 # All modules/materials are constructed synchronously.
+		"unique_king_growth":
+			return 0.40 # Let the sword enter the preparation camera's view.
+		"true_damage_attack":
+			return 0.35 # Fracture appears after 0.16s.
+		"every_fourth_combo":
+			return 0.60 # Arrow's impact appears after 0.42s.
+		"global_divine_blast", "judgement_strike":
+			return 0.55 # Lightning's ground residual appears after 0.285s.
+	return 0.40 if effect.begins_with("basic_attack_") else 0.85
 
 func _cancelled(can_continue: Callable) -> bool:
 	return not is_inside_tree() or (can_continue.is_valid() and not bool(can_continue.call()))

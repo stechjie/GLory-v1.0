@@ -2601,7 +2601,14 @@ func _pack_replay(replay: Dictionary, battle_id: String = "") -> PackedByteArray
 	return _replay_transfer.pack(replay, battle_id)
 
 func _unpack_replay(packed: PackedByteArray) -> Dictionary:
-	return _replay_transfer.unpack(packed)
+	var started := Time.get_ticks_usec()
+	var replay: Dictionary = _replay_transfer.unpack(packed)
+	# Local durations need no client/server clock synchronization. Never log
+	# unvalidated payload text; battle identity is checked by the receive path.
+	_net_log("replay decode bytes=%d frames=%d elapsed_usec=%d valid_container=%s" % [
+		packed.size(), (replay.get("frames", []) as Array).size() if replay.get("frames", []) is Array else 0,
+		Time.get_ticks_usec() - started, str(not replay.is_empty())])
+	return replay
 
 # =============================================================================
 # 回放分块下发 / 确认 / 重试（原始 README 给 ReplayTransferService 定的后三件事）
@@ -2768,9 +2775,12 @@ func _replay_identity_is_current(battle_id: String) -> bool:
 
 
 func _valid_received_replay(replay: Dictionary, battle_id: String) -> bool:
-	return _replay_battle_can_buffer(battle_id) \
+	var started := Time.get_ticks_usec()
+	var valid := _replay_battle_can_buffer(battle_id) \
 		and _replay_payload_identity(replay) == battle_id \
 		and ReplayValidation.valid_team_replay(replay)
+	_net_log("replay validation elapsed_usec=%d valid=%s" % [Time.get_ticks_usec() - started, str(valid)])
+	return valid
 
 
 func _replay_payload_identity(replay: Dictionary) -> String:
@@ -3358,6 +3368,15 @@ func _room_publish_replays(room: Dictionary, job: RefCounted) -> void:
 		job.compute_usec, job.max_slice_usec, job.prepare_usec, _simulation_max_enqueue_usec])
 	_net_log("replay packed room=%d round=%d a=%d B b=%d B pack_usec=%d error=%s" % [
 		job.room_id, job.round_index, packed_a.size(), packed_b.size(), int(job.result.pack_usec), str(room.replay_error)])
+	# All timestamps use the server monotonic clock. Slices include scheduler
+	# waiting; compute_usec measures actual simulation work within those slices.
+	var published_at := Time.get_ticks_usec()
+	_net_log("settlement phases room=%d round=%d queue_usec=%d simulation_wall_usec=%d simulation_work_usec=%d pack_queue_usec=%d pack_work_usec=%d publish_wait_usec=%d total_usec=%d" % [
+		job.room_id, job.round_index, maxi(0, job.started_at_usec - job.enqueued_at_usec),
+		maxi(0, job.packing_queued_at_usec - job.started_at_usec), job.compute_usec,
+		maxi(0, int(job.result.get("pack_started_at_usec", job.packing_queued_at_usec)) - job.packing_queued_at_usec),
+		int(job.result.pack_usec), maxi(0, published_at - int(job.result.get("pack_finished_at_usec", published_at))),
+		published_at - job.enqueued_at_usec])
 	if ServerFlags.should_sample_battle():
 		_net_log("metrics room=%d round=%d frames=%d replay_a_raw=%d replay_b_raw=%d ser_usec=%d" % [
 			job.room_id, job.round_index, int(job.result.frames_a), int(job.result.raw_sizes[0]),
