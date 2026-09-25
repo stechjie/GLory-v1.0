@@ -335,30 +335,63 @@ def test_backend_only_reads_files_deploy_actually_copies() -> None:
 # --- 注销账号 -----------------------------------------------------------------
 
 
-def test_every_table_referencing_players_cascades() -> None:
-    """引用 players 的表**必须**带 on delete cascade。
+# 注销时**保留**的表（账目与游戏记录）。理由见 database/017_account_deletion.sql 文件头。
+# 删掉的那一边不在这里列 —— 以 017 的 erase_player() 里实际写的 delete 为准。
+KEPT_ON_DELETE = {
+    "player_wallets", "wallet_ledger",               # 钱：退款、对账
+    "player_entitlements", "shop_orders",            # 买过什么
+    "mails", "mail_states",                          # 发给他的邮件、领没领
+    "match_seats",                                   # 对局（同局其他人的历史不缺一格）
+    "player_ranked", "player_credit", "credit_events", "player_ranked_history",
+    "player_bans",                                   # 封号记录：注销不能洗掉
+}
 
-    delete_player() 只发一句 `delete from players`，它成立的**全部前提**就是这条。
-    哪天有人加一张新表引用 players 却忘了 cascade，注销会变成：
-    玩家看到「账号已删除」，而他的数据还在那张新表里 —— 不报错、不回滚，
-    只是没删干净。这正是最不该靠人记住的那类约束。
-    """
-    seen = 0
+
+def _tables_referencing_players() -> set[str]:
+    tables: set[str] = set()
     for path in sorted((REPO / "database").glob("*.sql")):
-        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        current = None
+        for line in path.read_text(encoding="utf-8").splitlines():
             stripped = line.strip().lower()
-            # 注释里提到 references 不算
-            if stripped.startswith("--") or "references players" not in stripped:
+            if stripped.startswith("--"):
                 continue
-            seen += 1
-            # 逐行判断而不是用正则跨行匹配：这个仓库里外键约束都写在一行上，
-            # 真有人拆成多行的话这条会**大声地误报**，而不是悄悄漏掉一张表 ——
-            # 对一条守着「删干净」的断言来说，宁可误报。
-            assert "on delete cascade" in stripped, (
-                "%s:%d 引用了 players(player_id) 却没有 on delete cascade，"
-                "注销账号会漏掉这张表的数据" % (path.name, number)
-            )
-    assert seen >= 2, "没扫到引用 players 的外键 —— 这条断言可能已经失效"
+            m = re.match(r"create table (\w+)", stripped)
+            if m:
+                current = m.group(1)
+            m = re.match(r"alter table (\w+)", stripped)
+            if m:
+                current = m.group(1)
+            if "references players" in stripped and current:
+                tables.add(current)
+    return tables
+
+
+def test_every_table_referencing_players_is_either_erased_or_kept() -> None:
+    """★ 注销 = 删资料、留账目（017）。**每一张引用 players 的表都必须在两边之一。**
+
+    哪天有人加一张新表引用 players 却没想过它属于哪一边，注销会变成：
+    玩家看到「账号已删除」，而他的个人数据还在那张新表里 —— 不报错、不回滚。
+    这条让新表在第一次跑测试时就被拦下来，逼着人做决定。
+    """
+    sql = (REPO / "database" / "017_account_deletion.sql").read_text(encoding="utf-8")
+    body = sql[sql.index("create function erase_player"):]
+    erased = set(re.findall(r"delete from (\w+)", body))
+    referencing = _tables_referencing_players()
+    assert len(referencing) >= 20, "没扫到引用 players 的外键 —— 这条断言可能已经失效"
+    assert not (erased & KEPT_ON_DELETE), "同一张表既删又留：%s" % (erased & KEPT_ON_DELETE)
+    unclassified = referencing - erased - KEPT_ON_DELETE
+    assert not unclassified, (
+        "这些表引用了 players，但注销时既没删也没列进 KEPT_ON_DELETE：%s。"
+        "是个人数据就在 017 之后的新迁移里改 erase_player() 去删，是账目就加进 KEPT_ON_DELETE"
+        % sorted(unclassified))
+    assert not (KEPT_ON_DELETE - referencing), "KEPT_ON_DELETE 里有不存在的表：%s" % (KEPT_ON_DELETE - referencing)
+
+
+def test_deletion_never_drops_the_player_row() -> None:
+    """players 这一行不许删：账目全挂在它上面。"""
+    code = (REPO / "backend" / "app" / "profile.py").read_text(encoding="utf-8")
+    assert "delete from players" not in code
+    assert "erase_player(" in code
 
 
 def test_delete_route_is_registered() -> None:

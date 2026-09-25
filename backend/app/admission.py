@@ -210,6 +210,11 @@ class Admission:
             waiter.conn = None
             waiter.dropped_at = now
 
+    def evict(self, player_id: uuid.UUID) -> None:
+        """立刻收回名额 / 排队位置，**不进断线宽限**（封号：他回不来了，占着只会让排队的人多等）。"""
+        self._seats.pop(player_id, None)
+        self._queue.pop(player_id, None)
+
     # --- 巡检 -----------------------------------------------------------------
 
     async def tick(self) -> None:

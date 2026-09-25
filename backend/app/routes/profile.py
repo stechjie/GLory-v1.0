@@ -393,8 +393,8 @@ async def delete_me(
     deleted = await profile.delete_player(row.player_id)
     if not deleted:
         # 上一句刚查到这个玩家，这里删不到只可能是并发重复注销。
-        # 结果与预期一致（数据已经没了），所以不当失败处理。
-        log.warning("delete_me: player %s already gone", row.player_id)
+        # 结果与预期一致（资料已经删了），所以不当失败处理。
+        log.warning("delete_me: player %s already erased", row.player_id)
     # 只记 player_id，不记昵称、好友码或任何资料内容 —— 那些正是玩家要删掉的东西。
     log.info("account deleted player_id=%s", row.player_id)
     return {"deleted": True}

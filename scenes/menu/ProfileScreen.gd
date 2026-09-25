@@ -685,9 +685,13 @@ func _danger_zone() -> Control:
 	column.add_child(title)
 
 	var warn := Label.new()
+	# 购买与对局记录会匿名保留（database/017_account_deletion.sql）—— 这件事要在删之前说清楚，
+	# 商店的注销政策也要求写明保留了什么、为什么。
 	warn.text = _text(
-		"昵称、头像、资料、宠物、图鉴全部删除，不可恢复，也没有冷静期。",
-		"Name, avatar, profile, pets and codex are deleted for good.")
+		"昵称、头像、资料、好友和聊天全部删除，宠物、钻石随账号作废，不可恢复，也没有冷静期。"
+		+ "购买与对局记录会去掉身份后保留，用于对账和处理违规。",
+		"Name, avatar, profile, friends and chats are deleted for good; pets and diamonds go with the account. "
+		+ "Purchase and match records are kept without your identity, for accounting and rule enforcement.")
 	warn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	warn.add_theme_font_size_override("font_size", Tokens.FONT_BODY - 4)
 	warn.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
@@ -730,8 +734,8 @@ func _on_delete_pressed() -> void:
 	DialogService.confirm({
 		"title": _text("确认注销", "Confirm deletion"),
 		"body": _text(
-			"这会永久删除你的账号和全部资料。没有撤销，也没有冷静期。",
-			"This permanently deletes your account and all profile data. There is no undo."),
+			"这会永久删除你的账号和个人资料。没有撤销，也没有冷静期。",
+			"This permanently deletes your account and personal data. There is no undo."),
 		# DANGER：主按钮暗红，且默认焦点留在取消 —— 见 GloryConfirmDialog.Intent。
 		"intent": ConfirmDialog.Intent.DANGER,
 		"confirm_text": _text("永久删除", "Delete forever"),

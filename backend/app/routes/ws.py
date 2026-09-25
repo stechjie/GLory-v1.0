@@ -32,7 +32,7 @@ import re
 from fastapi import APIRouter
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from app import admission, db, matchmaking, players, realtime
+from app import admission, bans, db, matchmaking, players, realtime
 from app.config import get_settings
 from app.jwt_verify import TokenError
 from app.realtime import Connection
@@ -84,7 +84,16 @@ async def realtime_endpoint(websocket: WebSocket) -> None:
         await websocket.close(code=CLOSE_POLICY)
         return
 
-    player = await players.get_by_auth_uid(claims.auth_uid)
+    try:
+        player = await players.get_by_auth_uid(claims.auth_uid)
+    except bans.AccountBanned as exc:
+        # 被封的人**身份是真的**，所以这里例外地先 accept：说清楚原因再关，
+        # 客户端才能显示「账号已被封禁」而不是一直当成握手失败重试（app/bans.py）。
+        # 不进连接表、不占名额。
+        await websocket.accept()
+        await websocket.send_json(bans.banned_message(exc.ban))
+        await websocket.close(code=bans.CLOSE_BANNED)
+        return
     if player is None:
         # 令牌有效但没有对应玩家。同 /v1/me：**不自动补建**，
         # 建账号只有 /v1/auth/anonymous 一条路。

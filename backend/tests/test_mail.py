@@ -229,10 +229,11 @@ def test_claimable_rules() -> None:
 # --- 领取 🔴 ---------------------------------------------------------------------
 
 
-def _claim_db(monkeypatch, row: dict | None, *, claimed_at=None, owned=()) -> FakeConn:
+def _claim_db(monkeypatch, row: dict | None, *, claimed_at=None, owned=(), live=True) -> FakeConn:
     return wire_db(monkeypatch, [
         ("from mails m", row),
         ("select claimed_at from mail_states", {"claimed_at": claimed_at}),
+        ("from mails where mail_id", live),
         ("from player_wallets", dict(WALLET)),
         ("from player_entitlements", owned_only(*owned)),
     ])
@@ -353,12 +354,42 @@ def test_claim_rejects_mail_with_a_bad_attachment(monkeypatch) -> None:
     assert not conn.wrote_money() and not conn.granted()
 
 
+def test_claim_rechecks_withdrawal_inside_the_transaction(monkeypatch) -> None:
+    """★ 可见性检查在事务外。两步之间被撤回 / 过期：锁住状态行之后再查一次，一分钱不动。"""
+    conn = _claim_db(monkeypatch, mail_row(diamond=100, items=SOLD[:1]), live=False)
+    with pytest.raises(mail.MailRejected) as exc:
+        asyncio.run(mail.claim(PLAYER_A, 7))
+    assert exc.value.code == "mail_not_found"
+    assert not conn.wrote_money() and not conn.granted()
+    assert conn.count("update mail_states set claimed_at") == 0
+    lock = conn.index_of("select claimed_at from mail_states")
+    recheck = conn.index_of("from mails where mail_id")
+    assert -1 < lock < recheck, conn.queries
+    assert "for share" in conn.queries[recheck]
+
+
+def test_claim_all_skips_a_mail_withdrawn_after_listing(monkeypatch) -> None:
+    rows = [mail_row(9, diamond=1), mail_row(5, diamond=2)]
+    conn = wire_db(monkeypatch, [
+        ("from mails m", rows),
+        ("select claimed_at from mail_states", {"claimed_at": None}),
+        ("from mails where mail_id", lambda mid: mid != 5),
+        ("from player_wallets", dict(WALLET)),
+        ("from player_entitlements", owned_only()),
+    ])
+    result = asyncio.run(mail.claim_all(PLAYER_A))
+    assert result.mail_ids == (9,)
+    assert result.diamond == 1
+    assert conn.count("into wallet_ledger") == 1
+
+
 def test_claim_all_uses_one_transaction_per_mail_oldest_first(monkeypatch) -> None:
     """一封出错不连累其他几封；老的先领（两封有同一样东西时，和一封封点的结果一样）。"""
     rows = [mail_row(9, diamond=1), mail_row(8, read=True), mail_row(5, coin=2), mail_row(3, diamond=4, claimed=True)]
     conn = wire_db(monkeypatch, [
         ("from mails m", rows),
         ("select claimed_at from mail_states", {"claimed_at": None}),
+        ("from mails where mail_id", True),
         ("from player_wallets", dict(WALLET)),
         ("from player_entitlements", owned_only()),
     ])
@@ -375,6 +406,7 @@ def test_claim_all_skips_mails_another_device_just_claimed(monkeypatch) -> None:
     conn = wire_db(monkeypatch, [
         ("from mails m", rows),
         ("select claimed_at from mail_states", lambda _p, mid: {"claimed_at": NOW if mid == 5 else None}),
+        ("from mails where mail_id", True),
         ("from player_wallets", dict(WALLET)),
         ("from player_entitlements", owned_only()),
     ])

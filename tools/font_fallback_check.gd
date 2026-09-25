@@ -10,7 +10,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	var font := ThemeDB.fallback_font
-	var cjk: FontFile = FallbackScript.CHINESE_FONT
+	var cjk: FontFile = FallbackScript.chinese_font()
 	# Prove that the bundled chain works even on a device with no system CJK font.
 	font.allow_system_fallback = false
 	cjk.allow_system_fallback = false

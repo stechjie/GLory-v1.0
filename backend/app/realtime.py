@@ -172,6 +172,22 @@ class Hub:
         results = await asyncio.gather(*(self._send_bounded(conn, payload) for conn in conns))
         return sum(1 for ok in results if ok)
 
+    async def disconnect_player(self, player_id: uuid.UUID, code: int, payload: dict) -> int:
+        """先说明原因、再断开这个玩家的所有设备（封号，app/bans.py）。返回断了几条。
+
+        先发消息再关：同 _close 的理由 —— 只给一个关闭码的话，弱网下客户端多半来不及读，
+        会当成普通掉线一直重连。表项由各连接自己的 finally 清（unregister 是幂等的）。
+        """
+        conns = list(self._by_player.get(player_id, {}).values())
+        for conn in conns:
+            await self._send_bounded(conn, payload)
+            try:
+                if conn.websocket.client_state is WebSocketState.CONNECTED:
+                    await conn.websocket.close(code=code)
+            except (RuntimeError, OSError):
+                log.debug("关闭连接时对端已断开 player=%s", player_id, exc_info=True)
+        return len(conns)
+
     async def _send_bounded(self, conn: Connection, payload: dict) -> bool:
         try:
             # 读模块常量要放在函数体里 —— 写成参数默认值的话测试 monkeypatch 不到。
@@ -211,6 +227,9 @@ class Hub:
 
     def is_online(self, player_id: uuid.UUID) -> bool:
         return bool(self._by_player.get(player_id))
+
+    def player_ids(self) -> list[uuid.UUID]:
+        return [pid for pid, devices in self._by_player.items() if devices]
 
 
 _hub: Hub | None = None

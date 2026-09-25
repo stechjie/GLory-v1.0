@@ -405,6 +405,27 @@ func _check_entry_gate_view() -> void:
 	_h.expect(str(connecting_during_notice.get("state", "")) == "connecting", "entry_maintenance_flashes",
 		"连接还没失败过就显示了维护说明")
 
+	# 封号（backend/app/bans.py）：压过一切，包括游戏中被封回来时名额那一侧还记着的「放行过」。
+	for banned_facts in [
+		{"login": "failed", "banned": true},
+		{"login": "logged_in", "online": true, "admitted": true, "banned": true},
+		{"login": "failed", "banned": true, "maintenance": true},
+	]:
+		var banned_view: Dictionary = BootstrapScript.entry_view(banned_facts)
+		_h.expect(str(banned_view.get("state", "")) == "banned" and not bool(banned_view.get("pass", false))
+				and bool(banned_view.get("actions", false)),
+			"entry_banned_not_shown", "账号被封时没有显示封号说明，或者放行了：%s" % str(banned_facts))
+	var timed := BootstrapScript.ban_text({"reason": "使用外挂", "ends_at": "2026-10-01T12:00:00+00:00"}, false, 480)
+	_h.expect(timed.contains("原因：使用外挂") and timed.contains("2026-10-01 20:00"),
+		"entry_ban_text_wrong", "封号说明没有原因或解封时间没换成本地时区：%s" % timed)
+	var forever_text := BootstrapScript.ban_text({"reason": "盗号", "ends_at": null}, true, 0)
+	_h.expect(forever_text.contains("Permanent") and forever_text.contains("Reason: 盗号"),
+		"entry_ban_text_permanent", "永久封号的英文说明不对：%s" % forever_text)
+	var account_source := FileAccess.get_file_as_string("res://scripts/autoload/AccountManager.gd")
+	_h.expect(account_source.contains("elif bool(refreshed.get(\"banned\", false)):"),
+		"entry_ban_clears_credentials",
+		"登录时被封没有单独处理 —— 落进 401 分支会清掉凭证、自动注册新号，封号白封")
+
 	var source := FileAccess.get_file_as_string("res://scenes/bootstrap/Bootstrap.gd")
 	_h.expect(source.contains("if _entry_gate_required():\n\t\t_begin_entry()"),
 		"entry_gate_bypassed", "主界面载完之后没有经过进门这一步就直接 READY 了")

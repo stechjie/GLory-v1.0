@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 import asyncpg
 
-from app import db
+from app import bans, db
 
 # 与 database/003_player_identities.sql 的 provider 白名单一致。
 # 匿名登录也走 supabase —— Supabase 的匿名用户就是一个普通 auth 用户。
@@ -101,54 +101,70 @@ async def resolve_or_create(
 
     **客户端提议的 id 不被信任为身份**：能不能登录完全由 auth_uid 决定，
     这个 id 只是新建时的主键取值。占用了别人的就直接拒绝。
+
+    被封的老玩家抛 bans.AccountBanned（登录 / 续期回 403，见 app/bans.py）。
     """
     async with db.pool().acquire() as conn:
-        async with conn.transaction():
-            existing = await conn.fetchrow(
-                """
-                select p.player_id, p.player_name, p.friend_code
-                from player_identities i
-                join players p on p.player_id = i.player_id
-                where i.provider = $1 and i.provider_user_id = $2
-                """,
-                PROVIDER_SUPABASE,
-                auth_uid,
-            )
-            if existing is not None:
-                # 顺手记一次活跃。放在同一个事务里，省一次往返。
-                await conn.execute(
-                    "update players set last_seen_at = now() where player_id = $1",
-                    existing["player_id"],
-                )
-                return Player(
-                    existing["player_id"],
-                    existing["player_name"],
-                    created=False,
-                    friend_code=existing["friend_code"],
-                )
+        player = await _resolve_or_create_in(conn, auth_uid, proposed_player_id)
+        if not player.created:
+            # 在事务**外**查：表还没建时那条查询会报错，在事务里会连累刚才那次登记。
+            await bans.raise_if_banned(conn, player.player_id)
+        return player
 
-            player_id = proposed_player_id or uuid.uuid4()
-            row = await _insert_player(conn, player_id)
 
+async def _resolve_or_create_in(
+    conn, auth_uid: str, proposed_player_id: uuid.UUID | None,
+) -> Player:
+    async with conn.transaction():
+        existing = await conn.fetchrow(
+            """
+            select p.player_id, p.player_name, p.friend_code
+            from player_identities i
+            join players p on p.player_id = i.player_id
+            where i.provider = $1 and i.provider_user_id = $2
+            """,
+            PROVIDER_SUPABASE,
+            auth_uid,
+        )
+        if existing is not None:
+            # 顺手记一次活跃。放在同一个事务里，省一次往返。
             await conn.execute(
-                """
-                insert into player_identities (provider, provider_user_id, player_id)
-                values ($1, $2, $3)
-                """,
-                PROVIDER_SUPABASE,
-                auth_uid,
-                player_id,
+                "update players set last_seen_at = now() where player_id = $1",
+                existing["player_id"],
             )
             return Player(
-                row["player_id"],
-                row["player_name"],
-                created=True,
-                friend_code=row["friend_code"],
+                existing["player_id"],
+                existing["player_name"],
+                created=False,
+                friend_code=existing["friend_code"],
             )
+
+        player_id = proposed_player_id or uuid.uuid4()
+        row = await _insert_player(conn, player_id)
+
+        await conn.execute(
+            """
+            insert into player_identities (provider, provider_user_id, player_id)
+            values ($1, $2, $3)
+            """,
+            PROVIDER_SUPABASE,
+            auth_uid,
+            player_id,
+        )
+        return Player(
+            row["player_id"],
+            row["player_name"],
+            created=True,
+            friend_code=row["friend_code"],
+        )
 
 
 async def get_by_auth_uid(auth_uid: str) -> Player | None:
-    """只读查询，不新建。给 /v1/me 用。"""
+    """只读查询，不新建。所有要身份的接口都经过这里。
+
+    🔴 **被封的玩家在这里抛 bans.AccountBanned**（main.py 映射成 403）。
+    放在这一处而不是各个路由里：以后加的新接口不用记得查，默认就拦住。
+    """
     async with db.pool().acquire() as conn:
         row = await conn.fetchrow(
             """
@@ -160,8 +176,9 @@ async def get_by_auth_uid(auth_uid: str) -> Player | None:
             PROVIDER_SUPABASE,
             auth_uid,
         )
-    if row is None:
-        return None
+        if row is None:
+            return None
+        await bans.raise_if_banned(conn, row["player_id"])
     return Player(
         row["player_id"],
         row["player_name"],

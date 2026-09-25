@@ -6,8 +6,15 @@ theme sizes and colours remain in use. The fallback also supplies missing glyphs
 to variations of the default font, including RichTextLabel bold and italic.
 
 This font is stored with the UI code so a stale Drive asset bundle cannot remove
-it during resource synchronization or build staging. The preload makes the font
-an explicit export dependency. It must remain in source control with this script.
+it during resource synchronization or build staging. It must remain in source
+control with this script.
+
+The script loads the font at runtime (`load`, not `preload`) and does nothing on
+the dedicated server (`--server` / `--dedicated-server`). The server package built
+by `make_server_zip.ps1` ships scripts only, without `.godot/imported`, so a
+preload made the autoload fail to parse there and broke the cold-start smoke
+test (2026-09-24). Both export presets use `all_resources`, so the client export
+still includes the font.
 
 - Upstream: https://github.com/notofonts/noto-cjk
 - File: Sans/SubsetOTF/SC/NotoSansSC-Regular.otf

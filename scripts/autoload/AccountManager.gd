@@ -24,6 +24,13 @@ signal login_succeeded(player_id: String, player_name: String)
 signal login_failed(reason: String)
 # 登出（含注销账号）。WebSocket 与私聊的客户端状态靠它收尾。
 signal logged_out()
+# 账号被封（登录时、游戏中都可能）。info = {"reason", "ends_at"}，ends_at 为 null 是永久。
+signal account_banned(info: Dictionary)
+
+# 被封时后端 403 响应体里的 code（backend/app/bans.py 的 ERROR_CODE，test_bans 钉着）。
+# 🔴 **被封是 403，不是 401**：401 在这里的意思是「凭证失效、清掉重新注册」——
+# 被封的人要是走了那条路，就等于自动换了个新号。本机凭证必须留着，解封后还是这个号。
+const BANNED_CODE := "account_banned"
 
 enum State { IDLE, WORKING, LOGGED_IN, FAILED }
 
@@ -42,6 +49,7 @@ enum Failure {
 	CONFLICT,       # 409 且重签后仍冲突
 	BAD_RESPONSE,   # HTTP 200 但响应里缺东西
 	UNKNOWN,
+	BANNED,         # 403 account_banned，账号被封（ban_info 里有原因与解封时间）
 }
 
 var state: int = State.IDLE
@@ -51,6 +59,8 @@ var player_name := ""
 var last_error := ""
 # 给机器看的分类，可以安全地进日志与报告。
 var last_failure: int = Failure.NONE
+# 被封时后端给的 {"reason", "ends_at"}。只在 last_failure == BANNED 时有意义。
+var ban_info: Dictionary = {}
 
 # access token **只在内存里**，永不落盘。
 #
@@ -82,6 +92,30 @@ func is_logged_in() -> bool:
 	return state == State.LOGGED_IN and not player_id.is_empty()
 
 
+func is_banned() -> bool:
+	return last_failure == Failure.BANNED
+
+
+# 游戏中得知被封（任何接口回 403 account_banned，或 RealtimeService 收到 banned）。
+#
+# 丢掉内存里的 access token：之后的请求在本地就被挡住，不再一次次去撞服务器。
+# 🔴 **本机的 refresh token 不动** —— 解封后重试登录，还是原来这个号。
+func note_banned(info: Dictionary) -> void:
+	if not info.is_empty():
+		ban_info = info
+	var already := is_banned()
+	_access_token = ""
+	_token_expires_at = 0.0
+	state = State.FAILED
+	last_failure = Failure.BANNED
+	last_error = "账号已被封禁"
+	if already:
+		return
+	push_warning("[ACCOUNT] 账号已被封禁")
+	_emit_status()
+	account_banned.emit(ban_info)
+
+
 # 内存里的 access token。给以后需要带令牌的接口用；**不要写进任何文件或日志**。
 func access_token() -> String:
 	return _access_token
@@ -111,6 +145,12 @@ func login() -> void:
 			# 留着只会让下次启动再失败一次。
 			print("[ACCOUNT] refresh 凭证已失效，改走匿名注册")
 			SaveManager.clear_account_credentials()
+		elif bool(refreshed.get("banned", false)):
+			# 被封。🔴 凭证**不清**、也**不注册新号**（见 BANNED_CODE 的注释）。
+			ban_info = refreshed.get("ban", {})
+			_finish_failure(str(refreshed.get("error", "账号已被封禁")), Failure.BANNED)
+			account_banned.emit(ban_info)
+			return
 		else:
 			# 网络不通、后端没起、5xx —— 这些**不是**凭证问题。
 			# 这时候绝不能去注册新账号：那会把一个临时故障变成永久丢号。
@@ -159,6 +199,7 @@ func _finish_success(body: Dictionary) -> void:
 	_access_token = str(body.get("access_token", ""))
 	_note_token_lifetime(body)
 	_refresh_dead = false
+	ban_info = {}
 	var refresh_token := str(body.get("refresh_token", ""))
 
 	# ⚠️ 必须存**返回的**那个 refresh token。Supabase 默认轮换，
@@ -252,6 +293,11 @@ func refresh_session() -> bool:
 	elif code == 401:
 		_refresh_dead = true
 		push_warning("[ACCOUNT] 续期被拒：凭证已失效，下次启动会重新走登录流程")
+	elif bool(result.get("banned", false)):
+		_refreshing = false
+		_refresh_finished.emit(false)
+		note_banned(result.get("ban", {}))
+		return false
 	else:
 		_last_refresh_failed_at = now
 	_refreshing = false
@@ -953,6 +999,14 @@ func _request(
 		var refreshed: bool = await refresh_session()
 		if refreshed:
 			return await _request(method, path, payload, authed, false)
+
+	# 被封（backend/app/bans.py）。登录那两个调用自己看 banned 字段；
+	# 游戏中别的接口撞上，就地记下来 —— Main 据此回启动页显示原因。
+	if code == 403 and str(body.get("code", "")) == BANNED_CODE:
+		var ban: Dictionary = body.get("ban", {}) if body.get("ban") is Dictionary else {}
+		if authed:
+			note_banned(ban)
+		return {"code": code, "error": str(body.get("detail", "账号已被封禁")), "banned": true, "ban": ban}
 
 	# 后端的 detail 已经脱敏（backend 那边有测试钉着不含 token），可以直接显示。
 	# 拿不到 detail（响应体不是 JSON）时**不要把原文回显给玩家** ——
