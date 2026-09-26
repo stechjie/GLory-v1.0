@@ -27,6 +27,14 @@ const HEARTBEAT_TIMEOUT_SEC := 20.0    # 超过没消息判掉线（双端）
 const PONG_GAP_WARN_SEC := 6.0         # 静默预警线：还没到超时，但网络已经不对劲
 const PING_RTT_LOG_MS := 400           # 心跳往返超过这个值才记，正常网络不刷日志
 const UNJOINED_PEER_TTL_SEC := 60.0    # 连上但一直不进房间的 peer 的存活上限
+const RESUME_STALE_SEC := HEARTBEAT_INTERVAL_SEC * 3.0
+
+
+# Only use after validating the reconnect credential for the occupied seat.
+# A fresh holder remains protected; a half-open mobile connection must not
+# delay its authenticated replacement until the full disconnect timeout.
+func resume_holder_stale(last_ping: Dictionary, peer_id: int, now: float) -> bool:
+	return last_ping.has(peer_id) and now - float(last_ping[peer_id]) >= RESUME_STALE_SEC
 
 
 # 哪些 peer 已经心跳超时。只做判定，断开由门面执行。

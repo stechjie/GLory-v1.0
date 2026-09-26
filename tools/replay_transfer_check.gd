@@ -34,6 +34,7 @@ func _ready() -> void:
 func _run() -> void:
 	_h = CheckHarness.new(CHECK_NAME)
 	_check_round_trip()
+	_check_long_dead_frames()
 	_check_compression_actually_shrinks()
 	_check_empty_and_short_inputs()
 	_check_bomb_guard()
@@ -105,6 +106,48 @@ func _check_round_trip() -> void:
 		"round_trip_mismatch", "解包结果与原始 replay 不一致 —— 回放对不上等于两端看到不同的战斗")
 	_h.expect(int(packed.decode_u64(0)) == var_to_bytes(replay).size(),
 		"header_length", "长度头应写入未压缩字节数；decompress() 要求预先知道输出大小")
+
+
+func _wire(payload: Dictionary) -> PackedByteArray:
+	var raw := var_to_bytes(payload)
+	var result := PackedByteArray()
+	result.resize(TransferScript.PACK_HEADER_BYTES)
+	result.encode_u64(0, raw.size())
+	result.append_array(raw.compress(FileAccess.COMPRESSION_ZSTD))
+	return result
+
+
+func _check_long_dead_frames() -> void:
+	var svc := _make()
+	var replay := {"frames": [], "result": {"winner": 0}}
+	for f in 128:
+		var rows: Array = []
+		for u in 100:
+			# Death, revival, and a later changed dead row all round-trip exactly.
+			rows.append(["unit_%d" % u, 1.25, 2.5, 0, f == 64,
+				{"effect": "x".repeat(2048), "changed": f >= 100}])
+		replay.frames.append(rows)
+	var original := var_to_bytes(replay)
+	_h.expect(original.size() > TransferScript.MAX_UNCOMPRESSED_BYTES,
+		"long_fixture_small", "长战斗样本必须超过旧的 16 MiB 上限")
+	var packed: PackedByteArray = svc.pack(replay)
+	_h.expect(not packed.is_empty(), "long_pack_empty", "重复死亡帧应无损编码，不能返回空包")
+	var back: Dictionary = svc.unpack(packed)
+	_h.expect(var_to_bytes(back) == original, "long_roundtrip", "压缩不能改变浮点、帧顺序、复活或死亡状态")
+	_h.expect(var_to_bytes(replay) == original, "pack_mutation", "编码不能修改模拟器原始回放")
+	if not back.is_empty():
+		back.frames[1][0][5].effect = "mutated"
+		_h.expect(back.frames[0][0][5].effect != "mutated", "row_alias", "解码帧不能共享可变状态")
+	var marker: String = TransferScript.DEAD_REFERENCE_KEY
+	for frames in [[["missing"]], [[["u", 0, 0, 1, true]], ["u"]]]:
+		var malformed := {"frames": frames}
+		malformed[marker] = true
+		_h.expect(svc.unpack(_wire(malformed)).is_empty(), "invalid_dead_ref", "未知或活棋子引用必须拒收")
+	var bomb := {"frames": [[["u", 0, 0, 0, false, "x".repeat(1024 * 1024)]]]}
+	bomb[marker] = true
+	for i in 70:
+		bomb.frames.append(["u"])
+	_h.expect(svc.unpack(_wire(bomb)).is_empty(), "expansion_budget", "帧引用必须在复制前检查展开上限")
 
 
 # 压缩不是可选的：实测最坏一场 replay 原始 5.32 MiB，不压直接从 ENet 推过去

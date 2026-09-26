@@ -155,7 +155,9 @@ const USE_DTLS := true
 #      代价同上：**战斗服务器必须重新打包部署到 p31**，和新包一起上。要有语音还得先装好 LiveKit、
 #      放好语音钥匙配置（deploy/livekit/README.md）；没放的话照常开服，只是没有语音。
 #      确认依据是服务器日志里的 `voice configured (LiveKit)` 与 `server started protocol=31`。
-const NETWORK_PROTOCOL_VERSION := 32
+# v33: Ordinary walking now stops/slides at bodies instead of pushing them.
+# This changes authoritative combat results; clients and server ship together.
+const NETWORK_PROTOCOL_VERSION := 33
 
 # Local phone hosting is debug-only.
 const ALLOW_LOCAL_HOST_DEBUG := false

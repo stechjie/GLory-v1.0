@@ -11,6 +11,9 @@ const CPU_BUDGET_USEC := 2000
 const MAX_PEERS := 512
 const MAX_CACHED_BYTES := 64 * 1024 * 1024
 const MAX_PAYLOAD_BYTES := LEGACY_MAX_CHUNKS * MAX_CHUNK_BYTES
+const PEER_INFLIGHT_BYTES := 32 * 1024
+const GLOBAL_INFLIGHT_BYTES := 256 * 1024
+const RECEIPT_STALL_USEC := 20000000
 
 var _peers: Dictionary = {}
 var _order: Array[int] = []
@@ -19,6 +22,7 @@ var _order: Array[int] = []
 var _battles: Dictionary = {}
 var _cached_bytes := 0
 var _frame := 0
+var _inflight_bytes := 0
 
 
 func clear() -> void:
@@ -27,9 +31,10 @@ func clear() -> void:
 	_battles.clear()
 	_cached_bytes = 0
 	_frame = 0
+	_inflight_bytes = 0
 
 
-func begin(peer_id: int, battle_id: String, payloads: Dictionary) -> String:
+func begin(peer_id: int, battle_id: String, payloads: Dictionary, flow_control: bool = false) -> String:
 	forget(peer_id)
 	if peer_id <= 0 or battle_id.is_empty() or payloads.is_empty() or payloads.size() > 2:
 		return "invalid_transfer"
@@ -62,11 +67,12 @@ func begin(peer_id: int, battle_id: String, payloads: Dictionary) -> String:
 	for kind in payloads:
 		var data: PackedByteArray = payloads[kind]
 		var block_bytes := PEER_BYTES_PER_FRAME
-		while int(ceil(float(data.size()) / block_bytes)) > LEGACY_MAX_CHUNKS:
+		while not flow_control and int(ceil(float(data.size()) / block_bytes)) > LEGACY_MAX_CHUNKS:
 			block_bytes += PEER_BYTES_PER_FRAME
-		streams[kind] = {"data": data, "block_bytes": block_bytes, "pending": {}, "done": false}
+		streams[kind] = {"data": data, "block_bytes": block_bytes, "pending": {}, "flight": {}, "done": false}
 	_peers[peer_id] = {"battle_id": battle_id, "streams": streams,
-		"kinds": payloads.size(), "kind_cursor": 0, "credit": 0, "credit_frame": _frame}
+		"kinds": payloads.size(), "kind_cursor": 0, "credit": 0, "credit_frame": _frame,
+		"flow_control": flow_control, "flight_bytes": 0, "progress_usec": 0}
 	_order.append(peer_id)
 	return ""
 
@@ -85,10 +91,11 @@ func enqueue(peer_id: int, kind: String = "", missing: PackedInt32Array = Packed
 		var total := int(ceil(float(data.size()) / int(stream.block_bytes)))
 		if missing.is_empty():
 			for idx in total:
-				stream.pending[idx] = true
+				if not stream.flight.has(idx):
+					stream.pending[idx] = true
 		else:
 			for idx in missing:
-				if idx >= 0 and idx < total:
+				if idx >= 0 and idx < total and not stream.flight.has(idx):
 					stream.pending[idx] = true
 
 
@@ -98,12 +105,45 @@ func complete_kind(peer_id: int, kind: String) -> void:
 		return
 	peer.streams[kind].done = true
 	(peer.streams[kind].pending as Dictionary).clear()
+	for bytes in (peer.streams[kind].flight as Dictionary).values():
+		peer.flight_bytes -= int(bytes)
+		_inflight_bytes -= int(bytes)
+	(peer.streams[kind].flight as Dictionary).clear()
+
+
+# Receipt credit is separate from the validated whole-replay ACK. A stale,
+# duplicate or invented receipt cannot release another transfer's window.
+func acknowledge_chunk(peer_id: int, battle_id: String, kind: String, idx: int) -> bool:
+	var peer: Dictionary = _peers.get(peer_id, {})
+	if peer.is_empty() or not bool(peer.flow_control) or str(peer.battle_id) != battle_id:
+		return false
+	var stream: Dictionary = (peer.streams as Dictionary).get(kind, {})
+	if stream.is_empty() or not (stream.flight as Dictionary).has(idx):
+		return false
+	var bytes := int(stream.flight[idx])
+	stream.flight.erase(idx)
+	peer.flight_bytes -= bytes
+	_inflight_bytes -= bytes
+	peer.progress_usec = Time.get_ticks_usec()
+	return true
+
+
+# Heartbeats alone cannot reserve the shared bulk window forever. Expiring a
+# stalled transfer releases other clients without disconnecting its player.
+func stalled_peers(now_usec: int) -> Array[int]:
+	var stale: Array[int] = []
+	for peer_id in _peers:
+		var peer: Dictionary = _peers[peer_id]
+		if bool(peer.flow_control) and int(peer.flight_bytes) > 0 \
+				and now_usec - int(peer.progress_usec) >= RECEIPT_STALL_USEC:
+			stale.append(int(peer_id))
+	return stale
 
 
 func has_queued(peer_id: int) -> bool:
 	var peer: Dictionary = _peers.get(peer_id, {})
 	for stream in (peer.get("streams", {}) as Dictionary).values():
-		if not (stream.pending as Dictionary).is_empty():
+		if not (stream.pending as Dictionary).is_empty() or not (stream.flight as Dictionary).is_empty():
 			return true
 	return false
 
@@ -121,6 +161,7 @@ func forget(peer_id: int) -> void:
 	if peer.is_empty():
 		return
 	var battle_id := str(peer.battle_id)
+	_inflight_bytes -= int(peer.flight_bytes)
 	var charge: Dictionary = _battles[battle_id]
 	charge.refs = int(charge.refs) - 1
 	if int(charge.refs) == 0:
@@ -170,6 +211,9 @@ func drain(send_fn: Callable, global_budget: int = GLOBAL_BYTES_PER_FRAME,
 			var block_bytes := int(stream.block_bytes)
 			var begin_at := idx * block_bytes
 			var byte_count := mini(block_bytes, packed.size() - begin_at)
+			if bool(peer.flow_control) and (int(peer.flight_bytes) + byte_count > PEER_INFLIGHT_BYTES \
+					or _inflight_bytes + byte_count > GLOBAL_INFLIGHT_BYTES):
+				break
 			if byte_count > int(peer.credit):
 				break
 			if int(result.bytes) + byte_count > global_budget:
@@ -186,6 +230,12 @@ func drain(send_fn: Callable, global_budget: int = GLOBAL_BYTES_PER_FRAME,
 				"kinds": int(peer.kinds), "data": data}
 			if bool(send_fn.call(item)):
 				pending.erase(idx)
+				if bool(peer.flow_control):
+					if int(peer.flight_bytes) == 0:
+						peer.progress_usec = Time.get_ticks_usec()
+					stream.flight[idx] = data.size()
+					peer.flight_bytes += data.size()
+					_inflight_bytes += data.size()
 				peer.credit = int(peer.credit) - data.size()
 				peer.kind_cursor = (k + 1) % names.size()
 				result.bytes = int(result.bytes) + data.size()

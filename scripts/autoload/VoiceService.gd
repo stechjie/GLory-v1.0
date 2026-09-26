@@ -151,7 +151,10 @@ func set_mode(next: int) -> String:
 		# 用途说明由界面在调这里之前弹（VoiceControls.request_talk），这里不再叠一层。
 		_want_talk_after_permission = true
 		_change_mode(Mode.LISTEN)
-		OS.request_permission(MIC_PERMISSION)
+		if _bridge.has_method("requestRecordPermission"):
+			_bridge.requestRecordPermission()
+		else:
+			OS.request_permission(MIC_PERMISSION)
 		return ""
 	return _change_mode(next)
 
@@ -345,6 +348,13 @@ func _process(delta: float) -> void:
 			return
 	if mode == Mode.OFF or _bridge == null:
 		return
+	if _want_talk_after_permission and _bridge.has_method("requestRecordPermission"):
+		# Permission can finish before a voice token arrives. status() intentionally
+		# hides room state until joined, so read the native permission independently.
+		var native_status: Variant = JSON.parse_string(str(_bridge.getStatus()))
+		var permission := str(native_status.get("permission", "")) if native_status is Dictionary else ""
+		if permission == "granted" or permission == "denied":
+			_on_permission_result("microphone", permission == "granted")
 	if _retry_in > 0.0:
 		_retry_in = maxf(0.0, _retry_in - delta)
 	if _awaiting_token:
@@ -368,7 +378,7 @@ func _notification(what: int) -> void:
 
 
 func _on_permission_result(permission: String, granted: bool) -> void:
-	if not permission.ends_with("RECORD_AUDIO") or not _want_talk_after_permission:
+	if (not permission.ends_with("RECORD_AUDIO") and permission != "microphone") or not _want_talk_after_permission:
 		return
 	_want_talk_after_permission = false
 	if granted and mode == Mode.LISTEN and in_room():

@@ -1,6 +1,6 @@
 ; 组队语音的电脑版桥接（docs/语音LiveKit方案.md 5.2）。源码与打包脚本在 native/glory_voice_desktop/，
 ; 改了要重跑 build_dll.ps1（tools/voice_check 拿源码指纹对账）。
-; 只有 Windows：别的平台没有这里的库，语音按钮会说明原因；安卓走 bin/GloryVoice.aar。
+; Windows / iOS 原生扩展；安卓走 bin/GloryVoice.aar。
 [configuration]
 
 entry_symbol = "glory_voice_library_init"
@@ -10,8 +10,14 @@ compatibility_minimum = "4.7"
 
 windows.debug.x86_64 = "res://addons/glory_voice/bin/windows/glory_voice.windows.template_debug.x86_64.dll"
 windows.release.x86_64 = "res://addons/glory_voice/bin/windows/glory_voice.windows.template_release.x86_64.dll"
+ios.arm64 = "res://addons/glory_voice/bin/ios/GloryVoice.framework"
 
 [dependencies]
+
+ios.arm64 = {
+	"res://addons/glory_voice/bin/ios/LiveKitWebRTC.framework": "",
+	"res://addons/glory_voice/bin/ios/RustLiveKitUniFFI.framework": ""
+}
 
 ; LiveKit 开发包的两个 dll，和它要的 VC++ 运行库（微软允许随程序分发；玩家电脑上不一定装了）。
 windows.x86_64 = {

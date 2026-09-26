@@ -88,6 +88,7 @@ var _director_missing_actor_drops := 0
 var _residue_samples: Array[Dictionary] = []
 # B4: the stress run needs to force a device tier rather than inherit MEDIUM.
 var _quality_tier := ""
+var _prep_warmup_sec := 0.0
 
 
 func _ready() -> void:
@@ -356,6 +357,26 @@ func _start_next_round() -> void:
 	# Re-establish the exact fixed state before rendering the already-computed replay.
 	_setup_match_state(round_index)
 	_prime_profile_seen(roster)
+	if _prep_warmup_sec > 0.0:
+		# Exercise the actual deployment screen, not a synthetic replay warmup.
+		# This isolated diagnostic has no server; restore the exact fixture after
+		# prep UI/shop bookkeeping so gameplay hashes remain directly comparable.
+		NetworkService.team_active = false
+		var prep_scene := load("res://scenes/prep/PrepScreen.tscn") as PackedScene
+		var prep := prep_scene.instantiate()
+		var prep_started := Time.get_ticks_msec()
+		var jobs_before := BattleRenderWarmup._ready_jobs.size()
+		add_child(prep)
+		await get_tree().create_timer(_prep_warmup_sec).timeout
+		_current_summary["deployment_prefetch"] = {
+			"elapsed_ms": Time.get_ticks_msec() - prep_started,
+			"cached_jobs_before": jobs_before,
+			"cached_jobs_after": BattleRenderWarmup._ready_jobs.size(),
+			"scene_cached": prep._cached_battle_scene != null,
+		}
+		prep.queue_free()
+		await get_tree().process_frame
+		_setup_match_state(round_index)
 	GameState.set_pending_battle_package({
 		"mode": "team_replay",
 		"round_index": round_index,
@@ -1149,6 +1170,8 @@ func _parse_arguments() -> void:
 					_rounds = parsed
 			"--tier":
 				_quality_tier = value.to_upper()
+			"--prep-warmup-seconds":
+				_prep_warmup_sec = clampf(float(value), 0.0, 60.0)
 			"--git-commit":
 				_git_commit = value
 			"--no-screenshots":

@@ -27,6 +27,8 @@ const FLAG := "--device-baseline"
 const TRIGGER_PATH := "user://device_harness.json"
 
 const BASELINE_SCENE := "res://scripts/qa/battle_presentation_baseline.tscn"
+const VOICE_SCENE := "res://scripts/qa/voice_device_probe.tscn"
+var _selected_scene := BASELINE_SCENE
 
 # 交给工具场景的参数。Android 上它们来自标记文件，桌面上来自命令行。
 var tool_args: PackedStringArray = []
@@ -81,6 +83,8 @@ func _claim_from_trigger_file() -> bool:
 	if not (parsed is Dictionary):
 		printerr("[DEVICE_HARNESS] %s 不是合法 JSON，忽略：%s" % [TRIGGER_PATH, text.substr(0, 120)])
 		return false
+	if str(parsed.get("tool", "baseline")) == "voice":
+		_selected_scene = VOICE_SCENE
 	for value in (parsed as Dictionary).get("tool_args", []):
 		tool_args.append(str(value))
 	_active = true
@@ -88,11 +92,11 @@ func _claim_from_trigger_file() -> bool:
 
 
 func _take_over() -> void:
-	var error := get_tree().change_scene_to_file(BASELINE_SCENE)
+	var error := get_tree().change_scene_to_file(_selected_scene)
 	if error != OK:
 		# 大声地失败，并且退出码非零：悄悄退回正常游戏的话，一次运行会"跑完"而
 		# 既没有证据也没有报错 —— 那正是 tools/android_smoke.sh 存在的理由。
-		printerr("[DEVICE_HARNESS] 切换到 %s 失败 (err %d)" % [BASELINE_SCENE, error])
+		printerr("[DEVICE_HARNESS] 切换到 %s 失败 (err %d)" % [_selected_scene, error])
 		get_tree().quit(1)
 		return
-	print("[DEVICE_HARNESS] 已切到 %s" % BASELINE_SCENE)
+	print("[DEVICE_HARNESS] 已切到 %s" % _selected_scene)

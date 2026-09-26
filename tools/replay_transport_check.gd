@@ -110,6 +110,13 @@ func exercise() -> void:
 		await get_tree().process_frame
 	if not h.expect(clients.all(connected), "eight_connected", "Eight peers establish %s connections" % ("DTLS" if encrypted else "plain ENet")):
 		return
+	for client in clients:
+		if not client.legacy_receiver:
+			client._rpc_replay_flow_ready.rpc_id(1)
+	deadline = Time.get_ticks_msec() + 2000
+	while server._replay_flow_peers.size() < 7 and Time.get_ticks_msec() < deadline:
+		await get_tree().process_frame
+	h.expect(server._replay_flow_peers.size() == 7, "receipt_negotiated", "Modern receivers negotiate bounded receipt windows while legacy stays compatible")
 	var packed: Dictionary = {}
 	for room in [100001, 100002]:
 		var bid := "%d:1:10" % room

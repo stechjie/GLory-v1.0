@@ -17,6 +17,7 @@ const TIMEOUT_SEC := 25.0
 var _deadline := 0.0
 var _connected := false
 var _rooms_seen := -1
+var _room_list_received := false
 var _done := false
 
 
@@ -59,6 +60,7 @@ func _on_session_changed() -> void:
 
 
 func _on_room_list(rooms: Array) -> void:
+	_room_list_received = true
 	_rooms_seen = rooms.size()
 	print("[LIVE] room list received: %d 个公开房间" % _rooms_seen)
 	_finish()
@@ -69,7 +71,7 @@ func _finish() -> void:
 		return
 	_done = true
 	set_process(false)
-	var ok := _connected
+	var ok := _connected and _room_list_received
 	print("[LIVE] %s | connected=%s rooms=%s state=%d error=%s" % [
 		"PASS" if ok else "FAIL", _connected, _rooms_seen, int(NetworkService.state), str(NetworkService.last_error)])
 	NetworkService.reset()

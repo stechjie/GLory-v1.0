@@ -48,6 +48,7 @@ var _h: CheckHarness
 
 func _ready() -> void:
 	_h = CheckHarness.new(CHECK_NAME)
+	_check_effect_prefetch_roster()
 	var baseline: Array = ModalStack.find_invisible_stop_controls()
 	await _check_overlay_contract()
 	await _check_failure_recovery_paths()
@@ -64,6 +65,36 @@ func _ready() -> void:
 		"关闭加载层后残留不可见 STOP 控件：%s" % ", ".join(leaked))
 	_check_prep_source_contract()
 	_h.finish(get_tree())
+
+
+func _check_effect_prefetch_roster() -> void:
+	var board := GameState.board_slots
+	var mercenaries := GameState.mercenary_slots
+	var round_before := GameState.round_index
+	var seed_before := NetworkService.shared_seed
+	GameState.board_slots = [{"id":"prefetch_player", "def":{"skill_id":"every_fourth_combo"}}]
+	GameState.mercenary_slots = [{"id":"prefetch_mercenary", "def":{"skill_id":"black_hole"}}]
+	NetworkService.shared_seed = 314159
+	var prep := PrepScreenScript.new()
+	for round_number in range(1, GameState.FINAL_ROUND + 1):
+		GameState.round_index = round_number
+		var roster: Dictionary = prep._effect_prefetch_replay().roster
+		_h.expect(roster.has("prefetch_player") and roster.has("prefetch_mercenary"),
+			"deployed_roster_missing", "预热阵容必须包含当前棋盘和佣兵")
+		var kind := RoundService.schedule_kind_for_round(round_number)
+		if kind in ["pvp", "final"]:
+			_h.expect(roster.size() == 2, "unknown_enemy_prefetched", "PVP 未知敌人不能编造预热阵容")
+		else:
+			var expected := BattleSimShared._round_monster_template(round_number)
+			_h.expect(roster.has(str(expected.id)), "wrong_round_prefetched", "预热应命中即将开战的当前回合怪物")
+			if kind == "boss":
+				var boss := BattleSimShared._round_boss_template(round_number)
+				_h.expect(roster.has(str(boss.id)), "boss_not_prefetched", "Boss 回合必须提前预热 Boss")
+	prep.free()
+	GameState.board_slots = board
+	GameState.mercenary_slots = mercenaries
+	GameState.round_index = round_before
+	NetworkService.shared_seed = seed_before
 
 
 func _check_overlay_contract() -> void:
@@ -178,6 +209,11 @@ func _check_failure_recovery_paths() -> void:
 	add_child(prep)
 	await get_tree().process_frame
 	await get_tree().process_frame
+	var prefetch_deadline := Time.get_ticks_msec() + 5000
+	while PrepScreenScript._cached_battle_scene == null and Time.get_ticks_msec() < prefetch_deadline:
+		await get_tree().process_frame
+	_h.expect(PrepScreenScript._cached_battle_scene is PackedScene and not prep.is_committing_to_battle(),
+		"scene_not_prefetched_in_prep", "未开始战斗时就应异步载入并持有战斗场景")
 	var emitted := [0]
 	prep.battle_requested.connect(func() -> void: emitted[0] = int(emitted[0]) + 1)
 

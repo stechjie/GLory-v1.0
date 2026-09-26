@@ -2640,6 +2640,7 @@ var _replay_out: Dictionary = {}
 var _replay_in: Dictionary = {}
 var _replay_completed: Dictionary = {}
 var _replay_ack_times: Dictionary = {}
+var _replay_flow_peers: Dictionary = {}
 # 只给门禁与真机测试用：把生产里走不到的分块路径强制走一遍。
 var _force_replay_chunking := false
 
@@ -2678,7 +2679,7 @@ func _send_replay_to_peer(peer_id: int, battle_id: String, own: PackedByteArray,
 	if rival.size() > ReplayTransferService.PACK_HEADER_BYTES:
 		payloads[ReplayTransferService.CHUNK_KIND_RIVAL] = rival
 
-	var queue_error: String = _replay_send_queue.begin(peer_id, battle_id, payloads)
+	var queue_error: String = _replay_send_queue.begin(peer_id, battle_id, payloads, _replay_flow_peers.has(peer_id))
 	if not queue_error.is_empty():
 		_replay_delivery_error(peer_id, battle_id, queue_error)
 		return
@@ -2750,6 +2751,10 @@ func _rpc_team_replay_chunk(battle_id: String, kind: String, idx: int, total: in
 	})
 	if not str(out.get("error", "")).is_empty():
 		return
+	# Receipt releases bounded transport credit; integrity and battle identity
+	# still require the separate validated whole-replay ACK below.
+	if multiplayer.multiplayer_peer != null and not multiplayer.is_server():
+		_rpc_replay_chunk_receipt.rpc_id(1, battle_id, kind, idx)
 	if not bool(out.get("complete", false)):
 		return
 
@@ -2907,6 +2912,24 @@ func _rpc_replay_ack(battle_id: String, kind: String, missing: PackedInt32Array)
 	_handle_replay_ack(sender, battle_id, kind, missing)
 
 
+@rpc("any_peer", "call_remote", "reliable", NetworkConfig.CH_CONTROL)
+func _rpc_replay_flow_ready() -> void:
+	if not multiplayer.is_server():
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if _peer_connected(sender):
+		_replay_flow_peers[sender] = true
+
+
+@rpc("any_peer", "call_remote", "reliable", NetworkConfig.CH_CONTROL)
+func _rpc_replay_chunk_receipt(battle_id: String, kind: String, idx: int) -> void:
+	if not multiplayer.is_server() or battle_id.length() > MAX_TREASURE_ID_LEN:
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if _replay_flow_peers.has(sender) and _replay_send_queue.acknowledge_chunk(sender, battle_id, kind, idx):
+		_replay_mark_queue_drained(sender)
+
+
 func _handle_replay_ack(sender: int, battle_id: String, kind: String, missing: PackedInt32Array) -> void:
 	if battle_id.length() > MAX_TREASURE_ID_LEN:
 		return
@@ -2949,6 +2972,11 @@ func _handle_replay_ack(sender: int, battle_id: String, kind: String, missing: P
 func _tick_replay_retry(_delta: float) -> void:
 	if _replay_out.is_empty():
 		return
+	for peer_id in _replay_send_queue.stalled_peers(Time.get_ticks_usec()):
+		var stalled: Dictionary = _replay_out.get(peer_id, {})
+		if not stalled.is_empty():
+			_replay_delivery_error(peer_id, str(stalled.get("battle_id", "")), "receipt_timeout")
+		_replay_forget_peer(peer_id)
 	var now := _now()
 	for peer_id in _replay_out.keys():
 		var pending: Dictionary = _replay_out[peer_id]
@@ -4028,6 +4056,7 @@ func reset_peer_only() -> void:
 	_replay_retry_accum = 0.0
 	_replay_out.clear()
 	_replay_send_queue.clear()
+	_replay_flow_peers.clear()
 	if multiplayer.multiplayer_peer != null:
 		multiplayer.multiplayer_peer.close()
 	multiplayer.multiplayer_peer = null
@@ -4679,12 +4708,18 @@ func _resume_seat(sender: int, token: String) -> void:
 		# 座位被别的 peer 占着。绝大多数情况下那是**这个玩家自己的旧半开连接**：
 		# ENet 还没判死、清道夫还没跑到，新连接就已经带着同一个 token 回来了。
 		# 持有同一个 token 就是同一个人 —— 直接把旧 peer 顶掉，让他接回来。
-		if not _peer_connected(int(pid)):
+		var holder_connected := _peer_connected(int(pid))
+		var holder_stale: bool = _conn_health.resume_holder_stale(_peer_last_ping, int(pid), _now())
+		if not holder_connected or holder_stale:
 			_net_log("resume evicting stale peer=%d room=%d slot=%d" % [int(pid), int(room.get("id", 0)), slot])
 			peer_slot.erase(int(pid))
 			room.peer_slot = peer_slot
 			_peer_room.erase(int(pid))
-			_peer_last_ping.erase(int(pid))
+			# Detach room ownership before cleanup: a late old-peer disconnect
+			# must never reserve or remove the replacement's seat.
+			_on_peer_disconnected(int(pid))
+			if holder_connected:
+				multiplayer.multiplayer_peer.disconnect_peer(int(pid))
 			break
 		# 旧 peer 真的还活着：这是**可重试**的竞态，不是凭证失效。
 		# 回 seat_busy（而不是 seat_taken），客户端据此保留 token 并退避重试。
@@ -4968,6 +5003,7 @@ func _on_peer_disconnected(id: int) -> void:
 	_net_log("client disconnected peer=%d" % id)
 	_peer_last_ping.erase(id)
 	_peer_connected_at.erase(id)
+	_replay_flow_peers.erase(id)
 	_rate_forget(id)
 	_replay_forget_peer(id)
 	# 短 token 映射过去从不清理，peer 断开也不 erase —— 内存只涨不降。
@@ -6020,6 +6056,7 @@ func _on_connected_to_server() -> void:
 	_last_pong_at = _now()
 	_net_log("connected to server")
 	_tune_peer_timeout(1)  # 放宽对服务器连接的 ENet 超时（防服务器短冻结时底层先拆线）
+	_rpc_replay_flow_ready.rpc_id(1)
 	# 断线前后的客户端现场回传服务器（journald 里 clientlog 行），排查掉线原因用
 	_client_send_pending_logs()
 	# 重连场景：连上后不直接进 READY，先带 token 请求恢复座位

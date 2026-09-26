@@ -16,12 +16,85 @@ func sample(battle: String) -> Dictionary:
 func run() -> void:
 	h = H.new("replay_delivery")
 	check_queue()
+	check_receipt_window()
 	check_new_sender_old_receiver()
 	check_codec()
 	check_receive()
 	check_legacy_protocol()
 	check_ack_pacing()
+	check_receipt_stall_cleanup()
 	h.finish(get_tree())
+
+func check_receipt_stall_cleanup() -> void:
+	var branch := Node.new()
+	add_child(branch)
+	var api := SceneMultiplayer.new()
+	get_tree().set_multiplayer(api, branch.get_path())
+	api.multiplayer_peer = null
+	var p := Peer.new()
+	branch.add_child(p)
+	var blob := PackedByteArray()
+	blob.resize(128 * 1024)
+	for id in [7, 8]:
+		p._replay_send_queue.begin(id, "stall", {"own": blob}, true)
+		p._replay_send_queue.enqueue(id)
+		p._replay_out[id] = {"battle_id": "stall", "deadline": 0.0, "tries": 0}
+		p._replay_flow_peers[id] = true
+	p._replay_send_queue.drain(func(_item): return true, 256 * 1024, 1000000)
+	p._replay_send_queue._peers[7].progress_usec = Time.get_ticks_usec() - Q.RECEIPT_STALL_USEC
+	var healthy_bytes := int(p._replay_send_queue._peers[8].flight_bytes)
+	p._tick_replay_retry(0.0)
+	h.expect(not p._replay_out.has(7) and not p._replay_send_queue._peers.has(7),
+		"receipt_service_cleanup", "Expired receipt transfer is removed from both service and queue")
+	h.expect(p._replay_out.has(8) and p._replay_send_queue._inflight_bytes == healthy_bytes,
+		"receipt_service_isolation", "Only stalled credit is released; progressing peer remains queued")
+	h.expect(p._replay_flow_peers.has(7), "receipt_service_capability", "Transfer failure does not clear connected peer capability")
+	p._replay_send_queue.clear()
+	get_tree().set_multiplayer(null, branch.get_path())
+	branch.free()
+
+func check_receipt_window() -> void:
+	var q := Q.new()
+	var blob := PackedByteArray()
+	blob.resize(128 * 1024)
+	for peer in range(1, 21):
+		q.begin(peer, "flow", {"own": blob}, true)
+		q.enqueue(peer)
+	var sent: Array[Dictionary] = []
+	var fn := func(item: Dictionary) -> bool: sent.append(item); return true
+	for frame in 20:
+		q.drain(fn, 256 * 1024, 1000000)
+	h.expect(q._inflight_bytes == Q.GLOBAL_INFLIGHT_BYTES, "receipt_global_window", "Unacknowledged traffic stops at the global window")
+	var before := sent.size()
+	q.drain(fn, 256 * 1024, 1000000)
+	h.expect(sent.size() == before, "receipt_backpressure", "Polling cannot grow the reliable backlog without receipts")
+	for peer in q._peers.values():
+		h.expect(int(peer.flight_bytes) <= Q.PEER_INFLIGHT_BYTES, "receipt_peer_window", "Each slow client has bounded outstanding bytes")
+	var item: Dictionary = sent[0]
+	h.expect(not q.acknowledge_chunk(item.peer_id, "stale", item.kind, item.idx), "receipt_stale", "Stale battle receipt does not release credit")
+	h.expect(not q.acknowledge_chunk(item.peer_id, "flow", "rival", item.idx), "receipt_wrong_kind", "Wrong kind cannot release another stream")
+	h.expect(q.acknowledge_chunk(item.peer_id, "flow", item.kind, item.idx), "receipt_release", "Actual chunk receipt releases credit")
+	h.expect(not q.acknowledge_chunk(item.peer_id, "flow", item.kind, item.idx), "receipt_duplicate", "Duplicate receipt cannot create extra credit")
+	q.drain(fn, 256 * 1024, 1000000)
+	h.expect(sent.size() == before + 1, "receipt_progress", "Released credit advances another queued block")
+	q.clear()
+	h.expect(q._inflight_bytes == 0, "receipt_clear", "Reset releases all transport credit")
+	q.begin(1, "single", {"own": blob}, true)
+	q.enqueue(1)
+	for frame in 10:
+		q.drain(fn, 256 * 1024, 1000000)
+	h.expect(q._inflight_bytes == Q.PEER_INFLIGHT_BYTES, "receipt_single_window", "One peer cannot consume the global window")
+	var started := int(q._peers[1].progress_usec)
+	h.expect(q.stalled_peers(started + Q.RECEIPT_STALL_USEC - 1).is_empty(), "receipt_stall_boundary", "A transfer has its full receipt deadline")
+	h.expect(q.stalled_peers(started + Q.RECEIPT_STALL_USEC) == [1], "receipt_stall_expires", "Heartbeats cannot pin bulk credit without receipt progress")
+	q.complete_kind(1, "own")
+	h.expect(q._inflight_bytes == 0 and not q.has_queued(1), "receipt_whole_ack", "Validated replay ACK releases residual receipt credit")
+	h.expect(q.stalled_peers(started + Q.RECEIPT_STALL_USEC).is_empty(), "receipt_completed_not_stalled", "Completed streams cannot expire unrelated work")
+	q.begin(1, "replace", {"own": blob}, true)
+	q.enqueue(1)
+	q.drain(fn, 256 * 1024, 1000000)
+	q.forget(1)
+	h.expect(q._inflight_bytes == 0, "receipt_disconnect", "Disconnect frees outstanding credit")
 
 func check_queue() -> void:
 	var q := Q.new()

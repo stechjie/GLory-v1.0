@@ -30,7 +30,24 @@ func _ready() -> void:
 	_case_rtt_logging()
 	_case_ping_interval()
 	_case_empty_inputs()
+	_case_resume_holder()
 	_h.finish(get_tree())
+
+
+func _case_resume_holder() -> void:
+	var health := ConnectionHealth.new()
+	var now := 1000.0
+	var stale_after: float = ConnectionHealth.RESUME_STALE_SEC
+	_h.expect(stale_after < ConnectionHealth.HEARTBEAT_TIMEOUT_SEC,
+		"resume_before_disconnect", "Authenticated recovery precedes full timeout")
+	_h.expect(not health.resume_holder_stale({}, 12, now),
+		"resume_unknown_holder", "Missing heartbeat evidence does not evict a holder")
+	_h.expect(not health.resume_holder_stale({12: now - stale_after + 0.001}, 12, now),
+		"resume_fresh_holder", "Recently responsive holder remains protected")
+	_h.expect(health.resume_holder_stale({12: now - stale_after}, 12, now),
+		"resume_stale_holder", "Half-open holder can be replaced at the recovery deadline")
+	_h.expect(not health.resume_holder_stale({12: now + 1.0}, 12, now),
+		"resume_clock_boundary", "Clock regression cannot evict the holder")
 
 
 # 阈值之间的相对关系必须成立，否则某些分支永远进不去。

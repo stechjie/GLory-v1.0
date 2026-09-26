@@ -1,0 +1,3 @@
+framework module GloryVoice {
+  header "GloryVoice-Swift.h"
+}

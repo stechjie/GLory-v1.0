@@ -119,6 +119,20 @@ class FakeBridge extends RefCounted:
 		return JSON.stringify({"platform": "fake", "sdk": "test", "aec": "webrtc", "listen_mode_fixed_at_join": listen_fixed})
 
 
+class FakeIOSBridge extends FakeBridge:
+	var permission_requests := 0
+	var permission_state := "undetermined"
+
+	func requestRecordPermission() -> void:
+		permission_requests += 1
+		permission_state = "prompting"
+
+	func getStatus() -> String:
+		var result: Dictionary = JSON.parse_string(super.getStatus())
+		result.permission = permission_state
+		return JSON.stringify(result)
+
+
 # 假的 LiveKit 管理接口：只记账（战斗服务器上是 scripts/voice/LiveKitAdmin.gd）。
 class FakeAdmin extends RefCounted:
 	var removed: Array = []
@@ -152,6 +166,7 @@ func _ready() -> void:
 	_case_desktop_bridge_contract()
 	_case_desktop_build()
 	_case_state_machine()
+	_case_ios_permission()
 	_case_state_machine_fixed_listen_mode()
 	_case_mutes_follow_player()
 	_case_mic_rationale()
@@ -282,7 +297,10 @@ func _case_export_plugin_off_by_default() -> void:
 		"voice_export_optional_again",
 		"安卓导出必须无条件交出 GloryVoice.aar —— 一旦又变成「看预设里的开关」，"
 		+ "某台机器上没勾就会出一个装上去才发现没语音的包（p27–p30 就是这么来的）")
-	_h.expect(not src.contains("_get_export_options"), "voice_export_option_back",
+	# iOS purpose text uses _get_export_options_overrides; that does not
+	# introduce an optional export toggle. Match the option-list hook exactly.
+	var optional_options := RegEx.create_from_string("func\\s+_get_export_options\\s*\\(")
+	_h.expect(optional_options.search(src) == null, "voice_export_option_back",
 		"不要再加 glory_voice/enabled 这种预设开关：它在 .gitignore 的文件里，每台机器各一份")
 	_h.expect(load(EXPORT_PLUGIN_PATH) != null, "voice_export_plugin_broken",
 		"导出插件脚本加载失败：%s" % EXPORT_PLUGIN_PATH)
@@ -758,7 +776,8 @@ func _case_desktop_build() -> void:
 		return
 	var declared: Array[String] = []
 	for key in gdext.get_section_keys("libraries"):
-		declared.append(str(gdext.get_value("libraries", key)))
+		if str(key).begins_with("windows."):
+			declared.append(str(gdext.get_value("libraries", key)))
 	var deps: Variant = gdext.get_value("dependencies", "windows.x86_64", {})
 	if deps is Dictionary:
 		for path in (deps as Dictionary).keys():
@@ -839,6 +858,49 @@ func _fresh_status() -> void:
 func _reply(room: String, error: String = "", token: String = "tok") -> void:
 	NetworkService.team_voice_token_received.emit("wss://voice.example.test" if error.is_empty() else "",
 		token if error.is_empty() else "", room if error.is_empty() else "", error)
+
+
+func _case_ios_permission() -> void:
+	var saved := _save_state()
+	var fake := FakeIOSBridge.new()
+	fake.permission = false
+	VoiceService._bridge = fake
+	VoiceService.mode = VoiceService.Mode.OFF
+	VoiceService.token_requester = func() -> bool: return true
+	NetworkService.team_active = true
+	NetworkService.team_local_slot = 0
+	NetworkService.team_slot_states = ["player", "player", "ai", "player", "player", "empty"]
+	var events: Array = []
+	var callback := func(granted: bool) -> void: events.append(granted)
+	VoiceService.mic_permission_result.connect(callback)
+	VoiceService.set_mode(VoiceService.Mode.TALK)
+	_h.expect(fake.permission_requests == 1 and VoiceService.mode == VoiceService.Mode.LISTEN and not fake.mic_on,
+		"ios_permission_prompt", "iOS 必须经原生桥接请求权限，等待时不开麦")
+	fake.permission_state = "denied"
+	_fresh_status()
+	VoiceService._process(0.01)
+	_h.expect(events == [false] and VoiceService.mode == VoiceService.Mode.LISTEN,
+		"ios_permission_denied", "iOS 拒绝权限应返回只听并通知界面")
+	VoiceService.set_mode(VoiceService.Mode.TALK)
+	_reply("ios-team-t0")
+	fake.permission = true
+	fake.permission_state = "granted"
+	_fresh_status()
+	VoiceService._process(0.01)
+	_h.expect(events == [false, true] and VoiceService.mode == VoiceService.Mode.TALK and fake.mic_on,
+		"ios_permission_granted", "iOS 允许权限后才开启麦克风")
+	VoiceService.set_mode(VoiceService.Mode.LISTEN)
+	fake.permission = false
+	VoiceService.set_mode(VoiceService.Mode.TALK)
+	VoiceService.set_mode(VoiceService.Mode.OFF)
+	fake.permission = true
+	fake.permission_state = "granted"
+	_fresh_status()
+	VoiceService._process(0.01)
+	_h.expect(VoiceService.mode == VoiceService.Mode.OFF and not fake.mic_on,
+		"ios_late_permission", "已关闭语音后迟到的授权不能重新开麦")
+	VoiceService.mic_permission_result.disconnect(callback)
+	_restore_state(saved)
 
 
 func _case_state_machine() -> void:

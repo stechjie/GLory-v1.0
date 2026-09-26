@@ -130,15 +130,20 @@ func split_clients(count: int, rendezvous: String) -> void:
 	var registered := {}
 	var next_ping := 0
 	var next_real_ping := 0
+	var next_sample := 0
 	var deadline := Time.get_ticks_msec() + clampi(int(arg("--waves", "1")), 1, 100) * 190000 + 90000
 	while Time.get_ticks_msec() < deadline:
 		var now := Time.get_ticks_usec()
+		if now >= next_sample:
+			print("CAPACITY_CLIENT_SAMPLE " + JSON.stringify(client_sample(first, now)))
+			next_sample = now + 5000000
 		for index in clients.size():
 			var client: Node = clients[index]
 			if client.multiplayer.multiplayer_peer.get_connection_status() != MultiplayerPeer.CONNECTION_CONNECTED:
 				continue
 			if not registered.has(index):
 				client._tune_peer_timeout(1)
+				client._rpc_replay_flow_ready.rpc_id(1)
 				client.capacity_register.rpc_id(1, index + first)
 				registered[index] = true
 				client._last_pong_at = client._now()
@@ -158,10 +163,40 @@ func split_clients(count: int, rendezvous: String) -> void:
 			next_ping = now + 250000
 		if clients.all(func(c): return c.phase_name == "done"):
 			break
+		# A lost registered endpoint cannot recover in this capacity fixture.
+		# Preserve local counters before exiting instead of waiting for a report
+		# request that the disconnected server can no longer deliver.
+		if registered.size() == clients.size() and clients.any(func(c): return c.disconnect_count > 0 or c.heartbeat_timeout_count > 0):
+			break
 		await get_tree().process_frame
+	print("CAPACITY_CLIENT_FINAL " + JSON.stringify(client_sample(first, Time.get_ticks_usec())))
 	h.expect(clients.all(func(c): return c.phase_name == "done"), "server_finished", "Server finished every requested phase")
 	# The isolated process owns ENet contexts until SceneTree shutdown.
 	h.finish(get_tree())
+
+func client_sample(first: int, now: int) -> Dictionary:
+	var rows: Array = []
+	for index in clients.size():
+		var client: Node = clients[index]
+		var reliable := {}
+		var transport := client.multiplayer.multiplayer_peer as ENetMultiplayerPeer
+		if transport != null and transport.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED:
+			# Query the active host peers, not a possibly removed SceneMultiplayer
+			# ID during disconnect cleanup.
+			for peer in transport.get_host().get_peers():
+				if not peer.is_active():
+					continue
+				reliable = {"rtt_ms": peer.get_statistic(ENetPacketPeer.PEER_ROUND_TRIP_TIME),
+					"loss_ratio": peer.get_statistic(ENetPacketPeer.PEER_PACKET_LOSS) / ENetPacketPeer.PACKET_LOSS_SCALE,
+					"throttle": peer.get_statistic(ENetPacketPeer.PEER_PACKET_THROTTLE)}
+		rows.append({"index": first + index, "phase": client.phase_name,
+			"reliable": reliable,
+			"status": client.multiplayer.multiplayer_peer.get_connection_status(),
+			"received": client.received_count, "failed": client.failed_count,
+			"disconnects": client.disconnect_count, "heartbeat_timeouts": client.heartbeat_timeout_count,
+			"pongs": client.real_pongs, "silence_ms": (now - client.real_last_pong_usec) / 1000.0 if client.real_last_pong_usec > 0 else -1.0,
+			"real_gap_ms": client.real_gap_usec / 1000.0})
+	return {"at_usec": now, "clients": rows}
 
 func split_phase(label: String, rooms: Array, mode: String, count: int, idle_ms: int, sequence: int = 1) -> void:
 	var expected_reports: int = server.reports.size() + count
@@ -268,7 +303,7 @@ func split_phase(label: String, rooms: Array, mode: String, count: int, idle_ms:
 	print("CAPACITY_PHASE " + JSON.stringify(stats))
 	h.expect(reports == count and stats.connected == count, label + "_peers", "Every peer stayed connected and reported")
 	h.expect(disconnected_peers == 0 and client_disconnects == 0, label + "_no_disconnects", "No transient or lasting disconnects")
-	h.expect(missing_pongs == 0 and pong_gap < 2500000, label + "_heartbeat_gap", "Every peer receives heartbeats with less than 2.5s silence")
-	h.expect(real_timeouts == 0 and missing_real_pongs == 0 and real_gap < 9500000, label + "_production_heartbeat", "Real production ping/pong cadence stays below half the timeout window")
+	h.expect(reports == count and missing_pongs == 0 and pong_gap < 2500000, label + "_heartbeat_gap", "Every peer reports heartbeats with less than 2.5s silence")
+	h.expect(reports == count and real_timeouts == 0 and missing_real_pongs == 0 and real_gap < 9500000, label + "_production_heartbeat", "Every peer reports production ping/pong cadence below half the timeout window")
 	h.expect(failed == 0 and received == rooms.size() * 4, label + "_replays", "All real replays decoded, validated and acknowledged")
 	NetworkService._rooms.clear()

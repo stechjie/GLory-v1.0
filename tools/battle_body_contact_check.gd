@@ -54,5 +54,49 @@ func _ready() -> void:
 	var alive := fighter("live",Vector2(500,260))
 	Sim._separate_units([alive,dead],[])
 	h.expect(alive.pos == Vector2(500,260),"dead_no_push","A corpse must not push a living unit")
+	_check_walking_pressure()
 	h.note("settled penetration=%.6f drift=%.6f" % [penetration(crowd),drift])
 	h.finish(get_tree())
+
+func _check_walking_pressure() -> void:
+	# Exercise the actual movement/attack branch, then the contact solver, for
+	# 60 seconds. The original resting-only tests missed this accumulating shove.
+	var defender := fighter("defender", Vector2(500,200))
+	defender.team = "enemy"
+	defender.def = {}
+	var attackers: Array = []
+	for row in 4:
+		for col in 3:
+			var unit := fighter("attacker_%d_%d" % [row,col], Vector2(466+col*34,240+row*34))
+			unit.merge({"team":"player", "def":{"no_basic_attack":true}, "range_px":32.0,
+				"move_speed_px":165.0, "next_attack":0.0})
+			attackers.append(unit)
+	var stationary: Vector2 = defender.pos
+	var worst := 0.0
+	for tick in 600:
+		Sim._step_team(attackers, [defender], float(tick)*0.1, {})
+		Sim._separate_units(attackers,[defender])
+		worst = maxf(worst, penetration(attackers+[defender]))
+	h.expect(defender.pos.distance_to(stationary) < 0.01, "walking_cannot_shove_enemy",
+		"Ordinary melee pressure moved the defender %.3fpx" % defender.pos.distance_to(stationary))
+	h.expect(worst < 0.1,"walking_keeps_collision", "Movement must block bodies; worst penetration %.3f" % worst)
+	var mover := fighter("walker",Vector2(400,260))
+	var wall := fighter("blocker",Vector2(500,260))
+	Sim._move_without_pushing(mover, Vector2(250,0), [mover,wall])
+	h.expect(mover.pos.distance_to(wall.pos) >= 29.99,"swept_contact","Fast walking cannot tunnel through a body")
+	h.expect(wall.pos == Vector2(500,260),"walking_does_not_move_blocker","Only the walker may move")
+	var a := fighter("a",Vector2(400,260))
+	var b := a.duplicate(true)
+	var obstacles := [fighter("x",Vector2(430,260)),fighter("y",Vector2(450,295))]
+	Sim._move_without_pushing(a,Vector2(30,0),obstacles)
+	obstacles.reverse()
+	Sim._move_without_pushing(b,Vector2(30,0),obstacles)
+	h.expect(a.pos == b.pos,"walking_order_independent","Obstacle array order must not change movement")
+	var caster := fighter("fear",Vector2(400,260))
+	caster.team = "player"
+	caster.def = {}
+	var victim := fighter("victim",Vector2(440,260))
+	victim.team = "enemy"
+	victim.def = {}
+	BattleSimSkills._skill_fear(caster,[victim],{}, {})
+	h.expect(victim.pos.distance_to(Vector2(530,260)) < 0.01,"skill_knockback_preserved","Explicit fear knockback still moves its target 90px")

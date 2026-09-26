@@ -374,6 +374,7 @@ func _prepare_replay_assets() -> bool:
 		if bar == null:
 			bar = _make_battle_prepare_bar()
 		bar.value = 100.0 * float(done) / float(maxi(1, total))
+		bar.get_node("StageText").text = tr("battle_load_assets") + " · %d/%d" % [done, total]
 		var failed: Array[String] = []
 		for path in model_paths + texture_paths:
 			if BattleAssetService.ready_count([path]) + VFXManager.ready_texture_count([path]) > 0:
@@ -445,7 +446,8 @@ func _prepare_battle_models() -> void:
 		done += 1
 		if done % MODELS_PER_FRAME == 0:
 			if bar != null:
-				bar.value = 100.0 * float(done) / float(maxi(1, total))
+				bar.value = 40.0 * float(done) / float(maxi(1, total))
+				bar.get_node("StageText").text = tr("battle_load_models") + " · %d/%d" % [done,total]
 			await get_tree().process_frame
 			if not is_inside_tree() or _finished or _prepare_deadline_expired():
 				# 中途退出也要把根恢复可见，否则这个节点被复用时棋盘是空的。
@@ -460,7 +462,8 @@ func _prepare_battle_models() -> void:
 	var render_report: Dictionary = await warmup.prepare_replays([_replay_own, _replay_rival], _battle_3d_viewport,
 		func(ready: int, count: int):
 			if is_instance_valid(bar):
-				bar.value = 100.0 * float(ready) / float(maxi(1, count)),
+				bar.value = 40.0 + 50.0 * float(ready) / float(maxi(1, count))
+				bar.get_node("StageText").text = tr("battle_load_effects") + " · %d/%d" % [ready,count],
 		func() -> bool: return is_inside_tree() and not _finished and not _return_emitted,
 		_battle_prepare_deadline_msec)
 	battle_preparation_report["effects"] = render_report.duplicate(true)
@@ -476,6 +479,8 @@ func _prepare_battle_models() -> void:
 		_fail_team_replay(str(render_report.get("error", "battle_render_prepare_failed")))
 		return
 	_refresh_visuals()
+	bar.value = 90.0
+	bar.get_node("StageText").text = tr("battle_load_scene")
 	if _battle_3d_root != null:
 		_battle_3d_root.visible = true
 	# Group heals pair nearby geometry with Omni lights. GLES creates a
@@ -585,6 +590,18 @@ func _make_battle_prepare_bar() -> ProgressBar:
 	bar.add_theme_stylebox_override("background", bg)
 	bar.add_theme_stylebox_override("fill", fill)
 	add_child(bar)
+	var label := Label.new()
+	label.name = "StageText"
+	label.text = tr("battle_load_models")
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	label.offset_top = 12.0
+	label.add_theme_font_size_override("font_size", 20)
+	label.add_theme_color_override("font_color", Color.WHITE)
+	label.add_theme_color_override("font_outline_color", Color(0,0,0,0.9))
+	label.add_theme_constant_override("outline_size", 5)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.add_child(label)
 	return bar
 
 func _try_start_final_round_intro() -> void:

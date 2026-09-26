@@ -18,6 +18,8 @@ extends RefCounted
 
 const PACK_HEADER_BYTES := 8
 const MAX_UNCOMPRESSED_BYTES := 16 * 1024 * 1024
+const MAX_EXPANDED_BYTES := 64 * 1024 * 1024
+const DEAD_REFERENCE_KEY := "_dead_frame_refs_v1"
 
 # 本客户端这一回合的 replay（B3，host 权威）
 var team_replay: Dictionary = {}
@@ -67,6 +69,13 @@ func pack_with_metrics(replay: Dictionary, battle_id: String = "") -> Dictionary
 		payload["battle_id"] = battle_id
 	var started := Time.get_ticks_usec()
 	var raw := var_to_bytes(payload)
+	# Long battles retain dead units in every frame. Encode identical dead rows
+	# as UID references without changing simulation or playback data. The decoder
+	# retains the wire cap and checks a separate expansion budget before cloning.
+	if raw.size() > MAX_UNCOMPRESSED_BYTES and raw.size() <= MAX_EXPANDED_BYTES:
+		var compact := _compact_dead_frames(payload)
+		if not compact.is_empty():
+			raw = var_to_bytes(compact)
 	metrics.serialize_usec = Time.get_ticks_usec() - started
 	metrics.raw_bytes = raw.size()
 	if raw.size() > MAX_UNCOMPRESSED_BYTES:
@@ -92,7 +101,7 @@ func unpack(packed: PackedByteArray) -> Dictionary:
 		return {}
 	var declared := int(packed.decode_u64(0))
 	# 防解压炸弹：只看头 8 字节就能判掉「几 KB 压缩包声称解出几 GB」，
-	# 全程不解压、不分配。实测最坏原始 3.6 MB，16 MB 是 4 倍余量。
+	# 全程不解压、不分配。压缩帧引用在解码时另有展开预算。
 	if declared <= 0 or declared > MAX_UNCOMPRESSED_BYTES:
 		_log("replay unpack rejected: declared=%d cap=%d packed=%d" % [
 			declared, MAX_UNCOMPRESSED_BYTES, packed.size()])
@@ -105,7 +114,88 @@ func unpack(packed: PackedByteArray) -> Dictionary:
 	# 用 bytes_to_var 而不是 bytes_to_var_with_objects：后者能从字节流里构造对象，
 	# 在明文链路上（C14 未做）等于给中间人一个执行面。
 	var value = bytes_to_var(raw)
-	return value if typeof(value) == TYPE_DICTIONARY else {}
+	if typeof(value) != TYPE_DICTIONARY:
+		return {}
+	if value.has(DEAD_REFERENCE_KEY):
+		return _expand_dead_frames(value, raw.size())
+	return value
+
+
+func _compact_dead_frames(payload: Dictionary) -> Dictionary:
+	if payload.has(DEAD_REFERENCE_KEY) or not payload.get("frames") is Array:
+		return {}
+	var frames: Array = payload.frames
+	if frames.size() > 3601:
+		return {}
+	var last_dead: Dictionary = {}
+	var encoded: Array = []
+	for frame in frames:
+		if not frame is Array or frame.size() > 512:
+			return {}
+		var rows: Array = []
+		for row in frame:
+			if not row is Array or row.size() < 5 or not row[0] is String or not row[4] is bool:
+				return {}
+			var uid: String = row[0]
+			if row[4]:
+				last_dead.erase(uid)
+				rows.append(row)
+				continue
+			var bytes := var_to_bytes(row)
+			if last_dead.has(uid) and last_dead[uid] == bytes:
+				rows.append(uid)
+			else:
+				rows.append(row)
+				last_dead[uid] = bytes
+		encoded.append(rows)
+	var result := payload.duplicate(false)
+	result.frames = encoded
+	result[DEAD_REFERENCE_KEY] = true
+	return result
+
+
+func _expand_dead_frames(payload: Dictionary, wire_bytes: int) -> Dictionary:
+	if payload.get(DEAD_REFERENCE_KEY) != true or not payload.get("frames") is Array:
+		return {}
+	var frames: Array = payload.frames
+	if frames.size() > 3601:
+		return {}
+	var last_dead: Dictionary = {}
+	var sizes: Dictionary = {}
+	var expanded_bytes := wire_bytes
+	# First validate and budget every reference. No row clones until the entire
+	# input is known to fit; a malicious tail cannot retain a partial expansion.
+	for frame in frames:
+		if not frame is Array or frame.size() > 512:
+			return {}
+		for row in frame:
+			if row is String:
+				if not last_dead.has(row):
+					return {}
+				expanded_bytes += int(sizes[row])
+				if expanded_bytes > MAX_EXPANDED_BYTES:
+					return {}
+			elif row is Array and row.size() >= 5 and row[0] is String and row[4] is bool:
+				var uid: String = row[0]
+				if row[4]:
+					last_dead.erase(uid)
+				else:
+					last_dead[uid] = row
+					sizes[uid] = var_to_bytes(row).size()
+			else:
+				return {}
+	last_dead.clear()
+	for frame in frames:
+		for i in frame.size():
+			var row = frame[i]
+			if row is String:
+				frame[i] = last_dead[row].duplicate(true)
+			elif row[4]:
+				last_dead.erase(row[0])
+			else:
+				last_dead[row[0]] = row
+	payload.erase(DEAD_REFERENCE_KEY)
+	return payload
 
 
 func _log(message: String) -> void:

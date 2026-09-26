@@ -8,6 +8,7 @@ const BattleSim = preload("res://scripts/battle/BattleSimulator.gd")
 # 只为拿它的 static 资源缓存（BattleRenderer.gd 没有 class_name）。战斗资源在这里
 # 就绪之后，BattleScreen 那边 _scene_for_model_path 直接命中缓存、不再同步读盘。
 const BattleRendererScript = preload("res://scenes/battle/BattleRenderer.gd")
+const PrepRenderWarmup = preload("res://scripts/assets/BattleRenderWarmup.gd")
 # 9.17 第二批：BGM 走常驻的 MusicService。
 const MusicService := preload("res://ui/services/MusicService.gd")
 const BattleLoadingOverlayScene := preload("res://ui/components/GloryLoadingOverlay.tscn")
@@ -16,8 +17,9 @@ const BattleLoadingOverlayScript := preload("res://ui/components/GloryLoadingOve
 const PREP_MUSIC_PATH := "res://assets/audio/bgm/prep_music.mp3"
 const PREP_PVP_MUSIC_PATH := "res://assets/audio/bgm/pvp_round_music.mp3"
 # Player-facing frame rate only. Build identity remains in the startup log.
-# BattleScreen path: loaded on Start Battle before entering battle.
+# BattleScreen is prefetched during deployment and retained across rounds.
 const BATTLE_SCREEN_PATH := "res://scenes/battle/BattleScreen.tscn"
+static var _cached_battle_scene: PackedScene
 # 临时缓解（B7），不是修复。这是**主路径**的超时：原值 20 秒短于服务器的
 # BOARD_SUBMIT_TIMEOUT_SEC(30)，任何需要看门狗兜底的回合，客户端都会先一步取消
 # 战斗准备退回备战，而服务器随后才补交/转 AI —— 迟到的结算会跳过单位阵亡与成长，
@@ -124,6 +126,9 @@ func _ready() -> void:
 		TutorialMode.attach(tutorial_target_provider())
 	_maybe_show_pvp_warning.call_deferred(PrepRules.next_round_kind())
 	startup_ready.emit()
+	# Start disk/script loading while the player deploys pieces, not on Ready.
+	_prefetch_battle_scene.call_deferred()
+	_warm_deployed_effects.call_deferred()
 
 func _start_prep_music() -> void:
 	# 下一回合是 PVP（含最终 PVP）时放专属音乐，否则放普通摆放音乐。
@@ -372,9 +377,7 @@ func _emit_battle_request_once() -> void:
 	_battle_launch_emitted = true
 	_battle_transition_running = true
 	GameState.clear_pending_battle_package()
-	_loaded_battle_scene = null
-	_battle_thread_requested = false
-	_battle_thread_path = ""
+	_loaded_battle_scene = _cached_battle_scene if _battle_scene_path() == BATTLE_SCREEN_PATH else null
 	if _start_battle_button != null:
 		_start_battle_button.show_pending(request_id, tr("battle_load_busy"))
 	if not _open_battle_loading_overlay(request_id, cancellable):
@@ -482,18 +485,94 @@ func _preload_battle_assets(request_id: String) -> void:
 func is_committing_to_battle() -> bool:
 	return _battle_launch_emitted or _battle_transition_running
 
+func _prefetch_battle_scene() -> void:
+	_start_battle_thread_load()
+	while is_inside_tree() and not _battle_transition_running:
+		if _harvest_battle_scene():
+			return
+		if ResourceLoader.load_threaded_get_status(_battle_thread_path) != ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+			return
+		await get_tree().process_frame
+
+# Incremental render preparation uses only already-visible pieces and the next
+# deterministic PvE roster. The real replay remains authoritative; unexpected
+# opponents/summons are prepared by BattleScreen's existing fallback.
+func _warm_deployed_effects() -> void:
+	if DisplayServer.get_name() == "headless" or _prep_river_viewport == null:
+		return
+	var warmup := PrepRenderWarmup.new()
+	add_child(warmup)
+	var warmed_signature := -1
+	while is_inside_tree() and not is_committing_to_battle():
+		await get_tree().create_timer(1.0).timeout
+		if not is_inside_tree() or is_committing_to_battle():
+			break
+		var replay := _effect_prefetch_replay()
+		var signature := hash([replay, VFXManager.get_quality_tier()])
+		if signature == warmed_signature:
+			continue
+		var paths := BattleAssetManifest.replay_texture_paths(replay)
+		VFXManager.preload_textures(paths)
+		# Never synchronously read a texture from an effect constructor in prep.
+		if VFXManager.ready_texture_count(paths) != paths.size():
+			continue
+		var report: Dictionary = await warmup.prepare_replays([replay], _prep_river_viewport, Callable(),
+			func() -> bool: return is_inside_tree() and not is_committing_to_battle())
+		if bool(report.get("ok", false)):
+			warmed_signature = signature
+	if is_instance_valid(warmup):
+		warmup.queue_free()
+
+func _effect_prefetch_replay() -> Dictionary:
+	var roster := {}
+	for cell in GameState.board_slots + GameState.mercenary_slots:
+		if cell is Dictionary:
+			var definition: Dictionary = cell.get("def", {})
+			var unit_id := str(cell.get("id", definition.get("id", "")))
+			if not unit_id.is_empty():
+				roster[unit_id] = {"id":unit_id, "def":definition}
+	# In prep, round_index already names the battle about to start.
+	var pending_round := GameState.round_index
+	var kind := RoundService.schedule_kind_for_round(pending_round)
+	if BattleAssetManifest.has_seed() and kind not in ["pvp", "final"]:
+		var definitions := [BattleSimShared._round_monster_template(pending_round)]
+		if kind == "boss":
+			definitions.append(BattleSimShared._round_boss_template(pending_round))
+		for definition: Dictionary in definitions:
+			var unit_id := str(definition.get("id", ""))
+			if not unit_id.is_empty():
+				roster[unit_id] = {"id":unit_id, "def":definition}
+	return {"roster":roster}
+
+var _battle_thread_type_invalid := false
+
+func _harvest_battle_scene() -> bool:
+	if _battle_scene_path() == BATTLE_SCREEN_PATH and _cached_battle_scene != null:
+		_loaded_battle_scene = _cached_battle_scene
+		return true
+	if not _battle_thread_requested or ResourceLoader.load_threaded_get_status(_battle_thread_path) != ResourceLoader.THREAD_LOAD_LOADED:
+		return false
+	_loaded_battle_scene = ResourceLoader.load_threaded_get(_battle_thread_path) as PackedScene
+	_battle_thread_type_invalid = _loaded_battle_scene == null
+	if _battle_thread_path == BATTLE_SCREEN_PATH:
+		_cached_battle_scene = _loaded_battle_scene
+	return _loaded_battle_scene != null
+
 func _start_battle_thread_load() -> void:
-	if _battle_thread_requested:
+	if _battle_thread_requested and _battle_thread_path == _battle_scene_path():
 		return
 	_battle_thread_requested = true
+	_battle_thread_type_invalid = false
 	_battle_thread_path = _battle_scene_path()
+	if _battle_thread_path == BATTLE_SCREEN_PATH and _cached_battle_scene != null:
+		_loaded_battle_scene = _cached_battle_scene
+		return
 	var err := ResourceLoader.load_threaded_request(_battle_thread_path)
 	if err != OK and err != ERR_BUSY:
 		push_warning("BattleScreen async load request failed: %s (%s)" % [err, _battle_thread_path])
 
 func _finish_battle_thread_load(request_id: String) -> bool:
-	if not _battle_thread_requested:
-		_start_battle_thread_load()
+	_start_battle_thread_load()
 	var scene_path := _battle_thread_path
 	if scene_path.is_empty():
 		scene_path = _battle_scene_path()
@@ -501,6 +580,12 @@ func _finish_battle_thread_load(request_id: String) -> bool:
 	var progress := []
 	while true:
 		if not _battle_request_is_active(request_id):
+			return false
+		if _harvest_battle_scene():
+			_set_battle_stage("load_battle_scene", tr("battle_load_scene"), "", 0.70)
+			return true
+		if _battle_thread_type_invalid:
+			_set_battle_failure("BATTLE_SCENE_EMPTY", tr("battle_load_error_scene"), true)
 			return false
 		var status := ResourceLoader.load_threaded_get_status(scene_path, progress)
 		if not progress.is_empty():

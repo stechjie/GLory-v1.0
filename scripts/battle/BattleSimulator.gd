@@ -593,6 +593,7 @@ static func _add_mercenary_fighters(out: Array, mercenary_slots: Array, team: St
 
 static func _step_team(team_units: Array, opponents: Array, elapsed: float, state: Dictionary) -> void:
 	var target_index := _attack_target_index(opponents)
+	var bodies := team_units + opponents
 	for f: Dictionary in team_units:
 		if not bool(f.get("alive", false)):
 			continue
@@ -610,7 +611,7 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 		if dist > attack_distance + ATTACK_RANGE_EPS:
 			var step := minf(float(f.move_speed_px) * StatusEffectService.move_speed_multiplier(f) * TICK_SEC, maxf(0.0, dist - attack_distance))
 			if dist > 0.001:
-				f.pos += delta.normalized() * step
+				_move_without_pushing(f, delta.normalized() * step, bodies)
 		elif elapsed >= float(f.next_attack):
 			# 无普攻的单位（法师，9.14 反馈：文案写「无普攻」但实测会普攻）。
 			# 只跳过攻击分支 —— 上面的移动分支照常执行，所以法师仍然会走到射程
@@ -639,6 +640,57 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 			DamageService.clear_stat_context()
 
 
+# Ordinary walking consumes only the walker's displacement. A following unit
+# must never inject momentum into a stationary ally/enemy through the overlap
+# solver. Sweep circles to the first contact, then slide the remaining movement
+# along that contact; skills still write their explicit displacement separately.
+static func _move_without_pushing(f: Dictionary, displacement: Vector2, bodies: Array) -> void:
+	var position: Vector2 = f.pos
+	var remaining := displacement
+	var radius := body_radius(f)
+	for iteration in 3:
+		var length := remaining.length()
+		if length < 0.001:
+			break
+		var direction := remaining / length
+		var travel := length
+		var normal := Vector2.ZERO
+		var hit_uid := ""
+		for other: Dictionary in bodies:
+			if is_same(other, f) or not bool(other.get("alive", false)) or int(other.get("hp", 0)) <= 0:
+				continue
+			var offset: Vector2 = position - Vector2(other.pos)
+			var minimum := radius + body_radius(other) + 0.01
+			if absf(offset.x) > minimum + length or absf(offset.y) > minimum + length:
+				continue
+			var towards := offset.dot(direction)
+			# An existing spawn/skill overlap can move out, never deeper in.
+			if towards >= 0.0:
+				continue
+			var discriminant := towards * towards - (offset.length_squared() - minimum * minimum)
+			if discriminant < 0.0:
+				continue
+			var contact := maxf(0.0, -towards - sqrt(discriminant))
+			var uid := str(other.get("uid", ""))
+			if contact > travel or (is_equal_approx(contact, travel) and not hit_uid.is_empty() and uid >= hit_uid):
+				continue
+			travel = contact
+			normal = (offset + direction * contact).normalized()
+			hit_uid = uid
+		position += direction * travel
+		if normal == Vector2.ZERO:
+			break
+		remaining = direction * (length - travel)
+		remaining -= normal * minf(0.0, remaining.dot(normal))
+		# Head-on blockers have no natural tangent. Walk around with a stable
+		# UID tie-break instead of repeatedly pushing the blocker each tick.
+		if remaining.length_squared() < 0.000001 and length - travel > 0.001:
+			var side := 1.0 if str(f.get("uid", "")) < hit_uid else -1.0
+			remaining = Vector2(-normal.y, normal.x) * (length - travel) * side
+	f.pos = Vector2(clampf(position.x, 45.0, ARENA_W - 45.0), clampf(position.y, 40.0, ARENA_H - 40.0))
+
+
+# Residual spawn/skill overlaps only; walking above cannot create penetration.
 # Deterministic body constraints, solved against the updated positions rather
 # than summing opposing pushes from an obsolete snapshot. Dense crowds need
 # several bounded passes; a large footprint is heavier, not infinitely pinned.

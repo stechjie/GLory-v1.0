@@ -59,7 +59,12 @@ class GloryVoiceExport extends EditorExportPlugin:
 		return "GloryVoice"
 
 	func _supports_platform(platform: EditorExportPlatform) -> bool:
-		return platform is EditorExportPlatformAndroid
+		return platform is EditorExportPlatformAndroid or platform.get_os_name() == "iOS"
+
+	func _get_export_options_overrides(platform: EditorExportPlatform) -> Dictionary:
+		if platform.get_os_name() == "iOS":
+			return {"privacy/microphone_usage_description": "用于队伍语音聊天，仅在您主动开启麦克风时录音。"}
+		return {}
 
 	func _get_android_libraries(_platform: EditorExportPlatform, _debug: bool) -> PackedStringArray:
 		# 🔴 无条件。没有开关可关 —— 见文件头：开关两次让语音悄悄从包里消失。
