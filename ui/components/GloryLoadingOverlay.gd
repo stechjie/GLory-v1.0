@@ -79,7 +79,7 @@ func configure(spec: Dictionary) -> void:
 	_cancellable = bool(spec.get("cancellable", false))
 	_cancel_reason = str(spec.get("cancel_reason", ""))
 	_cancel_button.visible = _cancellable
-	_cancel_button.text = str(spec.get("cancel_text", "取消并返回备战"))
+	_cancel_button.text = str(spec.get("cancel_text", "取消并返回摆放界面"))
 	_policy_label.text = str(spec.get("cancel_reason", ""))
 	_policy_label.visible = not _policy_label.text.is_empty()
 	set_stage(

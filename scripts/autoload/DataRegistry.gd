@@ -24,6 +24,7 @@ const DATA_FILES := {
 	"treasures": "res://data/treasure/treasures.json",
 	"formation_allies": "res://data/formation/formation_allies.json",
 	"pets": "res://data/pets/pets.json",
+	"prep_skins": "res://data/prep_skins.json",
 }
 
 signal ready_changed(state: int)

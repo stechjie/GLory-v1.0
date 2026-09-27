@@ -16,8 +16,9 @@
     → 你连战斗服务器时把名片交上去
     → 战斗服务器用公钥验签，整张名片记在座位上，**整局都以它为准**
 
-重连回到同一个座位，名片还在，宠物 / 种族 / 头像全都一样。以后加皮肤、加要解锁的种族，
-就是往名片里加一个字段，**不再发明第四种做法**。
+重连回到同一个座位，名片还在，宠物 / 种族 / 头像全都一样。以后加对局里别人看得见的皮肤、
+加要解锁的种族，就是往名片里加一个字段，**不再发明第四种做法**。
+（棋盘皮肤只有自己看得见，不进名片，见下面「棋盘皮肤」一节。）
 
 ## 分工
 
@@ -124,6 +125,55 @@ async def save_races(player_id: uuid.UUID, races: list[str]) -> list[str]:
             "update players set selected_races = $2 where player_id = $1",
             player_id, clean)
     return clean
+
+
+# --- 棋盘皮肤 -----------------------------------------------------------------
+#
+# 在「备战」页换，显示在对局里的摆放界面（docs/棋盘皮肤.md，database/021_prep_skin.sql）。
+#
+# 🔴 **不进名片**：只有自己看得见（游戏里没有看别人摆放界面的功能），战斗服务器用不到它。
+#
+# 皮肤 id 不查目录：卖的皮肤一定在商城目录里（shop.requires_entitlement 管），不在目录里的
+# 一律当免费。手机上没有这张图就显示默认，所以存了一个手机不认识的 id 也不会出事。
+
+PREP_SKIN_DEFAULT = "prep_skin_default"
+# 与 database/021_prep_skin.sql 的约束一致 —— 这里先挡，给出 400 和一句人话。
+_PREP_SKIN_ID = re.compile(r"^prep_skin_[a-z0-9_]{1,54}$")
+
+
+def clean_prep_skin(value: object) -> str | None:
+    """格式校验。选回默认一律返回 None（库里存 null，同一个意思只有一种写法）。"""
+    if value is None or value == "" or value == PREP_SKIN_DEFAULT:
+        return None
+    if not isinstance(value, str) or not _PREP_SKIN_ID.match(value):
+        raise LoadoutRejected("bad_prep_skin", "皮肤 id 格式不对")
+    return value
+
+
+async def _prep_skin_usable(player_id: uuid.UUID, skin: str) -> bool:
+    if not shop.requires_entitlement(skin):
+        return True
+    return skin in set(await shop.read_entitlements(player_id))
+
+
+async def read_prep_skin(player_id: uuid.UUID) -> str | None:
+    """None = 默认。退款收回之后库里可能还指着那张 —— 读的时候再过一遍资格，没资格就当默认。"""
+    async with db.pool().acquire() as conn:
+        skin = await conn.fetchval("select prep_skin from players where player_id = $1", player_id)
+    if skin and not await _prep_skin_usable(player_id, skin):
+        return None
+    return skin or None
+
+
+async def save_prep_skin(player_id: uuid.UUID, value: object) -> str | None:
+    """存棋盘皮肤。卖的皮肤要先买了才能选。"""
+    skin = clean_prep_skin(value)
+    if skin is not None and not await _prep_skin_usable(player_id, skin):
+        raise LoadoutRejected("prep_skin_not_owned", "你还没有这个皮肤")
+    async with db.pool().acquire() as conn:
+        await conn.execute(
+            "update players set prep_skin = $2 where player_id = $1", player_id, skin)
+    return skin
 
 
 # --- 名片内容 -----------------------------------------------------------------

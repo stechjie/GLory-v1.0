@@ -18,6 +18,7 @@ extends Node
 # 所以「没找到引用」对这些目录完全没有说服力，一律视为在用。
 # 来源：grep 'res://assets/<dir>/' 的全部命中。
 const DYNAMIC_DIRS := [
+	"res://assets/skins",  # 棋盘皮肤：目录在 data/prep_skins.json，路径由 PrepSkin 拼
 	"res://assets/ui/codex_portraits",
 	"res://assets/ui/mercenary_portraits",
 	"res://assets/ui/race_logos",

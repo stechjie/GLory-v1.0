@@ -7,6 +7,8 @@ const PREP_RELATION_PARTICLES_SCRIPT := preload("res://scenes/prep/PrepRelationP
 # 都从这里继承，子类再声明一次会撞「成员在父类里已存在」的解析错误。
 # preload 而不是全局类名，理由见 Main.gd 顶上那条注释。
 const SfxService := preload("res://ui/services/SfxService.gd")
+# 棋盘底图、下河流、待命区、萝卜、商店按钮这几张图随皮肤换，路径一律问它。
+const PrepSkin := preload("res://scenes/prep/PrepSkin.gd")
 const PREP_RELATION_LINK_SCRIPT := preload("res://scenes/prep/PrepRelationLink3D.gd")
 const UnitActor3DScript := preload("res://effects/runtime/presentation/UnitActor3D.gd")
 const UnitVisualResolverScript := preload("res://effects/runtime/presentation/UnitVisualResolver.gd")
@@ -79,14 +81,12 @@ func play_four_star_upgrade(uid: String) -> void:
 # 见下方 _add_prep_art_layers()。原来的两个路径常量与 _apply_prep_river_material()
 # 指向的 assets/models/prep/river_arena/ 目录早已不存在，且全仓无调用点，
 # 于 2026-08-18 随 A1 资产清单一并清理。
-# 2.5D 分层棋盘背景图（贴在 3D 平躺地面 quad 上，和棋子一起呈现 TFT 倾斜纵深）
-const PREP_BOARD_BASE_PATH := "res://assets/board/prep_2_5d/glory_grass_base_2560x1440.png"
+# 2.5D 分层棋盘背景图（贴在 3D 平躺地面 quad 上，和棋子一起呈现 TFT 倾斜纵深）随皮肤换，见 PrepSkin.SLOTS。
 # 每个 4×4 格子上的站位图案（站位.png）——3D 地面 quad，模型在其上方不会被盖。
 const PREP_CELL_MARK_PATH := "res://assets/board/prep_2_5d/board_cell_mark.png"
 const PREP_CELL_MARK_SIZE := Vector2(0.6, 0.6)   # 每张站位图的世界尺寸（可调大小）
 const PREP_CELL_MARK_Y_LIFT := 0.005             # 抬离地面高度（河流之上、模型之下）
 const PREP_RIVER_TOP_PATH := "res://assets/board/prep_2_5d/prep20_river_top.png"        # 上河流（黑底，shader 键透明+流动）
-const PREP_RIVER_BOTTOM_PATH := "res://assets/board/prep_2_5d/prep20_river_bottom.png"  # 下河流：恢复原始窄带高度
 # ══════ 整块棋盘的「大小 / 位置」══════
 #  改这两个会连 石台+格子+棋子+待命区+河流 一起动（它们都贴在这块地面上，不是只动棋盘）。
 # 大小：x=宽、y=进深；调大 = 整个场地变大。
@@ -98,8 +98,6 @@ const PREP_BOARD_GROUND_FLIP_V := false                  # 若图上下颠倒则
 const PREP_RIVER_FLOW_SHADER := "res://assets/shaders/prep_river_flow.gdshader"
 const PREP_RIVER_TOP_EF_PATH := "res://assets/board/prep_2_5d/prep20_river_top_ef.png"
 const PREP_RIVER_BOTTOM_EF_PATH := "res://assets/board/prep_2_5d/prep20_river_bottom_ef.png"
-const PREP_CARROT_PROP_PATH := "res://assets/props/prep/carrot_gathering_v1.png"
-const PREP_CARROT_FARM_DECOR_PATH := "res://assets/props/carrot_system/vfx/atlas_farm_level_decorations.png"
 const PREP_CARROT_DIG_PATH := "res://assets/props/carrot_system/vfx/atlas_digging_dust_4x4.png"
 const PREP_CARROT_LEVELUP_PATH := "res://assets/props/carrot_system/vfx/atlas_farm_levelup_4x4.png"
 const CARROT_PET_POSITIONS := [
@@ -127,7 +125,6 @@ const STANDBY_MODEL_DX := 0.0   # 待命模型左右微调（不动圆圈）
 const STANDBY_MODEL_DZ := 0.02  # Body center sits slightly above the platform center after foot anchoring.
 const STANDBY_MODEL_SPREAD := 0.94  # Body height expands the apparent spacing toward the screen edges.
 # 待命区背景平台：做成 3D 地面 quad（不是 2D 贴图），模型是地面上方的 3D 物体，自然盖在它上面。
-const PREP_STANDBY_BG_PATH := "res://assets/board/prep_2_5d/standby_bg.png"
 const PREP_STANDBY_BG_CENTER_UV := Vector2(0.49, 0.820)  # 平台中心 UV（默认对齐待命格子中心/前后）
 const PREP_STANDBY_BG_WORLD_SIZE := Vector2(3.5, 1.58)     # 平台 quad 世界尺寸（宽 × 进深），可调
 const PREP_STANDBY_BG_Y_LIFT := 0.006                     # 抬离地面高度（河流之上、模型之下）
@@ -149,7 +146,6 @@ var _carrot_pet_nodes: Array[Node3D] = []
 var _carrot_pet_nodes_by_slot: Dictionary = {}
 var _carrot_placeholder: Node3D
 var _carrot_pet_signature := ""
-var _carrot_farm_decor: Sprite3D
 var _carrot_last_farm_level := -1
 var _carrot_vfx_serial := 0
 var _prep_river_viewport: SubViewport
@@ -282,7 +278,7 @@ func _setup_carrot_gathering() -> void:
 	_carrot_placeholder = Node3D.new()
 	_carrot_placeholder.name = "CarrotVisual"
 	_carrot_gather_root.add_child(_carrot_placeholder)
-	var carrot_texture := ResourceLoader.load(PREP_CARROT_PROP_PATH) as Texture2D
+	var carrot_texture := ResourceLoader.load(PrepSkin.path("carrot")) as Texture2D
 	if carrot_texture != null:
 		var carrot_sprite := Sprite3D.new()
 		carrot_sprite.name = "CarrotGeneratedSprite"
@@ -301,37 +297,12 @@ func _setup_carrot_gathering() -> void:
 	else:
 		# Keep a readable development fallback if the imported PNG is unavailable.
 		_add_carrot_placeholder_fallback()
-	_setup_carrot_farm_decoration()
 	_refresh_carrot_gathering()
 
-func _setup_carrot_farm_decoration() -> void:
-	var texture := ResourceLoader.load(PREP_CARROT_FARM_DECOR_PATH) as Texture2D
-	if texture == null:
-		return
-	_carrot_farm_decor = Sprite3D.new()
-	_carrot_farm_decor.name = "CarrotFarmLevelDecoration"
-	_carrot_farm_decor.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	_carrot_farm_decor.pixel_size = 0.00032
-	_carrot_farm_decor.position = Vector3(0.0, 0.09, -0.025)
-	_carrot_farm_decor.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	_carrot_farm_decor.transparent = true
-	_carrot_farm_decor.shaded = false
-	_carrot_farm_decor.no_depth_test = false
-	_carrot_gather_root.add_child(_carrot_farm_decor)
-
+# 萝卜田升级只放一次爆光和升级音。萝卜后面原来按等级摆的花坛 / 金桂冠（2026-09-26 他定）
+# 所有皮肤都不要了 —— 冰萝卜后面露出泥土花坛很怪，草地也一起拿掉；等级在萝卜营地面板里看。
 func _refresh_carrot_farm_visual() -> void:
 	var farm_level := GameState.carrot_farm_level()
-	if _carrot_farm_decor != null and is_instance_valid(_carrot_farm_decor):
-		# The tall foliage tiers looked like a second, shorter carrot.  Early
-		# levels use the single authored carrot; later levels add only a low
-		# planting ring or the final golden wreath around its base.
-		_carrot_farm_decor.visible = farm_level >= 2
-		if _carrot_farm_decor.visible:
-			var atlas := AtlasTexture.new()
-			atlas.atlas = ResourceLoader.load(PREP_CARROT_FARM_DECOR_PATH) as Texture2D
-			var tier := 2 if farm_level < 4 else 3
-			atlas.region = Rect2((tier % 2) * 512, (tier / 2) * 512, 512, 512)
-			_carrot_farm_decor.texture = atlas
 	if _carrot_last_farm_level >= 0 and farm_level > _carrot_last_farm_level:
 		_play_carrot_world_flipbook(PREP_CARROT_LEVELUP_PATH, 0.23, 0.00058)
 		# 9.17：萝卜田升级音。萝卜田是**自动**升级的（累计花萝卜到达门槛就升，
@@ -623,10 +594,12 @@ func _carrot_pet_aabb(root: Node3D) -> AABB:
 
 func _add_prep_art_layers(world: Node3D) -> void:
 	# v4 横向竞技场，一层一层贴在平躺 3D 平面上（保留 2.5D 倾斜）
-	_add_prep_texture_plane(world, "PrepBaseLayer", PREP_BOARD_BASE_PATH, 0.000, 0)
+	_add_prep_texture_plane(world, "PrepBaseLayer", PrepSkin.path("board"), 0.000, 0)
 	# 下河流：黑底贴图，flow shader 键透明 + 横向滚动流动
-	_add_prep_texture_plane(world, "PrepRiverBottomLayer", PREP_RIVER_BOTTOM_PATH, 0.002, 2)
-	_add_prep_river_flow(world)
+	_add_prep_texture_plane(world, "PrepRiverBottomLayer", PrepSkin.path("river"), 0.002, 2)
+	# 流动波光是照草地河道画的，皮肤可以关掉它（data/prep_skins.json 的 river_glow）。
+	if PrepSkin.river_glow():
+		_add_prep_river_flow(world)
 	# 主战场 4×4：每格一张站位图（3D 地面 quad）。发光环仍由代码画在上层。
 	_add_prep_cell_marks(world)
 	# 待命区背景平台：3D 地面 quad，模型是地面上方 3D 物体，自然盖在它上面（修好被 2D 背景压掉的问题）
@@ -668,9 +641,10 @@ func _add_prep_cell_marks(world: Node3D) -> void:
 
 func _add_prep_standby_bg_plane(world: Node3D) -> void:
 	# 待命区背景做成 3D 地面 quad：躺在待命格子位置，被模型自然遮挡（模型在地面上方，深度更近）。
-	var tex := ResourceLoader.load(PREP_STANDBY_BG_PATH) as Texture2D
+	var bench_path := PrepSkin.path("bench")
+	var tex := ResourceLoader.load(bench_path) as Texture2D
 	if tex == null:
-		push_warning("待命区背景加载失败：%s" % PREP_STANDBY_BG_PATH)
+		push_warning("待命区背景加载失败：%s" % bench_path)
 		return
 	var layer := MeshInstance3D.new()
 	layer.name = "PrepStandbyBgLayer"
@@ -750,13 +724,13 @@ func _add_one_river_flow_quad(world: Node3D, node_name: String, ef_path: String,
 	world.add_child(quad)
 
 func _add_prep_ambient_particles(world: Node3D) -> void:
-	# 魔法森林氛围：全场金色萤火虫缓慢飘浮 + 下河面青色星光闪烁
+	# 全场萤火虫缓慢飘浮（颜色随皮肤，默认金色；冰雪是白色雪点）+ 下河面青色星光闪烁
 	var dot := _make_soft_dot_texture()
 	var ground := PREP_BOARD_GROUND_CENTER
 	world.add_child(_make_prep_drift_particles(
 		"PrepFireflies", dot,
 		ground + Vector3(0.0, 0.30, 0.0), Vector3(3.4, 0.26, 1.9),
-		34, 7.0, Color(1.0, 0.85, 0.45), 0.5, 1.1, 0.05
+		34, 7.0, PrepSkin.firefly_color(), 0.5, 1.1, 0.05
 	))
 	var bottom_center := _board_plane_world_pos(0.5, 0.905) + Vector3(0.0, 0.05, 0.0)
 	world.add_child(_make_prep_drift_particles(

@@ -28,10 +28,10 @@ import logging
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
-from app import db, players, shop
+from app import client_version, db, players, shop
 from app.jwt_verify import Claims
 from app.rate_limit import RateLimited, SlidingWindowLimiter
 from app.routes.me import current_claims
@@ -64,6 +64,18 @@ _STATUS_BY_CODE = {
     # 另外两个要弹的是错误提示。
     "insufficient_funds": 402,
 }
+
+# 棋盘皮肤从 versionCode 17 的包开始才认识。更早的包会把不认识的种类当成头像显示，
+# 能买却用不了（ShopScreen._item_category 不认识的一律归头像），所以不发给它们。
+# 编辑器里跑（build=0）照发，不然开发时看不到。
+PREP_SKIN_MIN_BUILD = 17
+
+
+def visible_to(item: shop.Item, build: int | None) -> bool:
+    """这个版本的客户端该不该看到这件商品。build 见 client_version.build_of。"""
+    if item.kind != "prep_skin":
+        return True
+    return build is not None and (build == 0 or build >= PREP_SKIN_MIN_BUILD)
 
 
 class ItemModel(BaseModel):
@@ -181,13 +193,15 @@ def _check_rate(player_id: uuid.UUID) -> None:
 
 
 @router.get("/shop", response_model=ShopResponse)
-async def catalog() -> ShopResponse:
-    """目录。**不需要登录** —— 它对所有人都一样，而且不含任何玩家数据。
+async def catalog(x_glory_client: Annotated[str | None, Header()] = None) -> ShopResponse:
+    """目录。**不需要登录** —— 它不含任何玩家数据。
 
     「我有没有买过」由客户端拿 /v1/me/entitlements 自己比对，不在这里合并：
-    合并了这个响应就变成按人不同，没法缓存。
+    合并了这个响应就变成按人不同，没法缓存。唯一按请求变的是客户端版本 ——
+    旧包不认识的商品种类不发给它（visible_to）。
     """
-    return ShopResponse(items=[ItemModel(**vars(i)) for i in shop.items()])
+    build = client_version.build_of(x_glory_client)
+    return ShopResponse(items=[ItemModel(**vars(i)) for i in shop.items() if visible_to(i, build)])
 
 
 @router.get("/me/wallet", response_model=WalletResponse)

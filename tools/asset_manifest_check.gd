@@ -36,6 +36,7 @@ const RESOURCE_EXT := ["tscn", "scn", "tres", "res", "material", "mesh",
 # 所以"没找到引用"对这些目录没有说服力，一律标 dynamic_dir 保留。
 # 来源与 tools/dep_scan_node.gd 保持一致。
 const DYNAMIC_DIRS := [
+	"res://assets/skins",  # 棋盘皮肤：目录在 data/prep_skins.json，路径由 PrepSkin 拼
 	"res://assets/ui/codex_portraits",
 	"res://assets/ui/mercenary_portraits",
 	"res://assets/ui/race_logos",

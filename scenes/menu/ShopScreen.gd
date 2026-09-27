@@ -38,6 +38,7 @@ const MENU_BG_TEX := preload("res://assets/ui/main_menu_live/background.png")
 const Currency := preload("res://scripts/account/Currency.gd")
 const PetPreview := preload("res://scripts/pets/PetPreview.gd")
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
+const PrepSkin := preload("res://scenes/prep/PrepSkin.gd")
 
 const CARD_SIZE := Vector2(214, 264)
 const PREVIEW_SIZE := Vector2(176, 118)
@@ -49,6 +50,7 @@ const CATEGORY_ALL := "all"
 const CATEGORY_PETS := "pet"
 const CATEGORY_AVATARS := "avatar"
 const CATEGORY_FRAMES := "frame"
+const CATEGORY_SKINS := "prep_skin"
 
 var _busy := false
 var _loading := true
@@ -160,6 +162,7 @@ func _category_bar() -> Control:
 		{"id": CATEGORY_PETS, "zh": "宠物", "en": "Pets"},
 		{"id": CATEGORY_AVATARS, "zh": "头像", "en": "Avatars"},
 		{"id": CATEGORY_FRAMES, "zh": "头像框", "en": "Frames"},
+		{"id": CATEGORY_SKINS, "zh": "棋盘皮肤", "en": "Boards"},
 	]:
 		var category := str(entry.id)
 		var button: Button = ACTION_BUTTON.instantiate()
@@ -322,7 +325,11 @@ func _reload() -> void:
 		_set_notice(str(catalog.get("error", _t("商城打不开", "The shop failed to load"))), true)
 		_render()
 		return
-	_items = ((catalog.get("body", {}) as Dictionary).get("items", []) as Array)
+	# 这个包里没有图的棋盘皮肤不上架：买了也显示不出来（新皮肤要等玩家换新包）。
+	_items = ((catalog.get("body", {}) as Dictionary).get("items", []) as Array).filter(
+		func(item: Variant) -> bool:
+			var d := item as Dictionary
+			return str(d.get("kind", "")) != CATEGORY_SKINS or PrepSkin.has_skin(str(d.get("grants", ""))))
 
 	# 余额和拥有列表失败不算致命：目录还能看，只是买不了。
 	# 直接整页报错的话，一次网络抖动就把整个商城变成错误页。
@@ -510,20 +517,28 @@ func _preview_stage(item: Dictionary, owned: bool, preview_size: Vector2) -> Con
 	return stage
 
 
-# 卡片上的图。宠物只有 3D 模型（pets.json 的 icon 是空的），头像 / 头像框是 2D 图。
+# 卡片上的图。宠物只有 3D 模型（pets.json 的 icon 是空的），头像 / 头像框是 2D 图，
+# 棋盘皮肤是实机画面截的预览图（铺满卡片，裁掉多出来的边）。
 func _preview(item: Dictionary, owned: bool, preview_size: Vector2 = PREVIEW_SIZE) -> Control:
 	var kind := str(item.get("kind", ""))
 	var grants := str(item.get("grants", ""))
 	if kind == "pet":
 		return PetPreview.build(grants, preview_size, owned)
-	var tex := AvatarCatalog.texture_for(grants)
+	var tex: Texture2D = null
+	if kind == CATEGORY_SKINS:
+		var skin_preview := PrepSkin.preview_path(grants)
+		if ResourceLoader.exists(skin_preview):
+			tex = load(skin_preview) as Texture2D
+	else:
+		tex = AvatarCatalog.texture_for(grants)
 	if tex == null:
 		return PetPreview.placeholder(preview_size, owned)
 	var rect := TextureRect.new()
 	rect.texture = tex
 	rect.custom_minimum_size = preview_size
 	rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	rect.stretch_mode = (TextureRect.STRETCH_KEEP_ASPECT_COVERED if kind == CATEGORY_SKINS
+		else TextureRect.STRETCH_KEEP_ASPECT_CENTERED)
 	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	if owned:
 		rect.modulate = Color(0.45, 0.45, 0.45)
@@ -661,6 +676,8 @@ func _item_id(item: Dictionary) -> String:
 
 func _item_category(item: Dictionary) -> String:
 	var kind := str(item.get("kind", "")).to_lower()
+	if kind == CATEGORY_SKINS:
+		return CATEGORY_SKINS
 	if kind.contains("pet"):
 		return CATEGORY_PETS
 	if kind.contains("frame"):
@@ -674,6 +691,8 @@ func _kind_label(item: Dictionary) -> String:
 			return _t("宠物 · 可在背包设为出战", "PET · Equip it from your Bag")
 		CATEGORY_FRAMES:
 			return _t("头像框 · 个性装饰", "AVATAR FRAME · Cosmetic")
+		CATEGORY_SKINS:
+			return _t("棋盘皮肤 · 在「备战」里更换", "BOARD SKIN · Switch it in Prep")
 		_:
 			return _t("头像 · 个人资料装饰", "AVATAR · Profile cosmetic")
 

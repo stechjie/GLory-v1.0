@@ -89,7 +89,7 @@ class ShopRejected(RuntimeError):
 @dataclasses.dataclass(frozen=True)
 class Item:
     id: str          # 商品 id，只出现在订单里
-    kind: str        # avatar / avatar_frame / pet
+    kind: str        # avatar / avatar_frame / pet / prep_skin
     grants: str      # 内容 id，归属表存的是它
     currency: str
     price: int

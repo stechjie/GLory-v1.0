@@ -358,6 +358,8 @@ func item_text(item: Dictionary) -> String:
 			label = _t("头像", "Avatar")
 		"avatar_frame":
 			label = _t("头像框", "Frame")
+		"prep_skin":
+			label = _t("棋盘皮肤", "Board skin")
 	if label.is_empty():
 		return name_text
 	return "%s: %s" % [label, name_text] if _english() else "%s：%s" % [label, name_text]

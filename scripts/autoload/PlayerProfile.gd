@@ -38,9 +38,11 @@ const STARTUP_MENU := "menu"
 const SUPPORTED_LOCALES: PackedStringArray = ["zh", "en"]
 
 const RacePick := preload("res://scripts/units/RacePick.gd")
+const PrepSkin := preload("res://scenes/prep/PrepSkin.gd")
 
 signal pets_changed()
 signal races_changed()
+signal prep_skin_changed()
 signal codex_changed()
 signal presentation_settings_changed()
 
@@ -558,3 +560,40 @@ func _adopt_races(body: Dictionary) -> void:
 		return
 	selected_races = next
 	races_changed.emit()
+
+# --- 棋盘皮肤（docs/棋盘皮肤.md）--------------------------------------------
+#
+# 缓存就是 PrepSkin.active_id（摆放界面直接读它），这里只管从服务端拉、往服务端存。
+# 纪律同出战种族：拉取失败不动缓存；存到服务端才算数。
+
+func refresh_prep_skin() -> bool:
+	if not AccountManager.is_logged_in():
+		return false
+	var result: Dictionary = await AccountManager.fetch_prep_skin()
+	if int(result.get("code", 0)) / 100 != 2:
+		return false
+	_adopt_prep_skin(result.get("body", {}))
+	return true
+
+
+func set_prep_skin(skin_id: String) -> bool:
+	if skin_id == PrepSkin.active_id:
+		return true
+	var result: Dictionary = await AccountManager.save_prep_skin(skin_id)
+	if int(result.get("code", 0)) / 100 != 2:
+		return false
+	_adopt_prep_skin(result.get("body", {}))
+	return true
+
+
+# body = {"skin": id | null}，null = 默认。这个包里没有的皮肤也照收 —— PrepSkin 取图时自己退回默认；
+# 在这里改成默认的话，玩家换回有这张图的包时，看到的就不是自己选的那张了。
+func _adopt_prep_skin(body: Dictionary) -> void:
+	var raw: Variant = body.get("skin", null)
+	var next := PrepSkin.DEFAULT_ID
+	if typeof(raw) == TYPE_STRING and not str(raw).is_empty():
+		next = str(raw)
+	if next == PrepSkin.active_id:
+		return
+	PrepSkin.active_id = next
+	prep_skin_changed.emit()

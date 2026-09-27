@@ -1162,6 +1162,8 @@ func _show_pet_screen() -> void:
 	_clear()
 	var pet_screen := _instantiate_screen("res://scenes/menu/PetScreen.tscn")
 	pet_screen.back_requested.connect(_show_menu)
+	# 棋盘皮肤页上没买的那张点「去商城」。
+	pet_screen.shop_requested.connect(_show_shop_screen)
 	_page_back_route = _show_menu
 	add_child(pet_screen)
 

@@ -36,6 +36,15 @@
 			"price": 300,
 			"name": "兔子",
 			"name_en": "Rabbit"
+		},
+		{
+			"id": "shop_prep_skin_ice",
+			"kind": "prep_skin",
+			"grants": "prep_skin_ice",
+			"currency": "diamond",
+			"price": 300,
+			"name": "冰雪棋盘",
+			"name_en": "Frost Board"
 		}
 	]
 }

@@ -20,9 +20,20 @@ signal treasure_detail_requested(id: String) # 长按宝物按钮看说明
 
 var overlay: RefCounted
 
+# 左面板的字直接压在棋盘底图上，而底图随棋盘皮肤换（冰雪是大片白雪）——
+# 一律带深色描边，不然浅色底上的白字看不见（2026-09-26 冰雪样片发现的）。
+const TEXT_OUTLINE_SIZE := 5
+const TEXT_OUTLINE_COLOR := Color(0.05, 0.08, 0.12, 0.9)
+
 
 func setup(p_overlay: RefCounted) -> void:
 	overlay = p_overlay
+
+
+func _outlined(label: Label) -> Label:
+	label.add_theme_constant_override("outline_size", TEXT_OUTLINE_SIZE)
+	label.add_theme_color_override("font_outline_color", TEXT_OUTLINE_COLOR)
+	return label
 
 
 # --- 搬过来的成员 ---
@@ -46,14 +57,14 @@ func refresh() -> void:
 	_left_panel_signature = sig
 	for child in _left_panel.get_children():
 		child.queue_free()
-	var title := Label.new()
+	var title := _outlined(Label.new())
 	title.text = tr("ui_bond_treasure")
 	title.add_theme_font_size_override("font_size", 16)
 	_left_panel.add_child(title)
 
 	_add_synergy_widgets()
 
-	var sell_hint := Label.new()
+	var sell_hint := _outlined(Label.new())
 	sell_hint.text = tr("ui_sell_hint")
 	sell_hint.modulate = Color(0.9, 0.82, 0.55)
 	_left_panel.add_child(sell_hint)
@@ -114,7 +125,7 @@ func _add_synergy_widgets() -> void:
 		logo.pressed.connect(overlay.show_text.bind(format_synergy_detail(race, count)))
 		row.add_child(logo)
 
-		var count_label := Label.new()
+		var count_label := _outlined(Label.new())
 		count_label.text = "%d/%d" % [count, max_threshold]
 		count_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		count_label.add_theme_font_size_override("font_size", 18)
@@ -122,7 +133,7 @@ func _add_synergy_widgets() -> void:
 		count_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(count_label)
 	if not shown:
-		var none := Label.new()
+		var none := _outlined(Label.new())
 		none.text = "No units on board" if PrepWidgets.is_en() else "棋盘上没有普通棋子"
 		none.modulate = Color(0.55, 0.55, 0.55)
 		_left_panel.add_child(none)

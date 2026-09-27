@@ -851,6 +851,17 @@ func save_races(races: Array) -> Dictionary:
 	return await _request(HTTPClient.METHOD_PUT, "/v1/me/races", {"races": races}, true)
 
 
+# 棋盘皮肤（docs/棋盘皮肤.md）。{"skin": "prep_skin_xxx" | null}，null = 默认。
+# 和出战种族在同一页选，但**不进名片** —— 只有自己看得见。
+func fetch_prep_skin() -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/me/prep-skin", null, true)
+
+
+# 存棋盘皮肤。卖的皮肤没买会被拒（403，X-Glory-Reason: prep_skin_not_owned）。
+func save_prep_skin(skin_id: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_PUT, "/v1/me/prep-skin", {"skin": skin_id}, true)
+
+
 # 领一张出战名片，入座（建房 / 加入房间）之前用。返回名片字符串，领不到返回空串。
 #
 # **不透明，原样交给战斗服务器，不解析、不改。** 验章在战斗服务器上。

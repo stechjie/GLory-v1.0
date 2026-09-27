@@ -543,7 +543,7 @@ func _build(staged: bool = false) -> void:
 	# 3D 视口已设透明，棋盘没盖到的角落就露出这张图的草地，不再有黑角。
 	var sky_background := TextureRect.new()
 	sky_background.name = "PrepFullscreenBackground"
-	sky_background.texture = PrepWidgets.cached_texture(PREP_BOARD_BASE_PATH)
+	sky_background.texture = PrepWidgets.cached_texture(PrepSkin.path("board"))
 	sky_background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	sky_background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	sky_background.mouse_filter = Control.MOUSE_FILTER_IGNORE

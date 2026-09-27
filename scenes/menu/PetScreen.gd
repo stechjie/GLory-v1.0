@@ -1,7 +1,9 @@
 extends Control
-# 备战界面。从主菜单「备战」按钮进入，两个页签：
+# 备战界面。从主菜单「备战」按钮进入，三个页签：
 #   - 宠物：展示所有宠物（拥有的可「设为出战」，未拥有置灰）。
 #   - 种族：选定出战种族（RacePick），对局里自己的商店只刷这几族的棋子。
+#   - 棋盘皮肤：对局里摆放界面用哪一套图（PrepSkin，docs/棋盘皮肤.md）。只有自己看得见。
+# 注意与对局里摆棋子的「摆放界面」（scenes/prep/PrepScreen）区分 —— 两个以前都叫备战。
 # 首次（needs_starter_pick）时整页只剩「宠物三选一」：任选一只作为初始宠物（拥有 + 出战），
 # 页签和返回按钮都藏起来，选完才放行（用于「进主菜单前的强制关卡」）。
 # 卡片统一规格：模型 + 名字 + 效果。模型预览在 scripts/pets/PetPreview.gd（商城与背包共用）。
@@ -15,15 +17,20 @@ const ActionButtonScene := preload("res://ui/components/GloryActionButton.tscn")
 const PetPreview := preload("res://scripts/pets/PetPreview.gd")
 # 与 PrepShopRaceIcon.LOGO_PATHS 同一批图。新种族没出图时这一块留空，不报错。
 const RACE_LOGO_PATH := "res://assets/ui/race_logos/%s.png"
+const PrepSkin := preload("res://scenes/prep/PrepSkin.gd")
 
 signal back_requested
 signal starter_picked   # 首次三选一选定后发出（用于「进主菜单前的强制关卡」）
+signal shop_requested   # 棋盘皮肤页点了「去商城」
 
-enum Tab { PETS, RACES }
+enum Tab { PETS, RACES, SKINS }
+enum SkinOwnership { NOT_LOADED, LOADING, READY, FAILED }
 
 const CARD_SIZE := Vector2(210, 280)
 const RACE_CARD_SIZE := Vector2(190, 250)
 const RACE_LOGO_SIZE := Vector2(96, 96)
+const SKIN_CARD_SIZE := Vector2(300, 0)
+const SKIN_PREVIEW_SIZE := Vector2(276, 155)   # 预览图是实机画面截的 16:9
 
 var _title_label: Label
 var _tab_row: HBoxContainer
@@ -48,6 +55,15 @@ var _race_cards: Dictionary = {}   # race -> {"panel": PanelContainer, "name": L
 # 顺序始终跟 RacePick.all_races() 一致，这样才能直接和已保存的那份比较。
 var _race_draft: Array[String] = []
 
+# --- 棋盘皮肤页 ---
+var _skin_box: VBoxContainer
+var _skin_cards: Dictionary = {}   # skin id -> {"panel", "name", "status", "button"}
+# 哪些皮肤要花钱、买过哪些：进这一页时才拉（商城目录 + 归属）。不在目录里的一律免费。
+var _skin_ownership: int = SkinOwnership.NOT_LOADED
+var _skin_sold: Dictionary = {}    # 商城里卖的皮肤 id -> true
+var _skin_owned: Dictionary = {}   # 买过的内容 id -> true
+var _skin_busy := false
+
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_race_draft = PlayerProfile.get_selected_races()
@@ -56,17 +72,22 @@ func _ready() -> void:
 		PlayerProfile.pets_changed.connect(_refresh)
 	if not PlayerProfile.races_changed.is_connected(_on_races_changed):
 		PlayerProfile.races_changed.connect(_on_races_changed)
+	if not PlayerProfile.prep_skin_changed.is_connected(_refresh_skins):
+		PlayerProfile.prep_skin_changed.connect(_refresh_skins)
 	_refresh()
-	# 归属与出战种族的真相在服务端，开这一页时拉一次。成功会发 pets_changed /
-	# races_changed，页面再刷一遍；失败什么都不做（缓存不动），页面就还是上次那份。
+	# 归属、出战种族、棋盘皮肤的真相在服务端，开这一页时拉一次。成功会发 pets_changed /
+	# races_changed / prep_skin_changed，页面再刷一遍；失败什么都不做（缓存不动），页面就还是上次那份。
 	PlayerProfile.refresh_pets()
 	PlayerProfile.refresh_races()
+	PlayerProfile.refresh_prep_skin()
 
 func _exit_tree() -> void:
 	if PlayerProfile.pets_changed.is_connected(_refresh):
 		PlayerProfile.pets_changed.disconnect(_refresh)
 	if PlayerProfile.races_changed.is_connected(_on_races_changed):
 		PlayerProfile.races_changed.disconnect(_on_races_changed)
+	if PlayerProfile.prep_skin_changed.is_connected(_refresh_skins):
+		PlayerProfile.prep_skin_changed.disconnect(_refresh_skins)
 
 func _build() -> void:
 	# V3 P1-04 验收原文：「无业务按钮使用 Godot 默认主题」。
@@ -96,6 +117,7 @@ func _build() -> void:
 	col.add_child(_build_tabs())
 	col.add_child(_build_pet_box())
 	col.add_child(_build_race_box())
+	col.add_child(_build_skin_box())
 
 	# 返回按钮（右上角）。最后添加 = 输入拾取时在最上层，不会被内容列挡住。
 	# 仅在非首次（已选过初始宠物）时显示；首次强制三选一时隐藏，逼玩家先选。
@@ -113,7 +135,7 @@ func _build_tabs() -> Control:
 	_tab_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	_tab_row.add_theme_constant_override("separation", Tokens.GAP_S)
 	_tab_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	for spec in [[Tab.PETS, "prep_tab_pets"], [Tab.RACES, "prep_tab_races"]]:
+	for spec in [[Tab.PETS, "prep_tab_pets"], [Tab.RACES, "prep_tab_races"], [Tab.SKINS, "prep_tab_skins"]]:
 		var tab_id: int = spec[0]
 		var button := ActionButtonScene.instantiate() as Button
 		button.text = tr(str(spec[1]))
@@ -154,6 +176,10 @@ func _switch_tab(tab_id: int) -> void:
 	_refresh_chrome()
 	if _tab == Tab.RACES:
 		_refresh_races()
+	elif _tab == Tab.SKINS:
+		if _skin_ownership == SkinOwnership.NOT_LOADED or _skin_ownership == SkinOwnership.FAILED:
+			_load_skin_ownership()
+		_refresh_skins()
 
 func _refresh() -> void:
 	if _cards_row == null:
@@ -161,6 +187,7 @@ func _refresh() -> void:
 	_refresh_chrome()
 	_refresh_pets()
 	_refresh_races()
+	_refresh_skins()
 
 # 标题、页签、返回按钮、哪一页可见。
 func _refresh_chrome() -> void:
@@ -174,6 +201,7 @@ func _refresh_chrome() -> void:
 		(_tab_buttons[tab_id] as Button).button_pressed = tab_id == _tab
 	_pet_box.visible = _tab == Tab.PETS
 	_race_box.visible = _tab == Tab.RACES
+	_skin_box.visible = _tab == Tab.SKINS
 	if _back_btn != null:
 		_back_btn.visible = not starter_mode
 
@@ -399,3 +427,157 @@ func _on_race_save_pressed() -> void:
 func _on_races_changed() -> void:
 	_race_draft = PlayerProfile.get_selected_races()
 	_refresh_races()
+
+# --- 棋盘皮肤页 ---------------------------------------------------------------
+
+func _build_skin_box() -> Control:
+	_skin_box = VBoxContainer.new()
+	_skin_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	_skin_box.add_theme_constant_override("separation", 18)
+	_skin_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	var hint := Label.new()
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hint.add_theme_font_size_override("font_size", 18)
+	hint.add_theme_color_override("font_color", Color(0.75, 0.78, 0.85))
+	hint.text = tr("skin_tab_hint")
+	_skin_box.add_child(hint)
+
+	var cards := HFlowContainer.new()
+	cards.alignment = FlowContainer.ALIGNMENT_CENTER
+	cards.add_theme_constant_override("h_separation", 24)
+	cards.add_theme_constant_override("v_separation", 18)
+	cards.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_skin_box.add_child(cards)
+	# 同种族页：卡片只建一次（目录随安装包走，开着这一页不会变），之后只改状态。
+	for entry in PrepSkin.catalog():
+		cards.add_child(_build_skin_card(str((entry as Dictionary).get("id", ""))))
+	return _skin_box
+
+func _build_skin_card(skin_id: String) -> Control:
+	var card := PanelContainer.new()
+	card.custom_minimum_size = SKIN_CARD_SIZE
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 10)
+	card.add_child(content)
+
+	var preview := TextureRect.new()
+	preview.custom_minimum_size = SKIN_PREVIEW_SIZE
+	preview.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	preview.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	preview.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	preview.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var preview_path := PrepSkin.preview_path(skin_id)
+	if ResourceLoader.exists(preview_path):
+		preview.texture = load(preview_path) as Texture2D
+	content.add_child(preview)
+
+	var name_lbl := Label.new()
+	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_lbl.add_theme_font_size_override("font_size", 24)
+	content.add_child(name_lbl)
+
+	var status_lbl := Label.new()
+	status_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	status_lbl.add_theme_font_size_override("font_size", 16)
+	status_lbl.add_theme_color_override("font_color", Color(0.72, 0.74, 0.80))
+	content.add_child(status_lbl)
+
+	var btn := ActionButtonScene.instantiate() as Button
+	btn.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+	btn.size_flags_horizontal = Control.SIZE_FILL
+	btn.pressed.connect(_on_skin_card_pressed.bind(skin_id))
+	content.add_child(btn)
+
+	_skin_cards[skin_id] = {"panel": card, "name": name_lbl, "status": status_lbl, "button": btn}
+	return card
+
+# 商城目录 + 归属。只在进这一页时拉，失败下次进来再拉。
+func _load_skin_ownership() -> void:
+	_skin_ownership = SkinOwnership.LOADING
+	var catalog: Dictionary = await AccountManager.fetch_shop()
+	var owned: Dictionary = await AccountManager.fetch_entitlements()
+	if not is_inside_tree():
+		return
+	if int(catalog.get("code", 0)) / 100 != 2 or int(owned.get("code", 0)) / 100 != 2:
+		_skin_ownership = SkinOwnership.FAILED
+		_refresh_skins()
+		return
+	_skin_sold.clear()
+	for raw in ((catalog.get("body", {}) as Dictionary).get("items", []) as Array):
+		var item := raw as Dictionary
+		if str(item.get("kind", "")) == "prep_skin":
+			_skin_sold[str(item.get("grants", ""))] = true
+	_skin_owned.clear()
+	for id in ((owned.get("body", {}) as Dictionary).get("items", []) as Array):
+		_skin_owned[str(id)] = true
+	_skin_ownership = SkinOwnership.READY
+	_refresh_skins()
+
+# 能不能直接用。没拉到目录时（失败）一律当能用 —— 账号服务器会把没买的挡回来，
+# 比「网络一抖整页都锁住」好。
+func _skin_usable(skin_id: String) -> bool:
+	if skin_id == PrepSkin.DEFAULT_ID or _skin_ownership == SkinOwnership.FAILED:
+		return true
+	return _skin_ownership == SkinOwnership.READY \
+		and (not _skin_sold.has(skin_id) or _skin_owned.has(skin_id))
+
+func _refresh_skins() -> void:
+	if _skin_cards.is_empty():
+		return
+	# 用着的那张这个包里没有（在更新的包上选的）：摆放界面显示的是默认，这里也标默认。
+	var active := PrepSkin.active_id if PrepSkin.has_skin(PrepSkin.active_id) else PrepSkin.DEFAULT_ID
+	for skin_id in _skin_cards:
+		_refresh_skin_card(str(skin_id), str(skin_id) == active)
+
+func _refresh_skin_card(skin_id: String, is_active: bool) -> void:
+	var parts: Dictionary = _skin_cards[skin_id]
+	var name_lbl: Label = parts["name"]
+	name_lbl.text = PrepSkin.display_name(skin_id)
+	if is_active:
+		name_lbl.text += "  ✓"
+	var panel: PanelContainer = parts["panel"]
+	panel.add_theme_stylebox_override("panel",
+		Tokens.panel_box(Tokens.SURFACE, Tokens.GOLD_EDGE if is_active else Tokens.BORDER, 12))
+	var status_lbl: Label = parts["status"]
+	var btn: Button = parts["button"]
+	var loading := _skin_ownership == SkinOwnership.LOADING or _skin_ownership == SkinOwnership.NOT_LOADED
+	if skin_id == PrepSkin.DEFAULT_ID:
+		status_lbl.text = tr("skin_status_free")
+	elif loading:
+		status_lbl.text = tr("skin_status_loading")
+	elif _skin_ownership == SkinOwnership.FAILED:
+		# 没拉到目录：不知道要不要钱，宁可不写，也别把卖的写成「免费」。
+		status_lbl.text = ""
+	elif _skin_sold.has(skin_id):
+		status_lbl.text = tr("skin_status_owned") if _skin_owned.has(skin_id) else tr("skin_status_locked")
+	else:
+		status_lbl.text = tr("skin_status_free")
+	if is_active:
+		btn.text = tr("skin_in_use")
+		btn.disabled = true
+	elif skin_id != PrepSkin.DEFAULT_ID and loading:
+		btn.text = tr("skin_use")
+		btn.disabled = true
+	elif _skin_usable(skin_id):
+		btn.text = tr("skin_use")
+		btn.disabled = _skin_busy
+	else:
+		btn.text = tr("skin_to_shop")
+		btn.disabled = false
+
+func _on_skin_card_pressed(skin_id: String) -> void:
+	if not _skin_usable(skin_id):
+		shop_requested.emit()
+		return
+	if _skin_busy:
+		return
+	# 存要走一次网络。期间按住所有「使用」，免得连点发出好几次。
+	_skin_busy = true
+	_refresh_skins()
+	var ok: bool = await PlayerProfile.set_prep_skin(skin_id)
+	if not is_inside_tree():
+		return
+	_skin_busy = false
+	GloryToast.show_text(tr("skin_saved") % PrepSkin.display_name(skin_id) if ok else tr("skin_save_failed"))
+	_refresh_skins()

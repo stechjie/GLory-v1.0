@@ -20,6 +20,7 @@ const DragButton := preload("res://scenes/prep/PrepDragButton.gd")
 const SellDropPanel := preload("res://scenes/prep/PrepSellDropPanel.gd")
 const PrepWidgets := preload("res://scenes/prep/PrepWidgets.gd")
 const PrepRules := preload("res://scenes/prep/PrepRules.gd")
+const PrepSkin := preload("res://scenes/prep/PrepSkin.gd")  # 底部商店按钮的图随皮肤换
 
 
 # D2 第三步：把备战界面「商店」这一簇从 PrepShared 的共享状态池里抽出来。
@@ -139,7 +140,6 @@ func setup(p_host: Control, p_overlay: RefCounted, p_hover: Callable) -> void:
 
 # --- 搬过来的常量（全仓只有商店簇在用，实测簇外引用为 0）--------------------
 
-const SHOP_CLOSED_BTN_PATH := "res://assets/ui/buttons/shop_closed.png"   # 底部商店按钮图（自带文字，无需再叠字）
 const SHOP_BTN_SIZE := Vector2(200, 66)      # 底部「商店」按钮（木牌框）
 const SHOP_IDLE_ATLAS_PATH := "res://assets/vfx/prep/scroll_idle_shimmer_atlas.png"
 const SHOP_IDLE_HALO_PATH := "res://assets/vfx/prep/scroll_idle_halo.png"
@@ -191,7 +191,7 @@ func build_button_and_purse(body: HBoxContainer, center_host: Control, center: C
 	center.add_child(board_bottom_reserve)
 
 	# 底部「商店」按钮：点击打开/关闭商店弹窗（弹窗打开时被弹窗盖住）。保留 shop_closed.png 贴图框、图自带文字。
-	var shop_open_btn := PrepWidgets.make_framed_text_button("", SHOP_CLOSED_BTN_PATH, SHOP_BTN_SIZE, 18, toggle_picker)
+	var shop_open_btn := PrepWidgets.make_framed_text_button("", PrepSkin.path("shop_button"), SHOP_BTN_SIZE, 18, toggle_picker)
 	open_button = shop_open_btn
 	shop_open_btn.anchor_left = 0.5
 	shop_open_btn.anchor_top = 1.0

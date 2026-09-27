@@ -2,7 +2,12 @@
 
     GET  /v1/me/races        出战种族（null = 没选过，用默认）
     PUT  /v1/me/races        存出战种族
+    GET  /v1/me/prep-skin    棋盘皮肤（null = 默认）
+    PUT  /v1/me/prep-skin    存棋盘皮肤
     POST /v1/battle/card     领一张出战名片，连战斗服务器前用
+
+棋盘皮肤和出战种族在同一页（主界面「备战」）选，但**不进名片** —— 只有自己看得见，
+见 loadout.py 的「棋盘皮肤」一节。
 
 出战宠物走 /v1/me/pets（routes/shop.py），头像头像框走 /v1/me/profile —— 它们本来就在那。
 名片只是把这些**已经存在账号服务器上的东西**签个名打包，不另开一套存储。
@@ -33,6 +38,8 @@ _card_limiter = SlidingWindowLimiter(CARD_PER_MINUTE, 60.0)
 _STATUS_BY_CODE = {
     "bad_races": 400,
     "race_not_owned": 403,
+    "bad_prep_skin": 400,
+    "prep_skin_not_owned": 403,
     "player_not_found": 404,
 }
 
@@ -45,6 +52,16 @@ class RacesResponse(BaseModel):
     # null = 没选过。**不要**在这里替客户端填默认：默认值是战斗服务器按棋子表算的，
     # 这边填一份就是第二个真相。
     races: list[str] | None
+
+
+class PrepSkinBody(BaseModel):
+    # null / "" / "prep_skin_default" 都是选回默认。
+    skin: str | None = None
+
+
+class PrepSkinResponse(BaseModel):
+    # null = 默认皮肤。
+    skin: str | None
 
 
 class CardResponse(BaseModel):
@@ -90,6 +107,25 @@ async def set_races(
     except loadout.LoadoutRejected as exc:
         raise _reject(exc) from None
     return RacesResponse(races=races)
+
+
+@router.get("/me/prep-skin", response_model=PrepSkinResponse)
+async def my_prep_skin(claims: Annotated[Claims, Depends(current_claims)]) -> PrepSkinResponse:
+    me = await _me(claims)
+    return PrepSkinResponse(skin=await loadout.read_prep_skin(me.player_id))
+
+
+@router.put("/me/prep-skin", response_model=PrepSkinResponse)
+async def set_prep_skin(
+    body: PrepSkinBody,
+    claims: Annotated[Claims, Depends(current_claims)],
+) -> PrepSkinResponse:
+    me = await _me(claims)
+    try:
+        skin = await loadout.save_prep_skin(me.player_id, body.skin)
+    except loadout.LoadoutRejected as exc:
+        raise _reject(exc) from None
+    return PrepSkinResponse(skin=skin)
 
 
 @router.post("/battle/card", response_model=CardResponse)

@@ -1,0 +1,26 @@
+{
+	"schema_version": 1,
+
+	"_why": "棋盘皮肤的目录：对局里摆放界面的底图等换成哪一套，只换图不碰玩法，在主界面「备战」页换。一张皮肤 = 这里一段 + assets/skins/prep/<id>/ 下的图，文件名固定为 board / river / bench / carrot / shop_button（.png），缺哪张就沿用默认那张；再加一张卡片用的 preview.png。槽位与默认图在 scenes/prep/PrepSkin.gd 的 SLOTS，加皮肤的步骤在 docs/棋盘皮肤.md。",
+
+	"_order": "按这里的顺序显示。默认皮肤放第一个，永远免费（不许进 data/shop.json）。",
+
+	"_options": "每张皮肤可以另写：firefly_color = [r, g, b] 满场光点的颜色（默认金色萤火虫）；river_glow = false 关掉下河面的流动波光。",
+
+	"_sale": "要卖就在 data/shop.json 加一个 kind=prep_skin、grants=这里 id 的商品。不在 shop.json 里的皮肤一律免费。",
+
+	"skins": [
+		{
+			"id": "prep_skin_default",
+			"name": "青草地",
+			"name_en": "Meadow"
+		},
+		{
+			"id": "prep_skin_ice",
+			"name": "冰雪",
+			"name_en": "Frost",
+			"firefly_color": [0.86, 0.95, 1.0],
+			"river_glow": false
+		}
+	]
+}

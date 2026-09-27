@@ -361,13 +361,15 @@ func _drive_entry() -> void:
 		RealtimeService.start()
 
 
-# 拉宠物归属与出战种族。有一样没拉到就等下一次（主菜单打开备战 / 商城时还会再拉），
+# 拉宠物归属、出战种族与棋盘皮肤。有一样没拉到就等下一次（主菜单打开备战 / 商城时还会再拉），
 # **不清空已有缓存** —— PlayerProfile.refresh_pets 里那条纪律。
-# 两个都要拉：种族没拉到时备战页显示的是默认，玩家会以为自己的选择丢了。
+# 都要拉：种族没拉到时备战页显示的是默认，玩家会以为自己的选择丢了；
+# 皮肤没拉到时这一局摆放界面是默认的青草地。
 func _fetch_loadout() -> void:
 	var pets_ok: bool = await PlayerProfile.refresh_pets()
 	var races_ok: bool = await PlayerProfile.refresh_races()
-	if pets_ok and races_ok:
+	var skin_ok: bool = await PlayerProfile.refresh_prep_skin()
+	if pets_ok and races_ok and skin_ok:
 		return
 	_loadout_requested = false
 
