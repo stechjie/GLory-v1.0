@@ -41,7 +41,7 @@ const TARGETS: Array[Dictionary] = [
 	#   直接以主场景加载的，解析失败时确实会自己报错，但按同一条教训还是单列出来，
 	#   免得以后有人只跑批跑、看到"全绿"却不知道这两条根本没被解析过。
 	{"kind": "script", "path": "res://tools/tutorial_text_leak_check.gd"},
-	{"kind": "script", "path": "res://work/_qa_922/probe_blood_link_boss_immune_925.gd"},
+	{"kind": "script", "path": "res://tools/qa_history/20260922/probe_blood_link_boss_immune_925.gd"},
 	# ★ 9.25 追加订正：预备阶段又被改了（PrepUI.gd 的刷新按钮判定）。按「改的每个文件
 	#   都要在清单里」补进来 —— PrepUI.gd 处在 PrepScreen 继承链的底层
 	#   （PrepScreen → PrepBoardController → PrepFlowController → PrepUI → PrepBoardModels

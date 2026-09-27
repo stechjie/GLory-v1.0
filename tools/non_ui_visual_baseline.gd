@@ -6,7 +6,7 @@ const SkillVFXConfig := preload("res://effects/SkillVFXConfig.gd")
 
 const CHECK_NAME := "non_ui_visual_baseline"
 const POLICY_PATH := "res://data/qa/non_ui_visual_freeze_policy.json"
-const OUTPUT_ROOT := "res://review_visual_20260912"
+const OUTPUT_ROOT := "res://reports/visual-review"
 
 var _h: CheckHarness
 var _policy: Dictionary = {}

@@ -15,14 +15,14 @@ extends Node
 # 运行：
 #   Godot_v4.7-stable_win64_console.exe --headless --path . tools/balance_table_dump.tscn
 # 输出：
-#   res://work/balance_runtime_dump.json
+#   res://reports/balance_runtime_dump.json
 
 const BattleSimTreasures := preload("res://scripts/battle/BattleSimTreasures.gd")
 const CarrotEconomy := preload("res://scripts/economy/CarrotEconomy.gd")
 const ShopRoll := preload("res://scripts/economy/ShopRoll.gd")
 const EconomyLedger := preload("res://scripts/multiplayer/EconomyLedger.gd")
 
-const OUT_PATH := "res://work/balance_runtime_dump.json"
+const OUT_PATH := "res://reports/balance_runtime_dump.json"
 const DUMMY_HP := 50000000
 
 var _out := {}

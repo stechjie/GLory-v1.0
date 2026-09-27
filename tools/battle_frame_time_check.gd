@@ -59,7 +59,7 @@ func _ready() -> void:
 # 用它来证明「缺字段」这条判据不是纸上谈兵。
 func _check_schema_contract_is_enforced() -> void:
 	var legacy := _load_fixture(
-		"res://A4_device_battle_20260820/desktop/round_01/summary.json")
+		"res://tools/testdata/A4_device_battle_20260820/desktop/round_01/summary.json")
 	if legacy.is_empty():
 		_h.note("A4 历史夹具不在（可能已被清理），跳过缺字段这条用真实数据的验证")
 		return
@@ -151,7 +151,7 @@ func _check_uniform_thresholds_no_round_special_case() -> void:
 # 138ms —— 早就知道这场很差，门禁必须对它说不，而不是被某种宽容悄悄放过。
 func _check_real_captured_regression_is_caught() -> void:
 	var device_round20 := _load_fixture(
-		"res://A4_device_battle_20260820/cold_cache/device/round_20/summary.json")
+		"res://tools/testdata/A4_device_battle_20260820/cold_cache/device/round_20/summary.json")
 	if device_round20.is_empty():
 		_h.note("A4 设备 Round 20 历史夹具不在，跳过这条用真实回归数据的验证")
 		return

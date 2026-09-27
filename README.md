@@ -2,6 +2,8 @@
 
 代码、Drive 资源与打包入口：[交付与打包边界](docs/DELIVERY-BOUNDARIES.md)。
 
+目录整理与新工具入口：[工作区目录说明](docs/WORKSPACE-LAYOUT.md)。Mac 同步和打包入口位于 `tools/workspace/`；Windows 服务端打包入口位于 `tools/make_server_zip.bat`。
+
 > 下面这一块由 `tools/current_health.ps1` 从各门禁的真实产物生成，是本文件里**唯一**保证反映当前状态的部分。
 > 其余章节是按日期冻结的历史记录：写下时为真，之后未必。两者冲突时以生成块为准。
 

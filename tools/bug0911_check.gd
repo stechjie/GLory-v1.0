@@ -67,7 +67,7 @@ func _ready() -> void:
 		rect.material = material
 		add_child(rect)
 		await RenderingServer.frame_post_draw
-		get_viewport().get_texture().get_image().save_png("res://work/bug0911-01/chat-preview.png")
+		get_viewport().get_texture().get_image().save_png("res://reports/bug0911-01/chat-preview.png")
 	h.finish(get_tree())
 
 func _check_upgrade_shadow(h) -> void:
