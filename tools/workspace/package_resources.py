@@ -18,12 +18,14 @@ def main():
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--label', default=datetime.date.today().strftime('%Y%m%d'))
     args = parser.parse_args()
-    sources, _, report = build.plan_asset_merge(args.project, args.assets)
+    sources, descriptors, report = build.plan_asset_merge(args.project, args.assets)
     if report['selection_conflicts']:
         raise RuntimeError('Unresolved resource version conflicts')
     files = {'assets/' + p.as_posix(): s for p, s in sources.items()}
     for folder in ('effects', 'shaders', 'ui/fonts'):
         files.update({folder + '/' + p.as_posix(): s for p, s in build.files_under(args.project / folder)})
+    files.update({'delivery/baseline/' + name: source for name, source in descriptors.items()})
+    all_paths = set(files)
     # Match the export boundary: discarded vendor demos and backups are not payloads.
     files = {p: s for p, s in files.items() if not any(
         part in ('New folder', 'Demo_GodotVFX', 'backups', 'private', '.git', '.godot')
@@ -34,12 +36,14 @@ def main():
     entries = [{'path': p, 'bytes': s.stat().st_size, 'sha256': build.digest(s)}
                for p, s in sorted(files.items())]
     changed = [e for e in entries if previous.get(e['path']) != e['sha256']]
-    removed = sorted(set(previous) - files.keys())
+    removed = sorted(set(previous) - all_paths)
+    excluded = sorted(all_paths - files.keys())
     commit = subprocess.check_output(['git', '-C', str(args.project), 'rev-parse', 'HEAD'], text=True).strip()
     args.out.mkdir(parents=True, exist_ok=True)
     manifest = {'commit': commit, 'created_utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 'baseline': args.baseline.name, 'baseline_sha256': build.digest(args.baseline),
-                'entries': entries, 'removed_since_baseline': removed}
+                'entries': entries, 'removed_since_baseline': removed,
+                'excluded_from_delivery': excluded}
     manifest_path = args.out / ('Glory-resources-' + args.label + '.manifest.json')
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n')
     archive_path = args.out / ('Glory-resources-incremental-' + args.label + '-' + commit[:8] + '.zip')
@@ -50,6 +54,7 @@ def main():
         archive.writestr('delivery/README.txt',
             'Apply this delta after the baseline named in the manifest, over its paired GitHub commit.\n'
             'See removed_since_baseline in the included manifest; archive removed resources before deleting.\n'
+            'excluded_from_delivery lists non-runtime material omitted from this delivery, not files to delete from Git.\n'
             'Do not replace current source with the old Drive project tree.\n')
     with zipfile.ZipFile(archive_path) as archive:
         import hashlib
