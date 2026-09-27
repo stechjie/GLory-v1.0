@@ -1832,6 +1832,11 @@ func _on_carrot_economy_receipt(receipt: Dictionary) -> void:
 	if action not in ["upgrade_harvest_tech", "hire_merc_carrot", "draw_upgrade_stone", "use_upgrade_stone"]:
 		return
 	if not bool(receipt.get("ok", false)):
+		if action == "use_upgrade_stone" and str(receipt.get("error", "")) == "no_stone":
+			_overlay.hide_detail()
+			show_message("The spirit stone has been used by a teammate. Upgrade failed." if LocaleManager.get_locale() == "en" else "灵石已被队友使用，升星失败")
+			SfxService.play(SfxService.CUE_UI_REJECT)
+			return
 		show_message(("Carrot action failed: %s" if LocaleManager.get_locale().begins_with("en") else "萝卜交易失败：%s") % str(receipt.get("error", "denied")))
 		# 9.17：服务端拒绝 = 按钮被拒绝，与单机时「钱不够」同一个反馈。
 		SfxService.play(SfxService.CUE_UI_REJECT)
@@ -1928,6 +1933,9 @@ func _build_detail_popups() -> void:
 	detail_content.add_child(upgrade_panel)
 	upgrade_panel.hide()
 	_overlay.upgrade_panel = upgrade_panel
+	upgrade_panel.shared_stone_unavailable.connect(func():
+		_overlay.hide_detail()
+		show_message("The spirit stone has been used by a teammate." if LocaleManager.get_locale() == "en" else "灵石已被队友使用"))
 	upgrade_panel.preview_requested.connect(func(enabled: bool, cell: Dictionary):
 		_detail_text.text = UnitDetailFormat.format_unit_def(cell.get("def", {}), \
 			4 if enabled else int(cell.get("star", 1)), cell))
