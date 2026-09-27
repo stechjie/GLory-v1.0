@@ -68,7 +68,6 @@ const BoardReadabilityLayerScene := preload("res://effects/runtime/presentation/
 @export_group("Standby Bench Layout")
 @export var standby_origin := Vector3.ZERO
 @export var standby_rotation := Vector3.ZERO
-@export var standby_unit_scale := 0.46
 @export_range(-0.08, 0.20, 0.005) var standby_unit_y_offset := 0.0
 @export var standby_face_battlefield := false
 @export_range(-180.0, 180.0, 1.0) var standby_facing_yaw_offset := 0.0

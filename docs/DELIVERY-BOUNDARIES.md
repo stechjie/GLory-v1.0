@@ -1,6 +1,6 @@
 # Code, resources and package boundaries
 
-- Source: `stechjie/GLory-v1.0`, branch `codex/battle-server-stability` (not yet merged into main). Start Godot from `project.godot`; runtime code is in `scripts/`, scenes in `scenes/`, UI in `ui/`, game data in `data/`.
+- Source: `stechjie/GLory-v1.0`, branch `main` (the canonical shared development and release branch). Start Godot from `project.godot`; runtime code is in `scripts/`, scenes in `scenes/`, UI in `ui/`, game data in `data/`.
 - Resources: [shared Drive folder](https://drive.google.com/drive/u/0/folders/1qDvPXP6VaB2DaIcJb_yg5P9xjbP-NKRc). Use the existing `Glory-art-assets-full-20260914.zip` baseline plus `Glory-resources-incremental-20260925-9f690075.zip`. The incremental archive is not a standalone full resource set. Follow its manifest, including removal entries. Do not overwrite current code with the old Drive project tree.
 - Tests and maintenance tools belong in Git under `tools/`; documentation belongs under `docs/`. Neither belongs in the runtime package.
 - Existing local packaging wrappers are outside this repository: `/Volumes/repository/github/GLory/tools/glory_build.py` and `glory_ios_build.py`. This change does not publish those machine-specific release tools. Other machines can use the repository export template and `tools/android_smoke.sh`, with their own signing setup.
@@ -25,3 +25,9 @@ The checker rejects known development directories in APK resources or an IPA's G
 2026-09-26 validation: the existing a8930aa9 APK fails with 13 development paths; a real Godot 4.7 export of an isolated fixture using the new filters passes, retains runtime/QA scenes, and excludes the development fixtures. No complete APK or IPA was rebuilt for this change. TestFlight 0.0.6 (12) remains unchanged.
 
 Resource verification: all 3,441 resource payload files match the previous delivery manifest, with zero changed/removed files and zero merge conflicts. Reuse the existing resource archive rather than upload a duplicate full archive.
+
+## Publication workflow (2026-09-27)
+
+Publish completed and validated code to GitHub `main`. Synchronize remote `main` first, resolve conflicts while preserving independent fixes, then verify the remote commit after push. Do not leave a shipped server/client fix only on a feature branch. Keep local `GLory-v1.0` aligned with `main` for the normal build entry points.
+
+Compare resource payload hashes against the latest Drive delivery. Upload changed resources with an incremental manifest and checksums to the resource folder; when hashes are unchanged, reuse the existing assets. APK distribution uses its separately designated Drive folder.

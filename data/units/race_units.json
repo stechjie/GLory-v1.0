@@ -30,7 +30,6 @@
                       "model":  "res://assets/models/units/god_priest_halo_animated/god_priest_animated.tscn",
                       "model_visual_scale":  1.0,
                       "model_base_yaw":  180.0,
-                      "model_frame_fill":  0.96,
                       "model_idle_animation_name":  "idle",
                       "model_attack_animation_name":  "attack",
                       "model_attack_sync_seek":  0.18,
@@ -66,7 +65,6 @@
                       "model":  "res://assets/models/units/god_priestess_animated/god_priestess_animated.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "name_en":  "Priestess"
                   },
                   {
@@ -99,7 +97,6 @@
                       "model_run_animation_name":  "run",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "name_en":  "Lightguard"
                   },
                   {
@@ -127,7 +124,6 @@
                       "model":  "res://assets/models/units/god_aurora_animated/god_aurora_animated.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "name_en":  "Aurora"
                   },
                   {
@@ -160,7 +156,6 @@
                       "model":  "res://assets/models/units/god_angel_animated/god_angel_animated.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "opening_cd":  2,
                       "name_en":  "Angel"
                   },
@@ -193,7 +188,6 @@
                       "model":  "res://assets/models/units/god_arbiter_animated/god_arbiter_animated.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "name_en":  "Arbiter"
                   },
                   {
@@ -224,7 +218,6 @@
                       "model":  "res://assets/models/units/god_archangel_animated/god_archangel_animated.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "name_en":  "Archangel"
                   },
                   {
@@ -255,7 +248,6 @@
                       "model":  "res://assets/models/units/god_king_animated/god_king_animated.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "name_en":  "God King"
                   },
                   {
@@ -289,7 +281,6 @@
                       "model_attack_sync_seek":  0.25,
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "name_en":  "Imp"
                   },
                   {
@@ -318,7 +309,6 @@
                       "model":  "res://assets/models/units/dark_mage_violet_necromancer/dark_mage_animated.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "model_idle_animation_name":  "idle",
                       "model_attack_animation_name":  "attack",
                       "model_attack_sync_seek":  0.18,
@@ -351,7 +341,6 @@
                       "model":  "res://assets/models/units/dark_fear_animated/dark_fear_animated.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "name_en":  "Fear Demon"
                   },
                   {
@@ -379,7 +368,6 @@
                       "model":  "res://assets/models/units/dark_queen_animated/dark_queen_animated.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "name_en":  "Pain Queen"
                   },
                   {
@@ -408,7 +396,6 @@
                       "model":  "res://assets/models/units/dark_scythe_animated/dark_scythe_animated.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "name_en":  "Ambusher"
                   },
                   {
@@ -436,7 +423,6 @@
                       "model":  "res://assets/models/units/dark_suc_animated/dark_suc_animated.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "model_idle_animation_name":  "idle",
                       "model_attack_animation_name":  "attack",
                       "model_attack_sync_seek":  0.18,
@@ -469,7 +455,6 @@
                       "model":  "res://assets/models/units/dark_doom_animated/dark_doom_animated.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "name_en":  "Doom Guard"
                   },
                   {
@@ -499,7 +484,6 @@
                       "model":  "res://assets/models/units/dark_dragon_animated/dark_dragon_animated.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "model_idle_animation_name":  "idle",
                       "model_attack_animation_name":  "attack",
                       "model_attack_sync_seek":  0.18,
@@ -528,7 +512,6 @@
                       "model":  "res://assets/models/units/undead_small_animated/undead_small_animated.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "model_idle_animation_name":  "idle",
                       "model_attack_animation_name":  "attack",
                       "model_attack_sync_seek":  0.18,
@@ -561,7 +544,6 @@
                       "model":  "res://assets/models/units/undead_poison_animated/undead_poison_animated.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "name_en":  "Venom"
                   },
                   {
@@ -590,7 +572,6 @@
                       "model":  "res://assets/models/units/undead_parasite_animated/undead_parasite_animated.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "name_en":  "Leech Wisp"
                   },
                   {
@@ -619,7 +600,6 @@
                       "model":  "res://assets/models/units/undead_spike_animated/undead_spike_animated.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "name_en":  "Spike Wisp"
                   },
                   {
@@ -650,7 +630,6 @@
                       "model":  "res://assets/models/units/undead_fly_animated/undead_fly_animated.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "name_en":  "Fly Wisp"
                   },
                   {
@@ -677,7 +656,6 @@
                       "model":  "res://assets/models/units/undead_bomb_animated/undead_bomb_animated.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "name_en":  "Bomb Wisp"
                   },
                   {
@@ -706,7 +684,6 @@
                       "model":  "res://assets/models/units/undead_titan_animated/undead_titan_animated.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "name_en":  "Titan Wisp"
                   },
                   {
@@ -740,7 +717,6 @@
                       "model":  "res://assets/models/units/undead_mother_animated/undead_mother_animated.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "name_en":  "Matron"
                   },
                   {
@@ -773,7 +749,6 @@
                       "model_run_animation_name":  "run",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "name_en":  "Militia"
                   },
                   {
@@ -801,7 +776,6 @@
                       "model_run_animation_name":  "run",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "name_en":  "Merchant"
                   },
                   {
@@ -829,7 +803,6 @@
                       "model":  "res://assets/models/units/human_archer_animated/human_archer_animated.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "name_en":  "Archer"
                   },
                   {
@@ -858,7 +831,6 @@
                       "model":  "res://assets/models/units/human_swordsman_animated/human_swordsman_animated.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "name_en":  "Swordsman"
                   },
                   {
@@ -886,7 +858,6 @@
                       "model":  "res://assets/models/units/human_mage_animated/human_mage_animated.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "skill_cd":  2.5,
                       "damage_atk_pct":  3,
                       "name_en":  "Mage"
@@ -916,7 +887,6 @@
                       "model":  "res://assets/models/units/human_cleric_animated/human_cleric_animated.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "name_en":  "Cleric"
                   },
                   {
@@ -943,7 +913,6 @@
                       "model":  "res://assets/models/units/human_death_servant_animated/human_death_servant_animated.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "ally_def_bonus":  3,
                       "ally_def_duration":  5,
                       "name_en":  "Deathbound"
@@ -975,7 +944,6 @@
                       "model":  "res://assets/models/units/human_king_animated/human_king_animated.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "model_frame_fill":  0.96,
                       "model_idle_animation_name":  "idle",
                       "model_attack_animation_name":  "attack",
                       "model_attack_sync_seek":  0.18,
