@@ -114,7 +114,7 @@
                       "hp":  720,
                       "atk":  77,
                       "def":  4,
-                      "attack_speed":  1.10,
+                      "attack_speed":  1.20,
                       "range":  4,
                       "move_speed":  3.2,
                       "crit":  0.10,
@@ -357,7 +357,7 @@
                       "hp":  920,
                       "atk":  68,
                       "def":  8,
-                      "attack_speed":  0.95,
+                      "attack_speed":  1.0,
                       "range":  2,
                       "move_speed":  3.2,
                       "crit":  0.08,
@@ -401,7 +401,7 @@
                   {
                       "id":  "dark_suc",
                       "star4":  {
-                          "stun_sec":  2,
+                          "stun_sec":  2.0,
                           "skill_cd":  3.5
                       },
                       "name":  "魅魔",
@@ -419,7 +419,7 @@
                       "crit_dmg":  1.6,
                       "skill_id":  "stun",
                       "skill_cd":  5.0,
-                      "stun_sec":  1.0,
+                      "stun_sec":  1.5,
                       "model":  "res://assets/models/units/dark_suc_animated/dark_suc_animated.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
@@ -434,7 +434,7 @@
                       "id":  "dark_doom",
                       "model_in_place_actions": ["run"],
                       "star4":  {
-                          "link_regen_pct":  0.03
+                          "link_regen_pct":  0.04
                       },
                       "name":  "末日守卫",
                       "race":  "dark",
@@ -578,7 +578,7 @@
                       "id":  "undead_spike",
                       "star4":  {
                           "duration":  8,
-                          "def_down_pct":  0.33
+                          "def_down_pct":  0.6
                       },
                       "name":  "刺灵",
                       "race":  "undead",
@@ -591,7 +591,7 @@
                       "attack_speed":  1.1,
                       "range":  4,
                       "move_speed":  3.25,
-                      "crit":  0.08,
+                      "crit":  0.15,
                       "crit_dmg":  1.6,
                       "skill_id":  "defense_down_attack",
                       "def_down_pct":  0.30,
@@ -644,7 +644,7 @@
                       "tier":  2,
                       "cost":  30,
                       "hp":  600,
-                      "atk":  138,
+                      "atk":  145,
                       "def":  0,
                       "attack_speed":  0.70,
                       "range":  1,
@@ -792,7 +792,7 @@
                       "hp":  760,
                       "atk":  70,
                       "def":  3,
-                      "attack_speed":  1.08,
+                      "attack_speed":  1.2,
                       "range":  4,
                       "move_speed":  3.25,
                       "crit":  0.10,
@@ -893,7 +893,7 @@
                       "id":  "human_death_servant",
                       "model_in_place_actions": ["run", "attack", "idle"],
                       "star4":  {
-                          "ally_def_pct":  0.3,
+                          "ally_def_pct":  0.4,
                           "ally_def_duration":  8
                       },
                       "name":  "死侍",
