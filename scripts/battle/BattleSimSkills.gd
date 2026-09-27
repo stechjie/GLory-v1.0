@@ -129,12 +129,100 @@ static func _skill_archangel(caster: Dictionary, allies: Array, d: Dictionary) -
 	StatusEffectService.add_status(target, "damage_reduction", float(d.get("duration", 6.0)), {"pct": float(d.get("damage_reduction", 0.5))})
 
 
-static func _skill_god_king(caster: Dictionary, opponents: Array, d: Dictionary) -> void:
+static func _split_damage(total: int, count: int) -> Array:
+	var chunks: Array = []
+	var safe_count := maxi(1, count)
+	var base := int(total / safe_count)
+	for _i in safe_count:
+		chunks.append(base)
+	chunks[safe_count - 1] = int(chunks[safe_count - 1]) + total % safe_count
+	return chunks
+
+
+static func _queue_god_king_damage(state: Dictionary, caster: Dictionary, target: Dictionary, total_damage: int, d: Dictionary) -> void:
+	# Compatibility for direct probes that predate the battle-state argument.
+	# Production always supplies state and therefore always uses timed pulses.
+	if state.is_empty():
+		DamageService.apply_damage(target, total_damage, false)
+		return
+	# Preserve the old one-roll dodge semantics. Once the judgement lands, later
+	# pulses do not reroll dodge, but they still respect live shields, defense and
+	# invulnerability when each pulse is due.
+	if not DamageService.skill_hit_lands(target):
+		return
+	var count := maxi(1, int(d.get("damage_tick_count", 5)))
+	var interval := maxf(TICK_SEC, float(d.get("damage_tick_interval", 0.5)))
+	var chunks := _split_damage(maxi(1, total_damage), count)
+	var revived_before := bool(target.get("sacrifice_revive_used", false))
+	DamageService.apply_damage(target, int(chunks[0]), false, true)
+	if chunks.size() <= 1 or not bool(target.get("alive", false)):
+		return
+	if not revived_before and bool(target.get("sacrifice_revive_used", false)):
+		return
+	var interval_ticks := maxi(1, roundi(interval / TICK_SEC))
+	var pending: Array = state.get("pending_skill_damage", [])
+	pending.append({
+		"source_uid": str(caster.get("uid", "")),
+		"source_race": str(d.get("race", "god")),
+		"target_uid": str(target.get("uid", "")),
+		"skill_id": "global_divine_blast",
+		"chunks": chunks.slice(1),
+		"interval_ticks": interval_ticks,
+		"ticks_until_next": interval_ticks,
+	})
+	state["pending_skill_damage"] = pending
+
+
+static func tick_pending_skill_damage(state: Dictionary) -> void:
+	var pending: Array = state.get("pending_skill_damage", [])
+	if pending.is_empty():
+		return
+	var fighters: Array = state.get("player", []) + state.get("enemy", [])
+	var by_uid := {}
+	for fighter in fighters:
+		if typeof(fighter) == TYPE_DICTIONARY:
+			by_uid[str((fighter as Dictionary).get("uid", ""))] = fighter
+	var keep: Array = []
+	for value in pending:
+		if typeof(value) != TYPE_DICTIONARY:
+			continue
+		var entry: Dictionary = value
+		var target_uid := str(entry.get("target_uid", ""))
+		if not by_uid.has(target_uid):
+			continue
+		var target: Dictionary = by_uid[target_uid]
+		if not bool(target.get("alive", false)):
+			continue
+		var ticks_left := int(entry.get("ticks_until_next", 1)) - 1
+		if ticks_left > 0:
+			entry["ticks_until_next"] = ticks_left
+			keep.append(entry)
+			continue
+		var chunks: Array = entry.get("chunks", [])
+		if chunks.is_empty():
+			continue
+		DamageService.begin_stat_source_uid(state, str(entry.get("source_uid", "")))
+		DamageService.set_hit_context("skill", false, str(entry.get("source_race", "god")), str(entry.get("skill_id", "global_divine_blast")))
+		var revived_before := bool(target.get("sacrifice_revive_used", false))
+		DamageService.apply_damage(target, int(chunks[0]), false, true)
+		DamageService.clear_stat_context()
+		chunks.remove_at(0)
+		if chunks.is_empty() or not bool(target.get("alive", false)):
+			continue
+		if not revived_before and bool(target.get("sacrifice_revive_used", false)):
+			continue
+		entry["chunks"] = chunks
+		entry["ticks_until_next"] = maxi(1, int(entry.get("interval_ticks", 1)))
+		keep.append(entry)
+	state["pending_skill_damage"] = keep
+
+
+static func _skill_god_king(caster: Dictionary, opponents: Array, d: Dictionary, state: Dictionary = {}) -> void:
 	var struck := []
 	for o in opponents:
 		if not bool(o.get("alive", false)) or not _can_target(caster, o, opponents): continue
 		var dmg := int(float(caster.atk) * float(d.get("damage_atk_pct", 1.6))) + int(float(o.max_hp) * float(d.get("max_hp_bonus_pct", 0.08)))
-		DamageService.apply_damage(o, maxi(1, dmg), false)
+		_queue_god_king_damage(state, caster, o, maxi(1, dmg), d)
 		struck.append(o)
 	# 9.24 第四轮：把**这一发真正选中的目标**交给表现层逐目标落雷。
 	# 记的是 `_can_target` 判定通过的目标，**不是**"打掉血的" —— 被闪避 / 被护盾

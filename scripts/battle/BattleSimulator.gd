@@ -401,6 +401,9 @@ static func step_state(state: Dictionary) -> void:
 	_tick_statuses(p_alive + e_alive, state)
 	# 神7：放在状态结算之后挂，挂上的 1 秒无敌正好覆盖本 tick 起的 10 个 tick。
 	BattleSimTreasures._apply_god_divine_pulse(state, p_alive + e_alive)
+	# 神王裁决的后续段数属于技能伤害：在当帧无敌挂好之后结算，确保每段都读取
+	# 当时真实的护盾、无敌和防御；队列只保存施法时已经选中的目标，不重新选人。
+	BattleSimSkills.tick_pending_skill_damage(state)
 	_tick_skills(p_alive, e_alive, state)
 	_tick_skills(e_alive, p_alive, state)
 	_process_boss_charges(state)
@@ -1043,7 +1046,7 @@ static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) ->
 				BattleSimSkills._skill_archangel(caster, casters, d)
 				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 6.0))
 			"global_divine_blast":
-				BattleSimSkills._skill_god_king(caster, opponents, d)
+				BattleSimSkills._skill_god_king(caster, opponents, d, state)
 				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 8.0))
 			"silence_bolt":
 				BattleSimSkills._skill_silence_bolt(caster, opponents, d, state)

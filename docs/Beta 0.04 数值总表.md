@@ -112,7 +112,7 @@ Boss 战斗实际值 = 基础值 x Boss 整体倍率 x Boss 成长。
 | god_angel | skill_cd 7.0，opening_cd 2.0，heal_pct 0.15，atk_bonus 0.10，aspd_bonus 0.15，清除负面状态，model `res://assets/models/units/god_angel_animated/god_angel_animated.tscn` |
 | god_arbiter | skill_cd 2.0，damage_atk_pct 2.2，def_stack_pct 0.06，max_stacks 5，model `res://assets/models/units/god_arbiter_animated/god_arbiter_animated.tscn` |
 | god_archangel | skill_cd 6.0，damage_reduction 0.50，duration 6.0，unique_on_board true，model `res://assets/models/units/god_archangel_animated/god_archangel_animated.tscn` |
-| god_king | skill_cd 8.0，damage_atk_pct 1.6，max_hp_bonus_pct 0.08，unique_on_board true，model `res://assets/models/units/god_king_animated/god_king_animated.tscn` |
+| god_king | skill_cd 8.0，damage_atk_pct 1.6，max_hp_bonus_pct 0.08，damage_tick_count 5，damage_tick_interval 0.5，unique_on_board true，model `res://assets/models/units/god_king_animated/god_king_animated.tscn` |
 | dark_imp | attack_down 0.08，aspd_down 0.08，duration 4.0，max_stacks 2 |
 | dark_mage | skill_cd 4.0，silence_sec 1.2，damage_atk_pct 1.7，model `res://assets/models/units/dark_mage_violet_necromancer/dark_mage_animated.tscn`，idle/attack/run 动作已接入 |
 | dark_fear | skill_cd 6.0，fear_sec 1.5 |

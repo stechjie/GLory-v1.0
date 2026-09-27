@@ -163,7 +163,9 @@ static func format_skill_detail(d: Dictionary) -> String:
 		"random_ally_damage_reduction":
 			return "天使庇护%s：随机友军获得%s减伤，持续%.1f秒。" % [cd, pct(float(d.get("damage_reduction", 0.50))), float(d.get("duration", 6.0))]
 		"global_divine_blast":
-			return "神王裁决%s：攻击全场敌人，造成自身攻击%s加目标最大生命%s的伤害。" % [cd, pct(float(d.get("damage_atk_pct", 1.6))), pct(float(d.get("max_hp_bonus_pct", 0.08)))]
+			var tick_count := maxi(1, int(d.get("damage_tick_count", 5)))
+			var tick_duration := float(tick_count - 1) * maxf(0.0, float(d.get("damage_tick_interval", 0.5)))
+			return "神王裁决%s：攻击神王所在战线内所有可攻击敌人，在%.1f秒内分%d次造成自身攻击%s加目标最大生命%s的伤害。" % [cd, tick_duration, tick_count, pct(float(d.get("damage_atk_pct", 1.6))), pct(float(d.get("max_hp_bonus_pct", 0.08)))]
 		"curse_attack":
 			return "诅咒攻击：普通攻击附带减攻%s与攻速降低%s，持续%.1f秒；暗2会增强效果。" % [pct(float(d.get("attack_down", 0.08))), pct(float(d.get("aspd_down", 0.08))), float(d.get("duration", 4.0))]
 		"silence_bolt":
@@ -330,7 +332,9 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"random_ally_damage_reduction":
 			return "Angel's Guard%s: Grant a random ally %s damage reduction for %.1fs." % [cd, pct(float(d.get("damage_reduction", 0.50))), float(d.get("duration", 6.0))]
 		"global_divine_blast":
-			return "Divine Judgement%s: Strike all enemies for %s ATK + %s of their max HP as damage." % [cd, pct(float(d.get("damage_atk_pct", 1.6))), pct(float(d.get("max_hp_bonus_pct", 0.08)))]
+			var tick_count := maxi(1, int(d.get("damage_tick_count", 5)))
+			var tick_duration := float(tick_count - 1) * maxf(0.0, float(d.get("damage_tick_interval", 0.5)))
+			return "Divine Judgement%s: Strike all attackable enemies in God King's lane, dealing %s ATK + %s of each target's max HP over %d hits in %.1fs." % [cd, pct(float(d.get("damage_atk_pct", 1.6))), pct(float(d.get("max_hp_bonus_pct", 0.08))), tick_count, tick_duration]
 		"curse_attack":
 			return "Curse Strike: Normal attacks reduce target ATK by %s and AS by %s for %.1fs. Dark 2 amplifies these debuffs." % [pct(float(d.get("attack_down", 0.08))), pct(float(d.get("aspd_down", 0.08))), float(d.get("duration", 4.0))]
 		"silence_bolt":

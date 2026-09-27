@@ -224,7 +224,7 @@
                       "id":  "god_king",
                       "star4":  {
                           "damage_atk_pct":  3.2,
-                          "max_hp_bonus_pct":  0.2,
+                          "max_hp_bonus_pct":  0.16,
                           "skill_cd":  6
                       },
                       "name":  "神王",
@@ -244,6 +244,8 @@
                       "skill_cd":  8.0,
                       "damage_atk_pct":  1.6,
                       "max_hp_bonus_pct":  0.08,
+                      "damage_tick_count":  5,
+                      "damage_tick_interval":  0.5,
                       "unique_on_board":  true,
                       "model":  "res://assets/models/units/god_king_animated/god_king_animated.tscn",
                       "model_visual_scale":  1,

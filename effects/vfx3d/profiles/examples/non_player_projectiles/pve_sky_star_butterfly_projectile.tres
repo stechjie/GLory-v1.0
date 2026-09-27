@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="VFXProfile3D" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+profile_id = "pve_sky_star_butterfly_projectile_preview"
+module_id = "authored_unit_projectile"
+curve_name = "snap"
+dark_color = Color(0.035, 0.015, 0.105, 1)
+main_color = Color(0.34, 0.24, 0.88, 1)
+core_color = Color(0.94, 0.76, 1, 1)
+size = 0.38
+duration = 0.40
+particle_count = 5
+trail_length = 0.48
+emission_energy = 1.65
+parameters = {"texture": "res://assets/vfx/basic_projectiles/non_player/pve_sky_star_butterfly_scale_swarm.png", "speed": 6.4, "arc_height": 0.22, "trail_interval": 0.085, "trail_alpha": 0.17, "impact_scale": 1.44, "motion_style": "flutter", "motion_amplitude": 0.050, "motion_frequency": 3.2, "warp_amount": 0.009}

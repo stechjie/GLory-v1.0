@@ -16,6 +16,7 @@ const VFX_LIGHT_PULSE:=preload("res://effects/vfx3d/modules/VFXLightPulse3D.gd")
 const VFX_ENERGY_BURST:=preload("res://effects/vfx3d/modules/VFXEnergyBurst3D.gd")
 const VFX_IMPACT_FLASH:=preload("res://effects/vfx3d/modules/VFXImpactFlash3D.gd")
 const VFX_RACE_BASIC_ATTACK:=preload("res://effects/vfx3d/modules/VFXRaceBasicAttack3D.gd")
+const VFX_AUTHORED_UNIT_PROJECTILE:=preload("res://effects/vfx3d/modules/VFXAuthoredUnitProjectile3D.gd")
 const VFX_OGA_PROJECTILE:=preload("res://effects/vfx3d/modules/VFXFlipbookProjectile3D.gd")
 const VFX_OGA_MELEE:=preload("res://effects/vfx3d/modules/VFXFlipbookMelee3D.gd")
 const VFX_OGA_SKILL:=preload("res://effects/vfx3d/modules/VFXFlipbookSkill3D.gd")
@@ -29,6 +30,15 @@ const BASIC_GOD:=preload("res://effects/vfx3d/profiles/examples/basic_attack_god
 const BASIC_HUMAN:=preload("res://effects/vfx3d/profiles/examples/basic_attack_human.tres")
 const BASIC_DARK:=preload("res://effects/vfx3d/profiles/examples/basic_attack_dark.tres")
 const BASIC_UNDEAD:=preload("res://effects/vfx3d/profiles/examples/basic_attack_undead.tres")
+const AUTHORED_UNIT_PROJECTILE_PROFILES := {
+	"merc_aquarius_time":preload("res://effects/vfx3d/profiles/examples/non_player_projectiles/merc_aquarius_time_projectile.tres"),
+	"pve_ren_voodoo_witch":preload("res://effects/vfx3d/profiles/examples/non_player_projectiles/pve_ren_voodoo_witch_projectile.tres"),
+	"boss_meteor_caster":preload("res://effects/vfx3d/profiles/examples/non_player_projectiles/boss_meteor_caster_projectile.tres"),
+	"pve_sky_hymn_spirit":preload("res://effects/vfx3d/profiles/examples/non_player_projectiles/pve_sky_hymn_spirit_projectile.tres"),
+	"pve_sky_star_butterfly":preload("res://effects/vfx3d/profiles/examples/non_player_projectiles/pve_sky_star_butterfly_projectile.tres"),
+	"pve_land_ancient_tree":preload("res://effects/vfx3d/profiles/examples/non_player_projectiles/pve_land_ancient_tree_projectile.tres"),
+	"boss_holy_priest":preload("res://effects/vfx3d/profiles/examples/non_player_projectiles/boss_holy_priest_projectile.tres"),
+}
 const VFX_MOTHER_EXECUTE:=preload("res://effects/vfx3d/modules/VFXMotherExecute3D.gd")
 const VFX_EXTERNAL:=preload("res://effects/vfx3d/vfxv2/VFXV2ExternalReference3D.gd")
 const VFX_PAINTED:=preload("res://effects/vfx3d/modules/VFXBossTextureLayer3D.gd")
@@ -245,6 +255,16 @@ func _basic_attack(origin:Vector3,target:Vector3,race:String,mode:String,context
 				projectile.play_spec(origin,target,projectile_spec,context)
 			return
 		if OGA_CHESS_CATALOG.is_player_chess(uid):
+			return
+		var authored_profile := AUTHORED_UNIT_PROJECTILE_PROFILES.get(uid) as VFXProfile3D
+		if authored_profile != null:
+			var authored_projectile := _block(VFX_AUTHORED_UNIT_PROJECTILE) as VFXAuthoredUnitProjectile3D
+			if authored_projectile != null:
+				last_spawned = authored_projectile
+				var authored_context := context.duplicate(true)
+				authored_context["origin"] = origin
+				authored_context["target"] = target
+				authored_projectile.play_profile(authored_profile, authored_context)
 			return
 	else:
 		var melee_spec:Dictionary=OGA_CHESS_CATALOG.melee_for(uid,race)

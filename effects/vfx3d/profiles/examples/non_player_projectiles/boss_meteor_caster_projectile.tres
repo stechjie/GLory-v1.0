@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="VFXProfile3D" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+profile_id = "boss_meteor_caster_projectile_preview"
+module_id = "authored_unit_projectile"
+curve_name = "snap"
+dark_color = Color(0.095, 0.012, 0.004, 1)
+main_color = Color(0.90, 0.15, 0.018, 1)
+core_color = Color(1, 0.76, 0.20, 1)
+size = 0.50
+duration = 0.44
+particle_count = 6
+trail_length = 0.56
+emission_energy = 1.80
+parameters = {"texture": "res://assets/vfx/basic_projectiles/non_player/boss_meteor_caster_molten_fragment.png", "speed": 6.4, "arc_height": 0.20, "trail_interval": 0.085, "trail_alpha": 0.18, "impact_scale": 1.55, "motion_style": "tumble", "motion_amplitude": 0.060, "motion_frequency": 1.2, "warp_amount": 0.0}

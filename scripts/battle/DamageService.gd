@@ -247,7 +247,22 @@ static func effective_defense(target: Dictionary) -> int:
 		base -= float(target.statuses.defense_flat_down.get("amount", 0))
 	return maxi(0, int(round(base * StatusEffectService.defense_multiplier(target))))
 
-static func apply_damage(target: Dictionary, amount: int, ignore_defense: bool = false) -> int:
+static func skill_hit_lands(target: Dictionary) -> bool:
+	if not bool(target.get("alive", true)):
+		return false
+	StatusEffectService.ensure_status(target)
+	if target.statuses.has("invulnerable"):
+		return false
+	var dodge_chance := float(target.get("dodge", 0.0))
+	if target.statuses.has("dodge_bonus"):
+		dodge_chance += float(target.statuses.dodge_bonus.get("pct", 0.0))
+	return RngService.rng.randf() >= dodge_chance
+
+
+# skip_dodge is reserved for a multi-pulse hit that already rolled its one dodge
+# check when the cast landed. Invulnerability, defense, shields and damage-taken
+# modifiers are still evaluated independently for every pulse.
+static func apply_damage(target: Dictionary, amount: int, ignore_defense: bool = false, skip_dodge: bool = false) -> int:
 	if amount <= 0 or not bool(target.get("alive", true)):
 		return 0
 
@@ -255,11 +270,12 @@ static func apply_damage(target: Dictionary, amount: int, ignore_defense: bool =
 	if target.statuses.has("invulnerable"):
 		if not (_dot_damage_active and bool(target.statuses.invulnerable.get("dot_pass", false))):
 			return 0
-	var dodge_chance := float(target.get("dodge", 0.0))
-	if target.statuses.has("dodge_bonus"):
-		dodge_chance += float(target.statuses.dodge_bonus.get("pct", 0.0))
-	if RngService.rng.randf() < dodge_chance:
-		return 0
+	if not skip_dodge:
+		var dodge_chance := float(target.get("dodge", 0.0))
+		if target.statuses.has("dodge_bonus"):
+			dodge_chance += float(target.statuses.dodge_bonus.get("pct", 0.0))
+		if RngService.rng.randf() < dodge_chance:
+			return 0
 	var remaining := amount
 	if not ignore_defense:
 		remaining = int(ceil(float(remaining) * (1.0 - damage_reduction(effective_defense(target)))))
