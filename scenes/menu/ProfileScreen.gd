@@ -26,6 +26,7 @@ const TouchChoice := preload("res://ui/components/TouchChoiceButton.gd")
 # 仓库里 TutorialMode 就是引用常量的（SkipDialog.RESULT_CONFIRMED）。
 const ConfirmDialog := preload("res://ui/components/GloryConfirmDialog.gd")
 const MatchHistory := preload("res://scenes/menu/MatchHistoryPanel.gd")
+const ReportDialog := preload("res://ui/components/ReportDialog.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
 const MENU_BG_TEX := preload("res://assets/ui/main_menu_live/background.png")
 
@@ -68,6 +69,9 @@ const DAYS_IN_MONTH := [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 
 var _mode: int = Mode.SELF
 var _target_code := ""
+# 从哪儿点进来看的（举报时告诉服务器该复制哪一种证据，见 backend/app/reports.py）：
+# 好友列表 / 最近同房 = profile，世界频道 = world。
+var _report_context := "profile"
 var _data: Dictionary = {}
 var _busy := false
 
@@ -102,9 +106,10 @@ func configure_self() -> void:
 	_target_code = ""
 
 
-func configure_public(friend_code: String) -> void:
+func configure_public(friend_code: String, report_context: String = "profile") -> void:
 	_mode = Mode.PUBLIC
 	_target_code = friend_code
+	_report_context = report_context
 
 
 func _ready() -> void:
@@ -410,15 +415,11 @@ func _report_button() -> Control:
 	button.text = _text("举报该玩家", "Report player")
 	button.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
 	# 举报入口是**发布必需项**（Google Play UGC 政策 / App Store 1.2）——
-	# 有玩家可见的自定义昵称与签名，就必须有地方举报。后端受理流程不在本批，
-	# 所以这里先只收下并告诉玩家收到了；接上之后把这个分支换掉。
+	# 有玩家可见的自定义昵称与签名，就必须有地方举报。2026-09-27 接上后端（backend/app/reports.py）：
+	# 证据由服务器复制，处理在网页后台「举报」页。
 	button.pressed.connect(func() -> void:
-		DialogService.info({
-			"title": _text("已记录", "Received"),
-			"body": _text(
-				"举报已记录。处理流程还在建设中，暂时不会有回执。",
-				"Report noted. The review pipeline is still being built."),
-		}))
+		ReportDialog.new().present(self, _target_code,
+			AccountManager.display_name(_field("player_name"), _target_code), _report_context))
 	return button
 
 var _friend_action: Button

@@ -125,6 +125,10 @@ EXPECTED_TABLES: tuple[str, ...] = (
     "admin_users",
     "admin_requests",
     "admin_audit",
+    # 019（世界频道、禁言、举报）
+    "world_messages",
+    "player_mutes",
+    "player_reports",
 )
 
 

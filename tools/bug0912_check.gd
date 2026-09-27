@@ -118,6 +118,6 @@ func _ready() -> void:
 		copy.position = Vector2(20, 565)
 		add_child(copy)
 		await RenderingServer.frame_post_draw
-		get_viewport().get_texture().get_image().save_png("res://work/bug0912-resource-review.png")
+		get_viewport().get_texture().get_image().save_png("res://reports/bug0912-resource-review.png")
 	h.expect(book.treasures.ctrl_interrupt_chain.effect.contains("缴械"), "disarm", "图鉴数据明确缴械")
 	h.finish(get_tree())

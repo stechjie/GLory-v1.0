@@ -344,7 +344,20 @@ KEPT_ON_DELETE = {
     "match_seats",                                   # 对局（同局其他人的历史不缺一格）
     "player_ranked", "player_credit", "credit_events", "player_ranked_history",
     "player_bans",                                   # 封号记录：注销不能洗掉
+    "player_mutes", "player_reports",                # 禁言与举报（019）：同封号，处罚记录不能靠注销洗掉
 }
+
+
+def _latest_erase_player() -> str:
+    """最后一个定义 erase_player() 的迁移里的函数体（017 定义，019 起用 create or replace 重定义）。"""
+    latest = ""
+    for path in sorted((REPO / "database").glob("[0-9][0-9][0-9]_*.sql")):
+        sql = path.read_text(encoding="utf-8")
+        for marker in ("create or replace function erase_player", "create function erase_player"):
+            if marker in sql:
+                latest = sql[sql.index(marker):]
+                break
+    return latest
 
 
 def _tables_referencing_players() -> set[str]:
@@ -373,8 +386,8 @@ def test_every_table_referencing_players_is_either_erased_or_kept() -> None:
     玩家看到「账号已删除」，而他的个人数据还在那张新表里 —— 不报错、不回滚。
     这条让新表在第一次跑测试时就被拦下来，逼着人做决定。
     """
-    sql = (REPO / "database" / "017_account_deletion.sql").read_text(encoding="utf-8")
-    body = sql[sql.index("create function erase_player"):]
+    body = _latest_erase_player()
+    assert body, "没找到 erase_player() 的定义"
     erased = set(re.findall(r"delete from (\w+)", body))
     referencing = _tables_referencing_players()
     assert len(referencing) >= 20, "没扫到引用 players 的外键 —— 这条断言可能已经失效"

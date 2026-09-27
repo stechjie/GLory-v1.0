@@ -5,18 +5,23 @@
 这里做的是三层里性价比最高的那部分：
 
     ① 结构管控   零宽字符、控制字符、双向覆写、Zalgo、空白规范、长度
-    ② 引流模式   URL、微信/QQ/Telegram、长数字串（**只对签名**）
+    ② 引流模式   URL、微信/QQ/Telegram/WhatsApp/Discord、手机号、长数字串（**只对签名与世界频道**）
     ③ 词表       可外挂文件，补词不用改代码
 
 上线时诚实的说法是「有基础管控 + 举报后处理」，见 docs/玩家资料系统设计.md 第六节。
 
 为什么 ② 只对签名：昵称 24 字、签名 60 字且更自由。手游签名栏里 90% 的违规
 内容是**代练与外挂引流**（「加V:xxx」「Q群 12345」），不是脏话 —— 一份词表
-覆盖不了两种滥用，所以分开处理。
+覆盖不了两种滥用，所以分开处理。世界频道是广播，和签名同一个性质（2026-09-10 已定：拦）。
+
+2026-09-27：世界频道第一版**只跑这里的本地规则**，不接外部审核（用户定：先本地规则 +
+举报 + 禁言 + 删单条）。引流模式补了马来西亚常见的几种（带横杠 / 空格的手机号、
+WhatsApp、Discord、.my 网址），词表第一次填了常见的中英马脏话，以后再慢慢补。
 """
 
 from __future__ import annotations
 
+import functools
 import os
 import pathlib
 import re
@@ -31,6 +36,10 @@ SIGNATURE_MAX = 60
 # 私聊单条上限。与 database/007_chat.sql 的 chat_body_length、
 # 客户端 ChatService.MAX_BODY_CHARS 必须一致（tools/chat_check.gd 钉着）。
 CHAT_MAX = 200
+
+# 世界频道单条上限（设计文档第八节第 11 条）。与 database/019_world_chat.sql 的 world_body_length、
+# 客户端 ChatService.WORLD_MAX_CHARS 必须一致（tools/chat_check.gd 钉着）。
+WORLD_MAX = 100
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _BLOCKLIST_PATH = pathlib.Path(
@@ -140,24 +149,35 @@ def _structural_check(raw: str, field: str) -> str:
     return text
 
 
-# --- ② 引流模式（只对签名）----------------------------------------------------
+# --- ② 引流模式（只对签名与世界频道）-------------------------------------------
 
 _CONTACT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("url", re.compile(r"(https?://|www\.|\.com|\.cn|\.net|\.io|\.xyz)", re.I)),
+    # .my 是马来西亚的域名；.gg / .me 是 discord.gg、t.me、wa.me 这类邀请链接的后缀。
+    ("url", re.compile(r"(https?://|www\.|\.com|\.cn|\.net|\.io|\.xyz|\.my\b|\.gg\b|\.me\b)", re.I)),
     # 「加V」「+v」「wx」「vx」「微信」后面跟内容的形态。单独一个「微信」不拦，
     # 拦的是「微信 xxx」这种给号的写法。
     ("wechat", re.compile(r"(微信|加\s*[vV]|[wWvV][xX])\s*[:：]?\s*\S", re.I)),
     ("qq", re.compile(r"([qQ]{2}|扣扣|企鹅)\s*(群)?\s*[:：]?\s*\d{5,}")),
     ("telegram", re.compile(r"(telegram|电报|飞机|@[A-Za-z0-9_]{5,32}\b)", re.I)),
+    # 马来西亚常见的引流：WhatsApp（whatsapp / wasap / 「WA: 012…」）、Discord、Line ID、FB / IG 账号。
+    ("whatsapp", re.compile(r"(whats\s*app|wasap|\bwa\s*[:：]\s*\+?\d)", re.I)),
+    ("discord", re.compile(r"(discord|dc\s*[:：]\s*\S)", re.I)),
+    ("social", re.compile(r"(\bline\s*id\b|\b(fb|ig|insta(gram)?)\s*[:：]\s*\S)", re.I)),
     # 9 位以上连续数字：手机号、QQ 号、群号的共同形态。
     ("long_number", re.compile(r"\d{9,}")),
+    # 被横杠 / 空格 / 点切开的手机号（上面那条抓不到「012-345 6789」）：
+    #   马来西亚手机号 01x 开头（可带 +60 / 60），后面再 7~8 位；
+    #   以及三段 3~4 位数字的写法（「123 456 7890」）。日期「2026-09-27」是 4-2-2，碰不到。
+    ("phone", re.compile(
+        r"(?<!\d)(\+?6[\s\-.]?)?0[\s\-.]?1\d([\s\-.]?\d){7,8}(?!\d)"
+        r"|(?<!\d)\d{3,4}[\s\-.]\d{3,4}[\s\-.]\d{3,4}(?!\d)")),
 )
 
 
-def _contact_check(text: str) -> None:
+def _contact_check(text: str, where: str = "签名") -> None:
     for code, pattern in _CONTACT_PATTERNS:
         if pattern.search(text):
-            raise TextRejected("contact_%s" % code, "签名里不能留联系方式或外链")
+            raise TextRejected("contact_%s" % code, "%s里不能留联系方式或外链" % where)
 
 
 # --- ③ 词表 -------------------------------------------------------------------
@@ -190,13 +210,34 @@ def _load_blocklist() -> frozenset[str]:
     return _blocklist_cache[1]
 
 
+@functools.lru_cache(maxsize=4)
+def _compile_blocklist(words: frozenset[str]) -> tuple[frozenset[str], re.Pattern[str] | None]:
+    """把词表分成两种匹配方式（2026-09-27 起，第一次填英文 / 马来文词时加的）：
+
+      · 含中文等非拉丁字符的词：**子串**匹配 —— 中文没有词边界；
+      · 纯拉丁字母的词（英文、马来文）：**整词**匹配 —— 子串的话「ass」会拦掉 class / pass，
+        「cock」会拦掉 cockroach。词尾写 `*` 表示前缀（`fuck*` 拦 fuck / fucking / fucker）。
+    """
+    substrings: set[str] = set()
+    parts: list[str] = []
+    for word in sorted(words):
+        if not word.isascii():
+            substrings.add(word)
+            continue
+        if word.endswith("*"):
+            parts.append(r"(?<![a-z0-9])" + re.escape(word[:-1]))
+        else:
+            parts.append(r"(?<![a-z0-9])" + re.escape(word) + r"(?![a-z0-9])")
+    return frozenset(substrings), (re.compile("|".join(parts)) if parts else None)
+
+
 def _blocklist_check(text: str) -> None:
-    folded = text.casefold()
-    for word in _load_blocklist():
-        if word in folded:
-            # **不回显命中的词**：一是没必要教人怎么绕，二是错误串会被
-            # IssueReport 收走并贴进聊天窗口。
-            raise TextRejected("blocked_word", "包含不允许的内容")
+    folded = unicodedata.normalize("NFC", text).casefold()
+    substrings, latin = _compile_blocklist(_load_blocklist())
+    if any(word in folded for word in substrings) or (latin is not None and latin.search(folded)):
+        # **不回显命中的词**：一是没必要教人怎么绕，二是错误串会被
+        # IssueReport 收走并贴进聊天窗口。
+        raise TextRejected("blocked_word", "包含不允许的内容")
 
 
 # --- 对外的两个入口 -----------------------------------------------------------
@@ -256,9 +297,49 @@ def clean_chat_message(raw: str) -> str:
     """
     if raw is None:
         raise TextRejected("empty", "消息不能为空")
-    text = raw.replace("\r\n", " ").replace("\r", " ").replace("\n", " ").replace("\t", " ")
-    text = text.replace(_ZWJ, "")
+    text = _flatten_chat(raw)
     text = _structural_check(text, "消息")
     if len(text) > CHAT_MAX:
         raise TextRejected("length", "消息最多 %d 个字" % CHAT_MAX)
+    return text
+
+
+# 聊天里的换行 / 制表压成空格、ZWJ 去掉（理由见 clean_chat_message 第 3 条）。
+def _flatten_chat(raw: str) -> str:
+    text = raw.replace("\r\n", " ").replace("\r", " ").replace("\n", " ").replace("\t", " ")
+    return text.replace(_ZWJ, "")
+
+
+# --- 世界频道（docs/聊天系统设计.md 批次 E，2026-09-27）------------------------------
+
+
+def clean_world_message(raw: str) -> str:
+    """校验并规范化一条世界频道消息。不通过就抛 TextRejected。
+
+    三层全开（设计文档第四节）：世界频道是**广播**，和签名同一个性质 ——
+    结构管控、引流模式、词表都跑。换行 / ZWJ 的处理同私聊（不整条拒绝）。
+    第一版不接外部审核（2026-09-27 用户定），这里就是全部的自动把关，其余靠举报与后台。
+    """
+    if raw is None:
+        raise TextRejected("empty", "消息不能为空")
+    text = _structural_check(_flatten_chat(raw), "消息")
+    if len(text) > WORLD_MAX:
+        raise TextRejected("length", "世界频道一条最多 %d 个字" % WORLD_MAX)
+    _contact_check(text, "世界频道")
+    _blocklist_check(text)
+    return text
+
+
+# 举报时玩家自己写的补充说明（database/019 的 report_detail_length）。
+REPORT_DETAIL_MAX = 200
+
+
+def clean_report_detail(raw: str | None) -> str | None:
+    """举报补充说明：只给管理员看，所以不拦内容（被举报的人骂了什么，举报人可能要原样引用），
+    只做结构管控 —— 它会显示在网页后台上，控制字符和双向覆写照样能把页面搅乱。空的返回 None。"""
+    if raw is None or not raw.strip():
+        return None
+    text = _structural_check(_flatten_chat(raw), "说明")
+    if len(text) > REPORT_DETAIL_MAX:
+        raise TextRejected("length", "说明最多 %d 个字" % REPORT_DETAIL_MAX)
     return text

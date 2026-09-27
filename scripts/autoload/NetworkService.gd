@@ -182,9 +182,8 @@ const LOBBY_EMPTY_TTL_SEC := 60.0
 # 期间房间转 suspended：不推进阶段、不启动新模拟、不进公开房间列表。
 # 任一有效 token 重连即取消；到期则关房并清理 token / 短码 / 缓存映射。
 # 依赖 C20 的单调时钟 —— 用墙钟的话一次 NTP 校时就能让它提前或永不到期。
-# App cold start/login can already exceed 30 seconds. Retain a suspended
-# match for the same 30-minute budget as preparation, without running AI work.
-const ROOM_SUSPEND_GRACE_SEC := 30.0 * 60.0
+# 所有真人离线满 30 秒即结束旧对局，允许重新开局；AI 不延长保留期。
+const ROOM_SUSPEND_GRACE_SEC := 30.0
 # 匹配房间等人坐满的时限（协议 32）。六个人都在账号服务器点过确认了，
 # 所以没连上来是异常；到点用 AI 补满开打，见 _cleanup_matched_rooms。
 # 给 90 秒：够一次「点完确认 → 过加载界面 → DTLS 握手」，再留一点弱网余量。
@@ -491,6 +490,8 @@ func _ready() -> void:
 		"room_closed": ROOM_CLOSED,
 		"reserve_grace_sec": RESERVE_GRACE_SEC,
 	})
+	team_chat_received.connect(_log_team_phrase)
+	team_chat_text_received.connect(_log_team_text)
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
@@ -2356,6 +2357,33 @@ func _host_send_text(slot: int, text: String, team_only: bool) -> void:
 	if chat_reaches(slot, team_local_slot, team_only):
 		team_chat_text_received.emit(slot, text, team_only)
 
+# --- 房间 / 对局聊天记录（2026-09-27）-------------------------------------------------
+#
+# 上面两个信号每收到一条就记进 room_chat_log（见 RoomChatLog.gd 顶部）。界面**只听记录的
+# entry_added**，不直接听上面两个信号：名字、是不是对方都在记录那一刻定下来，
+# 飘出来的那条和翻记录看到的永远是同一份。战斗服务器不发这两个信号，所以这里只在客户端有东西。
+
+const RoomChatLog := preload("res://scripts/multiplayer/RoomChatLog.gd")
+var room_chat_log := RoomChatLog.new()
+
+func _log_team_phrase(slot: int, phrase_id: int, team_only: bool) -> void:
+	_log_team_chat(slot, phrase_id, "", team_only)
+
+func _log_team_text(slot: int, text: String, team_only: bool) -> void:
+	_log_team_chat(slot, 0, text, team_only)
+
+func _log_team_chat(slot: int, phrase_id: int, text: String, team_only: bool) -> void:
+	room_chat_log.add(team_room_id, RoomChatLog.make_entry(slot, phrase_id, text, team_only,
+		team_local_slot, team_seat_profiles, AccountManager.profile, _chat_log_round(),
+		LocaleManager.get_locale() == "en"))
+
+# 记录分段用：0 = 还在大厅，否则是对局第几回合（和摆放界面顶上「第 N 回合」同一个数）。
+# 本地房主模式（调试用）没有服务器广播的阶段，退回 team_round_active。
+func _chat_log_round() -> int:
+	var in_match := server_phase in [ROOM_PREP, ROOM_BATTLE, ROOM_RESULT] \
+		or (server_phase.is_empty() and team_round_active)
+	return maxi(1, GameState.round_index) if in_match else 0
+
 # --- 组队语音：LiveKit（docs/语音LiveKit方案.md）-----------------------------------------
 #
 # 语音**不经过**战斗服务器：客户端直接连同一台机器上的 LiveKit 语音服务器。这里只做两件事 ——
@@ -4091,6 +4119,8 @@ func reset() -> void:
 	team_seat_pets.clear()
 	team_carrot_harvest_gains.clear()
 	team_carrot_harvest_round = -1
+	# 离开房间 / 对局结束：这一间的聊天记录跟着作废（中途重连不走 reset()，记录留着）。
+	room_chat_log.clear()
 	reset_peer_only()
 	_public_resume_pending = false
 	state = SessionState.OFFLINE
@@ -5546,6 +5576,23 @@ func _apply_server_shop(state: Dictionary) -> void:
 	if str((shop as Dictionary).get("offer_id", "")).is_empty():
 		return
 	server_shop = (shop as Dictionary).duplicate(true)
+	# 9.27 bug 文档第 3 条（重连后商店刷新费用变少）：room_state 里带着**服务端权威**
+	# 的本回合刷新次数，但以前只存进 server_shop（副本），从没搬进
+	# GameState.shop_refresh_uses_this_round —— 而价签（ShopPanel / PrepUI /
+	# PrepBoardController）与实际扣费读的都是后者。
+	#
+	# 触发是确定性的：客机在备战期刷新后掉线 / 杀进程重开 → 那笔刷新的回执在
+	# reset() 的 `_tx_pending.clear()` 里被丢掉（`_tx_consume` 不在等待表里直接
+	# 丢弃）→ 重连后计数停在旧值（常见为 0）→ 价签显示"免费"而服务端按真实
+	# 次数收钱。重连是 `_apply_server_shop` 的主通道，同步它即可自愈。
+	#
+	# 不设「只增不减」的单调保护：**新回合服务端把 refresh_uses 归零，客户端也
+	# 必须跟着归零**（EconomyLedger.reset_shop_refreshes），单调保护会把这条
+	# 正确的回落挡掉。回执路径（:_apply_carrot_receipt 内）传进来的 shop 不带
+	# refresh_uses（次数由它自己的 result 分支写），`has()` 判定保证这里不会
+	# 把它覆盖成 0。
+	if (shop as Dictionary).has("refresh_uses"):
+		GameState.shop_refresh_uses_this_round = maxi(0, int((shop as Dictionary).get("refresh_uses", 0)))
 
 
 func _apply_carrot_state(state: Dictionary) -> void:

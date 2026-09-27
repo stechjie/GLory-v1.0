@@ -58,8 +58,17 @@ func _ready() -> void:
 	# 这张图看的是「整条都在、没有被截」，不是好不好看。
 	NetworkService.team_seat_profiles[2] = {"player_name": LONGEST_NAME,
 		"friend_code": "CCCC3333", "avatar": ""}
-	_lobby.call("_on_chat_text_received", 2, LONGEST_TEXT, false)
+	NetworkService.team_chat_text_received.emit(2, LONGEST_TEXT, false)
 	await _shot("lobby_chat_worst_case")
+	# 聊天记录面板（2026-09-27）：点框里的消息往上弹出，能翻到框里已经挤掉的那几条。
+	# 按真判定区（发 pressed），顺带验了它确实接到了回调。
+	var record_hit := _lobby.find_child("hit_chat_record", true, false) as Button
+	if record_hit == null:
+		push_error("大厅里找不到 hit_chat_record 判定区")
+	else:
+		record_hit.pressed.emit()
+		await _shot("lobby_chat_record")
+		record_hit.pressed.emit()
 	# 语音面板（第九节 v1.1）：同队成员 + 屏蔽。桌面上没有语音插件，面板顶部会写「这个版本没有语音功能」；
 	# 这里看的是版面：成员行（含 24 字昵称）、屏蔽按钮、说明文字有没有被挤掉。
 	var voice_controls: Variant = _lobby.get("_voice_controls")
@@ -106,6 +115,15 @@ func _capture_prep() -> void:
 	GameState.tutorial_mode = false
 	NetworkService.team_active = true
 	NetworkService.is_host = false
+	# 聊天记录（2026-09-27）：上面大厅那几条已经在记录里（房间阶段）。再模拟「第 2 回合看战斗时」
+	# 队友说的两句 —— 那时没有界面接，回到摆放界面时聊天按钮要挂小点，打开直接翻到「记录」。
+	NetworkService.team_seat_profiles[3] = {"player_name": "对面阿强", "friend_code": "DDDD4444", "avatar": ""}
+	NetworkService.server_phase = NetworkService.ROOM_BATTLE
+	GameState.round_index = 2
+	NetworkService.team_chat_text_received.emit(1, "这波对面前排好厚，下回合我补个法师", true)
+	NetworkService.team_chat_received.emit(3, 8, false)
+	NetworkService.server_phase = NetworkService.ROOM_PREP
+	GameState.round_index = 3
 	var packed := load("res://scenes/prep/PrepScreen.tscn") as PackedScene
 	if packed == null:
 		push_error("PrepScreen.tscn 加载失败")
@@ -115,22 +133,34 @@ func _capture_prep() -> void:
 	for _i in PREP_SETTLE_FRAMES:
 		await get_tree().process_frame
 
-	# 聊天范围（2026-09-14）：队友频道不加标记；自己人发到全部是橙字「【全部】」，
-	# 对面的人发的是红字「【对方】」。本地是 0 号位（红方），3~5 号位是对面。
-	prep.call("_on_prep_chat_received", 1, 2, true)
-	prep.call("_on_prep_chat_received", 0, 8, false)
+	# 聊天范围（2026-09-14）：队友频道不加标记；自己人发到全部标「【全部】」，
+	# 对面的人发的标「【对方】」。本地是 0 号位（红方），3~5 号位是对面。2026-09-27 起一律黑字。
+	# 走真路径：NetworkService 的信号 → 聊天记录 → 界面（和线上同一条）。
+	NetworkService.team_chat_received.emit(1, 2, true)
+	NetworkService.team_chat_received.emit(0, 8, false)
 	# 批次 D：一条会折行的自由文字（最多两行）。
-	prep.call("_on_prep_chat_text_received", 1, "下回合我先卖掉那个两星民兵，你们别抢弓手", true)
+	NetworkService.team_chat_text_received.emit(1, "下回合我先卖掉那个两星民兵，你们别抢弓手", true)
 	await _shot("prep_chat_collapsed")
 	# 最坏情况：对面的人发全部频道，「【对方】」+ 24 字昵称 + 40 字（4 行）。条数上限 3 先挤掉最老的短语，
 	# 合计 1 + 2 + 4 = 7 行超了 6 行预算，再挤掉一条 —— 应当剩上面那条两行的
 	# 和这条四行的，**两条都完整**。
 	NetworkService.team_seat_profiles[3] = {"player_name": LONGEST_NAME,
 		"friend_code": "DDDD4444", "avatar": ""}
-	prep.call("_on_prep_chat_text_received", 3, LONGEST_TEXT, false)
+	NetworkService.team_chat_text_received.emit(3, LONGEST_TEXT, false)
 	await _shot("prep_chat_worst_case")
 
-	prep.call("_toggle_chat_panel")
+	# 有没看过的（看战斗时那两句）：打开面板直接是「记录」页，房间 / 第 2 回合 / 第 3 回合分段。
+	var chat_button := prep.find_child("PrepChatButton", true, false) as Button
+	if chat_button == null:
+		push_error("摆放界面里找不到 PrepChatButton")
+		return
+	chat_button.pressed.emit()
+	await _shot("prep_chat_record")
+	var phrases_tab := prep.find_child("PrepChatTabPhrases", true, false) as Button
+	if phrases_tab == null:
+		push_error("聊天面板里找不到 PrepChatTabPhrases 页签")
+	else:
+		phrases_tab.pressed.emit()
 	await _shot("prep_chat_panel_open")
 	# 切到「全部」：按钮字变橙。再打开输入条，看输入框左边的范围按钮。
 	# 按真按钮（发 pressed），不按名字调方法：顺带验了按钮确实接到了回调，也不涨 dynamic_call 的计数。
@@ -148,7 +178,7 @@ func _capture_prep() -> void:
 	# 避免截图里两个层同时展开，也顺带验证关闭入口仍然可用。
 	var prep_chat_panel := prep.find_child("PrepChatPanel", true, false) as Control
 	if prep_chat_panel != null and prep_chat_panel.visible:
-		prep.call("_toggle_chat_panel")
+		chat_button.pressed.emit()
 	var prep_voice_controls: Variant = prep.get("_voice_controls")
 	if prep_voice_controls == null:
 		push_error("备战期找不到 VoiceControls")
@@ -173,6 +203,8 @@ func _capture_chat_screen() -> void:
 	DisplayServer.window_set_size(CHAT_WINDOW)
 	for _i in 5:
 		await get_tree().process_frame
+	# 2026-09-27 起聊天界面有两个页签（世界频道 / 私聊），默认回到上次那个。私聊这几张先切到私聊。
+	ChatService.last_chat_tab = "dm"
 	var screen: Control = CHAT_SCREEN.instantiate()
 	add_child(screen)
 	for _i in 10:
@@ -220,6 +252,38 @@ func _capture_chat_screen() -> void:
 	ChatService.call("_set_kicked", true)
 	await _shot("chat_screen_kicked")
 	ChatService.reset()
+
+	# 世界频道页签（批次 E，2026-09-27）。按真页签按钮切过去（它一露出来就去订阅、拉消息 ——
+	# 出图时没登录，拉取当场失败，下面直接灌样例数据；渲染走的仍是面板自己的函数）。
+	var world_tab := screen.find_child("ChatTabWorld", true, false) as Button
+	if world_tab == null:
+		push_error("聊天界面里找不到 ChatTabWorld 页签")
+	else:
+		world_tab.pressed.emit()
+		for _i in 5:
+			await get_tree().process_frame
+		AccountManager.profile = {"player_name": "阿泰", "friend_code": "AAAA1111", "avatar": ""}
+		var samples: Array[Dictionary] = []
+		var lines := [
+			["BBBB2222", "小林", "有人一起排吗？差一个前排"],
+			["CCCC3333", LONGEST_NAME, "今晚八点开一局三排？我拉上阿泰，你把上次那套四星弓手阵带上，别又开局就把棋子卖光了哈哈哈，这次一定要上分"],
+			["AAAA1111", "阿泰", "我来，八点见"],
+			["DDDD4444", "路人甲", "新赛季的宝藏联动好强"],
+		]
+		for i in lines.size():
+			samples.append({"message_id": 101 + i, "from_code": lines[i][0], "name": lines[i][1],
+				"avatar": "", "avatar_frame": "", "body": lines[i][2],
+				"created_at": "2026-09-27T12:%02d:00+00:00" % (10 + i)})
+		ChatService.world_messages = samples
+		ChatService.world_has_more = true
+		ChatService.world_changed.emit()
+		await _shot("chat_world")
+		# 空频道：说清楚是没人说话，不是没加载出来（设计文档第八节第 9 条）。
+		ChatService.world_messages = []
+		ChatService.world_has_more = false
+		ChatService.world_changed.emit()
+		await _shot("chat_world_empty")
+		ChatService.reset()
 	screen.queue_free()
 	await get_tree().process_frame
 
@@ -240,13 +304,14 @@ func _stub_online_state() -> void:
 
 
 func _push_sample_messages() -> void:
-	# 走真实入口 _on_chat_received(slot, phrase_id)，不是直接往标签里塞字符串 ——
+	# 走真实入口（NetworkService 的信号 → 聊天记录 → 大厅），不是直接往标签里塞字符串 ——
 	# 这样连「谁说的」的取名逻辑与短语查表一起被拍进图里。
 	# 大厅只发全部（2026-09-14），team_only 一律 false。
+	NetworkService.room_chat_log.clear()
 	for pair in [[1, 1], [0, 5], [1, 8], [0, 4]]:
-		_lobby.call("_on_chat_received", int(pair[0]), int(pair[1]), false)
+		NetworkService.team_chat_received.emit(int(pair[0]), int(pair[1]), false)
 	# 批次 D：一条会折行的自由文字，看 4 行里折得对不对、有没有把框撑破。
-	_lobby.call("_on_chat_text_received", 1, "今晚八点开一局三排？我拉上阿泰，你带四星弓手", false)
+	NetworkService.team_chat_text_received.emit(1, "今晚八点开一局三排？我拉上阿泰，你带四星弓手", false)
 
 
 func _shot(shot_name: String) -> void:

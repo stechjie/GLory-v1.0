@@ -1240,9 +1240,14 @@ const CHAT_LOG_TEXT_LINES := 6
 const ChatInputBar := preload("res://ui/components/ChatInputBar.gd")
 const CHAT_LINE_HOLD_SEC := 6.0        # 停留多久之后开始淡出
 const CHAT_LINE_FADE_SEC := 1.0
-# 与 Team3v3Lobby.SLOT_LABELS 一致。⚠️ 两处都有，改一个必须改另一个 ——
-# 对不上的症状是同一个人在大厅显示成「席位B」、局内显示成「席位2」。
-const CHAT_SEAT_LABELS := ["A", "B", "C", "1", "2", "3"]
+# 消息从哪来：NetworkService.room_chat_log（整个房间一份，界面重建也不丢）。
+# 名字、范围标记都在记录那一刻定下来，这里只管显示。
+const RoomChatLog := preload("res://scripts/multiplayer/RoomChatLog.gd")
+# 聊天面板里「记录」页签的字号。
+const CHAT_RECORD_FONT_SIZE := 16
+# 翻到「记录」时面板往上拉高（短语页仍是 CHAT_PANEL_HEIGHT）。用户 2026-09-27 定：
+# 想聊天时就专注聊天，被盖住的东西无所谓。720 高时顶边约在 y=70，让开右上角那排按钮。
+const CHAT_RECORD_PANEL_HEIGHT := 520.0
 
 var _chat_button: Button = null
 var _chat_panel: PanelContainer = null
@@ -1256,14 +1261,21 @@ var _comms_dock: PanelContainer = null
 # 谁收得到由 ③ 决定（NetworkService.chat_recipients），这里只是选。
 var _chat_team_only := true
 var _chat_scope_button: Button = null
-# 消息前面的范围标记。队友频道是默认，**不加标记**，只标出例外。
-# tools/chat_check 读这两个常量算「最长一条放不放得下」，改字要跟着跑一次。
-const CHAT_TAG_ALL := "【全部】"      # 自己人发到全部：这条对面也看得到
-const CHAT_TAG_ENEMY := "【对方】"    # 对面的人发的（他们只能发到全部）
-const CHAT_TEAM_COLOR := Color(1.0, 0.94, 0.78)
+# 「发给：全部」时范围按钮的字色（提醒这条对面也看得到）。
 const CHAT_ALL_COLOR := Color(1.0, 0.76, 0.42)
-const CHAT_ENEMY_COLOR := Color(1.0, 0.56, 0.50)
 const CHAT_MENU_FONT_COLOR := Color(1.0, 0.90, 0.60)   # make_menu_button 的默认字色
+
+# 聊天面板的两个页签：短语（原来整块面板）/ 记录（这个房间从头到现在的聊天，2026-09-27）。
+var _chat_tab_phrases: Button = null
+var _chat_tab_record: Button = null
+var _chat_phrase_page: Control = null
+var _chat_record_page: Control = null
+var _chat_record_scroll: ScrollContainer = null
+var _chat_record_list: VBoxContainer = null
+var _chat_record_round := -1        # 记录列表里最后一条的回合（追加时判断要不要插分隔线）
+# 看战斗那段收到的消息不会飘出来：回到摆放界面时聊天按钮与「记录」页签上挂小点，看过就灭。
+var _chat_dot: Label = null
+var _chat_record_dot: Label = null
 
 func _build_chat_entry() -> void:
 	# 只在联机 3v3 里建。单机与教学没有队友，一个永远不会有人说话的入口是纯噪音 ——
@@ -1288,6 +1300,7 @@ func _build_chat_entry() -> void:
 	# 那时玩家在买卖，一个压在商店上的聊天按钮只会造成误触。
 	_chat_button.z_index = 20
 	add_child(_chat_button)
+	_chat_dot = _attach_chat_dot(_chat_button)
 	_build_voice_button()
 
 	_chat_log = VBoxContainer.new()
@@ -1313,10 +1326,10 @@ func _build_chat_entry() -> void:
 	add_child(_chat_log)
 
 	_build_chat_panel()
-	if not NetworkService.team_chat_received.is_connected(_on_prep_chat_received):
-		NetworkService.team_chat_received.connect(_on_prep_chat_received)
-	if not NetworkService.team_chat_text_received.is_connected(_on_prep_chat_text_received):
-		NetworkService.team_chat_text_received.connect(_on_prep_chat_text_received)
+	if not NetworkService.room_chat_log.entry_added.is_connected(_on_prep_chat_logged):
+		NetworkService.room_chat_log.entry_added.connect(_on_prep_chat_logged)
+	# 看战斗那段收到的（那时没有界面接）：不补飘，挂小点，点开「记录」看。
+	_refresh_chat_dot()
 
 # 语音按钮 + 队友按钮：缩短整组宽度，但两键都不低于 48px 触控下限。
 # 72 + 8 + 56 + 4 + 128 = 268，比旧布局窄 26px，与金币卷轴的距离反而更大。
@@ -1393,16 +1406,24 @@ func _build_chat_panel() -> void:
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 8)
 	_chat_panel.add_child(col)
+	# 标题栏就是两个页签：「短语」是原来整块面板，「记录」是这个房间从头到现在的聊天。
+	var en := LocaleManager.get_locale() == "en"
 	var header := HBoxContainer.new()
-	header.add_theme_constant_override("separation", 8)
+	header.add_theme_constant_override("separation", 6)
 	col.add_child(header)
-	var title := Label.new()
-	title.text = "Team Chat" if LocaleManager.get_locale() == "en" else "队伍交流"
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 19)
-	title.add_theme_color_override("font_color", GloryTokens.GOLD_HOVER)
-	header.add_child(title)
+	_chat_tab_phrases = PrepWidgets.make_menu_button("Phrases" if en else "短语", Vector2(96, 38), 17,
+		_show_chat_tab.bind(false))
+	_chat_tab_phrases.name = "PrepChatTabPhrases"
+	header.add_child(_chat_tab_phrases)
+	_chat_tab_record = PrepWidgets.make_menu_button("History" if en else "记录", Vector2(96, 38), 17,
+		_show_chat_tab.bind(true))
+	_chat_tab_record.name = "PrepChatTabRecord"
+	header.add_child(_chat_tab_record)
+	_chat_record_dot = _attach_chat_dot(_chat_tab_record)
+	var header_gap := Control.new()
+	header_gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header_gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	header.add_child(header_gap)
 	var close_button := PrepWidgets.make_menu_button("×", Vector2(42, 38), 19, _toggle_chat_panel)
 	close_button.name = "PrepChatClose"
 	header.add_child(close_button)
@@ -1425,22 +1446,45 @@ func _build_chat_panel() -> void:
 	top_row.add_child(_chat_scope_button)
 	_refresh_chat_scope_button()
 
+	var phrase_page := VBoxContainer.new()
+	phrase_page.add_theme_constant_override("separation", 8)
+	col.add_child(phrase_page)
+	_chat_phrase_page = phrase_page
 	var phrases_label := Label.new()
-	phrases_label.text = "QUICK PHRASES" if LocaleManager.get_locale() == "en" else "快捷短语"
+	phrases_label.text = "QUICK PHRASES" if en else "快捷短语"
 	phrases_label.add_theme_font_size_override("font_size", 13)
 	phrases_label.add_theme_color_override("font_color", GloryTokens.TEXT_SECONDARY)
-	col.add_child(phrases_label)
+	phrase_page.add_child(phrases_label)
 
 	var grid := GridContainer.new()
 	grid.columns = 2
 	grid.add_theme_constant_override("h_separation", 6)
 	grid.add_theme_constant_override("v_separation", 6)
-	col.add_child(grid)
+	phrase_page.add_child(grid)
 	for group in ChatPhrases.GROUP_ORDER:
 		for phrase_id in ChatPhrases.ids_in_group(group):
 			grid.add_child(PrepWidgets.make_menu_button(
 				ChatPhrases.text(phrase_id), Vector2(160, 38), 15,
 				_send_chat_phrase.bind(int(phrase_id))))
+
+	# 「记录」页：浅羊皮纸底 + 黑字（2026-09-27：聊天字一律黑色）。占满短语页让出来的高度。
+	var record_page := PanelContainer.new()
+	record_page.name = "PrepChatRecord"
+	record_page.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var record_style := GloryTokens.flat_box(GloryTokens.PARCHMENT, GloryTokens.PARCHMENT_EDGE, 2, 8)
+	record_style.set_content_margin_all(8)
+	record_page.add_theme_stylebox_override("panel", record_style)
+	record_page.visible = false
+	col.add_child(record_page)
+	_chat_record_page = record_page
+	_chat_record_scroll = ScrollContainer.new()
+	_chat_record_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	record_page.add_child(_chat_record_scroll)
+	_chat_record_list = VBoxContainer.new()
+	_chat_record_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_chat_record_list.add_theme_constant_override("separation", 4)
+	_chat_record_scroll.add_child(_chat_record_list)
+	_show_chat_tab(false)
 
 
 func _apply_chat_type_button_style(button: Button) -> void:
@@ -1468,6 +1512,9 @@ func _toggle_chat_panel() -> void:
 	if _chat_panel == null or not is_instance_valid(_chat_panel):
 		return
 	_chat_panel.visible = not _chat_panel.visible
+	# 有没看过的（看战斗时收到的）就直接翻到「记录」：小点就是冲着它亮的。
+	if _chat_panel.visible and _chat_unseen_count() > 0:
+		_show_chat_tab(true)
 
 func _send_chat_phrase(phrase_id: int) -> void:
 	NetworkService.team_send_phrase(phrase_id, _chat_team_only)
@@ -1476,15 +1523,131 @@ func _send_chat_phrase(phrase_id: int) -> void:
 	if _chat_panel != null and is_instance_valid(_chat_panel):
 		_chat_panel.visible = false
 
-func _on_prep_chat_received(slot: int, phrase_id: int, team_only: bool) -> void:
-	var body := ChatPhrases.text(phrase_id)
-	if body.is_empty():
-		# id 不合法。text() 刻意返回空串而不是占位符，见 ChatPhrases.gd。
-		return
-	_push_chat_line(_chat_line_head(slot, team_only) + body, _chat_line_color(slot, team_only))
+# 记录里多了一条：飘出来（摆放界面上看得到的那几条），记录页开着就接在末尾。
+func _on_prep_chat_logged(entry: Dictionary) -> void:
+	_push_chat_line(RoomChatLog.line_text(entry, LocaleManager.get_locale() == "en"))
+	NetworkService.room_chat_log.mark_entry_seen(entry)
+	if _chat_record_page != null and is_instance_valid(_chat_record_page) and _chat_record_page.visible:
+		var stick := _chat_record_near_bottom()
+		_append_chat_record_row(entry)
+		if stick:
+			_scroll_chat_record_to_bottom()
 
-func _on_prep_chat_text_received(slot: int, text: String, team_only: bool) -> void:
-	_push_chat_line(_chat_line_head(slot, team_only) + text, _chat_line_color(slot, team_only))
+
+# --- 聊天面板「记录」页签（2026-09-27）----------------------------------------------
+
+func _show_chat_tab(record: bool) -> void:
+	if _chat_phrase_page == null or _chat_record_page == null:
+		return
+	_chat_phrase_page.visible = not record
+	_chat_record_page.visible = record
+	_chat_panel.offset_top = _chat_panel.offset_bottom - (CHAT_RECORD_PANEL_HEIGHT if record else CHAT_PANEL_HEIGHT)
+	_style_chat_tab(_chat_tab_phrases, not record)
+	_style_chat_tab(_chat_tab_record, record)
+	if record:
+		_render_chat_record()
+		NetworkService.room_chat_log.mark_all_seen()
+		_refresh_chat_dot()
+
+
+# 选中的页签用羊皮纸底 + 深色字（同「点击输入文字」那颗），没选中的保持面板默认的深底金字。
+func _style_chat_tab(tab: Button, selected: bool) -> void:
+	if tab == null:
+		return
+	var style := GloryTokens.flat_box(GloryTokens.PARCHMENT_BUTTON, GloryTokens.GOLD_EDGE, 2, 10) \
+		if selected else PrepWidgets.menu_button_style()
+	for state in ["normal", "hover", "pressed"]:
+		tab.add_theme_stylebox_override(state, style)
+	var color := GloryTokens.TEXT_ON_GOLD if selected else CHAT_MENU_FONT_COLOR
+	for state in ["font_color", "font_hover_color", "font_pressed_color"]:
+		tab.add_theme_color_override(state, color)
+
+
+func _render_chat_record() -> void:
+	for child in _chat_record_list.get_children():
+		_chat_record_list.remove_child(child)
+		child.queue_free()
+	_chat_record_round = -1
+	var entries := NetworkService.room_chat_log.entries_for(NetworkService.team_room_id)
+	if entries.is_empty():
+		_chat_record_list.add_child(_chat_record_label(
+			"No messages yet" if LocaleManager.get_locale() == "en" else "还没有人说话",
+			GloryTokens.PARCHMENT_EDGE, HORIZONTAL_ALIGNMENT_CENTER))
+		return
+	for entry in entries:
+		_append_chat_record_row(entry)
+	_scroll_chat_record_to_bottom()
+
+
+func _append_chat_record_row(entry: Dictionary) -> void:
+	var en := LocaleManager.get_locale() == "en"
+	if _chat_record_round < 0 and _chat_record_list.get_child_count() > 0:
+		# 列表里只有「还没有人说话」那一行：第一条真消息进来时把它换掉。
+		for child in _chat_record_list.get_children():
+			_chat_record_list.remove_child(child)
+			child.queue_free()
+	var entry_round := int(entry.get("round", 0))
+	if entry_round != _chat_record_round:
+		_chat_record_list.add_child(_chat_record_label("—— %s ——" % RoomChatLog.round_label(entry_round, en),
+			GloryTokens.PARCHMENT_EDGE, HORIZONTAL_ALIGNMENT_CENTER))
+		_chat_record_round = entry_round
+	_chat_record_list.add_child(_chat_record_label(RoomChatLog.line_text(entry, en),
+		GloryTokens.CHAT_INK, HORIZONTAL_ALIGNMENT_LEFT))
+
+
+func _chat_record_label(text: String, color: Color, align: HorizontalAlignment) -> Label:
+	var lbl := Label.new()
+	lbl.text = text
+	lbl.horizontal_alignment = align
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	lbl.add_theme_font_size_override("font_size",
+		CHAT_RECORD_FONT_SIZE if align == HORIZONTAL_ALIGNMENT_LEFT else CHAT_RECORD_FONT_SIZE - 3)
+	lbl.add_theme_color_override("font_color", color)
+	return lbl
+
+
+# 在最底下（或差一点）才跟着新消息滚；往上翻着看的时候不把人拽回底部（同私聊界面）。
+func _chat_record_near_bottom() -> bool:
+	if _chat_record_scroll == null:
+		return true
+	var bar := _chat_record_scroll.get_v_scroll_bar()
+	return _chat_record_scroll.scroll_vertical >= int(bar.max_value - bar.page) - 48
+
+
+func _scroll_chat_record_to_bottom() -> void:
+	# 新行要等排完版才知道高度，现在滚只会滚到旧的底部（同 ChatScreen._scroll_to_bottom_later）。
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if not is_inside_tree() or _chat_record_scroll == null or not is_instance_valid(_chat_record_scroll):
+		return
+	_chat_record_scroll.scroll_vertical = int(_chat_record_scroll.get_v_scroll_bar().max_value)
+
+
+func _chat_unseen_count() -> int:
+	return NetworkService.room_chat_log.unseen_count(NetworkService.team_room_id)
+
+
+func _refresh_chat_dot() -> void:
+	var unseen := _chat_unseen_count() > 0
+	for dot in [_chat_dot, _chat_record_dot]:
+		if dot != null and is_instance_valid(dot):
+			dot.visible = unseen
+
+
+# 右上角的小红点（同好友界面 _attach_unread_dot 的样子）。默认藏着。
+func _attach_chat_dot(host: Control) -> Label:
+	var dot := Label.new()
+	dot.text = "●"
+	dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dot.add_theme_color_override("font_color", GloryTokens.UNREAD_DOT)
+	dot.add_theme_font_size_override("font_size", 16)
+	host.add_child(dot)
+	dot.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	dot.position.x -= 14
+	dot.visible = false
+	return dot
 
 
 # 打字入口（批次 D）。先收起短语面板：输入条弹在顶部，短语面板留着只会挡棋盘。
@@ -1518,46 +1681,7 @@ func _refresh_chat_scope_button() -> void:
 		CHAT_MENU_FONT_COLOR if _chat_team_only else CHAT_ALL_COLOR)
 
 
-# 「【对方】小林：」这样的开头。队友频道不加标记（备战期默认就是它），只标出例外。
-func _chat_line_head(slot: int, team_only: bool) -> String:
-	var tag := ""
-	if not team_only:
-		var en := LocaleManager.get_locale() == "en"
-		if _chat_is_enemy(slot):
-			tag = "[Enemy] " if en else CHAT_TAG_ENEMY
-		else:
-			tag = "[All] " if en else CHAT_TAG_ALL
-	return "%s%s：" % [tag, _chat_speaker_name(slot)]
-
-
-func _chat_line_color(slot: int, team_only: bool) -> Color:
-	if team_only:
-		return CHAT_TEAM_COLOR
-	return CHAT_ENEMY_COLOR if _chat_is_enemy(slot) else CHAT_ALL_COLOR
-
-
-func _chat_is_enemy(slot: int) -> bool:
-	var me := int(NetworkService.team_local_slot)
-	return me >= 0 and GameConstants.team_of_slot(slot) != GameConstants.team_of_slot(me)
-
-
-func _chat_speaker_name(slot: int) -> String:
-	var who := ""
-	if slot == int(NetworkService.team_local_slot):
-		# 自己的资料不在 team_seat_profiles 里（那张表是别人广播过来的）。
-		who = str(AccountManager.profile.get("player_name", "")).strip_edges()
-	else:
-		var profiles: Dictionary = NetworkService.team_seat_profiles
-		var identity: Dictionary = profiles.get(slot, profiles.get(str(slot), {}))
-		who = str(identity.get("player_name", "")).strip_edges()
-	if not who.is_empty():
-		return who
-	# 这个座位没有身份（AI 座位，或进程内门禁不带名片建的座位）。用座位号顶着 ——
-	# 空名字会让这条消息看起来像是没有人说的。
-	var seat: String = CHAT_SEAT_LABELS[slot] if slot >= 0 and slot < CHAT_SEAT_LABELS.size() else "?"
-	return ("Seat " + seat) if LocaleManager.get_locale() == "en" else ("席位" + seat)
-
-func _push_chat_line(text: String, color: Color = CHAT_TEAM_COLOR) -> void:
+func _push_chat_line(text: String) -> void:
 	if _chat_log == null or not is_instance_valid(_chat_log):
 		return
 	var lbl := Label.new()
@@ -1569,9 +1693,11 @@ func _push_chat_line(text: String, color: Color = CHAT_TEAM_COLOR) -> void:
 	# 读的人只看到半句话、还不知道少了。高度改由下面的行数预算管。
 	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lbl.add_theme_font_size_override("font_size", CHAT_LOG_FONT_SIZE)
-	lbl.add_theme_color_override("font_color", color)
-	lbl.add_theme_color_override("font_outline_color", Color(0.02, 0.025, 0.01, 0.95))
-	lbl.add_theme_constant_override("outline_size", 3)
+	# 2026-09-27：黑字 + 浅色描边（原来的米白 / 橙 / 红字配深描边，在浅草地和亮水面上看不清）。
+	# 「全部」「对方」靠行首的【全部】【对方】区分，不再靠字色。
+	lbl.add_theme_color_override("font_color", GloryTokens.CHAT_INK)
+	lbl.add_theme_color_override("font_outline_color", GloryTokens.CHAT_INK_OUTLINE)
+	lbl.add_theme_constant_override("outline_size", 5)
 	_chat_log.add_child(lbl)
 	# 两道上限：最多 CHAT_LOG_LINES 条，且折行后合计不超过 CHAT_LOG_TEXT_LINES 行。
 	# 超了就从最老的一条开始**整条**移走 —— 宁可少显示一条旧的，也不截断任何一条。
@@ -1611,10 +1737,8 @@ func _chat_log_text_lines() -> int:
 func _teardown_chat_entry() -> void:
 	# NetworkService 是 autoload（活得比本场景久），连接必须显式断开。
 	# 由 PrepScreen._exit_tree 调用 —— 生命周期钩子只在那一层有。
-	if NetworkService.team_chat_received.is_connected(_on_prep_chat_received):
-		NetworkService.team_chat_received.disconnect(_on_prep_chat_received)
-	if NetworkService.team_chat_text_received.is_connected(_on_prep_chat_text_received):
-		NetworkService.team_chat_text_received.disconnect(_on_prep_chat_text_received)
+	if NetworkService.room_chat_log.entry_added.is_connected(_on_prep_chat_logged):
+		NetworkService.room_chat_log.entry_added.disconnect(_on_prep_chat_logged)
 	if _voice_controls != null:
 		_voice_controls.teardown()
 
@@ -1708,6 +1832,11 @@ func _on_carrot_economy_receipt(receipt: Dictionary) -> void:
 	if action not in ["upgrade_harvest_tech", "hire_merc_carrot", "draw_upgrade_stone", "use_upgrade_stone"]:
 		return
 	if not bool(receipt.get("ok", false)):
+		if action == "use_upgrade_stone" and str(receipt.get("error", "")) == "no_stone":
+			_overlay.hide_detail()
+			show_message("The spirit stone has been used by a teammate. Upgrade failed." if LocaleManager.get_locale() == "en" else "灵石已被队友使用，升星失败")
+			SfxService.play(SfxService.CUE_UI_REJECT)
+			return
 		show_message(("Carrot action failed: %s" if LocaleManager.get_locale().begins_with("en") else "萝卜交易失败：%s") % str(receipt.get("error", "denied")))
 		# 9.17：服务端拒绝 = 按钮被拒绝，与单机时「钱不够」同一个反馈。
 		SfxService.play(SfxService.CUE_UI_REJECT)
@@ -1804,6 +1933,9 @@ func _build_detail_popups() -> void:
 	detail_content.add_child(upgrade_panel)
 	upgrade_panel.hide()
 	_overlay.upgrade_panel = upgrade_panel
+	upgrade_panel.shared_stone_unavailable.connect(func():
+		_overlay.hide_detail()
+		show_message("The spirit stone has been used by a teammate." if LocaleManager.get_locale() == "en" else "灵石已被队友使用"))
 	upgrade_panel.preview_requested.connect(func(enabled: bool, cell: Dictionary):
 		_detail_text.text = UnitDetailFormat.format_unit_def(cell.get("def", {}), \
 			4 if enabled else int(cell.get("star", 1)), cell))

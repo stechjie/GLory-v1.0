@@ -39,6 +39,7 @@ func _ready() -> void:
 		h.expect(not Ledger.apply(prep,"use_upgrade_stone",payload,ctx).ok and stones[d.element] == 1 and prep.gold == 0, "server_repeat", str(d.id))
 	_server_modes(units)
 	await _ui_and_visuals(units[0])
+	_shared_stone_race(units[0])
 	var room: Dictionary = NetworkService._new_room()
 	var actions: Array = NetworkService.ECONOMY_ACTIONS.duplicate()
 	actions.sort()
@@ -140,3 +141,62 @@ func _ui_and_visuals(d: Dictionary) -> void:
 		h.expect(aura.visible and aura.ring != null,"upgrade_no_burst",element)
 		actor.queue_free()
 	await get_tree().process_frame
+
+func _shared_stone_race(d: Dictionary) -> void:
+	NetworkService.reset()
+	GameState.reset_run()
+	GameState.gold = 2000
+	var element := str(d.element)
+	var cell := {"uid":"shared-ui", "id":d.id, "star":3, "def":d}
+	GameState.board_slots[0] = cell
+	GameState.team_upgrade_stones[element] = 2
+	NetworkService.team_active = true
+	NetworkService.is_host = true
+	var panel := preload("res://scenes/prep/FourStarUpgradePanel.gd").new()
+	add_child(panel)
+	var notices := [0]
+	var submissions := [0]
+	panel.shared_stone_unavailable.connect(func(): notices[0] += 1)
+	var submit := func(_uid): submissions[0] += 1
+	panel.open_for(cell, submit)
+	GameState.team_upgrade_stones[element] = 1
+	panel.refresh()
+	h.expect(notices[0] == 0 and not panel.action.disabled, "shared_remaining_stone", "仍有一颗时可以升星")
+	panel._pressed()
+	GameState.team_upgrade_stones[element] = 0
+	panel._pressed()
+	panel.refresh()
+	h.expect(notices[0] == 1 and submissions[0] == 0 and panel.action.disabled, "shared_stale_confirm", "过期确认只提示一次，不提交")
+	panel.open_for(cell, submit)
+	panel.refresh()
+	h.expect(notices[0] == 1, "shared_initial_empty", "原本没有灵石不误报队友消耗")
+	GameState.team_upgrade_stones[element] = 1
+	panel.open_for(cell, submit)
+	NetworkService.four_star_request_id = "own-upgrade"
+	GameState.team_upgrade_stones[element] = 0
+	panel.refresh()
+	h.expect(notices[0] == 1, "shared_pending_snapshot", "等待自己的回执时不误报")
+	cell.star = 4
+	NetworkService.four_star_request_id = ""
+	panel.refresh()
+	h.expect(notices[0] == 1, "shared_own_success", "自己的成功升星不误报")
+	cell.star = 3
+	GameState.team_upgrade_stones[element] = 1
+	panel.open_for(cell, submit)
+	GameState.team_upgrade_stones[element] = 0
+	panel.refresh()
+	h.expect(notices[0] == 2 and panel.action.disabled, "shared_live_inventory", "打开期间收到库存变化即提示，无需再点击")
+	# Two players race for the same last stone. Only the winner pays.
+	var stones := {"sky":0,"land":0,"ren":0}
+	stones[element] = 1
+	var ctx := {"unit_table":[d], "team_stones":stones, "round_index":4}
+	var first := Ledger.new_prep(2000)
+	var second := Ledger.new_prep(2000)
+	first.roster["first"] = {"unit_id":d.id,"star":3,"kind":"unit","cost_basis":30}
+	second.roster["second"] = {"unit_id":d.id,"star":3,"kind":"unit","cost_basis":30}
+	var before := second.duplicate(true)
+	var won := Ledger.apply(first, "use_upgrade_stone", {"uid":"first","unit_id":d.id}, ctx)
+	var lost := Ledger.apply(second, "use_upgrade_stone", {"uid":"second","unit_id":d.id}, ctx)
+	h.expect(won.ok and not lost.ok and lost.error == "no_stone" and second == before and stones[element] == 0, "shared_server_race_atomic", "仅一人成功，失败者不扣金币不升星")
+	panel.queue_free()
+	NetworkService.reset()

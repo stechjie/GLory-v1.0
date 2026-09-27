@@ -41,7 +41,7 @@ const TARGETS: Array[Dictionary] = [
 	#   直接以主场景加载的，解析失败时确实会自己报错，但按同一条教训还是单列出来，
 	#   免得以后有人只跑批跑、看到"全绿"却不知道这两条根本没被解析过。
 	{"kind": "script", "path": "res://tools/tutorial_text_leak_check.gd"},
-	{"kind": "script", "path": "res://work/_qa_922/probe_blood_link_boss_immune_925.gd"},
+	{"kind": "script", "path": "res://tools/qa_history/20260922/probe_blood_link_boss_immune_925.gd"},
 	# ★ 9.25 追加订正：预备阶段又被改了（PrepUI.gd 的刷新按钮判定）。按「改的每个文件
 	#   都要在清单里」补进来 —— PrepUI.gd 处在 PrepScreen 继承链的底层
 	#   （PrepScreen → PrepBoardController → PrepFlowController → PrepUI → PrepBoardModels
@@ -58,6 +58,26 @@ const TARGETS: Array[Dictionary] = [
 	# ★ 9.27 新增：大厅商店 / 公告图标预览。改 MainMenu.gd（图标内显示最新商品缩略图与
 	#   最新公告标题），按同一条教训补进清单。
 	{"kind": "script", "path": "res://scenes/menu/MainMenu.gd"},
+	# ★ 9.27 第二批（bug提交和修复.docx 5 条）：改了 BattleSimShared.gd（毒灵可达性选敌 +
+	#   隔断唯一真源 + C 层跨路限制）、BattleSimSkills.gd（瞬移/冲锋类技能按可达 lane 过滤）、
+	#   NetworkService.gd（重连时把服务端权威的商店刷新次数同步回客户端计数）。
+	#   BattleSimulator.gd / BattleArena.gd / UnitDetailFormat.gd 已在上面清单里。
+	#   按「改的每个文件都要在清单里，谁坏了就指谁」逐个单列。
+	{"kind": "script", "path": "res://scripts/battle/BattleSimShared.gd"},
+	{"kind": "script", "path": "res://scripts/battle/BattleSimSkills.gd"},
+	{"kind": "script", "path": "res://scripts/autoload/NetworkService.gd"},
+	# ★ 9.27 第三批（bug提交和修复.docx 第 2 条：房间邀请好友）。新增
+	#   scripts/multiplayer/RoomInvite.gd（纯判据），改了 ChatScreen.gd（邀请框 + 立即参与）、
+	#   Team3v3Lobby.gd（朋友列表可点 + 亮一下 + 限流）、Main.gd（把 join_room_requested
+	#   接到已有的加入路径）、AccountManager.gd（send_chat_message 带 kind/payload）。
+	#   按「改的每个文件都要在清单里，谁坏了就指谁」逐个单列 —— ChatScreen.gd / Team3v3Lobby.gd
+	#   都会被 Main 直接 instantiate，但那只在运行时才暴露，不能把判据押在别人身上。
+	{"kind": "script", "path": "res://scripts/multiplayer/RoomInvite.gd"},
+	{"kind": "script", "path": "res://scenes/menu/ChatScreen.gd"},
+	{"kind": "script", "path": "res://scenes/menu/Team3v3Lobby.gd"},
+	{"kind": "script", "path": "res://scenes/main/Main.gd"},
+	{"kind": "script", "path": "res://scripts/autoload/AccountManager.gd"},
+	{"kind": "script", "path": "res://tools/room_invite_check.gd"},
 ]
 
 

@@ -3,8 +3,9 @@ extends Control
 # 私聊界面（docs/聊天系统设计.md 批次 C，第六节「方案一」）。
 #
 # 入口两个：主菜单左侧「聊天」按钮（此前是「敬请期待」），好友列表每一行的「私聊」。
-# 左栏是**全部好友** —— 聊过的按最后一条消息排前面、带未读红点，没聊过的排后面，
-# 所以这里兼做选人。右边是消息区。世界频道（批次 E）以后作为另一个页签加进来。
+# 顶上两个页签：世界频道（批次 E，2026-09-27，scenes/menu/WorldChatPanel.gd）/ 私聊。
+# 私聊页左栏是**全部好友** —— 聊过的按最后一条消息排前面、带未读红点，没聊过的排后面，
+# 所以这里兼做选人。右边是消息区。红点只属于私聊（世界频道一直有人说话，挂红点会永远亮着）。
 #
 # ## 四条纪律
 #
@@ -17,6 +18,19 @@ extends Control
 #    自动再连会让两台设备无限互踢。
 
 signal back_requested
+# 世界频道里点别人的名字 →「查看资料」。Main 开他的资料页，返回时回到这里的世界页签。
+signal profile_requested(friend_code: String)
+# 私人消息里的房间邀请点了「立即参与」。Main 复用已有的加入流程
+# （先回主菜单再连，见 Main._join_room_by_id 的注释 —— 那里才有「连接中」与失败提示）。
+signal join_room_requested(room_id: int)
+
+const WorldChatPanel := preload("res://scenes/menu/WorldChatPanel.gd")
+# 房间邀请（bug提交和修复.docx 第 2 条）：失效判据、文案、限流全在那一份纯逻辑里，
+# 界面只负责把 payload 里的房间号读出来 + 把「邀请已过时」丢给全局 toast。
+const RoomInvite := preload("res://scripts/multiplayer/RoomInvite.gd")
+const GloryToastScript := preload("res://ui/components/GloryToast.gd")
+const TAB_WORLD := "world"
+const TAB_DM := "dm"
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
@@ -36,6 +50,12 @@ const BUBBLE_MAX_RATIO := 0.62
 const STICK_TO_BOTTOM_PX := 64.0
 
 var _focus_code := ""
+var _tab := ""
+var _dm_shell: Control
+var _world_panel: WorldChatPanel
+var _tab_world: Button
+var _tab_dm: Button
+var _dm_tab_dot: Label
 var _chats: Array = []
 var _open_code := ""
 # 当前会话的消息。已确认的按 message_id 升序；发送中 / 发送失败的排在最后，按本地序号。
@@ -57,15 +77,21 @@ var _input: LineEdit
 var _send_button: Button
 
 
-# 从好友列表进来时带上对方的好友码，打开就定位到那个会话。
-func configure(focus_code: String) -> void:
+# 从好友列表进来时带上对方的好友码，打开就定位到那个会话（私聊页签）。
+# tab：从资料页返回时指定回到哪个页签；都没给就回到上次停留的（ChatService.last_chat_tab）。
+func configure(focus_code: String, tab: String = "") -> void:
 	_focus_code = "" if focus_code.is_empty() else AccountManager.normalize_friend_code(focus_code)
+	if not _focus_code.is_empty():
+		_tab = TAB_DM
+	elif tab in [TAB_WORLD, TAB_DM]:
+		_tab = tab
 
 
 func _ready() -> void:
 	theme = Theming.get_theme()
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build()
+	_show_tab(_tab if not _tab.is_empty() else ChatService.last_chat_tab)
 	ChatService.dm_received.connect(_on_dm_received)
 	ChatService.unread_changed.connect(_on_unread_changed)
 	ChatService.kicked_changed.connect(_on_kicked_changed)
@@ -125,13 +151,22 @@ func _build() -> void:
 	_notice_label.visible = false
 	root.add_child(_notice_label)
 
+	# 世界频道页签（WorldChatPanel）。**建的时候先藏着**：它一露出来就会去订阅、拉消息，
+	# 要是先露出来再被 _show_tab 藏回去，等于白订一次、白拉一次。
+	_world_panel = WorldChatPanel.new()
+	_world_panel.visible = false
+	_world_panel.profile_requested.connect(func(code: String) -> void: profile_requested.emit(code))
+	root.add_child(_world_panel)
+
 	# 好友与对话属于同一个通讯面板。统一外框比两个并排的金边黑框更像游戏内设施，
 	# 中间只留一条低对比度分隔线，让注意力落在玩家与消息上。
 	var shell := PanelContainer.new()
 	shell.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	shell.add_theme_stylebox_override("panel", Tokens.panel_box(
 		Tokens.INK_PANEL, Tokens.INK_EDGE, Tokens.GAP_S))
+	shell.visible = false
 	root.add_child(shell)
+	_dm_shell = shell
 
 	var body := HBoxContainer.new()
 	body.add_theme_constant_override("separation", Tokens.GAP_S)
@@ -153,13 +188,28 @@ func _header() -> Control:
 	back.custom_minimum_size = Vector2(HEADER_SIDE_WIDTH, Tokens.TOUCH_MIN)
 	row.add_child(back)
 
-	var title := Label.new()
-	title.text = _text("好友私聊", "Friend Chat")
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
-	title.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
-	row.add_child(title)
+	# 标题的位置就是两个页签（居中）。私聊页签右上角挂未读红点 —— 只跟 ChatService 走。
+	var tabs := HBoxContainer.new()
+	tabs.alignment = BoxContainer.ALIGNMENT_CENTER
+	tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tabs.add_theme_constant_override("separation", Tokens.GAP_S)
+	row.add_child(tabs)
+	_tab_world = _button(_text("世界频道", "World"), func() -> void: _show_tab(TAB_WORLD))
+	_tab_world.custom_minimum_size = Vector2(Tokens.BUTTON_MIN_WIDTH, Tokens.TOUCH_MIN)
+	_tab_world.name = "ChatTabWorld"
+	tabs.add_child(_tab_world)
+	_tab_dm = _button(_text("好友私聊", "Friend Chat"), func() -> void: _show_tab(TAB_DM))
+	_tab_dm.custom_minimum_size = Vector2(Tokens.BUTTON_MIN_WIDTH, Tokens.TOUCH_MIN)
+	_tab_dm.name = "ChatTabDm"
+	tabs.add_child(_tab_dm)
+	_dm_tab_dot = Label.new()
+	_dm_tab_dot.text = "●"
+	_dm_tab_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_dm_tab_dot.add_theme_color_override("font_color", Tokens.UNREAD_DOT)
+	_tab_dm.add_child(_dm_tab_dot)
+	_dm_tab_dot.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	_dm_tab_dot.position.x -= 18
+	_dm_tab_dot.visible = ChatService.any_unread()
 
 	# 右边垫一块与返回按钮等宽的空白 —— 否则标题会随右边有没有东西左右漂
 	# （第一版把连接状态放在这里，出图一看，标题在两种状态下不在同一个位置）。
@@ -545,8 +595,23 @@ func _on_dm_received(code: String, message: Dictionary) -> void:
 	_mark_latest_read()
 
 
-func _on_unread_changed(_any_unread: bool) -> void:
+func _on_unread_changed(any_unread: bool) -> void:
+	if _dm_tab_dot != null:
+		_dm_tab_dot.visible = any_unread
 	_render_list()
+
+
+# 切页签。世界频道的订阅 / 退订跟着 WorldChatPanel 的显隐走（见那边的 _on_visibility_changed）。
+func _show_tab(tab: String) -> void:
+	_tab = tab if tab in [TAB_WORLD, TAB_DM] else TAB_WORLD
+	ChatService.last_chat_tab = _tab
+	var world := _tab == TAB_WORLD
+	_dm_shell.visible = not world
+	_world_panel.visible = world
+	_tab_world.theme_type_variation = Theming.VARIATION_PRIMARY if world else Theming.VARIATION_GHOST
+	_tab_dm.theme_type_variation = Theming.VARIATION_GHOST if world else Theming.VARIATION_PRIMARY
+	# 私聊页的提示（加载失败之类）不带到世界频道那边去。
+	_set_notice("", false)
 
 
 func _on_connection_changed(_state: int) -> void:
@@ -752,7 +817,7 @@ func _friend_time(entry: Dictionary) -> String:
 	var last: Variant = entry.get("last_message")
 	if not (last is Dictionary):
 		return ""
-	return _format_time(str((last as Dictionary).get("created_at", "")))
+	return ChatService.format_time(str((last as Dictionary).get("created_at", "")))
 
 
 func _update_peer_label() -> void:
@@ -797,7 +862,9 @@ func _render_messages(force_bottom: bool = false) -> void:
 		_msg_box.add_child(_hint(_text("还没有消息，打个招呼吧。", "No messages yet. Say hi!")))
 	else:
 		var max_width := _bubble_max_width()
-		for msg in _messages:
+		# 渲染前把「同一房间的重复邀请」收敛成一条（要求 4：被邀请方只会收到一次）。
+		# 判据在 RoomInvite 那份纯逻辑里，这里只负责调用 —— 不在界面里另写一套。
+		for msg in RoomInvite.dedupe_for_display(_messages):
 			_msg_box.add_child(_bubble(msg, max_width))
 	_refresh_input()
 	if stick:
@@ -805,6 +872,9 @@ func _render_messages(force_bottom: bool = false) -> void:
 
 
 func _bubble(msg: Dictionary, max_width: float) -> Control:
+	# 房间邀请不是普通气泡：它要显示成「框框 + 右下角立即参与」（要求 3）。
+	if RoomInvite.is_invite(msg):
+		return _invite_bubble(msg, max_width)
 	var mine := bool(msg.get("from_me", false))
 	var row := HBoxContainer.new()
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -851,7 +921,7 @@ func _bubble(msg: Dictionary, max_width: float) -> Control:
 			caption.tooltip_text = str(msg.get("error", ""))
 			caption.add_theme_color_override("font_color", Tokens.DANGER_HOVER)
 		_:
-			caption.text = _format_time(str(msg.get("created_at", "")))
+			caption.text = ChatService.format_time(str(msg.get("created_at", "")))
 			caption.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
 	meta.add_child(caption)
 
@@ -862,6 +932,108 @@ func _bubble(msg: Dictionary, max_width: float) -> Control:
 		retry.size_flags_horizontal = Control.SIZE_SHRINK_END
 		meta.add_child(retry)
 	return row
+
+
+# 房间邀请的框（要求 3）：上面是定死的那句文案，右下角一个「立即参与」。
+#
+# 与普通气泡分开渲染，是因为用户把它描述成「一个框框 + 右下角按钮」——
+# 气泡的左右对齐讲的是「谁说的」，而邀请要讲的是「可不可以点进去」。
+# 邀请方是对方（from_me == false）：自己发出去的邀请不显示「立即参与」
+# （自己已经在房间里了，按钮没有意义，点下去只会加入自己的房）。
+func _invite_bubble(msg: Dictionary, max_width: float) -> Control:
+	var mine := bool(msg.get("from_me", false))
+	var row := HBoxContainer.new()
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.alignment = BoxContainer.ALIGNMENT_END if mine else BoxContainer.ALIGNMENT_BEGIN
+
+	# 金边方框：邀请要讲的是「可不可以点进去」，不是「谁说的」，所以它和普通气泡
+	# 长得明显不一样 —— 一眼就是个「卡片」，而不是一段聊天文字（要求：做成方框）。
+	var box := PanelContainer.new()
+	box.custom_minimum_size = Vector2(minf(max_width, 460.0), 0)
+	box.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.SURFACE_RAISED, Tokens.GOLD, 14))
+	row.add_child(box)
+
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", Tokens.GAP_S)
+	box.add_child(col)
+
+	# 顶部小标题：和普通聊天气泡拉开距离。
+	var title := Label.new()
+	title.text = RoomInvite.title_text()
+	title.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+	title.add_theme_color_override("font_color", Tokens.GOLD)
+	col.add_child(title)
+
+	var text := Label.new()
+	text.text = RoomInvite.display_text(msg)
+	text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	text.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	col.add_child(text)
+
+	# 右下角：时间在左、按钮在右，按钮贴着框的右下（要求 3 的「右下角有按钮」）。
+	var foot := HBoxContainer.new()
+	foot.alignment = BoxContainer.ALIGNMENT_END
+	foot.add_theme_constant_override("separation", Tokens.GAP_S)
+	col.add_child(foot)
+
+	var stamp := Label.new()
+	stamp.text = ChatService.format_time(str(msg.get("created_at", "")))
+	stamp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	stamp.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	stamp.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	stamp.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+	stamp.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
+	foot.add_child(stamp)
+
+	if not mine:
+		var join := _button(_text("立即参与", "Join now"),
+			func() -> void: _on_invite_join(msg))
+		join.theme_type_variation = Theming.VARIATION_PRIMARY
+		join.custom_minimum_size = Vector2(128, Tokens.TOUCH_MIN)
+		foot.add_child(join)
+	return row
+
+
+# 点「立即参与」。失效则在中上方提示「邀请已过时」（要求 5），否则走已有的加入流程。
+#
+# 失效判据**只有一份**（RoomInvite.is_expired），四种情况（离房 / 解散 / 已开打 / 20 分钟）
+# 都在那里判。界面在这里补上「邀请人此刻在哪个房间」—— 那要问一趟好友列表
+# （fetch_chats 的 ChatItem 不带 room_id，friends 的带），所以这一步是异步的。
+func _on_invite_join(msg: Dictionary) -> void:
+	var room_id := RoomInvite.room_id_of(msg)
+	var created := int(Time.get_unix_time_from_datetime_string(
+		str(msg.get("created_at", "")).substr(0, 19)))
+	var now := int(Time.get_unix_time_from_system())
+	var inviter_room := await _inviter_room_id_now(_open_code)
+	# room_started 客户端拿不到（presence 只报房间号，不报「这间开打了没」）：
+	# 这一条由加入流程自己兜底 —— 房间已开打时加入会被服务端拒绝并给出原因。
+	if RoomInvite.is_expired(room_id, created, now, inviter_room, false):
+		GloryToastScript.show_text(RoomInvite.expired_text())
+		return
+	join_room_requested.emit(room_id)
+
+
+# 邀请人此刻所在的房间号。
+#   ≥ 0                    —— 确定（0 = 确定不在任何房间）
+#   RoomInvite.UNKNOWN_ROOM —— 查不到（请求失败 / 列表里没这个人）
+#
+# 🔴 这两种必须分开：0 要判「已离房 → 失效」，UNKNOWN_ROOM 要放过。
+# 混成一个 0，要么误杀正常邀请、要么漏掉「已离房」——两种都不报错。
+# **以服务端为准**，不从本地猜：本地没有任何关于别人房间的状态。
+func _inviter_room_id_now(code: String) -> int:
+	if code.is_empty():
+		return RoomInvite.UNKNOWN_ROOM
+	var result: Dictionary = await AccountManager.fetch_friends()
+	if int(result.get("code", 0)) / 100 != 2:
+		return RoomInvite.UNKNOWN_ROOM
+	for entry in (result.get("body", {}) as Dictionary).get("friends", []):
+		if entry is Dictionary and str((entry as Dictionary).get("friend_code", "")) == code:
+			var room_value: Variant = (entry as Dictionary).get("room_id")
+			if room_value == null:
+				return 0  # 在好友列表里、但不在任何房间 → 确定已离开
+			return int(room_value)
+	return RoomInvite.UNKNOWN_ROOM
 
 
 func _bubble_max_width() -> float:
@@ -890,21 +1062,6 @@ func _scroll_to_bottom_later() -> void:
 
 
 # --- 小工具 -------------------------------------------------------------------
-
-
-# 服务端给的是 UTC 的 isoformat（带时区与微秒）。只取到秒按 UTC 解析，再换成本地时间。
-static func _format_time(iso: String) -> String:
-	if iso.length() < 19:
-		return ""
-	var unix := Time.get_unix_time_from_datetime_string(iso.substr(0, 19))
-	var bias_minutes := int(Time.get_time_zone_from_system().get("bias", 0))
-	var local := Time.get_datetime_dict_from_unix_time(unix + bias_minutes * 60)
-	var now := Time.get_datetime_dict_from_system()
-	var clock := "%02d:%02d" % [int(local["hour"]), int(local["minute"])]
-	if int(local["year"]) == int(now["year"]) and int(local["month"]) == int(now["month"]) \
-			and int(local["day"]) == int(now["day"]):
-		return clock
-	return "%02d-%02d %s" % [int(local["month"]), int(local["day"]), clock]
 
 
 func _set_notice(message: String, bad: bool) -> void:

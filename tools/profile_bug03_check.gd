@@ -49,7 +49,7 @@ func _run() -> void:
 	if "--review" in OS.get_cmdline_user_args():
 		await get_tree().create_timer(0.3).timeout
 		await RenderingServer.frame_post_draw
-		get_viewport().get_texture().get_image().save_png("res://work/bug0909-03-review/birthday.png")
+		get_viewport().get_texture().get_image().save_png("res://reports/bug0909-03-review/birthday.png")
 	profile._day_pick._choose(profile._day_pick.get_item_index(31))
 	h.expect(profile._day_pick.get_selected_id() == 31, "touch_day31", "Touch picker did not select day 31")
 	profile._gender_pick.select(1)
@@ -84,7 +84,7 @@ func _run() -> void:
 	if "--review" in OS.get_cmdline_user_args():
 		await get_tree().create_timer(0.3).timeout
 		await RenderingServer.frame_post_draw
-		get_viewport().get_texture().get_image().save_png("res://work/bug0909-03-review/lobby.png")
+		get_viewport().get_texture().get_image().save_png("res://reports/bug0909-03-review/lobby.png")
 	h.expect(lobby._slot_status_lbls[1].text in ["准备", "Ready"], "ready_status", "Ready status missing")
 	var public_data := NetworkService.public_seat_identity({"friend_code": "ABCDEFGH", "player_name": "Me", "avatar": "preset:avatar_001", "avatar_frame": "preset:frame_default", "birth_day": 31, "signature": "private", "access_token": "secret"})
 	h.expect(public_data.size() == 4 and public_data.get("avatar_frame") == "preset:frame_default"

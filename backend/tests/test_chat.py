@@ -528,14 +528,16 @@ class _FakePool:
 
 
 def test_maintenance_purges_both_tables(monkeypatch: pytest.MonkeyPatch) -> None:
-    """两张表都要清：过期会话（007）和 friend_request_log（005 写了必须清，一直没人清）。"""
+    """三张表都要清：过期会话（007）、friend_request_log（005 写了必须清，一直没人清）、
+    世界频道 7 天前的消息（019）。"""
     conn = _FakeConn()
     monkeypatch.setattr(db, "pool", lambda: _FakePool(conn))
     result = asyncio.run(maintenance.run_once())
-    assert result == {"chat_conversations": 2, "friend_request_log": 2}
+    assert result == {"chat_conversations": 2, "friend_request_log": 2, "world_messages": 2}
     statements = [sql for sql, _ in conn.calls]
     assert any("delete from chat_conversations" in s for s in statements)
     assert any("delete from friend_request_log" in s for s in statements)
+    assert any("delete from world_messages" in s for s in statements)
     assert (chat.ENDED_RETENTION_DAYS,) in [args for _, args in conn.calls]
 
 

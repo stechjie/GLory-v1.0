@@ -141,7 +141,8 @@ async def realtime_endpoint(websocket: WebSocket) -> None:
 
 
 async def _pump(hub: realtime.Hub, conn: Connection) -> None:
-    """收消息循环。批次 B 只处理心跳，其余类型留给批次 C。"""
+    """收消息循环。客户端只会发两类：心跳（ping），订阅 / 退订主题（世界频道页签）。
+    发消息一律走 HTTP（私聊、世界频道都是），理由见 routes/chat.py 顶部。"""
     while True:
         raw = await conn.websocket.receive_text()
         # 长度先判，再解析。反过来写的话，一个 50 MB 的 body 会先被完整解析一遍 ——
@@ -162,6 +163,18 @@ async def _pump(hub: realtime.Hub, conn: Connection) -> None:
         kind = str(payload.get("t", ""))
         if kind == "ping":
             await hub.send(conn, {"t": "pong"})
+            continue
+        if kind in ("sub", "unsub"):
+            # 订阅 / 退订一个主题（世界频道页签打开 / 关上，app/world_chat.py）。
+            # 只认 realtime.TOPICS 里的：别的主题名一律不收，不让客户端往连接上挂任意字符串。
+            topic = str(payload.get("topic", ""))
+            if topic not in realtime.TOPICS:
+                await hub.send(conn, {"t": "error", "code": "unknown_topic"})
+                continue
+            if kind == "sub":
+                conn.topics.add(topic)
+            else:
+                conn.topics.discard(topic)
             continue
         # 未知类型**不断开连接**：客户端比服务端新的时候（灰度、没更新的旧包）
         # 会发服务端不认识的东西，为此掐掉整条连接是过度反应。

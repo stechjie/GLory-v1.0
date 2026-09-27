@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://cprobe927shoprefresh"]
+
+[ext_resource type="Script" path="res://work/_qa_922/probe_shop_refresh_reconnect_927.gd" id="1"]
+
+[node name="ProbeShopRefreshReconnect927" type="Node"]
+script = ExtResource("1")

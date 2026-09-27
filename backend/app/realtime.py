@@ -57,6 +57,11 @@ CLOSE_KICKED = 4001
 CLOSE_IDLE = 4002
 
 
+# 客户端能订阅的主题（{"t": "sub", "topic": ...}）。只有列在这里的才收，别的回 error ——
+# 来路是网络，任何没有上界的东西都会被人拿去打内存。
+TOPICS = frozenset({"world"})
+
+
 @dataclass
 class Connection:
     player_id: uuid.UUID
@@ -64,6 +69,9 @@ class Connection:
     websocket: WebSocket
     # 单调时钟：墙钟会因为 NTP 校正跳变，而这个值只用来算「多久没说话了」。
     last_seen: float = field(default_factory=time.monotonic)
+    # 订阅的主题。世界频道只推给正开着那个页签的连接（app/world_chat.py）。
+    # 挂在连接上而不是 Hub 的另一张表里：连接一断，订阅跟着没了，不存在「表里还挂着死连接」。
+    topics: set[str] = field(default_factory=set)
 
     def touch(self) -> None:
         self.last_seen = time.monotonic()
@@ -171,6 +179,22 @@ class Hub:
             return 0
         results = await asyncio.gather(*(self._send_bounded(conn, payload) for conn in conns))
         return sum(1 for ok in results if ok)
+
+    async def publish(self, topic: str, payload: dict) -> int:
+        """发给订阅了这个主题的连接（世界频道）。返回成功送达的连接数。
+
+        同 broadcast：并发发、每条有超时，一条卡住的连接不能挡住后面的人。
+        """
+        conns = [conn for devices in self._by_player.values() for conn in devices.values()
+                 if topic in conn.topics]
+        if not conns:
+            return 0
+        results = await asyncio.gather(*(self._send_bounded(conn, payload) for conn in conns))
+        return sum(1 for ok in results if ok)
+
+    def subscriber_count(self, topic: str) -> int:
+        return sum(1 for devices in self._by_player.values() for conn in devices.values()
+                   if topic in conn.topics)
 
     async def disconnect_player(self, player_id: uuid.UUID, code: int, payload: dict) -> int:
         """先说明原因、再断开这个玩家的所有设备（封号，app/bans.py）。返回断了几条。

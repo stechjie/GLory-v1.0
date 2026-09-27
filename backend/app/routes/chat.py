@@ -48,6 +48,12 @@ router = APIRouter(prefix="/v1", tags=["chat"])
 # 对不上的话推送全部落进 RealtimeService 的「未知类型」分支，不报错，就是收不到。
 DM_TYPE = "dm"
 
+# 房间邀请（bug提交和修复.docx 第 2 条）。邀请仍然走 dm 推送 ——
+# **不新开推送类型**：收件人侧的红点、音效、断线补拉全在 dm 那条链上，
+# 新类型只会多一套要单独维护的红点与音效通路。区别只在消息自带的 kind。
+ROOM_INVITE_KIND = chat.ROOM_INVITE_KIND
+_ALLOWED_KINDS = ("text", ROOM_INVITE_KIND)
+
 # 每人每分钟最多发多少条。**只防刷屏**，不负责总量 ——
 # 总量由「每对好友只存最近 200 条」在结构上封顶（见 database/007_chat.sql）。
 #
@@ -64,6 +70,9 @@ _STATUS_BY_CODE = {
     "you_blocked_them": 403,
     "cannot_message_self": 400,
     "send_conflict": 409,
+    # 房间邀请（要求 4）。去重是 409（已经有同一条邀请了），10 秒间隔是 429（稍后再试）。
+    "invite_duplicate": 409,
+    "invite_rate_limited": 429,
 }
 
 
@@ -73,6 +82,11 @@ class MessageItem(BaseModel):
     from_me: bool
     body: str
     created_at: str
+    # text / room_invite。老客户端不认识 room_invite，会把它当普通文本显示
+    # （body 就是那句邀请文案，不会崩）—— 这是刻意的降级，不是漏字段。
+    kind: str = "text"
+    # room_invite 时是 {"room_id": <int>}；text 时为 None。
+    payload: dict | None = None
 
 
 class ChatItem(BaseModel):
@@ -102,6 +116,10 @@ class SendBody(BaseModel):
     body: str = Field(min_length=1, max_length=2000)
     # 客户端给每条消息生成的 uuid。重发同一条时靠它去重，见 chat.send()。
     client_msg_id: uuid.UUID
+    # text / room_invite。老客户端不传 → 默认 "text"，既有行为一个字都不变。
+    kind: str = "text"
+    # 只有 room_invite 用（{"room_id": int}）。其余 kind 一律忽略 —— 见 send_message。
+    payload: dict | None = None
 
 
 class SendResponse(BaseModel):
@@ -141,7 +159,26 @@ def _item(message: chat.Message, viewer_id: uuid.UUID) -> MessageItem:
         from_me=message.sender_id == viewer_id,
         body=message.body,
         created_at=message.created_at.isoformat(),
+        kind=message.kind,
+        payload=message.payload,
     )
+
+
+def _validated_invite_payload(body: SendBody) -> dict:
+    """把邀请的 payload 收敛成 {"room_id": int>0}。
+
+    payload 是客户端传的，所以**必须校验**：一个 room_id=0 或负数的邀请，
+    收件人点「立即参与」会去加入一个不存在的房间，而客户端的失效判据
+    （room_id <= 0 → 已解散）会把它显示成「邀请已过时」—— 看起来像 bug 其实是我们放进去的脏数据。
+    """
+    payload = body.payload or {}
+    room_value = payload.get("room_id")
+    if not isinstance(room_value, int) or isinstance(room_value, bool) or room_value <= 0:
+        raise HTTPException(
+            status_code=400, detail="邀请缺少有效的房间号",
+            headers={"X-Glory-Reason": "invite_bad_payload"},
+        )
+    return {"room_id": room_value}
 
 
 # --- 接口 ---------------------------------------------------------------------
@@ -188,6 +225,18 @@ async def send_message(
     claims: Annotated[Claims, Depends(current_claims)],
 ) -> SendResponse:
     me = await _me(claims)
+    # 消息类型先收敛：不认识的 kind 直接 400，**别写进库、也别推送** ——
+    # 否则一个新 kind 会静默落库，收件人拿到一条自己渲染不了的记录。
+    kind = body.kind or "text"
+    if kind not in _ALLOWED_KINDS:
+        raise HTTPException(
+            status_code=400, detail="不支持的消息类型",
+            headers={"X-Glory-Reason": "chat_kind_invalid"},
+        )
+    # 邀请的机器可读部分（房间号）在这一层校验、**不塞进 body**：
+    # body 要过 text_guard（压换行、限 200 字），本地化之后从里面抠号会静默失效。
+    # 非邀请 kind 一律不带 payload —— 不让普通文本夹带任意字典进库。
+    payload = _validated_invite_payload(body) if kind == ROOM_INVITE_KIND else None
     try:
         _send_limiter.check(str(me.player_id))
     except RateLimited as exc:
@@ -203,7 +252,11 @@ async def send_message(
             status_code=400, detail=exc.message, headers={"X-Glory-Reason": exc.code},
         ) from None
     try:
-        result = await chat.send(me.player_id, _norm(code), text, body.client_msg_id)
+        # 🔴 kind/payload 必须**转发**给 chat.send：不传的话它默认 kind="text"，
+        # 邀请就变成一条普通文本落库 + 推送，收件人的邀请框永远不出现，且不报错。
+        result = await chat.send(
+            me.player_id, _norm(code), text, body.client_msg_id, kind, payload,
+        )
     except chat.ChatRejected as exc:
         raise _reject(exc) from None
 

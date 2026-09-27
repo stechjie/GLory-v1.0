@@ -124,7 +124,7 @@ function field(label, input, grow) {
 // 状态与骨架
 // ---------------------------------------------------------------------------
 
-const state = { admin: null, environment: "", tab: "players", pending: 0 };
+const state = { admin: null, environment: "", tab: "players", pending: 0, openReports: 0 };
 const app = document.getElementById("app");
 
 const TABS = [
@@ -132,6 +132,8 @@ const TABS = [
   ["requests", "审批"],
   ["mails", "邮件"],
   ["announcements", "公告"],
+  ["reports", "举报"],
+  ["world", "世界频道"],
   ["audit", "操作记录"],
 ];
 
@@ -152,9 +154,10 @@ function render() {
     return;
   }
   const prod = state.environment === "prod";
+  const counts = { requests: state.pending, reports: state.openReports };
   const tabs = h("nav", { class: "tabs" }, TABS.map(([key, label]) =>
-    h("button", { class: state.tab === key ? "on" : "", onclick: () => { state.tab = key; render(); } },
-      label, key === "requests" && state.pending ? h("span", { class: "badge" }, state.pending) : null)));
+    h("button", { class: state.tab === key ? "on" : "", "data-tab": key, onclick: () => { state.tab = key; render(); } },
+      label, counts[key] ? h("span", { class: "badge" }, counts[key]) : null)));
   const bar = h("header", { class: "topbar" },
     h("h1", {}, "Glory 运营后台"),
     h("span", { class: prod ? "env prod" : "env dev" }, prod ? "正式服" : `测试环境（${state.environment}）`),
@@ -164,9 +167,16 @@ function render() {
   const main = h("main", {});
   app.replaceChildren(bar, main);
   const views = { players: playersView, requests: requestsView, mails: mailsView,
-                  announcements: announcementsView, audit: auditView };
+                  announcements: announcementsView, reports: reportsView, world: worldView, audit: auditView };
   views[state.tab](main);
   refreshPendingCount();
+  refreshOpenReports();
+}
+
+// 顶栏页签上的数字（等批准的申请、待处理的举报）。拿不到不影响别的。
+function setTabBadge(key, label, count) {
+  const tab = app.querySelector(`.tabs button[data-tab="${key}"]`);
+  if (tab) tab.replaceChildren(label, count ? h("span", { class: "badge" }, count) : "");
 }
 
 async function refreshPendingCount() {
@@ -175,10 +185,20 @@ async function refreshPendingCount() {
     const count = data.requests.length;
     if (count !== state.pending) {
       state.pending = count;
-      const tab = app.querySelector(".tabs button:nth-child(2)");
-      if (tab) tab.replaceChildren("审批", count ? h("span", { class: "badge" }, count) : "");
+      setTabBadge("requests", "审批", count);
     }
   } catch (e) { /* 顶栏上的数字，拿不到不影响别的 */ }
+}
+
+async function refreshOpenReports() {
+  try {
+    const data = await api("GET", "/admin/api/reports?status=open");
+    const count = data.reports.length;
+    if (count !== state.openReports) {
+      state.openReports = count;
+      setTabBadge("reports", "举报", count);
+    }
+  } catch (e) { /* 019 没跑时这里 503，页签上不显示数字 */ }
 }
 
 async function logout() {
@@ -279,6 +299,12 @@ function playersView(main) {
     h("h2", {}, "找玩家"),
     h("p", { class: "hint" }, "好友码、完整玩家编号是精确查找；昵称只给候选（昵称不唯一），点开确认是谁再操作。"),
     h("div", { class: "row" }, field("", query, true), go), box, results), detail);
+  // 从举报 / 世界频道页点「看这个人」跳过来的：直接打开他。
+  if (state.focusPlayer) {
+    showPlayer(state.focusPlayer, detail);
+    state.focusPlayer = null;
+    return;
+  }
   query.focus();
 }
 
@@ -305,7 +331,55 @@ async function showPlayer(playerId, into) {
       h("div", {}, h("span", {}, "注册"), fmt(p.created_at)),
       h("div", {}, h("span", {}, "最后登录"), fmt(p.last_seen_at)),
       p.deleted_at ? h("div", {}, h("span", {}, "注销于"), fmt(p.deleted_at)) : null));
-  into.replaceChildren(header, banCard(p, d, who, reload), walletCard(p, d, who, reload), historyCards(d));
+  into.replaceChildren(header, banCard(p, d, who, reload), muteCard(p, d, who, reload),
+    worldCard(d.world_recent, reload, "他最近在世界频道说的（30 条，含已删）"),
+    reportsCard(d.reports_against, "别人对他的举报（最近 20 条）"),
+    walletCard(p, d, who, reload), historyCards(d));
+}
+
+// 禁言（世界频道）：被禁的人照常能玩、能私聊，只是不能在世界频道说话。和封号是两回事。
+const MUTE_PRESETS = [["1", "1 小时"], ["24", "1 天"], ["72", "3 天"], ["168", "7 天"], ["720", "30 天"], ["", "永久"]];
+
+function muteCard(p, d, who, reload) {
+  const box = h("div", {});
+  const card = h("section", { class: "card" }, h("h2", {}, "禁言（世界频道）"), box);
+  if (d.mute) {
+    card.append(notice("warn", `正在禁言：${d.mute.reason}（${d.mute.ends_at ? "到 " + fmt(d.mute.ends_at) : "永久"}）`));
+    const note = h("input", { placeholder: "为什么解除（内部备注）" });
+    const btn = h("button", { class: "btn" }, "解除禁言");
+    btn.addEventListener("click", action(btn, box, async () => {
+      if (!confirm(`解除 ${who} 的禁言？`)) return "";
+      await api("POST", `/admin/api/players/${p.player_id}/unmute`, { note: note.value });
+      reload();
+      return "已解除";
+    }));
+    card.append(h("div", { class: "row" }, field("备注", note, true), btn));
+  } else if (!p.deleted_at) {
+    const hours = h("select", {}, MUTE_PRESETS.map(([value, label]) => h("option", { value }, label)));
+    hours.value = "24";
+    const reason = h("input", { maxlength: "200", placeholder: "例如：世界频道刷屏 / 辱骂" });
+    const note = h("input", { maxlength: "500", placeholder: "对应哪条举报" });
+    const btn = h("button", { class: "btn danger" }, "禁言");
+    btn.addEventListener("click", action(btn, box, async () => {
+      const n = hours.value ? parseInt(hours.value, 10) : null;
+      const span = hours.options[hours.selectedIndex].textContent;
+      if (!confirm(`禁言 ${who}：${span}\n他在世界频道发言时会看到的原因：${reason.value}`)) return "";
+      await api("POST", `/admin/api/players/${p.player_id}/mute`, { hours: n, reason: reason.value, note: note.value });
+      reload();
+      return "已禁言";
+    }));
+    card.append(
+      h("p", { class: "hint" }, "禁言不用审批，随时能解除。只管世界频道：照常能玩、能私聊。"),
+      h("div", { class: "row" }, field("多久", hours), field("给玩家看的原因", reason, true),
+        field("内部备注（玩家看不到）", note, true), btn));
+  }
+  if (d.mutes && d.mutes.length) {
+    card.append(h("h3", {}, "禁言记录"), table(["时间", "到", "原因", "备注", "操作人", "解除"], d.mutes.map((m) =>
+      h("tr", {}, h("td", {}, fmt(m.created_at)), h("td", {}, m.ends_at ? fmt(m.ends_at) : "永久"),
+        h("td", {}, m.reason), h("td", { class: "muted" }, m.note || ""), h("td", {}, m.actor),
+        h("td", {}, m.revoked_at ? `${m.revoked_by} ${fmt(m.revoked_at)}${m.revoke_note ? "：" + m.revoke_note : ""}` : "")))));
+  }
+  return card;
 }
 
 function banCard(p, d, who, reload) {
@@ -711,6 +785,200 @@ function editAnnouncement(a, into) {
 }
 
 // ---------------------------------------------------------------------------
+// 举报与世界频道（database/019，docs/聊天系统设计.md 批次 E）
+// ---------------------------------------------------------------------------
+//
+// 处理一条举报 = 看证据（服务器在举报那一刻复制的，不是举报人上传的）→ 需要的话删消息、
+// 去玩家页禁言 / 封号 → 把举报标成「已处理」或「不成立」。标记本身不处罚任何人。
+
+const REPORT_CONTEXT = { world: "世界频道", profile: "资料页", dm: "私聊", match: "房间 / 对局" };
+const REPORT_REASON = { abuse: "辱骂骚扰", ads: "广告引流", cheat: "外挂作弊", name: "不当昵称 / 头像 / 签名", other: "其他" };
+const REPORT_STATUS = { open: ["待处理", "yellow"], resolved: ["已处理", "green"], dismissed: ["不成立", ""] };
+
+function statusTag(map, key) {
+  const [label, color] = map[key] || [key, ""];
+  return h("span", { class: `tag ${color}` }, label);
+}
+
+// 跳到玩家页并打开这个人（封号、禁言都在那里）。
+function openPlayer(playerId) {
+  state.focusPlayer = playerId;
+  state.tab = "players";
+  render();
+}
+
+function openReport(reportId) {
+  state.focusReport = reportId;
+  state.tab = "reports";
+  render();
+}
+
+// 世界频道消息表。玩家页、举报证据、世界频道页共用；三处给的行长得不完全一样（证据里是快照）。
+function worldCard(messages, reload, title, withSender) {
+  const box = h("div", {});
+  const rows = (messages || []).map((m) => {
+    const hidden = m.hidden_at || m.hidden;
+    const cell = h("td", {});
+    if (!hidden) {
+      const btn = h("button", { class: "btn small danger" }, "删除");
+      btn.addEventListener("click", action(btn, box, async () => {
+        const why = prompt(`删除这条世界频道消息？正开着世界频道的人那边会当场消失。\n\n「${m.body}」\n\n原因（内部备注，可空）：`, "");
+        if (why === null) return "";
+        await api("POST", `/admin/api/world/${m.message_id}/hide`, { reason: why });
+        reload();
+        return "已删除";
+      }));
+      cell.append(btn);
+    }
+    return h("tr", {},
+      h("td", {}, fmt(m.created_at)),
+      withSender ? h("td", { class: "mono" }, m.friend_code || "") : null,
+      h("td", {}, m.sender_name || m.name || ""),
+      h("td", {}, m.body),
+      h("td", {}, hidden
+        ? h("span", { class: "tag", title: m.hidden_reason || "" },
+          m.hidden_by ? `已删（${m.hidden_by}${m.hidden_reason ? "：" + m.hidden_reason : ""}）` : "已删")
+        : ""),
+      withSender && m.sender_id
+        ? h("td", {}, h("button", { class: "btn small", onclick: () => openPlayer(m.sender_id) }, "看这个人"))
+        : null,
+      cell);
+  });
+  const headers = ["时间"].concat(withSender ? ["好友码"] : []).concat(["昵称（当时）", "内容", "状态"])
+    .concat(withSender ? [""] : []).concat([""]);
+  return h("section", { class: "card" }, h("h2", {}, title), box, table(headers, rows));
+}
+
+function reportsCard(reports, title) {
+  return h("section", { class: "card" }, h("h2", {}, title),
+    table(["#", "时间", "场合", "原因", "举报人", "说明", "状态"], (reports || []).map((r) =>
+      h("tr", { class: "click", onclick: () => openReport(r.report_id) },
+        h("td", {}, r.report_id), h("td", {}, fmt(r.created_at)), h("td", {}, REPORT_CONTEXT[r.context] || r.context),
+        h("td", {}, REPORT_REASON[r.reason] || r.reason),
+        h("td", {}, `${r.reporter_name}（${r.reporter_code}）`),
+        h("td", { class: "muted" }, r.note_from_reporter || ""), h("td", {}, statusTag(REPORT_STATUS, r.status))))));
+}
+
+async function reportsView(main) {
+  const filter = h("select", {}, Object.entries({ open: "待处理", resolved: "已处理", dismissed: "不成立", all: "全部" })
+    .map(([value, label]) => h("option", { value }, label)));
+  filter.value = state.reportFilter || "open";
+  const box = h("div", {});
+  const list = h("div", {});
+  const detail = h("div", {});
+  const load = async () => {
+    state.reportFilter = filter.value;
+    list.replaceChildren(h("p", { class: "muted" }, "加载中…"));
+    try {
+      const data = await api("GET", "/admin/api/reports?status=" + filter.value);
+      list.replaceChildren(table(["#", "时间", "被举报", "场合", "原因", "举报人", "说明", "状态"], data.reports.map((r) =>
+        h("tr", { class: "click", onclick: () => showReport(r.report_id, detail, load) },
+          h("td", {}, r.report_id), h("td", {}, fmt(r.created_at)),
+          h("td", {}, h("b", {}, r.target_name), ` ${r.target_code}`),
+          h("td", {}, REPORT_CONTEXT[r.context] || r.context), h("td", {}, REPORT_REASON[r.reason] || r.reason),
+          h("td", {}, `${r.reporter_name}（${r.reporter_code}）`),
+          h("td", { class: "muted" }, r.note_from_reporter || ""), h("td", {}, statusTag(REPORT_STATUS, r.status))))));
+    } catch (e) {
+      list.replaceChildren(notice("error", e.message));
+    }
+  };
+  filter.addEventListener("change", load);
+  main.append(h("section", { class: "card" }, h("h2", {}, "举报"),
+    h("p", { class: "hint" }, "证据是服务器在举报那一刻复制的（不是举报人上传的）。同一个人对同一个人、同一种场合，"
+      + "处理前只算一条。处理完标「已处理」或「不成立」—— 标记本身不处罚任何人，封号 / 禁言去玩家页。"),
+    h("div", { class: "row" }, field("看哪些", filter)), box, list), detail);
+  await load();
+  if (state.focusReport) {
+    showReport(state.focusReport, detail, load);
+    state.focusReport = null;
+  }
+}
+
+async function showReport(reportId, into, reloadList) {
+  into.replaceChildren(h("p", { class: "muted" }, "加载中…"));
+  let r;
+  try {
+    r = await api("GET", "/admin/api/reports/" + reportId);
+  } catch (e) {
+    into.replaceChildren(notice("error", e.message));
+    return;
+  }
+  const reload = () => { showReport(reportId, into, reloadList); reloadList(); };
+  const ev = r.evidence || {};
+  const prof = ev.profile || {};
+  const box = h("div", {});
+  const head = h("section", { class: "card" },
+    h("h2", {}, `举报 #${r.report_id} `, statusTag(REPORT_STATUS, r.status)),
+    h("div", { class: "facts" },
+      h("div", {}, h("span", {}, "被举报"), h("b", {}, r.target_name), ` ${r.target_code} `,
+        h("button", { class: "btn small", onclick: () => openPlayer(r.target_id) }, "去他的玩家页（封号 / 禁言）")),
+      h("div", {}, h("span", {}, "举报人"), `${r.reporter_name}（${r.reporter_code}）`),
+      h("div", {}, h("span", {}, "时间"), fmt(r.created_at)),
+      h("div", {}, h("span", {}, "场合 / 原因"), `${REPORT_CONTEXT[r.context] || r.context} · ${REPORT_REASON[r.reason] || r.reason}`),
+      h("div", {}, h("span", {}, "被多少个不同的人举报过"), String(r.reporters_against_target)),
+      r.handled_by ? h("div", {}, h("span", {}, "处理"), `${r.handled_by} ${fmt(r.handled_at)}${r.handled_note ? "：" + r.handled_note : ""}`) : null),
+    r.note_from_reporter ? h("p", {}, h("b", {}, "举报人说："), r.note_from_reporter) : null,
+    h("h3", {}, "当时的资料（举报那一刻）"),
+    h("p", {}, `昵称：${prof.player_name || "—"}　签名：${prof.signature || "（没有）"}　头像：${prof.avatar || "—"}`),
+    box);
+  if (r.status === "open") {
+    const note = h("input", { maxlength: "500", placeholder: "处理说明（例如：已禁言 1 天）" });
+    const done = h("button", { class: "btn primary" }, "标为已处理");
+    const reject = h("button", { class: "btn" }, "标为不成立");
+    const decide = (status, label) => async () => {
+      if (!confirm(`把举报 #${r.report_id} 标为「${label}」？`)) return "";
+      await api("POST", `/admin/api/reports/${r.report_id}/resolve`, { status, note: note.value });
+      refreshOpenReports();
+      reload();
+      return `已标为${label}`;
+    };
+    done.addEventListener("click", action(done, box, decide("resolved", "已处理")));
+    reject.addEventListener("click", action(reject, box, decide("dismissed", "不成立")));
+    head.append(h("div", { class: "row" }, field("处理说明", note, true), done, reject));
+  }
+  const parts = [head];
+  if (ev.world_message !== undefined) {
+    parts.push(worldCard(ev.world_message ? [ev.world_message] : [], reload, "被举报的那一条"));
+  }
+  if (ev.world_recent) parts.push(worldCard(ev.world_recent, reload, "他当时最近在世界频道说的（含已删）"));
+  if (ev.dm_recent) {
+    parts.push(h("section", { class: "card" }, h("h2", {}, "他们最近的私聊（举报那一刻，最多 50 条）"),
+      table(["时间", "谁说的", "内容"], ev.dm_recent.map((m) => h("tr", {},
+        h("td", {}, fmt(m.created_at)), h("td", {}, m.from === "target" ? h("b", {}, "被举报人") : "举报人"),
+        h("td", {}, m.body))))));
+  }
+  if (r.context === "match") {
+    parts.push(notice("warn", "房间 / 对局里的聊天服务器不存，这条举报只有资料快照。"));
+  }
+  into.replaceChildren(...parts);
+  into.scrollIntoView({ behavior: "smooth" });
+}
+
+async function worldView(main) {
+  const code = h("input", { placeholder: "只看某个好友码（可空）", maxlength: "8" });
+  const refresh = h("button", { class: "btn" }, "刷新");
+  const list = h("div", {});
+  const load = async () => {
+    list.replaceChildren(h("p", { class: "muted" }, "加载中…"));
+    try {
+      const data = await api("GET", "/admin/api/world");
+      const want = code.value.trim().toUpperCase();
+      const rows = want ? data.messages.filter((m) => m.friend_code === want) : data.messages;
+      list.replaceChildren(worldCard(rows, load, `最近 200 条（新的在上面）${want ? " · 只看 " + want : ""}`, true));
+    } catch (e) {
+      list.replaceChildren(notice("error", e.message));
+    }
+  };
+  refresh.addEventListener("click", load);
+  code.addEventListener("keydown", (e) => { if (e.key === "Enter") load(); });
+  main.append(h("section", { class: "card" }, h("h2", {}, "世界频道"),
+    h("p", { class: "hint" }, "第一版只有本地规则（联系方式、词表）自动拦，其余靠举报和这里人工删。删除是打标记，"
+      + "库里留着（举报要看上下文），玩家那边当场消失。库里只存 7 天。"),
+    h("div", { class: "row" }, field("好友码", code), refresh)), list);
+  await load();
+}
+
+// ---------------------------------------------------------------------------
 // 操作记录
 // ---------------------------------------------------------------------------
 
@@ -718,6 +986,8 @@ const ACTIONS = {
   ban: "封号", unban: "解封", "mail.send": "发邮件", "mail.withdraw": "撤回邮件",
   "request.create": "提交发钱申请", "request.approve": "批准", "request.reject": "拒绝", "request.cancel": "撤回申请",
   "announcement.save": "保存公告", "announcement.image": "上传公告图",
+  mute: "禁言", unmute: "解除禁言", "world.hide": "删世界频道消息",
+  "report.resolved": "举报：已处理", "report.dismissed": "举报：不成立",
 };
 
 function auditTable(rows, withPlayer) {

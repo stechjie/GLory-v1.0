@@ -22,7 +22,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app import (admin, admission, announcements, bans, db, mail, maintenance, matchmaking,
-                 realtime, seasons, single_instance)
+                 realtime, seasons, single_instance, world_chat)
 from app.config import get_settings
 from app.routes import admin as admin_routes
 from app.routes import announcements as announcement_routes
@@ -37,7 +37,9 @@ from app.routes import matchmaking as matchmaking_routes
 from app.routes import me as me_routes
 from app.routes import presence as presence_routes
 from app.routes import profile as profile_routes
+from app.routes import reports as report_routes
 from app.routes import shop as shop_routes
+from app.routes import world as world_routes
 from app.routes import ws as ws_routes
 
 # Windows 控制台默认是 cp1252，中文日志会被转义成 以... 甚至直接抛
@@ -101,6 +103,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
     # 连接串为空时 connect() 不建池也不抛异常 —— 同样是为了让骨架能单独起来。
     await db.connect(cfg.database_url)
+    # 世界频道：从库里补回最近 100 条（app/world_chat.py）。不补的话每次部署完频道都是空的。
+    # 019 没跑、库没配都只记日志 —— 第一次有人打开页签时会再补一次。
+    if db.is_connected():
+        await world_chat.warm_at_startup()
 
     # 巡检死连接。TCP 不会告诉你对端已经没了（手机进隧道、被系统冻结、
     # NAT 表项过期），没有它连接表只增不减。
@@ -191,6 +197,8 @@ app.include_router(profile_routes.router)
 app.include_router(friends_routes.router)
 app.include_router(presence_routes.router)
 app.include_router(chat_routes.router)
+app.include_router(world_routes.router)
+app.include_router(report_routes.router)
 app.include_router(announcement_routes.router)
 app.include_router(shop_routes.router)
 app.include_router(loadout_routes.router)

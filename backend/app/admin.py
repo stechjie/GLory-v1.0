@@ -32,7 +32,7 @@ from typing import Any
 import asyncpg
 import httpx
 
-from app import announcements, bans, db, mail, ranked, realtime, shop
+from app import announcements, bans, db, mail, ranked, realtime, shop, world_chat
 from app.admin_auth import Admin
 from app.config import get_settings
 
@@ -65,7 +65,7 @@ def _jsonable(value: Any) -> Any:
 
 def _row(record: asyncpg.Record) -> dict:
     out = {k: _jsonable(v) for k, v in dict(record).items()}
-    for key in ("payload", "detail", "result"):
+    for key in ("payload", "detail", "result", "evidence"):
         if isinstance(out.get(key), str):
             out[key] = json.loads(out[key])
     return out
@@ -160,6 +160,16 @@ async def player_detail(player_id: uuid.UUID) -> dict:
         audit = await conn.fetch(
             "select audit_id, at, admin_name, action, detail, ok from admin_audit"
             " where player_id = $1 order by audit_id desc limit 50", player_id)
+        # 019（世界频道、禁言、举报）没跑时这三样是空的，玩家页其余部分照常。
+        mutes = await _optional(conn,
+            "select mute_id, scope, created_at, ends_at, reason, note, actor, revoked_at, revoked_by, revoke_note"
+            " from player_mutes where player_id = $1 order by mute_id desc", player_id)
+        reports_against = await _optional(conn, _REPORT_COLUMNS
+            + " where r.target_id = $1 order by r.report_id desc limit 20", player_id)
+        world_recent = await _optional(conn,
+            "select message_id, body, sender_name, created_at, hidden_at, hidden_by, hidden_reason"
+            " from world_messages where sender_id = $1 order by message_id desc limit 30", player_id)
+        mute = await world_chat.live_mute(conn, player_id) if mutes else None
     ranked_out = None
     if ranked_row is not None:
         ranked_out = {**_row(ranked_row), "tier": ranked.tier_of(int(ranked_row["score"]))}
@@ -178,7 +188,19 @@ async def player_detail(player_id: uuid.UUID) -> dict:
         "credit": None if credit is None else _row(credit),
         "matches": [_row(r) for r in matches],
         "audit": [_row(r) for r in audit],
+        "mute": None if mute is None else mute.to_client(),
+        "mutes": [_row(r) for r in mutes],
+        "reports_against": [_row(r) for r in reports_against],
+        "world_recent": [_row(r) for r in world_recent],
     }
+
+
+async def _optional(conn: asyncpg.Connection, sql: str, *args) -> list[asyncpg.Record]:
+    """019 的表还不存在时回空（部署时先上账号服务器、后跑 019 的那段时间，玩家页不能整页打不开）。"""
+    try:
+        return await conn.fetch(sql, *args)
+    except asyncpg.UndefinedTableError:
+        return []
 
 
 # --- 封号（不用批）-----------------------------------------------------------------
@@ -213,6 +235,147 @@ async def unban(admin: Admin, player_id: uuid.UUID, note: str) -> dict:
                 raise AdminRejected("这个玩家现在没有被封") from None
             await _audit(conn, admin, "unban", player_id, {"revoked": count, "note": note})
     return {"revoked": count}
+
+
+# --- 禁言（世界频道，不用批；database/019）--------------------------------------------------
+
+
+async def mute(admin: Admin, player_id: uuid.UUID, hours: int | None, reason: str, note: str) -> dict:
+    """禁言：被禁的人照常能玩、能私聊，只是不能在世界频道说话（app/world_chat.py）。"""
+    reason = _require_text(reason, "给玩家看的原因", 200)
+    note = (note or "").strip()[:500] or None
+    if hours is not None and not 1 <= hours <= 24 * 3650:
+        raise AdminRejected("禁言时长要在 1 小时到 10 年之间；永久禁言不填时长")
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            code = await _live_friend_code(conn, player_id)
+            try:
+                mute_id = await conn.fetchval(
+                    "select mute_player($1, $2::interval, $3, $4, $5)",
+                    code, None if hours is None else dt.timedelta(hours=hours), reason, admin.name, note)
+            except asyncpg.UndefinedFunctionError:
+                raise AdminRejected("数据库还没跑 019_world_chat.sql，禁言用不了", 503) from None
+            await _audit(conn, admin, "mute", player_id,
+                         {"mute_id": mute_id, "hours": hours, "reason": reason, "note": note})
+    return {"mute_id": mute_id}
+
+
+async def unmute(admin: Admin, player_id: uuid.UUID, note: str) -> dict:
+    note = (note or "").strip()[:500] or None
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            code = await _live_friend_code(conn, player_id)
+            try:
+                count = await conn.fetchval("select unmute_player($1, $2, $3)", code, admin.name, note)
+            except asyncpg.RaiseError:
+                raise AdminRejected("这个玩家现在没有被禁言") from None
+            except asyncpg.UndefinedFunctionError:
+                raise AdminRejected("数据库还没跑 019_world_chat.sql，禁言用不了", 503) from None
+            await _audit(conn, admin, "unmute", player_id, {"revoked": count, "note": note})
+    return {"revoked": count}
+
+
+# --- 举报（database/019，app/reports.py）------------------------------------------------
+#
+# 处理 = 看证据 → 需要的话在玩家页封号 / 禁言、在这里删消息 → 把举报标成「已处理」或「不成立」。
+# 标记本身不自动处罚任何人：处罚走各自的入口（都记操作记录），这里只记结论。
+
+# r.detail 改名：_row 会把叫 detail 的列当 JSON 解（那是 admin_audit.detail），举报的补充说明是普通文字。
+_REPORT_FIELDS = (
+    "select r.report_id, r.created_at, r.context, r.reason, r.detail as note_from_reporter, r.message_id,"
+    "       r.status, r.handled_by, r.handled_at, r.handled_note, r.target_id, r.reporter_id,"
+    "       t.friend_code as target_code, t.player_name as target_name,"
+    "       rp.friend_code as reporter_code, rp.player_name as reporter_name")
+_REPORT_FROM = (
+    "  from player_reports r"
+    "  join players t on t.player_id = r.target_id"
+    "  join players rp on rp.player_id = r.reporter_id")
+_REPORT_COLUMNS = _REPORT_FIELDS + _REPORT_FROM
+
+
+async def list_reports(status: str) -> list[dict]:
+    if status not in ("open", "resolved", "dismissed", "all"):
+        raise AdminRejected("状态只能是 open / resolved / dismissed / all")
+    async with db.pool().acquire() as conn:
+        try:
+            if status == "open":
+                # 待处理的按先来后到（最早的先处理）；其余看最近的。
+                rows = await conn.fetch(_REPORT_COLUMNS + " where r.status = 'open' order by r.report_id limit 200")
+            elif status == "all":
+                rows = await conn.fetch(_REPORT_COLUMNS + " order by r.report_id desc limit 200")
+            else:
+                rows = await conn.fetch(
+                    _REPORT_COLUMNS + " where r.status = $1 order by r.report_id desc limit 200", status)
+        except asyncpg.UndefinedTableError:
+            raise AdminRejected("数据库还没跑 019_world_chat.sql，还没有举报", 503) from None
+    return [_row(r) for r in rows]
+
+
+async def report_detail(report_id: int) -> dict:
+    async with db.pool().acquire() as conn:
+        try:
+            row = await conn.fetchrow(
+                _REPORT_FIELDS + ", r.evidence" + _REPORT_FROM + " where r.report_id = $1", report_id)
+        except asyncpg.UndefinedTableError:
+            raise AdminRejected("数据库还没跑 019_world_chat.sql", 503) from None
+        if row is None:
+            raise AdminRejected("没有这条举报", 404)
+        # 这个人一共被举报过几次（不同举报人），处理的人判断「是不是惯犯」要看。
+        against = await conn.fetchval(
+            "select count(distinct reporter_id) from player_reports where target_id = $1", row["target_id"])
+    return {**_row(row), "reporters_against_target": int(against)}
+
+
+async def resolve_report(admin: Admin, report_id: int, status: str, note: str) -> dict:
+    if status not in ("resolved", "dismissed"):
+        raise AdminRejected("处理结果只能是 resolved（已处理）或 dismissed（不成立）")
+    note = (note or "").strip()[:500] or None
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                "update player_reports set status = $2, handled_by = $3, handled_at = now(), handled_note = $4"
+                " where report_id = $1 and status = 'open' returning target_id",
+                report_id, status, admin.name, note)
+            if row is None:
+                raise AdminRejected("这条举报已经处理过了（或者不存在），刷新一下", 409)
+            await _audit(conn, admin, "report." + status, row["target_id"], {"report_id": report_id, "note": note})
+    return {"report_id": report_id, "status": status}
+
+
+# --- 世界频道（database/019，app/world_chat.py）--------------------------------------------
+
+
+async def recent_world(player_id: uuid.UUID | None) -> list[dict]:
+    """最近 200 条（含已删的，删了的带着谁删的、为什么）。给了 player_id 就只看这个人的。"""
+    sql = ("select w.message_id, w.created_at, w.body, w.sender_name, w.sender_id, p.friend_code,"
+           "       w.hidden_at, w.hidden_by, w.hidden_reason"
+           "  from world_messages w join players p on p.player_id = w.sender_id")
+    async with db.pool().acquire() as conn:
+        try:
+            if player_id is None:
+                rows = await conn.fetch(sql + " order by w.message_id desc limit 200")
+            else:
+                rows = await conn.fetch(sql + " where w.sender_id = $1 order by w.message_id desc limit 200", player_id)
+        except asyncpg.UndefinedTableError:
+            raise AdminRejected("数据库还没跑 019_world_chat.sql，世界频道没开", 503) from None
+    return [_row(r) for r in rows]
+
+
+async def hide_world_message(admin: Admin, message_id: int, reason: str) -> dict:
+    """删一条世界频道消息：打标记不删行（举报要看上下文），正开着页签的人那边当场消失。"""
+    reason = (reason or "").strip()[:200] or None
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            try:
+                sender = await world_chat.hide(conn, message_id, admin.name, reason)
+            except asyncpg.UndefinedTableError:
+                raise AdminRejected("数据库还没跑 019_world_chat.sql", 503) from None
+            if sender is None:
+                raise AdminRejected("没有这条消息，或者它已经被删过了", 409)
+            await _audit(conn, admin, "world.hide", sender, {"message_id": message_id, "reason": reason})
+    # 事务提交之后才让玩家那边消失：先推的话，事务万一回滚，界面上就少了一条库里还在的消息。
+    await world_chat.announce_hidden(message_id)
+    return {"message_id": message_id}
 
 
 # --- 发钱的审批 ---------------------------------------------------------------------

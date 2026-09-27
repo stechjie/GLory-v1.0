@@ -703,16 +703,60 @@ func fetch_chat_messages(code: String, after_id: int = 0) -> Dictionary:
 
 # client_msg_id 由调用方生成，重试同一条时**原样复用** —— 服务端靠它认出重发，
 # 弱网下「我发了一次、对方收到两条」就是它在挡。
-func send_chat_message(code: String, body: String, client_msg_id: String) -> Dictionary:
+#
+# kind / payload（2026-09-27，房间邀请）：普通文本不传，走默认空值 ——
+# 服务端把空 kind 当 "text"。房间邀请传 kind="room_invite" + payload={"room_id": N}
+# 见 scripts/multiplayer/RoomInvite.gd。**不要**把房间号塞进 body：
+# body 要过 text_guard（压换行、限 200 字），本地化之后从里面抠号会静默失效。
+func send_chat_message(code: String, body: String, client_msg_id: String,
+		kind: String = "", payload: Dictionary = {}) -> Dictionary:
+	var request := {"body": body, "client_msg_id": client_msg_id}
+	if not kind.is_empty():
+		request["kind"] = kind
+	if not payload.is_empty():
+		request["payload"] = payload
 	return await _request(HTTPClient.METHOD_POST,
-		"/v1/me/chats/%s/messages" % normalize_friend_code(code),
-		{"body": body, "client_msg_id": client_msg_id}, true)
+		"/v1/me/chats/%s/messages" % normalize_friend_code(code), request, true)
 
 
 func mark_chat_read(code: String, last_read_id: int) -> Dictionary:
 	return await _request(HTTPClient.METHOD_POST,
 		"/v1/me/chats/%s/read" % normalize_friend_code(code),
 		{"last_read_id": maxi(0, last_read_id)}, true)
+
+
+# --- 世界频道（docs/聊天系统设计.md 批次 E，backend/app/routes/world.py）------------------
+#
+# 同私聊：发送走这里（HTTPS，要明确的答复：发出去了 / 太快了 / 被禁言 / 不合规），
+# 收新消息走 RealtimeService 的订阅推送，状态在 ChatService。
+
+# before_id = 0：打开页签，最近 100 条；> 0：往上翻，比这条更早的一页。旧到新。
+func fetch_world_messages(before_id: int = 0) -> Dictionary:
+	var query := "" if before_id <= 0 else "?before=%d" % before_id
+	return await _request(HTTPClient.METHOD_GET, "/v1/world/messages" + query, null, true)
+
+
+# client_msg_id 同私聊：网络失败后重发同一句时**原样复用**，服务端认出来就不会发两条。
+func send_world_message(body: String, client_msg_id: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/world/messages",
+		{"body": body, "client_msg_id": client_msg_id}, true)
+
+
+# --- 举报（backend/app/reports.py）---------------------------------------------------
+#
+# 证据由服务器在举报那一刻复制（世界频道的发言、私聊记录、资料），客户端只报「谁、在哪、为什么」。
+# 与 backend/app/reports.py 的 CONTEXTS / REASONS 一致（tools/chat_check.gd 钉着）。
+const REPORT_CONTEXTS := ["world", "profile", "dm", "match"]
+const REPORT_REASONS := ["abuse", "ads", "cheat", "name", "other"]
+
+func report_player(code: String, context: String, reason: String, message_id: int = 0,
+		detail: String = "") -> Dictionary:
+	var payload := {"target_code": normalize_friend_code(code), "context": context, "reason": reason}
+	if message_id > 0:
+		payload["message_id"] = message_id
+	if not detail.strip_edges().is_empty():
+		payload["detail"] = detail.strip_edges()
+	return await _request(HTTPClient.METHOD_POST, "/v1/reports", payload, true)
 
 
 # --- 公告（docs/公告系统设计.md）------------------------------------------------

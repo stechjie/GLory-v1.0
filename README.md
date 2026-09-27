@@ -2,6 +2,8 @@
 
 代码、Drive 资源与打包入口：[交付与打包边界](docs/DELIVERY-BOUNDARIES.md)。
 
+目录整理与新工具入口：[工作区目录说明](docs/WORKSPACE-LAYOUT.md)。Mac 同步和打包入口位于 `tools/workspace/`；Windows 服务端打包入口位于 `tools/make_server_zip.bat`。
+
 > 下面这一块由 `tools/current_health.ps1` 从各门禁的真实产物生成，是本文件里**唯一**保证反映当前状态的部分。
 > 其余章节是按日期冻结的历史记录：写下时为真，之后未必。两者冲突时以生成块为准。
 
@@ -2101,3 +2103,44 @@ A 费用档位 / B 教程恒免费（刷 **999 次**仍为 0）/ C **递归扫 `
 
 ★ **未做真机/观感与 EXE/APK 验收**：门禁只证「不回归 + 解析可实例化」，不证「图标上看着对」。商店缩略图依赖登录态与网络拉取、宠物为 3D SubViewport 预览，需在真机/编辑器里肉眼确认位置与缩放。
 ★ **缩略图「是否真在框内」没有任何门禁覆盖**：`ui_capture_fixture` 路径下预览被刻意跳过（不发网络），故视觉回归图拍不到它。判断依据是**贴图金框的像素实测 + 容器几何**，不是断言。要补行为门禁需打桩 `AccountManager.fetch_shop` 并驱动 `MainMenu` 实例（本轮未做）。
+
+## 2026-09-27（第二批）：《bug提交和修复.docx》5 条（末日守卫星级上限 · 房间邀请好友 · 商店刷新重连 · 毒灵被挡 · 隔断越界）
+
+用户提交桌面 `bug提交和修复.docx`：1 条技能调整（末日守卫技能目标不得高于自身星级 + 改说明）、1 条**新功能**（房间内邀请好友进房）、3 条按既有调查/思路记录修复（重连后商店刷新费用变少、毒灵被队友挡住不参与战斗、战场隔断越界）。整体修复、更新 README、变动文件同目录同路径备份桌面。
+
+**① 末日守卫。** `BattleSimulator._link_targets_without_doom()` 在既有三类排除（自己 / 唯一棋子 / Boss 与法阵 Boss）之外加「星级不高于施法者」，两处都取 `maxi(1, int(...))`（`star` 缺失按 1 星，不能让"没写 star"变成"0 星谁都连不了"）；`UnitDetailFormat` zh/en 同步改成需求原句。判据 `probe_blood_link_boss_immune_925` **61**（新增 Part 6 星级 9 项）。
+
+**② 房间邀请好友（新功能，本轮最大的一块）。** 🔴 关键决定：**邀请 = 一条 `kind="room_invite"` 的私聊**（payload `{"room_id": N}`）。要求里的「在聊天朋友消息里收到 + 音效 + 红点」因此**全部白拿**——发送走既有 HTTPS、推送走 ② WebSocket 的 `dm` 分支、红点与音效在 `ChatService._on_dm_push`；**不新开推送类型**（新类型只会多一套要单独维护的通路，漏一处就是"有时收不到"）。代价是给 `chat_messages` 加两列（`database/020_room_invite.sql`，🟢 加列带默认值）。判据源只有一份：新文件 `scripts/multiplayer/RoomInvite.gd`（纯 static，不碰界面/网络/autoload），把要求 (4) 的限流与要求 (5) 的**四个失效条件**都收在里面 —— 不在界面里散着写。两处**写反了不报错**的地方被专门钉住：**(a)** `UNKNOWN_ROOM(-1)`「查不到」与 `0`「确定不在房间」必须分开（混成一个 0，要么网络抖一下误杀正常邀请、要么漏掉「已离房」）；**(b)** `我开启了新的房间，一起来玩吧` 与 `邀请已过时` 只许有一处拼法（门禁**注释感知**地扫 `scripts/`+`scenes/` 全目录）。客户端接线：`Team3v3Lobby`（朋友列表每行改可点，**刻意不用 `Button.new()`** —— 该文件棘轮基线恰好 3；点一下过限流 → 发邀请 → `_flash_row` 亮一下）、`ChatScreen`（`_bubble` 分流 → 邀请框 + 右下角「立即参与」；失效走 `GloryToast.show_text(RoomInvite.expired_text())`，与「上阵棋子数目少于 N」同一出口）、`Main`（复用既有 `_join_room_by_id`）、`AccountManager`（`send_chat_message` 加可选 `kind`/`payload`，既有调用点零改动）。后端：`database/020_room_invite.sql` + `chat.py`（`_check_invite_rules`，两条限流**判在数据库上**——`rate_limit.py` 是进程内窗口，重启清零、多 worker 各算各的，判在那里等于重启就能重发）+ `routes/chat.py`（`kind` 白名单、`payload` 收敛成 `{"room_id": int>0}`、邀请仍走 `dm` 推送）。**新门禁 `room_invite_check` 49 项**（行为 + 结构两类），变异 `work/_qa_922/mutate_room_invite_927.py` **6/6 全红并按 sha256 还原**（其中 M5 专打"把调用点整行注释掉"——裸 `contains` 会照绿，这正是结构断言必须注释感知的理由）。
+
+**③ 重连后商店刷新费用变少。** 根因：服务端 `room_state` 的 `shop.refresh_uses` 是权威值，而 `NetworkService._apply_server_shop` 只覆盖了 `server_shop`、**没把刷新次数同步回客户端计数**，于是重连后计数停在旧值，费用曲线 `0/10/20/40` 被压低 = 下一刷变便宜。做法：有 `refresh_uses` 时同步回 `GameState.shop_refresh_uses_this_round`；**必须用 `has()` 守卫**——回执那条路径传的 shop 不带这个键，不加守卫会把计数打回 0（正是要修的 bug，反过来又造一个）。判据 `probe_shop_refresh_reconnect_927` **32**。
+
+**④ 毒灵被队友挡住。** 根因：`range:1`→`range_px=32` 是近战，同速并排前进时恒差 `d≈32.7`，**永远差一点进不了攻击距离**。做法：选敌从"最近"改成**可达性感知**（`_first_contact` 圆射线扫掠：朝目标走第一下撞到友军就把候选池换成该方向走得通的那批），**只对"目标被友军挡住"的单位启用**（用户口径）。★ 9.25 的坑又踩一次：`_tick_skills` 会在 `_step_team` 之前写 `locked_target_uid`，那条路径一开始没带 `bodies` → 旧目标抢先锁住，端到端两条一直红；把 `bodies` 一路穿到 `_skill_target_in_range` 才通。判据 `probe_poison_reach_927` **12**（`l6_side_damage=900000`，被挡的目标最后真的挨打了）。
+
+**⑤ 战场隔断越界。** 按 `docs/9.27战场隔断越界修复思路.md` 的推荐默认值做 **A+B+C 三层**：A 层单一真源 `_lane_has_living_opponent`（`_can_target` / `BattleArena._lane_cleared_by` / 宝物效果 1/4 共用）、B 层 `_owner_lane_enemies_cleared` 从 `own_survivor` 口径换成 `_lane_ever_occupied`、C 层跨层技能（黑洞 / 低防后排瞬移 / 金币冲锋）改看 `_opponents_in_reachable_lanes`。判据 `probe_lane_partition_927` **52**。★ **M2 变异（把 Arena 退回 `own_survivor`）只有结构断言抓得住，行为断言全绿**——正好印证"行为断言 + 结构断言缺一不可"。
+
+**验证：批跑 34 条 → 27 PASS / 7 FAIL。** 7 条红**全部与本批 6 个改动文件无关**，且逐条单跑复核过失败原因：`audio_0922`(20) / `audio_0921`(14) 是 `play(...) 被拒（文件缺失）`——cue 表里登记了但对应 `.mp3` **在本检出里不存在**；`four_star_values`(1, `defense_shred_uncapped`) 属**另一批**（母灵四星）；`voice`(8) / `procedural_ui_ratchet`(3，全在 `FourStarUpgradePanel.gd`) / `prep_text_coverage`(1) / `dynamic_call`(4) 为**既存红**。三个"新增红"都 `grep` 确认输出里**一次都没出现**本批文件名。**没有跑 `--update-baseline` 刷绿。** `cold_parse_chain` 92 → **98**（本批改的每个文件都进了 TARGETS）。
+
+★ **未做真机 / 观感验收，未重新导出 EXE / APK。** 第 2 条另有三处如实记的缺口：**(a)** 要求 (5) 的「该房间对局已开始」客户端拿不到（presence 只报房间号），现由**加入流程兜底**（服务端拒绝并给原因），**不会**显示成「邀请已过时」——`is_expired` 已留 `room_started` 形参，门禁 `expired_started` 按它钉住判据本身；**(b)** 邀请的真实联网往返（发出→推送→渲染成框）需两台设备 + 后端 + 数据库，本轮只验了客户端判据/接线与后端**语法 + 结构断言**，**`backend/tests/` 没跑，`database/020` 没在真库上执行过**；**(c)** 邀请框的位置/宽度**没有出图核对**。
+
+详见[9.27《bug提交和修复.docx》5 条处理记录](docs/9.27bug文档5条修复记录.md)。
+
+### 2026-09-27 晚 · 第二轮订正（第 2 条「房间邀请」）
+
+用户回图回执 4 个问题：**① 点朋友 ID 没有「亮一下」；② 不想要「你已经邀请过了」这句提示；③ 被邀请方收到两条同房间的重复邀请；④ 邀请要做成方框、右下角「立即参与」按钮（图里那条是纯文本、没按钮）。**
+
+**根因：客户端传了 `kind`，后端根本没读。** 这是上一轮交付里一条**从未打通的管道**，问题 ③④ 都是它的症状（没有 kind ⇒ 渲染成普通文本、没有按钮；后端去重压根没跑 ⇒ 两条都落库、都推送）。逐处：
+
+- **`routes/chat.py` 的 `SendBody` 没有 `kind` / `payload` 字段** —— pydantic 对请求体里多出来的字段**默认忽略、不报错**，于是客户端 `send_chat_message(kind, payload)` 传了也白传，`send_message` 更是从不转发它们；
+- **`chat.py` 的 `history()` 把 `kind/payload` 丢在库里**（`select` 没取）—— 收件人「重进聊天」走 history，拿到的是缺字段的版本；
+- **`chat.py` 的 `send()` 返回 `Message(...)` 没带 `kind/payload`** —— HTTP 回包与 `dm` 推送都靠它，实时收到的那条也成了普通文本；
+- **`chat.py` 没有 `import json`**，而 `_decode_payload`/`send` 用 `json.loads`/`json.dumps` —— 只在**真有 payload** 时触发，所以邀请一进库就 `NameError`（500），普通聊天永远碰不到。
+
+**客户端两处**：`_flash_row(row)` 排在限流判定**之后**（「已经邀请过」时点了什么都不发生 = 问题 ① 的实测原因），且 `send_blocked_text(blocked)` 会把 `duplicate` 也弹出来（问题 ②）；`_render_messages` 渲染前没有任何去重（问题 ③）。
+
+**做法**：后端补 `import json`、`history` 补列、`send` 返回补字段、`SendBody` 加 `kind`/`payload` 并**转发**（不认识的 kind → 400；邀请 payload 收敛成 `{"room_id": int>0}`，非邀请一律不带 payload）。客户端：**点击必亮**——`_flash_row` 提到判定之前，并把亮度/时长 `1.6×/0.28s` → `2.6×/0.45s`（深色羊皮纸字乘 1.6 肉眼看不出来）；`duplicate` 与服务端 `409` 一律**静默**（只有换房间的 `rate_limited` 保留提示）；新增纯函数 `RoomInvite.dedupe_for_display()`，渲染前把同一 `room_id` 的重复邀请**收敛成一条、保留最新**（后端去重只防未来，**已经落库的旧两条只能靠显示层收拾**，同时也是任一侧漏判的兜底）；`_invite_bubble` 改成**金边方框** + 小标题「房间邀请」+ 底部「时间右对齐 + 右下角立即参与」。
+
+**判据**：`room_invite_check` **49 → 65**（新增 `dedupe_for_display` 行为 5 项、后端管道结构 8 项、客户端顺序/静默/去重结构 5 项）；变异 `mutate_room_invite_927.py` **6 → 15 条，全红 + 按 sha256 逐字节还原**。★ 这一轮又逮到一个**假绿**：门禁原来对整份 `routes/chat.py` 判 `contains('kind: str = "text"')`，而 `MessageItem` 也有同名同值字段 —— `SendBody` 把字段删了断言照样绿，**已改成 `_class_body()` 限定在 `SendBody` 类体内判**（变异锚点先 `ANCHOR_FAIL` 命中 2 次，正是这一撞暴露的）。
+
+**批跑仍是 34 条 → 27 PASS / 7 FAIL**，7 条红与上一轮**同一组**；已单独复核 `procedural_ui_ratchet`（它读 `Team3v3Lobby.gd`）：失败项落点是 `BattleScreen.gd` / `FourStarUpgradePanel.gd` / `scripts/qa/voice_device_probe.gd`，**不含本轮 5 个改动文件**。`cold_parse_chain` 110 PASS。
+
+★ 本轮**仍未**做真机/观感验收；`backend/tests/` 与 `database/020_room_invite.sql` 仍**没在真库上跑过**；**后端必须重启/重新部署才生效**（用户实测收到两条，很可能就是旧进程仍按 `text` 处理）。★ 交付夹从本轮起按用户要求**合并为一个**：`9.27交付_02_代码`（代码 + README + docs），只有**资源文件**才另开夹。

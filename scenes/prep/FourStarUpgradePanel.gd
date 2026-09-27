@@ -16,6 +16,9 @@ var poll := 0.0
 var confirm_signature := ""
 var ready_style: StyleBoxFlat
 signal preview_requested(enabled: bool, cell: Dictionary)
+signal shared_stone_unavailable
+var had_matching_stone := false
+var stone_notice_sent := false
 
 func _ready() -> void:
 	add_theme_constant_override("separation", 6)
@@ -80,6 +83,8 @@ func open_for(cell: Dictionary, callback: Callable) -> void:
 	submit = callback
 	confirming = false
 	previewing = false
+	had_matching_stone = int(GameState.team_upgrade_stones.get(str(cell.get("def", {}).get("element", "")), 0)) > 0
+	stone_notice_sent = false
 	show()
 	refresh()
 
@@ -105,6 +110,21 @@ func refresh() -> void:
 	var d: Dictionary = cell.get("def", {})
 	var element := str(d.get("element", ""))
 	var count := int(GameState.team_upgrade_stones.get(element, 0))
+	# Keep the initial availability while a request is pending: a room snapshot
+	# may arrive before our own successful receipt/grant is applied.
+	if count > 0:
+		had_matching_stone = true
+	if had_matching_stone and count <= 0 and int(cell.get("star", 0)) == 3 \
+			and NetworkService.team_active and NetworkService.four_star_request_id.is_empty() \
+			and not stone_notice_sent:
+		stone_notice_sent = true
+		confirming = false
+		action.disabled = true
+		shared_stone_unavailable.emit()
+		return
+	if stone_notice_sent:
+		action.disabled = true
+		return
 	var cost := Rules.four_star_gold(int(d.get("tier", 0)))
 	var signature := "%s/%s/%d/%d" % [piece_uid, element, cost, int(cell.get("star", 0))]
 	if confirming and signature != confirm_signature:
