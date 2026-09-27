@@ -182,9 +182,8 @@ const LOBBY_EMPTY_TTL_SEC := 60.0
 # 期间房间转 suspended：不推进阶段、不启动新模拟、不进公开房间列表。
 # 任一有效 token 重连即取消；到期则关房并清理 token / 短码 / 缓存映射。
 # 依赖 C20 的单调时钟 —— 用墙钟的话一次 NTP 校时就能让它提前或永不到期。
-# App cold start/login can already exceed 30 seconds. Retain a suspended
-# match for the same 30-minute budget as preparation, without running AI work.
-const ROOM_SUSPEND_GRACE_SEC := 30.0 * 60.0
+# 所有真人离线满 30 秒即结束旧对局，允许重新开局；AI 不延长保留期。
+const ROOM_SUSPEND_GRACE_SEC := 30.0
 # 匹配房间等人坐满的时限（协议 32）。六个人都在账号服务器点过确认了，
 # 所以没连上来是异常；到点用 AI 补满开打，见 _cleanup_matched_rooms。
 # 给 90 秒：够一次「点完确认 → 过加载界面 → DTLS 握手」，再留一点弱网余量。

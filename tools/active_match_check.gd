@@ -8,6 +8,7 @@ var closed := 0
 
 func _ready() -> void:
 	var h := Harness.new("active_match")
+	h.expect(NetworkService.ROOM_SUSPEND_GRACE_SEC == 30.0, "product_grace_30s", "All humans offline must release the match after 30 seconds")
 	var tokens := Tokens.new()
 	tokens.configure(func(): return now, func(_m): pass, {})
 	var rooms := Rooms.new()
@@ -20,11 +21,11 @@ func _ready() -> void:
 		closed += 1
 		r.state = "closed"
 	var advance := func(_r): pass
-	now = 100.0 + NetworkService.ROOM_SUSPEND_GRACE_SEC - 0.1
+	now = 129.9
 	rooms.cleanup_rooms(close, advance)
 	h.expect(closed == 0, "grace", "Room closed before the recovery window")
 	h.expect(rooms.room_online_count(room) == 0, "ai_not_human", "AI counted as an online human")
-	now = 100.0 + NetworkService.ROOM_SUSPEND_GRACE_SEC
+	now = 130.0
 	rooms.cleanup_rooms(close, advance)
 	h.expect(closed == 1 and rooms.rooms.is_empty(), "expiry", "Expired suspended room was not reclaimed")
 	room.state = "prep"
@@ -39,6 +40,18 @@ func _ready() -> void:
 	rooms.peer_room.clear()
 	rooms.cleanup_rooms(close, advance)
 	h.expect(float(room.empty_since) == now, "restart_timer", "Last human leaving did not restart grace")
+	for phase in ["battle", "result"]:
+		rooms.rooms.clear()
+		var phase_room := {"id": 2, "state": phase, "run_over": false, "empty_since": 1000.0, "peer_slot": {}, "seat_tokens": {0: "PHASE"}, "state_started_at": 1000.0}
+		tokens.token_seat["PHASE"] = {"room_id": 2, "slot": 0}
+		rooms.rooms[2] = phase_room
+		var before := closed
+		now = 1029.9
+		rooms.cleanup_rooms(close, advance)
+		h.expect(closed == before and bool(phase_room.get("suspended", false)), phase + "_can_resume_before_30s", "Offline match must remain resumable before 30 seconds")
+		now = 1030.0
+		rooms.cleanup_rooms(close, advance)
+		h.expect(closed == before + 1 and rooms.rooms.is_empty(), phase + "_expires_at_30s", "Offline match must close at 30 seconds")
 	var saved := {}
 	for suffix in ["", ".bak", ".tmp"]:
 		var path: String = SaveManager.RECONNECT_PATH + suffix
