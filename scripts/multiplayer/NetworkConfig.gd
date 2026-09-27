@@ -157,7 +157,8 @@ const USE_DTLS := true
 #      确认依据是服务器日志里的 `voice configured (LiveKit)` 与 `server started protocol=31`。
 # v33: Ordinary walking now stops/slides at bodies instead of pushing them.
 # This changes authoritative combat results; clients and server ship together.
-const NETWORK_PROTOCOL_VERSION := 33
+# v34: compiled RPC contract is required during authentication.
+const NETWORK_PROTOCOL_VERSION := 34
 
 # Local phone hosting is debug-only.
 const ALLOW_LOCAL_HOST_DEBUG := false

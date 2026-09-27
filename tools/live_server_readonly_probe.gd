@@ -33,8 +33,8 @@ func _ready() -> void:
 	if not _host.is_valid_ip_address() or _port <= 0 or _port > 65535:
 		_finish(false, "explicit_ip_and_port_required")
 		return
-	if NetworkConfig.NETWORK_PROTOCOL_VERSION != 32 or not NetworkConfig.USE_DTLS or TLS.pinned_cert() == null:
-		_finish(false, "production_protocol32_dtls_pin_required")
+	if NetworkConfig.NETWORK_PROTOCOL_VERSION != 34 or not NetworkConfig.USE_DTLS or TLS.pinned_cert() == null:
+		_finish(false, "production_protocol34_dtls_pin_required")
 		return
 	if not _unseated() or AccountManager.is_logged_in() \
 			or FileAccess.file_exists(SaveManager.ACCOUNT_PATH) \

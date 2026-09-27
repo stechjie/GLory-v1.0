@@ -36,6 +36,7 @@ var _fps_label: Label
 var _fps_accum := 0.0
 
 var _battle_transition_running := false
+var _battle_scene_handoff := false
 var _battle_thread_requested := false
 var _battle_thread_path := ""
 var _loaded_battle_scene: PackedScene
@@ -405,6 +406,7 @@ func _emit_battle_request_once() -> void:
 	_set_battle_stage("enter_battle", tr("battle_load_enter"), "", 1.0)
 	if _battle_loading_overlay != null and is_instance_valid(_battle_loading_overlay):
 		_battle_loading_overlay.set_entering(tr("battle_load_enter"))
+	_battle_scene_handoff = true
 	AsyncActionController.succeed(request_id)
 	_close_battle_loading_overlay()
 	_battle_transition_running = false
@@ -503,25 +505,33 @@ func _warm_deployed_effects() -> void:
 	var warmup := PrepRenderWarmup.new()
 	add_child(warmup)
 	var warmed_signature := -1
-	while is_inside_tree() and not is_committing_to_battle():
+	while _can_background_prepare():
 		await get_tree().create_timer(1.0).timeout
-		if not is_inside_tree() or is_committing_to_battle():
+		if not _can_background_prepare():
 			break
 		var replay := _effect_prefetch_replay()
 		var signature := hash([replay, VFXManager.get_quality_tier()])
 		if signature == warmed_signature:
 			continue
+		BattleAssetService.acquire_many(BattleAssetManifest.replay_paths(replay),
+			BattleAssetService.owner_future(GameState.round_index))
+		BattleAssetService.harvest()
 		var paths := BattleAssetManifest.replay_texture_paths(replay)
 		VFXManager.preload_textures(paths)
 		# Never synchronously read a texture from an effect constructor in prep.
 		if VFXManager.ready_texture_count(paths) != paths.size():
 			continue
 		var report: Dictionary = await warmup.prepare_replays([replay], _prep_river_viewport, Callable(),
-			func() -> bool: return is_inside_tree() and not is_committing_to_battle())
+			_can_background_prepare)
 		if bool(report.get("ok", false)):
 			warmed_signature = signature
 	if is_instance_valid(warmup):
 		warmup.queue_free()
+
+# Ready can spend seconds waiting for teammates/server. Keep using that time
+# for incremental preparation; stop only when handing the scene to BattleScreen.
+func _can_background_prepare() -> bool:
+	return is_inside_tree() and not _battle_scene_handoff
 
 func _effect_prefetch_replay() -> Dictionary:
 	var roster := {}
@@ -816,6 +826,7 @@ func _recover_battle_prepare(show_failure: bool, state: String, snapshot: Dictio
 	_battle_thread_requested = false
 	_battle_thread_path = ""
 	_battle_transition_running = false
+	_battle_scene_handoff = false
 	_battle_launch_emitted = false
 	if _start_battle_button != null:
 		_start_battle_button.show_terminal(_battle_action_request_id, state,

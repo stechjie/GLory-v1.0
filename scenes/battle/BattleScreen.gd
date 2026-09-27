@@ -577,29 +577,44 @@ func _make_battle_prepare_bar() -> ProgressBar:
 	bar.max_value = 100.0
 	bar.value = 0.0
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	# 只设 custom_minimum_size，不要再写 bar.size.y —— PRESET_TOP_WIDE 左右锚点
-	# 不相等，直接写 size 会被 _ready() 后的布局覆盖并刷一条警告。
-	bar.custom_minimum_size = Vector2(0.0, 5.0)
+	bar.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	bar.offset_left = -260.0
+	bar.offset_right = 260.0
+	bar.offset_top = 36.0
+	bar.offset_bottom = 48.0
 	bar.z_index = 200
 	var bg := StyleBoxFlat.new()
-	bg.bg_color = Color(0.02, 0.13, 0.16, 0.55)
+	bg.bg_color = Color(0.06, 0.16, 0.20, 1.0)
 	var fill := StyleBoxFlat.new()
-	# 和备战界面 RiverLaneProgressBar 的填充色一致，视觉上是同一条读条接力。
-	fill.bg_color = Color(0.20, 0.95, 0.92, 0.82)
+	fill.bg_color = Color(0.20, 0.95, 0.92, 1.0)
 	bar.add_theme_stylebox_override("background", bg)
 	bar.add_theme_stylebox_override("fill", fill)
 	add_child(bar)
+	var panel := Panel.new()
+	panel.name = "LoadingBackdrop"
+	panel.show_behind_parent = true
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	panel.offset_left = -32.0
+	panel.offset_right = 32.0
+	panel.offset_top = -116.0
+	panel.offset_bottom = 32.0
+	var card := StyleBoxFlat.new()
+	card.bg_color = Color(0.025, 0.06, 0.08, 1.0)
+	card.set_corner_radius_all(16)
+	panel.add_theme_stylebox_override("panel", card)
+	bar.add_child(panel)
 	var label := Label.new()
 	label.name = "StageText"
 	label.text = tr("battle_load_models")
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	label.offset_top = 12.0
-	label.add_theme_font_size_override("font_size", 20)
+	label.offset_top = -100.0
+	label.offset_bottom = -12.0
+	label.add_theme_font_size_override("font_size", 24)
 	label.add_theme_color_override("font_color", Color.WHITE)
-	label.add_theme_color_override("font_outline_color", Color(0,0,0,0.9))
-	label.add_theme_constant_override("outline_size", 5)
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar.add_child(label)
 	return bar

@@ -57,6 +57,7 @@ static func public_seat_identity(profile_data: Dictionary) -> Dictionary:
 	return out
 
 const ACTIVE_MATCH_HINT := "正在对局中，请进行游戏重连"
+var _match_check_generation := 0
 var _match_check_busy := false
 var _match_check_id := ""
 var _match_check_result := ""
@@ -86,20 +87,29 @@ func check_saved_match() -> String:
 	var port := int(rc.get("port", DEFAULT_PORT))
 	var token := str(rc.get("token", ""))
 	var deadline := Time.get_ticks_msec() + 8000
-	if not (team_active and state == SessionState.READY and remote_address == address and remote_port == port):
+	if not (team_active and state in [SessionState.JOINING, SessionState.READY] and remote_address == address and remote_port == port):
 		if not team_join(address, port):
 			_match_check_busy = false
 			return "unknown"
-	while state == SessionState.JOINING and Time.get_ticks_msec() < deadline:
+	# A foreground reconnect/reset supersedes this background status query.
+	_match_check_busy = true
+	var generation := _match_check_generation
+	while generation == _match_check_generation and state == SessionState.JOINING and Time.get_ticks_msec() < deadline:
 		await get_tree().create_timer(0.1).timeout
+	if generation != _match_check_generation:
+		return "unknown"
 	if state != SessionState.READY:
 		_match_check_busy = false
 		return "unknown"
 	_match_check_id = _make_request_id()
 	_match_check_result = ""
 	_rpc_match_status_request.rpc_id(1, _match_check_id, token)
-	while _match_check_result.is_empty() and Time.get_ticks_msec() < deadline:
+	# Give the status reply its own budget after transport authentication.
+	deadline = Time.get_ticks_msec() + 8000
+	while generation == _match_check_generation and _match_check_result.is_empty() and Time.get_ticks_msec() < deadline:
 		await get_tree().create_timer(0.1).timeout
+	if generation != _match_check_generation:
+		return "unknown"
 	var result := _match_check_result if not _match_check_result.is_empty() else "unknown"
 	_match_check_id = ""
 	_match_check_busy = false
@@ -172,7 +182,9 @@ const LOBBY_EMPTY_TTL_SEC := 60.0
 # 期间房间转 suspended：不推进阶段、不启动新模拟、不进公开房间列表。
 # 任一有效 token 重连即取消；到期则关房并清理 token / 短码 / 缓存映射。
 # 依赖 C20 的单调时钟 —— 用墙钟的话一次 NTP 校时就能让它提前或永不到期。
-const ROOM_SUSPEND_GRACE_SEC := 30.0
+# App cold start/login can already exceed 30 seconds. Retain a suspended
+# match for the same 30-minute budget as preparation, without running AI work.
+const ROOM_SUSPEND_GRACE_SEC := 30.0 * 60.0
 # 匹配房间等人坐满的时限（协议 32）。六个人都在账号服务器点过确认了，
 # 所以没连上来是异常；到点用 AI 补满开打，见 _cleanup_matched_rooms。
 # 给 90 秒：够一次「点完确认 → 过加载界面 → DTLS 握手」，再留一点弱网余量。
@@ -451,7 +463,7 @@ func _ready() -> void:
 	# 房间服务只注入**行为**（时钟/日志/分片号）；房间域常量在服务里、门面重新导出。
 	# TEAM_SLOTS / ROOM_LOBBY / ROOM_RESULT / RESERVE_GRACE_SEC 留在门面
 	# （内部 43/24/11/5 处引用、外部还有引用），按配置传进去。
-	_transport.configure(_net_log)
+	_transport.configure(_net_log, NetworkTransport.rpc_contract(get_script()))
 	_match_state.configure(_now)
 	# 先配 ReconnectService：它持有 token 索引，RoomService 要注入它才能读写。
 	_reconnect_service.configure(_now, _net_log, {
@@ -508,9 +520,8 @@ func _ready() -> void:
 #      的连接槽面，而且是个不需要发任何包就能占住槽位的版本；
 #   ③ 认证中的 peer 要有数量上限和 payload 字节上限。
 #
-# 按已确认的决定，E1 **只校验 protocol_version**。data/sim manifest 的字段
-# 已经在协议里留好（允许为空、不参与校验），等打包流程能生成指纹了再启用 ——
-# 这样以后加的时候不用再升一次协议。
+# v34 also checks the compiled RPC table before any gameplay RPC dispatch.
+# Data/simulation manifests remain independent of this transport contract.
 # 握手相关常量随实现搬到 NetworkTransport；这里重新导出，门面内部与 tools/ 里的
 # 既有引用一处都不用改。两处各存一份就是给自己造第二个真相源。
 const AUTH_TIMEOUT_SEC := NetworkTransport.AUTH_TIMEOUT_SEC
@@ -532,7 +543,7 @@ func _setup_auth() -> void:
 		scene_mp.peer_authentication_failed.connect(_on_peer_authentication_failed)
 
 func _client_hello_bytes() -> PackedByteArray:
-	return NetworkTransport.client_hello_bytes()
+	return NetworkTransport.client_hello_bytes(NetworkTransport.rpc_contract(get_script()))
 
 func _on_peer_authenticating(id: int) -> void:
 	if _dedicated_server:
@@ -4066,6 +4077,10 @@ func reset_peer_only() -> void:
 	_replay_transfer.retain_inflight_battle("")
 
 func reset() -> void:
+	_match_check_generation += 1
+	_match_check_busy = false
+	_match_check_id = ""
+	_match_check_result = ""
 	_set_current_replay_battle("")
 	_replay_out.clear()
 	_replay_send_queue.clear()

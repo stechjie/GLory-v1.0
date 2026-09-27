@@ -65,6 +65,8 @@ func _client_authenticating(id: int) -> void:
 	match _case:
 		"ok":
 			_client_mp.send_auth(id, NetworkService._client_hello_bytes())
+		"contract":
+			_client_mp.send_auth(id, var_to_bytes({"protocol": NetworkConfig.NETWORK_PROTOCOL_VERSION, "rpc_contract": "different-table"}))
 		"bad":
 			# 伪造一个不同的协议号 —— 模拟"旧客户端连新服务器"
 			_client_mp.send_auth(id, var_to_bytes({
@@ -95,7 +97,7 @@ func _finish() -> void:
 		"ok":
 			ok = _connected and _rejected.is_empty()
 			detail = "connected=%s rejected=%s" % [_connected, _rejected]
-		"bad":
+		"bad", "contract":
 			# 必须被拒、且**没有建立连接**，还要带上可读的原因
 			ok = (not _connected) and _rejected == "protocol_mismatch"
 			detail = "connected=%s rejected=%s (want protocol_mismatch)" % [_connected, _rejected]

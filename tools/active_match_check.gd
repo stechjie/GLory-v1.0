@@ -20,24 +20,25 @@ func _ready() -> void:
 		closed += 1
 		r.state = "closed"
 	var advance := func(_r): pass
-	now = 129.9
+	now = 100.0 + NetworkService.ROOM_SUSPEND_GRACE_SEC - 0.1
 	rooms.cleanup_rooms(close, advance)
-	h.expect(closed == 0, "grace", "Room closed before 30 seconds")
+	h.expect(closed == 0, "grace", "Room closed before the recovery window")
 	h.expect(rooms.room_online_count(room) == 0, "ai_not_human", "AI counted as an online human")
-	now = 130.0
+	now = 100.0 + NetworkService.ROOM_SUSPEND_GRACE_SEC
 	rooms.cleanup_rooms(close, advance)
-	h.expect(closed == 1 and rooms.rooms.is_empty(), "expiry", "AI-only room survived 30 seconds")
+	h.expect(closed == 1 and rooms.rooms.is_empty(), "expiry", "Expired suspended room was not reclaimed")
 	room.state = "prep"
 	room.peer_slot = {7: 0}
 	rooms.rooms[1] = room
 	rooms.peer_room[7] = 1
-	now = 200.0
+	now = 200.0 + NetworkService.ROOM_SUSPEND_GRACE_SEC
+	room.state_started_at = now
 	rooms.cleanup_rooms(close, advance)
 	h.expect(closed == 1 and float(room.empty_since) == 0.0, "human_keeps_match", "Online human did not preserve match")
 	room.peer_slot = {}
 	rooms.peer_room.clear()
 	rooms.cleanup_rooms(close, advance)
-	h.expect(float(room.empty_since) == 200.0, "restart_timer", "Last human leaving did not restart grace")
+	h.expect(float(room.empty_since) == now, "restart_timer", "Last human leaving did not restart grace")
 	var saved := {}
 	for suffix in ["", ".bak", ".tmp"]:
 		var path: String = SaveManager.RECONNECT_PATH + suffix
@@ -48,6 +49,7 @@ func _ready() -> void:
 	SaveManager.save_reconnect("TEST", "127.0.0.1", 8910)
 	h.expect(bool(SaveManager.load_reconnect().get("match_started", false)), "late_refresh", "Refresh erased started-match marker")
 	h.expect(not SaveManager.load_resumable_reconnect().is_empty(), "can_resume", "Started match is not resumable")
+	await _check_status_superseded(h)
 	NetworkService.request_user_leave()
 	h.expect(not SaveManager.load_resumable_reconnect().is_empty(), "explicit_leave", "Leaving a started match destroyed credentials")
 	NetworkService.cancel_reconnect()
@@ -77,3 +79,25 @@ func _ready() -> void:
 		f.store_buffer(saved[path])
 		f.close()
 	h.finish(get_tree())
+
+func _check_status_superseded(h: RefCounted) -> void:
+	var was_processing := NetworkService.is_processing()
+	NetworkService.set_process(false)
+	NetworkService.team_active = true
+	NetworkService.remote_address = "127.0.0.1"
+	NetworkService.remote_port = 8910
+	NetworkService.state = NetworkService.SessionState.JOINING
+	var replies: Array[String] = []
+	_capture_status(replies)
+	await get_tree().process_frame
+	h.expect(NetworkService._match_check_busy, "status_pending", "Status check should reuse an in-progress transport")
+	NetworkService.begin_resume_from_disk("TEST", "127.0.0.1", 8910)
+	await get_tree().create_timer(0.2).timeout
+	h.expect(replies == ["unknown"], "status_superseded", "Old status coroutine must stop after foreground resume")
+	h.expect(not NetworkService._match_check_busy and NetworkService._match_check_id.is_empty(), "status_released", "Superseded status must not hold the query lock")
+	h.expect(NetworkService.state == NetworkService.SessionState.RECONNECTING and not SaveManager.load_resumable_reconnect().is_empty(), "resume_preserved", "Status query must not reset the resumed session or erase credentials")
+	NetworkService.reset()
+	NetworkService.set_process(was_processing)
+
+func _capture_status(replies: Array[String]) -> void:
+	replies.append(await NetworkService.check_saved_match())

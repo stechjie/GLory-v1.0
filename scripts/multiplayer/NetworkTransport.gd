@@ -37,10 +37,12 @@ const AUTH_MAX_PAYLOAD_BYTES := 512
 const AUTH_MAX_PENDING := 64
 
 var _log_fn: Callable = Callable()
+var _rpc_contract := ""
 
 
-func configure(log_fn: Callable) -> void:
+func configure(log_fn: Callable, contract: String = "") -> void:
 	_log_fn = log_fn
+	_rpc_contract = contract
 
 
 func _log(message: String) -> void:
@@ -50,9 +52,27 @@ func _log(message: String) -> void:
 
 # --- 握手编解码 ---------------------------------------------------------------
 
-# 客户端问候：只带协议号。多带一个字段就多一个未经验证的输入面。
-static func client_hello_bytes() -> PackedByteArray:
-	return var_to_bytes({"protocol": NetworkConfig.NETWORK_PROTOCOL_VERSION})
+# 客户端问候只包含协议号与编译后的 RPC 配置指纹。
+# Hash the compiled RPC table, including permissions and channels. This works
+# in exported bytecode too; checking only the handwritten version allowed two
+# different protocol-33 tables to dispatch room requests to unrelated methods.
+static func rpc_contract(script: Script) -> String:
+	var config: Dictionary = script.get_rpc_config()
+	var signatures := {}
+	for method: Dictionary in script.get_script_method_list():
+		var method_name := str(method.get("name", ""))
+		if not config.has(method_name):
+			continue
+		var args: Array = []
+		for arg: Dictionary in method.get("args", []):
+			args.append([int(arg.get("type", TYPE_NIL)), str(arg.get("class_name", ""))])
+		var result: Dictionary = method.get("return", {})
+		signatures[method_name] = [args, int(result.get("type", TYPE_NIL)),
+			str(result.get("class_name", "")), (method.get("default_args", []) as Array).size()]
+	return JSON.stringify({"rpc": config, "signatures": signatures}, "", true).sha256_text()
+
+static func client_hello_bytes(contract: String = "") -> PackedByteArray:
+	return var_to_bytes({"protocol": NetworkConfig.NETWORK_PROTOCOL_VERSION, "rpc_contract": contract})
 
 
 static func auth_reject_bytes(code: String) -> PackedByteArray:
@@ -88,6 +108,10 @@ func server_verdict(data: PackedByteArray, peer_id: int) -> Dictionary:
 			peer_id, client_protocol, NetworkConfig.NETWORK_PROTOCOL_VERSION]
 		_log(msg2)
 		return {"accept": false, "code": "protocol_mismatch", "log": msg2}
+	if not _rpc_contract.is_empty() and str(hello.get("rpc_contract", "")) != _rpc_contract:
+		var msg3 := "auth rejected peer=%d reason=rpc_contract_mismatch" % peer_id
+		_log(msg3)
+		return {"accept": false, "code": "protocol_mismatch", "log": msg3}
 	return {"accept": true, "code": "", "log": ""}
 
 

@@ -91,8 +91,8 @@ done
 # bad 是唯一能抓到"拒绝原因被改坏"的那一个，silent 覆盖超时路径。
 if ! _skip handshake_check; then
     echo
-    echo "handshake_check（三个用例）："
-    for c in ok bad silent; do
+    echo "handshake_check（四个用例）："
+    for c in ok bad contract silent; do
         run_mode "handshake_check --hs-case=$c" "res://tools/handshake_check.tscn" -- "--hs-case=$c"
     done
 fi

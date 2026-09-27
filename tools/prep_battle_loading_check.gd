@@ -280,6 +280,7 @@ func _check_failure_recovery_paths() -> void:
 	prep.set_battle_prepare_check_hook(cancel_probe.invoke)
 	prep._emit_battle_request_once()
 	await _wait_for_probe_call(cancel_probe, 1)
+	_h.expect(prep._can_background_prepare(), "wait_stops_prefetch", "等待服务器时应继续后台预热")
 	var cancelled_request := prep.battle_action_request_id_for_check()
 	prep._on_battle_loading_cancel_requested(cancelled_request)
 	await get_tree().process_frame
@@ -302,6 +303,7 @@ func _check_failure_recovery_paths() -> void:
 		"取消+重试+迟到响应后 battle_requested 次数=%d，应为 1" % int(emitted[0]))
 	_h.expect(ModalStack.depth() == 0, "failure_recovery_overlay_leaked",
 		"故障恢复用例结束后 ModalStack depth=%d，应为 0" % ModalStack.depth())
+	_h.expect(not prep._can_background_prepare(), "handoff_keeps_prefetch", "场景交接后应停止后台预热")
 	prep.take_loaded_battle_scene()
 	prep.queue_free()
 	await get_tree().process_frame

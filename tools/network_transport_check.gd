@@ -29,6 +29,7 @@ func _run() -> void:
 	_h = CheckHarness.new(CHECK_NAME)
 	_check_hello_round_trip()
 	_check_server_accepts_matching_protocol()
+	_check_rpc_contract()
 	_check_server_rejects_mismatched_protocol()
 	_check_server_rejects_oversized()
 	_check_server_rejects_garbage()
@@ -53,8 +54,8 @@ func _check_hello_round_trip() -> void:
 	var back := Transport.decode_auth(hello)
 	_h.expect(int(back.get("protocol", -1)) == NetworkConfig.NETWORK_PROTOCOL_VERSION,
 		"hello_protocol", "问候包应带当前协议号")
-	_h.expect(back.size() == 1,
-		"hello_extra_fields", "问候包只应带协议号 —— 多一个字段就多一个未经验证的输入面")
+	_h.expect(back.size() == 2,
+		"hello_extra_fields", "问候包仅包含协议号和 RPC 指纹")
 
 
 # --- 服务端裁决 ---------------------------------------------------------------
@@ -207,3 +208,15 @@ func ", start + header.length())
 			and not code.contains("multiplayer_peer = null"),
 		"reject_closes_inside_callback",
 		"客户端被拒时必须推迟到认证回调之后再关连接（_close_rejected_peer.call_deferred），当场关引擎会崩")
+
+func _check_rpc_contract() -> void:
+	var script: Script = NetworkService.get_script()
+	var config: Dictionary = script.get_rpc_config()
+	_h.expect(config.has("_rpc_match_status_request") and config.has("_rpc_resume_request"), "rpc_table_available", "Compiled RPC table must include status and resume")
+	var contract := Transport.rpc_contract(script)
+	var svc := Transport.new()
+	svc.configure(Callable(), contract)
+	_h.expect(bool(svc.server_verdict(Transport.client_hello_bytes(contract), 42).accept), "same_contract", "Identical compiled RPC tables must connect")
+	for wrong in ["", "wrong-contract"]:
+		var verdict: Dictionary = svc.server_verdict(Transport.client_hello_bytes(wrong), 42)
+		_h.expect(not bool(verdict.accept) and verdict.code == "protocol_mismatch", "different_contract", "Same protocol with missing/different RPC table must fail before RPC dispatch")
