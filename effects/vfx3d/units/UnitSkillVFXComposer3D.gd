@@ -302,7 +302,10 @@ func _oga_pack_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dicti
 	var spec:Dictionary=OGA_SKILL_CATALOG.skill_for(skill_id)
 	if spec.is_empty():
 		return
-	var critical:=skill_id in ["guardian_shield_taunt","black_hole","death_poison_explosion"]
+	# Long-lived shield/black-hole readability is protected, but the poison death
+	# burst can happen several times in the same combat beat and must respect the
+	# normal concurrency budget.
+	var critical:=skill_id in ["guardian_shield_taunt","black_hole"]
 	var effect:=(_block_forced(VFX_OGA_PACK_SKILL) if critical else _block(VFX_OGA_PACK_SKILL)) as VFXPackSkill3D
 	if effect==null:
 		return
@@ -333,7 +336,9 @@ func _oga_pack_melee(skill_id:String,origin:Vector3,target:Vector3,context:Dicti
 	var spec:Dictionary=OGA_SKILL_CATALOG.melee_for(skill_id)
 	if spec.is_empty():
 		return
-	var melee:=(_block_forced(VFX_OGA_MELEE) if skill_id=="judgement_strike" else _block(VFX_OGA_MELEE)) as VFXFlipbookMelee3D
+	# Repeated melee skills must not bypass the global block budget. The protected
+	# judgement lightning is spawned by _aoe_thunder and is untouched here.
+	var melee:=_block(VFX_OGA_MELEE) as VFXFlipbookMelee3D
 	if melee==null:
 		return
 	last_spawned=melee

@@ -31,30 +31,29 @@ const SKILLS := {
 		{"name":"BlackHoleCore", "path":ROOT+"mage_arcane.png", "columns":7, "rows":1, "frame_count":7, "fps":14.0, "duration":0.70, "delay":0.24, "anchor":"origin_body", "size":Vector2(0.58,0.48), "color":Color(0.72,0.48,0.98,0.70), "emission_scale":0.54},
 	]},
 	"curse_attack": {"layers": [
-		{"name":"BloodCurseSlash", "path":ROOT+"blood_slash.png", "columns":5, "rows":1, "frame_count":5, "fps":16.0, "duration":0.44, "anchor":"target_body", "size":Vector2(1.12,0.92), "track_target":true},
-		{"name":"BloodCurseMark", "path":ROOT+"blood_orb.png", "columns":5, "rows":1, "frame_count":5, "fps":10.0, "duration":0.82, "delay":0.13, "anchor":"target_ground", "ground":true, "billboard":false, "size":Vector2(0.92,0.92), "color":Color(0.86,0.32,0.48,0.80)},
+		{"name":"BloodCurseSlash", "path":ROOT+"blood_slash.png", "columns":5, "rows":1, "frame_count":5, "fps":18.0, "duration":0.34, "anchor":"target_body", "size":Vector2(0.96,0.76), "color":Color(0.72,0.18,0.28,0.78), "fade_out":0.10, "emission_scale":0.42, "track_target":true},
+		{"name":"BloodCurseMark", "path":ROOT+"blood_orb.png", "columns":5, "rows":1, "frame_count":5, "fps":14.0, "duration":0.48, "delay":0.10, "anchor":"target_ground", "ground":true, "billboard":false, "size":Vector2(0.68,0.58), "color":Color(0.48,0.10,0.18,0.58), "fade_out":0.16, "emission_scale":0.24},
 	]},
 	"same_target_damage_stack": {"layers": [
 		{"name":"PainThorn", "path":ROOT+"blood_thorn.png", "columns":5, "rows":1, "frame_count":5, "fps":15.0, "duration":0.48, "anchor":"target_body", "size":Vector2(1.18,0.82), "track_target":true},
 		{"name":"PainBloom", "path":ROOT+"blood_bloom.png", "columns":5, "rows":1, "frame_count":5, "fps":11.0, "duration":0.76, "delay":0.16, "anchor":"target_body", "size":Vector2(0.94,0.94), "color":Color(0.92,0.26,0.40,0.86), "track_target":true},
 	]},
 	"poison_attack": {"layers": [
-		{"name":"PoisonVines", "path":ROOT+"nature_poison.png", "columns":7, "rows":1, "frame_count":7, "fps":15.0, "duration":0.58, "anchor":"target_body", "size":Vector2(0.78,0.52), "color":Color(0.34,0.68,0.24,0.84), "emission_scale":0.40, "track_target":true},
-		{"name":"PoisonSpore", "path":ROOT+"special_green.png", "columns":5, "rows":2, "frame_count":10, "fps":14.0, "duration":0.70, "delay":0.12, "anchor":"target_body", "size":Vector2(0.52,0.52), "color":Color(0.46,0.82,0.18,0.72), "emission_scale":0.38, "track_target":true},
+		{"name":"PoisonVines", "path":ROOT+"nature_poison.png", "columns":7, "rows":1, "frame_count":7, "fps":16.0, "duration":0.54, "anchor":"target_body", "size":Vector2(0.72,0.48), "color":Color(0.055,0.16,0.035,0.82), "fade_out":0.16, "emission_scale":0.14, "track_target":true},
+		{"name":"PoisonSpore", "path":ROOT+"special_green.png", "columns":5, "rows":2, "frame_count":10, "fps":17.0, "duration":0.54, "delay":0.10, "anchor":"target_body", "size":Vector2(0.40,0.40), "color":Color(0.34,0.68,0.12,0.62), "fade_out":0.18, "emission_scale":0.24, "track_target":true},
 	]},
 	"poison_reflect_armor_stack": {"layers": [
-		{"name":"PoisonArmor", "path":ROOT+"nature_armor.png", "columns":7, "rows":1, "frame_count":7, "fps":12.0, "duration":0.82, "anchor":"origin_body", "size":Vector2(0.80,0.86), "color":Color(0.30,0.64,0.16,0.82), "emission_scale":0.40},
-		{"name":"PoisonArmorSparks", "path":ROOT+"special_green.png", "columns":5, "rows":2, "frame_count":10, "fps":16.0, "duration":0.60, "delay":0.16, "anchor":"origin_body", "size":Vector2(0.50,0.50), "color":Color(0.58,0.88,0.24,0.68), "emission_scale":0.42},
+		{"name":"PoisonArmor", "path":ROOT+"nature_armor.png", "columns":7, "rows":1, "frame_count":7, "fps":13.0, "duration":0.74, "anchor":"origin_body", "size":Vector2(0.72,0.78), "color":Color(0.055,0.18,0.035,0.80), "fade_out":0.20, "emission_scale":0.14},
+		{"name":"PoisonArmorSparks", "path":ROOT+"special_green.png", "columns":5, "rows":2, "frame_count":10, "fps":18.0, "duration":0.48, "delay":0.14, "anchor":"origin_body", "size":Vector2(0.38,0.38), "color":Color(0.40,0.74,0.14,0.58), "fade_out":0.16, "emission_scale":0.23},
 	]},
 	"death_poison_explosion": {"layers": [
-		{"name":"PoisonDeathBurst", "path":ROOT+"poison_explosion.png", "columns":4, "rows":4, "frame_count":16, "fps":22.0, "duration":0.68, "anchor":"origin_body", "size":Vector2(0.90,0.90), "color":Color(0.26,0.68,0.14,0.82), "emission_scale":0.46},
-		{"name":"PoisonDeathDebris", "path":ROOT+"poison_debris.png", "columns":4, "rows":4, "frame_count":16, "fps":22.0, "duration":0.68, "delay":0.08, "anchor":"origin_body", "size":Vector2(0.78,0.78), "color":Color(0.42,0.76,0.18,0.76), "emission_scale":0.42},
-		{"name":"PoisonResidue", "path":ROOT+"nature_bloom.png", "columns":5, "rows":1, "frame_count":5, "fps":8.0, "duration":0.94, "delay":0.18, "anchor":"origin_ground", "ground":true, "billboard":false, "size":Vector2(0.98,0.98), "color":Color(0.20,0.54,0.10,0.68), "emission_scale":0.32},
+		{"name":"PoisonDeathBurst", "path":ROOT+"poison_explosion.png", "columns":4, "rows":4, "frame_count":16, "fps":24.0, "duration":0.58, "anchor":"origin_body", "size":Vector2(0.80,0.80), "color":Color(0.10,0.34,0.06,0.78), "fade_out":0.16, "emission_scale":0.24},
+		{"name":"PoisonDeathDebris", "path":ROOT+"poison_debris.png", "columns":4, "rows":4, "frame_count":16, "fps":24.0, "duration":0.58, "delay":0.06, "anchor":"origin_body", "size":Vector2(0.68,0.68), "color":Color(0.38,0.72,0.14,0.66), "fade_out":0.16, "emission_scale":0.28},
 	]},
 }
 
 const MELEE_SKILLS := {
-	"front_cone_stun": {"path":ROOT+"slash_blue.png", "columns":6, "rows":1, "frame_count":6, "fps":20.0, "size":Vector2(1.02,0.90), "duration":0.40, "impact_delay":0.10, "height_ratio":0.42, "impact_path":ROOT+"earth_crack.png", "impact_columns":5, "impact_rows":1, "impact_frames":5, "impact_fps":16.0, "impact_size":Vector2(0.76,0.76), "impact_duration":0.38},
+	"front_cone_stun": {"path":ROOT+"slash_blue.png", "columns":6, "rows":1, "frame_count":6, "fps":21.0, "size":Vector2(0.86,0.74), "duration":0.34, "impact_delay":0.085, "height_ratio":0.34, "color":Color(0.62,0.82,1.0,0.82), "emission_scale":0.54, "impact_path":ROOT+"earth_debris.png", "impact_columns":5, "impact_rows":1, "impact_frames":5, "impact_fps":19.0, "impact_size":Vector2(0.52,0.44), "impact_duration":0.27, "impact_color":Color(0.68,0.50,0.28,0.68), "impact_emission_scale":0.22},
 	"judgement_strike": {"path":ROOT+"slash_gold.png", "columns":6, "rows":1, "frame_count":6, "fps":19.0, "size":Vector2(1.12,0.96), "duration":0.42, "impact_delay":0.11, "height_ratio":0.43, "impact_path":ROOT+"earth_debris.png", "impact_columns":5, "impact_rows":1, "impact_frames":5, "impact_fps":16.0, "impact_size":Vector2(0.88,0.88), "impact_duration":0.42, "impact_color":Color(1.0,0.82,0.46,0.86)},
 	"global_divine_blast": {"path":ROOT+"slash_gold.png", "columns":6, "rows":1, "frame_count":6, "fps":17.0, "size":Vector2(0.94,0.84), "duration":0.42, "impact_delay":0.11, "height_ratio":0.40, "impact_path":ROOT+"earth_smoke.png", "impact_columns":5, "impact_rows":1, "impact_frames":5, "impact_fps":13.0, "impact_size":Vector2(0.72,0.72), "impact_duration":0.42, "impact_color":Color(0.62,0.74,0.94,0.74)},
 }

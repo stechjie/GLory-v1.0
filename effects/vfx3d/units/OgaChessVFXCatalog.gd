@@ -59,6 +59,8 @@ const PROJECTILES := {
 		"path":"res://assets/vfx/oga/projectiles/god_aurora_light_spear.png", "columns":5, "rows":1, "frame_count":5,
 		"fps":18.0, "size":Vector2(0.78,0.34), "speed":5.6, "arc_height":0.10, "wobble":0.015,
 		"color":Color(0.52,0.78,1.0,0.94), "emission_scale":0.60,
+		"trail_count":1, "trail_spacing":0.075, "trail_size_scale":0.70,
+		"trail_color":Color(0.28,0.58,0.92,0.30), "trail_emission_scale":0.24,
 		"impact_path":"res://assets/vfx/oga/impacts/god_priest_hit.png", "impact_columns":5, "impact_rows":1, "impact_frames":5, "impact_fps":15.0, "impact_size":Vector2(0.74,0.74),
 	},
 	"god_priestess": {
@@ -70,12 +72,16 @@ const PROJECTILES := {
 		"path":"res://assets/vfx/oga/projectiles/god_angel_wing.png", "columns":5, "rows":1, "frame_count":5,
 		"fps":16.0, "size":Vector2(0.70,0.52), "speed":7.5, "arc_height":0.26, "wobble":0.035,
 		"color":Color(1.0,0.88,0.62,0.92), "emission_scale":0.62,
+		"trail_count":1, "trail_spacing":0.065, "trail_size_scale":0.66,
+		"trail_color":Color(0.66,0.44,0.18,0.26), "trail_emission_scale":0.20,
 		"impact_path":"res://assets/vfx/oga/impacts/god_angel_hit.png", "impact_columns":5, "impact_rows":1, "impact_frames":5, "impact_fps":18.0, "impact_size":Vector2(0.72,0.72), "impact_color":Color(1.0,0.90,0.68,0.90), "impact_emission_scale":0.58,
 	},
 	"god_archangel": {
 		"path":"res://assets/vfx/oga/projectiles/god_archangel_seraph_orb.png", "columns":5, "rows":1, "frame_count":5,
 		"fps":10.0, "size":Vector2(0.48,0.48), "speed":6.2, "arc_height":0.06, "wobble":0.012,
-		"color":Color(0.88,0.94,1.0,0.92), "emission_scale":0.60,
+		"color":Color(0.72,0.84,1.0,0.90), "emission_scale":0.48,
+		"trail_count":1, "trail_spacing":0.070, "trail_size_scale":0.52,
+		"trail_color":Color(0.24,0.38,0.72,0.26), "trail_emission_scale":0.18,
 		"impact_path":"res://assets/vfx/oga/impacts/god_archangel_hit.png", "impact_columns":5, "impact_rows":1, "impact_frames":5, "impact_fps":13.0, "impact_size":Vector2(0.62,0.62), "impact_emission_scale":0.62,
 	},
 	# 9.24 订正 #2：接过神侍原本的「星矛」模型（模型对换的另一半）。
@@ -83,12 +89,16 @@ const PROJECTILES := {
 	"god_aurora": {
 		"path":"res://assets/vfx/oga/projectiles/god_priest_star_lance.png", "columns":5, "rows":1, "frame_count":5,
 		"fps":13.0, "size":Vector2(0.72,0.72), "speed":10.5, "arc_height":0.02, "wobble":0.0,
+		"trail_count":2, "trail_spacing":0.050, "trail_size_scale":0.64,
+		"trail_color":Color(0.58,0.78,1.0,0.28), "trail_emission_scale":0.22,
 		"impact_path":"res://assets/vfx/oga/impacts/god_aurora_hit.png", "impact_columns":4, "impact_rows":4, "impact_frames":16, "impact_fps":22.0, "impact_size":Vector2(0.58,0.58), "impact_emission_scale":0.64,
 	},
 	"dark_mage": {
 		"path":"res://assets/vfx/oga/skill_packs/cosmic_orb.png", "columns":5, "rows":1, "frame_count":5,
 		"fps":12.0, "size":Vector2(0.54,0.54), "speed":6.4, "arc_height":0.10, "wobble":0.038,
 		"color":Color(0.58,0.34,0.90,0.92), "emission_scale":0.72,
+		"trail_count":1, "trail_spacing":0.075, "trail_size_scale":0.58,
+		"trail_color":Color(0.20,0.08,0.42,0.28), "trail_emission_scale":0.20,
 		"impact_path":"res://assets/vfx/oga/skill_packs/cosmic_seal.png", "impact_columns":5, "impact_rows":1, "impact_frames":5, "impact_fps":15.0, "impact_size":Vector2(0.64,0.64), "impact_color":Color(0.68,0.40,0.96,0.90), "impact_emission_scale":0.66,
 	},
 	"dark_queen": {
@@ -114,6 +124,8 @@ const PROJECTILES := {
 	"human_archer": {
 		"path":"res://assets/vfx/oga/projectiles/human_archer_metal_arrow.png", "columns":6, "rows":1, "frame_count":6,
 		"fps":20.0, "size":Vector2(0.92,0.40), "speed":11.5, "arc_height":0.05, "wobble":0.0,
+		"trail_count":2, "trail_spacing":0.045, "trail_size_scale":0.62,
+		"trail_color":Color(0.28,0.44,0.62,0.26), "trail_emission_scale":0.16,
 		"impact_path":"res://assets/vfx/oga/impacts/human_archer_hit.png", "impact_columns":4, "impact_rows":4, "impact_frames":16, "impact_fps":24.0, "impact_size":Vector2(0.58,0.58),
 	},
 	"human_cleric": {
@@ -124,13 +136,17 @@ const PROJECTILES := {
 	"human_mage": {
 		"path":"res://assets/vfx/oga/projectiles/human_mage_arcane_satellites.png", "columns":7, "rows":1, "frame_count":7,
 		"fps":13.0, "size":Vector2(0.54,0.54), "speed":6.6, "arc_height":0.16, "wobble":0.070,
-		"color":Color(0.48,0.62,1.0,0.92), "emission_scale":0.62,
+		"color":Color(0.38,0.54,0.96,0.90), "emission_scale":0.50,
+		"trail_count":1, "trail_spacing":0.082, "trail_size_scale":0.50,
+		"trail_color":Color(0.14,0.22,0.58,0.24), "trail_emission_scale":0.17,
 		"impact_path":"res://assets/vfx/oga/impacts/human_mage_hit.png", "impact_columns":7, "impact_rows":1, "impact_frames":7, "impact_fps":15.0, "impact_size":Vector2(0.64,0.64), "impact_color":Color(0.52,0.66,1.0,0.90), "impact_emission_scale":0.58,
 	},
 	"undead_spike": {
 		"path":"res://assets/vfx/oga/projectiles/undead_spike_bone_fan.png", "columns":5, "rows":1, "frame_count":5,
 		"fps":19.0, "size":Vector2(0.78,0.34), "speed":9.3, "arc_height":0.0, "wobble":0.010,
 		"color":Color(0.78,0.74,0.62,0.94), "emission_scale":0.52,
+		"trail_count":1, "trail_spacing":0.050, "trail_size_scale":0.60,
+		"trail_color":Color(0.24,0.22,0.16,0.24), "trail_emission_scale":0.14,
 		"impact_path":"res://assets/vfx/oga/impacts/undead_spike_hit.png", "impact_columns":5, "impact_rows":1, "impact_frames":5, "impact_fps":16.0, "impact_size":Vector2(0.62,0.62),
 	},
 	"undead_mother": {
@@ -150,21 +166,27 @@ const MELEE_PREVIEWS := [
 const MELEE_BY_RACE := {
 	"god": {
 		"path":"res://assets/vfx/oga/skill_packs/slash_gold.png", "columns":6, "rows":1, "frame_count":6,
-		"fps":18.0, "size":Vector2(0.88,0.78), "duration":0.38, "impact_delay":0.09, "height_ratio":0.40,
-		"impact_path":"res://assets/vfx/oga/skill_packs/earth_crack.png", "impact_columns":5, "impact_rows":1,
-		"impact_frames":5, "impact_fps":16.0, "impact_size":Vector2(0.62,0.62), "impact_duration":0.34,
+		"fps":19.0, "size":Vector2(0.80,0.68), "duration":0.34, "impact_delay":0.08, "height_ratio":0.34,
+		"color":Color(1.0,0.90,0.64,0.86), "emission_scale":0.62,
+		"impact_path":"res://assets/vfx/oga/skill_packs/earth_debris.png", "impact_columns":5, "impact_rows":1,
+		"impact_frames":5, "impact_fps":19.0, "impact_size":Vector2(0.50,0.42), "impact_duration":0.27,
+		"impact_color":Color(0.72,0.52,0.28,0.70), "impact_emission_scale":0.24,
 	},
 	"human": {
 		"path":"res://assets/vfx/oga/skill_packs/slash_blue.png", "columns":6, "rows":1, "frame_count":6,
-		"fps":19.0, "size":Vector2(0.84,0.74), "duration":0.36, "impact_delay":0.08, "height_ratio":0.40,
-		"impact_path":"res://assets/vfx/oga/skill_packs/earth_crack.png", "impact_columns":5, "impact_rows":1,
-		"impact_frames":5, "impact_fps":16.0, "impact_size":Vector2(0.56,0.56), "impact_duration":0.32,
+		"fps":20.0, "size":Vector2(0.72,0.62), "duration":0.32, "impact_delay":0.075, "height_ratio":0.33,
+		"color":Color(0.62,0.82,1.0,0.80), "emission_scale":0.52,
+		"impact_path":"res://assets/vfx/oga/skill_packs/earth_debris.png", "impact_columns":5, "impact_rows":1,
+		"impact_frames":5, "impact_fps":19.0, "impact_size":Vector2(0.48,0.40), "impact_duration":0.26,
+		"impact_color":Color(0.68,0.50,0.28,0.68), "impact_emission_scale":0.22,
 	},
 	"dark": {
 		"path":"res://assets/vfx/oga/skill_packs/slash_purple.png", "columns":6, "rows":1, "frame_count":6,
-		"fps":18.0, "size":Vector2(0.90,0.76), "duration":0.39, "impact_delay":0.09, "height_ratio":0.40,
-		"impact_path":"res://assets/vfx/oga/skill_packs/earth_smoke.png", "impact_columns":5, "impact_rows":1,
-		"impact_frames":5, "impact_fps":14.0, "impact_size":Vector2(0.60,0.60), "impact_duration":0.36, "impact_color":Color(0.54,0.28,0.78,0.78),
+		"fps":19.0, "size":Vector2(0.80,0.68), "duration":0.35, "impact_delay":0.08, "height_ratio":0.34,
+		"color":Color(0.76,0.48,1.0,0.82), "emission_scale":0.56,
+		"impact_path":"res://assets/vfx/oga/skill_packs/earth_debris.png", "impact_columns":5, "impact_rows":1,
+		"impact_frames":5, "impact_fps":18.0, "impact_size":Vector2(0.50,0.42), "impact_duration":0.27,
+		"impact_color":Color(0.60,0.42,0.25,0.66), "impact_emission_scale":0.22,
 	},
 	"undead": {
 		"path":"res://assets/vfx/oga/skill_packs/slash_fire.png", "columns":6, "rows":1, "frame_count":6,
