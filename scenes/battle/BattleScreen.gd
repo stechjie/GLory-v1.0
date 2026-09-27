@@ -485,6 +485,9 @@ func _load_replay_roster(replay: Dictionary) -> void:
 			"attack_count": 0, "skill_ready": 0.0, "skill_stacks": 0,
 			"vfx_attack_target_uid": "", "vfx_skill_target_uid": "",
 		}
+		if r.has("twin_group_id"):
+			f["twin_group_id"] = str(r.get("twin_group_id", ""))
+			f["twin_member_index"] = int(r.get("twin_member_index", -1))
 		_replay_by_uid[uid] = f
 		if str(r.get("team", "")) == "player":
 			players.append(f)

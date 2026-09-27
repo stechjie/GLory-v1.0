@@ -1358,9 +1358,6 @@ func _position_prep_standby_model(model_node: Node3D, index: int, unit_def: Dict
 func _prep_board_model_target_size() -> float:
 	return minf(board_cell_spacing.x, board_cell_spacing.y) * unit_visual_scale
 
-func _prep_standby_model_target_size() -> float:
-	return minf(board_cell_spacing.x, board_cell_spacing.y) * standby_unit_scale
-
 func _update_prep_relation_particles(model_node: Node3D, cell: Dictionary) -> void:
 	var friendly_progress := 0
 	var hostile_progress := 0

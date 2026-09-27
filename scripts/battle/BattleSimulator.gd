@@ -374,6 +374,10 @@ static func _replay_capture_roster(state: Dictionary, roster: Dictionary) -> voi
 			"owner_slot": int(f.get("owner_slot", -1)),
 			"def": f.get("def", {}),
 		}
+		# 客户端播放时的双生连线 / 复活表现靠它找同伴。只给双生带，别的单位回放大小不变。
+		if f.has("twin_group_id"):
+			roster[uid]["twin_group_id"] = str(f.get("twin_group_id", ""))
+			roster[uid]["twin_member_index"] = int(f.get("twin_member_index", -1))
 
 
 static func step_state(state: Dictionary) -> void:

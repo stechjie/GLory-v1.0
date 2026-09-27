@@ -302,6 +302,11 @@ static func _append_lane_monsters(out: Array, lane: int, count: int, template: D
 		out.append(f)
 
 
+# 双生守门人两只在本路中心左右各偏这么多：两只相隔 110 ≈ 两个棋子列距（BOARD_COL_SPACING），
+# Boss 缩放 2.0 也不叠；相邻两路中心相距 270，±55 不会跑进隔壁路。开打后还有推开逻辑兜底。
+const TWIN_LANE_OFFSET := 55.0
+
+
 static func _append_lane_boss(out: Array, lane: int, template: Dictionary) -> void:
 	if template.is_empty():
 		return
@@ -313,11 +318,30 @@ static func _append_lane_boss(out: Array, lane: int, template: Dictionary) -> vo
 	d.def = maxi(0, int(round(float(d.get("def", 0)) * float(growth.def) * boss_mul)))
 	if d.has("skill_damage"):
 		d.skill_damage = maxi(1, int(round(float(d.get("skill_damage", 0)) * float(growth.skill_damage) * boss_mul)))
-	var f := _fighter_from_def(d, 12, "enemy", 0, 1)
-	f.pos = Vector2(TEAM_LANE_CENTERS[lane], ARENA_MID_Y - FRONT_ROW_GAP * 0.5 - BOARD_ROW_SPACING)
-	f.uid = "enemy_L%d_boss" % lane
-	f["lane"] = lane
-	out.append(f)
+	var y := ARENA_MID_Y - FRONT_ROW_GAP * 0.5 - BOARD_ROW_SPACING
+	if not bool(d.get("is_twin", false)):
+		var f := _fighter_from_def(d, 12, "enemy", 0, 1)
+		f.pos = Vector2(TEAM_LANE_CENTERS[lane], y)
+		f.uid = "enemy_L%d_boss" % lane
+		f["lane"] = lane
+		out.append(f)
+		return
+	# 双生：两只同时登场，第二只换成 twin_second_element（渲染按元素换天空形态模型）。
+	# twin_group_id / twin_member_index 是复活（BattleSimTreasures._has_living_twin_partner）
+	# 和双生连线特效找同伴的唯一依据。分组带路号：只认同一路的另一只，
+	# 否则 1 路那只会因为 3 路的双生还活着而一直复活。
+	var group_id := "%s_L%d" % [str(d.get("id", "boss_twin")), lane]
+	var second := d.duplicate(true)
+	second.element = str(d.get("twin_second_element", d.get("element", "sky")))
+	var twins := [d, second]
+	for i in twins.size():
+		var f := _fighter_from_def(twins[i], 7 if i == 0 else 17, "enemy", i, 2)
+		f.pos = Vector2(TEAM_LANE_CENTERS[lane] + (float(i) * 2.0 - 1.0) * TWIN_LANE_OFFSET, y)
+		f.uid = "enemy_L%d_boss%d" % [lane, i]
+		f["lane"] = lane
+		f["twin_group_id"] = group_id
+		f["twin_member_index"] = i
+		out.append(f)
 
 
 static func _dummy_merc_slots(_rng: RandomNumberGenerator) -> Array:

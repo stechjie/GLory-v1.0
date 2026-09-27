@@ -24,7 +24,6 @@ const VISUAL_FIELDS := [
 	"model",
 	"model_visual_scale",
 	"model_base_yaw",
-	"model_frame_fill",
 	"model_idle_animation",
 	"model_idle_animation_name",
 	"model_attack_animation_name",
