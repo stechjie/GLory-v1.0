@@ -2077,3 +2077,27 @@ A 费用档位 / B 教程恒免费（刷 **999 次**仍为 0）/ C **递归扫 `
 ★ **未做真机/观感与 EXE/APK 验收**：门禁只证「不回归 + 登记/文件/步频/独立性/静音门逻辑对」，不证「真机上听着对」。脚步声听感需戴耳机/真机复听微调。
 
 详见[9.26 大厅宠物脚步声](docs/9.26大厅宠物脚步声.md)。
+
+## 2026-09-27：大厅商店 / 公告图标预览（最新商品缩略图 + 商品名 / 最新公告完整标题）
+
+用户要求在大厅主菜单右侧的「商店」图标与「公告 / 活动」图标上各加一个预览：商店图标内显示**最新商品的缩略图与商品名**，公告图标内显示**最新公告的完整标题（含分类标签）**。
+
+**数据来源（均为服务器排序、最新的在最前）。** 商店：`AccountManager.fetch_shop()` 返回的 `body.items[0]` 为最新商品（`id` / `kind`：`pet`/`avatar`/`frame` / `grants` / `name` / `name_en` 等）；公告：`AnnouncementService.items()[0]` 为最新公告，完整标题经 `AnnouncementText.row_text(item, _english())` 按 locale 取（含「【系统】」等分类标签）。
+
+**做法（纯表现层，不动模拟与门禁数据）。** 在 `_build()` 里：商店图标（x=1380/y=140，270×250）的标题下方分两层——透明容器 `_shop_preview = _add_container(Vector2(1408,205), Vector2(214,134), "right")` 用于显示缩略图，并设 `clip_children = CanvasItem.CLIP_CHILDREN_ONLY` 防止 3D 预览溢出图标框；其下再放 `_shop_name = _add_label(...)`（18px、初始隐藏）显示商品名。公告图标之下仍放 `_news_title = _add_label(...)`（18px、`AUTOWRAP_WORD_SMART`、初始隐藏）。
+
+**容器尺寸的来处（量出来的，不是估的）。** `assets/ui/main_menu_live/shop.png` 是 500×500 贴图、按 270×250 显示。用 numpy 扫出贴图里**金色描边**的行/列峰值：横线在 y≈119–126（上框）与 y≈403–409（下框），竖线在 x≈39–48（左框）与 x≈451–460（右框）。换算到画布（x×0.54、y×0.5，再加图标原点 1380/140）得内侧框 ≈ **x 1404→1626、y 201→343**。容器取 (1408,205) + 214×134，四边各留 ~4 px 余量。**换了 shop.png 就要重新量。** 同理公告图标的内侧框低于标题行，标题标签直接贴 (1390,445) 即可。
+
+**刷新逻辑。** `_ready()` 末尾调 `_refresh_news_title()` 与 `_refresh_shop_preview.call_deferred()`；`AnnouncementService.changed` 回调里也重跑 `_refresh_news_title()` 让标题随列表更新：
+- `_refresh_shop_preview()`：先排除视觉回归截图（`has_meta("ui_capture_fixture")` 直接 return，避免回归图网络抖动）；未登录则静默返回；`await AccountManager.fetch_shop()`，非 2xx 或空列表 → `_clear_shop_preview()`；取到 `items[0]` 交给 `_set_shop_preview()`。
+- `_set_shop_preview()`：**不把预览拉伸填满容器**（拉伸会把宠物模型顶出金框，同 ShopScreen `_preview_stage` 用 `CenterContainer` 的理由）。改为往容器里放一个 `CenterContainer`，把预览尺寸按 **`SHOP_PREVIEW_SCALE = 0.8`** 等比缩小后作为 `custom_minimum_size` 传入 —— 模型以自然尺寸居中渲染、四周留白，完整落在内侧框内。`kind=="pet"` 走 `PetPreview.build(grants, preview_size, false)`；否则 `AvatarCatalog.texture_for(grants)` 做成 `TextureRect`（keep-aspect 居中、不吃输入）。商品名取 `name_en` / `name`（同 ShopScreen 回退链），失败时同步隐藏名称。任一失败都安全降级为隐藏，不额外加商品图的金圈/外框。
+  - ★ 复盘：初版把 `preview` 直接 `set_anchors_and_offsets_preset(PRESET_FULL_RECT)` 铺满容器，宠物 3D 预览被拉伸到 200×160，模型顶到/越过金框（用户截图可见）。**「填满容器」≠「好看」**；有内在留白的 3D 预览必须给固定尺寸 + 居中容器。
+- `_refresh_news_title()`：`items` 为空或标题为空则隐藏；否则写 `_news_title.text` 并显示。
+- `_english()`：`TranslationServer.get_locale().begins_with("en")`，与菜单其它 `_menu_text` 取 locale 的方式对齐。
+
+**门禁。** `tools/cold_parse_chain_check.gd` 的 TARGETS 已把 `res://scenes/menu/MainMenu.gd` 列入（改 `scenes/menu/**` 必跑 `can_instantiate()`）。
+
+**验证：单跑相关门禁全绿** —— `cold_parse_chain_check` 83/0、`announcement_check` 95/0（含 `row_text` 的「【活动】测试」格式钉子）、`responsive_layout_check` 114/0、`page_lifecycle_check` 74/0（`audio_sfx_check` 228/0、`pet_footstep_check` 22/0 为早前同批保留）。
+
+★ **未做真机/观感与 EXE/APK 验收**：门禁只证「不回归 + 解析可实例化」，不证「图标上看着对」。商店缩略图依赖登录态与网络拉取、宠物为 3D SubViewport 预览，需在真机/编辑器里肉眼确认位置与缩放。
+★ **缩略图「是否真在框内」没有任何门禁覆盖**：`ui_capture_fixture` 路径下预览被刻意跳过（不发网络），故视觉回归图拍不到它。判断依据是**贴图金框的像素实测 + 容器几何**，不是断言。要补行为门禁需打桩 `AccountManager.fetch_shop` 并驱动 `MainMenu` 实例（本轮未做）。

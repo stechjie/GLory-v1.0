@@ -55,6 +55,9 @@ const TARGETS: Array[Dictionary] = [
 	{"kind": "script", "path": "res://scenes/menu/MainMenuPet.gd"},
 	{"kind": "script", "path": "res://ui/services/SfxService.gd"},
 	{"kind": "script", "path": "res://tools/pet_footstep_check.gd"},
+	# ★ 9.27 新增：大厅商店 / 公告图标预览。改 MainMenu.gd（图标内显示最新商品缩略图与
+	#   最新公告标题），按同一条教训补进清单。
+	{"kind": "script", "path": "res://scenes/menu/MainMenu.gd"},
 ]
 
 

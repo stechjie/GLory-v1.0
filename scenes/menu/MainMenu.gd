@@ -86,6 +86,10 @@ const TEX_GALLERY := preload("res://assets/ui/main_menu_live/gallery.png")
 const MAIN_MENU_AMBIENCE := preload("res://scenes/menu/MainMenuAmbience.gd")
 const MAIN_MENU_PET := preload("res://scenes/menu/MainMenuPet.gd")
 const MENU_MUSIC_PATH := "res://assets/audio/bgm/menu_music.mp3"
+# 9.27：右侧「商店」预览最新商品缩略图、「公告 / 活动」预览最新公告标题。
+# AvatarCatalog 已在本文件顶部预加载，不再重复声明。
+const PetPreview := preload("res://scripts/pets/PetPreview.gd")
+const AnnouncementText := preload("res://scripts/account/AnnouncementText.gd")
 
 # ── 布局调试overlay ────────────────────────────────────────────────
 # 打开后：黑线 = 空间划分（参考画布边界 / 功能分区 / 每个元素占位框）
@@ -114,6 +118,13 @@ var _friends_dot: Label
 # 「公告 / 活动」右上角的红点。显隐只跟 AnnouncementService 走。
 var _news_dot: Label
 var _mail_dot: Label
+# 9.27：商店 / 公告图标内的实时预览。
+var _shop_preview: Control
+var _shop_name: Label
+var _news_title: Label
+# 缩略图相对内侧框的占比。0.8 是「等比例缩小 + 四周留白」后的平衡值 ——
+# 宠物 3D 预览自带上下留白，按 1.0 铺满会让模型顶到金框上，故收一档。
+const SHOP_PREVIEW_SCALE := 0.8
 var _address_edit: LineEdit
 var _net_status: Label
 # 「敬请期待」不再持有 AcceptDialog 节点：见 _show_coming_soon()。
@@ -164,6 +175,9 @@ func _ready() -> void:
 	# 大厅是停留最久的页面：只靠上面这一次的话，「已经停在大厅时收到的申请」要等下一次
 	# 进出页面才会亮。补一个轻量轮询，把红点与提示音对齐到聊天那种「实时」的观感。
 	_start_friend_request_poll()
+	# 9.27：商店最新商品缩略图、公告最新标题预览。
+	_refresh_news_title()
+	_refresh_shop_preview.call_deferred()
 
 func _exit_tree() -> void:
 	if AccountManager.profile_changed.is_connected(_on_account_profile_changed):
@@ -280,9 +294,21 @@ func _build() -> void:
 
 	_add_texture(TEX_SHOP, Vector2(1380, 140), Vector2(270, 250), "right")
 	_add_label(_menu_text("商店", "Shop"), Vector2(1380, 150), Vector2(270, 34), 24, "right")
+	# 9.27：商店图标内显示最新商品缩略图 + 名称。
+	# 容器四边按 shop.png（500×500 贴图 * 270×250 显示）的**内侧金框**量出：
+	# 金框 x≈45→456、y≈122→406 → 画布 x≈1404→1626、y≈201→343。
+	# 再加 clip_children 双保险，越界也裁掉。
+	_shop_preview = _add_container(Vector2(1408, 205), Vector2(214, 134), "right")
+	_shop_preview.clip_children = CanvasItem.CLIP_CHILDREN_ONLY
+	_shop_name = _add_label("", Vector2(1415, 322), Vector2(200, 26), 18, "right")
+	_shop_name.visible = false
 	_add_hit(Vector2(1380, 140), Vector2(270, 250), _emit_shop, "right")
 	_add_texture(TEX_NEWS, Vector2(1380, 400), Vector2(270, 250), "right")
 	_add_label(_menu_text("公告 / 活动", "News / Events"), Vector2(1380, 407), Vector2(270, 34), 22, "right")
+	# 9.27：公告图标内显示最新公告标题。
+	_news_title = _add_label("", Vector2(1390, 445), Vector2(250, 180), 18, "right")
+	_news_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_news_title.visible = false
 	# 有没看过的公告时亮红点，同聊天那个。hit 仍然放在最后。
 	_news_dot = _add_label("●", Vector2(1612, 404), Vector2(32, 32), 26, "right")
 	_news_dot.add_theme_color_override("font_color", Tokens.UNREAD_DOT)
@@ -787,6 +813,7 @@ func _emit_announcements() -> void:
 func _on_announcements_changed() -> void:
 	if _news_dot != null and is_instance_valid(_news_dot):
 		_news_dot.visible = AnnouncementService.any_unread()
+	_refresh_news_title()
 
 
 # 「邮件」：此前是「敬请期待」（docs/邮件系统设计.md）。
@@ -839,6 +866,104 @@ func _refresh_wallet() -> void:
 	var body: Dictionary = result.get("body", {})
 	_coin_label.text = Currency.comma(int(body.get("coin", 0)))
 	_diamond_label.text = Currency.comma(int(body.get("diamond", 0)))
+
+# 9.27：公告图标内显示最新公告标题（含【系统】/【活动】等分类标签）。
+func _refresh_news_title() -> void:
+	if _news_title == null or not is_instance_valid(_news_title):
+		return
+	var items: Array = AnnouncementService.items()
+	if items.is_empty():
+		_news_title.visible = false
+		return
+	var latest: Dictionary = items[0] as Dictionary
+	var title := AnnouncementText.row_text(latest, _english())
+	if title.is_empty():
+		_news_title.visible = false
+		return
+	_news_title.text = title
+	_news_title.visible = true
+
+# 9.27：商店图标内异步拉取并显示最新商品缩略图。
+func _refresh_shop_preview() -> void:
+	if _shop_preview == null or not is_instance_valid(_shop_preview):
+		return
+	# 视觉回归截图不发网络请求，避免回归图抖动。
+	if has_meta("ui_capture_fixture"):
+		return
+	if not AccountManager.is_logged_in():
+		return
+	var result: Dictionary = await AccountManager.fetch_shop()
+	if not is_inside_tree() or _shop_preview == null:
+		return
+	if int(result.get("code", 0)) / 100 != 2:
+		_clear_shop_preview()
+		return
+	var items: Array = (result.get("body", {}) as Dictionary).get("items", []) as Array
+	if items.is_empty():
+		_clear_shop_preview()
+		return
+	_set_shop_preview(items[0] as Dictionary)
+
+
+func _set_shop_preview(item: Dictionary) -> void:
+	if _shop_preview == null:
+		return
+	_clear_shop_preview()
+	var kind := str(item.get("kind", ""))
+	var grants := str(item.get("grants", ""))
+	var box := _shop_preview.size
+	if box.x <= 0 or box.y <= 0:
+		box = Vector2(210, 132)
+	# 等比例缩小：预览按容器再乘 SHOP_PREVIEW_SCALE，四周留白，确保完全落在图标内侧框里。
+	# 用 CenterContainer 而不是拉伸到容器大小 —— 宠物 3D 预览拉伸会把模型顶出框外。
+	var preview_size := Vector2(box.x * SHOP_PREVIEW_SCALE, box.y * SHOP_PREVIEW_SCALE)
+	var center := CenterContainer.new()
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_shop_preview.add_child(center)
+
+	var preview: Control
+	if kind == "pet":
+		preview = PetPreview.build(grants, preview_size, false)
+	else:
+		var tex := AvatarCatalog.texture_for(grants)
+		if tex == null:
+			return
+		var rect := TextureRect.new()
+		rect.texture = tex
+		rect.custom_minimum_size = preview_size
+		rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		preview = rect
+	if preview == null:
+		return
+	preview.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	preview.custom_minimum_size = preview_size
+	center.add_child(preview)
+	_shop_preview.visible = true
+	if _shop_name != null and is_instance_valid(_shop_name):
+		var name_key := "name_en" if _english() else "name"
+		var item_name := str(item.get(name_key, item.get("name", item.get("id", "")))).strip_edges()
+		_shop_name.text = item_name
+		_shop_name.visible = not item_name.is_empty()
+
+
+func _clear_shop_preview() -> void:
+	if _shop_preview == null:
+		return
+	_shop_preview.visible = false
+	for child in _shop_preview.get_children():
+		_shop_preview.remove_child(child)
+		child.queue_free()
+	if _shop_name != null and is_instance_valid(_shop_name):
+		_shop_name.text = ""
+		_shop_name.visible = false
+
+
+func _english() -> bool:
+	return TranslationServer.get_locale().begins_with("en")
+
 
 # 朋友申请的轮询间隔。与 AccountManager 的 presence 心跳同拍（10 秒）——
 # 朋友申请**没有实时推送**（socket 只推私聊与公告），轮询是唯一的近实时手段。
@@ -1026,6 +1151,15 @@ func _add_label(text: String, pos: Vector2, size: Vector2, font_size: int, edge:
 	add_child(label)
 	_track(label, pos, size, font_size, edge)
 	return label
+
+
+# 9.27：透明容器，用于在图标内部叠加动态内容（商店缩略图）。本身不绘制、不吃输入。
+func _add_container(pos: Vector2, size: Vector2, edge: String = "") -> Control:
+	var container := Control.new()
+	container.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(container)
+	_track(container, pos, size, 0, edge)
+	return container
 
 func _add_pill(text: String, pos: Vector2, size: Vector2) -> void:
 	# 四角同值，等价于原来逐角赋的 size.y * 0.5（药丸形）。

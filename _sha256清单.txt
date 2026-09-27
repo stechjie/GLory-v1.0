@@ -1,3 +1,4 @@
-# 9.26 交付_02_文档 sha256 清单（相对工程根路径）
-abd0ab0eea24337a761fbbcdfdc5fd5c832a17412c3682f0488137d6accf2d6f  docs/9.26大厅宠物脚步声.md
-ed0934ae183403d8f977eb04e8ea0f88e7fa0c74fe3c648844211c1bb16d4c81  README.md
+# 9.27 交付 sha256 清单（相对工程根路径）
+9648e306d4f20ad9ce48a8c187aad2c0f2a021c30bf52a93a4cbc3a7aafdfc17  scenes/menu/MainMenu.gd
+1f67c84ac05650f38241dc9196eaa8429fe9595367d39e8668974bf9ecc5bf8c  tools/cold_parse_chain_check.gd
+511aba20654d467e4b58b9bcfcf588f8d9ac4b4fae39d3be2a022fe8fe3aa36c  README.md
