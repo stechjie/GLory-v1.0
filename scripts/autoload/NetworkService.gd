@@ -491,6 +491,8 @@ func _ready() -> void:
 		"room_closed": ROOM_CLOSED,
 		"reserve_grace_sec": RESERVE_GRACE_SEC,
 	})
+	team_chat_received.connect(_log_team_phrase)
+	team_chat_text_received.connect(_log_team_text)
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
@@ -2356,6 +2358,33 @@ func _host_send_text(slot: int, text: String, team_only: bool) -> void:
 	if chat_reaches(slot, team_local_slot, team_only):
 		team_chat_text_received.emit(slot, text, team_only)
 
+# --- 房间 / 对局聊天记录（2026-09-27）-------------------------------------------------
+#
+# 上面两个信号每收到一条就记进 room_chat_log（见 RoomChatLog.gd 顶部）。界面**只听记录的
+# entry_added**，不直接听上面两个信号：名字、是不是对方都在记录那一刻定下来，
+# 飘出来的那条和翻记录看到的永远是同一份。战斗服务器不发这两个信号，所以这里只在客户端有东西。
+
+const RoomChatLog := preload("res://scripts/multiplayer/RoomChatLog.gd")
+var room_chat_log := RoomChatLog.new()
+
+func _log_team_phrase(slot: int, phrase_id: int, team_only: bool) -> void:
+	_log_team_chat(slot, phrase_id, "", team_only)
+
+func _log_team_text(slot: int, text: String, team_only: bool) -> void:
+	_log_team_chat(slot, 0, text, team_only)
+
+func _log_team_chat(slot: int, phrase_id: int, text: String, team_only: bool) -> void:
+	room_chat_log.add(team_room_id, RoomChatLog.make_entry(slot, phrase_id, text, team_only,
+		team_local_slot, team_seat_profiles, AccountManager.profile, _chat_log_round(),
+		LocaleManager.get_locale() == "en"))
+
+# 记录分段用：0 = 还在大厅，否则是对局第几回合（和摆放界面顶上「第 N 回合」同一个数）。
+# 本地房主模式（调试用）没有服务器广播的阶段，退回 team_round_active。
+func _chat_log_round() -> int:
+	var in_match := server_phase in [ROOM_PREP, ROOM_BATTLE, ROOM_RESULT] \
+		or (server_phase.is_empty() and team_round_active)
+	return maxi(1, GameState.round_index) if in_match else 0
+
 # --- 组队语音：LiveKit（docs/语音LiveKit方案.md）-----------------------------------------
 #
 # 语音**不经过**战斗服务器：客户端直接连同一台机器上的 LiveKit 语音服务器。这里只做两件事 ——
@@ -4091,6 +4120,8 @@ func reset() -> void:
 	team_seat_pets.clear()
 	team_carrot_harvest_gains.clear()
 	team_carrot_harvest_round = -1
+	# 离开房间 / 对局结束：这一间的聊天记录跟着作废（中途重连不走 reset()，记录留着）。
+	room_chat_log.clear()
 	reset_peer_only()
 	_public_resume_pending = false
 	state = SessionState.OFFLINE

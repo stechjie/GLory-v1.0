@@ -138,10 +138,8 @@ func _ready() -> void:
 		NetworkService.team_lobby_changed.connect(_on_session_changed)
 	if not NetworkService.team_start_requested.is_connected(_on_team_start_requested):
 		NetworkService.team_start_requested.connect(_on_team_start_requested)
-	if not NetworkService.team_chat_received.is_connected(_on_chat_received):
-		NetworkService.team_chat_received.connect(_on_chat_received)
-	if not NetworkService.team_chat_text_received.is_connected(_on_chat_text_received):
-		NetworkService.team_chat_text_received.connect(_on_chat_text_received)
+	if not NetworkService.room_chat_log.entry_added.is_connected(_on_chat_logged):
+		NetworkService.room_chat_log.entry_added.connect(_on_chat_logged)
 	_build()
 	_refresh()
 	var friends_timer := Timer.new()
@@ -230,10 +228,8 @@ func _exit_tree() -> void:
 		NetworkService.team_lobby_changed.disconnect(_on_session_changed)
 	if NetworkService.team_start_requested.is_connected(_on_team_start_requested):
 		NetworkService.team_start_requested.disconnect(_on_team_start_requested)
-	if NetworkService.team_chat_received.is_connected(_on_chat_received):
-		NetworkService.team_chat_received.disconnect(_on_chat_received)
-	if NetworkService.team_chat_text_received.is_connected(_on_chat_text_received):
-		NetworkService.team_chat_text_received.disconnect(_on_chat_text_received)
+	if NetworkService.room_chat_log.entry_added.is_connected(_on_chat_logged):
+		NetworkService.room_chat_log.entry_added.disconnect(_on_chat_logged)
 	if _voice_controls != null:
 		_voice_controls.teardown()
 
@@ -639,6 +635,9 @@ func _layout() -> void:
 		# font_size=0 的（纯判定区 _add_hit）没有文字，跳过。
 		if int(item.font_size) > 0 and (node is Label or node is Button):
 			node.add_theme_font_size_override("font_size", maxi(13, roundi(item.font_size * scale)))
+	# 记录面板里的字是容器排的、不在 _placed 里：开着的时候按新比例重画一遍。
+	if _record_panel != null and _record_panel.visible:
+		_render_record()
 	if _debug_layer != null:
 		_debug_layer.queue_redraw()
 
@@ -792,9 +791,25 @@ const CHAT_TEXT_W := 392.0                         # 右边界 496，与下面�
 # 右边界不变（496），一行少放一两个字；折行按 CHAT_MSG_W 算，不会被截断。
 const CHAT_MSG_X := 138.0
 const CHAT_MSG_W := 358.0
-const CHAT_TEXT_COLOR := Color(0.53, 0.40, 0.27)   # 沿用原占位文字的颜色
+# 聊天框里的字（消息和下面两个入口）一律用 Tokens.CHAT_INK 黑字：
+# 2026-09-27 用户反映原来沿用的浅棕色（占位文字那个色）在羊皮纸上看不清。
 # 入口那一行对半分：左「快捷短语」、右「打字」（批次 D）。
 const CHAT_ENTRY_SPLIT := 196.0
+
+# 消息从哪来：NetworkService.room_chat_log（整个房间一份，界面重建也不丢）。
+const RoomChatLog := preload("res://scripts/multiplayer/RoomChatLog.gd")
+# 聊天记录面板（2026-09-27）：点框里的消息往上弹出，能上下滑，看这个房间从头到现在的聊天。
+# 与短语面板同一个位置往上弹、互斥；比短语面板宽高都大 —— 用户定「想聊天时就专注聊天，
+# 被盖住的东西无所谓」，所以宽到聊天框那么宽（会压到敌方席位 1 的左边一点），高到语音按钮那一排。
+const RECORD_PANEL_POS := Vector2(80, 262)
+const RECORD_PANEL_SIZE := Vector2(430, 434)
+const RECORD_FONT_SIZE := 19
+var _record_panel: PanelContainer = null
+var _record_title: Label = null
+var _record_close: Button = null
+var _record_scroll: ScrollContainer = null
+var _record_list: VBoxContainer = null
+var _record_round := -1             # 列表里最后一条的回合（追加时判断要不要插分隔线）
 
 # 短语面板：从聊天框顶部往上弹。往下、往左都没地方 —— 聊天框已经贴着左下角。
 #
@@ -820,20 +835,23 @@ func _build_chat_box() -> void:
 	# 真正定位是 _layout() 干的。同 _ready 里那条注释。
 	for i in CHAT_LINES:
 		var lbl := _add_label("", Vector2(CHAT_MSG_X, CHAT_FIRST_LINE_Y + i * CHAT_LINE_H),
-			Vector2(CHAT_MSG_W, CHAT_LINE_H), CHAT_FONT_SIZE, CHAT_TEXT_COLOR, "left")
+			Vector2(CHAT_MSG_W, CHAT_LINE_H), CHAT_FONT_SIZE, Tokens.CHAT_INK, "left")
 		# _add_label 默认居中。聊天是逐行累积的文本，居中会让每来一条整块字都在跳。
 		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 		# 昵称最长 24 字，一行放不下时截断而不是把框撑破。
 		lbl.clip_text = true
 		_chat_labels.append(lbl)
+	# 点消息区 → 聊天记录面板（2026-09-27）。整块 4 行都是判定区：手机上它是聊天框里最大的一块。
+	_add_hit(Vector2(CHAT_MSG_X, CHAT_FIRST_LINE_Y), Vector2(CHAT_MSG_W, CHAT_LINES * CHAT_LINE_H),
+		_toggle_record_panel, "left", "hit_chat_record")
 	_phrase_btn_label = _add_label(_room_text("＋ 快捷短语", "＋ Quick chat"),
-		Vector2(CHAT_TEXT_X, CHAT_ENTRY_Y), Vector2(CHAT_ENTRY_SPLIT, 40), 20, CHAT_TEXT_COLOR, "left")
+		Vector2(CHAT_TEXT_X, CHAT_ENTRY_Y), Vector2(CHAT_ENTRY_SPLIT, 40), 20, Tokens.CHAT_INK, "left")
 	_phrase_btn_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	_add_hit(Vector2(CHAT_TEXT_X, CHAT_ENTRY_Y), Vector2(CHAT_ENTRY_SPLIT, 40), _toggle_phrase_panel,
 		"left", "hit_chat_phrase")
 	_type_btn_label = _add_label(_room_text("＋ 打字", "＋ Type"),
 		Vector2(CHAT_TEXT_X + CHAT_ENTRY_SPLIT, CHAT_ENTRY_Y),
-		Vector2(CHAT_TEXT_W - CHAT_ENTRY_SPLIT, 40), 20, CHAT_TEXT_COLOR, "left")
+		Vector2(CHAT_TEXT_W - CHAT_ENTRY_SPLIT, 40), 20, Tokens.CHAT_INK, "left")
 	_type_btn_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	# 右半边判定区的右边界 496，**刻意把贴图右下角那个黄色箭头也圈进来** ——
 	# 那个箭头是聊天框贴图自带的，看着就是「发送」，玩家一定会去点它。
@@ -843,6 +861,10 @@ func _build_chat_box() -> void:
 		Vector2(CHAT_TEXT_W - CHAT_ENTRY_SPLIT, 40), _open_text_input, "left", "hit_chat_text")
 	_build_voice_button()
 	_build_phrase_panel()
+	_build_record_panel()
+	# 大厅界面重建过（看完资料回来、重连回来）：框里接着显示这个房间已经说过的话。
+	for entry in NetworkService.room_chat_log.entries_for(NetworkService.team_room_id):
+		_show_chat_entry(entry)
 	_refresh_chat()
 
 # 语音按钮 + 队友按钮（docs/聊天系统设计.md 第九节）。行为都在 VoiceControls 里（大厅 / 备战期 / 战斗界面共用）。
@@ -926,6 +948,9 @@ func _set_phrase_panel_visible(shown: bool) -> void:
 	_phrase_panel.visible = shown
 	for btn in _phrase_buttons:
 		btn.visible = shown
+	# 与记录面板同一个位置往上弹，只开一个。
+	if shown:
+		_set_record_panel_visible(false)
 
 func _on_phrase_picked(phrase_id: int) -> void:
 	# 只发不显示。本地回显要等服务器广播回来 —— 服务器是唯一定序者，
@@ -934,20 +959,22 @@ func _on_phrase_picked(phrase_id: int) -> void:
 	# 发完收起，同备战期。面板压着敌方席位的一角，没理由让它一直开着。
 	_set_phrase_panel_visible(false)
 
-# team_only：大厅只发全部（2026-09-14 定：开局前还在换座位，队伍没定），这里用不上，
-# 只是信号带着它。会收到 true 的只有一种情况：同队有人已经进了备战期发消息、这台还停在大厅
-# （切场景的那一两秒）。那条本来就只发给了同队，照常显示、不加标记。
-func _on_chat_received(slot: int, phrase_id: int, _team_only: bool) -> void:
-	var body := ChatPhrases.text(phrase_id)
-	if body.is_empty():
-		# id 不合法。ChatPhrases.text() 刻意返回空串而不是「未知短语」这类占位符 ——
-		# 占位符会让一个协议错误在界面上长得像一条正常消息，于是没人会去查。
-		return
-	_push_chat_entry("%s：%s" % [_chat_speaker_name(slot), body])
+# 记录里多了一条（NetworkService.room_chat_log）。大厅只发全部（2026-09-14 定：开局前还在换座位，
+# 队伍没定），所以大厅阶段的记录不带范围标记（RoomChatLog.line_text 按回合判断）。
+# 会收到 team_only 的只有一种情况：同队有人已经进了摆放界面发消息、这台还停在大厅
+# （切场景的那一两秒）。那条本来就只发给了同队，照常显示。
+func _on_chat_logged(entry: Dictionary) -> void:
+	_show_chat_entry(entry)
+	if _record_panel != null and is_instance_valid(_record_panel) and _record_panel.visible:
+		var stick := _record_near_bottom()
+		_append_record_row(entry)
+		if stick:
+			_scroll_record_to_bottom()
 
 
-func _on_chat_text_received(slot: int, text: String, _team_only: bool) -> void:
-	_push_chat_entry("%s：%s" % [_chat_speaker_name(slot), text])
+func _show_chat_entry(entry: Dictionary) -> void:
+	_push_chat_entry(RoomChatLog.line_text(entry, _room_en()))
+	NetworkService.room_chat_log.mark_entry_seen(entry)
 
 
 # 打字入口（批次 D）。离线时同短语那句提示 —— 一个点了没反应的入口比没有更让人困惑。
@@ -1010,25 +1037,144 @@ static func wrap_chat_text(line: String, font: Font, font_size: int, width: floa
 		out.append(current)
 	return out
 
-func _chat_speaker_name(slot: int) -> String:
-	var identity := _seat_profile(slot)
-	var who := str(identity.get("player_name", "")).strip_edges()
-	if not who.is_empty():
-		return who
-	# 这个座位没有身份（AI 座位，或进程内门禁不带名片建的座位）。
-	# 用座位号顶着 —— 空名字会让这条消息看起来像是没有人说的。
-	# 显式标 String：SLOT_LABELS 是无类型 Array，取出来是 Variant，
-	# `:=` 推断不出类型会直接变成解析错误（而解析错误在 headless 下不产生结果，
-	# 只打一行 SCRIPT ERROR —— 见 docs/CHECKS.md）。
-	var seat: String = SLOT_LABELS[slot] if slot >= 0 and slot < SLOT_LABELS.size() else "?"
-	return "%s%s" % [_room_text("席位", "Seat "), seat]
-
 func _refresh_chat() -> void:
 	for i in _chat_labels.size():
 		_chat_labels[i].text = _chat_history[i] if i < _chat_history.size() else ""
 
+
+# --- 聊天记录面板（2026-09-27）---------------------------------------------------
+#
+# 与短语面板一样**在 _build 期建好、默认隐藏**（_layout() 只给 _placed 里登记过的控件定位）。
+# 面板里面是容器布局，跟着面板的大小走；只有字号要按 _layout_scale 自己缩 —— 每次打开和
+# 窗口变化时重画一遍（_layout 末尾会调 _render_record）。
+
+func _build_record_panel() -> void:
+	_record_panel = PanelContainer.new()
+	_record_panel.name = "ChatRecordPanel"
+	var style := Tokens.flat_box(Tokens.PARCHMENT, Tokens.PARCHMENT_EDGE, 2, 10)
+	# 不透明：PARCHMENT 自带 0.96 的透明度，盖在语音按钮上时底下的字会透出来一层灰影。
+	style.bg_color.a = 1.0
+	style.set_content_margin_all(12)
+	_record_panel.add_theme_stylebox_override("panel", style)
+	# 同短语面板：盖在后面才创建的席位 / 开始按钮之上。
+	_record_panel.z_index = 40
+	_record_panel.visible = false
+	add_child(_record_panel)
+	_track(_record_panel, RECORD_PANEL_POS, RECORD_PANEL_SIZE, 0, "left")
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 8)
+	_record_panel.add_child(col)
+	var header := HBoxContainer.new()
+	col.add_child(header)
+	_record_title = Label.new()
+	_record_title.text = _room_text("聊天记录", "Chat history")
+	_record_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_record_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_record_title.add_theme_color_override("font_color", Tokens.CHAT_INK)
+	header.add_child(_record_title)
+	_record_close = PrepWidgets.make_menu_button("×", Vector2(42, 38), 20,
+		_set_record_panel_visible.bind(false))
+	_record_close.name = "ChatRecordClose"
+	header.add_child(_record_close)
+	_record_scroll = ScrollContainer.new()
+	_record_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_record_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	col.add_child(_record_scroll)
+	_record_list = VBoxContainer.new()
+	_record_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_record_list.add_theme_constant_override("separation", 6)
+	_record_scroll.add_child(_record_list)
+
+
+func _toggle_record_panel() -> void:
+	if _record_panel == null or not is_instance_valid(_record_panel):
+		return
+	_set_record_panel_visible(not _record_panel.visible)
+
+
+func _set_record_panel_visible(shown: bool) -> void:
+	if _record_panel == null or not is_instance_valid(_record_panel):
+		return
+	if shown:
+		_set_phrase_panel_visible(false)
+	_record_panel.visible = shown
+	if shown:
+		_render_record()
+
+
+func _render_record() -> void:
+	var font_size := _record_font_size()
+	_record_title.add_theme_font_size_override("font_size", font_size + 2)
+	_record_close.add_theme_font_size_override("font_size", font_size)
+	_record_close.custom_minimum_size = Vector2(42, 38) * _layout_scale
+	for child in _record_list.get_children():
+		_record_list.remove_child(child)
+		child.queue_free()
+	_record_round = -1
+	var entries := NetworkService.room_chat_log.entries_for(NetworkService.team_room_id)
+	if entries.is_empty():
+		_record_list.add_child(_record_label(_room_text("还没有人说话", "No messages yet"),
+			Tokens.PARCHMENT_EDGE, HORIZONTAL_ALIGNMENT_CENTER))
+		return
+	for entry in entries:
+		_append_record_row(entry)
+	NetworkService.room_chat_log.mark_all_seen()
+	_scroll_record_to_bottom()
+
+
+func _append_record_row(entry: Dictionary) -> void:
+	var en := _room_en()
+	if _record_round < 0 and _record_list.get_child_count() > 0:
+		# 列表里只有「还没有人说话」那一行：第一条真消息进来时把它换掉。
+		for child in _record_list.get_children():
+			_record_list.remove_child(child)
+			child.queue_free()
+	var entry_round := int(entry.get("round", 0))
+	if entry_round != _record_round:
+		_record_list.add_child(_record_label("—— %s ——" % RoomChatLog.round_label(entry_round, en),
+			Tokens.PARCHMENT_EDGE, HORIZONTAL_ALIGNMENT_CENTER))
+		_record_round = entry_round
+	_record_list.add_child(_record_label(RoomChatLog.line_text(entry, en), Tokens.CHAT_INK,
+		HORIZONTAL_ALIGNMENT_LEFT))
+
+
+func _record_label(text: String, color: Color, align: HorizontalAlignment) -> Label:
+	var lbl := Label.new()
+	lbl.text = text
+	lbl.horizontal_alignment = align
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var size := _record_font_size()
+	lbl.add_theme_font_size_override("font_size", size if align == HORIZONTAL_ALIGNMENT_LEFT else maxi(13, size - 3))
+	lbl.add_theme_color_override("font_color", color)
+	return lbl
+
+
+# 同 _layout 给 _placed 里的文字缩字号的规则（最小 13）。
+func _record_font_size() -> int:
+	return maxi(13, roundi(RECORD_FONT_SIZE * _layout_scale))
+
+
+# 在最底下（或差一点）才跟着新消息滚；往上翻着看的时候不把人拽回底部（同私聊界面）。
+func _record_near_bottom() -> bool:
+	var bar := _record_scroll.get_v_scroll_bar()
+	return _record_scroll.scroll_vertical >= int(bar.max_value - bar.page) - 48
+
+
+func _scroll_record_to_bottom() -> void:
+	# 新行要等排完版才知道高度，现在滚只会滚到旧的底部（同 ChatScreen._scroll_to_bottom_later）。
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if not is_inside_tree() or _record_scroll == null or not is_instance_valid(_record_scroll):
+		return
+	_record_scroll.scroll_vertical = int(_record_scroll.get_v_scroll_bar().max_value)
+
 func _room_text(zh: String, en: String) -> String:
-	return en if TranslationServer.get_locale().begins_with("en") else zh
+	return en if _room_en() else zh
+
+func _room_en() -> bool:
+	return TranslationServer.get_locale().begins_with("en")
 
 # ── 布局调试overlay ────────────────────────────────────────────────
 func _build_debug_layer() -> void:

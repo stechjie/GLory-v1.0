@@ -1259,15 +1259,19 @@ func _join_room_by_id(room_id: int) -> void:
 
 # 私聊界面（docs/聊天系统设计.md 批次 C）。两个入口：主菜单「聊天」、好友列表每一行的「私聊」。
 # 从好友列表进来的，返回回好友列表 —— 玩家是从那里进来的（同 _show_public_profile）。
-func _show_chat_screen(focus_code: String = "", back_to_friends: bool = false) -> void:
+func _show_chat_screen(focus_code: String = "", back_to_friends: bool = false, tab: String = "") -> void:
 	_clear()
 	var screen := _instantiate_screen("res://scenes/menu/ChatScreen.tscn")
 	if screen == null:
 		_show_menu()
 		return
-	screen.call("configure", focus_code)
+	screen.call("configure", focus_code, tab)
 	var back: Callable = _show_friends_screen if back_to_friends else _show_menu
 	screen.back_requested.connect(back)
+	# 世界频道里点别人的名字 →「查看资料」：看完返回回世界频道（不是好友列表 —— 玩家是从那里来的）。
+	# 举报场合记 world：服务器会把他最近的世界频道发言复制进证据。
+	screen.profile_requested.connect(func(code: String) -> void:
+		_show_public_profile(code, func() -> void: _show_chat_screen("", back_to_friends, "world"), "world"))
 	_page_back_route = back
 	add_child(screen)
 
@@ -1484,17 +1488,19 @@ func _on_presence_room_changed() -> void:
 	AccountManager.report_presence_now()
 
 
-# 看别人的资料页。好友列表点头像进来。
-func _show_public_profile(friend_code: String) -> void:
+# 看别人的资料页。好友列表点头像、世界频道点名字进来。
+# back：看完回哪里（默认好友列表 —— 玩家是从那里进来的）；report_context：举报时的场合
+# （backend/app/reports.py，决定服务器复制哪一种证据）。
+func _show_public_profile(friend_code: String, back: Callable = Callable(), report_context: String = "profile") -> void:
+	var back_route: Callable = back if back.is_valid() else _show_friends_screen
 	_clear()
 	var profile := _instantiate_screen("res://scenes/menu/ProfileScreen.tscn")
 	if profile == null:
-		_show_friends_screen()
+		back_route.call()
 		return
-	profile.call("configure_public", friend_code)
-	# 返回回好友列表，不是主菜单 —— 玩家是从那里进来的。
-	profile.back_requested.connect(_show_friends_screen)
-	_page_back_route = _show_friends_screen
+	profile.call("configure_public", friend_code, report_context)
+	profile.back_requested.connect(back_route)
+	_page_back_route = back_route
 	add_child(profile)
 
 

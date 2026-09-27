@@ -4,11 +4,12 @@
 所以进程内的定时任务天然只有一份在跑，不会两个实例同时删同一批行。
 cron 则要多一处部署配置 —— 又一处会被忘掉的东西。
 
-清两样东西，都是「只增的表，必须有人定期清」：
+清三样东西，都是「只增的表，必须有人定期清」：
 
   1. 不再是好友、且最后一条消息已满 30 天的私聊会话（database/007 文件头）。
   2. friend_request_log 里 30 天前的行。005 的注释写着「必须有人定期清理」，
      但直到 2026-09-11 都没有任何地方在清 —— 这张表一直只增不减。
+  3. 世界频道 7 天前的消息（database/019；被举报过的证据另存在 player_reports 里，不受影响）。
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from app import chat, db
+from app import chat, db, world_chat
 
 log = logging.getLogger("glory.maintenance")
 
@@ -40,9 +41,11 @@ async def run_once() -> dict[str, int]:
         request_logs = db.affected_rows(
             await conn.execute(_PURGE_REQUEST_LOG, REQUEST_LOG_RETENTION_DAYS)
         )
-    if conversations or request_logs:
-        log.info("定时清理：过期私聊会话 %d 段，好友请求日志 %d 行", conversations, request_logs)
-    return {"chat_conversations": conversations, "friend_request_log": request_logs}
+        world = await world_chat.purge(conn)
+    if conversations or request_logs or world:
+        log.info("定时清理：过期私聊会话 %d 段，好友请求日志 %d 行，世界频道 %d 条",
+                 conversations, request_logs, world)
+    return {"chat_conversations": conversations, "friend_request_log": request_logs, "world_messages": world}
 
 
 async def loop() -> None:

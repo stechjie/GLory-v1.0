@@ -3,8 +3,8 @@ extends Node
 # 游戏内组队语音（docs/语音LiveKit方案.md —— 2026-09-19 起改用 LiveKit 自建）。
 #
 # 三档（界面上的语音按钮循环切换，见 ui/components/VoiceControls.gd）：
-#   OFF     不连语音服务器、不用麦克风（默认）。
-#   LISTEN  连上本队的语音房间，听队友；麦克风关着。
+#   OFF     不连语音服务器、不用麦克风。
+#   LISTEN  连上本队的语音房间，听队友；麦克风关着。**进房间的默认档**（2026-09-27 起，原来默认 OFF）。
 #   TALK    开麦，直接对话（不是按住说话）。回声消除 / 降噪由各平台的 LiveKit 开发包做。
 #
 # 这里是游戏里**唯一**的语音入口，界面和游戏代码不分平台：
@@ -33,7 +33,8 @@ extends Node
 # 不用再问战斗服务器；中间断一两秒。
 #
 # 🔴 麦克风绝不自己打开：
-#   - 默认 OFF；连续 LEAVE_GRACE_SEC 秒不在房间里就回到 OFF，下一个房间要自己再开；
+#   - 每进一个新房间自动切到「只听」一次（只收听、不开麦克风）；玩家在这个房间里自己关掉就保持关。
+#     连续 LEAVE_GRACE_SEC 秒不在房间里就回到 OFF，下一个房间又回到「只听」；开麦永远要自己点；
 #   - 切到后台就断开（不申请后台音频，后台不录音），回来只恢复离开前的档位，不会升档。
 #
 # 屏蔽：按玩家的好友码记，队友换座位也跟着人走；**整个游戏进程内有效**（骚扰的人下一局还可能
@@ -71,10 +72,13 @@ const TOKEN_REPLY_TIMEOUT_SEC := 10.0
 # 换档重进时，这么久以内拿到的钥匙直接再用（钥匙 10 分钟内可以进房，留 2 分钟余量）。
 # 只用于自己换档：连不上 / 被请出之后一律重新要（旧钥匙可能已经被服务器作废）。
 const TOKEN_REUSE_SEC := 480.0
-# 与 Team3v3Lobby.SLOT_LABELS / PrepUI.CHAT_SEAT_LABELS 一致：资料还没到时用座位号顶着。
+# 与 Team3v3Lobby.SLOT_LABELS / RoomChatLog.SEAT_LABELS 一致：资料还没到时用座位号顶着。
 const SEAT_LABELS := ["A", "B", "C", "1", "2", "3"]
 
 var mode: int = Mode.OFF
+# 已经替哪个房间切过默认的「只听」（-1 = 还没有）。每个房间只切一次：
+# 玩家在房间里自己关掉之后，不能每帧又被切回去。离开房间（LEAVE_GRACE_SEC）时清掉。
+var _defaulted_room := -1
 # 门禁注入「要钥匙」的函数（返回 bool：发出去没有）；空 = NetworkService.team_request_voice_token。
 var token_requester: Callable = Callable()
 
@@ -336,11 +340,13 @@ func teammates() -> Array[Dictionary]:
 func _process(delta: float) -> void:
 	if in_room():
 		_out_of_room_sec = 0.0
+		_apply_room_default()
 	else:
 		_out_of_room_sec += delta
 		if _out_of_room_sec >= LEAVE_GRACE_SEC:
 			# 真离开了（不是重连那种一两秒的掉线）：语音全关，按座位号记的屏蔽作废。
 			_out_of_room_sec = 0.0
+			_defaulted_room = -1
 			_forget_seat_mutes()
 			if mode != Mode.OFF:
 				_want_talk_after_permission = false
@@ -365,6 +371,17 @@ func _process(delta: float) -> void:
 	_watch_bridge()
 	_sync_and_fallback()
 	_apply_volumes()
+
+
+# 进了一个新房间：还关着就切到「只听」（2026-09-27 用户定的默认档）。只切这一次 ——
+# 之后玩家自己关掉就保持关。没有语音桥接的包什么都不做（不弹「这个版本没有语音」）。
+func _apply_room_default() -> void:
+	var room := int(NetworkService.team_room_id)
+	if room == _defaulted_room:
+		return
+	_defaulted_room = room
+	if mode == Mode.OFF and is_supported():
+		set_mode(Mode.LISTEN)
 
 
 func _notification(what: int) -> void:

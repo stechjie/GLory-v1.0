@@ -24,6 +24,7 @@ const ChatPhrases := preload("res://scripts/multiplayer/ChatPhrases.gd")
 const ChatText := preload("res://scripts/multiplayer/ChatText.gd")
 const RateLimitService := preload("res://scripts/multiplayer/RateLimitService.gd")
 const NetworkConfig := preload("res://scripts/multiplayer/NetworkConfig.gd")
+const RoomChatLog := preload("res://scripts/multiplayer/RoomChatLog.gd")
 
 const CHECK_NAME := "chat"
 
@@ -81,6 +82,9 @@ func _ready() -> void:
 	_case_longest_message_fits()
 	_case_text_client_interval_within_server_limit()
 	_case_chat_scope_routing()
+	_case_room_chat_log_entries()
+	_case_room_chat_log_lifecycle()
+	_case_room_chat_log_wired()
 	_h.finish(get_tree())
 
 
@@ -220,6 +224,56 @@ func _case_chat_constants_match_backend() -> void:
 	_h.expect(screen.contains("max_length = ChatService.MAX_BODY_CHARS"),
 		"chat_input_limit_hardcoded",
 		"ChatScreen 的输入框上限必须用 ChatService.MAX_BODY_CHARS，不能写死。")
+	_case_world_constants_match_backend(svc, guard)
+
+
+# 世界频道（批次 E，2026-09-27）：同一批约定又写在了 Python / SQL / GDScript 三种地方。
+#   推送类型 / 订阅主题 —— 对不上：推送落进「未知类型」或者服务器根本不认这个主题，不报错，就是收不到
+#   100 字 / 8 秒 —— 客户端放行、服务器拒；或者客户端的倒数和服务器的 CD 对不上，点了才被回「太快了」
+#   举报的场合 / 原因 —— 对不上：客户端发出去的服务器不认，举报一直 400
+func _case_world_constants_match_backend(svc: String, guard: String) -> void:
+	var world := FileAccess.get_file_as_string("res://backend/app/world_chat.py")
+	var realtime := FileAccess.get_file_as_string("res://backend/app/realtime.py")
+	var reports := FileAccess.get_file_as_string("res://backend/app/reports.py")
+	var sql := FileAccess.get_file_as_string("res://database/019_world_chat.sql")
+	var account := FileAccess.get_file_as_string("res://scripts/autoload/AccountManager.gd")
+	var panel := FileAccess.get_file_as_string("res://scenes/menu/WorldChatPanel.gd")
+	_h.item()
+	for src in [world, realtime, reports, sql, account, panel]:
+		if str(src).is_empty():
+			_h.fail("world_source_unreadable",
+				"读不到世界频道相关的源文件（world_chat.py / realtime.py / reports.py / 019_world_chat.sql / "
+				+ "AccountManager.gd / WorldChatPanel.gd）")
+			return
+	_h.expect(world.contains("TOPIC = \"world\"") and world.contains("PUSH_TYPE = \"world\"")
+			and world.contains("HIDE_TYPE = \"world_hide\"") and realtime.contains("TOPICS = frozenset({\"world\"})")
+			and svc.contains("const WORLD_TOPIC := \"world\"") and svc.contains("const WORLD_TYPE := \"world\"")
+			and svc.contains("const WORLD_HIDE_TYPE := \"world_hide\""),
+		"world_push_type_drift",
+		"世界频道的订阅主题 / 推送类型两边不是同一个串了（world_chat.py、realtime.TOPICS vs ChatService.WORLD_*）。")
+	_h.expect(guard.contains("WORLD_MAX = 100") and svc.contains("const WORLD_MAX_CHARS := 100")
+			and sql.contains("char_length(body) between 1 and 100"),
+		"world_max_chars_drift",
+		"世界频道单条上限在 text_guard.WORLD_MAX / ChatService.WORLD_MAX_CHARS / 019 的 world_body_length 三处不一致了。")
+	_h.expect(world.contains("COOLDOWN_SEC = 8.0") and svc.contains("const WORLD_COOLDOWN_SEC := 8.0"),
+		"world_cooldown_drift",
+		"世界频道 CD 在 world_chat.COOLDOWN_SEC 与 ChatService.WORLD_COOLDOWN_SEC 对不上了 —— "
+		+ "按钮倒数完了点下去仍被服务器回「发得太快了」，或者白等。")
+	_h.expect(panel.contains("max_length = ChatService.WORLD_MAX_CHARS"), "world_input_limit_hardcoded",
+		"WorldChatPanel 的输入框上限必须用 ChatService.WORLD_MAX_CHARS，不能写死。")
+	var ctx := RegEx.create_from_string("CONTEXTS = \\(([^)]*)\\)").search(reports)
+	var why := RegEx.create_from_string("REASONS = \\(([^)]*)\\)").search(reports)
+	_h.expect(ctx != null and why != null
+			and ctx.get_string(1).replace(" ", "") == "\"world\",\"profile\",\"dm\",\"match\""
+			and why.get_string(1).replace(" ", "") == "\"abuse\",\"ads\",\"cheat\",\"name\",\"other\""
+			and account.contains("const REPORT_CONTEXTS := [\"world\", \"profile\", \"dm\", \"match\"]")
+			and account.contains("const REPORT_REASONS := [\"abuse\", \"ads\", \"cheat\", \"name\", \"other\"]"),
+		"report_codes_drift",
+		"举报的场合 / 原因在 reports.py（CONTEXTS / REASONS）与 AccountManager.REPORT_* 对不上了。")
+	# 世界频道只在页签开着时订阅：关页签、离开聊天界面都要退订（否则对局里也一直收推送）。
+	_h.expect(panel.contains("ChatService.close_world()") and panel.contains("await ChatService.open_world()"),
+		"world_subscription_not_scoped",
+		"WorldChatPanel 必须在露出来时 open_world()、藏起来 / 离开时 close_world()。")
 
 
 # --- 9. 🔴 令牌续期接上了 --------------------------------------------------------
@@ -588,7 +642,11 @@ func _case_ui_scripts_parse() -> void:
 		"res://scenes/menu/FriendsScreen.gd",
 		"res://scenes/menu/MainMenu.gd",
 		"res://scripts/multiplayer/ChatText.gd",
+		"res://scripts/multiplayer/RoomChatLog.gd",
 		"res://ui/components/ChatInputBar.gd",
+		"res://scenes/menu/WorldChatPanel.gd",
+		"res://ui/components/ReportDialog.gd",
+		"res://scenes/menu/ProfileScreen.gd",
 	]:
 		_h.item()
 		# 🔴 判据是 `can_instantiate()`，**不是 `load() != null`**。
@@ -666,15 +724,12 @@ func _case_longest_message_fits() -> void:
 	var name_max := int(m.get_string(1))
 	# 全角字是最宽的常见情况（英文、数字都比它窄）。
 	var longest := "字".repeat(name_max) + "：" + "字".repeat(ChatText.MAX_CHARS)
-	# 备战期的消息前面还可能有范围标记（2026-09-14：「【对方】」「【全部】」），取长的那个。
-	# 大厅不加标记（只发全部），直接用上面那条。
+	# 摆放界面的消息前面还可能有范围标记（2026-09-14：「【对方】」「【全部】」），取长的那个。
+	# 大厅不加标记（只发全部），直接用上面那条。标记 2026-09-27 起在 RoomChatLog 里（记录与显示共用）。
 	var prep_tag := ""
-	for tag_name in ["CHAT_TAG_ALL", "CHAT_TAG_ENEMY"]:
-		var tag := str(prep_consts.get(tag_name, ""))
-		_h.expect(not tag.is_empty(), "prep_chat_tag_missing",
-			"PrepUI 里找不到 %s —— 范围标记换了写法，这条门禁要跟着改。" % tag_name)
-		if tag.length() > prep_tag.length():
-			prep_tag = tag
+	for tag in [RoomChatLog.TAG_ALL, RoomChatLog.TAG_ENEMY, RoomChatLog.TAG_ALL_EN, RoomChatLog.TAG_ENEMY_EN]:
+		if str(tag).length() > prep_tag.length():
+			prep_tag = str(tag)
 
 	# 用真 Label 取字体：两个聊天框用的都是主题的默认字体。
 	var probe := Label.new()
@@ -785,6 +840,139 @@ func _case_chat_scope_routing() -> void:
 	_h.expect(lobby.contains("NetworkService.team_send_phrase(phrase_id)")
 			and lobby.contains("NetworkService.team_send_text(text)"),
 		"lobby_chat_scope_changed", "大厅只发全部（2026-09-14 定）：大厅的发送调用不该带范围参数")
+
+
+# --- 15. 房间 / 对局聊天记录（2026-09-27）------------------------------------------------
+#
+# 以前大厅的框只留 4 行、摆放界面的消息飘 6 秒、每回合重建就全没了，看战斗那段收到的直接丢。
+# 现在一份记录挂在 NetworkService 上（RoomChatLog）。这里钉住几件不会报错、只会悄悄说错话的事：
+#   ① 名字、是不是对方按**收到那一刻**记 —— 按座位现查会把旧消息算到新坐进来的人头上
+#   ② 换房间 / 离开房间（reset）清掉；上限之外从最老的丢；「看过」按条记
+#   ③ 界面只听记录（entry_added），不再各自听原始信号、各自现查名字
+
+func _case_room_chat_log_entries() -> void:
+	var profiles := {1: {"player_name": "小林"}, "4": {"player_name": "对面阿强"}}
+	var me := {"player_name": "阿泰"}
+	var mine := RoomChatLog.make_entry(0, 0, "我先存钱", true, 0, profiles, me, 2, false)
+	var mate := RoomChatLog.make_entry(1, 5, "", true, 0, profiles, me, 2, false)
+	var enemy := RoomChatLog.make_entry(4, 0, "你们稳了", false, 0, profiles, me, 2, false)
+	var unnamed := RoomChatLog.make_entry(2, 0, "在吗", false, 0, profiles, me, 0, false)
+	_h.item()
+	_h.expect(str(mine.name) == "阿泰" and bool(mine.mine) and not bool(mine.enemy),
+		"chat_log_self_name", "自己发的要用自己的资料名（team_seat_profiles 里没有自己），实际 %s" % str(mine))
+	_h.expect(str(mate.name) == "小林" and not bool(mate.enemy) and int(mate.phrase_id) == 5
+			and str(mate.text).is_empty(), "chat_log_mate_entry", "队友的短语记错了：%s" % str(mate))
+	_h.expect(str(enemy.name) == "对面阿强" and bool(enemy.enemy), "chat_log_enemy_entry",
+		"对面座位（字符串键的资料也要认）要记成对方：%s" % str(enemy))
+	_h.expect(str(unnamed.name) == "席位C", "chat_log_seat_fallback",
+		"没有名字的座位要用座位号顶着，实际「%s」" % str(unnamed.name))
+	_h.item()
+	_h.expect(RoomChatLog.make_entry(1, 9999, "", true, 0, profiles, me, 1, false).is_empty()
+			and RoomChatLog.make_entry(1, 0, "", true, 0, profiles, me, 1, false).is_empty(),
+		"chat_log_records_junk", "非法短语 id、空文字都不该进记录（text() 对非法 id 返回空串，同一条纪律）")
+	_h.item()
+	# 显示：大厅（round 0）不标范围；对局里只标例外。
+	_h.expect(RoomChatLog.line_text(unnamed, false) == "席位C：在吗", "chat_log_lobby_tagged",
+		"大厅阶段的记录不该带范围标记，实际「%s」" % RoomChatLog.line_text(unnamed, false))
+	var mine_all := RoomChatLog.make_entry(0, 0, "看这边", false, 0, profiles, me, 3, false)
+	_h.expect(RoomChatLog.line_text(enemy, false) == RoomChatLog.TAG_ENEMY + "对面阿强：你们稳了"
+			and RoomChatLog.line_text(mine, false) == "阿泰：我先存钱"
+			and RoomChatLog.line_text(mine_all, false) == RoomChatLog.TAG_ALL + "阿泰：看这边",
+		"chat_log_line_tags", "对局里：队友频道不标，自己人发全部标【全部】，对面的人标【对方】")
+	_h.expect(RoomChatLog.line_text(mate, false).ends_with("：" + ChatPhrases.text(5)),
+		"chat_log_phrase_text", "短语要在显示时查表")
+	_h.item()
+	# 名字按收到那一刻记：之后座位换了人，记录不跟着变。
+	var before := RoomChatLog.make_entry(1, 0, "我顶前排", true, 0, profiles, me, 1, false)
+	profiles[1] = {"player_name": "新来的"}
+	_h.expect(RoomChatLog.line_text(before, false) == "小林：我顶前排", "chat_log_name_not_snapshot",
+		"座位换了人之后，旧消息还得算原来那个人说的")
+
+
+func _case_room_chat_log_lifecycle() -> void:
+	var chat_log := RoomChatLog.new()
+	var emitted: Array = []
+	chat_log.entry_added.connect(func(entry: Dictionary) -> void: emitted.append(int(entry.seq)))
+	var me := {"player_name": "阿泰"}
+	_h.item()
+	for i in 3:
+		chat_log.add(501, RoomChatLog.make_entry(1, 0, "第%d句" % i, true, 0, {}, me, 1, false))
+	chat_log.add(501, {})
+	_h.expect(chat_log.entries_for(501).size() == 3 and emitted.size() == 3 and chat_log.entries_for(777).is_empty(),
+		"chat_log_add_wrong", "同一间房记 3 条（空的不记）；别的房间号看不到这间的")
+	_h.item()
+	_h.expect(chat_log.unseen_count(501) == 3, "chat_log_unseen_wrong", "新记的都算没看过")
+	chat_log.mark_entry_seen(chat_log.entries_for(501)[2])
+	_h.expect(chat_log.unseen_count(501) == 2, "chat_log_seen_cursor",
+		"「看过」按条记：飘出来的新消息不能把之前没看过的（看战斗时收到的）也算成看过")
+	chat_log.mark_all_seen()
+	_h.expect(chat_log.unseen_count(501) == 0, "chat_log_mark_all", "翻开记录之后全部算看过")
+	_h.item()
+	chat_log.add(502, RoomChatLog.make_entry(1, 0, "新房间", true, 0, {}, me, 0, false))
+	_h.expect(chat_log.entries_for(502).size() == 1 and chat_log.entries_for(501).is_empty(),
+		"chat_log_room_switch", "进了另一间房要先清掉上一间的记录")
+	_h.item()
+	for i in RoomChatLog.MAX_ENTRIES + 5:
+		chat_log.add(502, RoomChatLog.make_entry(1, 0, "刷%d" % i, true, 0, {}, me, 1, false))
+	var kept := chat_log.entries_for(502)
+	_h.expect(kept.size() == RoomChatLog.MAX_ENTRIES
+			and str(kept[kept.size() - 1].text) == "刷%d" % (RoomChatLog.MAX_ENTRIES + 4),
+		"chat_log_cap", "超过 %d 条从最老的丢，最新的一条要在" % RoomChatLog.MAX_ENTRIES)
+	chat_log.clear()
+	_h.expect(chat_log.entries_for(502).is_empty(), "chat_log_clear", "clear() 之后没有记录")
+
+
+func _case_room_chat_log_wired() -> void:
+	# 真走 NetworkService：两个收消息的信号都要进记录，看战斗那段收到的也要记、算没看过。
+	var saved_room := NetworkService.team_room_id
+	var saved_slot := NetworkService.team_local_slot
+	var saved_profiles := NetworkService.team_seat_profiles.duplicate(true)
+	var saved_phase := NetworkService.server_phase
+	NetworkService.room_chat_log.clear()
+	NetworkService.team_room_id = 90001
+	NetworkService.team_local_slot = 0
+	NetworkService.team_seat_profiles = {4: {"player_name": "对面阿强"}}
+	NetworkService.server_phase = NetworkService.ROOM_BATTLE
+	_h.item()
+	NetworkService.team_chat_received.emit(4, 3, false)
+	NetworkService.team_chat_text_received.emit(4, "看战斗时说的", false)
+	var entries := NetworkService.room_chat_log.entries_for(90001)
+	_h.expect(entries.size() == 2 and bool(entries[1].enemy) and int(entries[1].round) >= 1
+			and str(entries[1].name) == "对面阿强" and NetworkService.room_chat_log.unseen_count(90001) == 2,
+		"chat_log_not_fed", "NetworkService 收到的短语和文字都要进记录（对局中、算没看过），实际 %s" % str(entries))
+	NetworkService.room_chat_log.clear()
+	NetworkService.team_room_id = saved_room
+	NetworkService.team_local_slot = saved_slot
+	NetworkService.team_seat_profiles = saved_profiles
+	NetworkService.server_phase = saved_phase
+
+	_h.item()
+	var src := FileAccess.get_file_as_string(NETWORK_SERVICE_PATH)
+	_h.expect(_chat_fn_body(src, "func reset() -> void:").contains("room_chat_log.clear()"),
+		"chat_log_not_cleared_on_leave", "NetworkService.reset()（离开房间 / 对局结束）必须清掉聊天记录")
+
+	_h.item()
+	var prep := FileAccess.get_file_as_string("res://scenes/prep/PrepUI.gd")
+	var lobby := FileAccess.get_file_as_string("res://scenes/menu/Team3v3Lobby.gd")
+	_h.expect(prep.contains("room_chat_log.entry_added.connect(_on_prep_chat_logged)")
+			and _chat_fn_body(prep, "func _teardown_chat_entry() -> void:")
+				.contains("room_chat_log.entry_added.disconnect(_on_prep_chat_logged)"),
+		"prep_chat_log_not_wired", "摆放界面要听 room_chat_log.entry_added，并在 _teardown_chat_entry 里断开")
+	_h.expect(lobby.contains("room_chat_log.entry_added.connect(_on_chat_logged)")
+			and _chat_fn_body(lobby, "func _exit_tree() -> void:")
+				.contains("room_chat_log.entry_added.disconnect(_on_chat_logged)"),
+		"lobby_chat_log_not_wired", "大厅要听 room_chat_log.entry_added，并在 _exit_tree 里断开")
+	for pair in [["PrepUI", prep], ["Team3v3Lobby", lobby]]:
+		var body := str(pair[1])
+		_h.expect(not body.contains("team_chat_received.connect") and not body.contains("team_chat_text_received.connect"),
+			"chat_ui_bypasses_log",
+			"%s 又直接听原始聊天信号了：名字会在显示时按座位现查，和记录里的对不上" % str(pair[0]))
+
+	_h.item()
+	# 2026-09-27 用户定：大厅和摆放界面的聊天字一律黑色（原来的浅色看不清）。
+	_h.expect(_chat_fn_body(prep, "func _push_chat_line(text: String) -> void:").contains("GloryTokens.CHAT_INK")
+			and _chat_fn_body(lobby, "func _build_chat_box() -> void:").contains("Tokens.CHAT_INK"),
+		"chat_text_not_ink", "摆放界面飘出来的消息和大厅聊天框的字要用 CHAT_INK（黑字）")
 
 
 func _same_peer_set(actual: Array, expected: Array) -> bool:

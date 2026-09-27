@@ -156,6 +156,22 @@ async def unban(player_id: uuid.UUID, body: NoteBody, who: Writer) -> dict:
     return await admin.unban(who, player_id, body.note)
 
 
+class MuteBody(BaseModel):
+    hours: int | None = None     # 不填 = 永久
+    reason: str = Field(max_length=200)
+    note: str = Field(default="", max_length=500)
+
+
+@router.post("/admin/api/players/{player_id}/mute")
+async def mute(player_id: uuid.UUID, body: MuteBody, who: Writer) -> dict:
+    return await admin.mute(who, player_id, body.hours, body.reason, body.note)
+
+
+@router.post("/admin/api/players/{player_id}/unmute")
+async def unmute(player_id: uuid.UUID, body: NoteBody, who: Writer) -> dict:
+    return await admin.unmute(who, player_id, body.note)
+
+
 class GrantBody(BaseModel):
     kind: Literal["grant_diamonds", "grant_coin"]
     amount: int
@@ -280,6 +296,46 @@ async def upload_image(request: Request, who: Writer) -> dict:
     if not chunks:
         raise HTTPException(status_code=400, detail="没有收到图片")
     return await admin.upload_announcement_image(who, b"".join(chunks))
+
+
+# --- 举报 -----------------------------------------------------------------------
+
+
+@router.get("/admin/api/reports")
+async def reports(_who: Me, status: str = "open") -> dict:
+    return {"reports": await admin.list_reports(status)}
+
+
+@router.get("/admin/api/reports/{report_id}")
+async def report(report_id: int, _who: Me) -> dict:
+    return await admin.report_detail(report_id)
+
+
+class ResolveBody(BaseModel):
+    status: Literal["resolved", "dismissed"]
+    note: str = Field(default="", max_length=500)
+
+
+@router.post("/admin/api/reports/{report_id}/resolve")
+async def resolve_report(report_id: int, body: ResolveBody, who: Writer) -> dict:
+    return await admin.resolve_report(who, report_id, body.status, body.note)
+
+
+# --- 世界频道 ---------------------------------------------------------------------
+
+
+@router.get("/admin/api/world")
+async def world(_who: Me, player_id: uuid.UUID | None = None) -> dict:
+    return {"messages": await admin.recent_world(player_id)}
+
+
+class HideBody(BaseModel):
+    reason: str = Field(default="", max_length=200)
+
+
+@router.post("/admin/api/world/{message_id}/hide")
+async def hide_world_message(message_id: int, body: HideBody, who: Writer) -> dict:
+    return await admin.hide_world_message(who, message_id, body.reason)
 
 
 # --- 操作记录 -------------------------------------------------------------------

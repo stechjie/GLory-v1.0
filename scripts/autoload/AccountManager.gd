@@ -715,6 +715,40 @@ func mark_chat_read(code: String, last_read_id: int) -> Dictionary:
 		{"last_read_id": maxi(0, last_read_id)}, true)
 
 
+# --- 世界频道（docs/聊天系统设计.md 批次 E，backend/app/routes/world.py）------------------
+#
+# 同私聊：发送走这里（HTTPS，要明确的答复：发出去了 / 太快了 / 被禁言 / 不合规），
+# 收新消息走 RealtimeService 的订阅推送，状态在 ChatService。
+
+# before_id = 0：打开页签，最近 100 条；> 0：往上翻，比这条更早的一页。旧到新。
+func fetch_world_messages(before_id: int = 0) -> Dictionary:
+	var query := "" if before_id <= 0 else "?before=%d" % before_id
+	return await _request(HTTPClient.METHOD_GET, "/v1/world/messages" + query, null, true)
+
+
+# client_msg_id 同私聊：网络失败后重发同一句时**原样复用**，服务端认出来就不会发两条。
+func send_world_message(body: String, client_msg_id: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/world/messages",
+		{"body": body, "client_msg_id": client_msg_id}, true)
+
+
+# --- 举报（backend/app/reports.py）---------------------------------------------------
+#
+# 证据由服务器在举报那一刻复制（世界频道的发言、私聊记录、资料），客户端只报「谁、在哪、为什么」。
+# 与 backend/app/reports.py 的 CONTEXTS / REASONS 一致（tools/chat_check.gd 钉着）。
+const REPORT_CONTEXTS := ["world", "profile", "dm", "match"]
+const REPORT_REASONS := ["abuse", "ads", "cheat", "name", "other"]
+
+func report_player(code: String, context: String, reason: String, message_id: int = 0,
+		detail: String = "") -> Dictionary:
+	var payload := {"target_code": normalize_friend_code(code), "context": context, "reason": reason}
+	if message_id > 0:
+		payload["message_id"] = message_id
+	if not detail.strip_edges().is_empty():
+		payload["detail"] = detail.strip_edges()
+	return await _request(HTTPClient.METHOD_POST, "/v1/reports", payload, true)
+
+
 # --- 公告（docs/公告系统设计.md）------------------------------------------------
 #
 # 只有拉列表。看过哪些、弹过哪些在 AnnouncementService（存本机），图片在 AnnouncementImages。

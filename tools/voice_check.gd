@@ -168,6 +168,7 @@ func _ready() -> void:
 	_case_state_machine()
 	_case_ios_permission()
 	_case_state_machine_fixed_listen_mode()
+	_case_room_default_listen()
 	_case_mutes_follow_player()
 	_case_mic_rationale()
 	_case_ui_wired()
@@ -823,6 +824,8 @@ func _save_state() -> Dictionary:
 	return {
 		"bridge": VoiceService._bridge,
 		"mode": VoiceService.mode,
+		"defaulted_room": VoiceService._defaulted_room,
+		"room_id": NetworkService.team_room_id,
 		"muted": VoiceService._muted_keys.duplicate(),
 		"active": NetworkService.team_active,
 		"slot": NetworkService.team_local_slot,
@@ -837,6 +840,8 @@ func _restore_state(saved: Dictionary) -> void:
 	VoiceService._leave()
 	VoiceService._bridge = saved.bridge
 	VoiceService.mode = int(saved.mode)
+	VoiceService._defaulted_room = int(saved.defaulted_room)
+	NetworkService.team_room_id = int(saved.room_id)
 	VoiceService._muted_keys = saved.muted
 	VoiceService.token_requester = Callable()
 	VoiceService._retry_in = 0.0
@@ -1069,6 +1074,61 @@ func _case_state_machine() -> void:
 		"voice_mode_changed_wrong", "档位每变一次都要发且只发一次 mode_changed（界面按钮靠它刷新），实际 %s" % str(events))
 
 	VoiceService.mode_changed.disconnect(on_changed)
+	_restore_state(saved)
+
+
+# 进房间默认「只听」（2026-09-27 用户定，原来默认关）：
+#   每个新房间切一次；玩家在房间里自己关掉就保持关（不能每帧又被切回去）；
+#   离开房间回到关，下一个房间再回到只听；绝不自己开麦；没有桥接的包什么都不做。
+func _case_room_default_listen() -> void:
+	var saved := _save_state()
+	var fake := FakeBridge.new()
+	VoiceService._bridge = fake
+	VoiceService._token_cache = {}
+	VoiceService._last_error = ""
+	VoiceService.mode = VoiceService.Mode.OFF
+	VoiceService._defaulted_room = -1
+	var requests := [0]
+	VoiceService.token_requester = func() -> bool:
+		requests[0] += 1
+		return true
+	NetworkService.team_active = true
+	NetworkService.team_local_slot = 0
+	NetworkService.team_room_id = 41001
+	NetworkService.team_slot_states = ["player", "player", "ai", "player", "player", "empty"]
+
+	_h.item()
+	VoiceService._process(0.01)
+	_reply("g1-s-t0", "", "tok-default")
+	_h.expect(VoiceService.mode == VoiceService.Mode.LISTEN and requests[0] == 1 and fake.joined
+			and bool(fake.join_args[2]) and not fake.mic_on,
+		"voice_default_not_listen", "进房间应自动切到「只听」（listen_only = true、不开麦），实际档位 %d、进房参数 %s"
+			% [VoiceService.mode, str(fake.join_args)])
+
+	_h.item()
+	VoiceService.set_mode(VoiceService.Mode.OFF)
+	VoiceService._process(0.01)
+	VoiceService._process(0.01)
+	_h.expect(VoiceService.mode == VoiceService.Mode.OFF and not fake.joined, "voice_default_overrides_player",
+		"玩家在房间里自己关掉之后，不能又被切回「只听」")
+
+	_h.item()
+	NetworkService.team_active = false
+	VoiceService._process(VoiceService.LEAVE_GRACE_SEC + 0.1)
+	NetworkService.team_active = true
+	NetworkService.team_room_id = 41002
+	VoiceService._process(0.01)
+	_h.expect(VoiceService.mode == VoiceService.Mode.LISTEN and not fake.mic_on, "voice_default_not_per_room",
+		"离开房间再进下一个房间，要重新回到「只听」（麦克风仍然关着）")
+
+	_h.item()
+	VoiceService.set_mode(VoiceService.Mode.OFF)
+	VoiceService._bridge = null
+	VoiceService._last_error = ""
+	NetworkService.team_room_id = 41003
+	VoiceService._process(0.01)
+	_h.expect(VoiceService.mode == VoiceService.Mode.OFF and VoiceService.last_error().is_empty(),
+		"voice_default_without_bridge", "没有语音桥接的包进房间时不动档位、不报原因")
 	_restore_state(saved)
 
 
