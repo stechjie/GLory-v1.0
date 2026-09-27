@@ -603,7 +603,7 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 			continue
 		if StatusEffectService.is_stunned(f):
 			continue
-		var target := _select_attack_target(f, opponents, target_index)
+		var target := _select_attack_target(f, opponents, target_index, bodies)
 		if str(f.get("frenzy_target_uid", "")) != str(target.get("uid", "")):
 			f.frenzy_stacks = 0
 			f.frenzy_target_uid = str(target.get("uid", ""))
@@ -648,6 +648,9 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 # must never inject momentum into a stationary ally/enemy through the overlap
 # solver. Sweep circles to the first contact, then slide the remaining movement
 # along that contact; skills still write their explicit displacement separately.
+#
+# 9.27：内层扫掠已抽到 BattleSimShared._first_contact（同一份几何），供"选敌避让"
+# 复用，避免两处各写一套扫掠而漂移。
 static func _move_without_pushing(f: Dictionary, displacement: Vector2, bodies: Array) -> void:
 	var position: Vector2 = f.pos
 	var remaining := displacement
@@ -657,30 +660,10 @@ static func _move_without_pushing(f: Dictionary, displacement: Vector2, bodies: 
 		if length < 0.001:
 			break
 		var direction := remaining / length
-		var travel := length
-		var normal := Vector2.ZERO
-		var hit_uid := ""
-		for other: Dictionary in bodies:
-			if is_same(other, f) or not bool(other.get("alive", false)) or int(other.get("hp", 0)) <= 0:
-				continue
-			var offset: Vector2 = position - Vector2(other.pos)
-			var minimum := radius + body_radius(other) + 0.01
-			if absf(offset.x) > minimum + length or absf(offset.y) > minimum + length:
-				continue
-			var towards := offset.dot(direction)
-			# An existing spawn/skill overlap can move out, never deeper in.
-			if towards >= 0.0:
-				continue
-			var discriminant := towards * towards - (offset.length_squared() - minimum * minimum)
-			if discriminant < 0.0:
-				continue
-			var contact := maxf(0.0, -towards - sqrt(discriminant))
-			var uid := str(other.get("uid", ""))
-			if contact > travel or (is_equal_approx(contact, travel) and not hit_uid.is_empty() and uid >= hit_uid):
-				continue
-			travel = contact
-			normal = (offset + direction * contact).normalized()
-			hit_uid = uid
+		var hit := _first_contact(position, radius, direction, length, f, bodies)
+		var travel := float(hit.get("contact", length))
+		var normal: Vector2 = hit.get("normal", Vector2.ZERO)
+		var hit_uid := str(hit.get("uid", ""))
 		position += direction * travel
 		if normal == Vector2.ZERO:
 			break
@@ -987,8 +970,13 @@ static func _apply_opening_unit_skills(player: Array, enemy: Array, event_log: A
 
 # 施法前的距离判定：和普攻用同一套目标选择 + 有效射程。射程内有合法敌人才允许施法。
 # 辅助技（治疗/增益）也走这条：nearest 敌人进入自己射程 = 本路已交战，才开始起作用。
-static func _skill_target_in_range(caster: Dictionary, opponents: Array) -> bool:
-	var target := _select_target(caster, opponents)
+#
+# ★ 9.27：`bodies` 必须传进来。这条判定调用 `_select_target`，而 `_select_target`
+# 会**写 `caster.locked_target_uid`** —— 它跑在 `_step_team` **之前**，所以谁先选谁
+# 定锁。修前这里不传 bodies（旧口径 = 直线最近），于是"被友军挡住的那个目标"会被
+# 先写进锁，随后 `_step_team` 的可达性避让因为"锁还有效"而根本不生效。
+static func _skill_target_in_range(caster: Dictionary, opponents: Array, bodies: Array = []) -> bool:
+	var target := _select_target(caster, opponents, bodies)
 	if target.is_empty():
 		return false
 	var caster_pos: Vector2 = caster.get("pos", Vector2.ZERO)
@@ -996,6 +984,12 @@ static func _skill_target_in_range(caster: Dictionary, opponents: Array) -> bool
 	return caster_pos.distance_to(target_pos) <= _effective_attack_distance(caster, target) + ATTACK_RANGE_EPS
 
 static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) -> void:
+	# 9.27：与 `_step_team` 用同一份 bodies（双方全体）。技能的射程判定也会写
+	# `locked_target_uid`，必须和普攻看到同一个"谁挡在谁前面"的世界，否则
+	# 毒灵的可达性避让会被先跑的技能判定用旧口径覆盖掉。
+	var bodies: Array = []
+	bodies.append_array(state.get("player", []))
+	bodies.append_array(state.get("enemy", []))
 	for caster: Dictionary in casters:
 		if not bool(caster.get("alive", false)):
 			continue
@@ -1015,7 +1009,7 @@ static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) ->
 		# 例外 skill_global：全场技不吃射程判定。法阵友军里的近战体型（噬兽、厄夜）
 		# 否则要贴到脸上才能放"全场"大招，多半没走到就死了。这批的开场时机改由
 		# opening_cd 把关，不会一到 0 秒就隔着半张地图开。
-		if not bool(d.get("skill_global", false)) and not _skill_target_in_range(caster, opponents):
+		if not bool(d.get("skill_global", false)) and not _skill_target_in_range(caster, opponents, bodies):
 			continue
 		var old_ready := float(caster.get("skill_ready", 0.0))
 		DamageService.begin_stat_context(state, caster)
@@ -1109,7 +1103,7 @@ static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) ->
 				BattleSimSkills._skill_time_slow(caster, opponents, d)
 				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 8.0))
 			"gold_charge":
-				BattleSimSkills._skill_gold_charge(caster, opponents, d)
+				BattleSimSkills._skill_gold_charge(caster, opponents, d, state)
 				caster.skill_ready = float(state.elapsed) + 7.0
 			"king_aura":
 				BattleSimSkills._skill_king_aura(caster, casters, d)
@@ -1244,10 +1238,18 @@ static func _nearest_non_boss(f: Dictionary, opponents: Array) -> Dictionary:
 # 留一只 boss 在里面，第二个调用方一出现就会踩坑。9.25 探针
 # （work/_qa_922/probe_blood_link_boss_immune_925.gd Part 2）就是因为这条断言红了。
 # 现在两边都判，与 _is_formation_ally_fighter 的防御性重复同一形状。
+#
+# 9.27 bug 文档第 1 条：候选池再加一条**星级不高于自身**（target.star <= caster.star）。
+# 末日守卫 1~3 星时把对面一只 4 星核心直接策反过来，等于白拿对方整只主力；
+# 这条与「非Boss / 非唯一棋子」同层，属**候选池**约束，改判定只动这一处。
+# star 由 BattleSimShared._fighter_from_def 写入（第 6 个参数），缺字段按 1 星。
 static func _link_targets_without_doom(caster: Dictionary, opponents: Array) -> Array:
+	var caster_star := maxi(1, int(caster.get("star", 1)))
 	var out: Array = []
 	for o in opponents:
 		if o == caster or _is_doom_guard_fighter(o) or _is_unique_fighter(o) or _is_boss_fighter(o) or _is_formation_ally_fighter(o):
+			continue
+		if maxi(1, int(o.get("star", 1))) > caster_star:
 			continue
 		out.append(o)
 	return out

@@ -16,9 +16,19 @@ const Tokens := preload("res://ui/theme/GloryTokens.gd")
 # 9.17 第二批：BGM 走常驻 MusicService，音效走 SfxService。
 const MusicService := preload("res://ui/services/MusicService.gd")
 const SfxService := preload("res://ui/services/SfxService.gd")
+# 房间邀请（bug提交和修复.docx 第 2 条）：文案 / 限流 / 失效判据都在这一份纯逻辑里。
+const RoomInvite := preload("res://scripts/multiplayer/RoomInvite.gd")
+# 「邀请已过时」「已经邀请过了」走全局 toast —— 与教程的「上阵棋子数目少于 N」同一个出口，
+# 所以「中上方 + 同一种格式」是天然的（要求 5）。
+const GloryToastScript := preload("res://ui/components/GloryToast.gd")
 var _slot_avatars: Array[TextureRect] = []
 var _friends_box: VBoxContainer
 var _friends_loading := false
+# 邀请限流状态（要求 4）。只活在本场房间的内存里（界面每次进房重建，初始值自然从零开始）。
+# 服务端还会再判一次（权威），这里只是本地先拦一道：反馈即时、省一次往返。
+var _invite_last_sec := 0
+# (房间号:好友码) -> true。同一房间对同一位好友只发一次邀请消息。
+var _invited_pairs: Dictionary = {}
 
 func _reload_online_friends() -> void:
 	if _friends_loading or not AccountManager.is_logged_in():
@@ -38,22 +48,101 @@ func _render_online_friends(friends: Array) -> void:
 	for entry in friends:
 		if not entry is Dictionary or not bool(entry.get("online", false)):
 			continue
-		var label := Label.new()
-		label.text = AccountManager.display_name(str(entry.get("player_name", "")), str(entry.get("friend_code", "")))
-		# 9.14 反馈：「朋友列表」里的朋友 ID 要贴在框框里边、向左对齐。label 默认就是
-		# 左对齐，真正的毛病是列表容器压到了木框上（见 _build() 里 friends_scroll 的
-		# 位置说明）—— 两处一起改才看得出来。这里显式写上左对齐，免得将来换主题
-		# 把 Label 的默认对齐改掉时又悄悄居中。
-		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		# 好友名写在羊皮纸里：深色正文已经有足够对比，不再加浅色粗描边。
-		# 旧版白字 + 2px 深边在 14px 下笔画几乎一样粗，看起来像失焦。
-		label.add_theme_color_override("font_color", Tokens.PARCHMENT_EDGE)
-		label.add_theme_constant_override("outline_size", 0)
-		label.add_theme_font_size_override("font_size", 15)
-		label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		label.tooltip_text = label.text
-		_friends_box.add_child(label)
+		_friends_box.add_child(_online_friend_row(entry as Dictionary))
+
+
+# 一行在线好友（要求 2）：显示在线好友的 ID，**点一下即邀请**。
+#
+# ⚠️ 行用 Label + gui_input，**刻意不用 Button.new()**：
+# 门禁 procedural_ui_ratchet_check 对 Team3v3Lobby.gd 的 Button.new() 基线是
+# **恰好 3**，棘轮只许降不许涨，多一个就 count_increased 红。所以这里改走
+# 手工点击区（同 _add_hit 的思路；但 _add_hit 走 _placed 布局、由 _layout 定位，
+# 而这一行挂在滚动容器里，由容器排版，不能混用）。
+func _online_friend_row(entry: Dictionary) -> Label:
+	var code := str(entry.get("friend_code", ""))
+	var label := Label.new()
+	label.text = AccountManager.display_name(str(entry.get("player_name", "")), code)
+	# 9.14 反馈：「朋友列表」里的朋友 ID 要贴在框框里边、向左对齐。label 默认就是
+	# 左对齐，真正的毛病是列表容器压到了木框上（见 _build() 里 friends_scroll 的
+	# 位置说明）—— 两处一起改才看得出来。这里显式写上左对齐，免得将来换主题
+	# 把 Label 的默认对齐改掉时又悄悄居中。
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# 好友名写在羊皮纸里：深色正文已经有足够对比，不再加浅色粗描边。
+	# 旧版白字 + 2px 深边在 14px 下笔画几乎一样粗，看起来像失焦。
+	label.add_theme_color_override("font_color", Tokens.PARCHMENT_EDGE)
+	label.add_theme_constant_override("outline_size", 0)
+	label.add_theme_font_size_override("font_size", 15)
+	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	label.tooltip_text = _room_text("点击邀请 %s 进入房间" % label.text,
+		"Tap to invite %s" % label.text)
+	# 可点：只有 STOP 才收得到 gui_input（IGNORE/PASS 都会漏给下面的滚动容器）。
+	label.mouse_filter = Control.MOUSE_FILTER_STOP
+	label.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	label.gui_input.connect(func(event: InputEvent) -> void:
+		var mb := event as InputEventMouseButton
+		if mb != null and mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+			_on_invite_friend(code, label))
+	return label
+
+
+# 点好友名 → 发一条房间邀请（要求 2/4）。这一下**只发消息**，不改自己的房间状态；
+# 对方收不收得到、点不点「立即参与」都是对方的事。
+func _on_invite_friend(code: String, row: Control) -> void:
+	if not _online():
+		GloryToastScript.show_text(_room_text("联机对局中才能邀请", "Invite is available in online rooms"))
+		return
+	var room_id := NetworkService.team_room_id
+	if room_id <= 0:
+		return
+	var now := int(Time.get_unix_time_from_system())
+	var key := "%d:%s" % [room_id, code]
+	# 先亮一下，**再**判能不能发 —— 顺序是有意的（要求 1）。
+	# 放在判限流之后的话，「同一房间已经邀请过」时玩家点了什么都不发生，
+	# 看起来跟没点到一模一样（这就是实测「点击没有亮一下」的原因）。
+	# 而且这一下不能等网络：弱网下那要好几秒，玩家会以为没点到而连点。
+	_flash_row(row)
+	var blocked := RoomInvite.send_blocked_reason(now, _invite_last_sec, _invited_pairs.has(key))
+	if blocked == "duplicate":
+		# 同一房间已经邀请过这位好友：**静默返回**。
+		# 不再弹「已经邀请过了」—— 亮一下已经说明「点到了」，再弹一句只会打扰；
+		# 而对方那边多出来的重复，由服务端去重 + 显示层收敛一起兜掉。
+		return
+	if blocked == "rate_limited":
+		# 换房间的 10 秒间隔：这条要说，否则玩家不知道为什么要等。
+		GloryToastScript.show_text(RoomInvite.send_blocked_text("rate_limited"))
+		return
+	var result: Dictionary = await AccountManager.send_chat_message(
+		code, RoomInvite.local_text(), ChatService.new_client_msg_id(),
+		RoomInvite.KIND, RoomInvite.make_payload(room_id))
+	if not is_inside_tree():
+		return
+	var status := int(result.get("code", 0))
+	if status / 100 == 2:
+		# 成功才记账：失败（网络）时不留痕，玩家可以立刻重试。
+		_invited_pairs[key] = true
+		_invite_last_sec = now
+	elif status == 409:
+		# 服务端去重兜底（invite_duplicate → 409）：与本地「已经邀请过」同义，也静默。
+		pass
+	else:
+		GloryToastScript.show_text(str(result.get("error",
+			_room_text("邀请发送失败", "Failed to send invite"))))
+
+
+# 「亮一下」（要求 1）。用 modulate 把整行烧到接近过曝再落回常态 ——
+# 不换字体颜色：字体色是主题定的，这里只是瞬时高亮，不该留下状态。
+#
+# 0.28 秒 / 1.6 倍太弱（深色羊皮纸字乘 1.6 仍然偏暗、时间又短），实测肉眼看不出来；
+# 改成 2.6 倍 + 0.45 秒缓出回落，一眼能看到「点到了」。
+func _flash_row(row: Control) -> void:
+	if row == null or not is_instance_valid(row):
+		return
+	row.modulate = Color(2.6, 2.4, 1.6, 1.0)
+	var tween := create_tween()
+	tween.set_ease(Tween.EASE_OUT)
+	tween.set_trans(Tween.TRANS_CUBIC)
+	tween.tween_property(row, "modulate", Color(1, 1, 1, 1), 0.45)
 
 func _seat_profile(index: int) -> Dictionary:
 	if index == _my_slot():

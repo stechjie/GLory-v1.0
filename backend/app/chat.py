@@ -17,6 +17,7 @@ canonical 表的共同前提，这里不许有第二个拼法。
 from __future__ import annotations
 
 import datetime as dt
+import json
 import uuid
 from dataclasses import dataclass
 
@@ -32,6 +33,15 @@ KEEP_PER_CONVERSATION = 200
 # 不再是好友之后，记录从最后一条消息算起再留多少天。
 # 只防一件事：骂完立刻删好友的人，记录不能跟着好友关系一起没了（见 007 文件头）。
 ENDED_RETENTION_DAYS = 30
+
+# 房间邀请（bug提交和修复.docx 第 2 条，2026-09-27）。见 database/020_room_invite.sql。
+#
+# 与客户端 scripts/multiplayer/RoomInvite.gd 的 KIND 一致（tools/room_invite_check.gd 钉着）——
+# 对不上的症状是「发出去的邀请对方收不到」或「邀请渲染成普通文本」，都不报错。
+ROOM_INVITE_KIND = "room_invite"
+# 同一邀请人换房间时，两条邀请至少隔这么多秒（要求 4）。客户端也有一份同值的本地预判，
+# 但**这里才是权威**：本地那份改个内存就绕过去了。
+ROOM_INVITE_RATE_SEC = 10
 
 
 class ChatRejected(RuntimeError):
@@ -49,6 +59,10 @@ class Message:
     sender_id: uuid.UUID
     body: str
     created_at: dt.datetime
+    # text / room_invite。默认 text 让既有构造点（_silently_drop 等）一个字都不用改。
+    kind: str = "text"
+    # 类型相关的机器可读数据。text 为 None；room_invite 为 {"room_id": int}。
+    payload: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -121,7 +135,8 @@ select p.friend_code, p.player_name, p.avatar, p.avatar_frame,
        pr.last_seen_at, pr.presence_visibility,
        c.last_message_id, c.updated_at,
        coalesce(rs.last_read_id, 0) as last_read_id,
-       m.sender_id as last_sender_id, m.body as last_body, m.created_at as last_created_at
+       m.sender_id as last_sender_id, m.body as last_body, m.created_at as last_created_at,
+       m.kind as last_kind, m.payload as last_payload
 from player_friendships f
 join players p
   on p.player_id = case when f.low_id = $1 then f.high_id else f.low_id end
@@ -170,7 +185,27 @@ async def _are_friends(conn: asyncpg.Connection, low: uuid.UUID, high: uuid.UUID
     ))
 
 
-async def _silently_drop(conn: asyncpg.Connection, sender_id: uuid.UUID, body: str) -> SendResult:
+# asyncpg 把 jsonb 取回来是**字符串**（除非注册了 codec）—— 这里统一转成 dict。
+# 不转的话 routes 那一层把 payload 直接塞进响应模型，会变成一坨 JSON 文本。
+def _decode_payload(value) -> dict | None:
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return value
+    try:
+        parsed = json.loads(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+async def _silently_drop(
+    conn: asyncpg.Connection,
+    sender_id: uuid.UUID,
+    body: str,
+    kind: str = "text",
+    payload: dict | None = None,
+) -> SendResult:
     """被对方拉黑后发的消息：**不落库、不推送**，但返回值与真发出去的一模一样。
 
     已定（设计文档第八节第 7 条）：对发送方显示「已发送」—— 告诉他「你被拉黑了」
@@ -189,7 +224,9 @@ async def _silently_drop(conn: asyncpg.Connection, sender_id: uuid.UUID, body: s
         """
     )
     return SendResult(
-        message=Message(int(row["message_id"]), sender_id, body, row["created_at"]),
+        message=Message(
+            int(row["message_id"]), sender_id, body, row["created_at"], kind, payload,
+        ),
         deliver_to=None,
     )
 
@@ -197,11 +234,65 @@ async def _silently_drop(conn: asyncpg.Connection, sender_id: uuid.UUID, body: s
 # --- 写 -----------------------------------------------------------------------
 
 
+async def _check_invite_rules(
+    conn: asyncpg.Connection,
+    sender_id: uuid.UUID,
+    low: uuid.UUID,
+    high: uuid.UUID,
+    room_id: int,
+) -> None:
+    """房间邀请的两条业务规则（要求 4）。**判在数据库上**。
+
+    理由与 friends 的每日配额、改名冷却相同：`rate_limit.py` 是进程内滑动窗口，
+    重启即清零、多 worker 各算各的（它自己的注释写着）。把「同房只发一次」判在那里，
+    等于重启一次就能重发一轮，而症状只是「有人能反复邀请」——不报错。
+
+    (a)「同一邀请人同一房间只会发送一次邀请消息」
+        —— 键是 (邀请人, 房间号, 收件人)。同一个房间邀请第二个好友要放行，
+        否则这个功能就只能邀请一个人。
+    """
+    dup = await conn.fetchval(
+        """
+        select 1 from chat_messages
+        where sender_id = $1 and kind = $2
+          and payload ->> 'room_id' = $3
+          and ((low_id = $4 and high_id = $5) or (low_id = $5 and high_id = $4))
+        limit 1
+        """,
+        sender_id,
+        ROOM_INVITE_KIND,
+        str(room_id),
+        low,
+        high,
+    )
+    if dup:
+        raise ChatRejected("invite_duplicate", "同一个房间已经邀请过对方了")
+
+    # (b)「同一邀请人不同的房间邀请消息的发送间隔为 10 秒」
+    #     —— 按发送者扫最近一条邀请，与房间无关（换房才触发这条）。
+    last = await conn.fetchval(
+        """
+        select created_at from chat_messages
+        where sender_id = $1 and kind = $2
+        order by created_at desc
+        limit 1
+        """,
+        sender_id,
+        ROOM_INVITE_KIND,
+    )
+    if last is not None:
+        elapsed = await conn.fetchval("select now() - $1::timestamptz", last)
+        if elapsed is not None and elapsed.total_seconds() < ROOM_INVITE_RATE_SEC:
+            raise ChatRejected("invite_rate_limited", "邀请发得太快了，请稍后再试")
+
+
 async def send(
     sender_id: uuid.UUID,
     target_code: str,
     body: str,
     client_msg_id: uuid.UUID,
+    kind: str = "text",
+    payload: dict | None = None,
 ) -> SendResult:
     """发一条私聊。body 必须已经过 text_guard.clean_chat_message。
 
@@ -210,7 +301,13 @@ async def send(
          只会拿到「你们不是好友」，静默丢弃那条已定的规则就永远走不到。
       2. 「我拉黑了对方」明说（这是他自己做的，不说他会以为坏了）；
          「对方拉黑了我」静默丢弃 —— 同 friends._blocked_between 的分寸。
+      3. 房间邀请的业务规则（去重 / 10 秒间隔）压在**好友关系之后** ——
+         陌生人根本发不出消息，那两条就没必要先跑一遍查询。
+
+    kind='room_invite' 时 payload 必须是 {"room_id": int}（校验在 routes/chat.py 做，
+    这里只负责按它去重）。
     """
+    invite_room_id = int((payload or {}).get("room_id", 0)) if kind == ROOM_INVITE_KIND else 0
     async with db.pool().acquire() as conn:
         async with conn.transaction():
             target = await _resolve(conn, target_code)
@@ -221,11 +318,14 @@ async def send(
             if blocked == "i_blocked":
                 raise ChatRejected("you_blocked_them", "你已拉黑对方，发不了消息")
             if blocked == "they_blocked":
-                return await _silently_drop(conn, sender_id, body)
+                return await _silently_drop(conn, sender_id, body, kind, payload)
 
             low, high = friends._pair(sender_id, target)
             if not await _are_friends(conn, low, high):
                 raise ChatRejected("not_friends", "你们不是好友，发不了消息")
+
+            if kind == ROOM_INVITE_KIND:
+                await _check_invite_rules(conn, sender_id, low, high, invite_room_id)
 
             await conn.execute(
                 """
@@ -237,8 +337,9 @@ async def send(
             )
             row = await conn.fetchrow(
                 """
-                insert into chat_messages (low_id, high_id, sender_id, body, client_msg_id)
-                values ($1, $2, $3, $4, $5)
+                insert into chat_messages
+                    (low_id, high_id, sender_id, body, client_msg_id, kind, payload)
+                values ($1, $2, $3, $4, $5, $6, $7::jsonb)
                 on conflict (sender_id, client_msg_id) do nothing
                 returning message_id, created_at
                 """,
@@ -247,13 +348,15 @@ async def send(
                 sender_id,
                 body,
                 client_msg_id,
+                kind,
+                json.dumps(payload) if payload is not None else None,
             )
             if row is None:
                 # 同一条消息的重发：第一次已经落库（多半也已经推过了）。
                 # 原样还回去，**不再推一次** —— 否则对方会看到两条一样的。
                 existing = await conn.fetchrow(
                     """
-                    select message_id, body, created_at from chat_messages
+                    select message_id, body, created_at, kind, payload from chat_messages
                     where sender_id = $1 and client_msg_id = $2
                     """,
                     sender_id,
@@ -265,6 +368,7 @@ async def send(
                     message=Message(
                         int(existing["message_id"]), sender_id,
                         existing["body"], existing["created_at"],
+                        str(existing["kind"]), _decode_payload(existing["payload"]),
                     ),
                     deliver_to=None,
                 )
@@ -287,8 +391,10 @@ async def send(
             await conn.execute(_ADVANCE_READ, sender_id, low, high, message_id)
             await conn.execute(_TRIM, low, high, KEEP_PER_CONVERSATION - 1)
 
+    # kind / payload 必须回给调用方：routes 用它组装 HTTP 回包与 dm 推送，两条都靠它。
+    # 少了这两个参数，发出去的邀请在收件人那头就是一条普通文本（不报错）。
     return SendResult(
-        message=Message(message_id, sender_id, body, row["created_at"]),
+        message=Message(message_id, sender_id, body, row["created_at"], kind, payload),
         deliver_to=target,
     )
 
@@ -326,7 +432,7 @@ async def history(viewer_id: uuid.UUID, other_code: str, after_id: int) -> list[
             raise ChatRejected("not_friends", "你们不是好友")
         rows = await conn.fetch(
             """
-            select message_id, sender_id, body, created_at from chat_messages
+            select message_id, sender_id, body, created_at, kind, payload from chat_messages
             where low_id = $1 and high_id = $2 and message_id > $3
             order by message_id desc
             limit $4
@@ -336,8 +442,14 @@ async def history(viewer_id: uuid.UUID, other_code: str, after_id: int) -> list[
             after_id,
             KEEP_PER_CONVERSATION,
         )
+    # 🔴 kind / payload 必须一起带出去。漏掉的话，收件人**重进聊天时**（走这条 history，
+    # 而不是那条带 kind 的推送）拿到的邀请就是缺字段的 → 渲染成一条普通文本，
+    # 「立即参与」按钮永远不出现，而且不报错。2026-09-27 实测踩到的就是这一处。
     return [
-        Message(int(r["message_id"]), r["sender_id"], r["body"], r["created_at"])
+        Message(
+            int(r["message_id"]), r["sender_id"], r["body"], r["created_at"],
+            str(r["kind"] or "text"), _decode_payload(r["payload"]),
+        )
         for r in reversed(rows)
     ]
 
@@ -352,6 +464,7 @@ async def list_chats(player_id: uuid.UUID) -> list[ChatSummary]:
             last = Message(
                 int(r["last_message_id"]), r["last_sender_id"],
                 r["last_body"], r["last_created_at"],
+                str(r["last_kind"] or "text"), _decode_payload(r["last_payload"]),
             )
         out.append(
             ChatSummary(

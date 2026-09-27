@@ -56,6 +56,22 @@ GATES = [
     #   仓里有实证：`_link_targets_without_doom` 少一个 `_is_boss_fighter(o)`
     #   时，探针 Part 2 立刻红 2 条（候选池里还留着 boss）。见报告 §1。
     "probe_blood_link_boss_immune_925",
+    # ★ 9.27 本批（bug提交和修复.docx 5 条）新增/更新的行为探针。
+    #   进批跑的理由同 9.25：行为探针就是判据，散在手工跑里必然有一条被忘掉。
+    #   - probe_shop_refresh_reconnect_927：重连后商店刷新费用被服务端 roomstate
+    #     覆盖回 0 的 bug（第 3 条）。含「客户端同步点存在 + 被 has() 守卫」的结构断言。
+    #   - probe_poison_reach_927：毒灵被友军挡住导致永远走不到攻击距离（第 4 条）。
+    #     含 L5/L6：可达性感知的选敌（_first_contact 射线）与端到端伤害。
+    #   - probe_lane_partition_927：隔断越界（第 5 条）。含 A/B/C 三层判据 +
+    #     §13/§14 行为断言（边界 α/β/γ/δ + 可跨层技能过滤）。
+    #   见 work/_qa_922/mutate_927_five_fixes.py（6 条变异全红并已还原）。
+    "probe_shop_refresh_reconnect_927",
+    "probe_poison_reach_927",
+    "probe_lane_partition_927",
+    # ★ 9.27 第三批：房间邀请好友（第 2 条）。行为 + 结构两类断言；
+    #   仓里有变异实证 work/_qa_922/mutate_room_invite_927.py（6 条全红并已还原），
+    #   其中 M5 专打「注释掉调用点」这条 —— 说明结构断言是注释感知的。
+    "room_invite_check",
     # ★ 9.25 追加订正（用户回执：教程里刷新刷几次就点不动了）。这条钉的是**判据同源**：
     #   凡是算 shop 刷新费用的地方都只能接 TutorialMode.shop_refresh_all_free()。
     #   它是唯一能抓住「第三处手抄条件漂移」的判据 —— A/B 两组行为断言都不管同源。

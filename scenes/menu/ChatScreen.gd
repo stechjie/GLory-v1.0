@@ -20,8 +20,15 @@ extends Control
 signal back_requested
 # 世界频道里点别人的名字 →「查看资料」。Main 开他的资料页，返回时回到这里的世界页签。
 signal profile_requested(friend_code: String)
+# 私人消息里的房间邀请点了「立即参与」。Main 复用已有的加入流程
+# （先回主菜单再连，见 Main._join_room_by_id 的注释 —— 那里才有「连接中」与失败提示）。
+signal join_room_requested(room_id: int)
 
 const WorldChatPanel := preload("res://scenes/menu/WorldChatPanel.gd")
+# 房间邀请（bug提交和修复.docx 第 2 条）：失效判据、文案、限流全在那一份纯逻辑里，
+# 界面只负责把 payload 里的房间号读出来 + 把「邀请已过时」丢给全局 toast。
+const RoomInvite := preload("res://scripts/multiplayer/RoomInvite.gd")
+const GloryToastScript := preload("res://ui/components/GloryToast.gd")
 const TAB_WORLD := "world"
 const TAB_DM := "dm"
 
@@ -855,7 +862,9 @@ func _render_messages(force_bottom: bool = false) -> void:
 		_msg_box.add_child(_hint(_text("还没有消息，打个招呼吧。", "No messages yet. Say hi!")))
 	else:
 		var max_width := _bubble_max_width()
-		for msg in _messages:
+		# 渲染前把「同一房间的重复邀请」收敛成一条（要求 4：被邀请方只会收到一次）。
+		# 判据在 RoomInvite 那份纯逻辑里，这里只负责调用 —— 不在界面里另写一套。
+		for msg in RoomInvite.dedupe_for_display(_messages):
 			_msg_box.add_child(_bubble(msg, max_width))
 	_refresh_input()
 	if stick:
@@ -863,6 +872,9 @@ func _render_messages(force_bottom: bool = false) -> void:
 
 
 func _bubble(msg: Dictionary, max_width: float) -> Control:
+	# 房间邀请不是普通气泡：它要显示成「框框 + 右下角立即参与」（要求 3）。
+	if RoomInvite.is_invite(msg):
+		return _invite_bubble(msg, max_width)
 	var mine := bool(msg.get("from_me", false))
 	var row := HBoxContainer.new()
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -920,6 +932,108 @@ func _bubble(msg: Dictionary, max_width: float) -> Control:
 		retry.size_flags_horizontal = Control.SIZE_SHRINK_END
 		meta.add_child(retry)
 	return row
+
+
+# 房间邀请的框（要求 3）：上面是定死的那句文案，右下角一个「立即参与」。
+#
+# 与普通气泡分开渲染，是因为用户把它描述成「一个框框 + 右下角按钮」——
+# 气泡的左右对齐讲的是「谁说的」，而邀请要讲的是「可不可以点进去」。
+# 邀请方是对方（from_me == false）：自己发出去的邀请不显示「立即参与」
+# （自己已经在房间里了，按钮没有意义，点下去只会加入自己的房）。
+func _invite_bubble(msg: Dictionary, max_width: float) -> Control:
+	var mine := bool(msg.get("from_me", false))
+	var row := HBoxContainer.new()
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.alignment = BoxContainer.ALIGNMENT_END if mine else BoxContainer.ALIGNMENT_BEGIN
+
+	# 金边方框：邀请要讲的是「可不可以点进去」，不是「谁说的」，所以它和普通气泡
+	# 长得明显不一样 —— 一眼就是个「卡片」，而不是一段聊天文字（要求：做成方框）。
+	var box := PanelContainer.new()
+	box.custom_minimum_size = Vector2(minf(max_width, 460.0), 0)
+	box.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.SURFACE_RAISED, Tokens.GOLD, 14))
+	row.add_child(box)
+
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", Tokens.GAP_S)
+	box.add_child(col)
+
+	# 顶部小标题：和普通聊天气泡拉开距离。
+	var title := Label.new()
+	title.text = RoomInvite.title_text()
+	title.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+	title.add_theme_color_override("font_color", Tokens.GOLD)
+	col.add_child(title)
+
+	var text := Label.new()
+	text.text = RoomInvite.display_text(msg)
+	text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	text.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	col.add_child(text)
+
+	# 右下角：时间在左、按钮在右，按钮贴着框的右下（要求 3 的「右下角有按钮」）。
+	var foot := HBoxContainer.new()
+	foot.alignment = BoxContainer.ALIGNMENT_END
+	foot.add_theme_constant_override("separation", Tokens.GAP_S)
+	col.add_child(foot)
+
+	var stamp := Label.new()
+	stamp.text = ChatService.format_time(str(msg.get("created_at", "")))
+	stamp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	stamp.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	stamp.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	stamp.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+	stamp.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
+	foot.add_child(stamp)
+
+	if not mine:
+		var join := _button(_text("立即参与", "Join now"),
+			func() -> void: _on_invite_join(msg))
+		join.theme_type_variation = Theming.VARIATION_PRIMARY
+		join.custom_minimum_size = Vector2(128, Tokens.TOUCH_MIN)
+		foot.add_child(join)
+	return row
+
+
+# 点「立即参与」。失效则在中上方提示「邀请已过时」（要求 5），否则走已有的加入流程。
+#
+# 失效判据**只有一份**（RoomInvite.is_expired），四种情况（离房 / 解散 / 已开打 / 20 分钟）
+# 都在那里判。界面在这里补上「邀请人此刻在哪个房间」—— 那要问一趟好友列表
+# （fetch_chats 的 ChatItem 不带 room_id，friends 的带），所以这一步是异步的。
+func _on_invite_join(msg: Dictionary) -> void:
+	var room_id := RoomInvite.room_id_of(msg)
+	var created := int(Time.get_unix_time_from_datetime_string(
+		str(msg.get("created_at", "")).substr(0, 19)))
+	var now := int(Time.get_unix_time_from_system())
+	var inviter_room := await _inviter_room_id_now(_open_code)
+	# room_started 客户端拿不到（presence 只报房间号，不报「这间开打了没」）：
+	# 这一条由加入流程自己兜底 —— 房间已开打时加入会被服务端拒绝并给出原因。
+	if RoomInvite.is_expired(room_id, created, now, inviter_room, false):
+		GloryToastScript.show_text(RoomInvite.expired_text())
+		return
+	join_room_requested.emit(room_id)
+
+
+# 邀请人此刻所在的房间号。
+#   ≥ 0                    —— 确定（0 = 确定不在任何房间）
+#   RoomInvite.UNKNOWN_ROOM —— 查不到（请求失败 / 列表里没这个人）
+#
+# 🔴 这两种必须分开：0 要判「已离房 → 失效」，UNKNOWN_ROOM 要放过。
+# 混成一个 0，要么误杀正常邀请、要么漏掉「已离房」——两种都不报错。
+# **以服务端为准**，不从本地猜：本地没有任何关于别人房间的状态。
+func _inviter_room_id_now(code: String) -> int:
+	if code.is_empty():
+		return RoomInvite.UNKNOWN_ROOM
+	var result: Dictionary = await AccountManager.fetch_friends()
+	if int(result.get("code", 0)) / 100 != 2:
+		return RoomInvite.UNKNOWN_ROOM
+	for entry in (result.get("body", {}) as Dictionary).get("friends", []):
+		if entry is Dictionary and str((entry as Dictionary).get("friend_code", "")) == code:
+			var room_value: Variant = (entry as Dictionary).get("room_id")
+			if room_value == null:
+				return 0  # 在好友列表里、但不在任何房间 → 确定已离开
+			return int(room_value)
+	return RoomInvite.UNKNOWN_ROOM
 
 
 func _bubble_max_width() -> float:

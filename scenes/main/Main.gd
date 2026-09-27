@@ -1268,6 +1268,9 @@ func _show_chat_screen(focus_code: String = "", back_to_friends: bool = false, t
 	screen.call("configure", focus_code, tab)
 	var back: Callable = _show_friends_screen if back_to_friends else _show_menu
 	screen.back_requested.connect(back)
+	# 房间邀请框里的「立即参与」。复用好友列表那条已经验过的加入路径：
+	# 先回主菜单再连（那里才有「连接中」与失败提示），理由见 _join_room_by_id。
+	screen.join_room_requested.connect(_join_room_by_id)
 	# 世界频道里点别人的名字 →「查看资料」：看完返回回世界频道（不是好友列表 —— 玩家是从那里来的）。
 	# 举报场合记 world：服务器会把他最近的世界频道发言复制进证据。
 	screen.profile_requested.connect(func(code: String) -> void:

@@ -5576,6 +5576,23 @@ func _apply_server_shop(state: Dictionary) -> void:
 	if str((shop as Dictionary).get("offer_id", "")).is_empty():
 		return
 	server_shop = (shop as Dictionary).duplicate(true)
+	# 9.27 bug 文档第 3 条（重连后商店刷新费用变少）：room_state 里带着**服务端权威**
+	# 的本回合刷新次数，但以前只存进 server_shop（副本），从没搬进
+	# GameState.shop_refresh_uses_this_round —— 而价签（ShopPanel / PrepUI /
+	# PrepBoardController）与实际扣费读的都是后者。
+	#
+	# 触发是确定性的：客机在备战期刷新后掉线 / 杀进程重开 → 那笔刷新的回执在
+	# reset() 的 `_tx_pending.clear()` 里被丢掉（`_tx_consume` 不在等待表里直接
+	# 丢弃）→ 重连后计数停在旧值（常见为 0）→ 价签显示"免费"而服务端按真实
+	# 次数收钱。重连是 `_apply_server_shop` 的主通道，同步它即可自愈。
+	#
+	# 不设「只增不减」的单调保护：**新回合服务端把 refresh_uses 归零，客户端也
+	# 必须跟着归零**（EconomyLedger.reset_shop_refreshes），单调保护会把这条
+	# 正确的回落挡掉。回执路径（:_apply_carrot_receipt 内）传进来的 shop 不带
+	# refresh_uses（次数由它自己的 result 分支写），`has()` 判定保证这里不会
+	# 把它覆盖成 0。
+	if (shop as Dictionary).has("refresh_uses"):
+		GameState.shop_refresh_uses_this_round = maxi(0, int((shop as Dictionary).get("refresh_uses", 0)))
 
 
 func _apply_carrot_state(state: Dictionary) -> void:

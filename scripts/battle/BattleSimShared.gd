@@ -199,13 +199,11 @@ static func _attacker_dark_stacks(attacker: Dictionary, state: Dictionary) -> in
 	return int(state.get("dark_kill_stacks", 0))
 
 # Has the owner cleared the enemies in their own lane? (used by effects 1 & 4)
-
+# 9.27 bug 文档第 5 条：判据改为共用 _lane_has_living_opponent（唯一真源），
+# 不再自留一份「本路还有没有活敌」的写法。
 static func _owner_lane_enemies_cleared(state: Dictionary, owner_team: String, lane: int) -> bool:
 	var enemy_side: Array = state.get("enemy", []) if owner_team == "player" else state.get("player", [])
-	for o in enemy_side:
-		if bool(o.get("alive", false)) and int(o.get("lane", -1)) == lane:
-			return false
-	return true
+	return not _lane_has_living_opponent(enemy_side, lane)
 
 
 static func _team_owner_ctx_for_slot(slot_idx: int) -> Dictionary:
@@ -713,7 +711,7 @@ static func _effective_attack_distance(attacker: Dictionary, target: Dictionary)
 	var target_extra := float(maxi(0, int(target.get("footprint_cells", 1)) - 1)) * CELL_SPACING * 0.5
 	return float(attacker.get("range_px", ATTACK_RANGE_SCALE)) + attacker_extra + target_extra
 
-static func _select_target(f: Dictionary, opponents: Array) -> Dictionary:
+static func _select_target(f: Dictionary, opponents: Array, bodies: Array = []) -> Dictionary:
 	# 嘲讽永远优先，但不覆盖锁定：嘲讽结束后回去打原来的目标（若还有效）。
 	var taunter := _nearest_taunter(f, opponents)
 	if not taunter.is_empty():
@@ -724,7 +722,7 @@ static func _select_target(f: Dictionary, opponents: Array) -> Dictionary:
 	var locked := _locked_target(f, opponents)
 	if not locked.is_empty():
 		return locked
-	var picked := _pick_new_target(f, opponents)
+	var picked := _pick_new_target(f, opponents, bodies)
 	f.locked_target_uid = str(picked.get("uid", ""))
 	return picked
 
@@ -745,7 +743,7 @@ static func _attack_target_index(opponents: Array) -> Dictionary:
 	return {"by_uid": by_uid, "taunters": taunters}
 
 
-static func _select_attack_target(f: Dictionary, opponents: Array, index: Dictionary) -> Dictionary:
+static func _select_attack_target(f: Dictionary, opponents: Array, index: Dictionary, bodies: Array = []) -> Dictionary:
 	var taunter := _nearest_taunter_in(f, index.taunters, opponents)
 	if not taunter.is_empty():
 		return taunter
@@ -753,7 +751,7 @@ static func _select_attack_target(f: Dictionary, opponents: Array, index: Dictio
 	var locked: Dictionary = index.by_uid.get(uid, {}) if not uid.is_empty() else {}
 	if not locked.is_empty() and bool(locked.get("alive", false)) and int(locked.get("hp", 0)) > 0 and _can_target(f, locked, opponents):
 		return locked
-	var picked := _pick_new_target(f, opponents)
+	var picked := _pick_new_target(f, opponents, bodies)
 	f.locked_target_uid = str(picked.get("uid", ""))
 	return picked
 
@@ -771,13 +769,13 @@ static func _locked_target(f: Dictionary, opponents: Array) -> Dictionary:
 	return {}
 
 
-static func _pick_new_target(f: Dictionary, opponents: Array) -> Dictionary:
+static func _pick_new_target(f: Dictionary, opponents: Array, bodies: Array = []) -> Dictionary:
 	# 冥界执行者（death_hunt）重选时优先打血量比例最低的敌人。
 	# （9.24：4 攻击套装已改为斩杀，不再改选敌。）
 	# 必须在组队分支之前判定：线上 3v3 与离线自测全走组队分支，判定写在它后面就永远轮不到。
 	var prefer_low_hp := str(f.get("def", {}).get("skill_id", "")) == "death_hunt"
 	if GameState.team_mode:
-		return _team_select_target(f, opponents, prefer_low_hp)
+		return _team_select_target(f, opponents, prefer_low_hp, bodies)
 	if prefer_low_hp:
 		var low := _lowest_targetable_hp_ratio(f, opponents)
 		if not low.is_empty():
@@ -785,7 +783,7 @@ static func _pick_new_target(f: Dictionary, opponents: Array) -> Dictionary:
 	return _nearest(f, opponents)
 
 
-static func _team_select_target(f: Dictionary, opponents: Array, prefer_low_hp: bool = false) -> Dictionary:
+static func _team_select_target(f: Dictionary, opponents: Array, prefer_low_hp: bool = false, bodies: Array = []) -> Dictionary:
 	# Fight your own lane first; when it is clear, help the LEFT lane (lower
 	# index) before the RIGHT lane. Within a lane: nearest, or lowest HP ratio.
 	var my_lane := int(f.get("lane", 0))
@@ -795,22 +793,110 @@ static func _team_select_target(f: Dictionary, opponents: Array, prefer_low_hp: 
 	for l in range(my_lane + 1, 3):
 		lane_order.append(l)
 	for lane in lane_order:
-		var best: Dictionary = {}
-		var best_score := INF
+		var pool: Array = []
 		for o in opponents:
 			if not bool(o.get("alive", false)) or int(o.get("lane", -1)) != lane or not _can_target(f, o, opponents):
 				continue
-			var score: float
-			if prefer_low_hp:
-				score = float(o.hp) / float(maxi(1, int(o.max_hp)))
-			else:
-				score = float(f.pos.distance_squared_to(o.pos))
-			if score < best_score:
-				best_score = score
-				best = o
-		if not best.is_empty():
-			return best
+			pool.append(o)
+		if pool.is_empty():
+			continue
+		var chosen := _score_target(f, pool, prefer_low_hp)
+		if chosen.is_empty():
+			continue
+		# 9.27 毒灵（bug 文档第 4 条）：**只对「会被友军挡住去路」的单位**启用可达性避让。
+		# 旧口径给出的目标没被挡住 → 原样返回，这类单位的选敌行为与改动前逐字节一致
+		# （集火效率不受影响，也不覆盖 death_hunt 的 prefer_low_hp 特化）。
+		if bodies.is_empty() or not _ally_blocks(f, chosen, bodies):
+			return chosen
+		# 被挡住了：把「沿 f→候选 方向被友军挡住」的候选先剔掉，再在**剩余可达候选**里
+		# 按原打分（距离 / 低血比例）重挑。全被挡住时退回旧目标，交给移动层绕行 —— 与
+		# 「不写第二套几何、不改位移钳制」的既有约定一致。
+		var clear_pool: Array = []
+		for o in pool:
+			if not _ally_blocks(f, o, bodies):
+				clear_pool.append(o)
+		if clear_pool.is_empty():
+			return chosen
+		var rerouted := _score_target(f, clear_pool, prefer_low_hp)
+		return rerouted if not rerouted.is_empty() else chosen
 	return _nearest(f, opponents)
+
+
+# 在给定候选池里按既有口径打分：死亡猎手打血量比例最低，其余打最近。
+# 抽出来只为让「可达性预筛前后」共用同一份打分，不改变打分本身。
+static func _score_target(f: Dictionary, pool: Array, prefer_low_hp: bool) -> Dictionary:
+	var best: Dictionary = {}
+	var best_score := INF
+	for o in pool:
+		var score: float
+		if prefer_low_hp:
+			score = float(o.hp) / float(maxi(1, int(o.max_hp)))
+		else:
+			score = float(f.pos.distance_squared_to(o.pos))
+		if score < best_score:
+			best_score = score
+			best = o
+	return best
+
+
+# 「沿 f→target 这条直线，f 与 target 之间有没有**友军**挡着」。
+# 复用 _first_contact（与 _move_without_pushing 同一套圆-射线扫掠几何），
+# 因此最远扫描距离取到 target 之前一点为止 —— 站在 target 背后的友军不算挡住。
+static func _ally_blocks(f: Dictionary, target: Dictionary, bodies: Array) -> bool:
+	var team := str(f.get("team", ""))
+	var target_uid := str(target.get("uid", ""))
+	var allies: Array = []
+	for b: Dictionary in bodies:
+		if is_same(b, f) or str(b.get("uid", "")) == target_uid:
+			continue
+		if str(b.get("team", "")) != team:
+			continue
+		if not bool(b.get("alive", false)) or int(b.get("hp", 0)) <= 0:
+			continue
+		allies.append(b)
+	if allies.is_empty():
+		return false
+	var delta: Vector2 = Vector2(target.pos) - Vector2(f.pos)
+	var reach := delta.length()
+	if reach <= body_radius(f) + body_radius(target):
+		return false
+	var hit := _first_contact(Vector2(f.pos), body_radius(f), delta / reach, reach, f, allies)
+	var uid := str(hit.get("uid", ""))
+	# contact >= reach ⇒ 那个友军整只在 target 身后，不构成阻挡。
+	return not uid.is_empty() and float(hit.get("contact", INF)) < reach
+
+
+# 圆-射线扫掠：从 position 沿 direction 走 length，返回**最先**挡路的 body。
+# 与 BattleSimulator._move_without_pushing 共用同一份几何（该函数的内层扫掠已改为
+# 调用本函数），这样「选敌避让」与「移动避让」永远看同一个判据，不会漂移。
+# 返回 {"uid": String, "contact": float, "normal": Vector2}；没撞到则 uid 为空、
+# contact = length、normal = ZERO。self_ref 用于排除施动者自己。
+static func _first_contact(position: Vector2, radius: float, direction: Vector2, length: float, self_ref: Dictionary, bodies: Array) -> Dictionary:
+	var travel := length
+	var normal := Vector2.ZERO
+	var hit_uid := ""
+	for other: Dictionary in bodies:
+		if is_same(other, self_ref) or not bool(other.get("alive", false)) or int(other.get("hp", 0)) <= 0:
+			continue
+		var offset: Vector2 = position - Vector2(other.pos)
+		var minimum := radius + body_radius(other) + 0.01
+		if absf(offset.x) > minimum + length or absf(offset.y) > minimum + length:
+			continue
+		var towards := offset.dot(direction)
+		# An existing spawn/skill overlap can move out, never deeper in.
+		if towards >= 0.0:
+			continue
+		var discriminant := towards * towards - (offset.length_squared() - minimum * minimum)
+		if discriminant < 0.0:
+			continue
+		var contact := maxf(0.0, -towards - sqrt(discriminant))
+		var uid := str(other.get("uid", ""))
+		if contact > travel or (is_equal_approx(contact, travel) and not hit_uid.is_empty() and uid >= hit_uid):
+			continue
+		travel = contact
+		normal = (offset + direction * contact).normalized()
+		hit_uid = uid
+	return {"uid": hit_uid, "contact": travel, "normal": normal}
 
 
 static func _nearest(f: Dictionary, opponents: Array) -> Dictionary:
@@ -838,10 +924,94 @@ static func _can_target(attacker: Dictionary, target: Dictionary, opponents: Arr
 	var lane := int(attacker.get("lane", -1))
 	if lane < 0 or int(target.get("lane", -1)) == lane:
 		return true
-	for o in opponents:
+	# 9.27 bug 文档第 5 条（战场隔断越界）：这里以前是第三套「本路还有没有活敌」
+	# 的写法，与 BattleArena._lane_cleared_by / _owner_lane_enemies_cleared 各写一份，
+	# 于是出现「玩法门禁已放开、晶柱还立着」的窗口（现象 P1）。现在三处共用
+	# _lane_has_living_opponent，对手条件在源码层就是同一个函数。
+	return not _lane_has_living_opponent(opponents, lane)
+
+
+# 「opponent_side 在这条 lane 上是否还有活人」—— **唯一真源**。
+# 玩法门禁（本文件 _can_target）、晶柱释放（BattleArena._lane_cleared_by）、
+# 宝物效果 1/4（本文件 _owner_lane_enemies_cleared）必须共用这一条，不许各写一份。
+static func _lane_has_living_opponent(opponent_side: Array, lane: int) -> bool:
+	for o in opponent_side:
 		if bool(o.get("alive", false)) and int(o.get("lane", -1)) == lane:
-			return false
-	return true
+			return true
+	return false
+
+
+# 「这条 lane 上曾经有单位（死活都算）」—— 用来把「开场还没进场」与
+# 「打完了双方都空」区分开，是 B 层（现象 P2）的判据。
+# 死亡单位不会被从 state.player / state.enemy 里移除（全仓没有删除点，只有血链
+# 策反会 erase + append 到另一队），所以「存在 lane 匹配的条目」就等价于
+# 「这条路过过单位」，既不需要新增记忆位、也不需要往回放 frames 里加列。
+static func _lane_ever_occupied(side_a: Array, side_b: Array, lane: int) -> bool:
+	for f in side_a:
+		if int(f.get("lane", -1)) == lane:
+			return true
+	for f in side_b:
+		if int(f.get("lane", -1)) == lane:
+			return true
+	return false
+
+
+# 「team 这一方在这条 lane 上是否已无事可做」= 对手在这路已经没有活人，且这条路
+# 曾经接过战（不是"开场还没进场"）。晶柱释放与「能否跨路」都读这一条。
+static func _lane_cleared_by_side(state: Dictionary, team: String, lane: int) -> bool:
+	var own_side: Array = state.get(team, [])
+	var opposing_side: Array = state.get("enemy" if team == "player" else "player", [])
+	if _lane_has_living_opponent(opposing_side, lane):
+		return false
+	return _lane_ever_occupied(own_side, opposing_side, lane)
+
+
+# 第 boundary_index 道隔断（lane b 与 lane b+1 之间）是否已释放。
+# ★ 这是**唯一**的隔断释放判据：晶柱表现（BattleArena._should_release_3v3_boundary）
+# 反向调用本函数，术式技能也调用它 —— 于是「玩法能不能跨路」与「屏幕上柱子还在不在」
+# 永远是同一个函数说了算，不会再出现 P1 那种「门禁开了、柱子还立着」。
+static func _boundary_released(state: Dictionary, boundary_index: int) -> bool:
+	if boundary_index < 0 or boundary_index > 1:
+		return true
+	var left := boundary_index
+	var right := boundary_index + 1
+	for team in ["player", "enemy"]:
+		if _lane_cleared_by_side(state, team, left) or _lane_cleared_by_side(state, team, right):
+			return true
+	return false
+
+
+# C 层：caster 实际能走到的 lane 集合 —— 自己的 lane，加上**沿途每一道隔断都已释放**
+# 的邻路。瞬移 / 冲锋类技能的选目标必须落在这个集合内，否则就是"跨过一道还立着的
+# 隔断"（现象 P4）。允许"清空自己路后去支援别路"（D1）仍然成立：隔断一旦释放
+# （= 中间那条路已清空），外扩就是允许的。
+# 非 3v3 / 无 lane 信息时返回空数组 —— 调用方据此跳过过滤，1v1 与教学不受影响。
+static func _reachable_lanes_for(caster: Dictionary, state: Dictionary) -> Array:
+	var my_lane := int(caster.get("lane", -1))
+	if not GameState.team_mode or my_lane < 0:
+		return []
+	var out: Array = [my_lane]
+	var l := my_lane
+	while l - 1 >= 0 and _boundary_released(state, l - 1):
+		out.append(l - 1)
+		l -= 1
+	var r := my_lane
+	while r + 1 <= 2 and _boundary_released(state, r):
+		out.append(r + 1)
+		r += 1
+	return out
+
+
+# 把候选池按"可达 lane"过滤（C 层）。无 lane 信息时原样返回。
+static func _opponents_in_reachable_lanes(caster: Dictionary, opponents: Array, state: Dictionary) -> Array:
+	var lanes := _reachable_lanes_for(caster, state)
+	if lanes.is_empty():
+		return opponents
+	var out: Array = []
+	for o in opponents:
+		if lanes.has(int(o.get("lane", -1))):
+			out.append(o)
+	return out
 
 
 static func _teams_have_valid_target_pair(player_units: Array, enemy_units: Array) -> bool:

@@ -174,7 +174,8 @@ static func _skill_stun(caster: Dictionary, opponents: Array, d: Dictionary, sta
 
 static func _skill_black_hole(caster: Dictionary, opponents: Array, d: Dictionary, state: Dictionary) -> void:
 	var dur := _dark_duration(float(d.get("pull_sec", 2.0)), caster, state)
-	for o in opponents:
+	# 9.27（C 层）：候选池先按"可达 lane"过滤 —— 隔断还没释放就不许把别路的人拉过来。
+	for o in _opponents_in_reachable_lanes(caster, opponents, state):
 		if not bool(o.get("alive", false)) or not _can_target(caster, o, opponents) or caster.pos.distance_to(o.pos) > 220.0: continue
 		StatusEffectService.add_status(o, "stun", dur, {})
 		o.pos = o.pos.lerp(caster.pos, 0.45)
@@ -182,7 +183,9 @@ static func _skill_black_hole(caster: Dictionary, opponents: Array, d: Dictionar
 
 
 static func _skill_blink_low_def_backline(caster: Dictionary, allies: Array, opponents: Array, d: Dictionary, state: Dictionary) -> bool:
-	var target := BattleSimulator._lowest_def_backline(caster, opponents)
+	# 9.27（C 层）：候选池先按"可达 lane"过滤 —— 隔断还没释放就不许瞬移过去
+	# （现象 P4：偷袭者 refresh_on_kill=true，清空自己路后可无限跳到别路后排）。
+	var target := BattleSimulator._lowest_def_backline(caster, _opponents_in_reachable_lanes(caster, opponents, state))
 	if target.is_empty():
 		return false
 	_mark_vfx_target(caster, target)
@@ -338,8 +341,11 @@ static func _skill_time_slow(caster: Dictionary, opponents: Array, d: Dictionary
 			StatusEffectService.add_status(o, "slow", float(d.get("duration", 5.0)), {"move_pct": float(d.get("slow_pct", 0.35)), "attack_speed_pct": float(d.get("slow_pct", 0.35))})
 
 
-static func _skill_gold_charge(caster: Dictionary, opponents: Array, d: Dictionary) -> void:
-	var target := _nearest(caster, opponents)
+static func _skill_gold_charge(caster: Dictionary, opponents: Array, d: Dictionary, state: Dictionary) -> void:
+	# 9.27（C 层）：黄金重骑是"唯一一条没被 _skill_target_in_range 挡住的非全局技能"，
+	# 以前会隔着半张地图（甚至跨过还立着的隔断）直接冲锋到 _nearest 身上。
+	# 这里把目标池收窄到"可达 lane"：隔断未释放时选不中别路目标 → 本路也没敌人就不放。
+	var target := _nearest(caster, _opponents_in_reachable_lanes(caster, opponents, state))
 	if target.is_empty(): return
 	caster.pos = target.pos + Vector2(-24, 0) if str(caster.team) == "player" else target.pos + Vector2(24, 0)
 	DamageService.apply_damage(target, int(d.get("skill_damage", 240)), true)

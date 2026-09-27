@@ -151,3 +151,5 @@ glory_server_key*.pem
 /update ssh code.txt
 /_sha256*.txt
 /_代码改动清单*.txt
+# 交付说明同样属本机 delivery/ 产物（与 _sha256*.txt 同类），不进运行仓库。
+/_说明.txt

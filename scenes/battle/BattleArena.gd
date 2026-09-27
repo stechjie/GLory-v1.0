@@ -453,32 +453,16 @@ func _update_3v3_dividers() -> void:
 			barrier.play_release()
 
 
+# 9.27 bug 文档第 5 条（战场隔断越界）：整套"这道隔断释放了吗"的判定已搬到
+# BattleSimShared（唯一真源），这里只做转发。于是三件事读的是同一个函数：
+#   ① 晶柱表现（本函数）② 玩法门禁 BattleSimShared._can_target ③ 术式技能的跨路判定
+# 再也不会出现"门禁已开、晶柱还立着"（P1）或"双方都空、柱子不放"（P2）。
 func _should_release_3v3_boundary(boundary_index: int) -> bool:
-	var left_lane := boundary_index
-	var right_lane := boundary_index + 1
-	return (
-		_lane_cleared_by("player", left_lane)
-		or _lane_cleared_by("enemy", left_lane)
-		or _lane_cleared_by("player", right_lane)
-		or _lane_cleared_by("enemy", right_lane)
-	)
+	return BattleSimShared._boundary_released(_state, boundary_index)
 
 
 func _lane_cleared_by(team: String, lane: int) -> bool:
-	var own_side: Array = _state.get(team, [])
-	var opposing_team := "enemy" if team == "player" else "player"
-	var opposing_side: Array = _state.get(opposing_team, [])
-	var own_survivor := false
-	for fighter in own_side:
-		if bool(fighter.get("alive", false)) and int(fighter.get("lane", -1)) == lane:
-			own_survivor = true
-			break
-	if not own_survivor:
-		return false
-	for fighter in opposing_side:
-		if bool(fighter.get("alive", false)) and int(fighter.get("lane", -1)) == lane:
-			return false
-	return true
+	return BattleSimShared._lane_cleared_by_side(_state, team, lane)
 
 func _add_result_overlay(arena_wrap: Control) -> void:
 	_result_overlay_lbl = Label.new()

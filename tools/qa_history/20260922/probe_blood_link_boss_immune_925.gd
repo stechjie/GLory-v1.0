@@ -58,6 +58,9 @@ func _ready() -> void:
 	print("\n=== Part 5: 接线文本断言（只证「写了且没被注释」，行为由上面几条验）===")
 	_part_wiring()
 
+	print("\n=== Part 6（9.27 docx 第 1 条）：血链目标星级不得高于自身 ===")
+	_part_star_limit()
+
 	GameState.team_mode = _saved_team_mode
 	if _fail == 0:
 		print("\nPROBE_DONE checks=%d fail=0" % _checks)
@@ -252,7 +255,142 @@ func _part_wiring() -> void:
 		"wiring：谓词补了 ally_ 前缀兜底")
 
 
+# --- Part 6: 星级限制（9.27 docx 第 1 条）------------------------------------
+#
+# 口径（用户拍板）：血链连接**最近非Boss、非唯一棋子且星级不高于自身**的敌人。
+#
+# 期望值独立算：候选 = 敌方里 star <= caster.star 的那些（按场景结构推出来，
+# 不借 `_link_targets_without_doom` 自己）。位置全部落在同一条 lane，避免把
+# 「分路可达」误当成「星级过滤」。
+func _part_star_limit() -> void:
+	# 6a. 3 星守卫 vs 敌方 [3 星民兵, 4 星民兵] → 池里只剩 3 星那只。
+	var s1: Dictionary = SIM.build_test_state({
+		"placements": [
+			{"slot": 0, "cell": 2, "kind": "piece", "unit_id": DOOM, "star": 3},
+			{"slot": 3, "cell": 5, "kind": "piece", "unit_id": MIL, "star": 3},
+			{"slot": 3, "cell": 7, "kind": "piece", "unit_id": MIL, "star": 4},
+		],
+		"slot_treasures": {},
+	}, true)
+	var doom3 := _find_by_id(s1, DOOM)
+	var mils := _all_by_id(s1, MIL)
+	if not _expect(mils.size(), 2, "[star] 两只民兵（3 星 / 4 星）都造出来了"):
+		return
+	var enemy_stars: Array = _stars_of(s1.get("enemy", []))
+	enemy_stars.sort()
+	print("  [diag] 敌方星数=%s；守卫 star=%s" % [str(enemy_stars), str(int(doom3.get("star", -1)))])
+
+	var pool: Array = BattleSimulator._link_targets_without_doom(doom3, s1.get("enemy", []))
+	var pool_stars: Array = _stars_of(pool)
+	pool_stars.sort()
+	print("  [diag] star-limit 候选池星数=%s" % str(pool_stars))
+	_expect(pool_stars, [3], "[star] ★ 候选池只留 star <= 3 的那只（4 星被排除）")
+
+	# 6b. 独立交叉验证：池里每一项都满足 star <= caster.star。
+	var all_le := true
+	for f in pool:
+		if int(f.get("star", 1)) > int(doom3.get("star", 1)):
+			all_le = false
+	_expect(all_le, true, "[star] 池里每一项都满足 star <= caster.star（独立复算）")
+
+	# 6c. 最近合法目标必须落在 3 星那只上（4 星那只更近也不许选）。
+	var nearest: Dictionary = BattleSimulator._nearest_non_boss(doom3, s1.get("enemy", []))
+	_expect(int(nearest.get("star", -1)), 3, "[star] ★ _nearest_non_boss 选中的是 3 星那只（不是更近的 4 星）")
+
+	# 6d. 上界含等号：4 星守卫对 [3 星, 4 星] → 两只都合法。
+	var s2: Dictionary = SIM.build_test_state({
+		"placements": [
+			{"slot": 0, "cell": 2, "kind": "piece", "unit_id": DOOM, "star": 4},
+			{"slot": 3, "cell": 5, "kind": "piece", "unit_id": MIL, "star": 3},
+			{"slot": 3, "cell": 7, "kind": "piece", "unit_id": MIL, "star": 4},
+		],
+		"slot_treasures": {},
+	}, true)
+	_expect(BattleSimulator._link_targets_without_doom(_find_by_id(s2, DOOM), s2.get("enemy", [])).size(),
+		2, "[star] 4 星守卫：3 星与 4 星目标都合法（判据是 <= 不是 <）")
+
+	# 6e. 缺 star 字段 → 按 1 星（不能因为字段缺失就放行高星目标）。
+	#     这一条专门测"字段缺失"分支，直接手搓最小字典驱动生产谓词。
+	var bare_caster := {"uid": "p_bare", "team": "player", "pos": Vector2(0, 0), "def": {}}
+	var bare_star3 := {"uid": "e_bare3", "team": "enemy", "pos": Vector2(0, 0), "def": {}, "star": 3}
+	_expect(BattleSimulator._link_targets_without_doom(bare_caster, [bare_star3]).size(),
+		0, "[star] caster 缺 star 字段按 1 星 → 3 星目标被排除")
+
+	# 6f. 端到端：1 星守卫对 3 星目标 → 不策反、不计为已用（技能确实跑到了）。
+	var s3: Dictionary = SIM.build_test_state({
+		"placements": [
+			{"slot": 0, "cell": 2, "kind": "piece", "unit_id": DOOM, "star": 1},
+			{"slot": 3, "cell": 5, "kind": "piece", "unit_id": MIL, "star": 3},
+		],
+		"slot_treasures": {},
+	})
+	var low := _find_by_id(s3, DOOM)
+	low.erase("shared_link_uid")
+	low.erase("shared_link_spent")
+	low.erase("shared_link_last_hp")
+	var low_enemies: Array = s3.get("enemy", [])
+	BattleSimulator._skill_shared_hp_link(low, low_enemies, {}, s3)
+	var low_guard := _find_by_id(s3, DOOM)
+	var low_victim := _find_by_id(s3, MIL)
+	print("  [diag] 1v3 星：守卫存活=%s spent=%s；目标 team=%s"
+		% [str(bool(low_guard.get("alive", false))), str(bool(low_guard.get("shared_link_spent", false))),
+			str(low_victim.get("team", ""))])
+	if _expect(bool(low_guard.get("alive", false)), true, "[star] 1 星守卫仍存活（前提：否则否定断言会空过）"):
+		_expect(str(low_victim.get("team", "")), "enemy", "[star] ★ 1 星守卫对 3 星目标：没被策反")
+		_expect(bool(low_guard.get("shared_link_spent", false)), false, "[star] ★ 也没被记成已使用（下次还能再连）")
+
+	# 6g. 端到端：3 星守卫对 3 星目标 → 真的策反。
+	var s4: Dictionary = SIM.build_test_state({
+		"placements": [
+			{"slot": 0, "cell": 2, "kind": "piece", "unit_id": DOOM, "star": 3},
+			{"slot": 3, "cell": 5, "kind": "piece", "unit_id": MIL, "star": 3},
+		],
+		"slot_treasures": {},
+	})
+	var eq := _find_by_id(s4, DOOM)
+	eq.erase("shared_link_uid")
+	eq.erase("shared_link_spent")
+	eq.erase("shared_link_last_hp")
+	BattleSimulator._skill_shared_hp_link(eq, s4.get("enemy", []), {}, s4)
+	_expect(str(_find_by_id(s4, MIL).get("team", "")), "player",
+		"[star] ★ 3 星守卫对 3 星目标：被策反（边界合法）")
+
+	# 6h. 文案（结构，zh + en 同源）：新句在场、旧句不在场。
+	var udf := FileAccess.get_file_as_string("res://scripts/ui/UnitDetailFormat.gd").replace("\r\n", "\n")
+	_expect(udf.contains("连接最近非Boss，非唯一棋子且星级不高于自身的敌人"), true,
+		"[star] zh 文案含新口径「星级不高于自身」")
+	_expect(udf.contains("连接最近非Boss，非唯一棋子敌人"), false,
+		"[star] zh 旧口径（无星级）已不存在")
+	_expect(udf.contains("whose star is no higher than your own"), true,
+		"[star] en 文案同步")
+
+	# 6i. 结构：星级过滤确实写在**候选池函数体**里（不是写在调用点旁边）。
+	var src := FileAccess.get_file_as_string("res://scripts/battle/BattleSimulator.gd").replace("\r\n", "\n")
+	var fi := src.find("func _link_targets_without_doom")
+	var body := src.substr(fi, 1200) if fi >= 0 else ""
+	_expect(body.contains("var caster_star := maxi(1, int(caster.get(\"star\", 1)))"), true,
+		"[star] 候选池函数体里算了 caster_star")
+	_expect(_has_live_code(body, "if maxi(1, int(o.get(\"star\", 1))) > caster_star:"), true,
+		"[star] 候选池函数体里有 star 过滤（且没被注释掉）")
+
+
 # --- helpers -----------------------------------------------------------------
+
+func _all_by_id(state: Dictionary, unit_id: String) -> Array:
+	var out: Array = []
+	for side in ["player", "enemy"]:
+		for f in state.get(side, []):
+			if typeof(f) == TYPE_DICTIONARY and str((f as Dictionary).get("id", "")) == unit_id:
+				out.append(f)
+	return out
+
+
+func _stars_of(fighters: Array) -> Array:
+	var out: Array = []
+	for f in fighters:
+		if typeof(f) == TYPE_DICTIONARY:
+			out.append(int((f as Dictionary).get("star", 1)))
+	return out
 
 func _cfg_mixed() -> Dictionary:
 	return {
