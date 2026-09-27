@@ -80,6 +80,7 @@ Supabase Dashboard → SQL Editor，按编号顺序逐个执行。
 | `017_account_deletion.sql` | 注销 = 删资料、留账目。`erase_player()` 删资料与社交、换好友码，账目保留；`players.deleted_at` |
 | `018_admin.sql` | 网页运营后台：管理员名单、发钱的审批、只追加的操作记录；附 `grant_coin()` |
 | `019_world_chat.sql` | 世界频道消息（7 天，删除打标记）、禁言（只管世界频道，附 `mute_player()` / `unmute_player()`）、举报（证据服务器当场复制）；`erase_player()` 重定义为多删世界频道发言。设计见 `docs/聊天系统设计.md` 批次 E |
+| `021_prep_skin.sql` | 棋盘皮肤：`players.prep_skin`（null = 默认），只有自己看得见、不进出战名片。设计见 `docs/棋盘皮肤.md` |
 
 **真库测试**：`backend/tests/pg_harness.py` 能在本机 PostgreSQL 上把这里全部文件跑一遍再测（设 `GLORY_TEST_PG`，只许本机）。
 见 `docs/运营后台设计.md` 第七节。

@@ -767,18 +767,25 @@ func fetch_announcements() -> Dictionary:
 	return await _request(HTTPClient.METHOD_GET, "/v1/announcements", null, true)
 
 
-# 每个请求都带上客户端版本（docs/公告系统设计.md「报版本号」）。**今天服务端还不读它** ——
-# 加它是为了以后能「只给旧版本弹请更新」：已经发出去的包补不上这个头，只能从这一版开始带。
-# build 取 build_info.json 的 version_code；编辑器里跑没有这个文件，记 0。
+# 每个请求都带上客户端版本（docs/公告系统设计.md「报版本号」）。账号服务器据此把旧包不认识的
+# 商品藏起来（backend/app/routes/shop.py 的 visible_to，第一个用上的是棋盘皮肤）。
+# 已经发出去的包补不上这个头，只能从加它的那一版开始带。
+#
+# build 取 build_info.json 的 version_code，**只在导出的包里**；编辑器里跑一律记 0。
+# 编辑器里不能读那个文件：它是出包前现生成、出完就留在项目根目录的（被 git 忽略），
+# 读了等于编辑器冒充上一次出的那个包。2026-09-28 就是这样：残留的 vc16 让账号服务器
+# 把皮肤商品藏了，备战页以为冰雪是免费的，点「使用」被拒。
 const CLIENT_HEADER := "X-Glory-Client"
 var _client_header_line := ""
 
 
 func client_header_line() -> String:
 	if _client_header_line.is_empty():
-		var info: Dictionary = StartupTrace.build_info()
+		var build := 0
+		if OS.has_feature("template"):
+			build = int(StartupTrace.build_info().get("version_code", 0))
 		_client_header_line = "%s: protocol=%d; build=%d" % [
-			CLIENT_HEADER, NetworkConfig.NETWORK_PROTOCOL_VERSION, int(info.get("version_code", 0))]
+			CLIENT_HEADER, NetworkConfig.NETWORK_PROTOCOL_VERSION, build]
 	return _client_header_line
 
 

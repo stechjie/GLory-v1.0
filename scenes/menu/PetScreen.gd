@@ -514,13 +514,14 @@ func _load_skin_ownership() -> void:
 	_skin_ownership = SkinOwnership.READY
 	_refresh_skins()
 
-# 能不能直接用。没拉到目录时（失败）一律当能用 —— 账号服务器会把没买的挡回来，
-# 比「网络一抖整页都锁住」好。
+# 能不能直接用。知道在卖的，买了才能用；不在卖的清单里：拉到了清单就是免费，
+# 没拉到（失败）先当能用 —— 账号服务器会把没买的挡回来，比「网络一抖整页都锁住」好。
 func _skin_usable(skin_id: String) -> bool:
-	if skin_id == PrepSkin.DEFAULT_ID or _skin_ownership == SkinOwnership.FAILED:
+	if skin_id == PrepSkin.DEFAULT_ID:
 		return true
-	return _skin_ownership == SkinOwnership.READY \
-		and (not _skin_sold.has(skin_id) or _skin_owned.has(skin_id))
+	if _skin_sold.has(skin_id):
+		return _skin_owned.has(skin_id)
+	return _skin_ownership == SkinOwnership.READY or _skin_ownership == SkinOwnership.FAILED
 
 func _refresh_skins() -> void:
 	if _skin_cards.is_empty():
@@ -544,13 +545,13 @@ func _refresh_skin_card(skin_id: String, is_active: bool) -> void:
 	var loading := _skin_ownership == SkinOwnership.LOADING or _skin_ownership == SkinOwnership.NOT_LOADED
 	if skin_id == PrepSkin.DEFAULT_ID:
 		status_lbl.text = tr("skin_status_free")
+	elif _skin_sold.has(skin_id):
+		status_lbl.text = tr("skin_status_owned") if _skin_owned.has(skin_id) else tr("skin_status_locked")
 	elif loading:
 		status_lbl.text = tr("skin_status_loading")
 	elif _skin_ownership == SkinOwnership.FAILED:
 		# 没拉到目录：不知道要不要钱，宁可不写，也别把卖的写成「免费」。
 		status_lbl.text = ""
-	elif _skin_sold.has(skin_id):
-		status_lbl.text = tr("skin_status_owned") if _skin_owned.has(skin_id) else tr("skin_status_locked")
 	else:
 		status_lbl.text = tr("skin_status_free")
 	if is_active:
@@ -575,9 +576,17 @@ func _on_skin_card_pressed(skin_id: String) -> void:
 	# 存要走一次网络。期间按住所有「使用」，免得连点发出好几次。
 	_skin_busy = true
 	_refresh_skins()
-	var ok: bool = await PlayerProfile.set_prep_skin(skin_id)
+	var code: int = await PlayerProfile.set_prep_skin(skin_id)
 	if not is_inside_tree():
 		return
 	_skin_busy = false
-	GloryToast.show_text(tr("skin_saved") % PrepSkin.display_name(skin_id) if ok else tr("skin_save_failed"))
+	if code / 100 == 2:
+		GloryToast.show_text(tr("skin_saved") % PrepSkin.display_name(skin_id))
+	elif code == 403:
+		# 账号服务器说这张要买、还没买（页面以为它免费，比如拿到的商城目录不全）。按它说的算。
+		_skin_sold[skin_id] = true
+		_skin_owned.erase(skin_id)
+		GloryToast.show_text(tr("skin_not_owned"))
+	else:
+		GloryToast.show_text(tr("skin_save_failed"))
 	_refresh_skins()

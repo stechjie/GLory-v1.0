@@ -576,14 +576,16 @@ func refresh_prep_skin() -> bool:
 	return true
 
 
-func set_prep_skin(skin_id: String) -> bool:
+# 返回 HTTP 状态码，调用方据此说人话：2xx 换好了（本来就是这张也算）；
+# 403 = 这张要买、还没买；0 / 5xx = 网络或服务器。
+func set_prep_skin(skin_id: String) -> int:
 	if skin_id == PrepSkin.active_id:
-		return true
+		return 200
 	var result: Dictionary = await AccountManager.save_prep_skin(skin_id)
-	if int(result.get("code", 0)) / 100 != 2:
-		return false
-	_adopt_prep_skin(result.get("body", {}))
-	return true
+	var code := int(result.get("code", 0))
+	if code / 100 == 2:
+		_adopt_prep_skin(result.get("body", {}))
+	return code
 
 
 # body = {"skin": id | null}，null = 默认。这个包里没有的皮肤也照收 —— PrepSkin 取图时自己退回默认；
