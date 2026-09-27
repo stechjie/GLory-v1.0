@@ -122,6 +122,15 @@ const CUE_PROFILE_SAVE := "profile_save"
 const CUE_SETTINGS_SWITCH := "settings_switch"
 const CUE_VOICE_SWITCH := "voice_switch"
 
+# --- 9.26 大厅宠物脚步声 ----------------------------------------------------
+#
+# 大厅里每只宠物各带一个独立 AudioStreamPlayer（挂在各自 pet Node3D 下，不走
+# SfxService 的共享播放器池）。脚步是「移动时按步频触发、停下即静默」的短促
+# 一次性音，多只宠物同帧迈步也要各自独立发声 —— 而共享池有 40ms 全局重触发
+# 保护 + 8 路上限，会吞掉同帧的其余脚步，所以这条 cue 只用作「文件路径的来源」，
+# 真正播放由各宠物的独立播放器完成（见 MainMenuPet.gd）。
+const CUE_PET_FOOTSTEP := "pet_footstep"
+
 # --- 9.19 第二批（`音乐/0919/战斗、特效` 9 个素材）--------------------------
 #
 # 用户口径两条：
@@ -308,6 +317,8 @@ const CUES := {
 	CUE_STAR4_POISON_PROC: "res://assets/audio/sfx/battle/star4_poison_proc.mp3",
 	CUE_STAR4_TITAN_PROC: "res://assets/audio/sfx/battle/star4_titan_proc.mp3",
 	CUE_STAR4_MOTONG_PROC: "res://assets/audio/sfx/battle/star4_motong_proc.mp3",
+	# 9.26 大厅宠物脚步声。素材放 lobby/ 下（其它四类是 ui/prep/battle/camp）。
+	CUE_PET_FOOTSTEP: "res://assets/audio/sfx/lobby/pet_footstep.wav",
 }
 
 # 每条 cue 的最小重触发间隔（毫秒）。缺省是 RETRIGGER_GUARD_MSEC。

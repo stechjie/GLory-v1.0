@@ -1,106 +1,13 @@
-9.25 批次交付说明（客户端 GloryBeta0925）
+9.26 大厅宠物脚步声 交付清单（同目录同路径备份）
 ================================================
+需求：大厅宠物移动时发出脚步声，所有宠物独立播放，移动对应脚步发声，停下声音消失。
+做法：每只宠物一个独立 AudioStreamPlayer（挂在 pet Node3D 下，不走 SfxService 共享池）；
+      新增 CUE_PET_FOOTSTEP（cue 表 75→76）+ 素材 pet_footstep.wav。
+二次修订：首版合成音用户反馈「偏嘈杂刺耳」，已改用用户提供的真实现场素材
+      「音效｜草地雪地脚步声｜音频.mp3」重设计（取最干净的单步 + 7kHz 低通柔化去刺
+      + 首尾淡入淡出，峰值 0.5），生成脚本 gen_pet_footstep_from_mp3.py（miniaudio 解码）。
+      新增门禁 pet_footstep_check（22 项，含步频/独立性/静音门行为断言）。
 
-来源：桌面《9.25bug提交及修复.docx》—— 2 条玩法问题 + 新手教程 6 项优化。
-用户另经问答锁定：① 「法阵 boss」= boss_* 与 ally_* 两者都免疫；
-② 技能文案保留星级差异（1~3 星不带回血句、4 星带），只去掉尾部「Boss免疫。」。
-
-夹结构
-------
-  9.25交付_01_代码/   本批改动/新增的源码与门禁脚本（11 个文件）
-  9.25交付_02_文档/   文档 + 可复跑的判据脚本 + 原始读数（证据）
-
-两个夹里都**保留工程内相对路径**（同目录同路径），直接对应回 GLory-work 工程。
-本批**没有新增或修改任何资源文件**，所以没有「_资源」夹。
-
-改了什么（逐条）
-----------------
-① 血链不能策反 boss_* / ally_*
-   scripts/battle/BattleSimulator.gd
-   - 新增谓词 _is_formation_ally_fighter()（读 is_formation_ally 字段 + ally_ 前缀兜底）
-   - _nearest_non_boss / _link_targets_without_doom / _skill_shared_hp_link 三处接同一个谓词
-   - ★ 探针第一次跑就是 44/2：_link_targets_without_doom 里还留着 boss，已补 _is_boss_fighter(o)
-
-② 技能文案
-   scripts/ui/UnitDetailFormat.gd（zh + en 两处；英文同步删掉 "Boss immune."、补 non-unique）
-
-③ 新手教程 6 项
-   ⑴ 前置任务提示 -> 「请先完成前置任务」（TutorialMode.follow_arrow_hint）
-      ★ 与既存门禁 V3 P1-10「至少 5 种说法」正面冲突，已换成逐字断言（见 docs/CHECKS.md）
-   ⑵ 萝卜营地：在 CARROT_CAMP 分支推完补 _refresh_prep()，升级按钮同一帧亮起
-      （根因：PrepUI._toggle_carrot_camp 先 refresh 再上报状态，推进后没人再刷视图）
-   ⑶ 商店刷新无限次+永久免费：新增唯一判定源 TutorialMode.shop_refresh_all_free()，
-      两个使用点都改读它；FILL_SHOP 去掉 human_death_servant
-   ⑷⑸ 开战门槛：新增 battle_board_gate_message()（3 / 7），
-        拦截点在 PrepFlowController._on_start_battle()
-   ⑹ 不再弹「教学目标暂时不可用」：_target_control() 传空串；update_overlay() 沿用上次位置
-
-附带（排查中发现，非用户提交项）
---------------------------------
-★ 9.24 探针 probe_doom_thunder_924 并入批跑后转红（checks=56 fail=1）。
-  bisect_925_regression.py 证明**与本轮血链改动无关**（3 处改动全部撤销仍红）。
-  真因：断言用 g["hp"]=0 并不足以让单位阵亡 —— 模拟器里 alive=false 只在
-  DamageService.apply_damage() 内锁存（DamageService.gd:280-282），
-  而 4 星末日守卫连接期间每 tick 回血，下一 tick 就把 0 抬回来。
-  已订正为走生产死亡路径，57/57 全绿。定位过程见 02_文档 里的
-  bisect_925_summary_prered.txt（订正前跑 -> 4/4 红）与 probe924_run1~3.txt（3/3 红）。
-★ 源码树里发现三个 2026-09-23 的过时 .mutbak（BattleVfx / BattleSimulator / SfxService）。
-  变异脚本带「发现残留 .mutbak 先还原」的启动自愈 —— 再跑一次就会把这两个文件
-  静默回退到 9.23、9.24+9.25 两轮修复全没。已**移动（不是删除）**到
-  work/_qa_922/stale_mutbak_923/，随本批一并交付可回溯。
-
-★ 9.25 追加订正（当天下午，用户截图回执）：教程商店刷新「免费」只生效了一半。
---------------------------------
-现象：教程里刷新刷几次之后就点不动 —— 按钮在、标着免费，按下去毫无反应（不是扣钱，是无响应）。
-根因：刷新费用在客户端被算了**三遍**，「唯一判定源」当时只改了**两处**，漏了第三处
-  scenes/prep/PrepUI.gd::_on_refresh_shop_control_pressed()（刷新按钮的前置判定）。
-  它留着旧的 all_free := TreasureService.has_set("money")（少了 GameState.tutorial_mode）
-  -> 教程里 cost 按 escalating_unit_price(uses) 递增 -> 超过金币就**静默 return**
-  （不播燃烧动画、不刷新）。"刷几次才失效"是因为 shop_refresh_cost 在 uses<=0 时短路返 0
-  （第一次永远免费），之后 10 -> 20 -> 40 递增，金币吃干即"死"。
-改法：第三处接**同一个函数** TutorialMode.shop_refresh_all_free()（不是照抄同一串条件）。
-新增门禁：tools/shop_refresh_free_source_check.gd/.tscn（19 项）
-  A 费用档位 6 / B 教程恒免费 2（刷 999 次仍 0）/ **C 调用点同源 7（唯一能抓本次事故的一组）**
-  / D 服务端分层反向哨兵 3。
-  ★ C 递归扫 res://scenes 下**每一处** shop_refresh_cost( 调用点，要求所属函数体内出现
-    共享谓词 —— 写死文件清单等于提前豁免下一次同类错。
-  ★ 范围只到客户端层：服务端 EconomyLedger._shop_refresh 的 free 来自 payload 的
-    owned_treasures（权威分层，不是重复），教学不走服务端，改用 D 组反向钉住。
-变异实证：work/_qa_922/mutate_shop_refresh_925.py
-  退回旧写法 -> 立刻红 2 条并**指名到** PrepUI.gd:2105 的 func，
-  MUTATION_VERDICT OK red=True green=True restored=True（二进制读写 + sha256 逐字节还原）。
-  ★ 排查中两个坑：① _func_start 只认 "func " 不认 "static func" -> 对全 static func 的文件
-    回溯到文件头 class_name 行，报出的"所在函数"是假的；② escalating_unit_price(999) =
-    10*2^998 **int64 溢出**，判据别用超大数验递增侧（all_free=true 侧短路返 0，用多大都安全）。
-
-验证口径（请连口径一起看）
---------------------------
-* 批跑 **32 条 -> 28 PASS / 4 FAIL**（31 条是追加订正前的读数；+1 = 新增
-  shop_refresh_free_source_check）；4 条红全部为既存，计数与 9.24 一致：
-  voice 8 / dynamic_call 4 / procedural_ui_ratchet 3 / prep_text_coverage 1。
-  **一条都没多。** 没有用 --update-baseline 刷绿。
-* cold_parse_chain 读数 44 -> 65 ->（§14）**71**（TARGETS 再 +2：PrepUI.gd + 新门禁脚本）。
-  shop_refresh_free_source **19** / probe_doom_thunder_924 57 / probe_blood_link_boss_immune_925 46。
-* ★ 批跑清单 != 全部门禁。asset_manifest_check 不在清单里且长期红（既存 6 条
-  missing_asset，本轮未新增资源故未单跑）；tutorial_arrow_alignment_check 要求独立
-  custom user dir，在本工程根直接跑必 rc=2，本轮未运行。
-  「27 PASS」这个口径没有涵盖这两条。
-* ★ 判据最硬的是 ①（行为探针 46 条，含先红后绿实证）。
-  ② / ③⑵ / ③⑷⑸ / ③⑹ **没有专门的自动化判据** —— tutorial_* 全绿只证明不回归，
-  不证明「按钮真的亮了」「提示真的不弹了」。
-* 未做真机 / 观感验收，未重新导出 EXE / APK。
-
-怎么自己复跑
-------------
-  1. 把 01_代码 / 02_文档 里的文件按相对路径覆盖回工程（或直接对比 sha256）。
-  2. 批跑：python work/_qa_922/run_gates.py
-  3. 单跑新探针：
-     <godot>_console.exe --headless --path <工程> work/_qa_922/probe_blood_link_boss_immune_925.tscn
-     通过行：PROBE_DONE checks=46 fail=0
-  4. 回归定位（会临时改源码再按 sha256 还原，请先自行备份）：
-     python work/_qa_922/bisect_925_regression.py
-  5. 单跑 §14 新门禁：
-     <godot>_console.exe --headless --path <工程> tools/shop_refresh_free_source_check.tscn
-     通过行：CHECK_RESULT name=shop_refresh_free_source status=PASS checked=19 failures=0
-  6. §14 变异实证（临时改 PrepUI.gd 再按 sha256 还原，结尾打印 MUTATION_VERDICT）：
-     python work/_qa_922/mutate_shop_refresh_925.py
+本夹含文件见 _sha256清单.txt。验证：pet_footstep_check 22/0、audio_sfx_check 228/0、
+cold_parse_chain_check 80/0，均 PASS（覆盖交付前重跑）。
+未做真机/观感与 EXE/APK 验收。

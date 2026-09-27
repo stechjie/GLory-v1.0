@@ -58,7 +58,9 @@ const CHECK_NAME := "audio_sfx"
 #   开始游戏成功 / 失败 2 条（Main / Team3v3Lobby 直接 play），故 53 → 60。
 # 注：`音乐/0921` 里另外两个文件（设置语音·画质切换 / 语音档位切换）与工程内
 # 既有的 settings_switch / voice_switch **逐字节相同**，是覆盖而非新增，不计数。
-const EXPECTED_CUE_COUNT := 75
+# 9.26 大厅宠物脚步声：1 条**新增** cue（`pet_footstep`，素材在 lobby/ 下，
+#   由各宠物独立播放器播，不进共享池），故 75 → 76。
+const EXPECTED_CUE_COUNT := 76
 
 # 播 SfxService 的生产代码扫描范围。**刻意不含 `res://tools`** ——
 # 门禁自己会调 play()，算进来就等于让门禁给自己的断言当证人

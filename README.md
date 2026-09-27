@@ -2059,3 +2059,21 @@ A 费用档位 / B 教程恒免费（刷 **999 次**仍为 0）/ C **递归扫 `
 §14 的判据只证"费用算得对 + 判定同源"，不证"点下去按钮真的动了、商店真的重新上货了"。
 
 详见[9.25 末日守卫血链与新手教程优化记录](docs/9.25末日守卫血链与新手教程优化记录.md)。
+
+## 2026-09-26：大厅宠物移动脚步声（独立播放 · 移动发声 · 停下静默）
+
+用户大厅界面截图里宠物在草地上走动，要求给每只宠物加移动脚步声，三条硬要求：所有宠物独立播放、移动时对应脚步发声、停下时声音消失，并设计适配音、更新文档/README、变动文件同目录同路径备份桌面。
+
+**做法（不走 SfxService 共享池）。** 大厅最多 5 只宠物在各自 SubViewport 里独立走动、迈步不同步；SfxService 的 8 路播放器池 + 40ms 全局重触发保护会在「多只同帧迈步」时吞掉其余脚步，破坏「独立播放」。故每只宠物在 `_spawn_pet()` 里挂**自己的** `AudioStreamPlayer`（`PetFootstepPlayer`，挂在 pet Node3D 下、不是 root、名字避开 `GlorySfxVoice*`/`GlorySfxLoopVoice`），脚步直接播在私有播放器上。`CUE_PET_FOOTSTEP`（`ui/services/SfxService.gd` 新增，cue 表 75→76）只用作素材路径来源。
+
+**步频与触发。** `FOOTSTEP_INTERVAL=0.36` 秒/步，与 `MOVE_SPEED=1.15` 对齐防打滑。纯静态 `advance_footstep(entry,delta)` 只在 `state=="walk"` 时累加、跨阈值返回 `true` 取模复位，非 walk 直接清零返回 `false`；`_step_pet` 的 walk 分支每帧推进位移后调用，返回 `true` 即 `_play_footstep`。`_play_footstep` 先过 `Presentation.ui_sound_allowed()`（与全局静音门同源），再在私有播放器 `play()`；停下即不再触发，短促一次性音（0.18s）自然结束。
+
+**素材（一只「软质爪步」）。** `assets/audio/sfx/lobby/pet_footstep.wav`（44.1kHz/单声道/16-bit/0.18s）。首版用 `gen_pet_footstep_wav.py` 合成、用户反馈「偏嘈杂刺耳」后，**二次修订改用用户提供的真实现场素材 `音效｜草地雪地脚步声｜音频.mp3` 重设计**：取最孤立干净的一段单步（峰值±0.03/0.15s），两级 2 阶低通 @ 7kHz 柔化去刺 + 首尾 5ms 淡入淡出，峰值压到 0.5 坐到 UI 音效之下，无尾音避免「停下还在响」。脚本 `work/_qa_922/gen_pet_footstep_from_mp3.py`（miniaudio 剥离 ID3 后解码）。各宠物随机微调 `pitch_scale`(0.92~1.08) 防同帧机械复读。
+
+**门禁 `pet_footstep_check`（22 项，先红后绿）。** 验：cue 登记+文件存在+能被 load；MainMenuPet 须引用 `CUE_PET_FOOTSTEP` 且不得出现 `SfxService.play(`；播放器命名/挂法不污染 audio_sfx_check 的「池==8」；步频（行走约 3 区间响约 3 声、idle 零发声）；**5 只同帧迈步各自响一声（独立性）**；静音门（关开关一声不响）。门禁见 `docs/9.26大厅宠物脚步声.md`。
+
+**验证：单跑三条相关门禁全绿** —— `pet_footstep_check` 22/0、`audio_sfx_check` 228/0（含 cue 计数 75→76 + 新素材文件存在）、`cold_parse_chain_check` 80/0（含 MainMenuPet.gd / SfxService.gd / pet_footstep_check.gd 解析）。`run_gates.py` 与 `cold_parse_chain_check.gd` 均已把本批改动列入。
+
+★ **未做真机/观感与 EXE/APK 验收**：门禁只证「不回归 + 登记/文件/步频/独立性/静音门逻辑对」，不证「真机上听着对」。脚步声听感需戴耳机/真机复听微调。
+
+详见[9.26 大厅宠物脚步声](docs/9.26大厅宠物脚步声.md)。

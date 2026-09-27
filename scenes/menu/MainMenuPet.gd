@@ -9,6 +9,18 @@ extends Control
 
 const REF_SIZE := Vector2(1672.0, 941.0)   # 与 MainMenu 同一套参考画布
 
+# 9.26 大厅宠物脚步声：每只宠物一个**独立** AudioStreamPlayer（挂在各自 pet Node3D 下，
+# 不进 SfxService 的共享播放器池）。移动时按步频触发、停下即静默。
+# 不走共享池的原因：那套有 40ms 全局重触发保护 + 8 路上限，多只宠物同帧迈步会被吞掉，
+# 破坏「所有宠物独立播放」。新播放器命名刻意避开 GlorySfxVoice* / GlorySfxLoopVoice，
+# 也**不是 root 的子节点**（挂在 pet Node3D 下），否则会被 audio_sfx_check 的
+# 「播放器池 == 8」断言误伤。
+const SfxService := preload("res://ui/services/SfxService.gd")
+const Presentation := preload("res://effects/runtime/presentation/PresentationSettings.gd")
+const FOOTSTEP_INTERVAL := 0.36        # 秒/步，与 MOVE_SPEED 对齐，避免脚底打滑
+const FOOTSTEP_BUS := "SFX"
+const FOOTSTEP_PLAYER_NAME := "PetFootstepPlayer"
+
 # ── 活动区域（参考坐标）──────────────────────────────────────────
 # 上边避开个人信息按钮（y 12~190），下边避开令牌行/底部按钮（y 585 起），
 # 左右避开朋友/聊天与商店/公告两根侧栏。开 F3 能看到这块的黑框。
@@ -55,12 +67,16 @@ var _camera: Camera3D
 var _pets: Array[Dictionary] = []
 var _shadow_texture: GradientTexture2D
 var _rng := RandomNumberGenerator.new()
+# 9.26：脚步声素材（一次性加载缓存，所有宠物的独立播放器共用同一份流）。
+var _footstep_stream: AudioStream = null
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE   # 绝对不能吃掉点击
 	set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
 	_rng.randomize()
 	_build_stage()
+	# 9.26：脚步声素材一次性加载缓存（各宠物独立播放器共用这份流）。
+	_footstep_stream = load(SfxService.cue_path(SfxService.CUE_PET_FOOTSTEP)) as AudioStream
 	_rebuild_pets()
 	if not PlayerProfile.pets_changed.is_connected(_rebuild_pets):
 		PlayerProfile.pets_changed.connect(_rebuild_pets)
@@ -221,6 +237,20 @@ func _spawn_pet(pet_id: String, index: int, total: int) -> void:
 	var shadow := _make_shadow_node()
 	node.add_child(shadow)
 
+	# 9.26 大厅宠物脚步声：每只宠物一个**独立** AudioStreamPlayer，挂在 pet Node3D 下
+	# （不是 root，名字也避开 GlorySfxVoice* / GlorySfxLoopVoice，见本文件顶部说明）。
+	# 移动时由 _step_pet 按步频触发，停下即不再发声。
+	var footstep_player := AudioStreamPlayer.new()
+	footstep_player.name = FOOTSTEP_PLAYER_NAME
+	footstep_player.bus = FOOTSTEP_BUS if AudioServer.get_bus_index(FOOTSTEP_BUS) >= 0 else "Master"
+	# 菜单被弹窗遮挡时会整块停画（_process 早退），但脚步声不该因此卡住 ——
+	# 它只在 _process 里被驱动，process_mode=ALWAYS 保证状态机走到"停下"时一定收得住。
+	footstep_player.process_mode = Node.PROCESS_MODE_ALWAYS
+	footstep_player.stream = _footstep_stream
+	# 每只宠物随机微调音高，避免多只同帧迈步听起来像同一次机械复读。
+	footstep_player.pitch_scale = _rng.randf_range(0.92, 1.08)
+	node.add_child(footstep_player)
+
 	# 初始位置沿 X 均分铺开，免得开局全挤在中间
 	var t := (float(index) + 0.5) / float(max(1, total))
 	var start := Vector3(lerpf(-GROUND_HALF_X * 0.7, GROUND_HALF_X * 0.7, t),
@@ -236,6 +266,8 @@ func _spawn_pet(pet_id: String, index: int, total: int) -> void:
 		"target": start,
 		"facing": _rng.randf_range(-PI, PI),
 		"base_y": node.position.y,
+		"footstep_player": footstep_player,
+		"footstep_accum": 0.0,
 	}
 	_pets.append(entry)
 	_play(node, "idle")
@@ -319,6 +351,10 @@ func _step_pet(entry: Dictionary, delta: float) -> void:
 			node.position += dir * MOVE_SPEED * delta
 			_clamp_to_ground(node)
 			entry.facing = atan2(dir.x, dir.z)
+			# 9.26 脚步声：每跨过一个步频阈值就响一声（独立播放器、停下即止）。
+			# advance_footstep 是纯静态函数，门禁可不经实例直接驱动验证步频与独立性。
+			if advance_footstep(entry, delta):
+				_play_footstep(entry)
 	_apply_facing(entry, delta)
 
 func _pick_next_state(entry: Dictionary) -> void:
@@ -391,6 +427,43 @@ func _play(node: Node3D, action: String) -> void:
 		_:
 			if node.has_method("play_idle"):
 				node.call("play_idle")
+
+# ── 9.26 大厅宠物脚步声 -------------------------------------------------------
+#
+# advance_footstep 是**纯静态**函数：只读写传进来的 entry 字典里的
+# `state` / `footstep_accum`，不碰任何实例成员。这样门禁可以不实例化整棵
+# MainMenuPet（那只为了出一张 3D 舞台要加载宠物模型，headless 太重且易失败），
+# 直接拿合成字典驱动它，验证「移动时按步频发声、停下即静默、多只同帧各自独立」。
+#
+# 返回 true = 这一帧该响一声脚步；false = 不该响。
+static func advance_footstep(entry: Dictionary, delta: float) -> bool:
+	if str(entry.get("state", "")) != "walk":
+		# 不在行走状态：清空累计（否则下次起步会立刻补一声"欠下的"）。
+		entry.footstep_accum = 0.0
+		return false
+	entry.footstep_accum = float(entry.get("footstep_accum", 0.0)) + delta
+	if entry.footstep_accum >= FOOTSTEP_INTERVAL:
+		# 用取模而不是清零，避免长帧（卡顿掉帧）把一步拆成"只响一声"的偏移。
+		entry.footstep_accum = fmod(entry.footstep_accum, FOOTSTEP_INTERVAL)
+		return true
+	return false
+
+# 真的把这一声放出去。每宠物一个独立播放器，所以"所有宠物独立播放"天然成立 ——
+# 不走 SfxService.play()（那套有 40ms 全局重触发保护，会吞掉同帧的其余脚步）。
+# 静音门与全局一致：关掉「界面音效」或 Master 总线静音时一声不响、也不记账。
+func _play_footstep(entry: Dictionary) -> void:
+	if not Presentation.ui_sound_allowed():
+		return
+	var player := entry.get("footstep_player", null) as AudioStreamPlayer
+	if player == null or not is_instance_valid(player):
+		return
+	if not player.is_inside_tree():
+		return
+	if player.stream == null:
+		return
+	if player.playing:
+		player.stop()
+	player.play()
 
 # ── 布局：跟 MainMenu 用同一套参考画布，居中缩放 ──────────────────
 func _layout_area() -> void:

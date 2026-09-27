@@ -49,6 +49,12 @@ const TARGETS: Array[Dictionary] = [
 	{"kind": "script", "path": "res://scenes/prep/PrepUI.gd"},
 	# 新门禁自身也在清单里（同 9.25 第二批的理由：改门禁也要被解析过）。
 	{"kind": "script", "path": "res://tools/shop_refresh_free_source_check.gd"},
+	# ★ 9.26 新增：大厅宠物脚步声。改了 MainMenuPet.gd（每宠物独立播放器 + 步频触发）、
+	#   SfxService.gd（新增 CUE_PET_FOOTSTEP），并新增 pet_footstep_check.gd 门禁。
+	#   按「改的每个文件都要在清单里，谁坏了就指谁」逐个单列。
+	{"kind": "script", "path": "res://scenes/menu/MainMenuPet.gd"},
+	{"kind": "script", "path": "res://ui/services/SfxService.gd"},
+	{"kind": "script", "path": "res://tools/pet_footstep_check.gd"},
 ]
 
 

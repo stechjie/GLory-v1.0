@@ -29,6 +29,8 @@ GATES = [
     "cold_parse_chain_check",
     # 本批改动直接命中
     "audio_sfx_check",
+    # 9.26 新增：大厅宠物脚步声（独立播放 + 步频行为 + 静音门）。
+    "pet_footstep_check",
     "audio_0921_check",
     "battle_presentation_event_check",
     "merge_rule_parity_check",
