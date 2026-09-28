@@ -7,7 +7,11 @@ extends "res://scenes/main/Main.gd"
 # 测的就是 Main.gd 里的判据与计时本身。
 
 var return_calls := 0
+var last_reason := ""
 
 
-func _return_to_login() -> void:
+# 🔴 签名必须和 Main._return_to_login 一模一样。2026-09-24 那边加了 reason 参数、这里没跟着改，
+# 替身从那天起就编译不过 —— 门禁照样报 PASS（用到替身的那几条根本没跑），直到 09-28 才发现。
+func _return_to_login(reason := "") -> void:
 	return_calls += 1
+	last_reason = reason

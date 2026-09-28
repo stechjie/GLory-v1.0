@@ -85,6 +85,7 @@ func _ready() -> void:
 	_case_room_chat_log_entries()
 	_case_room_chat_log_lifecycle()
 	_case_room_chat_log_wired()
+	_case_world_cache_reconcile()
 	_h.finish(get_tree())
 
 
@@ -179,10 +180,15 @@ func _case_admission_contract_matches_backend() -> void:
 		"admission_header_not_sent",
 		"RealtimeService._open 的握手头里没有带 ADMISSION_HEADER。")
 	# 🔴 放行过就不许清掉：清了的话，对局中的一次断线重连会被当成「新来的」去排队。
+	# 唯一的例外是被封号（_mark_banned）：服务器那边已经收回了名额（admission.evict），留着这个标记
+	# 反而会让启动页把人直接放进主界面 —— 2026-09-28 复现的封号死循环。其余地方一处都不许清。
 	_h.item()
-	_h.expect(not gd.contains("_admitted = false"),
+	var outside_ban := gd.replace(_chat_fn_body(gd, "func _mark_banned(info: Dictionary) -> void:"), "")
+	_h.expect(not outside_ban.contains("_admitted = false")
+			and _chat_fn_body(gd, "func _mark_banned(info: Dictionary) -> void:").contains("_admitted = false"),
 		"admission_flag_reset",
-		"RealtimeService 里出现了 _admitted = false —— 已经在游戏里的人重连时会被踢回队列。")
+		"_admitted = false 只许出现在 _mark_banned 里：别处清了，已经在游戏里的人重连时会被踢回队列；"
+		+ "被封时不清，启动页会拿旧的「放行过」把人放进主界面。")
 
 
 # --- 8. 🔴 私聊（批次 C）的跨语言常量 --------------------------------------------
@@ -973,6 +979,34 @@ func _case_room_chat_log_wired() -> void:
 	_h.expect(_chat_fn_body(prep, "func _push_chat_line(text: String) -> void:").contains("GloryTokens.CHAT_INK")
 			and _chat_fn_body(lobby, "func _build_chat_box() -> void:").contains("Tokens.CHAT_INK"),
 		"chat_text_not_ink", "摆放界面飘出来的消息和大厅聊天框的字要用 CHAT_INK（黑字）")
+
+
+# --- 16. 世界频道：关着页签 / 断线时被删的消息（2026-09-28）------------------------------
+#
+# 用户报「网页后台删掉的世界发言，玩家那边要重上游戏才消失」。本机端到端复现：开着页签时删，
+# 推送当场生效；**关着页签（或手机锁屏断线）时删**，那条删除推送收不到，重新打开页签 / 重连之后
+# 客户端接着用旧缓存、只合并不删除，删掉的那条一直在。
+
+func _case_world_cache_reconcile() -> void:
+	var cached: Array[Dictionary] = []
+	for message_id in [3, 4, 5, 6, 7, 8]:
+		cached.append({"message_id": message_id, "body": str(message_id)})
+	_h.item()
+	# 重连拿到的这一页覆盖 5 ~ 9，服务器那边 6 已经被删：6 不留；3、4 是往上翻出来的（这页之前的），照留。
+	var kept := ChatService.reconcile_world(cached,
+		[{"message_id": 5}, {"message_id": 7}, {"message_id": 8}, {"message_id": 9}])
+	var kept_ids: Array = []
+	for message in kept:
+		kept_ids.append(int(message.message_id))
+	_h.expect(kept_ids == [3, 4, 5, 7, 8], "world_deleted_message_survives_refresh",
+		"断线期间被删的那条（6）重连之后还留在缓存里，或者误删了往上翻出来的旧消息：%s" % str(kept_ids))
+	_h.expect(ChatService.reconcile_world(cached, [{"message_id": 20}]).is_empty()
+			and ChatService.reconcile_world(cached, []).is_empty(),
+		"world_gap_not_replaced", "接不上（中间漏的比一页还多）或者服务器这页是空的时，旧缓存要整份不留")
+	_h.item()
+	var svc := FileAccess.get_file_as_string("res://scripts/autoload/ChatService.gd")
+	_h.expect(_chat_fn_body(svc, "func open_world() -> void:").contains("world_messages.clear()"),
+		"world_reopen_uses_stale_cache", "重新打开世界页签时接着用了旧缓存 —— 关着页签时被删的消息会一直显示")
 
 
 func _same_peer_set(actual: Array, expected: Array) -> bool:

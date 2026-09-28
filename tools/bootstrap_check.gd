@@ -426,6 +426,40 @@ func _check_entry_gate_view() -> void:
 		"entry_ban_clears_credentials",
 		"登录时被封没有单独处理 —— 落进 401 分支会清掉凭证、自动注册新号，封号白封")
 
+	# 🔴 2026-09-28 本机端到端复现的封号死循环：游戏中被封回到启动页 → 自动重登（login() 一开始就清掉
+	# 「被封」）→ 进门这一步拿旧的「放行过」直接放人 → 主界面发现被封再送回来……两分钟一百多次续期，
+	# 把账号服务器按 IP 的续期限流打满，解封之后近一小时登不进去。三道都要在：
+	for stale_facts in [
+		{"login": "working", "admitted": true, "online": false},
+		{"login": "failed", "admitted": true, "online": false},
+	]:
+		var stale: Dictionary = BootstrapScript.entry_view(stale_facts)
+		_h.expect(not bool(stale.get("pass", false)), "entry_stale_admission_passes",
+			"还没登录上（%s），却因为以前「放行过」被放进了主界面 —— 封号死循环的入口" % str(stale_facts))
+	var boot_source := FileAccess.get_file_as_string("res://scenes/bootstrap/Bootstrap.gd")
+	_h.expect(boot_source.contains("if AccountManager.is_banned() and not AccountManager.ban_info.is_empty():\n\t\treturn\n\tAccountManager.login()"),
+		"entry_relogin_loop_on_ban",
+		"启动页对「已经知道被封了」的人仍然自动重新登录 —— 封号死循环的另一半")
+	var realtime_source := FileAccess.get_file_as_string("res://scripts/autoload/RealtimeService.gd")
+	_h.expect(_fn_body(realtime_source, "func _mark_banned(").contains("_admitted = false"),
+		"entry_ban_keeps_admission", "被封时没有忘掉「放行过」（服务器已经收回了名额）")
+	# 实时连接那条说明多半读不到（Godot 收到关闭帧就不给读剩下的包）：不知道详情时不能说成永久。
+	var unknown_ban := BootstrapScript.ban_text({}, false, 480)
+	_h.expect(not unknown_ban.contains("永久") and unknown_ban.contains("正在获取"),
+		"entry_unknown_ban_called_permanent", "还没拿到封禁详情就显示了「永久封禁」：%s" % unknown_ban)
+	# 429 可能是续期（登录）被限流，不能说成「新账号注册太频繁」。
+	_h.expect(not boot_source.contains("新账号注册太频繁"), "entry_rate_limit_says_signup",
+		"登录被限流时仍显示「新账号注册太频繁」")
+
+	# 封号强制下线（2026-09-28 用户定）：对局中也要退出对局、回启动页；判断要在「对局中不送回」那道之前。
+	var main_source := FileAccess.get_file_as_string("res://scenes/main/Main.gd")
+	var watch := _fn_body(main_source, "func _watch_account_link(")
+	var ban_at := watch.find("AccountManager.is_banned()")
+	var skip_at := watch.find("_should_watch_account_link()")
+	_h.expect(ban_at >= 0 and skip_at > ban_at and watch.contains("NetworkService.request_user_leave()"),
+		"ban_not_forced_offline",
+		"被封时 Main 没有在「对局中不送回」之前处理，或者没有先退出对局 —— 被封的人会接着打完这一局")
+
 	var source := FileAccess.get_file_as_string("res://scenes/bootstrap/Bootstrap.gd")
 	_h.expect(source.contains("if _entry_gate_required():\n\t\t_begin_entry()"),
 		"entry_gate_bypassed", "主界面载完之后没有经过进门这一步就直接 READY 了")
@@ -456,3 +490,17 @@ func _second_line(text: String) -> String:
 	var lines := text.split("
 ")
 	return str(lines[1]) if lines.size() > 1 else ""
+
+
+# 从函数头到下一个顶层声明为止（同 tools/chat_check 的 _chat_fn_body）。只看这一段 ——
+# 整个文件别处也可能有同样的写法，整文件 contains 会被那些满足，断言就成了摆设。
+func _fn_body(src: String, header: String) -> String:
+	var start := src.find(header)
+	if start < 0:
+		return ""
+	var stop := src.length()
+	for marker in ["\n@rpc(", "\nfunc ", "\nstatic func "]:
+		var at := src.find(marker, start + header.length())
+		if at >= 0 and at < stop:
+			stop = at
+	return src.substr(start, stop - start)

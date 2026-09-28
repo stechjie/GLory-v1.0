@@ -289,7 +289,10 @@ func _on_closed() -> void:
 		_mark_kicked()
 		return
 	if code == CLOSE_BANNED:
-		# 同上：说明原因的那条消息弱网下可能没读到，关闭码兜底。
+		# 说明原因的那条消息**多半读不到**：服务器「先发原因、紧接着关」，两者常在同一次 poll 里到，
+		# 而 Godot 的 WebSocketPeer 收到关闭帧之后就不再给读剩下的包（只在 OPEN 时可读，关完清缓冲，
+		# 2026-09-28 查过引擎源码 wsl_peer.cpp）。所以这里只知道「被封了」，原因和解封时间由启动页
+		# 再登录一次、从 403 的响应里拿（Bootstrap._kick_off_account_login）。
 		_mark_banned({})
 		return
 	_schedule_reconnect()
@@ -372,6 +375,10 @@ func _mark_banned(info: Dictionary) -> void:
 	_close_socket(1000)
 	state = State.OFFLINE
 	set_process(false)
+	# 服务器封号时已经收回了名额（admission.evict）。这边也要忘掉「放行过」：
+	# 留着的话启动页会拿这个旧标记直接放人进主界面（2026-09-28 复现的封号死循环就是它）。
+	_admitted = false
+	queue_position = 0
 	AccountManager.note_banned(info)
 
 

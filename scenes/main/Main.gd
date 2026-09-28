@@ -51,6 +51,10 @@ const BOOTSTRAP_SCENE := "res://scenes/bootstrap/Bootstrap.tscn"
 #   · 对局中（含离线自测、教学对局） —— 战斗服务器有自己的断线重连，踢出去等于毁掉一局
 #   · 教学中 —— 本地流程，不依赖账号服务器
 #   · 被顶号 —— RealtimeService 明确禁止自动重连（两台设备会无限互踢），走现有提示
+#
+# 🔴 **被封号不在上面三条之内**（2026-09-28 用户定：封号要强制下线，原来是「在打的那一局照常打完」）：
+# 不论在哪个界面、打没打着对局，一律先退出对局（战斗服务器把座位交给 AI，其他五个人照常打完），
+# 再回启动页显示封号原因。见 _watch_account_link。
 var _in_match_flow := false
 var _account_offline_sec := 0.0
 var _returning_to_login := false
@@ -618,13 +622,18 @@ func _process(delta: float) -> void:
 
 # 连不上账号服务器超过耐心值就回启动页。规则与例外见文件顶部那段。
 func _watch_account_link(delta: float) -> void:
+	# 被封：不等耐心值、也不管在不在对局里，直接下线回启动页显示原因（backend/app/bans.py，
+	# 文件顶部那段）。放在 _should_watch_account_link 前面 —— 那道会放过对局中、教学中的人。
+	# 教学例外：它是本地流程、不连任何服务器，教学状态也没有「中途被拉走」的收尾 —— 教完回主菜单时再回。
+	if AccountManager.is_banned() and AccountConfig.auto_login_enabled() and not _returning_to_login \
+			and not TutorialMode.active:
+		if NetworkService.team_active:
+			# 走玩家主动离开那条路：已开打的局保留座位、由战斗服务器交给 AI，不毁掉其他人的对局。
+			NetworkService.request_user_leave()
+		_return_to_login("账号被封")
+		return
 	if not _should_watch_account_link():
 		_account_offline_sec = 0.0
-		return
-	# 被封：不等耐心值，直接回启动页显示原因（backend/app/bans.py）。
-	# 对局中不走这里（上面那道已经挡住）—— 在打的那一局照常打完，打完回菜单时再回。
-	if AccountManager.is_banned():
-		_return_to_login("账号被封")
 		return
 	if RealtimeService.is_online():
 		_account_offline_sec = 0.0

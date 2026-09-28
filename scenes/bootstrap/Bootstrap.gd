@@ -225,6 +225,14 @@ func _kick_off_account_login() -> void:
 		return
 	if AccountManager.is_logged_in():
 		return
+	# 游戏中被封、被送回这里的：🔴 **不自动重登**。2026-09-28 本机复现过，重登会造成死循环 ——
+	# login() 一开始就清掉「被封」，进门那一步又拿旧的「放行过」直接放人，主界面再发现被封再送回来……
+	# 两分钟一百多次续期，把账号服务器按 IP 的续期限流（120 次 / 小时）打满，
+	# 解封之后还要等将近一小时才登得进去（同一个网络下的其他玩家也被连累）。
+	# 例外：原因和解封时间没拿到（实时连接那条说明多半读不到，见 RealtimeService._on_closed），
+	# 登录一次，从 403 的响应里拿 —— 服务器那边还封着时不会再去碰 Supabase（ban_refresh_handoff）。
+	if AccountManager.is_banned() and not AccountManager.ban_info.is_empty():
+		return
 	AccountManager.login()
 
 
@@ -429,8 +437,9 @@ static func entry_view(facts: Dictionary) -> Dictionary:
 	# 被封压过一切，包括「放行过」—— 游戏中被封回到这里时，名额那一侧还记着放行过。
 	if bool(facts.get("banned", false)):
 		return {"state": "banned", "actions": true}
-	if bool(facts.get("admitted", false)):
-		return {"state": "pass", "pass": true}
+	# 🔴 「放行过」只在**已经登录**时才算数（放在下面登录那一段之后）。以前放在最前面：
+	# 被封的人在这里重新登录的那一小会儿（login() 一开始就清掉了「被封」），会被这个旧标记直接放进主界面，
+	# 主界面发现被封又送回来 —— 2026-09-28 复现的封号死循环（Bootstrap._kick_off_account_login 那段）。
 	match str(facts.get("login", "working")):
 		"failed":
 			# 维护公告只替换「连不上」的说法，不改变放不放行。
@@ -444,6 +453,8 @@ static func entry_view(facts: Dictionary) -> Dictionary:
 			pass
 		_:
 			return {"state": "login"}
+	if bool(facts.get("admitted", false)):
+		return {"state": "pass", "pass": true}
 	if bool(facts.get("kicked", false)):
 		return {"state": "kicked", "actions": true}
 	if not bool(facts.get("online", false)):
@@ -477,8 +488,10 @@ func _show_entry(view: Dictionary) -> void:
 			var reason := _tr_text("暂时连不上账号服务器，连不上时无法进入游戏。",
 				"The account server can't be reached; the game can't be entered without it.")
 			if bool(view.get("rate_limited", false)):
-				reason = _tr_text("新账号注册太频繁，服务器暂时不接受。",
-					"Too many new accounts right now; the server isn't accepting more yet.")
+				# 429 既可能是注册、也可能是续期（登录）被限流，不能说成「注册太频繁」——
+				# 2026-09-28 被封的号解封后续期被限流，看到的就是那句不相干的话。
+				reason = _tr_text("登录请求太频繁，服务器暂时不接受。",
+					"Too many sign-in attempts; the server isn't accepting more yet.")
 			var retry_in := int(ceil(float(view.get("retry_in", -1.0))))
 			var countdown := _tr_text("正在重试。", "Retrying.")
 			if retry_in >= 0:
@@ -486,7 +499,8 @@ func _show_entry(view: Dictionary) -> void:
 			error = _entry_error(reason + countdown, ERROR_ENTRY_LOGIN)
 		"banned":
 			title = _tr_text("账号已被封禁", "Account suspended")
-			error = _entry_error(ban_text(AccountManager.ban_info, LocaleManager.get_locale().begins_with("en")),
+			error = _entry_error(ban_text(AccountManager.ban_info, LocaleManager.get_locale().begins_with("en"))
+				+ "\n" + _tr_text("解封之后点「重新检查」即可进入游戏。", "Once the suspension is lifted, tap \"Check again\"."),
 				ERROR_ENTRY_BANNED)
 		"kicked":
 			title = _tr_text("账号在另一台设备登录", "Signed in elsewhere")
@@ -527,8 +541,14 @@ func _show_entry(view: Dictionary) -> void:
 	_error_panel.visible = actions
 	if actions:
 		_error_text.text = error
-		_retry_button.text = _tr_text("在这台设备上继续", "Continue here") if _entry_state == "kicked" \
-			else _tr_text("重试", "Retry")
+		match _entry_state:
+			"kicked":
+				_retry_button.text = _tr_text("在这台设备上继续", "Continue here")
+			"banned":
+				# 被封时「重试」读起来像「再试试能不能绕过去」；它实际做的是问服务器解封了没有。
+				_retry_button.text = _tr_text("重新检查", "Check again")
+			_:
+				_retry_button.text = _tr_text("重试", "Retry")
 
 
 # 被封的说明：原因 + 到什么时候。**纯函数**，tools/bootstrap_check 直接测。
@@ -537,7 +557,11 @@ static func ban_text(info: Dictionary, english: bool, zone_bias_min: int = -9999
 	var reason := str(info.get("reason", "")).strip_edges()
 	var ends_at: Variant = info.get("ends_at")
 	var until := ""
-	if ends_at == null or str(ends_at).is_empty():
+	if info.is_empty():
+		# 还不知道详情（游戏中被封、说明那条没读到，启动页正在登录一次去拿）。
+		# 🔴 不能落到下面「ends_at 为空 = 永久」那条：7 天的封号会被说成永久（2026-09-28 复现过）。
+		until = "Fetching the details…" if english else "正在获取封禁详情…"
+	elif ends_at == null or str(ends_at).is_empty():
 		until = "Permanent." if english else "永久封禁。"
 	else:
 		var unix := ServiceStatus.parse_iso_utc(str(ends_at))

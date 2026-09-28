@@ -168,6 +168,13 @@ func open_world() -> void:
 	if world_open:
 		return
 	world_open = true
+	# 🔴 重新打开页签 = 重新拿一份，不接着用手上的旧缓存。关着页签（或者手机锁屏、断线）的那段时间，
+	# 运营删掉的消息收不到推送（没订阅）；接着用旧缓存的话，删掉的那条会一直显示到重开游戏 ——
+	# 2026-09-28 本机端到端复现过（用户报的「删除没有实时同步」）。
+	world_messages.clear()
+	world_has_more = false
+	world_loading = true
+	world_changed.emit()
 	RealtimeService.send({"t": "sub", "topic": WORLD_TOPIC})
 	await _refresh_world_blocks()
 	await refresh_world()
@@ -181,8 +188,8 @@ func close_world() -> void:
 	RealtimeService.send({"t": "unsub", "topic": WORLD_TOPIC})
 
 
-# 最近 100 条（打开页签、断线重连之后）。能接上手上的就合并；接不上（中间漏的比 100 条还多）
-# 就整份换掉，往上翻从新的这一批开始。返回空串 = 成功，否则是给玩家看的原因。
+# 最近 100 条（打开页签、断线重连之后），与手上的对账（reconcile_world）后合并。
+# 返回空串 = 成功，否则是给玩家看的原因。
 func refresh_world() -> String:
 	world_loading = true
 	var result: Dictionary = await AccountManager.fetch_world_messages()
@@ -192,15 +199,38 @@ func refresh_world() -> String:
 		return str(result.get("error", _text("加载失败", "Failed to load")))
 	var body: Dictionary = result.get("body", {})
 	var incoming: Array = body.get("messages", [])
-	var newest_known := int(world_messages.back().get("message_id", 0)) if not world_messages.is_empty() else 0
-	var oldest_new := int((incoming[0] as Dictionary).get("message_id", 0)) \
-		if not incoming.is_empty() and incoming[0] is Dictionary else 0
-	if world_messages.is_empty() or oldest_new > newest_known:
-		world_messages.clear()
+	var kept := reconcile_world(world_messages, incoming)
+	if kept.is_empty():
 		world_has_more = bool(body.get("has_more", false))
+	world_messages = kept
 	_merge_world(incoming)
 	world_changed.emit()
 	return ""
+
+
+# 断线重连后拿到的「最近一页」和手上的缓存对账，返回缓存里要留下的。纯函数，tools/chat_check 直接调。
+#
+# 这一页覆盖的范围（>= 这页最老的一条）**以服务器为准**：缓存里落在这个范围、这页却没有的，
+# 是断线那会儿被运营删掉的（那条删除推送漏了），不留。这页之前的（往上翻出来的）照留。
+# 接不上（中间漏的比一页还多）或者这页是空的：整份不留，往上翻从新的这一批开始。
+static func reconcile_world(cached: Array[Dictionary], fresh: Array) -> Array[Dictionary]:
+	var kept: Array[Dictionary] = []
+	if cached.is_empty() or fresh.is_empty():
+		return kept
+	var fresh_ids := {}
+	var oldest_fresh := -1
+	for raw in fresh:
+		if raw is Dictionary:
+			var fresh_id := int((raw as Dictionary).get("message_id", 0))
+			fresh_ids[fresh_id] = true
+			oldest_fresh = fresh_id if oldest_fresh < 0 else mini(oldest_fresh, fresh_id)
+	if oldest_fresh > int(cached.back().get("message_id", 0)):
+		return kept
+	for message in cached:
+		var cached_id := int(message.get("message_id", 0))
+		if cached_id < oldest_fresh or fresh_ids.has(cached_id):
+			kept.append(message)
+	return kept
 
 
 # 往上翻：比手上最老的那条更早的一页。

@@ -38,10 +38,50 @@ func _ready() -> void:
 
 func _run() -> void:
 	_h = CheckHarness.new(CHECK_NAME)
+	# 替身编译不过时，下面用到它的每一条都会「Invalid call」然后什么都没测、照样 PASS（09-24 ~ 09-28 就是这样）。
+	_h.item()
+	var double_script: GDScript = MainDouble
+	if not _h.expect(double_script.can_instantiate(), "main_double_broken",
+			"测试替身 account_link_check_main_double.gd 编译不过（多半是 Main 里被它覆盖的函数改了签名）"):
+		_h.finish(get_tree())
+		return
 	_check_rule_and_exceptions()
 	_check_timer()
+	_check_ban_forces_offline()
 	_check_sources()
 	_h.finish(get_tree())
+
+
+# --- 封号强制下线（2026-09-28 用户定）------------------------------------------------
+#
+# 被封了：不论在不在对局里都立刻回启动页（原来是「在打的那一局照常打完」）。教学是例外（本地流程）。
+# team_active 刻意保持 false：真的走 request_user_leave() 会去读写本机的对局重连凭证（user://），
+# 门禁不该碰玩家的存档。「对局中先退出对局」由 bootstrap_check 的源码断言钉着。
+func _check_ban_forces_offline() -> void:
+	var saved_failure: int = AccountManager.last_failure
+	var saved_team: bool = NetworkService.team_active
+	var saved_tutorial: bool = TutorialMode.active
+	NetworkService.team_active = false
+	TutorialMode.active = false
+	AccountManager.last_failure = AccountManager.Failure.BANNED
+
+	var in_match = MainDouble.new()
+	in_match._in_match_flow = true
+	in_match._watch_account_link(0.01)
+	_h.expect(in_match.return_calls == 1 and in_match.last_reason == "账号被封", "ban_waits_for_match_end",
+		"对局中被封没有立刻回启动页（return_calls=%d）—— 被封的人会接着打完这一局" % in_match.return_calls)
+
+	var tutorial = MainDouble.new()
+	TutorialMode.active = true
+	tutorial._watch_account_link(0.01)
+	_h.expect(tutorial.return_calls == 0, "ban_interrupts_tutorial",
+		"教学中被封就被拉走了 —— 教学是本地流程，没有中途离开的收尾，教完回主菜单时再回")
+
+	AccountManager.last_failure = saved_failure
+	NetworkService.team_active = saved_team
+	TutorialMode.active = saved_tutorial
+	in_match.free()
+	tutorial.free()
 
 
 # --- 判据 ---------------------------------------------------------------------
