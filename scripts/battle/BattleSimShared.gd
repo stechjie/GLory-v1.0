@@ -18,6 +18,34 @@ const ATTACK_RANGE_SCALE := 72.0
 # error in distance_to (which would freeze it just outside range).
 const ATTACK_RANGE_EPS := 4.0
 
+# --- 9.28「打不到就换目标」----------------------------------------------------
+# 9.27 的可达性选敌只在**重选目标那一刻**跑一次（`_select_target` / `_select_attack_target`
+# 命中锁定就直接返回）。于是有一个缺口：锁定若发生在「被挡住之前」（开局双方还在走位），
+# 之后友军并排压上来挡住去路，它就会一直锁着那个够不到的目标站到队友死 ——
+# 用户第二次报的「棋子排队不攻击」就是这个形态。
+# 这里补一条**持续无进展**的判据：连续 N tick 出在射程外、且没能比历史最好再近一点，
+# 就解除锁定并记下「避开这个目标」，让下一次重选去换一个可达的。
+#
+# 阈值取舍：TICK_SEC = 0.1，6 tick ≈ 0.6s。取太短会在走位抖动时误判，
+# 取太长则玩家能明显看出"它站那不动"。EPS 取 0.5px：满速 16.5px/tick 远超它，
+# 而"贴着队友蹭"只有 0~2px/tick，属该判为停滞的量级。
+const NO_PROGRESS_TICKS := 6
+const NO_PROGRESS_EPS := 0.5
+# 一轮（round）内最多换这么多次目标，换满就进冷却 `SWITCH_COOLDOWN_TICKS`。
+# 没有上限，两个都够不到的目标会每 6 tick 互踢一次（`locked_target_uid` 来回翻，
+# 表现上就是目标标记闪烁）。
+#
+# ★★★ 9.28 第三轮修正：上限必须是**每轮**的，不能是**整场**的。
+#   上一版把它当成了整场预算 —— 换满 3 次就永久「退回旧行为」（站着等队友死）。
+#   真实对局实测（work/_qa_928/diag_stuck_battle_928.gd，30 场 / 76 单位）：
+#   46 个单位至少卡住 3 秒、22 个卡住 10 秒以上、最长连续 282 tick（28 秒），
+#   而其中 **41/46 个的 `_switch_attempts` 正好等于 3** —— 全部死在永久放弃上。
+#   现在：换满 → 进冷却 → 冷却结束**清空避让集合重新探索**，永远不会永久停止。
+const MAX_SWITCH_ATTEMPTS := 3
+# 一轮换满之后的冷静期（tick）。冷却期内**照常走路/推挤**，只是不再重选目标，
+# 因此不会让目标标记闪烁。冷却结束就重开一轮，保证「一直在尝试」。
+const SWITCH_COOLDOWN_TICKS := 30
+
 # --- 9.25 站位与距离（近战改 B）----------------------------------------------
 # 准备阶段 4×4 格子 = 模拟坐标 = 画面位置，三者一致；画面不再额外加偏移
 # （BattleRenderer._make_fixed_visual_offset 已归零）。
@@ -800,6 +828,19 @@ static func _team_select_target(f: Dictionary, opponents: Array, prefer_low_hp: 
 			pool.append(o)
 		if pool.is_empty():
 			continue
+		# 9.28「打不到就换」：上一次被判为够不到的目标先从候选里剔掉，否则重选会
+		# 立刻把它选回来、换目标等于没换。★ 剔完一个不剩就**保持原样** ——
+		# 不能让避让把本路的候选池清空（那会退化成 `_nearest`，绕开分路规则）。
+		# ★ 是一个**集合**不是单个 uid：只有一个槽位时，第二个够不到的目标会把
+		#   第一个覆盖掉，于是两个之间来回踢（真实对局实测过，见常量注释）。
+		var avoided: Array = f.get("avoid_target_uids", [])
+		if not avoided.is_empty() and pool.size() > 1:
+			var without_avoided: Array = []
+			for o in pool:
+				if not avoided.has(str(o.get("uid", ""))):
+					without_avoided.append(o)
+			if not without_avoided.is_empty():
+				pool = without_avoided
 		var chosen := _score_target(f, pool, prefer_low_hp)
 		if chosen.is_empty():
 			continue
@@ -864,6 +905,51 @@ static func _ally_blocks(f: Dictionary, target: Dictionary, bodies: Array) -> bo
 	var uid := str(hit.get("uid", ""))
 	# contact >= reach ⇒ 那个友军整只在 target 身后，不构成阻挡。
 	return not uid.is_empty() and float(hit.get("contact", INF)) < reach
+
+
+# --- 9.28「打不到就换目标」的两个纯判据 ---------------------------------------
+#
+# 两个都抽成 static 纯函数，让探针能**直接驱动判定本身** ——
+# 不必在探针里复刻一份（复刻的那份会随生产漂移；本仓已栽过：探针写的几何
+# 和生产的几何不是同一个，于是判据全绿而功能没通）。
+# 参见 work/_qa_928/probe_stuck_target_928.gd 与 docs/9.28打不到就换目标修复记录.md。
+
+
+# 朝当前目标「有没有在推进」。返回 {"uid","best","ticks"}，调用方写回单位字段。
+#   目标变了        → 重新起步（best = 本 tick 距离，ticks = 0）
+#   明显更近了      → 归零
+#   其余（没动 / 只挪了一点点）→ ticks + 1
+#
+# 用「历史最好距离」当基准，而不是「上一 tick 距离」：贴着队友侧滑时会一 tick 近、
+# 一 tick 远地抖，拿上一 tick 比会把停滞误判成推进 —— 缺口就永远触发不了。
+static func no_progress_step(prev_uid: String, cur_uid: String, best_dist: float,
+		cur_dist: float, prev_ticks: int, eps: float = NO_PROGRESS_EPS) -> Dictionary:
+	if cur_uid != prev_uid:
+		return {"uid": cur_uid, "best": cur_dist, "ticks": 0}
+	if cur_dist < best_dist - eps:
+		return {"uid": cur_uid, "best": cur_dist, "ticks": 0}
+	return {"uid": cur_uid, "best": minf(best_dist, cur_dist), "ticks": prev_ticks + 1}
+
+
+# 「避让集合的存续过滤」。避让**不能是永久的** —— 否则被避开的那个目标即使重新
+# 可达（挡路的友军死了 / 让开了）也会被一直忽略。
+# 逐个元素判，**留**在集合里的条件：目标还活着 **且** 现在仍然挡路。
+#   目标已死          → 放回（下次重选就该能再考虑它）
+#   去路已通          → 放回
+# `alive_uids` / `blocked_uids` 由调用方按同一套 `_ally_blocks` 几何算好传进来，
+# 这样本函数保持纯函数、探针能直调，而几何仍然只有一份实现。
+static func avoid_prune(avoided: Array, alive_uids: Array, blocked_uids: Array) -> Array:
+	var out: Array = []
+	for entry in avoided:
+		var uid := str(entry)
+		if uid.is_empty():
+			continue
+		if not alive_uids.has(uid):
+			continue
+		if not blocked_uids.has(uid):
+			continue
+		out.append(uid)
+	return out
 
 
 # 圆-射线扫掠：从 position 沿 direction 走 length，返回**最先**挡路的 body。
