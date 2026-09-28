@@ -65,17 +65,16 @@ _STATUS_BY_CODE = {
     "insufficient_funds": 402,
 }
 
-# 棋盘皮肤从 versionCode 17 的包开始才认识。更早的包会把不认识的种类当成头像显示，
-# 能买却用不了（ShopScreen._item_category 不认识的一律归头像），所以不发给它们。
-# 编辑器里跑（build=0）照发，不然开发时看不到。
-PREP_SKIN_MIN_BUILD = 17
+# 后来才加的商品种类。客户端要在 X-Glory-Client 里声明认识它（kinds=…）才发给它：
+# 旧包会把不认识的种类当成头像显示，能买却用不了（ShopScreen._item_category 不认识的一律归头像）。
+# 头像、头像框、宠物从第一版就有，不用声明。
+# 加一种新种类：这里加一个名字，客户端 AccountManager.CLIENT_KINDS 也加同一个。
+DECLARED_KINDS = frozenset({"prep_skin"})
 
 
-def visible_to(item: shop.Item, build: int | None) -> bool:
-    """这个版本的客户端该不该看到这件商品。build 见 client_version.build_of。"""
-    if item.kind != "prep_skin":
-        return True
-    return build is not None and (build == 0 or build >= PREP_SKIN_MIN_BUILD)
+def visible_to(item: shop.Item, client_kinds: frozenset[str]) -> bool:
+    """这个客户端该不该看到这件商品。client_kinds 见 client_version.kinds_of。"""
+    return item.kind not in DECLARED_KINDS or item.kind in client_kinds
 
 
 class ItemModel(BaseModel):
@@ -197,11 +196,11 @@ async def catalog(x_glory_client: Annotated[str | None, Header()] = None) -> Sho
     """目录。**不需要登录** —— 它不含任何玩家数据。
 
     「我有没有买过」由客户端拿 /v1/me/entitlements 自己比对，不在这里合并：
-    合并了这个响应就变成按人不同，没法缓存。唯一按请求变的是客户端版本 ——
-    旧包不认识的商品种类不发给它（visible_to）。
+    合并了这个响应就变成按人不同，没法缓存。唯一按请求变的是客户端认识哪些商品种类 ——
+    旧包不认识的不发给它（visible_to）。
     """
-    build = client_version.build_of(x_glory_client)
-    return ShopResponse(items=[ItemModel(**vars(i)) for i in shop.items() if visible_to(i, build)])
+    kinds = client_version.kinds_of(x_glory_client)
+    return ShopResponse(items=[ItemModel(**vars(i)) for i in shop.items() if visible_to(i, kinds)])
 
 
 @router.get("/me/wallet", response_model=WalletResponse)

@@ -1,23 +1,27 @@
 """客户端版本：每个请求都带的 X-Glory-Client 头（scripts/autoload/AccountManager.gd 的 client_header_line）。
 
-    X-Glory-Client: protocol=32; build=16
+    X-Glory-Client: protocol=34; build=17; kinds=prep_skin
 
-build 是安装包的 versionCode；在编辑器里跑没有 build_info.json，记 0。
+kinds 是这个客户端认识的**新**商品种类（逗号分隔）。旧包不带 kinds，更老的包连这个头都不带 ——
+两种都当成「一个新种类都不认识」。
 
-**很老的包不带这个头** —— 它是后来才加的，已经发出去的包补不上。所以「没带头」要当成
-最老的那一档处理，不能当成最新。
+🔴 **别拿 build 做判断。** 本机 Godot 导出写的是 versionCode，tools/workspace 的安卓流水线不写、
+iOS 流水线写成 build_number，编辑器里是 0：同一个数字在不同出包路子上意思不一样
+（2026-09-28 查出来，同事出的包全都报 build=0，按 build 挡皮肤的规则就漏了）。
 """
 
 from __future__ import annotations
 
 import re
 
-_BUILD = re.compile(r"(?:^|;)\s*build=(\d{1,9})\s*(?:;|$)")
+_KINDS = re.compile(r"(?:^|;)\s*kinds=([a-z0-9_,]{0,256})\s*(?:;|$)")
 
 
-def build_of(header: str | None) -> int | None:
-    """None = 没带头或读不出来（当作很老的包）；0 = 编辑器 / 没有 build_info 的开发包。"""
+def kinds_of(header: str | None) -> frozenset[str]:
+    """客户端声明认识的新商品种类。没带头、没带 kinds 或读不出来，都是空集。"""
     if not header:
-        return None
-    match = _BUILD.search(header)
-    return int(match.group(1)) if match else None
+        return frozenset()
+    match = _KINDS.search(header)
+    if not match:
+        return frozenset()
+    return frozenset(kind for kind in match.group(1).split(",") if kind)

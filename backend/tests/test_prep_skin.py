@@ -6,7 +6,8 @@
 
   1. 卖的皮肤没买也存进去了 —— 玩家白嫖，而且客户端照样显示。
   2. 退款之后读出来的还是那张 —— 同名片「每一样都要再过一遍资格」那条。
-  3. 旧包（versionCode 16 及更早）看到了皮肤商品 —— 它会当成头像显示、能买却用不了。
+  3. 没声明认识皮肤的旧包看到了皮肤商品 —— 它会当成头像显示、能买却用不了。
+     判断看客户端头里的 kinds，不看版本号（各条出包路子报的版本号口径不一样）。
   4. shop.json 卖了一张客户端目录（data/prep_skins.json）里没有的皮肤 ——
      新包会把它藏起来（没有图），等于卖不出去也没人发现。
 
@@ -155,18 +156,23 @@ def test_skin_is_not_on_the_battle_card() -> None:
 # --- 旧包看不到 -----------------------------------------------------------------
 
 
-@pytest.mark.parametrize("header,build", [
-    (None, None), ("", None), ("protocol=32", None), ("protocol=32; build=16", 16),
-    ("protocol=32; build=0", 0), ("build=17", 17), ("protocol=32;build=170", 170),
-    ("protocol=32; build=abc", None), ("protocol=32; rebuild=18", None),
+@pytest.mark.parametrize("header,kinds", [
+    (None, set()), ("", set()), ("protocol=33; build=0", set()), ("protocol=32; build=16", set()),
+    ("protocol=34; build=17; kinds=prep_skin", {"prep_skin"}),
+    ("protocol=34;kinds=prep_skin,future_kind", {"prep_skin", "future_kind"}),
+    ("protocol=34; kinds=", set()), ("protocol=34; kinds=PREP_SKIN", set()), ("protocol=34; mykinds=prep_skin", set()),
 ])
-def test_build_is_read_from_the_client_header(header, build) -> None:
-    assert client_version.build_of(header) == build
+def test_kinds_are_read_from_the_client_header(header, kinds) -> None:
+    assert client_version.kinds_of(header) == kinds
 
 
-def test_min_build_is_above_the_last_package_without_skins() -> None:
-    """versionCode 16（2026-09-26 的测试包）还不认识皮肤。发第一个带皮肤的包之前别把这个数调小。"""
-    assert shop_routes.PREP_SKIN_MIN_BUILD >= 17
+def test_client_declares_every_gated_kind() -> None:
+    """服务端只发客户端声明过的新种类。两边的名单对不上，新包就永远看不到那一类商品。"""
+    account_gd = (REPO / "scripts" / "autoload" / "AccountManager.gd").read_text(encoding="utf-8")
+    declared = re.search(r'const CLIENT_KINDS := \[([^\]]*)\]', account_gd)
+    assert declared, "AccountManager.gd 里找不到 CLIENT_KINDS"
+    client_kinds = set(re.findall(r'"([a-z0-9_]+)"', declared.group(1)))
+    assert shop_routes.DECLARED_KINDS <= client_kinds
 
 
 def _skin_ids(client: TestClient, header: str | None) -> list[str]:
@@ -176,14 +182,16 @@ def _skin_ids(client: TestClient, header: str | None) -> list[str]:
     return [i["grants"] for i in r.json()["items"] if i["kind"] == "prep_skin"]
 
 
-def test_catalog_hides_skins_from_old_builds(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_catalog_hides_skins_from_clients_that_do_not_declare_them(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GLORY_DISABLE_INSTANCE_LOCK", "true")
     get_settings.cache_clear()
     with TestClient(app) as client:
         assert _skin_ids(client, None) == [], "不带版本头的老包看到了皮肤"
+        # 🔴 同事 tools/workspace 流水线出的包不写 version_code，全报 build=0（2026-09-28 线上就漏在这）。
+        assert _skin_ids(client, "protocol=33; build=0") == []
         assert _skin_ids(client, "protocol=32; build=16") == []
-        assert SOLD_SKIN in _skin_ids(client, "protocol=32; build=17")
-        assert SOLD_SKIN in _skin_ids(client, "protocol=32; build=0"), "编辑器里看不到皮肤，没法开发"
+        assert _skin_ids(client, "protocol=34; build=99") == [], "版本号再大，没声明也不该看到"
+        assert SOLD_SKIN in _skin_ids(client, "protocol=34; build=0; kinds=prep_skin")
         # 别的商品照常发给旧包。
         pets = [i for i in client.get("/v1/shop").json()["items"] if i["kind"] == "pet"]
         assert pets
