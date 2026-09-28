@@ -12,6 +12,8 @@ public final class GloryVoiceNative: NSObject, RoomDelegate {
     private var generation = 0
     private var desiredMic = false
     private var microphoneTask: Task<Void, Never>?
+    private var disconnectTask: Task<Void, Never>?
+    private var connectionTask: Task<Void, Never>?
     private var micError = ""
     private var connectionError = ""
     private var permissionPending = false
@@ -37,23 +39,38 @@ public final class GloryVoiceNative: NSObject, RoomDelegate {
         desiredMic = !listenOnly
         micError = ""
         connectionError = ""
-        // The SDK configures playAndRecord/voiceChat for capture and performs
-        // echo cancellation. Keep game audio mixing and route selection native.
-        AudioManager.shared.audioSession.isAutomaticConfigurationEnabled = true
-        AudioManager.shared.audioSession.isSpeakerOutputPreferred = true
+        let previousDisconnect = disconnectTask
         let room = Room(delegate: self)
         activeRoom = room
-        Task { @MainActor [weak self] in
+        connectionTask = Task { @MainActor [weak self] in
+            await previousDisconnect?.value
+            guard let self, self.generation == serial, self.activeRoom === room else { return }
+            // Godot and LiveKit share the process-wide audio session. A previous
+            // room must finish tearing down before the next one starts using it.
             do {
-                try await room.connect(url: url, token: token)
-                guard let self, self.generation == serial, self.activeRoom === room else {
+                let audio = AudioManager.shared
+                audio.audioSession.isAutomaticConfigurationEnabled = true
+                audio.audioSession.isAutomaticDeactivationEnabled = false
+                audio.audioSession.isSpeakerOutputPreferred = true
+                // Use WebRTC software AEC/NS/AGC, not Apple's Voice Processing
+                // I/O. VPIO changes the output path and ducks Godot's separate
+                // CoreAudio player. Music gain is controlled in MusicService.
+                try audio.setPlatformVoiceProcessingAllowed(false)
+            } catch {
+                self.connectionError = "audio_device_failed"
+                return
+            }
+            do {
+                try await room.connect(url: url, token: token,
+                                       connectOptions: ConnectOptions(autoSubscribe: true))
+                guard self.generation == serial, self.activeRoom === room else {
                     await room.disconnect()
                     return
                 }
                 self.applyVolumes(room)
                 self.reconcileMicrophone(room, serial: serial)
             } catch {
-                guard let self, self.generation == serial, self.activeRoom === room else { return }
+                guard self.generation == serial, self.activeRoom === room else { return }
                 self.connectionError = "connect_failed"
             }
         }
@@ -63,14 +80,22 @@ public final class GloryVoiceNative: NSObject, RoomDelegate {
     @objc public func leaveRoom() {
         generation += 1
         desiredMic = false
-        microphoneTask?.cancel()
+        let previousMicrophone = microphoneTask
+        previousMicrophone?.cancel()
         microphoneTask = nil
+        let previousConnection = connectionTask
+        previousConnection?.cancel()
+        connectionTask = nil
         let previous = activeRoom
         activeRoom = nil
         micError = ""
         connectionError = ""
-        if let previous {
-            Task { await previous.disconnect() }
+        let earlierDisconnect = disconnectTask
+        disconnectTask = Task {
+            await earlierDisconnect?.value
+            await previousMicrophone?.value
+            if let previous { await previous.disconnect() }
+            await previousConnection?.value
         }
     }
 
@@ -157,6 +182,11 @@ public final class GloryVoiceNative: NSObject, RoomDelegate {
             "self_speaking": room?.localParticipant.isSpeaking ?? false,
             "speaking": speaking, "participants": participants,
             "audio_mode": session.category.rawValue,
+            "session_mode": session.mode.rawValue,
+            "platform_voice_processing": AudioManager.shared.isPlatformVoiceProcessingAllowed,
+            "remote_audio_tracks": room?.remoteParticipants.values.reduce(0) { count, participant in
+                count + participant.trackPublications.values.filter { $0.track is RemoteAudioTrack }.count
+            } ?? 0,
             "output": session.currentRoute.outputs.map { $0.portType.rawValue }.joined(separator: ",")
         ])
     }

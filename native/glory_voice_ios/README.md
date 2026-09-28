@@ -48,3 +48,45 @@ received by a separate peer, and mute observed on both endpoints. The tester
 also confirmed hearing two remotely published tones through the speaker.
 No recording was saved. Full game integration, cellular switching, rejection
 recovery, headset routing and background behavior remain separate checks.
+
+## Full-duplex game audio policy (2026-09-29)
+
+The game owns other audio in the same process. LiveKit automatic session
+configuration stays enabled, but automatic **deactivation** is disabled so
+stopping/replacing a voice engine cannot deactivate Godot's music output.
+Before connecting, `setPlatformVoiceProcessingAllowed(false)` selects WebRTC
+software echo cancellation/noise suppression/gain control. This avoids Apple's
+Voice Processing I/O output changes and other-audio ducking; the SDK's software
+capture session uses play-and-record with media mode and speaker preference.
+Do not disable echo cancellation entirely or mute remote tracks while publishing.
+All remote tracks remain subscribed; participant mute remains independent.
+Old connection/publish/disconnect tasks finish before a replacement room connects.
+
+MusicService attenuates only its player to 0.5 linear gain when native status
+confirms a connected, enabled microphone in Talk mode. Listen, Off, failed or
+pending capture, and disconnect restore 1.0. It does not restart the track,
+change the Master bus, or override the music-off setting. This music behavior
+is shared with Android; Android's native voice routing is unchanged.
+
+Diagnosis is code-based, not a reproduced device root cause: the previous SDK
+policy allowed whole-session deactivation and iOS voice-processing output
+changes. These are plausible causes of lost game audio / quieter remote audio.
+The existing per-participant volume loop already supports multiple speakers.
+Native status now includes session mode, platform-processing policy, and the
+number of subscribed remote audio tracks to help distinguish routing from
+subscription problems in a device report.
+
+Validation: build the arm64 framework with `build.py`; run
+`tools/voice_music_check.tscn` and `tools/voice_check.tscn`. The former exercises
+confirmed vs pending mic, reconnect, mute/listen, leave, music continuity and two
+unmuted peers with a fake bridge. Neither headless checks nor a framework build
+prove audible full-duplex behavior on iOS.
+
+Device acceptance for the next IPA (no iPhone available during this fix):
+- Play BGM, join with two other teammates, and hear both before and after Talk.
+- Have all three speak concurrently for 30 seconds; each must hear both others.
+- Verify BGM remains audible at about half gain while talking and restores on
+  Listen/Off/disconnect; music disabled in settings must stay silent.
+- Repeat mic toggles, room switching, foreground/background, speaker, wired and
+  Bluetooth headset routes. Check echo/feedback under software AEC, especially
+  loud game effects. Local microphone monitoring is intentionally not added.

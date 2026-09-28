@@ -170,9 +170,23 @@ static func _stream_for(path: String) -> AudioStream:
 	return stream
 
 
+# Only the music player is attenuated; never the Master bus or remote voices.
+# Native status confirms capture actually started (permission/publish may fail).
+static func _sync_voice_volume() -> void:
+	if _player == null or not is_instance_valid(_player):
+		return
+	var voice := VoiceService.status()
+	var talking := VoiceService.mode == VoiceService.Mode.TALK \
+		and str(voice.get("state", "")) == "connected" and bool(voice.get("mic_on", false))
+	_player.volume_linear = 0.5 if talking else 1.0
+
+
 # 建播放器。**挂载一律走 `add_child.call_deferred`** —— 同 SfxService：
 # `install()` 的时机正撞在 root 装配子节点的窗口里，同步 add_child 会静默失败。
 static func _ensure_player() -> bool:
+	var voice_tree := Engine.get_main_loop() as SceneTree
+	if voice_tree != null and not voice_tree.process_frame.is_connected(_sync_voice_volume):
+		voice_tree.process_frame.connect(_sync_voice_volume)
 	if _player != null and is_instance_valid(_player) and _player.is_inside_tree():
 		return true
 	var tree := Engine.get_main_loop() as SceneTree
@@ -206,6 +220,8 @@ static func shutdown() -> void:
 	if tree != null and tree.process_frame.is_connected(_on_retry_sync):
 		tree.process_frame.disconnect(_on_retry_sync)
 	_retry_queued = false
+	if tree != null and tree.process_frame.is_connected(_sync_voice_volume):
+		tree.process_frame.disconnect(_sync_voice_volume)
 	if _player != null and is_instance_valid(_player):
 		_player.stop()
 		_player.free()

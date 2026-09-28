@@ -3,15 +3,15 @@
   "livekit": "2.17.0",
   "architecture": "arm64",
   "files": {
-    "GloryVoice.framework/GloryVoice": "a4dff9375975865c57bd951676ab7abc751958c30ffd2f412de02846472a84d8",
+    "GloryVoice.framework/GloryVoice": "81bd24837d868f94c5c1c58d5319feae559a8bb0f4e03791c96cf0a099bb7f2d",
     "GloryVoice.framework/Headers/GloryVoice-Swift.h": "293b05eb90621d4eab4a63a31b66ee0a4a09235b41fe63472170f5e618b82463",
     "GloryVoice.framework/Info.plist": "e57f66d638b440b8a62d02b42d4dcafc10e6e6d2c5b8db6ced8c0d0f8f9a2986",
     "GloryVoice.framework/LiveKit_LiveKit.bundle/Info.plist": "799d5f5c5ada71b905a645e119a7100c742334d6fbbe3991f0c4d0a860b8a4ed",
     "GloryVoice.framework/LiveKit_LiveKit.bundle/PrivacyInfo.xcprivacy": "7aed2e211fa5ee40e6457423bdb485a3fa0a60b4e182658e9fef5239c918dbc0",
-    "GloryVoice.framework/Modules/GloryVoice.swiftmodule/Project/arm64-apple-ios.swiftsourceinfo": "c14394754d94cf4392264b5a00b058189b7f8533682f896872880fadfe015ea4",
+    "GloryVoice.framework/Modules/GloryVoice.swiftmodule/Project/arm64-apple-ios.swiftsourceinfo": "fcc7a57af8bd2998eaf7b413cf7ad4ceb55f7f3c0ab4cd8d0c2cc7c2824a1d9c",
     "GloryVoice.framework/Modules/GloryVoice.swiftmodule/arm64-apple-ios.abi.json": "4277ac6b49f8511196028a5ac20f5b1b1dfa754c24615d34068089f0b1739728",
     "GloryVoice.framework/Modules/GloryVoice.swiftmodule/arm64-apple-ios.swiftdoc": "9856b94b3262640fddbb0695ff9820c2ec12ad784cebe77680bdf4b6c5d400d9",
-    "GloryVoice.framework/Modules/GloryVoice.swiftmodule/arm64-apple-ios.swiftmodule": "1427de0704c5378287d44b151b847afaf9c5e341c6af5b8e97b64e999a764281",
+    "GloryVoice.framework/Modules/GloryVoice.swiftmodule/arm64-apple-ios.swiftmodule": "62432ea762d6c9038c4b3ca2c199c7696c84d051dfd3a3f17087c3ac5e150535",
     "GloryVoice.framework/Modules/module.modulemap": "b8dd196a65d37e5591d672b4f7efbcbca3231c813b0130434c547824cf938a8e",
     "LiveKitWebRTC.framework/Headers/LiveKitWebRTC.h": "8b937fe657b309c1fdaa9fb4121c89b67cca12f3491cacb032d5893589838265",
     "LiveKitWebRTC.framework/Headers/RTCAudioBuffer.h": "c80b4e0e6a5a1d973d2abbf2eb301efad3c01ec1e195b97b1d69603cce51fc47",
@@ -138,7 +138,7 @@
     "RustLiveKitUniFFI.framework/RustLiveKitUniFFI": "f44acf62acd7cea72a6e13a33be7bd8ee7634b58e86fca4ca550894cf6286ef8"
   },
   "source": {
-    "GloryVoiceNative.swift": "97262aea695f5dc947b11e35c33d5264695b6f5506db94ad71b04dd754914658",
+    "GloryVoiceNative.swift": "17f1d3fbde750388278a1307484611b33480e2a4c310a7c330e518d00684936c",
     "GloryVoiceNative.h": "5336d15c4e0bf9bb83dc93141fd406e95f3ea63aea6737e122636004c80cd6da",
     "GloryVoiceBridge.mm": "aaf7635a36bc912a4c66ee440ed2df131946486be5bb834131ccdc955b8e6874",
     "build.py": "1663d08df402089b8281088587139681492ebc5e424406cffb5ca12c26e0308f"
