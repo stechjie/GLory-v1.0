@@ -477,6 +477,8 @@ func _wait_for_resume_identity(generation: int) -> void:
 func _begin_resume_replay(payload: Dictionary) -> void:
 	_clear()
 	_enter_match_flow()
+	# 重连补看回放：仍在「对局中」→ 静音（9.28 反馈第 4 条）。
+	_set_chat_sound_suppressed(true)
 	_resume_replay_pending = {
 		"battle_id": str(payload.get("battle_id", "")),
 		"round": int(payload.get("battle_round", payload.get("round_id", GameState.round_index))),
@@ -616,6 +618,14 @@ func _enter_match_flow() -> void:
 	_in_match_flow = true
 
 
+# 「新消息提示音是否该静音」（9.28 反馈第 4 条）。用户口径：
+# **大厅、房间收到信息会即时响；对局（备战→战斗→结算）不响。**
+# 所以这里**不含** 3v3 大厅 —— 它是「房间」，里面收到新消息照响。
+# 清在 _clear() 里，任何菜单界面都会自动恢复响铃。
+func _set_chat_sound_suppressed(suppressed: bool) -> void:
+	ChatService.in_match = suppressed
+
+
 func _process(delta: float) -> void:
 	_watch_account_link(delta)
 
@@ -682,6 +692,8 @@ func _clear() -> void:
 	# 同理：下一页是不是对局，由它自己说（_enter_match_flow）。默认不是 ——
 	# 这样新加的菜单界面不用记得做任何事，就自动受「掉线回启动页」保护。
 	_in_match_flow = false
+	# 回到非对局界面 → 新消息提示音恢复（9.28 反馈第 4 条）。见 _set_chat_sound_suppressed。
+	ChatService.in_match = false
 	# Menu-owned async work must stop before its controls leave the tree. This also
 	# makes a later public-token response stale instead of painting the next screen.
 	if _menu != null and is_instance_valid(_menu):
@@ -1468,14 +1480,20 @@ func _close_announcement_popup() -> void:
 # 是两条链路，不该互相认识（docs/账号系统RFC.md 第三节），所以房间号是通过一个
 # Callable 注入进去的，而这一处是唯一同时知道两边的地方。
 #
-# 上报的只有「我在线」和「我在哪个房间」。房间号是**客户端自报**的 ——
-# 谎报只能让好友进错房间，而房间号本来就是任何人知道号就能进。
+# 上报的只有「我在线」「我在哪个房间」「这间开打了没」。房间号与开局状态都是
+# **客户端自报**的 —— 谎报只能让好友进错房间、或让邀请早/晚一点变已过时
+# （9.28 bug 第 3 条：房间开局后，之前发出的邀请要显示成「已过时」）。
 # ⚠️ 这条边界只对「说谎没收益」的数据成立，别拿它承载战绩/奖励。
 var _presence_last_room := -1
+# 上一次上报的「是否已开打」。房间内 phase 从 lobby → prep/battle 时也要补一次上报，
+# 否则「开局」那一刻不会立刻同步给好友（要等满一个心跳周期）。
+var _presence_last_started := false
 
 
 func _install_presence_reporting() -> void:
-	AccountManager.configure_presence(func() -> int: return NetworkService.team_room_id)
+	AccountManager.configure_presence(
+		func() -> int: return NetworkService.team_room_id,
+		_room_started_now)
 	AccountManager.start_presence()
 	# 登录成功后补一次：_ready 跑在登录之前，第一次心跳会因为还没登录被跳过，
 	# 不补的话好友要等满一个心跳周期才看见我上线。
@@ -1492,13 +1510,27 @@ func _on_presence_login(_player_id: String, _player_name: String) -> void:
 	AccountManager.report_presence_now()
 
 
-# 只在**房间号真的变了**时上报。这两个信号在一局里会发很多次，
+# 「当前房间的对局是否已开打」：房间阶段离开 lobby 就算开局。
+# server_phase 由服务器广播（ROOM_LOBBY / PREP / BATTLE / RESULT / CLOSED）；
+# 本地房主模式（调试用）没有服务器广播的阶段，退回 team_round_active —— 同
+# NetworkService._chat_log_round 的处理。
+func _room_started_now() -> bool:
+	if NetworkService.team_room_id <= 0:
+		return false
+	if not NetworkService.server_phase.is_empty():
+		return NetworkService.server_phase != NetworkService.ROOM_LOBBY
+	return NetworkService.team_round_active
+
+
+# 只在**房间号或开局状态真的变了**时上报。这些信号在一局里会发很多次，
 # 无条件上报等于把「慢心跳」变成高频轮询。
 func _on_presence_room_changed() -> void:
 	var room := NetworkService.team_room_id
-	if room == _presence_last_room:
+	var started := _room_started_now()
+	if room == _presence_last_room and started == _presence_last_started:
 		return
 	_presence_last_room = room
+	_presence_last_started = started
 	AccountManager.report_presence_now()
 
 
@@ -1660,6 +1692,7 @@ func _show_selftest() -> void:
 		return
 	_clear()
 	_enter_match_flow()
+	_set_chat_sound_suppressed(true)
 	_selftest_prev_team_mode = GameState.team_mode
 	GameState.team_mode = true
 	# load() (not preload) so this optional officetest scene never becomes a
@@ -1707,6 +1740,7 @@ func _show_prep() -> void:
 		return
 	_clear()
 	_enter_match_flow()
+	_set_chat_sound_suppressed(true)
 	_prep = _instantiate_screen("res://scenes/prep/PrepScreen.tscn")
 	_prep.battle_requested.connect(_on_battle_requested)
 	add_child(_prep)
@@ -1715,6 +1749,7 @@ func _show_prep() -> void:
 func _show_battle(battle_scene: PackedScene = null) -> void:
 	_clear()
 	_enter_match_flow()
+	_set_chat_sound_suppressed(true)
 	var scene := battle_scene if battle_scene != null else _load_screen("res://scenes/battle/BattleScreen.tscn")
 	_battle = scene.instantiate()
 	_battle.battle_finished.connect(_on_battle_finished)
@@ -1725,6 +1760,8 @@ func _show_game_over() -> void:
 	SaveManager.clear_reconnect()
 	_clear()
 	_enter_match_flow()
+	# 结算界面仍算「对局中」→ 静音（用户口径：出来大厅才恢复）。
+	_set_chat_sound_suppressed(true)
 	var bg := ColorRect.new()
 	bg.color = Color(0.05, 0.06, 0.07)
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

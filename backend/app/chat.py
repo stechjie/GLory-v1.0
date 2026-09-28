@@ -250,6 +250,14 @@ async def _check_invite_rules(
     (a)「同一邀请人同一房间只会发送一次邀请消息」
         —— 键是 (邀请人, 房间号, 收件人)。同一个房间邀请第二个好友要放行，
         否则这个功能就只能邀请一个人。
+    (b)「同一邀请人不同房间的邀请间隔 10 秒」—— **只在换房间时才计时**
+        （2026-09-28 反馈第 5 条）：所以扫最近一条邀请时把它的 room_id 也取出来，
+        与本次的 room_id 相同就不触发冷却（同房连邀不同好友随便发）；
+        房间号不同才做 10 秒比较（换房刷屏仍被限）。
+
+        ⚠️ 旧实现只扫 created_at、不看房间号，于是同一房间邀请第二个好友也被拦
+        （客户端同样过宽）—— 玩家报的「10 秒后才能再次邀请」就是它。
+        客户端 RoomInvite.send_blocked_reason 用同一口径，两边必须一致。
     """
     dup = await conn.fetchval(
         """
@@ -268,11 +276,11 @@ async def _check_invite_rules(
     if dup:
         raise ChatRejected("invite_duplicate", "同一个房间已经邀请过对方了")
 
-    # (b)「同一邀请人不同的房间邀请消息的发送间隔为 10 秒」
-    #     —— 按发送者扫最近一条邀请，与房间无关（换房才触发这条）。
-    last = await conn.fetchval(
+    # (b) 换房才有的 10 秒间隔。把最近一条邀请的 room_id 一起取回来：
+    #     与本次 room_id 相同 → 跳过（同房连邀多个好友）。
+    last = await conn.fetchrow(
         """
-        select created_at from chat_messages
+        select created_at, payload ->> 'room_id' as room_id from chat_messages
         where sender_id = $1 and kind = $2
         order by created_at desc
         limit 1
@@ -281,9 +289,27 @@ async def _check_invite_rules(
         ROOM_INVITE_KIND,
     )
     if last is not None:
-        elapsed = await conn.fetchval("select now() - $1::timestamptz", last)
-        if elapsed is not None and elapsed.total_seconds() < ROOM_INVITE_RATE_SEC:
-            raise ChatRejected("invite_rate_limited", "邀请发得太快了，请稍后再试")
+        # payload 里的 room_id 是文本；坏数据（空 / 非数字）**一律当「换房」**，
+        # 宁可多限一次，也不因为一条脏数据把防刷整条放过（同 accounts 的取舍）。
+        last_room_id = _room_id_of_payload(last["room_id"])
+        if last_room_id != room_id:
+            elapsed = await conn.fetchval("select now() - $1::timestamptz", last["created_at"])
+            if elapsed is not None and elapsed.total_seconds() < ROOM_INVITE_RATE_SEC:
+                raise ChatRejected("invite_rate_limited", "邀请发得太快了，请稍后再试")
+
+
+def _room_id_of_payload(raw: str | None) -> int:
+    """从 chat_messages.payload->>'room_id' 的文本还原房间号；拿不到返回 0。
+
+    返回 0 与任何真实 room_id 都不相等（room_id 恒为正），所以在 (b) 的
+    「last_room_id != room_id」判断里 0 天然等价于「算作换房」—— 这正是要的兜底。
+    """
+    if raw is None:
+        return 0
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return 0
 
 
 async def send(

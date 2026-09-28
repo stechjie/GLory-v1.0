@@ -78,6 +78,14 @@ const TARGETS: Array[Dictionary] = [
 	{"kind": "script", "path": "res://scenes/main/Main.gd"},
 	{"kind": "script", "path": "res://scripts/autoload/AccountManager.gd"},
 	{"kind": "script", "path": "res://tools/room_invite_check.gd"},
+	# ★ 9.28 第一批（9.28bug提交及修复.docx 5 条）：改了 ui/components/ReportDialog.gd
+	#   （举报弹窗选中/未选中边框）、scripts/autoload/ChatService.gd（新消息音效场景门控）、
+	#   scripts/multiplayer/RoomInvite.gd（10 秒冷却改为仅换房计时）、ChatScreen.gd /
+	#   Main.gd / Team3v3Lobby.gd / AccountManager.gd（邀请失效前移 + room_started 上报）。
+	#   ReportDialog.gd 与 ChatService.gd（autoload）此前只在别的清单里靠连带覆盖 ——
+	#   按「改的每个文件都要在清单里，谁坏了就指谁」逐个单列。
+	{"kind": "script", "path": "res://ui/components/ReportDialog.gd"},
+	{"kind": "script", "path": "res://scripts/autoload/ChatService.gd"},
 ]
 
 

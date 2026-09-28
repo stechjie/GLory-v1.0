@@ -142,17 +142,23 @@ func _behavior_expiry() -> void:
 func _behavior_rate_limit() -> void:
 	var now := 2_000_000
 	# 同一房间对同一位好友只发一次。
-	_h.expect(RoomInvite.send_blocked_reason(now, 0, true) == "duplicate", "block_duplicate",
+	_h.expect(RoomInvite.send_blocked_reason(now, 77, 77, 0, true) == "duplicate", "block_duplicate",
 		"同房同好友已发过 → duplicate")
-	# 异房间隔 10 秒：9 秒拦、10 秒放（边界两侧）。
-	_h.expect(RoomInvite.send_blocked_reason(now, now - 9, false) == "rate_limited",
-		"block_rate_9s", "距上次 9 秒 → rate_limited")
-	_h.expect(RoomInvite.send_blocked_reason(now, now - WANT_RATE_SEC, false) == "",
-		"allow_rate_10s", "距上次正好 10 秒 → 放行（边界上）")
-	_h.expect(RoomInvite.send_blocked_reason(now, now - 60, false) == "", "allow_after_minute",
-		"距上次一分钟 → 放行")
+	# 换房间隔 10 秒：9 秒拦、10 秒放（边界两侧）。
+	_h.expect(RoomInvite.send_blocked_reason(now, 88, 77, now - 9, false) == "rate_limited",
+		"block_rate_9s", "换房后距上次 9 秒 → rate_limited")
+	_h.expect(RoomInvite.send_blocked_reason(now, 88, 77, now - WANT_RATE_SEC, false) == "",
+		"allow_rate_10s", "换房后距上次正好 10 秒 → 放行（边界上）")
+	_h.expect(RoomInvite.send_blocked_reason(now, 88, 77, now - 60, false) == "", "allow_after_minute",
+		"换房后距上次一分钟 → 放行")
+	# 🔴 同房间（本次房间号 == 上次发邀请的房间号）：**不管多近都不算冷却**
+	#    （2026-09-28 反馈第 5 条）—— 同一个房间里邀请第二个好友必须放行。
+	_h.expect(RoomInvite.send_blocked_reason(now, 77, 77, now - 1, false) == "", "allow_same_room_1s",
+		"同一房间内 1 秒后邀第二个好友 → 放行（旧实现在这里误拦）")
+	_h.expect(RoomInvite.send_blocked_reason(now, 77, 77, now, false) == "", "allow_same_room_same_sec",
+		"同一房间内同一秒邀第二个好友 → 放行")
 	# 从没发过。
-	_h.expect(RoomInvite.send_blocked_reason(now, 0, false) == "", "allow_first",
+	_h.expect(RoomInvite.send_blocked_reason(now, 77, 0, 0, false) == "", "allow_first",
 		"本场第一次邀请 → 放行")
 	# 两个原因都给得出人话（不给空串，否则提示是一条空白）。
 	_h.expect(not RoomInvite.send_blocked_text("duplicate").is_empty()

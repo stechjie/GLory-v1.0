@@ -19,7 +19,7 @@ extends RefCounted
 #
 #   · payload 的组装与解析  —— 客户端与服务端各写一份就会漂（漂了不报错，只是邀请收不到）
 #   · 失效判据（要求 5）    —— 离房 / 解散 / 已开打 / 20 分钟
-#   · 发送限流（要求 4）    —— 同房一次 / 异房 10 秒
+#   · 发送限流（要求 4）    —— 同房一次 / **换房** 10 秒（同房连邀不同好友不限）
 
 # 与 backend/app/chat.py 的 ROOM_INVITE_KIND 一致，门禁 tools/room_invite_check.gd 钉着。
 # 对不上的症状是「发出去的邀请对方收不到」或「收到的邀请渲染成一条普通文本」，都不报错。
@@ -31,7 +31,10 @@ const TEXT_EN := "I opened a new room — come join me!"
 
 # 邀请有效期（要求 5）：20 分钟。
 const EXPIRE_SEC := 20 * 60
-# 同一邀请人换房间时的最小间隔（要求 4）：10 秒。
+# 同一邀请人**换房间**时的最小间隔（要求 4）：10 秒。
+#
+# 🔴 只在房间号变化时计时（2026-09-28 反馈第 5 条）—— 同房间邀请不同好友不受限。
+# 详见 send_blocked_reason 上方那段。
 const RATE_LIMIT_SEC := 10
 
 # 失效提示（要求 5）。与教程的「上阵棋子数目少于 N」走同一个出口（GloryToast），
@@ -134,16 +137,33 @@ static func message_is_expired(message: Dictionary, created_sec: int, now_sec: i
 # 返回空串 = 可以发；否则是给玩家看的原因。本地先拦一道（省一次往返、反馈即时），
 # 服务端还会**再判一次**（本地判据在客户端，改个内存就能绕）。
 #   "duplicate"    —— 同一邀请人 + 同一房间 + 同一位好友，只会发一次邀请消息
-#   "rate_limited" —— 同一邀请人换房间时，两条邀请至少隔 10 秒
+#   "rate_limited" —— 同一邀请人**换房间**时，两条邀请至少隔 10 秒
 #
 # 关于 "duplicate" 的口径：要求原文是「同一邀请人同一房间只会发送一次邀请消息」。
 # 这里判的是 **(房间, 好友)** 这一对 —— 同一个房间里邀请第二个好友应该是允许的，
 # 否则「邀请朋友进入房间」这个功能就只能邀请一个人。房间级别的「只发一次」由服务端
 # 对 (room_id, 收件人) 去重实现，两边口径一致。
-static func send_blocked_reason(now_sec: int, last_sent_sec: int, same_room_already_sent: bool) -> String:
+#
+# ## 🔴 10 秒间隔只在**换房间**时计时（2026-09-28 反馈第 5 条）
+#
+# 需求原文是「同一邀请人**不同房间**的邀请间隔 10 秒」—— 也就是这条冷却是防
+# 「换房后刷屏式群发」的，不是防「同一个房间里连续邀请不同好友」。
+# 旧实现只传一个 last_sent_sec（本房间上一次成功发邀请的时间），**完全看不出房间变没变**，
+# 于是同一个房间邀请第二个好友也被拦，弹「10 秒后才能再次邀请」—— 那正是玩家报的 bug。
+#
+# 现在按 **(上次发邀请的房间号, 时间)** 一起比：房间号与当前相同 → 不触发冷却
+# （同房邀不同好友随便发）；房间号不同 → 才做 10 秒比较（换房刷屏仍被限）。
+# 服务端 chat.py:_check_invite_rules 的 (b) 用同一口径（扫最近一条邀请时把 room_id 也取出来），
+# 两边必须一致 —— 只改客户端没用：服务端还会回 409 invite_rate_limited。
+static func send_blocked_reason(
+		now_sec: int, current_room_id: int,
+		last_sent_room_id: int, last_sent_sec: int,
+		same_room_already_sent: bool) -> String:
 	if same_room_already_sent:
 		return "duplicate"
-	if last_sent_sec > 0 and now_sec - last_sent_sec < RATE_LIMIT_SEC:
+	# last_sent_room_id <= 0 表示「本次会话还没发过邀请」，不存在冷却。
+	if last_sent_sec > 0 and last_sent_room_id > 0 and last_sent_room_id != current_room_id \
+			and now_sec - last_sent_sec < RATE_LIMIT_SEC:
 		return "rate_limited"
 	return ""
 

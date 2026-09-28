@@ -42,6 +42,22 @@ const HISTORY_LIMIT := 200
 # 等玩家在聊天界面亲手点「在本设备重新连接」。
 var kicked := false
 
+# 玩家此刻在不在「对局」里（备战 / 战斗 / 结算 / 自测）。
+#
+# ⚠️ **不含房间（3v3 大厅）**：用户口径是「大厅、房间收到信息会即时响，对局收到不响」。
+# 3v3 大厅属于「房间」，收到新消息照响；只有真正开打前后（备战→战斗→结算）才静音。
+#
+# 由 Main 在对局界面进出时推。**新消息的提示音只在不在对局时响**（9.28 反馈第 4 条）：
+#   ① 大厅 / 房间收到 → 立即响；
+#   ② 对局中（备战/战斗/结算）收到 → **不响**（打起来时一声提示音会盖住战斗音、也分心）；
+#   ③ 对局结束回大厅 → 只亮红点、不补响（音效只挂在实时推送那一条路径上，
+#      refresh_unread / apply_chat_list 本来就只更新红点、不播音）。
+#
+# 为什么要一个显式标志而不是查 NetworkService/server_phase：账号门面（HTTPS）与
+# 战斗门面（ENet）是两条链路，不该互相认识（docs/账号系统RFC.md 第三节）。
+# 而且「对局」不等于「有 server_phase」——自测这类本地对局也要算进去。
+var in_match := false
+
 var _unread: Dictionary = {}  # friend_code -> true
 var _open_code := ""  # 当前在聊天界面上打开着的会话
 
@@ -397,9 +413,16 @@ func _on_dm_push(payload: Dictionary) -> void:
 	if code != _open_code and not _unread.has(code):
 		_unread[code] = true
 		unread_changed.emit(true)
-		# 只在「这条会话对玩家来说是新的未读」时响。正在看着的那个会话
-		# （code == _open_code）不响 —— 消息就在眼前，再响一声是噪音。
-		SfxService.play(SfxService.CUE_CHAT_ALERT)
+		# 红点任何时候都亮（红点不打扰，音效才打扰）。
+		#
+		# 音效只在这两种情况响：
+		#   · 不在对局里（大厅 / 房间 / 各种菜单）—— 9.28 反馈第 4 条 ①；
+		#   · 而且不是「正在看着的那个会话」（code == _open_code，消息就在眼前，
+		#     再响一声是噪音）。
+		# 对局中（in_match）**不响** —— 反馈 ②。对局结束回大厅时也不会补响：
+		# 音效只挂在实时推送这一条路径上，而 refresh_unread / apply_chat_list 只更新红点。
+		if not in_match:
+			SfxService.play(SfxService.CUE_CHAT_ALERT)
 	dm_received.emit(code, message as Dictionary)
 
 

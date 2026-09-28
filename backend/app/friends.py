@@ -77,6 +77,11 @@ class FriendSummary:
     avatar_frame: str
     online: bool
     room_id: int | None
+    # 他所在房间的对局是否已开打（database/022）。邀请失效判据要用：
+    # 房间开局后，之前发出的邀请要显示成「已过时」（9.28 bug 第 3 条）。
+    # room_id 为 None 时它恒为 False —— 与 room_id 同一条可见性边界
+    # （不在线 / 关掉了房间可见性时，不给房间号，也不给这个）。
+    room_started: bool = False
 
 
 @dataclass(frozen=True)
@@ -207,7 +212,8 @@ async def _friend_count(conn: asyncpg.Connection, player_id: uuid.UUID) -> int:
 # inner join 会把他们整个从好友列表里弄丢，而那是**沉默的**数据缺失。
 _LIST_FRIENDS = """
 select p.friend_code, p.player_name, p.avatar, p.avatar_frame,
-       pr.last_seen_at, pr.room_id, pr.presence_visibility, pr.room_visibility
+       pr.last_seen_at, pr.room_id, pr.room_started,
+       pr.presence_visibility, pr.room_visibility
 from player_friendships f
 join players p
   on p.player_id = case when f.low_id = $1 then f.high_id else f.low_id end
@@ -234,6 +240,10 @@ async def list_friends(player_id: uuid.UUID) -> list[FriendSummary]:
                 avatar_frame=r["avatar_frame"],
                 online=online,
                 room_id=int(room) if room is not None else None,
+                # 「已开打」跟着房间号走同一条可见性边界：看不到房间号时也不给这个，
+                # 否则会泄漏「他还在一间已经开打的房里」而他关了房间可见性。
+                # left join 出来可能是 NULL（没上报过心跳）→ 取 False。
+                room_started=bool(r["room_started"]) if room is not None else False,
             )
         )
     return out

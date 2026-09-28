@@ -602,7 +602,20 @@ func _check_settings_state_is_not_colour_only() -> void:
 				"feedback_row_missing",
 				"设置页没有 %s 这一行，开关对玩家不可达" % row_key):
 			continue
-		var row_btn: CheckButton = row
+		# ★ 每次换 locale 之后必须**重新取一次**按钮，不能把引用攥在手里。
+		#
+		# 根因（9.28 实测，不是推测）：`LocaleManager.set_locale()` 会 emit
+		# `locale_changed`，而 `SettingsScreen._on_locale_changed()` 走的是
+		# **整页重建**（`_build()`）—— 下面第 618/620/622 行那三次 set_locale
+		# 每执行一次，`_presentation_btns` 里就被换成**一批全新的 CheckButton**，
+		# 旧节点 `remove_child` 后已不在树上。
+		#
+		# 第一版把 `row_btn` 在循环开头取好、之后一直用它读 `text`，读到的是
+		# **已经离树的旧节点** —— 它的文案永远停在重建那一刻，开关怎么切都一样，
+		# 于是 `row_on == row_off` 恒成立，门禁对**完好的实现**报假红。
+		# 判据要指着能坏的那一处：坏的是"切换后文案没跟上"，不是"这个节点对象"，
+		# 所以每步都得从 `_presentation_btns` 现取。
+		var row_btn: CheckButton = _row_btn_now(screen, row_key)
 		# 文案两个语言都要登记。
 		#
 		# 直觉写法「tr(key) != key」在这里**证明不了任何事**：Godot 的
@@ -628,11 +641,17 @@ func _check_settings_state_is_not_colour_only() -> void:
 		# 开/关不能只靠颜色和滑块 —— 与 board_guides 同一条口径。
 		# 这几行原本一条断言都没有：toggle_state_is_colour_only 查的是
 		# _refresh_board_guides_button，走的是另一个函数。
+		#
+		# 每切一次状态都重新取按钮（理由见上面「每次换 locale 之后必须重新取一次」）。
+		# 三次 set_locale 刚把页面重建过，`row_btn` 此刻已经是离树旧节点。
+		row_btn = _row_btn_now(screen, row_key)
 		PlayerProfile.set_presentation_toggle(row_key, true)
 		screen._refresh_presentation_button(row_key)
+		row_btn = _row_btn_now(screen, row_key)
 		var row_on := str(row_btn.text)
 		PlayerProfile.set_presentation_toggle(row_key, false)
 		screen._refresh_presentation_button(row_key)
+		row_btn = _row_btn_now(screen, row_key)
 		var row_off := str(row_btn.text)
 		PlayerProfile.set_presentation_toggle(row_key, true)
 		screen._refresh_presentation_button(row_key)
@@ -655,10 +674,23 @@ func _check_settings_state_is_not_colour_only() -> void:
 		"设置页有 %d 个按钮低于 TOUCH_MIN=%.0f，最矮的只有 %.1fpx"
 			% [too_small, Tokens.TOUCH_MIN, worst_h])
 
-	if marked_before:
-		LocaleManager.set_locale("zh")
+	# 收尾还原：`marked_before` 只在「开局是中文」时为真，而语言按钮的选中标记
+	# 与 locale 是同一件事 —— 只要这次跑动过 locale（本函数第 559 行无条件切过），
+	# 就必须还原，不能挂在条件上。原来写成 `if marked_before:`，等于「开局本来
+	# 不是中文就不还原」，把 locale 留在切换后的那一半，污染同进程后续检查。
+	LocaleManager.set_locale("zh" if marked_before else LocaleManager.get_locale())
 	screen.queue_free()
 	await get_tree().process_frame
+
+
+# 从设置页现取一行开关按钮。**不要缓存返回值跨过 `set_locale()`** ——
+# 换 locale 会经 `locale_changed` → `SettingsScreen._on_locale_changed()`
+# → `_build()` 把整页重建，缓存下来的引用会变成已离树的旧节点。
+func _row_btn_now(screen: Node, row_key: String) -> CheckButton:
+	var row = screen._presentation_btns.get(row_key)
+	if row is CheckButton and is_instance_valid(row):
+		return row as CheckButton
+	return null
 
 
 func _all_buttons(node: Node) -> Array[BaseButton]:

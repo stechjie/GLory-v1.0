@@ -26,7 +26,12 @@ var _friends_box: VBoxContainer
 var _friends_loading := false
 # 邀请限流状态（要求 4）。只活在本场房间的内存里（界面每次进房重建，初始值自然从零开始）。
 # 服务端还会再判一次（权威），这里只是本地先拦一道：反馈即时、省一次往返。
+#
+# 🔴 10 秒冷却只在**换房间**时计时（2026-09-28 反馈第 5 条）：所以要同时记
+# 「上次成功发邀请是哪个房间」与「什么时候」。只记时间的话，同一个房间邀第二个好友
+# 会被误拦成「10 秒后才能再次邀请」—— 那正是玩家报的 bug。
 var _invite_last_sec := 0
+var _invite_last_room_id := 0
 # (房间号:好友码) -> true。同一房间对同一位好友只发一次邀请消息。
 var _invited_pairs: Dictionary = {}
 
@@ -102,7 +107,8 @@ func _on_invite_friend(code: String, row: Control) -> void:
 	# 看起来跟没点到一模一样（这就是实测「点击没有亮一下」的原因）。
 	# 而且这一下不能等网络：弱网下那要好几秒，玩家会以为没点到而连点。
 	_flash_row(row)
-	var blocked := RoomInvite.send_blocked_reason(now, _invite_last_sec, _invited_pairs.has(key))
+	var blocked := RoomInvite.send_blocked_reason(
+		now, room_id, _invite_last_room_id, _invite_last_sec, _invited_pairs.has(key))
 	if blocked == "duplicate":
 		# 同一房间已经邀请过这位好友：**静默返回**。
 		# 不再弹「已经邀请过了」—— 亮一下已经说明「点到了」，再弹一句只会打扰；
@@ -122,6 +128,7 @@ func _on_invite_friend(code: String, row: Control) -> void:
 		# 成功才记账：失败（网络）时不留痕，玩家可以立刻重试。
 		_invited_pairs[key] = true
 		_invite_last_sec = now
+		_invite_last_room_id = room_id
 	elif status == 409:
 		# 服务端去重兜底（invite_duplicate → 409）：与本地「已经邀请过」同义，也静默。
 		pass

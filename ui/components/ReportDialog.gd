@@ -99,6 +99,15 @@ func _ready() -> void:
 		button.toggle_mode = true
 		button.theme_type_variation = Theming.VARIATION_GHOST
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		# 选中态的外框（2026-09-28 反馈第 1 条）。GHOST 变体原本把 normal/hover/pressed
+		# 三态都设成「透明底 + 一圈边框」，而 pressed（= 选中并被保持）用的边框色是
+		# SURFACE_RAISED(0.105,0.121,0.161)，与弹窗底色 SURFACE(0.071,0.082,0.110)
+		# 几乎一样 —— 于是**选中的那个按钮看起来没有边框**，未选中的反而有。
+		# 这里按需求反过来：未选中（normal）无边框，选中（pressed）带金色外框。
+		# 只覆写样式盒，不动布局/文字/字号 —— 需求原文「保持原有布局、文字、配色不变」。
+		button.add_theme_stylebox_override("normal", Tokens.button_box(Tokens.BORDER, Tokens.BORDER, false))
+		button.add_theme_stylebox_override("hover", Tokens.button_box(Tokens.CYAN, Tokens.CYAN, false))
+		button.add_theme_stylebox_override("pressed", _selected_box())
 		grid.add_child(button)
 		_reason_buttons[str(reason)] = button
 
@@ -162,6 +171,16 @@ func _show_error(message: String) -> void:
 
 func _close() -> void:
 	ModalStack.pop(MODAL_ID)
+
+
+# 「已选中」的外框（反馈第 1 条）：实底用比弹窗更亮一档的金色，
+# 描边用 CYAN_HOVER —— 一眼分得出「这个被选中了」。底色仍保持透明，
+# 不引入新的填充色（需求要求「保持原有配色不变」）。
+static func _selected_box() -> StyleBoxFlat:
+	var box := Tokens.button_box(Tokens.SURFACE_RAISED, Tokens.CYAN_HOVER, false)
+	# 选中框给两倍线宽：同色细框在深底上仍然容易看漏，加粗才算「带外边框」。
+	box.set_border_width_all(Tokens.BORDER_WIDTH * 2)
+	return box
 
 
 func _button(label_text: String, on_press: Callable) -> Button:
