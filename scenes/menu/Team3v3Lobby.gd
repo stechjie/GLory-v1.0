@@ -340,9 +340,18 @@ func _states() -> Array:
 	return _slot_states
 
 # 房主席位号。联机局以服务端广播的 team_leader_slot 为准（它会因掉线顺延、
-# 也会跟着换位搬走）；单机/本地调试没有服务端广播，退化为 0 号位。
+# 也会跟着换位搬走）；单机/本地调试没有服务端广播 —— 离线房间里**只有本机一个
+# 玩家**，所以房主就是自己，返回自己的座位号。
+#
+# ★ 9.29 bug 文档第 4 条：这里原来硬编码 `0`，而离线自测时玩家一开局就在 A 座
+# 之外的地方（换过座、或本来就在别的座位）—— 于是「房主」被写给 0 号位，那个
+# 位子若是假想敌，文案紧接着又被 dummy 分支的「假想敌」覆盖，玩家自己的座位
+# 只能落到 else 分支显示「未准备」。实测（离线、玩家在 C 座、其余假想敌）：
+#   s0='假想敌'  s2='未准备'   ← 玩家看到的就是「本应房主、现在未准备」
+# 改取 `_my_slot()` 后 s2='房主'。注意**不能用 _local_slot 直读**：_my_slot()
+# 才是「在线走服务端、离线走本地」这件事的唯一出口，绕过它会在联机局里读错。
 func _leader_slot() -> int:
-	return NetworkService.team_leader_slot if _online() else 0
+	return NetworkService.team_leader_slot if _online() else _my_slot()
 
 func _ready_arr() -> Array:
 	if _online() and NetworkService.team_ready.size() == 6:
@@ -559,13 +568,19 @@ func _refresh() -> void:
 			Tokens.GOLD_HOVER if is_me else Tokens.TEXT_PRIMARY)
 		name_lbl.add_theme_color_override("font_outline_color", Tokens.INK_PANEL)
 		name_lbl.add_theme_constant_override("outline_size", 2)
+		# 座位状态变了（玩家 ↔ 假想敌 ↔ 空位）就要改这两条标签的字号与落点，
+		# 而 _placed 只是「期望值」——**改完必须立刻落到节点上**（见
+		# _apply_placement 的长注释：只写 _placed 不落节点 = 那个座位停在旧字号
+		# 与旧位置上，就是 bug 文档第 4 条的「字体不一致 + 字消失」）。
 		for placement in _placed:
 			if placement.node == name_lbl:
 				placement.font_size = 20 if state == "player" else 28
+				_apply_tracked(placement)
 			if placement.node == status_lbl:
 				placement.pos = SLOT_POS[i] + (Vector2(39, 137) if state == "player" else Vector2(34, 72))
 				placement.size = Vector2(106, 32) if state == "player" else Vector2(122, 42)
 				placement.font_size = 17 if state == "player" else 20
+				_apply_tracked(placement)
 		match state:
 			"player":
 				# 使用当前房主席位，兼容换位及房主迁移。
@@ -705,37 +720,63 @@ func _layout() -> void:
 		rect.position = Vector2(0.0, viewport_size.y - height if bool(band.from_bottom) else float(band.y) * scale)
 		rect.size = Vector2(viewport_size.x, height)
 	for item in _placed:
-		var node := item.node as Control
-		var pos := item.pos as Vector2
-		var size := item.size as Vector2
-		# edge=left/right 的元素锚定到真实屏幕边（消除宽屏下的左右留白）；
-		# 其余保持 16:9 画布居中缩放。垂直方向一律跟随居中画布。
-		var x: float
-		match str(item.get("edge", "")):
-			"left":
-				x = pos.x * scale
-			"right":
-				x = viewport_size.x - (REF_SIZE.x - pos.x) * scale
-			_:
-				x = origin.x + pos.x * scale
-		var resolved_pos := Vector2(x, origin.y + pos.y * scale)
-		var resolved_size := size * scale
-		# 字形落在半像素上时，FreeType 的覆盖率会平均到两列像素，视觉上就像蒙了一层灰。
-		# 贴图保留连续缩放；只把承载文字的控件吸附到整数像素，不改变点击区语义。
-		if node is Label or (node is Button and int(item.font_size) > 0):
-			resolved_pos = resolved_pos.round()
-			resolved_size = resolved_size.round()
-		node.position = resolved_pos
-		node.size = resolved_size
-		# 字号也要跟着缩放，否则窗口一小文字就撑破按钮框、窗口一大文字又显得过小。
-		# font_size=0 的（纯判定区 _add_hit）没有文字，跳过。
-		if int(item.font_size) > 0 and (node is Label or node is Button):
-			node.add_theme_font_size_override("font_size", maxi(13, roundi(item.font_size * scale)))
+		_apply_placement(item, scale, origin, viewport_size)
 	# 记录面板里的字是容器排的、不在 _placed 里：开着的时候按新比例重画一遍。
 	if _record_panel != null and _record_panel.visible:
 		_render_record()
 	if _debug_layer != null:
 		_debug_layer.queue_redraw()
+
+# 给 _refresh() 用：按**上一次** _layout() 记下的比例与原点，把单条记录落到节点上。
+# 屏幕尺寸没变时这是精确的；屏幕尺寸变了的话紧接着就有一次 _layout() 兜底
+# （notify 的 resized 会重排全量），所以这里不需要自己重算比例。
+func _apply_tracked(item: Dictionary) -> void:
+	if _layout_scale <= 0.0:
+		return
+	_apply_placement(item, _layout_scale, _layout_origin, get_viewport_rect().size)
+
+# 把一条 _placed 记录落到它的活节点上（位置 / 尺寸 / 字号）。
+#
+# ★ 9.29 bug 文档第 4 条：这一段**必须能单独调**，不能只活在 _layout() 里。
+# 原因：_refresh() 会改写 _placed 里的 pos/size/font_size（座位从「玩家」变成
+# 「假想敌」时，圈内状态标签要从框下方挪到框里、圈外名牌要换成大字），但
+# **写进 _placed 不等于写进节点** —— 真正落到 Label 上的是这里。
+# 只调 _refresh() 不调 _layout() 的路径（换座 _on_slot_pressed、加/减 AI
+# _toggle_dummy、以及它们经 session_changed 的兄弟路径）就会让那个座位**停在
+# 上一轮的字号和位置上**：实测把玩家从 A 座换到 C 座、再把 A 座设成假想敌后，
+# A 座圈外名牌仍是「玩家」时的 20 号字（其余假想敌都是 28），圈内「假想敌」
+# 还留在框**下方**「玩家」时代的位置 —— 也就是玩家看到的「字体不一致 + 字消失」。
+# 所以 _refresh() 改完 _placed 就地调本函数，两条路共用同一份落点逻辑，
+# 不会出现「只在某一条路径上对」的半修。
+func _apply_placement(item: Dictionary, scale: float, origin: Vector2, viewport_size: Vector2) -> void:
+	var node := item.node as Control
+	if node == null or not is_instance_valid(node):
+		return
+	var pos := item.pos as Vector2
+	var size := item.size as Vector2
+	# edge=left/right 的元素锚定到真实屏幕边（消除宽屏下的左右留白）；
+	# 其余保持 16:9 画布居中缩放。垂直方向一律跟随居中画布。
+	var x: float
+	match str(item.get("edge", "")):
+		"left":
+			x = pos.x * scale
+		"right":
+			x = viewport_size.x - (REF_SIZE.x - pos.x) * scale
+		_:
+			x = origin.x + pos.x * scale
+	var resolved_pos := Vector2(x, origin.y + pos.y * scale)
+	var resolved_size := size * scale
+	# 字形落在半像素上时，FreeType 的覆盖率会平均到两列像素，视觉上就像蒙了一层灰。
+	# 贴图保留连续缩放；只把承载文字的控件吸附到整数像素，不改变点击区语义。
+	if node is Label or (node is Button and int(item.font_size) > 0):
+		resolved_pos = resolved_pos.round()
+		resolved_size = resolved_size.round()
+	node.position = resolved_pos
+	node.size = resolved_size
+	# 字号也要跟着缩放，否则窗口一小文字就撑破按钮框、窗口一大文字又显得过小。
+	# font_size=0 的（纯判定区 _add_hit）没有文字，跳过。
+	if int(item.font_size) > 0 and (node is Label or node is Button):
+		node.add_theme_font_size_override("font_size", maxi(13, roundi(item.font_size * scale)))
 
 # 素材都是裁好的成品图（一张 PNG = 一个元素），所以整张画、不再做图集裁切。
 # STRETCH_SCALE = 拉满给定的框，不保持原始宽高比：框写多大就画多大，

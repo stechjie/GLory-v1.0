@@ -2237,3 +2237,34 @@ A 费用档位 / B 教程恒免费（刷 **999 次**仍为 0）/ C **递归扫 `
 **部署。** 账号服务器 `update.sh` 之后好友列表立刻恢复；客户端出新包（「连接中」修复在客户端）；**战斗服务器不动，协议号不变，Supabase 不用跑任何东西。**
 
 **验证。** 后端全量 681 过、5 红（`test_chat.py` 的 5 条在 HEAD 上就红：9.27 给 `chat.send` 加了两个参数，测试替身没跟上，与本批无关）。本机真库（只跑到 021，和线上一样）直接调好友列表 + 心跳正常。Godot 门禁：`room_invite` 83 项（新增加入被拒的行为断言 + 「房间状态不进账号服务器」的结构断言）、`main_team_join_room_action` / `create_room` / `room_list` / `token` 四条、`cold_parse_chain`、`friends`、`chat`、`account_link`、`bootstrap`、`ui_component` 全过（user 目录隔离）。变异：把修复退回旧行为，`room_invite` 红 7 条，还原后逐字节一致。★ 未做真机 / 双号验证。
+
+
+## 2026-09-29：《bug提交及修复.docx》（桌面）4 条（最终战血条配色 · 对局历史红蓝队 · 离线自测面板实时 · 房间座位标签）
+
+桌面文档 `bug提交及修复.docx`（GloryBeta0928 / 安卓）里的 4 条全部闭环。**本轮未改动任何资源文件**（`assets/**` 一律未动），只改 `.gd` 逻辑 + 新增门禁。
+
+**①最终战回合我方血条变红、敌方变绿。** 规范化棋局里 A 队（slot 0-2）恒为 `"player"` 侧，观众若坐在 B 队，画面上的「我方」是规范化 enemy 侧，血条**必须翻色**。这个翻色原来和「位置上下镜像」共用 `_arena_flip_y` 一个开关，而**最终战把战斗轴改成左右**（`_apply_final_round_left_right_layout`）⇒ 位置绝不能翻 ⇒ 决赛把该开关强制 false，**顺带把配色也关了**。修法：拆出独立开关 `_color_flip`（只看「观众是否坐在规范化 enemy 侧」，**不带决赛排除**），判据抽成 `static` 纯函数 `resolve_display_team` / `hp_color_for_display_team`（重型 3D 场景不能 headless `new()`）。半场标签仍用 `_arena_flip_y`（那是**位置**语义，正确，不改）。门禁 `battle_team_color` **PASS 24/0**；变异 3 处全红 + 还原 `MATCH`。★ 踩到判别力洞：结构断言最初只切第一行，而变异用**行尾 `\` 续行**把 `FINAL_ROUND` 放到第二行 ⇒ 门禁静默保持绿；改成取到空行的窗口后才红。
+
+**②对局历史显示 A 队/B 队。** 按「房间上方 = 红队 / 下方 = 蓝队」改 `MatchHistoryPanel` 两处文案（队伍标题 + 法阵 HP 行）。门禁 `match_history_ui` **PASS 41/0**（行为 + 去注释后的字面量结构断言）；变异 1 处 RED failures=7 + 还原 `MATCH`。
+
+**③离线自测点棋子，面板攻速/防御/暴击不实时。** 分两轮才修对：
+
+- **第一轮**：离线自测是**本地实时模拟**，模拟器**就地改写 fighter 上的活字段**（`f.attack_speed`/`f.defense`/`f.crit_bonus`），而面板读的是 `def` 里的**基准值**。改成读活 fighter（`live_attack_speed`/`live_defense`/`live_crit`，`def` 兜底）。
+- **第二轮（用户复报「攻速还是没更新」）**：第一轮只解决「被就地改写过的裸值」。但战斗真正用的攻速**不是裸字段**（`BattleSimulator.gd:730`）：`clamp(f.attack_speed × StatusEffectService.attack_speed_multiplier(f) × _dynamic_attack_speed_multiplier(f), 0.25, 2.5)`，而 `speed_bonus` / `slow` / `frenzy_stacks` / `blood_rampage` **全都只活在乘数里、不写回 `f.attack_speed`** ⇒ 读裸值恒等于基准值。用户截图里「状态：攻速提升 1.1秒」在生效、面板攻速却恒显 0.95，现场就是这么来的。★ **口径铁律：面板直接调用战斗同一个函数，不许自己再拼一遍公式**（拼一遍就漏项，漏的正是这几个）。现在攻速走上面那个完整式子、防御走 `DamageService.effective_defense()`、暴击与命中判定同源（**并补上人类「每 3 下一暴」是确定性必暴**，`attack_count % 3 == 2` 时显示 100%）。`range` **没有任何修改机制**故保持读 `def`。
+- 探针实锤（`work/_qa_929/probe_as_live.gd`，改前）：四种 buff 场景面板**全部恒读 0.950**，而实际值为 1.140 / 0.617 / 1.445 / 1.330。用截图里的真实单位复核（`probe_leo_live.gd`，炎阳王者 `merc_leo_sun`）：裸身 `0.950 / 11 / 5%` 与截图一字不差，吃到 `speed_bonus .25` → **1.188**、减速 → **0.617**、削防 → **8**、加防 → **21**。
+- 门禁 `officetest_stat_panel` 扩写 **PASS 45/0**（原 20）：新增「攻速逐位等于战斗式子」（含 speed_bonus/slow/frenzy/blood_rampage 四种 + 上界夹取）、「防御等于 `effective_defense`」、「结构：面板不许内联拼乘数公式」（口径必须单点）、体检断言 `checked >= 40`。变异 **7 处全红** + 按 sha256 还原 `MATCH`。
+- ★ 本轮踩坑：结构判据切函数体时用 `split("\nfunc ")[0]` **截不断**，因为紧随其后的是 **`static func`**（行首 `\nstatic func `）⇒ 判据命中实现本体而非面板。这是「`contains` 必须限作用域」那条铁律的变体。
+
+**④离线自测房间座位标签（「未准备」应为「房主」· 假想敌A 框里字消失 · 字号与 B 不一致）。** 两个根因：**(A)** `_leader_slot()` 离线**硬编码 0**，而玩家换过座 ⇒ 「房主」写到别人的位子上，那位子若是假想敌又被 `dummy` 分支覆盖，玩家座位只能落到「未准备」；改取 `_my_slot()`。**(B)** `_refresh()` 只改 `_placed` 的**期望值**，而真正落到 Label 上的是 `_layout()`；**换座 / 加减假想敌这两条路径只调 `_refresh()` 不调 `_layout()`** ⇒ 那个刚翻状态的座位**停在旧字号与旧位置**（探针实测：A 座名牌停在 20 号字而其余假想敌 28；圈内标签停在「框下方」的 player 坐标 ⇒ 字跑到框外，看上去像消失）。修法：抽出 `_apply_placement()`，`_layout()` 与 `_refresh()`（经 `_apply_tracked`）**共用同一份落点逻辑**。门禁 `team_lobby_seat_label` **PASS 35/0**（新建）；变异 **6 处全红** + 按 sha256 还原 `MATCH`。
+
+★ **第 4 条这条门禁本身抓到过一次「无声失效」**：初版 `checked=14` 看着绿，实际是**两个用例忘了 `await`**，在 `await _build_lobby()` 那个挂起点就返回、后面的断言一条都没跑（比假绿更隐蔽）。修法是每个用例都 `await`，并加**体检断言** `_h.checked_count() >= 20` —— 用例没跑到就直接红；加分后 `checked` 从 14 涨到 **35**。新增变异 M5（故意去掉 `await`）会令门禁**永不 quit** ⇒ 首次跑被外部 SIGTERM 打断、`finally` 没执行、**门禁脚本留在变异态**（`.r3bak` 残留 1 个）；已按 9.28 复盘口径加固：`subprocess.run(timeout=180)` + 超时计入 RED + `.r3bak` 残留检测，并把 M1–M4 与 M5 拆成两次跑；残留已**逐字节从 `.r3bak` 还原并核对 sha256**。
+
+★ **截图侧独立佐证**：逐像素 diff docx 的「图1(坏例 image6) vs 图2(好例 image7)」，A 座圈外名牌字形框 **45×25 vs 62×32**，比值 0.73 ≈ 字号 20/28 = 0.71 ⇒ 确认是**字号差**而非错觉；圈内「假想敌」三字只在 image7 存在。
+
+**回归（改动面 + 相邻面）。** `battle_team_color` 24 / `match_history_ui` 41 / `officetest_stat_panel` **45** / `team_lobby_seat_label` 35 / `cold_parse_chain` **116** —— 全 PASS。`procedural_ui_ratchet`(3) / `dynamic_call`(4) / `prep_text_coverage`(1) 三条**既存红，与本轮无关**（`Team3v3Lobby.gd` 的 `Button.new()`/`StyleBoxFlat.new()` 计数**未增加**，棘轮失败明细里没有这个文件）。
+
+★ **批跑口径**：本轮**未跑 `tools/*_check.tscn` 全集**，只跑「改动面 + 相邻面」，不重复声明全集结论。
+★ **未做真机 / 观感验收，未重新导出 EXE / APK。** 第 4 条的**联机侧（自定义房间）**靠「两条路径共用同一份 `_apply_placement`」的结构断言保证，**真机联机画面未验收**。
+★ **既存失败未修（超范围）**：`OfficetestSmoke` 的 `格点坐标与战斗站位一致` —— 探针实测 `_place_in_lane(f,5,"player",0)` → `(202,359)` 而 `OfficeTestSim.grid_sim_pos(0,5)` → `(218,398)`，**相差 42.15px**，是两套生产公式的历史不一致（疑似 9.25「4×4 真实间距」后 `grid_sim_pos` 未跟上），与本轮 4 条无关。
+
+详见[9.29 桌面 bug 文档四条修复记录](docs/9.29桌面bug文档四条修复记录.md)。

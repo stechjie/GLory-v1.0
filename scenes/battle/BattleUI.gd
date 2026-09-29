@@ -83,7 +83,20 @@ var _summary_lbl: RichTextLabel
 var _top5_atk_lbl: RichTextLabel
 # (4) When the local player is on the top (canonical "enemy") side of a PvP replay,
 # flip the arena vertically so THEIR units always appear at the bottom.
+#
+# ⚠️ 只负责**位置镜像**。颜色归属不要读这个（见 _color_flip）：决赛的最后战场把战斗轴
+# 改成了左右，镜像会把画面转坏，所以决赛里它恒为 false —— 但坐在 B 队的玩家在决赛里
+# 依然需要「我方绿」，那就不能靠它。
 var _arena_flip_y := false
+# (9.29 bug 文档第 1 条) 「我方 / 敌方」配色是否要从观众视角反转。
+#
+# 规范化棋局里 A 队（slot 0-2）恒为 "player" 侧。观众自己坐在 "enemy" 侧时，
+# 画面上的「我方」就是规范化的 enemy —— 血条颜色必须跟着观众翻，否则 B 队的玩家
+# 会看到自己是红的。普通回合里它和 _arena_flip_y 同值；**决赛里两者分开**：
+#   · 位置不翻（_arena_flip_y=false，左右战斗轴翻了会坏）
+#   · 颜色要翻（_color_flip=true，B 队观众永远看到自己绿）
+# 只影响配色（_hp_color_for_team / _display_team），不碰位置与朝向。
+var _color_flip := false
 # 观战敌方战场中（BattleScreen 切镜头置位）。渲染层据此反转敌我配色：
 # 敌方棋子显示红色阵营，他们打的怪显示绿色阵营。
 var _watching_rival := false

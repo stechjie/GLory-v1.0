@@ -1017,12 +1017,20 @@ func _build_detail_panel() -> void:
 # **当前这一帧**的数值面板；移开即收起。
 #
 # 面板内容全部读父类的 _frame_fighter_by_id：它是 _refresh_visuals() 每帧重建的「本帧存活
-# 单位」快照，hp / shield / statuses / skill_stacks / attack_count / damage_dealt 都是从
-# 回放帧直接灌进来的真值（见 BattleSimulator 的帧结构）。
+# 单位」快照。**离线自测是本地实时模拟**（OfficeTestSim.build_test_state + step_state），
+# 这个快照里存的就是**活的 fighter 字典本身**，所以 hp/shield/statuses/skill_stacks/
+# attack_count/damage_dealt，以及被 buff 改过的 atk/defense/attack_speed/crit_bonus
+# 都是真值，直接读即可。
 #
-# ⚠️ 攻击/攻速/暴击/射程 取的是**星级缩放后的 def 基准值**，不是被增益后的实时值：回放帧
-# 只记录 uid/pos/hp/alive/… 十几个字段，攻击力与攻速都不在其中（模拟器内部才有一份被
-# buff 改过的 fighter.atk）。所以这三行是「面板口径说明」的基准，别当成实时战报。
+# 9.29 bug 文档第 3 条：原先「攻击/攻速/防御/暴击」取的是**星级缩放后的 def 基准值**，
+# 不随 buff 变 —— 玩家反馈「面板数据未实时同步」。当时的注释理由是「回放帧只记录
+# uid/pos/hp/… 十几个字段」——那说的是**联机回放**（13 列位置元组，见
+# BattleSimulator._capture 的 frame 结构）。离线自测不走回放，那个理由在这里不成立。
+# 现在攻击/攻速/防御/暴击一律**优先读活 fighter 的实时值**，def 只作兜底：
+#   · 攻速  = f.attack_speed       （被 BattleSimShared 的 buff 就地改）
+#   · 防御  = f.defense            （同上）
+#   · 暴击  = def.crit + f.crit_bonus（战斗里实际用的就是这个和，见 BattleSimulator 命中判定）
+#   · 射程  = def.range            （战斗过程中没有改它的机制，保持基准值）
 func _build_stat_panel() -> void:
 	_stat_panel = PanelContainer.new()
 	_stat_panel.add_theme_stylebox_override("panel", _panel_style())
@@ -1107,9 +1115,9 @@ func _refresh_stat_panel() -> void:
 	if int(f.get("shield", 0)) > 0:
 		lines.append("%s  %d" % [_tt("护盾", "Shield"), int(f.get("shield", 0))])
 	lines.append("%s  %d   %s  %.2f" % [
-		_tt("攻击", "ATK"), _fighter_atk(f), _tt("攻速", "AS"), float(def.get("attack_speed", 1.0))])
+		_tt("攻击", "ATK"), _fighter_atk(f), _tt("攻速", "AS"), live_attack_speed(f)])
 	lines.append("%s  %d   %s  %.0f%%" % [
-		_tt("防御", "DEF"), int(def.get("def", 0)), _tt("暴击", "Crit"), float(def.get("crit", 0.0)) * 100.0])
+		_tt("防御", "DEF"), live_defense(f), _tt("暴击", "Crit"), live_crit(f) * 100.0])
 	lines.append("%s  %s   %s  %d" % [
 		_tt("射程", "Range"), str(def.get("range", 1)), _tt("技能层数", "Stacks"), int(f.get("skill_stacks", 0))])
 	lines.append("%s  %d   %s  %d" % [
@@ -1142,6 +1150,70 @@ func _refresh_stat_panel() -> void:
 				"s" if UnitDetailFormat.is_en() else "秒"])
 	_stat_text.text = "\n".join(lines)
 	_stat_panel.visible = true
+
+
+# --- 实时数值判据（static 纯函数，供门禁/探针直调，不必实例化场景）---------------
+#
+# 这三个是 9.29 bug 文档第 3 条的判据本体：「面板显示的数 == 战斗真正用的数」。
+# 抽成 static 是为了让门禁能在不实例化重型场景的前提下，直接喂一组 fighter 字典，
+# 断言读到的是**战斗口径** —— 而不是复刻一遍实现。
+#
+# ★★ 第二轮订正（9.29 用户复报「攻速还是没更新」）：
+# 第一版只做了「优先读活字段、def 兜底」，但那只解决「就地改过的裸值」。
+# 玩家截图里「状态：攻速提升 1.1秒」在生效、面板攻速却纹丝不动 —— 因为战斗真正用的
+# 是**乘完状态乘数之后**的值（BattleSimulator.gd:730）：
+#     aspd = clamp(f.attack_speed * StatusEffectService.attack_speed_multiplier(f)
+#                                 * _dynamic_attack_speed_multiplier(f), 0.25, 2.5)
+# 而 speed_bonus / slow / frenzy_stacks / blood_rampage 全都只活在那个乘数里，
+# **不写回 f.attack_speed**，所以「读裸值」恒等于基准值。
+# ★ 口径铁律：**面板直接调用战斗同一个函数**，不许自己再拼一遍公式
+#   （拼一遍就会漏项：漏 speed_bonus 漏 frenzy 漏 blood_rampage，就是这次的复发原因）。
+
+# 攻速：与 BattleSimulator 普攻间隔同一个式子（含状态乘数与动态乘数）。
+static func live_attack_speed(f: Dictionary) -> float:
+	var raw := base_attack_speed(f)
+	raw *= StatusEffectService.attack_speed_multiplier(f)
+	raw *= BattleSimulator._dynamic_attack_speed_multiplier(f)
+	return clampf(raw, 0.25, 2.5)
+
+
+# 攻速的「活字段优先、def 兜底」部分，单拆出来便于门禁分别验两件事。
+static func base_attack_speed(f: Dictionary) -> float:
+	if f.has("attack_speed"):
+		return float(f.get("attack_speed", 1.0))
+	var d = f.get("def", {})
+	return float((d as Dictionary).get("attack_speed", 1.0)) if typeof(d) == TYPE_DICTIONARY else 1.0
+
+
+# 防御：直接用 DamageService.effective_defense —— 战斗算承伤用的就是它
+# （含 defense_flat_up / defense_flat_down 与 defense_multiplier）。
+# 注意 effective_defense 里是 `target.get("defense", target.get("def", 0))`：只认
+# **活字段** `defense`，拿不到就直接把 `def` 当数字用 —— 而 `def` 在 fighter 里通常是
+# **字典**（定义表），会给 float() 一个字典而报错。所以这里先做一层兜底：
+# 活字段 `defense` 缺席时，从 `def.def` 补进来再交给它算。
+static func live_defense(f: Dictionary) -> int:
+	if f.has("defense"):
+		return DamageService.effective_defense(f)
+	var d_value = f.get("def", {})
+	var d: Dictionary = d_value if typeof(d_value) == TYPE_DICTIONARY else {}
+	var patched := f.duplicate()
+	patched["defense"] = int(d.get("def", 0))
+	return DamageService.effective_defense(patched)
+
+
+# 暴击：与 BattleSimulator 命中判定同一个式子。战斗里是
+#     randf() < d.crit + attacker.crit_bonus
+# 两条修正：① crit 取活值优先（有些技能会改 def.crit）；② 人类的「每 3 下一暴」是
+# **确定性必暴**，不是概率，面板要显示 100%。
+static func live_crit(f: Dictionary) -> float:
+	var d_value = f.get("def", {})
+	var d: Dictionary = d_value if typeof(d_value) == TYPE_DICTIONARY else {}
+	var base := float(d.get("crit", 0.0))
+	var total := base + float(f.get("crit_bonus", 0.0))
+	if str(d.get("race", "")) == "human" and int(f.get("attack_count", 0)) % 3 == 2:
+		# 下一次普攻（attack_count+1 后 %3==0）必定暴击。
+		return 1.0
+	return clampf(total, 0.0, 1.0)
 
 
 # 长按格点:弹出该棋子的详细数值。数值口径与模拟器一致(走 OfficeTestSim 同一套 def/星级)。

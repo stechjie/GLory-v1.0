@@ -279,9 +279,6 @@ func release_dying_unit_nodes() -> void:
 			(node_value as Node).queue_free()
 	_dying_unit_nodes.clear()
 
-func _hp_color_for_team(team: String) -> Color:
-	return Color(1.0, 0.18, 0.12) if team == "enemy" else Color(0.2, 0.9, 0.25)
-
 # (4) Team color from the VIEWER's point of view: the local player's own units keep
 # the friendly color and the opponent stays red, even when the arena is flipped.
 #
@@ -291,13 +288,36 @@ func _hp_color_for_team(team: String) -> Color:
 # docs/联机审计与整改方案.md 的术语边界，UI 早已改名"查看另一队/返回本队"，C25），
 # 反馈要的是「查看另一队」呈现**对方视角本身**：和那位玩家自己屏幕上看到的一模一样。
 # 反转会让同一场战斗在两台设备上配色/半场标注相反，就是 9.14 反馈的"与对方视角不同步"。
-# 现在只保留 _arena_flip_y（那是"我方永远在下方"的本地镜像，与观战无关）——
-# 而且 _setup_view_toggle 对 pvp/final 直接不建按钮，所以这两个条件本来也不会同时为真。
+#
+# 9.29 修正：反转的依据从 _arena_flip_y 换成 _color_flip。
+# 原来两者同源，但决赛的战斗轴是左右、位置**不能翻**（翻了画面会坏），于是
+# _arena_flip_y 在决赛被强制 false —— 顺带把「B 队玩家看到自己绿」也一起关掉了，
+# 表现为「一开始我方绿，到最终回合我方变红」。颜色与位置无关，必须解耦：
+#   · 位置镜像：_arena_flip_y（决赛 false）
+#   · 颜色归属：_color_flip（决赛对 B 队玩家仍为 true）
+# 见 BattleUI._color_flip 与 BattleScreen 的两处赋值。
 func _display_team(f: Dictionary) -> String:
-	var t := str(f.get("team", ""))
-	if _arena_flip_y:
-		return "player" if t == "enemy" else "enemy"
-	return t
+	return resolve_display_team(str(f.get("team", "")), _color_flip)
+
+
+# (9.29 bug 文档第 1 条) 纯函数：把棋子的**真实** team 映射成**画面展示**的 team。
+#
+# `color_flip` = 观众自己坐在规范化棋局的 "enemy" 侧（B 队玩家、联机 PvP）。
+# 抽成 static 是为了让门禁/探针**不实例化整个战斗场景**就能直调这条判据 ——
+# BattleRenderer 是重型 3D 场景，headless 下 new() 会挂死（见仓库纪律）。
+static func resolve_display_team(fighter_team: String, color_flip: bool) -> String:
+	if color_flip:
+		return "player" if fighter_team == "enemy" else "enemy"
+	return fighter_team
+
+
+# 同上的纯函数版本：**展示 team → 血条颜色**。绿=我方 / 红=敌方。
+static func hp_color_for_display_team(display_team: String) -> Color:
+	return Color(1.0, 0.18, 0.12) if display_team == "enemy" else Color(0.2, 0.9, 0.25)
+
+
+func _hp_color_for_team(team: String) -> Color:
+	return hp_color_for_display_team(team)
 
 func _make_unit_node(f: Dictionary) -> Control:
 	var root := Control.new()

@@ -43,6 +43,7 @@ func _ready() -> void:
 	_h = CheckHarness.new(CHECK_NAME)
 	await _case_summary_never_says_percentage()
 	await _case_outcome_is_per_seat()
+	await _case_teams_named_red_blue()
 	await _case_gold_caveat_shown()
 	await _case_offline_uses_online_at_end()
 	_case_profile_entry_exists()
@@ -125,7 +126,40 @@ func _case_outcome_is_per_seat() -> void:
 	panel.queue_free()
 
 
-# --- 3. 金币不权威时要标出来 -----------------------------------------------------
+# --- 3. 队伍名是「红队 / 蓝队」，不是「A 队 / B 队」 --------------------------------
+
+# 9.29 bug 文档第 2 条：战斗画面顶部是「左红水晶 / 右蓝水晶」，3v3 大厅也是「上方红队 /
+# 下方蓝队」，对局历史里却写 A 队 / B 队 —— 玩家对不上号。改名后口径统一。
+#
+# 两条断言缺一不可：
+#   · 行为：渲染出来的文本里**必须出现**「红队」「蓝队」，且**不许再出现**「A 队」「B 队」。
+#   · 结构：源码里不许再有 A 队/B 队的字面量 —— 否则只要有一处漏改，某条渲染路径就退回旧词。
+# 映射方向也钉死：team 0 = 红队、team 1 = 蓝队（GameConstants.TEAM_RED=0 / TEAM_BLUE=1）。
+func _case_teams_named_red_blue() -> void:
+	var panel := await _panel_with([_match(0, "team_a")])
+	var texts := _texts(panel)
+	_h.expect(texts.any(func(t): return t.contains("红队")), "team_red_missing",
+		"对局历史里没有「红队」—— 队伍名没改过来")
+	_h.expect(texts.any(func(t): return t.contains("蓝队")), "team_blue_missing",
+		"对局历史里没有「蓝队」—— 队伍名没改过来")
+	_h.expect(not texts.any(func(t): return t.contains("A 队") or t.contains("B 队")),
+		"old_team_label_present",
+		"对局历史里还残留「A 队 / B 队」—— 玩家对不上战斗里的红蓝水晶")
+	panel.queue_free()
+
+	# 结构断言：源码（去注释后）不许再有 A 队/B 队的字面量。
+	var code := _code(PANEL_PATH)
+	for bad in ["\"A 队\"", "\"B 队\"", "\"Team A\"", "\"Team B\""]:
+		_h.expect(not code.contains(bad), "old_team_label_in_source",
+			"MatchHistoryPanel.gd 的代码里还有 %s 字面量" % bad)
+	# 结构断言：红队/蓝队必须与 team 索引绑定（team 0 -> 红、team 1 -> 蓝）。
+	_h.expect(code.contains("\"红队\""), "red_team_literal_missing",
+		"源码里没有「红队」字面量")
+	_h.expect(code.contains("\"蓝队\""), "blue_team_literal_missing",
+		"源码里没有「蓝队」字面量")
+
+
+# --- 4. 金币不权威时要标出来 -----------------------------------------------------
 
 func _case_gold_caveat_shown() -> void:
 	var shadow := await _panel_with([_match(0, "team_a", false)])

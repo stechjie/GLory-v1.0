@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://cteamlobby929seatlabel"]
+
+[ext_resource type="Script" path="res://tools/team_lobby_seat_label_check.gd" id="1"]
+
+[node name="TeamLobbySeatLabelCheck" type="Node"]
+script = ExtResource("1")

@@ -246,9 +246,13 @@ func _refresh_detail() -> void:
 	_detail_box.add_child(head)
 
 	var hp := Label.new()
-	hp.text = "%s  A %d : %d B" % [
+	# 队伍名一律「红队 / 蓝队」：A 队恒为红队（slot 0-2，TEAM_RED），B 队恒为蓝队
+	# （slot 3-5，TEAM_BLUE）。见 GameConstants.team_of_slot。战斗画面顶部也是
+	# 「左红水晶 / 右蓝水晶」，这里用颜色词才和战斗里看到的对得上。
+	hp.text = "%s  %s %d : %d %s" % [
 		_text("法阵 HP", "Formation HP"),
-		int(item.get("team_a_hp", 0)), int(item.get("team_b_hp", 0))]
+		_text("红", "Red"), int(item.get("team_a_hp", 0)),
+		int(item.get("team_b_hp", 0)), _text("蓝", "Blue")]
 	hp.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
 	_detail_box.add_child(hp)
 
@@ -262,7 +266,9 @@ func _refresh_detail() -> void:
 	var seats: Array = (item.get("seats", []) as Array)
 	for team in 2:
 		var team_title := Label.new()
-		team_title.text = _text("A 队", "Team A") if team == 0 else _text("B 队", "Team B")
+		# A 队=红队（team 0）、B 队=蓝队（team 1）。与战斗画面顶部水晶、3v3 大厅
+		# 「上方红队 / 下方蓝队」的口径统一，见 GameConstants.TEAM_RED / TEAM_BLUE。
+		team_title.text = _text("红队", "Red Team") if team == 0 else _text("蓝队", "Blue Team")
 		team_title.add_theme_color_override("font_color", Tokens.GOLD_EDGE)
 		_detail_box.add_child(team_title)
 		for seat in seats:

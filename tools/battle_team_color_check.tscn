@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://cbattle929teamcolor"]
+
+[ext_resource type="Script" path="res://tools/battle_team_color_check.gd" id="1"]
+
+[node name="BattleTeamColorCheck" type="Node"]
+script = ExtResource("1")

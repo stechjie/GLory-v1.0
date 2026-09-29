@@ -320,6 +320,12 @@ func _start_replay(replay: Dictionary) -> void:
 	# "pvp"（被 prepare_team_state 改写过），所以必须按回合号单独排除。
 	_arena_flip_y = str(replay.get("kind", "")) == "pvp" and my_team == 1 \
 		and GameState.round_index != GameState.FINAL_ROUND
+	# (9.29 bug 文档第 1 条) 颜色归属单独一个开关，**不再跟着 _arena_flip_y 一起被决赛排除**。
+	# 规范化棋局里 A 队（slot 0-2）恒为 "player" 侧；B 队玩家看到的「我方」是规范化的
+	# enemy 侧，血条必须翻成绿，否则决赛里 B 队玩家自己全是红的（用户反馈的原现象）。
+	# 决赛的战斗轴是左右、位置不能翻，但**颜色与位置无关**，所以这里不带决赛排除。
+	# 见 BattleUI._color_flip 的注释与 BattleRenderer._display_team。
+	_color_flip = str(replay.get("kind", "")) == "pvp" and my_team == 1
 	if not replay.get("frames", []).is_empty():
 		_apply_replay_frame(0)
 		_build()
