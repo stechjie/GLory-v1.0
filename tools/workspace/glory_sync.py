@@ -33,7 +33,7 @@ import requests
 from bs4 import BeautifulSoup
 
 ROOT = Path(__file__).resolve().parents[3]
-FOLDER_ID = "1qDvPXP6VaB2DaIcJb_yg5P9xjbP-NKRc"
+FOLDER_ID = "19WnebPCTVXxxjY6pfJjsrAVyVJ0P9mXl"
 FOLDER_MIME = "application/vnd.google-apps.folder"
 RESOURCE_NAMES = {"assets", "assets.bundle.json", "assets.manifest.json"}
 LOCAL = threading.local()
