@@ -62,11 +62,6 @@ var _open_code := ""
 var _messages: Array[Dictionary] = []
 var _local_seq := 0
 var _list_loading := false
-# 对话对方此刻的房间状态缓存（9.28 反馈第 2/3 条）：{"room_id": int, "started": bool}。
-# 邀请是否「已过时」要在**渲染那一刻**判，而判定要问一趟好友列表 —— 所以缓存一份，
-# 渲染时先按缓存画、拿到新值再重画（见 _refresh_invite_states）。
-# 初始值与「查不到」同义（UNKNOWN_ROOM / started=false）→ 不判失效，画成可点。
-var _invite_peer_room: Dictionary = {"room_id": RoomInvite.UNKNOWN_ROOM, "started": false}
 
 var _list_box: VBoxContainer
 var _friend_count_label: Label
@@ -437,9 +432,6 @@ func _open(code: String) -> void:
 	_open_code = code
 	ChatService.set_open_conversation(code)
 	_messages.clear()
-	# 换会话：清掉上一个人的房间状态缓存 —— 留着会让新会话的邀请按旧人状态判定
-	# （重名/同房时可能显示错，且不报错）。初始值 = 「查不到」→ 不判失效。
-	_invite_peer_room = _unknown_room_state()
 	_set_notice("", false)
 	_update_peer_label()
 	_render_list()
@@ -877,57 +869,6 @@ func _render_messages(force_bottom: bool = false) -> void:
 	_refresh_input()
 	if stick:
 		_scroll_to_bottom_later()
-	# 邀请是否已过时要在**渲染那一刻**就知道（9.28 反馈第 2 条：已过时的邀请，
-	# 按钮直接显示成不亮的「已过时」，而不是点了才弹提示）。判定要问一趟好友列表
-	# （拿邀请人此刻的房间号与「是否已开打」），是异步的 —— 所以先按缓存的旧状态画，
-	# 拿到新状态后重画一次。只在这一屏真有没有失效可能的邀请时才发请求。
-	_refresh_invite_states()
-
-
-# 拉一次好友列表，刷新「邀请人此刻在哪个房间 / 那间开打了没」的缓存。
-#
-# 🔴 「查不到」与「确定不在房间」必须分开（RoomInvite.UNKNOWN_ROOM vs 0）——
-# 混成一个 0，要么网络抖一下误杀正常邀请、要么漏掉「已离房」。同 _inviter_room_id_now。
-#
-# 只在当前会话里有「别人发来的、房间号有效的邀请」时才拉：普通聊天不该为此多一趟网络。
-func _refresh_invite_states() -> void:
-	if _open_code.is_empty() or not AccountManager.is_logged_in():
-		return
-	var has_invite := false
-	for msg in _messages:
-		if msg is Dictionary and RoomInvite.is_invite(msg) \
-				and RoomInvite.room_id_of(msg) > 0 and not bool(msg.get("from_me", false)):
-			has_invite = true
-			break
-	if not has_invite:
-		return
-	var result: Dictionary = await AccountManager.fetch_friends()
-	if int(result.get("code", 0)) / 100 != 2:
-		# 拉不到 → 记成「查不到」（UNKNOWN_ROOM），**不判失效**（同 _inviter_room_id_now）。
-		_invite_peer_room = _unknown_room_state()
-	else:
-		var found := false
-		for entry in (result.get("body", {}) as Dictionary).get("friends", []):
-			if entry is Dictionary and str((entry as Dictionary).get("friend_code", "")) == _open_code:
-				_invite_peer_room = _peer_state_from_entry(entry as Dictionary)
-				found = true
-				break
-		# 好友列表里没有这个人（已解好友 / 被删）→ 也算「查不到」，不据此判失效。
-		_invite_peer_room = _unknown_room_state() if not found else _invite_peer_room
-	if is_inside_tree():
-		_render_messages(false)
-
-
-func _peer_state_from_entry(entry: Dictionary) -> Dictionary:
-	var room_value: Variant = entry.get("room_id")
-	return {
-		"room_id": 0 if room_value == null else int(room_value),
-		"started": bool(entry.get("room_started", false)),
-	}
-
-
-func _unknown_room_state() -> Dictionary:
-	return {"room_id": RoomInvite.UNKNOWN_ROOM, "started": false}
 
 
 func _bubble(msg: Dictionary, max_width: float) -> Control:
@@ -1046,70 +987,55 @@ func _invite_bubble(msg: Dictionary, max_width: float) -> Control:
 	foot.add_child(stamp)
 
 	if not mine:
-		# 已过时的邀请：按钮直接显示成不亮的「已过时」且不可点（9.28 反馈第 2 条）——
-		# 而不是「点了才弹一句『邀请已过时』」。判定用缓存的对方向状态（见 _refresh_invite_states）。
-		var expired := _invite_expired(msg)
-		var join := _button(
-			RoomInvite.expired_text() if expired else _text("立即参与", "Join now"),
+		var join := _button(_text("立即参与", "Join now"),
 			func() -> void: _on_invite_join(msg))
-		if expired:
-			join.disabled = true
-			join.theme_type_variation = Theming.VARIATION_GHOST
-		else:
-			join.theme_type_variation = Theming.VARIATION_PRIMARY
+		join.theme_type_variation = Theming.VARIATION_PRIMARY
 		join.custom_minimum_size = Vector2(128, Tokens.TOUCH_MIN)
 		foot.add_child(join)
 	return row
 
 
-# 这条邀请此刻是否已过时。判据**只有一份**（RoomInvite.is_expired），这里只负责
-# 把「此刻的输入」凑齐：房间号、发出时刻、现在、邀请人所在房间与是否已开打。
+# 点「立即参与」。失效则在中上方提示「邀请已过时」（要求 5），否则走已有的加入流程。
 #
-# 与 _on_invite_join 用的是同一份缓存与同一份判据 —— 渲染与点击不会各判一套。
-func _invite_expired(msg: Dictionary) -> bool:
+# **点了才判，不在渲染时判**（2026-09-29 用户定：不需要「点之前就变灰」）。
+# 失效判据**只有一份**（RoomInvite.is_expired）：离房 / 解散 / 20 分钟。
+# 界面在这里补上「邀请人此刻在哪个房间」—— 那要问一趟好友列表
+# （fetch_chats 的 ChatItem 不带 room_id，friends 的带），所以这一步是异步的。
+#
+# 「房间已开局 / 已关闭 / 已满」不在这里判：那是战斗服务器的事，加入时由它拒绝，
+# 原因由 Main._on_team_room_action_failed → MainMenu.show_join_rejected 显示。
+func _on_invite_join(msg: Dictionary) -> void:
+	var room_id := RoomInvite.room_id_of(msg)
 	var created := int(Time.get_unix_time_from_datetime_string(
 		str(msg.get("created_at", "")).substr(0, 19)))
 	var now := int(Time.get_unix_time_from_system())
-	return RoomInvite.is_expired(
-		RoomInvite.room_id_of(msg), created, now,
-		int(_invite_peer_room.get("room_id", RoomInvite.UNKNOWN_ROOM)),
-		bool(_invite_peer_room.get("started", false)))
-
-
-# 点「立即参与」。失效则在中上方提示「邀请已过时」（要求 5），否则走已有的加入流程。
-#
-# 失效判据**只有一份**（RoomInvite.is_expired）。判定要问一趟好友列表
-# （fetch_chats 的 ChatItem 不带 room_id，friends 的带），所以在真正加入前**再实时问一次**：
-# 渲染时按钮虽是亮的，玩家点下去这一刻对方可能刚开局 —— 那一下必须拦住。
-func _on_invite_join(msg: Dictionary) -> void:
-	var room_id := RoomInvite.room_id_of(msg)
-	var inviter := await _inviter_state_now(_open_code)
-	if inviter.get("room_id", RoomInvite.UNKNOWN_ROOM) != RoomInvite.UNKNOWN_ROOM:
-		_invite_peer_room = inviter
-	if _invite_expired(msg):
+	var inviter_room := await _inviter_room_id_now(_open_code)
+	if RoomInvite.is_expired(room_id, created, now, inviter_room):
 		GloryToastScript.show_text(RoomInvite.expired_text())
-		_render_messages(false)
 		return
 	join_room_requested.emit(room_id)
 
 
-# 邀请人此刻的房间状态：{"room_id": int, "started": bool}。
-#   room_id ≥ 0                —— 确定所在房间（0 = 确定不在任何房间）
-#   RoomInvite.UNKNOWN_ROOM    —— 查不到（请求失败 / 列表里没这个人）
+# 邀请人此刻所在的房间号。
+#   ≥ 0                    —— 确定（0 = 确定不在任何房间）
+#   RoomInvite.UNKNOWN_ROOM —— 查不到（请求失败 / 列表里没这个人）
 #
-# 🔴 「查不到」与「确定不在房间」必须分开：0 要判「已离房 → 失效」，
-# UNKNOWN_ROOM 要放过。混成一个 0，要么误杀正常邀请、要么漏掉「已离房」——两种都不报错。
+# 🔴 这两种必须分开：0 要判「已离房 → 失效」，UNKNOWN_ROOM 要放过。
+# 混成一个 0，要么误杀正常邀请、要么漏掉「已离房」——两种都不报错。
 # **以服务端为准**，不从本地猜：本地没有任何关于别人房间的状态。
-func _inviter_state_now(code: String) -> Dictionary:
+func _inviter_room_id_now(code: String) -> int:
 	if code.is_empty():
-		return _unknown_room_state()
+		return RoomInvite.UNKNOWN_ROOM
 	var result: Dictionary = await AccountManager.fetch_friends()
 	if int(result.get("code", 0)) / 100 != 2:
-		return _unknown_room_state()
+		return RoomInvite.UNKNOWN_ROOM
 	for entry in (result.get("body", {}) as Dictionary).get("friends", []):
 		if entry is Dictionary and str((entry as Dictionary).get("friend_code", "")) == code:
-			return _peer_state_from_entry(entry as Dictionary)
-	return _unknown_room_state()
+			var room_value: Variant = (entry as Dictionary).get("room_id")
+			if room_value == null:
+				return 0  # 在好友列表里、但不在任何房间 → 确定已离开
+			return int(room_value)
+	return RoomInvite.UNKNOWN_ROOM
 
 
 func _bubble_max_width() -> float:

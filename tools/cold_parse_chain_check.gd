@@ -81,11 +81,15 @@ const TARGETS: Array[Dictionary] = [
 	# ★ 9.28 第一批（9.28bug提交及修复.docx 5 条）：改了 ui/components/ReportDialog.gd
 	#   （举报弹窗选中/未选中边框）、scripts/autoload/ChatService.gd（新消息音效场景门控）、
 	#   scripts/multiplayer/RoomInvite.gd（10 秒冷却改为仅换房计时）、ChatScreen.gd /
-	#   Main.gd / Team3v3Lobby.gd / AccountManager.gd（邀请失效前移 + room_started 上报）。
+	#   Main.gd / Team3v3Lobby.gd / AccountManager.gd（邀请失效前移 + room_started 上报，
+	#   这一项 09-29 已撤回）。
 	#   ReportDialog.gd 与 ChatService.gd（autoload）此前只在别的清单里靠连带覆盖 ——
 	#   按「改的每个文件都要在清单里，谁坏了就指谁」逐个单列。
 	{"kind": "script", "path": "res://ui/components/ReportDialog.gd"},
 	{"kind": "script", "path": "res://scripts/autoload/ChatService.gd"},
+	# ★ 9.29：撤回邀请「点之前变灰」与 room_started；加入被拒改走 MainMenu.show_join_rejected
+	#   （MainMenu.gd / Main.gd / ChatScreen.gd / RoomInvite.gd 已在上面），门禁替身跟着改。
+	{"kind": "script", "path": "res://tools/main_team_join_room_action_check.gd"},
 ]
 
 

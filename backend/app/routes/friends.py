@@ -72,10 +72,6 @@ class FriendItem(BaseModel):
     # null = 不在房间 / 不在线 / 对方关掉了房间可见性。
     # 三种情况对观众刻意**不可分辨** —— 同 to_public 的处理。
     room_id: int | None = None
-    # 他所在房间的对局是否已开打（database/022）。邀请失效判据要用
-    # （9.28 bug 第 3 条：房间开局后，之前发出的邀请要显示成「已过时」）。
-    # 与 room_id 同一条可见性边界：看不到 room_id 时它恒为 false。
-    room_started: bool = False
 
 
 class RequestItem(BaseModel):
@@ -185,7 +181,6 @@ async def my_friends(
             avatar_frame=r.avatar_frame,
             online=r.online,
             room_id=r.room_id,
-            room_started=r.room_started,
         )
         for r in rows
     ])

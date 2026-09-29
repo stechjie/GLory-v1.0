@@ -5,7 +5,7 @@ extends Node
 # ## 两类断言都要有（9.24 的教训：缺哪类就有哪类盲区）
 #
 #   · **行为断言** —— 直接驱动生产实现 scripts/multiplayer/RoomInvite.gd 的 static 纯函数：
-#     失效四判据、限流两判据、payload 组装/解析、文案。探针**只驱动那一份实现**，
+#     失效三判据、限流两判据、payload 组装/解析、文案。探针**只驱动那一份实现**，
 #     绝不在这里复刻一份判据（复刻版会跟生产漂移，测了等于没测）。
 #   · **结构断言** —— 「谁在调用它」。行为断言看不见接线：把 lobby 的邀请调用删掉，
 #     纯函数照样全绿。所以另加一组「调用点还在不在」的存在性断言
@@ -18,6 +18,7 @@ extends Node
 
 const CheckHarness := preload("res://tools/CheckHarness.gd")
 const RoomInvite := preload("res://scripts/multiplayer/RoomInvite.gd")
+const MenuScript := preload("res://scenes/menu/MainMenu.gd")
 
 const CHECK_NAME := "room_invite"
 
@@ -36,8 +37,10 @@ func _ready() -> void:
 	_behavior_expiry()
 	_behavior_rate_limit()
 	_behavior_dedupe()
+	_behavior_join_rejected()
 	_structure_client()
 	_structure_backend_pipeline()
+	_structure_no_room_state_in_account_server()
 	_structure_single_spelling()
 	_h.finish(get_tree())
 
@@ -87,7 +90,9 @@ func _behavior_payload() -> void:
 		"display_fallback", "body 空时退回本地文案，不留空白框")
 
 
-# --- 行为：失效四判据（要求 5）-------------------------------------------------
+# --- 行为：失效三判据（要求 5）-------------------------------------------------
+#
+# 「房间已开局」不在这里：那由战斗服务器在加入时拒绝（见 _behavior_join_rejected）。
 
 func _behavior_expiry() -> void:
 	var room := 1000
@@ -95,46 +100,35 @@ func _behavior_expiry() -> void:
 	var created := now - 60  # 一分钟前发的，没过期
 
 	# 基线：一切都正常 → 有效。
-	_h.expect(not RoomInvite.is_expired(room, created, now, room, false), "valid_baseline",
-		"房间在、没超时、邀请人还在、没开打 → 有效")
+	_h.expect(not RoomInvite.is_expired(room, created, now, room), "valid_baseline",
+		"房间在、没超时、邀请人还在 → 有效")
 
 	# ① 房间已解散（拿不到号）。
-	_h.expect(RoomInvite.is_expired(0, created, now, 0, false), "expired_dissolved",
+	_h.expect(RoomInvite.is_expired(0, created, now, 0), "expired_dissolved",
 		"房间已解散（号回收）→ 失效")
 
 	# ② 20 分钟到了。边界两侧都要判：1199 秒有效、1200 秒失效。
 	var t1199 := now - (WANT_EXPIRE_SEC - 1)
 	var t1200 := now - WANT_EXPIRE_SEC
-	_h.expect(not RoomInvite.is_expired(room, t1199, now, room, false), "boundary_1199",
+	_h.expect(not RoomInvite.is_expired(room, t1199, now, room), "boundary_1199",
 		"过去 %d 秒仍然有效（边界内侧）" % (WANT_EXPIRE_SEC - 1))
-	_h.expect(RoomInvite.is_expired(room, t1200, now, room, false), "boundary_1200",
+	_h.expect(RoomInvite.is_expired(room, t1200, now, room), "boundary_1200",
 		"过去 %d 秒即失效（边界上）" % WANT_EXPIRE_SEC)
 
 	# ③ 邀请人已离开该房间：换到别的号、或确定不在任何房间（0），都要失效。
-	_h.expect(RoomInvite.is_expired(room, created, now, room + 1, false), "expired_left_room",
+	_h.expect(RoomInvite.is_expired(room, created, now, room + 1), "expired_left_room",
 		"邀请人换到别的房间 → 失效")
-	_h.expect(RoomInvite.is_expired(room, created, now, 0, false), "expired_left_all",
+	_h.expect(RoomInvite.is_expired(room, created, now, 0), "expired_left_all",
 		"邀请人已不在任何房间（0 = 确定）→ 失效")
-
-	# ④ 对局已开始。
-	_h.expect(RoomInvite.is_expired(room, created, now, room, true), "expired_started",
-		"该房间已开打 → 失效")
 
 	# 🔴 「查不到」一律当有效 —— 但必须与「0 = 确定不在房间」分开：
 	#    0 走上面 expired_left_all（失效），UNKNOWN_ROOM 才放过。
-	_h.expect(not RoomInvite.is_expired(room, 0, now, room, false), "unknown_created_ok",
+	_h.expect(not RoomInvite.is_expired(room, 0, now, room), "unknown_created_ok",
 		"拿不到创建时间 → 当有效（误杀比漏判严重）")
-	_h.expect(not RoomInvite.is_expired(room, created, now, RoomInvite.UNKNOWN_ROOM, false),
+	_h.expect(not RoomInvite.is_expired(room, created, now, RoomInvite.UNKNOWN_ROOM),
 		"unknown_inviter_ok", "查不到邀请人房间（哨兵）→ 不因这一条判失效")
 	_h.expect(RoomInvite.UNKNOWN_ROOM != 0, "unknown_room_sentinel",
 		"哨兵必须不等于 0 —— 否则「查不到」与「确定不在房间」又混成一个值")
-
-	# 便捷重载与主函数同口径。
-	var invite := {"kind": "room_invite", "body": "x", "payload": {"room_id": room}}
-	_h.expect(not RoomInvite.message_is_expired(invite, created, now, room, false),
-		"message_overload_valid", "从消息直接判：有效")
-	_h.expect(RoomInvite.message_is_expired(invite, created, now, room, true),
-		"message_overload_expired", "从消息直接判：已开打 → 失效")
 
 
 # --- 行为：发送限流（要求 4）---------------------------------------------------
@@ -188,6 +182,52 @@ func _behavior_dedupe() -> void:
 	var broken := {"message_id": 5, "kind": "room_invite", "payload": "oops", "body": "x"}
 	_h.expect(RoomInvite.dedupe_for_display([broken, broken.duplicate()]).size() == 2,
 		"dedupe_broken_payload", "坏 payload 的邀请不去重，也不崩")
+
+
+# --- 行为：加入被拒要说出原因（2026-09-29）---------------------------------------
+#
+# 9.28 反馈第 3 条「点立即参与一直显示连接中」的真正原因：战斗服务器拒绝时，原因只写进
+# 「自定房间」面板里的状态行；从邀请 / 好友列表加入时面板没开，原因丢了，
+# 加入开头写上的「连接中…」也一直挂着。
+#
+# 直接驱动真实的 MainMenu.show_join_rejected。**不进树**：_ready() 要碰网络、钱包与音乐，
+# 而这里只关心那两行字。期望文案按用户原话独立写死（「已开局」「房间已关闭」）。
+func _behavior_join_rejected() -> void:
+	var saved_locale := TranslationServer.get_locale()
+	TranslationServer.set_locale("zh_CN")
+	var menu: MenuScript = MenuScript.new()
+	var net_status := Label.new()
+	menu._net_status = net_status
+
+	# 面板没开（从邀请 / 好友列表进来）：收回「连接中…」，弹提示说原因。
+	for case in [["room_started", "房间已开局"], ["room_not_found", "房间已关闭"], ["room_full", "房间已满"]]:
+		net_status.text = "连接中…"
+		GloryToast.reset_counters_for_check()
+		menu.show_join_rejected(str(case[0]))
+		_h.expect(net_status.text.is_empty(), "join_rejected_still_connecting",
+			"%s 被拒后顶上还挂着「%s」" % [case[0], net_status.text])
+		_h.expect(GloryToast.shown_count() == 1 and GloryToast.last_text() == str(case[1]),
+			"join_rejected_silent", "%s 被拒应提示「%s」，实测弹了 %d 次、最后一条「%s」" % [
+				case[0], case[1], GloryToast.shown_count(), GloryToast.last_text()])
+
+	# 面板开着（玩家自己输的号）：写进面板，不另弹；号可能打错，所以是「找不到房间」。
+	var room_status := Label.new()
+	menu._room_status = room_status
+	net_status.text = "连接中…"
+	GloryToast.reset_counters_for_check()
+	menu.show_join_rejected("room_not_found")
+	_h.expect(room_status.text == "找不到房间" and GloryToast.shown_count() == 0,
+		"join_rejected_panel", "面板开着时应写进面板「找不到房间」且不弹提示，实测面板「%s」、弹了 %d 次" % [
+			room_status.text, GloryToast.shown_count()])
+	_h.expect(net_status.text.is_empty(), "join_rejected_panel_connecting",
+		"面板开着时被拒，顶上的「连接中…」也要收回")
+
+	GloryToast.dismiss()
+	GloryToast.reset_counters_for_check()
+	room_status.free()
+	net_status.free()
+	menu.free()
+	TranslationServer.set_locale(saved_locale)
 
 
 # --- 结构：接线还在不在 --------------------------------------------------------
@@ -280,6 +320,25 @@ func _structure_backend_pipeline() -> void:
 		"routes 必须校验 invite payload（房间号 > 0）")
 	_h.expect(_has_live_code(routes, "text, body.client_msg_id, kind, payload"), "backend_pass_through",
 		"routes 必须把 kind/payload 转发给 chat.send —— 不转发就是「传了没人读」")
+
+
+# --- 结构：房间开没开局不进账号服务器（2026-09-29 用户定）-------------------------
+#
+# 9.28 曾让邀请人的客户端经心跳把「房间开打了没」写进账号服务器的数据库
+# （player_presence.room_started，database/022），好让邀请点之前就变灰。
+# 用户明确不要：点了由战斗服务器拒绝、提示「房间已开局」就够，房间状态不进数据库。
+# 9.28 的修复记录里还写着那套做法，钉在这里，免得照着它又加回去。
+func _structure_no_room_state_in_account_server() -> void:
+	for path in ["res://backend/app/presence.py", "res://backend/app/friends.py",
+			"res://backend/app/routes/presence.py", "res://backend/app/routes/friends.py",
+			"res://scripts/autoload/AccountManager.gd"]:
+		var src := FileAccess.get_file_as_string(path)
+		if not _h.expect(not src.is_empty(), "room_state_source_unreadable", "读不到 %s" % path):
+			continue
+		_h.expect(not _has_live_code(src, "room_started"), "room_state_in_account_server",
+			"%s 又在读写 room_started —— 房间开没开由战斗服务器在加入时判，不进账号服务器" % path)
+	_h.expect(not FileAccess.file_exists("res://database/022_presence_room_started.sql"),
+		"room_state_migration_back", "database/022_presence_room_started.sql 又回来了 —— 已作废，编号不再使用")
 
 
 # --- 结构：文案只有一处拼法 ----------------------------------------------------

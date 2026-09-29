@@ -18,6 +18,7 @@ class FakeMenu:
 	var connecting_count := 0
 	var connection_errors: Array[String] = []
 	var room_errors: Array[String] = []
+	var join_rejections: Array[String] = []
 
 
 	func show_connecting() -> void:
@@ -30,6 +31,10 @@ class FakeMenu:
 
 	func show_room_error(reason: String) -> void:
 		room_errors.append(reason)
+
+
+	func show_join_rejected(reason: String) -> void:
+		join_rejections.append(reason)
 
 
 class JoinRequestProbe:
@@ -162,8 +167,10 @@ func _check_failure(
 	main._on_team_room_action_failed("join_room_failed")
 	_h.expect(_state_of(request_id) == AsyncActionController.STATE_FAILED,
 		"failure_state_missing", "team_room_action_failed 没有结算加入动作为 FAILED")
-	_h.expect(menu.room_errors.has("join_room_failed"), "failure_ui_missing",
-		"加入房间失败没有沿用房间错误 UI")
+	# 必须走 show_join_rejected，不是 show_room_error：后者只写「自定房间」面板，
+	# 从邀请 / 好友列表加入时面板没开，原因会丢、「连接中…」一直挂着（2026-09-29）。
+	_h.expect(menu.join_rejections.has("join_room_failed"), "failure_ui_missing",
+		"加入房间被拒没有走 show_join_rejected")
 	await get_tree().process_frame
 
 

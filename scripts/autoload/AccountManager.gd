@@ -497,10 +497,6 @@ var _presence_timer: Timer
 # 账号门面（HTTPS）与战斗门面（ENet）是两条链路，不该互相认识
 # （docs/账号系统RFC.md 第三节）。接线在 Main.gd 一处可见。
 var _room_provider: Callable = Callable()
-# 「所在房间是否已开打」（9.28 bug 第 3 条，database/022）。同样是注入的 Callable：
-# 它给邀请失效判据用 —— 房间开局后，之前发出的邀请要显示成「已过时」。
-# 拿不到就恒 false（服务端会归一成「不在房间」那一档，不会留下上一次的 true）。
-var _room_started_provider: Callable = Callable()
 # 上一次心跳还没回来时不叠加：弱网下会堆出一串在途请求，
 # 而它们携带的房间号已经过期了。
 var _presence_busy := false
@@ -945,12 +941,8 @@ func delete_read_mail() -> Dictionary:
 
 
 # 接线入口。room_provider 返回当前房间号，0 或负数表示不在房间。
-# room_started_provider（可选）返回当前房间的对局是否已开打 —— 给邀请失效判据用
-# （9.28 bug 第 3 条）。**不传就恒 false**：服务端也会把「不在房间」归一成 false，
-# 所以漏接只表现为「房间开局后旧邀请不会自动变已过时」，不会留下脏状态。
-func configure_presence(room_provider: Callable, room_started_provider: Callable = Callable()) -> void:
+func configure_presence(room_provider: Callable) -> void:
 	_room_provider = room_provider
-	_room_started_provider = room_started_provider
 
 
 func start_presence() -> void:
@@ -980,14 +972,10 @@ func _send_presence() -> void:
 	var room := 0
 	if _room_provider.is_valid():
 		room = int(_room_provider.call())
-	var started := false
-	if room > 0 and _room_started_provider.is_valid():
-		started = bool(_room_started_provider.call())
 	_presence_busy = true
 	# room_id 传 null 表示「在线但不在房间」。0 / 负数都归到这一档 ——
 	# 后端有 check (room_id is null or room_id > 0)，传 0 会被拒。
-	# room_started 只在有房间时才可能为 true（不在房间时上报 false）。
-	var payload := {"room_id": room if room > 0 else null, "room_started": started}
+	var payload := {"room_id": room if room > 0 else null}
 	await _request(HTTPClient.METHOD_PUT, "/v1/me/presence", payload, true)
 	_presence_busy = false
 

@@ -1,12 +1,10 @@
 """在线状态接口。
 
-    PUT /v1/me/presence             心跳：{room_id | null, room_started}
+    PUT /v1/me/presence             心跳：{room_id | null}
     GET /v1/me/presence/visibility  两个开关
     PUT /v1/me/presence/visibility  两个开关
 
 设计文档：docs/交友系统设计.md 第二节与第四节。
-`room_started` 见 database/022_presence_room_started.sql —— 它给邀请失效判据用
-（9.28 bug 第 3 条：房间开局后，之前发出的邀请要显示成「已过时」）。
 
 **刻意没有「查某人在不在线」的接口。** 在线状态只随好友列表一起返回
 （GET /v1/me/friends）。单独提供一个按好友码查在线的接口，等于给任何人
@@ -45,9 +43,6 @@ class HeartbeatBody(BaseModel):
     # **不传和传 null 是同一个意思** —— 这里没有「不动」的语义，
     # 心跳本来就是整份覆盖当前位置。
     room_id: int | None = None
-    # 当前所在房间的对局是否已开打（database/022，9.28 bug 第 3 条）。
-    # 客户端自报 —— 它自己知道 room phase。不在房间时服务端一律存 false。
-    room_started: bool = False
 
 
 class VisibilityBody(BaseModel):
@@ -90,7 +85,7 @@ async def heartbeat(
             status_code=429, detail=str(exc), headers={"Retry-After": str(exc.retry_after)}
         ) from None
     try:
-        await presence.heartbeat(player_id, body.room_id, body.room_started)
+        await presence.heartbeat(player_id, body.room_id)
     except presence.PresenceRejected as exc:
         raise HTTPException(status_code=400, detail=exc.message) from None
 

@@ -18,7 +18,7 @@ extends RefCounted
 # 而不是在探针里复刻一份（复刻版会随生产代码漂移，测了等于没测）。
 #
 #   · payload 的组装与解析  —— 客户端与服务端各写一份就会漂（漂了不报错，只是邀请收不到）
-#   · 失效判据（要求 5）    —— 离房 / 解散 / 已开打 / 20 分钟
+#   · 失效判据（要求 5）    —— 离房 / 解散 / 20 分钟（已开局由战斗服务器在加入时拒绝）
 #   · 发送限流（要求 4）    —— 同房一次 / **换房** 10 秒（同房连邀不同好友不限）
 
 # 与 backend/app/chat.py 的 ROOM_INVITE_KIND 一致，门禁 tools/room_invite_check.gd 钉着。
@@ -100,36 +100,32 @@ static func title_text() -> String:
 
 # --- 失效判据（要求 5）----------------------------------------------------------
 
-# 四个失效条件，任一成立即失效：
+# 三个失效条件，任一成立即失效：
 #   1. payload_room_id <= 0        —— 房间已解散（号已回收，客户端拿不到这个号）
 #   2. now - created >= 20 分钟    —— 邀请时长已过去 20 分钟
 #   3. inviter_room_id != 房间号   —— 邀请人已离开该房间。**0 也算离开**（确定不在任何房间）；
 #                                    只有 UNKNOWN_ROOM(-1) 才是「查不到」、跳过这一条
-#   4. room_started == true        —— 该房间的对局已经开始
 #
-# 🔴 四条**必须都在这里判**，不要在界面里散着写：散着写一定会出现
+# 「该房间已开局」**不在这里判**（2026-09-29 用户定）：房间开没开只有战斗服务器知道，
+# 点「立即参与」加入时由它拒绝（room_started），客户端显示「房间已开局」。
+# 9.28 曾让邀请人的客户端把「开打了没」经心跳写进账号服务器的数据库，好让邀请点之前就变灰 ——
+# 用户明确不要这个体验，也不要房间状态进数据库，已整条撤掉（database/022 作废）。
+#
+# 🔴 三条**必须都在这里判**，不要在界面里散着写：散着写一定会出现
 # 「20 分钟那条到处都对、但漏了离房那条」这种只在特定操作顺序下才暴露的漂移。
 #
 # 🔴 「查不到」一律当**有效**（created_sec <= 0、inviter_room_id == UNKNOWN_ROOM），
 # 但「确定不在房间」（0）**必须判失效** —— 那是要求 5 点名的第一种情况。
 # 把哨兵与 0 混为一谈是最容易写出的那个 bug：不是误杀正常邀请，就是漏掉「已离房」。
 static func is_expired(payload_room_id: int, created_sec: int, now_sec: int,
-		inviter_room_id: int, room_started: bool) -> bool:
+		inviter_room_id: int) -> bool:
 	if payload_room_id <= 0:
 		return true
 	if created_sec > 0 and now_sec - created_sec >= EXPIRE_SEC:
 		return true
 	if inviter_room_id != UNKNOWN_ROOM and inviter_room_id != payload_room_id:
 		return true
-	if room_started:
-		return true
 	return false
-
-
-# 便捷重载：直接从一条消息判。
-static func message_is_expired(message: Dictionary, created_sec: int, now_sec: int,
-		inviter_room_id: int, room_started: bool) -> bool:
-	return is_expired(room_id_of(message), created_sec, now_sec, inviter_room_id, room_started)
 
 
 # --- 发送限流（要求 4）----------------------------------------------------------

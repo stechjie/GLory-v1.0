@@ -30,6 +30,7 @@ const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
 # 两者都不做 autoload，由 Main._ready() 各 install() 一次。
 const MusicService := preload("res://ui/services/MusicService.gd")
 const SfxService := preload("res://ui/services/SfxService.gd")
+const GloryToastScript := preload("res://ui/components/GloryToast.gd")
 const REF_SIZE := Vector2(1672.0, 941.0)
 
 # V3 P0-07：房间面板改由 ModalStack 收口。
@@ -654,22 +655,44 @@ func show_room_list(rooms: Array) -> void:
 func show_room_error(reason: String) -> void:
 	if _room_status == null:
 		return
+	_room_status.text = _room_error_text(reason, true)
+
+
+# 加入房间被战斗服务器拒绝（Main._on_team_room_action_failed 在加入动作进行中时调它）。
+#
+# 🔴 从邀请、好友列表点「加入」时，「自定房间」面板**没开**，_room_status 是 null。
+# 以前只走 show_room_error，原因直接丢掉，加入开头 show_connecting() 写上的「连接中…」
+# 也一直挂着 —— 玩家看到的就是「点了立即参与，一直连接中」（9.28 反馈第 3 条的真正原因）。
+# 所以先收回「连接中…」；面板开着就写进面板，没开就弹提示。
+func show_join_rejected(reason: String) -> void:
+	if _net_status != null:
+		_net_status.text = ""
+	if _room_status != null:
+		_room_status.text = _room_error_text(reason, true)
+	else:
+		GloryToastScript.show_text(_room_error_text(reason, false))
+
+
+# 房间动作失败时给玩家看的话。面板里外只有 room_not_found 说法不同：
+# 面板里的号是玩家自己输的，可能打错了 →「找不到房间」；
+# 从邀请 / 好友列表进来的号是真实存在过的房间 →「房间已关闭」。
+func _room_error_text(reason: String, typed_by_player: bool) -> String:
 	match reason:
 		"room_not_found":
-			_room_status.text = _menu_text("找不到房间", "Room not found")
+			if typed_by_player:
+				return _menu_text("找不到房间", "Room not found")
+			return _menu_text("房间已关闭", "This room has closed")
 		"room_started":
-			_room_status.text = _menu_text("房间已经开始游戏", "Room already started")
+			return _menu_text("房间已开局", "This match has already started")
 		"room_full":
-			_room_status.text = _menu_text("房间已满", "Room is full")
+			return _menu_text("房间已满", "Room is full")
 		"token_id_unknown":
-			_room_status.text = _menu_text("没有找到可恢复的 Token ID", "No resumable game for this Token ID")
-		_:
-			# 出战名片的各种失败（领不到、过期、验不过…）对玩家是同一件事。
-			# 具体原因在战斗服务器日志里（seat card rejected reason=…），不给玩家看代码。
-			if reason.begins_with("card_"):
-				_room_status.text = _menu_text("暂时进不了对局，请稍后再试", "Can't join a match right now — try again later")
-			else:
-				_room_status.text = reason
+			return _menu_text("没有找到可恢复的 Token ID", "No resumable game for this Token ID")
+	# 出战名片的各种失败（领不到、过期、验不过…）对玩家是同一件事。
+	# 具体原因在战斗服务器日志里（seat card rejected reason=…），不给玩家看代码。
+	if reason.begins_with("card_"):
+		return _menu_text("暂时进不了对局，请稍后再试", "Can't join a match right now — try again later")
+	return reason
 
 func _emit_join() -> void:
 	var address := NetworkConfig.SERVER_IP

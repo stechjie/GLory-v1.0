@@ -1480,20 +1480,16 @@ func _close_announcement_popup() -> void:
 # 是两条链路，不该互相认识（docs/账号系统RFC.md 第三节），所以房间号是通过一个
 # Callable 注入进去的，而这一处是唯一同时知道两边的地方。
 #
-# 上报的只有「我在线」「我在哪个房间」「这间开打了没」。房间号与开局状态都是
-# **客户端自报**的 —— 谎报只能让好友进错房间、或让邀请早/晚一点变已过时
-# （9.28 bug 第 3 条：房间开局后，之前发出的邀请要显示成「已过时」）。
+# 上报的只有「我在线」和「我在哪个房间」。房间号是**客户端自报**的 ——
+# 谎报只能让好友进错房间，而房间号本来就是任何人知道号就能进。
 # ⚠️ 这条边界只对「说谎没收益」的数据成立，别拿它承载战绩/奖励。
+# 「房间开没开局」也**不报**（2026-09-29 用户定）：那是战斗服务器内部的状态，
+# 加入时由它判，不抄一份进账号服务器的数据库。
 var _presence_last_room := -1
-# 上一次上报的「是否已开打」。房间内 phase 从 lobby → prep/battle 时也要补一次上报，
-# 否则「开局」那一刻不会立刻同步给好友（要等满一个心跳周期）。
-var _presence_last_started := false
 
 
 func _install_presence_reporting() -> void:
-	AccountManager.configure_presence(
-		func() -> int: return NetworkService.team_room_id,
-		_room_started_now)
+	AccountManager.configure_presence(func() -> int: return NetworkService.team_room_id)
 	AccountManager.start_presence()
 	# 登录成功后补一次：_ready 跑在登录之前，第一次心跳会因为还没登录被跳过，
 	# 不补的话好友要等满一个心跳周期才看见我上线。
@@ -1510,27 +1506,13 @@ func _on_presence_login(_player_id: String, _player_name: String) -> void:
 	AccountManager.report_presence_now()
 
 
-# 「当前房间的对局是否已开打」：房间阶段离开 lobby 就算开局。
-# server_phase 由服务器广播（ROOM_LOBBY / PREP / BATTLE / RESULT / CLOSED）；
-# 本地房主模式（调试用）没有服务器广播的阶段，退回 team_round_active —— 同
-# NetworkService._chat_log_round 的处理。
-func _room_started_now() -> bool:
-	if NetworkService.team_room_id <= 0:
-		return false
-	if not NetworkService.server_phase.is_empty():
-		return NetworkService.server_phase != NetworkService.ROOM_LOBBY
-	return NetworkService.team_round_active
-
-
-# 只在**房间号或开局状态真的变了**时上报。这些信号在一局里会发很多次，
+# 只在**房间号真的变了**时上报。这两个信号在一局里会发很多次，
 # 无条件上报等于把「慢心跳」变成高频轮询。
 func _on_presence_room_changed() -> void:
 	var room := NetworkService.team_room_id
-	var started := _room_started_now()
-	if room == _presence_last_room and started == _presence_last_started:
+	if room == _presence_last_room:
 		return
 	_presence_last_room = room
-	_presence_last_started = started
 	AccountManager.report_presence_now()
 
 
@@ -2668,10 +2650,17 @@ func _on_team_room_action_failed(reason: String) -> void:
 	if not _create_room_request_id.is_empty() \
 			and AsyncActionController.is_current(_create_room_request_id):
 		AsyncActionController.fail(_create_room_request_id, "CREATE_ROOM_REQUEST_FAILED", true)
-	if not _join_room_request_id.is_empty() \
-			and AsyncActionController.is_current(_join_room_request_id):
+	var joining := not _join_room_request_id.is_empty() \
+			and AsyncActionController.is_current(_join_room_request_id)
+	if joining:
 		AsyncActionController.fail(_join_room_request_id, "JOIN_ROOM_REQUEST_FAILED", true)
-	if is_instance_valid(_menu) and _menu.has_method("show_room_error"):
+	if not is_instance_valid(_menu):
+		return
+	# 加入被拒（房间已开局 / 已关闭 / 已满…）另走一条：从邀请、好友列表进来时面板没开，
+	# 只走 show_room_error 的话原因会丢、「连接中…」一直挂着。见 MainMenu.show_join_rejected。
+	if joining:
+		_menu.show_join_rejected(reason)
+	elif _menu.has_method("show_room_error"):
 		_menu.show_room_error(reason)
 
 func _on_public_token_changed(token_id: String) -> void:

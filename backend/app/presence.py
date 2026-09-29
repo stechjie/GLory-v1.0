@@ -1,17 +1,15 @@
 """在线状态的读写（player_presence）。
 
-配套：database/005_friends.sql、database/022_presence_room_started.sql、
-docs/交友系统设计.md 第二节。
+配套：database/005_friends.sql、docs/交友系统设计.md 第二节。
 
 **读**在 friends.py 里（好友列表一次 join 把 presence 带出来），
 这里只有写：心跳与两个可见性开关。分成两个模块是因为读永远是「好友列表的一部分」，
 单独提供一个「查某人在不在线」的接口反而会变成探测器。
 
-## 这一层的全部安全边界：room_id / room_started 都是客户端自报的
+## 这一层的全部安全边界：room_id 是客户端自报的
 
-谎报的后果只是让好友进错房间（房间号本来就是任何人知道号就能进，
-NetworkService.team_request_join_room），或让好友看到的邀请早/晚一点变成「已过时」——
-没有新增攻击面。
+谎报的后果只是让好友进错房间，而房间号本来就是任何人知道号就能进
+（NetworkService.team_request_join_room）—— 没有新增攻击面。
 
 ⚠️ **这条边界只对「说谎没有收益」的数据成立。**
 战绩、排行、奖励一律不能建在这张表上。要做那些，只能等 ②↔③ 通道
@@ -40,26 +38,18 @@ class PresenceRejected(RuntimeError):
         self.message = message
 
 
-async def heartbeat(player_id: uuid.UUID, room_id: int | None, room_started: bool = False) -> None:
+async def heartbeat(player_id: uuid.UUID, room_id: int | None) -> None:
     """一次心跳。room_id 为 None = 在线但不在房间（主菜单等）。
-
-    `room_started`（database/022）是「所在房间的对局是否已开打」，客户端自报 ——
-    它自己知道 room phase。邀请失效判据要用（9.28 bug 第 3 条：房间开局后，
-    之前发出的邀请要显示成「已过时」）。不在房间时一律写 false：
-    room_started 只在 room_id 非空时有意义，留着上一次的 true 会让
-    「我离开房间了」被好友看成「我还在一间已经开打的房里」。
 
     **upsert 而不是「先查再插」**：心跳是这套系统里唯一的高频写，
     多一次往返就是多一倍成本，而且两段式在并发下还会撞主键。
 
-    可见性开关**不在这里写** —— on conflict 只更新 last_seen_at、room_id 与
-    room_started。心跳顺手覆盖开关的话，玩家设的「隐身」会被下一次心跳冲掉，
+    可见性开关**不在这里写** —— on conflict 只更新 last_seen_at 和 room_id。
+    心跳顺手覆盖开关的话，玩家设的「隐身」会被下一次心跳冲掉，
     而这个 bug 不报错，只表现为「设置没保存」。
     """
     if room_id is not None and not (0 < room_id <= MAX_ROOM_ID):
         raise PresenceRejected("bad_room_id", "房间号不合法")
-    # 不在房间时 room_started 没有意义，归一成 false（见 docstring）。
-    started = bool(room_started) and room_id is not None
     async with db.pool().acquire() as conn:
         # 一条语句同时做两件事：写心跳，并把**改之前**的房间号带回来。
         #
@@ -72,18 +62,15 @@ async def heartbeat(player_id: uuid.UUID, room_id: int | None, room_started: boo
             with prev as (
                 select room_id from player_presence where player_id = $1
             ), upsert as (
-                insert into player_presence (player_id, last_seen_at, room_id, room_started)
-                values ($1, now(), $2, $3)
+                insert into player_presence (player_id, last_seen_at, room_id)
+                values ($1, now(), $2)
                 on conflict (player_id) do update
-                  set last_seen_at = now(),
-                      room_id      = excluded.room_id,
-                      room_started = excluded.room_started
+                  set last_seen_at = now(), room_id = excluded.room_id
             )
             select room_id from prev
             """,
             player_id,
             room_id,
-            started,
         )
         if previous != room_id:
             await _record_room_transition(conn, player_id, previous, room_id)

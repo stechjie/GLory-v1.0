@@ -351,6 +351,19 @@ def test_all_routes_are_registered() -> None:
         assert set(paths[path]) >= methods, "%s 缺方法：%s" % (path, methods - set(paths[path]))
 
 
+def test_heartbeat_accepts_room_started_from_older_clients() -> None:
+    """9.28 到 9.29 之间出的包，心跳会多带一个 room_started（2026-09-29 已撤掉）。
+
+    必须照收、直接丢掉，**不能回 422**：那些包还在人手里，心跳被拒 = 他们在好友那边
+    一直显示离线。HeartbeatBody 要是哪天改成 extra="forbid"，这条会先红。
+    """
+    from app.routes.presence import HeartbeatBody
+
+    body = HeartbeatBody.model_validate({"room_id": 123, "room_started": True})
+    assert body.room_id == 123
+    assert "room_started" not in body.model_dump()
+
+
 def test_no_endpoint_returns_a_top_level_array() -> None:
     """任何接口都不许返回顶层 JSON 数组。
 
