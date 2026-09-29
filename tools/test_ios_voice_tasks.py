@@ -26,6 +26,13 @@ class AVAudioSession {
     enum Permission { case granted, denied, undetermined }
     static let shared = AVAudioSession()
     static func sharedInstance() -> AVAudioSession { shared }
+    var active = false
+    var categoryChanges = 0
+    enum Option: Hashable { case defaultToSpeaker, allowBluetooth, mixWithOthers }
+    func setCategory(_ category: Identifier, mode: Identifier, options: Set<Option>) throws {
+        self.category = category; self.mode = mode; categoryChanges += 1
+    }
+    func setActive(_ active: Bool) throws { self.active = active }
     var recordPermission = Permission.granted
     func requestRecordPermission(_ reply: @escaping (Bool) -> Void) { reply(true) }
     var category = Identifier(stringValue: "playAndRecord")
@@ -34,7 +41,16 @@ class AVAudioSession {
     struct Port { var portType: Identifier }
     var currentRoute = Route()
 }
-extension Identifier { var rawValue: String { stringValue } }
+extension Identifier {
+    var rawValue: String { stringValue }
+    static let playAndRecord = Identifier(stringValue: "playAndRecord")
+    static let `default` = Identifier(stringValue: "default")
+}
+struct AudioEngineAvailability {
+    var enabled: Bool
+    static let none = AudioEngineAvailability(enabled: false)
+    static let `default` = AudioEngineAvailability(enabled: true)
+}
 class AudioManager {
     static let shared = AudioManager()
     class Session {
@@ -42,17 +58,22 @@ class AudioManager {
         var isAutomaticDeactivationEnabled = true
         var isSpeakerOutputPreferred = true
     }
+    var available = true
+    func setEngineAvailability(_ availability: AudioEngineAvailability) throws { available = availability.enabled }
     var audioSession = Session()
     var isPlatformVoiceProcessingAllowed = true
     func setPlatformVoiceProcessingAllowed(_ allowed: Bool) throws { isPlatformVoiceProcessingAllowed = allowed }
 }
 @MainActor class LocalParticipant {
     var mic = false; var isSpeaking = false
+    var muteCalls = 0; var failNextEnable = false
     var suspendNextEnable = false; var enableStarted = false
     var suspendPermission = false; var permissionStarted = false
     var permissionGate: CheckedContinuation<Void, Never>?
     func isMicrophoneEnabled() -> Bool { mic }
     func setMicrophone(enabled: Bool) async throws {
+        if !enabled { muteCalls += 1 }
+        if enabled && failNextEnable { failNextEnable = false; throw LiveKitError() }
         if enabled && suspendNextEnable {
             suspendNextEnable = false; enableStarted = true
             try await Task.sleep(nanoseconds: 60_000_000_000)
@@ -101,6 +122,14 @@ TESTS = r'''
         assert(status(voice)["mic_error"] as? String == "", "Intentional cancellation must not report mic_failed")
         print("PASS audience change cancels old publish without false mic failure")
 
+        let muteCalls = first.localParticipant.muteCalls
+        voice.setAudience(true, identitiesJson: "[]")
+        for _ in 0..<30 { _ = voice.getStatus(); await Task.yield() }
+        assert(first.localParticipant.muteCalls == muteCalls, "Repeated audience must not interrupt capture")
+        assert(!AudioManager.shared.audioSession.isAutomaticConfigurationEnabled)
+        assert(AVAudioSession.shared.active)
+        print("PASS stable duplex session and idempotent audience")
+
         first.localParticipant.suspendPermission = true
         voice.setAudience(false, identitiesJson: "[]")
         await spin { first.localParticipant.permissionStarted }
@@ -115,6 +144,25 @@ TESTS = r'''
         assert(status(voice)["mic_error"] as? String == "")
         assert(!second.localParticipant.mic, "Listen-only replacement must not publish")
         print("PASS replacement waits for old audience task and remains listen-only")
+        voice.setApplicationActive(false)
+        voice.leaveRoom()
+        assert(!AudioManager.shared.available, "Background must block capture and playback")
+        assert(voice.joinRoom("wss://example.test", token: "background", listenOnly: false) == "paused")
+        AVAudioSession.shared.active = false
+        voice.setApplicationActive(true)
+        await spin { AudioManager.shared.available && AVAudioSession.shared.active }
+        assert(second.disconnects > 0, "Resume must wait for previous room cleanup")
+        _ = voice.joinRoom("wss://example.test", token: "foreground", listenOnly: true)
+        let third = Room.created.last!
+        await spin { third.connectionState == .connected }
+        for _ in 0..<30 { _ = voice.getStatus(); await Task.yield() }
+        assert(!third.localParticipant.mic, "Foreground may not promote Listen to Talk")
+        third.localParticipant.failNextEnable = true
+        _ = voice.setMicrophoneEnabled(true)
+        await spin { status(voice)["state"] as? String == "failed" }
+        assert(status(voice)["error"] as? String == "audio_device_failed")
+        assert(status(voice)["mic_error"] as? String == "")
+        print("PASS foreground restores audio after cleanup; transient device failure requests reconnect")
         voice.leaveRoom()
     }
 }

@@ -35,6 +35,8 @@ extends RefCounted
 
 const Presentation := preload("res://effects/runtime/presentation/PresentationSettings.gd")
 
+const LifecyclePlayer := preload("res://ui/services/MusicPlayer.gd")
+
 const PLAYER_NAME := "GloryMusicPlayer"
 
 # path -> AudioStream（已把 loop 打开的那种）
@@ -44,6 +46,9 @@ static var _path := ""
 static var _installed := false
 # 「下一帧再同步一次」是否已经约过（见 _retry_sync_next_frame）。
 static var _retry_queued := false
+static var _application_suspended := false
+static var _resume_position := 0.0
+static var _resume_path := ""
 
 
 # 由 Main._ready() 调一次，幂等。
@@ -106,6 +111,29 @@ static func _allowed() -> bool:
 
 # --- 内部 -------------------------------------------------------------------
 
+static func _on_application_suspended() -> void:
+	if _application_suspended:
+		return
+	_application_suspended = true
+	_resume_path = _path
+	_resume_position = _player.get_playback_position() if is_playing() else 0.0
+	if is_instance_valid(_player):
+		_player.stream_paused = true
+
+
+static func _on_application_resumed() -> void:
+	if not _application_suspended:
+		return
+	_application_suspended = false
+	if is_instance_valid(_player) and not _path.is_empty() and _allowed():
+		# playing can remain true while the old platform playback is silent.
+		# Recreate playback only on a real lifecycle transition, keeping position.
+		_player.stream_paused = false
+		_player.play(_resume_position if _resume_path == _path else 0.0)
+	_sync()
+	_sync_voice_volume()
+
+
 static func _on_settings_changed() -> void:
 	_sync()
 
@@ -128,7 +156,7 @@ static func _sync() -> void:
 	if not _player.is_inside_tree():
 		_retry_sync_next_frame()
 		return
-	var want := _allowed()
+	var want := _allowed() and not _application_suspended
 	_player.stream_paused = not want
 	if want and not _player.playing:
 		_player.play()
@@ -187,8 +215,10 @@ static func _ensure_player() -> bool:
 	var voice_tree := Engine.get_main_loop() as SceneTree
 	if voice_tree != null and not voice_tree.process_frame.is_connected(_sync_voice_volume):
 		voice_tree.process_frame.connect(_sync_voice_volume)
-	if _player != null and is_instance_valid(_player) and _player.is_inside_tree():
-		return true
+	if _player != null and is_instance_valid(_player):
+		# Reuse a player whose deferred add_child has not run yet. Multiple
+		# scene requests in one frame must not create competing BGM players.
+		return _player.is_inside_tree()
 	var tree := Engine.get_main_loop() as SceneTree
 	if tree == null or tree.root == null:
 		return false
@@ -196,7 +226,9 @@ static func _ensure_player() -> bool:
 	if existing != null and is_instance_valid(existing):
 		_player = existing
 		return true
-	var player := AudioStreamPlayer.new()
+	var player := LifecyclePlayer.new()
+	player.application_suspended.connect(_on_application_suspended)
+	player.application_resumed.connect(_on_application_resumed)
 	player.name = PLAYER_NAME
 	# 与四个页面原实现同款：有 Music 总线就走它，没有就落 Master。
 	# **本批不新增 Music 总线**（`ui_feedback_check.music_bus_added_silently` 钉着）。
@@ -227,6 +259,9 @@ static func shutdown() -> void:
 		_player.free()
 	_player = null
 	_path = ""
+	_application_suspended = false
+	_resume_position = 0.0
+	_resume_path = ""
 	_streams.clear()
 
 

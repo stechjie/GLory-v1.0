@@ -8,6 +8,11 @@ import LiveKit
 @MainActor
 public final class GloryVoiceNative: NSObject, RoomDelegate {
     @objc public static let shared = GloryVoiceNative()
+    private var applicationActive = true
+    private var audioConfigured = false
+    private var audioResumeRevision = 0
+    private var audioResumeTask: Task<Void, Never>?
+    private var audioSessionError = ""
     private var activeRoom: Room?
     private var generation = 0
     private var desiredMic = false
@@ -25,6 +30,45 @@ public final class GloryVoiceNative: NSObject, RoomDelegate {
     private var permissionPending = false
     private var volumes: [String: Double] = [:]
 
+    // The game and WebRTC use separate engines but one AVAudioSession. Keep
+    // a stable duplex category; capture is still controlled only by the mic.
+    private func activateAudioSession() throws {
+        let audio = AudioManager.shared
+        audio.audioSession.isAutomaticConfigurationEnabled = false
+        audio.audioSession.isAutomaticDeactivationEnabled = false
+        if audioConfigured {
+            try AVAudioSession.sharedInstance().setCategory(
+                .playAndRecord, mode: .default,
+                options: [.defaultToSpeaker, .allowBluetooth, .mixWithOthers])
+        }
+        try AVAudioSession.sharedInstance().setActive(true)
+        audioSessionError = ""
+    }
+
+    @objc public func setApplicationActive(_ active: Bool) {
+        applicationActive = active
+        audioResumeRevision += 1
+        let revision = audioResumeRevision
+        audioResumeTask?.cancel()
+        if !active {
+            // Prevent in-flight publication/subscription work restarting capture
+            // while Godot is still delivering the background notification.
+            do { try AudioManager.shared.setEngineAvailability(.none) }
+            catch { audioSessionError = "audio_suspend_failed" }
+            return
+        }
+        let pendingDisconnect = disconnectTask
+        audioResumeTask = Task { @MainActor [weak self] in
+            await pendingDisconnect?.value
+            guard let self, !Task.isCancelled, self.applicationActive,
+                  self.audioResumeRevision == revision else { return }
+            do {
+                try self.activateAudioSession()
+                try AudioManager.shared.setEngineAvailability(.default)
+            } catch { self.audioSessionError = "audio_resume_failed" }
+        }
+    }
+
     @objc public func hasRecordPermission() -> Bool {
         AVAudioSession.sharedInstance().recordPermission == .granted
     }
@@ -40,6 +84,7 @@ public final class GloryVoiceNative: NSObject, RoomDelegate {
     @objc public func joinRoom(_ url: String, token: String, listenOnly: Bool) -> String {
         guard let endpoint = URL(string: url), endpoint.scheme == "wss", endpoint.host != nil,
               !token.isEmpty else { return "invalid_config" }
+        guard applicationActive else { return "paused" }
         leaveRoom()
         let serial = generation
         desiredMic = !listenOnly
@@ -50,12 +95,15 @@ public final class GloryVoiceNative: NSObject, RoomDelegate {
         activeRoom = room
         connectionTask = Task { @MainActor [weak self] in
             await previousDisconnect?.value
-            guard let self, self.generation == serial, self.activeRoom === room else { return }
+            guard let self, self.generation == serial, self.activeRoom === room, self.applicationActive else { return }
             // Godot and LiveKit share the process-wide audio session. A previous
             // room must finish tearing down before the next one starts using it.
             do {
                 let audio = AudioManager.shared
-                audio.audioSession.isAutomaticConfigurationEnabled = true
+                self.audioConfigured = true
+                try self.activateAudioSession()
+                try audio.setEngineAvailability(.default)
+                audio.audioSession.isAutomaticConfigurationEnabled = false
                 audio.audioSession.isAutomaticDeactivationEnabled = false
                 audio.audioSession.isSpeakerOutputPreferred = true
                 // Use WebRTC software AEC/NS/AGC, not Apple's Voice Processing
@@ -125,8 +173,10 @@ public final class GloryVoiceNative: NSObject, RoomDelegate {
     @objc public func setAudience(_ all: Bool, identitiesJson: String) {
         let data = Data(identitiesJson.utf8)
         let identities = (try? JSONSerialization.jsonObject(with: data)) as? [String] ?? []
+        let nextIds = Set(identities.filter { !$0.isEmpty })
+        guard audienceAll != all || audienceIds != nextIds else { return }
         audienceAll = all
-        audienceIds = Set(identities.filter { !$0.isEmpty })
+        audienceIds = nextIds
         audienceReady = false
         audienceRevision += 1
         if let room = activeRoom, room.connectionState == .connected {
@@ -143,6 +193,7 @@ public final class GloryVoiceNative: NSObject, RoomDelegate {
         }.sorted()
         let fingerprint = "\(audienceAll):\(sids.joined(separator: ","))"
         if audienceReady && fingerprint == audienceFingerprint { return }
+        audienceReady = false
         let revision = audienceRevision
         let allowAll = audienceAll
         audienceTask = Task { @MainActor [weak self] in
@@ -198,7 +249,11 @@ public final class GloryVoiceNative: NSObject, RoomDelegate {
                     try await room.localParticipant.setMicrophone(enabled: wanted)
                 } catch {
                     if !Task.isCancelled, self.generation == serial, self.activeRoom === room {
-                        self.micError = "mic_failed"
+                        if self.hasRecordPermission() {
+                            // Audio route/engine failures are recoverable: let the
+                            // service reconnect with backoff and preserve Talk.
+                            self.connectionError = "audio_device_failed"
+                        } else { self.micError = "no_permission" }
                     }
                     return
                 }
@@ -254,7 +309,8 @@ public final class GloryVoiceNative: NSObject, RoomDelegate {
         }
         return json([
             "state": state, "error": connectionError,
-            "mic_on": room?.localParticipant.isMicrophoneEnabled() ?? false,
+            "mic_on": applicationActive && (room?.localParticipant.isMicrophoneEnabled() ?? false),
+            "application_active": applicationActive, "audio_session_error": audioSessionError,
             "mic_error": micError, "permission": permission,
             "self_speaking": room?.localParticipant.isSpeaking ?? false,
             "speaking": speaking, "participants": participants,

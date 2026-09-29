@@ -52,8 +52,10 @@ recovery, headset routing and background behavior remain separate checks.
 ## Full-duplex game audio policy (2026-09-29)
 
 The game owns other audio in the same process. LiveKit automatic session
-configuration stays enabled, but automatic **deactivation** is disabled so
-stopping/replacing a voice engine cannot deactivate Godot's music output.
+configuration and deactivation are disabled. The bridge owns activation and
+pins play-and-record / default mode with speaker, Bluetooth and mix-with-others
+options after voice is first used, so voice engine changes do not replace the
+shared session policy or deactivate Godot output.
 Before connecting, `setPlatformVoiceProcessingAllowed(false)` selects WebRTC
 software echo cancellation/noise suppression/gain control. This avoids Apple's
 Voice Processing I/O output changes and other-audio ducking; the SDK's software
@@ -104,3 +106,25 @@ before a replacement room connects.
 against deterministic SDK doubles on macOS. It verifies cancelled publication
 without false failure and room replacement waiting for suspended audience work.
 It uses no audio hardware and does not substitute for physical device acceptance.
+
+## Foreground and battle transition recovery (2026-09-29)
+
+VoiceService suspends token/join work while the app is backgrounded. The native
+bridge suspends its audio engine and serializes foreground activation after old
+room cleanup, preserving the user's Talk/Listen/Off choice. A transient native
+capture failure with permission still granted now triggers connection recovery;
+permission denial still falls back to Listen. Identical audience updates no
+longer mute/reconfigure capture unnecessarily.
+
+The root-owned MusicPlayer forwards application lifecycle notifications. On
+foreground, MusicService recreates playback at the saved position, respecting
+the current track, explicit stop and the music setting. It also reuses a player
+that is awaiting deferred tree insertion instead of creating duplicates.
+
+Validation: production Swift race/lifecycle tests pass; native arm64 framework
+build succeeds; voice/music regression has 30 passing assertions. The broader
+voice check has 410/412 passing assertions: the two remaining failures report
+pre-existing Android and Windows binary/source hash mismatches. No physical
+iPhone was available. These fixes require a new IPA; existing TestFlight
+0.0.11 (24) does not contain them. Verify repeated prep/battle transitions and
+background/foreground with three simultaneous speakers before accepting audio.
