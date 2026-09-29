@@ -628,6 +628,39 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 			continue
 		if StatusEffectService.is_stunned(f):
 			continue
+		# 9.28「打不到就换目标」：连续 N tick 出在射程外且没推进 → 解除锁定，并把
+		# 「这个 uid 够不到」记进**避让集合**，让下面的重选去换一个可达的目标。
+		# ★ 必须放在 `_select_attack_target` **之前** —— 它命中锁定就直接返回，
+		#   放在后面等于永远轮不到（9.24 死亡猎手判定就栽过同一个位置错误）。
+		# ★★ 换目标上限是**每轮**的预算，不是整场的：换满 MAX_SWITCH_ATTEMPTS 次就进
+		#   SWITCH_COOLDOWN_TICKS 的冷却（冷却期内不重选，但走路/推挤照常），冷却结束
+		#   清空避让集合重开一轮。**绝不停下来** —— 上一版把它当整场预算，换满 3 次就
+		#   永久退回旧行为；真实对局 30 场 / 76 单位实测：46 个单位卡住 ≥3 秒、
+		#   最长 282 tick（28 秒），其中 41/46 个的 `_switch_attempts` 正好等于 3。
+		if int(f.get("_switch_cooldown", 0)) > 0:
+			f._switch_cooldown = int(f.get("_switch_cooldown", 0)) - 1
+		if int(f.get("_no_progress_ticks", 0)) >= NO_PROGRESS_TICKS \
+				and int(f.get("_switch_cooldown", 0)) <= 0:
+			if int(f.get("_switch_attempts", 0)) >= MAX_SWITCH_ATTEMPTS:
+				f._switch_attempts = 0
+				f._switch_cooldown = SWITCH_COOLDOWN_TICKS
+				f.erase("avoid_target_uids")
+			else:
+				# ★ 记的是「这一 tick 实际没打到的那个目标」（`_progress_uid`），不是
+				#   `locked_target_uid` —— 嘲讽 / 技能改写选敌时锁定可能是空的、也可能
+				#   指的是另一个单位，拿它去避让等于没避让（避让集合变成空转）。
+				var failed := str(f.get("_progress_uid", ""))
+				if failed.is_empty():
+					failed = str(f.get("locked_target_uid", ""))
+				if not failed.is_empty():
+					var avoided: Array = f.get("avoid_target_uids", [])
+					if not avoided.has(failed):
+						avoided.append(failed)
+						f.avoid_target_uids = avoided
+					f._switch_attempts = int(f.get("_switch_attempts", 0)) + 1
+			f.erase("locked_target_uid")
+			f._no_progress_ticks = 0
+			f.erase("_progress_uid")
 		var target := _select_attack_target(f, opponents, target_index, bodies)
 		if str(f.get("frenzy_target_uid", "")) != str(target.get("uid", "")):
 			f.frenzy_stacks = 0
@@ -637,7 +670,37 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 		var delta: Vector2 = target.pos - f.pos
 		var dist: float = delta.length()
 		var attack_distance := _effective_attack_distance(f, target)
-		if dist > attack_distance + ATTACK_RANGE_EPS:
+		var in_range := dist <= attack_distance + ATTACK_RANGE_EPS
+		if in_range:
+			# 已经打到 —— 这次「打不到」的事件结束，推进计数与换目标配额一起复位。
+			f._no_progress_ticks = 0
+			f._switch_attempts = 0
+			f.erase("_progress_uid")
+		else:
+			var progress := no_progress_step(str(f.get("_progress_uid", "")),
+				str(target.get("uid", "")), float(f.get("_progress_best", INF)), dist,
+				int(f.get("_no_progress_ticks", 0)))
+			f._progress_uid = str(progress["uid"])
+			f._progress_best = float(progress["best"])
+			f._no_progress_ticks = int(progress["ticks"])
+		# 避让集合修剪：被避让的目标已死、或去路已通（挡路的友军死了 / 让开了）
+		# → 从集合里放回去。★ 避让**不能是永久的**，否则一个重新可达的目标会被一直忽略。
+		var avoided_now: Array = f.get("avoid_target_uids", [])
+		if not avoided_now.is_empty():
+			var alive_uids: Array = []
+			var blocked_uids: Array = []
+			for o: Dictionary in opponents:
+				var o_uid := str(o.get("uid", ""))
+				if not avoided_now.has(o_uid):
+					continue
+				if bool(o.get("alive", false)) and int(o.get("hp", 0)) > 0:
+					alive_uids.append(o_uid)
+					if _ally_blocks(f, o, bodies):
+						blocked_uids.append(o_uid)
+			var pruned := avoid_prune(avoided_now, alive_uids, blocked_uids)
+			if pruned.size() != avoided_now.size():
+				f.avoid_target_uids = pruned
+		if not in_range:
 			var step := minf(float(f.move_speed_px) * StatusEffectService.move_speed_multiplier(f) * TICK_SEC, maxf(0.0, dist - attack_distance))
 			if dist > 0.001:
 				_move_without_pushing(f, delta.normalized() * step, bodies)
@@ -696,9 +759,28 @@ static func _move_without_pushing(f: Dictionary, displacement: Vector2, bodies: 
 		remaining -= normal * minf(0.0, remaining.dot(normal))
 		# Head-on blockers have no natural tangent. Walk around with a stable
 		# UID tie-break instead of repeatedly pushing the blocker each tick.
-		if remaining.length_squared() < 0.000001 and length - travel > 0.001:
+		# ★★★ 9.28 第三轮「卡在后面不动」：旧口径要求 |remaining|² < 1e-6 才侧移
+		#   —— 而"顶着同队友军站住"这个形态的切向残量通常落在 1e-4~1e-2 之间：
+		#   既不触发绕行、又几乎走不动，位移恒为 0。真实对局取样（30 场）里
+		#   「2~3 只同队友军互相停在接触距离上（d=30/31/32）」的整簇就是这个状态：
+		#   `moved=0.000`、`step` 明明有 4~17px、`blocked_dirs` 只有 8~16/16。
+		#   现在：残量小于本次位移的 20% 就按「正对挡路者」处理，**两侧都试**，
+		#   取走得远的一侧；两侧一样远时按 uid 字典序定侧（保持确定性）。
+		#   A/B 实测（同 fixture 30 场 / ≈1.9 万单位-tick）：停滞占比 45.0%→42.0%、
+		#   爬行占比 51.9%→44.3%、卡住单位 39→35。
+		if remaining.length() < length * 0.2 and length - travel > 0.001:
+			var tangent := Vector2(-normal.y, normal.x)
+			var budget := length - travel
+			var plus := _first_contact(position, radius, tangent, budget, f, bodies)
+			var minus := _first_contact(position, radius, -tangent, budget, f, bodies)
+			var travel_plus := float(plus.get("contact", budget))
+			var travel_minus := float(minus.get("contact", budget))
 			var side := 1.0 if str(f.get("uid", "")) < hit_uid else -1.0
-			remaining = Vector2(-normal.y, normal.x) * (length - travel) * side
+			if travel_plus > travel_minus + 0.001:
+				side = 1.0
+			elif travel_minus > travel_plus + 0.001:
+				side = -1.0
+			remaining = tangent * budget * side
 	f.pos = Vector2(clampf(position.x, 45.0, ARENA_W - 45.0), clampf(position.y, 40.0, ARENA_H - 40.0))
 
 
