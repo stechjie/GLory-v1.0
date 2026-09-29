@@ -146,7 +146,6 @@ const SHOP_IDLE_HALO_PATH := "res://assets/vfx/prep/scroll_idle_halo.png"
 const SHOP_POPUP_SIZE := Vector2(896, 230)   # 商店弹窗判定框：宽=屏宽70%(1280*0.7)、高=屏高40%(720*0.4)
 const SHOP_BG_SIZE := Vector2(920, 280)     # 背景卷轴显示尺寸（像素）：独立于判定框，改这里只变视觉不变判定
 const SHOP_BG_OFFSET := Vector2(0, -2)        # 背景相对弹窗中心的平移（正 x 右移、正 y 下移）
-const SHOP_PANEL_BACKGROUND_PATH := "res://assets/ui/shop/btm_stone_frame_v4.png"
 const MONEY_BAG_GLOW_SHADER: Shader = preload("res://assets/shaders/prep_money_bag_glow.gdshader")
 const GOLD_NUMBER_FONT: Font = preload("res://assets/fonts/Knewave-Regular.ttf")
 const SHOP_CARD_SEPARATION := 12             # 手牌卡间距
@@ -317,7 +316,7 @@ func build_popup(body: HBoxContainer, center_host: Control) -> void:
 	shop_background.offset_right = SHOP_BG_SIZE.x * 0.5 + SHOP_BG_OFFSET.x
 	shop_background.offset_top = -SHOP_BG_SIZE.y * 0.5 + SHOP_BG_OFFSET.y
 	shop_background.offset_bottom = SHOP_BG_SIZE.y * 0.5 + SHOP_BG_OFFSET.y
-	var shop_background_source := PrepWidgets.cached_texture(SHOP_PANEL_BACKGROUND_PATH)
+	var shop_background_source := PrepWidgets.cached_texture(PrepSkin.path("shop_panel"))  # 随棋盘皮肤换
 	shop_background.texture = shop_background_source
 	shop_background_host.add_child(shop_background)
 	var shop_layout := Control.new()
