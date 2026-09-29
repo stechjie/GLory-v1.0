@@ -11,6 +11,9 @@ func _ready() -> void:
 	VoiceService._joined = true
 	fake.joined = true
 	Music._ensure_player()
+	var pending_player := Music._player
+	Music._ensure_player()
+	h.expect(Music._player == pending_player, "one_pending_music_player", "同帧切换页面只保留一个播放器")
 	await get_tree().process_frame
 	var player: AudioStreamPlayer = Music._player
 	var tone := AudioStreamWAV.new()
@@ -57,5 +60,27 @@ func _ready() -> void:
 	VoiceService._leave()
 	Music._sync_voice_volume()
 	h.expect(is_equal_approx(player.volume_linear, 1.0), "leave_restores_music", "离开恢复音乐")
+	Music._path = "test://loop"
+	player.stream_paused = false
+	player.notification(Node.NOTIFICATION_APPLICATION_PAUSED)
+	h.expect(player.stream_paused, "background_pauses_music", "后台暂停 BGM")
+	Music._sync()
+	h.expect(player.stream_paused, "background_sync_stays_paused", "后台同步不能重启 BGM")
+	player.stop()
+	player.notification(Node.NOTIFICATION_APPLICATION_RESUMED)
+	await get_tree().process_frame
+	h.expect(player.playing and not player.stream_paused and player.stream == tone, "foreground_restores_music", "前台恢复丢失的播放器")
+	player.notification(Node.NOTIFICATION_APPLICATION_PAUSED)
+	var previous_music_enabled := PlayerProfile.music_enabled
+	PlayerProfile.music_enabled = false
+	player.notification(Node.NOTIFICATION_APPLICATION_RESUMED)
+	await get_tree().process_frame
+	h.expect(player.stream_paused, "foreground_respects_music_off", "回前台不覆盖用户关闭音乐的设置")
+	PlayerProfile.music_enabled = previous_music_enabled
+	player.notification(Node.NOTIFICATION_APPLICATION_PAUSED)
+	Music.stop()
+	player.notification(Node.NOTIFICATION_APPLICATION_RESUMED)
+	await get_tree().process_frame
+	h.expect(not player.playing, "foreground_respects_stop", "主动停止的音乐不恢复")
 	Music.shutdown()
 	h.finish(get_tree())

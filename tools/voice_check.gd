@@ -1038,6 +1038,8 @@ func _case_state_machine() -> void:
 	_h.expect(not fake.joined and VoiceService.mode == VoiceService.Mode.LISTEN, "voice_background_kept",
 		"切到后台必须断开（不申请后台音频），档位不变")
 	before = int(requests[0])
+	VoiceService._process(30.0)
+	_h.expect(int(requests[0]) == before and not fake.joined, "voice_background_no_reconnect", "后台帧不能重新要钥匙或开麦")
 	VoiceService._notification(Node.NOTIFICATION_APPLICATION_RESUMED)
 	VoiceService._process(0.01)
 	_h.item()

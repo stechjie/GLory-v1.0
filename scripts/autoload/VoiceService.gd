@@ -111,6 +111,7 @@ var _muted_keys: Dictionary = {}
 # 语音身份 -> 最后一次设给桥接的音量（只在变了时才调）
 var _applied_volumes: Dictionary = {}
 var _applied_audience := ""
+var _application_paused := false
 
 
 func _ready() -> void:
@@ -418,6 +419,8 @@ func _apply_audience() -> void:
 # --- 每帧 ----------------------------------------------------------------------------
 
 func _process(delta: float) -> void:
+	if _application_paused:
+		return
 	if in_room():
 		_out_of_room_sec = 0.0
 		_apply_room_default()
@@ -470,8 +473,14 @@ func _notification(what: int) -> void:
 	match what:
 		NOTIFICATION_APPLICATION_PAUSED:
 			# 切到后台：断开（不申请后台音频，后台不录音）。档位不变，回来之后 _process 里自动重连。
+			_application_paused = true
+			if _bridge != null and _bridge.has_method("setApplicationActive"):
+				_bridge.setApplicationActive(false)
 			_leave()
 		NOTIFICATION_APPLICATION_RESUMED:
+			_application_paused = false
+			if _bridge != null and _bridge.has_method("setApplicationActive"):
+				_bridge.setApplicationActive(true)
 			_retry_in = 0.0
 			_retry_index = 0
 
@@ -566,7 +575,7 @@ func _change_mode(next: int) -> String:
 
 # 让桥接的实际状态跟上档位与座位。每帧调；只在要变的时候才调桥接。返回开麦失败的原因（空 = 没事）。
 func _sync() -> String:
-	if not is_supported():
+	if not is_supported() or _application_paused:
 		return ""
 	if mode == Mode.OFF:
 		_leave()
