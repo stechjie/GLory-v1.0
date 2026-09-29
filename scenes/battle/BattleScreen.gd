@@ -776,8 +776,8 @@ func _advance_spectate(delta: float) -> void:
 # 这里只是给玩家一个随手开关。
 const VoiceControls := preload("res://ui/components/VoiceControls.gd")
 const VOICE_BTN_TOP := 100.0
-const VOICE_BTN_SIZE := Vector2(120, 36)
-const VOICE_BTN_STEP := 42.0
+const VOICE_BTN_SIZE := Vector2(120, 56)
+const VOICE_BTN_STEP := 64.0
 var _voice_controls: VoiceControls = null
 
 func _setup_voice_controls() -> void:
