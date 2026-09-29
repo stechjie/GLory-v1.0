@@ -460,7 +460,7 @@ def main(argv=None):
         build_tuple(args.build_number)
         if build_tuple(args.build_number) < (2, 0, 0):
             raise RuntimeError("新构建的 build number 至少为 2。")
-    if args.update:
+    if args.update and not args.check:
         git_update_ready(args.project)
     env = environment(args)
     version = project_version(args.project, args.version)

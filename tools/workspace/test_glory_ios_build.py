@@ -190,11 +190,12 @@ class IOSBuildTests(unittest.TestCase):
             stack.enter_context(mock.patch.object(ios, "read_profile", return_value=self.profile))
             stack.enter_context(mock.patch.object(ios, "select_identity", return_value={"name": "Fixture"}))
             stack.enter_context(mock.patch.object(ios.shared, "asset_root", return_value=self.root))
-            stack.enter_context(mock.patch.object(ios, "git_update_ready", return_value=("main", "origin/main")))
+            git_ready = stack.enter_context(mock.patch.object(ios, "git_update_ready", side_effect=AssertionError("check must not require a clean Git tree")))
             forbidden = [stack.enter_context(mock.patch.object(ios, name, side_effect=AssertionError(name)))
                          for name in ("unlock_keychain", "update_sources", "reserve_build_number", "install_profile", "publish")]
             stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
             ios.main(["--check", "--update", "--project", str(project)])
+            git_ready.assert_not_called()
             self.assertFalse((self.root / "build").exists())
             for call in forbidden:
                 call.assert_not_called()
