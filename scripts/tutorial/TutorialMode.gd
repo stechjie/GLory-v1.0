@@ -1620,10 +1620,10 @@ func _refresh_prep() -> void:
 #
 # **判定必须只在这一处**：PrepBoardController._on_refresh_shop（真正扣钱的那边）和
 # ShopPanel.refresh（画按钮、写「免费」标签的那边）各算一遍的话，两处一旦漂移就会出现
-# 「按钮写着免费、点下去照扣」这类只在一处生效的错。非教学仍然回落到「金币」套装
-# (money) 的原有口径。
+# 「按钮写着免费、点下去照扣」这类只在一处生效的错。非教学始终使用正常刷新费用；
+# 4 金钱套装已改为按持有金币提高开战 ATK/HP。
 func shop_refresh_all_free() -> bool:
-	return GameState.tutorial_mode or TreasureService.has_set("money")
+	return GameState.tutorial_mode
 
 func _start_treasure(ids: Array) -> void:
 	GameState.pending_treasure = {"active": true, "round": GameState.round_index, "candidates": TreasureService.available_candidates(ids), "refresh_index": 0}

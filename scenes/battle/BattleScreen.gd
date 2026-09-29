@@ -893,7 +893,7 @@ func show_settlement_waiting() -> void:
 			and kind != "pvp" and kind != "final"
 	_show_team_waiting()
 	if _result_overlay_lbl != null:
-		_result_overlay_lbl.text = "需等待其他人战斗结束"
+		_result_overlay_lbl.text = tr("battle_waiting_others")
 
 func _show_team_waiting() -> void:
 	if _result_overlay_lbl == null:

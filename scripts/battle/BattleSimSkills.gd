@@ -317,7 +317,7 @@ static func _skill_holy_purify(_caster: Dictionary, allies: Array, d: Dictionary
 			continue
 		a.statuses = {}
 		_heal_unit(a, maxi(1, int(round(float(a.max_hp) * float(d.get("heal_pct", 0.12))))))
-		a.shield = int(a.get("shield", 0)) + maxi(1, int(round(float(a.max_hp) * float(d.get("shield_pct", 0.10)))))
+		_grant_shield(a, maxi(1, int(round(float(a.max_hp) * float(d.get("shield_pct", 0.10))))))
 
 
 # 9.23 第五批：返回值改成 bool = 「这一下真的开始蓄力了」。
@@ -329,7 +329,7 @@ static func _skill_apocalypse_charge(caster: Dictionary, state: Dictionary, d: D
 	if caster.has("apocalypse_due"):
 		return false
 	var shield := maxi(1, int(round(float(caster.max_hp) * float(d.get("charge_shield_pct", 0.10)))))
-	caster.shield = int(caster.get("shield", 0)) + shield
+	_grant_shield(caster, shield)
 	caster.apocalypse_due = float(state.elapsed) + float(d.get("charge_sec", 2.0))
 	caster.apocalypse_damage_atk_pct = float(d.get("damage_atk_pct", 2.5))
 	caster.apocalypse_ignore_def = bool(d.get("ignore_def", true))
@@ -351,15 +351,17 @@ static func _skill_mirror_clone(caster: Dictionary, state: Dictionary, d: Dictio
 		return 0
 	for idx in range(have + 1, should_have + 1):
 		var clone := caster.duplicate(true)
+		var inherited_money_multiplier := maxf(1.0, float(caster.get("money_set_multiplier", 1.0)))
 		# Every lane has its own boss. Keep the summon prefix for treasure rules,
 		# but include the caster identity so one lane's death cannot own another.
 		clone.uid = "%s_mirror_%s_%d" % [str(caster.team), str(caster.uid), idx]
-		clone.hp = maxi(1, int(round(float(caster.max_hp) * float(d.get("clone_hp_pct", 0.30)))))
+		clone.hp = maxi(1, int(round(float(caster.max_hp) / inherited_money_multiplier * float(d.get("clone_hp_pct", 0.30)))))
 		clone.max_hp = clone.hp
-		clone.atk = maxi(1, int(round(float(caster.atk) * float(d.get("clone_atk_pct", 0.40)))))
+		clone.atk = maxi(1, int(round(float(caster.atk) / inherited_money_multiplier * float(d.get("clone_atk_pct", 0.40)))))
 		clone.defense = int(d.get("clone_def", 0))
 		clone.alive = true
 		clone.statuses = {}
+		clone.erase("money_set_multiplier")
 		clone.skill_ready = 9999.0
 		if str(caster.team) == "enemy":
 			state.enemy.append(clone)
@@ -396,11 +398,13 @@ static func _skill_twin_strike(caster: Dictionary, state: Dictionary, d: Diction
 	var summon_index := int(caster.get("twin_clones_spawned", 0)) + 1
 	caster.twin_clones_spawned = summon_index
 	var clone := caster.duplicate(true)
+	var inherited_money_multiplier := maxf(1.0, float(caster.get("money_set_multiplier", 1.0)))
 	clone.uid = "%s_twin_%d" % [str(caster.uid), summon_index]
-	clone.hp = maxi(1, int(round(float(caster.max_hp) * float(d.get("clone_hp_pct", 0.30)))))
+	clone.hp = maxi(1, int(round(float(caster.max_hp) / inherited_money_multiplier * float(d.get("clone_hp_pct", 0.30)))))
 	clone.max_hp = clone.hp
-	clone.atk = maxi(1, int(round(float(caster.atk) * float(d.get("clone_atk_pct", 0.40)))))
+	clone.atk = maxi(1, int(round(float(caster.atk) / inherited_money_multiplier * float(d.get("clone_atk_pct", 0.40)))))
 	clone.statuses = {}
+	clone.erase("money_set_multiplier")
 	clone.skill_ready = 9999.0
 	if str(caster.team) == "player": state.player.append(clone)
 	else: state.enemy.append(clone)
@@ -473,7 +477,7 @@ static func _skill_ally_self_sustain(caster: Dictionary, d: Dictionary) -> void:
 	_heal_unit(caster, maxi(0, int(d.get("self_heal", 200))))
 	var cap := maxi(0, int(d.get("shield_cap", 300)))
 	var gain := maxi(0, int(d.get("self_shield", 100)))
-	caster.shield = mini(cap, int(caster.get("shield", 0)) + gain)
+	_grant_shield(caster, gain, cap)
 
 
 # 暗狱锁魂者（11-20 血）：全体眩晕 + 减攻速。只降攻速不降移速——移速降了会让敌人

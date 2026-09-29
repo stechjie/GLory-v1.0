@@ -20,8 +20,6 @@ const STAR4_DEFAULT_MULTIPLIER := 1.15
 # 而它按设计不能读 GameState。这里保留同名常量只是为了不动那些调用点。
 const STAR_UPGRADE_COPIES := GameConstants.STAR_UPGRADE_COPIES
 const FINAL_ROUND := 21
-const BATTLE_DECAY_START_SEC := 10.0
-const BATTLE_DECAY_INTERVAL_SEC := 6.0
 const BATTLE_HARD_TIMEOUT_SEC := 180.0
 const SHOP_UNIT_SLOTS := 4
 const BENCH_SLOTS := 8

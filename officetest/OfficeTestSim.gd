@@ -224,7 +224,7 @@ static func build_test_state(config: Dictionary, display_only := false) -> Dicti
 	# ---- 以下拷贝自 BattleSimulator.prepare_team_state()(原版改动需手动同步) ----
 	var battle_log: Array[String] = []
 	battle_log.append("单位测试:我方 %d 个单位,敌方 %d 个单位。" % [player.size(), enemy.size()])
-	var state := {"kind": TEST_KIND, "player": player, "enemy": enemy, "elapsed": 0.0, "next_decay": BattleSimulator.DECAY_START_SEC, "finished": false, "log": battle_log, "player_syn": {}, "enemy_deaths": 0, "total_deaths": 0, "field_death_count": 0, "mother_death_counter": 0, "dark_kill_stacks": 0, "undead_trait_death_counter": 0, "race_trait_processed_deaths": {}, "death_history": [], "revive_queue": [], "player_kill_gold": 0, "enemy_kill_gold": 0, "kill_gold_by_slot": {}, "player_kills": [], "enemy_kills": [], "bonus_gold": 0, "temporary_deaths": [], "visual_events": [], "unit_stats": {}}
+	var state := {"kind": TEST_KIND, "player": player, "enemy": enemy, "elapsed": 0.0, "next_sudden_death_tick": BattleFrenzyService.SUDDEN_DEATH_SEC, "finished": false, "log": battle_log, "player_syn": {}, "enemy_deaths": 0, "total_deaths": 0, "field_death_count": 0, "mother_death_counter": 0, "dark_kill_stacks": 0, "undead_trait_death_counter": 0, "race_trait_processed_deaths": {}, "death_history": [], "revive_queue": [], "player_kill_gold": 0, "enemy_kill_gold": 0, "kill_gold_by_slot": {}, "player_kills": [], "enemy_kills": [], "bonus_gold": 0, "temporary_deaths": [], "visual_events": [], "unit_stats": {}}
 	state.team_heal_ally = BattleSimulator._team_formation_heal_total(ctx_list.slice(0, 3))
 	state.team_heal_rival = BattleSimulator._team_formation_heal_total(ctx_list.slice(3, 6))
 	var owner_syn_by_key: Dictionary = {}

@@ -7,6 +7,7 @@ signal battle_finished(result: Dictionary)
 const BattleSim := preload("res://scripts/battle/BattleSimulator.gd")
 const UnitActorRegistryScript := preload("res://effects/runtime/presentation/UnitActorRegistry.gd")
 const BoardReadabilityLayerScene := preload("res://effects/runtime/presentation/BoardReadabilityLayer.tscn")
+const BattleFrenzy := preload("res://scripts/battle/BattleFrenzyService.gd")
 const SIM_TICK_SEC := 0.1
 const PLAYBACK_SPEED := 1.0
 const MAX_STEPS_PER_FRAME := 3
@@ -89,6 +90,7 @@ var _watching_rival := false
 var _arena: Control
 var _title_lbl: Label
 var _battle_state_lbl: Label
+var _frenzy_lbl: Label
 var _result_overlay_lbl: Label
 var _unit_nodes: Dictionary = {}
 var _board_readability_layer: BoardReadabilityLayer

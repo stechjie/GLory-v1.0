@@ -2557,7 +2557,7 @@ func server_prep_confirmed(required_round: int) -> bool:
 
 func shop_refresh_error_text(reason: String) -> String:
 	if reason == "bad_phase":
-		return "需等待其他人战斗结束"
+		return tr("battle_waiting_others")
 	return "商店刷新失败：%s" % reason
 
 func team_begin_round() -> void:

@@ -81,6 +81,7 @@ func _refresh_visuals() -> void:
 	# These HUD labels are hidden — only rebuild their text if actually shown.
 	if _battle_state_lbl != null and _battle_state_lbl.visible:
 		_battle_state_lbl.text = tr("battle_state") % [player_alive, enemy_alive, float(_state.get("elapsed", 0.0)), tr("battle_ended_suffix") if _finished else ""]
+	_refresh_frenzy_hud()
 	# Per-unit: only the things that actually change each frame (position + HP fill).
 	for f in living:
 		var node: Control = _unit_nodes.get(_visual_id(f))
@@ -103,6 +104,37 @@ func _refresh_visuals() -> void:
 	_refresh_top5_atk(living)
 	if _summary_lbl != null and _summary_lbl.visible:
 		_refresh_summary()
+
+
+func _refresh_frenzy_hud() -> void:
+	if _frenzy_lbl == null:
+		return
+	var frenzy_panel := _frenzy_lbl.get_parent() as Control
+	var elapsed := float(_state.get("elapsed", 0.0))
+	if _finished or elapsed < 30.0:
+		if frenzy_panel != null:
+			frenzy_panel.visible = false
+		return
+	if frenzy_panel != null:
+		frenzy_panel.visible = true
+	if elapsed < BattleFrenzy.FRENZY_I_SEC:
+		var remaining := maxi(1, int(ceil(BattleFrenzy.FRENZY_I_SEC - elapsed)))
+		_frenzy_lbl.text = tr("battle_frenzy_warning") % remaining
+		_frenzy_lbl.add_theme_color_override("font_color", Color(1.0, 0.86, 0.34))
+		return
+	match BattleFrenzy.stage_for_elapsed(elapsed):
+		1:
+			_frenzy_lbl.text = tr("battle_frenzy_i")
+			_frenzy_lbl.add_theme_color_override("font_color", Color(1.0, 0.78, 0.24))
+		2:
+			_frenzy_lbl.text = tr("battle_frenzy_ii")
+			_frenzy_lbl.add_theme_color_override("font_color", Color(1.0, 0.52, 0.18))
+		3:
+			_frenzy_lbl.text = tr("battle_frenzy_iii")
+			_frenzy_lbl.add_theme_color_override("font_color", Color(1.0, 0.30, 0.18))
+		_:
+			_frenzy_lbl.text = tr("battle_sudden_death")
+			_frenzy_lbl.add_theme_color_override("font_color", Color(1.0, 0.18, 0.14))
 
 # (8) Left-middle leaderboard: top 5 living units by ATK, colored by owner/team,
 # with the damage each has dealt so far.

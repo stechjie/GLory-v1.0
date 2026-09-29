@@ -1443,7 +1443,7 @@ func _case_economy_ledger() -> void:
 	# --- 赌博：服务端开奖 ---
 	prep = EconomyLedger.new_prep(100)
 	var g_win := EconomyLedger.apply(prep, "gamble", {}, {"roll": 0.1, "gamble_linked": false, "gamble_entitled": true})
-	checks.append(["gamble_win_doubles", int(prep.get("gold", 0)) == 200
+	checks.append(["gamble_win_2_5x", int(prep.get("gold", 0)) == 250
 		and bool((g_win.get("result", {}) as Dictionary).get("won", false))])
 	# 每回合只能一次 —— 重连重点也不行
 	checks.append(["gamble_once_per_round",
@@ -1456,7 +1456,7 @@ func _case_economy_ledger() -> void:
 	checks.append(["gamble_linked_keeps_50pct", int(prep.get("gold", 0)) == 50])
 	prep = EconomyLedger.new_prep(100)
 	EconomyLedger.apply(prep, "gamble", {}, {"roll": 0.55, "gamble_linked": true, "gamble_entitled": true})
-	checks.append(["gamble_linked_win_at_55", int(prep.get("gold", 0)) == 200])
+	checks.append(["gamble_linked_win_at_55", int(prep.get("gold", 0)) == 250])
 	# 持有权：没有「慷慨命运」这件宝物就不能开奖。
 	# 客户端一直有这道门（PrepFlowController:183），服务端此前没有 —— 改客户端就能白嫖翻倍。
 	prep = EconomyLedger.new_prep(100)

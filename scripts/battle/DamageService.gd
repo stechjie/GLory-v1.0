@@ -2,6 +2,7 @@
 extends RefCounted
 
 const MIN_HP_DAMAGE := 1
+const BattleFrenzy := preload("res://scripts/battle/BattleFrenzyService.gd")
 
 static var _stat_state: Dictionary = {}
 static var _stat_source_uid := ""
@@ -19,6 +20,10 @@ static var _hit_is_crit := false
 # numbers on the renderer side.
 static var _hit_source_race := ""
 static var _hit_skill_id := ""
+
+
+static func current_battle_elapsed() -> float:
+	return float(_stat_state.get("elapsed", 0.0))
 
 static func set_hit_context(kind: String, is_crit: bool = false, source_race: String = "", skill_id: String = "") -> void:
 	_hit_kind = kind
@@ -277,6 +282,10 @@ static func apply_damage(target: Dictionary, amount: int, ignore_defense: bool =
 		if RngService.rng.randf() < dodge_chance:
 			return 0
 	var remaining := amount
+	# Frenzy amplifies damage caused by a unit. Environmental sudden-death
+	# damage has no source uid and uses apply_sudden_death_damage().
+	if not _stat_source_uid.is_empty():
+		remaining = maxi(MIN_HP_DAMAGE, int(round(float(remaining) * BattleFrenzy.damage_multiplier(current_battle_elapsed()))))
 	if not ignore_defense:
 		remaining = int(ceil(float(remaining) * (1.0 - damage_reduction(effective_defense(target)))))
 	remaining = maxi(MIN_HP_DAMAGE, int(ceil(float(remaining) * status_damage_taken_multiplier(target))))
@@ -306,6 +315,40 @@ static func apply_damage(target: Dictionary, amount: int, ignore_defense: bool =
 	if died_now:
 		emit_death(target)
 	return remaining
+
+
+# 65s sudden death: unavoidable field true damage. It ignores defense, dodge,
+# damage reduction and invulnerability, while shields still absorb it first.
+# With no attacker it cannot grant kill gold, lifesteal, reflect, or dealt-damage
+# credit. Sacrifice/revive mechanics remain valid.
+static func apply_sudden_death_damage(target: Dictionary, amount: int) -> int:
+	if amount <= 0 or not bool(target.get("alive", true)):
+		return 0
+	StatusEffectService.ensure_status(target)
+	var remaining := amount
+	if int(target.get("shield", 0)) > 0:
+		var absorbed := mini(int(target.shield), remaining)
+		target.shield = int(target.shield) - absorbed
+		remaining -= absorbed
+	if remaining <= 0:
+		return 0
+	var hp_before := int(target.hp)
+	var previous_source_uid := _stat_source_uid
+	_stat_source_uid = ""
+	if hp_before - remaining <= 0 and _try_sacrifice_revive(target):
+		_record_damage(target, hp_before)
+		_stat_source_uid = previous_source_uid
+		return hp_before
+	target.hp = maxi(0, hp_before - remaining)
+	var hp_damage := mini(hp_before, remaining)
+	if int(target.hp) <= 0:
+		target.alive = false
+		target.erase("killer_uid")
+	_record_damage(target, hp_damage)
+	if not bool(target.get("alive", true)):
+		emit_death(target)
+	_stat_source_uid = previous_source_uid
+	return hp_damage
 
 static func _record_damage(target: Dictionary, amount: int) -> void:
 	if amount <= 0 or _stat_state.is_empty():

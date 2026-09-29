@@ -101,7 +101,7 @@ func _ready() -> void:
 	for i in shop_expected.size():
 		failures += _check_int("商店刷新/第%d次" % (i + 1),
 			EconomyService.shop_refresh_cost(i, false), int(shop_expected[i]))
-	failures += _check_int("商店刷新/金钱套装免费", EconomyService.shop_refresh_cost(5, true), 0)
+	failures += _check_int("商店刷新/教学模式免费", EconomyService.shop_refresh_cost(5, true), 0)
 
 	# --- 宝藏刷新：50 起，无上限翻倍 ---
 	var treasure_expected := [50, 100, 200, 400, 800, 1600]

@@ -140,8 +140,8 @@
   "money_generous_fate": {
    "name": "慷慨命运",
    "name_en": "Generous Fate",
-   "effect": "准备阶段每回合可手动参与 1 次赌博：50% 概率金币翻倍，50% 概率损失当前金币 80%；与诡诈命运联动后变为 60% 翻倍、40% 损失当前金币 50%",
-   "effect_en": "One manual gamble per prep round: 50% to double your gold, 50% to lose 80% of it; with Trickster's Fate it becomes 60% double / 40% lose half",
+   "effect": "准备阶段每回合可手动参与 1 次赌博：50% 概率金币变为 2.5 倍，50% 概率损失当前金币 80%；与诡诈命运联动后变为 60% 变为 2.5 倍、40% 损失当前金币 50%",
+   "effect_en": "One manual gamble per prep round: 50% to raise your gold to 2.5x, 50% to lose 80% of it; with Trickster's Fate it becomes 60% to 2.5x / 40% lose half",
    "trigger": "手动点击按钮",
    "trigger_en": "Manual button"
   },
@@ -248,8 +248,8 @@
    "name_en": "Trickster's Fate",
    "requires_text": "幻影步伐 + 慷慨命运",
    "requires_text_en": "Phantom Step + Generous Fate",
-   "effect": "慷慨命运变为准备阶段每回合手动赌博 1 次：60% 金币翻倍，40% 损失当前金币 50%",
-   "effect_en": "Generous Fate becomes one manual gamble per prep round: 60% to double your gold, 40% to lose half of it"
+   "effect": "慷慨命运变为准备阶段每回合手动赌博 1 次：60% 金币变为 2.5 倍，40% 损失当前金币 50%",
+   "effect_en": "Generous Fate becomes one manual gamble per prep round: 60% to raise your gold to 2.5x, 40% to lose half of it"
   },
   "link_iron_maiden": {
    "name": "铁处女",
@@ -322,8 +322,8 @@
    "name_en": "4 Money",
    "requires_text": "任意 4 件金钱宝藏",
    "requires_text_en": "Any 4 Money treasures",
-   "effect": "商店刷新和宝藏刷新免费。",
-   "effect_en": "Shop refresh and treasure refresh are free."
+   "effect": "开战时，每持有 1000 金，普通棋子攻击与生命 +10%，最高 +100%。",
+   "effect_en": "At battle start, normal pieces gain +10% ATK and HP per 1,000 gold owned, up to +100%."
   },
   "set_element": {
    "name": "4元素",

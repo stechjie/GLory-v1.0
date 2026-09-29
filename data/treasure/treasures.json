@@ -17,7 +17,7 @@
                  "defense":  "normal units hp+30 def+30 dodge+15",
                  "control":  "basic-attack last hit refreshes the killer's skill cooldown",
                  "attack":  "basic attack executes non-boss target at or below 10% hp (ignores invulnerable)",
-                 "money":  "shop and treasure refresh free",
+                 "money":  "+10% atk and hp per 1000 gold at battle start, capped at +100%",
                  "element":  "20% attack proc, radius 180, enemies take 10% max hp"
              },
     "attribute_effects":  {

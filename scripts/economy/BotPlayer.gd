@@ -210,7 +210,6 @@ static func _prep_round(bot: Dictionary, round_index: int, rng: RandomNumberGene
 	_try_four_star(bot)
 	_try_tech(bot, round_index)
 	_spend_carrots(bot, round_index, rng)
-	var money_set := TreasureService.has_set_in(bot.treasures, "money")
 	var refreshes := 0
 	var offers := _roll_shop(units, round_index, rng)
 	while true:
@@ -230,7 +229,7 @@ static func _prep_round(bot: Dictionary, round_index: int, rng: RandomNumberGene
 			_trim_roster(bot)
 		if refreshes >= MAX_REFRESH_PER_ROUND:
 			break
-		var refresh_cost := EconomyService.shop_refresh_cost(refreshes, money_set)
+		var refresh_cost := EconomyService.shop_refresh_cost(refreshes, false)
 		if int(bot.gold) - _reserve(bot, round_index) < refresh_cost + 60:
 			break
 		bot.gold = int(bot.gold) - refresh_cost

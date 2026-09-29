@@ -415,7 +415,7 @@
                       "atk":  64,
                       "def":  7,
                       "attack_speed":  1.0,
-                      "range":  1,
+                      "range":  3.0,
                       "move_speed":  3.25,
                       "crit":  0.08,
                       "crit_dmg":  1.6,

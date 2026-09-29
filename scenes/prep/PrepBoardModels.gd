@@ -15,6 +15,7 @@ const UnitVisualResolverScript := preload("res://effects/runtime/presentation/Un
 const UnitContactShadowScript := preload("res://effects/runtime/presentation/UnitContactShadow.gd")
 const FOUR_STAR_READY_AURA := preload("res://effects/vfx3d/modules/FourStarAura3D.gd")
 const FOUR_STAR_AURA := preload("res://effects/vfx3d/modules/FourStarAuraV3_3D.gd")
+const CARROT_CURRENCY_ICON := preload("res://assets/props/carrot_system/ui/icon_carrot_currency.png")
 var _four_star_visual_poll := 0.0
 
 func refresh_four_star_visuals(delta: float) -> void:
@@ -517,23 +518,64 @@ func play_carrot_harvest_feedback(gains_by_slot: Dictionary) -> void:
 		_play_carrot_world_flipbook(PREP_CARROT_DIG_PATH, 0.12, 0.00050)
 
 func _show_carrot_pet_gain(pet: Node3D, gain: int) -> void:
-	var gain_label := Label3D.new()
-	gain_label.name = "CarrotHarvestGain"
+	var head_world := pet.global_position + Vector3(0.0, 0.175, 0.0)
+	var head_screen := _world_to_main_screen(head_world)
+	var badge := Control.new()
+	badge.name = "CarrotHarvestGain"
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge.size = Vector2(82.0, 36.0)
+	badge.clip_contents = true
+	badge.position = head_screen - Vector2(badge.size.x * 0.5, badge.size.y)
+	badge.pivot_offset = badge.size * 0.5
+	badge.scale = Vector2.ONE * 0.70
+	badge.z_index = 80
+	add_child(badge)
+
+	var plate := Panel.new()
+	plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	plate.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var plate_style := StyleBoxFlat.new()
+	plate_style.bg_color = Color(0.075, 0.045, 0.018, 0.90)
+	plate_style.border_color = Color(0.96, 0.63, 0.16, 0.92) if gain > 0 else Color(0.55, 0.55, 0.48, 0.82)
+	plate_style.set_border_width_all(2)
+	plate_style.set_corner_radius_all(12)
+	plate.add_theme_stylebox_override("panel", plate_style)
+	badge.add_child(plate)
+
+	var icon := TextureRect.new()
+	icon.name = "CarrotIcon"
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.texture = CARROT_CURRENCY_ICON
+	icon.position = Vector2(8.0, 4.0)
+	icon.size = Vector2(28.0, 28.0)
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icon.modulate = Color(1.0, 1.0, 1.0, 1.0 if gain > 0 else 0.72)
+	badge.add_child(icon)
+
+	var gain_label := Label.new()
+	gain_label.name = "GainText"
 	gain_label.text = "+%d" % gain
-	gain_label.font_size = 18
-	gain_label.outline_size = 3
-	gain_label.pixel_size = 0.0021
-	gain_label.modulate = Color(1.0, 0.79, 0.28, 1.0) if gain > 0 else Color(0.72, 0.72, 0.62, 0.92)
-	gain_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	# Every gathering pet is normalized to the same world height.  This keeps the
-	# compact gain badge just above its head without covering the face or carrot.
-	gain_label.position = pet.position + Vector3(0.0, 0.155, 0.0)
-	_carrot_gather_root.add_child(gain_label)
-	var label_tween := create_tween()
-	label_tween.set_parallel(true)
-	label_tween.tween_property(gain_label, "position:y", gain_label.position.y + 0.028, 1.1)
-	label_tween.tween_property(gain_label, "modulate:a", 0.0, 1.1)
-	label_tween.chain().tween_callback(gain_label.queue_free)
+	gain_label.position = Vector2(35.0, 0.0)
+	gain_label.size = Vector2(43.0, 36.0)
+	gain_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	gain_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	gain_label.add_theme_font_size_override("font_size", 23)
+	gain_label.add_theme_constant_override("outline_size", 5)
+	gain_label.add_theme_color_override("font_outline_color", Color(0.08, 0.045, 0.015, 0.96))
+	gain_label.modulate = Color(1.0, 0.88, 0.30, 1.0) if gain > 0 else Color(0.76, 0.76, 0.67, 0.92)
+	gain_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge.add_child(gain_label)
+
+	var pop := create_tween()
+	pop.tween_property(badge, "scale", Vector2.ONE * 1.10, 0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	pop.tween_property(badge, "scale", Vector2.ONE, 0.08).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
+	var rise := create_tween()
+	rise.tween_property(badge, "position:y", badge.position.y - 24.0, 2.0).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	var fade := create_tween()
+	fade.tween_interval(1.55)
+	fade.tween_property(badge, "modulate:a", 0.0, 0.45)
+	fade.chain().tween_callback(badge.queue_free)
 
 func _play_carrot_world_flipbook(path: String, height: float, pixel_size: float) -> void:
 	if _carrot_gather_root == null or not is_instance_valid(_carrot_gather_root):

@@ -1,13 +1,13 @@
 extends Node
 
-# 9.25 追加订正门禁：商店刷新「教学免费 = 无限次」的判定必须**同源**。
+# 商店刷新「教学免费 = 无限次」的判定必须**同源**。
 #
 # 事故形态（用户 2026-09-25 回执：教程里刷新刷几次就点不动了）：
 #   刷新费用被算了三遍 ——
 #     * ShopPanel.refresh()                         ← 画按钮、写「免费」标签
 #     * PrepBoardController._on_refresh_shop()      ← 真正扣钱
 #     * PrepUI._on_refresh_shop_control_pressed()   ← 决定放不放燃烧动画
-#   第三处只抄了 `TreasureService.has_set("money")`，漏掉 `GameState.tutorial_mode`。
+#   第三处曾只抄 `TreasureService.has_set("money")`，漏掉 `GameState.tutorial_mode`。
 #   于是：按钮由**正确**判定置成「免费、可点」，点下去却被**错误**判定按递增价拦住
 #   （`if GameState.gold < refresh_cost: return`），既不播动画也不刷新 ——
 #   用户看到的就是「写着免费、点不动」。
@@ -32,14 +32,15 @@ const CHECK_NAME := "shop_refresh_free_source"
 
 # 调用点所在函数体**必须**出现的判定源（字面上同一个函数）。
 const REQUIRED_SOURCE := "TutorialMode.shop_refresh_all_free()"
-# 旧的、手抄的 all_free 写法：不允许再出现在 shop_refresh_cost 所在函数里。
+# 旧的、手抄的金钱套装免费写法：4 金钱现在改为按持有金币提高开战属性，
+# 不允许再出现在 shop_refresh_cost 所在函数里。
 const FORBIDDEN_ALLOFREE := "all_free := TreasureService.has_set(\"money\")"
 const CALL_TOKEN := "EconomyService.shop_refresh_cost("
 
 # 只扫**客户端层**。服务端账本 `scripts/multiplayer/EconomyLedger.gd::_shop_refresh`
-# 刻意不在范围内：它按 payload 里的 owned_treasures 判 free（权威对账），而且教学是
-# 纯本地流程、根本不走服务端。那份分层由 `_check_server_layer` 单独钉住，
-# 免得有人「顺手」把客户端教学状态塞进服务端。
+# 刻意不在范围内：教学是纯本地流程、根本不走服务端；普通联机刷新始终收费。
+# 服务端分层由 `_check_server_layer` 单独钉住，免得有人把客户端教学状态或已移除的
+# 金钱套装免费规则塞回权威层。
 # ★ 不写死三个文件名：本轮的错恰恰是「第三处没人想到」，写死清单等于提前豁免下一次。
 const SCAN_ROOTS: Array[String] = ["res://scenes"]
 
@@ -142,9 +143,8 @@ func _check_call_sites_same_source(harness: RefCounted) -> void:
 # --- D 结构：服务端分层（反向哨兵） ---------------------------------------------
 #
 # 服务端权威账本**不能**吃客户端教学状态：教学是纯本地流程，不走服务端网络。
-# 它判 free 的数据源只能是 payload 里的 owned_treasures（客户端随意图上报、
-# 服务端自行判定）。这条钉的是「别顺手往服务端塞 GameState.tutorial_mode」——
-# 那会让权威层反过来依赖客户端状态。
+# 4 金钱套装也不再提供免费刷新，因此服务端必须明确传 `false`，且不得再从
+# owned_treasures 推导免费。这样权威层既不依赖客户端教学状态，也不会复活旧规则。
 func _check_server_layer(harness: RefCounted) -> void:
 	var text := FileAccess.get_file_as_string(SERVER_LEDGER_PATH)
 	if not harness.expect(not text.is_empty(), "server_ledger_readable",
@@ -158,9 +158,13 @@ func _check_server_layer(harness: RefCounted) -> void:
 		found = true
 		var body := "\n".join(lines.slice(_func_start(lines, i), _func_end(lines, i)))
 		var owner := lines[_func_start(lines, i)].strip_edges()
-		harness.expect(_has_live_line(body, "TreasureService.has_set_in("),
-			"server_free_from_payload",
-			"%s:%d 所在的 `%s`：服务端 free 必须来自 payload（TreasureService.has_set_in）"
+		harness.expect(_has_live_line(body, "EconomyService.shop_refresh_cost(uses, false)"),
+			"server_normal_refresh_not_free",
+			"%s:%d 所在的 `%s`：服务端普通刷新必须明确传 false，不能套用教学免费"
+				% [SERVER_LEDGER_PATH, i + 1, owner])
+		harness.expect(not _has_live_line(body, "TreasureService.has_set_in("),
+			"server_money_set_not_free",
+			"%s:%d 所在的 `%s`：4 金钱套装已不再提供免费刷新"
 				% [SERVER_LEDGER_PATH, i + 1, owner])
 		harness.expect(not _has_live_line(body, "GameState.tutorial_mode"),
 			"server_must_not_read_tutorial",

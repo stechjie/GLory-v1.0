@@ -18,11 +18,11 @@ static func prepare_tutorial_state(kind: String) -> Dictionary:
 	var player_syn := SynergyService.current_player_flags()
 	var enemy_syn := _enemy_syn_for_kind(kind)
 	if player.is_empty():
-		return {"kind": kind, "player": player, "enemy": enemy, "elapsed": 0.0, "next_decay": DECAY_START_SEC, "finished": true, "forced_result": {"player_wins": false, "reason": "no_player_units", "log": [TranslationServer.translate("log_no_player_units")]}}
+		return {"kind": kind, "player": player, "enemy": enemy, "elapsed": 0.0, "next_sudden_death_tick": BattleFrenzy.SUDDEN_DEATH_SEC, "finished": true, "forced_result": {"player_wins": false, "reason": "no_player_units", "log": [TranslationServer.translate("log_no_player_units")]}}
 	if enemy.is_empty():
-		return {"kind": kind, "player": player, "enemy": enemy, "elapsed": 0.0, "next_decay": DECAY_START_SEC, "finished": true, "forced_result": {"player_wins": true, "reason": "no_enemy_units", "log": [TranslationServer.translate("log_enemy_empty")]}}
+		return {"kind": kind, "player": player, "enemy": enemy, "elapsed": 0.0, "next_sudden_death_tick": BattleFrenzy.SUDDEN_DEATH_SEC, "finished": true, "forced_result": {"player_wins": true, "reason": "no_enemy_units", "log": [TranslationServer.translate("log_enemy_empty")]}}
 	battle_log.append(TranslationServer.translate("log_unit_counts") % [player.size(), enemy.size()])
-	var state := {"kind": kind, "player": player, "enemy": enemy, "elapsed": 0.0, "next_decay": DECAY_START_SEC, "finished": false, "log": battle_log, "player_syn": player_syn, "enemy_deaths": 0, "total_deaths": 0, "field_death_count": 0, "mother_death_counter": 0, "dark_kill_stacks": 0, "undead_trait_death_counter": 0, "race_trait_processed_deaths": {}, "death_history": [], "revive_queue": [], "player_kill_gold": 0, "enemy_kill_gold": 0, "kill_gold_by_slot": {}, "player_kills": [], "enemy_kills": [], "bonus_gold": 0, "temporary_deaths": [], "visual_events": [], "unit_stats": {}}
+	var state := {"kind": kind, "player": player, "enemy": enemy, "elapsed": 0.0, "next_sudden_death_tick": BattleFrenzy.SUDDEN_DEATH_SEC, "finished": false, "log": battle_log, "player_syn": player_syn, "enemy_deaths": 0, "total_deaths": 0, "field_death_count": 0, "mother_death_counter": 0, "dark_kill_stacks": 0, "undead_trait_death_counter": 0, "race_trait_processed_deaths": {}, "death_history": [], "revive_queue": [], "player_kill_gold": 0, "enemy_kill_gold": 0, "kill_gold_by_slot": {}, "player_kills": [], "enemy_kills": [], "bonus_gold": 0, "temporary_deaths": [], "visual_events": [], "unit_stats": {}}
 	state["enemy_syn"] = enemy_syn
 	_init_unit_stats(state)
 	DamageService.set_stat_state(state)
@@ -34,6 +34,8 @@ static func prepare_tutorial_state(kind: String) -> Dictionary:
 				f.defense = maxi(0, int(round(float(f.defense) * 1.30)))
 				f.dodge = float(f.get("dodge", 0.0)) + 0.15
 		battle_log.append(TranslationServer.translate("log_defense_set"))
+	for f in player:
+		_apply_money_set_bonus(f)
 	if bool(player_syn.get("human_shield", false)):
 		for f in player:
 			if not _ignores_treasure(f):
@@ -95,7 +97,7 @@ static func prepare_team_state(forced_team: int = -1) -> Dictionary:
 		rival_ctx.append(_team_owner_ctx_for_slot(rival_slots[lane]))
 	var player: Array = []
 	for lane in 3:
-		_append_lane_board_fighters(player, lane_boards[lane], "player", lane, ally_ctx[lane].treasures, ally_ctx[lane].syn, ally_slots[lane], ally_ctx[lane].get("pet", ""))
+		_append_lane_board_fighters(player, lane_boards[lane], "player", lane, ally_ctx[lane].treasures, ally_ctx[lane].syn, ally_slots[lane], ally_ctx[lane].get("pet", ""), int(ally_ctx[lane].get("gold", 0)))
 	# Enemy side only exists if the opposing team has a real opponent: a host-added
 	# dummy (假想敌), or — only when online — a remote player. Offline there is just
 	# ONE real player (you), so a stray "player" slot marker must NOT count as an
@@ -124,7 +126,7 @@ static func prepare_team_state(forced_team: int = -1) -> Dictionary:
 					_append_lane_boss(enemy, lane, boss_template)
 					_append_lane_monsters(enemy, lane, lane_monster_count, monster_template)
 				"pvp":
-					_append_lane_board_fighters(enemy, _team_board_for_slot(rival_slots[lane], rng), "enemy", lane, rival_ctx[lane].treasures, rival_ctx[lane].syn, rival_slots[lane], rival_ctx[lane].get("pet", ""))
+					_append_lane_board_fighters(enemy, _team_board_for_slot(rival_slots[lane], rng), "enemy", lane, rival_ctx[lane].treasures, rival_ctx[lane].syn, rival_slots[lane], rival_ctx[lane].get("pet", ""), int(rival_ctx[lane].get("gold", 0)))
 				_:
 					_append_lane_monsters(enemy, lane, lane_monster_count, monster_template)
 		# Mercenaries (Legion TD 2 "send"): PvP -> own mercs fight WITH you and the
@@ -142,7 +144,7 @@ static func prepare_team_state(forced_team: int = -1) -> Dictionary:
 
 	var battle_log: Array[String] = []
 	battle_log.append(TranslationServer.translate("log_team_unit_counts") % [kind.to_upper(), player.size(), enemy.size()])
-	var state := {"kind": kind, "player": player, "enemy": enemy, "elapsed": 0.0, "next_decay": DECAY_START_SEC, "finished": false, "log": battle_log, "player_syn": {}, "enemy_deaths": 0, "total_deaths": 0, "field_death_count": 0, "mother_death_counter": 0, "dark_kill_stacks": 0, "undead_trait_death_counter": 0, "race_trait_processed_deaths": {}, "death_history": [], "revive_queue": [], "player_kill_gold": 0, "enemy_kill_gold": 0, "kill_gold_by_slot": {}, "player_kills": [], "enemy_kills": [], "bonus_gold": 0, "temporary_deaths": [], "visual_events": [], "unit_stats": {}}
+	var state := {"kind": kind, "player": player, "enemy": enemy, "elapsed": 0.0, "next_sudden_death_tick": BattleFrenzy.SUDDEN_DEATH_SEC, "finished": false, "log": battle_log, "player_syn": {}, "enemy_deaths": 0, "total_deaths": 0, "field_death_count": 0, "mother_death_counter": 0, "dark_kill_stacks": 0, "undead_trait_death_counter": 0, "race_trait_processed_deaths": {}, "death_history": [], "revive_queue": [], "player_kill_gold": 0, "enemy_kill_gold": 0, "kill_gold_by_slot": {}, "player_kills": [], "enemy_kills": [], "bonus_gold": 0, "temporary_deaths": [], "visual_events": [], "unit_stats": {}}
 	# lane -> 座位 的映射：跨路击杀分账要靠它找到「路线主」（见 _add_kill_reward）。
 	# 教学的 prepare_tutorial_state 不会有这两个键，那边棋子的 lane 恒为 -1，分账自动跳过。
 	state["ally_slots"] = ally_slots.duplicate()
@@ -175,6 +177,7 @@ static func prepare_team_state(forced_team: int = -1) -> Dictionary:
 			f.hp = int(f.max_hp)
 			f.defense = maxi(0, int(round(float(f.defense) * 1.30)))
 			f.dodge = float(f.get("dodge", 0.0)) + 0.15
+		_apply_money_set_bonus(f)
 		# (7) human opening shield: only the owner's own units.
 		if bool(_f_syn(f).get("human_shield", false)):
 			f.shield = maxi(int(f.get("shield", 0)), int(float(f.get("max_hp", 1)) * 0.08))
@@ -407,10 +410,7 @@ static func step_state(state: Dictionary) -> void:
 	_tick_skills(p_alive, e_alive, state)
 	_tick_skills(e_alive, p_alive, state)
 	_process_boss_charges(state)
-	if float(state.elapsed) >= float(state.next_decay):
-		_decay_units(p_alive + e_alive)
-		state.log.append(TranslationServer.translate("log_decay_triggered") % float(state.elapsed))
-		state.next_decay = float(state.next_decay) + DECAY_INTERVAL_SEC
+	_process_frenzy(state, p_alive, e_alive)
 	_step_team(player, e_alive, float(state.elapsed), state)
 	_step_team(enemy, p_alive, float(state.elapsed), state)
 	# Solve crowd contacts once with a bounded iterative constraint pass.
@@ -420,6 +420,28 @@ static func step_state(state: Dictionary) -> void:
 	_process_pending_kill_rewards(state)
 	BattleSimTreasures._process_race_death_traits(state)
 	state.elapsed = float(state.elapsed) + TICK_SEC
+
+
+static func _process_frenzy(state: Dictionary, p_alive: Array, e_alive: Array) -> void:
+	var elapsed := float(state.get("elapsed", 0.0))
+	var stage := BattleFrenzy.stage_for_elapsed(elapsed)
+	var previous_stage := int(state.get("frenzy_stage", 0))
+	if stage > previous_stage:
+		state.frenzy_stage = stage
+		state.log.append(TranslationServer.translate("log_frenzy_stage_%d" % stage))
+	if stage < 4:
+		return
+	var next_tick := float(state.get("next_sudden_death_tick", BattleFrenzy.SUDDEN_DEATH_SEC))
+	while elapsed + 0.0001 >= next_tick:
+		# Apply to both sides from the same alive snapshot before normal actions.
+		# This keeps the tick simultaneous and preserves double-KO resolution.
+		for fighter in p_alive + e_alive:
+			if not bool(fighter.get("alive", false)):
+				continue
+			var amount := maxi(1, int(ceil(float(fighter.get("max_hp", 1)) * BattleFrenzy.SUDDEN_DEATH_MAX_HP_PCT)))
+			DamageService.apply_sudden_death_damage(fighter, amount)
+		next_tick += BattleFrenzy.SUDDEN_DEATH_INTERVAL_SEC
+	state.next_sudden_death_tick = next_tick
 
 
 static func result_from_state(state: Dictionary) -> Dictionary:
@@ -946,7 +968,7 @@ static func _apply_opening_unit_skills(player: Array, enemy: Array, event_log: A
 			if immune_sec > 0.0:
 				StatusEffectService.add_status(f, "control_immune", immune_sec, {})
 			if sid == "guardian_shield_taunt":
-				f.shield = int(f.get("shield", 0)) + maxi(1, int(round(float(f.max_hp) * float(d.get("start_shield_pct", 0.20)))))
+				_grant_shield(f, maxi(1, int(round(float(f.max_hp) * float(d.get("start_shield_pct", 0.20))))))
 				f.taunt_active = true
 				f.taunt_radius = float(d.get("taunt_radius", 180.0))
 			elif sid == "left_neighbor_sacrifice":
@@ -1174,14 +1196,16 @@ static func _maybe_spawn_parasite_clone(killer: Dictionary, victim: Dictionary, 
 	if str(killer.get("def", {}).get("skill_id", "")) != "parasite_on_kill" or _is_boss_fighter(victim):
 		return false
 	var clone := victim.duplicate(true)
+	var inherited_money_multiplier := maxf(1.0, float(victim.get("money_set_multiplier", 1.0)))
 	clone.uid = "%s_parasite_%d" % [str(killer.team), int(state.get("total_deaths", 0))]
 	clone.team = str(killer.team)
-	clone.hp = maxi(1, int(round(float(victim.max_hp) * float(killer.get("def", {}).get("clone_hp_pct", 0.10)))))
+	clone.hp = maxi(1, int(round(float(victim.max_hp) / inherited_money_multiplier * float(killer.get("def", {}).get("clone_hp_pct", 0.10)))))
 	clone.max_hp = clone.hp
-	clone.atk = maxi(1, int(round(float(victim.atk) * float(killer.get("def", {}).get("clone_atk_def_pct", 0.50)))))
+	clone.atk = maxi(1, int(round(float(victim.atk) / inherited_money_multiplier * float(killer.get("def", {}).get("clone_atk_def_pct", 0.50)))))
 	clone.defense = maxi(0, int(round(float(victim.defense) * float(killer.get("def", {}).get("clone_atk_def_pct", 0.50)))))
 	clone.alive = true
 	clone.statuses = {}
+	clone.erase("money_set_multiplier")
 	((state.player) if str(killer.team) == "player" else (state.enemy)).append(clone)
 	return true
 

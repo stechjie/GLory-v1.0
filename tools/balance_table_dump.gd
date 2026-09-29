@@ -89,8 +89,10 @@ func _dump_globals() -> Dictionary:
 		"MERCENARY_SLOTS": GameState.MERCENARY_SLOTS,
 		"SHOP_UNIT_SLOTS": GameState.SHOP_UNIT_SLOTS,
 		"FINAL_ROUND": GameState.FINAL_ROUND,
-		"DECAY_START_SEC": BattleSimShared.DECAY_START_SEC,
-		"DECAY_INTERVAL_SEC": BattleSimShared.DECAY_INTERVAL_SEC,
+		"FRENZY_I_SEC": BattleFrenzyService.FRENZY_I_SEC,
+		"FRENZY_II_SEC": BattleFrenzyService.FRENZY_II_SEC,
+		"FRENZY_III_SEC": BattleFrenzyService.FRENZY_III_SEC,
+		"SUDDEN_DEATH_SEC": BattleFrenzyService.SUDDEN_DEATH_SEC,
 		"HARD_TIMEOUT_SEC": BattleSimShared.HARD_TIMEOUT_SEC,
 		"TICK_SEC": BattleSimShared.TICK_SEC,
 		"ATTACK_RANGE_SCALE": BattleSimShared.ATTACK_RANGE_SCALE,
@@ -149,7 +151,7 @@ func _dummy(team: String, hp: int = DUMMY_HP, max_hp: int = DUMMY_MAX_HP) -> Dic
 func _state(player: Array, enemy: Array) -> Dictionary:
 	var st := {
 		"kind": "pvp", "player": player, "enemy": enemy, "elapsed": 0.0,
-		"next_decay": BattleSimShared.DECAY_START_SEC, "finished": false, "log": [],
+		"next_sudden_death_tick": BattleFrenzyService.SUDDEN_DEATH_SEC, "finished": false, "log": [],
 		"player_syn": {}, "enemy_syn": {}, "enemy_deaths": 0, "total_deaths": 0,
 		"field_death_count": 0, "mother_death_counter": 0, "dark_kill_stacks": 0,
 		"undead_trait_death_counter": 0, "race_trait_processed_deaths": {},

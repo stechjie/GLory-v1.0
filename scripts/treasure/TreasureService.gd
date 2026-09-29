@@ -3,10 +3,11 @@ extends RefCounted
 
 const MAX_OWNED := 5
 const REFRESH_COSTS := [50, 100, 200, 400]
+const MONEY_SET_GOLD_STEP := 1000
+const MONEY_SET_BONUS_PER_STEP := 0.10
+const MONEY_SET_MAX_BONUS := 1.00
 
-static func refresh_cost(index: int, money_set_active: bool) -> int:
-	if money_set_active:
-		return 0
+static func refresh_cost(index: int, _money_set_active: bool = false) -> int:
 	var i := maxi(index, 0)
 	# 50, 100, 200, 400, then keep doubling with no cap: 800, 1600, ...
 	if i < REFRESH_COSTS.size():
@@ -15,6 +16,11 @@ static func refresh_cost(index: int, money_set_active: bool) -> int:
 	for _step in range(i - (REFRESH_COSTS.size() - 1)):
 		cost *= 2
 	return cost
+
+
+static func money_set_bonus_for_gold(gold: int) -> float:
+	var steps := floori(float(maxi(0, gold)) / float(MONEY_SET_GOLD_STEP))
+	return minf(float(steps) * MONEY_SET_BONUS_PER_STEP, MONEY_SET_MAX_BONUS)
 
 static func can_draw() -> bool:
 	return GameState.owned_treasures.size() < MAX_OWNED

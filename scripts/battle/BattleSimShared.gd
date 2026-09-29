@@ -4,9 +4,8 @@ extends RefCounted
 const BotBudget := preload("res://scripts/economy/BotEconomyBudget.gd")
 const BotPlayer := preload("res://scripts/economy/BotPlayer.gd")
 const ShopRoll := preload("res://scripts/economy/ShopRoll.gd")
+const BattleFrenzy := preload("res://scripts/battle/BattleFrenzyService.gd")
 
-const DECAY_START_SEC := 10.0
-const DECAY_INTERVAL_SEC := 6.0
 const HARD_TIMEOUT_SEC := 180.0
 const TICK_SEC := 0.1
 const ARENA_W := 1000.0
@@ -108,7 +107,7 @@ static func _place_in_lane(f: Dictionary, slot: int, team: String, lane: int) ->
 	f["lane"] = lane
 
 
-static func _append_lane_board_fighters(out: Array, board: Array, team: String, lane: int, owner_treasures: Array = [], owner_syn: Dictionary = {}, owner_slot: int = -1, owner_pet: String = "") -> void:
+static func _append_lane_board_fighters(out: Array, board: Array, team: String, lane: int, owner_treasures: Array = [], owner_syn: Dictionary = {}, owner_slot: int = -1, owner_pet: String = "", owner_gold: int = 0) -> void:
 	for i in board.size():
 		var cell = board[i]
 		if cell == null or typeof(cell) != TYPE_DICTIONARY:
@@ -120,6 +119,7 @@ static func _append_lane_board_fighters(out: Array, board: Array, team: String, 
 		f["owner_syn"] = owner_syn
 		f["owner_slot"] = owner_slot
 		f["owner_pet"] = owner_pet
+		f["owner_gold"] = maxi(0, owner_gold)
 		out.append(f)
 
 # Per-fighter owner context (3v3): treasures/synergies come from the unit's
@@ -146,6 +146,14 @@ static func _f_pet(f: Dictionary) -> String:
 	if str(f.get("team", "")) == "player":
 		return PlayerProfile.get_active()
 	return ""
+
+
+static func _f_gold(f: Dictionary) -> int:
+	if f.has("owner_gold"):
+		return maxi(0, int(f.get("owner_gold", 0)))
+	if str(f.get("team", "")) == "player":
+		return maxi(0, GameState.gold)
+	return 0
 
 
 static func _f_has_set(f: Dictionary, category: String) -> bool:
@@ -211,10 +219,10 @@ static func _team_owner_ctx_for_slot(slot_idx: int) -> Dictionary:
 		if _team_slot_state(slot_idx) == "player":
 			var snap = NetworkService.team_boards.get(slot_idx, {})
 			if snap is Dictionary and not (snap as Dictionary).is_empty():
-				return {"treasures": NetProtocol.extract_treasures(snap), "syn": NetProtocol.extract_syn(snap), "pet": NetProtocol.extract_pet(snap)}
+				return {"treasures": NetProtocol.extract_treasures(snap), "syn": NetProtocol.extract_syn(snap), "pet": NetProtocol.extract_pet(snap), "gold": maxi(0, int((snap as Dictionary).get("gold", 0)))}
 		return _dummy_owner_ctx(slot_idx)
 	if slot_idx == 0:
-		return {"treasures": GameState.owned_treasures.duplicate(), "syn": SynergyService.current_player_flags(), "pet": PlayerProfile.get_active()}
+		return {"treasures": GameState.owned_treasures.duplicate(), "syn": SynergyService.current_player_flags(), "pet": PlayerProfile.get_active(), "gold": maxi(0, GameState.gold)}
 	return _dummy_owner_ctx(slot_idx)
 
 
@@ -222,9 +230,9 @@ static func _team_owner_ctx_for_slot(slot_idx: int) -> Dictionary:
 # 4 灵 / 5 暗，战斗里也一点加成都没有。现在读 BotPlayer 推演出来的结果。
 static func _dummy_owner_ctx(slot_idx: int) -> Dictionary:
 	if _team_slot_state(slot_idx) != "dummy":
-		return {"treasures": [], "syn": {}, "pet": ""}
+		return {"treasures": [], "syn": {}, "pet": "", "gold": 0}
 	var bot := BotPlayer.state_for(NetworkService.shared_seed, slot_idx, GameState.round_index)
-	return {"treasures": (bot.get("treasures", []) as Array).duplicate(), "syn": (bot.get("syn", {}) as Dictionary).duplicate(true), "pet": ""}
+	return {"treasures": (bot.get("treasures", []) as Array).duplicate(), "syn": (bot.get("syn", {}) as Dictionary).duplicate(true), "pet": "", "gold": maxi(0, int(bot.get("gold", 0)))}
 
 
 static func _round_pick_index(size: int, salt: String, round_index: int = -1) -> int:
@@ -1088,12 +1096,31 @@ static func _record_death_history(state: Dictionary, victim: Dictionary) -> void
 	state.death_history = history
 
 
-static func _decay_units(fighters: Array) -> void:
-	for f in fighters:
-		f.max_hp = maxi(1, int(floor(float(f.max_hp) * 0.8)))
-		f.hp = clampi(int(floor(float(f.hp) * 0.8)), 1, int(f.max_hp))
-		f.atk = maxi(1, int(floor(float(f.atk) * 0.8)))
-		f.defense = maxi(0, int(floor(float(f.defense) * 0.8)))
+static func _grant_shield(unit: Dictionary, amount: int, cap: int = -1) -> int:
+	if amount <= 0 or not bool(unit.get("alive", false)):
+		return 0
+	var scaled := maxi(0, int(round(float(amount) * BattleFrenzy.shield_multiplier(DamageService.current_battle_elapsed()))))
+	if scaled <= 0:
+		return 0
+	var before := int(unit.get("shield", 0))
+	var after := before + scaled
+	if cap >= 0:
+		after = mini(cap, after)
+	unit.shield = after
+	return maxi(0, after - before)
+
+
+static func _apply_money_set_bonus(fighter: Dictionary) -> void:
+	if _ignores_treasure(fighter) or not _f_has_set(fighter, "money"):
+		return
+	var bonus := TreasureService.money_set_bonus_for_gold(_f_gold(fighter))
+	if bonus <= 0.0:
+		return
+	var multiplier := 1.0 + bonus
+	fighter.max_hp = maxi(1, int(round(float(fighter.max_hp) * multiplier)))
+	fighter.hp = int(fighter.max_hp)
+	fighter.atk = maxi(1, int(round(float(fighter.atk) * multiplier)))
+	fighter["money_set_multiplier"] = multiplier
 
 
 static func timeout_power(fighters: Array) -> float:
@@ -1328,7 +1355,7 @@ static func _heal_unit(unit: Dictionary, amount: int) -> void:
 	if amount <= 0 or not bool(unit.get("alive", false)):
 		return
 	StatusEffectService.ensure_status(unit)
-	var final_amount := amount
+	var final_amount := maxi(0, int(round(float(amount) * BattleFrenzy.healing_multiplier(DamageService.current_battle_elapsed()))))
 	if unit.statuses.has("heal_reduction"):
 		final_amount = maxi(0, int(round(float(final_amount) * maxf(0.0, 1.0 - float(unit.statuses.heal_reduction.get("pct", 0.0))))))
 	var before := int(unit.hp)

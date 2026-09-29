@@ -209,7 +209,7 @@ func _maybe_play_pending_carrot_harvest() -> void:
 
 func _on_golden_altar() -> void:
 	if not GameState.tutorial_mode and NetworkService.team_active and not NetworkService.is_host and not NetworkService.server_prep_confirmed(GameState.round_index):
-		show_message("需等待其他人战斗结束")
+		show_message(tr("battle_waiting_others"))
 		return
 	if not GameState.owned_treasures.has("money_golden_altar"):
 		return
@@ -246,7 +246,7 @@ func _on_altar_result(granted: bool, team_hp: int, uses: int) -> void:
 
 func _on_generous_fate_gamble() -> void:
 	if not GameState.tutorial_mode and NetworkService.team_active and not NetworkService.is_host and not NetworkService.server_prep_confirmed(GameState.round_index):
-		show_message("需等待其他人战斗结束")
+		show_message(tr("battle_waiting_others"))
 		return
 	if not GameState.owned_treasures.has("money_generous_fate"):
 		return
@@ -258,7 +258,7 @@ func _on_generous_fate_gamble() -> void:
 	var win_chance := 0.60 if fraud_fate else 0.50
 	var loss_keep := 0.50 if fraud_fate else 0.20
 	if randf() < win_chance:
-		GameState.gold = before * 2
+		GameState.gold = int(floor(float(before) * 2.5))
 	else:
 		GameState.gold = maxi(0, int(floor(float(before) * loss_keep)))
 	SaveManager.save_run()

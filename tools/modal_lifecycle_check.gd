@@ -1460,7 +1460,7 @@ func _check_treasure_choice_modal() -> void:
 	_h.expect((GameState.pending_treasure.get("candidates", []) as Array) == poor_cands,
 		"tc_refresh_rolled_when_poor", "金币不足时候选仍然被重摇了")
 
-	# --- 9 Money 四件套：费用为 0 ---------------------------------------------
+	# --- 9 Money 四件套：不再免除刷新费用 -------------------------------------
 	var money_ids := _tc_money_ids(4)
 	if money_ids.size() == 4:
 		# 直接写 owned，不走 add_owned —— 那条路会 mark_seen 并落盘 profile.json。
@@ -1468,21 +1468,22 @@ func _check_treasure_choice_modal() -> void:
 			GameState.owned_treasures.append(str(tid))
 		_h.expect(TreasureService.has_set("money"), "tc_money_set_not_detected",
 			"塞了 4 件 money 类宝物，has_set(\"money\") 仍是 false")
-		_h.expect(TreasureService.refresh_cost(
-				int(GameState.pending_treasure.get("refresh_index", 0)), true) == 0,
-			"tc_money_cost_not_free", "Money 套装下刷新费用不是 0")
+		var money_cost := TreasureService.refresh_cost(
+			int(GameState.pending_treasure.get("refresh_index", 0)), true)
+		_h.expect(money_cost > 0, "tc_money_cost_still_free",
+			"Money 套装已改为战斗属性加成，刷新费用却仍是 %d" % money_cost)
 		GameState.gold = 0
 		GameState.pending_treasure.candidates = TreasureService.roll_candidates(3)
 		prep._treasure.refresh()
 		await _settle(2)
-		_h.expect(not prep._treasure._treasure_refresh_btn.disabled,
-			"tc_money_refresh_disabled",
-			"Money 套装时费用为 0，刷新按钮却因为没钱被禁用了")
-		_h.expect(prep._treasure._treasure_refresh_btn.text == tr("ui_treasure_refresh_free"),
-			"tc_money_refresh_text", "Money 套装时刷新按钮没有显示免费文案")
+		_h.expect(prep._treasure._treasure_refresh_btn.disabled,
+			"tc_money_refresh_not_disabled",
+			"Money 套装不再免费，0 金时刷新按钮却仍可用")
+		_h.expect(prep._treasure._treasure_refresh_btn.text == tr("ui_treasure_refresh_cost") % money_cost,
+			"tc_money_refresh_text", "Money 套装刷新按钮没有显示正常费用")
 		GameState.owned_treasures.clear()
 	else:
-		_h.note("数据表里 money 类宝物不足 4 件，Money 免费这一组跳过")
+		_h.note("数据表里 money 类宝物不足 4 件，Money 费用这一组跳过")
 
 	# --- 8 联机：不乐观入袋，一次意图合同 -------------------------------------
 	# request_treasure_choice 内部有 `multiplayer_peer != null` 守卫，

@@ -67,7 +67,7 @@ func _target(team: String, lane: int, uid: String, max_hp: int, hp: int, pos: Ve
 func _state(player: Array, enemy: Array) -> Dictionary:
 	var st := {
 		"kind": "pvp", "player": player, "enemy": enemy, "elapsed": 0.0,
-		"next_decay": BattleSimShared.DECAY_START_SEC, "finished": false, "log": [],
+		"next_sudden_death_tick": BattleFrenzyService.SUDDEN_DEATH_SEC, "finished": false, "log": [],
 		"player_syn": {}, "enemy_syn": {}, "enemy_deaths": 0, "total_deaths": 0,
 		"field_death_count": 0, "mother_death_counter": 0, "dark_kill_stacks": 0,
 		"undead_trait_death_counter": 0, "race_trait_processed_deaths": {},
@@ -82,7 +82,7 @@ func _state(player: Array, enemy: Array) -> Dictionary:
 
 # Same setup as tools/ai_survival_curve_check.gd: the online 3v3 path, where
 # every seat's treasures arrive in its board snapshot.
-func _team_state_with(slot0_treasures: Array) -> Dictionary:
+func _team_state_with(slot0_treasures: Array, slot0_gold: int = 0) -> Dictionary:
 	GameState.reset_run()
 	GameState.team_mode = true
 	GameState.round_index = 10
@@ -99,6 +99,7 @@ func _team_state_with(slot0_treasures: Array) -> Dictionary:
 			"version": NetProtocol.SNAPSHOT_VERSION, "round": 10, "board": board,
 			"mercenaries": [], "treasures": slot0_treasures.duplicate() if slot == 0 else [],
 			"syn": NetProtocol.rebuild_syn_from_board(board), "pet": "",
+			"gold": slot0_gold if slot == 0 else 0,
 		}
 	NetworkService.team_boards = boards
 	return BattleSimulator.prepare_team_state(0)
@@ -228,7 +229,8 @@ func _element_bursts(treasures: Array) -> Dictionary:
 			bursts += 1
 		elif lost != 0:
 			other += 1
-		st.elapsed = float(st.elapsed) + 1.0
+		# Keep this set-specific probe before Frenzy I; frenzy damage scaling is
+		# covered independently by battle_frenzy_check.gd.
 	DamageService.clear_stat_context()
 	return {"bursts": bursts, "other": other}
 
@@ -269,7 +271,7 @@ func _probe_control() -> void:
 	_h.expect(is_equal_approx(r4n, 50.0), "control_set_no_kill", "no kill, no refresh, got %.1f" % r4n)
 
 
-# --- 4 money: server ledger refresh costs ---------------------------------------
+# --- 4 money: normal refresh costs + per-owner battle bonus --------------------
 
 func _money_costs(owned: Array) -> Dictionary:
 	var prep := EconomyLedger.new_prep(100000)
@@ -291,7 +293,25 @@ func _probe_money() -> void:
 	var r4 := _money_costs(MONEY_4)
 	print("[money] server ledger costs: 3 treasures %s ; 4 treasures %s" % [str(r3), str(r4)])
 	_h.expect(r3.treasure == [50, 100, 200], "money_baseline", "treasure refresh without the set: %s" % str(r3.treasure))
-	_h.expect(r4.shop == [0, 0, 0] and r4.treasure == [0, 0, 0], "money_set", "with the set: %s" % str(r4))
+	_h.expect(r4.shop == r3.shop and r4.treasure == r3.treasure, "money_refresh_normal",
+		"4 Money must keep normal refresh costs: 3=%s 4=%s" % [str(r3), str(r4)])
+	for gold in [0, 999, 1000, 2000, 10000, 15000]:
+		var base_state := _team_state_with(MONEY_3, gold)
+		var set_state := _team_state_with(MONEY_4, gold)
+		var base_units := _lane0_units(base_state)
+		var set_units := _lane0_units(set_state)
+		if not _h.expect(not base_units.is_empty() and base_units.size() == set_units.size(),
+				"money_units_%d" % gold, "lane 0 units mismatch at %dG" % gold):
+			continue
+		var expected_bonus := minf(float(floori(float(gold) / 1000.0)) * 0.10, 1.0)
+		var expected_multiplier := 1.0 + expected_bonus
+		for i in base_units.size():
+			var base: Dictionary = base_units[i]
+			var boosted: Dictionary = set_units[i]
+			_h.expect(absf(float(boosted.max_hp) / float(base.max_hp) - expected_multiplier) < 0.02,
+				"money_hp_%d_%d" % [gold, i], "%dG HP %d -> %d" % [gold, int(base.max_hp), int(boosted.max_hp)])
+			_h.expect(absf(float(boosted.atk) / float(base.atk) - expected_multiplier) < 0.03,
+				"money_atk_%d_%d" % [gold, i], "%dG ATK %d -> %d" % [gold, int(base.atk), int(boosted.atk)])
 
 
 # --- codex: sets live in the linkage tab --------------------------------------------

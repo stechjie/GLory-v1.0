@@ -18,6 +18,7 @@ const Presentation := preload("res://effects/runtime/presentation/PresentationSe
 # 走 preload 常量而不是从 autoload 实例上取，dynamic_call 棘轮才不会长。
 const TutorialModeScript := preload("res://scripts/tutorial/TutorialMode.gd")
 const CarrotCampPanelScript := preload("res://scenes/prep/CarrotCampPanelV3.gd")
+const UNIT_TEAM_RING_SHADER := preload("res://shaders/unit_team_ring.gdshader")
 
 # Keep the selector API used by preparation-screen regression checks while the
 # redesigned code-drawn panel remains the production implementation.
@@ -687,12 +688,25 @@ func _build_top_bar(root: VBoxContainer) -> void:
 	var round_lbl := Label.new()
 	round_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	round_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	round_lbl.add_theme_font_size_override("font_size", 14)
+	round_lbl.add_theme_font_size_override("font_size", 22)
 	round_lbl.add_theme_color_override("font_color", Color(0.98, 0.92, 0.74))
 	round_lbl.add_theme_color_override("font_outline_color", Color(0.10, 0.05, 0.0, 0.95))
-	round_lbl.add_theme_constant_override("outline_size", 3)
+	round_lbl.add_theme_constant_override("outline_size", 5)
 	_round_info_label = round_lbl
-	battle_col.add_child(round_lbl)
+	var round_panel := PanelContainer.new()
+	round_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var round_style := StyleBoxFlat.new()
+	round_style.bg_color = Color(0.035, 0.027, 0.020, 0.82)
+	round_style.border_color = Color(0.77, 0.57, 0.28, 0.70)
+	round_style.set_border_width_all(1)
+	round_style.set_corner_radius_all(7)
+	round_style.content_margin_left = 12.0
+	round_style.content_margin_right = 12.0
+	round_style.content_margin_top = 3.0
+	round_style.content_margin_bottom = 4.0
+	round_panel.add_theme_stylebox_override("panel", round_style)
+	round_panel.add_child(round_lbl)
+	battle_col.add_child(round_panel)
 	formation_row.add_child(battle_col)
 
 	# Top-right: per-player ready indicator (6 colored dots, ✓ when ready).
@@ -2023,11 +2037,18 @@ func _refresh_round_info_label() -> void:
 	else:
 		# 教学：和 BattleScreen 用同一个来源，标签才不会和实战对不上。
 		kind = TutorialMode.battle_kind()
-	var type_txt := "Final Round" if kind == "final" else kind.to_upper()
-	if LocaleManager.get_locale() == "en":
+	var is_en := LocaleManager.get_locale() == "en"
+	var type_txt := ("FINAL" if is_en else "最终回合") if kind == "final" else kind.to_upper()
+	if is_en:
 		_round_info_label.text = "Round %d · %s" % [GameState.round_index, type_txt]
 	else:
 		_round_info_label.text = "第 %d 回合 · %s" % [GameState.round_index, type_txt]
+	var kind_color := Color(0.54, 0.96, 0.82)
+	match kind:
+		"pvp": kind_color = Color(1.0, 0.48, 0.40)
+		"boss": kind_color = Color(1.0, 0.78, 0.28)
+		"final": kind_color = Color(1.0, 0.60, 0.22)
+	_round_info_label.add_theme_color_override("font_color", kind_color)
 
 func _refresh_start_button_label() -> void:
 	if _start_battle_label == null:
@@ -2226,9 +2247,9 @@ func _on_portrait_card_hover(card: Control, hovered: bool) -> void:
 func _on_refresh_shop_control_pressed() -> void:
 	if _shop_refresh_burn == null or _shop_refresh_burn.is_playing():
 		return
-	# 9.25 订正：本函数是刷新按钮的**前置**判定（决定放不放燃烧动画），原先只抄了
-	# TreasureService.has_set("money")，漏掉教学分支。教程里 shop_refresh_all_free()
-	# 恒真 ⇒ cost 恒 0；漏抄后 cost 按 shop_refresh_uses_this_round 递增
+	# 本函数是刷新按钮的**前置**判定（决定放不放燃烧动画）。教程里
+	# shop_refresh_all_free() 恒真 ⇒ cost 恒 0；漏抄后 cost 会按
+	# shop_refresh_uses_this_round 递增
 	# （EconomyService.shop_refresh_cost 在 all_free=false 且 uses>0 时走递增价），
 	# 刷几次就超过金币，这里静默 return —— 表现正是「按钮写着免费（ShopPanel 那边
 	# 用的是正确判定）、点下去毫无反应」。判定只能接 TutorialMode.shop_refresh_all_free()
@@ -3034,18 +3055,17 @@ func _team_mercs_spot(rng: RandomNumberGenerator, taken: Array) -> Vector3:
 
 func _make_team_mercs_plate(slot: int, pos: Vector3) -> MeshInstance3D:
 	var plate := MeshInstance3D.new()
-	var plate_mesh := CylinderMesh.new()
-	plate_mesh.top_radius = TEAM_MERCS_PLATE_RADIUS
-	plate_mesh.bottom_radius = TEAM_MERCS_PLATE_RADIUS
-	plate_mesh.height = TEAM_MERCS_PLATE_HEIGHT
+	plate.name = "TeamMercOwnerRing"
+	var plate_mesh := PlaneMesh.new()
+	plate_mesh.size = Vector2.ONE * TEAM_MERCS_PLATE_RADIUS * 2.0
 	plate.mesh = plate_mesh
-	var plate_material := StandardMaterial3D.new()
-	plate_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	plate_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	var plate_material := ShaderMaterial.new()
+	plate_material.shader = UNIT_TEAM_RING_SHADER
 	var slot_color := GameConstants.team_slot_color(slot)
-	plate_material.albedo_color = Color(slot_color.r, slot_color.g, slot_color.b, 0.92)
+	plate_material.set_shader_parameter("team_color", Color(slot_color.r, slot_color.g, slot_color.b, 0.55))
 	plate.material_override = plate_material
-	plate.position = Vector3(pos.x, TEAM_MERCS_PLATE_HEIGHT * 0.5, pos.z)
+	plate.position = Vector3(pos.x, 0.004, pos.z)
+	plate.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return plate
 func _refresh_owned_treasure_logos() -> void:
 	if _treasure._owned_treasure_box == null:

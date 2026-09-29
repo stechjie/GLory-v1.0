@@ -66,7 +66,7 @@ func _ready() -> void:
 	var book: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/codex/treasure_text.json"))
 	h.expect(book.treasures.atk_wail_resonance.effect.contains("15%"), "wail", "图鉴为15%")
 	h.expect(book.linkages.link_hu_pai_master.requires_text.contains("狂怒阵容"), "hand", "胡牌手第五件为狂怒阵容")
-	h.expect(NetworkService.shop_refresh_error_text("bad_phase") == "需等待其他人战斗结束", "bad_phase_text", "旧服务端回执显示等待提示")
+	h.expect(NetworkService.shop_refresh_error_text("bad_phase") == tr("battle_waiting_others"), "bad_phase_text", "旧服务端回执显示等待提示")
 	NetworkService.server_phase = NetworkService.ROOM_PREP
 	NetworkService.server_round_index = 4
 	h.expect(not NetworkService.server_prep_confirmed(5), "stale_prep", "上回合prep不能放行下一回合")
@@ -76,7 +76,7 @@ func _ready() -> void:
 	h.expect(not NetworkService.server_prep_confirmed(5), "result_not_prep", "回合号已推进但仍在结算不能放行")
 	var receipt_probe := ReceiptProbe.new()
 	receipt_probe._on_carrot_economy_receipt({"action": "shop_refresh", "ok": false, "error": "bad_phase"})
-	h.expect(receipt_probe.message == "需等待其他人战斗结束", "actual_receipt", "刷新回执真实UI处理分支显示等待提示")
+	h.expect(receipt_probe.message == tr("battle_waiting_others"), "actual_receipt", "刷新回执真实UI处理分支显示等待提示")
 	receipt_probe.free()
 	var probe := MainProbe.new()
 	add_child(probe)

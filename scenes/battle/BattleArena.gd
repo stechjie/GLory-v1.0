@@ -160,6 +160,32 @@ func _build() -> void:
 	_battle_state_lbl.visible = false
 	add_child(_battle_state_lbl)
 
+	var frenzy_panel := PanelContainer.new()
+	frenzy_panel.visible = false
+	frenzy_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	frenzy_panel.offset_left = -230
+	frenzy_panel.offset_right = 230
+	frenzy_panel.offset_top = 48
+	frenzy_panel.offset_bottom = 84
+	frenzy_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	frenzy_panel.z_index = 110
+	var frenzy_style := StyleBoxFlat.new()
+	frenzy_style.bg_color = Color(0.035, 0.020, 0.018, 0.86)
+	frenzy_style.border_color = Color(0.86, 0.42, 0.18, 0.78)
+	frenzy_style.set_border_width_all(1)
+	frenzy_style.set_corner_radius_all(8)
+	frenzy_panel.add_theme_stylebox_override("panel", frenzy_style)
+	_frenzy_lbl = Label.new()
+	_frenzy_lbl.visible = true
+	_frenzy_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_frenzy_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_frenzy_lbl.add_theme_font_size_override("font_size", 21)
+	_frenzy_lbl.add_theme_constant_override("outline_size", 4)
+	_frenzy_lbl.add_theme_color_override("font_outline_color", Color(0.05, 0.01, 0.0, 0.95))
+	_frenzy_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	frenzy_panel.add_child(_frenzy_lbl)
+	add_child(frenzy_panel)
+
 	_summary_lbl = RichTextLabel.new()
 	_summary_lbl.bbcode_enabled = true
 	_summary_lbl.fit_content = true

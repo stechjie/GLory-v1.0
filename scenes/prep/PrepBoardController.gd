@@ -361,7 +361,7 @@ func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
 	# 9.13 #3：教学是纯本地流程，不存在「等别人」这回事。上一场对局的残留会话
 	# （team_active 还在、阶段停在 battle/result）不应把教学卡成等待状态。
 	if not GameState.tutorial_mode and NetworkService.team_active and not NetworkService.is_host and not NetworkService.server_prep_confirmed(GameState.round_index):
-		show_message("需等待其他人战斗结束")
+		show_message(tr("battle_waiting_others"))
 		return
 	if NetworkService.shop_refresh_in_flight():
 		show_message("商店刷新中，请稍候")
@@ -423,7 +423,7 @@ func _buy_or_merge_shop_to_bench(shop_index: int, bench_index: int) -> void:
 	# 9.13 #3：教学是纯本地流程，不存在「等别人」这回事。上一场对局的残留会话
 	# （team_active 还在、阶段停在 battle/result）不应把教学卡成等待状态。
 	if not GameState.tutorial_mode and NetworkService.team_active and not NetworkService.is_host and not NetworkService.server_prep_confirmed(GameState.round_index):
-		show_message("需等待其他人战斗结束")
+		show_message(tr("battle_waiting_others"))
 		return
 	if NetworkService.shop_refresh_in_flight():
 		show_message("商店刷新中，请稍候")
@@ -967,7 +967,7 @@ func _on_refresh_shop() -> void:
 	# 9.13 #3：教学是纯本地流程，不存在「等别人」这回事。上一场对局的残留会话
 	# （team_active 还在、阶段停在 battle/result）不应把教学卡成等待状态。
 	if not GameState.tutorial_mode and NetworkService.team_active and not NetworkService.is_host and not NetworkService.server_prep_confirmed(GameState.round_index):
-		show_message("需等待其他人战斗结束")
+		show_message(tr("battle_waiting_others"))
 		return
 	if not GameState.tutorial_mode and NetworkService.team_active and not NetworkService.is_host and not NetworkService.server_shop.is_empty():
 		NetworkService.request_shop_refresh()

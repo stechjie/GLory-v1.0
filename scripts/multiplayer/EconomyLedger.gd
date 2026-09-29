@@ -485,8 +485,7 @@ static func _sell(prep: Dictionary, payload: Dictionary, _ctx: Dictionary) -> Di
 static func _shop_refresh(prep: Dictionary, _payload: Dictionary, ctx: Dictionary) -> Dictionary:
 	var shop: Dictionary = prep.get("shop", {})
 	var uses := int(shop.get("refresh_uses", 0))
-	var free := TreasureService.has_set_in(ctx.get("owned_treasures", []), "money")
-	var cost := EconomyService.shop_refresh_cost(uses, free)
+	var cost := EconomyService.shop_refresh_cost(uses, false)
 	if int(prep.get("gold", 0)) < cost:
 		return {"ok": false, "error": "not_enough_gold"}
 	var rolled = ctx.get("rolled_offers", null)
@@ -508,8 +507,7 @@ static func _shop_refresh(prep: Dictionary, _payload: Dictionary, ctx: Dictionar
 # （那条链路已经有服务端权威的 offer 与 E4 幂等回执了）。
 static func _treasure_refresh_cost(prep: Dictionary, payload: Dictionary, ctx: Dictionary) -> Dictionary:
 	var index := int(payload.get("refresh_index", 0))
-	var free := TreasureService.has_set_in(ctx.get("owned_treasures", []), "money")
-	var cost := TreasureService.refresh_cost(index, free)
+	var cost := TreasureService.refresh_cost(index, false)
 	if int(prep.get("gold", 0)) < cost:
 		return {"ok": false, "error": "not_enough_gold"}
 	prep["gold"] = int(prep["gold"]) - cost
@@ -541,7 +539,7 @@ static func _gamble(prep: Dictionary, _payload: Dictionary, ctx: Dictionary) -> 
 	var loss_keep := 0.5 if linked else 0.2
 	var before := int(prep.get("gold", 0))
 	var won := roll < win_chance
-	prep["gold"] = before * 2 if won else maxi(0, int(floor(float(before) * loss_keep)))
+	prep["gold"] = int(floor(float(before) * 2.5)) if won else maxi(0, int(floor(float(before) * loss_keep)))
 	prep["gamble_used"] = true
 	return {"ok": true, "result": {"won": won, "gold_before": before, "gold_after": int(prep["gold"])}}
 

@@ -421,7 +421,7 @@ func _row(unit_id: String) -> Dictionary:
 func _state(player: Array, enemy: Array) -> Dictionary:
 	var st := {
 		"kind": "pvp", "player": player, "enemy": enemy, "elapsed": 0.0,
-		"next_decay": BattleSimShared.DECAY_START_SEC, "finished": false, "log": [],
+		"next_sudden_death_tick": BattleFrenzyService.SUDDEN_DEATH_SEC, "finished": false, "log": [],
 		"player_syn": {}, "enemy_syn": {}, "enemy_deaths": 0, "total_deaths": 0,
 		"field_death_count": 0, "mother_death_counter": 0, "dark_kill_stacks": 0,
 		"undead_trait_death_counter": 0, "race_trait_processed_deaths": {},

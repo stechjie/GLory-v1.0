@@ -152,7 +152,7 @@ func refresh() -> void:
 			fallback.add_theme_constant_override("outline_size", 4)
 			card.add_child(fallback)
 		_treasure_choice_row.add_child(card)
-	var cost := TreasureService.refresh_cost(int(GameState.pending_treasure.get("refresh_index", 0)), TreasureService.has_set("money"))
+	var cost := TreasureService.refresh_cost(int(GameState.pending_treasure.get("refresh_index", 0)), false)
 	_treasure_refresh_btn.text = tr("ui_treasure_refresh_free") if cost == 0 else tr("ui_treasure_refresh_cost") % cost
 	_treasure_refresh_btn.disabled = GameState.gold < cost
 
@@ -201,7 +201,7 @@ func _treasure_card_size(count: int) -> Vector2:
 
 
 func _refresh_candidates() -> void:
-	var cost := TreasureService.refresh_cost(int(GameState.pending_treasure.get("refresh_index", 0)), TreasureService.has_set("money"))
+	var cost := TreasureService.refresh_cost(int(GameState.pending_treasure.get("refresh_index", 0)), false)
 	if GameState.gold < cost:
 		return
 	GameState.gold -= cost
@@ -494,9 +494,13 @@ func set_effect_text(category: String) -> String:
 	var entry := CodexService.set_text(category)
 	if entry.is_empty():
 		return ""
+	var current_line := ""
+	if category == "money":
+		var current_pct := int(round(TreasureService.money_set_bonus_for_gold(GameState.gold) * 100.0))
+		current_line = ("\nCurrent gold bonus: +%d%% ATK/HP" if PrepWidgets.is_en() else "\n当前金币加成：攻击/生命 +%d%%") % current_pct
 	if PrepWidgets.is_en():
-		return "%s: %s" % [str(entry.get("name_en", "")), str(entry.get("effect_en", ""))]
-	return "%s：%s" % [str(entry.get("name", "")), str(entry.get("effect", ""))]
+		return "%s: %s%s" % [str(entry.get("name_en", "")), str(entry.get("effect_en", "")), current_line]
+	return "%s：%s%s" % [str(entry.get("name", "")), str(entry.get("effect", "")), current_line]
 
 
 
@@ -522,7 +526,7 @@ func effect_text(tid: String) -> String:
 		"atk_wail_resonance":   return "击杀敌人时，对死亡目标周围 180 范围敌人造成其最大生命 15% 真实伤害。"
 		"atk_frenzy_assault":   return "攻击同一目标时自身攻速 x1.15，可叠；换目标重置。"
 		"money_compound":       return "单件战后利息额外 +5% 当前金币。与雷霆加速联动后造成伤害有概率获得金币。"
-		"money_generous_fate":  return "准备阶段每回合可手动参与 1 次赌博：50% 概率胜利使当前金币翻倍；50% 概率失败并损失当前金币的 80%。与幻影步伐联动后变为 60% 翻倍、40% 损失当前金币 50%。"
+		"money_generous_fate":  return "准备阶段每回合可手动参与 1 次赌博：50% 概率胜利使当前金币变为 2.5 倍；50% 概率失败并损失当前金币的 80%。与幻影步伐联动后变为 60% 变为 2.5 倍、40% 损失当前金币 50%。"
 		"money_discount":       return "棋子商店价格 -20%；与狂怒阵容联动后变为 -40%。"
 		"money_golden_altar":   return "准备阶段出现黄金祭坛按钮：-1 法阵 HP，+50 金，每回合最多 3 次，HP <=10 不可用。"
 		"money_lucky_envelope": return "战后随机 +10~30 金；与时空压缩联动后额外随机 +50~70 金，10% 概率额外 +100 金。"
@@ -554,7 +558,7 @@ func effect_text_en(tid: String) -> String:
 		"atk_wail_resonance":   return "On kill, deal 15% of the target's max HP as true damage to all enemies within radius 180."
 		"atk_frenzy_assault":   return "Attacking the same target stacks own AS ×1.15 (stackable); resets on target switch."
 		"money_compound":       return "After battle, gain bonus interest equal to +5% of current gold. Synergy with Thunder Haste: 10% chance to gain +10G on damage."
-		"money_generous_fate":  return "Once per prep phase, gamble: 50% chance to double current gold; 50% chance to lose 80% of current gold. Synergy with Phantom Step: becomes 60%/40% with 50% loss."
+		"money_generous_fate":  return "Once per prep phase, gamble: 50% chance to raise current gold to 2.5x; 50% chance to lose 80% of current gold. Synergy with Phantom Step: becomes 60%/40% with 50% loss."
 		"money_discount":       return "Shop unit prices -20%. Synergy with Fury Roster: -40%."
 		"money_golden_altar":   return "Adds a Golden Altar button during prep: spend 1 Formation HP to gain +50G (max 3 times per round; unavailable at HP ≤10)."
 		"money_lucky_envelope": return "After battle, gain a random +10~30G. Synergy with Time Compress: +50~70G extra, with 10% chance of +100G."
@@ -575,7 +579,7 @@ func link_effect_text(link_id: String) -> String:
 			"link_blood_covenant":    return "Flame Shatter true damage increases from 40% ATK to 100% ATK."
 			"link_paralysis_shackles":return "On successful disarm, also apply ice effect; ice-affected targets take +15% damage."
 			"link_oppression_counter":return "When a friendly normal unit is hit, apply ATK -20% to the attacker for 2s; also stacks Frenzy Assault AS logic on them."
-			"link_fraud_fate":        return "Generous Fate becomes: 60% chance to double gold, 40% chance to lose 50% of gold."
+			"link_fraud_fate":        return "Generous Fate becomes: 60% chance to raise gold to 2.5x, 40% chance to lose 50% of gold."
 			"link_iron_maiden":       return "When a friendly normal unit is hit, inflict bleed and armor break on the attacker (CD 5s)."
 			"link_toxic_burst":       return "On dealing damage, 50% chance to instantly resolve remaining poison on poisoned targets."
 			"link_rich_path":         return "10% chance to gain +10G on dealing damage."
@@ -588,7 +592,7 @@ func link_effect_text(link_id: String) -> String:
 		"link_blood_covenant":    return "炎焰碎裂触发时，真实伤害从 ATK 40% 提高到 ATK 100%。"
 		"link_paralysis_shackles":return "缴械成功后额外触发冰效果，被冰影响目标受伤 +15%。"
 		"link_oppression_counter":return "我方普通棋子被攻击时，对攻击者施加减攻 20%，持续 2 秒；攻击者也会被叠加狂暴进攻攻速逻辑。"
-		"link_fraud_fate":        return "慷慨命运变为每回合手动赌博 1 次：60% 金币翻倍，40% 损失当前金币 50%。"
+		"link_fraud_fate":        return "慷慨命运变为每回合手动赌博 1 次：60% 金币变为 2.5 倍，40% 损失当前金币 50%。"
 		"link_iron_maiden":       return "我方普通棋子受击时反施失血和破甲，冷却 5 秒。"
 		"link_toxic_burst":       return "造成伤害时，中毒目标有 50% 概率提前结算剩余毒伤。"
 		"link_rich_path":         return "造成伤害后 10% 概率 +10 金。"

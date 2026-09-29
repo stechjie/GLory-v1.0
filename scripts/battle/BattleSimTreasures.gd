@@ -209,9 +209,10 @@ static func _spawn_undead_trait_clone(state: Dictionary, summoner: Dictionary, s
 	clone.is_mercenary = false
 	clone.is_formation_ally = false
 	clone.is_race_trait_clone = true
-	clone.max_hp = maxi(1, int(round(float(source.get("max_hp", source.get("hp", cloned_def.get("hp", 1)))) * 0.40)))
+	var inherited_money_multiplier := maxf(1.0, float(source.get("money_set_multiplier", 1.0)))
+	clone.max_hp = maxi(1, int(round(float(source.get("max_hp", source.get("hp", cloned_def.get("hp", 1)))) / inherited_money_multiplier * 0.40)))
 	clone.hp = int(clone.max_hp)
-	clone.atk = maxi(1, int(round(float(source.get("atk", cloned_def.get("atk", 1))) * 0.40)))
+	clone.atk = maxi(1, int(round(float(source.get("atk", cloned_def.get("atk", 1))) / inherited_money_multiplier * 0.40)))
 	clone.defense = maxi(0, int(round(float(source.get("defense", cloned_def.get("def", 0))) * 0.40)))
 	cloned_def.hp = int(clone.max_hp)
 	cloned_def.atk = int(clone.atk)
@@ -233,6 +234,7 @@ static func _spawn_undead_trait_clone(state: Dictionary, summoner: Dictionary, s
 	clone.dodge = float(source.get("dodge", cloned_def.get("dodge", 0.0)))
 	clone.revives_left = 0
 	clone.treasure_cd = {}
+	clone.erase("money_set_multiplier")
 	clone.erase("parasite_owner")
 	clone.erase("sacrifice_guardian")
 	clone.erase("shared_link_uid")
