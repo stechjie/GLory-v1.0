@@ -168,23 +168,27 @@ func _try_connect(port: int, client_dtls: bool, client_cert: X509Certificate) ->
 	var srv_saw: Array = []
 	server_mp.peer_connected.connect(func(id: int): srv_saw.append(id))
 	var failed := false
-	client_mp.connection_failed.connect(func(): failed = true)
 
 	var deadline := Time.get_ticks_msec() + int(CONNECT_DEADLINE_SEC * 1000.0)
 	var connected := false
+	var cid := 0
 	while Time.get_ticks_msec() < deadline and not connected and not failed:
 		server_mp.poll()
 		client_mp.poll()
-		var cid := client_mp.get_unique_id()
-		connected = (client_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED
-			and cid != 0 and srv_saw.has(cid))
+		# 拒绝握手后 ENet 已失效，get_unique_id() 会每帧打印错误。
+		# 独立 SceneMultiplayer 的信号不能充当判据（见上文）；直接读传输状态。
+		var status := client_peer.get_connection_status()
+		failed = status == MultiplayerPeer.CONNECTION_DISCONNECTED
+		if status == MultiplayerPeer.CONNECTION_CONNECTED:
+			cid = client_mp.get_unique_id()
+			connected = cid != 0 and srv_saw.has(cid)
 		await get_tree().process_frame
 
 	# 这一行在门禁变红时是唯一有用的东西：能立刻分出「握手被拒」（srv_saw 空、
 	# status=0/1）和「连上了但判据写错」（srv_saw 非空、status=2）。
 	var detail := "connected=%s failed=%s cli_status=%d cli_id=%d srv_saw=%s" % [
 		connected, failed, client_peer.get_connection_status(),
-		client_mp.get_unique_id(), str(srv_saw)]
+		cid, str(srv_saw)]
 	print("[dtls] port=%d %s" % [port, detail])
 	client_peer.close()
 	server_peer.close()
