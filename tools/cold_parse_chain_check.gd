@@ -90,6 +90,15 @@ const TARGETS: Array[Dictionary] = [
 	# ★ 9.29：撤回邀请「点之前变灰」与 room_started；加入被拒改走 MainMenu.show_join_rejected
 	#   （MainMenu.gd / Main.gd / ChatScreen.gd / RoomInvite.gd 已在上面），门禁替身跟着改。
 	{"kind": "script", "path": "res://tools/main_team_join_room_action_check.gd"},
+	# ★ 9.29 第二批：换座后账号跟着人走 + 对局历史「详细战况」（结算面板进战报、历史里复用）。
+	{"kind": "script", "path": "res://scripts/multiplayer/RoomService.gd"},
+	{"kind": "script", "path": "res://scripts/multiplayer/BattleReport.gd"},
+	{"kind": "script", "path": "res://scenes/menu/FinalSettlementPanel.gd"},
+	{"kind": "script", "path": "res://scenes/menu/MatchHistoryPanel.gd"},
+	{"kind": "script", "path": "res://tools/seat_identity_check.gd"},
+	{"kind": "script", "path": "res://tools/match_history_ui_check.gd"},
+	{"kind": "script", "path": "res://tools/battle_report_check.gd"},
+	{"kind": "script", "path": "res://tools/final_settlement_check.gd"},
 ]
 
 

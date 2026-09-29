@@ -21,7 +21,7 @@ class TestServer extends "res://scripts/autoload/NetworkService.gd":
 		_bump_room_seq(room)
 	func _send_room_state(_room: Dictionary, _peer: int, _seq: int) -> void:
 		pass
-	func _room_sign_report(_room: Dictionary, _rounds: int, _outcome: int, _hp_a: int, _hp_b: int) -> String:
+	func _room_sign_report(_room: Dictionary, _rounds: int, _outcome: int, _hp_a: int, _hp_b: int, _final_data: Dictionary) -> String:
 		return ""
 	func _voice_seat_released(_room: Dictionary, _slot: int, _identity: String) -> void:
 		pass

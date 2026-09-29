@@ -6,6 +6,7 @@
     2. 校验形状（签过章不等于内容对 —— 战斗服务器也可能有 bug）
     3. 按 match_uid 去重
     4. 写 match_records + match_seats（database/013_match_history.sql）
+       + 详细战况 match_records.settlement（database/023_match_settlement.sql）
 
 ## 它是出战名片反过来那一半
 
@@ -52,10 +53,11 @@ REPORT_VERSION = 1
 
 # 线格式的长度上限，**在 base64 解码之前**就挡。
 #
-# 实测满配一局（六座位 × 16 棋子 + 8 佣兵 + 5 宝藏）是 13913 字节
-# （tools/battle_report_check.gd 每次都量一遍并打印）。这里给到 64 KB：
+# 实测满配一局（六座位 × 16 棋子 + 8 佣兵 + 5 宝藏，外加 023 的详细战况：
+# 每座位 30 条最后一战统计）是 47509 字节（tools/battle_report_check.gd 每次都量一遍并打印；
+# 023 之前是 13913）。这里给到 192 KB，保持约 4 倍余量：
 # 够以后加字段，又不至于让一次解码 + RSA 验签的开销由对方决定。
-MAX_WIRE_CHARS = 65536
+MAX_WIRE_CHARS = 196608
 
 # RSA-2048 的签名固定 256 字节。
 SIGNATURE_BYTES = 256
@@ -78,6 +80,12 @@ MAX_REPORT_AGE_SEC = 7 * 24 * 3600
 # 数据库那几列都是 int（4 字节）。战斗服务器那边已经 clamp 过，这里是第二道 ——
 # 溢出的话 asyncpg 会抛，变成 500。
 _INT_MAX = 2**31 - 1
+
+# 详细战况（023）。与 BattleReport.gd 的 MAX_STATS_ENTRIES / MAX_NAME_LEN / STONE_TYPES 一致。
+MAX_STATS_ENTRIES = 240
+MAX_NAME_LEN = 24
+MAX_ID_LEN = 64
+STONE_TYPES = ("sky", "land", "ren")
 
 
 class ReportRejected(Exception):
@@ -228,6 +236,7 @@ def _validate(raw: dict, now: float) -> dict:
         "gold_authoritative": bool(raw.get("gold_auth", False)),
         "carrot_authoritative": bool(raw.get("carrot_auth", False)),
         "seats": seats,
+        "settlement": _validate_settlement(raw, raw_seats),
     }
 
 
@@ -267,6 +276,73 @@ def _validate_seat(item: object, index: int) -> dict:
     }
 
 
+def _validate_settlement(raw: dict, raw_seats: list) -> dict | None:
+    """详细战况（database/023）。旧战斗服务器的战报没有 stats 这一项 → None。
+
+    🔴 这一块**宽松**：坏条目丢掉、打 warning，不拒整份。
+    它只是给人看的明细；为它拒掉一份战报，丢的是整局历史和排位结算。
+    """
+    if "stats" not in raw:
+        return None
+    raw_stats = raw.get("stats")
+    if not isinstance(raw_stats, list):
+        log.warning("战报 %s 的 stats 不是列表，详细战况留空", raw.get("mid"))
+        raw_stats = []
+    stats = []
+    for entry in raw_stats[:MAX_STATS_ENTRIES]:
+        clean = _settlement_stat(entry)
+        if clean is None:
+            log.warning("战报 %s 丢掉一条坏的统计：%r", raw.get("mid"), entry)
+            continue
+        stats.append(clean)
+    raw_allies = raw.get("allies")
+    allies = ["", ""]
+    if isinstance(raw_allies, list):
+        for side in range(min(2, len(raw_allies))):
+            allies[side] = str(raw_allies[side])[:MAX_NAME_LEN]
+    seats = []
+    for item in raw_seats:
+        item = item if isinstance(item, dict) else {}
+        stones_raw = item.get("stones")
+        stones = {}
+        if isinstance(stones_raw, dict):
+            for kind in STONE_TYPES:
+                count = _soft_int(stones_raw.get(kind), 0, 999)
+                if count > 0:
+                    stones[kind] = count
+        seats.append({"stones": stones, "total_gold": _soft_int(item.get("total_gold"), 0, _INT_MAX)})
+    return {"allies": allies, "stats": stats, "seats": seats}
+
+
+def _settlement_stat(entry: object) -> dict | None:
+    if not isinstance(entry, dict):
+        return None
+    owner = _soft_int(entry.get("own"), -1, SEAT_COUNT)
+    if not 0 <= owner < SEAT_COUNT:
+        return None
+    return {
+        "own": owner,
+        "slot": _soft_int(entry.get("slot"), -1, 255),
+        "id": str(entry.get("id", ""))[:MAX_ID_LEN],
+        "name": str(entry.get("name", ""))[:MAX_NAME_LEN],
+        "star": _soft_int(entry.get("star"), 0, 9),
+        "merc": bool(entry.get("merc", False)),
+        "stack": _soft_int(entry.get("stack"), 0, 99),
+        "dmg": _soft_int(entry.get("dmg"), 0, _INT_MAX),
+        "taken": _soft_int(entry.get("taken"), 0, _INT_MAX),
+        "heal": _soft_int(entry.get("heal"), 0, _INT_MAX),
+    }
+
+
+def _soft_int(value: object, low: int, high: int) -> int:
+    """详细战况用的取整：拿不到数就当 low，不抛（见 _validate_settlement 的「宽松」）。"""
+    try:
+        out = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return low
+    return max(low, min(high, out))
+
+
 def _int(value: object) -> int:
     """取整并夹到 int4 范围。溢出的话 asyncpg 会抛，那是 500 不是 400。"""
     try:
@@ -274,6 +350,13 @@ def _int(value: object) -> int:
     except (TypeError, ValueError) as exc:
         raise ReportRejected("report_malformed", "数字字段格式不对") from exc
     return max(-_INT_MAX, min(_INT_MAX, out))
+
+
+def _json_or_null(value: object) -> str | None:
+    """同 _json_list：自己序列化后 ::jsonb。None 原样传（= SQL null）。"""
+    if value is None:
+        return None
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
 def _json_list(value: object) -> str:
@@ -297,8 +380,8 @@ async def record(report: dict) -> bool:
             insert into match_records (
               match_uid, mode, protocol, server_epoch, room_id,
               started_at, ended_at, rounds, outcome, team_a_hp, team_b_hp,
-              gold_authoritative, carrot_authoritative
-            ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+              gold_authoritative, carrot_authoritative, settlement
+            ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb)
             on conflict (match_uid) do nothing
             returning match_uid
             """,
@@ -307,6 +390,7 @@ async def record(report: dict) -> bool:
             report["started_at"], report["ended_at"], report["rounds"],
             report["outcome"], report["team_a_hp"], report["team_b_hp"],
             report["gold_authoritative"], report["carrot_authoritative"],
+            _json_or_null(report.get("settlement")),
         )
         if inserted is None:
             # 已经有人交过了。幂等，不是错误 —— 六个人各交一份是设计如此。
@@ -351,6 +435,11 @@ async def record(report: dict) -> bool:
     return True
 
 
+def _jsonb(value: object) -> object:
+    """jsonb 列读回来：没设编解码器时 asyncpg 给的是字符串。"""
+    return json.loads(value) if isinstance(value, str) else value
+
+
 async def _known_players(conn, ids: list[uuid.UUID | None]) -> set[uuid.UUID]:
     wanted = [i for i in ids if i is not None]
     if not wanted:
@@ -371,7 +460,7 @@ async def list_for_player(player_id: uuid.UUID, limit: int) -> list[dict]:
             """
             select r.match_uid, r.mode, r.rounds, r.outcome,
                    r.team_a_hp, r.team_b_hp, r.ended_at,
-                   r.gold_authoritative, r.carrot_authoritative,
+                   r.gold_authoritative, r.carrot_authoritative, r.settlement,
                    s.slot as my_slot
               from match_seats s
               join match_records r on r.match_uid = s.match_uid
@@ -383,13 +472,17 @@ async def list_for_player(player_id: uuid.UUID, limit: int) -> list[dict]:
         )
         if not rows:
             return []
+        # 名字按 player_id 取**现在**的（2026-09-29 用户定：改过名显示新名字；
+        # 注销的在 017 里已经被改成「已注销玩家」）。不往战报里存名字 —— 存了就会过期。
         seats = await conn.fetch(
             """
-            select match_uid, slot, team, player_id, was_ai, online_at_end,
-                   ai_rounds, gold, carrots, carrots_spent, board, treasures
-              from match_seats
-             where match_uid = any($1::text[])
-             order by match_uid, slot
+            select s.match_uid, s.slot, s.team, s.player_id, s.was_ai, s.online_at_end,
+                   s.ai_rounds, s.gold, s.carrots, s.carrots_spent, s.board, s.treasures,
+                   p.player_name, p.friend_code
+              from match_seats s
+              left join players p on p.player_id = s.player_id
+             where s.match_uid = any($1::text[])
+             order by s.match_uid, s.slot
             """,
             [r["match_uid"] for r in rows],
         )
@@ -399,9 +492,9 @@ async def list_for_player(player_id: uuid.UUID, limit: int) -> list[dict]:
             {
                 "slot": s["slot"],
                 "team": s["team"],
-                # 好友码 / 昵称不在这里拼 —— 名字会改，历史里存一份死的就会过期。
-                # 客户端拿 player_id 走已有的公开资料接口。
                 "player_id": str(s["player_id"]) if s["player_id"] else None,
+                "player_name": s["player_name"],
+                "friend_code": s["friend_code"],
                 "was_ai": s["was_ai"],
                 "online_at_end": s["online_at_end"],
                 "ai_rounds": s["ai_rounds"],
@@ -426,6 +519,8 @@ async def list_for_player(player_id: uuid.UUID, limit: int) -> list[dict]:
             "my_slot": r["my_slot"],
             "gold_authoritative": r["gold_authoritative"],
             "carrot_authoritative": r["carrot_authoritative"],
+            # null = 023 之前打的局，没有详细战况。
+            "settlement": _jsonb(r["settlement"]),
             "seats": by_match.get(r["match_uid"], []),
         }
         for r in rows

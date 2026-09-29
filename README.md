@@ -2278,3 +2278,15 @@ A 费用档位 / B 教程恒免费（刷 **999 次**仍为 0）/ C **递归扫 `
 ★ **既存失败未修（超范围）**：`OfficetestSmoke` 的 `格点坐标与战斗站位一致` —— 探针实测 `_place_in_lane(f,5,"player",0)` → `(202,359)` 而 `OfficeTestSim.grid_sim_pos(0,5)` → `(218,398)`，**相差 42.15px**，是两套生产公式的历史不一致（疑似 9.25「4×4 真实间距」后 `grid_sim_pos` 未跟上），与本轮 4 条无关。
 
 详见[9.29 桌面 bug 文档四条修复记录](docs/9.29桌面bug文档四条修复记录.md)。
+
+## 2026-09-29（第二批）：换座后账号跟着人走 · 对局历史「详细战况」· 语音安卓插件重编
+
+**① 对局历史记错人 / 整局不见。** 战斗服务器按座位记「这是哪个账号」（`seat_pid`），换座时它没跟着搬：旧座位补了 AI → 历史里把人记成「AI + 掉线未归」、坐错队、胜负反了、按跑路扣信誉分；旧座位被别人坐走 → 账号被顶掉，整局历史里找不到这个人（用户 09-29 实测就是这种：日志里 `battle report submitted recorded=false`）。修法：`seat_pid` 加进 `RoomService.SEAT_SLOT_MAPS`，换座一起搬、离座一起清。另外「打完返回房间」原来把所有人的账号整份抄进新房间，改成只抄会回来的人。门禁 `tools/seat_identity_check.tscn`（13 项；把两处修复分别退回旧写法各红 5 / 2 条）。
+
+**② 对局历史「详细战况」。** 用户定：直接用打完那一刻的结算面板。战斗服务器把结算数据（升级石、总金币、法阵守护、最后一战逐棋子统计）签进战报 → 账号服务器存进 `match_records.settlement`（新迁移 `database/023_match_settlement.sql`）→ 历史里点「详细战况」弹出 `FinalSettlementPanel` 本身（按钮换成「关闭」、没有「返回房间」）。名字按账号取**现在**的名字，历史列表里的「座位 N」也换成名字。023 之前的局写「这一局是旧版本记录，没有详细战况」。战报满配从 13913 字节涨到 47509 字节，账号服务器上限从 64 KB 调到 192 KB。顺带修了战报里棋子位置全记成 0 号位的问题。
+
+**③ 语音「语音组件需要更新，请安装新版游戏」。** 同事 `db462f5` 给三端语音加了 `setAudience`（队友 / 全部），改了源码但没重编安卓 AAR 和 Windows dll。已在 MSI 用 `android_plugins/glory_voice/build_aar.ps1` 重编 AAR（Kotlin 一次编过，8 个桥接方法都在）。**Windows dll 还没重编**（编辑器开着，dll 被占用）。
+
+**部署（顺序要紧）：** 🔴 Supabase 先跑 `023` → 账号服务器 `update.sh`（反过来就是 09-29 好友列表 500 那种事）→ 战斗服务器重新打包部署 → 出新客户端包。Supabase 里清旧的错记录：`delete from match_records;`（match_seats 跟着删，建议在新战斗服务器上线后跑）。协议号不变。
+
+**验证。** 后端全量 693 过（含真库：详细战况原样存取、改名显示新名字、注销显示「已注销玩家」、旧局 settlement 为 null）。Godot：`seat_identity` 13、`battle_report` 52、`match_history_ui` 77、`final_settlement` 38、`room_service` 137、`matchmaking` 47、`room_invite` 83、房间动作两条、`cold_parse_chain` 143 全过；`voice` 只红 Windows dll 过期一条；`adversarial_client` 的红都是旧账（另有 `tx_idempotency` 两条：祭坛已改成扣 2 HP、用例还按 1 算）。用样例数据实渲截了四张图给用户看。★ 未做真机 / 线上验证。

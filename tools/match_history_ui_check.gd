@@ -19,6 +19,9 @@ extends Node
 #   4. 「掉线未归」按 was_ai 判。座位断线 20 秒就转 AI，但转了之后玩家还能回来
 #      —— 拿 was_ai 当跑路会冤枉一大片只是切了后台的人。判据必须是 online_at_end。
 #   5. 资料页那个入口没了 / 战绩块退回全占位。那样这一整块功能玩家根本点不到。
+#   6. （2026-09-29）名字：按账号现在的名字显示，「我」标出来；AI / 空位分清。
+#   7. （2026-09-29）「详细战况」：点开就是打完那一刻的结算面板（FinalSettlementPanel 本身），
+#      数据从历史接口的格式换过去不能丢东西、不能串座位；旧局没有详细战况时要说清楚。
 #
 # ## 为什么直接戳私有成员
 #
@@ -46,6 +49,9 @@ func _ready() -> void:
 	await _case_teams_named_red_blue()
 	await _case_gold_caveat_shown()
 	await _case_offline_uses_online_at_end()
+	await _case_names_are_current()
+	_case_settlement_view_data()
+	await _case_detail_opens_settlement_panel()
 	_case_profile_entry_exists()
 	_case_profile_shows_real_rank()
 	_case_no_hand_rolled_buttons()
@@ -55,12 +61,14 @@ func _ready() -> void:
 # --- 夹具 ---------------------------------------------------------------------
 
 # 一局。my_slot 决定「我」在哪一队，outcome 是队伍级结果。
-func _match(my_slot: int, outcome: String, gold_auth: bool = true, seats_over: Dictionary = {}) -> Dictionary:
+func _match(my_slot: int, outcome: String, gold_auth: bool = true, seats_over: Dictionary = {}, settlement: Variant = null) -> Dictionary:
 	var seats := []
 	for slot in 6:
 		var seat := {
 			"slot": slot, "team": 0 if slot < 3 else 1,
 			"player_id": null if slot == 5 else "1111111%d-1111-1111-1111-111111111111" % slot,
+			"player_name": null if slot == 5 else "玩家%d号" % slot,
+			"friend_code": null if slot == 5 else "CODE000%d" % slot,
 			"was_ai": slot == 5, "online_at_end": slot != 5, "ai_rounds": 0,
 			"gold": 137, "carrots": 12, "carrots_spent": 40,
 			"board": [{"slot": 0, "id": "dark_dragon", "star": 3, "merc": false}],
@@ -73,6 +81,24 @@ func _match(my_slot: int, outcome: String, gold_auth: bool = true, seats_over: D
 		"match_uid": "a".repeat(32), "mode": "custom", "rounds": 21, "outcome": outcome,
 		"team_a_hp": 17, "team_b_hp": 0, "age_sec": 7200, "my_slot": my_slot,
 		"gold_authoritative": gold_auth, "carrot_authoritative": true, "seats": seats,
+		"settlement": settlement,
+	}
+
+
+# 023 的详细战况（后端原样返回的那种：统计是短键）。
+func _settlement() -> Dictionary:
+	var extras := []
+	for slot in 6:
+		extras.append({"stones": {"sky": slot}, "total_gold": 1000 + slot})
+	return {
+		"allies": ["圣骑守护", "暗影守护"],
+		"seats": extras,
+		"stats": [
+			{"own": 3, "slot": 0, "id": "dark_dragon", "name": "暗黑巨龙", "star": 3, "merc": false,
+			 "stack": 2, "dmg": 9000, "taken": 800, "heal": 5},
+			{"own": 1, "slot": 1, "id": "merc_x", "name": "佣兵甲", "star": 0, "merc": true,
+			 "stack": 0, "dmg": 100, "taken": 50, "heal": 0},
+		],
 	}
 
 
@@ -198,6 +224,108 @@ func _case_offline_uses_online_at_end() -> void:
 	_h.expect(_texts(left).any(func(t): return t.contains("掉线未归")),
 		"leaver_not_shown", "结束时不在线的座位没被标出来")
 	left.queue_free()
+
+
+# --- 6. 名字：账号现在的名字 ------------------------------------------------------
+
+func _case_names_are_current() -> void:
+	var panel := await _panel_with([_match(3, "team_b", true, {
+		4: {"player_id": null, "player_name": null, "friend_code": null, "was_ai": false, "board": []},
+	})])
+	var texts := _texts(panel)
+	_h.expect(texts.any(func(t): return t.contains("玩家3号 #CODE0003（我）")), "my_name_missing",
+		"我那一行应该是「名字 #好友码（我）」")
+	_h.expect(texts.any(func(t): return t.contains("玩家0号 #CODE0000")), "other_name_missing",
+		"别人的座位应该显示账号的名字，不是「座位 N」")
+	_h.expect(texts.any(func(t): return t.begins_with("AI")), "ai_seat_missing", "AI 座位要写 AI")
+	_h.expect(texts.any(func(t): return t.begins_with("空位")), "empty_seat_missing",
+		"没账号、不是 AI、也没棋子的座位是空位")
+	_h.expect(not texts.any(func(t): return t.contains("座位 ")), "seat_number_left",
+		"还在用「座位 N」—— 现在有名字了")
+	panel.queue_free()
+
+
+# --- 7. 详细战况 ------------------------------------------------------------------
+
+func _case_settlement_view_data() -> void:
+	var item := _match(3, "team_b", false, {
+		3: {"board": [
+			{"slot": 7, "id": "dark_dragon", "star": 3, "merc": false},
+			{"slot": 0, "id": "merc_x", "star": 1, "merc": true},
+		], "treasures": ["treasure_blood_pact"]},
+	}, _settlement())
+	var data: Dictionary = PanelScript.settlement_view_data(item)
+	_eq(int(data.get("outcome", -1)), 1, "view_outcome", "team_b 应该换成 1（蓝队）")
+	_eq(bool(data.get("can_return_room", true)), false, "view_can_return", "历史里不能有「返回房间」")
+	_eq(data.get("allies", []), ["圣骑守护", "暗影守护"], "view_allies", "法阵守护照抄")
+	var seats: Array = data.get("seats", [])
+	_eq(seats.size(), 6, "view_seat_count", "永远六个座位")
+	var mine: Dictionary = seats[3]
+	_eq(str(mine.get("name", "")), "玩家3号 #CODE0003（我）", "view_my_name", "我那个座位的名字")
+	_eq(mine.get("board", []), [{"id": "dark_dragon", "star": 3, "slot": 7}], "view_board",
+		"棋盘只放 merc=false 的，带位置")
+	_eq(mine.get("mercenaries", []), [{"id": "merc_x", "star": 1, "slot": 0}], "view_mercs",
+		"merc=true 的进佣兵列")
+	_h.expect((mine.get("treasures", []) as Array).has("treasure_blood_pact"), "view_treasures",
+		"宝藏照抄（再按结算面板的规则补上联动 / 套装）")
+	_eq(mine.get("stones", {}), {"sky": 3}, "view_stones", "升级石取 settlement.seats[3]，不能串座位")
+	_eq(int(mine.get("total_gold", 0)), 1003, "view_total_gold", "总金币取 settlement.seats[3]")
+	_eq(str((seats[5] as Dictionary).get("name", "")), "AI", "view_ai_name", "AI 座位叫 AI")
+	var stat: Dictionary = (data.get("stats", []) as Array)[0]
+	for key in ["owner_slot", "slot", "id", "name", "star", "is_mercenary", "skill_stacks",
+			"damage_dealt", "damage_taken", "healing_done"]:
+		_h.expect(stat.has(key), "view_stat_key", "统计要换回结算面板认的键：缺 %s" % key)
+	_eq([int(stat.owner_slot), int(stat.damage_dealt), int(stat.skill_stacks)], [3, 9000, 2],
+		"view_stat_values", "统计的值照抄")
+	_eq(PanelScript.settlement_view_data(_match(0, "team_a")), {}, "view_no_settlement",
+		"023 之前的局（settlement 为 null）返回空字典")
+
+
+func _case_detail_opens_settlement_panel() -> void:
+	# 旧局：不给按钮，给一句说明。
+	var old := await _panel_with([_match(0, "team_a")])
+	var old_texts := _texts(old)
+	_h.expect(not old_texts.has("详细战况"), "old_match_has_button", "没有详细战况的旧局不该有按钮")
+	_h.expect(old_texts.any(func(t): return t.contains("没有详细战况")), "old_match_silent",
+		"旧局要说明为什么看不了")
+	old.queue_free()
+
+	var panel := await _panel_with([_match(3, "team_b", true, {}, _settlement())])
+	var button := _button_with_text(panel, "详细战况")
+	if not _h.expect(button != null, "detail_button_missing", "有详细战况的局没有「详细战况」按钮"):
+		panel.queue_free()
+		return
+	button.pressed.emit()
+	await get_tree().process_frame
+	_h.expect(ModalStack.has(PanelScript.DETAIL_MODAL_ID), "detail_not_opened", "点了「详细战况」没弹出来")
+	var top: Dictionary = ModalStack.top()
+	var content: Variant = top.get("content")
+	_h.expect(content != null and (content as Object).get_script() == PanelScript.SettlementPanel,
+		"detail_not_settlement_panel", "弹出来的不是结算面板本身（要直接搬，不是另画一份）")
+	if content != null:
+		var texts := _texts(content as Node)
+		_h.expect(texts.has("关闭") and not texts.has("返回主菜单"), "detail_close_text",
+			"历史里那颗按钮应该叫「关闭」，不是「返回主菜单」")
+		_h.expect(texts.any(func(t): return t.contains("暗黑巨龙")), "detail_stats_missing",
+			"统计面板里没有最后一战的棋子")
+		var close := _button_with_text(content as Node, "关闭")
+		if close != null:
+			close.pressed.emit()
+			await get_tree().process_frame
+		_h.expect(not ModalStack.has(PanelScript.DETAIL_MODAL_ID), "detail_not_closed", "点「关闭」没关掉")
+	ModalStack.pop(PanelScript.DETAIL_MODAL_ID)
+	panel.queue_free()
+
+
+func _button_with_text(root: Node, text: String) -> Button:
+	var stack: Array = [root]
+	while not stack.is_empty():
+		var node: Node = stack.pop_back()
+		if node is Button and (node as Button).text == text:
+			return node as Button
+		for child in node.get_children():
+			stack.append(child)
+	return null
 
 
 # --- 5. 资料页的入口 -------------------------------------------------------------

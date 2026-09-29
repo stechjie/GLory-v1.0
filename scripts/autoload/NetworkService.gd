@@ -1198,11 +1198,6 @@ func _clear_seat_metadata(room: Dictionary, slot: int) -> void:
 	seat_pets.erase(slot)
 	seat_pets.erase(str(slot))
 	room["seat_pets"] = seat_pets
-	# 名片上的 player_id 跟着座位走。离座不清的话，后坐进来的人会顶着前一个人的
-	# 账号 id 进战报 —— 历史里记成别人打的，而且不报错。
-	var seat_pids: Dictionary = room.get("seat_pid", {})
-	seat_pids.erase(slot)
-	room["seat_pid"] = seat_pids
 # 释放一个座位绑定的公开短码。
 # compare-and-delete：只有当这条映射**仍指向本座位的 token** 时才删。
 # 无条件删会在短码碰撞（同一 id 被另一个座位重新绑定）时，让先离开的人把后来者的
@@ -3749,7 +3744,7 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 	#
 	# **不新开 RPC、不顶协议号** —— _rpc_receive_match_state 收的是 Dictionary，
 	# 没有严格 schema，老客户端看不懂这个 key 就忽略，新客户端连老服务器就是收不到。
-	# 只有最后一轮带，所以 match_state 只在这一次从几百字节涨到 ~14 KB
+	# 只有最后一轮带，所以 match_state 只在这一次从几百字节涨到 ~48 KB（满配，含详细战况）
 	# （实测值见 tools/battle_report_check.gd），相比同批发的 replay（压缩后单边
 	# 61.8 KB）不算什么。
 	if run_over:
@@ -3757,7 +3752,7 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 		room["final_settlement"] = final_data
 		for final_slot in out:
 			out[final_slot]["final_settlement"] = final_data
-		var report := _room_sign_report(room, completed_round, outcome, hp_a, hp_b)
+		var report := _room_sign_report(room, completed_round, outcome, hp_a, hp_b, final_data)
 		if not report.is_empty():
 			for slot in TEAM_SLOTS:
 				if out.has(slot):
@@ -3772,25 +3767,32 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 #
 # 为什么这里不 fail loud：战报是记账，不是对局的一部分。为它让一整局崩掉，
 # 是把故障面放大。代价是它会静默少记，所以每一局都留一条日志。
-func _room_sign_report(room: Dictionary, rounds: int, outcome: int, hp_a: int, hp_b: int) -> String:
+func _room_sign_report(room: Dictionary, rounds: int, outcome: int, hp_a: int, hp_b: int, final_data: Dictionary) -> String:
 	var loaded := BattleReport.load_signing_key()
 	var key: CryptoKey = loaded.get("key")
 	if key == null:
 		_net_log("battle report skipped room=%d: %s" % [
 			int(room.get("id", 0)), str(loaded.get("error", ""))])
 		return ""
-	var match_uid := str(room.get("match_uid", ""))
-	if match_uid.is_empty():
+	if str(room.get("match_uid", "")).is_empty():
 		# 进程重启前开的局，快照里没有 match_uid（013 之前的版本）。补摇一个会让
 		# 同一局在历史里变成两行，所以宁可这一局不记。
 		_net_log("battle report skipped room=%d: 没有 match_uid（013 之前开的局）" % int(room.get("id", 0)))
 		return ""
+	return BattleReport.sign(BattleReport.build(_room_report_ctx(room, rounds, outcome, hp_a, hp_b, final_data)), key)
 
+
+# 战报的原料（还没清洗、没签）。和签章拆开，门禁才能不带私钥直接查「哪个账号坐哪个座位」。
+#
+# final_data 是同一刻给结算面板的那份（FinalSettlementData.build）。升级石、总金币、
+# 最后一战的逐棋子统计从它里面取 —— 历史里的「详细战况」就是这一份（2026-09-29）。
+func _room_report_ctx(room: Dictionary, rounds: int, outcome: int, hp_a: int, hp_b: int, final_data: Dictionary) -> Dictionary:
 	var states: Array = room.get("slot_states", [])
 	var boards: Dictionary = room.get("boards", {})
 	var pids: Dictionary = room.get("seat_pid", {})
 	var ai_rounds: Dictionary = room.get("seat_ai_rounds", {})
 	var slot_gold: Array = room.get("slot_gold", [])
+	var settle_seats: Array = final_data.get("seats", [])
 	# 结束那一刻谁还连着。**这就是排位的跑路判定线** —— 不是「有没有转过 AI」
 	# （座位断线 20 秒就转 AI，但转了之后 _resume_seat 还能回来）。
 	var online_slots := {}
@@ -3801,6 +3803,7 @@ func _room_sign_report(room: Dictionary, rounds: int, outcome: int, hp_a: int, h
 	for slot in TEAM_SLOTS:
 		var snap: Dictionary = boards.get(slot, {})
 		var prep: Dictionary = _room_prep(room, slot)
+		var settle: Dictionary = settle_seats[slot] if slot < settle_seats.size() and settle_seats[slot] is Dictionary else {}
 		seats.append({
 			"pid": str(pids.get(slot, "")),
 			"was_ai": slot < states.size() and str(states[slot]) == "dummy",
@@ -3817,10 +3820,12 @@ func _room_sign_report(room: Dictionary, rounds: int, outcome: int, hp_a: int, h
 			# 服务端记录的持有列表，不是客户端自报的 snap.treasures
 			# （后者只用于影子比对，见 _room_owned_treasures）。
 			"treasures": _room_owned_treasures(room, slot),
+			"stones": settle.get("stones", {}),
+			"total_gold": int(settle.get("total_gold", 0)),
 		})
 
-	return BattleReport.sign(BattleReport.build({
-		"match_uid": match_uid,
+	return {
+		"match_uid": str(room.get("match_uid", "")),
 		# 匹配出来的房间在建房时写了 mode（协议 32）；自定义房间没写，回落 custom。
 		# 这个值会进 match_records.mode，013 的 check 约束只认三个。
 		"mode": str(room.get("mode", "custom")),
@@ -3835,7 +3840,9 @@ func _room_sign_report(room: Dictionary, rounds: int, outcome: int, hp_a: int, h
 		"gold_authoritative": economy_authoritative(),
 		"carrot_authoritative": carrot_economy_enabled(),
 		"seats": seats,
-	}), key)
+		"allies": final_data.get("allies", []),
+		"stats": final_data.get("stats", []),
+	}
 
 # 专用服务器的权威结算：与本地/房主的 Main._on_team_battle_finished 共用
 # EconomyService.settle_post_battle_gold，两处不能再各写各的。
@@ -6498,10 +6505,19 @@ func _return_to_settlement_room(peer_id: int) -> Dictionary:
 			var reserved_slot := int(old.peer_slot[pid])
 			target.slot_states[reserved_slot] = "settling"
 			target.settlement_pending[reserved_slot] = int(pid)
-		for key in ["seat_profiles", "seat_pets", "seat_races", "seat_pid", "join_seq", "next_join_seq"]:
-			if old.has(key):
-				var value: Variant = old[key]
-				target[key] = value.duplicate(true) if value is Dictionary or value is Array else value
+		# 只抄**会回来的人**（上面标成 settling 的座位）。整份抄的话，没回来的人的账号 id 和资料
+		# 会留在新房间的空座位上：房主在那儿补个 AI，战报就把这个不在场的人记进这一局，
+		# 还按「结束时不在线」扣他信誉分（2026-09-29）。
+		for key in ["seat_profiles", "seat_pets", "seat_races", "seat_pid", "join_seq"]:
+			var source: Dictionary = old.get(key, {})
+			var copied := {}
+			for reserved_slot in target.settlement_pending:
+				var value: Variant = source.get(reserved_slot, source.get(str(reserved_slot)))
+				if value != null:
+					copied[int(reserved_slot)] = value.duplicate(true) if value is Dictionary or value is Array else value
+			target[key] = copied
+		if old.has("next_join_seq"):
+			target["next_join_seq"] = old["next_join_seq"]
 		_maybe_promote_leader(target)
 	if target.is_empty() or str(target.get("state", "")) != ROOM_LOBBY:
 		return {}

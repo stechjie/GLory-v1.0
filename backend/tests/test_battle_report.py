@@ -277,11 +277,21 @@ def test_wire_limit_is_above_the_measured_worst_case() -> None:
     小了的表现是**满配的对局全部记不下来**，而空房间的测试一路绿 ——
     和名片那条 MAX_CARD_CHARS 是同一类坑。
 
-    13913 是 tools/battle_report_check.gd 实测的最坏情况（六座位 × 16 棋子 +
-    8 佣兵 + 5 宝藏，每次运行都会重新打印）。留 4 倍余量给以后加字段。
+    47509 是 tools/battle_report_check.gd 实测的最坏情况（六座位 × 16 棋子 +
+    8 佣兵 + 5 宝藏 + 每座位 30 条最后一战统计，每次运行都会重新打印；
+    023 之前是 13913）。留 4 倍余量给以后加字段。
     """
-    measured_worst_case = 13913
+    measured_worst_case = 47509
     assert battle_report.MAX_WIRE_CHARS >= measured_worst_case * 4
+
+
+def test_settlement_limits_match_gdscript() -> None:
+    """详细战况（023）的上限两边各写一份，对不上时多出来的那几条会被这边悄悄截掉。"""
+    for name in ("MAX_STATS_ENTRIES", "MAX_NAME_LEN"):
+        gd = int(re.search(r"const %s\s*:=\s*(\d+)" % name, REPORT_GD).group(1))
+        assert gd == getattr(battle_report, name), name
+    gd_types = re.search(r"const STONE_TYPES\s*:=\s*\[([^\]]*)\]", REPORT_GD).group(1)
+    assert tuple(s.strip().strip('"') for s in gd_types.split(",")) == battle_report.STONE_TYPES
 
 
 def test_gdscript_does_not_put_uid_in_the_report() -> None:
@@ -289,6 +299,72 @@ def test_gdscript_does_not_put_uid_in_the_report() -> None:
     cleaned = REPORT_GD.split("_clean_units", 1)[1]
     assert '"uid"' not in cleaned
     assert '"race_relations"' not in cleaned
+
+
+# --- 详细战况（023）--------------------------------------------------------------
+
+
+def _with_settlement(**over) -> dict:
+    """带详细战况的战报：每个座位有升级石和总金币，外加最后一战的统计。"""
+    payload = _payload(**over)
+    for seat in payload["seats"]:
+        seat["stones"] = {"sky": 2, "ren": 1}
+        seat["total_gold"] = 1480
+    payload["allies"] = ["圣骑守护", "暗影守护"]
+    payload["stats"] = [
+        {"own": 0, "slot": 3, "id": "unit_dark_dragon", "name": "暗黑巨龙", "star": 4,
+         "merc": False, "stack": 2, "dmg": 123456, "taken": 5000, "heal": 0},
+        {"own": 4, "slot": 0, "id": "merc_scorpio_death", "name": "死亡天蝎", "star": 0,
+         "merc": True, "stack": 0, "dmg": 900, "taken": 12000, "heal": 300},
+    ]
+    return payload
+
+
+def test_settlement_is_parsed(report_key) -> None:
+    report = battle_report.verify(_sign(report_key, _with_settlement()))
+    settle = report["settlement"]
+    assert settle["allies"] == ["圣骑守护", "暗影守护"]
+    assert len(settle["stats"]) == 2
+    assert settle["stats"][0] == {
+        "own": 0, "slot": 3, "id": "unit_dark_dragon", "name": "暗黑巨龙", "star": 4,
+        "merc": False, "stack": 2, "dmg": 123456, "taken": 5000, "heal": 0,
+    }
+    assert len(settle["seats"]) == 6
+    assert settle["seats"][0] == {"stones": {"sky": 2, "ren": 1}, "total_gold": 1480}
+
+
+def test_report_from_an_older_battle_server_has_no_settlement(report_key) -> None:
+    """023 之前的战斗服务器签的战报没有 stats：照收，详细战况是 None（不是空壳）。"""
+    report = battle_report.verify(_sign(report_key, _payload()))
+    assert report["settlement"] is None
+
+
+def test_bad_settlement_entries_are_dropped_not_the_whole_report(report_key) -> None:
+    """🔴 详细战况只是给人看的明细。为它拒掉整份战报，丢的是整局历史和排位结算。"""
+    payload = _with_settlement()
+    payload["stats"] = [
+        "不是字典",
+        {"own": 9, "id": "x"},                          # 座位号越界
+        {"own": 1, "id": "ok", "dmg": "abc", "name": "名" * 50, "star": 99},
+    ]
+    payload["seats"][2]["stones"] = "坏"
+    report = battle_report.verify(_sign(report_key, payload))
+    stats = report["settlement"]["stats"]
+    assert len(stats) == 1
+    assert stats[0]["dmg"] == 0 and stats[0]["star"] == 9
+    assert len(stats[0]["name"]) == battle_report.MAX_NAME_LEN
+    assert report["settlement"]["seats"][2]["stones"] == {}
+
+    payload["stats"] = "不是列表"
+    report = battle_report.verify(_sign(report_key, payload))
+    assert report["settlement"]["stats"] == []
+
+
+def test_settlement_stats_are_capped(report_key) -> None:
+    payload = _with_settlement()
+    payload["stats"] = payload["stats"][:1] * (battle_report.MAX_STATS_ENTRIES + 50)
+    report = battle_report.verify(_sign(report_key, payload))
+    assert len(report["settlement"]["stats"]) == battle_report.MAX_STATS_ENTRIES
 
 
 # --- 入库（假数据库）------------------------------------------------------------
@@ -306,10 +382,13 @@ class _FakeConn:
         self.existing = existing
         self.known = known
         self.seat_rows: list[tuple] = []
+        self.record_args: tuple = ()
 
     async def fetchval(self, sql, *args):
         if "credit_events" in sql:
             return 1               # ranked.settle 数「7 天内第几次」
+        if "insert into match_records" in sql:
+            self.record_args = args
         uid = args[0]
         if uid in self.existing:
             return None            # on conflict do nothing -> 没有 returning
@@ -370,6 +449,21 @@ async def test_record_is_idempotent(report_key, monkeypatch: pytest.MonkeyPatch)
     assert await battle_report.record(report) is True
     assert await battle_report.record(report) is False
     assert len(conn.seat_rows) == 6, "第二次不该再插一遍座位"
+
+
+@pytest.mark.anyio
+async def test_record_writes_settlement_as_jsonb(report_key, monkeypatch: pytest.MonkeyPatch) -> None:
+    conn = _FakeConn(set(), {PLAYER_A, PLAYER_B})
+    monkeypatch.setattr(db, "pool", lambda: _Pool(conn))
+    assert await battle_report.record(battle_report.verify(_sign(report_key, _with_settlement()))) is True
+    stored = json.loads(conn.record_args[13])       # 第 14 个参数 = settlement
+    assert stored["stats"][0]["id"] == "unit_dark_dragon"
+    assert stored["seats"][0]["total_gold"] == 1480
+
+    conn2 = _FakeConn(set(), {PLAYER_A, PLAYER_B})
+    monkeypatch.setattr(db, "pool", lambda: _Pool(conn2))
+    assert await battle_report.record(battle_report.verify(_sign(report_key, _payload(mid="b" * 32)))) is True
+    assert conn2.record_args[13] is None, "旧战报的详细战况要写 SQL null，不是字符串 'null'"
 
 
 @pytest.mark.anyio
