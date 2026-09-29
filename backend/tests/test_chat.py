@@ -133,7 +133,11 @@ _WHEN = dt.datetime(2026, 9, 11, 12, 0, tzinfo=dt.timezone.utc)
 def _fake_send(deliver_to: uuid.UUID | None, message_id: int = 41):
     calls: list[tuple] = []
 
-    async def _send(sender_id, target_code, body, client_msg_id):
+    async def _send(sender_id, target_code, body, client_msg_id, kind="text", payload=None):
+        # The route forwards the explicit message type and attachment payload.
+        # These cases exercise ordinary text, including cleaning and rate limits.
+        assert kind == "text"
+        assert payload is None
         calls.append((sender_id, target_code, body, client_msg_id))
         return chat.SendResult(
             message=chat.Message(message_id, sender_id, body, _WHEN),
