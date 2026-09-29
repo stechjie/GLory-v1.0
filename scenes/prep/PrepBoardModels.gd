@@ -859,6 +859,59 @@ func _setup_prep_board_model_view(board_frame: Control) -> void:
 	if not resized.is_connected(_queue_prep_model_layout_refresh):
 		resized.connect(_queue_prep_model_layout_refresh)
 	_queue_prep_model_layout_refresh()
+	_connect_prep_layout_guard()
+
+
+# ── 上阵光圈「持续守卫」 ─────────────────────────────────────────────────────
+#
+# 为什么需要（9.30 门禁实测定位，不是推理）：
+#   `board_frame.item_rect_changed` 只能捕获「board_frame 在**自己的父容器里**被
+#   重新排布」—— 那是它的**局部** rect 变了。但「拿到宝物后左面板多一个按钮」
+#   走的是另一条路：左侧羁绊面板变尺寸 ⇒ body/center 重新排布 ⇒ board_frame 被
+#   **祖先带着整体平移**，它自己的局部 position 没变 ⇒ **信号根本不发**。
+#
+#   实测（tools/prep_ring_layout_check 用例 A，走生产收尾 _finish_treasure_change）：
+#     grid 整体右移 78px，而 `_prep_model_root` 一次都没被隐藏过（说明
+#     `_apply_prep_model_layout_after_frames` 从没跑过），
+#     同一时刻 `frame.item_rect_changed.is_connected(...)` 仍然是 true。
+#   结果就是上阵光圈停在旧坐标、相对固定不动的 3D 石台偏 78px，一直到玩家做
+#   别的操作（比如点赌博，那条路径显式调了重排）才回正 —— 与用户实测一致。
+#
+# 所以再加一道与「谁引起的、什么时候引起」全都无关的防线：每帧比一次 grid 的
+# 全局位置，和上次对齐时用的值不同就原地补一次对齐。常态成本只是一次 Vector2
+# 比较，只有真的挪了才重算。
+#
+# 边界（都用实测定的，别顺手扩）：
+#   * 只补 2D 那一层，**不碰** `_reposition_existing_prep_models()`：3D 棋子是
+#     固定投影到石台上的，被祖先带着平移的是 2D 层，把棋子也拽走只会错得更远。
+#     实测偏移的也只有 2D 光圈。
+#   * **不走** `_queue_prep_model_layout_refresh()`：那条路会先把 3D 模型藏两帧
+#     再放出来（防闪烁设计），每帧这么做会闪成一片。
+#   * 锚点由 `_realign_prep_board_cells()` 自己在末尾写入，谁调的都算对过账。
+var _prep_aligned_grid_pos := Vector2.INF
+
+
+func _connect_prep_layout_guard() -> void:
+	var tree := get_tree()
+	if tree == null:
+		return
+	if not tree.process_frame.is_connected(_tick_prep_board_layout_guard):
+		tree.process_frame.connect(_tick_prep_board_layout_guard)
+
+
+func _tick_prep_board_layout_guard() -> void:
+	if _board_hud == null or _board_hud.grid == null:
+		return
+	if _prep_river_camera == null or _prep_river_viewport == null:
+		return
+	if not _board_hud.grid.is_inside_tree():
+		return
+	var now := _board_hud.grid.global_position
+	if _prep_aligned_grid_pos.is_finite() and now.is_equal_approx(_prep_aligned_grid_pos):
+		return
+	_realign_prep_board_cells()
+	_realign_prep_standby_cells()
+	_update_prep_board_glow()
 
 func _queue_prep_model_layout_refresh() -> void:
 	_prep_layout_refresh_version += 1
@@ -1190,6 +1243,9 @@ func _realign_prep_board_cells() -> void:
 		var u := lerpf(BOARD_STONE_U.x, BOARD_STONE_U.y, (float(col) + 0.5) / float(cols))
 		var v := lerpf(BOARD_STONE_V.x, BOARD_STONE_V.y, (float(row) + 0.5) / float(rows))
 		_fit_cell_to_screen_polygon(child, _plane_circle_screen_pts(u, v, BOARD_CELL_RADIUS), grid_origin)
+	# 记下这次对齐用的原点，「持续守卫」靠它判断棋盘有没有被挪走（见
+	# `_tick_prep_board_layout_guard` 的注释）。
+	_prep_aligned_grid_pos = _board_hud.grid.global_position
 	_sync_prep_board_readability_geometry()
 	_sync_prep_board_readability_state()
 

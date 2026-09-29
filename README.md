@@ -2324,3 +2324,45 @@ A 费用档位 / B 教程恒免费（刷 **999 次**仍为 0）/ C **递归扫 `
 ★ **未做真机 / 观感验收，未重新导出 EXE / APK。** 本轮只跑「改动面 + 相邻面」13 条，**未跑 `tools/*_check.tscn` 全集**。既存红 `procedural_ui_ratchet`(3) / `dynamic_call`(4) / `prep_text_coverage`(1) / `voice`(8) 与本轮无关（这些门禁不加载本轮改动的模块）。`live_stats` 只在离线自测路径生成；**联机对局本就走实时模拟、不经过 replay**，故不受影响，但未做真机复核。
 
 详见[9.29 离线自测回放侧面板不实时修复记录](docs/9.29离线自测回放侧面板不实时修复记录.md)。
+
+## 2026-09-30：《bug提交及优化.docx》3 条（羁绊神3·吸血 · 自爆灵被技能击杀 · 上阵光圈偏移）
+
+**① 羁绊神3·吸血对非神族单位也生效。** 文案真源 `scenes/prep/panels/SynergyPanel.gd:154`：「**神族单位**造成伤害时回复实际伤害 20% 生命」——限定的是**攻击者的种族**。`BattleSimulator._perform_attack` 里原来取到**队伍**羁绊 `syn` 就直接回血，没判攻击者种族 ⇒ 队伍凑够 3 神后，任何攻击者（含佣兵、含非神族）普攻都回 20% 血。同函数的暗族分支本来就有 `race == "dark"` 判定，神族这条漏了。修法：补 `and str(d.get("race", "")) == "god"`，与暗族对齐。
+
+**② 自爆灵被技能击杀时自爆失效。** 爆炸本体原来**只**写在 `_on_unit_killed` 里，而那是**普攻致死**入口 ⇒ 被技能 / AOE 打死时整段不执行（「母灵」类死亡特性早已迁到 per-tick 清扫，自爆灵没跟着迁）。修法：爆炸本体抽成 `BattleSimTreasures.apply_death_poison_explosion()`，新增 per-tick 清扫 `_process_death_explosions()` 覆盖**普攻 / 技能 / AOE 全部致死方式**，两边靠 `death_explosion_done` 去重；普攻那条路保持原样（死亡瞬间即时引爆）。★ 清扫**必须排到胜负判定之前**：`step_state` 第 411 行一旦 `p_alive.is_empty()` 就 early return，「自爆灵是最后一个阵亡单位」时（真实战斗里很常见）tick 尾部那处清扫永远轮不到 ⇒ 现在两处调用（胜负判定前兜底 + tick 尾部补炸）。
+
+**③ 选「慷慨命运」后上阵光圈偏移、点赌博又恢复。** 宝物入袋会改变左侧羁绊面板与商店内容 ⇒ 棋盘框 `board_frame` 被 HBox 整体**平移**（不是 resize），而 `item_rect_changed` 只在 rect 变化的当帧发出，落在 `_apply_prep_model_layout_after_frames` 稳定轮询窗口之外的二次平移会被漏掉，必须显式再排一次。四条相关路径原来只有两条做了：联机入袋 ✅、赌博 ✅（tester 原话「点赌博又恢复原样」正是它）、**黄金祭坛 ❌、单机选宝藏 ❌**。修法：抽共享收尾 `_finish_treasure_change(bonus_before)`（`_refresh_all` + `_queue_bonus_fx` + `_queue_prep_model_layout_refresh`），四条路径走同一条；祭坛另补 `_queue_prep_model_layout_refresh()`。★「两条路径各写一份 = 只修一条」本轮第三次撞上同一形状（神3/暗族、普攻/技能致死、联机/单机），所以这次直接抽成**唯一写入点**。
+
+**验证。** 新建门禁 `tools/bug0930_check.tscn`：**PASS checked=55**（行为用例走 `BattleSimulator.step_state` **真实入口**、不直接调清扫函数；体检断言 `MIN_EXPECTS=45`）。取证探针实跑：`probe_lifesteal.gd` 神族 `+4` / 非神族 `+0`；`probe_bomb.gd` 技能致死掉血 363 + 中毒、普攻致死同值、重复扫额外掉血 0。变异 **7 处全 RED + 按 sha256 还原 MATCH**（含「基线必须先绿」——本轮才从注释落成代码）。关联门禁批跑 **20 条 / 18 PASS**；两条非 PASS（`treasure_set_effect` 的 `element_set`、`four_star_values` 的 `defense_shred_uncapped`）**已用「临时还原神3那行再跑」实证为既存红**（读数一模一样，同时 `bug0930` 由 PASS 转 `FAIL failures=2`）⇒ 与本轮无关。
+
+★ **踩坑**：批跑器上一版的格式识别只认 `CHECK_RESULT`，把**全 PASS** 的 `dark_undead_20260929`（自有输出 `DARK_UNDEAD_20260929_RESULT failed=0`）误报成 `NO_RESULT` ⇒ 已扩成三格式识别并给解析器本身加了 7 条自检断言。
+
+★ **第 3 条未做观感 / 真机验收**（需要真实 3D 备战界面，重 3D 场景不能 headless `new()`）：依据是**代码路径不对称 + 注释里 tester 的原话**，门禁只能做**结构断言**（共享收尾 + 四条路径接线）。请实机过一遍。**未跑 `tools/*_check.tscn` 全集**（只跑改动面 + 相邻面 20 条），**未重新导出 EXE / APK**。
+
+详见[9.30 三条修复记录](docs/9.30神3吸血与自爆灵与光圈偏移修复记录.md)。
+
+## 2026-09-31：上阵光圈对齐（持续守卫）—— 9.30 第 3 条的真正根因
+
+用户复报「慷慨命运依旧会偏移光圈，点击后恢复」并附三张截图。上一轮那条只做了**结构断言**（当时就声明了未做观感验收），这一轮不再推理，直接建门禁把像素量出来。
+
+**先说判据为什么成立（不是自证）。** 上阵格子的屏幕位置 = `grid.global_position + cell.position`；而投影链路 `_world_to_main_screen` 的三个输入 —— river 相机、`PREP_RIVER_VIEWPORT_SIZE`（常量）、主窗口尺寸 —— **全都与面板布局无关**，3D 石台在备战期间也固定不动 ⇒ **这个屏幕坐标必须恒定**，一旦变化就是 bug，不需要拿「看起来对不对」当判据。
+
+**复现。** 新建 `tools/prep_ring_layout_check.gd/.tscn`，三个用例**各用一个独立 PrepScreen 实例**（共用一个实例时，前一个用例留下的偏差会被后一个的基准吸收，出现「A 红 B 也红」却说不清各自责任 —— 第一版就是这么写的，已改）：**A** 走生产收尾函数 `_finish_treasure_change`（用户真实路径）、**B** 往 board_frame 所在 HBox 前插 120px 占位（确定性挤动）、**C** 同 B 但**不调用任何重排**（单验 `item_rect_changed` 信号兜底能否独立成立）。每例都带**前置体检**：必须实测到 `grid.global_position` 真的变了，否则判 FAIL —— 不许拿「这台环境挤不动面板」冒充通过。判据取**终态**（最后 10 帧的最大漂移 ≤ 1.5px）而非全程峰值：布局刚变的那一两帧本来就没补偿，属过渡。
+
+**根因：`item_rect_changed` 压根没响。** `Control.item_rect_changed` 只在**自己的局部 rect**（position/size）变化时发出。而「拿到宝物 ⇒ 左侧羁绊面板多一个赌博按钮 ⇒ 面板变尺寸」走的是另一条路：面板变尺寸 ⇒ `body`/`center` 重新排布 ⇒ **board_frame 被祖先带着整体平移**，它自己的局部 position 没变 ⇒ **信号根本不发**。三条诊断把责任钉死：
+
+| 诊断 | 结果 | 排除了什么 |
+|---|---|---|
+| 偏了之后手动补一次 `_realign_prep_board_cells()` | drift 78.00 → **0.00** | 重排函数本身有效，问题是**没被调到** |
+| 跟踪 `_prep_model_root.visible`（协程跑到最后才会设回 true） | 用例 A **轨迹为空** | `_apply_prep_model_layout_after_frames` **从没跑过** |
+| 跟踪 `board_frame.global_position` + 信号连接状态 | frame 位移 78px、`is_connected=true` | 信号**连着、但没响** |
+
+**修法：加一道与「谁引起的平移、什么时候引起的」全都无关的持续守卫。** 接 `SceneTree.process_frame`（**不写 `_process`** —— 那会被继承链上的子类覆盖：`PrepScreen ← PrepBoardController ← PrepFlowController ← PrepUI ← PrepBoardModels`），每帧比一次 `grid.global_position`，与上次对齐时用的锚点不同就原地补一次 2D 对齐；锚点由 `_realign_prep_board_cells()` **自己在末尾写入**，谁调的、什么时候调的都算对过账，不需要第二处维护。两条边界都是实测定的：**只补 2D 那一层、不碰 `_reposition_existing_prep_models()`**（3D 棋子是固定投影到石台上的，被祖先带着平移的是 2D 层，实测偏的也只有 2D 光圈，把棋子也拽走只会错得更远）；**也不走 `_queue_prep_model_layout_refresh()`**（那条路会先把 3D 模型藏两帧再放出来，每帧这么做会闪成一片）。常态成本 = 一次 `Vector2` 比较。
+
+**验证。** `prep_ring_layout` **PASS checked=17**；修复后三用例 `peak` 从 78 / 128 / 104 **全部降到 0.00**（`over_threshold_frames=0`，连过渡帧都没有了）。变异：**M1**（删掉显式重排、守卫在）由 RED 变 **GREEN** —— 守卫能独立顶住；**M2**（M1 再叠加「断开守卫」= 两条防线全拿掉）**RED**（A `tail=78.00 settled_at=-1`）—— 保证加了守卫之后门禁仍有判别力，不产生新的假绿。还原两文件 sha256 `c48305fca433d595` / `226183ec7bd863f7` **双 MATCH**。
+
+**同批第一条「神3吸血其他种族依然有效」：代码层复查未发现第二条路径。** 逐条排除：吸血纹章 `def_lifesteal_emblem` 需要**持有该宝物**才生效（`_f_has_treasure` 为前提，且用户明确「左下角都没选宝」）；佣兵 `mercenaries.json` 里 `"race"` 出现 **0 次** ⇒ 恒不满足 `race == "god"`；佣兵 `rules.affected_by_treasure=false` 且 `_ignores_treasure` 排除佣兵；`god_lifesteal` 全工程只有 `SynergyService.gd:36`（定义）与 `BattleSimulator.gd:1009`（读）各一处；回血出口只有 `_heal_unit`（`BattleSimShared.gd:1447` 一处 `unit.hp = mini(...)`）；离线自测不是旧录像（`OfficeTestSim.compute_test_replay_async:300` 内部 `build_test_state` **重新模拟**）。⇒ **待确认复现时跑的是哪个可执行包**：`GLory-v1.0`、`GLory-codex` 以及两处导出产物路径（`Desktop/GloryBeta0908.apk`、`Glory steam version/glory_test.exe`）都**不存在或都不含 9.30 那一刀**。
+
+★ **未做真机观感验收**；批跑只覆盖「备战界面 + 本轮直接相邻」面，**批跑 ≠ 全集**；**未重新导出 EXE / APK**。
+
+详见[9.31 备战光圈对齐持续守卫修复记录](docs/9.31备战光圈对齐持续守卫修复记录.md)。
