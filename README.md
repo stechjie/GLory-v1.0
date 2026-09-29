@@ -1,5 +1,12 @@
 # Glory Beta 0.04
 
+## 2026-09-30 近战绕路与可达目标选择
+
+- 近战追击受阻时，搜索能够站立且进入攻击距离的位置，沿避开单位身体的路径绕行；原目标没有可用攻击位置时，选择同优先路线内可达的其他敌人。附近已有可攻击敌人时立即改打，保留嘲讽和原有分路目标限制。
+- 使用真实体积扫掠检查每段路径，兼容大体积单位；每 tick 校验下一段，目标移动或队友堵路后重新规划。缓存有效期 0.8 秒，每 tick 最多规划 2 次、每次最多搜索 128 个节点，无法找到路径时继续碰撞约束下的移动并定期重试。
+- 专项验证覆盖队友墙、无可站立攻击位、完全包围、解除堵路、动态障碍、嘲讽、分路和大体积目标。详见 [近战寻路修复与检验](docs/近战寻路修复_20260930.md)。这是有界搜索，不保证任何拥挤阵型都能立即找到路线。
+- 联机战斗须同步更新客户端与 Godot 战斗服务端并重新启动服务端；现有 EXE/APK 需要重新导出。本次只修改源码，未部署远端或重新打包。
+
 ## 2026-09-29 最终战结算与返回自定义房间
 
 - 胜负页改为「查看详情」，进入可纵向滚动的最终结算页，展示两队六席阵容、佣兵、宝藏/联动、个人获得的升级石、整局获得总金币及最终一战的伤害/承伤/治疗。图标支持点击查看名称、星级和技能层数。
@@ -2290,3 +2297,23 @@ A 费用档位 / B 教程恒免费（刷 **999 次**仍为 0）/ C **递归扫 `
 **部署（顺序要紧）：** 🔴 Supabase 先跑 `023` → 账号服务器 `update.sh`（反过来就是 09-29 好友列表 500 那种事）→ 战斗服务器重新打包部署 → 出新客户端包。Supabase 里清旧的错记录：`delete from match_records;`（match_seats 跟着删，建议在新战斗服务器上线后跑）。协议号不变。
 
 **验证。** 后端全量 693 过（含真库：详细战况原样存取、改名显示新名字、注销显示「已注销玩家」、旧局 settlement 为 null）。Godot：`seat_identity` 13、`battle_report` 52、`match_history_ui` 77、`final_settlement` 38、`room_service` 137、`matchmaking` 47、`room_invite` 83、房间动作两条、`cold_parse_chain` 143 全过；`voice` 只红 Windows dll 过期一条；`adversarial_client` 的红都是旧账（另有 `tx_idempotency` 两条：祭坛已改成扣 2 HP、用例还按 1 算）。用样例数据实渲截了四张图给用户看。★ 未做真机 / 线上验证。
+
+## 2026-09-29（第三批）：离线自测「大祭司技能没生效」——真因在面板，不在技能
+
+用户复报「离线自测点棋子，面板攻速等属性还是不实时」，截图里大祭司的技能在面板上看不出效果，并要求**先判定是技能未生效还是面板不正确**（技能问题则停下等指令）。★ 用户纠正：截图下方**两只都是大祭司**（不是神侍）——两只大祭司互为「最近友军」，技能本应互相加强。
+
+**判定：技能生效，面板不正确。** 复刻该场景实测（`work/_qa_929_syn/probe_priest.gd`，1★ `atk26 / aspd0.900`）：真实模拟里 `t0: 26/0.900` → `t0.1: 28/1.050` → `t6.2: 30/1.200`；4★ 攻击 `90 → 119 → 157 → 207`、攻速 `0.900 → 1.350 → 1.800 → 2.250`。**技能既释放又生效、叠层也对** ⇒ 按用户指令继续修面板。
+
+**根因（第三轮，前两轮修的是另一条路）。** 离线自测有两条路径：实时模拟侧（第一、二轮已修）和**回放侧**——点「开始测试」走 `OfficeTestSim.compute_test_replay_async`，是**先录帧、后回放**。`BattleSimulator._replay_capture_frame` 只写 **13 列冻结结构**（uid/pos/hp/alive/attack_count/skill_ready/shield/skill_stacks/statuses/damage_dealt/…），**不含 `atk` / `attack_speed` / `defense` / `crit_bonus`**；`BattleScreen._apply_replay_frame` 只回填帧里有的字段 ⇒ 回放侧 fighter 里这四个字段**永远是 `def` 基准值** ⇒ 面板一路读基准（26 / 0.90），**技能叠多少层都不动**。
+
+**修法：不给 `frames` 加列**（改冻结哈希、联机回放字节数会漂）⇒ 另带一条**活字段旁路快照 `live_stats`**：只在数值变化的那一帧记一条 `{f:帧号, atk, as, df, cb}`；面板查「≤ 当前帧的最近一条」补进**副本**（`patched_with_live_stats`）。★ **必须写副本**：回放侧 fighter 是跨帧复用对象，直接改会串帧污染。联机回放 payload 没有这个键 ⇒ 走原路径，行为不变。
+
+**验证。** 端到端探针 `probe_priest2.gd`：frame=0 面板 `28 / 1.050`、frame=61 面板 `30 / 1.200`、frame=91 保持；**空 live_stats 时 frame=91 面板 `26 / 0.900`（旧行为）** ⇒ 联机路径未被改坏。门禁 `officetest_stat_panel` 从 **45 扩到 70**（新增端到端 + 结构接线两个用例，体检断言 `MIN_EXPECTS` 40→55）；变异 **4 处全红**（删录制调用 / 删 payload 赋值 / 面板跳过 patch / patch 写原对象），按 sha256 还原 `MATCH`。
+
+**回归：13 条关联门禁全 PASS** —— `officetest_stat_panel` **70**、`officetest_online_parity` PASS（自有格式）、`replay_delivery` 159、`replay_transfer` 119、`replay_transport` 139、`replay_transport_plain` 63、`replay_identity_split` 42、`battle_playback_stability` 145、`determinism` 111、`cold_parse_chain` 143、`team_lobby_seat_label` 35、`match_history_ui` 77、`battle_team_color` 24。
+
+★ **踩坑**：批跑脚本加了 `--quit-after 180` 会让长门禁（`battle_playback_stability`、`replay_transport`）**在跑完前被强制退出** ⇒ 表现成 `NO_RESULT` 的**假失败**。批跑器原参数是纯 `--headless --path`（不带 quit-after，靠 `subprocess timeout=300` 兜底）。已修正并写进注释。
+
+★ **未做真机 / 观感验收，未重新导出 EXE / APK。** 本轮只跑「改动面 + 相邻面」13 条，**未跑 `tools/*_check.tscn` 全集**。既存红 `procedural_ui_ratchet`(3) / `dynamic_call`(4) / `prep_text_coverage`(1) / `voice`(8) 与本轮无关（这些门禁不加载本轮改动的模块）。`live_stats` 只在离线自测路径生成；**联机对局本就走实时模拟、不经过 replay**，故不受影响，但未做真机复核。
+
+详见[9.29 离线自测回放侧面板不实时修复记录](docs/9.29离线自测回放侧面板不实时修复记录.md)。

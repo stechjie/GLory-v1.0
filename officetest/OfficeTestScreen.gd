@@ -88,6 +88,12 @@ var _detail_text: RichTextLabel
 var _stat_panel: PanelContainer
 var _stat_text: RichTextLabel
 var _hover_unit_id := ""
+# 9.29 面板不实时第三问：回放帧是 13 列冻结结构，没有 atk/attack_speed/defense/crit_bonus，
+# 面板只能退回 def 基准值（大祭司被强化到 28/1.05 仍显示 26/0.90）。离线自测录制时
+# 另带一份活字段旁路快照（OfficeTestSim.compute_test_replay_async 的 live_stats），
+# 播放时由 _patched_with_live_stats 查「≤ 当前帧的最近一条」补进面板副本。
+# 联机回放没有这份数据 → 空字典 → 面板行为与旧版完全一致。
+var _live_stats: Dictionary = {}
 
 
 func _tt(cn: String, en: String) -> String:
@@ -908,6 +914,7 @@ func _start_test_demo() -> void:
 		_return_to_edit()
 		return
 	_start_replay(replay)
+	_live_stats = replay.get("live_stats", {})
 	# 9.19：这里原本是 `_battle_music_player.play()`，而那个 AudioStreamPlayer
 	# 在 9.17「BGM 统一走 MusicService、五处页面自带播放器全删」时已被移除 ——
 	# 留下的是一个**已不存在的成员**，导致本脚本整个编译不过、离线自测打不开。
@@ -953,6 +960,7 @@ func _return_to_edit() -> void:
 	_replay = {}
 	_replay_by_uid = {}
 	_replay_frame = 0
+	_live_stats = {}
 	_finished = false
 	_return_emitted = false
 	_sim_accumulator = 0.0
@@ -1164,6 +1172,44 @@ func _is_local_owned_unit(sim_uid: String) -> bool:
 	return owner == 0
 
 
+# 回放帧没有 atk/attack_speed/defense/crit_bonus（13 列冻结，不能加列 —— 加列会改
+# 联机回放的冻结哈希），所以离线自测录制时另带一份「活字段旁路快照」。
+# 这里查「≤ 当前帧的最近一条」把四个活字段补进**副本**再交给面板口径函数 ——
+# 四个 live_* 本来就是为活 fighter 写的，statuses 已在帧里，补上活字段后它们全部自动正确。
+# 联机回放 / 旧录制没有这份数据 → 原样返回，行为与旧版一致。
+# 实现抽成 static（探针/门禁直调，不需要实例化重型场景）；实例包装只负责带成员。
+static func patched_with_live_stats(f: Dictionary, live_stats: Dictionary, frame: int) -> Dictionary:
+	if live_stats.is_empty():
+		return f
+	var entries_value = live_stats.get(str(f.get("uid", "")), null)
+	if entries_value == null or typeof(entries_value) != TYPE_ARRAY:
+		return f
+	var entries: Array = entries_value
+	if entries.is_empty():
+		return f
+	var best: Dictionary = {}
+	for e in entries:
+		if typeof(e) != TYPE_DICTIONARY:
+			continue
+		var ed: Dictionary = e
+		if int(ed.get("f", -1)) <= frame:
+			best = ed
+		else:
+			break
+	if best.is_empty():
+		return f
+	var out: Dictionary = f.duplicate()
+	out["atk"] = int(best.get("atk", 0))
+	out["attack_speed"] = float(best.get("as", 0.0))
+	out["defense"] = int(best.get("df", 0))
+	out["crit_bonus"] = float(best.get("cb", 0.0))
+	return out
+
+
+func _patched_with_live_stats(f: Dictionary) -> Dictionary:
+	return patched_with_live_stats(f, _live_stats, int(_replay_frame))
+
+
 func _refresh_stat_panel() -> void:
 	if _stat_panel == null or _hover_unit_id.is_empty():
 		return
@@ -1172,7 +1218,7 @@ func _refresh_stat_panel() -> void:
 		# 这枚棋子本帧已经阵亡/离场：不要把上一帧的旧数字留在屏幕上。
 		_stat_panel.visible = false
 		return
-	var f: Dictionary = value
+	var f: Dictionary = _patched_with_live_stats(value)
 	var def_value = f.get("def", {})
 	var def: Dictionary = def_value if typeof(def_value) == TYPE_DICTIONARY else {}
 	var color := _fighter_display_color(f)

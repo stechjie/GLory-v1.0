@@ -285,6 +285,17 @@ static func build_test_state(config: Dictionary, display_only := false) -> Dicti
 
 # 与 BattleSimulator.compute_team_replay_async 同构,只是状态来自 build_test_state,
 # 模拟/录制全部引用原版 static。
+#
+# 9.29 用户复报「面板攻速不实时」第三问：离线自测的「开始测试」走的是**先录帧后回放**
+# （本函数 + BattleScreen._apply_replay_frame），而回放帧是 **13 列冻结结构**
+# （uid/pos/hp/alive/attack_count/skill_ready/shield/skill_stacks/statuses/damage_dealt/...），
+# **没有 atk / attack_speed / defense / crit_bonus** ⇒ 回放侧的 fighter 永远只有 def 基准值，
+# 面板的「攻击 / 攻速 / 防御 / 暴击」就恒等于面板打开前的那份基准（大祭司被队友强化到
+# 28/1.05，面板仍显示 26/0.90 就是这么来的）。
+# 修复：**不能给 frames 加列**（改冻结哈希、联机回放会漂），所以在这条**离线自测专用**
+# 录制循环里另带一份「活字段旁路快照」 live_stats：uid -> [ {f,atk,as,df,cb}, ... ]，
+# 只在数值真正变化的那一帧记一条。OfficeTestScreen 播放时查「≤ 当前帧的最近一条」
+# 补进面板副本。联机回放没有这份旁路 → 空字典 → 面板原样走 def 基准，行为不变。
 static func compute_test_replay_async(config: Dictionary, budget_usec: int = 8000) -> Dictionary:
 	var state := build_test_state(config)
 	var roster: Dictionary = {}
@@ -292,6 +303,9 @@ static func compute_test_replay_async(config: Dictionary, budget_usec: int = 800
 	# 和 BattleSimulator 的回放循环一样，捕获每帧的视觉事件（母灵处决 / 屏震 /
 	# 技能演出），否则 officetest 回放里这些只在 live sim 出现的事件会全部丢失。
 	var frame_events: Array = []
+	# 活字段旁路快照（离线自测专用，见上注释）。键 = uid，值 = 按帧升序的变化记录。
+	var live_stats: Dictionary = {}
+	var last_live: Dictionary = {}
 	BattleSimulator._replay_capture_roster(state, roster)
 	var steps := 0
 	var tree := Engine.get_main_loop() as SceneTree
@@ -301,10 +315,46 @@ static func compute_test_replay_async(config: Dictionary, budget_usec: int = 800
 		steps += 1
 		BattleSimulator._replay_capture_roster(state, roster)
 		BattleSimulator._replay_capture_frame(state, frames, frame_events)
+		_capture_live_stats(state, frames.size() - 1, live_stats, last_live)
 		if tree != null and Time.get_ticks_usec() - slice_start > budget_usec:
 			await tree.process_frame
 			slice_start = Time.get_ticks_usec()
-	return BattleSimulator._team_replay_payload(state, roster, frames, frame_events)
+	var payload: Dictionary = BattleSimulator._team_replay_payload(state, roster, frames, frame_events)
+	if not live_stats.is_empty():
+		payload["live_stats"] = live_stats
+	return payload
+
+
+# 逐帧比对四项活字段（atk / attack_speed / defense / crit_bonus），变了才记一条。
+# 与 frames 的索引严格对齐：调用点传进来的 frame_index 就是 _replay_capture_frame 刚写
+# 进去的那一帧下标（frames.size()-1），面板用它做「≤ 当前帧取最近一条」的查询。
+static func _capture_live_stats(state: Dictionary, frame_index: int, live_stats: Dictionary, last_live: Dictionary) -> void:
+	for f: Dictionary in (state.get("player", []) + state.get("enemy", [])):
+		var uid := str(f.get("uid", ""))
+		if uid.is_empty():
+			continue
+		var atk := int(f.get("atk", 0))
+		var aspd := float(f.get("attack_speed", 0.0))
+		var dfn := int(f.get("defense", 0))
+		var cb := float(f.get("crit_bonus", 0.0))
+		var prev: Variant = last_live.get(uid, null)
+		var changed := true
+		if typeof(prev) == TYPE_ARRAY and (prev as Array).size() == 4:
+			var p: Array = prev
+			changed = int(p[0]) != atk or absf(float(p[1]) - aspd) > 1e-6 \
+				or int(p[2]) != dfn or absf(float(p[3]) - cb) > 1e-6
+		if not changed:
+			continue
+		last_live[uid] = [atk, aspd, dfn, cb]
+		if not live_stats.has(uid):
+			live_stats[uid] = []
+		(live_stats[uid] as Array).append({
+			"f": int(frame_index),
+			"atk": atk,
+			"as": aspd,
+			"df": dfn,
+			"cb": cb,
+		})
 
 
 # 编辑器格点的模拟坐标 = BattleSimShared._place_in_lane 的同款公式

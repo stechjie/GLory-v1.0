@@ -2,6 +2,7 @@ class_name BattleSimulator
 extends BattleSimShared
 
 const BattlePresentationEventSchema := preload("res://scripts/battle/BattlePresentationEvent.gd")
+const MeleeNavigation := preload("res://scripts/battle/MeleeNavigation.gd")
 
 # 教学专用战斗。唯一入口是 BattleScreen 的 `team_mode == false` 分支，而 team_mode
 # 只有 Main._select_language() → TutorialMode.start() 这一条路会留成 false，
@@ -663,7 +664,7 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 		if int(f.get("_switch_cooldown", 0)) > 0:
 			f._switch_cooldown = int(f.get("_switch_cooldown", 0)) - 1
 		if int(f.get("_no_progress_ticks", 0)) >= NO_PROGRESS_TICKS \
-				and int(f.get("_switch_cooldown", 0)) <= 0:
+				and int(f.get("_switch_cooldown", 0)) <= 0 and not MeleeNavigation.applies(f):
 			if int(f.get("_switch_attempts", 0)) >= MAX_SWITCH_ATTEMPTS:
 				f._switch_attempts = 0
 				f._switch_cooldown = SWITCH_COOLDOWN_TICKS
@@ -685,6 +686,8 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 			f._no_progress_ticks = 0
 			f.erase("_progress_uid")
 		var target := _select_attack_target(f, opponents, target_index, bodies)
+		var navigation := MeleeNavigation.choose(f, target, opponents, bodies, elapsed, state)
+		target = navigation.target
 		if str(f.get("frenzy_target_uid", "")) != str(target.get("uid", "")):
 			f.frenzy_stacks = 0
 			f.frenzy_target_uid = str(target.get("uid", ""))
@@ -724,9 +727,11 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 			if pruned.size() != avoided_now.size():
 				f.avoid_target_uids = pruned
 		if not in_range:
-			var step := minf(float(f.move_speed_px) * StatusEffectService.move_speed_multiplier(f) * TICK_SEC, maxf(0.0, dist - attack_distance))
-			if dist > 0.001:
-				_move_without_pushing(f, delta.normalized() * step, bodies)
+			var move_delta: Vector2 = Vector2(navigation.waypoint) - Vector2(f.pos)
+			var remaining := move_delta.length() if f.has("_melee_route") else maxf(0.0, dist - attack_distance)
+			var step := minf(float(f.move_speed_px) * StatusEffectService.move_speed_multiplier(f) * TICK_SEC, remaining)
+			if move_delta.length() > 0.001:
+				_move_without_pushing(f, move_delta.normalized() * step, bodies)
 		elif elapsed >= float(f.next_attack):
 			# 无普攻的单位（法师，9.14 反馈：文案写「无普攻」但实测会普攻）。
 			# 只跳过攻击分支 —— 上面的移动分支照常执行，所以法师仍然会走到射程
