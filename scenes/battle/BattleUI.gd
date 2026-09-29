@@ -365,6 +365,8 @@ func _settlement_preview(result: Dictionary) -> String:
 	var interest := EconomyService.base_interest(before_interest)
 	if GameState.owned_treasures.has("money_compound"):
 		interest += int(floor(float(before_interest) * 0.05))
+		if not GameState.gold_spent_this_round:
+			interest += int(floor(float(before_interest) * 0.03))
 	interest += EconomyService.pet_interest_bonus(before_interest, PlayerProfile.get_active())
 	var camp_income := GameState.carrot_camp_income()
 	if merchant_gold > 0:
@@ -374,8 +376,10 @@ func _settlement_preview(result: Dictionary) -> String:
 	if consolation_gold > 0:
 		lines.append(tr("settle_consolation") % [GameState.loss_streak + 1, consolation_gold])
 	if GameState.owned_treasures.has("def_formation_heal"):
-		var formation_heal := 2 if TreasureService.has_linkage("link_hu_pai_master") else 1
+		var formation_heal := 1 if win or bool(result.get("is_draw", false)) else 2
 		lines.append(tr("settle_formation_heal") % formation_heal)
+	if GameState.owned_treasures.has("money_golden_altar") and GameState.golden_altar_uses == 0:
+		lines.append(tr("settle_altar_heal"))
 	if GameState.owned_treasures.has("money_lucky_envelope"):
 		lines.append(tr("settle_lucky_envelope"))
 	if TreasureService.has_linkage("link_money_magic"):

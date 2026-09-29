@@ -390,7 +390,7 @@ func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
 			# 9.17：买不起 = 按钮被拒绝。
 			SfxService.play(SfxService.CUE_UI_REJECT)
 			return
-		GameState.gold -= cost
+		GameState.spend_gold(cost)
 		GameState.board_slots[board_index] = incoming
 		GameState.shop_sold[shop_index] = true
 		_shadow_report_buy(shop_index, incoming)
@@ -402,7 +402,7 @@ func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
 			return
 		if not _merge_copies_into_cell(target, incoming, [board_index], []):
 			return
-		GameState.gold -= cost
+		GameState.spend_gold(cost)
 		GameState.shop_sold[shop_index] = true
 		_shadow_report_buy(shop_index, incoming)
 		_shadow_report_merge()
@@ -442,7 +442,7 @@ func _buy_or_merge_shop_to_bench(shop_index: int, bench_index: int) -> void:
 			# 9.17：买不起 = 按钮被拒绝。
 			SfxService.play(SfxService.CUE_UI_REJECT)
 			return
-		GameState.gold -= cost
+		GameState.spend_gold(cost)
 		GameState.bench_slots[bench_index] = incoming
 		GameState.shop_sold[shop_index] = true
 		_shadow_report_buy(shop_index, incoming)
@@ -454,7 +454,7 @@ func _buy_or_merge_shop_to_bench(shop_index: int, bench_index: int) -> void:
 			return
 		if not _merge_copies_into_cell(target, incoming, [], [bench_index]):
 			return
-		GameState.gold -= cost
+		GameState.spend_gold(cost)
 		GameState.shop_sold[shop_index] = true
 		_shadow_report_buy(shop_index, incoming)
 		_shadow_report_merge()
@@ -988,7 +988,7 @@ func _on_refresh_shop() -> void:
 	# 口径与 NetworkService.request_shop_refresh() 完全一致（那里发的也是扣费前的
 	# GameState.gold，扣费由回执处理）。
 	_shadow_report("shop_refresh", {"gold": GameState.gold})
-	GameState.gold -= cost
+	GameState.spend_gold(cost)
 	GameState.shop_refresh_uses_this_round += 1
 	# 服务端摇好的新一轮商店随回执/下一份 room_state 回来，
 	# _roll_shop() 里的 _adopt_server_shop() 负责采用它。
@@ -1058,12 +1058,12 @@ func _roll_shop_tier(rng: RandomNumberGenerator) -> int:
 # 定价改为委托服务端的权威实现 EconomyLedger.unit_cost()。
 #
 # 抽这一步的起因：这里原本有一份与 EconomyLedger.unit_cost() **逐行相同**的公式
-# （基础价 → shop_cost_multiplier → link_clearance_sale ×0.6 / money_discount ×0.8，
+# （基础价 → shop_cost_multiplier → link_clearance_sale ×0.4 / money_discount ×0.7，
 #  两者互斥、不叠加，每步都 maxi(1, ceil(...))）。同一套算钱逻辑存两份，
 # 改一处忘另一处 = 客户端显示一个价、服务端扣另一个价，而且不会有任何报错。
 # 服务端那份是权威裁决方，所以以它为准。
 func _shop_unit_cost(unit_def: Dictionary) -> int:
-	return EconomyLedger.unit_cost(unit_def, GameState.owned_treasures)
+	return EconomyLedger.unit_cost(unit_def, GameState.owned_treasures, GameState.team_clearance_sale_active)
 
 
 # ─── 详情弹窗（原 PrepDetails.gd，D2 步骤 6′ 并入本层）──────────────────────

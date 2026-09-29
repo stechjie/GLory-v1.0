@@ -171,13 +171,13 @@ static func format_skill_detail(d: Dictionary) -> String:
 		"silence_bolt":
 			return "沉默箭%s：沉默最近敌人%.1f秒，并造成自身攻击%s伤害。" % [cd, float(d.get("silence_sec", 1.2)), pct(float(d.get("damage_atk_pct", 1.7)))]
 		"fear":
-			return "恐惧%s：使最近敌人恐惧/眩晕%.1f秒并推离。" % [cd, float(d.get("fear_sec", 1.5))]
+			return "恐惧%s：使最近敌人向后逃跑%.1f秒，结束后重新接近目标。" % [cd, float(d.get("fear_sec", 2.0))]
 		"same_target_damage_stack":
 			return "痛苦凝视：持续攻击同一目标时，每层伤害+%s，最多%d层；换目标重置。" % [pct(float(d.get("stack_damage", 0.06))), int(d.get("max_stacks", 5))]
 		"blink_low_def_backline":
 			return "暗影突袭（冷却时间5.0秒）：瞬移到低防后排敌人身边，造成自身攻击%s伤害；击杀后刷新冷却。" % [pct(float(d.get("damage_atk_pct", 2.0)))]
 		"stun":
-			return "暗影击晕%s：眩晕最近敌人%.1f秒。" % [cd, float(d.get("stun_sec", 1.0))]
+			return "暗影击晕%s：眩晕最近敌人%.1f秒，并造成自身攻击%s伤害。" % [cd, float(d.get("stun_sec", 1.0)), pct(float(d.get("damage_atk_pct", 1.5)))]
 		"shared_hp_link":
 			# 9.14 反馈：4 星连接期间会按每秒 3% 最大生命回血，但文案没写。link_regen_pct
 			# 只在 4 星的 star4 覆写里有，1~3 星回血为 0，文案自然不带那句。
@@ -342,13 +342,13 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"silence_bolt":
 			return "Silence Bolt%s: Silence the nearest enemy for %.1fs and deal %s ATK damage." % [cd, float(d.get("silence_sec", 1.2)), pct(float(d.get("damage_atk_pct", 1.7)))]
 		"fear":
-			return "Fear%s: Frighten/stun the nearest enemy for %.1fs and knock them back." % [cd, float(d.get("fear_sec", 1.5))]
+			return "Fear%s: Make the nearest enemy retreat for %.1fs, then resume approaching its target." % [cd, float(d.get("fear_sec", 2.0))]
 		"same_target_damage_stack":
 			return "Agonizing Gaze: Consecutive attacks on the same target deal +%s damage per stack (max %d stacks). Resets on target switch." % [pct(float(d.get("stack_damage", 0.06))), int(d.get("max_stacks", 5))]
 		"blink_low_def_backline":
 			return "Shadow Ambush%s: Blink to the lowest-DEF backline enemy and deal %s ATK damage. Cooldown resets on kill." % [cd, pct(float(d.get("damage_atk_pct", 2.0)))]
 		"stun":
-			return "Shadow Stun%s: Stun the nearest enemy for %.1fs." % [cd, float(d.get("stun_sec", 1.0))]
+			return "Shadow Stun%s: Stun the nearest enemy for %.1fs and deal %s ATK damage." % [cd, float(d.get("stun_sec", 1.0)), pct(float(d.get("damage_atk_pct", 1.5)))]
 		"shared_hp_link":
 			# 9.14: 4-star regenerates 3% max HP/s while linked; only 4-star sets
 			# link_regen_pct, so 1-3 star text stays without the clause.

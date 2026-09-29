@@ -159,7 +159,9 @@ const USE_DTLS := true
 # This changes authoritative combat results; clients and server ship together.
 # v34: compiled RPC contract is required during authentication.
 # v35: final settlement details and server-owned rematch reservations.
-const NETWORK_PROTOCOL_VERSION := 35
+# v36: All six players share one LiveKit room; microphone track permissions
+#      enforce the selected team/all audience. Old clients must not join it.
+const NETWORK_PROTOCOL_VERSION := 36
 
 # Local phone hosting is debug-only.
 const ALLOW_LOCAL_HOST_DEBUG := false

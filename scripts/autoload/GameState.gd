@@ -31,6 +31,8 @@ var enemy_formation_hp := START_FORMATION_HP
 var gold := START_GOLD
 # 只累计本地备战的真实正向收入；战后收入由服务端逐场累计。
 var prep_income_total := 0
+var gold_spent_this_round := false
+var team_clearance_sale_active := false
 ## Per-run carrot economy. These are player-owned values; derived farm values
 ## come from CarrotEconomyRules so saves do not carry duplicate truths.
 var carrots := 0
@@ -114,6 +116,8 @@ func reset_run() -> void:
 	enemy_formation_hp = START_FORMATION_HP
 	gold = START_GOLD
 	prep_income_total = 0
+	gold_spent_this_round = false
+	team_clearance_sale_active = false
 	carrots = 0
 	harvest_tech_level = 0
 	merc_carrots_spent_total = 0
@@ -185,6 +189,12 @@ func harvest_carrots_for_round(round_number: int) -> Dictionary:
 		"overflow": int(result.overflow), "after": carrots,
 		"capacity": int(result.capacity), "production": int(result.production)}
 
+func spend_gold(amount: int) -> void:
+	if amount <= 0:
+		return
+	gold -= amount
+	gold_spent_this_round = true
+
 func upgrade_harvest_tech() -> Dictionary:
 	# 教学（9.25）：「升级采集」那一步不受第 2 回合才解锁的限制 —— 教学局的回合推进
 	# 与正式局不同。放不放行由调用方（PrepBoardController）按教学步骤把关。
@@ -195,7 +205,7 @@ func upgrade_harvest_tech() -> Dictionary:
 		return {"ok": false, "error": "max_level", "price": -1}
 	if gold < price:
 		return {"ok": false, "error": "not_enough_gold", "price": price}
-	gold -= price
+	spend_gold(price)
 	harvest_tech_level += 1
 	return {"ok": true, "price": price, "level": harvest_tech_level,
 		"production": carrot_production()}
@@ -254,7 +264,7 @@ func upgrade_cell_to_four_star(cell: Variant) -> Dictionary:
 	if not bool(check.get("ok", false)):
 		return check
 	var stone := str(check.get("stone", ""))
-	gold -= int(check["cost"])
+	spend_gold(int(check["cost"]))
 	team_upgrade_stones[stone] = int(team_upgrade_stones.get(stone, 0)) - 1
 	(cell as Dictionary)["star"] = MAX_UNIT_STAR
 	return {"ok": true, "error": "", "stone": stone}
@@ -285,6 +295,7 @@ func normal_unit_count() -> int:
 func reset_shop_refreshes() -> void:
 	shop_refresh_uses_this_round = 0
 	golden_altar_uses = 0
+	gold_spent_this_round = false
 	gamble_used = false
 
 func clear_shop() -> void:

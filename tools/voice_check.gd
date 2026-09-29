@@ -75,6 +75,8 @@ class FakeBridge extends RefCounted:
 	var self_speaking := false
 	var participants: Array = []
 	var volumes: Dictionary = {}
+	var audience_all := false
+	var audience_ids: Array = []
 
 	func hasRecordPermission() -> bool:
 		return permission
@@ -101,6 +103,10 @@ class FakeBridge extends RefCounted:
 
 	func setParticipantVolume(identity: String, volume: float) -> void:
 		volumes[identity] = volume
+
+	func setAudience(all: bool, identities_json: String) -> void:
+		audience_all = all
+		audience_ids = JSON.parse_string(identities_json)
 
 	func getStatus() -> String:
 		return JSON.stringify({
@@ -484,12 +490,12 @@ func _case_token_policy() -> void:
 	var red := NetworkService.voice_token_for_peer(room, 11, 1000)
 	var blue := NetworkService.voice_token_for_peer(room, 21, 1000)
 	_h.item()
-	_h.expect(str(red.error).is_empty() and str(red.room) == "g123456-a1b2c3-t0"
+	_h.expect(str(red.error).is_empty() and str(red.room) == "g123456-a1b2c3-all"
 			and str(red.url) == str(TEST_CONFIG.client_url),
-		"voice_token_red_room", "红方 0 号位应拿到本队（t0）的钥匙：%s" % str(red))
+		"voice_token_red_room", "红方 0 号位应拿到本局语音房间钥匙：%s" % str(red))
 	_h.item()
-	_h.expect(str(blue.error).is_empty() and str(blue.room) == "g123456-a1b2c3-t1",
-		"voice_token_blue_room", "蓝方 3 号位应拿到本队（t1）的钥匙：%s" % str(blue))
+	_h.expect(str(blue.error).is_empty() and str(blue.room) == str(red.room),
+		"voice_token_blue_room", "同局六人应拿到同一个语音房间钥匙：%s" % str(blue))
 	var red_payload := LiveKitAuth.decode_payload(str(red.token))
 	_h.item()
 	_h.expect(str(red_payload.get("sub", "")) == "AAAA1111" and str(red_payload.get("name", "")) == "小林"
@@ -500,15 +506,14 @@ func _case_token_policy() -> void:
 	_h.expect(str(LiveKitAuth.decode_payload(str(no_card.token)).get("sub", "")) == "seat1",
 		"voice_token_seat_identity", "没有名片的座位身份应是 seat<N>")
 
-	# 🔴 谁都拿不到对面的房间：每个人拿到的房间号末尾一定是自己座位的队伍
+	# 所有人进同局语音房；麦克风订阅范围由发布者权限控制。
 	_h.item()
 	var leaked: Array = []
 	for peer in (room.peer_slot as Dictionary).keys():
 		var reply := NetworkService.voice_token_for_peer(room, int(peer), 1000)
-		var team := GameConstants.team_of_slot(int(room.peer_slot[peer]))
-		if str(reply.error).is_empty() and not str(reply.room).ends_with("-t%d" % team):
+		if str(reply.error).is_empty() and not str(reply.room).ends_with("-all"):
 			leaked.append(peer)
-	_h.expect(leaked.is_empty(), "voice_token_wrong_team", "这些连接拿到了不是自己队伍的语音房间：%s" % str(leaked))
+	_h.expect(leaked.is_empty(), "voice_token_wrong_room", "这些连接拿到了错误的语音房间：%s" % str(leaked))
 
 	_h.item()
 	_h.expect(str(NetworkService.voice_token_for_peer(room, 99, 1000).error) == "not_seated"
@@ -543,7 +548,7 @@ func _case_token_policy() -> void:
 func _case_rpc_contract() -> void:
 	var src := FileAccess.get_file_as_string(NETWORK_SERVICE_PATH)
 	var request := "func _rpc_team_voice_token_request() -> void:"
-	var reply := "func _rpc_team_voice_token(url: String, token: String, room_name: String, error: String) -> void:"
+	var reply := "func _rpc_team_voice_token(url: String, token: String, room_name: String, error: String, team: int) -> void:"
 	_h.item()
 	_h.expect(src.contains("@rpc(\"any_peer\", \"call_remote\", \"reliable\")\n" + request),
 		"voice_token_request_signature",
@@ -611,12 +616,12 @@ func _case_kick_hooks() -> void:
 	NetworkService._voice_seat_released(room, 1, "AAAA1111")
 	NetworkService._voice_seat_released(room, 4, "DDDD4444")
 	_h.item()
-	_h.expect(str(admin.removed) == str([["g123456-a1b2c3-t0", "AAAA1111"], ["g123456-a1b2c3-t1", "DDDD4444"]]),
-		"voice_kick_wrong_room", "应从各自所在队伍的语音房间请出去，实际 %s" % str(admin.removed))
+	_h.expect(str(admin.removed) == str([["g123456-a1b2c3-all", "AAAA1111"], ["g123456-a1b2c3-all", "DDDD4444"]]),
+		"voice_kick_wrong_room", "应从本局语音房间请出去，实际 %s" % str(admin.removed))
 	NetworkService._voice_rooms_closed(room)
 	_h.item()
-	_h.expect(str(admin.deleted) == str(["g123456-a1b2c3-t0", "g123456-a1b2c3-t1"]), "voice_close_rooms",
-		"关房应删掉两队的语音房间，实际 %s" % str(admin.deleted))
+	_h.expect(str(admin.deleted) == str(["g123456-a1b2c3-all"]), "voice_close_rooms",
+		"关房应删掉本局语音房间，实际 %s" % str(admin.deleted))
 	NetworkService._voice_admin = saved_admin
 
 
@@ -824,6 +829,7 @@ func _save_state() -> Dictionary:
 	return {
 		"bridge": VoiceService._bridge,
 		"mode": VoiceService.mode,
+		"audience": VoiceService.audience,
 		"defaulted_room": VoiceService._defaulted_room,
 		"room_id": NetworkService.team_room_id,
 		"muted": VoiceService._muted_keys.duplicate(),
@@ -840,6 +846,7 @@ func _restore_state(saved: Dictionary) -> void:
 	VoiceService._leave()
 	VoiceService._bridge = saved.bridge
 	VoiceService.mode = int(saved.mode)
+	VoiceService.audience = int(saved.audience)
 	VoiceService._defaulted_room = int(saved.defaulted_room)
 	NetworkService.team_room_id = int(saved.room_id)
 	VoiceService._muted_keys = saved.muted
@@ -860,9 +867,12 @@ func _fresh_status() -> void:
 	VoiceService._status_at_msec = -100000
 
 
-func _reply(room: String, error: String = "", token: String = "tok") -> void:
+func _reply(_room: String, error: String = "", token: String = "tok", team: int = -2) -> void:
+	if team == -2:
+		team = GameConstants.team_of_slot(int(NetworkService.team_local_slot))
+	var room_name := "g%d-s-all" % int(NetworkService.team_room_id)
 	NetworkService.team_voice_token_received.emit("wss://voice.example.test" if error.is_empty() else "",
-		token if error.is_empty() else "", room if error.is_empty() else "", error)
+		token if error.is_empty() else "", room_name if error.is_empty() else "", error, team)
 
 
 func _case_ios_permission() -> void:
@@ -975,7 +985,7 @@ func _case_state_machine() -> void:
 	VoiceService._process(0.1)
 	_h.expect(fake.leaves == leaves + 1 and not fake.joined and int(requests[0]) == before + 1,
 		"voice_team_change_not_followed", "换到对面队伍后应退出旧房间并要新队伍的钥匙")
-	_reply("g1-s-t0", "", "tok-red-late")
+	_reply("g1-s-t0", "", "tok-red-late", 0)
 	_h.item()
 	_h.expect(not fake.joined, "voice_stale_token_used", "换队之前那张（旧队伍的）钥匙迟到了，不能拿它进房")
 	_reply("g1-s-t1", "", "tok-blue")

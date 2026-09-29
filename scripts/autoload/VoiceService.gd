@@ -4,13 +4,13 @@ extends Node
 #
 # 三档（界面上的语音按钮循环切换，见 ui/components/VoiceControls.gd）：
 #   OFF     不连语音服务器、不用麦克风。
-#   LISTEN  连上本队的语音房间，听队友；麦克风关着。**进房间的默认档**（2026-09-27 起，原来默认 OFF）。
+#   LISTEN  连上本局语音房间；麦克风关着。**进房间的默认档**（2026-09-27 起，原来默认 OFF）。
 #   TALK    开麦，直接对话（不是按住说话）。回声消除 / 降噪由各平台的 LiveKit 开发包做。
 #
 # 这里是游戏里**唯一**的语音入口，界面和游戏代码不分平台：
 #   录音 / 编码 / 网络 / 播放  各平台的桥接（安卓 Kotlin、电脑 C++ 扩展、苹果 Swift），都注册成同一个单例
 #                             Engine.get_singleton("GloryVoice")，方法见 BRIDGE_METHODS
-#   钥匙                       战斗服务器签发，只能进「本房间本队」的语音房间（NetworkService.team_request_voice_token）
+#   钥匙                       战斗服务器签发，只能进「本对局」的语音房间（NetworkService.team_request_voice_token）
 #   换队 / 离开时请出旧房间     战斗服务器做（钥匙只管进门）；这里只管自己跟上新队伍
 #
 # 桥接的方法（名字刻意避开 Object 自带的 connect / disconnect）：
@@ -21,6 +21,7 @@ extends Node
 #   setMicrophoneEnabled(enabled) -> String       开 / 关麦；还没连上时先记下，连上再生效。
 #                                                 空串 = 已受理；真正打不开（异步）写在 getStatus 的 mic_error
 #   setParticipantVolume(identity, volume)        某个队友的音量 0 ~ 1，0 = 屏蔽（只影响自己）
+#   setAudience(all, identities_json)              发布者麦克风订阅权限；队友范围按身份列表，全部范围开放全房间
 #   getStatus() -> String   JSON：state（disconnected / connecting / connected / reconnecting / failed）、error、
 #                           mic_on、mic_error、self_speaking、speaking（身份列表）、participants（身份列表）、
 #                           audio_mode、output。放弃重连、被服务器请出房间、切后台时 state = failed，
@@ -44,11 +45,13 @@ extends Node
 # 对局照常。没有桥接的包（电脑版第 3 阶段之前、苹果版之前）按钮照样在，点了说明原因。
 
 signal mode_changed(mode: int)
+signal audience_changed(audience: int)
 signal mutes_changed
 # 系统麦克风权限弹窗的结果（只在这里请求过时发）。界面据此在被拒时提示去系统设置打开。
 signal mic_permission_result(granted: bool)
 
 enum Mode { OFF, LISTEN, TALK }
+enum Audience { TEAM, ALL }
 
 const SINGLETON := "GloryVoice"
 # 桥接必须提供的方法（名字 → 参数个数）。三个平台照这张表实现；tools/voice_check 拿它对账。
@@ -58,6 +61,7 @@ const BRIDGE_METHODS := {
 	"leaveRoom": 0,
 	"setMicrophoneEnabled": 1,
 	"setParticipantVolume": 2,
+	"setAudience": 2,
 	"getStatus": 0,
 	"getCapabilities": 0,
 }
@@ -76,6 +80,7 @@ const TOKEN_REUSE_SEC := 480.0
 const SEAT_LABELS := ["A", "B", "C", "1", "2", "3"]
 
 var mode: int = Mode.OFF
+var audience: int = Audience.TEAM
 # 已经替哪个房间切过默认的「只听」（-1 = 还没有）。每个房间只切一次：
 # 玩家在房间里自己关掉之后，不能每帧又被切回去。离开房间（LEAVE_GRACE_SEC）时清掉。
 var _defaulted_room := -1
@@ -105,6 +110,7 @@ var _capabilities: Dictionary = {}
 var _muted_keys: Dictionary = {}
 # 语音身份 -> 最后一次设给桥接的音量（只在变了时才调）
 var _applied_volumes: Dictionary = {}
+var _applied_audience := ""
 
 
 func _ready() -> void:
@@ -117,13 +123,34 @@ func _ready() -> void:
 
 
 func is_supported() -> bool:
-	return _bridge != null
+	return _bridge != null and _bridge.has_method("setAudience")
+
+
+func audience_label() -> String:
+	return _text("队友", "Team") if audience == Audience.TEAM else _text("全部", "All")
+
+
+func set_audience(next: int) -> void:
+	if next != Audience.TEAM and next != Audience.ALL:
+		return
+	if next == audience:
+		return
+	audience = next
+	_applied_audience = ""
+	_apply_audience()
+	audience_changed.emit(audience)
+
+
+func toggle_audience() -> void:
+	set_audience(Audience.ALL if audience == Audience.TEAM else Audience.TEAM)
 
 
 # 没有语音桥接时给玩家看的话。
 # Windows 版的桥接是 addons/glory_voice/glory_voice.gdextension（docs/语音LiveKit方案.md 5.2）：
 # 在 Windows 上还没有，就是那几个 dll 没加载起来（包里缺了，或者被杀毒软件拦了）。
 func unsupported_reason() -> String:
+	if _bridge != null and not _bridge.has_method("setAudience"):
+		return _text("语音组件需要更新，请安装新版游戏", "Voice component needs an update; install the latest game build")
 	if OS.has_feature("windows"):
 		return _text("语音组件没有加载起来，请重新安装游戏", "Voice component failed to load; please reinstall the game")
 	if OS.has_feature("pc"):
@@ -224,7 +251,7 @@ func capabilities() -> Dictionary:
 	return _capabilities
 
 
-# 正在说话的队友座位（不含自己）。
+# 正在说话的其他玩家座位（不含自己）。
 func speaking_slots() -> Array[int]:
 	var out: Array[int] = []
 	var me := int(NetworkService.team_local_slot)
@@ -335,6 +362,59 @@ func teammates() -> Array[Dictionary]:
 	return out
 
 
+func audience_members() -> Array[Dictionary]:
+	if audience == Audience.TEAM:
+		return teammates()
+	var out: Array[Dictionary] = []
+	if not in_room():
+		return out
+	var me := int(NetworkService.team_local_slot)
+	var states: Array = NetworkService.team_slot_states
+	var profiles: Dictionary = NetworkService.team_seat_profiles
+	var speaking := speaking_slots()
+	for slot in NetworkService.TEAM_SLOTS:
+		if slot == me:
+			continue
+		var state := str(states[slot]) if slot < states.size() else ""
+		var has_profile := profiles.has(slot) or profiles.has(str(slot))
+		if state != "player" and not (state.is_empty() and has_profile):
+			continue
+		out.append({"slot": slot, "name": member_name(slot), "muted": is_muted(slot), "speaking": speaking.has(slot)})
+	return out
+
+
+func _team_audience_identities() -> Array[String]:
+	var ids: Array[String] = []
+	if not in_room():
+		return ids
+	var me := int(NetworkService.team_local_slot)
+	var team := GameConstants.team_of_slot(me)
+	var states: Array = NetworkService.team_slot_states
+	var profiles: Dictionary = NetworkService.team_seat_profiles
+	for slot in NetworkService.TEAM_SLOTS:
+		if slot == me or GameConstants.team_of_slot(slot) != team:
+			continue
+		var state := str(states[slot]) if slot < states.size() else ""
+		var profile: Dictionary = profiles.get(slot, profiles.get(str(slot), {}))
+		if state != "player" and not (state.is_empty() and not profile.is_empty()):
+			continue
+		var code := str(profile.get("friend_code", "")).strip_edges()
+		ids.append(code if not code.is_empty() else "seat%d" % slot)
+	ids.sort()
+	return ids
+
+
+func _apply_audience() -> void:
+	if not _joined or not is_supported():
+		return
+	var identities := _team_audience_identities() if audience == Audience.TEAM else []
+	var key := "%d:%s" % [audience, JSON.stringify(identities)]
+	if key == _applied_audience:
+		return
+	_bridge.setAudience(audience == Audience.ALL, JSON.stringify(identities))
+	_applied_audience = key
+
+
 # --- 每帧 ----------------------------------------------------------------------------
 
 func _process(delta: float) -> void:
@@ -347,12 +427,13 @@ func _process(delta: float) -> void:
 			# 真离开了（不是重连那种一两秒的掉线）：语音全关，按座位号记的屏蔽作废。
 			_out_of_room_sec = 0.0
 			_defaulted_room = -1
+			set_audience(Audience.TEAM)
 			_forget_seat_mutes()
 			if mode != Mode.OFF:
 				_want_talk_after_permission = false
 				_change_mode(Mode.OFF)
 			return
-	if mode == Mode.OFF or _bridge == null:
+	if mode == Mode.OFF or not is_supported():
 		return
 	if _want_talk_after_permission and _bridge.has_method("requestRecordPermission"):
 		# Permission can finish before a voice token arrives. status() intentionally
@@ -371,6 +452,7 @@ func _process(delta: float) -> void:
 	_watch_bridge()
 	_sync_and_fallback()
 	_apply_volumes()
+	_apply_audience()
 
 
 # 进了一个新房间：还关着就切到「只听」（2026-09-27 用户定的默认档）。只切这一次 ——
@@ -404,11 +486,14 @@ func _on_permission_result(permission: String, granted: bool) -> void:
 
 
 # 战斗服务器回了钥匙（或原因）。
-func _on_voice_token(url: String, token: String, room_name: String, error: String) -> void:
+func _on_voice_token(url: String, token: String, room_name: String, error: String, token_team: int) -> void:
 	if not _awaiting_token:
 		return   # 已经不要了（关了语音、换了队、超时之后才到）
-	# 旧请求的回复：房间名末尾是队伍号，对不上就是换队之前那一张。
-	if error.is_empty() and not room_name.ends_with("-t%d" % _requested_team):
+	if token_team >= 0 and token_team != _requested_team:
+		return
+	# 只接受当前对局的全员语音房，旧钥匙作废。
+	if error.is_empty() and (not room_name.begins_with("g%d-" % int(NetworkService.team_room_id))
+			or not room_name.ends_with("-all")):
 		return
 	_awaiting_token = false
 	if mode == Mode.OFF or _bridge == null or not in_room():
@@ -438,6 +523,8 @@ func _join(url: String, token: String, room_name: String, team: int, clear_error
 	_room_name = room_name
 	_mic_on = false
 	_applied_volumes.clear()
+	_applied_audience = ""
+	_apply_audience()
 	_status = {}
 	_status_at_msec = -100000
 	_retry_index = 0
@@ -479,7 +566,7 @@ func _change_mode(next: int) -> String:
 
 # 让桥接的实际状态跟上档位与座位。每帧调；只在要变的时候才调桥接。返回开麦失败的原因（空 = 没事）。
 func _sync() -> String:
-	if _bridge == null:
+	if not is_supported():
 		return ""
 	if mode == Mode.OFF:
 		_leave()
@@ -570,6 +657,7 @@ func _leave() -> void:
 	_mic_on = false
 	_awaiting_token = false
 	_applied_volumes.clear()
+	_applied_audience = ""
 	_status = {}
 	_status_at_msec = -100000
 
@@ -602,6 +690,8 @@ static func explain(code: String) -> String:
 			return "麦克风被别的应用占着（比如正在通话）"
 		"mic_failed":
 			return "麦克风打不开"
+		"audience_failed":
+			return "语音范围设置失败，麦克风已关闭"
 		"removed":
 			return "你已不在这个队伍的语音里"
 		"room_deleted":

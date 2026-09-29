@@ -1169,21 +1169,6 @@ static func _team_max_hp(fighters: Array) -> int:
 	return total
 
 
-static func _record_death_history(state: Dictionary, victim: Dictionary) -> void:
-	var history: Array = state.get("death_history", [])
-	var snapshot := victim.duplicate(true)
-	snapshot.alive = false
-	snapshot.statuses = {}
-	snapshot.erase("parasite_owner")
-	snapshot.erase("sacrifice_guardian")
-	snapshot.erase("shared_link_uid")
-	snapshot.erase("shared_link_peer")
-	history.append(snapshot)
-	while history.size() > 80:
-		history.pop_front()
-	state.death_history = history
-
-
 static func _grant_shield(unit: Dictionary, amount: int, cap: int = -1) -> int:
 	if amount <= 0 or not bool(unit.get("alive", false)):
 		return 0
@@ -1446,6 +1431,18 @@ static func _heal_unit(unit: Dictionary, amount: int) -> void:
 	var final_amount := maxi(0, int(round(float(amount) * BattleFrenzy.healing_multiplier(DamageService.current_battle_elapsed()))))
 	if unit.statuses.has("heal_reduction"):
 		final_amount = maxi(0, int(round(float(final_amount) * maxf(0.0, 1.0 - float(unit.statuses.heal_reduction.get("pct", 0.0))))))
+	if StatusEffectService.has_status(unit, "poison"):
+		var poison_antiheal := float(unit.statuses.poison.get("antiheal_pct", 0.0))
+		var opposite := "enemy" if str(unit.get("team", "")) == "player" else "player"
+		var battle_state: Dictionary = DamageService._stat_state
+		var by_owner: Dictionary = battle_state.get("owner_syn_by_key", {})
+		if not by_owner.is_empty():
+			for owner_key in by_owner.keys():
+				if str(owner_key).begins_with(opposite + "_"):
+					poison_antiheal = maxf(poison_antiheal, SynergyService.safe_factor(by_owner[owner_key], "undead_poison_antiheal"))
+		else:
+			poison_antiheal = maxf(poison_antiheal, SynergyService.safe_factor(battle_state.get(opposite + "_syn", {}), "undead_poison_antiheal"))
+		final_amount = maxi(0, int(round(float(final_amount) * maxf(0.0, 1.0 - poison_antiheal))))
 	var before := int(unit.hp)
 	unit.hp = mini(int(unit.max_hp), int(unit.hp) + final_amount)
 	var healed := maxi(0, int(unit.hp) - before)
@@ -1456,7 +1453,7 @@ static func _heal_unit(unit: Dictionary, amount: int) -> void:
 
 # ---------------------------------------------------------------------------
 # 9.24 羁绊改版共用：开战基础属性快照。
-# 人7（每死一个 +20%）与暗7（每下 ±3%/2%）都按「开战时」的数值算增量，不复利、
+# 人7（每死一个 +20%）与暗7（每下 ±4%/3%）都按「开战时」的数值算增量，不复利、
 # 也不会被战斗中其它加减益污染。快照在 prepare_*_state 末尾（开场宝藏之后）拍；
 # 战斗中途才出现的单位（复活体 / 克隆 / 寄生体）在第一次用到时补拍。
 static func _snapshot_base_stats(fighters: Array) -> void:

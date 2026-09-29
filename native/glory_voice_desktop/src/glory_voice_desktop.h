@@ -46,6 +46,7 @@ public:
 	void leaveRoom();
 	godot::String setMicrophoneEnabled(bool enabled);
 	void setParticipantVolume(const godot::String &identity, double volume);
+	void setAudience(bool all, const godot::String &identities_json);
 	godot::String getStatus() const;
 	godot::String getCapabilities() const;
 
@@ -82,6 +83,7 @@ private:
 	// 只在工作线程上跑。
 	void do_join(int gen, const std::string &url, const std::string &token);
 	void do_apply_mic(int gen, bool enabled);
+	void do_apply_audience(int gen);
 	void do_apply_volume(const std::string &identity);
 	void do_teardown();
 
@@ -101,6 +103,9 @@ private:
 	// 只在工作线程上碰。
 	bool sdk_ready_ = false;
 	bool want_mic_ = false;
+	bool audience_all_ = false;
+	bool audience_configured_ = false;
+	std::vector<std::string> audience_ids_;
 	std::unique_ptr<livekit::PlatformAudio> platform_audio_;
 	std::unique_ptr<livekit::RoomDelegate> delegate_;
 	std::unique_ptr<livekit::Room> room_;

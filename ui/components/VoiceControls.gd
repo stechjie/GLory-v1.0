@@ -26,6 +26,7 @@ const REFRESH_SEC := 0.25
 const RATIONALE_REQUEST_ID := "voice_mic_rationale"
 
 var voice_button: Button = null
+var audience_button: Button = null
 var members_button: Button = null
 var _owner: Node = null
 var _timer: Timer = null
@@ -40,10 +41,14 @@ func build(owner: Node, voice_size: Vector2, members_size: Vector2, font_size: i
 	_panel_context = str(options.get("panel_context", ""))
 	voice_button = PrepWidgets.make_menu_button(VoiceService.mode_label(), voice_size, font_size, _on_voice_pressed)
 	voice_button.name = "VoiceToggle"
+	audience_button = PrepWidgets.make_menu_button("", members_size, font_size, _on_audience_pressed)
+	audience_button.name = "VoiceAudience"
 	members_button = PrepWidgets.make_menu_button(_text("队友", "Team"), members_size, font_size, _on_members_pressed)
 	members_button.name = "VoiceMembers"
 	if not VoiceService.mode_changed.is_connected(_on_mode_changed):
 		VoiceService.mode_changed.connect(_on_mode_changed)
+	if not VoiceService.audience_changed.is_connected(_on_audience_changed):
+		VoiceService.audience_changed.connect(_on_audience_changed)
 	if not VoiceService.mutes_changed.is_connected(refresh):
 		VoiceService.mutes_changed.connect(refresh)
 	if not VoiceService.mic_permission_result.is_connected(_on_mic_permission_result):
@@ -59,6 +64,8 @@ func build(owner: Node, voice_size: Vector2, members_size: Vector2, font_size: i
 func teardown() -> void:
 	if VoiceService.mode_changed.is_connected(_on_mode_changed):
 		VoiceService.mode_changed.disconnect(_on_mode_changed)
+	if VoiceService.audience_changed.is_connected(_on_audience_changed):
+		VoiceService.audience_changed.disconnect(_on_audience_changed)
 	if VoiceService.mutes_changed.is_connected(refresh):
 		VoiceService.mutes_changed.disconnect(refresh)
 	if VoiceService.mic_permission_result.is_connected(_on_mic_permission_result):
@@ -72,15 +79,21 @@ func refresh() -> void:
 	if voice_button == null or not is_instance_valid(voice_button):
 		return
 	voice_button.text = VoiceService.mode_label()
+	if _panel_context == "lobby":
+		voice_button.text = voice_button.text.replace("：", "\n").replace(": ", "\n")
+	if audience_button != null and is_instance_valid(audience_button):
+		audience_button.text = _text("范围\n", "To\n") + VoiceService.audience_label()
+		audience_button.add_theme_color_override("font_color",
+			ACTIVE_COLOR if VoiceService.audience == VoiceService.Audience.ALL else IDLE_COLOR)
 	var color := IDLE_COLOR
 	if VoiceService.mode == VoiceService.Mode.LISTEN:
 		color = LISTEN_COLOR
 	elif VoiceService.mode == VoiceService.Mode.TALK:
 		color = ACTIVE_COLOR
 	voice_button.add_theme_color_override("font_color", color)
-	if members_button != null and is_instance_valid(members_button) and _panel_context == "prep":
-		var count := VoiceService.teammates().size()
-		members_button.text = _text("队友\n%d" % count, "Team\n%d" % count)
+	if members_button != null and is_instance_valid(members_button):
+		var count := VoiceService.audience_members().size()
+		members_button.text = _text("成员\n%d" % count, "Users\n%d" % count)
 
 
 # 开麦的唯一入口（语音按钮和语音面板里的「开麦」都走这里）：没权限时先说明用途。
@@ -91,8 +104,8 @@ func request_talk() -> void:
 			"owner": _owner,
 			"title": _text("开麦需要麦克风权限", "Microphone permission"),
 			"body": _text(
-				"语音只在你开麦时使用麦克风。声音只实时发给同队队友，不录音、不保存。\n下一步系统会问你是否允许。",
-				"Voice uses the microphone only while your mic is on. Your voice goes live to your teammates only and is never recorded or stored.\nAndroid will ask for permission next."),
+				"语音只在你开麦时使用麦克风。声音会实时传给当前选择的范围（队友或全部人），不录音、不保存。\n下一步系统会问你是否允许。",
+				"Voice uses the microphone only while your mic is on. Your voice goes to the selected audience (team or all) and is never recorded or stored.\nAndroid will ask for permission next."),
 			"confirm_text": _text("去开启", "Continue"),
 			"cancel_text": _text("先不用", "Not now"),
 			"on_result": _on_rationale_result,
@@ -136,6 +149,16 @@ func _on_voice_pressed() -> void:
 
 func _on_members_pressed() -> void:
 	VoicePanel.new().present(_owner, request_talk, {"context": _panel_context})
+
+
+func _on_audience_pressed() -> void:
+	SfxService.play(SfxService.CUE_VOICE_SWITCH)
+	VoiceService.toggle_audience()
+	refresh()
+
+
+func _on_audience_changed(_audience: int) -> void:
+	refresh()
 
 
 func _on_mode_changed(_mode: int) -> void:

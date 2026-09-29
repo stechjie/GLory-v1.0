@@ -287,6 +287,7 @@ func _write_now() -> void:
 		"boss_completed": GameState.boss_completed,
 		"loss_streak": GameState.loss_streak,
 		"golden_altar_uses": GameState.golden_altar_uses,
+		"gold_spent_this_round": GameState.gold_spent_this_round,
 		"gamble_used": GameState.gamble_used,
 		"run_races": GameState.run_races,
 		# 组队局字段（重连恢复用；team_mode 本身由 Main 显式控制，不入档）
@@ -341,6 +342,8 @@ func load_run() -> bool:
 	GameState.boss_completed = int(parsed.get("boss_completed", 0))
 	GameState.loss_streak = int(parsed.get("loss_streak", 0))
 	GameState.golden_altar_uses = int(parsed.get("golden_altar_uses", 0))
+	# Older saves did not record spending. Treat the unknown round as spent so it cannot gain an unearned bonus.
+	GameState.gold_spent_this_round = bool(parsed.get("gold_spent_this_round", true))
 	GameState.gamble_used = bool(parsed.get("gamble_used", false))
 	# 老存档没有这一项 / 不合法 -> 空，摇商店时 RacePick.resolve 回落默认。
 	GameState.run_races = RacePick.sanitize(parsed.get("run_races", []))

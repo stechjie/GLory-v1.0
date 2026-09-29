@@ -105,6 +105,8 @@ func _ready() -> void:
 	if GameState.shop_offers.is_empty() or GameState.shop_offers[0].is_empty():
 		_roll_shop()
 	await _build(startup_staged)
+	if not NetworkService.team_treasure_effects_changed.is_connected(_on_team_treasure_effects_changed):
+		NetworkService.team_treasure_effects_changed.connect(_on_team_treasure_effects_changed)
 	if not carrot_harvest_gains.is_empty():
 		# 记账：客机那条路径（_maybe_play_pending_carrot_harvest）也会在权威采集
 		# 到达时补播，两边共用这个标记保证一回合只播一次。
@@ -165,6 +167,8 @@ func _exit_tree() -> void:
 		NetworkService.session_changed.disconnect(_on_network_session_changed)
 	if NetworkService.team_lobby_changed.is_connected(_on_network_session_changed):
 		NetworkService.team_lobby_changed.disconnect(_on_network_session_changed)
+	if NetworkService.team_treasure_effects_changed.is_connected(_on_team_treasure_effects_changed):
+		NetworkService.team_treasure_effects_changed.disconnect(_on_team_treasure_effects_changed)
 	if NetworkService.team_round_start.is_connected(_on_team_round_start):
 		NetworkService.team_round_start.disconnect(_on_team_round_start)
 	if AsyncActionController.action_state_changed.is_connected(_on_async_action_state_changed):

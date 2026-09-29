@@ -74,7 +74,7 @@ func refresh() -> void:
 		var altar := Button.new()
 		# 显示实际到账金额。此前硬编码了 5，而 ALTAR_GOLD = 50 —— 玩家看到的和
 		# 拿到的差了一个数量级。改成读常量，以后调数值不会再漏改这里。
-		altar.text = tr("ui_altar") % [NetworkService.ALTAR_GOLD, GameState.golden_altar_uses]
+		altar.text = tr("ui_altar") % [0 if TreasureService.has_linkage("link_hu_pai_master") else 2, NetworkService.ALTAR_GOLD, GameState.golden_altar_uses]
 		var altar_hp := GameState.team_hp if GameState.team_mode else GameState.player_formation_hp
 		altar.disabled = altar_hp <= NetworkService.ALTAR_MIN_HP or GameState.golden_altar_uses >= NetworkService.ALTAR_MAX_USES_PER_ROUND
 		altar.pressed.connect(func(): altar_requested.emit())
@@ -157,13 +157,13 @@ func _race_entries(race: String) -> Array:
 		"dark":
 			return [
 				{"threshold": 1, "name": "暗族特性·击杀叠层", "detail": "每 3 个敌人死亡，暗族单位获得 1 层 +6% 伤害。"},
-				{"threshold": 2, "name": "暗2·负面强化", "detail": "暗族负面效果（减攻、减速、破甲）强度 +25%。"},
+				{"threshold": 2, "name": "暗2·负面强化", "detail": "暗族单位施加的所有负面效果数值强度 +30%；无数值的控制效果持续时间 +30%。"},
 				{"threshold": 5, "name": "暗5·伤害", "detail": "暗族单位伤害 +25%。"},
-				{"threshold": 7, "name": "暗7·蚀魂", "detail": "暗族单位攻击带有负面状态的敌人时，每次使其攻击/防御/攻速 -3%，自身攻击/防御/攻速 +2%（各最多 15 层）。"},
+				{"threshold": 7, "name": "暗7·蚀魂", "detail": "暗族单位每次普攻使目标攻击/防御/攻速 -4%，自身攻击/防御/攻速 +3%（各最多 15 层）。"},
 			]
 		"undead":
 			return [
-				{"threshold": 1, "name": "灵族特性·亡者召唤", "detail": "累计 30 次死亡时，每个灵族单位以 40% 属性召唤一个随机死亡单位的复制体。"},
+				{"threshold": 2, "name": "灵2·剧毒抑疗", "detail": "目标中毒期间，其治疗与吸血获得的生命减少 30%。"},
 				{"threshold": 4, "name": "灵4·剧毒", "detail": "灵族中毒伤害翻倍。"},
 				{"threshold": 7, "name": "灵7·噬毒", "detail": "灵族单位攻击已中毒的敌人时，每次回复自身 15% 最大生命。"},
 			]
@@ -189,13 +189,13 @@ func _race_entries_en(race: String) -> Array:
 		"dark":
 			return [
 				{"threshold": 1, "name": "Dark Trait: Kill Stack", "detail": "Every 3 enemy deaths, Dark units gain 1 stack of +6% damage."},
-				{"threshold": 2, "name": "Dark 2: Debuff Power", "detail": "Dark debuffs (ATK down, slow, DEF down) are 25% stronger."},
+				{"threshold": 2, "name": "Dark 2: Debuff Power", "detail": "All debuffs applied by Dark units are 30% stronger; controls without a numeric strength last 30% longer."},
 				{"threshold": 5, "name": "Dark 5: Damage", "detail": "Dark units deal +25% damage."},
-				{"threshold": 7, "name": "Dark 7: Soul Sap", "detail": "When Dark units hit a debuffed enemy, each hit reduces its ATK/DEF/AS by 3% and raises their own by 2% (up to 15 stacks each)."},
+				{"threshold": 7, "name": "Dark 7: Soul Sap", "detail": "Each Dark basic attack reduces the target’s ATK/DEF/AS by 4% and raises the attacker’s by 3% (up to 15 stacks each)."},
 			]
 		"undead":
 			return [
-				{"threshold": 1, "name": "Undead Trait: Death Summon", "detail": "At 30 total deaths, each of your Undead units summons a clone of a random dead unit at 40% stats."},
+				{"threshold": 2, "name": "Undead 2: Venom Suppression", "detail": "While poisoned, the target receives 30% less HP from healing and lifesteal."},
 				{"threshold": 4, "name": "Undead 4: Poison", "detail": "Undead poison deals double damage."},
 				{"threshold": 7, "name": "Undead 7: Venom Feast", "detail": "When Undead units hit a poisoned enemy, they restore 15% of their max HP per hit."},
 			]

@@ -243,6 +243,19 @@ static func status_damage_taken_multiplier(target: Dictionary) -> float:
 		mul *= 1.0 + float(target.statuses.ice_vulnerable.get("pct", 0.15))
 	return mul
 
+static func source_damage_multiplier() -> float:
+	if _stat_source_uid.is_empty():
+		return 1.0
+	for side in ["player", "enemy"]:
+		for source in _stat_state.get(side, []):
+			if str(source.get("uid", "")) != _stat_source_uid:
+				continue
+			StatusEffectService.ensure_status(source)
+			if source.statuses.has("damage_down"):
+				return maxf(0.0, 1.0 - float(source.statuses.damage_down.get("pct", 0.0)))
+			return 1.0
+	return 1.0
+
 static func effective_defense(target: Dictionary) -> int:
 	var base := float(target.get("defense", target.get("def", 0)))
 	StatusEffectService.ensure_status(target)
@@ -282,6 +295,8 @@ static func apply_damage(target: Dictionary, amount: int, ignore_defense: bool =
 		if RngService.rng.randf() < dodge_chance:
 			return 0
 	var remaining := amount
+	if not _stat_source_uid.is_empty() and _stat_source_uid != str(target.get("uid", "")):
+		remaining = maxi(MIN_HP_DAMAGE, int(ceil(float(remaining) * source_damage_multiplier())))
 	# Frenzy amplifies damage caused by a unit. Environmental sudden-death
 	# damage has no source uid and uses apply_sudden_death_damage().
 	if not _stat_source_uid.is_empty():

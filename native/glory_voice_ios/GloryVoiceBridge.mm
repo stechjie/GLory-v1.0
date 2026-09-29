@@ -24,6 +24,7 @@ protected:
         ClassDB::bind_method(D_METHOD("leaveRoom"), &GloryVoiceIOS::leaveRoom);
         ClassDB::bind_method(D_METHOD("setMicrophoneEnabled", "enabled"), &GloryVoiceIOS::setMicrophoneEnabled);
         ClassDB::bind_method(D_METHOD("setParticipantVolume", "identity", "volume"), &GloryVoiceIOS::setParticipantVolume);
+        ClassDB::bind_method(D_METHOD("setAudience", "all", "identities_json"), &GloryVoiceIOS::setAudience);
         ClassDB::bind_method(D_METHOD("getStatus"), &GloryVoiceIOS::getStatus);
         ClassDB::bind_method(D_METHOD("getCapabilities"), &GloryVoiceIOS::getCapabilities);
     }
@@ -49,6 +50,10 @@ public:
     void setParticipantVolume(const String &identity, double volume) {
         NSString *i = native_string(identity);
         on_main(^{ [[GloryVoiceNative shared] setParticipantVolume:i volume:volume]; });
+    }
+    void setAudience(bool all, const String &identities_json) {
+        NSString *ids = native_string(identities_json);
+        on_main(^{ [[GloryVoiceNative shared] setAudience:all identitiesJson:ids]; });
     }
     String getStatus() {
         __block NSString *result;

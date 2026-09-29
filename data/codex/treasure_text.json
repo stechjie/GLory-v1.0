@@ -20,8 +20,8 @@
   "def_formation_heal": {
    "name": "法阵回春",
    "name_en": "Formation Heal",
-   "effect": "我方法阵 HP +1，不超过初始上限；胡牌手激活后为 +2",
-   "effect_en": "Your formation gains +1 HP, never above its starting cap; +2 once Winning Hand is active",
+   "effect": "胜利或平局后法阵 HP +1，失败后 +2，不超过初始上限",
+   "effect_en": "After a win or draw, restore 1 formation HP; after a loss, restore 2, up to the starting cap",
    "trigger": "每次战后",
    "trigger_en": "After each battle"
   },
@@ -68,8 +68,8 @@
   "ctrl_interrupt_chain": {
    "name": "打断锁链",
    "name_en": "Interrupt Chain",
-   "effect": "25% 概率缴械目标，冷却 5 秒",
-   "effect_en": "25% chance to disarm the target, 5s cooldown",
+   "effect": "攻击时 25% 概率缴械目标 1.5 秒，冷却 3 秒",
+   "effect_en": "On attack, 25% chance to disarm for 1.5s, 3s cooldown",
    "trigger": "我方普通棋子攻击时",
    "trigger_en": "When an allied normal piece attacks"
   },
@@ -84,8 +84,8 @@
   "ctrl_binding_weight": {
    "name": "束缚重压",
    "name_en": "Binding Weight",
-   "effect": "当前目标移动 -25%、攻速 -20%，持续 2 秒，冷却 5 秒",
-   "effect_en": "Current target moves 25% slower and attacks 20% slower for 2s, 5s cooldown",
+   "effect": "当前目标移动 -25%、攻速 -20%、造成伤害 -20%，持续 2 秒，冷却 5 秒",
+   "effect_en": "Target movement -25%, attack speed -20%, and outgoing damage -20% for 2s, 5s cooldown",
    "trigger": "我方普通棋子攻击时",
    "trigger_en": "When an allied normal piece attacks"
   },
@@ -132,8 +132,8 @@
   "money_compound": {
    "name": "复利之道",
    "name_en": "Compound Interest",
-   "effect": "单件战后利息额外 +5% 当前金币",
-   "effect_en": "Each copy adds +5% of your current gold to post-battle interest",
+   "effect": "战后利息额外 +5% 当前金币；本回合未花金币则再额外 +3%",
+   "effect_en": "Post-battle interest gains 5% of current gold, plus another 3% if no gold was spent this round",
    "trigger": "每次战后",
    "trigger_en": "After each battle"
   },
@@ -148,24 +148,24 @@
   "money_discount": {
    "name": "折扣令牌",
    "name_en": "Discount Token",
-   "effect": "棋子商店价格 -20%，最低 1 金",
-   "effect_en": "Piece shop prices -20%, minimum 1 gold",
+   "effect": "棋子商店价格 -30%，最低 1 金",
+   "effect_en": "Piece shop prices -30%, minimum 1 gold",
    "trigger": "准备阶段购买棋子时",
    "trigger_en": "When buying pieces in the prep phase"
   },
   "money_golden_altar": {
    "name": "黄金祭坛",
    "name_en": "Golden Altar",
-   "effect": "准备阶段出现黄金祭坛按钮：法阵 HP -1，金币 +50；每回合最多 3 次，法阵 HP <=10 不可用",
-   "effect_en": "A Golden Altar button appears in the prep phase: formation HP -1 for +50 gold. Up to 3 times per round, unavailable at formation HP <= 10",
+   "effect": "准备阶段每次使用：法阵 HP -2、金币 +100，每回合最多 3 次，HP <=10 不可用；本回合不使用则战后法阵 HP +1",
+   "effect_en": "Each prep use costs 2 formation HP and grants 100 gold, up to 3 uses per round; unavailable at HP <=10. If unused this round, restore 1 formation HP after battle",
    "trigger": "手动点击按钮",
    "trigger_en": "Manual button"
   },
   "money_lucky_envelope": {
    "name": "幸运信封",
    "name_en": "Lucky Envelope",
-   "effect": "战后随机 +10 / +20 / +30 金",
-   "effect_en": "Gain +10 / +20 / +30 gold at random after a battle",
+   "effect": "战后随机 +30 / +40 / +50 金",
+   "effect_en": "After battle, randomly gain 30, 40, or 50 gold",
    "trigger": "每次战后",
    "trigger_en": "After each battle"
   },
@@ -180,8 +180,8 @@
   "elem_frost_blade": {
    "name": "冰封霜刃",
    "name_en": "Frost Blade",
-   "effect": "攻击有 25% 概率使目标移动 -35%、攻速 -35%，持续 1.5 秒",
-   "effect_en": "Attacks have a 25% chance to cut the target's movement and attack speed by 35% for 1.5s",
+   "effect": "攻击有 25% 概率使目标移动 -35%、攻速 -50%，持续 2 秒",
+   "effect_en": "Attacks have a 25% chance to reduce target movement by 35% and attack speed by 50% for 2s",
    "trigger": "我方普通棋子攻击时",
    "trigger_en": "When an allied normal piece attacks"
   },
@@ -216,8 +216,8 @@
    "name_en": "Money Magic",
    "requires_text": "幸运信封 + 时空压缩",
    "requires_text_en": "Lucky Envelope + Time Compress",
-   "effect": "战后额外随机 +50 / +60 / +70 金，10% 概率额外 +100 金",
-   "effect_en": "Gain an extra +50 / +60 / +70 gold after a battle, with a 10% chance of +100 more"
+   "effect": "战后额外随机 +60 / +70 / +80 金，10% 概率额外 +200 金",
+   "effect_en": "After battle, randomly gain another 60, 70, or 80 gold, with a 10% chance for 200 more"
   },
   "link_blood_covenant": {
    "name": "血之契约",
@@ -232,16 +232,16 @@
    "name_en": "Paralysis Shackles",
    "requires_text": "打断锁链 + 冰封霜刃",
    "requires_text_en": "Interrupt Chain + Frost Blade",
-   "effect": "打断锁链成功缴械后，额外触发冰属性效果，并使目标获得冰易伤：受伤 +15%，持续 3 秒",
-   "effect_en": "A successful Interrupt Chain also fires the ice effect and leaves the target ice-vulnerable: +15% damage taken for 3s"
+   "effect": "打断锁链成功缴械后触发冰属性效果，使目标受伤 +25%、治疗效果 -75%，持续 4 秒",
+   "effect_en": "A successful Interrupt Chain also applies ice; target takes 25% more damage and receives 75% less healing for 4s"
   },
   "link_oppression_counter": {
    "name": "压迫反击",
    "name_en": "Oppression Counter",
    "requires_text": "束缚重压 + 狂暴进攻",
    "requires_text_en": "Binding Weight + Frenzy Assault",
-   "effect": "我方普通棋子被攻击时，对攻击者施加减攻 20%，持续 2 秒；狂暴进攻会在被攻击时也对攻击者叠加",
-   "effect_en": "When an allied normal piece is attacked, the attacker takes -20% ATK for 2s; Frenzy Assault also stacks onto the attacker when struck"
+   "effect": "我方普通棋子被攻击时，对攻击者施加减攻 25%，持续 2 秒；狂暴进攻仍对攻击者叠加",
+   "effect_en": "When a friendly normal piece is hit, the attacker gets ATK -25% for 2s; Frenzy Assault still stacks on the attacker"
   },
   "link_fraud_fate": {
    "name": "诡诈命运",
@@ -256,8 +256,8 @@
    "name_en": "Iron Maiden",
    "requires_text": "铁壁之护 + 腐蚀毒针",
    "requires_text_en": "Iron Wall + Corrosive Needle",
-   "effect": "我方普通棋子受击时，反施失血 3 秒，并使攻击者 DEF -6，持续 3 秒，冷却 5 秒",
-   "effect_en": "When an allied normal piece is hit, bleed the attacker for 3s and cut their DEF by 6 for 3s, 5s cooldown"
+   "effect": "我方普通棋子受击时，使攻击者失血 5 秒且 DEF -50% 持续 5 秒，冷却 8 秒",
+   "effect_en": "When a friendly normal piece is hit, bleed the attacker for 5s and reduce DEF by 50% for 5s, 8s cooldown"
   },
   "link_toxic_burst": {
    "name": "剧毒爆发",
@@ -272,24 +272,24 @@
    "name_en": "Path of Riches",
    "requires_text": "复利之道 + 雷霆加速",
    "requires_text_en": "Compound Interest + Thunder Haste",
-   "effect": "我方普通棋子造成伤害后 10% 概率 +10 金",
-   "effect_en": "Allied normal pieces have a 10% chance to grant +10 gold after dealing damage"
+   "effect": "我方普通棋子造成伤害后 25% 概率 +10 金",
+   "effect_en": "After a friendly normal piece deals damage, 25% chance to gain 10 gold"
   },
   "link_clearance_sale": {
    "name": "清仓特卖",
    "name_en": "Clearance Sale",
    "requires_text": "狂怒阵容 + 折扣令牌",
    "requires_text_en": "Fury Roster + Discount Token",
-   "effect": "自动激活，棋子商店价格 -40%，最低 1 金",
-   "effect_en": "Activates automatically: piece shop prices -40%, minimum 1 gold"
+   "effect": "自动激活，同队所有人的棋子商店价格 -60%，最低 1 金",
+   "effect_en": "Activates automatically: all teammates get 60% off piece shop prices, minimum 1 gold"
   },
   "link_hu_pai_master": {
    "name": "胡牌手",
    "name_en": "Winning Hand",
-   "requires_text": "生命丰碑 + 法阵回春 + 震荡余波 + 血契之刃 + 狂怒阵容",
-   "requires_text_en": "Life Monument + Formation Heal + Shockwave + Blood Pact + Fury Roster",
-   "effect": "五件全部拥有时激活：生命丰碑 +40%、法阵回春 +2、震荡余波眩晕 2 秒、血契之刃 ATK x1.50、狂怒阵容上限提高至9；冷却、概率、次数与负面代价不变",
-   "effect_en": "Active while all five are held: Life Monument +40%, Formation Heal +2, Shockwave stuns 2s, Blood Pact ATK ×1.50, Fury Roster raises the unit cap to 9. Cooldowns, chances, use counts and drawbacks are unchanged"
+   "requires_text": "生命丰碑 + 黄金祭坛 + 震荡余波 + 血契之刃 + 狂怒阵容",
+   "requires_text_en": "Life Monument + Golden Altar + Shockwave + Blood Pact + Fury Roster",
+   "effect": "集齐生命丰碑、黄金祭坛、震荡余波、血契之刃、狂怒阵容时立即回复法阵 HP +2；生命丰碑 +40%、震荡余波眩晕 2 秒、血契之刃 ATK x1.50、狂怒阵容上限 9；黄金祭坛使用时不扣 HP，仍得 +100 金，每回合最多 3 次，HP <=10 不可用",
+   "effect_en": "On completing Life Monument, Golden Altar, Shockwave, Blood Pact, and Fury Roster, immediately restore 2 formation HP. Life Monument +40%, Shockwave stun 2s, Blood Pact ATK x1.50, roster cap 9; Golden Altar costs no HP and still grants 100 gold per use, up to 3 times per round, unavailable at HP <=10"
   }
  },
  "sets": {
@@ -314,8 +314,8 @@
    "name_en": "4 Attack",
    "requires_text": "任意 4 件攻击宝藏",
    "requires_text_en": "Any 4 Attack treasures",
-   "effect": "普通棋子普攻命中后，若目标生命 ≤10% 则直接斩杀（Boss 不受影响，无敌也挡不住）。",
-   "effect_en": "After a normal unit's basic attack, a target at or below 10% HP is executed outright (not Bosses; ignores invincibility)."
+   "effect": "普通棋子普攻后对生命 <=10% 的非 Boss 目标直接斩杀，触发斩杀的棋子攻速 +25% 持续 5 秒，重复触发只刷新时间；无敌也挡不住斩杀",
+   "effect_en": "After a normal unit's basic attack, execute non-Boss targets at <=10% HP even through invulnerability; the executing unit gains 25% attack speed for 5s, refreshing duration on repeat"
   },
   "set_money": {
    "name": "4金钱",
@@ -330,8 +330,8 @@
    "name_en": "4 Element",
    "requires_text": "4 件元素宝藏",
    "requires_text_en": "All 4 Element treasures",
-   "effect": "普通棋子攻击 20% 概率触发 180 范围元素爆发，对范围敌人造成最大生命 10% 真实伤害。",
-   "effect_en": "Normal units' attacks have a 20% chance to trigger an AoE (radius 180) elemental burst dealing 10% max HP true damage."
+   "effect": "普通棋子攻击 20% 概率触发 180 范围元素爆发，造成目标最大生命 10% 真实伤害；每个棋子内置冷却 2 秒",
+   "effect_en": "Each normal unit's attack has a 20% chance to trigger an elemental burst in radius 180 for 10% max HP true damage, with its own 2s cooldown"
   }
  }
 }

@@ -600,7 +600,7 @@ func refresh() -> void:
 			btn.modulate = Color.WHITE
 			continue
 		var sold := bool(GameState.shop_sold[i])
-		var cost := EconomyLedger.unit_cost(offer, GameState.owned_treasures)
+		var cost := EconomyLedger.unit_cost(offer, GameState.owned_treasures, GameState.team_clearance_sale_active)
 		var can_purchase := not sold and GameState.gold >= cost
 		var unit_name := DataRegistry.unit_display_name(offer, LocaleManager.get_locale() == "en")
 		btn.disabled = false
@@ -684,7 +684,7 @@ func _purchase_reason(index: int) -> String:
 		return tr("ui_no_item")
 	if bool(GameState.shop_sold[index]):
 		return tr("ui_sold")
-	if GameState.gold < EconomyLedger.unit_cost(offer, GameState.owned_treasures):
+	if GameState.gold < EconomyLedger.unit_cost(offer, GameState.owned_treasures, GameState.team_clearance_sale_active):
 		return tr("ui_not_enough_gold")
 	if PrepRules.first_empty_bench_slot() < 0:
 		return tr("ui_bench_full")
@@ -699,7 +699,7 @@ func buy_selected() -> void:
 	if offer.is_empty() or bool(GameState.shop_sold[selected]):
 		return
 	# 买不了时给提示（原推车按钮的 tooltip 逻辑搬过来）
-	if GameState.gold < EconomyLedger.unit_cost(offer, GameState.owned_treasures):
+	if GameState.gold < EconomyLedger.unit_cost(offer, GameState.owned_treasures, GameState.team_clearance_sale_active):
 		message_requested.emit(tr("ui_not_enough_gold"))
 		return
 	var empty_bench := PrepRules.first_empty_bench_slot()
@@ -717,6 +717,8 @@ func format_gold_interest_detail() -> String:
 	var money_compound_bonus := 0
 	if GameState.owned_treasures.has("money_compound"):
 		money_compound_bonus = int(floor(float(gold) * 0.05))
+		if not GameState.gold_spent_this_round:
+			money_compound_bonus += int(floor(float(gold) * 0.03))
 	var pet_interest_bonus := EconomyService.pet_interest_bonus(gold, PlayerProfile.get_active())
 	var total_interest := base_interest + money_compound_bonus + pet_interest_bonus
 	var is_en := TranslationServer.get_locale().begins_with("en")

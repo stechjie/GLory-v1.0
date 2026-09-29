@@ -1014,16 +1014,20 @@ func _build_chat_box() -> void:
 # 右边从 x=447 起是敌方席位 1。短语面板打开时会盖住它们（面板 z=40），面板本来就是临时的。
 const VoiceControls := preload("res://ui/components/VoiceControls.gd")
 const VOICE_BTN_POS := Vector2(180, 650)
-const VOICE_BTN_SIZE := Vector2(150, 46)
-const VOICE_MEMBERS_POS := Vector2(336, 650)
-const VOICE_MEMBERS_SIZE := Vector2(90, 46)
-const VOICE_BTN_FONT := 18
+const VOICE_BTN_SIZE := Vector2(100, 46)
+const VOICE_AUDIENCE_POS := Vector2(286, 650)
+const VOICE_AUDIENCE_SIZE := Vector2(68, 46)
+const VOICE_MEMBERS_POS := Vector2(360, 650)
+const VOICE_MEMBERS_SIZE := Vector2(66, 46)
+const VOICE_BTN_FONT := 15
 var _voice_controls: VoiceControls = null
 
 func _build_voice_button() -> void:
 	_voice_controls = VoiceControls.new()
-	_voice_controls.build(self, VOICE_BTN_SIZE, VOICE_MEMBERS_SIZE, VOICE_BTN_FONT)
+	_voice_controls.build(self, VOICE_BTN_SIZE, VOICE_MEMBERS_SIZE, VOICE_BTN_FONT,
+		{"panel_context": "lobby"})
 	_place_voice_button(_voice_controls.voice_button, VOICE_BTN_POS, VOICE_BTN_SIZE)
+	_place_voice_button(_voice_controls.audience_button, VOICE_AUDIENCE_POS, VOICE_AUDIENCE_SIZE)
 	_place_voice_button(_voice_controls.members_button, VOICE_MEMBERS_POS, VOICE_MEMBERS_SIZE)
 
 func _place_voice_button(button: Button, pos: Vector2, size: Vector2) -> void:

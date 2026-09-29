@@ -93,8 +93,10 @@ func _check_flags() -> void:
 		"flags_6", "6 人不激活")
 	_expect(not f7.has("god_invulnerable_opening") and not f7.has("human_last_stand") and not f7.has("dark_debuff_duration"),
 		"flags_old_removed", "旧 7 档 flag 已删除")
-	_expect(int(f7.undead_death_clone_threshold) == 30 and float(f7.undead_threshold_mul) == 1.0,
-		"flags_undead_threshold", "灵7 不再降低阈值：%d / %.2f" % [int(f7.undead_death_clone_threshold), float(f7.undead_threshold_mul)])
+	var f2 := SynergyService.flags_from_counts({"god": 0, "dark": 2, "undead": 2, "human": 0})
+	_expect(is_equal_approx(float(f2.dark_debuff_strength), 0.30) and is_equal_approx(float(f2.undead_poison_antiheal), 0.30),
+		"flags_2", "暗2 与灵2 均为 30%")
+	_expect(not f7.has("undead_death_clone_threshold"), "flags_clone_removed", "30 次死亡克隆已移除")
 
 
 # --- 人7 -------------------------------------------------------------------------
@@ -234,16 +236,16 @@ func _check_dark_sap() -> void:
 	var st := _state([d], [t])
 	DamageService.begin_stat_context(st, d)
 	BattleSimulator._perform_attack(d, t, st)
-	_expect(int(t.atk) == 200 and int(d.atk) == 100, "dark_sap_needs_debuff", "目标没负面时不触发")
-	StatusEffectService.add_status(t, "slow", 99.0, {"attack_speed_pct": 0.0, "move_pct": 0.0})
+	_expect(int(t.atk) == 192 and int(t.defense) == 96 and int(d.atk) == 103, "dark_sap_no_debuff_needed",
+		"无负面也触发：目标 atk %d def %d，自己 atk %d" % [int(t.atk), int(t.defense), int(d.atk)])
 	BattleSimulator._perform_attack(d, t, st)
-	_expect(int(t.atk) == 194 and int(t.defense) == 97 and int(d.atk) == 102, "dark_sap_1",
-		"目标 atk %d def %d，自己 atk %d" % [int(t.atk), int(t.defense), int(d.atk)])
+	_expect(int(t.atk) == 184 and int(t.defense) == 92 and int(d.atk) == 106, "dark_sap_2",
+		"第二次普攻：目标 atk %d def %d，自己 atk %d" % [int(t.atk), int(t.defense), int(d.atk)])
 	for i in 30:
 		BattleSimulator._perform_attack(d, t, st)
 	DamageService.clear_stat_context()
-	_expect(int(t.dark_sap_taken) == 15 and int(t.atk) == 110 and int(d.atk) == 130 and is_equal_approx(float(d.attack_speed), 1.3),
-		"dark_sap_cap", "15 层封顶：目标 atk %d（应 110），自己 atk %d（应 130），自己攻速 %.2f" % [int(t.atk), int(d.atk), float(d.attack_speed)])
+	_expect(int(t.dark_sap_taken) == 15 and int(t.atk) == 80 and int(d.atk) == 145 and is_equal_approx(float(d.attack_speed), 1.45),
+		"dark_sap_cap", "15 层封顶：目标 atk %d（应 80），自己 atk %d（应 145），自己攻速 %.2f" % [int(t.atk), int(d.atk), float(d.attack_speed)])
 
 
 # --- 4 攻击 / 4 控制 --------------------------------------------------------------
@@ -297,12 +299,12 @@ func _check_target_lock() -> void:
 		if not tu.is_empty():
 			targets[tu] = true
 		st.elapsed = float(i) * 0.1
-	_expect(targets.keys() == ["l1"], "target_lock_live", "60 tick 里实际打过的目标：%s（应只有 l1）" % str(targets.keys()))
+	_expect(targets.has("l1") and targets.has("l2"), "target_lock_reselect_on_stall", "60 tick 里先打 l1、卡路后改打 l2：%s" % str(targets.keys()))
 	var picked := str(BattleSimShared._select_target(a, [e1, e2]).get("uid", ""))
 	e1.alive = false
 	e1.hp = 0
 	var after := str(BattleSimShared._select_target(a, [e1, e2]).get("uid", ""))
-	_expect(picked == "l1" and after == "l2", "target_lock_release", "锁定 %s，死后换成 %s" % [picked, after])
+	_expect(picked == "l2" and after == "l2", "target_lock_after_reselect", "卡路改锁 %s，旧目标死亡后仍是 %s" % [picked, after])
 	# 嘲讽可以抢走，嘲讽结束回到原目标
 	var a2 := _unit("la2", "-", "player", 0, {}, 1, 3000)
 	a2.pos = Vector2(500, 420)

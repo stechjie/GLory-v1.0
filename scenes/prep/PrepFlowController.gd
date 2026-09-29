@@ -42,6 +42,11 @@ func _pick_treasure(tid: String) -> void:
 		return
 	_claim_pending_treasure_round()
 	GameState.pending_treasure.active = false
+	if "link_hu_pai_master" not in bonus_before and TreasureService.has_linkage("link_hu_pai_master"):
+		if GameState.team_mode:
+			GameState.team_hp = mini(GameState.START_FORMATION_HP, GameState.team_hp + 2)
+		else:
+			GameState.player_formation_hp = mini(GameState.START_FORMATION_HP, GameState.player_formation_hp + 2)
 	SaveManager.save_run()
 	_refresh_all()
 	_queue_bonus_fx(bonus_before)
@@ -160,6 +165,10 @@ func _mark_online_board_changed() -> void:
 		if NetworkService.local_ready_intent():
 			NetworkService.team_set_ready(false)
 
+func _on_team_treasure_effects_changed() -> void:
+	SaveManager.save_run()
+	_refresh_all()
+
 func _on_network_session_changed() -> void:
 	var incoming_offer := str(NetworkService.server_shop.get("offer_id", ""))
 	if not incoming_offer.is_empty() and incoming_offer != GameState.shop_offer_id:
@@ -223,7 +232,7 @@ func _on_golden_altar() -> void:
 	# 单机：本地就是权威，直接结算。
 	if GameState.player_formation_hp <= NetworkService.ALTAR_MIN_HP or GameState.golden_altar_uses >= NetworkService.ALTAR_MAX_USES_PER_ROUND:
 		return
-	GameState.player_formation_hp -= 1
+	GameState.player_formation_hp -= 0 if TreasureService.has_linkage("link_hu_pai_master") else 2
 	GameState.gold += NetworkService.ALTAR_GOLD
 	GameState.prep_income_total += NetworkService.ALTAR_GOLD
 	GameState.golden_altar_uses += 1
@@ -264,6 +273,8 @@ func _on_generous_fate_gamble() -> void:
 		GameState.prep_income_total += maxi(0, GameState.gold - before)
 	else:
 		GameState.gold = maxi(0, int(floor(float(before) * loss_keep)))
+		if GameState.gold < before:
+			GameState.gold_spent_this_round = true
 	SaveManager.save_run()
 	_refresh_all()
 	# 赌博同样会改变面板内容并触发棋盘平移，重新对齐圆圈以防偏移。

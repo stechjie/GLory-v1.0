@@ -7,11 +7,11 @@ extends RefCounted
 # tools/audio_sfx_check 会拿这两个函数对一遍，对不上直接红。
 #
 # 取值的来源是 flags_from_counts() 下面那一堆比较：god 1/3/7、dark 1/2/5/7、
-# undead 1/4/7、human 1/2/7。
+# undead 2/4/7、human 1/2/7。
 const RACE_THRESHOLDS := {
 	"god": [1, 3, 7],
 	"dark": [1, 2, 5, 7],
-	"undead": [1, 4, 7],
+	"undead": [2, 4, 7],
 	"human": [1, 2, 7],
 }
 
@@ -39,8 +39,8 @@ static func flags_from_counts(counts: Dictionary) -> Dictionary:
 		"god_divine_pulse": god >= 7,
 		"dark_death_stack_enabled": dark > 0,
 		"dark_damage_bonus": 0.25 if dark >= 5 else 0.0,
-		"dark_debuff_strength": 0.25 if dark >= 2 else 0.0,
-		# 暗7（9.24 改）：普攻带负面的目标 → 目标攻/防/攻速 -3%、自己 +2%，各最多 15 层。
+		"dark_debuff_strength": 0.30 if dark >= 2 else 0.0,
+		# 暗7：每次普攻使目标攻/防/攻速 -4%、自己 +3%，各最多 15 层。
 		# 旧的「负面时长 +50%」(dark_debuff_duration) 已删除，_dark_duration 读不到即为 0。
 		"dark_sap": dark >= 7,
 		"undead_poison_bonus": 1.0 if undead >= 4 else 0.0,
@@ -48,7 +48,7 @@ static func flags_from_counts(counts: Dictionary) -> Dictionary:
 		# 旧的「克隆/母灵阈值 ×0.75」已删除，undead_threshold_mul 恒为 1.0。
 		"undead_poison_heal": 0.15 if undead >= 7 else 0.0,
 		"undead_threshold_mul": 1.0,
-		"undead_death_clone_threshold": 30 if undead > 0 else 0,
+		"undead_poison_antiheal": 0.30 if undead >= 2 else 0.0,
 		"human_shield": human >= 2,
 		# 人7（9.24 改）：己方棋盘每死 1 个，活着的全部 +1 档（每档 +20%，见 BattleSimTreasures._owner_human_rally）。
 		# 旧的「只剩最后 1 个时属性翻倍」已删除。

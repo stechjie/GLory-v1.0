@@ -36,8 +36,8 @@ const PVP_KILLS_LOSS := 1
 ## 宝藏里带随机的两项（幸运信封、金钱魔法联动）用期望值结算，
 ## 否则 EconomyService 里的 Crypto 随机会让各客户端推演出不同的金币。
 const RANDOM_MONEY_TREASURES := ["money_lucky_envelope"]
-const LUCKY_ENVELOPE_EXPECTED := 20
-const MONEY_MAGIC_EXPECTED := 70
+const LUCKY_ENVELOPE_EXPECTED := 40
+const MONEY_MAGIC_EXPECTED := 90
 const TIER_WEIGHT := {1: 1.0, 2: 1.6, 3: 2.4}
 const FRONT_SLOTS := [1, 2, 0, 3, 5, 6, 4, 7]      # 第 1、2 行，中间优先
 const BACK_SLOTS := [13, 14, 12, 15, 9, 10, 8, 11]  # 第 4、3 行，中间优先
@@ -145,6 +145,7 @@ static func _settle_battle(bot: Dictionary, round_index: int, rng: RandomNumberG
 	var board := _arrange_board(bot)
 	var ctx := {
 		"gold_before": int(bot.gold),
+		"gold_spent_this_round": bool(bot.get("gold_spent_this_round", false)),
 		"kill_gold": kill_gold,
 		"bonus_gold": 0,
 		"kind": kind,
@@ -165,6 +166,7 @@ static func _settle_battle(bot: Dictionary, round_index: int, rng: RandomNumberG
 	if TreasureService.has_linkage_in(owned, "link_money_magic"):
 		gold += MONEY_MAGIC_EXPECTED
 	bot.gold = gold
+	bot.gold_spent_this_round = false
 
 
 # ---------------------------------------------------------------- 胡萝卜 / 升级石
@@ -223,6 +225,7 @@ static func _prep_round(bot: Dictionary, round_index: int, rng: RandomNumberGene
 			if not _wants(bot, offer):
 				continue
 			bot.gold = int(bot.gold) - cost
+			bot.gold_spent_this_round = true
 			(bot.roster as Array).append({"id": str(offer.get("id", "")), "star": 1, "def": offer, "cost_basis": cost})
 			offers[i] = {}
 			_merge(bot)
@@ -233,6 +236,8 @@ static func _prep_round(bot: Dictionary, round_index: int, rng: RandomNumberGene
 		if int(bot.gold) - _reserve(bot, round_index) < refresh_cost + 60:
 			break
 		bot.gold = int(bot.gold) - refresh_cost
+		if refresh_cost > 0:
+			bot.gold_spent_this_round = true
 		refreshes += 1
 		offers = _roll_shop(units, round_index, rng)
 	_update_second_race(bot)
@@ -373,6 +378,7 @@ static func _try_tech(bot: Dictionary, round_index: int) -> void:
 	var price := CarrotRules.tech_price(int(bot.tech))
 	if int(bot.gold) - _reserve(bot, round_index) >= price + 100:
 		bot.gold = int(bot.gold) - price
+		bot.gold_spent_this_round = true
 		bot.tech = int(bot.tech) + 1
 
 
@@ -404,6 +410,7 @@ static func _try_four_star(bot: Dictionary) -> void:
 		return
 	var element := str((target.def as Dictionary).get("element", ""))
 	bot.gold = int(bot.gold) - cost
+	bot.gold_spent_this_round = true
 	bot.stones[element] = int(bot.stones[element]) - 1
 	target.star = GameState.MAX_UNIT_STAR
 

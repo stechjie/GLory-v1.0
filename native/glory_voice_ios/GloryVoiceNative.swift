@@ -11,6 +11,12 @@ public final class GloryVoiceNative: NSObject, RoomDelegate {
     private var activeRoom: Room?
     private var generation = 0
     private var desiredMic = false
+    private var audienceAll = false
+    private var audienceIds: Set<String> = []
+    private var audienceReady = false
+    private var audienceRevision = 0
+    private var audienceFingerprint = ""
+    private var audienceTask: Task<Void, Never>?
     private var microphoneTask: Task<Void, Never>?
     private var disconnectTask: Task<Void, Never>?
     private var connectionTask: Task<Void, Never>?
@@ -68,7 +74,7 @@ public final class GloryVoiceNative: NSObject, RoomDelegate {
                     return
                 }
                 self.applyVolumes(room)
-                self.reconcileMicrophone(room, serial: serial)
+                self.updateAudience(room, serial: serial)
             } catch {
                 guard self.generation == serial, self.activeRoom === room else { return }
                 self.connectionError = "connect_failed"
@@ -80,6 +86,11 @@ public final class GloryVoiceNative: NSObject, RoomDelegate {
     @objc public func leaveRoom() {
         generation += 1
         desiredMic = false
+        audienceReady = false
+        audienceRevision += 1
+        audienceFingerprint = ""
+        audienceTask?.cancel()
+        audienceTask = nil
         let previousMicrophone = microphoneTask
         previousMicrophone?.cancel()
         microphoneTask = nil
@@ -109,9 +120,63 @@ public final class GloryVoiceNative: NSObject, RoomDelegate {
         return ""
     }
 
+    @objc public func setAudience(_ all: Bool, identitiesJson: String) {
+        let data = Data(identitiesJson.utf8)
+        let identities = (try? JSONSerialization.jsonObject(with: data)) as? [String] ?? []
+        audienceAll = all
+        audienceIds = Set(identities.filter { !$0.isEmpty })
+        audienceReady = false
+        audienceRevision += 1
+        if let room = activeRoom, room.connectionState == .connected {
+            updateAudience(room, serial: generation)
+        }
+    }
+
+    private func updateAudience(_ room: Room, serial: Int) {
+        guard audienceTask == nil else { return }
+        let sids = room.remoteParticipants.values.compactMap { participant -> String? in
+            guard let identity = participant.identity?.stringValue,
+                  audienceIds.contains(identity) else { return nil }
+            return participant.sid?.stringValue
+        }.sorted()
+        let fingerprint = "\(audienceAll):\(sids.joined(separator: ","))"
+        if audienceReady && fingerprint == audienceFingerprint { return }
+        let revision = audienceRevision
+        let allowAll = audienceAll
+        audienceTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { if self.generation == serial { self.audienceTask = nil } }
+            do {
+                let previousMicrophone = self.microphoneTask
+                previousMicrophone?.cancel()
+                await previousMicrophone?.value
+                // Stop the old scope before narrowing it, then publish only after
+                // the new subscriber permissions are accepted.
+                if room.localParticipant.isMicrophoneEnabled() {
+                    try await room.localParticipant.setMicrophone(enabled: false)
+                }
+                let permissions = sids.map {
+                    ParticipantTrackPermission(participantSid: $0,
+                                               allTracksAllowed: true,
+                                               allowedTrackSids: [])
+                }
+                try await room.localParticipant.setTrackSubscriptionPermissions(
+                    allParticipantsAllowed: allowAll, trackPermissions: permissions)
+                guard self.generation == serial, self.activeRoom === room,
+                      self.audienceRevision == revision else { return }
+                self.audienceFingerprint = fingerprint
+                self.audienceReady = true
+                self.reconcileMicrophone(room, serial: serial)
+            } catch {
+                if self.generation == serial { self.micError = "audience_failed" }
+            }
+        }
+    }
+
     // Serialize toggles. A late publish completion may not re-enable the mic
     // after switching to Listen, leaving a room, or joining a different team.
     private func reconcileMicrophone(_ room: Room, serial: Int) {
+        guard audienceReady else { return }
         guard microphoneTask == nil else { return }
         microphoneTask = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -155,6 +220,9 @@ public final class GloryVoiceNative: NSObject, RoomDelegate {
 
     @objc public func getStatus() -> String {
         let room = activeRoom
+        if let room, room.connectionState == .connected {
+            updateAudience(room, serial: generation)
+        }
         var state = "disconnected"
         if let room {
             switch room.connectionState {

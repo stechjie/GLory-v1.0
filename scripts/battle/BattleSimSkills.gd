@@ -244,13 +244,11 @@ static func _skill_fear(caster: Dictionary, opponents: Array, d: Dictionary, sta
 	var target := _nearest(caster, opponents)
 	if target.is_empty(): return
 	_mark_vfx_target(caster, target)
-	var dur := _dark_duration(float(d.get("fear_sec", 1.5)), caster, state)
-	StatusEffectService.add_status(target, "stun", dur, {})
+	var dur := _dark_duration(float(d.get("fear_sec", 2.0)), caster, state)
 	var away: Vector2 = (target.pos - caster.pos).normalized()
-	# 9.24：推离不超过战场边界；目标已被推到边缘时不再继续推离，
-	# 避免被推出场或与其它单位重叠（原实现直接 +90 无边界判断）。
-	var pushed: Vector2 = Vector2(target.pos.x, target.pos.y) + away * 90.0
-	target.pos = Vector2(clampf(pushed.x, 80.0, ARENA_W - 80.0), clampf(pushed.y, 60.0, ARENA_H - 60.0))
+	if away.length_squared() < 0.001:
+		away = Vector2.DOWN if str(target.get("team", "")) == "player" else Vector2.UP
+	StatusEffectService.add_status(target, "fear", dur, {"away_x": away.x, "away_y": away.y})
 
 
 static func _skill_stun(caster: Dictionary, opponents: Array, d: Dictionary, state: Dictionary) -> void:
@@ -258,6 +256,9 @@ static func _skill_stun(caster: Dictionary, opponents: Array, d: Dictionary, sta
 	if target.is_empty(): return
 	_mark_vfx_target(caster, target)
 	StatusEffectService.add_status(target, "stun", _dark_duration(float(d.get("stun_sec", 1.0)), caster, state), {})
+	var damage_pct := float(d.get("damage_atk_pct", 0.0))
+	if damage_pct > 0.0:
+		DamageService.apply_damage(target, maxi(1, int(round(float(caster.atk) * damage_pct))), false)
 
 
 static func _skill_black_hole(caster: Dictionary, opponents: Array, d: Dictionary, state: Dictionary) -> void:

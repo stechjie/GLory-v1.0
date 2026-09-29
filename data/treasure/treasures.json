@@ -81,7 +81,7 @@
                           "id":  "ctrl_interrupt_chain",
                           "name":  "打断锁链",
                           "category":  "control",
-                          "cooldown":  5.0,
+                          "cooldown":  3.0,
                           "name_en":  "Interrupt Chain"
                       },
                       {
@@ -93,6 +93,7 @@
                       },
                       {
                           "id":  "ctrl_binding_weight",
+                          "damage_down":  0.20,
                           "name":  "束缚重压",
                           "category":  "control",
                           "move_down":  0.25,
@@ -179,8 +180,8 @@
                           "category":  "element",
                           "proc_chance":  0.25,
                           "move_down":  0.35,
-                          "attack_speed_down":  0.35,
-                          "duration":  1.5,
+                          "attack_speed_down":  0.50,
+                          "duration":  2.0,
                           "name_en":  "Frost Blade"
                       },
                       {
@@ -225,11 +226,12 @@
                      },
                      {
                          "id":  "link_paralysis_shackles",
+                          "heal_reduction":  0.75,
                          "requires":  [
                                           "ctrl_interrupt_chain",
                                           "elem_frost_blade"
                                       ],
-                         "ice_damage_taken_bonus":  0.15
+                         "ice_damage_taken_bonus":  0.25
                      },
                      {
                          "id":  "link_oppression_counter",
@@ -266,7 +268,7 @@
                                           "money_compound",
                                           "elem_thunder_haste"
                                       ],
-                         "attack_gold_chance":  0.10
+                         "attack_gold_chance":  0.25
                      },
                      {
                          "id":  "link_clearance_sale",
@@ -274,13 +276,13 @@
                                           "atk_fury_roster",
                                           "money_discount"
                                       ],
-                         "shop_price_multiplier":  0.60
+                         "shop_price_multiplier":  0.40
                      },
                      {
                          "id":  "link_hu_pai_master",
                          "requires":  [
                                           "def_life_monument",
-                                          "def_formation_heal",
+                                          "money_golden_altar",
                                           "ctrl_shockwave",
                                           "atk_blood_pact",
                                           "atk_fury_roster"

@@ -790,7 +790,7 @@ func _setup_voice_controls() -> void:
 	# 与 PrepUI._build_voice_button() 传 "prep" 同一个道理，这里传 "battle"。
 	_voice_controls.build(self, VOICE_BTN_SIZE, VOICE_BTN_SIZE, 14, {"panel_context": "battle"})
 	var top := VOICE_BTN_TOP
-	for button in [_voice_controls.voice_button, _voice_controls.members_button]:
+	for button in [_voice_controls.voice_button, _voice_controls.audience_button, _voice_controls.members_button]:
 		var control := button as Button
 		control.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
 		control.offset_left = -16.0 - VOICE_BTN_SIZE.x

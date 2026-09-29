@@ -65,6 +65,8 @@ static func placements_by_slot(config: Dictionary) -> Dictionary:
 		var slot := int((p as Dictionary).get("slot", -1))
 		if slot >= 0 and slot < 6:
 			(out[slot] as Array).append(p)
+	for slot in 6:
+		(out[slot] as Array).sort_custom(func(a, b): return int(a.get('cell', 0)) < int(b.get('cell', 0)))
 	return out
 
 
@@ -196,7 +198,10 @@ static func _fighter_for_placement(p: Dictionary, team: String) -> Dictionary:
 # display_only=true:只组装单位和站位(编辑态预览用),跳过开战后处理,
 # 保证编辑画面上的单位不带开场技能/护盾等战斗副作用。
 static func build_test_state(config: Dictionary, display_only := false) -> Dictionary:
-	RngService.rng.randomize()
+	if config.has("shared_seed"):
+		RngService.seed_from_parts([config.get("shared_seed"), int(config.get("round_index", GameState.round_index)), "pvp"])
+	else:
+		RngService.rng.randomize()
 	var player: Array = []
 	var enemy: Array = []
 	var by_slot := placements_by_slot(config)
@@ -210,21 +215,51 @@ static func build_test_state(config: Dictionary, display_only := false) -> Dicti
 		ctx_list.append({"treasures": treasures, "syn": syn})
 		var out := player if is_red else enemy
 		for p in by_slot[slot]:
+			if str(p.get("kind", "piece")) == "merc":
+				continue
 			var f := _fighter_for_placement(p, team)
 			if f.is_empty():
 				continue
 			# 需求:全部单位统一用"棋子进战斗的起始位子"(96 个格点)。
 			BattleSimulator._place_in_lane(f, int(p.get("cell", 0)), team, lane)
-			f.uid = "test_s%d_c%d" % [slot, int(p.get("cell", 0))]
-			f["owner_treasures"] = treasures
-			f["owner_syn"] = syn
+			f.uid = "%s_L%d_%d" % [team, lane, int(p.get("cell", 0))]
+			var owns_board_effects := str(p.get("kind", "piece")) == "piece"
+			f["owner_treasures"] = treasures if owns_board_effects else []
+			f["owner_syn"] = syn if owns_board_effects else {}
 			f["owner_slot"] = slot
+			f["owner_pet"] = str(config.get("slot_pets", {}).get(slot, "")) if owns_board_effects else ""
+			f["owner_gold"] = maxi(0, int(config.get("slot_gold", {}).get(slot, 0))) if owns_board_effects else 0
 			out.append(f)
+	# 联机先加入三路棋盘棋子，再加入佣兵；佣兵不继承主人羁绊、宝藏或宠物。
+	for slot in 6:
+		var is_red := GameConstants.team_of_slot(slot) == GameConstants.TEAM_RED
+		var team := "player" if is_red else "enemy"
+		var lane := slot % GameConstants.TEAM_SIDE_SIZE
+		var out := player if is_red else enemy
+		var merc_index := 0
+		for p in by_slot[slot]:
+			if str(p.get("kind", "piece")) != "merc":
+				continue
+			var f := _fighter_for_placement(p, team)
+			if f.is_empty():
+				continue
+			BattleSimulator._place_in_lane(f, int(p.get("cell", 0)), team, lane)
+			f.slot = GameConstants.CELL_COUNT + merc_index
+			f.uid = "%s_L%d_merc%d" % [team, lane, merc_index]
+			f["owner_treasures"] = []
+			f["owner_syn"] = {}
+			f["owner_slot"] = slot
+			f["owner_pet"] = ""
+			f["owner_gold"] = 0
+			out.append(f)
+			merc_index += 1
 
 	# ---- 以下拷贝自 BattleSimulator.prepare_team_state()(原版改动需手动同步) ----
 	var battle_log: Array[String] = []
 	battle_log.append("单位测试:我方 %d 个单位,敌方 %d 个单位。" % [player.size(), enemy.size()])
-	var state := {"kind": TEST_KIND, "player": player, "enemy": enemy, "elapsed": 0.0, "next_sudden_death_tick": BattleFrenzyService.SUDDEN_DEATH_SEC, "finished": false, "log": battle_log, "player_syn": {}, "enemy_deaths": 0, "total_deaths": 0, "field_death_count": 0, "mother_death_counter": 0, "dark_kill_stacks": 0, "undead_trait_death_counter": 0, "race_trait_processed_deaths": {}, "death_history": [], "revive_queue": [], "player_kill_gold": 0, "enemy_kill_gold": 0, "kill_gold_by_slot": {}, "player_kills": [], "enemy_kills": [], "bonus_gold": 0, "temporary_deaths": [], "visual_events": [], "unit_stats": {}}
+	var state := {"kind": TEST_KIND, "player": player, "enemy": enemy, "elapsed": 0.0, "next_sudden_death_tick": BattleFrenzyService.SUDDEN_DEATH_SEC, "finished": false, "log": battle_log, "player_syn": {}, "enemy_deaths": 0, "total_deaths": 0, "field_death_count": 0, "mother_death_counter": 0, "dark_kill_stacks": 0, "race_trait_processed_deaths": {}, "revive_queue": [], "player_kill_gold": 0, "enemy_kill_gold": 0, "kill_gold_by_slot": {}, "player_kills": [], "enemy_kills": [], "bonus_gold": 0, "temporary_deaths": [], "visual_events": [], "unit_stats": {}}
+	state["ally_slots"] = [0, 1, 2]
+	state["rival_slots"] = [3, 4, 5]
 	state.team_heal_ally = BattleSimulator._team_formation_heal_total(ctx_list.slice(0, 3))
 	state.team_heal_rival = BattleSimulator._team_formation_heal_total(ctx_list.slice(3, 6))
 	var owner_syn_by_key: Dictionary = {}
@@ -243,23 +278,7 @@ static func build_test_state(config: Dictionary, display_only := false) -> Dicti
 		state.finished = true
 		state.forced_result = {"player_wins": true, "reason": "no_enemy_units", "log": ["敌方没有单位。"]}
 		return state
-	for f in (player + enemy):
-		if BattleSimulator._ignores_treasure(f):
-			continue
-		if BattleSimulator._f_has_set(f, "defense"):
-			f.max_hp = maxi(1, int(round(float(f.max_hp) * 1.30)))
-			f.hp = int(f.max_hp)
-			f.defense = maxi(0, int(round(float(f.defense) * 1.30)))
-			f.dodge = float(f.get("dodge", 0.0)) + 0.15
-		if bool(BattleSimulator._f_syn(f).get("human_shield", false)):
-			f.shield = maxi(int(f.get("shield", 0)), int(float(f.get("max_hp", 1)) * 0.08))
-		if bool(BattleSimulator._f_syn(f).get("god_invulnerable_opening", false)):
-			StatusEffectService.add_status(f, "invulnerable", 1.5, {})
-	BattleSimulator._init_unit_stats(state)
-	DamageService.set_stat_state(state)
-	BattleSimulator._apply_opening_unit_skills(player, enemy, battle_log, state)
-	BattleSimTreasures._apply_opening_treasures(player, battle_log)
-	BattleSimTreasures._apply_opening_treasures(enemy, battle_log)
+	BattleSimulator._finalize_team_opening(state)
 	return state
 	# ---- 拷贝段结束 ----
 
@@ -293,8 +312,4 @@ static func compute_test_replay_async(config: Dictionary, budget_usec: int = 800
 static func grid_sim_pos(slot: int, cell: int) -> Vector2:
 	var team := "player" if GameConstants.team_of_slot(slot) == GameConstants.TEAM_RED else "enemy"
 	var lane := slot % GameConstants.TEAM_SIDE_SIZE
-	var col := cell % GameConstants.BOARD_COLUMNS
-	var row := floori(float(cell) / float(GameConstants.BOARD_COLUMNS))
-	var lane_x: float = BattleSimulator.TEAM_LANE_CENTERS[lane] + (float(col) - 1.5) * 24.0
-	var y := BattleSimulator._opening_y(team, 300.0 + float(row) * 40.0 if team == "player" else 220.0 - float(row) * 40.0)
-	return Vector2(clampf(lane_x, 80.0, BattleSimulator.ARENA_W - 80.0), clampf(y, 60.0, BattleSimulator.ARENA_H - 60.0))
+	return BattleSimulator.board_cell_pos(cell, team, float(BattleSimulator.TEAM_LANE_CENTERS[lane]))

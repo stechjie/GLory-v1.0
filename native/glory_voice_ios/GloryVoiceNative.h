@@ -11,6 +11,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)leaveRoom;
 - (NSString *)setMicrophoneEnabled:(BOOL)enabled;
 - (void)setParticipantVolume:(NSString *)identity volume:(double)volume;
+- (void)setAudience:(BOOL)all identitiesJson:(NSString *)identitiesJson;
 - (NSString *)getStatus;
 - (NSString *)getCapabilities;
 @end

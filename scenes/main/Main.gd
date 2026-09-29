@@ -394,6 +394,7 @@ func _on_resume_completed(payload: Dictionary) -> void:
 		if PlaybackRecovery.needs_replay(payload) else int(payload.get("round_id", GameState.round_index))
 	GameState.team_hp = int(payload.get("team_hp", GameState.team_hp))
 	GameState.enemy_team_hp = int(payload.get("rival_team_hp", GameState.enemy_team_hp))
+	GameState.team_clearance_sale_active = bool(payload.get("team_clearance_sale", false))
 	# 金币同步：默认（经济账本未开启权威）配置下金币由客户端权威维护——备战阶段每一笔
 	# 购买/出售都只改本地 GameState.gold，服务端 slot_gold 仅在战斗结算时更新一次，
 	# 等于"购买前"的金币。重连若用这份陈旧快照覆盖本地正确金币，金币会回退到购买前
@@ -402,6 +403,7 @@ func _on_resume_completed(payload: Dictionary) -> void:
 	var _eco_state: Dictionary = payload.get("economy", {}) as Dictionary
 	if not _eco_state.is_empty() and bool(_eco_state.get("authoritative", false)):
 		GameState.gold = int(_eco_state.get("gold", GameState.gold))
+		GameState.gold_spent_this_round = bool(_eco_state.get("gold_spent_this_round", GameState.gold_spent_this_round))
 	if not _eco_state.is_empty() and bool(_eco_state.get("carrot_authoritative", false)):
 		NetworkService._apply_carrot_state(_eco_state)
 	# else: 保留本地金币（GameState.gold 已是本回合真实值）
@@ -2766,6 +2768,8 @@ func _on_team_battle_finished(result: Dictionary) -> void:
 		# still alive, capped at the starting HP.
 		var heal_self := int(result.get("team_heal_self", 0))
 		var heal_rival := int(result.get("team_heal_rival", 0))
+		if not NetworkService.team_active and GameState.owned_treasures.has("money_golden_altar") and GameState.golden_altar_uses == 0:
+			heal_self += 1
 		if GameState.team_hp > 0 and heal_self > 0:
 			GameState.team_hp = mini(GameState.START_FORMATION_HP, GameState.team_hp + heal_self)
 		if GameState.enemy_team_hp > 0 and heal_rival > 0:
@@ -2783,6 +2787,7 @@ func _on_team_battle_finished(result: Dictionary) -> void:
 		GameState.loss_streak += 1
 	GameState.gold = EconomyService.settle_post_battle_gold({
 		"gold_before": GameState.gold,
+		"gold_spent_this_round": GameState.gold_spent_this_round,
 		"kill_gold": _team_local_kill_gold(result),
 		"bonus_gold": int(result.get("bonus_gold", 0)),
 		"kind": kind,

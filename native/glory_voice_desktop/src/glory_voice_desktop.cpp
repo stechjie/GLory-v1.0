@@ -149,6 +149,7 @@ void GloryVoiceDesktop::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("leaveRoom"), &GloryVoiceDesktop::leaveRoom);
 	ClassDB::bind_method(D_METHOD("setMicrophoneEnabled", "enabled"), &GloryVoiceDesktop::setMicrophoneEnabled);
 	ClassDB::bind_method(D_METHOD("setParticipantVolume", "identity", "volume"), &GloryVoiceDesktop::setParticipantVolume);
+	ClassDB::bind_method(D_METHOD("setAudience", "all", "identities_json"), &GloryVoiceDesktop::setAudience);
 	ClassDB::bind_method(D_METHOD("getStatus"), &GloryVoiceDesktop::getStatus);
 	ClassDB::bind_method(D_METHOD("getCapabilities"), &GloryVoiceDesktop::getCapabilities);
 }
@@ -171,6 +172,7 @@ String GloryVoiceDesktop::joinRoom(const String &url, const String &token, bool)
 	post([this, gen, url_s, token_s]() {
 		// 新房间默认不开麦；要开麦由 VoiceService 随后调 setMicrophoneEnabled（排在这之后，连上就生效）。
 		want_mic_ = false;
+		audience_configured_ = false;
 		do_teardown();
 		do_join(gen, url_s, token_s);
 	});
@@ -209,6 +211,26 @@ void GloryVoiceDesktop::setParticipantVolume(const String &identity, double volu
 		volumes_[id] = volume;
 	}
 	post([this, id]() { do_apply_volume(id); });
+}
+
+void GloryVoiceDesktop::setAudience(bool all, const String &identities_json) {
+	std::vector<std::string> ids;
+	const Variant parsed = JSON::parse_string(identities_json);
+	if (parsed.get_type() == Variant::ARRAY) {
+		const Array array = parsed;
+		for (int i = 0; i < array.size(); ++i) {
+			const std::string id = to_std(String(array[i]));
+			if (!id.empty()) ids.push_back(id);
+		}
+	}
+	const int gen = generation_.load();
+	post([this, gen, all, ids]() {
+		if (gen != generation_.load()) return;
+		audience_all_ = all;
+		audience_ids_ = ids;
+		audience_configured_ = true;
+		do_apply_audience(gen);
+	});
 }
 
 String GloryVoiceDesktop::getStatus() const {
@@ -416,7 +438,32 @@ void GloryVoiceDesktop::do_join(int gen, const std::string &url, const std::stri
 	}
 }
 
+void GloryVoiceDesktop::do_apply_audience(int gen) {
+	if (!room_ || gen != generation_.load() || !audience_configured_) return;
+	auto local = room_->localParticipant().lock();
+	if (!local || room_->connectionState() != livekit::ConnectionState::Connected) return;
+	try {
+		if (mic_track_) do_apply_mic(gen, false);
+		std::vector<livekit::ParticipantTrackPermission> permissions;
+		for (const auto &id : audience_ids_) {
+			livekit::ParticipantTrackPermission permission;
+			permission.participant_identity = id;
+			permission.allow_all = true;
+			permissions.push_back(permission);
+		}
+		local->setTrackSubscriptionPermissions(audience_all_, permissions);
+		if (want_mic_) do_apply_mic(gen, true);
+	} catch (const std::exception &e) {
+		log_warning(std::string("audience permission: ") + e.what());
+		audience_configured_ = false;
+		if (mic_track_) do_apply_mic(gen, false);
+		std::lock_guard<std::mutex> lock(mutex_);
+		snapshot_.mic_error = "audience_failed";
+	}
+}
+
 void GloryVoiceDesktop::do_apply_mic(int gen, bool enabled) {
+	if (enabled && !audience_configured_) return;
 	if (!room_ || gen != generation_.load()) {
 		return;
 	}

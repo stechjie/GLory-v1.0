@@ -23,6 +23,10 @@ const MODE_LISTEN_COLOR := Color(0.50, 0.88, 1.0)
 
 var _on_talk_requested: Callable = Callable()
 var _mode_buttons: Array[Button] = []
+var _title: Label
+var _privacy: Label
+var _audience_button: Button
+var _member_title: Label
 var _note: Label
 var _members: VBoxContainer
 var _state: Label
@@ -71,17 +75,20 @@ func _ready() -> void:
 	var head := HBoxContainer.new()
 	head.add_theme_constant_override("separation", Tokens.GAP_S)
 	col.add_child(head)
-	var title := _label(_text("队伍语音", "Team Voice"), Tokens.FONT_TITLE, Tokens.GOLD_HOVER)
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	head.add_child(title)
+	_title = _label(_text("队伍语音", "Team Voice"), Tokens.FONT_TITLE, Tokens.GOLD_HOVER)
+	_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(_title)
 	var close_button := _button("×", _close, Theming.VARIATION_GHOST)
 	close_button.custom_minimum_size = Vector2(Tokens.TOUCH_MIN, Tokens.TOUCH_MIN)
 	head.add_child(close_button)
 
-	var privacy := _label(_text("只传给同队队友 · 不录音，不保存",
+	_privacy = _label(_text("只传给同队队友 · 不录音，不保存",
 		"Teammates only · Never recorded or stored"), Tokens.FONT_CAPTION, Tokens.TEXT_SECONDARY)
-	privacy.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	col.add_child(privacy)
+	_privacy.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	col.add_child(_privacy)
+	_audience_button = _button("", _toggle_audience, Theming.VARIATION_GHOST)
+	_audience_button.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+	col.add_child(_audience_button)
 
 	_state = _label("", Tokens.FONT_BODY, Tokens.TEXT_PRIMARY)
 	_state.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -100,11 +107,11 @@ func _ready() -> void:
 	_note = _label("", Tokens.FONT_CAPTION, Tokens.DANGER_HOVER)
 	col.add_child(_note)
 
-	var member_title := _label(_text("队伍频道", "TEAM CHANNEL"), Tokens.FONT_CAPTION, Tokens.GOLD)
-	member_title.add_theme_constant_override("outline_size", 1)
-	col.add_child(member_title)
+	_member_title = _label(_text("队伍频道", "TEAM CHANNEL"), Tokens.FONT_CAPTION, Tokens.GOLD)
+	_member_title.add_theme_constant_override("outline_size", 1)
+	col.add_child(_member_title)
 	col.add_child(_label(_text("屏蔽只影响你自己，对方不会收到提示",
-		"Muting only affects what you hear; teammates are not notified"), Tokens.FONT_CAPTION, Tokens.TEXT_SECONDARY))
+		"Muting only affects what you hear; others are not notified"), Tokens.FONT_CAPTION, Tokens.TEXT_SECONDARY))
 	_members = VBoxContainer.new()
 	_members.add_theme_constant_override("separation", Tokens.GAP_S)
 	col.add_child(_members)
@@ -119,6 +126,8 @@ func _ready() -> void:
 
 	if not VoiceService.mode_changed.is_connected(_on_voice_mode_changed):
 		VoiceService.mode_changed.connect(_on_voice_mode_changed)
+	if not VoiceService.audience_changed.is_connected(_on_audience_changed):
+		VoiceService.audience_changed.connect(_on_audience_changed)
 	if not VoiceService.mutes_changed.is_connected(_refresh):
 		VoiceService.mutes_changed.connect(_refresh)
 	var timer := Timer.new()
@@ -132,6 +141,8 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	if VoiceService.mode_changed.is_connected(_on_voice_mode_changed):
 		VoiceService.mode_changed.disconnect(_on_voice_mode_changed)
+	if VoiceService.audience_changed.is_connected(_on_audience_changed):
+		VoiceService.audience_changed.disconnect(_on_audience_changed)
 	if VoiceService.mutes_changed.is_connected(_refresh):
 		VoiceService.mutes_changed.disconnect(_refresh)
 
@@ -160,11 +171,27 @@ func _on_voice_mode_changed(_mode: int) -> void:
 	_refresh()
 
 
+func _on_audience_changed(_audience: int) -> void:
+	_refresh()
+
+
+func _toggle_audience() -> void:
+	VoiceService.toggle_audience()
+	_refresh()
+
+
 func _on_mute_pressed(slot: int) -> void:
 	VoiceService.set_muted(slot, not VoiceService.is_muted(slot))
 
 
 func _refresh() -> void:
+	var all := VoiceService.audience == VoiceService.Audience.ALL
+	_title.text = _text("全房语音", "Room Voice") if all else _text("队伍语音", "Team Voice")
+	_privacy.text = _text("传给房间全部人 · 不录音，不保存", "Everyone in room · Never recorded or stored") if all \
+		else _text("只传给同队队友 · 不录音，不保存", "Teammates only · Never recorded or stored")
+	_audience_button.text = _text("说话范围：全部人（点击切换）", "Audience: everyone (tap to change)") if all \
+		else _text("说话范围：队友（点击切换）", "Audience: team (tap to change)")
+	_member_title.text = _text("房间成员", "ROOM MEMBERS") if all else _text("队伍频道", "TEAM CHANNEL")
 	for i in _mode_buttons.size():
 		_mode_buttons[i].theme_type_variation = Theming.VARIATION_PRIMARY if i == VoiceService.mode \
 			else Theming.VARIATION_GHOST
@@ -189,8 +216,8 @@ func _refresh() -> void:
 
 
 func _refresh_members() -> void:
-	var mates := VoiceService.teammates()
-	var signature := ""
+	var mates := VoiceService.audience_members()
+	var signature := str(VoiceService.audience) + ":"
 	for mate in mates:
 		signature += "%d|%s|%s;" % [int(mate.slot), str(mate.name), str(mate.muted)]
 	if signature != _member_signature:
@@ -200,7 +227,7 @@ func _refresh_members() -> void:
 			child.queue_free()
 		_speaking_labels.clear()
 		if mates.is_empty():
-			_members.add_child(_label(_text("暂时没有同队的真人队友", "No human teammates yet"),
+			_members.add_child(_label(_text("暂时没有其他真人玩家", "No other players yet"),
 				Tokens.FONT_BODY, Tokens.TEXT_SECONDARY))
 		for mate in mates:
 			var slot := int(mate.slot)
@@ -246,7 +273,8 @@ func _state_text() -> String:
 		VoiceService.Mode.LISTEN:
 			return _text("● 只听模式 · 麦克风已关闭", "● Listen only · Microphone off")
 		VoiceService.Mode.TALK:
-			return _text("● 麦克风已开启 · 同队队友可以听见你", "● Mic on · Teammates can hear you")
+			return _text("● 麦克风已开启 · %s可以听见你" % VoiceService.audience_label(),
+				"● Mic on · %s can hear you" % VoiceService.audience_label())
 		_:
 			return _text("● 语音已关闭 · 不使用麦克风", "● Voice off · Microphone not in use")
 

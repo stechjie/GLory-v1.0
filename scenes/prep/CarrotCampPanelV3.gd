@@ -49,6 +49,8 @@ var _draw_button: Button
 var _stone_art: TextureRect
 var _stone_reveal: TextureRect
 var _stone_counts: Dictionary = {}
+var _stone_names: Dictionary = {}
+var _stone_rail: PanelContainer
 var _four_star_list: VBoxContainer
 var _last_stones := {"sky": 0, "land": 0, "ren": 0}
 var _stones_initialized := false
@@ -83,7 +85,6 @@ func _on_locale_changed(_locale: String) -> void:
 	_camp_page = null
 	_stone_page = null
 	_help_panel = null
-	_stone_counts.clear()
 	_stones_initialized = false
 	_build()
 	_show_page(selected_page)
@@ -117,6 +118,42 @@ func _build() -> void:
 	_stone_page.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build_help_panel()
 	_show_page(0)
+
+# The rail is a sibling of this centered modal so PanelContainer cannot stretch it
+# over the modal's content. Its anchors use the same center as PANEL_SIZE.
+func attach_stone_rail(parent: Control) -> void:
+	if _stone_rail != null and is_instance_valid(_stone_rail):
+		return
+	_stone_rail = PanelContainer.new()
+	_stone_rail.name = "CarrotTeamStones"
+	_stone_rail.anchor_left = 0.5
+	_stone_rail.anchor_right = 0.5
+	_stone_rail.anchor_top = 0.5
+	_stone_rail.anchor_bottom = 0.5
+	_stone_rail.offset_left = -506
+	_stone_rail.offset_right = -390
+	_stone_rail.offset_top = -222
+	_stone_rail.offset_bottom = 222
+	_stone_rail.z_index = 35
+	_stone_rail.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var rail_style := _panel_style()
+	rail_style.set_content_margin_all(8)
+	_stone_rail.add_theme_stylebox_override("panel", rail_style)
+	parent.add_child(_stone_rail)
+	var column := VBoxContainer.new()
+	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	column.add_theme_constant_override("separation", 8)
+	_stone_rail.add_child(column)
+	_add_stone_counter(column, "sky", TEX_STONE_SKY)
+	_add_stone_counter(column, "land", TEX_STONE_LAND)
+	_add_stone_counter(column, "ren", TEX_STONE_REN)
+	visibility_changed.connect(_sync_stone_rail_visibility)
+	_sync_stone_rail_visibility()
+	refresh()
+
+func _sync_stone_rail_visibility() -> void:
+	if _stone_rail != null and is_instance_valid(_stone_rail):
+		_stone_rail.visible = visible and _current_page == 1
 
 func _build_header(parent: VBoxContainer) -> void:
 	var header := HBoxContainer.new()
@@ -298,21 +335,14 @@ func _build_stone_page() -> Control:
 	inventory_card.add_child(inventory)
 	var inventory_header := HBoxContainer.new()
 	inventory.add_child(inventory_header)
-	var inventory_title := _label(_t("升级石库存", "Upgrade Stone Inventory"), 21, TEXT)
+	var inventory_title := _label(_t("四星升级", "4-Star Upgrade"), 21, TEXT)
 	inventory_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	inventory_header.add_child(inventory_title)
-	inventory_header.add_child(_label(_t("队伍共享", "Team Shared"), 13, GREEN))
-	var stones := HBoxContainer.new()
-	stones.add_theme_constant_override("separation", 7)
-	inventory.add_child(stones)
-	_add_stone_counter(stones, "sky", TEX_STONE_SKY, _stone_display("sky"))
-	_add_stone_counter(stones, "land", TEX_STONE_LAND, _stone_display("land"))
-	_add_stone_counter(stones, "ren", TEX_STONE_REN, _stone_display("ren"))
-	inventory.add_child(_divider())
-	inventory.add_child(_label(_t("四星升级", "4-Star Upgrade"), 16, TEXT))
+	inventory_header.add_child(_label(_t("可升星优先", "Ready first"), 13, GREEN))
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	inventory.add_child(scroll)
 	_four_star_list = VBoxContainer.new()
 	_four_star_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -365,6 +395,7 @@ func _show_page(index: int) -> void:
 	_set_tab(_camp_tab, index == 0)
 	_set_tab(_stone_tab, index == 1)
 	_current_page = index
+	_sync_stone_rail_visibility()
 	page_changed.emit(index)
 
 
@@ -477,7 +508,10 @@ func refresh() -> void:
 		var count := int(GameState.team_upgrade_stones.get(stone_type, 0))
 		var count_label := _stone_counts.get(stone_type) as Label
 		if count_label != null:
-			count_label.text = "%s  %d" % [_stone_display(stone_type), count]
+			count_label.text = _t("团队 ×%d", "Team ×%d") % count
+		var name_label := _stone_names.get(stone_type) as Label
+		if name_label != null:
+			name_label.text = _stone_display(stone_type)
 		if _stones_initialized and count > int(_last_stones.get(stone_type, 0)):
 			changed = stone_type
 		_last_stones[stone_type] = count
@@ -493,7 +527,7 @@ func _refresh_four_star_list() -> void:
 		_four_star_list.remove_child(child)
 		child.queue_free()
 	_four_star_buttons.clear()
-	var rows := 0
+	var candidates: Array[Dictionary] = []
 	for source in [["board", GameState.board_slots], ["bench", GameState.bench_slots]]:
 		var where := str(source[0])
 		var slots: Array = source[1]
@@ -501,37 +535,48 @@ func _refresh_four_star_list() -> void:
 			var cell: Variant = slots[index]
 			if typeof(cell) != TYPE_DICTIONARY or int((cell as Dictionary).get("star", 1)) != GameState.MAX_MERGE_STAR:
 				continue
-			rows += 1
 			var check := GameState.four_star_check(cell)
-			var unit_def: Dictionary = (cell as Dictionary).get("def", {})
-			var stone_type := str(check.get("stone", unit_def.get("element", "")))
-			var row := PanelContainer.new()
-			row.add_theme_stylebox_override("panel", _flat(Color(0.07,0.115,0.09,0.92),8))
-			row.custom_minimum_size.y = 52
-			_four_star_list.add_child(row)
-			var row_content := HBoxContainer.new()
-			row_content.add_theme_constant_override("separation", 6)
-			row.add_child(row_content)
-			row_content.add_child(_icon(_stone_texture(stone_type), Vector2(42,42)))
-			var info := VBoxContainer.new()
-			info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			row_content.add_child(info)
-			info.add_child(_label("%s  ★★★" % str(unit_def.get("name", unit_def.get("id", _t("棋子", "Unit")))), 14, TEXT))
-			var reason := _t("1 颗%s石 ＋ %d 金", "1 %s Stone + %d Gold") % [_stone_display(stone_type), CarrotEconomy.four_star_gold(int(unit_def.get("tier", 0)))]
-			if not bool(check.get("ok", false)):
-				reason = _four_star_reason(str(check.get("error", "")), stone_type)
-			info.add_child(_label(reason, 12, MUTED))
-			var action := Button.new()
-			action.text = _t("升至四星", "Upgrade to 4 Stars")
-			action.custom_minimum_size = Vector2(90,44)
-			action.add_theme_font_size_override("font_size", 14)
-			action.add_theme_stylebox_override("normal", _secondary_button_style())
-			action.disabled = _action_locked or not bool(check.get("ok", false)) or not NetworkService.four_star_upgrade_available() or not NetworkService.four_star_request_id.is_empty() \
-				or not _tutorial_allows("four_star")
-			action.pressed.connect(_on_four_star.bind(where, index))
-			row_content.add_child(action)
-			_four_star_buttons.append(action)
-	if rows == 0:
+			candidates.append({"where": where, "index": index, "cell": cell, "check": check,
+				"ready": bool(check.get("ok", false)), "order": candidates.size()})
+	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if bool(a.ready) != bool(b.ready):
+			return bool(a.ready)
+		return int(a.order) < int(b.order))
+	for candidate in candidates:
+		var cell: Dictionary = candidate.cell
+		var check: Dictionary = candidate.check
+		var unit_def: Dictionary = cell.get("def", {})
+		var stone_type := str(check.get("stone", unit_def.get("element", "")))
+		var ready := bool(candidate.ready)
+		var row := PanelContainer.new()
+		row.add_theme_stylebox_override("panel", _flat(
+			Color(0.23,0.22,0.12,0.96) if ready else Color(0.07,0.115,0.09,0.92),
+			8, GOLD if ready else Color(0.25,0.32,0.24), 1))
+		row.custom_minimum_size.y = 66
+		_four_star_list.add_child(row)
+		var row_content := HBoxContainer.new()
+		row_content.add_theme_constant_override("separation", 6)
+		row.add_child(row_content)
+		row_content.add_child(_icon(_stone_texture(stone_type), Vector2(42,42)))
+		var info := VBoxContainer.new()
+		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row_content.add_child(info)
+		info.add_child(_label("%s  ★★★" % str(unit_def.get("name", unit_def.get("id", _t("棋子", "Unit")))), 16, TEXT))
+		var reason := _t("1 颗%s石 ＋ %d 金", "1 %s Stone + %d Gold") % [_stone_display(stone_type), CarrotEconomy.four_star_gold(int(unit_def.get("tier", 0)))]
+		if not ready:
+			reason = _four_star_reason(str(check.get("error", "")), stone_type)
+		info.add_child(_label(reason, 12, MUTED))
+		var action := Button.new()
+		action.text = _t("升至四星", "Upgrade to 4 Stars")
+		action.custom_minimum_size = Vector2(96,48)
+		action.add_theme_font_size_override("font_size", 14)
+		action.add_theme_stylebox_override("normal", _secondary_button_style())
+		action.disabled = _action_locked or not ready or not NetworkService.four_star_upgrade_available() or not NetworkService.four_star_request_id.is_empty() \
+			or not _tutorial_allows("four_star")
+		action.pressed.connect(_on_four_star.bind(str(candidate.where), int(candidate.index)))
+		row_content.add_child(action)
+		_four_star_buttons.append(action)
+	if candidates.is_empty():
 		var empty := VBoxContainer.new()
 		empty.alignment = BoxContainer.ALIGNMENT_CENTER
 		empty.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -544,15 +589,22 @@ func _refresh_four_star_list() -> void:
 		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		empty.add_child(hint)
 
-func _add_stone_counter(parent: HBoxContainer, stone_type: String, texture: Texture2D, display_name: String) -> void:
+func _add_stone_counter(parent: VBoxContainer, stone_type: String, texture: Texture2D) -> void:
 	var box := PanelContainer.new()
-	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_theme_stylebox_override("panel", _flat(Color(0.055,0.10,0.075,0.95),9,Color(0.25,0.32,0.24),1))
 	parent.add_child(box)
 	var column := VBoxContainer.new()
+	column.alignment = BoxContainer.ALIGNMENT_CENTER
+	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(column)
-	column.add_child(_icon(texture, Vector2(66,62)))
-	var count := _label("%s  0" % display_name, 15, TEXT)
+	column.add_child(_icon(texture, Vector2(80,72)))
+	var name_label := _label(_stone_display(stone_type), 16, TEXT)
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	column.add_child(name_label)
+	_stone_names[stone_type] = name_label
+	var count := _label(_t("团队 ×0", "Team ×0"), 14, GREEN)
 	count.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	column.add_child(count)
 	_stone_counts[stone_type] = count

@@ -144,21 +144,23 @@ static func settle_post_battle_breakdown(ctx: Dictionary) -> Dictionary:
 	# (6) 战斗额外金币（富裕之路等战斗内产出）
 	income_by_reason["battle_bonus"] = maxi(0, int(ctx.get("bonus_gold", 0)))
 	gold += int(income_by_reason["battle_bonus"])
-	# (7) 宝藏战后金币。随机档位之间相隔 10 金：幸运信封 10/20/30，金钱魔法 50/60/70。
+	# (7) 宝藏战后金币。随机档位之间相隔 10 金：幸运信封 30/40/50，金钱魔法 60/70/80。
 	var rng := _rng()
 	if treasures.has("money_lucky_envelope"):
-		income_by_reason["lucky_envelope"] = 10 + (rng.randi() % 3) * 10
+		income_by_reason["lucky_envelope"] = 30 + (rng.randi() % 3) * 10
 		gold += int(income_by_reason["lucky_envelope"])
 	if TreasureService.has_linkage_in(treasures, "link_money_magic"):
-		income_by_reason["money_magic"] = 50 + (rng.randi() % 3) * 10
+		income_by_reason["money_magic"] = 60 + (rng.randi() % 3) * 10
 		gold += int(income_by_reason["money_magic"])
 		if rng.randf() < 0.10:
-			income_by_reason["money_magic_bonus"] = 100
+			income_by_reason["money_magic_bonus"] = 200
 			gold += int(income_by_reason["money_magic_bonus"])
 	# (8) 利息
 	var interest := base_interest(gold)
 	if treasures.has("money_compound"):
 		interest += int(floor(float(gold) * 0.05))
+		if not bool(ctx.get("gold_spent_this_round", false)):
+			interest += int(floor(float(gold) * 0.03))
 	interest += pet_interest_bonus(gold, str(ctx.get("pet_id", "")))
 	income_by_reason["interest"] = interest
 	gold += int(income_by_reason["interest"])

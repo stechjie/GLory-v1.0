@@ -1,7 +1,7 @@
 class_name StatusEffectService
 extends RefCounted
 
-const DEBUFF_POOL := ["slow", "attack_down", "silence", "stun", "poison", "interrupt", "bleed"]
+const DEBUFF_POOL := ["slow", "attack_down", "silence", "stun", "poison", "interrupt", "bleed", "fear"]
 const POISON_TICK_SEC := 1.0
 const BLEED_TICK_SEC := 1.0
 
@@ -9,9 +9,9 @@ static func ensure_status(fighter: Dictionary) -> void:
 	if not fighter.has("statuses") or typeof(fighter.statuses) != TYPE_DICTIONARY:
 		fighter.statuses = {}
 
-# 控制类状态。恐惧（fear_sec）与黑洞（pull_sec）在实现上都落成 stun，所以只有这三种。
+# 控制类状态。恐惧是独立状态，黑洞仍使用 stun。
 static func _is_control_status(kind: String) -> bool:
-	return kind in ["stun", "silence", "interrupt"]
+	return kind in ["stun", "silence", "interrupt", "fear"]
 
 
 # 控制免疫。两个来源都只在 4 星才有对应字段（走 race_units.json 的 star4 覆写），
@@ -34,7 +34,21 @@ static func add_status(fighter: Dictionary, kind: String, duration: float, param
 	# 不变量：params 必须是扁平字典（标量值，无嵌套容器）——所有调用方目前都传
 	# 现场构造的字面量。浅拷足以隔离，热路径上省去逐 tick 的深拷开销。
 	var next := params.duplicate()
-	var adjusted_duration := _duration_after_control_reduction(fighter, kind, duration)
+	var adjusted_duration := duration
+	var source := _status_source_fighter()
+	if not source.is_empty() and str(source.get("team", "")) != str(fighter.get("team", "")) and _is_negative_status(kind):
+		var syn: Dictionary = source.get("owner_syn", DamageService._stat_state.get("player_syn", {}) if str(source.get("team", "")) == "player" else DamageService._stat_state.get("enemy_syn", {}))
+		var dark_bonus := SynergyService.safe_factor(syn, "dark_debuff_strength") if str(source.get("def", {}).get("race", "")) == "dark" else 0.0
+		if dark_bonus > 0.0:
+			if kind in ["slow", "attack_down", "damage_down", "defense_down", "defense_flat_down", "heal_reduction", "ice_vulnerable", "poison", "bleed", "bleed_nonlethal", "burn"]:
+				for key in next.keys():
+					if str(key) in ["tick_left", "source_uid", "antiheal_pct"]:
+						continue
+					if typeof(next[key]) == TYPE_INT or typeof(next[key]) == TYPE_FLOAT:
+						next[key] = float(next[key]) * (1.0 + dark_bonus)
+			else:
+				adjusted_duration *= 1.0 + dark_bonus
+	adjusted_duration = _duration_after_control_reduction(fighter, kind, adjusted_duration)
 	if _is_boss(fighter) and _is_negative_status(kind):
 		next = _boss_reduced_params(kind, next)
 		if _boss_reduces_duration(kind):
@@ -49,13 +63,24 @@ static func add_status(fighter: Dictionary, kind: String, duration: float, param
 	var added_duration := maxf(0.0, float(next.remaining) - maxf(0.0, float(existing.get("remaining", 0.0))))
 	DamageService.record_status_applied(kind, added_duration, _is_negative_status(kind))
 
+static func _status_source_fighter() -> Dictionary:
+	var source_uid := DamageService.current_stat_source_uid()
+	if source_uid.is_empty():
+		return {}
+	var state: Dictionary = DamageService._stat_state
+	for f in (state.get("player", []) + state.get("enemy", [])):
+		if str(f.get("uid", "")) == source_uid:
+			return f
+	return {}
+
+
 static func _is_boss(fighter: Dictionary) -> bool:
 	var d: Dictionary = fighter.get("def", {})
 	var id := str(fighter.get("id", d.get("id", "")))
 	return bool(d.get("is_boss", false)) or id.begins_with("boss_")
 
 static func _is_negative_status(kind: String) -> bool:
-	return kind in ["slow", "attack_down", "silence", "stun", "interrupt", "defense_down", "defense_flat_down", "heal_reduction", "ice_vulnerable", "ice_affected", "poison", "bleed", "bleed_nonlethal", "burn"]
+	return kind in ["slow", "attack_down", "damage_down", "silence", "stun", "fear", "interrupt", "defense_down", "defense_flat_down", "heal_reduction", "ice_vulnerable", "ice_affected", "poison", "bleed", "bleed_nonlethal", "burn"]
 
 static func clear_negative_statuses(fighter: Dictionary) -> int:
 	ensure_status(fighter)
@@ -68,14 +93,14 @@ static func clear_negative_statuses(fighter: Dictionary) -> int:
 	return remove_keys.size()
 
 static func _boss_reduces_duration(kind: String) -> bool:
-	return kind in ["silence", "stun", "interrupt", "ice_affected"]
+	return kind in ["silence", "stun", "fear", "interrupt", "ice_affected"]
 
 static func _boss_reduced_params(kind: String, params: Dictionary) -> Dictionary:
 	# 不变量：唯一调用方（add_status）传入的已是私有拷贝，可就地修改。
 	var next := params
-	if kind in ["slow", "attack_down", "defense_down", "defense_flat_down", "heal_reduction", "ice_vulnerable", "poison", "bleed", "bleed_nonlethal", "burn"]:
+	if kind in ["slow", "attack_down", "damage_down", "defense_down", "defense_flat_down", "heal_reduction", "ice_vulnerable", "poison", "bleed", "bleed_nonlethal", "burn"]:
 		for key in next.keys():
-			if str(key) == "tick_left":
+			if str(key) in ["tick_left", "antiheal_pct"]:
 				continue
 			if typeof(next[key]) == TYPE_INT or typeof(next[key]) == TYPE_FLOAT:
 				next[key] = float(next[key]) * 0.5
@@ -93,10 +118,14 @@ static func _boss_reduced_params(kind: String, params: Dictionary) -> Dictionary
 # BattleSimulator._process_pending_kill_rewards skips the victim: the kill gold
 # is not misattributed, it is lost outright, and the stats panel credits nobody.
 static func add_poison(fighter: Dictionary, duration: float = 4.0, pct_max_hp: float = 0.03, bonus: float = 0.0) -> void:
+	var source := _status_source_fighter()
+	var source_syn: Dictionary = source.get("owner_syn", DamageService._stat_state.get("player_syn", {}) if str(source.get("team", "")) == "player" else DamageService._stat_state.get("enemy_syn", {}))
+	var antiheal := SynergyService.safe_factor(source_syn, "undead_poison_antiheal") if str(source.get("def", {}).get("race", "")) == "undead" else 0.0
 	add_status(fighter, "poison", duration, {
 		"pct_max_hp": pct_max_hp * (1.0 + bonus),
 		"tick_left": 0.0,
 		"source_uid": DamageService.current_stat_source_uid(),
+		"antiheal_pct": antiheal,
 	})
 
 static func add_bleed(fighter: Dictionary, duration: float = 3.0, pct_current_hp: float = 0.06, nonlethal: bool = false) -> void:
@@ -123,9 +152,9 @@ static func _apply_dot_damage(fighter: Dictionary, amount: int, params: Dictiona
 	DamageService._dot_damage_active = false
 	DamageService.set_stat_source_uid(previous)
 
-static func interrupt(fighter: Dictionary) -> void:
+static func interrupt(fighter: Dictionary, duration: float = 1.0) -> void:
 	# 缴械：1 秒内无法进行普通攻击（普攻在 _perform_attack 处被 has_status("interrupt") 拦下）。
-	add_status(fighter, "interrupt", 1.0, {})
+	add_status(fighter, "interrupt", duration, {})
 
 static func tick(fighter: Dictionary, delta: float) -> Array[int]:
 	ensure_status(fighter)
@@ -195,6 +224,8 @@ static func attack_speed_multiplier(fighter: Dictionary) -> float:
 		mul *= maxf(0.1, 1.0 - float(fighter.statuses.slow.get("attack_speed_pct", 0.0)))
 	if fighter.statuses.has("speed_bonus"):
 		mul *= 1.0 + float(fighter.statuses.speed_bonus.get("pct", fighter.statuses.speed_bonus.get("attack_speed_pct", 0.0)))
+	if fighter.statuses.has("attack_set_speed_bonus"):
+		mul *= 1.0 + float(fighter.statuses.attack_set_speed_bonus.get("pct", 0.0))
 	return mul
 
 static func move_speed_multiplier(fighter: Dictionary) -> float:
@@ -219,7 +250,7 @@ static func _duration_after_control_reduction(fighter: Dictionary, kind: String,
 	ensure_status(fighter)
 	if not fighter.statuses.has("control_time_reduction"):
 		return duration
-	if kind in ["slow", "attack_down", "silence", "stun", "interrupt", "defense_down", "defense_flat_down", "heal_reduction", "ice_vulnerable", "ice_affected", "dodge_bonus", "speed_bonus", "damage_reduction", "defense_flat_up", "invulnerable", "control_time_reduction"]:
+	if kind in ["slow", "attack_down", "damage_down", "silence", "stun", "fear", "interrupt", "defense_down", "defense_flat_down", "heal_reduction", "ice_vulnerable", "ice_affected", "dodge_bonus", "speed_bonus", "attack_set_speed_bonus", "damage_reduction", "defense_flat_up", "invulnerable", "control_time_reduction"]:
 		return duration * maxf(0.0, 1.0 - float(fighter.statuses.control_time_reduction.get("pct", 0.0)))
 	return duration
 

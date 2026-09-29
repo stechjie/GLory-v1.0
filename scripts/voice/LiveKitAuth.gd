@@ -66,6 +66,12 @@ static func room_name(room_id: int, salt: String, team: int) -> String:
 	return "g%d-%s-t%d" % [room_id, salt, team]
 
 
+# One LiveKit room holds both teams. Publishers restrict subscriptions to their
+# teammates for team chat, or allow everyone for all chat.
+static func all_room_name(room_id: int, salt: String) -> String:
+	return "g%d-%s-all" % [room_id, salt]
+
+
 # 进房钥匙。identity = 座位名片里的好友码（没有名片的测试座位用 seat<N>），客户端用它把声音对回座位。
 static func join_token(cfg: Dictionary, identity: String, display_name: String, room: String, now: int) -> String:
 	var payload := {

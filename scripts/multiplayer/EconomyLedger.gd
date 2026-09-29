@@ -51,6 +51,7 @@ static func new_prep(start_gold: int) -> Dictionary:
 		"roster": {},        # uid(String) -> {unit_id, star, cost_basis, kind}
 		"next_uid": 1,
 		"altar_uses": 0,
+		"gold_spent_this_round": false,
 		"gamble_used": false,
 	}
 
@@ -60,6 +61,7 @@ static func reset_round(prep: Dictionary) -> void:
 	shop["refresh_uses"] = 0
 	prep["shop"] = shop
 	prep["altar_uses"] = 0
+	prep["gold_spent_this_round"] = false
 	prep["gamble_used"] = false
 	# Mercenaries last for one battle. Clear only their roster records; the
 	# cumulative carrot spend remains and continues to drive farm progression.
@@ -104,12 +106,12 @@ static func base_unit_cost(unit_def: Dictionary) -> int:
 		cost = maxi(1, int(ceil(float(cost) * float(unit_def.shop_cost_multiplier))))
 	return maxi(1, cost)
 
-static func unit_cost(unit_def: Dictionary, owned: Array) -> int:
+static func unit_cost(unit_def: Dictionary, owned: Array, team_clearance_sale: bool = false) -> int:
 	var cost := base_unit_cost(unit_def)
-	if TreasureService.has_linkage_in(owned, "link_clearance_sale"):
-		cost = maxi(1, int(ceil(float(cost) * 0.6)))
+	if team_clearance_sale or TreasureService.has_linkage_in(owned, "link_clearance_sale"):
+		cost = maxi(1, int(ceil(float(cost) * 0.4)))
 	elif owned.has("money_discount"):
-		cost = maxi(1, int(ceil(float(cost) * 0.8)))
+		cost = maxi(1, int(ceil(float(cost) * 0.7)))
 	return cost
 
 # 出售退款 = **实付价**的一半（已确认的规则改动）。
@@ -172,6 +174,8 @@ static func apply(prep: Dictionary, action: String, payload: Dictionary, ctx: Di
 		var reasons: Dictionary = prep.get("income_by_reason", {})
 		reasons[action] = int(reasons.get(action, 0)) + gold_after - gold_before
 		prep["income_by_reason"] = reasons
+	if gold_after < gold_before:
+		prep["gold_spent_this_round"] = true
 	return {
 		"ok": true, "error": "",
 		"gold_before": gold_before, "delta": gold_after - gold_before, "gold_after": gold_after,
@@ -196,7 +200,7 @@ static func _buy(prep: Dictionary, payload: Dictionary, ctx: Dictionary) -> Dict
 	var unit_def = offers[index]
 	if typeof(unit_def) != TYPE_DICTIONARY or (unit_def as Dictionary).is_empty():
 		return {"ok": false, "error": "empty_offer"}
-	var cost := unit_cost(unit_def, ctx.get("owned_treasures", []))
+	var cost := unit_cost(unit_def, ctx.get("owned_treasures", []), bool(ctx.get("team_clearance_sale", false)))
 	if int(prep.get("gold", 0)) < cost:
 		return {"ok": false, "error": "not_enough_gold"}
 	if _roster_size(prep) >= int(ctx.get("roster_cap", 64)):

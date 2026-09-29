@@ -1199,6 +1199,7 @@ func _build_top_actions() -> void:
 	_carrot_panel.closed.connect(_close_carrot_camp)
 	_carrot_panel.page_changed.connect(func(_page: int): _report_carrot_camp_state())
 	add_child(_carrot_panel)
+	_carrot_panel.attach_stone_rail(self)
 
 	_build_chat_entry()
 
@@ -1239,33 +1240,22 @@ const COMMS_DOCK_WIDTH := 288.0
 const COMMS_DOCK_HEIGHT := 88.0
 const COMMS_DOCK_BOTTOM := -32.0
 const CHAT_BTN_BOTTOM := -40.0
-const CHAT_LOG_WIDTH := 360.0
+const CHAT_LOG_WIDTH := 288.0
+const CHAT_PANEL_WIDTH := 360.0
 const CHAT_PANEL_HEIGHT := 410.0
 const CHAT_FLOAT_GAP := 10.0
 
-const CHAT_LOG_LINES := 3
-# 消息条高度。批次 A 时是 122（3 条单行短语）；批次 D 加了会折行的自由文字，放大到 156。
-const CHAT_LOG_HEIGHT := 156.0
-const CHAT_LOG_FONT_SIZE := 17
-# 折行之后合计最多几行（_push_chat_line 按它整条移走旧消息）。6 行加上条与条之间的
-# 间距放得进 156。最坏的一条（24 字昵称 + 40 字）在 352 宽里是 4 行，最新那条永远放得下。
-const CHAT_LOG_TEXT_LINES := 6
+const CHAT_LOG_HEIGHT := 184.0
 # 自由文字（批次 D）：输入条贴在屏幕顶部，理由见 ChatInputBar.gd 顶部（手机键盘）。
 const ChatInputBar := preload("res://ui/components/ChatInputBar.gd")
-const CHAT_LINE_HOLD_SEC := 6.0        # 停留多久之后开始淡出
-const CHAT_LINE_FADE_SEC := 1.0
 # 消息从哪来：NetworkService.room_chat_log（整个房间一份，界面重建也不丢）。
 # 名字、范围标记都在记录那一刻定下来，这里只管显示。
 const RoomChatLog := preload("res://scripts/multiplayer/RoomChatLog.gd")
-# 聊天面板里「记录」页签的字号。
+# 固定聊天窗口的字号。
 const CHAT_RECORD_FONT_SIZE := 16
-# 翻到「记录」时面板往上拉高（短语页仍是 CHAT_PANEL_HEIGHT）。用户 2026-09-27 定：
-# 想聊天时就专注聊天，被盖住的东西无所谓。720 高时顶边约在 y=70，让开右上角那排按钮。
-const CHAT_RECORD_PANEL_HEIGHT := 520.0
 
 var _chat_button: Button = null
 var _chat_panel: PanelContainer = null
-var _chat_log: VBoxContainer = null
 var _comms_dock: PanelContainer = null
 
 # 🔴 聊天范围（2026-09-14 定，协议 26）：**备战期默认只发给队友**，点「发给：…」切到全部。
@@ -1279,17 +1269,11 @@ var _chat_scope_button: Button = null
 const CHAT_ALL_COLOR := Color(1.0, 0.76, 0.42)
 const CHAT_MENU_FONT_COLOR := Color(1.0, 0.90, 0.60)   # make_menu_button 的默认字色
 
-# 聊天面板的两个页签：短语（原来整块面板）/ 记录（这个房间从头到现在的聊天，2026-09-27）。
-var _chat_tab_phrases: Button = null
-var _chat_tab_record: Button = null
-var _chat_phrase_page: Control = null
+# 固定聊天窗口始终显示当前房间的记录。
 var _chat_record_page: Control = null
 var _chat_record_scroll: ScrollContainer = null
 var _chat_record_list: VBoxContainer = null
 var _chat_record_round := -1        # 记录列表里最后一条的回合（追加时判断要不要插分隔线）
-# 看战斗那段收到的消息不会飘出来：回到摆放界面时聊天按钮与「记录」页签上挂小点，看过就灭。
-var _chat_dot: Label = null
-var _chat_record_dot: Label = null
 
 func _build_chat_entry() -> void:
 	# 只在联机 3v3 里建。单机与教学没有队友，一个永远不会有人说话的入口是纯噪音 ——
@@ -1314,42 +1298,47 @@ func _build_chat_entry() -> void:
 	# 那时玩家在买卖，一个压在商店上的聊天按钮只会造成误触。
 	_chat_button.z_index = 20
 	add_child(_chat_button)
-	_chat_dot = _attach_chat_dot(_chat_button)
 	_build_voice_button()
-
-	_chat_log = VBoxContainer.new()
-	_chat_log.name = "PrepChatLog"
-	_chat_log.anchor_left = 1.0
-	_chat_log.anchor_right = 1.0
-	_chat_log.anchor_top = 1.0
-	_chat_log.anchor_bottom = 1.0
-	# 贴在整个通讯栏正上方，右边界与聊天按钮对齐。
-	_chat_log.offset_right = -CHAT_RIGHT
-	_chat_log.offset_left = -CHAT_RIGHT - CHAT_LOG_WIDTH
-	_chat_log.offset_bottom = COMMS_DOCK_BOTTOM - COMMS_DOCK_HEIGHT - CHAT_FLOAT_GAP
-	_chat_log.offset_top = _chat_log.offset_bottom - CHAT_LOG_HEIGHT
-	_chat_log.alignment = BoxContainer.ALIGNMENT_END
-	# 内容万一比 CHAT_LOG_HEIGHT 高（字体行高与估算不符时），往上长、不往下长 ——
-	# 往下会压到聊天按钮上。正常情况下行数预算已经保证放得下。
-	_chat_log.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	# 🔴 消息条压在棋盘右下方的空域上。IGNORE 不能省 —— 少了它，
-	# 一条飘过的消息会把它盖住的那格棋盘变成点不动的，而玩家只会觉得「卡了」。
-	_chat_log.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_chat_log.add_theme_constant_override("separation", 4)
-	_chat_log.z_index = 20
-	add_child(_chat_log)
-
+	_build_chat_record_window()
 	_build_chat_panel()
 	if not NetworkService.room_chat_log.entry_added.is_connected(_on_prep_chat_logged):
 		NetworkService.room_chat_log.entry_added.connect(_on_prep_chat_logged)
-	# 看战斗那段收到的（那时没有界面接）：不补飘，挂小点，点开「记录」看。
-	_refresh_chat_dot()
+	# The room log survives scene rebuilds; show the same conversation here on every round.
+	_render_chat_record()
+	NetworkService.room_chat_log.mark_all_seen()
 
-# 语音按钮 + 队友按钮：缩短整组宽度，但两键都不低于 48px 触控下限。
-# 72 + 8 + 56 + 4 + 128 = 268，比旧布局窄 26px，与金币卷轴的距离反而更大。
-# 改这几个数之前同样先跑 tools/chat_ui_capture.tscn，用矮窗口看。行为都在 VoiceControls 里。
+func _build_chat_record_window() -> void:
+	var window := PanelContainer.new()
+	window.name = "PrepChatHistory"
+	window.anchor_left = 1.0
+	window.anchor_right = 1.0
+	window.anchor_top = 1.0
+	window.anchor_bottom = 1.0
+	window.offset_right = -CHAT_RIGHT
+	window.offset_left = -CHAT_RIGHT - CHAT_LOG_WIDTH
+	window.offset_bottom = COMMS_DOCK_BOTTOM - COMMS_DOCK_HEIGHT - CHAT_FLOAT_GAP
+	window.offset_top = window.offset_bottom - CHAT_LOG_HEIGHT
+	window.z_index = 20
+	window.mouse_filter = Control.MOUSE_FILTER_STOP
+	var style := GloryTokens.flat_box(Color(0.055, 0.085, 0.065, 0.96), GloryTokens.INK_EDGE, 2, 10)
+	style.set_content_margin_all(9)
+	window.add_theme_stylebox_override("panel", style)
+	add_child(window)
+	_chat_record_page = window
+	_chat_record_scroll = ScrollContainer.new()
+	_chat_record_scroll.name = "PrepChatHistoryScroll"
+	_chat_record_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_chat_record_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	window.add_child(_chat_record_scroll)
+	_chat_record_list = VBoxContainer.new()
+	_chat_record_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_chat_record_list.add_theme_constant_override("separation", 4)
+	_chat_record_scroll.add_child(_chat_record_list)
+
+# 语音、范围、成员和聊天按钮都满足触控尺寸；三档状态由 VoiceControls 维护。
 const VoiceControls := preload("res://ui/components/VoiceControls.gd")
-const VOICE_BTN_SIZE := Vector2(128, 56)
+const VOICE_BTN_SIZE := Vector2(92, 56)
+const VOICE_AUDIENCE_SIZE := Vector2(56, 56)
 const VOICE_MEMBERS_SIZE := Vector2(56, 56)
 const VOICE_BTN_GAP := 8.0
 const VOICE_INNER_GAP := 4.0
@@ -1380,7 +1369,10 @@ func _build_voice_button() -> void:
 		{"panel_context": "prep"})
 	var right := -CHAT_RIGHT - CHAT_BTN_SIZE.x - VOICE_BTN_GAP
 	_place_voice_button(_voice_controls.members_button, right, VOICE_MEMBERS_SIZE)
-	_place_voice_button(_voice_controls.voice_button, right - VOICE_MEMBERS_SIZE.x - VOICE_INNER_GAP, VOICE_BTN_SIZE)
+	right -= VOICE_MEMBERS_SIZE.x + VOICE_INNER_GAP
+	_place_voice_button(_voice_controls.audience_button, right, VOICE_AUDIENCE_SIZE)
+	right -= VOICE_AUDIENCE_SIZE.x + VOICE_INNER_GAP
+	_place_voice_button(_voice_controls.voice_button, right, VOICE_BTN_SIZE)
 
 func _place_voice_button(button: Button, right: float, size: Vector2) -> void:
 	button.anchor_left = 1.0
@@ -1404,8 +1396,8 @@ func _build_chat_panel() -> void:
 	_chat_panel.anchor_bottom = 1.0
 	# **往上弹**，与消息条同一列（右边界对齐、同宽）。
 	# 不往左弹：那会横穿到棋盘中央去；往上只压掉自己那几条消息，代价最小。
-	_chat_panel.offset_right = -CHAT_RIGHT
-	_chat_panel.offset_left = -CHAT_RIGHT - CHAT_LOG_WIDTH
+	_chat_panel.offset_right = -CHAT_RIGHT - CHAT_LOG_WIDTH - 8.0
+	_chat_panel.offset_left = _chat_panel.offset_right - CHAT_PANEL_WIDTH
 	_chat_panel.offset_bottom = COMMS_DOCK_BOTTOM - COMMS_DOCK_HEIGHT - CHAT_FLOAT_GAP
 	_chat_panel.offset_top = _chat_panel.offset_bottom - CHAT_PANEL_HEIGHT
 	_chat_panel.z_index = 30
@@ -1420,20 +1412,16 @@ func _build_chat_panel() -> void:
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 8)
 	_chat_panel.add_child(col)
-	# 标题栏就是两个页签：「短语」是原来整块面板，「记录」是这个房间从头到现在的聊天。
+	# The persistent history is visible above the controls. This popup is for composing.
 	var en := LocaleManager.get_locale() == "en"
 	var header := HBoxContainer.new()
 	header.add_theme_constant_override("separation", 6)
 	col.add_child(header)
-	_chat_tab_phrases = PrepWidgets.make_menu_button("Phrases" if en else "短语", Vector2(96, 38), 17,
-		_show_chat_tab.bind(false))
-	_chat_tab_phrases.name = "PrepChatTabPhrases"
-	header.add_child(_chat_tab_phrases)
-	_chat_tab_record = PrepWidgets.make_menu_button("History" if en else "记录", Vector2(96, 38), 17,
-		_show_chat_tab.bind(true))
-	_chat_tab_record.name = "PrepChatTabRecord"
-	header.add_child(_chat_tab_record)
-	_chat_record_dot = _attach_chat_dot(_chat_tab_record)
+	var title := Label.new()
+	title.text = "Quick Phrases" if en else "快捷短语"
+	title.add_theme_font_size_override("font_size", 18)
+	title.add_theme_color_override("font_color", GloryTokens.TEXT_SECONDARY)
+	header.add_child(title)
 	var header_gap := Control.new()
 	header_gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header_gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1463,7 +1451,6 @@ func _build_chat_panel() -> void:
 	var phrase_page := VBoxContainer.new()
 	phrase_page.add_theme_constant_override("separation", 8)
 	col.add_child(phrase_page)
-	_chat_phrase_page = phrase_page
 	var phrases_label := Label.new()
 	phrases_label.text = "QUICK PHRASES" if en else "快捷短语"
 	phrases_label.add_theme_font_size_override("font_size", 13)
@@ -1481,24 +1468,6 @@ func _build_chat_panel() -> void:
 				ChatPhrases.text(phrase_id), Vector2(160, 38), 15,
 				_send_chat_phrase.bind(int(phrase_id))))
 
-	# 「记录」页：浅羊皮纸底 + 黑字（2026-09-27：聊天字一律黑色）。占满短语页让出来的高度。
-	var record_page := PanelContainer.new()
-	record_page.name = "PrepChatRecord"
-	record_page.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	var record_style := GloryTokens.flat_box(GloryTokens.PARCHMENT, GloryTokens.PARCHMENT_EDGE, 2, 8)
-	record_style.set_content_margin_all(8)
-	record_page.add_theme_stylebox_override("panel", record_style)
-	record_page.visible = false
-	col.add_child(record_page)
-	_chat_record_page = record_page
-	_chat_record_scroll = ScrollContainer.new()
-	_chat_record_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	record_page.add_child(_chat_record_scroll)
-	_chat_record_list = VBoxContainer.new()
-	_chat_record_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_chat_record_list.add_theme_constant_override("separation", 4)
-	_chat_record_scroll.add_child(_chat_record_list)
-	_show_chat_tab(false)
 
 
 func _apply_chat_type_button_style(button: Button) -> void:
@@ -1526,9 +1495,6 @@ func _toggle_chat_panel() -> void:
 	if _chat_panel == null or not is_instance_valid(_chat_panel):
 		return
 	_chat_panel.visible = not _chat_panel.visible
-	# 有没看过的（看战斗时收到的）就直接翻到「记录」：小点就是冲着它亮的。
-	if _chat_panel.visible and _chat_unseen_count() > 0:
-		_show_chat_tab(true)
 
 func _send_chat_phrase(phrase_id: int) -> void:
 	NetworkService.team_send_phrase(phrase_id, _chat_team_only)
@@ -1537,44 +1503,17 @@ func _send_chat_phrase(phrase_id: int) -> void:
 	if _chat_panel != null and is_instance_valid(_chat_panel):
 		_chat_panel.visible = false
 
-# 记录里多了一条：飘出来（摆放界面上看得到的那几条），记录页开着就接在末尾。
+# Append to the fixed window without moving its frame or interrupting history browsing.
 func _on_prep_chat_logged(entry: Dictionary) -> void:
-	_push_chat_line(RoomChatLog.line_text(entry, LocaleManager.get_locale() == "en"))
+	if _chat_record_round == -1 and _chat_record_list.get_child_count() == 1:
+		var placeholder := _chat_record_list.get_child(0)
+		_chat_record_list.remove_child(placeholder)
+		placeholder.queue_free()
+	var stick := _chat_record_near_bottom()
+	_append_chat_record_row(entry)
+	if stick:
+		_scroll_chat_record_to_bottom()
 	NetworkService.room_chat_log.mark_entry_seen(entry)
-	if _chat_record_page != null and is_instance_valid(_chat_record_page) and _chat_record_page.visible:
-		var stick := _chat_record_near_bottom()
-		_append_chat_record_row(entry)
-		if stick:
-			_scroll_chat_record_to_bottom()
-
-
-# --- 聊天面板「记录」页签（2026-09-27）----------------------------------------------
-
-func _show_chat_tab(record: bool) -> void:
-	if _chat_phrase_page == null or _chat_record_page == null:
-		return
-	_chat_phrase_page.visible = not record
-	_chat_record_page.visible = record
-	_chat_panel.offset_top = _chat_panel.offset_bottom - (CHAT_RECORD_PANEL_HEIGHT if record else CHAT_PANEL_HEIGHT)
-	_style_chat_tab(_chat_tab_phrases, not record)
-	_style_chat_tab(_chat_tab_record, record)
-	if record:
-		_render_chat_record()
-		NetworkService.room_chat_log.mark_all_seen()
-		_refresh_chat_dot()
-
-
-# 选中的页签用羊皮纸底 + 深色字（同「点击输入文字」那颗），没选中的保持面板默认的深底金字。
-func _style_chat_tab(tab: Button, selected: bool) -> void:
-	if tab == null:
-		return
-	var style := GloryTokens.flat_box(GloryTokens.PARCHMENT_BUTTON, GloryTokens.GOLD_EDGE, 2, 10) \
-		if selected else PrepWidgets.menu_button_style()
-	for state in ["normal", "hover", "pressed"]:
-		tab.add_theme_stylebox_override(state, style)
-	var color := GloryTokens.TEXT_ON_GOLD if selected else CHAT_MENU_FONT_COLOR
-	for state in ["font_color", "font_hover_color", "font_pressed_color"]:
-		tab.add_theme_color_override(state, color)
 
 
 func _render_chat_record() -> void:
@@ -1586,7 +1525,7 @@ func _render_chat_record() -> void:
 	if entries.is_empty():
 		_chat_record_list.add_child(_chat_record_label(
 			"No messages yet" if LocaleManager.get_locale() == "en" else "还没有人说话",
-			GloryTokens.PARCHMENT_EDGE, HORIZONTAL_ALIGNMENT_CENTER))
+			GloryTokens.TEXT_SECONDARY, HORIZONTAL_ALIGNMENT_CENTER))
 		return
 	for entry in entries:
 		_append_chat_record_row(entry)
@@ -1603,10 +1542,10 @@ func _append_chat_record_row(entry: Dictionary) -> void:
 	var entry_round := int(entry.get("round", 0))
 	if entry_round != _chat_record_round:
 		_chat_record_list.add_child(_chat_record_label("—— %s ——" % RoomChatLog.round_label(entry_round, en),
-			GloryTokens.PARCHMENT_EDGE, HORIZONTAL_ALIGNMENT_CENTER))
+			GloryTokens.TEXT_SECONDARY, HORIZONTAL_ALIGNMENT_CENTER))
 		_chat_record_round = entry_round
 	_chat_record_list.add_child(_chat_record_label(RoomChatLog.line_text(entry, en),
-		GloryTokens.CHAT_INK, HORIZONTAL_ALIGNMENT_LEFT))
+		Color(0.97, 0.93, 0.81), HORIZONTAL_ALIGNMENT_LEFT))
 
 
 func _chat_record_label(text: String, color: Color, align: HorizontalAlignment) -> Label:
@@ -1639,31 +1578,6 @@ func _scroll_chat_record_to_bottom() -> void:
 	_chat_record_scroll.scroll_vertical = int(_chat_record_scroll.get_v_scroll_bar().max_value)
 
 
-func _chat_unseen_count() -> int:
-	return NetworkService.room_chat_log.unseen_count(NetworkService.team_room_id)
-
-
-func _refresh_chat_dot() -> void:
-	var unseen := _chat_unseen_count() > 0
-	for dot in [_chat_dot, _chat_record_dot]:
-		if dot != null and is_instance_valid(dot):
-			dot.visible = unseen
-
-
-# 右上角的小红点（同好友界面 _attach_unread_dot 的样子）。默认藏着。
-func _attach_chat_dot(host: Control) -> Label:
-	var dot := Label.new()
-	dot.text = "●"
-	dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	dot.add_theme_color_override("font_color", GloryTokens.UNREAD_DOT)
-	dot.add_theme_font_size_override("font_size", 16)
-	host.add_child(dot)
-	dot.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	dot.position.x -= 14
-	dot.visible = false
-	return dot
-
-
 # 打字入口（批次 D）。先收起短语面板：输入条弹在顶部，短语面板留着只会挡棋盘。
 # 输入条上也放同一个范围按钮：打到一半发现范围不对，点一下就改，不用关掉重打。
 func _open_text_input() -> void:
@@ -1694,59 +1608,6 @@ func _refresh_chat_scope_button() -> void:
 	_chat_scope_button.add_theme_color_override("font_color",
 		CHAT_MENU_FONT_COLOR if _chat_team_only else CHAT_ALL_COLOR)
 
-
-func _push_chat_line(text: String) -> void:
-	if _chat_log == null or not is_instance_valid(_chat_log):
-		return
-	var lbl := Label.new()
-	lbl.text = text
-	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	# 自由文字（批次 D）一行放不下，要折行。**不设 max_lines_visible**：
-	# 设了（第一版是 2）就会把长消息的后半截悄悄吞掉 —— 40 字加昵称在 352 宽里要 3~4 行，
-	# 读的人只看到半句话、还不知道少了。高度改由下面的行数预算管。
-	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	lbl.add_theme_font_size_override("font_size", CHAT_LOG_FONT_SIZE)
-	# 2026-09-27：黑字 + 浅色描边（原来的米白 / 橙 / 红字配深描边，在浅草地和亮水面上看不清）。
-	# 「全部」「对方」靠行首的【全部】【对方】区分，不再靠字色。
-	lbl.add_theme_color_override("font_color", GloryTokens.CHAT_INK)
-	lbl.add_theme_color_override("font_outline_color", GloryTokens.CHAT_INK_OUTLINE)
-	lbl.add_theme_constant_override("outline_size", 5)
-	_chat_log.add_child(lbl)
-	# 两道上限：最多 CHAT_LOG_LINES 条，且折行后合计不超过 CHAT_LOG_TEXT_LINES 行。
-	# 超了就从最老的一条开始**整条**移走 —— 宁可少显示一条旧的，也不截断任何一条。
-	# 最新那条永远留着（它自己最多 4 行，放得下）。
-	while _chat_log.get_child_count() > 1 and (_chat_log.get_child_count() > CHAT_LOG_LINES
-			or _chat_log_text_lines() > CHAT_LOG_TEXT_LINES):
-		var oldest := _chat_log.get_child(0)
-		_chat_log.remove_child(oldest)
-		oldest.queue_free()
-	# 每条自己管自己的寿命，**不要共用一个 Timer**：共用的话后到的消息会重置
-	# 前一条的计时，表现为「一直有人说话时最早那条永远不消失」。
-	#
-	# tween 挂在 lbl 上（不是 self）—— 上面那个 while 提前把它 free 掉时
-	# tween 跟着失效，不会对着一个已销毁的节点写属性。
-	var tween := lbl.create_tween()
-	tween.tween_interval(CHAT_LINE_HOLD_SEC)
-	tween.tween_property(lbl, "modulate:a", 0.0, CHAT_LINE_FADE_SEC)
-	tween.tween_callback(lbl.queue_free)
-
-# 消息条里全部消息折行之后的总行数。按消息条的宽度自己排一遍版，
-# 不读 Label.get_line_count() —— 那要等容器排完版才准，而调用处是刚 add_child 的同一帧。
-func _chat_log_text_lines() -> int:
-	var total := 0
-	for child in _chat_log.get_children():
-		var lbl := child as Label
-		if lbl == null:
-			continue
-		var para := TextParagraph.new()
-		para.width = CHAT_LOG_WIDTH
-		# 与 Label 的 AUTOWRAP_WORD_SMART 同一组断行规则，否则算出的行数和显示的对不上。
-		para.break_flags = (TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND
-			| TextServer.BREAK_ADAPTIVE)
-		para.add_string(lbl.text, lbl.get_theme_font("font"), CHAT_LOG_FONT_SIZE)
-		total += para.get_line_count()
-	return total
 
 func _teardown_chat_entry() -> void:
 	# NetworkService 是 autoload（活得比本场景久），连接必须显式断开。
@@ -2288,10 +2149,45 @@ func _create_mercenary_purchase_card(mercenary: Dictionary, index: int) -> DragB
 	portrait.offset_left = 4
 	portrait.offset_top = 2
 	portrait.offset_right = -4
-	portrait.offset_bottom = -38
+	portrait.offset_bottom = -25
 	var portrait_path := str(MERCENARY_PORTRAIT_PATHS.get(str(mercenary.get("id", "")), ""))
 	portrait.texture = PrepWidgets.cached_texture(portrait_path)
 	card.add_child(portrait)
+
+	# The hire price is paid in carrots. Keep its icon and number together on the
+	# portrait, where they remain readable while browsing the four-column grid.
+	var price_badge := PanelContainer.new()
+	price_badge.name = "MercenaryCarrotPrice"
+	price_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	price_badge.anchor_left = 1.0
+	price_badge.anchor_right = 1.0
+	price_badge.anchor_top = 1.0
+	price_badge.anchor_bottom = 1.0
+	price_badge.offset_left = -78
+	price_badge.offset_right = -5
+	price_badge.offset_top = -57
+	price_badge.offset_bottom = -27
+	price_badge.add_theme_stylebox_override("panel", GloryTokens.flat_box(
+		Color(0.055, 0.075, 0.045, 0.96), GloryTokens.GOLD_EDGE, 1, 7))
+	card.add_child(price_badge)
+	var price_row := HBoxContainer.new()
+	price_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	price_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	price_row.add_theme_constant_override("separation", 2)
+	price_badge.add_child(price_row)
+	var price_icon := TextureRect.new()
+	price_icon.texture = load(CARROT_CURRENCY_ICON_PATH)
+	price_icon.custom_minimum_size = Vector2(23, 23)
+	price_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	price_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	price_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	price_row.add_child(price_icon)
+	var price_number := Label.new()
+	price_number.text = str(int(mercenary.get("carrot_cost", 0)))
+	price_number.add_theme_font_size_override("font_size", 19)
+	price_number.add_theme_color_override("font_color", Color(1.0, 0.94, 0.70))
+	price_number.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	price_row.add_child(price_number)
 
 	var name_label := Label.new()
 	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -2300,35 +2196,18 @@ func _create_mercenary_purchase_card(mercenary: Dictionary, index: int) -> DragB
 	name_label.anchor_right = 1.0
 	name_label.anchor_bottom = 1.0
 	name_label.offset_left = 1
-	name_label.offset_top = -38
+	name_label.offset_top = -25
 	name_label.offset_right = -1
-	name_label.offset_bottom = -19
+	name_label.offset_bottom = 0
 	name_label.text = PrepWidgets.unit_name(mercenary)
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	name_label.add_theme_font_size_override("font_size", 20)
+	name_label.add_theme_font_size_override("font_size", 18)
 	name_label.add_theme_color_override("font_color", Color.WHITE)
 	name_label.add_theme_color_override("font_outline_color", Color.TRANSPARENT)
 	name_label.add_theme_constant_override("outline_size", 0)
 	card.add_child(name_label)
 
-	var price_label := Label.new()
-	price_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	price_label.anchor_left = 0.0
-	price_label.anchor_top = 1.0
-	price_label.anchor_right = 1.0
-	price_label.anchor_bottom = 1.0
-	price_label.offset_left = 1
-	price_label.offset_top = -19
-	price_label.offset_right = -1
-	price_label.offset_bottom = 0
-	price_label.text = price_text
-	price_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	price_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	price_label.add_theme_font_size_override("font_size", 10)
-	price_label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.95))
-	price_label.add_theme_constant_override("outline_size", 2)
-	card.add_child(price_label)
 	var reason_label := _shop._create_purchase_reason_overlay(card)
 	_shop._set_purchase_reason(reason_label, purchase_reason)
 	return card
@@ -3418,6 +3297,7 @@ func _on_shop_picker_toggled(is_open: bool) -> void:
 	# 这一行原本写的是 v1 的 _voice_button：与 v1.1 合并时 git 没报冲突，但那个变量已经没有了，PrepUI 会解析失败。
 	if _voice_controls != null:
 		_set_overlay_blocked(_voice_controls.voice_button, is_open)
+		_set_overlay_blocked(_voice_controls.audience_button, is_open)
 		_set_overlay_blocked(_voice_controls.members_button, is_open)
 	_set_overlay_blocked(_chat_button, is_open)
 

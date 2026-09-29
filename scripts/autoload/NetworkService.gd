@@ -1949,6 +1949,7 @@ func _build_room_state(room: Dictionary, slot: int) -> Dictionary:
 		"pve_completed": int(room.get("pve_completed", 0)),
 		"boss_completed": int(room.get("boss_completed", 0)),
 		"owned_treasures": _room_owned_treasures(room, slot).duplicate(),
+		"team_clearance_sale": _room_team_has_clearance_sale(room, slot),
 		"treasure_offer": ((room.get("treasure_offer", {}) as Dictionary).get(slot, {}) as Dictionary).duplicate(true),
 		"altar_uses": int((room.get("altar_uses", {}) as Dictionary).get(slot, 0)),
 		"run_over": bool(room.get("run_over", false)),
@@ -1970,6 +1971,7 @@ func _build_economy_state(room: Dictionary, slot: int) -> Dictionary:
 		"four_star_grants": (prep.get("four_star_uids", {}) as Dictionary).duplicate(true),
 		"revision": int(prep.get("revision", 0)),
 		"gold": int(prep.get("gold", 0)),
+		"gold_spent_this_round": bool(prep.get("gold_spent_this_round", false)),
 		"carrots": int(prep.get("carrots", 0)),
 		"harvest_tech_level": int(prep.get("harvest_tech_level", 0)),
 		"merc_carrots_spent_total": int(prep.get("merc_carrots_spent_total", 0)),
@@ -2397,9 +2399,8 @@ func _chat_log_round() -> int:
 #
 # 语音**不经过**战斗服务器：客户端直接连同一台机器上的 LiveKit 语音服务器。这里只做两件事 ——
 #
-#   发钥匙  客户端只说「给我钥匙」，**不带任何参数**：谁、哪个房间、哪一队一律从连接反查
-#           （同聊天：带参数就等于能冒充别人）。钥匙只能进「这个对局房间、这一队」的语音房间，
-#           只准发麦克风。敌方拿不到本队的钥匙，也就听不到。
+#   发钥匙  客户端只说「给我钥匙」，**不带任何参数**：身份和对局房间从连接反查。
+#           同局六人进入同一个 LiveKit 房间；发布者按队友/全部设置麦克风订阅权限。
 #   踢人    钥匙只管进门：LiveKit 只在**首次进房**时检查钥匙，进去以后还会自动续。所以玩家
 #           换队、离开、座位被 AI 接管、关房时，要主动让 LiveKit 把人请出去
 #           （_voice_seat_released / _voice_rooms_closed，调用处在各条座位变动路径里）。
@@ -2411,14 +2412,14 @@ func _chat_log_round() -> int:
 const LiveKitAuth := preload("res://scripts/voice/LiveKitAuth.gd")
 const LiveKitAdmin := preload("res://scripts/voice/LiveKitAdmin.gd")
 
-signal team_voice_token_received(url: String, token: String, room: String, error: String)
+signal team_voice_token_received(url: String, token: String, room: String, error: String, team: int)
 
 var _voice_config: Dictionary = {}
 # 踢人 / 删房间的执行者（LiveKitAdmin）。门禁换成记账的假对象，所以不写死类型。
 var _voice_admin: Object = null
 
 
-# 客户端：向战斗服务器要一张本队语音房间的钥匙，回复走 team_voice_token_received。
+# 客户端：向战斗服务器要一张本局语音房间的钥匙，回复走 team_voice_token_received。
 # 返回 false = 这会儿根本发不出去（没连上 / 不在房间 / 本地房主调试房没有语音服务器）。
 func team_request_voice_token() -> bool:
 	if not team_active or team_local_slot < 0 or is_host:
@@ -2438,11 +2439,11 @@ func _rpc_team_voice_token_request() -> void:
 		return
 	var reply := voice_token_for_peer(_room_for_peer(sender), sender, int(Time.get_unix_time_from_system()))
 	if _peer_connected(sender):
-		_rpc_team_voice_token.rpc_id(sender, str(reply.url), str(reply.token), str(reply.room), str(reply.error))
+		_rpc_team_voice_token.rpc_id(sender, str(reply.url), str(reply.token), str(reply.room), str(reply.error), int(reply.team))
 
 @rpc("authority", "call_remote", "reliable")
-func _rpc_team_voice_token(url: String, token: String, room_name: String, error: String) -> void:
-	team_voice_token_received.emit(url, token, room_name, error)
+func _rpc_team_voice_token(url: String, token: String, room_name: String, error: String, team: int) -> void:
+	team_voice_token_received.emit(url, token, room_name, error, team)
 
 
 # 给这个 peer 签钥匙。纯逻辑（不碰网络），tools/voice_check 直接调。
@@ -2455,28 +2456,29 @@ func voice_token_for_peer(room: Dictionary, peer_id: int, now: int) -> Dictionar
 	var states: Array = room.get("slot_states", [])
 	if slot < 0 or slot >= TEAM_SLOTS or slot >= states.size() or str(states[slot]) != "player":
 		return _voice_reply("not_seated")
-	var room_name := voice_room_name(room, GameConstants.team_of_slot(slot))
+	var team := GameConstants.team_of_slot(slot)
+	var room_name := voice_room_name(room)
 	if not bool(room.get("voice_used", false)):
 		room["voice_used"] = true
 		_rooms_dirty = true
 	var token := LiveKitAuth.join_token(_voice_config, _voice_identity(room, slot),
 		_voice_display_name(room, slot), room_name, now)
-	return {"url": str(_voice_config.get("client_url", "")), "token": token, "room": room_name, "error": ""}
+	return {"url": str(_voice_config.get("client_url", "")), "token": token, "room": room_name, "error": "", "team": team}
 
 
 static func _voice_reply(error: String) -> Dictionary:
-	return {"url": "", "token": "", "room": "", "error": error}
+	return {"url": "", "token": "", "room": "", "error": error, "team": -1}
 
 
-# 这个对局房间某一队的语音房间名。随机串建房时就有（RoomService.new_room）；
+# 这个对局的六人语音房间名。随机串建房时就有（RoomService.new_room）；
 # 旧快照里读回来的房间没有，第一次用时补一个并标脏存盘。
-func voice_room_name(room: Dictionary, team: int) -> String:
+func voice_room_name(room: Dictionary, _team: int = -1) -> String:
 	var salt := str(room.get("voice_salt", ""))
 	if salt.is_empty():
 		salt = Crypto.new().generate_random_bytes(6).hex_encode()
 		room["voice_salt"] = salt
 		_rooms_dirty = true
-	return LiveKitAuth.room_name(int(room.get("id", 0)), salt, team)
+	return LiveKitAuth.all_room_name(int(room.get("id", 0)), salt)
 
 
 # 座位上的人在语音里的身份：名片里的好友码（账号服务器签过名，可信）。没有名片的测试座位用 seat<N>。
@@ -2493,22 +2495,21 @@ func _voice_display_name(room: Dictionary, slot: int) -> String:
 	return str(profile.get("player_name", "")).strip_edges()
 
 
-# 这个人不再属于 slot 所在的那一队了：请 LiveKit 把他从那一队的语音房间请出去（并作废他的钥匙）。
+# 这个人不再属于原座位/队伍：请 LiveKit 把他从本局语音房间请出去（并作废他的钥匙）。
 # 调用方要在清座位**之前**取 identity —— 清完名片就没了。这个房间从没发过语音钥匙就不用去。
 func _voice_seat_released(room: Dictionary, slot: int, identity: String) -> void:
 	if _voice_admin == null or identity.is_empty() or slot < 0 or slot >= TEAM_SLOTS:
 		return
 	if not bool(room.get("voice_used", false)):
 		return
-	_voice_admin.remove_participant(voice_room_name(room, GameConstants.team_of_slot(slot)), identity)
+	_voice_admin.remove_participant(voice_room_name(room), identity)
 
 
-# 关房：两队的语音房间一起删掉（里面的人会被请出去）。
+# 关房：删除本局语音房间（里面的人会被请出去）。
 func _voice_rooms_closed(room: Dictionary) -> void:
 	if _voice_admin == null or not bool(room.get("voice_used", false)):
 		return
-	for team in [GameConstants.TEAM_RED, GameConstants.TEAM_BLUE]:
-		_voice_admin.delete_room(voice_room_name(room, int(team)))
+	_voice_admin.delete_room(voice_room_name(room))
 
 
 # 专服启动时读语音配置（team_host 调）。读不到照常开服，只是不发钥匙。
@@ -3627,6 +3628,15 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 	for t in 2:
 		loss_streak[t] = 0 if team_wins[t] else int(loss_streak[t]) + 1
 	room.team_loss_streak = loss_streak
+	var altar_heal := [0, 0]
+	var altar_uses: Dictionary = room.get("altar_uses", {})
+	for slot in TEAM_SLOTS:
+		if _room_owned_treasures(room, slot).has("money_golden_altar") and int(altar_uses.get(slot, 0)) == 0:
+			altar_heal[GameConstants.team_of_slot(slot)] += 1
+	res_a["team_heal_self"] = int(res_a.get("team_heal_self", 0)) + altar_heal[0]
+	res_a["team_heal_rival"] = int(res_a.get("team_heal_rival", 0)) + altar_heal[1]
+	res_b["team_heal_self"] = int(res_b.get("team_heal_self", 0)) + altar_heal[1]
+	res_b["team_heal_rival"] = int(res_b.get("team_heal_rival", 0)) + altar_heal[0]
 	var hp_a := maxi(0, int(team_hp[0]) - maxi(0, int(res_a.get("team_damage_self", 0))))
 	var hp_b := maxi(0, int(team_hp[1]) - maxi(0, int(res_a.get("team_damage_rival", 0))))
 	if hp_a > 0:
@@ -3679,6 +3689,7 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 			"round_index": completed_round,
 			"loss_streak_after": int(loss_streak[own_team]),
 			"camp_income": CarrotEconomy.income_for_spent(int(_room_prep(room, slot).get("merc_carrots_spent_total", 0))),
+			"gold_spent_this_round": bool(_room_prep(room, slot).get("gold_spent_this_round", false)) if economy_authoritative() else bool(snap.get("gold_spent_this_round", false)),
 		})
 		var gold_after := int(settlement.gold_after)
 		var income_prep := _room_prep(room, slot)
@@ -3846,6 +3857,7 @@ func _server_gold_breakdown(gold_before: int, result: Dictionary, slot: int, sna
 		"boss_hp_max": maxi(1, int(result.get("enemy_hp_max", 1))),
 		"merchant_gold": EconomyService.merchant_gold_from_board(NetProtocol.extract_board(snapshot)),
 		"treasures": snapshot.get("treasures", []),
+		"gold_spent_this_round": bool(round_ctx.get("gold_spent_this_round", false)),
 		"pet_id": NetProtocol.extract_pet(snapshot),
 		"camp_income": int(round_ctx.get("camp_income", 0)),
 	})
@@ -4934,10 +4946,19 @@ func _rpc_room_state(envelope: Dictionary) -> void:
 	team_local_slot = int(payload.get("my_slot", -1))
 	team_leader_slot = int(payload.get("leader_slot", 0))
 	team_slot_states = (payload.get("slot_states", []) as Array).duplicate()
+	var team_discount := bool(payload.get("team_clearance_sale", false))
+	var incoming_team_hp := int(payload.get("team_hp", GameState.team_hp))
+	var team_effects_changed := GameState.team_clearance_sale_active != team_discount or (str(payload.get("phase", "")) == ROOM_PREP and GameState.team_hp != incoming_team_hp)
+	if team_effects_changed:
+		GameState.team_clearance_sale_active = team_discount
+		if str(payload.get("phase", "")) == ROOM_PREP:
+			GameState.team_hp = incoming_team_hp
 	team_seat_profiles = (payload.get("seat_profiles", {}) as Dictionary).duplicate(true)
 	team_ready = (payload.get("ready", []) as Array).duplicate()
 	server_round_index = int(payload.get("round_id", 0))
 	server_phase = str(payload.get("phase", ""))
+	if team_effects_changed:
+		team_treasure_effects_changed.emit()
 	if payload.has("battle_id"):
 		_set_current_replay_battle(str(payload.battle_id))
 	elif server_phase in [ROOM_LOBBY, ROOM_PREP, ROOM_CLOSED]:
@@ -5375,6 +5396,13 @@ func _room_team_stones(room: Dictionary, slot: int) -> Dictionary:
 	room["team_upgrade_stones"] = warehouses
 	return warehouses[GameConstants.team_of_slot(clampi(slot, 0, TEAM_SLOTS - 1))] as Dictionary
 
+func _room_team_has_clearance_sale(room: Dictionary, slot: int) -> bool:
+	var team := GameConstants.team_of_slot(slot)
+	for seat in TEAM_SLOTS:
+		if GameConstants.team_of_slot(seat) == team and TreasureService.has_linkage_in(_room_owned_treasures(room, seat), "link_clearance_sale"):
+			return true
+	return false
+
 func _room_owned_for_ledger(room: Dictionary, slot: int) -> Array:
 	# 账本按**服务端记录的**持有宝物算折扣，不按客户端自报 —— 否则伪造一件
 	# money_discount 就能让服务端跟着按折扣价扣钱。
@@ -5450,6 +5478,7 @@ func _economy_ctx(room: Dictionary, slot: int, action: String) -> Dictionary:
 	var owned := _room_owned_for_ledger(room, slot)
 	var ctx := {
 		"owned_treasures": owned,
+		"team_clearance_sale": _room_team_has_clearance_sale(room, slot),
 		"merc_table": DataRegistry.get_table("mercenaries").get("mercenaries", []),
 		"roster_cap": GameConstants.CELL_COUNT + GameState.BENCH_SLOTS,
 		"merc_cap": GameState.MERCENARY_SLOTS,
@@ -5561,6 +5590,8 @@ func _economy_reject(room: Dictionary, slot: int, reason: String) -> Dictionary:
 func _rpc_economy_receipt(request_id: String, receipt: Dictionary) -> void:
 	if not _tx_consume(request_id):
 		return
+	if bool(receipt.get("ok", false)) and int(receipt.get("delta", 0)) < 0:
+		GameState.gold_spent_this_round = true
 	_apply_carrot_receipt(receipt)
 	if request_id == four_star_request_id:
 		four_star_request_id = ""
@@ -5659,6 +5690,8 @@ func _apply_carrot_state(state: Dictionary) -> void:
 				continue
 			var changed := int(cell.get("star", 1)) < GameState.MAX_UNIT_STAR
 			if changed:
+				if int(grant.get("cost", 0)) > 0:
+					GameState.gold_spent_this_round = true
 				GameState.gold = int(state.get("gold", GameState.gold)) if bool(state.get("authoritative", false)) else maxi(0, GameState.gold - int(grant.get("cost", 0)))
 				cell["star"] = GameState.MAX_UNIT_STAR
 			if uid == four_star_request_uid and not four_star_request_id.is_empty():
@@ -5680,7 +5713,7 @@ func _apply_carrot_receipt(receipt: Dictionary) -> void:
 	match action:
 		"shop_refresh":
 			# 等待期间可能卖棋，按这笔刷新实际费用扣除，不覆盖期间的新收入。
-			GameState.gold = maxi(0, GameState.gold - int(result.get("cost", 0)))
+			GameState.spend_gold(int(result.get("cost", 0)))
 			GameState.shop_refresh_uses_this_round = int(result.get("refresh_uses", GameState.shop_refresh_uses_this_round))
 			var offers: Array = result.get("offers", [])
 			var sold: Array = []
@@ -5774,7 +5807,7 @@ signal altar_result(granted: bool, team_hp: int, uses: int)
 
 const ALTAR_MAX_USES_PER_ROUND := 3
 const ALTAR_MIN_HP := 10
-const ALTAR_GOLD := 50
+const ALTAR_GOLD := 100
 
 func request_golden_altar() -> void:
 	if team_active and multiplayer.multiplayer_peer != null:
@@ -5819,7 +5852,7 @@ func _room_apply_altar(room: Dictionary, slot: int) -> Dictionary:
 	var hp := int(hp_arr[team])
 	if used >= ALTAR_MAX_USES_PER_ROUND or hp <= ALTAR_MIN_HP:
 		return {"ok": false, "team_hp": hp, "uses": used, "reason": "exhausted"}
-	hp -= 1
+	hp -= 0 if TreasureService.has_linkage_in(_room_owned_treasures(room, slot), "link_hu_pai_master") else 2
 	hp_arr[team] = hp
 	room.team_hp = hp_arr
 	uses_map[slot] = used + 1
@@ -5859,6 +5892,7 @@ func _rpc_altar_team_hp(team_hp: int) -> void:
 signal treasure_offer_changed(candidates: Array, refresh_index: int)
 signal treasure_granted(tid: String, owned: Array)
 signal treasure_denied(reason: String)
+signal team_treasure_effects_changed
 
 func request_treasure_choice(tid: String) -> void:
 	if team_active and multiplayer.multiplayer_peer != null:
@@ -5899,6 +5933,7 @@ func _rpc_treasure_choice(request_id: String, tid: String) -> void:
 		_rpc_treasure_denied.rpc_id(sender, request_id, str(outcome.get("reason", "denied")))
 		return
 	_rpc_treasure_granted.rpc_id(sender, request_id, tid, outcome.get("owned", []))
+	_broadcast_room_lobby(room)
 
 # 选择裁决与 RPC 分开（和本文件其余 _rpc_X → _room_X 的分层一致），
 # 这样对抗测试台能直接驱动裁决逻辑，不必伪造 remote sender id。
@@ -5923,8 +5958,14 @@ func _room_apply_treasure_choice(room: Dictionary, slot: int, tid: String) -> Di
 	var owned := _room_owned_treasures(room, slot)
 	if owned.has(tid) or owned.size() >= TreasureService.MAX_OWNED:
 		return {"ok": false, "reason": "cannot_own"}
+	var hu_pai_was_active := TreasureService.has_linkage_in(owned, "link_hu_pai_master")
 	owned = owned.duplicate()
 	owned.append(tid)
+	if not hu_pai_was_active and TreasureService.has_linkage_in(owned, "link_hu_pai_master"):
+		var team := GameConstants.team_of_slot(slot)
+		var hp_arr: Array = room.get("team_hp", [GameState.START_FORMATION_HP, GameState.START_FORMATION_HP])
+		hp_arr[team] = mini(GameState.START_FORMATION_HP, int(hp_arr[team]) + 2)
+		room.team_hp = hp_arr
 	var owned_map: Dictionary = room.get("owned_treasures", {})
 	owned_map[slot] = owned
 	room.owned_treasures = owned_map

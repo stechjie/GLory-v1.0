@@ -27,7 +27,6 @@ static func _process_single_race_death(state: Dictionary, victim: Dictionary) ->
 	if bool(victim.get("mother_execute_kill", false)):
 		return
 	state.field_death_count = int(state.get("field_death_count", 0)) + 1
-	_record_death_history(state, victim)
 	# 母灵计数在这里进行：此路径覆盖普攻/技能/AOE 所有致死方式，
 	# 且上面的 mother_execute_kill 早退已把处决击杀排除在外。
 	_credit_mother_kill(state, victim)
@@ -35,15 +34,12 @@ static func _process_single_race_death(state: Dictionary, victim: Dictionary) ->
 		# 3v3: each effect uses the dead unit's / opponent's OWNER synergy.
 		_owner_god_cleanse(state, victim)
 		_owner_dark_stack_on_death(state, victim)
-		_owner_undead_clone_on_death(state, victim)
 		return
 	# 1v1: both sides use their own synergy (player_syn / enemy_syn).
 	var vteam := str(victim.get("team", ""))
 	var opp := "enemy" if vteam == "player" else "player"
 	_maybe_god_death_cleanse(state, vteam)
 	_apply_dark_death_stack(state, opp)
-	_maybe_undead_death_clone(state, "player")
-	_maybe_undead_death_clone(state, "enemy")
 
 # (1) 神族·死亡净化: owner's unit dies -> cleanse one of the owner's units,
 # preferring its own; once the owner's lane enemies are cleared, can extend to
@@ -81,46 +77,6 @@ static func _owner_dark_stack_on_death(state: Dictionary, victim: Dictionary) ->
 		os.dark_enemy_deaths = int(os.get("dark_enemy_deaths", 0)) + 1
 		os.dark_stacks = floori(float(int(os.dark_enemy_deaths)) / 3.0)
 
-# (3) 亡灵·死亡克隆: count ALL deaths (whole field) for each undead owner.
-
-static func _owner_undead_clone_on_death(state: Dictionary, victim: Dictionary) -> void:
-	for key in state.get("owner_syn_by_key", {}):
-		var threshold := int(_owner_syn(state, key).get("undead_death_clone_threshold", 0))
-		if threshold <= 0:
-			continue
-		var os := _owner_state(state, key)
-		os.undead_deaths = int(os.get("undead_deaths", 0)) + 1
-		if int(os.undead_deaths) < threshold:
-			continue
-		os.undead_deaths = 0
-		_owner_clone_dead_undead(state, key)
-
-
-static func _owner_clone_dead_undead(state: Dictionary, key: String) -> void:
-	var parts := key.split("_")
-	if parts.size() < 2:
-		return
-	var team := str(parts[0])
-	var lane := int(parts[1])
-	var side: Array = state.get("player", []) if team == "player" else state.get("enemy", [])
-	var summoner: Dictionary = {}
-	for f in side:
-		if bool(f.get("alive", false)) and int(f.get("hp", 0)) > 0 and int(f.get("lane", -1)) == lane and str(f.get("def", {}).get("race", "")) == "undead" and not bool(f.get("is_race_trait_clone", false)):
-			summoner = f
-			break
-	if summoner.is_empty():
-		return
-	var sources: Array = []
-	for h in state.get("death_history", []):
-		if str(h.get("team", "")) == team and int(h.get("lane", -1)) == lane and str(h.get("def", {}).get("race", "")) == "undead":
-			sources.append(h)
-	if sources.is_empty():
-		return
-	var source: Dictionary = sources[RngService.rng.randi() % sources.size()]
-	_spawn_undead_trait_clone(state, summoner, source, int(state.get("field_death_count", 0)))
-	state.log.append(TranslationServer.translate("log_necro_summon"))
-
-
 static func _maybe_god_death_cleanse(state: Dictionary, team: String) -> void:
 	# A unit of `team` died -> that team's god synergy cleanses one of its units.
 	var syn: Dictionary = _team_syn(state, team)
@@ -153,98 +109,6 @@ static func _apply_dark_death_stack(state: Dictionary, team: String) -> void:
 		state.log.append(TranslationServer.translate("log_dark_stack") % [int(state[deaths_key]), new_stacks * 6])
 
 
-static func _maybe_undead_death_clone(state: Dictionary, team: String) -> void:
-	# Whole-field deaths accumulate per undead owner; each side clones independently.
-	var syn: Dictionary = _team_syn(state, team)
-	var threshold := int(syn.get("undead_death_clone_threshold", 0))
-	if threshold <= 0:
-		return
-	var counter_key := "undead_trait_death_counter" if team == "player" else "enemy_undead_trait_death_counter"
-	state[counter_key] = int(state.get(counter_key, 0)) + 1
-	if int(state[counter_key]) < threshold:
-		return
-	state[counter_key] = 0
-	var history: Array = state.get("death_history", [])
-	if history.is_empty():
-		return
-	var side: Array = state.get("player", []) if team == "player" else state.get("enemy", [])
-	var summoners: Array = []
-	for f in side:
-		if bool(f.get("alive", false)) and int(f.get("hp", 0)) > 0 and str(f.get("def", {}).get("race", "")) == "undead" and not bool(f.get("is_race_trait_clone", false)):
-			summoners.append(f)
-	if summoners.is_empty():
-		return
-	var spawned := 0
-	for summoner in summoners:
-		var source: Dictionary = history[RngService.rng.randi() % history.size()]
-		_spawn_undead_trait_clone(state, summoner, source, spawned)
-		spawned += 1
-	if spawned > 0:
-		state.log.append(TranslationServer.translate("log_necro_threshold") % [threshold, spawned])
-
-
-static func _spawn_undead_trait_clone(state: Dictionary, summoner: Dictionary, source: Dictionary, idx: int) -> void:
-	# 已审计（勿降级）：source 来自 death_history 共享数据，clone/def 随后被
-	# 大量写入（erase/改 id），浅拷会污染历史记录和原单位 def。每场只跑几次。
-	var clone := source.duplicate(true)
-	var cloned_def: Dictionary = clone.get("def", {}).duplicate(true)
-	var base_id := str(source.get("id", cloned_def.get("id", "unit")))
-	var clone_id := "undead_trait_clone_%s" % base_id
-	cloned_def.id = clone_id
-	cloned_def.name = TranslationServer.translate("name_clone_suffix") % str(source.get("name", cloned_def.get("name", TranslationServer.translate("name_unit"))))
-	cloned_def.erase("is_boss")
-	cloned_def.erase("series")
-	cloned_def.erase("unique_on_board")
-	cloned_def.erase("remove_on_death")
-	clone.uid = "%s_undead_trait_%d_%d" % [str(summoner.get("uid", "undead")), int(state.get("field_death_count", 0)), idx]
-	clone.id = clone_id
-	clone.name = str(cloned_def.name)
-	clone.team = str(summoner.get("team", "player"))
-	clone["lane"] = int(summoner.get("lane", -1))
-	clone["owner_treasures"] = []
-	clone["owner_syn"] = summoner.get("owner_syn", {})
-	clone.slot = -1
-	clone.def = cloned_def
-	clone.star = 1
-	clone.is_mercenary = false
-	clone.is_formation_ally = false
-	clone.is_race_trait_clone = true
-	var inherited_money_multiplier := maxf(1.0, float(source.get("money_set_multiplier", 1.0)))
-	clone.max_hp = maxi(1, int(round(float(source.get("max_hp", source.get("hp", cloned_def.get("hp", 1)))) / inherited_money_multiplier * 0.40)))
-	clone.hp = int(clone.max_hp)
-	clone.atk = maxi(1, int(round(float(source.get("atk", cloned_def.get("atk", 1))) / inherited_money_multiplier * 0.40)))
-	clone.defense = maxi(0, int(round(float(source.get("defense", cloned_def.get("def", 0))) * 0.40)))
-	cloned_def.hp = int(clone.max_hp)
-	cloned_def.atk = int(clone.atk)
-	cloned_def.def = int(clone.defense)
-	clone.attack_speed = float(source.get("attack_speed", cloned_def.get("attack_speed", 1.0)))
-	clone.range_px = float(source.get("range_px", range_px_for(float(cloned_def.get("range", 1)))))
-	clone.move_speed_px = float(source.get("move_speed_px", float(cloned_def.get("move_speed", 3.0)) * 55.0))
-	var offset_x := (float(idx % GameConstants.BOARD_COLUMNS) - (float(GameConstants.BOARD_COLUMNS) - 1.0) * 0.5) * 18.0
-	var offset_y := float(floori(float(idx) / float(GameConstants.BOARD_COLUMNS)) + 1) * 18.0
-	clone.pos = Vector2(clampf(float(summoner.pos.x) + offset_x, 80.0, ARENA_W - 80.0), clampf(float(summoner.pos.y) + offset_y, 45.0, ARENA_H - 45.0))
-	clone.next_attack = float(state.get("elapsed", 0.0)) + 0.2
-	clone.alive = true
-	clone.shield = 0
-	clone.attack_count = 0
-	clone.skill_ready = 9999.0
-	clone.skill_stacks = 0
-	clone.linked_target_uid = ""
-	clone.statuses = {}
-	clone.dodge = float(source.get("dodge", cloned_def.get("dodge", 0.0)))
-	clone.revives_left = 0
-	clone.treasure_cd = {}
-	clone.erase("money_set_multiplier")
-	clone.erase("parasite_owner")
-	clone.erase("sacrifice_guardian")
-	clone.erase("shared_link_uid")
-	clone.erase("shared_link_peer")
-	if str(clone.team) == "player":
-		state.player.append(clone)
-	else:
-		state.enemy.append(clone)
-
-
 static func _apply_attack_treasure_effects(attacker: Dictionary, target: Dictionary, state: Dictionary) -> void:
 	if _ignores_treasure(attacker):
 		return
@@ -253,13 +117,15 @@ static func _apply_attack_treasure_effects(attacker: Dictionary, target: Diction
 	if _f_has_treasure(attacker, "elem_flame_shatter") and RngService.rng.randf() < 0.25:
 		_apply_attribute_effect("fire", attacker, target)
 	if _f_has_treasure(attacker, "elem_frost_blade") and RngService.rng.randf() < 0.25:
-		_apply_attribute_effect("ice", attacker, target)
+		StatusEffectService.add_status(target, "slow", 2.0, {"move_pct": 0.35, "attack_speed_pct": 0.50})
+		StatusEffectService.add_status(target, "ice_affected", 2.0, {})
 	if _f_has_treasure(attacker, "elem_thunder_haste") and RngService.rng.randf() < 0.25:
 		StatusEffectService.add_status(attacker, "speed_bonus", 3.0, {"pct": 0.60})
 	if _f_has_treasure(attacker, "elem_toxic_spread") and RngService.rng.randf() < 0.25:
 		_apply_attribute_effect("poison", attacker, target)
-	if _f_has_set(attacker, "element") and RngService.rng.randf() < 0.20:
+	if _f_has_set(attacker, "element") and _treasure_ready(attacker, "set_element", float(state.elapsed)) and RngService.rng.randf() < 0.20:
 		_apply_element_set_burst(attacker, target, state)
+		_set_treasure_cd(attacker, "set_element", float(state.elapsed), 2.0)
 	if _f_has_treasure(attacker, "ctrl_shockwave") and _treasure_ready(attacker, "ctrl_shockwave", float(state.elapsed)):
 		var shock_duration := 2.0 if _f_has_linkage(attacker, "link_hu_pai_master") else 1.0
 		StatusEffectService.add_status(target, "stun", shock_duration, {})
@@ -269,13 +135,15 @@ static func _apply_attack_treasure_effects(attacker: Dictionary, target: Diction
 		_set_treasure_cd(attacker, "ctrl_corrosive_needle", float(state.elapsed), 5.0)
 	if _f_has_treasure(attacker, "ctrl_interrupt_chain") and _treasure_ready(attacker, "ctrl_interrupt_chain", float(state.elapsed)):
 		if RngService.rng.randf() < 0.25:
-			StatusEffectService.interrupt(target)
+			StatusEffectService.interrupt(target, 1.5)
 			if _f_has_linkage(attacker, "link_paralysis_shackles"):
 				_apply_attribute_effect("ice", attacker, target)
-				StatusEffectService.add_status(target, "ice_vulnerable", 3.0, {"pct": 0.15})
-		_set_treasure_cd(attacker, "ctrl_interrupt_chain", float(state.elapsed), 5.0)
+				StatusEffectService.add_status(target, "ice_vulnerable", 4.0, {"pct": 0.25})
+				StatusEffectService.add_status(target, "heal_reduction", 4.0, {"pct": 0.75})
+		_set_treasure_cd(attacker, "ctrl_interrupt_chain", float(state.elapsed), 3.0)
 	if _f_has_treasure(attacker, "ctrl_binding_weight") and _treasure_ready(attacker, "ctrl_binding_weight", float(state.elapsed)):
 		StatusEffectService.add_status(target, "slow", 2.0, {"move_pct": 0.25, "attack_speed_pct": 0.20})
+		StatusEffectService.add_status(target, "damage_down", 2.0, {"pct": 0.20})
 		_set_treasure_cd(attacker, "ctrl_binding_weight", float(state.elapsed), 5.0)
 
 
@@ -326,7 +194,7 @@ static func _apply_post_damage_treasures(attacker: Dictionary, target: Dictionar
 	if _f_has_linkage(attacker, "link_toxic_burst"):
 		_try_toxic_burst(target)
 	if _f_has_linkage(attacker, "link_rich_path"):
-		if RngService.rng.randf() < 0.10:
+		if RngService.rng.randf() < 0.25:
 			state.bonus_gold = int(state.get("bonus_gold", 0)) + 10
 
 
@@ -337,11 +205,11 @@ static func _apply_defender_treasure_reaction(defender: Dictionary, attacker: Di
 	DamageService.begin_stat_context(state, defender)
 	if _f_has_linkage(defender, "link_oppression_counter"):
 		_apply_frenzy_assault(attacker, defender)
-		StatusEffectService.add_status(attacker, "attack_down", 2.0, {"pct": 0.20})
+		StatusEffectService.add_status(attacker, "attack_down", 2.0, {"pct": 0.25})
 	if _f_has_linkage(defender, "link_iron_maiden") and _treasure_ready(defender, "link_iron_maiden", float(state.elapsed)):
-		StatusEffectService.add_bleed(attacker, 3.0, 0.06)
-		StatusEffectService.add_status(attacker, "defense_flat_down", 3.0, {"amount": 6})
-		_set_treasure_cd(defender, "link_iron_maiden", float(state.elapsed), 5.0)
+		StatusEffectService.add_bleed(attacker, 5.0, 0.06)
+		StatusEffectService.add_status(attacker, "defense_down", 5.0, {"pct": 0.50})
+		_set_treasure_cd(defender, "link_iron_maiden", float(state.elapsed), 8.0)
 	DamageService.set_stat_source_uid(prev_source)
 
 
@@ -750,7 +618,7 @@ static func _apply_human_last_stand(_state: Dictionary, _p_alive: Array) -> void
 
 
 static func _is_board_piece(f: Dictionary) -> bool:
-	if _ignores_treasure(f) or bool(f.get("is_race_trait_clone", false)):
+	if _ignores_treasure(f):
 		return false
 	# 技能召唤出来的分身（寄生 / 镜像 / 双生）不是棋盘上的棋子。
 	# uid 格式见 _maybe_spawn_parasite_clone / _skill_mirror_clone（"<team>_parasite_N" /
@@ -846,16 +714,13 @@ static func _apply_undead_poison_heal(attacker: Dictionary, state: Dictionary, t
 
 
 # ---------------------------------------------------------------------------
-# 暗族 7（9.24 改）：暗族棋子普攻时，目标在这一下之前身上有任意负面状态 →
-# 目标 攻击 / 防御 / 攻速 各 -3%（按目标开战基础值），目标身上最多 15 层（多个暗族共用）；
-# 攻击者自己 各 +2%（按自身开战基础值），最多 15 层。
-const DARK_SAP_TARGET_PCT := 0.03
-const DARK_SAP_SELF_PCT := 0.02
+# 暗族 7：暗族棋子每次普攻，目标攻/防/攻速各 -4%，自己各 +3%。
+# 均按开战基础值计算，各自最多 15 层。
+const DARK_SAP_TARGET_PCT := 0.04
+const DARK_SAP_SELF_PCT := 0.03
 const DARK_SAP_MAX_STACKS := 15
 
-static func _apply_dark_sap(attacker: Dictionary, target: Dictionary, state: Dictionary, target_was_debuffed: bool) -> void:
-	if not target_was_debuffed:
-		return
+static func _apply_dark_sap(attacker: Dictionary, target: Dictionary, state: Dictionary) -> void:
 	if str(attacker.get("def", {}).get("race", "")) != "dark":
 		return
 	if not bool(_resolve_syn(attacker, state).get("dark_sap", false)):
@@ -890,6 +755,7 @@ static func _try_attack_set_execute(attacker: Dictionary, target: Dictionary, st
 	DamageService.record_forced_hp_loss(target, hp_before)
 	target.hp = 0
 	target.alive = false
+	StatusEffectService.add_status(attacker, "attack_set_speed_bonus", 5.0, {"pct": 0.25})
 	target["killer_uid"] = str(attacker.get("uid", ""))
 	DamageService.emit_death(target)
 	state.log.append(TranslationServer.translate("log_attack_execute") % [str(attacker.get("name", "?")), str(target.get("name", "?"))])

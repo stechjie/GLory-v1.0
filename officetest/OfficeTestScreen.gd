@@ -21,7 +21,7 @@ const GRID_BTN_SIZE := Vector2(30.0, 30.0)
 # 统计表单元格内边距(左,上,右,下):不加的话 7 列会挤成一团。
 const CELL_PAD := "padding=6,2,14,2"
 
-var _config := {"placements": [], "slot_treasures": {}}
+var _config := {"placements": [], "slot_treasures": {}, "slot_gold": {}, "slot_pets": {}}
 var _edit_mode := true
 var _demo_running := false
 var _last_test_result: Dictionary = {}
@@ -57,6 +57,9 @@ var _treasure_panel: PanelContainer
 var _treasure_title: Label
 var _treasure_list_box: VBoxContainer
 var _treasure_slot := 0
+var _gold_spin: SpinBox
+var _pet_option: OptionButton
+var _seed_edit: LineEdit
 var _treasure_chip_btns: Array = []
 
 # 9.19：人王「战后胜利 · 增加属性」离线验证用的控件与计数。
@@ -754,6 +757,37 @@ func _build_treasure_panel() -> void:
 
 	_treasure_title = _panel_label("", 20, Color(1.0, 0.95, 0.72))
 	col.add_child(_treasure_title)
+	var gold_row := HBoxContainer.new()
+	col.add_child(gold_row)
+	gold_row.add_child(_panel_label(_tt("金币", "Gold"), 14, Color.WHITE))
+	_gold_spin = SpinBox.new()
+	_gold_spin.min_value = 0
+	_gold_spin.max_value = 99999
+	_gold_spin.step = 1
+	_gold_spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_gold_spin.value_changed.connect(_on_slot_gold_changed)
+	gold_row.add_child(_gold_spin)
+	var pet_row := HBoxContainer.new()
+	col.add_child(pet_row)
+	pet_row.add_child(_panel_label(_tt("宠物", "Pet"), 14, Color.WHITE))
+	_pet_option = OptionButton.new()
+	_pet_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_pet_option.add_item(_tt("无", "None"))
+	_pet_option.set_item_metadata(0, "")
+	for pet in DataRegistry.get_table("pets").get("pets", []):
+		var pet_id := str(pet.get("id", ""))
+		_pet_option.add_item(str(pet.get("name_en", pet_id)) if LocaleManager.get_locale() == "en" else str(pet.get("name", pet_id)))
+		_pet_option.set_item_metadata(_pet_option.item_count - 1, pet_id)
+	_pet_option.item_selected.connect(_on_slot_pet_changed)
+	pet_row.add_child(_pet_option)
+	var seed_row := HBoxContainer.new()
+	col.add_child(seed_row)
+	seed_row.add_child(_panel_label(_tt("联机种子", "Online seed"), 14, Color.WHITE))
+	_seed_edit = LineEdit.new()
+	_seed_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_seed_edit.placeholder_text = _tt("空=随机", "Blank=random")
+	_seed_edit.text_changed.connect(_on_seed_changed)
+	seed_row.add_child(_seed_edit)
 
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -773,7 +807,20 @@ func _open_treasure_panel(slot: int) -> void:
 	_picker_panel.visible = false
 	_summary_panel.visible = false
 	_treasure_slot = slot
-	_treasure_title.text = "%s · %s" % [_slot_display_name(slot), _tt("宝藏", "Treasures")]
+	_treasure_title.text = "%s · %s" % [_slot_display_name(slot), _tt("宝藏与联机参数", "Treasures and online parameters")]
+	_gold_spin.set_block_signals(true)
+	_gold_spin.value = int(_config.get("slot_gold", {}).get(slot, 0))
+	_gold_spin.set_block_signals(false)
+	_pet_option.set_block_signals(true)
+	var active_pet := str(_config.get("slot_pets", {}).get(slot, ""))
+	for index in _pet_option.item_count:
+		if str(_pet_option.get_item_metadata(index)) == active_pet:
+			_pet_option.select(index)
+			break
+	_pet_option.set_block_signals(false)
+	_seed_edit.set_block_signals(true)
+	_seed_edit.text = str(_config.get("shared_seed", ""))
+	_seed_edit.set_block_signals(false)
 	for child in _treasure_list_box.get_children():
 		child.queue_free()
 	var owned := OfficeTestSim.slot_treasures(_config, slot)
@@ -794,6 +841,27 @@ func _open_treasure_panel(slot: int) -> void:
 		check.toggled.connect(_on_treasure_toggled.bind(tid))
 		_treasure_list_box.add_child(check)
 	_treasure_panel.visible = true
+
+
+func _on_slot_gold_changed(value: float) -> void:
+	var by_slot: Dictionary = _config.get("slot_gold", {})
+	by_slot[_treasure_slot] = maxi(0, int(value))
+	_config["slot_gold"] = by_slot
+	_rebuild_edit_preview()
+
+
+func _on_slot_pet_changed(index: int) -> void:
+	var by_slot: Dictionary = _config.get("slot_pets", {})
+	by_slot[_treasure_slot] = str(_pet_option.get_item_metadata(index))
+	_config["slot_pets"] = by_slot
+	_rebuild_edit_preview()
+
+
+func _on_seed_changed(value: String) -> void:
+	if value.strip_edges().is_empty():
+		_config.erase("shared_seed")
+	else:
+		_config["shared_seed"] = int(value)
 
 
 func _on_treasure_toggled(pressed: bool, tid: String) -> void:

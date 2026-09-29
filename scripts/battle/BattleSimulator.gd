@@ -22,7 +22,7 @@ static func prepare_tutorial_state(kind: String) -> Dictionary:
 	if enemy.is_empty():
 		return {"kind": kind, "player": player, "enemy": enemy, "elapsed": 0.0, "next_sudden_death_tick": BattleFrenzy.SUDDEN_DEATH_SEC, "finished": true, "forced_result": {"player_wins": true, "reason": "no_enemy_units", "log": [TranslationServer.translate("log_enemy_empty")]}}
 	battle_log.append(TranslationServer.translate("log_unit_counts") % [player.size(), enemy.size()])
-	var state := {"kind": kind, "player": player, "enemy": enemy, "elapsed": 0.0, "next_sudden_death_tick": BattleFrenzy.SUDDEN_DEATH_SEC, "finished": false, "log": battle_log, "player_syn": player_syn, "enemy_deaths": 0, "total_deaths": 0, "field_death_count": 0, "mother_death_counter": 0, "dark_kill_stacks": 0, "undead_trait_death_counter": 0, "race_trait_processed_deaths": {}, "death_history": [], "revive_queue": [], "player_kill_gold": 0, "enemy_kill_gold": 0, "kill_gold_by_slot": {}, "player_kills": [], "enemy_kills": [], "bonus_gold": 0, "temporary_deaths": [], "visual_events": [], "unit_stats": {}}
+	var state := {"kind": kind, "player": player, "enemy": enemy, "elapsed": 0.0, "next_sudden_death_tick": BattleFrenzy.SUDDEN_DEATH_SEC, "finished": false, "log": battle_log, "player_syn": player_syn, "enemy_deaths": 0, "total_deaths": 0, "field_death_count": 0, "mother_death_counter": 0, "dark_kill_stacks": 0, "race_trait_processed_deaths": {}, "revive_queue": [], "player_kill_gold": 0, "enemy_kill_gold": 0, "kill_gold_by_slot": {}, "player_kills": [], "enemy_kills": [], "bonus_gold": 0, "temporary_deaths": [], "visual_events": [], "unit_stats": {}}
 	state["enemy_syn"] = enemy_syn
 	_init_unit_stats(state)
 	DamageService.set_stat_state(state)
@@ -144,7 +144,7 @@ static func prepare_team_state(forced_team: int = -1) -> Dictionary:
 
 	var battle_log: Array[String] = []
 	battle_log.append(TranslationServer.translate("log_team_unit_counts") % [kind.to_upper(), player.size(), enemy.size()])
-	var state := {"kind": kind, "player": player, "enemy": enemy, "elapsed": 0.0, "next_sudden_death_tick": BattleFrenzy.SUDDEN_DEATH_SEC, "finished": false, "log": battle_log, "player_syn": {}, "enemy_deaths": 0, "total_deaths": 0, "field_death_count": 0, "mother_death_counter": 0, "dark_kill_stacks": 0, "undead_trait_death_counter": 0, "race_trait_processed_deaths": {}, "death_history": [], "revive_queue": [], "player_kill_gold": 0, "enemy_kill_gold": 0, "kill_gold_by_slot": {}, "player_kills": [], "enemy_kills": [], "bonus_gold": 0, "temporary_deaths": [], "visual_events": [], "unit_stats": {}}
+	var state := {"kind": kind, "player": player, "enemy": enemy, "elapsed": 0.0, "next_sudden_death_tick": BattleFrenzy.SUDDEN_DEATH_SEC, "finished": false, "log": battle_log, "player_syn": {}, "enemy_deaths": 0, "total_deaths": 0, "field_death_count": 0, "mother_death_counter": 0, "dark_kill_stacks": 0, "race_trait_processed_deaths": {}, "revive_queue": [], "player_kill_gold": 0, "enemy_kill_gold": 0, "kill_gold_by_slot": {}, "player_kills": [], "enemy_kills": [], "bonus_gold": 0, "temporary_deaths": [], "visual_events": [], "unit_stats": {}}
 	# lane -> 座位 的映射：跨路击杀分账要靠它找到「路线主」（见 _add_kill_reward）。
 	# 教学的 prepare_tutorial_state 不会有这两个键，那边棋子的 lane 恒为 -1，分账自动跳过。
 	state["ally_slots"] = ally_slots.duplicate()
@@ -169,6 +169,15 @@ static func prepare_team_state(forced_team: int = -1) -> Dictionary:
 			owner_syn_by_key["enemy_%d" % lane] = rival_ctx[lane].syn
 	state.owner_syn_by_key = owner_syn_by_key
 	state.owner_state = {}
+	_finalize_team_opening(state)
+	return state
+
+
+# 联机服务端与离线自测共用同一份开场规则，避免套装、初始技能和基础属性快照漂移。
+static func _finalize_team_opening(state: Dictionary) -> void:
+	var player: Array = state.get("player", [])
+	var enemy: Array = state.get("enemy", [])
+	var battle_log: Array[String] = state.log
 	for f in (player + enemy):
 		if _ignores_treasure(f):
 			continue
@@ -178,19 +187,14 @@ static func prepare_team_state(forced_team: int = -1) -> Dictionary:
 			f.defense = maxi(0, int(round(float(f.defense) * 1.30)))
 			f.dodge = float(f.get("dodge", 0.0)) + 0.15
 		_apply_money_set_bonus(f)
-		# (7) human opening shield: only the owner's own units.
 		if bool(_f_syn(f).get("human_shield", false)):
 			f.shield = maxi(int(f.get("shield", 0)), int(float(f.get("max_hp", 1)) * 0.08))
 	_init_unit_stats(state)
 	DamageService.set_stat_state(state)
 	_apply_opening_unit_skills(player, enemy, battle_log, state)
-	# Opening treasures run AFTER opening skills (matching 1v1 order) so cooldown
-	# treasures like Time Compress apply their -25% to the opening skill_ready that
-	# the skills just set.
 	BattleSimTreasures._apply_opening_treasures(player, battle_log)
 	BattleSimTreasures._apply_opening_treasures(enemy, battle_log)
 	_snapshot_base_stats(player + enemy)
-	return state
 
 # --- B: host computes the whole battle and records a replay -----------------
 # roster: uid -> render info (incl. def for the 3D model). frames: per-tick
@@ -321,6 +325,15 @@ static func stamp_team_round_damages(replay_a: Dictionary, replay_b: Dictionary)
 	# so orient self/rival per replay just like the damage.
 	var heal_a := int((replay_a.get("result", {}) as Dictionary).get("team_heal_ally", 0))
 	var heal_b := int((replay_a.get("result", {}) as Dictionary).get("team_heal_rival", 0))
+	var a_draw := bool(ra.get("is_draw", false))
+	var rb: Dictionary = replay_b.get("result", {})
+	var b_draw := a_draw if kind == "pvp" else bool(rb.get("is_draw", false))
+	var a_wins := bool(ra.get("player_wins", false))
+	var b_wins := (not a_wins) if kind == "pvp" else bool(rb.get("player_wins", false))
+	if not a_wins and not a_draw:
+		heal_a *= 2
+	if not b_wins and not b_draw:
+		heal_b *= 2
 	var res_a: Dictionary = replay_a.get("result", {})
 	res_a["team_damage_self"] = dmg_a
 	res_a["team_damage_rival"] = dmg_b
@@ -349,7 +362,7 @@ static func _team_formation_heal_total(ctx_list: Array) -> int:
 	for ctx in ctx_list:
 		var treasures: Array = (ctx as Dictionary).get("treasures", [])
 		if treasures.has("def_formation_heal"):
-			total += 2 if TreasureService.has_linkage_in(treasures, "link_hu_pai_master") else 1
+			total += 1
 	return total
 
 static func _replay_statuses(f: Dictionary) -> Dictionary:
@@ -629,6 +642,12 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 	var bodies := team_units + opponents
 	for f: Dictionary in team_units:
 		if not bool(f.get("alive", false)):
+			continue
+		if StatusEffectService.has_status(f, "fear"):
+			var fear: Dictionary = f.statuses.fear
+			var away := Vector2(float(fear.get("away_x", 0.0)), float(fear.get("away_y", 0.0)))
+			var retreat := away * float(f.move_speed_px) * StatusEffectService.move_speed_multiplier(f) * TICK_SEC
+			_move_without_pushing(f, retreat, bodies)
 			continue
 		if StatusEffectService.is_stunned(f):
 			continue
@@ -917,7 +936,6 @@ static func _perform_attack(attacker: Dictionary, target: Dictionary, state: Dic
 	# 9.24 羁绊：判定用「这一下打之前」目标身上的状态（本次普攻新挂的不算）。
 	StatusEffectService.ensure_status(target)
 	var target_was_poisoned := StatusEffectService.has_status(target, "poison")
-	var target_was_debuffed := _has_negative_status(target)
 	# Only the crit base hit surfaces a floating number; the true-damage rider,
 	# combo strikes and treasure reactions below stay silent.
 	var basic_skill_id := "basic_ranged" if float(d.get("range", 1.0)) > 1.0 else "basic_melee"
@@ -942,7 +960,7 @@ static func _perform_attack(attacker: Dictionary, target: Dictionary, state: Dic
 	dealt += BattleSimTreasures._try_attack_set_execute(attacker, target, state)
 	# 灵7 / 暗7（9.24 改）。
 	BattleSimTreasures._apply_undead_poison_heal(attacker, state, target_was_poisoned)
-	BattleSimTreasures._apply_dark_sap(attacker, target, state, target_was_debuffed)
+	BattleSimTreasures._apply_dark_sap(attacker, target, state)
 	_apply_attack_statuses(attacker, target, state)
 	BattleSimTreasures._apply_attack_treasure_effects(attacker, target, state)
 	BattleSimTreasures._apply_defender_reaction(attacker, target, dealt)
@@ -978,11 +996,10 @@ static func _apply_attack_statuses(attacker: Dictionary, target: Dictionary, sta
 	var d: Dictionary = attacker.get("def", {})
 	var sid := str(d.get("skill_id", ""))
 	var syn: Dictionary = _resolve_syn(attacker, state)
-	var strength := 1.0 + SynergyService.safe_factor(syn, "dark_debuff_strength")
 	var duration_bonus := 1.0 + SynergyService.safe_factor(syn, "dark_debuff_duration")
 	if sid == "curse_attack":
-		StatusEffectService.add_status(target, "attack_down", float(d.get("duration", 4.0)) * duration_bonus, {"pct": float(d.get("attack_down", 0.08)) * strength})
-		StatusEffectService.add_status(target, "slow", float(d.get("duration", 4.0)) * duration_bonus, {"attack_speed_pct": float(d.get("aspd_down", 0.08)) * strength, "move_pct": 0.0})
+		StatusEffectService.add_status(target, "attack_down", float(d.get("duration", 4.0)) * duration_bonus, {"pct": float(d.get("attack_down", 0.08))})
+		StatusEffectService.add_status(target, "slow", float(d.get("duration", 4.0)) * duration_bonus, {"attack_speed_pct": float(d.get("aspd_down", 0.08)), "move_pct": 0.0})
 		_emit_sfx_proc(state, sid, attacker, target)
 	elif sid == "burn_claw":
 		StatusEffectService.add_poison(target, float(d.get("burn_duration", 3.0)), 0.0, 0.0)
@@ -1004,7 +1021,7 @@ static func _apply_attack_statuses(attacker: Dictionary, target: Dictionary, sta
 		# 9.22：四星毒灵 / 四星飞灵共用这一条（两只棋子的 skill_id 都是 `poison_attack`）。
 		_emit_sfx_proc(state, sid, attacker, target)
 	elif sid == "defense_down_attack":
-		StatusEffectService.add_status(target, "defense_down", float(d.get("duration", 5.0)) * duration_bonus, {"pct": float(d.get("def_down_pct", 0.10)) * strength})
+		StatusEffectService.add_status(target, "defense_down", float(d.get("duration", 5.0)) * duration_bonus, {"pct": float(d.get("def_down_pct", 0.10))})
 		# 9.22：四星刺灵。
 		_emit_sfx_proc(state, sid, attacker, target)
 	elif sid == "death_hunt":
@@ -1108,7 +1125,7 @@ static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) ->
 		var sid := str(d.get("skill_id", ""))
 		if sid.is_empty() or sid == "none":
 			continue
-		if StatusEffectService.has_status(caster, "silence"):
+		if StatusEffectService.has_status(caster, "silence") or StatusEffectService.is_stunned(caster) or StatusEffectService.has_status(caster, "fear"):
 			continue
 		if float(state.elapsed) < float(caster.get("skill_ready", 0.0)):
 			continue
