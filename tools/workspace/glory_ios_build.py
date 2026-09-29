@@ -216,7 +216,7 @@ def update_sources(project, logdir, env):
     if result.returncode:
         raise RuntimeError("更新后无法确认原提交仍保留，已停止构建。")
     note("同步 Google Drive 资源到 res（调用现有 sync_res.sh）…")
-    run([ROOT / "tools" / "sync_res.sh"], logdir / "resource-sync.log", env)
+    run([Path(__file__).resolve().with_name("sync_res.sh")], logdir / "resource-sync.log", env)
 
 
 def environment(args):

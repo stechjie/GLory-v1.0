@@ -736,7 +736,7 @@ def verify_export_diagnostics(content, logdir):
 def main():
     parser = argparse.ArgumentParser(description="将 GLory-v1.0 与本地 res 合并到隔离目录构建 Android 调试 APK；--sync 先更新 Git 和 Drive。")
     parser.add_argument("--sync", action="store_true", help="先 git pull --ff-only 更新当前分支代码和仓库资源，再同步 Drive 资源，最后构建")
-    parser.add_argument("--check", action="store_true", help="只检查工具环境和资源目录，不导入或构建")
+    parser.add_argument("--check", action="store_true", help="只读检查工具环境和资源目录；即使带 --sync 也不更新、导入或构建")
     parser.add_argument("--project", type=Path, default=ROOT / "GLory-v1.0")
     parser.add_argument("--assets", type=Path, default=ROOT / "res", help="res、res/assets 或其他已展开的资源目录")
     parser.add_argument("--godot", help="Godot 二进制或 .app 路径，也可设置 GODOT_BIN")
@@ -749,11 +749,11 @@ def main():
     if not (project / "project.godot").is_file():
         raise RuntimeError(f"不是 Godot 工程：{project}")
     git_sync = None
-    if args.sync:
+    if args.sync and not args.check:
         # Serialize Git updates against other script-driven builds/snapshots.
         with file_lock(ROOT / "build/.apk-build.lock", nonblocking=True):
             git_sync = sync_project(project)
-        subprocess.run([str(ROOT / "tools" / "sync_res.sh")], check=True)
+        subprocess.run([str(Path(__file__).resolve().with_name("sync_res.sh"))], check=True)
     env = environment(args)
     note(f"Godot {env['version']}；JDK：{env['java']}；Android SDK：{env['sdk']}")
     feature = re.search(r'config/features=.*?"(\d+\.\d+)"', (project / "project.godot").read_text())

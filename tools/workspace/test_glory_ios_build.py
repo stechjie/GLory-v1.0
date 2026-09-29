@@ -242,7 +242,7 @@ class GitUpdateTests(unittest.TestCase):
             self.update_calls.append([str(value) for value in command])
             if str(command[0]) == "git":
                 return subprocess.check_output([str(v) for v in command], stderr=subprocess.STDOUT, text=True)
-            self.assertEqual(command, [self.root / "tools" / "sync_res.sh"])
+            self.assertEqual(command, [Path(ios.__file__).resolve().with_name("sync_res.sh")])
             return "sync fixture"
         with mock.patch.object(ios, "ROOT", self.root), mock.patch.object(ios, "run", side_effect=runner), \
              contextlib.redirect_stdout(io.StringIO()):
@@ -319,7 +319,7 @@ class GitUpdateTests(unittest.TestCase):
         self.update()
         self.assertEqual(self.git(self.repo, "rev-parse", "HEAD"), remote)
         self.assertEqual(cache.read_text(), "keep ignored cache\n")
-        self.assertEqual(self.update_calls[-1], [str(self.root / "tools" / "sync_res.sh")])
+        self.assertEqual(self.update_calls[-1], [str(Path(ios.__file__).resolve().with_name("sync_res.sh"))])
         self.assertEqual(self.git(self.repo, "status", "--porcelain"), "")
 
 

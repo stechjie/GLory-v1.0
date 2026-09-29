@@ -139,7 +139,7 @@ class GitSyncTests(unittest.TestCase):
         drive_calls = []
 
         def run(command, *args, **kwargs):
-            if command == [str(self.root / "tools" / "sync_res.sh")]:
+            if command == [str(Path(build.__file__).resolve().with_name("sync_res.sh"))]:
                 drive_calls.append(command)
                 raise AssertionError("Drive must not run after an ignored-file collision")
             return real_run(command, *args, **kwargs)
@@ -210,7 +210,7 @@ class GitSyncTests(unittest.TestCase):
         calls = []
 
         def run(command, *args, **kwargs):
-            if command == [str(self.root / "tools" / "sync_res.sh")]:
+            if command == [str(Path(build.__file__).resolve().with_name("sync_res.sh"))]:
                 calls.append("drive")
                 return subprocess.CompletedProcess(command, 0)
             if command[0] == "git" and "merge" in command:
@@ -254,6 +254,21 @@ class MainSyncOrderTests(unittest.TestCase):
              contextlib.redirect_stdout(io.StringIO()):
             build.main()
 
+    def test_check_with_sync_is_read_only(self):
+        env = dict(version="4.7", major_minor="4.7", java="jdk", sdk="sdk")
+        with mock.patch.object(build, "ROOT", self.root), \
+             mock.patch("sys.argv", ["glory_build.py", "--project", str(self.project), "--sync", "--check"]), \
+             mock.patch.object(build, "sync_project") as git_sync, \
+             mock.patch.object(build.subprocess, "run") as run, \
+             mock.patch.object(build, "environment", return_value=env), \
+             mock.patch.object(build, "asset_root", return_value=self.root / "assets"), \
+             mock.patch.object(build, "stage_project") as stage, \
+             contextlib.redirect_stdout(io.StringIO()):
+            build.main()
+        git_sync.assert_not_called()
+        run.assert_not_called()
+        stage.assert_not_called()
+
     def test_sync_sequence_git_then_drive_then_environment(self):
         calls = []
 
@@ -262,7 +277,7 @@ class MainSyncOrderTests(unittest.TestCase):
             calls.append("git")
 
         def drive_sync(command, **kwargs):
-            self.assertEqual(command, [str(self.root / "tools" / "sync_res.sh")])
+            self.assertEqual(command, [str(Path(build.__file__).resolve().with_name("sync_res.sh"))])
             self.assertTrue(kwargs.get("check"))
             calls.append("drive")
 
@@ -301,7 +316,7 @@ class MainSyncOrderTests(unittest.TestCase):
         stage.assert_not_called()
 
     def test_drive_failure_stops_build(self):
-        failure = subprocess.CalledProcessError(1, [str(self.root / "tools" / "sync_res.sh")])
+        failure = subprocess.CalledProcessError(1, [str(Path(build.__file__).resolve().with_name("sync_res.sh"))])
         with mock.patch.object(build, "sync_project") as git_sync, \
              mock.patch.object(build.subprocess, "run", side_effect=failure), \
              mock.patch.object(build, "environment") as environment, \

@@ -3,4 +3,4 @@
 set -euo pipefail
 GLORY_TOOLS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 GLORY_ROOT="$(cd "$GLORY_TOOLS/../../.." && pwd -P)"
-exec "${PYTHON3:-python3}" "$GLORY_ROOT/tools/glory_build.py" "$@"
+exec "${PYTHON3:-python3}" "$GLORY_TOOLS/glory_build.py" "$@"

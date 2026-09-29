@@ -433,7 +433,7 @@ class TestFlightTests(unittest.TestCase):
 
     def test_build_command_updates_by_default_and_honors_local_only(self):
         command = tf.build_command(tf.arguments([]), self.root / "result.json", "12")
-        self.assertEqual(command, [str(self.root / "tools" / "build_ipa.sh"), "--method", "app-store", "--update",
+        self.assertEqual(command, [str(Path(tf.__file__).resolve().with_name("build_ipa.sh")), "--method", "app-store", "--update",
                                   "--result-file", str(self.root / "result.json"), "--build-number", "12"])
         command = tf.build_command(tf.arguments(["--local", "--version", "0.0.5", "--profile", "/fixture/profile"]), check=True)
         self.assertNotIn("--update", command)
@@ -481,7 +481,7 @@ class TestFlightTests(unittest.TestCase):
             raise AssertionError(f"Unexpected API request: {method} {path}")
 
         def command(args, **kwargs):
-            if args[0] == str(self.root / "tools" / "build_ipa.sh"):
+            if args[0] == str(Path(tf.__file__).resolve().with_name("build_ipa.sh")):
                 self.assertIn("--update", args)
                 number = args[args.index("--build-number") + 1]
                 self.assertEqual(number, "12")

@@ -148,7 +148,7 @@ def parse_embedded(html):
     return children
 
 
-def read_folder(folder_id):
+def _read_folder_once(folder_id):
     children = parse_embedded(get(f"https://drive.google.com/embeddedfolderview?id={folder_id}").text)
     metadata = parse_metadata(get(f"https://drive.google.com/drive/folders/{folder_id}").text)
     if not set(metadata).issubset(children):
@@ -166,6 +166,18 @@ def read_folder(folder_id):
             child.update(metadata[fid])
         safe_name(child["name"])
     return children
+
+
+def read_folder(folder_id):
+    # Drive occasionally serves an incomplete page or changes a listing between
+    # requests. Retry the entire validation, never accept a partial inventory.
+    for attempt in range(3):
+        try:
+            return _read_folder_once(folder_id)
+        except ValueError:
+            if attempt == 2:
+                raise
+            time.sleep(2 ** attempt)
 
 
 def list_folder(folder_id):
