@@ -245,7 +245,13 @@ func _check_cue_table() -> void:
 
 func _check_cue_files() -> void:
 	for cue in SfxService.cue_ids():
-		var path := SfxService.cue_path(str(cue))
+		var original := SfxService.cue_path(str(cue))
+		var path := SfxService.resolved_cue_path(str(cue))
+		if original != path:
+			_h.note("原始素材待补齐，使用技能音效回退：%s -> %s" % [original, path])
+			_h.expect(SfxService.cue_length(str(cue)) > 0.0, "fallback_decodes", "回退音频必须可解码且有时长")
+		else:
+			_h.expect(path == original, "original_preferred", "现有音效保持原始素材")
 		_h.expect(FileAccess.file_exists(path), "cue_file_missing",
 			"cue %s 指向的文件不存在：%s" % [str(cue), path])
 
