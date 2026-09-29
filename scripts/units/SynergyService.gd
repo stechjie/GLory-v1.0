@@ -40,7 +40,7 @@ static func flags_from_counts(counts: Dictionary) -> Dictionary:
 		"dark_death_stack_enabled": dark > 0,
 		"dark_damage_bonus": 0.25 if dark >= 5 else 0.0,
 		"dark_debuff_strength": 0.30 if dark >= 2 else 0.0,
-		# 暗7：每次普攻使目标攻/防/攻速 -4%、自己 +3%，各最多 15 层。
+		# 暗7：每次普攻使目标攻/防/攻速 -3%、自己 +3%，各最多 15 层。
 		# 旧的「负面时长 +50%」(dark_debuff_duration) 已删除，_dark_duration 读不到即为 0。
 		"dark_sap": dark >= 7,
 		"undead_poison_bonus": 1.0 if undead >= 4 else 0.0,

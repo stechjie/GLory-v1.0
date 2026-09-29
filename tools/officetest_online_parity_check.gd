@@ -69,7 +69,24 @@ func _ready() -> void:
 		push_error("OFFICETEST_ONLINE_PARITY FAIL opening state")
 		get_tree().quit(1)
 		return
-	var seen := {"fear": 0, "stun": 0, "poison": 0}
+	# Inject the same two real Undead poison applications into both prepared
+	# states, then compare their normal battle steps and replay payloads.
+	for battle_state in [online, offline]:
+		var caster := _find_fighter(battle_state, "undead_poison")
+		var target := _find_fighter(battle_state, "human_king")
+		if caster.is_empty() or target.is_empty():
+			push_error("OFFICETEST_ONLINE_PARITY FAIL missing poison fixture")
+			get_tree().quit(1)
+			return
+		DamageService.begin_stat_context(battle_state, caster)
+		StatusEffectService.add_poison(target, 4.0, 0.03)
+		StatusEffectService.add_poison(target, 4.0, 0.03)
+		DamageService.clear_stat_context()
+	if not _same_frame(online, offline):
+		push_error("OFFICETEST_ONLINE_PARITY FAIL two-poison opening state")
+		get_tree().quit(1)
+		return
+	var seen := {"fear": 0, "stun": 0, "poison": 0, "poison_stacks": 0}
 	for tick in STEPS:
 		RngService.rng.state = online_rng_state
 		DamageService.set_stat_state(online)
@@ -90,13 +107,26 @@ func _ready() -> void:
 			get_tree().quit(1)
 			return
 		for f in (online.player + online.enemy):
-			for kind in seen.keys():
+			for kind in ["fear", "stun", "poison"]:
 				if StatusEffectService.has_status(f, str(kind)):
 					seen[kind] = int(seen[kind]) + 1
+			if StatusEffectService.has_status(f, "poison") and f.statuses.poison.get("stacks", []).size() == 2:
+				seen["poison_stacks"] = int(seen["poison_stacks"]) + 1
 		if bool(online.finished) or bool(offline.finished):
 			break
+	if int(seen.poison_stacks) == 0:
+		push_error("OFFICETEST_ONLINE_PARITY FAIL no two-stack poison frame")
+		get_tree().quit(1)
+		return
 	print("OFFICETEST_ONLINE_PARITY PASS ticks=%d observed=%s" % [STEPS, str(seen)])
 	get_tree().quit(0)
+
+
+func _find_fighter(battle_state: Dictionary, unit_id: String) -> Dictionary:
+	for f in (battle_state.player + battle_state.enemy):
+		if str(f.get("id", "")) == unit_id:
+			return f
+	return {}
 
 
 func _same_frame(a: Dictionary, b: Dictionary) -> bool:

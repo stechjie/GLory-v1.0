@@ -26,7 +26,7 @@ static func is_control_immune(fighter: Dictionary) -> bool:
 	return bool(d.get("shield_control_immune", false)) and int(fighter.get("shield", 0)) > 0
 
 
-static func add_status(fighter: Dictionary, kind: String, duration: float, params: Dictionary = {}) -> void:
+static func add_status(fighter: Dictionary, kind: String, duration: float, params: Dictionary = {}, stack_poison: bool = false) -> void:
 	ensure_status(fighter)
 	if _is_control_status(kind) and is_control_immune(fighter):
 		return
@@ -53,6 +53,26 @@ static func add_status(fighter: Dictionary, kind: String, duration: float, param
 		next = _boss_reduced_params(kind, next)
 		if _boss_reduces_duration(kind):
 			adjusted_duration *= 0.5
+	if kind == "poison" and stack_poison:
+		var stacks: Array = []
+		if existing.has("stacks"):
+			for old_stack in existing.get("stacks", []):
+				if typeof(old_stack) == TYPE_DICTIONARY and float(old_stack.get("remaining", 0.0)) > 0.0:
+					stacks.append(old_stack.duplicate())
+		elif float(existing.get("remaining", 0.0)) > 0.0:
+			stacks.append(existing.duplicate())
+		next["remaining"] = adjusted_duration
+		next["tick_left"] = 0.0
+		var added_stack_duration := adjusted_duration
+		if stacks.size() >= 2:
+			var replace_idx := 1 if float(stacks[1].get("remaining", 0.0)) < float(stacks[0].get("remaining", 0.0)) else 0
+			added_stack_duration = maxf(0.0, adjusted_duration - float(stacks[replace_idx].get("remaining", 0.0)))
+			stacks[replace_idx] = next
+		else:
+			stacks.append(next)
+		fighter.statuses[kind] = _poison_status_from_stacks(stacks)
+		DamageService.record_status_applied(kind, added_stack_duration, true)
+		return
 	next["remaining"] = maxf(float(existing.get("remaining", 0.0)), adjusted_duration)
 	if kind in ["poison", "bleed", "bleed_nonlethal", "burn"]:
 		next["tick_left"] = minf(float(existing.get("tick_left", 0.0)), float(next.get("tick_left", 0.0))) if existing.has("tick_left") else 0.0
@@ -62,6 +82,20 @@ static func add_status(fighter: Dictionary, kind: String, duration: float, param
 	# the caster, so buffs on allies and debuffs on enemies belong to that caster.
 	var added_duration := maxf(0.0, float(next.remaining) - maxf(0.0, float(existing.get("remaining", 0.0))))
 	DamageService.record_status_applied(kind, added_duration, _is_negative_status(kind))
+
+# Keep top-level poison fields for healing, VFX and replay readers.
+# Each nested stack retains its own duration, tick timer, strength and caster.
+static func _poison_status_from_stacks(stacks: Array) -> Dictionary:
+	if stacks.size() == 1:
+		return (stacks[0] as Dictionary).duplicate()
+	var first: Dictionary = stacks[0]
+	var second: Dictionary = stacks[1]
+	var primary: Dictionary = first if float(first.get("remaining", 0.0)) >= float(second.get("remaining", 0.0)) else second
+	var status := primary.duplicate()
+	status["stacks"] = stacks
+	status["antiheal_pct"] = maxf(float(first.get("antiheal_pct", 0.0)), float(second.get("antiheal_pct", 0.0)))
+	return status
+
 
 static func _status_source_fighter() -> Dictionary:
 	var source_uid := DamageService.current_stat_source_uid()
@@ -117,7 +151,7 @@ static func _boss_reduced_params(kind: String, params: Dictionary) -> Dictionary
 # Without it a DoT kill leaves killer_uid empty and
 # BattleSimulator._process_pending_kill_rewards skips the victim: the kill gold
 # is not misattributed, it is lost outright, and the stats panel credits nobody.
-static func add_poison(fighter: Dictionary, duration: float = 4.0, pct_max_hp: float = 0.03, bonus: float = 0.0) -> void:
+static func add_poison(fighter: Dictionary, duration: float = 4.0, pct_max_hp: float = 0.03, bonus: float = 0.0, force_undead_stack: bool = false) -> void:
 	var source := _status_source_fighter()
 	var source_syn: Dictionary = source.get("owner_syn", DamageService._stat_state.get("player_syn", {}) if str(source.get("team", "")) == "player" else DamageService._stat_state.get("enemy_syn", {}))
 	var antiheal := SynergyService.safe_factor(source_syn, "undead_poison_antiheal") if str(source.get("def", {}).get("race", "")) == "undead" else 0.0
@@ -126,7 +160,7 @@ static func add_poison(fighter: Dictionary, duration: float = 4.0, pct_max_hp: f
 		"tick_left": 0.0,
 		"source_uid": DamageService.current_stat_source_uid(),
 		"antiheal_pct": antiheal,
-	})
+	}, pct_max_hp > 0.0 and (force_undead_stack or str(source.get("def", {}).get("race", "")) == "undead"))
 
 static func add_bleed(fighter: Dictionary, duration: float = 3.0, pct_current_hp: float = 0.06, nonlethal: bool = false) -> void:
 	# Offensive bleed is lethal. Blood Pact uses a separate status key so its
@@ -162,6 +196,24 @@ static func tick(fighter: Dictionary, delta: float) -> Array[int]:
 	var remove_keys: Array[String] = []
 	for key in fighter.statuses.keys():
 		var s: Dictionary = fighter.statuses[key]
+		if key == "poison" and s.has("stacks"):
+			var active_stacks: Array = []
+			for raw_stack in s.get("stacks", []):
+				var stack: Dictionary = raw_stack
+				stack.remaining = float(stack.get("remaining", 0.0)) - delta
+				stack.tick_left = float(stack.get("tick_left", 0.0)) - delta
+				if float(stack.tick_left) <= 0.0 and bool(fighter.get("alive", false)):
+					stack.tick_left = POISON_TICK_SEC
+					var stack_dmg := maxi(1, int(floor(float(fighter.max_hp) * float(stack.get("pct_max_hp", 0.03)))))
+					_apply_dot_damage(fighter, stack_dmg, stack)
+					damages.append(stack_dmg)
+				if float(stack.remaining) > 0.0:
+					active_stacks.append(stack)
+			if active_stacks.is_empty():
+				remove_keys.append(str(key))
+			else:
+				fighter.statuses[key] = _poison_status_from_stacks(active_stacks)
+			continue
 		s.remaining = float(s.get("remaining", 0.0)) - delta
 		if key == "poison":
 			s.tick_left = float(s.get("tick_left", 0.0)) - delta

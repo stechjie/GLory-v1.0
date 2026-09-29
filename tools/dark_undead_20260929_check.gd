@@ -76,6 +76,91 @@ func _ready() -> void:
 	_expect(int(poison_target.hp) == 570 and is_equal_approx(float(poison_target.statuses.poison.antiheal_pct), 0.30),
 		"undead2_all_healing", "healed=%d poison=%s" % [int(poison_target.hp) - 500, str(poison_target.statuses.poison)])
 	DamageService.clear_stat_context()
+
+	var double_target := _unit("human_king", "enemy", {}, Vector2(500, 320))
+	double_target.max_hp = 1000
+	double_target.hp = 1000
+	var double_state := {"player": [poison_caster], "enemy": [double_target], "elapsed": 0.0,
+		"visual_events": [], "unit_stats": {}, "kind": "pvp"}
+	DamageService.begin_stat_context(double_state, poison_caster)
+	StatusEffectService.add_poison(double_target, 4.0, 0.03)
+	StatusEffectService.add_poison(double_target, 4.0, 0.03)
+	var two_ticks := StatusEffectService.tick(double_target, 0.1)
+	_expect(double_target.statuses.poison.get("stacks", []).size() == 2 and two_ticks == [30, 30] and int(double_target.hp) == 940,
+		"undead_two_poison_ticks", "ticks=%s hp=%d" % [str(two_ticks), int(double_target.hp)])
+	StatusEffectService.add_poison(double_target, 4.0, 0.03)
+	_expect(double_target.statuses.poison.get("stacks", []).size() == 2,
+		"undead_poison_two_stack_cap", str(double_target.statuses.poison))
+	double_target.hp = 800
+	BattleSimShared._heal_unit(double_target, 100)
+	_expect(int(double_target.hp) == 870, "undead_two_poison_antiheal_once", "hp=%d" % int(double_target.hp))
+	DamageService.clear_stat_context()
+
+	var expiring_target := _unit("human_king", "enemy", {}, Vector2(500, 320))
+	expiring_target.max_hp = 1000
+	expiring_target.hp = 1000
+	var expiry_state := {"player": [poison_caster], "enemy": [expiring_target], "elapsed": 0.0,
+		"visual_events": [], "unit_stats": {}, "kind": "pvp"}
+	DamageService.begin_stat_context(expiry_state, poison_caster)
+	StatusEffectService.add_poison(expiring_target, 0.5, 0.03)
+	StatusEffectService.add_poison(expiring_target, 2.0, 0.03)
+	StatusEffectService.tick(expiring_target, 0.1)
+	StatusEffectService.tick(expiring_target, 0.5)
+	_expect(StatusEffectService.has_status(expiring_target, "poison") and not expiring_target.statuses.poison.has("stacks"),
+		"undead_poison_independent_expiry", str(expiring_target.statuses.poison))
+	StatusEffectService.tick(expiring_target, 1.5)
+	_expect(not StatusEffectService.has_status(expiring_target, "poison"), "undead_poison_final_expiry", str(expiring_target.statuses))
+	DamageService.clear_stat_context()
+
+	var burst_target := _unit("human_king", "enemy", {}, Vector2(500, 320))
+	burst_target.max_hp = 1000
+	burst_target.hp = 1000
+	var burst_state := {"player": [poison_caster], "enemy": [burst_target], "elapsed": 0.0,
+		"visual_events": [], "unit_stats": {}, "kind": "pvp"}
+	DamageService.begin_stat_context(burst_state, poison_caster)
+	StatusEffectService.add_poison(burst_target, 4.0, 0.03)
+	StatusEffectService.add_poison(burst_target, 4.0, 0.03)
+	var saved_rng := RngService.rng.state
+	RngService.rng.seed = 42
+	for attempt in 20:
+		if not StatusEffectService.has_status(burst_target, "poison"):
+			break
+		BattleSimTreasures._try_toxic_burst(burst_target)
+	RngService.rng.state = saved_rng
+	_expect(int(burst_target.hp) == 760 and not StatusEffectService.has_status(burst_target, "poison"),
+		"undead_two_poison_burst", "hp=%d statuses=%s" % [int(burst_target.hp), str(burst_target.statuses)])
+	DamageService.clear_stat_context()
+
+	var mixed_target := _unit("human_king", "enemy", {}, Vector2(500, 320))
+	mixed_target.max_hp = 1000
+	mixed_target.hp = 1000
+	var mixed_state := {"player": [poison_caster], "enemy": [mixed_target], "elapsed": 0.0,
+		"visual_events": [], "unit_stats": {}, "kind": "pvp"}
+	DamageService.begin_stat_context(mixed_state, poison_caster)
+	StatusEffectService.add_poison(mixed_target, 2.0, 0.03)
+	StatusEffectService.add_poison(mixed_target, 4.0, 0.06)
+	StatusEffectService.add_poison(mixed_target, 5.0, 0.09)
+	var mixed_ticks := StatusEffectService.tick(mixed_target, 0.1)
+	_expect(mixed_target.statuses.poison.get("stacks", []).size() == 2 and mixed_ticks == [90, 60] and int(mixed_target.hp) == 850,
+		"undead_poison_replace_earliest", "ticks=%s hp=%d" % [str(mixed_ticks), int(mixed_target.hp)])
+	DamageService.clear_stat_context()
+
+	var undead4 := SynergyService.flags_from_counts({"god": 0, "dark": 0, "undead": 4, "human": 0})
+	poison_caster.owner_syn = undead4
+	var strong_target := _unit("human_king", "enemy", {}, Vector2(500, 320))
+	strong_target.max_hp = 1000
+	strong_target.hp = 1000
+	var strong_state := {"player": [poison_caster], "enemy": [strong_target], "elapsed": 0.0,
+		"visual_events": [], "unit_stats": {}, "kind": "pvp"}
+	DamageService.begin_stat_context(strong_state, poison_caster)
+	StatusEffectService.add_poison(strong_target, 6.0, 0.06, 1.0)
+	StatusEffectService.add_poison(strong_target, 6.0, 0.06, 1.0)
+	var strong_ticks := StatusEffectService.tick(strong_target, 0.1)
+	_expect(strong_ticks == [120, 120] and int(strong_target.hp) == 760,
+		"undead_four_star_two_poison_ticks", "ticks=%s hp=%d" % [str(strong_ticks), int(strong_target.hp)])
+	DamageService.clear_stat_context()
+	poison_caster.owner_syn = undead_syn
+
 	var other_source := _unit("human_king", "player", {}, Vector2(500, 300))
 	var other_target := _unit("human_king", "enemy", {}, Vector2(500, 320))
 	other_target.hp = 500

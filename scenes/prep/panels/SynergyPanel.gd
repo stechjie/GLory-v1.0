@@ -159,7 +159,7 @@ func _race_entries(race: String) -> Array:
 				{"threshold": 1, "name": "暗族特性·击杀叠层", "detail": "每 3 个敌人死亡，暗族单位获得 1 层 +6% 伤害。"},
 				{"threshold": 2, "name": "暗2·负面强化", "detail": "暗族单位施加的所有负面效果数值强度 +30%；无数值的控制效果持续时间 +30%。"},
 				{"threshold": 5, "name": "暗5·伤害", "detail": "暗族单位伤害 +25%。"},
-				{"threshold": 7, "name": "暗7·蚀魂", "detail": "暗族单位每次普攻使目标攻击/防御/攻速 -4%，自身攻击/防御/攻速 +3%（各最多 15 层）。"},
+				{"threshold": 7, "name": "暗7·蚀魂", "detail": "暗族单位每次普攻使目标攻击/防御/攻速 -3%，自身攻击/防御/攻速 +3%（各最多 15 层）。"},
 			]
 		"undead":
 			return [
@@ -191,7 +191,7 @@ func _race_entries_en(race: String) -> Array:
 				{"threshold": 1, "name": "Dark Trait: Kill Stack", "detail": "Every 3 enemy deaths, Dark units gain 1 stack of +6% damage."},
 				{"threshold": 2, "name": "Dark 2: Debuff Power", "detail": "All debuffs applied by Dark units are 30% stronger; controls without a numeric strength last 30% longer."},
 				{"threshold": 5, "name": "Dark 5: Damage", "detail": "Dark units deal +25% damage."},
-				{"threshold": 7, "name": "Dark 7: Soul Sap", "detail": "Each Dark basic attack reduces the target’s ATK/DEF/AS by 4% and raises the attacker’s by 3% (up to 15 stacks each)."},
+				{"threshold": 7, "name": "Dark 7: Soul Sap", "detail": "Each Dark basic attack reduces the target’s ATK/DEF/AS by 3% and raises the attacker’s by 3% (up to 15 stacks each)."},
 			]
 		"undead":
 			return [

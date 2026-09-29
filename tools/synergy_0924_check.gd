@@ -236,16 +236,16 @@ func _check_dark_sap() -> void:
 	var st := _state([d], [t])
 	DamageService.begin_stat_context(st, d)
 	BattleSimulator._perform_attack(d, t, st)
-	_expect(int(t.atk) == 192 and int(t.defense) == 96 and int(d.atk) == 103, "dark_sap_no_debuff_needed",
+	_expect(int(t.atk) == 194 and int(t.defense) == 97 and int(d.atk) == 103, "dark_sap_no_debuff_needed",
 		"无负面也触发：目标 atk %d def %d，自己 atk %d" % [int(t.atk), int(t.defense), int(d.atk)])
 	BattleSimulator._perform_attack(d, t, st)
-	_expect(int(t.atk) == 184 and int(t.defense) == 92 and int(d.atk) == 106, "dark_sap_2",
+	_expect(int(t.atk) == 188 and int(t.defense) == 94 and int(d.atk) == 106, "dark_sap_2",
 		"第二次普攻：目标 atk %d def %d，自己 atk %d" % [int(t.atk), int(t.defense), int(d.atk)])
 	for i in 30:
 		BattleSimulator._perform_attack(d, t, st)
 	DamageService.clear_stat_context()
-	_expect(int(t.dark_sap_taken) == 15 and int(t.atk) == 80 and int(d.atk) == 145 and is_equal_approx(float(d.attack_speed), 1.45),
-		"dark_sap_cap", "15 层封顶：目标 atk %d（应 80），自己 atk %d（应 145），自己攻速 %.2f" % [int(t.atk), int(d.atk), float(d.attack_speed)])
+	_expect(int(t.dark_sap_taken) == 15 and int(t.atk) == 110 and int(d.atk) == 145 and is_equal_approx(float(d.attack_speed), 1.45),
+		"dark_sap_cap", "15 层封顶：目标 atk %d（应 110），自己 atk %d（应 145），自己攻速 %.2f" % [int(t.atk), int(d.atk), float(d.attack_speed)])
 
 
 # --- 4 攻击 / 4 控制 --------------------------------------------------------------

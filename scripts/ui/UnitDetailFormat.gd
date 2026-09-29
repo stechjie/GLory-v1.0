@@ -192,15 +192,15 @@ static func format_skill_detail(d: Dictionary) -> String:
 		"black_hole":
 			return "黑洞%s：牵引周围敌人，眩晕%.1f秒，并造成自身攻击%s伤害。" % [cd, float(d.get("pull_sec", 2.0)), pct(float(d.get("damage_atk_pct", 2.2)))]
 		"poison_attack":
-			return "毒击：普通攻击附带中毒，每秒造成目标最大生命%s伤害，持续%.1f秒；灵4毒伤x2。" % [pct(float(d.get("poison_pct_max_hp", 0.03))), float(d.get("poison_duration", 4.0))]
+			return "毒击：普通攻击附带中毒，每秒造成目标最大生命%s伤害，持续%.1f秒；最多2层，分别扣血；灵4毒伤x2。" % [pct(float(d.get("poison_pct_max_hp", 0.03))), float(d.get("poison_duration", 4.0))]
 		"parasite_on_kill":
 			return "寄生：普攻标记非 Boss 敌人，被标记敌人死亡时，召唤该敌人的分身，生命为原目标%s，攻防为原目标%s。" % [pct(float(d.get("clone_hp_pct", 0.10))), pct(float(d.get("clone_atk_def_pct", 0.50)))]
 		"defense_down_attack":
 			return "腐蚀攻击：普通攻击降低目标防御%s，持续%.1f秒；暗2会增强效果。" % [pct(float(d.get("def_down_pct", 0.10))), float(d.get("duration", 5.0))]
 		"death_poison_explosion":
-			return "死亡毒爆：死亡时对周围敌人造成自身攻击%s真实伤害，并施加中毒。" % pct(float(d.get("damage_atk_pct", 2.5)))
+			return "死亡毒爆：死亡时对周围敌人造成自身攻击%s真实伤害，并施加中毒（最多2层，分别扣血）。" % pct(float(d.get("damage_atk_pct", 2.5)))
 		"poison_reflect_armor_stack":
-			return "毒甲：受伤后反弹本次伤害%s真实伤害并使攻击者中毒；自身防御每次+%s，最多%d层。" % [pct(float(d.get("reflect_taken_damage_pct", 0.12))), pct(float(d.get("armor_per_hit_pct", 0.14))), int(d.get("max_stacks", 10))]
+			return "毒甲：受伤后反弹本次伤害%s真实伤害并使攻击者中毒（最多2层，分别扣血）；自身防御每次+%s，最多%d层。" % [pct(float(d.get("reflect_taken_damage_pct", 0.12))), pct(float(d.get("armor_per_hit_pct", 0.14))), int(d.get("max_stacks", 10))]
 		"unique_death_execute":
 			# 9.14：文案把所有可调数值都改成读 def，1~3 星与 4 星自动显示各自那一份。
 			# 9.24：灵7 已改为「普攻中毒目标回血」，不再降低母灵阈值。
@@ -364,15 +364,15 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"black_hole":
 			return "Black Hole%s: Pull surrounding enemies, stun for %.1fs, and deal %s ATK damage." % [cd, float(d.get("pull_sec", 2.0)), pct(float(d.get("damage_atk_pct", 2.2)))]
 		"poison_attack":
-			return "Poison Strike: Normal attacks apply poison — %s max HP per second for %.1fs. Undead 4 doubles poison damage." % [pct(float(d.get("poison_pct_max_hp", 0.03))), float(d.get("poison_duration", 4.0))]
+			return "Poison Strike: Normal attacks apply poison — %s max HP per second for %.1fs. Up to 2 stacks tick separately. Undead 4 doubles poison damage." % [pct(float(d.get("poison_pct_max_hp", 0.03))), float(d.get("poison_duration", 4.0))]
 		"parasite_on_kill":
 			return "Parasite: When a basic attack kills a non-Boss enemy, summon its clone at %s HP and %s ATK/DEF." % [pct(float(d.get("clone_hp_pct", 0.10))), pct(float(d.get("clone_atk_def_pct", 0.50)))]
 		"defense_down_attack":
 			return "Corrosive Strike: Normal attacks reduce target DEF by %s for %.1fs. Dark 2 amplifies this effect." % [pct(float(d.get("def_down_pct", 0.10))), float(d.get("duration", 5.0))]
 		"death_poison_explosion":
-			return "Death Poison Burst: On death, deal %s ATK true damage to surrounding enemies and apply poison." % pct(float(d.get("damage_atk_pct", 2.5)))
+			return "Death Poison Burst: On death, deal %s ATK true damage to surrounding enemies and apply poison (up to 2 separate damage stacks)." % pct(float(d.get("damage_atk_pct", 2.5)))
 		"poison_reflect_armor_stack":
-			return "Toxic Armor: On taking damage, reflect %s as true damage and poison the attacker. Own DEF stacks +%s per hit (max %d stacks)." % [pct(float(d.get("reflect_taken_damage_pct", 0.12))), pct(float(d.get("armor_per_hit_pct", 0.14))), int(d.get("max_stacks", 10))]
+			return "Toxic Armor: On taking damage, reflect %s as true damage and poison the attacker (up to 2 separate damage stacks). Own DEF stacks +%s per hit (max %d stacks)." % [pct(float(d.get("reflect_taken_damage_pct", 0.12))), pct(float(d.get("armor_per_hit_pct", 0.14))), int(d.get("max_stacks", 10))]
 		"unique_death_execute":
 			var m_th := int(d.get("death_threshold", 5))
 			var m_t1 := float(d.get("tier1_or_merc_chance", 0.5))

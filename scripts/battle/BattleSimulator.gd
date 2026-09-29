@@ -1286,7 +1286,7 @@ static func _on_unit_killed(killer: Dictionary, victim: Dictionary, state: Dicti
 		for o in killer_team:
 			if bool(o.get("alive", false)) and _can_target(victim, o, killer_team) and victim.pos.distance_to(o.pos) <= 180.0:
 				DamageService.apply_damage(o, maxi(1, int(round(float(victim.atk) * float(vd.get("damage_atk_pct", 2.5))))), true)
-				StatusEffectService.add_poison(o)
+				StatusEffectService.add_poison(o, 4.0, 0.03, 0.0, true)
 	_maybe_spawn_parasite_clone(killer, victim, state)
 	# 母灵计数已移到每 tick 的死亡清扫 _process_single_race_death 里，
 	# 那条路能捕获普攻/技能/AOE 所有致死方式（本入口只覆盖普攻），且天然排除处决。

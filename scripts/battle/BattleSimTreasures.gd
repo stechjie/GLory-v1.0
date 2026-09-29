@@ -229,12 +229,17 @@ static func _try_toxic_burst(target: Dictionary) -> void:
 	if not bool(target.get("alive", false)) or not target.statuses.has("poison") or RngService.rng.randf() >= 0.50:
 		return
 	var poison: Dictionary = target.statuses.get("poison", {})
-	var remaining := maxf(0.0, float(poison.get("remaining", 0.0)))
-	var ticks := int(ceil(remaining / StatusEffectService.POISON_TICK_SEC))
-	if ticks <= 0:
+	var burst_damage := 0
+	for raw_stack in poison.get("stacks", [poison]):
+		var stack: Dictionary = raw_stack
+		var remaining := maxf(0.0, float(stack.get("remaining", 0.0)))
+		var ticks := int(ceil(remaining / StatusEffectService.POISON_TICK_SEC))
+		if ticks > 0:
+			var tick_damage := maxi(1, int(floor(float(target.max_hp) * float(stack.get("pct_max_hp", 0.03)))))
+			burst_damage += tick_damage * ticks
+	if burst_damage <= 0:
 		return
-	var tick_damage := maxi(1, int(floor(float(target.max_hp) * float(poison.get("pct_max_hp", 0.03)))))
-	DamageService.apply_damage(target, tick_damage * ticks, true)
+	DamageService.apply_damage(target, burst_damage, true)
 	target.statuses.erase("poison")
 
 static func _apply_soul_counter_treasure(killer: Dictionary, victim: Dictionary) -> void:
@@ -714,9 +719,9 @@ static func _apply_undead_poison_heal(attacker: Dictionary, state: Dictionary, t
 
 
 # ---------------------------------------------------------------------------
-# 暗族 7：暗族棋子每次普攻，目标攻/防/攻速各 -4%，自己各 +3%。
+# 暗族 7：暗族棋子每次普攻，目标攻/防/攻速各 -3%，自己各 +3%。
 # 均按开战基础值计算，各自最多 15 层。
-const DARK_SAP_TARGET_PCT := 0.04
+const DARK_SAP_TARGET_PCT := 0.03
 const DARK_SAP_SELF_PCT := 0.03
 const DARK_SAP_MAX_STACKS := 15
 
