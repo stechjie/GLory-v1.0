@@ -1,6 +1,7 @@
 extends RefCounted
 
-# 棋盘皮肤：对局里摆放界面（摆棋子那页）的底图等换成哪一套。只换图，不碰玩法。
+# 棋盘皮肤：对局里摆放界面（摆棋子那页）的底图、河流、待命区、萝卜、商店按钮与商店背景换成哪一套。
+# 只换图，不碰玩法。
 # 在主界面「备战」页的「棋盘皮肤」页签里换（PetScreen），设计与加皮肤的步骤见 docs/棋盘皮肤.md。
 #
 # 一张皮肤 = data/prep_skins.json 里的一段 + assets/skins/prep/<皮肤 id>/ 下的图，
@@ -24,6 +25,7 @@ const SLOTS := {
 	"bench": "res://assets/board/prep_2_5d/standby_bg.png",  # 待命区 8 格平台
 	"carrot": "res://assets/props/prep/carrot_gathering_v1.png",
 	"shop_button": "res://assets/ui/buttons/shop_closed.png",  # 底部商店按钮（图自带框，不叠字）
+	"shop_panel": "res://assets/ui/shop/btm_stone_frame_v4.png",  # 商店打开时的卷轴背景（拉伸到 920×280 显示）
 }
 
 # 皮肤在 data/prep_skins.json 里可以另写的两项，不写就是默认：

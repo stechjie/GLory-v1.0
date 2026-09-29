@@ -1,7 +1,7 @@
 {
 	"schema_version": 1,
 
-	"_why": "棋盘皮肤的目录：对局里摆放界面的底图等换成哪一套，只换图不碰玩法，在主界面「备战」页换。一张皮肤 = 这里一段 + assets/skins/prep/<id>/ 下的图，文件名固定为 board / river / bench / carrot / shop_button（.png），缺哪张就沿用默认那张；再加一张卡片用的 preview.png。槽位与默认图在 scenes/prep/PrepSkin.gd 的 SLOTS，加皮肤的步骤在 docs/棋盘皮肤.md。",
+	"_why": "棋盘皮肤的目录：对局里摆放界面的底图等换成哪一套，只换图不碰玩法，在主界面「备战」页换。一张皮肤 = 这里一段 + assets/skins/prep/<id>/ 下的图，文件名固定为 board / river / bench / carrot / shop_button / shop_panel（.png），缺哪张就沿用默认那张；再加一张卡片用的 preview.png。槽位与默认图在 scenes/prep/PrepSkin.gd 的 SLOTS，加皮肤的步骤在 docs/棋盘皮肤.md。",
 
 	"_order": "按这里的顺序显示。默认皮肤放第一个，永远免费（不许进 data/shop.json）。",
 

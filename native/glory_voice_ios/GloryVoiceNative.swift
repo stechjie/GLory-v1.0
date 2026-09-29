@@ -89,7 +89,8 @@ public final class GloryVoiceNative: NSObject, RoomDelegate {
         audienceReady = false
         audienceRevision += 1
         audienceFingerprint = ""
-        audienceTask?.cancel()
+        let previousAudience = audienceTask
+        previousAudience?.cancel()
         audienceTask = nil
         let previousMicrophone = microphoneTask
         previousMicrophone?.cancel()
@@ -104,6 +105,7 @@ public final class GloryVoiceNative: NSObject, RoomDelegate {
         let earlierDisconnect = disconnectTask
         disconnectTask = Task {
             await earlierDisconnect?.value
+            await previousAudience?.value
             await previousMicrophone?.value
             if let previous { await previous.disconnect() }
             await previousConnection?.value
@@ -150,11 +152,15 @@ public final class GloryVoiceNative: NSObject, RoomDelegate {
                 let previousMicrophone = self.microphoneTask
                 previousMicrophone?.cancel()
                 await previousMicrophone?.value
+                guard !Task.isCancelled, self.generation == serial, self.activeRoom === room,
+                      self.audienceRevision == revision else { return }
                 // Stop the old scope before narrowing it, then publish only after
                 // the new subscriber permissions are accepted.
                 if room.localParticipant.isMicrophoneEnabled() {
                     try await room.localParticipant.setMicrophone(enabled: false)
                 }
+                guard !Task.isCancelled, self.generation == serial, self.activeRoom === room,
+                      self.audienceRevision == revision else { return }
                 let permissions = sids.map {
                     ParticipantTrackPermission(participantSid: $0,
                                                allTracksAllowed: true,
@@ -168,7 +174,8 @@ public final class GloryVoiceNative: NSObject, RoomDelegate {
                 self.audienceReady = true
                 self.reconcileMicrophone(room, serial: serial)
             } catch {
-                if self.generation == serial { self.micError = "audience_failed" }
+                if !Task.isCancelled, self.generation == serial, self.activeRoom === room,
+                   self.audienceRevision == revision { self.micError = "audience_failed" }
             }
         }
     }
@@ -190,7 +197,9 @@ public final class GloryVoiceNative: NSObject, RoomDelegate {
                     }
                     try await room.localParticipant.setMicrophone(enabled: wanted)
                 } catch {
-                    if self.generation == serial { self.micError = "mic_failed" }
+                    if !Task.isCancelled, self.generation == serial, self.activeRoom === room {
+                        self.micError = "mic_failed"
+                    }
                     return
                 }
                 guard self.generation == serial, self.activeRoom === room else {

@@ -384,6 +384,7 @@ SWIFT_CLASS_PROPERTY(@property (nonatomic, class, readonly, strong) GloryVoiceNa
 - (NSString * _Nonnull)joinRoom:(NSString * _Nonnull)url token:(NSString * _Nonnull)token listenOnly:(BOOL)listenOnly SWIFT_WARN_UNUSED_RESULT;
 - (void)leaveRoom;
 - (NSString * _Nonnull)setMicrophoneEnabled:(BOOL)enabled SWIFT_WARN_UNUSED_RESULT;
+- (void)setAudience:(BOOL)all identitiesJson:(NSString * _Nonnull)identitiesJson;
 - (void)setParticipantVolume:(NSString * _Nonnull)identity volume:(double)volume;
 - (NSString * _Nonnull)getStatus SWIFT_WARN_UNUSED_RESULT;
 - (NSString * _Nonnull)getCapabilities SWIFT_WARN_UNUSED_RESULT;

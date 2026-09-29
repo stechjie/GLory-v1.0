@@ -28,6 +28,7 @@ const PREVIEW_CROP := Rect2i(200, 0, 1280, 720)
 const PREVIEW_SIZE := Vector2i(640, 360)
 
 var team_pets_box: CheckBox
+var shop_open_box: CheckBox
 var prep: Control
 var _prep_host: Control
 var _toolbar_layer: CanvasLayer
@@ -73,6 +74,11 @@ func _ready() -> void:
 	team_pets_box.focus_mode = Control.FOCUS_NONE
 	team_pets_box.toggled.connect(func(_on: bool) -> void: _refresh_carrot())
 	rows.add_child(team_pets_box)
+	shop_open_box = CheckBox.new()
+	shop_open_box.text = "打开商店（看商店背景）"
+	shop_open_box.focus_mode = Control.FOCUS_NONE
+	shop_open_box.toggled.connect(func(_on: bool) -> void: _apply_shop_open())
+	rows.add_child(shop_open_box)
 	_status = Label.new()
 	rows.add_child(_status)
 
@@ -96,8 +102,18 @@ func show_skin(skin_id: String) -> void:
 	while not started.done:
 		await get_tree().process_frame
 	_refresh_carrot()
+	_apply_shop_open()
 	_status.text = "当前：%s" % skin_id
 	_building = false
+
+
+# 商店弹窗开着才看得到商店背景（shop_panel）。画面盖了吃输入的遮罩，点不到底部的商店按钮，所以在这里开。
+func _apply_shop_open() -> void:
+	if prep == null or not is_instance_valid(prep):
+		return
+	var shop: Variant = prep.get("_shop")
+	if shop != null and bool(shop.picker_open) != shop_open_box.button_pressed:
+		shop.toggle_picker()
 
 
 # 截当前画面（藏掉上面这排按钮）写成当前皮肤的 preview.png。返回写到哪了，失败返回空串。

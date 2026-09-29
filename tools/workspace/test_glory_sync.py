@@ -105,14 +105,14 @@ class ParsingTests(unittest.TestCase):
             Response(text=embedded_html(items)),
             Response(text=metadata_html([metadata_row(fid, name) for fid, name in items])),
             Response(text=embedded_html(items[:-1])),
-        ]), self.assertRaises(ValueError):
+        ] * 3), patch.object(sync.time, "sleep"), self.assertRaises(ValueError):
             sync.list_folder("root")
 
     def test_metadata_missing_from_embedded_listing_rejected(self):
         with patch.object(sync, "get", side_effect=[
             Response(text=embedded_html([("one", "a")])),
             Response(text=metadata_html([metadata_row("one", "a"), metadata_row("two", "b")])),
-        ]), self.assertRaises(ValueError):
+        ] * 3), patch.object(sync.time, "sleep"), self.assertRaises(ValueError):
             sync.list_folder("root")
 
     def test_case_and_unicode_name_collisions_rejected(self):
@@ -535,3 +535,18 @@ class DuplicateResolutionTests(unittest.TestCase):
              patch.object(sync, 'get', return_value=Response(body=b'new')), \
              patch.object(sync.time, 'sleep'), self.assertRaises(ValueError):
             sync.download(item, Path(folder) / 'candidate')
+
+
+class FolderRetryTests(unittest.TestCase):
+    def test_incomplete_page_retries_full_validation(self):
+        listing = {'file-id': {'id': 'file-id', 'name': 'image.png'}}
+        with patch.object(sync, '_read_folder_once', side_effect=[ValueError('incomplete page'), listing]) as read, \
+             patch.object(sync.time, 'sleep'):
+            self.assertEqual(sync.read_folder('folder-id'), listing)
+        self.assertEqual(read.call_count, 2)
+
+    def test_persistent_bad_listing_never_becomes_empty_success(self):
+        with patch.object(sync, '_read_folder_once', side_effect=ValueError('invalid listing')) as read, \
+             patch.object(sync.time, 'sleep'), self.assertRaisesRegex(ValueError, 'invalid listing'):
+            sync.read_folder('folder-id')
+        self.assertEqual(read.call_count, 3)

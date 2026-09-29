@@ -18,4 +18,4 @@ fi
 if ! "$PY" -c 'import requests, bs4' >/dev/null 2>&1; then
   "$PY" -m pip install 'requests>=2.32,<3' 'beautifulsoup4>=4.12,<5'
 fi
-exec "$PY" "$ROOT/tools/glory_sync.py" "$@"
+exec "$PY" "$GLORY_TOOLS/glory_sync.py" "$@"

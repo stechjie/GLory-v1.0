@@ -18,9 +18,9 @@ static func paths() -> Array:
 		Prep.TEAM_MERCS_STAGE_BACKGROUND_PATH, Prep.SHOP_REFRESH_FIRE_ATLAS_PATH,
 		Prep.TEAM_MERC_ALERT_ATLAS_PATH,
 		Shop.SHOP_IDLE_ATLAS_PATH, Shop.SHOP_IDLE_HALO_PATH,
-		Shop.SHOP_PANEL_BACKGROUND_PATH, Shop.PrepMoneyBagIcon.MONEY_BAG_TEXTURE_PATH,
+		Shop.PrepMoneyBagIcon.MONEY_BAG_TEXTURE_PATH,
 	]
-	# 棋盘底图、河流、待命区、萝卜、商店按钮随皮肤换：预热正在用的那一套。
+	# 棋盘底图、河流、待命区、萝卜、商店按钮与商店背景随皮肤换：预热正在用的那一套。
 	out.append_array(PrepSkin.active_paths())
 	# A restored tutorial can already be at its PvP step. Match the music and
 	# announcement chosen by PrepScreen without warming unrelated future rounds.

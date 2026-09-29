@@ -560,6 +560,16 @@ const MERC_SKILL_CUES := {
 }
 
 
+# Missing 9.20 source assets use an existing skill sound until originals arrive.
+# Keep the original CUES paths so restoring resources needs no code change.
+const MISSING_SKILL_FALLBACKS := {
+	CUE_STAR4_SCYTHE_SKILL: CUE_STAR4_SWORDSMAN_SKILL,
+	CUE_STAR4_DARK_CASTERS_SKILL: CUE_STAR4_MAGE_SKILL,
+	CUE_STAR4_BOMB_SKILL: CUE_STAR4_MAGE_SKILL,
+	CUE_STAR4_DEATH_SERVANT_SKILL: CUE_STAR4_SWORDSMAN_SKILL,
+}
+
+
 # --- 状态 -------------------------------------------------------------------
 
 static var _voices: Array[AudioStreamPlayer] = []
@@ -636,7 +646,7 @@ static func _watch_currency() -> void:
 static func play(cue: String, volume_db := 0.0) -> bool:
 	if not Presentation.ui_sound_allowed():
 		return false
-	var path := str(CUES.get(cue, ""))
+	var path := resolved_cue_path(cue)
 	if path.is_empty():
 		push_warning("SfxService.play: 未登记的 cue %s" % cue)
 		return false
@@ -848,7 +858,7 @@ static func cue_volume_db(cue: String) -> float:
 static func start_loop(cue: String) -> bool:
 	if not Presentation.ui_sound_allowed():
 		return false
-	var path := str(CUES.get(cue, ""))
+	var path := resolved_cue_path(cue)
 	if path.is_empty():
 		push_warning("SfxService.start_loop: 未登记的 cue %s" % cue)
 		return false
@@ -943,7 +953,7 @@ static func loop_start_count() -> int:
 # RESULT_DISPLAY_SECONDS 取 max，而不是自己写一个「够长」的常数 ——
 # 那种写法换了素材就对不上，而且没人会发现。
 static func cue_length(cue: String) -> float:
-	var path := str(CUES.get(cue, ""))
+	var path := resolved_cue_path(cue)
 	if path.is_empty():
 		return 0.0
 	var stream := _stream_for(path)
@@ -1050,6 +1060,13 @@ static func total_play_count() -> int:
 
 static func cue_path(cue: String) -> String:
 	return str(CUES.get(cue, ""))
+
+
+static func resolved_cue_path(cue: String) -> String:
+	var original := cue_path(cue)
+	if not original.is_empty() and ResourceLoader.exists(original):
+		return original
+	return cue_path(str(MISSING_SKILL_FALLBACKS[cue])) if MISSING_SKILL_FALLBACKS.has(cue) else original
 
 
 static func cue_ids() -> Array:

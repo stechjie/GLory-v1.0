@@ -6,4 +6,4 @@ GLORY_ROOT="$(cd "$GLORY_TOOLS/../../.." && pwd -P)"
 if [[ -f /Volumes/repository/glory-ios-dev/env.sh ]]; then
   source /Volumes/repository/glory-ios-dev/env.sh
 fi
-exec "${PYTHON3:-python3}" -B "$GLORY_ROOT/tools/glory_ios_build.py" "$@"
+exec "${PYTHON3:-python3}" -B "$GLORY_TOOLS/glory_ios_build.py" "$@"

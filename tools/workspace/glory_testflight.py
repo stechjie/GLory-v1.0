@@ -51,7 +51,7 @@ def safe_text(text):
 
 def load_credentials():
     if not CONFIG_FILE.is_file():
-        raise RuntimeError("尚未配置自动上传 API 密钥。先运行 ./release_testflight.sh --setup；操作说明见 TestFlight一键发布.md。")
+        raise RuntimeError("尚未配置自动上传 API 密钥。先运行 ./tools/release_testflight.sh --setup；操作说明见 docs/TestFlight一键发布.md。")
     config = read_json(CONFIG_FILE)
     credentials = Credentials(config["key_id"], config["issuer_id"], Path(config["key_path"]).expanduser())
     credentials.validate()
@@ -97,7 +97,7 @@ def setup(args):
         os.replace(candidate, destination)
         ios.atomic_json(CONFIG_FILE, {"key_id": key_id, "issuer_id": issuer_id, "key_path": str(destination)})
         CONFIG_FILE.chmod(0o600)
-    note("API 密钥已保存到本机专用目录。以后直接运行 ./release_testflight.sh。")
+    note("API 密钥已保存到本机专用目录。以后直接运行 ./tools/release_testflight.sh。")
 
 
 def next_number(client):
@@ -265,7 +265,7 @@ def assign_group(client, build_id):
 
 
 def build_command(args, result_file=None, number=None, check=False):
-    command = [str(ROOT / "tools" / "build_ipa.sh"), "--method", "app-store"]
+    command = [str(Path(__file__).resolve().with_name("build_ipa.sh")), "--method", "app-store"]
     if not args.local:
         command.append("--update")
     if check:
@@ -351,7 +351,7 @@ def main(argv=None):
         try:
             result_file = Path(state["build_result_file"])
             if not result_file.is_file():
-                raise RuntimeError("这次发布尚未生成 IPA，请重新运行 ./release_testflight.sh 开始构建。")
+                raise RuntimeError("这次发布尚未生成 IPA，请重新运行 ./tools/release_testflight.sh 开始构建。")
             metadata = read_json(result_file)
             if metadata.get("build_number") != state["build_number"]:
                 raise RuntimeError("本次 IPA 的构建号不匹配，拒绝使用其他任务的包。")
@@ -371,7 +371,7 @@ def main(argv=None):
             note(f"现有组员可在 iPhone 的 TestFlight 安装/更新。IPA：{metadata['ipa']}")
             note(f"发布记录：{path}\n后台：{URL}")
         except (Exception, KeyboardInterrupt):
-            note("本次发布记录已保留。继续执行：\n  ./release_testflight.sh --resume " + shlex.quote(str(path)))
+            note("本次发布记录已保留。继续执行：\n  ./tools/release_testflight.sh --resume " + shlex.quote(str(path)))
             raise
 
 

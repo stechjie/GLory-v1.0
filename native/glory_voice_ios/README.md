@@ -90,3 +90,17 @@ Device acceptance for the next IPA (no iPhone available during this fix):
 - Repeat mic toggles, room switching, foreground/background, speaker, wired and
   Bluetooth headset routes. Check echo/feedback under software AEC, especially
   loud game effects. Local microphone monitoring is intentionally not added.
+
+## Audience task cancellation regression (0.0.11)
+
+Changing audience intentionally cancels an in-flight microphone task. Cancellation
+must not set `mic_failed`, otherwise VoiceService treats the intentional scope
+change as a capture failure and drops Talk to Listen. Stale/cancelled audience
+operations are checked before SDK mutations and may not report current errors.
+Leaving now drains the audience task as well as connection and microphone tasks
+before a replacement room connects.
+
+`python3 tools/test_ios_voice_tasks.py` compiles the production Swift state machine
+against deterministic SDK doubles on macOS. It verifies cancelled publication
+without false failure and room replacement waiting for suspended audience work.
+It uses no audio hardware and does not substitute for physical device acceptance.

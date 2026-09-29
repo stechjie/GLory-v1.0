@@ -99,4 +99,7 @@ func _check_walking_pressure() -> void:
 	victim.team = "enemy"
 	victim.def = {}
 	BattleSimSkills._skill_fear(caster,[victim],{}, {})
-	h.expect(victim.pos.distance_to(Vector2(530,260)) < 0.01,"skill_knockback_preserved","Explicit fear knockback still moves its target 90px")
+	h.expect(StatusEffectService.has_status(victim, "fear"), "fear_status_preserved",
+		"Body contact must not prevent the current fear skill from applying its retreat status")
+	h.expect(victim.pos == Vector2(440,260), "fear_not_instant_knockback",
+		"Fear now retreats over time; casting must not teleport the target 90px")
