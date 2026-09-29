@@ -158,7 +158,8 @@ const USE_DTLS := true
 # v33: Ordinary walking now stops/slides at bodies instead of pushing them.
 # This changes authoritative combat results; clients and server ship together.
 # v34: compiled RPC contract is required during authentication.
-const NETWORK_PROTOCOL_VERSION := 34
+# v35: final settlement details and server-owned rematch reservations.
+const NETWORK_PROTOCOL_VERSION := 35
 
 # Local phone hosting is debug-only.
 const ALLOW_LOCAL_HOST_DEBUG := false

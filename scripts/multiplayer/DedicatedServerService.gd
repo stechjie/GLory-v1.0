@@ -69,6 +69,7 @@ const PERSISTED_ROOM_FIELDS := [
 	#                      变成一个能被路人按房间号加入的普通房间，而且战报里的
 	#                      mode 会退回 custom（协议 32）
 	"match_uid", "match_started_wall", "seat_pid", "seat_ai_rounds", "matched", "mode",
+	"initial_seats", "initial_leader", "rematch_room_id", "settlement_source",
 ]
 # 时间字段一律存**相对量**，不存单调时钟的绝对值：单调时钟跨进程重启就归零，
 # 存绝对值等于重启后所有 TTL 立刻到期或永不到期（见 C20 的说明）。
@@ -255,6 +256,9 @@ func load_snapshot() -> void:
 		var deadline: Dictionary = {}
 		var states: Array = room.get("slot_states", [])
 		for i in team_slots:
+			# Pending viewers disconnected with the old server; no live reservation survives.
+			if i < states.size() and str(states[i]) == "settling":
+				states[i] = "empty"
 			if i < states.size() and str(states[i]) == "player":
 				reserved[i] = {"reserved_at": now}
 				deadline[i] = now + reserve_grace

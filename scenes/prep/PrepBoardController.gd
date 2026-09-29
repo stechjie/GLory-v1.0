@@ -660,6 +660,7 @@ func _sell_board_index(index: int, confirmed: bool = false) -> void:
 	var refund := _sell_refund_for_cell(cell)
 	var sold_uid := str(cell.get("uid", ""))
 	GameState.gold += refund
+	GameState.prep_income_total += maxi(0, refund)
 	GameState.board_slots[index] = null
 	_shadow_report("sell", {"uid": sold_uid})
 	_board_hud._selected_board = -1
@@ -682,6 +683,7 @@ func _sell_bench_index(index: int, confirmed: bool = false) -> void:
 	var refund := _sell_refund_for_cell(cell)
 	var sold_uid := str(cell.get("uid", ""))
 	GameState.gold += refund
+	GameState.prep_income_total += maxi(0, refund)
 	GameState.bench_slots[index] = null
 	# 9.17：同 _sell_board_index。
 	SfxService.play(SfxService.CUE_UNIT_SELL)

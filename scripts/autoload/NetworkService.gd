@@ -1211,6 +1211,8 @@ func _clear_seat_metadata(room: Dictionary, slot: int) -> void:
 func _release_seat_public_id(room: Dictionary, slot: int) -> void:
 	_room_service.release_seat_public_id(room, slot)
 func _room_close(room: Dictionary, reason: String) -> void:
+	for old_peer in room.get("peer_slot", {}).keys():
+		_release_rematch_reservation(room, int(old_peer))
 	room.state = ROOM_CLOSED
 	room.finished_reason = reason
 	# 两队的语音房间一起删（里面的人会被 LiveKit 请出去）。放在清座位之前：要用房间里的语音随机串。
@@ -1689,6 +1691,11 @@ func _room_kick_slot(room: Dictionary, slot: int) -> void:
 	# 不能踢房主自己（房主可能已顺延到非 0 号位）
 	if slot < 0 or slot >= TEAM_SLOTS or slot == int(room.get("leader_slot", 0)):
 		return
+	var pending: Dictionary = room.get("settlement_pending", {})
+	if pending.has(slot) and slot != int(room.get("leader_slot", 0)):
+		# Keep their old result screen; removing the reservation makes a later return fail.
+		_release_settlement_seat(room, slot)
+		return
 	var peer_slot: Dictionary = room.get("peer_slot", {})
 	for peer_id in peer_slot.keys():
 		if int(peer_slot[peer_id]) == slot:
@@ -1739,7 +1746,7 @@ func team_all_ready() -> bool:
 		var st := str(team_slot_states[i])
 		# 房主不再免检：任何 player 座位（含房主）都必须 ready。房主的"开始游戏"
 		# 会先把自己 ready=true 再走到这里（见 team_start / _rpc_team_start_request）。
-		if st == "player" and not bool(team_ready[i]):
+		if st == "settling" or (st == "player" and not bool(team_ready[i])):
 			return false
 		if st != "empty":
 			if i < 3:
@@ -1784,7 +1791,7 @@ func _room_all_ready(room: Dictionary) -> bool:
 		var st := str(states[i])
 		# 房主不再免检：每回合备战里房主也要按"准备"；大厅开局时房主的 ready 由
 		# _rpc_team_start_request 先置 true。这条修掉"进回合摆棋就自动开战"。
-		if st == "player" and not bool(ready[i]):
+		if st == "settling" or (st == "player" and not bool(ready[i])):
 			return false
 		if st != "empty":
 			if i < 3:
@@ -1803,6 +1810,8 @@ func _room_start_authoritative(room: Dictionary) -> void:
 		return
 	if not _room_all_ready(room):
 		return
+	room["initial_seats"] = room.get("slot_states", []).duplicate()
+	room["initial_leader"] = int(room.get("leader_slot", 0))
 	_touch_room(room)
 	# 🔴 大厅 → 备战。**这一行是整个开局的关键**：少了它服务器停在 LOBBY，
 	# 而下面的 _rpc_team_start 已经广播出去 —— 客户端进了对局，服务器以为还在大厅。
@@ -3664,13 +3673,20 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 		var gold_before := int(snap.get("gold", slot_gold[slot]))
 		if economy_authoritative():
 			gold_before = int(_room_prep(room, slot).get("gold", slot_gold[slot]))
-		var gold_after := _server_gold_after_battle(gold_before, result, slot, snap, {
+		var settlement := _server_gold_breakdown(gold_before, result, slot, snap, {
 			"kind": kind,
 			"player_wins": bool(team_wins[own_team]),
 			"round_index": completed_round,
 			"loss_streak_after": int(loss_streak[own_team]),
 			"camp_income": CarrotEconomy.income_for_spent(int(_room_prep(room, slot).get("merc_carrots_spent_total", 0))),
 		})
+		var gold_after := int(settlement.gold_after)
+		var income_prep := _room_prep(room, slot)
+		var reasons: Dictionary = income_prep.get("income_by_reason", {})
+		for reason in settlement.income_by_reason:
+			reasons[reason] = int(reasons.get(reason, 0)) + int(settlement.income_by_reason[reason])
+		income_prep["income_by_reason"] = reasons
+		income_prep["battle_income_total"] = int(income_prep.get("battle_income_total", 0)) + maxi(0, gold_after - gold_before)
 		slot_gold[slot] = gold_after
 		# 战后收益回写账本，让下一轮备战从正确的余额开始（P1）。
 		if _economy_action_enabled("upgrade_harvest_tech"):
@@ -3726,6 +3742,10 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 	# （实测值见 tools/battle_report_check.gd），相比同批发的 replay（压缩后单边
 	# 61.8 KB）不算什么。
 	if run_over:
+		var final_data: Dictionary = preload("res://scripts/multiplayer/FinalSettlementData.gd").build(room, [replay_a, replay_b], outcome, economy_authoritative())
+		room["final_settlement"] = final_data
+		for final_slot in out:
+			out[final_slot]["final_settlement"] = final_data
 		var report := _room_sign_report(room, completed_round, outcome, hp_a, hp_b)
 		if not report.is_empty():
 			for slot in TEAM_SLOTS:
@@ -3811,7 +3831,10 @@ func _room_sign_report(room: Dictionary, rounds: int, outcome: int, hp_a: int, h
 # round_ctx 由 _room_build_match_states 按队伍算好：kind / player_wins /
 # round_index / loss_streak_after。
 func _server_gold_after_battle(gold_before: int, result: Dictionary, slot: int, snapshot: Dictionary, round_ctx: Dictionary) -> int:
-	return EconomyService.settle_post_battle_gold({
+	return int(_server_gold_breakdown(gold_before, result, slot, snapshot, round_ctx).gold_after)
+
+func _server_gold_breakdown(gold_before: int, result: Dictionary, slot: int, snapshot: Dictionary, round_ctx: Dictionary) -> Dictionary:
+	return EconomyService.settle_post_battle_breakdown({
 		"gold_before": gold_before,
 		"kill_gold": EconomyService.kill_gold_for_slot(result, slot),
 		"bonus_gold": int(result.get("bonus_gold", 0)),
@@ -5991,6 +6014,7 @@ func _rpc_team_leave() -> void:
 
 # 离场的实际处理，供 `_rpc_team_leave`（遗留）与 `_rpc_leave_intent`（E3）共用。
 func _apply_peer_leave(room: Dictionary, peer_id: int) -> void:
+	_release_rematch_reservation(room, peer_id)
 	# Lobby leaves release the seat; started-match leaves preserve it for resuming.
 	if str(room.get("state", ROOM_LOBBY)) == ROOM_LOBBY:
 		_room_remove_peer(room, peer_id)
@@ -5998,6 +6022,7 @@ func _apply_peer_leave(room: Dictionary, peer_id: int) -> void:
 	_room_reserve_peer(room, peer_id)
 
 func _room_remove_peer(room: Dictionary, peer_id: int) -> void:
+	_release_rematch_reservation(room, peer_id)
 	# 硬移除（大厅掉线/主动离开/被踢）：座位彻底释放，token 作废。
 	var peer_slot: Dictionary = room.get("peer_slot", {})
 	var slot := int(peer_slot.get(peer_id, -1))
@@ -6026,6 +6051,7 @@ func _room_remove_peer(room: Dictionary, peer_id: int) -> void:
 # 软移除（开赛后掉线）：座位保留为"重连中"，slot_states 仍是 "player"，
 # 棋盘/回合进度不丢；起 RESERVE_GRACE_SEC 宽限，期内 token 重连无损续上。
 func _room_reserve_peer(room: Dictionary, peer_id: int) -> void:
+	_release_rematch_reservation(room, peer_id)
 	var peer_slot: Dictionary = room.get("peer_slot", {})
 	var slot := int(peer_slot.get(peer_id, -1))
 	if slot < 0:
@@ -6050,6 +6076,9 @@ func _maybe_promote_leader(room: Dictionary) -> void:
 	var leader := int(room.get("leader_slot", 0))
 	var peer_slot: Dictionary = room.get("peer_slot", {})
 	var online_slots := {}
+	for pending_slot in room.get("settlement_pending", {}):
+		if _peer_connected(int(room["settlement_pending"][pending_slot])):
+			online_slots[int(pending_slot)] = true
 	for pid in peer_slot.keys():
 		online_slots[int(peer_slot[pid])] = true
 	# 房主仍是在线玩家 -> 不动；一个在线玩家都没有 -> 无人可顺延（房间会超时回收）
@@ -6248,6 +6277,8 @@ func _rpc_team_set_ready(slot: int, value: bool) -> void:
 		# 在线玩家的座位可能被看门狗/宽限转成了 AI（dummy）——他人还连着并且在按
 		# 准备，说明活得好好的，立刻还他 player 身份，否则他之后交的棋盘会被无视。
 		var seat_states: Array = room.get("slot_states", [])
+		if slot < seat_states.size() and str(seat_states[slot]) == "settling":
+			return
 		if slot < seat_states.size() and str(seat_states[slot]) == "dummy":
 			seat_states[slot] = "player"
 			room.slot_states = seat_states
@@ -6356,3 +6387,139 @@ func _store_room_seat_pet(room: Dictionary, slot: int, pet_id: String) -> void:
 	seat_pets[slot] = pet_id
 	seat_pets.erase(str(slot))
 	room["seat_pets"] = seat_pets
+
+
+# Final-settlement rematch. Pending peers stay in their old room until they choose.
+signal settlement_returned(ok: bool)
+
+func request_settlement_return() -> void:
+	if not is_online() or is_host:
+		settlement_returned.emit(false)
+		return
+	_rpc_settlement_return.rpc_id(1)
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_settlement_return() -> void:
+	if not _dedicated_server:
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if not _rate_ok(sender, "settlement_return"):
+		return
+	var target := _return_to_settlement_room(sender)
+	if target.is_empty():
+		_rpc_settlement_returned.rpc_id(sender, false)
+		return
+	# Reset the old envelope cursor before the new room's first (smaller) sequence.
+	_rpc_settlement_room_switch.rpc_id(sender)
+	_send_room_state(target, sender, int(target.get("state_seq", 1)))
+	_rpc_settlement_returned.rpc_id(sender, true)
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_settlement_room_switch() -> void:
+	room_chat_log.clear()
+	_match_state.reset_applied()
+	_pending_ready = -1
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_settlement_returned(ok: bool) -> void:
+	settlement_returned.emit(ok)
+
+func _return_to_settlement_room(peer_id: int) -> Dictionary:
+	var old := _room_for_peer(peer_id)
+	if old.is_empty():
+		return {}
+	# A replayed request must return the same room, never create another one.
+	if old.has("settlement_source") and str(old.get("state", "")) == ROOM_LOBBY:
+		return old
+	if not bool(old.get("run_over", false)) or str(old.get("mode", "custom")) != "custom" or bool(old.get("matched", false)):
+		return {}
+	var old_id := int(old.id)
+	var slot := int(old.get("peer_slot", {}).get(peer_id, -1))
+	if slot < 0:
+		return {}
+	var target_id := int(old.get("rematch_room_id", 0))
+	var target: Dictionary = _rooms.get(target_id, {})
+	if target_id == 0:
+		target = _new_room()
+		old["rematch_room_id"] = int(target.id)
+		target["settlement_source"] = old_id
+		# Only original custom rooms support returning; matchmaking uses the menu.
+		target["mode"] = "custom"
+		target["leader_slot"] = int(old.get("initial_leader", old.get("leader_slot", 0)))
+		target["settlement_pending"] = {}
+		var initial: Array = old.get("initial_seats", old.get("slot_states", []))
+		for i in mini(6, initial.size()):
+			if str(initial[i]) == "dummy":
+				target.slot_states[i] = "dummy"
+		for pid in old.get("peer_slot", {}):
+			if not _peer_connected(int(pid)):
+				continue
+			var reserved_slot := int(old.peer_slot[pid])
+			target.slot_states[reserved_slot] = "settling"
+			target.settlement_pending[reserved_slot] = int(pid)
+		for key in ["seat_profiles", "seat_pets", "seat_races", "seat_pid", "join_seq", "next_join_seq"]:
+			if old.has(key):
+				var value: Variant = old[key]
+				target[key] = value.duplicate(true) if value is Dictionary or value is Array else value
+		_maybe_promote_leader(target)
+	if target.is_empty() or str(target.get("state", "")) != ROOM_LOBBY:
+		return {}
+	if int(target.get("settlement_pending", {}).get(slot, -1)) != peer_id:
+		return {} # Host removed this reservation: viewer stays until this click.
+	var identity: Dictionary = {}
+	for key in ["seat_profiles", "seat_pets", "seat_races", "seat_pid", "join_seq"]:
+		identity[key] = target.get(key, {}).get(slot)
+	target.settlement_pending.erase(slot)
+	# Detach without releasing the pending seat through the normal leave hook.
+	var old_voice_identity := _voice_identity(old, slot)
+	old.peer_slot.erase(peer_id)
+	_peer_room.erase(peer_id)
+	_voice_seat_released(old, slot, old_voice_identity)
+	_clear_seat_metadata(old, slot)
+	old.slot_states[slot] = "empty"
+	old.ready[slot] = false
+	_touch_room(old)
+	# Avoid an intermediate broadcast while restoring trusted seat identity.
+	target.peer_slot[peer_id] = slot
+	target.slot_states[slot] = "player"
+	target.ready[slot] = false
+	_peer_room[peer_id] = int(target.id)
+	var token := _make_token()
+	target.seat_tokens[slot] = token
+	var public_id := _make_public_token()
+	if not public_id.is_empty():
+		target.seat_public_id[slot] = public_id
+		_public_token_seat[public_id] = token
+		_peer_public_token[peer_id] = public_id
+	_token_seat[token] = {"room_id": int(target.id), "slot": slot}
+	for key in identity:
+		if identity[key] != null:
+			target[key][slot] = identity[key]
+	_maybe_promote_leader(target)
+	_touch_room(target)
+	# Caller sends this peer its ordered switch/state/ACK; existing lobby members update now.
+	_bump_room_seq(target)
+	for pid in target.peer_slot:
+		if int(pid) != peer_id and _peer_connected(int(pid)):
+			_send_room_state(target, int(pid), int(target.get("state_seq", 1)))
+	return target
+
+func _release_settlement_seat(room: Dictionary, slot: int) -> void:
+	var pending: Dictionary = room.get("settlement_pending", {})
+	if not pending.has(slot):
+		return
+	pending.erase(slot)
+	room.slot_states[slot] = "empty"
+	room.ready[slot] = false
+	_clear_seat_metadata(room, slot)
+	_maybe_promote_leader(room)
+	_touch_room(room)
+	_broadcast_room_lobby(room)
+
+func _release_rematch_reservation(old: Dictionary, peer_id: int) -> void:
+	var target: Dictionary = _rooms.get(int(old.get("rematch_room_id", 0)), {})
+	if target.is_empty():
+		return
+	for slot in target.get("settlement_pending", {}).keys():
+		if int(target.settlement_pending[slot]) == peer_id:
+			_release_settlement_seat(target, int(slot))

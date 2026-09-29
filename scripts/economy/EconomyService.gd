@@ -104,6 +104,10 @@ static func merchant_gold_from_board(board: Array) -> int:
 #         loss_streak_after, boss_hp_current, boss_hp_max,
 #         merchant_gold, treasures(Array), pet_id(String)
 static func settle_post_battle_gold(ctx: Dictionary) -> int:
+	return int(settle_post_battle_breakdown(ctx)["gold_after"])
+
+static func settle_post_battle_breakdown(ctx: Dictionary) -> Dictionary:
+	var income_by_reason: Dictionary = {}
 	var gold := maxi(0, int(ctx.get("gold_before", 0)))
 	var kind := str(ctx.get("kind", "pve"))
 	var player_wins := bool(ctx.get("player_wins", false))
@@ -114,41 +118,56 @@ static func settle_post_battle_gold(ctx: Dictionary) -> int:
 	# PVE：击杀金输赢都给，只有回合奖励是胜利专属。
 	match kind:
 		"pve":
-			gold += kill_gold
+			income_by_reason["kill"] = kill_gold
+			gold += int(income_by_reason["kill"])
 			if player_wins:
-				gold += pve_win_bonus(int(ctx.get("round_index", 0)))
+				income_by_reason["round_win"] = pve_win_bonus(int(ctx.get("round_index", 0)))
+				gold += int(income_by_reason["round_win"])
 		"boss":
 			var round_index := int(ctx.get("round_index", 0))
 			if player_wins:
-				gold += boss_win_reward(round_index)
+				income_by_reason["boss_win"] = boss_win_reward(round_index)
+				gold += int(income_by_reason["boss_win"])
 			else:
-				gold += boss_loss_reward(round_index, int(ctx.get("boss_hp_current", 0)), maxi(1, int(ctx.get("boss_hp_max", 1))))
+				income_by_reason["boss_compensation"] = boss_loss_reward(round_index, int(ctx.get("boss_hp_current", 0)), maxi(1, int(ctx.get("boss_hp_max", 1))))
+				gold += int(income_by_reason["boss_compensation"])
 		"pvp", "final":
-			gold += kill_gold + pvp_result_bonus(player_wins)
+			income_by_reason["pvp_and_kill"] = kill_gold + pvp_result_bonus(player_wins)
+			gold += int(income_by_reason["pvp_and_kill"])
 	# (4) 败方安慰金：loss_streak_after 是本场结算后的连败数（胜利时调用方已清零）。
 	if not player_wins:
-		gold += consolation_reward(int(ctx.get("loss_streak_after", 0)))
+		income_by_reason["consolation"] = consolation_reward(int(ctx.get("loss_streak_after", 0)))
+		gold += int(income_by_reason["consolation"])
 	# (5) 商人战后金币
-	gold += maxi(0, int(ctx.get("merchant_gold", 0)))
+	income_by_reason["merchant"] = maxi(0, int(ctx.get("merchant_gold", 0)))
+	gold += int(income_by_reason["merchant"])
 	# (6) 战斗额外金币（富裕之路等战斗内产出）
-	gold += maxi(0, int(ctx.get("bonus_gold", 0)))
+	income_by_reason["battle_bonus"] = maxi(0, int(ctx.get("bonus_gold", 0)))
+	gold += int(income_by_reason["battle_bonus"])
 	# (7) 宝藏战后金币。随机档位之间相隔 10 金：幸运信封 10/20/30，金钱魔法 50/60/70。
 	var rng := _rng()
 	if treasures.has("money_lucky_envelope"):
-		gold += 10 + (rng.randi() % 3) * 10
+		income_by_reason["lucky_envelope"] = 10 + (rng.randi() % 3) * 10
+		gold += int(income_by_reason["lucky_envelope"])
 	if TreasureService.has_linkage_in(treasures, "link_money_magic"):
-		gold += 50 + (rng.randi() % 3) * 10
+		income_by_reason["money_magic"] = 50 + (rng.randi() % 3) * 10
+		gold += int(income_by_reason["money_magic"])
 		if rng.randf() < 0.10:
-			gold += 100
+			income_by_reason["money_magic_bonus"] = 100
+			gold += int(income_by_reason["money_magic_bonus"])
 	# (8) 利息
 	var interest := base_interest(gold)
 	if treasures.has("money_compound"):
 		interest += int(floor(float(gold) * 0.05))
 	interest += pet_interest_bonus(gold, str(ctx.get("pet_id", "")))
-	gold += interest
+	income_by_reason["interest"] = interest
+	gold += int(income_by_reason["interest"])
 	# (9) 营地固定收入：发生在本次利息之后，避免本场收入再参与利息。
-	gold += maxi(0, int(ctx.get("camp_income", 0)))
-	return maxi(0, gold)
+	income_by_reason["camp"] = maxi(0, int(ctx.get("camp_income", 0)))
+	gold += int(income_by_reason["camp"])
+	return {"gold_after": maxi(0, gold), "income_by_reason": income_by_reason,
+		"income_total": maxi(0, gold - int(ctx.get("gold_before", 0)))}
+
 
 # 商店刷新的递增价：首价 10 金，之后每次翻倍 → 10, 20, 40, 80, 160, 320…
 # 翻倍是整数运算，不再需要旧的 round(×1.5)。

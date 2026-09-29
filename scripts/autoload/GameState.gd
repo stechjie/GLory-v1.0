@@ -29,6 +29,8 @@ var round_index := 1
 var player_formation_hp := START_FORMATION_HP
 var enemy_formation_hp := START_FORMATION_HP
 var gold := START_GOLD
+# 只累计本地备战的真实正向收入；战后收入由服务端逐场累计。
+var prep_income_total := 0
 ## Per-run carrot economy. These are player-owned values; derived farm values
 ## come from CarrotEconomyRules so saves do not carry duplicate truths.
 var carrots := 0
@@ -111,6 +113,7 @@ func reset_run() -> void:
 	player_formation_hp = START_FORMATION_HP
 	enemy_formation_hp = START_FORMATION_HP
 	gold = START_GOLD
+	prep_income_total = 0
 	carrots = 0
 	harvest_tech_level = 0
 	merc_carrots_spent_total = 0

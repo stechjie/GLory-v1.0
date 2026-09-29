@@ -167,6 +167,11 @@ static func apply(prep: Dictionary, action: String, payload: Dictionary, ctx: Di
 		}
 	prep["revision"] = int(prep.get("revision", 0)) + 1
 	var gold_after := int(prep.get("gold", 0))
+	prep["prep_income_total"] = int(prep.get("prep_income_total", 0)) + maxi(0, gold_after - gold_before)
+	if gold_after > gold_before:
+		var reasons: Dictionary = prep.get("income_by_reason", {})
+		reasons[action] = int(reasons.get(action, 0)) + gold_after - gold_before
+		prep["income_by_reason"] = reasons
 	return {
 		"ok": true, "error": "",
 		"gold_before": gold_before, "delta": gold_after - gold_before, "gold_after": gold_after,
@@ -317,6 +322,9 @@ static func _draw_upgrade_stone(prep: Dictionary, _payload: Dictionary, ctx: Dic
 	prep["carrots"] = carrots - cost
 	prep["stone_draw_used_round"] = round_index
 	prep["stone_draw_count"] = draw_count + 1
+	var gained: Dictionary = prep.get("stones_gained", {})
+	gained[stone_type] = int(gained.get(stone_type, 0)) + 1
+	prep["stones_gained"] = gained
 	team_stones[stone_type] = int(team_stones.get(stone_type, 0)) + 1
 	return {"ok": true, "result": {
 		"stone_type": stone_type,

@@ -225,6 +225,7 @@ func _on_golden_altar() -> void:
 		return
 	GameState.player_formation_hp -= 1
 	GameState.gold += NetworkService.ALTAR_GOLD
+	GameState.prep_income_total += NetworkService.ALTAR_GOLD
 	GameState.golden_altar_uses += 1
 	SaveManager.save_run()
 	_refresh_all()
@@ -241,6 +242,7 @@ func _on_altar_result(granted: bool, team_hp: int, uses: int) -> void:
 	GameState.team_hp = team_hp
 	GameState.golden_altar_uses = uses
 	GameState.gold += NetworkService.ALTAR_GOLD
+	GameState.prep_income_total += NetworkService.ALTAR_GOLD
 	SaveManager.save_run()
 	_refresh_all()
 
@@ -259,6 +261,7 @@ func _on_generous_fate_gamble() -> void:
 	var loss_keep := 0.50 if fraud_fate else 0.20
 	if randf() < win_chance:
 		GameState.gold = int(floor(float(before) * 2.5))
+		GameState.prep_income_total += maxi(0, GameState.gold - before)
 	else:
 		GameState.gold = maxi(0, int(floor(float(before) * loss_keep)))
 	SaveManager.save_run()

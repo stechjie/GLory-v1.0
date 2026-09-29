@@ -445,6 +445,10 @@ static func _process_frenzy(state: Dictionary, p_alive: Array, e_alive: Array) -
 
 
 static func result_from_state(state: Dictionary) -> Dictionary:
+	for fighter in state.get("player", []) + state.get("enemy", []):
+		var uid := str(fighter.get("uid", ""))
+		if state.get("unit_stats", {}).has(uid):
+			state.unit_stats[uid]["skill_stacks"] = int(fighter.get("skill_stacks", 0))
 	if state.has("forced_result"):
 		var forced: Dictionary = state.forced_result
 		var forced_player: Array = state.get("player", [])

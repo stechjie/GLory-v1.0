@@ -41,6 +41,12 @@ func _ready() -> void:
 	_case_stone_reachable()
 	_case_four_star_upgrade()
 	await _case_harvest_owner()
+	# PrepScreen warms the battle resource asynchronously. Join it before quitting.
+	var battle_path := "res://scenes/battle/BattleScreen.tscn"
+	while ResourceLoader.load_threaded_get_status(battle_path) == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+		await get_tree().process_frame
+	if ResourceLoader.load_threaded_get_status(battle_path) == ResourceLoader.THREAD_LOAD_LOADED:
+		ResourceLoader.load_threaded_get(battle_path)
 	_h.finish(get_tree())
 
 
@@ -236,7 +242,7 @@ func _case_capacity_fillable() -> void:
 # --- 6. 升级石价格与可达性 -----------------------------------------------------
 func _case_stone_price_curve() -> void:
 	for draws_completed in [0, 1, 2, 6]:
-		var expected := 50 + draws_completed * 20
+		var expected: int = 50 + int(draws_completed) * 20
 		_h.expect(CarrotEconomy.stone_cost_for_draw(draws_completed) == expected,
 			"stone_price_curve", "个人第%d次抽取价格 %d，应为 %d"
 				% [draws_completed + 1, CarrotEconomy.stone_cost_for_draw(draws_completed), expected])

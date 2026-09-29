@@ -262,6 +262,7 @@ func _write_now() -> void:
 		"player_formation_hp": GameState.player_formation_hp,
 		"enemy_formation_hp": GameState.enemy_formation_hp,
 		"gold": GameState.gold,
+		"prep_income_total": GameState.prep_income_total,
 		"carrots": GameState.carrots,
 		"harvest_tech_level": GameState.harvest_tech_level,
 		"merc_carrots_spent_total": GameState.merc_carrots_spent_total,
@@ -308,6 +309,7 @@ func load_run() -> bool:
 	GameState.player_formation_hp = int(parsed.get("player_formation_hp", GameState.START_FORMATION_HP))
 	GameState.enemy_formation_hp = int(parsed.get("enemy_formation_hp", GameState.START_FORMATION_HP))
 	GameState.gold = int(parsed.get("gold", GameState.START_GOLD))
+	GameState.prep_income_total = maxi(0, int(parsed.get("prep_income_total", 0)))
 	GameState.carrots = maxi(0, int(parsed.get("carrots", 0)))
 	GameState.harvest_tech_level = maxi(0, int(parsed.get("harvest_tech_level", 0)))
 	GameState.merc_carrots_spent_total = maxi(0, int(parsed.get("merc_carrots_spent_total", 0)))

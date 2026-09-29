@@ -251,6 +251,11 @@ func room_online_count(room: Dictionary) -> int:
 	for peer_id in peer_slot.keys():
 		if int(peer_room.get(int(peer_id), 0)) == room_id:
 			count += 1
+	# A pending viewer is connected to the finished source room, not this lobby.
+	var source_id := int(room.get("settlement_source", 0))
+	for pending_peer in room.get("settlement_pending", {}).values():
+		if source_id > 0 and int(peer_room.get(int(pending_peer), 0)) == source_id:
+			count += 1
 	return count
 
 
@@ -376,7 +381,7 @@ func room_next_free_slot_on_team(room: Dictionary, team: int) -> int:
 func room_player_count(room: Dictionary) -> int:
 	var count := 0
 	for st in (room.get("slot_states", []) as Array):
-		if str(st) == "player":
+		if str(st) in ["player", "settling"]:
 			count += 1
 	return count
 

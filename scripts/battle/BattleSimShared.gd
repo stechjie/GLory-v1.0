@@ -649,6 +649,8 @@ static func _register_unit_stat(state: Dictionary, f: Dictionary) -> void:
 		return
 	var d: Dictionary = f.get("def", {})
 	state.unit_stats[uid] = {
+		"id": str(f.get("id", d.get("id", ""))),
+		"star": int(f.get("star", 1)),
 		"name": str(f.get("name", d.get("name", f.get("id", "?")))),
 		"name_en": str(f.get("name_en", _english_name_from_def(d))),
 		"position": _stat_position_label(f),

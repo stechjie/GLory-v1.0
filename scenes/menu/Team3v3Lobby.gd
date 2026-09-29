@@ -431,7 +431,7 @@ func _build_slot(index: int) -> void:
 	var avatar := _add_texture(null, pos + Vector2(39, 40), Vector2(106, 106))
 	avatar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var shader := Shader.new()
-	shader.code = "shader_type canvas_item; void fragment(){vec4 c=texture(TEXTURE,UV); c.a*=1.0-smoothstep(0.48,0.5,length(UV-vec2(0.5))); COLOR=c;}"
+	shader.code = "shader_type canvas_item; void fragment(){vec4 c=COLOR; c.a*=1.0-smoothstep(0.48,0.5,length(UV-vec2(0.5))); COLOR=c;}"
 	var material := ShaderMaterial.new()
 	material.shader = shader
 	avatar.material = material
@@ -538,8 +538,9 @@ func _refresh() -> void:
 		var ai_btn: Button = _slot_ai_btns[i]
 		name_lbl.text = _slot_name(i, state, false)
 		var identity := _seat_profile(i)
-		_slot_avatars[i].visible = state == "player"
-		if state == "player":
+		_slot_avatars[i].modulate = Color(1, 1, 1, 0.35 if state == "settling" else 1.0)
+		_slot_avatars[i].visible = state in ["player", "settling"]
+		if state in ["player", "settling"]:
 			_slot_avatars[i].texture = AvatarCatalog.texture_for(str(identity.get("avatar", AvatarCatalog.default_avatar())))
 			if not identity.is_empty():
 				name_lbl.text = AccountManager.display_name(str(identity.get("player_name", "")), str(identity.get("friend_code", "")))
@@ -553,7 +554,7 @@ func _refresh() -> void:
 			# 假想敌座位保留圈外标签（要写出它在这一侧的身份），只清掉上一轮的
 			# 省略号行为：假想敌名字是定长文案，不需要按玩家昵称那样截断。
 			name_lbl.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
-		var is_me := state == "player" and i == my_slot
+		var is_me := state in ["player", "settling"] and i == my_slot
 		if is_me:
 			var suffix := _room_text("（我）", " (Me)")
 			var base_name := name_lbl.text
@@ -574,14 +575,16 @@ func _refresh() -> void:
 		# 与旧位置上，就是 bug 文档第 4 条的「字体不一致 + 字消失」）。
 		for placement in _placed:
 			if placement.node == name_lbl:
-				placement.font_size = 20 if state == "player" else 28
+				placement.font_size = 20 if state in ["player", "settling"] else 28
 				_apply_tracked(placement)
 			if placement.node == status_lbl:
-				placement.pos = SLOT_POS[i] + (Vector2(39, 137) if state == "player" else Vector2(34, 72))
-				placement.size = Vector2(106, 32) if state == "player" else Vector2(122, 42)
-				placement.font_size = 17 if state == "player" else 20
+				placement.pos = SLOT_POS[i] + (Vector2(39, 137) if state in ["player", "settling"] else Vector2(34, 72))
+				placement.size = Vector2(106, 32) if state in ["player", "settling"] else Vector2(122, 42)
+				placement.font_size = 17 if state in ["player", "settling"] else 20
 				_apply_tracked(placement)
 		match state:
+			"settling":
+				status_lbl.text = _room_text("结算中", "Viewing results")
 			"player":
 				# 使用当前房主席位，兼容换位及房主迁移。
 				status_lbl.text = _room_text("房主", "Host") if i == _leader_slot() else (_room_text("准备", "Ready") if bool(ready_arr[i]) else _room_text("未准备", "Not ready"))
@@ -628,7 +631,7 @@ func _lobby_status_text() -> String:
 	var ais := 0
 	for i in 6:
 		var st := str(states[i])
-		if st == "player":
+		if st in ["player", "settling"]:
 			players += 1
 		elif st == "dummy":
 			ais += 1
@@ -639,7 +642,7 @@ func _lobby_status_text() -> String:
 func _slot_name(index: int, state: String, self_slot: bool) -> String:
 	if state == "empty":
 		return _room_text("空位 %s", "Empty %s") % SLOT_LABELS[index]
-	var base := _room_text("玩家 %s", "Player %s") if state == "player" else _room_text("假想敌 %s", "AI %s")
+	var base := _room_text("玩家 %s", "Player %s") if state in ["player", "settling"] else _room_text("假想敌 %s", "AI %s")
 	return (base % SLOT_LABELS[index]) + (_room_text("（你）", " (You)") if self_slot else "")
 
 func _is_host_seat() -> bool:
@@ -657,6 +660,8 @@ func _start_block_reason(host_ready: bool) -> String:
 		ready_arr[leader] = true
 	if _online() and (states.size() < 6 or ready_arr.size() < 6):
 		return _room_text("房间状态同步中", "Room state syncing")
+	if states.has("settling"):
+		return _room_text("等待结算中的玩家返回，或由房主请离", "Waiting for players to return from results or be removed by host")
 	var side_a := 0
 	var side_b := 0
 	for i in 6:

@@ -1737,7 +1737,10 @@ func _show_battle(battle_scene: PackedScene = null) -> void:
 	_battle.battle_finished.connect(_on_battle_finished)
 	add_child(_battle)
 
+var _final_settlement_data: Dictionary = {}
+
 func _show_game_over() -> void:
+	_final_settlement_data = NetworkService.latest_match_state.get("final_settlement", {}).duplicate(true)
 	# 对局结束：重连凭证作废，避免下次启动误恢复到已结束的房间
 	SaveManager.clear_reconnect()
 	_clear()
@@ -1775,10 +1778,36 @@ func _show_game_over() -> void:
 	panel.add_child(body)
 
 	var menu_btn := Button.new()
-	menu_btn.text = tr("gameover_back")
+	menu_btn.text = "查看详情"
 	menu_btn.custom_minimum_size = Vector2(180, 40)
-	menu_btn.pressed.connect(_on_return_menu_requested)
+	menu_btn.pressed.connect(_show_final_settlement)
 	panel.add_child(menu_btn)
+
+func _show_final_settlement() -> void:
+	_clear()
+	_enter_match_flow()
+	_set_chat_sound_suppressed(true)
+	var panel := preload("res://scenes/menu/FinalSettlementPanel.gd").new()
+	panel.data = _final_settlement_data.duplicate(true)
+	panel.return_menu_requested.connect(_on_return_menu_requested)
+	panel.return_room_requested.connect(_return_from_settlement)
+	add_child(panel)
+
+func _return_from_settlement() -> void:
+	if not NetworkService.settlement_returned.is_connected(_on_settlement_returned):
+		NetworkService.settlement_returned.connect(_on_settlement_returned)
+	NetworkService.request_settlement_return()
+
+func _on_settlement_returned(ok: bool) -> void:
+	if NetworkService.settlement_returned.is_connected(_on_settlement_returned):
+		NetworkService.settlement_returned.disconnect(_on_settlement_returned)
+	if not ok:
+		_on_return_menu_requested()
+		return
+	SaveManager.clear_reconnect()
+	GameState.reset_run()
+	_set_chat_sound_suppressed(false)
+	_show_team3v3_lobby()
 
 func _on_team_host_requested() -> void:
 	# Debug-only local host. Production Android clients connect to the VPS.

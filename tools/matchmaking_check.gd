@@ -265,8 +265,8 @@ func _case_index_rebuild() -> void:
 # --- 9. 常量对齐 -----------------------------------------------------------------
 
 func _case_constants_line_up() -> void:
-	_eq(NetworkConfig.NETWORK_PROTOCOL_VERSION, 32, "protocol_is_32",
-		"匹配入座是新 RPC，协议号要顶到 32（战斗服务器与 APK 一起上）")
+	_eq(NetworkConfig.NETWORK_PROTOCOL_VERSION >= 32, true, "protocol_supports_matchmaking",
+		"匹配入座要求协议至少为 32；后续兼容升级不应使匹配回归失败")
 
 	# 会合键的长度上限：名片清洗时按 MAX_TEXT 截断，比 32 小的话**每一张都会被截掉尾巴**，
 	# 然后 match_of 的正则不过 → 所有匹配对局都退回自定义房间那条路，而且不报错。
