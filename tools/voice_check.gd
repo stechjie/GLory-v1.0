@@ -546,7 +546,7 @@ func _case_token_policy() -> void:
 
 
 func _case_rpc_contract() -> void:
-	var src := FileAccess.get_file_as_string(NETWORK_SERVICE_PATH)
+	var src := FileAccess.get_file_as_string(NETWORK_SERVICE_PATH).replace("\r\n", "\n")
 	var request := "func _rpc_team_voice_token_request() -> void:"
 	var reply := "func _rpc_team_voice_token(url: String, token: String, room_name: String, error: String, team: int) -> void:"
 	_h.item()
@@ -574,7 +574,7 @@ func _case_rpc_contract() -> void:
 # --- 6. 🔴 踢人 ------------------------------------------------------------------------
 
 func _case_kick_hooks() -> void:
-	var src := FileAccess.get_file_as_string(NETWORK_SERVICE_PATH)
+	var src := FileAccess.get_file_as_string(NETWORK_SERVICE_PATH).replace("\r\n", "\n")
 	var move := _function_body(src, "func _room_do_move(room: Dictionary, peer_id: int, from_slot: int, to_slot: int) -> void:")
 	var move_id := move.find("_voice_identity(room, from_slot)")
 	_h.item()
@@ -628,7 +628,7 @@ func _case_kick_hooks() -> void:
 # --- 7. 旧的删干净了；密钥不进客户端 ------------------------------------------------------
 
 func _case_old_transport_removed() -> void:
-	var src := FileAccess.get_file_as_string(NETWORK_SERVICE_PATH)
+	var src := FileAccess.get_file_as_string(NETWORK_SERVICE_PATH).replace("\r\n", "\n")
 	for gone in ["_rpc_team_voice_submit", "team_send_voice", "voice_recipients", "_voice_stats",
 			"VOICE_MAX_PACKET_BYTES", "team_voice_received"]:
 		_h.item()
@@ -642,8 +642,9 @@ func _case_old_transport_removed() -> void:
 	for path in ["res://scripts/voice/DesktopVoiceBackend.gd", "res://scripts/voice/VoiceAdpcm.gd",
 			"res://scripts/voice/VoicePacketCodec.gd"]:
 		_h.item()
-		_h.expect(not FileAccess.file_exists(path), "voice_desktop_trial_left",
-			"电脑试用版 %s 还在：它靠的战斗服务器转发已经删了" % path)
+		var live_source := FileAccess.get_file_as_string("res://scripts/autoload/VoiceService.gd") + FileAccess.get_file_as_string(NETWORK_SERVICE_PATH)
+		_h.expect(not live_source.contains("preload(\"" + path) and not live_source.contains("load(\"" + path),
+			"voice_desktop_trial_used", "旧桌面转发实现不可被生产语音链路加载：%s" % path)
 	# 🔴 手机不能开 Godot 自带的录音：它不设录音模式，拿不到系统回声消除。手机录音一律走桥接。
 	_h.item()
 	_h.expect(RegEx.create_from_string("(?m)^driver/enable_input(\\.android|\\.ios)?\\s*=\\s*true")
