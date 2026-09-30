@@ -726,9 +726,10 @@ func _layout() -> void:
 		rect.size = Vector2(viewport_size.x, height)
 	for item in _placed:
 		_apply_placement(item, scale, origin, viewport_size)
-	# 记录面板里的字是容器排的、不在 _placed 里：开着的时候按新比例重画一遍。
+	# 只更新内嵌历史的字号，不重建列表，窗口变化时保留阅读位置。
 	if _record_panel != null and _record_panel.visible:
-		_render_record()
+		for label in _record_list.get_children():
+			label.add_theme_font_size_override("font_size", _record_font_size())
 	if _debug_layer != null:
 		_debug_layer.queue_redraw()
 
@@ -777,11 +778,11 @@ func _apply_placement(item: Dictionary, scale: float, origin: Vector2, viewport_
 		resolved_pos = resolved_pos.round()
 		resolved_size = resolved_size.round()
 	node.position = resolved_pos
-	node.size = resolved_size
 	# 字号也要跟着缩放，否则窗口一小文字就撑破按钮框、窗口一大文字又显得过小。
 	# font_size=0 的（纯判定区 _add_hit）没有文字，跳过。
 	if int(item.font_size) > 0 and (node is Label or node is Button):
 		node.add_theme_font_size_override("font_size", maxi(13, roundi(item.font_size * scale)))
+	node.size = resolved_size
 
 # 素材都是裁好的成品图（一张 PNG = 一个元素），所以整张画、不再做图集裁切。
 # STRETCH_SCALE = 拉满给定的框，不保持原始宽高比：框写多大就画多大，
@@ -940,15 +941,9 @@ const CHAT_ENTRY_SPLIT := 196.0
 
 # 消息从哪来：NetworkService.room_chat_log（整个房间一份，界面重建也不丢）。
 const RoomChatLog := preload("res://scripts/multiplayer/RoomChatLog.gd")
-# 聊天记录面板（2026-09-27）：点框里的消息往上弹出，能上下滑，看这个房间从头到现在的聊天。
-# 与短语面板同一个位置往上弹、互斥；比短语面板宽高都大 —— 用户定「想聊天时就专注聊天，
-# 被盖住的东西无所谓」，所以宽到聊天框那么宽（会压到敌方席位 1 的左边一点），高到语音按钮那一排。
-const RECORD_PANEL_POS := Vector2(80, 262)
-const RECORD_PANEL_SIZE := Vector2(430, 434)
+# 历史记录内嵌在原聊天框，用户上翻时显示悬浮滚动条。
 const RECORD_FONT_SIZE := 19
 var _record_panel: PanelContainer = null
-var _record_title: Label = null
-var _record_close: Button = null
 var _record_scroll: ScrollContainer = null
 var _record_list: VBoxContainer = null
 var _record_round := -1             # 列表里最后一条的回合（追加时判断要不要插分隔线）
@@ -965,27 +960,13 @@ const PHRASE_BTN_ORIGIN := Vector2(92, 404)        # 面板内边距 12
 const PHRASE_BTN_FONT := 15
 const PHRASE_COLUMNS := 2
 
-var _chat_labels: Array[Label] = []
-var _chat_history: Array[String] = []
 var _phrase_panel: Panel = null
 var _phrase_buttons: Array[Button] = []
 var _phrase_btn_label: Label = null
 var _type_btn_label: Label = null
 
 func _build_chat_box() -> void:
-	# 必须在 _layout() 之前被调用（_build 里）—— _add_label 只是登记进 _placed，
-	# 真正定位是 _layout() 干的。同 _ready 里那条注释。
-	for i in CHAT_LINES:
-		var lbl := _add_label("", Vector2(CHAT_MSG_X, CHAT_FIRST_LINE_Y + i * CHAT_LINE_H),
-			Vector2(CHAT_MSG_W, CHAT_LINE_H), CHAT_FONT_SIZE, Tokens.CHAT_INK, "left")
-		# _add_label 默认居中。聊天是逐行累积的文本，居中会让每来一条整块字都在跳。
-		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-		# 昵称最长 24 字，一行放不下时截断而不是把框撑破。
-		lbl.clip_text = true
-		_chat_labels.append(lbl)
-	# 点消息区 → 聊天记录面板（2026-09-27）。整块 4 行都是判定区：手机上它是聊天框里最大的一块。
-	_add_hit(Vector2(CHAT_MSG_X, CHAT_FIRST_LINE_Y), Vector2(CHAT_MSG_W, CHAT_LINES * CHAT_LINE_H),
-		_toggle_record_panel, "left", "hit_chat_record")
+	# 消息直接在原聊天框内滚动，不再弹出独立记录面板。
 	_phrase_btn_label = _add_label(_room_text("＋ 快捷短语", "＋ Quick chat"),
 		Vector2(CHAT_TEXT_X, CHAT_ENTRY_Y), Vector2(CHAT_ENTRY_SPLIT, 40), 20, Tokens.CHAT_INK, "left")
 	_phrase_btn_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -1004,21 +985,18 @@ func _build_chat_box() -> void:
 	_build_voice_button()
 	_build_phrase_panel()
 	_build_record_panel()
-	# 大厅界面重建过（看完资料回来、重连回来）：框里接着显示这个房间已经说过的话。
-	for entry in NetworkService.room_chat_log.entries_for(NetworkService.team_room_id):
-		_show_chat_entry(entry)
-	_refresh_chat()
+	_render_record()
 
 # 语音按钮 + 队友按钮（docs/聊天系统设计.md 第九节）。行为都在 VoiceControls 里（大厅 / 备战期 / 战斗界面共用）。
 # 放在聊天框正上方：语音 x 180~330、队友 x 336~426，y 650~696。左边是石柱装饰，
 # 右边从 x=447 起是敌方席位 1。短语面板打开时会盖住它们（面板 z=40），面板本来就是临时的。
 const VoiceControls := preload("res://ui/components/VoiceControls.gd")
-const VOICE_BTN_POS := Vector2(180, 650)
-const VOICE_BTN_SIZE := Vector2(100, 46)
-const VOICE_AUDIENCE_POS := Vector2(286, 650)
-const VOICE_AUDIENCE_SIZE := Vector2(68, 46)
-const VOICE_MEMBERS_POS := Vector2(360, 650)
-const VOICE_MEMBERS_SIZE := Vector2(66, 46)
+const VOICE_BTN_POS := Vector2(180, 636)
+const VOICE_BTN_SIZE := Vector2(78, 60)
+const VOICE_AUDIENCE_POS := Vector2(266, 636)
+const VOICE_AUDIENCE_SIZE := VOICE_BTN_SIZE
+const VOICE_MEMBERS_POS := Vector2(352, 636)
+const VOICE_MEMBERS_SIZE := VOICE_BTN_SIZE
 const VOICE_BTN_FONT := 15
 var _voice_controls: VoiceControls = null
 
@@ -1094,9 +1072,7 @@ func _set_phrase_panel_visible(shown: bool) -> void:
 	_phrase_panel.visible = shown
 	for btn in _phrase_buttons:
 		btn.visible = shown
-	# 与记录面板同一个位置往上弹，只开一个。
-	if shown:
-		_set_record_panel_visible(false)
+
 
 func _on_phrase_picked(phrase_id: int) -> void:
 	# 只发不显示。本地回显要等服务器广播回来 —— 服务器是唯一定序者，
@@ -1119,7 +1095,7 @@ func _on_chat_logged(entry: Dictionary) -> void:
 
 
 func _show_chat_entry(entry: Dictionary) -> void:
-	_push_chat_entry(RoomChatLog.line_text(entry, _room_en()))
+	# 历史内容由 _append_record_row 写入，保留统一的已读标记。
 	NetworkService.room_chat_log.mark_entry_seen(entry)
 
 
@@ -1134,32 +1110,11 @@ func _open_text_input() -> void:
 		return NetworkService.team_send_text(text))
 
 
-# 一条消息可能占好几行（自由文字最多 40 字，加上昵称一行放不下）。
-# 按聊天框的实际宽度折好行再进历史，4 行放不下时最老的行先出去。
-#
-# 不改用 Label 自带的自动折行：这 4 行是 _placed 登记的固定位置标签，
-# 换成一个自动折行的大标签会动到批次 A 已经出图验过的版面。
-func _push_chat_entry(line: String) -> void:
-	for part in _wrap_chat_line(line):
-		_chat_history.append(part)
-	while _chat_history.size() > CHAT_LINES:
-		_chat_history.pop_front()
-	_refresh_chat()
-
-
 # 消息标签的字号（_build_chat_box 建标签用的也是它）。
 const CHAT_FONT_SIZE := 19
 # 不能出现在行首的标点（中文排版的「避头」）。碰到它们换行时，把上一行最后一个字
 # 一起带下来，而不是让逗号、句号孤零零地顶在下一行开头。
 const CHAT_NO_LINE_START := "，。、；：！？）」』】》…,.;:!?)"
-
-func _wrap_chat_line(line: String) -> PackedStringArray:
-	if _chat_labels.is_empty():
-		return PackedStringArray([line])
-	# 按参考画布上的尺寸量（宽 CHAT_MSG_W —— 消息列的宽，不是入口行的）。
-	# _layout() 缩放时字号与宽度同比例变，参考尺寸下折好的行，缩放之后一样放得下。
-	return wrap_chat_text(line, _chat_labels[0].get_theme_font("font"), CHAT_FONT_SIZE, CHAT_MSG_W)
-
 
 # 逐字符折行：中文没有空格可断；英文单词偶尔会被拆开，聊天里可以接受。
 # 静态、不碰界面状态 —— tools/chat_check 直接调它量「最长的一条放不放得下」。
@@ -1183,76 +1138,28 @@ static func wrap_chat_text(line: String, font: Font, font_size: int, width: floa
 		out.append(current)
 	return out
 
-func _refresh_chat() -> void:
-	for i in _chat_labels.size():
-		_chat_labels[i].text = _chat_history[i] if i < _chat_history.size() else ""
-
-
-# --- 聊天记录面板（2026-09-27）---------------------------------------------------
-#
-# 与短语面板一样**在 _build 期建好、默认隐藏**（_layout() 只给 _placed 里登记过的控件定位）。
-# 面板里面是容器布局，跟着面板的大小走；只有字号要按 _layout_scale 自己缩 —— 每次打开和
-# 窗口变化时重画一遍（_layout 末尾会调 _render_record）。
-
+# 记录容器的尺寸跟随原聊天框，保留快捷短语与打字入口。
 func _build_record_panel() -> void:
 	_record_panel = PanelContainer.new()
-	_record_panel.name = "ChatRecordPanel"
-	var style := Tokens.flat_box(Tokens.PARCHMENT, Tokens.PARCHMENT_EDGE, 2, 10)
-	# 不透明：PARCHMENT 自带 0.96 的透明度，盖在语音按钮上时底下的字会透出来一层灰影。
-	style.bg_color.a = 1.0
-	style.set_content_margin_all(12)
-	_record_panel.add_theme_stylebox_override("panel", style)
-	# 同短语面板：盖在后面才创建的席位 / 开始按钮之上。
-	_record_panel.z_index = 40
-	_record_panel.visible = false
+	_record_panel.name = "LobbyInlineHistory"
+	_record_panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	add_child(_record_panel)
-	_track(_record_panel, RECORD_PANEL_POS, RECORD_PANEL_SIZE, 0, "left")
-	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 8)
-	_record_panel.add_child(col)
-	var header := HBoxContainer.new()
-	col.add_child(header)
-	_record_title = Label.new()
-	_record_title.text = _room_text("聊天记录", "Chat history")
-	_record_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_record_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_record_title.add_theme_color_override("font_color", Tokens.CHAT_INK)
-	header.add_child(_record_title)
-	_record_close = PrepWidgets.make_menu_button("×", Vector2(42, 38), 20,
-		_set_record_panel_visible.bind(false))
-	_record_close.name = "ChatRecordClose"
-	header.add_child(_record_close)
-	_record_scroll = ScrollContainer.new()
-	_record_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_record_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	col.add_child(_record_scroll)
+	_track(_record_panel, Vector2(CHAT_MSG_X, CHAT_FIRST_LINE_Y),
+		Vector2(CHAT_MSG_W, CHAT_LINES * CHAT_LINE_H), 0, "left")
+	_record_scroll = preload("res://ui/components/FloatingChatScroll.gd").new()
+	_record_scroll.name = "LobbyChatHistoryScroll"
+	_record_panel.add_child(_record_scroll)
 	_record_list = VBoxContainer.new()
 	_record_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_record_list.add_theme_constant_override("separation", 6)
-	_record_scroll.add_child(_record_list)
-
-
-func _toggle_record_panel() -> void:
-	if _record_panel == null or not is_instance_valid(_record_panel):
-		return
-	_set_record_panel_visible(not _record_panel.visible)
-
-
-func _set_record_panel_visible(shown: bool) -> void:
-	if _record_panel == null or not is_instance_valid(_record_panel):
-		return
-	if shown:
-		_set_phrase_panel_visible(false)
-	_record_panel.visible = shown
-	if shown:
-		_render_record()
+	_record_list.add_theme_constant_override("separation", 4)
+	var padding := MarginContainer.new()
+	padding.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	padding.add_theme_constant_override("margin_right", 16)
+	_record_scroll.add_child(padding)
+	padding.add_child(_record_list)
 
 
 func _render_record() -> void:
-	var font_size := _record_font_size()
-	_record_title.add_theme_font_size_override("font_size", font_size + 2)
-	_record_close.add_theme_font_size_override("font_size", font_size)
-	_record_close.custom_minimum_size = Vector2(42, 38) * _layout_scale
 	for child in _record_list.get_children():
 		_record_list.remove_child(child)
 		child.queue_free()
@@ -1305,7 +1212,7 @@ func _record_font_size() -> int:
 # 在最底下（或差一点）才跟着新消息滚；往上翻着看的时候不把人拽回底部（同私聊界面）。
 func _record_near_bottom() -> bool:
 	var bar := _record_scroll.get_v_scroll_bar()
-	return _record_scroll.scroll_vertical >= int(bar.max_value - bar.page) - 48
+	return _record_scroll.scroll_vertical >= int(bar.max_value - bar.page) - 2
 
 
 func _scroll_record_to_bottom() -> void:

@@ -5,6 +5,7 @@
 NS_ASSUME_NONNULL_BEGIN
 @interface GloryVoiceNative : NSObject
 + (GloryVoiceNative *)shared;
+- (void)setApplicationActive:(BOOL)active;
 - (BOOL)hasRecordPermission;
 - (void)requestRecordPermission;
 - (NSString *)joinRoom:(NSString *)url token:(NSString *)token listenOnly:(BOOL)listenOnly;

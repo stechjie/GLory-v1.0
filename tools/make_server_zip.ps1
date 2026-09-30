@@ -156,7 +156,19 @@ try {
     Get-ChildItem -Path $stage -Recurse -Directory -Filter "reference_packages" -ErrorAction SilentlyContinue |
         ForEach-Object { Remove-Item -Recurse -Force $_.FullName }
 
-    Copy-Item -Force "$src\project.godot" "$stage\project.godot"
+    # systemd starts the project's default scene. Testing an explicit ServerMain
+    # override used to hide that the ZIP still defaulted to the client Bootstrap.
+    $serverProject = [System.IO.File]::ReadAllText("$src\project.godot")
+    if ([regex]::Matches($serverProject, '(?m)^run/main_scene=').Count -ne 1) {
+        throw "project.godot 必须有且只有一个 run/main_scene"
+    }
+    $serverProject = [regex]::Replace($serverProject, '(?m)^run/main_scene=[^\r\n]*',
+        'run/main_scene="res://scenes/server/ServerMain.tscn"')
+    $serverProject = [regex]::Replace($serverProject, '(?m)^(boot_splash/image|config/icon)=[^\r\n]*\r?\n?', '')
+    # Release templates buffer stdout by default; journal timestamps must track events.
+    $serverProject = [regex]::Replace($serverProject, '(?m)^run/flush_stdout_on_print=[^\r\n]*\r?\n?', '')
+    $serverProject = [regex]::Replace($serverProject, '(?m)^\[application\]\r?$', "[application]`nrun/flush_stdout_on_print=true")
+    [System.IO.File]::WriteAllText("$stage\project.godot", $serverProject, (New-Object System.Text.UTF8Encoding($false)))
     New-Item -ItemType Directory -Force "$stage\.godot" | Out-Null
     if (-not (Test-Path "$src\.godot\global_script_class_cache.cfg")) {
         throw "缺少 .godot\global_script_class_cache.cfg。新增 class_name 后必须先重建：godot --headless --editor --quit --path ."
@@ -255,7 +267,7 @@ try {
         # 注意：下面那行以反引号续行，中间不能插注释行 —— 一插 -ArgumentList 就断成
         # 独立语句，Godot 变成无参启动、弹出项目管理器 GUI，然后永远挂在那里。
         $proc = Start-Process -FilePath $Godot -PassThru -NoNewWindow -RedirectStandardOutput $so -RedirectStandardError $se `
-            -ArgumentList @("--headless", "--path", $smokeDir, "res://scenes/server/ServerMain.tscn",
+            -ArgumentList @("--headless", "--path", $smokeDir,
                             "--server", "--port=$smokePort", "--battle-card-key=$smokeCardKey")
         Start-Sleep -Seconds 15
         if (-not $proc.HasExited) { $proc.Kill(); $proc.WaitForExit() }
@@ -276,7 +288,8 @@ try {
         #   Failed to instantiate an autoload  autoload 没起来
         # 刻意**不**拿裸 "ERROR:" 当判据：Godot 用它报很多无害的事，
         # 那样会让打包因为噪音变红，然后所有人学会无视它 —— 比没有门禁更糟。
-        $fatalPatterns = @("SCRIPT ERROR", "Failed to instantiate an autoload")
+        $fatalPatterns = @("SCRIPT ERROR", "Failed to instantiate an autoload", "Parse Error",
+                           "Failed loading resource", "Failed to load resource")
         $hits = @()
         foreach ($pat in $fatalPatterns) {
             if ($errlog -match [regex]::Escape($pat)) { $hits += $pat }

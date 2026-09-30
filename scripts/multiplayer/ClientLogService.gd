@@ -35,8 +35,8 @@ func configure(file_path: String = LOG_FILE) -> void:
 
 
 func write(message: String, server_mode: bool) -> void:
-	# print 在手机上每次都是一次系统调用，发布版必须静音。
-	if OS.is_debug_build():
+	# 手机发布版保持静音；专服发布版仍须写 stdout，交给 journald。
+	if server_mode or OS.is_debug_build():
 		print("[NET] %s" % message)
 	if server_mode:
 		return  # 服务器有 journald，不用双写

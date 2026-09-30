@@ -48,10 +48,25 @@ func _pick_treasure(tid: String) -> void:
 		else:
 			GameState.player_formation_hp = mini(GameState.START_FORMATION_HP, GameState.player_formation_hp + 2)
 	SaveManager.save_run()
-	_refresh_all()
-	_queue_bonus_fx(bonus_before)
+	_finish_treasure_change(bonus_before)
 	if GameState.tutorial_mode:
 		TutorialMode.sync()
+
+
+# 宝物入袋后的统一收尾 —— **单机与联机必须走同一条路**。
+#
+# 为什么需要：宝物（折扣令牌 / 慷慨命运 / 黄金祭坛…）会改变左侧羁绊面板与商店
+# 内容，棋盘框 `board_frame` 被 HBox 整体挤动。这是**平移**不是 resize。
+# `item_rect_changed` 信号只在 rect 变化的当帧发出，落在
+# `_apply_prep_model_layout_after_frames` 稳定轮询窗口之外的二次平移会被漏掉 ——
+# 现象就是用户实测的「选了宝藏后上阵光圈偏移石台，**点赌博又恢复原样**」：
+# 因为赌博那条路径（`_on_generous_fate_gamble`）显式调了重排，而单机选宝藏
+# （`_pick_treasure` 的非 team_active 分支）原来漏了这一步，联机分支
+# （`_on_treasure_granted`）却有。两条路径各写一份 = 只修一条。
+func _finish_treasure_change(bonus_before: Array) -> void:
+	_refresh_all()
+	_queue_bonus_fx(bonus_before)
+	_queue_prep_model_layout_refresh()
 
 func _connect_treasure_signals() -> void:
 	if not NetworkService.treasure_granted.is_connected(_on_treasure_granted):
@@ -79,12 +94,7 @@ func _on_treasure_granted(tid: String, owned: Array) -> void:
 	# 意图已经有结果了，解开待定锁。
 	_treasure.clear_pick_pending()
 	SaveManager.save_run()
-	_refresh_all()
-	_queue_bonus_fx(bonus_before)
-	# 宝物入袋（折扣令牌/慷慨命运等）会改变左侧羁绊面板或商店内容，棋盘随之平移。
-	# 主动重新对齐 3D 投影的棋盘圆圈，避免「绿/红圈偏移石台」的 bug 复现
-	# （进下一轮对战后回正，正是重建 PrepUI 时重新跑了这次对齐）。
-	_queue_prep_model_layout_refresh()
+	_finish_treasure_change(bonus_before)
 
 func _on_treasure_denied(reason: String) -> void:
 	# 不静默：拒收后界面必须回到一个玩家能理解的状态，否则就是「点了没反应」。
@@ -254,6 +264,9 @@ func _on_altar_result(granted: bool, team_hp: int, uses: int) -> void:
 	GameState.prep_income_total += NetworkService.ALTAR_GOLD
 	SaveManager.save_run()
 	_refresh_all()
+	# 祭坛按钮的文案（剩余次数）会改变左面板高度 ⇒ 同样挤动棋盘。收尾与宝物入袋一致：
+	# 只靠 `item_rect_changed` 信号会在「平移落在稳定轮询窗口之外」时漏掉。
+	_queue_prep_model_layout_refresh()
 
 func _on_generous_fate_gamble() -> void:
 	if not GameState.tutorial_mode and NetworkService.team_active and not NetworkService.is_host and not NetworkService.server_prep_confirmed(GameState.round_index):

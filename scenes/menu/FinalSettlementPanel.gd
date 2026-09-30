@@ -10,6 +10,9 @@ const TEXT := Color("edeff4")
 const MUTED := Color("b8becc")
 const WIDTHS := [150.0, 340.0, 300.0, 240.0, 170.0, 170.0]
 var data: Dictionary = {}
+# 对局历史里复用这个面板时（MatchHistoryPanel「详细战况」），「返回主菜单」换成这里的字，
+# 按下去照样发 return_menu_requested，由历史那边关掉弹窗。
+var close_text := ""
 var _bubble: PanelContainer
 var _bubble_label: Label
 var _return_button: Button
@@ -58,7 +61,7 @@ func _ready() -> void:
 		_return_button.disabled = true
 		_return_button.text = "正在返回…"
 		return_room_requested.emit())
-	var menu := _button("返回主菜单", buttons)
+	var menu := _button(close_text if not close_text.is_empty() else "返回主菜单", buttons)
 	menu.add_theme_stylebox_override("normal", Tokens.panel_box(Color("e9aa43"), GOLD, 10))
 	menu.add_theme_color_override("font_color", Color("231a0d"))
 	menu.pressed.connect(func(): return_menu_requested.emit())

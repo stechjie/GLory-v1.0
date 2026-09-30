@@ -228,6 +228,10 @@ const SEAT_SLOT_MAPS := [
 	"seat_races",  # 出战种族（协议 28）：换座跟着人走，离座一起清
 	"seat_pets",   # 出战名片的宠物（协议 30 起只有名片能写）：战斗读它，不能让新座位继承
 	"seat_ai_pets",  # AI 座位在营地里展示的宠物。**与 seat_pets 分开**，理由见 NetworkService._ensure_dummy_seat_pet
+	# 名片上的账号 id，战报靠它认人（BattleReport）。2026-09-29 之前漏在这张表外面：
+	# 换座后账号留在旧座位 —— 旧座位补了 AI 就把人记成「AI + 掉线」、胜负跟着错队，
+	# 被真人坐走就整局找不到这个人（还白扣信誉分）。
+	"seat_pid",
 ]
 
 # 短码给玩家手输，所以不能太长；用 base32 去掉易混字符（0/O/1/I），

@@ -18,11 +18,24 @@ extends Control
 # 3. **按钮不用 Button.new()**，一律实例化 ui/components/GloryActionButton.tscn。
 #    tools/procedural_ui_ratchet_check 的单文件计数只许降不许升，新文件从 0 开始，
 #    写一个 Button.new() 就是红的（同 scenes/menu/ChatScreen.gd 顶部那条）。
+#
+# 4. **「详细战况」就是打完那一刻的结算面板**（2026-09-29 用户定：「直接搬来」）。
+#    不另画一份：点按钮弹出 scenes/menu/FinalSettlementPanel.gd 本身，数据由
+#    settlement_view_data() 从历史接口的格式换成它认的格式。结算面板改了，这里跟着变。
+#    023 之前打的局没有这份数据（settlement 为 null），按钮换成一句说明。
+#
+# 5. **名字是账号现在的名字**（2026-09-29 用户定）：后端按 player_id 现取，改过名显示新名字。
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
 const SfxService := preload("res://ui/services/SfxService.gd")
+const SettlementPanel := preload("res://scenes/menu/FinalSettlementPanel.gd")
+const FinalSettlementData := preload("res://scripts/multiplayer/FinalSettlementData.gd")
+
+# 「详细战况」叠在历史弹窗上面（ProfileScreen 推历史用的是 40）。
+const DETAIL_MODAL_ID := "match_history_detail"
+const DETAIL_PRIORITY := 50
 
 signal dismissed()
 
@@ -32,16 +45,9 @@ const FETCH_LIMIT := 20
 
 const PANEL_SIZE := Vector2(1100, 620)
 const LIST_WIDTH := 320.0
-const PORTRAIT := 56.0
-
-# 棋子头像。与 scripts/codex/CodexService.gd 的三个目录常量同源 ——
-# 那边是图鉴用的，这边是历史用的，路径规则一样（<目录>/<id>.png）。
-const UNIT_PORTRAIT_DIR := "res://assets/ui/unit_portraits/"
-const MERC_PORTRAIT_DIR := "res://assets/ui/mercenary_portraits/"
 
 var _matches: Array = []
 var _selected_match := -1
-var _selected_slot := -1
 var _list_box: VBoxContainer
 var _detail_box: VBoxContainer
 var _summary: Label
@@ -218,8 +224,6 @@ func _select_match(index: int) -> void:
 	if index < 0 or index >= _matches.size():
 		return
 	_selected_match = index
-	# 默认摊开**我自己**那个座位。别人一进来最想看的是自己那局摆了什么。
-	_selected_slot = int((_matches[index] as Dictionary).get("my_slot", 0))
 	_refresh_list()
 	_refresh_detail()
 
@@ -263,6 +267,22 @@ func _refresh_detail() -> void:
 		note.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
 		_detail_box.add_child(note)
 
+	# 详细战况：打完那一刻的结算面板（见文件顶部第 4 条）。
+	if typeof(item.get("settlement")) == TYPE_DICTIONARY:
+		var detail := ACTION_BUTTON.instantiate() as Button
+		detail.text = _text("详细战况", "Match details")
+		detail.custom_minimum_size = Vector2(200, Tokens.TOUCH_MIN)
+		detail.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		detail.pressed.connect(func() -> void:
+			SfxService.play(SfxService.CUE_UI_POPUP)
+			_open_settlement(item))
+		_detail_box.add_child(detail)
+	else:
+		var none := Label.new()
+		none.text = _text("这一局是旧版本记录，没有详细战况", "No details for this match (recorded by an older version)")
+		none.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
+		_detail_box.add_child(none)
+
 	var seats: Array = (item.get("seats", []) as Array)
 	for team in 2:
 		var team_title := Label.new()
@@ -276,44 +296,38 @@ func _refresh_detail() -> void:
 				continue
 			_detail_box.add_child(_seat_row(seat as Dictionary, int(item.get("my_slot", -1))))
 
-	_detail_box.add_child(_board_block(seats))
-
 
 func _seat_row(seat: Dictionary, my_slot: int) -> Control:
 	var slot := int(seat.get("slot", 0))
-	var row := ACTION_BUTTON.instantiate() as Button
+	var row := Label.new()
 	row.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
-	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	row.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	row.text = "%s %s · %s %d · %s %d/%d" % [
-		_seat_who(seat, my_slot),
+		seat_name(seat, slot == my_slot),
 		_seat_state(seat),
 		_text("金币", "Gold"), int(seat.get("gold", 0)),
 		_text("萝卜 剩/用", "Carrots left/used"),
 		int(seat.get("carrots", 0)), int(seat.get("carrots_spent", 0)),
 	]
 	row.add_theme_color_override("font_color",
-		Tokens.GOLD_EDGE if slot == _selected_slot else Tokens.TEXT_SECONDARY)
-	row.pressed.connect(func() -> void:
-		SfxService.play(SfxService.CUE_UI_POPUP)
-		_selected_slot = slot
-		_refresh_detail())
+		Tokens.GOLD_EDGE if slot == my_slot else Tokens.TEXT_SECONDARY)
 	return row
 
 
-# 谁坐在这个座位上。
-#
-# **不显示别人的昵称** —— 历史接口只回 player_id，而昵称要另外一趟公开资料请求。
-# 一局六个人 × 二十局 = 一百二十次请求，不值得。座位号足够定位，
-# 「我」那一格标出来就够了。以后真要显示名字，是后端在 /v1/me/matches 里
-# 顺带回昵称，而不是客户端一个个去问。
-func _seat_who(seat: Dictionary, my_slot: int) -> String:
-	var slot := int(seat.get("slot", 0))
-	if slot == my_slot:
-		return _text("我", "Me")
-	if _seat_pid(seat).is_empty():
-		return _text("AI", "AI")
-	return "%s %d" % [_text("座位", "Seat"), slot + 1]
+# 谁坐在这个座位上：账号**现在**的名字（后端按 player_id 现取，见文件顶部第 5 条）。
+# 注销了的账号，后端给的就是「已注销玩家」。
+static func seat_name(seat: Dictionary, mine: bool) -> String:
+	var who: String
+	if not _seat_pid(seat).is_empty():
+		who = AccountManager.display_name(_json_str(seat.get("player_name")), _json_str(seat.get("friend_code")))
+	elif bool(seat.get("was_ai", false)):
+		who = "AI"
+	else:
+		# 没账号也不是 AI：有棋子 = 没带名片的真人（进程内门禁那条路），没棋子 = 空位。
+		var board: Variant = seat.get("board", [])
+		var has_units := typeof(board) == TYPE_ARRAY and not (board as Array).is_empty()
+		who = _text("玩家", "Player") if has_units else _text("空位", "Empty")
+	return who + (_text("（我）", " (me)") if mine else "")
 
 
 # ⚠️ **JSON 的 null 在 GDScript 里是 null 变体，而 str(null) 得到字面量 "<null>"。**
@@ -323,8 +337,11 @@ func _seat_who(seat: Dictionary, my_slot: int) -> String:
 # AI 座位会被当成真人，再因为它 online_at_end=false 被标成「掉线未归」。
 # 2026-09-22 由 tools/match_history_ui_check 抓到。同 ProfileScreen._field()
 # 顶上那条警告，是同一个坑。
-func _seat_pid(seat: Dictionary) -> String:
-	var value: Variant = seat.get("player_id", null)
+static func _seat_pid(seat: Dictionary) -> String:
+	return _json_str(seat.get("player_id", null))
+
+
+static func _json_str(value: Variant) -> String:
 	return "" if value == null else str(value)
 
 
@@ -344,85 +361,91 @@ func _seat_state(seat: Dictionary) -> String:
 	return ""
 
 
-func _board_block(seats: Array) -> Control:
-	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SURFACE_RAISED, Tokens.GOLD_EDGE, Tokens.GAP_S))
-	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", Tokens.GAP_S)
-	panel.add_child(column)
+# --- 详细战况 -------------------------------------------------------------------
 
-	var title := Label.new()
-	title.text = "%s %d %s" % [_text("座位", "Seat"), _selected_slot + 1, _text("的最终棋盘", "final board")]
-	title.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
-	column.add_child(title)
-
-	var seat := _seat_by_slot(seats, _selected_slot)
-	var board: Array = (seat.get("board", []) as Array) if typeof(seat.get("board", [])) == TYPE_ARRAY else []
-	if board.is_empty():
-		var empty := Label.new()
-		empty.text = _text("这一局没有记录到棋子", "No pieces recorded")
-		empty.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
-		column.add_child(empty)
-	else:
-		var grid := GridContainer.new()
-		grid.columns = 8
-		grid.add_theme_constant_override("h_separation", Tokens.GAP_S)
-		grid.add_theme_constant_override("v_separation", Tokens.GAP_S)
-		column.add_child(grid)
-		for cell in board:
-			if typeof(cell) == TYPE_DICTIONARY:
-				grid.add_child(_piece(cell as Dictionary))
-
-	var treasures: Array = (seat.get("treasures", []) as Array) if typeof(seat.get("treasures", [])) == TYPE_ARRAY else []
-	if not treasures.is_empty():
-		var line := Label.new()
-		line.text = "%s %d" % [_text("宝藏", "Treasures"), treasures.size()]
-		line.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
-		column.add_child(line)
-	return panel
+func _open_settlement(item: Dictionary) -> void:
+	if ModalStack.has(DETAIL_MODAL_ID):
+		return
+	var panel := SettlementPanel.new()
+	panel.data = settlement_view_data(item)
+	panel.close_text = _text("关闭", "Close")
+	panel.return_menu_requested.connect(func() -> void: ModalStack.pop(DETAIL_MODAL_ID))
+	ModalStack.push(panel, {
+		"id": DETAIL_MODAL_ID,
+		"owner": self,
+		"priority": DETAIL_PRIORITY,
+		"popup_sfx": false,
+	})
 
 
-func _seat_by_slot(seats: Array, slot: int) -> Dictionary:
-	for seat in seats:
-		if typeof(seat) == TYPE_DICTIONARY and int((seat as Dictionary).get("slot", -1)) == slot:
-			return seat as Dictionary
-	return {}
-
-
-# 一个棋子：头像 + 名字 + 星级。
+# 历史接口的一局 → FinalSettlementPanel 认的 data（FinalSettlementData.build 的形状）。
 #
-# 名字走 DataRegistry.unit_display_name()，**不是**战报里存的字符串 ——
-# 战报里只有 id，而这正是当初把 uid / race_relations 排除在外的理由：
-# 改过名的单位在历史里也要显示新名字（同 canonical_unit_def 那段注释）。
-func _piece(cell: Dictionary) -> Control:
-	var unit_id := str(cell.get("id", ""))
-	var is_merc := bool(cell.get("merc", false))
-	var box := VBoxContainer.new()
-	box.custom_minimum_size = Vector2(PORTRAIT + 8, 0)
-	box.add_theme_constant_override("separation", 2)
-
-	var art := TextureRect.new()
-	art.custom_minimum_size = Vector2(PORTRAIT, PORTRAIT)
-	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	var path := (MERC_PORTRAIT_DIR if is_merc else UNIT_PORTRAIT_DIR) + unit_id + ".png"
-	# 缺图不是错误：历史里可能有已经下线的单位。留空格比留一个红叉好。
-	if ResourceLoader.exists(path):
-		art.texture = load(path)
-	box.add_child(art)
-
-	var name_label := Label.new()
-	name_label.text = "%s ★%d" % [
-		DataRegistry.unit_display_name({"id": unit_id}, _is_en()),
-		clampi(int(cell.get("star", 1)), 1, 9),
-	]
-	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	name_label.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	name_label.add_theme_color_override("font_color",
-		Tokens.GOLD_EDGE if is_merc else Tokens.TEXT_SECONDARY)
-	box.add_child(name_label)
-	return box
+# 棋子 / 佣兵 / 宝藏来自 match_seats（board 里 merc=true 的是佣兵），升级石 / 总金币 /
+# 法阵守护 / 统计来自 settlement（database/023；统计是短键，见 BattleReport._clean_stats）。
+# 没有 settlement（023 之前的局）返回空字典。
+static func settlement_view_data(item: Dictionary) -> Dictionary:
+	var settle: Variant = item.get("settlement")
+	if typeof(settle) != TYPE_DICTIONARY:
+		return {}
+	var extras: Array = (settle as Dictionary).get("seats", []) if typeof((settle as Dictionary).get("seats")) == TYPE_ARRAY else []
+	var rows: Array = item.get("seats", []) if typeof(item.get("seats")) == TYPE_ARRAY else []
+	var my_slot := int(item.get("my_slot", -1))
+	var seats := []
+	for slot in 6:
+		var seat := {}
+		for row in rows:
+			if typeof(row) == TYPE_DICTIONARY and int((row as Dictionary).get("slot", -1)) == slot:
+				seat = row
+		var extra: Dictionary = extras[slot] if slot < extras.size() and typeof(extras[slot]) == TYPE_DICTIONARY else {}
+		var board := []
+		var mercs := []
+		for cell in (seat.get("board", []) if typeof(seat.get("board")) == TYPE_ARRAY else []):
+			if typeof(cell) != TYPE_DICTIONARY:
+				continue
+			var unit := {"id": str(cell.get("id", "")), "star": int(cell.get("star", 1)), "slot": int(cell.get("slot", -1))}
+			if bool(cell.get("merc", false)):
+				mercs.append(unit)
+			else:
+				board.append(unit)
+		var owned: Array = seat.get("treasures", []) if typeof(seat.get("treasures")) == TYPE_ARRAY else []
+		seats.append({
+			"slot": slot,
+			"name": seat_name(seat, slot == my_slot),
+			"board": board,
+			"mercenaries": mercs,
+			"treasures": FinalSettlementData.display_treasures(owned),
+			"stones": extra.get("stones", {}) if typeof(extra.get("stones")) == TYPE_DICTIONARY else {},
+			"total_gold": int(extra.get("total_gold", 0)),
+		})
+	var stats := []
+	for entry in ((settle as Dictionary).get("stats", []) if typeof((settle as Dictionary).get("stats")) == TYPE_ARRAY else []):
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		var e: Dictionary = entry
+		stats.append({
+			"owner_slot": clampi(int(e.get("own", 0)), 0, 5),
+			"slot": int(e.get("slot", -1)),
+			"id": str(e.get("id", "")),
+			"name": str(e.get("name", "")),
+			"star": int(e.get("star", 1)),
+			"is_mercenary": bool(e.get("merc", false)),
+			"skill_stacks": int(e.get("stack", 0)),
+			"damage_dealt": int(e.get("dmg", 0)),
+			"damage_taken": int(e.get("taken", 0)),
+			"healing_done": int(e.get("heal", 0)),
+		})
+	var allies: Array = ((settle as Dictionary).get("allies") as Array).duplicate() if typeof((settle as Dictionary).get("allies")) == TYPE_ARRAY else ["", ""]
+	while allies.size() < 2:
+		allies.append("")
+	return {
+		"outcome": {"team_a": 0, "team_b": 1}.get(str(item.get("outcome", "draw")), 2),
+		"allies": allies,
+		"seats": seats,
+		"stats": stats,
+		"gold_authoritative": bool(item.get("gold_authoritative", false)),
+		# 历史里没有「返回房间」：那个房间早就不在了。
+		"can_return_room": false,
+	}
 
 
 # --- 文案 ---------------------------------------------------------------------
@@ -463,9 +486,9 @@ func _set_status(text: String) -> void:
 		_status.text = text
 
 
-func _is_en() -> bool:
+static func _is_en() -> bool:
 	return LocaleManager.get_locale().begins_with("en")
 
 
-func _text(zh: String, en: String) -> String:
+static func _text(zh: String, en: String) -> String:
 	return en if _is_en() else zh

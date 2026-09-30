@@ -49,6 +49,7 @@ func _ready() -> void:
 	_check_match_uid()
 	_check_key_loading()
 	_check_build_shape()
+	_check_settlement()
 	_check_caps()
 	_check_sign_roundtrip()
 	_cleanup()
@@ -140,6 +141,36 @@ func _check_build_shape() -> void:
 	_expect(str(bad_mode.get("mode", "")), "custom", "未知模式回落 custom")
 
 
+# 详细战况（2026-09-29）：结算面板那份数据跟着战报走，历史里点开能看。
+func _check_settlement() -> void:
+	print("-- 详细战况 --")
+	var payload: Dictionary = BattleReport.build(_sample_ctx())
+	var seat: Dictionary = (payload.get("seats", []) as Array)[0]
+	_expect(seat.get("stones", {}), {"sky": 2, "ren": 1}, "升级石照抄（0 个的种类不写）")
+	_expect(int(seat.get("total_gold", -1)), 1480, "总金币照抄")
+	_expect(payload.get("allies", []), ["圣骑守护", "暗影守护"], "两边法阵守护")
+	var stats: Array = payload.get("stats", [])
+	_expect(stats.size(), 6 * 30, "统计条数照抄（没到上限）")
+	var first: Dictionary = stats[0]
+	var want_keys := ["dmg", "heal", "id", "merc", "name", "own", "slot", "stack", "star", "taken"]
+	var got_keys: Array = first.keys()
+	got_keys.sort()
+	_expect(got_keys, want_keys, "统计是短键，没有多余字段（buffs / debuffs / name_en 不进战报）")
+	_expect(int(first.get("dmg", -1)), 123456, "造成伤害")
+	_expect(int(first.get("stack", -1)), 3, "技能层数")
+
+	# 🔴 棋子位置：服务器存的棋盘是 16 格数组、格子里没有 slot 键 —— 用下标。
+	# 以前缺省成 0，所有棋子都记在 0 号位。
+	var no_slot := BattleReport.build({"seats": [{"board": [null, {"id": "a", "star": 1}, null, {"id": "b", "star": 2}]}]})
+	var kept: Array = ((no_slot.get("seats", []) as Array)[0] as Dictionary).get("board", [])
+	_expect([int(kept[0].slot), int(kept[1].slot)], [1, 3], "没有 slot 键时用数组下标")
+
+	# 旧的调用方（没有这几项）照样能出战报，详细战况是空的。
+	var bare: Dictionary = BattleReport.build({})
+	_expect((bare.get("stats", [1]) as Array).is_empty(), true, "没有统计时是空列表")
+	_expect(((bare.get("seats", []) as Array)[0] as Dictionary).get("stones", {1: 1}), {}, "没有升级石时是空字典")
+
+
 func _check_caps() -> void:
 	print("-- 上限 --")
 	# 造一个远超上限的座位：棋盘 100 条、佣兵 100 条、宝藏 100 条。
@@ -166,6 +197,20 @@ func _check_caps() -> void:
 	var holed: Dictionary = BattleReport.build({"seats": [{"board": [{"slot": 0, "id": ""}, {"slot": 1, "id": "ok"}]}]})
 	var kept: Array = ((holed.get("seats", []) as Array)[0] as Dictionary).get("board", [])
 	_expect(kept.size(), 1, "空 id 的棋子丢掉")
+
+	# 统计条数封顶；座位号不对的条目丢掉；名字截断。
+	var fat_stats := []
+	for i in 500:
+		fat_stats.append({"owner_slot": i % 7, "name": "很长很长的名字".repeat(10), "damage_dealt": -5})
+	var capped: Array = BattleReport.build({"stats": fat_stats}).get("stats", [])
+	_expect(capped.size(), BattleReport.MAX_STATS_ENTRIES, "统计封顶")
+	var bad_owner := false
+	for entry in capped:
+		if int((entry as Dictionary).own) < 0 or int((entry as Dictionary).own) >= 6:
+			bad_owner = true
+	_expect(bad_owner, false, "座位号不在 0-5 的统计丢掉")
+	_expect(str((capped[0] as Dictionary).name).length() <= BattleReport.MAX_NAME_LEN, true, "名字截断")
+	_expect(int((capped[0] as Dictionary).dmg), 0, "负数夹到 0")
 
 
 # --- 签章 ---------------------------------------------------------------------
@@ -249,7 +294,21 @@ func _sample_ctx() -> Dictionary:
 			"ai_rounds": 3 if slot == 5 else 0,
 			"gold": 137, "carrots": 12, "carrots_spent": 40,
 			"board": board, "mercenaries": mercs, "treasures": treasures,
+			"stones": {"sky": 2, "land": 0, "ren": 1}, "total_gold": 1480,
 		})
+	# 最后一战的统计，按满配算：每座位 16 棋子 + 8 佣兵 + 6 个召唤物，数字都是六位数。
+	# 字段就是 BattleSimShared._register_unit_stat 那一套（多出来的几个断言不会进战报）。
+	var stats := []
+	for slot in 6:
+		for i in 30:
+			stats.append({
+				"id": "unit_dark_dragon", "star": 4, "name": "暗黑巨龙",
+				"name_en": "Dark Dragon", "position": "棋盘%d" % i, "group": "player",
+				"team": "player", "owner_slot": slot, "lane": 1, "slot": i,
+				"is_mercenary": i >= 16, "skill_stacks": 3,
+				"damage_dealt": 123456, "damage_taken": 654321, "healing_done": 99999,
+				"debuffs": {"burn": 12, "stun": 3}, "buffs": {"shield": 5},
+			})
 	return {
 		"match_uid": BattleReport.new_match_uid(),
 		"mode": "custom",
@@ -258,6 +317,8 @@ func _sample_ctx() -> Dictionary:
 		"rounds": 21, "outcome": "team_a", "team_hp": [17, 0],
 		"gold_authoritative": false, "carrot_authoritative": true,
 		"seats": seats,
+		"allies": ["圣骑守护", "暗影守护"],
+		"stats": stats,
 	}
 
 

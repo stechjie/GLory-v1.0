@@ -2,6 +2,7 @@ class_name BattleSimulator
 extends BattleSimShared
 
 const BattlePresentationEventSchema := preload("res://scripts/battle/BattlePresentationEvent.gd")
+const MeleeNavigation := preload("res://scripts/battle/MeleeNavigation.gd")
 
 # 教学专用战斗。唯一入口是 BattleScreen 的 `team_mode == false` 分支，而 team_mode
 # 只有 Main._select_language() → TutorialMode.start() 这一条路会留成 false，
@@ -405,6 +406,12 @@ static func step_state(state: Dictionary) -> void:
 	var enemy: Array = state.enemy
 	BattleSimTreasures._process_revives(state)
 	BattleSimTreasures._process_temporary_deaths(state)
+	# 9.30：自爆灵的爆炸必须**先于胜负判定**结算。原来的位置只在 tick 尾部，
+	# 而下面第 411 行一旦 `p_alive.is_empty()`（自爆灵是最后一个阵亡的单位 ——
+	# 真实战斗里很常见）就直接 return，爆炸永远轮不到。这里先扫一遍兜住这条路径；
+	# tick 尾部再扫一遍处理「本 tick 战斗中刚死的」自爆灵。两边用
+	# `death_explosion_done` 去重，不会重复炸。
+	BattleSimTreasures._process_death_explosions(state)
 	var p_alive := _alive(player)
 	var e_alive := _alive(enemy)
 	if p_alive.is_empty() or (e_alive.is_empty() and state.get("revive_queue", []).is_empty()) or float(state.elapsed) >= HARD_TIMEOUT_SEC:
@@ -429,6 +436,10 @@ static func step_state(state: Dictionary) -> void:
 	# Solve crowd contacts once with a bounded iterative constraint pass.
 	_separate_units(player, enemy)
 	_process_shared_links(state)
+	# 9.30：自爆灵的爆炸也必须在收尾这一层补一次 —— 上面那条只覆盖**普攻致死**，
+	# 被技能/AOE 打死的自爆灵原来一声不响（用户实测报告）。放在击杀金与死亡特性
+	# 之前，这样「被炸死的单位」能在本 tick 一并结清，不用等下一 tick。
+	BattleSimTreasures._process_death_explosions(state)
 	# 本 tick 所有伤害都结算完了，再补发非普攻致死的击杀金（必须在 _step_team 之后）。
 	_process_pending_kill_rewards(state)
 	BattleSimTreasures._process_race_death_traits(state)
@@ -663,7 +674,7 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 		if int(f.get("_switch_cooldown", 0)) > 0:
 			f._switch_cooldown = int(f.get("_switch_cooldown", 0)) - 1
 		if int(f.get("_no_progress_ticks", 0)) >= NO_PROGRESS_TICKS \
-				and int(f.get("_switch_cooldown", 0)) <= 0:
+				and int(f.get("_switch_cooldown", 0)) <= 0 and not MeleeNavigation.applies(f):
 			if int(f.get("_switch_attempts", 0)) >= MAX_SWITCH_ATTEMPTS:
 				f._switch_attempts = 0
 				f._switch_cooldown = SWITCH_COOLDOWN_TICKS
@@ -685,6 +696,8 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 			f._no_progress_ticks = 0
 			f.erase("_progress_uid")
 		var target := _select_attack_target(f, opponents, target_index, bodies)
+		var navigation := MeleeNavigation.choose(f, target, opponents, bodies, elapsed, state)
+		target = navigation.target
 		if str(f.get("frenzy_target_uid", "")) != str(target.get("uid", "")):
 			f.frenzy_stacks = 0
 			f.frenzy_target_uid = str(target.get("uid", ""))
@@ -724,9 +737,11 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 			if pruned.size() != avoided_now.size():
 				f.avoid_target_uids = pruned
 		if not in_range:
-			var step := minf(float(f.move_speed_px) * StatusEffectService.move_speed_multiplier(f) * TICK_SEC, maxf(0.0, dist - attack_distance))
-			if dist > 0.001:
-				_move_without_pushing(f, delta.normalized() * step, bodies)
+			var move_delta: Vector2 = Vector2(navigation.waypoint) - Vector2(f.pos)
+			var remaining := move_delta.length() if f.has("_melee_route") else maxf(0.0, dist - attack_distance)
+			var step := minf(float(f.move_speed_px) * StatusEffectService.move_speed_multiplier(f) * TICK_SEC, remaining)
+			if move_delta.length() > 0.001:
+				_move_without_pushing(f, move_delta.normalized() * step, bodies)
 		elif elapsed >= float(f.next_attack):
 			# 无普攻的单位（法师，9.14 反馈：文案写「无普攻」但实测会普攻）。
 			# 只跳过攻击分支 —— 上面的移动分支照常执行，所以法师仍然会走到射程
@@ -986,8 +1001,13 @@ static func _perform_attack(attacker: Dictionary, target: Dictionary, state: Dic
 		else:
 			attacker.linked_target_uid = str(target.get("uid", ""))
 			attacker.skill_stacks = 1
+	# 9.30 修复：羁绊文案是「**神族单位**造成伤害时回复实际伤害 20% 生命」
+	# （SynergyPanel.gd:154 神3·吸血），但这里原来只取了队伍羁绊 `syn` 就直接
+	# 给**任何攻击者**回血 ⇒ 队伍凑够 3 神后，非神族棋子（含佣兵）普攻也吸血
+	# 20%（用户实测报告：「描述对神族生效、实际对自身非佣兵棋子生效」）。
+	# 判据与同函数里暗族的写法对齐（见上方 `race == "dark"` 那处）。
 	var lifesteal := SynergyService.safe_factor(syn, "god_lifesteal")
-	if lifesteal > 0.0:
+	if lifesteal > 0.0 and str(d.get("race", "")) == "god":
 		_heal_unit(attacker, maxi(1, int(round(float(dealt) * lifesteal))))
 	return dealt
 
@@ -1283,10 +1303,11 @@ static func _on_unit_killed(killer: Dictionary, victim: Dictionary, state: Dicti
 	BattleSimTreasures._apply_kill_treasures(killer, victim, victim_team)
 	var vd: Dictionary = victim.get("def", {})
 	if str(vd.get("skill_id", "")) == "death_poison_explosion":
-		for o in killer_team:
-			if bool(o.get("alive", false)) and _can_target(victim, o, killer_team) and victim.pos.distance_to(o.pos) <= 180.0:
-				DamageService.apply_damage(o, maxi(1, int(round(float(victim.atk) * float(vd.get("damage_atk_pct", 2.5))))), true)
-				StatusEffectService.add_poison(o, 4.0, 0.03, 0.0, true)
+		# 9.30：爆炸本体抽到 BattleSimTreasures.apply_death_poison_explosion，
+		# 与 per-tick 清扫（_process_death_explosions，专补技能/AOE 致死）共用同一份判据。
+		# 这里保留**即时**引爆（普攻路径行为不变），并落标记让清扫不再重复炸。
+		victim.death_explosion_done = true
+		BattleSimTreasures.apply_death_poison_explosion(victim, vd, killer_team)
 	_maybe_spawn_parasite_clone(killer, victim, state)
 	# 母灵计数已移到每 tick 的死亡清扫 _process_single_race_death 里，
 	# 那条路能捕获普攻/技能/AOE 所有致死方式（本入口只覆盖普攻），且天然排除处决。

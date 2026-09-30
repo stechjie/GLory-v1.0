@@ -45,6 +45,16 @@ func build(owner: Node, voice_size: Vector2, members_size: Vector2, font_size: i
 	audience_button.name = "VoiceAudience"
 	members_button = PrepWidgets.make_menu_button(_text("队友", "Team"), members_size, font_size, _on_members_pressed)
 	members_button.name = "VoiceMembers"
+	# 三个按钮统一使用紧凑内边距，避免双行文字把实际高度撑到布局尺寸之外。
+	for button in [voice_button, audience_button, members_button]:
+		var style := PrepWidgets.menu_button_style()
+		style.content_margin_top = 3.0
+		style.content_margin_bottom = 3.0
+		style.content_margin_left = 4.0
+		style.content_margin_right = 4.0
+		for state in ["normal", "hover", "pressed"]:
+			button.add_theme_stylebox_override(state, style)
+
 	if not VoiceService.mode_changed.is_connected(_on_mode_changed):
 		VoiceService.mode_changed.connect(_on_mode_changed)
 	if not VoiceService.audience_changed.is_connected(_on_audience_changed):
@@ -79,7 +89,7 @@ func refresh() -> void:
 	if voice_button == null or not is_instance_valid(voice_button):
 		return
 	voice_button.text = VoiceService.mode_label()
-	if _panel_context == "lobby":
+	if _panel_context in ["lobby", "prep", "battle"]:
 		voice_button.text = voice_button.text.replace("：", "\n").replace(": ", "\n")
 	if audience_button != null and is_instance_valid(audience_button):
 		audience_button.text = _text("范围\n", "To\n") + VoiceService.audience_label()

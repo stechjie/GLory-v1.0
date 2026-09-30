@@ -41,6 +41,48 @@ static func _process_single_race_death(state: Dictionary, victim: Dictionary) ->
 	_maybe_god_death_cleanse(state, vteam)
 	_apply_dark_death_stack(state, opp)
 
+
+# 9.30 修复：自爆灵（`death_poison_explosion`）「死亡时对 180px 内敌人爆炸 + 中毒」
+# 原本**只**写在 `BattleSimulator._on_unit_killed` 里 —— 那是**普攻致死**入口，
+# 于是被技能 / AOE 打死时自爆**不触发**（用户实测报告）。
+# 这里补一条与 `_process_race_death_traits` / `_process_pending_kill_rewards`
+# 同款的 per-tick 清扫，覆盖普攻/技能/AOE 全部致死方式。
+# 普攻那条路**保持原样**（死亡瞬间即时引爆），由 `death_explosion_done` 去重，
+# 两个调用点不会各炸一次。
+static func _process_death_explosions(state: Dictionary) -> void:
+	var fighters: Array = state.get("player", []) + state.get("enemy", [])
+	for victim in fighters:
+		if bool(victim.get("alive", true)) and int(victim.get("hp", 0)) > 0:
+			continue
+		if bool(victim.get("death_explosion_done", false)):
+			continue
+		var vd: Dictionary = victim.get("def", {})
+		if str(vd.get("skill_id", "")) != "death_poison_explosion":
+			continue
+		# 标记必须在任何分支之前落下 —— 否则这具尸体每 tick 都会被重扫一遍。
+		victim.death_explosion_done = true
+		var enemies: Array = state.get("enemy", []) if str(victim.get("team", "")) == "player" else state.get("player", [])
+		apply_death_poison_explosion(victim, vd, enemies)
+
+
+# 自爆的爆炸本体。两个调用点共用这一份判据（普攻即时引爆 / per-tick 清扫补技能致死），
+# 条件与原实现逐条一致：目标存活 + `_can_target` + 距离 ≤ 180。
+# 返回是否真的炸到过人（供调用方判断）。
+static func apply_death_poison_explosion(victim: Dictionary, vd: Dictionary, enemies: Array) -> bool:
+	var exploded := false
+	for o in enemies:
+		if not bool(o.get("alive", false)):
+			continue
+		if not _can_target(victim, o, enemies):
+			continue
+		if victim.pos.distance_to(o.pos) > 180.0:
+			continue
+		DamageService.apply_damage(o, maxi(1, int(round(float(victim.atk) * float(vd.get("damage_atk_pct", 2.5))))), true)
+		StatusEffectService.add_poison(o, 4.0, 0.03, 0.0, true)
+		exploded = true
+	return exploded
+
+
 # (1) 神族·死亡净化: owner's unit dies -> cleanse one of the owner's units,
 # preferring its own; once the owner's lane enemies are cleared, can extend to
 # the owner's allies (same team, other lanes).

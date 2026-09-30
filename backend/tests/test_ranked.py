@@ -222,7 +222,10 @@ class _FakeConn:
         if "from player_wallets" in sql:
             return {"diamond_paid": 0, "diamond_free": 0, "coin": 0}
         if "player_credit" in sql:
-            return {"score": 100, "banned_until": None, "last_daily_grant": dt.date.today()}
+            # Production settles daily credit in UTC, including before 08:00
+            # on a UTC+8 test runner. A local date triggers an unrelated grant.
+            return {"score": 100, "banned_until": None,
+                    "last_daily_grant": dt.datetime.now(dt.UTC).date()}
         return None
 
     async def fetchval(self, sql, *args):
@@ -286,7 +289,23 @@ async def test_ranked_settlement_uses_pre_match_averages() -> None:
 
 
 @pytest.mark.anyio
-async def test_casual_does_not_touch_ranked_score() -> None:
+@pytest.mark.parametrize("local_hour", [0, 7, 8, 23])
+async def test_casual_does_not_touch_ranked_score(monkeypatch, local_hour) -> None:
+    # Cover both sides of the UTC date boundary independently of wall clock.
+    local_now = dt.datetime(2026, 9, 30, local_hour, tzinfo=dt.timezone(ranked.MYT_OFFSET))
+
+    class FrozenDatetime(dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return local_now.astimezone(tz) if tz else local_now.replace(tzinfo=None)
+
+    class LocalDate(dt.date):
+        @classmethod
+        def today(cls):
+            return local_now.date()
+
+    monkeypatch.setattr(dt, "datetime", FrozenDatetime)
+    monkeypatch.setattr(dt, "date", LocalDate)
     players_ = _six()
     conn = _FakeConn(set(players_), {p: 300 for p in players_})
     await ranked.settle(conn, _report("casual", "team_a", players_))

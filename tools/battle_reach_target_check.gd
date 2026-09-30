@@ -228,19 +228,11 @@ func _check_behavior() -> void:
 	a_poison["locked_target_uid"] = "e_front"
 	var a := _run(a_poison, a_wall, [a_front, a_side], 300)
 
-	# 前提体检：友军墙确实把它挡在射程外 —— 否则后面的断言可能空过。
-	h.expect(not bool(a["front_attacked"]) and float(a["min_front"]) > IN_RANGE_PX,
-		"blocked_target_really_unreachable",
-		"前提体检：毒灵从没打过 e_front、最近只到 %.1f px（射程 %.0f）—— 它确实够不到"
-			% [float(a["min_front"]), IN_RANGE_PX])
-	h.expect(bool(a["side_attacked"]), "stuck_unit_switches_to_reachable",
-		"★ 够不到原目标时改打可达目标：毒灵真的出手打过 e_side=%s"
-			% str(a["side_attacked"]))
-	h.expect(str(a["locked"]) == "e_side", "stuck_unit_ends_on_reachable",
-		"锁定最终落在可达的 e_side —— 实得 %s" % str(a["locked"]))
-	# ★ 避让真的被记下过：不是「因为别的原因顺手打了 e_side」。
-	h.expect(bool(a["avoid_seen"]), "avoidance_recorded",
-		"★ 过程中确实记过避让（`avoid_target_uids` 至少非空过一次）")
+	# 新的近战寻路允许绕墙接近原目标，验收实际攻击结果，不再要求原目标永远不可达。
+	h.expect(bool(a["front_attacked"]) or bool(a["side_attacked"]),
+		"blocked_melee_attacks", "毒灵必须绕墙或换目标并实际出手")
+	h.expect(str(a["locked"]) in ["e_front", "e_side"],
+		"blocked_melee_legal_lock", "最终锁定合法敌人")
 
 	# B：无阻挡对照 —— 不许把正常单位带坏（仍然锁定最近的、老实打它）
 	var b_poison := _mk("undead_poison", "player", 0, 230.0, 470.0, 660, 32.0, "p2", "poison_attack")
@@ -267,6 +259,8 @@ func _check_behavior() -> void:
 	#   焦点与目标的距离恒定 350px，停滞判定在第 7 tick 必然触发，完全确定。
 	#   位移层由下面的 F 场景单独考，这里不重复。
 	var c_poison := _mk("undead_poison", "player", 0, 230.0, 470.0, 660, 32.0, "p3", "poison_attack")
+	# 非近战继续覆盖原有停滞/避让重试机制；近战绕路在 melee_navigation_check 验证。
+	c_poison["range_px"] = Shared.MELEE_RANGE_PX + 1.0
 	var c_wall := _wall()
 	var c_front := _mk("bubble", "enemy", 0, 230.0, 120.0, 900000, 32.0, "e_front")
 	c_poison["move_speed_px"] = 0.0
@@ -298,6 +292,8 @@ func _check_liveness() -> void:
 	# D：只有一个够不到的目标（没有任何可达替代）+ 友军墙 → 旧口径换满 3 次就永久
 	#    退回旧行为（`_switch_attempts` 停在 3 再也不动）；现在必须一直接着试。
 	var d_poison := _mk("undead_poison", "player", 0, 230.0, 470.0, 660, 32.0, "p4", "poison_attack")
+	# 非近战继续覆盖原有停滞/避让重试机制；近战绕路在 melee_navigation_check 验证。
+	d_poison["range_px"] = Shared.MELEE_RANGE_PX + 1.0
 	var d_wall := _wall()
 	var d_front := _mk("bubble", "enemy", 0, 230.0, 120.0, 900000, 32.0, "e_front")
 	d_poison["locked_target_uid"] = "e_front"
@@ -316,6 +312,8 @@ func _check_avoid_accumulates() -> void:
 	# E：同一条路线上两个够不到的目标 → 避让必须**累积**成 2 个。
 	#    旧口径只有一个槽位：第二个会把第一个覆盖掉，两个目标之间来回踢。
 	var e_poison := _mk("undead_poison", "player", 0, 230.0, 470.0, 660, 32.0, "p5", "poison_attack")
+	# 非近战继续覆盖原有停滞/避让重试机制；近战绕路在 melee_navigation_check 验证。
+	e_poison["range_px"] = Shared.MELEE_RANGE_PX + 1.0
 	var e_wall := _wall()
 	var e_f1 := _mk("bubble", "enemy", 0, 230.0, 120.0, 900000, 32.0, "e_front")
 	var e_f2 := _mk("bubble", "enemy", 0, 290.0, 120.0, 900000, 32.0, "e_front2")

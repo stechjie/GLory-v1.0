@@ -68,6 +68,12 @@ const MAX_MERC_ENTRIES := 8                              # GameState.MERCENARY_S
 const MAX_TREASURE_ENTRIES := 8                          # TreasureService.MAX_OWNED 是 5，留余量
 const MAX_ID_LEN := 64                                   # 同 NetProtocol.MAX_ID_LENGTH
 const SEAT_COUNT := 6
+# 最后一战的逐棋子统计（历史里「详细战况」的统计面板，2026-09-29）。
+# 6 座位 × (16 棋子 + 8 佣兵) = 144，余下的给战斗中召唤出来的单位。
+const MAX_STATS_ENTRIES := 240
+const MAX_NAME_LEN := 24
+# 升级石三种（天 / 地 / 人），与 FinalSettlementData 的 stones_gained 同键。
+const STONE_TYPES := ["sky", "land", "ren"]
 
 # 合法的对局模式。第 1 步只有 custom；casual / ranked 是给后面几步留的。
 # 与 database/013_match_history.sql 的 match_mode_known 约束一致。
@@ -143,7 +149,13 @@ static func new_match_uid() -> String:
 #   gold_authoritative   bool
 #   carrot_authoritative bool
 #   seats       Array    六个座位，每个 {pid, was_ai, online_at_end, ai_rounds,
-#                                       gold, carrots, carrots_spent, board, mercenaries, treasures}
+#                                       gold, carrots, carrots_spent, board, mercenaries, treasures,
+#                                       stones, total_gold}
+#   allies      Array    [A 队法阵守护, B 队法阵守护] 的名字（结算面板队名后面那个）
+#   stats       Array    最后一战的逐棋子统计（FinalSettlementData.build 的 stats，已按伤害排好）
+#
+# stones / total_gold / allies / stats 是 2026-09-29 为历史里的「详细战况」加的：
+# 和打完那一刻的结算面板是同一份数据。旧战斗服务器签的战报没有这几项，账号服务器照收。
 #
 # 返回的字典就是要被签的那一份。**这里只做清洗与封顶，不做任何业务判断** ——
 # 谁赢谁输是 TeamOutcome 算的，这里照抄。
@@ -171,6 +183,8 @@ static func build(ctx: Dictionary) -> Dictionary:
 			"board": _clean_units(raw.get("board", []), MAX_BOARD_ENTRIES, false)
 					+ _clean_units(raw.get("mercenaries", []), MAX_MERC_ENTRIES, true),
 			"treasures": _clean_ids(raw.get("treasures", []), MAX_TREASURE_ENTRIES),
+			"stones": _clean_stones(raw.get("stones", {})),
+			"total_gold": maxi(0, int(raw.get("total_gold", 0))),
 		})
 	return {
 		"v": VERSION,
@@ -187,6 +201,8 @@ static func build(ctx: Dictionary) -> Dictionary:
 		"gold_auth": bool(ctx.get("gold_authoritative", false)),
 		"carrot_auth": bool(ctx.get("carrot_authoritative", false)),
 		"seats": seats,
+		"allies": _clean_allies(ctx.get("allies", [])),
+		"stats": _clean_stats(ctx.get("stats", [])),
 	}
 
 
@@ -195,13 +211,18 @@ static func build(ctx: Dictionary) -> Dictionary:
 # **刻意丢掉 uid 和 race_relations**：uid 是一局之内的运行时编号，出了这一局没有意义；
 # race_relations 从单位 id 就查得回来。两个都留会让战报大一倍以上，
 # 而历史界面一个都用不上。
+#
+# slot 缺省用**数组下标**：服务器存的棋盘是 16 格数组、格子里不带 slot（NetProtocol._validate_slots），
+# 以前缺省成 0，于是所有棋子都记在 0 号位（2026-09-29 修）。同 FinalSettlementData.units。
 static func _clean_units(raw: Variant, limit: int, mercenary: bool) -> Array:
 	var out := []
 	if typeof(raw) != TYPE_ARRAY:
 		return out
-	for cell in (raw as Array):
+	var cells: Array = raw
+	for index in cells.size():
 		if out.size() >= limit:
 			break
+		var cell: Variant = cells[index]
 		if cell == null or typeof(cell) != TYPE_DICTIONARY:
 			continue
 		var d: Dictionary = cell
@@ -209,10 +230,62 @@ static func _clean_units(raw: Variant, limit: int, mercenary: bool) -> Array:
 		if id.is_empty():
 			continue
 		out.append({
-			"slot": maxi(0, int(d.get("slot", 0))),
+			"slot": maxi(0, int(d.get("slot", index))),
 			"id": id,
 			"star": clampi(int(d.get("star", 1)), 1, GameConstantsRef.MAX_STAR),
 			"merc": mercenary or bool(d.get("is_mercenary", false)),
+		})
+	return out
+
+
+static func _clean_stones(raw: Variant) -> Dictionary:
+	var out := {}
+	if typeof(raw) != TYPE_DICTIONARY:
+		return out
+	for type in STONE_TYPES:
+		var count := clampi(int((raw as Dictionary).get(type, 0)), 0, 999)
+		if count > 0:
+			out[type] = count
+	return out
+
+
+static func _clean_allies(raw: Variant) -> Array:
+	var out := ["", ""]
+	if typeof(raw) != TYPE_ARRAY:
+		return out
+	for side in mini(2, (raw as Array).size()):
+		out[side] = str((raw as Array)[side]).left(MAX_NAME_LEN)
+	return out
+
+
+# 统计条目压成短键 —— 满配一局一百多条，长键（damage_dealt / owner_slot…）一条就多四十来字节。
+# 客户端 MatchHistoryPanel.settlement_view_data 负责换回结算面板认的键。
+#   own 座位（0-5）  slot 棋盘/佣兵位  id / name / star / merc  stack 技能层数
+#   dmg 造成伤害     taken 承受伤害    heal 治疗
+static func _clean_stats(raw: Variant) -> Array:
+	var out := []
+	if typeof(raw) != TYPE_ARRAY:
+		return out
+	for entry in (raw as Array):
+		if out.size() >= MAX_STATS_ENTRIES:
+			break
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		var d: Dictionary = entry
+		var owner := int(d.get("owner_slot", -1))
+		if owner < 0 or owner >= SEAT_COUNT:
+			continue
+		out.append({
+			"own": owner,
+			"slot": int(d.get("slot", -1)),
+			"id": str(d.get("id", "")).left(MAX_ID_LEN),
+			"name": str(d.get("name", "")).left(MAX_NAME_LEN),
+			"star": clampi(int(d.get("star", 1)), 0, GameConstantsRef.MAX_STAR),
+			"merc": bool(d.get("is_mercenary", false)),
+			"stack": clampi(int(d.get("skill_stacks", 0)), 0, 99),
+			"dmg": maxi(0, int(d.get("damage_dealt", 0))),
+			"taken": maxi(0, int(d.get("damage_taken", 0))),
+			"heal": maxi(0, int(d.get("healing_done", 0))),
 		})
 	return out
 

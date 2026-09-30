@@ -1,6 +1,6 @@
 -- Seven cumulative daily claims. The account service calculates the game day in
 -- Asia/Kuala_Lumpur; both constraints are a final guard against duplicate grants.
-create table seven_day_login_claims (
+create table if not exists seven_day_login_claims (
   player_id uuid not null references players(player_id) on delete cascade,
   day smallint not null check (day between 1 and 7),
   game_day date not null,

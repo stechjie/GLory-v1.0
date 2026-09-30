@@ -10,12 +10,14 @@
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
+import json
 import uuid
 
 import asyncpg
 import pytest
 
-from app import bans, db, mail, players, profile, shop
+from app import bans, battle_report, db, mail, players, profile, shop
 from pg_harness import auth_uid_of, new_player, requires_pg, run_with_db
 
 pytestmark = requires_pg
@@ -277,6 +279,63 @@ def test_missing_ban_tables_do_not_lock_everyone_out() -> None:
 
 
 # --- 017 注销：删资料、留账目 -------------------------------------------------------
+
+
+# --- 013 / 023 对局历史 -----------------------------------------------------------
+
+
+def _report(match_uid: str, pids: list, settlement: dict | None) -> dict:
+    """battle_report.verify() 验完之后的那种字典（这里不签名，直接给 record()）。"""
+    now = dt.datetime.now(dt.UTC)
+    return {
+        "match_uid": match_uid, "mode": "custom", "protocol": 36, "server_epoch": 1, "room_id": 123456,
+        "started_at": now - dt.timedelta(minutes=20), "ended_at": now, "rounds": 21,
+        "outcome": "team_b", "team_a_hp": 0, "team_b_hp": 17,
+        "gold_authoritative": False, "carrot_authoritative": True,
+        "seats": [
+            {"slot": slot, "team": 0 if slot < 3 else 1, "player_id": pid,
+             "was_ai": pid is None, "online_at_end": pid is not None, "ai_rounds": 0,
+             "gold": 10, "carrots": 1, "carrots_spent": 2,
+             "board": json.dumps([{"slot": 4, "id": "unit_dark_dragon", "star": 3, "merc": False}]),
+             "treasures": "[]"}
+            for slot, pid in enumerate(pids)
+        ],
+        "settlement": settlement,
+    }
+
+
+def test_match_history_has_settlement_and_current_names() -> None:
+    """023：详细战况原样存、原样取；名字按账号取现在的（改名后显示新名字，注销显示「已注销玩家」）。"""
+    async def body() -> None:
+        async with db.pool().acquire() as conn:
+            me = await new_player(conn)
+            mate = await new_player(conn)
+            await conn.execute("update players set player_name = '旧名字' where player_id = $1", me)
+        settlement = {
+            "allies": ["圣骑守护", ""],
+            "stats": [{"own": 3, "slot": 4, "id": "unit_dark_dragon", "name": "暗黑巨龙", "star": 3,
+                       "merc": False, "stack": 1, "dmg": 999, "taken": 5, "heal": 0}],
+            "seats": [{"stones": {"sky": 1}, "total_gold": 300 + slot} for slot in range(6)],
+        }
+        pids = [None, mate, None, me, None, None]
+        assert await battle_report.record(_report("c" * 32, pids, settlement)) is True
+        assert await battle_report.record(_report("d" * 32, pids, None)) is True   # 旧版本战报
+
+        async with db.pool().acquire() as conn:
+            await conn.execute("update players set player_name = '新名字' where player_id = $1", me)
+        assert await profile.delete_player(mate) is True
+
+        matches = {m["match_uid"]: m for m in await battle_report.list_for_player(me, 20)}
+        detailed = matches["c" * 32]
+        assert detailed["my_slot"] == 3
+        assert detailed["settlement"] == settlement
+        by_slot = {s["slot"]: s for s in detailed["seats"]}
+        assert by_slot[3]["player_name"] == "新名字" and by_slot[3]["friend_code"]
+        assert by_slot[1]["player_name"] == "已注销玩家"
+        assert by_slot[0]["player_name"] is None and by_slot[0]["was_ai"] is True
+        assert matches["d" * 32]["settlement"] is None
+
+    run_with_db(body)
 
 
 def test_erase_player_removes_identity_and_social_but_keeps_the_books() -> None:

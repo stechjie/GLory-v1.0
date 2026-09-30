@@ -379,6 +379,7 @@ SWIFT_CLASS_NAMED("GloryVoiceNative")
 @interface GloryVoiceNative : NSObject <RoomDelegate>
 SWIFT_CLASS_PROPERTY(@property (nonatomic, class, readonly, strong) GloryVoiceNative * _Nonnull shared;)
 + (GloryVoiceNative * _Nonnull)shared SWIFT_WARN_UNUSED_RESULT;
+- (void)setApplicationActive:(BOOL)active;
 - (BOOL)hasRecordPermission SWIFT_WARN_UNUSED_RESULT;
 - (void)requestRecordPermission;
 - (NSString * _Nonnull)joinRoom:(NSString * _Nonnull)url token:(NSString * _Nonnull)token listenOnly:(BOOL)listenOnly SWIFT_WARN_UNUSED_RESULT;

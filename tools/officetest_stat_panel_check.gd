@@ -43,12 +43,15 @@ const ScreenScript := preload("res://officetest/OfficeTestScreen.gd")
 const SimScript := preload("res://scripts/battle/BattleSimulator.gd")
 const EffectScript := preload("res://scripts/battle/StatusEffectService.gd")
 const DamageScript := preload("res://scripts/battle/DamageService.gd")
+# 离线自测的模拟/录制入口（live_stats 旁路就在它的录制循环里）。
+const TestSim := preload("res://officetest/OfficeTestSim.gd")
 
 const CHECK_NAME := "officetest_stat_panel"
 const SCREEN_PATH := "res://officetest/OfficeTestScreen.gd"
+const SIM_PATH := "res://officetest/OfficeTestSim.gd"
 
 # 体检下界：本文件所有用例的 expect 数之和（写少一个就等于漏跑一整段）。
-const MIN_EXPECTS := 40
+const MIN_EXPECTS := 55
 
 var _h: CheckHarness
 
@@ -63,6 +66,10 @@ func _ready() -> void:
 	_case_crit_matches_hit_judgement()
 	_case_panel_reads_live_fields()
 	_case_range_still_from_def()
+	# 第三问（用户复报「大祭司的技能在面板上并未生效」）：
+	# 离线自测「开始测试」走先录帧后回放，回放帧没有四项活字段 ⇒ 面板退回 def 基准。
+	await _case_replay_live_stats_end_to_end()
+	_case_replay_live_stats_wiring()
 	_case_all_cases_executed()
 	_h.finish(get_tree())
 
@@ -316,6 +323,138 @@ func _case_all_cases_executed() -> void:
 		% [_h.checked_count(), MIN_EXPECTS])
 
 
+# --- 10. 第三问端到端：回放侧的活字段旁路 -----------------------------------------
+#
+# 场景 = 用户截图（两只大祭司互为最近友军，技能应互相强化到 28/1.05 → 30/1.20）。
+# 判据分三层：
+#   ① 录制出的 replay 必须带 live_stats，且首条就是技能强化后的值（不是基准）；
+#   ② 用「回放 fighter」（只有帧字段）过 patched_with_live_stats 后，面板口径读到真值；
+#   ③ 空 live_stats（联机回放）必须原样返回 —— 不能影响联机。
+func _case_replay_live_stats_end_to_end() -> void:
+	var cfg := {"placements": [], "slot_treasures": {}}
+	TestSim.set_placement(cfg, 0, 0, "piece", "god_priestess", 1)
+	TestSim.set_placement(cfg, 0, 1, "piece", "god_priestess", 1)
+	TestSim.set_placement(cfg, 3, 0, "piece", "god_priest", 1)
+	TestSim.set_placement(cfg, 3, 1, "piece", "god_priest", 1)
+	var replay: Dictionary = await TestSim.compute_test_replay_async(cfg)
+	var frames: Array = replay.get("frames", [])
+	_h.expect(frames.size() > 0, "replay_no_frames",
+		"离线自测录不出帧（compute_test_replay_async 返回空）")
+	var ls_value = replay.get("live_stats", null)
+	_h.expect(ls_value != null and typeof(ls_value) == TYPE_DICTIONARY
+		and not (ls_value as Dictionary).is_empty(), "replay_missing_live_stats",
+		"录制结果没有 live_stats 旁路 —— 回放侧面板只能退回 def 基准值（本条要修的 bug 复发）")
+	if ls_value == null or typeof(ls_value) != TYPE_DICTIONARY:
+		return
+	var ls: Dictionary = ls_value
+	var priest_uid := ""
+	var base_atk := 0
+	var base_as := 0.0
+	for f in replay.get("roster", {}).values():
+		if f is Dictionary and str((f as Dictionary).get("id", "")) == "god_priestess":
+			priest_uid = str((f as Dictionary).get("uid", ""))
+			var d: Dictionary = (f as Dictionary).get("def", {})
+			base_atk = int(d.get("atk", 0))
+			base_as = float(d.get("attack_speed", 0.0))
+			break
+	_h.expect(not priest_uid.is_empty(), "roster_missing_priest",
+		"roster 里找不到大祭司（fixture 没建起来）")
+	var entries_value = ls.get(priest_uid, null)
+	_h.expect(entries_value != null and typeof(entries_value) == TYPE_ARRAY
+		and not (entries_value as Array).is_empty(), "live_stats_no_entries",
+		"live_stats 里没有大祭司的记录")
+	if entries_value == null or typeof(entries_value) != TYPE_ARRAY:
+		return
+	var entries: Array = entries_value
+	# 帧号严格升序（面板「≤ 当前帧取最近一条」依赖它）
+	var ordered := true
+	var last_f := -1
+	for e in entries:
+		var fi := int((e as Dictionary).get("f", -1))
+		if fi <= last_f:
+			ordered = false
+		last_f = fi
+	_h.expect(ordered, "live_stats_not_ascending",
+		"live_stats 的帧号不是升序 —— 「取最近一条」的查询会拿错值")
+	# 首条 = 技能强化后的值（大祭司 1★：atk ×1.08、aspd +0.15），**不是**基准。
+	# 这两个期望值是对战斗式子的独立复刻（第二实现），不是读实现抄来的。
+	var want_atk := maxi(1, int(round(float(base_atk) * (1.0 + 0.08))))
+	var want_as := clampf(base_as + 0.15, 0.25, 2.5)
+	var first: Dictionary = entries[0]
+	_h.expect(int(first.get("atk", -1)) == want_atk, "live_stats_first_atk_wrong",
+		"首条 atk=%s，期望技能强化后的 %d（基准 %d × 1.08）—— 技能效果没被录进去"
+		% [str(first.get("atk", "缺")), want_atk, base_atk])
+	_h.expect(is_equal_approx(float(first.get("as", -1.0)), want_as), "live_stats_first_as_wrong",
+		"首条攻速=%s，期望 %s（基准 %s + 0.15）" % [str(first.get("as", "缺")), str(want_as), str(base_as)])
+	# 回放 fighter：只有帧字段（复刻 _replay_by_uid 造出来的对象，没有四项活字段）。
+	var rf_value = replay.get("roster", {}).get(priest_uid, null)
+	_h.expect(rf_value != null and typeof(rf_value) == TYPE_DICTIONARY, "roster_entry_missing",
+		"roster 里没有该 uid")
+	if rf_value == null or typeof(rf_value) != TYPE_DICTIONARY:
+		return
+	var rf: Dictionary = (rf_value as Dictionary).duplicate()
+	rf["uid"] = priest_uid
+	rf["hp"] = 420
+	rf["alive"] = true
+	rf["statuses"] = {}
+	# ③-a 当前帧在首条之前 → 查不到 → 原样返回（def 基准）
+	var before: Dictionary = ScreenScript.patched_with_live_stats(rf, ls, -1)
+	_h.expect(not before.has("atk"), "patch_leaks_before_first",
+		"首条之前的帧也被 patch 出 atk —— 「≤ 当前帧」的边界写错了")
+	# ③-b 最后一帧 → 面板口径 = 技能强化后的真值
+	var last: Dictionary = entries[entries.size() - 1]
+	var at_frame := int(last.get("f", 0))
+	var patched: Dictionary = ScreenScript.patched_with_live_stats(rf, ls, at_frame)
+	_h.expect(int(patched.get("atk", -1)) == int(last.get("atk", -1)), "patch_atk_wrong",
+		"面板攻 %s ≠ 旁路记录 %s" % [str(patched.get("atk", "缺")), str(last.get("atk", "缺"))])
+	_h.expect(is_equal_approx(float(patched.get("attack_speed", -1.0)), float(last.get("as", -1.0))),
+		"patch_as_wrong", "面板攻速 %s ≠ 旁路记录 %s"
+		% [str(patched.get("attack_speed", "缺")), str(last.get("as", "缺"))])
+	# 面板口径函数（live_attack_speed）在补上活字段后必须给出与战斗一致的值。
+	var panel_as := ScreenScript.live_attack_speed(patched)
+	var battle_as := clampf(float(last.get("as", 0.0)), 0.25, 2.5)
+	_h.expect(is_equal_approx(panel_as, battle_as), "panel_as_not_battle_value",
+		"面板攻速 %s ≠ 战斗值 %s（statuses 已在帧里，补上活字段后应自动对齐）"
+		% [str(panel_as), str(battle_as)])
+	# ③-c patch 是写副本，不许污染回放 fighter 本体（它被跨帧复用）。
+	_h.expect(not rf.has("atk"), "patch_mutates_input",
+		"patched_with_live_stats 改了传入的 fighter —— 回放 fighter 是跨帧复用对象，污染会串帧")
+	# ③-d 空 live_stats（联机回放）→ 原样返回，行为与旧版一致。
+	var bare: Dictionary = ScreenScript.patched_with_live_stats(rf, {}, at_frame)
+	var bare_atk := int(bare.get("atk", (bare.get("def", {}) as Dictionary).get("atk", 0)))
+	_h.expect(bare_atk == base_atk, "patch_breaks_online_path",
+		"空 live_stats 时面板攻 %d ≠ def 基准 %d —— 联机回放路径被改坏" % [bare_atk, base_atk])
+	_h.expect(is_equal_approx(ScreenScript.live_attack_speed(bare), base_as),
+		"patch_breaks_online_path_as",
+		"空 live_stats 时面板攻速 %s ≠ def 基准 %s" % [str(ScreenScript.live_attack_speed(bare)), str(base_as)])
+
+
+# --- 11. 结构：旁路的接线不许被拆 -------------------------------------------------
+
+func _case_replay_live_stats_wiring() -> void:
+	var sim := _code(SIM_PATH)
+	_h.expect(sim.contains("_capture_live_stats(state, frames.size() - 1, live_stats, last_live)"),
+		"sim_capture_call_removed",
+		"录制循环里不调 _capture_live_stats 了 —— live_stats 旁路断了")
+	_h.expect(sim.contains('payload["live_stats"] = live_stats'),
+		"sim_payload_missing_live_stats",
+		"compute_test_replay_async 的返回值没带 live_stats")
+	var body := _refresh_stat_panel_body()
+	_h.expect(body.contains("_patched_with_live_stats("), "panel_not_patched",
+		"_refresh_stat_panel 没走 _patched_with_live_stats —— 回放侧面板又退回 def 基准")
+	var screen := _code(SCREEN_PATH)
+	_h.expect(screen.contains('replay.get("live_stats", {})'), "screen_not_loading_live_stats",
+		"OfficeTestScreen 没有从 replay 里取 live_stats")
+	# patch 实现必须是写副本（回放 fighter 跨帧复用），且不许从 def 反推这四项。
+	var fn := _static_fn_body(screen, "static func patched_with_live_stats(")
+	_h.expect(not fn.is_empty(), "patch_fn_not_found", "切不出 patched_with_live_stats 函数体")
+	_h.expect(fn.contains("duplicate()"), "patch_no_copy",
+		"patched_with_live_stats 没有写副本 —— 会污染跨帧复用的回放 fighter")
+	for bad in ['def.get("attack_speed"', 'def.get("atk"', 'def.get("def"', 'def.get("crit"']:
+		_h.expect(not fn.contains(bad), "patch_reads_def_base",
+			"patched_with_live_stats 里出现 %s —— 活字段必须来自 live_stats 旁路，不是 def" % bad)
+
+
 # --- 小工具 ---------------------------------------------------------------------
 
 func _code(path: String) -> String:
@@ -324,3 +463,15 @@ func _code(path: String) -> String:
 		if not str(line).strip_edges().begins_with("#"):
 			kept.append(str(line))
 	return "\n".join(kept)
+
+
+# 切出一个 **static** 函数的函数体（★ 必须同时按 \nfunc / \nstatic func / 注释分隔线
+# 三个锚点取最短 —— 只按 \nfunc 切会把紧随其后的 static func 一起吃进来）。
+func _static_fn_body(src: String, anchor: String) -> String:
+	var head := src.split(anchor)
+	if head.size() < 2:
+		return ""
+	var tail: String = head[1]
+	for sep in ["\nfunc ", "\nstatic func ", "\n# ---"]:
+		tail = tail.split(sep)[0]
+	return tail

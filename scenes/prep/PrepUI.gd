@@ -1236,7 +1236,7 @@ const CHAT_BTN_SIZE := Vector2(72, 72)
 #
 # 改这几个数之前先跑一次那个截图工具，**用矮窗口看**，别用参考画布的高度。
 const CHAT_RIGHT := 148.0
-const COMMS_DOCK_WIDTH := 288.0
+const COMMS_DOCK_WIDTH := 308.0
 const COMMS_DOCK_HEIGHT := 88.0
 const COMMS_DOCK_BOTTOM := -32.0
 const CHAT_BTN_BOTTOM := -40.0
@@ -1320,28 +1320,32 @@ func _build_chat_record_window() -> void:
 	window.offset_top = window.offset_bottom - CHAT_LOG_HEIGHT
 	window.z_index = 20
 	window.mouse_filter = Control.MOUSE_FILTER_STOP
-	var style := GloryTokens.flat_box(Color(0.055, 0.085, 0.065, 0.96), GloryTokens.INK_EDGE, 2, 10)
+	var style := StyleBoxEmpty.new()
 	style.set_content_margin_all(9)
 	window.add_theme_stylebox_override("panel", style)
 	add_child(window)
 	_chat_record_page = window
-	_chat_record_scroll = ScrollContainer.new()
+	_chat_record_scroll = preload("res://ui/components/FloatingChatScroll.gd").new()
 	_chat_record_scroll.name = "PrepChatHistoryScroll"
 	_chat_record_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_chat_record_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	_chat_record_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
 	window.add_child(_chat_record_scroll)
 	_chat_record_list = VBoxContainer.new()
 	_chat_record_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_chat_record_list.add_theme_constant_override("separation", 4)
-	_chat_record_scroll.add_child(_chat_record_list)
+	var padding := MarginContainer.new()
+	padding.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	padding.add_theme_constant_override("margin_right", 16)
+	_chat_record_scroll.add_child(padding)
+	padding.add_child(_chat_record_list)
 
 # 语音、范围、成员和聊天按钮都满足触控尺寸；三档状态由 VoiceControls 维护。
 const VoiceControls := preload("res://ui/components/VoiceControls.gd")
-const VOICE_BTN_SIZE := Vector2(92, 56)
-const VOICE_AUDIENCE_SIZE := Vector2(56, 56)
-const VOICE_MEMBERS_SIZE := Vector2(56, 56)
+const VOICE_BTN_SIZE := Vector2(64, 56)
+const VOICE_AUDIENCE_SIZE := VOICE_BTN_SIZE
+const VOICE_MEMBERS_SIZE := VOICE_BTN_SIZE
 const VOICE_BTN_GAP := 8.0
-const VOICE_INNER_GAP := 4.0
+const VOICE_INNER_GAP := 8.0
 const VOICE_BTN_BOTTOM := -48.0
 const VOICE_BTN_FONT := 13
 var _voice_controls: VoiceControls = null
@@ -1558,6 +1562,8 @@ func _chat_record_label(text: String, color: Color, align: HorizontalAlignment) 
 	lbl.add_theme_font_size_override("font_size",
 		CHAT_RECORD_FONT_SIZE if align == HORIZONTAL_ALIGNMENT_LEFT else CHAT_RECORD_FONT_SIZE - 3)
 	lbl.add_theme_color_override("font_color", color)
+	lbl.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.9))
+	lbl.add_theme_constant_override("outline_size", 3)
 	return lbl
 
 
@@ -1566,7 +1572,7 @@ func _chat_record_near_bottom() -> bool:
 	if _chat_record_scroll == null:
 		return true
 	var bar := _chat_record_scroll.get_v_scroll_bar()
-	return _chat_record_scroll.scroll_vertical >= int(bar.max_value - bar.page) - 48
+	return _chat_record_scroll.scroll_vertical >= int(bar.max_value - bar.page) - 2
 
 
 func _scroll_chat_record_to_bottom() -> void:

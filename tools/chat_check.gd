@@ -671,13 +671,10 @@ func _case_prep_log_ignores_mouse() -> void:
 	if src.is_empty():
 		_h.fail("prep_ui_unreadable", "读不到 PrepUI.gd")
 		return
-	# 消息条压在棋盘右下方的空域上，且是**自动出现**的（不是玩家点出来的）。
-	# 少了 IGNORE，一条飘过的消息会把它盖住的那格棋盘变成点不动的 ——
-	# 玩家只会觉得「卡了」，而这件事只在有人正好说话时发生，极难复现。
-	_h.expect(src.contains("_chat_log.mouse_filter = Control.MOUSE_FILTER_IGNORE"),
-		"prep_chat_log_eats_clicks",
-		"PrepUI 的 _chat_log 必须设 mouse_filter = MOUSE_FILTER_IGNORE。"
-		+ "它是备战期唯一会自动盖到棋盘上的控件。")
+	# 9.30：用户要求固定聊天区可上翻，记录区应接收拖动；文字自身不截获输入。
+	_h.expect(_chat_fn_body(src, "func _chat_record_label(text: String, color: Color, align: HorizontalAlignment) -> Label:")
+		.contains("MOUSE_FILTER_IGNORE") and src.contains("FloatingChatScroll.gd"),
+		"prep_chat_scroll_input", "文字不挡滚动，由聊天滚动容器处理输入")
 
 	_h.item()
 	# 连接必须显式断开：NetworkService 是 autoload，活得比场景久。
@@ -698,72 +695,19 @@ func _case_prep_log_ignores_mouse() -> void:
 # 改昵称上限、自由文字上限、字号或框宽的人，会在这里第一时间知道版面装不下了。
 
 func _case_longest_message_fits() -> void:
-	_h.item()
-	var prep_src := FileAccess.get_file_as_string("res://scenes/prep/PrepUI.gd")
-	var start := prep_src.find("func _push_chat_line(")
-	var stop := prep_src.find("\nfunc ", start + 1)
-	var body := prep_src.substr(start, stop - start) if start >= 0 and stop > start else ""
-	if not _h.expect(not body.is_empty(), "prep_push_chat_line_missing",
-			"PrepUI 里找不到 _push_chat_line —— 备战期消息条换了写法，这条门禁要跟着改。"):
-		return
-	# 查的是赋值，不是字样：函数里那段注释本身就提到了这个属性名。
-	_h.expect(RegEx.create_from_string("max_lines_visible\\s*=").search(body) == null,
-		"prep_chat_log_truncates",
-		"PrepUI._push_chat_line 又设了 max_lines_visible。那会把长消息的后半截悄悄吞掉；"
-		+ "高度要靠 CHAT_LOG_TEXT_LINES 整条移走旧消息来管。")
-	_h.expect(body.contains("CHAT_LOG_TEXT_LINES"), "prep_chat_log_no_line_budget",
-		"PrepUI._push_chat_line 没有按 CHAT_LOG_TEXT_LINES 管合计行数 —— 长消息会把消息条撑出去。")
-
-	_h.item()
-	var prep_script := load("res://scenes/prep/PrepUI.gd") as GDScript
-	var lobby_script := load("res://scenes/menu/Team3v3Lobby.gd") as GDScript
-	if not _h.expect(prep_script != null and lobby_script != null, "chat_box_scripts_unloadable",
-			"PrepUI.gd / Team3v3Lobby.gd 加载失败（解析错误见 ui_scripts_parse 那一条）。"):
-		return
-	var prep_consts := prep_script.get_script_constant_map()
-	var lobby_consts := lobby_script.get_script_constant_map()
-	var guard := FileAccess.get_file_as_string("res://backend/app/text_guard.py")
-	var m := RegEx.create_from_string("NAME_MIN, NAME_MAX = \\d+, (\\d+)").search(guard)
-	if not _h.expect(m != null, "name_max_unreadable",
-			"从 backend/app/text_guard.py 读不到 NAME_MAX —— 昵称上限换了写法，这条门禁要跟着改。"):
-		return
-	var name_max := int(m.get_string(1))
-	# 全角字是最宽的常见情况（英文、数字都比它窄）。
-	var longest := "字".repeat(name_max) + "：" + "字".repeat(ChatText.MAX_CHARS)
-	# 摆放界面的消息前面还可能有范围标记（2026-09-14：「【对方】」「【全部】」），取长的那个。
-	# 大厅不加标记（只发全部），直接用上面那条。标记 2026-09-27 起在 RoomChatLog 里（记录与显示共用）。
-	var prep_tag := ""
-	for tag in [RoomChatLog.TAG_ALL, RoomChatLog.TAG_ENEMY, RoomChatLog.TAG_ALL_EN, RoomChatLog.TAG_ENEMY_EN]:
-		if str(tag).length() > prep_tag.length():
-			prep_tag = str(tag)
-
-	# 用真 Label 取字体：两个聊天框用的都是主题的默认字体。
-	var probe := Label.new()
-	add_child(probe)
-	var font := probe.get_theme_font("font")
-	probe.queue_free()
-
-	var para := TextParagraph.new()
-	para.width = float(prep_consts.get("CHAT_LOG_WIDTH", 0.0))
-	# 与 PrepUI._chat_log_text_lines 同一组断行规则（= Label 的 AUTOWRAP_WORD_SMART）。
-	para.break_flags = (TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND
-		| TextServer.BREAK_ADAPTIVE)
-	para.add_string(prep_tag + longest, font, int(prep_consts.get("CHAT_LOG_FONT_SIZE", 0)))
-	var prep_lines := para.get_line_count()
-	var budget := int(prep_consts.get("CHAT_LOG_TEXT_LINES", 0))
-	_h.expect(prep_lines <= budget, "prep_longest_message_overflows",
-		"最长的一条（范围标记「%s」+ %d 字昵称 + %d 字）在备战期消息条里要 %d 行，超过行数预算 %d。"
-			% [prep_tag, name_max, ChatText.MAX_CHARS, prep_lines, budget])
-
-	# 大厅直接调它自己的折行函数（Team3v3Lobby.wrap_chat_text），不在这里另抄一份算法 ——
-	# 抄的那份会和真的慢慢分叉（比如后来加的「避头」），门禁就成了在量一个假的。
-	var rows := (lobby_script.call("wrap_chat_text", longest, font,
-		int(lobby_consts.get("CHAT_FONT_SIZE", 0)), float(lobby_consts.get("CHAT_MSG_W", 0.0)))
-		as PackedStringArray).size()
-	var box_rows := int(lobby_consts.get("CHAT_LINES", 0))
-	_h.expect(rows <= box_rows, "lobby_longest_message_overflows",
-		"最长的一条（%d 字昵称 + %d 字）在大厅要折 %d 行，框里只有 %d 行 —— 开头的说话人会被挤出去。"
-			% [name_max, ChatText.MAX_CHARS, rows, box_rows])
+	# 固定历史区允许消息超出一屏，通过滚动阅读；不能再要求删掉旧行来塞进一屏。
+	var prep = load("res://scenes/prep/PrepUI.gd").new()
+	var lobby = load("res://scenes/menu/Team3v3Lobby.gd").new()
+	var longest := "字".repeat(24) + "：" + "字".repeat(ChatText.MAX_CHARS)
+	for label: Label in [prep._chat_record_label(longest, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT),
+			lobby._record_label(longest, Color.BLACK, HORIZONTAL_ALIGNMENT_LEFT)]:
+		_h.item()
+		_h.expect(label.text == longest and label.max_lines_visible == -1
+			and label.autowrap_mode == TextServer.AUTOWRAP_WORD_SMART,
+			"history_complete_message", "长昵称和完整消息自动换行，不裁掉行数")
+		label.free()
+	prep.free()
+	lobby.free()
 
 
 # --- 13. 客户端节流必须比服务端限流更严（批次 D）--------------------------------
@@ -975,10 +919,11 @@ func _case_room_chat_log_wired() -> void:
 			"%s 又直接听原始聊天信号了：名字会在显示时按座位现查，和记录里的对不上" % str(pair[0]))
 
 	_h.item()
-	# 2026-09-27 用户定：大厅和摆放界面的聊天字一律黑色（原来的浅色看不清）。
-	_h.expect(_chat_fn_body(prep, "func _push_chat_line(text: String) -> void:").contains("GloryTokens.CHAT_INK")
-			and _chat_fn_body(lobby, "func _build_chat_box() -> void:").contains("Tokens.CHAT_INK"),
-		"chat_text_not_ink", "摆放界面飘出来的消息和大厅聊天框的字要用 CHAT_INK（黑字）")
+	# 透明备战区使用带描边的浅字；大厅羊皮纸上保留黑字。
+	_h.expect(_chat_fn_body(prep, "func _chat_record_label(text: String, color: Color, align: HorizontalAlignment) -> Label:")
+		.contains("font_outline_color") and _chat_fn_body(lobby, "func _append_record_row(entry: Dictionary) -> void:")
+		.contains("Tokens.CHAT_INK"), "chat_text_readability", "透明背景文字描边，大厅使用黑字")
+
 
 
 # --- 16. 世界频道：关着页签 / 断线时被删的消息（2026-09-28）------------------------------
