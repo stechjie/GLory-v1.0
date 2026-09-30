@@ -311,12 +311,19 @@ func _diagnostic_text() -> String:
 	var st := VoiceService.status()
 	var caps := VoiceService.capabilities()
 	var output := str(st.get("output", "")).strip_edges()
-	return _text("连接：%s · 声音模式：%s · 输出：%s · 回声消除：%s",
+	var detail := _text("连接：%s · 声音模式：%s · 输出：%s · 回声消除：%s",
 		"Connection: %s · Audio mode: %s · Output: %s · Echo cancel: %s") % [
 		str(connection.get(state, state)),
 		str(audio_mode.get(str(st.get("audio_mode", "")), "-")),
 		str(outputs.get(output, output)) if not output.is_empty() else "-",
 		str(aec.get(str(caps.get("aec", "")), _text("无", "none")))]
+	detail += _text("\n麦克风实际开启：%s · 检测到自己说话：%s · 语音房其他成员：%d",
+		"\nMic active: %s · Self speaking: %s · Remote members: %d") % [
+		str(st.get("mic_on", false)), str(st.get("self_speaking", false)), st.get("participants", []).size()]
+	if st.has("published_audio"):
+		detail += _text("\n已发布音轨：%d · 已订阅音轨：%d", "\nPublished audio: %d · Subscribed audio: %d") % [
+			int(st.published_audio), int(st.get("subscribed_audio", 0))]
+	return detail
 
 
 func _toggle_details() -> void:

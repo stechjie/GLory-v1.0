@@ -33,6 +33,8 @@ var _timer: Timer = null
 var _panel_context := ""
 # 这一份发起了系统权限请求、还在等结果。同时开着几份时（备战期 + 战斗界面），只由发起的那份提示。
 var _awaiting_mic := false
+var _speaker_hold_started := -1
+var _speaker_hold_opened := false
 
 
 func build(owner: Node, voice_size: Vector2, members_size: Vector2, font_size: int,
@@ -43,6 +45,10 @@ func build(owner: Node, voice_size: Vector2, members_size: Vector2, font_size: i
 	voice_button.name = "VoiceToggle"
 	audience_button = PrepWidgets.make_menu_button("", members_size, font_size, _on_speaker_pressed)
 	audience_button.name = "VoiceAudience"
+	audience_button.button_down.connect(func():
+		_speaker_hold_started = Time.get_ticks_msec()
+		_speaker_hold_opened = false)
+	audience_button.button_up.connect(func(): _speaker_hold_started = -1)
 	members_button = PrepWidgets.make_menu_button(_text("队友", "Team"), members_size, font_size, _on_audience_pressed)
 	members_button.name = "VoiceMembers"
 	# 三个按钮统一使用紧凑内边距，避免双行文字把实际高度撑到布局尺寸之外。
@@ -88,12 +94,16 @@ func teardown() -> void:
 func refresh() -> void:
 	if voice_button == null or not is_instance_valid(voice_button):
 		return
+	if _speaker_hold_started >= 0 and not _speaker_hold_opened and Time.get_ticks_msec() - _speaker_hold_started >= 700:
+		_speaker_hold_opened = true
+		_on_members_pressed()
 	voice_button.text = ""
 	audience_button.text = ""
 	_set_icon(voice_button, "mic_on" if VoiceService.mode == VoiceService.Mode.TALK else "mic_off")
 	_set_icon(audience_button, "speaker_on" if VoiceService.speaker_enabled else "speaker_off")
 	voice_button.tooltip_text = _text("关闭麦克风" if VoiceService.mode == VoiceService.Mode.TALK else "打开麦克风", "Toggle microphone")
 	audience_button.tooltip_text = _text("关闭扬声器" if VoiceService.speaker_enabled else "打开扬声器", "Toggle speaker")
+	audience_button.tooltip_text += _text("\n长按查看语音状态", "\nHold for voice status")
 	if not VoiceService.last_error().is_empty():
 		voice_button.tooltip_text += "\n" + VoiceService.last_error()
 		audience_button.tooltip_text += "\n" + VoiceService.last_error()
@@ -120,6 +130,9 @@ func _set_icon(button: Button, key: String) -> void:
 		art.set_meta("voice_icon", key)
 
 func _on_speaker_pressed() -> void:
+	if _speaker_hold_opened:
+		_speaker_hold_opened = false
+		return
 	_apply_result(VoiceService.set_speaker_enabled(not VoiceService.speaker_enabled))
 
 

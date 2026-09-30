@@ -153,6 +153,9 @@ class FakeAdmin extends RefCounted:
 
 func _ready() -> void:
 	_h = CheckHarness.new(CHECK_NAME)
+	_case_android_jni_discovery()
+	_case_audience_switch_delivery()
+	_case_audience_switch_keeps_mic()
 	_case_aar_matches_source()
 	_case_aar_local_headers()
 	_case_aar_manifest()
@@ -179,6 +182,74 @@ func _ready() -> void:
 	_case_mic_rationale()
 	_case_ui_wired()
 	_h.finish(get_tree())
+
+
+# JNI exposes Java methods separately from Object.has_method(). This deliberately
+# has no GDScript setAudience method, reproducing Android's discovery behavior.
+class JniDiscoveryBridge extends RefCounted:
+	var methods := ["setAudience", "setApplicationActive", "requestRecordPermission"]
+	func has_java_method(method: StringName) -> bool:
+		return str(method) in methods
+
+func _case_audience_switch_delivery() -> void:
+	var service = load("res://scripts/autoload/VoiceService.gd").new()
+	var bridge := FakeBridge.new()
+	service._bridge = bridge
+	service._joined = true
+	service.mode = VoiceService.Mode.TALK
+	service.set_audience(VoiceService.Audience.ALL)
+	_h.expect(bridge.audience_all and not service._applied_audience.is_empty(),
+		"all_audience_delivered", "所有人范围必须实际送到桥接，不能因空数组类型错误中断")
+	service.set_audience(VoiceService.Audience.TEAM)
+	_h.expect(not bridge.audience_all and service.mode == VoiceService.Mode.TALK,
+		"team_switch_keeps_mic", "切到队友保持开麦意图并更新桥接")
+	service.set_audience(VoiceService.Audience.ALL)
+	_h.expect(bridge.audience_all and service.mode == VoiceService.Mode.TALK,
+		"all_switch_again", "反复切换仍须送达桥接")
+	service.free()
+
+# 切范围不能顺手关麦。applyAudience 以前是「先 setMicrophoneEnabled(false) 改权限、再开回来」，
+# 于是每次点「队友 / 所有人」、以及队友身份列表一变（资料到齐、有人入座）都会断一下 ——
+# 手机上看到的就是「麦自己关了」。改权限只是把新权限发给服务器，不需要撤下麦克风。
+# 「先有权限、后发布麦克风」这个顺序另有保证：applyMic 的前置条件（下面第二条断言钉住它）。
+func _case_audience_switch_keeps_mic() -> void:
+	var src := FileAccess.get_file_as_string(KOTLIN_BRIDGE_PATH)
+	_h.item()
+	if not _h.expect(not src.is_empty(), "voice_audience_switch_source_missing", "读不到 %s" % KOTLIN_BRIDGE_PATH):
+		return
+	var body := _kotlin_function_body(src, "private suspend fun applyAudience(")
+	var mic_body := _kotlin_function_body(src, "private suspend fun applyMic(")
+	# 体检：先证明真的抽到了这两个函数体。抽空 / 抽错会让下面两条断言变成摆设（静默通过）。
+	_h.expect(body.contains("setTrackSubscriptionPermissions")
+			and body.contains("audienceConfigured = true")
+			and not body.contains("private suspend fun applyMic")
+			and mic_body.contains("setMicrophoneEnabled(enabled)")
+			and not mic_body.contains("refreshSnapshot"),
+		"voice_audience_body_scope",
+		"applyAudience / applyMic 的函数体没取对（取到空串或取成了别的函数），后面的断言就不算数")
+	_h.item()
+	_h.expect(not body.contains("setMicrophoneEnabled(false)") and not body.contains("setMicrophoneEnabled(true)"),
+		"voice_audience_no_mic_cycle",
+		"applyAudience 不得为了让新权限生效而先关麦再开麦：每次切「队友 / 所有人」都会断一下（现象是「麦自己关了」）")
+	_h.item()
+	_h.expect(mic_body.contains("(enabled && !audienceConfigured)"),
+		"voice_mic_gated_until_audience",
+		"applyMic 必须保留「权限没设好之前不许发布麦克风」的前置条件，否则第一次开麦会有一个「谁都能听」的窗口")
+
+func _case_android_jni_discovery() -> void:
+	var saved_bridge: Object = VoiceService._bridge
+	var jni := JniDiscoveryBridge.new()
+	VoiceService._bridge = jni
+	_h.expect(not jni.has_method("setAudience") and VoiceService.is_supported(),
+		"jni_supported", "Java 方法存在时不能误报语音组件过旧")
+	_h.expect(VoiceService._bridge_has_method("setApplicationActive")
+		and VoiceService._bridge_has_method("requestRecordPermission"),
+		"jni_optional_methods", "JNI 生命周期与权限接口也须使用 Java 方法检测")
+	jni.methods.clear()
+	_h.expect(not VoiceService.is_supported(), "jni_missing_api", "真正缺少接口仍须拒绝")
+	VoiceService._bridge = null
+	_h.expect(not VoiceService.is_supported(), "jni_missing_plugin", "缺少插件不可视为可用")
+	VoiceService._bridge = saved_bridge
 
 
 # --- 1. 插件包与源码对得上 --------------------------------------------------------
@@ -1402,3 +1473,59 @@ func _function_body(src: String, header: String) -> String:
 		if at >= 0 and at < stop:
 			stop = at
 	return src.substr(start, stop - start)
+
+
+# Kotlin 源码的「活代码」视图：`//` 注释与 `"..."` 字面量的内容一律抹成空格（长度不变，下标仍对齐）。
+# 结构断言只在活代码上做：注释里提到 setMicrophoneEnabled(false) 不该让判据变红，也不该被注释满足。
+func _kotlin_live_code(src: String) -> String:
+	var out := ""
+	var i := 0
+	var n := src.length()
+	while i < n:
+		var ch := src[i]
+		if ch == "/" and i + 1 < n and src[i + 1] == "/":
+			var eol := src.find("\n", i)
+			if eol < 0:
+				out += " ".repeat(n - i)
+				break
+			out += " ".repeat(eol - i)
+			i = eol
+			continue
+		if ch == "\"":
+			var j := i + 1
+			while j < n and src[j] != "\"":
+				if src[j] == "\\":
+					j += 2
+				else:
+					j += 1
+			out += " ".repeat(mini(j + 1, n) - i)
+			i = j + 1
+			continue
+		out += ch
+		i += 1
+	return out
+
+
+# Kotlin 版函数体：函数头 -> 与它配对的那个右花括号。Kotlin 的函数是缩进的、文件里也没有「下一行 func」，
+# 所以按花括号配对取；注释与字符串先抹掉，否则字面量里的括号会把配对带偏。
+func _kotlin_function_body(src: String, header: String) -> String:
+	var live := _kotlin_live_code(src)
+	var start := live.find(header)
+	if start < 0:
+		return ""
+	var open := live.find("{", start + header.length())
+	if open < 0:
+		return ""
+	var depth := 0
+	var i := open
+	var n := live.length()
+	while i < n:
+		var ch := live[i]
+		if ch == "{":
+			depth += 1
+		elif ch == "}":
+			depth -= 1
+			if depth == 0:
+				return live.substr(start, i - start + 1)
+		i += 1
+	return live.substr(start)

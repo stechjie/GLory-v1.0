@@ -71,7 +71,7 @@ class GloryVoicePlugin(godot: Godot) : GodotPlugin(godot) {
     private var audienceConfigured = false
     private var audienceRequested = false
     private var audienceRevision = 0
-    private val audienceMutex = Mutex()
+    private val audioMutex = Mutex()
     // 语音身份 -> 音量（0 = 屏蔽）。新订阅到的声音按它设；跨房间保留（屏蔽跟着人走）。
     private val volumes = HashMap<String, Double>()
 
@@ -86,6 +86,8 @@ class GloryVoicePlugin(godot: Godot) : GodotPlugin(godot) {
     private var participants: List<String> = emptyList()
     private var audioMode = ""
     private var output = ""
+    private var publishedAudio = 0
+    private var subscribedAudio = 0
 
     override fun getPluginName(): String = "GloryVoice"
 
@@ -151,10 +153,12 @@ class GloryVoicePlugin(godot: Godot) : GodotPlugin(godot) {
         val gen = generation.get()
         synchronized(lock) { micError = "" }
         main.launch {
+            if (generation.get() != gen) return@launch
             wantMic = enabled
-            if (enabled && !audienceConfigured) return@launch
-            val r = room ?: return@launch
-            if (r.state == Room.State.CONNECTED) applyMic(gen, r, enabled)
+            audioMutex.withLock {
+                val r = room ?: return@withLock
+                if (r.state == Room.State.CONNECTED) applyMic(gen, r, wantMic)
+            }
         }
         return ""
     }
@@ -170,6 +174,8 @@ class GloryVoicePlugin(godot: Godot) : GodotPlugin(godot) {
         }
         val gen = generation.get()
         main.launch {
+            if (generation.get() != gen) return@launch
+            snapshot(gen) { micError = "" }
             audienceAll = all
             audienceIds = ids
             audienceRequested = true
@@ -183,25 +189,31 @@ class GloryVoicePlugin(godot: Godot) : GodotPlugin(godot) {
     }
 
     private suspend fun applyAudience(gen: Int, r: Room) {
-        audienceMutex.withLock {
+        audioMutex.withLock {
             if (generation.get() != gen || !audienceRequested) return@withLock
             val revision = audienceRevision
             try {
-                if (micOn) {
-                    r.localParticipant.setMicrophoneEnabled(false)
-                    synchronized(lock) { micOn = false }
-                }
-                if (revision != audienceRevision || generation.get() != gen) return@withLock
+                // 不要为了改权限先把麦克风撤下来再开回去。setTrackSubscriptionPermissions 只是把新权限
+                // 发给服务器（UpdateSubscriptionPermission），服务器自己会重算谁能订阅；发完权限，麦克风
+                // 该开就还是开着。原来这里先 setMicrophoneEnabled(false) 再开回来 —— 每隔一次范围切换、
+                // 以及队友身份列表一变（资料到齐、有人入座）都会断一下，听感上就是「麦自己关了」。
+                // 「先有权限、后有麦克风」的顺序由 applyMic 的 audienceConfigured 前置条件保证：
+                // 第一次发布麦克风之前权限一定已经设好，不会出现默认「谁都能听」的窗口。
                 r.localParticipant.setTrackSubscriptionPermissions(
                     audienceAll,
-                    audienceIds.map { ParticipantTrackPermission(participantIdentity = it, allTracksAllowed = true) }
+                    audienceIds.map { // SDK 2.28.2 writes BOTH nullable fields to protobuf. A null SID
+                    // throws even when identity is valid. Empty SID means identity-only.
+                    ParticipantTrackPermission(participantIdentity = it, participantSid = "", allTracksAllowed = true) }
                 )
                 if (revision != audienceRevision || generation.get() != gen) return@withLock
                 audienceConfigured = true
-                if (wantMic) applyMic(gen, r, true)
+                snapshot(gen) { micError = "" }
+                applyMic(gen, r, wantMic)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Throwable) {
                 Log.w(TAG, "audience permission failed", e)
-                synchronized(lock) { micError = "audience_failed" }
+                snapshot(gen) { micError = "audience_failed" }
             }
         }
     }
@@ -232,6 +244,8 @@ class GloryVoicePlugin(godot: Godot) : GodotPlugin(godot) {
             o.put("participants", JSONArray(participants))
             o.put("audio_mode", audioMode)
             o.put("output", output)
+            o.put("published_audio", publishedAudio)
+            o.put("subscribed_audio", subscribedAudio)
         }
         return o.toString()
     }
@@ -334,10 +348,10 @@ class GloryVoicePlugin(godot: Godot) : GodotPlugin(godot) {
         else -> "disconnected"
     }
 
-    private fun applyMic(gen: Int, r: Room, enabled: Boolean) {
-        if (enabled && !audienceConfigured) return
-        main.launch {
-            if (generation.get() != gen || (enabled && !audienceConfigured)) return@launch
+    private suspend fun applyMic(gen: Int, r: Room, enabled: Boolean) {
+        if (generation.get() != gen || room !== r || (enabled && !audienceConfigured)) return
+        // Called under audioMutex: a scope update cannot race a pending mic publish.
+        run {
             try {
                 val ok = r.localParticipant.setMicrophoneEnabled(enabled)
                 snapshot(gen) {
@@ -372,6 +386,10 @@ class GloryVoicePlugin(godot: Godot) : GodotPlugin(godot) {
             speaking = talking
             participants = others
             output = device
+            publishedAudio = me.trackPublications.values.count { it.track is io.livekit.android.room.track.LocalAudioTrack }
+            subscribedAudio = r.remoteParticipants.values.sumOf { p ->
+                p.trackPublications.values.count { it.track is RemoteAudioTrack }
+            }
             if (reconnecting && state == "connected") state = "reconnecting"
         }
     }

@@ -124,8 +124,18 @@ func _ready() -> void:
 		get_tree().on_request_permissions_result.connect(_on_permission_result)
 
 
+# Android plugin methods live in JNI, outside Object.has_method().
+# Desktop GDExtensions and test bridges use the ordinary Object method table.
+func _bridge_has_method(method: StringName) -> bool:
+	if _bridge == null:
+		return false
+	if _bridge.has_method("has_java_method"):
+		return bool(_bridge.call("has_java_method", method))
+	return _bridge.has_method(method)
+
+
 func is_supported() -> bool:
-	return _bridge != null and _bridge.has_method("setAudience")
+	return _bridge != null and _bridge_has_method("setAudience")
 
 
 func audience_label() -> String:
@@ -151,7 +161,7 @@ func toggle_audience() -> void:
 # Windows 版的桥接是 addons/glory_voice/glory_voice.gdextension（docs/语音LiveKit方案.md 5.2）：
 # 在 Windows 上还没有，就是那几个 dll 没加载起来（包里缺了，或者被杀毒软件拦了）。
 func unsupported_reason() -> String:
-	if _bridge != null and not _bridge.has_method("setAudience"):
+	if _bridge != null and not _bridge_has_method("setAudience"):
 		return _text("语音组件需要更新，请安装新版游戏", "Voice component needs an update; install the latest game build")
 	if OS.has_feature("windows"):
 		return _text("语音组件没有加载起来，请重新安装游戏", "Voice component failed to load; please reinstall the game")
@@ -202,7 +212,7 @@ func set_mode(next: int) -> String:
 		# 用途说明由界面在调这里之前弹（VoiceControls.request_talk），这里不再叠一层。
 		_want_talk_after_permission = true
 		_change_mode(Mode.LISTEN)
-		if _bridge.has_method("requestRecordPermission"):
+		if _bridge_has_method("requestRecordPermission"):
 			_bridge.requestRecordPermission()
 		else:
 			OS.request_permission(MIC_PERMISSION)
@@ -429,7 +439,9 @@ func _team_audience_identities() -> Array[String]:
 func _apply_audience() -> void:
 	if not _joined or not is_supported():
 		return
-	var identities := _team_audience_identities() if audience == Audience.TEAM else []
+	var identities: Array[String] = []
+	if audience == Audience.TEAM:
+		identities = _team_audience_identities()
 	var key := "%d:%s" % [audience, JSON.stringify(identities)]
 	if key == _applied_audience:
 		return
@@ -459,7 +471,7 @@ func _process(delta: float) -> void:
 			return
 	if mode == Mode.OFF or not is_supported():
 		return
-	if _want_talk_after_permission and _bridge.has_method("requestRecordPermission"):
+	if _want_talk_after_permission and _bridge_has_method("requestRecordPermission"):
 		# Permission can finish before a voice token arrives. status() intentionally
 		# hides room state until joined, so read the native permission independently.
 		var native_status: Variant = JSON.parse_string(str(_bridge.getStatus()))
@@ -495,12 +507,12 @@ func _notification(what: int) -> void:
 		NOTIFICATION_APPLICATION_PAUSED:
 			# 切到后台：断开（不申请后台音频，后台不录音）。档位不变，回来之后 _process 里自动重连。
 			_application_paused = true
-			if _bridge != null and _bridge.has_method("setApplicationActive"):
+			if _bridge != null and _bridge_has_method("setApplicationActive"):
 				_bridge.setApplicationActive(false)
 			_leave()
 		NOTIFICATION_APPLICATION_RESUMED:
 			_application_paused = false
-			if _bridge != null and _bridge.has_method("setApplicationActive"):
+			if _bridge != null and _bridge_has_method("setApplicationActive"):
 				_bridge.setApplicationActive(true)
 			_retry_in = 0.0
 			_retry_index = 0
