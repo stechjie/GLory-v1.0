@@ -25,7 +25,7 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from app import admission, db, players, realtime, single_instance
+from app import admission, analytics, db, players, realtime, single_instance
 from app.config import get_settings
 from app.jwt_verify import Claims, TokenError
 from app.main import app
@@ -285,6 +285,20 @@ def test_two_players_do_not_disturb_each_other(wired) -> None:
                 assert realtime.hub().player_count() == 2
                 one.send_json({"t": "ping"})
                 assert one.receive_json() == {"t": "pong"}
+
+
+def test_connecting_counts_as_came_today_and_leaving_stops_the_clock(wired) -> None:
+    """运营数据（app/analytics.py）接在这条连接上：连上 = 今天来过；断开 = 在线时长结账。
+    写好了却没接上的话，后台日活永远是 0，而且不报错。"""
+    pid = uuid.UUID("11111111-1111-1111-1111-111111111111")
+    client = TestClient(app)
+    with client:
+        with client.websocket_connect("/v1/ws", headers=_headers()) as ws:
+            ws.receive_json()
+            recorder = analytics.current()
+            assert recorder._connects == {pid: 1}
+            assert pid in recorder._since
+        assert pid not in recorder._since, "断开之后还在计时"
 
 
 # --- 连接表自身 ---------------------------------------------------------------

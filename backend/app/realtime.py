@@ -255,6 +255,17 @@ class Hub:
     def player_ids(self) -> list[uuid.UUID]:
         return [pid for pid, devices in self._by_player.items() if devices]
 
+    def last_seen(self, player_id: uuid.UUID) -> float | None:
+        """这个玩家所有设备里最近一次收到消息的时刻（单调时钟）。不在线返回 None。
+
+        app/analytics.py 算在线时长用：手机切后台后心跳停了，连接还要挂 IDLE_TIMEOUT_SEC 才被判死，
+        那段不能算在线。
+        """
+        devices = self._by_player.get(player_id)
+        if not devices:
+            return None
+        return max(conn.last_seen for conn in devices.values())
+
 
 _hub: Hub | None = None
 

@@ -97,6 +97,29 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .money span { display: block; font-size: 12px; color: var(--muted); }
 .banned { border: 2px solid var(--danger); }
 
+/* --- 数据 --- */
+ul.hint { padding-left: 18px; }
+ul.hint li { margin: 2px 0; }
+.card h2 .btn { margin-left: 6px; vertical-align: middle; }
+.chart { display: block; width: 100%; height: 220px; background: var(--bg); border-radius: 6px; }
+.chart line, .chart polyline { vector-effect: non-scaling-stroke; fill: none; }
+.chart .grid { stroke: var(--line); stroke-width: 1; }
+.chart .line { stroke: var(--accent); stroke-width: 2; }
+.chart .queue { stroke: var(--warn); stroke-width: 1.5; }
+.chart .restart { stroke: var(--danger); stroke-width: 1; stroke-dasharray: 4 3; }
+.chart-hours { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; margin-top: 4px; }
+td.ret { text-align: center; white-space: nowrap; }
+td.ret b { display: block; font-weight: 600; font-variant-numeric: tabular-nums; }
+td.ret span { font-size: 11px; color: var(--muted); }
+td.ret.future { color: var(--muted); vertical-align: middle; }
+td.ret.today b { color: var(--muted); }
+td.ret.r1 { background: #eef3fd; }
+td.ret.r2 { background: #dde7fb; }
+td.ret.r3 { background: #c6d6f7; }
+td.ret.r4 { background: #a9c1f2; }
+tr.total td { border-top: 2px solid var(--line); font-weight: 600; }
+progress { width: 160px; vertical-align: middle; }
+
 /* --- 登录 --- */
 .login { max-width: 380px; margin: 80px auto; }
 .login img.qr { width: 200px; height: 200px; display: block; margin: 8px auto; background: #fff; }

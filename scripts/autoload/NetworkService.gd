@@ -926,6 +926,7 @@ func team_request_room_list() -> void:
 func team_request_create_room() -> void:
 	if not _can_send_room_request("create_room"):
 		return
+	AnalyticsService.note_mode("custom")
 	var card := await _fetch_seat_card("create_room")
 	# 领名片是一次网络往返，期间连接可能已经断了 —— 再查一次。
 	if card.is_empty() or not _can_send_room_request("create_room"):
@@ -935,6 +936,7 @@ func team_request_create_room() -> void:
 func team_request_join_room(room_id: int) -> void:
 	if not _can_send_room_request("join_room"):
 		return
+	AnalyticsService.note_mode("custom")
 	var card := await _fetch_seat_card("join_room")
 	if card.is_empty() or not _can_send_room_request("join_room"):
 		return
@@ -4101,6 +4103,8 @@ func _tick_tx_retry(_delta: float) -> void:
 # 先把 pending_leave 落盘再发包 —— 进程这时候被杀，下次启动能凭它知道
 # "这局是主动退的，别再提示重连"。
 func request_user_leave() -> void:
+	# 运营数据：对局打到一半自己退出（没开局 / 已经打完的它自己不记）。
+	AnalyticsService.match_left("user_leave")
 	# Leaving a started match disconnects the player, but keeps their seat resumable.
 	if not is_host and bool(SaveManager.load_reconnect().get("match_started", false)):
 		reset()

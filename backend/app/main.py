@@ -21,7 +21,7 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app import (admin, admission, announcements, bans, db, mail, maintenance, matchmaking,
+from app import (admin, admission, analytics, announcements, bans, db, mail, maintenance, matchmaking,
                  realtime, seasons, single_instance, world_chat)
 from app.config import get_settings
 from app.routes import admin as admin_routes
@@ -30,6 +30,7 @@ from app.routes import auth as auth_routes
 from app.routes import battle_report as battle_report_routes
 from app.routes import chat as chat_routes
 from app.routes import debug as debug_routes
+from app.routes import events as event_routes
 from app.routes import friends as friends_routes
 from app.routes import loadout as loadout_routes
 from app.routes import mail as mail_routes
@@ -135,13 +136,19 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     seasonal = asyncio.create_task(seasons.loop())
     # 封号（app/bans.py）：每 10 秒看一眼在线的人里有没有刚被封的，有就踢下线。
     banhammer = asyncio.create_task(bans.loop())
+    # 运营数据（app/analytics.py）：每 15 秒记在线人数，每分钟记谁在线、在线多久。
+    # 进程内状态，同上；重启那一段在线曲线是空的（不是 0）。
+    recorder = analytics.install(analytics.Recorder())
+    counter = asyncio.create_task(analytics.loop(recorder))
     try:
         yield
     finally:
-        for task in (sweeper, cleaner, admitter, notices, postman, matcher, seasonal, banhammer):
+        for task in (sweeper, cleaner, admitter, notices, postman, matcher, seasonal, banhammer, counter):
             task.cancel()
             with suppress(asyncio.CancelledError):
                 await task
+        # 最后不到一分钟的在线时长。要在断开数据库之前。
+        await analytics.flush_on_shutdown(recorder)
         await fetcher.aclose()
         await db.disconnect()
         single_instance.release(lock)
@@ -206,6 +213,8 @@ app.include_router(seven_day_login_routes.router)
 app.include_router(loadout_routes.router)
 app.include_router(mail_routes.router)
 app.include_router(battle_report_routes.router)
+# 运营数据：游戏上报的事件（docs/运营数据.md 第六节）。
+app.include_router(event_routes.router)
 app.include_router(matchmaking_routes.router)
 app.include_router(matchmaking_routes.me_router)
 app.include_router(ws_routes.router)

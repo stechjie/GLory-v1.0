@@ -11,15 +11,16 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import pathlib
 import uuid
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
-from app import admin, admin_auth, db
+from app import admin, admin_auth, analytics_report, db
 from app.admin_auth import Admin, current_admin, writing_admin
 from app.config import get_settings
 
@@ -182,6 +183,62 @@ class GrantBody(BaseModel):
 @router.post("/admin/api/players/{player_id}/grant")
 async def grant(player_id: uuid.UUID, body: GrantBody, who: Writer) -> dict:
     return await admin.request_grant(who, body.kind, player_id, body.amount, body.reason, body.request_key)
+
+
+class TagBody(BaseModel):
+    kind: Literal["staff", "qa", "loadtest"]
+    note: str = Field(default="", max_length=200)
+
+
+@router.post("/admin/api/players/{player_id}/tag")
+async def tag(player_id: uuid.UUID, body: TagBody, who: Writer) -> dict:
+    return await admin.tag_player(who, player_id, body.kind, body.note)
+
+
+@router.post("/admin/api/players/{player_id}/untag")
+async def untag(player_id: uuid.UUID, who: Writer) -> dict:
+    return await admin.untag_player(who, player_id)
+
+
+# --- 运营数据（只读；docs/运营数据.md）---------------------------------------------------
+
+Days = Annotated[int, Query(ge=1, le=analytics_report.MAX_DAYS)]
+
+
+@router.get("/admin/api/analytics/overview")
+async def analytics_overview(_who: Me, days: Days = 30) -> dict:
+    _require_db()
+    return await analytics_report.overview(days)
+
+
+@router.get("/admin/api/analytics/online")
+async def analytics_online(day: dt.date, _who: Me) -> dict:
+    _require_db()
+    return await analytics_report.online_curve(day)
+
+
+@router.get("/admin/api/analytics/retention")
+async def analytics_retention(_who: Me, days: Days = 30) -> dict:
+    _require_db()
+    return await analytics_report.retention(days)
+
+
+@router.get("/admin/api/analytics/matches")
+async def analytics_matches(_who: Me, days: Days = 30) -> dict:
+    _require_db()
+    return await analytics_report.matches(days)
+
+
+@router.get("/admin/api/analytics/client")
+async def analytics_client(_who: Me, days: Days = 30, mode: str = "all") -> dict:
+    _require_db()
+    return await analytics_report.client_report(days, mode)
+
+
+@router.get("/admin/api/analytics/tags")
+async def analytics_tags(_who: Me) -> dict:
+    _require_db()
+    return {"tags": await analytics_report.tags()}
 
 
 # --- 审批 -----------------------------------------------------------------------

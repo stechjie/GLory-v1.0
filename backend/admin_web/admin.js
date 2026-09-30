@@ -129,6 +129,7 @@ const app = document.getElementById("app");
 
 const TABS = [
   ["players", "玩家"],
+  ["data", "数据"],
   ["requests", "审批"],
   ["mails", "邮件"],
   ["announcements", "公告"],
@@ -166,7 +167,7 @@ function render() {
     h("button", { class: "btn small", onclick: logout }, "退出"));
   const main = h("main", {});
   app.replaceChildren(bar, main);
-  const views = { players: playersView, requests: requestsView, mails: mailsView,
+  const views = { players: playersView, data: dataView, requests: requestsView, mails: mailsView,
                   announcements: announcementsView, reports: reportsView, world: worldView, audit: auditView };
   views[state.tab](main);
   refreshPendingCount();
@@ -334,7 +335,43 @@ async function showPlayer(playerId, into) {
   into.replaceChildren(header, banCard(p, d, who, reload), muteCard(p, d, who, reload),
     worldCard(d.world_recent, reload, "他最近在世界频道说的（30 条，含已删）"),
     reportsCard(d.reports_against, "别人对他的举报（最近 20 条）"),
-    walletCard(p, d, who, reload), historyCards(d));
+    walletCard(p, d, who, reload), tagCard(p, d, who, reload), historyCards(d));
+}
+
+// 内部账号（员工 / 测试 / 压测）：运营数据里不算他。只影响统计，不影响他玩。
+const TAG_KINDS = { staff: "员工", qa: "测试", loadtest: "压测" };
+
+function tagCard(p, d, who, reload) {
+  const box = h("div", {});
+  const card = h("section", { class: "card" }, h("h2", {}, "运营数据"), box);
+  if (d.tag) {
+    const t = d.tag;
+    card.append(notice("warn", `内部账号（${TAG_KINDS[t.kind] || t.kind}）：不算进日活、留存、在线人数。`
+      + `${t.tagged_by} ${fmt(t.tagged_at)} 标的${t.note ? "：" + t.note : ""}`));
+    const btn = h("button", { class: "btn" }, "改回普通玩家");
+    btn.addEventListener("click", action(btn, box, async () => {
+      if (!confirm(`把 ${who} 改回普通玩家？\n他以前的日活、留存也会一起算回统计里。`)) return "";
+      await api("POST", `/admin/api/players/${p.player_id}/untag`);
+      reload();
+      return "已改回";
+    }));
+    card.append(btn);
+  } else if (!p.deleted_at) {
+    const kind = h("select", {}, Object.entries(TAG_KINDS).map(([value, label]) => h("option", { value }, label)));
+    const note = h("input", { maxlength: "200", placeholder: "例如：美术那台测试机" });
+    const btn = h("button", { class: "btn" }, "标为内部账号");
+    btn.addEventListener("click", action(btn, box, async () => {
+      const label = TAG_KINDS[kind.value];
+      if (!confirm(`把 ${who} 标为内部账号（${label}）？\n他以前和以后的日活、留存都不再算进统计。`)) return "";
+      await api("POST", `/admin/api/players/${p.player_id}/tag`, { kind: kind.value, note: note.value });
+      reload();
+      return "已标记";
+    }));
+    card.append(
+      h("p", { class: "hint" }, "员工、测试、压测用的号要标上，不然会混进日活和留存。只影响统计，不影响他玩；随时能改回。"),
+      h("div", { class: "row" }, field("类型", kind), field("备注", note, true), btn));
+  }
+  return card;
 }
 
 // 禁言（世界频道）：被禁的人照常能玩、能私聊，只是不能在世界频道说话。和封号是两回事。
@@ -979,6 +1016,459 @@ async function worldView(main) {
 }
 
 // ---------------------------------------------------------------------------
+// 数据（docs/运营数据.md）。口径都在页面的灰字里 —— 数字会被截图发给别人，口径要跟着走。
+// ---------------------------------------------------------------------------
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function svg(tag, attrs, ...children) {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const [key, value] of Object.entries(attrs || {})) el.setAttribute(key, value);
+  for (const child of children.flat()) if (child) el.append(child);
+  return el;
+}
+
+function pct(numerator, denominator) {
+  return denominator ? `${(100 * numerator / denominator).toFixed(1)}%` : "—";
+}
+
+const WEEKDAYS = "日一二三四五六";
+
+// "2026-10-01" → "10-01 周四"
+function dayLabel(iso) {
+  return `${iso.slice(5)} 周${WEEKDAYS[new Date(iso + "T00:00:00Z").getUTCDay()]}`;
+}
+
+// 服务器给的 UTC 时间 → 马来西亚时间当天第几分钟。
+function minuteOfDay(iso) {
+  const d = new Date(Date.parse(iso) + MYT_MS);
+  return d.getUTCHours() * 60 + d.getUTCMinutes();
+}
+
+function dash(value, render) {
+  return value === null || value === undefined ? "—" : (render ? render(value) : value);
+}
+
+// 导出给别人用。文字格子以 = + - @ 开头的前面加 '，免得 Excel 当成公式执行；带 BOM，Excel 才认中文。
+function downloadCsv(name, headers, rows) {
+  const cell = (value) => {
+    let text = value === null || value === undefined ? "" : String(value);
+    if (typeof value === "string" && /^[=+\-@]/.test(text)) text = "'" + text;
+    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  const body = [headers, ...rows].map((row) => row.map(cell).join(",")).join("\r\n");
+  const url = URL.createObjectURL(new Blob(["﻿" + body], { type: "text/csv;charset=utf-8" }));
+  const link = h("a", { href: url, download: name });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function csvButton(fn) {
+  const btn = h("button", { class: "btn small" }, "导出 CSV");
+  btn.addEventListener("click", fn);
+  return btn;
+}
+
+const DATA_RANGES = [["14", "近 14 天"], ["30", "近 30 天"], ["60", "近 60 天"], ["90", "近 90 天"]];
+
+async function dataView(main) {
+  const range = h("select", {}, DATA_RANGES.map(([value, label]) => h("option", { value }, label)));
+  range.value = state.dataDays || "30";
+  const refresh = h("button", { class: "btn" }, "刷新");
+  const top = h("div", {});
+  const boxes = [h("div", {}), h("div", {}), h("div", {}), h("div", {}), h("div", {})];
+  // 游戏上报的那几块（026）单独拉：库还没跑 026 时只这一块报错，上面照常。
+  const client = h("div", {});
+  main.append(h("section", { class: "card" }, h("h2", {}, "运营数据"),
+    h("p", { class: "hint" }, "全部按马来西亚时间的自然日。员工 / 测试 / 压测号（在玩家页标）全部不算。"
+      + "「没记」「未到」「—」都表示没有这个数，不是 0。"),
+    h("div", { class: "row" }, field("范围", range), refresh), top), ...boxes.slice(0, 4), client, boxes[4]);
+  const load = async () => {
+    state.dataDays = range.value;
+    top.replaceChildren(h("p", { class: "muted" }, "加载中…"));
+    for (const box of boxes) box.replaceChildren();
+    loadClientReport(client, range.value);
+    let ov, ret, games, tags;
+    try {
+      [ov, ret, games, tags] = await Promise.all([
+        api("GET", `/admin/api/analytics/overview?days=${range.value}`),
+        api("GET", `/admin/api/analytics/retention?days=${range.value}`),
+        api("GET", `/admin/api/analytics/matches?days=${range.value}`),
+        api("GET", "/admin/api/analytics/tags"),
+      ]);
+    } catch (e) {
+      top.replaceChildren(notice("error", e.message));
+      return;
+    }
+    top.replaceChildren(nowStrip(ov));
+    boxes[0].append(dailyCard(ov));
+    boxes[1].append(curveCard(ov));
+    boxes[2].append(retentionCard(ret));
+    boxes[3].append(matchesCard(games, range.value));
+    boxes[4].append(tagsCard(tags.tags));
+  };
+  range.addEventListener("change", load);
+  refresh.addEventListener("click", load);
+  await load();
+}
+
+function stat(value, label) {
+  return h("div", {}, h("b", {}, value), h("span", {}, label));
+}
+
+function nowStrip(ov) {
+  const today = ov.days[0];
+  return h("div", {},
+    ov.collection_started_at ? null
+      : notice("warn", "还没有任何数据：数据库跑过 025_analytics.sql、账号服务器更新之后才开始记。之前的日子补不回来。"),
+    h("div", { class: "money" },
+      stat(num(ov.now.players), "现在在线"),
+      stat(num(ov.now.queued), "现在排队"),
+      stat(dash(today && today.active, num), "今天来过"),
+      stat(dash(today && today.peak, num), "今天最高在线"),
+      stat(num(ov.ever_active), "开始记录以来来过的人")),
+    h("p", { class: "hint" }, `从 ${fmt(ov.collection_started_at)} 开始记录 · 内部账号 ${ov.internal_accounts} 个`
+      + `（现在在线 ${ov.now.internal} 个，都没算进上面）· 数据截至 ${fmt(ov.as_of)}`));
+}
+
+function coverageTag(value) {
+  if (value === null) return "—";
+  const p = Math.floor(value * 100);
+  return h("span", { class: p >= 95 ? "tag green" : p >= 50 ? "tag yellow" : "tag red" }, `${p}%`);
+}
+
+function dailyCard(ov) {
+  const headers = ["日期", "日活", "近 7 天来过", "新注册", "最高在线", "在几点", "平均在线",
+                   "人均在线（分钟）", "中位 / 前 10%", "打完的对局", "采集覆盖"];
+  const rows = ov.days.map((d) => h("tr", {},
+    h("td", {}, dayLabel(d.day)),
+    h("td", { class: "num" }, d.recorded ? h("b", {}, num(d.active)) : h("span", { class: "muted" }, "没记")),
+    h("td", { class: "num" }, d.recorded ? [num(d.weekly_active), d.weekly_partial ? " *" : ""] : "—"),
+    h("td", { class: "num" }, num(d.registered)),
+    h("td", { class: "num" }, dash(d.peak, num)),
+    h("td", {}, d.peak_at ? fmt(d.peak_at).slice(11) : ""),
+    h("td", { class: "num" }, dash(d.avg_online)),
+    h("td", { class: "num" }, dash(d.minutes_avg)),
+    h("td", { class: "num" }, d.minutes_p50 === null ? "—" : `${d.minutes_p50} / ${d.minutes_p90}`),
+    h("td", { class: "num" }, num(d.matches)),
+    h("td", {}, coverageTag(d.coverage))));
+  const csv = csvButton(() => downloadCsv(`glory_daily_${ov.today}.csv`,
+    ["日期", "日活", "近7天来过", "近7天不完整", "新注册", "内部账号新注册", "最高在线", "最高在线时刻(MYT)", "平均在线",
+     "人均在线分钟", "在线分钟中位", "在线分钟P90", "打完的对局", "采集覆盖"],
+    ov.days.map((d) => [d.day, d.active, d.weekly_active, d.weekly_partial ? "是" : "", d.registered, d.registered_internal,
+      d.peak, d.peak_at ? fmt(d.peak_at) : "", d.avg_online, d.minutes_avg, d.minutes_p50, d.minutes_p90, d.matches,
+      d.coverage === null ? "" : d.coverage.toFixed(3)])));
+  return h("section", { class: "card" }, h("h2", {}, "每天 ", csv),
+    h("ul", { class: "hint" },
+      h("li", {}, "日活：那天游戏开着、连上过账号服务器的人，一个人一天只算一次。"),
+      h("li", {}, "近 7 天来过：到那天为止 7 天里来过的人，按人去重（不是 7 天日活相加）。带 * 的是 7 天里有几天还没开始记，偏小。"),
+      h("li", {}, "新注册：那天第一次打开游戏自动建的号。卸载重装、换手机会再建一个新号，所以新注册 ≥ 新来的人。"),
+      h("li", {}, "在线：每 15 秒数一次此刻连着的真人（一个人几台设备算一个）；最高在线是那天数到的最大值，平均在线是那天所有采样的平均。"),
+      h("li", {}, "人均在线：连着的时长，只算当天来过的人。手机切后台不算；电脑版最小化会算进去（偏多）。"),
+      h("li", {}, "打完的对局：那天结束、并且有人交了战报的局。中途散掉的局不在这里。"),
+      h("li", {}, "采集覆盖：那天真正采到了多少时间。不到 100% 的那段是服务器重启或数据库一时写不进，那段在线人数没有数，不是没人。"
+        + "开始记录的第一天本来就不满。")),
+    table(headers, rows));
+}
+
+function curveCard(ov) {
+  const card = h("section", { class: "card" }, h("h2", {}, "在线曲线"));
+  const days = ov.days.filter((d) => d.recorded);
+  if (!days.length) {
+    card.append(h("p", { class: "muted" }, "还没有数据"));
+    return card;
+  }
+  const pick = h("select", {}, days.map((d) => h("option", { value: d.day }, dayLabel(d.day))));
+  const box = h("div", {});
+  const load = async () => {
+    box.replaceChildren(h("p", { class: "muted" }, "加载中…"));
+    try {
+      box.replaceChildren(curveChart(await api("GET", "/admin/api/analytics/online?day=" + pick.value)));
+    } catch (e) {
+      box.replaceChildren(notice("error", e.message));
+    }
+  };
+  pick.addEventListener("change", load);
+  card.append(h("p", { class: "hint" }, "每分钟一个点（那一分钟里最高的一次采样），横轴是马来西亚时间 0–24 点。"
+    + "蓝线 = 在线，黄线 = 排队（有人排队时才有）。线断开 = 那段没采到，不是 0 人；红色虚线 = 账号服务器重新启动。"),
+    h("div", { class: "row" }, field("哪一天", pick)), box);
+  load();
+  return card;
+}
+
+// 纵轴四格，每格一个整数的「好看」人数（1、2、5、10、15、20、25、50…）。
+function gridStep(value) {
+  if (value <= 1) return 1;
+  const base = Math.pow(10, Math.floor(Math.log10(value)));
+  for (const m of [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) {
+    if (m * base >= value && Number.isInteger(m * base)) return m * base;
+  }
+  return 10 * base;
+}
+
+function curveChart(data) {
+  if (!data.points.length) return h("p", { class: "muted" }, "这一天没有采到");
+  const W = 1440, H = 200;
+  const peakPoint = data.points.reduce((best, p) => (p[1] > best[1] ? p : best), data.points[0]);
+  const step = gridStep(Math.max(...data.points.map((p) => Math.max(p[1], p[2]))) / 4);
+  const top = step * 4;
+  const y = (v) => (H - (v / top) * H).toFixed(1);
+  // 连续的分钟连成一段，中间缺超过 2 分钟就断开：缺的那段不能画成连着的线。
+  const lines = (index) => {
+    const segments = [];
+    let seg = [];
+    let last = -10;
+    for (const p of data.points) {
+      if (p[0] - last > 2 && seg.length) { segments.push(seg); seg = []; }
+      seg.push([p[0], p[index]]);
+      last = p[0];
+    }
+    if (seg.length) segments.push(seg);
+    return segments.map((s) => {
+      if (s.length === 1) s.push([s[0][0] + 1, s[0][1]]);
+      return s.map(([m, v]) => `${m},${y(v)}`).join(" ");
+    });
+  };
+  const queued = data.points.some((p) => p[2] > 0);
+  const chart = svg("svg", { class: "chart", viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: "none",
+                             role: "img", "aria-label": `${data.day} 在线曲线` },
+    [1, 2, 3].map((i) => svg("line", { class: "grid", x1: 0, x2: W, y1: (H * i) / 4, y2: (H * i) / 4 })),
+    [1, 2, 3, 4, 5, 6, 7].map((i) => svg("line", { class: "grid", x1: i * 180, x2: i * 180, y1: 0, y2: H })),
+    data.restarts.map((iso) => {
+      const m = minuteOfDay(iso);
+      return svg("line", { class: "restart", x1: m, x2: m, y1: 0, y2: H });
+    }),
+    queued ? lines(2).map((points) => svg("polyline", { class: "queue", points })) : [],
+    lines(1).map((points) => svg("polyline", { class: "line", points })));
+  const hh = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+  return h("div", {},
+    h("p", {}, `最高 ${num(peakPoint[1])} 人（${hh(peakPoint[0])}）· 纵轴满格 ${num(top)} 人，横线每格 ${num(step)} 人`
+      + (data.restarts.length ? ` · 这天重启了 ${data.restarts.length} 次` : "")),
+    chart,
+    h("div", { class: "chart-hours" }, [0, 3, 6, 9, 12, 15, 18, 21, 24].map((hour) => h("span", {}, `${hour}`))));
+}
+
+function retentionBucket(rate) {
+  return rate >= 0.5 ? 4 : rate >= 0.3 ? 3 : rate >= 0.15 ? 2 : rate >= 0.05 ? 1 : 0;
+}
+
+function retentionCell(cell, size) {
+  if (cell.state === "future") return h("td", { class: "ret future" }, "未到");
+  const today = cell.state === "today";
+  return h("td", { class: today ? "ret today" : `ret r${retentionBucket(size ? cell.returned / size : 0)}`,
+                   title: today ? "今天还没过完，这个数还会涨" : "" },
+    h("b", {}, pct(cell.returned, size), today ? "…" : ""), h("span", {}, `${cell.returned}/${size}`));
+}
+
+function retentionCard(ret) {
+  const label = (n) => (n === 0 ? "当天" : `D${n}`);
+  const card = h("section", { class: "card" }, h("h2", {}, "留存（按注册日）"),
+    h("ul", { class: "hint" },
+      h("li", {}, "D1 = 注册后第二天那一整天来过；D7 = 第 8 天那一天来过（例：10-01 注册，D1 看 10-02，D7 看 10-08）。不是「几天之内来过一次」。"),
+      h("li", {}, "每格：回来的人 / 那天注册的人。「当天」是注册那天有没有真的进过游戏。"),
+      h("li", {}, "合计 = 各天回来的人相加 / 各天人数相加，只算已经过完的格子（不是把百分比平均）。「…」= 今天还没过完。"),
+      h("li", {}, "只算开始记录之后注册、没注销的号；内部账号不算。人数少于 30 的行波动很大，别单独下结论。")));
+  if (!ret.cohorts.length) {
+    card.append(h("p", { class: "muted" }, ret.collection_started_at ? "开始记录之后还没有新注册的号" : "还没开始记录"));
+    return card;
+  }
+  const headers = ["注册日", "人数", ...ret.offsets.map(label)];
+  const rows = ret.cohorts.map((c) => h("tr", {},
+    h("td", {}, dayLabel(c.day)),
+    h("td", { class: c.size < 30 ? "num muted" : "num", title: c.size < 30 ? "样本少" : "" }, num(c.size)),
+    c.cells.map((cell) => retentionCell(cell, c.size))));
+  rows.push(h("tr", { class: "total" }, h("td", {}, "合计（已过完的）"), h("td", {}, ""),
+    ret.total.map((t) => (t.size
+      ? h("td", { class: "ret", title: `${t.cohorts} 天合计` }, h("b", {}, pct(t.returned, t.size)), h("span", {}, `${t.returned}/${t.size}`))
+      : h("td", { class: "ret future" }, "未到")))));
+  const csv = csvButton(() => downloadCsv(`glory_retention_${ret.today}.csv`,
+    ["注册日", "人数", ...ret.offsets.map((n) => `${label(n)}回来`), ...ret.offsets.map((n) => `${label(n)}状态`)],
+    ret.cohorts.map((c) => [c.day, c.size, ...c.cells.map((cell) => cell.returned),
+      ...c.cells.map((cell) => ({ done: "已过完", today: "今天未完", future: "未到" }[cell.state]))])
+      .concat([["合计(已过完)", "", ...ret.total.map((t) => (t.size ? `${t.returned}/${t.size}` : "")),
+        ...ret.total.map(() => "")]])));
+  card.querySelector("h2").append(" ", csv);
+  card.append(table(headers, rows));
+  return card;
+}
+
+const MODE_NAMES = { custom: "自定义房间", casual: "休闲匹配", ranked: "排位" };
+const ROUND_KINDS = { boss: "Boss", pvp: "PVP", normal: "普通" };
+
+function matchesCard(data, days) {
+  const card = h("section", { class: "card" }, h("h2", {}, `对局（近 ${days} 天打完的）`),
+    h("ul", { class: "hint" },
+      h("li", {}, "只有打完、并且有人交了战报的局。中途散掉、全员掉线没人交的局这里没有（要等战斗服务器直接上报，下一批做）。"),
+      h("li", {}, "真人座位 = 有账号的座位；AI 座位 = 一开始就是 AI（房主加的）。中途离开 = 真人座位到最后不在线（掉线后回来的不算）。"),
+      h("li", {}, `结束回合：整局在第几回合结束（一方法阵归零，或打满 ${data.final_round} 回合）。内部账号的局也算在里面。`)));
+  if (!data.modes.length) {
+    card.append(h("p", { class: "muted" }, "这段时间没有"));
+    return card;
+  }
+  card.append(table(["模式", "局数", "平均结束回合", `打满 ${data.final_round} 回合`, "6 个都是真人", "平局",
+                     "真人座位", "AI 座位", "中途离开", "时长中位（分钟）"],
+    data.modes.map((m) => h("tr", {},
+      h("td", {}, MODE_NAMES[m.mode] || m.mode), h("td", { class: "num" }, num(m.matches)),
+      h("td", { class: "num" }, m.avg_rounds),
+      h("td", { class: "num" }, `${num(m.full_length)}（${pct(m.full_length, m.matches)}）`),
+      h("td", { class: "num" }, `${num(m.all_human)}（${pct(m.all_human, m.matches)}）`),
+      h("td", { class: "num" }, num(m.draws)),
+      h("td", { class: "num" }, num(m.humans)), h("td", { class: "num" }, num(m.bots)),
+      h("td", { class: "num" }, `${num(m.left_early)}（${pct(m.left_early, m.humans)}）`),
+      h("td", { class: "num" }, m.median_minutes)))));
+  for (const m of data.modes) {
+    card.append(h("h3", {}, `${MODE_NAMES[m.mode] || m.mode}：在第几回合结束`),
+      table(["回合", "类型", "局数", "占比", ""], m.end_rounds.map(([round, kind, n]) => h("tr", {},
+        h("td", { class: "num" }, round), h("td", {}, ROUND_KINDS[kind] || kind), h("td", { class: "num" }, num(n)),
+        h("td", { class: "num" }, pct(n, m.matches)),
+        h("td", {}, h("progress", { max: m.matches, value: n }))))));
+  }
+  return card;
+}
+
+// --- 游戏上报的事件（第二批，docs/运营数据.md 第六节）---------------------------------------
+
+const TUTORIAL_STEP_NAMES = {
+  BUY_3: "购买棋子", PLACE_3: "上阵布阵", START_PVE_1: "首场战斗", UPGRADE_2: "升到 2 星",
+  START_PVE_2: "第二场战斗", TAKE_TREASURE_1: "选择宝藏", UPGRADE_3: "升到 3 星", UPGRADE_OTHERS: "继续升星",
+  BOND_HINT: "查看羁绊", VIEW_TREASURE: "查看宝藏", FORMATION_HP: "了解法阵", CARROT_CAMP: "萝卜营地",
+  HARVEST_UPGRADE: "升级采集", START_BOSS: "挑战首领", TAKE_TREASURE_2: "再选宝藏", CARROT_HARVEST: "收获萝卜",
+  DRAW_STONE: "抽升级石", FOUR_STAR: "升到四星", HIRE_MERC: "召唤佣兵", FILL_7: "补满七人", START_PVP: "玩家对战",
+};
+const REASON_EVENTS = { replay_failed: "战斗播放失败", reconnect: "重连失败", room_action_failed: "进房 / 建房失败",
+                        match_leave: "中途离开" };
+const PERF_CONTEXT = { menu: "主菜单 / 大厅", tutorial: "新手教学", match: "对局中" };
+const CLIENT_MODES = [["all", "全部模式"], ["custom", "自定义房间"], ["casual", "休闲匹配"], ["ranked", "排位"]];
+
+async function loadClientReport(into, days, mode) {
+  into.replaceChildren(h("section", { class: "card" }, h("p", { class: "muted" }, "游戏上报的数据加载中…")));
+  let cr;
+  try {
+    cr = await api("GET", `/admin/api/analytics/client?days=${days}&mode=${mode || "all"}`);
+  } catch (e) {
+    into.replaceChildren(h("section", { class: "card" }, h("h2", {}, "游戏上报的数据"), notice("error", e.message)));
+    return;
+  }
+  into.replaceChildren(
+    h("section", { class: "card" }, h("h2", {}, "游戏上报的数据（第二批）"),
+      h("p", { class: "hint" }, "下面几块是游戏自己报上来的，只有装了新包的人才有。分母都是「报过的人」，"
+        + "所以先看「新包覆盖」：覆盖低的时候，下面的比例只代表已经更新的那部分玩家。")),
+    coverageCard(cr), tutorialCard(cr.tutorial), firstPlayCard(cr.first_play),
+    roundsCard(cr, into, days), qualityCard(cr.quality));
+}
+
+function coverageCard(cr) {
+  return h("section", { class: "card" }, h("h2", {}, "新包覆盖"),
+    h("p", { class: "hint" }, "每天报过事件的人 / 那天的日活。新包刚发的几天会低，越接近 100% 下面的数越能代表全体。"
+      + "版本号 0 = 从编辑器里跑的（内部测试）。"),
+    table(["日期", "报过事件的人", "日活", "覆盖", "事件条数"], cr.coverage.map((d) => h("tr", {},
+      h("td", {}, dayLabel(d.day)), h("td", { class: "num" }, num(d.players)), h("td", { class: "num" }, dash(d.active, num)),
+      h("td", { class: "num" }, d.active ? pct(d.players, d.active) : "—"), h("td", { class: "num" }, num(d.events))))),
+    h("h3", {}, "按包的版本"),
+    table(["版本号", "人数", "最近一次"], cr.builds.map((b) => h("tr", {},
+      h("td", { class: "num" }, b.build), h("td", { class: "num" }, num(b.players)), h("td", {}, fmt(b.last_seen))))));
+}
+
+function tutorialCard(t) {
+  const card = h("section", { class: "card" }, h("h2", {}, "新手教学漏斗"),
+    h("p", { class: "hint" }, "这段时间开始过教学的人，之后每一步走到哪（重玩的算一个人）。到达第 N 步 = 完成了上一步。"
+      + "「停在这步」= 到了这一步、没完成也没跳过（可能退出了游戏，也可能还没玩完）。耗时只算游戏开着的时间，切后台不算。"));
+  if (!t.started) {
+    card.append(h("p", { class: "muted" }, "这段时间没有人开始教学"));
+    return card;
+  }
+  const others = t.started - t.completed - t.skipped;
+  card.append(h("div", { class: "money" },
+    stat(num(t.started), "开始教学"), stat(`${num(t.completed)}（${pct(t.completed, t.started)}）`, "完成"),
+    stat(`${num(t.skipped)}（${pct(t.skipped, t.started)}）`, "跳过"),
+    stat(`${num(Math.max(0, others))}（${pct(Math.max(0, others), t.started)}）`, "既没完成也没跳过")));
+  card.append(table(["步", "内容", "到达", "完成", "跳过", "停在这步", "", "中位耗时（秒）", "慢的 10%（秒）"],
+    t.steps.map((s) => h("tr", {},
+      h("td", { class: "num" }, s.index), h("td", {}, TUTORIAL_STEP_NAMES[s.step] || s.step || "—"),
+      h("td", { class: "num" }, num(s.reached)), h("td", { class: "num" }, num(s.done)),
+      h("td", { class: "num" }, s.skipped ? num(s.skipped) : ""),
+      h("td", { class: s.stuck ? "num neg" : "num" }, s.stuck ? `${num(s.stuck)}（${pct(s.stuck, s.reached)}）` : ""),
+      h("td", {}, h("progress", { max: t.started, value: s.reached })),
+      h("td", { class: "num" }, dash(s.p50_sec)), h("td", { class: "num" }, dash(s.p90_sec))))));
+  return card;
+}
+
+function firstPlayCard(f) {
+  const rows = [
+    ["注册并打开了新包", f.players], ["开始新手教学", f.tutorial_started], ["教学完成", f.tutorial_done],
+    ["跳过教学（没完成）", f.tutorial_skipped], ["开了第一局对局", f.match_started], ["打完过一整局", f.match_finished],
+  ];
+  return h("section", { class: "card" }, h("h2", {}, "新玩家第一次体验"),
+    h("p", { class: "hint" }, "这段时间注册、装的是新包的号，各走到了哪一步（每一行都是占注册人数的比例）。"
+      + "第二天回来只算注册后第二天已经过完的人。内部账号不算。"),
+    f.players ? table(["", "人数", "占注册", ""], rows.map(([label, n]) => h("tr", {},
+      h("td", {}, label), h("td", { class: "num" }, num(n)), h("td", { class: "num" }, pct(n, f.players)),
+      h("td", {}, h("progress", { max: f.players, value: n })))).concat([h("tr", {},
+      h("td", {}, "第二天回来"), h("td", { class: "num" }, `${num(f.d1_back)} / ${num(f.d1_ready)}`),
+      h("td", { class: "num" }, pct(f.d1_back, f.d1_ready)), h("td", {}, h("progress", { max: f.d1_ready || 1, value: f.d1_back })))]))
+      : h("p", { class: "muted" }, "这段时间还没有装新包的新注册玩家"));
+}
+
+function roundsCard(cr, into, days) {
+  const mode = h("select", {}, CLIENT_MODES.map(([value, label]) => h("option", { value }, label)));
+  mode.value = cr.mode;
+  mode.addEventListener("change", () => loadClientReport(into, days, mode.value));
+  const card = h("section", { class: "card" }, h("h2", {}, "回合难度"),
+    h("ul", { class: "hint" },
+      h("li", {}, "一支队伍打一个回合算一次（同队三个人都报，只算一次）。数据是战斗服务器算好、经游戏转来的。"),
+      h("li", {}, "「这回合输了」是这一场战斗输了（法阵扣血）；「法阵归零」= 整局在这一回合输掉。"),
+      h("li", {}, "越往后的回合到达的队伍越少，别拿第 20 回合的输率跟第 1 回合的比人数。自定义房间里有 AI 座位，和匹配分开看。")),
+    h("div", { class: "row" }, field("模式", mode)));
+  if (!cr.rounds.length) {
+    card.append(h("p", { class: "muted" }, "这段时间没有"));
+    return card;
+  }
+  card.append(table(["回合", "类型", "到达的队伍", "这回合输了", "法阵归零", "平均剩余法阵"], cr.rounds.map((r) => h("tr", {},
+    h("td", { class: "num" }, r.round), h("td", {}, ROUND_KINDS[r.kind] || r.kind || ""),
+    h("td", { class: "num" }, num(r.teams)), h("td", { class: "num" }, `${num(r.lost)}（${pct(r.lost, r.teams)}）`),
+    h("td", { class: r.eliminated ? "num neg" : "num" }, r.eliminated ? `${num(r.eliminated)}（${pct(r.eliminated, r.teams)}）` : ""),
+    h("td", { class: "num" }, dash(r.avg_hp))))));
+  return card;
+}
+
+function qualityCard(q) {
+  const replays = q.replay_done + q.replay_failed;
+  return h("section", { class: "card" }, h("h2", {}, "技术问题"),
+    h("div", { class: "money" },
+      stat(`${num(q.replay_failed)} / ${num(replays)}`, `战斗播放失败（${pct(q.replay_failed, replays)}）`),
+      stat(num(q.reconnects), "重连次数（成功 + 失败）"),
+      stat(`${num(q.match_leave_players)} 人`, `中途退出对局（共 ${num(q.match_leaves)} 次，开局 ${num(q.matches_started)} 次）`),
+      stat(q.launch.launches ? `${dash(q.launch.t3_p50_sec)} / ${dash(q.launch.t3_p90_sec)} 秒` : "—",
+        "启动到能点（中位 / 慢的 10%）"),
+      stat(num(q.events_dropped), "手机上攒满丢掉的记录")),
+    h("h3", {}, "失败原因"),
+    table(["哪一类", "原因", "次数", "人数"], q.reasons.map((r) => h("tr", {},
+      h("td", {}, REASON_EVENTS[r.event] || r.event), h("td", { class: "mono" }, r.reason || "—"),
+      h("td", { class: "num" }, num(r.times)), h("td", { class: "num" }, num(r.players))))),
+    h("h3", {}, "帧率（每 5 分钟报一次）"),
+    table(["在哪", "人数", "中位帧率", "最差 10% 的帧率", "每分钟卡顿（一帧超过 50 毫秒）"], q.perf.map((p) => h("tr", {},
+      h("td", {}, PERF_CONTEXT[p.ctx] || p.ctx), h("td", { class: "num" }, num(p.players)),
+      h("td", { class: "num" }, dash(p.fps_p50)), h("td", { class: "num" }, dash(p.fps_p10)),
+      h("td", { class: "num" }, dash(p.slow_per_min))))),
+    h("h3", {}, "报错（按影响人数排，最多 30 种）"),
+    h("p", { class: "hint" }, "同一次启动里同一种报错只报第一次。报错文字里的 IP、电脑路径、长串令牌已经在手机上抹掉。"),
+    table(["类型", "位置", "内容", "次数", "人数", "版本", "最近"], q.errors.map((e) => h("tr", {},
+      h("td", {}, e.kind), h("td", { class: "mono" }, e.where), h("td", { class: "muted" }, e.msg),
+      h("td", { class: "num" }, num(e.times)), h("td", { class: "num" }, num(e.players)),
+      h("td", { class: "num" }, dash(e.build)), h("td", {}, fmt(e.last_seen))))));
+}
+
+function tagsCard(tags) {
+  return h("section", { class: "card" }, h("h2", {}, `内部账号（统计时排除，${tags.length} 个）`),
+    h("p", { class: "hint" }, "在「玩家」页打开一个人，「运营数据」那一栏标。员工、测试、压测的号都要标，不然会混进日活和留存。点一行去他的玩家页。"),
+    table(["好友码", "昵称", "类型", "备注", "谁标的", "什么时候"], tags.map((t) => h("tr", { class: "click", onclick: () => openPlayer(t.player_id) },
+      h("td", { class: "mono" }, t.friend_code), h("td", {}, t.player_name), h("td", {}, TAG_KINDS[t.kind] || t.kind),
+      h("td", { class: "muted" }, t.note || ""), h("td", {}, t.tagged_by), h("td", {}, fmt(t.tagged_at))))));
+}
+
+// ---------------------------------------------------------------------------
 // 操作记录
 // ---------------------------------------------------------------------------
 
@@ -988,6 +1478,7 @@ const ACTIONS = {
   "announcement.save": "保存公告", "announcement.image": "上传公告图",
   mute: "禁言", unmute: "解除禁言", "world.hide": "删世界频道消息",
   "report.resolved": "举报：已处理", "report.dismissed": "举报：不成立",
+  "analytics.tag": "标为内部账号", "analytics.untag": "改回普通玩家",
 };
 
 function auditTable(rows, withPlayer) {

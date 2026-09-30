@@ -602,6 +602,8 @@ func remove_friend(code: String) -> Dictionary:
 # 两边形状一致，客户端才只需要写一套解析。
 
 func join_match_queue(mode: String = "casual") -> Dictionary:
+	# 运营数据：接下来匹配进的那一局按这个模式记。
+	AnalyticsService.note_mode(mode)
 	return await _request(HTTPClient.METHOD_POST, "/v1/match/queue", {"mode": mode}, true)
 
 
@@ -616,6 +618,12 @@ func fetch_match_state() -> Dictionary:
 # 确认。**重复确认不是错误** —— 弱网下客户端会重发，玩家也会点两下。
 func accept_match() -> Dictionary:
 	return await _request(HTTPClient.METHOD_POST, "/v1/match/accept", null, true)
+
+
+# 运营数据：交一批事件（AnalyticsService，docs/运营数据.md 第六节）。
+# 回的是每条的去向（accepted / duplicate / rejected），客户端据此从队列里删。
+func post_events(payload: Dictionary) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/events", payload, true)
 
 
 # 交一份战斗服务器签过章的战报（docs/排位系统设计.md 第七节）。

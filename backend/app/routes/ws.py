@@ -32,7 +32,7 @@ import re
 from fastapi import APIRouter
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from app import admission, bans, db, matchmaking, players, realtime
+from app import admission, analytics, bans, db, matchmaking, players, realtime
 from app.config import get_settings
 from app.jwt_verify import TokenError
 from app.realtime import Connection
@@ -106,6 +106,8 @@ async def realtime_endpoint(websocket: WebSocket) -> None:
     # register 会踢掉同账号的旧连接，所以必须在 accept 之后 ——
     # 同设备重连时被踢的那条可能就是上一次的自己。
     await hub.register(conn)
+    # 运营数据：「今天来过」、在线时长从这一刻起算。只动内存，不碰数据库（app/analytics.py）。
+    analytics.current().on_connect(player.player_id)
     await hub.send(conn, {
         "t": "ready",
         "player_id": str(player.player_id),
@@ -131,6 +133,8 @@ async def realtime_endpoint(websocket: WebSocket) -> None:
     finally:
         # 幂等，且不会误删顶号后新连接的那一条（见 Hub.unregister）。
         hub.unregister(conn)
+        # 摘掉之后再结在线时长：还有别的设备连着（或同设备刚重连上）就接着算。
+        analytics.current().on_disconnect(conn)
         # 同样只认自己那条；名额进宽限期，不是立刻收回（见 admission 顶部）。
         gate.leave(conn)
         # 排队中的人进掉线宽限（不立刻踢出队列，手机切后台是常态）；

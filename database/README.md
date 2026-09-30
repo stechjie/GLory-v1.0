@@ -85,6 +85,8 @@ Supabase Dashboard → SQL Editor，按编号顺序逐个执行。
 | ~~`022`~~ | **作废，编号不再使用**（2026-09-29）。原来给 `player_presence` 加 `room_started`（房间开打了没），线上一次都没跑过就撤了：房间开没开局由战斗服务器在加入时判，不进数据库。本机跑过的库多一列不影响，想清掉就 `alter table player_presence drop column room_started`。下一个新文件从 `023` 起，免得跑过旧 022 的库把新 022 当成已跑 |
 | `023_match_settlement.sql` | 对局历史的「详细战况」：`match_records.settlement`（jsonb，🟢，null = 之前打的局），存结算面板那份升级石 / 总金币 / 最后一战逐棋子统计。战斗服务器签进战报 |
 | `024_seven_day_login.sql` | 七日累计登录领取记录；玩家与天数、玩家与游戏日均唯一，奖励与记录在同一事务完成 |
+| `025_analytics.sql` | 运营数据第一批：在线人数采样（15 秒一行，没有行 ≠ 0 人）、每人每天活跃、内部账号标签；`erase_player()` 重定义为注销时多删每日活跃记录与标签。设计见 `docs/运营数据.md` |
+| `026_client_events.sql` | 运营数据第二批：游戏上报的事件（教学步骤、对局、战斗播放、报错、帧率），主键 (player_id, event_id) 去重；**客户端说的，只做统计**；`erase_player()` 重定义为多删这一张。设计见 `docs/运营数据.md` 第六节 |
 
 **真库测试**：`backend/tests/pg_harness.py` 能在本机 PostgreSQL 上把这里全部文件跑一遍再测（设 `GLORY_TEST_PG`，只许本机）。
 见 `docs/运营后台设计.md` 第七节。

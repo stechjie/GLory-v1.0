@@ -129,8 +129,14 @@ EXPECTED_TABLES: tuple[str, ...] = (
     "world_messages",
     "player_mutes",
     "player_reports",
-    # 023（累计七日登录）
+    # 024（累计七日登录）
     "seven_day_login_claims",
+    # 025（运营数据：在线人数、每日活跃、内部账号）
+    "analytics_online_samples",
+    "analytics_player_days",
+    "analytics_account_tags",
+    # 026（运营数据：游戏上报的事件）
+    "analytics_client_events",
 )
 
 

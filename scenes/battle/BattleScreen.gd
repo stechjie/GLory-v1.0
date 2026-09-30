@@ -1072,6 +1072,7 @@ func _fail_team_replay(reason: String) -> void:
 		return
 	_return_emitted = true
 	_finished = true
+	AnalyticsService.track("replay_failed", {"round": _replay_round, "reason": reason})
 	_presentation_director.skip_to_result()
 	_stop_battle_music()
 	_result = {"kind": "team", "player_wins": false, "error": reason, "log": [reason]}
@@ -1099,6 +1100,9 @@ func _finish_replay() -> void:
 	_finished = true
 	_result = _replay.get("result", {})
 	_return_emitted = true
+	# 运营数据：这一回合的战斗播完了（从开始准备到播完多久）。和服务器的结算对得上 = 玩家看到了结果。
+	AnalyticsService.track("replay_done", {"round": _replay_round,
+		"ms": Time.get_ticks_msec() - _battle_prepare_started_msec})
 	_stop_battle_music()
 	# 9.19：人王奖励音 + 升级闪光（见 BattleVfx._play_human_king_reward）。
 	# 本地模拟那条路在 BattleResult._emit_finished 里调，这里是 replay/组队那条。

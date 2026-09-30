@@ -32,7 +32,7 @@ from typing import Any
 import asyncpg
 import httpx
 
-from app import announcements, bans, db, mail, ranked, realtime, shop, world_chat
+from app import analytics, announcements, bans, db, mail, ranked, realtime, shop, world_chat
 from app.admin_auth import Admin
 from app.config import get_settings
 
@@ -170,6 +170,9 @@ async def player_detail(player_id: uuid.UUID) -> dict:
             "select message_id, body, sender_name, created_at, hidden_at, hidden_by, hidden_reason"
             " from world_messages where sender_id = $1 order by message_id desc limit 30", player_id)
         mute = await world_chat.live_mute(conn, player_id) if mutes else None
+        # 025（运营数据）没跑时空着。
+        tag = await _optional(conn,
+            "select kind, note, tagged_by, tagged_at from analytics_account_tags where player_id = $1", player_id)
     ranked_out = None
     if ranked_row is not None:
         ranked_out = {**_row(ranked_row), "tier": ranked.tier_of(int(ranked_row["score"]))}
@@ -192,6 +195,7 @@ async def player_detail(player_id: uuid.UUID) -> dict:
         "mutes": [_row(r) for r in mutes],
         "reports_against": [_row(r) for r in reports_against],
         "world_recent": [_row(r) for r in world_recent],
+        "tag": _row(tag[0]) if tag else None,
     }
 
 
@@ -273,6 +277,51 @@ async def unmute(admin: Admin, player_id: uuid.UUID, note: str) -> dict:
                 raise AdminRejected("数据库还没跑 019_world_chat.sql，禁言用不了", 503) from None
             await _audit(conn, admin, "unmute", player_id, {"revoked": count, "note": note})
     return {"revoked": count}
+
+
+# --- 内部账号（运营数据排除；database/025，app/analytics.py）-----------------------------------
+#
+# 不用批：只影响报表里算不算他，随时能改回来。都记操作记录 —— 报表排除了谁、谁排的，要查得到。
+
+TAG_KINDS = {"staff": "员工", "qa": "测试", "loadtest": "压测"}
+
+
+async def tag_player(admin: Admin, player_id: uuid.UUID, kind: str, note: str) -> dict:
+    if kind not in TAG_KINDS:
+        raise AdminRejected("标签只能是 %s" % " / ".join(TAG_KINDS))
+    note = (note or "").strip()[:200] or None
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            await _live_friend_code(conn, player_id)
+            try:
+                previous = await conn.fetchval(
+                    "select kind from analytics_account_tags where player_id = $1 for update", player_id)
+                await conn.execute(
+                    "insert into analytics_account_tags (player_id, kind, note, tagged_by) values ($1, $2, $3, $4)"
+                    " on conflict (player_id) do update"
+                    " set kind = excluded.kind, note = excluded.note, tagged_by = excluded.tagged_by, tagged_at = now()",
+                    player_id, kind, note, admin.name)
+            except asyncpg.UndefinedTableError:
+                raise AdminRejected("数据库还没跑 025_analytics.sql，打不了标签", 503) from None
+            await _audit(conn, admin, "analytics.tag", player_id, {"kind": kind, "note": note, "previous": previous})
+    # 在线人数的采样当场按新标签算，不等下一分钟重读。
+    analytics.current().set_internal(player_id, True)
+    return {"kind": kind}
+
+
+async def untag_player(admin: Admin, player_id: uuid.UUID) -> dict:
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            try:
+                kind = await conn.fetchval(
+                    "delete from analytics_account_tags where player_id = $1 returning kind", player_id)
+            except asyncpg.UndefinedTableError:
+                raise AdminRejected("数据库还没跑 025_analytics.sql", 503) from None
+            if kind is None:
+                raise AdminRejected("他本来就不是内部账号", 409)
+            await _audit(conn, admin, "analytics.untag", player_id, {"previous": kind})
+    analytics.current().set_internal(player_id, False)
+    return {"removed": kind}
 
 
 # --- 举报（database/019，app/reports.py）------------------------------------------------

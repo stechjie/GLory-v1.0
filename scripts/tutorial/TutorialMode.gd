@@ -209,6 +209,7 @@ func start() -> void:
 	GameState.enemy_formation_hp = TUTORIAL_HP
 	GameState.gold = TUTORIAL_GOLD
 	_apply_shop(START_SHOP)
+	AnalyticsService.tutorial_started()
 
 func finish(clear_saved_checkpoint: bool = true) -> void:
 	active = false
@@ -781,6 +782,7 @@ func _on_skip_dialog_result(result: String, _request_id: String) -> void:
 		return
 	if not active:
 		return
+	AnalyticsService.tutorial_skipped(step_key(), step_number())
 	skip_requested.emit()
 
 func _on_hotspot_pressed() -> void:
@@ -845,9 +847,13 @@ var _checkpoint_signature := ""
 func _advance_to(next_step: int) -> void:
 	if step == next_step:
 		return
+	# 运营数据的教学漏斗也从这唯一的推进入口记：走完哪一步、停了多久（DONE = 整段完成）。
+	var from_key := step_key()
+	var from_number := step_number()
 	step = next_step
 	_sync_progress_index()
 	save_checkpoint()
+	AnalyticsService.tutorial_step(from_key, step_key(), from_number)
 
 
 func save_checkpoint(force: bool = false) -> void:
@@ -994,6 +1000,7 @@ func restore_checkpoint() -> bool:
 	GameState.boss_completed = int(data.get("boss_completed", 0))
 
 	_checkpoint_signature = _checkpoint_progress_signature()
+	AnalyticsService.tutorial_resumed(step_key(), step_number())
 	return true
 
 

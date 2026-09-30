@@ -369,7 +369,8 @@ def _tables_referencing_players() -> set[str]:
             stripped = line.strip().lower()
             if stripped.startswith("--"):
                 continue
-            m = re.match(r"create table (\w+)", stripped)
+            # 024 写的是 create table if not exists —— 不跳过的话会把「if」当成表名。
+            m = re.match(r"create table (?:if not exists )?(\w+)", stripped)
             if m:
                 current = m.group(1)
             m = re.match(r"alter table (\w+)", stripped)
