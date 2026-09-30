@@ -21,6 +21,7 @@ signal friends_requested        # 左侧「朋友」按钮：进入好友界面
 signal chat_requested           # 左侧「聊天」按钮：进入私聊界面
 signal announcements_requested  # 右侧「公告 / 活动」：进入公告界面
 signal shop_requested           # 右侧「商店」：进入商城
+signal diamond_shop_requested   # 顶部钻石 +：直接进入钻石档位
 signal bag_requested            # 右上角「背包」：进入背包
 signal mail_requested           # 右上角「邮件」：进入邮箱（docs/邮件系统设计.md）
 
@@ -122,10 +123,10 @@ var _mail_dot: Label
 # 9.27：商店 / 公告图标内的实时预览。
 var _shop_preview: Control
 var _shop_name: Label
+var _shop_dot: Label
 var _news_title: Label
-# 缩略图相对内侧框的占比。0.8 是「等比例缩小 + 四周留白」后的平衡值 ——
-# 宠物 3D 预览自带上下留白，按 1.0 铺满会让模型顶到金框上，故收一档。
-const SHOP_PREVIEW_SCALE := 0.8
+# 商店入口的模型需要在主菜单右侧小框里看清，仍留一点空间给金框和名称牌。
+const SHOP_PREVIEW_SCALE := 0.94
 var _address_edit: LineEdit
 var _net_status: Label
 # 「敬请期待」不再持有 AcceptDialog 节点：见 _show_coming_soon()。
@@ -153,6 +154,7 @@ func _ready() -> void:
 	_build()
 	_refresh_saved_match.call_deferred()
 	_layout()
+	_show_shop_fallback()
 	_start_menu_music()
 	if not AccountManager.profile_changed.is_connected(_on_account_profile_changed):
 		AccountManager.profile_changed.connect(_on_account_profile_changed)
@@ -166,6 +168,7 @@ func _ready() -> void:
 	_ensure_profile_loaded()
 	# 钱包**每次回主菜单都重拉**，不像资料那样吃缓存 —— 玩家多半是刚从商城买完东西回来的。
 	_refresh_wallet()
+	_refresh_login_dot()
 	# 9.17 反馈第 6 条：朋友申请的红点与提示音。
 	#
 	# ★ 这一行**曾经漏掉了** —— `_refresh_friend_requests()` 连同红点都写好了，却没人调它，
@@ -255,6 +258,8 @@ func _build() -> void:
 	_coin_label = _add_label("—", Vector2(645, 35), Vector2(220, 55), 24)
 	_add_texture(TEX_DIAMOND, Vector2(885, 35), Vector2(220, 55))
 	_diamond_label = _add_label("—", Vector2(885, 35), Vector2(220, 55), 24)
+	_add_hit(Vector2(885, 35), Vector2(220, 55),
+		func() -> void: diamond_shop_requested.emit())
 
 	_add_texture(TEX_FRIENDS, Vector2(28, 300), Vector2(132, 132), "left")
 	_add_label(_menu_text("朋友", "Friends"), Vector2(47, 380), Vector2(94, 30), 21, "left")
@@ -295,14 +300,22 @@ func _build() -> void:
 
 	_add_texture(TEX_SHOP, Vector2(1380, 140), Vector2(270, 250), "right")
 	_add_label(_menu_text("商店", "Shop"), Vector2(1380, 150), Vector2(270, 34), 24, "right")
-	# 9.27：商店图标内显示最新商品缩略图 + 名称。
-	# 容器四边按 shop.png（500×500 贴图 * 270×250 显示）的**内侧金框**量出：
-	# 金框 x≈45→456、y≈122→406 → 画布 x≈1404→1626、y≈201→343。
-	# 再加 clip_children 双保险，越界也裁掉。
-	_shop_preview = _add_container(Vector2(1408, 205), Vector2(214, 134), "right")
+	# 原画内侧金框是商品展台；名称牌与入口提示固定显示，网络未返回时也不留空框。
+	_shop_preview = _add_container(Vector2(1409, 204), Vector2(212, 132), "right")
 	_shop_preview.clip_children = CanvasItem.CLIP_CHILDREN_ONLY
-	_shop_name = _add_label("", Vector2(1415, 322), Vector2(200, 26), 18, "right")
-	_shop_name.visible = false
+	var shop_name_plate := Panel.new()
+	shop_name_plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	shop_name_plate.add_theme_stylebox_override("panel", Tokens.flat_box(
+		Tokens.INK_PANEL, Tokens.MIST_LINE_GOLD, 1, 5))
+	add_child(shop_name_plate)
+	_track(shop_name_plate, Vector2(1421, 310), Vector2(188, 31), 0, "right")
+	_shop_name = _add_label("", Vector2(1424, 312), Vector2(182, 27), 18, "right")
+	_add_label(_menu_text("探索商店  ›", "ENTER SHOP  ›"),
+		Vector2(1404, 349), Vector2(222, 29), 19, "right")
+	_shop_dot = _add_label("●", Vector2(1612, 145), Vector2(32, 32), 26, "right")
+	_shop_dot.add_theme_color_override("font_color", Tokens.UNREAD_DOT)
+	_shop_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_shop_dot.visible = false
 	_add_hit(Vector2(1380, 140), Vector2(270, 250), _emit_shop, "right")
 	_add_texture(TEX_NEWS, Vector2(1380, 400), Vector2(270, 250), "right")
 	_add_label(_menu_text("公告 / 活动", "News / Events"), Vector2(1380, 407), Vector2(270, 34), 22, "right")
@@ -890,6 +903,16 @@ func _refresh_wallet() -> void:
 	_coin_label.text = Currency.comma(int(body.get("coin", 0)))
 	_diamond_label.text = Currency.comma(int(body.get("diamond", 0)))
 
+
+func _refresh_login_dot() -> void:
+	if not AccountManager.is_logged_in():
+		return
+	var result: Dictionary = await AccountManager.fetch_seven_day_login()
+	if not is_inside_tree() or _shop_dot == null:
+		return
+	if int(result.get("code", 0)) / 100 == 2:
+		_shop_dot.visible = bool((result.get("body", {}) as Dictionary).get("claimable_today", false))
+
 # 9.27：公告图标内显示最新公告标题（含【系统】/【活动】等分类标签）。
 func _refresh_news_title() -> void:
 	if _news_title == null or not is_instance_valid(_news_title):
@@ -919,13 +942,22 @@ func _refresh_shop_preview() -> void:
 	if not is_inside_tree() or _shop_preview == null:
 		return
 	if int(result.get("code", 0)) / 100 != 2:
-		_clear_shop_preview()
+		_show_shop_fallback()
 		return
 	var items: Array = (result.get("body", {}) as Dictionary).get("items", []) as Array
 	if items.is_empty():
-		_clear_shop_preview()
+		_show_shop_fallback()
 		return
 	_set_shop_preview(items[0] as Dictionary)
+
+
+func _show_shop_fallback() -> void:
+	# 实机离线和视觉回归截图都使用现有宠物模型，让入口始终是一张完整的陈列卡。
+	# 这里只是主菜单展示；商品、价格和归属仍全部来自服务端。
+	_set_shop_preview({
+		"kind": "pet", "grants": "pet_cat",
+		"name": "探索珍藏", "name_en": "Discover",
+	})
 
 
 func _set_shop_preview(item: Dictionary) -> void:
@@ -937,13 +969,18 @@ func _set_shop_preview(item: Dictionary) -> void:
 	var box := _shop_preview.size
 	if box.x <= 0 or box.y <= 0:
 		box = Vector2(210, 132)
-	# 等比例缩小：预览按容器再乘 SHOP_PREVIEW_SCALE，四周留白，确保完全落在图标内侧框里。
-	# 用 CenterContainer 而不是拉伸到容器大小 —— 宠物 3D 预览拉伸会把模型顶出框外。
+	# 用 CenterContainer 保持 3D 模型比例，不拉伸模型。
 	var preview_size := Vector2(box.x * SHOP_PREVIEW_SCALE, box.y * SHOP_PREVIEW_SCALE)
+	var stage := Panel.new()
+	stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stage.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	stage.add_theme_stylebox_override("panel", Tokens.flat_box(
+		Tokens.MIST_ROW_IDLE, Tokens.MIST_LINE_GOLD, 1, 5))
+	_shop_preview.add_child(stage)
 	var center := CenterContainer.new()
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_shop_preview.add_child(center)
+	stage.add_child(center)
 
 	var preview: Control
 	if kind == "pet":
@@ -951,6 +988,7 @@ func _set_shop_preview(item: Dictionary) -> void:
 	else:
 		var tex := AvatarCatalog.texture_for(grants)
 		if tex == null:
+			_show_shop_fallback()
 			return
 		var rect := TextureRect.new()
 		rect.texture = tex

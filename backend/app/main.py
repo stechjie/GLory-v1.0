@@ -39,6 +39,7 @@ from app.routes import presence as presence_routes
 from app.routes import profile as profile_routes
 from app.routes import reports as report_routes
 from app.routes import shop as shop_routes
+from app.routes import seven_day_login as seven_day_login_routes
 from app.routes import world as world_routes
 from app.routes import ws as ws_routes
 
@@ -201,6 +202,7 @@ app.include_router(world_routes.router)
 app.include_router(report_routes.router)
 app.include_router(announcement_routes.router)
 app.include_router(shop_routes.router)
+app.include_router(seven_day_login_routes.router)
 app.include_router(loadout_routes.router)
 app.include_router(mail_routes.router)
 app.include_router(battle_report_routes.router)

@@ -83,6 +83,7 @@ Supabase Dashboard → SQL Editor，按编号顺序逐个执行。
 | `020_room_invite.sql` | 房间邀请好友。**不建表** —— 邀请是 `chat_messages` 上 `kind='room_invite'` 的一条私聊，加 `kind` / `payload` 两列（🟢）。红点 / 音效 / 未读 / 断线补拉全部复用 007 的链路。设计见 `docs/交友系统设计.md`、`docs/聊天系统设计.md` |
 | `021_prep_skin.sql` | 棋盘皮肤：`players.prep_skin`（null = 默认），只有自己看得见、不进出战名片。设计见 `docs/棋盘皮肤.md` |
 | ~~`022`~~ | **作废，编号不再使用**（2026-09-29）。原来给 `player_presence` 加 `room_started`（房间开打了没），线上一次都没跑过就撤了：房间开没开局由战斗服务器在加入时判，不进数据库。本机跑过的库多一列不影响，想清掉就 `alter table player_presence drop column room_started`。下一个新文件从 `023` 起，免得跑过旧 022 的库把新 022 当成已跑 |
+| `023_seven_day_login.sql` | 七日累计登录领取记录；玩家与天数、玩家与游戏日均唯一，奖励与记录在同一事务完成 |
 
 **真库测试**：`backend/tests/pg_harness.py` 能在本机 PostgreSQL 上把这里全部文件跑一遍再测（设 `GLORY_TEST_PG`，只许本机）。
 见 `docs/运营后台设计.md` 第七节。

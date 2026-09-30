@@ -71,7 +71,7 @@ CURRENCIES = ("diamond", "coin")
 # 而那通常发生在出事故的当天），所以这一层漏了就等于没校验。
 #
 # mail = 系统邮件的附件（backend/app/mail.py）。那一笔流水同时记 mail_id，指明是哪封。
-SOURCES = ("shop", "iap", "grant", "refund", "starter_pick", "match_reward", "mail")
+SOURCES = ("shop", "iap", "grant", "refund", "starter_pick", "match_reward", "mail", "seven_day_login")
 
 
 class ShopRejected(RuntimeError):
@@ -95,6 +95,7 @@ class Item:
     price: int
     name: str
     name_en: str
+    enabled: bool = True
 
 
 _shop_cache: tuple[float, dict] | None = None
@@ -145,6 +146,7 @@ def _catalog() -> dict:
             price=int(raw["price"]),
             name=str(raw.get("name", raw["id"])),
             name_en=str(raw.get("name_en", raw.get("name", raw["id"]))),
+            enabled=bool(raw.get("enabled", True)),
         )
         if item.currency not in CURRENCIES:
             raise ValueError("shop.json 的 %s 用了未知货币 %s" % (item.id, item.currency))
@@ -184,7 +186,7 @@ def _pets() -> dict:
 
 def items() -> list[Item]:
     """整份目录，按 shop.json 里的顺序。"""
-    return list(_catalog()["by_item"].values())
+    return [item for item in _catalog()["by_item"].values() if item.enabled]
 
 
 def item_by_id(item_id: str) -> Item:
@@ -461,6 +463,10 @@ async def purchase(
                     replayed=True,
                     created_at=existing["created_at"],
                 )
+
+            # 活动内容仍在目录里用于归属校验，但绝不能由普通购买接口领取。
+            if not item.enabled:
+                raise ShopRejected("unknown_item", "这件商品目前没有上架")
 
             if await _owns(conn, player_id, item.grants):
                 raise ShopRejected("already_owned", "你已经拥有它了")

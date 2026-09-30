@@ -207,6 +207,8 @@ class _FakeConn:
         self.ranked_writes: list[tuple] = []
         self.credit_writes: list[tuple] = []
         self.events: list[tuple] = []
+        self.wallet_writes: list[tuple] = []
+        self.ledger_writes: list[tuple] = []
 
     async def fetch(self, sql, *args):
         if "from players" in sql:
@@ -217,6 +219,8 @@ class _FakeConn:
         return []
 
     async def fetchrow(self, sql, *args):
+        if "from player_wallets" in sql:
+            return {"diamond_paid": 0, "diamond_free": 0, "coin": 0}
         if "player_credit" in sql:
             return {"score": 100, "banned_until": None, "last_daily_grant": dt.date.today()}
         return None
@@ -233,6 +237,10 @@ class _FakeConn:
             self.credit_writes.append(args)
         elif "insert into credit_events" in sql:
             self.events.append(args)
+        elif "update player_wallets" in sql:
+            self.wallet_writes.append(args)
+        elif "insert into wallet_ledger" in sql:
+            self.ledger_writes.append(args)
         return "UPDATE 1"
 
     async def executemany(self, sql, rows):
@@ -271,6 +279,10 @@ async def test_ranked_settlement_uses_pre_match_averages() -> None:
     winners = [w for w in conn.ranked_writes if w[0] in players_[:3]]
     assert len(winners) == 3
     assert {w[1] for w in winners} == {40}, "三个赢家的新分数应该一样（都是 0 + 40）"
+    assert len(conn.wallet_writes) == 6
+    assert len(conn.ledger_writes) == 6
+    assert all(8 <= w[3] <= 15 for w in conn.wallet_writes[:3])
+    assert all(3 <= w[3] <= 8 for w in conn.wallet_writes[3:])
 
 
 @pytest.mark.anyio
@@ -280,6 +292,7 @@ async def test_casual_does_not_touch_ranked_score() -> None:
     await ranked.settle(conn, _report("casual", "team_a", players_))
     assert conn.ranked_writes == [], "休闲局不该动排位分"
     assert len(conn.credit_writes) == 6, "但信誉分照算 —— 跑路的损失和模式无关"
+    assert conn.wallet_writes == [], "休闲局不发排位游戏币"
 
 
 @pytest.mark.anyio
@@ -302,6 +315,7 @@ async def test_draw_does_not_move_score() -> None:
     conn = _FakeConn(set(players_), {p: 300 for p in players_})
     await ranked.settle(conn, _report("ranked", "draw", players_))
     assert {w[1] for w in conn.ranked_writes} == {300}, "平局不动分"
+    assert {w[3] for w in conn.wallet_writes} == {5}
 
 
 @pytest.mark.anyio

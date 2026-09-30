@@ -201,8 +201,8 @@ def test_content_not_in_catalog_is_free() -> None:
         content_id = "preset:%s" % entry["id"]
         assert content_id not in sold, "现有头像 %s 被挪进商城卖了" % entry["id"]
         assert shop.requires_entitlement(content_id) is False
-    for entry in avatars["frames"]:
-        assert shop.requires_entitlement("preset:%s" % entry["id"]) is False
+    assert shop.requires_entitlement("preset:frame_default") is False
+    assert shop.requires_entitlement("preset:avatar_frame_7day_01") is True
 
 
 def test_sold_content_requires_entitlement() -> None:
@@ -310,7 +310,7 @@ def test_order_lookup_happens_before_ownership_check(
     conn = wire_db(monkeypatch, [
         ("from shop_orders where", None),
         ("from player_entitlements", None),
-        ("from player_wallets", wallet_row(paid=1000)),
+        ("from player_wallets", wallet_row(coin=1000)),
         ("into shop_orders", WHEN),
     ])
     asyncio.run(shop.purchase(PLAYER_A, uuid.uuid4(), item.id))
@@ -406,7 +406,7 @@ def test_insufficient_funds_rejects_without_granting(
     conn = wire_db(monkeypatch, [
         ("from shop_orders where", None),
         ("from player_entitlements", None),
-        ("from player_wallets", wallet_row(paid=item.price - 1)),
+        ("from player_wallets", wallet_row(coin=item.price - 1)),
     ])
     with pytest.raises(shop.ShopRejected) as exc:
         asyncio.run(shop.purchase(PLAYER_A, uuid.uuid4(), item.id))
@@ -427,7 +427,7 @@ def test_successful_purchase_writes_ledger_and_grants_and_orders(
     conn = wire_db(monkeypatch, [
         ("from shop_orders where", None),
         ("from player_entitlements", None),
-        ("from player_wallets", wallet_row(free=item.price)),
+        ("from player_wallets", wallet_row(coin=item.price)),
         ("into shop_orders", WHEN),
     ])
     receipt = asyncio.run(shop.purchase(PLAYER_A, uuid.uuid4(), item.id))
@@ -438,9 +438,26 @@ def test_successful_purchase_writes_ledger_and_grants_and_orders(
     assert conn.count("into wallet_ledger") == 1
     assert conn.count("into player_entitlements") == 1
     assert conn.count("into shop_orders") == 1
-    # 全款从赠送列出，付费列一分没动。
+    # 普通宠物只扣账号游戏币，不碰钻石列。
+    assert receipt.wallet.coin == 0
     assert receipt.wallet.diamond_free == 0
     assert receipt.wallet.diamond_paid == 0
+
+
+def test_event_rewards_require_entitlement_but_cannot_be_purchased(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ice = shop.item_by_id("shop_prep_skin_ice")
+    frame = shop.item_by_id("event_frame_7day_ice")
+    assert not ice.enabled and not frame.enabled
+    assert ice not in shop.items() and frame not in shop.items()
+    assert shop.requires_entitlement("prep_skin_ice")
+    assert shop.requires_entitlement("preset:avatar_frame_7day_01")
+    conn = wire_db(monkeypatch, [("from shop_orders where", None)])
+    with pytest.raises(shop.ShopRejected) as exc:
+        asyncio.run(shop.purchase(PLAYER_A, uuid.uuid4(), ice.id))
+    assert exc.value.code == "unknown_item"
+    assert not conn.wrote_money() and not conn.granted()
 
 
 def test_purchase_never_trusts_a_client_supplied_price(

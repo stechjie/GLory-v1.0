@@ -191,7 +191,7 @@ def test_catalog_hides_skins_from_clients_that_do_not_declare_them(monkeypatch: 
         assert _skin_ids(client, "protocol=33; build=0") == []
         assert _skin_ids(client, "protocol=32; build=16") == []
         assert _skin_ids(client, "protocol=34; build=99") == [], "版本号再大，没声明也不该看到"
-        assert SOLD_SKIN in _skin_ids(client, "protocol=34; build=0; kinds=prep_skin")
+        assert _skin_ids(client, "protocol=34; build=0; kinds=prep_skin") == [], "冰雪皮肤仅由七日活动解锁"
         # 别的商品照常发给旧包。
         pets = [i for i in client.get("/v1/shop").json()["items"] if i["kind"] == "pet"]
         assert pets
@@ -204,9 +204,9 @@ def test_catalog_hides_skins_from_clients_that_do_not_declare_them(monkeypatch: 
 def test_every_sold_skin_exists_in_the_client_catalog() -> None:
     """卖了客户端目录里没有的皮肤：新包会把它藏起来（没有图），卖不出去也没人发现。"""
     client_ids = {str(s["id"]) for s in SKIN_CATALOG["skins"]}
-    sold = [i.grants for i in shop.items() if i.kind == "prep_skin"]
-    assert sold, "商城里一张皮肤都没有"
-    for skin in sold:
+    gated = [i.grants for i in shop._catalog()["by_item"].values() if i.kind == "prep_skin"]
+    assert gated, "冰雪皮肤必须保留归属门槛，否则所有账号都能免费使用"
+    for skin in gated:
         assert skin in client_ids, "shop.json 卖的 %s 不在 data/prep_skins.json 里" % skin
         assert re.match(loadout._PREP_SKIN_ID, skin), "%s 不符合皮肤 id 格式，存不进库" % skin
 

@@ -129,6 +129,8 @@ EXPECTED_TABLES: tuple[str, ...] = (
     "world_messages",
     "player_mutes",
     "player_reports",
+    # 023（累计七日登录）
+    "seven_day_login_claims",
 )
 
 

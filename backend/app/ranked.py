@@ -39,7 +39,10 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import secrets
 import uuid
+
+from app import shop
 
 log = logging.getLogger("glory.ranked")
 
@@ -258,7 +261,19 @@ async def _settle_ranked(conn, report: dict, seats: list[dict]) -> None:
             """,
             seat["player_id"], apply_delta(row["score"], delta), 1 if won else 0, streak,
         )
+        reward = coin_reward(outcome, seat["team"])
+        wallet = await shop._lock_wallet(conn, seat["player_id"])
+        await shop._apply(conn, seat["player_id"], wallet, {"coin": reward},
+                          "match_reward", None, note=f"ranked match {report['match_uid']}")
     log.info("排位结算 match=%s outcome=%s seats=%d", report["match_uid"], outcome, len(seats))
+
+
+def coin_reward(outcome: str, team: int) -> int:
+    """Inclusive ranges from the shop spec. Called only after match UID insertion."""
+    if outcome == "draw":
+        return 5
+    won = (outcome == "team_a") == (team == 0)
+    return 8 + secrets.randbelow(8) if won else 3 + secrets.randbelow(6)
 
 
 async def _settle_credit(conn, report: dict, seats: list[dict]) -> None:

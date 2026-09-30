@@ -5,17 +5,17 @@
 
 	"_free_by_omission": "🔴 不在这个文件里的内容一律免费。现有 20 张头像与 frame_default 上线时就是免费的，不能因为做了商城就变成付费 —— 那是对已经在用它的玩家的回收。要卖新头像就出新图、给新 id，别把老的挪进来。判定在 backend/app/shop.py 的 requires_entitlement()。",
 
-	"_price_placeholder": "⚠️ 下面的价格是占位，没有经过任何数值设计。上线前必须由策划定。改价格是安全的 —— 历史订单存的是下单时的快照，不 join 这个文件。",
+	"_price_note": "普通宠物按七日登录规格定价 500 游戏币。改价格不会改动历史订单的价格快照。",
 
-	"_currency_note": "currency 只能是 diamond 或 coin。第一版 coin（黄金）没有任何产出口、余额恒为 0，所以全部商品都标 diamond；等黄金的赚取方式定了再把无战力商品（头像、头像框）改成 coin。",
+	"_currency_note": "currency 只能是 diamond 或 coin。coin 是账号游戏币，区别于对局内 gold。enabled=false 的内容仍需归属，但不在商店出售。",
 
 	"items": [
 		{
 			"id": "shop_pet_mushroom",
 			"kind": "pet",
 			"grants": "pet_mushroom",
-			"currency": "diamond",
-			"price": 300,
+			"currency": "coin",
+			"price": 500,
 			"name": "蘑菇",
 			"name_en": "Mushroom"
 		},
@@ -23,8 +23,8 @@
 			"id": "shop_pet_cat",
 			"kind": "pet",
 			"grants": "pet_cat",
-			"currency": "diamond",
-			"price": 300,
+			"currency": "coin",
+			"price": 500,
 			"name": "猫",
 			"name_en": "Cat"
 		},
@@ -32,8 +32,8 @@
 			"id": "shop_pet_rabbit",
 			"kind": "pet",
 			"grants": "pet_rabbit",
-			"currency": "diamond",
-			"price": 300,
+			"currency": "coin",
+			"price": 500,
 			"name": "兔子",
 			"name_en": "Rabbit"
 		},
@@ -42,9 +42,40 @@
 			"kind": "prep_skin",
 			"grants": "prep_skin_ice",
 			"currency": "diamond",
-			"price": 300,
+			"price": 0,
+			"enabled": false,
 			"name": "冰雪棋盘",
 			"name_en": "Frost Board"
+		},
+		{
+			"id": "event_frame_7day_ice",
+			"kind": "avatar_frame",
+			"grants": "preset:avatar_frame_7day_01",
+			"currency": "diamond",
+			"price": 0,
+			"enabled": false,
+			"name": "冰雪七日头像框",
+			"name_en": "Frost Seven-Day Frame"
+		},
+		{
+			"id": "future_pet_diamond_01",
+			"kind": "pet",
+			"grants": "pet_diamond_01",
+			"currency": "diamond",
+			"price": 750,
+			"enabled": false,
+			"name": "即将推出",
+			"name_en": "Coming Soon"
+		},
+		{
+			"id": "future_pet_diamond_02",
+			"kind": "pet",
+			"grants": "pet_diamond_02",
+			"currency": "diamond",
+			"price": 750,
+			"enabled": false,
+			"name": "即将推出",
+			"name_en": "Coming Soon"
 		}
 	]
 }

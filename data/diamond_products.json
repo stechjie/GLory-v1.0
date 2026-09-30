@@ -1,0 +1,11 @@
+{
+	"schema_version": 1,
+	"_note": "Only display amount and platform product ID here. Localized price and purchase result must come from the platform IAP service; no client-side wallet credit is allowed.",
+	"products": [
+		{"product_id": "diamond_100", "diamond": 100},
+		{"product_id": "diamond_300", "diamond": 300},
+		{"product_id": "diamond_500", "diamond": 500},
+		{"product_id": "diamond_750", "diamond": 750},
+		{"product_id": "diamond_1000", "diamond": 1000}
+	]
+}

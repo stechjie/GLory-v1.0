@@ -12,6 +12,12 @@
 			"name": "默认",
 			"name_en": "Default",
 			"source": "res://assets/ui/main_menu_live/profile_avatar.png"
+		},
+		{
+			"id": "avatar_frame_7day_01",
+			"name": "冰雪七日",
+			"name_en": "Frost Seven-Day",
+			"source": "res://assets/ui/shop/frame_7day_ice.png"
 		}
 	],
 	"avatars": [

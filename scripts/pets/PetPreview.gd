@@ -24,7 +24,8 @@ const TARGET_HEIGHT := 0.95
 
 # 没有模型 / 模型加载失败时都回占位框，**不返回 null** ——
 # 调用方直接 add_child，多一个空判就多一处会忘的地方。
-static func build(pet_id: String, size: Vector2 = CARD_SIZE, greyed: bool = false) -> Control:
+static func build(pet_id: String, size: Vector2 = CARD_SIZE, greyed: bool = false,
+	camera_size: float = ORTHO_SIZE, camera_y_offset: float = 0.0) -> Control:
 	var path := PetService.model_path(pet_id)
 	if path.is_empty():
 		return placeholder(size, greyed)
@@ -70,8 +71,10 @@ static func build(pet_id: String, size: Vector2 = CARD_SIZE, greyed: bool = fals
 
 	var camera := Camera3D.new()
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
-	camera.size = ORTHO_SIZE
-	camera.look_at_from_position(CAMERA_POS, CAMERA_TARGET, Vector3.UP)
+	camera.size = camera_size
+	var camera_offset := Vector3(0.0, camera_y_offset, 0.0)
+	camera.look_at_from_position(CAMERA_POS + camera_offset,
+		CAMERA_TARGET + camera_offset, Vector3.UP)
 	camera.current = true
 	viewport.add_child(camera)
 

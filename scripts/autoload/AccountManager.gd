@@ -813,6 +813,14 @@ func fetch_wallet() -> Dictionary:
 	return await _request(HTTPClient.METHOD_GET, "/v1/me/wallet", null, true)
 
 
+func fetch_seven_day_login() -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/me/seven-day-login", null, true)
+
+
+func claim_seven_day_login() -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/me/seven-day-login/claim", {}, true)
+
+
 # 拥有的**内容 id**（pet_cat / preset:avatar_005），不是商品 id。
 #
 # 🔴 **不在这个列表里 ≠ 没有。** 不在服务端目录里的内容一律免费 ——

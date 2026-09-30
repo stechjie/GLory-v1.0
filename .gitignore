@@ -57,6 +57,25 @@ android/
 !/assets/ui/buttons/ready_magic_circle.png
 !/assets/ui/buttons/ready_magic_circle.png.import
 
+# Seven-day shop art is a runtime dependency of ShopScreen and PrepSkin.
+# Keep this small set with the code while the rest of the large art bundle stays external.
+!/assets/ui/shop/
+/assets/ui/shop/*
+!/assets/ui/shop/shop_hero_bg.png
+!/assets/ui/shop/frame_7day_ice.png
+!/assets/ui/shop/ice_reveal.gdshader
+!/assets/skins/
+/assets/skins/*
+!/assets/skins/prep/
+/assets/skins/prep/*
+!/assets/skins/prep/prep_skin_ice/
+/assets/skins/prep/prep_skin_ice/*
+!/assets/skins/prep/prep_skin_ice/board.png
+!/assets/skins/prep/prep_skin_ice/river.png
+!/assets/skins/prep/prep_skin_ice/bench.png
+!/assets/skins/prep/prep_skin_ice/carrot.png
+!/assets/skins/prep/prep_skin_ice/shop_button.png
+
 # Runtime logs
 logs/
 

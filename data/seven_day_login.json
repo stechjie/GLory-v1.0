@@ -1,0 +1,13 @@
+{
+	"schema_version": 1,
+	"game_timezone": "Asia/Kuala_Lumpur",
+	"rewards": [
+		{"day": 1, "reward_type": "diamond", "amount": 100},
+		{"day": 2, "reward_type": "diamond", "amount": 100},
+		{"day": 3, "reward_type": "coin", "amount": 500},
+		{"day": 4, "reward_type": "diamond", "amount": 100},
+		{"day": 5, "reward_type": "diamond", "amount": 100},
+		{"day": 6, "reward_type": "avatar_frame", "amount": 1, "item_id": "preset:avatar_frame_7day_01"},
+		{"day": 7, "reward_type": "diamond", "amount": 100, "extra_unlock": "prep_skin_ice"}
+	]
+}

@@ -5,6 +5,8 @@ extends Node
 #   Godot_v4.7-stable_win64_console.exe --path . res://tools/shop_bag_ui_capture.tscn
 
 const SHOP := preload("res://scenes/menu/ShopScreen.gd")
+const DIAMOND_STORE := preload("res://scenes/menu/DiamondStoreDialog.gd")
+const PET_DRAW := preload("res://scenes/menu/PetDrawDialog.gd")
 const BAG := preload("res://scenes/menu/BagScreen.gd")
 const WINDOW := Vector2i(1280, 720)
 const OUT_DIR := "res://reports/shop_bag_ui"
@@ -24,6 +26,10 @@ func _ready() -> void:
 		await get_tree().process_frame
 
 	await _capture_shop()
+	await _capture_shop_diamonds()
+	await _capture_pet_draw()
+	await _capture_shop_event()
+	await _capture_shop_appearance()
 	await _capture_bag_pets()
 	await _capture_bag_avatars()
 	print("SHOP_BAG_UI_CAPTURE dir=%s" % OUT_DIR)
@@ -39,18 +45,69 @@ func _capture_shop() -> void:
 	shop.set("_owned", {"pet_mushroom": true})
 	shop.set("_items", [
 		{"id": "shop_pet_mushroom", "kind": "pet", "grants": "pet_mushroom",
-			"currency": "diamond", "price": 300, "name": "蘑菇", "name_en": "Mushroom"},
+			"currency": "coin", "price": 500, "name": "蘑菇", "name_en": "Mushroom"},
 		{"id": "shop_pet_cat", "kind": "pet", "grants": "pet_cat",
-			"currency": "diamond", "price": 300, "name": "猫", "name_en": "Cat"},
+			"currency": "coin", "price": 500, "name": "猫", "name_en": "Cat"},
 		{"id": "shop_pet_rabbit", "kind": "pet", "grants": "pet_rabbit",
-			"currency": "diamond", "price": 800, "name": "兔子", "name_en": "Rabbit"},
-		{"id": "shop_avatar_dragon", "kind": "avatar", "grants": "preset:avatar_005",
-			"currency": "coin", "price": 900, "name": "暗黑巨龙", "name_en": "Dark Dragon"},
+			"currency": "coin", "price": 500, "name": "兔子", "name_en": "Rabbit"},
 	])
+	shop.set("_active_pet", "pet_mushroom")
 	shop.set("_selected_item_id", "shop_pet_cat")
 	_show(shop)
-	await _settle_and_shot("shop_featured_1280")
+	await _settle_and_shot("shop_pets_1280")
 	_clear_screen()
+
+
+func _capture_shop_diamonds() -> void:
+	var dialog := DIAMOND_STORE.new()
+	dialog.set_meta("ui_capture_fixture", true)
+	dialog.set("_balance", 500)
+	_show(dialog)
+	await _settle_and_shot("diamond_store_dialog_1280")
+	_clear_screen()
+
+
+func _capture_pet_draw() -> void:
+	var dialog := PET_DRAW.new()
+	_show(dialog)
+	await _settle_and_shot("pet_draw_dialog_1280")
+	_clear_screen()
+
+
+func _capture_shop_event() -> void:
+	var shop := _fixture_shop_special("seven_day")
+	_show(shop)
+	await _settle_and_shot("shop_seven_day_1280")
+	_clear_screen()
+
+
+func _capture_shop_appearance() -> void:
+	var shop := _fixture_shop_special("prep_skin")
+	_show(shop)
+	await _settle_and_shot("shop_appearance_1280")
+	_clear_screen()
+
+
+func _fixture_shop_special(category: String) -> Control:
+	var shop := SHOP.new()
+	shop.set_meta("ui_capture_fixture", true)
+	shop.set("_loading", false)
+	shop.set("_diamond", 400)
+	shop.set("_coin", 900)
+	shop.set("_active_category", category)
+	shop.set("_items", [{"id": "shop_pet_mushroom", "kind": "pet", "grants": "pet_mushroom",
+		"currency": "coin", "price": 500, "name": "蘑菇", "name_en": "Mushroom"},
+		{"id": "shop_pet_cat", "kind": "pet", "grants": "pet_cat",
+		"currency": "coin", "price": 500, "name": "猫", "name_en": "Cat"},
+		{"id": "shop_pet_rabbit", "kind": "pet", "grants": "pet_rabbit",
+		"currency": "coin", "price": 500, "name": "兔子", "name_en": "Rabbit"}])
+	var raw: Variant = JSON.parse_string(FileAccess.get_file_as_string(
+		"res://data/seven_day_login.json"))
+	var rewards: Array = (raw as Dictionary).get("rewards", [])
+	shop.set("_login_state", {"current_day": 4, "claimed_days": [1, 2, 3],
+		"claimable_today": true, "completed": false, "ice_skin_progress": 3,
+		"rewards": rewards})
+	return shop
 
 
 func _capture_bag_pets() -> void:

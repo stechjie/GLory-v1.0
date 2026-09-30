@@ -345,6 +345,7 @@ KEPT_ON_DELETE = {
     "player_ranked", "player_credit", "credit_events", "player_ranked_history",
     "player_bans",                                   # 封号记录：注销不能洗掉
     "player_mutes", "player_reports",                # 禁言与举报（019）：同封号，处罚记录不能靠注销洗掉
+    "seven_day_login_claims",                         # 奖励领取记录：要与钱包和归属流水对账
 }
 
 
