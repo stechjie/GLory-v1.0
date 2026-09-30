@@ -36,6 +36,9 @@ def main():
         root = Path(directory)
         project = root / "project"
         files = bundle.selected_files(args.source)
+        # This upstream regression uses a pure simulation fixture intentionally
+        # omitted from production server bundles. Include its class in tests only.
+        files["officetest/OfficeTestSim.gd"] = (args.source / "officetest/OfficeTestSim.gd").read_bytes()
         cache, _ = bundle.fresh_class_cache(files)
         files[".godot/global_script_class_cache.cfg"] = cache
         settings = bundle.server_project(files["project.godot"]).decode()
@@ -52,16 +55,15 @@ def main():
             command = [str(args.godot.resolve()), "--headless", "--path", str(project),
                        "res://tools/" + scene + ".tscn"] + tail
             timed_out = False
+            log_path = args.out / (name + ".log")
             try:
-                process = subprocess.run(command, env=environment, stdout=subprocess.PIPE,
-                                         stderr=subprocess.STDOUT, text=True, timeout=900)
-                log, code = process.stdout, process.returncode
-            except subprocess.TimeoutExpired as error:
-                log = error.stdout or b""
-                if isinstance(log, bytes):
-                    log = log.decode(errors="replace")
+                with log_path.open("w") as output:
+                    process = subprocess.run(command, env=environment, stdout=output,
+                                             stderr=subprocess.STDOUT, timeout=900 if name == "determinism" else 90)
+                code = process.returncode
+            except subprocess.TimeoutExpired:
                 code, timed_out = None, True
-            (args.out / (name + ".log")).write_text(log)
+            log = log_path.read_text(errors="replace")
             errors = [line for line in log.splitlines() if "ERROR:" in line or "SCRIPT ERROR" in line]
             summaries = [line for line in log.splitlines()
                          if any(token in line for token in ("CHECK_RESULT", "[HS]", "PROBE RESULT"))]
