@@ -26,6 +26,7 @@ func _ready() -> void:
 		await get_tree().process_frame
 
 	await _capture_shop()
+	await _capture_shop_frames()
 	await _capture_shop_diamonds()
 	await _capture_pet_draw()
 	await _capture_shop_event()
@@ -55,6 +56,19 @@ func _capture_shop() -> void:
 	shop.set("_selected_item_id", "shop_pet_cat")
 	_show(shop)
 	await _settle_and_shot("shop_pets_1280")
+	_clear_screen()
+
+
+func _capture_shop_frames() -> void:
+	var shop := SHOP.new()
+	shop.set_meta("ui_capture_fixture", true)
+	shop.set("_loading", false)
+	shop.set("_coin", 1250)
+	shop.set("_active_category", "frame")
+	shop.set("_owned", {"preset:avatar_frame_shop_01": true})
+	shop.set("_selected_item_id", "shop_frame_frost")
+	_show(shop)
+	await _settle_and_shot("shop_frames_1280")
 	_clear_screen()
 
 

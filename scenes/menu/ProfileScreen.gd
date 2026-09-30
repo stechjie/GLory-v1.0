@@ -20,6 +20,7 @@ const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const Catalog := preload("res://scripts/account/AvatarCatalog.gd")
 const AvatarPicker := preload("res://scenes/menu/AvatarPickerPanel.gd")
+const FramePicker := preload("res://scenes/menu/FramePickerPanel.gd")
 const TouchChoice := preload("res://ui/components/TouchChoiceButton.gd")
 # 引用常量而不是写字符串字面量。第一版这里写的是 "confirm"，而真值是 "confirmed"
 # —— 判断永远为假，玩家第一次设生日点了确认什么都不会发生，且不报任何错。
@@ -35,6 +36,7 @@ signal back_requested
 enum Mode { SELF, PUBLIC }
 
 const PICKER_MODAL_ID := "profile_avatar_picker"
+const FRAME_PICKER_MODAL_ID := "profile_frame_picker"
 const HISTORY_MODAL_ID := "profile_match_history"
 
 # 「战绩」块里三个要异步填的值标签（_load_ranked）。
@@ -79,6 +81,7 @@ var _body: VBoxContainer
 var _public_rows: VBoxContainer
 var _status: Label
 var _avatar_rect: TextureRect
+var _frame_rect: TextureRect
 var _name_label: Label
 var _days_label: Label
 var _pet_label: Label
@@ -123,6 +126,8 @@ func _exit_tree() -> void:
 	# 页面被关掉时把浮层一起收走，否则它会留在 ModalStack 上盖住主菜单。
 	if ModalStack.has(PICKER_MODAL_ID):
 		ModalStack.pop(PICKER_MODAL_ID)
+	if ModalStack.has(FRAME_PICKER_MODAL_ID):
+		ModalStack.pop(FRAME_PICKER_MODAL_ID)
 	if ModalStack.has(HISTORY_MODAL_ID):
 		ModalStack.pop(HISTORY_MODAL_ID)
 
@@ -250,10 +255,21 @@ func _identity_card() -> Control:
 	panel.add_child(row)
 
 	_avatar_rect = TextureRect.new()
-	_avatar_rect.custom_minimum_size = Vector2(112, 112)
+	_avatar_rect.custom_minimum_size = Vector2.ZERO
 	_avatar_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_avatar_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_avatar_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var avatar_stage := Control.new()
+	avatar_stage.custom_minimum_size = Vector2(112, 112)
+	avatar_stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_avatar_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	avatar_stage.add_child(_avatar_rect)
+	_frame_rect = TextureRect.new()
+	_frame_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_frame_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_frame_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_frame_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	avatar_stage.add_child(_frame_rect)
 
 	if _mode == Mode.SELF:
 		var avatar_btn := Button.new()
@@ -265,11 +281,11 @@ func _identity_card() -> Control:
 		for state in ["normal", "hover", "pressed"]:
 			avatar_btn.add_theme_stylebox_override(state, box)
 		avatar_btn.pressed.connect(_open_avatar_picker)
-		_avatar_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		avatar_btn.add_child(_avatar_rect)
+		avatar_stage.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		avatar_btn.add_child(avatar_stage)
 		row.add_child(avatar_btn)
 	else:
-		row.add_child(_avatar_rect)
+		row.add_child(avatar_stage)
 
 	var column := VBoxContainer.new()
 	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -288,6 +304,12 @@ func _identity_card() -> Control:
 	_pet_label = Label.new()
 	_pet_label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
 	column.add_child(_pet_label)
+	if _mode == Mode.SELF:
+		var frame_button: Button = ACTION_BUTTON.instantiate()
+		frame_button.text = _text("更换头像框", "Change frame")
+		frame_button.custom_minimum_size = Vector2(150, Tokens.TOUCH_MIN)
+		frame_button.pressed.connect(_open_frame_picker)
+		column.add_child(frame_button)
 	return panel
 
 
@@ -809,6 +831,19 @@ func _refresh() -> void:
 	# 唯一的显示名拼法。见文件顶部第 3 条。
 	_name_label.text = AccountManager.display_name(name_text, code)
 	_avatar_rect.texture = Catalog.texture_for(_field("avatar"))
+	var frame_id := Catalog.id_from_value(_field("avatar_frame"))
+	_frame_rect.visible = not frame_id.is_empty() and frame_id != "frame_default"
+	if _frame_rect.visible:
+		_frame_rect.texture = Catalog.frame_texture_for(_field("avatar_frame"))
+		_avatar_rect.offset_left = 21
+		_avatar_rect.offset_top = 21
+		_avatar_rect.offset_right = -21
+		_avatar_rect.offset_bottom = -21
+	else:
+		_avatar_rect.offset_left = 0
+		_avatar_rect.offset_top = 0
+		_avatar_rect.offset_right = 0
+		_avatar_rect.offset_bottom = 0
 
 	var days := _field_int("days_since_created", 1)
 	_days_label.text = _text("第 %d 天" % days, "Day %d" % days)
@@ -960,6 +995,11 @@ func _save_avatar(value: String) -> void:
 	_finish_submit(await AccountManager.update_profile({"avatar": value}))
 
 
+func _save_frame(value: String) -> void:
+	_begin_submit()
+	_finish_submit(await AccountManager.update_profile({"avatar_frame": value}))
+
+
 func _bio_payload() -> Dictionary:
 	var gender_index := _gender_pick.selected
 	var hide_gender := gender_index >= GENDER_VALUES.size()
@@ -1031,6 +1071,32 @@ func _open_avatar_picker() -> void:
 	picker.connect("dismissed", func() -> void: ModalStack.pop(PICKER_MODAL_ID))
 	ModalStack.push(picker, {
 		"id": PICKER_MODAL_ID,
+		"owner": self,
+		"priority": PICKER_PRIORITY,
+		"dismiss_on_backdrop": true,
+	})
+
+
+func _open_frame_picker() -> void:
+	if _busy or ModalStack.has(FRAME_PICKER_MODAL_ID):
+		return
+	var result: Dictionary = await AccountManager.fetch_entitlements()
+	if not is_inside_tree():
+		return
+	if int(result.get("code", 0)) / 100 != 2:
+		_set_status(_text("无法载入头像框收藏", "Could not load your frames"))
+		return
+	var owned: Dictionary = {}
+	for value in ((result.get("body", {}) as Dictionary).get("items", []) as Array):
+		owned[str(value)] = true
+	var picker := FramePicker.new() as Control
+	picker.call("configure", _field("avatar_frame"), owned)
+	picker.connect("picked", func(value: String) -> void:
+		ModalStack.pop(FRAME_PICKER_MODAL_ID)
+		_save_frame(value))
+	picker.connect("dismissed", func() -> void: ModalStack.pop(FRAME_PICKER_MODAL_ID))
+	ModalStack.push(picker, {
+		"id": FRAME_PICKER_MODAL_ID,
 		"owner": self,
 		"priority": PICKER_PRIORITY,
 		"dismiss_on_backdrop": true,

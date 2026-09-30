@@ -18,6 +18,36 @@
 			"name": "冰雪七日",
 			"name_en": "Frost Seven-Day",
 			"source": "res://assets/ui/shop/frame_7day_ice.png"
+		},
+		{
+			"id": "avatar_frame_shop_01",
+			"name": "翡翠森境",
+			"name_en": "Emerald Grove",
+			"source": "res://assets/ui/shop/headframes/emerald.png"
+		},
+		{
+			"id": "avatar_frame_shop_02",
+			"name": "霜晶王冠",
+			"name_en": "Frost Crown",
+			"source": "res://assets/ui/shop/headframes/frost.png"
+		},
+		{
+			"id": "avatar_frame_shop_03",
+			"name": "鎏金龙鳞",
+			"name_en": "Gilded Dragon",
+			"source": "res://assets/ui/shop/headframes/dragon.png"
+		},
+		{
+			"id": "avatar_frame_shop_04",
+			"name": "星穹秘环",
+			"name_en": "Astral Halo",
+			"source": "res://assets/ui/shop/headframes/astral.png"
+		},
+		{
+			"id": "avatar_frame_shop_05",
+			"name": "炽焰之心",
+			"name_en": "Inferno Heart",
+			"source": "res://assets/ui/shop/headframes/inferno.png"
 		}
 	],
 	"avatars": [

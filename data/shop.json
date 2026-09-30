@@ -58,6 +58,51 @@
 			"name_en": "Frost Seven-Day Frame"
 		},
 		{
+			"id": "shop_frame_emerald",
+			"kind": "avatar_frame",
+			"grants": "preset:avatar_frame_shop_01",
+			"currency": "coin",
+			"price": 600,
+			"name": "翡翠森境",
+			"name_en": "Emerald Grove"
+		},
+		{
+			"id": "shop_frame_frost",
+			"kind": "avatar_frame",
+			"grants": "preset:avatar_frame_shop_02",
+			"currency": "coin",
+			"price": 600,
+			"name": "霜晶王冠",
+			"name_en": "Frost Crown"
+		},
+		{
+			"id": "shop_frame_dragon",
+			"kind": "avatar_frame",
+			"grants": "preset:avatar_frame_shop_03",
+			"currency": "coin",
+			"price": 600,
+			"name": "鎏金龙鳞",
+			"name_en": "Gilded Dragon"
+		},
+		{
+			"id": "shop_frame_astral",
+			"kind": "avatar_frame",
+			"grants": "preset:avatar_frame_shop_04",
+			"currency": "coin",
+			"price": 600,
+			"name": "星穹秘环",
+			"name_en": "Astral Halo"
+		},
+		{
+			"id": "shop_frame_inferno",
+			"kind": "avatar_frame",
+			"grants": "preset:avatar_frame_shop_05",
+			"currency": "coin",
+			"price": 600,
+			"name": "炽焰之心",
+			"name_en": "Inferno Heart"
+		},
+		{
 			"id": "future_pet_diamond_01",
 			"kind": "pet",
 			"grants": "pet_diamond_01",

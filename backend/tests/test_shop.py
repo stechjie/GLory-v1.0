@@ -210,6 +210,22 @@ def test_sold_content_requires_entitlement() -> None:
         assert shop.requires_entitlement(item.grants) is True
 
 
+def test_new_avatar_frames_cost_600_coins_and_require_ownership() -> None:
+    catalog = json.loads((REPO / "data" / "shop.json").read_text(encoding="utf-8"))
+    avatars = json.loads((REPO / "data" / "avatars.json").read_text(encoding="utf-8"))
+    frame_ids = {entry["id"] for entry in avatars["frames"]}
+    sold = [item for item in catalog["items"] if item["id"].startswith("shop_frame_")]
+    assert len(sold) == 5
+    assert len({item["grants"] for item in sold}) == 5
+    for item in sold:
+        assert item["kind"] == "avatar_frame"
+        assert item["currency"] == "coin"
+        assert item["price"] == 600
+        assert item.get("enabled", True) is True
+        assert item["grants"].removeprefix("preset:") in frame_ids
+        assert shop.requires_entitlement(item["grants"])
+
+
 def test_starter_ids_come_from_the_same_pets_table_as_the_client() -> None:
     """服务端与客户端读同一份 data/pets/pets.json。
 

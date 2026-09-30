@@ -109,6 +109,10 @@ const DEBUG_BANDS := [
 
 # 左上角名牌上的两行字。要在账号资料到达后就地刷新，所以留引用。
 var _profile_portrait: TextureRect
+var _profile_base_frame: TextureRect
+var _profile_frame_overlay: Control
+var _profile_frame_portrait: TextureRect
+var _profile_frame_art: TextureRect
 var _profile_name_label: Label
 var _profile_sub_label: Label
 var _coin_label: Label
@@ -122,11 +126,17 @@ var _news_dot: Label
 var _mail_dot: Label
 # 9.27：商店 / 公告图标内的实时预览。
 var _shop_preview: Control
-var _shop_name: Label
 var _shop_dot: Label
+var _shop_preview_timer: Timer
+var _shop_preview_index := 0
 var _news_title: Label
-# 商店入口的模型需要在主菜单右侧小框里看清，仍留一点空间给金框和名称牌。
+# 手绘宠物在主菜单右侧小框里留一点空间给金框和名称牌。
 const SHOP_PREVIEW_SCALE := 0.94
+const SHOP_PREVIEW_PETS := [
+	"pet_cat",
+	"pet_rabbit",
+	"pet_mushroom",
+]
 var _address_edit: LineEdit
 var _net_status: Label
 # 「敬请期待」不再持有 AcceptDialog 节点：见 _show_coming_soon()。
@@ -235,7 +245,7 @@ func _build() -> void:
 	# 顺序 = 绘制层级，hit 必须放最后（TextureRect 默认会吃掉点击）。
 	# TODO 以后往头像框里放玩家立绘：要一张圆心透明的头像框，立绘那行插在头像框之前垫底。
 	_add_texture(TEX_PROFILE_PANEL, Vector2(18, 46), Vector2(550, 110), "left")
-	_add_texture(TEX_PROFILE_AVATAR, Vector2(18, 12), Vector2(180, 175), "left")
+	_profile_base_frame = _add_texture(TEX_PROFILE_AVATAR, Vector2(18, 12), Vector2(180, 175), "left")
 	# 头像画在框**之上**，不是垫在底下。
 	#
 	# 顶部原来那条 TODO 写的是「以后往头像框里放玩家立绘：要一张圆心透明的头像框，
@@ -245,6 +255,17 @@ func _build() -> void:
 	# 所以改成盖在上面 + 裁成圆形。等美术出了圆心透明的版本，可以把这行挪到
 	# 上一行之前并去掉裁剪，那样更省一次绘制。
 	_profile_portrait = _add_round_portrait(Vector2(46, 36), Vector2(123, 123), "left")
+	# 玩家装备了透明头像框时，绘制其专属框与较小的圆形头像。
+	_profile_frame_portrait = _add_round_portrait(Vector2(69, 60), Vector2(78, 78), "left")
+	_profile_frame_portrait.visible = false
+	_profile_frame_overlay = _add_container(Vector2(18, 12), Vector2(180, 175), "left")
+	_profile_frame_overlay.visible = false
+	_profile_frame_art = TextureRect.new()
+	_profile_frame_art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_profile_frame_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_profile_frame_art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_profile_frame_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_profile_frame_overlay.add_child(_profile_frame_art)
 	# 这两行**曾经是写死的假数据**（"GloryMaster" / "等级 45"）。等级系统不存在，
 	# 所以第二行现在放注册天数 —— 有真实来源，且比精确注册日期少泄漏一点。
 	# 等级/段位做出来之后再换回去，那时第二行才有真东西可放。
@@ -300,16 +321,9 @@ func _build() -> void:
 
 	_add_texture(TEX_SHOP, Vector2(1380, 140), Vector2(270, 250), "right")
 	_add_label(_menu_text("商店", "Shop"), Vector2(1380, 150), Vector2(270, 34), 24, "right")
-	# 原画内侧金框是商品展台；名称牌与入口提示固定显示，网络未返回时也不留空框。
+	# 原画内侧金框只轮播宠物手绘图；入口提示固定显示。
 	_shop_preview = _add_container(Vector2(1409, 204), Vector2(212, 132), "right")
 	_shop_preview.clip_children = CanvasItem.CLIP_CHILDREN_ONLY
-	var shop_name_plate := Panel.new()
-	shop_name_plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	shop_name_plate.add_theme_stylebox_override("panel", Tokens.flat_box(
-		Tokens.INK_PANEL, Tokens.MIST_LINE_GOLD, 1, 5))
-	add_child(shop_name_plate)
-	_track(shop_name_plate, Vector2(1421, 310), Vector2(188, 31), 0, "right")
-	_shop_name = _add_label("", Vector2(1424, 312), Vector2(182, 27), 18, "right")
 	_add_label(_menu_text("探索商店  ›", "ENTER SHOP  ›"),
 		Vector2(1404, 349), Vector2(222, 29), 19, "right")
 	_shop_dot = _add_label("●", Vector2(1612, 145), Vector2(32, 32), 26, "right")
@@ -876,9 +890,23 @@ func _refresh_profile_plate() -> void:
 		_profile_sub_label.text = "—"
 		if _profile_portrait != null and is_instance_valid(_profile_portrait):
 			_profile_portrait.texture = null
+		_profile_base_frame.visible = true
+		_profile_portrait.visible = true
+		_profile_frame_portrait.visible = false
+		_profile_frame_overlay.visible = false
 		return
 	if _profile_portrait != null and is_instance_valid(_profile_portrait):
-		_profile_portrait.texture = AvatarCatalog.texture_for(str(profile.get("avatar", "")))
+		var portrait := AvatarCatalog.texture_for(str(profile.get("avatar", "")))
+		_profile_portrait.texture = portrait
+		_profile_frame_portrait.texture = portrait
+		var frame_id := AvatarCatalog.id_from_value(str(profile.get("avatar_frame", "")))
+		var custom_frame := not frame_id.is_empty() and frame_id != "frame_default"
+		_profile_base_frame.visible = not custom_frame
+		_profile_portrait.visible = not custom_frame
+		_profile_frame_portrait.visible = custom_frame
+		_profile_frame_overlay.visible = custom_frame
+		if custom_frame:
+			_profile_frame_art.texture = AvatarCatalog.frame_texture_for(str(profile.get("avatar_frame", "")))
 	_profile_name_label.text = AccountManager.display_name(
 		str(profile.get("player_name", "")), str(profile.get("friend_code", "")))
 	var days := int(profile.get("days_since_created", 1))
@@ -929,47 +957,39 @@ func _refresh_news_title() -> void:
 	_news_title.text = title
 	_news_title.visible = true
 
-# 9.27：商店图标内异步拉取并显示最新商品缩略图。
+# 商店入口轮播三只手绘宠物；它只是陈列，不参与商品价格或归属判定。
 func _refresh_shop_preview() -> void:
 	if _shop_preview == null or not is_instance_valid(_shop_preview):
 		return
-	# 视觉回归截图不发网络请求，避免回归图抖动。
+	# 视觉回归截图固定在第一张，避免定时器让截图抖动。
 	if has_meta("ui_capture_fixture"):
 		return
-	if not AccountManager.is_logged_in():
-		return
-	var result: Dictionary = await AccountManager.fetch_shop()
-	if not is_inside_tree() or _shop_preview == null:
-		return
-	if int(result.get("code", 0)) / 100 != 2:
-		_show_shop_fallback()
-		return
-	var items: Array = (result.get("body", {}) as Dictionary).get("items", []) as Array
-	if items.is_empty():
-		_show_shop_fallback()
-		return
-	_set_shop_preview(items[0] as Dictionary)
+	_shop_preview_timer = Timer.new()
+	_shop_preview_timer.name = "ShopPetRotation"
+	_shop_preview_timer.wait_time = 3.0
+	_shop_preview_timer.timeout.connect(_next_shop_preview)
+	add_child(_shop_preview_timer)
+	_shop_preview_timer.start()
 
 
 func _show_shop_fallback() -> void:
-	# 实机离线和视觉回归截图都使用现有宠物模型，让入口始终是一张完整的陈列卡。
-	# 这里只是主菜单展示；商品、价格和归属仍全部来自服务端。
-	_set_shop_preview({
-		"kind": "pet", "grants": "pet_cat",
-		"name": "探索珍藏", "name_en": "Discover",
-	})
+	_shop_preview_index = 0
+	_set_shop_preview(str(SHOP_PREVIEW_PETS[_shop_preview_index]))
 
 
-func _set_shop_preview(item: Dictionary) -> void:
+func _next_shop_preview() -> void:
+	_shop_preview_index = (_shop_preview_index + 1) % SHOP_PREVIEW_PETS.size()
+	_set_shop_preview(str(SHOP_PREVIEW_PETS[_shop_preview_index]))
+
+
+func _set_shop_preview(pet_id: String) -> void:
 	if _shop_preview == null:
 		return
 	_clear_shop_preview()
-	var kind := str(item.get("kind", ""))
-	var grants := str(item.get("grants", ""))
 	var box := _shop_preview.size
 	if box.x <= 0 or box.y <= 0:
 		box = Vector2(210, 132)
-	# 用 CenterContainer 保持 3D 模型比例，不拉伸模型。
+	# CenterContainer 保持手绘原画比例，不拉伸。
 	var preview_size := Vector2(box.x * SHOP_PREVIEW_SCALE, box.y * SHOP_PREVIEW_SCALE)
 	var stage := Panel.new()
 	stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -982,32 +1002,13 @@ func _set_shop_preview(item: Dictionary) -> void:
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	stage.add_child(center)
 
-	var preview: Control
-	if kind == "pet":
-		preview = PetPreview.build(grants, preview_size, false)
-	else:
-		var tex := AvatarCatalog.texture_for(grants)
-		if tex == null:
-			_show_shop_fallback()
-			return
-		var rect := TextureRect.new()
-		rect.texture = tex
-		rect.custom_minimum_size = preview_size
-		rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		preview = rect
+	var preview: Control = PetPreview.build_illustration(pet_id, preview_size, false)
 	if preview == null:
 		return
 	preview.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	preview.custom_minimum_size = preview_size
 	center.add_child(preview)
 	_shop_preview.visible = true
-	if _shop_name != null and is_instance_valid(_shop_name):
-		var name_key := "name_en" if _english() else "name"
-		var item_name := str(item.get(name_key, item.get("name", item.get("id", "")))).strip_edges()
-		_shop_name.text = item_name
-		_shop_name.visible = not item_name.is_empty()
 
 
 func _clear_shop_preview() -> void:
@@ -1017,9 +1018,6 @@ func _clear_shop_preview() -> void:
 	for child in _shop_preview.get_children():
 		_shop_preview.remove_child(child)
 		child.queue_free()
-	if _shop_name != null and is_instance_valid(_shop_name):
-		_shop_name.text = ""
-		_shop_name.visible = false
 
 
 func _english() -> bool:
