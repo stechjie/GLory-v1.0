@@ -172,7 +172,7 @@ var _seen_card_jti: Dictionary = {}   # jti -> 过期时刻（unix 秒）
 # 验章在战斗服务器上，客户端怎么拿到名片都得过那一关。
 var seat_card_provider: Callable = Callable()
 const DEFAULT_PORT := NetworkConfig.SERVER_PORT
-const DEFAULT_HOST := NetworkConfig.SERVER_IP
+const DEFAULT_HOST := NetworkConfig.SERVER_HOST
 const TEAM_MAX_CLIENTS := 512
 var last_carrot_harvest_gain := 0
 const TEAM_SLOTS := 6
@@ -508,6 +508,24 @@ func _ready() -> void:
 		_shard_index = _cmdline_int("--shard", 0)
 		# 端口默认按分片推导（SERVER_PORT + shard），也允许 --port 显式覆盖。
 		call_deferred("start_dedicated_server", _cmdline_int("--port", NetworkConfig.port_of_shard(_shard_index)))
+	else:
+		_warm_server_dns()
+
+# 客户端启动时在后台把战斗服务器的域名解析一次（理由见 NetworkConfig.SERVER_HOST）。
+# ENet 建连时在主线程上同步解析域名；这里先解析好，结果进 IP 单例的缓存，
+# 之后点「连接」直接命中缓存，网络差时也不会卡界面。
+# 解析失败不进缓存：建连时会再解析一次，照常走「连不上」那条路，这里不用管。
+# 无界面运行（门禁、工具）跳过，免得每次跑门禁都去查一次公网 DNS。
+func _warm_server_dns() -> void:
+	var host := NetworkConfig.SERVER_HOST
+	if host.is_valid_ip_address() or DisplayServer.get_name() == "headless":
+		return
+	var id := IP.resolve_hostname_queue_item(host)
+	if id == IP.RESOLVER_INVALID_ID:
+		return
+	while IP.get_resolve_item_status(id) == IP.RESOLVER_STATUS_WAITING:
+		await get_tree().create_timer(0.2).timeout
+	IP.erase_resolve_item(id)
 
 # --- 握手（E1，对应 C10）-----------------------------------------------------
 # 此前协议号唯一的实际拦截点是 `validate_team_snapshot` —— 也就是说版本不匹配的

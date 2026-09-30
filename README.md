@@ -1375,7 +1375,7 @@ FAIL [reset_not_wired] NetworkService.reset() 必须重置信封位置（实际 
   - `procedural_ui_ratchet`；
   - `main_team_create_room_action` / `main_team_join_room_action`：残留重连凭证；
   - `page_lifecycle`：模型 `.tscn` 解析失败，没跑出结果。
-- **注意**：`modal_lifecycle` 和 `responsive_layout` 会让主菜单真的连线上战斗服务器（`NetworkConfig.SERVER_IP`）。本地协议和线上不一致时，就是它们撞上了上面那个崩溃。
+- **注意**：`modal_lifecycle` 和 `responsive_layout` 会让主菜单真的连线上战斗服务器（`NetworkConfig.SERVER_HOST`）。本地协议和线上不一致时，就是它们撞上了上面那个崩溃。
 
 **还没验**：
 - 在服务器上装好 LiveKit 之后，用官方命令行工具拿战斗服务器发的钥匙真进房：

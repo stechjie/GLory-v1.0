@@ -47,7 +47,7 @@ var last_error := ""
 # 连接目标的默认值必须和搬迁前一致：原来是 DEFAULT_HOST / DEFAULT_PORT，
 # 也就是 NetworkConfig 里的值。写成空串/0 会让"没显式设过地址就连"退化成连不上，
 # 而那是个很难查的失败 —— 表现是连接超时，看不出默认值被弄丢了。
-var remote_address := NetworkConfig.SERVER_IP
+var remote_address := NetworkConfig.SERVER_HOST
 var remote_port := NetworkConfig.SERVER_PORT
 # 服务器签发的会话 token（重连凭证，非账号）
 var session_token := ""
