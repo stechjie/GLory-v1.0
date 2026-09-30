@@ -145,6 +145,7 @@ func _run() -> void:
 	for i in 24:
 		model.stats.append({"name": "人王", "id": "human_king", "star": 4, "skill_stacks": 6, "owner_slot": i % 6, "damage_dealt": 100, "damage_taken": 30, "healing_done": 0})
 	var panel := SettlementPanel.new()
+	model["local_team"] = 1
 	panel.data = model
 	add_child(panel)
 	await get_tree().process_frame
@@ -154,7 +155,7 @@ func _run() -> void:
 	_check_icon_bounds(panel)
 	if OS.get_cmdline_user_args().has("--render"):
 		await RenderingServer.frame_post_draw
-		get_viewport().get_texture().get_image().save_png("res://work/final_settlement_20260929/panel_top.png")
+		get_viewport().get_texture().get_image().save_png("res://work/voice_redesign_20260930/panel_top.png")
 		var icons := panel.find_children("*", "TextureRect", true, false)
 		var icon := icons[0] as Control
 		var click := InputEventMouseButton.new()
@@ -165,12 +166,12 @@ func _run() -> void:
 		await get_tree().process_frame
 		await RenderingServer.frame_post_draw
 		_expect(panel._bubble.visible, "icon_click_opens_overlay_bubble")
-		get_viewport().get_texture().get_image().save_png("res://work/final_settlement_20260929/panel_bubble.png")
+		get_viewport().get_texture().get_image().save_png("res://work/voice_redesign_20260930/panel_bubble.png")
 		var scroll := panel.get_child(1) as ScrollContainer
 		scroll.scroll_vertical = 10000
 		await get_tree().process_frame
 		await RenderingServer.frame_post_draw
-		get_viewport().get_texture().get_image().save_png("res://work/final_settlement_20260929/panel_bottom.png")
+		get_viewport().get_texture().get_image().save_png("res://work/voice_redesign_20260930/panel_bottom.png")
 	panel.queue_free()
 	await get_tree().process_frame
 	NetworkService.team_active = true
@@ -190,7 +191,7 @@ func _run() -> void:
 	_expect(not lobby._start_block_reason(true).is_empty(), "lobby_explains_pending_start_block")
 	if OS.get_cmdline_user_args().has("--render"):
 		await RenderingServer.frame_post_draw
-		get_viewport().get_texture().get_image().save_png("res://work/final_settlement_20260929/lobby_pending.png")
+		get_viewport().get_texture().get_image().save_png("res://work/voice_redesign_20260930/lobby_pending.png")
 	lobby.queue_free()
 	await get_tree().process_frame
 	var battle_path := "res://scenes/battle/BattleScreen.tscn"
@@ -206,18 +207,24 @@ func _data_fixture() -> Dictionary:
 func _check_alignment(panel: Control) -> void:
 	var labels := panel.find_children("*", "Label", true, false)
 	for side in 2:
-		var right := -1.0
-		var aligned := true
-		var count := 0
-		for label in labels:
-			if int(label.get_meta("settlement_column", -1)) != 5 or int(label.get_meta("settlement_team", -1)) != side:
-				continue
-			var edge: float = label.get_global_rect().end.x
-			if right < 0:
-				right = edge
-			aligned = aligned and absf(edge - right) <= 1.0 and label.horizontal_alignment == HORIZONTAL_ALIGNMENT_RIGHT
-			count += 1
-		_expect(aligned and count == 4, "gold_header_values_share_right_edge_team_%d" % side)
+		for col in [5, 6]:
+			var right := -1.0
+			var aligned := true
+			var count := 0
+			for label in labels:
+				if int(label.get_meta("settlement_column", -1)) != col or int(label.get_meta("settlement_team", -1)) != side:
+					continue
+				var edge: float = label.get_global_rect().end.x
+				if right < 0:
+					right = edge
+				aligned = aligned and absf(edge - right) <= 1.0 and label.horizontal_alignment == HORIZONTAL_ALIGNMENT_RIGHT
+				count += 1
+			_expect(aligned and count == 4, "numeric_header_values_share_right_edge_team_%d_column_%d" % [side,col])
+	var team_headers: Array = []
+	for label in labels:
+		if str(label.text).begins_with("蓝队（") or str(label.text).begins_with("红队（"):
+			team_headers.append(label)
+	_expect(team_headers.size()==2 and str(team_headers[0].text).begins_with("蓝队"), "own_blue_team_shown_first")
 	for col in range(2, 5):
 		var right := -1.0
 		var aligned := true

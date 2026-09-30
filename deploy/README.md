@@ -26,6 +26,17 @@
 
 DuckDNS（免费）或自己的域名，A 记录指向服务器 IP。
 
+现在用的是三个 DuckDNS 子域名，**全部指向同一台机器的外网 IP**（2026-09-30 起是新账号的
+glory-server-3，`34.124.141.90`）：
+
+| 子域名 | 谁用 |
+|---|---|
+| `glorytd-api.duckdns.org` | 账号服务器（本文、Caddy） |
+| `glorytd-voice.duckdns.org` | 语音（`deploy/livekit/README.md`） |
+| `glorytd-battle.duckdns.org` | 战斗服务器（客户端 `NetworkConfig.SERVER_HOST`，UDP 8080，不经过 Caddy） |
+
+**换机器时三个都要改。** 客户端里一个 IP 都没写，所以只改 DuckDNS、不用发包。
+
 证书由 Caddy 自动申请与续期 —— 你不用碰证书。**但它要求域名先解析到这台机器**，
 不然申请会失败。先确认：
 

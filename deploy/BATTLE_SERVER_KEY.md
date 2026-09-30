@@ -246,7 +246,8 @@ godot --headless --path <目录> res://scenes/server/ServerMain.tscn --server --
 3. **客户端重新发版** —— 新证书在 `NetTLSCert.gd` 里，随包走
 
 漏掉第 3 步 = 所有老客户端连不上。这是自签名 pin 证书的固有代价，
-换成正式 CA 证书可以免掉，但那需要先有域名（见 `C15`：现在是硬编码 IP）。
+换成正式 CA 证书可以免掉。客户端 2026-09-30 起已经按域名连（`NetworkConfig.SERVER_HOST`），
+但要用 CA 证书，还得先把客户端改成校验域名（现在是 client_unsafe，见 `NetTLS.gd`）。
 
 ---
 

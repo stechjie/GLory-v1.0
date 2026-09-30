@@ -23,8 +23,9 @@ extends RefCounted
 #
 # ## 为什么是 client_unsafe 而不是 client
 #
-# NetworkConfig.SERVER_IP 是写死的 IP，不是域名（那是 C15），所以主机名校验
-# 永远过不了。client_unsafe 的"unsafe"**只指不校验 CN，不指不校验证书**：
+# 客户端现在按域名连（NetworkConfig.SERVER_HOST），但这张证书是自签的、CN 是
+# PIN_HOSTNAME（glory-battle），和域名对不上，所以主机名校验永远过不了。
+# client_unsafe 的"unsafe"**只指不校验 CN，不指不校验证书**：
 # 实测换一张自签证书接上去，客户端报 mbedtls -0x2700（X509 证书校验失败）并
 # 拒绝连接。也就是说 pin 证书这条路，服务端身份认证是**真的**成立的。
 # 门禁里有这个反例用例，不是靠这段注释保证。

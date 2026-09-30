@@ -1044,7 +1044,6 @@ func _show_menu() -> void:
 	_menu.chat_requested.connect(_show_chat_screen)
 	_menu.announcements_requested.connect(_show_announcements_screen)
 	_menu.shop_requested.connect(_show_shop_screen)
-	_menu.diamond_shop_requested.connect(_show_diamond_store)
 	_menu.bag_requested.connect(_show_bag_screen)
 	_menu.mail_requested.connect(_show_mail_screen)
 	add_child(_menu)
@@ -1211,34 +1210,15 @@ func _show_codex_screen() -> void:
 # 那会把它的整张依赖图拉进 Main 的加载路径 —— 同 _show_profile_screen 的理由。
 # 商城（docs/商城系统设计.md）。返回主菜单时那边会重拉一次钱包 ——
 # 玩家多半是刚买完东西回来的。
-func _show_shop_screen(category: String = "pet") -> void:
+func _show_shop_screen() -> void:
 	_clear()
 	var screen := _instantiate_screen("res://scenes/menu/ShopScreen.tscn")
 	if screen == null:
 		_show_menu()
 		return
 	screen.back_requested.connect(_show_menu)
-	screen.diamond_store_requested.connect(_show_diamond_store)
-	screen.pet_draw_requested.connect(_show_pet_draw)
-	screen.set("_active_category", category)
 	_page_back_route = _show_menu
 	add_child(screen)
-
-
-func _show_diamond_store() -> void:
-	if has_node("DiamondStoreDialog"):
-		return
-	var dialog := _instantiate_screen("res://scenes/menu/DiamondStoreDialog.tscn")
-	if dialog != null:
-		add_child(dialog)
-
-
-func _show_pet_draw() -> void:
-	if has_node("PetDrawDialog"):
-		return
-	var dialog := _instantiate_screen("res://scenes/menu/PetDrawDialog.tscn")
-	if dialog != null:
-		add_child(dialog)
 
 
 func _show_bag_screen() -> void:
@@ -1799,11 +1779,26 @@ func _show_game_over() -> void:
 	body.add_theme_color_override("font_color", Color(0.86, 0.9, 0.9))
 	panel.add_child(body)
 
-	var menu_btn := Button.new()
-	menu_btn.text = "查看详情"
-	menu_btn.custom_minimum_size = Vector2(180, 40)
-	menu_btn.pressed.connect(_show_final_settlement)
-	panel.add_child(menu_btn)
+	if bool(_final_settlement_data.get("show_details", false)):
+		var detail_btn := Button.new()
+		detail_btn.text = "查看详情"
+		detail_btn.custom_minimum_size = Vector2(180, 48)
+		detail_btn.pressed.connect(_show_final_settlement)
+		panel.add_child(detail_btn)
+	else:
+		if bool(_final_settlement_data.get("can_return_room", false)):
+			var room_btn := Button.new()
+			room_btn.text = "返回房间"
+			room_btn.custom_minimum_size = Vector2(180, 48)
+			room_btn.pressed.connect(func():
+				room_btn.disabled = true
+				_return_from_settlement())
+			panel.add_child(room_btn)
+		var menu_btn := Button.new()
+		menu_btn.text = "返回主菜单"
+		menu_btn.custom_minimum_size = Vector2(180, 48)
+		menu_btn.pressed.connect(_on_return_menu_requested)
+		panel.add_child(menu_btn)
 
 func _show_final_settlement() -> void:
 	_clear()
@@ -1811,6 +1806,7 @@ func _show_final_settlement() -> void:
 	_set_chat_sound_suppressed(true)
 	var panel := preload("res://scenes/menu/FinalSettlementPanel.gd").new()
 	panel.data = _final_settlement_data.duplicate(true)
+	panel.data["local_team"] = GameConstants.team_of_slot(NetworkService.team_local_slot)
 	panel.return_menu_requested.connect(_on_return_menu_requested)
 	panel.return_room_requested.connect(_return_from_settlement)
 	add_child(panel)

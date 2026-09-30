@@ -2,7 +2,16 @@ class_name NetworkConfig
 extends RefCounted
 
 # Client-side production target. Public server info only; no secrets belong here.
-const SERVER_IP := "34.142.168.170"
+#
+# 战斗服务器写**域名**、不写 IP：换机器（换 GCP 账号、换机房）时只改 DuckDNS 上的
+# 指向，不用全体玩家换包。写死 IP 的时候，换一次机器就等于所有已发出去的包一起作废
+# （审计文档 C15）。账号服务器（AccountConfig.DEFAULT_BACKEND_URL）和语音本来就是域名。
+#
+# 域名在 ENet 建连时解析（ENetConnection.connect_to_host 里同步解析，成功的结果缓存在
+# IP 单例里直到进程结束）。为了不在点「连接」时卡主线程，NetworkService 在客户端启动时
+# 先在后台解析一次（_warm_server_dns）。
+# DTLS 不受影响：客户端 pin 的是证书本身、不校验主机名（NetTLS「为什么是 client_unsafe」）。
+const SERVER_HOST := "glorytd-battle.duckdns.org"
 const SERVER_PORT := 8080
 const CONNECTION_TIMEOUT := 10.0
 const USE_DEDICATED_SERVER := true

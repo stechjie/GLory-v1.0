@@ -8,7 +8,7 @@ const Action := preload("res://ui/components/GloryActionButton.tscn")
 const GOLD := Color("e8c46a")
 const TEXT := Color("edeff4")
 const MUTED := Color("b8becc")
-const WIDTHS := [150.0, 340.0, 300.0, 240.0, 170.0, 170.0]
+const WIDTHS := [150.0, 310.0, 270.0, 210.0, 150.0, 170.0, 150.0]
 var data: Dictionary = {}
 # 对局历史里复用这个面板时（MatchHistoryPanel「详细战况」），「返回主菜单」换成这里的字，
 # 按下去照样发 return_menu_requested，由历史那边关掉弹窗。
@@ -23,7 +23,7 @@ func _ready() -> void:
 	background.color = Color("0d1219")
 	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(background)
-	var scroll := ScrollContainer.new()
+	var scroll := preload("res://ui/components/TouchScrollContainer.gd").new()
 	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	add_child(scroll)
@@ -40,14 +40,14 @@ func _ready() -> void:
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	content.add_child(title)
 	var outcome := int(data.get("outcome", 2))
-	var winners := ["红队", "蓝队", "平局"]
-	var winner := _label(("本场胜利：" + winners[clampi(outcome, 0, 2)] + ("（%s）" % str(data.get("allies", ["", ""])[outcome]) if outcome < 2 else "本场结果：平局")), Color("ff6b5a") if outcome == 0 else Color("4da3ff"), 18)
+	var winner := _label("本场胜利：" + _team_title(outcome) if outcome in [0, 1] else "本场结果：平局", Color("ff6b5a") if outcome == 0 else Color("4da3ff"), 18)
 	winner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	content.add_child(winner)
 	if data.get("seats", []).is_empty():
 		content.add_child(_label("本局暂无完整结算详情，请返回主菜单。", MUTED))
 	else:
-		for side in 2:
+		var own_side := clampi(int(data.get("local_team", GameConstants.team_of_slot(NetworkService.team_local_slot))), 0, 1)
+		for side in [own_side, 1 - own_side]:
 			content.add_child(_team(side))
 		content.add_child(_label("统计面板", TEXT, 20))
 		content.add_child(_stats())
@@ -125,6 +125,11 @@ func _row(widths: Array) -> Container:
 		row.add_child(cell)
 	return row
 
+func _team_title(side: int) -> String:
+	var allies: Array = data.get("allies", [])
+	var guardian := str(allies[side]).strip_edges() if side >= 0 and side < allies.size() else ""
+	return ("红队" if side == 0 else "蓝队") + ("（%s）" % guardian if not guardian.is_empty() else "")
+
 func _team(side: int) -> Control:
 	var panel := PanelContainer.new()
 	var color := Color("ff6b5a") if side == 0 else Color("4da3ff")
@@ -132,13 +137,12 @@ func _team(side: int) -> Control:
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 12)
 	panel.add_child(column)
-	var allies: Array = data.get("allies", ["", ""])
-	column.add_child(_label(("红队" if side == 0 else "蓝队") + ("（%s）" % str(allies[side]) if not str(allies[side]).is_empty() else ""), color, 24))
+	column.add_child(_label(_team_title(side), color, 24))
 	var headers := _row(WIDTHS)
-	var labels := ["玩家", "上阵棋子", "召唤佣兵", "宝藏", "获取升级石", "获得总金币"]
+	var labels := ["玩家", "上阵棋子", "召唤佣兵", "宝藏", "获取升级石", "本回合总造成伤害", "获得总金币"]
 	for i in labels.size():
 		var label := _label(labels[i], MUTED, 14)
-		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT if i == 5 else HORIZONTAL_ALIGNMENT_LEFT
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT if i >= 5 else HORIZONTAL_ALIGNMENT_LEFT
 		label.set_meta("settlement_column", i)
 		label.set_meta("settlement_team", side)
 		label.set_meta("settlement_header", true)
@@ -182,9 +186,14 @@ func _team(side: int) -> Control:
 				stones.add_child(icon)
 		var gold := _label(str(seat.get("total_gold", 0)), Color("ffd24d"))
 		gold.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		gold.set_meta("settlement_column", 5)
+		gold.set_meta("settlement_column", 6)
 		gold.set_meta("settlement_team", side)
-		row.get_child(5).add_child(gold)
+		row.get_child(6).add_child(gold)
+		var damage := _label(str(seat.get("round_damage", 0)), TEXT)
+		damage.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		damage.set_meta("settlement_column", 5)
+		damage.set_meta("settlement_team", side)
+		row.get_child(5).add_child(damage)
 	return panel
 
 func _stats() -> Control:
@@ -225,7 +234,7 @@ func _icon(path: String, caption: String, stars: int = 0, pixels: int = 48) -> V
 	art.custom_minimum_size = Vector2(pixels, pixels)
 	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	art.mouse_filter = Control.MOUSE_FILTER_STOP
+	art.mouse_filter = Control.MOUSE_FILTER_PASS
 	var rounded := ShaderMaterial.new()
 	rounded.shader = preload("res://ui/theme/SettlementIcon.gdshader")
 	art.material = rounded

@@ -401,7 +401,7 @@ func _build() -> void:
 	_net_status.add_theme_color_override("font_color", Color(0.98, 0.88, 0.55))
 
 	_address_edit = LineEdit.new()
-	_address_edit.text = NetworkConfig.SERVER_IP
+	_address_edit.text = NetworkConfig.SERVER_HOST
 	_address_edit.visible = false
 	add_child(_address_edit)
 
@@ -722,11 +722,11 @@ func _room_error_text(reason: String, typed_by_player: bool) -> String:
 	return reason
 
 func _emit_join() -> void:
-	var address := NetworkConfig.SERVER_IP
+	var address := NetworkConfig.SERVER_HOST
 	if _address_edit != null:
 		address = _address_edit.text.strip_edges()
 	if address.is_empty():
-		address = NetworkConfig.SERVER_IP
+		address = NetworkConfig.SERVER_HOST
 	team_join_requested.emit(address)
 
 func _show_room_overlay() -> void:

@@ -41,9 +41,9 @@ func build(owner: Node, voice_size: Vector2, members_size: Vector2, font_size: i
 	_panel_context = str(options.get("panel_context", ""))
 	voice_button = PrepWidgets.make_menu_button(VoiceService.mode_label(), voice_size, font_size, _on_voice_pressed)
 	voice_button.name = "VoiceToggle"
-	audience_button = PrepWidgets.make_menu_button("", members_size, font_size, _on_audience_pressed)
+	audience_button = PrepWidgets.make_menu_button("", members_size, font_size, _on_speaker_pressed)
 	audience_button.name = "VoiceAudience"
-	members_button = PrepWidgets.make_menu_button(_text("队友", "Team"), members_size, font_size, _on_members_pressed)
+	members_button = PrepWidgets.make_menu_button(_text("队友", "Team"), members_size, font_size, _on_audience_pressed)
 	members_button.name = "VoiceMembers"
 	# 三个按钮统一使用紧凑内边距，避免双行文字把实际高度撑到布局尺寸之外。
 	for button in [voice_button, audience_button, members_button]:
@@ -88,22 +88,39 @@ func teardown() -> void:
 func refresh() -> void:
 	if voice_button == null or not is_instance_valid(voice_button):
 		return
-	voice_button.text = VoiceService.mode_label()
-	if _panel_context in ["lobby", "prep", "battle"]:
-		voice_button.text = voice_button.text.replace("：", "\n").replace(": ", "\n")
-	if audience_button != null and is_instance_valid(audience_button):
-		audience_button.text = _text("范围\n", "To\n") + VoiceService.audience_label()
-		audience_button.add_theme_color_override("font_color",
-			ACTIVE_COLOR if VoiceService.audience == VoiceService.Audience.ALL else IDLE_COLOR)
-	var color := IDLE_COLOR
-	if VoiceService.mode == VoiceService.Mode.LISTEN:
-		color = LISTEN_COLOR
-	elif VoiceService.mode == VoiceService.Mode.TALK:
-		color = ACTIVE_COLOR
-	voice_button.add_theme_color_override("font_color", color)
-	if members_button != null and is_instance_valid(members_button):
-		var count := VoiceService.audience_members().size()
-		members_button.text = _text("成员\n%d" % count, "Users\n%d" % count)
+	voice_button.text = ""
+	audience_button.text = ""
+	_set_icon(voice_button, "mic_on" if VoiceService.mode == VoiceService.Mode.TALK else "mic_off")
+	_set_icon(audience_button, "speaker_on" if VoiceService.speaker_enabled else "speaker_off")
+	voice_button.tooltip_text = _text("关闭麦克风" if VoiceService.mode == VoiceService.Mode.TALK else "打开麦克风", "Toggle microphone")
+	audience_button.tooltip_text = _text("关闭扬声器" if VoiceService.speaker_enabled else "打开扬声器", "Toggle speaker")
+	if not VoiceService.last_error().is_empty():
+		voice_button.tooltip_text += "\n" + VoiceService.last_error()
+		audience_button.tooltip_text += "\n" + VoiceService.last_error()
+	members_button.text = _text("所有人", "All") if VoiceService.audience == VoiceService.Audience.ALL else _text("队友", "Team")
+	members_button.add_theme_color_override("font_color", ACTIVE_COLOR if VoiceService.audience == VoiceService.Audience.ALL else IDLE_COLOR)
+
+func _set_icon(button: Button, key: String) -> void:
+	var art := button.get_node_or_null("VoiceIcon") as TextureRect
+	if art == null:
+		art = TextureRect.new()
+		art.name = "VoiceIcon"
+		art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		button.add_child(art)
+		art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		art.offset_left = 8
+		art.offset_right = -8
+		art.offset_top = 5
+		art.offset_bottom = -5
+	var path := "res://assets/ui/voice/%s.svg" % key
+	if art.get_meta("voice_icon", "") != key:
+		art.texture = load(path)
+		art.set_meta("voice_icon", key)
+
+func _on_speaker_pressed() -> void:
+	_apply_result(VoiceService.set_speaker_enabled(not VoiceService.speaker_enabled))
 
 
 # 开麦的唯一入口（语音按钮和语音面板里的「开麦」都走这里）：没权限时先说明用途。
@@ -149,12 +166,10 @@ func _on_mic_permission_result(granted: bool) -> void:
 
 
 func _on_voice_pressed() -> void:
-	# 9.18：语音开关切换反馈音（关 → 只听 → 开麦 这一档切换的确认）。
-	SfxService.play(SfxService.CUE_VOICE_SWITCH)
-	if VoiceService.mode == VoiceService.Mode.LISTEN:
+	if VoiceService.mode == VoiceService.Mode.TALK:
+		_apply_result(VoiceService.set_microphone_enabled(false))
+	else:
 		request_talk()
-		return
-	_apply_result(VoiceService.cycle_mode())
 
 
 func _on_members_pressed() -> void:

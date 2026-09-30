@@ -339,7 +339,7 @@ func _build_stone_page() -> Control:
 	inventory_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	inventory_header.add_child(inventory_title)
 	inventory_header.add_child(_label(_t("可升星优先", "Ready first"), 13, GREEN))
-	var scroll := ScrollContainer.new()
+	var scroll := preload("res://ui/components/TouchScrollContainer.gd").new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO

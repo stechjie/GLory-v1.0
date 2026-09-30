@@ -22,7 +22,7 @@ var _done := false
 
 
 func _ready() -> void:
-	var host := _arg("--probe-host", NetworkConfig.SERVER_IP)
+	var host := _arg("--probe-host", NetworkConfig.SERVER_HOST)
 	var port := int(_arg("--probe-port", str(NetworkConfig.SERVER_PORT)))
 	print("[LIVE] target=%s:%d protocol=%d" % [host, port, NetworkConfig.NETWORK_PROTOCOL_VERSION])
 

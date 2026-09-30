@@ -59,8 +59,7 @@ if ([string]::IsNullOrWhiteSpace($Gradle)) {
 $godotAar = Join-Path $root "android\build\libs\release\godot-lib.template_release.aar"
 if (-not (Test-Path -LiteralPath $godotAar)) { throw "missing $godotAar - install the Android build template first" }
 
-$work = Join-Path ([IO.Path]::GetTempPath()) "glory_voice_aar_build"
-if (Test-Path -LiteralPath $work) { Remove-Item -LiteralPath $work -Recurse -Force }
+$work = Join-Path ([IO.Path]::GetTempPath()) ("glory_voice_aar_build_" + [Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $work | Out-Null
 
 Add-Type -AssemblyName System.IO.Compression
@@ -72,7 +71,13 @@ $projectFiles = @("AndroidManifest.xml", "proguard.txt", "build.gradle.kts", "se
 foreach ($name in $projectFiles) { Copy-Item -LiteralPath (Join-Path $here $name) -Destination (Join-Path $work $name) }
 $srcRoot = Join-Path $here "src"
 if (@(Get-ChildItem $srcRoot -Recurse -Filter "*.kt").Count -eq 0) { throw "no .kt files under $srcRoot" }
-Copy-Item -LiteralPath $srcRoot -Destination (Join-Path $work "src") -Recurse
+# Copy only current Kotlin sources: stale Java bridges may remain after selective sync.
+foreach ($source in Get-ChildItem -LiteralPath $srcRoot -Recurse -Filter "*.kt") {
+    $relative = $source.FullName.Substring($srcRoot.Length).TrimStart([char]92, [char]47)
+    $destination = Join-Path (Join-Path $work "src") $relative
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
+    Copy-Item -LiteralPath $source.FullName -Destination $destination
+}
 [IO.File]::WriteAllText((Join-Path $work "local.properties"), "sdk.dir=" + $AndroidSdk.Replace("\", "/") + "`n")
 
 $godotJar = Join-Path $work "godot-classes.jar"
