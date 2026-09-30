@@ -5078,7 +5078,16 @@ func _tune_peer_timeout(peer_id: int) -> void:
 		_conn_health.configure_peer(ep)
 
 func _on_peer_connected(id: int) -> void:
-	_net_log("client connected peer=%d protocol=%d" % [id, NetworkConfig.NETWORK_PROTOCOL_VERSION])
+	# Server-only endpoint metadata joins ENet peers to engine DTLS diagnostics.
+	# Do not add endpoints to client logs uploaded by players.
+	var endpoint := ""
+	if _dedicated_server:
+		var enet := multiplayer.multiplayer_peer as ENetMultiplayerPeer
+		if enet != null:
+			var remote := enet.get_peer(id)
+			if remote != null:
+				endpoint = " remote=%s:%d" % [remote.get_remote_address(), remote.get_remote_port()]
+	_net_log("client connected peer=%d protocol=%d%s" % [id, NetworkConfig.NETWORK_PROTOCOL_VERSION, endpoint])
 	_tune_peer_timeout(id)
 	if team_active:
 		if is_host:

@@ -1,0 +1,142 @@
+--- a/core/io/udp_server.h
++++ b/core/io/udp_server.h
+@@ -59,10 +59,17 @@
+ 	List<Peer> pending;
+ 	int max_pending_connections = 16;
+ 
++	// Native-only admission hook. Existing peers bypass it; generic UDP is unchanged.
++	bool (*connection_filter)(void *, const IPAddress &, uint16_t, const uint8_t *, int) = nullptr;
++	void *connection_filter_context = nullptr;
+ 	Ref<NetSocket> _sock;
+ 	static void _bind_methods();
+ 
+ public:
++	void set_connection_filter(bool (*p_filter)(void *, const IPAddress &, uint16_t, const uint8_t *, int), void *p_context) {
++		connection_filter = p_filter;
++		connection_filter_context = p_context;
++	}
+ 	void remove_peer(IPAddress p_ip, int p_port);
+ 	Error listen(uint16_t p_port, const IPAddress &p_bind_address = IPAddress("*"));
+ 	Error poll();
+--- a/core/io/udp_server.cpp
++++ b/core/io/udp_server.cpp
+@@ -72,6 +72,9 @@
+ 		if (E) {
+ 			E->get().peer->store_packet(ip, port, recv_buffer, read);
+ 		} else {
++			if (connection_filter && !connection_filter(connection_filter_context, ip, port, recv_buffer, read)) {
++				continue;
++			}
+ 			if (pending.size() >= max_pending_connections) {
+ 				// Drop connection.
+ 				continue;
+--- /dev/null
++++ b/thirdparty/enet/enet/dtls_admission.h
+@@ -0,0 +1,14 @@
++// GLory: classify only NEW UDP endpoints, before allocating a DTLS session.
++// This is not certificate or ClientHello validation; mbedTLS still does both.
++#pragma once
++#include <cstddef>
++#include <cstdint>
++
++inline bool glory_dtls_can_start(const uint8_t *data, size_t size) {
++    // DTLS 1.0/1.2 record header: content type, version, epoch, sequence, length.
++    // Initial handshake record must be epoch 0 and start a ClientHello (type 1).
++    // Do not constrain sequence, fragmentation or cookie: mbedTLS handles them.
++    return size >= 14 && data[0] == 22 && data[1] == 0xfe &&
++            (data[2] == 0xfd || data[2] == 0xff) &&
++            data[3] == 0 && data[4] == 0 && data[13] == 1;
++}
+--- a/thirdparty/enet/enet_godot.cpp
++++ b/thirdparty/enet/enet_godot.cpp
+@@ -39,6 +39,7 @@
+ #include "core/io/packet_peer_dtls.h"
+ #include "core/io/udp_server.h"
+ #include "core/os/os.h"
++#include "enet/dtls_admission.h"
+ 
+ // This must be last for windows to compile (tested with MinGW)
+ #include "enet/enet.h"
+@@ -294,11 +295,31 @@
+ 	HashMap<String, Peer> peers;
+ 	IPAddress local_address;
+ 	size_t max_clients = 0;
++	uint64_t last_drop_report = 0;
++	uint64_t pending_drop_count = 0;
++
++	static bool filter_new_endpoint(void *p_context, const IPAddress &p_ip, uint16_t p_port, const uint8_t *p_data, int p_size) {
++		if (glory_dtls_can_start(p_data, p_size)) {
++			return true;
++		}
++		ENetDTLSServer *self = static_cast<ENetDTLSServer *>(p_context);
++		self->pending_drop_count++;
++		uint64_t now = OS::get_singleton()->get_ticks_msec();
++		if (!self->last_drop_report || now - self->last_drop_report >= 1000) {
++			// Rate-bounded metadata only. Never log payload, certificates or secrets.
++			print_line(vformat("DTLS_ADMISSION_DROP remote=%s:%d bytes=%d type=%d epoch=%d count=%d", String(p_ip), p_port, p_size,
++					p_size > 0 ? p_data[0] : -1, p_size >= 5 ? (p_data[3] << 8) | p_data[4] : -1, self->pending_drop_count));
++			self->last_drop_report = now;
++			self->pending_drop_count = 0;
++		}
++		return false;
++	}
+ 
+ public:
+ 	ENetDTLSServer(ENetUDP *p_base, Ref<TLSOptions> p_options, size_t p_max_clients) {
+ 		max_clients = p_max_clients;
+ 		udp_server.instantiate();
++		udp_server->set_connection_filter(filter_new_endpoint, this);
+ 		if (p_base->bound) {
+ 			uint16_t port;
+ 			p_base->get_socket_address(&local_address, &port);
+--- a/modules/mbedtls/packet_peer_mbed_dtls.cpp
++++ b/modules/mbedtls/packet_peer_mbed_dtls.cpp
+@@ -97,6 +97,8 @@
+ 	while ((ret = mbedtls_ssl_handshake(tls_ctx->get_context())) != 0) {
+ 		if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
+ 			if (ret != MBEDTLS_ERR_SSL_HELLO_VERIFY_REQUIRED) {
++				// Keep genuine handshake failures visible and attributable by endpoint.
++				print_line(vformat("DTLS_HANDSHAKE_FAILURE remote=%s:%d code=%d", String(base->get_packet_address()), base->get_packet_port(), ret));
+ 				ERR_PRINT("TLS handshake error: " + itos(ret));
+ 				TLSContextMbedTLS::print_mbedtls_error(ret);
+ 			}
+--- a/modules/mbedtls/tls_context_mbedtls.cpp
++++ b/modules/mbedtls/tls_context_mbedtls.cpp
+@@ -76,6 +76,7 @@
+ 	if (!inited) {
+ 		return;
+ 	}
++	inited = false; // clear() is also called by the destructor.
+ 	mbedtls_ctr_drbg_free(&ctr_drbg);
+ 	mbedtls_entropy_free(&entropy);
+ 	mbedtls_ssl_cookie_free(&cookie_ctx);
+--- a/main/main.cpp
++++ b/main/main.cpp
+@@ -27,6 +27,12 @@
+ /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+ /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+ /**************************************************************************/
++
++// GLory's source-only dedicated server needs explicit project/script paths.
++// These are the two Linux translation units consuming this build feature.
++#ifndef OVERRIDE_PATH_ENABLED
++#define OVERRIDE_PATH_ENABLED
++#endif
+ 
+ #include "main.h"
+ 
+--- a/core/config/project_settings.cpp
++++ b/core/config/project_settings.cpp
+@@ -27,6 +27,12 @@
+ /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+ /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+ /**************************************************************************/
++
++// GLory's source-only dedicated server needs explicit project/script paths.
++// These are the two Linux translation units consuming this build feature.
++#ifndef OVERRIDE_PATH_ENABLED
++#define OVERRIDE_PATH_ENABLED
++#endif
+ 
+ #include "project_settings.h"
+ 

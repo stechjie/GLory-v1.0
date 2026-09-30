@@ -92,6 +92,7 @@ def project_setting(text: str, section: str, key: str, value: str | None) -> str
 def server_project(original: bytes) -> bytes:
     text = original.decode("utf-8-sig")
     text = project_setting(text, "application", "run/main_scene", json.dumps(ENTRY))
+    text = project_setting(text, "application", "run/flush_stdout_on_print", "true")
     for key in ("boot_splash/image", "config/icon"):
         text = project_setting(text, "application", key, None)
     # The server bundle deliberately does not ship the editor/native voice addon.
@@ -283,7 +284,7 @@ def main() -> None:
                 "godot_version": godot_version, "entry_scene": ENTRY,
                 "class_cache": {"generated_from_current_source": True, "named_classes": class_count},
                 "production_application_settings_preserved": True,
-                "project_derivations": ["default ServerMain entry", "remove boot splash image/icon", "disable editor addon"],
+                "project_derivations": ["default ServerMain entry", "flush dedicated stdout", "remove boot splash image/icon", "disable editor addon"],
                 "content_roots": list(ROOTS), "art_assets_included": False,
                 "files": [{"path": path, "sha256": digest(data), "bytes": len(data)}
                           for path, data in sorted(files.items())]}

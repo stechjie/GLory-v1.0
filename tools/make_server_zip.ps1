@@ -165,6 +165,9 @@ try {
     $serverProject = [regex]::Replace($serverProject, '(?m)^run/main_scene=[^\r\n]*',
         'run/main_scene="res://scenes/server/ServerMain.tscn"')
     $serverProject = [regex]::Replace($serverProject, '(?m)^(boot_splash/image|config/icon)=[^\r\n]*\r?\n?', '')
+    # Release templates buffer stdout by default; journal timestamps must track events.
+    $serverProject = [regex]::Replace($serverProject, '(?m)^run/flush_stdout_on_print=[^\r\n]*\r?\n?', '')
+    $serverProject = [regex]::Replace($serverProject, '(?m)^\[application\]\r?$', "[application]`nrun/flush_stdout_on_print=true")
     [System.IO.File]::WriteAllText("$stage\project.godot", $serverProject, (New-Object System.Text.UTF8Encoding($false)))
     New-Item -ItemType Directory -Force "$stage\.godot" | Out-Null
     if (-not (Test-Path "$src\.godot\global_script_class_cache.cfg")) {
