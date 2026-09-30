@@ -27,8 +27,14 @@ static func build(room: Dictionary, replays: Array, outcome: int, gold_authorita
 		var replay: Dictionary = replays[side]
 		var roster: Dictionary = replay.get("roster", {})
 		for actor in roster.values():
-			if bool(actor.get("is_formation_ally", false)) and str(actor.get("team", "")) == "player":
-				allies[side] = str(actor.get("name", ""))
+			if bool(actor.get("is_formation_ally", false)):
+				# PvP replays keep A=player and B=enemy in both views.
+				var actor_side := (0 if str(actor.get("team", "")) == "player" else 1) if str(replay.get("kind", "")) == "pvp" else side
+				var actor_name := str(actor.get("name", "")).strip_edges()
+				if actor_name.is_empty():
+					actor_name = str(actor.get("def", {}).get("name", ""))
+				if not actor_name.is_empty():
+					allies[actor_side] = actor_name
 		var raw: Dictionary = replay.get("result", {}).get("unit_stats", {})
 		for entry in raw.values():
 			var slot := int(entry.get("owner_slot", -1))
@@ -36,12 +42,18 @@ static func build(room: Dictionary, replays: Array, outcome: int, gold_authorita
 			if slot < side * 3 or slot >= side * 3 + 3 or str(entry.get("group", "")) == "boss":
 				continue
 			stats.append(entry.duplicate(true))
+	for seat in seats:
+		seat["round_damage"] = 0
+	for entry in stats:
+		var slot := int(entry.get("owner_slot", -1))
+		if slot >= 0 and slot < seats.size():
+			seats[slot].round_damage += maxi(0, int(entry.get("damage_dealt", 0)))
 	stats.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		if int(a.get("damage_dealt", 0)) != int(b.get("damage_dealt", 0)):
 			return int(a.get("damage_dealt", 0)) > int(b.get("damage_dealt", 0))
 		return str(a.get("owner_slot", 0)) + str(a.get("position", "")) < str(b.get("owner_slot", 0)) + str(b.get("position", "")))
 	return {"can_return_room": str(room.get("mode", "custom")) == "custom" and not bool(room.get("matched", false)), "outcome": outcome, "seats": seats, "stats": stats, "allies": allies,
-		"gold_authoritative": gold_authoritative}
+		"gold_authoritative": gold_authoritative, "show_details": not replays.is_empty() and str(replays[0].get("kind", "pve")) == "pvp"}
 
 static func units(raw: Array) -> Array:
 	var out: Array = []

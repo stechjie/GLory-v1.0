@@ -183,7 +183,7 @@ const LOBBY_EMPTY_TTL_SEC := 60.0
 # 任一有效 token 重连即取消；到期则关房并清理 token / 短码 / 缓存映射。
 # 依赖 C20 的单调时钟 —— 用墙钟的话一次 NTP 校时就能让它提前或永不到期。
 # 所有真人离线满 30 秒即结束旧对局，允许重新开局；AI 不延长保留期。
-const ROOM_SUSPEND_GRACE_SEC := 30.0
+const ROOM_SUSPEND_GRACE_SEC := 120.0
 # 匹配房间等人坐满的时限（协议 32）。六个人都在账号服务器点过确认了，
 # 所以没连上来是异常；到点用 AI 补满开打，见 _cleanup_matched_rooms。
 # 给 90 秒：够一次「点完确认 → 过加载界面 → DTLS 握手」，再留一点弱网余量。
@@ -640,6 +640,7 @@ func _process(delta: float) -> void:
 	var proc_now := _now()
 	_forgive_process_stall(proc_now)
 	_last_process_at = proc_now
+	_tick_foreground_probe(proc_now)
 	if not _dedicated_server and (not _simulation_jobs.is_empty() or not _finalize_queue.is_empty()):
 		_cancel_pending_simulations()
 	_poll_retired_simulations()
@@ -1115,12 +1116,40 @@ func _rpc_client_log(lines: PackedStringArray) -> void:
 		_net_log("clientlog peer=%d | %s" % [sender, line])
 
 # app 生命周期事件：锁屏/切后台是手机掉线的头号惯犯，记下来和断线时间对照。
+var _mobile_was_paused := false
+var _foreground_probe_at := 0.0
+var _foreground_probe_deadline := 0.0
+
+func _resume_mobile_connection() -> void:
+	if not _mobile_was_paused or _dedicated_server or is_host:
+		return
+	_mobile_was_paused = false
+	if state == SessionState.RECONNECTING:
+		_enter_reconnect_backoff()
+		_reconnect_retry_left = 0.0
+	elif team_active and state == SessionState.READY:
+		_foreground_probe_at = _now()
+		_foreground_probe_deadline = _foreground_probe_at + 3.0
+		_last_pong_at = _foreground_probe_at
+		_ping_accum = HEARTBEAT_INTERVAL_SEC
+
+func _tick_foreground_probe(now: float) -> void:
+	if _foreground_probe_deadline <= 0.0:
+		return
+	if state != SessionState.READY:
+		_foreground_probe_deadline = 0.0
+	elif now >= _foreground_probe_deadline:
+		_foreground_probe_deadline = 0.0
+		_begin_reconnect("foreground_probe_timeout")
+
 func _notification(what: int) -> void:
 	match what:
 		NOTIFICATION_APPLICATION_PAUSED:
+			_mobile_was_paused = true
 			_net_log("app paused (backgrounded/screen off)")
 		NOTIFICATION_APPLICATION_RESUMED:
 			_net_log("app resumed")
+			_resume_mobile_connection()
 		NOTIFICATION_APPLICATION_FOCUS_OUT:
 			_net_log("app focus out")
 		NOTIFICATION_APPLICATION_FOCUS_IN:
@@ -4606,6 +4635,7 @@ func _rpc_ping() -> void:
 
 @rpc("authority", "call_remote", "unreliable")
 func _rpc_pong() -> void:
+	_foreground_probe_deadline = 0.0
 	if _pong_gap_logged:
 		_pong_gap_logged = false
 		_net_log("pong recovered")
@@ -5096,16 +5126,7 @@ func _tune_peer_timeout(peer_id: int) -> void:
 		_conn_health.configure_peer(ep)
 
 func _on_peer_connected(id: int) -> void:
-	# Server-only endpoint metadata joins ENet peers to engine DTLS diagnostics.
-	# Do not add endpoints to client logs uploaded by players.
-	var endpoint := ""
-	if _dedicated_server:
-		var enet := multiplayer.multiplayer_peer as ENetMultiplayerPeer
-		if enet != null:
-			var remote := enet.get_peer(id)
-			if remote != null:
-				endpoint = " remote=%s:%d" % [remote.get_remote_address(), remote.get_remote_port()]
-	_net_log("client connected peer=%d protocol=%d%s" % [id, NetworkConfig.NETWORK_PROTOCOL_VERSION, endpoint])
+	_net_log("client connected peer=%d protocol=%d" % [id, NetworkConfig.NETWORK_PROTOCOL_VERSION])
 	_tune_peer_timeout(id)
 	if team_active:
 		if is_host:
@@ -5137,12 +5158,8 @@ func _on_peer_disconnected(id: int) -> void:
 		if _dedicated_server:
 			var room := _room_for_peer(id)
 			if not room.is_empty():
-				# 大厅阶段掉线 = 直接释放座位（还没开赛，无需保留）；
-				# 开赛后掉线 = 保留座位进入宽限，等 token 重连。
-				if str(room.get("state", ROOM_LOBBY)) == ROOM_LOBBY:
-					_room_remove_peer(room, id)
-				else:
-					_room_reserve_peer(room, id)
+				# Unexpected mobile disconnects retain their credential; explicit leave still releases it.
+				_room_reserve_peer(room, id)
 			return
 		if is_host and _team_peer_slot.has(id):
 			var slot: int = _team_peer_slot[id]
@@ -6136,6 +6153,8 @@ func _room_reserve_peer(room: Dictionary, peer_id: int) -> void:
 	room.peer_slot = peer_slot
 	# 宽限记账已搬到 ReconnectService.reserve_seat()。
 	_reconnect_service.reserve_seat(room, slot)
+	if str(room.get("state", ROOM_LOBBY)) == ROOM_LOBBY:
+		room.reserve_deadline[slot] = _now() + ROOM_SUSPEND_GRACE_SEC
 	if _room_online_count(room) <= 0:
 		room.empty_since = _now()
 	_maybe_promote_leader(room)
@@ -6195,6 +6214,16 @@ func _tick_reserved_seats() -> void:
 # 方案乙：宽限到期 -> 座位转 AI(dummy)，其他玩家立刻面对真 AI、本回合不再卡。
 # token 仍有效：A 之后按"游戏重连"回来，resume 会把 dummy 变回 player、A 从存档恢复棋盘。
 func _room_auto_complete_seat(room: Dictionary, slot: int) -> void:
+	if str(room.get("state", ROOM_LOBBY)) == ROOM_LOBBY:
+		var identity := _voice_identity(room, slot)
+		_clear_seat_metadata(room, slot)
+		room.slot_states[slot] = "empty"
+		room.ready[slot] = false
+		_voice_seat_released(room, slot, identity)
+		_maybe_promote_leader(room)
+		_touch_room(room)
+		_broadcast_room_lobby(room)
+		return
 	# 状态变更已搬到 ReconnectService.apply_ai_takeover()。留在这里的是发消息与
 	# 阶段推进：广播大厅、按当前阶段决定接下来做什么 —— 那些都要发 RPC。
 	var voice_identity := _voice_identity(room, slot)

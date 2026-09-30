@@ -81,6 +81,7 @@ const SEAT_LABELS := ["A", "B", "C", "1", "2", "3"]
 
 var mode: int = Mode.OFF
 var audience: int = Audience.TEAM
+var speaker_enabled := true
 # 已经替哪个房间切过默认的「只听」（-1 = 还没有）。每个房间只切一次：
 # 玩家在房间里自己关掉之后，不能每帧又被切回去。离开房间（LEAVE_GRACE_SEC）时清掉。
 var _defaulted_room := -1
@@ -168,10 +169,28 @@ func cycle_mode() -> String:
 	return set_mode((mode + 1) % 3)
 
 
+func set_microphone_enabled(enabled: bool) -> String:
+	return set_mode(Mode.TALK if enabled else (Mode.LISTEN if speaker_enabled else Mode.OFF))
+
+func set_speaker_enabled(enabled: bool) -> String:
+	if enabled and not is_supported():
+		return unsupported_reason()
+	if enabled and not in_room():
+		return _text("进入房间后才能开语音", "Join a room to use voice")
+	speaker_enabled = enabled
+	_applied_volumes.clear()
+	var error := ""
+	if mode != Mode.TALK and not _want_talk_after_permission:
+		error = set_mode(Mode.LISTEN if enabled else Mode.OFF)
+	_apply_volumes()
+	mode_changed.emit(mode)
+	return error
+
 func set_mode(next: int) -> String:
 	if next == mode:
 		return ""
 	if next == Mode.OFF:
+		speaker_enabled = false
 		_want_talk_after_permission = false
 		return _change_mode(Mode.OFF)
 	if not is_supported():
@@ -188,6 +207,8 @@ func set_mode(next: int) -> String:
 		else:
 			OS.request_permission(MIC_PERMISSION)
 		return ""
+	if next == Mode.LISTEN:
+		speaker_enabled = true
 	return _change_mode(next)
 
 
@@ -677,7 +698,7 @@ func _apply_volumes() -> void:
 		return
 	for identity in status().get("participants", []):
 		var id := str(identity)
-		var volume := 0.0 if _identity_muted(id) else 1.0
+		var volume := 0.0 if not speaker_enabled or _identity_muted(id) else 1.0
 		if float(_applied_volumes.get(id, -1.0)) != volume:
 			_bridge.setParticipantVolume(id, volume)
 			_applied_volumes[id] = volume
