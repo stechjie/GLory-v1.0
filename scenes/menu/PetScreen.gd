@@ -6,14 +6,14 @@ extends Control
 # 注意与对局里摆棋子的「摆放界面」（scenes/prep/PrepScreen）区分 —— 两个以前都叫备战。
 # 首次（needs_starter_pick）时整页只剩「宠物三选一」：任选一只作为初始宠物（拥有 + 出战），
 # 页签和返回按钮都藏起来，选完才放行（用于「进主菜单前的强制关卡」）。
-# 卡片统一规格：模型 + 名字 + 效果。模型预览在 scripts/pets/PetPreview.gd（商城与背包共用）。
+# 卡片统一规格：手绘插画 + 名字 + 效果。缺图时回退模型预览。
 
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const RacePick := preload("res://scripts/units/RacePick.gd")
 # 这一页新加的按钮一律实例化这个场景，不写 Button.new() —— procedural_ui_ratchet 按文件只许降。
 const ActionButtonScene := preload("res://ui/components/GloryActionButton.tscn")
-# 模型小预览抽到了共用脚本 —— 商城与背包也要显示宠物，而 pets.json 的 icon 是空的。
+# 手绘插画和模型预览共用同一个脚本；主菜单、背包仍使用模型。
 const PetPreview := preload("res://scripts/pets/PetPreview.gd")
 # 与 PrepShopRaceIcon.LOGO_PATHS 同一批图。新种族没出图时这一块留空，不报错。
 const RACE_LOGO_PATH := "res://assets/ui/race_logos/%s.png"
@@ -231,7 +231,7 @@ func _build_card(pet_id: String, starter_mode: bool) -> Control:
 	content.add_theme_constant_override("separation", 10)
 	m.add_child(content)
 
-	content.add_child(PetPreview.build(pet_id, PetPreview.CARD_SIZE, greyed))
+	content.add_child(PetPreview.build_illustration(pet_id, PetPreview.CARD_SIZE, greyed))
 
 	var name_lbl := Label.new()
 	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

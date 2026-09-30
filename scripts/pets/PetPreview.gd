@@ -2,9 +2,8 @@ extends RefCounted
 
 # 宠物的 3D 小预览（一个 SubViewport + 正交相机 + 一盏主光）。
 #
-# 从 scenes/menu/PetScreen.gd 抽出来的 —— 商城和背包也要显示宠物，
-# 而 data/pets/pets.json 的 icon 字段是空的：**宠物没有 2D 图，只有模型**。
-# 不抽的话这七十行会被抄三遍，以后调一次相机角度要改三处。
+# 从 scenes/menu/PetScreen.gd 抽出来的共用预览。商店与备战卡片优先展示
+# pets.json 的手绘插画；主菜单、背包与缺图回退仍使用 3D 模型。
 #
 # 用法：
 #     content.add_child(PetPreview.build(pet_id, PetPreview.CARD_SIZE, not owned))
@@ -20,6 +19,31 @@ const CAMERA_POS := Vector3(0.0, 1.05, 2.05)
 const CAMERA_TARGET := Vector3(0.0, 0.48, 0.0)
 const ORTHO_SIZE := 1.35
 const TARGET_HEIGHT := 0.95
+
+
+# 商店和备战卡片展示数据表中的手绘图；未配置或缺失时回退到现有模型预览。
+# 主菜单、背包和战场继续调用 build()，不改变它们的 3D 展示。
+static func build_illustration(pet_id: String, size: Vector2 = CARD_SIZE,
+	greyed: bool = false) -> Control:
+	var icon_path := str(PetService.pet_by_id(pet_id).get("icon", ""))
+	if icon_path.is_empty() or not ResourceLoader.exists(icon_path):
+		return build(pet_id, size, greyed)
+	var texture := load(icon_path) as Texture2D
+	if texture == null:
+		return build(pet_id, size, greyed)
+	var frame := Control.new()
+	frame.custom_minimum_size = size
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var art := TextureRect.new()
+	art.texture = texture
+	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if greyed:
+		art.modulate = Color(0.45, 0.45, 0.45)
+	frame.add_child(art)
+	return frame
 
 
 # 没有模型 / 模型加载失败时都回占位框，**不返回 null** ——

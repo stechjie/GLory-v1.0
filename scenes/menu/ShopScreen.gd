@@ -85,8 +85,11 @@ var _diamond_label: Label
 var _coin_label: Label
 var _empty_label: Label
 var _catalog_count_label: Label
+var _catalog_title_label: Label
 var _category_buttons: Dictionary = {}
 var _catalog_shell: PanelContainer
+var _summon_panel_control: Control
+var _detail_panel_control: Control
 var _special_panel: PanelContainer
 var _special_content: VBoxContainer
 var _hero_panel: Control
@@ -167,7 +170,10 @@ func _build() -> void:
 	divider.color = Tokens.INK_EDGE.darkened(0.42)
 	divider.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	split.add_child(divider)
-	split.add_child(_summon_panel())
+	_summon_panel_control = _summon_panel()
+	split.add_child(_summon_panel_control)
+	_detail_panel_control = _detail_panel()
+	split.add_child(_detail_panel_control)
 
 	_special_panel = PanelContainer.new()
 	_special_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -242,6 +248,7 @@ func _category_bar() -> Control:
 	panel.add_child(row)
 	for entry in [
 		{"id": CATEGORY_PETS, "zh": "宠物", "en": "Pets"},
+		{"id": CATEGORY_FRAMES, "zh": "头像框", "en": "Avatar Frames"},
 		{"id": CATEGORY_SKINS, "zh": "外观", "en": "Appearance"},
 		{"id": CATEGORY_EVENT, "zh": "七日登录 · 冰雪", "en": "Seven days · Frost"},
 	]:
@@ -278,12 +285,12 @@ func _catalog_panel() -> Control:
 	var head := HBoxContainer.new()
 	head.custom_minimum_size.y = 34
 	col.add_child(head)
-	var title := Label.new()
-	title.text = _t("金币宠物", "Coin companions")
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title.add_theme_font_size_override("font_size", Tokens.FONT_BUTTON)
-	title.add_theme_color_override("font_color", Tokens.GOLD)
-	head.add_child(title)
+	_catalog_title_label = Label.new()
+	_catalog_title_label.text = _t("金币宠物", "Coin companions")
+	_catalog_title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_catalog_title_label.add_theme_font_size_override("font_size", Tokens.FONT_BUTTON)
+	_catalog_title_label.add_theme_color_override("font_color", Tokens.GOLD)
+	head.add_child(_catalog_title_label)
 	_catalog_count_label = Label.new()
 	_catalog_count_label.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
 	_catalog_count_label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
@@ -538,8 +545,13 @@ func _render() -> void:
 		else:
 			_render_appearance()
 		return
+	_catalog_title_label.text = (_t("珍藏头像框", "Collector frames")
+		if _active_category == CATEGORY_FRAMES else _t("金币宠物", "Coin companions"))
+	_summon_panel_control.visible = _active_category == CATEGORY_PETS
+	_detail_panel_control.visible = _active_category == CATEGORY_FRAMES
 
 	_clear_children(_grid)
+	_clear_children(_detail)
 
 	if _loading:
 		_empty_label.text = _t("正在载入…", "Loading…")
@@ -559,6 +571,8 @@ func _render() -> void:
 		_selected_item_id = _item_id(visible_items[0] as Dictionary)
 	for raw in visible_items:
 		_grid.add_child(_card(raw as Dictionary))
+	if _active_category == CATEGORY_FRAMES:
+		_render_detail(_selected_item(visible_items))
 
 
 func _section_title(title_text: String, subtitle: String) -> void:
@@ -1004,13 +1018,15 @@ func _preview_stage(item: Dictionary, owned: bool, preview_size: Vector2) -> Con
 	return stage
 
 
-# 卡片上的图。宠物只有 3D 模型（pets.json 的 icon 是空的），头像 / 头像框是 2D 图，
+# 卡片上的图。宠物优先使用手绘插画，缺图时回退 3D 模型；头像 / 头像框是 2D 图，
 # 棋盘皮肤是实机画面截的预览图（铺满卡片，裁掉多出来的边）。
 func _preview(item: Dictionary, owned: bool, preview_size: Vector2 = PREVIEW_SIZE) -> Control:
 	var kind := str(item.get("kind", ""))
 	var grants := str(item.get("grants", ""))
 	if kind == "pet":
-		return PetPreview.build(grants, preview_size, owned, 1.70, 0.27)
+		return PetPreview.build_illustration(grants, preview_size, owned)
+	if kind == "avatar_frame":
+		return _frame_preview(grants, preview_size, owned)
 	var tex: Texture2D = null
 	if kind == CATEGORY_SKINS:
 		var skin_preview := PrepSkin.preview_path(grants)
@@ -1032,6 +1048,22 @@ func _preview(item: Dictionary, owned: bool, preview_size: Vector2 = PREVIEW_SIZ
 	return rect
 
 
+func _frame_preview(grants: String, preview_size: Vector2, owned: bool) -> Control:
+	var stage := Control.new()
+	stage.custom_minimum_size = preview_size
+	stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var frame := TextureRect.new()
+	frame.texture = AvatarCatalog.frame_texture_for(grants)
+	frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stage.add_child(frame)
+	if owned:
+		stage.modulate = Color(0.70, 0.70, 0.70)
+	return stage
+
+
 func _render_detail(item: Dictionary) -> void:
 	if item.is_empty():
 		_detail.add_child(_detail_hint(_t("选择一个商品查看详情", "Select an item to see details")))
@@ -1041,13 +1073,15 @@ func _render_detail(item: Dictionary) -> void:
 	var price := int(item.get("price", 0))
 	var currency := str(item.get("currency", "diamond"))
 	var affordable := _balance_of(currency) >= price
+	var catalog_pending := bool(item.get("_catalog_pending", false))
 
 	var eyebrow := Label.new()
 	eyebrow.text = _t("当前选择", "SELECTED ITEM")
 	eyebrow.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
 	eyebrow.add_theme_color_override("font_color", Tokens.GOLD)
 	_detail.add_child(eyebrow)
-	_detail.add_child(_preview_stage(item, owned, DETAIL_PREVIEW_SIZE))
+	_detail.add_child(_preview_stage(item, owned,
+		Vector2(280, 218) if _item_category(item) == CATEGORY_FRAMES else DETAIL_PREVIEW_SIZE))
 
 	var name_label := Label.new()
 	name_label.text = _item_name(item)
@@ -1093,6 +1127,9 @@ func _render_detail(item: Dictionary) -> void:
 		else:
 			buy.text = _t("已拥有 ✓", "Owned ✓")
 			buy.disabled = true
+	elif catalog_pending:
+		buy.text = _t("价格待同步", "Awaiting sync")
+		buy.disabled = true
 	elif not affordable:
 		buy.text = _t("余额不足", "Not enough balance")
 		buy.disabled = true
@@ -1180,6 +1217,29 @@ func _visible_items() -> Array:
 					preview["_catalog_pending"] = true
 					coin_pets.append(preview)
 		return coin_pets
+	if _active_category == CATEGORY_FRAMES:
+		var local_frames: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://data/shop.json"))
+		var frames: Array = []
+		if local_frames is Dictionary:
+			for raw in (local_frames as Dictionary).get("items", []):
+				var configured := raw as Dictionary
+				if str(configured.get("kind", "")) != "avatar_frame" or not bool(configured.get("enabled", true)):
+					continue
+				var matching: Dictionary = {}
+				for server_raw in _items:
+					var server_item := server_raw as Dictionary
+					if str(server_item.get("id", "")) == str(configured.get("id", "")):
+						matching = server_item
+						break
+				if str(matching.get("grants", "")) == str(configured.get("grants", "")) \
+					and str(matching.get("currency", "")) == "coin" \
+					and int(matching.get("price", -1)) == int(configured.get("price", 0)):
+					frames.append(matching)
+				else:
+					var preview := configured.duplicate()
+					preview["_catalog_pending"] = true
+					frames.append(preview)
+		return frames
 	var out: Array = []
 	for raw in _items:
 		var item := raw as Dictionary
@@ -1190,7 +1250,7 @@ func _visible_items() -> Array:
 
 
 func _category_has_items(category: String) -> bool:
-	if category in [CATEGORY_DIAMONDS, CATEGORY_SKINS, CATEGORY_EVENT]:
+	if category in [CATEGORY_DIAMONDS, CATEGORY_FRAMES, CATEGORY_SKINS, CATEGORY_EVENT]:
 		return true
 	for raw in _items:
 		if _item_category(raw as Dictionary) == category:
@@ -1226,7 +1286,7 @@ func _kind_label(item: Dictionary) -> String:
 		CATEGORY_PETS:
 			return _t("宠物 · 可在背包设为出战", "PET · Equip it from your Bag")
 		CATEGORY_FRAMES:
-			return _t("头像框 · 个性装饰", "AVATAR FRAME · Cosmetic")
+			return _t("头像框 · 购买后在资料页佩戴", "AVATAR FRAME · Equip from Profile")
 		CATEGORY_SKINS:
 			return _t("棋盘皮肤 · 在「备战」里更换", "BOARD SKIN · Switch it in Prep")
 		_:

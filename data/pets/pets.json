@@ -10,7 +10,7 @@
 			"model": "res://assets/models/pets/pet_mushroom/pet_mushroom_animated.tscn",
 			"model_scale": 1.0,
 			"model_y": 0.0,
-			"icon": ""
+			"icon": "res://assets/ui/pets/pet_mushroom_illustration.png"
 		},
 		{
 			"id": "pet_cat",
@@ -21,7 +21,7 @@
 			"model": "res://assets/models/pets/pet_cat/pet_cat_animated.tscn",
 			"model_scale": 1.0,
 			"model_y": 0.0,
-			"icon": ""
+			"icon": "res://assets/ui/pets/pet_cat_illustration.png"
 		},
 		{
 			"id": "pet_rabbit",
@@ -32,7 +32,7 @@
 			"model": "res://assets/models/pets/pet_rabbit/pet_rabbit_animated.tscn",
 			"model_scale": 1.0,
 			"model_y": 0.0,
-			"icon": ""
+			"icon": "res://assets/ui/pets/pet_rabbit_illustration.png"
 		}
 	]
 }
