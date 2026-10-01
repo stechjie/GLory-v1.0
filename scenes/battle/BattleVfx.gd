@@ -1960,6 +1960,7 @@ const _RACE_NUMBER_COLORS := {
 	"dark": Color(0.07, 0.07, 0.09),  # 暗 = black (uses a light outline below)
 	"undead": Color(0.30, 1.0, 0.90), # 灵 = cyan
 	"human": Color(0.36, 0.62, 1.0),  # 人 = blue
+	"crimson": Color(1.0, 0.18, 0.16), # 赤律 = red
 }
 
 # Spawns one floating number at a screen-space head anchor. kind is

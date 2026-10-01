@@ -13,10 +13,11 @@ const RACE_THRESHOLDS := {
 	"dark": [1, 2, 5, 7],
 	"undead": [2, 4, 7],
 	"human": [1, 2, 7],
+	"crimson": [2, 4, 7],
 }
 
 static func count_races_from_board() -> Dictionary:
-	var counts := {"god": 0, "dark": 0, "undead": 0, "human": 0}
+	var counts := {"god": 0, "dark": 0, "undead": 0, "human": 0, "crimson": 0}
 	for cell in GameState.board_slots:
 		if cell == null:
 			continue
@@ -30,6 +31,7 @@ static func flags_from_counts(counts: Dictionary) -> Dictionary:
 	var dark := int(counts.get("dark", 0))
 	var undead := int(counts.get("undead", 0))
 	var human := int(counts.get("human", 0))
+	var crimson := int(counts.get("crimson", 0))
 	return {
 		"counts": counts,
 		"god_death_cleanse": god > 0,
@@ -53,6 +55,9 @@ static func flags_from_counts(counts: Dictionary) -> Dictionary:
 		# 人7（9.24 改）：己方棋盘每死 1 个，活着的全部 +1 档（每档 +20%，见 BattleSimTreasures._owner_human_rally）。
 		# 旧的「只剩最后 1 个时属性翻倍」已删除。
 		"human_death_rally": human >= 7,
+		"crimson_duration": crimson >= 2,
+		"crimson_resonance": crimson >= 4,
+		"crimson_pulse": crimson >= 7,
 	}
 
 static func current_player_flags() -> Dictionary:

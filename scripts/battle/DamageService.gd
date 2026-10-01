@@ -263,6 +263,7 @@ static func effective_defense(target: Dictionary) -> int:
 		base += float(target.statuses.defense_flat_up.get("amount", 0))
 	if target.statuses.has("defense_flat_down"):
 		base -= float(target.statuses.defense_flat_down.get("amount", 0))
+	base -= float(target.get("crimson_def_break", 0))
 	return maxi(0, int(round(base * StatusEffectService.defense_multiplier(target))))
 
 static func skill_hit_lands(target: Dictionary) -> bool:
@@ -287,6 +288,9 @@ static func apply_damage(target: Dictionary, amount: int, ignore_defense: bool =
 	StatusEffectService.ensure_status(target)
 	if target.statuses.has("invulnerable"):
 		if not (_dot_damage_active and bool(target.statuses.invulnerable.get("dot_pass", false))):
+			return 0
+	if not _dot_damage_active and _hit_kind in ["basic", "skill"] and str(target.get("def", {}).get("skill_id", "")) == "block_guard":
+		if RngService.rng.randf() < float(target.get("def", {}).get("block_chance", 0.10)):
 			return 0
 	if not skip_dodge:
 		var dodge_chance := float(target.get("dodge", 0.0))

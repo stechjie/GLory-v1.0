@@ -267,6 +267,15 @@ static func attack_multiplier(fighter: Dictionary) -> float:
 	var mul := 1.0
 	if fighter.statuses.has("attack_down"):
 		mul *= maxf(0.1, 1.0 - float(fighter.statuses.attack_down.get("pct", 0.0)))
+	if fighter.statuses.has("crimson_attack"):
+		mul *= 1.0 + float(fighter.statuses.crimson_attack.get("pct", 0.0))
+	if fighter.statuses.has("crimson_pulse"):
+		mul *= 1.0 + float(fighter.statuses.crimson_pulse.get("pct", 0.0))
+	var drum_atk_pct := 0.0
+	for layer in fighter.get("crimson_drum_atk", []):
+		drum_atk_pct += float((layer as Dictionary).get("pct", 0.0))
+	mul *= 1.0 + drum_atk_pct
+	mul *= 1.0 + 0.04 * float(fighter.get("crimson_resonance_stacks", 0))
 	return mul
 
 static func attack_speed_multiplier(fighter: Dictionary) -> float:
@@ -278,6 +287,15 @@ static func attack_speed_multiplier(fighter: Dictionary) -> float:
 		mul *= 1.0 + float(fighter.statuses.speed_bonus.get("pct", fighter.statuses.speed_bonus.get("attack_speed_pct", 0.0)))
 	if fighter.statuses.has("attack_set_speed_bonus"):
 		mul *= 1.0 + float(fighter.statuses.attack_set_speed_bonus.get("pct", 0.0))
+	if fighter.statuses.has("crimson_speed"):
+		mul *= 1.0 + float(fighter.statuses.crimson_speed.get("pct", 0.0))
+	if fighter.statuses.has("crimson_pulse"):
+		mul *= 1.0 + float(fighter.statuses.crimson_pulse.get("pct", 0.0))
+	var drum_speed_pct := 0.0
+	for layer in fighter.get("crimson_drum_speed", []):
+		drum_speed_pct += float((layer as Dictionary).get("pct", 0.0))
+	mul *= 1.0 + drum_speed_pct
+	mul *= 1.0 + 0.04 * float(fighter.get("crimson_resonance_stacks", 0))
 	return mul
 
 static func move_speed_multiplier(fighter: Dictionary) -> float:

@@ -3,7 +3,7 @@ extends RefCounted
 # 宠物的 3D 小预览（一个 SubViewport + 正交相机 + 一盏主光）。
 #
 # 从 scenes/menu/PetScreen.gd 抽出来的共用预览。商店与备战卡片优先展示
-# pets.json 的手绘插画；主菜单、背包与缺图回退仍使用 3D 模型。
+# pets.json 的手绘插画；背包也展示手绘插画，主菜单与缺图回退仍使用 3D 模型。
 #
 # 用法：
 #     content.add_child(PetPreview.build(pet_id, PetPreview.CARD_SIZE, not owned))
@@ -22,7 +22,7 @@ const TARGET_HEIGHT := 0.95
 
 
 # 商店和备战卡片展示数据表中的手绘图；未配置或缺失时回退到现有模型预览。
-# 主菜单、背包和战场继续调用 build()，不改变它们的 3D 展示。
+# 主菜单和战场继续调用 build()，不改变它们的 3D 展示。
 static func build_illustration(pet_id: String, size: Vector2 = CARD_SIZE,
 	greyed: bool = false) -> Control:
 	var icon_path := str(PetService.pet_by_id(pet_id).get("icon", ""))

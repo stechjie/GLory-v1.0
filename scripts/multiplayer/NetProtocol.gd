@@ -86,7 +86,7 @@ static func validate_team_snapshot(snapshot: Variant, expected_round: int) -> Di
 # SynergyService.count_races_from_board 完全一致，否则服务端算出的战斗会和玩家
 # 界面显示的羁绊对不上。
 static func rebuild_syn_from_board(board_slots: Array) -> Dictionary:
-	var counts := {"god": 0, "dark": 0, "undead": 0, "human": 0}
+	var counts := {"god": 0, "dark": 0, "undead": 0, "human": 0, "crimson": 0}
 	for cell in board_slots:
 		if typeof(cell) != TYPE_DICTIONARY:
 			continue

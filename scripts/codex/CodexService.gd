@@ -19,6 +19,7 @@ const CATEGORIES := [
 	{"key": "human", "kind": "unit", "race": "human"},
 	{"key": "dark", "kind": "unit", "race": "dark"},
 	{"key": "undead", "kind": "unit", "race": "undead"},
+	{"key": "crimson", "kind": "unit", "race": "crimson"},
 	{"key": "merc", "kind": "merc"},
 	{"key": "treasure", "kind": "treasure"},
 	{"key": "link", "kind": "link"},

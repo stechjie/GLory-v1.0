@@ -436,7 +436,7 @@ func _pet_preview_stage(pet_id: String, preview_size: Vector2, active: bool) -> 
 	var center := CenterContainer.new()
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	well.add_child(center)
-	var preview := PetPreview.build(pet_id, preview_size, false)
+	var preview := PetPreview.build_illustration(pet_id, preview_size, false)
 	_ignore_mouse_tree(preview)
 	center.add_child(preview)
 	if active:

@@ -2,9 +2,9 @@ extends Node
 
 # 出战种族（scripts/units/RacePick.gd，协议 28）：规则、本机摇商店、战斗服务器三处摇商店、备战界面。
 #
-# 🔴 为什么要往棋子表里塞假种族：今天只有四族、必须选四个 = 全选，过滤等于没过滤。
-# 只用真实数据测，「忘了过滤」「过滤了但服务器没用上」照样全绿。
-# 所以除了钉住真实数据的形状，其余用例先在**内存里**给棋子表加一个假的第五族（zz_fake），
+# 真实目录已是五族选四个；额外注入假种族可验证服务端和客户端
+# 都使用玩家自己的选择，而非恰好使用默认的前四族。
+# 除了钉住真实数据的形状，其余用例先在**内存里**给棋子表加一个假族（zz_fake），
 # 选「暗、灵、人、假」—— 神族一个都不许出现，假族必须出现。用完还原，不写任何文件。
 #
 # 界面用例在**没登录**的状态下按保存：请求在本机就判失败，不碰网络，也不写任何文件。
@@ -24,7 +24,8 @@ const CHECK_NAME := "race_pick"
 const FAKE_PREFIX := "zz_"
 const FAKE_RACE := "zz_fake"
 # 真实数据的独立副本：故意不从 RacePick 读，否则规则改了检查跟着改，等于没测。
-const REAL_RACES := ["god", "dark", "undead", "human"]
+const REAL_RACES := ["god", "dark", "undead", "human", "crimson"]
+const DEFAULT_RACES := ["god", "dark", "undead", "human"]
 const PICK_WITH_FAKE := ["dark", "undead", "human", "zz_fake"]
 const EXCLUDED := "god"
 const ROOMS := 60
@@ -127,6 +128,12 @@ func _expect_only_picked(seen: Dictionary, where: String) -> void:
 	_h.expect(int(seen.get(FAKE_RACE, 0)) > 0, where + "_ignores_pick",
 		"%s：选了假种族，%d 个商品里一个都没有 —— 摇商店用的多半是默认四族，不是这一份选择" % [
 			where, total])
+	var leaked: Array = []
+	for race in seen:
+		if not PICK_WITH_FAKE.has(str(race)):
+			leaked.append(race)
+	_h.expect(leaked.is_empty(), where + "_leaks_other_races",
+		"%s：商品中出现未选种族 %s" % [where, str(leaked)])
 
 
 # --- 规则 ---------------------------------------------------------------------
@@ -140,10 +147,10 @@ func _case_real_data_shape() -> void:
 		"PICK_COUNT 是 %d，设计是正好 4 个" % RacePick.PICK_COUNT)
 	_h.expect(RacePick.required_count() == 4, "required_count_wrong",
 		"四族时应当要选 4 个，实际 %d" % RacePick.required_count())
-	_h.expect(RacePick.is_forced(), "four_of_four_not_forced",
-		"四族选四个没有选择余地，界面应当整页锁定")
-	_h.expect(str(RacePick.default_races()) == str(REAL_RACES), "default_wrong",
-		"默认出战种族是 %s，期望表里前四族 %s" % [str(RacePick.default_races()), str(REAL_RACES)])
+	_h.expect(not RacePick.is_forced(), "five_of_four_forced",
+		"五族选四个应允许玩家选择")
+	_h.expect(str(RacePick.default_races()) == str(DEFAULT_RACES), "default_wrong",
+		"默认出战种族是 %s，期望表里前四族 %s" % [str(RacePick.default_races()), str(DEFAULT_RACES)])
 	for race in REAL_RACES:
 		_h.expect(RacePick.unit_count(race) > 0, "race_without_units", "%s 族一个棋子都没有" % race)
 
@@ -164,16 +171,16 @@ func _case_sanitize_rejects() -> void:
 	for key in bad:
 		_h.expect(RacePick.sanitize(bad[key]).is_empty(), "sanitize_accepted_bad",
 			"%s 这份不合法的选择被收下了：%s" % [str(key), str(bad[key])])
-	_h.expect(str(RacePick.resolve(["god"])) == str(REAL_RACES), "resolve_bad_not_default",
+	_h.expect(str(RacePick.resolve(["god"])) == str(DEFAULT_RACES), "resolve_bad_not_default",
 		"不合法的选择没有回落到默认，实际 %s" % str(RacePick.resolve(["god"])))
 
 
 func _case_sanitize_orders() -> void:
 	var shuffled := ["human", "god", "undead", "dark"]
-	_h.expect(str(RacePick.sanitize(shuffled)) == str(REAL_RACES), "sanitize_not_ordered",
+	_h.expect(str(RacePick.sanitize(shuffled)) == str(DEFAULT_RACES), "sanitize_not_ordered",
 		"乱序的合法选择没有按棋子表顺序整理：%s" % str(RacePick.sanitize(shuffled)))
 	var names := [&"god", &"dark", &"undead", &"human"]
-	_h.expect(str(RacePick.sanitize(names)) == str(REAL_RACES), "sanitize_rejects_string_name",
+	_h.expect(str(RacePick.sanitize(names)) == str(DEFAULT_RACES), "sanitize_rejects_string_name",
 		"StringName 写的合法选择被拒了")
 
 
@@ -191,7 +198,7 @@ func _case_oversized_rejected_fast() -> void:
 
 func _case_choice_with_fake_race() -> void:
 	var races := RacePick.all_races()
-	_h.expect(races.size() == 5 and races.has(FAKE_RACE), "fake_race_not_seen",
+	_h.expect(races.size() == 6 and races.has(FAKE_RACE), "fake_race_not_seen",
 		"注入假种族后 all_races() 是 %s —— 种族列表没有从棋子表里读" % str(races))
 	_h.expect(not RacePick.is_forced(), "five_races_still_forced", "五族选四个应当可以选")
 	_h.expect(RacePick.required_count() == 4, "required_count_not_capped",
@@ -200,7 +207,7 @@ func _case_choice_with_fake_race() -> void:
 		"五族里选四个被拒了：%s" % str(PICK_WITH_FAKE))
 	_h.expect(RacePick.sanitize(["god", "dark", "undead", "human", FAKE_RACE]).is_empty(),
 		"five_of_five_accepted", "五族全选被收下了 —— 卡池比规定的深")
-	_h.expect(str(RacePick.default_races()) == str(REAL_RACES), "default_not_first_four",
+	_h.expect(str(RacePick.default_races()) == str(DEFAULT_RACES), "default_not_first_four",
 		"五族时默认应当是表里前四族，实际 %s" % str(RacePick.default_races()))
 
 
@@ -335,7 +342,7 @@ func _case_server_seat_without_races_defaults() -> void:
 		ns._room_start_authoritative(room)
 		_tally_offers(seen, _seat_offers(room, 0))
 		ns._rooms.erase(int(room.id))
-	_h.expect(int(seen.get(FAKE_RACE, 0)) == 0 and int(seen.get(EXCLUDED, 0)) > 0,
+	_h.expect(int(seen.get(FAKE_RACE, 0)) == 0 and int(seen.get("crimson", 0)) == 0 and int(seen.get(EXCLUDED, 0)) > 0,
 		"seat_without_races_not_default",
 		"座位没有出战种族时应当回落默认（表里前四族：有神族、没有假族），实际 %s" % str(seen))
 
@@ -396,8 +403,8 @@ func _case_pet_screen_race_tab() -> void:
 	(screen._tab_buttons[PetScreenScript.Tab.RACES] as Button).pressed.emit()
 	_h.expect(screen._race_box.visible and not screen._pet_box.visible, "race_tab_not_shown",
 		"点了「种族」页签，种族页没出来")
-	_h.expect(screen._race_cards.size() == 5, "race_cards_count",
-		"五族应当有五张卡，实际 %d" % screen._race_cards.size())
+	_h.expect(screen._race_cards.size() == 6, "race_cards_count",
+		"注入测试种族后应当有六张卡，实际 %d" % screen._race_cards.size())
 	_h.expect(screen._race_save_btn.visible and screen._race_save_btn.disabled, "save_state_unchanged",
 		"没改动时保存按钮应当看得见、点不了")
 
@@ -491,11 +498,20 @@ func _case_races_live_on_server() -> void:
 
 
 func _case_pet_screen_forced_and_starter() -> void:
+	# The real catalog now has five races. Remove Crimson from the in-memory
+	# table for this legacy four-of-four forced-state check, then restore it.
+	var units := _units()
+	var crimson_rows: Array = []
+	for i in range(units.size() - 1, -1, -1):
+		if str((units[i] as Dictionary).get("race", "")) == "crimson":
+			crimson_rows.push_front(units[i])
+			units.remove_at(i)
 	var saved_starter: bool = PlayerProfile.needs_starter_pick
 	PlayerProfile.needs_starter_pick = false
 	var screen := _open_pet_screen()
 	if screen == null:
 		PlayerProfile.needs_starter_pick = saved_starter
+		units.append_array(crimson_rows)
 		return
 	await get_tree().process_frame
 	(screen._tab_buttons[PetScreenScript.Tab.RACES] as Button).pressed.emit()
@@ -528,6 +544,7 @@ func _case_pet_screen_forced_and_starter() -> void:
 	var gate := _open_pet_screen()
 	if gate == null:
 		PlayerProfile.needs_starter_pick = saved_starter
+		units.append_array(crimson_rows)
 		return
 	await get_tree().process_frame
 	_h.expect(not gate._tab_row.visible and gate._pet_box.visible and not gate._race_box.visible \
@@ -537,3 +554,4 @@ func _case_pet_screen_forced_and_starter() -> void:
 	gate.queue_free()
 	await get_tree().process_frame
 	PlayerProfile.needs_starter_pick = saved_starter
+	units.append_array(crimson_rows)

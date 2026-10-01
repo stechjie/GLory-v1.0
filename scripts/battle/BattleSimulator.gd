@@ -422,6 +422,7 @@ static func step_state(state: Dictionary) -> void:
 		state.finished = true
 		return
 	_tick_statuses(p_alive + e_alive, state)
+	CrimsonCombat.pulse(state)
 	# 神7：放在状态结算之后挂，挂上的 1 秒无敌正好覆盖本 tick 起的 10 个 tick。
 	BattleSimTreasures._apply_god_divine_pulse(state, p_alive + e_alive)
 	# 神王裁决的后续段数属于技能伤害：在当帧无敌挂好之后结算，确保每段都读取
@@ -756,6 +757,21 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 			var was_alive := bool(target.get("alive", false))
 			var dealt := _perform_attack(f, target, state)
 			_handle_attack_kill(f, target, state, team_units, opponents, was_alive)
+			if str(f.get("def", {}).get("skill_id", "")) == "line_pierce":
+				var pierce_index := 1
+				for pierced: Dictionary in CrimsonCombat.pierce_targets(f, target, opponents):
+					var pierced_alive := bool(pierced.get("alive", false))
+					var coeff := maxf(0.0, 1.0 - float(f.get("def", {}).get("pierce_falloff", 0.20)) * float(pierce_index))
+					var pierce_base := float(f.get("atk", 1)) * StatusEffectService.attack_multiplier(f) * coeff
+					pierce_base *= _element_multiplier(str(f.get("def", {}).get("element", "")), str(pierced.get("def", {}).get("element", "")))
+					if bool(f.get("crimson_last_crit", false)):
+						pierce_base *= float(f.get("def", {}).get("crit_dmg", 1.75)) + float(f.get("crit_dmg_bonus", 0.0))
+					DamageService.set_hit_context("basic", bool(f.get("crimson_last_crit", false)), "crimson", "line_pierce")
+					DamageService.emit_impact(f, pierced, "line_pierce", bool(f.get("crimson_last_crit", false)))
+					DamageService.apply_damage(pierced, maxi(1, int(round(pierce_base))), false)
+					DamageService.clear_hit_context()
+					_handle_attack_kill(f, pierced, state, team_units, opponents, pierced_alive)
+					pierce_index += 1
 			if bool(target.get("alive", false)) and str(f.get("def", {}).get("skill_id", "")) == "every_fourth_combo" and int(f.get("attack_count", 0)) % int(f.get("def", {}).get("every", 4)) == 0:
 				var combo_alive := bool(target.get("alive", false))
 				DamageService.apply_damage(target, maxi(1, int(round(float(f.atk) * float(f.get("def", {}).get("combo_atk_pct", 0.70))))), false)
@@ -917,6 +933,7 @@ static func _tick_statuses(fighters: Array, state: Dictionary) -> void:
 	for f in fighters:
 		DamageService.clear_stat_context()
 		StatusEffectService.tick(f, TICK_SEC)
+		CrimsonCombat.tick_fighter(f, float(state.get("elapsed", 0.0)))
 	DamageService.clear_stat_context()
 
 
@@ -925,6 +942,8 @@ static func _perform_attack(attacker: Dictionary, target: Dictionary, state: Dic
 		return 0
 	var d: Dictionary = attacker.get("def", {})
 	var base := float(attacker.get("atk", 1)) * StatusEffectService.attack_multiplier(attacker)
+	if str(d.get("skill_id", "")) == "current_hp_strike":
+		attacker.crimson_target_hp_before = int(target.get("hp", 0))
 	base *= _element_multiplier(str(d.get("element", "")), str(target.get("def", {}).get("element", "")))
 	var syn: Dictionary = _resolve_syn(attacker, state)
 	if str(d.get("race", "")) == "dark":
@@ -948,6 +967,8 @@ static func _perform_attack(attacker: Dictionary, target: Dictionary, state: Dic
 		is_crit = true
 	if is_crit:
 		base *= float(d.get("crit_dmg", 1.5)) + float(attacker.get("crit_dmg_bonus", 0.0))
+	if str(d.get("skill_id", "")) == "line_pierce":
+		attacker.crimson_last_crit = is_crit
 	# 9.24 羁绊：判定用「这一下打之前」目标身上的状态（本次普攻新挂的不算）。
 	StatusEffectService.ensure_status(target)
 	var target_was_poisoned := StatusEffectService.has_status(target, "poison")
@@ -962,6 +983,8 @@ static func _perform_attack(attacker: Dictionary, target: Dictionary, state: Dic
 	DamageService.emit_impact(attacker, target, basic_skill_id, is_crit)
 	DamageService.set_hit_context("basic", is_crit, str(d.get("race", "")), basic_skill_id)
 	var dealt := DamageService.apply_damage(target, maxi(1, int(round(base))), false)
+	if dealt > 0:
+		dealt += CrimsonCombat.passive_attack(attacker, target, state)
 	DamageService.clear_hit_context()
 	if str(d.get("skill_id", "")) == "true_damage_attack":
 		var true_pct := float(d.get("true_damage_pct", 0.18))
@@ -1165,6 +1188,15 @@ static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) ->
 		# at the end of this iteration resets the tag (see DamageService).
 		DamageService.set_hit_context("skill", false, str(d.get("race", "")), sid)
 		match sid:
+			"random_ally_buff":
+				CrimsonCombat.skill_dancer(caster, casters, d, state)
+				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 5.0))
+			"frost_status":
+				CrimsonCombat.skill_icey(caster, opponents, d, state)
+				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 6.0))
+			"aoe_silence":
+				CrimsonCombat.skill_lantern(caster, opponents, d, state)
+				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 10.0))
 			"lowest_ally_heal":
 				BattleSimSkills._skill_lowest_ally_heal(caster, casters, d)
 				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 4.0))

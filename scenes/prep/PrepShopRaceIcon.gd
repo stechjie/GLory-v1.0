@@ -8,6 +8,7 @@ const LOGO_PATHS := {
 	"human": "res://assets/ui/race_logos/human.png",
 	"undead": "res://assets/ui/race_logos/undead.png",
 	"dark": "res://assets/ui/race_logos/dark.png",
+	"crimson": "res://assets/ui/race_logos/crimson.png",
 }
 
 var _race := ""

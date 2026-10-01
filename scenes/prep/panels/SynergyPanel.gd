@@ -96,7 +96,7 @@ func refresh() -> void:
 func _add_synergy_widgets() -> void:
 	var counts := SynergyService.count_races_from_board()
 	var shown := false
-	for race in ["god", "dark", "undead", "human"]:
+	for race in ["god", "dark", "undead", "human", "crimson"]:
 		var count := int(counts.get(race, 0))
 		if count <= 0:
 			continue
@@ -173,6 +173,12 @@ static func _race_entries(race: String) -> Array:
 				{"threshold": 2, "name": "人2·护盾", "detail": "开战时普通棋子获得等于 8% 最大生命的护盾。"},
 				{"threshold": 7, "name": "人7·哀兵", "detail": "己方每阵亡 1 个棋子，存活棋子获得 1 层：最大生命/攻击/防御/攻速 +20%、暴击 +20%、暴击伤害 +10%，并回复 20% 生命（可无限叠加）。"},
 			]
+		"crimson":
+			return [
+				{"threshold": 2, "name": "赤律2·绵延", "detail": "赤律族施加的增益和减益持续时间 +20%；沉默、冰霜等控制额外增加最多 0.5 秒。"},
+				{"threshold": 4, "name": "赤律4·共鸣", "detail": "每次成功施加增益、减益或控制，施加者获得一层共鸣：攻击和攻速 +4%，持续 4 秒，最多 10 层；新增层数刷新持续时间。"},
+				{"threshold": 7, "name": "赤律7·赤潮", "detail": "开战第 2 秒起每 5 秒，赤律族全体技能剩余冷却 -1 秒、清除负面状态、攻击和攻速 +10% 持续 3 秒，并回复 6% 最大生命。"},
+			]
 	return []
 
 
@@ -204,6 +210,12 @@ static func _race_entries_en(race: String) -> Array:
 				{"threshold": 1, "name": "Human Trait: Triple Crit", "detail": "Every 3rd attack from a Human unit is a guaranteed critical hit."},
 				{"threshold": 2, "name": "Human 2: Shield", "detail": "At battle start, normal units gain a shield equal to 8% max HP."},
 				{"threshold": 7, "name": "Human 7: Vengeance", "detail": "Each time one of your units dies, survivors gain a stack: max HP/ATK/DEF/AS +20%, Crit +20%, CritDmg +10%, and heal 20% HP (no stack limit)."},
+			]
+		"crimson":
+			return [
+				{"threshold": 2, "name": "Crimson 2: Lingering Effects", "detail": "Crimson buffs and debuffs last 20% longer. Control effects gain at most 0.5 additional seconds."},
+				{"threshold": 4, "name": "Crimson 4: Resonance", "detail": "Applying a buff, debuff, or control grants the caster +4% ATK and attack speed for 4s, up to 10 stacks. New stacks refresh the duration."},
+				{"threshold": 7, "name": "Crimson 7: Red Tide", "detail": "From 2s into battle, every 5s Crimson units reduce remaining skill cooldown by 1s, cleanse debuffs, gain +10% ATK and attack speed for 3s, and heal 6% max HP."},
 			]
 	return []
 
@@ -275,6 +287,7 @@ func race_max_threshold(race: String) -> int:
 		"dark":   entries = [{"threshold":1},{"threshold":2},{"threshold":5},{"threshold":7}]
 		"undead": entries = [{"threshold":1},{"threshold":4},{"threshold":7}]
 		"human":  entries = [{"threshold":1},{"threshold":2},{"threshold":7}]
+		"crimson": entries = [{"threshold":2},{"threshold":4},{"threshold":7}]
 		_:        entries = []
 	for item in entries:
 		max_threshold = maxi(max_threshold, int(item.get("threshold", 0)))
@@ -292,10 +305,12 @@ static func race_name(race: String) -> String:
 			"dark":   return "Dark"
 			"undead": return "Undead"
 			"human":  return "Human"
+			"crimson": return "Crimson"
 		return race
 	match race:
 		"god":    return "神"
 		"dark":   return "暗"
 		"undead": return "灵"
 		"human":  return "人"
+		"crimson": return "赤律"
 	return race

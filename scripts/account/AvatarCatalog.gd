@@ -106,12 +106,14 @@ static func texture_for(value: String, thumb: bool = false) -> Texture2D:
 	return load(path) as Texture2D
 
 
-static func frame_texture_for(value: String) -> Texture2D:
+static func frame_texture_for(value: String, fallback_to_default: bool = true) -> Texture2D:
 	var id := id_from_value(value)
 	if id.is_empty():
+		if not fallback_to_default:
+			return null
 		id = str(_catalog().get("default_frame_id", "frame_default"))
 	var path := frame_source_path(id)
-	if path.is_empty() or not ResourceLoader.exists(path):
+	if (path.is_empty() or not ResourceLoader.exists(path)) and fallback_to_default:
 		path = frame_source_path(str(_catalog().get("default_frame_id", "frame_default")))
 	if path.is_empty() or not ResourceLoader.exists(path):
 		return null

@@ -95,7 +95,7 @@ static func _simulate(seed: Variant, slot: int, round_n: int) -> Dictionary:
 		_harvest(bot)
 		_prep_round(bot, r, rng, units)
 	var board := _arrange_board(bot)
-	var counts := {"god": 0, "dark": 0, "undead": 0, "human": 0}
+	var counts := {"god": 0, "dark": 0, "undead": 0, "human": 0, "crimson": 0}
 	for cell in board:
 		if typeof(cell) == TYPE_DICTIONARY:
 			var race := str((cell.def as Dictionary).get("race", ""))

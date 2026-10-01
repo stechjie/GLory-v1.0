@@ -57,6 +57,30 @@ android/
 !/assets/ui/buttons/ready_magic_circle.png
 !/assets/ui/buttons/ready_magic_circle.png.import
 
+# Crimson test-race art is required by the hand cards and portrait battle fallback.
+!/assets/ui/unit_portraits/
+/assets/ui/unit_portraits/*
+!/assets/ui/unit_portraits/crimson.png
+!/assets/ui/unit_portraits/dancer.png
+!/assets/ui/unit_portraits/drumer.png
+!/assets/ui/unit_portraits/hunter.png
+!/assets/ui/unit_portraits/armbreaker.png
+!/assets/ui/unit_portraits/Icey.png
+!/assets/ui/unit_portraits/skypierce.png
+!/assets/ui/unit_portraits/lattern.png
+!/assets/ui/unit_portraits/crimson.png.import
+!/assets/ui/unit_portraits/dancer.png.import
+!/assets/ui/unit_portraits/drumer.png.import
+!/assets/ui/unit_portraits/hunter.png.import
+!/assets/ui/unit_portraits/armbreaker.png.import
+!/assets/ui/unit_portraits/Icey.png.import
+!/assets/ui/unit_portraits/skypierce.png.import
+!/assets/ui/unit_portraits/lattern.png.import
+!/assets/ui/race_logos/
+/assets/ui/race_logos/*
+!/assets/ui/race_logos/crimson.png
+!/assets/ui/race_logos/crimson.png.import
+
 # Seven-day shop art is a runtime dependency of ShopScreen and PrepSkin.
 # Keep this small set with the code while the rest of the large art bundle stays external.
 !/assets/ui/shop/

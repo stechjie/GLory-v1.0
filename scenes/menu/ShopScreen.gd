@@ -1084,7 +1084,7 @@ func _frame_preview(grants: String, preview_size: Vector2, owned: bool) -> Contr
 	stage.custom_minimum_size = preview_size
 	stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var frame := TextureRect.new()
-	frame.texture = AvatarCatalog.frame_texture_for(grants)
+	frame.texture = AvatarCatalog.frame_texture_for(grants, false)
 	frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
