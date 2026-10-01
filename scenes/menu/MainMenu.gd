@@ -384,23 +384,29 @@ func _build() -> void:
 		add_child(offline_btn)
 		_track(offline_btn, Vector2(40, 876), Vector2(210, 54), 0, "left")
 
-	# 游戏重连：放在"开始游戏（自定房间 970,724）"正上方，仅在本地存在重连凭证时显示。
-	# 按它才连回上一场；按开始游戏则放弃旧局开新的一场。
+	# 游戏重连：仅在本地存在重连凭证时显示，点击回到上一场。
 	var reconnect_btn := Button.new()
-	reconnect_btn.text = _menu_text("↩ 游戏重连", "↩ Reconnect")
+	reconnect_btn.name = "ReconnectButton"
+	# 不用字体可能缺失的箭头占位，保证可见文字位于按钮正中。
+	reconnect_btn.text = _menu_text("游戏重连", "Reconnect")
+	reconnect_btn.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	reconnect_btn.focus_mode = Control.FOCUS_NONE
 	reconnect_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	var rc_style := Tokens.flat_box(Tokens.INK_PANEL, Tokens.INK_EDGE, 3, 26)
-	reconnect_btn.add_theme_stylebox_override("normal", rc_style)
-	reconnect_btn.add_theme_stylebox_override("hover", rc_style)
-	reconnect_btn.add_theme_stylebox_override("pressed", rc_style)
-	reconnect_btn.add_theme_color_override("font_color", Color(1.0, 0.90, 0.60))
+	# 与大厅的深棕底、金色边框一致；三态保持相同的对称留白。
+	reconnect_btn.add_theme_stylebox_override("normal",
+		_room_button_box(Tokens.INK_PANEL, Tokens.INK_EDGE, 3))
+	reconnect_btn.add_theme_stylebox_override("hover",
+		_room_button_box(Tokens.INK_PANEL.lightened(0.12), Tokens.INK_EDGE.lightened(0.2), 3))
+	reconnect_btn.add_theme_stylebox_override("pressed",
+		_room_button_box(Tokens.INK_PANEL.darkened(0.2), Tokens.INK_EDGE, 3))
+	for state in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+		reconnect_btn.add_theme_color_override(state, Color(1.0, 0.90, 0.60))
 	reconnect_btn.add_theme_font_size_override("font_size", 26)
 	reconnect_btn.pressed.connect(_emit_reconnect)
 	# Active leave requests retain credentials only for the server receipt.
 	reconnect_btn.visible = not SaveManager.load_resumable_reconnect().is_empty()
 	add_child(reconnect_btn)
-	_track(reconnect_btn, Vector2(1110, 594), Vector2(235, 58))
+	_track(reconnect_btn, Vector2(1110, 591), Vector2(235, 64))
 
 	_net_status = _add_label("", Vector2(640, 64), Vector2(320, 32), 20)
 	_net_status.add_theme_color_override("font_color", Color(0.98, 0.88, 0.55))
@@ -1150,7 +1156,13 @@ func _layout() -> void:
 			_:
 				x = origin.x + pos.x * scale
 		node.position = Vector2(x, origin.y + pos.y * scale)
-		node.size = size * scale
+		if node is Button:
+			# 整体缩放按钮：文字、内边距、边框和点击区域使用同一比例。
+			# 只缩 size 会让固定字号挤满底板，且被最小尺寸反向撑开。
+			node.size = size
+			node.scale = Vector2.ONE * scale
+		else:
+			node.size = size * scale
 		if node is Label:
 			node.add_theme_font_size_override("font_size", maxi(10, int(item.font_size * scale)))
 
