@@ -3,11 +3,19 @@ const Harness = preload("res://tools/CheckHarness.gd")
 const Music = preload("res://ui/services/MusicService.gd")
 const VoiceChecks = preload("res://tools/voice_check.gd")
 
+class FocusAudioBridge extends VoiceChecks.FakeIOSBridge:
+	var focus_prepared := 0
+	func prepareAudioResume() -> bool:
+		focus_prepared += 1
+		return true
+
 func _ready() -> void:
 	var h = Harness.new("voice_music")
-	var fake = VoiceChecks.FakeIOSBridge.new()
+	var fake = FocusAudioBridge.new()
 	VoiceService.set_process(false)
 	VoiceService._bridge = fake
+	VoiceService._notification(Node.NOTIFICATION_APPLICATION_FOCUS_IN)
+	h.expect(fake.focus_prepared == 1, "focus_prepares_ios_output", "iOS audio session is ready during FOCUS_IN, before Godot starts output")
 	VoiceService._joined = true
 	fake.joined = true
 	Music._ensure_player()

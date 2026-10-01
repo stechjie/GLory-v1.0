@@ -132,6 +132,9 @@ static func _on_application_resumed() -> void:
 		_player.play(_resume_position if _resume_path == _path else 0.0)
 	_sync()
 	_sync_voice_volume()
+	if OS.has_feature("ios") and is_instance_valid(_player):
+		NetworkService._net_log("music resumed playing=%s paused=%s allowed=%s position=%.2f" % [
+			str(_player.playing), str(_player.stream_paused), str(_allowed()), _player.get_playback_position()])
 
 
 static func _on_settings_changed() -> void:

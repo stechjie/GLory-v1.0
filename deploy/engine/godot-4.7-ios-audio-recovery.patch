@@ -1,0 +1,90 @@
+--- a/drivers/coreaudio/audio_driver_coreaudio.h
++++ b/drivers/coreaudio/audio_driver_coreaudio.h
+@@ -46,6 +46,10 @@
+ 	AudioComponentInstance input_unit = nullptr;
+ 
+ 	bool active = false;
++#ifndef MACOS_ENABLED
++	uint64_t recovery_check_after = 0;
++	unsigned int recovery_attempts = 0;
++#endif
+ 	Mutex mutex;
+ 
+ 	String output_device_name = "Default";
+@@ -96,6 +100,9 @@
+ 
+ 	virtual Error init() override;
+ 	virtual void start() override;
++#ifndef MACOS_ENABLED
++	void recover_output_if_stalled();
++#endif
+ 	virtual int get_mix_rate() const override;
+ 	virtual int get_input_mix_rate() const override;
+ 	virtual SpeakerMode get_speaker_mode() const override;
+--- a/drivers/coreaudio/audio_driver_coreaudio.mm
++++ b/drivers/coreaudio/audio_driver_coreaudio.mm
+@@ -270,6 +270,10 @@
+ }
+ 
+ void AudioDriverCoreAudio::start() {
++#ifndef MACOS_ENABLED
++	recovery_attempts = 0;
++	recovery_check_after = OS::get_singleton()->get_ticks_usec() + 250000;
++#endif
+ 	if (!active && audio_unit != nullptr) {
+ 		OSStatus result = AudioOutputUnitStart(audio_unit);
+ 		if (result != noErr) {
+@@ -290,6 +294,38 @@
+ 		}
+ 	}
+ }
++
++#ifndef MACOS_ENABLED
++void AudioDriverCoreAudio::recover_output_if_stalled() {
++	if (!audio_unit || recovery_attempts >= 6) {
++		return;
++	}
++	const uint64_t now = OS::get_singleton()->get_ticks_usec();
++	if (now < recovery_check_after || get_time_since_last_mix() < 0.25) {
++		return;
++	}
++	// RemoteIO may report success but stop invoking its render callback after
++	// an interruption or another engine reconfigures the shared audio session.
++	// Only called while foreground and focused. Do not hold the mixer mutex
++	// across stop: an in-flight render callback may need it.
++	recovery_check_after = now + 1000000;
++	recovery_attempts++;
++	NSError *error = nil;
++	if (![[AVAudioSession sharedInstance] setActive:YES error:&error]) {
++		NSLog(@"[GLORY_AUDIO_DRIVER] activate failed: %@", error);
++		return;
++	}
++	const OSStatus stopped = AudioOutputUnitStop(audio_unit);
++	active = false;
++	const OSStatus uninitialized = AudioUnitUninitialize(audio_unit);
++	const OSStatus initialized = AudioUnitInitialize(audio_unit);
++	const OSStatus started = initialized == noErr ? AudioOutputUnitStart(audio_unit) : initialized;
++	active = started == noErr;
++	NSLog(@"[GLORY_AUDIO_DRIVER] recovery=%u stop=%d uninit=%d init=%d start=%d elapsed_ms=%.1f", recovery_attempts,
++		(int)stopped, (int)uninitialized, (int)initialized, (int)started,
++		(double)(OS::get_singleton()->get_ticks_usec() - now) / 1000.0);
++}
++#endif
+ 
+ int AudioDriverCoreAudio::get_mix_rate() const {
+ 	return mix_rate;
+--- a/drivers/apple_embedded/os_apple_embedded.mm
++++ b/drivers/apple_embedded/os_apple_embedded.mm
+@@ -222,6 +222,12 @@
+ 	if (!main_loop) {
+ 		return true;
+ 	}
++
++#ifdef IOS_ENABLED
++	if (is_focused && [UIApplication sharedApplication].applicationState == UIApplicationStateActive) {
++		audio_driver.recover_output_if_stalled();
++	}
++#endif
+ 
+ 	GodotProfileFrameMark;
+ 	GodotProfileZone("OS_AppleEmbedded::iterate");

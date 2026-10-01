@@ -31,3 +31,16 @@ Cloud Shell `/tmp` is ephemeral. Keep the build directory and evidence on its pe
 Before production promotion: test the actual binary on the server OS in an isolated network namespace, cold-start the exact source bundle, verify its manifest, verify no peers/rooms, preserve user directory and TLS credentials, install a versioned binary and retain the old systemd configuration for rollback. Check public DTLS heartbeat and post-start journal. Never use a fresh certificate in the production bundle.
 
 Historical attribution and actual rollout evidence: [audit](../../docs/DTLS逐条核查与修复_20260930.md).
+
+## iOS CoreAudio recovery template
+
+`godot-4.7-ios-audio-recovery.patch` targets the same Godot 4.7 source commit. It checks actual mixer callbacks only while foreground and focused, and performs bounded RemoteIO reinitialization on a stall. It does not keep background microphone capture running.
+
+From the outer delivery workspace, using a Python environment with SCons:
+
+```sh
+python3 tools/build_ios_audio_template.py --source /path/to/godot-5b4e0cb0fd279832bbdd69fed5354d4e5ad26f88
+python3 tools/glory_ios_build.py --check --method ad-hoc --version 0.0.15
+```
+
+Stock templates remain unchanged. Output goes to `build/ios-audio-templates/4.7.stable`; this arm64 release replacement supports this project's GL Compatibility renderer, not Metal/Vulkan. `glory-engine.json` records patch, library and archive hashes. Packaging requires matching patch/archive evidence and verifies the recovery marker and voice framework in the final IPA. After native changes, verify both audible recovery and return latency on a physical device.

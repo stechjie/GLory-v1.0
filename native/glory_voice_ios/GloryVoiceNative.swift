@@ -10,8 +10,7 @@ public final class GloryVoiceNative: NSObject, RoomDelegate {
     @objc public static let shared = GloryVoiceNative()
     private var applicationActive = true
     private var audioConfigured = false
-    private var audioResumeRevision = 0
-    private var audioResumeTask: Task<Void, Never>?
+    private var audioSessionReady = false
     private var audioSessionError = ""
     private var activeRoom: Room?
     private var generation = 0
@@ -36,37 +35,50 @@ public final class GloryVoiceNative: NSObject, RoomDelegate {
         let audio = AudioManager.shared
         audio.audioSession.isAutomaticConfigurationEnabled = false
         audio.audioSession.isAutomaticDeactivationEnabled = false
-        if audioConfigured {
-            try AVAudioSession.sharedInstance().setCategory(
-                .playAndRecord, mode: .default,
-                options: [.defaultToSpeaker, .allowBluetooth, .mixWithOthers])
+        let session = AVAudioSession.sharedInstance()
+        let options: AVAudioSession.CategoryOptions = [.defaultToSpeaker, .allowBluetooth, .mixWithOthers]
+        if audioConfigured && (session.category != .playAndRecord || session.mode != .default || session.categoryOptions != options) {
+            try session.setCategory(.playAndRecord, mode: .default, options: options)
+            audioSessionReady = false
         }
-        try AVAudioSession.sharedInstance().setActive(true)
+        if !audioSessionReady {
+            try session.setActive(true)
+            audioSessionReady = true
+        }
         audioSessionError = ""
+    }
+
+    // Godot emits FOCUS_IN before AudioOutputUnitStart, but RESUMED after it.
+    // This call must finish synchronously on the main thread; waiting for an
+    // old LiveKit disconnect lets CoreAudio start against an inactive session.
+    @objc public func prepareAudioResume() -> Bool {
+        audioSessionReady = false // Each FOCUS_IN may follow a system interruption.
+        do {
+            try activateAudioSession()
+            NSLog("[GLORY_AUDIO] session_ready category=%@ mode=%@",
+                  AVAudioSession.sharedInstance().category.rawValue,
+                  AVAudioSession.sharedInstance().mode.rawValue)
+            return true
+        } catch {
+            audioSessionError = "audio_resume_failed"
+            NSLog("[GLORY_AUDIO] session_resume_failed %@", String(describing: error))
+            return false
+        }
     }
 
     @objc public func setApplicationActive(_ active: Bool) {
         applicationActive = active
-        audioResumeRevision += 1
-        let revision = audioResumeRevision
-        audioResumeTask?.cancel()
         if !active {
-            // Prevent in-flight publication/subscription work restarting capture
-            // while Godot is still delivering the background notification.
+            audioSessionReady = false
+            // Block capture while the old room disconnects in the background.
             do { try AudioManager.shared.setEngineAvailability(.none) }
             catch { audioSessionError = "audio_suspend_failed" }
             return
         }
-        let pendingDisconnect = disconnectTask
-        audioResumeTask = Task { @MainActor [weak self] in
-            await pendingDisconnect?.value
-            guard let self, !Task.isCancelled, self.applicationActive,
-                  self.audioResumeRevision == revision else { return }
-            do {
-                try self.activateAudioSession()
-                try AudioManager.shared.setEngineAvailability(.default)
-            } catch { self.audioSessionError = "audio_resume_failed" }
-        }
+        // FOCUS_IN already prepared output. Avoid repeating the blocking session
+        // activation or starting an empty WebRTC engine before joining its room.
+        if !audioSessionReady { _ = prepareAudioResume() }
+        // joinRoom waits for old disconnect and starts WebRTC exactly once.
     }
 
     @objc public func hasRecordPermission() -> Bool {

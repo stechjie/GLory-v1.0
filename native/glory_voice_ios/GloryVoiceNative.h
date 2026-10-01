@@ -5,6 +5,7 @@
 NS_ASSUME_NONNULL_BEGIN
 @interface GloryVoiceNative : NSObject
 + (GloryVoiceNative *)shared;
+- (BOOL)prepareAudioResume;
 - (void)setApplicationActive:(BOOL)active;
 - (BOOL)hasRecordPermission;
 - (void)requestRecordPermission;

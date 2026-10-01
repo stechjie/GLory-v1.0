@@ -11,7 +11,7 @@ STUBS = r'''
 import Foundation
 public protocol RoomDelegate {}
 public struct LiveKitError: Error {}
-struct Identifier { var stringValue: String }
+struct Identifier: Equatable { var stringValue: String }
 struct ParticipantTrackPermission {
     init(participantSid: String, allTracksAllowed: Bool, allowedTrackSids: [String]) {}
 }
@@ -28,11 +28,14 @@ class AVAudioSession {
     static func sharedInstance() -> AVAudioSession { shared }
     var active = false
     var categoryChanges = 0
+    var activations = 0
+    typealias CategoryOptions = Set<Option>
+    var categoryOptions: CategoryOptions = []
     enum Option: Hashable { case defaultToSpeaker, allowBluetooth, mixWithOthers }
     func setCategory(_ category: Identifier, mode: Identifier, options: Set<Option>) throws {
-        self.category = category; self.mode = mode; categoryChanges += 1
+        self.category = category; self.mode = mode; self.categoryOptions = options; categoryChanges += 1
     }
-    func setActive(_ active: Bool) throws { self.active = active }
+    func setActive(_ active: Bool) throws { self.active = active; activations += 1 }
     var recordPermission = Permission.granted
     func requestRecordPermission(_ reply: @escaping (Bool) -> Void) { reply(true) }
     var category = Identifier(stringValue: "playAndRecord")
@@ -149,12 +152,21 @@ TESTS = r'''
         assert(!AudioManager.shared.available, "Background must block capture and playback")
         assert(voice.joinRoom("wss://example.test", token: "background", listenOnly: false) == "paused")
         AVAudioSession.shared.active = false
+        let activations = AVAudioSession.shared.activations
+        let categoryChanges = AVAudioSession.shared.categoryChanges
+        assert(voice.prepareAudioResume())
         voice.setApplicationActive(true)
-        await spin { AudioManager.shared.available && AVAudioSession.shared.active }
+        assert(AVAudioSession.shared.activations == activations + 1, "FOCUS_IN and RESUMED activate only once")
+        assert(AVAudioSession.shared.categoryChanges == categoryChanges, "Unchanged category must not reset audio hardware")
+        assert(!AudioManager.shared.available, "Do not start an empty WebRTC engine before joining")
+        assert(AVAudioSession.shared.active, "Godot starts CoreAudio immediately: activation cannot wait for an async task")
+        await spin { second.disconnects > 0 }
         assert(second.disconnects > 0, "Resume must wait for previous room cleanup")
         _ = voice.joinRoom("wss://example.test", token: "foreground", listenOnly: true)
         let third = Room.created.last!
         await spin { third.connectionState == .connected }
+        assert(AudioManager.shared.available)
+        assert(AVAudioSession.shared.activations == activations + 1, "Joining must reuse the foreground session")
         for _ in 0..<30 { _ = voice.getStatus(); await Task.yield() }
         assert(!third.localParticipant.mic, "Foreground may not promote Listen to Talk")
         third.localParticipant.failNextEnable = true

@@ -219,6 +219,19 @@ def update_sources(project, logdir, env):
     run([Path(__file__).resolve().with_name("sync_res.sh")], logdir / "resource-sync.log", env)
 
 
+def engine_template_info(project, templates):
+    engine_patch = project / "deploy/engine/godot-4.7-ios-audio-recovery.patch"
+    engine_info = {}
+    if engine_patch.is_file():
+        manifest = templates / "glory-engine.json"
+        if not manifest.is_file():
+            raise RuntimeError("本项目需要 iOS 音频恢复引擎；请先运行 tools/workspace/build_ios_audio_template.py。")
+        engine_info = json.loads(manifest.read_text())
+        if engine_info.get("patch_sha256") != shared.digest(engine_patch) or engine_info.get("ios_zip_sha256") != shared.digest(templates / "ios.zip"):
+            raise RuntimeError("iOS 引擎模板与音频修复补丁/模板指纹不一致，请重新构建模板。")
+    return engine_info
+
+
 def environment(args):
     if sys.platform != "darwin":
         raise RuntimeError("iOS IPA 构建需要 macOS 和完整 Xcode。")
@@ -240,6 +253,7 @@ def environment(args):
         raise RuntimeError(f"无法识别 Godot 版本：{version}")
     template_version = f"{match[1]}{'.' + match[2] if match[2] else ''}.{match[3]}"
     templates = shared.first_dir([args.templates, os.environ.get("GODOT_TEMPLATES"),
+        ROOT / "build/ios-audio-templates" / template_version,
         Path.home() / "Library/Application Support/Godot/export_templates" / template_version], "ios.zip")
     if not templates:
         raise RuntimeError(f"缺少 {template_version} iOS 导出模板。")
@@ -253,9 +267,10 @@ def environment(args):
         required = {"godot_apple_embedded.xcodeproj/project.pbxproj", "libgodot.ios.release.xcframework/ios-arm64/libgodot.a"}
         if not required.issubset(archive.namelist()):
             raise RuntimeError("iOS 模板缺少 Xcode 工程或 arm64 Release 库。")
+    engine_info = engine_template_info(args.project, templates)
     if not shutil.which("rsync"):
         raise RuntimeError("缺少 rsync。")
-    return {"child": child, "godot": godot, "version": version, "templates": templates,
+    return {"child": child, "godot": godot, "version": version, "templates": templates, "engine_info": engine_info,
             "template_version": template_version, "xcode": xcode}
 
 
@@ -311,6 +326,10 @@ def write_preset(stage, method, profile, cert, version, number):
     text = (stage / "export_presets.cfg").read_text()
     filters = {key: re.search(r'^' + key + r'="([^"]*)"', text, re.M)[1]
                for key in ("include_filter", "exclude_filter")}
+    # Android uses its AAR; iOS requires the native GDExtension instead.
+    filters["exclude_filter"] = ",".join(
+        value for value in filters["exclude_filter"].split(",")
+        if value != "addons/glory_voice/glory_voice.gdextension")
     filters["exclude_filter"] += ",*.p12,*.pfx,*.keystore,*.jks,*.mobileprovision,*.csr,*.cer"
     header = {"name": PRESET, "platform": "iOS", "runnable": True, "dedicated_server": False,
               "custom_features": "", "export_filter": "all_resources", **filters,
@@ -381,6 +400,8 @@ def verify_ipa(ipa, directory, method, profile, cert, version, number, identity,
     if (info.get("CFBundleIdentifier"), info.get("CFBundleShortVersionString"), info.get("CFBundleVersion")) != (BUNDLE, version, number):
         raise RuntimeError("IPA 的 Bundle ID、营销版本或 build number 与本次配置不一致。")
     voice = app / "Frameworks/GloryVoice.framework/GloryVoice"
+    if not voice.is_file():
+        raise RuntimeError("IPA 缺少必需的 iOS 音频/语音扩展 GloryVoice.framework。")
     if voice.exists():
         if not str(info.get("NSMicrophoneUsageDescription", "")).strip():
             raise RuntimeError("IPA 包含 iOS 语音组件，但麦克风用途声明为空。")
@@ -401,6 +422,8 @@ def verify_ipa(ipa, directory, method, profile, cert, version, number, identity,
     if hashlib.sha1(Path(str(prefix) + "0").read_bytes()).hexdigest().upper() != cert["sha1"]:
         raise RuntimeError("IPA 实际签名证书与选定发布证书不一致。")
     executable = app / info["CFBundleExecutable"]
+    if identity.get("engine_info") and b"[GLORY_AUDIO_DRIVER] recovery=" not in executable.read_bytes():
+        raise RuntimeError("IPA 主程序没有包含 iOS 音频驱动恢复补丁。")
     arch = capture(["xcrun", "lipo", "-archs", executable], env=env).decode().split()
     if arch != ["arm64"] or "iPhoneOS" not in info.get("CFBundleSupportedPlatforms", []):
         raise RuntimeError("IPA 主程序不是 iPhoneOS arm64 真机程序。")
@@ -510,6 +533,7 @@ def main(argv=None):
             identity = {"build_id": str(uuid.uuid4()), "git_commit": commit, "git_commit_short": commit[:8],
                         "dirty_files": len(dirty.splitlines()) if dirty else 0,
                         "build_utc": dt.datetime.now(dt.timezone.utc).isoformat(), "godot_version": env["version"],
+                        "engine_info": env.get("engine_info", {}),
                         "package_id": BUNDLE, "export_preset": PRESET, "version": version, "build_number": number,
                         "asset_inventory_sha256": report["actual_assets_sha256"],
                         "asset_inventory_kind": "merged_source_files_sha256"}

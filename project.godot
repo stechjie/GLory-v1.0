@@ -22,6 +22,10 @@ boot_splash/stretch_mode=0
 boot_splash/image="res://ui/branding/glory_bootstrap.png"
 config/icon="res://icon.svg"
 
+[audio]
+
+general/ios/session_category=3
+
 [autoload]
 
 StartupTrace="*res://scripts/autoload/StartupTrace.gd"

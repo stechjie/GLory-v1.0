@@ -22,6 +22,29 @@ spec.loader.exec_module(ios)
 
 
 class IOSBuildTests(unittest.TestCase):
+    def test_audio_engine_template_rejects_missing_or_stale_proof(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory) / "project"
+            patch = project / "deploy/engine/godot-4.7-ios-audio-recovery.patch"
+            patch.parent.mkdir(parents=True)
+            patch.write_bytes(b"patch")
+            templates = Path(directory) / "templates"
+            templates.mkdir()
+            archive = templates / "ios.zip"
+            archive.write_bytes(b"template")
+            with self.assertRaises(RuntimeError):
+                ios.engine_template_info(project, templates)
+            info = {"patch_sha256": ios.shared.digest(patch), "ios_zip_sha256": ios.shared.digest(archive)}
+            (templates / "glory-engine.json").write_text(json.dumps(info))
+            self.assertEqual(ios.engine_template_info(project, templates), info)
+            archive.write_bytes(b"old engine substituted")
+            with self.assertRaises(RuntimeError):
+                ios.engine_template_info(project, templates)
+            archive.write_bytes(b"template")
+            patch.write_bytes(b"new patch")
+            with self.assertRaises(RuntimeError):
+                ios.engine_template_info(project, templates)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -138,6 +161,7 @@ class IOSBuildTests(unittest.TestCase):
         cert = {"name": "iPhone Distribution: Fixture"}
         ios.write_preset(stage, "ad-hoc", self.profile, cert, "0.0.4", "2")
         text = preset.read_text()
+        self.assertNotIn("addons/glory_voice/glory_voice.gdextension", text)
         self.assertIn('application/export_method_release=2', text)
         self.assertIn('application/provisioning_profile_specifier_release="' + self.profile["UUID"] + '"', text)
         self.assertNotIn('provisioning_profile_specifier_release="Fixture"', text)
@@ -149,10 +173,13 @@ class IOSBuildTests(unittest.TestCase):
         cert = {"sha1": hashlib.sha1(leaf).hexdigest().upper()}
         identity = {"build_number": "2"}
         info = {"CFBundleIdentifier": ios.BUNDLE, "CFBundleShortVersionString": "0.0.4", "CFBundleVersion": "2",
-                "CFBundleExecutable": "Fixture", "CFBundleSupportedPlatforms": ["iPhoneOS"]}
+                "CFBundleExecutable": "Fixture", "CFBundleSupportedPlatforms": ["iPhoneOS"], "NSMicrophoneUsageDescription": "Voice"}
         with zipfile.ZipFile(ipa, "w") as archive:
             for name, data in {"Info.plist": plistlib.dumps(info), "Fixture": b"arm64 fixture",
-                               "Fixture.pck": b"pck fixture", "embedded.mobileprovision": b"profile fixture"}.items():
+                               "Fixture.pck": b"pck fixture", "embedded.mobileprovision": b"profile fixture",
+                               "Frameworks/GloryVoice.framework/GloryVoice": b"voice fixture",
+                               "Frameworks/LiveKitWebRTC.framework/LiveKitWebRTC": b"rtc fixture",
+                               "Frameworks/RustLiveKitUniFFI.framework/RustLiveKitUniFFI": b"ffi fixture"}.items():
                 archive.writestr("Payload/Fixture.app/" + name, data)
 
         def tool(command, **kwargs):
@@ -174,8 +201,22 @@ class IOSBuildTests(unittest.TestCase):
         with mock.patch.object(ios, "capture", side_effect=tool), mock.patch.object(ios, "read_profile", return_value=self.profile), \
                 mock.patch.object(ios, "pck_file", return_value=json.dumps(identity).encode()):
             result = ios.verify_ipa(ipa, destination, "ad-hoc", self.profile, cert, "0.0.4", "2", identity, {})
+            with self.assertRaisesRegex(RuntimeError, "音频驱动恢复补丁"):
+                ios.verify_ipa(ipa, destination, "ad-hoc", self.profile, cert, "0.0.4", "2",
+                               dict(identity, engine_info={"patched": True}), {})
         self.assertTrue(result["codesign"])
         self.assertTrue((destination / "signer-0").is_file())
+
+        # A signed-looking package without the native bridge must never pass.
+        missing_voice = self.root / "missing-voice.ipa"
+        with zipfile.ZipFile(ipa) as source, zipfile.ZipFile(missing_voice, "w") as target:
+            for name in source.namelist():
+                if "GloryVoice.framework/GloryVoice" not in name:
+                    target.writestr(name, source.read(name))
+        with mock.patch.object(ios, "capture", side_effect=tool):
+            with self.assertRaisesRegex(RuntimeError, "GloryVoice.framework"):
+                ios.verify_ipa(missing_voice, self.root / "missing-verify", "ad-hoc",
+                               self.profile, cert, "0.0.4", "2", identity, {})
 
     def test_check_path_does_not_unlock_sync_stage_reserve_or_publish(self):
         project = self.root / "project"

@@ -18,6 +18,7 @@ class GloryVoiceIOS : public Object {
     GDCLASS(GloryVoiceIOS, Object)
 protected:
     static void _bind_methods() {
+        ClassDB::bind_method(D_METHOD("prepareAudioResume"), &GloryVoiceIOS::prepareAudioResume);
         ClassDB::bind_method(D_METHOD("setApplicationActive", "active"), &GloryVoiceIOS::setApplicationActive);
         ClassDB::bind_method(D_METHOD("hasRecordPermission"), &GloryVoiceIOS::hasRecordPermission);
         ClassDB::bind_method(D_METHOD("requestRecordPermission"), &GloryVoiceIOS::requestRecordPermission);
@@ -30,6 +31,11 @@ protected:
         ClassDB::bind_method(D_METHOD("getCapabilities"), &GloryVoiceIOS::getCapabilities);
     }
 public:
+    bool prepareAudioResume() {
+        __block bool ready = false;
+        on_main(^{ ready = [[GloryVoiceNative shared] prepareAudioResume]; });
+        return ready;
+    }
     void setApplicationActive(bool active) { on_main(^{ [[GloryVoiceNative shared] setApplicationActive:active]; }); }
     bool hasRecordPermission() {
         __block bool result = false;

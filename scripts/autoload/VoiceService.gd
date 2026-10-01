@@ -504,6 +504,12 @@ func _apply_room_default() -> void:
 
 func _notification(what: int) -> void:
 	match what:
+		NOTIFICATION_APPLICATION_FOCUS_IN:
+			# iOS starts CoreAudio immediately after this notification and before
+			# APPLICATION_RESUMED. Activate its session synchronously first.
+			if _bridge != null and _bridge_has_method("prepareAudioResume"):
+				var audio_ready := bool(_bridge.prepareAudioResume())
+				NetworkService._net_log("ios audio focus ready=%s" % str(audio_ready))
 		NOTIFICATION_APPLICATION_PAUSED:
 			# 切到后台：断开（不申请后台音频，后台不录音）。档位不变，回来之后 _process 里自动重连。
 			_application_paused = true
