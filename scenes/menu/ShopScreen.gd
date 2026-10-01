@@ -139,6 +139,8 @@ func _build() -> void:
 	for side in ["left", "right", "top", "bottom"]:
 		margin.add_theme_constant_override("margin_" + side, Tokens.PAD)
 	add_child(margin)
+	# 灵动岛 / 圆角那几条让出来；背景（bg、dim）照样铺满（ui/services/SafeArea.gd）。
+	SafeArea.track(margin)
 
 	var root := VBoxContainer.new()
 	root.add_theme_constant_override("separation", Tokens.GAP_M)

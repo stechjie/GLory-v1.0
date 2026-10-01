@@ -27,6 +27,10 @@ const RESOLUTIONS: Array = [
 	{"name": "20:9 2400x1080", "size": Vector2i(2400, 1080)},
 	{"name": "2640x1216", "size": Vector2i(2640, 1216)},
 	{"name": "1280x720", "size": Vector2i(1280, 720)},
+	# 横屏 iPhone：灵动岛只在一侧（手机倒过来拿就换边），底下是手势条。左右不对称，
+	# 专门抓「只让了一边」「让了两次」这类错（ui/services/SafeArea.gd 注入假安全区）。
+	{"name": "iPhone 灵动岛在左 1748x804", "size": Vector2i(1748, 804), "insets": Vector4(114, 0, 0, 38)},
+	{"name": "iPhone 灵动岛在右 1748x804", "size": Vector2i(1748, 804), "insets": Vector4(0, 0, 114, 38)},
 ]
 
 # 目标至少要露出这么多面积。
@@ -43,8 +47,10 @@ func _ready() -> void:
 	_restore_size = get_window().size
 
 	for entry in RESOLUTIONS:
+		SafeArea.set_test_insets((entry as Dictionary).get("insets", Vector4.ZERO))
 		await _check_resolution(entry as Dictionary)
 
+	SafeArea.set_test_insets(null)
 	get_window().size = _restore_size
 	TutorialMode.finish()
 	GameState.reset_run()
@@ -227,20 +233,12 @@ func _walkable_steps() -> Array:
 # ⚠️ 这里**刻意不调用** `TutorialMode._safe_rect()`。
 # 第一版调了，结果「去掉安全区」那次反向变异是绿的 —— 变异同时改掉了实现和门禁
 # 读到的期望值，两边一起动就永远对得上，成了同义反复。
-# 这里独立把契约算一遍：canvas ∩ 显示安全区，再内缩 BUBBLE_EDGE_MARGIN。
+# 这里独立把契约算一遍：canvas 四边各减掉 SafeArea 报的那一段（灵动岛 / 圆角 / 手势条），
+# 再内缩 BUBBLE_EDGE_MARGIN。只取它报的四个数，矩形自己算 —— 不用 SafeArea.rect()，
+# 更不用 TutorialMode._safe_rect()。
 func _expected_safe(canvas: Vector2) -> Rect2:
-	var full := Rect2(Vector2.ZERO, canvas)
-	var safe := DisplayServer.get_display_safe_area()
-	var win := DisplayServer.window_get_size()
-	if safe.size.x > 0 and safe.size.y > 0 and win.x > 0 and win.y > 0:
-		var sx := canvas.x / float(win.x)
-		var sy := canvas.y / float(win.y)
-		var mapped := Rect2(
-			Vector2(float(safe.position.x) * sx, float(safe.position.y) * sy),
-			Vector2(float(safe.size.x) * sx, float(safe.size.y) * sy))
-		var clipped := full.intersection(mapped)
-		if clipped.size.x > 0.0 and clipped.size.y > 0.0:
-			full = clipped
+	var insets := SafeArea.insets()
+	var full := Rect2(insets.x, insets.y, canvas.x - insets.x - insets.z, canvas.y - insets.y - insets.w)
 	var inset := minf(TutorialScript.BUBBLE_EDGE_MARGIN, minf(full.size.x, full.size.y) * 0.25)
 	return full.grow(-inset)
 

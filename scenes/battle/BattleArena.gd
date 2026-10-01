@@ -185,6 +185,8 @@ func _build() -> void:
 	_frenzy_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	frenzy_panel.add_child(_frenzy_lbl)
 	add_child(frenzy_panel)
+	# 战场本身铺满全屏；叠在上面的按钮和字让开灵动岛 / 圆角 / 手势条（ui/services/SafeArea.gd）。
+	SafeArea.track(frenzy_panel)
 
 	_summary_lbl = RichTextLabel.new()
 	_summary_lbl.bbcode_enabled = true
@@ -214,6 +216,7 @@ func _build() -> void:
 	_top5_atk_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_top5_atk_lbl.z_index = 90
 	add_child(_top5_atk_lbl)
+	SafeArea.track(_top5_atk_lbl)
 
 	# Floating skip button (top-right corner, above the full-screen arena).
 	var skip := Button.new()
@@ -226,6 +229,7 @@ func _build() -> void:
 	skip.offset_bottom = 48
 	skip.pressed.connect(_skip_animation)
 	add_child(skip)
+	SafeArea.track(skip)
 	skip.z_index = 100
 
 	if GameState.team_mode:
@@ -244,6 +248,7 @@ func _build() -> void:
 		team_hp_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		team_hp_lbl.z_index = 100
 		add_child(team_hp_lbl)
+		SafeArea.track(team_hp_lbl)
 
 const BATTLE_3V3_BOUNDS := [1.0 / 3.0, 2.0 / 3.0]
 

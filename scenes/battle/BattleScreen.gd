@@ -731,6 +731,7 @@ func _setup_view_toggle() -> void:
 	_view_toggle_btn.z_index = 100
 	_view_toggle_btn.pressed.connect(_on_view_toggle_pressed)
 	add_child(_view_toggle_btn)
+	SafeArea.track(_view_toggle_btn)
 
 func _on_view_toggle_pressed() -> void:
 	if not _battle_setup_ready:
@@ -800,6 +801,7 @@ func _setup_voice_controls() -> void:
 		# 同「跳过」按钮：盖在全屏战场之上。
 		control.z_index = 100
 		add_child(control)
+		SafeArea.track(control)
 		top += VOICE_BTN_STEP
 
 # Mirrors PrepScreen._setup_fps_overlay; positioned slightly off the top-left
@@ -819,6 +821,7 @@ func _setup_fps_overlay() -> void:
 	_fps_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_fps_label.z_index = 300
 	add_child(_fps_label)
+	SafeArea.track(_fps_label)
 
 func _switch_active_replay(replay: Dictionary) -> void:
 	_clear_unit_visuals()

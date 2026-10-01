@@ -1238,24 +1238,17 @@ func _rect_near(a: Rect2, b: Rect2) -> bool:
 		and absf(a.size.x - b.size.x) <= LAYOUT_GEOMETRY_EPS \
 		and absf(a.size.y - b.size.y) <= LAYOUT_GEOMETRY_EPS
 
-# 屏幕安全区（刘海、圆角、手势条），换算到 overlay 局部坐标并收掉边距。
+# 屏幕安全区（灵动岛、刘海、圆角、手势条），换算到 overlay 局部坐标并收掉边距。
 #
-# `DisplayServer.get_display_safe_area()` 在桌面返回整块窗口、在 Android 返回真实
-# 可视矩形 —— 两边共用同一条代码路径，不做平台分支，桌面上因此是无害的恒等变换。
-# overlay 可能因为 stretch 与窗口像素尺寸不同，所以按比例换算而不是直接用像素值。
+# 全游戏同一个来源 ui/services/SafeArea.gd（手机上读系统安全区、按视口/窗口比例换算，
+# 电脑上是整个窗口；门禁能注入假刘海）。它给的是根视口坐标，这里减掉 overlay 的原点。
 func _safe_rect() -> Rect2:
 	var full := Rect2(Vector2.ZERO, _overlay.size)
-	var safe := DisplayServer.get_display_safe_area()
-	var win := DisplayServer.window_get_size()
-	if safe.size.x > 0 and safe.size.y > 0 and win.x > 0 and win.y > 0:
-		var sx := _overlay.size.x / float(win.x)
-		var sy := _overlay.size.y / float(win.y)
-		var mapped := Rect2(
-			Vector2(float(safe.position.x) * sx, float(safe.position.y) * sy),
-			Vector2(float(safe.size.x) * sx, float(safe.size.y) * sy))
-		var clipped := full.intersection(mapped)
-		if clipped.size.x > 0.0 and clipped.size.y > 0.0:
-			full = clipped
+	var mapped := SafeArea.rect()
+	mapped.position -= _overlay.get_global_rect().position
+	var clipped := full.intersection(mapped)
+	if clipped.size.x > 0.0 and clipped.size.y > 0.0:
+		full = clipped
 	# 极窄屏下不要把安全区收成负的，宁可贴边也不要算出 NaN 版面。
 	var inset := minf(BUBBLE_EDGE_MARGIN, minf(full.size.x, full.size.y) * 0.25)
 	return full.grow(-inset)

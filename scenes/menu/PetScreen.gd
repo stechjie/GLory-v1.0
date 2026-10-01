@@ -110,6 +110,8 @@ func _build() -> void:
 	col.add_theme_constant_override("separation", 18)
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(col)
+	# 灵动岛 / 圆角那几条让出来；背景照样铺满（ui/services/SafeArea.gd）。
+	SafeArea.track(col)
 
 	_title_label = Label.new()
 	_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -130,6 +132,7 @@ func _build() -> void:
 	_back_btn.position = Vector2(_back_btn.position.x - 140, 20)
 	_back_btn.pressed.connect(func(): back_requested.emit())
 	add_child(_back_btn)
+	SafeArea.track(_back_btn)
 
 # 页签：与 FriendsScreen 同一个做法 —— toggle_mode，当前页由 _refresh_chrome 按下。
 func _build_tabs() -> Control:

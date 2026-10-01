@@ -61,11 +61,16 @@ func _ready() -> void:
 	_build()
 	if not PlayerProfile.codex_changed.is_connected(_refresh):
 		PlayerProfile.codex_changed.connect(_refresh)
+	# Rotating the phone moves the Dynamic Island to the other side without a resize.
+	if not SafeArea.changed.is_connected(_layout):
+		SafeArea.changed.connect(_layout)
 	_refresh()
 
 func _exit_tree() -> void:
 	if PlayerProfile.codex_changed.is_connected(_refresh):
 		PlayerProfile.codex_changed.disconnect(_refresh)
+	if SafeArea.changed.is_connected(_layout):
+		SafeArea.changed.disconnect(_layout)
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED:
@@ -173,16 +178,31 @@ func _layout() -> void:
 	var view := size
 	if view.x <= 1.0 or view.y <= 1.0:
 		return
-	# Cover fills the window; the safe limit is how far we may zoom before the
-	# pages themselves start leaving the screen. The smaller of the two wins.
+	# Cover fills the window; the keep limit is how far we may zoom before the
+	# pages themselves leave the device safe area (notch / Dynamic Island / rounded
+	# corners, ui/services/SafeArea.gd). The smaller of the two wins. The book art
+	# itself still covers the whole window; only the pages have to stay clear.
+	var device_safe := SafeArea.rect()
 	var cover := maxf(view.x / BOOK_ART.size.x, view.y / BOOK_ART.size.y)
-	var safe := _safe_rect()
-	var safe_limit := minf(view.x / safe.size.x, view.y / safe.size.y)
-	var scale := minf(cover, safe_limit)
+	var keep := _page_keep_rect()
+	var keep_limit := minf(device_safe.size.x / keep.size.x, device_safe.size.y / keep.size.y)
+	var scale := minf(cover, keep_limit)
 	# Screen position of the texture's own origin, so page rects map straight through.
 	var origin := Vector2(
 		-BOOK_ART.position.x * scale + (view.x - BOOK_ART.size.x * scale) * 0.5,
 		-BOOK_ART.position.y * scale + (view.y - BOOK_ART.size.y * scale) * 0.5)
+	# Centring the art can leave the pages under a notch on one side: slide the
+	# spread just far enough to bring them back inside. The scale above guarantees
+	# they fit, so one push per axis is enough.
+	var pages := Rect2(origin + keep.position * scale, keep.size * scale)
+	if pages.position.x < device_safe.position.x:
+		origin.x += device_safe.position.x - pages.position.x
+	elif pages.end.x > device_safe.end.x:
+		origin.x -= pages.end.x - device_safe.end.x
+	if pages.position.y < device_safe.position.y:
+		origin.y += device_safe.position.y - pages.position.y
+	elif pages.end.y > device_safe.end.y:
+		origin.y -= pages.end.y - device_safe.end.y
 	_book.position = origin
 	_book.size = REF_SIZE * scale
 	for pair in [[_left_page, LEFT_PAGE], [_right_page, RIGHT_PAGE]]:
@@ -201,7 +221,7 @@ func _layout() -> void:
 		_back_btn.custom_minimum_size = Vector2(_px(120), _px(44))
 		_back_btn.add_theme_font_size_override("font_size", _fs(16))
 		_back_btn.size = _back_btn.custom_minimum_size
-		_back_btn.position = Vector2(view.x - _px(140), _px(20))
+		_back_btn.position = Vector2(device_safe.end.x - _px(140), device_safe.position.y + _px(20))
 	if _detail_scroll != null and _back_btn != null and _right_page != null:
 		# The spread now reaches the window edges, so the back button sits over the top
 		# of the right page rather than beside it. Start the detail below it.
@@ -212,9 +232,10 @@ func _layout() -> void:
 	if ui_changed and _grid != null and _grid.get_child_count() > 0:
 		_refresh()
 
-# The rectangle that must stay on screen: both pages plus a little of the
-# parchment margin around them.
-func _safe_rect() -> Rect2:
+# The part of the book art that must stay visible and clear of the notch: both
+# pages plus a little of the parchment margin around them. (Book-art pixels —
+# not the device safe area, which is SafeArea.rect().)
+func _page_keep_rect() -> Rect2:
 	return LEFT_PAGE.merge(RIGHT_PAGE).grow(SAFE_MARGIN)
 
 # --- refresh -------------------------------------------------------------

@@ -174,6 +174,9 @@ func _ready() -> void:
 		AnnouncementService.changed.connect(_on_announcements_changed)
 	if not MailService.changed.is_connected(_on_mail_changed):
 		MailService.changed.connect(_on_mail_changed)
+	# 转屏（灵动岛换边）、切回前台时安全区会变，宽高不一定变。
+	if not SafeArea.changed.is_connected(_layout):
+		SafeArea.changed.connect(_layout)
 	_refresh_profile_plate()
 	_ensure_profile_loaded()
 	# 钱包**每次回主菜单都重拉**，不像资料那样吃缓存 —— 玩家多半是刚从商城买完东西回来的。
@@ -202,6 +205,8 @@ func _exit_tree() -> void:
 		AnnouncementService.changed.disconnect(_on_announcements_changed)
 	if MailService.changed.is_connected(_on_mail_changed):
 		MailService.changed.disconnect(_on_mail_changed)
+	if SafeArea.changed.is_connected(_layout):
+		SafeArea.changed.disconnect(_layout)
 
 func _on_account_profile_changed(_profile: Dictionary) -> void:
 	_refresh_profile_plate()
@@ -1116,8 +1121,11 @@ func _layout() -> void:
 	var viewport_size := get_viewport_rect().size
 	if viewport_size.x <= 0.0 or viewport_size.y <= 0.0:
 		return
-	var scale := minf(viewport_size.x / REF_SIZE.x, viewport_size.y / REF_SIZE.y)
-	var origin := (viewport_size - REF_SIZE * scale) * 0.5
+	# 按钮和字放进安全区（iPhone 横屏的灵动岛 / 圆角 / 手势条让出来，ui/services/SafeArea.gd）；
+	# 背景和上下装饰带照样铺满整屏。没有刘海时 safe 就是整个视口，和以前一模一样。
+	var safe := SafeArea.rect()
+	var scale := minf(safe.size.x / REF_SIZE.x, safe.size.y / REF_SIZE.y)
+	var origin := safe.position + (safe.size - REF_SIZE * scale) * 0.5
 	_layout_scale = scale
 	_layout_origin = origin
 	if _debug_layer != null:
@@ -1131,14 +1139,14 @@ func _layout() -> void:
 		var node := item.node as Control
 		var pos := item.pos as Vector2
 		var size := item.size as Vector2
-		# edge=left/right 的元素锚定到真实屏幕边（消除宽屏下的左右留白）；
+		# edge=left/right 的元素锚定到安全区的左右边（消除宽屏下的左右留白，又不钻进灵动岛）；
 		# 其余保持 16:9 画布居中缩放。垂直方向一律跟随居中画布。
 		var x: float
 		match str(item.get("edge", "")):
 			"left":
-				x = pos.x * scale
+				x = safe.position.x + pos.x * scale
 			"right":
-				x = viewport_size.x - (REF_SIZE.x - pos.x) * scale
+				x = safe.end.x - (REF_SIZE.x - pos.x) * scale
 			_:
 				x = origin.x + pos.x * scale
 		node.position = Vector2(x, origin.y + pos.y * scale)
@@ -1416,15 +1424,16 @@ func _draw_debug_layout() -> void:
 		int(MAIN_MENU_PET.AREA_SIZE.x), int(MAIN_MENU_PET.AREA_SIZE.y)],
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 14, black)
 
-	# 4) edge=left / edge=right 锚定边（这两列贴真实屏幕边，不跟画布走）
-	var left_edge_x := 176.0 * scale
-	var right_edge_x := viewport_size.x - (REF_SIZE.x - 1355.0) * scale
+	# 4) edge=left / edge=right 锚定边（这两列贴安全区的左右边，不跟画布走）
+	var safe := SafeArea.rect()
+	var left_edge_x := safe.position.x + 176.0 * scale
+	var right_edge_x := safe.end.x - (REF_SIZE.x - 1355.0) * scale
 	_debug_layer.draw_line(Vector2(left_edge_x, 0.0), Vector2(left_edge_x, viewport_size.y), black, 2.0)
 	_debug_layer.draw_line(Vector2(right_edge_x, 0.0), Vector2(right_edge_x, viewport_size.y), black, 2.0)
 	_debug_layer.draw_string(font, Vector2(6.0, viewport_size.y - 26.0),
-		"edge=left 贴屏幕左", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, black)
+		"edge=left 贴安全区左", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, black)
 	_debug_layer.draw_string(font, Vector2(right_edge_x + 6.0, viewport_size.y - 26.0),
-		"edge=right 贴屏幕右", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, black)
+		"edge=right 贴安全区右", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, black)
 
 	# 5) 每个元素的占位框：按钮判定区红色，其余（图片/文字）黑色细框
 	for item in _placed:

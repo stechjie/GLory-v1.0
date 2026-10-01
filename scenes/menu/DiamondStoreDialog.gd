@@ -38,6 +38,8 @@ func _build() -> void:
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(center)
+	# 遮罩铺满全屏，弹窗本身在安全区里居中（ui/services/SafeArea.gd）。
+	SafeArea.track(center)
 	var shell := PanelContainer.new()
 	shell.custom_minimum_size = Vector2(1130, 445)
 	shell.add_theme_stylebox_override("panel", Tokens.panel_box(
@@ -125,7 +127,9 @@ func _product_card(product: Dictionary) -> Control:
 	var button: Button = ACTION_BUTTON.instantiate()
 	button.text = _t("即将开放", "Coming soon")
 	button.disabled = true
-	button.custom_minimum_size.y = Tokens.TOUCH_MIN
+	# 宽度跟卡片走（卡片 195）。GloryActionButton 自带 280 的最小宽：只改高度的话五张卡
+	# 会被撑到约 1520 宽，比设计的 1130 宽出一截，手机横屏两头钻进灵动岛 / 圆角。
+	button.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
 	col.add_child(button)
 	return card
 

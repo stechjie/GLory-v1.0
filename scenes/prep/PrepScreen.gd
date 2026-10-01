@@ -161,6 +161,7 @@ func _setup_fps_overlay() -> void:
 	_fps_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_fps_label.z_index = 300
 	add_child(_fps_label)
+	SafeArea.track(_fps_label)
 
 func _exit_tree() -> void:
 	if NetworkService.session_changed.is_connected(_on_network_session_changed):

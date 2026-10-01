@@ -567,6 +567,9 @@ func _build(staged: bool = false) -> void:
 	root.offset_bottom = -10
 	root.add_theme_constant_override("separation", 6)
 	add_child(root)
+	# 左边的种族羁绊栏、上面一排、商店：整块让开灵动岛 / 圆角 / 手势条（ui/services/SafeArea.gd）。
+	# 棋盘不受影响：3D 石台是全屏固定的，格子圆圈每帧按投影重新对齐（_tick_prep_board_layout_guard）。
+	SafeArea.track(root)
 
 	_build_top_bar(root)
 	if staged:
@@ -1042,6 +1045,7 @@ func _build_top_actions() -> void:
 	top_row.add_theme_constant_override("separation", 6)
 	top_row.z_index = 20
 	add_child(top_row)
+	SafeArea.track(top_row)
 	top_row.add_child(PrepWidgets.make_menu_button(tr("ui_power"), TOP_ROW_BTN_SIZE, 13, _stats.show_power_recommendation))
 	top_row.add_child(PrepWidgets.make_menu_button(tr("ui_stats"), TOP_ROW_BTN_SIZE, 13, _stats.show_last_battle))
 	# 静音按钮：切换全局 Master 总线静音
@@ -1063,6 +1067,7 @@ func _build_top_actions() -> void:
 	side_col.add_theme_constant_override("separation", 6)
 	side_col.z_index = 20
 	add_child(side_col)
+	SafeArea.track(side_col)
 	# 佣兵按钮：盾牌框 + 下方写「佣兵」（保留原贴图框，不改）
 	var merc_btn := PrepWidgets.make_framed_text_button("", MERC_BTN_PATH, MERC_BTN_SIZE, 16, _toggle_merc_picker)
 	_merc_button = merc_btn
@@ -1298,6 +1303,7 @@ func _build_chat_entry() -> void:
 	# 那时玩家在买卖，一个压在商店上的聊天按钮只会造成误触。
 	_chat_button.z_index = 20
 	add_child(_chat_button)
+	SafeArea.track(_chat_button)
 	_build_voice_button()
 	_build_chat_record_window()
 	_build_chat_panel()
@@ -1324,6 +1330,7 @@ func _build_chat_record_window() -> void:
 	style.set_content_margin_all(9)
 	window.add_theme_stylebox_override("panel", style)
 	add_child(window)
+	SafeArea.track(window)
 	_chat_record_page = window
 	_chat_record_scroll = preload("res://ui/components/FloatingChatScroll.gd").new()
 	_chat_record_scroll.name = "PrepChatHistoryScroll"
@@ -1366,6 +1373,7 @@ func _build_comms_dock() -> void:
 	_comms_dock.add_theme_stylebox_override("panel",
 		GloryTokens.flat_box(GloryTokens.INK_PANEL, GloryTokens.INK_EDGE, 2, 18))
 	add_child(_comms_dock)
+	SafeArea.track(_comms_dock)
 
 func _build_voice_button() -> void:
 	_voice_controls = VoiceControls.new()
@@ -1390,6 +1398,7 @@ func _place_voice_button(button: Button, right: float, size: Vector2) -> void:
 	# 同聊天按钮：低于商店弹窗（40）与卖出区（50），商店开着时点不到。
 	button.z_index = 20
 	add_child(button)
+	SafeArea.track(button)
 
 func _build_chat_panel() -> void:
 	_chat_panel = PanelContainer.new()
@@ -1410,6 +1419,7 @@ func _build_chat_panel() -> void:
 	style.set_content_margin_all(12)
 	_chat_panel.add_theme_stylebox_override("panel", style)
 	add_child(_chat_panel)
+	SafeArea.track(_chat_panel)
 
 	# 两列。一列放不下 12 条（会比棋盘还高），三列会让「我这边有点难」这种
 	# 六字短语被截断。
@@ -1961,6 +1971,7 @@ func _build_ready_indicator() -> void:
 	_ready_indicator.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ready_indicator.z_index = 25
 	add_child(_ready_indicator)
+	SafeArea.track(_ready_indicator)
 	_ready_dots = []
 	for row in 2:
 		var row_box := HBoxContainer.new()

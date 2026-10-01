@@ -257,6 +257,9 @@ var _layout_origin := Vector2.ZERO
 
 func _ready() -> void:
 	AccountManager.profile_changed.connect(_on_profile_changed)
+	# 转屏（灵动岛换边）、切回前台时安全区会变，宽高不一定变。
+	if not SafeArea.changed.is_connected(_layout):
+		SafeArea.changed.connect(_layout)
 	_slot_states[_local_slot] = "player"
 	if not NetworkService.session_changed.is_connected(_on_session_changed):
 		NetworkService.session_changed.connect(_on_session_changed)
@@ -348,6 +351,8 @@ func _notification(what: int) -> void:
 		_layout()
 
 func _exit_tree() -> void:
+	if SafeArea.changed.is_connected(_layout):
+		SafeArea.changed.disconnect(_layout)
 	if NetworkService.session_changed.is_connected(_on_session_changed):
 		NetworkService.session_changed.disconnect(_on_session_changed)
 	if NetworkService.team_lobby_changed.is_connected(_on_session_changed):
@@ -806,8 +811,11 @@ func _layout() -> void:
 	var viewport_size := get_viewport_rect().size
 	if viewport_size.x <= 0.0 or viewport_size.y <= 0.0:
 		return
-	var scale := minf(viewport_size.x / REF_SIZE.x, viewport_size.y / REF_SIZE.y)
-	var origin := (viewport_size - REF_SIZE * scale) * 0.5
+	# 按钮和字放进安全区（iPhone 横屏的灵动岛 / 圆角 / 手势条让出来，ui/services/SafeArea.gd）；
+	# 背景和上下装饰带照样铺满整屏。没有刘海时 safe 就是整个视口，和以前一模一样。
+	var safe := SafeArea.rect()
+	var scale := minf(safe.size.x / REF_SIZE.x, safe.size.y / REF_SIZE.y)
+	var origin := safe.position + (safe.size - REF_SIZE * scale) * 0.5
 	_layout_scale = scale
 	_layout_origin = origin
 	for band in _screen_bands:
@@ -816,7 +824,7 @@ func _layout() -> void:
 		rect.position = Vector2(0.0, viewport_size.y - height if bool(band.from_bottom) else float(band.y) * scale)
 		rect.size = Vector2(viewport_size.x, height)
 	for item in _placed:
-		_apply_placement(item, scale, origin, viewport_size)
+		_apply_placement(item, scale, origin, safe)
 	# 只更新内嵌历史的字号，不重建列表，窗口变化时保留阅读位置。
 	if _record_panel != null and _record_panel.visible:
 		for label in _record_list.get_children():
@@ -830,7 +838,7 @@ func _layout() -> void:
 func _apply_tracked(item: Dictionary) -> void:
 	if _layout_scale <= 0.0:
 		return
-	_apply_placement(item, _layout_scale, _layout_origin, get_viewport_rect().size)
+	_apply_placement(item, _layout_scale, _layout_origin, SafeArea.rect())
 
 # 把一条 _placed 记录落到它的活节点上（位置 / 尺寸 / 字号）。
 #
@@ -845,20 +853,20 @@ func _apply_tracked(item: Dictionary) -> void:
 # 还留在框**下方**「玩家」时代的位置 —— 也就是玩家看到的「字体不一致 + 字消失」。
 # 所以 _refresh() 改完 _placed 就地调本函数，两条路共用同一份落点逻辑，
 # 不会出现「只在某一条路径上对」的半修。
-func _apply_placement(item: Dictionary, scale: float, origin: Vector2, viewport_size: Vector2) -> void:
+func _apply_placement(item: Dictionary, scale: float, origin: Vector2, safe: Rect2) -> void:
 	var node := item.node as Control
 	if node == null or not is_instance_valid(node):
 		return
 	var pos := item.pos as Vector2
 	var size := item.size as Vector2
-	# edge=left/right 的元素锚定到真实屏幕边（消除宽屏下的左右留白）；
+	# edge=left/right 的元素锚定到安全区的左右边（消除宽屏下的左右留白，又不钻进灵动岛）；
 	# 其余保持 16:9 画布居中缩放。垂直方向一律跟随居中画布。
 	var x: float
 	match str(item.get("edge", "")):
 		"left":
-			x = pos.x * scale
+			x = safe.position.x + pos.x * scale
 		"right":
-			x = viewport_size.x - (REF_SIZE.x - pos.x) * scale
+			x = safe.end.x - (REF_SIZE.x - pos.x) * scale
 		_:
 			x = origin.x + pos.x * scale
 	var resolved_pos := Vector2(x, origin.y + pos.y * scale)
@@ -1389,16 +1397,17 @@ func _draw_debug_layout() -> void:
 			int(SLOT_SIZE.x), int(SLOT_SIZE.y)],
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 13, black)
 
-	# 4) edge=left / edge=right 锚定边（这两列贴真实屏幕边，不跟画布走）
+	# 4) edge=left / edge=right 锚定边（这两列贴安全区的左右边，不跟画布走）
 	#    左列最宽的是聊天框(147+432)、右列最靠左的是房主提示(1285)
-	var left_edge_x := 579.0 * scale
-	var right_edge_x := viewport_size.x - (REF_SIZE.x - 1285.0) * scale
+	var safe := SafeArea.rect()
+	var left_edge_x := safe.position.x + 579.0 * scale
+	var right_edge_x := safe.end.x - (REF_SIZE.x - 1285.0) * scale
 	_debug_layer.draw_line(Vector2(left_edge_x, 0.0), Vector2(left_edge_x, viewport_size.y), black, 2.0)
 	_debug_layer.draw_line(Vector2(right_edge_x, 0.0), Vector2(right_edge_x, viewport_size.y), black, 2.0)
 	_debug_layer.draw_string(font, Vector2(6.0, viewport_size.y - 26.0),
-		"edge=left 贴屏幕左", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, black)
+		"edge=left 贴安全区左", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, black)
 	_debug_layer.draw_string(font, Vector2(right_edge_x + 6.0, viewport_size.y - 26.0),
-		"edge=right 贴屏幕右", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, black)
+		"edge=right 贴安全区右", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, black)
 
 	# 5) 每个元素的占位框：按钮判定区红色，其余（图片/文字）黑色细框
 	for item in _placed:

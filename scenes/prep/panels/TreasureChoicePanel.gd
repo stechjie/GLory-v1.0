@@ -190,6 +190,9 @@ func _treasure_card_size(count: int) -> Vector2:
 		available = Vector2(
 			float(ProjectSettings.get_setting("display/window/size/viewport_width", 1600)),
 			float(ProjectSettings.get_setting("display/window/size/viewport_height", 720)))
+	# 灵动岛 / 圆角 / 手势条那几条不放卡：整列在 _create_content 里已经挪进安全区（ui/services/SafeArea.gd）。
+	var insets := SafeArea.insets()
+	available -= Vector2(insets.x + insets.z, insets.y + insets.w)
 	# 上下各留一条安全边距再算可用高度 —— 否则 20:9（canvas 1600×720）与
 	# 2640×1216 下正好差这一圈：582 + 138 = 720 塞满整块画布，安全区一收就出界。
 	var usable_w := available.x - TREASURE_CARD_SEPARATION * float(slots - 1) - TREASURE_CARD_SEPARATION * 2.0
@@ -251,6 +254,8 @@ func _create_content() -> Control:
 	treasure_box.alignment = BoxContainer.ALIGNMENT_CENTER
 	treasure_box.add_theme_constant_override("separation", 16)
 	root.add_child(treasure_box)
+	# 遮罩铺满全屏；标题、三张卡、刷新按钮在安全区里居中。
+	SafeArea.track(treasure_box)
 	_treasure_timer_lbl = Label.new()
 	_treasure_timer_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_treasure_timer_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -375,6 +380,8 @@ func build_logos_panel() -> void:
 	treasure_panel.offset_bottom = -10
 	treasure_panel.z_index = -5            # 河流(z-19)之上、石框(z0)之下：石框画在灰框上面，不被挡
 	host.add_child(treasure_panel)
+	# 贴左下角：iPhone 横屏那里是灵动岛 / 圆角 / 手势条，让出来（ui/services/SafeArea.gd）。
+	SafeArea.track(treasure_panel)
 	# 宝藏 grid 左对齐（4 列 × 2 行横排，66px）。
 	_owned_treasure_box = GridContainer.new()
 	_owned_treasure_box.columns = 4
