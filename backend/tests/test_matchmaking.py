@@ -576,16 +576,18 @@ def test_ws_state_shape_matches_the_http_one(wired) -> None:
     assert set(http) == set(matchmaking.queued_message(1, matchmaking.CASUAL))
 
 
-def test_card_carries_the_assignment_after_everyone_accepts(wired, monkeypatch) -> None:
+@pytest.mark.parametrize("mode", [matchmaking.CASUAL, matchmaking.RANKED])
+def test_card_carries_the_assignment_after_everyone_accepts(wired, monkeypatch, mode) -> None:
     """🔴 这一整套的接缝：匹配好之后领的名片必须带会合键。
 
     漏了的话六个人会各自建一个房间，症状是「匹配成功但大家都在空房里」。
     """
     captured: dict = {}
 
-    async def _card(pid, match_uid="", team=-1):
+    async def _card(pid, match_uid="", team=-1, mode=""):
         captured["match_uid"] = match_uid
         captured["team"] = team
+        captured["mode"] = mode
         return "Ym9keQ==.c2ln"
 
     monkeypatch.setattr(loadout, "issue_card", _card)
@@ -594,22 +596,23 @@ def test_card_carries_the_assignment_after_everyone_accepts(wired, monkeypatch) 
         # 同上：lifespan 会换掉匹配器实例，状态要在 with 里面铺。
         maker = matchmaking.current()
         maker._assignments[PLAYER_A] = matchmaking.Assignment(
-            match_uid="b" * 32, mode=matchmaking.CASUAL, team=1,
+            match_uid="b" * 32, mode=mode, team=1,
             expires_at=maker._now() + 100)
         r = client.post("/v1/battle/card", headers={"Authorization": "Bearer token-a"})
     assert r.status_code == 200
-    assert captured == {"match_uid": "b" * 32, "team": 1}
+    assert captured == {"match_uid": "b" * 32, "team": 1, "mode": mode}
 
 
 def test_card_without_assignment_asks_for_no_match(wired, monkeypatch) -> None:
     captured: dict = {}
 
-    async def _card(pid, match_uid="", team=-1):
+    async def _card(pid, match_uid="", team=-1, mode=""):
         captured["match_uid"] = match_uid
         captured["team"] = team
+        captured["mode"] = mode
         return "Ym9keQ==.c2ln"
 
     monkeypatch.setattr(loadout, "issue_card", _card)
     with TestClient(app) as client:
         client.post("/v1/battle/card", headers={"Authorization": "Bearer token-a"})
-    assert captured == {"match_uid": "", "team": -1}
+    assert captured == {"match_uid": "", "team": -1, "mode": ""}

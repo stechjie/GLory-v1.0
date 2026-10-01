@@ -156,6 +156,14 @@ def test_payload_field_names_are_stable() -> None:
         "v", "pid", "code", "name", "avatar", "frame", "pet", "races", "iat", "exp", "jti"}
 
 
+def test_assigned_card_carries_server_chosen_mode() -> None:
+    casual = loadout.card_payload(_loadout(), match_uid="a" * 32, team=0)
+    ranked = loadout.card_payload(_loadout(), match_uid="b" * 32, team=1, mode="ranked")
+    assert casual["mode"] == "casual"
+    assert ranked["mode"] == "ranked"
+    assert "mode" not in loadout.card_payload(_loadout())
+
+
 def test_max_size_card_fits_what_the_battle_server_accepts(card_key) -> None:
     """🔴 最大的名片也要在战斗服务器肯收的长度以内。
 

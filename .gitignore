@@ -52,6 +52,18 @@ android/
 # walked back in, hence the alternating !dir / dir/* pairs below.
 !/assets/ui/
 /assets/ui/*
+!/assets/ui/ranked/
+/assets/ui/ranked/*
+!/assets/ui/ranked/reward_crest.png
+!/assets/ui/ranked/reward_crest.png.import
+!/assets/ui/ranked/rank_oath.png
+!/assets/ui/ranked/rank_oath.png.import
+!/assets/ui/ranked/rank_verdant.png
+!/assets/ui/ranked/rank_verdant.png.import
+!/assets/ui/ranked/rank_starforge.png
+!/assets/ui/ranked/rank_starforge.png.import
+!/assets/ui/ranked/rank_celestial.png
+!/assets/ui/ranked/rank_celestial.png.import
 !/assets/ui/buttons/
 /assets/ui/buttons/*
 !/assets/ui/buttons/ready_magic_circle.png

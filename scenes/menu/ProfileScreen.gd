@@ -30,6 +30,7 @@ const MatchHistory := preload("res://scenes/menu/MatchHistoryPanel.gd")
 const ReportDialog := preload("res://ui/components/ReportDialog.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
 const MENU_BG_TEX := preload("res://assets/ui/main_menu_live/background.png")
+const RankedTiers := preload("res://scenes/menu/RankedTiers.gd")
 
 signal back_requested
 
@@ -41,6 +42,7 @@ const HISTORY_MODAL_ID := "profile_match_history"
 
 # 「战绩」块里三个要异步填的值标签（_load_ranked）。
 var _rank_value: Label
+var _rank_badge: TextureRect
 var _record_value: Label
 var _credit_value: Label
 # 与主菜单房间面板同档：都是页面级面板。
@@ -554,13 +556,7 @@ func _friend_request_button() -> Control:
 # --- 占位与入口位 -------------------------------------------------------------
 
 
-# 段位名。第 0..7 段，**这是唯一一份**；服务器只发数字（tier），名字归客户端。
-#
-# 分成两份的理由很实在：改一个段位名不该要改后端、不该要重启账号服务器。
-# 而「分数 → 段位」那个换算**只在服务器**（backend/app/ranked.py 的 tier_of）——
-# 客户端自己再除一遍就是第二个真相。
-const TIER_NAMES_ZH := ["黑铁", "青铜", "白银", "黄金", "铂金", "钻石", "星耀", "王者"]
-const TIER_NAMES_EN := ["Iron", "Bronze", "Silver", "Gold", "Platinum", "Diamond", "Master", "Champion"]
+# Names and emblems live together in RankedTiers; score conversion stays server-owned.
 
 
 # 「战绩」块。**半真半占位** —— 这是它与 _placeholder_block 的区别。
@@ -583,7 +579,21 @@ func _record_block() -> Control:
 	panel.add_child(column)
 	column.add_child(_section_title(_text("战绩", "Record")))
 
-	_rank_value = _record_line(column, _text("段位", "Rank"), "—")
+	var rank_row := HBoxContainer.new()
+	rank_row.add_theme_constant_override("separation", Tokens.GAP_M)
+	column.add_child(rank_row)
+	_rank_badge = TextureRect.new()
+	_rank_badge.name = "RankBadge"
+	_rank_badge.custom_minimum_size = Vector2(84, 84)
+	_rank_badge.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_rank_badge.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_rank_badge.visible = false
+	rank_row.add_child(_rank_badge)
+	var rank_text := VBoxContainer.new()
+	rank_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	rank_text.alignment = BoxContainer.ALIGNMENT_CENTER
+	rank_row.add_child(rank_text)
+	_rank_value = _record_line(rank_text, _text("段位", "Rank"), "—")
 	_record_value = _record_line(column, _text("场次 / 胜", "Matches / Wins"), "—")
 	_credit_value = _record_line(column, _text("信誉分", "Credit"), "—")
 	# 「等级」系统仍然不存在。**不放假数据** —— 见 docs/玩家资料系统设计.md 的那条。
@@ -626,14 +636,20 @@ func _load_ranked() -> void:
 	if not is_inside_tree() or int(result.get("code", 0)) != 200:
 		return
 	var body: Dictionary = result.get("body", {})
-	var tier := clampi(int(body.get("tier", 0)), 0, TIER_NAMES_ZH.size() - 1)
-	var names: Array = TIER_NAMES_EN if _is_en() else TIER_NAMES_ZH
-	# 段位名后面跟本段进度。第 8 段（王者）**不封顶**，进度是溢出量 ——
-	# 那时候显示总分更有意义（高手之间只能靠分数区分，第三节）。
-	if tier >= TIER_NAMES_ZH.size() - 1:
-		_rank_value.text = "%s %d" % [str(names[tier]), int(body.get("score", 0))]
+	var tier := clampi(int(body.get("tier", 0)), 0, RankedTiers.BADGES.size() - 1)
+	var games := int(body.get("games", 0))
+	if games <= 0:
+		_rank_value.text = _text("尚未排位", "Unranked")
+		_rank_badge.visible = false
 	else:
-		_rank_value.text = "%s %d/100" % [str(names[tier]), int(body.get("tier_progress", 0))]
+		_rank_badge.texture = RankedTiers.badge_of(tier)
+		_rank_badge.visible = true
+		var name_text := RankedTiers.name_of(tier, _is_en())
+		var span := int(body.get("tier_span", 0))
+		if span <= 0:
+			_rank_value.text = "%s · %d" % [name_text, int(body.get("score", 0))]
+		else:
+			_rank_value.text = "%s · %d/%d" % [name_text, int(body.get("tier_progress", 0)), span]
 	_record_value.text = "%d / %d" % [int(body.get("games", 0)), int(body.get("wins", 0))]
 
 	var credit := int(body.get("credit", 100))
@@ -1219,6 +1235,6 @@ func _text(zh: String, en: String) -> String:
 	return en if _is_en() else zh
 
 
-# 段位名要按语言取整个数组，_text 那种「两句里挑一句」不够用。
+# Names and badges use this locale choice together.
 func _is_en() -> bool:
 	return TranslationServer.get_locale().begins_with("en")

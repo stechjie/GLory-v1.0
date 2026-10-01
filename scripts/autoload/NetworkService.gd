@@ -4745,14 +4745,15 @@ func _rpc_team_join_matched(public_id: String = "", card: String = "") -> void:
 		return
 	var match_uid := BattleCard.match_of(seat_card)
 	var team := BattleCard.team_of(seat_card)
-	if match_uid.is_empty() or team < 0:
+	var match_mode := BattleCard.mode_of(seat_card)
+	if match_uid.is_empty() or team < 0 or match_mode.is_empty():
 		# 名片上没有分配就走这条路 = 客户端搞错了（或者有人在试）。
 		_rpc_team_action_failed.rpc_id(sender, "no_match_assignment")
 		return
 
 	var existing := _room_for_peer(sender)
 	if not existing.is_empty():
-		if str(existing.get("match_uid", "")) == match_uid:
+		if str(existing.get("match_uid", "")) == match_uid and str(existing.get("mode", "")) == match_mode:
 			return                                 # 已经在这一局里，忽略重复请求
 		if str(existing.get("state", ROOM_LOBBY)) == ROOM_LOBBY:
 			_room_remove_peer(existing, sender)
@@ -4760,7 +4761,7 @@ func _rpc_team_join_matched(public_id: String = "", card: String = "") -> void:
 			_rpc_team_action_failed.rpc_id(sender, "already_in_match")
 			return
 
-	var room := _matched_room_for(match_uid)
+	var room := _matched_room_for(match_uid, match_mode)
 	if room.is_empty():
 		_rpc_team_action_failed.rpc_id(sender, "server_busy")
 		return
@@ -4786,12 +4787,12 @@ func _rpc_team_join_matched(public_id: String = "", card: String = "") -> void:
 	_matched_try_start(room)
 
 # 会合键对应的房间；没有就新建一个。满了 / 到达全服房间上限时返回空字典。
-func _matched_room_for(match_uid: String) -> Dictionary:
+func _matched_room_for(match_uid: String, match_mode: String = "casual") -> Dictionary:
 	var room_id := int(_matched_rooms.get(match_uid, 0))
 	if room_id > 0:
 		var existing: Dictionary = _rooms.get(room_id, {})
 		if not existing.is_empty() and str(existing.get("state", "")) != ROOM_CLOSED:
-			return existing
+			return existing if str(existing.get("mode", "")) == match_mode else {}
 		# 房间没了（打完回收 / 重启）：把索引里的孤儿条目清掉再建新的。
 		_matched_rooms.erase(match_uid)
 	if _rooms.size() >= MAX_ROOMS:
@@ -4804,7 +4805,7 @@ func _matched_room_for(match_uid: String) -> Dictionary:
 	room["match_started_wall"] = int(_wall_now())
 	room["matched"] = true
 	# 战报里的 mode。第 4b 步只开休闲；排位等第 5 步。
-	room["mode"] = "casual"
+	room["mode"] = match_mode
 	_matched_rooms[match_uid] = int(room.get("id", 0))
 	_net_log("matched room created id=%d match=%s" % [int(room.get("id", 0)), match_uid])
 	return room

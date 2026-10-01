@@ -42,17 +42,19 @@ def anyio_backend():
 
 
 @pytest.mark.parametrize("score, tier", [
-    (0, 0), (99, 0), (100, 1), (250, 2), (699, 6), (700, 7), (1200, 7), (99999, 7),
+    (0, 0), (99, 0), (100, 1), (299, 1), (300, 2), (499, 2),
+    (500, 3), (699, 3), (700, 4), (1200, 4), (99999, 4),
 ])
 def test_tier_slices(score, tier) -> None:
     assert ranked.tier_of(score) == tier
 
 
 def test_top_tier_is_uncapped() -> None:
-    """🔴 第 8 段不封顶。封了的话高手之间就分不出来了（第三节）。"""
+    """🔴 最高档不封顶，高手仍靠总分区分。"""
     assert ranked.tier_of(700) == ranked.tier_of(5000) == ranked.MAX_TIER
     assert ranked.tier_progress(700) == 0
-    assert ranked.tier_progress(950) == 250, "第 8 段的进度应该是溢出量"
+    assert ranked.tier_progress(950) == 250
+    assert [ranked.tier_span(i) for i in range(5)] == [100, 200, 200, 200, 0]
 
 
 def test_tier_is_not_a_column() -> None:
@@ -209,6 +211,7 @@ class _FakeConn:
         self.events: list[tuple] = []
         self.wallet_writes: list[tuple] = []
         self.ledger_writes: list[tuple] = []
+        self.reward_receipts: list[tuple] = []
 
     async def fetch(self, sql, *args):
         if "from players" in sql:
@@ -244,6 +247,8 @@ class _FakeConn:
             self.wallet_writes.append(args)
         elif "insert into wallet_ledger" in sql:
             self.ledger_writes.append(args)
+        elif "insert into ranked_reward_receipts" in sql:
+            self.reward_receipts.append(args)
         return "UPDATE 1"
 
     async def executemany(self, sql, rows):
@@ -284,8 +289,11 @@ async def test_ranked_settlement_uses_pre_match_averages() -> None:
     assert {w[1] for w in winners} == {40}, "三个赢家的新分数应该一样（都是 0 + 40）"
     assert len(conn.wallet_writes) == 6
     assert len(conn.ledger_writes) == 6
+    assert len(conn.reward_receipts) == 6
     assert all(8 <= w[3] <= 15 for w in conn.wallet_writes[:3])
     assert all(3 <= w[3] <= 8 for w in conn.wallet_writes[3:])
+    assert all(r[2] == "win" and r[3] == r[6] for r in conn.reward_receipts[:3])
+    assert all(r[2] == "lose" and r[3] == r[6] for r in conn.reward_receipts[3:])
 
 
 @pytest.mark.anyio
@@ -312,6 +320,7 @@ async def test_casual_does_not_touch_ranked_score(monkeypatch, local_hour) -> No
     assert conn.ranked_writes == [], "休闲局不该动排位分"
     assert len(conn.credit_writes) == 6, "但信誉分照算 —— 跑路的损失和模式无关"
     assert conn.wallet_writes == [], "休闲局不发排位游戏币"
+    assert conn.reward_receipts == [], "休闲局不能产生排位奖励回执"
 
 
 @pytest.mark.anyio
@@ -335,6 +344,7 @@ async def test_draw_does_not_move_score() -> None:
     await ranked.settle(conn, _report("ranked", "draw", players_))
     assert {w[1] for w in conn.ranked_writes} == {300}, "平局不动分"
     assert {w[3] for w in conn.wallet_writes} == {5}
+    assert {r[3] for r in conn.reward_receipts} == {5}
 
 
 @pytest.mark.anyio

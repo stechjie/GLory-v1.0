@@ -178,6 +178,7 @@ class MyRankedResponse(BaseModel):
     score: int
     tier: int
     tier_progress: int
+    tier_span: int
     games: int
     wins: int
     win_streak: int
@@ -220,6 +221,7 @@ async def my_ranked(claims: Annotated[Claims, Depends(current_claims)]) -> MyRan
         score=score,
         tier=ranked.tier_of(score),
         tier_progress=ranked.tier_progress(score),
+        tier_span=ranked.tier_span(ranked.tier_of(score)),
         games=int(row["games"]) if row else 0,
         wins=int(row["wins"]) if row else 0,
         win_streak=int(row["win_streak"]) if row else 0,

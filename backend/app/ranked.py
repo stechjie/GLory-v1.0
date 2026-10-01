@@ -11,9 +11,9 @@
 
 ## 段位不存，是分数的显示切片
 
-    段位 = clamp(score // 100, 0, 7)     八段，第 8 段不封顶
+    段位起点 = 0 / 100 / 300 / 500 / 700     五段，最高段不封顶
 
-不加 `tier` 列的理由写在 014 的文件头。改段位宽窄就是改这里的常量。
+不加 `tier` 列的理由写在 014 的文件头。当前口径由 TIER_FLOORS 定义。
 
 ## 信誉分的「每天 +5」是读到时现算的
 
@@ -48,22 +48,27 @@ log = logging.getLogger("glory.ranked")
 
 # --- 段位 ---------------------------------------------------------------------
 
-# 八段，每段 100 分。第 8 段（>=700）不封顶。
-TIER_SIZE = 100
-TIER_COUNT = 8
+# Five visible ranks. Keep existing score totals and the 700-point top-rank threshold.
+TIER_FLOORS = (0, 100, 300, 500, 700)
+TIER_COUNT = len(TIER_FLOORS)
 MAX_TIER = TIER_COUNT - 1
 
 
 def tier_of(score: int) -> int:
-    """分数 → 段位（0..7）。**唯一的换算口径**，别在别处再写一遍。"""
-    return max(0, min(MAX_TIER, int(score) // TIER_SIZE))
+    """分数 → 五档段位（0..4）。唯一的换算口径。"""
+    value = max(0, int(score))
+    return max(i for i, floor in enumerate(TIER_FLOORS) if value >= floor)
 
 
 def tier_progress(score: int) -> int:
-    """本段内的进度（0..99）。第 8 段返回溢出量（可能 >= 100），界面自己决定怎么显示。"""
-    if tier_of(score) >= MAX_TIER:
-        return max(0, int(score) - MAX_TIER * TIER_SIZE)
-    return max(0, int(score) % TIER_SIZE)
+    """本段已取得的分数；最高档继续累计，不封顶。"""
+    return max(0, int(score) - TIER_FLOORS[tier_of(score)])
+
+
+def tier_span(tier: int) -> int:
+    """升到下一档所需分数；最高档没有上限。"""
+    index = max(0, min(MAX_TIER, int(tier)))
+    return 0 if index == MAX_TIER else TIER_FLOORS[index + 1] - TIER_FLOORS[index]
 
 
 # --- 一局加减多少 ---------------------------------------------------------------
@@ -252,6 +257,7 @@ async def _settle_ranked(conn, report: dict, seats: list[dict]) -> None:
         if not seat["online_at_end"]:
             delta -= int(round(BASE_DELTA * ABANDON_PENALTY_MULT))
             streak = 0
+        score_after = apply_delta(row["score"], delta)
         await conn.execute(
             """
             update player_ranked
@@ -259,12 +265,20 @@ async def _settle_ranked(conn, report: dict, seats: list[dict]) -> None:
                    win_streak = $4, updated_at = now()
              where player_id = $1
             """,
-            seat["player_id"], apply_delta(row["score"], delta), 1 if won else 0, streak,
+            seat["player_id"], score_after, 1 if won else 0, streak,
         )
         reward = coin_reward(outcome, seat["team"])
         wallet = await shop._lock_wallet(conn, seat["player_id"])
-        await shop._apply(conn, seat["player_id"], wallet, {"coin": reward},
-                          "match_reward", None, note=f"ranked match {report['match_uid']}")
+        wallet = await shop._apply(conn, seat["player_id"], wallet, {"coin": reward},
+                                   "match_reward", None, note=f"ranked match {report['match_uid']}")
+        await conn.execute(
+            "insert into ranked_reward_receipts "
+            "(match_uid, player_id, result, coin, score_before, score_after, coin_balance_after) "
+            "values ($1, $2, $3, $4, $5, $6, $7)",
+            report["match_uid"], seat["player_id"],
+            "draw" if outcome == "draw" else ("win" if won else "lose"),
+            reward, row["score"], score_after, wallet.coin,
+        )
     log.info("排位结算 match=%s outcome=%s seats=%d", report["match_uid"], outcome, len(seats))
 
 

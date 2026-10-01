@@ -25,12 +25,13 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app import battle_report, db, players
+from app import battle_report, db, players, ranked
 from app.jwt_verify import Claims
 from app.rate_limit import RateLimited, SlidingWindowLimiter
 from app.routes.me import current_claims
@@ -47,6 +48,8 @@ _report_limiter = SlidingWindowLimiter(REPORT_PER_MINUTE, 60.0)
 
 MATCHES_PER_MINUTE = 30
 _matches_limiter = SlidingWindowLimiter(MATCHES_PER_MINUTE, 60.0)
+REWARD_PER_MINUTE = 60
+_reward_limiter = SlidingWindowLimiter(REWARD_PER_MINUTE, 60.0)
 
 # 一页最多多少局。历史界面一屏十几条，20 够翻一阵了。
 DEFAULT_LIMIT = 20
@@ -66,6 +69,19 @@ class ReportResponse(BaseModel):
 
 class MatchesResponse(BaseModel):
     matches: list[dict]
+
+
+class RankedRewardResponse(BaseModel):
+    status: str
+    result: str | None = None
+    coin: int | None = None
+    score_before: int | None = None
+    score_after: int | None = None
+    coin_balance_after: int | None = None
+    tier_before: int | None = None
+    tier_after: int | None = None
+    tier_progress: int | None = None
+    tier_span: int | None = None
 
 
 async def _me(claims: Claims) -> players.Player:
@@ -134,3 +150,33 @@ async def my_matches(
     me = await _me(claims)
     _limit(_matches_limiter, str(me.player_id))
     return MatchesResponse(matches=await battle_report.list_for_player(me.player_id, limit))
+
+
+@router.get("/me/matches/{match_uid}/reward", response_model=RankedRewardResponse)
+async def my_ranked_reward(
+    match_uid: str,
+    claims: Annotated[Claims, Depends(current_claims)],
+) -> RankedRewardResponse:
+    """The player's committed ranked reward. A missing row is still being settled."""
+    if re.fullmatch(r"[0-9a-f]{32}", match_uid) is None:
+        raise HTTPException(status_code=400, detail="对局编号格式不对")
+    me = await _me(claims)
+    _limit(_reward_limiter, str(me.player_id))
+    async with db.pool().acquire() as conn:
+        row = await conn.fetchrow(
+            "select result, coin, score_before, score_after, coin_balance_after "
+            "from ranked_reward_receipts where match_uid = $1 and player_id = $2",
+            match_uid, me.player_id,
+        )
+    if row is None:
+        return RankedRewardResponse(status="pending")
+    before = int(row["score_before"])
+    after = int(row["score_after"])
+    after_tier = ranked.tier_of(after)
+    return RankedRewardResponse(status="settled", result=str(row["result"]),
+                                coin=int(row["coin"]), score_before=before,
+                                score_after=after,
+                                coin_balance_after=int(row["coin_balance_after"]),
+                                tier_before=ranked.tier_of(before), tier_after=after_tier,
+                                tier_progress=ranked.tier_progress(after),
+                                tier_span=ranked.tier_span(after_tier))

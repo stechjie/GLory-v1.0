@@ -33,6 +33,7 @@ from app import loadout, ranked, seasons
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 SQL_015 = (REPO / "database" / "015_ranked_seasons.sql").read_text(encoding="utf-8")
+SQL_028 = (REPO / "database" / "028_ranked_five_tiers.sql").read_text(encoding="utf-8")
 SQL_012 = (REPO / "database" / "012_mail.sql").read_text(encoding="utf-8")
 CARD_GD = (REPO / "scripts" / "multiplayer" / "BattleCard.gd").read_text(encoding="utf-8")
 
@@ -92,6 +93,17 @@ def test_history_stores_the_tier() -> None:
     assert "tier" in table
     # 归档时是算出来写死的，不是以后再算
     assert "least(r.score / 100, 7)" in _settle_body()
+
+
+def test_five_tier_migration_preserves_settlement_guards() -> None:
+    assert "create or replace function settle_season" in SQL_028
+    assert "settled_at is null" in SQL_028
+    assert "on conflict (season, player_id) do nothing" in SQL_028
+    assert "h.games > 0" in SQL_028
+    assert "season = p_season + 1" in SQL_028
+    assert "where season = p_season and tier > 4" in SQL_028
+    for floor, tier in ((700, 4), (500, 3), (300, 2), (100, 1)):
+        assert f"r.score >= {floor} then {tier}" in SQL_028
 
 
 def test_rewards_only_go_to_people_who_played() -> None:
@@ -254,4 +266,4 @@ def test_tier_uses_the_single_conversion() -> None:
     src = (REPO / "backend" / "app" / "loadout.py").read_text(encoding="utf-8")
     assert "ranked.tier_of(" in src
     assert "// 100" not in src and "/ 100" not in src
-    assert ranked.tier_of(0) == 0 and ranked.tier_of(700) == 7
+    assert ranked.tier_of(0) == 0 and ranked.tier_of(700) == 4

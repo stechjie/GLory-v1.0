@@ -135,9 +135,13 @@ func _case_rendezvous() -> void:
 	_eq(int(second.get("id", 0)), int(first.get("id", 0)), "same_key_same_room",
 		"🔴 同一个会合键必须进同一间房 —— 认错亲 = 六个人各开一间空房")
 
-	var other: Dictionary = NetworkService._matched_room_for(MATCH_B)
+	var other: Dictionary = NetworkService._matched_room_for(MATCH_B, "ranked")
 	_eq(int(other.get("id", 0)) != int(first.get("id", 0)), true, "different_key_different_room",
 		"不同会合键不能混进同一间")
+	_eq(str(other.get("mode", "")), "ranked", "ranked_mode_reaches_room",
+		"排位房间必须保留账号服务器签发的 ranked 模式")
+	_eq(NetworkService._matched_room_for(MATCH_B, "casual").is_empty(), true,
+		"mode_mismatch_rejected", "同一个会合键不能把排位玩家和休闲玩家混进一间房")
 	_drop(first)
 	_drop(other)
 

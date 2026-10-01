@@ -51,6 +51,7 @@ static func build(room: Dictionary, replays: Array, outcome: int, gold_authorita
 		return str(a.get("owner_slot", 0)) + str(a.get("position", "")) < str(b.get("owner_slot", 0)) + str(b.get("position", "")))
 	var kind := str(replays[0].get("kind", "pve")) if not replays.is_empty() else "pve"
 	return {"can_return_room": str(room.get("mode", "custom")) == "custom" and not bool(room.get("matched", false)), "outcome": outcome, "seats": seats, "stats": stats, "allies": allies,
+		"match_uid": str(room.get("match_uid", "")), "mode": str(room.get("mode", "custom")),
 		"kind": kind, "gold_authoritative": gold_authoritative, "show_details": kind in ["pvp", "final"]}
 
 static func units(raw: Array) -> Array:

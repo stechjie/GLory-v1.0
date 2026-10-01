@@ -653,6 +653,11 @@ func fetch_matches(limit: int = 20) -> Dictionary:
 	return await _request(HTTPClient.METHOD_GET, "/v1/me/matches?limit=%d" % limit, null, true)
 
 
+func fetch_ranked_reward(match_uid: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET,
+		"/v1/me/matches/%s/reward" % match_uid, null, true)
+
+
 # 最近一起玩过、但还不是好友的人。**不是战绩** ——
 # 它是靠「同一时间报了同一个房间号」关联出来的，只用于加人。
 func fetch_recent_players() -> Dictionary:

@@ -591,6 +591,34 @@ def test_matches_limit_is_bounded(wired) -> None:
     assert r.status_code == 422, "不限上限的话一次请求能把整张表拉出来"
 
 
+@pytest.mark.anyio
+async def test_ranked_reward_receipt_is_scoped_to_the_signed_in_player(
+    wired, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ReceiptConn:
+        async def fetchrow(self, sql, match_uid, player_id):
+            assert "player_id = $2" in sql
+            assert match_uid == "a" * 32
+            if player_id != PLAYER_A:
+                return None
+            return {"result": "win", "coin": 12, "score_before": 320,
+                    "score_after": 345, "coin_balance_after": 1512}
+
+    monkeypatch.setattr(db, "pool", lambda: _Pool(ReceiptConn()))
+    report_routes._reward_limiter.reset()
+    claims = Claims(auth_uid="auth-a", is_anonymous=True, expires_at=0)
+    own = await report_routes.my_ranked_reward("a" * 32, claims)
+    assert own.status == "settled" and own.coin == 12 and own.score_after == 345
+    assert (own.tier_before, own.tier_after, own.tier_progress, own.tier_span) == (2, 2, 45, 200)
+
+    async def other_player(_claims):
+        return _FakePlayer(PLAYER_B, "阿乙", "BBBB2222")
+
+    monkeypatch.setattr(report_routes, "_me", other_player)
+    other = await report_routes.my_ranked_reward("a" * 32, claims)
+    assert other.status == "pending" and other.coin is None
+
+
 # --- 部署 ---------------------------------------------------------------------
 
 

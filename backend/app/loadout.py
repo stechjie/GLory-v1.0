@@ -253,6 +253,7 @@ def card_payload(
     now: float | None = None,
     match_uid: str = "",
     team: int = -1,
+    mode: str = "casual",
 ) -> dict:
     """名片的 JSON 结构。字段名与 BattleCard.gd 一一对应（test_loadout 钉着）。
 
@@ -289,6 +290,8 @@ def card_payload(
         # 账号服务器说不出「去几号房」—— 房间是客户端连上去才建的（第 4a 步的发现）。
         payload["match"] = match_uid
         payload["team"] = int(team)
+        if mode in ("casual", "ranked"):
+            payload["mode"] = mode
     return payload
 
 
@@ -338,5 +341,7 @@ def sign(payload: dict) -> str:
     )
 
 
-async def issue_card(player_id: uuid.UUID, match_uid: str = "", team: int = -1) -> str:
-    return sign(card_payload(await build_loadout(player_id), match_uid=match_uid, team=team))
+async def issue_card(player_id: uuid.UUID, match_uid: str = "", team: int = -1,
+                     mode: str = "casual") -> str:
+    return sign(card_payload(await build_loadout(player_id), match_uid=match_uid,
+                             team=team, mode=mode))

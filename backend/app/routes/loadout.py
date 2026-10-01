@@ -151,8 +151,9 @@ async def battle_card(claims: Annotated[Claims, Depends(current_claims)]) -> Car
     assignment = matchmaking.current().assignment_for(me.player_id)
     match_uid = assignment.match_uid if assignment is not None else ""
     team = assignment.team if assignment is not None else -1
+    mode = assignment.mode if assignment is not None else ""
     try:
-        card = await loadout.issue_card(me.player_id, match_uid=match_uid, team=team)
+        card = await loadout.issue_card(me.player_id, match_uid=match_uid, team=team, mode=mode)
     except loadout.CardKeyMissing as exc:
         # 日志里留原因，给玩家的只有一句「稍后再试」—— 路径不外传。
         log.error("发不了出战名片：%s", exc)

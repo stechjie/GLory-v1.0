@@ -85,6 +85,7 @@ const MAX_TEXT := {
 	# **合法的** 32 位会合键，然后六个人各自切出同一个值、进了一间谁也没打算去的房间。
 	# 留到 40：超长的值保持超长，match_of 的正则就会拒掉它。
 	"match": 40,
+	"mode": 8,
 }
 const MAX_RACES := 16
 const MAX_RACE_ID := 32
@@ -265,6 +266,11 @@ static func match_of(card: Dictionary) -> String:
 static func team_of(card: Dictionary) -> int:
 	var team := int(card.get("team", -1))
 	return team if team == 0 or team == 1 else -1
+
+
+static func mode_of(card: Dictionary) -> String:
+	var mode := str(card.get("mode", ""))
+	return mode if mode == "casual" or mode == "ranked" else ""
 
 
 # 公钥解析一次就缓存。每个入座请求都要验，没必要每次都解析 PEM。

@@ -1754,6 +1754,14 @@ func _show_game_over(local_settlement: Dictionary = {}) -> void:
 	_enter_match_flow()
 	# 结算界面仍算「对局中」→ 静音（用户口径：出来大厅才恢复）。
 	_set_chat_sound_suppressed(true)
+	if str(_final_settlement_data.get("mode", "")) == "ranked" \
+		and not str(_final_settlement_data.get("match_uid", "")).is_empty():
+		var reward_screen := preload("res://scenes/menu/RankedRewardScreen.gd").new()
+		reward_screen.data = _final_settlement_data.duplicate(true)
+		reward_screen.confirmed.connect(_on_return_menu_requested)
+		reward_screen.details_requested.connect(_show_final_settlement)
+		add_child(reward_screen)
+		return
 	var bg := ColorRect.new()
 	bg.color = Color(0.05, 0.06, 0.07)
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
