@@ -4966,7 +4966,7 @@ func _tick_heartbeat_timeouts(observed_at: float = -1.0) -> void:
 # 每秒扫描：ENet 已经丢了、但 peer_disconnected 信号没触发的"僵尸连接"（实测
 # 存在，日志表现为对某 peer 发 RPC 报 unknown peer ID，但它从没走过掉线清理）。
 # 僵尸会永远占着 peer_slot：房间判不空、永不回收，且每次广播都对它报错烧 CPU。
-# 主动替它走一遍正常掉线流程（大厅=释放座位；开赛=保留座位等重连）。
+# 主动替它走一遍异常掉线保留流程；大厅同样保留凭证，只有主动离开才释放。
 func _reap_zombie_peers() -> void:
 	for peer_key in _peer_room.keys():
 		var pid := int(peer_key)
@@ -4983,10 +4983,9 @@ func _reap_zombie_peers() -> void:
 		if room.is_empty():
 			_peer_room.erase(pid)
 			continue
-		if str(room.get("state", ROOM_LOBBY)) == ROOM_LOBBY:
-			_room_remove_peer(room, pid)
-		else:
-			_room_reserve_peer(room, pid)
+		# ENet heartbeat disconnects can omit peer_disconnected. This sweep must
+		# preserve exactly the same recovery rights as the normal callback.
+		_room_reserve_peer(room, pid)
 
 # 战斗收集阶段看门狗：某 player 槽超时没交棋盘（客户端卡死/重连落备战/半开连接
 # 等任何原因），有缓存棋盘就代交、没有就转 AI——保证一个人永远卡不住整个房间。
@@ -6329,7 +6328,7 @@ func _apply_peer_leave(room: Dictionary, peer_id: int) -> void:
 
 func _room_remove_peer(room: Dictionary, peer_id: int) -> void:
 	_release_rematch_reservation(room, peer_id)
-	# 硬移除（大厅掉线/主动离开/被踢）：座位彻底释放，token 作废。
+	# 硬移除（主动离开/被踢）：座位彻底释放，token 作废。
 	var peer_slot: Dictionary = room.get("peer_slot", {})
 	var slot := int(peer_slot.get(peer_id, -1))
 	var states: Array = room.get("slot_states", [])
@@ -6354,7 +6353,7 @@ func _room_remove_peer(room: Dictionary, peer_id: int) -> void:
 	_touch_room(room)
 	_broadcast_room_lobby(room)
 
-# 软移除（开赛后掉线）：座位保留为"重连中"，slot_states 仍是 "player"，
+# 软移除（任何阶段的异常掉线）：座位保留为"重连中"，slot_states 仍是 "player"，
 # 棋盘/回合进度不丢；起 RESERVE_GRACE_SEC 宽限，期内 token 重连无损续上。
 func _room_reserve_peer(room: Dictionary, peer_id: int) -> void:
 	_release_rematch_reservation(room, peer_id)
