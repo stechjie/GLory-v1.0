@@ -11,6 +11,10 @@ compatibility_minimum = "4.7"
 windows.debug.x86_64 = "res://addons/glory_voice/bin/windows/glory_voice.windows.template_debug.x86_64.dll"
 windows.release.x86_64 = "res://addons/glory_voice/bin/windows/glory_voice.windows.template_release.x86_64.dll"
 ios.arm64 = "res://addons/glory_voice/bin/ios/GloryVoice.framework"
+; macOS has no voice backend yet. This adapter registers no singleton, so
+; VoiceService continues to report unsupported instead of faking voice support.
+; Rebuild with native/glory_voice_macos_stub/build.sh and the local Godot binary.
+macos = "res://addons/glory_voice/bin/macos/libglory_voice_unavailable.macos.dylib"
 
 [dependencies]
 
