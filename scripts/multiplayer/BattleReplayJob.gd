@@ -44,6 +44,7 @@ var _roster: Dictionary = {}
 var _frames: Array = []
 var _events: Array = []
 var _replays: Array = []
+var _battle_loadouts: Dictionary = {}
 var _shared_pvp := false
 var _bot_slots: Array[int] = []
 var _worker_task := -1
@@ -108,6 +109,8 @@ func advance(budget_usec: int) -> void:
 				# deadline before another seat or the remaining roster preparation.
 				continue
 			var preparation_started := Time.get_ticks_usec()
+			if _battle_loadouts.is_empty():
+				_capture_battle_loadouts()
 			_state = Sim.prepare_team_state(_team)
 			_state["_presentation_battle_id"] = Sim._presentation_battle_id(_state, _team, battle_id)
 			Sim._replay_capture_roster(_state, _roster)
@@ -149,6 +152,17 @@ func advance(budget_usec: int) -> void:
 	if _team >= 2:
 		_start_worker(true)
 
+
+func _capture_battle_loadouts() -> void:
+	# Capture the exact generated inputs while every bot is already warm, before
+	# simulation or another room can evict the cache. Never regenerate at settlement.
+	for slot in mini(6, _net.team_slot_states.size()):
+		var snap: Dictionary = _net.team_boards.get(slot, {}).duplicate(true)
+		if str(_net.team_slot_states[slot]) == "dummy":
+			var bot: Dictionary = Bot.state_for(_net.shared_seed, slot, round_index)
+			snap = {"board": bot.board.duplicate(true), "mercenaries": bot.mercs.duplicate(true),
+				"treasures": bot.treasures.duplicate(), "stones_gained": bot.get("stones_gained", {}).duplicate(), "is_ai": true}
+		_battle_loadouts[slot] = snap
 
 func _warm_one_missing_bot() -> bool:
 	# The shared cache clears at 64 entries. Recheck every required key before
@@ -285,8 +299,11 @@ func _pack_and_release(pack: bool) -> void:
 			if not str(metrics.error).is_empty():
 				errors.append(str(metrics.error))
 		_worker_result = {
-			"a": {"kind": _replays[0].kind, "result": _replays[0].result},
-			"b": {"kind": _replays[1].kind, "result": _replays[1].result},
+			"battle_loadouts": _battle_loadouts,
+			# Settlement needs the actual deployed guardians, including dead ones.
+			# Keep the small roster; frames/events still leave with the packed replay.
+			"a": {"kind": _replays[0].kind, "result": _replays[0].result, "roster": _replays[0].roster},
+			"b": {"kind": _replays[1].kind, "result": _replays[1].result, "roster": _replays[1].roster},
 			"packed_a": packed[0], "packed_b": packed[1], "raw_sizes": raw_sizes,
 			"frames_a": (_replays[0].frames as Array).size(),
 			"frames_b": (_replays[1].frames as Array).size(),

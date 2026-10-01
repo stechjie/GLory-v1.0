@@ -203,6 +203,7 @@ static func build(ctx: Dictionary) -> Dictionary:
 		"seats": seats,
 		"allies": _clean_allies(ctx.get("allies", [])),
 		"stats": _clean_stats(ctx.get("stats", [])),
+		"settlement_kind": str(ctx.get("settlement_kind", "")),
 	}
 
 

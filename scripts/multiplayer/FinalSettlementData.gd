@@ -5,8 +5,9 @@ static func build(room: Dictionary, replays: Array, outcome: int, gold_authorita
 	var seats: Array = []
 	var profiles: Dictionary = room.get("seat_profiles", {})
 	for slot in 6:
-		var snap: Dictionary = room.get("boards", {}).get(slot, {})
+		var snap: Dictionary = room.get("battle_loadouts", {}).get(slot, room.get("boards", {}).get(slot, {}))
 		var prep: Dictionary = room.get("prep", {}).get(slot, {})
+		var owned: Array = snap.get("treasures", []) if bool(snap.get("is_ai", false)) else room.get("owned_treasures", {}).get(slot, [])
 		var profile: Dictionary = profiles.get(slot, {})
 		var states: Array = room.get("slot_states", [])
 		var occupied := str(states[slot]) != "empty" if slot < states.size() else not snap.is_empty()
@@ -16,9 +17,10 @@ static func build(room: Dictionary, replays: Array, outcome: int, gold_authorita
 			"name": AccountManager.display_name(str(profile.get("player_name", fallback_name)), str(profile.get("friend_code", ""))) if occupied else "空位",
 			"board": units(snap.get("board", [])),
 			"mercenaries": units(snap.get("mercenaries", [])),
-			"treasures": display_treasures(room.get("owned_treasures", {}).get(slot, [])),
+			"treasures": display_treasures(owned),
+			"owned_treasures": owned.duplicate(),
 			"income_by_reason": prep.get("income_by_reason", {}).duplicate(),
-			"stones": prep.get("stones_gained", {}).duplicate(),
+			"stones": (snap.get("stones_gained", {}) if bool(snap.get("is_ai", false)) else prep.get("stones_gained", {})).duplicate(),
 			"total_gold": (GameState.START_GOLD + int(prep.get("battle_income_total", 0)) + int(prep.get("prep_income_total", 0) if gold_authoritative else snap.get("prep_income_total", 0))) if occupied else 0,
 		})
 	var stats: Array = []
@@ -29,7 +31,7 @@ static func build(room: Dictionary, replays: Array, outcome: int, gold_authorita
 		for actor in roster.values():
 			if bool(actor.get("is_formation_ally", false)):
 				# PvP replays keep A=player and B=enemy in both views.
-				var actor_side := (0 if str(actor.get("team", "")) == "player" else 1) if str(replay.get("kind", "")) == "pvp" else side
+				var actor_side := (0 if str(actor.get("team", "")) == "player" else 1) if str(replay.get("kind", "")) in ["pvp", "final"] else side
 				var actor_name := str(actor.get("name", "")).strip_edges()
 				if actor_name.is_empty():
 					actor_name = str(actor.get("def", {}).get("name", ""))
@@ -42,18 +44,14 @@ static func build(room: Dictionary, replays: Array, outcome: int, gold_authorita
 			if slot < side * 3 or slot >= side * 3 + 3 or str(entry.get("group", "")) == "boss":
 				continue
 			stats.append(entry.duplicate(true))
-	for seat in seats:
-		seat["round_damage"] = 0
-	for entry in stats:
-		var slot := int(entry.get("owner_slot", -1))
-		if slot >= 0 and slot < seats.size():
-			seats[slot].round_damage += maxi(0, int(entry.get("damage_dealt", 0)))
+	update_round_damage(seats, stats)
 	stats.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		if int(a.get("damage_dealt", 0)) != int(b.get("damage_dealt", 0)):
 			return int(a.get("damage_dealt", 0)) > int(b.get("damage_dealt", 0))
 		return str(a.get("owner_slot", 0)) + str(a.get("position", "")) < str(b.get("owner_slot", 0)) + str(b.get("position", "")))
+	var kind := str(replays[0].get("kind", "pve")) if not replays.is_empty() else "pve"
 	return {"can_return_room": str(room.get("mode", "custom")) == "custom" and not bool(room.get("matched", false)), "outcome": outcome, "seats": seats, "stats": stats, "allies": allies,
-		"gold_authoritative": gold_authoritative, "show_details": not replays.is_empty() and str(replays[0].get("kind", "pve")) == "pvp"}
+		"kind": kind, "gold_authoritative": gold_authoritative, "show_details": kind in ["pvp", "final"]}
 
 static func units(raw: Array) -> Array:
 	var out: Array = []
@@ -62,6 +60,39 @@ static func units(raw: Array) -> Array:
 		if cell is Dictionary and not str(cell.get("id", "")).is_empty():
 			out.append({"id": str(cell.id), "star": clampi(int(cell.get("star", 1)), 1, 4), "slot": int(cell.get("slot", index))})
 	return out
+
+static func update_round_damage(seats: Array, stats: Array) -> void:
+	for seat in seats:
+		seat["round_damage"] = 0
+	for entry in stats:
+		var slot := int(entry.get("owner_slot", -1))
+		if slot >= 0 and slot < seats.size():
+			seats[slot].round_damage += int(entry.get("damage_dealt", 0))
+
+# Eligibility is a property of the completed battle, never of who won it.
+# Older servers omit show_details; their match_state still contains kind.
+static func can_show_details(data: Dictionary, match_state: Dictionary, replay: Dictionary = {}) -> bool:
+	var kind := str(match_state.get("kind", replay.get("kind", data.get("kind", ""))))
+	if not kind.is_empty():
+		return kind in ["pvp", "final"]
+	return bool(data.get("show_details", false))
+
+# Offline/custom local-host battles do not receive a server match_state.
+# Capture their actual boards before Main clears mercenaries/advances the round.
+static func build_local(replays: Array) -> Dictionary:
+	var sim := preload("res://scripts/battle/BattleSimulator.gd")
+	var states: Array = NetworkService.team_slot_states if NetworkService.team_active else GameState.team_slot_states
+	var room := {"slot_states": states, "boards": {}, "owned_treasures": {}, "mode": "local"}
+	for slot in 6:
+		room.boards[slot] = {"board": sim._team_board_for_slot(slot, RngService.rng), "mercenaries": sim._team_mercs_for_slot(slot, RngService.rng)}
+		room.owned_treasures[slot] = sim._team_owner_ctx_for_slot(slot).get("treasures", [])
+	var data := build(room, replays, TeamOutcome.DRAW, false)
+	data["local_team"] = GameConstants.team_of_slot(NetworkService.team_local_slot) if NetworkService.team_active else 0
+	# The local path has no per-seat cumulative gold/stone ledger. Do not present
+	# starting gold or remaining stones as lifetime earnings.
+	for seat in data.seats:
+		seat["total_gold"] = null
+	return data
 
 static func display_treasures(owned: Array) -> Array:
 	var out := owned.duplicate()

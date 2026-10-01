@@ -311,7 +311,11 @@ def _validate_settlement(raw: dict, raw_seats: list) -> dict | None:
                 if count > 0:
                     stones[kind] = count
         seats.append({"stones": stones, "total_gold": _soft_int(item.get("total_gold"), 0, _INT_MAX)})
-    return {"allies": allies, "stats": stats, "seats": seats}
+    settlement = {"allies": allies, "stats": stats, "seats": seats}
+    kind = raw.get("settlement_kind")
+    if kind in ("pvp", "final", "pve", "boss"):
+        settlement["kind"] = kind
+    return settlement
 
 
 def _settlement_stat(entry: object) -> dict | None:

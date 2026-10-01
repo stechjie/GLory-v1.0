@@ -11,6 +11,33 @@ const SLOT_POS := [
 	Vector2(447, 502), Vector2(739, 502), Vector2(1015, 502),
 ]
 const SLOT_SIZE := Vector2(184, 175)
+# 10.01 反馈（第 4 条）：座位框换成玩家在大厅佩戴的头像框。
+#
+# 同一席位里的层次（后加的子节点在上面）：
+#   slot.png 木环底板 → 圆形头像 → **玩家的头像框** → 铭牌复本 → 圈外名牌 / X / ±AI
+# 头像框只要插在铭牌之前，就天然盖住木环；圈外名牌那几样本来就是后加的。
+#
+# 为什么要「铭牌复本」：反馈原文是「框框下面的字符『房主』『准备』『未准备』及
+# 周围的边框做保留，覆盖在头像框的上层」。那块六边形铭牌是画在 slot.png 里的，
+# 位于头像框**下面**，会被框整个盖住 —— 所以这里再从 slot.png 里把铭牌那一块
+# 单独抠出来（AtlasTexture 取 region），在头像框之后再画一遍抬到最上层。
+#
+# 尺寸来历：头像框取 160x160，是与主界面资料卡对齐的比例（那边 180x175 的框配
+# 78x78 的头像）。实测五张商城框的内孔占比在宽 0.58~0.68 / 高 0.45~0.64 之间，
+# 160 的框内孔最小只剩 92x72 —— 所以**有框时头像必须从 106 缩到 78**，
+# 否则最厚的那张（炽焰之心）会把头像上下各切掉十几像素。
+const SLOT_AVATAR_POS := Vector2(39, 40)
+const SLOT_AVATAR_SIZE := Vector2(106, 106)
+const SLOT_FRAME_POS := Vector2(12, 13)
+const SLOT_FRAME_SIZE := Vector2(160, 160)
+const SLOT_FRAME_AVATAR_POS := Vector2(53, 54)
+const SLOT_FRAME_AVATAR_SIZE := Vector2(78, 78)
+# 铭牌在 slot.png（400x376）里的像素矩形，以及它换算到席位局部坐标的落点
+# （×184/400、×175/376）。比「房主」那行字的框（39,137,106x32）略窄，因为
+# 铭牌是六边形、四角本来就收进去。
+const SLOT_PLATE_REGION := Rect2(105, 291, 185, 74)
+const SLOT_PLATE_POS := Vector2(48, 135)
+const SLOT_PLATE_SIZE := Vector2(86, 35)
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 # 9.17 第二批：BGM 走常驻 MusicService，音效走 SfxService。
@@ -213,6 +240,9 @@ var _slot_name_lbls: Array = []
 var _slot_status_lbls: Array = []
 var _slot_x_btns: Array = []
 var _slot_ai_btns: Array = []
+# 10.01 反馈（第 4 条）：每个席位多两个节点 —— 玩家的头像框，和抬到框上面的铭牌复本。
+var _slot_frames: Array = []
+var _slot_plates: Array = []
 var _status_lbl: Label
 var _room_id_lbl: Label
 var _start_btn: Button
@@ -378,8 +408,16 @@ func _build() -> void:
 	_add_texture(TEX_BACK, Vector2(80, 35), Vector2(143, 83), "left")
 	_add_hit(Vector2(80, 35), Vector2(143, 83), func(): back_requested.emit(), "left", "hit_back")
 	_add_texture(TEX_TITLE, Vector2(599, 21), Vector2(475, 143))
-	_room_id_lbl = _add_label("", Vector2(712, 103), Vector2(250, 30), 20, Color(0.45, 0.27, 0.08))
-	_add_label(_room_text("自定义房间", "CUSTOM GAME"), Vector2(650, 51), Vector2(372, 48), 32,
+	# 10.01 反馈（第 3 条）：木牌上的三行字重排。
+	#   ① 原来第三行（状态行）的框底是 142 + 28 = 170，而木牌只到 y=164 —— 溢出 6px，
+	#      字直接压在下边框上（截图里「在线 ｜ 玩家1 AI0 ｜ …」就贴在木牌边缘）；
+	#   ② 房间 ID 用的是写死的暗琥珀 Color(0.45, 0.27, 0.08)，在棕木底上几乎看不清，
+	#      反馈要求与「自定义房间」同色。
+	# 现在三行都按木牌内区（y 32~153）排，行间距统一，第三行框底 142 < 164。
+	# 水平框统一成木牌的 475 宽，三行共用一个居中轴（原来是 372 / 250 / 420 三个宽度，
+	# 各自居中，看起来是歪的）。
+	_room_id_lbl = _add_label("", Vector2(599, 88), Vector2(475, 26), 18, Tokens.TEXT_PRIMARY)
+	_add_label(_room_text("自定义房间", "CUSTOM GAME"), Vector2(599, 40), Vector2(475, 44), 32,
 		Tokens.TEXT_PRIMARY, "", true)
 	# 右侧朋友列表：锚定屏幕右边（edge="right"）
 	_add_texture(TEX_FRIENDS, Vector2(1340, 180), Vector2(230, 400), "right")
@@ -404,6 +442,8 @@ func _build() -> void:
 	_slot_x_btns.resize(6)
 	_slot_ai_btns.resize(6)
 	_slot_avatars.resize(6)
+	_slot_frames.resize(6)
+	_slot_plates.resize(6)
 	for i in 6:
 		_build_slot(i)
 
@@ -421,7 +461,9 @@ func _build() -> void:
 	_selftest_btn.visible = selftest_available() and not _online()
 	_host_hint_lbl = _add_label(_room_text("等待其他玩家准备后可按", "Waiting for players"),
 		Vector2(1285, 880), Vector2(310, 28), 20, Tokens.TEXT_PRIMARY, "right", true)
-	_status_lbl = _add_label("", Vector2(626, 142), Vector2(420, 28), 17,
+	# 状态行：字号 17 → 15、上移到 y=118（框底 142，木牌底 164，留 22px 余量）。
+	# 旧值 (626, 142, 420x28) 的框底 170 已经落到木牌外面了。
+	_status_lbl = _add_label("", Vector2(599, 118), Vector2(475, 24), 15,
 		Tokens.TEXT_PRIMARY, "", true)
 	_build_debug_layer()
 
@@ -436,6 +478,23 @@ func _build_slot(index: int) -> void:
 	material.shader = shader
 	avatar.material = material
 	_slot_avatars[index] = avatar
+	# 玩家的头像框（默认框不画 —— 与 MainMenu / ProfileScreen 一致，那两处也只画
+	# 自定义框；默认框 = slot.png 那只木环，本来就是席位的样子）。
+	#
+	# **不能套头像那个圆形 shader**：框的外圈是宝石、冰晶、藤蔓，裁成圆就全没了。
+	var frame := _add_texture(null, pos + SLOT_FRAME_POS, SLOT_FRAME_SIZE)
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	frame.visible = false
+	_slot_frames[index] = frame
+	# 铭牌复本：只在有框时显示。没框时下面那张 slot.png 已经把铭牌画出来了，
+	# 再画一遍是同像素重复，白多一次绘制（也会让「无框」这条路径多一份可变量）。
+	var plate_atlas := AtlasTexture.new()
+	plate_atlas.atlas = TEX_SLOT
+	plate_atlas.region = SLOT_PLATE_REGION
+	var plate := _add_texture(plate_atlas, pos + SLOT_PLATE_POS, SLOT_PLATE_SIZE)
+	plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	plate.visible = false
+	_slot_plates[index] = plate
 	_add_hit(pos + Vector2(0, 0), Vector2(182, 125), _on_slot_pressed.bind(index),
 		"", "hit_slot_%s" % SLOT_LABELS[index])
 	var name_pos := Vector2(pos.x - 10, pos.y - 46) if index < 3 else Vector2(pos.x - 10, pos.y + SLOT_SIZE.y + 4)
@@ -538,6 +597,7 @@ func _refresh() -> void:
 		var ai_btn: Button = _slot_ai_btns[i]
 		name_lbl.text = _slot_name(i, state, false)
 		var identity := _seat_profile(i)
+		_apply_slot_frame(i, identity, state)
 		_slot_avatars[i].modulate = Color(1, 1, 1, 0.35 if state == "settling" else 1.0)
 		_slot_avatars[i].visible = state in ["player", "settling"]
 		if state in ["player", "settling"]:
@@ -613,6 +673,37 @@ func _refresh() -> void:
 		_host_hint_lbl.text = _start_hint_text()
 	if _selftest_btn != null:
 		_selftest_btn.visible = selftest_available() and not _online()
+
+
+# 第 4 条：把席位框换成玩家在大厅佩戴的头像框（10.01）。
+#
+# 落点沿用座位标签那一套：改完 _placed 必须就地 _apply_tracked()。换座
+# （_on_slot_pressed）与加/减 AI 之后只调 _refresh()、不调 _layout()，只写 _placed
+# 不落节点的话，头像会停在旧位置旧尺寸 —— 就是 bug 文档第 4 条同型的坑。
+#
+# 判定「有没有框」的写法与 ProfileScreen / MainMenu 完全一致：
+# 认不出 id、或者就是默认框，都算「没有自定义框」。
+func _apply_slot_frame(index: int, identity: Dictionary, state: String) -> void:
+	var frame_value := str(identity.get("avatar_frame", ""))
+	var frame_id := AvatarCatalog.id_from_value(frame_value)
+	var custom := state in ["player", "settling"] and not frame_id.is_empty() and frame_id != "frame_default"
+	if custom:
+		var tex: Texture2D = AvatarCatalog.frame_texture_for(frame_value)
+		if tex == null:
+			# 图缺失（老包、或资源没打进包）时退回「没框」：宁可少一个装饰，
+			# 也不能留一个「头像被缩成小圆、框却是空的」席位。
+			custom = false
+		else:
+			_slot_frames[index].texture = tex
+	_slot_frames[index].visible = custom
+	_slot_plates[index].visible = custom
+	var slot_pos: Vector2 = SLOT_POS[index]
+	for placement in _placed:
+		if placement.node == _slot_avatars[index]:
+			placement.pos = slot_pos + (SLOT_FRAME_AVATAR_POS if custom else SLOT_AVATAR_POS)
+			placement.size = SLOT_FRAME_AVATAR_SIZE if custom else SLOT_AVATAR_SIZE
+			_apply_tracked(placement)
+			return
 
 
 func selftest_available() -> bool:

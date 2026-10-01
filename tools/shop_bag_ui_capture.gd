@@ -118,7 +118,12 @@ func _fixture_shop_special(category: String) -> Control:
 	var raw: Variant = JSON.parse_string(FileAccess.get_file_as_string(
 		"res://data/seven_day_login.json"))
 	var rewards: Array = (raw as Dictionary).get("rewards", [])
-	shop.set("_login_state", {"current_day": 4, "claimed_days": [1, 2, 3],
+	# 10.01：claimed_days 必须写成 **float**。真实链路是
+	# AccountManager.fetch_seven_day_login() -> JSON.parse_string()，Godot 把 JSON
+	# 数字一律解析成 float；而 Godot 4 的 `int in Array` 是类型严格比较，恒为 false。
+	# 原来这里写 [1, 2, 3]（int）正好绕开了那个 bug —— 截图永远是「正确」的，
+	# 于是没人发现线上领过的天数一直显示「未解锁」。夹具要跟线上同型。
+	shop.set("_login_state", {"current_day": 4, "claimed_days": [1.0, 2.0, 3.0],
 		"claimable_today": true, "completed": false, "ice_skin_progress": 3,
 		"rewards": rewards})
 	return shop

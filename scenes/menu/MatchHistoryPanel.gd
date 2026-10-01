@@ -268,7 +268,7 @@ func _refresh_detail() -> void:
 		_detail_box.add_child(note)
 
 	# 详细战况：打完那一刻的结算面板（见文件顶部第 4 条）。
-	if typeof(item.get("settlement")) == TYPE_DICTIONARY:
+	if has_settlement_details(item):
 		var detail := ACTION_BUTTON.instantiate() as Button
 		detail.text = _text("详细战况", "Match details")
 		detail.custom_minimum_size = Vector2(200, Tokens.TOUCH_MIN)
@@ -279,7 +279,7 @@ func _refresh_detail() -> void:
 		_detail_box.add_child(detail)
 	else:
 		var none := Label.new()
-		none.text = _text("这一局是旧版本记录，没有详细战况", "No details for this match (recorded by an older version)")
+		none.text = _text("本局在 PvE 回合结束，无结算详情", "This match ended in PvE; no settlement details") if typeof(item.get("settlement")) == TYPE_DICTIONARY else _text("这一局是旧版本记录，没有详细战况", "No details for this match (recorded by an older version)")
 		none.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
 		_detail_box.add_child(none)
 
@@ -364,7 +364,7 @@ func _seat_state(seat: Dictionary) -> String:
 # --- 详细战况 -------------------------------------------------------------------
 
 func _open_settlement(item: Dictionary) -> void:
-	if ModalStack.has(DETAIL_MODAL_ID):
+	if not has_settlement_details(item) or ModalStack.has(DETAIL_MODAL_ID):
 		return
 	var panel := SettlementPanel.new()
 	panel.data = settlement_view_data(item)
@@ -383,6 +383,19 @@ func _open_settlement(item: Dictionary) -> void:
 # 棋子 / 佣兵 / 宝藏来自 match_seats（board 里 merc=true 的是佣兵），升级石 / 总金币 /
 # 法阵守护 / 统计来自 settlement（database/023；统计是短键，见 BattleReport._clean_stats）。
 # 没有 settlement（023 之前的局）返回空字典。
+static func has_settlement_details(item: Dictionary) -> bool:
+	if not item.get("settlement") is Dictionary:
+		return false
+	var kind := str(item.settlement.get("kind", ""))
+	if not kind.is_empty():
+		return kind in ["pvp", "final"]
+	# Old records have rounds but no battle-kind field. Read the schedule without
+	# consulting GameState.final_round_played (which belongs to the current run).
+	var round_index := int(item.get("rounds", 0))
+	if round_index > 0:
+		return round_index == GameState.FINAL_ROUND or RoundService.is_pvp_schedule_round(round_index)
+	return true
+
 static func settlement_view_data(item: Dictionary) -> Dictionary:
 	var settle: Variant = item.get("settlement")
 	if typeof(settle) != TYPE_DICTIONARY:
@@ -439,6 +452,7 @@ static func settlement_view_data(item: Dictionary) -> Dictionary:
 		allies.append("")
 	return {
 		"outcome": {"team_a": 0, "team_b": 1}.get(str(item.get("outcome", "draw")), 2),
+		"local_team": GameConstants.team_of_slot(my_slot),
 		"allies": allies,
 		"seats": seats,
 		"stats": stats,

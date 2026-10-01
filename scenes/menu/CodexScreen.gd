@@ -273,7 +273,9 @@ func _category_title() -> String:
 	return label
 
 func _is_reference_category() -> bool:
-	return _category == "status"
+	# 状态和元素都是**参考物料**：不是收集目标，计数栏写「N 种」而不是
+	# 「已发现 N/M」（10.01 第 11 条把「元素」并进这一档）。
+	return _category == "status" or _category == "element"
 
 # --- grid tiles ----------------------------------------------------------
 
@@ -451,6 +453,9 @@ func _build_badges(entry: Dictionary, unlocked: bool) -> Control:
 		row.add_child(_flat_badge(
 			tr("codex_buff") if is_buff else tr("codex_debuff"),
 			GOOD if is_buff else BAD))
+	# 元素图鉴的角标是「属性」；状态那条走 buff / debuff（10.01 第 11 条）。
+	if bool(entry.get("attribute", false)):
+		row.add_child(_flat_badge(tr("codex_attr"), INK))
 	return row if row.get_child_count() > 0 else null
 
 # Emblem above, label beneath: the round art identifies the entry, the words only
@@ -604,7 +609,11 @@ func _build_state_line(entry: Dictionary, unlocked: bool) -> Control:
 	var lbl := Label.new()
 	lbl.add_theme_font_size_override("font_size", _fs(12))
 	lbl.add_theme_color_override("font_color", INK_SOFT)
-	if not bool(entry.get("collectible", true)):
+	if bool(entry.get("attribute", false)):
+		# 元素不能复用状态那条：「图标与战斗中显示的完全一致」讲的是战斗
+		# HUD 的减益图标，元素图标只在图鉴里出现，套上去就是文案≠实现。
+		lbl.text = tr("codex_element_reference")
+	elif not bool(entry.get("collectible", true)):
 		lbl.text = tr("codex_status_reference")
 	elif unlocked:
 		lbl.text = tr("codex_unlocked_state")

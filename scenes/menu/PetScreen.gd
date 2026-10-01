@@ -18,6 +18,8 @@ const PetPreview := preload("res://scripts/pets/PetPreview.gd")
 # 与 PrepShopRaceIcon.LOGO_PATHS 同一批图。新种族没出图时这一块留空，不报错。
 const RACE_LOGO_PATH := "res://assets/ui/race_logos/%s.png"
 const PrepSkin := preload("res://scenes/prep/PrepSkin.gd")
+# 10.01 第 12 条：点种族卡片时弹该族的羁绊效果（只列效果，不含达成条件）。
+const SynergyBond := preload("res://scenes/prep/panels/SynergyPanel.gd")
 
 signal back_requested
 signal starter_picked   # 首次三选一选定后发出（用于「进主菜单前的强制关卡」）
@@ -390,13 +392,25 @@ func _refresh_race_card(race: String, forced: bool) -> void:
 		Tokens.panel_box(Tokens.SURFACE, Tokens.GOLD_EDGE if picked else Tokens.BORDER, 12))
 	var btn: Button = parts["button"]
 	if forced:
-		btn.text = tr("race_pick_locked")
-		btn.disabled = true
+		# ★ 10.01 第 12 条真机踩的坑：这里以前是 tr("race_pick_locked")（「出战中」）+ disabled = true。
+		#   **禁用的 Button 根本不发 pressed** —— 所以四族全出战时（今天就是）这四张卡
+		#   一个都点不动，羁绊弹窗写得再对也永远弹不出来。门禁当时只做源码文本断言，
+		#   于是照样 PASS 70/0，真机上却是「点了没反应」。
+		#   锁定语义没丢，只是换了表达：不再靠「按钮点不动」，改成「点了也改不了选择」
+		#   （拦在 _on_race_card_pressed 里）。按钮这就腾出来做「查看羁绊」。
+		btn.text = tr("race_pick_view_bond")
+		btn.disabled = false
 	else:
 		btn.text = tr("race_pick_deselect") if picked else tr("race_pick_select")
 		btn.disabled = false
 
 func _on_race_card_pressed(race: String) -> void:
+	# 10.01 第 12 条：点种族卡片，第一件事就是摊开这一族的羁绊效果。
+	# **必须排在下面那道 is_forced 早退之前**：没得选的那一页（今天四族全出战就是）
+	# 要是先 return，羁绊弹窗就永远点不出来 —— 真机就是这么点不动的。
+	_show_race_bond(race)
+	# 没得选（今天：四族全出战）：弹窗已经把第 12 条要的东西给了，到此为止。
+	# 再往下走只会去改 _race_draft —— 那会把一个「锁定页」变成能改出非法选择的页。
 	if RacePick.is_forced():
 		return
 	var need := RacePick.required_count()
@@ -413,6 +427,22 @@ func _on_race_card_pressed(race: String) -> void:
 				next.append(known)
 		_race_draft = next
 	_refresh_races()
+
+# 10.01 第 12 条：点种族卡片时把该族的羁绊**效果**摊开给玩家看。
+#
+# 用 DialogService.info（只有一个「知道了」的提示框，长文自动滚）。
+# 正文纯文本：弹窗正文是 Label 不吃 BBCode，而且全文同一字号同一颜色，
+# 正好满足「字体和颜色深浅要一致」——不像战场羁绊面板那样分两种亮度。
+func _show_race_bond(race: String) -> void:
+	var body: String = SynergyBond.format_synergy_effects(race)
+	if body.is_empty():
+		return
+	DialogService.info({
+		"title": SynergyBond.format_synergy_title(race),
+		"body": body,
+		"owner": self,
+	})
+
 
 func _on_race_save_pressed() -> void:
 	# 存要走一次网络。期间先把按钮按住，免得连点发出好几次。

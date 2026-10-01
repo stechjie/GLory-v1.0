@@ -73,6 +73,23 @@ func show_power_recommendation() -> void:
 
 # 原 _refresh_stats_popup（PrepDetails.gd）
 
+# 「我方」这一栏在**本回合的规范化棋局**里对应哪个 group（10.01 反馈第 6 条）。
+#
+# PvP / 第21回合打的是规范化棋局：A 队（座位 0-2）恒为 "player"、B 队（3-5）
+# 恒为 "enemy"。本地玩家在 B 队时，**自己的单位**在数据里落在 "enemy" 那批 ——
+# 这时还按 _stats_group="player" 直接筛，列出来的正是对手。
+# 玩家报的「个别回合上一局统计面板显示的是敌方的数据」就是这一条：
+# 只有「B 队玩家 + PvP 回合」才会中，所以是「个别回合」而不是每回合。
+#
+# 反转规则本身在 TeamOutcome.viewer_group（与 viewer_wins_battle 同源），
+# 这里只负责把本客户端的球队问出来。Boss 那一栏不参与反转。
+func _viewer_group() -> String:
+	if _stats_group != "player" or not NetworkService.team_active:
+		return _stats_group
+	var kind := str(_last_result().get("kind", ""))
+	return TeamOutcome.viewer_group(_stats_group, kind,
+		GameConstants.team_of_slot(NetworkService.team_local_slot))
+
 func _refresh_popup() -> void:
 	if _stats_text == null:
 		return
@@ -88,7 +105,7 @@ func _refresh_popup() -> void:
 		if typeof(entry_value) != TYPE_DICTIONARY:
 			continue
 		var entry: Dictionary = entry_value
-		if _entry_group(entry) == _stats_group:
+		if _entry_group(entry) == _viewer_group():
 			rows.append(entry)
 	# Highest damage dealt first; ties fall back to position/name for a stable order.
 	rows.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:

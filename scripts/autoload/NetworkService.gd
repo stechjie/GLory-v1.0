@@ -1202,7 +1202,12 @@ func _room_online_count(room: Dictionary) -> int:
 # peer 是否还连着（服务器给某个 peer 发 RPC 前必须先查，否则对已断开的 peer 发
 # 会刷 "Attempt to call RPC with unknown peer ID" 错误、并可能中断后续清理）。
 func _peer_connected(peer_id: int) -> bool:
-	if multiplayer.multiplayer_peer == null:
+	# `multiplayer` 是 Node 的属性：本类被**脱树实例化**时（门禁/探针用
+	# `class X extends "…NetworkService.gd"` 复算某个纯路径）它是 null。
+	# 那种语境下「一个 peer 都没连」本来就是正确答案，但直接取
+	# `.multiplayer_peer` 会抛 "Invalid access … on a base object of type
+	# 'null instance'"——把整条复算路径刷成 SCRIPT ERROR。
+	if multiplayer == null or multiplayer.multiplayer_peer == null:
 		return false
 	if peer_id == 1:
 		return true
@@ -1289,8 +1294,20 @@ func _tick_result_ack_deadlines() -> void:
 				or bool(room.get("run_over", false)):
 			continue
 		var deadline := float(room.get("result_ack_deadline", 0.0))
-		if deadline > 0.0 and now >= deadline and _room_result_acks_complete(room):
+		# ★ 判据必须与 _rpc_result_ack 末尾那条**一致**：ACK 齐全就立刻推进。
+		# 这里此前多要一个 `now >= deadline`，等于把「兜底上限」当成「强制延迟」——
+		# 六个人早就确认完了，房间仍要干等满整个窗口（最短 78s、带回放 206~480s）。
+		# 超时兜底由 _room_result_acks_complete 自己负责（到点即返回 true），
+		# 不需要在外面再判一次。见上面 RESULT_*_GRACE_SEC 的既有注释：
+		# "These are ceilings, not delays: all online human ACKs still advance
+		#  the room immediately."（10.01 第 8 条前半：等待时间过长）
+		if deadline > 0.0 and _room_result_acks_complete(room):
 			_room_begin_next_prep(room)
+			continue
+		# 还没到点、或者到了点但缺 ACK：把结算重推给缺的那个人（幂等）。
+		# 放在这里而不是回调里：这是**唯一**一个「没有新 RPC 到达也会跑」的
+		# 维护点，弱网下等一个不会再来的包，只能靠它。
+		_room_nudge_result_ack(room, now)
 
 # 匹配房间坐不满的兜底（协议 32）。
 #
@@ -1348,6 +1365,39 @@ const RESULT_PRESENTATION_GRACE_SEC := 18.0
 # 480s contains its full playback + bounded preparation/delivery and one
 # bounded resume allowance. Repeated reconnects cannot renew this hard limit.
 const RESULT_ACK_HARD_LIMIT_SEC := 480.0
+
+# ── 结算确认的双向重试（10.01 反馈第 8 条）────────────────────────────────────
+#
+# 症状：真实玩家 3v3 自定义对战里，六个人都进了「等待其他玩家」，却一直不进
+# 下一轮备战，等待时间以分钟计。
+#
+# 机制：结算确认是**单向、一次性**的 —— 服务端等「在线的真人座位全部 ACK」，
+# 而客户端那条 ACK 是 fire-and-forget，只发一次：
+#   * 客户端侧 send_result_ack 有 4 个静默 return（battle_id 空 / is_host /
+#     不在房间 / 没有 multiplayer peer）；
+#   * 服务端 _rpc_result_ack 有 6 个静默丢弃（非专服 / 限流 / battle_id 过长 /
+#     找不到房间 / 座位号非法 / battle_id 过期）。
+# 任何一条命中，房间就多出一个「在线但永不确认」的座位，而服务端唯一的兜底是
+# result_ack_deadline —— 那个窗口是按「对方还在播回放」算的：60s 接收 +
+# 18s 呈现 + 120s 冷启动准备 + 回放时长，**最短 78s、带回放 206~480s**。
+# 于是一条丢包（或一次发送瞬间的断线）让**全房**干等 3~8 分钟。
+# 更糟的是 match_state 那一条也可能到不了客户端（_rpc_receive_match_state 有
+# 「battle_id 对不上就丢」的早退）——而客户端在等待界面里不会再去要一次。
+#
+# 修法是对称的两条重试，**都幂等**（服务端对同一 battle_id 的重复 ACK 直接
+# return；客户端对同一 completed_round 的重复结算原地覆盖）：
+#   ① 客户端在等待期间每 RESULT_ACK_RESEND_SEC 重发一次 ACK
+#      —— Main._finish_server_authoritative_team_battle；
+#   ② 服务端每 RESULT_ACK_NUDGE_SEC 把结算重推给还没确认的在线真人
+#      —— _room_nudge_result_ack，覆盖「客户端压根没收到 match_state」那一半。
+# 判据只有一条：结算确认这条链上，**两端都不许出现「只发一次、丢了就算了」**。
+#
+# ★ 为什么不做「客户端等太久就自己进备战」：客户端一旦单方面推进，
+#   GameState.round_index 会领先服务器的 room.round_index，之后提交棋盘会被
+#   wrong_round 拒收 —— 拿一个更显眼的新 bug 换一个安静的旧 bug。
+#   服务端窗口本身有 480s 硬上限，房间不会永久卡死；把重试补上就够了。
+const RESULT_ACK_RESEND_SEC := 3.0    # 客户端重发间隔（等待界面里）
+const RESULT_ACK_NUDGE_SEC := 10.0    # 服务端催促间隔（重推结算）
 
 func _room_start_result_ack_wait(room: Dictionary, frames_a: int, frames_b: int, replay_available: bool) -> void:
 	var now := _now()
@@ -1410,6 +1460,82 @@ func _room_result_acks_complete(room: Dictionary) -> bool:
 			return true
 	return true
 
+# 把结算重推给「在线、真人、但还没确认这一场」的座位。
+#
+# 这是客户端那条重发 ACK 的**对偶**：客户端重发修的是「ACK 发出去没到」，
+# 这里修的是「结算根本没送到客户端」—— 后者发生时客户端没有 battle_id，
+# 既不会进等待循环也不会 ACK，只靠客户端自己是永远好不了的。
+#
+# 幂等：_rpc_receive_match_state 对同一 completed_round 原地覆盖同一份数据，
+# 客户端收到后重发 ACK，而服务端 _rpc_result_ack 对同一 battle_id 的重复
+# ACK 直接 return。重推多少次都不会改变结果。
+func _room_nudge_result_ack(room: Dictionary, now: float) -> void:
+	var last := float(room.get("result_ack_nudge_at", 0.0))
+	if last > 0.0 and now - last < RESULT_ACK_NUDGE_SEC:
+		return
+	var connected: Array = []
+	for pid in (room.get("peer_slot", {}) as Dictionary).keys():
+		if _peer_connected(int(pid)):
+			connected.append(int(pid))
+	var pending := result_ack_pending_peers(room, connected)
+	if pending.is_empty():
+		return
+	var match_states: Dictionary = room.get("last_match_state", {})
+	var peer_slot: Dictionary = room.get("peer_slot", {})
+	for peer_id in pending:
+		_resend_result_state(int(peer_id), match_states.get(int(peer_slot[peer_id]), {}))
+	room.result_ack_nudge_at = now
+	_touch_room(room)
+	_net_log("result ack nudge room=%d battle=%s seats=%d" % [
+		int(room.get("id", 0)), str(room.get("battle_id", "")), pending.size()])
+
+# 重推一次结算。单独一个函数是因为它**要碰 multiplayer**，
+# 而"该推给谁"的判据是纯的 —— 探针覆写本函数来数推了几次、推给谁，
+# 不必真的起一个 ENet 连接。
+func _resend_result_state(peer_id: int, ms: Dictionary) -> void:
+	_rpc_receive_match_state.rpc_id(peer_id, ms)
+
+# 结算催促的**判据**（static 纯函数，探针直调）：这一场还欠哪些 peer 的确认。
+#
+# 依赖全部注入（在线 peer 名单由调用方给），不碰 multiplayer / _now，所以能在
+# 没有网络的情况下把每种座位组合都验一遍。返回值按 peer id 升序，保证可断言。
+#
+# 判据与 _room_result_acks_complete **同源**，不许再抄第二份：
+#   * AI / 空席（slot_states != "player"）由服务器代过，不需要确认；
+#   * 不在线的座位**不等**（已确认的产品规则），也不该往断开的 peer 发 RPC
+#     （会刷 unknown peer ID 并烧 CPU）；
+#   * 座位号非法、座位没有对应结算条目 —— 都没东西可推。
+static func result_ack_pending_peers(room: Dictionary, connected_peer_ids: Array) -> Array:
+	var battle_id := str(room.get("battle_id", ""))
+	if battle_id.is_empty():
+		return []
+	var match_states: Dictionary = room.get("last_match_state", {})
+	# 「结果还没算出来」（排队/计算中）不需要单独早退：下面每个座位都会因为
+	# 取不到自己的结算条目而被跳过，返回值同样是空。少留一条走不到的路径。
+	var online := {}
+	for pid in connected_peer_ids:
+		online[int(pid)] = true
+	var states: Array = room.get("slot_states", [])
+	var peer_slot: Dictionary = room.get("peer_slot", {})
+	var acks: Dictionary = room.get("result_acks", {})
+	var out := []
+	for pid in peer_slot.keys():
+		var peer_id := int(pid)
+		if not online.has(peer_id):
+			continue
+		var slot := int(peer_slot[pid])
+		if slot < 0 or slot >= TEAM_SLOTS or slot >= states.size():
+			continue
+		if str(states[slot]) != "player":
+			continue
+		if str(acks.get(slot, "")) == battle_id:
+			continue
+		if (match_states.get(slot, {}) as Dictionary).is_empty():
+			continue
+		out.append(peer_id)
+	out.sort()
+	return out
+
 func send_result_ack(battle_id: String) -> void:
 	if battle_id.is_empty() or is_host or not team_active or multiplayer.multiplayer_peer == null:
 		return
@@ -1465,6 +1591,7 @@ func _room_begin_next_prep(room: Dictionary) -> void:
 	# ROOM_RESULT 下补发）。不清的话每个房间会带着约 196 KB 熝到下一场。
 	room.replay_packed = {}
 	room.prep_mercs = {}
+	room["battle_loadouts"] = {}
 	room.replay_pending = false
 	room.replay_error = ""
 	room.altar_uses = {}   # 祭坛次数按回合重置，和客户端 reset_shop_refreshes 同步
@@ -3396,6 +3523,7 @@ func _enqueue_finalize(room: Dictionary) -> void:
 	room.replay_error = ""
 	# Lock inputs now, before a queued room's reserved seats can expire/resume.
 	# Only compact board inputs are copied here; replay arrays do not exist yet.
+	_room_expire_treasure_offers(room)
 	var queued_at := Time.get_ticks_usec()
 	var inputs := BattleReplayJob.snapshot_room_inputs(room)
 	_simulation_max_enqueue_usec = maxi(_simulation_max_enqueue_usec, Time.get_ticks_usec() - queued_at)
@@ -3472,6 +3600,7 @@ func _room_compute_and_broadcast_replays(room: Dictionary) -> void:
 func _room_publish_replays(room: Dictionary, job: RefCounted) -> void:
 	var replay_a: Dictionary = job.result.a
 	var replay_b: Dictionary = job.result.b
+	room["battle_loadouts"] = job.result.get("battle_loadouts", {})
 	var match_states := _room_build_match_states(room, replay_a, replay_b)
 	room.last_match_state = match_states
 	room.replay_pending = false
@@ -3779,6 +3908,7 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 			"run_outcome": outcome,
 			"team_run_won": TeamOutcome.team_won_run(outcome, own_team),
 			"pending_treasure": _server_pending_treasure(room, slot, completed_round),
+			"treasure_compensations": room.get("treasure_compensations", {}).get(slot, []).duplicate(),
 		}
 	room.slot_gold = slot_gold
 	# AI 代打回合数：这一轮结算时仍是 dummy 的座位 +1。
@@ -3864,11 +3994,11 @@ func _room_report_ctx(room: Dictionary, rounds: int, outcome: int, hp_a: int, hp
 			# 萝卜是真的服务端权威（carrot_economy_enabled 默认开）。
 			"carrots": int(prep.get("carrots", 0)),
 			"carrots_spent": int(prep.get("merc_carrots_spent_total", 0)),
-			"board": snap.get("board", []),
-			"mercenaries": snap.get("mercenaries", []),
+			"board": settle.get("board", snap.get("board", [])),
+			"mercenaries": settle.get("mercenaries", snap.get("mercenaries", [])),
 			# 服务端记录的持有列表，不是客户端自报的 snap.treasures
 			# （后者只用于影子比对，见 _room_owned_treasures）。
-			"treasures": _room_owned_treasures(room, slot),
+			"treasures": settle.get("owned_treasures", _room_owned_treasures(room, slot)),
 			"stones": settle.get("stones", {}),
 			"total_gold": int(settle.get("total_gold", 0)),
 		})
@@ -3891,6 +4021,7 @@ func _room_report_ctx(room: Dictionary, rounds: int, outcome: int, hp_a: int, hp
 		"seats": seats,
 		"allies": final_data.get("allies", []),
 		"stats": final_data.get("stats", []),
+		"settlement_kind": final_data.get("kind", ""),
 	}
 
 # 专用服务器的权威结算：与本地/房主的 Main._on_team_battle_finished 共用
@@ -3927,16 +4058,107 @@ func _room_owned_treasures(room: Dictionary, slot: int) -> Array:
 	var owned = owned_map.get(slot, [])
 	return (owned as Array) if typeof(owned) == TYPE_ARRAY else []
 
+# 把一件宝物记进服务端权威持有列表，并补上它**顺带触发**的联动效果
+# （目前只有「胡牌手」的 +2 队血）。
+#
+# 选宝与掉线补偿共用这一个函数：两条路各写一份 = 以后只修一条。
+# 返回写入后的持有列表。
+func _room_grant_owned_treasure(room: Dictionary, slot: int, tid: String) -> Array:
+	var before := _room_owned_treasures(room, slot)
+	var owned := before.duplicate()
+	owned.append(tid)
+	if not TreasureService.has_linkage_in(before, "link_hu_pai_master") \
+			and TreasureService.has_linkage_in(owned, "link_hu_pai_master"):
+		var team := GameConstants.team_of_slot(slot)
+		var hp_arr: Array = room.get("team_hp", [GameState.START_FORMATION_HP, GameState.START_FORMATION_HP])
+		hp_arr[team] = mini(GameState.START_FORMATION_HP, int(hp_arr[team]) + 2)
+		room.team_hp = hp_arr
+	var owned_map: Dictionary = room.get("owned_treasures", {})
+	owned_map[slot] = owned
+	room.owned_treasures = owned_map
+	return owned
+
+
+# 掉线错过选宝的补偿（10.01 第 10 条）。
+#
+# 判据刻意**不是**「这个座位掉线了」：掉线可自愈，重连的 resume payload 会把
+# treasure_offer 一起带回来，玩家仍能正常三选一。真正的丢宝时刻是 offer
+# 到期被丢掉的那一刻 —— 也就是这个函数被调用的这一刻。
+#
+# 返回补发的 tid；成功后立即消费 offer 并记录回执，重复调用不再补发。
+func _room_expire_treasure_offers(room: Dictionary) -> void:
+	# The selection window ends when the next battle locks its inputs, including
+	# round 21. Compensating after that battle would omit the treasure's effects.
+	var offers: Dictionary = room.get("treasure_offer", {})
+	for key in offers.keys():
+		var slot := int(key)
+		if int(offers[key].get("round", 0)) >= int(room.get("round_index", 1)):
+			continue
+		_server_compensate_missed_treasure(room, slot)
+		offers.erase(key)
+	room["treasure_offer"] = offers
+	# Keep confirmed compensation in future submitted boards too: an offline or
+	# older client may still submit its pre-compensation inventory on reconnect.
+	for slot in room.get("boards", {}):
+		var snap: Dictionary = room.boards[slot]
+		var treasures: Array = snap.get("treasures", []).duplicate()
+		for tid in room.get("treasure_compensations", {}).get(slot, []):
+			if not treasures.has(tid):
+				treasures.append(tid)
+		snap["treasures"] = treasures
+
+func _server_compensate_missed_treasure(room: Dictionary, slot: int) -> String:
+	var offer_value = (room.get("treasure_offer", {}) as Dictionary).get(slot)
+	if typeof(offer_value) != TYPE_DICTIONARY:
+		return ""
+	var offer: Dictionary = offer_value
+	# 双保险：只补「藏宝回合发出去的候选」。别的形态（旧版本残留 / 数据被改坏）
+	# 不猜，直接不补 —— 补错了就是凭空发宝物。
+	if not RoundService.is_treasure_round(int(offer.get("round", 0))):
+		return ""
+	var owned := _room_owned_treasures(room, slot)
+	if owned.size() >= TreasureService.MAX_OWNED:
+		return ""
+	var pool := _server_roll_treasure_candidates(owned, 1)
+	if pool.is_empty():
+		return ""
+	var tid := str(pool[0])
+	owned = _room_grant_owned_treasure(room, slot, tid)
+	var receipts: Dictionary = room.get("treasure_compensations", {})
+	var granted: Array = receipts.get(slot, [])
+	if not granted.has(tid):
+		granted.append(tid)
+	receipts[slot] = granted
+	room["treasure_compensations"] = receipts
+	(room.get("treasure_offer", {}) as Dictionary).erase(slot)
+	_touch_room(room)
+	_net_log("treasure compensated room=%d round=%d slot=%d tid=%s owned=%d" % [
+		int(room.get("id", 0)), int(offer.get("round", 0)), slot, _log_safe(tid), owned.size()])
+	return tid
+
 # 发放本回合的宝物候选，并把这份 offer 记进房间。
 # 关键改动：`owned` 从「客户端上报的 treasures」换成「服务端记录的持有列表」——
 # 否则客户端只要少报几件，服务器就会一直给它发新候选，MAX_OWNED 形同虚设。
 func _server_pending_treasure(room: Dictionary, slot: int, completed_round: int) -> Dictionary:
 	var offers: Dictionary = room.get("treasure_offer", {})
 	var owned := _room_owned_treasures(room, slot)
-	if not RoundService.is_treasure_round(completed_round) or owned.size() >= TreasureService.MAX_OWNED:
+	if owned.size() >= TreasureService.MAX_OWNED:
 		offers.erase(slot)
 		room.treasure_offer = offers
 		return TREASURE_OFFER_NONE.duplicate(true)
+	if not RoundService.is_treasure_round(completed_round):
+		# ★ 10.01 第 10 条：这一轮不是藏宝回合，说明本座位手上那份候选已经过期。
+		#   若它**从没被消费**（_room_apply_treasure_choice 成功会立刻 erase），
+		#   就是玩家在选宝期间掉线、重连后又没赶上 —— 补发一件随机未拥有的宝藏。
+		#   offer 紧接着被 erase，所以同一次错过只会走到这里一次（幂等）。
+		var granted := _server_compensate_missed_treasure(room, slot)
+		offers.erase(slot)
+		room.treasure_offer = offers
+		var expired := TREASURE_OFFER_NONE.duplicate(true)
+		if not granted.is_empty():
+			# 在线（没掉线但就是没选）的客户端靠这一条立刻入袋，不必等下次重连。
+			expired["compensated"] = granted
+		return expired
 	var candidates := _server_roll_treasure_candidates(owned, 3)
 	if candidates.is_empty():
 		offers.erase(slot)
@@ -6013,17 +6235,9 @@ func _room_apply_treasure_choice(room: Dictionary, slot: int, tid: String) -> Di
 	var owned := _room_owned_treasures(room, slot)
 	if owned.has(tid) or owned.size() >= TreasureService.MAX_OWNED:
 		return {"ok": false, "reason": "cannot_own"}
-	var hu_pai_was_active := TreasureService.has_linkage_in(owned, "link_hu_pai_master")
-	owned = owned.duplicate()
-	owned.append(tid)
-	if not hu_pai_was_active and TreasureService.has_linkage_in(owned, "link_hu_pai_master"):
-		var team := GameConstants.team_of_slot(slot)
-		var hp_arr: Array = room.get("team_hp", [GameState.START_FORMATION_HP, GameState.START_FORMATION_HP])
-		hp_arr[team] = mini(GameState.START_FORMATION_HP, int(hp_arr[team]) + 2)
-		room.team_hp = hp_arr
-	var owned_map: Dictionary = room.get("owned_treasures", {})
-	owned_map[slot] = owned
-	room.owned_treasures = owned_map
+	# 发放与「胡牌手」联动的补正都在 _room_grant_owned_treasure 里，
+	# 和掉线补偿共用同一份实现。
+	owned = _room_grant_owned_treasure(room, slot, tid)
 	# offer 用后即弃：同一轮不能再选第二件，重复请求会落到 no_offer。
 	offers.erase(slot)
 	room.treasure_offer = offers

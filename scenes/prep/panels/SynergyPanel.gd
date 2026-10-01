@@ -144,7 +144,7 @@ func _add_synergy_widgets() -> void:
 
 # ─── race synergy ─────────────────────────────────────────────────────────────
 
-func _race_entries(race: String) -> Array:
+static func _race_entries(race: String) -> Array:
 	if PrepWidgets.is_en():
 		return _race_entries_en(race)
 	match race:
@@ -178,7 +178,7 @@ func _race_entries(race: String) -> Array:
 
 
 # 原 _race_synergy_entries_en（PrepDetails.gd）
-func _race_entries_en(race: String) -> Array:
+static func _race_entries_en(race: String) -> Array:
 	match race:
 		"god":
 			return [
@@ -241,6 +241,28 @@ func format_synergy_detail(race: String, count: int) -> String:
 
 
 
+# ─── 羁绊**效果**列表（10.01 第 12 条）─────────────────────────────────────
+#
+# 与 format_synergy_detail 的区别：那条是**战场上**的达成状态（当前数量 N/7、
+# 已解锁 / 未解锁 · 还差 N 人），这里是选族前的**效果预览**，只列效果本身。
+# 用户明确要求「去除已解锁、未解锁、还差几人这种说明」。
+#
+# 返回**纯文本**（不是 BBCode）：弹窗正文是 Label，不吃标记；全文同一字号
+# 同一颜色，也就满足了「字体和颜色深浅要一致」。
+static func format_synergy_effects(race: String) -> String:
+	var blocks: Array[String] = []
+	for item in _race_entries(race):
+		blocks.append("%s\n%s" % [str(item.get("name", "")), str(item.get("detail", ""))])
+	return "\n\n".join(blocks)
+
+
+# 弹窗标题：与 format_synergy_detail 的抬头同一口径（神族羁绊 / God Bond）。
+static func format_synergy_title(race: String) -> String:
+	if PrepWidgets.is_en():
+		return "%s Bond" % race_name(race)
+	return "%s族羁绊" % race_name(race)
+
+
 # 原 _race_synergy_max_threshold（PrepDetails.gd）
 func race_max_threshold(race: String) -> int:
 	var max_threshold := 0
@@ -263,7 +285,7 @@ func race_max_threshold(race: String) -> int:
 # 原 _race_name（PrepDetails.gd）
 # ─── race names ───────────────────────────────────────────────────────────────
 
-func race_name(race: String) -> String:
+static func race_name(race: String) -> String:
 	if PrepWidgets.is_en():
 		match race:
 			"god":    return "God"

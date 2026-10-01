@@ -27,6 +27,8 @@ const CATEGORIES := [
 	{"key": "ally", "kind": "ally"},
 	{"key": "pet", "kind": "pet"},
 	{"key": "status", "kind": "status"},
+	# 10.01 第 11 条：状态之后追加「元素」（天 / 地 / 人）。
+	{"key": "element", "kind": "element"},
 ]
 
 # Status effects are reference material rather than a collection goal, so they are
@@ -47,6 +49,11 @@ const STATUSES := [
 	{"id": "ice_affected", "buff": false, "icon": "status_ice_affected_icon_v2.png"},
 	{"id": "ice_vulnerable", "buff": false, "icon": "status_ice_vulnerable_icon_v2.png"},
 ]
+
+# 元素是**参考物料**，和状态一样：三条固定条目、永远可读、不计入收集进度。
+# id 与 race_units / bosses 里的 element 字段同一套（sky / land / ren），
+# 所以徽章图和战斗里认的是同一个东西。
+const ELEMENTS: Array[String] = ["sky", "land", "ren"]
 
 # Linkage display names live only as icon filenames; the data table has ids alone.
 const LINK_ART_NAME := {
@@ -113,6 +120,7 @@ static func entries_for(category_key: String) -> Array[Dictionary]:
 		"ally": return _allies()
 		"pet": return _pets()
 		"status": return _statuses()
+		"element": return _elements()
 	return []
 
 static func _category(key: String) -> Dictionary:
@@ -339,6 +347,26 @@ static func _statuses() -> Array[Dictionary]:
 			"icon_art": true,
 			"buff": bool(def.get("buff", false)),
 			"desc_key": "codex_status_%s_desc" % id,
+			# Reference material: always readable, never counted as collection.
+			"collectible": false,
+		})
+	return out
+
+
+# 元素图鉴（10.01 第 11 条）。只讲**克制关系与数值**，不讲战场达成条件。
+# 形状与 _statuses() 完全一致：name_key + desc_key（静态上下文里 tr() 不可调用），
+# collectible=false 让它永远可读、且计入参考档而不是收集进度。
+static func _elements() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for id in ELEMENTS:
+		out.append({
+			"id": id,
+			"name_key": "codex_elem_%s" % id,
+			"portrait": PORTRAIT_DIR + "elem_%s.png" % id,
+			"icon_art": true,
+			# 角标写「属性」而不是「增益 / 异常」（第 11 条明确要求）。
+			"attribute": true,
+			"desc_key": "codex_element_%s_desc" % id,
 			# Reference material: always readable, never counted as collection.
 			"collectible": false,
 		})

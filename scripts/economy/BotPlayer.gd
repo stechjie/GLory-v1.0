@@ -74,6 +74,7 @@ static func _simulate(seed: Variant, slot: int, round_n: int) -> Dictionary:
 		"roster": [],            # [{id, star, def, cost_basis}]
 		"treasures": [],
 		"stones": CarrotRules.empty_stones(),
+		"stones_gained": CarrotRules.empty_stones(),
 		"carrots": 0,
 		"carrot_spent": 0,
 		"tech": 0,
@@ -108,6 +109,7 @@ static func _simulate(seed: Variant, slot: int, round_n: int) -> Dictionary:
 		"gold": int(bot.gold),
 		"main_race": str(bot.main_race),
 		"stones": (bot.stones as Dictionary).duplicate(),
+		"stones_gained": (bot.stones_gained as Dictionary).duplicate(),
 	}
 
 
@@ -190,6 +192,7 @@ static func _spend_carrots(bot: Dictionary, round_index: int, rng: RandomNumberG
 			bot.stone_draws = int(bot.stone_draws) + 1
 			var stone := CarrotRules.draw_type_from_roll(rng.randf())
 			bot.stones[stone] = int(bot.stones.get(stone, 0)) + 1
+			bot.stones_gained[stone] = int(bot.stones_gained.get(stone, 0)) + 1
 		else:
 			return  # 攒着下回合抽
 	_hire_mercs(bot)

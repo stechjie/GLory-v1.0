@@ -371,7 +371,11 @@ func _open_pet_screen() -> PetScreenScript:
 
 
 func _press_race(screen: PetScreenScript, race: String) -> void:
+	# 10.01 第 12 条之后，点种族卡片会先弹一次这一族的羁绊说明（真机上玩家看到的就是这个框）。
+	# 本用例测的是「选择」语义，所以按完顺手把框收掉：既不给后面的断言留下悬挂模态，
+	# 也顺带证明这些框收得掉 —— 关不掉的模态才是真麻烦。
 	((screen._race_cards[race] as Dictionary)["button"] as Button).pressed.emit()
+	ModalStack.close_all()
 
 
 func _case_pet_screen_race_tab() -> void:
@@ -497,11 +501,22 @@ func _case_pet_screen_forced_and_starter() -> void:
 	(screen._tab_buttons[PetScreenScript.Tab.RACES] as Button).pressed.emit()
 	_h.expect(screen._race_cards.size() == 4, "forced_card_count",
 		"四族应当四张卡，实际 %d" % screen._race_cards.size())
-	var all_locked := true
+	# ★ 口径变更（10.01 第 12 条）：这里以前断言「按钮 disabled = 锁定」。
+	#   第 12 条要求点种族卡片要弹出这一族的羁绊说明，而**禁用的 Button 根本不发 pressed** ——
+	#   四族全出战时四张卡一个都点不动，弹窗永远出不来（用户真机实测就是这个）。
+	#   所以锁定换了表达：不再靠「按钮点不动」，改成「点了也改不了选择」。
+	#   判据不是放松，是换成更硬的那个 —— 原来只证明按钮是灰的，现在真按下去，草稿必须原样不动。
+	var still_disabled := false
 	for race in screen._race_cards:
-		if not ((screen._race_cards[race] as Dictionary)["button"] as Button).disabled:
-			all_locked = false
-	_h.expect(all_locked, "forced_cards_clickable", "四族选四个时卡片按钮应当全部锁定")
+		if ((screen._race_cards[race] as Dictionary)["button"] as Button).disabled:
+			still_disabled = true
+	_h.expect(not still_disabled, "forced_cards_clickable",
+		"四族选四个时卡片按钮仍然是灰的 —— 那样第 12 条的羁绊弹窗永远点不出来")
+	var draft_before: Array = screen._race_draft.duplicate()
+	for race in screen._race_cards:
+		_press_race(screen, race)
+	_h.expect(str(screen._race_draft) == str(draft_before), "forced_press_changes_draft",
+		"锁定页上点卡片把草稿改掉了：%s -> %s" % [str(draft_before), str(screen._race_draft)])
 	_h.expect(not screen._race_save_btn.visible, "forced_save_visible", "没得选时不该出现保存按钮")
 	_h.expect(screen._race_draft.size() == 4, "forced_draft_not_full",
 		"没得选时草稿应当就是全部四族，实际 %s" % str(screen._race_draft))

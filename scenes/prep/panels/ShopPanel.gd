@@ -250,6 +250,9 @@ func build_button_and_purse(body: HBoxContainer, center_host: Control, center: C
 	_closed_gold_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_closed_gold_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_closed_gold_label.add_theme_font_size_override("font_size", 15)
+	# 10.01 反馈第 7 条：金币数值要加粗。收起态这颗钱袋下面那行「100金」字号只有 15，
+	# 压在木牌上最容易看不清 —— 用合成加粗顶上去（工程没有 Bold 字体资源）。
+	_closed_gold_label.add_theme_font_override("font", UIFontFallback.bold_font())
 	_closed_gold_label.add_theme_color_override("font_color", Color(1.0, 0.84, 0.34))
 	_closed_gold_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 	_closed_gold_label.add_theme_constant_override("outline_size", 3)
@@ -373,6 +376,9 @@ func build_popup(body: HBoxContainer, center_host: Control) -> void:
 	_gold_amount_label.pivot_offset = Vector2(44, 14)
 	_gold_amount_label.rotation_degrees = -4.0
 	_gold_amount_label.add_theme_font_override("font", GOLD_NUMBER_FONT)
+	# 10.01 反馈第 7 条：金币数值加粗。★ 必须带上 base —— 数字用的是
+	# Knewave-Regular.ttf，不传就会退成中文字体，数字字形直接变样。
+	_gold_amount_label.add_theme_font_override("font", UIFontFallback.bold_font(GOLD_NUMBER_FONT))
 	_gold_amount_label.add_theme_font_size_override("font_size", 24)
 	_gold_amount_label.add_theme_color_override("font_color", Color(1.0, 0.86, 0.30))
 	_gold_amount_label.add_theme_color_override("font_outline_color", Color(0.20, 0.08, 0.01, 0.98))

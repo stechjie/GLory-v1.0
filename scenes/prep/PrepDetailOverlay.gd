@@ -148,10 +148,11 @@ func attach_long_press(btn: BaseButton, cb: Callable) -> void:
 			btn.set_meta("long_press_consumed", true)
 			cb.call()
 	)
+	# gui_input 的鼠标和触摸事件都使用按钮局部坐标；起点与移动点
+	# 统一从事件读取。原始 Viewport.push_input 输入才使用视口坐标。
+	# button_down 不覆盖触摸 pointer，避免模拟鼠标信号丢失多指身份。
 	btn.button_down.connect(func():
-		btn.set_meta("long_press_start", btn.get_local_mouse_position())
 		btn.set_meta("long_press_down_msec", Time.get_ticks_msec())
-		btn.set_meta("long_press_pointer", -1)
 		btn.set_meta("long_press_cancelled", false)
 		btn.set_meta("long_press_triggered", false)
 		btn.set_meta("long_press_consumed", false)
@@ -167,18 +168,43 @@ func attach_long_press(btn: BaseButton, cb: Callable) -> void:
 			hide_detail()
 	)
 	btn.gui_input.connect(func(event: InputEvent):
+		# 桌面按下：记起点（按钮局部坐标）。button_down 不再写起点，所以两条路径
+		# 谁先到都不影响结果；触摸模拟出的 MouseButton 也走这里，值同样一致。
+		if event is InputEventMouseButton:
+			var mb := event as InputEventMouseButton
+			if mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed:
+				btn.set_meta("long_press_start", mb.position)
 		if event is InputEventScreenTouch:
 			var touch := event as InputEventScreenTouch
+			var active_pointer := int(btn.get_meta("long_press_pointer", -1))
+			if active_pointer >= 0 and touch.index != active_pointer:
+				return
 			if touch.pressed:
 				btn.set_meta("long_press_pointer", touch.index)
 				btn.set_meta("long_press_start", touch.position)
+				# ★ 触摸路径自己启表：不能指望 emulate_mouse_from_touch 一定开着
+				#   ——关掉时 button_down 根本不来，长按就永不触发。与 button_down
+				#   重复 start 是幂等的（只把剩余时间重置回 0.7s），无害。
+				btn.set_meta("long_press_down_msec", Time.get_ticks_msec())
+				btn.set_meta("long_press_cancelled", false)
+				btn.set_meta("long_press_triggered", false)
+				btn.set_meta("long_press_consumed", false)
+				btn.set_meta("dragging", false)
+				timer.start()
 			elif touch.canceled:
+				btn.set_meta("long_press_pointer", -1)
 				btn.set_meta("long_press_cancelled", true)
+				timer.stop()
+			else:
+				# Native touch release must stop the timer even without mouse emulation.
+				btn.set_meta("long_press_pointer", -1)
 				timer.stop()
 		if not timer.time_left > 0.0:
 			return
 		if event is InputEventMouseMotion or event is InputEventScreenDrag:
-			var current := btn.get_local_mouse_position()
+			# 两种事件都自带 position，而且都是按钮局部坐标 —— 不再需要
+			# 避免混用实时鼠标位置与当前触摸事件的位置。
+			var current: Vector2
 			if event is InputEventMouseMotion:
 				current = (event as InputEventMouseMotion).position
 			else:

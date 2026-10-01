@@ -18,6 +18,9 @@ var _bubble_label: Label
 var _return_button: Button
 
 func _ready() -> void:
+	# Both live settlement and history render these same rows. Derive the total
+	# here as well so old history records need no backfill or extra stored field.
+	preload("res://scripts/multiplayer/FinalSettlementData.gd").update_round_damage(data.get("seats", []), data.get("stats", []))
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var background := ColorRect.new()
 	background.color = Color("0d1219")
@@ -184,7 +187,7 @@ func _team(side: int) -> Control:
 				number.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 				icon.add_child(number)
 				stones.add_child(icon)
-		var gold := _label(str(seat.get("total_gold", 0)), Color("ffd24d"))
+		var gold := _label(str(seat.total_gold) if seat.get("total_gold") != null else "—", Color("ffd24d"))
 		gold.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		gold.set_meta("settlement_column", 6)
 		gold.set_meta("settlement_team", side)

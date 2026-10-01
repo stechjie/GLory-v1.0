@@ -1741,8 +1741,13 @@ func _show_battle(battle_scene: PackedScene = null) -> void:
 
 var _final_settlement_data: Dictionary = {}
 
-func _show_game_over() -> void:
-	_final_settlement_data = NetworkService.latest_match_state.get("final_settlement", {}).duplicate(true)
+func _show_game_over(local_settlement: Dictionary = {}) -> void:
+	_final_settlement_data = (local_settlement if not local_settlement.is_empty() else NetworkService.latest_match_state.get("final_settlement", {})).duplicate(true)
+	# Freeze the viewing side while the completed room still owns the local seat.
+	_final_settlement_data["local_team"] = int(local_settlement.get("local_team", GameConstants.team_of_slot(NetworkService.team_local_slot)))
+	var completed_replay: Dictionary = _battle._replay_own if is_instance_valid(_battle) else NetworkService.team_replay
+	_final_settlement_data["show_details"] = preload("res://scripts/multiplayer/FinalSettlementData.gd").can_show_details(
+		_final_settlement_data, NetworkService.latest_match_state if local_settlement.is_empty() else {}, completed_replay)
 	# 对局结束：重连凭证作废，避免下次启动误恢复到已结束的房间
 	SaveManager.clear_reconnect()
 	_clear()
@@ -1806,7 +1811,6 @@ func _show_final_settlement() -> void:
 	_set_chat_sound_suppressed(true)
 	var panel := preload("res://scenes/menu/FinalSettlementPanel.gd").new()
 	panel.data = _final_settlement_data.duplicate(true)
-	panel.data["local_team"] = GameConstants.team_of_slot(NetworkService.team_local_slot)
 	panel.return_menu_requested.connect(_on_return_menu_requested)
 	panel.return_room_requested.connect(_return_from_settlement)
 	add_child(panel)
@@ -2819,6 +2823,12 @@ func _on_team_battle_finished(result: Dictionary) -> void:
 	})
 	_apply_post_battle_unit_outcomes(result)
 	GameState.battle_history.append(result)
+	var local_settlement: Dictionary = {}
+	if GameState.team_hp <= 0 or GameState.enemy_team_hp <= 0 or completed_round >= GameState.FINAL_ROUND:
+		var own_replay: Dictionary = _battle._replay_own if is_instance_valid(_battle) else NetworkService.team_replay
+		var rival_replay: Dictionary = _battle._replay_rival if is_instance_valid(_battle) else NetworkService.team_replay_rival
+		var replays: Array = [own_replay, rival_replay] if local_team == TeamOutcome.TEAM_A else [rival_replay, own_replay]
+		local_settlement = preload("res://scripts/multiplayer/FinalSettlementData.gd").build_local(replays)
 	if kind == "pve":
 		GameState.pve_completed += 1
 	elif kind == "boss":
@@ -2850,7 +2860,8 @@ func _on_team_battle_finished(result: Dictionary) -> void:
 		})
 		GameState.team_run_won = TeamOutcome.team_won_run(GameState.team_run_outcome, local_team)
 		SaveManager.save_run()
-		_show_game_over()
+		local_settlement["outcome"] = GameState.team_run_outcome
+		_show_game_over(local_settlement)
 		return
 	NetworkService.team_begin_round()
 	_start_treasure_for_completed_round(completed_round)
@@ -2888,16 +2899,34 @@ func _finish_server_authoritative_team_battle(result: Dictionary) -> void:
 		return
 	var state_payload := NetworkService.latest_match_state.duplicate(true)
 	# 本人看完/跳过仅确认回放结束；等全部在线玩家确认后才发放收益并进入备战。
-	NetworkService.send_result_ack(str(state_payload.get("battle_id", "")))
+	var settlement_ack_id := str(state_payload.get("battle_id", ""))
+	NetworkService.send_result_ack(settlement_ack_id)
 	if not bool(state_payload.get("run_over", false)):
 		if is_instance_valid(_battle):
 			_battle.call("show_settlement_waiting")
+		# 10.01 反馈第 8 条：等待期间**周期性重发**结算确认。
+		#
+		# 服务端只等「在线的真人座位全部 ACK」才推进下一轮，而上面那次 ACK 是
+		# **一次性**的：客户端有 4 个静默 return（battle_id 空 / is_host / 不在房间 /
+		# 没有 multiplayer peer），服务端有 6 个静默丢弃（非专服 / 限流 / id 过长 /
+		# 找不到房间 / 座位号非法 / battle_id 过期）。任一条命中，房间就多出一个
+		# 「在线但永不确认」的座位，全房只能等到 result_ack_deadline 才被兜底推进
+		# —— 那个窗口按「对方还在播回放」算，最短 78s、带回放 206~480s。
+		# 实测现象正是「所有人都卡在等待界面，几分钟不进备战」。
+		#
+		# 重发是幂等的（服务端 _rpc_result_ack 对同一 battle_id 的重复 ACK 直接
+		# return），所以这里只是把「一次丢包 = 全房等 3~8 分钟」压回「3 秒内自愈」。
+		var resend_waited := 0.0
 		while not NetworkService.server_prep_confirmed(completed_round + 1):
 			if not NetworkService.team_active or NetworkService.state == NetworkService.SessionState.RECONNECTING:
 				return
 			await get_tree().create_timer(0.1).timeout
 			if generation != _battle_settlement_generation:
 				return
+			resend_waited += 0.1
+			if resend_waited >= NetworkService.RESULT_ACK_RESEND_SEC:
+				resend_waited = 0.0
+				NetworkService.send_result_ack(settlement_ack_id)
 	_apply_team_match_state_payload(state_payload, result)
 	print("[NET] client applied match_state round=%d next=%d gold=%d hp=%d" % [completed_round, GameState.round_index, GameState.gold, GameState.team_hp])
 	if bool(state_payload.get("run_over", false)):
@@ -2936,6 +2965,17 @@ func _apply_team_match_state_payload(state_payload: Dictionary, result: Dictiona
 		GameState.battle_history.append(result)
 	GameState.round_index = int(state_payload.get("round_index", GameState.round_index))
 	GameState.pending_treasure = (state_payload.get("pending_treasure", {"active": false, "round": 0, "candidates": [], "refresh_index": 0}) as Dictionary).duplicate(true)
+	# ★ 10.01 第 10 条：服务端替「错过选宝」的玩家补发了一件随机未拥有的宝藏。
+	# 这里只做**只增**的入袋（add_owned 自己会去重、也会卡 MAX_OWNED）。
+	# 不走 sync_owned_from_server：那个会**删掉**服务端列表里没有的条目，
+	# 而「以服务端为准」的删除同步只在重连 resume 那条路上做
+	# （Main._on_resume_completed），在这里做等于拿一份只用于本轮的字段
+	# 去裁决玩家的全部持有，一次口径不一致就会把诚实玩家的宝物吞掉。
+	var compensated := str(GameState.pending_treasure.get("compensated", ""))
+	if not compensated.is_empty():
+		TreasureService.add_owned(compensated)
+	for tid in state_payload.get("treasure_compensations", []):
+		TreasureService.add_owned(str(tid))
 	# 结算已经落到本地状态上了，现在才回执（E3）。服务器要等所有在线真人都确认
 	# 才推进下一轮 —— 此前任意一个人按准备就能把还在看回放的人一起拽走（C7）。
 	NetworkService.send_result_ack(str(state_payload.get("battle_id", "")))

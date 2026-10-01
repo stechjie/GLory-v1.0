@@ -222,7 +222,7 @@ func _log(message: String) -> void:
 const SEAT_SLOT_MAPS := [
 	"seat_tokens", "seat_public_id", "seat_profiles", "join_seq",
 	"reserved", "reserve_deadline",
-	"treasure_offer", "owned_treasures", "altar_uses", "last_board", "boards",
+	"treasure_offer", "owned_treasures", "treasure_compensations", "battle_loadouts", "altar_uses", "last_board", "boards",
 	"tx_log",   # E4：座位没了，这个座位的交易回执也没有意义了
 	"prep",     # P1：座位账本同理
 	"seat_races",  # 出战种族（协议 28）：换座跟着人走，离座一起清

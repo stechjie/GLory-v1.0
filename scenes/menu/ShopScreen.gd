@@ -91,6 +91,9 @@ var _catalog_shell: PanelContainer
 var _summon_panel_control: Control
 var _detail_panel_control: Control
 var _special_panel: PanelContainer
+	# 活动 / 外观页的纵向滚动容器。这一块的内容比一屏高（七日登录的 DAY 奖励条
+	# 整条掉到窗口外），没有它就只能看到上半截（10.01 反馈第 2 条 1）。
+var _special_scroll: ScrollContainer
 var _special_content: VBoxContainer
 var _hero_panel: Control
 var _event_dot: Label
@@ -180,9 +183,22 @@ func _build() -> void:
 	_special_panel.add_theme_stylebox_override("panel", Tokens.panel_box(
 		Tokens.INK_PANEL, Tokens.GOLD_PRESSED.darkened(0.4), Tokens.GAP_M))
 	root.add_child(_special_panel)
+	# 10.01 反馈（第 2 条 1）：「商城界面显示不全，但无法操作下滑」。
+	# 活动页（七日登录 / 冰雪）与外观页的内容都比一屏高：标题 + 220 高的大图 +
+	# 150 高的 DAY 奖励条加起来约 430，而这一块拿到的可用高度没有那么多 ——
+	# 之前直接挂在 PanelContainer 上，超出的部分既看不到也滑不动。
+	# 加一层纵向 ScrollContainer：横轴 DISABLED（让内容按容器宽度铺开，
+	# 不会横向晃），纵轴保持默认 AUTO（内容不高时不出滚动条，观感不变）。
+	# ScrollContainer 在纵轴 AUTO 下最小高度是 0，所以它不会把整页再顶出去。
+	_special_scroll = preload("res://ui/components/TouchScrollContainer.gd").new()
+	_special_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_special_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_special_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_special_panel.add_child(_special_scroll)
 	_special_content = VBoxContainer.new()
+	_special_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_special_content.add_theme_constant_override("separation", Tokens.GAP_M)
-	_special_panel.add_child(_special_content)
+	_special_scroll.add_child(_special_content)
 	_special_panel.hide()
 
 
@@ -296,7 +312,7 @@ func _catalog_panel() -> Control:
 	_catalog_count_label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
 	head.add_child(_catalog_count_label)
 
-	var scroll := ScrollContainer.new()
+	var scroll := preload("res://ui/components/TouchScrollContainer.gd").new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	col.add_child(scroll)
@@ -760,15 +776,28 @@ func _render_event() -> void:
 
 func _reward_card(reward: Dictionary) -> Control:
 	var day := int(reward.get("day", 0))
-	var claimed: Array = _login_state.get("claimed_days", [])
-	var done := day in claimed
+	# 10.01 反馈（第 2 条 2）：签到领取后仍显示「未解锁」。
+	# 根因是类型而不是数值 —— 服务端 claimed_days 是 JSON 数字数组，Godot 把
+	# JSON 数字一律解析成 float，而 Godot 4 里 `int in Array` 走的是**类型严格**
+	# 比较。已用探针实测：`2 in [1.0, 2.0, 3.0]` == false，而
+	# `[1.0, 2.0, 3.0][0] == 1` == true。所以逐项取整后再比，
+	# 不再依赖隐式数值提升。
+	var done := false
+	for raw_day in _login_state.get("claimed_days", []):
+		if int(raw_day) == day:
+			done = true
+			break
 	var ready := day == int(_login_state.get("current_day", 0)) and bool(
 		_login_state.get("claimable_today", false))
 	var card := PanelContainer.new()
 	card.custom_minimum_size = Vector2(137, 150)
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# 已领取的整块底色压到最深一档（BG_DEEP），与「未解锁」用的 SURFACE_RAISED
+	# 一眼可分 —— 反馈原文就是「整个框框底色要更加深沉以和其他未解锁的进行区分」。
 	card.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.SURFACE_RAISED, Tokens.GOLD_EDGE if ready else Tokens.BORDER, Tokens.GAP_S))
+		Tokens.BG_DEEP if done else Tokens.SURFACE_RAISED,
+		Tokens.GOLD_EDGE if ready else (Tokens.BORDER.darkened(0.45) if done else Tokens.BORDER),
+		Tokens.GAP_S))
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 3)
 	card.add_child(col)

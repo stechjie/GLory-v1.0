@@ -46,6 +46,30 @@ static func viewer_wins_battle(result: Dictionary, kind: String, viewer_team: in
 		return not wins
 	return wins
 
+# 规范化战报里的一条 group（"player" / "enemy"）在**本客户端视角**下该叫什么。
+#
+# 为什么要它（10.01 反馈第 6 条）：战报数据是规范化棋局产出的 —— A 队（slot 0-2）
+# 恒为 "player"、B 队（3-5）恒为 "enemy"。B 队玩家**自己的单位**在数据里落在
+# "enemy" 那批，于是任何「按 group 取我方」的界面都会列出对手的数据。
+# 上一局统计面板就是这么中招的：只有「B 队玩家 + PvP 回合」才会看到敌方的表，
+# 所以玩家报的是「个别回合」而不是每回合。
+#
+# 判据与 viewer_wins_battle 完全同源（kind == "pvp" and viewer_team == TEAM_B），
+# 不要再抄一份 —— 这个文件顶部的注释就是在讲这件事。
+#
+# 注意 kind 的字面值：第 21 回合按定义是最终战，但 prepare_team_state 会把
+# schedule_kind_for_round() 给的 "final" 改写成 "pvp" 再存进 state/replay，
+# 所以这里只认 "pvp" 就够（run_outcome 顶部对这件事有完整说明）。
+# 其它 group（如 "boss"）原样返回：Boss 恒在规范 boss 组，与本队无关。
+static func viewer_group(data_group: String, kind: String, viewer_team: int) -> String:
+	if kind != "pvp" or viewer_team != TEAM_B:
+		return data_group
+	if data_group == "player":
+		return "enemy"
+	if data_group == "enemy":
+		return "player"
+	return data_group
+
 # --- 整局归属 ---------------------------------------------------------------
 
 # ctx:

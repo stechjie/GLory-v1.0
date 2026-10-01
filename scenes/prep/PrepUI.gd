@@ -1561,6 +1561,10 @@ func _chat_record_label(text: String, color: Color, align: HorizontalAlignment) 
 	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	lbl.add_theme_font_size_override("font_size",
 		CHAT_RECORD_FONT_SIZE if align == HORIZONTAL_ALIGNMENT_LEFT else CHAT_RECORD_FONT_SIZE - 3)
+	# 10.01 反馈第 7 条：对局内的对话框文字要加粗。这里是最窄的落点 ——
+	# 消息行与回合分隔行都走本函数，一处生效两处都对。
+	# 用合成加粗（工程没有 Bold 字体资源），见 UIFontFallback.bold_font 顶部。
+	lbl.add_theme_font_override("font", UIFontFallback.bold_font())
 	lbl.add_theme_color_override("font_color", color)
 	lbl.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.9))
 	lbl.add_theme_constant_override("outline_size", 3)

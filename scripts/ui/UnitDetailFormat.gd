@@ -167,7 +167,7 @@ static func format_skill_detail(d: Dictionary) -> String:
 			var tick_duration := float(tick_count - 1) * maxf(0.0, float(d.get("damage_tick_interval", 0.5)))
 			return "神王裁决%s：攻击神王所在战线内所有可攻击敌人，在%.1f秒内分%d次造成自身攻击%s加目标最大生命%s的伤害。" % [cd, tick_duration, tick_count, pct(float(d.get("damage_atk_pct", 1.6))), pct(float(d.get("max_hp_bonus_pct", 0.08)))]
 		"curse_attack":
-			return "诅咒攻击：普通攻击附带减攻%s与攻速降低%s，持续%.1f秒；暗2会增强效果。" % [pct(float(d.get("attack_down", 0.08))), pct(float(d.get("aspd_down", 0.08))), float(d.get("duration", 4.0))]
+			return "诅咒攻击：普通攻击附带减攻%s与攻速降低%s，持续%.1f秒。" % [pct(float(d.get("attack_down", 0.08))), pct(float(d.get("aspd_down", 0.08))), float(d.get("duration", 4.0))]
 		"silence_bolt":
 			return "沉默箭%s：沉默最近敌人%.1f秒，并造成自身攻击%s伤害。" % [cd, float(d.get("silence_sec", 1.2)), pct(float(d.get("damage_atk_pct", 1.7)))]
 		"fear":
@@ -192,11 +192,11 @@ static func format_skill_detail(d: Dictionary) -> String:
 		"black_hole":
 			return "黑洞%s：牵引周围敌人，眩晕%.1f秒，并造成自身攻击%s伤害。" % [cd, float(d.get("pull_sec", 2.0)), pct(float(d.get("damage_atk_pct", 2.2)))]
 		"poison_attack":
-			return "毒击：普通攻击附带中毒，每秒造成目标最大生命%s伤害，持续%.1f秒；最多2层，分别扣血；灵4毒伤x2。" % [pct(float(d.get("poison_pct_max_hp", 0.03))), float(d.get("poison_duration", 4.0))]
+			return "毒击：普通攻击附带中毒，每秒造成目标最大生命%s伤害，持续%.1f秒；最多2层，分别扣血。" % [pct(float(d.get("poison_pct_max_hp", 0.03))), float(d.get("poison_duration", 4.0))]
 		"parasite_on_kill":
 			return "寄生：普攻标记非 Boss 敌人，被标记敌人死亡时，召唤该敌人的分身，生命为原目标%s，攻防为原目标%s。" % [pct(float(d.get("clone_hp_pct", 0.10))), pct(float(d.get("clone_atk_def_pct", 0.50)))]
 		"defense_down_attack":
-			return "腐蚀攻击：普通攻击降低目标防御%s，持续%.1f秒；暗2会增强效果。" % [pct(float(d.get("def_down_pct", 0.10))), float(d.get("duration", 5.0))]
+			return "腐蚀攻击：普通攻击降低目标防御%s，持续%.1f秒。" % [pct(float(d.get("def_down_pct", 0.10))), float(d.get("duration", 5.0))]
 		"death_poison_explosion":
 			return "死亡毒爆：死亡时对周围敌人造成自身攻击%s真实伤害，并施加中毒（最多2层，分别扣血）。" % pct(float(d.get("damage_atk_pct", 2.5)))
 		"poison_reflect_armor_stack":
@@ -338,7 +338,7 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 			var tick_duration := float(tick_count - 1) * maxf(0.0, float(d.get("damage_tick_interval", 0.5)))
 			return "Divine Judgement%s: Strike all attackable enemies in God King's lane, dealing %s ATK + %s of each target's max HP over %d hits in %.1fs." % [cd, pct(float(d.get("damage_atk_pct", 1.6))), pct(float(d.get("max_hp_bonus_pct", 0.08))), tick_count, tick_duration]
 		"curse_attack":
-			return "Curse Strike: Normal attacks reduce target ATK by %s and AS by %s for %.1fs. Dark 2 amplifies these debuffs." % [pct(float(d.get("attack_down", 0.08))), pct(float(d.get("aspd_down", 0.08))), float(d.get("duration", 4.0))]
+			return "Curse Strike: Normal attacks reduce target ATK by %s and AS by %s for %.1fs." % [pct(float(d.get("attack_down", 0.08))), pct(float(d.get("aspd_down", 0.08))), float(d.get("duration", 4.0))]
 		"silence_bolt":
 			return "Silence Bolt%s: Silence the nearest enemy for %.1fs and deal %s ATK damage." % [cd, float(d.get("silence_sec", 1.2)), pct(float(d.get("damage_atk_pct", 1.7)))]
 		"fear":
@@ -364,11 +364,11 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"black_hole":
 			return "Black Hole%s: Pull surrounding enemies, stun for %.1fs, and deal %s ATK damage." % [cd, float(d.get("pull_sec", 2.0)), pct(float(d.get("damage_atk_pct", 2.2)))]
 		"poison_attack":
-			return "Poison Strike: Normal attacks apply poison — %s max HP per second for %.1fs. Up to 2 stacks tick separately. Undead 4 doubles poison damage." % [pct(float(d.get("poison_pct_max_hp", 0.03))), float(d.get("poison_duration", 4.0))]
+			return "Poison Strike: Normal attacks apply poison — %s max HP per second for %.1fs. Up to 2 stacks tick separately." % [pct(float(d.get("poison_pct_max_hp", 0.03))), float(d.get("poison_duration", 4.0))]
 		"parasite_on_kill":
 			return "Parasite: When a basic attack kills a non-Boss enemy, summon its clone at %s HP and %s ATK/DEF." % [pct(float(d.get("clone_hp_pct", 0.10))), pct(float(d.get("clone_atk_def_pct", 0.50)))]
 		"defense_down_attack":
-			return "Corrosive Strike: Normal attacks reduce target DEF by %s for %.1fs. Dark 2 amplifies this effect." % [pct(float(d.get("def_down_pct", 0.10))), float(d.get("duration", 5.0))]
+			return "Corrosive Strike: Normal attacks reduce target DEF by %s for %.1fs." % [pct(float(d.get("def_down_pct", 0.10))), float(d.get("duration", 5.0))]
 		"death_poison_explosion":
 			return "Death Poison Burst: On death, deal %s ATK true damage to surrounding enemies and apply poison (up to 2 separate damage stacks)." % pct(float(d.get("damage_atk_pct", 2.5)))
 		"poison_reflect_armor_stack":
