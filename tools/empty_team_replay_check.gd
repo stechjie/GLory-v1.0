@@ -33,6 +33,32 @@ func _ready() -> void:
 		peer._rpc_team_replay(packed)
 		h.expect(peer.received_count == 1 and peer.failed_count == 0, "duplicate", "Resend does not settle or fail twice")
 		peer.free()
+	# Android's actual failure was the rival perspective; own playback was valid.
+	for chunked in [false, true]:
+		var peer := Peer.new()
+		add_child(peer)
+		peer.suppress_acks = true
+		peer.team_room_id = 977696
+		peer.server_round_index = 2
+		peer._set_current_replay_battle("977696:1:22")
+		var own := generated.duplicate(true)
+		own.roster = {"unit": {}}
+		own.result.reason = "wipeout"
+		var rival := generated.duplicate(true)
+		rival.frames = []
+		rival.frame_events = []
+		var own_packed := transfer.pack(own, "977696:1:22")
+		var rival_packed := transfer.pack(rival, "977696:1:22")
+		if chunked:
+			peer._rpc_team_replay_chunk("977696:1:22", "own", 0, 1, 2, own_packed)
+			peer._rpc_team_replay_chunk("977696:1:22", "rival", 0, 1, 2, rival_packed)
+		else:
+			peer._rpc_team_replay(own_packed, rival_packed)
+		h.expect(peer.received_count == 1 and peer.failed_count == 0,
+			"empty_rival_received", "An empty rival replay must not fail a valid own replay")
+		h.expect(peer.team_replay_rival.frames == [[]] and peer.team_replay_rival.result == rival.result,
+			"rival_result_preserved", "Both transport modes preserve rival settlement")
+		peer.free()
 	for mutation in [{"reason": "wipeout"}, {"player_wins": true}, {"player_alive": 1}, {"player_alive": "0"}]:
 		var invalid := generated.duplicate(true)
 		invalid.frames = []

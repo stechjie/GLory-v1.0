@@ -219,6 +219,7 @@ const BOARD_SUBMIT_TIMEOUT_SEC := 30.0
 # 注意这只是"别人等多久"——重连窗口是整局（座位/token 保留到比赛结束，
 # 迟到者重连后落到服务器当前回合）。
 const RESERVE_GRACE_SEC := 20.0
+const PREP_UNREADY_RESERVE_GRACE_SEC := 120.0
 
 # --- 会话状态（D1 步骤 1.5）---------------------------------------------------
 # 下面这一批曾是门面自己的字段，现已搬到 scripts/multiplayer/SessionContext.gd。
@@ -6369,12 +6370,17 @@ func _room_reserve_peer(room: Dictionary, peer_id: int) -> void:
 	_reconnect_service.reserve_seat(room, slot)
 	if str(room.get("state", ROOM_LOBBY)) == ROOM_LOBBY:
 		room.reserve_deadline[slot] = _now() + ROOM_SUSPEND_GRACE_SEC
+	elif str(room.get("state", "")) == ROOM_PREP and not bool(room.ready[slot]):
+		# Backgrounding is not readiness. Give an unready player time to return
+		# and finish preparation; battle/result watchdogs keep their own limits.
+		room.reserve_deadline[slot] = _now() + PREP_UNREADY_RESERVE_GRACE_SEC
 	if _room_online_count(room) <= 0:
 		room.empty_since = _now()
 	_maybe_promote_leader(room)
 	_touch_room(room)
 	_broadcast_room_lobby(room)
-	_net_log("seat reserved room=%d slot=%d grace=%ds" % [int(room.get("id", 0)), slot, int(RESERVE_GRACE_SEC)])
+	_net_log("seat reserved room=%d slot=%d grace=%ds" % [int(room.get("id", 0)), slot,
+		int(ceil(float(room.reserve_deadline[slot]) - _now()))])
 
 # 房主掉线/离开 -> 顺延给最小编号的在线座位并广播。回来也不收回（避免反复切换）。
 # 保证 leader_slot 始终指向一个"在线真人"座位。当前房主离线/变 dummy/座位为空时，

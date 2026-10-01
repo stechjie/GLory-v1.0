@@ -14,6 +14,9 @@ class ReconnectProbe extends "res://scripts/autoload/NetworkService.gd":
 		pass
 
 class DisconnectProbe extends "res://scripts/autoload/NetworkService.gd":
+	var test_time := 1000.0
+	func _now() -> float:
+		return test_time
 	func _ready() -> void:
 		_reconnect_service.configure(_now, _net_log, {})
 		_room_service.configure(_now, _wall_now, _net_log, func(): return 0, {}, _reconnect_service)
@@ -101,6 +104,32 @@ func _ready() -> void:
 			disconnected._peer_room[72] = retained.id
 			disconnected._apply_peer_leave(retained, 72)
 			h.expect(not disconnected._token_seat.has("zombie_" + phase), "explicit_leave_releases", "Explicit lobby leave still invalidates the credential")
+		elif phase == "prep":
+			h.expect(is_equal_approx(float(retained.reserve_deadline[0]) - disconnected._now(), 120.0),
+				"unready_prep_two_minutes", "Unready preparation seats wait two minutes before AI takeover")
+		else:
+			h.expect(is_equal_approx(float(retained.reserve_deadline[0]) - disconnected._now(), 20.0),
+				phase + "_unchanged_grace", "Battle and result retain their existing short takeover grace")
+	var prep: Dictionary = disconnected._new_room()
+	prep.state = "prep"
+	prep.peer_slot = {81: 0, 82: 3}
+	prep.slot_states[0] = "player"
+	prep.slot_states[3] = "player"
+	prep.ready[3] = true
+	disconnected._room_reserve_peer(prep, 81)
+	var takeovers: Array = []
+	disconnected.test_time += 119.0
+	disconnected._reconnect_service.tick_reserved_seats({prep.id: prep}, func(_r, slot): takeovers.append(slot))
+	h.expect(takeovers.is_empty() and not disconnected._room_all_ready(prep),
+		"unready_wait_before_deadline", "Ready opponents still wait at 119 seconds")
+	disconnected.test_time += 1.0
+	disconnected._reconnect_service.tick_reserved_seats({prep.id: prep}, func(_r, slot): takeovers.append(slot))
+	h.expect(takeovers == [0], "takeover_at_deadline", "Two-minute expiry releases the waiting round")
+	prep.peer_slot[81] = 0
+	prep.ready[0] = true
+	disconnected._room_reserve_peer(prep, 81)
+	h.expect(is_equal_approx(float(prep.reserve_deadline[0]) - disconnected._now(), 20.0),
+		"ready_prep_short_grace", "Already-ready players do not gain a new preparation wait")
 	disconnected.free()
 	h.finish(get_tree())
 
