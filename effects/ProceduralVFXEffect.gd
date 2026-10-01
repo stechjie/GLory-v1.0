@@ -284,7 +284,11 @@ func _circle_polygon(radius: float, segments: int) -> PackedVector2Array:
 # 代际计数保证：归还后如果实例已被复用，旧的 await 回调直接失效。
 func _free_after(seconds: float) -> void:
 	var generation := _generation
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(seconds).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if not is_instance_valid(self) or generation != _generation:
 		return
 	_release_self()

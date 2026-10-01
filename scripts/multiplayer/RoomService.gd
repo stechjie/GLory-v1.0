@@ -453,6 +453,19 @@ func public_room_list() -> Array:
 #
 # close_fn(room, reason)         关房（门面那边会给还连着的 peer 发 room_closed）
 # begin_next_prep_fn(room)       结算超时且对局未结束时推进到下一备战
+func resume_suspended_room(room: Dictionary) -> void:
+	if bool(room.get("suspended", false)):
+		var paused_for := maxf(0.0, _time() - float(room.get("empty_since", _time())))
+		# No game time elapsed while the entire room was suspended. Otherwise a
+		# ten-minute recovery immediately trips the five-minute battle watchdog.
+		for key in ["state_started_at", "result_ack_deadline", "result_ack_hard_deadline"]:
+			if float(room.get(key, 0.0)) > 0.0:
+				room[key] = float(room[key]) + paused_for
+		room.suspended = false
+		_log("room resumed id=%d paused_sec=%.1f" % [int(room.get("id", 0)), paused_for])
+	room.empty_since = 0.0
+
+
 func cleanup_rooms(close_fn: Callable, begin_next_prep_fn: Callable) -> void:
 	var now := _time()
 	var room_lobby := str(_cfg.get("room_lobby", "lobby"))
@@ -461,7 +474,7 @@ func cleanup_rooms(close_fn: Callable, begin_next_prep_fn: Callable) -> void:
 	var room_battle := str(_cfg.get("room_battle", "battle"))
 	var room_result := str(_cfg.get("room_result", "result"))
 	var lobby_empty_ttl := float(_cfg.get("lobby_empty_ttl_sec", 60.0))
-	var suspend_grace := float(_cfg.get("room_suspend_grace_sec", 30.0))
+	var suspend_grace := float(_cfg.get("room_suspend_grace_sec", 600.0))
 	var prep_timeout := float(_cfg.get("prep_timeout_sec", 1800.0))
 	var battle_timeout := float(_cfg.get("battle_timeout_sec", 300.0))
 	var result_timeout := float(_cfg.get("result_timeout_sec", 600.0))
@@ -485,7 +498,7 @@ func cleanup_rooms(close_fn: Callable, begin_next_prep_fn: Callable) -> void:
 			if live_tokens <= 0:
 				# 没有任何人能回来了：立刻关，不必等任何 TTL。
 				close_fn.call(room, "empty_no_tokens")
-			elif match_over and empty_for >= lobby_empty_ttl:
+			elif match_over and empty_for >= maxf(lobby_empty_ttl, suspend_grace):
 				# 已打完的房间：没人在线就限时回收（不回收会永远卡在 ROOM_RESULT，
 				# _room_begin_next_prep 对 final 房间直接 return，内存只涨不降）。
 				close_fn.call(room, "match_over")
@@ -500,10 +513,7 @@ func cleanup_rooms(close_fn: Callable, begin_next_prep_fn: Callable) -> void:
 					_log("room suspended id=%d tokens=%d grace=%ds" % [
 						int(room.get("id", 0)), live_tokens, int(suspend_grace)])
 		else:
-			room.empty_since = 0.0
-			if bool(room.get("suspended", false)):
-				room.suspended = false
-				_log("room resumed id=%d" % int(room.get("id", 0)))
+			resume_suspended_room(room)
 		if str(room.get("state", "")) == room_closed:
 			to_delete.append(room_id)
 			continue

@@ -121,11 +121,20 @@ func play_summon(at:Vector3,profile:VFXProfile3D=null)->void:
 	_spawn_column(active,t_reveal,t_end)
 	_spawn_converging_motes(active,t_reveal)
 	_spawn_ground_smoke(active,t_reveal,t_settle,t_end)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(t_reveal).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if _finished:return
 	reveal_requested.emit()
 	_spawn_reveal_flash(active);_spawn_shockwave(active);_spawn_outward_push(active)
-	await get_tree().create_timer(d-t_reveal).timeout;finish()
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
+	await get_tree().create_timer(d-t_reveal).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
+	finish()
 
 # Two counter-rotating copies of the painted sigil: a wide outer rune band and a
 # smaller inner core. Both spin up into the reveal, then wind down.

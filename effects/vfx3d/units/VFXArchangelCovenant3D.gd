@@ -104,7 +104,11 @@ func pulse_guard() -> void:
 	})
 
 func _demo_hit_pulse() -> void:
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(.98).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if is_inside_tree():
 		pulse_guard()
 

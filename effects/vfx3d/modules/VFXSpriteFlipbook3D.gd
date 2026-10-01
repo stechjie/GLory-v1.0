@@ -114,7 +114,11 @@ func play_flipbook_advanced(at: Vector3, texture: Texture2D, config: Dictionary)
 	add_child(node)
 	_playing = true
 	set_process(true)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(_duration).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if not _loop:
 		_playing = false
 		finish()

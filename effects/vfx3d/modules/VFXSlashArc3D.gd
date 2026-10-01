@@ -29,7 +29,11 @@ func play_slash(at: Vector3, direction: Vector3, profile: VFXProfile3D = null) -
 	var ribbon := PATH_RIBBON.new()
 	add_child(ribbon)
 	ribbon.play_path(points, Vector3.FORWARD, main_profile)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(duration * 0.075).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if _finished:
 		return
 	var echo_profile := main_profile.duplicate_runtime()
@@ -45,7 +49,11 @@ func play_slash(at: Vector3, direction: Vector3, profile: VFXProfile3D = null) -
 	echo.position = Vector3(0.0, -0.04, 0.025)
 	add_child(echo)
 	echo.play_path(points, Vector3.FORWARD, echo_profile)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(duration * 0.70).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	finish()
 
 func _build_vertical_arc(radius: float, degrees: float, tilt_degrees: float, direction: Vector3) -> PackedVector3Array:

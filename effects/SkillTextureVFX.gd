@@ -146,6 +146,10 @@ func _circle_polygon(radius: float, segments: int) -> PackedVector2Array:
 	return points
 
 func _free_after(seconds: float) -> void:
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(seconds).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if is_instance_valid(self):
 		queue_free()

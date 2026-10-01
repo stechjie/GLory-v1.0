@@ -39,7 +39,11 @@ func play_trail(origin: Vector3, direction: Vector3, color: Color, length := 1.1
 	var tween := track_tween(create_tween())
 	tween.tween_interval(duration * 0.38)
 	tween.tween_property(ribbon.material_override, "shader_parameter/strength", 0.0, duration * 0.62)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(duration + 0.05).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	finish()
 
 func _make_ribbon(direction: Vector3, color: Color, length: float) -> MeshInstance3D:

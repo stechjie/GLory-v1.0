@@ -370,7 +370,11 @@ func _oga_pack_multi_melee(skill_id:String,origin:Vector3,target:Vector3,context
 		targets=[target]
 	for i in range(targets.size()):
 		if i>0:
+			if not is_inside_tree() or is_queued_for_deletion():
+				return
 			await get_tree().create_timer(0.07).timeout
+			if not is_inside_tree() or is_queued_for_deletion():
+				return
 		var target_context:=context.duplicate(false)
 		target_context.erase("target_node")
 		target_context["target_foot"]=targets[i]
@@ -830,7 +834,12 @@ func _global_divine(target:Vector3,context:Dictionary)->void:
 	var targets:Array=_capped_targets(context.get("targets",[]))
 	if targets.is_empty():targets=[target]
 	for i in range(targets.size()):
-		if i>0: await get_tree().create_timer(.075).timeout
+		if i > 0:
+			if not is_inside_tree() or is_queued_for_deletion():
+				return
+			await get_tree().create_timer(.075).timeout
+			if not is_inside_tree() or is_queued_for_deletion():
+				return
 		var value:Variant=targets[i]
 		var p:=_holy_profile(.78,1.0);p.main_color=Color(.24,.42,.96);p.core_color=Color(.84,.96,1.0);p.emission_energy=4.4
 		_spawn(VFX_FALLING_PILLAR,p,{"target":value})

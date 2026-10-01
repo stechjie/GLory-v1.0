@@ -119,6 +119,8 @@ func _trigger_close() -> void:
 		reference_instance.call("close")
 
 func _finish_after(seconds: float) -> void:
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	get_tree().create_timer(seconds).timeout.connect(queue_free)
 
 func _exit_tree() -> void:

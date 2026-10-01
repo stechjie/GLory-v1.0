@@ -30,7 +30,11 @@ func play_feedback(camera: Camera3D, profile: VFXProfile3D = null) -> void:
 	_elapsed = 0.0
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	set_process(true)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(_duration, true, false, true).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	_restore_camera()
 	finish()
 

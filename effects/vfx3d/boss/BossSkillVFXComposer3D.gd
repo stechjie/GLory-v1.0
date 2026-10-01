@@ -72,7 +72,11 @@ func _overload_counter(origin: Vector3, target: Vector3, context: Dictionary) ->
 	var target_node: Variant = context.get("target_node")
 	if ball != null:
 		ball.play_ball(origin + Vector3(0,.62,0), target + Vector3(0,.38,0), target_node)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(.38).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	target = _tracked_target(target, context)
 	var arc := _block(LIGHTNING_ARC) as VFXLightningArc
 	if arc != null:

@@ -71,7 +71,11 @@ func play_status(at:Vector3,status_type:String,profile:VFXProfile3D=null,target_
 	for i in range(clampi(active.particle_count,6,12)):
 		var mote:=_make_card("StatusMote_%d"%i,TEX_DOT,Vector2(s*.10,s*.16),active,float(i)*1.31)
 		_animate_mote(mote,active,i)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(d+.08).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	finish()
 
 func _process(_delta:float)->void:

@@ -52,7 +52,11 @@ func play_residue(at: Vector3, color: Color, size := 1.25, duration := 1.15) -> 
 	var tween := track_tween(create_tween())
 	tween.tween_interval(duration * 0.22)
 	tween.tween_property(_material, "shader_parameter/progress", 1.0, duration * 0.78)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(duration + 0.05).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	finish()
 
 func set_vfx_alpha(value: float) -> void:

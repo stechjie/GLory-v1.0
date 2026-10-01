@@ -65,7 +65,11 @@ func play_distortion(at: Vector3, direction: Vector3, profile: VFXProfile3D = nu
 	add_child(node)
 	var duration := profile.duration if profile != null else 0.9
 	CURVES.tween_method(self, _set_dissolve, 0.0, 0.86, duration, "delayed_fade")
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(duration + 0.05).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	finish()
 
 func set_vfx_alpha(value: float) -> void:

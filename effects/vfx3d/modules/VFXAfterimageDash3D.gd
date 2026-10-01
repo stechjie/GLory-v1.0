@@ -32,7 +32,12 @@ func play_dash(origin:Vector3,target:Vector3,profile:VFXProfile3D=null)->void:
 	for i in range(4):_spawn_ghost(origin,target,active,i)
 	_spawn_departure(origin,direction,active)
 	_spawn_arrival(target,direction,active,d*.42)
-	await get_tree().create_timer(d+.08).timeout;finish()
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
+	await get_tree().create_timer(d+.08).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
+	finish()
 
 func _make_ribbon(origin:Vector3,target:Vector3,profile:VFXProfile3D,layer:int)->MeshInstance3D:
 	var verts:=PackedVector3Array();var uvs:=PackedVector2Array();var indices:=PackedInt32Array();var segments:=22;var delta:=target-origin;var dir:=delta.normalized();var side:=Vector3(-dir.y,dir.x,0.0).normalized();var width:=profile.size*(.18+.07*float(layer));var phase:=float(layer)*1.9

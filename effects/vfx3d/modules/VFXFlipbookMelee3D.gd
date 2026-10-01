@@ -54,7 +54,11 @@ func play_spec(origin: Vector3, target: Vector3, spec: Dictionary, context: Dict
 	var tracked_ground := _tracked_target(slash_anchor) - Vector3(0.0, target_height * height_ratio, 0.0)
 	_play_impact(tracked_ground, spec)
 	var total_duration := maxf(float(spec.get("duration", 0.42)), impact_delay + float(spec.get("impact_duration", 0.40)))
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(maxf(0.05, total_duration - impact_delay)).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if not _finished:
 		finish()
 

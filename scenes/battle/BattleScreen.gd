@@ -7,8 +7,7 @@ const BattlePresentationDirectorScript := preload("res://effects/runtime/present
 const LegacyBattleVfxAdapterScript := preload("res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd")
 const VfxProfileResolverScript := preload("res://effects/runtime/presentation/VfxProfileResolver.gd")
 
-# Diagnostic threshold for unexpectedly slow presentation draining. It must not
-# discard valid attacks merely because the main thread was temporarily stalled.
+# Presentation cannot hold the authoritative result indefinitely.
 const PRESENTATION_DRAIN_TIMEOUT_SEC := 3.0
 
 # --- V2 P1-01：最短可读演出时长 -----------------------------------------------
@@ -63,8 +62,9 @@ var _replay_by_uid: Dictionary = {}
 # 加列会让 D0-D6 的**冻结哈希**漂移。表现层能自洽解决的问题，不去动模拟身份。
 var _converted_ally_ids: Dictionary = {}
 var _battle_setup_ready := false
-const BATTLE_PREPARE_TIMEOUT_MSEC := 120000
+const BATTLE_PREPARE_TIMEOUT_MSEC := 30000
 var _battle_prepare_deadline_msec := 0
+var _playback_deadline_msec := 0
 var battle_preparation_report: Dictionary = {}
 var _battle_prepare_started_msec := 0
 var _final_round_intro_active := false
@@ -205,6 +205,12 @@ func _exit_tree() -> void:
 	release_round_assets()
 
 func _process(delta: float) -> void:
+	# Slow devices drop simulation accumulator time. Bound actual elapsed
+	# playback too, otherwise that deliberate slowdown can last indefinitely.
+	if NetworkService.team_active and not NetworkService.is_host and _replay_mode and not _return_emitted and _playback_deadline_msec > 0 \
+			and Time.get_ticks_msec() >= _playback_deadline_msec:
+		_fail_team_replay("battle_playback_timeout")
+		return
 	# B8: keep the on-screen FPS readout live in every mode (team + tutorial).
 	if _fps_label != null:
 		_fps_accum += delta
@@ -280,6 +286,7 @@ func _start_replay(replay: Dictionary) -> void:
 		_show_team_waiting()
 		return
 	_battle_setup_ready = false
+	_playback_deadline_msec = 0
 	_sim_accumulator = 0.0
 	_battle_prepare_started_msec = Time.get_ticks_msec()
 	battle_preparation_report = {"budget_ms": BATTLE_PREPARE_TIMEOUT_MSEC, "started_msec": _battle_prepare_started_msec}
@@ -336,6 +343,8 @@ func _start_replay(replay: Dictionary) -> void:
 			return
 		# Actors are registered now, so queued cues may resolve their anchors.
 		_readable_speed = _compute_readable_speed()
+		var playback_seconds := maxf(8.0, float((_replay_own.get("frames", []) as Array).size()) * SIM_TICK_SEC / (PLAYBACK_SPEED * _readable_speed))
+		_playback_deadline_msec = Time.get_ticks_msec() + int((playback_seconds + 20.0) * 1000.0)
 		_presentation_director.set_playback_speed(PLAYBACK_SPEED * _readable_speed)
 
 
@@ -1184,11 +1193,12 @@ func _compute_readable_speed() -> float:
 
 func _await_presentation_drained() -> void:
 	var deadline := Time.get_ticks_msec() + int(PRESENTATION_DRAIN_TIMEOUT_SEC * 1000.0)
-	var reported_slow_drain := false
 	while _presentation_director.has_blocking_cues():
-		if not reported_slow_drain and Time.get_ticks_msec() >= deadline:
-			reported_slow_drain = true
-			push_warning("[BATTLE_PLAYBACK] slow presentation drain; waiting for pending attacks")
+		if Time.get_ticks_msec() >= deadline:
+			push_warning("[BATTLE_PLAYBACK] presentation deadline -> authoritative result")
+			_presentation_director.skip_to_result()
+			cue_release_corpses()
+			break
 		await get_tree().process_frame
 		if not is_inside_tree():
 			return

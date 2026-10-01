@@ -27,7 +27,11 @@ func play_recipe(recipe: Resource, context: Dictionary = {}) -> void:
 			continue
 		total_duration = maxf(total_duration, float(track.start_time) + float(track.duration) / maxf(float(track.time_scale), 0.01))
 		_run_track(track, context, index)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(total_duration + 0.18).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	finish()
 
 func _run_track(track: Resource, context: Dictionary, index: int) -> void:
@@ -36,7 +40,11 @@ func _run_track(track: Resource, context: Dictionary, index: int) -> void:
 		return
 	if bool(track.trigger_once):
 		_triggered_tracks[key] = true
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(maxf(float(track.start_time), 0.0)).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if _finished or track.module_script == null:
 		return
 	var scaled_duration: float = float(track.duration) / maxf(float(track.time_scale), 0.01)
@@ -62,7 +70,11 @@ func _run_track(track: Resource, context: Dictionary, index: int) -> void:
 		if layer.has_method("play_profile"):
 			layer.call("play_profile", runtime_profile, context)
 		_animate_track(layer, track, current_duration)
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 		await get_tree().create_timer(current_duration).timeout
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 		if is_instance_valid(layer):
 			layer.queue_free()
 		elapsed += current_duration

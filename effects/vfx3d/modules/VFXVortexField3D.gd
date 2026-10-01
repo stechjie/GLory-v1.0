@@ -47,7 +47,12 @@ func play_vortex(at:Vector3,profile:VFXProfile3D=null)->void:
 	_spawn_ground_tendrils(active)
 	_spawn_suction_wisps(active)
 	_spawn_center_flash(active,d*.16)
-	await get_tree().create_timer(d+.12).timeout;finish()
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
+	await get_tree().create_timer(d+.12).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
+	finish()
 
 func _spawn_ground_tendrils(profile:VFXProfile3D)->void:
 	for arm in range(7):

@@ -106,14 +106,26 @@ func play_burst(at: Vector3, direction: Vector3, profile: VFXProfile3D = null) -
 		if is_instance_valid(core): core.scale = Vector3.ONE * v,
 		0.18, 1.08, active.duration * 0.18, "ease_out_back")
 	_tween_progress(core.material_override as ShaderMaterial, active.duration * 0.70)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(active.duration * 0.08).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if _finished: return
 	_spawn_broken_ring(active)
 	_spawn_sparks(facing, active)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(active.duration * 0.12).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if _finished: return
 	_spawn_smoke(active)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(active.duration * 0.86).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	finish()
 
 func _spawn_billboard(node_name: String, size: Vector2, shader_code: String, params: Dictionary) -> MeshInstance3D:

@@ -151,6 +151,10 @@ func finish(delay := 0.0) -> void:
 	if delay <= 0.0:
 		queue_free()
 	else:
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 		await get_tree().create_timer(delay).timeout
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 		if is_instance_valid(self):
 			queue_free()

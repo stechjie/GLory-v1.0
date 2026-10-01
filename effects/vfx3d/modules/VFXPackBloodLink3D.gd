@@ -44,7 +44,11 @@ func play_link(origin: Vector3, target: Vector3, context: Dictionary = {}) -> vo
 	set_process(true)
 	_update_link()
 	if not _persistent:
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 		await get_tree().create_timer(1.35).timeout
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 		if not _finished:
 			finish()
 

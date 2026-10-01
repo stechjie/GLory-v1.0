@@ -123,7 +123,11 @@ func play_projectile(origin:Vector3,target:Vector3,profile:VFXProfile3D=null,tar
 	# This prevents a captured charge reference from becoming null mid-tween.
 	CURVES.tween_method(self,func(v:float)->void:if is_instance_valid(charge):charge.scale=Vector3.ONE*v,.12,.82,active.duration*.12,"ease_out_back")
 	_tween_shader(charge.material_override as ShaderMaterial,"progress",0.0,.24,active.duration*.12)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(active.duration*.15).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if _finished:return
 	_spawn_release_sparks(direction,active)
 	charge.queue_free()
@@ -149,11 +153,19 @@ func play_projectile(origin:Vector3,target:Vector3,profile:VFXProfile3D=null,tar
 		while puff_index<trail_puffs and travel_elapsed>=puff_interval*float(puff_index+1):
 			_spawn_trail_puff(active,puff_index)
 			puff_index+=1
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(active.duration*.04).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if _finished:return
 	body.queue_free();halo.queue_free();tail.queue_free();streak.queue_free()
 	_spawn_impact(active)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(active.duration*.34).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	finish()
 
 

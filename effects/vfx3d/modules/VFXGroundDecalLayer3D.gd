@@ -78,7 +78,11 @@ func play_decal(at: Vector3, profile: VFXProfile3D, seed := 0.0) -> void:
 	var fade := track_tween(create_tween())
 	fade.tween_interval(active.duration * 0.62)
 	fade.tween_method(_set_dissolve, 0.0, 1.0, active.duration * 0.34).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(active.duration + 0.04).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	finish()
 
 func _set_reveal(value: float) -> void:

@@ -112,7 +112,11 @@ func play_spec(origin: Vector3, target: Vector3, spec: Dictionary, context: Dict
 			trail.finish()
 	_play_impact(_tracked_target(target), spec)
 	var impact_duration := maxf(0.18, float(spec.get("impact_duration", 0.46)))
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(impact_duration).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if not _finished:
 		finish()
 

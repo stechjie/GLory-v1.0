@@ -32,17 +32,33 @@ func play_roar(origin:Vector3,target:Vector3,profile:VFXProfile3D=null)->void:
 	begin();position=origin
 	var active:=profile if profile!=null else _fallback_profile();var local_end:=target-origin;var direction:=local_end.normalized();var distance:=local_end.length()
 	_spawn_mouth_flash(active)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(active.duration*.10).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if _finished:return
 	_spawn_center_pressure(local_end,direction,distance,active)
 	for i in range(2):
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 		await get_tree().create_timer(active.duration*.025).timeout
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 		_spawn_pressure_arc(direction,distance,active,i)
 	_spawn_edge_sparks(direction,distance,active)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(active.duration*.28).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if _finished:return
 	_spawn_target_hit(local_end,active)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(active.duration*.52).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	finish()
 
 func _make_cone_sheet(direction:Vector3,distance:float,start_half:float,phase:float)->MeshInstance3D:

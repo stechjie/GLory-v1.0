@@ -41,17 +41,29 @@ func play_barrier(at:Vector3,profile:VFXProfile3D=null)->void:
 	for i in range(arc_count):
 		var start:float=-2.72+float(i)*2.08;var span:=1.72+float(i%2)*.16;var radius:=active.size*(.62 if edge_only else (.76+float(i%2)*.055));var arc:=_make_arc(radius,active.size*(.08 if edge_only else .12),start,start+span,40);arc.name="BrokenShieldArc_%d"%i;arc.material_override=_arc_material(active,float(i)*4.3);arc.scale=Vector3.ONE*(.06 if edge_only else .10);add_child(arc);_arc_nodes.append(arc);CURVES.tween_method(self,func(v:float)->void:if is_instance_valid(arc):arc.scale=Vector3.ONE*v,(.06 if edge_only else .10),1.0,active.duration*(.14+float(i)*.022),"ease_out_back")
 	if membrane!=null:_tween_shader(membrane.material_override as ShaderMaterial,"progress",0.0,.72,active.duration*.76)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(active.duration*.22).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if _finished:return
 	if not edge_only:
 		_hit_ripple(active)
 	for m in _materials:_tween_shader(m,"hit",0.0,1.0,active.duration*.12)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(active.duration*.28).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if _finished:return
 	if not edge_only:_spawn_crack_shards(active)
 	for i in range(_arc_nodes.size()):
 		var arc:=_arc_nodes[i];var outward:=Vector3(cos(float(i)*1.6),sin(float(i)*1.6),0.0);var t:=track_tween(create_tween());t.set_parallel(true);t.tween_property(arc,"position",outward*active.size*.42,active.duration*.28).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT);t.tween_property(arc,"scale",Vector3.ONE*(.18+float(i)*.04),active.duration*.28).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(active.duration*.34).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	finish()
 
 func _make_arc(radius:float,thickness:float,start:float,end:float,segments:int)->MeshInstance3D:

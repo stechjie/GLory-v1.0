@@ -82,4 +82,6 @@ func _walk_nodes(root: Node) -> Array[Node]:
 	return result
 
 func _finish_after(seconds: float) -> void:
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	get_tree().create_timer(seconds).timeout.connect(queue_free)

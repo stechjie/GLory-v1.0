@@ -80,7 +80,11 @@ func play_sheet(at: Vector3, direction: Vector3, profile: VFXProfile3D, length_s
 	var fade := track_tween(create_tween())
 	fade.tween_interval(duration * 0.46)
 	fade.tween_method(_set_dissolve, 0.0, 1.0, duration * 0.48).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(duration + 0.04).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	finish()
 
 func _make_sheet_mesh(direction: Vector3, length: float, width: float, seed: float) -> ArrayMesh:

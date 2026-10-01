@@ -27,7 +27,11 @@ func play_pulse(at: Vector3, profile: VFXProfile3D = null) -> void:
 	add_child(_light)
 	var duration := profile.duration if profile != null else 0.36
 	CURVES.tween_method(self, _set_pulse, 0.0, 1.0, duration, "pulse")
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(duration + 0.04).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	finish()
 
 func _set_pulse(value: float) -> void:

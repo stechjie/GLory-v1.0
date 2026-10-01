@@ -77,6 +77,16 @@ func exercise_resume() -> void:
 	h.expect(not server._peer_connected(old_id), "old_transport_closed", "Old live socket is explicitly disconnected")
 	server._on_peer_disconnected(old_id)
 	h.expect(room.peer_slot.get(new_id, -1) == 0 and not room.reserved.has(0), "late_disconnect", "Delayed old disconnect cannot reserve replacement seat")
+	room.state = server.ROOM_RESULT
+	room.run_over = true
+	room.last_match_state = {0: {"completed_round": 21, "run_over": true, "gold": 321}}
+	fresh._rpc_resume_request.rpc_id(1, "mobile_test_token")
+	await wait_reply(fresh, 2, 2)
+	h.expect(fresh.room_snapshots.size() == 2, "finished_room_resume", "Finished room accepts its retained seat credential")
+	if fresh.room_snapshots.size() == 2:
+		var payload: Dictionary = fresh.room_snapshots[1].get("payload", {})
+		h.expect(payload.get("completed_settlement", {}).get("gold", 0) == 321,
+			"finished_authority", "Recovery snapshot includes exact authoritative final settlement")
 
 func wait_reply(client: Node, errors: int, snapshots: int) -> void:
 	var deadline := Time.get_ticks_msec() + 3000

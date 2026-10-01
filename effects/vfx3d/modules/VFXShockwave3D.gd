@@ -69,7 +69,11 @@ func play_shockwave(at: Vector3, profile: VFXProfile3D = null) -> void:
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(node)
 	CURVES.tween_method(self, _set_progress, 0.0, 1.0, duration, profile.curve_name if profile != null else "explosive_out")
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(duration + 0.06).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	finish()
 
 func set_vfx_alpha(value: float) -> void:

@@ -66,7 +66,11 @@ func play_rim(at: Vector3, profile: VFXProfile3D, radius_scale := 1.0, seed := 0
 	var fade := track_tween(create_tween())
 	fade.tween_interval(active.duration * 0.70)
 	fade.tween_method(_set_dissolve, 0.0, 1.0, active.duration * 0.26).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(active.duration + 0.04).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	finish()
 
 func _make_rim_mesh(radius_x: float, radius_y: float, width: float, seed: float) -> ArrayMesh:

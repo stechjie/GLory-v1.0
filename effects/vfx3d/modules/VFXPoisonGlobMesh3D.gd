@@ -50,7 +50,11 @@ func play_projectile(origin: Vector3, target: Vector3, profile: VFXProfile3D,
 	_visual.scale = Vector3.ONE * base_scale * 0.20
 	CURVES.tween_method(self, _set_visual_scale.bind(base_scale), 0.20, 1.0, 0.13, "ease_out_back")
 
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(0.12).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if _finished:
 		return
 	var elapsed := 0.0
@@ -75,7 +79,11 @@ func play_projectile(origin: Vector3, target: Vector3, profile: VFXProfile3D,
 	position = tracked_target
 	var compression := track_tween(create_tween())
 	compression.tween_property(_visual, "scale", Vector3(base_scale * 0.28, base_scale * 1.24, base_scale * 1.24), 0.09).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(0.09).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if _finished:
 		return
 	_visual.visible = false
@@ -84,7 +92,11 @@ func play_projectile(origin: Vector3, target: Vector3, profile: VFXProfile3D,
 	# than rotating sideways with the projectile.
 	rotation = Vector3.ZERO
 	_spawn_impact(profile, context)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(1.52).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if not _finished:
 		finish()
 

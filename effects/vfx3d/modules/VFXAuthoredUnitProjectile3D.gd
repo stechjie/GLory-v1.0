@@ -45,7 +45,11 @@ func play_projectile(origin: Vector3, target: Vector3, profile: VFXProfile3D, ta
 	position = origin + vfx_toward_camera(0.10)
 	_spawn_release(active, facing)
 
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(0.045).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if _finished:
 		return
 
@@ -95,7 +99,11 @@ func play_projectile(origin: Vector3, target: Vector3, profile: VFXProfile3D, ta
 	if is_instance_valid(body):
 		body.finish()
 	_spawn_impact(active, facing)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(0.34).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if not _finished:
 		finish()
 

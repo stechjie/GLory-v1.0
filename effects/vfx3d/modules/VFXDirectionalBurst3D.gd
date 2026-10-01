@@ -54,5 +54,9 @@ func play_burst(at: Vector3, direction: Vector3, profile: VFXProfile3D = null) -
 	quad.material = material
 	particles.draw_pass_1 = quad
 	add_child(particles)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(particles.lifetime + 0.18).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	finish()

@@ -117,7 +117,11 @@ func play_layer(texture_path: String, params: Dictionary = {}) -> void:
 	if delay > 0.0:
 		if not is_inside_tree():
 			return
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 		await get_tree().create_timer(delay).timeout
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 		if _finished or not is_inside_tree():
 			return
 	var duration := maxf(0.18, float(params.get("duration", 0.9)))
@@ -165,7 +169,11 @@ func play_layer(texture_path: String, params: Dictionary = {}) -> void:
 		set_process(true)
 	if not is_inside_tree():
 		return
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(duration * 0.56).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if _finished or not is_inside_tree():
 		return
 	_tween_shader("dissolve", 0.0, 1.0, duration * 0.40)
@@ -175,7 +183,11 @@ func play_layer(texture_path: String, params: Dictionary = {}) -> void:
 	breakup.tween_property(art, "position:y", art.position.y + float(params.get("rise", 0.08)), duration * 0.40)
 	if not is_inside_tree():
 		return
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(duration * 0.44).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if _finished or not is_inside_tree():
 		return
 	finish()

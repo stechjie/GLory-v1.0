@@ -66,7 +66,11 @@ func _play_layered(at: Vector3, color: Color, amount: int, speed: float, lifetim
 		emitter.name = "DebrisShardEmitter%d" % variant
 		add_child(emitter)
 		if variant < 2:
+			if not is_inside_tree() or is_queued_for_deletion():
+				return
 			await get_tree().create_timer(0.025).timeout
+			if not is_inside_tree() or is_queued_for_deletion():
+				return
 
 	var sparks := TARGET_IMPACT.burst(color.lightened(0.24), QUALITY.particle_count(spark_count), speed * 1.35, minf(lifetime, 0.48))
 	sparks.name = "DebrisLargeSparks"
@@ -84,7 +88,11 @@ func _play_layered(at: Vector3, color: Color, amount: int, speed: float, lifetim
 	var residue_duration := maxf(0.82, lifetime + 0.18)
 	residue.play_residue(Vector3.ZERO, color.darkened(0.48), residue_size, residue_duration)
 
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(maxf(lifetime + 0.28, residue_duration + 0.06)).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	finish()
 
 func _make_shard_emitter(color: Color, amount: int, speed: float, lifetime: float, variant: int) -> GPUParticles3D:

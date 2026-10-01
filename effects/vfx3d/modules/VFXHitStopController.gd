@@ -14,7 +14,11 @@ func play_hit_stop(duration := 0.075, reduced_scale := 0.08) -> void:
 	_previous_scale = Engine.time_scale
 	_active = true
 	Engine.time_scale = clampf(reduced_scale, 0.01, 1.0)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(duration, true, false, true).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	_restore_time_scale()
 	finish()
 

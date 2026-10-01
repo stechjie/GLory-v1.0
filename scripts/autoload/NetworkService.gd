@@ -182,8 +182,9 @@ const LOBBY_EMPTY_TTL_SEC := 60.0
 # 期间房间转 suspended：不推进阶段、不启动新模拟、不进公开房间列表。
 # 任一有效 token 重连即取消；到期则关房并清理 token / 短码 / 缓存映射。
 # 依赖 C20 的单调时钟 —— 用墙钟的话一次 NTP 校时就能让它提前或永不到期。
-# 所有真人离线满 30 秒即结束旧对局，允许重新开局；AI 不延长保留期。
-const ROOM_SUSPEND_GRACE_SEC := 120.0
+# Mobile suspension is not an explicit leave. Keep recoverable seats for ten
+# minutes even when every human has backgrounded the app.
+const ROOM_SUSPEND_GRACE_SEC := 600.0
 # 匹配房间等人坐满的时限（协议 32）。六个人都在账号服务器点过确认了，
 # 所以没连上来是异常；到点用 AI 补满开打，见 _cleanup_matched_rooms。
 # 给 90 秒：够一次「点完确认 → 过加载界面 → DTLS 握手」，再留一点弱网余量。
@@ -1355,16 +1356,16 @@ func _cleanup_matched_rooms() -> void:
 # AI 席位与空席由服务器自己算作已确认，**不伪造客户端 ACK**。
 const RESULT_ACK_TIMEOUT_SEC := 60.0
 # Playback completes before the client ACKs. Match BattleScreen's total cold
-# preparation bound (120s), replay receive bound (60s), and presentation drain
+# preparation bound (30s), replay receive bound (60s), and presentation drain
 # (3s); allow 15s for frame jitter/result UI/control ACK. These are ceilings,
 # not delays: all online human ACKs still advance the room immediately.
-const RESULT_PREPARE_GRACE_SEC := 120.0
+const RESULT_PREPARE_GRACE_SEC := 30.0
 const RESULT_DELIVERY_GRACE_SEC := 60.0
 const RESULT_PRESENTATION_GRACE_SEC := 18.0
 # The simulator itself stops at 180s (BattleSimShared.HARD_TIMEOUT_SEC).
-# 480s contains its full playback + bounded preparation/delivery and one
+# 300s contains its full playback + bounded preparation/delivery and one
 # bounded resume allowance. Repeated reconnects cannot renew this hard limit.
-const RESULT_ACK_HARD_LIMIT_SEC := 480.0
+const RESULT_ACK_HARD_LIMIT_SEC := 300.0
 
 # ── 结算确认的双向重试（10.01 反馈第 8 条）────────────────────────────────────
 #
@@ -2099,6 +2100,7 @@ func _build_room_state(room: Dictionary, slot: int) -> Dictionary:
 		"replay_pending": str(room.get("state", "")) == ROOM_BATTLE or bool(room.get("replay_pending", false)),
 		"replay_available": replay_available,
 		"replay_error": str(room.get("replay_error", "")),
+		"completed_settlement": (room.get("last_match_state", {}) as Dictionary).get(slot, {}) if bool(room.get("run_over", false)) else {},
 		"leader_slot": int(room.get("leader_slot", 0)),
 		"slot_states": (room.get("slot_states", []) as Array).duplicate(),
 		"seat_profiles": (room.get("seat_profiles", {}) as Dictionary).duplicate(true),
@@ -4488,9 +4490,9 @@ func reset() -> void:
 func _begin_reconnect(reason: String) -> void:
 	if session_token.is_empty() or reconnect_address.is_empty():
 		return
-	reset_peer_only()
 	if state == SessionState.RECONNECTING:
 		return
+	reset_peer_only()
 	_net_log("connection lost (%s) -> reconnecting to %s" % [reason, reconnect_address])
 	state = SessionState.RECONNECTING
 	last_error = tr("net_status_reconnecting")
@@ -5050,14 +5052,7 @@ func _resume_seat(sender: int, token: String) -> void:
 		_net_log("resume failed reason=room_gone peer=%d" % sender)
 		_rpc_resume_failed.rpc_id(sender, "room_gone")
 		return
-	# 对局已打完的房间不可恢复：按失败处理让客户端回主菜单。否则重连者会被
-	# resume 进一个永不开下一回合的死房间（客户端落备战界面干等）——实测日志里
-	# 出现过 "resume ok state=result" 后玩家卡死的案例。
-	if bool(room.get("run_over", false)):
-		_token_seat.erase(token)
-		_net_log("resume failed reason=match_over peer=%d" % sender)
-		_rpc_resume_failed.rpc_id(sender, "match_over")
-		return
+	# Finished rooms retain their authoritative settlement during mobile recovery.
 	var slot := int(seat.get("slot", -1))
 	if slot < 0 or slot >= TEAM_SLOTS:
 		_net_log("resume failed reason=bad_slot peer=%d" % sender)
@@ -5108,7 +5103,7 @@ func _resume_seat(sender: int, token: String) -> void:
 		ready_arr[slot] = false
 		room.ready = ready_arr
 	_reconnect_service.release_reservation(room, slot)
-	room.empty_since = 0.0
+	_room_service.resume_suspended_room(room)
 	_peer_last_ping[sender] = _now()
 	# 全员掉线后有人重连时，原房主可能还没回来 -> 把房主顺延给这个在线玩家，
 	# 否则房间没房主、谁都开不了游戏/加不了 AI。在构建 payload 前做，payload 才带对。

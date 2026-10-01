@@ -48,7 +48,11 @@ func play_flash(at: Vector3, color: Color, size := 1.1, duration := 0.42) -> voi
 	tween.set_parallel(true)
 	tween.tween_property(node, "scale", Vector3.ONE * 1.55, duration)
 	tween.tween_property(_material, "shader_parameter/progress", 1.0, duration)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(duration + 0.05).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	finish()
 
 func set_vfx_alpha(value: float) -> void:

@@ -115,7 +115,11 @@ func play_shockwave(target: Vector3, color := Color(1.0, 0.30, 0.08)) -> void:
 	library.add_animation("play", animation)
 	player.add_animation_library("", library)
 	player.play("play")
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(0.68).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	finish()
 
 func _debris_process() -> ParticleProcessMaterial:

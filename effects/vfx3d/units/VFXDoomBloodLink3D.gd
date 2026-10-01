@@ -85,7 +85,11 @@ func play_link(origin: Vector3, target: Vector3, profile: VFXProfile3D = null, o
 	_knots.append(_make_knot("DoomLinkKnot_Target"))
 	_update_ribbon()
 	if not _persistent:
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 		await get_tree().create_timer(_profile.duration).timeout
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 		release_link(.24)
 
 # Pact broken: tear from the middle, then fade the body out.  BattleVfx calls

@@ -102,7 +102,11 @@ func play_path(points: PackedVector3Array, plane_normal: Vector3, profile: VFXPr
 				active_material.set_shader_parameter("dissolve", value)
 				active_material.set_shader_parameter("opacity", vfx_alpha * (1.0 - value * 0.82))
 	fade.tween_method(dissolve_setter, 0.0, 1.0, dissolve_time).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(duration + 0.05).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	finish()
 
 func _make_path_mesh(points: PackedVector3Array, plane_normal: Vector3, width: float, taper_both_ends: bool, curve_bias: float) -> MeshInstance3D:

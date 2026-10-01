@@ -61,7 +61,12 @@ func play_link(origin:Vector3,target:Vector3,profile:VFXProfile3D=null,origin_no
 		tw.tween_method(func(t:float):for m in _materials:if is_instance_valid(m):m.set_shader_parameter("life",t),.22,.64,_profile.duration*.72).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	else:
 		tw.tween_method(func(t:float):for m in _materials:if is_instance_valid(m):m.set_shader_parameter("life",t),0.0,1.0,_profile.duration)
-		await get_tree().create_timer(_profile.duration+.08).timeout;finish()
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
+		await get_tree().create_timer(_profile.duration+.08).timeout
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
+		finish()
 
 func release_link(fade_duration:float=0.20)->void:
 	if _finished or _released:return

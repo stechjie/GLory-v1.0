@@ -245,7 +245,11 @@ func _play_ranged(origin: Vector3, target: Vector3, race: String, profile: VFXPr
 		_spawn_authored_impact(tracked_target + Vector3(0.0, 0.04, 0.0) + vfx_toward_camera(impact_z), active, bolt_kind, bolt_spec)
 	else:
 		_spawn_linear_hit(tracked_target + Vector3(0.0, 0.04, 0.04), direction, active, race)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(active.duration * 0.34).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	finish()
 
 func _play_melee(origin: Vector3, target: Vector3, race: String, profile: VFXProfile3D, melee_kind := "") -> void:
@@ -261,11 +265,19 @@ func _play_melee(origin: Vector3, target: Vector3, race: String, profile: VFXPro
 	var painted: Dictionary = PAINTED_MELEE.get(melee_kind, {})
 	if not painted.is_empty():
 		_spawn_painted_melee_slash(hit_at, direction, active, painted)
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 		await get_tree().create_timer(active.duration * 0.16).timeout
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 		if _finished:
 			return
 		_spawn_painted_melee_hit(target + vfx_offset(Vector3(0.0, 0.26, 0.04)), active, painted)
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 		await get_tree().create_timer(active.duration * 0.82).timeout
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 		finish()
 		return
 	# 近战 T3 专属斩击（保持近战定位，只是斩击更派头）。其余单位走默认单斩。
@@ -288,7 +300,11 @@ func _play_melee(origin: Vector3, target: Vector3, race: String, profile: VFXPro
 			slash.name = "RaceSlash_%s" % race
 			add_child(slash)
 			slash.play_slash(hit_at, direction, active)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(active.duration * 0.16).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if _finished:
 		return
 	if melee_kind == "guardian_crystal":
@@ -301,7 +317,11 @@ func _play_melee(origin: Vector3, target: Vector3, race: String, profile: VFXPro
 	# T3 专属斩击给更强的命中闪。
 	var flash_scale := active.size * (0.52 if melee_kind != "" else 0.38)
 	flash.play_flash(target, active.core_color, flash_scale, active.duration * 0.16)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(active.duration * 0.82).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	finish()
 
 func _spawn_painted_melee_slash(at: Vector3, direction: Vector3, profile: VFXProfile3D, spec: Dictionary) -> void:

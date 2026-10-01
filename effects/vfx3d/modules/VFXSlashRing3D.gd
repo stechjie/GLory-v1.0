@@ -25,7 +25,11 @@ func play_ring(at: Vector3, profile: VFXProfile3D = null) -> void:
 	add_child(main_ribbon)
 	main_ribbon.play_path(main_points, Vector3.UP, main_profile)
 	_spawn_radial_fragments(main_points, main_profile)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(duration * 0.12).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if _finished:
 		return
 	var second_profile := main_profile.duplicate_runtime()
@@ -41,7 +45,11 @@ func play_ring(at: Vector3, profile: VFXProfile3D = null) -> void:
 	var second_ribbon := PATH_RIBBON.new()
 	add_child(second_ribbon)
 	second_ribbon.play_path(second_points, Vector3.UP, second_profile)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(duration * 0.66).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	finish()
 
 func _build_ring(radius: float, height_wave: float, segments: int) -> PackedVector3Array:

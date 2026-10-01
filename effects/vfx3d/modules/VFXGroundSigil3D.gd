@@ -113,11 +113,19 @@ func play_sigil(at: Vector3, profile: VFXProfile3D = null) -> void:
 		if is_instance_valid(hot_core): hot_core.scale = Vector3.ONE * v,
 		0.10, 0.92, active.duration * 0.10, "explosive_out")
 	_tween_progress(hot_core.material_override as ShaderMaterial, active.duration * 0.36)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(active.duration * 0.055).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if _finished: return
 	_spawn_debris(active)
 	_spawn_smoke(active)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(active.duration * 0.96).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	finish()
 
 func _spawn_ground_front(profile: VFXProfile3D) -> void:

@@ -74,7 +74,11 @@ func play_guard(at: Vector3, duration := 0.74) -> void:
 	var progress_tween := track_tween(create_tween())
 	progress_tween.tween_method(func(value: float) -> void:
 		if is_instance_valid(_material): _material.set_shader_parameter("progress", value), 0.0, 1.0, duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(duration + 0.04).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if not _finished: finish()
 
 func set_vfx_alpha(value: float) -> void:

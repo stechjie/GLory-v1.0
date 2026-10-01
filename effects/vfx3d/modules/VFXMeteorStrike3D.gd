@@ -47,7 +47,11 @@ func play_strike(target:Vector3,profile:VFXProfile3D=null)->void:
 	var active:=profile if profile!=null else _fallback_profile()
 	var warning:=_ground_quad("MeteorWarning",active.size*Vector2(1.62,1.10),WARNING_SHADER,{"dark_color":active.dark_color,"main_color":active.main_color,"core_color":active.core_color})
 	_tween_shader(warning.material_override as ShaderMaterial,"progress",0.0,1.0,active.duration*.42)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(active.duration*.18).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if _finished:return
 	var meteor:=_billboard("FallingMeteor",active.size*Vector2(1.22,1.34),METEOR_SHADER,{"dark_color":active.dark_color,"main_color":active.main_color,"core_color":active.core_color,"seed":7.1})
 	meteor.position=Vector3(-active.size*.82,active.size*3.55,0.0)
@@ -60,12 +64,20 @@ func play_strike(target:Vector3,profile:VFXProfile3D=null)->void:
 	_tween_shader(trail_outer.material_override as ShaderMaterial,"progress",0.0,.72,fall_time)
 	_tween_shader(trail_core.material_override as ShaderMaterial,"progress",0.0,.72,fall_time)
 	for i in range(maxi(3, QUALITY.auxiliary_layers(5))):
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 		await get_tree().create_timer(fall_time/5.0).timeout
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 		_spawn_falling_ember(meteor.position,active,i)
 	if _finished:return
 	meteor.visible=false;trail_outer.visible=false;trail_core.visible=false;warning.visible=false
 	_spawn_impact(active)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(active.duration*.52).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	finish()
 
 func _spawn_impact(profile:VFXProfile3D)->void:

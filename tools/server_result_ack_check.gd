@@ -28,10 +28,10 @@ func _ready() -> void:
 	room.last_match_state = {0: {"completed_round": 20}}
 	NetworkService._room_start_result_ack_wait(room, 900, 1400, true)
 	h.expect(is_equal_approx(float(room.result_playback_sec), 140.0), "longer_side", "Longer rival replay determines playback grace")
-	h.expect(is_equal_approx(float(room.result_ack_window_sec), 338.0), "bounded_budgets", "140s playback + 120s total prepare + 60s receive + 18s presentation/ACK")
+	h.expect(is_equal_approx(float(room.result_ack_window_sec), 248.0), "bounded_budgets", "140s playback + 30s total prepare + 60s receive + 18s presentation/ACK")
 	advance_clock(room, 61.0)
 	h.expect(not NetworkService._room_result_acks_complete(room), "old_60s_regression", "Still-playing client is not advanced by the old 60-second cutoff")
-	advance_clock(room, 260.0)
+	advance_clock(room, 170.0)
 	h.expect(not NetworkService._room_result_acks_complete(room), "cold_prepare_then_long_battle", "Full preparation plus long playback fits before deadline")
 	room.result_acks = {0: room.battle_id, 3: room.battle_id}
 	h.expect(NetworkService._room_result_acks_complete(room), "acked_immediately", "Both ACKs advance without waiting for generous safety deadline")
@@ -57,7 +57,7 @@ func _ready() -> void:
 	NetworkService._room_extend_result_ack_for_resume(room)
 	h.expect(is_equal_approx(float(room.result_ack_deadline), before), "resume_not_renewable", "Repeated reconnect never renews the room deadline")
 	advance_clock(room, 261.0)
-	h.expect(NetworkService._room_result_acks_complete(room), "absolute_hard_limit", "Even resumed zombie cannot hold RESULT beyond 480s from publication")
+	h.expect(NetworkService._room_result_acks_complete(room), "absolute_hard_limit", "Even resumed zombie cannot hold RESULT beyond 300s from publication")
 	room = fixture()
 	room.last_match_state = {0: {"completed_round": 20}}
 	NetworkService._room_start_result_ack_wait(room, 20, 30, true)

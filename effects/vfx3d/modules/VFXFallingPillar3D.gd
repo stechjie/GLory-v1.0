@@ -31,7 +31,11 @@ func play_pillar(at:Vector3,profile:VFXProfile3D=null)->void:
 	var active:=profile if profile!=null else _fallback_profile()
 	var mark:=_ground_quad("PillarAnticipation",active.size*Vector2(1.34,.92),GROUND_SHADER,{"dark_color":active.dark_color,"main_color":active.main_color,"core_color":active.core_color})
 	_tween_shader(mark.material_override as ShaderMaterial,"progress",0.0,.82,active.duration*.22)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(active.duration*.14).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if _finished:return
 	var outer:=_billboard("FallingPillarOuter",active.size*Vector2(.94,3.45),PILLAR_SHADER,{"dark_color":active.dark_color.darkened(.20),"main_color":active.main_color.darkened(.20),"core_color":active.main_color,"seed":3.8,"core_width":.16})
 	outer.position.y=active.size*1.62;outer.scale=Vector3(.52,.08,1.0)
@@ -40,10 +44,18 @@ func play_pillar(at:Vector3,profile:VFXProfile3D=null)->void:
 	CURVES.tween_method(self,func(v:float)->void:if is_instance_valid(outer):outer.scale=Vector3(lerpf(.52,1.0,v),v,1.0),.08,1.0,active.duration*.14,"snap")
 	CURVES.tween_method(self,func(v:float)->void:if is_instance_valid(body):body.scale=Vector3(lerpf(.36,1.0,v),v,1.0),.08,1.0,active.duration*.12,"snap")
 	_tween_shader(outer.material_override as ShaderMaterial,"progress",0.0,1.0,active.duration*.46);_tween_shader(body.material_override as ShaderMaterial,"progress",0.0,1.0,active.duration*.42)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(active.duration*.10).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if _finished:return
 	_spawn_hit(active)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(active.duration*.58).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	finish()
 
 func _spawn_hit(profile:VFXProfile3D)->void:

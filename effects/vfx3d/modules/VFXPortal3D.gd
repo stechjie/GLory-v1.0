@@ -331,7 +331,11 @@ func play_portal(at: Vector3, profile: VFXProfile3D = null) -> void:
 	_tween_param(pop, "strength", 1.0, 0.0, d * 0.13, "ease_in", d * 0.905)
 	_spawn_embers(active, center_y, d * 0.87)
 
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(d * 1.08 + 0.25).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	finish()
 
 func _face_battle_camera() -> void:

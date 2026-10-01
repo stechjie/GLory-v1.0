@@ -131,7 +131,11 @@ func play_ball(origin: Vector3, target: Vector3, target_node: Variant = null) ->
 	if is_instance_valid(ball):
 		ball.queue_free()
 	_play_impact(tracked_target)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(0.54).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	finish()
 
 func _tracked_target_position(fallback: Vector3, target_ref: WeakRef) -> Vector3:

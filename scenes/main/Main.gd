@@ -366,6 +366,12 @@ func _on_resume_completed(payload: Dictionary) -> void:
 			return
 	_hide_reconnect_overlay()
 	GameState.team_mode = true
+	var completed: Dictionary = payload.get("completed_settlement", {})
+	if bool(payload.get("run_over", false)) and not completed.is_empty():
+		NetworkService.latest_match_state = completed
+		_apply_team_match_state_payload(completed)
+		_show_game_over()
+		return
 	if str(payload.get("replay_error", "")).is_empty() and PlaybackRecovery.needs_replay(payload):
 		var resolved := PlaybackRecovery.resolve_resume(payload, NetworkService.latest_match_state)
 		if resolved.is_empty():
@@ -469,7 +475,11 @@ func _wait_for_resume_identity(generation: int) -> void:
 		if Time.get_ticks_msec() >= deadline:
 			_fail_resume_replay("replay_timeout")
 			return
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 		await get_tree().create_timer(0.1).timeout
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 		if not is_inside_tree():
 			return
 
@@ -538,7 +548,11 @@ func _wait_for_resume_replay(generation: int) -> void:
 		if Time.get_ticks_msec() >= deadline:
 			_fail_resume_replay("replay_timeout")
 			return
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 		await get_tree().create_timer(0.1).timeout
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 		if not is_inside_tree():
 			return
 
@@ -2764,7 +2778,11 @@ func _play_start_game_success_then_prep() -> void:
 	# `+ 0.05` 是留给播放器真正把缓冲吐完的一点余量：cue_length 给的是素材时长，
 	# 恰好在末尾切场景会切掉最后几个采样。
 	if wait > 0.0 and is_inside_tree():
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 		await get_tree().create_timer(wait + 0.05).timeout
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 	_show_prep()
 
 func _on_team_battle_finished(result: Dictionary) -> void:
@@ -2878,6 +2896,10 @@ func _on_team_battle_finished(result: Dictionary) -> void:
 func _finish_server_authoritative_team_battle(result: Dictionary) -> void:
 	_battle_settlement_generation += 1
 	var generation := _battle_settlement_generation
+	# Rendering/loading failure cannot discard a valid server settlement.
+	# Never manufacture a local win/loss when the replay is unavailable.
+	if result.has("error") and _has_team_match_state(GameState.round_index):
+		result = {}
 	if result.has("error"):
 		# **技术失败，不是玩家退出**（B8/E3）：replay 没等到、解包失败之类。
 		# 此前这里调 disconnect_session()，等于清掉重连凭证 —— 而服务器那边
@@ -2891,7 +2913,11 @@ func _finish_server_authoritative_team_battle(result: Dictionary) -> void:
 	var completed_round := GameState.round_index
 	var waited := 0.0
 	while not _has_team_match_state(completed_round) and waited < NetworkService.REPLAY_TIMEOUT_SEC:
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 		await get_tree().create_timer(0.1).timeout
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 		if generation != _battle_settlement_generation:
 			return
 		waited += 0.1
@@ -2925,10 +2951,18 @@ func _finish_server_authoritative_team_battle(result: Dictionary) -> void:
 		# 重发是幂等的（服务端 _rpc_result_ack 对同一 battle_id 的重复 ACK 直接
 		# return），所以这里只是把「一次丢包 = 全房等 3~8 分钟」压回「3 秒内自愈」。
 		var resend_waited := 0.0
+		var settlement_deadline := Time.get_ticks_msec() + int((NetworkService.RESULT_ACK_HARD_LIMIT_SEC + 10.0) * 1000.0)
 		while not NetworkService.server_prep_confirmed(completed_round + 1):
+			if Time.get_ticks_msec() >= settlement_deadline:
+				NetworkService.enter_recoverable_failure("settlement_phase_timeout")
+				return
 			if not NetworkService.team_active or NetworkService.state == NetworkService.SessionState.RECONNECTING:
 				return
+			if not is_inside_tree() or is_queued_for_deletion():
+				return
 			await get_tree().create_timer(0.1).timeout
+			if not is_inside_tree() or is_queued_for_deletion():
+				return
 			if generation != _battle_settlement_generation:
 				return
 			resend_waited += 0.1

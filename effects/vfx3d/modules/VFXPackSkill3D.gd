@@ -20,7 +20,11 @@ func play_spec(points: Dictionary, spec: Dictionary, context: Dictionary = {}) -
 		lifetime = maxf(lifetime, float(layer.get("delay", 0.0)) + float(layer.get("duration", 0.7)))
 		_spawn_layer_after(points, layer, context)
 	set_process(true)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(lifetime + 0.08).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	if not _finished:
 		finish()
 
@@ -28,7 +32,11 @@ func play_spec(points: Dictionary, spec: Dictionary, context: Dictionary = {}) -
 func _spawn_layer_after(points: Dictionary, layer: Dictionary, context: Dictionary) -> void:
 	var delay := maxf(0.0, float(layer.get("delay", 0.0)))
 	if delay > 0.0:
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 		await get_tree().create_timer(delay).timeout
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 	if _finished:
 		return
 	var path := str(layer.get("path", ""))

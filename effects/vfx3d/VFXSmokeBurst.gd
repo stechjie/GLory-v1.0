@@ -60,5 +60,9 @@ func play_smoke(target: Vector3, color := Color(0.24, 0.26, 0.30)) -> void:
 	add_child(debris)
 	var tween := create_tween()
 	tween.tween_property(material, "shader_parameter/phase", 1.0, 0.78)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	await get_tree().create_timer(1.02).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
 	finish()
