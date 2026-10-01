@@ -511,6 +511,8 @@ def export_preset(stage, wanted):
         ("exclude_filter", ["*.bak", "*.bak_*", "*.backup*", "backups/*", "*/backups/*", "*/Demo_GodotVFX/*",
                             "*/New folder/*", "*/desktop.ini", "*/Thumbs.db", "tools/*", "officetest/*", "reports/*",
                             "backend/*", "work/*", "build/*", "logs/*", "docs/*", "*.pem", "*.key", ".env*",
+                            "scenes/debug/*", "effects/vfx3d/experimental/*", "addons/effekseer/*",
+                            "addons/glory_voice/glory_voice.gdextension",
                             # Unreferenced vendor demo points to an undelivered shield_02 scene.
                             # The rest of binbun_reference is required by real battle VFX.
                             "effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/battle_fx_scene_free.tscn"]),
@@ -520,6 +522,13 @@ def export_preset(stage, wanted):
         line = f'{key}="{",".join(dict.fromkeys(values))}"'
         body = body[:field.start()] + line + body[field.end():] if field else body + "\n" + line + "\n"
     text = text[:match.end()] + body + text[end:] if end != -1 else text[:match.end()] + body
+    option_match = re.search(r'^\[preset\.' + match[1] + r'\.options\]\s*\n(.*?)(?=^\[|\Z)', text, re.M | re.S)
+    if not option_match:
+        raise RuntimeError("Android 预设缺少 options。")
+    options = option_match[1]
+    options = re.sub(r'(?m)^gradle_build/use_gradle_build=.*\n?', '', options)
+    options = 'gradle_build/use_gradle_build=true\n' + options
+    text = text[:option_match.start(1)] + options + text[option_match.end(1):]
     file.write_text(text, encoding="utf-8")
     file.chmod(0o600)
     option_match = re.search(r'^\[preset\.' + match[1] + r'\.options\]\s*\n(.*?)(?=^\[|\Z)', text, re.M | re.S)
@@ -829,11 +838,20 @@ def main():
                     raise RuntimeError(f"APK ZIP 校验失败：{bad}")
                 if json.loads(archive.read("assets/build_info.json")) != identity:
                     raise RuntimeError("APK 内构建身份与本次构建不一致。")
+                dex = [archive.read(n) for n in archive.namelist() if n.endswith('.dex')]
+                for required in (b'com/glory/voice/GloryVoicePlugin', b'io/livekit/android/room/Room'):
+                    if not any(required in blob for blob in dex):
+                        raise RuntimeError("APK 缺少语音运行依赖：" + required.decode())
             logged_process([env["build_tools"] / "apksigner", "verify", "--verbose", apk], logdir / "signature.log", child_env)
             badging = capture([env["build_tools"] / "aapt2", "dump", "badging", apk], env=child_env)
             (logdir / "apk-badging.txt").write_text(badging + "\n")
             if f"package: name='{package}'" not in badging:
                 raise RuntimeError("APK 包名与导出预设不一致。")
+            if "android.permission.RECORD_AUDIO" not in badging:
+                raise RuntimeError("APK 缺少语音录音权限。")
+            for unwanted in ("android.permission.CAMERA", "android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"):
+                if unwanted in badging:
+                    raise RuntimeError("APK 包含非语音所需权限：" + unwanted)
             summary = dict(identity, apk=str(apk), apk_bytes=apk.stat().st_size, apk_sha256=digest(apk),
                            logs=str(logdir), source_project=str(project), asset_source=str(assets),
                            signed=True, built=True, device_installed=False, device_tested=False,
