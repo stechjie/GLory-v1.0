@@ -298,6 +298,9 @@ static func _replay_capture_frame(state: Dictionary, frames: Array, frame_events
 	frames.append(frame)
 
 static func _team_replay_payload(state: Dictionary, roster: Dictionary, frames: Array, frame_events: Array = []) -> Dictionary:
+	if frames.is_empty() and bool(state.get("finished", false)):
+		# An empty side is an immediate result, not a failed replay transfer.
+		_replay_capture_frame(state, frames, frame_events)
 	var replay_result := result_from_state(state)
 	replay_result["team_heal_ally"] = int(state.get("team_heal_ally", 0))
 	replay_result["team_heal_rival"] = int(state.get("team_heal_rival", 0))

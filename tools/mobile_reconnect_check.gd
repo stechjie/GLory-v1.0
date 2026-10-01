@@ -77,14 +77,26 @@ func exercise_resume() -> void:
 	h.expect(not server._peer_connected(old_id), "old_transport_closed", "Old live socket is explicitly disconnected")
 	server._on_peer_disconnected(old_id)
 	h.expect(room.peer_slot.get(new_id, -1) == 0 and not room.reserved.has(0), "late_disconnect", "Delayed old disconnect cannot reserve replacement seat")
+	# A foreground reconnect is not a ready action. Even if the other player
+	# was already ready, restoring this seat must leave this preparation round open.
+	room.state = server.ROOM_PREP
+	room.slot_states = ["player", "empty", "empty", "player", "empty", "empty"]
+	room.ready = [true, false, false, true, false, false]
+	fresh._rpc_resume_request.rpc_id(1, "mobile_test_token")
+	await wait_reply(fresh, 2, 2)
+	h.expect(room.state == server.ROOM_PREP and not bool(room.ready[0]),
+		"prep_resume_not_ready", "Resume resets readiness without advancing preparation")
+	server._room_maybe_start_round(room)
+	h.expect(room.state == server.ROOM_PREP,
+		"prep_resume_blocks_start", "A ready opponent cannot start while the returning player is unready")
 	room.state = server.ROOM_RESULT
 	room.run_over = true
 	room.last_match_state = {0: {"completed_round": 21, "run_over": true, "gold": 321}}
 	fresh._rpc_resume_request.rpc_id(1, "mobile_test_token")
-	await wait_reply(fresh, 2, 2)
-	h.expect(fresh.room_snapshots.size() == 2, "finished_room_resume", "Finished room accepts its retained seat credential")
-	if fresh.room_snapshots.size() == 2:
-		var payload: Dictionary = fresh.room_snapshots[1].get("payload", {})
+	await wait_reply(fresh, 2, 3)
+	h.expect(fresh.room_snapshots.size() == 3, "finished_room_resume", "Finished room accepts its retained seat credential")
+	if fresh.room_snapshots.size() == 3:
+		var payload: Dictionary = fresh.room_snapshots[2].get("payload", {})
 		h.expect(payload.get("completed_settlement", {}).get("gold", 0) == 321,
 			"finished_authority", "Recovery snapshot includes exact authoritative final settlement")
 

@@ -2825,6 +2825,7 @@ func _pack_replay(replay: Dictionary, battle_id: String = "") -> PackedByteArray
 func _unpack_replay(packed: PackedByteArray) -> Dictionary:
 	var started := Time.get_ticks_usec()
 	var replay: Dictionary = _replay_transfer.unpack(packed)
+	ReplayValidation.normalize_terminal_replay(replay)
 	# Local durations need no client/server clock synchronization. Never log
 	# unvalidated payload text; battle identity is checked by the receive path.
 	_net_log("replay decode bytes=%d frames=%d elapsed_usec=%d valid_container=%s" % [
