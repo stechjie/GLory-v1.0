@@ -218,8 +218,9 @@ const BOARD_SUBMIT_TIMEOUT_SEC := 30.0
 # 掉线座位宽限：期内其他玩家会等他；到期服务器代打、游戏继续。
 # 注意这只是"别人等多久"——重连窗口是整局（座位/token 保留到比赛结束，
 # 迟到者重连后落到服务器当前回合）。
-const RESERVE_GRACE_SEC := 20.0
-const PREP_UNREADY_RESERVE_GRACE_SEC := 120.0
+const RESERVE_GRACE_SEC := 120.0
+const PREP_UNREADY_RESERVE_GRACE_SEC := RESERVE_GRACE_SEC
+const MATCH_DISCONNECT_GRACE_SEC := RESERVE_GRACE_SEC
 
 # --- 会话状态（D1 步骤 1.5）---------------------------------------------------
 # 下面这一批曾是门面自己的字段，现已搬到 scripts/multiplayer/SessionContext.gd。
@@ -3536,7 +3537,7 @@ func _enqueue_finalize(room: Dictionary) -> void:
 func _simulation_is_current(rid: int, battle_id: String) -> bool:
 	var room: Dictionary = _rooms.get(rid, {})
 	return not room.is_empty() and str(room.get("state", "")) == ROOM_RESULT \
-		and str(room.get("battle_id", "")) == battle_id
+		and str(room.get("battle_id", "")) == battle_id and not bool(room.get("run_over", false))
 
 func _cancel_pending_simulations() -> void:
 	_finalize_queue.clear()
@@ -5104,6 +5105,7 @@ func _resume_seat(sender: int, token: String) -> void:
 		ready_arr[slot] = false
 		room.ready = ready_arr
 	_reconnect_service.release_reservation(room, slot)
+	(room.get("human_offline_since", {}) as Dictionary).erase(slot)
 	_room_service.resume_suspended_room(room)
 	_peer_last_ping[sender] = _now()
 	# 全员掉线后有人重连时，原房主可能还没回来 -> 把房主顺延给这个在线玩家，
@@ -6370,10 +6372,12 @@ func _room_reserve_peer(room: Dictionary, peer_id: int) -> void:
 	_reconnect_service.reserve_seat(room, slot)
 	if str(room.get("state", ROOM_LOBBY)) == ROOM_LOBBY:
 		room.reserve_deadline[slot] = _now() + ROOM_SUSPEND_GRACE_SEC
-	elif str(room.get("state", "")) == ROOM_PREP and not bool(room.ready[slot]):
-		# Backgrounding is not readiness. Give an unready player time to return
-		# and finish preparation; battle/result watchdogs keep their own limits.
-		room.reserve_deadline[slot] = _now() + PREP_UNREADY_RESERVE_GRACE_SEC
+	else:
+		# Loading/playback watchdogs remain independent of seat takeover.
+		room.reserve_deadline[slot] = _now() + MATCH_DISCONNECT_GRACE_SEC
+		var offline: Dictionary = room.get("human_offline_since", {})
+		offline[slot] = _now()
+		room["human_offline_since"] = offline
 	if _room_online_count(room) <= 0:
 		room.empty_since = _now()
 	_maybe_promote_leader(room)
@@ -6429,11 +6433,90 @@ func _rpc_team_leader(leader_slot: int) -> void:
 # 扫描策略已搬到 ReconnectService.tick_reserved_seats()（D1 第 4 刀第 4 步）。
 # _room_auto_complete_seat 留在门面：它要改席位状态并广播出去。
 func _tick_reserved_seats() -> void:
+	# Decide before AI takeover can advance the phase or queue a replay.
+	for room in _rooms.values():
+		var winner := _last_online_human_winner(room)
+		if winner >= 0:
+			_finish_abandoned_match(room, winner)
 	_reconnect_service.tick_reserved_seats(_rooms, _room_auto_complete_seat)
+
+# Initial humans still count after AI takes over; solo practice never auto-wins.
+func _last_online_human_winner(room: Dictionary) -> int:
+	if str(room.get("state", "")) not in [ROOM_PREP, ROOM_BATTLE, ROOM_RESULT] or bool(room.get("run_over", false)) or bool(room.get("suspended", false)):
+		return -1
+	var initial: Array = room.get("initial_seats", [])
+	if initial.size() != TEAM_SLOTS:
+		return -1
+	var online: Array = []
+	for pid in room.get("peer_slot", {}):
+		if _peer_connected(int(pid)):
+			online.append(int(room.peer_slot[pid]))
+	if online.size() != 1:
+		return -1
+	var survivor := int(online[0])
+	if survivor < 0 or survivor >= TEAM_SLOTS or str(initial[survivor]) != "player":
+		return -1
+	var had_human_opponent := false
+	var offline: Dictionary = room.get("human_offline_since", {})
+	for slot in TEAM_SLOTS:
+		if slot == survivor or str(initial[slot]) != "player":
+			continue
+		if not offline.has(slot) or _now() - float(offline[slot]) < MATCH_DISCONNECT_GRACE_SEC:
+			return -1
+		if GameConstants.team_of_slot(slot) != GameConstants.team_of_slot(survivor):
+			had_human_opponent = true
+	return survivor if had_human_opponent else -1
+
+func _finish_abandoned_match(room: Dictionary, winner_slot: int) -> void:
+	if bool(room.get("run_over", false)):
+		return
+	var outcome := GameConstants.team_of_slot(winner_slot)
+	room.run_over = true
+	room.reserve_deadline = {}
+	room.replay_pending = false
+	room.replay_packed = {}
+	room.replay_error = ""
+	room.result_acks = {}
+	_set_room_state(room, ROOM_RESULT)
+	var terminal_seq := _bump_room_seq(room)
+	room.battle_id = "%d:%d:%d" % [int(room.id), int(room.round_index), terminal_seq]
+	# No fictional rewards, damage, or simulated round statistics.
+	var final_data: Dictionary = preload("res://scripts/multiplayer/FinalSettlementData.gd").build(room, [], outcome, economy_authoritative())
+	final_data["end_reason"] = "last_human_online"
+	final_data["show_details"] = false
+	room["final_settlement"] = final_data
+	var hp: Array = room.get("team_hp", [GameState.START_FORMATION_HP, GameState.START_FORMATION_HP])
+	var report := _room_sign_report(room, int(room.round_index), outcome, int(hp[0]), int(hp[1]), final_data)
+	var states := {}
+	for slot in TEAM_SLOTS:
+		var own_team := GameConstants.team_of_slot(slot)
+		var prep := _room_prep(room, slot)
+		var ms: Dictionary = (room.get("last_match_state", {}).get(slot, {}) as Dictionary).duplicate(true)
+		ms.merge({"protocol": NetworkConfig.NETWORK_PROTOCOL_VERSION,
+			"battle_id": str(room.battle_id), "completed_round": int(room.round_index),
+			"round_index": int(room.round_index), "slot": slot, "kind": "abandonment",
+			"run_over": true, "end_reason": "last_human_online", "run_outcome": outcome,
+			"team_run_won": own_team == outcome, "team_hp": int(hp[own_team]),
+			"enemy_team_hp": int(hp[1 - own_team]), "gold": int(prep.get("gold", room.slot_gold[slot])) if economy_authoritative() else int(room.slot_gold[slot]),
+			"carrot_authoritative": false, "pending_treasure": {"active": false}, "final_settlement": final_data}, true)
+		ms.erase("battle_report")
+		if not report.is_empty():
+			ms["battle_report"] = report
+		states[slot] = ms
+	room.last_match_state = states
+	_rooms_dirty = true
+	_broadcast_room_lobby(room)
+	for pid in room.get("peer_slot", {}):
+		if _peer_connected(int(pid)):
+			_replay_forget_peer(int(pid))
+			_resend_result_state(int(pid), states[int(room.peer_slot[pid])])
+	_net_log("match abandoned room=%d winner_slot=%d outcome=%d" % [int(room.id), winner_slot, outcome])
 
 # 方案乙：宽限到期 -> 座位转 AI(dummy)，其他玩家立刻面对真 AI、本回合不再卡。
 # token 仍有效：A 之后按"游戏重连"回来，resume 会把 dummy 变回 player、A 从存档恢复棋盘。
 func _room_auto_complete_seat(room: Dictionary, slot: int) -> void:
+	if bool(room.get("run_over", false)):
+		return
 	if str(room.get("state", ROOM_LOBBY)) == ROOM_LOBBY:
 		var identity := _voice_identity(room, slot)
 		_clear_seat_metadata(room, slot)

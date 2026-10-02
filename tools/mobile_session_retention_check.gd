@@ -108,8 +108,8 @@ func _ready() -> void:
 			h.expect(is_equal_approx(float(retained.reserve_deadline[0]) - disconnected._now(), 120.0),
 				"unready_prep_two_minutes", "Unready preparation seats wait two minutes before AI takeover")
 		else:
-			h.expect(is_equal_approx(float(retained.reserve_deadline[0]) - disconnected._now(), 20.0),
-				phase + "_unchanged_grace", "Battle and result retain their existing short takeover grace")
+			h.expect(is_equal_approx(float(retained.reserve_deadline[0]) - disconnected._now(), 120.0),
+				phase + "_unchanged_grace", "All match phases retain two minutes before seat takeover")
 	var prep: Dictionary = disconnected._new_room()
 	prep.state = "prep"
 	prep.peer_slot = {81: 0, 82: 3}
@@ -128,8 +128,8 @@ func _ready() -> void:
 	prep.peer_slot[81] = 0
 	prep.ready[0] = true
 	disconnected._room_reserve_peer(prep, 81)
-	h.expect(is_equal_approx(float(prep.reserve_deadline[0]) - disconnected._now(), 20.0),
-		"ready_prep_short_grace", "Already-ready players do not gain a new preparation wait")
+	h.expect(is_equal_approx(float(prep.reserve_deadline[0]) - disconnected._now(), 120.0),
+		"ready_prep_short_grace", "Ready players also retain two minutes of seat recovery")
 	disconnected.free()
 	h.finish(get_tree())
 

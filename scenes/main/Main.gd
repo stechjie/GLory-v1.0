@@ -3110,7 +3110,18 @@ func _last_battle_result() -> Dictionary:
 		return last
 	return {}
 
+var _shown_abandonment_battle := ""
+
 func _on_network_match_state_received(state_payload: Dictionary) -> void:
+	# Server termination supersedes preparation/loading/replay waits.
+	if GameState.team_mode and bool(state_payload.get("run_over", false)) and str(state_payload.get("end_reason", "")) == "last_human_online":
+		var terminal_id := str(state_payload.get("battle_id", ""))
+		if terminal_id.is_empty() or terminal_id == _shown_abandonment_battle:
+			return
+		_shown_abandonment_battle = terminal_id
+		_apply_team_match_state_payload(state_payload)
+		_show_game_over()
+		return
 	if not _resume_replay_pending.is_empty():
 		return
 	if _battle != null and is_instance_valid(_battle):

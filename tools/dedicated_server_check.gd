@@ -127,6 +127,8 @@ func _check_snapshot_round_trip() -> void:
 	room.round_index = 7
 	room.team_hp = [33, 29]
 	room.slot_states = ["player", "player", "empty", "empty", "empty", "empty"]
+	room.initial_seats = ["player", "player", "empty", "player", "empty", "empty"]
+	room.human_offline_since = {3: 1.0}
 	room.state_seq = 12
 	room.tx_log = {0: ["r1"]}
 	room.peer_slot = {555: 0}
@@ -155,6 +157,10 @@ func _check_snapshot_round_trip() -> void:
 		"snapshot_peer_kept", "恢复后 peer_slot 必须清空")
 	_h.expect((back.get("boards", {}) as Dictionary).is_empty(),
 		"snapshot_boards_kept", "boards 是缓存类字段，不入快照也不该恢复")
+
+	_h.expect(back.get("initial_seats", []) == room.initial_seats, "initial_humans_restored", "AI takeover must not erase original humans")
+	_h.expect(back.get("human_offline_since", {}) == {0: _now, 1: _now, 3: _now},
+		"restart_abandonment_grace", "Restart grants all original humans a fresh grace including former AI seats")
 
 	# 房间是在存盘前一刻建的，所以存进去的"已过去多久"≈0，恢复后 created_at 应≈当前时刻。
 	# 松成 "created > 0 且 <= now" 是测不出东西的：存绝对值（1000）时恢复出来是

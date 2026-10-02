@@ -252,8 +252,8 @@ func _check_slow_drain_preserves_attacks() -> void:
 	probe.set("_presentation_director", director)
 	var done: Array = [false]
 	_finish_drain(probe, done)
-	await get_tree().create_timer(3.1).timeout
-	_h.expect(not bool(done[0]), "no_result_at_wall_clock_cap", "result bypassed an unfinished valid attack after 3s")
+	await get_tree().create_timer(0.1).timeout
+	_h.expect(not bool(done[0]), "wait_before_presentation_deadline", "result bypassed an unfinished attack before its deadline")
 	probe.set("_replay_mode", true)
 	probe.set("_return_emitted", true)
 	probe.call("_skip_animation")

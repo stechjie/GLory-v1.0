@@ -264,6 +264,13 @@ func load_snapshot() -> void:
 				deadline[i] = now + reserve_grace
 		room.reserved = reserved
 		room.reserve_deadline = deadline
+		# Restart grants a fresh disconnect grace, including AI-controlled humans.
+		var initial: Array = room.get("initial_seats", [])
+		var offline := {}
+		for slot in initial.size():
+			if str(initial[slot]) == "player":
+				offline[slot] = now
+		room["human_offline_since"] = offline
 		_rooms_service.rooms[int(room.id)] = room
 		restored += 1
 
