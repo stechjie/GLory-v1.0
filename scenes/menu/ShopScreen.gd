@@ -426,7 +426,7 @@ func _header() -> Control:
 	title.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
 	row.add_child(title)
 
-	# 余额。与主菜单右上角是同一组图标（同一条 gold.png / diamond.png，这里只裁出图标那一段）——
+	# 余额与主菜单共用独立透明货币图标，不从装饰边框中裁切。
 	# 两处显示同一个数，图不一样会让人以为是两种钱。
 	var purse := HBoxContainer.new()
 	purse.add_theme_constant_override("separation", Tokens.GAP_S)

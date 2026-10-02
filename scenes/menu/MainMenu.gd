@@ -86,8 +86,6 @@ const PROFILE_PORTRAIT_SIZE := Vector2(123, 123)
 # 圆盘盒中心。头像与自定义框（的**内孔圆心**）都以它为心。
 const PROFILE_DISC_CENTER := PROFILE_DISC_POS + PROFILE_DISC_BOX * 0.5
 const PROFILE_PORTRAIT_POS := PROFILE_DISC_CENTER - PROFILE_PORTRAIT_SIZE * 0.5
-const TEX_GOLD := preload("res://assets/ui/main_menu_live/gold.png")
-const TEX_DIAMOND := preload("res://assets/ui/main_menu_live/diamond.png")
 const TEX_MAIL := preload("res://assets/ui/main_menu_live/mail.png")
 # 千分位与商城、邮件共用这一份（两处显示同一个数，格式不一样很显眼）。
 const Currency := preload("res://scripts/account/Currency.gd")
@@ -310,10 +308,8 @@ func _build() -> void:
 	# 这两个数**曾经也是写死的假数据**（"89,450" / "2,350"），同上面名牌那两行。
 	# 现在接的是 GET /v1/me/wallet。拉到之前显示 "—" 而不是 0 ——
 	# 0 是一个**看起来正常的错值**，玩家会以为自己的钱没了。
-	_add_texture(TEX_GOLD, Vector2(645, 35), Vector2(220, 55))
-	_coin_label = _add_label("—", Vector2(645, 35), Vector2(220, 55), 24)
-	_add_texture(TEX_DIAMOND, Vector2(885, 35), Vector2(220, 55))
-	_diamond_label = _add_label("—", Vector2(885, 35), Vector2(220, 55), 24)
+	_coin_label = _add_currency_bar("coin", Vector2(645, 35))
+	_diamond_label = _add_currency_bar("diamond", Vector2(885, 35))
 	_add_hit(Vector2(885, 35), Vector2(220, 55),
 		func() -> void: diamond_shop_requested.emit())
 
@@ -1247,6 +1243,19 @@ func _apply_item(item: Dictionary) -> void:
 		node.size = size * scale
 	if node is Label:
 		node.add_theme_font_size_override("font_size", maxi(10, int(item.font_size * scale)))
+
+func _add_currency_bar(currency: String, pos: Vector2) -> Label:
+	var host := _add_container(pos, Vector2(220, 55))
+	var panel := Panel.new()
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	panel.add_theme_stylebox_override("panel", Tokens.panel_box(Color("211a0e"), Color("aa7f28"), 10))
+	host.add_child(panel)
+	var icon := _add_texture(Currency.icon(currency), pos + Vector2(5, 3), Vector2(49, 49))
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var amount := _add_label("—", pos + Vector2(51, 0), Vector2(126, 55), 24)
+	_add_label("+", pos + Vector2(180, 0), Vector2(32, 55), 30)
+	return amount
 
 func _add_texture(texture: Texture2D, pos: Vector2, size: Vector2, edge: String = "") -> TextureRect:
 	var rect := TextureRect.new()

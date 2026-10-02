@@ -11,7 +11,7 @@ const RankedTiers := preload("res://scenes/menu/RankedTiers.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
 const BACKGROUND := preload("res://assets/ui/main_menu_live/background.png")
 const RANK_EMBLEM := preload("res://assets/ui/ranked/reward_crest.png")
-const COIN := preload("res://assets/ui/main_menu_live/gold.png")
+const Currency := preload("res://scripts/account/Currency.gd")
 const WARM_GLOW := preload("res://assets/ui/main_menu_live/glow_warm.png")
 
 const POLL_ATTEMPTS := 12
@@ -158,10 +158,7 @@ func _build() -> void:
 	amount_row.add_theme_constant_override("separation", 12)
 	reward_column.add_child(amount_row)
 	var coin := TextureRect.new()
-	var coin_crop := AtlasTexture.new()
-	coin_crop.atlas = COIN
-	coin_crop.region = Rect2(16, 7, 91, 89)
-	coin.texture = coin_crop
+	coin.texture = Currency.icon("coin")
 	coin.custom_minimum_size = Vector2(56, 56)
 	coin.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	coin.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED

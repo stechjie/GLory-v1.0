@@ -207,11 +207,12 @@ func _case_currency_helper() -> void:
 	for pair in pairs:
 		_h.expect(Currency.comma(int(pair[0])) == str(pair[1]), "comma",
 			"千分位 %d -> %s，应为 %s" % [pair[0], Currency.comma(int(pair[0])), pair[1]])
-	var diamond := Currency.icon("diamond") as AtlasTexture
-	var gold := Currency.icon("coin") as AtlasTexture
-	_h.expect(diamond != null and diamond.region == Currency.DIAMOND_ICON_REGION
-			and gold != null and gold.region == Currency.GOLD_ICON_REGION, "icon_regions",
-		"货币图标没按裁切区域裁（会显示成整条货币条被压扁的样子）")
+	var diamond := Currency.icon("diamond")
+	var gold := Currency.icon("coin")
+	_h.expect(diamond != null and gold != null and not diamond is AtlasTexture
+			and not gold is AtlasTexture and diamond.get_width() == diamond.get_height()
+			and gold.get_width() == gold.get_height(), "standalone_icons",
+		"货币应使用独立方形透明图标，不能裁入整条货币栏边框")
 	_h.expect(Currency.icon("diamond") == diamond, "icon_cached", "货币图标每次都新建一份")
 
 
