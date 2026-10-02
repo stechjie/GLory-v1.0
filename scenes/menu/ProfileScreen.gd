@@ -40,6 +40,14 @@ const PICKER_MODAL_ID := "profile_avatar_picker"
 const FRAME_PICKER_MODAL_ID := "profile_frame_picker"
 const HISTORY_MODAL_ID := "profile_match_history"
 
+# 资料页专用的默认框素材：`main_menu_live/profile_avatar.png` 把内圆抠透明后的副本。
+# **刻意不写进 data/avatars.json** —— 那一行是「资料页 + 大厅名牌」共用的，
+# 改了会连带改掉大厅的画法。只在本文件里用，见 `_profile_frame_texture`。
+const FRAME_DEFAULT_ID := "frame_default"
+const FRAME_DEFAULT_HOLLOW_PATH := "res://assets/ui/shop/headframes/frame_default.png"
+# 懒加载缓存（对齐 AvatarCatalog 的做法：只有资料页用得到的东西不占启动预算）。
+var _frame_default_hollow: Texture2D
+
 # 「战绩」块里三个要异步填的值标签（_load_ranked）。
 var _rank_value: Label
 var _rank_badge: TextureRect
@@ -847,10 +855,23 @@ func _refresh() -> void:
 	# 唯一的显示名拼法。见文件顶部第 3 条。
 	_name_label.text = AccountManager.display_name(name_text, code)
 	_avatar_rect.texture = Catalog.texture_for(_field("avatar"))
+	# 头像框：**默认框也是框**（10.02 反馈：资料页选默认框时整块没有头像框）。
+	#
+	# 改动前这里是
+	#   `_frame_rect.visible = not frame_id.is_empty() and frame_id != "frame_default"`
+	# —— 因为默认框那张图（`main_menu_live/profile_avatar.png`）的圆心是**实心**深棕盘，
+	# 盖上去就把头像糊掉，所以只能把框整个藏掉；代价是玩家一选默认框资料页就没框，
+	# 而大厅名牌、3v3 席位还画着金环，三处口径对不上。
+	#
+	# ★ 本次**只动资料页这一处**：默认框改读同一张图把内圆抠空后的副本
+	# （`assets/ui/shop/headframes/frame_default.png`），于是它跟商城框一样贴得出来。
+	# `data/avatars.json` 里 `frame_default.source` **保持不动** —— 那一行同时是大厅
+	# 名牌的底板，改它会牵连别的界面。其余 id 仍交给 AvatarCatalog 决定（含
+	# 「认不出就回落默认框」那条）。
 	var frame_id := Catalog.id_from_value(_field("avatar_frame"))
-	_frame_rect.visible = not frame_id.is_empty() and frame_id != "frame_default"
+	_frame_rect.visible = not frame_id.is_empty()
 	if _frame_rect.visible:
-		_frame_rect.texture = Catalog.frame_texture_for(_field("avatar_frame"))
+		_frame_rect.texture = _profile_frame_texture(frame_id, _field("avatar_frame"))
 		_avatar_rect.offset_left = 21
 		_avatar_rect.offset_top = 21
 		_avatar_rect.offset_right = -21
@@ -870,6 +891,25 @@ func _refresh() -> void:
 		_refresh_self()
 	else:
 		_refresh_public()
+
+
+# 资料页专用的取框函数。只有 `frame_default` 与别处不同：它读**抠空内圆**的副本，
+# 好让默认框也能压在头像上（原图圆心实心，压上去等于把头像抹掉）。
+# 抠空素材缺失时返回 null（宁可少一个装饰），**不**回落成实心原图 —— 回落就等于
+# 把原来的 bug 原样搬回来。其余 id 与改动前完全一致。
+func _profile_frame_texture(frame_id: String, raw_value: String) -> Texture2D:
+	if frame_id == FRAME_DEFAULT_ID:
+		return _frame_default_hollow_texture()
+	return Catalog.frame_texture_for(raw_value)
+
+
+func _frame_default_hollow_texture() -> Texture2D:
+	if _frame_default_hollow != null:
+		return _frame_default_hollow
+	if not ResourceLoader.exists(FRAME_DEFAULT_HOLLOW_PATH):
+		return null
+	_frame_default_hollow = load(FRAME_DEFAULT_HOLLOW_PATH) as Texture2D
+	return _frame_default_hollow
 
 
 func _rename_hint(ready_at: String, now: int) -> String:
