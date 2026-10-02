@@ -69,6 +69,23 @@ const ROOM_ICON_SIZE := 44
 const TEX_BACKGROUND := preload("res://assets/ui/main_menu_live/background.png")
 const TEX_PROFILE_PANEL := preload("res://assets/ui/main_menu_live/profile_panel.png")
 const TEX_PROFILE_AVATAR := preload("res://assets/ui/main_menu_live/profile_avatar.png")
+# ── 资料卡那组头像的几何（10.02 三轮）────────────────────────────────────
+# 头像 123、圆盘盒 180x175。**自定义框按内孔反推尺寸**（`_profile_hole_target()` +
+# `AvatarCatalog.frame_drawn_size`）：内孔直径对齐到「默认圆盘的内孔」≈112.9
+# （< 头像 123，所以头像盖得住、不会露缝），框的**内孔圆心**再按 FRAME_HOLE_OFFSET
+# 压到圆盘中心上。于是不管戴哪张商城框，内孔几何都与默认圆盘重合、头像一点不变。
+# 竖长素材要画得比圆盘更大才能做到这一点。
+#
+# ★ `PROFILE_DISC_POS` 就在画布左上角（y=12）。最厚的那些按内孔反推后画出来
+#   约 197x246（炽焰之心）⇒ 圆盘中心在 y=99.5，顶点会跑到画布外约 23px 被裁掉。
+#   **这是允许的**：2026-10-02 用户明确「允许头像框超出屏幕外」。
+#   不要为了不出屏去缩框或挪资料卡 —— 那会把「任意框头像一样大」这条破坏掉。
+const PROFILE_DISC_POS := Vector2(18, 12)
+const PROFILE_DISC_BOX := Vector2(180, 175)
+const PROFILE_PORTRAIT_SIZE := Vector2(123, 123)
+# 圆盘盒中心。头像与自定义框（的**内孔圆心**）都以它为心。
+const PROFILE_DISC_CENTER := PROFILE_DISC_POS + PROFILE_DISC_BOX * 0.5
+const PROFILE_PORTRAIT_POS := PROFILE_DISC_CENTER - PROFILE_PORTRAIT_SIZE * 0.5
 const TEX_GOLD := preload("res://assets/ui/main_menu_live/gold.png")
 const TEX_DIAMOND := preload("res://assets/ui/main_menu_live/diamond.png")
 const TEX_MAIL := preload("res://assets/ui/main_menu_live/mail.png")
@@ -108,10 +125,10 @@ const DEBUG_BANDS := [
 ]
 
 # 左上角名牌上的两行字。要在账号资料到达后就地刷新，所以留引用。
+# 头像只有一个节点：默认框与自定义框共用它（10.02 三轮删掉了那个 78x78 的副本）。
 var _profile_portrait: TextureRect
 var _profile_base_frame: TextureRect
 var _profile_frame_overlay: Control
-var _profile_frame_portrait: TextureRect
 var _profile_frame_art: TextureRect
 var _profile_name_label: Label
 var _profile_sub_label: Label
@@ -159,6 +176,9 @@ var _debug_layer: Control
 var _debug_on := DEBUG_LAYOUT
 var _layout_scale := 1.0
 var _layout_origin := Vector2.ZERO
+# `_layout()` 那次用的安全区。`_apply_item()` 要单独落到某个元素时得复用它，
+# 否则就得在循环里对每个元素重算一次 SafeArea（上百个元素 × 每次布局）。
+var _layout_safe := Rect2()
 
 func _ready() -> void:
 	_build()
@@ -250,7 +270,7 @@ func _build() -> void:
 	# 顺序 = 绘制层级，hit 必须放最后（TextureRect 默认会吃掉点击）。
 	# TODO 以后往头像框里放玩家立绘：要一张圆心透明的头像框，立绘那行插在头像框之前垫底。
 	_add_texture(TEX_PROFILE_PANEL, Vector2(18, 46), Vector2(550, 110), "left")
-	_profile_base_frame = _add_texture(TEX_PROFILE_AVATAR, Vector2(18, 12), Vector2(180, 175), "left")
+	_profile_base_frame = _add_texture(TEX_PROFILE_AVATAR, PROFILE_DISC_POS, PROFILE_DISC_BOX, "left")
 	# 头像画在框**之上**，不是垫在底下。
 	#
 	# 顶部原来那条 TODO 写的是「以后往头像框里放玩家立绘：要一张圆心透明的头像框，
@@ -259,11 +279,15 @@ func _build() -> void:
 	#
 	# 所以改成盖在上面 + 裁成圆形。等美术出了圆心透明的版本，可以把这行挪到
 	# 上一行之前并去掉裁剪，那样更省一次绘制。
-	_profile_portrait = _add_round_portrait(Vector2(46, 36), Vector2(123, 123), "left")
-	# 玩家装备了透明头像框时，绘制其专属框与较小的圆形头像。
-	_profile_frame_portrait = _add_round_portrait(Vector2(69, 60), Vector2(78, 78), "left")
-	_profile_frame_portrait.visible = false
-	_profile_frame_overlay = _add_container(Vector2(18, 12), Vector2(180, 175), "left")
+	#
+	# ★ 10.02 三轮：**只有这一个头像节点**。原先还额外有一个 78x78 的
+	# `_profile_frame_portrait` 专门给「戴了商城框」用 —— 于是同一张立绘，戴框就
+	# 从 123 缩到 78（玩家报的「头像变小」）。现在不管戴什么框都走这一个。
+	_profile_portrait = _add_round_portrait(PROFILE_PORTRAIT_POS, PROFILE_PORTRAIT_SIZE, "left")
+	# 自定义框的容器。**初始是圆盘盒的大小，实际尺寸由 `_refresh_profile_plate()`
+	# 按内孔反推后改**（见 `_profile_hole_target()`）—— 每个框的内孔占比不同，
+	# 竖长的框要画得比圆盘更大，内孔才能和圆盘一样大。
+	_profile_frame_overlay = _add_container(PROFILE_DISC_POS, PROFILE_DISC_BOX, "left")
 	_profile_frame_overlay.visible = false
 	_profile_frame_art = TextureRect.new()
 	_profile_frame_art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -271,6 +295,12 @@ func _build() -> void:
 	_profile_frame_art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_profile_frame_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_profile_frame_overlay.add_child(_profile_frame_art)
+	# ★ 10.02 三轮：把自定义框挪到头像**前面**（= 画在头像下面），与默认圆盘同一层次。
+	# 之前它是后加的 ⇒ 盖在头像上，它那道圆内孔会把头像边缘切掉一圈：内孔是圆的、
+	# 头像也是圆的，两圆心/半径差几像素就吃掉几像素（三轮渲染实测 -0.8% ~ -4.1%），
+	# 于是「戴哪个框」直接改变了头像的可见大小。放到头像下面之后，**头像的可见像素
+	# 在任何框下都逐像素相同** —— 这才是「和默认框一样大」的结构性保证。
+	move_child(_profile_frame_overlay, _profile_portrait.get_parent().get_index())
 	# 这两行**曾经是写死的假数据**（"GloryMaster" / "等级 45"）。等级系统不存在，
 	# 所以第二行现在放注册天数 —— 有真实来源，且比精确注册日期少泄漏一点。
 	# 等级/段位做出来之后再换回去，那时第二行才有真东西可放。
@@ -903,25 +933,62 @@ func _refresh_profile_plate() -> void:
 			_profile_portrait.texture = null
 		_profile_base_frame.visible = true
 		_profile_portrait.visible = true
-		_profile_frame_portrait.visible = false
 		_profile_frame_overlay.visible = false
 		return
 	if _profile_portrait != null and is_instance_valid(_profile_portrait):
-		var portrait := AvatarCatalog.texture_for(str(profile.get("avatar", "")))
-		_profile_portrait.texture = portrait
-		_profile_frame_portrait.texture = portrait
+		_profile_portrait.texture = AvatarCatalog.texture_for(str(profile.get("avatar", "")))
 		var frame_id := AvatarCatalog.id_from_value(str(profile.get("avatar_frame", "")))
 		var custom_frame := not frame_id.is_empty() and frame_id != "frame_default"
+		# ★ 10.02 三轮：头像**永远可见、永远是 123**，默认框与自定义框只是换外圈。
+		#   原先 custom_frame 时把头像换成那个 78x78 的副本 ⇒ 同一张立绘戴框就变小。
+		_profile_portrait.visible = true
 		_profile_base_frame.visible = not custom_frame
-		_profile_portrait.visible = not custom_frame
-		_profile_frame_portrait.visible = custom_frame
 		_profile_frame_overlay.visible = custom_frame
 		if custom_frame:
-			_profile_frame_art.texture = AvatarCatalog.frame_texture_for(str(profile.get("avatar_frame", "")))
+			_profile_frame_art.texture = AvatarCatalog.frame_texture_for(
+				str(profile.get("avatar_frame", "")))
+			_place_profile_frame(frame_id)
 	_profile_name_label.text = AccountManager.display_name(
 		str(profile.get("player_name", "")), str(profile.get("friend_code", "")))
 	var days := int(profile.get("days_since_created", 1))
 	_profile_sub_label.text = _menu_text("第 %d 天" % days, "Day %d" % days)
+
+
+# 目标内孔直径 = **默认圆盘的内孔直径**（圆盘盒 180 × 默认框内孔占比 0.6271 ≈ 112.9）。
+#
+# ★ 为什么不是「头像画出来的直径（123）」：内孔只要 ≤ 头像就不会露缝，而取「默认圆盘的内孔」
+#   有三个好处：① 与玩家已经认可的默认框**逐像素同款**（内孔直径、圆心都对齐，见
+#   `frame_box_origin`）；② 比内孔=123 小一圈 ⇒ 框的绘制尺寸也小一圈，最厚的炽焰之心
+#   只需 197 宽（内孔=123 时要 219，左边缘会出屏）；③ 头像被内孔盖住的那 5px 是
+#   默认圆盘本来就有的观感，不是新引入的。
+#
+# ★ 内孔必须 **≤ 头像**，否则头像外面会留一圈背景缝（框画在头像下面，缝里是背景）。
+#   这条由门禁 frame_hole_check 的 `*_no_gap_*` 与 seat_frame_check 的
+#   `hole_not_larger_than_avatar` 两处一起锁。
+#
+# ★ 这条是渲染 + 像素测量的结论：`其他/work/_qa_1002c/`（7 种框 × 房间/大厅 ×
+#   有头像/无头像/无框三种渲染）。
+func _profile_hole_target() -> float:
+	return PROFILE_DISC_BOX.x * AvatarCatalog.default_disc_hole_fraction()
+
+
+# 把自定义框的容器改成「按内孔反推」的尺寸与落点：**内孔**压在圆盘中心上。
+# 不是「盒心压在圆盘中心上」—— 每个框的内孔在图里的位置都不一样（偏上 2~3%），
+# 少这一步就会在头像外露一圈背景缝（三轮门禁 frame_hole_check 抓到的就是它）。
+# 框可能比画布还高/宽（最厚的炽焰之心约 199x250）⇒ 顶部会被画布裁掉，这是允许的。
+func _place_profile_frame(frame_id: String) -> void:
+	if _profile_frame_overlay == null or not is_instance_valid(_profile_frame_overlay):
+		return
+	var drawn := AvatarCatalog.frame_drawn_size(frame_id, _profile_hole_target())
+	if drawn.x <= 0.0:
+		return
+	for placement in _placed:
+		if placement.node == _profile_frame_overlay:
+			placement.pos = AvatarCatalog.frame_box_origin(
+				frame_id, _profile_hole_target(), PROFILE_DISC_CENTER)
+			placement.size = drawn
+			_apply_item(placement)
+			return
 
 func _emit_shop() -> void:
 	shop_requested.emit()
@@ -1134,6 +1201,7 @@ func _layout() -> void:
 	var origin := safe.position + (safe.size - REF_SIZE * scale) * 0.5
 	_layout_scale = scale
 	_layout_origin = origin
+	_layout_safe = safe
 	if _debug_layer != null:
 		_debug_layer.queue_redraw()
 	for band in _screen_bands:
@@ -1142,29 +1210,43 @@ func _layout() -> void:
 		rect.position = Vector2(0.0, viewport_size.y - height if bool(band.from_bottom) else float(band.y) * scale)
 		rect.size = Vector2(viewport_size.x, height)
 	for item in _placed:
-		var node := item.node as Control
-		var pos := item.pos as Vector2
-		var size := item.size as Vector2
-		# edge=left/right 的元素锚定到安全区的左右边（消除宽屏下的左右留白，又不钻进灵动岛）；
-		# 其余保持 16:9 画布居中缩放。垂直方向一律跟随居中画布。
-		var x: float
-		match str(item.get("edge", "")):
-			"left":
-				x = safe.position.x + pos.x * scale
-			"right":
-				x = safe.end.x - (REF_SIZE.x - pos.x) * scale
-			_:
-				x = origin.x + pos.x * scale
-		node.position = Vector2(x, origin.y + pos.y * scale)
-		if node is Button:
-			# 整体缩放按钮：文字、内边距、边框和点击区域使用同一比例。
-			# 只缩 size 会让固定字号挤满底板，且被最小尺寸反向撑开。
-			node.size = size
-			node.scale = Vector2.ONE * scale
-		else:
-			node.size = size * scale
-		if node is Label:
-			node.add_theme_font_size_override("font_size", maxi(10, int(item.font_size * scale)))
+		_apply_item(item)
+
+
+# 把一个登记过的元素落到屏幕上。**单独抽出来**是为了让「资料卡上的自定义框」
+# 能在资料变动时就地换尺寸（`_place_profile_frame`）—— 只改 `_placed` 不落到节点，
+# 框会停在数据里的新尺寸、屏幕上还是旧的（10.01 第 4 条那个坑）。
+# 用到的 safe / scale / origin 都是 `_layout()` 存下来的，所以它只能在 `_layout()`
+# 跑过之后用；`_refresh_profile_plate()` 都发生在 `_ready()` 的 `_layout()` 之后。
+func _apply_item(item: Dictionary) -> void:
+	var node := item.node as Control
+	if node == null or not is_instance_valid(node):
+		return
+	var safe := _layout_safe
+	var scale := _layout_scale
+	var origin := _layout_origin
+	var pos := item.pos as Vector2
+	var size := item.size as Vector2
+	# edge=left/right 的元素锚定到安全区的左右边（消除宽屏下的左右留白，又不钻进灵动岛）；
+	# 其余保持 16:9 画布居中缩放。垂直方向一律跟随居中画布。
+	var x: float
+	match str(item.get("edge", "")):
+		"left":
+			x = safe.position.x + pos.x * scale
+		"right":
+			x = safe.end.x - (REF_SIZE.x - pos.x) * scale
+		_:
+			x = origin.x + pos.x * scale
+	node.position = Vector2(x, origin.y + pos.y * scale)
+	if node is Button:
+		# 整体缩放按钮：文字、内边距、边框和点击区域使用同一比例。
+		# 只缩 size 会让固定字号挤满底板，且被最小尺寸反向撑开。
+		node.size = size
+		node.scale = Vector2.ONE * scale
+	else:
+		node.size = size * scale
+	if node is Label:
+		node.add_theme_font_size_override("font_size", maxi(10, int(item.font_size * scale)))
 
 func _add_texture(texture: Texture2D, pos: Vector2, size: Vector2, edge: String = "") -> TextureRect:
 	var rect := TextureRect.new()

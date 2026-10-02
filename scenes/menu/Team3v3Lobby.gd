@@ -22,16 +22,17 @@ const SLOT_SIZE := Vector2(184, 175)
 # 位于头像框**下面**，会被框整个盖住 —— 所以这里再从 slot.png 里把铭牌那一块
 # 单独抠出来（AtlasTexture 取 region），在头像框之后再画一遍抬到最上层。
 #
-# 尺寸来历：头像框取 160x160，是与主界面资料卡对齐的比例（那边 180x175 的框配
-# 78x78 的头像）。实测五张商城框的内孔占比在宽 0.58~0.68 / 高 0.45~0.64 之间，
-# 160 的框内孔最小只剩 92x72 —— 所以**有框时头像必须从 106 缩到 78**，
-# 否则最厚的那张（炽焰之心）会把头像上下各切掉十几像素。
+# 尺寸来历（10.02 三轮改口径，与大厅资料卡同一套）：
+# 头像**永远是 106**（= 没戴框时的尺寸），不再跟着框缩。框按「内孔直径 == 默认圆盘
+# 的内孔」反推绘制尺寸（`AvatarCatalog.frame_drawn_size`）—— 旧口径是「头像缩到 78
+# 去迁就框」，玩家看到的就是「戴上框头像变小」，那正是这一轮要消灭的。
 const SLOT_AVATAR_POS := Vector2(39, 40)
 const SLOT_AVATAR_SIZE := Vector2(106, 106)
+# 默认圆盘（金棕圆盘）的盒：160x160，素材 850x825，KEEP_ASPECT 居中。
 const SLOT_FRAME_POS := Vector2(12, 13)
 const SLOT_FRAME_SIZE := Vector2(160, 160)
-const SLOT_FRAME_AVATAR_POS := Vector2(53, 54)
-const SLOT_FRAME_AVATAR_SIZE := Vector2(78, 78)
+# 圆盘盒的中心 —— 头像中心、圆盘内孔中心、自定义框的**内孔圆心**，三者都是它。
+const SLOT_DISC_CENTER := SLOT_FRAME_POS + SLOT_FRAME_SIZE * 0.5
 # 铭牌在 slot.png（400x376）里的像素矩形，以及它换算到席位局部坐标的落点
 # （×184/400、×175/376）。比「房主」那行字的框（39,137,106x32）略窄，因为
 # 铭牌是六边形、四角本来就收进去。
@@ -205,6 +206,15 @@ const TEX_BACKGROUND := preload("res://assets/ui/room_v2/background.png")
 const TEX_BACK := preload("res://assets/ui/room_v2/back.png")
 const TEX_TITLE := preload("res://assets/ui/room_v2/title.png")
 const TEX_SLOT := preload("res://assets/ui/room_v2/slot.png")
+# 10.02 bug 文档：玩家的座位头像框展示要与大厅的头像保持一致。
+# 大厅资料卡在「没戴自定义框」时画的是这张 —— 金棕圆盘垫底 + 大圆头像；
+# 戴了自定义框才改画框 + 小头像（MainMenu._refresh_profile_plate）。
+# 席位据此对齐同一口径，所以这里复用大厅同一张图，而不是自己造一只木环。
+#
+# 只此一处 preload：全仓原本只有 MainMenu.gd 引用它，这里新增第二个引用点。
+# 若以后换掉 profile_avatar.png，MainMenu 的注释里那句「换了那张框图就要重新量」
+# 同样适用 —— 席位的圆盘内孔与头像直径也是按那张量出来的。
+const TEX_PROFILE_AVATAR := preload("res://assets/ui/main_menu_live/profile_avatar.png")
 const TEX_FRIENDS := preload("res://assets/ui/room_v2/friends.png")
 const TEX_CHAT := preload("res://assets/ui/room_v2/chat.png")
 const TEX_START := preload("res://assets/ui/room_v2/start.png")
@@ -243,6 +253,11 @@ var _slot_ai_btns: Array = []
 # 10.01 反馈（第 4 条）：每个席位多两个节点 —— 玩家的头像框，和抬到框上面的铭牌复本。
 var _slot_frames: Array = []
 var _slot_plates: Array = []
+# 10.02 bug 文档：玩家席位要去掉「头像框后面的座位」（slot.png 那只木环），
+# 换成大厅那套金棕圆盘。这两组引用就是为「能单独控制底图/圆盘的显隐 + 落点」补的：
+# 木环底图原先 `_add_texture(TEX_SLOT, ...)` 的返回值直接丢掉了，改不动它。
+var _slot_bases: Array = []
+var _slot_frame_bases: Array = []
 var _status_lbl: Label
 var _room_id_lbl: Label
 var _start_btn: Button
@@ -449,6 +464,8 @@ func _build() -> void:
 	_slot_avatars.resize(6)
 	_slot_frames.resize(6)
 	_slot_plates.resize(6)
+	_slot_bases.resize(6)
+	_slot_frame_bases.resize(6)
 	for i in 6:
 		_build_slot(i)
 
@@ -474,8 +491,22 @@ func _build() -> void:
 
 func _build_slot(index: int) -> void:
 	var pos: Vector2 = SLOT_POS[index]
-	_add_texture(TEX_SLOT, pos, SLOT_SIZE)
-	var avatar := _add_texture(null, pos + Vector2(39, 40), Vector2(106, 106))
+	# 木环底图。玩家席位会把它整块隐藏（10.02 bug 文档），所以这一行必须留住引用 ——
+	# 原先返回值被直接丢掉，想隐藏也没有把手。
+	_slot_bases[index] = _add_texture(TEX_SLOT, pos, SLOT_SIZE)
+	# 大厅那套「金棕圆盘」：只在玩家席位、且**没戴自定义框**时显示。
+	# 插在木环之后、头像之前 —— 垫在头像下面，头像的圆形 shader 会把它的内孔盖住，
+	# 露出来的正是外圈那道金环（与大厅资料卡同款）。
+	#
+	# 同样**不能拉满矩形**：这张图是 850x825（W/H=1.030）也不是方的。大厅那边
+	# `MainMenu._profile_base_frame` 走 `_add_texture()` 的默认 `STRETCH_KEEP_ASPECT`，
+	# 这里取同一个口径（方盒子里两者等价，都居中）。
+	var frame_base := _add_texture(TEX_PROFILE_AVATAR, pos + SLOT_FRAME_POS, SLOT_FRAME_SIZE)
+	frame_base.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT
+	frame_base.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	frame_base.visible = false
+	_slot_frame_bases[index] = frame_base
+	var avatar := _add_texture(null, pos + SLOT_AVATAR_POS, SLOT_AVATAR_SIZE)
 	avatar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var shader := Shader.new()
 	shader.code = "shader_type canvas_item; void fragment(){vec4 c=COLOR; c.a*=1.0-smoothstep(0.48,0.5,length(UV-vec2(0.5))); COLOR=c;}"
@@ -483,16 +514,38 @@ func _build_slot(index: int) -> void:
 	material.shader = shader
 	avatar.material = material
 	_slot_avatars[index] = avatar
-	# 玩家的头像框（默认框不画 —— 与 MainMenu / ProfileScreen 一致，那两处也只画
-	# 自定义框；默认框 = slot.png 那只木环，本来就是席位的样子）。
+	# 玩家的头像框。只画**自定义框**：默认框 / 没框时画的是上面那只金棕圆盘
+	# （10.02 改口径，与 MainMenu / ProfileScreen 完全一致 —— 那两处也只画自定义框，
+	# 默认框走「圆盘 + 大头像」这条路）。
 	#
 	# **不能套头像那个圆形 shader**：框的外圈是宝石、冰晶、藤蔓，裁成圆就全没了。
-	var frame := _add_texture(null, pos + SLOT_FRAME_POS, SLOT_FRAME_SIZE)
+	#
+	# ★★ 10.02 二轮：**必须保持长宽比**。五张商城框的素材都不是方图
+	# （实测 W/H = 0.773 ~ 0.889，都是竖长），而 `_add_texture()` 默认给的是
+	# `STRETCH_SCALE`（拉满整个矩形 = 非等比）⇒ 160x160 的框盒会把它们**横向压成椭圆**。
+	# 大厅那边是 `MainMenu._profile_frame_art`，取值 `STRETCH_KEEP_ASPECT_CENTERED`，
+	# 这里跟着它一致 —— 这是「与大厅保持一致」在几何上的那一半。
+	#
+# ★★ 10.02 三轮：盒**不是固定 160**了。原来竖长的框按 160 盒贴满只剩 ~124 宽的内孔，
+# 头像（106）塞不进去，旧口径就是靠把头像缩到 78 来迁就它的。现在改成
+# 按内孔反推尺寸（`_apply_slot_frame` 里按实际戴的框算），**内孔圆心**压在圆盘中心上。
+	var frame := _add_texture(null, pos + SLOT_DISC_CENTER - SLOT_FRAME_SIZE * 0.5,
+		SLOT_FRAME_SIZE)
+	frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	frame.visible = false
 	_slot_frames[index] = frame
-	# 铭牌复本：只在有框时显示。没框时下面那张 slot.png 已经把铭牌画出来了，
-	# 再画一遍是同像素重复，白多一次绘制（也会让「无框」这条路径多一份可变量）。
+	# ★★ 10.02 三轮：把框挪到**头像前面**（= 画在头像下面），与默认圆盘的层次一致。
+	# `_add_texture` 是 `add_child()`，后加的盖在上面；框盖在头像上时，它那道圆的
+	# 内孔会把头像的边缘切掉一圈 —— 内孔是圆的、头像也是圆的，两个圆只要圆心/半径
+	# 差几像素就吃掉几像素（三轮渲染实测：大厅 -0.8% ~ -4.1%），于是「戴哪个框」直接
+	# 改变了头像的可见大小。放到头像下面之后，**头像的可见像素在任何框下都逐像素
+	# 相同**，这才是「和默认框一样大」的结构性保证，而不是靠把内孔调准去碰运气。
+	move_child(frame, avatar.get_index())
+	# 铭牌复本：玩家席位一律显示（判定见 _apply_slot_frame）。底下 slot.png 里本来就
+	# 画着这块六边形木牌，但玩家席位的底图整块被隐藏了，不再补一份「房主 / 准备 /
+	# 未准备」就没了底 —— 10.02 反馈明确要求保留这块铭牌。
+	# 空位 / 假想敌仍旧吃底图自带的那块，不重复画。
 	var plate_atlas := AtlasTexture.new()
 	plate_atlas.atlas = TEX_SLOT
 	plate_atlas.region = SLOT_PLATE_REGION
@@ -688,25 +741,78 @@ func _refresh() -> void:
 #
 # 判定「有没有框」的写法与 ProfileScreen / MainMenu 完全一致：
 # 认不出 id、或者就是默认框，都算「没有自定义框」。
+#
+# ── 10.02 bug 文档：玩家席位不再保留「头像框后面的座位」 ──────────────────
+# 现按**三种**情况分开画，AI / 空位维持原样（完全不动）：
+#
+#   玩家 + 自定义框  木环隐藏、圆盘不画；框按内孔反推尺寸 + 头像 106
+#   玩家 + 默认框/无框 木环隐藏、画金棕圆盘 160x160 + 头像 106（同大厅）
+#   空位 / 假想敌    木环显示、圆盘不画（一切照旧）
+#
+# 三分支里**头像中心都落在 SLOT_DISC_CENTER (92,93)**：圆盘盒的中心、圆盘内孔的中心、
+# 自定义框的中心、头像位都是它 —— 所以切换默认框 ↔ 自定义框时头像不动，只换了外圈。
+#
+# ★ 10.02 三轮：头像**不再**跟着框缩（旧口径是 78）。框按「内孔直径 == 默认圆盘内孔」
+#   反推绘制尺寸 —— 见 `_slot_hole_target()` 与 `AvatarCatalog.frame_drawn_size()`。
+#   框画在头像**下面**（`_build_slot` 里的 `move_child`），所以头像的可见大小与
+#   戴哪个框无关。
+#
+# 铭牌复本：玩家席位一律显示。铭牌本来就画在 slot.png 里，底图一隐就跟着没了，
+# 而反馈明确要求保留「房主」那一块。
 func _apply_slot_frame(index: int, identity: Dictionary, state: String) -> void:
+	var occupied := state in ["player", "settling"]
 	var frame_value := str(identity.get("avatar_frame", ""))
 	var frame_id := AvatarCatalog.id_from_value(frame_value)
-	var custom := state in ["player", "settling"] and not frame_id.is_empty() and frame_id != "frame_default"
+	var custom := occupied and not frame_id.is_empty() and frame_id != "frame_default"
 	if custom:
 		var tex: Texture2D = AvatarCatalog.frame_texture_for(frame_value)
-		if tex == null:
+		var drawn := AvatarCatalog.frame_drawn_size(frame_id, _slot_hole_target())
+		if tex == null or drawn.x <= 0.0:
 			# 图缺失（老包、或资源没打进包）时退回「没框」：宁可少一个装饰，
-			# 也不能留一个「头像被缩成小圆、框却是空的」席位。
+			# 也不能留一个「框是空的、头像还被让开一块」的席位。
 			custom = false
 		else:
 			_slot_frames[index].texture = tex
+			# 框的**内孔圆心**压在圆盘中心上（= 头像中心），尺寸由内孔反推 ——
+			# 每个框的内孔占比、内孔在图里的位置都不同，所以落点**必须**跟着框走，
+			# 不能只在 _build_slot 里定一次，也不能自己写 `中心 - 尺寸/2`
+			# （内孔偏心的框会因此在头像外露一圈背景缝，见 FRAME_HOLE_OFFSET）。
+			_place_node(_slot_frames[index],
+				SLOT_POS[index] + AvatarCatalog.frame_box_origin(
+					frame_id, _slot_hole_target(), SLOT_DISC_CENTER),
+				drawn)
 	_slot_frames[index].visible = custom
-	_slot_plates[index].visible = custom
-	var slot_pos: Vector2 = SLOT_POS[index]
+	_slot_bases[index].visible = not occupied
+	_slot_frame_bases[index].visible = occupied and not custom
+	_slot_plates[index].visible = occupied
+
+
+# 目标内孔直径 = **默认圆盘的内孔直径**（160 盒 × 默认框内孔占比 0.6271 ≈ 100.3）。
+#
+# ★ 为什么不是「头像画出来的直径（106）」：内孔只要 ≤ 头像就不会露缝，而取「默认圆盘的内孔」
+#   有三个好处：① 与玩家已经认可的默认框**逐像素同款**（内孔直径与圆心都对齐，见
+#   `AvatarCatalog.frame_box_origin`）；② 比内孔=106 小一圈 ⇒ 框画得也小一圈，不挤到
+#   隔壁席位；③ 头像被内孔盖住的那 3px 是默认圆盘本来就有的观感，不是新引入的。
+#   这也正是玩家原话的意思：「内孔贴齐默认框，而默认框也是贴齐头像的」。
+#
+# ★ 内孔**比头像小**才不会露缝：框画在头像下面（`_build_slot` 里的 `move_child`），
+#   缝里露出来的是背景。这条由门禁 lock 在三处：
+#   frame_hole_check 的 `room_no_gap_*` / seat_frame_check 的
+#   `hole_not_larger_than_avatar`。
+#
+# ★ 这条是渲染 + 像素测量出来的，不是推的：`其他/work/_qa_1002c/`（7 种框 × 房间/大厅
+#   × 有头像/无头像/无框三种渲染）。改回「框在上」会在那里立刻看到各框大小不一。
+static func _slot_hole_target() -> float:
+	return SLOT_FRAME_SIZE.x * AvatarCatalog.default_disc_hole_fraction()
+
+
+# 改一个**已登记**节点的落点：改 `_placed` 里那条，并立刻落到节点上。
+# 只写 `_placed` 不落节点 = 10.01 第 4 条那个坑（期望值对了，节点还停在旧位置）。
+func _place_node(node: Control, pos: Vector2, size: Vector2) -> void:
 	for placement in _placed:
-		if placement.node == _slot_avatars[index]:
-			placement.pos = slot_pos + (SLOT_FRAME_AVATAR_POS if custom else SLOT_AVATAR_POS)
-			placement.size = SLOT_FRAME_AVATAR_SIZE if custom else SLOT_AVATAR_SIZE
+		if placement.node == node:
+			placement.pos = pos
+			placement.size = size
 			_apply_tracked(placement)
 			return
 
