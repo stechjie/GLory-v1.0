@@ -625,7 +625,16 @@ func _instantiate_screen(path: String) -> Control:
 	var scene := _load_screen(path)
 	if scene == null:
 		return null
-	return scene.instantiate() as Control
+	var instance := scene.instantiate()
+	# A scene can load despite a failed root script. Reject an empty Control so
+	# the caller can return to its existing fallback instead of showing a blank page.
+	var script: Script = instance.get_script() if instance != null else null
+	if not instance is Control or script == null or not script.can_instantiate():
+		if instance != null:
+			instance.free()
+		push_error("界面脚本加载失败：%s" % path)
+		return null
+	return instance as Control
 
 
 # 对局类界面（备战、战斗、结算、3v3 大厅、自测）在 _clear() 之后调一次。

@@ -18,7 +18,7 @@ const PetPreview := preload("res://scripts/pets/PetPreview.gd")
 # 与 PrepShopRaceIcon.LOGO_PATHS 同一批图。新种族没出图时这一块留空，不报错。
 const RACE_LOGO_PATH := "res://assets/ui/race_logos/%s.png"
 const PrepSkin := preload("res://scenes/prep/PrepSkin.gd")
-# 10.01 第 12 条：点种族卡片时弹该族的羁绊效果（只列效果，不含达成条件）。
+# 点击种族图标查看羁绊效果；选择按钮独立修改出战草稿。
 const SynergyBond := preload("res://scenes/prep/panels/SynergyPanel.gd")
 
 signal back_requested
@@ -51,7 +51,7 @@ var _race_box: VBoxContainer
 var _race_hint_label: Label
 var _race_count_label: Label
 var _race_save_btn: Button
-var _race_cards: Dictionary = {}   # race -> {"panel": PanelContainer, "name": Label, "button": Button}
+var _race_cards: Dictionary = {}   # race -> {"panel", "name", "button", "logo"}
 # 草稿：玩家在页面上点来点去的那一份。只有凑满 RacePick.required_count() 个、按了「保存」
 # 才交给账号服务器 —— 选到一半（3 个）的状态绝不能存，否则存下来的就是一份不合法的选择。
 # 顺序始终跟 RacePick.all_races() 一致，这样才能直接和已保存的那份比较。
@@ -327,16 +327,17 @@ func _build_race_card(race: String) -> Control:
 	content.add_theme_constant_override("separation", 10)
 	card.add_child(content)
 
-	var logo := TextureRect.new()
+	var logo := TextureButton.new()
 	logo.custom_minimum_size = RACE_LOGO_SIZE
-	logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	logo.ignore_texture_size = true
+	logo.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
 	logo.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	logo.tooltip_text = SynergyBond.format_synergy_title(race)
+	logo.pressed.connect(_show_race_bond.bind(race))
 	var logo_path := RACE_LOGO_PATH % race
 	# 先问 exists：load 一个不存在的路径会打引擎错误，而新种族没出图是正常情况。
 	if ResourceLoader.exists(logo_path):
-		logo.texture = load(logo_path) as Texture2D
+		logo.texture_normal = load(logo_path) as Texture2D
 	content.add_child(logo)
 
 	var name_lbl := Label.new()
@@ -357,7 +358,7 @@ func _build_race_card(race: String) -> Control:
 	btn.pressed.connect(_on_race_card_pressed.bind(race))
 	content.add_child(btn)
 
-	_race_cards[race] = {"panel": card, "name": name_lbl, "button": btn}
+	_race_cards[race] = {"panel": card, "name": name_lbl, "button": btn, "logo": logo}
 	return card
 
 func _refresh_races() -> void:
@@ -395,25 +396,15 @@ func _refresh_race_card(race: String, forced: bool) -> void:
 		Tokens.panel_box(Tokens.SURFACE, Tokens.GOLD_EDGE if picked else Tokens.BORDER, 12))
 	var btn: Button = parts["button"]
 	if forced:
-		# ★ 10.01 第 12 条真机踩的坑：这里以前是 tr("race_pick_locked")（「出战中」）+ disabled = true。
-		#   **禁用的 Button 根本不发 pressed** —— 所以四族全出战时（今天就是）这四张卡
-		#   一个都点不动，羁绊弹窗写得再对也永远弹不出来。门禁当时只做源码文本断言，
-		#   于是照样 PASS 70/0，真机上却是「点了没反应」。
-		#   锁定语义没丢，只是换了表达：不再靠「按钮点不动」，改成「点了也改不了选择」
-		#   （拦在 _on_race_card_pressed 里）。按钮这就腾出来做「查看羁绊」。
-		btn.text = tr("race_pick_view_bond")
-		btn.disabled = false
+		# 选择锁定时，种族图标仍可独立查看羁绊。
+		btn.text = tr("race_pick_locked")
+		btn.disabled = true
 	else:
 		btn.text = tr("race_pick_deselect") if picked else tr("race_pick_select")
 		btn.disabled = false
 
 func _on_race_card_pressed(race: String) -> void:
-	# 10.01 第 12 条：点种族卡片，第一件事就是摊开这一族的羁绊效果。
-	# **必须排在下面那道 is_forced 早退之前**：没得选的那一页（今天四族全出战就是）
-	# 要是先 return，羁绊弹窗就永远点不出来 —— 真机就是这么点不动的。
-	_show_race_bond(race)
-	# 没得选（今天：四族全出战）：弹窗已经把第 12 条要的东西给了，到此为止。
-	# 再往下走只会去改 _race_draft —— 那会把一个「锁定页」变成能改出非法选择的页。
+	# 选择按钮只修改出战草稿；查看羁绊由种族图标触发。
 	if RacePick.is_forced():
 		return
 	var need := RacePick.required_count()
@@ -431,7 +422,7 @@ func _on_race_card_pressed(race: String) -> void:
 		_race_draft = next
 	_refresh_races()
 
-# 10.01 第 12 条：点种族卡片时把该族的羁绊**效果**摊开给玩家看。
+# 点击种族图标时把该族的羁绊效果摊开给玩家看。
 #
 # 用 DialogService.info（只有一个「知道了」的提示框，长文自动滚）。
 # 正文纯文本：弹窗正文是 Label 不吃 BBCode，而且全文同一字号同一颜色，
