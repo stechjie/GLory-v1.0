@@ -353,6 +353,10 @@ func _collect_vfx_units(state_snapshot: Dictionary) -> Dictionary:
 			u["range_px"] = float(f.get("range_px", 0.0))
 			u["skill_ready"] = float(f.get("skill_ready", 0.0))
 			u["skill_id"] = str(f.get("def", {}).get("skill_id", ""))
+			# Replay rosters preserve the resolved def, but omit the opening-only
+			# taunt fields. Taunt lasts while the guardian lives, independent of shield.
+			u["taunt_active"] = bool(f.get("taunt_active", u["skill_id"] == "guardian_shield_taunt"))
+			u["taunt_radius"] = float(f.get("taunt_radius", f.get("def", {}).get("taunt_radius", 0.0)))
 			u["skill_every"] = int(f.get("def", {}).get("every", 0))
 			u["unit_id"] = str(f.get("id", ""))
 			u["skill_stacks"] = int(f.get("skill_stacks", 0))
@@ -651,6 +655,18 @@ func _sync_persistent_unit_vfx(current:Dictionary)->void:
 		var unit:Dictionary=current.get(id,{})
 		var record:Dictionary=_persistent_unit_vfx.get(id,{})
 		var node:Variant=record.get("node")
+		if str(record.get("kind", "")) == "guardian":
+			var guardian_alive := not unit.is_empty() and bool(unit.get("alive", false)) and str(unit.get("skill_id", "")) == "guardian_shield_taunt"
+			if not is_instance_valid(node):
+				_persistent_unit_vfx.erase(id)
+				continue
+			if not guardian_alive:
+				node.call("update_guardian_state", false, false, Vector2.ZERO)
+				node.call("stop_vfx")
+				_persistent_unit_vfx.erase(id)
+				continue
+			node.call("update_guardian_state", int(unit.get("shield", 0)) > 0, bool(unit.get("taunt_active", false)), _guardian_taunt_world_radius(float(unit.get("taunt_radius", 0.0))))
+			continue
 		var uid:=str(unit.get("skill_target_uid",""))
 		var bound_target:=str(record.get("target_uid",""))
 		# 9.24 #7：连接特效要「双方任意一方死亡即消失」。原判据只看了守卫自身，
@@ -665,6 +681,47 @@ func _sync_persistent_unit_vfx(current:Dictionary)->void:
 			continue
 		if is_instance_valid(node) and node is Node3D and node.has_method("release_link"):
 			node.release_link()
+		_persistent_unit_vfx.erase(id)
+	# Models can become available after the opening snapshot. Retry only missing
+	# guardians; an existing record never replays its opening pulse every frame.
+	if _vfx_seeded:
+		for id: String in current:
+			var unit: Dictionary = current[id]
+			if str(unit.get("skill_id", "")) == "guardian_shield_taunt" and bool(unit.get("alive", false)) and not _persistent_unit_vfx.has(id):
+				_start_guardian_unit_vfx(unit)
+
+func _guardian_taunt_world_radius(sim_radius: float) -> Vector2:
+	# _sim_to_world_pos uses different X/Z scales. A sim-space circle therefore
+	# becomes an ellipse; offsets, board flip and visual clamping do not alter it.
+	return maxf(0.0, sim_radius) * Vector2(BATTLE_PLAYABLE_WIDTH / SIM_W, BATTLE_PLAYABLE_DEPTH / SIM_H) * BATTLE_VISUAL_SPACE_SCALE
+
+func _start_guardian_unit_vfx(unit: Dictionary) -> void:
+	var id := str(unit.get("id", ""))
+	if _persistent_unit_vfx.has(id):
+		return
+	var model: Variant = unit.get("model_node")
+	if not is_instance_valid(model) or not model is Node3D:
+		return
+	var context := _unit_target_context(unit, unit, {
+		"persistent": true,
+		"shield_active": int(unit.get("shield", 0)) > 0,
+		"taunt_active": bool(unit.get("taunt_active", true)),
+		"taunt_world_radius": _guardian_taunt_world_radius(float(unit.get("taunt_radius", 0.0))),
+	})
+	var body: Vector3 = unit.get("world_cast", unit.get("world_foot", Vector3.ZERO))
+	var spawned := _play_unit_procedural("guardian_shield_taunt", body, body, context)
+	if spawned != null:
+		_persistent_unit_vfx[id] = {"node": spawned, "kind": "guardian"}
+
+func _clear_guardian_unit_vfx() -> void:
+	# Keep the existing blood-link lifecycle untouched when resetting a replay.
+	for id: String in _persistent_unit_vfx.keys().duplicate():
+		var record: Dictionary = _persistent_unit_vfx[id]
+		if str(record.get("kind", "")) != "guardian":
+			continue
+		var node: Variant = record.get("node")
+		if is_instance_valid(node):
+			node.call("stop_vfx", true)
 		_persistent_unit_vfx.erase(id)
 
 func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictionary,damage_events:Array[Dictionary],current:Dictionary)->void:
@@ -884,7 +941,7 @@ func _play_opening_unit_vfx(current:Dictionary)->void:
 		if not bool(unit.get("alive",false)):continue
 		var sid:=str(unit.get("skill_id",""))
 		if sid=="guardian_shield_taunt":
-			_play_unit_procedural(sid,unit.get("world_foot",Vector3.ZERO),unit.get("world_foot",Vector3.ZERO),_unit_target_context(unit,unit))
+			_start_guardian_unit_vfx(unit)
 		elif sid=="left_neighbor_sacrifice":
 			var target:=_exact_skill_target(unit,current)
 			if not target.is_empty():

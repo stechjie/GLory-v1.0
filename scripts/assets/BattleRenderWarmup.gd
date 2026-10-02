@@ -14,9 +14,9 @@ const OGA_PACK := preload("res://effects/vfx3d/modules/VFXPackSkill3D.gd")
 const OGA_CARD := preload("res://effects/vfx3d/modules/VFXSpriteFlipbook3D.gd")
 # These are the exclusive standard-card routes in UnitSkillVFXComposer3D.
 # A catalogue entry alone is insufficient: e.g. judgement_strike and the angel
-# guard now use procedural geometry and must still run their complete composer.
+# guards now use procedural geometry and must still run their complete composer.
 const DIRECT_PACK_ROUTES := ["lowest_ally_heal", "nearest_ally_bless", "nearby_ally_heal_buff",
-	"black_hole", "guardian_shield_taunt", "curse_attack", "same_target_damage_stack",
+	"black_hole", "curse_attack", "same_target_damage_stack",
 	"poison_attack", "death_poison_explosion", "poison_reflect_armor_stack"]
 const MAX_JOBS := 256
 const MAX_CACHED_JOBS := 512
@@ -111,7 +111,7 @@ func prepare_replays(replays: Array, template: SubViewport, progress: Callable =
 	var rendered := 0
 	var max_draw_frame_ms := 0
 	var costs: Array[Dictionary] = []
-	var format_key := "oga-direct-omni-v2|%s|%d|%d|%s|" % [RenderingServer.get_current_rendering_method(), template.msaa_3d, VFXManager.get_quality_tier(), str(template.transparent_bg)]
+	var format_key := "oga-direct-omni-v3|%s|%d|%d|%s|" % [RenderingServer.get_current_rendering_method(), template.msaa_3d, VFXManager.get_quality_tier(), str(template.transparent_bg)]
 	for index in jobs.size():
 		if _cancelled(can_continue) or Time.get_ticks_msec() > deadline:
 			viewport.queue_free()
@@ -161,7 +161,8 @@ func prepare_replays(replays: Array, template: SubViewport, progress: Callable =
 			draw_frames += 1
 		costs.append({"key": job.key, "ms": Time.get_ticks_msec() - item_started, "draw_frames": draw_frames,
 			"mode": "oga_direct" if not direct.is_empty() else "full_composer",
-			"retained_materials": materials.size(), "drawn_texture_paths": _material_texture_paths(materials)})
+			"retained_materials": materials.size(), "drawn_texture_paths": _material_texture_paths(materials),
+			"drawn_shader_paths": _material_shader_paths(materials)})
 		holder.queue_free()
 		# Release every block before the next item so the live effect budget
 		# cannot silently suppress preparation. Network processing keeps running.
@@ -328,6 +329,16 @@ static func _material_texture_paths(materials: Dictionary) -> Array[String]:
 	paths.sort()
 	return paths
 
+static func _material_shader_paths(materials: Dictionary) -> Array[String]:
+	var paths: Array[String] = []
+	for material in materials.values():
+		if material is ShaderMaterial and material.shader != null:
+			var path: String = material.shader.resource_path
+			if not path.is_empty() and path not in paths:
+				paths.append(path)
+	paths.sort()
+	return paths
+
 func _release_links(node: Node) -> void:
 	if node.has_method("release_link"):
 		node.call("release_link")
@@ -345,6 +356,19 @@ func _retain_draw_materials(node: Node, materials: Dictionary) -> void:
 		if mesh_node.mesh != null:
 			for index in mesh_node.mesh.get_surface_count():
 				var material := mesh_node.get_active_material(index)
+				if material != null:
+					materials[material.get_instance_id()] = material
+	elif node is MultiMeshInstance3D:
+		# Guardian activation shards use an instanced StandardMaterial3D. Keep its
+		# generated pipeline alive just like the shell/range ShaderMaterials.
+		var multi_node := node as MultiMeshInstance3D
+		for material: Material in [multi_node.material_override, multi_node.material_overlay]:
+			if material != null:
+				materials[material.get_instance_id()] = material
+		if multi_node.multimesh != null and multi_node.multimesh.mesh != null:
+			var mesh := multi_node.multimesh.mesh
+			for index in mesh.get_surface_count():
+				var material := mesh.surface_get_material(index)
 				if material != null:
 					materials[material.get_instance_id()] = material
 	for child in node.get_children():

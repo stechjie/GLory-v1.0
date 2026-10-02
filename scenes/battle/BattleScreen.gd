@@ -891,6 +891,7 @@ func _clear_unit_visuals() -> void:
 # （`_load_replay_roster()` / `_switch_active_replay()`），游标若停在上一局的位置，
 # 新一局的前 N 条事件会被静默跳过。
 func _reseat_vfx_diff_for_new_battle() -> void:
+	_clear_guardian_unit_vfx()
 	_vfx_prev_units = {}
 	_vfx_seeded = false
 	_vfx_visual_event_index = 0

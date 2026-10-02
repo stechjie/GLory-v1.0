@@ -23,6 +23,7 @@ const VFX_OGA_SKILL:=preload("res://effects/vfx3d/modules/VFXFlipbookSkill3D.gd"
 const VFX_OGA_PACK_SKILL:=preload("res://effects/vfx3d/modules/VFXPackSkill3D.gd")
 const VFX_OGA_BLOOD_LINK:=preload("res://effects/vfx3d/modules/VFXPackBloodLink3D.gd")
 const VFX_ANGEL_GUARD:=preload("res://effects/vfx3d/modules/VFXAngelGuard3D.gd")
+const VFX_GUARDIAN_SANCTUARY:=preload("res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd")
 const PROFILE_ANGEL_GUARD:=preload("res://effects/vfx3d/profiles/examples/angel_guard_example.tres")
 const OGA_CHESS_CATALOG:=preload("res://effects/vfx3d/units/OgaChessVFXCatalog.gd")
 const OGA_SKILL_CATALOG:=preload("res://effects/vfx3d/units/OgaSkillVFXCatalog.gd")
@@ -71,10 +72,6 @@ const PRIESTESS_BLESSING_SIGIL_TEXTURE:="res://assets/vfx/skills/god_priestess_b
 const PRIESTESS_BLESSING_RIBBON_TEXTURE:="res://assets/vfx/skills/god_priestess_blessing/priestess_blessing_ribbon.png"
 const PRIESTESS_BLESSING_BURST_TEXTURE:="res://assets/vfx/skills/god_priestess_blessing/priestess_blessing_burst.png"
 const PRIESTESS_BLESSING_PARTICLES_TEXTURE:="res://assets/vfx/skills/god_priestess_blessing/priestess_blessing_particles.png"
-const GUARDIAN_SHIELD_SIGIL_TEXTURE:="res://assets/vfx/skills/god_guardian/guardian_shield_sigil.png"
-const GUARDIAN_SHIELD_SHELL_TEXTURE:="res://assets/vfx/skills/god_guardian/guardian_shield_shell.png"
-const GUARDIAN_TAUNT_RING_TEXTURE:="res://assets/vfx/skills/god_guardian/guardian_taunt_ring.png"
-const GUARDIAN_CRYSTAL_SHARDS_TEXTURE:="res://assets/vfx/skills/god_guardian/guardian_crystal_shards.png"
 const AURORA_TRUE_PIERCE_TEXTURE:="res://assets/vfx/skills/god_aurora/god_aurora_true_pierce.png"
 const AURORA_TRUE_HIT_TEXTURE:="res://assets/vfx/skills/god_aurora/god_aurora_true_hit.png"
 const ANGEL_CAST_WINGS_TEXTURE:="res://assets/vfx/skills/god_angel/god_angel_cast_wings.png"
@@ -171,7 +168,7 @@ func play_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary
 		# （VFXPackBloodLink3D），没有重量、没有端点结。专属模块本就为它而写。
 		"shared_hp_link":_doom_blood_link(origin,target,context)
 		"front_cone_stun":_oga_pack_melee("front_cone_stun",origin,target,context)
-		"guardian_shield_taunt":_oga_pack_skill("guardian_shield_taunt",origin,origin,context)
+		"guardian_shield_taunt":_guardian_shield_taunt(origin,context)
 		"true_damage_attack":_true_damage_hit(target)
 		"curse_attack":_oga_pack_skill("curse_attack",origin,target,context)
 		"same_target_damage_stack":_oga_pack_skill("same_target_damage_stack",origin,target,context)
@@ -544,46 +541,13 @@ func _melee_kind_for(unit_id:String)->String:
 	return str(MELEE_KIND_BY_UNIT.get(unit_id,""))
 
 func _guardian_shield_taunt(origin:Vector3,context:Dictionary)->void:
-	var oh := _uh(context,"origin_height")
-	# The guardian skill is self-centered: shield and taunt radius belong to the caster.
-	var sigil:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
-	if sigil!=null:
-		sigil.play_layer(GUARDIAN_SHIELD_SIGIL_TEXTURE,{
-			"name":"GuardianShield_Sigil","position":_lvl(origin,oh,LEVEL_FOOT,0.0),
-			"size":Vector2(1.30,1.30),"ground":true,"duration":1.12,
-			"start_scale":.08,"peak_scale":.78,"end_scale":1.02,
-			"dark_tint":Color(.055,.065,.10),"body_tint":Color(1.0,.97,.88),
-			"core_tint":Color(1.0,1.0,.98),"flow_strength":.007,"opacity":.90,"seed":61.0
-		})
-	var ring:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
-	if ring!=null:
-		ring.play_layer(GUARDIAN_TAUNT_RING_TEXTURE,{
-			"name":"GuardianTaunt_Ring","position":_lvl(origin,oh,LEVEL_FOOT,0.0),
-			"size":Vector2(1.78,1.78),"ground":true,"duration":1.02,
-			"start_scale":.08,"peak_scale":.68,"end_scale":1.0,
-			"dark_tint":Color(.055,.065,.10),"body_tint":Color(1.0,.96,.84),
-			"core_tint":Color(1.0,1.0,.98),"flow_strength":.010,"opacity":.82,"delay":.20,"seed":67.0
-		})
-	var shell:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
-	if shell!=null:
-		shell.play_layer(GUARDIAN_SHIELD_SHELL_TEXTURE,{
-			"name":"GuardianShield_Shell","position":_lvl(origin,oh,LEVEL_BODY),
-			"size":Vector2(.96,1.56),"duration":1.24,
-			"start_scale":.12,"peak_scale":.72,"end_scale":.88,
-			"dark_tint":Color(.055,.065,.10),"body_tint":Color(1.0,.97,.88),
-			"core_tint":Color(1.0,1.0,.98),"flow_strength":.012,"opacity":.86,"delay":.12,"seed":71.0
-		})
-	var shards:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
-	if shards!=null:
-		shards.play_layer(GUARDIAN_CRYSTAL_SHARDS_TEXTURE,{
-			"name":"GuardianShield_Shards","position":_lvl(origin,oh,LEVEL_BODY),
-			"size":Vector2(1.22,1.22),"duration":1.02,
-			"start_scale":.08,"peak_scale":.54,"end_scale":.90,
-			"dark_tint":Color(.055,.065,.10),"body_tint":Color(1.0,.96,.84),
-			"core_tint":Color(1.0,1.0,.98),"flow_strength":.022,"opacity":.78,"delay":.30,"seed":79.0
-		})
-	# The authored guardian layers above are the complete shield/taunt presentation.
-	# Do not add the legacy generic barrier or its old gold shield texture here.
+	# One persistent block owns shield and taunt independently. Keep this route
+	# exclusive so neither the retired OGA plate nor painted layers stack over it.
+	var guardian := _block_forced(VFX_GUARDIAN_SANCTUARY)
+	if guardian == null:
+		return
+	last_spawned = guardian
+	guardian.call("play_guardian", origin, context)
 
 func _holy_heal(target:Vector3,context:Dictionary={})->void:
 	var th := _uh(context)
