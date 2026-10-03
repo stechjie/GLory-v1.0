@@ -1,12 +1,12 @@
 # GLory：给 Codex 执行的 3D 角色模型精修工作流
 
-把本文件和完整项目交给 Codex，指定角色，即可开展诊断、制作、接入和测试。目标是**角色更容易区分、结构和材质更精美、符合种族与职业设定，并在真实游戏和手机上成立**。允许精修原模型，也允许制作新资源替换；面数增加、工具安装或代码检查通过都不等于目标完成。
+把本文件和完整项目交给 Codex，指定角色，即可开展诊断、制作、接入和测试。目标是**角色更容易区分、结构和材质更精美、符合种族与职业设定，并在本地真实游戏中成立；手机表现按本次测试范围另验**。允许精修原模型，也允许制作新资源替换；面数增加、工具安装或代码检查通过都不等于目标完成。
 
 本文是普通 Markdown 执行说明，不需要安装成 skill。项目入口与研究来源复核日期为 **2026-10-03**；后续使用必须以当前代码、实际资源和工具版本为准。第 9 节记录首个样板，不能当作其他角色已验收。
 
 ## 1. 怎样交接与执行
 
-同事需要本 MD、同版本 `GLory-v1.0` 源码及角色实际引用的模型、贴图、动作资源。先按 `docs/WORKSPACE-LAYOUT.md` 核对目录；部分美术另由资源包分发，只有 Git clone 不一定齐全。缺少资源时列出具体路径，从已授权交付源补齐，保留本地较新文件；不使用占位模型完成验收。
+同事需要本 MD、本地 `GLory-v1.0` 源码及角色实际引用的模型、贴图、动作资源。先按 `docs/WORKSPACE-LAYOUT.md` 核对目录；部分美术另由资源包分发，仅有源码不一定资源齐全。缺少资源时列出具体路径，从已授权交付源补齐，保留本地较新文件；不使用占位模型完成验收。
 
 最低环境是项目匹配的 Godot；制作可编辑模型使用 Blender，构建工具使用 Python 3.10+；Android 测试还需要匹配的导出模板、SDK、JDK、ADB。复用已有环境，先看目标脚本 `--help` 和 `--check`，不为单个模型重装整个工具链。
 
@@ -18,9 +18,9 @@
 问题：<辨识度低、造型粗糙、材质糊；可以补参考图>
 方向：<保持种族与角色设定；或明确指定风格/配色>
 范围：<单个角色；或一组角色逐个验收>
-设备：<当前连接手机；或指定设备>
+测试环境：<默认本地 Godot 编辑器；可选填写手机>
 允许精修原资源或新增替换，保留回退版本，先使用免费本地工具。
-本次允许安装必要免费工具并在指定手机测试；不改变玩法、动作时序和挂点契约。
+本次允许安装必要免费工具并在本地 Godot 编辑器测试；手机测试仅在明确指定且设备可用时进行；不改变玩法、动作时序和挂点契约。
 请先加载真实模型和同族角色比较，再制作、实际预览、接入并测量。
 不满意就依据画面指出问题、修改并复验。交付可编辑源、可重跑脚本、前后对比和测试证据。
 不要自动提交、推送、发布、同步远端或上传私有素材到第三方服务。
@@ -28,14 +28,34 @@
 
 批量任务建立 `unit_id / 设定 / 原场景 / 候选资源 / 缺陷 / 状态 / 证据` 清单。每个角色独立验收；共同族色不是让全族共享同一轮廓。
 
+### 跨平台与本地测试（默认路径）
+
+支持 Windows 和 macOS。以收到的本地 `project.godot`、代码和资源为事实源：可以来自本地副本、压缩包或版本库，不要求 GitHub、特定提交号、`.git` 或联网同步。先备份将修改的文件并记录资源路径/哈希；存在 Git 时可额外记录差异。文中项目入口是查找线索，本地布局不同就沿真实引用调整，不能为匹配文档覆盖本地资源。
+
+**没有手机也能完成本次本地验收。** 在 Godot 项目管理器中导入本地 `project.godot`，等待资源导入完成，打开 `scenes/debug/ModelRefinementPreview.tscn`，按 F6（运行当前场景）循环观察。不要双击场景文件启动另一个项目，也不要为预览改正式主场景。再运行项目的真实战斗入口，验证正式路由、动画、挂点和多单位效果；使用调试器/性能监视器记录本机数据，保存同条件前后截图或录像。离线截帧和 headless 检查不能代替实际画面与实时性能观察。
+
+验收分为“本地编辑器与正式路线”和“可选真机”。本地范围内画面、契约、路由与性能检查通过即可写“本地验收通过；真机未测试（本次未纳入）”。没有手机时跳过 Android/iOS 构建、安装与设备采样，不安装 SDK/JDK/ADB，不等待设备。仅当本次明确包含手机测试且设备可用时执行真机章节；不能把桌面结果写成手机性能结论。
+
+Windows 使用 PowerShell，Godot 路径指向实际 `.exe`（需要终端日志时可选 console 版本），Blender 指向 `blender.exe`；macOS 指向应用包中的实际可执行文件。Python 命令按本机使用 `py -3` 或 `python3`。下方 Bash 命令用于 macOS/Linux；Windows 不直接粘贴 Bash，按示例使用调用运算符 `&`，路径有空格时保留引号。每一步检查退出码和产物，失败即停，不继续后续命令。
+
+Windows 编辑器启动示例（先替换为真实路径）：
+
+```powershell
+$MODEL_PROJECT = "D:/Projects/GLory-v1.0"
+$MODEL_GODOT = "D:/Tools/Godot/Godot.exe"
+$MODEL_OUT = "D:/Deliveries/model-review"
+Set-Location "$MODEL_PROJECT"
+& "$MODEL_GODOT" --editor --path "$MODEL_PROJECT" "res://scenes/debug/ModelRefinementPreview.tscn"
+```
+
 ## 2. 先锁定角色与项目契约
 
 ### 2.1 工作区与执行范围
 
-1. 找到同时包含 `.git`、`project.godot`、`data/`、`assets/` 的根目录。本机为 `/Volumes/repository/github/GLory/GLory-v1.0`，外层是交付容器，同事机器路径可以不同。
-2. 读取适用 `AGENTS.md`，记录 `git rev-parse HEAD`、`git status --short`、`git diff --stat`。保留已有未提交改动，不全局 reset/clean，不覆盖其他角色或资源。
-3. 核对 Godot `--version`、实际渲染器、导出预设、模型和动作源是否齐全。项目声明 Godot 4.7；以手机实际渲染器和 3D 视口尺寸验收，不以桌面配置推断。
-4. 既有授权覆盖必要的本地制作、免费工具安装与指定手机测试时直接推进。新工具先核对来源、许可和本机支持；付费服务、第三方上传、远端发布不由本 MD 自动授权。
+1. 找到包含 `project.godot` 和实际资源/代码目录的项目根目录；不要求 `.git`，路径以操作者本机为准。
+2. 阅读适用 `AGENTS.md`，备份本次将改动的文件并记录本地基线。若存在 Git，额外记录状态与差异；没有 Git 时使用文件副本和哈希比较。保留已有工作，不全局 reset/clean，不批量覆盖资源。
+3. 核对 Godot `--version`、实际渲染器、导出预设、模型和动作源是否齐全。项目声明 Godot 4.7；按本次实际测试平台的渲染器和 3D 视口尺寸验收；手机另测。
+4. 既有授权覆盖必要的本地制作、免费工具安装与本地测试（或已指定的手机测试）时直接推进。新工具先核对来源、许可和本机支持；付费服务、第三方上传、远端发布不由本 MD 自动授权。
 
 ### 2.2 追踪事实源
 
@@ -100,9 +120,9 @@ play_idle/play_run/play_attack 等包装接口与正式攻击同步参数：
 | [Material Maker](https://github.com/RodZill4/material-maker)（默认 MIT，例外另查） | 金属、布料、雕纹等程序纹理与绘制 | 保留节点源，优先烘焙 PBR 贴图；不解决轮廓、骨架或动画 |
 | [RetopoFlow](https://github.com/CGCookie/retopoflow) / [Instant Meshes](https://github.com/wjakob/instant-meshes) | 拓扑确有问题时整理网格 | 不会自动精美化，也不保证保留 UV/权重。RetopoFlow 许可元数据有不一致且非代码资产另有权利；Instant Meshes 官方预编译为 Intel64，Apple Silicon 未验证。本流程不强制依赖 |
 
-引入时记录 URL、作者、版本/commit、许可原文、安装路径和用途；复制代码或素材时保留要求的版权声明，素材独立许可单独核对。不要把代码 MIT 等同于所有云服务和资产免费。
+引入时记录 URL、作者、工具版本或文件哈希、许可原文、安装路径和用途；复制代码或素材时保留要求的版权声明，素材独立许可单独核对。不要把代码 MIT 等同于所有云服务和资产免费。
 
-本次可用的官方 LTS 候选为 [Blender 4.5.14 macOS ARM64](https://download.blender.org/release/Blender4.5/blender-4.5.14-macos-arm64.dmg)，[官方校验文件](https://download.blender.org/release/Blender4.5/blender-4.5.14.sha256)中 SHA256 为 `65134d9b07b20e2fa8d3c9e44f6f44ffb5c9774dd521b95f50387310241ca170`。这是本次核实版本，后续选择版本时重新检查官方来源。
+Blender 选用与本地制作脚本兼容的版本，根据 Windows/macOS 和 CPU 架构选择安装包；已有可用版本优先复用。无需安装某个固定 macOS 构建，变更版本后先试跑导出并检查结果。
 
 ## 5. 制作：结构先行，细节分层
 
@@ -127,13 +147,13 @@ play_idle/play_run/play_attack 等包装接口与正式攻击同步参数：
 - [Godot 推荐 glTF/GLB](https://docs.godotengine.org/en/stable/tutorials/assets_pipeline/importing_3d_scenes/available_formats.html)。OBJ 不携带骨架/动画；`.blend` 直接导入依赖本机 Blender。团队交付优先保留 blend 制作源，同时导出独立运行 GLB，避免手机样板依赖制作软件。Blender 批处理使用 `--python-exit-code 1`，同时确认导出文件存在、体积与内容正确；进程返回 0 不能单独证明导出完成。版本变化时先检查操作符参数，本轮 4.5 使用 `export_vertex_color`，不接受旧 `export_colors` 参数。
 - 可保留原始包装场景引用，在新包装层使用精修 mesh/材质；也可新建候选资源后仅切换目标的模型视觉映射。记录 `原路径 → 新路径 → 正式调用`，不能只修改没有被调用的预览。
 - 修改数据表时严格限制为本次需要的视觉字段。`UnitVisualResolver.VISUAL_FIELDS` 是代码实现，不是任意改值许可；不得顺便改 `tier`、费用、伤害、血量、范围、移动/攻击速度、技能目标或回放规则。攻击同步与挂点契约本次保持不变。
-- 材质不要污染共享资源，原新模型不要重复叠加显示。正式战斗与备战/图鉴若使用同一映射，分别确认显示正确；旧版本保留在 Git 基线或明确的参考目录中。
+- 材质不要污染共享资源，原新模型不要重复叠加显示。正式战斗与备战/图鉴若使用同一映射，分别确认显示正确；旧版本保留在本地备份或明确的参考目录中。
 
-## 7. 验证画面、路由与手机成本
+## 7. 验证本地画面、路由与性能（手机可选）
 
 ### 7.1 技术检查覆盖正确对象
 
-先读现有工具覆盖范围，再选相关检查：`tools/model_material_integrity_check.gd`、`tools/model_bounds_check.gd`、`tools/model_asset_budget_check.gd`、`tools/model_action_contract_report.gd`、`tools/model_action_playback_continuity_check.gd`、`tools/model_root_motion_inventory_check.gd`。复用 `tools/model_visual_matrix_capture.gd` 做适当画面采集。检查导入错误和 `git diff --check`。
+先读现有工具覆盖范围，再选相关检查：`tools/model_material_integrity_check.gd`、`tools/model_bounds_check.gd`、`tools/model_asset_budget_check.gd`、`tools/model_action_contract_report.gd`、`tools/model_action_playback_continuity_check.gd`、`tools/model_root_motion_inventory_check.gd`。复用 `tools/model_visual_matrix_capture.gd` 做适当画面采集。检查导入错误；有 Git 时运行 `git diff --check`。
 
 刚性附件跟骨运动正确也不证明它不穿模或好看。新增甲片须与原身体的曲率、倒角、金属明暗及细节密度协调；本轮四件附件的 184 项技术断言通过，但箱形肩甲和棕色金属仍被视觉审查淘汰。
 
@@ -154,6 +174,15 @@ MODEL_GODOT="/本机路径/Godot可执行文件"
   res://scenes/debug/ModelRefinementPreview.tscn
 ```
 
+Windows PowerShell 等价命令（同样先填写本机路径）：
+
+```powershell
+$MODEL_PROJECT = "D:/本机路径/GLory-v1.0"
+$MODEL_GODOT = "D:/本机路径/Godot可执行文件"
+& "$MODEL_GODOT" --editor --path "$MODEL_PROJECT" `
+  res://scenes/debug/ModelRefinementPreview.tscn
+```
+
 交付前逐项查看画面并给出具体结论：
 
 - 在实际战斗距离，无名字也能凭体型与器具区别目标和最相似同族角色。
@@ -168,7 +197,7 @@ MODEL_GODOT="/本机路径/Godot可执行文件"
 
 固定阵容经过真实模拟器和回放进入战斗，可证明这条本地路线；在线传输与手机完整战斗负载仍需各自证据。不得为方便展示改变正式伤害、阵容规则或随机流。
 
-### 7.4 独立 Android 样板
+### 7.4 可选：独立 Android 样板（无手机跳过）
 
 使用 `tools/build_model_refinement_pilot.py` 与 `tools/run_model_refinement_pilot.py`。先看当前 `--help`，确认预览已经实现。构建默认只收集依赖，`--build` 才导入/导出；runner 的 `--check` 只读。以下路径由操作者填写，产物置于项目外层新目录：
 
@@ -189,6 +218,25 @@ python3 tools/run_model_refinement_pilot.py --serial "$MODEL_SERIAL" \
   --unit-id god_guard --build-dir "$MODEL_OUT/android-build" --out "$MODEL_OUT/android-run"
 ```
 
+Windows PowerShell 等价命令（同样先填写本机路径）：
+
+```powershell
+$MODEL_PROJECT = "D:/本机路径/GLory-v1.0"
+$MODEL_GODOT = "D:/本机路径/Godot可执行文件"
+$MODEL_OUT = "D:/本机路径/delivery/model-目标角色-日期"
+$MODEL_SERIAL = "从 adb devices -l 读取的精确序列号"
+Set-Location "$MODEL_PROJECT"
+py -3 tools/build_model_refinement_pilot.py --help
+py -3 tools/run_model_refinement_pilot.py --help
+py -3 tools/build_model_refinement_pilot.py --check --godot "$MODEL_GODOT"
+py -3 tools/build_model_refinement_pilot.py --build --godot "$MODEL_GODOT" `
+  --unit-id god_guard --out "$MODEL_OUT/android-build"
+py -3 tools/run_model_refinement_pilot.py --check --serial "$MODEL_SERIAL" `
+  --unit-id god_guard --build-dir "$MODEL_OUT/android-build" --out "$MODEL_OUT/android-run"
+py -3 tools/run_model_refinement_pilot.py --serial "$MODEL_SERIAL" `
+  --unit-id god_guard --build-dir "$MODEL_OUT/android-build" --out "$MODEL_OUT/android-run"
+```
+
 例如准备测试神侍时，先完成神侍专用预览和候选模型，再填写以下三个真实路径；不要把光之卫士预览改个文件名就当作已换角色。此处路径变量均须指向已经存在、正确配置的资源，尚未制作时不能执行：
 
 ```bash
@@ -205,6 +253,25 @@ python3 tools/build_model_refinement_pilot.py --build --godot "$MODEL_GODOT" \
 python3 tools/run_model_refinement_pilot.py --check --serial "$MODEL_SERIAL" \
   --unit-id "$MODEL_UNIT" --build-dir "$MODEL_OUT/android-build" --out "$MODEL_OUT/android-run"
 python3 tools/run_model_refinement_pilot.py --serial "$MODEL_SERIAL" \
+  --unit-id "$MODEL_UNIT" --build-dir "$MODEL_OUT/android-build" --out "$MODEL_OUT/android-run"
+```
+
+Windows PowerShell 等价命令（同样先填写本机路径）：
+
+```powershell
+$MODEL_UNIT = "god_priest"
+$MODEL_PREVIEW = "res://填写神侍专用预览.tscn"
+$MODEL_OLD = "res://assets/models/units/god_priest_halo_animated/god_priest_animated.tscn"
+$MODEL_NEW = "res://填写神侍候选模型.tscn"
+py -3 tools/build_model_refinement_pilot.py --check --godot "$MODEL_GODOT" `
+  --unit-id "$MODEL_UNIT" --preview "$MODEL_PREVIEW" `
+  --old-model "$MODEL_OLD" --new-model "$MODEL_NEW"
+py -3 tools/build_model_refinement_pilot.py --build --godot "$MODEL_GODOT" `
+  --unit-id "$MODEL_UNIT" --preview "$MODEL_PREVIEW" `
+  --old-model "$MODEL_OLD" --new-model "$MODEL_NEW" --out "$MODEL_OUT/android-build"
+py -3 tools/run_model_refinement_pilot.py --check --serial "$MODEL_SERIAL" `
+  --unit-id "$MODEL_UNIT" --build-dir "$MODEL_OUT/android-build" --out "$MODEL_OUT/android-run"
+py -3 tools/run_model_refinement_pilot.py --serial "$MODEL_SERIAL" `
   --unit-id "$MODEL_UNIT" --build-dir "$MODEL_OUT/android-build" --out "$MODEL_OUT/android-run"
 ```
 
@@ -253,7 +320,7 @@ python3 tools/run_model_refinement_pilot.py --serial "$MODEL_SERIAL" \
 - 候选入口：`res://assets/models/units/god_guard_refined/god_guard_refined.tscn`。正式 `race_units.json` 只修改 `god_guard.model` 一个字段。回退时恢复本节开头的原场景路径即可；原资源未覆盖。该新场景继承原 `god_guard_crystalbound_animated.tscn`，脚本也继承原包装器，原目录及其依赖仍是运行必需；仅复制 refined 目录无法运行。`guardian_armor.glb` 只含四组附件，不含身体、骨架和动作。
 - 身体沿用原网格、UV、权重、Godot 骨架的 83 个骨节点与三动作。角色专属材质将原 atlas 从运行 512 调整为 1024，减轻硬阴影和描边，增加受控的暖金高光；没有伪造不存在的法线贴图。本样板仍是自定义风格化光照，并非完整 PBR 重制。Godot 4 的自定义 `DIFFUSE_LIGHT` 与 `ALBEDO` 分工以[官方 spatial shader 文档](https://docs.godotengine.org/en/stable/tutorials/shaders/shader_reference/spatial_shader.html)为准；本轮去除了新 shader 中重复乘色造成的暗棕，角色共享 shader 未改。
 - Blender 制作了弧面塔盾及背板、弧形肩甲、额头晶石；四组刚性几何按原骨名挂接，共用一个附加材质。盾牌是模型结构，守护技能特效仍走原有 VFX 入口。
-- 最终运行统计：**7213 顶点 / 8538 三角面 / 5 surfaces / 3 个唯一材质（含身体描边）/ 最大纹理 1024**。原版 3018 面，增长主要用于盾牌弧面和倒角，属于约 2.83 倍三角数的单角色试点，不能直接全族照搬；是否保留由同条件手机结果决定。
+- 最终运行统计：**7213 顶点 / 8538 三角面 / 5 surfaces / 3 个唯一材质（含身体描边）/ 最大纹理 1024**。原版 3018 面，增长主要用于盾牌弧面和倒角，属于约 2.83 倍三角数的单角色试点，不能直接全族照搬；是否保留由本次目标平台的同条件结果决定。
 - `tools/model_refinement_contract_check.gd --require-integrated`：**185 项通过**，覆盖原资源 SHA、身体几何/蒙皮、骨架/rest、动画轨道与实际姿态、四附件的 36 个跟骨采样、材质独立、预算和正式映射。报告为交付目录 `audit/model-contract-v4-integrated.json`。
 - 对 MD 做了另一角色的盲读试用，修正“换了角色却仍测默认光之卫士”、缺失身份字段仍能启动、三 FBX 只改 idle 和强制材质覆盖等问题。身份与文档修复验证 **50 项通过**，记录 `audit/workflow-blind-trial.json`；它不是第二个角色的美術制作验收。
 
@@ -271,14 +338,18 @@ python3 tools/run_model_refinement_pilot.py --serial "$MODEL_SERIAL" \
 
 ### 9.3 制作与重跑命令
 
-制作源和证据位于项目外层 `delivery/model-workflow-20261003/`。DCC 使用已核验的 Blender 4.5.14 LTS，`source/guardian-original.glb` 和 `source/guardian-original-rig.json` 是从实际原场景导出的参考及坐标契约。生成脚本为 `tools/model_refinement/build_guardian_armor.py`；输出包含可编辑 blend、GLB 与部件清单。
+历史样板的制作源和证据位于项目外层 `delivery/model-workflow-20261003/`。DCC 使用已核验的 Blender 4.5.14 LTS，`source/guardian-original.glb` 和 `source/guardian-original-rig.json` 是从实际原场景导出的参考及坐标契约。生成脚本为 `tools/model_refinement/build_guardian_armor.py`；输出包含可编辑 blend、GLB 与部件清单。
 
 最终可直接打开的是 `source/guardian_refined_editable.blend`：22 个新增部件已在 Blender 中真正附骨，原纹理已打包。`source/parent_guardian_editable_parts.py` 是不导出 runtime 的源文件后处理；它验证静止变换、四骨分别旋转 17° 的跟随、还原及保存后重开，报告 `source/guardian_editable_check.json` 全部通过。静止矩阵最大误差约 `2.09e-7`；原动作关键帧和原几何不变。Godot 有 83 个骨节点，导出的 GLB skin 与 Blender data.bones 为 82，`RL_BoneRoot` 作为根对象另计；这是格式表示差异，不能误报丢骨。Blender 材质用于编辑参考，最终画面仍以 Godot 专属 shader 和运行 1024 纹理验证。
 
 ```bash
+MODEL_PROJECT="/本机路径/GLory-v1.0"
+MODEL_GODOT="/本机路径/Godot可执行文件"
+MODEL_OUT="/本机路径/delivery/model-review"
 MODEL_BLENDER="/本机路径/Blender可执行文件"
+cd "$MODEL_PROJECT"
 mkdir -p "$MODEL_OUT/audit" "$MODEL_OUT/source"
-# 将仓库内版本固定的源文件工具复制到交付目录，再操作交付源文件：
+# 将本地项目的源文件工具复制到交付目录，再操作交付源文件：
 cp tools/model_refinement/parent_guardian_editable_parts.py "$MODEL_OUT/source/"
 cp tools/model_refinement/export_guardian_editable_parts.py "$MODEL_OUT/source/"
 "$MODEL_BLENDER" --background --python-exit-code 1 \
@@ -301,6 +372,38 @@ cp tools/model_refinement/export_guardian_editable_parts.py "$MODEL_OUT/source/"
   --unit god_guard --close --view front --capture-dir "$MODEL_OUT/final-front"
 ```
 
+Windows PowerShell 等价命令（同样先填写本机路径）：
+
+```powershell
+$MODEL_PROJECT = "D:/本机路径/GLory-v1.0"
+$MODEL_GODOT = "D:/本机路径/Godot可执行文件"
+$MODEL_OUT = "D:/本机路径/delivery/model-review"
+$MODEL_BLENDER = "D:/本机路径/Blender可执行文件"
+Set-Location "$MODEL_PROJECT"
+New-Item -ItemType Directory -Force -Path "$MODEL_OUT/audit", "$MODEL_OUT/source" | Out-Null
+# 将本地项目的源文件工具复制到交付目录，再操作交付源文件：
+Copy-Item tools/model_refinement/parent_guardian_editable_parts.py "$MODEL_OUT/source/"
+Copy-Item tools/model_refinement/export_guardian_editable_parts.py "$MODEL_OUT/source/"
+& "$MODEL_BLENDER" --background --python-exit-code 1 `
+  --python tools/model_refinement/build_guardian_armor.py -- `
+  --source "$MODEL_OUT/source/guardian-original.glb" `
+  --rig-json "$MODEL_OUT/source/guardian-original-rig.json" `
+  --out "$MODEL_OUT/source/refinement-rebuild"
+# 为制作源补正确附骨，保留未经后处理的原 blend：
+& "$MODEL_BLENDER" --background --python-exit-code 1 `
+  --python "$MODEL_OUT/source/parent_guardian_editable_parts.py" -- `
+  --source "$MODEL_OUT/source/refinement-rebuild/guardian_refinement.blend" `
+  --output "$MODEL_OUT/source/guardian_refined_editable.blend" `
+  --report "$MODEL_OUT/source/guardian_editable_check.json"
+# 检查文件和清单，复制候选 GLB 到对应角色目录后重新导入；再执行：
+& "$MODEL_GODOT" --headless --path "$MODEL_PROJECT" `
+  --script res://tools/model_refinement_contract_check.gd -- `
+  --require-integrated --out "$MODEL_OUT/audit/model-contract-final.json"
+& "$MODEL_GODOT" --path "$MODEL_PROJECT" --rendering-method gl_compatibility `
+  --resolution 1440x900 --always-on-top res://scenes/debug/ModelRefinementPreview.tscn -- `
+  --unit god_guard --close --view front --capture-dir "$MODEL_OUT/final-front"
+```
+
 手工编辑使用另一条入口：上面的生成器从原 GLB 和脚本参数重新建附件，**不会读取最终 editable blend 的手工改动**。在 Blender 中修改 `.blend` 后，用已交付的 `source/export_guardian_editable_parts.py` 导出附件，不能直接把整个场景导出后覆盖游戏 GLB。此工具使用原 Godot rest JSON 转换坐标，按四个 `bone_name` 合并，保留顶点 `Color`、法线和一个共享材质，排除原身体、骨架与动画；颜色应修改 `Color` 属性，单改 Blender 材质基础色不会改变运行专属 shader。
 
 ```bash
@@ -312,11 +415,22 @@ cp tools/model_refinement/export_guardian_editable_parts.py "$MODEL_OUT/source/"
   --manifest "$MODEL_OUT/source/manual-edited-manifest.json"
 ```
 
-先审查导出，再把该 GLB 替换角色目录的 `guardian_armor.glb`、重新导入，执行资源契约、多角度动作检查和手机重新构建。手改后不能继续使用修改前的性能报告。未手改源的回导已完成隔离 Godot 检查：**37 项通过**，四组附件实际附骨后的逐三角世界几何、绕序、顶点色、法线、AABB 与锁定 runtime 一致，最大误差 0；报告为 `source/editable-export-equivalence.json`。该报告证明无损回导，不自动证明后续手工编辑美观。
+Windows PowerShell 等价命令（同样先填写本机路径）：
+
+```powershell
+& "$MODEL_BLENDER" --background --python-exit-code 1 `
+  --python "$MODEL_OUT/source/export_guardian_editable_parts.py" -- `
+  --source "$MODEL_OUT/source/guardian_refined_editable.blend" `
+  --rig-json "$MODEL_OUT/source/guardian-original-rig.json" `
+  --output "$MODEL_OUT/source/manual-edited-armor.glb" `
+  --manifest "$MODEL_OUT/source/manual-edited-manifest.json"
+```
+
+先审查导出，再把该 GLB 替换角色目录的 `guardian_armor.glb`、重新导入，执行资源契约和本地多角度动作检查；本次包括手机时再重新构建。手改后不能继续使用修改前的性能报告。未手改源的回导已完成隔离 Godot 检查：**37 项通过**，四组附件实际附骨后的逐三角世界几何、绕序、顶点色、法线、AABB 与锁定 runtime 一致，最大误差 0；报告为 `source/editable-export-equivalence.json`。该报告证明无损回导，不自动证明后续手工编辑美观。
 
 同样采集 `--view side`、`--view back`、不带 `--close` 的 `--view battle`，以及 `--compare`、`--lineup`。这些实际渲染命令会自动保存四帧及准确动作时间后退出；`--smoke` 只检查加载和动作，不产生视觉通过结论。
 
-### 9.4 正式页面和手机证据
+### 9.4 历史正式页面与手机证据（手机命令可选）
 
 正式页面采集须使用隔离工程与独立用户目录，避免修改操作者存档。`model_refinement_prep_capture.gd` 验证正式 PrepScreen 路由、棋盘/候补不同星级与脚底；`--validate-fixture` 可预先检查阵位。按正式 Prep 的 `prep_visual_root` 元信息定位实例，记录实际路径。固定阵容要检查自动合成：本轮两个 1 星同名卫士进备战后合成，测试错误地等一个已被合并的候补；改为 1/2/4 星并验证合成阈值、实际星级和逐节点状态后通过。等待超时须输出哪个槽位缺失/隐藏/未居中，不能只给笼统失败。
 
@@ -327,6 +441,16 @@ python3 tools/build_model_battle_pilot.py --godot "$MODEL_GODOT" \
   --out "$MODEL_OUT/android-battle-build" \
   --expected-model res://assets/models/units/god_guard_refined/god_guard_refined.tscn --build
 python3 tools/run_model_battle_pilot.py --serial "$MODEL_SERIAL" \
+  --build-dir "$MODEL_OUT/android-battle-build" --out "$MODEL_OUT/android-battle-run"
+```
+
+Windows PowerShell 等价命令（同样先填写本机路径）：
+
+```powershell
+py -3 tools/build_model_battle_pilot.py --godot "$MODEL_GODOT" `
+  --out "$MODEL_OUT/android-battle-build" `
+  --expected-model res://assets/models/units/god_guard_refined/god_guard_refined.tscn --build
+py -3 tools/run_model_battle_pilot.py --serial "$MODEL_SERIAL" `
   --build-dir "$MODEL_OUT/android-battle-build" --out "$MODEL_OUT/android-battle-run"
 ```
 

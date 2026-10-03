@@ -6,7 +6,7 @@
 
 ## 1. 同事怎样使用
 
-**首次交接需要 MD、完整项目源码和对应运行资源。** 本文件不会携带它引用的脚本、场景、角色模型、贴图或测试证据。先取得同一版本的 `GLory-v1.0` 与它实际引用的 `assets/`；项目部分资源另经资源包/Drive 分发，不能假设仅 clone GitHub 就已齐全。按 `docs/WORKSPACE-LAYOUT.md` 核对目录，缺什么列出具体路径，从已授权的项目交付源补齐，保留本地较新文件。不要用空模型或占位贴图产生“通过”结果。
+**首次交接需要 MD、完整项目源码和对应运行资源。** 本文件不会携带它引用的脚本、场景、角色模型、贴图或测试证据。先取得本地 `GLory-v1.0` 与它实际引用的 `assets/`；项目部分资源另经资源包/Drive 分发，不能假设仅复制源码就已齐全。按 `docs/WORKSPACE-LAYOUT.md` 核对目录，缺什么列出具体路径，从已授权的项目交付源补齐，保留本地较新文件。不要用空模型或占位贴图产生“通过”结果。
 
 同事机器至少需要匹配项目的 Godot；使用本项目 Python 构建工具需要 Python 3.10+；Android 构建/运行还需要匹配的导出模板、SDK、JDK 与 ADB。先读目标工具的 `--help`，有 `--check` 时先做只读检查。已有完整环境可直接复用，不为一个效果重装整套工具链。
 
@@ -20,11 +20,11 @@
 颜色：<保持种族风格；或指定白色、紫色、色号等>
 方向：<更有空间感 / 更有力度 / 更清晰 / 参考图；可留空>
 替换方式：<允许原地修改或新资源替换，保留可回退版本>
-设备：<使用当前已连接手机；或指定设备>
+测试环境：<默认本地 Godot 编辑器；可选填写手机>
 限制：先用免费、开源工具，不改变玩法数值和目标规则。
 
 请先读真实技能与正式播放链路，再实现、在 Godot 循环预览、
-接入正式战斗并验证手机表现。交付前后对比、源文件、性能结果和可复现命令。
+接入本地正式战斗并验证表现；有手机且纳入范围时再补真机测试。交付前后对比、源文件、性能结果和可复现命令。
 本次允许安装必要的免费工具/插件/skill/MCP，允许在指定测试设备运行；
 如果已有授权覆盖所需操作，直接继续。不要自动提交、推送、发布或同步远端资源。
 ```
@@ -37,12 +37,32 @@
 
 批量任务先建立 `unit_id / skill_id / 当前路由 / 新资源 / 状态 / 证据` 清单。每种独立效果各走一次完整流程，不能用第一个效果通过代替整批验收。
 
+### 跨平台与本地测试（默认路径）
+
+支持 Windows 和 macOS。以收到的本地 `project.godot`、代码和资源为事实源：可以来自本地副本、压缩包或版本库，不要求 GitHub、特定提交号、`.git` 或联网同步。先备份将修改的文件并记录资源路径/哈希；存在 Git 时可额外记录差异。文中项目入口是查找线索，本地布局不同就沿真实引用调整，不能为匹配文档覆盖本地资源。
+
+**没有手机也能完成本次本地验收。** 在 Godot 项目管理器中导入本地 `project.godot`，等待资源导入完成，打开 `effects/preview/GuardianVFXPreview.tscn`，按 F6（运行当前场景）循环观察。不要双击场景文件启动另一个项目，也不要为预览改正式主场景。再运行项目的真实战斗入口，验证正式路由、动画、挂点和多单位效果；使用调试器/性能监视器记录本机数据，保存同条件前后截图或录像。离线截帧和 headless 检查不能代替实际画面与实时性能观察。
+
+验收分为“本地编辑器与正式路线”和“可选真机”。本地范围内画面、契约、路由与性能检查通过即可写“本地验收通过；真机未测试（本次未纳入）”。没有手机时跳过 Android/iOS 构建、安装与设备采样，不安装 SDK/JDK/ADB，不等待设备。仅当本次明确包含手机测试且设备可用时执行真机章节；不能把桌面结果写成手机性能结论。
+
+Windows 使用 PowerShell，Godot 路径指向实际 `.exe`（需要终端日志时可选 console 版本），Blender 指向 `blender.exe`；macOS 指向应用包中的实际可执行文件。Python 命令按本机使用 `py -3` 或 `python3`。下方 Bash 命令用于 macOS/Linux；Windows 不直接粘贴 Bash，按示例使用调用运算符 `&`，路径有空格时保留引号。每一步检查退出码和产物，失败即停，不继续后续命令。
+
+Windows 编辑器启动示例（先替换为真实路径）：
+
+```powershell
+$VFX_PROJECT = "D:/Projects/GLory-v1.0"
+$VFX_GODOT = "D:/Tools/Godot/Godot.exe"
+$VFX_OUT = "D:/Deliveries/vfx-review"
+Set-Location "$VFX_PROJECT"
+& "$VFX_GODOT" --editor --path "$VFX_PROJECT" "res://effects/preview/GuardianVFXPreview.tscn"
+```
+
 ## 2. 执行前：读技能，确定视觉应当表达什么
 
 ### 2.1 核对工作区和执行边界
 
-1. 找到同时包含 `.git`、`project.godot`、`effects/` 的根目录。本机通常是 `/Volumes/repository/github/GLory/GLory-v1.0`；外层 `GLory` 是交付容器，同事机器路径可以不同。
-2. 阅读生效的 `AGENTS.md`，执行 `git rev-parse HEAD`、`git status --short`、`git diff --stat`，记录开始版本与已有改动。保留其他人的资源、代码和未提交工作；不要使用全局 reset/clean 或批量覆盖。源码、资源或工具不在本文对应版本时，重新追入口，不照抄旧行号。
+1. 找到包含 `project.godot` 和实际资源/代码目录的项目根目录；不要求 `.git`，路径以操作者本机为准。
+2. 阅读适用 `AGENTS.md`，备份本次将改动的文件并记录本地基线。若存在 Git，额外记录状态与差异；没有 Git 时使用文件副本和哈希比较。保留已有工作，不全局 reset/clean，不批量覆盖资源。
 3. 检查实际 Godot 二进制 `--version`、`project.godot`、导出预设和插件，并确认目标角色模型、动画、特效依赖源文件存在。当前配置声明 Godot 4.7、默认 Mobile，手机平台覆盖为 `gl_compatibility`；这些只是当前线索，运行日志与目标设备实际渲染器才是验收依据。
 4. 简短说明本次对象、将改哪些路径、测试方式，然后执行已授权的本地制作、预览和修复。只有真正缺少必要输入或授权时才询问；不要为每次可回退编辑反复确认。
 
@@ -50,7 +70,7 @@
 
 从以下入口按需查找，不要一次读取整个仓库：
 
-| 要查的问题 | 当前入口（相对 Git/Godot 根目录） |
+| 要查的问题 | 当前入口（相对 Godot 项目根目录） |
 |---|---|
 | 角色 ID、种族、技能 ID、星级参数、模型 | `data/units/race_units.json`；佣兵、怪物另查 `data/mercenary/`、`data/pve/` |
 | 实际生效条件、选人、范围、持续状态 | `scripts/battle/BattleSimulator.gd`、`BattleSimSkills.gd`、`BattleSimShared.gd` 及它们调用的服务 |
@@ -112,13 +132,13 @@
 
 Material Maker 不限于静态贴图：官方说明动态 Unlit 可导出 Shader，2D 预览可导出动画图片序列或 spritesheet；[Unlit 节点文档](https://rodzill4.github.io/material-maker/doc/node_material_unlit.html)说明可导出 Godot 材质，[官方发布页](https://rodzilla.itch.io/material-maker)提供免费取得方式。选择这两种输出时都不需要把制作软件整体带入游戏。
 
-需要其他免费工具、插件、skill 或 MCP 时，可以在本次授权范围内安装。安装前做四件事：说明其解决的具体缺口；检查官方来源和许可证；确认当前环境/渲染器/导出平台支持；记录版本或 commit、安装路径与移除方式。先检查本机已有能力，优先项目局部安装。
+需要其他免费工具、插件、skill 或 MCP 时，可以在本次授权范围内安装。安装前做四件事：说明其解决的具体缺口；检查官方来源和许可证；确认当前环境/渲染器/导出平台支持；记录工具版本或文件哈希、安装路径与移除方式。先检查本机已有能力，优先项目局部安装。
 
 不要把“仓库能看源码”“免费下载 Demo”“插件 MIT”自动解释成所有编辑器与素材都免费商用。当前任务不采用付费 EffectBlocks、Pixelpart 专业版或付费素材；免费预览包也须单独满足其使用许可。通用 AI skill 只辅助代码，不能替代视觉验收。
 
 不为安装工具上传本项目源码、签名文件、账号信息或私有素材到第三方服务。遇到收费、账号登录或平台库缺失，先使用已有免费本地路径继续能做的部分，明确记录受限项。
 
-每次引入外部资源记录：来源 URL、作者、许可证文件、版本/commit、原文件、修改内容、游戏内位置、是否进入最终包。MIT 保留版权与许可声明；具体素材如有独立许可按其实际条件处理。
+每次引入外部资源记录：来源 URL、作者、许可证文件、工具版本或文件哈希、原文件、修改内容、游戏内位置、是否进入最终包。MIT 保留版权与许可声明；具体素材如有独立许可按其实际条件处理。
 
 ## 4. 制作：先把主效果做好，再控制成本
 
@@ -141,7 +161,7 @@ Material Maker 不限于静态贴图：官方说明动态 Unlit 可导出 Shader
 ### 4.3 选择改动方式并接入真正的路由
 
 - **原地优化：** 当前结构正确、只是材质或层次欠佳时，修改局部资源和参数。共享材质使用独立实例/运行副本，避免改一个角色影响全部种族。
-- **新文件替换：** 当前资源不适合空间关系或维护时，新增命名明确的模块/场景/配置，在正式分发分支切换引用。保留旧版在 Git 基线或隔离参考中，不把新旧主效果重复叠播。
+- **新文件替换：** 当前资源不适合空间关系或维护时，新增命名明确的模块/场景/配置，在正式分发分支切换引用。保留旧版在本地备份或隔离参考中，不把新旧主效果重复叠播。
 - 在报告列出“正式事件 → 分发分支 → 实际模块/场景 → 素材”。检查前置目录命中、提前 `return`、旧的纹理层与状态层；修改一个没有被调用的同名旧函数不算接入。
 - 仓库已有“角色技能预览”也要检查是否调用正式分发器。自建光柱、自己延迟生效或播放另一套材质的演示，不能当正式旧版基线；保留其参考价值，重新捕获实际命中的资源与时序。
 - 使用真实 `source_unit_id`、`origin_node`、`target_node`、高度、状态时长、范围等上下文。预览中补齐的字段也必须在正式链路存在；缺少时只补表现数据传递，不改玩法规则。
@@ -171,7 +191,7 @@ Material Maker 不限于静态贴图：官方说明动态 Unlit 可导出 Shader
 
 ### 5.2 用同场景前后数据判断
 
-1. 固定设备、分辨率、质量档、战斗阵容、相机与可复现操作，先测旧版，再测新版。记录设备型号、系统、GPU（可获取时）、渲染器、实际 3D 视口尺寸、包哈希和动画模式。正常验收要开启真实角色动画；冻结模型的静态对照可以保留，但必须单列，不能替代带动画场景。
+1. 固定设备、分辨率、质量档、战斗阵容、相机与可复现操作，先测旧版，再测新版。记录设备型号、系统、GPU（可获取时）、渲染器、实际 3D 视口尺寸、本地资源哈希（打包时另记包哈希）和动画模式。正常验收要开启真实角色动画；冻结模型的静态对照可以保留，但必须单列，不能替代带动画场景。
 2. 分别测试单次、典型多单位同时施放、预期最大并发。短采样每组建议 30～60 秒；连续重放至少 3 分钟检查积累与温升趋势。持续状态另覆盖提前死亡、移动、目标消失、退出场景。
 3. 记录帧时间中位数、p95、明显长帧次数、峰值存活特效/粒子、draw calls（可获取时）、内存和资源清理。平均 FPS 不能单独证明不卡；离线固定帧截图速度也不是运行性能。
 4. 测前记录预期最大并发、目标帧率和允许开销；先确认项目/设备实际采用 30 还是 60 FPS，再使用相应每帧预算 33.3/16.7 ms。将相同场景 p95 增长超过 10%、重复出现 >100 ms 长帧、稳定帧率跨档下降或存活节点持续增长作为需要调查的触发线；它们是本流程的起始门槛，不是已经实测的结果。报告须给出触发项的修复或有数据支持的解释，不能测完后静默放宽标准。
@@ -183,7 +203,7 @@ Compatibility 与其他渲染器支持不同。依据当前 Godot 官方文档�
 
 ### 6.1 先查错，再看真实画面
 
-对本次改动做 Godot 导入/脚本解析与必要的生命周期、路由回归，运行 `git diff --check`。优先复用 `tools/vfx_timer_lifetime_check.gd`、`tools/battle_vfx_preload_check.gd`、`tools/vfx_warmup_check.gd` 等现有工具；**先读脚本确认覆盖目标与调用方式**，不把无关全绿当作本技能验证。
+对本次改动做 Godot 导入/脚本解析与必要的生命周期、路由回归，有 Git 时运行 `git diff --check`。优先复用 `tools/vfx_timer_lifetime_check.gd`、`tools/battle_vfx_preload_check.gd`、`tools/vfx_warmup_check.gd` 等现有工具；**先读脚本确认覆盖目标与调用方式**，不把无关全绿当作本技能验证。
 
 用 Godot 编辑器打开目标 `.tscn` 并运行循环预览。循环间隔覆盖完整寿命并留观察间隔；提供重新播放、暂停、质量档选择，必要时加旧/新切换。持续技能展示建立、保持、移动、破盾/死亡/退出等场景，不能只重播开场闪光。
 
@@ -207,9 +227,23 @@ mkdir -p "$VFX_OUT"
   --owners black_hole=dark_dragon --tier medium
 ```
 
+Windows PowerShell 等价命令（同样先填写本机路径）：
+
+```powershell
+$VFX_PROJECT = "D:/本机路径/GLory-v1.0"
+$VFX_GODOT = "D:/本机路径/Godot可执行文件"
+$VFX_OUT = "D:/本机路径/delivery/vfx-dark-dragon/before"
+New-Item -ItemType Directory -Force -Path "$VFX_OUT" | Out-Null
+& "$VFX_GODOT" --path "$VFX_PROJECT" --rendering-method gl_compatibility `
+  --script res://tools/vfx_capture.gd `
+  --write-movie "$VFX_OUT/frame.png" --fixed-fps 12 --quit-after 34 `
+  -- --out "$VFX_OUT" --skills black_hole --unit dark_dragon `
+  --owners black_hole=dark_dragon --tier medium
+```
+
 此例选择当前走该组合器的黑龙；换其他技能时同时替换技能和真实角色 ID，并重新查路由。`34` 来源于当前脚本的 6 帧预热 + 24 帧技能 + 4 帧尾段；脚本变化时重新计算。修改后用相同条件输出到 `after`，保存完整日志与 manifest；`--out` 决定 manifest 目录，`--write-movie` 决定截图目录，两者必须对应。`vfx_diff.py` 只能证明像素变化或疑似空表现，不能证明更美观、机制正确或手机性能达标。
 
-### 6.3 正式战斗和手机
+### 6.3 本地正式战斗与可选手机测试
 
 至少在正式战斗确认：真实事件触发新效果、源/目标正确、范围与坐标正确、伤害/治疗/控制时刻匹配、低档仍清楚、多个角色同屏可辨、结束后无残留。使用 `scripts/qa/FixedBattleFixture.gd` 等已有固定阵容能力前先确认适用流程；不得为演示改变线上玩法参数。
 
@@ -217,11 +251,11 @@ mkdir -p "$VFX_OUT"
 
 固定阵容经真实模拟器进入 `BattleScreen`，可以证明该本地回放路线的功能；它仍不能证明在线传输、完整手机战斗负载或所有比赛模式。独立手机样板适合排查兼容性和量化效果开销，正式手机验收还要在本次构建的游戏里触发同一技能，检查真实模型动画、镜头、其他角色/UI 遮挡和战斗负载。每份证据写清走了哪条路线。
 
-手机已获授权时直接检测连接，Android 使用 `adb devices -l` 并指定序列号，iOS 使用当前可用的 Xcode/设备工具。工具能处理的普通“允许/确认”可在授权范围内操作；设备端锁屏、系统安全确认等无法代办时准确说明所需一步，同时继续本地独立工作。
+以下设备与打包步骤仅用于已纳入范围的真机测试；无手机时跳过。手机已获授权时直接检测连接，Android 使用 `adb devices -l` 并指定序列号，iOS 使用当前可用的 Xcode/设备工具。工具能处理的普通“允许/确认”可在授权范围内操作；设备端锁屏、系统安全确认等无法代办时准确说明所需一步，同时继续本地独立工作。
 
 先检查构建脚本参数再构建：`tools/workspace/build_apk.sh`、`tools/android_smoke.sh`、`tools/android_baseline.sh` 是现有入口。不要为了测本地特效默认加 `--sync`，否则远端同步可能改变本次源码。确认临时构建目录、包内资源、签名、版本和安装结果与本次代码对应；保留用户应用数据，不通过卸载重装消除问题。
 
-实际录屏或截图证明新效果已在手机运行，性能使用正常实时运行采样。安装成功、进程存在、桌面预览、Mac 上通过都不能代替手机特效画面与性能。手机或打包受阻时写“桌面已验证 / 真机待验证”及精确原因，不写“全部完成”。
+实际录屏或截图证明新效果已在手机运行，性能使用正常实时运行采样。安装成功、进程存在、桌面预览、Windows/macOS 上通过都不能代替手机特效画面与性能。本次未要求手机时写“本地验收通过 / 真机未测试（本次未纳入）”；已要求但受阻时写“桌面已验证 / 真机待验证”及精确原因，不将未完成的真机范围标为通过。
 
 ## 7. 交付、失败处理和批量复用
 
@@ -236,7 +270,7 @@ mkdir -p "$VFX_OUT"
 旧/新同视角起手、峰值、消散对比；完整循环录屏：
 低/中/高画质与颜色；范围/单体/状态语义验证：
 实际战斗证据与触发日志：
-手机型号/系统/渲染器/实际视口/包哈希；前后性能数据与采样方式：
+本机系统/GPU/渲染器/实际视口/资源哈希；前后性能与采样方式；可选手机另列：
 分别标记：编辑器预览 / 正式战斗路由 / 独立手机样板 / 手机正式战斗：
 错误检查、回收检查；未验证项与后续动作：
 结论：通过 / 视觉候选待验收 / 真机待验证 / 退回修改：
@@ -250,12 +284,12 @@ mkdir -p "$VFX_OUT"
 - [ ] Godot 编辑器中有可循环观察的 3D 预览，前后对比条件一致，画面无黑片/过曝/遮挡/残留缺陷。
 - [ ] 正式战斗实际触发新资源，无旧新重复叠播、无共享资源误改其他角色。
 - [ ] 低/中/高档均保留主视觉与玩法可读性，预算在代码里实际生效。
-- [ ] 目标手机已在正式游戏中展示本次效果，前后性能/并发检查覆盖真实角色动画与预期战斗负载；独立样板数据已单列，没有用其他平台或静态模型结果代替。
+- [ ] 可选真机（未纳入时标记不适用）：目标手机已在正式游戏中展示本次效果，前后性能/并发检查覆盖真实角色动画与预期战斗负载；独立样板数据已单列，没有用其他平台或静态模型结果代替。
 - [ ] 解析、运行、资源导入和生命周期检查通过；证据足以复现，保留他人改动与回退路径。
 
 不能只凭截图非空、像素变多、测试全绿或粒子数降低认定美术改善。执行者要亲自检查动态节奏与战斗视角，报告视觉选择的理由；用户/美术的审美反馈可能仍需下一轮迭代。
 
-各验证项分别标记“通过 / 未通过 / 待验证”，附证据路径、日期与代码/包版本。本次要求中的检查全部完成后，才给整体“通过”；手机正式游戏未测时可以交付候选和已完成证据，但结论应写“独立真机样板通过，手机正式战斗待验证”。后续代码有变化时只重跑受影响检查，不能直接沿用旧日期的绿色结论。
+各验证项分别标记“通过 / 未通过 / 待验证 / 不适用”，附证据路径、日期与本地资源哈希或可选包版本。本次要求中的检查全部完成后，才给整体“通过”；无手机且仅约定本地测试时，可完成本地交付并明确“真机未测试（本次未纳入）”；仅在已完成独立真机样板但未完成约定的手机正式战斗时，写“独立真机样板通过，手机正式战斗待验证”。后续代码有变化时只重跑受影响检查，不能直接沿用旧日期的绿色结论。
 
 批处理先完成一个代表性样板，再提取可复用配置/模块/素材规则，按清单逐项推进。不要把同一种光圈统一替换所有技能。每个技能独立保留约束卡、正式路由与证据，公用模块改动应抽查其他受影响技能。
 
@@ -321,7 +355,7 @@ mkdir -p "$VFX_OUT"
 
 本次证据位于 `../delivery/vfx-god-guard-20261003/`：`guardian-before-after.png`、`editor-preview-running.png`、`contract-final.log`、`formal-battle/evidence.json`、`android-run/run-report.json`、`android-run/guardian_pilot_perf.json` 与 `android-run/device-new-final-loop.mp4`。原始截图包含建立、移动和破盾后范围保留；昨天的结果单独保留，不混用日期或动画模式。
 
-### 同事运行当前样板并重新测量
+### 同事运行本地样板（手机构建与测量可选）
 
 以下命令使用当前源码重新生成证据，不会自动复现旧版本的数值。先补齐第 1 节依赖并填写本机路径，确认 `VFX_OUT` 在项目外；测量期间不要继续修改本次构建包含的源文件。
 
@@ -329,7 +363,6 @@ mkdir -p "$VFX_OUT"
 VFX_PROJECT="/本机路径/GLory-v1.0"
 VFX_GODOT="/本机路径/Godot可执行文件"
 VFX_OUT="/本机路径/delivery/vfx-god-guard"
-VFX_SERIAL="填写 adb devices -l 显示的已授权设备序列号"
 
 # 编辑器打开后运行当前场景；也可省略 --editor 独立循环运行。
 "$VFX_GODOT" --editor --path "$VFX_PROJECT" res://effects/preview/GuardianVFXPreview.tscn
@@ -338,6 +371,29 @@ VFX_SERIAL="填写 adb devices -l 显示的已授权设备序列号"
 # 正式战斗画面与实际路由证据，不添加 --headless。
 "$VFX_GODOT" --path "$VFX_PROJECT" --rendering-method gl_compatibility --always-on-top \
   --script res://tools/guardian_vfx_battle_capture.gd -- --out "$VFX_OUT/formal-battle"
+```
+
+Windows PowerShell 等价命令（同样先填写本机路径）：
+
+```powershell
+$VFX_PROJECT = "D:/本机路径/GLory-v1.0"
+$VFX_GODOT = "D:/本机路径/Godot可执行文件"
+$VFX_OUT = "D:/本机路径/delivery/vfx-god-guard"
+
+# 编辑器打开后运行当前场景；也可省略 --editor 独立循环运行。
+& "$VFX_GODOT" --editor --path "$VFX_PROJECT" res://effects/preview/GuardianVFXPreview.tscn
+# 行为与生命周期回归。
+& "$VFX_GODOT" --headless --path "$VFX_PROJECT" --script res://tools/guardian_vfx_contract_check.gd
+# 正式战斗画面与实际路由证据，不添加 --headless。
+& "$VFX_GODOT" --path "$VFX_PROJECT" --rendering-method gl_compatibility --always-on-top `
+  --script res://tools/guardian_vfx_battle_capture.gd -- --out "$VFX_OUT/formal-battle"
+```
+
+以下仅在本次包含 Android 真机测试时执行；没有手机直接跳过。
+
+```bash
+# 复用上面的本机路径变量。
+VFX_SERIAL="填写 adb devices -l 显示的已授权设备序列号"
 # 只读检查；缺 SDK/JDK/模板时按 --help 指定，不会自动下载或安装。
 python3 "$VFX_PROJECT/tools/build_guardian_vfx_pilot.py" \
   --godot "$VFX_GODOT" --out "$VFX_OUT/android" --check
@@ -354,6 +410,27 @@ python3 "$VFX_PROJECT/tools/run_guardian_vfx_pilot.py" \
  --out "$VFX_OUT/android-run"
 ```
 
+Windows PowerShell 等价命令（同样先填写本机路径）：
+
+```powershell
+# 复用上面的本机路径变量。
+$VFX_SERIAL = "填写 adb devices -l 显示的已授权设备序列号"
+# 只读检查；缺 SDK/JDK/模板时按 --help 指定，不会自动下载或安装。
+py -3 "$VFX_PROJECT/tools/build_guardian_vfx_pilot.py" `
+  --godot "$VFX_GODOT" --out "$VFX_OUT/android" --check
+# 生成独立 APK，不自动安装。
+py -3 "$VFX_PROJECT/tools/build_guardian_vfx_pilot.py" `
+  --godot "$VFX_GODOT" --out "$VFX_OUT/android" --build
+# 只读检查指定手机、当前源码和已导出 APK 是否对应。
+py -3 "$VFX_PROJECT/tools/run_guardian_vfx_pilot.py" `
+  --serial "$VFX_SERIAL" --build-dir "$VFX_OUT/android" `
+  --out "$VFX_OUT/android-run" --check
+# 安装/复用独立样板并测量五组；android-run 每次使用新的或空的证据目录。
+py -3 "$VFX_PROJECT/tools/run_guardian_vfx_pilot.py" `
+  --serial "$VFX_SERIAL" --build-dir "$VFX_OUT/android" `
+ --out "$VFX_OUT/android-run"
+```
+
 桌面捕获期间保持窗口可见，避免同时启动其他 Godot 窗口遮住它。macOS 窗口完全被遮挡时可能停止绘制，使等待 `frame_post_draw` 的捕获停住；`--always-on-top` 用于降低这类干扰，不能把未完成日志当成截图验收通过。
 
 设备已装过样板而本次输出目录换新时，构建命令加 `--debug-keystore "/旧构建目录/runtime/pilot-debug.keystore"` 复用调试签名，避免覆盖安装签名不一致；不要通过卸载或清空数据解决，也不要使用正式发布密钥。环境探测不到工具时，按 `--help` 指定 `--android-sdk`、`--java-home`、`--templates`、`--adb` 或 `--aapt`。
@@ -364,6 +441,6 @@ python3 "$VFX_PROJECT/tools/run_guardian_vfx_pilot.py" \
 
 运行器会校验源文件清单与 APK/已安装包哈希，保存 `run-report.json`、`guardian_pilot_perf.json`、`device-perf.log` 和设备画面；输入是一次性 `user://guardian_pilot_request.json`，无需同事手工写入应用沙盒。退出码 0 / `measurement_verified` 只表示该次独立样板数据完整且通过运行器校验。没有指定 `--max-p95-ms` 时，`performance_budget` 会标为 `not_evaluated`，仍须按第 5 节比较前后开销；它也不代替人工画面判断或手机正式战斗验收。失败先看报告与日志，修复后使用新的证据目录重跑，不能沿用旧结果。
 
-本机证据集中在 Git 根目录外侧 `../delivery/vfx-god-guard-20261002/`：`guardian-before-after.png`、`guardian-cycle.mp4`、`contract-final.log`、`formal-battle/evidence.json`、`android/guardian_pilot_perf.json`、`android/device-meta.json` 和 `pilot-report.json`。提交给其他同事时连同这些证据交付，或让其按命令重新生成；单独复制本 MD 不会携带资源与代码。
+本机证据集中在项目根目录外侧 `../delivery/vfx-god-guard-20261002/`：`guardian-before-after.png`、`guardian-cycle.mp4`、`contract-final.log`、`formal-battle/evidence.json`、`android/guardian_pilot_perf.json`、`android/device-meta.json` 和 `pilot-report.json`。提交给其他同事时连同这些证据交付，或让其按命令重新生成；单独复制本 MD 不会携带资源与代码。
 
-试点基线 commit 为 `4c6fbb1dca67f088a5ca353f28643e0dbce5bae3`；首版实现已在 `bc0e663f1ef0073d08dec0370a395f8086bfcbf8` 提交，并包含于 2026-10-03 复审时的 `7ec6e5d003835dc9365d1201ee105dd3062b292b`。这不说明当前工作区所有后续改动已提交，也不证明远端状态。需要回退时先检查之后的依赖与他人改动，再按实际差异撤回本次替换点及不再引用的新增文件；不要照固定文件数删除，不要对整个工作区执行 reset/clean。
+回退以本地备份和实际变更清单为准；检查依赖与他人改动，只撤回本次替换点及不再引用的新增文件，不对整个工作区执行 reset/clean。
