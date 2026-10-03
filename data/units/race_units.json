@@ -27,7 +27,7 @@
                       "skill_cd":  4.0,
                       "heal_pct":  0.06,
                       "cleanse_chance":  0.25,
-                      "model":  "res://assets/models/units/god_priest_halo_animated/god_priest_animated.tscn",
+                      "model":  "res://assets/models/units/god_priest_refined/god_priest_refined.tscn",
                       "model_visual_scale":  1.0,
                       "model_base_yaw":  180.0,
                       "model_idle_animation_name":  "idle",
