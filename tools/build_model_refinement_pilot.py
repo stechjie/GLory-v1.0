@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage/export the offline guardian preview under a separate Android package.
+"""Stage/export the offline model refinement preview under a separate Android package.
 
 Default: copy only the preview's explicit resource closure and write a manifest.
 --build additionally imports and exports; this tool never installs or launches.
@@ -17,22 +17,23 @@ from pathlib import Path, PurePosixPath
 import re
 import shutil
 import subprocess
+import struct
 import sys
 import zipfile
+from urllib.parse import unquote, urlsplit
 
 
-PACKAGE = "com.glory.vfxpilot.guard"
-PREVIEW = "effects/preview/GuardianVFXPreview.tscn"
-CORE = (
-    "effects/vfx3d/VFXBlockRoot.gd",
-    "effects/vfx3d/core/VFXQualityBudget.gd",
-    "effects/vfx3d/core/VFXShaderCache.gd",
-    # Sprite flipbook's typed API references this global class without preload.
-    "effects/vfx3d/core/VFXProfile3D.gd",
-)
-TEXT_TYPES = {".gd", ".tscn", ".tres", ".gdshader", ".gdshaderinc", ".shader"}
+PACKAGE = "com.glory.modelpilot"
+PREVIEW = "scenes/debug/ModelRefinementPreview.tscn"
+DEFAULT_OLD_MODEL = "res://assets/models/units/god_guard_crystalbound/god_guard_crystalbound_animated.tscn"
+DEFAULT_NEW_MODEL = "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+IDENTITY_KEYS = ("unit_id", "old_model_path", "new_model_path")
+CORE: tuple[str, ...] = ()
+MAX_RESOURCES = 2048
+MAX_SOURCE_BYTES = 2 * 1024 * 1024 * 1024
+TEXT_TYPES = {".gd", ".tscn", ".tres", ".gdshader", ".gdshaderinc", ".shader", ".import"}
 RESOURCE_LITERAL = re.compile(r'''["'](res://[^"'\r\n]+)["']''')
-GENERATED_MARKER = ".guardian-vfx-pilot-generated.json"
+GENERATED_MARKER = ".model-refinement-pilot-generated.json"
 ERROR_LINE = re.compile(r"(?m)^(?:SCRIPT ERROR:|ERROR:)|Parse Error:|Failed to (?:load|import)")
 
 
@@ -49,7 +50,7 @@ def json_write(path: Path, value: object) -> None:
 
 
 def note(message: str) -> None:
-    print(f"[GUARDIAN-PILOT] {message}", flush=True)
+    print(f"[MODEL-PILOT] {message}", flush=True)
 
 
 def checked_resource(source: Path, relative: str) -> Path:
@@ -77,17 +78,43 @@ def resource_closure(source: Path, seeds: list[str]) -> list[str]:
         relative = pending.pop()
         if relative in seen:
             continue
-        if relative.endswith("/OgaSkillVFXCatalog.gd"):
-            raise RuntimeError("Use the guardian's fixed two-layer baseline in the preview; "
-                               "the whole OgaSkillVFXCatalog contains dynamic, unrelated resources.")
         path = checked_resource(source, relative)
         seen.add(relative)
-        if len(seen) > 128:
-            raise RuntimeError("Preview closure exceeds 128 files; inspect unexpected dependencies.")
+        if len(seen) > MAX_RESOURCES:
+            raise RuntimeError(f"Preview closure exceeds {MAX_RESOURCES} files; inspect unexpected dependencies.")
         for suffix in (".uid", ".import"):
             sidecar = source / (relative + suffix)
             if sidecar.is_file():
                 pending.append(relative + suffix)
+        if path.suffix.lower() == ".blend":
+            raise RuntimeError("Export Blender authoring files to self-contained GLB before packaging the pilot.")
+        if path.suffix.lower() in {".gltf", ".glb"}:
+            if path.suffix.lower() == ".gltf":
+                gltf = json.loads(path.read_text(encoding="utf-8-sig"))
+            else:
+                with path.open("rb") as stream:
+                    header = stream.read(20)
+                    if len(header) != 20:
+                        raise RuntimeError(f"Invalid GLB header: {relative}")
+                    magic, version, total, json_bytes, chunk_type = struct.unpack("<5I", header)
+                    if (magic != 0x46546C67 or version != 2 or total != path.stat().st_size
+                            or chunk_type != 0x4E4F534A or not 0 < json_bytes <= total - 20):
+                        raise RuntimeError(f"Invalid GLB JSON chunk: {relative}")
+                    gltf = json.loads(stream.read(json_bytes).decode("utf-8"))
+            for entry in [*gltf.get("buffers", []), *gltf.get("images", [])]:
+                uri = entry.get("uri", "")
+                if not uri or uri.startswith("data:"):
+                    continue
+                parsed = urlsplit(uri)
+                if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment:
+                    raise RuntimeError(f"Only local glTF dependencies are permitted: {uri}")
+                decoded = unquote(parsed.path)
+                if Path(decoded).is_absolute() or "\\" in decoded:
+                    raise RuntimeError(f"Unsafe glTF URI: {uri}")
+                target = (path.parent / decoded).resolve()
+                if not target.is_relative_to(source.resolve()) or not target.is_file():
+                    raise RuntimeError(f"Missing/out-of-project glTF dependency: {uri}")
+                pending.append(target.relative_to(source.resolve()).as_posix())
         if path.suffix not in TEXT_TYPES:
             continue
         text = path.read_text(encoding="utf-8-sig")
@@ -95,9 +122,13 @@ def resource_closure(source: Path, seeds: list[str]) -> list[str]:
             # Directory constants do not authorize copying a whole library.
             if ref.endswith("/"):
                 continue
+            # Import remaps point to generated cache files. External override
+            # materials/animation libraries in the same sidecar are real inputs.
+            if path.suffix == ".import" and ref.startswith("res://.godot/"):
+                continue
             pending.append(ref.removeprefix("res://"))
-    if sum((source / item).stat().st_size for item in seen) > 128 * 1024 * 1024:
-        raise RuntimeError("Preview source closure exceeds 128 MiB; inspect dependencies first.")
+    if sum((source / item).stat().st_size for item in seen) > MAX_SOURCE_BYTES:
+        raise RuntimeError("Preview source closure exceeds 2 GiB; inspect dependencies first.")
     return sorted(seen)
 
 
@@ -176,7 +207,31 @@ def validate_output(source: Path, output: Path) -> None:
         raise RuntimeError("Output marker belongs to a different package.")
 
 
-def stage_project(source: Path, output: Path, resources: list[str], env: dict) -> Path:
+def source_fingerprint(rows: list[dict], identity: dict) -> str:
+    return hashlib.sha256(json.dumps({"files": rows, "identity": {key: identity[key] for key in IDENTITY_KEYS}}, sort_keys=True).encode()).hexdigest()
+
+
+def resolve_identity(args: argparse.Namespace, source: Path) -> tuple[str, dict]:
+    if not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", args.unit_id):
+        raise RuntimeError("--unit-id must be an exact lower-case unit identifier.")
+    if args.unit_id != "god_guard" and (not args.preview or args.preview.removeprefix("res://") == PREVIEW or not args.old_model or not args.new_model):
+        raise RuntimeError("A non-god_guard target requires its own explicit --preview, --old-model and --new-model; the default guardian preview cannot prove another character.")
+    preview = (args.preview or PREVIEW).removeprefix("res://")
+    if not preview.endswith(".tscn"):
+        raise RuntimeError("--preview must be an explicit .tscn scene.")
+    identity = {"unit_id": args.unit_id,
+                "old_model_path": "res://" + (args.old_model or DEFAULT_OLD_MODEL).removeprefix("res://"),
+                "new_model_path": "res://" + (args.new_model or DEFAULT_NEW_MODEL).removeprefix("res://")}
+    if identity["old_model_path"] == identity["new_model_path"]:
+        raise RuntimeError("Old and new model paths must be distinct for an A/B refinement test.")
+    checked_resource(source, preview)
+    for key in ("old_model_path", "new_model_path"):
+        checked_resource(source, identity[key])
+    return preview, identity
+
+
+def stage_project(source: Path, output: Path, resources: list[str], env: dict,
+                  preview: str, extra_resources: list[str], identity: dict) -> Path:
     validate_output(source, output)
     output.mkdir(parents=True, exist_ok=True)
     json_write(output / GENERATED_MARKER, {"package": PACKAGE, "source": str(source)})
@@ -209,25 +264,26 @@ def stage_project(source: Path, output: Path, resources: list[str], env: dict) -
         if not target.is_file() or sha256(target) != digest:
             shutil.copy2(original, target)
         rows.append({"path": relative, "bytes": original.stat().st_size, "sha256": digest})
-    fingerprint = hashlib.sha256(json.dumps(rows, sort_keys=True).encode()).hexdigest()
+    fingerprint = source_fingerprint(rows, identity)
     manifest = {
-        "package": PACKAGE, "godot": env["version"], "scene": f"res://{PREVIEW}",
+        "package": PACKAGE, "godot": env["version"], "scene": f"res://{preview}", **identity,
+        "resource_seeds": [preview, identity["old_model_path"], identity["new_model_path"], *extra_resources],
         "renderer": "gl_compatibility", "source_fingerprint": fingerprint,
         "created_utc": dt.datetime.now(dt.timezone.utc).isoformat(), "files": rows,
-        "scope": "offline guardian VFX preview; not a full-game performance test",
+        "scope": "offline real-model A/B preview; not a full-game performance test",
     }
     json_write(previous, manifest)
-    json_write(stage / "pilot_build_info.json", manifest)
+    json_write(stage / "model_build_info.json", manifest)
     (stage / "pilot_icon.svg").write_text('''<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect width="128" height="128" rx="24" fill="#172822"/><path d="M64 17 104 34v29c0 25-19 41-40 50-21-9-40-25-40-50V34Z" fill="#e6efeb" stroke="#c4b77c" stroke-width="5"/><path d="m64 38 7 20 21 7-21 7-7 20-7-20-21-7 21-7Z" fill="#516e61"/></svg>''', encoding="utf-8")
-    (stage / "project.godot").write_text('''config_version=5
+    (stage / "project.godot").write_text(f'''config_version=5
 
 [application]
-config/name="GLory Guardian VFX Pilot"
+config/name="GLory Model Refinement Pilot"
 config/icon="res://pilot_icon.svg"
-run/main_scene="res://effects/preview/GuardianVFXPreview.tscn"
+run/main_scene="res://{preview}"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/use_custom_user_dir=true
-config/custom_user_dir_name="GLoryGuardianVFXPilot"
+config/custom_user_dir_name="GLoryModelRefinementPilot"
 
 [display]
 window/size/viewport_width=1600
@@ -240,7 +296,7 @@ window/vsync/vsync_mode=1
 
 [debug]
 file_logging/enable_file_logging=true
-file_logging/log_path="user://logs/guardian_pilot.log"
+file_logging/log_path="user://logs/model_pilot.log"
 file_logging/max_log_files=3
 
 [rendering]
@@ -251,13 +307,13 @@ textures/default_filters/use_nearest_mipmap_filter=false
 ''', encoding="utf-8")
     # Export only the preview closure. No networking, microphone or release key.
     preset = f'''[preset.0]
-name="Guardian VFX Pilot"
+name="Model Refinement Pilot"
 platform="Android"
 runnable=true
 export_filter="all_resources"
-include_filter="pilot_build_info.json"
-exclude_filter=""
-export_path="../GuardianVFXPilot.apk"
+include_filter="model_build_info.json"
+exclude_filter="tools/_pilot_material_audit.*,tools/CheckHarness.gd*,reports/**"
+export_path="../ModelRefinementPilot.apk"
 
 [preset.0.options]
 custom_template/debug={json.dumps(str(env["templates"] / "android_debug.apk"))}
@@ -269,7 +325,7 @@ architectures/x86_64=false
 version/code=1
 version/name="0.1-pilot"
 package/unique_name="{PACKAGE}"
-package/name="Guardian VFX Pilot"
+package/name="Model Refinement Pilot"
 package/signed=true
 permissions/internet=false
 permissions/record_audio=false
@@ -306,7 +362,7 @@ def portable_engine(env: dict, output: Path) -> Path:
         keytool = env["java"] / "bin" / ("keytool.exe" if os.name == "nt" else "keytool")
         subprocess.run([str(keytool), "-genkeypair", "-keystore", str(keystore),
                         "-storepass", "android", "-alias", "androiddebugkey", "-keypass", "android",
-                        "-dname", "CN=Guardian VFX Pilot,O=Local Development,C=US",
+                        "-dname", "CN=Model Refinement Pilot,O=Local Development,C=US",
                         "-keyalg", "RSA", "-keysize", "2048", "-validity", "10000"],
                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         keystore.chmod(0o600)
@@ -335,18 +391,78 @@ def run_logged(command: list[str], path: Path, env: dict[str, str]) -> str:
     return content
 
 
+def audit_import_diagnostics(content: str, source: Path, stage: Path, output: Path,
+                             engine: Path, child_env: dict[str, str]) -> None:
+    """Apply the production material audit to every model wrapper in this closure.
+
+    Only exact unused FBX source-image diagnostics may be accepted, and only
+    after all final materials/textures and every resident action model pass.
+    The generated audit helpers are excluded from the Android package.
+    """
+    from workspace import glory_build as production
+    checker = source / "tools/model_material_integrity_check.gd"
+    harness = source / "tools/CheckHarness.gd"
+    whitelist = source / "data/qa/intentional_untextured_materials.json"
+    manifest = json.loads((output / "source-manifest.json").read_text())
+    model_paths = ["res://" + row["path"] for row in manifest["files"]
+                   if row["path"].startswith("assets/models/") and row["path"].endswith(".tscn")]
+    if not model_paths or not all(path.is_file() for path in (checker, harness, whitelist)):
+        raise RuntimeError("FBX source diagnostics require the production material audit and real model wrappers.")
+    code = checker.read_text(encoding="utf-8-sig")
+    code = re.sub(r'^const UnitVisualResolverScript :=.*\n', '', code, flags=re.M)
+    start = code.find('\tvar entries := UnitVisualResolverScript.all_combat_entries()')
+    end = code.find('\t_check_stale_whitelist_entries()', start)
+    if start < 0 or end < 0:
+        raise RuntimeError("Production material audit structure changed; review the subset adapter.")
+    # The original stale-whitelist check concerns the entire roster. This
+    # explicitly scoped subset may legitimately leave other entries unused.
+    code = code[:start] + '\tfor model_path in ' + json.dumps(model_paths) + ':\n\t\tawait _audit_model("pilot", "unit", model_path)\n\n' + code[end + len('\t_check_stale_whitelist_entries()\n'):]
+    (stage / "tools").mkdir(exist_ok=True)
+    shutil.copy2(harness, stage / "tools/CheckHarness.gd")
+    target_whitelist = stage / "data/qa/intentional_untextured_materials.json"
+    target_whitelist.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(whitelist, target_whitelist)
+    (stage / "tools/_pilot_material_audit.gd").write_text(code)
+    (stage / "tools/_pilot_material_audit.tscn").write_text('[gd_scene load_steps=2 format=3]\n[ext_resource type="Script" path="res://tools/_pilot_material_audit.gd" id="1"]\n[node name="PilotMaterialAudit" type="Node"]\nscript = ExtResource("1")\n')
+    run_logged([str(engine), "--headless", "--path", str(stage), "res://tools/_pilot_material_audit.tscn"],
+               output / "model-materials.log", child_env)
+    report = json.loads((stage / "reports/model_material_integrity.json").read_text())
+    summary = report["summary"]
+    if summary.get("models") != len(model_paths) or any(summary.get(key) for key in
+            ("scene_load_failed", "material_missing", "missing_texture", "white_material_suspect")):
+        raise RuntimeError("Pilot final model material audit failed; inspect model-materials.log.")
+    audit_log = (output / "model-materials.log").read_text(errors="replace")
+    if "CHECK_RESULT name=model_material_integrity status=PASS" not in audit_log:
+        raise RuntimeError("Pilot material audit has no successful completion marker.")
+    shutil.copy2(stage / "reports/model_material_integrity.json", output / "model-materials.json")
+    production.verify_import_diagnostics(content, stage, output, report)
+    json_write(output / "material-audit-provenance.json", {"scope":"every model wrapper in the isolated dependency closure", "model_paths":model_paths,
+        "production_checker_sha256":sha256(checker), "harness_sha256":sha256(harness), "whitelist_sha256":sha256(whitelist),
+        "generated_audit_sha256":sha256(stage / "tools/_pilot_material_audit.gd"), "summary":summary})
+
+
 def build(stage: Path, output: Path, env: dict) -> None:
     engine = portable_engine(env, output)
     child_env = os.environ.copy()
     child_env["JAVA_HOME"] = str(env["java"])
     child_env["ANDROID_HOME"] = str(env["sdk"])
     command = [str(engine), "--headless", "--path", str(stage)]
-    run_logged(command + ["--editor", "--import"], output / "import.log", child_env)
+    import_log = output / "import.log"
+    if import_log.exists():
+        shutil.copy2(import_log, output / ("import-before-" + dt.datetime.now().strftime("%Y%m%d-%H%M%S") + ".log"))
+    with import_log.open("w", encoding="utf-8") as stream:
+        imported = subprocess.run(command + ["--editor", "--import"], stdout=stream, stderr=subprocess.STDOUT, env=child_env)
+    content = re.sub(r"\x1b\[[0-9;]*m", "", import_log.read_text(errors="replace"))
+    if imported.returncode:
+        raise RuntimeError(f"Import process failed (rc={imported.returncode}); inspect {import_log}")
+    if ERROR_LINE.search(content):
+        source = Path(json.loads((output / GENERATED_MARKER).read_text())["source"])
+        audit_import_diagnostics(content, source, stage, output, engine, child_env)
     # Always export to a new temporary name; a stale APK cannot pass this build.
-    apk = output / "GuardianVFXPilot.pending.apk"
+    apk = output / "ModelRefinementPilot.pending.apk"
     if apk.exists():
         apk.unlink()
-    log = run_logged(command + ["--export-debug", "Guardian VFX Pilot", str(apk)],
+    log = run_logged(command + ["--export-debug", "Model Refinement Pilot", str(apk)],
                      output / "export.log", child_env)
     if not apk.is_file() or "[ DONE ] export" not in log:
         raise RuntimeError("Export did not confirm completion with a new APK.")
@@ -355,11 +471,11 @@ def build(stage: Path, output: Path, env: dict) -> None:
     if f"package: name='{PACKAGE}'" not in badging:
         raise RuntimeError("Unexpected Android package identity; APK must not be installed.")
     with zipfile.ZipFile(apk) as archive:
-        embedded = json.loads(archive.read("assets/pilot_build_info.json"))
-    expected = json.loads((stage / "pilot_build_info.json").read_text())
+        embedded = json.loads(archive.read("assets/model_build_info.json"))
+    expected = json.loads((stage / "model_build_info.json").read_text())
     if embedded != expected:
         raise RuntimeError("APK embedded identity does not match the staged sources.")
-    final = output / "GuardianVFXPilot.apk"
+    final = output / "ModelRefinementPilot.apk"
     apk.replace(final)
     json_write(output / "apk-report.json", {
         "apk": str(final), "package": PACKAGE, "sha256": sha256(final),
@@ -374,6 +490,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--out", type=Path, help="Generated directory outside source (must be empty/marked)")
+    parser.add_argument("--preview", help="Preview scene path; default is the god_guard-specific preview")
+    parser.add_argument("--unit-id", default="god_guard", help="Exact intended unit; custom units require their own preview and model paths")
+    parser.add_argument("--old-model", help="Original res:// model path; defaults to the original guardian")
+    parser.add_argument("--new-model", help="Candidate res:// model path; defaults to the refined guardian")
     parser.add_argument("--resource", action="append", default=[], help="Additional explicit res:// file")
     parser.add_argument("--godot", help="Godot 4.7 executable or app bundle")
     parser.add_argument("--templates", help="Matching Godot export template directory")
@@ -387,15 +507,16 @@ def main() -> None:
     source = args.project.expanduser().resolve()
     if not (source / "project.godot").is_file():
         raise RuntimeError(f"Not a Godot source project: {source}")
-    output = (args.out or source.parent / "delivery/guardian-vfx-pilot/android").expanduser().resolve()
+    output = (args.out or source.parent / "delivery/model-refinement-pilot/android").expanduser().resolve()
     validate_output(source, output)
     env = tool_environment(args)
-    resources = resource_closure(source, [PREVIEW, *CORE, *args.resource])
+    preview, identity = resolve_identity(args, source)
+    resources = resource_closure(source, [preview, identity["old_model_path"], identity["new_model_path"], *CORE, *args.resource])
     note(f"Godot={env['version']}; closure={len(resources)} files; renderer=gl_compatibility")
     if args.check:
         note("Read-only check passed; no staging/import/export/install performed.")
         return
-    stage = stage_project(source, output, resources, env)
+    stage = stage_project(source, output, resources, env, preview, args.resource, identity)
     if args.build:
         build(stage, output, env)
     else:
@@ -406,5 +527,5 @@ if __name__ == "__main__":
     try:
         main()
     except (RuntimeError, OSError, ValueError, subprocess.CalledProcessError, zipfile.BadZipFile) as exc:
-        print(f"[GUARDIAN-PILOT] FAIL: {exc}", file=sys.stderr)
+        print(f"[MODEL-PILOT] FAIL: {exc}", file=sys.stderr)
         sys.exit(1)

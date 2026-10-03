@@ -38,6 +38,10 @@ android/
 !/assets/models/units/dark_queen_animated/dark_queen_run_smooth.fbx
 !/assets/models/units/dark_queen_animated/dark_queen_run_smooth.fbx.import
 
+# Model-workflow pilot: ship its small runtime refinement with code.
+# Original character source/rig remains in the separately delivered art bundle.
+!/assets/models/units/god_guard_refined/
+
 # Exception: VFX textures must ship through git. effects/ holds ~1080 references
 # to res://assets/vfx/, so a teammate without these files hits
 # "Failed loading resource" the moment a battle starts.

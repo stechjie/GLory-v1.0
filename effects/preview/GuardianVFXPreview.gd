@@ -16,6 +16,7 @@ var _actors: Node3D
 var _effects: Node3D
 var _camera: Camera3D
 var _units: Array[Node3D] = []
+var _models: Array[Node3D] = []
 var _active: Array[Node3D] = []
 var _title: Label
 var _status: Label
@@ -40,6 +41,11 @@ var _node_samples: Array[int] = []
 var _peak_memory := 0
 var _case_started_usec := 0
 var _last_usec := 0
+var _animate := true
+var _motion := ""
+var _main_color := Color(1.0, 0.98, 0.93)
+var _run_id := ""
+var _source_fingerprint := ""
 
 func _ready() -> void:
 	BUDGET.tier = 1
@@ -49,9 +55,29 @@ func _ready() -> void:
 	var request: Dictionary = {}
 	if FileAccess.file_exists("user://guardian_pilot_request.json"):
 		var value: Variant = JSON.parse_string(FileAccess.get_file_as_string("user://guardian_pilot_request.json"))
-		if value is Dictionary:
-			request = value
 		DirAccess.remove_absolute("user://guardian_pilot_request.json")
+		if not value is Dictionary:
+			_request_error("request must be a JSON object")
+			return
+		request = value
+	var request_problem := validate_request(request)
+	if not request_problem.is_empty():
+		_request_error(request_problem)
+		return
+	_run_id = str(request.get("run_id", ""))
+	_animate = bool(request.get("animate", true))
+	_star4 = bool(request.get("star4", false))
+	BUDGET.tier = int(request.get("tier", 1))
+	if bool(request.get("close", false)):
+		_camera.size = 4.1
+	if request.has("color"):
+		_main_color = Color.from_string(str(request.color), _main_color)
+	# Build metadata is generated only in the isolated Android project.
+	var build_path := "res://" + "pilot_build_info.json"
+	if FileAccess.file_exists(build_path):
+		var build: Variant = JSON.parse_string(FileAccess.get_file_as_string(build_path))
+		if build is Dictionary:
+			_source_fingerprint = str(build.get("source_fingerprint", ""))
 	for i in args.size():
 		if args[i] == "--capture-dir" and i + 1 < args.size():
 			_capture_dir = args[i + 1]
@@ -65,6 +91,13 @@ func _ready() -> void:
 			BUDGET.tier = 2
 		if args[i] == "--star4":
 			_star4 = true
+		if args[i] == "--freeze-model":
+			_animate = false
+		if args[i] == "--color" and i + 1 < args.size():
+			if not Color.html_is_valid(args[i + 1]):
+				_request_error("--color requires a hex color")
+				return
+			_main_color = Color.from_string(args[i + 1], _main_color)
 	if not _capture_dir.is_empty():
 		DirAccess.make_dir_recursive_absolute(_capture_dir)
 	_mode = str(request.get("mode", _mode))
@@ -77,6 +110,39 @@ func _ready() -> void:
 		_restart()
 	_last_usec = Time.get_ticks_usec()
 	print("GUARDIAN_PREVIEW_READY renderer=%s user=%s" % [RenderingServer.get_current_rendering_method(), OS.get_user_data_dir()])
+
+static func validate_request(request: Dictionary) -> String:
+	for key in ["perf", "animate", "star4", "close"]:
+		if request.has(key) and not request[key] is bool:
+			return "%s must be boolean" % key
+	if request.has("run_id") and (not request.run_id is String or str(request.run_id).length() > 128):
+		return "run_id must be a string of at most 128 characters"
+	if request.has("color") and (not request.color is String or not Color.html_is_valid(str(request.color))):
+		return "color requires a hex color"
+	var cases: Variant = request.get("cases", [])
+	if not cases is Array or cases.size() > 12:
+		return "cases must be an array with at most 12 entries"
+	var entries: Array = [request]
+	entries.append_array(cases)
+	for item in entries:
+		if not item is Dictionary:
+			return "each case must be a JSON object"
+		if str(item.get("mode", "new")) not in ["off", "old", "new"]:
+			return "mode must be off, old, or new"
+		for key in ["count", "tier", "seconds"]:
+			if item.has(key) and not (item[key] is int or item[key] is float):
+				return "%s must be numeric" % key
+		if float(item.get("count", 1)) not in [1.0, 6.0, 12.0]:
+			return "count must be 1, 6, or 12"
+		if float(item.get("tier", 1)) not in [0.0, 1.0, 2.0]:
+			return "tier must be 0, 1, or 2"
+		if float(item.get("seconds", 30)) < 1.0 or float(item.get("seconds", 30)) > 600.0:
+			return "seconds must be between 1 and 600"
+	return ""
+
+func _request_error(message: String) -> void:
+	push_error("GUARDIAN_PREVIEW_REQUEST_ERROR " + message)
+	get_tree().quit(2)
 
 func _build_stage() -> void:
 	var back := ColorRect.new()
@@ -143,6 +209,7 @@ func _build_ui() -> void:
 	column.add_child(_title)
 	_detail = Label.new()
 	_detail.add_theme_font_size_override("font_size", 18)
+	_detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_detail.modulate = Color("bec8bc")
 	column.add_child(_detail)
 	var space := Control.new()
@@ -151,13 +218,18 @@ func _build_ui() -> void:
 	column.add_child(space)
 	_status = Label.new()
 	_status.add_theme_font_size_override("font_size", 23)
+	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(_status)
-	var bar := HBoxContainer.new()
-	bar.add_theme_constant_override("separation", 12)
+	var bar := HFlowContainer.new()
+	bar.add_theme_constant_override("h_separation", 12)
+	bar.add_theme_constant_override("v_separation", 12)
 	column.add_child(bar)
 	_button(bar, "新版 / New", func(): _select_mode("new"))
 	_button(bar, "原版 / Before", func(): _select_mode("old"))
-	_button(bar, "重播", _restart)
+	_button(bar, "重播", func():
+		_paused = false
+		_world.process_mode = Node.PROCESS_MODE_INHERIT
+		_restart())
 	_button(bar, "暂停 / 继续", func():
 		_paused = not _paused
 		_world.process_mode = Node.PROCESS_MODE_DISABLED if _paused else Node.PROCESS_MODE_INHERIT)
@@ -168,6 +240,10 @@ func _build_ui() -> void:
 		_rebuild_units()
 		_restart())
 	_button(bar, "普通 / 四星", func(): _star4 = not _star4; _restart())
+	_button(bar, "动画 / 定帧", func():
+		_animate = not _animate
+		_rebuild_units()
+		_restart())
 
 func _button(parent: Node, text: String, action: Callable) -> void:
 	var button := Button.new()
@@ -187,6 +263,7 @@ func _rebuild_units() -> void:
 	for child in _actors.get_children():
 		child.free()
 	_units.clear()
+	_models.clear()
 	for i in _count:
 		var unit := Node3D.new()
 		var at := Vector3.ZERO if _count == 1 else Vector3((i % 4 - 1.5) * 1.5, 0, (i / 4 - 1) * 1.6)
@@ -206,9 +283,25 @@ func _rebuild_units() -> void:
 		anchor.name = "CastAnchor"
 		anchor.position = Vector3(0.0, 0.98 * 0.60, -0.04)
 		unit.add_child(anchor)
+		var foot := Node3D.new()
+		foot.name = "FootAnchor"
+		foot.position.y = 0.98 * 0.05
+		unit.add_child(foot)
 		_actors.add_child(unit)
-		_freeze_after_pose(model)
+		if not _animate:
+			_freeze_after_pose(model)
+		_models.append(model)
 		_units.append(unit)
+	_motion = ""
+
+func _set_motion(motion: String) -> void:
+	if not _animate or motion == _motion:
+		return
+	_motion = motion
+	for model in _models:
+		var method := "play_run" if motion == "run" else "play_idle"
+		if is_instance_valid(model) and model.has_method(method):
+			model.call(method)
 
 func _freeze_after_pose(model: Node3D) -> void:
 	await get_tree().process_frame
@@ -245,6 +338,7 @@ func _radius() -> Vector2:
 	return Vector2(radius * 14.5 * 0.88 / 1000.0, radius * 10.0 * 0.88 / 520.0)
 
 func _restart() -> void:
+	_set_motion("idle")
 	_viewport.msaa_3d = Viewport.MSAA_2X if BUDGET.tier == 2 else Viewport.MSAA_DISABLED
 	for child in _effects.get_children():
 		child.queue_free()
@@ -259,14 +353,14 @@ func _restart() -> void:
 		if _mode == "new":
 			var effect := GUARDIAN.new()
 			_effects.add_child(effect)
-			effect.play_guardian(anchor.global_position, {"origin_node":anchor, "origin_height":0.98, "persistent":true, "taunt_world_radius":_radius()})
+			effect.play_guardian(anchor.global_position, {"origin_node":anchor, "origin_ground_node":unit.get_node("FootAnchor"), "origin_height":0.98, "persistent":true, "taunt_world_radius":_radius(), "main_color":_main_color})
 			_active.append(effect)
 		elif _mode == "old":
 			var effect := LEGACY.new()
 			_effects.add_child(effect)
 			effect.play_spec({"origin_body":anchor.global_position, "origin_ground":unit.global_position}, OLD_SPEC)
 	_title.text = "光之卫士 · 白晶守护   /   " + {"new":"新版", "old":"原版", "off":"无特效"}[_mode]
-	_detail.text = "%s画质  ·  %d 单位  ·  %s  ·  自身护盾 + 周围嘲讽，无范围伤害" % [["低", "中", "高"][BUDGET.tier], _count, "四星 / 范围240" if _star4 else "普通 / 范围180"]
+	_detail.text = "%s画质 · %d 单位 · %s · %s · 自身护盾 + 周围嘲讽，无范围伤害" % [["低", "中", "高"][BUDGET.tier], _count, "四星 / 范围240" if _star4 else "普通 / 范围180", "动画" if _animate else "定帧"]
 
 func _process(delta: float) -> void:
 	if _world == null or _paused:
@@ -275,6 +369,7 @@ func _process(delta: float) -> void:
 	var wall_ms := float(now - _last_usec) / 1000.0 if _last_usec > 0 else 0.0
 	_last_usec = now
 	_clock += delta
+	_set_motion("run" if _clock > 1.5 and _clock < 3.1 else "idle")
 	if _clock > 1.5 and _clock < 3.1:
 		for unit in _units:
 			unit.position.x = (unit.get_meta("start") as Vector3).x + sin((_clock - 1.5) * PI / 1.6) * 0.6
@@ -314,6 +409,7 @@ func _start_perf(cases: Array) -> void:
 	if _cases.is_empty():
 		for mode in ["off", "old", "new"]:
 			_cases.append({"mode":mode, "count":6, "tier":1, "seconds":30})
+		_cases.append({"mode":"new", "count":6, "tier":0, "seconds":30})
 		_cases.append({"mode":"new", "count":12, "tier":2, "seconds":180})
 	_perf = true
 	_next_case()
@@ -357,10 +453,13 @@ func _measure_perf(wall_ms: float) -> void:
 		if value > 100.0:
 			long_frames += 1
 	var record: Dictionary = _cases[_case_index].duplicate()
-	record.merge({"frames":_samples.size(), "p50_ms":_percentile(0.50), "p95_ms":_percentile(0.95), "p99_ms":_percentile(0.99), "over_100ms":long_frames, "peak_draw_calls":_peak_draws, "peak_static_bytes":_peak_memory, "loop_end_node_counts":_node_samples.duplicate()})
+	record.merge({"frames":_samples.size(), "warmup_seconds":2.0, "sampled_seconds":_case_clock - 2.0, "p50_ms":_percentile(0.50), "p95_ms":_percentile(0.95), "p99_ms":_percentile(0.99), "over_100ms":long_frames, "peak_draw_calls":_peak_draws, "peak_static_bytes":_peak_memory, "loop_end_node_counts":_node_samples.duplicate()})
 	_results.append(record)
 	var file := FileAccess.open("user://guardian_pilot_perf.json", FileAccess.WRITE)
-	file.store_string(JSON.stringify({"scope":"isolated real-model VFX scene, not whole-game benchmark", "renderer":RenderingServer.get_current_rendering_method(), "os":OS.get_name(), "model":OS.get_model_name(), "gpu":RenderingServer.get_video_adapter_name(), "viewport":_viewport.size, "results":_results}, "\t"))
+	if file == null:
+		_request_error("cannot write performance report")
+		return
+	file.store_string(JSON.stringify({"schema_version":2, "run_id":_run_id, "source_fingerprint":_source_fingerprint, "completed":_results.size() == _cases.size(), "animation_mode":"animated" if _animate else "frozen", "color":_main_color.to_html(), "star4":_star4, "scope":"isolated real-model VFX scene, not whole-game benchmark", "renderer":RenderingServer.get_current_rendering_method(), "os":OS.get_name(), "model":OS.get_model_name(), "gpu":RenderingServer.get_video_adapter_name(), "viewport":_viewport.size, "results":_results}, "\t"))
 	file.close()
 	print("GUARDIAN_PERF_RESULT " + JSON.stringify(record))
 	_next_case()

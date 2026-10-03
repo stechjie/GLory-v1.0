@@ -90,7 +90,7 @@
                       "skill_id":  "guardian_shield_taunt",
                       "start_shield_pct":  0.20,
                       "taunt_radius":  180.0,
-                      "model":  "res://assets/models/units/god_guard_crystalbound/god_guard_crystalbound_animated.tscn",
+                      "model":  "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
                       "model_attack_animation_name":  "attack",
                       "model_attack_sync_seek":  0.35,
                       "model_attack_lock_time":  0.45,

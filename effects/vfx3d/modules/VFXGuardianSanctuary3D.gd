@@ -12,6 +12,7 @@ var _taunt_active := true
 var _world_radius := DEFAULT_WORLD_RADIUS
 var _persistent := false
 var _owner: WeakRef
+var _ground_owner: WeakRef
 var _height := 0.98
 var _age := 0.0
 var _shield_fade := 0.0
@@ -39,6 +40,8 @@ func play_guardian(origin: Vector3, context: Dictionary = {}) -> void:
 	if is_instance_valid(owner_node) and owner_node is Node3D:
 		_owner = weakref(owner_node)
 		global_position = owner_node.global_position
+	var ground_node: Variant = context.get("origin_ground_node")
+	_ground_owner = weakref(ground_node) if is_instance_valid(ground_node) and ground_node is Node3D else null
 	_spark_count = [10, 18, 28][clampi(QUALITY_BUDGET.tier, 0, 2)]
 	_build()
 	set_process(true)
@@ -113,13 +116,14 @@ func _build() -> void:
 func _update_visuals(delta: float) -> void:
 	if _shell == null:
 		return
+	_place_ground_layers()
 	_shield_fade = move_toward(_shield_fade, 1.0 if _shield_active else 0.0, delta * (4.5 if _shield_active else 5.0))
 	_range_fade = move_toward(_range_fade, 1.0 if _taunt_active else 0.0, delta * 3.5)
 	var opening := smoothstep(0.0, 0.48, _age)
 	var emphasis := 1.0 - smoothstep(0.4, 1.4, _age)
-	# This unit's 0.98 gameplay height includes its anchor allowance; its scaled
-	# crystalbound mesh is about 0.51 tall. Fit the shell to that silhouette.
-	_shell.scale = Vector3(lerpf(0.60, 1.0, opening), 0.60 * lerpf(0.78, 1.0, opening), lerpf(0.60, 1.0, opening))
+	# Fit the animated idle/run silhouette. The imported skinned mesh's static
+	# AABB understates this unit's visible height and must not size the shield.
+	_shell.scale = Vector3(lerpf(0.60, 1.0, opening), 0.82 * lerpf(0.78, 1.0, opening), lerpf(0.60, 1.0, opening))
 	_shell_material.set_shader_parameter("opacity", _shield_fade * vfx_alpha)
 	_shell_material.set_shader_parameter("activation", emphasis)
 	_shell_material.set_shader_parameter("age", _age)
@@ -143,6 +147,18 @@ func _update_visuals(delta: float) -> void:
 			var transform := Transform3D(Basis(Vector3.FORWARD, angle * 0.3), point)
 			_sparks.multimesh.set_instance_transform(i, transform)
 			_sparks.multimesh.set_instance_color(i, Color(1.0, 1.0, 1.0, sin(progress * PI) * vfx_alpha))
+
+func _place_ground_layers() -> void:
+	# CastAnchor has a facing-dependent horizontal offset. Only the body shell
+	# follows it; ground state markers center on the real actor's FootAnchor.
+	var ground_node: Variant = _ground_owner.get_ref() if _ground_owner != null else null
+	if is_instance_valid(ground_node) and ground_node is Node3D and ground_node.is_inside_tree():
+		_range.global_position = ground_node.global_position + Vector3.UP * 0.018
+		_seal.global_position = ground_node.global_position + Vector3.UP * 0.024
+	else:
+		# Warmup and standalone callers may provide only a body origin.
+		_range.position = Vector3(0.0, -_height * 0.55 + 0.018, 0.0)
+		_seal.position = Vector3(0.0, -_height * 0.55 + 0.024, 0.0)
 
 func _material(shader: Shader) -> ShaderMaterial:
 	var material := ShaderMaterial.new()

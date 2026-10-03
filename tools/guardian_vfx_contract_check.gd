@@ -15,6 +15,7 @@ func _run() -> void:
 	var network := root.get_node_or_null("NetworkService")
 	if network != null:
 		network.set_process(false)
+	_check_preview_requests()
 	var factory: Script = load("res://scripts/units/UnitFactory.gd")
 	var simulator: Script = load("res://scripts/battle/BattleSimulator.gd")
 	var shared: Script = load("res://scripts/battle/BattleSimShared.gd")
@@ -89,6 +90,11 @@ func _run() -> void:
 	h.expect((initial.get("world_radius", Vector2.ZERO) as Vector2).is_equal_approx(expected_radius), "mapped_radius", "Effect radius must come from the battle coordinate conversion")
 	h.expect(not is_equal_approx(expected_radius.x, expected_radius.y), "anisotropic_radius", "A simulation circle must retain the arena's nonuniform X/Z scale")
 	h.expect(int(initial.get("spark_count", 100000)) <= 48, "bounded_particles", "A persistent guardian must not exceed the low-tier per-effect particle ceiling")
+	var range_mesh := effect.get_node("TauntRange_NoDamage") as MeshInstance3D
+	var seal_mesh := effect.get_node("ShieldFootSeal") as MeshInstance3D
+	var foot := actor.get_node("FootAnchor") as Node3D
+	var cast := actor.get_node("CastAnchor") as Node3D
+	h.expect(_same_ground_center(range_mesh, foot) and _same_ground_center(seal_mesh, foot), "ground_center_at_opening", "Actual range and seal meshes must center on the production FootAnchor, not the offset CastAnchor")
 	await create_timer(1.5).timeout
 	h.expect(is_instance_valid(effect) and float(effect.call("get_debug_state").get("range_fade", 0.0)) > 0.99, "persistent_hold", "The formal effect must remain readable after its opening burst ends")
 	# Retained nodes must follow their caster, without replaying the opening burst.
@@ -99,6 +105,13 @@ func _run() -> void:
 	await process_frame
 	await process_frame
 	h.expect((effect.global_position - before).is_equal_approx(move), "caster_follow", "Persistent shell/range must follow the original actor")
+	h.expect(_same_ground_center(range_mesh, foot) and _same_ground_center(seal_mesh, foot), "ground_center_after_move", "Both ground meshes must retain their actor's actual foot center after movement")
+	actor.rotation.y = PI * 0.5
+	await process_frame
+	await process_frame
+	h.expect(_same_ground_center(range_mesh, foot) and _same_ground_center(seal_mesh, foot), "ground_center_after_turn", "Turning the production actor must not orbit the range/seal around its feet")
+	h.expect(effect.global_position.is_equal_approx(cast.global_position), "body_follows_cast_after_turn", "Ground centering must preserve the body's original CastAnchor attachment")
+	h.expect(range_mesh.global_basis.x.is_equal_approx(Vector3.RIGHT * expected_radius.x) and range_mesh.global_basis.z.is_equal_approx(Vector3.BACK * expected_radius.y), "world_ellipse_after_turn", "Taunt axes and radii must stay in battle world space when the actor turns")
 	battle.call("_play_opening_unit_vfx", snapshots)
 	h.expect((battle.get("_persistent_unit_vfx") as Dictionary)["guardian_test"].node == effect, "opening_deduplicated", "Repeated seeding must not stack another guardian")
 	# Shield depletion does NOT stop taunt in the actual simulation.
@@ -158,15 +171,36 @@ func _fighter(definition: Dictionary) -> Dictionary:
 		"pos": Vector2(500.0, 260.0), "def": definition, "statuses": {}}
 
 func _actor() -> Node3D:
-	var actor := Node3D.new()
+	var actor_script: Script = load("res://effects/runtime/presentation/UnitActor3D.gd")
+	var actor: Node3D = actor_script.new()
 	actor.name = "GuardianContractActor"
-	actor.set_meta("model_height", 1.2)
-	for node_name: String in ["ActorRoot", "FootAnchor", "HeadAnchor", "CastAnchor", "HitAnchor", "Shadow"]:
-		var anchor := Node3D.new()
-		anchor.name = node_name
-		if node_name in ["CastAnchor", "HitAnchor"]:
-			anchor.position.y = 0.66
-		elif node_name == "HeadAnchor":
-			anchor.position.y = 1.2
-		actor.add_child(anchor)
+	actor.call("configure_contract", 0.98, "melee")
 	return actor
+
+func _same_ground_center(mesh: Node3D, foot: Node3D) -> bool:
+	return Vector2(mesh.global_position.x, mesh.global_position.z).is_equal_approx(Vector2(foot.global_position.x, foot.global_position.z))
+
+func _check_preview_requests() -> void:
+	var preview: Script = load("res://effects/preview/GuardianVFXPreview.gd")
+	# Round-trip the same JSON types used by the device protocol. This tests the
+	# public request boundary without starting a preview or touching user files.
+	var request: Dictionary = JSON.parse_string(JSON.stringify({
+		"run_id": "guardian-contract", "perf": true, "animate": true,
+		"star4": true, "close": true, "color": "#7ab8ffff", "mode": "new",
+		"count": 6, "tier": 1, "cases": [
+			{"mode": "off", "count": 1, "tier": 0, "seconds": 30},
+			{"mode": "old", "count": 6, "tier": 1, "seconds": 30},
+			{"mode": "new", "count": 12, "tier": 2, "seconds": 180},
+		]}))
+	h.expect(str(preview.validate_request(request)).is_empty(), "preview_complete_request", "A complete JSON device request must support animated four-star/color previews and the comparative performance cases")
+	var invalid_cases := {
+		"mode": {"mode": "unknown"},
+		"count": {"count": 0},
+		"tier": {"tier": -1},
+		"case_type": {"cases": ["new"]},
+		"color": {"color": "not-a-color"},
+	}
+	for label: String in invalid_cases:
+		var invalid := request.duplicate(true)
+		invalid.merge(invalid_cases[label], true)
+		h.expect(not str(preview.validate_request(invalid)).is_empty(), "preview_reject_" + label, "Invalid device input must be rejected before scene construction or measurement")

@@ -1,0 +1,15 @@
+[gd_resource type="ShaderMaterial" load_steps=5 format=3]
+[ext_resource type="Shader" path="res://assets/models/units/god_guard_refined/guardian_body.gdshader" id="1"]
+[ext_resource type="Texture2D" path="res://assets/models/units/god_guard_refined/guardian_albedo.png" id="2"]
+[ext_resource type="Shader" path="res://shaders/character_outline.gdshader" id="3"]
+[sub_resource type="ShaderMaterial" id="Outline"]
+shader = ExtResource("3")
+shader_parameter/outline_color = Color(0.10,0.13,0.19,1)
+shader_parameter/outline_width = 0.012
+[resource]
+resource_name = "GuardianRefinedBody"
+shader = ExtResource("1")
+next_pass = SubResource("Outline")
+shader_parameter/albedo_texture = ExtResource("2")
+shader_parameter/shadow_tint = Vector3(0.48,0.53,0.64)
+shader_parameter/specular_strength = 0.28

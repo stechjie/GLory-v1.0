@@ -702,8 +702,10 @@ func _start_guardian_unit_vfx(unit: Dictionary) -> void:
 	var model: Variant = unit.get("model_node")
 	if not is_instance_valid(model) or not model is Node3D:
 		return
+	var ground_anchor := model.get_node_or_null("FootAnchor") as Node3D
 	var context := _unit_target_context(unit, unit, {
 		"persistent": true,
+		"origin_ground_node": ground_anchor,
 		"shield_active": int(unit.get("shield", 0)) > 0,
 		"taunt_active": bool(unit.get("taunt_active", true)),
 		"taunt_world_radius": _guardian_taunt_world_radius(float(unit.get("taunt_radius", 0.0))),
