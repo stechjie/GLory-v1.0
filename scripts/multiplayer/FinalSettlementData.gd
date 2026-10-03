@@ -14,7 +14,8 @@ static func build(room: Dictionary, replays: Array, outcome: int, gold_authorita
 		var fallback_name := "AI" if slot < states.size() and str(states[slot]) == "dummy" else "玩家%d" % (slot + 1)
 		seats.append({
 			"slot": slot,
-			"name": AccountManager.display_name(str(profile.get("player_name", fallback_name)), str(profile.get("friend_code", ""))) if occupied else "空位",
+			# 10.04 bug 文档第 5 条：结算面板只显示昵称（隐藏 #好友码）。
+			"name": AccountManager.display_name(str(profile.get("player_name", fallback_name)), str(profile.get("friend_code", "")), false) if occupied else "空位",
 			"board": units(snap.get("board", [])),
 			"mercenaries": units(snap.get("mercenaries", [])),
 			"treasures": display_treasures(owned),

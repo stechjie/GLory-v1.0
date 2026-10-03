@@ -34,6 +34,18 @@ const HP_FRAME_RED_PATH := "res://assets/ui/buttons/btn_hp_red.png"       # 血�
 const HP_FRAME_SIZE := Vector2(246, 82)                                   # 高清框 2172x724，比例 3.0
 const START_BTN_PATH := "res://assets/ui/buttons/btn_start.png"           # 开始战斗木牌框（高清透明）
 const START_BTN_SIZE := Vector2(240, 80)                                  # 比例 3.0
+
+# ── 10.04 bug 文档第 2 条（对局）：「准备 / 未准备」原来只差文字尾巴一个「✓」，太不明显 ──
+# 玩家选定「方案 B · 宝石红 / 青」，配色**呼应顶部血条（红）与法条（青）**：
+#   未准备 = 宝石红（还要你动手）    已准备 = 青（已完成 —— 与「战斗加载中」的忙碌皮肤同族）
+# 只作用于这一个按钮；非联机（教学 / 离线自测）不套色，保持原木牌金。
+const READY_TONE_PENDING_EDGE := Color(0.902, 0.216, 0.318)   # 宝石红描边
+const READY_TONE_PENDING_FILL := Color(0.263, 0.055, 0.090, 0.95)
+const READY_TONE_PENDING_TEXT := Color(1.000, 0.737, 0.741)
+const READY_TONE_DONE_EDGE := Color(0.239, 0.859, 0.820)      # 法条青描边
+const READY_TONE_DONE_FILL := Color(0.027, 0.180, 0.180, 0.95)
+const READY_TONE_DONE_TEXT := Color(0.702, 1.000, 0.973)
+const READY_BTN_TEXT_DEFAULT := Color(1.0, 0.90, 0.60)        # 木牌金（原色，非联机时用）
 const STATS_BTN_PATH := "res://assets/ui/buttons/btn_stats.png"           # 统计/战力石板框（高清透明）
 const STATS_BTN_SIZE := Vector2(140, 94)                                  # 比例 1.5
 const REFRESH_BTN_PATH := "res://assets/ui/buttons/btn_refresh_fire_lowpoly.png"
@@ -678,7 +690,7 @@ func _build_top_bar(root: VBoxContainer) -> void:
 	battle_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	battle_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	battle_label.add_theme_font_size_override("font_size", 20)
-	battle_label.add_theme_color_override("font_color", Color(1.0, 0.90, 0.60))
+	battle_label.add_theme_color_override("font_color", READY_BTN_TEXT_DEFAULT)
 	battle.add_child(battle_label)
 	battle.bind_content_label(battle_label)
 	battle.set_idle_text(tr("ui_start_battle_btn"))
@@ -1938,8 +1950,51 @@ func _refresh_start_button_label() -> void:
 		var my := NetworkService.team_local_slot
 		var ready := my >= 0 and my < NetworkService.team_ready.size() and bool(NetworkService.team_ready[my])
 		_start_battle_button.set_idle_text(tr("lobby_ready_done") if ready else tr("lobby_ready"))
+		_apply_ready_button_tone(ready)
 	else:
 		_start_battle_button.set_idle_text(tr("ui_start_battle_btn"))
+		_clear_ready_button_tone()
+
+
+# 「方案 B · 宝石红 / 青」。见文件上方 READY_TONE_* 常量的注释。
+func _apply_ready_button_tone(ready: bool) -> void:
+	if _start_battle_button == null:
+		return
+	# 忙碌态（战斗加载中）有它自己的皮肤（GloryBusy 主题变体）。实例级 stylebox
+	# 覆盖会把它整块盖掉 ⇒ 忙的时候索性让开，等它回到非 pending 再上色。
+	if _ready_button_is_busy():
+		_clear_ready_button_tone()
+		return
+	var edge := READY_TONE_DONE_EDGE if ready else READY_TONE_PENDING_EDGE
+	var fill := READY_TONE_DONE_FILL if ready else READY_TONE_PENDING_FILL
+	var ink := READY_TONE_DONE_TEXT if ready else READY_TONE_PENDING_TEXT
+	_set_ready_button_style(edge, fill)
+	if _start_battle_label != null:
+		_start_battle_label.add_theme_color_override("font_color", ink)
+
+
+# 交还给主题画（含 GloryBusy 变体），文字回到木牌金。
+func _clear_ready_button_tone() -> void:
+	if _start_battle_button == null:
+		return
+	for state in ["normal", "hover", "pressed"]:
+		_start_battle_button.remove_theme_stylebox_override(state)
+	if _start_battle_label != null:
+		_start_battle_label.add_theme_color_override("font_color", READY_BTN_TEXT_DEFAULT)
+
+
+func _set_ready_button_style(edge: Color, fill: Color) -> void:
+	var style := PrepWidgets.menu_button_style()
+	style.bg_color = fill
+	style.border_color = edge
+	for state in ["normal", "hover", "pressed"]:
+		_start_battle_button.add_theme_stylebox_override(state, style)
+
+
+func _ready_button_is_busy() -> bool:
+	if _start_battle_button == null:
+		return false
+	return str(_start_battle_button.action_snapshot().get("state", "")) == "pending"
 
 func show_message(text: String) -> void:
 	# V3 P1-04：转发给全局 GloryToast。

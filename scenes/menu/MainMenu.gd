@@ -944,8 +944,9 @@ func _refresh_profile_plate() -> void:
 			_profile_frame_art.texture = AvatarCatalog.frame_texture_for(
 				str(profile.get("avatar_frame", "")))
 			_place_profile_frame(frame_id)
+	# 10.04 bug 文档第 5 条：大厅左上角资料卡只显示昵称（隐藏 #好友码）。
 	_profile_name_label.text = AccountManager.display_name(
-		str(profile.get("player_name", "")), str(profile.get("friend_code", "")))
+		str(profile.get("player_name", "")), str(profile.get("friend_code", "")), false)
 	var days := int(profile.get("days_since_created", 1))
 	_profile_sub_label.text = _menu_text("第 %d 天" % days, "Day %d" % days)
 

@@ -13,6 +13,10 @@ func _finish_simulation() -> void:
 	# 结算取 match_state（见 Main._on_network_match_state_received）。
 	_result = BattleSim.result_from_state(_state)
 	_refresh_summary()
+	# 10.04 bug 文档第 3 条：本地模拟这条路不经过 BattleScreen._finish_replay /
+	# play_victory_finish，必须自己补一次动作归位，否则结束帧在移动的棋子
+	# 会永久停在 run（`_finished` 一置真，_process 就不再刷新动画）。
+	settle_model_animation_idle()
 	_emit_finished()
 
 func _emit_finished() -> void:

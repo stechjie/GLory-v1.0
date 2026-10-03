@@ -1,177 +1,95 @@
 extends Node
-
-# V2 P1-02 的门禁：车道晶柱只作为边界提示，不得再当画面主体。
-#
-# 背景（2026-08-29 固定 seed round 1 中段截图实测）：晶柱此前**从不设置 modulate**，
-# 也就是全亮度全不透明，于是成了画面里最亮、对比最强的物体，比角色还抢眼。
-#
-# 这里守的是**机械不变式**，不是"好不好看" —— 后者只能人看图定，也确实是由用户
-# 看改前/改后截图定的。门禁的意义是把那次人工判断固化下来：
-#   * 谁把 alpha 调回接近不透明 -> 红（重新压住画面）
-#   * 谁**再把高度缩短** -> 红（第一版这么干过，用户否决："看不出那种隔开的感觉"）
-# 而不是等下一次有人截图才发现。
-#
-# 刻意没有做 V2 原文那条"晶柱遮挡角色像素占比 >10% 失败"：实测晶柱本来就落在三条
-# 车道的间隙里，横向不与角色重叠，那条断言会恒真通过 —— 一个证明不了任何事的绿灯。
-
+# Native 3D ward: preserve lane span, release lifecycle and quality behavior.
 const CheckHarness := preload("res://tools/CheckHarness.gd")
-const BarrierScript := preload("res://scenes/battle/BattleLaneBarrier2D.gd")
-const CHECK_NAME := "battle_lane_barrier"
-
-# 常态 alpha 的允许区间。
-#
-# **不是 V2 原文的 0.15-0.30。** 那个区间是在"同时把高度缩到 45%-60%"的前提下给的，
-# 而那条已被用户实看否决（见 BattleLaneBarrier2D 文件头）。恢复铺满高度之后，
-# 0.22 太淡、看不出隔开，用户实看后定为 0.45。前提没了，判据跟着失效。
-#
-# 记一句以免将来误会：这里放宽区间**不是为了让检查变绿**。绿是因为参数按用户
-# 实看结果改对了；区间跟着改，是因为旧区间守的是一个已被推翻的设计。
-const STEADY_ALPHA_MIN := 0.30
-const STEADY_ALPHA_MAX := 0.55
-
-# 晶柱 scale 赋值的唯一合法形态（空白归一后）。y 分量必须是"铺满战场可视高度"，
-# 后面不得再乘任何东西。见 _check_height_is_not_reduced() 里为什么必须精确比对。
-const EXPECTED_BARRIER_SCALE_STMT := \
-	"barrier.scale = Vector2(0.42, maxf(0.1, (bot_y - top_y) / 512.0))"
-
-var _h: RefCounted
-
-
+const Wall := preload("res://effects/battlefield/LaneRunicWall3D.gd")
+var h: RefCounted
+var release_count := 0
 func _ready() -> void:
-	call_deferred("_run")
-
-
-func _run() -> void:
-	_h = CheckHarness.new(CHECK_NAME)
-	_check_alpha_contract()
-	_check_height_is_not_reduced()
-	_check_emphasis_settles(await _make_barrier())
-	_check_low_quality_is_wired()
-	_check_z_order_below_ui()
-	_h.finish(get_tree())
-
-
-func _make_barrier() -> Node2D:
-	var barrier: Node2D = BarrierScript.new()
-	barrier.name = "BarrierUnderTest"
-	add_child(barrier)
+	call_deferred("run")
+func run() -> void:
+	h = CheckHarness.new("battle_lane_barrier")
+	var wall := Wall.new()
+	add_child(wall)
+	wall.release_finished.connect(func(): release_count += 1)
+	wall.fit_between(Vector3(2,0,-4), Vector3(2,0,4))
+	h.expect(wall.position.is_equal_approx(Vector3(2,0,0)) and is_equal_approx(wall.length,8.0), "full_length", "Wall must span both lane endpoints")
+	var body: Node3D = wall.get("_body")
+	var bounds := AABB()
+	var triangles := 0
+	for child in body.get_children():
+		if child is MeshInstance3D:
+			bounds = bounds.merge(child.transform * child.get_aabb())
+			for i in child.mesh.get_surface_count():
+				var arrays: Array = child.mesh.surface_get_arrays(i)
+				triangles += (arrays[Mesh.ARRAY_INDEX].size() if arrays[Mesh.ARRAY_INDEX] != null and arrays[Mesh.ARRAY_INDEX].size() > 0 else arrays[Mesh.ARRAY_VERTEX].size()) / 3
+	h.expect(bounds.position.z <= -4.0 and bounds.end.z >= 4.0, "mesh_span", "Actual meshes must cover full lane")
+	h.expect(bounds.size.x <= 0.5 and bounds.size.y < 1.0, "visual_footprint", "Wall must stay within lane gap")
+	h.expect(body.get_child_count() == 3 and triangles < 1000, "geometry_budget", "Ward should have three meshes and less than 1000 triangles")
+	wall.play_loop()
+	wall.set_low_quality(true)
+	var material: ShaderMaterial = wall.get("_material")
+	h.expect(bool(material.get_shader_parameter("low_quality")), "low_quality", "Low tier must reach shader")
+	wall.set_low_quality(false)
+	h.expect(not bool(material.get_shader_parameter("low_quality")), "quality_restore", "Tier must restore")
+	await get_tree().create_timer(1.0).timeout
+	h.expect(is_zero_approx(float(material.get_shader_parameter("emphasis"))), "opening_settles", "Opening emphasis must settle")
+	wall.play_release()
+	wall.play_release()
+	h.expect(wall.is_released(), "release_state", "Release state should change immediately")
+	h.expect(not wall.visible, "release_clears_path", "Entire wall must disappear on the exact unlock frame")
 	await get_tree().process_frame
-	return barrier
-
-
-# 常态必须很淡，强调必须明显更亮，否则"只在需要时被看见"就不成立。
-func _check_alpha_contract() -> void:
-	var steady: float = BarrierScript.STEADY_ALPHA
-	var emphasis: float = BarrierScript.EMPHASIS_ALPHA
-	var low: float = BarrierScript.LOW_QUALITY_ALPHA
-
-	_h.expect(steady >= STEADY_ALPHA_MIN and steady <= STEADY_ALPHA_MAX,
-		"steady_alpha_out_of_range",
-		"常态 alpha %.3f 不在 %.2f-%.2f —— 太高会重新压住画面，太低会看不出隔开"
-			% [steady, STEADY_ALPHA_MIN, STEADY_ALPHA_MAX])
-	_h.expect(emphasis > steady,
-		"emphasis_not_brighter",
-		"强调 alpha %.3f 不比常态 %.3f 亮，开场提示等于没有" % [emphasis, steady])
-	_h.expect(low <= steady,
-		"low_quality_not_dimmer",
-		"低画质 alpha %.3f 不比常态 %.3f 更淡" % [low, steady])
-	_h.expect(BarrierScript.EMPHASIS_HOLD_SEC > 0.0 and BarrierScript.EMPHASIS_HOLD_SEC <= 1.0,
-		"emphasis_hold_unreasonable",
-		"强调保持 %.2f 秒不合理（V2 要求开场约 0.4 秒）" % BarrierScript.EMPHASIS_HOLD_SEC)
-
-
-# 反向断言：晶柱**必须铺满**战场可视高度，不得被任何系数缩减。
-#
-# 这条是用户反馈直接转化成的回归护栏。第一版按 V2 原文把高度缩到 0.55，用户实看后
-# 否决：「你把那个晶体缩短了，看不出那种隔开的感觉，不能弄短」。高度是"隔开"的载体，
-# 缩短它等于把分隔线降级成装饰。V2 那条判据已作废，谁再照原文缩一次，这里立刻红。
-func _check_height_is_not_reduced() -> void:
+	h.expect(not wall.visible and not wall.is_processing(), "release_hides", "Release must hide and stop CPU processing")
+	h.expect(release_count == 1, "one_signal", "Duplicate release must emit only once")
+	wall.play_loop()
+	h.expect(wall.visible and not wall.is_released() and body.scale == Vector3.ONE, "restart", "Replay restart must restore geometry")
+	h.expect(is_zero_approx(float(material.get_shader_parameter("dissolve"))), "restart_opacity", "Restart must restore membrane opacity")
+	wall.fit_between(Vector3(2,0,4), Vector3(2,0,-4))
+	h.expect(is_equal_approx(wall.length,8.0) and wall.get("_body") == body, "reverse_view", "Other-side view must keep span without rebuilding")
 	var source := FileAccess.get_file_as_string("res://scenes/battle/BattleArena.gd")
-	if not _h.expect(not source.is_empty(), "arena_unreadable", "读不到 BattleArena.gd"):
-		return
-	# 取包含该赋值的整行。别试图靠数括号找语句结尾 —— 表达式里嵌了三层括号，
-	# 第一版按 ")" 截断，切在 "(bot_y - top_y)" 后面就停了，于是把正确的写法误报成
-	# "高度公式被改了"。
-	var stmt := ""
-	for raw_line in source.split("\n"):
-		var line := str(raw_line)
-		if line.contains("barrier.scale = Vector2("):
-			stmt = line
-			break
-	if not _h.expect(not stmt.is_empty(), "barrier_scale_missing", "找不到晶柱的 scale 赋值"):
-		return
+	h.expect(source.contains("_battle_3d_world.add_child(barrier)"), "world_depth", "Ward must use production 3D depth")
+	h.expect(source.contains("barrier.fit_between(p_top, p_bot)"), "real_endpoints", "Production must supply both world endpoints")
+	h.expect(source.contains("BattleSimShared._boundary_released(_state, boundary_index)"), "gameplay_owner", "Release must remain owned by shared simulation")
+	var replay_screen = load("res://scenes/battle/BattleScreen.gd")
+	var shared = load("res://scripts/battle/BattleSimShared.gd")
+	var defender := {"uid":"defender", "team":"player", "lane":2, "alive":true}
+	var converted := {"uid":"converted", "team":"enemy", "lane":2, "alive":true}
+	var middle_a := {"uid":"a", "team":"player", "lane":1, "alive":true}
+	var middle_b := {"uid":"b", "team":"enemy", "lane":1, "alive":true}
+	var state := {"player":[defender,middle_a], "enemy":[converted,middle_b]}
+	h.expect(not shared._boundary_released(state,1), "conversion_before", "Both lanes are contested before conversion")
+	replay_screen.apply_latched_team(converted,"converted",{"converted":"player"})
+	replay_screen.reconcile_replay_teams(state,{"defender":defender,"converted":converted,"a":middle_a,"b":middle_b})
+	h.expect(shared._boundary_released(state,1), "conversion_opens_wall", "Converted last opponent must open wall on the same frame")
+	h.expect(state.player.size()==3 and state.enemy.size()==1, "conversion_membership", "Replay side arrays must reflect permanent conversion")
+	print("WALL_GEOMETRY triangles=", triangles, " meshes=", body.get_child_count(), " bounds=", bounds)
 
-	# **整行精确比对**，不是"包含某个片段"。
-	#
-	# 第一版写成 `contains("(bot_y - top_y) / 512.0")` 加 `not contains("HEIGHT_FACTOR")`，
-	# 变异测试当场证明它没用：把系数写成字面量 `* 0.55` 而不是命名常量，两条断言全通过，
-	# 门禁照样绿。只要允许"包含即可"，任何后缀乘法都能溜过去。
-	#
-	# 精确比对对格式改动敏感，但那正是想要的：这一行已经被改错过一次，
-	# 任何改动都应该逼一个人重新看一眼，而不是自动放行。
-	var normalized := " ".join(stmt.strip_edges().split(" ", false))
-	_h.expect(normalized == EXPECTED_BARRIER_SCALE_STMT,
-		"barrier_height_changed",
-		"晶柱 scale 赋值被改动了。期望：\n  %s\n实际：\n  %s\n缩短高度会让它看不出隔开，已被用户实看否决；如果这次改动是别的目的，请一并更新本断言。"
-			% [EXPECTED_BARRIER_SCALE_STMT, normalized])
+	# ★ 加载过场按住（10.04 第 7 条）：读条期这道墙还没被 _update_3v3_dividers() 摆位，
+	# 停在原点会叠成画面正中一道墙 ⇒ 必须能被按住不显示，且 rebuild()/play_loop()
+	# 都不能把它重新点亮（这两个函数自己都会 visible=true）。
+	h.expect(not bool(wall.get("_preview_hidden")), "preview_hold_default_off", "Hold flag must default off (no behavior change)")
+	wall.set_preview_hidden(true)
+	h.expect(not wall.visible, "preview_hold", "Holding the preview must hide the ward")
+	wall.play_loop()
+	h.expect(not wall.visible and not wall.is_released(), "preview_hold_beats_play_loop", "play_loop() must not resurrect a held ward")
+	wall.rebuild()
+	h.expect(not wall.visible, "preview_hold_beats_rebuild", "rebuild() must not resurrect a held ward")
+	wall.set_preview_hidden(false)
+	h.expect(wall.visible, "preview_hold_release", "Releasing the hold must show the ward again")
+	wall.rebuild()
+	h.expect(wall.visible, "preview_default_visible", "Without a hold the ward stays visible (default behavior unchanged)")
 
-
-# 这条是本项的核心行为：开场亮一下，然后**必须自己落回常态**。
-# 落不回去就等于什么都没改。
-func _check_emphasis_settles(barrier: Node2D) -> void:
-	if not _h.expect(barrier != null, "barrier_null", "晶柱实例化失败"):
-		return
-	barrier.play_loop()
-	_h.expect(is_equal_approx(barrier.modulate.a, BarrierScript.EMPHASIS_ALPHA),
-		"no_emphasis_on_start",
-		"play_loop() 之后 alpha 是 %.3f，不是强调值 %.3f —— 开场提示没出现"
-			% [barrier.modulate.a, BarrierScript.EMPHASIS_ALPHA])
-
-	# 等过 保持 + 淡出 + 余量，强调必须已经退掉。
-	var wait_sec := BarrierScript.EMPHASIS_HOLD_SEC + BarrierScript.EMPHASIS_FADE_SEC + 0.25
-	await get_tree().create_timer(wait_sec).timeout
-	_h.expect(is_equal_approx(barrier.modulate.a, barrier.steady_alpha()),
-		"emphasis_never_settles",
-		"等待 %.2f 秒后 alpha 仍是 %.3f，没有落回常态 %.3f —— 晶柱会一直保持高亮"
-			% [wait_sec, barrier.modulate.a, barrier.steady_alpha()])
-
-	# 车道清空是一次性事件，应当重新被看见。
-	barrier.play_release()
-	_h.expect(is_equal_approx(barrier.modulate.a, BarrierScript.EMPHASIS_ALPHA),
-		"release_not_visible",
-		"play_release() 时 alpha 是 %.3f，消失动画会看不见" % barrier.modulate.a)
-
-	barrier.queue_free()
-
-
-func _check_low_quality_is_wired() -> void:
-	var barrier: Node2D = BarrierScript.new()
-	add_child(barrier)
-	barrier.set_low_quality(true)
-	_h.expect(is_equal_approx(barrier.steady_alpha(), BarrierScript.LOW_QUALITY_ALPHA),
-		"low_quality_alpha_ignored",
-		"set_low_quality(true) 之后常态 alpha 仍是 %.3f" % barrier.steady_alpha())
-	barrier.set_low_quality(false)
-	_h.expect(is_equal_approx(barrier.steady_alpha(), BarrierScript.STEADY_ALPHA),
-		"low_quality_not_reversible", "set_low_quality(false) 没有恢复常态 alpha")
-	barrier.queue_free()
-
-	# 接口存在还不够，BattleArena 必须真的按画质档调它。
-	var source := FileAccess.get_file_as_string("res://scenes/battle/BattleArena.gd")
-	_h.expect(source.contains("barrier.set_low_quality("),
-		"low_quality_not_called",
-		"BattleArena 没有按画质档调 barrier.set_low_quality()，低画质分支是死代码")
-
-
-# 晶柱是背景元素。它不该被抬到 UI 之上：Top ATK 是 90、Skip 100、结果覆盖层 200。
-func _check_z_order_below_ui() -> void:
-	var source := FileAccess.get_file_as_string("res://scenes/battle/BattleArena.gd")
-	if source.is_empty():
-		return
-	var at := source.find("Battle3v3LaneBarrier%d")
-	if not _h.expect(at >= 0, "barrier_creation_missing", "找不到晶柱创建处"):
-		return
-	var block := source.substr(maxi(0, at - 200), 400)
-	_h.expect(block.contains("z_index = 40"),
-		"barrier_z_changed",
-		"晶柱 z_index 不再是 40 —— 高于 Top ATK(90)/Skip(100)/结果(200) 会盖住 UI")
+	# 结构：生产接线（加载期按住 + 摆位首帧撤销），且按住必须在 play_loop() 之后施加，
+	# 否则会被 play_loop() 的 visible=true 盖掉。
+	var wall_src := FileAccess.get_file_as_string("res://effects/battlefield/LaneRunicWall3D.gd")
+	h.expect(wall_src.contains("func set_preview_hidden("), "wall_api", "Ward must expose set_preview_hidden()")
+	h.expect(wall_src.contains("visible = not _preview_hidden"), "wall_play_loop_guarded", "play_loop() visibility must route through the hold flag")
+	h.expect(wall_src.contains("visible = not _released and not _preview_hidden"), "wall_rebuild_guarded", "rebuild() visibility must route through the hold flag")
+	var play_at := source.find("barrier.play_loop(i * 7)")
+	var hold_at := source.find("barrier.set_preview_hidden(true)")
+	h.expect(play_at >= 0 and hold_at > play_at, "hold_after_play_loop", "Hold must be applied after play_loop() or it would be overwritten")
+	h.expect(source.contains("_preview_walls_hidden = true"), "arena_flag_set", "Production must arm the loading-preview suppression")
+	h.expect(source.contains("barrier.set_preview_hidden(false)"), "arena_flag_release_wired", "First positioning frame must release the suppression")
+	h.expect(source.contains("if _preview_walls_hidden:"), "arena_release_once", "Suppression release must be guarded so it runs once")
+	wall.queue_free()
+	await get_tree().process_frame
+	h.finish(get_tree())

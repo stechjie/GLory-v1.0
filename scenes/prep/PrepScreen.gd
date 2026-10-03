@@ -385,6 +385,9 @@ func _emit_battle_request_once() -> void:
 	GameState.clear_pending_battle_package()
 	_loaded_battle_scene = _cached_battle_scene if _battle_scene_path() == BATTLE_SCREEN_PATH else null
 	if _start_battle_button != null:
+		# 「准备 / 未准备」的宝石红·青是**实例级 stylebox 覆盖**，会盖掉忙碌皮肤
+		# （GloryBusy 变体）⇒ 进忙碌前先撤掉，让「正在加载」看着还是加载。
+		_clear_ready_button_tone()
 		_start_battle_button.show_pending(request_id, tr("battle_load_busy"))
 	if not _open_battle_loading_overlay(request_id, cancellable):
 		AsyncActionController.fail(request_id, _battle_failure_code, true)
@@ -822,6 +825,9 @@ func _on_async_action_state_changed(
 			_recover_battle_prepare(true, state, snapshot)
 		AsyncActionController.STATE_CANCELLED:
 			_recover_battle_prepare(false, state, snapshot)
+	# 终态之后按钮回到非 pending，把「准备 / 未准备」的宝石红·青重新贴回去
+	# （show_pending 前撤掉过，见上面那条注释）。
+	_refresh_start_button_label()
 
 
 func _recover_battle_prepare(show_failure: bool, state: String, snapshot: Dictionary) -> void:

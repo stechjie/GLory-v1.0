@@ -25,6 +25,9 @@ extends Control
 #    023 之前打的局没有这份数据（settlement 为 null），按钮换成一句说明。
 #
 # 5. **名字是账号现在的名字**（2026-09-29 用户定）：后端按 player_id 现取，改过名显示新名字。
+#    2026-10-04 bug 文档第 5 条（二次反馈）：这里**只显示昵称、隐藏 #好友码**
+#    （seat_name 传 with_code=false）。本面板右列的座位行与「详细战况」弹的结算面板
+#    共用同一个 seat_name，两处口径必须一致。
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
@@ -316,10 +319,22 @@ func _seat_row(seat: Dictionary, my_slot: int) -> Control:
 
 # 谁坐在这个座位上：账号**现在**的名字（后端按 player_id 现取，见文件顶部第 5 条）。
 # 注销了的账号，后端给的就是「已注销玩家」。
+#
+# ★ 2026-10-04 bug 文档第 5 条（二次反馈）——「结算面板隐藏 #ID 未实现」：
+#   这个函数同时喂两处：本面板右列的座位行（_seat_row，:306）与「详细战况」弹出来的
+#   **结算面板**（settlement_view_data → FinalSettlementPanel 的「玩家」列、以及统计表
+#   的「所属玩家」列）。
+#
+#   结算面板有**两个入口**：打完那一刻走 FinalSettlementData.build（那边早就传了
+#   false），历史对局走这里 —— **漏的就是这条路**，所以同一句结算里两个入口的名字
+#   格式必须一致。`with_code` 在这里一次性传 false。
+#
+#   仍然带码的地方（刻意保留，见 AccountManager.display_name 顶上那段）：好友 / 聊天 /
+#   世界频道 / 资料页（资料页是玩家看自己好友码的唯一入口，去了码等于删功能）。
 static func seat_name(seat: Dictionary, mine: bool) -> String:
 	var who: String
 	if not _seat_pid(seat).is_empty():
-		who = AccountManager.display_name(_json_str(seat.get("player_name")), _json_str(seat.get("friend_code")))
+		who = AccountManager.display_name(_json_str(seat.get("player_name")), _json_str(seat.get("friend_code")), false)
 	elif bool(seat.get("was_ai", false)):
 		who = "AI"
 	else:

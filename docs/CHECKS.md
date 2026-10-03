@@ -3794,3 +3794,206 @@ headless 只能读 `stretch_mode`；像素级证据只能靠渲染图（三方�
 **资料页 `ProfileScreen` 未动**（头像 stage 只有 112×112，戴框时四边内缩 21 ⇒ 112→70。
 它与本轮同一类问题，但要把 stage 放大到 ~180 才看得见外框，属**版式改动**，用户本轮点名的只有
 「大厅 + 房间」）；**未做真机观感验收，未重导 EXE/APK**。
+
+
+
+---
+
+## 2026-10-04：隔离墙换成原生 3D 符文墙（第 1 条接手收尾）—— 换口径，不放松
+
+**背景**：`桌面\bug提交及修复.docx` 第 1 条「优化战斗场景的隔离墙模型」。同事先把墙换成
+原生 3D 符文屏障（`effects/battlefield/LaneRunicWall3D.tscn` / `.gd` / `lane_ward.gdshader`，
+`BattleArena.gd` 把 `LANE_WARD_SCENE` 放进 `_battle_3d_world`，用 `fit_between(p_top, p_bot)`
+按模拟边界端点定位），但**没有跑收尾面**，留下一处真红。
+
+### ★★★ 一条「盯着已退役实现」的断言 = 换实现后必然误报
+
+`tools/battle_final_lane_wall_check.gd` 的 `regular_crystal_changed` 原文是
+`source.contains("barrier.scale = Vector2(0.42, maxf(0.1, (bot_y - top_y) / 512.0))")` ——
+它盯的是 **`BattleLaneBarrier2D` 贴图晶柱**的铺满高度公式。第 1 条把普通分路墙换成 3D 符文墙后，
+那段 `scale` 公式**按设计消失**了，断言于是恒红。这不是「改坏了」，是**判据绑在了实现细节上**。
+
+**处理＝换口径，不放松**（长期笔记的硬规矩）：那条断言真正要守的不是 `0.42` 这个数，
+而是**用户实看定下的合同** —— 「隔断必须铺满整条边界，不许再缩短」（原注释原话：
+"你把那个晶体缩短了，看不出那种隔开的感觉，不能弄短"）。新实现里这条合同由
+**两个端点必须取自整幅战场可视上下边界**承载，于是判据改成 `_regular_ward_span_contract()`：
+
+1. 作用域**只取 `_update_3v3_dividers()` 里 `if _3v3_barriers.is_empty():` 之后的普通分路基**（决赛那一支另有断言）；
+2. `p_top` 必须取自 `visual_min.y`、`p_bot` 必须取自 `visual_max.y`（**只查 `fit_between(` 不够** —— 传两个挨在一起的点也过，必须证到端点来源）；
+3. 必须存在 `barrier.fit_between(p_top, p_bot)`；
+4. 普通分支里**不允许再出现任何 `barrier.scale` 赋值**（那正是"再缩一次"的形状）。
+
+★ 该纯函数是 `static`，并在门禁里**用合成源码自检 4 条**（正例 1 + 反例 3）。不这样验，
+就等于让外层 `if not _h.expect(source.is_empty(), "arena_unreadable", ...)` 的守卫替它背书 ——
+**把内层整段删掉也照样绿**（长期笔记：「判据别靠调用者的前置条件」）。
+
+### 读数
+
+- `battle_final_lane_wall` **8 → 12 PASS / 0 FAIL**（8 原有 + 4 条判据自检探针）。`rc=0`。
+- `battle_lane_barrier` **14 → 20 PASS / 0 FAIL**（同事已整篇重写成 3D 墙合同：`full_length` /
+  `mesh_span` / `visual_footprint` / `geometry_budget` / 低画质 / 释放生命周期 / 策反分组）。
+- 变异（真改 `scenes/battle/BattleArena.gd`，改完只认 `.r3bak` 还原、逐字节核 sha256，
+  基线先绿、启动见残留拒跑、注册 SIGTERM 兜底）：**3/3 如期 RED**，且红的键都是 `regular_ward_span_broken`：
+  - M-A `fit_between(p_top, p_bot)` → `fit_between(p_top, p_top.lerp(p_bot, 0.6))`（墙缩到 60%）→ RED
+  - M-B 在 `fit_between` 后补回 `barrier.scale = Vector2(0.42, 1.0)` → RED
+  - M-C `p_top` 误用 `visual_max.y` → RED
+  还原后 sha256 `AB63148A51AAF5E225EBC0B9181591197F1C3B6AE30494D312C706B949A9C490` 与基线逐字节相同。
+- 改动面连带回归（均 PASS / 0 FAIL）：`cold_parse_chain` 143、`battle_animation_activity` 29、
+  `battle_death_exit` 35、`battle_actor_body_on_disc` 95、`battle_visual_separation` 26、
+  `battle_body_contact` 62、`battle_reach_target` 43、`battle_readable_pace` 29、
+  `battle_presentation_director` 96、`battle_target_index` 4816、`character_opaque_depth` 314、
+  `battle_team_color` 24、`prep_battle_loading` 109。
+- 渲染复核（本机 1600×720，改完 BattleScreen/BattleRenderer 之后重出）：森林轮次 1 `walls=2`、
+  雪地轮次 6 高/低画质与释放帧各一张，边界不匹配 0；决赛轮次 21 `walls=0` 为设计使然（决赛左右对战不分路）。
+
+⚠️ **本口径未涵盖**：`tools/*_check.tscn` 全集未跑（只跑改动面 + 直接相邻面）；**未重导 EXE/APK**；
+`battle_final_lane_wall` 与 `battle_lane_barrier` 的项数已在本文件更新，但 `work/_qa_922/run_gates.py`
+套件清单（32 条）**未同步**（那会让工程重新偏离共享仓）。
+
+## 2026-10-04：《bug提交及修复.docx》第 6 条 —— 备战拖拽阈值（新增门禁 `prep_drag_threshold`）
+
+**症状**：手机端备战商店点棋子卡有时完全没反应（选中态不切换）。
+
+**根因（引擎行为，探针实测）**：引擎在按下后**累计位移 >10px** 时才会自动调一次 `_get_drag_data()`
+（≤10px 不调、11px 才调）；那次调用一旦返回拖拽数据就起了拖拽，**起拖后的那次松手永远不发 `pressed`**
+⇒ 十几像素的手抖把整次点击吞掉。★ 把实现退回修复前再跑同一探针读到 `tap12 → pressed=0 drag_start=0`
+—— 点击被吞且没有起拖，即「点一下没反应」的直接复现。四张卡的矩形与命中层级一致、逐点扫过无遮挡，
+「第 4 格格外不灵」只是拇指落点差异。
+
+**修法**：`PrepDragButton._get_drag_data()` 一律 `return null`（引擎永不接管）；拖拽改由按钮自己在
+`gui_input` 里累计位移、超过 `DRAG_START_DISTANCE = 16.0` 才 `force_drag()`，副作用与原实现逐条对齐。
+阈值必须 **> 引擎的 10px**（取 8px 等于把「吞点击」的起点提前到 8px）；钩子挂在
+`_notification(NOTIFICATION_READY)` 上、**不许用 `_ready()`** —— `PrepBoardCellButton` /
+`PrepBenchCellButton` 都覆写 `_ready()` 且不调 `super`，基类钩子会被静默顶掉。
+
+**判据**
+
+- 新增 `tools/prep_drag_threshold_check.tscn`：**64 PASS / 0 FAIL**，`rc=0`。含源码合同
+  （`_get_drag_data` 代码里只能有一个 `return` 且必须是 `return null`；不许出现 `_ready()`；阈值 >10；
+  `_launch_drag` 五条副作用）、三类按钮（基类/棋盘格/待命格）的钩子接线与驱动结果、阈值边界
+  15.99/16.0、触摸路径与多指。
+- 非 headless 探针 `work/_qa_shop/drag_fix_probe.tscn`（真窗口 1600×720 + `push_input` 真事件）
+  **24/24 OK**：`tap0/6/12/15 → pressed=1 drag_start=0`、`tap16/20/48 → drag_start=1`、
+  `ramp 12→40 → drag_start=1 drag_end=1`；引擎确实尝试过 6 次 `_get_drag_data`，返回 null 后 `pressed` 照发。
+
+**口径声明（重要）**：headless 用 `gui_input.emit()` 直接喂生产处理器，**绕过事件路由**，且
+**判不了 `pressed` 发没发**（`emit` 不跑 `BaseButton` 内建点击逻辑，实测 `pressed` 恒为 0）⇒ 门禁里
+**刻意不写任何 `pressed` 计数断言**（那会是恒真的空转断言）。「点击真的生效」只由非 headless 探针判。
+
+**变异 4/4 如期 RED**（`其他/work/_qa_1004b/mut_drag.py`；`.r3bak` + SIGTERM 兜底 + 基线先绿 + 锚点零转义）
+
+- M-A `_get_drag_data` 改回返回数据 → 门禁 5 红 + **探针 6 红**（三种类型 `tap12/15` 全变 `pressed=0 drag_start=0`）
+- M-B 阈值改 0 → 15 红；M-C 不接钩子 → 19 红；
+- **M-D 把钩子搬进 `_ready()` → 12 红，且 base 类型保持绿、board/bench 变红** —— 子类覆写 `_ready`
+  顶掉基类钩子的直接证据。
+
+还原后 sha256 `39877E7A8700773B7FC9B04ECF748A6CC751CFADDBE2FA3276A1503C983A565C` 与基线逐字节相同。
+
+**连带回归（PASS / 0 FAIL）**：`prep_long_press` 32、`board_4x4_smoke` 64、`merge_rule_parity` 29、
+`prep_shop` 34、`prep_swap` 30、`prep_empty_board` 9、`prep_detail_overlay` 32。
+
+既存红（已逐条定性，非本次造成）：`dynamic_call` 12 条（`unresolved_grew` = 硬上限 191 vs 实测 516；
+把本轮新增门禁摘出后重跑仍是 501 处 / 12 条失败、明细逐条相同）、`prep_text_coverage` 1 条。
+
+⚠️ **本口径未涵盖**：`tools/*_check.tscn` 全集未跑；未重导 EXE/APK；未真机验证；
+`emulate_mouse_from_touch` 关掉的平台上的触摸路径未实测（项目未显式配置该项，走默认 `true`）；
+16px 是阈值判断，不是手感验收。阈值放宽后 8~16px 的手势现在会判成点击（对商店是切换选中，无害；
+对棋盘格/佣兵卡分别是选中落子与雇人）—— 这个区间修复前本就是「≤10px 即点击」，语义未变、带宽变了。
+
+---
+
+## 2026-10-04：《bug提交及修复.docx》第 5 条补漏 —— 历史入口的结算面板还在显示 `#好友码`
+
+**症状**（用户回执 + 两张截图）：从「**历史对局 → 查看详情 → 详细战况**」进去的**结算面板**，
+座位名仍然显示 `昵称 #好友码`（截图里「明 #VACQNSG7（我）」「leno #7A7TH6F5」等）。
+
+**根因**：结算面板有**两个入口**，座位名来自两段不同的代码 ——
+
+- 打完那一刻：`scripts/multiplayer/FinalSettlementData.gd:18` → `display_name(..., false)`（已隐藏）；
+- 历史对局：`scenes/menu/MatchHistoryPanel.gd:322` 的 `seat_name()` → `display_name(pn, code)`（**仍带码**）。
+
+`MatchHistoryPanel.settlement_view_data()` 把 `seat_name()` 写进 `seats[].name`，而
+`FinalSettlementPanel` 直接渲染 `seat["name"]`（`:163` 玩家列、`:222` 统计表「所属玩家」列）
+⇒ 历史入口的整片结算面板带码。同一个 `seat_name()` 还喂着本面板右列的座位行（`_seat_row`，`:306`）。
+
+**修法**：`seat_name()` 调 `display_name` 时补 `false`。**仍然带码**的是好友 / 聊天 / 世界频道 / 资料页
+（资料页是玩家看自己好友码的唯一入口）—— 这条口径写进了 `AccountManager.display_name()` 顶上的注释，
+对局历史从「带码」名单里移出。
+
+**顺带修复（崩溃型陈旧 case）**：`_case_profile_shows_real_rank` 盯的 `ProfileScreen.TIER_NAMES_ZH`
+常量已被迁走（段位名表现在在 `scenes/menu/RankedTiers.gd`，8 档 → 5 档，对齐后端 `TIER_FLOORS`）。
+旧断言不只是报红 —— 紧随其后的 `src.split("const TIER_NAMES_ZH := [")[1]` **越界抛错**，
+把该 case 后半段**和后面几条 case 一起吞掉**（`checked` 83 → 67，`_case_no_hand_rolled_buttons` 没跑）。
+按「换口径不放松」改成盯**新真源**：数量**从后端 `TIER_FLOORS` 推导**（不写死），中/英文名与徽章
+三个数组都要与它对上，另钉一条「客户端不许自己列第二份名字表」。
+
+**判据**：`tools/match_history_ui_check.tscn` —— **83 checked / 0 failures**、`rc=0`
+（修复前 `FAIL 1` + 崩溃截断到 67）。相关断言：`my_name_missing`、`code_shown_in_history`（阴性）、
+`view_my_name`、`view_my_name_has_code`（阴性）、`view_any_name_has_code`（六座位阴性）、
+`tier_names_exist`、`tier_names_count`、`tier_names_en_count`、`tier_badges_count`、`dup_tier_names`。
+
+**变异 3/3 如期 RED**（`其他/work/_qa_1004c/mut_history.py`；四道加固同第 6 条）
+
+- M-1 去掉 `, false`（= 修复前实现）→ 5 红；M-3 `RankedTiers` 英文名 5→4 → 1 红（`tier_names_en_count`）；
+- **M-2 改成 `with_code = not mine`（只藏自己的、别人照漏）→ 只红 2 条**
+  （`code_shown_in_history`、`view_any_name_has_code`），`view_my_name` 保持绿
+  ⇒ 证明「六座位逐个查」那条阴性断言**不是被我自己那条遮住的空转断言**。
+
+还原后 `MatchHistoryPanel.gd` / `RankedTiers.gd` 与基线逐字节相同，`.r3bak` 已清理。
+
+**连带回归（PASS / 0 FAIL）**：`final_settlement` 41、`profile` 154、`profile_bug03` 15、
+`battle_card` 83、`battle_report` 52、`friends` 55（★ 证明 `display_name` 的**默认带码行为未变**）。
+
+既存红（已证与本轮无关）：`lobby_identity03` 2 条（`gold` / `reset`）—— **中和证明**：摘掉本轮改动后
+重跑，失败明细逐字相同；且 `Team3v3Lobby.gd` 不引用 `MatchHistoryPanel`，名字颜色已改成
+`Tokens.GOLD_HOVER / TEXT_PRIMARY`，门禁却仍写死旧的 `Color(1,0.82,0.18)` ⇒ 陈旧门禁。
+`procedural_ui_ratchet` 3 条（明细不含 `MatchHistoryPanel.gd`）。`final_settlement_transport_check`
+需要服务端，headless 下 `FINAL_TRANSPORT TIMEOUT`（非 `CHECK_RESULT` 式门禁）。
+
+⚠️ **本口径未涵盖**：未重导 EXE/APK、未真机验证；`tools/*_check.tscn` 全集未跑；
+改动文件行尾实测均 `pureLF=0`，全工程 `.r3bak/.mutbak/.bak/.tmp` 残留 0。
+
+## 2026-10-04：《bug提交及修复.docx》第 1 条补漏 —— 战斗加载过场中间那道隔离墙
+
+**症状**（用户回执 + 截图，读条文字「正在准备战斗特效 · 6/13」，顶部青色进度条）：
+战斗场景**加载过场**期间，画面正中竖着一道隔离墙。
+
+**根因（是时机，不是墙本身）**：墙在 `BattleArena._add_battle_3v3_dividers()`（`BattleArena.gd:429`）
+随 `_build()` 就建好并挂进 `_battle_3d_world`，但 `position` **仍停在原点 `(0,0,0)`**；唯一摆位者
+`_update_3v3_dividers()`（`:449`，普通墙走 `barrier.fit_between(p_top, p_bot)`）只由
+`BattleRenderer._refresh_visuals()`（`:101`）调用，而它要等 `_battle_setup_ready` ——
+`BattleScreen._process()` 开头 `if not _battle_setup_ready: return`（`:220`），该标志**到
+`_prepare_battle_models()` 末尾（`:576`）才置 true** ⇒ 读条期摆位**一次都没跑**、两道墙叠在原点成一道。
+`_battle_3d_root.visible = false` 只藏单位模型，**藏不到墙**（墙挂在 `_battle_3d_world`）。
+
+**修法**：`LaneRunicWall3D` 加抑制标志 `_preview_hidden` + `set_preview_hidden(enabled)`，并把可见性的
+**两个写入点**都过这个标志 —— `rebuild()` → `visible = not _released and not _preview_hidden`、
+`play_loop()` → `visible = not _preview_hidden`（★ **不改 `play_loop()` 就是白按**，它自己会 `visible = true`）。
+`BattleArena` 在 `_add_battle_3v3_dividers()` 的 `play_loop()` **之后**按住，在 `_update_3v3_dividers()`
+能摆位的第一帧撤销（同函数同帧 ⇒ 无「先露原点再跳位」的闪烁）。默认 `false` ⇒ 不改变任何原有行为。
+
+**判据**：`tools/battle_lane_barrier_check.tscn` **20 → 33**（+13：行为 6 条 + 结构 7 条），
+**33 checked / 0 failures**。含 `hold_after_play_loop`（用 `find()` 下标比较，**钉死「按住必须排在
+`play_loop(i * 7)` 之后」**，防顺序写反＝白按）。
+
+**变异 10/10 如期 RED**（`其他/work/_qa_1004d/mut_wall.py`；四道加固；锚点零反斜杠转义、
+每文件用**自身 EOL**）：M1 去掉按住 → `hold_after_play_loop`；M2 标志置 `false` → `arena_flag_set`；
+M3 删撤销块 → 2 红；M4 `play_loop` 改回 `visible = true` → 2 红；M5 忽略 `enabled` → `preview_hold`；
+M6 `rebuild` 改回 → 2 红；M7 删一条断言 → `checked` 33→32 仍 PASS（**活代码证明**，非空转）；
+M8 默认值改 `true` → 2 红；M9 恒隐藏 → `preview_hold_release`；M10 `rebuild` 恒隐藏（过度抑制）→ 2 红。
+新增 13 条断言中 **12 条被杀死**，唯一未杀的 `wall_api` 属**编译级**守卫（删方法即编译不过），如实声明。
+还原后三文件 sha256 与基线逐字节相同，`.r3bak` 已清理。
+
+**连带回归（PASS / 0 FAIL）**：`battle_lane_barrier` 33、`battle_final_lane_wall` 12、
+`cold_parse_chain` 143、`bug0911` 42（它**直接调** `_add_battle_3v3_dividers()`，验决赛不建墙）。
+既存红 `dynamic_call` 12（`unresolved_grew` 实测 **516**，改动前后同值）、`procedural_ui_ratchet` 3 ——
+本轮 diff **无新增** `StyleBoxFlat.new()` / `Button.new()`，该指标**可证不变**。
+
+⚠️ **本口径未涵盖**：未重导 EXE/APK、未真机验证；`tools/*_check.tscn` 全集未跑；残留普查 0。
+★ **行尾遗留（需单独决策）**：本轮改动的 `scenes/battle/BattleArena.gd`、`effects/battlefield/LaneRunicWall3D.gd`、
+`tools/battle_lane_barrier_check.gd` 在 **codex 侧是 LF**（同事 10.04 改动带来的，**非本轮改出**；`Edit` 保留原行尾，
+对照上一节改的 `MatchHistoryPanel.gd` 仍是 CRLF）。**共享仓里**那两个**已跟踪**文件（`BattleArena.gd` /
+`battle_lane_barrier_check.gd`）的既有版本是 CRLF —— `git ls-files --eol` = `i/lf w/crlf`，与仓惯例一致
+（`core.autocrlf=true` ⇒ 索引 LF、检出 CRLF）；`effects/battlefield/*` 仓里还没有，按同一惯例（无 `.gitattributes`
+例外）也写 CRLF。⇒ 同步后普查里这几个文件呈现「仓 CRLF / codex LF」（归 `EOL_ONLY`，与那 34 个 `*.import` 同类）。
+本轮**未强行转换 codex 侧行尾**，**建议单独排一轮决定是否全仓统一行尾**。

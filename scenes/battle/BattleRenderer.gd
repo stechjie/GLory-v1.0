@@ -1045,6 +1045,51 @@ func _freeze_surviving_actors() -> void:
 			player.pause()
 
 
+# 10.04 bug 文档第 3 条：战斗收尾时把"还停在 run"的棋子归位到 idle。
+#
+# 为什么需要一次单独的"收尾归位"：
+#   * `_update_model_animation_state()` 在本帧发生过位移时会设
+#     `run_lock_until = now + 0.18` 并当场下发 play_run()，指望 0.18 秒后的
+#     那次刷新把它带回 idle；
+#   * 收尾路径先 `_refresh_visuals()`、紧接着 `_finished = true`，而
+#     `BattleScreen._process()` 里 `if _finished: return` ⇒ 0.18 秒后的那次
+#     刷新永远不会发生 ⇒ 结束帧正在移动的棋子会**永久停在 run**。
+#   * `_freeze_surviving_actors()` 按 `animation_player_path` 过滤，而 74 个
+#     棋子模型全走"动作方法通道"（只写 `model_action_node_path`）⇒ 它一个都
+#     命中不到（保留不动，免得动到别处语义）。
+#
+# 口径**只修 run 这一种**：`current_model_action == "run"`（或 run 锁还没到期）
+# 才归位到 idle。停在 `attack` 是原本的"幸存者定格"设计（`_freeze_surviving_actors`
+# 的原意就是停在当前姿势），《战斗结束棋子idle异常统计_20261004》也把"停在 attack"
+# 判为不算异常 —— 所以这里不去动它，免得把刚挥出去的一刀切掉。`idle` 的更是原样。
+# 只改动画、不碰位置（位置每帧仍由 `_position_3d_model_node` 写）。
+func settle_model_animation_idle() -> void:
+	var now := float(Time.get_ticks_msec()) * 0.001
+	for key in _battle_3d_models.keys():
+		var actor_value = _battle_3d_models[key]
+		if not (actor_value is Node3D) or not is_instance_valid(actor_value):
+			continue
+		var actor := actor_value as Node3D
+		var current := str(actor.get_meta("current_model_action", ""))
+		var locked := now < float(actor.get_meta("run_lock_until", 0.0))
+		if current != "run" and not locked:
+			continue
+		actor.set_meta("run_lock_until", 0.0)
+		actor.set_meta("attack_lock_until", 0.0)
+		# 清缓存：`_play_model_action_method()` 的"同动作不重播"短路正是
+		# 我们不想让它挡住 idle 的地方（force_restart 已能绕过，缓存一起清更保险）。
+		actor.set_meta("current_model_action", "")
+		if _play_model_action_method(actor, "idle", true):
+			continue
+		# 回退到 AnimationPlayer 通道。当前 74 个模型都不走这条，留着防以后新增。
+		if not actor.has_meta("animation_player_path"):
+			continue
+		var player := actor.get_node_or_null(actor.get_meta("animation_player_path")) as AnimationPlayer
+		var idle_name := str(actor.get_meta("idle_animation", ""))
+		if player != null and not idle_name.is_empty() and player.has_animation(idle_name):
+			_play_animation_if_needed(player, idle_name)
+
+
 func _tighten_battle_camera() -> void:
 	if _battle_3d_camera == null or not is_instance_valid(_battle_3d_camera):
 		return

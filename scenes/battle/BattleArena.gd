@@ -5,7 +5,7 @@ const BossProceduralVFX3D := preload("res://effects/BossProceduralVFX3D.gd")
 const CrystalRibbon3D := preload("res://effects/CrystalRibbon3D.gd")
 const CRYSTAL_TOON_SHADER := preload("res://shaders/battle_crystal_toon_preview.gdshader")
 const CRYSTAL_OUTLINE_SHADER := preload("res://shaders/battle_crystal_outline.gdshader")
-const BattleLaneBarrier2D := preload("res://scenes/battle/BattleLaneBarrier2D.gd")
+const LANE_WARD_SCENE := preload("res://effects/battlefield/LaneRunicWall3D.tscn")
 const FinalLaneLightWall2D := preload("res://scenes/battle/FinalLaneLightWall2D.gd")
 const CRYSTAL_OUTLINE_WIDTH := 0.008
 
@@ -47,7 +47,11 @@ const CRYSTAL_GLOW_POINTS := [
 	Vector3(1505.0, 155.0, 1.0),
 ]
 
-var _3v3_barriers: Array[BattleLaneBarrier2D] = []
+var _3v3_barriers: Array[Node3D] = []
+# ★ 加载过场按住：读条期 _update_3v3_dividers() 还没跑（墙停在原点会叠成画面
+# 正中一道墙），先在 _add_battle_3v3_dividers() 里抑制显示；摆位第一帧由
+# _update_3v3_dividers() 撤销。默认 false ⇒ 不改变任何原有行为。
+var _preview_walls_hidden := false
 var _final_lane_walls: Array[FinalLaneLightWall2D] = []
 var _battlefield_2_5d_root: Node2D
 var _battlefield_2_5d_size := Vector2(1672.0, 941.0)
@@ -422,25 +426,36 @@ func _add_front_copy(sprite_name: String, offset: Vector2, layer_z: int, color: 
 	sprite.modulate = color
 
 
-func _add_battle_3v3_dividers(arena_wrap: Control) -> void:
+func _add_battle_3v3_dividers(_arena_wrap: Control) -> void:
 	_3v3_barriers.clear()
 	_final_lane_walls.clear()
 	if _battlefield_kind() == "final":
 		# 最终回合左右对战，不绘制半场及分路分割线。
 		return
 	for i in BATTLE_3V3_BOUNDS.size():
-		var barrier := BattleLaneBarrier2D.new()
+		var barrier := LANE_WARD_SCENE.instantiate() as Node3D
 		barrier.name = "Battle3v3LaneBarrier%d" % i
-		barrier.z_index = 40
-		arena_wrap.add_child(barrier)
-		# 低画质档退化成细线提示。写法与下面 _board_readability_layer 那两处一致。
+		# Native world geometry respects unit depth and stays below the 2D UI.
+		_battle_3d_world.add_child(barrier)
+		# Low tier keeps the boundary silhouette and disables fine rune animation.
 		barrier.set_low_quality(VFXManager.get_quality_tier() == VFXQualityBudget.Tier.LOW)
 		barrier.play_loop(i * 7)
+		# ★ 加载过场按住：这张墙此刻还没摆位（停在原点），先强制不显示。必须放在
+		# play_loop() 之后（play_loop() 自己会 visible=true），否则会被它盖掉。
+		barrier.set_preview_hidden(true)
+		_preview_walls_hidden = true
 		_3v3_barriers.append(barrier)
 
 func _update_3v3_dividers() -> void:
 	if _arena == null or _battle_3d_camera == null:
 		return
+	# ★ 读到能摆位的第一帧，撤销加载过场的"按住"抑制，紧接着本函数把墙摆到正确位置。
+	# 幂等：只在抑制还生效时做一次。
+	if _preview_walls_hidden:
+		_preview_walls_hidden = false
+		for barrier in _3v3_barriers:
+			if is_instance_valid(barrier):
+				barrier.set_preview_hidden(false)
 	if _battlefield_kind() == "final":
 		var visual_min := _battle_visual_min()
 		var visual_max := _battle_visual_max()
@@ -453,8 +468,7 @@ func _update_3v3_dividers() -> void:
 			wall.rotation = (p_right - p_left).angle()
 			# Final-only horizontal light wall: preserve its full lane width, but keep
 			# the painted ridge close to the floor so it no longer cuts across faces
-			# and weapons. The regular vertical BattleLaneBarrier2D scale below is
-			# deliberately unchanged.
+			# and weapons. This remains independent of the native 3D lane wards.
 			wall.scale = Vector2(maxf(0.1, p_left.distance_to(p_right) / 1024.0), FinalLaneLightWall2D.SCREEN_HEIGHT_SCALE)
 			if not wall.is_released() and _should_release_3v3_boundary(i):
 				wall.play_release()
@@ -467,19 +481,11 @@ func _update_3v3_dividers() -> void:
 	var x1 := visual_max.x
 	for i in _3v3_barriers.size():
 		var sx := lerpf(x0, x1, BATTLE_3V3_BOUNDS[i])
-		var p_top := _world_to_arena(_sim_to_world_pos(Vector2(sx, visual_min.y), false))
-		var p_bot := _world_to_arena(_sim_to_world_pos(Vector2(sx, visual_max.y), false))
-		var top_y := minf(p_top.y, p_bot.y)
-		var bot_y := maxf(p_top.y, p_bot.y)
-		var mid_x := (p_top.x + p_bot.x) * 0.5
+		var p_top := _sim_to_world_pos(Vector2(sx, visual_min.y), false)
+		var p_bot := _sim_to_world_pos(Vector2(sx, visual_max.y), false)
 		var barrier := _3v3_barriers[i]
-		barrier.position = Vector2(mid_x, (top_y + bot_y) * 0.5)
-		# 晶柱必须铺满战场可视高度。V2 P1-02 写的"高度缩到 45%-60%"曾经照做过一版，
-		# 用户实看后否决：「你把那个晶体缩短了，看不出那种隔开的感觉，不能弄短」。
-		# 高度就是"隔开"这件事的载体，不能拿它换视觉克制 —— 太抢眼要靠 alpha 解决
-		# （见 BattleLaneBarrier2D.STEADY_ALPHA）。tools/battle_lane_barrier_check
-		# 有一条反向断言盯着这里，防止有人照 V2 原文再缩一次。
-		barrier.scale = Vector2(0.42, maxf(0.1, (bot_y - top_y) / 512.0))
+		# Preserve the entire boundary length; only the visual is replaced.
+		barrier.fit_between(p_top, p_bot)
 		if not barrier.is_released() and _should_release_3v3_boundary(i):
 			barrier.play_release()
 

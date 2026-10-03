@@ -20,6 +20,8 @@ extends Node
 #      —— 拿 was_ai 当跑路会冤枉一大片只是切了后台的人。判据必须是 online_at_end。
 #   5. 资料页那个入口没了 / 战绩块退回全占位。那样这一整块功能玩家根本点不到。
 #   6. （2026-09-29）名字：按账号现在的名字显示，「我」标出来；AI / 空位分清。
+#      （2026-10-04 bug 文档第 5 条二次反馈）名字**只显示昵称、隐藏 #好友码** ——
+#      本面板的座位行与「详细战况」弹出来的结算面板共用 seat_name，两处都不许漏码。
 #   7. （2026-09-29）「详细战况」：点开就是打完那一刻的结算面板（FinalSettlementPanel 本身），
 #      数据从历史接口的格式换过去不能丢东西、不能串座位；旧局没有详细战况时要说清楚。
 #
@@ -226,17 +228,22 @@ func _case_offline_uses_online_at_end() -> void:
 	left.queue_free()
 
 
-# --- 6. 名字：账号现在的名字 ------------------------------------------------------
+# --- 6. 名字：账号现在的名字；2026-10-04 起隐藏 #好友码 -----------------------------
 
 func _case_names_are_current() -> void:
 	var panel := await _panel_with([_match(3, "team_b", true, {
 		4: {"player_id": null, "player_name": null, "friend_code": null, "was_ai": false, "board": []},
 	})])
 	var texts := _texts(panel)
-	_h.expect(texts.any(func(t): return t.contains("玩家3号 #CODE0003（我）")), "my_name_missing",
-		"我那一行应该是「名字 #好友码（我）」")
-	_h.expect(texts.any(func(t): return t.contains("玩家0号 #CODE0000")), "other_name_missing",
-		"别人的座位应该显示账号的名字，不是「座位 N」")
+	# 10.04 第 5 条：座位名只显示昵称（隐藏 #好友码）。断言的期望值从
+	# 「名字 #码」换成「名字」，并**新加**一条阴性断言钉住「码不许漏出来」——
+	# 换口径不放松，不是把失败断言删掉。
+	_h.expect(texts.any(func(t): return t.contains("玩家3号（我）")), "my_name_missing",
+		"我那一行应该是「昵称（我）」，不带 #好友码")
+	_h.expect(texts.any(func(t): return t.contains("玩家0号")), "other_name_missing",
+		"别人的座位应该显示账号的昵称，不是「座位 N」")
+	_h.expect(not texts.any(func(t): return t.contains("#CODE")), "code_shown_in_history",
+		"对局历史的座位名漏出了 #好友码 —— 第 5 条要求隐藏")
 	_h.expect(texts.any(func(t): return t.begins_with("AI")), "ai_seat_missing", "AI 座位要写 AI")
 	_h.expect(texts.any(func(t): return t.begins_with("空位")), "empty_seat_missing",
 		"没账号、不是 AI、也没棋子的座位是空位")
@@ -261,7 +268,13 @@ func _case_settlement_view_data() -> void:
 	var seats: Array = data.get("seats", [])
 	_eq(seats.size(), 6, "view_seat_count", "永远六个座位")
 	var mine: Dictionary = seats[3]
-	_eq(str(mine.get("name", "")), "玩家3号 #CODE0003（我）", "view_my_name", "我那个座位的名字")
+	_eq(str(mine.get("name", "")), "玩家3号（我）", "view_my_name", "我那个座位的名字（只昵称）")
+	# 10.04 第 5 条：历史入口的结算面板**也不许带好友码** —— 这正是那条漏修的路
+	# （截图里的「查看详情 → 详细战况」结算面板）。六个座位逐个查，不只我那一行。
+	_eq(str(mine.get("name", "")).contains("#"), false, "view_my_name_has_code",
+		"历史结算面板里我那个座位的名字带着 #好友码")
+	_eq(seats.any(func(s): return str((s as Dictionary).get("name", "")).contains("#")), false,
+		"view_any_name_has_code", "历史结算面板里有座位名带 #好友码")
 	_eq(mine.get("board", []), [{"id": "dark_dragon", "star": 3, "slot": 7}], "view_board",
 		"棋盘只放 merc=false 的，带位置")
 	_eq(mine.get("mercenaries", []), [{"id": "merc_x", "star": 1, "slot": 0}], "view_mercs",
@@ -353,13 +366,29 @@ func _case_profile_shows_real_rank() -> void:
 	var code := _code("res://scenes/menu/ProfileScreen.gd")
 	_eq(src.contains("_load_ranked"), true, "profile_loads_ranked",
 		"资料页没拉 /v1/me/ranked —— 战绩块退回占位了")
-	_eq(src.contains("TIER_NAMES_ZH"), true, "tier_names_exist", "缺段位名表")
+	# ⚠️ 段位名表已从 ProfileScreen 迁到 scenes/menu/RankedTiers.gd（8 档 → 5 档，
+	# 与后端 TIER_FLOORS 对齐）。旧断言盯的 `TIER_NAMES_ZH` 常量已经不存在 ——
+	# 它不只是报红，下面那行 split()[1] 还会越界抛错、**把这条 case 后面的断言
+	# 乃至后面几条 case 一起吞掉**。这里改成盯**新真源**（换口径，不是放松断言）。
+	_eq(src.contains("RankedTiers"), true, "tier_names_exist", "资料页没用 RankedTiers 段位名表")
 
-	# 八个段位名，和后端的 TIER_COUNT 对齐。少一个的话最高段会显示成越界或空。
-	var zh := src.split("const TIER_NAMES_ZH := [")[1].split("]")[0]
-	_eq(zh.split(",").size(), 8, "tier_names_count", "段位名不是 8 个")
 	var py := FileAccess.get_file_as_string("res://backend/app/ranked.py")
-	_eq(py.contains("TIER_COUNT = 8"), true, "tier_count_matches", "后端的段位数不是 8")
+	# 数量不写死：后端 TIER_COUNT 由 TIER_FLOORS 推导，从这里推出来，两边比。
+	_eq(py.contains("TIER_COUNT = len(TIER_FLOORS)"), true, "tier_count_matches",
+		"后端的 TIER_COUNT 不是由 TIER_FLOORS 推导 —— 客户端就没了可对齐的真源")
+	var count := py.split("TIER_FLOORS = (")[1].split(")")[0].split(",").size()
+	var tiers := FileAccess.get_file_as_string("res://scenes/menu/RankedTiers.gd")
+	var zh := tiers.split("const NAMES_ZH := [")[1].split("]")[0]
+	var en := tiers.split("const NAMES_EN := [")[1].split("]")[0]
+	_eq(zh.split(",").size(), count, "tier_names_count",
+		"中文段位名数量与后端 TIER_FLOORS 不一致")
+	_eq(en.split(",").size(), count, "tier_names_en_count",
+		"英文段位名数量与后端 TIER_FLOORS 不一致")
+	_eq(tiers.split("const BADGES := [")[1].split("]")[0].count("preload("), count,
+		"tier_badges_count", "段位徽章数量与后端 TIER_FLOORS 不一致")
+	# 客户端不许自己再列第二份名字表（名字只在 RankedTiers 一处）。
+	_eq(code.contains("NAMES_ZH"), false, "dup_tier_names",
+		"ProfileScreen 里又写了一份段位名 —— 名字表只许在 RankedTiers 里")
 
 	# 🔴 **客户端不许自己算段位。** 服务器发的是 tier / tier_progress
 	# （backend/app/ranked.py 的 tier_of 是唯一口径）。客户端再除一遍就是第二个真相，
