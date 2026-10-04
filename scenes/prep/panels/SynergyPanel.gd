@@ -176,8 +176,8 @@ static func _race_entries(race: String) -> Array:
 		"crimson":
 			return [
 				{"threshold": 2, "name": "赤律2·绵延", "detail": "赤律族施加的增益和减益持续时间 +20%；沉默、冰霜等控制额外增加最多 0.5 秒。"},
-				{"threshold": 4, "name": "赤律4·共鸣", "detail": "每次成功施加增益、减益或控制，施加者获得一层共鸣：攻击和攻速 +4%，持续 4 秒，最多 10 层；新增层数刷新持续时间。"},
-				{"threshold": 7, "name": "赤律7·赤潮", "detail": "开战第 2 秒起每 5 秒，赤律族全体技能剩余冷却 -1 秒、清除负面状态、攻击和攻速 +10% 持续 3 秒，并回复 6% 最大生命。"},
+				{"threshold": 4, "name": "赤律4·共鸣", "detail": "每次成功施加增益、减益或控制，施加者获得一层共鸣：攻击和攻速 +5%，持续 4 秒，最多 10 层；新增层数刷新持续时间。"},
+				{"threshold": 7, "name": "赤律7·赤潮", "detail": "开战第 2 秒起每 5 秒，赤律族全体技能剩余冷却 -1 秒、清除负面状态、回复 6% 最大生命，并永久获得 1 层攻击和攻速 +10%、暴击率 +10 个百分点，整场最多 5 层。"},
 			]
 	return []
 
@@ -214,8 +214,8 @@ static func _race_entries_en(race: String) -> Array:
 		"crimson":
 			return [
 				{"threshold": 2, "name": "Crimson 2: Lingering Effects", "detail": "Crimson buffs and debuffs last 20% longer. Control effects gain at most 0.5 additional seconds."},
-				{"threshold": 4, "name": "Crimson 4: Resonance", "detail": "Applying a buff, debuff, or control grants the caster +4% ATK and attack speed for 4s, up to 10 stacks. New stacks refresh the duration."},
-				{"threshold": 7, "name": "Crimson 7: Red Tide", "detail": "From 2s into battle, every 5s Crimson units reduce remaining skill cooldown by 1s, cleanse debuffs, gain +10% ATK and attack speed for 3s, and heal 6% max HP."},
+				{"threshold": 4, "name": "Crimson 4: Resonance", "detail": "Applying a buff, debuff, or control grants the caster +5% ATK and attack speed for 4s, up to 10 stacks. New stacks refresh the duration."},
+				{"threshold": 7, "name": "Crimson 7: Red Tide", "detail": "From 2s into battle, every 5s Crimson units reduce remaining skill cooldown by 1s, cleanse debuffs, heal 6% max HP, and permanently gain one stack of +10% ATK, +10% attack speed, and +10 percentage points crit chance, up to 5 stacks per battle."},
 			]
 	return []
 

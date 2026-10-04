@@ -149,11 +149,11 @@ static func format_skill_detail(d: Dictionary) -> String:
 	var cd := skill_cd_text(d)
 	match sid:
 		"block_guard":
-			return "赤卫格挡：每次受到普攻或技能直击时，有%s概率完全格挡；持续伤害不触发。" % pct(float(d.get("block_chance", 0.10)))
+			return "赤卫格挡：每次受到普攻或技能直击时，有%s概率完全格挡；持续伤害不触发。" % pct(float(d.get("block_chance", 0.20)))
 		"random_ally_buff":
-			return "赤舞祝福%s：随机选择%d名不同友军，各随机获得一种效果：技能剩余冷却-2秒、攻击+%s或攻速+%s，增益持续%.1f秒，同类刷新不叠加。" % [cd, int(d.get("ally_count", 1)), pct(float(d.get("buff_pct", 0.20))), pct(float(d.get("buff_pct", 0.20))), float(d.get("buff_duration", 3.0))]
+			return "赤舞祝福%s：随机选择%d名不同友军（优先其他存活队友，人数不足时可选自身），各随机获得一种效果：技能剩余冷却-2秒、攻击+%s或攻速+%s，增益持续%.1f秒，同类刷新不叠加。" % [cd, int(d.get("ally_count", 1)), pct(float(d.get("buff_pct", 0.20))), pct(float(d.get("buff_pct", 0.20))), float(d.get("buff_duration", 3.0))]
 		"team_random_stack":
-			return "战鼓共振：每次普攻命中随机触发全队攻击+%s或攻速+%s，持续%.1f秒，各最多%d层（每层独立计时）；或立刻回复全队最大生命%s。" % [pct(float(d.get("stack_pct", 0.03))), pct(float(d.get("stack_pct", 0.03))), float(d.get("stack_duration", 3.0)), int(d.get("max_stacks", 5)), pct(float(d.get("heal_pct", 0.03)))]
+			return "战鼓共振：每次普攻命中随机触发全队攻击+%s或攻速+%s，持续%.1f秒，各最多%d层（每层独立计时）；或立刻回复全队最大生命%s。" % [pct(float(d.get("stack_pct", 0.05))), pct(float(d.get("stack_pct", 0.05))), float(d.get("stack_duration", 3.0)), int(d.get("max_stacks", 15)), pct(float(d.get("heal_pct", 0.05)))]
 		"current_hp_strike":
 			var text := "血猎：普攻额外造成目标受击前当前生命%s的伤害，Boss为%s；额外伤害不暴击。" % [pct(float(d.get("current_hp_pct", 0.10))), pct(float(d.get("boss_hp_pct", 0.05)))]
 			if float(d.get("execute_atk_pct", 0.0)) > 0.0:
@@ -162,7 +162,7 @@ static func format_skill_detail(d: Dictionary) -> String:
 		"stacking_def_break":
 			return "破甲：每次普攻命中有%s概率使目标防御永久降低%d点，可叠加，最低为0。" % [pct(float(d.get("break_chance", 0.50))), int(d.get("break_amount", 2))]
 		"frost_status":
-			return "霜印%s：对目标造成自身攻击%s伤害，并附加冰霜状态%.1f秒（Boss控制时长减半）。" % [cd, pct(float(d.get("damage_atk_pct", 1.70))), float(d.get("ice_duration", 3.0))]
+			return "霜印%s：以当前目标为中心，对2格范围内每名敌人造成自身攻击%s技能伤害，并附加冰易伤%.1f秒，使其受到的伤害+%s（Boss为+%s）。" % [cd, pct(float(d.get("damage_atk_pct", 1.70))), float(d.get("ice_duration", 3.0)), pct(float(d.get("ice_vulnerable_pct", 0.25))), pct(float(d.get("ice_vulnerable_pct", 0.25)) * 0.5)]
 		"line_pierce":
 			return "穿云：普攻沿直线最多命中%d名敌人，第1至第4名分别受到自身攻击的100%%、%s、%s、%s伤害，各自计算防御与元素克制。" % [int(d.get("pierce_targets", 4)), pct(1.0 - float(d.get("pierce_falloff", 0.20))), pct(1.0 - float(d.get("pierce_falloff", 0.20)) * 2.0), pct(1.0 - float(d.get("pierce_falloff", 0.20)) * 3.0)]
 		"aoe_silence":
@@ -339,11 +339,11 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 	var cd := skill_cd_text(d)
 	match sid:
 		"block_guard":
-			return "Crimson Guard: %s chance to fully block each direct basic or skill hit; damage-over-time ticks do not trigger it." % pct(float(d.get("block_chance", 0.10)))
+			return "Crimson Guard: %s chance to fully block each direct basic or skill hit; damage-over-time ticks do not trigger it." % pct(float(d.get("block_chance", 0.20)))
 		"random_ally_buff":
 			return "Crimson Dance%s: Choose %d distinct random allies. Each gets one random effect: 2s off remaining skill cooldown, +%s ATK, or +%s attack speed for %.1fs. Same-type buffs refresh." % [cd, int(d.get("ally_count", 1)), pct(float(d.get("buff_pct", 0.20))), pct(float(d.get("buff_pct", 0.20))), float(d.get("buff_duration", 3.0))]
 		"team_random_stack":
-			return "War Drum: Each landed basic hit randomly grants the team +%s ATK or +%s attack speed for %.1fs (up to %d independently timed layers), or heals %s max HP." % [pct(float(d.get("stack_pct", 0.03))), pct(float(d.get("stack_pct", 0.03))), float(d.get("stack_duration", 3.0)), int(d.get("max_stacks", 5)), pct(float(d.get("heal_pct", 0.03)))]
+			return "War Drum: Each landed basic hit randomly grants the team +%s ATK or +%s attack speed for %.1fs (up to %d independently timed layers), or heals %s max HP." % [pct(float(d.get("stack_pct", 0.05))), pct(float(d.get("stack_pct", 0.05))), float(d.get("stack_duration", 3.0)), int(d.get("max_stacks", 15)), pct(float(d.get("heal_pct", 0.05)))]
 		"current_hp_strike":
 			var text := "Blood Hunt: Basics deal extra damage equal to %s of the target's pre-hit current HP (%s against bosses); the extra damage cannot crit." % [pct(float(d.get("current_hp_pct", 0.10))), pct(float(d.get("boss_hp_pct", 0.05)))]
 			if float(d.get("execute_atk_pct", 0.0)) > 0.0:
@@ -352,7 +352,7 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"stacking_def_break":
 			return "Armor Break: Each landed basic has a %s chance to permanently reduce target DEF by %d, stacking down to zero." % [pct(float(d.get("break_chance", 0.50))), int(d.get("break_amount", 2))]
 		"frost_status":
-			return "Frost Mark%s: Deal %s ATK damage and apply Frost for %.1fs (boss control duration is halved)." % [cd, pct(float(d.get("damage_atk_pct", 1.70))), float(d.get("ice_duration", 3.0))]
+			return "Frost Mark%s: Deal %s ATK skill damage to each enemy within two cells of the target and apply Ice Vulnerable for %.1fs. Damage taken +%s (+%s for bosses)." % [cd, pct(float(d.get("damage_atk_pct", 1.70))), float(d.get("ice_duration", 3.0)), pct(float(d.get("ice_vulnerable_pct", 0.25))), pct(float(d.get("ice_vulnerable_pct", 0.25)) * 0.5)]
 		"line_pierce":
 			return "Skypierce: Basics strike up to %d enemies in a line for 100%%, %s, %s, and %s ATK damage. DEF and element are calculated separately." % [int(d.get("pierce_targets", 4)), pct(1.0 - float(d.get("pierce_falloff", 0.20))), pct(1.0 - float(d.get("pierce_falloff", 0.20)) * 2.0), pct(1.0 - float(d.get("pierce_falloff", 0.20)) * 3.0)]
 		"aoe_silence":

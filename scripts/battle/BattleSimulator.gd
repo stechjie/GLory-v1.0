@@ -966,7 +966,7 @@ static func _perform_attack(attacker: Dictionary, target: Dictionary, state: Dic
 	attacker.attack_count = int(attacker.get("attack_count", 0)) + 1
 	if str(d.get("race", "")) == "human" and int(attacker.attack_count) % 3 == 0:
 		is_crit = true
-	elif RngService.rng.randf() < float(d.get("crit", 0.05)) + float(attacker.get("crit_bonus", 0.0)):
+	elif RngService.rng.randf() < float(d.get("crit", 0.05)) + float(attacker.get("crit_bonus", 0.0)) + 0.10 * float(attacker.get("crimson_pulse_stacks", 0)):
 		is_crit = true
 	if is_crit:
 		base *= float(d.get("crit_dmg", 1.5)) + float(attacker.get("crit_dmg_bonus", 0.0))

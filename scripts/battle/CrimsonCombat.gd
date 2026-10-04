@@ -32,7 +32,7 @@ static func pulse(state: Dictionary) -> void:
 			continue
 		fighter.skill_ready = maxf(elapsed, float(fighter.get("skill_ready", 0.0)) - 1.0)
 		StatusEffectService.clear_negative_statuses(fighter)
-		StatusEffectService.add_status(fighter, "crimson_pulse", 3.6, {"pct": 0.10})
+		fighter.crimson_pulse_stacks = mini(5, int(fighter.get("crimson_pulse_stacks", 0)) + 1)
 		DamageService.begin_stat_context(state, fighter)
 		_heal_unit(fighter, maxi(1, int(round(float(fighter.get("max_hp", 1)) * 0.06))))
 		DamageService.clear_stat_context()
@@ -82,7 +82,7 @@ static func passive_attack(attacker: Dictionary, target: Dictionary, state: Dict
 			if roll == 2:
 				for ally: Dictionary in allies:
 					if bool(ally.get("alive", false)):
-						_heal_unit(ally, maxi(1, int(round(float(ally.get("max_hp", 1)) * float(d.get("heal_pct", 0.03))))))
+						_heal_unit(ally, maxi(1, int(round(float(ally.get("max_hp", 1)) * float(d.get("heal_pct", 0.05))))))
 			else:
 				var key := "crimson_drum_atk" if roll == 0 else "crimson_drum_speed"
 				var applied := false
@@ -90,9 +90,9 @@ static func passive_attack(attacker: Dictionary, target: Dictionary, state: Dict
 					if not bool(ally.get("alive", false)):
 						continue
 					var layers: Array = ally.get(key, [])
-					if layers.size() >= int(d.get("max_stacks", 5)):
+					if layers.size() >= int(d.get("max_stacks", 15)):
 						layers.pop_front()
-					layers.append({"until": float(state.get("elapsed", 0.0)) + float(d.get("stack_duration", 3.0)) * (1.20 if bool(_resolve_syn(attacker, state).get("crimson_duration", false)) else 1.0), "pct": float(d.get("stack_pct", 0.03))})
+					layers.append({"until": float(state.get("elapsed", 0.0)) + float(d.get("stack_duration", 3.0)) * (1.20 if bool(_resolve_syn(attacker, state).get("crimson_duration", false)) else 1.0), "pct": float(d.get("stack_pct", 0.05))})
 					ally[key] = layers
 					applied = true
 				if applied:
@@ -102,11 +102,16 @@ static func passive_attack(attacker: Dictionary, target: Dictionary, state: Dict
 
 static func skill_dancer(caster: Dictionary, allies: Array, d: Dictionary, state: Dictionary) -> void:
 	var pool: Array = []
+	var self_fallback: Dictionary = {}
 	for ally: Dictionary in allies:
-		if bool(ally.get("alive", false)):
+		if not bool(ally.get("alive", false)):
+			continue
+		if str(ally.get("uid", "")) == str(caster.get("uid", "")):
+			self_fallback = ally
+		else:
 			pool.append(ally)
-	for _i in mini(int(d.get("ally_count", 1)), pool.size()):
-		var ally: Dictionary = pool.pop_at(RngService.rng.randi_range(0, pool.size() - 1))
+	for _i in mini(int(d.get("ally_count", 1)), pool.size() + (0 if self_fallback.is_empty() else 1)):
+		var ally: Dictionary = pool.pop_at(RngService.rng.randi_range(0, pool.size() - 1)) if not pool.is_empty() else self_fallback
 		var effect := RngService.rng.randi_range(0, 2)
 		if effect == 0:
 			ally.skill_ready = maxf(float(state.get("elapsed", 0.0)), float(ally.get("skill_ready", 0.0)) - 2.0)
@@ -117,13 +122,17 @@ static func skill_dancer(caster: Dictionary, allies: Array, d: Dictionary, state
 
 
 static func skill_icey(caster: Dictionary, opponents: Array, d: Dictionary, state: Dictionary) -> void:
-	var target := _select_target(caster, opponents)
-	if target.is_empty() or not bool(target.get("alive", false)):
+	var center := _select_target(caster, opponents)
+	if center.is_empty() or not bool(center.get("alive", false)):
 		return
-	caster.vfx_skill_target_uid = str(target.get("uid", ""))
-	DamageService.apply_damage(target, maxi(1, int(round(float(caster.get("atk", 1)) * StatusEffectService.attack_multiplier(caster) * float(d.get("damage_atk_pct", 1.70))))), false)
-	if bool(target.get("alive", false)):
-		apply_status(caster, target, "ice_affected", float(d.get("ice_duration", 3.0)), {}, state)
+	caster.vfx_skill_target_uid = str(center.get("uid", ""))
+	var damage := maxi(1, int(round(float(caster.get("atk", 1)) * StatusEffectService.attack_multiplier(caster) * float(d.get("damage_atk_pct", 1.70)))))
+	for target: Dictionary in opponents:
+		if not bool(target.get("alive", false)) or not _can_target(caster, target, opponents) or center.pos.distance_to(target.pos) > float(d.get("aoe_radius", 144.0)):
+			continue
+		DamageService.apply_damage(target, damage, false)
+		if bool(target.get("alive", false)):
+			apply_status(caster, target, "ice_vulnerable", float(d.get("ice_duration", 3.0)), {"pct": float(d.get("ice_vulnerable_pct", 0.25))}, state)
 
 
 static func skill_lantern(caster: Dictionary, opponents: Array, d: Dictionary, state: Dictionary) -> void:

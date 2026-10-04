@@ -1203,6 +1203,7 @@ static func patched_with_live_stats(f: Dictionary, live_stats: Dictionary, frame
 	out["attack_speed"] = float(best.get("as", 0.0))
 	out["defense"] = int(best.get("df", 0))
 	out["crit_bonus"] = float(best.get("cb", 0.0))
+	out["crimson_pulse_stacks"] = int(best.get("cps", 0))
 	return out
 
 
@@ -1316,14 +1317,14 @@ static func live_defense(f: Dictionary) -> int:
 
 
 # 暴击：与 BattleSimulator 命中判定同一个式子。战斗里是
-#     randf() < d.crit + attacker.crit_bonus
+#     randf() < d.crit + attacker.crit_bonus + Crimson 7 stacks × 0.10
 # 两条修正：① crit 取活值优先（有些技能会改 def.crit）；② 人类的「每 3 下一暴」是
 # **确定性必暴**，不是概率，面板要显示 100%。
 static func live_crit(f: Dictionary) -> float:
 	var d_value = f.get("def", {})
 	var d: Dictionary = d_value if typeof(d_value) == TYPE_DICTIONARY else {}
 	var base := float(d.get("crit", 0.0))
-	var total := base + float(f.get("crit_bonus", 0.0))
+	var total := base + float(f.get("crit_bonus", 0.0)) + 0.10 * float(f.get("crimson_pulse_stacks", 0))
 	if str(d.get("race", "")) == "human" and int(f.get("attack_count", 0)) % 3 == 2:
 		# 下一次普攻（attack_count+1 后 %3==0）必定暴击。
 		return 1.0

@@ -115,7 +115,7 @@ static func side_unit_count(config: Dictionary, team_a: bool) -> int:
 
 # 与 SynergyService.count_races_from_board 同口径:只有普通棋子计入种族羁绊。
 static func _syn_for_slot(slot_placements: Array) -> Dictionary:
-	var counts := {"god": 0, "dark": 0, "undead": 0, "human": 0}
+	var counts := {"god": 0, "dark": 0, "undead": 0, "human": 0, "crimson": 0}
 	for p in slot_placements:
 		if str(p.get("kind", "")) != "piece":
 			continue
@@ -325,7 +325,7 @@ static func compute_test_replay_async(config: Dictionary, budget_usec: int = 800
 	return payload
 
 
-# 逐帧比对四项活字段（atk / attack_speed / defense / crit_bonus），变了才记一条。
+# 逐帧比对活字段（atk / attack_speed / defense / crit_bonus / Crimson 7 层数），变了才记一条。
 # 与 frames 的索引严格对齐：调用点传进来的 frame_index 就是 _replay_capture_frame 刚写
 # 进去的那一帧下标（frames.size()-1），面板用它做「≤ 当前帧取最近一条」的查询。
 static func _capture_live_stats(state: Dictionary, frame_index: int, live_stats: Dictionary, last_live: Dictionary) -> void:
@@ -337,15 +337,16 @@ static func _capture_live_stats(state: Dictionary, frame_index: int, live_stats:
 		var aspd := float(f.get("attack_speed", 0.0))
 		var dfn := int(f.get("defense", 0))
 		var cb := float(f.get("crit_bonus", 0.0))
+		var cps := int(f.get("crimson_pulse_stacks", 0))
 		var prev: Variant = last_live.get(uid, null)
 		var changed := true
-		if typeof(prev) == TYPE_ARRAY and (prev as Array).size() == 4:
+		if typeof(prev) == TYPE_ARRAY and (prev as Array).size() == 5:
 			var p: Array = prev
 			changed = int(p[0]) != atk or absf(float(p[1]) - aspd) > 1e-6 \
-				or int(p[2]) != dfn or absf(float(p[3]) - cb) > 1e-6
+				or int(p[2]) != dfn or absf(float(p[3]) - cb) > 1e-6 or int(p[4]) != cps
 		if not changed:
 			continue
-		last_live[uid] = [atk, aspd, dfn, cb]
+		last_live[uid] = [atk, aspd, dfn, cb, cps]
 		if not live_stats.has(uid):
 			live_stats[uid] = []
 		(live_stats[uid] as Array).append({
@@ -354,6 +355,7 @@ static func _capture_live_stats(state: Dictionary, frame_index: int, live_stats:
 			"as": aspd,
 			"df": dfn,
 			"cb": cb,
+			"cps": cps,
 		})
 
 
