@@ -215,7 +215,7 @@
                       "damage_reduction":  0.50,
                       "duration":  6.0,
                       "unique_on_board":  true,
-                      "model":  "res://assets/models/units/god_archangel_animated/god_archangel_animated.tscn",
+                      "model":  "res://assets/models/units/god_archangel_refined/god_archangel_refined.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
                       "name_en":  "Archangel"
