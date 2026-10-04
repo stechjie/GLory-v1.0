@@ -3997,3 +3997,79 @@ M8 默认值改 `true` → 2 红；M9 恒隐藏 → `preview_hold_release`；M10
 （`core.autocrlf=true` ⇒ 索引 LF、检出 CRLF）；`effects/battlefield/*` 仓里还没有，按同一惯例（无 `.gitattributes`
 例外）也写 CRLF。⇒ 同步后普查里这几个文件呈现「仓 CRLF / codex LF」（归 `EOL_ONLY`，与那 34 个 `*.import` 同类）。
 本轮**未强行转换 codex 侧行尾**，**建议单独排一轮决定是否全仓统一行尾**。
+
+## 2026-10-04：《bug提交及修复.docx》第 4 条 —— 穿墙攻击（证伪）+ 恐惧魔跨墙推挤（已修）
+
+**门禁**：`work/_qa_1004e/probe_cross_wall_1004e.{gd,tscn}`，**87 checked / 0 failures**。
+⚠️ 位置在 `work/`（被 `.gitignore` 忽略）⇒ **仓内没有这条门禁的副本**，
+共享仓要复跑得先从 `其他/work/_qa_1004e/evidence/` 取。
+
+### 「穿墙攻击」证伪：不是不需要查，是**构造不出来**
+
+三套互不引用的判据：A 层 `_can_target`（`:1011`，只查**敌队**在 `attacker.lane` 有无活人，1 个组合）、
+B 层 `_boundary_released`（`:1069`，∃ team 的 4 个组合）、C 层 `_reachable_lanes_for`（`:1085`，逐段扩张）。
+**B 是 A 的超集** ⇒ **A 放行跨路 ⇒ 对应 boundary 必然释放** ⇒「墙立着还能打过去」在 A 层不可构造。
+四种局面 4/4 成立，端到端 80 tick `locked_cross=0`。**故本条不改选敌层**
+（改了会破坏 9.27 D1「清空自己路后跨路支援」）。
+
+### 真实缺陷：fear 推挤整路平移
+
+`_skill_fear`（`BattleSimSkills.gd:243`）选敌走 `_nearest`→`_can_target`（无 C 层过滤，
+但被上面那条不变式兜住 ⇒ **不会隔墙释放**）；位移在 `BattleSimulator._step_team:661-666`
+走 `_move_without_pushing`，而那函数原本 clamp **只有竞技场边框 45~955，没有 lane 约束**。
+`away = (target.pos - caster.pos).normalized()` ⇒ **方向由施法者站位决定**（施法者在目标左侧 ⇒ 推向隔断、越界）。
+推距：1~3★ `fear_sec:2.0` ⇒ **346.5px**（1.04 个 lane 带宽 333.3）；4★ 3.0s ⇒ **519.8px**（1.56 倍）。
+
+**修法**：`BattleSimShared` 新增 `lane_band_x` / `clamp_x_to_lane` 作**唯一真源**（闭区间、相邻带共享端点）；
+`_move_without_pushing` 加**可选** `clamp_lane: int = -1`，fear 分支显式传本单位 lane。
+★ **普通行走调用点（`:748`）刻意没改** —— 它也走同一函数，而跨路支援是 D1 明确允许的
+⇒ 约束必须由**调用方显式传入**，绝不能内置进公共位移函数。
+
+### ★★ 一条被返工的判据：B6 的「对称」是错判据
+
+原来判「推挤后选敌权对称 / 不再单方面挨打」。**修前修后读数完全相同**
+（`被推单位打不到 p2 = true`、`p2 能打到它 = true`）⇒ 这个不对称**不是推挤越界引起的**，
+而是 A 层 `_can_target` 自身的语义：p2 打 lane1 的敌人时查「enemy 在 lane2 有无活人」= 无 ⇒ 放行；
+敌人打 lane2 的 p2 时查「player 在 lane1 有无活人」= 有 ⇒ 挡住。**攻守查的不是同一路**，天然不对称。
+现改为**无 fear 对照组**：不施放 fear、不推挤，只把 enemy lane1 的单位直接摆到修前落点 x=730，
+同样的不对称照样出现 ⇒ 成因钉死在 A 层，且这条**直接打生产函数**、对 M1/M2 变异必红。
+**教训**：断言绿了两次就默认它对 —— 必须核对「修前修后读数是否真的变了」。
+
+### ★★ 变异暴露的判别力漏洞：B4/B5 抓不到「删掉 fear 位移」
+
+M3（fear 分支 → `pass`）下单位**原地不动**，而起点本来就在带内
+⇒ 「位移 ≤ 带宽」「终点在带内」两条照样全绿。补 **B4b**：钉住「推挤**确实发生**且正好停在带边界」，
+M3 下位移 0.0px 立即转红。
+
+### ★★ M5 证明「问唯一真源」的价值
+
+把 `_in_band` / `_band_overflow` 改成直接问 `Shared.lane_band_x`（不在探针里复刻带宽算式），
+再把 `lane_band_x` 的 lane1 带写错（±120px）⇒ `s3_band_endpoints_shared` 转红。
+若探针自带一份算式，这个变异**测不出来**。
+
+**变异 5/5 如期 RED**（`其他/work/_qa_1004e/mutate_shared.py`、`mutate_fear_push.py`、`mutate_lane_clamp.py`；
+四道加固、只认 `.r3bak/.r4bak`、见残留拒跑、SIGTERM/SIGINT 兜底）：
+M1 `_can_target`→`true` 3 红｜M2 →`false` 10 红｜M3 去 fear 位移 4 红（含 2 条 B4b）｜
+M4 `clamp_x_to_lane`→`return x` 10 红（含 3 条 `clamp_pulls_back`）｜M5 带宽写错 2 红。
+还原后 `BattleSimShared.gd` 70994 B / 1534 CRLF / `c7cc3f15…`、
+`BattleSimulator.gd` 94363 B / 1752 CRLF / `3e26ff70…`，残留 **0**。
+
+### ★★ 顺手救活一条**一直失效**的门禁：`probe_lane_partition_927` 根本没跑起来
+
+`tools/qa_history/20260922/probe_lane_partition_927.tscn` 的 `ext_resource` 指向
+`res://work/_qa_922/probe_lane_partition_927.gd` —— 而 `work/` 被 `.gitignore` 忽略、**该文件已不在磁盘上**
+⇒ 引擎挂了个空引用，只输出 `PERFLOG` 常驻渲染、**永远不退出**（本次撞上宿主 bash 时限被 SIGTERM 才发现）。
+真实脚本在 `tools/qa_history/20260922/probe_lane_partition_927.gd`（仓内、34676 B）。
+已把 `path=` 改到仓内真实位置 ⇒ **52 checked / 0 failures**（修前一次都没跑过）。
+★ 教训：`.tscn` 里的 `path=` 失效**不会报错**，只会让门禁静默变成空场景；
+「跑出来一堆 PERFLOG 且不退出」就是征兆。
+
+**连带回归（PASS / 0 FAIL）**：`cross_wall_1004e` 87、`battle_lane_barrier` 33、
+`battle_final_lane_wall` 12、`lane_partition_927` 52、`battle_death_exit` 35、`twin_boss` 28、
+`cold_parse_chain` 143。
+
+⚠️ **本口径未涵盖**：未重导 EXE/APK、未真机验证。
+**母灵处决 `_mother_execute_target`（`BattleSimTreasures.gd:449`）刻意不改**（注释写了「本路优先，
+没有再退到全场敌人」＝有意设计）。
+**B 层语义收窄**（`_lane_cleared_by_side` 不要求该路分出胜负 ⇒ 墙提前消失，
+是 9.27 P1 的镜像）**另立一轮**。
