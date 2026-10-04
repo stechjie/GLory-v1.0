@@ -335,6 +335,10 @@ func _start_replay(replay: Dictionary) -> void:
 	_color_flip = str(replay.get("kind", "")) == "pvp" and my_team == 1
 	if not replay.get("frames", []).is_empty():
 		_apply_replay_frame(0)
+		# Round 21 shows formation allies before combat starts. Stage only the
+		# Lantern opening cast so its silence and cast VFX wait for frame 0 playback.
+		if GameState.round_index == GameState.FINAL_ROUND and _has_live_formation_ally():
+			stage_final_intro_lanterns(_replay_by_uid)
 		_build()
 		_setup_view_toggle()
 		_start_battle_music()
@@ -346,6 +350,37 @@ func _start_replay(replay: Dictionary) -> void:
 		var playback_seconds := maxf(8.0, float((_replay_own.get("frames", []) as Array).size()) * SIM_TICK_SEC / (PLAYBACK_SPEED * _readable_speed))
 		_playback_deadline_msec = Time.get_ticks_msec() + int((playback_seconds + 20.0) * 1000.0)
 		_presentation_director.set_playback_speed(PLAYBACK_SPEED * _readable_speed)
+
+
+func _has_live_formation_ally() -> bool:
+	for fighter: Dictionary in _replay_by_uid.values():
+		if bool(fighter.get("alive", false)) and bool(fighter.get("is_formation_ally", false)):
+			return true
+	return false
+
+
+# The replay's frame 0 is already post-cast. Keep the authoritative frame intact;
+# only its presentation copies are staged during the round-21 summon. The first
+# playback tick reapplies frame 0, restoring the silence and the cast trace. The
+# skill_ready rise from zero then plays the cast once through BattleVfx's diff.
+static func stage_final_intro_lanterns(by_uid: Dictionary) -> int:
+	var staged := 0
+	for caster: Dictionary in by_uid.values():
+		if not bool(caster.get("alive", false)) or str(caster.get("def", {}).get("skill_id", "")) != "aoe_silence":
+			continue
+		var target_uids := str(caster.get("vfx_skill_target_uid", ""))
+		if target_uids.is_empty():
+			continue
+		for target_uid in target_uids.split(",", false):
+			var target: Dictionary = by_uid.get(target_uid, {})
+			var statuses: Dictionary = target.get("statuses", {})
+			var silence: Dictionary = statuses.get("silence", {})
+			if silence.has("lantern_slow_pct"):
+				statuses.erase("silence")
+		caster["skill_ready"] = 0.0
+		caster["vfx_skill_target_uid"] = ""
+		staged += 1
+	return staged
 
 
 # Normal Prep already owns these resources. Cold recovery and QA can enter the

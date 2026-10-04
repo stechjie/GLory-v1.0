@@ -3,6 +3,7 @@ extends Node
 const Harness := preload("res://tools/CheckHarness.gd")
 const RacePick := preload("res://scripts/units/RacePick.gd")
 const OfficeTestScreenScript := preload("res://officetest/OfficeTestScreen.gd")
+const BattleScreenScript := preload("res://scenes/battle/BattleScreen.gd")
 
 var _h
 
@@ -12,6 +13,7 @@ func _ready() -> void:
 	_check_combat()
 	_check_runes()
 	_check_lantern()
+	_check_final_intro_lantern_timing()
 	_check_simulator_dispatch()
 	_check_office_test_synergy()
 	_h.finish(get_tree())
@@ -31,6 +33,47 @@ func _state(player: Array, enemy: Array = [], elapsed: float = 0.0, count: int =
 		"unit_stats": {}, "log": []}
 	DamageService.set_stat_state(state)
 	return state
+
+
+func _check_final_intro_lantern_timing() -> void:
+	var player := {"uid": "p", "alive": true, "def": {"skill_id": "aoe_silence"},
+		"skill_ready": 10.0, "vfx_skill_target_uid": "e,a", "statuses": {"silence": {"remaining": 3.0, "lantern_slow_pct": 0.30}}}
+	var enemy := {"uid": "e", "alive": true, "def": {"skill_id": "aoe_silence"},
+		"skill_ready": 10.0, "vfx_skill_target_uid": "p", "statuses": {"silence": {"remaining": 3.0, "lantern_slow_pct": 0.30}}}
+	var ally := {"uid": "a", "alive": true, "def": {"skill_id": "other"},
+		"statuses": {"silence": {"remaining": 3.0, "lantern_slow_pct": 0.30}, "poison": {"remaining": 5.0}}}
+	var unrelated := {"uid": "u", "alive": true, "def": {"skill_id": "other"},
+		"statuses": {"silence": {"remaining": 2.0}}}
+	var by_uid := {"p": player, "e": enemy, "a": ally, "u": unrelated}
+	var staged := BattleScreenScript.stage_final_intro_lanterns(by_uid)
+	_h.expect(staged == 2 and not player.statuses.has("silence") and not enemy.statuses.has("silence")
+		and not ally.statuses.has("silence") and ally.statuses.has("poison")
+		and unrelated.statuses.has("silence"), "lantern_final_intro_no_early_silence",
+		"Round-21 summon staging must hide only Lantern's opening silence on both sides")
+	_h.expect(is_zero_approx(float(player.skill_ready)) and is_zero_approx(float(enemy.skill_ready))
+		and str(player.vfx_skill_target_uid).is_empty() and str(enemy.vfx_skill_target_uid).is_empty(),
+		"lantern_final_intro_no_early_cast", "Opening cast trace must wait until battle playback")
+	var frame := [
+		["p", 0.0, 0.0, 1000, true, 0, 10.0, 0, 0,
+			{"silence": {"remaining": 3.0, "lantern_slow_pct": 0.30}}, 0, "", "e,a"],
+		["e", 0.0, 0.0, 1000, true, 0, 10.0, 0, 0,
+			{"silence": {"remaining": 3.0, "lantern_slow_pct": 0.30}}, 0, "", "p"],
+		["a", 0.0, 0.0, 1000, true, 0, 0.0, 0, 0,
+			{"silence": {"remaining": 3.0, "lantern_slow_pct": 0.30}, "poison": {"remaining": 5.0}}, 0, "", ""],
+		["u", 0.0, 0.0, 1000, true, 0, 0.0, 0, 0,
+			{"silence": {"remaining": 2.0}}, 0, "", ""],
+	]
+	var screen := BattleScreenScript.new()
+	screen.set("_replay", {"frames": [frame], "frame_events": []})
+	screen.set("_replay_by_uid", by_uid)
+	screen.set("_state", {"player": [player], "enemy": [enemy, ally, unrelated], "visual_events": []})
+	screen.call("_apply_replay_frame", 0)
+	_h.expect(player.statuses.has("silence") and enemy.statuses.has("silence")
+		and ally.statuses.has("silence") and is_equal_approx(float(player.skill_ready), 10.0)
+		and is_equal_approx(float(enemy.skill_ready), 10.0)
+		and str(player.vfx_skill_target_uid) == "e,a" and str(enemy.vfx_skill_target_uid) == "p",
+		"lantern_final_intro_first_combat_frame", "Combat frame 0 must restore both silence and cast traces after the summon")
+	screen.free()
 
 
 func _check_runes() -> void:
