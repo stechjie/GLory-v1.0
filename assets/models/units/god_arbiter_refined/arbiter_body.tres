@@ -1,0 +1,36 @@
+[gd_resource type="ShaderMaterial" load_steps=5 format=3]
+
+[ext_resource type="Shader" path="res://assets/models/units/god_arbiter_refined/arbiter_surface.gdshader" id="1_toon"]
+[ext_resource type="Texture2D" path="res://assets/models/units/god_arbiter_refined/arbiter_albedo.png" id="2_albedo"]
+[ext_resource type="Shader" path="res://shaders/character_outline.gdshader" id="5_outline"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_outline"]
+render_priority = -1
+shader = ExtResource("5_outline")
+shader_parameter/outline_color = Color(0.08, 0.10, 0.16, 1)
+shader_parameter/outline_width = 0.006
+[resource]
+resource_name = "god_arbiter_body_material"
+next_pass = SubResource("ShaderMaterial_outline")
+shader = ExtResource("1_toon")
+shader_parameter/albedo_color = Color(1.0, 1.0, 0.96, 1)
+shader_parameter/albedo_texture = ExtResource("2_albedo")
+shader_parameter/shadow_tint = Color(0.68, 0.72, 0.79, 1)
+shader_parameter/light_threshold = 0.32
+shader_parameter/band_softness = 0.02
+shader_parameter/light_energy = 1.08
+shader_parameter/light_response = 1.5
+shader_parameter/rim_color = Color(0.85, 0.95, 1, 1)
+shader_parameter/rim_strength = 0.12
+shader_parameter/rim_power = 3.0
+shader_parameter/rim_threshold = 0.55
+shader_parameter/specular_color = Color(1, 1, 1, 1)
+shader_parameter/specular_amount = 0.06
+shader_parameter/specular_gloss = 0.7
+shader_parameter/specular_threshold = 0.5
+shader_parameter/use_normal_map = false
+shader_parameter/normal_map_depth = 0.22
+shader_parameter/emission_color = Color(0, 0, 0, 1)
+shader_parameter/emission_energy = 0.0
+shader_parameter/uv_scale = Vector2(1, 1)
+shader_parameter/uv_offset = Vector2(0, 0)

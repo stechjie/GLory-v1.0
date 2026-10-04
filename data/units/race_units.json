@@ -185,7 +185,7 @@
                       "damage_atk_pct":  2.2,
                       "def_stack_pct":  0.06,
                       "max_stacks":  5,
-                      "model":  "res://assets/models/units/god_arbiter_animated/god_arbiter_animated.tscn",
+                      "model":  "res://assets/models/units/god_arbiter_refined/god_arbiter_refined.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
                       "name_en":  "Arbiter"
