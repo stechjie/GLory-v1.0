@@ -1,5 +1,21 @@
 # Glory Beta 0.04
 
+## 2026-10-04 大祭司（god_priestess）模型精修接入 + 裙摆黑斑修复
+
+参考 `docs/CODEX_MODEL_WORKFLOW.md`，把大祭司从原包装场景切到精修场景 `res://assets/models/units/god_priestess_refined/god_priestess_refined.tscn`，并把用户箭头标记的裙摆黑块一并修掉。
+
+精修是**材质 + 挂件级**、不重建网格：主体 3046 三角面 / UV / `skin` / 表情形变与旧版是**同一资源实例**（契约逐动作断言 `old.mesh == new.mesh and old.skin == new.skin`），只换 `priestess_body.tres`（`shadow_tint` 由偏蓝 `(0.543,0.604,0.774)` 改偏灰 `(0.70,0.72,0.77)`、`light_energy` 1.35→1.05、去掉旧描边 `next_pass`）并挂两件 Blender 饰品（冠冕 → `CC_Base_Head` 204 面、襟扣 → `CC_Base_Spine02` 76 面），合计 3326 三角面 / 6 surface / 83 骨每套。RTX 3080、1440×900 隔离负载实测 6 与 12 单位帧时间无回退（差异 < 0.001 ms），draw call 6 单位 68→92、12 单位 80→128。
+
+黑斑**不是精修引入的**：原版模型同一处同样黑，且两侧贴图逐字节同一张。定位过程：先例 `repair_priest_atlas.py` 的「`max ≤ 12` + 连通域 ≥ 256px」判据对本图是 **no-op**（468750 个候选里 **99.46% 落在 UV 足迹外**；只跑它，3046 个三角面中心**一个都没变**、渲染仅差 158/1296000 像素）；把材质参数还原后重渲染黑斑**逐像素不变**、把 albedo 换成纯洋红则黑斑**整片变洋红** ⇒ 成因是反照率贴图里「UV 岛内未绘制的暗区」（`max ∈ 13..96` 的大块，连通域 3.8K~41K，远大于「<256＝墨线/眼睛」量级）。
+
+修法是两步新工具 `tools/model_refinement/pad_priestess_atlas.py`：第一步默认 gutter 模式补齐图集背景（等价于先例脚本），第二步 `--keep-gutter` **只填 UV 足迹内**——先把覆盖掩码膨胀 3px、与暗区求交，**然后**才做四邻接连通域标记（★ 顺序反了暗岛会与背景连成一块、被尺寸过滤**整片滤掉**，实测 33 个含黑斑的暗岛会全部漏掉），填 `max ≤ 96`、连通域 ≥ 800px 的暗区，< 800px 的小暗点（眼睛/墨线）原样保留。两步都声明 `painted_pixels_unchanged` / `alpha_unchanged` 为真。
+
+读数：三角面中心近黑 **82 → 11**（三动作各 3046 采样）、全图近黑 468750（纯黑口径）→ **8031**、渲染裙摆框近黑 **4723 → 145**、暗(<120) 6603 → 302；脸部与眼睛裁剪逐像素一致。契约 **2313 项通过**（比交接件多一条 `race_units.json` 正式映射断言；变异「把大祭司 `model` 改回原路径」实测转红 `failures=["formal mapping"]`、rc=1，还原后 sha256 与基线相同）。贴图探针实测运行时材质确接在修复图上、尺寸 1024×1024。**交付文件可逐字节重建**：`priestess_uv_dump.gd` 输出的 `tri_uv.json` 与交接件 sha256 相同（`f7cd11c7…`），两步重跑得到 `bc520121…`（step1）与 `a0b7b018…`（最终图），与仓库文件逐字节一致；覆盖掩码与交付 `coverage_mask.png` **IoU 1.000**（覆盖率 0.56723）。
+
+工具已**去硬编码**后移植进仓库：`build_priestess.py` 改 `--source/--texture/--out`（原来是写死的桌面绝对路径）、预览脚本里外部 `C:/.../policy_host.gd` 改为脚本内联类、战斗/备战工具的用户目录守卫改判 `application/config/custom_user_dir_name` 前缀 `GLoryPriestReview`（原来写死某个桌面目录名）；8 个新 `.gd` 全部实测可 `load()`、无解析错误（`priestess_inventory` / `contract_check` / `uv_dump` / `texture_probe` / `perf_run` / `battle_review` / `prep_capture` / 预览），2 个 Python 工具过 `ast.parse` 且 `pad_priestess_atlas.py` 已实测可逐字节复现交付贴图。
+
+素材口径：用户确认精修**进仓**，故 `assets/models/units/god_priestess_refined/` 的 14 个文件（含 7.2MB 修复贴图）随 `.gitignore` 目录白名单一起同步 `GLory-v1.0`，另加 `data/units/race_units.json` 的大祭司 `model` 一行、新增 `docs/MODEL_REFINEMENT_GOD_PRIESTESS.md`、10 个 `tools/model_refinement/` 文件与 2 个 `scenes/debug/PriestessModelRefinementPreview.*`（仓内**新增文件合计 27 个**）；同步前做全量普查（`SAME_BYTES/EOL_ONLY/CONTENT_DIFF/MISSING` 四分桶）与逐字节核对。**未执行 git add / commit / push**。非游戏产物（可编辑 `.blend`、正侧背与 A/B 截图、性能原始记录、脚本与日志）在桌面 `其他/大祭司精修_20261004/` 与 `其他/work/_qa_priestess/`。未重导 EXE/APK，**未真机验证**。
+
 ## 2026-10-04：《bug提交及修复.docx》第 1 条补漏 —— 战斗加载过场中间那道隔离墙
 
 用户回执：「现在还存在一个问题：战斗场景加载过场出现中间一个隔离墙，现要求该界面不显示该隔离墙。」（附截图，读条文字「正在准备战斗特效 · 6/13」）

@@ -62,7 +62,7 @@
                       "skill_cd":  6.0,
                       "atk_bonus":  0.08,
                       "aspd_bonus":  0.15,
-                      "model":  "res://assets/models/units/god_priestess_animated/god_priestess_animated.tscn",
+                      "model":  "res://assets/models/units/god_priestess_refined/god_priestess_refined.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
                       "name_en":  "Priestess"
