@@ -1037,6 +1037,20 @@ func _apply_replay_frame(i: int) -> void:
 		# 而模拟层是**永久**改掉的（守卫死了也不还）。这里补齐这一条跨不过边界的变更，
 		# 之后血条配色 / 敌方目标集合 / 存活计数就全都跟着对了。
 		apply_latched_team(f, str(entry[0]), _converted_ally_ids)
+	# Conversion changes membership in the simulation, not only the health-bar
+	# colour. Boundary release and side counts must read the same membership.
+	reconcile_replay_teams(_state, _replay_by_uid)
+
+static func reconcile_replay_teams(state: Dictionary, by_uid: Dictionary) -> void:
+	var player: Array = []
+	var enemy: Array = []
+	for f: Dictionary in by_uid.values():
+		if str(f.get("team", "player")) == "enemy":
+			enemy.append(f)
+		else:
+			player.append(f)
+	state["player"] = player
+	state["enemy"] = enemy
 
 # 9.24 #7：从**一帧回放**里抽出「本帧有哪些血之契约锁定了哪个目标」。
 #
@@ -1103,6 +1117,10 @@ func _finish_replay() -> void:
 	# The process loop stops refreshing positions once `_finished` is set. Refresh
 	# the authoritative final replay coordinates before the victory pose freezes.
 	_refresh_visuals()
+	# 10.04 bug 文档第 3 条：`_refresh_visuals()` 会把"本帧还在移动"的棋子下发
+	# play_run() 并挂上 0.18 秒的 run 锁，而收尾后 `_process` 立刻停在
+	# `if _finished: return` ⇒ 那次回落 idle 的刷新永不发生。这里补一次归位。
+	settle_model_animation_idle()
 	# 9.13 #2：这里**不隐藏**「查看另一队」按钮 —— Main 随后会调
 	# show_settlement_waiting()，等待期间玩家要能继续切过去补看另一队。
 	# 按钮最终随本场景一起销毁。

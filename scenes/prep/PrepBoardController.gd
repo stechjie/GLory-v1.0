@@ -147,6 +147,17 @@ func _hire_mercenary_to_slot(index: int, mercenary_index: int) -> void:
 	if not PrepRules.can_hire_mercenary(index):
 		return
 	var m: Dictionary = mercs[index]
+	# 10.04（萝卜交易失败：merc_slot_occupied）：**客机路径也必须在发请求之前判萝卜。**
+	# 原来这道门只写在下面的单机分支里，客机在上一段发完 request_economy 就 return 了
+	# ⇒ 萝卜已经花完时点卡照样发请求，服务端回了什么就弹什么，
+	# 于是玩家在「抽升级石」界面上也会看到上一笔雇佣留下的佣兵错误码。
+	# 房主/单机本来就有这道门（`show_message("萝卜不足")` 在下面），
+	# 客机补上之后三条路径口径一致：买不了就当场说清楚，不发无谓的请求。
+	var gate_cost := int(m.get("carrot_cost", -1))
+	if gate_cost < 0 or GameState.carrots < gate_cost:
+		show_message("萝卜不足")
+		SfxService.play(SfxService.CUE_UI_REJECT)
+		return
 	if not GameState.tutorial_mode and NetworkService.team_active and not NetworkService.is_host:
 		if not NetworkService.carrot_economy_enabled():
 			show_message("联机萝卜系统尚未开启")
@@ -204,7 +215,9 @@ func request_carrot_harvest_upgrade() -> void:
 		return
 	var result := GameState.upgrade_harvest_tech()
 	if not bool(result.get("ok", false)):
-		show_message("采集科技无法升级：%s" % str(result.get("error", "denied")))
+		# 10.04：这一处原先把内部错误码原样拼进 UI（`采集科技无法升级：harvest_locked_first_round`），
+		# 与「萝卜交易失败」是**同一种毛病**。统一走映射表，未登记的码也不会泄漏。
+		show_message(carrot_action_error_text("upgrade_harvest_tech", str(result.get("error", ""))))
 		SfxService.play(SfxService.CUE_UI_REJECT)
 		return
 	# 9.17：只在这一条 ok 分支上响。
@@ -293,7 +306,8 @@ func _execute_four_star_upgrade(where: String, index: int) -> void:
 		# 但服务端那份是唯一算数的。
 		var check := GameState.four_star_check(cell)
 		if not bool(check.get("ok", false)):
-			show_message("无法升四星：%s" % str(check.get("error", "denied")))
+			# 10.04：同族泄漏的**第三处**（探针 s5e 抓出来的 —— 前两处修完它还活着）。
+			show_message(carrot_action_error_text("use_upgrade_stone", str(check.get("error", ""))))
 			return
 		var c: Dictionary = cell
 		var rid := NetworkService.request_economy("use_upgrade_stone", {
@@ -309,7 +323,8 @@ func _execute_four_star_upgrade(where: String, index: int) -> void:
 		return
 	var result := GameState.upgrade_cell_to_four_star(cell)
 	if not bool(result.get("ok", false)):
-		show_message("无法升四星：%s" % str(result.get("error", "denied")))
+		# 10.04：同族泄漏（原先是 `无法升四星：%s`），统一走映射表。
+		show_message(carrot_action_error_text("use_upgrade_stone", str(result.get("error", ""))))
 		return
 	var d: Dictionary = (cell as Dictionary).get("def", {})
 	show_message(("%s upgraded to four stars" if LocaleManager.get_locale() == "en" else "%s 升为四星") % DataRegistry.unit_display_name(d, LocaleManager.get_locale() == "en"))

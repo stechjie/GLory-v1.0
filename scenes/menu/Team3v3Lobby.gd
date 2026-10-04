@@ -179,6 +179,42 @@ func _flash_row(row: Control) -> void:
 	tween.set_trans(Tween.TRANS_CUBIC)
 	tween.tween_property(row, "modulate", Color(1, 1, 1, 1), 0.45)
 
+
+# 「未准备」提醒：右下角按钮缓慢脉动（10.04 bug 文档第 2 条 · 房间手法③）。
+#
+# ★ 脉动的是**木牌底图 + 文字**，不是 `_start_btn` —— 后者是 hit 层，
+#   `modulate.a = 0`，脉动它肉眼看不到任何东西。
+# ★ 两块走在**同一条** tween 上：kill 时一起复位，不会留半亮的按钮。
+# ★ `Tokens.motion()` 在系统「减弱动态效果」下返回 0 ⇒ 自动退化成「不脉动」；
+#   此处的信息本来就靠文字（准备 ✓ / 未准备）承载，脉动只是提醒强度，丢了不丢信息。
+func _update_start_pulse(active: bool) -> void:
+	if _start_plate == null or _start_lbl == null:
+		return
+	if active and Tokens.motion(1.0) > 0.0:
+		if _start_pulse_tween != null and _start_pulse_tween.is_valid():
+			return
+		var bright := Color(1.34, 1.24, 1.04, 1.0)
+		var dim := Color(0.70, 0.72, 0.72, 1.0)
+		var t := create_tween().set_loops()
+		t.set_trans(Tween.TRANS_SINE)
+		t.set_ease(Tween.EASE_IN_OUT)
+		t.tween_property(_start_plate, "modulate", bright, 0.9)
+		t.parallel().tween_property(_start_lbl, "modulate", bright, 0.9)
+		t.tween_property(_start_plate, "modulate", dim, 0.9)
+		t.parallel().tween_property(_start_lbl, "modulate", dim, 0.9)
+		_start_pulse_tween = t
+	else:
+		_stop_start_pulse()
+
+
+func _stop_start_pulse() -> void:
+	if _start_pulse_tween != null and _start_pulse_tween.is_valid():
+		_start_pulse_tween.kill()
+	_start_pulse_tween = null
+	for node in [_start_plate, _start_lbl]:
+		if node != null:
+			node.modulate = Color(1, 1, 1, 1)
+
 func _seat_profile(index: int) -> Dictionary:
 	if index == _my_slot():
 		return AccountManager.profile
@@ -262,6 +298,11 @@ var _status_lbl: Label
 var _room_id_lbl: Label
 var _start_btn: Button
 var _start_lbl: Label
+# 10.04 bug 文档第 2 条（房间）：未准备时给本人一个「缓脉动」提醒（手法③）。
+# 要脉动的是**看得见的两块** —— 木牌底图与文字；`_start_btn` 是 hit 层，
+# 建的时候 `modulate.a = 0`（见 `_add_hit`），脉动它等于没脉动。
+var _start_plate: TextureRect
+var _start_pulse_tween: Tween
 var _host_hint_lbl: Label
 var _selftest_btn: Button
 var _screen_bands: Array[Dictionary] = []
@@ -470,7 +511,7 @@ func _build() -> void:
 		_build_slot(i)
 
 	# 右下开始按钮组、自测、提示：锚定屏幕右边（edge="right"）
-	_add_texture(TEX_START, Vector2(1300, 760), Vector2(270, 130), "right")
+	_start_plate = _add_texture(TEX_START, Vector2(1300, 760), Vector2(270, 130), "right")
 	_start_lbl = _add_label("", Vector2(1300, 790), Vector2(270, 95), 28,
 		Color(0.96, 0.87, 0.70), "right", true)
 	_start_btn = _add_hit(Vector2(1300, 790), Vector2(270, 95), _on_primary_pressed, "right", "hit_start")
@@ -661,7 +702,8 @@ func _refresh() -> void:
 		if state in ["player", "settling"]:
 			_slot_avatars[i].texture = AvatarCatalog.texture_for(str(identity.get("avatar", AvatarCatalog.default_avatar())))
 			if not identity.is_empty():
-				name_lbl.text = AccountManager.display_name(str(identity.get("player_name", "")), str(identity.get("friend_code", "")))
+				# 10.04 bug 文档第 5 条：房间座位只显示昵称（隐藏 #好友码）。
+				name_lbl.text = AccountManager.display_name(str(identity.get("player_name", "")), str(identity.get("friend_code", "")), false)
 			name_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		elif state == "empty":
 			# 9.20 bug 文档第 2 条：空位只留**圈内**那一个「空位」提示。
@@ -726,6 +768,12 @@ func _refresh() -> void:
 		else:
 			var ready := my_slot >= 0 and bool(_ready_arr()[my_slot])
 			_start_lbl.text = tr("lobby_ready_done") if ready else tr("lobby_ready")
+	# 10.04 bug 文档第 2 条（房间）：颜色照旧（契合房间），只给**未准备的本人**
+	# 加提醒 —— 右下角按钮缓慢脉动（玩家选定的手法③「对本人最有效」）。
+	# 房主也算未准备（房主按「开始游戏」时才自动提交自己的 ready）。
+	var my_seat_player := my_slot >= 0 and my_slot < states.size() and str(states[my_slot]) == "player"
+	var my_seat_ready := my_slot >= 0 and my_slot < ready_arr.size() and bool(ready_arr[my_slot])
+	_update_start_pulse(my_seat_player and not my_seat_ready)
 	if _host_hint_lbl != null:
 		_host_hint_lbl.visible = is_host_seat
 		_host_hint_lbl.text = _start_hint_text()

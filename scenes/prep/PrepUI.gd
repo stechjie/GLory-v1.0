@@ -34,6 +34,18 @@ const HP_FRAME_RED_PATH := "res://assets/ui/buttons/btn_hp_red.png"       # 血�
 const HP_FRAME_SIZE := Vector2(246, 82)                                   # 高清框 2172x724，比例 3.0
 const START_BTN_PATH := "res://assets/ui/buttons/btn_start.png"           # 开始战斗木牌框（高清透明）
 const START_BTN_SIZE := Vector2(240, 80)                                  # 比例 3.0
+
+# ── 10.04 bug 文档第 2 条（对局）：「准备 / 未准备」原来只差文字尾巴一个「✓」，太不明显 ──
+# 玩家选定「方案 B · 宝石红 / 青」，配色**呼应顶部血条（红）与法条（青）**：
+#   未准备 = 宝石红（还要你动手）    已准备 = 青（已完成 —— 与「战斗加载中」的忙碌皮肤同族）
+# 只作用于这一个按钮；非联机（教学 / 离线自测）不套色，保持原木牌金。
+const READY_TONE_PENDING_EDGE := Color(0.902, 0.216, 0.318)   # 宝石红描边
+const READY_TONE_PENDING_FILL := Color(0.263, 0.055, 0.090, 0.95)
+const READY_TONE_PENDING_TEXT := Color(1.000, 0.737, 0.741)
+const READY_TONE_DONE_EDGE := Color(0.239, 0.859, 0.820)      # 法条青描边
+const READY_TONE_DONE_FILL := Color(0.027, 0.180, 0.180, 0.95)
+const READY_TONE_DONE_TEXT := Color(0.702, 1.000, 0.973)
+const READY_BTN_TEXT_DEFAULT := Color(1.0, 0.90, 0.60)        # 木牌金（原色，非联机时用）
 const STATS_BTN_PATH := "res://assets/ui/buttons/btn_stats.png"           # 统计/战力石板框（高清透明）
 const STATS_BTN_SIZE := Vector2(140, 94)                                  # 比例 1.5
 const REFRESH_BTN_PATH := "res://assets/ui/buttons/btn_refresh_fire_lowpoly.png"
@@ -678,7 +690,7 @@ func _build_top_bar(root: VBoxContainer) -> void:
 	battle_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	battle_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	battle_label.add_theme_font_size_override("font_size", 20)
-	battle_label.add_theme_color_override("font_color", Color(1.0, 0.90, 0.60))
+	battle_label.add_theme_color_override("font_color", READY_BTN_TEXT_DEFAULT)
 	battle.add_child(battle_label)
 	battle.bind_content_label(battle_label)
 	battle.set_idle_text(tr("ui_start_battle_btn"))
@@ -1705,6 +1717,83 @@ func _on_carrot_dimmer_input(event: InputEvent) -> void:
 	elif event is InputEventScreenTouch and event.pressed:
 		_close_carrot_camp()
 
+# 10.04（萝卜交易失败：merc_slot_occupied）：经济动作被拒时的**唯一**文案出口。
+#
+# 为什么必须有一层映射（10.04 实测记录）：
+#   原来这里是 `show_message("萝卜交易失败：%s" % receipt["error"])`，
+#   **把服务端返回的内部错误码原样拼进 UI**。玩家看到的是 `merc_slot_occupied`
+#   这种 snake_case 标识符 —— 既不知道发生了什么、也不知道该怎么做，观感极差。
+#   加上四个动作共用一句话，玩家还分辨不出是**哪一步**被拒的
+#   （现象：抽升级石时看到的是上一笔雇佣留下的码）。
+#
+# 两条硬规则：
+#   ① **绝不把内部错误码漏给玩家**。表里查不到的一律走通用文案。
+#      新增服务端错误码时如果忘了登记，代价只是文案不够精确，**不会是泄漏**。
+#   ② 文案按**动作 + 错误码**两个维度查，而不是只看错误码 ——
+#      同一个 `capacity_too_low` 在不同动作下的白话不一样。
+static func carrot_action_error_text(action: String, error: String) -> String:
+	var en := LocaleManager.get_locale().begins_with("en")
+	var generic := ""
+	match error:
+		"not_enough_carrots":
+			generic = "Not enough carrots" if en else "萝卜不足"
+		"not_enough_gold":
+			generic = "Not enough gold" if en else "金额不足"
+		"merc_slot_occupied":
+			generic = "That mercenary slot is already taken, please retry" if en else "佣兵栏该位置已被占用，请重试"
+		"merc_slots_full":
+			generic = "Mercenary slots are full (8/8)" if en else "佣兵栏已满（8/8）"
+		"bad_merc_slot":
+			generic = "Invalid mercenary slot, please pick again" if en else "佣兵栏位置异常，请重新选择"
+		"bad_mercenary":
+			generic = "Unknown mercenary" if en else "没有这个佣兵"
+		"missing_carrot_cost":
+			generic = "This mercenary cannot be hired with carrots" if en else "这个佣兵不能用萝卜召唤"
+		"harvest_locked_first_round":
+			generic = "Unlocks from round 2" if en else "第 2 回合才解锁"
+		"max_level":
+			generic = "Already at max level" if en else "已是最高等级"
+		"already_used":
+			generic = "Already used this round" if en else "本回合已使用过"
+		"capacity_too_low":
+			generic = "Camp capacity too low" if en else "营地容量不足"
+		"team_stones_unavailable":
+			generic = "No upgrade stones available for the team" if en else "队伍暂无升级石"
+		"no_roll":
+			generic = "Draw failed, please retry" if en else "抽取失败，请重试"
+		"bad_phase":
+			generic = "Can't do that right now" if en else "当前阶段不能这么操作"
+		"gold_desync":
+			generic = "Gold is still syncing, please retry" if en else "金币正在同步，请稍后重试"
+		"unknown_action":
+			generic = "Unsupported action" if en else "不支持的操作"
+		"bad_request":
+			generic = "Malformed request" if en else "请求有误"
+		"unknown_uid":
+			generic = "That piece no longer exists" if en else "该棋子已不存在"
+		"last_unit":
+			generic = "Can't sell your last piece" if en else "不能出售最后一个棋子"
+		"stale_offer":
+			generic = "Shop has changed, please retry" if en else "商店已刷新，请重试"
+		"timeout":
+			generic = "Network is slow, operation timed out" if en else "网络较慢，操作超时"
+		_:
+			# ★ 兜底：**未登记的错误码一律不给玩家看原文**，只说「操作失败，请重试」。
+			#   真实错误码仍然留在客户端日志里（下面 _net_log 一行），
+			#   所以「漏登记」不会丢信息，只是文案不够精确。
+			generic = "Operation failed, please retry" if en else "操作失败，请重试"
+	if not en:
+		_log_unmapped_error_code(action, error)
+	return generic
+
+
+## 未登记错误码的唯一去处：日志。玩家看不到，开发查得到。
+## ★ 必须是 `static`：调用方 `carrot_action_error_text` 本身是 static，
+##   static 函数调不到实例方法（10.04 实测踩过：Parse Error + 「Nonexistent function」两连）。
+static func _log_unmapped_error_code(action: String, error: String) -> void:
+	print("[carrot_economy] 未登记的错误码 action=%s error=%s" % [action, error])
+
+
 func _on_carrot_economy_receipt(receipt: Dictionary) -> void:
 	var action := str(receipt.get("action", ""))
 	if action == "shop_refresh":
@@ -1732,7 +1821,7 @@ func _on_carrot_economy_receipt(receipt: Dictionary) -> void:
 			show_message("The spirit stone has been used by a teammate. Upgrade failed." if LocaleManager.get_locale() == "en" else "灵石已被队友使用，升星失败")
 			SfxService.play(SfxService.CUE_UI_REJECT)
 			return
-		show_message(("Carrot action failed: %s" if LocaleManager.get_locale().begins_with("en") else "萝卜交易失败：%s") % str(receipt.get("error", "denied")))
+		show_message(carrot_action_error_text(action, str(receipt.get("error", ""))))
 		# 9.17：服务端拒绝 = 按钮被拒绝，与单机时「钱不够」同一个反馈。
 		SfxService.play(SfxService.CUE_UI_REJECT)
 		return
@@ -1938,8 +2027,51 @@ func _refresh_start_button_label() -> void:
 		var my := NetworkService.team_local_slot
 		var ready := my >= 0 and my < NetworkService.team_ready.size() and bool(NetworkService.team_ready[my])
 		_start_battle_button.set_idle_text(tr("lobby_ready_done") if ready else tr("lobby_ready"))
+		_apply_ready_button_tone(ready)
 	else:
 		_start_battle_button.set_idle_text(tr("ui_start_battle_btn"))
+		_clear_ready_button_tone()
+
+
+# 「方案 B · 宝石红 / 青」。见文件上方 READY_TONE_* 常量的注释。
+func _apply_ready_button_tone(ready: bool) -> void:
+	if _start_battle_button == null:
+		return
+	# 忙碌态（战斗加载中）有它自己的皮肤（GloryBusy 主题变体）。实例级 stylebox
+	# 覆盖会把它整块盖掉 ⇒ 忙的时候索性让开，等它回到非 pending 再上色。
+	if _ready_button_is_busy():
+		_clear_ready_button_tone()
+		return
+	var edge := READY_TONE_DONE_EDGE if ready else READY_TONE_PENDING_EDGE
+	var fill := READY_TONE_DONE_FILL if ready else READY_TONE_PENDING_FILL
+	var ink := READY_TONE_DONE_TEXT if ready else READY_TONE_PENDING_TEXT
+	_set_ready_button_style(edge, fill)
+	if _start_battle_label != null:
+		_start_battle_label.add_theme_color_override("font_color", ink)
+
+
+# 交还给主题画（含 GloryBusy 变体），文字回到木牌金。
+func _clear_ready_button_tone() -> void:
+	if _start_battle_button == null:
+		return
+	for state in ["normal", "hover", "pressed"]:
+		_start_battle_button.remove_theme_stylebox_override(state)
+	if _start_battle_label != null:
+		_start_battle_label.add_theme_color_override("font_color", READY_BTN_TEXT_DEFAULT)
+
+
+func _set_ready_button_style(edge: Color, fill: Color) -> void:
+	var style := PrepWidgets.menu_button_style()
+	style.bg_color = fill
+	style.border_color = edge
+	for state in ["normal", "hover", "pressed"]:
+		_start_battle_button.add_theme_stylebox_override(state, style)
+
+
+func _ready_button_is_busy() -> bool:
+	if _start_battle_button == null:
+		return false
+	return str(_start_battle_button.action_snapshot().get("state", "")) == "pending"
 
 func show_message(text: String) -> void:
 	# V3 P1-04：转发给全局 GloryToast。

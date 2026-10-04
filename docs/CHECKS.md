@@ -3794,3 +3794,340 @@ headless 只能读 `stretch_mode`；像素级证据只能靠渲染图（三方�
 **资料页 `ProfileScreen` 未动**（头像 stage 只有 112×112，戴框时四边内缩 21 ⇒ 112→70。
 它与本轮同一类问题，但要把 stage 放大到 ~180 才看得见外框，属**版式改动**，用户本轮点名的只有
 「大厅 + 房间」）；**未做真机观感验收，未重导 EXE/APK**。
+
+
+
+---
+
+## 2026-10-04：隔离墙换成原生 3D 符文墙（第 1 条接手收尾）—— 换口径，不放松
+
+**背景**：`桌面\bug提交及修复.docx` 第 1 条「优化战斗场景的隔离墙模型」。同事先把墙换成
+原生 3D 符文屏障（`effects/battlefield/LaneRunicWall3D.tscn` / `.gd` / `lane_ward.gdshader`，
+`BattleArena.gd` 把 `LANE_WARD_SCENE` 放进 `_battle_3d_world`，用 `fit_between(p_top, p_bot)`
+按模拟边界端点定位），但**没有跑收尾面**，留下一处真红。
+
+### ★★★ 一条「盯着已退役实现」的断言 = 换实现后必然误报
+
+`tools/battle_final_lane_wall_check.gd` 的 `regular_crystal_changed` 原文是
+`source.contains("barrier.scale = Vector2(0.42, maxf(0.1, (bot_y - top_y) / 512.0))")` ——
+它盯的是 **`BattleLaneBarrier2D` 贴图晶柱**的铺满高度公式。第 1 条把普通分路墙换成 3D 符文墙后，
+那段 `scale` 公式**按设计消失**了，断言于是恒红。这不是「改坏了」，是**判据绑在了实现细节上**。
+
+**处理＝换口径，不放松**（长期笔记的硬规矩）：那条断言真正要守的不是 `0.42` 这个数，
+而是**用户实看定下的合同** —— 「隔断必须铺满整条边界，不许再缩短」（原注释原话：
+"你把那个晶体缩短了，看不出那种隔开的感觉，不能弄短"）。新实现里这条合同由
+**两个端点必须取自整幅战场可视上下边界**承载，于是判据改成 `_regular_ward_span_contract()`：
+
+1. 作用域**只取 `_update_3v3_dividers()` 里 `if _3v3_barriers.is_empty():` 之后的普通分路基**（决赛那一支另有断言）；
+2. `p_top` 必须取自 `visual_min.y`、`p_bot` 必须取自 `visual_max.y`（**只查 `fit_between(` 不够** —— 传两个挨在一起的点也过，必须证到端点来源）；
+3. 必须存在 `barrier.fit_between(p_top, p_bot)`；
+4. 普通分支里**不允许再出现任何 `barrier.scale` 赋值**（那正是"再缩一次"的形状）。
+
+★ 该纯函数是 `static`，并在门禁里**用合成源码自检 4 条**（正例 1 + 反例 3）。不这样验，
+就等于让外层 `if not _h.expect(source.is_empty(), "arena_unreadable", ...)` 的守卫替它背书 ——
+**把内层整段删掉也照样绿**（长期笔记：「判据别靠调用者的前置条件」）。
+
+### 读数
+
+- `battle_final_lane_wall` **8 → 12 PASS / 0 FAIL**（8 原有 + 4 条判据自检探针）。`rc=0`。
+- `battle_lane_barrier` **14 → 20 PASS / 0 FAIL**（同事已整篇重写成 3D 墙合同：`full_length` /
+  `mesh_span` / `visual_footprint` / `geometry_budget` / 低画质 / 释放生命周期 / 策反分组）。
+- 变异（真改 `scenes/battle/BattleArena.gd`，改完只认 `.r3bak` 还原、逐字节核 sha256，
+  基线先绿、启动见残留拒跑、注册 SIGTERM 兜底）：**3/3 如期 RED**，且红的键都是 `regular_ward_span_broken`：
+  - M-A `fit_between(p_top, p_bot)` → `fit_between(p_top, p_top.lerp(p_bot, 0.6))`（墙缩到 60%）→ RED
+  - M-B 在 `fit_between` 后补回 `barrier.scale = Vector2(0.42, 1.0)` → RED
+  - M-C `p_top` 误用 `visual_max.y` → RED
+  还原后 sha256 `AB63148A51AAF5E225EBC0B9181591197F1C3B6AE30494D312C706B949A9C490` 与基线逐字节相同。
+- 改动面连带回归（均 PASS / 0 FAIL）：`cold_parse_chain` 143、`battle_animation_activity` 29、
+  `battle_death_exit` 35、`battle_actor_body_on_disc` 95、`battle_visual_separation` 26、
+  `battle_body_contact` 62、`battle_reach_target` 43、`battle_readable_pace` 29、
+  `battle_presentation_director` 96、`battle_target_index` 4816、`character_opaque_depth` 314、
+  `battle_team_color` 24、`prep_battle_loading` 109。
+- 渲染复核（本机 1600×720，改完 BattleScreen/BattleRenderer 之后重出）：森林轮次 1 `walls=2`、
+  雪地轮次 6 高/低画质与释放帧各一张，边界不匹配 0；决赛轮次 21 `walls=0` 为设计使然（决赛左右对战不分路）。
+
+⚠️ **本口径未涵盖**：`tools/*_check.tscn` 全集未跑（只跑改动面 + 直接相邻面）；**未重导 EXE/APK**；
+`battle_final_lane_wall` 与 `battle_lane_barrier` 的项数已在本文件更新，但 `work/_qa_922/run_gates.py`
+套件清单（32 条）**未同步**（那会让工程重新偏离共享仓）。
+
+## 2026-10-04：《bug提交及修复.docx》第 6 条 —— 备战拖拽阈值（新增门禁 `prep_drag_threshold`）
+
+**症状**：手机端备战商店点棋子卡有时完全没反应（选中态不切换）。
+
+**根因（引擎行为，探针实测）**：引擎在按下后**累计位移 >10px** 时才会自动调一次 `_get_drag_data()`
+（≤10px 不调、11px 才调）；那次调用一旦返回拖拽数据就起了拖拽，**起拖后的那次松手永远不发 `pressed`**
+⇒ 十几像素的手抖把整次点击吞掉。★ 把实现退回修复前再跑同一探针读到 `tap12 → pressed=0 drag_start=0`
+—— 点击被吞且没有起拖，即「点一下没反应」的直接复现。四张卡的矩形与命中层级一致、逐点扫过无遮挡，
+「第 4 格格外不灵」只是拇指落点差异。
+
+**修法**：`PrepDragButton._get_drag_data()` 一律 `return null`（引擎永不接管）；拖拽改由按钮自己在
+`gui_input` 里累计位移、超过 `DRAG_START_DISTANCE = 16.0` 才 `force_drag()`，副作用与原实现逐条对齐。
+阈值必须 **> 引擎的 10px**（取 8px 等于把「吞点击」的起点提前到 8px）；钩子挂在
+`_notification(NOTIFICATION_READY)` 上、**不许用 `_ready()`** —— `PrepBoardCellButton` /
+`PrepBenchCellButton` 都覆写 `_ready()` 且不调 `super`，基类钩子会被静默顶掉。
+
+**判据**
+
+- 新增 `tools/prep_drag_threshold_check.tscn`：**64 PASS / 0 FAIL**，`rc=0`。含源码合同
+  （`_get_drag_data` 代码里只能有一个 `return` 且必须是 `return null`；不许出现 `_ready()`；阈值 >10；
+  `_launch_drag` 五条副作用）、三类按钮（基类/棋盘格/待命格）的钩子接线与驱动结果、阈值边界
+  15.99/16.0、触摸路径与多指。
+- 非 headless 探针 `work/_qa_shop/drag_fix_probe.tscn`（真窗口 1600×720 + `push_input` 真事件）
+  **24/24 OK**：`tap0/6/12/15 → pressed=1 drag_start=0`、`tap16/20/48 → drag_start=1`、
+  `ramp 12→40 → drag_start=1 drag_end=1`；引擎确实尝试过 6 次 `_get_drag_data`，返回 null 后 `pressed` 照发。
+
+**口径声明（重要）**：headless 用 `gui_input.emit()` 直接喂生产处理器，**绕过事件路由**，且
+**判不了 `pressed` 发没发**（`emit` 不跑 `BaseButton` 内建点击逻辑，实测 `pressed` 恒为 0）⇒ 门禁里
+**刻意不写任何 `pressed` 计数断言**（那会是恒真的空转断言）。「点击真的生效」只由非 headless 探针判。
+
+**变异 4/4 如期 RED**（`其他/work/_qa_1004b/mut_drag.py`；`.r3bak` + SIGTERM 兜底 + 基线先绿 + 锚点零转义）
+
+- M-A `_get_drag_data` 改回返回数据 → 门禁 5 红 + **探针 6 红**（三种类型 `tap12/15` 全变 `pressed=0 drag_start=0`）
+- M-B 阈值改 0 → 15 红；M-C 不接钩子 → 19 红；
+- **M-D 把钩子搬进 `_ready()` → 12 红，且 base 类型保持绿、board/bench 变红** —— 子类覆写 `_ready`
+  顶掉基类钩子的直接证据。
+
+还原后 sha256 `39877E7A8700773B7FC9B04ECF748A6CC751CFADDBE2FA3276A1503C983A565C` 与基线逐字节相同。
+
+**连带回归（PASS / 0 FAIL）**：`prep_long_press` 32、`board_4x4_smoke` 64、`merge_rule_parity` 29、
+`prep_shop` 34、`prep_swap` 30、`prep_empty_board` 9、`prep_detail_overlay` 32。
+
+既存红（已逐条定性，非本次造成）：`dynamic_call` 12 条（`unresolved_grew` = 硬上限 191 vs 实测 516；
+把本轮新增门禁摘出后重跑仍是 501 处 / 12 条失败、明细逐条相同）、`prep_text_coverage` 1 条。
+
+⚠️ **本口径未涵盖**：`tools/*_check.tscn` 全集未跑；未重导 EXE/APK；未真机验证；
+`emulate_mouse_from_touch` 关掉的平台上的触摸路径未实测（项目未显式配置该项，走默认 `true`）；
+16px 是阈值判断，不是手感验收。阈值放宽后 8~16px 的手势现在会判成点击（对商店是切换选中，无害；
+对棋盘格/佣兵卡分别是选中落子与雇人）—— 这个区间修复前本就是「≤10px 即点击」，语义未变、带宽变了。
+
+---
+
+## 2026-10-04：《bug提交及修复.docx》第 5 条补漏 —— 历史入口的结算面板还在显示 `#好友码`
+
+**症状**（用户回执 + 两张截图）：从「**历史对局 → 查看详情 → 详细战况**」进去的**结算面板**，
+座位名仍然显示 `昵称 #好友码`（截图里「明 #VACQNSG7（我）」「leno #7A7TH6F5」等）。
+
+**根因**：结算面板有**两个入口**，座位名来自两段不同的代码 ——
+
+- 打完那一刻：`scripts/multiplayer/FinalSettlementData.gd:18` → `display_name(..., false)`（已隐藏）；
+- 历史对局：`scenes/menu/MatchHistoryPanel.gd:322` 的 `seat_name()` → `display_name(pn, code)`（**仍带码**）。
+
+`MatchHistoryPanel.settlement_view_data()` 把 `seat_name()` 写进 `seats[].name`，而
+`FinalSettlementPanel` 直接渲染 `seat["name"]`（`:163` 玩家列、`:222` 统计表「所属玩家」列）
+⇒ 历史入口的整片结算面板带码。同一个 `seat_name()` 还喂着本面板右列的座位行（`_seat_row`，`:306`）。
+
+**修法**：`seat_name()` 调 `display_name` 时补 `false`。**仍然带码**的是好友 / 聊天 / 世界频道 / 资料页
+（资料页是玩家看自己好友码的唯一入口）—— 这条口径写进了 `AccountManager.display_name()` 顶上的注释，
+对局历史从「带码」名单里移出。
+
+**顺带修复（崩溃型陈旧 case）**：`_case_profile_shows_real_rank` 盯的 `ProfileScreen.TIER_NAMES_ZH`
+常量已被迁走（段位名表现在在 `scenes/menu/RankedTiers.gd`，8 档 → 5 档，对齐后端 `TIER_FLOORS`）。
+旧断言不只是报红 —— 紧随其后的 `src.split("const TIER_NAMES_ZH := [")[1]` **越界抛错**，
+把该 case 后半段**和后面几条 case 一起吞掉**（`checked` 83 → 67，`_case_no_hand_rolled_buttons` 没跑）。
+按「换口径不放松」改成盯**新真源**：数量**从后端 `TIER_FLOORS` 推导**（不写死），中/英文名与徽章
+三个数组都要与它对上，另钉一条「客户端不许自己列第二份名字表」。
+
+**判据**：`tools/match_history_ui_check.tscn` —— **83 checked / 0 failures**、`rc=0`
+（修复前 `FAIL 1` + 崩溃截断到 67）。相关断言：`my_name_missing`、`code_shown_in_history`（阴性）、
+`view_my_name`、`view_my_name_has_code`（阴性）、`view_any_name_has_code`（六座位阴性）、
+`tier_names_exist`、`tier_names_count`、`tier_names_en_count`、`tier_badges_count`、`dup_tier_names`。
+
+**变异 3/3 如期 RED**（`其他/work/_qa_1004c/mut_history.py`；四道加固同第 6 条）
+
+- M-1 去掉 `, false`（= 修复前实现）→ 5 红；M-3 `RankedTiers` 英文名 5→4 → 1 红（`tier_names_en_count`）；
+- **M-2 改成 `with_code = not mine`（只藏自己的、别人照漏）→ 只红 2 条**
+  （`code_shown_in_history`、`view_any_name_has_code`），`view_my_name` 保持绿
+  ⇒ 证明「六座位逐个查」那条阴性断言**不是被我自己那条遮住的空转断言**。
+
+还原后 `MatchHistoryPanel.gd` / `RankedTiers.gd` 与基线逐字节相同，`.r3bak` 已清理。
+
+**连带回归（PASS / 0 FAIL）**：`final_settlement` 41、`profile` 154、`profile_bug03` 15、
+`battle_card` 83、`battle_report` 52、`friends` 55（★ 证明 `display_name` 的**默认带码行为未变**）。
+
+既存红（已证与本轮无关）：`lobby_identity03` 2 条（`gold` / `reset`）—— **中和证明**：摘掉本轮改动后
+重跑，失败明细逐字相同；且 `Team3v3Lobby.gd` 不引用 `MatchHistoryPanel`，名字颜色已改成
+`Tokens.GOLD_HOVER / TEXT_PRIMARY`，门禁却仍写死旧的 `Color(1,0.82,0.18)` ⇒ 陈旧门禁。
+`procedural_ui_ratchet` 3 条（明细不含 `MatchHistoryPanel.gd`）。`final_settlement_transport_check`
+需要服务端，headless 下 `FINAL_TRANSPORT TIMEOUT`（非 `CHECK_RESULT` 式门禁）。
+
+⚠️ **本口径未涵盖**：未重导 EXE/APK、未真机验证；`tools/*_check.tscn` 全集未跑；
+改动文件行尾实测均 `pureLF=0`，全工程 `.r3bak/.mutbak/.bak/.tmp` 残留 0。
+
+## 2026-10-04：《bug提交及修复.docx》第 1 条补漏 —— 战斗加载过场中间那道隔离墙
+
+**症状**（用户回执 + 截图，读条文字「正在准备战斗特效 · 6/13」，顶部青色进度条）：
+战斗场景**加载过场**期间，画面正中竖着一道隔离墙。
+
+**根因（是时机，不是墙本身）**：墙在 `BattleArena._add_battle_3v3_dividers()`（`BattleArena.gd:429`）
+随 `_build()` 就建好并挂进 `_battle_3d_world`，但 `position` **仍停在原点 `(0,0,0)`**；唯一摆位者
+`_update_3v3_dividers()`（`:449`，普通墙走 `barrier.fit_between(p_top, p_bot)`）只由
+`BattleRenderer._refresh_visuals()`（`:101`）调用，而它要等 `_battle_setup_ready` ——
+`BattleScreen._process()` 开头 `if not _battle_setup_ready: return`（`:220`），该标志**到
+`_prepare_battle_models()` 末尾（`:576`）才置 true** ⇒ 读条期摆位**一次都没跑**、两道墙叠在原点成一道。
+`_battle_3d_root.visible = false` 只藏单位模型，**藏不到墙**（墙挂在 `_battle_3d_world`）。
+
+**修法**：`LaneRunicWall3D` 加抑制标志 `_preview_hidden` + `set_preview_hidden(enabled)`，并把可见性的
+**两个写入点**都过这个标志 —— `rebuild()` → `visible = not _released and not _preview_hidden`、
+`play_loop()` → `visible = not _preview_hidden`（★ **不改 `play_loop()` 就是白按**，它自己会 `visible = true`）。
+`BattleArena` 在 `_add_battle_3v3_dividers()` 的 `play_loop()` **之后**按住，在 `_update_3v3_dividers()`
+能摆位的第一帧撤销（同函数同帧 ⇒ 无「先露原点再跳位」的闪烁）。默认 `false` ⇒ 不改变任何原有行为。
+
+**判据**：`tools/battle_lane_barrier_check.tscn` **20 → 33**（+13：行为 6 条 + 结构 7 条），
+**33 checked / 0 failures**。含 `hold_after_play_loop`（用 `find()` 下标比较，**钉死「按住必须排在
+`play_loop(i * 7)` 之后」**，防顺序写反＝白按）。
+
+**变异 10/10 如期 RED**（`其他/work/_qa_1004d/mut_wall.py`；四道加固；锚点零反斜杠转义、
+每文件用**自身 EOL**）：M1 去掉按住 → `hold_after_play_loop`；M2 标志置 `false` → `arena_flag_set`；
+M3 删撤销块 → 2 红；M4 `play_loop` 改回 `visible = true` → 2 红；M5 忽略 `enabled` → `preview_hold`；
+M6 `rebuild` 改回 → 2 红；M7 删一条断言 → `checked` 33→32 仍 PASS（**活代码证明**，非空转）；
+M8 默认值改 `true` → 2 红；M9 恒隐藏 → `preview_hold_release`；M10 `rebuild` 恒隐藏（过度抑制）→ 2 红。
+新增 13 条断言中 **12 条被杀死**，唯一未杀的 `wall_api` 属**编译级**守卫（删方法即编译不过），如实声明。
+还原后三文件 sha256 与基线逐字节相同，`.r3bak` 已清理。
+
+**连带回归（PASS / 0 FAIL）**：`battle_lane_barrier` 33、`battle_final_lane_wall` 12、
+`cold_parse_chain` 143、`bug0911` 42（它**直接调** `_add_battle_3v3_dividers()`，验决赛不建墙）。
+既存红 `dynamic_call` 12（`unresolved_grew` 实测 **516**，改动前后同值）、`procedural_ui_ratchet` 3 ——
+本轮 diff **无新增** `StyleBoxFlat.new()` / `Button.new()`，该指标**可证不变**。
+
+⚠️ **本口径未涵盖**：未重导 EXE/APK、未真机验证；`tools/*_check.tscn` 全集未跑；残留普查 0。
+★ **行尾遗留（需单独决策）**：本轮改动的 `scenes/battle/BattleArena.gd`、`effects/battlefield/LaneRunicWall3D.gd`、
+`tools/battle_lane_barrier_check.gd` 在 **codex 侧是 LF**（同事 10.04 改动带来的，**非本轮改出**；`Edit` 保留原行尾，
+对照上一节改的 `MatchHistoryPanel.gd` 仍是 CRLF）。**共享仓里**那两个**已跟踪**文件（`BattleArena.gd` /
+`battle_lane_barrier_check.gd`）的既有版本是 CRLF —— `git ls-files --eol` = `i/lf w/crlf`，与仓惯例一致
+（`core.autocrlf=true` ⇒ 索引 LF、检出 CRLF）；`effects/battlefield/*` 仓里还没有，按同一惯例（无 `.gitattributes`
+例外）也写 CRLF。⇒ 同步后普查里这几个文件呈现「仓 CRLF / codex LF」（归 `EOL_ONLY`，与那 34 个 `*.import` 同类）。
+本轮**未强行转换 codex 侧行尾**，**建议单独排一轮决定是否全仓统一行尾**。
+
+## 2026-10-04：《bug提交及修复.docx》第 4 条 —— 穿墙攻击（证伪）+ 恐惧魔跨墙推挤（已修）
+
+**门禁**：`work/_qa_1004e/probe_cross_wall_1004e.{gd,tscn}`，**87 checked / 0 failures**。
+⚠️ 位置在 `work/`（被 `.gitignore` 忽略）⇒ **仓内没有这条门禁的副本**，
+共享仓要复跑得先从 `其他/work/_qa_1004e/evidence/` 取。
+
+### 「穿墙攻击」证伪：不是不需要查，是**构造不出来**
+
+三套互不引用的判据：A 层 `_can_target`（`:1011`，只查**敌队**在 `attacker.lane` 有无活人，1 个组合）、
+B 层 `_boundary_released`（`:1069`，∃ team 的 4 个组合）、C 层 `_reachable_lanes_for`（`:1085`，逐段扩张）。
+**B 是 A 的超集** ⇒ **A 放行跨路 ⇒ 对应 boundary 必然释放** ⇒「墙立着还能打过去」在 A 层不可构造。
+四种局面 4/4 成立，端到端 80 tick `locked_cross=0`。**故本条不改选敌层**
+（改了会破坏 9.27 D1「清空自己路后跨路支援」）。
+
+### 真实缺陷：fear 推挤整路平移
+
+`_skill_fear`（`BattleSimSkills.gd:243`）选敌走 `_nearest`→`_can_target`（无 C 层过滤，
+但被上面那条不变式兜住 ⇒ **不会隔墙释放**）；位移在 `BattleSimulator._step_team:661-666`
+走 `_move_without_pushing`，而那函数原本 clamp **只有竞技场边框 45~955，没有 lane 约束**。
+`away = (target.pos - caster.pos).normalized()` ⇒ **方向由施法者站位决定**（施法者在目标左侧 ⇒ 推向隔断、越界）。
+推距：1~3★ `fear_sec:2.0` ⇒ **346.5px**（1.04 个 lane 带宽 333.3）；4★ 3.0s ⇒ **519.8px**（1.56 倍）。
+
+**修法**：`BattleSimShared` 新增 `lane_band_x` / `clamp_x_to_lane` 作**唯一真源**（闭区间、相邻带共享端点）；
+`_move_without_pushing` 加**可选** `clamp_lane: int = -1`，fear 分支显式传本单位 lane。
+★ **普通行走调用点（`:748`）刻意没改** —— 它也走同一函数，而跨路支援是 D1 明确允许的
+⇒ 约束必须由**调用方显式传入**，绝不能内置进公共位移函数。
+
+### ★★ 一条被返工的判据：B6 的「对称」是错判据
+
+原来判「推挤后选敌权对称 / 不再单方面挨打」。**修前修后读数完全相同**
+（`被推单位打不到 p2 = true`、`p2 能打到它 = true`）⇒ 这个不对称**不是推挤越界引起的**，
+而是 A 层 `_can_target` 自身的语义：p2 打 lane1 的敌人时查「enemy 在 lane2 有无活人」= 无 ⇒ 放行；
+敌人打 lane2 的 p2 时查「player 在 lane1 有无活人」= 有 ⇒ 挡住。**攻守查的不是同一路**，天然不对称。
+现改为**无 fear 对照组**：不施放 fear、不推挤，只把 enemy lane1 的单位直接摆到修前落点 x=730，
+同样的不对称照样出现 ⇒ 成因钉死在 A 层，且这条**直接打生产函数**、对 M1/M2 变异必红。
+**教训**：断言绿了两次就默认它对 —— 必须核对「修前修后读数是否真的变了」。
+
+### ★★ 变异暴露的判别力漏洞：B4/B5 抓不到「删掉 fear 位移」
+
+M3（fear 分支 → `pass`）下单位**原地不动**，而起点本来就在带内
+⇒ 「位移 ≤ 带宽」「终点在带内」两条照样全绿。补 **B4b**：钉住「推挤**确实发生**且正好停在带边界」，
+M3 下位移 0.0px 立即转红。
+
+### ★★ M5 证明「问唯一真源」的价值
+
+把 `_in_band` / `_band_overflow` 改成直接问 `Shared.lane_band_x`（不在探针里复刻带宽算式），
+再把 `lane_band_x` 的 lane1 带写错（±120px）⇒ `s3_band_endpoints_shared` 转红。
+若探针自带一份算式，这个变异**测不出来**。
+
+**变异 5/5 如期 RED**（`其他/work/_qa_1004e/mutate_shared.py`、`mutate_fear_push.py`、`mutate_lane_clamp.py`；
+四道加固、只认 `.r3bak/.r4bak`、见残留拒跑、SIGTERM/SIGINT 兜底）：
+M1 `_can_target`→`true` 3 红｜M2 →`false` 10 红｜M3 去 fear 位移 4 红（含 2 条 B4b）｜
+M4 `clamp_x_to_lane`→`return x` 10 红（含 3 条 `clamp_pulls_back`）｜M5 带宽写错 2 红。
+还原后 `BattleSimShared.gd` 70994 B / 1534 CRLF / `c7cc3f15…`、
+`BattleSimulator.gd` 94363 B / 1752 CRLF / `3e26ff70…`，残留 **0**。
+
+### ★★ 顺手救活一条**一直失效**的门禁：`probe_lane_partition_927` 根本没跑起来
+
+`tools/qa_history/20260922/probe_lane_partition_927.tscn` 的 `ext_resource` 指向
+`res://work/_qa_922/probe_lane_partition_927.gd` —— 而 `work/` 被 `.gitignore` 忽略、**该文件已不在磁盘上**
+⇒ 引擎挂了个空引用，只输出 `PERFLOG` 常驻渲染、**永远不退出**（本次撞上宿主 bash 时限被 SIGTERM 才发现）。
+真实脚本在 `tools/qa_history/20260922/probe_lane_partition_927.gd`（仓内、34676 B）。
+已把 `path=` 改到仓内真实位置 ⇒ **52 checked / 0 failures**（修前一次都没跑过）。
+★ 教训：`.tscn` 里的 `path=` 失效**不会报错**，只会让门禁静默变成空场景；
+「跑出来一堆 PERFLOG 且不退出」就是征兆。
+
+**连带回归（PASS / 0 FAIL）**：`cross_wall_1004e` 87、`battle_lane_barrier` 33、
+`battle_final_lane_wall` 12、`lane_partition_927` 52、`battle_death_exit` 35、`twin_boss` 28、
+`cold_parse_chain` 143。
+
+⚠️ **本口径未涵盖**：未重导 EXE/APK、未真机验证。
+**母灵处决 `_mother_execute_target`（`BattleSimTreasures.gd:449`）刻意不改**（注释写了「本路优先，
+没有再退到全场敌人」＝有意设计）。
+**B 层语义收窄**（`_lane_cleared_by_side` 不要求该路分出胜负 ⇒ 墙提前消失，
+是 9.27 P1 的镜像）**另立一轮**。
+
+## 2026-10-04：联机偶弹「萝卜交易失败：merc_slot_occupied」（第 7 条）—— 判定顺序 + 文案出口
+
+**根因（三层，主因在服务端）**
+
+1. **判定顺序错（主因）**：`EconomyLedger._hire_merc_carrot` 原顺序
+   「先查槽位（:279）→ 再查萝卜（:284）」。萝卜已花完且请求槽恰被占时，
+   服务端**先回 `merc_slot_occupied`**，把「萝卜没了」这个真因完全掩盖。
+   探针读数：`s2_current_order_error=merc_slot_occupied` / `s2_fixed_order_would_be=not_enough_carrots`。
+   **这也解释了「不是每次弹」**：撞上槽位 ⇒ 这个码；没撞上 ⇒ 一路走到萝卜检查
+   ⇒ `not_enough_carrots`（玩家不觉得异常）。探针 S3：同一萝卜 0 的状态下三个槽位给三种码。
+2. **客机路径无萝卜门**：房主/单机在发请求**之前**本地判萝卜，不走 `EconomyLedger`；
+   客机没有这道门（修前 `request_economy` 在 646 行、萝卜判定在 918 行，走不到）。
+3. **提示泄漏内部错误码且不分动作**：`PrepUI:1747` 四个action 共用
+   `"萝卜交易失败：%s" % receipt["error"]`，原样拼 `snake_case`，且只印 `error` 不印 `action`。
+
+**修法**：①`_hire_merc_carrot` 把萝卜检查提到槽位检查之前（判据按**因果先后**排）；
+②`PrepBoardController` 客机路径补萝卜门 + 同族三处泄漏改走映射表；
+③`PrepUI` 新增唯一文案出口 `static func carrot_action_error_text(action, error)`
+（20+ 条映射，**未登记一律「操作失败，请重试」，绝不暴露 `snake_case`**）。
+
+**门禁**：`work/_qa_1004h/probe_carroot_order_1004h` **13/0 / exit 0**。
+S5 **直接调生产映射函数** —— 外层 `_on_carrot_economy_receipt` 会先按action 白名单return，
+删掉映射调用它也照样全绿（判别力陷阱，与9.27 那条同源）。
+
+**变异4/4 如期 RED**（还原后逐字节相同）：
+
+| 变异 | 手法 | 转红 |
+|------|------|------|
+| M1 | 萝卜检查移回槽位检查之后（= 修前顺序） | 3 条（S1/S2/S3） |
+| M2 | 删掉槽位占用检查那一行 | 2 条 ⇒ 证明「调顺序没把判据弄丢」 |
+| M3 | 打`merc_slot_occupied` 那一条 case | **恰好 S5a**，S5b/S5c 保持绿 |
+| M4 | 打兜底分支 `_:` | **恰好 S5c**，S5a/S5b 保持绿 |
+
+**★ M3 返工两轮，两次都是假绿（值得记住）**
+
+1. 把整个 `carrot_action_error_text` 换掉 ⇒ **编译被破坏**
+   （`A void function cannot return a value` / `Nonexistent function`），
+   门禁只跑到 8 项就报 `PASS` ⇒ 作废。
+   **教训：门禁提前中断时的 `PASS` 不是通过。要核对 `checked` 数量是否与基线一致。**
+2. 改用表内单条 case 替换后，**切片索引写错**
+   （`raw[start + len(line):]` 把绝对索引当相对长度用）
+   ⇒ 切点落进中文 UTF-8 字符中间 ⇒ 产出非法 UTF-8，Godot 直接
+   「contains invalid unicode」拒载脚本 ⇒ **又一次假绿**。
+   修法：脚本加两道**落盘前**的闸 —— 变异后必须仍含函数签名 ＋ 必须是合法 UTF-8。
+
+**★ 文本断言必须能看穿注释**：`s5d` 判`not src.contains("萝卜交易失败：%s")`
+会**永远红** —— 我自己写的注释里就引用了这句原文。
+正确做法是**先把整行注释剔掉再搜**（`_strip_comments`）。
+
+**连带回归**：`carrot_online` **101/0**、`carrot_economy` **2480/0**、
+`cold_parse_chain` **143/0**、`prep_shop` **34/0**、`tutorial_carrot_flow` **47/0**
+（⚠️ 旧式门禁，输出 `47 passed, 0 failed` 而非 `CHECK_RESULT`，口径不同不是失败）。
+
+**⚠️ 本口径未涵盖**：`_apply_remote_mercenary:6049` 的**静默丢弃回执**没动
+（`GameState.mercenary_slots` 与 `prep.roster[merc_slot]` 是两套账，
+探针 S8 实测服务端占满 8 个而客户端只同步到 7 个 —— 这是「为什么会撞车」的**上游成因**，
+修它要动服务端回执语义，风险高，**另立一轮**）。未重导 EXE/APK、未真机验证。

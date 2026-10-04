@@ -662,7 +662,10 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 			var fear: Dictionary = f.statuses.fear
 			var away := Vector2(float(fear.get("away_x", 0.0)), float(fear.get("away_y", 0.0)))
 			var retreat := away * float(f.move_speed_px) * StatusEffectService.move_speed_multiplier(f) * TICK_SEC
-			_move_without_pushing(f, retreat, bodies)
+			# ★ 10.04 第 4 条：传本单位 lane，把推挤收进自己的隔离墙带内。
+			#   away 由 `(target.pos - caster.pos)` 决定 —— 施法者在目标左侧时朝 +x，
+			#   一次 fear 就能把目标推过 333.3px 的隔断线进��邻路。收窄后越界不再发生。
+			_move_without_pushing(f, retreat, bodies, int(f.get("lane", -1)))
 			continue
 		if StatusEffectService.is_stunned(f):
 			continue
@@ -796,7 +799,18 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 #
 # 9.27：内层扫掠已抽到 BattleSimShared._first_contact（同一份几何），供"选敌避让"
 # 复用，避免两处各写一套扫掠而漂移。
-static func _move_without_pushing(f: Dictionary, displacement: Vector2, bodies: Array) -> void:
+#
+# 10.04 bug 文档第 4 条（恐惧魔跨墙推挤）：新增**可选** `clamp_lane`。
+#   fear 推挤实测一次推 346.5px（4★ 519.8px），而一个 lane 带宽只有 333.3px
+#   ⇒ 单位被整路平移进隔壁路，lane 字段却不变，于是「站进了 lane1 但逻辑上属
+#   lane0」，和身边的敌人**互相都打不到**（详见 scripts/battle/BattleSimShared.gd
+#   的 lane_band_x / clamp_x_to_lane 注释）。
+#   ⇒ fear 分支传自己本单位 lane，位移收进本路带内。
+#
+# ⚠ 默认 -1 = **不收窄**，这是刻意的：普通行走（唯一另一个调用点）必须能跨带，
+#   因为「清空自己路后去支援别路」是 9.27 D1 明确允许的。约束由调用方显式传入，
+#   绝不能内置到这个公共位移函数里。
+static func _move_without_pushing(f: Dictionary, displacement: Vector2, bodies: Array, clamp_lane: int = -1) -> void:
 	var position: Vector2 = f.pos
 	var remaining := displacement
 	var radius := body_radius(f)
@@ -838,7 +852,9 @@ static func _move_without_pushing(f: Dictionary, displacement: Vector2, bodies: 
 			elif travel_minus > travel_plus + 0.001:
 				side = -1.0
 			remaining = tangent * budget * side
-	f.pos = Vector2(clampf(position.x, 45.0, ARENA_W - 45.0), clampf(position.y, 40.0, ARENA_H - 40.0))
+	f.pos = Vector2(
+		clamp_x_to_lane(clampf(position.x, 45.0, ARENA_W - 45.0), clamp_lane),
+		clampf(position.y, 40.0, ARENA_H - 40.0))
 
 
 # Residual spawn/skill overlaps only; walking above cannot create penetration.

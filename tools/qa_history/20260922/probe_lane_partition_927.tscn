@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3 uid="uid://cprobe927lanepart"]
 
-[ext_resource type="Script" path="res://work/_qa_922/probe_lane_partition_927.gd" id="1"]
+[ext_resource type="Script" path="res://tools/qa_history/20260922/probe_lane_partition_927.gd" id="1"]
 
 [node name="ProbeLanePartition927" type="Node"]
 script = ExtResource("1")

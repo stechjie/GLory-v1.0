@@ -388,8 +388,20 @@ signal profile_changed(profile: Dictionary)
 # ⚠️ players.player_name 不唯一（database/001 的设计）。你叫 Leno，
 # 别人改名成 Leno 就能冒充你 —— 只要 UI 里存在任何一处只显示昵称的地方，
 # 冒充就成立。所以显示名只能从这里出，不许有第二个拼法。
-func display_name(player_name: String, friend_code: String) -> String:
-	if friend_code.is_empty():
+# ★ 10.04 bug 文档第 5 条：**大厅头像资料卡 / 房间座位 / 结算面板三处**要求
+#   隐藏 #好友码、只显示昵称 —— 这三处传 `with_code = false`。
+#   （10.04 二次反馈：结算面板有**两个入口** —— 打完那一刻走
+#   scripts/multiplayer/FinalSettlementData.gd，历史对局走
+#   scenes/menu/MatchHistoryPanel.gd 的 seat_name()。两个入口都要 false，
+#   漏掉历史那个入口，就是「结算面板隐藏 #ID 未实现」。）
+#
+#   其余入口（好友 / 聊天 / 世界频道 / 资料页）**一律保持带码**：
+#   上面那段「只显示昵称就能冒充」的推理仍然成立，去掉码是**玩家明确要求的
+#   展示口径**，不是对这条推理的推翻 —— 所以它必须是**显式传入**的参数，
+#   而不是默认行为。资料页尤其不能去码：那里是玩家唯一能看到自己好友码的地方
+#   （删号还要手打确认），去了码等于把功能删掉。
+func display_name(player_name: String, friend_code: String, with_code: bool = true) -> String:
+	if not with_code or friend_code.is_empty():
 		return player_name
 	return "%s #%s" % [player_name, friend_code]
 

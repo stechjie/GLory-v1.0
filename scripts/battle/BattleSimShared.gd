@@ -1098,6 +1098,41 @@ static func _reachable_lanes_for(caster: Dictionary, state: Dictionary) -> Array
 	return out
 
 
+# 10.04 bug 文档第 4 条（恐惧魔跨墙推挤）：**位移的 lane 带边界** —— 唯一真源。
+#
+# 隔断线的几何与表现层一致：lane 0 带 = [45, WALL_A]、lane 1 带 = [WALL_A, WALL_B]、
+# lane 2 带 = [WALL_B, ARENA_W-45]，其中 WALL_A = ARENA_W/3、WALL_B = ARENA_W*2/3。
+# 端点用**闭区间**且相邻带共享端点 —— 这样「正好站在线上」两个归属都说得通，
+# 不会在 clamp 后立刻又被判成越界。
+#
+# ★ 只有**强制位移**（fear 推挤）才按这个收窄。**普通行走不能**：
+#   「清空自己路后去支援别路」是 9.27 D1 明确允许的（D1 = 隔断已释放时跨路支援），
+#   而 `_move_without_pushing` 的行走调用点也正是靠这条走到别路去。
+#   两者共用同一个位移函数，所以约束必须由**调用方显式传入**，不能内置。
+#
+# 返回该 lane 允许的 x 区间。lane < 0 / 非 team_mode ⇒ 返回 null（调用方跳过）。
+static func lane_band_x(lane: int) -> Vector2:
+	if lane < 0 or lane > 2:
+		return Vector2.ZERO
+	var wall_a := ARENA_W / 3.0
+	var wall_b := ARENA_W * 2.0 / 3.0
+	match lane:
+		0:
+			return Vector2(45.0, wall_a)
+		1:
+			return Vector2(wall_a, wall_b)
+		_:
+			return Vector2(wall_b, ARENA_W - 45.0)
+
+
+# 把 x 收进指定 lane 的带。非 team_mode / lane<0 ⇒ 原样返回（不过滤）。
+static func clamp_x_to_lane(x: float, lane: int) -> float:
+	if not GameState.team_mode or lane < 0 or lane > 2:
+		return x
+	var band := lane_band_x(lane)
+	return clampf(x, band.x, band.y)
+
+
 # 把候选池按"可达 lane"过滤（C 层）。无 lane 信息时原样返回。
 static func _opponents_in_reachable_lanes(caster: Dictionary, opponents: Array, state: Dictionary) -> Array:
 	var lanes := _reachable_lanes_for(caster, state)
