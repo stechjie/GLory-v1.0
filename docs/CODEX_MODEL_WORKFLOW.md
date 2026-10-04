@@ -92,7 +92,7 @@ play_idle/play_run/play_attack 等包装接口与正式攻击同步参数：
 
 正面方向用实际眼睛、脚尖、武器和骨骼姿态确认，不凭 `model_base_yaw` 或静态 AABB 猜测。正式游戏的朝向补偿与美术正面可不同；本轮已发现 180° 误标，旧错误截图保留为失败证据，最终对照重新采集。截图元数据应含 unit_id、实际资源、镜头、朝向、动作名与准确采样秒数。
 
-再把目标与至少两个最容易混淆的同族角色放在同一画面：先看无名字的轮廓/灰度，再看正常材质。必要时给全族做联系表，记录身宽、头肩形状、武器、背部和站姿差异。辨识点必须在游戏实际显示尺寸下可见。
+再把目标与至少两个最容易混淆的同族角色放在同一画面：先看无名字的轮廓/灰度，再看正常材质。必要时给全族做联系表，记录身宽、头肩形状、武器、背部和站姿差异。辨识点必须在游戏实际显示尺寸下可见。正式战斗镜头从高处看：玩家看到的己方单位主要是**背面和头顶**，敌方才是正面；识别点至少要在背面/俯视下成立（暗族批次中，法师光环在敌方正面被兜帽挡住，但在己方背面最醒目）。
 
 ### 3.2 分开诊断，不先加面
 
@@ -120,6 +120,8 @@ play_idle/play_run/play_attack 等包装接口与正式攻击同步参数：
 
 神侍案例与复现命令见 [MODEL_REFINEMENT_GOD_PRIEST.md](MODEL_REFINEMENT_GOD_PRIEST.md) 的“黑斑修复追加验收”。`tools/model_refinement/repair_priest_atlas.py` 使用 Pillow/NumPy 为该角色图集补齐大块近黑空白；其中颜色、连通区域面积和扩边阈值仅针对这张图调校。用于其他角色前必须重新核验掩码，不能把“小块一定是眼睛、大块一定是空白”当作通用规则。
 
+AI 生成图集常见三个隐患：岛与岛之间是**不透明黑色**（`fix_alpha_border` 无效，低 mip 会把黑边混进细小岛，造成颗粒/黑楔）；全图 alpha=255 却按 RGBA 压缩（显存翻倍）；烘焙时把肤色串到头发/披风边缘。整族统一乘色或压暗会掩盖第三项，一旦提亮材质就会露出来。修法是按真实网格 UV 光栅化覆盖区、只对覆盖区重采样并向外扩边、按三角朝向修补串色，存 RGB；不要靠再压暗来藏。
+
 ## 4. 免费工具与开源资料怎样选
 
 主路径是 **Blender 原生建模/bpy → 可编辑 `.blend` → GLB 与贴图 → Godot 包装场景**。已有 Godot 程序几何也可用，但必须有真实可编辑几何与可复现参数。工具只解决已发现的缺口，无需安装整张清单。
@@ -142,7 +144,7 @@ Blender 选用与本地制作脚本兼容的版本，根据 Windows/macOS 和 CP
 1. **比例和主轮廓。** 先完成可辨识的黑色剪影，落实职业识别点。坦克可用坚实胸肩、稳定下肢与防御器具体现定位；具体设计必须与现有角色动作及设定一致。
 2. **中尺度部件。** 处理甲片叠层、肩/胸/腰的承接、器具厚度和倒角。用几何表现会改变轮廓和遮挡的结构。配件不能悬浮、过度对称复制或覆盖所有关节。
 3. **表面细节。** 用材质分区、粗糙度、法线和适度雕纹建立白色甲壳、金属、布料的区别。主识别线在小尺寸下仍要清楚，微细噪声不能导致手机闪烁。提高分辨率前确认 UV 与导入限制确实是瓶颈。
-4. **控制光照。** 保持基线灯光，使用局部材质实例/专属 Shader。高光要显结构，发光不能把形体洗成纯白。不得用更强灯光、景深、Bloom 或特效遮盖几何问题。
+4. **控制光照。** 保持基线灯光，使用局部材质实例/专属 Shader。高光要显结构，发光不能把形体洗成纯白。不得用更强灯光、景深、Bloom 或特效遮盖几何问题。战斗主光偏暖（约 1.0/0.84/0.62）：条带高光若乘光色，大平面（翼膜）和浅色发丝会出现成片棕褐色块；冷色调种族的高光只取光强、颜色由材质定。
 5. **必要时重拓扑/烘焙。** 先保存高模与原始绑定版本；高模细节烘焙至游戏网格的法线/粗糙度，轮廓细节保留几何。检查 UV 接缝、cage、法线方向、mipmap 边距。自动重网格后重新转移和检查权重，不假设动画仍正确。
 6. **保存可编辑源。** 保留 `.blend`、制作脚本/参数、原资源引用、GLB、材质与必要贴图。仅截图或渲染视频不构成模型交付；仅挂配件也不能自动证明主体比例和材质已改善。
 
@@ -154,6 +156,8 @@ Blender 选用与本地制作脚本兼容的版本，根据 Windows/macOS 和 CP
 
 - 优先保留现有骨架、骨名/父子关系、绑定姿势和动作库；新增刚性护甲/器具绑定适当骨骼，软部件需要正确权重。检查是否给原有动画层重复套变换。
 - 替换或压缩蒙皮网格时，还需保留所有 blend shape 名称、模式及逐顶点形变通道；动画可能引用 `V_None` 等表情轨道。仅保留骨骼和权重仍会导致 AnimationMixer 缺失目标。神侍试做曾触发此错误，修复后须再次检查三个实际动作。
+- 三份动作 FBX/GLB 的包装器里，**不同动作文件可能是不同绑定**：同一身体被重新导出到别的空间、换了骨骼朝向，甚至换了骨架命名（魅魔 run 前移 0.141；末日守卫 idle/attack 为 Mixamo 65 骨、run 为 CC 83 骨且整体高 0.844）。先导出每个动作骨架的 rest/bind 并比较，再决定零件做几套；按“该骨在该骨架皮肤里的 bind pose 一致”来挂零件，不匹配就报错，不要按动作名猜。
+- 刚性零件不要每骨一个 `BoneAttachment3D` + MeshInstance：它会让常驻 surface 按“骨数 × 动作数”增长（黑龙一度 12 > 硬上限 6）。把同一骨架的零件合成**一个蒙皮 surface**：顶点存为骨局部坐标、100% 权重到所属骨、bind 为单位矩阵，交给引擎蒙皮，相同骨架共享同一网格。
 - 比对所有已有动作的名字、长度、循环、轨道目标、根位移与攻击触发点。至少真实播放 idle/run/attack；受击/死亡有专用动作时也测，没有时保持既有处理，不为验收伪造新动作。
 - 保留 `play_idle()`、`play_run()`、`play_attack()` 等当前包装接口。不要照搬外部 skill 将动作改名 `AN_*`；不要用静态姿势或程序摆动替换原有蒙皮动作。
 - 比较身体与配件在跑步、抬手、攻击末端的相对位置，检查漂浮、穿插、脚滑、断层及镜像朝向。保留脚底/施法/命中挂点与技能包覆；修模型不应让此前护盾和武器落在错误位置。
@@ -173,6 +177,8 @@ Blender 选用与本地制作脚本兼容的版本，根据 Windows/macOS 和 CP
 
 技术通过只证明其断言覆盖的资源/契约；无关检查全绿、像素有变化、骨骼数量相同都不证明美观或动画正确。
 
+headless 运行检查时一律加超时（如 `timeout 900`）：场景脚本若有解析错误，Godot 会在无脚本的情况下一直空跑，不会退出也不会报 CHECK_RESULT。工具注释里写 `res://` 示例路径会被 `asset_manifest_check` 当成缺失引用，示例用占位符。预览若要与正式战斗一致，须对 `model_in_place_actions` 套用同一 `ModelRootMotionPolicy`，否则会看到正式路线里不存在的跑步前冲。`battle_presentation_baseline` 的固定阵容里第 1/3 回合是 PvE，B 队（含暗族）不上场；要让 B 队出现须跑 PvP 回合（`data/rounds/round_schedule.json`，如 6、21）。
+
 当前工具有明确覆盖边界：`model_bounds_check` 使用 `load_idle_only`，不证明 run/attack 的动态轮廓；`model_visual_matrix_capture` 的矩阵是 idle/attack/hit/death，缺 run，且其配置检查要求 Mobile，不能代替 Compatibility 真机结果；`model_action_playback_continuity_check` 只选中配置了 `model_in_place_actions` 包含 run 的对象，目标未配置时可能被跳过。始终检查报告实际枚举了本次 unit_id 和动作，空覆盖不能过关。
 
 ### 7.2 循环预览与视觉判定
@@ -181,7 +187,7 @@ Blender 选用与本地制作脚本兼容的版本，根据 Windows/macOS 和 CP
 
 专用入口为 `res://scenes/debug/ModelRefinementPreview.tscn`。执行前确认文件与依赖存在，再在 Godot 编辑器打开运行；不要修改项目正式主场景来启动样板。预览提供原/新模型、近景/战斗距离与真实动作观察；截帧时不用 `--headless`。
 
-**当前提供的预览和下方命令是 `god_guard` 样板。** 它的原/新路径、同族对照和标题有角色配置，不会因聊天中写“神侍”就自动换模型。测试其他角色前，创建该角色的预览并明确配置目标 ID、旧/新路径、缩放、动作、朝向及对照角色；构建时必须同时传 `--unit-id`、`--preview`、`--old-model`、`--new-model`，runner 也要传同一个 `--unit-id`，完整命令见 7.4。先检查日志、画面标题和加载资源都对应目标，再开始手机矩阵。默认样板支持 `--unit god_guard` 核验，传入其他 ID 会拒绝执行，防止成功测完错误对象。新预览须保留同样的身份校验：性能请求必须包含 `unit_id`、`old_model_path`、`new_model_path`，三项与预览配置及非空 `model_build_info.json` 一致；构建指纹也必须非空。纯交互预览不要求性能请求或构建信息。
+`ModelRefinementPreview.gd` 的目标（原/新路径、比例、美术正面、同框阵容）现由可覆写的目标表提供，默认仍只有 `god_guard`；暗族八个单位用子类 `scenes/debug/DarkRaceRefinementPreview.tscn`（`--unit dark_<id>`，`--lineup` 为全族同框，比例/三阶放大/原地动作从数据表读取），见第 10 节。**当前提供的预览和下方命令是 `god_guard` 样板。** 它的原/新路径、同族对照和标题有角色配置，不会因聊天中写“神侍”就自动换模型。测试其他角色前，创建该角色的预览并明确配置目标 ID、旧/新路径、缩放、动作、朝向及对照角色；构建时必须同时传 `--unit-id`、`--preview`、`--old-model`、`--new-model`，runner 也要传同一个 `--unit-id`，完整命令见 7.4。先检查日志、画面标题和加载资源都对应目标，再开始手机矩阵。默认样板支持 `--unit god_guard` 核验，传入其他 ID 会拒绝执行，防止成功测完错误对象。新预览须保留同样的身份校验：性能请求必须包含 `unit_id`、`old_model_path`、`new_model_path`，三项与预览配置及非空 `model_build_info.json` 一致；构建指纹也必须非空。纯交互预览不要求性能请求或构建信息。
 
 ```bash
 MODEL_PROJECT="/本机路径/GLory-v1.0"
@@ -318,6 +324,8 @@ py -3 tools/run_model_refinement_pilot.py --serial "$MODEL_SERIAL" `
 设备、源码/APK哈希、实际渲染条件、旧新性能与未测项：
 本轮失败及修正；视觉结论、尚存限制；下一位同事的复制命令：
 ```
+
+清理旧资源前先查 `assets.manifest.json` 的分类与 `required_by`：清单分类可能已过期（如女王已换 `*_smooth.fbx`，清单仍记旧 FBX 为 runtime_required）。`unit` 模型目录被 git 忽略、经资源 ZIP 分发；只删工作区文件时，`restore_assets.ps1` 会把它们还原，`asset_delivery_check` 会报缺失。重做基准（`update_asset_manifest.ps1` + `package_assets.ps1`）会一并吸收所有未提交的资源漂移，属于资源负责人的决定；删除前把文件和哈希完整备份到交付目录，并在 `docs/assets/` 记录增删清单。
 
 代码通过但视觉缺陷仍在，继续改。手机仅安装成功或样板完成，不能写成完整战斗验收。若外部条件确实阻塞，交付已有可核实证据并清楚保留待验证项；不要借技术通过宣称用户审美满意。
 
@@ -488,3 +496,75 @@ py -3 tools/run_model_battle_pilot.py --serial "$MODEL_SERIAL" `
 独立测试前后，手机正式 `com.glory.game` 保持 0.0.15（22）及原 APK SHA，没有卸载、清档或替换。供查看的循环留在 `com.glory.modelpilot`；实际手机 A/B 录屏为 `android-run/device-ab-loop.mp4`（采样结束后录制，约 16 秒），桌面近景为 `guardian-refined-loop.mp4`。正式战斗截图期间出现过瞬时 20 FPS，末帧为 61；采集包含截图读回和 PNG 写入，本轮未隔离这些成本，不能宣称整局稳定 60 FPS，也不能直接归因于模型。桌面正式旧/新采集退出都记录了 Godot 的 ObjectDB/ParticlesShader 清理诊断，作为既有退出问题保留，不能称所有平台日志零告警。
 
 本轮完成状态：**MD 已经实际试用、修正并验证；光之卫士精修样板已通过资源/动画契约、桌面多视角、真实备战、独立手机矩阵和手机真实战斗表现验证。** 最终审美仍由用户判断；后续角色、低端设备、多人整局与长期热稳定性须按本文重新测量。
+
+## 10. 暗族批次：八个单位 `dark_*`
+
+记录日期 **2026-10-04**，范围由用户确认：八个一起做；暗紫为种族主色，复审后要求**全族颜色统一**、魅魔与痛苦女王不要偏粉；黑龙保持人形；不按阶位改体型，仅魔童缩小；本轮只做本地验收，之后全设备验证；清理未使用旧资源。证据与可编辑源在项目外层 `delivery/model-dark-race-20261004/`。
+
+### 10.1 诊断（基线 `captures/old/`）
+
+八份材质除阴影色外完全相同（统一乘紫 0.84/0.76/0.96、无高光/法线/自发光），图集运行时 512（三张 4096 源缩 8 倍），全族在战斗距离是同一团暗紫。每个动作 FBX 约 3,000 面，面数不是瓶颈。八个单位双眼骨中点都在头骨 +Z 侧，`model_base_yaw=180` 正确；早期矩阵截图里的“背面”是高机位俯视大发型/披风。三阶在正式战斗另有 ×1.2（`BattleRenderer.TIER3_VISUAL_BOOST`），原始模型高度本身都在 1.82～2.05。
+
+### 10.2 做法与结构
+
+- **接入**：`assets/models/units/dark_refined/<id>/<id>_refined.tscn` 实例化**未改动**的原包装器，加一个 `DarkRefinement` 子节点；`race_units.json` 只改 8 个 `model` 与魔童 `model_visual_scale 1→0.85`。回退＝改回原路径（见 `docs/assets/dark_race_refinement_20261004.json`）。
+- **材质**：`shared/dark_body.gdshader`（暗族专属，共享 `character_toon` 未改）：去掉统一乘紫，`value_lift` 按 sqrt 提亮暗部不改色相；**统一色板**——饱和颜色（粉、橙、金）按饱和度沿色环拉向种族紫 `race_hue≈277°`（默认 0.85，魅魔/女王 0.95），低饱和的皮肤、白发、钢色保留；各单位只按自己图集的色相带决定“哪些细节发光”，发光与边缘光一律同一紫色；浅色饰边只取光强的冷色条带高光；末日守卫用已有的烘焙法线。参数表在 `tools/model_refinement/dark_race_materials.py`（`RACE_HUE`/`RACE_GLOW`）。
+- **贴图**：`tools/model_refinement/dark_race_textures.py` 按真实 UV 覆盖重采样、扩边、修补黑龙后/顶部发丝的肤色串色，输出 1024 RGB（DXT1/ETC2，比原 512 DXT5 每张多约 0.4 MB）。原图集保持不动。
+- **识别零件**（Blender 5.1，`tools/model_refinement/build_dark_parts.py`，可编辑源 `source/<id>/parts/<id>_parts_source.blend`；所有发光件同一紫色）：魔童尾尖发光桃心；暗影法师头后符文光环；偷袭者背负镰刀（刃越过头顶）；魅魔桃心尾；恐惧魔骨色卷角；痛苦女王荆棘冠；末日守卫胸背两道魂链（链接技能）；黑龙后掠龙角、收拢龙翼与龙尾。零件按骨架 bind 匹配导出（魅魔/末日 run 各有第二套），运行时每个动作骨架合成一个刚性蒙皮 surface。
+
+| 单位 | 原常驻三角 | 新常驻三角 | 可见增量 | 识别点 |
+|---|---:|---:|---:|---|
+| 魔童 | 3,122 | 3,150 | +28 | 缩小 0.85、尾尖桃心 |
+| 暗影法师 | 9,351 | 12,039 | +896 | 符文光环 |
+| 偷袭者 | 9,267 | 10,179 | +304 | 背负镰刀 |
+| 魅魔 | 9,099 | 10,047 | +316 | 桃心尾 |
+| 恐惧魔 | 9,045 | 11,367 | +774 | 骨色卷角 |
+| 痛苦女王 | 9,162 | 11,511 | +783 | 荆棘冠 |
+| 末日守卫 | 9,312 | 12,012 | +900 | 魂链、法线 |
+| 黑龙 | 9,030 | 21,426 | +4,132 | 龙翼、龙角、龙尾 |
+
+常驻＝三个动作模型之和（隐藏动作也常驻）；全部在 `model_asset_budget` 硬预算内（黑龙 hero 档 surfaces 6/6）。
+
+### 10.3 验证（本地）
+
+- `tools/dark_refinement_contract_check.tscn -- --require-integrated`：**710 项通过**——原包装器运行所需文件哈希未变、骨架/rest/身体网格/全部片段与原版一致、每个动作骨架使用精修材质与刚性蒙皮零件、备战 idle-only 实例同样成立、贴图 ≤1024 且无 alpha。
+- 既有检查：`model_asset_budget`、`model_bounds`、`model_material_integrity`（报告列出 8 个精修路径）、`model_root_motion_inventory`、`model_action_playback_continuity` 通过；`texture_import_budget` 只检查固定 8 张贴图，**不覆盖**本批贴图。
+- 正式路线：`scripts/qa/battle_presentation_baseline.tscn` 跑 PvP 第 6、21 回合（第 1、3 回合为 PvE，暗族不上场），新旧数据各一次：6 个上场暗族单位真实加载精修场景、actor 契约完整、0 回退；`simulation_replay_sha256`、`final_state_sha256`、`frame_events_sha256` 新旧**完全相同**（玩法不变），仅 payload 因 `def.model` 改变。魔童、痛苦女王不在固定阵容中，其路由由数据契约与预览覆盖。
+- 桌面同条件（Compatibility，1280×720，同一代码版本、仅切换数据）：p95 9.09→9.26 ms（R6、R21）；峰值 draw calls 435→446、439→451；纹理显存 +3.4 MB；>100 ms 长帧 1→1。**真机未测试（本次未纳入）**，手机须重新测量，黑龙是首要观察对象。复审期间仓库合入了上游提交（crimson 更新等），合入前后第 21 回合模拟本身就不同；新旧对照必须在同一代码版本上只切换 `race_units.json`，否则会把别人的改动误判为本批的影响。
+
+### 10.4 本轮失败与修正
+
+| 轮次 | 发现 | 修正 |
+|---|---|---|
+| 01 材质 | 法师整体变成平淡淡紫；黑龙背上出现棕褐色条 | 法师不提亮、边缘光减弱；串色改为贴图修补 |
+| 02 零件 | 魅魔尾/恐惧魔角/末日锁链看不见（颜色与身体同暗或埋进护甲） | 骨色/渐变色、宽半径贴面采样、加大链环 |
+| 03 | 法师光环发粉、与魅魔撞色；俯视下翼膜大片棕褐 | 冷色“arcane”光环；高光只取光强 |
+| 04 | 光环挂胸随身体前倾偏出头部；顶部发丝仍有串色 | 光环改挂头骨；修补规则加顶面朝向 |
+| 05 动作 | 末日攻击时过肩链条漂在空中；镰刀杆尾甩出 | 链条只在躯干；镰刀杆缩短、刃加大 |
+| 预算 | 黑龙每骨一个挂点 → 12 surfaces > 6 | 合成单一刚性蒙皮 surface |
+| 复审 | 用户：颜色要统一；魅魔、女王偏粉 | 统一色板（色相拉向种族紫、单一发光色）；零件取消橙/蓝/粉；发光紫降低红分量，避免亮处溢成粉 |
+
+### 10.5 清理与待办
+
+删除 68 个运行时未使用的暗族文件（284.7 MiB：根目录原始 GLB/JPG、末日旧 FBX 与重复贴图、女王非 smooth FBX），全部按哈希备份在 `delivery/.../removed-assets/`；魔童 `attack_punching.fbx` 因 `BattleRenderer.gd` 仍有字面量而保留。`assets.manifest.json`/`assets.bundle.json` **未改**：重做基准会同时吸收 19 个与本批无关的既有尺寸差异，由资源负责人决定（见第 8 节）。
+
+尚存限制：敌方正面看不到法师光环（被兜帽挡住）；末日攻击中段链条侧视；魅魔桃心与恐惧魔卷角在己方俯视背面不明显；统一色板后魅魔/女王/魔童不再靠颜色区分，主要靠轮廓与零件，魔童尾尖在战斗距离不如橙色醒目；备战界面仅做结构验证，未单独截图；手机性能未测。
+
+### 10.6 重跑命令（Windows，先替换路径）
+
+```powershell
+$P = "D:/本机路径/GLory-v1.0"; $G = "D:/本机路径/Godot_v4.7-stable_win64_console.exe"
+$B = "D:/本机路径/blender.exe"; $D = "D:/本机路径/delivery/model-dark-race-20261004"
+# 1 导出原始骨架/身体参考（每个单位一次，--model 填原包装器）
+& $G --headless --path $P --script res://tools/model_refinement/export_unit_reference.gd -- --model <原包装器> --unit-id dark_dragon --out "$D/source/dark_dragon"
+# 2 贴图、零件、材质与场景
+py -3 "$P/tools/model_refinement/dark_race_textures.py" --refs "$D/source"
+bash "$P/tools/model_refinement/build_dark_parts_all.sh" "$B" "$P" "$D/source"
+py -3 "$P/tools/model_refinement/dark_race_materials.py"
+& $G --headless --path $P --import
+# 3 契约与画面
+& $G --headless --path $P res://tools/dark_refinement_contract_check.tscn -- --require-integrated --out "$D/audit/contract.json"
+& $G --path $P --rendering-method gl_compatibility res://scenes/debug/DarkRaceRefinementPreview.tscn -- --lineup --view battle
+```
+
+`tools/model_refinement/capture_dark_race.sh <godot> <project> <out> old|new` 批量采集全部视角（`VIEWS`/`LINEUP` 环境变量可缩小范围）。最终审美仍由用户判断。

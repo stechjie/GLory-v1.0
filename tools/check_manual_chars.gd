@@ -10,7 +10,7 @@ const CHARS := {
 	"allies/formation_ally_4_animated": ["idle.fbx", "attack.fbx", "run.fbx"],
 	"allies/formation_ally_5_animated": ["idle.fbx", "attack.fbx", "run.fbx"],
 	"allies/abyss_beast_animated": ["idle.fbx", "attack.fbx", "run.fbx"],
-	"units/dark_doom_animated": ["dark_doom_idle.fbx", "dark_doom_attack.fbx", "dark_doom_run.fbx"],
+	"units/dark_doom_animated": ["dark_doom_idle.glb", "dark_doom_attack.glb", "dark_doom_run.glb"],
 	"units/god_arbiter_animated": ["god_arbiter_idle.fbx", "god_arbiter_attack.fbx", "god_arbiter_run.fbx"],
 }
 

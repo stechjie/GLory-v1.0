@@ -10,15 +10,9 @@ const TARGET_UNIT_ID := "god_guard"
 const LOOP_SECONDS := 7.2
 const MODEL_SCALE := 0.42
 const CAPTURE_POINTS := [0.8, 3.0, 5.3, 6.9]
-# Per-asset art front, independent from gameplay model_base_yaw. Verified at
-# idle 0.8: eye midpoint is +Z from head for guard/priest/arbiter, and guard
-# front/back captures confirm the visor/chest versus rear helmet/backplate.
-# Keep entries explicit: future assets may use a different authored forward.
-const ART_FRONT_YAWS := {
-	OLD_MODEL_PATH: 0.0,
-	PRIEST_PATH: 0.0,
-	ARBITER_PATH: 0.0,
-}
+
+var _target_id := ""
+var _target: Dictionary = {}
 
 var _viewport: SubViewport
 var _world: Node3D
@@ -76,6 +70,17 @@ func _ready() -> void:
 			return
 		request = parsed
 	var args := OS.get_cmdline_user_args()
+	var unit_arg := ""
+	var unit_index := args.find("--unit")
+	if unit_index >= 0:
+		if unit_index + 1 >= args.size():
+			_error("missing value for --unit")
+			return
+		unit_arg = args[unit_index + 1]
+	var target_problem := _select_target(str(request.get("unit_id", "")), unit_arg)
+	if not target_problem.is_empty():
+		_error(target_problem)
+		return
 	var problem := validate_request(request, "--perf" in args)
 	if not problem.is_empty():
 		_error(problem)
@@ -108,10 +113,6 @@ func _ready() -> void:
 			_error("missing value for " + arg)
 			return
 		match arg:
-			"--unit":
-				if args[i + 1] != TARGET_UNIT_ID:
-					_error("This preview is configured for " + TARGET_UNIT_ID + "; configure a target-specific old/new scene before testing another unit")
-					return
 			"--capture-dir": _capture_dir = args[i + 1]
 			"--view": _view = args[i + 1]
 			"--pose": _pose = args[i + 1]
@@ -144,9 +145,41 @@ func _ready() -> void:
 	if bool(request.get("perf", false)) or "--perf" in args:
 		_start_perf(request.get("cases", []))
 	_last_usec = Time.get_ticks_usec()
-	print("MODEL_PREVIEW_READY unit=god_guard renderer=%s user=%s variant=%s paths=%s" % [RenderingServer.get_current_rendering_method(), OS.get_user_data_dir(), _variant, JSON.stringify(_paths)])
+	print("MODEL_PREVIEW_READY unit=%s renderer=%s user=%s variant=%s paths=%s" % [_target_id, RenderingServer.get_current_rendering_method(), OS.get_user_data_dir(), _variant, JSON.stringify(_paths)])
 
-static func validate_request(request: Dictionary, require_identity: bool = false) -> String:
+## Review targets keyed by unit id. A subclass replaces this table to review
+## other characters on the same stage; every entry names its own old/new
+## scenes, so a request can never silently measure a different character.
+## art_front_yaw is the authored front, independent from gameplay
+## model_base_yaw; the guard's eye midpoint is +Z from the head at idle 0.8.
+func _targets() -> Dictionary:
+	return {TARGET_UNIT_ID: {
+		"title": "神族模型精修 · 光之卫士", "old": OLD_MODEL_PATH, "new": NEW_MODEL_PATH,
+		"scale": MODEL_SCALE, "art_front_yaw": 0.0,
+		"lineup_button": "神族同框", "lineup_text": "左：神侍    中：光之卫士新版    右：裁决者",
+	}}
+
+func _default_target_id() -> String:
+	return TARGET_UNIT_ID
+
+func _select_target(request_unit: String, arg_unit: String) -> String:
+	if not request_unit.is_empty() and not arg_unit.is_empty() and request_unit != arg_unit:
+		return "--unit %s disagrees with request unit_id %s" % [arg_unit, request_unit]
+	var wanted := request_unit if not request_unit.is_empty() else arg_unit
+	if wanted.is_empty():
+		wanted = _default_target_id()
+	var table := _targets()
+	if not table.has(wanted):
+		return "This preview is configured for %s; configure a target-specific old/new scene before testing another unit" % ", ".join(PackedStringArray(table.keys()))
+	_target_id = wanted
+	_target = table[wanted]
+	return ""
+
+## Side-by-side review line-up. Each placement may carry its own scale and art front.
+func _lineup_placements() -> Array:
+	return [{"path":PRIEST_PATH,"x":-1.75}, {"path":NEW_MODEL_PATH,"x":0.0,"art_front_yaw":_target.art_front_yaw}, {"path":ARBITER_PATH,"x":1.75}]
+
+func validate_request(request: Dictionary, require_identity: bool = false) -> String:
 	for key in ["perf", "animate"]:
 		if request.has(key) and not request[key] is bool:
 			return "%s must be boolean" % key
@@ -154,10 +187,10 @@ static func validate_request(request: Dictionary, require_identity: bool = false
 		for key in ["unit_id", "old_model_path", "new_model_path"]:
 			if not request.has(key) or not request[key] is String or str(request[key]).is_empty():
 				return "%s is required for performance/build identity" % key
-	if request.has("unit_id") and str(request.unit_id) != TARGET_UNIT_ID:
-		return "unit_id does not match this preview target " + TARGET_UNIT_ID
+	if request.has("unit_id") and str(request.unit_id) != _target_id:
+		return "unit_id does not match this preview target " + _target_id
 	for key in ["old_model_path", "new_model_path"]:
-		var expected := OLD_MODEL_PATH if key == "old_model_path" else NEW_MODEL_PATH
+		var expected := str(_target.old) if key == "old_model_path" else str(_target.new)
 		if request.has(key) and str(request[key]) != expected:
 			return key + " does not match this preview model"
 	if request.has("run_id") and (not request.run_id is String or str(request.run_id).length() > 128):
@@ -266,7 +299,7 @@ func _build_ui() -> void:
 	_button(bar, "原版", func(): _variant = "old"; _layout = "single"; _rebuild())
 	_button(bar, "新版", func(): _variant = "new"; _layout = "single"; _rebuild())
 	_button(bar, "左右对照", func(): _layout = "compare"; _rebuild())
-	_button(bar, "神族同框", func(): _layout = "lineup"; _rebuild())
+	_button(bar, str(_target.lineup_button), func(): _layout = "lineup"; _rebuild())
 	_button(bar, "战斗 / 近景", func(): _close = not _close; _view = "front" if _close else "battle"; _apply_camera())
 	_button(bar, "前 / 侧 / 后", func(): _view = {"battle":"front", "front":"side", "side":"back", "back":"front"}[_view]; _apply_camera())
 	_button(bar, "循环 / 待机 / 跑 / 攻", func(): _pose = {"cycle":"idle", "idle":"run", "run":"attack", "attack":"cycle"}[_pose]; _reset_cycle())
@@ -316,15 +349,17 @@ func _rebuild() -> void:
 	_units.clear()
 	_paths.clear()
 	var placements: Array = []
+	var old_item := {"path":str(_target.old),"scale":float(_target.get("old_scale", _target.scale)),"art_front_yaw":_target.art_front_yaw}
+	var new_item := {"path":str(_target.new),"scale":float(_target.get("new_scale", _target.scale)),"art_front_yaw":_target.art_front_yaw}
 	if _layout == "compare":
-		placements = [{"path":OLD_MODEL_PATH,"x":-0.95,"z":0.0}, {"path":NEW_MODEL_PATH,"x":0.95,"z":0.0}]
+		placements = [old_item.merged({"x":-0.95}), new_item.merged({"x":0.95})]
 	elif _layout == "lineup":
-		placements = [{"path":PRIEST_PATH,"x":-1.75,"z":0.0}, {"path":NEW_MODEL_PATH,"x":0.0,"z":0.0}, {"path":ARBITER_PATH,"x":1.75,"z":0.0}]
+		placements = _lineup_placements()
 	else:
 		var columns := 3 if _count == 6 else 4
 		var rows := int(ceil(float(_count) / columns))
 		for i in _count:
-			placements.append({"path":OLD_MODEL_PATH if _variant == "old" else NEW_MODEL_PATH,"x":0.0 if _count == 1 else (float(i % columns) - (columns-1)*0.5)*1.35,"z":0.0 if _count == 1 else (float(i / columns) - (rows-1)*0.5)*1.45})
+			placements.append((old_item if _variant == "old" else new_item).merged({"x":0.0 if _count == 1 else (float(i % columns) - (columns-1)*0.5)*1.35,"z":0.0 if _count == 1 else (float(i / columns) - (rows-1)*0.5)*1.45}))
 	for item in placements:
 		var packed := load(str(item.path)) as PackedScene
 		if packed == null:
@@ -335,12 +370,10 @@ func _rebuild() -> void:
 			_error("model root must be Node3D")
 			return
 		var actor := Node3D.new()
-		actor.position = Vector3(float(item.x), -0.14, float(item.z))
+		actor.position = Vector3(float(item.x), -0.14, float(item.get("z", 0.0)))
 		actor.rotation.y = PI
-		# Refined guardian inherits the original guardian's authored orientation.
-		var calibration_path: String = OLD_MODEL_PATH if str(item.path) == NEW_MODEL_PATH else str(item.path)
-		actor.set_meta("art_front_yaw", float(ART_FRONT_YAWS.get(calibration_path, 0.0)))
-		model.scale = Vector3.ONE * MODEL_SCALE
+		actor.set_meta("art_front_yaw", float(item.get("art_front_yaw", 0.0)))
+		model.scale = Vector3.ONE * float(item.get("scale", MODEL_SCALE))
 		actor.add_child(model)
 		# Same pre-tree scaled mesh centering as BattleRenderer. Animated FBX
 		# wrappers create children in _ready; source behavior is intentionally kept.
@@ -406,9 +439,9 @@ func _set_pose(pose_value: String) -> void:
 func _update_labels() -> void:
 	if _title == null:
 		return
-	var layout_name: String = {"single":"原版" if _variant == "old" else "新版", "compare":"左：原版    右：新版", "lineup":"左：神侍    中：光之卫士新版    右：裁决者"}[_layout]
-	_title.text = "神族模型精修 · 光之卫士  /  " + str(layout_name)
-	_detail.text = "真实比例 ×0.42 · 正交 %.1f · %s · %s · %d 模型 · 三动作同相位" % [_camera.size, _view, _background, _models.size()]
+	var layout_name: String = {"single":"原版" if _variant == "old" else "新版", "compare":"左：原版    右：新版", "lineup":str(_target.lineup_text)}[_layout]
+	_title.text = str(_target.title) + "  /  " + str(layout_name)
+	_detail.text = "战斗比例 ×%.3f · 正交 %.1f · %s · %s · %d 模型 · 三动作同相位" % [float(_target.get("new_scale" if _variant == "new" else "old_scale", _target.scale)), _camera.size, _view, _background, _models.size()]
 
 func _process(delta: float) -> void:
 	if not _ready_done or _capture_busy:
@@ -564,7 +597,7 @@ func _measure_perf(wall_ms: float) -> void:
 	if file == null:
 		_error("cannot write performance report")
 		return
-	file.store_string(JSON.stringify({"schema_version":1,"unit_id":TARGET_UNIT_ID,"old_model_path":OLD_MODEL_PATH,"new_model_path":NEW_MODEL_PATH,"run_id":_run_id,"source_fingerprint":_source_fingerprint,"completed":_results.size()==_cases.size(),"animation_mode":"animated" if _animate else "frozen","scope":"isolated model scene, not whole-game benchmark","renderer":RenderingServer.get_current_rendering_method(),"os":OS.get_name(),"model":OS.get_model_name(),"gpu":RenderingServer.get_video_adapter_name(),"viewport":_viewport.size,"results":_results},"\t"))
+	file.store_string(JSON.stringify({"schema_version":1,"unit_id":_target_id,"old_model_path":str(_target.old),"new_model_path":str(_target.new),"run_id":_run_id,"source_fingerprint":_source_fingerprint,"completed":_results.size()==_cases.size(),"animation_mode":"animated" if _animate else "frozen","scope":"isolated model scene, not whole-game benchmark","renderer":RenderingServer.get_current_rendering_method(),"os":OS.get_name(),"model":OS.get_model_name(),"gpu":RenderingServer.get_video_adapter_name(),"viewport":_viewport.size,"results":_results},"\t"))
 	file.close()
 	print("MODEL_PERF_RESULT " + JSON.stringify(record))
 	_next_case()

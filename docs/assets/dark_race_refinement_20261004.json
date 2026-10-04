@@ -1,0 +1,851 @@
+{
+ "date": "2026-10-04",
+ "scope": "dark race (8 units) model refinement",
+ "engine": "Godot 4.7.stable",
+ "dcc": "Blender 5.1.2",
+ "workflow": "docs/CODEX_MODEL_WORKFLOW.md section 10",
+ "data_change": {
+  "file": "data/units/race_units.json",
+  "fields": "dark_* model -> res://assets/models/units/dark_refined/<id>/<id>_refined.tscn; dark_imp model_visual_scale 1 -> 0.85; no gameplay field changed",
+  "rollback": "set each dark_* model back to units.<id>.original below and dark_imp model_visual_scale back to 1; the original wrappers and their files are untouched (hash-verified by the contract check)"
+ },
+ "delivery": "assets/models/units/* is git-ignored; like god_guard_refined, track dark_refined with git add -f when committing. assets.manifest.json / assets.bundle.json are intentionally NOT updated (see pending).",
+ "pending_asset_baseline": "The removed files are still listed in assets.manifest.json and inside the current asset ZIP, so asset_delivery_check reports them missing and restore_assets.ps1 would bring them back. Re-baselining (tools/update_asset_manifest.ps1 then tools/package_assets.ps1) also absorbs 19 unrelated pre-existing size mismatches (BGM mp3s, a UI png, DarkQueenAnimated.gd) and is the asset owner's decision.",
+ "reproduce": [
+  "godot --headless --path . --script res://tools/model_refinement/export_unit_reference.gd -- --model <wrapper> --unit-id <id> --out <delivery>/source/<id>",
+  "py -3 tools/model_refinement/dark_race_textures.py --refs <delivery>/source",
+  "bash tools/model_refinement/build_dark_parts_all.sh <blender.exe> <project> <delivery>/source",
+  "py -3 tools/model_refinement/dark_race_materials.py",
+  "godot --headless --path . res://tools/dark_refinement_contract_check.tscn -- --require-integrated --out <report.json>"
+ ],
+ "contract_check": {
+  "checked": 710,
+  "failures": 0
+ },
+ "units": {
+  "dark_imp": {
+   "refined": "res://assets/models/units/dark_refined/dark_imp/dark_imp_refined.tscn",
+   "original_files_verified": 7,
+   "resident_body_triangles": 3122,
+   "resident_part_triangles": 28,
+   "parts_per_skeleton": [
+    [
+     "Pelvis"
+    ]
+   ],
+   "albedo": {
+    "format": 17,
+    "path": "res://assets/models/units/dark_refined/dark_imp/dark_imp_albedo.png",
+    "size": 1024
+   },
+   "original": "res://assets/models/units/dark_imp_motong/dark_imp_motong_animated.tscn"
+  },
+  "dark_mage": {
+   "refined": "res://assets/models/units/dark_refined/dark_mage/dark_mage_refined.tscn",
+   "original_files_verified": 13,
+   "resident_body_triangles": 9351,
+   "resident_part_triangles": 2688,
+   "parts_per_skeleton": [
+    [
+     "CC_Base_Head"
+    ],
+    [
+     "CC_Base_Head"
+    ],
+    [
+     "CC_Base_Head"
+    ]
+   ],
+   "albedo": {
+    "format": 17,
+    "path": "res://assets/models/units/dark_refined/dark_mage/dark_mage_albedo.png",
+    "size": 1024
+   },
+   "original": "res://assets/models/units/dark_mage_violet_necromancer/dark_mage_animated.tscn"
+  },
+  "dark_scythe": {
+   "refined": "res://assets/models/units/dark_refined/dark_scythe/dark_scythe_refined.tscn",
+   "original_files_verified": 13,
+   "resident_body_triangles": 9267,
+   "resident_part_triangles": 912,
+   "parts_per_skeleton": [
+    [
+     "CC_Base_Spine02"
+    ],
+    [
+     "CC_Base_Spine02"
+    ],
+    [
+     "CC_Base_Spine02"
+    ]
+   ],
+   "albedo": {
+    "format": 17,
+    "path": "res://assets/models/units/dark_refined/dark_scythe/dark_scythe_albedo.png",
+    "size": 1024
+   },
+   "original": "res://assets/models/units/dark_scythe_animated/dark_scythe_animated.tscn"
+  },
+  "dark_suc": {
+   "refined": "res://assets/models/units/dark_refined/dark_suc/dark_suc_refined.tscn",
+   "original_files_verified": 13,
+   "resident_body_triangles": 9099,
+   "resident_part_triangles": 948,
+   "parts_per_skeleton": [
+    [
+     "CC_Base_Pelvis"
+    ],
+    [
+     "CC_Base_Pelvis"
+    ],
+    [
+     "CC_Base_Pelvis"
+    ]
+   ],
+   "albedo": {
+    "format": 17,
+    "path": "res://assets/models/units/dark_refined/dark_suc/dark_suc_albedo.png",
+    "size": 1024
+   },
+   "original": "res://assets/models/units/dark_suc_animated/dark_suc_animated.tscn"
+  },
+  "dark_fear": {
+   "refined": "res://assets/models/units/dark_refined/dark_fear/dark_fear_refined.tscn",
+   "original_files_verified": 13,
+   "resident_body_triangles": 9045,
+   "resident_part_triangles": 2322,
+   "parts_per_skeleton": [
+    [
+     "CC_Base_Head"
+    ],
+    [
+     "CC_Base_Head"
+    ],
+    [
+     "CC_Base_Head"
+    ]
+   ],
+   "albedo": {
+    "format": 17,
+    "path": "res://assets/models/units/dark_refined/dark_fear/dark_fear_albedo.png",
+    "size": 1024
+   },
+   "original": "res://assets/models/units/dark_fear_animated/dark_fear_animated.tscn"
+  },
+  "dark_queen": {
+   "refined": "res://assets/models/units/dark_refined/dark_queen/dark_queen_refined.tscn",
+   "original_files_verified": 13,
+   "resident_body_triangles": 9162,
+   "resident_part_triangles": 2349,
+   "parts_per_skeleton": [
+    [
+     "CC_Base_Head"
+    ],
+    [
+     "CC_Base_Head"
+    ],
+    [
+     "CC_Base_Head"
+    ]
+   ],
+   "albedo": {
+    "format": 17,
+    "path": "res://assets/models/units/dark_refined/dark_queen/dark_queen_albedo.png",
+    "size": 1024
+   },
+   "original": "res://assets/models/units/dark_queen_animated/dark_queen_animated.tscn"
+  },
+  "dark_doom": {
+   "refined": "res://assets/models/units/dark_refined/dark_doom/dark_doom_refined.tscn",
+   "original_files_verified": 13,
+   "resident_body_triangles": 9312,
+   "resident_part_triangles": 2700,
+   "parts_per_skeleton": [
+    [
+     "mixamorig_Spine2"
+    ],
+    [
+     "mixamorig_Spine2"
+    ],
+    [
+     "CC_Base_Spine02"
+    ]
+   ],
+   "albedo": {
+    "format": 17,
+    "path": "res://assets/models/units/dark_refined/dark_doom/dark_doom_albedo.png",
+    "size": 1024
+   },
+   "original": "res://assets/models/units/dark_doom_animated/dark_doom_animated.tscn"
+  },
+  "dark_dragon": {
+   "refined": "res://assets/models/units/dark_refined/dark_dragon/dark_dragon_refined.tscn",
+   "original_files_verified": 13,
+   "resident_body_triangles": 9030,
+   "resident_part_triangles": 12396,
+   "parts_per_skeleton": [
+    [
+     "CC_Base_Head",
+     "CC_Base_Spine02",
+     "CC_Base_Pelvis"
+    ],
+    [
+     "CC_Base_Head",
+     "CC_Base_Spine02",
+     "CC_Base_Pelvis"
+    ],
+    [
+     "CC_Base_Head",
+     "CC_Base_Spine02",
+     "CC_Base_Pelvis"
+    ]
+   ],
+   "albedo": {
+    "format": 17,
+    "path": "res://assets/models/units/dark_refined/dark_dragon/dark_dragon_albedo.png",
+    "size": 1024
+   },
+   "original": "res://assets/models/units/dark_dragon_animated/dark_dragon_animated.tscn"
+  }
+ },
+ "added": [
+  {
+   "path": "res://assets/models/units/dark_refined/dark_doom/dark_doom_albedo.png",
+   "bytes": 1704701,
+   "sha256": "a2313df7bb5d7f9cdfbdb604afcde800d14f3826fd1f87b4cf640d3361423150"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_doom/dark_doom_albedo.png.import",
+   "bytes": 1246,
+   "sha256": "564e8cc197403ee7eadfedd8798f0a857ba480397fa11bb25ad2768b724675ba"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_doom/dark_doom_body.tres",
+   "bytes": 2022,
+   "sha256": "c91960bd85689d35749a86c4d95ae76c066386ed738e734d99c586abcb1b9761"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_doom/dark_doom_normal.png",
+   "bytes": 1913166,
+   "sha256": "60b5bce8dfa96b3bd99df4438ca16c12d606c35d2a3ae0e06558911daeac8921"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_doom/dark_doom_normal.png.import",
+   "bytes": 1246,
+   "sha256": "eefa04e96afa80300a6d850136d7f93645799740017093b0020539065d23b53c"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_doom/dark_doom_parts.glb",
+   "bytes": 41948,
+   "sha256": "3e5397c916175f4a145d35fb35b471e46816677fe4638d93101cce9d248df4d6"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_doom/dark_doom_parts.glb.import",
+   "bytes": 1203,
+   "sha256": "7d69f47cf59ffa6c9eb8b2ca7fa3070186d78c2beb9bd34cf971a1653d4963a9"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_doom/dark_doom_refined.tscn",
+   "bytes": 824,
+   "sha256": "62551133d81474de81b9400c3158f81e04c4a825cb0e7334d1bdc9474b3856f6"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_dragon/dark_dragon_albedo.png",
+   "bytes": 1805860,
+   "sha256": "3294f0956df57f922d53cdcff5b6a6b9b4df4454e2fcb676d2d2b50552f9a890"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_dragon/dark_dragon_albedo.png.import",
+   "bytes": 1257,
+   "sha256": "d1b4b56d774795e0a2fc2e105d331f4721f636a3ea49f3cd1b90eff42bdac420"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_dragon/dark_dragon_body.tres",
+   "bytes": 1776,
+   "sha256": "1c65b0da0a1ec6e2423a74d224137aa95ee181668135655d5bb5761234724547"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_dragon/dark_dragon_parts.glb",
+   "bytes": 96308,
+   "sha256": "7ef4f733febf384f66fdcf9cd6d6525a0e9f70205ddceb9a69f30c4e1767829f"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_dragon/dark_dragon_parts.glb.import",
+   "bytes": 1210,
+   "sha256": "065e127ca9a21da1475e94618648debde684342a247e21993e83fa955eb6f63a"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_dragon/dark_dragon_refined.tscn",
+   "bytes": 838,
+   "sha256": "29782f1ac75fbffdb23f11240de22d65fb18ee3d7260ebb32c29ca47000dc861"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_fear/dark_fear_albedo.png",
+   "bytes": 1769380,
+   "sha256": "dc2116d75253abf81261f0b7e921969088074eae2c3cc8dec3a2e9d0820708dd"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_fear/dark_fear_albedo.png.import",
+   "bytes": 1245,
+   "sha256": "617af346a40a4661164de0f9dd3e7091e3bb1f3e1a0412447a181c341e4caa40"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_fear/dark_fear_body.tres",
+   "bytes": 1770,
+   "sha256": "b747f8436b05ac84a76391e46e84fda1b9a9ae00690ea0558f8ed25cebf50c51"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_fear/dark_fear_parts.glb",
+   "bytes": 18688,
+   "sha256": "4c17af851d8f9cf19138ca74acb5961b9075c3b9ebb5d03a483732b91e2b1ae1"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_fear/dark_fear_parts.glb.import",
+   "bytes": 1202,
+   "sha256": "ac4414985ec4d87011fa89bcbf10fedca519c37989369d9835c290342bc436a9"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_fear/dark_fear_refined.tscn",
+   "bytes": 824,
+   "sha256": "af8935c3b786721ef20ef685ab394f719926b3e9aa857d5994826495272aeecf"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_imp/dark_imp_albedo.png",
+   "bytes": 1544078,
+   "sha256": "9aed37d30deb5ab4dc0df22eb9caa66bba671a279c59210aca24035fe00a3dbd"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_imp/dark_imp_albedo.png.import",
+   "bytes": 1240,
+   "sha256": "f347307ca0978ead8bb7e906247acde328fa4924ffa7f6652919655a4aa37251"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_imp/dark_imp_body.tres",
+   "bytes": 1767,
+   "sha256": "4c73120fdc2d6c86ec90ad0e3d36601c2a48bc36282a2f97b78d6de911ea7d4a"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_imp/dark_imp_parts.glb",
+   "bytes": 3000,
+   "sha256": "f8e1b55f02b818088572fd77912ac9fbadd0efaeeee368a2bdab78983709de82"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_imp/dark_imp_parts.glb.import",
+   "bytes": 1198,
+   "sha256": "944352f3bf721c786cc08a5a73a91f8edb0642ccf937833bda92732f7ed0d1cd"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_imp/dark_imp_refined.tscn",
+   "bytes": 822,
+   "sha256": "e5c38d3072a676a719b2637141cf7a55a0185ef579b3ba1cdf05938aa7fcc592"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_mage/dark_mage_albedo.png",
+   "bytes": 1399036,
+   "sha256": "b8d5db0b0ca60e4f341c6a970ed6a5a965c129007eeef20d10b991db95cd9fb2"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_mage/dark_mage_albedo.png.import",
+   "bytes": 1246,
+   "sha256": "20fa87f9c238d3fed182ddecac43a60601105c1934b312036d3471081a994b09"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_mage/dark_mage_body.tres",
+   "bytes": 1770,
+   "sha256": "dd8bb0a16571b71f78a4ef531b44d18c2fd7e9bd285ee37d10a085b118ad59e4"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_mage/dark_mage_parts.glb",
+   "bytes": 25948,
+   "sha256": "e4a2c29bc58a3cb5994101079b859b5905fc2f58b64a9c7febe5981d327f05b2"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_mage/dark_mage_parts.glb.import",
+   "bytes": 1203,
+   "sha256": "2f38146723c19d6230394ac1f7184e6420b4b5da3faff7990818de260ec2e353"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_mage/dark_mage_refined.tscn",
+   "bytes": 834,
+   "sha256": "625693b444f7ffd72513f3578003f00ee8edfa2f496b14e3e8b9012ee43b362b"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_queen/dark_queen_albedo.png",
+   "bytes": 1765569,
+   "sha256": "7b495ecf12ad12e33f1da3821066de4b0fb827cad539464dceeccf42a0fc6ed8"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_queen/dark_queen_albedo.png.import",
+   "bytes": 1252,
+   "sha256": "04806383e91148b54ecd7293e5fefcad9ec0b945106488eaddb2707eef96ff25"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_queen/dark_queen_body.tres",
+   "bytes": 1773,
+   "sha256": "6d4df113ef0fe1b3d7abfb40e36665a4eef3b904e4c4913a03177fa226fe571a"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_queen/dark_queen_parts.glb",
+   "bytes": 19552,
+   "sha256": "64d4133b1de94fd177fc9cbad5fb444c0d4044bcc8f74700d36b6b0031d4c0d7"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_queen/dark_queen_parts.glb.import",
+   "bytes": 1207,
+   "sha256": "e306d0bb13f04eefdd20502414a66543e4565dc424ac8c3a911b174b8f906a9e"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_queen/dark_queen_refined.tscn",
+   "bytes": 831,
+   "sha256": "80c12e43f8f4562e2f8ff4b623ef77420e5e09173316a4b92c02cecaf7f8a7dd"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_scythe/dark_scythe_albedo.png",
+   "bytes": 1841014,
+   "sha256": "0015823f2ec87845e1844283c05c8472ca57b7125eb7069e48e5554f9e802f71"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_scythe/dark_scythe_albedo.png.import",
+   "bytes": 1258,
+   "sha256": "eee2d2aa97017b736c4909a2a29b9ac27e992ae249e1453ec1a7012b835bd17c"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_scythe/dark_scythe_body.tres",
+   "bytes": 1776,
+   "sha256": "b6efbfbed871ede7e7afa7feccefe2d876544c7cf4af22c613211c3210783387"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_scythe/dark_scythe_parts.glb",
+   "bytes": 9416,
+   "sha256": "4bc97a07abd623524efbca38e4f784cd2f15936c9fb429f4df7d46c4a9a8521a"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_scythe/dark_scythe_parts.glb.import",
+   "bytes": 1210,
+   "sha256": "6d4d6e90a6488986b114795f8e0ff05e91b54477d6d71ff2f1df239b66f440e5"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_scythe/dark_scythe_refined.tscn",
+   "bytes": 838,
+   "sha256": "afa2f2e79c7eced10868c090d5912fbb0d43554db751cf8bb11a6f92f61dac31"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_suc/dark_suc_albedo.png",
+   "bytes": 1683680,
+   "sha256": "6a9c8cd4e8fb838315fed1a48e1db521fbe9e690523b4630e0b03ce4f9e58375"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_suc/dark_suc_albedo.png.import",
+   "bytes": 1239,
+   "sha256": "b8b891ff36b6e3893ea3d1e649b2fb661937bd2af7848b694edd7681b5dc32b8"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_suc/dark_suc_body.tres",
+   "bytes": 1767,
+   "sha256": "6fad8742f6e3e56d85f60f65c428c8bcfbf6ed56933c037fcaf49f3cdf011f2a"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_suc/dark_suc_parts.glb",
+   "bytes": 19188,
+   "sha256": "5e34467753e0e33e6038d429782488fd9ff3cab74f712b275e374a483ea8b39a"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_suc/dark_suc_parts.glb.import",
+   "bytes": 1199,
+   "sha256": "56b2a68c69dd02b42cd56f9ea1a19d3b5c3745961bf162249881013dd065dd2a"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/dark_suc/dark_suc_refined.tscn",
+   "bytes": 817,
+   "sha256": "a34cb3c0bb3f03b7d9e3f2d82a1a48d8b1a3f131f4892aba51f0a29e31fb9605"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/original_runtime_assets.json",
+   "bytes": 13994,
+   "sha256": "391f6b8afff21944e314e196def151415875927138b1719e271ad2b71602760f"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/shared/dark_body.gdshader",
+   "bytes": 6668,
+   "sha256": "6c10dae57378490572864b9e0dfba5304dbd77e45e3717fdcc9e67e05333bfac"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/shared/dark_body.gdshader.uid",
+   "bytes": 19,
+   "sha256": "c9c01411552c155f2036c6776b586cec0194e5bd171f29fa18d2a6baf92c9764"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/shared/dark_parts.gdshader",
+   "bytes": 2629,
+   "sha256": "ae9b2bb8f53a7ab6f7030f4576ba137662403be552bdf9573374dd839803480f"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/shared/dark_parts.gdshader.uid",
+   "bytes": 20,
+   "sha256": "8cd94b5581e7a71a4699d99daa9846067cf62495127f4e4cbd6b88067e499b7f"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/shared/dark_parts.tres",
+   "bytes": 561,
+   "sha256": "c165f7ad0306406d5956b452b9e018d01ad9a6331f56d82d44cec6c2435552b5"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/shared/DarkRefinement.gd",
+   "bytes": 6139,
+   "sha256": "2c1bee72ad8d69fbf72a35e8e810130241152c20dbded31a96e7a60f2451fe21"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/shared/DarkRefinement.gd.uid",
+   "bytes": 20,
+   "sha256": "89e957ebe75ce17fbe56495afb474a03ff3ca569d35518f2165e48de77351fae"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/texture_build.json",
+   "bytes": 1368,
+   "sha256": "587766b1ecb57677ba292fb6eb0dc2afeba9d5be3bc4d61d16312b846f37d930"
+  }
+ ],
+ "removed": [
+  {
+   "path": "res://assets/models/units/dark_queen_animated/dark_queen_attack.fbx",
+   "size": 3760160,
+   "sha256": "1e69eef33a3887bbe5ac2b5156c9d50f42d2dd4a3c7d7eb3a56f8cebd1c558e9"
+  },
+  {
+   "path": "res://assets/models/units/dark_queen_animated/dark_queen_attack.fbx.import",
+   "size": 1232,
+   "sha256": "dc8885d9fad1f45198e4b7193506762c32f25a2e9fa50ac26efc5baac3201531"
+  },
+  {
+   "path": "res://assets/models/units/dark_queen_animated/dark_queen_idle.fbx",
+   "size": 6332768,
+   "sha256": "7e482b60857cdaf9e9381174a29a228166a16affbf09b0823fc4f7d634db00a5"
+  },
+  {
+   "path": "res://assets/models/units/dark_queen_animated/dark_queen_idle.fbx.import",
+   "size": 1226,
+   "sha256": "3b5d1815ad7a3e03c615bf826ad26b62fa9b0dd8f7edd67c3141f3b69a5eab8e"
+  },
+  {
+   "path": "res://assets/models/units/dark_queen_animated/dark_queen_run.fbx",
+   "size": 1476304,
+   "sha256": "f0289b0292a1a9369fce1dcfa7e05120b0d1392a712d1727744dcaba70c5f1c9"
+  },
+  {
+   "path": "res://assets/models/units/dark_queen_animated/dark_queen_run.fbx.import",
+   "size": 1223,
+   "sha256": "76fc10103181d02e016b8445d98e2ea11f39f8e9e77a98d3acb975e06c5f9b66"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack.fbx",
+   "size": 15034128,
+   "sha256": "58d6e23ef56ec9eaeaf2e38aba451411cfbcceaf197c1f21e36f3b21d8bc52f4"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack.fbx.import",
+   "size": 1230,
+   "sha256": "fd5793eda3400d5ce88a2c16c9b0ca843d6b008844cc1977ec4ac1ba374dcf06"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack_0.png",
+   "size": 6818316,
+   "sha256": "8dfbb244c8d3b6733c8b758496eb5699d38ed48c870c8152ece9ee27a902f0bf"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack_0.png.import",
+   "size": 1251,
+   "sha256": "75e80bf461ab8e6e9abc1c7feeded12fd0a0459f2bcded2ce81c4187c7a5c13e"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack_1.png",
+   "size": 24132,
+   "sha256": "42a4de75ebbb57bcceb3e6d2d87d29af894d4bc32f64e29ed478d25eee595594"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack_1.png.import",
+   "size": 1318,
+   "sha256": "a4edcca8bc57e1c819d9cd062cfe7b94241f03847a24f727d2916a2f87e821c6"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack_2.png",
+   "size": 6613735,
+   "sha256": "af83a2f0f91a477c7efee5fc32212035c409c7321f692d45739b1fb7b6fb96b5"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack_2.png.import",
+   "size": 1385,
+   "sha256": "c221783cf41ba8a7887857e4578be2850fc4ecbf570a5f32855a8343ff878cde"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack_Baked_BaseColor.png",
+   "size": 7539736,
+   "sha256": "25b7aa8077c6a281bb91cb7a382c82cdb8d2f4379d325e5565400dc8e3fd2a37"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack_Baked_BaseColor.png.import",
+   "size": 1105,
+   "sha256": "0d6b4a2d2ee6fa8ecbe90e27fe555f5434d4a9666acf7f5b2f399090e0c2548a"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack_Baked_Emit.png",
+   "size": 84914,
+   "sha256": "f8a491a859149895d865d926e426a2c4e0da259825b40ede85d05dcc6ba24ce1"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack_Baked_Emit.png.import",
+   "size": 1089,
+   "sha256": "c70cc9bbc54e56b57604cc33c569af69ade293caa241060be42c43dee38413c6"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack_normal.png",
+   "size": 6580485,
+   "sha256": "23711baac3b49c98bb5bb809fc03085391c305ba1679be7a917b78661acf2da2"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_attack_normal.png.import",
+   "size": 1078,
+   "sha256": "7b5b8d144f7e5b409ceee36b68b59ba0adc097f5865289b2f66139442273fd9e"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle.fbx",
+   "size": 15078432,
+   "sha256": "b46d802421ac2b3f6f87fda4e4a9b7e139eb5f956969f809c60b11467984d971"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle.fbx.import",
+   "size": 1224,
+   "sha256": "6f106470039f9a5cc4adb9b074e3d2ac3141deae8a019f76818b8309cbcb4230"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle_0.png",
+   "size": 6818316,
+   "sha256": "8dfbb244c8d3b6733c8b758496eb5699d38ed48c870c8152ece9ee27a902f0bf"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle_0.png.import",
+   "size": 1308,
+   "sha256": "3065618a064ca43c3098e293f92318d45c70dcc382f0d73d703abb6357517735"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle_1.png",
+   "size": 24132,
+   "sha256": "42a4de75ebbb57bcceb3e6d2d87d29af894d4bc32f64e29ed478d25eee595594"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle_1.png.import",
+   "size": 1307,
+   "sha256": "b048beec934cf8a472a7625314f5ccba23d7863065d184b9bba201fdda6af7da"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle_2.png",
+   "size": 6613735,
+   "sha256": "af83a2f0f91a477c7efee5fc32212035c409c7321f692d45739b1fb7b6fb96b5"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle_2.png.import",
+   "size": 1373,
+   "sha256": "0934b20007a6b1ddac5b617e0c23357eaddda26ec749d5532b199c984a0ab9ff"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle_Baked_BaseColor.png",
+   "size": 7539736,
+   "sha256": "25b7aa8077c6a281bb91cb7a382c82cdb8d2f4379d325e5565400dc8e3fd2a37"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle_Baked_BaseColor.png.import",
+   "size": 1099,
+   "sha256": "90b61a69e0a7c56042231b7f9e0a1180c73547b59bacb552e361c1dd885ff25c"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle_Baked_Emit.png",
+   "size": 84914,
+   "sha256": "f8a491a859149895d865d926e426a2c4e0da259825b40ede85d05dcc6ba24ce1"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle_Baked_Emit.png.import",
+   "size": 1084,
+   "sha256": "a51aebd84f84abc38e2bdd577a63b40dd07ec37e4baf2ecb4e614be4dbafc026"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle_normal.png",
+   "size": 6580485,
+   "sha256": "23711baac3b49c98bb5bb809fc03085391c305ba1679be7a917b78661acf2da2"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_idle_normal.png.import",
+   "size": 1071,
+   "sha256": "19d3f960b78f54add1b42aae1682ad10f917f2d027b96688a4840bde51775316"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_run.fbx",
+   "size": 1516096,
+   "sha256": "d03a7596c122d3a07c391ad89954a6db7cada3e04ead13338efef64e2cc0b249"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_run.fbx.import",
+   "size": 1221,
+   "sha256": "3ad661b18ccea7b6508c45d5a103e54bd8a34884e7ae159cff34064ed3f29bf2"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_run_Image.png",
+   "size": 250,
+   "sha256": "3f5e2ffbb1843629c0d3836a89efd4e691cd0fec83d18bc28c368bf32595f044"
+  },
+  {
+   "path": "res://assets/models/units/dark_doom_animated/dark_doom_run_Image.png.import",
+   "size": 1066,
+   "sha256": "ab7ccb1504c78281d2aba56059c02073bb44939527838a21ec462c351c9ddb97"
+  },
+  {
+   "path": "res://assets/models/units/dark_dragon.glb",
+   "size": 70398728,
+   "sha256": "3b85982474b650f631ce38e9b0413a549bb60ff7c0cd7aea3de04900ddbeb3ee"
+  },
+  {
+   "path": "res://assets/models/units/dark_dragon.glb.import",
+   "size": 1168,
+   "sha256": "5e6368673bbbd0bddec4e474bbec2c32af1ef5a76ffc547fcd045789f69a36bb"
+  },
+  {
+   "path": "res://assets/models/units/dark_dragon_0.jpg",
+   "size": 4451835,
+   "sha256": "22bc2cd8f296ba39efa3aba77d733d80f2ea1be50dae87b6c0e6679278b1f8a7"
+  },
+  {
+   "path": "res://assets/models/units/dark_dragon_0.jpg.import",
+   "size": 1272,
+   "sha256": "9d9c9914269e0ab5c765cb9f5a7180495911213cdfff487dfe98af1173ee0fba"
+  },
+  {
+   "path": "res://assets/models/units/dark_dragon_1.jpg",
+   "size": 2500643,
+   "sha256": "bf45ecb5f17aa32b9b6349c1e99ee908c88066e7671cbc3f5be15487cd1e1b37"
+  },
+  {
+   "path": "res://assets/models/units/dark_dragon_1.jpg.import",
+   "size": 1274,
+   "sha256": "4f7ac0c2f49e2d3cb870d3a0b399980e8aa9f56b0d1031ec029b5672a6c222ff"
+  },
+  {
+   "path": "res://assets/models/units/dark_dragon_2.jpg",
+   "size": 3918721,
+   "sha256": "81031cb544b8e0c4d87292f73e9f3e366a397d1eed124ec34abefcf36b30ea48"
+  },
+  {
+   "path": "res://assets/models/units/dark_dragon_2.jpg.import",
+   "size": 1317,
+   "sha256": "a3c0929067cb37946262ed1085e9797c809e7d11537b9ba3263f34d45d828bc4"
+  },
+  {
+   "path": "res://assets/models/units/dark_dragon_3.jpg",
+   "size": 70355,
+   "sha256": "a79dc33bdfa4bf5e8b687fa4e99d6adfec7cd9ebe394734723cb17e0166c2c00"
+  },
+  {
+   "path": "res://assets/models/units/dark_dragon_3.jpg.import",
+   "size": 1274,
+   "sha256": "cc2909ab0084db50e2dffc716f706b4e2e44e789e885dfb042ee35b0d1502a40"
+  },
+  {
+   "path": "res://assets/models/units/dark_fear.glb",
+   "size": 44295940,
+   "sha256": "c1d79f9172ec470a2b051db5dbf9e0e59d69916499e808daf5f5b6a6362a82ee"
+  },
+  {
+   "path": "res://assets/models/units/dark_fear.glb.import",
+   "size": 1162,
+   "sha256": "fd7b7d6b87bbdf013730ac9184ddd35e95f98fbc9e8a8f4b58aee8b0d9ecb1a3"
+  },
+  {
+   "path": "res://assets/models/units/dark_fear_0.jpg",
+   "size": 3671924,
+   "sha256": "8c3fbe1451447e5380303ec1ed05c71cbdd374f3bef062eaf3566e9152821a87"
+  },
+  {
+   "path": "res://assets/models/units/dark_fear_0.jpg.import",
+   "size": 1264,
+   "sha256": "209703c91399a5ad766dc06ba11f03150231fad5f2d859483feec182575038bf"
+  },
+  {
+   "path": "res://assets/models/units/dark_fear_1.jpg",
+   "size": 2334303,
+   "sha256": "f47c528e54ad1b54cad20f1c749007331d20506e5ad88723f967de57ae7227af"
+  },
+  {
+   "path": "res://assets/models/units/dark_fear_1.jpg.import",
+   "size": 1264,
+   "sha256": "5097158622d1a19db50c9ae5146ab9d7557b1b312fbca8e5aed6b694824ea377"
+  },
+  {
+   "path": "res://assets/models/units/dark_fear_2.jpg",
+   "size": 3583323,
+   "sha256": "0e9dfbfeb728621406f3148c2d9acb80a7fd87fd5de65bc6942ab7b4a775fc2a"
+  },
+  {
+   "path": "res://assets/models/units/dark_fear_2.jpg.import",
+   "size": 1305,
+   "sha256": "aa91f313f9424db5f99da7af0078e631be09a65ab682a1a9d54d1cbac9142ce0"
+  },
+  {
+   "path": "res://assets/models/units/dark_fear_3.jpg",
+   "size": 70034,
+   "sha256": "4fa7b9a391f22c658ce2b520fb9fb8490f13ab1e701d82dc59bbb5e1d7438183"
+  },
+  {
+   "path": "res://assets/models/units/dark_fear_3.jpg.import",
+   "size": 1264,
+   "sha256": "327fdc5ab61ac790bd97aa949d8eec0994b62b4ea37f42f09c0b71b76ae92dc7"
+  },
+  {
+   "path": "res://assets/models/units/dark_scythe.glb",
+   "size": 54250752,
+   "sha256": "a3073990d2b1f85c342dffe3cc1d0e1552b3e61aa8b46021b850aee9392e8d74"
+  },
+  {
+   "path": "res://assets/models/units/dark_scythe.glb.import",
+   "size": 1168,
+   "sha256": "d367fd3a48202bc71229e7cd4467aad6e0fa821af8f9af188afa198d0263db44"
+  },
+  {
+   "path": "res://assets/models/units/dark_scythe_0.jpg",
+   "size": 4082573,
+   "sha256": "c197b81f55f2ccbc403974dde01b130b17c943cc8e22728ec718e30a3590719e"
+  },
+  {
+   "path": "res://assets/models/units/dark_scythe_0.jpg.import",
+   "size": 1274,
+   "sha256": "e636a9a1d3825b019a3b6529378425e6a832ce215a7ab27175f7eebbb7a5795d"
+  },
+  {
+   "path": "res://assets/models/units/dark_scythe_1.jpg",
+   "size": 2535280,
+   "sha256": "f0390e109a631772c54759feb9334f6a98c9858a86768f997b9a818a968e4221"
+  },
+  {
+   "path": "res://assets/models/units/dark_scythe_1.jpg.import",
+   "size": 1274,
+   "sha256": "0c2e89cb4c57669dad856c497def00027e4c91ea8b0a0018c438e422032f7f85"
+  },
+  {
+   "path": "res://assets/models/units/dark_scythe_2.jpg",
+   "size": 3451063,
+   "sha256": "e1b68c4a67feb919687db13d4eb70ecb1dbd70a4cfec3ebad244f68169c5e059"
+  },
+  {
+   "path": "res://assets/models/units/dark_scythe_2.jpg.import",
+   "size": 1317,
+   "sha256": "7e39a73806b7ef5a80ba6bc1b88027737489d7436f1c6c7518a90a5ca11eb179"
+  },
+  {
+   "path": "res://assets/models/units/dark_scythe_3.jpg",
+   "size": 338114,
+   "sha256": "8e2a3a58fd3a85e646f2a08332e4240c2c15669904c2c74743ab2f8aab67dc6a"
+  },
+  {
+   "path": "res://assets/models/units/dark_scythe_3.jpg.import",
+   "size": 1274,
+   "sha256": "1299a1eaffce368a5cc515b8c8836c063a3265cc121140e9213c08d7bf3e60a2"
+  }
+ ],
+ "palette": "unified after the 2026-10-04 review: saturated paint pulled to race violet (~277 deg), one glow colour for bodies and parts; succubus/queen no longer pink"
+}
