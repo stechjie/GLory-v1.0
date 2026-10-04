@@ -10,6 +10,8 @@ func _ready() -> void:
 	_h = Harness.new("crimson_integration")
 	_check_catalog()
 	_check_combat()
+	_check_runes()
+	_check_lantern()
 	_check_simulator_dispatch()
 	_check_office_test_synergy()
 	_h.finish(get_tree())
@@ -29,6 +31,190 @@ func _state(player: Array, enemy: Array = [], elapsed: float = 0.0, count: int =
 		"unit_stats": {}, "log": []}
 	DamageService.set_stat_state(state)
 	return state
+
+
+func _check_runes() -> void:
+	_h.expect(bool(SynergyService.flags_from_counts({"crimson": 1}).get("crimson_rune", false)) and not bool(SynergyService.flags_from_counts({"crimson": 0}).get("crimson_rune", false)),
+		"rune_base_tier", "Battle Runes must unlock with one Crimson unit")
+	var caster := _fighter("rune_caster")
+	var ally := _fighter("rune_ally")
+	var enemy := _fighter("rune_enemy", "enemy")
+	var state := _state([caster, ally], [enemy], 0.0, 1)
+	CrimsonRuneService.begin_action(caster, state)
+	DamageService.begin_stat_context(state, caster)
+	StatusEffectService.add_status(ally, "speed_bonus", 3.0, {"pct": 0.20})
+	StatusEffectService.add_status(enemy, "slow", 3.0, {"attack_speed_pct": 0.20})
+	_h.expect(CrimsonRuneService.stack_count(caster) == 0, "rune_self_only", "Effects on other units must not grant runes at Crimson 1")
+	StatusEffectService.add_status(caster, "speed_bonus", 3.0, {"pct": 0.20})
+	StatusEffectService.add_status(caster, "damage_down", 3.0, {"pct": 0.20})
+	_h.expect(CrimsonRuneService.stack_count(caster) == 1, "rune_one_action", "Two self statuses in one action must grant one rune")
+	DamageService.clear_stat_context()
+	CrimsonRuneService.end_action(caster)
+	for _i in 8:
+		CrimsonRuneService.begin_action(caster, state)
+		CrimsonRuneService.note_self_effect(caster, state)
+		CrimsonRuneService.end_action(caster)
+	_h.expect(CrimsonRuneService.stack_count(caster) == 9 and not CrimsonRuneService.note_self_effect(caster, state),
+		"rune_cap", "Battle Runes must stop at nine stacks")
+	_h.expect(is_equal_approx(CrimsonRuneService.crit_bonus(caster), 0.30)
+		and is_equal_approx(CrimsonRuneService.attack_speed_multiplier(caster), 1.60)
+		and is_equal_approx(CrimsonRuneService.crit_damage_bonus(caster), 0.90),
+		"rune_milestones", "Three, six, and nine runes must grant cumulative crit, speed, and crit damage")
+	caster.def.crit = 0.05
+	_h.expect(is_equal_approx(OfficeTestScreenScript.live_crit(caster), 0.35), "rune_crit_panel", "Live crit panel missed the rune bonus")
+	var hit_target := _fighter("rune_hit_target", "enemy")
+	caster = _fighter("rune_strike")
+	caster.crimson_rune_stacks = 9
+	caster.def.crit = 1.0
+	caster.def.crit_dmg = 1.5
+	state = _state([caster], [hit_target], 0.0, 1)
+	DamageService.begin_stat_context(state, caster)
+	BattleSimulator._perform_attack(caster, hit_target, state)
+	DamageService.clear_stat_context()
+	_h.expect(int(hit_target.hp) == 760, "rune_crit_damage", "Nine runes should make a 100 ATK critical hit deal 240 damage")
+	var live_stats := {}
+	var last_live := {}
+	OfficeTestSim._capture_live_stats(state, 0, live_stats, last_live)
+	var replay_view := OfficeTestScreenScript.patched_with_live_stats({"uid": caster.uid, "def": caster.def}, live_stats, 0)
+	_h.expect(CrimsonRuneService.stack_count(replay_view) == 9 and is_equal_approx(OfficeTestScreenScript.live_crit(replay_view), 1.0),
+		"rune_office_replay", "Offline replay must preserve rune stacks in the live stat panel")
+
+	caster = _fighter("rune_resonance")
+	enemy = _fighter("rune_resonance_target", "enemy")
+	state = _state([caster], [enemy], 0.0, 4)
+	CrimsonRuneService.begin_action(caster, state)
+	DamageService.begin_stat_context(state, caster)
+	CrimsonCombat.apply_status(caster, caster, "crimson_attack", 3.0, {"pct": 0.20}, state)
+	CrimsonCombat.apply_status(caster, enemy, "ice_vulnerable", 3.0, {"pct": 0.20}, state)
+	_h.expect(CrimsonRuneService.stack_count(caster) == 1, "rune_resonance_dedup", "A self buff plus Resonance in one action must count once")
+	DamageService.clear_stat_context()
+	CrimsonRuneService.end_action(caster)
+	CrimsonRuneService.begin_action(caster, state)
+	DamageService.begin_stat_context(state, caster)
+	CrimsonCombat.apply_status(caster, enemy, "ice_vulnerable", 3.0, {"pct": 0.20}, state)
+	_h.expect(CrimsonRuneService.stack_count(caster) == 2, "rune_resonance_self_buff", "Crimson 4 Resonance must grant a rune on a later action")
+	DamageService.clear_stat_context()
+	CrimsonRuneService.end_action(caster)
+
+	caster = _fighter("rune_pulse")
+	state = _state([caster], [], 2.0, 7)
+	CrimsonCombat.pulse(state)
+	_h.expect(CrimsonRuneService.stack_count(caster) == 1, "rune_red_tide", "Crimson 7 Red Tide must grant one rune")
+
+
+func _check_lantern() -> void:
+	var unit_def: Dictionary = {}
+	for unit: Dictionary in DataRegistry.get_table("race_units").get("units", []):
+		if str(unit.get("id", "")) == "lattern":
+			unit_def = unit
+			break
+	_h.expect(not unit_def.is_empty() and bool(unit_def.get("skill_global", false))
+		and not unit_def.has("damage_atk_pct")
+		and is_equal_approx(float(unit_def.get("silence_duration", 0.0)), 3.0)
+		and is_equal_approx(float(unit_def.get("skill_cd", 0.0)), 10.0),
+		"lantern_base_data", "Lantern base skill data is wrong")
+	if unit_def.is_empty():
+		return
+	var four_def := UnitFactory.apply_star_stats(unit_def, 4)
+	_h.expect(not four_def.has("damage_atk_pct")
+		and is_equal_approx(float(four_def.get("silence_duration", 0.0)), 4.0)
+		and is_equal_approx(float(four_def.get("skill_cd", 0.0)), 9.0),
+		"lantern_star4_data", "Lantern fourth-star skill data is wrong")
+
+	var old_team_mode := GameState.team_mode
+	GameState.team_mode = true
+	var both_player := _fighter("lattern")
+	both_player.def = unit_def.duplicate(true)
+	both_player.lane = 0
+	both_player.skill_ready = 0.0
+	var both_enemy := _fighter("lattern", "enemy")
+	both_enemy.def = unit_def.duplicate(true)
+	both_enemy.lane = 0
+	both_enemy.skill_ready = 0.0
+	var both_state := _state([both_player], [both_enemy], 0.0, 0)
+	BattleSimulator._tick_opening_lanterns(both_state)
+	_h.expect(StatusEffectService.has_status(both_player, "silence")
+		and StatusEffectService.has_status(both_enemy, "silence")
+		and int(both_player.hp) == 1000 and int(both_enemy.hp) == 1000,
+		"lantern_both_sides_silenced", "Both sides must be silenced without damage by simultaneous opening casts")
+	var player_lantern := _fighter("lattern")
+	player_lantern.def = unit_def.duplicate(true)
+	player_lantern.lane = 0
+	player_lantern.skill_ready = 0.0
+	var player_ally := _fighter("player_ally")
+	player_ally.lane = 0
+	var enemy_lantern := _fighter("lattern", "enemy")
+	enemy_lantern.def = unit_def.duplicate(true)
+	enemy_lantern.lane = 0
+	enemy_lantern.skill_ready = 0.0
+	var enemy_ally := _fighter("enemy_ally", "enemy")
+	enemy_ally.lane = 0
+	var next_lane := _fighter("next_lane", "enemy")
+	next_lane.lane = 1
+	next_lane.pos = Vector2(2000, 0)
+	var state := _state([player_lantern, player_ally], [enemy_lantern, enemy_ally, next_lane], 0.0, 0)
+	BattleSimulator._tick_opening_lanterns(state)
+	_h.expect(bool(enemy_lantern.alive) and is_equal_approx(float(enemy_lantern.skill_ready), 10.0)
+		and StatusEffectService.has_status(enemy_lantern, "silence")
+		and StatusEffectService.has_status(player_lantern, "silence")
+		and StatusEffectService.has_status(player_ally, "silence"),
+		"lantern_simultaneous_opening", "Both opening casts must resolve despite the opposing silence")
+	_h.expect(int(player_ally.hp) == 1000 and StatusEffectService.has_status(enemy_ally, "silence")
+		and not StatusEffectService.has_status(next_lane, "silence")
+		and int(next_lane.hp) == 1000,
+		"lantern_own_lane_first", "The opening cast must hit every enemy in its lane and cannot spill into another lane")
+	_h.expect(is_equal_approx(StatusEffectService.attack_speed_multiplier(player_ally), 0.7)
+		and is_equal_approx(float(player_ally.statuses.silence.remaining), 3.0),
+		"lantern_silence_slow", "Lantern silence must reduce attack speed by 30% for 3.0 seconds")
+	StatusEffectService.add_status(player_ally, "silence", 5.0, {})
+	StatusEffectService.tick(player_ally, 3.0)
+	_h.expect(StatusEffectService.has_status(player_ally, "silence")
+		and is_equal_approx(StatusEffectService.attack_speed_multiplier(player_ally), 1.0),
+		"lantern_slow_independent", "A different silence may extend control but not Lantern's attack-speed penalty")
+	BattleSimulator._tick_opening_lanterns(state)
+	_h.expect(is_equal_approx(float(player_lantern.skill_ready), 10.0),
+		"lantern_opening_once", "Opening Lantern cast must not repeat")
+
+	StatusEffectService.tick(player_lantern, 3.0)
+	enemy_lantern.alive = false
+	enemy_ally.alive = false
+	state.elapsed = 10.0
+	BattleSimulator._tick_skills([player_lantern], state.enemy, state)
+	_h.expect(int(next_lane.hp) == 1000 and StatusEffectService.has_status(next_lane, "silence")
+		and is_equal_approx(float(player_lantern.skill_ready), 20.0),
+		"lantern_next_cast_cross_lane", "The next cast must reach another lane after the caster's lane is cleared")
+
+	var four := _fighter("lattern_four")
+	four.def = four_def
+	four.lane = 0
+	four.skill_ready = 0.0
+	var four_target := _fighter("four_target", "enemy")
+	four_target.lane = 0
+	state = _state([four], [four_target], 0.0, 0)
+	BattleSimulator._tick_opening_lanterns(state)
+	_h.expect(int(four_target.hp) == 1000 and is_equal_approx(float(four_target.statuses.silence.remaining), 4.0)
+		and is_equal_approx(float(four.skill_ready), 9.0),
+		"lantern_star4_opening", "Fourth-star opening must deal no damage and use the 4.0-second silence and 9.0-second cooldown")
+	var boss := _fighter("boss_lantern_target", "enemy")
+	boss.lane = 0
+	state = _state([four], [boss], 0.0, 0)
+	DamageService.begin_stat_context(state, four)
+	CrimsonCombat.skill_lantern(four, [boss], {"silence_duration": 4.0}, state)
+	DamageService.clear_stat_context()
+	_h.expect(is_equal_approx(float(boss.statuses.silence.remaining), 2.0)
+		and is_equal_approx(StatusEffectService.attack_speed_multiplier(boss), 0.7),
+		"lantern_boss_duration", "Boss control duration must be halved while the Lantern slow remains 30%")
+	var immune := _fighter("immune", "enemy")
+	immune.lane = 0
+	StatusEffectService.add_status(immune, "control_immune", 6.0, {})
+	state = _state([four], [immune], 0.0, 0)
+	DamageService.begin_stat_context(state, four)
+	CrimsonCombat.skill_lantern(four, [immune], {"silence_duration": 4.0}, state)
+	DamageService.clear_stat_context()
+	_h.expect(int(immune.hp) == 1000 and not StatusEffectService.has_status(immune, "silence")
+		and is_equal_approx(StatusEffectService.attack_speed_multiplier(immune), 1.0),
+		"lantern_control_immune", "Control immunity must block silence and its slow with no damage")
+	GameState.team_mode = old_team_mode
 
 
 func _check_catalog() -> void:
@@ -182,8 +368,10 @@ func _check_combat() -> void:
 	second.pos = Vector2(80, 0)
 	state = _state([lantern], [victim, second])
 	DamageService.begin_stat_context(state, lantern)
-	CrimsonCombat.skill_lantern(lantern, [victim, second], {"damage_atk_pct": 1.3, "silence_duration": 2.5, "aoe_radius": 144.0}, state)
-	_h.expect(StatusEffectService.has_status(victim, "silence") and StatusEffectService.has_status(second, "silence"), "lantern_aoe", "Lantern missed an enemy inside radius")
+	CrimsonCombat.skill_lantern(lantern, CrimsonCombat.lantern_targets(lantern, [victim, second]), {"silence_duration": 3.0}, state)
+	_h.expect(StatusEffectService.has_status(victim, "silence") and StatusEffectService.has_status(second, "silence")
+		and int(victim.hp) == 1000 and int(second.hp) == 1000,
+		"lantern_aoe", "Lantern must silence every targetable enemy without dealing damage")
 	DamageService.clear_stat_context()
 
 	var piercer := _fighter("skypierce")
@@ -207,8 +395,9 @@ func _check_combat() -> void:
 		state.elapsed = pulse_time
 		CrimsonCombat.pulse(state)
 	_h.expect(int(guard.get("crimson_pulse_stacks", 0)) == 5, "pulse_cap", "Crimson 7 exceeded five permanent stacks")
-	_h.expect(is_equal_approx(StatusEffectService.attack_multiplier(guard), 1.50) and is_equal_approx(StatusEffectService.attack_speed_multiplier(guard), 1.50), "pulse_max_stats", "Five Crimson 7 stacks should total +50% attack and speed")
-	_h.expect(is_equal_approx(OfficeTestScreenScript.live_crit(guard), 0.50), "pulse_crit", "Five Crimson 7 stacks should add 50 percentage points crit chance")
+	_h.expect(CrimsonRuneService.stack_count(guard) == 6, "pulse_rune_count", "Each Red Tide action must add one Battle Rune")
+	_h.expect(is_equal_approx(StatusEffectService.attack_multiplier(guard), 1.50) and is_equal_approx(StatusEffectService.attack_speed_multiplier(guard), 2.40), "pulse_max_stats", "Five Red Tide stacks and six Battle Runes must combine correctly")
+	_h.expect(is_equal_approx(OfficeTestScreenScript.live_crit(guard), 0.80), "pulse_crit", "Red Tide and Battle Runes must combine in the live crit value")
 
 
 func _check_simulator_dispatch() -> void:

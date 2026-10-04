@@ -127,6 +127,24 @@ func update_from_fighter(fighter: Dictionary) -> void:
 		if kind == "bleed" and float(status.get("remaining", 0.0)) <= 0.0:
 			status = statuses.get("bleed_nonlethal", {})
 		_set_effect_visible(kind, float(status.get("remaining", 0.0)) > 0.0)
+	# Poison remains one gameplay status with two independently timed stacks.
+	# Reuse its existing texture for a second head icon only while both are live.
+	_set_effect_visible("poison_2", active_poison_layers(statuses) >= 2)
+
+
+static func active_poison_layers(statuses: Dictionary) -> int:
+	var poison: Dictionary = statuses.get("poison", {})
+	if poison.has("stacks"):
+		var active := 0
+		for raw_stack in poison.get("stacks", []):
+			if typeof(raw_stack) == TYPE_DICTIONARY and float((raw_stack as Dictionary).get("remaining", 0.0)) > 0.0:
+				active += 1
+		return mini(active, 2)
+	return 1 if float(poison.get("remaining", 0.0)) > 0.0 else 0
+
+
+static func _effect_kind(kind: String) -> String:
+	return "poison" if kind == "poison_2" else kind
 
 # 按护盾值的变化定相位。只在这里判定，_process 只负责把相位画出来。
 func _note_shield_transition(shield_now: int) -> void:
@@ -197,7 +215,7 @@ func _process(delta: float) -> void:
 		var sprite := _sprites[kind] as Sprite3D
 		if sprite == null:
 			continue
-		var cfg: Dictionary = EFFECTS[kind]
+		var cfg: Dictionary = EFFECTS[_effect_kind(kind)]
 		if kind == "shield":
 			# 护盾走自己的相位状态机，不参与下面那套通用脉动。
 			var visual := _shield_visual(delta)
@@ -240,7 +258,11 @@ func _set_effect_visible(kind: String, visible: bool) -> void:
 	var index := _active_kinds.find(kind)
 	var changed := false
 	if visible and index < 0:
-		_active_kinds.append(kind)
+		var poison_index := _active_kinds.find("poison") if kind == "poison_2" else -1
+		if poison_index >= 0:
+			_active_kinds.insert(poison_index + 1, kind)
+		else:
+			_active_kinds.append(kind)
 		changed = true
 	elif not visible and index >= 0:
 		_active_kinds.remove_at(index)
@@ -255,7 +277,7 @@ func _set_effect_visible(kind: String, visible: bool) -> void:
 func _relayout_slots() -> void:
 	var head_kinds: Array[String] = []
 	for kind in _active_kinds:
-		if str((EFFECTS[kind] as Dictionary).anchor) == "HeadAnchor":
+		if str((EFFECTS[_effect_kind(kind)] as Dictionary).anchor) == "HeadAnchor":
 			head_kinds.append(kind)
 	_slot_x.clear()
 	var count := head_kinds.size()
@@ -293,11 +315,12 @@ func _set_procedural_status(kind:String,active:bool,remaining:float)->void:
 func _make_sprite(kind: String) -> Sprite3D:
 	if get_parent() == null or not is_instance_valid(get_parent()):
 		return null
-	var cfg: Dictionary = EFFECTS[kind]
+	var visual_kind := _effect_kind(kind)
+	var cfg: Dictionary = EFFECTS[visual_kind]
 	var anchor := _anchor(str(cfg.anchor))
 	var sprite := Sprite3D.new()
 	sprite.name = "Status_%s" % kind
-	sprite.texture = STATUS_TEXTURES.get(kind)
+	sprite.texture = STATUS_TEXTURES.get(visual_kind)
 	sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	# Keep the icon head-mounted and readable in the 1280x720 distant camera;
 	# it is still much smaller than a unit and never becomes a world burst.
