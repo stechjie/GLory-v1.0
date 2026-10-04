@@ -4073,3 +4073,61 @@ M4 `clamp_x_to_lane`→`return x` 10 红（含 3 条 `clamp_pulls_back`）｜M5 
 没有再退到全场敌人」＝有意设计）。
 **B 层语义收窄**（`_lane_cleared_by_side` 不要求该路分出胜负 ⇒ 墙提前消失，
 是 9.27 P1 的镜像）**另立一轮**。
+
+## 2026-10-04：联机偶弹「萝卜交易失败：merc_slot_occupied」（第 7 条）—— 判定顺序 + 文案出口
+
+**根因（三层，主因在服务端）**
+
+1. **判定顺序错（主因）**：`EconomyLedger._hire_merc_carrot` 原顺序
+   「先查槽位（:279）→ 再查萝卜（:284）」。萝卜已花完且请求槽恰被占时，
+   服务端**先回 `merc_slot_occupied`**，把「萝卜没了」这个真因完全掩盖。
+   探针读数：`s2_current_order_error=merc_slot_occupied` / `s2_fixed_order_would_be=not_enough_carrots`。
+   **这也解释了「不是每次弹」**：撞上槽位 ⇒ 这个码；没撞上 ⇒ 一路走到萝卜检查
+   ⇒ `not_enough_carrots`（玩家不觉得异常）。探针 S3：同一萝卜 0 的状态下三个槽位给三种码。
+2. **客机路径无萝卜门**：房主/单机在发请求**之前**本地判萝卜，不走 `EconomyLedger`；
+   客机没有这道门（修前 `request_economy` 在 646 行、萝卜判定在 918 行，走不到）。
+3. **提示泄漏内部错误码且不分动作**：`PrepUI:1747` 四个action 共用
+   `"萝卜交易失败：%s" % receipt["error"]`，原样拼 `snake_case`，且只印 `error` 不印 `action`。
+
+**修法**：①`_hire_merc_carrot` 把萝卜检查提到槽位检查之前（判据按**因果先后**排）；
+②`PrepBoardController` 客机路径补萝卜门 + 同族三处泄漏改走映射表；
+③`PrepUI` 新增唯一文案出口 `static func carrot_action_error_text(action, error)`
+（20+ 条映射，**未登记一律「操作失败，请重试」，绝不暴露 `snake_case`**）。
+
+**门禁**：`work/_qa_1004h/probe_carroot_order_1004h` **13/0 / exit 0**。
+S5 **直接调生产映射函数** —— 外层 `_on_carrot_economy_receipt` 会先按action 白名单return，
+删掉映射调用它也照样全绿（判别力陷阱，与9.27 那条同源）。
+
+**变异4/4 如期 RED**（还原后逐字节相同）：
+
+| 变异 | 手法 | 转红 |
+|------|------|------|
+| M1 | 萝卜检查移回槽位检查之后（= 修前顺序） | 3 条（S1/S2/S3） |
+| M2 | 删掉槽位占用检查那一行 | 2 条 ⇒ 证明「调顺序没把判据弄丢」 |
+| M3 | 打`merc_slot_occupied` 那一条 case | **恰好 S5a**，S5b/S5c 保持绿 |
+| M4 | 打兜底分支 `_:` | **恰好 S5c**，S5a/S5b 保持绿 |
+
+**★ M3 返工两轮，两次都是假绿（值得记住）**
+
+1. 把整个 `carrot_action_error_text` 换掉 ⇒ **编译被破坏**
+   （`A void function cannot return a value` / `Nonexistent function`），
+   门禁只跑到 8 项就报 `PASS` ⇒ 作废。
+   **教训：门禁提前中断时的 `PASS` 不是通过。要核对 `checked` 数量是否与基线一致。**
+2. 改用表内单条 case 替换后，**切片索引写错**
+   （`raw[start + len(line):]` 把绝对索引当相对长度用）
+   ⇒ 切点落进中文 UTF-8 字符中间 ⇒ 产出非法 UTF-8，Godot 直接
+   「contains invalid unicode」拒载脚本 ⇒ **又一次假绿**。
+   修法：脚本加两道**落盘前**的闸 —— 变异后必须仍含函数签名 ＋ 必须是合法 UTF-8。
+
+**★ 文本断言必须能看穿注释**：`s5d` 判`not src.contains("萝卜交易失败：%s")`
+会**永远红** —— 我自己写的注释里就引用了这句原文。
+正确做法是**先把整行注释剔掉再搜**（`_strip_comments`）。
+
+**连带回归**：`carrot_online` **101/0**、`carrot_economy` **2480/0**、
+`cold_parse_chain` **143/0**、`prep_shop` **34/0**、`tutorial_carrot_flow` **47/0**
+（⚠️ 旧式门禁，输出 `47 passed, 0 failed` 而非 `CHECK_RESULT`，口径不同不是失败）。
+
+**⚠️ 本口径未涵盖**：`_apply_remote_mercenary:6049` 的**静默丢弃回执**没动
+（`GameState.mercenary_slots` 与 `prep.roster[merc_slot]` 是两套账，
+探针 S8 实测服务端占满 8 个而客户端只同步到 7 个 —— 这是「为什么会撞车」的**上游成因**，
+修它要动服务端回执语义，风险高，**另立一轮**）。未重导 EXE/APK、未真机验证。

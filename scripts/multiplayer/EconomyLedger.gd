@@ -270,6 +270,17 @@ static func _hire_merc_carrot(prep: Dictionary, payload: Dictionary, ctx: Dictio
 	var merc_cap := int(ctx.get("merc_cap", 8))
 	if merc_slot < 0 or merc_slot >= merc_cap:
 		return {"ok": false, "error": "bad_merc_slot"}
+	# 10.04（萝卜交易失败：merc_slot_occupied）：**萝卜检查必须排在槽位检查前面。**
+	# 原顺序是「先查槽位有没有被占，再查萝卜够不够」，于是萝卜已经花完时，
+	# 只要请求的槽位恰好被占，服务端就先回 `merc_slot_occupied` ——
+	# 把「萝卜没了」这个**真正原因**完全掩盖，客户端卡面写的却是「萝卜不足」，
+	# 两边都在说真话、只是顺序不同，玩家看到的是一句与自己操作无关的内部错误码。
+	# （客机路径没有萝卜那道门，所以这个顺序错误只会发生在客机；房主/单机本地就挡住了。）
+	# 判据顺序按**因果先后**排：钱不够 ⇒ 位置再空也没用（且卡面已经提示过），
+	# 钱够 ⇒ 才轮到位置（这时报「槽位被占」才是有用的新信息）。
+	var carrots := int(prep.get("carrots", 0))
+	if carrots < cost:
+		return {"ok": false, "error": "not_enough_carrots"}
 	var roster: Dictionary = prep.get("roster", {})
 	var merc_count := 0
 	for uid in roster.keys():
@@ -278,11 +289,8 @@ static func _hire_merc_carrot(prep: Dictionary, payload: Dictionary, ctx: Dictio
 			merc_count += 1
 			if int(owned.get("merc_slot", -1)) == merc_slot:
 				return {"ok": false, "error": "merc_slot_occupied"}
-	if merc_count >= int(ctx.get("merc_cap", 8)):
+	if merc_count >= merc_cap:
 		return {"ok": false, "error": "merc_slots_full"}
-	var carrots := int(prep.get("carrots", 0))
-	if carrots < cost:
-		return {"ok": false, "error": "not_enough_carrots"}
 	prep["carrots"] = carrots - cost
 	prep["merc_carrots_spent_total"] = int(prep.get("merc_carrots_spent_total", 0)) + cost
 	var uid := _add_unit(prep, merc_id, 1, 0, "merc")
