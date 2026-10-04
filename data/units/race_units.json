@@ -153,7 +153,7 @@
                       "heal_pct":  0.15,
                       "atk_bonus":  0.10,
                       "aspd_bonus":  0.15,
-                      "model":  "res://assets/models/units/god_angel_animated/god_angel_animated.tscn",
+                      "model":  "res://assets/models/units/god_angel_refined/god_angel_refined.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
                       "opening_cd":  2,

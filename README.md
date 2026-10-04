@@ -1,5 +1,16 @@
 # Glory Beta 0.04
 
+## 2026-10-04 天使模型精修（god_angel）
+
+按 `docs/CODEX_MODEL_WORKFLOW.md` 精修天使：保留白色羽翼、长发和原动作，将片状光环替换为立体暖金圆环；移除薄羽片和发丝上穿出的倒壳描边，修补图集纯黑空白及采样暗边，独立贴图以 1024 像素和 mipmap 导入，改善羽翼、面部与衣料清晰度。其他角色的共享材质不变。
+
+- 正式模型改为 `assets/models/units/god_angel_refined/god_angel_refined.tscn`。原 FBX、71 根骨骼、表情通道及三套动作时序保留，天使数据仅改 model 字段。
+- 2934 → 3408 三角面；取消描边 pass 抵消新增光环 pass。301 项模型/动画检查通过，完成正侧背三动作、同族对照及正式备战和真实战斗回放验证。
+- RTX 3080 / Compatibility / 1440×900，6／12 人前后绘制调用分别保持 68／80；本次约 165 FPS 的显示节拍下稳定，不能据此推断手机性能。手机未测，正式场景退出仍记录了 ObjectDB 残留警告。
+- 可编辑 `.blend`、复现脚本、前后对比页面、哈希和日志在桌面 `其他/天使精修_20261004/`，最终截图为 `captures/delivery-*`。完整源为 `source/angel_complete_editable.blend`。
+- 用户测试后，按光之卫士、大祭司的精修入仓方式，为 `assets/models/units/god_angel_refined/` 添加 `.gitignore` 白名单。12 个运行文件（包装脚本、场景、材质、网格、修复贴图和导入元数据）已完整同步 GLory-v1.0，可随代码上传；天使 model 路径和本节同时同步。原 FBX 动作仍沿用既有美术资源包。本次没有需另行分发的新增运行素材；桌面 `天使新增资源_20261004/` 保留同内容副本。可编辑源、截图和日志留在“其他”，未执行 Git 暂存、提交或推送。
+
+
 ## 2026-10-04 大祭司（god_priestess）模型精修接入 + 裙摆黑斑修复
 
 参考 `docs/CODEX_MODEL_WORKFLOW.md`，把大祭司从原包装场景切到精修场景 `res://assets/models/units/god_priestess_refined/god_priestess_refined.tscn`，并把用户箭头标记的裙摆黑块一并修掉。

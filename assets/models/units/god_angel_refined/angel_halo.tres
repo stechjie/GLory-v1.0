@@ -1,0 +1,15 @@
+[gd_resource type="ShaderMaterial" load_steps=4 format=3]
+[ext_resource type="Shader" path="res://shaders/character_toon.gdshader" id="1"]
+[sub_resource type="Gradient" id="Solid"]
+colors = PackedColorArray(1, 1, 1, 1, 1, 1, 1, 1)
+[sub_resource type="GradientTexture1D" id="White"]
+gradient = SubResource("Solid")
+[resource]
+shader = ExtResource("1")
+shader_parameter/albedo_color = Color(0.88, 0.70, 0.35, 1)
+shader_parameter/albedo_texture = SubResource("White")
+shader_parameter/shadow_tint = Color(0.63, 0.67, 0.73, 1)
+shader_parameter/light_energy = 1.0
+shader_parameter/light_threshold = 0.30
+shader_parameter/specular_amount = 0.15
+shader_parameter/rim_strength = 0.08
