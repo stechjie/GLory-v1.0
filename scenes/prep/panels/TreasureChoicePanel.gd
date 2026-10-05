@@ -16,6 +16,7 @@ extends Control
 
 const PrepWidgets := preload("res://scenes/prep/PrepWidgets.gd")
 const SfxService := preload("res://ui/services/SfxService.gd")
+const SoftEdgeGlowScript := preload("res://ui/components/SoftEdgeGlow.gd")
 const TREASURE_CARD_DIRECTORY := "res://assets/ui/treasure_cards"
 
 # 三选一层的 ModalStack 合同（C-11 的 C2）。
@@ -27,6 +28,9 @@ const PICK_PENDING_RETRY_MSEC := 5000
 # 迁移前这 0.66 的黑是浮层自己那块 ColorRect；现在由 ModalStack 的 backdrop 承担，
 # 数值逐字保持，玩家看到的变暗程度不变。
 const TREASURE_BACKDROP_COLOR := Color(0.0, 0.0, 0.0, 0.66)
+# 刷新按钮的边缘光（10.05 第 4 条）：边框亮金 + 外侧琥珀光晕，靠 modulate 呼吸。
+const REFRESH_EDGE_COLOR := Color(1.0, 0.86, 0.42)
+const REFRESH_GLOW_COLOR := Color(1.0, 0.66, 0.18, 0.38)
 
 signal pick_requested(tid: String)  # 玩家点了某个候选；领取流程归宿主（要走服务端授予）
 signal claim_requested              # 该结算这一轮的宝物了
@@ -55,6 +59,7 @@ var _treasure_overlay: Control
 var _treasure_timer_lbl: Label
 var _treasure_choice_row: HBoxContainer
 var _treasure_refresh_btn: Button
+var _treasure_gold_lbl: Label                      # 刷新按钮右边的「当前剩余金」（10.05 第 4 条）
 var _owned_treasure_box: GridContainer
 
 # 联机局点卡片只是发意图，要等服务端 grant/deny。这段等待里必须挡住连点，
@@ -155,6 +160,8 @@ func refresh() -> void:
 	var cost := TreasureService.refresh_cost(int(GameState.pending_treasure.get("refresh_index", 0)), false)
 	_treasure_refresh_btn.text = tr("ui_treasure_refresh_free") if cost == 0 else tr("ui_treasure_refresh_cost") % cost
 	_treasure_refresh_btn.disabled = GameState.gold < cost
+	if _treasure_gold_lbl != null and is_instance_valid(_treasure_gold_lbl):
+		_treasure_gold_lbl.text = tr("ui_treasure_gold_left") % GameState.gold
 
 
 
@@ -275,6 +282,7 @@ func _create_content() -> Control:
 	treasure_refresh_holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	treasure_refresh_holder.alignment = BoxContainer.ALIGNMENT_CENTER
 	treasure_refresh_holder.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	treasure_refresh_holder.add_theme_constant_override("separation", 16)
 	treasure_box.add_child(treasure_refresh_holder)
 	_treasure_refresh_btn = Button.new()
 	_treasure_refresh_btn.custom_minimum_size = Vector2(220, 46)
@@ -282,7 +290,57 @@ func _create_content() -> Control:
 	PrepWidgets.apply_refresh_button_styles(_treasure_refresh_btn)
 	_treasure_refresh_btn.pressed.connect(_refresh_candidates)
 	treasure_refresh_holder.add_child(_treasure_refresh_btn)
+	# 10.05 第 4 条：给刷新按钮加一圈呼吸的边缘光，提示「这里可以刷新」。
+	_attach_refresh_glow(_treasure_refresh_btn)
+	# 10.05 第 4 条：按钮右边显示当前剩余金币，辅助玩家判断要不要刷新。
+	# 数值在 refresh() 里赋值 —— 花金刷新走 state_changed → 宿主整屏刷新 → 回到这里，
+	# 所以花费之后数字会当场变小。
+	_treasure_gold_lbl = Label.new()
+	_treasure_gold_lbl.name = "TreasureGoldLeft"
+	_treasure_gold_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_treasure_gold_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_treasure_gold_lbl.add_theme_font_size_override("font_size", 20)
+	_treasure_gold_lbl.add_theme_color_override("font_color", Color(1.0, 0.90, 0.55))
+	_treasure_gold_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	_treasure_gold_lbl.add_theme_constant_override("outline_size", 3)
+	treasure_refresh_holder.add_child(_treasure_gold_lbl)
 	return root
+
+
+# 刷新按钮的边缘光：一个画在按钮**背后**的亮边 + 外发光，靠 modulate 呼吸。
+#
+# 用 SoftEdgeGlow（纯 `_draw()`）而不是 `Panel` + `StyleBoxFlat(draw_center=false,
+# shadow_*)`：本仓有 procedural_ui_ratchet 棘轮 —— 业务代码里的 `StyleBoxFlat.new()`
+# 只能下降、而且按文件记账，用 StyleBoxFlat 实现这层光会把棘轮顶红。
+#
+# 呼吸用的 Tween 必须等它进了场景树再建 —— `_create_content()` 期间 root 还没被
+# ModalStack push 进树，那时 `create_tween()` 直接失败（Tween 只能在树内创建），
+# 表现是「按钮在、光不呼吸」，不报错。
+func _attach_refresh_glow(button: Button) -> void:
+	# 不加类型标注：`Script.new()` 的返回类型对分析器是 Variant，
+	# 用 `:=` 会被本工程当错误的 `inference_on_variant` 拦下。
+	var glow = SoftEdgeGlowScript.new()
+	glow.name = "RefreshEdgeGlow"
+	glow.edge_color = REFRESH_EDGE_COLOR
+	glow.glow_color = REFRESH_GLOW_COLOR
+	glow.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	glow.offset_left = -9.0
+	glow.offset_top = -9.0
+	glow.offset_right = 9.0
+	glow.offset_bottom = 9.0
+	button.add_child(glow)
+	glow.tree_entered.connect(_start_refresh_glow.bind(glow))
+
+
+func _start_refresh_glow(glow: Control) -> void:
+	if glow == null or not is_instance_valid(glow) or not glow.is_inside_tree():
+		return
+	if glow.has_meta("edge_glow_started"):
+		return
+	glow.set_meta("edge_glow_started", true)
+	var tween := glow.create_tween().set_loops()
+	tween.tween_property(glow, "modulate:a", 0.26, 0.9).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tween.tween_property(glow, "modulate:a", 1.0, 0.9).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 
 # 一次有效点击只发一次意图。联机局要等服务端 grant/deny，这中间连点必须无效。
@@ -355,6 +413,7 @@ func _teardown_modal_state() -> void:
 	_treasure_timer_lbl = null
 	_treasure_choice_row = null
 	_treasure_refresh_btn = null
+	_treasure_gold_lbl = null
 	# 不清 _pick_pending_tid：外部 Back/close_all 后若 pending 仍 active，层会自愈；
 	# 等待中的服务端意图必须继续锁住新建卡片，直到结算或有限重试到期。
 

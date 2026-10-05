@@ -6,6 +6,7 @@ const RenderWarmup := preload("res://scripts/assets/BattleRenderWarmup.gd")
 const BattlePresentationDirectorScript := preload("res://effects/runtime/presentation/BattlePresentationDirector.gd")
 const LegacyBattleVfxAdapterScript := preload("res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd")
 const VfxProfileResolverScript := preload("res://effects/runtime/presentation/VfxProfileResolver.gd")
+const PetPreview := preload("res://scripts/pets/PetPreview.gd")
 
 # Presentation cannot hold the authoritative result indefinitely.
 const PRESENTATION_DRAIN_TIMEOUT_SEC := 3.0
@@ -423,8 +424,7 @@ func _prepare_replay_assets() -> bool:
 			return true
 		if bar == null:
 			bar = _make_battle_prepare_bar()
-		bar.value = 100.0 * float(done) / float(maxi(1, total))
-		bar.get_node("StageText").text = tr("battle_load_assets") + " · %d/%d" % [done, total]
+		_set_prepare_progress(bar, 100.0 * float(done) / float(maxi(1, total)))
 		var failed: Array[String] = []
 		for path in model_paths + texture_paths:
 			if BattleAssetService.ready_count([path]) + VFXManager.ready_texture_count([path]) > 0:
@@ -461,6 +461,14 @@ func completed_replay_result() -> Dictionary:
 # 实测单个单位模型的实例化 + bounds + 动画绑定在这台机器上约 20–60 ms。
 const MODELS_PER_FRAME := 3
 
+# 读条（10.05 第 5 条）：进度条尺寸与条上宠物的大小。
+# 尺寸写成常量而不是读 `bar.size`：进度条是在 `_make_battle_prepare_bar()` 里
+# 现建、当场设值的，那一瞬间布局还没跑过，size 还是 0 —— 用 size 算出来的宠物
+# 位置会全部叠在左上角。
+const BATTLE_PREPARE_BAR_WIDTH := 520.0
+const BATTLE_PREPARE_BAR_HEIGHT := 12.0
+const BATTLE_PREPARE_PET_SIZE := Vector2(64.0, 64.0)
+
 # 分帧建单位模型，全程隐藏，建完一次性显形，建完才开打。
 #
 # 三件事各自的理由：
@@ -496,8 +504,7 @@ func _prepare_battle_models() -> void:
 		done += 1
 		if done % MODELS_PER_FRAME == 0:
 			if bar != null:
-				bar.value = 40.0 * float(done) / float(maxi(1, total))
-				bar.get_node("StageText").text = tr("battle_load_models") + " · %d/%d" % [done,total]
+				_set_prepare_progress(bar, 40.0 * float(done) / float(maxi(1, total)))
 			await get_tree().process_frame
 			if not is_inside_tree() or _finished or _prepare_deadline_expired():
 				# 中途退出也要把根恢复可见，否则这个节点被复用时棋盘是空的。
@@ -512,8 +519,7 @@ func _prepare_battle_models() -> void:
 	var render_report: Dictionary = await warmup.prepare_replays([_replay_own, _replay_rival], _battle_3d_viewport,
 		func(ready: int, count: int):
 			if is_instance_valid(bar):
-				bar.value = 40.0 + 50.0 * float(ready) / float(maxi(1, count))
-				bar.get_node("StageText").text = tr("battle_load_effects") + " · %d/%d" % [ready,count],
+				_set_prepare_progress(bar, 40.0 + 50.0 * float(ready) / float(maxi(1, count))),
 		func() -> bool: return is_inside_tree() and not _finished and not _return_emitted,
 		_battle_prepare_deadline_msec)
 	battle_preparation_report["effects"] = render_report.duplicate(true)
@@ -529,8 +535,7 @@ func _prepare_battle_models() -> void:
 		_fail_team_replay(str(render_report.get("error", "battle_render_prepare_failed")))
 		return
 	_refresh_visuals()
-	bar.value = 90.0
-	bar.get_node("StageText").text = tr("battle_load_scene")
+	_set_prepare_progress(bar, 90.0)
 	if _battle_3d_root != null:
 		_battle_3d_root.visible = true
 	# Group heals pair nearby geometry with Omni lights. GLES creates a
@@ -619,6 +624,14 @@ func _prepare_deadline_expired() -> bool:
 	return false
 
 # 顶部一条细进度条，接着备战界面那条蓝线继续走，避免「画面停住」的观感。
+#
+# 10.05 反馈第 5 条：**去掉**「正在准备战斗特效 · 11/13」这类文字提示与它背后那块
+# 黑色卡片（LoadingBackdrop），只保留蓝色进度条；并在进度条填充的右端放一只玩家
+# 当前出战的宠物（跑动姿势），让它跟着进度一起前进 —— 加载期画面不再被黑卡遮住，
+# 玩家能看见宠物在跑，也知道还差多少。
+#
+# ★ 进度只能通过 `_set_prepare_progress()` 推进：宠物位置是跟着 value 算出来的，
+# 别处直接写 bar.value 会让「条走了、宠物没走」。
 func _make_battle_prepare_bar() -> ProgressBar:
 	var bar := ProgressBar.new()
 	bar.name = "BattlePrepareBar"
@@ -628,10 +641,10 @@ func _make_battle_prepare_bar() -> ProgressBar:
 	bar.value = 0.0
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	bar.offset_left = -260.0
-	bar.offset_right = 260.0
+	bar.offset_left = -BATTLE_PREPARE_BAR_WIDTH * 0.5
+	bar.offset_right = BATTLE_PREPARE_BAR_WIDTH * 0.5
 	bar.offset_top = 36.0
-	bar.offset_bottom = 48.0
+	bar.offset_bottom = 36.0 + BATTLE_PREPARE_BAR_HEIGHT
 	bar.z_index = 200
 	var bg := StyleBoxFlat.new()
 	bg.bg_color = Color(0.06, 0.16, 0.20, 1.0)
@@ -640,34 +653,34 @@ func _make_battle_prepare_bar() -> ProgressBar:
 	bar.add_theme_stylebox_override("background", bg)
 	bar.add_theme_stylebox_override("fill", fill)
 	add_child(bar)
-	var panel := Panel.new()
-	panel.name = "LoadingBackdrop"
-	panel.show_behind_parent = true
-	panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	panel.offset_left = -32.0
-	panel.offset_right = 32.0
-	panel.offset_top = -116.0
-	panel.offset_bottom = 32.0
-	var card := StyleBoxFlat.new()
-	card.bg_color = Color(0.025, 0.06, 0.08, 1.0)
-	card.set_corner_radius_all(16)
-	panel.add_theme_stylebox_override("panel", card)
-	bar.add_child(panel)
-	var label := Label.new()
-	label.name = "StageText"
-	label.text = tr("battle_load_models")
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	label.offset_top = -100.0
-	label.offset_bottom = -12.0
-	label.add_theme_font_size_override("font_size", 24)
-	label.add_theme_color_override("font_color", Color.WHITE)
-	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	bar.add_child(label)
+	_attach_prepare_pet(bar)
+	_set_prepare_progress(bar, 0.0)
 	return bar
+
+
+# 进度条上的宠物。模型取玩家当前出战的宠物（`PlayerProfile.get_active()`）；
+# 没选宠物、模型缺失时 `build_runner` 返回 null —— 那就只留进度条，不给玩家看「?」占位。
+func _attach_prepare_pet(bar: ProgressBar) -> void:
+	var pet := PetPreview.build_runner(PlayerProfile.get_active(), BATTLE_PREPARE_PET_SIZE)
+	if pet == null:
+		return
+	pet.name = "PreparePet"
+	pet.z_index = 201
+	bar.add_child(pet)
+
+
+func _set_prepare_progress(bar: ProgressBar, value: float) -> void:
+	if bar == null or not is_instance_valid(bar):
+		return
+	bar.value = value
+	var pet := bar.get_node_or_null("PreparePet") as Control
+	if pet == null:
+		return
+	var ratio := clampf(value / maxf(1.0, bar.max_value), 0.0, 1.0)
+	# 横向：宠物中心贴在进度条填充的右端；纵向：脚踩在条上（底边略低于条中线）。
+	pet.position = Vector2(
+		BATTLE_PREPARE_BAR_WIDTH * ratio - pet.size.x * 0.5,
+		BATTLE_PREPARE_BAR_HEIGHT * 0.5 - pet.size.y + 5.0).round()
 
 func _try_start_final_round_intro() -> void:
 	if _final_round_intro_started or GameState.round_index != GameState.FINAL_ROUND:

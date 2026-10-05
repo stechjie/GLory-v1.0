@@ -74,6 +74,16 @@ func _on_drag_ended() -> void:
 	# Released without landing on a cell -> snap into the nearest valid cell.
 	if not _drop_consumed and not _active_drag_payload.is_empty():
 		_snap_drop_to_nearest(get_global_mouse_position(), _active_drag_payload)
+	_finish_drag_state()
+
+# 拖拽收尾：清掉拖拽态，把棋盘/待命区恢复成「没在拖」的样式。
+#
+# 从 `_on_drag_ended` 拆出来是给**商店卡片**那条路用的（10.05 第 2 条返工）：
+# 商店卡的 drag_owner 是商店面板，它把起拖/松手转发成信号，由 PrepScreen 接到
+# `_on_drag_started` / 这里。刻意**只共用收尾**、不让商店走 `_on_drag_ended` ——
+# 那样会多做一次 `_snap_drop_to_nearest`，把「商店卡随手一放」变成自动买入，
+# 与现状不同，属于这次返工不该顺手改掉的行为。
+func _finish_drag_state() -> void:
 	_active_drag_payload = {}
 	_drop_consumed = false
 	_set_shop_sell_mode(false)
@@ -398,7 +408,19 @@ func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
 			show_message(tr("toast_unique_limit"))
 			return
 		if GameState.normal_unit_count() >= GameState.normal_unit_cap():
-			show_message(tr("toast_board_full") % GameState.normal_unit_cap())
+			# 10.05 第 3 条**返工追加的第 4 种情况**（用户原话）：「棋盘满 待命区未满，
+			# 拖动商店的棋子到棋盘会自动落到待命区，如果可升星，会自动升星」。
+			#
+			# 改之前这里只弹一句「棋盘人口已满（N）」就 return —— 玩家拖了半天棋子，
+			# 得到的是一句拒绝，而待命区其实还有空位能收下它（截图反馈的那一句提示）。
+			# 现在按下面的顺序自动分流：
+			#   ① 棋盘上有同名同星能升星的 → 就地升星（最优先：不占新格，还直接变强）；
+			#   ② 待命区里有能升星的 → 在待命区升星（同理，省下一个格子）；
+			#   ③ 待命区还有空位 → 落到待命区（本条的正文）；
+			#   ④ 都不行 → 「棋子已满，无法购买」（第 3 条之（3）的既有口径）。
+			if _auto_dispatch_shop_when_board_full(shop_index, offer):
+				return
+			show_message(tr("ui_pieces_full"))
 			return
 		if GameState.gold < cost:
 			show_message(tr("ui_not_enough_gold"))
@@ -482,6 +504,33 @@ func _buy_or_merge_shop_to_bench(shop_index: int, bench_index: int) -> void:
 		TutorialMode.record_shop_purchase()
 	SaveManager.save_run()
 	_refresh_all()
+
+# 「上阵已满」时把这张商店卡自动分流到唯一还收得下它的地方。见
+# `_buy_or_merge_shop_to_board` 的「上阵上限」分支（10.05 第 3 条返工追加）。
+#
+# 返回 true = 已经把它路由出去了（买没买成、提示什么，都由被调的那两个买入函数自己负责）；
+# 返回 false = 棋盘与待命区都收不下它，由调用方给「棋子已满，无法购买」。
+#
+# 为什么单独抽一个函数而不是在分支里就地写：它必须**复用** `_buy_or_merge_shop_to_board` /
+# `_buy_or_merge_shop_to_bench` 那一整套买入流程（扣钱、`shop_sold`、影子账
+# `_shadow_report_buy`、音效、存档）。照抄一遍就等于把「哪一步会漏」的机会复制一份。
+func _auto_dispatch_shop_when_board_full(shop_index: int, offer: Dictionary) -> bool:
+	# ① 棋盘上先升星。走 `_buy_or_merge_shop_to_board` 自己 —— 那条路上 target 非空，
+	#    不会再回到「上阵上限」这个分支，递归一层就收。
+	var board_merge := PrepRules.first_merge_target(GameState.board_slots, offer)
+	if board_merge >= 0:
+		_buy_or_merge_shop_to_board(shop_index, board_merge)
+		return true
+	# ② 待命区升星优先于「找个空位塞进去」：升星省一个格子，而待命区的格子是稀缺的。
+	var bench_target := PrepRules.first_merge_target(GameState.bench_slots, offer)
+	if bench_target < 0:
+		# ③ 待命区空位（本轮返工要的新情况）。
+		bench_target = PrepRules.first_empty_bench_slot()
+	if bench_target < 0:
+		return false
+	_buy_or_merge_shop_to_bench(shop_index, bench_target)
+	return true
+
 func _would_exceed_board_limit(cell: Dictionary, ignore_index: int = -1) -> bool:
 	var d: Dictionary = cell.get("def", {})
 	return bool(d.get("unique_on_board", false)) and PrepRules.has_unique_board_unit(str(cell.get("id", "")), PrepRules.board_limit_for_def(d), ignore_index)

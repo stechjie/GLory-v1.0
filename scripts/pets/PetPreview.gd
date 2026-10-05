@@ -20,6 +20,18 @@ const CAMERA_TARGET := Vector3(0.0, 0.48, 0.0)
 const ORTHO_SIZE := 1.35
 const TARGET_HEIGHT := 0.95
 
+# 读条进度条上「跟着进度跑」的宠物（10.05 反馈第 5 条）。
+const RUNNER_SIZE := Vector2(64, 64)
+# 侧前方视角：跑动/前进走动这类动作从侧面最好认（正面看就是原地踏步）。
+const RUNNER_CAMERA_POS := Vector3(-1.35, 0.78, 1.15)
+const RUNNER_CAMERA_TARGET := Vector3(0.0, 0.46, 0.0)
+# 1.16 → 1.40（10.05 第 5 条返工）：不再靠「单帧量一次」拍板，而是按帧采样整个 run 周期
+# 取最坏一帧（work/_qa_1005d/probe_petanim_1005d）。跑步时身体前后摆，单帧余量会被吃掉：
+#   1.16 → 猫 1px / 蘑菇 5px / 兔 6px（宠物会擦边甚至被裁）
+#   1.40 → 猫 15px / 蘑菇 18px / 兔 19px（160px 框上约 9% 留白）
+#   1.50 → 19px 起（再放大宠物就明显变小了，不值）
+const RUNNER_ORTHO_SIZE := 1.40
+
 
 # 商店和备战卡片展示数据表中的手绘图；未配置或缺失时回退到现有模型预览。
 # 主菜单和战场继续调用 build()，不改变它们的 3D 展示。
@@ -103,7 +115,7 @@ static func build(pet_id: String, size: Vector2 = CARD_SIZE, greyed: bool = fals
 	viewport.add_child(camera)
 
 	viewport.add_child(model)
-	normalize(model, pet_id)
+	fit_when_ready(model, pet_id)
 
 	if greyed:
 		var dim := ColorRect.new()
@@ -115,13 +127,181 @@ static func build(pet_id: String, size: Vector2 = CARD_SIZE, greyed: bool = fals
 
 
 # 把模型缩放到统一高度并把脚底对齐到框底。各宠物的模型尺寸差很多，
-# 不做这一步的话兔子会比蘑菇大一圈。
+# 不做这一步的话兔子会比蘑菇大一圈。**调用时机见 `fit_when_ready()`：直接在模型
+# 还没进树时调它，量到的是空包围盒，等于没归一化。**
 static func normalize(model: Node3D, pet_id: String) -> void:
 	var box := aabb_of(model)
 	var height := maxf(0.0001, box.size.y)
 	var factor := TARGET_HEIGHT / height * PetService.model_scale(pet_id)
 	model.scale = Vector3.ONE * factor
-	model.position.y = -box.position.y * factor + PetService.model_y(pet_id)
+	# ★ 脚底基准**不能**用 `box.position.y`（10.05 第 5 条返工的根因）。
+	#
+	# 宠物 FBX 导入后是 `ModelRoot/Armature(scale=100)/Skeleton3D/Mesh1_0`，
+	# `MeshInstance3D.get_aabb()` 给的是**以网格节点原点为中心**的盒子 —— 实测三只
+	# 宠物的盒子都关于 0 对称（猫 [-0.794, +0.790]、蘑菇 [-0.747, +0.749]、
+	# 兔 [-0.949, +0.948]）：**高度是对的，基准错了半身**。
+	# 而真正被动画驱动、真正被渲染出来的几何（骨骼当前姿势）是 [0.000, +1.178]
+	# —— 脚底恰好落在 local y = 0（见 work/_qa_1005d/probe_petbones_1005d）。
+	# 拿盒底当脚底 ⇒ 宠物被整体抬高半身 ⇒ 头顶出画，读条上那只猫只剩斗篷
+	#（用户 10.05 截图 feedback 第 5 条）。
+	# 高度继续用 AABB（实测与骨骼+网格一致），只把基准换成骨骼下沿。
+	var anchor := skeleton_bottom(model, box)
+	model.position.y = -anchor * factor + PetService.model_y(pet_id)
+
+
+# 模型**当前姿势**的脚底高度（模型 local 空间）。骨骼才是动画真正驱动的东西，
+# `MeshInstance3D.get_aabb()` 不是（详见 `normalize()` 的说明）。
+# 找不到骨骼时退回包围盒底 —— 与改之前同口径，至少不会更差。
+static func skeleton_bottom(root: Node3D, box: AABB) -> float:
+	var found := false
+	var bottom := 0.0
+	var stack: Array[Node] = [root]
+	while not stack.is_empty():
+		var current: Node = stack.pop_back()
+		for child in current.get_children():
+			stack.append(child)
+		if not (current is Skeleton3D):
+			continue
+		var skeleton := current as Skeleton3D
+		if skeleton.get_bone_count() == 0:
+			continue
+		var local := root.global_transform.affine_inverse() * skeleton.global_transform
+		for i in skeleton.get_bone_count():
+			var y := (local * skeleton.get_bone_global_pose(i).origin).y
+			if found:
+				bottom = minf(bottom, y)
+			else:
+				bottom = y
+				found = true
+	return bottom if found else box.position.y
+
+
+# 读条进度条上跟着进度前进的宠物（10.05 反馈第 5 条）。
+#
+# 与 build() 的三点差别：
+#   1. 相机从**侧前方**看 —— 跑动/前进走动从侧面最好认；
+#   2. 模型按 `play_run()` 播跑动片段（宠物库没有 idle 片段，`play_idle` 是一帧静止，
+#      见 PrepBoardModels._play_carrot_pet_ambient 的注释）；
+#   3. 尺寸先自己设好再交给调用方 —— 调用方是把它挂在 ProgressBar 底下的，
+#      而 ProgressBar 不是容器，不会替子节点套用 custom_minimum_size。
+#
+# 没有宠物 / 模型缺失时返回 **null**（不是占位框）：读条上不该出现一个「?」，
+# 玩家会以为加载出错了。调用方看到 null 就只留进度条。
+#
+# `camera_size` / `camera_y_offset` 与 `build()` 同名同义，默认取上面的常量。
+# 加这两个参数是为了能用同一份生产代码做**取景标定**（work/_qa_1005d 的扫描探针），
+# 而不是在探针里照抄一遍相机参数。
+static func build_runner(pet_id: String, size: Vector2 = RUNNER_SIZE,
+	camera_size: float = RUNNER_ORTHO_SIZE, camera_y_offset: float = 0.0) -> Control:
+	if pet_id.is_empty():
+		return null
+	var path := PetService.model_path(pet_id)
+	if path.is_empty():
+		return null
+	var scene := ResourceLoader.load(path) as PackedScene
+	if scene == null:
+		return null
+	var model := scene.instantiate() as Node3D
+	if model == null:
+		return null
+
+	var frame := Panel.new()
+	frame.custom_minimum_size = size
+	frame.size = size
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	frame.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+
+	var container := SubViewportContainer.new()
+	container.stretch = true
+	container.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	container.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	frame.add_child(container)
+
+	var viewport := SubViewport.new()
+	viewport.own_world_3d = true
+	viewport.transparent_bg = true
+	viewport.disable_3d = false
+	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	container.add_child(viewport)
+
+	var env_node := WorldEnvironment.new()
+	var env := Environment.new()
+	env.background_mode = Environment.BG_COLOR
+	env.background_color = Color(0.0, 0.0, 0.0, 0.0)
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0.62, 0.72, 0.66)
+	env.ambient_light_energy = 0.45
+	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	env_node.environment = env
+	viewport.add_child(env_node)
+
+	var key_light := DirectionalLight3D.new()
+	key_light.light_color = Color(1.0, 0.94, 0.80)
+	key_light.light_energy = 0.70
+	key_light.rotation_degrees = Vector3(-46.0, 18.0, 0.0)
+	key_light.shadow_enabled = false
+	viewport.add_child(key_light)
+
+	var camera := Camera3D.new()
+	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
+	camera.size = camera_size
+	var runner_offset := Vector3(0.0, camera_y_offset, 0.0)
+	camera.look_at_from_position(RUNNER_CAMERA_POS + runner_offset,
+		RUNNER_CAMERA_TARGET + runner_offset, Vector3.UP)
+	camera.current = true
+	viewport.add_child(camera)
+
+	viewport.add_child(model)
+	# ★ 先量包围盒、再切动作：两个都挂在模型的 `ready` 上，按连接顺序回调（先 fit 后 run）。
+	fit_when_ready(model, pet_id)
+	play_run(model)
+	return frame
+
+
+# 「等模型真的进树、`_ready()` 跑完再量包围盒」的时机处理（10.05 第 5 条返工）。
+#
+# 根因：宠物模型的三个动作子模型是 `_load_action_models()` 在**模型的 `_ready()` 里**
+# 建的（见 assets/models/pets/pet_cat/PetCatAnimated.gd），而 `build()` / `build_runner()`
+# 返回的 frame 还没被调用方 `add_child` —— 此刻模型不在树里，`_ready()` 没跑，
+# ModelRoot 下**一个 MeshInstance3D 都没有**。`aabb_of()` 于是找不到网格，落到兜底的
+# `AABB(Vector3.ZERO, Vector3.ONE)`（size.y = 1.0），`normalize()` 按「模型高 1.0」算出
+# 缩放系数恒为 0.95 —— 而真实模型高约 1.5~1.9 ⇒ 宠物被画面裁掉，
+# 就是用户反馈的「宠物的模型不全」（读条上那只猫只看得见头和斗篷）。
+#
+# 实测（work/_qa_1005d/probe_petfit，改前）：三只宠物 × 两条入口（build/build_runner）
+# × 两种姿势，渲染出来的**不透明像素全部贴住画面四边**（即全部被裁），
+# 且 `model.scale` 恒为 0.950、`model.position.y` 恒为 0.000。
+static func fit_when_ready(model: Node3D, pet_id: String) -> void:
+	if model == null or not is_instance_valid(model):
+		return
+	if model.is_node_ready():
+		normalize(model, pet_id)
+	else:
+		model.ready.connect(func() -> void: normalize(model, pet_id), CONNECT_ONE_SHOT)
+
+
+# 把模型切到跑动片段。宠物模型不一定都有这个动作 —— **没有 `play_run()` 方法的
+# 模型保持默认姿态，不报错**（所以下面用 `has_method` 兜底）。
+# 调用时机见函数体内的说明：不能在模型还没进树时直接调。
+static func play_run(model: Node3D) -> void:
+	if model == null or not is_instance_valid(model):
+		return
+	if not model.has_method("play_run"):
+		return
+	# ★ 不能在「模型还没进树」时直接调。宠物脚本里写的是
+	#   `@onready var animation_player: AnimationPlayer = $AnimationPlayer`，
+	#   而 @onready 只在 `_ready()` 那一刻赋值；build_runner 返回的 frame 还没被
+	#   调用方 add_child，模型此时不在树里 ⇒ `animation_player` 仍是 null，
+	#   直接调会让它在模型内部炸出
+	#   `Cannot call method 'play' on a null value`（10.05 实测，被读条门禁日志抓到）。
+	#   而且模型的 `_ready()` 结尾自己会 `play_idle()` —— 抢在它前面调，
+	#   就算不炸也会被那一句覆盖回静止帧。
+	#   所以：已经 ready 就直接切；没 ready 就挂一次性 `ready` 信号（该信号在
+	#   `_ready()` 之后才发），等它自己初始化完再切到跑动。
+	if model.is_node_ready():
+		model.call("play_run")
+	else:
+		model.ready.connect(func() -> void: model.call("play_run"), CONNECT_ONE_SHOT)
 
 
 # 模型自己的包围盒。用遍历而不是 model.get_aabb()：Node3D 没有那个方法，

@@ -99,6 +99,29 @@ const TARGETS: Array[Dictionary] = [
 	{"kind": "script", "path": "res://tools/match_history_ui_check.gd"},
 	{"kind": "script", "path": "res://tools/battle_report_check.gd"},
 	{"kind": "script", "path": "res://tools/final_settlement_check.gd"},
+	# ★ 10.05（10.05bug提交及修复.docx 5 条）：按「改的每个文件都要在清单里，谁坏了就指谁」
+	#   逐个单列。★ 这一批**真的抓到一个漏网**：`ui/components/TouchScrollContainer.gd`
+	#   在补进清单之前根本没人解析它 —— 它里面 `var local := _accepts(pos)`（从 Variant
+	#   推断）触发了本工程当错误用的 `inference_on_variant`，解析直接失败；门禁却全绿，
+	#   只有日志里一行 SCRIPT ERROR。教训与 9.22 一模一样：**没有单列 = 靠别人连带**，
+	#   而别人连带失败时 `CHECK_RESULT` 仍可能是 PASS。
+	{"kind": "script", "path": "res://ui/components/TouchScrollContainer.gd"},
+	{"kind": "script", "path": "res://ui/components/RoundedRectDraw.gd"},
+	{"kind": "script", "path": "res://ui/components/SoftEdgeGlow.gd"},
+	{"kind": "script", "path": "res://scenes/prep/CarrotCampPanelV3.gd"},
+	{"kind": "script", "path": "res://scenes/prep/PrepShared.gd"},
+	{"kind": "script", "path": "res://scenes/prep/PrepRules.gd"},
+	{"kind": "script", "path": "res://scenes/prep/panels/PrepDeployCounter.gd"},
+	{"kind": "script", "path": "res://effects/runtime/presentation/BoardReadabilityLayer.gd"},
+	{"kind": "script", "path": "res://scenes/prep/PrepWidgets.gd"},
+	{"kind": "script", "path": "res://scenes/prep/panels/TreasureChoicePanel.gd"},
+	{"kind": "script", "path": "res://scripts/autoload/LocaleManager.gd"},
+	{"kind": "script", "path": "res://scripts/pets/PetPreview.gd"},
+	{"kind": "script", "path": "res://tools/battle_loading_layout_check.gd"},
+	# ★ 本轮新写的两个行为门禁也要单列：它们是新代码，没人「连带」解析。
+	#   （`prep_1005` 覆盖第 2/3/4 条，`touch_scroll` 覆盖第 1 条。）
+	{"kind": "script", "path": "res://tools/prep_1005_check.gd"},
+	{"kind": "script", "path": "res://tools/touch_scroll_check.gd"},
 ]
 
 

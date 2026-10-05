@@ -116,6 +116,15 @@ func _ready() -> void:
 	# 而面板的接线在 PrepUI._build() 里 —— 父类看不见子类的方法。
 	if not _treasure.net_signals_needed.is_connected(_connect_treasure_signals):
 		_treasure.net_signals_needed.connect(_connect_treasure_signals)
+	# 商店卡片起拖/松手也要通知宿主（10.05 第 2 条返工）：商店卡的 drag_owner 是
+	# 商店面板自己，宿主以前收不到这条路，于是「在商店里拖棋子上阵」时棋盘正中的
+	# 计数图案不让位、16 个圆圈也不出现。同样必须在这里接线 ——
+	# _on_drag_started / _finish_drag_state 定义在 PrepBoardController，
+	# 而 _shop 的接线在 PrepUI._build() 里，父类看不见子类的方法。
+	if not _shop.drag_started.is_connected(_on_drag_started):
+		_shop.drag_started.connect(_on_drag_started)
+	if not _shop.drag_ended.is_connected(_finish_drag_state):
+		_shop.drag_ended.connect(_finish_drag_state)
 	# 备战期只做**增量**：把后几轮的怪排进后台队列。
 	# 大批量加载在大厅完成（Team3v3Lobby._setup_asset_loader）—— 备战期玩家在拖
 	# 棋子、看羁绊，3D 棋盘和 UI 都在跑，往这里塞几百 MB 会直接卡到操作。

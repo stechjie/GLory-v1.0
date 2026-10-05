@@ -16,6 +16,10 @@ const UnitContactShadowScript := preload("res://effects/runtime/presentation/Uni
 const FOUR_STAR_READY_AURA := preload("res://effects/vfx3d/modules/FourStarAura3D.gd")
 const FOUR_STAR_AURA := preload("res://effects/vfx3d/modules/FourStarAuraV3_3D.gd")
 const CARROT_CURRENCY_ICON := preload("res://assets/props/carrot_system/ui/icon_carrot_currency.png")
+# 棋盘正中的「上阵数 / 上限」图案本体（矢量自绘）。10.05 第 2 条返工把它从 2D 徽章
+# 改成贴地的 3D 面片，所以 preload 从 PrepUI 挪到这一层 —— **基类不能引用子类的常量**，
+# 而面片是在 PrepBoardModels 里建的。
+const PrepDeployCounterScript := preload("res://scenes/prep/panels/PrepDeployCounter.gd")
 var _four_star_visual_poll := 0.0
 
 func refresh_four_star_visuals(delta: float) -> void:
@@ -87,6 +91,22 @@ func play_four_star_upgrade(uid: String) -> void:
 const PREP_CELL_MARK_PATH := "res://assets/board/prep_2_5d/board_cell_mark.png"
 const PREP_CELL_MARK_SIZE := Vector2(0.6, 0.6)   # 每张站位图的世界尺寸（可调大小）
 const PREP_CELL_MARK_Y_LIFT := 0.005             # 抬离地面高度（河流之上、模型之下）
+# 「上阵数 / 上限」贴地图案（10.05 反馈第 2 条返工）。
+#
+# 为什么必须是 3D 面片而不是 2D 控件：2D 层（z_index≥0）整块压在 3D 视口
+# （PrepRiverArenaLayer，z_index = -19）之上，任何 2D 图案都会**盖住棋子**；
+# 而这块面片躺在棋盘地面上、和 16 张站位图同一套深度排序规则 —— 棋子是不透明
+# 3D 物体、比它离相机更近，深度测试自然把它挡在身后，于是图案落在棋子**脚下**。
+#
+# 图案本体仍在 `PrepDeployCounter`（纯 `_draw()` 矢量），由 SubViewport 渲成贴图
+# 再贴到面片上；这样既不新增图片素材，也不用把矢量画法搬进 3D。
+const PREP_DEPLOY_COUNTER_VIEWPORT_SIZE := Vector2i(162, 88)   # = BADGE_SIZE + 2×发光边距
+const PREP_DEPLOY_COUNTER_WORLD_WIDTH := 1.30                  # 面片世界宽度（含发光边距）
+const PREP_DEPLOY_COUNTER_Y_LIFT := 0.0045                     # 河道波光(0.004) 与站位图(0.005) 之间
+const PREP_DEPLOY_COUNTER_RENDER_PRIORITY := 5                 # 与站位图同层（两者互斥，不会同现）
+# 兜底开关：若真机上视口贴图与普通贴图的 V 轴相反、图案上下颠倒，改 true 即翻正
+# （结构门禁在 headless 下渲不出图，测不到朝向，所以留这一行显式开关）。
+const PREP_DEPLOY_COUNTER_FLIP_V := false
 const PREP_RIVER_TOP_PATH := "res://assets/board/prep_2_5d/prep20_river_top.png"        # 上河流（黑底，shader 键透明+流动）
 # ══════ 整块棋盘的「大小 / 位置」══════
 #  改这两个会连 石台+格子+棋子+待命区+河流 一起动（它们都贴在这块地面上，不是只动棋盘）。
@@ -159,6 +179,16 @@ var _prep_standby_model_signatures: Dictionary = {}
 var _prep_board_model_nodes: Dictionary = {}
 var _prep_board_model_signatures: Dictionary = {}
 var _prep_relation_link_nodes: Dictionary = {}
+# 16 张站位图（`PrepCellMark%d`）与棋盘正中的计数面片。两者**互斥**：
+# 平时藏圆圈、显计数图案；一拖棋子就反过来（落点引导接管棋盘）。
+var _prep_cell_mark_nodes: Array[Node3D] = []
+var _prep_cell_marks_visible := false
+var _prep_deploy_counter_viewport: SubViewport
+# 用 const-preload 当类型标注（同 PrepShared 的 `_shop: ShopPanelScript`）：
+# 标成 Control 的话，`configure()` / `deploy_text()` 在静态检查期就不认了。
+var _prep_deploy_counter_control: PrepDeployCounterScript
+var _prep_deploy_counter_layer: MeshInstance3D
+var _prep_deploy_counter_visible := true
 # 模型/动画缓存已移到 BattleAssetService（备战棋盘与战斗共用一份，且跨场景存活）。
 var _prep_layout_refresh_version := 0
 
@@ -644,6 +674,9 @@ func _add_prep_art_layers(world: Node3D) -> void:
 		_add_prep_river_flow(world)
 	# 主战场 4×4：每格一张站位图（3D 地面 quad）。发光环仍由代码画在上层。
 	_add_prep_cell_marks(world)
+	# 棋盘正中「上阵数 / 上限」贴地图案（10.05 第 2 条返工）。放在站位图**之后**建，
+	# 位置与它们同一层地面 —— 与站位图互斥显隐，见 set_prep_cell_marks_visible()。
+	_add_prep_deploy_counter_layer(world)
 	# 待命区背景平台：3D 地面 quad，模型是地面上方 3D 物体，自然盖在它上面（修好被 2D 背景压掉的问题）
 	_add_prep_standby_bg_plane(world)
 	# 氛围层：萤火虫/河面星光粒子
@@ -656,6 +689,7 @@ func _add_prep_cell_marks(world: Node3D) -> void:
 	if tex == null:
 		push_warning("站位图加载失败：%s" % PREP_CELL_MARK_PATH)
 		return
+	_prep_cell_mark_nodes.clear()
 	var cols := GameConstants.BOARD_COLUMNS
 	var rows := GameConstants.BOARD_ROWS
 	for i in cols * rows:
@@ -679,7 +713,147 @@ func _add_prep_cell_marks(world: Node3D) -> void:
 		var pos := _board_plane_world_pos(u, v)
 		pos.y = PREP_BOARD_GROUND_CENTER.y + PREP_CELL_MARK_Y_LIFT
 		layer.position = pos
+		# 初始显隐：平时藏起来（棋盘正中交给计数图案），拖棋子上阵时才出现。
+		layer.visible = _prep_cell_marks_visible
 		world.add_child(layer)
+		_prep_cell_mark_nodes.append(layer)
+
+# 棋盘正中的「上阵数 / 上限」贴地图案（10.05 反馈第 2 条返工）。
+#
+# 做法：`PrepDeployCounter`（纯 `_draw()` 矢量）塞进一个 SubViewport 渲成贴图，
+# 再把贴图贴到一块**躺在棋盘地面上的 PlaneMesh** 上。这样：
+#   * 它与棋子同处 3D 场景 —— 棋子不透明、离相机更近，深度测试自然把它盖住，
+#     于是图案在棋子脚下（旧版是 2D 控件，整块压在 3D 视口之上，反而遮棋子）；
+#   * 与 16 张站位图同一个 y 层与 render_priority，谁显谁隐由状态决定；
+#   * 不新增图片素材，矢量画法一行不用改。
+func _add_prep_deploy_counter_layer(world: Node3D) -> void:
+	var counter: PrepDeployCounterScript = PrepDeployCounterScript.new()
+	counter.name = PrepDeployCounterScript.NODE_NAME
+	_prep_deploy_counter_control = counter
+
+	var vp := SubViewport.new()
+	vp.name = "PrepDeployCounterViewport"
+	vp.transparent_bg = true    # 底板以外要透出草地，否则面片是一块深色矩形
+	vp.disable_3d = true        # 只画 2D 图案，不必为它建一套 3D 世界与相机
+	vp.size = PREP_DEPLOY_COUNTER_VIEWPORT_SIZE
+	# 图案是静态的，只在数值变化时重渲一帧（手机上别常开一块视口全速重画）。
+	vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+	vp.add_child(counter)
+	add_child(vp)
+	_prep_deploy_counter_viewport = vp
+
+	var layer := MeshInstance3D.new()
+	layer.name = "PrepDeployCounterLayer"
+	var plane := PlaneMesh.new()
+	plane.size = Vector2(PREP_DEPLOY_COUNTER_WORLD_WIDTH,
+		PREP_DEPLOY_COUNTER_WORLD_WIDTH * float(PREP_DEPLOY_COUNTER_VIEWPORT_SIZE.y)
+			/ float(PREP_DEPLOY_COUNTER_VIEWPORT_SIZE.x))
+	layer.mesh = plane
+	var mat := StandardMaterial3D.new()
+	mat.albedo_texture = vp.get_texture()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	mat.render_priority = PREP_DEPLOY_COUNTER_RENDER_PRIORITY
+	if PREP_DEPLOY_COUNTER_FLIP_V:
+		# 兜底开关：视口贴图与普通贴图的 V 轴在真机上若相反，图案会上下颠倒。
+		# 结构门禁测不到这一点（headless 下渲不出图），所以留一行开关，改 true 即翻正。
+		mat.uv1_scale = Vector3(1.0, -1.0, 1.0)
+	layer.material_override = mat
+	# 摆在 16 格的**正中心**：同样走棋盘 UV → 世界坐标的换算，不另起一套。
+	var center := _board_plane_world_pos(
+		(BOARD_STONE_U.x + BOARD_STONE_U.y) * 0.5,
+		(BOARD_STONE_V.x + BOARD_STONE_V.y) * 0.5)
+	center.y = PREP_BOARD_GROUND_CENTER.y + PREP_DEPLOY_COUNTER_Y_LIFT
+	layer.position = center
+	layer.visible = _prep_deploy_counter_visible
+	world.add_child(layer)
+	_prep_deploy_counter_layer = layer
+	set_prep_deploy_counter_values(GameState.normal_unit_count(), GameState.normal_unit_cap())
+	# 首帧那次渲染有可能落在控件还没画完的时候，补一次延迟重渲（一帧、162×88，成本可忽略）。
+	# 另外每次棋盘刷新都会经 set_prep_deploy_counter_values 再补一次，漏不掉。
+	_refresh_prep_deploy_counter_texture.call_deferred()
+
+# 16 张站位图的显隐（平时藏起来，拖棋子上阵时才出现当落点引导）。
+func set_prep_cell_marks_visible(visible_now: bool) -> void:
+	_prep_cell_marks_visible = visible_now
+	for node in _prep_cell_mark_nodes:
+		if is_instance_valid(node):
+			node.visible = visible_now
+
+# 计数图案的显隐（与站位图互斥）。
+func set_prep_deploy_counter_visible(visible_now: bool) -> void:
+	_prep_deploy_counter_visible = visible_now
+	if _prep_deploy_counter_layer != null and is_instance_valid(_prep_deploy_counter_layer):
+		_prep_deploy_counter_layer.visible = visible_now
+	if visible_now:
+		# 藏起来的这段时间上阵数可能变过，重新出现时保证贴图是新的。
+		_refresh_prep_deploy_counter_texture()
+
+# 计数图案的数值。改完立刻重渲一帧 SubViewport，否则贴图还是旧的。
+func set_prep_deploy_counter_values(count: int, cap: int) -> void:
+	if _prep_deploy_counter_control == null or not is_instance_valid(_prep_deploy_counter_control):
+		return
+	_prep_deploy_counter_control.configure(count, cap, _prep_deploy_counter_color())
+	_refresh_prep_deploy_counter_texture()
+
+func _prep_deploy_counter_color() -> Color:
+	# 与棋盘格子共用同一份玩家色（3v3 是座位色，单机是棋盘默认青色）。
+	if _board_hud == null or not is_instance_valid(_board_hud):
+		return Color(0.48, 1.0, 0.92, 0.55)
+	return _board_hud.player_color()
+
+func _refresh_prep_deploy_counter_texture() -> void:
+	if _prep_deploy_counter_viewport == null or not is_instance_valid(_prep_deploy_counter_viewport):
+		return
+	_prep_deploy_counter_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+
+# 契约快照 —— 门禁读它，不直接伸手摸 3D 节点。
+# 「贴地 + 在棋子脚下」拆成四条**可判定的量**：
+#   * `counter_is_3d`            它是 MeshInstance3D（不是 2D 控件）；
+#   * `counter_in_board_world`   它与棋子渲染在**同一个 3D 视口**里 —— 这一条才是
+#                                「不会被 2D 层压住」的实质：2D 层和 3D 视口根本
+#                                不在一个渲染空间，同空间才谈得上深度排序；
+#   * `counter_y_lift`           离地高度，必须不高于棋子站立的地面层；
+#   * `counter_render_priority`  与站位图同层（5），低于待命区平台（7）。
+func prep_deploy_counter_snapshot() -> Dictionary:
+	var layer_valid := _prep_deploy_counter_layer != null and is_instance_valid(_prep_deploy_counter_layer)
+	var counter_valid := _prep_deploy_counter_control != null \
+		and is_instance_valid(_prep_deploy_counter_control)
+	var priority := -1
+	var in_board_world := false
+	if layer_valid:
+		var mat := _prep_deploy_counter_layer.material_override as BaseMaterial3D
+		if mat != null:
+			priority = mat.render_priority
+		in_board_world = _prep_deploy_counter_layer.is_inside_tree() \
+			and _prep_river_viewport != null \
+			and _prep_deploy_counter_layer.get_viewport() == _prep_river_viewport
+	var text := ""
+	if counter_valid:
+		text = _prep_deploy_counter_control.deploy_text()
+	return {
+		"cell_mark_count": _prep_cell_mark_nodes.size(),
+		"cell_marks_visible": _prep_cell_marks_visible,
+		"cell_mark_visible_count": _count_visible_cell_marks(),
+		"counter_is_3d": layer_valid and _prep_deploy_counter_layer is MeshInstance3D,
+		"counter_in_board_world": in_board_world,
+		"counter_visible": _prep_deploy_counter_visible,
+		"counter_visible_on_layer": layer_valid and _prep_deploy_counter_layer.visible,
+		"counter_text": text,
+		"counter_render_priority": priority,
+		"counter_y_lift": (_prep_deploy_counter_layer.position.y - PREP_BOARD_GROUND_CENTER.y)
+			if layer_valid else -1.0,
+		"cell_mark_y_lift": PREP_CELL_MARK_Y_LIFT,
+	}
+
+func _count_visible_cell_marks() -> int:
+	var count := 0
+	for node in _prep_cell_mark_nodes:
+		if is_instance_valid(node) and node.visible:
+			count += 1
+	return count
 
 func _add_prep_standby_bg_plane(world: Node3D) -> void:
 	# 待命区背景做成 3D 地面 quad：躺在待命格子位置，被模型自然遮挡（模型在地面上方，深度更近）。

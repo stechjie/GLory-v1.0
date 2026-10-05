@@ -295,12 +295,19 @@ func _shop_unit_cost(unit_def: Dictionary) -> int:
 # 「按名字调用子类方法」用的占位。五个面板与四个内部类搬走之后，
 # 其中 26 个已经没有任何调用点，删掉了。
 #
-# 剩下这 18 个是编译器点名要留的：本层或 PrepBoardModels/PrepUI 里仍有直接调用，
+# 剩下这 20 个是编译器点名要留的：本层或 PrepBoardModels/PrepUI 里仍有直接调用，
 # 而实现在更派生的层。它们是继承链还没拆干净的直接证据 ——
 # 每少一个，就说明又有一块行为不再需要「父类声明、子类实现」这种绕法。
 func _auto_combine_all() -> void:
 	pass
 func _buy_or_merge_shop_to_bench(shop_index: int, bench_index: int) -> void:
+	pass
+# 10.05（待命区满时的买入分流）：PrepUI._on_shop_buy_requested 现在会按名调它，
+# 而实现在 PrepBoardController（更派生的层）。桩必须留在这一层 —— 与
+# _buy_or_merge_shop_to_bench 完全同一个道理。漏了这个桩的后果很重：
+# PrepUI 解析期就报「Function "_buy_or_merge_shop_to_board()" not found in base self」，
+# 连带 PrepFlowController / PrepBoardController / PrepScreen.tscn 全部解析失败。
+func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
 	pass
 func _claim_pending_treasure_round() -> void:
 	pass

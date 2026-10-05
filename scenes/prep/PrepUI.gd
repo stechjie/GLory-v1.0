@@ -513,6 +513,14 @@ func _report_carrot_camp_state() -> void:
 	TutorialMode.record_carrot_camp_state(panel.visible, panel.current_page())
 
 
+# 棋盘正中的「已上阵 / 上阵上限」图案（10.05 反馈第 2 条）。
+# 平时显示它、隐藏 16 个圆圈；拖动棋子上阵时反过来。见 _sync_prep_board_readability_state。
+#
+# 10.05 第 2 条**返工**：图案本体与那块贴地面片都搬到了 PrepBoardModels
+# （`_add_prep_deploy_counter_layer`）—— 它必须是 3D 场景里的物体才可能在棋子脚下。
+# 这里只负责按拖拽状态调显隐与数值。
+
+
 func _build(staged: bool = false) -> void:
 	if not LocaleManager.locale_changed.is_connected(_on_locale_changed):
 		LocaleManager.locale_changed.connect(_on_locale_changed)
@@ -816,6 +824,9 @@ func _build_rest(root: VBoxContainer) -> void:
 	_board_hud.readability_layer.set_low_quality(VFXManager.get_quality_tier() == VFXQualityBudget.Tier.LOW)
 	_board_hud.readability_layer.set_direction_texts(tr("board_frontline"), tr("board_backline"))
 	_board_hud.grid.add_child(_board_hud.readability_layer)
+	# 棋盘正中的计数图案**不在这一层**：它是 3D 贴地面片（PrepBoardModels 建），
+	# 位置由棋盘 UV 中点决定，不再需要每帧按 16 格投影质心对齐。见
+	# `_add_prep_deploy_counter_layer()` 与 `_sync_prep_board_readability_state()`。
 	for i in GameConstants.CELL_COUNT:
 		var cell := BoardCellButton.new()
 		cell.board_index = i
@@ -2513,7 +2524,22 @@ func _sync_prep_board_readability_geometry() -> void:
 		polygons.append(polygon)
 	_board_hud.readability_layer.set_prep_cells(polygons)
 
+
 func _sync_prep_board_readability_state() -> void:
+	# 10.05 反馈第 2 条（含返工）：**平时**棋盘正中显示「上阵数 / 上限」贴地图案、
+	# 16 张站位圆圈藏起来；一开始拖棋子上阵就反过来 —— 圆圈接管棋盘当落点引导。
+	#
+	# `dragging` 必须两条都看：`drop_highlight_active` 是棋盘/待命区拖拽路径写的，
+	# 而 `standby_drop_highlight_active` 在待命区那一侧同样表示「正在拖」。商店卡片
+	# 起拖时会同时置起这两个（PrepBoardController._on_drag_started）。
+	#
+	# 这一段**刻意放在可读性层判空之前**：图案与圆圈是核心引导，不该因为玩家在设置里
+	# 关掉可读性层、或该层尚未建好，就跟着一起消失（旧版放在判空之后，正中图案在
+	# 那种情况下会永远不出现）。
+	var dragging := _board_hud.drop_highlight_active or _board_hud.standby_drop_highlight_active
+	set_prep_cell_marks_visible(dragging)
+	set_prep_deploy_counter_visible(not dragging)
+	set_prep_deploy_counter_values(GameState.normal_unit_count(), GameState.normal_unit_cap())
 	if _board_hud.readability_layer == null or not is_instance_valid(_board_hud.readability_layer):
 		return
 	_board_hud.readability_layer.set_guides_enabled(PlayerProfile.board_readability_enabled)
@@ -3420,12 +3446,64 @@ func _on_shop_card_selected(_index: int) -> void:
 
 
 # 商店请求买入：找空位、扣钱、合成都在宿主这边（它们要动棋盘与联机同步）。
+#
+# 10.05 反馈（原话）：「待命区满时商店棋子显示黑屏 + 待命区已满，但其实还有能升级的
+# 棋子，得先腾位子甚至卖掉自己要留的棋子」。改成：待命区满时不再一票否决，按下面的
+# 顺序自动分流 ——
+#   ① 棋盘上有能合成的同名同星棋子 → 直接升星（最优先，别让玩家为了腾位子卖棋子）；
+#   ② 棋盘还有空位（且没到上阵上限）→ 随机放一格；
+#   ③ 待命区内部有能合成的 → 就地升星（合成本身会腾出空位）；
+#   ④ 都不行 → 「棋子已满，无法购买」。
+# 从商店**拖**到棋盘的路径（_drop_on_board → _buy_or_merge_shop_to_board）本来就走得通，
+# 这一处只管「点购买」。
 func _on_shop_buy_requested(index: int) -> void:
 	var empty_bench := PrepRules.first_empty_bench_slot()
-	if empty_bench < 0:
+	if empty_bench >= 0:
+		_buy_or_merge_shop_to_bench(index, empty_bench)
+		return
+	if GameState.tutorial_mode:
+		# 教学是脚本化流程（先「买齐」再单独一步「上阵」），自动往棋盘上放会替玩家
+		# 跳过那一步。教学里待命区满由 TutorialMode 的自动补偿处理，维持原口径。
 		show_message(tr("ui_bench_full"))
 		return
-	_buy_or_merge_shop_to_bench(index, empty_bench)
+	if index < 0 or index >= GameState.shop_offers.size():
+		return
+	var offer: Dictionary = GameState.shop_offers[index]
+	if offer.is_empty() or bool(GameState.shop_sold[index]):
+		return
+	# ① 棋盘升星。
+	var board_merge := PrepRules.first_merge_target(GameState.board_slots, offer)
+	if board_merge >= 0:
+		_buy_or_merge_shop_to_board(index, board_merge)
+		return
+	# ② 棋盘空位。上阵上限与「同名唯一」两条都要先判掉，否则 _buy_or_merge_shop_to_board
+	#    会在里面弹别的提示后直接 return —— 这里挑的就是「真能放」的格子。
+	var unique_blocked := bool(offer.get("unique_on_board", false)) \
+		and PrepRules.has_unique_board_unit(str(offer.get("id", "")), PrepRules.board_limit_for_def(offer))
+	if GameState.normal_unit_count() < GameState.normal_unit_cap() and not unique_blocked:
+		var placeable := PrepRules.empty_slot_indices(GameState.board_slots)
+		if placeable.size() > 0:
+			_buy_or_merge_shop_to_board(index, placeable[_board_pick_rng().randi_range(0, placeable.size() - 1)])
+			return
+	# ③ 待命区内部升星（待命区满时棋盘也可能满，但同名同星的凑齐了就还能合）。
+	var bench_merge := PrepRules.first_merge_target(GameState.bench_slots, offer)
+	if bench_merge >= 0:
+		_buy_or_merge_shop_to_bench(index, bench_merge)
+		return
+	# ④ 真放不下。
+	show_message(tr("ui_pieces_full"))
+
+
+# 「随机放到棋盘可放置处」用的 RNG。**刻意不复用 RngService** ——
+# 那是战斗回放确定性用的流，备战界面挑一个空格子不该去搅它。
+var _board_pick_rng_holder: RandomNumberGenerator
+
+
+func _board_pick_rng() -> RandomNumberGenerator:
+	if _board_pick_rng_holder == null:
+		_board_pick_rng_holder = RandomNumberGenerator.new()
+		_board_pick_rng_holder.randomize()
+	return _board_pick_rng_holder
 
 
 # 商店开合：关掉别的弹窗，并调整待命格的输入 ——

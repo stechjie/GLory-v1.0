@@ -343,6 +343,9 @@ func _build_stone_page() -> Control:
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	# 10.05：手势区放大到整张「四星升级」卡片 —— 玩家按在升星区域的任何地方
+	# 上下滑动都能滚，不必正好落在列表行上。轻点仍照常落到子控件，不抢点击。
+	scroll.set_drag_zone(func() -> Control: return inventory_card)
 	inventory.add_child(scroll)
 	_four_star_list = VBoxContainer.new()
 	_four_star_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
