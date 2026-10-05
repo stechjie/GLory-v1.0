@@ -29,7 +29,7 @@ const ConfirmDialog := preload("res://ui/components/GloryConfirmDialog.gd")
 const MatchHistory := preload("res://scenes/menu/MatchHistoryPanel.gd")
 const ReportDialog := preload("res://ui/components/ReportDialog.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
-const MENU_BG_TEX := preload("res://assets/ui/main_menu_live/background.png")
+const PROFILE_BG_TEX := preload("res://assets/ui/profile/hall_of_glory.png")
 const RankedTiers := preload("res://scenes/menu/RankedTiers.gd")
 
 signal back_requested
@@ -53,6 +53,16 @@ var _rank_value: Label
 var _rank_badge: TextureRect
 var _record_value: Label
 var _credit_value: Label
+var _rank_progress: ProgressBar
+var _rank_progress_label: Label
+var _next_rank_label: Label
+var _wins_value: Label
+var _win_rate_value: Label
+var _tier_icons: Array[TextureRect] = []
+var _overview_panel: Control
+var _settings_panel: Control
+var _overview_tab: Button
+var _settings_tab: Button
 # 与主菜单房间面板同档：都是页面级面板。
 const PICKER_PRIORITY := 40
 
@@ -147,7 +157,7 @@ func _exit_tree() -> void:
 
 func _build() -> void:
 	var bg := TextureRect.new()
-	bg.texture = MENU_BG_TEX
+	bg.texture = PROFILE_BG_TEX
 	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -155,7 +165,8 @@ func _build() -> void:
 	add_child(bg)
 
 	var dim := ColorRect.new()
-	dim.color = Tokens.BACKDROP
+	# A moderate veil keeps text readable while the profile art remains visible.
+	dim.color = Color(0.008, 0.016, 0.031, 0.38)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(dim)
@@ -182,27 +193,46 @@ func _build() -> void:
 
 	_body.add_child(_header())
 
-	var columns := HBoxContainer.new()
-	columns.add_theme_constant_override("separation", Tokens.GAP_M)
-	columns.alignment = BoxContainer.ALIGNMENT_CENTER
-	_body.add_child(columns)
-
 	if _mode == Mode.SELF:
-		columns.add_child(_column(400, [
-			_identity_card(),
-			_name_section(),
-			_bind_account_slot(),
-		]))
-		columns.add_child(_column(440, [_bio_section()]))
-		columns.add_child(_column(340, [
-			_record_block(),
-			_placeholder_block(
-				_text("收藏", "Collection"),
-				[_text("图鉴进度", "Codex"), _text("拥有宠物", "Pets"),
-					_text("拥有皮肤", "Skins")]),
-			_danger_zone(),
-		]))
+		var tabs := HBoxContainer.new()
+		tabs.alignment = BoxContainer.ALIGNMENT_CENTER
+		tabs.add_theme_constant_override("separation", Tokens.GAP_S)
+		_body.add_child(tabs)
+		_overview_tab = ACTION_BUTTON.instantiate() as Button
+		_overview_tab.text = _text("总览", "Overview")
+		_overview_tab.custom_minimum_size = Vector2(190, Tokens.TOUCH_MIN)
+		_overview_tab.pressed.connect(func() -> void: _select_profile_tab(false))
+		tabs.add_child(_overview_tab)
+		var history_tab := ACTION_BUTTON.instantiate() as Button
+		history_tab.text = _text("对局记录", "Match History")
+		history_tab.custom_minimum_size = Vector2(190, Tokens.TOUCH_MIN)
+		history_tab.pressed.connect(_open_match_history)
+		tabs.add_child(history_tab)
+		_settings_tab = ACTION_BUTTON.instantiate() as Button
+		_settings_tab.text = _text("资料设置", "Profile Settings")
+		_settings_tab.custom_minimum_size = Vector2(190, Tokens.TOUCH_MIN)
+		_settings_tab.pressed.connect(func() -> void: _select_profile_tab(true))
+		tabs.add_child(_settings_tab)
+
+		_overview_panel = HBoxContainer.new()
+		_overview_panel.add_theme_constant_override("separation", Tokens.GAP_M)
+		_body.add_child(_overview_panel)
+		_overview_panel.add_child(_column(400, [_identity_card()]))
+		_overview_panel.add_child(_column(780, [_record_block()]))
+
+		_settings_panel = HBoxContainer.new()
+		_settings_panel.add_theme_constant_override("separation", Tokens.GAP_M)
+		_settings_panel.alignment = BoxContainer.ALIGNMENT_CENTER
+		_body.add_child(_settings_panel)
+		_settings_panel.add_child(_column(400, [_name_section(), _bind_account_slot()]))
+		_settings_panel.add_child(_column(440, [_bio_section()]))
+		_settings_panel.add_child(_column(340, [_danger_zone()]))
+		_select_profile_tab(false)
 	else:
+		var columns := HBoxContainer.new()
+		columns.add_theme_constant_override("separation", Tokens.GAP_M)
+		columns.alignment = BoxContainer.ALIGNMENT_CENTER
+		_body.add_child(columns)
 		columns.add_child(_column(400, [_identity_card()]))
 		columns.add_child(_column(440, [_public_bio_block(), _friend_request_button()]))
 		var report_row := HBoxContainer.new()
@@ -216,6 +246,23 @@ func _build() -> void:
 	_status.custom_minimum_size = Vector2(0, 26)
 	_status.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
 	_body.add_child(_status)
+
+
+func _select_profile_tab(settings: bool) -> void:
+	_overview_panel.visible = not settings
+	_settings_panel.visible = settings
+	for button in [_overview_tab, _settings_tab]:
+		var active: bool = (button == _settings_tab) == settings
+		if active:
+			button.add_theme_stylebox_override("normal", Tokens.button_box(Tokens.SURFACE_RAISED, Tokens.GOLD_EDGE))
+			button.add_theme_stylebox_override("hover", Tokens.button_box(Tokens.SURFACE_RAISED, Tokens.GOLD_EDGE))
+			button.add_theme_color_override("font_color", Tokens.GOLD)
+			button.add_theme_color_override("font_hover_color", Tokens.GOLD)
+		else:
+			button.remove_theme_stylebox_override("normal")
+			button.remove_theme_stylebox_override("hover")
+			button.remove_theme_color_override("font_color")
+			button.remove_theme_color_override("font_hover_color")
 
 
 # 一栏。定宽是刻意的：三栏各自内容长度差很多，让它们自己去抢宽度
@@ -241,7 +288,7 @@ func _header() -> Control:
 	row.add_child(back)
 
 	var title := Label.new()
-	title.text = _text("我的资料", "My Profile") if _mode == Mode.SELF \
+	title.text = _text("玩家主页", "Player Profile") if _mode == Mode.SELF \
 		else _text("玩家资料", "Player Profile")
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -258,11 +305,20 @@ func _header() -> Control:
 
 func _identity_card() -> Control:
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SURFACE, Tokens.GOLD_EDGE, Tokens.GAP_M))
+	if _mode == Mode.SELF:
+		panel.add_theme_stylebox_override("panel", Tokens.panel_box(Color.TRANSPARENT, Color.TRANSPARENT, Tokens.GAP_M))
+		panel.custom_minimum_size = Vector2(400, 430)
+	else:
+		panel.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SURFACE, Tokens.GOLD_EDGE, Tokens.GAP_M))
 
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", Tokens.GAP_M)
-	panel.add_child(row)
+	var content: BoxContainer
+	if _mode == Mode.SELF:
+		content = VBoxContainer.new()
+		content.alignment = BoxContainer.ALIGNMENT_CENTER
+	else:
+		content = HBoxContainer.new()
+	content.add_theme_constant_override("separation", Tokens.GAP_M)
+	panel.add_child(content)
 
 	_avatar_rect = TextureRect.new()
 	_avatar_rect.custom_minimum_size = Vector2.ZERO
@@ -270,7 +326,8 @@ func _identity_card() -> Control:
 	_avatar_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_avatar_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var avatar_stage := Control.new()
-	avatar_stage.custom_minimum_size = Vector2(112, 112)
+	var avatar_size := 176 if _mode == Mode.SELF else 112
+	avatar_stage.custom_minimum_size = Vector2(avatar_size, avatar_size)
 	avatar_stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_avatar_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	avatar_stage.add_child(_avatar_rect)
@@ -283,41 +340,49 @@ func _identity_card() -> Control:
 
 	if _mode == Mode.SELF:
 		var avatar_btn := Button.new()
-		avatar_btn.custom_minimum_size = Vector2(112, 112)
+		avatar_btn.custom_minimum_size = Vector2(avatar_size, avatar_size)
+		avatar_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		avatar_btn.focus_mode = Control.FOCUS_NONE
 		avatar_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		avatar_btn.tooltip_text = _text("换头像", "Change avatar")
-		var box := Tokens.flat_box(Tokens.SURFACE_RAISED, Tokens.GOLD_EDGE, 2)
-		for state in ["normal", "hover", "pressed"]:
-			avatar_btn.add_theme_stylebox_override(state, box)
+		var clear_box := Tokens.flat_box(Color.TRANSPARENT, Color.TRANSPARENT, 0)
+		for state in ["normal", "hover", "pressed", "hover_pressed", "disabled", "focus"]:
+			avatar_btn.add_theme_stylebox_override(state, clear_box)
 		avatar_btn.pressed.connect(_open_avatar_picker)
 		avatar_stage.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		avatar_btn.add_child(avatar_stage)
-		row.add_child(avatar_btn)
+		content.add_child(avatar_btn)
 	else:
-		row.add_child(avatar_stage)
+		content.add_child(avatar_stage)
 
 	var column := VBoxContainer.new()
 	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	column.add_theme_constant_override("separation", Tokens.GAP_S)
-	row.add_child(column)
+	content.add_child(column)
 
 	_name_label = Label.new()
-	_name_label.add_theme_font_size_override("font_size", Tokens.FONT_BODY + 4)
+	_name_label.add_theme_font_size_override("font_size", Tokens.FONT_BODY + (9 if _mode == Mode.SELF else 4))
 	_name_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	if _mode == Mode.SELF:
+		_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	column.add_child(_name_label)
 
 	_days_label = Label.new()
 	_days_label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	if _mode == Mode.SELF:
+		_days_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	column.add_child(_days_label)
 
 	_pet_label = Label.new()
 	_pet_label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	if _mode == Mode.SELF:
+		_pet_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	column.add_child(_pet_label)
 	if _mode == Mode.SELF:
 		var frame_button: Button = ACTION_BUTTON.instantiate()
 		frame_button.text = _text("更换头像框", "Change frame")
 		frame_button.custom_minimum_size = Vector2(150, Tokens.TOUCH_MIN)
+		frame_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		frame_button.pressed.connect(_open_frame_picker)
 		column.add_child(frame_button)
 	return panel
@@ -581,18 +646,28 @@ func _friend_request_button() -> Control:
 # 信誉分更是只给自己看（docs/排位系统设计.md 第四节：公开等于发一个新的骂人理由）。
 func _record_block() -> Control:
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SURFACE, Tokens.GOLD_EDGE, Tokens.GAP_M))
+	panel.add_theme_stylebox_override("panel", Tokens.panel_box(Color.TRANSPARENT, Color.TRANSPARENT, Tokens.GAP_M))
+	panel.custom_minimum_size = Vector2(780, 430)
 	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", Tokens.GAP_S)
+	column.add_theme_constant_override("separation", Tokens.GAP_M)
 	panel.add_child(column)
-	column.add_child(_section_title(_text("战绩", "Record")))
+	var heading := HBoxContainer.new()
+	column.add_child(heading)
+	heading.add_child(_section_title(_text("本赛季排位", "Season Ranked")))
+	var heading_spacer := Control.new()
+	heading_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	heading.add_child(heading_spacer)
+	_credit_value = Label.new()
+	_credit_value.text = _text("信誉分 —", "Credit —")
+	_credit_value.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	heading.add_child(_credit_value)
 
 	var rank_row := HBoxContainer.new()
 	rank_row.add_theme_constant_override("separation", Tokens.GAP_M)
 	column.add_child(rank_row)
 	_rank_badge = TextureRect.new()
 	_rank_badge.name = "RankBadge"
-	_rank_badge.custom_minimum_size = Vector2(84, 84)
+	_rank_badge.custom_minimum_size = Vector2(192, 192)
 	_rank_badge.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_rank_badge.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_rank_badge.visible = false
@@ -600,22 +675,80 @@ func _record_block() -> Control:
 	var rank_text := VBoxContainer.new()
 	rank_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	rank_text.alignment = BoxContainer.ALIGNMENT_CENTER
+	rank_text.add_theme_constant_override("separation", Tokens.GAP_S)
 	rank_row.add_child(rank_text)
-	_rank_value = _record_line(rank_text, _text("段位", "Rank"), "—")
-	_record_value = _record_line(column, _text("场次 / 胜", "Matches / Wins"), "—")
-	_credit_value = _record_line(column, _text("信誉分", "Credit"), "—")
-	# 「等级」系统仍然不存在。**不放假数据** —— 见 docs/玩家资料系统设计.md 的那条。
-	_record_line(column, _text("等级", "Level"), _text("敬请期待", "Coming soon"), true)
+	var eyebrow := Label.new()
+	eyebrow.text = _text("当前段位", "Current rank")
+	eyebrow.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	rank_text.add_child(eyebrow)
+	_rank_value = Label.new()
+	_rank_value.text = "—"
+	_rank_value.add_theme_font_size_override("font_size", 34)
+	_rank_value.add_theme_color_override("font_color", Tokens.GOLD)
+	rank_text.add_child(_rank_value)
+	_rank_progress_label = Label.new()
+	_rank_progress_label.text = _text("正在读取排位进度…", "Loading rank progress…")
+	_rank_progress_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	rank_text.add_child(_rank_progress_label)
+	_rank_progress = ProgressBar.new()
+	_rank_progress.custom_minimum_size = Vector2(0, 18)
+	_rank_progress.show_percentage = false
+	_rank_progress.max_value = 100
+	rank_text.add_child(_rank_progress)
+	_next_rank_label = Label.new()
+	_next_rank_label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	rank_text.add_child(_next_rank_label)
+
+	var tier_path := HBoxContainer.new()
+	tier_path.alignment = BoxContainer.ALIGNMENT_CENTER
+	tier_path.add_theme_constant_override("separation", Tokens.GAP_M)
+	column.add_child(tier_path)
+	for tier in RankedTiers.BADGES.size():
+		var tier_icon := TextureRect.new()
+		tier_icon.texture = RankedTiers.badge_of(tier)
+		tier_icon.custom_minimum_size = Vector2(60, 60)
+		tier_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tier_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		tier_icon.modulate.a = 0.38
+		tier_icon.tooltip_text = RankedTiers.name_of(tier, _is_en())
+		tier_path.add_child(tier_icon)
+		_tier_icons.append(tier_icon)
+
+	column.add_child(HSeparator.new())
+	var stats := HBoxContainer.new()
+	stats.alignment = BoxContainer.ALIGNMENT_CENTER
+	stats.add_theme_constant_override("separation", 64)
+	column.add_child(stats)
+	_record_value = _rank_stat(stats, _text("排位场次", "Matches"))
+	_wins_value = _rank_stat(stats, _text("胜场", "Wins"))
+	_win_rate_value = _rank_stat(stats, _text("胜率", "Win rate"))
 	_load_ranked()
 
-	# 按钮实例化 GloryActionButton.tscn，不用 Button.new() ——
-	# tools/procedural_ui_ratchet_check 的单文件计数只许降（本文件基线 11）。
 	var open := ACTION_BUTTON.instantiate() as Button
-	open.text = _text("查看对局历史", "Match History")
+	open.text = _text("查看最近对局", "Recent Matches")
 	open.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+	open.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	open.pressed.connect(_open_match_history)
 	column.add_child(open)
 	return panel
+
+
+func _rank_stat(parent: HBoxContainer, caption: String) -> Label:
+	var box := VBoxContainer.new()
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	parent.add_child(box)
+	var value := Label.new()
+	value.text = "—"
+	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	value.add_theme_font_size_override("font_size", 27)
+	value.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	box.add_child(value)
+	var name_label := Label.new()
+	name_label.text = caption
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	box.add_child(name_label)
+	return value
 
 
 # 战绩块里的一行。返回右边那个值标签，供 _load_ranked 填。
@@ -646,25 +779,42 @@ func _load_ranked() -> void:
 	var body: Dictionary = result.get("body", {})
 	var tier := clampi(int(body.get("tier", 0)), 0, RankedTiers.BADGES.size() - 1)
 	var games := int(body.get("games", 0))
+	var score := int(body.get("score", 0))
+	var progress := int(body.get("tier_progress", 0))
+	var span := int(body.get("tier_span", 0))
 	if games <= 0:
 		_rank_value.text = _text("尚未排位", "Unranked")
 		_rank_badge.visible = false
+		_rank_progress.visible = false
+		_rank_progress_label.text = _text("完成首场排位后显示段位", "Play a ranked match to reveal your rank")
+		_next_rank_label.text = ""
 	else:
 		_rank_badge.texture = RankedTiers.badge_of(tier)
 		_rank_badge.visible = true
-		var name_text := RankedTiers.name_of(tier, _is_en())
-		var span := int(body.get("tier_span", 0))
+		_rank_value.text = RankedTiers.name_of(tier, _is_en())
 		if span <= 0:
-			_rank_value.text = "%s · %d" % [name_text, int(body.get("score", 0))]
+			_rank_progress.visible = false
+			_rank_progress_label.text = _text("累计 %d 排位分" % score, "%d total rank points" % score)
+			_next_rank_label.text = _text("最高段位 · 积分持续累积", "Top rank · points continue to accumulate")
 		else:
-			_rank_value.text = "%s · %d/%d" % [name_text, int(body.get("tier_progress", 0)), span]
-	_record_value.text = "%d / %d" % [int(body.get("games", 0)), int(body.get("wins", 0))]
+			_rank_progress.visible = true
+			_rank_progress.max_value = span
+			_rank_progress.value = clampi(progress, 0, span)
+			_rank_progress_label.text = _text("本段进度 %d / %d" % [progress, span], "Progress %d / %d" % [progress, span])
+			_next_rank_label.text = _text("距「%s」还差 %d 分" % [RankedTiers.name_of(tier + 1), maxi(0, span - progress)],
+				"%d points to %s" % [maxi(0, span - progress), RankedTiers.name_of(tier + 1, true)])
+	for index in _tier_icons.size():
+		_tier_icons[index].modulate.a = 1.0 if games > 0 and index == tier else 0.38
+	var wins := int(body.get("wins", 0))
+	_record_value.text = str(games)
+	_wins_value.text = str(wins)
+	_win_rate_value.text = "%d%%" % int(round(float(wins) / float(games) * 100.0)) if games > 0 else "—"
 
 	var credit := int(body.get("credit", 100))
-	_credit_value.text = str(credit)
+	_credit_value.text = _text("信誉分 %d" % credit, "Credit %d" % credit)
 	# <85 是警告线（第四节）。禁赛中另说，那个更要紧。
 	if int(body.get("banned_sec", 0)) > 0:
-		_credit_value.text = "%d %s" % [credit, _text("（禁排位中）", "(suspended)")]
+		_credit_value.text = "%s %s" % [_credit_value.text, _text("（禁排位中）", "(suspended)")]
 		_credit_value.add_theme_color_override("font_color", Tokens.DANGER)
 	elif bool(body.get("credit_warn", false)):
 		_credit_value.add_theme_color_override("font_color", Tokens.DANGER)

@@ -1346,6 +1346,27 @@ func _install_realtime() -> void:
 		AccountManager.logged_out.connect(_on_realtime_logout)
 	if not RealtimeService.kicked_by_other_device.is_connected(_on_realtime_kicked):
 		RealtimeService.kicked_by_other_device.connect(_on_realtime_kicked)
+	if not RealtimeService.message_received.is_connected(_on_party_realtime):
+		RealtimeService.message_received.connect(_on_party_realtime)
+
+
+func _on_party_realtime(payload: Dictionary) -> void:
+	if str(payload.get("t", "")) != "party_invite" or _in_match_flow:
+		return
+	var room_id := str(payload.get("party_id", ""))
+	var host_name := str(payload.get("host_name", ""))
+	var en := LocaleManager.get_locale().begins_with("en")
+	DialogService.confirm({
+		"owner": self,
+		"request_id": "party_invite_" + room_id,
+		"title": "Party invitation" if en else "组队邀请",
+		"body": ("%s invited you to a party." if en else "%s 邀请你进入队伍。") % host_name,
+		"confirm_text": "Join" if en else "加入",
+		"cancel_text": "Later" if en else "稍后",
+		"on_result": func(result: String, _request_id: String) -> void:
+			if result == "confirmed":
+				_show_party_lobby(str(payload.get("mode", "casual")), room_id),
+	})
 
 
 # ⚠️ RealtimeService.start() 只挂在「登录成功」上（那只发生在启动时）。
@@ -1601,21 +1622,39 @@ const MatchQueuePanel := preload("res://scenes/menu/MatchQueuePanel.gd")
 
 
 func _show_casual_queue() -> void:
-	_show_match_queue("casual")
+	_show_party_lobby("casual")
 
 
 # 排位。窗口 / 信誉分 / 禁赛的闸全在服务器（`ranked.queue_gate`）——
 # 客户端改系统时区就能绕过本地判断，而排位是发分的。
 # 这里照常开面板，面板把服务器给的原因显示出来。
 func _show_ranked_queue() -> void:
-	_show_match_queue("ranked")
+	_show_party_lobby("ranked")
 
 
-func _show_match_queue(mode: String) -> void:
+func _show_party_lobby(mode: String, invite_id: String = "") -> void:
+	VoiceService.set_mode(VoiceService.Mode.OFF)
+	_clear()
+	var lobby := _instantiate_screen("res://scenes/menu/PartyLobby.tscn")
+	if lobby == null:
+		_show_menu()
+		return
+	lobby.call("configure", mode, invite_id)
+	lobby.connect("back_requested", _show_menu)
+	lobby.connect("queue_started", _show_party_queue)
+	_page_back_route = func() -> void: lobby.call("_leave")
+	add_child(lobby)
+
+
+func _show_party_queue(mode: String, host: bool) -> void:
+	_show_match_queue(mode, true, host)
+
+
+func _show_match_queue(mode: String, party_queue: bool = false, party_host: bool = false) -> void:
 	if ModalStack.has(MATCH_QUEUE_MODAL_ID):
 		return
 	var panel := MatchQueuePanel.new() as Control
-	panel.call("configure", mode)
+	panel.call("configure", mode, party_queue, party_host)
 	panel.connect("match_ready", _on_match_ready)
 	panel.connect("dismissed", func() -> void: ModalStack.pop(MATCH_QUEUE_MODAL_ID))
 	ModalStack.push(panel, {
@@ -1630,6 +1669,9 @@ func _show_match_queue(mode: String) -> void:
 
 func _on_match_ready() -> void:
 	ModalStack.pop(MATCH_QUEUE_MODAL_ID)
+	for child in get_children():
+		if child.has_method("stop_party_voice"):
+			child.call("stop_party_voice")
 	var target_port := NetworkService.DEFAULT_PORT
 	if NetworkService.team_active and NetworkService.remote_port != target_port:
 		NetworkService.disconnect_session()

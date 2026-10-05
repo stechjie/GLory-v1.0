@@ -69,6 +69,21 @@ var _shadow_texture: GradientTexture2D
 var _rng := RandomNumberGenerator.new()
 # 9.26：脚步声素材（一次性加载缓存，所有宠物的独立播放器共用同一份流）。
 var _footstep_stream: AudioStream = null
+var _external_pet_ids: Array = []
+var _use_external_pets := false
+var _area_pos := AREA_POS
+var _area_size := AREA_SIZE
+
+func configure_party_display(ids: Array, area_pos: Vector2, area_size: Vector2) -> void:
+	var changed := not _use_external_pets or _external_pet_ids != ids
+	_use_external_pets = true
+	_external_pet_ids = ids.duplicate()
+	_area_pos = area_pos
+	_area_size = area_size
+	if is_inside_tree():
+		if changed:
+			_rebuild_pets()
+		_layout_area()
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE   # 绝对不能吃掉点击
@@ -78,7 +93,7 @@ func _ready() -> void:
 	# 9.26：脚步声素材一次性加载缓存（各宠物独立播放器共用这份流）。
 	_footstep_stream = load(SfxService.cue_path(SfxService.CUE_PET_FOOTSTEP)) as AudioStream
 	_rebuild_pets()
-	if not PlayerProfile.pets_changed.is_connected(_rebuild_pets):
+	if not _use_external_pets and not PlayerProfile.pets_changed.is_connected(_rebuild_pets):
 		PlayerProfile.pets_changed.connect(_rebuild_pets)
 	get_viewport().size_changed.connect(_layout_area)
 	_layout_area()
@@ -216,7 +231,7 @@ func _rebuild_pets() -> void:
 	_pets.clear()
 	if _stage == null:
 		return
-	var ids: Array = PlayerProfile.owned_pets.duplicate()
+	var ids: Array = _external_pet_ids.duplicate() if _use_external_pets else PlayerProfile.owned_pets.duplicate()
 	for i in range(min(ids.size(), MAX_PETS)):
 		_spawn_pet(str(ids[i]), i, min(ids.size(), MAX_PETS))
 
@@ -472,5 +487,5 @@ func _layout_area() -> void:
 		return
 	var scale := minf(viewport_size.x / REF_SIZE.x, viewport_size.y / REF_SIZE.y)
 	var origin := (viewport_size - REF_SIZE * scale) * 0.5
-	position = origin + AREA_POS * scale
-	size = AREA_SIZE * scale
+	position = origin + _area_pos * scale
+	size = _area_size * scale

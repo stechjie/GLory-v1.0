@@ -35,7 +35,8 @@ const Catalog := preload("res://scripts/account/AvatarCatalog.gd")
 const ConfirmDialog := preload("res://ui/components/GloryConfirmDialog.gd")
 # 新按钮一律实例化组件，不写 Button.new()：V3 P1-08 的棘轮盯着本文件的自绘按钮数，只能降。
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
-const MENU_BG_TEX := preload("res://assets/ui/main_menu_live/background.png")
+const FRIENDS_BG_TEX := preload("res://assets/ui/profile/hall_of_glory.png")
+const DEFAULT_FRAME_TEX := preload("res://assets/ui/shop/headframes/frame_default.png")
 
 # 面板开着时的刷新间隔。**不是心跳** —— 这是读，心跳是写。
 const REFRESH_SEC := 5.0
@@ -92,7 +93,7 @@ func _on_chat_unread_changed(_any_unread: bool) -> void:
 
 func _build() -> void:
 	var bg := TextureRect.new()
-	bg.texture = MENU_BG_TEX
+	bg.texture = FRIENDS_BG_TEX
 	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -100,39 +101,52 @@ func _build() -> void:
 	add_child(bg)
 
 	var dim := ColorRect.new()
-	dim.color = Tokens.BACKDROP
+	dim.color = Color(0.008, 0.016, 0.031, 0.38)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(dim)
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	for side in ["left", "right", "top", "bottom"]:
-		margin.add_theme_constant_override("margin_" + side, Tokens.PAD)
+	for side in ["left", "right"]:
+		margin.add_theme_constant_override("margin_" + side, 48)
+	for side in ["top", "bottom"]:
+		margin.add_theme_constant_override("margin_" + side, 28)
 	add_child(margin)
 	# 灵动岛 / 圆角那几条让出来；背景（bg、dim）照样铺满（ui/services/SafeArea.gd）。
 	SafeArea.track(margin)
 
 	var root := VBoxContainer.new()
-	root.add_theme_constant_override("separation", Tokens.GAP_M)
+	root.add_theme_constant_override("separation", 18)
 	margin.add_child(root)
 
 	root.add_child(_header())
-	root.add_child(_tabs())
+	var body := HBoxContainer.new()
+	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body.add_theme_constant_override("separation", 24)
+	root.add_child(body)
+	body.add_child(_tabs())
+	var content_panel := PanelContainer.new()
+	content_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	content_panel.add_theme_stylebox_override("panel", Tokens.panel_box(Color(0.018, 0.04, 0.075, 0.30), Color.TRANSPARENT, 18))
+	body.add_child(content_panel)
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 14)
+	content_panel.add_child(content)
 
 	_notice_label = Label.new()
 	_notice_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_notice_label.visible = false
-	root.add_child(_notice_label)
+	content.add_child(_notice_label)
 
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	root.add_child(scroll)
+	content.add_child(scroll)
 
 	_list_box = VBoxContainer.new()
 	_list_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_list_box.add_theme_constant_override("separation", Tokens.GAP_S)
+	_list_box.add_theme_constant_override("separation", 10)
 	scroll.add_child(_list_box)
 
 
@@ -140,46 +154,50 @@ func _header() -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", Tokens.GAP_M)
 
-	var back := Button.new()
+	var back := ACTION_BUTTON.instantiate() as Button
 	back.text = _text("← 返回", "← Back")
-	back.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+	back.custom_minimum_size = Vector2(140, Tokens.TOUCH_MIN)
+	_style_quiet_button(back)
 	back.pressed.connect(func() -> void: back_requested.emit())
 	row.add_child(back)
 
 	var title := Label.new()
 	title.text = _text("朋友", "Friends")
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
+	title.add_theme_font_size_override("font_size", 32)
 	title.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
 	row.add_child(title)
 
-	var refresh := Button.new()
+	var refresh := ACTION_BUTTON.instantiate() as Button
 	refresh.text = _text("刷新", "Refresh")
-	refresh.custom_minimum_size = Vector2(96, Tokens.TOUCH_MIN)
+	refresh.custom_minimum_size = Vector2(112, Tokens.TOUCH_MIN)
+	_style_quiet_button(refresh)
 	refresh.pressed.connect(func() -> void: await _reload(true))
 	row.add_child(refresh)
 	return row
 
 
 func _tabs() -> Control:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", Tokens.GAP_S)
+	var rail := VBoxContainer.new()
+	rail.custom_minimum_size.x = 208
+	rail.add_theme_constant_override("separation", 10)
 	for spec in [
 		[Tab.FRIENDS, _text("好友", "Friends")],
 		[Tab.REQUESTS, _text("请求", "Requests")],
 		[Tab.ADD, _text("添加", "Add")],
 	]:
 		var tab_id: int = spec[0]
-		var button := Button.new()
+		var button := ACTION_BUTTON.instantiate() as Button
 		button.text = str(spec[1])
-		button.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+		button.custom_minimum_size = Vector2(196, 62)
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.toggle_mode = true
 		button.pressed.connect(func() -> void: _switch_tab(tab_id))
 		_tab_buttons[tab_id] = button
-		row.add_child(button)
-	return row
+		rail.add_child(button)
+	return rail
 
 
 func _switch_tab(tab_id: int) -> void:
@@ -272,7 +290,9 @@ func _render() -> void:
 	for child in _list_box.get_children():
 		child.queue_free()
 	for tab_id in _tab_buttons:
-		(_tab_buttons[tab_id] as Button).button_pressed = tab_id == _tab
+		var tab_button := _tab_buttons[tab_id] as Button
+		tab_button.button_pressed = tab_id == _tab
+		_style_tab_button(tab_button, tab_id == _tab)
 	var request_tab: Button = _tab_buttons.get(Tab.REQUESTS)
 	if request_tab != null:
 		var badge := request_tab.get_node_or_null("RequestBadge") as Label
@@ -299,6 +319,12 @@ func _render() -> void:
 
 
 func _render_friends() -> void:
+	var online_count := 0
+	for entry in _friends:
+		if typeof(entry) == TYPE_DICTIONARY and bool((entry as Dictionary).get("online", false)):
+			online_count += 1
+	_list_box.add_child(_section(_text("好友 %d · 在线 %d" % [_friends.size(), online_count],
+		"%d friends · %d online" % [_friends.size(), online_count])))
 	if _friends.is_empty():
 		_list_box.add_child(_hint(_text(
 			"还没有好友。到「添加」页签用好友码加人。",
@@ -314,66 +340,112 @@ func _render_friends() -> void:
 		return str((a as Dictionary).get("player_name", "")) \
 			< str((b as Dictionary).get("player_name", "")))
 	for entry in sorted:
-		_list_box.add_child(_friend_row(entry as Dictionary))
+		_list_box.add_child(_wrap_card(_friend_row(entry as Dictionary)))
 
 
 func _friend_row(entry: Dictionary) -> Control:
 	var code := str(entry.get("friend_code", ""))
 	var row := _card()
-
-	var avatar := TextureButton.new()
-	avatar.texture_normal = Catalog.texture_for(str(entry.get("avatar", "")), true)
-	avatar.custom_minimum_size = Vector2(Tokens.TOUCH_MIN, Tokens.TOUCH_MIN)
-	avatar.ignore_texture_size = true
-	avatar.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
-	avatar.pressed.connect(func() -> void: profile_requested.emit(code))
-	row.add_child(avatar)
+	row.add_child(_avatar_stage(entry, code))
 
 	var name_label := Label.new()
 	# 昵称永远带好友码 —— 唯一实现在 AccountManager.display_name()。
 	name_label.text = AccountManager.display_name(str(entry.get("player_name", "")), code)
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	name_label.clip_text = true
+	name_label.add_theme_font_size_override("font_size", 20)
 	row.add_child(name_label)
 
 	var online := bool(entry.get("online", false))
 	name_label.add_theme_color_override("font_color", Color.WHITE if online else Tokens.TEXT_DISABLED)
 	var status := Label.new()
-	status.text = _text("在线", "Online") if online else _text("离线", "Offline")
+	status.text = _text("● 在线", "● Online") if online else _text("○ 离线", "○ Offline")
+	status.custom_minimum_size.x = 112
+	status.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	status.add_theme_color_override(
-		"font_color", Color.WHITE if online else Tokens.TEXT_DISABLED)
+		"font_color", Color("73e0a8") if online else Tokens.TEXT_DISABLED)
 	row.add_child(status)
 
 	var room_value: Variant = entry.get("room_id")
 	var room_id := int(room_value) if room_value != null else 0
 	if room_id > 0:
-		var join := Button.new()
+		var join := ACTION_BUTTON.instantiate() as Button
 		join.text = _text("加入", "Join")
-		join.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+		join.custom_minimum_size = Vector2(92, Tokens.TOUCH_MIN)
+		_style_primary_button(join)
 		join.pressed.connect(func() -> void: join_room_requested.emit(room_id))
 		row.add_child(join)
 
 	# 私聊。实例化组件而不是 Button.new()（见 ACTION_BUTTON 的注释）。
 	var chat := ACTION_BUTTON.instantiate() as Button
 	chat.text = _text("私聊", "Chat")
-	chat.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+	chat.custom_minimum_size = Vector2(94, Tokens.TOUCH_MIN)
 	chat.size_flags_horizontal = Control.SIZE_FILL
+	_style_quiet_button(chat)
 	chat.pressed.connect(func() -> void: chat_requested.emit(code))
 	if ChatService.has_unread(code):
 		_attach_unread_dot(chat)
 	row.add_child(chat)
 
-	var remove := Button.new()
-	remove.text = _text("删除", "Remove")
-	remove.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
-	remove.pressed.connect(func() -> void: _confirm_remove(entry))
-	row.add_child(remove)
-
-	var block := Button.new()
-	block.text = _text("拉黑", "Block")
-	block.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
-	block.pressed.connect(func() -> void: _confirm_block(entry))
-	row.add_child(block)
+	var more := ACTION_BUTTON.instantiate() as Button
+	more.text = "⋯"
+	more.tooltip_text = _text("更多操作", "More actions")
+	more.custom_minimum_size = Vector2(56, Tokens.TOUCH_MIN)
+	_style_quiet_button(more)
+	row.add_child(more)
+	var menu := PopupMenu.new()
+	menu.add_item(_text("删除好友", "Remove friend"), 0)
+	menu.add_item(_text("拉黑", "Block"), 1)
+	menu.id_pressed.connect(func(id: int) -> void:
+		if id == 0:
+			_confirm_remove(entry)
+		else:
+			_confirm_block(entry))
+	more.add_child(menu)
+	more.pressed.connect(func() -> void:
+		menu.popup(Rect2i(Vector2i(more.get_screen_position()), Vector2i(170, 1))))
 	return row
+
+
+func _avatar_stage(entry: Dictionary, code: String) -> Control:
+	var stage := Control.new()
+	stage.custom_minimum_size = Vector2(82, 82)
+	var avatar := TextureRect.new()
+	avatar.texture = Catalog.texture_for(str(entry.get("avatar", "")), true)
+	avatar.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	avatar.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	avatar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stage.add_child(avatar)
+	avatar.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	avatar.position = Vector2(14, 14)
+	avatar.size = Vector2(54, 54)
+	var frame_value := str(entry.get("avatar_frame", ""))
+	var frame_id := Catalog.id_from_value(frame_value)
+	if frame_id.is_empty():
+		frame_value = Catalog.default_frame()
+		frame_id = Catalog.id_from_value(frame_value)
+	var frame_texture: Texture2D = DEFAULT_FRAME_TEX if frame_id == "frame_default" else Catalog.frame_texture_for(frame_value, false)
+	if frame_texture != null:
+		var frame := TextureRect.new()
+		frame.texture = frame_texture
+		frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		frame.size = Catalog.frame_drawn_size(frame_id, 49.0)
+		frame.position = Catalog.frame_box_origin(frame_id, 49.0, Vector2(41, 41))
+		stage.add_child(frame)
+	var hit := ACTION_BUTTON.instantiate() as Button
+	hit.text = ""
+	hit.tooltip_text = _text("查看资料", "View profile")
+	hit.custom_minimum_size = Vector2.ZERO
+	hit.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var clear := Tokens.flat_box(Color.TRANSPARENT, Color.TRANSPARENT, 0)
+	for state in ["normal", "hover", "pressed", "hover_pressed", "focus"]:
+		hit.add_theme_stylebox_override(state, clear)
+	hit.pressed.connect(func() -> void: profile_requested.emit(code))
+	stage.add_child(hit)
+	return stage
 
 
 func _render_requests() -> void:
@@ -383,42 +455,45 @@ func _render_requests() -> void:
 	if not _incoming.is_empty():
 		_list_box.add_child(_section(_text("收到的", "Received")))
 		for entry in _incoming:
-			_list_box.add_child(_request_row(entry as Dictionary, true))
+			_list_box.add_child(_wrap_card(_request_row(entry as Dictionary, true)))
 	if not _outgoing.is_empty():
 		_list_box.add_child(_section(_text("发出的", "Sent")))
 		for entry in _outgoing:
-			_list_box.add_child(_request_row(entry as Dictionary, false))
+			_list_box.add_child(_wrap_card(_request_row(entry as Dictionary, false)))
 
 
 func _request_row(entry: Dictionary, incoming: bool) -> Control:
 	var code := str(entry.get("friend_code", ""))
 	var row := _card()
+	row.add_child(_avatar_stage(entry, code))
 
 	var name_label := Label.new()
 	name_label.text = AccountManager.display_name(str(entry.get("player_name", "")), code)
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	name_label.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
+	name_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	name_label.add_theme_font_size_override("font_size", 18)
 	row.add_child(name_label)
 
-	var view := Button.new()
+	var view := _make_button()
 	view.text = _text("看资料", "Profile")
-	view.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+	view.custom_minimum_size = Vector2(110, Tokens.TOUCH_MIN)
 	view.pressed.connect(func() -> void: profile_requested.emit(code))
 	row.add_child(view)
 
 	if incoming:
-		var accept := Button.new()
+		var accept := _make_button(true)
 		accept.text = _text("通过", "Accept")
-		accept.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+		accept.custom_minimum_size = Vector2(110, Tokens.TOUCH_MIN)
 		accept.pressed.connect(func() -> void:
 			await _run(func(): return await AccountManager.accept_friend_request(code),
 				_text("已成为好友", "You are now friends")))
 		row.add_child(accept)
 
-	var drop := Button.new()
+	var drop := _make_button()
 	# 拒绝和取消是同一个接口（都是删掉那一行），文案分开只是为了讲人话。
 	drop.text = _text("拒绝", "Decline") if incoming else _text("取消", "Cancel")
-	drop.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+	drop.custom_minimum_size = Vector2(110, Tokens.TOUCH_MIN)
 	drop.pressed.connect(func() -> void:
 		await _run(func(): return await AccountManager.drop_friend_request(code),
 			_text("已处理", "Done")))
@@ -435,14 +510,16 @@ func _render_add() -> void:
 	_code_input.max_length = 8
 	_code_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_code_input.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+	_code_input.add_theme_stylebox_override("normal", Tokens.flat_box(Color(0.02, 0.05, 0.09, 0.42), Color(0.60, 0.77, 0.91, 0.34), 1, 8))
+	_code_input.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
 	add_row.add_child(_code_input)
 
-	var submit := Button.new()
+	var submit := _make_button(true)
 	submit.text = _text("发送请求", "Send request")
-	submit.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+	submit.custom_minimum_size = Vector2(136, Tokens.TOUCH_MIN)
 	submit.pressed.connect(_on_add_pressed)
 	add_row.add_child(submit)
-	_list_box.add_child(add_row)
+	_list_box.add_child(_wrap_card(add_row))
 
 	# 自己的好友码：加人这件事最真实的路径是把码发给朋友，不是在游戏里找人。
 	var mine := str(AccountManager.profile.get("friend_code", ""))
@@ -452,14 +529,14 @@ func _render_add() -> void:
 		label.text = _text("我的好友码：", "My code: ") + mine
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		my_row.add_child(label)
-		var copy := Button.new()
+		var copy := _make_button()
 		copy.text = _text("复制", "Copy")
-		copy.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+		copy.custom_minimum_size = Vector2(110, Tokens.TOUCH_MIN)
 		copy.pressed.connect(func() -> void:
 			DisplayServer.clipboard_set(mine)
 			_set_notice(_text("已复制好友码", "Code copied"), false))
 		my_row.add_child(copy)
-		_list_box.add_child(my_row)
+		_list_box.add_child(_wrap_card(my_row))
 
 	# 最近一起玩过 —— 加人最真实的路径之一：刚打完一局配合不错，顺手加。
 	# 列表里只有「还不是好友」的人（后端已经排掉好友/待处理/拉黑/隐身）。
@@ -478,19 +555,19 @@ func _render_add() -> void:
 			rname.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			rname.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
 			rrow.add_child(rname)
-			var rview := Button.new()
+			var rview := _make_button()
 			rview.text = _text("看资料", "Profile")
-			rview.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+			rview.custom_minimum_size = Vector2(110, Tokens.TOUCH_MIN)
 			rview.pressed.connect(func() -> void: profile_requested.emit(rcode))
 			rrow.add_child(rview)
-			var radd := Button.new()
+			var radd := _make_button(true)
 			radd.text = _text("加好友", "Add")
-			radd.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+			radd.custom_minimum_size = Vector2(110, Tokens.TOUCH_MIN)
 			radd.pressed.connect(func() -> void:
 				await _run(func(): return await AccountManager.send_friend_request(rcode),
 					_text("已发送好友请求", "Friend request sent")))
 			rrow.add_child(radd)
-			_list_box.add_child(rrow)
+			_list_box.add_child(_wrap_card(rrow))
 
 	_list_box.add_child(_section(_text("已拉黑", "Blocked")))
 	if _blocks.is_empty():
@@ -505,15 +582,15 @@ func _render_add() -> void:
 		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		name_label.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
 		row.add_child(name_label)
-		var unblock := Button.new()
+		var unblock := _make_button()
 		unblock.text = _text("解除", "Unblock")
-		unblock.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+		unblock.custom_minimum_size = Vector2(110, Tokens.TOUCH_MIN)
 		unblock.pressed.connect(func() -> void:
 			await _run(func(): return await AccountManager.unblock_player(code),
 				_text("已解除拉黑。要重新加好友需要再发一次请求。",
 					"Unblocked. You will need to send a new friend request.")))
 		row.add_child(unblock)
-		_list_box.add_child(row)
+		_list_box.add_child(_wrap_card(row))
 
 
 # --- 动作 ---------------------------------------------------------------------
@@ -594,15 +671,69 @@ func _attach_unread_dot(button: Control) -> void:
 
 func _card() -> HBoxContainer:
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", Tokens.GAP_S)
+	row.add_theme_constant_override("separation", 16)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.custom_minimum_size.y = 84
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	return row
+
+
+func _wrap_card(content: Control) -> PanelContainer:
+	var panel := PanelContainer.new()
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var style := Tokens.flat_box(Color(0.025, 0.055, 0.10, 0.50), Color.TRANSPARENT, 0, 12)
+	style.set_content_margin_all(12)
+	panel.add_theme_stylebox_override("panel", style)
+	panel.add_child(content)
+	return panel
+
+
+func _make_button(primary: bool = false) -> Button:
+	var button := ACTION_BUTTON.instantiate() as Button
+	button.custom_minimum_size = Vector2(110, Tokens.TOUCH_MIN)
+	if primary:
+		_style_primary_button(button)
+	else:
+		_style_quiet_button(button)
+	return button
+
+
+func _style_quiet_button(button: Button) -> void:
+	button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	button.add_theme_stylebox_override("normal", Tokens.flat_box(Color(0.025, 0.07, 0.12, 0.57), Color(0.65, 0.81, 0.90, 0.38), 1, 8))
+	button.add_theme_stylebox_override("hover", Tokens.flat_box(Color(0.06, 0.13, 0.20, 0.76), Color(0.75, 0.88, 0.98, 0.64), 1, 8))
+	button.add_theme_stylebox_override("pressed", Tokens.flat_box(Color(0.035, 0.09, 0.15, 0.82), Color(0.75, 0.88, 0.98, 0.54), 1, 8))
+	button.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	button.add_theme_color_override("font_hover_color", Color.WHITE)
+
+
+func _style_primary_button(button: Button) -> void:
+	button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	button.add_theme_stylebox_override("normal", Tokens.flat_box(Tokens.GOLD, Tokens.GOLD_EDGE, 1, 8))
+	button.add_theme_stylebox_override("hover", Tokens.flat_box(Tokens.GOLD_HOVER, Tokens.GOLD_EDGE, 1, 8))
+	button.add_theme_stylebox_override("pressed", Tokens.flat_box(Tokens.GOLD_PRESSED, Tokens.GOLD_EDGE, 1, 8))
+	button.add_theme_color_override("font_color", Tokens.TEXT_ON_GOLD)
+	button.add_theme_color_override("font_hover_color", Tokens.TEXT_ON_GOLD)
+
+
+func _style_tab_button(button: Button, selected: bool) -> void:
+	var idle := Color(0.03, 0.065, 0.11, 0.42)
+	var selected_bg := Color(0.055, 0.095, 0.15, 0.72)
+	button.add_theme_stylebox_override("normal", Tokens.flat_box(selected_bg if selected else idle, Color.TRANSPARENT, 0, 10))
+	button.add_theme_stylebox_override("hover", Tokens.flat_box(Color(0.08, 0.14, 0.21, 0.80), Color.TRANSPARENT, 0, 10))
+	button.add_theme_stylebox_override("pressed", Tokens.flat_box(selected_bg, Color.TRANSPARENT, 0, 10))
+	button.add_theme_stylebox_override("hover_pressed", Tokens.flat_box(selected_bg, Color.TRANSPARENT, 0, 10))
+	button.add_theme_color_override("font_color", Tokens.GOLD if selected else Tokens.TEXT_PRIMARY)
+	button.add_theme_color_override("font_hover_color", Tokens.GOLD_HOVER)
+	button.add_theme_color_override("font_pressed_color", Tokens.GOLD)
+	button.add_theme_color_override("font_hover_pressed_color", Tokens.GOLD_HOVER)
 
 
 func _section(title: String) -> Control:
 	var label := Label.new()
 	label.text = title
-	label.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
+	label.custom_minimum_size.y = 36
+	label.add_theme_font_size_override("font_size", 21)
 	label.add_theme_color_override("font_color", Tokens.GOLD)
 	return label
 
@@ -611,6 +742,9 @@ func _hint(message: String) -> Control:
 	var label := Label.new()
 	label.text = message
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.custom_minimum_size.y = 88
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 18)
 	label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
 	return label
 

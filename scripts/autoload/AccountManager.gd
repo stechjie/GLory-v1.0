@@ -608,6 +608,44 @@ func remove_friend(code: String) -> Dictionary:
 
 
 # --- 匹配队列（docs/排位系统设计.md 第五节，backend/app/routes/matchmaking.py）----
+
+func fetch_party() -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/party", null, true)
+
+func create_party(mode: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/party", {"mode": mode}, true)
+
+func leave_party() -> Dictionary:
+	return await _request(HTTPClient.METHOD_DELETE, "/v1/party", null, true)
+
+func invite_to_party(code: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/party/invite",
+		{"friend_code": normalize_friend_code(code)}, true)
+
+func join_party(party_id: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/party/join", {"party_id": party_id}, true)
+
+func set_party_mode(mode: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_PUT, "/v1/party/mode", {"mode": mode}, true)
+
+func set_party_pets(pets: Array) -> Dictionary:
+	return await _request(HTTPClient.METHOD_PUT, "/v1/party/pets", {"pets": pets}, true)
+
+func set_party_ready(ready: bool) -> Dictionary:
+	return await _request(HTTPClient.METHOD_PUT, "/v1/party/ready", {"ready": ready}, true)
+
+func start_party_match() -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/party/start", {}, true)
+
+func cancel_party_match() -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/party/cancel", {}, true)
+
+func send_party_chat(message: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/party/chat", {"text": message}, true)
+
+func fetch_party_voice_token() -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/party/voice-token", null, true)
+
 #
 # 四个接口的返回都是同一个形状：`{"state": {...}}`，而里面那份与 WebSocket 推的
 # `t: "match"` 消息**一模一样**。推送是主路径，这几个是 WS 正好断着时的兜底 ——

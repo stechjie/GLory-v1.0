@@ -35,6 +35,7 @@ const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
 const SfxService := preload("res://ui/services/SfxService.gd")
 const SettlementPanel := preload("res://scenes/menu/FinalSettlementPanel.gd")
 const FinalSettlementData := preload("res://scripts/multiplayer/FinalSettlementData.gd")
+const PROFILE_BG_TEX := preload("res://assets/ui/profile/hall_of_glory.png")
 
 # 「详细战况」叠在历史弹窗上面（ProfileScreen 推历史用的是 40）。
 const DETAIL_MODAL_ID := "match_history_detail"
@@ -46,13 +47,9 @@ signal dismissed()
 # 同一份响应里，拉太多是白白占内存。
 const FETCH_LIMIT := 20
 
-const PANEL_SIZE := Vector2(1100, 620)
-const LIST_WIDTH := 320.0
-
 var _matches: Array = []
 var _selected_match := -1
 var _list_box: VBoxContainer
-var _detail_box: VBoxContainer
 var _summary: Label
 var _status: Label
 
@@ -65,69 +62,62 @@ func _ready() -> void:
 
 func _build() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-
-	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box())
-	panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	panel.custom_minimum_size = PANEL_SIZE
-	panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	panel.grow_vertical = Control.GROW_DIRECTION_BOTH
-	add_child(panel)
-
+	var background := TextureRect.new()
+	background.texture = PROFILE_BG_TEX
+	background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(background)
+	var veil := ColorRect.new()
+	veil.color = Color(0.008, 0.016, 0.031, 0.43)
+	veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	veil.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(veil)
+	var margin := MarginContainer.new()
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	for edge in ["left", "right"]:
+		margin.add_theme_constant_override("margin_" + edge, 56)
+	for edge in ["top", "bottom"]:
+		margin.add_theme_constant_override("margin_" + edge, 28)
+	add_child(margin)
 	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", Tokens.GAP_M)
-	panel.add_child(column)
-
+	column.add_theme_constant_override("separation", 12)
+	margin.add_child(column)
+	var header := HBoxContainer.new()
+	column.add_child(header)
 	var title := Label.new()
 	title.text = _text("对局历史", "Match History")
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
+	title.add_theme_font_size_override("font_size", 30)
 	title.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
-	column.add_child(title)
-
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(title)
+	var close := ACTION_BUTTON.instantiate() as Button
+	close.text = _text("返回", "Back")
+	close.custom_minimum_size = Vector2(130, Tokens.TOUCH_MIN)
+	close.pressed.connect(func() -> void:
+		SfxService.play(SfxService.CUE_UI_CONFIRM)
+		dismissed.emit())
+	header.add_child(close)
 	_summary = Label.new()
-	_summary.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_summary.add_theme_font_size_override("font_size", 18)
 	_summary.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
 	column.add_child(_summary)
-
-	var body := HBoxContainer.new()
-	body.add_theme_constant_override("separation", Tokens.GAP_M)
-	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	column.add_child(body)
-
 	var list_scroll := ScrollContainer.new()
-	list_scroll.custom_minimum_size = Vector2(LIST_WIDTH, 0)
 	list_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	list_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	list_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_child(list_scroll)
+	column.add_child(list_scroll)
 	_list_box = VBoxContainer.new()
 	_list_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_list_box.add_theme_constant_override("separation", Tokens.GAP_S)
+	_list_box.add_theme_constant_override("separation", 8)
 	list_scroll.add_child(_list_box)
-
-	var detail_scroll := ScrollContainer.new()
-	detail_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	detail_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	detail_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_child(detail_scroll)
-	_detail_box = VBoxContainer.new()
-	_detail_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_detail_box.add_theme_constant_override("separation", Tokens.GAP_S)
-	detail_scroll.add_child(_detail_box)
-
 	_status = Label.new()
 	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_status.custom_minimum_size = Vector2(0, 26)
 	_status.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
 	column.add_child(_status)
-
-	var close := ACTION_BUTTON.instantiate() as Button
-	close.text = _text("关闭", "Close")
-	close.pressed.connect(func() -> void:
-		SfxService.play(SfxService.CUE_UI_CONFIRM)
-		dismissed.emit())
-	column.add_child(close)
 
 
 # --- 取数 ---------------------------------------------------------------------
@@ -205,116 +195,87 @@ func _refresh_list() -> void:
 func _list_row(index: int) -> Control:
 	var item: Dictionary = _matches[index]
 	var outcome := _my_result(item)
+	var available := has_settlement_details(item)
 	var row := ACTION_BUTTON.instantiate() as Button
-	row.custom_minimum_size = Vector2(LIST_WIDTH - Tokens.GAP_M, Tokens.TOUCH_MIN)
+	row.text = ""
+	row.custom_minimum_size = Vector2(0, 122)
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	row.text = "%s  %s  %s" % [
-		_outcome_word(outcome),
-		_mode_word(str(item.get("mode", ""))),
-		_ago_text(int(item.get("age_sec", 0))),
-	]
-	row.add_theme_color_override("font_color", _outcome_color(outcome))
-	if index == _selected_match:
-		row.add_theme_color_override("font_color", Tokens.GOLD_EDGE)
+	row.add_theme_stylebox_override("normal", Tokens.flat_box(Color(0.015, 0.04, 0.08, 0.39), Color.TRANSPARENT, 0, 12))
+	row.add_theme_stylebox_override("hover", Tokens.flat_box(Color(0.025, 0.075, 0.13, 0.67), Color.TRANSPARENT, 0, 12))
+	row.add_theme_stylebox_override("pressed", Tokens.flat_box(Color(0.025, 0.075, 0.13, 0.8), Color.TRANSPARENT, 0, 12))
 	row.pressed.connect(func() -> void:
-		SfxService.play(SfxService.CUE_UI_POPUP)
-		_select_match(index))
-	return row
-
-
-func _select_match(index: int) -> void:
-	if index < 0 or index >= _matches.size():
-		return
-	_selected_match = index
-	_refresh_list()
-	_refresh_detail()
-
-
-# --- 右列：这一局的详情 ---------------------------------------------------------
-
-func _refresh_detail() -> void:
-	for child in _detail_box.get_children():
-		_detail_box.remove_child(child)
-		child.queue_free()
-	if _selected_match < 0 or _selected_match >= _matches.size():
-		return
-	var item: Dictionary = _matches[_selected_match]
-
-	var head := Label.new()
-	head.text = "%s · %s · %s %d · %s" % [
-		_outcome_word(_my_result(item)),
-		_mode_word(str(item.get("mode", ""))),
-		_text("回合", "Round"), int(item.get("rounds", 0)),
-		_ago_text(int(item.get("age_sec", 0))),
-	]
-	head.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
-	head.add_theme_color_override("font_color", _outcome_color(_my_result(item)))
-	_detail_box.add_child(head)
-
-	var hp := Label.new()
-	# 队伍名一律「红队 / 蓝队」：A 队恒为红队（slot 0-2，TEAM_RED），B 队恒为蓝队
-	# （slot 3-5，TEAM_BLUE）。见 GameConstants.team_of_slot。战斗画面顶部也是
-	# 「左红水晶 / 右蓝水晶」，这里用颜色词才和战斗里看到的对得上。
-	hp.text = "%s  %s %d : %d %s" % [
-		_text("法阵 HP", "Formation HP"),
-		_text("红", "Red"), int(item.get("team_a_hp", 0)),
-		int(item.get("team_b_hp", 0)), _text("蓝", "Blue")]
-	hp.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
-	_detail_box.add_child(hp)
-
-	# 🔴 金币不是权威的时候要说出来。见文件顶部第 2 条。
+		if available:
+			SfxService.play(SfxService.CUE_UI_POPUP)
+			_open_settlement(item))
+	var inset := MarginContainer.new()
+	inset.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	inset.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for edge in ["left", "right"]:
+		inset.add_theme_constant_override("margin_" + edge, 18)
+	for edge in ["top", "bottom"]:
+		inset.add_theme_constant_override("margin_" + edge, 10)
+	row.add_child(inset)
+	var content := HBoxContainer.new()
+	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	content.add_theme_constant_override("separation", 22)
+	inset.add_child(content)
+	var result_box := VBoxContainer.new()
+	result_box.custom_minimum_size.x = 146
+	result_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	content.add_child(result_box)
+	result_box.add_child(_row_label(_outcome_word(outcome), _outcome_color(outcome), 26))
+	result_box.add_child(_row_label("%s · %s %d" % [_mode_word(str(item.get("mode", ""))), _text("回合", "Round"), int(item.get("rounds", 0))], Tokens.TEXT_SECONDARY, 15))
+	var seats: Array = item.get("seats", []) if typeof(item.get("seats")) == TYPE_ARRAY else []
+	for team in 2:
+		var team_box := VBoxContainer.new()
+		team_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		team_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		team_box.add_theme_constant_override("separation", 1)
+		content.add_child(team_box)
+		team_box.add_child(_row_label(_text("红队", "Red Team") if team == 0 else _text("蓝队", "Blue Team"), Color("ff8b7f") if team == 0 else Color("82bdff"), 16))
+		for seat in seats:
+			if typeof(seat) != TYPE_DICTIONARY or int((seat as Dictionary).get("team", -1)) != team:
+				continue
+			var seat_data := seat as Dictionary
+			var name := seat_name(seat_data, int(seat_data.get("slot", -1)) == int(item.get("my_slot", -1)))
+			var state := _seat_state(seat_data)
+			team_box.add_child(_row_label(name + state, Tokens.TEXT_PRIMARY if state.is_empty() else Tokens.TEXT_SECONDARY, 14))
+	var action_box := VBoxContainer.new()
+	action_box.custom_minimum_size.x = 190
+	action_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	action_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	content.add_child(action_box)
+	action_box.add_child(_row_label(_ago_text(int(item.get("age_sec", 0))), Tokens.TEXT_SECONDARY, 14))
 	if not bool(item.get("gold_authoritative", false)):
-		var note := Label.new()
-		note.text = _text("金币为客户端上报值", "Gold is client-reported")
-		note.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
-		_detail_box.add_child(note)
-
-	# 详细战况：打完那一刻的结算面板（见文件顶部第 4 条）。
-	if has_settlement_details(item):
+		action_box.add_child(_row_label(_text("金币为客户端上报值", "Gold is client-reported"), Tokens.TEXT_SECONDARY, 12))
+	if available:
 		var detail := ACTION_BUTTON.instantiate() as Button
 		detail.text = _text("详细战况", "Match details")
-		detail.custom_minimum_size = Vector2(200, Tokens.TOUCH_MIN)
+		detail.custom_minimum_size = Vector2(145, 38)
 		detail.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 		detail.pressed.connect(func() -> void:
 			SfxService.play(SfxService.CUE_UI_POPUP)
 			_open_settlement(item))
-		_detail_box.add_child(detail)
+		action_box.add_child(detail)
 	else:
-		var none := Label.new()
-		none.text = _text("本局在 PvE 回合结束，无结算详情", "This match ended in PvE; no settlement details") if typeof(item.get("settlement")) == TYPE_DICTIONARY else _text("这一局是旧版本记录，没有详细战况", "No details for this match (recorded by an older version)")
-		none.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
-		_detail_box.add_child(none)
-
-	var seats: Array = (item.get("seats", []) as Array)
-	for team in 2:
-		var team_title := Label.new()
-		# A 队=红队（team 0）、B 队=蓝队（team 1）。与战斗画面顶部水晶、3v3 大厅
-		# 「上方红队 / 下方蓝队」的口径统一，见 GameConstants.TEAM_RED / TEAM_BLUE。
-		team_title.text = _text("红队", "Red Team") if team == 0 else _text("蓝队", "Blue Team")
-		team_title.add_theme_color_override("font_color", Tokens.GOLD_EDGE)
-		_detail_box.add_child(team_title)
-		for seat in seats:
-			if typeof(seat) != TYPE_DICTIONARY or int((seat as Dictionary).get("team", 0)) != team:
-				continue
-			_detail_box.add_child(_seat_row(seat as Dictionary, int(item.get("my_slot", -1))))
-
-
-func _seat_row(seat: Dictionary, my_slot: int) -> Control:
-	var slot := int(seat.get("slot", 0))
-	var row := Label.new()
-	row.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
-	row.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	row.text = "%s %s · %s %d · %s %d/%d" % [
-		seat_name(seat, slot == my_slot),
-		_seat_state(seat),
-		_text("金币", "Gold"), int(seat.get("gold", 0)),
-		_text("萝卜 剩/用", "Carrots left/used"),
-		int(seat.get("carrots", 0)), int(seat.get("carrots_spent", 0)),
-	]
-	row.add_theme_color_override("font_color",
-		Tokens.GOLD_EDGE if slot == my_slot else Tokens.TEXT_SECONDARY)
+		action_box.add_child(_row_label(_text("本局在 PvE 回合结束，无结算详情", "PvE match, no details") if typeof(item.get("settlement")) == TYPE_DICTIONARY else _text("旧版本记录，没有详细战况", "Older record, no match details"), Tokens.TEXT_SECONDARY, 12))
 	return row
+
+
+func _row_label(value: String, color: Color, font_size: int) -> Label:
+	var label := Label.new()
+	label.text = value
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.add_theme_color_override("font_color", color)
+	label.add_theme_font_size_override("font_size", font_size)
+	label.clip_text = true
+	return label
+
+
+func _select_match(index: int) -> void:
+	# Kept for the existing history fixture. Selection does not open a detail until tapped.
+	if index >= 0 and index < _matches.size():
+		_selected_match = index
 
 
 # 谁坐在这个座位上：账号**现在**的名字（后端按 player_id 现取，见文件顶部第 5 条）。
@@ -488,8 +449,8 @@ func _outcome_word(outcome: String) -> String:
 
 func _outcome_color(outcome: String) -> Color:
 	match outcome:
-		"win": return Tokens.TEXT_PRIMARY
-		"loss": return Tokens.TEXT_DISABLED
+		"win": return Color("67dca2")
+		"loss": return Color("ff796f")
 		_: return Tokens.TEXT_SECONDARY
 
 

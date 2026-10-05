@@ -40,6 +40,8 @@ const POLL_SEC := 3.0
 const ACCEPT_SEC := 30.0
 
 var _mode := "casual"
+var _party_queue := false
+var _party_host := false
 var _state := "idle"
 var _accept_deadline := 0.0
 var _poll_timer := 0.0
@@ -51,8 +53,10 @@ var _accept_btn: Button
 var _leave_btn: Button
 
 
-func configure(mode: String) -> void:
+func configure(mode: String, party_queue: bool = false, party_host: bool = false) -> void:
 	_mode = mode
+	_party_queue = party_queue
+	_party_host = party_host
 
 
 func _ready() -> void:
@@ -60,7 +64,10 @@ func _ready() -> void:
 	_build()
 	if not RealtimeService.message_received.is_connected(_on_realtime_message):
 		RealtimeService.message_received.connect(_on_realtime_message)
-	_join()
+	if _party_queue:
+		_poll()
+	else:
+		_join()
 
 
 func _exit_tree() -> void:
@@ -151,6 +158,13 @@ func _on_accept() -> void:
 
 func _on_leave() -> void:
 	SfxService.play(SfxService.CUE_UI_CONFIRM)
+	if _party_queue and _state == "queued":
+		if _party_host:
+			AccountManager.cancel_party_match()
+		else:
+			AccountManager.leave_party()
+		dismissed.emit()
+		return
 	# 不等回执就关：退队列是「尽力而为」的动作，等一趟网络只会让界面卡住。
 	# 真没退成的话，服务器那边的掉线宽限会收拾（QUEUE_GRACE_SEC）。
 	AccountManager.leave_match_queue()

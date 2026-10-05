@@ -86,6 +86,10 @@ android/
 # walked back in, hence the alternating !dir / dir/* pairs below.
 !/assets/ui/
 /assets/ui/*
+!/assets/ui/profile/
+/assets/ui/profile/*
+!/assets/ui/profile/hall_of_glory.png
+!/assets/ui/profile/hall_of_glory.png.import
 !/assets/ui/ranked/
 /assets/ui/ranked/*
 !/assets/ui/ranked/reward_crest.png

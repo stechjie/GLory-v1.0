@@ -5,6 +5,7 @@ signal return_menu_requested
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Action := preload("res://ui/components/GloryActionButton.tscn")
+const PROFILE_BG_TEX := preload("res://assets/ui/profile/hall_of_glory.png")
 const GOLD := Color("e8c46a")
 const TEXT := Color("edeff4")
 const MUTED := Color("b8becc")
@@ -22,10 +23,18 @@ func _ready() -> void:
 	# here as well so old history records need no backfill or extra stored field.
 	preload("res://scripts/multiplayer/FinalSettlementData.gd").update_round_damage(data.get("seats", []), data.get("stats", []))
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var background := ColorRect.new()
-	background.color = Color("0d1219")
+	var background := TextureRect.new()
+	background.texture = PROFILE_BG_TEX
+	background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(background)
+	var veil := ColorRect.new()
+	veil.color = Color(0.008, 0.016, 0.031, 0.52)
+	veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	veil.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(veil)
 	var scroll := preload("res://ui/components/TouchScrollContainer.gd").new()
 	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -73,7 +82,7 @@ func _ready() -> void:
 	content.add_child(hint)
 	_bubble = PanelContainer.new()
 	_bubble.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_bubble.add_theme_stylebox_override("panel", Tokens.panel_box(Color(0.11, 0.13, 0.18, 0.88), Color(0.91, 0.77, 0.42, 0.75), 8))
+	_bubble.add_theme_stylebox_override("panel", Tokens.panel_box(Color(0.04, 0.08, 0.14, 0.9), Color.TRANSPARENT, 8))
 	_bubble_label = _label("", GOLD, 13)
 	_bubble.add_child(_bubble_label)
 	add_child(_bubble)
@@ -136,7 +145,7 @@ func _team_title(side: int) -> String:
 func _team(side: int) -> Control:
 	var panel := PanelContainer.new()
 	var color := Color("ff6b5a") if side == 0 else Color("4da3ff")
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box(Color("121720"), color.darkened(0.4), 16))
+	panel.add_theme_stylebox_override("panel", Tokens.panel_box(Color(0.02, 0.045, 0.08, 0.2), Color.TRANSPARENT, 16))
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 12)
 	panel.add_child(column)
@@ -159,7 +168,7 @@ func _team(side: int) -> Control:
 		var seat: Dictionary = seats[slot]
 		var row := _row(WIDTHS)
 		row.custom_minimum_size.y = 76
-		column.add_child(_row_panel(row, Color("20212b"), color.darkened(0.7)))
+		column.add_child(_row_panel(row, Color(0.025, 0.055, 0.1, 0.46)))
 		var name_label := _label(str(seat.get("name", "")), GameConstants.team_slot_color(slot), 15)
 		name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		row.get_child(0).add_child(name_label)
@@ -210,7 +219,7 @@ func _stats() -> Control:
 		label.set_meta("stats_column", i)
 		label.set_meta("settlement_header", true)
 		header.get_child(i).add_child(label)
-	column.add_child(_row_panel(header, Color("293142")))
+	column.add_child(_row_panel(header, Color(0.025, 0.055, 0.1, 0.42)))
 	var row_index := 0
 	for entry in data.get("stats", []):
 		var slot := int(entry.get("owner_slot", 0))
@@ -226,7 +235,7 @@ func _stats() -> Control:
 			label.set_meta("stats_column", i)
 			label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			row.get_child(i).add_child(label)
-		column.add_child(_row_panel(row, Color("19212e") if row_index % 2 == 0 else Color("141c27")))
+		column.add_child(_row_panel(row, Color(0.025, 0.055, 0.1, 0.42) if row_index % 2 == 0 else Color(0.025, 0.055, 0.1, 0.24)))
 		row_index += 1
 	return column
 
