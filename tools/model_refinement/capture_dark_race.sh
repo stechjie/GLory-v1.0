@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Capture the dark-race refinement matrix with the real preview (rendered, not headless).
+# Capture a race refinement matrix with the real preview (rendered, not headless).
 # Usage: capture_dark_race.sh <godot> <project> <out_dir> <old|new> [unit ...]
+# Units default to the dark race; the race line-ups show the race of the first unit
+# (e.g. pass the eight undead_* ids for the undead race).
 # VIEWS="front battle" limits the per-unit views; LINEUP=0 skips the race line-ups.
 # Each run writes 4 frames (idle 0.8s, run 3.0s, attack 5.3s, idle 6.9s) plus capture-metadata.json.
 set -u
@@ -25,7 +27,7 @@ for unit in "${UNITS[@]}"; do
   done
 done
 if [ "${LINEUP:-1}" = 1 ]; then
-  run "$OUT/$VARIANT/lineup-battle" $FLAG --lineup --view battle
-  run "$OUT/$VARIANT/lineup-close-front" $FLAG --lineup --close --view front
-  run "$OUT/$VARIANT/lineup-close-back" $FLAG --lineup --close --view back
+  run "$OUT/$VARIANT/lineup-battle" --unit "${UNITS[0]}" $FLAG --lineup --view battle
+  run "$OUT/$VARIANT/lineup-close-front" --unit "${UNITS[0]}" $FLAG --lineup --close --view front
+  run "$OUT/$VARIANT/lineup-close-back" --unit "${UNITS[0]}" $FLAG --lineup --close --view back
 fi

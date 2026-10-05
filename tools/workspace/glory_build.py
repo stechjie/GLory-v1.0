@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import contextlib
 import datetime as dt
-import fcntl
 import hashlib
 import json
 import math
@@ -217,6 +216,7 @@ def copy_changed(source, target):
 
 @contextlib.contextmanager
 def file_lock(path, shared=False, nonblocking=False):
+    import fcntl  # POSIX-only; keeps this module importable on Windows (model pilot audit).
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a+") as stream:
         try:
@@ -680,7 +680,7 @@ def verify_import_diagnostics(content, stage, logdir, material_report):
     compiled = 0
     compiled_dirs = set()
     for metadata in (stage / "assets/models").rglob("*.fbx.import"):
-        match = re.search(r'^path="res://([^"]+)"', metadata.read_text(), re.M)
+        match = re.search(r'^path="res://([^"]+)"', metadata.read_text(encoding="utf-8"), re.M)
         artifact = (stage / match[1]).resolve() if match else None
         if not match or not metadata.with_suffix("").is_file() or not artifact.is_file() or artifact.stat().st_size == 0 \
                 or not artifact.is_relative_to((stage / ".godot/imported").resolve()):

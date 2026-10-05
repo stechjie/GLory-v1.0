@@ -9,7 +9,7 @@
   "fields": "dark_* model -> res://assets/models/units/dark_refined/<id>/<id>_refined.tscn; dark_imp model_visual_scale 1 -> 0.85; no gameplay field changed",
   "rollback": "set each dark_* model back to units.<id>.original below and dark_imp model_visual_scale back to 1; the original wrappers and their files are untouched (hash-verified by the contract check)"
  },
- "delivery": "assets/models/units/* is git-ignored; like god_guard_refined, track dark_refined with git add -f when committing. assets.manifest.json / assets.bundle.json are intentionally NOT updated (see pending).",
+ "delivery": "assets/models/units/* is git-ignored; .gitignore re-includes dark_refined/ (and undead_refined/), so they ship with the code and need no git add -f. assets.manifest.json / assets.bundle.json are intentionally NOT updated (see pending).",
  "pending_asset_baseline": "The removed files are still listed in assets.manifest.json and inside the current asset ZIP, so asset_delivery_check reports them missing and restore_assets.ps1 would bring them back. Re-baselining (tools/update_asset_manifest.ps1 then tools/package_assets.ps1) also absorbs 19 unrelated pre-existing size mismatches (BGM mp3s, a UI png, DarkQueenAnimated.gd) and is the asset owner's decision.",
  "reproduce": [
   "godot --headless --path . --script res://tools/model_refinement/export_unit_reference.gd -- --model <wrapper> --unit-id <id> --out <delivery>/source/<id>",
@@ -357,7 +357,7 @@
   {
    "path": "res://assets/models/units/dark_refined/dark_mage/dark_mage_parts.glb",
    "bytes": 25948,
-   "sha256": "e4a2c29bc58a3cb5994101079b859b5905fc2f58b64a9c7febe5981d327f05b2"
+   "sha256": "bb13096ae6fda723819cf62264c01ef617b4a81c8065411bd12d0b055a525b4a"
   },
   {
    "path": "res://assets/models/units/dark_refined/dark_mage/dark_mage_parts.glb.import",
@@ -466,13 +466,23 @@
   },
   {
    "path": "res://assets/models/units/dark_refined/shared/dark_body.gdshader",
-   "bytes": 6668,
-   "sha256": "6c10dae57378490572864b9e0dfba5304dbd77e45e3717fdcc9e67e05333bfac"
+   "bytes": 1229,
+   "sha256": "c4355ab8d5a2d8aae8df7d2230a6185ad2e9cf77c1be769bf094415d71d346d6"
   },
   {
    "path": "res://assets/models/units/dark_refined/shared/dark_body.gdshader.uid",
    "bytes": 19,
    "sha256": "c9c01411552c155f2036c6776b586cec0194e5bd171f29fa18d2a6baf92c9764"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/shared/dark_body_two_sided.gdshader",
+   "bytes": 369,
+   "sha256": "760594307bb7e07675cdeb604f3c3823670d26e973a9956e353ccd63fe256c9d"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/shared/dark_body_two_sided.gdshader.uid",
+   "bytes": 19,
+   "sha256": "2b4500b99c69b510b9bf10cc05ba9f4d20e31ca0e30a2d46b2f24a71f9729b65"
   },
   {
    "path": "res://assets/models/units/dark_refined/shared/dark_parts.gdshader",
@@ -498,6 +508,16 @@
    "path": "res://assets/models/units/dark_refined/shared/DarkRefinement.gd.uid",
    "bytes": 20,
    "sha256": "89e957ebe75ce17fbe56495afb474a03ff3ca569d35518f2165e48de77351fae"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/shared/race_body.gdshaderinc",
+   "bytes": 5846,
+   "sha256": "1b65ba8fb1ff20f329443555d79eadd30fa2d3cc6186466f6478b419003a9f38"
+  },
+  {
+   "path": "res://assets/models/units/dark_refined/shared/race_body.gdshaderinc.uid",
+   "bytes": 20,
+   "sha256": "25d924364ab1b35e7049ea4d923375a147ca7b764fd101ebcccdd20bc31fa77c"
   },
   {
    "path": "res://assets/models/units/dark_refined/texture_build.json",
@@ -847,5 +867,6 @@
    "sha256": "1299a1eaffce368a5cc515b8c8836c063a3265cc121140e9213c08d7bf3e60a2"
   }
  ],
- "palette": "unified after the 2026-10-04 review: saturated paint pulled to race violet (~277 deg), one glow colour for bodies and parts; succubus/queen no longer pink"
+ "palette": "unified after the 2026-10-04 review: saturated paint pulled to race violet (~277 deg), one glow colour for bodies and parts; succubus/queen no longer pink",
+ "note_undead_batch": "2026-10-04 undead batch: shared body shader split into race_body.gdshaderinc + dark_body_two_sided.gdshader (dark keeps cull_back, unchanged output); plate() fix rebuilt dark parts (mage runes now glow as designed); .gitignore re-includes dark_refined/."
 }

@@ -259,6 +259,14 @@ py -3 tools/run_model_refinement_pilot.py --serial "$MODEL_SERIAL" `
   --unit-id god_guard --build-dir "$MODEL_OUT/android-build" --out "$MODEL_OUT/android-run"
 ```
 
+Windows 实测注意（2026-10-05，暗族/灵族模拟器测试）：
+
+- `--out` 必须是纯英文路径：Java `keytool` 遇到 `桌面` 这类非 ASCII 路径报 “Bad pathname”（工具现会提前拒绝）。先输出到英文目录，证据再复制进交付目录。
+- `--godot` 可直接给 `_console.exe`，工具会把同目录主程序一并复制进 `runtime/`（console 版只是启动器）。Windows 上通常还要显式给 `--java-home`、`--android-sdk`；runner 要显式给 `--adb` 和 `--aapt`（`build-tools/<版本>/aapt.exe`）。
+- Android 模拟器的 GLES 翻译层读不回 Godot 缓存的着色器二进制，每次启动都打印 `WARNING: Failed to load cached shader, recompiling.`；runner 只在模拟器（`ro.kernel.qemu`/`ro.boot.qemu` = 1）上放过这一行，真机仍按任何 WARNING 判失败。刚装完 APK 第一次写请求偶尔读回不一致，重跑即可。
+- 同一台设备同一时间只能有一个 runner。在 Git Bash 里中止脚本不一定连带结束子进程，重跑前先确认没有残留的 `run_model_refinement_pilot.py`；交叠运行的数据全部作废。
+- 无真机可用 Android SDK 模拟器（WHPX）。新版 cmdline-tools 用 `android.exe` 代替 `sdkmanager`：`android sdk install system-images/android-34/google_apis/x86_64`。`android emulator create <profile>` 会**自行下载**它选的系统镜像，要用指定镜像就改 AVD 的 `config.ini`。模拟器首次进入全屏应用会弹系统提示，测量前先关掉。模拟器 GPU 是主机显卡翻译层，帧时间不代表手机，只证明 GLES/Compatibility 下能安装、加载、渲染且日志无错。
+
 例如准备测试神侍时，先完成神侍专用预览和候选模型，再填写以下三个真实路径；不要把光之卫士预览改个文件名就当作已换角色。此处路径变量均须指向已经存在、正确配置的资源，尚未制作时不能执行：
 
 ```bash
@@ -530,7 +538,7 @@ py -3 tools/run_model_battle_pilot.py --serial "$MODEL_SERIAL" `
 - `tools/dark_refinement_contract_check.tscn -- --require-integrated`：**710 项通过**——原包装器运行所需文件哈希未变、骨架/rest/身体网格/全部片段与原版一致、每个动作骨架使用精修材质与刚性蒙皮零件、备战 idle-only 实例同样成立、贴图 ≤1024 且无 alpha。
 - 既有检查：`model_asset_budget`、`model_bounds`、`model_material_integrity`（报告列出 8 个精修路径）、`model_root_motion_inventory`、`model_action_playback_continuity` 通过；`texture_import_budget` 只检查固定 8 张贴图，**不覆盖**本批贴图。
 - 正式路线：`scripts/qa/battle_presentation_baseline.tscn` 跑 PvP 第 6、21 回合（第 1、3 回合为 PvE，暗族不上场），新旧数据各一次：6 个上场暗族单位真实加载精修场景、actor 契约完整、0 回退；`simulation_replay_sha256`、`final_state_sha256`、`frame_events_sha256` 新旧**完全相同**（玩法不变），仅 payload 因 `def.model` 改变。魔童、痛苦女王不在固定阵容中，其路由由数据契约与预览覆盖。
-- 桌面同条件（Compatibility，1280×720，同一代码版本、仅切换数据）：p95 9.09→9.26 ms（R6、R21）；峰值 draw calls 435→446、439→451；纹理显存 +3.4 MB；>100 ms 长帧 1→1。**真机未测试（本次未纳入）**，手机须重新测量，黑龙是首要观察对象。复审期间仓库合入了上游提交（crimson 更新等），合入前后第 21 回合模拟本身就不同；新旧对照必须在同一代码版本上只切换 `race_units.json`，否则会把别人的改动误判为本批的影响。
+- 桌面同条件（Compatibility，1280×720，同一代码版本、仅切换数据）：p95 9.09→9.26 ms（R6、R21）；峰值 draw calls 435→446、439→451；纹理显存 +3.4 MB；>100 ms 长帧 1→1。真机未测；2026-10-05 在 Android 模拟器上测了黑龙（见 §11.5），6/12 个原版与新版均通过、日志无错误、draw calls 每个 +2。模拟器帧时间不代表手机，黑龙仍是手机上的首要观察对象。复审期间仓库合入了上游提交（crimson 更新等），合入前后第 21 回合模拟本身就不同；新旧对照必须在同一代码版本上只切换 `race_units.json`，否则会把别人的改动误判为本批的影响。
 
 ### 10.4 本轮失败与修正
 
@@ -568,3 +576,63 @@ py -3 "$P/tools/model_refinement/dark_race_materials.py"
 ```
 
 `tools/model_refinement/capture_dark_race.sh <godot> <project> <out> old|new` 批量采集全部视角（`VIEWS`/`LINEUP` 环境变量可缩小范围）。最终审美仍由用户判断。
+
+## 11. 灵族批次：八个单位 `undead_*`
+
+记录日期 **2026-10-04**，用户确认：八个一起做；全族统一为毒绿（小灵、毒灵、寄生灵的绿）；不改体型（小灵本身已小）；识别零件按计划；所有设备都要测（本机无真机，先用模拟器）；共用文件**原地复用**，不另建中性目录。证据在 `delivery/model-undead-race-20261004/`。
+
+### 11.1 诊断
+
+与暗族同样的模板问题：8 份材质只差阴影色、统一乘偏绿色、无高光/边缘光；图集 4096 → 运行 512；岛间不透明黑缝。灵族特有：颜色分裂成毒绿（75–105°）与橙棕/琥珀/芥末黄（30–60°），母灵整件斗篷为芥末黄；毒灵、寄生灵、刺灵同为“兜帽 + 头顶绿火 + 披风”。三份动作文件共用同一身体与骨架（无需第二套零件），朝向均为 +Z，每动作约 3,000 面。
+
+### 11.2 做法（复用第 10 节工具，按种族参数运行）
+
+- 工具原名原地扩展为多种族：预览 `DarkRaceRefinementPreview`（`RACES` 表，`--unit undead_*` 选灵族、同框摆出该族）、`dark_race_materials.py --race undead`、`dark_race_textures.py --race undead`、`build_dark_parts.py`（单位前缀决定输出 `undead_refined/`）、`dark_refinement_contract_check --race undead`。运行时与 shader 复用 `dark_refined/shared`；`undead_refined/undead_parts.tres` 为灵族部件材质。`.gitignore` 为 `dark_refined/`、`undead_refined/` 加了例外，GitHub Desktop 才看得到这两个目录。
+- 统一色板：`race_hue=0.253`（≈91°，小灵/毒灵/寄生灵火焰实测中位数），发光 `(0.42, 1.0, 0.14)`（红约为绿的 0.4，亮处不溢成黄）；暗金饰边与母灵芥末黄斗篷被拉向橄榄绿（母灵 0.95 并压暗）。
+- 识别零件：毒灵右后胯发光毒液罐；寄生灵背上三颗半透明寄生囊和触须；刺灵背后五支投枪扇（枪头发光，高出兜帽）；自爆灵炸弹头顶引信火花、胸口毒核，黄色疙瘩发光；巨甲灵上背一排骨刺；母灵兜帽上一圈毒火角冠（圆心只取兜帽顶点，每根角用射线找该方向兜帽最外层表面再略微埋入）；小灵、飞灵只调材质。
+- 母灵斗篷有朝内的三角面，单面剔除后露出描边黑壳：身体 shader 主体移入 `race_body.gdshaderinc`，新增 `dark_body_two_sided.gdshader`（cull_disabled）仅母灵使用。
+
+| 单位 | 原常驻三角 | 新常驻三角 | 识别点 |
+|---|---:|---:|---|
+| 小灵 | 9,312 | 9,312 | 材质 |
+| 毒灵 | 9,330 | 10,734 | 毒液罐 |
+| 寄生灵 | 9,363 | 12,522 | 寄生囊 |
+| 刺灵 | 9,246 | 10,146 | 投枪扇 |
+| 飞灵 | 9,297 | 9,297 | 材质 |
+| 自爆灵 | 9,252 | 10,938 | 引信、毒核、发光疙瘩 |
+| 巨甲灵 | 9,090 | 10,980 | 背刺 |
+| 母灵 | 9,270 | 11,160 | 毒火角冠、双面斗篷 |
+
+### 11.3 本轮失败与修正
+
+| 轮次 | 发现 | 修正 |
+|---|---|---|
+| Blender 初看 | 毒液罐、寄生囊太小，像饰物/蘑菇 | 放大 1.4–1.5 倍并上移 |
+| 01 | 母灵背面黑三角（新旧都有）；投枪头、背刺发暗 | 双面 shader；`plate()` 用面序号区分顶面与侧墙（4 点轮廓的顶面曾被当侧墙涂边缘色，暗族法师符文同受影响已重建） |
+| 02 | 寄生囊全亮成平面方块；母灵冠环像悬空黑条 | 囊体渐变（橄榄→玻璃→暗发光→亮尖）；去掉冠环 |
+| 03 | 两侧角悬在兜帽外 | 每根角按自身方向的兜帽表面半径定位 |
+| 设备测试（10-05） | 模拟器近景发现母灵角冠在各视角、各动作都离开兜帽，回看桌面最终采集同样如此，03 轮的修正并没有生效 | 原因：`y=1.5` 这一圈顶点混进了 rest 姿势里举起的法杖一侧（x<−0.4），圆心被拉偏约 0.28；兜帽在这一高度面数很少，按顶点估半径也不可靠。改为圆心只取兜帽（离头顶顶点水平 <0.45），`Body.outer_hit` 用 BVH 射线取该方向兜帽最外层表面再内收 0.025。暗族零件用新脚本重建后与已提交文件字节一致 |
+
+审图教训：零件根部要逐个确认接触本体（正/背/侧 × 每个动作），尤其是正面看到的后排零件；按某一高度取整圈顶点前，先确认这一圈里没有武器、手臂等别的部件。
+
+### 11.4 验证（本地）
+
+- `dark_refinement_contract_check.tscn -- --race undead --require-integrated`：**686 项通过**（10-05 母灵角冠修正后重跑，灵族 686、暗族 710 仍全部通过）（原包装器运行文件哈希不变、骨架/片段一致、精修材质与零件、备战 idle-only、贴图 ≤1024 无 alpha；小灵/飞灵验证“无零件”）。同时重跑暗族 **710 项通过**（共用 shader 拆分与零件重建后）。
+- 尺寸、材质完整性（报告列出 `undead_refined`）、根位移、连续播放检查通过；预算检查中灵族、暗族 0 项失败（现有 8 项失败来自上游新增的 `god_priestess_refined` 与 `crimson_race`）。
+- 正式路线：PvP 第 6、12、18、21 回合，同一代码只切换 `race_units.json`：6 个上场灵族单位（毒灵、刺灵、飞灵、自爆灵、巨甲灵、母灵）加载精修场景、actor 契约完整、0 回退；模拟/终局/事件哈希新旧完全相同。小灵、寄生灵不在固定阵容中。正式路线截图早于母灵角冠修正（零件只影响画面，场景路径未变）。
+- 桌面同条件：p95 7.58→7.41～8.33 ms；峰值 draw calls +8～10；纹理显存 +2.1 MB；>100 ms 长帧 1→1。
+
+### 11.5 设备测试（Android 模拟器，2026-10-05）
+
+本机无真机：`MSI App Player`（BlueStacks 4.280）因系统开启 Hyper-V 无法启动，改用 Android SDK 模拟器（Android 14 google_apis x86_64，WHPX，GPU 为主机 RTX 3070 Ti 经 GLES 翻译层）。按 §7.4 独立样板测三个代表：黑龙（常驻三角最多）、母灵（双面斗篷、角冠）、寄生灵（零件最多）；视口 1600×720，Compatibility，真实动画，原版/新版各 6 个、12 个。全部 `measurement_verified`，日志除模拟器专有的着色器缓存警告外无错误：
+
+| 单位 | 数量 | p95 原→新 (ms) | draw calls 原→新 | 静态内存 原→新 (MB) | >100 ms 帧 |
+|---|---|---|---|---|---|
+| 黑龙 | 6 | 18.7 → 18.8 | 69 → 81 | 61.2 → 61.6 | 0 / 0 |
+| 黑龙 | 12 | 18.5 → 19.2 | 81 → 105 | 65.2 → 65.9 | 0 / 0 |
+| 母灵 | 6 | 18.6 → 18.3 | 69 → 81 | 58.2 → 58.5 | 0 / 0 |
+| 母灵 | 12 | 18.6 → 18.3 | 81 → 105 | 60.1 → 60.8 | 0 / 0 |
+| 寄生灵 | 6 | 18.4 → 18.4 | 69 → 81 | 59.0 → 59.3 | 0 / 0 |
+| 寄生灵 | 12 | 18.3 → 18.5 | 81 → 105 | 61.7 → 62.4 | 0 / 0 |
+
+模拟器锁 60 帧、GPU 是桌面显卡，帧时间只证明 Android/GLES/Compatibility 下安装、加载、渲染、零件与双面斗篷正常，**不代表手机性能**；draw calls（每个精修单位 +2）与静态内存（+0.3～0.7 MB）与平台无关。母灵数据为角冠修正（§11.3）后重新打包所测。真机与 iOS 仍未测试（Windows 无法构建 iOS），不得写“手机验收通过”。证据在两个交付目录的 `android-emulator/`。

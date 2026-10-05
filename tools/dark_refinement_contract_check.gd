@@ -1,7 +1,8 @@
 extends Node
-## Dark-race refinement contract (8 units). Headless:
-##   Godot --headless --path <project> res://tools/dark_refinement_contract_check.tscn -- [--out <report.json>] [--require-integrated]
-##   ... -- --write-baseline   (once, before refinement: hash every file the original wrappers load)
+## Race refinement contract (dark, undead; 8 units each). Headless:
+##   Godot --headless --path <project> res://tools/dark_refinement_contract_check.tscn -- [--race dark|undead] [--out <report.json>] [--require-integrated]
+##   ... -- --race <race> --write-baseline   (once per race, before refinement: hash every file the original wrappers load)
+## Original/refined paths come from scenes/debug/DarkRaceRefinementPreview.gd (RACES), the same table the preview uses.
 ##
 ## Proves, per unit: the refined scene instances the UNCHANGED original wrapper; skeletons,
 ## bone rests, body meshes and every clip are identical to the original; every action body
@@ -11,40 +12,52 @@ extends Node
 ## It does not judge looks: rendered captures do that.
 
 const CheckHarness := preload("res://tools/CheckHarness.gd")
-const BASELINE := "res://assets/models/units/dark_refined/original_runtime_assets.json"
+const Races := preload("res://scenes/debug/DarkRaceRefinementPreview.gd")
 const UNIT_DATA := "res://data/units/race_units.json"
-const ORDER := ["dark_imp", "dark_mage", "dark_scythe", "dark_suc", "dark_fear", "dark_queen", "dark_doom", "dark_dragon"]
-const ORIGINALS := {
-	"dark_imp": "res://assets/models/units/dark_imp_motong/dark_imp_motong_animated.tscn",
-	"dark_mage": "res://assets/models/units/dark_mage_violet_necromancer/dark_mage_animated.tscn",
-	"dark_scythe": "res://assets/models/units/dark_scythe_animated/dark_scythe_animated.tscn",
-	"dark_suc": "res://assets/models/units/dark_suc_animated/dark_suc_animated.tscn",
-	"dark_fear": "res://assets/models/units/dark_fear_animated/dark_fear_animated.tscn",
-	"dark_queen": "res://assets/models/units/dark_queen_animated/dark_queen_animated.tscn",
-	"dark_doom": "res://assets/models/units/dark_doom_animated/dark_doom_animated.tscn",
-	"dark_dragon": "res://assets/models/units/dark_dragon_animated/dark_dragon_animated.tscn",
-}
+const BODY_SHADERS := ["res://assets/models/units/dark_refined/shared/dark_body.gdshader",
+	"res://assets/models/units/dark_refined/shared/dark_body_two_sided.gdshader"]
 const SHARED_SHADERS := ["res://shaders/character_toon.gdshader", "res://shaders/character_outline.gdshader"]
 const MAX_TEXTURE_EDGE := 1024
 
 var _h: CheckHarness
+var _race := "dark"
 var _report := {"units": {}}
 
 
 func refined_path(unit_id: String) -> String:
-	return "res://assets/models/units/dark_refined/%s/%s_refined.tscn" % [unit_id, unit_id]
+	return Races.new_model_path(unit_id)
+
+
+func originals() -> Dictionary:
+	return Races.RACES[_race].old
+
+
+func baseline_path() -> String:
+	return "res://assets/models/units/%s_refined/original_runtime_assets.json" % _race
+
+
+func refined_dir(unit_id: String) -> String:
+	return "res://assets/models/units/%s_refined/%s" % [_race, unit_id]
 
 
 func _ready() -> void:
-	_h = CheckHarness.new("dark_refinement_contract")
 	var args := OS.get_cmdline_user_args()
+	var race_index := args.find("--race")
+	if race_index >= 0 and race_index + 1 < args.size():
+		_race = args[race_index + 1]
+	_h = CheckHarness.new("%s_refinement_contract" % _race)
+	if not Races.RACES.has(_race):
+		_h.fail("unknown_race", "未知种族：%s" % _race)
+		_h.finish(get_tree())
+		return
+	_report["race"] = _race
 	if "--write-baseline" in args:
 		_write_baseline()
 		_h.finish(get_tree())
 		return
 	await _check_shared()
 	var defs := _unit_defs()
-	for unit_id in ORDER:
+	for unit_id in originals():
 		await _check_unit(unit_id, defs.get(unit_id, {}), "--require-integrated" in args)
 	var out_index := args.find("--out")
 	if out_index >= 0 and out_index + 1 < args.size():
@@ -73,19 +86,20 @@ func _runtime_files(path: String, seen: Dictionary) -> void:
 
 func _write_baseline() -> void:
 	var table := {}
-	for unit_id in ORDER:
+	for unit_id in originals():
 		var seen := {}
-		_runtime_files(ORIGINALS[unit_id], seen)
+		_runtime_files(originals()[unit_id], seen)
 		var rows := {}
 		for path in seen.keys():
 			rows[path] = FileAccess.get_sha256(path)
 		table[unit_id] = rows
 	for path in SHARED_SHADERS:
 		table[path] = FileAccess.get_sha256(path)
-	var file := FileAccess.open(BASELINE, FileAccess.WRITE)
+	DirAccess.make_dir_recursive_absolute(baseline_path().get_base_dir())
+	var file := FileAccess.open(baseline_path(), FileAccess.WRITE)
 	file.store_string(JSON.stringify(table, "\t", true))
 	file.close()
-	_h.note("baseline written: %s" % BASELINE)
+	_h.note("baseline written: %s" % baseline_path())
 
 
 # ------------------------------------------------------------ checks
@@ -93,15 +107,15 @@ func _unit_defs() -> Dictionary:
 	var defs := {}
 	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(UNIT_DATA))
 	for unit in (parsed as Dictionary).get("units", []):
-		if str(unit.get("race", "")) == "dark":
+		if str(unit.get("race", "")) == _race:
 			defs[str(unit.id)] = unit
 	return defs
 
 
 func _check_shared() -> void:
-	var baseline: Variant = JSON.parse_string(FileAccess.get_file_as_string(BASELINE)) if FileAccess.file_exists(BASELINE) else null
+	var baseline: Variant = JSON.parse_string(FileAccess.get_file_as_string(baseline_path())) if FileAccess.file_exists(baseline_path()) else null
 	_h.item()
-	if not _h.expect(baseline is Dictionary, "baseline_missing", "缺少原资源哈希基线 %s（先 --write-baseline）" % BASELINE):
+	if not _h.expect(baseline is Dictionary, "baseline_missing", "缺少原资源哈希基线 %s（先 --write-baseline）" % baseline_path()):
 		return
 	for path in SHARED_SHADERS:
 		_h.item()
@@ -110,10 +124,10 @@ func _check_shared() -> void:
 
 
 func _check_unit(unit_id: String, def: Dictionary, require_integrated: bool) -> void:
-	var row := {"original": ORIGINALS[unit_id], "refined": refined_path(unit_id)}
+	var row := {"original": originals()[unit_id], "refined": refined_path(unit_id)}
 	_report.units[unit_id] = row
 	# Original runtime files untouched.
-	var baseline: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(BASELINE)).get(unit_id, {})
+	var baseline: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(baseline_path())).get(unit_id, {})
 	var changed: Array = []
 	for path in baseline:
 		if FileAccess.get_sha256(path) != str(baseline[path]):
@@ -130,9 +144,9 @@ func _check_unit(unit_id: String, def: Dictionary, require_integrated: bool) -> 
 	# Refined scene instances the original wrapper.
 	var refined_text := FileAccess.get_file_as_string(refined_path(unit_id))
 	_h.item()
-	_h.expect(refined_text.contains('path="%s"' % ORIGINALS[unit_id]) and refined_text.contains("instance=ExtResource"),
+	_h.expect(refined_text.contains('path="%s"' % originals()[unit_id]) and refined_text.contains("instance=ExtResource"),
 		"not_inherited", "%s 精修场景没有实例化原包装器" % unit_id)
-	var original := await _spawn(ORIGINALS[unit_id])
+	var original := await _spawn(originals()[unit_id])
 	var refined := await _spawn(refined_path(unit_id))
 	_h.item()
 	if not _h.expect(original != null and refined != null, "load_failed", "%s 场景加载失败" % unit_id):
@@ -230,10 +244,10 @@ func _clips(root: Node) -> Array:
 
 
 func _check_materials(unit_id: String, refined: Node3D, row: Dictionary) -> void:
-	var expected := "res://assets/models/units/dark_refined/%s/%s_body.tres" % [unit_id, unit_id]
+	var expected := "%s/%s_body.tres" % [refined_dir(unit_id), unit_id]
 	var material := load(expected) as ShaderMaterial
 	_h.item()
-	if not _h.expect(material != null and material.shader.resource_path.ends_with("dark_refined/shared/dark_body.gdshader"),
+	if not _h.expect(material != null and material.shader.resource_path in BODY_SHADERS,
 			"material_route", "%s 精修材质未使用暗族专属 shader" % unit_id):
 		return
 	for skeleton: Skeleton3D in _skeletons(refined):
@@ -244,7 +258,7 @@ func _check_materials(unit_id: String, refined: Node3D, row: Dictionary) -> void
 				"%s %s surface %d 未使用精修材质" % [unit_id, refined.get_path_to(skeleton), s])
 	var albedo := material.get_shader_parameter("albedo_texture") as Texture2D
 	_h.item()
-	_h.expect(albedo != null and albedo.resource_path.contains("/dark_refined/") and maxi(albedo.get_width(), albedo.get_height()) <= MAX_TEXTURE_EDGE,
+	_h.expect(albedo != null and albedo.resource_path.contains("/%s_refined/" % _race) and maxi(albedo.get_width(), albedo.get_height()) <= MAX_TEXTURE_EDGE,
 		"texture_budget", "%s 精修贴图缺失或超过 %d" % [unit_id, MAX_TEXTURE_EDGE])
 	if albedo != null:
 		var format := albedo.get_image().get_format()
@@ -260,10 +274,16 @@ func _check_materials(unit_id: String, refined: Node3D, row: Dictionary) -> void
 func _check_parts(unit_id: String, refined: Node3D, row: Dictionary) -> void:
 	var per_skeleton: Array = []
 	var part_triangles := 0
+	# Some units are refined by material only (undead small/fly): then no parts at all.
+	var authored := FileAccess.file_exists("%s/%s_parts.glb" % [refined_dir(unit_id), unit_id])
 	for skeleton: Skeleton3D in _skeletons(refined):
 		var parts := skeleton.get_node_or_null("CraftedParts") as MeshInstance3D
 		var where := "%s %s" % [unit_id, refined.get_path_to(skeleton)]
 		_h.item()
+		if not authored:
+			_h.expect(parts == null, "parts_unexpected", "%s 没有零件资源却挂了部件" % where)
+			per_skeleton.append(0)
+			continue
 		if not _h.expect(parts != null and parts.mesh != null and parts.skin != null, "parts_missing", "%s 没有精修部件或未蒙皮" % where):
 			per_skeleton.append(0)
 			continue

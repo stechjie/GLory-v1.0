@@ -122,6 +122,10 @@ def resource_closure(source: Path, seeds: list[str]) -> list[str]:
             # Directory constants do not authorize copying a whole library.
             if ref.endswith("/"):
                 continue
+            # Neither do format templates; the paths they build reach the pilot
+            # only through --old-model/--new-model/--resource.
+            if "%" in ref:
+                continue
             # Import remaps point to generated cache files. External override
             # materials/animation libraries in the same sidecar are real inputs.
             if path.suffix == ".import" and ref.startswith("res://.godot/"):
@@ -200,10 +204,12 @@ def tool_environment(args: argparse.Namespace) -> dict:
 def validate_output(source: Path, output: Path) -> None:
     if output == source or output.is_relative_to(source) or source.is_relative_to(output):
         raise RuntimeError("Output must be outside, and not a parent of, the source project.")
+    if os.name == "nt" and not str(output).isascii():
+        raise RuntimeError("On Windows the output path must be ASCII-only; Java keytool rejects it otherwise.")
     if output.exists() and any(output.iterdir()) and not (output / GENERATED_MARKER).is_file():
         raise RuntimeError(f"Refusing to reuse unmarked nonempty output directory: {output}")
     marker = output / GENERATED_MARKER
-    if marker.is_file() and json.loads(marker.read_text()).get("package") != PACKAGE:
+    if marker.is_file() and json.loads(marker.read_text(encoding="utf-8")).get("package") != PACKAGE:
         raise RuntimeError("Output marker belongs to a different package.")
 
 
@@ -247,7 +253,7 @@ def stage_project(source: Path, output: Path, resources: list[str], env: dict,
         shutil.rmtree(stage / ".godot")
     previous = output / "source-manifest.json"
     if previous.is_file():
-        for item in json.loads(previous.read_text()).get("files", []):
+        for item in json.loads(previous.read_text(encoding="utf-8")).get("files", []):
             relative = item["path"]
             if relative not in resources:
                 stale = stage / relative
@@ -348,6 +354,10 @@ def portable_engine(env: dict, output: Path) -> Path:
     else:
         engine = folder / original.name
         shutil.copy2(original, engine)
+        # Windows *_console.exe only launches the sibling GUI executable.
+        if original.name.endswith("_console.exe"):
+            main = original.with_name(original.name.removesuffix("_console.exe") + ".exe")
+            shutil.copy2(main, folder / main.name)
     (folder / "_sc_").touch()
     editor_data = folder / "editor_data"
     editor_data.mkdir(exist_ok=True)
@@ -403,7 +413,7 @@ def audit_import_diagnostics(content: str, source: Path, stage: Path, output: Pa
     checker = source / "tools/model_material_integrity_check.gd"
     harness = source / "tools/CheckHarness.gd"
     whitelist = source / "data/qa/intentional_untextured_materials.json"
-    manifest = json.loads((output / "source-manifest.json").read_text())
+    manifest = json.loads((output / "source-manifest.json").read_text(encoding="utf-8"))
     model_paths = ["res://" + row["path"] for row in manifest["files"]
                    if row["path"].startswith("assets/models/") and row["path"].endswith(".tscn")]
     if not model_paths or not all(path.is_file() for path in (checker, harness, whitelist)):
@@ -422,16 +432,16 @@ def audit_import_diagnostics(content: str, source: Path, stage: Path, output: Pa
     target_whitelist = stage / "data/qa/intentional_untextured_materials.json"
     target_whitelist.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(whitelist, target_whitelist)
-    (stage / "tools/_pilot_material_audit.gd").write_text(code)
+    (stage / "tools/_pilot_material_audit.gd").write_text(code, encoding="utf-8")
     (stage / "tools/_pilot_material_audit.tscn").write_text('[gd_scene load_steps=2 format=3]\n[ext_resource type="Script" path="res://tools/_pilot_material_audit.gd" id="1"]\n[node name="PilotMaterialAudit" type="Node"]\nscript = ExtResource("1")\n')
     run_logged([str(engine), "--headless", "--path", str(stage), "res://tools/_pilot_material_audit.tscn"],
                output / "model-materials.log", child_env)
-    report = json.loads((stage / "reports/model_material_integrity.json").read_text())
+    report = json.loads((stage / "reports/model_material_integrity.json").read_text(encoding="utf-8"))
     summary = report["summary"]
     if summary.get("models") != len(model_paths) or any(summary.get(key) for key in
             ("scene_load_failed", "material_missing", "missing_texture", "white_material_suspect")):
         raise RuntimeError("Pilot final model material audit failed; inspect model-materials.log.")
-    audit_log = (output / "model-materials.log").read_text(errors="replace")
+    audit_log = (output / "model-materials.log").read_text(encoding="utf-8", errors="replace")
     if "CHECK_RESULT name=model_material_integrity status=PASS" not in audit_log:
         raise RuntimeError("Pilot material audit has no successful completion marker.")
     shutil.copy2(stage / "reports/model_material_integrity.json", output / "model-materials.json")
@@ -452,11 +462,11 @@ def build(stage: Path, output: Path, env: dict) -> None:
         shutil.copy2(import_log, output / ("import-before-" + dt.datetime.now().strftime("%Y%m%d-%H%M%S") + ".log"))
     with import_log.open("w", encoding="utf-8") as stream:
         imported = subprocess.run(command + ["--editor", "--import"], stdout=stream, stderr=subprocess.STDOUT, env=child_env)
-    content = re.sub(r"\x1b\[[0-9;]*m", "", import_log.read_text(errors="replace"))
+    content = re.sub(r"\x1b\[[0-9;]*m", "", import_log.read_text(encoding="utf-8", errors="replace"))
     if imported.returncode:
         raise RuntimeError(f"Import process failed (rc={imported.returncode}); inspect {import_log}")
     if ERROR_LINE.search(content):
-        source = Path(json.loads((output / GENERATED_MARKER).read_text())["source"])
+        source = Path(json.loads((output / GENERATED_MARKER).read_text(encoding="utf-8"))["source"])
         audit_import_diagnostics(content, source, stage, output, engine, child_env)
     # Always export to a new temporary name; a stale APK cannot pass this build.
     apk = output / "ModelRefinementPilot.pending.apk"
@@ -472,7 +482,7 @@ def build(stage: Path, output: Path, env: dict) -> None:
         raise RuntimeError("Unexpected Android package identity; APK must not be installed.")
     with zipfile.ZipFile(apk) as archive:
         embedded = json.loads(archive.read("assets/model_build_info.json"))
-    expected = json.loads((stage / "model_build_info.json").read_text())
+    expected = json.loads((stage / "model_build_info.json").read_text(encoding="utf-8"))
     if embedded != expected:
         raise RuntimeError("APK embedded identity does not match the staged sources.")
     final = output / "ModelRefinementPilot.apk"
@@ -487,6 +497,10 @@ def build(stage: Path, output: Path, env: dict) -> None:
 
 
 def main() -> None:
+    # Windows consoles/pipes default to cp1252; paths (…/桌面/…) and audit notes are Chinese.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--out", type=Path, help="Generated directory outside source (must be empty/marked)")

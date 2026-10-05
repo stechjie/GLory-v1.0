@@ -1,6 +1,8 @@
 """Build cleaned dark-race albedo (and doom normal) sources for the refined scenes.
 
-py -3 tools/model_refinement/dark_race_textures.py --refs <delivery>/source [--project <GLory root>] [--units a,b]
+py -3 tools/model_refinement/dark_race_textures.py --refs <delivery>/source [--race dark|undead] [--units a,b] [--project <GLory root>]
+
+Units belong to the race named by their id prefix and are written to <race>_refined/.
 
 The original atlases stay untouched (the original wrappers keep using them).
 Per unit, from the unit's real body mesh (reference_0.glb written by
@@ -42,7 +44,13 @@ UNITS = {
     # high battle camera (iteration 04). Side-facing skin (elf ears) and the face stay.
     "dark_dragon": {"albedo": "dark_dragon_animated/dark_dragon_texture.png",
                     "rear_skin_bleed": {"normal_z_below": -0.2, "normal_y_above": 0.45, "height_above": 0.75}},
+    **{f"undead_{n}": {"albedo": f"undead_{n}_animated/undead_{n}_texture.png"}
+       for n in ("small", "poison", "parasite", "spike", "fly", "bomb", "titan", "mother")},
 }
+
+
+def race_of(unit_id: str) -> str:
+    return unit_id.split("_", 1)[0]
 
 
 def read_glb(path: Path):
@@ -161,11 +169,14 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--refs", required=True, help="delivery source dir holding <unit>/reference_0.glb")
     parser.add_argument("--project", default=str(Path(__file__).resolve().parents[2]))
+    parser.add_argument("--race", default="", help="only units of this race (dark, undead)")
     parser.add_argument("--units", default=",".join(UNITS))
     args = parser.parse_args()
     project, refs = Path(args.project), Path(args.refs)
     report = {}
     for unit_id in args.units.split(","):
+        if args.race and race_of(unit_id) != args.race:
+            continue
         spec = UNITS[unit_id]
         pos, nrm, uv, faces = read_glb(refs / unit_id / "reference_0.glb")
         tri_id = rasterise(uv, faces, SIZE)
@@ -194,7 +205,7 @@ def main() -> None:
             rgb = diffuse_fill(rgb, cover & ~bad, bad, 64)
         padded = diffuse_fill(rgb, cover, ~cover, 24)
         padded[~cover & (padded.sum(-1) == 0)] = rgb[cover].mean(0)
-        out_dir = project / UNITS_DIR / "dark_refined" / unit_id
+        out_dir = project / UNITS_DIR / f"{race_of(unit_id)}_refined" / unit_id
         out_dir.mkdir(parents=True, exist_ok=True)
         save_rgb(padded, out_dir / f"{unit_id}_albedo.png")
         row = {"source": spec["albedo"], "coverage": round(float(cover.mean()), 4), "repaired_texels": repaired}
@@ -213,11 +224,12 @@ def main() -> None:
         report[unit_id] = row
         print(unit_id, json.dumps(row))
     # Merge, so rebuilding a subset of units keeps the other units' rows.
-    report_path = project / UNITS_DIR / "dark_refined" / "texture_build.json"
-    merged = json.loads(report_path.read_text(encoding="utf-8"))["units"] if report_path.is_file() else {}
-    merged.update(report)
-    report_path.write_text(json.dumps({"tool": "tools/model_refinement/dark_race_textures.py", "work_size": SIZE, "output_size": OUT_SIZE,
-                                       "units": {u: merged[u] for u in UNITS if u in merged}}, indent=2) + "\n", encoding="utf-8")
+    for race in sorted({race_of(u) for u in report}):
+        report_path = project / UNITS_DIR / f"{race}_refined" / "texture_build.json"
+        merged = json.loads(report_path.read_text(encoding="utf-8"))["units"] if report_path.is_file() else {}
+        merged.update({u: row for u, row in report.items() if race_of(u) == race})
+        report_path.write_text(json.dumps({"tool": "tools/model_refinement/dark_race_textures.py", "work_size": SIZE, "output_size": OUT_SIZE,
+                                           "units": {u: merged[u] for u in UNITS if u in merged}}, indent=2) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

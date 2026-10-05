@@ -1,0 +1,48 @@
+{
+  "tool": "tools/model_refinement/dark_race_textures.py",
+  "work_size": 2048,
+  "output_size": 1024,
+  "units": {
+    "dark_imp": {
+      "source": "dark_imp_motong/dark_imp_motong_albedo.png",
+      "coverage": 0.5118,
+      "repaired_texels": 0
+    },
+    "dark_mage": {
+      "source": "dark_mage_violet_necromancer/dark_mage_albedo.png",
+      "coverage": 0.5314,
+      "repaired_texels": 0
+    },
+    "dark_scythe": {
+      "source": "dark_scythe_animated/dark_scythe_texture.png",
+      "coverage": 0.5201,
+      "repaired_texels": 0
+    },
+    "dark_suc": {
+      "source": "dark_suc_animated/dark_suc_albedo.png",
+      "coverage": 0.4999,
+      "repaired_texels": 0
+    },
+    "dark_fear": {
+      "source": "dark_fear_animated/dark_fear_texture.png",
+      "coverage": 0.4853,
+      "repaired_texels": 0
+    },
+    "dark_queen": {
+      "source": "dark_queen_animated/dark_queen_albedo.png",
+      "coverage": 0.5042,
+      "repaired_texels": 0
+    },
+    "dark_doom": {
+      "source": "dark_doom_animated/dark_doom_albedo.png",
+      "coverage": 0.5351,
+      "repaired_texels": 0,
+      "normal": "dark_doom_animated/dark_doom_idle_normal.png"
+    },
+    "dark_dragon": {
+      "source": "dark_dragon_animated/dark_dragon_texture.png",
+      "coverage": 0.509,
+      "repaired_texels": 20369
+    }
+  }
+}

@@ -1,0 +1,11 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="PackedScene" path="res://assets/models/units/undead_fly_animated/undead_fly_animated.tscn" id="1"]
+[ext_resource type="Script" path="res://assets/models/units/dark_refined/shared/DarkRefinement.gd" id="2"]
+[ext_resource type="Material" path="res://assets/models/units/undead_refined/undead_fly/undead_fly_body.tres" id="3"]
+
+[node name="UndeadFlyRefined" instance=ExtResource("1")]
+
+[node name="DarkRefinement" type="Node" parent="."]
+script = ExtResource("2")
+body_material = ExtResource("3")

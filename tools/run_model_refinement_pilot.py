@@ -51,6 +51,14 @@ MEASUREMENT_SECONDS = sum(c["seconds"] + WARMUP_SECONDS for c in CASES)
 SCOPE = "isolated original/candidate real-model preview; not whole-game performance"
 LOG_PROBLEM = re.compile(r"(?im)^\s*(?:SCRIPT ERROR:|ERROR:|WARNING:)|"
                          r"Parse Error:|MODEL_PREVIEW_REQUEST_ERROR|FATAL EXCEPTION")
+# The Android emulator's GLES translator cannot reload Godot's cached program binaries,
+# so every launch there logs this warning; tolerated on emulators only, real devices stay strict.
+EMULATOR_ONLY_WARNING = "WARNING: Failed to load cached shader, recompiling."
+
+
+def log_problems(text: str, emulator: bool) -> list[str]:
+    return [line for line in text.splitlines() if LOG_PROBLEM.search(line)
+            and not (emulator and line.strip() == EMULATOR_ONLY_WARNING)]
 
 
 class PilotError(RuntimeError):
@@ -105,6 +113,9 @@ class Device:
         # adb joins shell arguments itself: explicitly quote each remote token.
         result = self.call("shell", shlex.join(args), check=check)
         return self.redact(result.stdout.decode(errors="replace")).strip()
+
+    def is_emulator(self) -> bool:
+        return self.shell("getprop", "ro.kernel.qemu") == "1" or self.shell("getprop", "ro.boot.qemu") == "1"
 
     def authorize(self) -> None:
         result = command([self.adb, "devices"], timeout=20)
@@ -169,7 +180,7 @@ class Device:
             "model": self.shell("getprop", "ro.product.model"),
             "android": self.shell("getprop", "ro.build.version.release"),
             "abi": self.shell("getprop", "ro.product.cpu.abi"),
-            "screen_size": self.shell("wm", "size"), "battery": values,
+            "screen_size": self.shell("wm", "size"), "battery": values, "emulator": self.is_emulator(),
         }
 
     def launch(self, out: Path) -> None:
@@ -383,13 +394,14 @@ def collect_measurement(device: Device, out: Path, request: dict, fingerprint: s
     next_progress = 0.0
     last_count = -1
     missing_process = 0
+    emulator = device.is_emulator()
     while time.monotonic() - start < timeout:
         elapsed = time.monotonic() - start
         raw_log = device.private_read(LOG)
         log = raw_log.decode(errors="replace") if raw_log else ""
         if raw_log is not None:
             (out / "device-perf.log").write_bytes(raw_log)
-        problems = [line for line in log.splitlines() if LOG_PROBLEM.search(line)]
+        problems = log_problems(log, emulator)
         require(not problems, 6, "Pilot log has runtime errors/warnings: " + " | ".join(problems[:5]))
         raw = device.private_read(RESULT)
         result = None
@@ -526,7 +538,7 @@ def run(args: argparse.Namespace) -> int:
                     raw = device.private_read(LOG)
                     if raw is not None:
                         (out / "device-perf.log").write_bytes(raw)
-                        problems = [line for line in raw.decode(errors="replace").splitlines() if LOG_PROBLEM.search(line)]
+                        problems = log_problems(raw.decode(errors="replace"), device.is_emulator())
                         report["godot_log_errors_or_warnings"] = problems
                         require(not problems, 6, "Final Godot log contains errors/warnings.")
             except (PilotError, OSError, ValueError, KeyError, RuntimeError) as exc:
@@ -554,6 +566,10 @@ def positive_number(value: str) -> float:
 
 
 def main() -> int:
+    # Windows consoles/pipes default to cp1252; paths (…/桌面/…) and audit notes are Chinese.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--serial", required=True, help="Exact adb device serial; never auto-selects a device")
     parser.add_argument("--build-dir", required=True, type=Path, help="Verified build_model_refinement_pilot.py output")

@@ -1,4 +1,4 @@
-"""Author dark-race identity parts in Blender and export bind-matched runtime parts.
+"""Author race identity parts (dark, undead) in Blender and export bind-matched runtime parts.
 
 blender --background --python-exit-code 1 --python tools/model_refinement/build_dark_parts.py -- \
     --unit dark_dragon --refs <delivery>/source --out <delivery>/source/dark_dragon/parts [--render]
@@ -28,6 +28,7 @@ import bmesh
 import bpy
 import numpy as np
 from mathutils import Matrix, Vector
+from mathutils.bvhtree import BVHTree
 
 C = Matrix(((1, 0, 0, 0), (0, 0, -1, 0), (0, 1, 0, 0), (0, 0, 0, 1)))  # Godot -> Blender
 C_INV = C.inverted()
@@ -45,6 +46,17 @@ PALETTE = {
     "violet": (0.300, 0.140, 0.800, 1.0),
     "violet_dim": (0.160, 0.070, 0.400, 0.45),
     "steel": (0.300, 0.270, 0.380, 0.0),
+}
+
+# Undead: one toxic green (2026-10-04 review: unified to the small/poison/parasite green).
+# Green ~4x red so lit glow never clips to yellow.
+TOXIC = {
+    "void": (0.012, 0.022, 0.010, 0.0),
+    "olive": (0.100, 0.120, 0.050, 0.0),
+    "bone": (0.540, 0.560, 0.430, 0.0),
+    "glass": (0.060, 0.300, 0.040, 0.55),
+    "toxic": (0.200, 0.800, 0.060, 1.0),
+    "toxic_dim": (0.080, 0.360, 0.030, 0.5),
 }
 
 LOGICAL = {  # logical bone -> per rig family
@@ -150,17 +162,16 @@ class Builder:
         faces += [(i, (i + 1) % n, (i + 1) % n + n, i + n) for i in range(n)]
         obj = self._object(name, verts, faces, cols, bone, smooth=False)
         if edge is not None:
-            # Split the side walls so they can carry the edge colour.
+            # Split the side walls (every face after the two caps) so they can carry
+            # the edge colour. Selecting them by vertex count painted 4-point caps too.
             bm = bmesh.new(); bm.from_mesh(obj.data)
-            bm.verts.ensure_lookup_table()
-            side = [f for f in bm.faces if len(f.verts) == 4]
-            bmesh.ops.split(bm, geom=side)
+            bm.faces.ensure_lookup_table()
+            bmesh.ops.split(bm, geom=[bm.faces[i] for i in range(2, len(bm.faces))])
             bm.to_mesh(obj.data); bm.free()
             attr = obj.data.color_attributes["Color"]
-            for poly in obj.data.polygons:
-                if len(poly.vertices) == 4:
-                    for vi in poly.vertices:
-                        attr.data[vi].color = edge
+            for poly in obj.data.polygons[2:]:
+                for vi in poly.vertices:
+                    attr.data[vi].color = edge
         if bevel:
             mod = obj.modifiers.new("bevel", "BEVEL"); mod.width = bevel; mod.segments = 2
             bpy.context.view_layer.objects.active = obj
@@ -237,8 +248,20 @@ class Builder:
 class Body:
     """Surface queries on the real upright reference body (Godot coordinates)."""
 
-    def __init__(self, verts):
+    def __init__(self, verts, triangles):
         self.v = verts
+        self.bvh = BVHTree.FromPolygons([Vector(p) for p in verts], triangles.tolist())
+
+    def outer_hit(self, origin, direction, reach):
+        """Outermost body surface on the ray origin + t * direction, 0 < t <= reach (or None)."""
+        o, d = Vector(origin), Vector(direction).normalized()
+        last, left = None, reach
+        while left > 0:
+            hit, _, _, dist = self.bvh.ray_cast(o, d, left)
+            if hit is None:
+                break
+            last, o, left = hit, hit + d * 1e-4, left - dist - 1e-4
+        return last
 
     def depth(self, x, y, side, gap=0.0, radius=0.05):
         m = (np.abs(self.v[:, 0] - x) < radius) & (np.abs(self.v[:, 1] - y) < radius)
@@ -371,12 +394,108 @@ def design_dragon(b, body):
            [(0, 0.075), (0.5, 0.045), (1, 0.0)], [(0, PALETTE["horn"]), (0.8, PALETTE["horn"]), (1, PALETTE["violet"])], sides=8, samples=18)
 
 
+def design_undead_poison(b, body):
+    # Poisoner: a glowing poison flask hung at the back of the right hip (front and back read it).
+    x, y = -0.23, 0.56
+    z = body.depth(x, y, -1, 0.10, radius=0.08)
+    bottom, top = (x, y - 0.24, z), (x, y + 0.27, z)
+    b.tube("FlaskGlass", "pelvis", [bottom, top], [(0, 0.04), (0.12, 0.14), (0.45, 0.16), (0.70, 0.10), (0.80, 0.05), (1, 0.048)],
+           [(0, TOXIC["toxic"]), (0.68, TOXIC["toxic"]), (0.72, TOXIC["glass"]), (1, TOXIC["glass"])], sides=10, samples=14)
+    b.tube("FlaskCork", "pelvis", [top, (x, y + 0.35, z)], [(0, 0.054), (1, 0.042)], [(0, TOXIC["olive"]), (1, TOXIC["olive"])], sides=8, samples=3)
+    b.torus("FlaskStrap", "pelvis", (x, y + 0.19, z), (0, 1, 0), 0.07, 0.016, TOXIC["bone"], seg=14, sides=5)
+
+
+def design_undead_parasite(b, body):
+    # Parasite: glowing brood pods on the back under the flame collar, trailing tendrils.
+    pods = [(0.15, 0.86, 0.15), (-0.14, 0.82, 0.14), (0.0, 0.66, 0.13)]
+    for k, (x, y, r) in enumerate(pods):
+        z = body.depth(x, y, -1, 0.0, radius=0.07) + r * 0.4
+        start, end = (x, y, z), (x * 1.15, y - 0.03, z - r * 2.1)
+        # Graded so the sac keeps its form (fully glowing pods read as flat blocks, iteration 02).
+        b.tube(f"Pod{k}", "chest", [start, end], [(0, r * 0.45), (0.4, r), (0.8, r * 0.7), (1, 0.0)],
+               [(0, TOXIC["olive"]), (0.35, TOXIC["glass"]), (0.8, TOXIC["toxic_dim"]), (1, TOXIC["toxic"])], sides=12, samples=12)
+        b.tube(f"Tendril{k}", "chest", [(x, y - r * 0.6, z - r * 0.4), (x * 1.3, y - 0.14, z - r * 0.9), (x * 1.6, y - 0.26, z - r * 0.4)],
+               [(0, 0.016), (1, 0.0)], [(0, TOXIC["olive"]), (1, TOXIC["toxic_dim"])], sides=5, samples=8)
+
+
+def design_undead_spike(b, body):
+    # Spike thrower: a fan of javelins on the back, heads glowing above the hood.
+    base = Vector((0.0, 0.80, body.depth(0.0, 0.85, -1, 0.05, radius=0.08)))
+    head = [(0.0, -0.05), (0.035, 0.03), (0.0, 0.16), (-0.035, 0.03)]
+    for k, angle in enumerate((-38, -19, 0, 19, 38)):
+        a = math.radians(angle)
+        d = Vector((math.sin(a), math.cos(a), -0.28)).normalized()
+        start, tip = base + d * 0.08, base + d * 1.02
+        b.tube(f"Javelin{k}", "chest", [tuple(start), tuple(tip)], [(0, 0.022), (1, 0.019)],
+               [(0, TOXIC["bone"]), (1, TOXIC["bone"])], sides=6, samples=4)
+        side = d.cross(Vector((0, 0, 1))).normalized()
+        b.plate(f"JavelinHead{k}", "chest", head, tuple(tip), tuple(side), tuple(d), tuple(side.cross(d).normalized()), 0.016,
+                TOXIC["toxic"], edge=TOXIC["olive"])
+
+
+def design_undead_bomb(b, body):
+    # Bomb: a sparking fuse on the gem atop its round bomb head, and a glowing core on the chest.
+    top = body.v[np.argmax(np.where(np.abs(body.v[:, 0]) < 0.12, body.v[:, 1], -9))]
+    tx, ty, tz = float(top[0]), float(top[1]), float(top[2])
+    b.tube("Fuse", "head", [(tx, ty - 0.03, tz), (tx + 0.03, ty + 0.08, tz - 0.02), (tx + 0.09, ty + 0.14, tz - 0.05)],
+           [(0, 0.016), (1, 0.012)], [(0, TOXIC["olive"]), (0.85, TOXIC["olive"]), (1, TOXIC["toxic"])], sides=6, samples=8)
+    spark = (tx + 0.11, ty + 0.16, tz - 0.06)
+    b.tube("FuseSpark", "head", [(spark[0] - 0.045, spark[1], spark[2]), (spark[0] + 0.045, spark[1], spark[2])],
+           [(0, 0.0), (0.5, 0.05), (1, 0.0)], [(0, TOXIC["toxic"]), (1, TOXIC["toxic"])], sides=8, samples=7)
+    zc = body.depth(0.0, 0.92, 1, -0.03, radius=0.07)
+    b.tube("Core", "chest", [(0.0, 0.92, zc - 0.05), (0.0, 0.92, zc + 0.11)], [(0, 0.0), (0.5, 0.085), (1, 0.0)],
+           [(0, TOXIC["toxic"]), (1, TOXIC["toxic"])], sides=10, samples=9)
+    b.torus("CoreRing", "chest", (0.0, 0.92, zc + 0.03), (0, 0, 1), 0.085, 0.016, TOXIC["olive"], seg=16, sides=6)
+
+
+def design_undead_titan(b, body):
+    # Armoured tank: a ridge of bone spikes rising from the upper back, toxic tips.
+    rows = [(0.0, 1.30, 0.34), (0.14, 1.24, 0.28), (-0.14, 1.24, 0.28), (0.24, 1.15, 0.22), (-0.24, 1.15, 0.22), (0.0, 1.12, 0.26)]
+    for k, (x, y, length) in enumerate(rows):
+        z = body.depth(x, y, -1, -0.02, radius=0.07)
+        d = Vector((x * 0.9, 0.75, -0.75)).normalized()
+        start = Vector((x, y, z))
+        b.tube(f"DorsalSpike{k}", "chest", [tuple(start), tuple(start + d * length * 0.55 + Vector((0, 0.03, 0))), tuple(start + d * length)],
+               [(0, 0.05), (0.6, 0.026), (1, 0.0)], [(0, TOXIC["bone"]), (0.7, TOXIC["bone"]), (1, TOXIC["toxic"])], sides=7, samples=8)
+
+
+def design_undead_mother(b, body):
+    # Brood mother (T3): a crown of toxic flame-horns ringing the top of her hood.
+    # Horns grow straight out of the hood: a band ring read as a floating bar (iterations 01-02).
+    # The hood centre comes from the hood alone: at these heights the rest pose also holds the
+    # staff side (x < -0.4), which pulled the old ring centroid 0.28 off the head and left the
+    # horns floating beside the hood in every view (device test, 2026-10-05).
+    y0 = 1.50
+    crown = body.v[body.v[:, 1] > 1.75]
+    hx, hz = float(np.median(crown[:, 0])), float(np.median(crown[:, 2]))
+    ring = body.v[(np.abs(body.v[:, 1] - y0) < 0.03) & (np.hypot(body.v[:, 0] - hx, body.v[:, 2] - hz) < 0.45)]
+    centre = Vector(((ring[:, 0].min() + ring[:, 0].max()) / 2, y0, (ring[:, 2].min() + ring[:, 2].max()) / 2))
+    for k in range(7):
+        a = 2 * math.pi * k / 7 + math.pi / 2
+        out = Vector((math.cos(a), 0, math.sin(a)))
+        front = max(0.0, out.z)
+        height = 0.30 + 0.12 * front
+        # Root each horn on the outermost hood surface in its own direction, sunk in slightly;
+        # the hood is too low-poly here for per-direction vertex radii.
+        hit = body.outer_hit(centre, out, 0.45)
+        if hit is None:
+            raise RuntimeError(f"CrownHorn{k}: no hood surface within 0.45 of {tuple(centre)}")
+        base = hit - out * 0.025
+        bend = base + out * 0.06 + Vector((0, height * 0.55, 0))
+        tip = base + out * 0.03 + Vector((0, height, 0))
+        b.tube(f"CrownHorn{k}", "head", [tuple(base), tuple(bend), tuple(tip)], [(0, 0.04), (1, 0.0)],
+               [(0, TOXIC["olive"]), (0.4, TOXIC["toxic_dim"]), (1, TOXIC["toxic"])], sides=6, samples=8)
+
+
 DESIGNS = {"dark_imp": design_imp, "dark_mage": design_mage, "dark_scythe": design_scythe, "dark_suc": design_suc,
-           "dark_fear": design_fear, "dark_queen": design_queen, "dark_doom": design_doom, "dark_dragon": design_dragon}
+           "dark_fear": design_fear, "dark_queen": design_queen, "dark_doom": design_doom, "dark_dragon": design_dragon,
+           "undead_poison": design_undead_poison, "undead_parasite": design_undead_parasite, "undead_spike": design_undead_spike,
+           "undead_bomb": design_undead_bomb, "undead_titan": design_undead_titan, "undead_mother": design_undead_mother}
 
 
 # ---------------------------------------------------------------- rig plumbing
-def read_glb_positions(path: Path):
+def read_glb_mesh(path: Path):
+    """Positions and triangles of every primitive, raw glTF space (= Godot coordinates)."""
     data = path.read_bytes()
     length = struct.unpack_from("<I", data, 8)[0]
     offset, chunks = 12, {}
@@ -385,17 +504,35 @@ def read_glb_positions(path: Path):
         chunks[kind] = data[offset + 8: offset + 8 + size]
         offset += 8 + size
     doc, blob = json.loads(chunks[0x4E4F534A]), chunks[0x004E4942]
-    out = []
+
+    def accessor(index, width, dtype):
+        acc = doc["accessors"][index]
+        view = doc["bufferViews"][acc["bufferView"]]
+        start = view.get("byteOffset", 0) + acc.get("byteOffset", 0)
+        stride = view.get("byteStride", 0) or width
+        raw = np.frombuffer(blob, dtype=np.uint8, count=stride * (acc["count"] - 1) + width, offset=start)
+        rows = np.lib.stride_tricks.as_strided(raw, shape=(acc["count"], width), strides=(stride, 1))
+        return np.ascontiguousarray(rows).view(dtype)
+
+    verts, tris, base = [], [], 0
     for mesh in doc["meshes"]:
         for prim in mesh["primitives"]:
-            acc = doc["accessors"][prim["attributes"]["POSITION"]]
-            view = doc["bufferViews"][acc["bufferView"]]
-            start = view.get("byteOffset", 0) + acc.get("byteOffset", 0)
-            stride = view.get("byteStride", 0) or 12
-            raw = np.frombuffer(blob, dtype=np.uint8, count=stride * (acc["count"] - 1) + 12, offset=start)
-            rows = np.lib.stride_tricks.as_strided(raw, shape=(acc["count"], 12), strides=(stride, 1))
-            out.append(np.ascontiguousarray(rows).view(np.float32).reshape(-1, 3))
-    return np.concatenate(out)
+            positions = accessor(prim["attributes"]["POSITION"], 12, np.float32).reshape(-1, 3)
+            if "indices" in prim:
+                kind = doc["accessors"][prim["indices"]]["componentType"]
+                width, dtype = {5121: (1, np.uint8), 5123: (2, np.uint16), 5125: (4, np.uint32)}[kind]
+                index = accessor(prim["indices"], width, dtype).reshape(-1).astype(np.int64)
+            else:
+                index = np.arange(len(positions))
+            if prim.get("mode", 4) == 4:
+                tris.append(index.reshape(-1, 3) + base)
+            verts.append(positions)
+            base += len(positions)
+    return np.concatenate(verts), np.concatenate(tris)
+
+
+def read_glb_positions(path: Path):
+    return read_glb_mesh(path)[0]
 
 
 def nearest(src, dst):
@@ -475,7 +612,7 @@ def main():
     vc = nodes.new("ShaderNodeVertexColor"); vc.layer_name = "Color"
     material.node_tree.links.new(vc.outputs["Color"], nodes["Principled BSDF"].inputs["Base Color"])
     builder = Builder()
-    DESIGNS[a.unit](builder, Body(read_glb_positions(refs / a.unit / "reference_0.glb")))
+    DESIGNS[a.unit](builder, Body(*read_glb_mesh(refs / a.unit / "reference_0.glb")))
     authoring = bpy.data.collections.new("AUTHORING - editable dark parts")
     bpy.context.scene.collection.children.link(authoring)
     for obj, _ in builder.parts:

@@ -1,0 +1,41 @@
+[gd_resource type="ShaderMaterial" load_steps=5 format=3]
+
+[ext_resource type="Shader" path="res://assets/models/units/dark_refined/shared/dark_body.gdshader" id="1"]
+[ext_resource type="Texture2D" path="res://assets/models/units/dark_refined/dark_fear/dark_fear_albedo.png" id="2"]
+[ext_resource type="Shader" path="res://shaders/character_outline.gdshader" id="3"]
+
+[sub_resource type="ShaderMaterial" id="Outline"]
+render_priority = -1
+shader = ExtResource("3")
+shader_parameter/outline_color = Color(0.045, 0.018, 0.075, 1)
+shader_parameter/outline_width = 0.034
+
+[resource]
+resource_name = "dark_fear_refined_body"
+next_pass = SubResource("Outline")
+shader = ExtResource("1")
+shader_parameter/albedo_texture = ExtResource("2")
+shader_parameter/race_hue = 0.770
+shader_parameter/hue_unify = 0.850
+shader_parameter/unify_min_saturation = 0.180
+shader_parameter/value_lift = 0.200
+shader_parameter/shadow_tint = Color(0.580, 0.480, 0.720, 1)
+shader_parameter/light_threshold = 0.320
+shader_parameter/band_softness = 0.030
+shader_parameter/light_energy = 1.250
+shader_parameter/light_response = 1.500
+shader_parameter/accent_color = Color(0.480, 0.320, 1.000, 1)
+shader_parameter/accent_hue = 0.770
+shader_parameter/accent_hue_width = 0.060
+shader_parameter/accent_min_saturation = 0.400
+shader_parameter/accent_min_value = 0.500
+shader_parameter/accent_glow = 0.900
+shader_parameter/trim_max_saturation = 0.400
+shader_parameter/trim_min_value = 0.350
+shader_parameter/trim_highlight_color = Color(0.920, 0.880, 1.000, 1)
+shader_parameter/trim_highlight = 0.450
+shader_parameter/trim_gloss = 0.750
+shader_parameter/rim_color = Color(0.520, 0.360, 1.000, 1)
+shader_parameter/rim_strength = 0.220
+shader_parameter/rim_power = 2.500
+shader_parameter/rim_threshold = 0.560

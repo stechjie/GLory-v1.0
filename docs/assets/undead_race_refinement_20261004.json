@@ -1,0 +1,440 @@
+{
+ "date": "2026-10-04",
+ "scope": "undead race (8 units) model refinement",
+ "engine": "Godot 4.7.stable",
+ "dcc": "Blender 5.1.2",
+ "workflow": "docs/CODEX_MODEL_WORKFLOW.md section 11",
+ "data_change": {
+  "file": "data/units/race_units.json",
+  "fields": "undead_* model -> res://assets/models/units/undead_refined/<id>/<id>_refined.tscn; no other field changed",
+  "rollback": "set each undead_* model back to units.<id>.original below; the original wrappers and their files are untouched (hash-verified by the contract check)"
+ },
+ "palette": "unified toxic green: race_hue 0.253 (~91 deg, small/poison/parasite flames), glow (0.42, 1.0, 0.14); gold trims and the mother's mustard cloak pulled to olive",
+ "shared_runtime": "reuses assets/models/units/dark_refined/shared (DarkRefinement.gd, dark_body.gdshader, dark_body_two_sided.gdshader for the mother, dark_parts.gdshader) in place; undead_refined/undead_parts.tres",
+ "reproduce": [
+  "godot --headless --path . --script res://tools/model_refinement/export_unit_reference.gd -- --model <wrapper> --unit-id <id> --out <delivery>/source/<id>",
+  "py -3 tools/model_refinement/dark_race_textures.py --refs <delivery>/source --race undead",
+  "bash tools/model_refinement/build_dark_parts_all.sh <blender.exe> <project> <delivery>/source undead_poison undead_parasite undead_spike undead_bomb undead_titan undead_mother",
+  "py -3 tools/model_refinement/dark_race_materials.py --race undead",
+  "godot --headless --path . res://tools/dark_refinement_contract_check.tscn -- --race undead --require-integrated --out <report.json>"
+ ],
+ "contract_check": {
+  "checked": 686,
+  "failures": 0
+ },
+ "units": {
+  "undead_bomb": {
+   "original": "res://assets/models/units/undead_bomb_animated/undead_bomb_animated.tscn",
+   "refined": "res://assets/models/units/undead_refined/undead_bomb/undead_bomb_refined.tscn",
+   "original_files_verified": 13,
+   "resident_body_triangles": 9252,
+   "resident_part_triangles": 1686,
+   "parts_per_skeleton": [
+    [
+     "CC_Base_Head",
+     "CC_Base_Spine02"
+    ],
+    [
+     "CC_Base_Head",
+     "CC_Base_Spine02"
+    ],
+    [
+     "CC_Base_Head",
+     "CC_Base_Spine02"
+    ]
+   ],
+   "albedo": {
+    "format": 17,
+    "path": "res://assets/models/units/undead_refined/undead_bomb/undead_bomb_albedo.png",
+    "size": 1024
+   }
+  },
+  "undead_fly": {
+   "original": "res://assets/models/units/undead_fly_animated/undead_fly_animated.tscn",
+   "refined": "res://assets/models/units/undead_refined/undead_fly/undead_fly_refined.tscn",
+   "original_files_verified": 13,
+   "resident_body_triangles": 9297,
+   "resident_part_triangles": 0,
+   "parts_per_skeleton": [
+    0,
+    0,
+    0
+   ],
+   "albedo": {
+    "format": 17,
+    "path": "res://assets/models/units/undead_refined/undead_fly/undead_fly_albedo.png",
+    "size": 1024
+   }
+  },
+  "undead_mother": {
+   "original": "res://assets/models/units/undead_mother_animated/undead_mother_animated.tscn",
+   "refined": "res://assets/models/units/undead_refined/undead_mother/undead_mother_refined.tscn",
+   "original_files_verified": 13,
+   "resident_body_triangles": 9270,
+   "resident_part_triangles": 1890,
+   "parts_per_skeleton": [
+    [
+     "CC_Base_Head"
+    ],
+    [
+     "CC_Base_Head"
+    ],
+    [
+     "CC_Base_Head"
+    ]
+   ],
+   "albedo": {
+    "format": 17,
+    "path": "res://assets/models/units/undead_refined/undead_mother/undead_mother_albedo.png",
+    "size": 1024
+   }
+  },
+  "undead_parasite": {
+   "original": "res://assets/models/units/undead_parasite_animated/undead_parasite_animated.tscn",
+   "refined": "res://assets/models/units/undead_refined/undead_parasite/undead_parasite_refined.tscn",
+   "original_files_verified": 13,
+   "resident_body_triangles": 9363,
+   "resident_part_triangles": 3159,
+   "parts_per_skeleton": [
+    [
+     "CC_Base_Spine02"
+    ],
+    [
+     "CC_Base_Spine02"
+    ],
+    [
+     "CC_Base_Spine02"
+    ]
+   ],
+   "albedo": {
+    "format": 17,
+    "path": "res://assets/models/units/undead_refined/undead_parasite/undead_parasite_albedo.png",
+    "size": 1024
+   }
+  },
+  "undead_poison": {
+   "original": "res://assets/models/units/undead_poison_animated/undead_poison_animated.tscn",
+   "refined": "res://assets/models/units/undead_refined/undead_poison/undead_poison_refined.tscn",
+   "original_files_verified": 13,
+   "resident_body_triangles": 9330,
+   "resident_part_triangles": 1404,
+   "parts_per_skeleton": [
+    [
+     "CC_Base_Pelvis"
+    ],
+    [
+     "CC_Base_Pelvis"
+    ],
+    [
+     "CC_Base_Pelvis"
+    ]
+   ],
+   "albedo": {
+    "format": 17,
+    "path": "res://assets/models/units/undead_refined/undead_poison/undead_poison_albedo.png",
+    "size": 1024
+   }
+  },
+  "undead_small": {
+   "original": "res://assets/models/units/undead_small_animated/undead_small_animated.tscn",
+   "refined": "res://assets/models/units/undead_refined/undead_small/undead_small_refined.tscn",
+   "original_files_verified": 13,
+   "resident_body_triangles": 9312,
+   "resident_part_triangles": 0,
+   "parts_per_skeleton": [
+    0,
+    0,
+    0
+   ],
+   "albedo": {
+    "format": 17,
+    "path": "res://assets/models/units/undead_refined/undead_small/undead_small_albedo.png",
+    "size": 1024
+   }
+  },
+  "undead_spike": {
+   "original": "res://assets/models/units/undead_spike_animated/undead_spike_animated.tscn",
+   "refined": "res://assets/models/units/undead_refined/undead_spike/undead_spike_refined.tscn",
+   "original_files_verified": 13,
+   "resident_body_triangles": 9246,
+   "resident_part_triangles": 900,
+   "parts_per_skeleton": [
+    [
+     "CC_Base_Spine02"
+    ],
+    [
+     "CC_Base_Spine02"
+    ],
+    [
+     "CC_Base_Spine02"
+    ]
+   ],
+   "albedo": {
+    "format": 17,
+    "path": "res://assets/models/units/undead_refined/undead_spike/undead_spike_albedo.png",
+    "size": 1024
+   }
+  },
+  "undead_titan": {
+   "original": "res://assets/models/units/undead_titan_animated/undead_titan_animated.tscn",
+   "refined": "res://assets/models/units/undead_refined/undead_titan/undead_titan_refined.tscn",
+   "original_files_verified": 13,
+   "resident_body_triangles": 9090,
+   "resident_part_triangles": 1890,
+   "parts_per_skeleton": [
+    [
+     "CC_Base_Spine02"
+    ],
+    [
+     "CC_Base_Spine02"
+    ],
+    [
+     "CC_Base_Spine02"
+    ]
+   ],
+   "albedo": {
+    "format": 17,
+    "path": "res://assets/models/units/undead_refined/undead_titan/undead_titan_albedo.png",
+    "size": 1024
+   }
+  }
+ },
+ "added": [
+  {
+   "path": "res://assets/models/units/undead_refined/original_runtime_assets.json",
+   "bytes": 15247,
+   "sha256": "eafc5467afea85e9147d9a84f1a959afaebf6e33299dc38fa2c24afad82fe0c1"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/texture_build.json",
+   "bytes": 1359,
+   "sha256": "235f66e16884c4a5e45b3cb6f142a4989d483509df20ba976f8240214d4959b7"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_bomb/undead_bomb_albedo.png",
+   "bytes": 1625111,
+   "sha256": "0b1264c4bb2a431b90d87b8736c72dab0cd6ea0736b29bc0db715b19d6febd21"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_bomb/undead_bomb_albedo.png.import",
+   "bytes": 1260,
+   "sha256": "f67fda35b29afd0b91dca3bab101adce9495b53891038d856fe1638d892a34ba"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_bomb/undead_bomb_body.tres",
+   "bytes": 1778,
+   "sha256": "c27d0b25289227d3c15d334c38cfdf23a1a14f2091d893ca146380155a587034"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_bomb/undead_bomb_parts.glb",
+   "bytes": 15172,
+   "sha256": "8f943ff43cfc21ea6ff7033ad981450e479f87b61201b88f4c8388ba45821a27"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_bomb/undead_bomb_parts.glb.import",
+   "bytes": 1212,
+   "sha256": "27dbba8962e4e331c76fdd804d2f91f2e143774e9381ae8fcc60c411506ac4dc"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_bomb/undead_bomb_refined.tscn",
+   "bytes": 839,
+   "sha256": "8e6d10ac8647a67dda1dbe2290af42235a93298cb2aa67ac9d97bc13232aab6e"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_fly/undead_fly_albedo.png",
+   "bytes": 1728351,
+   "sha256": "5179b6f205fc8de61f71df60ca15ca83f6e24a3a84a9dc940a8fff94ea0c349d"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_fly/undead_fly_albedo.png.import",
+   "bytes": 1253,
+   "sha256": "8b72d3fe91c1e3dfcf3dfc77d1b48968c1d45caf69aec71e71fb1ea51225c6c5"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_fly/undead_fly_body.tres",
+   "bytes": 1775,
+   "sha256": "0a10332f2eaed496fce8db0f82676cbc003ba74d63f221d5c9da53984cf7c4c1"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_fly/undead_fly_refined.tscn",
+   "bytes": 548,
+   "sha256": "c60f7e535a1959d414d086a3335da5c15650b32610bd280cd572483448519cf1"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_mother/undead_mother_albedo.png",
+   "bytes": 1824162,
+   "sha256": "ab9ef145efe5b65e54d506406494dca7d0a4082100ee2239f3771c3dacc0f461"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_mother/undead_mother_albedo.png.import",
+   "bytes": 1272,
+   "sha256": "2b6038c7f24bdba6edf46bac2ea13919efbf25b719a34ccfa10a9a66bb86bd62"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_mother/undead_mother_body.tres",
+   "bytes": 1853,
+   "sha256": "4cb01e8bf6d2e4666ee8d0b4fa930738c04cf633d9e55e9f169d9d9fdc0df898"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_mother/undead_mother_parts.glb",
+   "bytes": 16068,
+   "sha256": "ef0116ed5085645cc2d044ee872006e9638faa397516b3e079a49e32cf48e840"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_mother/undead_mother_parts.glb.import",
+   "bytes": 1220,
+   "sha256": "25742add55e766a2cce396f72d05fa6238430ff3cc85deef4d3767718586c3d6"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_mother/undead_mother_refined.tscn",
+   "bytes": 853,
+   "sha256": "f95b4c525b77140f9257322db5e371314f75a7a3bc87dc62ac57e6a147e66805"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_parasite/undead_parasite_albedo.png",
+   "bytes": 1628704,
+   "sha256": "9b7e2286896a4fd0b4e6782ea15721b5aed3b20dc6453268dafa170e97633ea4"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_parasite/undead_parasite_albedo.png.import",
+   "bytes": 1283,
+   "sha256": "17863fde0813f3a97130d40355486507d1ebf928b95271e7a8bf698b53c38741"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_parasite/undead_parasite_body.tres",
+   "bytes": 1790,
+   "sha256": "d8c09177173468969b6779d37f93c5762fdce7169a409e02fa419c8f9a42496c"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_parasite/undead_parasite_parts.glb",
+   "bytes": 25492,
+   "sha256": "16f74f3470f39bdb0a34f6f24652a79a505d0becb693bfde956807697df148a8"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_parasite/undead_parasite_parts.glb.import",
+   "bytes": 1229,
+   "sha256": "0d5e45016594b22dcaf7dc4065ed2a709a0186c0586947f93911363fcfcbde39"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_parasite/undead_parasite_refined.tscn",
+   "bytes": 867,
+   "sha256": "c4241adef3020ae935036d1611808f24bdd00dc10c44f71ee298abe1dae7689f"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_parts.tres",
+   "bytes": 713,
+   "sha256": "c79297137e4c91ee8a29a9988a13aaa41014d104cf2b6da54d10fde6faa089e4"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_poison/undead_poison_albedo.png",
+   "bytes": 1718054,
+   "sha256": "2fe7faf19e814c0d20696ca1f8a36e1f502a5ca6bd5b186d4ecc4394d9c10b01"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_poison/undead_poison_albedo.png.import",
+   "bytes": 1272,
+   "sha256": "da18c3724a6ee39a597d42a60c3bfaace656c208d0d95bc4d549343cf626bdcb"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_poison/undead_poison_body.tres",
+   "bytes": 1784,
+   "sha256": "14ea97c414432e02ea96fb0318dcac536454375b538c1304d0c5a4dc9fd8f8dd"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_poison/undead_poison_parts.glb",
+   "bytes": 11756,
+   "sha256": "c45ac34503e28559214a228a5e856f2453977f2e047f8da07b069d44d81b26ea"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_poison/undead_poison_parts.glb.import",
+   "bytes": 1221,
+   "sha256": "4856f72339f2371dc59ec1a02b50b8bfd95ac971ebe6f3a8c71bc8777e0bd6c4"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_poison/undead_poison_refined.tscn",
+   "bytes": 853,
+   "sha256": "04d3f36663102fc64ad9ada394d5e011eecb55e053e124c73c520b3202329ceb"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_small/undead_small_albedo.png",
+   "bytes": 1386209,
+   "sha256": "133d0808f734aca5c3b80d129d1d468671edb7c46cda837e36358d5549474c22"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_small/undead_small_albedo.png.import",
+   "bytes": 1266,
+   "sha256": "78aedc45c3083437e9f4def2cea3cdfd81f0180d753ad085ef525c184ef1c5ba"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_small/undead_small_body.tres",
+   "bytes": 1781,
+   "sha256": "1be5ee1de5c3d18468cf0aeb4fa8882ff55499c8b67ed26f8a419a0e9ffa86ea"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_small/undead_small_refined.tscn",
+   "bytes": 558,
+   "sha256": "cab67aca9edb1f89b814f6c2aebbac1a0f3512d2f87d5d27769b8b9721303256"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_spike/undead_spike_albedo.png",
+   "bytes": 1708558,
+   "sha256": "b93f9af5b98e08c28aa93cf33f09ff1f5048359c623cc37066134cdb5ea1a28a"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_spike/undead_spike_albedo.png.import",
+   "bytes": 1266,
+   "sha256": "01b3b631522d841b0e9c45bc39cc6497034314b9d7ed3a6854671c8c334f69aa"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_spike/undead_spike_body.tres",
+   "bytes": 1781,
+   "sha256": "f9b8e3882ee0f813c3713b646506623335d5f93ef62bc49ec2badb4aa4acdf5e"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_spike/undead_spike_parts.glb",
+   "bytes": 11184,
+   "sha256": "41ae9a2b0060f4035ff1148ba2c16808137c24e33ceeaa58ea032161ff357b3a"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_spike/undead_spike_parts.glb.import",
+   "bytes": 1217,
+   "sha256": "a98e94dd9f8da636d3b659a127959c4425bc7d168190424b22674510b50df25c"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_spike/undead_spike_refined.tscn",
+   "bytes": 846,
+   "sha256": "e5b4852976c07d07892164d6a2261febede879614926d13782a79262791ae9ce"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_titan/undead_titan_albedo.png",
+   "bytes": 1903321,
+   "sha256": "eeb2602a13d75d7754725cdc73934c3cbb8fa47d0908ea7bf34cfca3f0d29958"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_titan/undead_titan_albedo.png.import",
+   "bytes": 1266,
+   "sha256": "3e4465c75a3d170af00d923bc0e91c886f677fe7d72cb16bb681dec482d054c0"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_titan/undead_titan_body.tres",
+   "bytes": 1781,
+   "sha256": "d76bda3616793aa074fda612f43a9aefb19beeb991b1d6948b1a436149bc46cf"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_titan/undead_titan_parts.glb",
+   "bytes": 16056,
+   "sha256": "4bd424f8ac9a81ae695498bb4d241f606dba8f2147d879c10e0061159e2d16ed"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_titan/undead_titan_parts.glb.import",
+   "bytes": 1217,
+   "sha256": "e95b7060a99d3f8f42d53ace7e689323c79d0931429d0dc16e508d2ae1582b89"
+  },
+  {
+   "path": "res://assets/models/units/undead_refined/undead_titan/undead_titan_refined.tscn",
+   "bytes": 846,
+   "sha256": "c96c9cd330af65507dbe339078fd4532b05b32f5209bc43a3fd12b0763432bc6"
+  }
+ ],
+ "removed": []
+}

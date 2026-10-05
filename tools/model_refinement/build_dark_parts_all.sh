@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build parts for the dark race and stage the runtime GLBs into the project.
+# Build race parts (dark_*, undead_*) and stage the runtime GLBs into <race>_refined/<unit>/.
 # Usage: build_dark_parts_all.sh <blender> <project> <refs_dir> [unit ...]
 set -u
 BLENDER="$1"; PROJECT="$2"; REFS="$3"; shift 3
@@ -10,7 +10,8 @@ for unit in "${UNITS[@]}"; do
   mkdir -p "$out"
   if "$BLENDER" --background --factory-startup --python-exit-code 1 --python "$PROJECT/tools/model_refinement/build_dark_parts.py" -- \
       --unit "$unit" --refs "$REFS" --out "$out" --render > "$out/build.log" 2>&1 && [ -s "$out/${unit}_parts.glb" ]; then
-    cp "$out/${unit}_parts.glb" "$PROJECT/assets/models/units/dark_refined/$unit/${unit}_parts.glb"
+    mkdir -p "$PROJECT/assets/models/units/${unit%%_*}_refined/$unit"
+    cp "$out/${unit}_parts.glb" "$PROJECT/assets/models/units/${unit%%_*}_refined/$unit/${unit}_parts.glb"
     echo "ok $unit $(grep -o 'DARK_PARTS_COMPLETE.*' "$out/build.log" | grep -o '"triangles": \[[0-9, ]*\]')"
   else
     echo "FAIL $unit"; grep -E "Error|Traceback|line [0-9]+" "$out/build.log" | tail -5

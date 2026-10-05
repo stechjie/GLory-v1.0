@@ -26,6 +26,10 @@ android/
 /assets/models/*
 !/assets/models/units/
 /assets/models/units/*
+# Race refinements (2026-10-04) ship with code; their original models stay in the
+# asset bundle and are only referenced, never modified.
+!/assets/models/units/dark_refined/
+!/assets/models/units/undead_refined/
 !/assets/models/units/dark_queen_animated/
 /assets/models/units/dark_queen_animated/*
 !/assets/models/units/dark_queen_animated/DarkQueenAnimated.gd

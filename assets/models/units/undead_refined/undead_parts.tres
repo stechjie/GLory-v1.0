@@ -1,0 +1,18 @@
+[gd_resource type="ShaderMaterial" load_steps=4 format=3]
+
+[ext_resource type="Shader" path="res://assets/models/units/dark_refined/shared/dark_parts.gdshader" id="1"]
+[ext_resource type="Shader" path="res://shaders/character_outline.gdshader" id="2"]
+
+[sub_resource type="ShaderMaterial" id="Outline"]
+render_priority = -1
+shader = ExtResource("2")
+shader_parameter/outline_color = Color(0.020, 0.035, 0.016, 1)
+shader_parameter/outline_width = 0.02
+
+[resource]
+resource_name = "undead_refined_parts"
+next_pass = SubResource("Outline")
+shader = ExtResource("1")
+shader_parameter/shadow_tint = Color(0.52, 0.60, 0.50, 1)
+shader_parameter/rim_color = Color(0.45, 1.0, 0.32, 1)
+shader_parameter/rim_strength = 0.18

@@ -1,0 +1,47 @@
+{
+  "tool": "tools/model_refinement/dark_race_textures.py",
+  "work_size": 2048,
+  "output_size": 1024,
+  "units": {
+    "undead_small": {
+      "source": "undead_small_animated/undead_small_texture.png",
+      "coverage": 0.5415,
+      "repaired_texels": 0
+    },
+    "undead_poison": {
+      "source": "undead_poison_animated/undead_poison_texture.png",
+      "coverage": 0.5375,
+      "repaired_texels": 0
+    },
+    "undead_parasite": {
+      "source": "undead_parasite_animated/undead_parasite_texture.png",
+      "coverage": 0.5531,
+      "repaired_texels": 0
+    },
+    "undead_spike": {
+      "source": "undead_spike_animated/undead_spike_texture.png",
+      "coverage": 0.4988,
+      "repaired_texels": 0
+    },
+    "undead_fly": {
+      "source": "undead_fly_animated/undead_fly_texture.png",
+      "coverage": 0.4989,
+      "repaired_texels": 0
+    },
+    "undead_bomb": {
+      "source": "undead_bomb_animated/undead_bomb_texture.png",
+      "coverage": 0.5533,
+      "repaired_texels": 0
+    },
+    "undead_titan": {
+      "source": "undead_titan_animated/undead_titan_texture.png",
+      "coverage": 0.5182,
+      "repaired_texels": 0
+    },
+    "undead_mother": {
+      "source": "undead_mother_animated/undead_mother_texture.png",
+      "coverage": 0.5059,
+      "repaired_texels": 0
+    }
+  }
+}
