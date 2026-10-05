@@ -110,16 +110,22 @@ func _remove_all_variants(path: String) -> void:
 # port 必须一起存（多进程）。座位 token 是**进程内**的字典，连错进程就等于凭证失效。
 # 此前只存 address，app 重开时端口被填成 DEFAULT_PORT —— 单进程时碰巧对，
 # 多进程时是 (N-1)/N 的概率连错。
-func save_reconnect(token: String, address: String, port: int = NetworkConfig.SERVER_PORT) -> void:
+#
+# mode（custom / casual / ranked）是给「退出对局」确认框说会不会扣分用的（MatchExitPenalty）：
+# app 被杀重开之后内存里什么都没有，只能从这里读。同一个座位再存一次时没带 mode 就沿用旧的。
+func save_reconnect(token: String, address: String, port: int = NetworkConfig.SERVER_PORT, mode: String = "") -> void:
 	var rc := {"token": token, "address": address, "port": port}
 	var previous := load_reconnect()
-	if str(previous.get("token", "")) == token and str(previous.get("address", "")) == address \
-			and int(previous.get("port", NetworkConfig.SERVER_PORT)) == port and bool(previous.get("match_started", false)):
+	var same_seat := str(previous.get("token", "")) == token and str(previous.get("address", "")) == address \
+			and int(previous.get("port", NetworkConfig.SERVER_PORT)) == port
+	if not mode.is_empty():
+		rc["mode"] = mode
+	elif same_seat and not str(previous.get("mode", "")).is_empty():
+		rc["mode"] = previous["mode"]
+	if same_seat and bool(previous.get("match_started", false)):
 		rc["match_started"] = true
 	# A late credential refresh must not undo the user's leave intent.
-	if str(previous.get("token", "")) == token and str(previous.get("address", "")) == address \
-			and int(previous.get("port", NetworkConfig.SERVER_PORT)) == port \
-			and not str(previous.get("pending_leave", "")).is_empty():
+	if same_seat and not str(previous.get("pending_leave", "")).is_empty():
 		rc["pending_leave"] = previous["pending_leave"]
 	_atomic_write(RECONNECT_PATH, JSON.stringify(rc))
 

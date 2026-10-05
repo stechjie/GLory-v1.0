@@ -11,9 +11,12 @@ const GloryToastScript := preload("res://ui/components/GloryToast.gd")
 const GloryTheme := preload("res://ui/theme/GloryTheme.gd")
 const GloryTokens := preload("res://ui/theme/GloryTokens.gd")
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
-# 右上角那个静音键要读「设置页的背景音乐开关」，裁决只在 PresentationSettings 一处
-# （同 SfxService / MusicService / UiFeedback 的写法，用 preload 常量而不是全局类名）。
-const Presentation := preload("res://effects/runtime/presentation/PresentationSettings.gd")
+# 右上角「设定」打开的就是主界面那一页（2026-10-06，原来是静音键），见 _open_settings。
+const SettingsScreenScript := preload("res://scenes/menu/SettingsScreen.gd")
+const SETTINGS_SCENE := preload("res://scenes/menu/SettingsScreen.tscn")
+const SETTINGS_MODAL_ID := "prep_settings"
+# 盖住摆放界面上的各种面板（佣兵选择 40 等），低于重连层 90 和确认框 100。
+const SETTINGS_MODAL_PRIORITY := 50
 # 只为拿 FillPhase 枚举做**静态**引用（教学第 15 步的子阶段），
 # 走 preload 常量而不是从 autoload 实例上取，dynamic_call 棘轮才不会长。
 const TutorialModeScript := preload("res://scripts/tutorial/TutorialMode.gd")
@@ -74,7 +77,7 @@ const CRYSTAL_WATER_PATHS := [                # 水队（slot 3-5 黄紫橙）�
 	"res://assets/ui/crystals/blue_30_40.png",
 	"res://assets/ui/crystals/blue_40_50.png",
 ]
-const TOP_ROW_BTN_SIZE := Vector2(96, 64)                                 # 右上角横排三键（战力/统计/静音）缩小尺寸
+const TOP_ROW_BTN_SIZE := Vector2(96, 64)                                 # 右上角横排三键（战力/统计/设定）缩小尺寸
 # 调试：把所有按钮的点击判定区域用线条画出来。不需要时改成 false。
 const SHOW_HIT_AREAS := false
 # 调试：把所有布局控件的矩形（空间框）用黑边画出来，方便看排版。不需要时改成 false。
@@ -167,7 +170,6 @@ const MERCENARY_PORTRAIT_PATHS := {
 	"merc_scorpio_death": "res://assets/ui/mercenary_portraits/merc_scorpio_death.png",
 }
 
-var _mute_button: Button
 var _shop_refresh_burn: PrepShopRefreshBurn
 # 强引用贴图缓存：load() 只在资源仍被引用时命中引擎缓存，
 # 这里持有引用保证商店头像/宝物图标等反复刷新的贴图零重复 I/O。
@@ -1062,7 +1064,7 @@ func _build_merc_panels(body: HBoxContainer, center_host: Control) -> void:
 
 	_build_detail_popups()
 func _build_top_actions() -> void:
-	# 右上角横排：战力推荐 | 统计 | 静音（缩小，A 需求）。加到 self 顶层（z 高，不被 body 拦点击）。
+	# 右上角横排：战力推荐 | 统计 | 设定（缩小，A 需求）。加到 self 顶层（z 高，不被 body 拦点击）。
 	var top_row := HBoxContainer.new()
 	top_row.anchor_left = 1.0
 	top_row.anchor_right = 1.0
@@ -1080,10 +1082,9 @@ func _build_top_actions() -> void:
 	SafeArea.track(top_row)
 	top_row.add_child(PrepWidgets.make_menu_button(tr("ui_power"), TOP_ROW_BTN_SIZE, 13, _stats.show_power_recommendation))
 	top_row.add_child(PrepWidgets.make_menu_button(tr("ui_stats"), TOP_ROW_BTN_SIZE, 13, _stats.show_last_battle))
-	# 静音按钮：切换全局 Master 总线静音
-	var mute_btn := PrepWidgets.make_menu_button(_mute_label_text(), TOP_ROW_BTN_SIZE, 13, _toggle_mute)
-	_mute_button = mute_btn
-	top_row.add_child(mute_btn)
+	var settings_btn := PrepWidgets.make_menu_button(tr("ui_settings"), TOP_ROW_BTN_SIZE, 13, _open_settings)
+	settings_btn.name = "SettingsButton"
+	top_row.add_child(settings_btn)
 
 	# 佣兵盾牌 / 队伍佣兵：不改，仍竖排，挪到横排下面（A1-a）。宽度保持 140，尺寸不变。
 	var side_col := VBoxContainer.new()
@@ -1674,49 +1675,40 @@ func _teardown_chat_entry() -> void:
 	if _voice_controls != null:
 		_voice_controls.teardown()
 
-# 「已静音」的判据，按钮文案与点击方向**共用这一处**。两处各判一次的话迟早分叉，
-# 而分叉的症状是「键上写着已静音、按下去却更静」——那种键按了像坏了。
+# 右上角「设定」（2026-10-06 用户要求：原来的静音键改成跟主界面一样的设定页）。
 #
-# 两种情况都算静音：
-#   ① Master 总线被静音 —— 就是本页这个按键自己按下去的那一步；
-#   ② 设置页把「背景音乐」关了 —— 9.17 第二批反馈：在大厅里关了 BGM，
-#      进对局也该显示已静音，而不是两处各说各话。
+# 主界面那个是整页切换（Main._show_settings 会 _clear() 掉当前界面），对局里不能这样 ——
+# 摆放界面一拆，对局就断了。所以同一个 SettingsScreen 用弹层盖上来，摆放界面在底下照常走
+# （倒计时不停）。回合结束切到战斗时摆放界面被释放，弹层跟着 owner 一起关。
 #
-# 只看「背景音乐」，**不看**「界面音效」：后者只掐 SFX，玩家还听得见 BGM，
-# 把它也算成「已静音」是句假话。这条范围由 prep_mute_state_check 钉住，
-# 将来要改成「任一开关关掉都算静音」得显式改断言，不能顺手漂移。
-func _is_audio_muted() -> bool:
-	var master := AudioServer.get_bus_index("Master")
-	if master >= 0 and AudioServer.is_bus_mute(master):
-		return true
-	return not Presentation.music_allowed()
+# 「重新体验教学」在对局里换成「退出对局」，而且只有联网对局有（教学、离线自测没有这一行）。
+# 点了走 leave_match_requested → Main.request_exit_match：先弹判负 / 扣分的确认框，确认了才退。
+#
+# 原来静音键管的事，设定页里都有：「背景音乐」「界面音效」两个开关
+# （9.17 反馈第 5 条要的「对局里能把音乐重新打开」照样做得到）。
+func _open_settings() -> void:
+	if ModalStack.has(SETTINGS_MODAL_ID):
+		return
+	var settings: SettingsScreenScript = SETTINGS_SCENE.instantiate()
+	settings.in_match = true
+	settings.can_leave_match = NetworkService.team_active and not GameState.tutorial_mode
+	settings.back_requested.connect(_close_settings)
+	settings.leave_match_requested.connect(_on_settings_leave_match)
+	ModalStack.push(settings, {
+		"id": SETTINGS_MODAL_ID,
+		"owner": self,
+		"priority": SETTINGS_MODAL_PRIORITY,
+		"dismiss_on_backdrop": false,
+	})
 
 
-func _toggle_mute() -> void:
-	# 全局静音开关：静音 Master 总线（BGM + 音效都停），引擎级状态，切场景仍生效。
-	#
-	# 目标状态从 _is_audio_muted() 反推，**不是**直接翻转总线：设置页关过
-	# 「背景音乐」时按钮显示的是「已静音」，这一次按下去必须把声音打开
-	# （清总线静音 + 打开音乐开关）。照旧直接翻总线的话，那种局面下第一下是把
-	# 一个本来就没静音的总线翻成静音 —— 键上写着已静音、按下去更静，按了没反应。
-	var master := AudioServer.get_bus_index("Master")
-	var want_mute := not _is_audio_muted()
-	if master >= 0:
-		AudioServer.set_bus_mute(master, want_mute)
-	# 9.17 反馈第 5 条：「若在这里（设置页）关闭音乐，在游戏对局中可以通过右上的
-	# 『已静音』按键重新打开音乐。」
-	#
-	# 清总线静音只算半条：设置页那个「背景音乐」开关是**另一条**闸门
-	# （PresentationSettings.music_allowed()，由 MusicService 执行 stream_paused）。
-	# 只解总线的话，设置里关过音乐的玩家按这个键仍然听不到 BGM —— 反馈要的正是
-	# 这条路径能把音乐重新打开，所以这里一并把那个偏好打开。
-	#
-	# 只在**解除静音**时做：把整体静音这一步定义成「声音都回来」，
-	# 而按下去要静音时不该顺手改玩家的音乐偏好（那是设置页的事）。
-	if not want_mute:
-		PlayerProfile.set_presentation_toggle("music", true)
-	if _mute_button != null:
-		_mute_button.text = _mute_label_text()
+func _close_settings() -> void:
+	ModalStack.pop(SETTINGS_MODAL_ID)
+
+
+# 设定页先留着：确认框里点「取消」回到的还是设定页；确认了 Main 换界面，弹层跟着摆放界面一起关。
+func _on_settings_leave_match() -> void:
+	leave_match_requested.emit()
 
 func _toggle_carrot_camp() -> void:
 	if _carrot_panel == null or not is_instance_valid(_carrot_panel):
@@ -1910,12 +1902,6 @@ func _refresh_carrot_counter() -> void:
 	_carrot_counter_label.add_theme_color_override("font_color",
 		Color(0.72, 1.0, 0.58) if amount >= capacity else Color(1.0, 0.94, 0.70))
 
-func _mute_label_text() -> String:
-	# 判据与点击方向同源（_is_audio_muted）：设置页关了背景音乐，这里也要写「已静音」。
-	var muted := _is_audio_muted()
-	if LocaleManager.get_locale() == "en":
-		return "Muted" if muted else "Mute"
-	return "已静音" if muted else "静音"
 func _build_detail_popups() -> void:
 	_detail = PopupPanel.new()
 	_detail.theme = GloryTheme.get_theme()

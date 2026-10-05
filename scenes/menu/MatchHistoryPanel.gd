@@ -173,7 +173,15 @@ func _refresh_summary() -> void:
 
 
 # 这一局对**我**来说是胜是负。outcome 是队伍级的，要按我的座位翻译过来。
+#
+# 🔴 跑路判负（2026-10-06，同 backend/app/ranked.py 的 _settle_ranked）：对局结束时我不在线，
+# 队伍赢、输、平都算我输。判据同 _seat_state 的「掉线未归」—— 看 online_at_end，不看 was_ai。
 func _my_result(item: Dictionary) -> String:
+	var seats: Array = item.get("seats", []) if typeof(item.get("seats")) == TYPE_ARRAY else []
+	for seat in seats:
+		var mine := seat is Dictionary and int((seat as Dictionary).get("slot", -1)) == int(item.get("my_slot", -1))
+		if mine and not bool((seat as Dictionary).get("online_at_end", true)):
+			return "loss"
 	var outcome := str(item.get("outcome", "draw"))
 	if outcome == "draw":
 		return "draw"

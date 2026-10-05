@@ -127,6 +127,13 @@ const TARGETS: Array[Dictionary] = [
 	{"kind": "script", "path": "res://scenes/prep/panels/PrepSeatCard.gd"},
 	{"kind": "script", "path": "res://scripts/multiplayer/RoomChatLog.gd"},
 	{"kind": "script", "path": "res://tools/prep_seat_card_check.gd"},
+	# ★ 10.06 第二批：退出对局（断线遮罩 / 摆放界面「设定」/ 开新局被拦）。
+	#   Main / NetworkService / PrepUI / PrepShared / MatchHistoryPanel / LocaleManager 已在上面，
+	#   新文字表、设定页、重连凭证、新门禁单列。
+	{"kind": "script", "path": "res://scripts/multiplayer/MatchExitPenalty.gd"},
+	{"kind": "script", "path": "res://scenes/menu/SettingsScreen.gd"},
+	{"kind": "script", "path": "res://scripts/autoload/SaveManager.gd"},
+	{"kind": "script", "path": "res://tools/match_exit_check.gd"},
 ]
 
 

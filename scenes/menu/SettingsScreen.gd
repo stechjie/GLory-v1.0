@@ -9,6 +9,14 @@ const SfxService := preload("res://ui/services/SfxService.gd")
 
 signal back_requested
 signal replay_tutorial_requested
+# 对局里点了「退出对局」（2026-10-06）。摆放界面转给 Main，先弹判负 / 扣分的确认框。
+signal leave_match_requested
+
+# 从摆放界面右上角「设定」打开的（2026-10-06，原来那里是静音键）：和主界面同一页，
+# 只是「重新体验教学」不显示 —— 对局里点它等于把这局扔掉，教学要从主界面进。
+var in_match := false
+# 对局里能不能退：只有联网对局有「退出对局」这一行（教学、离线自测没有）。
+var can_leave_match := false
 
 var _btn_zh: Button
 var _btn_en: Button
@@ -203,12 +211,22 @@ func _build() -> void:
 	var sep2 := HSeparator.new()
 	panel.add_child(sep2)
 
-	var replay_btn := ActionButtonScene.instantiate() as Button
-	replay_btn.text = tr("settings_replay_tutorial")
-	replay_btn.custom_minimum_size = Vector2(280, Tokens.TOUCH_MIN)
-	replay_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	replay_btn.pressed.connect(func(): replay_tutorial_requested.emit())
-	panel.add_child(replay_btn)
+	if not in_match:
+		var replay_btn := ActionButtonScene.instantiate() as Button
+		replay_btn.text = tr("settings_replay_tutorial")
+		replay_btn.custom_minimum_size = Vector2(280, Tokens.TOUCH_MIN)
+		replay_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		replay_btn.pressed.connect(func(): replay_tutorial_requested.emit())
+		panel.add_child(replay_btn)
+	elif can_leave_match:
+		var leave_btn := ActionButtonScene.instantiate() as Button
+		leave_btn.name = "LeaveMatch"
+		leave_btn.text = tr("settings_leave_match")
+		leave_btn.theme_type_variation = Theming.VARIATION_DANGER
+		leave_btn.custom_minimum_size = Vector2(280, Tokens.TOUCH_MIN)
+		leave_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		leave_btn.pressed.connect(func(): leave_match_requested.emit())
+		panel.add_child(leave_btn)
 
 	var back_btn := Button.new()
 	back_btn.text = tr("settings_back")

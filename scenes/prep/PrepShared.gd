@@ -1,6 +1,8 @@
 extends Control
 
 signal battle_requested
+# 摆放界面「设定」里点了「退出对局」（2026-10-06）。Main 接住，先弹判负 / 扣分的确认框。
+signal leave_match_requested
 
 # D2 第一步：通用 UI 工具箱。放在继承链最底层，五个面板与宿主共用同一份。
 # 用 preload 而非 class_name：新增全局类要等编辑器重扫才进类缓存。

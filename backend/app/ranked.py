@@ -209,11 +209,14 @@ async def settle(conn, report: dict) -> None:
 
     做三件事：
       1. 排位局：算分、写 player_ranked
-      2. 所有模式：正常打完 +2 信誉分
-      3. 所有模式：跑路的扣信誉分 + 禁排位
+      2. 匹配来的局（休闲 / 排位）：正常打完 +2 信誉分
+      3. 匹配来的局（休闲 / 排位）：跑路的扣信誉分 + 禁排位
 
     ⚠️ 信誉分对**休闲局也算** —— 跑路给别人造成的损失和模式无关。
     只有排位分是排位局才动的。
+
+    🔴 自定房间（好友开房）**不加也不扣**信誉分（2026-10-06 用户定）：信誉分只管匹配和排位。
+    房间是自己人开的；内部测试也大多在自定房间里打，测几局退几次就会被扣到不能排位。
     """
     seats = [s for s in report["seats"] if s["player_id"] is not None]
     if not seats:
@@ -225,7 +228,8 @@ async def settle(conn, report: dict) -> None:
 
     if report["mode"] == "ranked":
         await _settle_ranked(conn, report, seats)
-    await _settle_credit(conn, report, seats)
+    if report["mode"] != "custom":
+        await _settle_credit(conn, report, seats)
 
 
 async def _settle_ranked(conn, report: dict, seats: list[dict]) -> None:
@@ -242,21 +246,29 @@ async def _settle_ranked(conn, report: dict, seats: list[dict]) -> None:
     outcome = report["outcome"]
     for seat in seats:
         row = rows[seat["player_id"]]
-        if outcome == "draw":
+        # 🔴 跑路判负（第四节「本局按输计算」）：对局结束时还不在线的人，队伍赢、输、平
+        # 都按输算 —— 输的分、输的游戏币、不算胜场、连胜清零，再额外扣一份。
+        # 2026-10-06 才照这条做：之前队伍赢了，跑的人也跟着算赢、拿赢的分和游戏币。
+        # 判定线是 online_at_end，不是 was_ai —— 转过 AI 但回来了的不算。
+        abandoned = not seat["online_at_end"]
+        if abandoned:
+            result = "lose"
+        elif outcome == "draw":
+            result = "draw"
+        else:
+            result = "win" if (outcome == "team_a") == (seat["team"] == 0) else "lose"
+        won = result == "win"
+        if result == "draw":
             # 平局不动分，但算一场。连胜不中断也不增加 —— 平局既不是赢也不是输。
             delta = 0
-            won = False
             streak = row["win_streak"]
         else:
-            won = (outcome == "team_a") == (seat["team"] == 0)
             delta = score_delta(won, averages[seat["team"]], averages[1 - seat["team"]],
                                 row["win_streak"])
             streak = row["win_streak"] + 1 if won else 0
-        # 🔴 跑路的人额外再扣一份（第四节：输的那一份 × 1.5）。
-        # 判定线是 online_at_end，不是 was_ai —— 转过 AI 但回来了的不算。
-        if not seat["online_at_end"]:
+        # 跑路在输的分上再额外扣一份（第四节：输的那一份 × 1.5）。
+        if abandoned:
             delta -= int(round(BASE_DELTA * ABANDON_PENALTY_MULT))
-            streak = 0
         score_after = apply_delta(row["score"], delta)
         await conn.execute(
             """
@@ -267,7 +279,7 @@ async def _settle_ranked(conn, report: dict, seats: list[dict]) -> None:
             """,
             seat["player_id"], score_after, 1 if won else 0, streak,
         )
-        reward = coin_reward(outcome, seat["team"])
+        reward = coin_reward(result)
         wallet = await shop._lock_wallet(conn, seat["player_id"])
         wallet = await shop._apply(conn, seat["player_id"], wallet, {"coin": reward},
                                    "match_reward", None, note=f"ranked match {report['match_uid']}")
@@ -275,19 +287,20 @@ async def _settle_ranked(conn, report: dict, seats: list[dict]) -> None:
             "insert into ranked_reward_receipts "
             "(match_uid, player_id, result, coin, score_before, score_after, coin_balance_after) "
             "values ($1, $2, $3, $4, $5, $6, $7)",
-            report["match_uid"], seat["player_id"],
-            "draw" if outcome == "draw" else ("win" if won else "lose"),
+            report["match_uid"], seat["player_id"], result,
             reward, row["score"], score_after, wallet.coin,
         )
     log.info("排位结算 match=%s outcome=%s seats=%d", report["match_uid"], outcome, len(seats))
 
 
-def coin_reward(outcome: str, team: int) -> int:
-    """Inclusive ranges from the shop spec. Called only after match UID insertion."""
-    if outcome == "draw":
+def coin_reward(result: str) -> int:
+    """Inclusive ranges from the shop spec. Called only after match UID insertion.
+
+    result 是**这个人**的结果（win / lose / draw），不是队伍的：跑路的人队伍赢了也按 lose 发。
+    """
+    if result == "draw":
         return 5
-    won = (outcome == "team_a") == (team == 0)
-    return 8 + secrets.randbelow(8) if won else 3 + secrets.randbelow(6)
+    return 8 + secrets.randbelow(8) if result == "win" else 3 + secrets.randbelow(6)
 
 
 async def _settle_credit(conn, report: dict, seats: list[dict]) -> None:

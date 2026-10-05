@@ -64,6 +64,7 @@ func _zh_strings() -> Dictionary:
 		"settings_toggle_on": "开",
 		"settings_toggle_off": "关",
 		"settings_replay_tutorial": "重新体验教学",
+		"settings_leave_match": "退出对局",
 		"settings_back": "返回",
 		"board_frontline": "前排",
 		"board_backline": "后排",
@@ -117,6 +118,7 @@ func _zh_strings() -> Dictionary:
 		"battle_load_error_network": "网络连接已中断，请恢复连接后重试。",
 		"ui_stats": "上一局统计",
 		"ui_power": "战力推荐",
+		"ui_settings": "设定",
 		"ui_sell_zone": "出售区域",
 		# Prep 商店
 		"ui_free": "免费",
@@ -503,6 +505,7 @@ func _en_strings() -> Dictionary:
 		"settings_toggle_on": "On",
 		"settings_toggle_off": "Off",
 		"settings_replay_tutorial": "Replay Tutorial",
+		"settings_leave_match": "Leave Match",
 		"settings_back": "Back",
 		"board_frontline": "Frontline",
 		"board_backline": "Backline",
@@ -556,6 +559,7 @@ func _en_strings() -> Dictionary:
 		"battle_load_error_network": "The network connection was interrupted. Reconnect and retry.",
 		"ui_stats": "Last Battle",
 		"ui_power": "Power Rating",
+		"ui_settings": "Settings",
 		"ui_sell_zone": "Sell Zone",
 		# Prep Shop
 		"ui_free": "Free",

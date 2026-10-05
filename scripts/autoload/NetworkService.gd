@@ -57,17 +57,55 @@ static func public_seat_identity(profile_data: Dictionary) -> Dictionary:
 	return out
 
 const ACTIVE_MATCH_HINT := "正在对局中，请进行游戏重连"
+const MatchExitPenalty := preload("res://scripts/multiplayer/MatchExitPenalty.gd")
 var _match_check_generation := 0
 var _match_check_busy := false
 var _match_check_id := ""
 var _match_check_result := ""
 
+# 这一局是什么模式：custom（自定房间）/ casual / ranked，空串 = 不知道。
+# 战斗服务器在对局中不发这个，由进房的入口自己记（建房 / 进房 / 匹配入座 / 从磁盘恢复）。
+# 只给「退出对局」确认框说会不会扣分用（MatchExitPenalty），并随重连凭证落盘 —— app 重开后要用。
+var match_mode := ""
+
 func allow_new_match() -> bool:
 	var result := await check_saved_match()
 	if result == "clear":
 		return true
-	DialogService.info({"request_id": "active_match_guard", "title": "提示", "body": ACTIVE_MATCH_HINT if result == "active" else "暂时无法确认对局状态，请检查网络后重试", "owner": self})
-	return false
+	if result != "active":
+		DialogService.info({"request_id": "active_match_guard", "title": "提示", "body": "暂时无法确认对局状态，请检查网络后重试", "owner": self})
+		return false
+	return await _confirm_exit_for_new_match()
+
+# 上一局还没打完：**对局要退出了才能开新局**（2026-10-06 用户定，原来只能回去重连或干等它打完）。
+# 被拦的这一刻直接给「退出对局」，说清会判负、会不会扣分；确认了就退，这次开新局照常往下走。
+# 不退就回主菜单点「游戏重连」。
+#
+# 弹窗常量从 DialogService 上拿：这个 autoload 战斗服务器也加载，不在这里另外 preload 界面脚本。
+func _confirm_exit_for_new_match() -> bool:
+	var en := LocaleManager.get_locale().begins_with("en")
+	var request_id := DialogService.confirm({
+		"request_id": "active_match_guard",
+		"title": "The last match isn't over" if en else "上一局还没打完",
+		"body": ("Leave it to start a new one, or tap Reconnect on the menu to go back.\n" if en
+			else "要先退出上一局才能开新局；想回去就点主菜单的「游戏重连」。\n")
+			+ MatchExitPenalty.body(str(SaveManager.load_reconnect().get("mode", "")), en),
+		"intent": DialogService.Dialog.Intent.DANGER,
+		"confirm_text": "Leave the match" if en else "退出对局",
+		"cancel_text": "Cancel" if en else "取消",
+		"owner": self,
+	})
+	if not DialogService.is_open(request_id):
+		return false
+	var answer := ""
+	while answer.is_empty():
+		var resolved: Array = await DialogService.dialog_resolved
+		if str(resolved[0]) == request_id:
+			answer = str(resolved[1])
+	if answer != DialogService.Dialog.RESULT_CONFIRMED:
+		return false
+	abandon_started_match()
+	return true
 
 # Check the original server/port without occupying a seat in the old match.
 # Unknown/network failure never clears credentials or unlocks a new match.
@@ -930,6 +968,7 @@ func team_request_create_room() -> void:
 	if not _can_send_room_request("create_room"):
 		return
 	AnalyticsService.note_mode("custom")
+	match_mode = "custom"
 	var card := await _fetch_seat_card("create_room")
 	# 领名片是一次网络往返，期间连接可能已经断了 —— 再查一次。
 	if card.is_empty() or not _can_send_room_request("create_room"):
@@ -940,6 +979,7 @@ func team_request_join_room(room_id: int) -> void:
 	if not _can_send_room_request("join_room"):
 		return
 	AnalyticsService.note_mode("custom")
+	match_mode = "custom"
 	var card := await _fetch_seat_card("join_room")
 	if card.is_empty() or not _can_send_room_request("join_room"):
 		return
@@ -953,9 +993,12 @@ func team_request_join_room(room_id: int) -> void:
 # 名片同样是**现领**：从点完确认到这一刻可能过了一分多钟（加载界面、握手），
 # 而名片只有 60 秒有效期。账号服务器那边的分配留了 5 分钟
 # （matchmaking.ASSIGNMENT_TTL_SEC），所以现领拿到的仍然带着会合键。
-func team_request_join_matched() -> void:
+#
+# mode 是排队时选的 casual / ranked（Main 记着），只给「退出对局」确认框用，不发给服务器。
+func team_request_join_matched(mode: String = "") -> void:
 	if not _can_send_room_request("join_room"):
 		return
+	match_mode = mode
 	var card := await _fetch_seat_card("join_matched")
 	if card.is_empty() or not _can_send_room_request("join_room"):
 		return
@@ -996,6 +1039,8 @@ func team_request_public_token() -> void:
 
 func team_request_public_resume(token_id: String) -> void:
 	if team_active and multiplayer.multiplayer_peer != null:
+		# 短码可能是别的设备上那一局：模式不知道，确认框说通用的那句。
+		match_mode = ""
 		public_token_id = token_id.strip_edges().to_upper()
 		SaveManager.save_public_token(public_token_id)
 		# 短码恢复沿用同一份 room_state / resume_failed 协议，但它不是由
@@ -4578,10 +4623,26 @@ func cancel_reconnect() -> void:
 		SaveManager.clear_reconnect()
 	reset()
 
+# 玩家确认「退出对局」（2026-10-06）：断线遮罩、摆放界面的设定、开新局被上一局拦住，三个入口都走这里。
+#
+# 🔴 **只在本机做，不通知战斗服务器**：
+#   · 断线的时候本来就发不出去；
+#   · 连着的时候关掉连接，服务器看到的就是这个座位断线 —— 20 秒后 AI 接管，对局结束时
+#     座位还不在线 = 跑路，账号服务器照现有规则判负、扣分（backend/app/ranked.py 的 settle）；
+#   · 不能拿 _rpc_abandon_seat 去说「我退了」：它会把座位上的账号信息清掉，结算时这个位置
+#     被当成 AI，跑路的人反而一分不扣。
+# 重连凭证一删，allow_new_match() 就读不到上一局，可以开新局了。
+func abandon_started_match() -> void:
+	AnalyticsService.match_left("user_abandon")
+	SaveManager.clear_reconnect()
+	pending_abandon_token = ""
+	reset()
+
 # app 重开后凭本地存的 token 恢复对局（Main 在启动时调用）。
 # port 必须由调用方传进来：座位 token 是**进程内**的，多进程下连错端口 = 凭证失效。
 func begin_resume_from_disk(token: String, address: String, port: int = DEFAULT_PORT) -> void:
 	reset()
+	match_mode = str(SaveManager.load_reconnect().get("mode", ""))
 	team_active = true
 	session_token = token
 	reconnect_address = address
@@ -5258,7 +5319,7 @@ func _rpc_room_state(envelope: Dictionary) -> void:
 		session_token = incoming_token
 		if reconnect_address.is_empty():
 			reconnect_address = remote_address
-		SaveManager.save_reconnect(session_token, reconnect_address, remote_port)
+		SaveManager.save_reconnect(session_token, reconnect_address, remote_port, match_mode)
 	if server_phase in [ROOM_PREP, ROOM_BATTLE, ROOM_RESULT] and not bool(payload.get("run_over", false)):
 		SaveManager.mark_match_started()
 	var incoming_public := str(payload.get("public_id", ""))
@@ -6639,7 +6700,7 @@ func _rpc_team_assign_slot(slot: int, token: String = "", room_id: int = 0, shor
 		# 存下重连凭证（内存 + 磁盘），app 被杀重开也能凭它恢复对局
 		session_token = token
 		reconnect_address = remote_address
-		SaveManager.save_reconnect(session_token, reconnect_address, remote_port)
+		SaveManager.save_reconnect(session_token, reconnect_address, remote_port, match_mode)
 	team_lobby_changed.emit()
 
 # 遗留通道：**只有本地房主调试路径**还在用（`_team_broadcast_lobby`）。

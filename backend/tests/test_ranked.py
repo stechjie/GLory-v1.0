@@ -323,18 +323,57 @@ async def test_casual_does_not_touch_ranked_score(monkeypatch, local_hour) -> No
     assert conn.reward_receipts == [], "休闲局不能产生排位奖励回执"
 
 
+_ABANDON_EXTRA = int(round(ranked.BASE_DELTA * ranked.ABANDON_PENALTY_MULT))
+
+
 @pytest.mark.anyio
 async def test_abandoner_loses_extra_and_gets_credit_penalty() -> None:
+    """🔴 跑路判负（2026-10-06 用户定，第四节「本局按输计算」）。
+
+    之前他在赢的那一队就跟着算赢：+25、胜场 +1、拿赢的游戏币，只是额外扣 38。
+    """
     players_ = _six()
     runner = players_[0]
     conn = _FakeConn(set(players_), {p: 300 for p in players_}, {runner: 0})
     await ranked.settle(conn, _report("ranked", "team_a", players_, offline={runner}))
-    by_player = {w[0]: w[1] for w in conn.ranked_writes}
-    # 他在赢的那一队，但跑了：25（赢）− 38（额外罚）→ 300 − 13
-    assert by_player[runner] < by_player[players_[1]]
+    writes = {w[0]: w for w in conn.ranked_writes}
+    # 队伍赢了，他照样按输算：输的分（−25）再额外扣一份（−38）。
+    assert writes[runner][1] == 300 + ranked.score_delta(False, 300, 300) - _ABANDON_EXTRA
+    assert writes[runner][2] == 0, "跑路不算胜场"
+    assert writes[runner][3] == 0, "连胜清零"
+    assert writes[players_[1]][1] > 300, "队友照常算赢"
+    receipts = {r[1]: r for r in conn.reward_receipts}
+    assert receipts[runner][2] == "lose"
+    assert 3 <= receipts[runner][3] <= 8, "游戏币按输发"
     kinds = {e[1] for e in conn.events}
     assert "abandon" in kinds
     assert all(e[2] < 0 for e in conn.events if e[1] == "abandon")
+
+
+@pytest.mark.anyio
+async def test_abandoner_in_draw_is_judged_loss() -> None:
+    players_ = _six()
+    runner = players_[3]
+    conn = _FakeConn(set(players_), {p: 300 for p in players_}, {runner: 0})
+    await ranked.settle(conn, _report("ranked", "draw", players_, offline={runner}))
+    writes = {w[0]: w for w in conn.ranked_writes}
+    assert writes[runner][1] == 300 + ranked.score_delta(False, 300, 300) - _ABANDON_EXTRA
+    assert writes[players_[0]][1] == 300, "其他人平局不动分"
+    receipts = {r[1]: r for r in conn.reward_receipts}
+    assert receipts[runner][2] == "lose"
+    assert receipts[players_[0]][2] == "draw"
+
+
+@pytest.mark.anyio
+async def test_custom_room_never_touches_credit() -> None:
+    """🔴 自定房间不加也不扣信誉分（2026-10-06 用户定）：信誉分只管匹配和排位。"""
+    players_ = _six()
+    runner = players_[0]
+    conn = _FakeConn(set(players_), {p: 300 for p in players_}, {runner: 0})
+    await ranked.settle(conn, _report("custom", "team_a", players_, offline={runner}))
+    assert conn.credit_writes == [], "自定房间：跑路不扣、打完也不加"
+    assert conn.events == []
+    assert conn.ranked_writes == [] and conn.wallet_writes == [] and conn.reward_receipts == []
 
 
 @pytest.mark.anyio

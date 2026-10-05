@@ -94,6 +94,11 @@ const PrepScreenScript := preload("res://scenes/prep/PrepScreen.gd")
 # 而它必须盖住战斗加载。
 const RECONNECT_MODAL_ID := "reconnect_status"
 const RECONNECT_MODAL_PRIORITY := 90
+# 「退出对局」确认框（2026-10-06）。DialogService 的 100 盖在重连层 90 和摆放界面的设定 50 上面。
+const EXIT_MATCH_DIALOG_ID := "exit_match"
+const MatchExitPenalty := preload("res://scripts/multiplayer/MatchExitPenalty.gd")
+const ConfirmDialog := preload("res://ui/components/GloryConfirmDialog.gd")
+const GloryTheme := preload("res://ui/theme/GloryTheme.gd")
 # 迁移前这 0.72 的黑是浮层自己那块 ColorRect；现在由 ModalStack 的 backdrop 承担，
 # 数值逐字保持。
 const RECONNECT_BACKDROP_COLOR := Color(0.0, 0.0, 0.0, 0.72)
@@ -110,6 +115,11 @@ var _battle_settlement_generation := 0
 var _reconnect_overlay: Control
 var _reconnect_label: Label
 var _reconnect_cancel_button: Button
+# 「退出对局」确认框是从重连遮罩上点开的：重连成功（或凭证失效）时要把它收掉，
+# 免得人已经回到对局里，手一滑又点了「确认退出」。从设定里点开的不收。
+var _exit_dialog_from_reconnect := false
+# 排队时选的模式（casual / ranked），匹配成功入座时交给 NetworkService 记下。
+var _match_queue_mode := ""
 var _reconnect_cancel_navigation_check_hook := Callable()
 var _public_token_request_id := ""
 var _public_token_waiting_for_session := false
@@ -223,6 +233,10 @@ func _on_global_session_changed() -> void:
 		_show_reconnect_overlay()
 	else:
 		_hide_reconnect_overlay()
+		# 重连遮罩上点开的「退出对局」还开着：连回去了（或凭证失效回不去了）就收掉。
+		if _exit_dialog_from_reconnect:
+			_exit_dialog_from_reconnect = false
+			DialogService.close(EXIT_MATCH_DIALOG_ID)
 
 func _show_reconnect_overlay() -> void:
 	# 迁移前这里自己建 CanvasLayer(layer=100) 挂到 root（C-11 的 B1 之前）。
@@ -258,6 +272,9 @@ func _show_reconnect_overlay() -> void:
 func _create_reconnect_content() -> Control:
 	var root := Control.new()
 	root.name = "ReconnectStatusOverlay"
+	# 弹层不在游戏主题底下：不挂的话按钮是 Godot 默认的深灰底，在 0.72 的黑底上几乎看不见
+	# （2026-10-06 实拍发现；这个键现在是「退出对局」，断线时唯一的出口）。
+	root.theme = GloryTheme.get_theme()
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var center := CenterContainer.new()
@@ -276,7 +293,13 @@ func _create_reconnect_content() -> Control:
 	_reconnect_label.add_theme_color_override("font_color", Color(0.95, 0.92, 0.80))
 	box.add_child(_reconnect_label)
 	_reconnect_cancel_button = Button.new()
-	_reconnect_cancel_button.text = "取消并返回主菜单" if not LocaleManager.get_locale().begins_with("en") else "Cancel and return to menu"
+	# 对局已经开打：这个键就是「退出对局」（2026-10-06），点了先弹判负 / 扣分的确认框。
+	# 还在房间里没开打：照旧「取消并返回主菜单」，不罚、不弹框（座位直接放掉）。
+	var en := LocaleManager.get_locale().begins_with("en")
+	if _reconnect_match_started():
+		_reconnect_cancel_button.text = "Leave the match" if en else "退出对局"
+	else:
+		_reconnect_cancel_button.text = "Cancel and return to menu" if en else "取消并返回主菜单"
 	_reconnect_cancel_button.custom_minimum_size = Vector2(260, 48)
 	_reconnect_cancel_button.pressed.connect(_on_reconnect_cancel)
 	box.add_child(_reconnect_cancel_button)
@@ -332,9 +355,51 @@ func _on_reconnect_cancel() -> void:
 	# 守卫绑在「面板确实还在屏幕上」这个玩家可见事实上，而不是再加一份要同步的 bool。
 	if not ModalStack.has(RECONNECT_MODAL_ID):
 		return
+	if _reconnect_match_started():
+		# 开打了的局：这个键是「退出对局」，确认之前什么都不动 —— 后台照样在重连。
+		_exit_dialog_from_reconnect = true
+		request_exit_match("Keep reconnecting" if LocaleManager.get_locale().begins_with("en") else "继续重连")
+		return
 	NetworkService.cancel_reconnect()
 	GameState.team_mode = false
 	_hide_reconnect_overlay()
+	if OS.is_debug_build() and _reconnect_cancel_navigation_check_hook.is_valid():
+		reconnect_cancel_navigation_check_requested.emit()
+		return
+	_show_menu()
+
+
+func _reconnect_match_started() -> bool:
+	return bool(SaveManager.load_reconnect().get("match_started", false))
+
+
+# 「退出对局」（2026-10-06 用户要求：断线了除了重连可以直接退出，退出要显示惩罚、让玩家确认）。
+# 断线遮罩和摆放界面的设定都走这里；开新局被上一局拦住的那个在 NetworkService.allow_new_match。
+# 先弹确认框说判负、会不会扣分（MatchExitPenalty），确认了才退；退本身只在本机做，见
+# NetworkService.abandon_started_match 的注释。
+func request_exit_match(cancel_text: String = "") -> void:
+	var en := LocaleManager.get_locale().begins_with("en")
+	var mode := str(SaveManager.load_reconnect().get("mode", NetworkService.match_mode))
+	DialogService.confirm({
+		"request_id": EXIT_MATCH_DIALOG_ID,
+		"title": MatchExitPenalty.title(en),
+		"body": MatchExitPenalty.body(mode, en),
+		"intent": ConfirmDialog.Intent.DANGER,
+		"confirm_text": MatchExitPenalty.confirm_text(en),
+		"cancel_text": cancel_text if not cancel_text.is_empty() else ("Cancel" if en else "取消"),
+		"owner": self,
+		"on_result": _on_exit_match_result,
+	})
+
+
+func _on_exit_match_result(result: String, _request_id: String) -> void:
+	_exit_dialog_from_reconnect = false
+	if result != ConfirmDialog.RESULT_CONFIRMED:
+		return
+	NetworkService.abandon_started_match()
+	GameState.team_mode = false
+	_hide_reconnect_overlay()
+	# 同「取消并返回主菜单」那条：门禁在 debug 构建里把回主菜单这一步换成计数。
 	if OS.is_debug_build() and _reconnect_cancel_navigation_check_hook.is_valid():
 		reconnect_cancel_navigation_check_requested.emit()
 		return
@@ -863,6 +928,7 @@ func _enter_tutorial_from_startup() -> void:
 	_prep = scene.instantiate() as Control
 	_prep.startup_staged = true
 	_prep.battle_requested.connect(_on_battle_requested)
+	_prep.leave_match_requested.connect(request_exit_match.bind(""))
 	add_child(_prep)
 	await _prep.startup_ready
 	await _await_startup_frame()
@@ -1653,6 +1719,7 @@ func _show_party_queue(mode: String, host: bool) -> void:
 func _show_match_queue(mode: String, party_queue: bool = false, party_host: bool = false) -> void:
 	if ModalStack.has(MATCH_QUEUE_MODAL_ID):
 		return
+	_match_queue_mode = mode
 	var panel := MatchQueuePanel.new() as Control
 	panel.call("configure", mode, party_queue, party_host)
 	panel.connect("match_ready", _on_match_ready)
@@ -1676,7 +1743,7 @@ func _on_match_ready() -> void:
 	if NetworkService.team_active and NetworkService.remote_port != target_port:
 		NetworkService.disconnect_session()
 	elif NetworkService.team_active 			and NetworkService.state == NetworkService.SessionState.READY 			and NetworkService.team_local_slot < 0:
-		NetworkService.team_request_join_matched()
+		NetworkService.team_request_join_matched(_match_queue_mode)
 		_watch_matched_lobby()
 		return
 	if NetworkService.team_active and NetworkService.team_local_slot >= 0:
@@ -1693,7 +1760,7 @@ func _on_matched_session_changed() -> void:
 	match NetworkService.state:
 		NetworkService.SessionState.READY:
 			_disconnect_matched_handlers()
-			NetworkService.team_request_join_matched()
+			NetworkService.team_request_join_matched(_match_queue_mode)
 			_watch_matched_lobby()
 		NetworkService.SessionState.FAILED, NetworkService.SessionState.OFFLINE:
 			_disconnect_matched_handlers()
@@ -1792,6 +1859,7 @@ func _show_prep() -> void:
 	_set_chat_sound_suppressed(true)
 	_prep = _instantiate_screen("res://scenes/prep/PrepScreen.tscn")
 	_prep.battle_requested.connect(_on_battle_requested)
+	_prep.leave_match_requested.connect(request_exit_match.bind(""))
 	add_child(_prep)
 	SaveManager.save_run()
 
