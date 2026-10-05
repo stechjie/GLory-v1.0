@@ -101,6 +101,9 @@ class Settings(BaseSettings):
     # 并在那一行的 problem 列里写明原因）。生产上由 glory-backend.service 的 StateDirectory 建好并设置。
     media_dir: str = ""
 
+    # Same LiveKit JSON shape as the battle server; secret stays server-side.
+    party_voice_config_file: str = ""
+
     @property
     def is_dev(self) -> bool:
         return self.environment != "prod"

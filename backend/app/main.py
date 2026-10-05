@@ -21,7 +21,7 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app import (admin, admission, analytics, announcements, bans, db, mail, maintenance, matchmaking,
+from app import (admin, admission, analytics, announcements, bans, db, mail, maintenance, matchmaking, party,
                  realtime, seasons, single_instance, world_chat)
 from app.config import get_settings
 from app.routes import admin as admin_routes
@@ -35,6 +35,7 @@ from app.routes import friends as friends_routes
 from app.routes import loadout as loadout_routes
 from app.routes import mail as mail_routes
 from app.routes import matchmaking as matchmaking_routes
+from app.routes import party as party_routes
 from app.routes import me as me_routes
 from app.routes import presence as presence_routes
 from app.routes import profile as profile_routes
@@ -129,6 +130,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     postman = asyncio.create_task(mail.loop(mail.Postman.for_production()))
     # 匹配队列（app/matchmaking.py）。与 admission 同一个前提：进程内状态、单实例。
     # 重启 = 队列清空、待确认的对局作废 —— 高峰期别部署。
+    party.install(party.Parties())
     matcher = asyncio.create_task(matchmaking.loop(matchmaking.install(
         matchmaking.Matchmaker(matchmaking.hub_send))))
     # 赛季结算（app/seasons.py）：每 5 分钟看一眼有没有到点的赛季。
@@ -216,6 +218,7 @@ app.include_router(battle_report_routes.router)
 # 运营数据：游戏上报的事件（docs/运营数据.md 第六节）。
 app.include_router(event_routes.router)
 app.include_router(matchmaking_routes.router)
+app.include_router(party_routes.router)
 app.include_router(matchmaking_routes.me_router)
 app.include_router(ws_routes.router)
 # 网页运营后台（docs/运营后台设计.md）。只认后台自己的会话，不收玩家令牌。

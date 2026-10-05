@@ -58,6 +58,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 from app import ranked
+from app.party_match_selection import select as select_party_seats
 
 log = logging.getLogger("glory.matchmaking")
 
@@ -205,6 +206,12 @@ class Matchmaker:
         self._queues: dict[str, OrderedDict[uuid.UUID, _Waiter]] = {
             mode: OrderedDict() for mode in KNOWN_MODES
         }
+        # Group queue is separate so the original solo selector remains unchanged.
+        self._party_queues: dict[str, OrderedDict[uuid.UUID, _Waiter]] = {
+            mode: OrderedDict() for mode in KNOWN_MODES
+        }
+        self._party_of: dict[uuid.UUID, uuid.UUID] = {}
+        self._party_disconnected: set[uuid.UUID] = set()
         # player_id -> match_uid
         self._pending_of: dict[uuid.UUID, str] = {}
         self._pending: dict[str, _Pending] = {}
@@ -221,6 +228,8 @@ class Matchmaker:
 
     def join(self, player_id: uuid.UUID, mode: str) -> dict:
         """进队列。已经在待确认里的人**不许重排** —— 那会把自己从那一桌里摘掉。"""
+        if player_id in self._party_of:
+            return self.state_of(player_id)
         if player_id in self._pending_of:
             pending = self._pending[self._pending_of[player_id]]
             return found_message(pending.match_uid, pending.mode,
@@ -247,8 +256,42 @@ class Matchmaker:
         queue[player_id].sent_position = position
         return queued_message(position, mode)
 
+    def join_group(self, players: list[uuid.UUID], mode: str,
+                   ratings: dict[uuid.UUID, int] | None = None) -> dict:
+        """Queue a one to three person room as one indivisible entry."""
+        if mode not in OPEN_MODES or not 1 <= len(players) <= TEAM_SIDE_SIZE \
+                or len(players) != len(set(players)):
+            raise ValueError("队伍人数或模式无效")
+        if any(self.state_of(pid)["state"] != "idle" for pid in players):
+            raise ValueError("有队员已经在匹配中")
+        leader = players[0]
+        score = ratings or {}
+        self._party_queues[mode][leader] = _Waiter(
+            mode=mode, joined_at=self._now(), party=players.copy(),
+            rating=sum(int(score.get(pid, 0)) for pid in players))
+        for pid in players:
+            self._party_of[pid] = leader
+            self._party_disconnected.discard(pid)
+        return self.state_of(leader)
+
+    def leave_group(self, player_id: uuid.UUID) -> list[uuid.UUID]:
+        """Remove the whole queued room when any member cancels."""
+        leader = self._party_of.get(player_id)
+        if leader is None:
+            return []
+        for queue in self._party_queues.values():
+            waiter = queue.pop(leader, None)
+            if waiter is not None:
+                for pid in waiter.party:
+                    self._party_of.pop(pid, None)
+                    self._party_disconnected.discard(pid)
+                return waiter.party.copy()
+        return []
+
     def leave(self, player_id: uuid.UUID) -> dict:
         """主动退出。待确认阶段退出 = 拒绝，那一桌当场解散（见 _dissolve）。"""
+        if player_id in self._party_of:
+            self.leave_group(player_id)
         for queue in self._queues.values():
             queue.pop(player_id, None)
         match_uid = self._pending_of.get(player_id)
@@ -263,6 +306,13 @@ class Matchmaker:
         待确认阶段断线则当场解散：让另外五个人早点回队列，比干等 30 秒强。
         """
         now = self._now()
+        leader = self._party_of.get(player_id)
+        if leader is not None:
+            self._party_disconnected.add(player_id)
+            for queue in self._party_queues.values():
+                waiter = queue.get(leader)
+                if waiter is not None and waiter.dropped_at <= 0.0:
+                    waiter.dropped_at = now
         for queue in self._queues.values():
             waiter = queue.get(player_id)
             if waiter is not None and waiter.dropped_at <= 0.0:
@@ -311,6 +361,15 @@ class Matchmaker:
         assignment = self.assignment_for(player_id)
         if assignment is not None:
             return ready_message(assignment.match_uid, assignment.mode, assignment.team)
+        leader = self._party_of.get(player_id)
+        if leader is not None:
+            self._party_disconnected.discard(player_id)
+            for mode, queue in self._party_queues.items():
+                if leader in queue:
+                    waiter = queue[leader]
+                    if not any(pid in self._party_disconnected for pid in waiter.party):
+                        waiter.dropped_at = 0.0
+                    return queued_message(list(queue).index(leader) + 1, mode)
         for mode in KNOWN_MODES:
             if player_id in self._queues[mode]:
                 return queued_message(self.position_of(player_id, mode), mode)
@@ -343,6 +402,12 @@ class Matchmaker:
             if mode == RANKED and not ranked.window_state()["accepting"]:
                 continue
             while True:
+                party_seats = self._take_party_match(mode)
+                if party_seats is None:
+                    break
+                players, teams = party_seats
+                messages.extend(self._form_party(players, teams, mode, now))
+            while True:
                 group = self._take_group(mode, now)
                 if group is None:
                     break
@@ -366,6 +431,41 @@ class Matchmaker:
         except Exception:  # noqa: BLE001 - 一条发不出去不该让整轮 tick 挂掉
             log.warning("匹配消息发不出去 player=%s", player_id, exc_info=True)
             return 0
+
+    def _take_party_match(self, mode: str) -> tuple[list[uuid.UUID], list[int]] | None:
+        rooms = self._party_queues[mode]
+        active_rooms = [("room", pid, tuple(waiter.party))
+                        for pid, waiter in rooms.items() if waiter.dropped_at <= 0.0]
+        active_solos = [("solo", pid, (pid,))
+                        for pid, waiter in self._queues[mode].items()
+                        if waiter.dropped_at <= 0.0]
+        sides = select_party_seats(active_rooms, active_solos)
+        if sides is None:
+            return None
+        players: list[uuid.UUID] = []
+        teams: list[int] = []
+        for team, side in enumerate(sides):
+            for kind, leader, members in side:
+                (rooms if kind == "room" else self._queues[mode]).pop(leader)
+                if kind == "room":
+                    for pid in members:
+                        self._party_of.pop(pid, None)
+                        self._party_disconnected.discard(pid)
+                players.extend(members)
+                teams.extend([team] * len(members))
+        return players, teams
+
+    def _form_party(self, players: list[uuid.UUID], teams: list[int],
+                    mode: str, now: float) -> list[tuple[uuid.UUID, dict]]:
+        match_uid = new_match_uid()
+        members = [_Member(pid, team) for pid, team in zip(players, teams, strict=True)]
+        pending = _Pending(match_uid, mode, members, now + ACCEPT_TIMEOUT_SEC)
+        self._pending[match_uid] = pending
+        for member in members:
+            self._pending_of[member.player_id] = match_uid
+        from app import party
+        party.current().finish_for_match(players)
+        return [(pid, found_message(match_uid, mode, ACCEPT_TIMEOUT_SEC)) for pid in players]
 
     def _take_group(self, mode: str, now: float) -> list[uuid.UUID] | None:
         """按先来后到取一桌。**只取还连着的人。**
@@ -418,6 +518,21 @@ class Matchmaker:
                 if 0.0 < waiter.dropped_at <= now - QUEUE_GRACE_SEC:
                     queue.pop(pid, None)
                     log.info("排队者掉线超时移出队列 player=%s mode=%s", pid, mode)
+        for mode, queue in self._party_queues.items():
+            for leader, waiter in list(queue.items()):
+                if not 0.0 < waiter.dropped_at <= now - QUEUE_GRACE_SEC:
+                    continue
+                queue.pop(leader, None)
+                from app import party
+                room = party.current().of(leader)
+                if room is not None:
+                    party.current().mark_idle(room)
+                    asyncio.create_task(party.current().broadcast(room))
+                for pid in waiter.party:
+                    self._party_of.pop(pid, None)
+                    self._party_disconnected.discard(pid)
+                    messages.append((pid, idle_message("disconnected")))
+                log.info("组队掉线超时移出队列 leader=%s mode=%s", leader, mode)
         # 过期的分配（人一直没去连战斗服务器）。
         for pid, assignment in list(self._assignments.items()):
             if assignment.expires_at <= now:
