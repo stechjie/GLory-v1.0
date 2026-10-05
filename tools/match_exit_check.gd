@@ -33,7 +33,11 @@ const USER_FILES: PackedStringArray = [
 	"user://glory_reconnect.json",
 	"user://glory_reconnect.json.bak",
 	"user://glory_reconnect.json.tmp",
+	"user://glory_public_token.txt",
+	"user://glory_public_token.txt.bak",
+	"user://glory_public_token.txt.tmp",
 ]
+const DUMMY_PUBLIC_ID := "GATEXQ2345"
 
 
 # 只数「回主菜单」发生了几次（Main 的 debug 导航探针）。
@@ -127,8 +131,29 @@ func _case_abandon_clears_and_unlocks() -> void:
 		"「取消并返回主菜单」不该删开打了的局的凭证（那是「退出对局」的事，要先确认）")
 	_started_record("casual")
 	NetworkService.pending_abandon_token = "gate_should_be_cleared"
+	# 10-06 实测踩到：短码在服务器上还绑着旧座位，建房时服务器凭它拒（ACTIVE_MATCH_HINT）。
+	# 照 _rpc_team_create_room 开头那道闸的写法，用假的服务器表对一遍：退出前会拦、退出后不拦。
+	SaveManager.save_public_token(DUMMY_PUBLIC_ID)
+	SaveManager.save_public_token(DUMMY_PUBLIC_ID)   # 第二次写出 .bak —— 只写空串的话会从 .bak 读回来
+	NetworkService.public_token_id = DUMMY_PUBLIC_ID
+	var server_before := {"rooms": NetworkService._rooms, "tokens": NetworkService._token_seat,
+		"peers": NetworkService._peer_room, "public": NetworkService._public_token_seat}
+	NetworkService._rooms = {1: {"id": 1, "state": "prep", "peer_slot": {7: 0}, "run_over": false}}
+	NetworkService._token_seat = {"gate_old_seat": {"room_id": 1, "slot": 1}}
+	NetworkService._peer_room = {7: 1}
+	NetworkService._public_token_seat = {DUMMY_PUBLIC_ID: "gate_old_seat"}
+	_h.expect(_server_guard_blocks(SaveManager.load_public_token()), "guard_fixture_broken",
+		"夹具没搭好：退出前服务器就该凭短码拦住建房")
 	NetworkService.abandon_started_match()
 	_h.expect(SaveManager.load_reconnect().is_empty(), "abandon_kept_credentials", "退出对局之后重连凭证还在 —— 开不了新局")
+	_h.expect(SaveManager.load_public_token().is_empty() and NetworkService.public_token_id.is_empty(),
+		"abandon_kept_public_id", "退出对局之后短码还在 —— 服务器凭它认出上一局没打完，建房被拒")
+	_h.expect(not _server_guard_blocks(SaveManager.load_public_token()), "server_still_blocks",
+		"退出对局之后，建房仍会被服务器以「正在对局中」拒掉")
+	NetworkService._rooms = server_before.rooms
+	NetworkService._token_seat = server_before.tokens
+	NetworkService._peer_room = server_before.peers
+	NetworkService._public_token_seat = server_before.public
 	_h.expect(NetworkService.pending_abandon_token.is_empty(), "abandon_kept_pending_token", "退出对局之后还挂着待发的 abandon")
 	var ok: bool = await NetworkService.allow_new_match()
 	_h.expect(ok and not DialogService.is_open("active_match_guard"), "abandon_did_not_unlock", "退出对局之后开新局还被拦")
@@ -340,6 +365,12 @@ func _case_history_judged_loss() -> void:
 
 
 # --- 工具 --------------------------------------------------------------------------
+
+# 同 NetworkService._rpc_team_create_room / join_room / join_matched 开头那道闸：
+# 客户端带来的短码在服务器上指向一个没打完的对局，就拒。team_join 带的短码是从磁盘读的。
+func _server_guard_blocks(public_id: String) -> bool:
+	var token := str(NetworkService._public_token_seat.get(NetworkService._sanitize_public_id(public_id), ""))
+	return not NetworkService._active_match_for_token(token).is_empty()
 
 func _started_record(mode: String) -> void:
 	SaveManager.clear_reconnect()

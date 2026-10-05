@@ -238,6 +238,10 @@ func save_public_token(token_id: String) -> void:
 func load_public_token() -> String:
 	return _read_with_fallback(PUBLIC_TOKEN_PATH).strip_edges().to_upper()
 
+# 连 .bak/.tmp 一起删。不能写空串代替：_read_with_fallback 读到空的主文件会退回 .bak，把旧短码读回来。
+func clear_public_token() -> void:
+	_remove_all_variants(PUBLIC_TOKEN_PATH)
+
 # 合并短时间内的多次存档请求（拖拽/连买会连续触发 save_run），
 # 真正的磁盘写入最多每 SAVE_DEBOUNCE_SEC 一次。
 func save_run() -> void:

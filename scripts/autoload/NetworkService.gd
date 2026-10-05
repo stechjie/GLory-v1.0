@@ -4632,9 +4632,17 @@ func cancel_reconnect() -> void:
 #   · 不能拿 _rpc_abandon_seat 去说「我退了」：它会把座位上的账号信息清掉，结算时这个位置
 #     被当成 AI，跑路的人反而一分不扣。
 # 重连凭证一删，allow_new_match() 就读不到上一局，可以开新局了。
+#
+# 🔴 短码也要删（10-06 实测踩到：退出了还是开不了房，提示「正在对局中，请进行游戏重连」）：
+# 短码在战斗服务器上还绑着旧座位，建房 / 进房 / 匹配入座时服务器凭它认出「这人有一局没打完」
+# 就拒（_rpc_team_create_room 等开头那道 ACTIVE_MATCH_HINT）。team_join 每次都从磁盘读短码，
+# 所以内存和磁盘都要清。没有短码是正常状态，玩家要用时在主菜单再生成一个。
+# 不发 public_token_changed：Main 会把它当成「生成短码」的结果。
 func abandon_started_match() -> void:
 	AnalyticsService.match_left("user_abandon")
 	SaveManager.clear_reconnect()
+	SaveManager.clear_public_token()
+	public_token_id = ""
 	pending_abandon_token = ""
 	reset()
 
