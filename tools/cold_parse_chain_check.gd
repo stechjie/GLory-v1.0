@@ -122,6 +122,11 @@ const TARGETS: Array[Dictionary] = [
 	#   （`prep_1005` 覆盖第 2/3/4 条，`touch_scroll` 覆盖第 1 条。）
 	{"kind": "script", "path": "res://tools/prep_1005_check.gd"},
 	{"kind": "script", "path": "res://tools/touch_scroll_check.gd"},
+	# ★ 10.06 新增：摆放界面头像放大 + 点开卡片（不看留言 / 不听语音）。
+	#   PrepUI.gd 已在上面；新卡片、聊天记录的屏蔽、新门禁按同一条教训单列。
+	{"kind": "script", "path": "res://scenes/prep/panels/PrepSeatCard.gd"},
+	{"kind": "script", "path": "res://scripts/multiplayer/RoomChatLog.gd"},
+	{"kind": "script", "path": "res://tools/prep_seat_card_check.gd"},
 ]
 
 

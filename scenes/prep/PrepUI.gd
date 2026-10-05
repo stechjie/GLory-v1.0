@@ -123,6 +123,15 @@ const TEAM_MERCS_MODAL_PRIORITY := 40
 # 两者互斥（开一个必关另一个），永远不会同时在栈上，同优先级不产生歧义。
 const MERC_PICKER_MODAL_ID := "mercenary_picker"
 const MERC_PICKER_MODAL_PRIORITY := 40
+# 左上角准备头像（2026-10-06 用户要求放大 + 点开看名字、不看留言、不听语音）。
+# 原来 40 像素、上下两排；放大到 56 之后两排会压到下面的「羁绊 / 宝藏」栏，所以改成一排：
+# 左边三个是自己队、右边三个是对面，中间空一段。
+const READY_AVATAR_SIZE := 56.0
+const READY_AVATAR_GAP := 4
+const READY_TEAM_GAP := 18
+const SEAT_CARD_MODAL_ID := "prep_seat_card"
+const SEAT_CARD_MODAL_PRIORITY := 40
+const PrepSeatCard := preload("res://scenes/prep/panels/PrepSeatCard.gd")
 const PVP_WARNING_DWELL_SEC := 2.0
 const PVP_WARNING_FADE_SEC := 0.18
 
@@ -1332,6 +1341,9 @@ func _build_chat_entry() -> void:
 	_build_chat_panel()
 	if not NetworkService.room_chat_log.entry_added.is_connected(_on_prep_chat_logged):
 		NetworkService.room_chat_log.entry_added.connect(_on_prep_chat_logged)
+	# 点头像「不看留言 / 恢复看留言」之后，那个人之前说的也要马上藏起来 / 放回来。
+	if not NetworkService.room_chat_log.mutes_changed.is_connected(_render_chat_record):
+		NetworkService.room_chat_log.mutes_changed.connect(_render_chat_record)
 	# The room log survives scene rebuilds; show the same conversation here on every round.
 	_render_chat_record()
 	NetworkService.room_chat_log.mark_all_seen()
@@ -1657,6 +1669,8 @@ func _teardown_chat_entry() -> void:
 	# 由 PrepScreen._exit_tree 调用 —— 生命周期钩子只在那一层有。
 	if NetworkService.room_chat_log.entry_added.is_connected(_on_prep_chat_logged):
 		NetworkService.room_chat_log.entry_added.disconnect(_on_prep_chat_logged)
+	if NetworkService.room_chat_log.mutes_changed.is_connected(_render_chat_record):
+		NetworkService.room_chat_log.mutes_changed.disconnect(_render_chat_record)
 	if _voice_controls != null:
 		_voice_controls.teardown()
 
@@ -2098,41 +2112,74 @@ func show_message(text: String) -> void:
 
 
 func _build_ready_indicator() -> void:
-	# 3v3 准备状态：上排=敌队 3 个、下排=自己队 3 个（自己队永远在下，和战斗演示一致）。
-	# _ready_dots 按「位置」存头像徽章：0-2=上排左中右、3-5=下排左中右；刷新时再映射到对应 slot。
-	_ready_indicator = VBoxContainer.new()
+	# 3v3 准备状态：一排六个头像，左边三个=自己队、右边三个=对面（常量那里有为什么是一排）。
+	# _ready_dots 按「位置」存头像徽章：0-2=自己队、3-5=对面；刷新时再映射到对应 slot。
+	# 点头像弹 PrepSeatCard：名字 + 不看留言 + 不听语音。
+	_ready_indicator = HBoxContainer.new()
 	# (7) Ready checks live in the empty TOP-LEFT corner, not the right side.
 	_ready_indicator.anchor_left = 0.0
 	_ready_indicator.anchor_right = 0.0
 	_ready_indicator.anchor_top = 0.0
 	_ready_indicator.anchor_bottom = 0.0
 	_ready_indicator.offset_left = 16
-	_ready_indicator.offset_right = 16 + 128
+	_ready_indicator.offset_right = 16 + READY_AVATAR_SIZE * 6 + READY_AVATAR_GAP * 4 + READY_TEAM_GAP
 	_ready_indicator.offset_top = 8
-	_ready_indicator.offset_bottom = 8 + 84
-	_ready_indicator.add_theme_constant_override("separation", 4)
+	_ready_indicator.offset_bottom = 8 + READY_AVATAR_SIZE
+	_ready_indicator.add_theme_constant_override("separation", READY_AVATAR_GAP)
 	_ready_indicator.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ready_indicator.z_index = 25
 	add_child(_ready_indicator)
 	SafeArea.track(_ready_indicator)
 	_ready_dots = []
-	for row in 2:
-		var row_box := HBoxContainer.new()
-		row_box.alignment = BoxContainer.ALIGNMENT_BEGIN
-		row_box.add_theme_constant_override("separation", 4)
-		row_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_ready_indicator.add_child(row_box)
-		for col in 3:
-			var badge := _create_ready_avatar_badge()
-			row_box.add_child(badge)
-			_ready_dots.append(badge)
+	for pos in 6:
+		if pos == 3:
+			var team_gap := Control.new()
+			team_gap.custom_minimum_size = Vector2(READY_TEAM_GAP - READY_AVATAR_GAP, 0)
+			team_gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			_ready_indicator.add_child(team_gap)
+		var badge := _create_ready_avatar_badge()
+		badge.gui_input.connect(_on_ready_badge_input.bind(badge))
+		_ready_indicator.add_child(badge)
+		_ready_dots.append(badge)
 	_refresh_ready_indicator()
+
+
+# 点（鼠标或手指）头像：弹出这个座位的卡片。再点同一个或点别处就关。
+func _on_ready_badge_input(event: InputEvent, badge: Control) -> void:
+	var pressed := (event is InputEventMouseButton and (event as InputEventMouseButton).pressed
+			and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT) \
+		or (event is InputEventScreenTouch and (event as InputEventScreenTouch).pressed)
+	if not pressed or not badge.has_meta("slot"):
+		return
+	badge.accept_event()
+	open_seat_card(int(badge.get_meta("slot")), badge)
+
+
+func open_seat_card(slot: int, badge: Control) -> void:
+	if ModalStack.has(SEAT_CARD_MODAL_ID):
+		ModalStack.pop(SEAT_CARD_MODAL_ID, ModalStack.REASON_PROGRAMMATIC)
+	var card := PrepSeatCard.new()
+	card.setup(slot)
+	# 贴在头像下面；靠右的头像也不能让卡片伸出屏幕。
+	var rect := badge.get_global_rect()
+	var view_w := get_viewport_rect().size.x
+	card.position = Vector2(clampf(rect.position.x, 8.0, maxf(8.0, view_w - PrepSeatCard.CARD_WIDTH - 8.0)),
+		rect.end.y + 8.0)
+	ModalStack.push(card, {
+		"id": SEAT_CARD_MODAL_ID,
+		"owner": self,
+		"priority": SEAT_CARD_MODAL_PRIORITY,
+		"dismiss_on_backdrop": true,
+		# 同佣兵选择那张：小卡片，不把整个画面压暗。
+		"backdrop_color": Color.TRANSPARENT,
+	})
 
 
 func _create_ready_avatar_badge() -> Control:
 	var badge := Control.new()
-	badge.custom_minimum_size = Vector2(40, 40)
-	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge.custom_minimum_size = Vector2(READY_AVATAR_SIZE, READY_AVATAR_SIZE)
+	badge.mouse_filter = Control.MOUSE_FILTER_STOP
+	badge.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 
 	# 当前默认框的圆心是不透明的，和主菜单一样先画框，再把头像裁圆后画在上面。
 	# 头像缩进在金环内，不会盖住框；未来换框只需更新 avatars.json。
@@ -2145,18 +2192,20 @@ func _create_ready_avatar_badge() -> Control:
 	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	badge.add_child(frame)
 
+	# 头像缩进与圆角按尺寸算（原来写死 40 像素时的 7 / 26），放大之后比例不变。
+	var inset := roundi(READY_AVATAR_SIZE * 0.175)
 	var mask := Panel.new()
 	mask.name = "PortraitMask"
 	mask.clip_children = CanvasItem.CLIP_CHILDREN_ONLY
 	mask.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	mask.offset_left = 7
-	mask.offset_top = 7
-	mask.offset_right = -7
-	mask.offset_bottom = -7
+	mask.offset_left = inset
+	mask.offset_top = inset
+	mask.offset_right = -inset
+	mask.offset_bottom = -inset
 	mask.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var circle := StyleBoxFlat.new()
 	circle.bg_color = Color.WHITE
-	circle.set_corner_radius_all(26)
+	circle.set_corner_radius_all(roundi(READY_AVATAR_SIZE))
 	mask.add_theme_stylebox_override("panel", circle)
 	badge.add_child(mask)
 
@@ -2171,14 +2220,14 @@ func _create_ready_avatar_badge() -> Control:
 	var check := Label.new()
 	check.name = "ReadyCheck"
 	check.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	check.offset_left = -20
-	check.offset_top = -22
+	check.offset_left = -26
+	check.offset_top = -28
 	check.offset_right = 2
 	check.offset_bottom = 0
 	check.text = "✓"
 	check.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	check.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	check.add_theme_font_size_override("font_size", 19)
+	check.add_theme_font_size_override("font_size", 24)
 	check.add_theme_color_override("font_color", Color(0.34, 1.0, 0.28))
 	check.add_theme_color_override("font_outline_color", Color(0.02, 0.08, 0.01, 1.0))
 	check.add_theme_constant_override("outline_size", 4)
@@ -2203,14 +2252,15 @@ func _refresh_ready_indicator() -> void:
 		return
 	var states: Array = NetworkService.team_slot_states
 	var ready_arr: Array = NetworkService.team_ready
-	# 自己队永远在下排：team_local_slot<3=火队(0,1,2)、≥3=水队(3,4,5)；-1(没入队)默认火队在下。
+	# 自己队永远在左边：team_local_slot<3=火队(0,1,2)、≥3=水队(3,4,5)；-1(没入队)默认火队在左。
 	var local_fire := NetworkService.team_local_slot < 3
 	var own_slots: Array = [0, 1, 2] if local_fire else [3, 4, 5]
 	var enemy_slots: Array = [3, 4, 5] if local_fire else [0, 1, 2]
-	var pos_to_slot: Array = enemy_slots + own_slots   # 位置 0-2=上排(敌)、3-5=下排(自己)
+	var pos_to_slot: Array = own_slots + enemy_slots   # 位置 0-2=自己队、3-5=对面
 	for pos in 6:
 		var badge: Control = _ready_dots[pos]
 		var slot: int = int(pos_to_slot[pos])
+		badge.set_meta("slot", slot)
 		var st := str(states[slot]) if slot < states.size() else "empty"
 		badge.visible = st != "empty"
 		if st == "empty":

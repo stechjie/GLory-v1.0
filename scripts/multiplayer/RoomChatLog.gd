@@ -18,6 +18,8 @@ extends RefCounted
 const ChatPhrases := preload("res://scripts/multiplayer/ChatPhrases.gd")
 
 signal entry_added(entry: Dictionary)
+# 屏蔽名单变了（摆放界面点头像「屏蔽留言」）。显示记录的界面据此重画，被屏蔽的人的旧消息一起藏起来。
+signal mutes_changed
 
 # 一局六个人（战斗服务器每人 10 秒最多放行 3 条）正常聊不到这么多；超了从最老的丢。
 const MAX_ENTRIES := 100
@@ -33,9 +35,15 @@ const TAG_ENEMY_EN := "[Enemy] "
 var room_id := 0
 var _entries: Array[Dictionary] = []
 var _next_seq := 1
+# 不看谁的留言（2026-10-06，摆放界面点头像）。键同 VoiceService 的语音屏蔽：
+# 有好友码按 "code:好友码"（换座位跟着人走），资料还没到时按 "slot:座位号"。
+# 只存内存：整个游戏进程内有效（骚扰的人下一局还可能分到一起），重开游戏清空；
+# 座位号那条离开房间时清掉（下一个房间同一个座位是别人）。
+var _muted_keys: Dictionary = {}
 
 
 # 收到一条就记一条。room 变了（进了另一个房间）先清掉上一间的。
+# 被屏蔽的人说的照样记（取消屏蔽后能看回来），但不发 entry_added —— 界面上不冒出来。
 func add(current_room_id: int, entry: Dictionary) -> void:
 	if entry.is_empty():
 		return
@@ -48,20 +56,69 @@ func add(current_room_id: int, entry: Dictionary) -> void:
 	_entries.append(entry)
 	while _entries.size() > MAX_ENTRIES:
 		_entries.pop_front()
+	if _entry_muted(entry):
+		entry["seen"] = true
+		return
 	entry_added.emit(entry)
 
 
 func clear() -> void:
 	room_id = 0
 	_entries.clear()
+	_forget_seat_mutes()
 
 
-# 当前房间的记录（旧到新）。房间号对不上时是空的 —— 记录属于上一间。
+# 当前房间的记录（旧到新），不含被屏蔽的人说的。房间号对不上时是空的 —— 记录属于上一间。
 # 返回的是新数组、同一批字典：界面改 seen 标记会落回记录里。
 func entries_for(current_room_id: int) -> Array[Dictionary]:
 	if current_room_id != room_id:
 		return []
-	return _entries.duplicate()
+	var out: Array[Dictionary] = []
+	for entry in _entries:
+		if not _entry_muted(entry):
+			out.append(entry)
+	return out
+
+
+# --- 屏蔽留言 ------------------------------------------------------------------------
+
+# 认人用的键。同 VoiceService.member_key：有好友码按人，没有按座位。
+static func person_key(slot: int, profiles: Dictionary) -> String:
+	var identity: Dictionary = profiles.get(slot, profiles.get(str(slot), {}))
+	var code := str(identity.get("friend_code", "")).strip_edges()
+	return ("code:" + code) if not code.is_empty() else "slot:%d" % slot
+
+
+func is_muted(slot: int, profiles: Dictionary) -> bool:
+	return _muted_keys.has(person_key(slot, profiles)) or _muted_keys.has("slot:%d" % slot)
+
+
+# 按人和座位号各记一条：资料到之前收到的那几条记的是座位号，也要一起藏起来。
+func set_muted(slot: int, profiles: Dictionary, muted: bool) -> void:
+	if muted == is_muted(slot, profiles):
+		return
+	var keys := [person_key(slot, profiles), "slot:%d" % slot]
+	for key in keys:
+		if muted:
+			_muted_keys[key] = true
+		else:
+			_muted_keys.erase(key)
+	mutes_changed.emit()
+
+
+func _entry_muted(entry: Dictionary) -> bool:
+	var who := str(entry.get("who", ""))
+	return not who.is_empty() and _muted_keys.has(who)
+
+
+func _forget_seat_mutes() -> void:
+	var changed := false
+	for key in _muted_keys.keys():
+		if str(key).begins_with("slot:"):
+			_muted_keys.erase(key)
+			changed = true
+	if changed:
+		mutes_changed.emit()
 
 
 # 「看过」按条记，不用一个游标：摆放界面飘出来的新消息不能顺带把看战斗时收到、
@@ -97,6 +154,8 @@ static func make_entry(slot: int, phrase_id: int, text: String, team_only: bool,
 		return {}
 	return {
 		"slot": slot,
+		# 屏蔽留言按这个认人（收到那一刻记下，之后换座位也认得出）。自己说的是空串 —— 屏蔽不到自己。
+		"who": "" if slot == local_slot else person_key(slot, profiles),
 		"name": speaker_name(slot, local_slot, profiles, self_profile, en),
 		"mine": slot == local_slot,
 		"enemy": local_slot >= 0 and slot >= 0
