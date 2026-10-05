@@ -1,0 +1,35 @@
+{
+ "meshes": [
+  {
+   "name": "output_unwrapped",
+   "fit_residual": 4.636077568354926e-07,
+   "vertices_before": 25568,
+   "vertices_after": 15017,
+   "triangles_before": 13198,
+   "triangles_after": 6326
+  }
+ ],
+ "skins": [
+  {
+   "joints": 54,
+   "bind_spread": 5.412769861212752e-07,
+   "rebased": false,
+   "M": null
+  }
+ ],
+ "textures": [
+  {
+   "material": "Material.002",
+   "index": 0,
+   "albedo": "crimson_m0_albedo.png",
+   "albedo_size": [
+    1024,
+    1024
+   ],
+   "normal": "crimson_m0_normal.png"
+  }
+ ],
+ "materials": [
+  "Material.002"
+ ]
+}

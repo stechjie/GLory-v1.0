@@ -1,0 +1,85 @@
+{
+ "meshes": [
+  {
+   "name": "output_unwrapped",
+   "fit_residual": 3.6471075509623467e-07,
+   "vertices_before": 11816,
+   "vertices_after": 11827,
+   "triangles_before": 5560,
+   "triangles_after": 5560
+  },
+  {
+   "name": "output_unwrapped.001",
+   "fit_residual": 1.903091017814412e-07,
+   "vertices_before": 11503,
+   "vertices_after": 3508,
+   "triangles_before": 6424,
+   "triangles_after": 1554
+  }
+ ],
+ "skins": [
+  {
+   "joints": 1,
+   "bind_spread": 0.0,
+   "rebased": true,
+   "M": [
+    [
+     -0.859873,
+     0.510507,
+     0.0,
+     -1.255074
+    ],
+    [
+     -0.510507,
+     -0.859873,
+     0.0,
+     1.779216
+    ],
+    [
+     0.0,
+     -0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ]
+  },
+  {
+   "joints": 27,
+   "bind_spread": 3.0195112841186955e-07,
+   "rebased": false,
+   "M": null
+  }
+ ],
+ "textures": [
+  {
+   "material": "Material.001",
+   "index": 0,
+   "albedo": "armbreaker_m0_albedo.png",
+   "albedo_size": [
+    1024,
+    1024
+   ],
+   "normal": "armbreaker_m0_normal.png"
+  },
+  {
+   "material": "Material.002",
+   "index": 1,
+   "albedo": "armbreaker_m1_albedo.png",
+   "albedo_size": [
+    1024,
+    1024
+   ],
+   "normal": "armbreaker_m1_normal.png"
+  }
+ ],
+ "materials": [
+  "Material.001",
+  "Material.002"
+ ]
+}

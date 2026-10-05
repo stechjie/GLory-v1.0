@@ -1,6 +1,6 @@
 extends Node
-## Race refinement contract (dark, undead; 8 units each). Headless:
-##   Godot --headless --path <project> res://tools/dark_refinement_contract_check.tscn -- [--race dark|undead] [--out <report.json>] [--require-integrated]
+## Race refinement contract (dark, undead, crimson; 8 units each). Headless:
+##   Godot --headless --path <project> res://tools/dark_refinement_contract_check.tscn -- [--race dark|undead|crimson] [--out <report.json>] [--require-integrated]
 ##   ... -- --race <race> --write-baseline   (once per race, before refinement: hash every file the original wrappers load)
 ## Original/refined paths come from scenes/debug/DarkRaceRefinementPreview.gd (RACES), the same table the preview uses.
 ##
@@ -9,6 +9,10 @@ extends Node
 ## wears the unit's refined material; every action skeleton carries one rigidly skinned
 ## crafted-parts surface bound to its own bones (also in the prep screen's idle-only
 ## instancing); refined textures stay within budget.
+## GLB races (crimson): the refined scene instances the refined GLB (crimson_refine.py) instead;
+## skeletons, bone rests and every clip still equal the original's, every surface wears a race
+## body material, the mesh stays within the vertex budget and its bounds stand upright on the
+## ground (crimson_refine.py --audit proves the GLB-level identity of nodes/skins/animations).
 ## It does not judge looks: rendered captures do that.
 
 const CheckHarness := preload("res://tools/CheckHarness.gd")
@@ -18,6 +22,8 @@ const BODY_SHADERS := ["res://assets/models/units/dark_refined/shared/dark_body.
 	"res://assets/models/units/dark_refined/shared/dark_body_two_sided.gdshader"]
 const SHARED_SHADERS := ["res://shaders/character_toon.gdshader", "res://shaders/character_outline.gdshader"]
 const MAX_TEXTURE_EDGE := 1024
+# data/presentation/model_asset_budgets.json, unit tier: visible vertices hard 20000.
+const MAX_GLB_VERTICES := 20000
 
 var _h: CheckHarness
 var _race := "dark"
@@ -58,7 +64,10 @@ func _ready() -> void:
 	await _check_shared()
 	var defs := _unit_defs()
 	for unit_id in originals():
-		await _check_unit(unit_id, defs.get(unit_id, {}), "--require-integrated" in args)
+		if Races.RACES[_race].get("glb", false):
+			await _check_glb_unit(unit_id, defs.get(unit_id, {}), "--require-integrated" in args)
+		else:
+			await _check_unit(unit_id, defs.get(unit_id, {}), "--require-integrated" in args)
 	var out_index := args.find("--out")
 	if out_index >= 0 and out_index + 1 < args.size():
 		var file := FileAccess.open(args[out_index + 1], FileAccess.WRITE)
@@ -167,6 +176,111 @@ func _check_unit(unit_id: String, def: Dictionary, require_integrated: bool) -> 
 	if prep != null:
 		prep.queue_free()
 	await get_tree().process_frame
+
+
+func _check_glb_unit(unit_id: String, def: Dictionary, require_integrated: bool) -> void:
+	var row := {"original": originals()[unit_id], "refined": refined_path(unit_id)}
+	_report.units[unit_id] = row
+	var baseline: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(baseline_path())).get(unit_id, {})
+	var changed: Array = []
+	for path in baseline:
+		if FileAccess.get_sha256(path) != str(baseline[path]):
+			changed.append(path)
+	_h.item()
+	_h.expect(not baseline.is_empty() and changed.is_empty(), "original_changed", "%s 原资源被改动：%s" % [unit_id, changed])
+	row["original_files_verified"] = baseline.size()
+	_h.item()
+	var mapped := str(def.get("model", ""))
+	row["data_model"] = mapped
+	if require_integrated:
+		_h.expect(mapped == refined_path(unit_id), "not_integrated", "%s 正式 model 未指向精修场景：%s" % [unit_id, mapped])
+	var glb := "%s/%s_refined.glb" % [refined_dir(unit_id), unit_id]
+	_h.item()
+	_h.expect(FileAccess.get_file_as_string(refined_path(unit_id)).contains('path="%s"' % glb), "not_inherited",
+		"%s 精修场景没有实例化精修 GLB" % unit_id)
+	var original := await _spawn(originals()[unit_id])
+	var refined := await _spawn(refined_path(unit_id))
+	_h.item()
+	if not _h.expect(original != null and refined != null, "load_failed", "%s 场景加载失败" % unit_id):
+		return
+	var a := _skeletons(original)
+	var b := _skeletons(refined)
+	_h.item()
+	_h.expect(a.size() == b.size() and a.size() > 0, "skeleton_count", "%s 骨架数 原%d 新%d" % [unit_id, a.size(), b.size()])
+	for i in mini(a.size(), b.size()):
+		var sa := a[i] as Skeleton3D
+		var sb := b[i] as Skeleton3D
+		_h.item()
+		_h.expect(sa.get_bone_count() == sb.get_bone_count(), "skeleton_mismatch", "%s 骨数不同" % unit_id)
+		var rest_delta := 0.0
+		for bone in mini(sa.get_bone_count(), sb.get_bone_count()):
+			rest_delta = maxf(rest_delta, (sa.get_bone_rest(bone).origin - sb.get_bone_rest(bone).origin).length())
+		_h.item()
+		_h.expect(rest_delta < 1e-6, "rest_changed", "%s 骨骼 rest 改变 %.6f" % [unit_id, rest_delta])
+	var clips_a := _clips(original)
+	var clips_b := _clips(refined)
+	_h.item()
+	_h.expect(clips_a.size() == clips_b.size() and not clips_a.is_empty() and _clip_signatures(clips_a) == _clip_signatures(clips_b),
+		"clips_changed", "%s 动作片段（名/长/循环/轨道）不同" % unit_id)
+	row["clips"] = clips_b.size()
+	var vertices := 0
+	var surfaces := 0
+	for found in refined.find_children("*", "MeshInstance3D", true, false):
+		var mesh_node := found as MeshInstance3D
+		for s in mesh_node.mesh.get_surface_count():
+			surfaces += 1
+			vertices += mesh_node.mesh.surface_get_array_len(s)
+			var material := mesh_node.get_active_material(s) as ShaderMaterial
+			_h.item()
+			if not _h.expect(material != null and material.shader.resource_path in BODY_SHADERS, "material_route",
+					"%s %s surface %d 未使用种族 shader" % [unit_id, mesh_node.name, s]):
+				continue
+			var albedo := material.get_shader_parameter("albedo_texture") as Texture2D
+			_h.item()
+			_h.expect(albedo != null and albedo.resource_path.contains("/%s_refined/" % _race) and maxi(albedo.get_width(), albedo.get_height()) <= MAX_TEXTURE_EDGE,
+				"texture_budget", "%s 精修贴图缺失或超过 %d" % [unit_id, MAX_TEXTURE_EDGE])
+			if albedo != null:
+				_h.item()
+				_h.expect(albedo.get_image().get_format() in [Image.FORMAT_DXT1, Image.FORMAT_ETC2_RGB8, Image.FORMAT_ETC], "albedo_alpha",
+					"%s 精修贴图仍带 alpha" % unit_id)
+	row["vertices"] = vertices
+	row["surfaces"] = surfaces
+	_h.item()
+	_h.expect(vertices > 0 and vertices <= MAX_GLB_VERTICES, "vertex_budget", "%s 顶点 %d 超过 %d" % [unit_id, vertices, MAX_GLB_VERTICES])
+	# BattleRenderer centres on the pre-tree mesh AABB: it must stand upright on the ground.
+	var bounds := _pretree_bounds(load(refined_path(unit_id)).instantiate())
+	row["bounds"] = [bounds.position.y, bounds.size.y]
+	_h.item()
+	_h.expect(absf(bounds.position.y) < 0.05 and bounds.size.y > 1.5 and bounds.size.y < 3.0, "bounds_not_upright",
+		"%s 包围盒不是站立在地面上：%s" % [unit_id, bounds])
+	original.queue_free()
+	refined.queue_free()
+	await get_tree().process_frame
+
+
+## Name, length, loop and track count; the player path differs (original vs refined root name).
+func _clip_signatures(clips: Array) -> Array:
+	var out: Array = []
+	for clip in clips:
+		out.append(str(clip).get_slice("|", 1) + "|" + "|".join(str(clip).split("|").slice(2)))
+	out.sort()
+	return out
+
+
+func _pretree_bounds(root: Node3D) -> AABB:
+	var bounds := AABB()
+	var stack: Array = [[root, Transform3D.IDENTITY]]
+	while not stack.is_empty():
+		var item: Array = stack.pop_back()
+		var node: Node = item[0]
+		var xform: Transform3D = item[1]
+		if node is MeshInstance3D:
+			var box: AABB = xform * (node as MeshInstance3D).get_aabb()
+			bounds = box if bounds.size == Vector3.ZERO else bounds.merge(box)
+		for child in node.get_children():
+			stack.append([child, xform * (child as Node3D).transform if child is Node3D else xform])
+	root.free()
+	return bounds
 
 
 func _spawn(path: String, idle_only := false) -> Node3D:

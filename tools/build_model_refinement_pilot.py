@@ -218,8 +218,9 @@ def source_fingerprint(rows: list[dict], identity: dict) -> str:
 
 
 def resolve_identity(args: argparse.Namespace, source: Path) -> tuple[str, dict]:
-    if not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", args.unit_id):
-        raise RuntimeError("--unit-id must be an exact lower-case unit identifier.")
+    # Exact race_units.json id; some are capitalised (crimson "Icey").
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", args.unit_id):
+        raise RuntimeError("--unit-id must be an exact unit identifier (letters, digits, underscore).")
     if args.unit_id != "god_guard" and (not args.preview or args.preview.removeprefix("res://") == PREVIEW or not args.old_model or not args.new_model):
         raise RuntimeError("A non-god_guard target requires its own explicit --preview, --old-model and --new-model; the default guardian preview cannot prove another character.")
     preview = (args.preview or PREVIEW).removeprefix("res://")

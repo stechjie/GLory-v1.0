@@ -1,0 +1,35 @@
+{
+ "meshes": [
+  {
+   "name": "output_unwrapped",
+   "fit_residual": 4.870418322778119e-06,
+   "vertices_before": 15447,
+   "vertices_after": 15448,
+   "triangles_before": 7048,
+   "triangles_after": 7048
+  }
+ ],
+ "skins": [
+  {
+   "joints": 36,
+   "bind_spread": 4.198230981744544e-06,
+   "rebased": false,
+   "M": null
+  }
+ ],
+ "textures": [
+  {
+   "material": "Material.001",
+   "index": 0,
+   "albedo": "skypierce_m0_albedo.png",
+   "albedo_size": [
+    1024,
+    1024
+   ],
+   "normal": "skypierce_m0_normal.png"
+  }
+ ],
+ "materials": [
+  "Material.001"
+ ]
+}

@@ -1,0 +1,35 @@
+{
+ "meshes": [
+  {
+   "name": "output_unwrapped",
+   "fit_residual": 6.459672422927416e-07,
+   "vertices_before": 10572,
+   "vertices_after": 10574,
+   "triangles_before": 5041,
+   "triangles_after": 5041
+  }
+ ],
+ "skins": [
+  {
+   "joints": 33,
+   "bind_spread": 5.092275686124914e-07,
+   "rebased": false,
+   "M": null
+  }
+ ],
+ "textures": [
+  {
+   "material": "Material.001",
+   "index": 0,
+   "albedo": "hunter_m0_albedo.png",
+   "albedo_size": [
+    1024,
+    1024
+   ],
+   "normal": "hunter_m0_normal.png"
+  }
+ ],
+ "materials": [
+  "Material.001"
+ ]
+}

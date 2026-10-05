@@ -480,7 +480,7 @@ func _finish_all() -> void:
 		"seed": _seed,
 		"rounds_requested": _rounds,
 		"locale": _locale,
-		"lineup": Fixture.LINEUP,
+		"lineup": {"a": Fixture.lineup("a"), "b": Fixture.lineup("b")},
 		"viewport": _viewport_metadata(),
 		"rounds": _round_summaries,
 		"residue_samples": _residue_samples.duplicate(true),
@@ -1174,6 +1174,13 @@ func _parse_arguments() -> void:
 				_prep_warmup_sec = clampf(float(value), 0.0, 60.0)
 			"--git-commit":
 				_git_commit = value
+			"--lineup-b":
+				# QA only: up to 12 comma-separated unit ids, four per lane, replace team b.
+				var ids := value.split(",", false)
+				var lanes: Array = [[], [], []]
+				for i in mini(ids.size(), 12):
+					(lanes[i / 4] as Array).append(ids[i].strip_edges())
+				Fixture.lineup_b_override = lanes
 			"--no-screenshots":
 				_capture_screenshots = false
 				index += 1

@@ -29,6 +29,16 @@ const LINEUP := {
 	],
 }
 
+# QA only (battle_presentation_baseline --lineup-b): team b plays these three lanes
+# instead of LINEUP["b"], e.g. to put a race the D0 lineup lacks on a real battle route.
+# Empty = the fixed D0 lineup that every recorded baseline uses.
+static var lineup_b_override: Array = []
+
+
+static func lineup(team: String) -> Array:
+	return lineup_b_override if team == "b" and not lineup_b_override.is_empty() else LINEUP[team]
+
+
 # A reproducible fixture cannot inherit the account's currently selected pet.
 # D0 was recorded with no pet; pin that without touching PlayerProfile.
 const FIXED_PET_ID := ""
@@ -44,7 +54,7 @@ static func setup_match_state(round_index: int, seed_value: int, unknown_unit_si
 	GameState.round_index = round_index
 	GameState.team_hp = GameState.START_FORMATION_HP
 	GameState.enemy_team_hp = GameState.START_FORMATION_HP
-	GameState.board_slots = board_from_ids((LINEUP["a"] as Array)[0], unknown_unit_sink)
+	GameState.board_slots = board_from_ids(lineup("a")[0], unknown_unit_sink)
 	GameState.mercenary_slots = empty_mercenary_slots()
 
 	NetworkService.team_active = true
@@ -53,8 +63,8 @@ static func setup_match_state(round_index: int, seed_value: int, unknown_unit_si
 	NetworkService.team_slot_states = ["player", "player", "player", "player", "player", "player"]
 	var boards: Dictionary = {}
 	for lane in 3:
-		boards[lane] = board_submission(board_from_ids((LINEUP["a"] as Array)[lane], unknown_unit_sink), empty_mercenary_slots())
-		boards[lane + 3] = board_submission(board_from_ids((LINEUP["b"] as Array)[lane], unknown_unit_sink), empty_mercenary_slots())
+		boards[lane] = board_submission(board_from_ids(lineup("a")[lane], unknown_unit_sink), empty_mercenary_slots())
+		boards[lane + 3] = board_submission(board_from_ids(lineup("b")[lane], unknown_unit_sink), empty_mercenary_slots())
 	NetworkService.team_boards = boards
 
 
@@ -103,7 +113,7 @@ static func unit_defs() -> Dictionary:
 static func all_unit_ids() -> Array[String]:
 	var out: Array[String] = []
 	for team in ["a", "b"]:
-		for lane in (LINEUP[team] as Array):
+		for lane in lineup(team):
 			for unit_id in (lane as Array):
 				out.append(str(unit_id))
 	return out

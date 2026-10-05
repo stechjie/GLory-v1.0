@@ -1,0 +1,98 @@
+{
+ "meshes": [
+  {
+   "name": "output_unwrapped",
+   "fit_residual": 1.1204321060885864e-06,
+   "vertices_before": 30770,
+   "vertices_after": 7002,
+   "triangles_before": 15187,
+   "triangles_after": 3036
+  },
+  {
+   "name": "output_unwrapped.001",
+   "fit_residual": 3.3014014704633833e-07,
+   "vertices_before": 16752,
+   "vertices_after": 6060,
+   "triangles_before": 10450,
+   "triangles_after": 3249
+  },
+  {
+   "name": "output_unwrapped.002",
+   "fit_residual": 2.4370295858007937e-07,
+   "vertices_before": 18781,
+   "vertices_after": 1499,
+   "triangles_before": 10307,
+   "triangles_after": 669
+  }
+ ],
+ "skins": [
+  {
+   "joints": 40,
+   "bind_spread": 1.8126667950577574e-06,
+   "rebased": true,
+   "M": [
+    [
+     0.998942,
+     -0.045996,
+     -0.0,
+     0.0
+    ],
+    [
+     0.001534,
+     0.03332,
+     -0.999444,
+     0.0
+    ],
+    [
+     0.04597,
+     0.998386,
+     0.033355,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ]
+  }
+ ],
+ "textures": [
+  {
+   "material": "Material.001",
+   "index": 0,
+   "albedo": "dancer_m0_albedo.png",
+   "albedo_size": [
+    1024,
+    1024
+   ],
+   "normal": "dancer_m0_normal.png"
+  },
+  {
+   "material": "Material.002",
+   "index": 1,
+   "albedo": "dancer_m1_albedo.png",
+   "albedo_size": [
+    1024,
+    1024
+   ],
+   "normal": "dancer_m1_normal.png"
+  },
+  {
+   "material": "Material.003",
+   "index": 2,
+   "albedo": "dancer_m2_albedo.png",
+   "albedo_size": [
+    1024,
+    1024
+   ],
+   "normal": "dancer_m2_normal.png"
+  }
+ ],
+ "materials": [
+  "Material.001",
+  "Material.002",
+  "Material.003"
+ ]
+}

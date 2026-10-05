@@ -1,0 +1,61 @@
+{
+ "meshes": [
+  {
+   "name": "output_unwrapped",
+   "fit_residual": 7.77002152178543e-07,
+   "vertices_before": 25780,
+   "vertices_after": 14993,
+   "triangles_before": 12637,
+   "triangles_after": 6251
+  }
+ ],
+ "skins": [
+  {
+   "joints": 71,
+   "bind_spread": 5.500532913682844e-07,
+   "rebased": true,
+   "M": [
+    [
+     100.000008,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     100.000004,
+     -3e-06,
+     0.0
+    ],
+    [
+     0.0,
+     3e-06,
+     100.000008,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ]
+  }
+ ],
+ "textures": [
+  {
+   "material": "Material_001",
+   "index": 0,
+   "hair_texels": 889944,
+   "albedo": "Icey_m0_albedo.png",
+   "albedo_size": [
+    1024,
+    1024
+   ],
+   "normal": "Icey_m0_normal.png"
+  }
+ ],
+ "materials": [
+  "Material_001"
+ ]
+}

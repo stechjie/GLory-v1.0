@@ -269,7 +269,7 @@ def verify_artifact(source: Path, folder: Path, aapt: Path) -> dict:
     require(scene.removeprefix("res://") in manifest.get("resource_seeds", []),
             4, "Preview scene is missing from the explicit resource seeds.")
     require(manifest.get("renderer") == "gl_compatibility", 4, "Unexpected pilot renderer.")
-    require(bool(re.fullmatch(r"[a-z][a-z0-9_]{0,63}", str(manifest.get("unit_id", "")))), 4,
+    require(bool(re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", str(manifest.get("unit_id", "")))), 4,
             "Manifest unit_id is invalid.")
     for key in ("old_model_path", "new_model_path"):
         require(isinstance(manifest.get(key), str) and manifest[key].startswith("res://"), 4,

@@ -1,5 +1,5 @@
 extends "res://scenes/debug/ModelRefinementPreview.gd"
-## 种族模型精修对照预览（暗族、灵族）。--unit <id> 选目标（默认 dark_dragon）；
+## 种族模型精修对照预览（暗族、灵族、赤律族）。--unit <id> 选目标（默认 dark_dragon）；
 ## "同框" 把目标所属种族的八个单位按当前 原版/新版 一起摆出，用来判断无名字时能否区分，
 ## 例如 --unit undead_mother --lineup 摆出灵族。
 ## 比例、三阶放大和 model_in_place_actions 都从 data/units/race_units.json 读，
@@ -33,9 +33,19 @@ const RACES := {
 		"undead_titan": "res://assets/models/units/undead_titan_animated/undead_titan_animated.tscn",
 		"undead_mother": "res://assets/models/units/undead_mother_animated/undead_mother_animated.tscn",
 	}},
+	# Crimson originals are single Meshy GLBs ("glb": refined scenes instance a refined GLB, not
+	# the original); their current model_visual_scale is kept.
+	"crimson": {"label": "赤律族", "glb": true, "keep_visual_scale": true, "old": {
+		"crimson": "res://assets/models/units/crimson_race/crimson.glb",
+		"dancer": "res://assets/models/units/crimson_race/dancer.glb",
+		"drumer": "res://assets/models/units/crimson_race/drumer.glb",
+		"hunter": "res://assets/models/units/crimson_race/hunter.glb",
+		"armbreaker": "res://assets/models/units/crimson_race/armbreaker.glb",
+		"Icey": "res://assets/models/units/crimson_race/Icey.glb",
+		"skypierce": "res://assets/models/units/crimson_race/skypierce.glb",
+		"lattern": "res://assets/models/units/crimson_race/lattern.glb",
+	}},
 }
-# The original wrappers were all shown at model_visual_scale 1.0.
-const OLD_VISUAL_SCALE := 1.0
 
 var _defs := {}
 
@@ -62,7 +72,9 @@ func _unit_defs() -> Dictionary:
 
 func _scale(unit_id: String, which: String) -> float:
 	var unit: Dictionary = _unit_defs()[unit_id]
-	var visual := OLD_VISUAL_SCALE if which == "old" else float(unit.get("model_visual_scale", 1.0))
+	# Dark and undead originals were all shown at model_visual_scale 1.0.
+	var keep: bool = RACES[race_of(unit_id)].get("keep_visual_scale", false)
+	var visual := 1.0 if which == "old" and not keep else float(unit.get("model_visual_scale", 1.0))
 	return BATTLE_SCALE * visual * (TIER3_BOOST if int(unit.get("tier", 1)) == 3 else 1.0)
 
 

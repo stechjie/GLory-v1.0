@@ -1,0 +1,79 @@
+{
+ "meshes": [
+  {
+   "name": "output_unwrapped",
+   "fit_residual": 8.676221050418624e-07,
+   "vertices_before": 6083,
+   "vertices_after": 6086,
+   "triangles_before": 2494,
+   "triangles_after": 2494
+  },
+  {
+   "name": "output_unwrapped.001",
+   "fit_residual": 2.465467403725711e-07,
+   "vertices_before": 6233,
+   "vertices_after": 6234,
+   "triangles_before": 2902,
+   "triangles_after": 2902
+  }
+ ],
+ "skins": [
+  {
+   "joints": 40,
+   "bind_spread": 2.7076563150485455e-06,
+   "rebased": true,
+   "M": [
+    [
+     1.0,
+     0.0,
+     -0.0,
+     0.0
+    ],
+    [
+     -0.0,
+     0.025455,
+     -0.999676,
+     0.0
+    ],
+    [
+     -0.0,
+     0.999676,
+     0.025455,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ]
+  }
+ ],
+ "textures": [
+  {
+   "material": "Material.001",
+   "index": 0,
+   "albedo": "lattern_m0_albedo.png",
+   "albedo_size": [
+    1024,
+    1024
+   ],
+   "normal": "lattern_m0_normal.png"
+  },
+  {
+   "material": "Material.002",
+   "index": 1,
+   "albedo": "lattern_m1_albedo.png",
+   "albedo_size": [
+    1024,
+    1024
+   ],
+   "normal": "lattern_m1_normal.png"
+  }
+ ],
+ "materials": [
+  "Material.001",
+  "Material.002"
+ ]
+}
