@@ -11,6 +11,10 @@ const AVATARS := preload("res://scripts/account/AvatarCatalog.gd")
 const RANKS := preload("res://scenes/menu/RankedTiers.gd")
 const PROFILE_DISC := preload("res://assets/ui/main_menu_live/profile_avatar.png")
 const ACTION := preload("res://ui/components/GloryActionButton.tscn")
+const BUTTON_PRIMARY := preload("res://assets/ui/party_lobby/party_button_primary.png")
+const BUTTON_SECONDARY := preload("res://assets/ui/party_lobby/party_button_secondary.png")
+const BUTTON_MODE_IDLE := preload("res://assets/ui/party_lobby/party_button_mode_idle.png")
+const BUTTON_MODE_ACTIVE := preload("res://assets/ui/party_lobby/party_button_mode_active.png")
 const GOLD := Color("e6c984")
 const CREAM := Color("f8f0d8")
 const MUTED := Color("bbc5b9")
@@ -777,22 +781,77 @@ func _friend_avatar(parent: Control, entry: Dictionary, pos: Vector2, diameter: 
 
 
 func _style_paper_button(button: Button, selected: bool) -> void:
-	var normal := StyleBoxFlat.new()
-	normal.bg_color = Color(0.88, 0.72, 0.38, 0.96) if selected else Color(0.96, 0.93, 0.80, 0.91)
-	normal.border_color = Color(0.82, 0.65, 0.29, 0.94)
-	normal.set_border_width_all(1)
-	normal.set_corner_radius_all(13)
-	var hover := normal.duplicate() as StyleBoxFlat
-	hover.bg_color = Color(0.99, 0.92, 0.68, 0.98)
-	for state in ["normal", "disabled", "focus"]:
-		button.add_theme_stylebox_override(state, normal)
-	for state in ["hover", "pressed", "hover_pressed"]:
-		button.add_theme_stylebox_override(state, hover)
-	button.add_theme_color_override("font_color", Color("3e5038"))
-	button.add_theme_color_override("font_hover_color", Color("3e5038"))
-	button.add_theme_color_override("font_pressed_color", Color("3e5038"))
-	button.add_theme_color_override("font_disabled_color", Color("8d8d7c"))
+	if button.size.x <= 80.0:
+		_style_compact_button(button, selected)
+		return
+	var normal := _button_plate(BUTTON_SECONDARY,
+		Color(1.0, 0.97, 0.88) if selected else Color.WHITE)
+	button.add_theme_stylebox_override("normal", normal)
+	button.add_theme_stylebox_override("focus", normal)
+	button.add_theme_stylebox_override("hover", _button_plate(BUTTON_SECONDARY,
+		Color(1.12, 1.08, 0.96)))
+	button.add_theme_stylebox_override("pressed", _button_plate(BUTTON_SECONDARY,
+		Color(0.84, 0.82, 0.78)))
+	button.add_theme_stylebox_override("hover_pressed", _button_plate(BUTTON_SECONDARY,
+		Color(0.84, 0.82, 0.78)))
+	button.add_theme_stylebox_override("disabled", _button_plate(BUTTON_SECONDARY,
+		Color(0.66, 0.67, 0.63, 0.74)))
+	button.add_theme_color_override("font_color", CREAM)
+	button.add_theme_color_override("font_hover_color", Color("fff7df"))
+	button.add_theme_color_override("font_pressed_color", CREAM)
+	button.add_theme_color_override("font_disabled_color", Color("d1c8ad"))
+	button.add_theme_color_override("font_outline_color", Color("2c1b11"))
+	button.add_theme_constant_override("outline_size", 2)
 	button.add_theme_font_size_override("font_size", 18)
+
+
+func _style_compact_button(button: Button, selected: bool) -> void:
+	var normal := StyleBoxFlat.new()
+	normal.bg_color = Color("a16c30") if selected else Color("684528")
+	normal.border_color = Color("e6c984")
+	normal.set_border_width_all(2)
+	normal.set_corner_radius_all(10)
+	var hover := normal.duplicate() as StyleBoxFlat
+	hover.bg_color = Color("b17a38")
+	var pressed := normal.duplicate() as StyleBoxFlat
+	pressed.bg_color = Color("503c29")
+	for state in ["normal", "focus", "disabled"]:
+		button.add_theme_stylebox_override(state, normal)
+	button.add_theme_stylebox_override("hover", hover)
+	button.add_theme_stylebox_override("pressed", pressed)
+	button.add_theme_stylebox_override("hover_pressed", pressed)
+	button.add_theme_color_override("font_color", CREAM)
+	button.add_theme_color_override("font_hover_color", CREAM)
+	button.add_theme_color_override("font_pressed_color", CREAM)
+	button.add_theme_color_override("font_disabled_color", Color("c5b796"))
+	button.add_theme_font_size_override("font_size", 18)
+
+
+func _button_plate(texture: Texture2D, tint: Color) -> StyleBoxTexture:
+	var atlas := AtlasTexture.new()
+	atlas.atlas = texture
+	# Crop the generated transparent padding in source-image coordinates.
+	# The region scales with Godot's mobile-friendly texture import size limit.
+	var source_size: Vector2
+	var crop: Rect2
+	if texture == BUTTON_PRIMARY:
+		source_size = Vector2(1916, 821)
+		crop = Rect2(26, 96, 1866, 620)
+	elif texture == BUTTON_SECONDARY:
+		source_size = Vector2(1944, 809)
+		crop = Rect2(31, 168, 1886, 472)
+	elif texture == BUTTON_MODE_IDLE:
+		source_size = Vector2(2022, 778)
+		crop = Rect2(27, 135, 1969, 506)
+	else:
+		source_size = Vector2(2023, 777)
+		crop = Rect2(23, 125, 1977, 512)
+	var scale: Vector2 = texture.get_size() / source_size
+	atlas.region = Rect2(crop.position * scale, crop.size * scale)
+	var style := StyleBoxTexture.new()
+	style.texture = atlas
+	style.modulate_color = tint
+	return style
 
 
 func _style_chat_input(input: LineEdit) -> void:
@@ -848,28 +907,46 @@ func _button(parent: Control, value: String, pos: Vector2, dimensions: Vector2) 
 
 
 func _style_mode(button: Button, selected: bool) -> void:
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.93, 0.76, 0.40, 0.98) if selected else Color(0.95, 0.92, 0.79, 0.82)
-	style.border_color = GOLD if selected else Color(GOLD.r, GOLD.g, GOLD.b, 0.48)
-	style.set_border_width_all(2 if selected else 1)
-	style.set_corner_radius_all(15)
-	for state in ["normal", "disabled", "focus", "hover", "pressed", "hover_pressed"]:
-		button.add_theme_stylebox_override(state, style)
-	button.add_theme_color_override("font_color", Color("425031"))
-	button.add_theme_color_override("font_disabled_color", Color("425031"))
+	var texture: Texture2D = BUTTON_MODE_ACTIVE if selected else BUTTON_MODE_IDLE
+	var normal := _button_plate(texture, Color.WHITE)
+	button.add_theme_stylebox_override("normal", normal)
+	button.add_theme_stylebox_override("focus", normal)
+	button.add_theme_stylebox_override("hover", _button_plate(texture,
+		Color(1.10, 1.08, 1.02)))
+	button.add_theme_stylebox_override("pressed", _button_plate(texture,
+		Color(0.87, 0.86, 0.83)))
+	button.add_theme_stylebox_override("hover_pressed", _button_plate(texture,
+		Color(0.87, 0.86, 0.83)))
+	button.add_theme_stylebox_override("disabled", _button_plate(texture,
+		Color(0.64, 0.65, 0.62, 0.72)))
+	var text_color := CREAM
+	button.add_theme_color_override("font_color", text_color)
+	button.add_theme_color_override("font_hover_color", text_color)
+	button.add_theme_color_override("font_pressed_color", text_color)
+	button.add_theme_color_override("font_disabled_color", Color("d1c8ad"))
+	button.add_theme_color_override("font_outline_color", Color("342010"))
+	button.add_theme_constant_override("outline_size", 2)
 	button.add_theme_font_size_override("font_size", 24)
 
 
 func _style_action() -> void:
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.89, 0.69, 0.32, 0.98) if not _action.disabled else Color(0.78, 0.78, 0.67, 0.88)
-	style.border_color = GOLD
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(19)
-	for state in ["normal", "disabled", "focus", "hover", "pressed", "hover_pressed"]:
-		_action.add_theme_stylebox_override(state, style)
-	_action.add_theme_color_override("font_color", Color("3d432d"))
-	_action.add_theme_color_override("font_disabled_color", Color("6c705f"))
+	var normal := _button_plate(BUTTON_PRIMARY, Color.WHITE)
+	_action.add_theme_stylebox_override("normal", normal)
+	_action.add_theme_stylebox_override("focus", normal)
+	_action.add_theme_stylebox_override("hover", _button_plate(BUTTON_PRIMARY,
+		Color(1.10, 1.08, 1.02)))
+	_action.add_theme_stylebox_override("pressed", _button_plate(BUTTON_PRIMARY,
+		Color(0.85, 0.83, 0.80)))
+	_action.add_theme_stylebox_override("hover_pressed", _button_plate(BUTTON_PRIMARY,
+		Color(0.85, 0.83, 0.80)))
+	_action.add_theme_stylebox_override("disabled", _button_plate(BUTTON_PRIMARY,
+		Color(0.65, 0.66, 0.63, 0.73)))
+	_action.add_theme_color_override("font_color", CREAM)
+	_action.add_theme_color_override("font_hover_color", Color("fff7df"))
+	_action.add_theme_color_override("font_pressed_color", CREAM)
+	_action.add_theme_color_override("font_disabled_color", Color("d6d0b4"))
+	_action.add_theme_color_override("font_outline_color", Color("342010"))
+	_action.add_theme_constant_override("outline_size", 3)
 	_action.add_theme_font_size_override("font_size", 28)
 
 
