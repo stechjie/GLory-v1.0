@@ -61,6 +61,12 @@ android/
 # per-action combined-skin welding and atlas repair.
 !/assets/models/units/god_arbiter_refined/
 
+# Refined God King: sculpted crown and royal armour welded into one
+# rigid-skinned mesh, atlas void repair and runtime wrapper.
+!/assets/models/units/god_king_refined/
+!/assets/models/units/god_king_refined/**
+
+
 # Exception: VFX textures must ship through git. effects/ holds ~1080 references
 # to res://assets/vfx/, so a teammate without these files hits
 # "Failed loading resource" the moment a battle starts.
