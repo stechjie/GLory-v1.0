@@ -68,6 +68,32 @@ static func is_merge_piece(cell: Variant, id: String, star: int) -> bool:
 	return str(d.get("id", "")) == id and int(d.get("star", 1)) == star
 
 
+# 一组格子（棋盘或待命区）里第一个能和 incoming 合成的下标；没有就 -1。
+#
+# 10.05（待命区满时的买入分流）要用它排优先级：
+# **能升星就先升星**，其次才是找空位。反过来（先找空位）会让棋盘上明明
+# 只差一个就能升星的棋子一直等不到那一个，玩家反而得先去卖掉一个腾位子。
+static func first_merge_target(slots: Array, incoming: Dictionary) -> int:
+	if incoming.is_empty():
+		return -1
+	for i in slots.size():
+		var cell: Variant = slots[i]
+		if typeof(cell) != TYPE_DICTIONARY:
+			continue
+		if can_merge_cells(cell as Dictionary, incoming):
+			return i
+	return -1
+
+
+# 一组格子里所有空位的下标。空数组 = 全满。
+static func empty_slot_indices(slots: Array) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	for i in slots.size():
+		if slots[i] == null:
+			out.append(i)
+	return out
+
+
 # --- 出售 ---------------------------------------------------------------------
 
 # 我方当前拥有的棋子总数（棋盘 + 备战席）。

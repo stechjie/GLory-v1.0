@@ -166,7 +166,7 @@ static func format_skill_detail(d: Dictionary) -> String:
 		"line_pierce":
 			return "穿云：普攻沿直线最多命中%d名敌人，第1至第4名分别受到自身攻击的100%%、%s、%s、%s伤害，各自计算防御与元素克制。" % [int(d.get("pierce_targets", 4)), pct(1.0 - float(d.get("pierce_falloff", 0.20))), pct(1.0 - float(d.get("pierce_falloff", 0.20)) * 2.0), pct(1.0 - float(d.get("pierce_falloff", 0.20)) * 3.0)]
 		"aoe_silence":
-			return "赤灯禁言%s：以当前目标为中心，在2格范围内造成自身攻击%s伤害并沉默%.1f秒（Boss控制时长减半）。" % [cd, pct(float(d.get("damage_atk_pct", 1.30))), float(d.get("silence_duration", 2.5))]
+			return "赤灯禁言%s：开战立即释放，使当前可攻击路线的所有敌人沉默%.1f秒；沉默期间无法释放主动技能，攻速降低30%%，普攻与被动正常。本路清空后，后续施法可按分路规则影响其他路（Boss控制时长减半）。" % [cd, float(d.get("silence_duration", 3.0))]
 		"none":
 			return "无主动技能。"
 		"lowest_ally_heal":
@@ -356,7 +356,7 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"line_pierce":
 			return "Skypierce: Basics strike up to %d enemies in a line for 100%%, %s, %s, and %s ATK damage. DEF and element are calculated separately." % [int(d.get("pierce_targets", 4)), pct(1.0 - float(d.get("pierce_falloff", 0.20))), pct(1.0 - float(d.get("pierce_falloff", 0.20)) * 2.0), pct(1.0 - float(d.get("pierce_falloff", 0.20)) * 3.0)]
 		"aoe_silence":
-			return "Crimson Lantern%s: Deal %s ATK damage and silence enemies within two cells of the target for %.1fs (boss control duration is halved)." % [cd, pct(float(d.get("damage_atk_pct", 1.30))), float(d.get("silence_duration", 2.5))]
+			return "Crimson Lantern%s: Cast at battle start and silence all enemies in currently targetable lanes for %.1fs. While silenced, active skills are blocked and attack speed is reduced by 30%%; basic attacks and passives work normally. Later casts can affect other lanes after the caster's lane is cleared (boss control duration is halved)." % [cd, float(d.get("silence_duration", 3.0))]
 		"none":
 			return "No active skill."
 		"lowest_ally_heal":

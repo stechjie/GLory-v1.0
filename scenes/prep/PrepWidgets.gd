@@ -71,22 +71,34 @@ static func apply_transparent_panel_style(panel: PanelContainer) -> void:
 	panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 
 
+# 宝藏三选一那个「刷新」按钮。
+#
+# 10.05 反馈第 4 条：原来是一块深墨绿底 + 暗绿描边，跟背景的草地几乎同色，玩家
+# 看不到「这里能刷新」。改成琥珀金底 + 亮金描边 + 浅金字，配合调用方（
+# TreasureChoicePanel）自己加的边缘光呼吸，一眼就能看见。
+# 全仓只有宝藏面板用它 —— 改这里不会牵动别的按钮。
 static func apply_refresh_button_styles(button: Button) -> void:
 	var normal_style := StyleBoxFlat.new()
-	normal_style.bg_color = Color(0.025, 0.075, 0.055, 0.78)
-	normal_style.border_color = Color(0.34, 0.52, 0.24, 0.82)
-	normal_style.set_border_width_all(1)
-	normal_style.set_corner_radius_all(4)
+	normal_style.bg_color = Color(0.52, 0.305, 0.055, 0.96)
+	normal_style.border_color = Color(1.0, 0.82, 0.34, 0.98)
+	normal_style.set_border_width_all(2)
+	normal_style.set_corner_radius_all(6)
 	var hover_style := normal_style.duplicate() as StyleBoxFlat
-	hover_style.bg_color = Color(0.075, 0.19, 0.105, 0.92)
-	hover_style.border_color = Color(0.72, 0.84, 0.36, 0.96)
+	hover_style.bg_color = Color(0.68, 0.42, 0.09, 0.99)
+	hover_style.border_color = Color(1.0, 0.93, 0.58, 1.0)
 	var pressed_style := hover_style.duplicate() as StyleBoxFlat
-	pressed_style.bg_color = Color(0.04, 0.13, 0.075, 0.96)
+	pressed_style.bg_color = Color(0.36, 0.21, 0.04, 1.0)
 	button.add_theme_stylebox_override("normal", normal_style)
 	button.add_theme_stylebox_override("hover", hover_style)
 	button.add_theme_stylebox_override("pressed", pressed_style)
 	button.add_theme_stylebox_override("focus", hover_style)
 	button.add_theme_stylebox_override("disabled", normal_style)
+	# 深底改亮底之后，原来的浅色字会糊在金色上 —— 字色一并在样式里定好，
+	# 免得调用方漏改（漏了就是「按钮亮了但字看不见」）。
+	button.add_theme_color_override("font_color", Color(1.0, 0.95, 0.78))
+	button.add_theme_color_override("font_hover_color", Color(1.0, 1.0, 0.90))
+	button.add_theme_color_override("font_pressed_color", Color(1.0, 0.95, 0.78))
+	button.add_theme_color_override("font_disabled_color", Color(0.58, 0.53, 0.42))
 
 
 # 仿主界面「离线自测」按钮：深棕底 + 古铜边框 + 大圆角。所有备战按钮统一用它。

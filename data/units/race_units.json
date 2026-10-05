@@ -121,7 +121,7 @@
                       "crit_dmg":  1.6,
                       "skill_id":  "true_damage_attack",
                       "true_damage_pct":  0.18,
-                      "model":  "res://assets/models/units/god_aurora_animated/god_aurora_animated.tscn",
+                      "model":  "res://assets/models/units/god_aurora_refined/god_aurora_refined.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
                       "name_en":  "Aurora"
@@ -185,7 +185,7 @@
                       "damage_atk_pct":  2.2,
                       "def_stack_pct":  0.06,
                       "max_stacks":  5,
-                      "model":  "res://assets/models/units/god_arbiter_animated/god_arbiter_animated.tscn",
+                      "model":  "res://assets/models/units/god_arbiter_refined/god_arbiter_refined.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
                       "name_en":  "Arbiter"
@@ -215,7 +215,7 @@
                       "damage_reduction":  0.50,
                       "duration":  6.0,
                       "unique_on_board":  true,
-                      "model":  "res://assets/models/units/god_archangel_animated/god_archangel_animated.tscn",
+                      "model":  "res://assets/models/units/god_archangel_refined/god_archangel_refined.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
                       "name_en":  "Archangel"
@@ -247,7 +247,7 @@
                       "damage_tick_count":  5,
                       "damage_tick_interval":  0.5,
                       "unique_on_board":  true,
-                      "model":  "res://assets/models/units/god_king_animated/god_king_animated.tscn",
+                      "model":  "res://assets/models/units/god_king_refined/god_king_refined.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
                       "name_en":  "God King"
@@ -961,6 +961,6 @@
                   {"id":"armbreaker","name":"破甲者","name_en":"Armbreaker","race":"crimson","model":"res://assets/models/units/crimson_race/armbreaker.glb","model_visual_scale":1.14,"model_idle_animation_name":"idle","model_attack_animation_name":"attack","model_run_animation_name":"run","element":"land","tier":2,"cost":30,"hp":1180,"atk":54,"def":12,"attack_speed":0.9,"range":1,"move_speed":3.05,"crit":0.08,"crit_dmg":1.6,"skill_id":"stacking_def_break","break_chance":0.50,"break_amount":2,"star4":{"break_chance":1.0}},
                   {"id":"Icey","name":"霜印使","name_en":"Icey","race":"crimson","model":"res://assets/models/units/crimson_race/Icey.glb","model_visual_scale":1.21,"model_idle_animation_name":"idle","model_attack_animation_name":"attack","model_run_animation_name":"run","element":"sky","tier":2,"cost":30,"hp":780,"atk":68,"def":4,"attack_speed":0.85,"range":4,"move_speed":3.2,"crit":0.08,"crit_dmg":1.6,"skill_id":"frost_status","skill_cd":6.0,"damage_atk_pct":1.70,"ice_duration":3.0,"ice_vulnerable_pct":0.25,"aoe_radius":144.0,"star4":{"damage_atk_pct":3.00,"ice_duration":5.0}},
                   {"id":"skypierce","name":"穿云弩手","name_en":"Skypierce","race":"crimson","model":"res://assets/models/units/crimson_race/skypierce.glb","model_visual_scale":1.20,"model_idle_animation_name":"idle","model_attack_animation_name":"attack","model_run_animation_name":"run","element":"sky","tier":3,"cost":50,"hp":1500,"atk":104,"def":10,"attack_speed":0.86,"range":2,"move_speed":3.1,"crit":0.10,"crit_dmg":1.75,"skill_id":"line_pierce","pierce_falloff":0.20,"pierce_targets":4,"star4":{"pierce_falloff":0.10}},
-                  {"id":"lattern","name":"赤灯使","name_en":"Lantern","race":"crimson","model":"res://assets/models/units/crimson_race/lattern.glb","model_visual_scale":1.18,"model_idle_animation_name":"idle","model_attack_animation_name":"attack","model_run_animation_name":"run","element":"land","tier":3,"cost":50,"hp":1720,"atk":82,"def":16,"attack_speed":0.78,"range":2,"move_speed":3.0,"crit":0.10,"crit_dmg":1.75,"skill_id":"aoe_silence","skill_cd":10.0,"damage_atk_pct":1.30,"silence_duration":2.5,"aoe_radius":144.0,"unique_on_board":true,"star4":{"skill_cd":9.0,"damage_atk_pct":1.50,"silence_duration":3.0}}
+                  {"id":"lattern","name":"赤灯使","name_en":"Lantern","race":"crimson","model":"res://assets/models/units/crimson_race/lattern.glb","model_visual_scale":1.18,"model_idle_animation_name":"idle","model_attack_animation_name":"attack","model_run_animation_name":"run","element":"land","tier":3,"cost":50,"hp":1720,"atk":82,"def":16,"attack_speed":0.78,"range":2,"move_speed":3.0,"crit":0.10,"crit_dmg":1.75,"skill_id":"aoe_silence","skill_global":true,"skill_cd":10.0,"silence_duration":3.0,"unique_on_board":true,"star4":{"skill_cd":9.0,"silence_duration":4.0}}
               ]
 }

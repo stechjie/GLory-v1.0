@@ -127,6 +127,7 @@ func _zh_strings() -> Dictionary:
 		"ui_sold": "已售",
 		"ui_not_enough_gold": "金额不足",
 		"ui_bench_full": "待命区已满",
+		"ui_pieces_full": "棋子已满，无法购买",
 		"ui_merc_full": "佣兵栏已满",
 		"ui_bench_slot": "待命空位",
 		"ui_buy_tooltip": "购买到第一个空待命位",
@@ -146,6 +147,7 @@ func _zh_strings() -> Dictionary:
 		"ui_treasure_pick": "选择一件宝藏（长按看详情）",
 		"ui_treasure_refresh_free": "刷新（免费）",
 		"ui_treasure_refresh_cost": "刷新（%d金）",
+		"ui_treasure_gold_left": "（当前剩余金：%d）",
 		"ui_linkage_fx_banner": "联动激活 · %s",
 		"ui_set_fx_banner": "套装激活 · %s",
 		# 统计弹窗 tab
@@ -564,6 +566,7 @@ func _en_strings() -> Dictionary:
 		"ui_sold": "Sold",
 		"ui_not_enough_gold": "Not enough gold",
 		"ui_bench_full": "Bench full",
+		"ui_pieces_full": "Board and bench are full",
 		"ui_merc_full": "Merc slots full",
 		"ui_bench_slot": "Bench Slot",
 		"ui_buy_tooltip": "Buy to first bench slot",
@@ -583,6 +586,7 @@ func _en_strings() -> Dictionary:
 		"ui_treasure_pick": "Pick a Treasure (hold to preview)",
 		"ui_treasure_refresh_free": "Refresh (Free)",
 		"ui_treasure_refresh_cost": "Refresh (%d G)",
+		"ui_treasure_gold_left": "(Gold: %d)",
 		"ui_linkage_fx_banner": "Linkage Activated · %s",
 		"ui_set_fx_banner": "Set Activated · %s",
 		# Stats tabs

@@ -431,6 +431,7 @@ static func step_state(state: Dictionary) -> void:
 	# 神王裁决的后续段数属于技能伤害：在当帧无敌挂好之后结算，确保每段都读取
 	# 当时真实的护盾、无敌和防御；队列只保存施法时已经选中的目标，不重新选人。
 	BattleSimSkills.tick_pending_skill_damage(state)
+	_tick_opening_lanterns(state)
 	_tick_skills(p_alive, e_alive, state)
 	_tick_skills(e_alive, p_alive, state)
 	_process_boss_charges(state)
@@ -759,6 +760,7 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 			# Render-only telemetry: preserve the simulator's exact chosen target so
 			# projectiles and hit VFX never have to guess from nearby damaged units.
 			f.vfx_attack_target_uid = str(target.get("uid", ""))
+			CrimsonRuneService.begin_action(f, state)
 			DamageService.begin_stat_context(state, f)
 			var was_alive := bool(target.get("alive", false))
 			var dealt := _perform_attack(f, target, state)
@@ -771,7 +773,7 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 					var pierce_base := float(f.get("atk", 1)) * StatusEffectService.attack_multiplier(f) * coeff
 					pierce_base *= _element_multiplier(str(f.get("def", {}).get("element", "")), str(pierced.get("def", {}).get("element", "")))
 					if bool(f.get("crimson_last_crit", false)):
-						pierce_base *= float(f.get("def", {}).get("crit_dmg", 1.75)) + float(f.get("crit_dmg_bonus", 0.0))
+						pierce_base *= float(f.get("def", {}).get("crit_dmg", 1.75)) + float(f.get("crit_dmg_bonus", 0.0)) + CrimsonRuneService.crit_damage_bonus(f)
 					DamageService.set_hit_context("basic", bool(f.get("crimson_last_crit", false)), "crimson", "line_pierce")
 					DamageService.emit_impact(f, pierced, "line_pierce", bool(f.get("crimson_last_crit", false)))
 					DamageService.apply_damage(pierced, maxi(1, int(round(pierce_base))), false)
@@ -790,6 +792,7 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 			var aspd := clampf(float(f.attack_speed) * StatusEffectService.attack_speed_multiplier(f) * _dynamic_attack_speed_multiplier(f), 0.25, 2.5)
 			f.next_attack = elapsed + (1.0 / aspd)
 			DamageService.clear_stat_context()
+			CrimsonRuneService.end_action(f)
 
 
 # Ordinary walking consumes only the walker's displacement. A following unit
@@ -982,10 +985,10 @@ static func _perform_attack(attacker: Dictionary, target: Dictionary, state: Dic
 	attacker.attack_count = int(attacker.get("attack_count", 0)) + 1
 	if str(d.get("race", "")) == "human" and int(attacker.attack_count) % 3 == 0:
 		is_crit = true
-	elif RngService.rng.randf() < float(d.get("crit", 0.05)) + float(attacker.get("crit_bonus", 0.0)) + 0.10 * float(attacker.get("crimson_pulse_stacks", 0)):
+	elif RngService.rng.randf() < float(d.get("crit", 0.05)) + float(attacker.get("crit_bonus", 0.0)) + 0.10 * float(attacker.get("crimson_pulse_stacks", 0)) + CrimsonRuneService.crit_bonus(attacker):
 		is_crit = true
 	if is_crit:
-		base *= float(d.get("crit_dmg", 1.5)) + float(attacker.get("crit_dmg_bonus", 0.0))
+		base *= float(d.get("crit_dmg", 1.5)) + float(attacker.get("crit_dmg_bonus", 0.0)) + CrimsonRuneService.crit_damage_bonus(attacker)
 	if str(d.get("skill_id", "")) == "line_pierce":
 		attacker.crimson_last_crit = is_crit
 	# 9.24 羁绊：判定用「这一下打之前」目标身上的状态（本次普攻新挂的不算）。
@@ -1158,6 +1161,34 @@ static func _apply_opening_unit_skills(player: Array, enemy: Array, event_log: A
 		event_log.append(TranslationServer.translate("log_deadpool_bind"))
 
 
+# Both opening Lantern casts choose their lanes and targets before either side
+# receives silence. Once committed, both casts complete in the opening phase.
+static func _tick_opening_lanterns(state: Dictionary) -> void:
+	if bool(state.get("lantern_opening_done", false)) or float(state.get("elapsed", 0.0)) > 0.0:
+		return
+	state["lantern_opening_done"] = true
+	var opening: Array = []
+	for team_units in [state.get("player", []), state.get("enemy", [])]:
+		for caster: Dictionary in team_units:
+			if not bool(caster.get("alive", false)) or str(caster.get("def", {}).get("skill_id", "")) != "aoe_silence":
+				continue
+			var opponents: Array = state.get("enemy", []) if str(caster.get("team", "")) == "player" else state.get("player", [])
+			var targets := CrimsonCombat.lantern_targets(caster, opponents)
+			if not targets.is_empty():
+				opening.append({"caster": caster, "targets": targets})
+	for cast: Dictionary in opening:
+		var caster: Dictionary = cast.caster
+		var d: Dictionary = caster.get("def", {})
+		CrimsonRuneService.begin_action(caster, state)
+		DamageService.begin_stat_context(state, caster)
+		DamageService.set_hit_context("skill", false, str(d.get("race", "")), "aoe_silence")
+		CrimsonCombat.skill_lantern(caster, cast.targets, d, state)
+		var cd := float(d.get("skill_cd", 10.0)) * float(caster.get("skill_cd_multiplier", 1.0))
+		caster.skill_ready = float(state.elapsed) + cd
+		DamageService.clear_stat_context()
+		CrimsonRuneService.end_action(caster)
+
+
 # 施法前的距离判定：和普攻用同一套目标选择 + 有效射程。射程内有合法敌人才允许施法。
 # 辅助技（治疗/增益）也走这条：nearest 敌人进入自己射程 = 本路已交战，才开始起作用。
 #
@@ -1202,6 +1233,7 @@ static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) ->
 		if not bool(d.get("skill_global", false)) and not _skill_target_in_range(caster, opponents, bodies):
 			continue
 		var old_ready := float(caster.get("skill_ready", 0.0))
+		CrimsonRuneService.begin_action(caster, state)
 		DamageService.begin_stat_context(state, caster)
 		# Every apply_damage inside this dispatch is skill damage. clear_stat_context()
 		# at the end of this iteration resets the tag (see DamageService).
@@ -1214,8 +1246,10 @@ static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) ->
 				CrimsonCombat.skill_icey(caster, opponents, d, state)
 				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 6.0))
 			"aoe_silence":
-				CrimsonCombat.skill_lantern(caster, opponents, d, state)
-				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 10.0))
+				var lantern_targets := CrimsonCombat.lantern_targets(caster, opponents)
+				if not lantern_targets.is_empty():
+					CrimsonCombat.skill_lantern(caster, lantern_targets, d, state)
+					caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 10.0))
 			"lowest_ally_heal":
 				BattleSimSkills._skill_lowest_ally_heal(caster, casters, d)
 				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 4.0))
@@ -1330,6 +1364,7 @@ static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) ->
 		if float(caster.get("skill_ready", old_ready)) != old_ready and _skill_cast_should_shake(caster):
 			_add_visual_event(state, "skill_shake", caster, 9.0 if bool(d.get("is_boss", false)) or d.has("series") else 6.5, 0.22)
 		DamageService.clear_stat_context()
+		CrimsonRuneService.end_action(caster)
 
 
 static func _on_unit_killed(killer: Dictionary, victim: Dictionary, state: Dictionary, killer_team: Array, victim_team: Array) -> void:

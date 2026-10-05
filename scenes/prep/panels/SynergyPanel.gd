@@ -163,6 +163,7 @@ static func _race_entries(race: String) -> Array:
 			]
 		"undead":
 			return [
+				{"threshold": 1, "name": "灵族特性·双毒", "detail": "灵族施加的中毒最多叠加2层，分别计时和造成伤害；两层时目标头顶显示两枚毒标记。"},
 				{"threshold": 2, "name": "灵2·剧毒抑疗", "detail": "目标中毒期间，其治疗与吸血获得的生命减少 30%。"},
 				{"threshold": 4, "name": "灵4·剧毒", "detail": "灵族中毒伤害翻倍。"},
 				{"threshold": 7, "name": "灵7·噬毒", "detail": "灵族单位攻击已中毒的敌人时，每次回复自身 15% 最大生命。"},
@@ -175,6 +176,7 @@ static func _race_entries(race: String) -> Array:
 			]
 		"crimson":
 			return [
+				{"threshold": 1, "name": "赤律特性·战律符文", "detail": "赤律棋子每次给自身施加增益或减益时获得1层战律符文（每次行动最多1层，整场最多9层）。3层：暴击率+30%；6层：再加攻速+60%；9层：再加暴击伤害+90%。赤律4共鸣与赤律7赤潮也可叠加符文。"},
 				{"threshold": 2, "name": "赤律2·绵延", "detail": "赤律族施加的增益和减益持续时间 +20%；沉默、冰霜等控制额外增加最多 0.5 秒。"},
 				{"threshold": 4, "name": "赤律4·共鸣", "detail": "每次成功施加增益、减益或控制，施加者获得一层共鸣：攻击和攻速 +5%，持续 4 秒，最多 10 层；新增层数刷新持续时间。"},
 				{"threshold": 7, "name": "赤律7·赤潮", "detail": "开战第 2 秒起每 5 秒，赤律族全体技能剩余冷却 -1 秒、清除负面状态、回复 6% 最大生命，并永久获得 1 层攻击和攻速 +10%、暴击率 +10 个百分点，整场最多 5 层。"},
@@ -201,6 +203,7 @@ static func _race_entries_en(race: String) -> Array:
 			]
 		"undead":
 			return [
+				{"threshold": 1, "name": "Undead Trait: Double Poison", "detail": "Poison applied by Undead units stacks twice. Each stack ticks and expires separately; two poison marks appear above the target at two stacks."},
 				{"threshold": 2, "name": "Undead 2: Venom Suppression", "detail": "While poisoned, the target receives 30% less HP from healing and lifesteal."},
 				{"threshold": 4, "name": "Undead 4: Poison", "detail": "Undead poison deals double damage."},
 				{"threshold": 7, "name": "Undead 7: Venom Feast", "detail": "When Undead units hit a poisoned enemy, they restore 15% of their max HP per hit."},
@@ -213,6 +216,7 @@ static func _race_entries_en(race: String) -> Array:
 			]
 		"crimson":
 			return [
+				{"threshold": 1, "name": "Crimson Trait: Battle Runes", "detail": "When a Crimson unit applies a buff or debuff to itself, it gains one rune (at most one per action and nine per battle). At 3 runes: +30 percentage points Crit; at 6: another +60% Attack Speed; at 9: another +90 percentage points Crit Damage. Crimson 4 Resonance and Crimson 7 Red Tide also grant runes."},
 				{"threshold": 2, "name": "Crimson 2: Lingering Effects", "detail": "Crimson buffs and debuffs last 20% longer. Control effects gain at most 0.5 additional seconds."},
 				{"threshold": 4, "name": "Crimson 4: Resonance", "detail": "Applying a buff, debuff, or control grants the caster +5% ATK and attack speed for 4s, up to 10 stacks. New stacks refresh the duration."},
 				{"threshold": 7, "name": "Crimson 7: Red Tide", "detail": "From 2s into battle, every 5s Crimson units reduce remaining skill cooldown by 1s, cleanse debuffs, heal 6% max HP, and permanently gain one stack of +10% ATK, +10% attack speed, and +10 percentage points crit chance, up to 5 stacks per battle."},
@@ -285,9 +289,9 @@ func race_max_threshold(race: String) -> int:
 	match race:
 		"god":    entries = [{"threshold":1},{"threshold":3},{"threshold":7}]
 		"dark":   entries = [{"threshold":1},{"threshold":2},{"threshold":5},{"threshold":7}]
-		"undead": entries = [{"threshold":1},{"threshold":4},{"threshold":7}]
+		"undead": entries = [{"threshold":1},{"threshold":2},{"threshold":4},{"threshold":7}]
 		"human":  entries = [{"threshold":1},{"threshold":2},{"threshold":7}]
-		"crimson": entries = [{"threshold":2},{"threshold":4},{"threshold":7}]
+		"crimson": entries = [{"threshold":1},{"threshold":2},{"threshold":4},{"threshold":7}]
 		_:        entries = []
 	for item in entries:
 		max_threshold = maxi(max_threshold, int(item.get("threshold", 0)))

@@ -42,11 +42,11 @@ var _persistent_unit_vfx: Dictionary = {}
 #     那是「永不施法」的哨兵值。
 # 法师的 `random_attribute_bolt` 满足条件：模拟器施法时同步 `attack_count += 1`
 # （BattleSimulator.gd `_tick_skills` 的 random_attribute_bolt 分支），所以
-# attack_count 就是它的施法计数。它是**目前唯一**会在 frames[0] 之前施法的单位 ——
-# range = 4（288px）已覆盖开战站位距离，探针实测整个阵容里只有它一个
-# （work/_qa_922/probe_mage_cast_924）。
+# attack_count 就是它的施法计数。赤灯使也会在第 0 tick 开场施法；
+# 它的目标 uid 列表只在真正施法后写入，适合作为播种帧的痕迹。
 const SEED_ALREADY_CAST_TRACE := {
 	"random_attribute_bolt": "attack_count",
+	"aoe_silence": "skill_target_uid",
 }
 # 9.19：四星末日守卫（skill_id = shared_hp_link 血契连线）的技能音**只在开始释放时播一次**。
 #
@@ -965,7 +965,8 @@ func _play_opening_unit_vfx(current:Dictionary)->void:
 				var spawned:=_play_unit_procedural(sid,unit.get("world_cast",unit.get("world_foot",Vector3.ZERO)),link_target.get("world_hit",link_target.get("world_foot",Vector3.ZERO)),context)
 				if spawned!=null:
 					_persistent_unit_vfx[str(unit.get("id",""))]={"node":spawned,"target_uid":str(unit.get("skill_target_uid",""))}
-		# 9.24 #5：法师（human_mage）的 random_attribute_bolt。它的 range = 4（288px）
+		# 9.24 #5：开场即施法的技能（法师弹体和赤灯使禁言）。
+	# 法师（human_mage）的 random_attribute_bolt。它的 range = 4（288px）
 		# 已覆盖开战站位距离，所以第 0 tick 就会施法；而 frames[0] 已经是施法之后
 		# 的状态，skill_ready 上升沿落在基线之前 → 首次施法的弹道与技能音全丢
 		# （用户报的「首次发动技能不播放技能音效，也没有技能弹道，只造成伤害」）。
@@ -985,7 +986,8 @@ func _play_opening_unit_vfx(current:Dictionary)->void:
 func _seed_cast_already_fired(unit:Dictionary)->bool:
 	var trace:=str(SEED_ALREADY_CAST_TRACE.get(str(unit.get("skill_id","")),""))
 	if trace.is_empty():return false
-	return int(unit.get(trace,0))>0
+	var value:Variant=unit.get(trace,0)
+	return not str(value).is_empty() if typeof(value)==TYPE_STRING else int(value)>0
 
 func _boss_world_position(value: Variant) -> Vector3:
 	if value is Vector3:

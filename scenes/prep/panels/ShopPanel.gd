@@ -87,6 +87,19 @@ func clear_slot_arrays() -> void:
 	reason_labels.clear()
 
 
+# 商店卡片的 `drag_owner` 是本面板，`PrepDragButton` 起拖/松手时按名字回调这两个
+# （`has_method` 保护）。以前这两个不存在 ⇒ 商店那条路**静默不通知任何人**。
+# 现在只做转发：真正的状态（高亮、可读性层、计数图案让位）仍由宿主一处管，
+# 面板不掺和。用信号而不是直接 `host._on_drag_started(...)`：那是动态调用，
+# 会顶起 dynamic_call 棘轮，而且宿主改名时不会报错。
+func _on_drag_started(payload: Dictionary) -> void:
+	drag_started.emit(payload)
+
+
+func _on_drag_ended() -> void:
+	drag_ended.emit()
+
+
 # 改名映射表（原名 -> 新名），单射。改引用时照此核对：
 #   _shop_row                -> _shop.row
 #   _shop_panel              -> _shop.panel
@@ -126,6 +139,14 @@ signal picker_toggled(is_open: bool)      # 商店开合；宿主据此关别的
 signal refresh_requested                  # 请求刷新商店（燃烧特效与扣钱都归宿主）
 signal message_requested(text: String)    # 「钱不够」「待命区满」之类的提示
 signal state_changed                      # 需要整屏刷新
+# 10.05 第 2 条返工：商店卡片起拖/松手要**转发给宿主**。
+# 根因：`PrepDragButton` 只通知 `drag_owner`，而商店卡的 `drag_owner` 是本面板
+# （见 build_hand_cards），宿主因此收不到商店这条路 —— 表现是「商店里拖棋子上阵时，
+# 棋盘正中的计数图案不让位、16 个圆圈也不出现」，而棋盘/待命区两条路是好的。
+# 两条信号由**最派生的 PrepScreen** 接到 PrepBoardController 的
+# `_on_drag_started` / `_finish_drag_state`（父类看不见子类的方法，接线必须在那里）。
+signal drag_started(payload: Dictionary)   # 卡片开始拖拽（payload 与 drag_payload 同构）
+signal drag_ended                          # 拖拽结束（松手 / 被取消）
 
 var host: Control
 var overlay: RefCounted
@@ -691,8 +712,11 @@ func _purchase_reason(index: int) -> String:
 		return tr("ui_sold")
 	if GameState.gold < EconomyLedger.unit_cost(offer, GameState.owned_treasures, GameState.team_clearance_sale_active):
 		return tr("ui_not_enough_gold")
-	if PrepRules.first_empty_bench_slot() < 0:
-		return tr("ui_bench_full")
+	# 10.05：待命区满**不再**算「买不了」。
+	# 原来这里返回 ui_bench_full，卡片会被盖上一层黑底 + 红框「待命区已满」——
+	# 但那时棋盘上还可能有位置、或者这张卡能和场上的棋子升星，玩家其实买得动。
+	# 现在这种「放哪儿」的判断交给宿主在成交那一刻做（PrepUI._on_shop_buy_requested），
+	# 卡片保持正常可点、可拖。
 	return ""
 
 
@@ -707,10 +731,8 @@ func buy_selected() -> void:
 	if GameState.gold < EconomyLedger.unit_cost(offer, GameState.owned_treasures, GameState.team_clearance_sale_active):
 		message_requested.emit(tr("ui_not_enough_gold"))
 		return
-	var empty_bench := PrepRules.first_empty_bench_slot()
-	if empty_bench < 0:
-		message_requested.emit(tr("ui_bench_full"))
-		return
+	# 10.05：待命区满不再是「买不了」。落点（待命 / 棋盘空格 / 就地升星）
+	# 由宿主在成交那一刻决定，见 PrepUI._on_shop_buy_requested。
 	buy_requested.emit(selected)
 
 

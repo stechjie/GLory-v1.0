@@ -1,5 +1,103 @@
 # Glory Beta 0.04
 
+## 2026-10-05（同步批次 `20261005f`）：神王精修独立复核与进仓
+
+接手上一节的交付产物后做收尾：**不改动任何模型字节**，只做独立复核、白名单归位与进仓。
+
+- 交付方的 **347 项模型/动画契约在当前磁盘状态独立复跑通过**（`KING_CONTRACT 347 checks; failures=[]`，rc=0）；另跑项目门禁，`cold_parse_chain 188/0`、`unit_anchor_contract 51/0`，其余门禁的失败项**全部是既存的 `dark_refined` 魔族缺资源等长期项**，`grep -i king` 零命中。
+- 另写「正式映射 → 实例化 → 三动作 → 装备蒙皮」端到端路由探针，**83 项全绿**；并对探针做变异验证 **2/2 全红**（把 `model` 指向不存在的场景、删掉装备节点挂载），改坏后逐字节还原、sha256 与被改前一致，证明探针确有判别力而非恒绿。
+- `.gitignore` 白名单从文件末尾**归位**到先例那组（紧跟 `god_arbiter_refined`），写法统一为 `!/assets/models/units/…`；四组对照实验（归位前／归位后／抽掉白名单／不放 `.gitignore`）证明 14 个新增运行文件**全部可上传**（抽掉白名单则 14/14 被忽略）。本地无新增素材。
+- 同步前普查：内容差异**恰好 3 个**（`.gitignore`、`README.md`、`data/units/race_units.json`，逐行复核**无一处删除他人内容**）＋ 新增 14 个 = **17 个文件**；`MISSING_IN_CODEX=0`，「codex 有而仓未跟踪」集合的增量恰为神王 11 个可见文件与 1 个门禁产物。批次 `20261005f` 已同步，台账 `其他/GLory-v1.0同步记录_20261005f.md`。
+
+## 2026-10-05 神王模型精修（god_king）
+
+依据 `docs/CODEX_MODEL_WORKFLOW.md`，围绕神族三阶地系近战与全场神罚定位，重做王冠上层冠圈、**8 枚有厚度和折面的冠齿及镶嵌晶石**，保留原下层雕纹冠带、面部、短发与长披风。新增白金折面胸甲、腹部叠甲、三层护肩、护臂、披风领链与背扣；肩甲贴合锁骨运动，突出神王的冠冕与披风轮廓。本轮为局部结构与材质精修，并非整个人物重拓扑。
+
+- 正式入口为 `assets/models/units/god_king_refined/god_king_refined.tscn`，单位表仅修改 `model`。原 **19 个文件 SHA256 不变**；三套动作均保留 83 骨、原 skin、表情通道、动画资源与时序，idle 从第 90 帧、attack 从第 210 帧起播。不改变技能、全场伤害、生命加成、攻击/移动速度或根运动配置。
+- 按实际网格位置仅替换冠齿区域 **175 个三角面**，保留身体 2915 面及其全部顶点通道；法线/切线仅有 Godot 重新打包误差，最大约 0.000171。41 个可编辑部件合并为一层装备网格，**2290 顶点、2390 三角、7 个按名骨绑定**；每动作总计 **6394 顶点、5305 三角、2 surfaces**，三动作常驻 19182 顶点、15915 三角、6 surfaces。
+- 独立修复图集空白及采样暗边，运行贴图 **512→1024**，保留原 alpha、有效绘制像素与 mipmap；取消薄发片的倒壳描边，保留纹理墨线。共享角色 shader 未修改。检查了面部、肩袖、披风与接缝，没有用全局增亮覆盖黑斑。
+- **347 项模型/动画契约通过**，覆盖保留拓扑、各顶点通道、表情形变、逐骨姿态、装备绑定、正式映射和备战 idle-only。目标资源硬预算检查 `checked=1, failures=0`，仅 1024 贴图超过 512 软建议。本轮不代表全项目检查全部通过。
+- 同条件正侧背与 idle/run/attack、战斗距离原新对照、光之卫士/裁决者同框已复查。真实 PrepScreen 的 1/2/4 星显示与居中、BattleSimulator → BattleScreen 完整回放和远距离移动通过，正式挂点前后一致；最终相关日志无脚本/引擎 ERROR，退出时仍有既有 ObjectDB 残留警告。
+- RTX 3080 / Compatibility / 1440×900，6 人 p95 **6.070→6.070 ms**、12 人 **6.070→6.071 ms**，绘制调用保持 **68／80**。取消原描边 pass 抵消新增装备 pass；约 165 FPS 显示节拍限制采样，不能据此宣称性能提升或推断手机表现。手机未测试，本次为本地验证。
+- 三动作完整可编辑源 `source/king_complete_editable.blend`、41 部件制作源、复现脚本、SHA256、迭代记录及前后对照均在桌面 `其他/神王精修_20261005/`，最终截图为 `captures/delivery-*`。14 个新增运行文件已加入 `.gitignore` 白名单并逐文件验证可上传；没有需另置桌面同路径目录的不可上传运行素材。本次**已由 `20261005f` 批次同步进 GLory-v1.0**（独立复核结论见上节，同步台账 `其他/GLory-v1.0同步记录_20261005f.md`）。
+
+## 2026-10-05（返工二）：第 3 条 —— 棋盘满/待命区未满的自动落位升星 · 第 5 条 —— 读条宠物只剩斗篷
+
+用户追加反馈两条。**其中第 3 条我先读错了**：当成「自动落待命区是个 bug」，写了两轮读码去追拖拽投递顺序；用户一句澄清把方向扭正 ——「**所以是第3条增加多一种情况：棋盘满 待命区未满，拖动商店的棋子到棋盘会自动落到待命区，如果可升星，会自动升星**」。⇒ 自动落待命区要保留，缺的是**优先级**。
+
+- **第 3 条**：`PrepBoardController._buy_or_merge_shop_to_board()` 的「上阵上限」分支原来只弹一句「棋盘人口已满（N）」就 `return`（玩家拖半天得到一句拒绝，而待命区其实还有空位）。现在改调新抽的 `_auto_dispatch_shop_when_board_full()`，按序 **①棋盘上同名同星 → 就地升星 ②待命区同名同星 → 待命区升星 ③待命区还有空位 → 落待命区 ④都不行 → 「棋子已满，无法购买」**。抽成独立函数是为了**复用**既有买入流程（扣钱 / `shop_sold` / 影子账 / 音效 / 存档），照抄一遍等于把「哪一步会漏」的机会复制一份。
+- **第 5 条**：读条上那只猫「只剩斗篷和一块白」。**根因是两条，都不是参数没调好**。①**时机**：`PetPreview.normalize()` 在 `build_runner()` 里**当场**调，而那一刻 frame 还没 `add_child`、模型不在树里，`PetCatAnimated._load_action_models()`（建在模型自己的 `_ready()` 里）还没跑 ⇒ `aabb_of()` 落到兜底 `AABB(0,1)`（高 1.0）⇒ `scale = 0.95`（真实需要 **0.60**），宠物**偏大 1.58 倍**；②**基准**：`MeshInstance3D.get_aabb()` 给的是**绑定姿势**的盒子且**关于网格原点对称**（实测猫 `[-0.794,+0.790]` —— **高度对、基准错半身**），而真正被驱动的骨骼是 **`[0.000,+1.178]`，脚底恰在 local y=0** ⇒ 拿盒底当脚底就把宠物**抬高半身**、头顶出画。修法：新增 `fit_when_ready()`（没进树就挂一次性 `ready` 信号）＋ `skeleton_bottom()`（基准改用**骨骼**下沿，高度仍用 AABB）。
+- **取景**：修完基准单帧已经不贴边，但读条宠物**在播 run**，摆动会吃掉余量 ⇒ 按帧采样整个周期取最坏一帧：`1.16` 档猫 **1px** / 蘑菇 5px / 兔 6px（擦边甚至被裁），故 `RUNNER_ORTHO_SIZE` **1.16 → 1.40**（最坏 15px ≈ 画面 9.4%），**生产默认值下实测复现**。`build_runner()` 顺手补 `camera_size`/`camera_y_offset` 两个参数（与 `build()` 同名同义），让同一份生产代码能做取景标定、探针不照抄相机参数。
+- **门禁**：`prep_1005` **52 → 76**（第 3 条 +4 用例 / 13 条断言）；`battle_loading_layout` **14 → 32**（+18 条几何判据，`3 类 × 3 宠 × 2 入口`，宠物集合走 `PetService.all_pets()` **数据驱动**）。★ 原 14 条在「宠物被裁掉一半」时**全是绿的** —— 节点一个不少、动作也在播，**不含几何量的判据等于没断言**（与第 2 条同款教训）。新判据一律走**骨骼**（真正被动画驱动的几何）而不是 `MeshInstance3D.get_aabb()`：`pet_feet_*` 最低骨头世界 y≈0、`pet_fits_*` 骨骼盒投影四边留白 ≥8%（runner，播 run）/≥5%（front，idle 冻结帧）、`pet_height_*` 归一化后高度 ≈ `TARGET_HEIGHT`。
+- ★ **一条必须记下来的盲区**：门禁跑 headless、**拿不到渲染像素**，所以判据是几何量；像素真值只能靠非 headless 探针取证。两者实测对照：`runner@1.16` 骨骼 4.2% ↔ 渲染 0.6%；`runner@1.40` 骨骼 12.0% ↔ 渲染 9.4%（**骨骼留白 ≈ 渲染留白 + 3%**）。另外**别用**「截主窗口再按 frame 矩形裁」当渲染判据 —— 主窗口 clear color 不透明，裁下来的 alpha 包围盒恒等于整块（实测 100%/贴四边），是个假测量；`SubViewport.get_texture().get_image()` 才是屏幕上的成像。
+- **变异 4/4 + 4/4 全红且都是"正确理由"**（`其他/work/_mutate_1005e.py` / `_mutate_1005f.py`，还原后 sha256 逐一相符）：第 3 条 —— 退回「只弹棋盘人口已满」/ 砍掉棋盘升星 / 待命区那条分支永不买入 / 待命区只找空位不找升星；第 5 条 —— 把盒底退回当脚底 / 取景退回 1.16 / 把 `fit_when_ready()` 换回进树前直接 `normalize()` / 正面卡取景收紧到 1.00。★ 第 3 条**刻意没做**「待命区升星与塞空位调换顺序」这个变异：`_auto_combine_all()` 会跨棋盘+待命区自动合成、keeper 优先留棋盘 ⇒ 两种顺序终局**完全一样**，那是**不可观测**差异，给它写断言只会得到恒绿的假判据（实测两种写法都 PASS）。
+- **真输入验证**（非 headless 真窗口 1600×720，真鼠标事件）：棋盘 7/7 + 待命区 5/8 时把商店卡拖到棋盘空格 —— 改前 `gold` 不变且弹「棋盘人口已满（7）」；**改后 `gold 500→470`、`bench 5→6`、`sold=true`、不再弹那句提示**。
+- 连带回归全绿：`prep_1005` **76**、`prep_shop` 34、`prep_drag_threshold` 64、`board_4x4_smoke` 64、`prep_swap` 30、`prep_empty_board` 9、`merge_rule_parity` 29、`prep_battle_loading` 109、`prep_detail_overlay` 32、`prep_ring_layout` 17、`cold_parse_chain` 188、`battle_loading_layout` 32、`pet_footstep` 22、`model_root_motion_lock` 49、`board_readability` 5。既存红（`prep_text_coverage` 1、`dynamic_call` 12、`procedural_ui_ratchet` 3、`model_action_playback_continuity` 1、`model_root_motion_inventory` 8 —— **8 条全是 `dark_refined` 缺失**、`asset_manifest_check` 38）已逐条确认与本轮无关。
+- 两个改动文件逐文件核过为纯 CRLF（`bareLF == 0`、`\r\r\n == 0`）。**本轮无新增素材**（纯代码 + 门禁 + 探针）。**未重导 EXE/APK，未真机验证，未同步 `GLory-v1.0`，未暂存/提交/推送**。详见[10.05 修复记录](docs/10.05bug提交及修复记录.md)「一补二」。
+
+## 2026-10-05（返工）：第 2 条 —— 圆圈互斥 / 商店拖拽让位 / 计数图案贴地
+
+上一版第 2 条只做对了一半，用户带着截图指出四件事。逐条复查后确认**根因有三条，都不是"参数没调好"**：
+
+- **「只隐藏了光圈，没有隐藏掉棋盘上的圆圈」**：上一版只让 `BoardReadabilityLayer` 不画那 16 个 **2D 多边形光圈**。截图里剩下的圆圈是**另一套东西** —— `PrepBoardModels._add_prep_cell_marks()` 为每格建的 **3D 地面 quad**（`assets/board/prep_2_5d/board_cell_mark.png`，节点名 `PrepCellMark%d`，共 16 个），它**从不参与显隐**，所以一直亮着。现在这 16 个节点登记进 `_prep_cell_mark_nodes`，新增 `set_prep_cell_marks_visible()`；默认藏、拖拽时全开。
+- **「在商店里拖动棋子到棋盘时，没有隐藏中间的图标」**：`PrepDragButton._launch_drag()` 只通知 `drag_owner`，而**商店卡的 `drag_owner` 是商店面板自己**（`ShopPanel.build_hand_cards` 里 `slot.drag_owner = self`），`ShopPanel` 当时既没有 `_on_drag_started` 也没有 `_on_drag_ended` ⇒ `has_method` 为假 ⇒ 商店这条路**静默不通知任何人**。棋盘/待命区的 `drag_owner` 是宿主，所以只有商店漏了。现在 `ShopPanel` 新增 `drag_started` / `drag_ended` 两个信号与那两个回调名，由**最派生的 `PrepScreen._ready()`** 接到宿主（父类看不见子类的方法，接线必须放最派生层 —— 与既有 `_treasure.net_signals_needed` 同一处的做法）；`PrepBoardController._on_drag_ended()` 拆出 `_finish_drag_state()` 供两条路共用，**商店刻意不做 `_snap_drop_to_nearest`**（那会把"随手一放"变成自动买入，是与现状不同的行为）。
+- **「中间图标要贴在地面上…物理层面应该在棋子的脚下，而不是现在遮挡棋子」**：上一版把图案做成 **2D `Control`**（`z_index = 6`，挂在 `_board_hud.grid` 下），而棋盘 3D 视口 `PrepRiverArenaLayer` 的 `z_index = -19` —— **2D 层整块压在 3D 之上**，所以它必然盖住棋子、且没有地面透视。现在图案（矢量自绘一行不改）塞进 `SubViewport` 渲成贴图，贴到一块**躺在棋盘地面上的 `PlaneMesh`** 上，与 16 张站位图同一个 y 层与 `render_priority = 5`：棋子是不透明 3D 物体、离相机更近，**深度测试自然把它挡在身后**。位置走同一套 `_board_plane_world_pos()`（16 格 UV 区间中点）。
+- **风格按用户给的参考图**：深色半透明底板（alpha 0.55）+ 玩家色细描边 + 一圈柔和外发光，**棋子图标保留在数字前面**（用户明确要求）。另：画布比底板大一圈（`GLOW_MARGIN 12px`，画布 162×88）—— SubViewport 会在边界裁像素，不留边距外发光会被切成一条直边，那正是"贴了一张方图在地上"的突兀感。
+- ★ **一处必须承认的盲区**：视口贴图与普通贴图的 V 轴若相反，图案会上下颠倒，而这一点 **headless 下渲不出图、结构门禁测不到**。所以留了一行显式开关 `PREP_DEPLOY_COUNTER_FLIP_V`（默认 false），并把数字改成按 `ascent/descent` 垂直居中（两版朝向落点几乎一样，不至于先因"偏上偏下"暴露）。
+- **门禁**：`tools/prep_1005_check.tscn` 从 **36 → 52** 条，新增用例 `_case_shop_drag_hides_counter`（专测商店那条路）。四条可判定的量各对应一个子项：`cell_mark_visible_count`、`shop_drag_sets_drop_state` + `shop_drag_hides_counter`、`counter_y_lift ≤ cell_mark_y_lift`、`counter_in_board_world`（与棋子**同一个 3D 视口**才谈得上深度排序）。★ 上一版正是**假绿**：只断言了 2D 徽章的 `visible` 与 `deploy_text()`，于是"圆圈没藏""商店拖拽不让位""浮在空中盖住棋子"三件事一条都测不到。
+- **变异 5/5 全红且都是"正确理由"**（`其他/work/_mutate_1005c.py`，还原后 sha256 逐一相符）：圆圈永不隐藏 / 圆圈不入登记表 / 商店不转发起拖 / 离地抬到 0.30 / 面片挂回 2D 控件树。
+- 回归全绿：`prep_1005` **52/0**、`cold_parse_chain` **188/0**、`prep_shop` 34、`prep_drag_threshold` 64、`board_4x4_smoke` 64、`board_readability` 5、`prep_ring_layout` 17、`prep_empty_board` 9、`prep_swap` 30、`prep_detail_overlay` 32、`prep_battle_loading` 109。**两条既存红**给出了可复核证据、**没有擅自动它们的基线**：`prep_tree_snapshot` FAIL 19（基线 307 行 / mtime `2026-09-17` / `Carrot` 命中 0 次，实测树 441；本轮净增 **+2** ⇒ 改动前就差 **+132**，本文档 2026-09-17 那条"增量同为 +104"就是它的前身）、`procedural_ui_ratchet` FAIL 3（`29→34` / `89→96`，9 条上升项逐条查过无一是本轮造成；本轮新增的 `PrepDeployCounter.gd` 走 `RoundedRectDraw` 纯 `_draw()`，一处 `StyleBoxFlat`/`Button.new()` 都没有）。`dynamic_call` **12** 与既有一致。
+- 7 个改动文件逐文件核过为纯 CRLF（`bareLF == 0`、`\r\r\n == 0`）。**本轮无新增素材**（纯代码 + 门禁）。**未重导 EXE/APK，未真机验证，未同步 `GLory-v1.0`，未暂存/提交/推送**。详见[10.05 修复记录](docs/10.05bug提交及修复记录.md)「一补」。
+
+## 2026-10-05：《10.05bug提交及修复.docx》5 条 —— 升级石拖拽滚动 / 棋盘区重设计 / 待命区满也能买 / 宝藏刷新按钮 / 战斗读条
+
+用户提交 5 条（安卓真机 + MuMu / 雷电 / BlueStacks 模拟器），本轮逐条落地并各配行为门禁。改动**直接覆盖**桌面 `GLory-codex`；等用户真机测试通过后再统一同步 `GLory-v1.0`（**本轮不同步**）。**未暂存、提交或推送**；**本轮无新增素材**（纯代码 + 门禁 + 两个复用自绘组件）；新增 7 个文件、修改 14 个文件，全部核过为纯 CRLF。
+
+- **第 1 条 升级石列表要能「按住升星区域上下滑」**：根因是**两个**。`TouchScrollContainer.gd` 是 9.30 带进来的（`git show 3ea330df:` 只有 34 行）：①**只认 `InputEventScreenTouch`、完全没有鼠标分支** ⇒ 桌面与模拟器拖不动、只剩滚轮和滚动条（用户原话）；②命中与位移**只用一种坐标空间**（`get_global_rect().has_point(event.position)`）⇒ 手机分辨率与 1600×720 基准不同时两者差一个缩放系数，真机上「怎么按都滚不动」且不报错。现在三类输入都接（触摸 / 鼠标拖拽 / 滚轮保持原行为），纵向位移超 `DRAG_THRESHOLD 5.0`（原 6.0）才判拖拽并发 `NOTIFICATION_SCROLL_BEGIN` 让 `BaseButton` 取消这次按压（拖完松手不会误触列表里的按钮），轻点原样放行；**双坐标空间**任一命中即算命中、坐标空间在手势开始时定死；Android `emulate_mouse_from_touch` 的双路投递用「先到先占」去重；新增 `set_drag_zone()` 把可起手区域扩到整张升星卡片（`CarrotCampPanelV3` 已接）。★ 顺手修掉一处**假绿**：该文件里 `var local := _accepts(pos)` 从 `Variant` 推断，触发本工程当错误用的 `inference_on_variant`，**解析期就失败**，但它此前**不在 `cold_parse_chain` 清单里也没人连带** ⇒ 门禁照报 PASS、只在日志留一行 `SCRIPT ERROR`。
+- **第 2 条 棋盘区重设计**：新组件 `scenes/prep/panels/PrepDeployCounter.gd` 在棋盘正中画一枚**上阵计数图案**（圆角底板 + 棋子图标 + `当前/上限`，整枚按玩家位置对应颜色着色）。`BoardReadabilityLayer` 把「这一格画不画」抽成 `prep_cell_visible()`，并让 `_draw_prep()` 与它**共用同一逻辑**：空闲 **0 格**（16 圆圈与光圈全隐藏）、拖动上阵 **16 格**全开，与计数图案互斥显隐。★ 一处**口径判断**：点选棋子显示「选中格 + 射程」是点一下才出现的交互态、不是「平时」，且是玩家判断范围的凭据，故**保留** —— 若不需要请指出。★★ **此条当天即被返工**（见上一节）：当时"16 圆圈全隐藏"只做到了 2D 光圈那一半，棋盘上的 3D 站位圆圈并未隐藏、商店拖拽时图案不让位、图案本身还是 2D 的（会盖住棋子）。
+- **第 3 条 待命区满也能买**：`PrepUI._on_shop_buy_requested` 取消一票否决，按序自动分流 ①棋盘上有能合成的同名同星 → 直接升星 ②棋盘还有空位且未到上阵上限 → 随机放一格 ③待命区内能合成 → 就地升星 ④都不行 → 提示「棋子已满，无法购买」（与要求逐字一致）。`ShopPanel` 去掉棋子黑屏与「待命区已满」提示（`ui_bench_full` 仅教学流程仍用）。★ 另修一处埋在**基类**里的解析错：`PrepUI` 是继承链的基类，它按名调用的 `_buy_or_merge_shop_to_board` 实现在更派生的 `PrepBoardController` ⇒ 按既有惯例在 `PrepShared` 抽象桩区补 `pass` 桩，否则 `PrepScreen.tscn` 整链解析失败。
+- **第 4 条 宝藏刷新按钮**：改成醒目**琥珀金** + 一圈**边缘光呼吸**，按钮右侧加「（当前剩余金：%d）」，花金刷新时**实时更新**。★ 一处**棘轮**踩坑：第一版用 `StyleBoxFlat` 做这圈光，把 `procedural_ui_ratchet` 从 29 顶到 37、明细点名我这两个文件；改成纯 `_draw()`（新 `ui/components/SoftEdgeGlow.gd` + `RoundedRectDraw.gd`，与第 2 条共用）后总数回落 34，**这两个文件已从「上升名单」消失**。
+- **第 5 条 读条重设计**：去掉「正在准备战斗特效 11/13」文字与黑底、保留蓝色进度条，把**当前备战宠物**放在进度条右端跟随前进。★ 修掉一处崩溃：`PetPreview.play_run()` 原先直接调模型方法，而 `build_runner()` 的 frame 还没 `add_child`、模型不在树里 ⇒ `@onready animation_player` 仍是 `null`，抛 `Cannot call method 'play' on a null value`；现在「已 ready 直接切、没 ready 挂一次性 `ready` 信号」—— **不能只加空判断**，因为模型自己的 `_ready()` 结尾会 `play_idle()` 把它覆盖回静止帧。
+- **门禁**：新增 `tools/touch_scroll_check.tscn`（**11 / 0**）与 `tools/prep_1005_check.tscn`（**36 / 0**），`tools/battle_loading_layout_check.tscn` 补 1 条「宠物真的在播 run」判据（**14 / 0**）。★ 两个新门禁都做了**变异验证**（改坏 → 如期 RED → 还原 → sha256 逐字节相同）：`touch_scroll` **4/4 红**（鼠标不起手势 / 取消手势区 / 去掉位移阈值 / 删掉双坐标回退），`prep_1005` **3/3 红**（砍掉棋盘升星分流 / 让圆圈恒显示 / 不挂边缘光），`battle_loading_layout` **1/1 红**（退回直接调 `play_run` ⇒ 动作停在 `idle`）。连带回归全绿：`cold_parse_chain` **188**、`modal_lifecycle` 433、`prep_shop` 34、`prep_battle_loading` 109、`prep_ring_layout` 17、`merge_rule_parity` 29、`board_readability` 5。既存红（`procedural_ui_ratchet` 3、`dynamic_call` 12、`prep_text_coverage` 1、`treasure_bug0910` 1、`treasure_set_effect` 1、`lobby_identity03` 2）已逐条与 10.04 / 9.30 历史日志对照确认与本次无关。
+- ★ **一个必须记下来的坑**：门禁最初用 `push_input(event)`（第二参数默认 `false`）投事件，`--headless` 下窗口尺寸 `(0,0)`、视口退回拉伸基准，`get_final_transform()` 缩放实测 **0.04** ⇒ 逆变换 **×25**，投 `(150,120)` 落点变成 `(3750,3000)`、**全部脱靶**，6 个用例里 5 个假红。正确写法是 `push_input(event, true)`（坐标已是视口本地），先例见 `tools/voice_redesign_check.gd:111`。另修掉用例自身一处错：原先「容器外起手」点写在容器**内部**，那两条用例等于没测。
+- 变异脚本与全部日志在桌面 `其他/work/`（`_mutate_gate.py` / `_mutate_gate2.py` / `_run_gates.py` / `*.log`），非游戏产物。**未重导 EXE/APK，未真机验证**。详见[10.05 修复记录](docs/10.05bug提交及修复记录.md)。
+
+## 2026-10-05 裁决者模型精修（god_arbiter）
+
+依据 `docs/CODEX_MODEL_WORKFLOW.md`，保留神族地系近战、叠防裁决定位，精修白金胸甲、双层包覆肩甲、护臂、护胫、腰甲与披风背扣。23 个可编辑部件共 1372 三角；肩甲补齐背面并平滑曲面，胸甲采用折面与金色脊线。保留面部、冠状发型、浮晶、披风和原攻击武器。本轮为局部结构与材质精修，未重做整个人物。
+
+- 正式入口为 `assets/models/units/god_arbiter_refined/god_arbiter_refined.tscn`；单位表仅改 `model`，原 34 个文件 SHA256 不变。idle/run 为 83 骨、attack 为 118 骨，分别通过原皮肤绑定坐标转换甲片，再并入各动作身体 surface，保留原顶点通道、表情和动画；idle 第 90 帧起播、run 原地策略、攻击时序及技能数值不变。
+- 图集独立补齐空白和采样暗边；披风残留黑点通过实际网格 UV 定位后局部补齐。原 alpha、眼睛、墨线和深色衣料保留，运行贴图 512→1024，描边 0.024→0.006。角色专属 shader 区分原图集和新甲片顶点色，共享 shader 未修改。
+- 待机/跑步每动作 **6168 顶点、4353 三角、1 surface**；攻击含原武器 **9650 顶点、7381 三角、2 surfaces**。三动作常驻 **21986 顶点、16087 三角、4 surfaces**，表面数与原版相同。目标资源硬预算通过（checked=1、failures=0），只有 1024 贴图高于 512 软建议；工具的 visible_v 按默认待机统计，不代表攻击峰值。
+- **2895 项契约检查通过**；同条件正侧背、idle/run/attack、战斗距离原新对照及光之卫士/极光射手同框已复查。真实 PrepScreen 的 1/2/4 星显示、BattleSimulator → BattleScreen 完整回放和远距离移动通过，正式挂点前后相同。修复了切换网格与皮肤的赋值顺序导致的临时包围盒错误；最终相关日志无脚本/引擎 ERROR，退出时仍有既有 ObjectDB 残留警告。
+- RTX 3080 / Compatibility / 1440×900，6 人 p95 **6.069→6.069 ms**、12 人 **6.070→6.064 ms**，绘制调用保持 **80／104**。约 165 FPS 显示节拍限制采样，不能据此认定性能提升；本次为本地验收，手机未测试。
+- 可编辑完整源 `source/arbiter_complete_editable.blend`、23 部件制作源、复现脚本、失败迭代记录、真实引擎对照与 SHA256 在桌面 `其他/裁决者精修_20261005/`（非游戏产物，不进仓）。游戏目录新增 14 个运行文件；精修目录已加入 `.gitignore` 白名单，`git status --ignored` 实测这 14 个文件**全部可上传**（无一被忽略）。**14 个运行文件、裁决者 `model` 路径、本节与白名单已同步至 GLory-v1.0**；因全部可上传，**无需另放桌面同路径素材目录**。**未暂存、提交或推送**。
+
+## 2026-10-05 大天使模型精修（god_archangel）
+
+依据 `docs/CODEX_MODEL_WORKFLOW.md`，围绕神族三阶减伤支援定位重做主要识别结构：原片状双翼替换为 **26 片有厚度和弧度的主羽、覆羽与翼根羽**，整理前后叠层及翼根连接；头后圣环改为圆润的白金双层环、桥接金饰与顶端晶体，增加小型礼服襟扣。保留原冠饰、面部、身形和流动衣袍，避免与普通天使的横向羽翼、水平光环混淆。新结构在背面及俯视战斗镜头下也可辨认。
+
+- 正式入口改为 `assets/models/units/god_archangel_refined/god_archangel_refined.tscn`，单位数据仅改 `model`。原 19 个资源文件 SHA256 不变，83 根骨骼、蒙皮、表情通道及全部动作片段保留；idle 从第 90 帧、attack 从第 210 帧开始，预览也按实际偏移采样。本轮未改变攻击/移动速度、技能减伤数值或技能特效。
+- 原网格的羽翼/圣环与后脑在位置上邻接，先按 UV 岛和空间范围分离，最终仅替换标记的 948 个三角面；剩余身体 2072 面保留原位置、UV、权重和形变，法线/切线仅有 Godot 重新打包的微小误差（最大约 0.000171）。新羽翼、圣环、襟扣共 3728 面，以一个蒙皮 surface、两个按名绑定骨合并，不按零件增加绘制调用。
+- 每动作由 **3020→5800 三角、4822→5536 顶点**，2 surfaces；三动作常驻 17400 三角、16608 顶点、6 surfaces。角色专属材质取消薄片倒壳描边；独立修复图集空白和采样暗边，运行贴图 512→1024，保留原 alpha 与 mipmap，共享角色材质未改。
+- **347 项模型/动画契约通过**，覆盖保留区域的拓扑、全部顶点通道、表情形变、原动画资源、逐骨姿态、装备 rest/权重、正式映射与备战 idle-only。目标资源预算检查 `checked=1, failures=0`，仅 1024 贴图超过 512 软建议；本轮未将其他角色的检查结果混入验收。
+- 同条件正侧背与三动作、战斗距离原新对照、天使/大祭司同框已采集。正式 PrepScreen 的 1/2/4 星显示与居中、BattleSimulator → BattleScreen 完整回放及远距离移动通过，确实观察到原 idle/run/attack 播放。原/新正式场景日志仍有飘字目标回退或退出 ObjectDB 残留警告。
+- RTX 3080 / Compatibility / 1440×900，6 人 p95 **6.070→6.071 ms**、12 人 **6.071→6.071 ms**；绘制调用保持 68／80。约 165 FPS 显示节拍仍限制测量，结果不证明性能提升；手机未测试，本轮范围为本地验证。
+- 可编辑完整源 `source/archangel_complete_editable.blend`（三套动作、身体、装备、打包贴图）、78 个独立编辑部件源、复现脚本、SHA256、日志及前后对照在桌面 `其他/大天使精修_20261004/`；任务于 10 月 4 日开始，10 月 5 日交付，最终截图为 `captures/delivery-*`。
+- 精修目录已加入 `.gitignore` 白名单。14 个新增运行文件、大天使 `model` 路径、本节与白名单已同步至 GLory-v1.0，逐项合并并保留仓库其他内容。这 14 个运行文件经 `git check-ignore` 实测**全部可上传**（与光之卫士/大祭司/天使/极光同构），故**不再在桌面另置素材副本** —— 按约定，桌面同路径夹只用于放**无法进仓**的部分。原 FBX 仍依赖已有美术资源包。**未暂存、提交或推送**。
+
+## 2026-10-04 极光射手模型精修（god_aurora）
+
+按 `docs/CODEX_MODEL_WORKFLOW.md` 增强射手职业辨识：新增白金分层胸甲、护肩、护胫、随左前臂运动的腕式弓架，以及长发侧面可见的箭匣和青色晶体箭尾。保留原面部、发型、身形和射击动作；本轮为局部装备建模与材质精修，并非整个人物重拓扑。去掉薄发片的倒壳描边，修补图集空白及背面长发暗斑，独立贴图运行时提升到 1024，保留 mipmap、发丝墨线和深色衣料。共享角色材质与技能特效未改。
+
+- 正式入口：`assets/models/units/god_aurora_refined/god_aurora_refined.tscn`；单位数据仅修改 `model`。原三份 FBX、83 根骨骼、身体网格/UV/表情通道、动作片段、idle 起播帧及 run 根运动策略保留。
+- 新装备由 Blender 制作，33 个编辑部件合并为一个蒙皮 surface、7 个按名绑定骨。相同位置/法线/颜色/骨名的顶点焊接后，装备 1964 顶点、2226 三角；加原身体后每动作 **6522 顶点、5325 三角、2 surfaces**，三动作常驻 19566 顶点、15975 三角、6 surfaces，无新增骨骼。
+- **2294 项契约通过**，包含原身体和全部动画资源一致、逐骨姿态、装备 rest/权重及原地跑步策略。完成同条件正侧背三动作、天使/大祭司同族对照、正式 PrepScreen 的 1/2/4 星显示与居中、BattleSimulator → BattleScreen 回放和远距离移动验证。
+- RTX 3080 / Compatibility / 1440×900：6 人 p95 **6.071→6.070 ms**，12 人 **6.070→6.066 ms**；绘制调用保持 68／80。取消原描边 pass 抵消新增装备 pass。测量仍呈约 165 FPS 显示节拍，不能据此声称性能提升或推断手机表现；手机未测。
+- 本单位通过资源硬预算，仅 1024 贴图高于 512 软建议。**此前 GLory-codex 精修验证时，全项目预算检查未全绿**：16 条失败来自其他模型（暗族精修资源缺失、大祭司 surfaces 和部分 crimson 系模型超限），详见外部 `asset-budget-final.log`。正式场景原/新日志仍有飘字目标回退或退出 ObjectDB 残留警告，本轮未修改这些系统。
+- 可编辑完整源 `source/aurora_complete_editable.blend`、独立零件源、真实引擎前后对照页面、复现脚本、SHA256 与日志均在桌面 `其他/极光射手精修_20261004/`，最终近景截图为 `captures/delivery-*`。
+- 运行资源目录已按既有精修模型加入 `.gitignore` 白名单。11 个新增运行文件、极光射手 model 路径、本节与白名单已同步至 GLory-v1.0，基于同事最新提交 `92c5ea0` 逐项合并，保留仓库其他内容。新增资源均可随代码上传；桌面 `极光射手新增资源_20261004/` 保留同内容副本。原 FBX 继续依赖已有美术资源包（仓库本地未安装原极光射手目录）；本次核验资源 SHA256、引用清单与配置差异，未在缺少原美术包的仓库目录重跑引擎验收。未暂存、提交或推送。
+
 ## 2026-10-04 天使模型精修（god_angel）
 
 按 `docs/CODEX_MODEL_WORKFLOW.md` 精修天使：保留白色羽翼、长发和原动作，将片状光环替换为立体暖金圆环；移除薄羽片和发丝上穿出的倒壳描边，修补图集纯黑空白及采样暗边，独立贴图以 1024 像素和 mipmap 导入，改善羽翼、面部与衣料清晰度。其他角色的共享材质不变。

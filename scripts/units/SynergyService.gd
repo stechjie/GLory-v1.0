@@ -7,13 +7,13 @@ extends RefCounted
 # tools/audio_sfx_check 会拿这两个函数对一遍，对不上直接红。
 #
 # 取值的来源是 flags_from_counts() 下面那一堆比较：god 1/3/7、dark 1/2/5/7、
-# undead 2/4/7、human 1/2/7。
+# undead 1/2/4/7、human 1/2/7、crimson 1/2/4/7。
 const RACE_THRESHOLDS := {
 	"god": [1, 3, 7],
 	"dark": [1, 2, 5, 7],
-	"undead": [2, 4, 7],
+	"undead": [1, 2, 4, 7],
 	"human": [1, 2, 7],
-	"crimson": [2, 4, 7],
+	"crimson": [1, 2, 4, 7],
 }
 
 static func count_races_from_board() -> Dictionary:
@@ -56,6 +56,7 @@ static func flags_from_counts(counts: Dictionary) -> Dictionary:
 		# 旧的「只剩最后 1 个时属性翻倍」已删除。
 		"human_death_rally": human >= 7,
 		"crimson_duration": crimson >= 2,
+		"crimson_rune": crimson > 0,
 		"crimson_resonance": crimson >= 4,
 		"crimson_pulse": crimson >= 7,
 	}

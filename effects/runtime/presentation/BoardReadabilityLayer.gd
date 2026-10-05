@@ -132,11 +132,33 @@ func contract_snapshot() -> Dictionary:
 		"prep_cell_count": _prep_cells.size(),
 		"prep_selected_index": _prep_selected_index,
 		"prep_range_count": _prep_range_indices.size(),
+		"prep_drawn_cell_count": _prep_drawn_cell_count(),
 		"battle_zone_count": _battle_zones.size(),
 		"battle_focus_id": _battle_focus_id,
 		"battle_range_point_count": _battle_range_polygon.size(),
 		"battle_has_target": _battle_has_target,
 	}
+
+
+# 这一格此刻该不该画出来。**`_draw_prep()` 与 `contract_snapshot()` 共用它** ——
+# 否则门禁断言的是另一套逻辑，「平时不画光圈」这条永远测不到（10.05 第 2 条）。
+func prep_cell_visible(index: int) -> bool:
+	if index < 0 or index >= _prep_cells.size():
+		return false
+	if _prep_cells[index].size() < 3:
+		return false
+	if _prep_drop_active:
+		return true
+	# 选中格与射程是「点一下才出现」的即时反馈，与拖放无关，始终保留。
+	return index == _prep_selected_index or _prep_range_indices.has(index)
+
+
+func _prep_drawn_cell_count() -> int:
+	var count := 0
+	for index in _prep_cells.size():
+		if prep_cell_visible(index):
+			count += 1
+	return count
 
 
 func _restart_focus_fade(entering: bool) -> void:
@@ -162,29 +184,38 @@ func _draw() -> void:
 
 
 func _draw_prep() -> void:
+	# 10.05 反馈第 2 条：**平时不画 16 个圆圈和玩家色光圈** —— 它们只在拖动棋子上阵
+	# 时出现（那一刻才需要看落点），平时棋盘交给正中的计数图案（PrepDeployCounter）。
+	# 两个例外保留：选中格与攻击射程。它们是玩家点一下才出现的即时反馈，
+	# 藏掉就等于点棋子看不出射程了。
 	for index in _prep_cells.size():
-		var polygon := _prep_cells[index]
-		if polygon.size() < 3:
+		if not prep_cell_visible(index):
 			continue
-		var fill_alpha: float = style.prep_drag_fill_alpha if _prep_drop_active else style.prep_rest_fill_alpha
-		var line_alpha: float = style.prep_drag_line_alpha if _prep_drop_active else style.prep_rest_line_alpha
-		var fill_color := _alpha(_prep_player_color, fill_alpha)
-		var line_color := _alpha(_prep_player_color, line_alpha)
-		if _prep_range_indices.has(index):
+		var polygon := _prep_cells[index]
+		var selected := index == _prep_selected_index
+		var in_range := _prep_range_indices.has(index)
+		var fill_color: Color
+		var line_color: Color
+		if in_range:
 			fill_color = _alpha(style.range_color, style.prep_range_fill_alpha * _focus_strength)
 			line_color = _alpha(style.range_color, style.prep_range_line_alpha * _focus_strength)
-		if index == _prep_selected_index:
+		else:
+			fill_color = _alpha(_prep_player_color,
+				style.prep_drag_fill_alpha if _prep_drop_active else style.prep_rest_fill_alpha)
+			line_color = _alpha(_prep_player_color,
+				style.prep_drag_line_alpha if _prep_drop_active else style.prep_rest_line_alpha)
+		if selected:
 			fill_color = _alpha(style.selection_color, style.prep_selected_fill_alpha * _focus_strength)
 			line_color = _alpha(style.selection_color, style.prep_selected_line_alpha * _focus_strength)
 		draw_colored_polygon(polygon, fill_color)
 		var outline := _closed(polygon)
-		if index == _prep_selected_index:
+		if selected:
 			draw_polyline(outline, _alpha(style.selection_color, 0.18 * _focus_strength), 12.0, true)
-		elif _prep_range_indices.has(index):
+		elif in_range:
 			draw_polyline(outline, _alpha(style.range_color, 0.09 * _focus_strength), 7.0, true)
-		else:
+		elif _prep_drop_active:
 			draw_polyline(outline, _alpha(_prep_player_color, 0.18), 8.0, true)
-		draw_polyline(outline, line_color, style.prep_line_width + (1.0 if index == _prep_selected_index else 0.0), true)
+		draw_polyline(outline, line_color, style.prep_line_width + (1.0 if selected else 0.0), true)
 		if _prep_drop_active and index == _prep_drop_hover_index:
 			_draw_drop_beam(polygon)
 	_draw_prep_direction_labels()

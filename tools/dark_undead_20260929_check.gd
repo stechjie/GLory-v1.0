@@ -1,5 +1,7 @@
 extends Node
 
+const StatusVFX := preload("res://scenes/battle/StatusVFXController.gd")
+
 var failed := 0
 
 
@@ -88,6 +90,8 @@ func _ready() -> void:
 	var two_ticks := StatusEffectService.tick(double_target, 0.1)
 	_expect(double_target.statuses.poison.get("stacks", []).size() == 2 and two_ticks == [30, 30] and int(double_target.hp) == 940,
 		"undead_two_poison_ticks", "ticks=%s hp=%d" % [str(two_ticks), int(double_target.hp)])
+	_expect(StatusVFX.active_poison_layers(double_target.statuses) == 2,
+		"undead_two_poison_icons", "Two live poison layers must show two head icons")
 	StatusEffectService.add_poison(double_target, 4.0, 0.03)
 	_expect(double_target.statuses.poison.get("stacks", []).size() == 2,
 		"undead_poison_two_stack_cap", str(double_target.statuses.poison))
@@ -108,8 +112,12 @@ func _ready() -> void:
 	StatusEffectService.tick(expiring_target, 0.5)
 	_expect(StatusEffectService.has_status(expiring_target, "poison") and not expiring_target.statuses.poison.has("stacks"),
 		"undead_poison_independent_expiry", str(expiring_target.statuses.poison))
+	_expect(StatusVFX.active_poison_layers(expiring_target.statuses) == 1,
+		"undead_one_poison_icon", "One remaining poison layer must show one head icon")
 	StatusEffectService.tick(expiring_target, 1.5)
 	_expect(not StatusEffectService.has_status(expiring_target, "poison"), "undead_poison_final_expiry", str(expiring_target.statuses))
+	_expect(StatusVFX.active_poison_layers(expiring_target.statuses) == 0,
+		"undead_no_poison_icon", "Expired poison must hide both head icons")
 	DamageService.clear_stat_context()
 
 	var burst_target := _unit("human_king", "enemy", {}, Vector2(500, 320))

@@ -72,8 +72,18 @@ static func add_status(fighter: Dictionary, kind: String, duration: float, param
 			stacks.append(next)
 		fighter.statuses[kind] = _poison_status_from_stacks(stacks)
 		DamageService.record_status_applied(kind, added_stack_duration, true)
+		_note_crimson_self_status(source, fighter, kind)
 		return
 	next["remaining"] = maxf(float(existing.get("remaining", 0.0)), adjusted_duration)
+	if kind == "silence":
+		# Keep Lantern's attack-speed penalty on its own timer if another
+		# silence refreshes the control duration.
+		var lantern_time := float(existing.get("lantern_slow_remaining", 0.0))
+		if next.has("lantern_slow_pct"):
+			lantern_time = maxf(lantern_time, adjusted_duration)
+		if lantern_time > 0.0:
+			next["lantern_slow_remaining"] = lantern_time
+			next["lantern_slow_pct"] = float(existing.get("lantern_slow_pct", next.get("lantern_slow_pct", 0.0)))
 	if kind in ["poison", "bleed", "bleed_nonlethal", "burn"]:
 		next["tick_left"] = minf(float(existing.get("tick_left", 0.0)), float(next.get("tick_left", 0.0))) if existing.has("tick_left") else 0.0
 	fighter.statuses[kind] = next
@@ -82,6 +92,15 @@ static func add_status(fighter: Dictionary, kind: String, duration: float, param
 	# the caster, so buffs on allies and debuffs on enemies belong to that caster.
 	var added_duration := maxf(0.0, float(next.remaining) - maxf(0.0, float(existing.get("remaining", 0.0))))
 	DamageService.record_status_applied(kind, added_duration, _is_negative_status(kind))
+	_note_crimson_self_status(source, fighter, kind)
+
+
+static func _note_crimson_self_status(source: Dictionary, fighter: Dictionary, kind: String) -> void:
+	if source.is_empty() or str(source.get("uid", "")) != str(fighter.get("uid", "")):
+		return
+	if float(fighter.get("statuses", {}).get(kind, {}).get("remaining", 0.0)) <= 0.0:
+		return
+	CrimsonRuneService.note_self_effect(source, DamageService._stat_state)
 
 # Keep top-level poison fields for healing, VFX and replay readers.
 # Each nested stack retains its own duration, tick timer, strength and caster.
@@ -215,6 +234,8 @@ static func tick(fighter: Dictionary, delta: float) -> Array[int]:
 				fighter.statuses[key] = _poison_status_from_stacks(active_stacks)
 			continue
 		s.remaining = float(s.get("remaining", 0.0)) - delta
+		if key == "silence" and s.has("lantern_slow_remaining"):
+			s.lantern_slow_remaining = maxf(0.0, float(s.lantern_slow_remaining) - delta)
 		if key == "poison":
 			s.tick_left = float(s.get("tick_left", 0.0)) - delta
 			if float(s.tick_left) <= 0.0:
@@ -282,6 +303,8 @@ static func attack_speed_multiplier(fighter: Dictionary) -> float:
 	var mul := pow(1.15, clampi(int(fighter.get("frenzy_stacks", 0)), 0, 64))
 	if fighter.statuses.has("slow"):
 		mul *= maxf(0.1, 1.0 - float(fighter.statuses.slow.get("attack_speed_pct", 0.0)))
+	if fighter.statuses.has("silence") and float(fighter.statuses.silence.get("lantern_slow_remaining", 0.0)) > 0.0:
+		mul *= maxf(0.1, 1.0 - float(fighter.statuses.silence.get("lantern_slow_pct", 0.0)))
 	if fighter.statuses.has("speed_bonus"):
 		mul *= 1.0 + float(fighter.statuses.speed_bonus.get("pct", fighter.statuses.speed_bonus.get("attack_speed_pct", 0.0)))
 	if fighter.statuses.has("attack_set_speed_bonus"):
@@ -294,6 +317,7 @@ static func attack_speed_multiplier(fighter: Dictionary) -> float:
 		drum_speed_pct += float((layer as Dictionary).get("pct", 0.0))
 	mul *= 1.0 + drum_speed_pct
 	mul *= 1.0 + 0.05 * float(fighter.get("crimson_resonance_stacks", 0))
+	mul *= CrimsonRuneService.attack_speed_multiplier(fighter)
 	return mul
 
 static func move_speed_multiplier(fighter: Dictionary) -> float:
