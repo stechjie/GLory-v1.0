@@ -1,5 +1,105 @@
 # Glory Beta 0.04
 
+## 2026-10-06：`10.06bug提交及修复.docx` 8 条
+
+按文档逐条落码。**改动只有代码 + 1 张图标素材**（`assets/ui/race_logos/crimson.png`），
+无新增运行资源、未重导 EXE/APK、未真机验证、未同步 `GLory-v1.0`、未暂存/提交/推送。
+
+- **第 1 条（计数图案去底板）** `scenes/prep/panels/PrepDeployCounter.gd`：`_draw()` 删掉
+  `RoundedRectDraw.draw_soft_glow()` / `draw_colored_polygon(..., PLATE_BG)` / `draw_polyline(..., BORDER_WIDTH)`
+  三层，只留「棋子剪影 + 数字」。`box`/`center` 仍照算，`GLOW_MARGIN` 与
+  `PrepBoardModels.PREP_DEPLOY_COUNTER_VIEWPORT_SIZE` 的对应关系不变；数字那层深色投影**刻意保留** ——
+  去掉底板后它是数字贴在草地上唯一的可读性保障。
+- **第 2 条（朋友列表只显昵称）** `scenes/menu/Team3v3Lobby.gd::_online_friend_row()` 改走
+  `AccountManager.display_name(name, code, false)`。好友码**不是删掉、只是不显示** —— 邀请仍按它发消息。
+- **第 3 条（刷新键对齐 + 开商店收起通讯簇）** `scenes/prep/PrepUI.gd`：刷新键
+  `offset_left -105→-143`、`offset_right 25→-13`（框宽 130、中心正好落在右侧竖列 W-78；
+  原值中心在 W-40、右缘还探出屏幕）。`_on_shop_picker_toggled()` 里三行 `_set_overlay_blocked`
+  换成新抽的 `_set_comms_ui_hidden()` —— 商店开着**整块隐藏**右下角通讯簇（原来只禁输入、仍占位置看着拥挤），
+  关店走 `set_deferred` 下一帧按**进来时的可见性**放回。
+  ★ **第一版只藏了语音三键，真机复测「没消失」**（见下面「第二段」）：那四键外面还有一层共享底板
+  `_comms_dock`（`PanelContainer`，`308×88`、`z=19`、比最左语音键还宽一圈），加上同簇的聊天键；
+  现在的成员表是 `[_comms_dock, _chat_button, 语音, 队友, 所有人]` 五个，**整簇一起收**。
+- **第 4 条（赤律族图标去黑底）** `assets/ui/race_logos/crimson.png` 原来是 **RGB、无 alpha、黑底烘焙在像素里**
+  （其余 4 族 logo 都是 RGBA + 四角透明）。四边连通域泛洪（`lum<=26`）置透明 + 1px 高斯羽化，输出 RGBA 1254×1254，
+  不透明像素占比 **55.0%**。原件备份 `其他/work/_qa_1006/crimson_orig_backup.png`
+  （sha `d0703af86f5dcaee` → 新 `a0ab6d311d683784`）。★ 本轮唯一素材改动，**已 `--import` 重导入**。
+- **第 5 条（结算面板上下两排按钮 + 删滚动提示）** `scenes/menu/FinalSettlementPanel.gd`：一排按钮抽成
+  `_button_row()`，在**面板上部（与标题同高）与底部各放一排**；`_return_button` 单变量改
+  `_return_buttons: Array`（两排一起禁用 / 一起被 `allow_return_retry()` 恢复）；删掉
+  「↓ 本结算面板超过一屏，可上下滚动查看全部内容」。
+- **第 6 条（房间顶部文案）** `Team3v3Lobby.gd::_start_block_reason()` 只留「等待结算中的玩家返回」，
+  「，或由房主请离」半句删掉。
+- **第 7 条（落点在商店里不购买）** `scenes/prep/PrepBoardController.gd`：`_drop_on_board()` /
+  `_drop_on_bench()` 加 `_shop_drop_inside_store(d)` 早退。根因是商店弹窗为**非模态透明 Container**
+  （`mouse_filter = PASS`）、背景层一律 `IGNORE`，悬在它下面的棋盘格/待命格仍会收到那次放置，
+  而弹窗正压在棋盘下缘 ⇒「在商店里随口一拖」被当成上阵买入。只有 `kind=="shop"` 且商店开着、
+  落点在弹窗或外挂层（钱袋 A / 刷新键）矩形内才拦；拖到空位照旧买入。
+- **第 8 条（房间里也能静音）** `Team3v3Lobby.gd` 右上角（`MUTE_BTN_POS=(1500,26)`、`edge="right"`）
+  新增「静音 / 已静音」键，走 `PrepWidgets.make_menu_button`（**刻意不用 `Button.new()`**，
+  否则顶红 `procedural_ui_ratchet`）。语义与备战期那颗同源：`Master` 总线静音 **或**
+  `Presentation.music_allowed()==false` 都算已静音；在「设置页关了背景音乐」那一态按下去会把声音
+  **真正打开**（清总线静音 + 打开音乐开关），而不是翻一个本来就没静音的总线（按了像没反应）。
+
+**判据与变异**
+
+- 新增 `tools/prep_1006_check.tscn`（headless）**51 PASS / 0 FAIL**：第 2/3/5/6/7/8 条的行为判据，
+  外加两条结构判据（`_drop_on_board` / `_drop_on_bench` 都调用了守卫；计数图案 `_draw` 里不再有
+  `draw_soft_glow` / `PLATE_BG` / `draw_polyline`）。第 8 条用例结束**还原现场**（总线静音态 + 音乐开关）。
+  ★ 第 3 条那条用例必须先 `NetworkService.team_active = true` 才建得出语音三键
+  （`PrepUI._build_chat_entry()` 开头就 `not NetworkService.team_active → return`），
+  否则测的是「根本没有语音键」而不是「有没有隐藏」。并且它验的是**整簇 5 个成员**
+  （三键 + `_comms_dock` + `_chat_button`）、走**真实入口** `_shop.toggle_picker()`
+  （不是直接调 `_on_shop_picker_toggled()` —— 那样接线断了也全绿）。
+- 新增 `work/_qa_1006/deploy_counter_probe.tscn`（**非** headless —— headless 取不到像素真值、
+  真鼠标也不走 `BaseButton` 内建逻辑）**6 PASS / 0 FAIL**：把计数图案渲进 `SubViewport(transparent_bg)`
+  后逐像素判「底板圆角矩形以外整圈全透明 / 底板四角内侧取样点全透明 / 图案本体必须仍在」，
+  并真鼠标 `Input.parse_input_event` 点上面那排「返回房间」验证两排一起进「正在返回…」。
+  ★ 这个探针 **`work/**` 受 gitignore ⇒ 不进仓**（本地开发者产物，与先例 `work/_qa_shop/drag_fix_probe` 同一处理）；
+  需要复跑时按上面的命令行在本地建场景即可。
+- 新增 `其他/work/_qa_1006/assert_crimson_logo.py`（第 4 条，判据就是像素）**5 PASS / 0 FAIL**：
+  RGBA、四角 alpha=0、最外圈全透明、图案未被抹掉、与其余 4 族 logo 同口径。
+- **变异 13/13 全红**（`其他/work/_qa_1006/mutate_1006.py`，含探针模式 2 条；四道加固：
+  只认先复制的 `.r3bak` / 见残留拒跑 / SIGTERM 兜底 / 基线先绿）：显示好友码、刷新键退回 -105/25、
+  通讯簇成员表退回空（＝只藏三键、底板 + 聊天键留在原地，**正是真机报的第一版行为**）、上面那排按钮删掉、滚动提示加回来、文案补回「或由房主请离」、守卫恒返回 false、
+  棋盘那条路不再调守卫、`_is_audio_muted()` 恒 false、静音键根本不建、`_draw` 里把底板画回来、上面那排删掉。
+  **每一处改坏后逐字节还原、sha256 与改坏前一致，全库 `.r3bak/.mutbak/.bak/.tmp` 残留 = 0。**
+- 连带回归全绿：`cold_parse_chain` 209、`prep_1005` 76、`prep_shop` 34、`prep_drag_threshold` 64、
+  `final_settlement` 41、`comms_layout` 113、`match_exit` 69、`voice_music` 31、`team_lobby_seat_label` 35。
+  既存红逐条确认与本轮无关：`procedural_ui_ratchet` 3（基线过时 + `PrepUI` 的 `StyleBoxFlat 4→5`
+  来自用户 10-06 自己的改动，本轮代码**零新增原语**）、`prep_mute_state` **12（本条门禁已过时 ——
+  它测备战页的静音键，而那颗键 10-06 被换成了「设定」；`match_exit_check` 反而反向断言「摆放界面上
+  不应再有静音键」）**、`asset_manifest` 28（4 条 allowlist 于 2026-09-30 到期 + 23 条既存缺失，
+  `grep prep_1006 / deploy_counter_probe / crimson` 零命中）、`prep_tree_snapshot` 19、
+  `prep_text_coverage` 1、`dynamic_call` 12。本轮文件逐文件核过为纯 CRLF（`bareLF == 0`）。
+- 详见[10.06 修复记录](docs/10.06bug提交及修复记录.md)。
+
+**★★ 第二段（真机复测后）：第 3 条补漏**
+
+用户真机复测回报 **「开商店而语音 UI 没消失」** —— 第 3 条第一版漏了整簇底板。根因与修法见
+[修复记录 §6](docs/10.06bug提交及修复记录.md)：
+
+- **根因**：第一版只对语音三键 `visible = false`，但同簇的 `_comms_dock` 深色底板（`308×88`、`z=19`）
+  与 `_chat_button` 没被藏 ⇒ 右下角看着「根本没动」。**接线本身是通的**（真实入口验证过），
+  问题在**判据只盯三个按钮、与用户所见不一致**。
+- **修法**：`_set_voice_ui_hidden` → `_set_comms_ui_hidden`，成员扩为 5 个；
+  新增 `_comms_hidden_visible` 记下进入时各自可见性，关闭时按原样 `set_deferred` 恢复。
+  门禁同步扩到 5 成员 + 改走真实入口 `toggle_picker()`，`checked` 45 → **51**。
+- **验证**：`prep_1006_check` **PASS 51/0**；重标定后的变异 `m3_bug3_comms_dock_left` **RED**
+  （`failures=2`：`_comms_dock` + `_chat_button`，正是这一版漏掉的两条），逐字节还原 sha256 一致；
+  回归 `comms_layout` **113/0**、`cold_parse_chain` **209/0**；残留普查 = 0。
+  第二段后 `PrepUI.gd` sha16 `eb5f3626d6bde603`、`prep_1006_check.gd` sha16 `a129771a84f2e708`。
+
+**★ 本批素材点名（唯一一件）**：`assets/ui/race_logos/crimson.png` —— **赤律族羁绊图标黑底透明化**。
+原件是 RGB 无 alpha、黑底烘焙在像素里，现改为 RGBA 且只保留图案本体；备份
+`其他/work/_qa_1006/crimson_orig_backup.png`，五族对照图 `其他/work/_qa_1006/race_family_compare.png`。
+该文件 `git check-ignore` 实测**可上传**（`assets/ui/**` 不受 `/assets/*` 白名单制约束），
+按 10.05 口径**只归仓库、桌面不放副本**。**没有需要另置桌面同路径目录的不可上传素材。**
+
+**★ 待用户确认**：第 8 条「放到房间里同位置处」我理解为**只**加在 3v3 房间界面（备战页那颗静音键
+10-06 已被换成「设定」，且 `match_exit_check` 断言摆放界面上不应再有静音键）；另外
+`prep_mute_state_check` 已成过时门禁，是否改它的口径或下掉，等用户决定 —— 本轮**没擅自动**。
+
 ## 2026-10-05（同步批次 `20261005f`）：神王精修独立复核与进仓
 
 接手上一节的交付产物后做收尾：**不改动任何模型字节**，只做独立复核、白名单归位与进仓。

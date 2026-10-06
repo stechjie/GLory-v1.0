@@ -12,6 +12,9 @@ func _drop_on_board(board_index: int, data: Variant) -> void:
 	if typeof(data) != TYPE_DICTIONARY:
 		return
 	var d: Dictionary = data
+	# 10.06 反馈第 7 条：商店棋子若落回商店里，不触发购买（见 _shop_drop_inside_store）。
+	if _shop_drop_inside_store(d):
+		return
 	match str(d.get("kind", "")):
 		"shop":
 			if GameState.tutorial_mode:
@@ -29,6 +32,9 @@ func _drop_on_bench(bench_index: int, data: Variant) -> void:
 	if typeof(data) != TYPE_DICTIONARY:
 		return
 	var d: Dictionary = data
+	# 10.06 反馈第 7 条：同上 —— 落点在商店里就不买。
+	if _shop_drop_inside_store(d):
+		return
 	match str(d.get("kind", "")):
 		"shop":
 			_buy_or_merge_shop_to_bench(int(d.get("index", -1)), bench_index)
@@ -36,6 +42,34 @@ func _drop_on_bench(bench_index: int, data: Variant) -> void:
 			_move_or_merge_board_to_bench(int(d.get("index", -1)), bench_index)
 		"bench":
 			_move_or_merge_bench(int(d.get("index", -1)), bench_index)
+
+
+# 10.06 反馈第 7 条：拖动商店棋子时，松手点还在**商店里**（弹窗 / 外挂层上的钱袋、刷新键）
+# 就不算一次「买它」。
+#
+# 根因：商店弹窗是**非模态**的透明 Container（mouse_filter=PASS）、背景层一律 IGNORE，
+# 所以悬在它下面的棋盘格/待命格仍会接到这次放置 —— 弹窗又正好压在棋盘下缘，
+# 「在商店里随手一拖松手」就被当成上阵买入（误购）。
+# 这里只在 **kind=="shop"** 且商店确实开着、鼠标落在商店矩形内时拦下；
+# 拖到棋盘/待命格空位照旧买入（那是正常路径）。
+# `at` 只是给门禁留的落点入口：省略时就是真实鼠标位置（生产路径原样）。
+# 之所以要能指定：headless 里 `get_global_mouse_position()` 拿不到真光标，
+# 而这条判据的核心恰恰是「落点在哪」，不给入口就只能写一条自证式断言。
+func _shop_drop_inside_store(data: Dictionary, at: Vector2 = Vector2.INF) -> bool:
+	if str(data.get("kind", "")) != "shop":
+		return false
+	if _shop == null or not _shop.picker_open:
+		return false
+	var point := get_global_mouse_position() if at == Vector2.INF else at
+	var panel := _shop.panel
+	if panel != null and is_instance_valid(panel) and panel.visible and panel.get_global_rect().has_point(point):
+		return true
+	var side := _shop.side_controls
+	if side != null and is_instance_valid(side) and side.visible:
+		for child in side.get_children():
+			if child is Control and (child as Control).visible and (child as Control).get_global_rect().has_point(point):
+				return true
+	return false
 
 func _can_drop_to_sell(data: Variant) -> bool:
 	return typeof(data) == TYPE_DICTIONARY and str((data as Dictionary).get("kind", "")) in ["board", "bench"]
