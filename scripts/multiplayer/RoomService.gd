@@ -456,14 +456,20 @@ func public_room_list() -> Array:
 func resume_suspended_room(room: Dictionary) -> void:
 	if bool(room.get("suspended", false)):
 		var paused_for := maxf(0.0, _time() - float(room.get("empty_since", _time())))
-		# No game time elapsed while the entire room was suspended. Otherwise a
-		# ten-minute recovery immediately trips the five-minute battle watchdog.
+		# No game time elapsed while the entire room was suspended. Recovery
+		# must not consume the battle watchdog or result ACK budget.
 		for key in ["state_started_at", "result_ack_deadline", "result_ack_hard_deadline"]:
 			if float(room.get(key, 0.0)) > 0.0:
 				room[key] = float(room[key]) + paused_for
 		room.suspended = false
 		_log("room resumed id=%d paused_sec=%.1f" % [int(room.get("id", 0)), paused_for])
 	room.empty_since = 0.0
+
+
+func suspend_grace_sec(room: Dictionary) -> float:
+	if str(room.get("state", "lobby")) == str(_cfg.get("room_lobby", "lobby")):
+		return float(_cfg.get("lobby_suspend_grace_sec", 600.0))
+	return float(_cfg.get("room_suspend_grace_sec", 120.0))
 
 
 func cleanup_rooms(close_fn: Callable, begin_next_prep_fn: Callable) -> void:
@@ -474,7 +480,6 @@ func cleanup_rooms(close_fn: Callable, begin_next_prep_fn: Callable) -> void:
 	var room_battle := str(_cfg.get("room_battle", "battle"))
 	var room_result := str(_cfg.get("room_result", "result"))
 	var lobby_empty_ttl := float(_cfg.get("lobby_empty_ttl_sec", 60.0))
-	var suspend_grace := float(_cfg.get("room_suspend_grace_sec", 600.0))
 	var prep_timeout := float(_cfg.get("prep_timeout_sec", 1800.0))
 	var battle_timeout := float(_cfg.get("battle_timeout_sec", 300.0))
 	var result_timeout := float(_cfg.get("result_timeout_sec", 600.0))
@@ -483,6 +488,7 @@ func cleanup_rooms(close_fn: Callable, begin_next_prep_fn: Callable) -> void:
 	for room_id in rooms.keys():
 		var room: Dictionary = rooms[room_id]
 		var state_name := str(room.get("state", room_lobby))
+		var suspend_grace := suspend_grace_sec(room)
 		var online_count := room_online_count(room)
 		var match_over := bool(room.get("run_over", false))
 		if online_count <= 0:

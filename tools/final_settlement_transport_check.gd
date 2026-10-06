@@ -9,6 +9,8 @@ var _clients: Dictionary = {}
 var _reports: Dictionary = {}
 var _saved: Dictionary = {}
 var _finished := false
+var _checking_rematch := false
+var _displayed_result: Dictionary = {}
 
 func _ready() -> void:
 	_server = OS.get_cmdline_user_args().has("--final-server")
@@ -65,7 +67,9 @@ func _begin(old_id: int, slot: int) -> void:
 	NetworkService.team_local_slot = slot
 	NetworkService._applied_epoch = 0
 	NetworkService._applied_seq = 99999
-	NetworkService.latest_match_state = {"final_settlement": {"sentinel": true}}
+	NetworkService.latest_match_state = {"completed_round": 12, "battle_id": "%d:12:726" % old_id,
+		"final_settlement": {"sentinel": true}}
+	_displayed_result = NetworkService.latest_match_state.duplicate(true)
 	# Non-host returns first; the original host is still looking at the result.
 	if slot == 0:
 		await get_tree().create_timer(1.0).timeout
@@ -73,7 +77,7 @@ func _begin(old_id: int, slot: int) -> void:
 
 func _returned(ok: bool) -> void:
 	var valid := ok and NetworkService.server_phase == "lobby" and NetworkService.team_local_slot == _slot and NetworkService.team_leader_slot == 0
-	valid = valid and bool(NetworkService.latest_match_state.get("final_settlement", {}).get("sentinel", false))
+	valid = valid and NetworkService.latest_match_state.is_empty() and bool(_displayed_result.final_settlement.sentinel)
 	_report.rpc_id(1, valid, NetworkService.team_room_id)
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -85,12 +89,36 @@ func _report(ok: bool, room_id: int) -> void:
 		return
 	var values := _reports.values()
 	var valid := bool(values[0].ok) and bool(values[1].ok) and int(values[0].room) == int(values[1].room) and int(values[0].room) != int(_old.id)
+	if valid and not _checking_rematch:
+		_checking_rematch = true
+		var room: Dictionary = NetworkService._rooms[int(values[0].room)]
+		room["state"] = "battle"
+		room["round_index"] = 1
+		var battle_id := "%d:1:66" % int(room.id)
+		room["battle_id"] = battle_id
+		NetworkService._bump_room_seq(room)
+		var peers := _reports.keys()
+		_reports.clear()
+		for pid in peers:
+			NetworkService._send_room_state(room, int(pid), int(room.state_seq))
+			NetworkService._rpc_receive_match_state.rpc_id(int(pid), {
+				"completed_round": 1, "battle_id": battle_id, "slot": int(room.peer_slot[pid]),
+				"protocol": NetworkConfig.NETWORK_PROTOCOL_VERSION})
+			_verify_rematch.rpc_id(int(pid), battle_id)
+		return
 	print("FINAL_TRANSPORT_RESULT ", "PASS" if valid else "FAIL", " reports=", _reports)
 	for pid in _reports:
 		_finish.rpc_id(int(pid), valid)
 	_finished = true
 	await get_tree().create_timer(0.5).timeout
 	get_tree().quit(0 if valid else 1)
+
+@rpc("authority", "call_remote", "reliable")
+func _verify_rematch(battle_id: String) -> void:
+	var result := NetworkService.latest_match_state
+	var valid := int(result.get("completed_round", 0)) == 1 and str(result.get("battle_id", "")) == battle_id
+	valid = valid and int(result.get("protocol", -1)) == NetworkConfig.NETWORK_PROTOCOL_VERSION
+	_report.rpc_id(1, valid, NetworkService.team_room_id)
 
 @rpc("authority", "call_remote", "reliable")
 func _finish(ok: bool) -> void:

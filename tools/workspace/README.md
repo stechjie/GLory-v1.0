@@ -23,7 +23,14 @@
 ./tools/release_testflight.sh --check
 ```
 
-资源扫描使用 `./tools/sync_res.sh --dry-run`；它会访问 Drive 并保存扫描清单，但不覆盖资源。当前源为共享目录 `1xjn5Hpa4AzSS8v7hgECEZstHb3dG6m11` 下的 `glory`（`19WnebPCTVXxxjY6pfJjsrAVyVJ0P9mXl`），只同步 `assets` 和资源清单，不下载该目录的旧代码或缓存。同步入口是云端到 `res` 的下载工具，不会自动反向上传；打包时再按已有版本规则合并项目与 `res`。
+资源扫描使用 `./tools/sync_res.sh --dry-run`；它会访问 Drive 并保存扫描清单，但不覆盖资源。当前源为共享目录 `1xjn5Hpa4AzSS8v7hgECEZstHb3dG6m11` 下的 `glory`（`19WnebPCTVXxxjY6pfJjsrAVyVJ0P9mXl`），默认只同步 `assets/`。同步入口是云端到 `res` 的下载工具，不会自动反向上传；打包时再按已有版本规则合并项目与 `res`。
+
+### Drive 固定目录约定（2026-10-06 确认）
+
+- 唯一正式美术资源入口为 [glory/assets](https://drive.google.com/drive/folders/1ksYudI6xNjNemvWaBOw50zKLIWcAYXqu)。美术资源新增、更新及交付均放在此目录对应子目录中；界面图片放在 `assets/ui/`。
+- `glory` 下除 `assets/` 以外的文件和目录全部作为历史备份，包括外层 `ui/`、`shaders/`、工程代码、缓存和根目录的 `assets.bundle.json`、`assets.manifest.json`。它们不参与日常资源同步，也不作为当前版本依据；代码以 GitHub 仓库为准。
+- 保留当前目录层级和目录 ID，不因同名而合并外层 `ui/` 与 `assets/ui/`。备份恢复须单独明确范围；日常同步不使用 `--all`。
+- 已下载的本地文件不会因同步范围收紧而自动删除。
 
 TestFlight 自动上传必须先由账号持有人配置 App Store Connect 团队 API Key。缺少配置时脚本会明确退出，不能仅凭浏览器或 Transporter 已登录判断自动发布可用。配置入口为 `./tools/release_testflight.sh --setup`，本机说明位于 `docs/TestFlight一键发布.md`；密钥必须保存在项目外。
 

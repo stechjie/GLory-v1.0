@@ -20,10 +20,42 @@ func run() -> void:
 	check_new_sender_old_receiver()
 	check_codec()
 	check_receive()
+	check_rematch_result()
 	check_legacy_protocol()
 	check_ack_pacing()
 	check_receipt_stall_cleanup()
 	h.finish(get_tree())
+
+func check_rematch_result() -> void:
+	for final_round in [12, 21]:
+		var p := Peer.new()
+		add_child(p)
+		p.team_active = true
+		p.team_room_id = 750192
+		p.server_round_index = final_round
+		p.server_phase = "result"
+		p._set_current_replay_battle("750192:%d:726" % final_round)
+		p.latest_match_state = {"completed_round": final_round, "battle_id": p.current_battle_id,
+			"final_settlement": {"sentinel": true}}
+		var displayed_result := p.latest_match_state.duplicate(true)
+		p._rpc_settlement_room_switch()
+		p.team_room_id = 791833
+		p.server_round_index = 1
+		p.server_phase = "battle"
+		p._set_current_replay_battle("791833:1:66")
+		p._apply_received_replay("791833:1:66", sample("791833:1:66"), {})
+		p._rpc_receive_match_state({"completed_round": 1, "battle_id": "791833:1:66",
+			"protocol": NetworkConfig.NETWORK_PROTOCOL_VERSION})
+		h.expect(p.received_count == 1 and int(p.latest_match_state.get("completed_round", 0)) == 1,
+			"rematch_first_result_%d" % final_round, "New match round 1 must be usable after the previous final round")
+		h.expect(bool(displayed_result.final_settlement.sentinel), "rematch_display_snapshot", "Detached final result remains available to the result UI")
+		p.server_round_index = 2
+		p._set_current_replay_battle("791833:2:90")
+		p._rpc_receive_match_state({"completed_round": 2, "battle_id": "791833:2:90"})
+		p._rpc_receive_match_state({"completed_round": 1, "battle_id": "791833:1:66"})
+		h.expect(int(p.latest_match_state.get("completed_round", 0)) == 2,
+			"rematch_stale_result", "Late results still cannot roll back the current match")
+		p.free()
 
 func check_receipt_stall_cleanup() -> void:
 	var branch := Node.new()

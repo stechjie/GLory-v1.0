@@ -80,6 +80,7 @@ func _make_service() -> RefCounted:
 			"room_battle": "battle",
 			"lobby_empty_ttl_sec": 60.0,
 			"room_suspend_grace_sec": 300.0,
+			"lobby_suspend_grace_sec": 300.0,
 			"prep_timeout_sec": 1800.0,
 			"battle_timeout_sec": 300.0,
 			"result_timeout_sec": 600.0,

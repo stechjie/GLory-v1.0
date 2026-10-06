@@ -23,8 +23,9 @@ func run() -> void:
 				var arrays: Array = child.mesh.surface_get_arrays(i)
 				triangles += (arrays[Mesh.ARRAY_INDEX].size() if arrays[Mesh.ARRAY_INDEX] != null and arrays[Mesh.ARRAY_INDEX].size() > 0 else arrays[Mesh.ARRAY_VERTEX].size()) / 3
 	h.expect(bounds.position.z <= -4.0 and bounds.end.z >= 4.0, "mesh_span", "Actual meshes must cover full lane")
-	h.expect(bounds.size.x <= 0.5 and bounds.size.y < 1.0, "visual_footprint", "Wall must stay within lane gap")
-	h.expect(body.get_child_count() == 3 and triangles < 1000, "geometry_budget", "Ward should have three meshes and less than 1000 triangles")
+	h.expect(bounds.position.z <= -4.75 and bounds.end.z >= 4.75, "border_overlap", "Visual curtain must continue into both arena borders")
+	h.expect(bounds.size.x <= 0.31 and bounds.size.y >= 1.2 and bounds.size.y <= 1.4, "visual_footprint", "Narrow curtain must keep its height and remain at most 0.31 units wide")
+	h.expect(body.get_child_count() == 1 and triangles < 800, "geometry_budget", "Ward must contain only the light membrane, no posts or crystals, under 800 triangles")
 	wall.play_loop()
 	wall.set_low_quality(true)
 	var material: ShaderMaterial = wall.get("_material")

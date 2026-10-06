@@ -484,7 +484,7 @@ func _update_3v3_dividers() -> void:
 		var p_top := _sim_to_world_pos(Vector2(sx, visual_min.y), false)
 		var p_bot := _sim_to_world_pos(Vector2(sx, visual_max.y), false)
 		var barrier := _3v3_barriers[i]
-		# Preserve the entire boundary length; only the visual is replaced.
+		# Shared playable bounds exclude the forest/stone border.
 		barrier.fit_between(p_top, p_bot)
 		if not barrier.is_released() and _should_release_3v3_boundary(i):
 			barrier.play_release()

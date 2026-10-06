@@ -34,7 +34,7 @@ class DisconnectProbe extends "res://scripts/autoload/NetworkService.gd":
 func _ready() -> void:
 	var h := H.new("mobile_session_retention")
 	NetworkService.set_process(false)
-	h.expect(NetworkService.ROOM_SUSPEND_GRACE_SEC >= 600.0, "ten_minutes", "Production room recovery retains ten minutes")
+	h.expect(NetworkService.ROOM_SUSPEND_GRACE_SEC == 120.0, "two_minutes", "Started matches expire after two empty minutes")
 	var tokens := Tokens.new()
 	var rooms := Rooms.new()
 	rooms.configure(func(): return clock, func(): return 0.0, Callable(), func(): return 0,
@@ -49,10 +49,11 @@ func _ready() -> void:
 		room.seat_tokens = {0: "retention_fixture"}
 		tokens.token_seat["retention_fixture"] = {"room_id": room.id, "slot": 0}
 		rooms.cleanup_rooms(_close_room, Callable())
-		clock = 1599.0
+		var grace := 600.0 if phase == "lobby" else 120.0
+		clock = 1000.0 + grace - 0.001
 		rooms.cleanup_rooms(_close_room, Callable())
-		h.expect(closed.is_empty() and room.suspended, phase + "_retained", "Background room and final settlement remain recoverable before ten minutes")
-		clock = 1601.0
+		h.expect(closed.is_empty() and room.suspended, phase + "_retained", "Background room and final settlement remain recoverable before the room deadline")
+		clock = 1000.0 + grace
 		rooms.cleanup_rooms(_close_room, Callable())
 		h.expect(closed.size() == 1, phase + "_bounded", "Expired empty rooms still release capacity")
 	clock = 1000.0
@@ -63,13 +64,13 @@ func _ready() -> void:
 	active.seat_tokens = {0: "retention_fixture"}
 	tokens.token_seat["retention_fixture"] = {"room_id": active.id, "slot": 0}
 	rooms.cleanup_rooms(_close_room, Callable())
-	clock = 1590.0
+	clock = 1119.0
 	active.peer_slot = {17: 0}
 	rooms.peer_room[17] = active.id
 	rooms.resume_suspended_room(active)
 	rooms.cleanup_rooms(_close_room, Callable())
-	h.expect(closed.is_empty() and not active.suspended and active.state_started_at == 1590.0,
-		"resume_pauses_phase_clock", "Returning after 590 seconds must not trip the 300-second battle watchdog")
+	h.expect(closed.is_empty() and not active.suspended and active.state_started_at == 1119.0,
+		"resume_pauses_phase_clock", "Returning before expiry pauses the phase watchdog")
 	var probe := ReconnectProbe.new()
 	probe.session_token = "retention_fixture"
 	probe.reconnect_address = "127.0.0.1"

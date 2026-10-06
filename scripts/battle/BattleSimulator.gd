@@ -196,6 +196,7 @@ static func _finalize_team_opening(state: Dictionary) -> void:
 	BattleSimTreasures._apply_opening_treasures(player, battle_log)
 	BattleSimTreasures._apply_opening_treasures(enemy, battle_log)
 	_snapshot_base_stats(player + enemy)
+	constrain_battle_positions(state)
 
 # --- B: host computes the whole battle and records a replay -----------------
 # roster: uid -> render info (incl. def for the 3D model). frames: per-tick
@@ -409,6 +410,7 @@ static func step_state(state: Dictionary) -> void:
 	var enemy: Array = state.enemy
 	BattleSimTreasures._process_revives(state)
 	BattleSimTreasures._process_temporary_deaths(state)
+	constrain_battle_positions(state)
 	# 9.30：自爆灵的爆炸必须**先于胜负判定**结算。原来的位置只在 tick 尾部，
 	# 而下面第 411 行一旦 `p_alive.is_empty()`（自爆灵是最后一个阵亡的单位 ——
 	# 真实战斗里很常见）就直接 return，爆炸永远轮不到。这里先扫一遍兜住这条路径；
@@ -435,11 +437,13 @@ static func step_state(state: Dictionary) -> void:
 	_tick_skills(p_alive, e_alive, state)
 	_tick_skills(e_alive, p_alive, state)
 	_process_boss_charges(state)
+	constrain_battle_positions(state)
 	_process_frenzy(state, p_alive, e_alive)
 	_step_team(player, e_alive, float(state.elapsed), state)
 	_step_team(enemy, p_alive, float(state.elapsed), state)
 	# Solve crowd contacts once with a bounded iterative constraint pass.
 	_separate_units(player, enemy)
+	constrain_battle_positions(state)
 	_process_shared_links(state)
 	# 9.30：自爆灵的爆炸也必须在收尾这一层补一次 —— 上面那条只覆盖**普攻致死**，
 	# 被技能/AOE 打死的自爆灵原来一声不响（用户实测报告）。放在击杀金与死亡特性
@@ -448,6 +452,7 @@ static func step_state(state: Dictionary) -> void:
 	# 本 tick 所有伤害都结算完了，再补发非普攻致死的击杀金（必须在 _step_team 之后）。
 	_process_pending_kill_rewards(state)
 	BattleSimTreasures._process_race_death_traits(state)
+	constrain_battle_positions(state)
 	state.elapsed = float(state.elapsed) + TICK_SEC
 
 
@@ -663,10 +668,8 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 			var fear: Dictionary = f.statuses.fear
 			var away := Vector2(float(fear.get("away_x", 0.0)), float(fear.get("away_y", 0.0)))
 			var retreat := away * float(f.move_speed_px) * StatusEffectService.move_speed_multiplier(f) * TICK_SEC
-			# ★ 10.04 第 4 条：传本单位 lane，把推挤收进自己的隔离墙带内。
-			#   away 由 `(target.pos - caster.pos)` 决定 —— 施法者在目标左侧时朝 +x，
-			#   一次 fear 就能把目标推过 333.3px 的隔断线进��邻路。收窄后越界不再发生。
-			_move_without_pushing(f, retreat, bodies, int(f.get("lane", -1)))
+			# Fear obeys the same grass bounds and currently closed walls as walking.
+			_move_without_pushing(f, retreat, bodies, -1, state)
 			continue
 		if StatusEffectService.is_stunned(f):
 			continue
@@ -749,7 +752,7 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 			var remaining := move_delta.length() if f.has("_melee_route") else maxf(0.0, dist - attack_distance)
 			var step := minf(float(f.move_speed_px) * StatusEffectService.move_speed_multiplier(f) * TICK_SEC, remaining)
 			if move_delta.length() > 0.001:
-				_move_without_pushing(f, move_delta.normalized() * step, bodies)
+				_move_without_pushing(f, move_delta.normalized() * step, bodies, -1, state)
 		elif elapsed >= float(f.next_attack):
 			# 无普攻的单位（法师，9.14 反馈：文案写「无普攻」但实测会普攻）。
 			# 只跳过攻击分支 —— 上面的移动分支照常执行，所以法师仍然会走到射程
@@ -803,17 +806,10 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 # 9.27：内层扫掠已抽到 BattleSimShared._first_contact（同一份几何），供"选敌避让"
 # 复用，避免两处各写一套扫掠而漂移。
 #
-# 10.04 bug 文档第 4 条（恐惧魔跨墙推挤）：新增**可选** `clamp_lane`。
-#   fear 推挤实测一次推 346.5px（4★ 519.8px），而一个 lane 带宽只有 333.3px
-#   ⇒ 单位被整路平移进隔壁路，lane 字段却不变，于是「站进了 lane1 但逻辑上属
-#   lane0」，和身边的敌人**互相都打不到**（详见 scripts/battle/BattleSimShared.gd
-#   的 lane_band_x / clamp_x_to_lane 注释）。
-#   ⇒ fear 分支传自己本单位 lane，位移收进本路带内。
-#
-# ⚠ 默认 -1 = **不收窄**，这是刻意的：普通行走（唯一另一个调用点）必须能跨带，
-#   因为「清空自己路后去支援别路」是 9.27 D1 明确允许的。约束由调用方显式传入，
-#   绝不能内置到这个公共位移函数里。
-static func _move_without_pushing(f: Dictionary, displacement: Vector2, bodies: Array, clamp_lane: int = -1) -> void:
+# Production movement supplies state so grass bounds and closed walls constrain
+# walking, sliding and fear alike. Released walls permit connected-lane travel.
+# clamp_lane remains available to older isolated callers without a battle state.
+static func _move_without_pushing(f: Dictionary, displacement: Vector2, bodies: Array, clamp_lane: int = -1, state: Dictionary = {}) -> void:
 	var position: Vector2 = f.pos
 	var remaining := displacement
 	var radius := body_radius(f)
@@ -858,6 +854,8 @@ static func _move_without_pushing(f: Dictionary, displacement: Vector2, bodies: 
 	f.pos = Vector2(
 		clamp_x_to_lane(clampf(position.x, 45.0, ARENA_W - 45.0), clamp_lane),
 		clampf(position.y, 40.0, ARENA_H - 40.0))
+	if not state.is_empty():
+		f.pos = constrain_fighter_position(f, state, f.pos)
 
 
 # Residual spawn/skill overlaps only; walking above cannot create penetration.
@@ -1365,6 +1363,7 @@ static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) ->
 			_add_visual_event(state, "skill_shake", caster, 9.0 if bool(d.get("is_boss", false)) or d.has("series") else 6.5, 0.22)
 		DamageService.clear_stat_context()
 		CrimsonRuneService.end_action(caster)
+		constrain_battle_positions(state)
 
 
 static func _on_unit_killed(killer: Dictionary, victim: Dictionary, state: Dictionary, killer_team: Array, victim_team: Array) -> void:

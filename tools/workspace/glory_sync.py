@@ -35,7 +35,8 @@ from bs4 import BeautifulSoup
 ROOT = Path(__file__).resolve().parents[3]
 FOLDER_ID = "19WnebPCTVXxxjY6pfJjsrAVyVJ0P9mXl"
 FOLDER_MIME = "application/vnd.google-apps.folder"
-RESOURCE_NAMES = {"assets", "assets.bundle.json", "assets.manifest.json"}
+# Everything outside assets/ is a historical backup (confirmed 2026-10-06).
+RESOURCE_NAMES = {"assets"}
 LOCAL = threading.local()
 PRESERVE_REASONS = {
     "remote_mtime_unknown": "云端修改时间未知",
@@ -446,7 +447,7 @@ def main():
         except BlockingIOError:
             raise ValueError("另一个同步或资源快照正在运行，请稍后重试。")
         print("云端→本地：" + str(dest), flush=True)
-        print("范围：" + ("完整云端目录" if args.all else "assets/ + 两份资源清单"), flush=True)
+        print("范围：" + ("完整云端目录（包含历史备份）" if args.all else "assets/（其余内容为备份，不同步）"), flush=True)
         print("覆盖规则：仅可信云端时间严格较新时替换；本地较新、同时间、时间未知和同步期间编辑均保留。--force 也遵循此规则。", flush=True)
         print("内容与已同步记录一致时沿用其修改时间；本地内容有改动才使用本地文件修改时间，避免下载/复制/touch 改变版本优先级。", flush=True)
         files, directories = scan(FOLDER_ID, args.all, args.workers)

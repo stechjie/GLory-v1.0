@@ -62,6 +62,10 @@ func _mk(id: String, team: String, lane: int, x: float, y: float,
 
 
 func _base_state(player: Array, enemy: Array) -> Dictionary:
+	# These targeting fixtures span several lanes and test unit obstacles, not
+	# closed magic walls. A cleared middle lane explicitly opens both boundaries.
+	player = player.duplicate()
+	player.append({"uid":"cleared_lane_marker", "team":"player", "lane":1, "alive":false, "hp":0})
 	return {
 		"kind": "pvp", "player": player, "enemy": enemy,
 		"elapsed": 0.0, "next_decay": 9999.0, "finished": false,
@@ -221,7 +225,7 @@ func _ready() -> void:
 # ---------- 行为：够不到就换到可达的 ----------
 func _check_behavior() -> void:
 	# A：预置锁定 + 友军墙挡路（复现原缺口）
-	var a_poison := _mk("undead_poison", "player", 0, 230.0, 470.0, 660, 32.0, "p", "poison_attack")
+	var a_poison := _mk("undead_poison", "player", 0, 230.0, 420.0, 660, 32.0, "p", "poison_attack")
 	var a_wall := _wall()
 	var a_front := _mk("bubble", "enemy", 0, 230.0, 120.0, 900000, 32.0, "e_front")
 	var a_side := _mk("bubble", "enemy", 0, 700.0, 330.0, 900000, 32.0, "e_side")
@@ -235,7 +239,7 @@ func _check_behavior() -> void:
 		"blocked_melee_legal_lock", "最终锁定合法敌人")
 
 	# B：无阻挡对照 —— 不许把正常单位带坏（仍然锁定最近的、老实打它）
-	var b_poison := _mk("undead_poison", "player", 0, 230.0, 470.0, 660, 32.0, "p2", "poison_attack")
+	var b_poison := _mk("undead_poison", "player", 0, 230.0, 420.0, 660, 32.0, "p2", "poison_attack")
 	var b_front := _mk("bubble", "enemy", 0, 230.0, 120.0, 900000, 32.0, "e_front")
 	var b_side := _mk("bubble", "enemy", 0, 700.0, 330.0, 900000, 32.0, "e_side")
 	var b := _run(b_poison, [], [b_front, b_side], 300)
@@ -258,7 +262,7 @@ func _check_behavior() -> void:
 	#   拆墙后的读数在变异前后都为 0 ⇒ 判据没有判别力。冻住位移后，
 	#   焦点与目标的距离恒定 350px，停滞判定在第 7 tick 必然触发，完全确定。
 	#   位移层由下面的 F 场景单独考，这里不重复。
-	var c_poison := _mk("undead_poison", "player", 0, 230.0, 470.0, 660, 32.0, "p3", "poison_attack")
+	var c_poison := _mk("undead_poison", "player", 0, 230.0, 420.0, 660, 32.0, "p3", "poison_attack")
 	# 非近战继续覆盖原有停滞/避让重试机制；近战绕路在 melee_navigation_check 验证。
 	c_poison["range_px"] = Shared.MELEE_RANGE_PX + 1.0
 	var c_wall := _wall()
@@ -291,7 +295,7 @@ func _check_behavior() -> void:
 func _check_liveness() -> void:
 	# D：只有一个够不到的目标（没有任何可达替代）+ 友军墙 → 旧口径换满 3 次就永久
 	#    退回旧行为（`_switch_attempts` 停在 3 再也不动）；现在必须一直接着试。
-	var d_poison := _mk("undead_poison", "player", 0, 230.0, 470.0, 660, 32.0, "p4", "poison_attack")
+	var d_poison := _mk("undead_poison", "player", 0, 230.0, 420.0, 660, 32.0, "p4", "poison_attack")
 	# 非近战继续覆盖原有停滞/避让重试机制；近战绕路在 melee_navigation_check 验证。
 	d_poison["range_px"] = Shared.MELEE_RANGE_PX + 1.0
 	var d_wall := _wall()
@@ -311,7 +315,7 @@ func _check_liveness() -> void:
 func _check_avoid_accumulates() -> void:
 	# E：同一条路线上两个够不到的目标 → 避让必须**累积**成 2 个。
 	#    旧口径只有一个槽位：第二个会把第一个覆盖掉，两个目标之间来回踢。
-	var e_poison := _mk("undead_poison", "player", 0, 230.0, 470.0, 660, 32.0, "p5", "poison_attack")
+	var e_poison := _mk("undead_poison", "player", 0, 230.0, 420.0, 660, 32.0, "p5", "poison_attack")
 	# 非近战继续覆盖原有停滞/避让重试机制；近战绕路在 melee_navigation_check 验证。
 	e_poison["range_px"] = Shared.MELEE_RANGE_PX + 1.0
 	var e_wall := _wall()

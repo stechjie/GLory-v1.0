@@ -54,8 +54,8 @@ const BATTLE_CAMERA_POS := Vector3(0.0, 7.4, 7.0)
 const BATTLE_PLAYABLE_WIDTH := 14.5
 const BATTLE_PLAYABLE_DEPTH := 10.0
 const BATTLE_PLAYABLE_OFFSET := Vector3(0.0, 0.0, 0.0)
-const BATTLE_VISUAL_MIN := Vector2(95.0, 68.0)
-const BATTLE_VISUAL_MAX := Vector2(905.0, 452.0)
+const BATTLE_VISUAL_MIN := BattleSimShared.PLAYABLE_MIN
+const BATTLE_VISUAL_MAX := BattleSimShared.PLAYABLE_MAX
 const BATTLE_MUSIC_PATH := "res://assets/audio/bgm/fighting_music.mp3"
 const PVP_BATTLE_MUSIC_PATH := "res://assets/audio/bgm/pvp_battle_music.mp3"
 

@@ -1583,7 +1583,7 @@ func _begin_visual_frame(living: Array, _delta: float = 0.0) -> void:
 		_frame_living_ids.append(id)
 		_frame_living_pos.append(raw)
 		_frame_fighter_by_id[id] = f
-		_visual_pos_cache[id] = _clamp_visual_sim_pos(raw + offset)
+		_visual_pos_cache[id] = _clamp_visual_sim_pos(BattleSimShared.constrain_fighter_position(f, _state, raw + offset))
 		living_ids[id] = true
 	for stale_id in _fixed_visual_offset_by_id.keys():
 		if not living_ids.has(stale_id):
@@ -1595,7 +1595,7 @@ func _visual_sim_pos_for_fighter(f: Dictionary) -> Vector2:
 	var cached: Variant = _visual_pos_cache.get(id)
 	if cached is Vector2:
 		return cached as Vector2
-	return _clamp_visual_sim_pos(Vector2(float(f.pos.x), float(f.pos.y)))
+	return _clamp_visual_sim_pos(BattleSimShared.constrain_fighter_position(f, _state, Vector2(float(f.pos.x), float(f.pos.y))))
 
 
 # 9.25：模拟坐标已经按准备阶段的 4×4 真实间距摆放（BattleSimShared.board_cell_pos），

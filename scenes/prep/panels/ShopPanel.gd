@@ -210,6 +210,14 @@ func build_button_and_purse(body: HBoxContainer, center_host: Control, center: C
 	board_bottom_reserve.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	center.add_child(board_bottom_reserve)
 
+	# 独立安全区根与准备按钮居中对齐；浮动动画只改子按钮，不覆盖安全区偏移。
+	var closed_controls := Control.new()
+	closed_controls.name = "ShopClosedControls"
+	closed_controls.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	closed_controls.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	host.add_child(closed_controls)
+	SafeArea.track(closed_controls)
+
 	# 底部「商店」按钮：点击打开/关闭商店弹窗（弹窗打开时被弹窗盖住）。保留 shop_closed.png 贴图框、图自带文字。
 	var shop_open_btn := PrepWidgets.make_framed_text_button("", PrepSkin.path("shop_button"), SHOP_BTN_SIZE, 18, toggle_picker)
 	open_button = shop_open_btn
@@ -219,10 +227,10 @@ func build_button_and_purse(body: HBoxContainer, center_host: Control, center: C
 	shop_open_btn.anchor_bottom = 1.0
 	shop_open_btn.offset_left = -SHOP_BTN_SIZE.x * 0.5
 	shop_open_btn.offset_right = SHOP_BTN_SIZE.x * 0.5
-	shop_open_btn.offset_top = -SHOP_BTN_SIZE.y - 40
-	shop_open_btn.offset_bottom = -40
+	shop_open_btn.offset_top = -SHOP_BTN_SIZE.y - 16
+	shop_open_btn.offset_bottom = -16
 	shop_open_btn.z_index = 6
-	center_host.add_child(shop_open_btn)
+	closed_controls.add_child(shop_open_btn)
 	_shop_scroll_idle = PrepScrollIdleFlipbookScript.new()
 	_shop_scroll_idle.setup(
 		shop_open_btn,
@@ -243,10 +251,10 @@ func build_button_and_purse(body: HBoxContainer, center_host: Control, center: C
 	closed_money_btn.anchor_bottom = 1.0
 	closed_money_btn.offset_left = -SHOP_BTN_SIZE.x * 0.5 - 8 - 60   # 商店按钮左边 8px 间隙，宽 60
 	closed_money_btn.offset_right = -SHOP_BTN_SIZE.x * 0.5 - 8
-	closed_money_btn.offset_top = -SHOP_BTN_SIZE.y - 40
-	closed_money_btn.offset_bottom = -40
+	closed_money_btn.offset_top = -SHOP_BTN_SIZE.y - 16
+	closed_money_btn.offset_bottom = -16
 	closed_money_btn.z_index = 6
-	center_host.add_child(closed_money_btn)
+	closed_controls.add_child(closed_money_btn)
 	var closed_bag_icon: Control = PrepMoneyBagIcon.new()
 	closed_bag_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	closed_bag_icon.anchor_left = 0.5

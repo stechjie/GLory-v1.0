@@ -10,6 +10,10 @@ const HARD_TIMEOUT_SEC := 180.0
 const TICK_SEC := 0.1
 const ARENA_W := 1000.0
 const ARENA_H := 520.0
+# The grass fighting area, shared by wall placement, simulation and rendering.
+const PLAYABLE_MIN := Vector2(95.0, 68.0)
+const PLAYABLE_MAX := Vector2(905.0, 452.0)
+const LANE_WIDTH := (PLAYABLE_MAX.x - PLAYABLE_MIN.x) / 3.0
 const CELL_SPACING := 72.0
 const ATTACK_RANGE_SCALE := 72.0
 # Tolerance so a unit sitting exactly on the edge of its attack range counts as
@@ -1098,31 +1102,38 @@ static func _reachable_lanes_for(caster: Dictionary, state: Dictionary) -> Array
 	return out
 
 
-# 10.04 bug 文档第 4 条（恐惧魔跨墙推挤）：**位移的 lane 带边界** —— 唯一真源。
-#
-# 隔断线的几何与表现层一致：lane 0 带 = [45, WALL_A]、lane 1 带 = [WALL_A, WALL_B]、
-# lane 2 带 = [WALL_B, ARENA_W-45]，其中 WALL_A = ARENA_W/3、WALL_B = ARENA_W*2/3。
-# 端点用**闭区间**且相邻带共享端点 —— 这样「正好站在线上」两个归属都说得通，
-# 不会在 clamp 后立刻又被判成越界。
-#
-# ★ 只有**强制位移**（fear 推挤）才按这个收窄。**普通行走不能**：
-#   「清空自己路后去支援别路」是 9.27 D1 明确允许的（D1 = 隔断已释放时跨路支援），
-#   而 `_move_without_pushing` 的行走调用点也正是靠这条走到别路去。
-#   两者共用同一个位移函数，所以约束必须由**调用方显式传入**，不能内置。
-#
-# 返回该 lane 允许的 x 区间。lane < 0 / 非 team_mode ⇒ 返回 null（调用方跳过）。
+# Equal lanes within the playable grass, not within the whole backdrop.
 static func lane_band_x(lane: int) -> Vector2:
 	if lane < 0 or lane > 2:
 		return Vector2.ZERO
-	var wall_a := ARENA_W / 3.0
-	var wall_b := ARENA_W * 2.0 / 3.0
-	match lane:
-		0:
-			return Vector2(45.0, wall_a)
-		1:
-			return Vector2(wall_a, wall_b)
-		_:
-			return Vector2(wall_b, ARENA_W - 45.0)
+	return Vector2(PLAYABLE_MIN.x + lane * LANE_WIDTH, PLAYABLE_MIN.x + (lane + 1) * LANE_WIDTH)
+
+
+# Keep body/visual footprint inside grass and all still-closed walls. Open walls
+# expand the allowed connected region, preserving normal cross-lane assistance.
+static func constrain_fighter_position(f: Dictionary, state: Dictionary, candidate: Vector2, released: Array = []) -> Vector2:
+	var lane := int(f.get("lane", -1))
+	if not GameState.team_mode or lane < 0 or lane > 2 or GameState.round_index == GameState.FINAL_ROUND or bool(f.get("is_formation_ally", false)):
+		return candidate
+	if released.is_empty():
+		released = [_boundary_released(state, 0), _boundary_released(state, 1)]
+	var left := lane
+	var right := lane
+	while left > 0 and bool(released[left - 1]):
+		left -= 1
+	while right < 2 and bool(released[right]):
+		right += 1
+	var margin := maxf(body_radius(f), BOARD_COL_SPACING * 0.5) + 3.0
+	var low := Vector2(lane_band_x(left).x + margin, PLAYABLE_MIN.y + margin)
+	var high := Vector2(lane_band_x(right).y - margin, PLAYABLE_MAX.y - margin)
+	return candidate.clamp(low, high)
+
+
+static func constrain_battle_positions(state: Dictionary) -> void:
+	var released := [_boundary_released(state, 0), _boundary_released(state, 1)]
+	for f: Dictionary in state.get("player", []) + state.get("enemy", []):
+		if bool(f.get("alive", false)) and f.has("pos"):
+			f.pos = constrain_fighter_position(f, state, f.pos, released)
 
 
 # 把 x 收进指定 lane 的带。非 team_mode / lane<0 ⇒ 原样返回（不过滤）。

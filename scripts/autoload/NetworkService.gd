@@ -166,7 +166,7 @@ func _active_match_for_token(token: String) -> Dictionary:
 	if room.is_empty() or str(room.get("state", ROOM_LOBBY)) in [ROOM_LOBBY, ROOM_CLOSED] or bool(room.get("run_over", false)):
 		return {}
 	if _room_online_count(room) == 0 and float(room.get("empty_since", 0.0)) > 0.0 \
-			and _now() - float(room.empty_since) >= ROOM_SUSPEND_GRACE_SEC:
+			and _now() - float(room.empty_since) >= _room_service.suspend_grace_sec(room):
 		return {}
 	return room
 
@@ -220,9 +220,9 @@ const LOBBY_EMPTY_TTL_SEC := 60.0
 # 期间房间转 suspended：不推进阶段、不启动新模拟、不进公开房间列表。
 # 任一有效 token 重连即取消；到期则关房并清理 token / 短码 / 缓存映射。
 # 依赖 C20 的单调时钟 —— 用墙钟的话一次 NTP 校时就能让它提前或永不到期。
-# Mobile suspension is not an explicit leave. Keep recoverable seats for ten
-# minutes even when every human has backgrounded the app.
-const ROOM_SUSPEND_GRACE_SEC := 600.0
+# 已开局房间连续空房 120 秒即失效；大厅仍保留原有的后台恢复窗口。
+const ROOM_SUSPEND_GRACE_SEC := 120.0
+const LOBBY_SUSPEND_GRACE_SEC := 600.0
 # 匹配房间等人坐满的时限（协议 32）。六个人都在账号服务器点过确认了，
 # 所以没连上来是异常；到点用 AI 补满开打，见 _cleanup_matched_rooms。
 # 给 90 秒：够一次「点完确认 → 过加载界面 → DTLS 握手」，再留一点弱网余量。
@@ -521,6 +521,7 @@ func _ready() -> void:
 		"room_battle": ROOM_BATTLE,
 		"lobby_empty_ttl_sec": LOBBY_EMPTY_TTL_SEC,
 		"room_suspend_grace_sec": ROOM_SUSPEND_GRACE_SEC,
+		"lobby_suspend_grace_sec": LOBBY_SUSPEND_GRACE_SEC,
 		"prep_timeout_sec": PREP_TIMEOUT_SEC,
 		"battle_timeout_sec": BATTLE_TIMEOUT_SEC,
 		"result_timeout_sec": RESULT_TIMEOUT_SEC,
@@ -6440,7 +6441,7 @@ func _room_reserve_peer(room: Dictionary, peer_id: int) -> void:
 	# 宽限记账已搬到 ReconnectService.reserve_seat()。
 	_reconnect_service.reserve_seat(room, slot)
 	if str(room.get("state", ROOM_LOBBY)) == ROOM_LOBBY:
-		room.reserve_deadline[slot] = _now() + ROOM_SUSPEND_GRACE_SEC
+		room.reserve_deadline[slot] = _now() + LOBBY_SUSPEND_GRACE_SEC
 	else:
 		# Loading/playback watchdogs remain independent of seat takeover.
 		room.reserve_deadline[slot] = _now() + MATCH_DISCONNECT_GRACE_SEC
@@ -6892,6 +6893,13 @@ func _rpc_settlement_return() -> void:
 
 @rpc("authority", "call_remote", "reliable")
 func _rpc_settlement_room_switch() -> void:
+	# This is a new match on the same connection. The round watermark belongs
+	# to the old room; keeping it silently rejects round 1 after a round-12/21
+	# finish, leaving PrepScreen waiting for TEAM_RESULT_TIMEOUT. Main keeps
+	# its own final-settlement display snapshot, so detach rather than clear it.
+	_net_log("settlement room switch room=%d cleared completed_round=%d" % [
+		team_room_id, int(latest_match_state.get("completed_round", 0))])
+	latest_match_state = {}
 	room_chat_log.clear()
 	_match_state.reset_applied()
 	_pending_ready = -1

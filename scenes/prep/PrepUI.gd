@@ -951,9 +951,9 @@ func _build_sell_zone_and_refresh(body: HBoxContainer, center_host: Control) -> 
 	refresh_shop.anchor_top = 1.0
 	refresh_shop.anchor_right = 1.0
 	refresh_shop.anchor_bottom = 1.0
-	refresh_shop.offset_left = -105
+	refresh_shop.offset_left = -138
 	refresh_shop.offset_top = -200
-	refresh_shop.offset_right = 25
+	refresh_shop.offset_right = -8
 	refresh_shop.offset_bottom = -70
 	refresh_shop.focus_mode = Control.FOCUS_NONE
 	var refresh_frame := TextureRect.new()    # 循环箭头图标框（箭头已画死）
@@ -965,6 +965,8 @@ func _build_sell_zone_and_refresh(body: HBoxContainer, center_host: Control) -> 
 	refresh_shop.add_child(refresh_frame)
 	refresh_shop.pressed.connect(_on_refresh_shop_control_pressed)
 	_shop.side_controls.add_child(refresh_shop)
+	# 外挂层铺满屏幕，刷新按钮需独立避开刘海、圆角与手势条。
+	SafeArea.track(refresh_shop)
 
 	var refresh_icon := Label.new()
 	_shop.refresh_icon = refresh_icon
@@ -1259,25 +1261,14 @@ const ChatPhrases := preload("res://scripts/multiplayer/ChatPhrases.gd")
 
 const CHAT_BTN_SIZE := Vector2(72, 72)
 
-# 🔴 **聊天整块必须让开右侧那一列，横竖两个方向都要让。**
-#
-# 2026-09-10 实测（tools/chat_ui_capture.tscn，1280×720）：第一版把聊天贴着屏幕
-# 右缘、按钮锚在 offset_top=-340，结果正好盖住萝卜计数器，消息条压在萝卜按钮旁边。
-# **941 高时一点问题都没有** —— 因为两边用的是不同的锚：
-#
-#   side_col（佣兵 / 队伍佣兵 / 萝卜 / 萝卜计数）  从**屏幕顶部**往下固定排到 y=518
-#   聊天入口                                      从**屏幕底部**往上锚
-#
-# 窗口越矮，两者越近；到 720 就撞上了。所以：
-#   横向 —— 右边界收到 -148，让开那一列（STATS_BTN_SIZE.x=140 + 贴边 8）
-#   纵向 —— 整组收在底边 -120 ~ -32，给备战席留出 40px 以上的空档。
-#
-# 改这几个数之前先跑一次那个截图工具，**用矮窗口看**，别用参考画布的高度。
-const CHAT_RIGHT := 148.0
+# 语音聊天底板与右上角快捷按钮右边缘对齐，收在安全区底部。
+# 720 高的布局仍须让开顶部向下排列的萝卜计数器。
+const CHAT_RIGHT := 18.0
 const COMMS_DOCK_WIDTH := 308.0
 const COMMS_DOCK_HEIGHT := 88.0
-const COMMS_DOCK_BOTTOM := -32.0
-const CHAT_BTN_BOTTOM := -40.0
+const COMMS_DOCK_BOTTOM := -8.0
+const CHAT_BTN_BOTTOM := COMMS_DOCK_BOTTOM - 8.0
+const CHAT_LOG_RIGHT := 148.0  # 消息记录仍让开佣兵/萝卜侧栏。
 const CHAT_LOG_WIDTH := 288.0
 const CHAT_PANEL_WIDTH := 360.0
 const CHAT_PANEL_HEIGHT := 410.0
@@ -1327,7 +1318,7 @@ func _build_chat_entry() -> void:
 	_chat_button.anchor_right = 1.0
 	_chat_button.anchor_top = 1.0
 	_chat_button.anchor_bottom = 1.0
-	# 右侧保留 148，让开佣兵 / 萝卜的侧栏；按钮与语音两键共用同一底板。
+	# 按钮在底板内保留 10px 右内边距，底板与顶部快捷按钮右对齐。
 	_chat_button.offset_right = -CHAT_RIGHT
 	_chat_button.offset_left = -CHAT_RIGHT - CHAT_BTN_SIZE.x
 	_chat_button.offset_bottom = CHAT_BTN_BOTTOM
@@ -1356,8 +1347,8 @@ func _build_chat_record_window() -> void:
 	window.anchor_right = 1.0
 	window.anchor_top = 1.0
 	window.anchor_bottom = 1.0
-	window.offset_right = -CHAT_RIGHT
-	window.offset_left = -CHAT_RIGHT - CHAT_LOG_WIDTH
+	window.offset_right = -CHAT_LOG_RIGHT
+	window.offset_left = -CHAT_LOG_RIGHT - CHAT_LOG_WIDTH
 	window.offset_bottom = COMMS_DOCK_BOTTOM - COMMS_DOCK_HEIGHT - CHAT_FLOAT_GAP
 	window.offset_top = window.offset_bottom - CHAT_LOG_HEIGHT
 	window.z_index = 20
@@ -1389,7 +1380,7 @@ const VOICE_AUDIENCE_SIZE := VOICE_BTN_SIZE
 const VOICE_MEMBERS_SIZE := VOICE_BTN_SIZE
 const VOICE_BTN_GAP := 8.0
 const VOICE_INNER_GAP := 8.0
-const VOICE_BTN_BOTTOM := -48.0
+const VOICE_BTN_BOTTOM := CHAT_BTN_BOTTOM - 8.0
 const VOICE_BTN_FONT := 13
 var _voice_controls: VoiceControls = null
 
@@ -1445,7 +1436,7 @@ func _build_chat_panel() -> void:
 	_chat_panel.anchor_bottom = 1.0
 	# **往上弹**，与消息条同一列（右边界对齐、同宽）。
 	# 不往左弹：那会横穿到棋盘中央去；往上只压掉自己那几条消息，代价最小。
-	_chat_panel.offset_right = -CHAT_RIGHT - CHAT_LOG_WIDTH - 8.0
+	_chat_panel.offset_right = -CHAT_LOG_RIGHT - CHAT_LOG_WIDTH - 8.0
 	_chat_panel.offset_left = _chat_panel.offset_right - CHAT_PANEL_WIDTH
 	_chat_panel.offset_bottom = COMMS_DOCK_BOTTOM - COMMS_DOCK_HEIGHT - CHAT_FLOAT_GAP
 	_chat_panel.offset_top = _chat_panel.offset_bottom - CHAT_PANEL_HEIGHT
@@ -3567,6 +3558,9 @@ func _on_shop_picker_toggled(is_open: bool) -> void:
 		_set_overlay_blocked(_voice_controls.audience_button, is_open)
 		_set_overlay_blocked(_voice_controls.members_button, is_open)
 	_set_overlay_blocked(_chat_button, is_open)
+	# 商店操作区会覆盖底部通讯栏；禁用时也隐藏，避免刷新文字叠在按钮上。
+	if _comms_dock != null:
+		_comms_dock.visible = not is_open
 
 
 # 商店打开时禁用被它盖住的按钮；关闭时**下一帧**再恢复。
@@ -3578,6 +3572,7 @@ func _on_shop_picker_toggled(is_open: bool) -> void:
 func _set_overlay_blocked(btn: Control, blocked: bool) -> void:
 	if btn == null or not is_instance_valid(btn):
 		return
+	btn.visible = not blocked
 	if blocked:
 		btn.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	else:
