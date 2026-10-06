@@ -56,6 +56,7 @@ func _run() -> void:
 		print("LAYOUT %s scroll=%s ready=%s dock=%s refresh=%s" % [fixture[0], button.get_global_rect(), ready.get_global_rect(), dock.get_global_rect(), shop.refresh_button.get_global_rect()])
 		_check(not dock.visible, "%s dock hidden in shop" % fixture[0])
 		shop.close_picker()
+		await process_frame
 		_check(dock.visible, "%s dock restored" % fixture[0])
 	print("PREP_BOTTOM_LAYOUT failures=%d" % failures)
 	prep.queue_free()
