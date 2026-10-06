@@ -120,8 +120,10 @@ func play_ball(origin: Vector3, target: Vector3, target_node: Variant = null) ->
 	var start_position := ball.position
 	var travel_elapsed := 0.0
 	while travel_elapsed < 0.92:
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
 		await get_tree().process_frame
-		if _finished or not is_instance_valid(ball):
+		if _finished or not is_inside_tree() or is_queued_for_deletion() or not is_instance_valid(ball):
 			return
 		travel_elapsed += get_process_delta_time()
 		tracked_target = _tracked_target_position(tracked_target, target_ref)
@@ -131,10 +133,7 @@ func play_ball(origin: Vector3, target: Vector3, target_node: Variant = null) ->
 	if is_instance_valid(ball):
 		ball.queue_free()
 	_play_impact(tracked_target)
-	if not is_inside_tree() or is_queued_for_deletion():
-		return
-	await get_tree().create_timer(0.54).timeout
-	if not is_inside_tree() or is_queued_for_deletion():
+	if not await wait_for(0.54):
 		return
 	finish()
 

@@ -30,16 +30,10 @@ func play_arc(origin: Vector3, target: Vector3, palette: Dictionary = {}) -> voi
 	var guide := _build_arc(strike_origin, target, pal.get("guide", ARC_PALETTE_BLUE["guide"]), 0.012, 9, 0.12, 1.9)
 	guide.name = "LeaderFlash"
 	add_child(guide)
-	if not is_inside_tree() or is_queued_for_deletion():
-		return
-	await get_tree().create_timer(0.045).timeout
-	if not is_inside_tree() or is_queued_for_deletion():
+	if not await wait_for(0.045):
 		return
 	guide.visible = false
-	if not is_inside_tree() or is_queued_for_deletion():
-		return
-	await get_tree().create_timer(0.035).timeout
-	if not is_inside_tree() or is_queued_for_deletion():
+	if not await wait_for(0.035):
 		return
 	var outer := _build_arc(strike_origin, target, pal.get("outer", ARC_PALETTE_BLUE["outer"]), 0.040, 10, 0.15, 1.0)
 	outer.name = "MainBoltOuter"
@@ -51,18 +45,12 @@ func play_arc(origin: Vector3, target: Vector3, palette: Dictionary = {}) -> voi
 	core.name = "MainBoltCore"
 	add_child(core)
 	_play_target_impact(target, pal)
-	if not is_inside_tree() or is_queued_for_deletion():
-		return
-	await get_tree().create_timer(0.085).timeout
-	if not is_inside_tree() or is_queued_for_deletion():
+	if not await wait_for(0.085):
 		return
 	outer.visible = false
 	middle.visible = false
 	core.visible = false
-	if not is_inside_tree() or is_queued_for_deletion():
-		return
-	await get_tree().create_timer(0.045).timeout
-	if not is_inside_tree() or is_queued_for_deletion():
+	if not await wait_for(0.045):
 		return
 	core.visible = true
 	middle.visible = true
@@ -72,20 +60,14 @@ func play_arc(origin: Vector3, target: Vector3, palette: Dictionary = {}) -> voi
 	var branch_b := _build_arc(strike_origin.lerp(target, 0.61), target + Vector3(0.42, 0.05, -0.10), pal.get("branch_b", ARC_PALETTE_BLUE["branch_b"]), 0.013, 5, 0.075, 1.0)
 	branch_b.name = "BranchFlashB"
 	add_child(branch_b)
-	if not is_inside_tree() or is_queued_for_deletion():
-		return
-	await get_tree().create_timer(0.075).timeout
-	if not is_inside_tree() or is_queued_for_deletion():
+	if not await wait_for(0.075):
 		return
 	core.visible = false
 	middle.visible = false
 	branch_a.visible = false
 	branch_b.visible = false
 	_play_ground_residual(target, pal)
-	if not is_inside_tree() or is_queued_for_deletion():
-		return
-	await get_tree().create_timer(0.40).timeout
-	if not is_inside_tree() or is_queued_for_deletion():
+	if not await wait_for(0.40):
 		return
 	finish()
 
