@@ -124,7 +124,7 @@ CRIMSON_BASE = {
     # paint (orange-red props) is pulled, or everything turns pink (iteration 01). The shadow
     # floor stays warm-neutral: a red shadow tint turned shaded skin pink (iteration 02).
     "race_hue": CRIMSON_HUE, "hue_unify": 0.85, "unify_min_saturation": 0.50,
-    "value_lift": 0.10, "shadow_tint": (0.58, 0.55, 0.52), "light_threshold": 0.32, "band_softness": 0.03,
+    "value_lift": 0.10, "shadow_tint": (0.58, 0.55, 0.52), "light_threshold": 0.32, "band_softness": 0.08,
     "light_energy": 1.2, "light_response": 1.5,
     # Most of the paint is already saturated red: only the brightest of it glows, faintly.
     "accent_color": CRIMSON_GLOW, "accent_hue": CRIMSON_HUE, "accent_hue_width": 0.05,
@@ -132,9 +132,9 @@ CRIMSON_BASE = {
     "trim_max_saturation": 0.25, "trim_min_value": 0.50, "trim_highlight_color": (1.0, 0.95, 0.88),
     "trim_highlight": 0.45, "trim_gloss": 0.75,
     "rim_color": (1.0, 0.30, 0.24), "rim_strength": 0.12, "rim_power": 2.5, "rim_threshold": 0.56,
-    "outline_color": (0.060, 0.012, 0.015), "outline_width": 0.030,
+    "outline_color": (0.060, 0.012, 0.015), "outline_width": 0.030, "outline_max_pixels": 0.55,
     # Every Meshy material is double-sided (hair cards, feathers).
-    "two_sided": True, "normal_depth": 0.35,
+    "two_sided": True, "normal_depth": 0.15,
 }
 
 CRIMSON_UNITS = {unit: {} for unit in ("crimson", "dancer", "drumer", "hunter", "armbreaker", "skypierce", "lattern")}
@@ -196,7 +196,9 @@ def outline_material(p: dict) -> str:
                       f'[ext_resource type="Shader" path="{OUTLINE}" id="1"]', "",
                       "[resource]", "render_priority = -1", 'shader = ExtResource("1")',
                       f'shader_parameter/outline_color = {value(p["outline_color"])}',
-                      f'shader_parameter/outline_width = {value(p["outline_width"])}']) + "\n"
+                      f'shader_parameter/outline_width = {value(p["outline_width"])}',
+                      *([f'shader_parameter/outline_max_pixels = {value(p["outline_max_pixels"])}']
+                        if "outline_max_pixels" in p else [])]) + "\n"
 
 
 def material(race: str, unit_id: str, spec: dict, textures: dict, outline: str | None = None) -> str:
@@ -220,7 +222,7 @@ def material(race: str, unit_id: str, spec: dict, textures: dict, outline: str |
               f'next_pass = {"ExtResource(\"3\")" if outline else "SubResource(\"Outline\")"}',
               'shader = ExtResource("1")', 'shader_parameter/albedo_texture = ExtResource("2")']
     for key, v in p.items():
-        if key in ("wrapper", "albedo", "outline_color", "outline_width", "normal_depth", "two_sided"):
+        if key in ("wrapper", "albedo", "outline_color", "outline_width", "outline_max_pixels", "normal_depth", "two_sided"):
             continue
         lines.append(f"shader_parameter/{key} = {value(v)}")
     if "normal" in textures:

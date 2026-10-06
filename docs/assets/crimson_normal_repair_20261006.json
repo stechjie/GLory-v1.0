@@ -1,0 +1,200 @@
+{
+  "scope": "crimson / 赤律",
+  "method": "75 degree edge-connected angle-weighted smoothing, preserve authored normals on disconnected and hard-edge fans",
+  "units": [
+    {
+      "source": "assets/models/units/crimson_refined/crimson/crimson_refined.glb",
+      "output": "assets/models/units/crimson_refined/crimson/crimson_refined.glb",
+      "source_sha256": "20622a707a173d8e745ad2df34528b5d19f9a79f3e0abe986c1eb7ce286bf7a7",
+      "output_sha256": "e77b14f20eed71ea1a55364fee317274af194ddb1c712c37930c5364b56f6a62",
+      "non_normal_bytes_identical": true,
+      "crease_degrees": 75,
+      "meshes": [
+        {
+          "vertices": 15017,
+          "triangles": 6326,
+          "joined_edges": 4089,
+          "flat_faces_before": 2195,
+          "flat_faces_after": 1002,
+          "changed_normals": 3441
+        }
+      ]
+    },
+    {
+      "source": "assets/models/units/crimson_refined/dancer/dancer_refined.glb",
+      "output": "assets/models/units/crimson_refined/dancer/dancer_refined.glb",
+      "source_sha256": "508c36361eb2d9a28606f23b3e951c16b349a0a1f8470f1082d82d0f8c999c3a",
+      "output_sha256": "5080a0151304edd8b27a5593a0f64502a6b8317bc7154091ccd70a7231b2e664",
+      "non_normal_bytes_identical": true,
+      "crease_degrees": 75,
+      "meshes": [
+        {
+          "vertices": 7002,
+          "triangles": 3036,
+          "joined_edges": 1131,
+          "flat_faces_before": 501,
+          "flat_faces_after": 341,
+          "changed_normals": 706
+        },
+        {
+          "vertices": 6060,
+          "triangles": 3249,
+          "joined_edges": 1878,
+          "flat_faces_before": 300,
+          "flat_faces_after": 163,
+          "changed_normals": 756
+        },
+        {
+          "vertices": 1499,
+          "triangles": 669,
+          "joined_edges": 224,
+          "flat_faces_before": 20,
+          "flat_faces_after": 6,
+          "changed_normals": 66
+        }
+      ]
+    },
+    {
+      "source": "assets/models/units/crimson_refined/drumer/drumer_refined.glb",
+      "output": "assets/models/units/crimson_refined/drumer/drumer_refined.glb",
+      "source_sha256": "b6c54bea8cf0163e19f4604e164fd5ae40f55d42bd3073da37c0a8163320c77b",
+      "output_sha256": "ecb45048b71659435d882ca1b1d359f66d33dbc5314d9e20ecd00d7b642922e8",
+      "non_normal_bytes_identical": true,
+      "crease_degrees": 75,
+      "meshes": [
+        {
+          "vertices": 6751,
+          "triangles": 2989,
+          "joined_edges": 2906,
+          "flat_faces_before": 1319,
+          "flat_faces_after": 246,
+          "changed_normals": 4972
+        },
+        {
+          "vertices": 6473,
+          "triangles": 3046,
+          "joined_edges": 3353,
+          "flat_faces_before": 1029,
+          "flat_faces_after": 83,
+          "changed_normals": 5334
+        }
+      ]
+    },
+    {
+      "source": "assets/models/units/crimson_refined/hunter/hunter_refined.glb",
+      "output": "assets/models/units/crimson_refined/hunter/hunter_refined.glb",
+      "source_sha256": "342dc19dc561b863355b27ea7bff834719d4f9f4ae941c9b003a3cfca3db8b18",
+      "output_sha256": "a5401ca5ce6cb07ea6128edf84fcea97f2109303755d3f3adb450ac561b54184",
+      "non_normal_bytes_identical": true,
+      "crease_degrees": 75,
+      "meshes": [
+        {
+          "vertices": 10574,
+          "triangles": 5041,
+          "joined_edges": 5123,
+          "flat_faces_before": 1678,
+          "flat_faces_after": 250,
+          "changed_normals": 7930
+        }
+      ]
+    },
+    {
+      "source": "assets/models/units/crimson_refined/armbreaker/armbreaker_refined.glb",
+      "output": "assets/models/units/crimson_refined/armbreaker/armbreaker_refined.glb",
+      "source_sha256": "20bcce32b1a2f7cb279e3a32c4a8236a0ee421679dde412b91b4fba04f29a768",
+      "output_sha256": "ff823fadc2e4583acf713644e60ffc94647d70f3df2621d5cc81dbc415051447",
+      "non_normal_bytes_identical": true,
+      "crease_degrees": 75,
+      "meshes": [
+        {
+          "vertices": 11827,
+          "triangles": 5560,
+          "joined_edges": 5558,
+          "flat_faces_before": 2058,
+          "flat_faces_after": 325,
+          "changed_normals": 8820
+        },
+        {
+          "vertices": 3508,
+          "triangles": 1554,
+          "joined_edges": 663,
+          "flat_faces_before": 224,
+          "flat_faces_after": 118,
+          "changed_normals": 487
+        }
+      ]
+    },
+    {
+      "source": "assets/models/units/crimson_refined/Icey/Icey_refined.glb",
+      "output": "assets/models/units/crimson_refined/Icey/Icey_refined.glb",
+      "source_sha256": "5565b1640a052feabe52952c3d7806fb3c017e4f49c1b1d21e520495ead00f70",
+      "output_sha256": "1c22ce104794ec8e7bbb66a86f8bcf45d1a82fbe7d68f9c8b8f4fed800e7ddba",
+      "non_normal_bytes_identical": true,
+      "crease_degrees": 75,
+      "meshes": [
+        {
+          "vertices": 14993,
+          "triangles": 6251,
+          "joined_edges": 3272,
+          "flat_faces_before": 2010,
+          "flat_faces_after": 755,
+          "changed_normals": 5115
+        }
+      ]
+    },
+    {
+      "source": "assets/models/units/crimson_refined/skypierce/skypierce_refined.glb",
+      "output": "assets/models/units/crimson_refined/skypierce/skypierce_refined.glb",
+      "source_sha256": "6330bb160e347d34314f2a93b9e8ae1182a49608a4ed6584e4171f59ead843a6",
+      "output_sha256": "51c1e2576541429d93d195947a7e4a3d89e94e04253d9d56d3b82d8ffa6702e4",
+      "non_normal_bytes_identical": true,
+      "crease_degrees": 75,
+      "meshes": [
+        {
+          "vertices": 15448,
+          "triangles": 7048,
+          "joined_edges": 6882,
+          "flat_faces_before": 2712,
+          "flat_faces_after": 435,
+          "changed_normals": 11489
+        }
+      ]
+    },
+    {
+      "source": "assets/models/units/crimson_refined/lattern/lattern_refined.glb",
+      "output": "assets/models/units/crimson_refined/lattern/lattern_refined.glb",
+      "source_sha256": "e5dc8510ffdf81827cb3a522f4d8aecd220da688cae793fe8819c8e19b986701",
+      "output_sha256": "78f3254ab9e84cda7e754b3dcfbf548c9a47b288da6de2b40b81bbde4da05870",
+      "non_normal_bytes_identical": true,
+      "crease_degrees": 75,
+      "meshes": [
+        {
+          "vertices": 6086,
+          "triangles": 2494,
+          "joined_edges": 2249,
+          "flat_faces_before": 1211,
+          "flat_faces_after": 249,
+          "changed_normals": 4361
+        },
+        {
+          "vertices": 6234,
+          "triangles": 2902,
+          "joined_edges": 3182,
+          "flat_faces_before": 1119,
+          "flat_faces_after": 119,
+          "changed_normals": 5055
+        }
+      ]
+    }
+  ],
+  "triangles": 50165,
+  "flat_faces_before": 16376,
+  "flat_faces_after": 4092,
+  "validation": {
+    "non_normal_bytes_identical": true,
+    "animations": 24,
+    "rendered_poses": 72,
+    "renderer": "Godot 4.7 Compatibility on Apple M4",
+    "android_device": "not_connected"
+  }
+}

@@ -76,11 +76,7 @@ static func range_px_for(range_value: float) -> float:
 # 4×4 格子 → 模拟坐标。row 0 = 前排（面向敌人）。
 # 敌方左右镜像（云顶之弈式面对面）：对手视角的左边 = 我方屏幕的右边。
 #
-# 🔴 普通 PvP 不镜像（2026-10-06 用户定，调用方传 mirror_enemy=false）。房间里 A 在 1 正上方，
-# 战场上也是「正上方对正下方」：对面摆在他棋盘左边的，在你画面里也在左边 —— PvE 回合「查看另一队」
-# 看他打怪时在左边，到 PvP 还在左边，你左边那格正对着它。镜像的话，看到在左边、打的时候却跑到右边，
-# 布局就没法照着看到的去针对。蓝队看 PvP 只上下翻、不左右翻（BattleArena._sim_to_world_pos），
-# 自己摆的棋子方向也就跟摆放界面一样。
+# 保持本地棋盘约定：普通 PvP 对手按面对面镜像摆放，蓝队视角再由 BattleArena 整体翻转。
 # PvE 的敌方（怪、送来的佣兵）和决赛（左右对打，面对面镜像才对）照旧镜像。
 static func board_cell_pos(slot: int, team: String, center_x: float, mirror_enemy: bool = true) -> Vector2:
 	var col := slot % GameConstants.BOARD_COLUMNS

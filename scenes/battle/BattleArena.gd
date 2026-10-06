@@ -1047,11 +1047,8 @@ func _sim_to_world_pos(sim_pos: Vector2, apply_down_shift: bool = true) -> Vecto
 	var ny := sim_pos.y / SIM_H
 	var nx := sim_pos.x / SIM_W
 	if _arena_flip_y:
-		# 蓝队看 PvP：**只上下翻**（自己到下方），左右不翻（2026-10-06 用户定）。
-		# 9.25 起这里是整张转 180°（x 也翻）—— 那是为了抵消模拟里蓝队棋盘的左右镜像，
-		# 代价是分路左右也反了：蓝队 1 号 PvE 在最左路，一到 PvP 就跑到最右。
-		# 现在普通 PvP 的棋盘在模拟里就不镜像（BattleSimShared.board_cell_pos），
-		# 只上下翻：分路、棋子左右都和房间 / 摆放界面 / PvE 一致，正上方对正下方。
+		# 本地位置约定：蓝队视角整张战场翻转，左右分路与摆放界面保持一致。
+		nx = 1.0 - nx
 		ny = 1.0 - ny
 	var x := (nx - 0.5) * BATTLE_PLAYABLE_WIDTH * BATTLE_VISUAL_SPACE_SCALE + BATTLE_PLAYABLE_OFFSET.x
 	var z := (ny - 0.5) * BATTLE_PLAYABLE_DEPTH * BATTLE_VISUAL_SPACE_SCALE + BATTLE_PLAYABLE_OFFSET.z

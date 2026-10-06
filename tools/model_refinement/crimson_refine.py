@@ -25,6 +25,7 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw
+from repair_crimson_normals import repair as repair_split_normals
 
 UNITS = ["crimson", "dancer", "drumer", "hunter", "armbreaker", "Icey", "skypierce", "lattern"]
 ORIGINAL = "assets/models/units/crimson_race/{unit}.glb"
@@ -455,6 +456,14 @@ def main() -> None:
     folder.mkdir(parents=True, exist_ok=True)
     out, out_blob, report = refined_glb(doc, blob, np.load(args.dump))
     write_glb(folder / f"{unit}_refined.glb", out, out_blob)
+    # Meshy exports split almost every painted triangle. Smooth continuous fans
+    # after decimation without re-exporting skins, UVs or animation channels.
+    model_path = folder / f"{unit}_refined.glb"
+    normal_path = folder / f"{unit}_normals.tmp.glb"
+    normal_report = repair_split_normals(model_path, normal_path)
+    normal_path.replace(model_path)
+    report["normal_repair"] = {k: normal_report[k] for k in
+        ("source_sha256", "output_sha256", "non_normal_bytes_identical", "crease_degrees", "meshes")}
     report["textures"] = textures(doc, blob, unit, folder)
     report["materials"] = [m.get("name") for m in doc["materials"]]
     (folder / "refine.json").write_text(json.dumps(report, ensure_ascii=False, indent=1) + "\n", encoding="utf-8", newline="\n")

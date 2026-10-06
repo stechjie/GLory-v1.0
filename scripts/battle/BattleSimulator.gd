@@ -74,9 +74,8 @@ static func prepare_team_state(forced_team: int = -1) -> Dictionary:
 	var ally_slots: Array
 	var rival_slots: Array
 	var seed_parts: Array
-	# 普通 PvP 两边棋盘都不左右镜像：正上方对正下方，同房间里 A 在 1 正上方（2026-10-06，
-	# 见 BattleSimShared.board_cell_pos）。决赛是左右对打，面对面镜像才对，照旧。
-	var mirror_enemy := not (kind == "pvp" and not is_final_round)
+	# 使用本地位置约定：对手棋盘面对面镜像，蓝队视角由 BattleArena 整体翻转。
+	var mirror_enemy := true
 	if kind == "pvp":
 		ally_slots = [0, 1, 2]
 		rival_slots = [3, 4, 5]
