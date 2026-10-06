@@ -438,6 +438,8 @@ func _zh_strings() -> Dictionary:
 		"pet_effect_self_hp_pct": "自身棋子生命 +%d%%",
 		"pet_effect_self_atk_pct": "自身棋子攻击 +%d%%",
 		"pet_effect_interest_pct": "金币利息 +%d%%",
+		"pet_skill_detail_pet_squirrel": "萝卜每次收获额外增加 20%，额外数量向下取整，最少额外获得 1 个；自己的营地萝卜容量增加 20%，增量向下取整。",
+		"pet_skill_detail_pet_tiger": "自己的棋子每次升星，老虎永久累计 1 层；棋盘和备战区升星都算，1、2、3 阶棋子升星都算。每层让自己所有 1 阶棋子的生命、攻击、防御 +5%。之后上场的 1 阶棋子继承已有层数；卖掉棋子不清除层数。2、3 阶棋子、队友和敌方棋子不获得加成。",
 		# 备战：出战种族（scripts/units/RacePick.gd）
 		"prep_title": "备战",
 		"prep_tab_pets": "宠物",
@@ -878,6 +880,8 @@ func _en_strings() -> Dictionary:
 		"pet_effect_self_hp_pct": "Own pieces HP +%d%%",
 		"pet_effect_self_atk_pct": "Own pieces ATK +%d%%",
 		"pet_effect_interest_pct": "Gold interest +%d%%",
+		"pet_skill_detail_pet_squirrel": "Each carrot harvest gains 20% extra, rounded down, with at least 1 extra carrot. Your camp's carrot capacity also gains 20%, rounded down.",
+		"pet_skill_detail_pet_tiger": "Each time one of your pieces gains a star, Tiger permanently gains 1 stack. Upgrades on the board or bench count, including Tier 1, 2, and 3 pieces. Each stack gives all your Tier 1 pieces +5% HP, ATK, and DEF. Tier 1 pieces deployed later inherit every stack; selling pieces does not remove stacks. Tier 2 and 3 pieces, teammates, and enemies receive no bonus.",
 		# Prep: race pick (scripts/units/RacePick.gd)
 		"prep_title": "Prep",
 		"prep_tab_pets": "Pets",

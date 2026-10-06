@@ -67,6 +67,11 @@ static func effect_text(pet_id: String) -> String:
 		return fmt
 	return fmt % pct
 
+static func skill_detail_text(pet_id: String) -> String:
+	var key := "pet_skill_detail_" + pet_id
+	var detail := TranslationServer.translate(key)
+	return "" if detail == key else detail
+
 # ---- 挂钩点助手：给定「出战宠物 id」，返回对应加成 ----
 
 # 猫：利息率加成（叠加到基础 0.05 上）。

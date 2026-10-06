@@ -7,6 +7,7 @@ const Theming := preload("res://ui/theme/GloryTheme.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
 const Currency := preload("res://scripts/account/Currency.gd")
 const PetPreview := preload("res://scripts/pets/PetPreview.gd")
+const PetService := preload("res://scripts/pets/PetService.gd")
 
 signal draw_finished
 
@@ -106,7 +107,7 @@ func _build() -> void:
 	portraits.add_theme_constant_override("separation", Tokens.GAP_S)
 	art.add_child(portraits)
 	for pet_id in ["pet_squirrel", "pet_tiger"]:
-		portraits.add_child(PetPreview.build_illustration(pet_id, Vector2(160, 290)))
+		portraits.add_child(_pet_skill_button(pet_id, Vector2(160, 290)))
 	var right := PanelContainer.new()
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	right.add_theme_stylebox_override("panel", Tokens.panel_box(
@@ -259,6 +260,32 @@ func _pet_name(pet_id: String) -> String:
 	return pet_id
 
 
+func _pet_skill_button(pet_id: String, portrait_size: Vector2) -> Button:
+	var button: Button = ACTION_BUTTON.instantiate()
+	button.name = "Skill_%s" % pet_id
+	button.flat = true
+	button.custom_minimum_size = portrait_size
+	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	button.tooltip_text = _t("点击查看技能", "Tap to view skill")
+	var art := PetPreview.build_illustration(pet_id, portrait_size)
+	button.add_child(art)
+	art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	button.pressed.connect(_show_pet_skill.bind(pet_id))
+	return button
+
+
+func _show_pet_skill(pet_id: String) -> void:
+	var detail := PetService.skill_detail_text(pet_id)
+	if detail.is_empty():
+		return
+	DialogService.info({
+		"title": PetService.display_name(pet_id),
+		"body": detail,
+		"confirm_text": _t("知道了", "Got it"),
+		"owner": self,
+	})
+
+
 func _show_pool() -> void:
 	_pity_label = null
 	_draw_button = null
@@ -277,7 +304,7 @@ func _show_pool() -> void:
 		var col := VBoxContainer.new()
 		col.alignment = BoxContainer.ALIGNMENT_CENTER
 		card.add_child(col)
-		col.add_child(PetPreview.build_illustration(pet_id, Vector2(190, 165)))
+		col.add_child(_pet_skill_button(pet_id, Vector2(190, 165)))
 		var name := _line(_pet_name(pet_id))
 		name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		col.add_child(name)

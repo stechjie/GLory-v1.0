@@ -43,6 +43,7 @@ const ICE_REVEAL_SHADER := preload("res://assets/ui/shop/ice_reveal.gdshader")
 # 货币图标（从整条货币条里裁出来的）与千分位，主菜单 / 商城 / 邮件共用这一份。
 const Currency := preload("res://scripts/account/Currency.gd")
 const PetPreview := preload("res://scripts/pets/PetPreview.gd")
+const PetService := preload("res://scripts/pets/PetService.gd")
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
 const PrepSkin := preload("res://scenes/prep/PrepSkin.gd")
 
@@ -378,7 +379,7 @@ func _summon_panel() -> Control:
 	portraits.add_theme_constant_override("separation", Tokens.GAP_S)
 	col.add_child(portraits)
 	for pet_id in ["pet_squirrel", "pet_tiger"]:
-		portraits.add_child(PetPreview.build_illustration(pet_id, Vector2(142, 176)))
+		portraits.add_child(_pet_skill_button(pet_id, Vector2(142, 176)))
 	var price := Label.new()
 	price.text = _t("75 钻石 / 次", "75 gems / draw")
 	price.add_theme_font_size_override("font_size", Tokens.FONT_BUTTON)
@@ -402,6 +403,32 @@ func _summon_panel() -> Control:
 	action.pressed.connect(func() -> void: pet_draw_requested.emit())
 	col.add_child(action)
 	return panel
+
+
+func _pet_skill_button(pet_id: String, portrait_size: Vector2) -> Button:
+	var button: Button = ACTION_BUTTON.instantiate()
+	button.name = "Skill_%s" % pet_id
+	button.flat = true
+	button.custom_minimum_size = portrait_size
+	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	button.tooltip_text = _t("点击查看技能", "Tap to view skill")
+	var art := PetPreview.build_illustration(pet_id, portrait_size)
+	button.add_child(art)
+	art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	button.pressed.connect(_show_pet_skill.bind(pet_id))
+	return button
+
+
+func _show_pet_skill(pet_id: String) -> void:
+	var detail := PetService.skill_detail_text(pet_id)
+	if detail.is_empty():
+		return
+	DialogService.info({
+		"title": PetService.display_name(pet_id),
+		"body": detail,
+		"confirm_text": _t("知道了", "Got it"),
+		"owner": self,
+	})
 
 
 func _header() -> Control:
