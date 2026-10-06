@@ -6,7 +6,7 @@
 			"name": "蘑菇",
 			"name_en": "Mushroom",
 			"effect": "self_hp_pct",
-			"value": 0.01,
+			"value": 0.10,
 			"model": "res://assets/models/pets/pet_mushroom/pet_mushroom_animated.tscn",
 			"model_scale": 1.0,
 			"model_y": 0.0,
@@ -17,7 +17,7 @@
 			"name": "猫",
 			"name_en": "Cat",
 			"effect": "interest_pct",
-			"value": 0.01,
+			"value": 0.05,
 			"model": "res://assets/models/pets/pet_cat/pet_cat_animated.tscn",
 			"model_scale": 1.0,
 			"model_y": 0.0,
@@ -28,11 +28,33 @@
 			"name": "兔子",
 			"name_en": "Rabbit",
 			"effect": "self_atk_pct",
-			"value": 0.01,
+			"value": 0.10,
 			"model": "res://assets/models/pets/pet_rabbit/pet_rabbit_animated.tscn",
 			"model_scale": 1.0,
 			"model_y": 0.0,
 			"icon": "res://assets/ui/pets/pet_rabbit_illustration.png"
+		},
+		{
+			"id": "pet_squirrel",
+			"name": "松鼠",
+			"name_en": "Squirrel",
+			"effect": "carrot_harvest_capacity_pct",
+			"value": 0.20,
+			"model": "res://assets/models/pets/pet_squirrel/pet_squirrel_animated.tscn",
+			"model_scale": 1.0,
+			"model_y": 0.0,
+			"icon": "res://assets/ui/pets/pet_squirrel_illustration.png"
+		},
+		{
+			"id": "pet_tiger",
+			"name": "老虎",
+			"name_en": "Tiger",
+			"effect": "tier1_upgrade_growth",
+			"value": 0.05,
+			"model": "res://assets/models/pets/pet_tiger/pet_tiger_animated.tscn",
+			"model_scale": 1.0,
+			"model_y": 0.0,
+			"icon": "res://assets/ui/pets/pet_tiger_illustration.png"
 		}
 	]
 }

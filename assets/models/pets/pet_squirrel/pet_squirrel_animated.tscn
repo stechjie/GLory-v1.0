@@ -1,0 +1,12 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/pets/ImportedPetAnimated.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://assets/models/pets/pet_squirrel/pet_squirrel_idle.glb" id="2_idle"]
+[ext_resource type="PackedScene" path="res://assets/models/pets/pet_squirrel/pet_squirrel_walk.glb" id="3_run"]
+
+[node name="PetSquirrelAnimated" type="Node3D"]
+script = ExtResource("1_script")
+idle_model = ExtResource("2_idle")
+run_model = ExtResource("3_run")
+
+[node name="ModelRoot" type="Node3D" parent="."]

@@ -98,7 +98,7 @@ static func prepare_team_state(forced_team: int = -1) -> Dictionary:
 		rival_ctx.append(_team_owner_ctx_for_slot(rival_slots[lane]))
 	var player: Array = []
 	for lane in 3:
-		_append_lane_board_fighters(player, lane_boards[lane], "player", lane, ally_ctx[lane].treasures, ally_ctx[lane].syn, ally_slots[lane], ally_ctx[lane].get("pet", ""), int(ally_ctx[lane].get("gold", 0)))
+		_append_lane_board_fighters(player, lane_boards[lane], "player", lane, ally_ctx[lane].treasures, ally_ctx[lane].syn, ally_slots[lane], ally_ctx[lane].get("pet", ""), int(ally_ctx[lane].get("gold", 0)), int(ally_ctx[lane].get("tiger_starups", 0)))
 	# Enemy side only exists if the opposing team has a real opponent: a host-added
 	# dummy (假想敌), or — only when online — a remote player. Offline there is just
 	# ONE real player (you), so a stray "player" slot marker must NOT count as an
@@ -127,7 +127,7 @@ static func prepare_team_state(forced_team: int = -1) -> Dictionary:
 					_append_lane_boss(enemy, lane, boss_template)
 					_append_lane_monsters(enemy, lane, lane_monster_count, monster_template)
 				"pvp":
-					_append_lane_board_fighters(enemy, _team_board_for_slot(rival_slots[lane], rng), "enemy", lane, rival_ctx[lane].treasures, rival_ctx[lane].syn, rival_slots[lane], rival_ctx[lane].get("pet", ""), int(rival_ctx[lane].get("gold", 0)))
+					_append_lane_board_fighters(enemy, _team_board_for_slot(rival_slots[lane], rng), "enemy", lane, rival_ctx[lane].treasures, rival_ctx[lane].syn, rival_slots[lane], rival_ctx[lane].get("pet", ""), int(rival_ctx[lane].get("gold", 0)), int(rival_ctx[lane].get("tiger_starups", 0)))
 				_:
 					_append_lane_monsters(enemy, lane, lane_monster_count, monster_template)
 		# Mercenaries (Legion TD 2 "send"): PvP -> own mercs fight WITH you and the
@@ -278,8 +278,36 @@ static func _replay_capture_frame(state: Dictionary, frames: Array, frame_events
 	frame_events.append(new_events)
 	var frame_stats: Dictionary = state.get("unit_stats", {})
 	var frame: Array = []
+	# Keep War Drum HUD data beside the frozen 13-column simulation frames.
+	# Only count changes are recorded, so timed expiry is visible in replays too.
+	var drum_events: Array = state.get("_replay_drum_stack_events", [])
+	var drum_last: Dictionary = state.get("_replay_drum_stack_last", {})
+	var resonance_events: Array = state.get("_replay_resonance_stack_events", [])
+	var resonance_last: Dictionary = state.get("_replay_resonance_stack_last", {})
+	var red_tide_events: Array = state.get("_replay_red_tide_stack_events", [])
+	var red_tide_last: Dictionary = state.get("_replay_red_tide_stack_last", {})
+	var rune_events: Array = state.get("_replay_rune_stack_events", [])
+	var rune_last: Dictionary = state.get("_replay_rune_stack_last", {})
 	for f: Dictionary in (state.get("player", []) + state.get("enemy", [])):
 		var uid := str(f.get("uid", ""))
+		var atk_layers: Array = f.get("crimson_drum_atk", [])
+		var speed_layers: Array = f.get("crimson_drum_speed", [])
+		var drum_count := mini(atk_layers.size(), speed_layers.size())
+		if drum_count != int(drum_last.get(uid, 0)):
+			drum_events.append([tick, uid, drum_count])
+			drum_last[uid] = drum_count
+		var resonance_count := clampi(int(f.get("crimson_resonance_stacks", 0)), 0, 10)
+		if resonance_count != int(resonance_last.get(uid, 0)):
+			resonance_events.append([tick, uid, resonance_count])
+			resonance_last[uid] = resonance_count
+		var red_tide_count := clampi(int(f.get("crimson_pulse_stacks", 0)), 0, 5)
+		if red_tide_count != int(red_tide_last.get(uid, 0)):
+			red_tide_events.append([tick, uid, red_tide_count])
+			red_tide_last[uid] = red_tide_count
+		var rune_count := clampi(int(f.get("crimson_rune_stacks", 0)), 0, 9)
+		if rune_count != int(rune_last.get(uid, 0)):
+			rune_events.append([tick, uid, rune_count])
+			rune_last[uid] = rune_count
 		var position: Vector2 = f.pos
 		frame.append([
 			uid,
@@ -297,6 +325,14 @@ static func _replay_capture_frame(state: Dictionary, frames: Array, frame_events
 			str(f.get("vfx_skill_target_uid", "")),
 		])
 	frames.append(frame)
+	state["_replay_drum_stack_events"] = drum_events
+	state["_replay_drum_stack_last"] = drum_last
+	state["_replay_resonance_stack_events"] = resonance_events
+	state["_replay_resonance_stack_last"] = resonance_last
+	state["_replay_red_tide_stack_events"] = red_tide_events
+	state["_replay_red_tide_stack_last"] = red_tide_last
+	state["_replay_rune_stack_events"] = rune_events
+	state["_replay_rune_stack_last"] = rune_last
 
 static func _team_replay_payload(state: Dictionary, roster: Dictionary, frames: Array, frame_events: Array = []) -> Dictionary:
 	if frames.is_empty() and bool(state.get("finished", false)):
@@ -305,7 +341,20 @@ static func _team_replay_payload(state: Dictionary, roster: Dictionary, frames: 
 	var replay_result := result_from_state(state)
 	replay_result["team_heal_ally"] = int(state.get("team_heal_ally", 0))
 	replay_result["team_heal_rival"] = int(state.get("team_heal_rival", 0))
-	return {"kind": str(state.get("kind", "pve")), "roster": roster, "frames": frames, "frame_events": frame_events, "result": replay_result}
+	var payload := {"kind": str(state.get("kind", "pve")), "roster": roster, "frames": frames, "frame_events": frame_events, "result": replay_result}
+	var drum_events: Array = state.get("_replay_drum_stack_events", [])
+	if not drum_events.is_empty():
+		payload["crimson_drum_stack_events"] = drum_events
+	var resonance_events: Array = state.get("_replay_resonance_stack_events", [])
+	if not resonance_events.is_empty():
+		payload["crimson_resonance_stack_events"] = resonance_events
+	var red_tide_events: Array = state.get("_replay_red_tide_stack_events", [])
+	if not red_tide_events.is_empty():
+		payload["crimson_red_tide_stack_events"] = red_tide_events
+	var rune_events: Array = state.get("_replay_rune_stack_events", [])
+	if not rune_events.is_empty():
+		payload["crimson_rune_stack_events"] = rune_events
+	return payload
 
 # (1/2) Compute how much HP each team loses this round and stamp it into BOTH
 # replays' results, so every client can drive team_hp and enemy_team_hp

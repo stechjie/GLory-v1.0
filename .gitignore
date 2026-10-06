@@ -130,6 +130,8 @@ android/
 /assets/ui/race_logos/*
 !/assets/ui/race_logos/crimson.png
 !/assets/ui/race_logos/crimson.png.import
+!/assets/ui/race_logos/crimson_lantern.png
+!/assets/ui/race_logos/crimson_lantern.png.import
 
 # Seven-day shop art is a runtime dependency of ShopScreen and PrepSkin.
 # Keep this small set with the code while the rest of the large art bundle stays external.
@@ -258,3 +260,13 @@ glory_server_key*.pem
 /_代码改动清单*.txt
 # 交付说明同样属本机 delivery/ 产物（与 _sha256*.txt 同类），不进运行仓库。
 /_说明.txt
+
+# Two authored rare pets ship with the game; the older pet art stays in the external art bundle.
+!/assets/models/pets/
+/assets/models/pets/*
+!/assets/models/pets/pet_squirrel/
+!/assets/models/pets/pet_tiger/
+!/assets/ui/pets/
+/assets/ui/pets/*
+!/assets/ui/pets/pet_squirrel_illustration.png
+!/assets/ui/pets/pet_tiger_illustration.png

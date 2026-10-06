@@ -164,6 +164,13 @@ func _build_header(parent: VBoxContainer) -> void:
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	header.add_child(title)
+	# Current pet portrait uses the same authored illustration as bag and shop.
+	var current_pet := PlayerProfile.get_active()
+	if not current_pet.is_empty():
+		var portrait := preload("res://scripts/pets/PetPreview.gd").build_illustration(
+			current_pet, Vector2(48, 48), false)
+		portrait.custom_minimum_size = Vector2(48, 48)
+		header.add_child(portrait)
 	var wallet := PanelContainer.new()
 	wallet.custom_minimum_size = Vector2(230, 44)
 	wallet.add_theme_stylebox_override("panel", _flat(Color(0.075,0.115,0.09,0.98),11,Color(0.28,0.34,0.25),1))
@@ -448,7 +455,8 @@ func refresh() -> void:
 		return
 	var capacity := GameState.carrot_capacity()
 	var production := GameState.carrot_production()
-	var preview := CarrotEconomy.harvest(GameState.carrots, GameState.merc_carrots_spent_total, GameState.harvest_tech_level)
+	var preview := CarrotEconomy.harvest(GameState.carrots, GameState.merc_carrots_spent_total,
+		GameState.harvest_tech_level, PetService.carrot_bonus_rate(PlayerProfile.get_active()))
 	var actual_gain := int(preview.get("gain", 0))
 	var overflow := int(preview.get("overflow", 0))
 	_carrot_balance.text = str(GameState.carrots)
@@ -462,8 +470,12 @@ func refresh() -> void:
 	var segment := maxi(1, next_threshold - current_threshold)
 	_farm_progress.value = 100.0 * float(spent_in_level) / float(segment)
 	_farm_need.text = _t("距离 Lv.%d · 还需消耗 %d 萝卜", "To Lv.%d · spend %d more carrots") % [next_level + 1, next_threshold - GameState.merc_carrots_spent_total]
-	_farm_next_capacity.text = "%d → %d" % [capacity, CarrotEconomy.farm_capacity_for_level(next_level)]
-	_farm_next_production.text = "%d → %d" % [production, CarrotEconomy.total_production(GameState.harvest_tech_level, next_threshold)]
+	_farm_next_capacity.text = "%d → %d" % [capacity,
+		CarrotEconomy.capacity_for_spent(next_threshold,
+			PetService.carrot_bonus_rate(PlayerProfile.get_active()))]
+	_farm_next_production.text = "%d → %d" % [production, CarrotEconomy.total_production(
+		GameState.harvest_tech_level, next_threshold,
+		PetService.carrot_bonus_rate(PlayerProfile.get_active()))]
 	_farm_next_income.text = _t("%d → %d G / 场", "%d → %d G / battle") % [GameState.carrot_camp_income(), CarrotEconomy.farm_income_for_level(next_level)]
 
 	var tech_level := GameState.harvest_tech_level

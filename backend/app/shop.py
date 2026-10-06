@@ -71,7 +71,7 @@ CURRENCIES = ("diamond", "coin")
 # 而那通常发生在出事故的当天），所以这一层漏了就等于没校验。
 #
 # mail = 系统邮件的附件（backend/app/mail.py）。那一笔流水同时记 mail_id，指明是哪封。
-SOURCES = ("shop", "iap", "grant", "refund", "starter_pick", "match_reward", "mail", "seven_day_login")
+SOURCES = ("shop", "iap", "grant", "refund", "starter_pick", "match_reward", "mail", "seven_day_login", "pet_draw")
 
 
 class ShopRejected(RuntimeError):

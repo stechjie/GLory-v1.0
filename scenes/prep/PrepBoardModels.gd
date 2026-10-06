@@ -165,6 +165,7 @@ var _prep_relation_link_root: Node3D
 var _carrot_gather_root: Node3D
 var _carrot_pet_nodes: Array[Node3D] = []
 var _carrot_pet_nodes_by_slot: Dictionary = {}
+var _tiger_stack_badge: Label
 var _carrot_placeholder: Node3D
 var _carrot_pet_signature := ""
 var _carrot_last_farm_level := -1
@@ -387,6 +388,7 @@ func _refresh_carrot_gathering() -> void:
 	var entries := _carrot_pet_entries()
 	var signature := JSON.stringify(entries)
 	if signature == _carrot_pet_signature:
+		refresh_tiger_stack_badge()
 		return
 	for pet in _carrot_pet_nodes:
 		if is_instance_valid(pet):
@@ -421,6 +423,7 @@ func _refresh_carrot_gathering() -> void:
 		# the model tree exists.
 		call_deferred("_normalize_carrot_pet", pet, pet_id, target,
 			_carrot_facing_yaw(target), 6)
+	refresh_tiger_stack_badge()
 
 func _carrot_pet_entries() -> Array:
 	var entries: Array = []
@@ -494,6 +497,7 @@ func _normalize_carrot_pet(pet: Node3D, pet_id: String, target: Vector3, yaw: fl
 	pet.rotation_degrees.y = yaw
 	pet.visible = true
 	_play_carrot_pet_ambient(pet)
+	refresh_tiger_stack_badge()
 
 func _play_carrot_pet_ambient(pet: Node3D) -> void:
 	if pet == null or not is_instance_valid(pet) or pet not in _carrot_pet_nodes:
@@ -546,6 +550,33 @@ func play_carrot_harvest_feedback(gains_by_slot: Dictionary) -> void:
 		tween.tween_property(pet, "position:y", base_y, 0.18)
 	if has_harvest:
 		_play_carrot_world_flipbook(PREP_CARROT_DIG_PATH, 0.12, 0.00050)
+
+func refresh_tiger_stack_badge() -> void:
+	if _tiger_stack_badge != null and not is_instance_valid(_tiger_stack_badge):
+		_tiger_stack_badge = null
+	var local_slot := clampi(NetworkService.team_local_slot, 0, 5) if NetworkService.team_active else 4
+	var pet := _carrot_pet_nodes_by_slot.get(local_slot) as Node3D
+	var show := PlayerProfile.get_active() == "pet_tiger" and pet != null and is_instance_valid(pet)
+	if not show:
+		if _tiger_stack_badge != null:
+			_tiger_stack_badge.visible = false
+		return
+	if _tiger_stack_badge == null:
+		_tiger_stack_badge = Label.new()
+		_tiger_stack_badge.name = "OwnTigerStarupCount"
+		_tiger_stack_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_tiger_stack_badge.z_index = 80
+		_tiger_stack_badge.size = Vector2(76, 30)
+		_tiger_stack_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_tiger_stack_badge.add_theme_font_size_override("font_size", 20)
+		_tiger_stack_badge.add_theme_constant_override("outline_size", 5)
+		_tiger_stack_badge.add_theme_color_override("font_color", Color(0.85, 0.95, 1.0))
+		_tiger_stack_badge.add_theme_color_override("font_outline_color", Color(0.06, 0.10, 0.20))
+		add_child(_tiger_stack_badge)
+	_tiger_stack_badge.visible = true
+	_tiger_stack_badge.text = "★ %d" % GameState.tiger_starup_count
+	_tiger_stack_badge.position = _world_to_main_screen(pet.global_position + Vector3(0.0, 0.18, 0.0)) \
+		- Vector2(38.0, 44.0)
 
 func _show_carrot_pet_gain(pet: Node3D, gain: int) -> void:
 	var head_world := pet.global_position + Vector3(0.0, 0.175, 0.0)

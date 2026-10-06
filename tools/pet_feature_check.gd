@@ -1,0 +1,107 @@
+extends Node
+
+# Focused checks for the new pets and strengthened starter pets.
+const Harness := preload("res://tools/CheckHarness.gd")
+const Carrots := preload("res://scripts/economy/CarrotEconomy.gd")
+const Ledger := preload("res://scripts/multiplayer/EconomyLedger.gd")
+const Battle := preload("res://scripts/battle/BattleSimShared.gd")
+const BattleTreasures := preload("res://scripts/battle/BattleSimTreasures.gd")
+const Preview := preload("res://scripts/pets/PetPreview.gd")
+
+var _h: RefCounted
+
+func _ready() -> void:
+	_h = Harness.new("pet_feature")
+	_check_squirrel()
+	_check_starters()
+	_check_tiger_ledger()
+	_check_tiger_battle()
+	await _check_models()
+	_h.finish(get_tree())
+
+func _check_squirrel() -> void:
+	_h.expect(Carrots.total_production(0, 0, 0.20) == 4,
+		"squirrel_min_one", "3 carrots should become 4")
+	_h.expect(Carrots.total_production(2, 0, 0.20) == 10,
+		"squirrel_floor_nine", "9 carrots should become 10")
+	_h.expect(Carrots.total_production(1, 20, 0.20) == 12,
+		"squirrel_floor_ten", "10 carrots should become 12")
+	_h.expect(Carrots.capacity_for_spent(0, 0.20) == 14,
+		"squirrel_capacity", "12 capacity should become 14")
+	var capped := Carrots.harvest(13, 0, 0, 0.20)
+	_h.expect(int(capped.gain) == 1 and int(capped.after) == 14,
+		"squirrel_cap", "harvest must still obey increased capacity")
+	var prep := Ledger.new_prep(0)
+	var result := Ledger.harvest_for_round(prep, 1, 0.20)
+	_h.expect(int(result.gain) == 4 and int(result.capacity) == 14,
+		"squirrel_online", "ledger and local squirrel harvest differ")
+
+func _check_starters() -> void:
+	_h.expect(is_equal_approx(PetService.opening_hp_mult("pet_mushroom"), 1.10),
+		"mushroom_ten", "mushroom HP must be +10%")
+	_h.expect(is_equal_approx(PetService.opening_atk_mult("pet_rabbit"), 1.10),
+		"rabbit_ten", "rabbit attack must be +10%")
+	_h.expect(EconomyService.base_interest(99)
+			+ EconomyService.pet_interest_bonus(99, "pet_cat") == 9,
+		"cat_interest", "cat combined interest should floor 99 x 10% to 9")
+
+func _check_tiger_ledger() -> void:
+	var prep := Ledger.new_prep(100)
+	prep.roster = {
+		"a": {"unit_id": "test", "star": 1, "cost_basis": 10, "kind": "unit"},
+		"b": {"unit_id": "test", "star": 1, "cost_basis": 10, "kind": "unit"},
+		"c": {"unit_id": "other", "star": 1, "cost_basis": 10, "kind": "unit"},
+	}
+	var ctx := {"tiger_growth_rate": 0.05}
+	var merged := Ledger.apply(prep, "merge", {"uids": ["a", "b"], "keeper_uid": "a"}, ctx)
+	_h.expect(bool(merged.ok) and int(prep.tiger_starup_count) == 1,
+		"tiger_merge", "a successful star merge must add one stack")
+	var sold := Ledger.apply(prep, "sell", {"uid": "a"}, ctx)
+	_h.expect(bool(sold.ok) and int(prep.tiger_starup_count) == 1,
+		"tiger_sell", "selling the upgraded piece must keep the stack")
+	prep.roster["d"] = {"unit_id": "test2", "star": 1, "cost_basis": 10, "kind": "unit"}
+	prep.roster["e"] = {"unit_id": "test2", "star": 1, "cost_basis": 10, "kind": "unit"}
+	var second := Ledger.apply(prep, "merge", {"uids": ["d", "e"], "keeper_uid": "d"}, ctx)
+	_h.expect(bool(second.ok) and int(prep.tiger_starup_count) == 2,
+		"tiger_repeat", "later merges must continue the same stack")
+
+func _check_tiger_battle() -> void:
+	var tier1 := {"id": "test1", "hp": 100, "atk": 100, "def": 20, "tier": 1}
+	var tier2 := {"id": "test2", "hp": 100, "atk": 100, "def": 20, "tier": 2}
+	var units: Array = [
+		Battle._fighter_from_def(tier1, 0, "player", 0, 2, 3),
+		Battle._fighter_from_def(tier2, 1, "player", 1, 2, 1),
+	]
+	for fighter in units:
+		fighter["owner_pet"] = "pet_tiger"
+		fighter["owner_tiger_starups"] = 2
+		fighter["owner_treasures"] = []
+		fighter["owner_syn"] = {}
+	var log: Array[String] = []
+	BattleTreasures._apply_opening_treasures(units, log)
+	_h.expect(int(units[0].max_hp) == 110 and int(units[0].atk) == 110
+			and int(units[0].defense) == 22,
+		"tiger_tier1", "two stacks should add 10% HP/ATK/DEF to tier 1 at any star")
+	_h.expect(int(units[1].max_hp) == 100 and int(units[1].atk) == 100
+			and int(units[1].defense) == 20,
+		"tiger_tier2", "tier 2 must not receive the tiger bonus")
+
+func _check_models() -> void:
+	for pet_id in ["pet_squirrel", "pet_tiger"]:
+		var pet_def := PetService.pet_by_id(pet_id)
+		_h.expect(not pet_def.is_empty(), pet_id + "_data", "pet missing from pets.json")
+		var icon_path := str(pet_def.get("icon", ""))
+		_h.expect(ResourceLoader.exists(icon_path), pet_id + "_art", "hand art missing")
+		var scene := load(PetService.model_path(pet_id)) as PackedScene
+		if not _h.expect(scene != null, pet_id + "_model", "3D scene failed to load"):
+			continue
+		var model := scene.instantiate() as Node3D
+		add_child(model)
+		await get_tree().process_frame
+		_h.expect(Preview.aabb_of(model).size.y > 0.0,
+			pet_id + "_mesh", "3D model has no visible mesh bounds")
+		_h.expect(model.has_method("play_idle") and model.has_method("play_run"),
+			pet_id + "_motion", "main menu movement hooks missing")
+		if model.has_method("play_run"):
+			model.call("play_run")
+		model.queue_free()

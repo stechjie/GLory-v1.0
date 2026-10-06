@@ -7,6 +7,10 @@ const ModelRootMotionPolicyScript := preload("res://effects/runtime/presentation
 const UnitContactShadowScript := preload("res://effects/runtime/presentation/UnitContactShadow.gd")
 const UNIT_TEAM_RING_SHADER := preload("res://shaders/unit_team_ring.gdshader")
 const FOUR_STAR_AURA := preload("res://effects/vfx3d/modules/FourStarAuraV3_3D.gd")
+const CrimsonDrumBadge := preload("res://scenes/battle/CrimsonDrumBadge.gd")
+const CrimsonRuneBadgeScript := preload("res://scenes/battle/CrimsonRuneBadge.gd")
+const CrimsonResonanceOrb := preload("res://effects/vfx3d/modules/CrimsonResonanceOrb3D.gd")
+const CrimsonRedTideOrbits := preload("res://effects/vfx3d/modules/CrimsonRedTideOrbits3D.gd")
 
 # Per-frame actor lookup and memoized visual positions. The immutable personal
 # slot is stored separately; these frame tables are rebuilt by _refresh_visuals.
@@ -88,6 +92,20 @@ func _refresh_visuals() -> void:
 		if node == null:
 			continue
 		_position_unit_node(node, f)
+		var drum_count := _crimson_drum_stack_count(f)
+		var drum_badge := node.get_node_or_null("CrimsonDrumBadge") as Control
+		if drum_count > 0 and drum_badge == null:
+			drum_badge = CrimsonDrumBadge.new()
+			node.add_child(drum_badge)
+		if drum_badge != null:
+			drum_badge.call("set_stacks", drum_count)
+		var rune_count := clampi(int(f.get("crimson_rune_stacks", 0)), 0, 9)
+		var rune_badge := node.get_node_or_null("CrimsonRuneBadge") as Control
+		if rune_count > 0 and rune_badge == null:
+			rune_badge = CrimsonRuneBadgeScript.new()
+			node.add_child(rune_badge)
+		if rune_badge != null:
+			rune_badge.call("set_stacks", rune_count)
 		var hp_bar: ColorRect = _hp_fill_by_id.get(_visual_id(f))
 		if hp_bar != null and is_instance_valid(hp_bar):
 			hp_bar.scale.x = clampf(float(f.hp) / float(maxi(1, f.max_hp)), 0.0, 1.0)
@@ -104,6 +122,14 @@ func _refresh_visuals() -> void:
 	_refresh_top5_atk(living)
 	if _summary_lbl != null and _summary_lbl.visible:
 		_refresh_summary()
+
+
+func _crimson_drum_stack_count(f: Dictionary) -> int:
+	if f.has("crimson_drum_stacks"):
+		return clampi(int(f["crimson_drum_stacks"]), 0, 15)
+	var atk_layers: Array = f.get("crimson_drum_atk", [])
+	var speed_layers: Array = f.get("crimson_drum_speed", [])
+	return mini(atk_layers.size(), speed_layers.size())
 
 
 func _refresh_frenzy_hud() -> void:
@@ -485,6 +511,25 @@ func _sync_3d_model_nodes(living: Array, facing_delta: float, prune := true) -> 
 			status_vfx = _ensure_status_vfx_controller(model_node)
 			_status_vfx_by_id[id] = status_vfx
 		status_vfx.update_from_fighter(f)
+		var resonance_count := clampi(int(f.get("crimson_resonance_stacks", 0)), 0, 10)
+		var resonance_orb := model_node.get_node_or_null("HeadAnchor/CrimsonResonanceOrb3D") as Node3D
+		if resonance_count > 0 and resonance_orb == null:
+			var head_anchor := model_node.get_node_or_null("HeadAnchor") as Node3D
+			if head_anchor != null:
+				resonance_orb = CrimsonResonanceOrb.new()
+				resonance_orb.name = "CrimsonResonanceOrb3D"
+				head_anchor.add_child(resonance_orb)
+		if resonance_orb != null:
+			resonance_orb.call("set_stacks", resonance_count)
+		var red_tide_count := clampi(int(f.get("crimson_pulse_stacks", 0)), 0, 5)
+		var red_tide_orbits := model_node.get_node_or_null("CrimsonRedTideOrbits3D") as CrimsonRedTideOrbits3D
+		if red_tide_count > 0 and red_tide_orbits == null:
+			red_tide_orbits = CrimsonRedTideOrbits.new() as CrimsonRedTideOrbits3D
+			red_tide_orbits.name = "CrimsonRedTideOrbits3D"
+			model_node.add_child(red_tide_orbits)
+			red_tide_orbits.configure(null, float(model_node.get_meta("model_height", NOMINAL_UNIT_HEIGHT)))
+		if red_tide_orbits != null:
+			red_tide_orbits.set_stacks(red_tide_count)
 	if not prune:
 		return
 	for key in _battle_3d_models.keys():

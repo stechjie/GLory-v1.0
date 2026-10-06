@@ -151,6 +151,8 @@ const SHOP_PREVIEW_PETS := [
 	"pet_cat",
 	"pet_rabbit",
 	"pet_mushroom",
+	"pet_squirrel",
+	"pet_tiger",
 ]
 var _address_edit: LineEdit
 var _net_status: Label

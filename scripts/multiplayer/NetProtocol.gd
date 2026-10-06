@@ -4,7 +4,8 @@ extends RefCounted
 # v3: 每格新增 uid（棋子唯一标识）。服务端靠它认「这枚四星是不是由一次成功的
 #     升级石交易产生的」—— 只凭自报的 star=4 认不出伪造（设计文档 §5）。
 #     版本没跟着加字段一起顶，旧客户端的提交会被按新语义解析成「所有棋子 uid 为空」。
-const SNAPSHOT_VERSION := 3
+# v4: carry Tiger star-up stacks for combat; the host stamps its ledger count.
+const SNAPSHOT_VERSION := 4
 const BOARD_SIZE := GameConstants.CELL_COUNT
 
 # --- 载荷硬上限 -------------------------------------------------------------
@@ -29,12 +30,13 @@ static func team_board_submission(board_slots: Array, mercenary_slots: Array = [
 		"treasures": _sanitize_treasure_ids(GameState.owned_treasures),
 		"syn": SynergyService.current_player_flags(),
 		"pet": _sanitize_pet_id(PlayerProfile.get_active()),
+		"tiger_starups": maxi(0, GameState.tiger_starup_count),
 	}
 
 static func board_snapshot(board_slots: Array, mercenary_slots: Array = []) -> Dictionary:
 	# 3v3: carry this player's treasures + synergy flags + active pet so the host can
 	# apply them to THIS player's units only (per-owner effects, synced for everyone).
-	return {"version": SNAPSHOT_VERSION, "round": GameState.round_index, "board": sanitize_board(board_slots), "mercenaries": sanitize_mercenaries(mercenary_slots), "treasures": GameState.owned_treasures.duplicate(), "syn": SynergyService.current_player_flags(), "pet": _sanitize_pet_id(PlayerProfile.get_active())}
+	return {"version": SNAPSHOT_VERSION, "round": GameState.round_index, "board": sanitize_board(board_slots), "mercenaries": sanitize_mercenaries(mercenary_slots), "treasures": GameState.owned_treasures.duplicate(), "syn": SynergyService.current_player_flags(), "pet": _sanitize_pet_id(PlayerProfile.get_active()), "tiger_starups": maxi(0, GameState.tiger_starup_count)}
 
 static func validate_team_snapshot(snapshot: Variant, expected_round: int) -> Dictionary:
 	if typeof(snapshot) != TYPE_DICTIONARY:
@@ -79,6 +81,7 @@ static func validate_team_snapshot(snapshot: Variant, expected_round: int) -> Di
 			# 且服务器会把它算进权威 replay 广播给全房。
 			"syn": rebuild_syn_from_board(clean_board),
 			"pet": _sanitize_pet_id(d.get("pet", "")),
+			"tiger_starups": maxi(0, int(d.get("tiger_starups", 0))),
 		}
 	}
 
@@ -98,16 +101,19 @@ static func rebuild_syn_from_board(board_slots: Array) -> Dictionary:
 static func normalize_snapshot(snapshot: Variant) -> Dictionary:
 	if typeof(snapshot) == TYPE_DICTIONARY:
 		var d: Dictionary = snapshot
-		return {"version": int(d.get("version", SNAPSHOT_VERSION)), "round": int(d.get("round", 0)), "board": sanitize_board(d.get("board", [])), "mercenaries": sanitize_mercenaries(d.get("mercenaries", [])), "treasures": d.get("treasures", []), "syn": d.get("syn", {}), "pet": _sanitize_pet_id(d.get("pet", ""))}
+		return {"version": int(d.get("version", SNAPSHOT_VERSION)), "round": int(d.get("round", 0)), "board": sanitize_board(d.get("board", [])), "mercenaries": sanitize_mercenaries(d.get("mercenaries", [])), "treasures": d.get("treasures", []), "syn": d.get("syn", {}), "pet": _sanitize_pet_id(d.get("pet", "")), "tiger_starups": maxi(0, int(d.get("tiger_starups", 0)))}
 	if typeof(snapshot) == TYPE_ARRAY:
-		return {"version": SNAPSHOT_VERSION, "round": 0, "board": sanitize_board(snapshot), "mercenaries": [], "treasures": [], "syn": {}, "pet": ""}
-	return {"version": SNAPSHOT_VERSION, "round": 0, "board": _empty_board(), "mercenaries": [], "treasures": [], "syn": {}, "pet": ""}
+		return {"version": SNAPSHOT_VERSION, "round": 0, "board": sanitize_board(snapshot), "mercenaries": [], "treasures": [], "syn": {}, "pet": "", "tiger_starups": 0}
+	return {"version": SNAPSHOT_VERSION, "round": 0, "board": _empty_board(), "mercenaries": [], "treasures": [], "syn": {}, "pet": "", "tiger_starups": 0}
 
 static func extract_treasures(snapshot: Variant) -> Array:
 	return normalize_snapshot(snapshot).get("treasures", [])
 
 static func extract_pet(snapshot: Variant) -> String:
 	return str(normalize_snapshot(snapshot).get("pet", ""))
+
+static func extract_tiger_starups(snapshot: Variant) -> int:
+	return maxi(0, int(normalize_snapshot(snapshot).get("tiger_starups", 0)))
 
 static func extract_syn(snapshot: Variant) -> Dictionary:
 	return normalize_snapshot(snapshot).get("syn", {})

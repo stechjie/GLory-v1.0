@@ -1677,7 +1677,8 @@ func _room_begin_next_prep(room: Dictionary) -> void:
 				if slot < slot_gold.size() and slot_gold[slot] != null:
 					prep["gold"] = int(slot_gold[slot])
 			EconomyLedger.reset_round(prep)
-			EconomyLedger.harvest_for_round(prep, next_round)
+			EconomyLedger.harvest_for_round(prep, next_round,
+				PetService.carrot_bonus_rate(_room_seat_pet(room, slot)))
 			var shop: Dictionary = prep.get("shop", {})
 			shop["offers"] = _server_roll_shop_offers(GameState.SHOP_UNIT_SLOTS, next_round,
 				_room_seat_races(room, slot))
@@ -2066,7 +2067,8 @@ func _room_start_authoritative(room: Dictionary) -> void:
 					var slot_gold: Array = room.get("slot_gold", [])
 					if slot < slot_gold.size() and slot_gold[slot] != null:
 						prep["gold"] = int(slot_gold[slot])
-				EconomyLedger.harvest_for_round(prep, int(room.get("round_index", 1)))
+				EconomyLedger.harvest_for_round(prep, int(room.get("round_index", 1)),
+					PetService.carrot_bonus_rate(_room_seat_pet(room, slot)))
 				# 9.13 #1：首回合也必须给服务端摇一份商店。
 				# _room_begin_next_prep 只覆盖第 2 回合起的房间推进，漏了开局这一份，
 				# 结果整局第一回合 server_shop 恒为空：客户端刷新商店走不了
@@ -2198,6 +2200,7 @@ func _build_economy_state(room: Dictionary, slot: int) -> Dictionary:
 		"merc_carrots_spent_total": int(prep.get("merc_carrots_spent_total", 0)),
 		"last_harvest_round": int(prep.get("last_harvest_round", -1)),
 		"last_harvest_gain": int(prep.get("last_harvest_gain", 0)),
+		"tiger_starup_count": int(prep.get("tiger_starup_count", 0)),
 		"stone_draw_used_round": int(prep.get("stone_draw_used_round", -1)),
 		"stone_draw_count": maxi(0, int(prep.get("stone_draw_count", 0))),
 		"team_upgrade_stones": _room_team_stones(room, slot).duplicate(true),
@@ -3444,6 +3447,9 @@ func _rpc_team_submit_board(slot: int, snapshot: Dictionary) -> void:
 		# 重连也一样：手机刚重开、本机宠物缓存还是空的，交上来的棋盘里 pet 是空串 ——
 		# 照样换成座位上的，宠物不变、效果照有。
 		accepted_snapshot["pet"] = _room_seat_pet(room, slot)
+		# Pet growth is always server-counted, including the ledger's shadow phase.
+		# The client's submitted number is never trusted for combat.
+		accepted_snapshot["tiger_starups"] = maxi(0, int(_room_prep(room, slot).get("tiger_starup_count", 0)))
 		boards[slot] = accepted_snapshot
 		room.boards = boards
 		# 跨回合缓存最后一次合法棋盘：该座位掉线时用它补交（room.boards 每轮清空）
@@ -3506,6 +3512,7 @@ func _restamp_cached_board(room: Dictionary, slot: int, cached: Variant) -> Dict
 	# 宠物同理，以座位上的名片为准。缓存可能来自存盘后读回的旧房间（旧版本存的是
 	# 手机自报的宠物），这里再强制一遍，缓存从哪来都不影响。
 	snap["pet"] = _room_seat_pet(room, slot)
+	snap["tiger_starups"] = maxi(0, int(_room_prep(room, slot).get("tiger_starup_count", 0)))
 	var validation := NetProtocol.validate_team_snapshot(snap, round_index)
 	if bool(validation.get("ok", false)):
 		return validation.get("snapshot", {})
@@ -5830,6 +5837,8 @@ func _economy_ctx(room: Dictionary, slot: int, action: String) -> Dictionary:
 		"merc_cap": GameState.MERCENARY_SLOTS,
 		"round_index": int(room.get("round_index", 1)),
 		"team_stones": _room_team_stones(room, slot),
+		"carrot_bonus_rate": PetService.carrot_bonus_rate(_room_seat_pet(room, slot)),
+		"tiger_growth_rate": PetService.tier1_growth_rate(_room_seat_pet(room, slot)),
 	}
 	match action:
 		"shop_refresh":
@@ -5996,6 +6005,8 @@ func _apply_server_shop(state: Dictionary) -> void:
 
 
 func _apply_carrot_state(state: Dictionary) -> void:
+	if bool(state.get("authoritative", false)):
+		GameState.tiger_starup_count = maxi(0, int(state.get("tiger_starup_count", 0)))
 	server_four_star_cost_version = int(state.get("four_star_cost_version", 0))
 	if state.is_empty() or not bool(state.get("carrot_authoritative", false)):
 		return
@@ -6093,6 +6104,8 @@ func _apply_carrot_receipt(receipt: Dictionary) -> void:
 			# 按 uid 找那一枚棋子 —— 不按格子号：从发出意图到回执回来，玩家可能已经
 			# 把它拖到别的格子、或者棋盘被服务端快照覆盖过。
 			_apply_four_star_to_uid(str(result.get("uid", "")))
+			if not already_applied and not economy_authoritative():
+				GameState.record_tiger_starup()
 			var stones_after: Variant = result.get("team_upgrade_stones", {})
 			if typeof(stones_after) == TYPE_DICTIONARY:
 				GameState.team_upgrade_stones = (stones_after as Dictionary).duplicate(true)

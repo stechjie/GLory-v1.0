@@ -64,8 +64,9 @@ static func farm_production_bonus(total: int) -> int:
 ## production_for_tech() —— 那是只含科技的半个答案，漏掉田等级加成不会报错，
 ## 只会让显示和实发对不上（本作已经为「同一规则两份实现」付过两次学费，
 ## 见 ShopRoll.gd 顶部与 EconomyService.settle_post_battle_gold() 的注释）。
-static func total_production(tech_level: int, spent_total: int) -> int:
-	return production_for_tech(tech_level) + farm_production_bonus(spent_total)
+static func total_production(tech_level: int, spent_total: int, bonus_rate: float = 0.0) -> int:
+	var base := production_for_tech(tech_level) + farm_production_bonus(spent_total)
+	return base + maxi(1, int(floor(float(base) * bonus_rate))) if bonus_rate > 0.0 else base
 
 static func tech_price(level: int) -> int:
 	var safe_level := maxi(0, level)
@@ -115,8 +116,9 @@ static func farm_production_for_level(level: int) -> int:
 		return int(FARM_PRODUCTION[safe_level])
 	return int(FARM_PRODUCTION.back()) + (safe_level - (FARM_PRODUCTION.size() - 1)) * FARM_REPEAT_PRODUCTION_INCREMENT
 
-static func capacity_for_spent(total: int) -> int:
-	return farm_capacity_for_level(farm_level_for_spent(total))
+static func capacity_for_spent(total: int, bonus_rate: float = 0.0) -> int:
+	var base := farm_capacity_for_level(farm_level_for_spent(total))
+	return base + int(floor(float(base) * bonus_rate)) if bonus_rate > 0.0 else base
 
 static func income_for_spent(total: int) -> int:
 	return farm_income_for_level(farm_level_for_spent(total))
@@ -124,9 +126,9 @@ static func income_for_spent(total: int) -> int:
 static func next_threshold_for_spent(total: int) -> int:
 	return farm_threshold_for_level(farm_level_for_spent(total) + 1)
 
-static func harvest(carrot_balance: int, spent_total: int, tech_level: int) -> Dictionary:
-	var capacity := capacity_for_spent(spent_total)
-	var production := total_production(tech_level, spent_total)
+static func harvest(carrot_balance: int, spent_total: int, tech_level: int, bonus_rate: float = 0.0) -> Dictionary:
+	var capacity := capacity_for_spent(spent_total, bonus_rate)
+	var production := total_production(tech_level, spent_total, bonus_rate)
 	var before := clampi(carrot_balance, 0, capacity)
 	var gained := mini(production, capacity - before)
 	return {

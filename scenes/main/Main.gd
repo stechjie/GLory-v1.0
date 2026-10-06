@@ -1306,6 +1306,10 @@ func _show_shop_screen() -> void:
 		_show_menu()
 		return
 	screen.back_requested.connect(_show_menu)
+	screen.pet_draw_requested.connect(func() -> void:
+		var dialog: Control = (load("res://scenes/menu/PetDrawDialog.gd") as GDScript).new()
+		dialog.draw_finished.connect(screen._reload)
+		screen.add_child(dialog))
 	_page_back_route = _show_menu
 	add_child(screen)
 

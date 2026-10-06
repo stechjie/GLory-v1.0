@@ -47,6 +47,14 @@ var _replay_round := -1
 var _battle_result_reported := false
 # 已灌入 visual_events 的最高回放帧号，避免重复播放同一帧的视觉事件。
 var _replay_events_applied := -1
+var _replay_drum_event_cursor := 0
+var _replay_drum_last_frame := -1
+var _replay_resonance_event_cursor := 0
+var _replay_resonance_last_frame := -1
+var _replay_red_tide_event_cursor := 0
+var _replay_red_tide_last_frame := -1
+var _replay_rune_event_cursor := 0
+var _replay_rune_last_frame := -1
 var _replay_by_uid: Dictionary = {}
 # 9.24 #7（订正）：末日守卫「血之契约」把被连接目标**永久**变成我方棋子。
 #
@@ -732,6 +740,14 @@ func _finish_final_round_intro_after_delay() -> void:
 
 func _load_replay_roster(replay: Dictionary) -> void:
 	_replay_by_uid = {}
+	_replay_drum_event_cursor = 0
+	_replay_drum_last_frame = -1
+	_replay_resonance_event_cursor = 0
+	_replay_resonance_last_frame = -1
+	_replay_red_tide_event_cursor = 0
+	_replay_red_tide_last_frame = -1
+	_replay_rune_event_cursor = 0
+	_replay_rune_last_frame = -1
 	# 9.24 #7：策反锁存是**每局**的，换局必须清空，否则上一局被策反过的 uid 会带到下一局。
 	_converted_ally_ids = {}
 	var players: Array = []
@@ -751,6 +767,10 @@ func _load_replay_roster(replay: Dictionary) -> void:
 			"pos": Vector2.ZERO, "alive": false, "statuses": {}, "shield": 0,
 			"range_px": float(r.get("range_px", float(r.get("def", {}).get("range", 1)) * BattleSim.ATTACK_RANGE_SCALE)),
 			"attack_count": 0, "skill_ready": 0.0, "skill_stacks": 0,
+			"crimson_drum_stacks": 0,
+			"crimson_resonance_stacks": 0,
+			"crimson_pulse_stacks": 0,
+			"crimson_rune_stacks": 0,
 			"vfx_attack_target_uid": "", "vfx_skill_target_uid": "",
 		}
 		if r.has("twin_group_id"):
@@ -1044,6 +1064,10 @@ func _apply_replay_frame(i: int) -> void:
 					ve.append(ev)
 		_state["visual_events"] = ve
 		_replay_events_applied = i
+	_apply_drum_stack_events(i)
+	_apply_resonance_stack_events(i)
+	_apply_red_tide_stack_events(i)
+	_apply_rune_stack_events(i)
 	for f in _replay_by_uid.values():
 		f.alive = false
 	if typeof(frames[i]) != TYPE_ARRAY:
@@ -1088,6 +1112,89 @@ func _apply_replay_frame(i: int) -> void:
 	# Conversion changes membership in the simulation, not only the health-bar
 	# colour. Boundary release and side counts must read the same membership.
 	reconcile_replay_teams(_state, _replay_by_uid)
+
+
+# War Drum stack counts are presentation-only changes outside the frozen frame
+# tuple. Rebuild from the start on backward seeks; normal playback consumes only
+# the new changes for this tick.
+func _apply_drum_stack_events(frame_index: int) -> void:
+	if frame_index < _replay_drum_last_frame:
+		for f: Dictionary in _replay_by_uid.values():
+			f["crimson_drum_stacks"] = 0
+		_replay_drum_event_cursor = 0
+	var events: Array = _replay.get("crimson_drum_stack_events", [])
+	while _replay_drum_event_cursor < events.size():
+		var event: Variant = events[_replay_drum_event_cursor]
+		if not (event is Array) or (event as Array).size() < 3:
+			_replay_drum_event_cursor += 1
+			continue
+		if int(event[0]) > frame_index:
+			break
+		var f: Variant = _replay_by_uid.get(str(event[1]))
+		if f is Dictionary:
+			(f as Dictionary)["crimson_drum_stacks"] = clampi(int(event[2]), 0, 15)
+		_replay_drum_event_cursor += 1
+	_replay_drum_last_frame = frame_index
+
+
+func _apply_resonance_stack_events(frame_index: int) -> void:
+	if frame_index < _replay_resonance_last_frame:
+		for f: Dictionary in _replay_by_uid.values():
+			f["crimson_resonance_stacks"] = 0
+		_replay_resonance_event_cursor = 0
+	var events: Array = _replay.get("crimson_resonance_stack_events", [])
+	while _replay_resonance_event_cursor < events.size():
+		var event: Variant = events[_replay_resonance_event_cursor]
+		if not (event is Array) or (event as Array).size() < 3:
+			_replay_resonance_event_cursor += 1
+			continue
+		if int(event[0]) > frame_index:
+			break
+		var f: Variant = _replay_by_uid.get(str(event[1]))
+		if f is Dictionary:
+			(f as Dictionary)["crimson_resonance_stacks"] = clampi(int(event[2]), 0, 10)
+		_replay_resonance_event_cursor += 1
+	_replay_resonance_last_frame = frame_index
+
+
+func _apply_red_tide_stack_events(frame_index: int) -> void:
+	if frame_index < _replay_red_tide_last_frame:
+		for f: Dictionary in _replay_by_uid.values():
+			f["crimson_pulse_stacks"] = 0
+		_replay_red_tide_event_cursor = 0
+	var events: Array = _replay.get("crimson_red_tide_stack_events", [])
+	while _replay_red_tide_event_cursor < events.size():
+		var event: Variant = events[_replay_red_tide_event_cursor]
+		if not (event is Array) or (event as Array).size() < 3:
+			_replay_red_tide_event_cursor += 1
+			continue
+		if int(event[0]) > frame_index:
+			break
+		var f: Variant = _replay_by_uid.get(str(event[1]))
+		if f is Dictionary:
+			(f as Dictionary)["crimson_pulse_stacks"] = clampi(int(event[2]), 0, 5)
+		_replay_red_tide_event_cursor += 1
+	_replay_red_tide_last_frame = frame_index
+
+
+func _apply_rune_stack_events(frame_index: int) -> void:
+	if frame_index < _replay_rune_last_frame:
+		for f: Dictionary in _replay_by_uid.values():
+			f["crimson_rune_stacks"] = 0
+		_replay_rune_event_cursor = 0
+	var events: Array = _replay.get("crimson_rune_stack_events", [])
+	while _replay_rune_event_cursor < events.size():
+		var event: Variant = events[_replay_rune_event_cursor]
+		if not (event is Array) or (event as Array).size() < 3:
+			_replay_rune_event_cursor += 1
+			continue
+		if int(event[0]) > frame_index:
+			break
+		var f: Variant = _replay_by_uid.get(str(event[1]))
+		if f is Dictionary:
+			(f as Dictionary)["crimson_rune_stacks"] = clampi(int(event[2]), 0, 9)
+		_replay_rune_event_cursor += 1
+	_replay_rune_last_frame = frame_index
 
 static func reconcile_replay_teams(state: Dictionary, by_uid: Dictionary) -> void:
 	var player: Array = []

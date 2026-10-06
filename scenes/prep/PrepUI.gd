@@ -2540,6 +2540,7 @@ func _refresh_all() -> void:
 	if _carrot_panel != null and is_instance_valid(_carrot_panel):
 		_carrot_panel.refresh()
 	_refresh_carrot_counter()
+	refresh_tiger_stack_badge()
 	if GameState.tutorial_mode:
 		TutorialMode.update_overlay()
 	_check_team_merc_alert()

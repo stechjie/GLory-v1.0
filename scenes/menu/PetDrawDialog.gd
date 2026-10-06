@@ -1,14 +1,22 @@
 extends Control
 
-# 稀有宠物奖池的交互预览。奖池、概率和服务端交易未开放时绝不扣币或发奖。
+# 钻石宠物召唤。抽取结果、余额和保底次数全部来自账号服务器。
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
-const SHOP_ART := preload("res://assets/ui/shop/shop_hero_bg.png")
 const Currency := preload("res://scripts/account/Currency.gd")
+const PetPreview := preload("res://scripts/pets/PetPreview.gd")
+
+signal draw_finished
 
 var _pity_progress := -1
+var _available: Array = []
+var _owned: Array = []
+var _diamond := -1
+var _busy := false
+var _pending_draw_id := ""
+var _draw_button: Button
 var _view := "summon"
 var _body: VBoxContainer
 var _notice: Label
@@ -21,6 +29,7 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build()
 	_show_view("summon")
+	_load_state()
 
 
 # 以后由服务端奖池状态调用；-1 表示尚无可验证的抽取记录。
@@ -92,11 +101,12 @@ func _build() -> void:
 	art.add_theme_stylebox_override("panel", Tokens.panel_box(
 		Tokens.SURFACE, Tokens.GOLD_PRESSED, 2))
 	content.add_child(art)
-	var scene := TextureRect.new()
-	scene.texture = SHOP_ART
-	scene.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	scene.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	art.add_child(scene)
+	var portraits := HBoxContainer.new()
+	portraits.alignment = BoxContainer.ALIGNMENT_CENTER
+	portraits.add_theme_constant_override("separation", Tokens.GAP_S)
+	art.add_child(portraits)
+	for pet_id in ["pet_squirrel", "pet_tiger"]:
+		portraits.add_child(PetPreview.build_illustration(pet_id, Vector2(160, 290)))
 	var right := PanelContainer.new()
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	right.add_theme_stylebox_override("panel", Tokens.panel_box(
@@ -106,7 +116,7 @@ func _build() -> void:
 	_body.add_theme_constant_override("separation", Tokens.GAP_S)
 	right.add_child(_body)
 	_notice = Label.new()
-	_notice.text = _t("奖池筹备中；当前不会扣除钻石。", "Pool in preparation; no gems can be spent yet.")
+	_notice.text = _t("正在读取奖池与钱包…", "Loading pool and wallet…")
 	_notice.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
 	_notice.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
 	root.add_child(_notice)
@@ -130,9 +140,9 @@ func _show_view(view_id: String) -> void:
 
 
 func _show_summon() -> void:
-	_heading(_t("下一位伙伴，等待揭晓", "Your next companion awaits"))
-	var intro := _line(_t("两只稀有宠物正在设计中，正式奖池开放后可在此抽取。",
-		"Two rare pets are being designed. Summoning opens with the completed pool."))
+	_heading(_t("召唤松鼠或老虎", "Summon Squirrel or Tiger"))
+	var intro := _line(_t("每抽 10% 获得一只未拥有的奖池宠物；第 10 抽必得。",
+		"10% chance for an unowned pool pet; guaranteed on draw 10."))
 	intro.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_body.add_child(intro)
 	_pity_label = _line("")
@@ -150,30 +160,114 @@ func _show_summon() -> void:
 		cell.add_theme_stylebox_override("panel", Tokens.panel_box(
 			Tokens.SURFACE_RAISED, Tokens.GOLD_PRESSED if i == 9 else Tokens.BORDER, 0))
 		track.add_child(cell)
-	var line := _line(_t("未获得新宠物：返还 100 游戏币", "No new pet: receive 100 coins"))
-	_body.add_child(line)
+	_body.add_child(_line(_t("未抽中宠物时获得 100 账号金币。",
+		"No pet? Receive 100 account coins.")))
 	var spacer := Control.new()
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_body.add_child(spacer)
-	var draw: Button = ACTION_BUTTON.instantiate()
-	draw.text = _t("抽取一次  ·  75 钻石", "Draw once  ·  75 gems")
-	draw.theme_type_variation = Theming.VARIATION_PRIMARY
-	draw.custom_minimum_size.y = Tokens.TOUCH_MIN
-	draw.pressed.connect(func() -> void:
-		_notice.text = _t("奖池尚未开放，没有扣除钻石，也没有发放奖励。",
-			"The pool is not open. No gems were spent and no reward was granted.")
-		_notice.add_theme_color_override("font_color", Tokens.CYAN))
-	_body.add_child(draw)
+	_draw_button = ACTION_BUTTON.instantiate()
+	_draw_button.theme_type_variation = Theming.VARIATION_PRIMARY
+	_draw_button.custom_minimum_size.y = Tokens.TOUCH_MIN
+	_draw_button.pressed.connect(_draw)
+	_body.add_child(_draw_button)
+	_update_draw_button()
+
+
+func _update_draw_button() -> void:
+	if _draw_button == null or not is_instance_valid(_draw_button):
+		return
+	_draw_button.disabled = _busy or _pity_progress < 0 or _available.is_empty() or _diamond < 75
+	if _available.is_empty() and _pity_progress >= 0:
+		_draw_button.text = _t("奖池已收集完毕", "Pool complete")
+	elif _diamond >= 0 and _diamond < 75:
+		_draw_button.text = _t("钻石不足", "Not enough gems")
+	else:
+		_draw_button.text = _t("抽取一次 · 75 钻石", "Draw once · 75 gems")
+
+
+func _load_state() -> void:
+	var pool: Dictionary = await AccountManager.fetch_pet_draw_state()
+	var wallet: Dictionary = await AccountManager.fetch_wallet()
+	if not is_inside_tree():
+		return
+	if int(pool.get("code", 0)) / 100 != 2:
+		_notice.text = str(pool.get("error", _t("奖池读取失败", "Could not load pool")))
+		return
+	var body: Dictionary = pool.get("body", {})
+	_available = body.get("available", [])
+	_owned = body.get("owned", [])
+	set_pity_progress(int(body.get("misses", 0)))
+	if int(wallet.get("code", 0)) / 100 == 2:
+		_diamond = int((wallet.get("body", {}) as Dictionary).get("diamond", -1))
+	_notice.text = _t("当前钻石：%s" % Currency.comma(_diamond),
+		"Gems: %s" % Currency.comma(_diamond))
+	_update_draw_button()
+	if _view == "pool":
+		_show_view("pool")
+
+
+func _draw() -> void:
+	if _busy or _available.is_empty() or _diamond < 75:
+		return
+	_busy = true
+	_update_draw_button()
+	if _pending_draw_id.is_empty():
+		_pending_draw_id = AccountManager.new_client_order_id()
+	var result: Dictionary = await AccountManager.draw_pet(_pending_draw_id)
+	_busy = false
+	if not is_inside_tree():
+		return
+	var code := int(result.get("code", 0))
+	if code / 100 == 2:
+		_pending_draw_id = ""
+		var receipt: Dictionary = result.get("body", {})
+		var replayed := bool(receipt.get("replayed", false))
+		_diamond = int(receipt.get("diamond", _diamond))
+		set_pity_progress(int(receipt.get("misses", _pity_progress)))
+		var pet_id := str(receipt.get("pet_id", ""))
+		if pet_id.is_empty():
+			_notice.text = _t("获得 100 账号金币 · 剩余 %d 抽保底 · 钻石 %d" %
+				[10 - _pity_progress, _diamond],
+				"100 coins · %d draws to guarantee · %d gems" %
+				[10 - _pity_progress, _diamond])
+		else:
+			_available.erase(pet_id)
+			_owned.append(pet_id)
+			_notice.text = _t("获得新宠物：%s！" % _pet_name(pet_id),
+				"New pet: %s!" % _pet_name(pet_id))
+			await PlayerProfile.refresh_pets()
+		if replayed:
+			_notice.text = _t("这一抽已完成，没有重复扣钻。", "This draw was already completed; no gems were charged again.") + " " + _notice.text
+		draw_finished.emit()
+		if _view == "pool":
+			_show_view("pool")
+	else:
+		if code != 0 and code < 500:
+			_pending_draw_id = ""
+		_notice.text = str(result.get("error", _t("抽取失败", "Draw failed")))
+		if code == 0 or code >= 500:
+			_notice.text += _t("；重试会继续同一抽", "; retry resumes the same draw")
+	_update_draw_button()
+
+
+func _pet_name(pet_id: String) -> String:
+	match pet_id:
+		"pet_squirrel":
+			return _t("松鼠", "Squirrel")
+		"pet_tiger":
+			return _t("老虎", "Tiger")
+	return pet_id
 
 
 func _show_pool() -> void:
 	_pity_label = null
+	_draw_button = null
 	_heading(_t("稀有宠物奖池", "Rare pet pool"))
 	var row := HBoxContainer.new()
 	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	row.add_theme_constant_override("separation", Tokens.GAP_S)
 	_body.add_child(row)
-	for number in [1, 2]:
+	for pet_id in ["pet_squirrel", "pet_tiger"]:
 		var card := PanelContainer.new()
 		card.custom_minimum_size = Vector2(195, 180)
 		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -183,16 +277,16 @@ func _show_pool() -> void:
 		var col := VBoxContainer.new()
 		col.alignment = BoxContainer.ALIGNMENT_CENTER
 		card.add_child(col)
-		var mark := _line("✦  ?  ✦")
-		mark.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		mark.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
-		mark.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
-		col.add_child(mark)
-		var name := _line(_t("神秘伙伴 %d" % number, "Mystery pet %d" % number))
+		col.add_child(PetPreview.build_illustration(pet_id, Vector2(190, 165)))
+		var name := _line(_pet_name(pet_id))
 		name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		col.add_child(name)
-	var note := _line(_t("宠物外观、效果和抽中概率将在奖池开放前公布。",
-		"Pet art, effects and draw odds will be published before the pool opens."))
+		var status := _line(_t("已拥有", "Owned") if _owned.has(pet_id) else
+			_t("未拥有", "Not owned"))
+		status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		col.add_child(status)
+	var note := _line(_t("抽中宠物时，从未拥有的宠物中等概率选择。全部拥有后停止抽取。",
+		"Pet drops are shared equally among unowned pets. Drawing stops when both are owned."))
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_body.add_child(note)
 
@@ -204,9 +298,9 @@ func _show_rules() -> void:
 		[_t("每次抽取消耗 75 钻石。", "Each draw costs 75 gems.")],
 		[_t("最多 10 抽获得一只尚未拥有的新宠物。", "A new unowned pet is guaranteed within 10 draws.")],
 		[_t("没有抽中新宠物时，获得 100 游戏币。", "If no new pet drops, receive 100 coins.")],
-		[_t("剩余保底抽数会由服务器记录，奖池开放后在召唤页显示。",
-			"Remaining draws will be tracked by the server and shown on the summon page.")],
-		[_t("具体概率将在正式开放前公布。", "Exact odds will be published before release.")],
+		[_t("保底次数由服务器按账号记录，获得宠物后重置。",
+			"Pity is tracked per account and resets after a pet drop.")],
+		[_t("普通抽取宠物概率 10%，第 10 抽保底。", "Pet chance is 10%, guaranteed on draw 10.")],
 	]:
 		var label := _line("•  " + str(text_pair[0]))
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="VFXProfile3D" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://effects/vfx3d/core/VFXProfile3D.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+profile_id = "crimson_resonance_orb"
+module_id = "crimson_resonance_orb"
+dark_color = Color(0.12, 0.006, 0.02, 1)
+main_color = Color(0.74, 0.018, 0.055, 1)
+core_color = Color(1, 0.28, 0.17, 1)
+size = 0.26
+duration = 4.0
+particle_count = 1
+emission_energy = 2.4
+parameters = {"base_radius": 0.106, "radius_per_stack": 0.010, "spin_speed": 2.1}

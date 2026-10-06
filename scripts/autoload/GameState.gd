@@ -39,6 +39,8 @@ var carrots := 0
 var harvest_tech_level := 0
 var merc_carrots_spent_total := 0
 var last_harvest_round := -1
+# Per-run Tiger stacks survive selling the upgraded unit and are saved with the run.
+var tiger_starup_count := 0
 var stone_draw_used_round := -1
 var stone_draw_count := 0
 
@@ -122,6 +124,7 @@ func reset_run() -> void:
 	harvest_tech_level = 0
 	merc_carrots_spent_total = 0
 	last_harvest_round = -1
+	tiger_starup_count = 0
 	stone_draw_used_round = -1
 	stone_draw_count = 0
 	team_upgrade_stones = CarrotEconomyRules.empty_stones()
@@ -162,10 +165,16 @@ func copies_to_upgrade(star: int) -> int:
 	return GameConstants.copies_to_upgrade(star)
 
 func carrot_capacity() -> int:
-	return CarrotEconomyRules.capacity_for_spent(merc_carrots_spent_total)
+	return CarrotEconomyRules.capacity_for_spent(merc_carrots_spent_total,
+		PetService.carrot_bonus_rate(PlayerProfile.get_active()))
 
 func carrot_production() -> int:
-	return CarrotEconomyRules.total_production(harvest_tech_level, merc_carrots_spent_total)
+	return CarrotEconomyRules.total_production(harvest_tech_level, merc_carrots_spent_total,
+		PetService.carrot_bonus_rate(PlayerProfile.get_active()))
+
+func record_tiger_starup() -> void:
+	if PetService.tier1_growth_rate(PlayerProfile.get_active()) > 0.0:
+		tiger_starup_count += 1
 
 func carrot_farm_level() -> int:
 	return CarrotEconomyRules.farm_level_for_spent(merc_carrots_spent_total)
@@ -182,7 +191,8 @@ func harvest_carrots_for_round(round_number: int) -> Dictionary:
 	if round_number < 1 or last_harvest_round >= round_number:
 		return {"ok": false, "already_harvested": true, "gain": 0, "overflow": 0,
 			"after": carrots, "capacity": carrot_capacity(), "production": carrot_production()}
-	var result := CarrotEconomyRules.harvest(carrots, merc_carrots_spent_total, harvest_tech_level)
+	var result := CarrotEconomyRules.harvest(carrots, merc_carrots_spent_total, harvest_tech_level,
+		PetService.carrot_bonus_rate(PlayerProfile.get_active()))
 	carrots = int(result.after)
 	last_harvest_round = round_number
 	return {"ok": true, "already_harvested": false, "gain": int(result.gain),

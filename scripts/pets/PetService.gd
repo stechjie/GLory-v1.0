@@ -74,6 +74,16 @@ static func interest_rate_bonus(pet_id: String) -> float:
 	var e := effect_of(pet_id)
 	return float(e.get("value", 0.0)) if str(e.get("effect", "")) == "interest_pct" else 0.0
 
+# 松鼠：萝卜采集和容量加成。
+static func carrot_bonus_rate(pet_id: String) -> float:
+	var e := effect_of(pet_id)
+	return float(e.get("value", 0.0)) if str(e.get("effect", "")) == "carrot_harvest_capacity_pct" else 0.0
+
+# 老虎：每次升星带给一阶棋子的成长率。
+static func tier1_growth_rate(pet_id: String) -> float:
+	var e := effect_of(pet_id)
+	return float(e.get("value", 0.0)) if str(e.get("effect", "")) == "tier1_upgrade_growth" else 0.0
+
 # 蘑菇：开局最大生命乘数（1.0 = 无加成）。
 static func opening_hp_mult(pet_id: String) -> float:
 	var e := effect_of(pet_id)

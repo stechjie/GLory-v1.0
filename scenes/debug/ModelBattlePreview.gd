@@ -42,6 +42,11 @@ const VFX_BARRIER_SHIELD := preload("res://effects/vfx3d/modules/VFXBarrierShiel
 const VFX_FALLING_PILLAR := preload("res://effects/vfx3d/modules/VFXFallingPillar3D.gd")
 const VFX_ROAR_CONE := preload("res://effects/vfx3d/modules/VFXRoarCone3D.gd")
 const VFX_STATUS_EFFECT := preload("res://effects/vfx3d/modules/VFXStatusEffect3D.gd")
+const VFX_CRIMSON_RESONANCE_ORB := preload("res://effects/vfx3d/modules/CrimsonResonanceOrb3D.gd")
+const VFX_CRIMSON_RED_TIDE_ORBITS := preload("res://effects/vfx3d/modules/CrimsonRedTideOrbits3D.gd")
+const CRIMSON_RUNE_BADGE := preload("res://scenes/battle/CrimsonRuneBadge.gd")
+const PROFILE_CRIMSON_RESONANCE_ORB := preload("res://effects/vfx3d/profiles/examples/crimson_resonance_orb.tres")
+const PROFILE_CRIMSON_RED_TIDE_ORBITS := preload("res://effects/vfx3d/profiles/examples/crimson_red_tide_orbits.tres")
 const VFX_TRACKED_LINK := preload("res://effects/vfx3d/modules/VFXTrackedLink3D.gd")
 const VFX_VORTEX_FIELD := preload("res://effects/vfx3d/modules/VFXVortexField3D.gd")
 const VFX_SUMMON_SPAWN := preload("res://effects/vfx3d/modules/VFXSummonSpawn3D.gd")
@@ -145,6 +150,7 @@ var vfx_select: OptionButton
 var vfx_status_label: Label
 var vfx_preview_root: Node3D
 var vfx_preview_effect: Node3D
+var rune_preview_hud: Control
 var oga_preview_serial := 0
 var lane_barrier_preview_nodes: Array[Node2D] = []
 var vfx_recorder: VFXPreviewRecorder
@@ -192,6 +198,9 @@ func _ready() -> void:
 
 func _try_run_oga_capture_cli() -> void:
 	for argument in OS.get_cmdline_user_args():
+		if argument.begins_with("--red-tide-capture="):
+			_run_red_tide_capture_cli.call_deferred(argument.trim_prefix("--red-tide-capture="))
+			return
 		if argument.begins_with("--oga-preview="):
 			var preview_id := argument.trim_prefix("--oga-preview=")
 			if preview_id in OGA_CHESS_CATALOG.RANGED_UNIT_ORDER or preview_id in ["melee", "skills"]:
@@ -214,6 +223,37 @@ func _run_oga_capture_cli(preview_id: String) -> void:
 	var capture_path := await vfx_recorder.capture_at_time(get_viewport(), capture_delay, "oga_%s" % preview_id)
 	print("OGA_CAPTURE %s" % ProjectSettings.globalize_path(capture_path))
 	get_tree().quit(0 if not capture_path.is_empty() else 1)
+
+
+func _run_red_tide_capture_cli(output_dir: String) -> void:
+	if output_dir.is_empty() or DirAccess.make_dir_recursive_absolute(output_dir) != OK:
+		push_error("Red Tide capture directory is unavailable: %s" % output_dir)
+		get_tree().quit(1)
+		return
+	selected_left_index = _find_entry_index("crimson", selected_left_index)
+	left_model_select.select(selected_left_index)
+	_load_selected_pair()
+	await get_tree().process_frame
+	var orbits := _make_crimson_red_tide_orbits_preview()
+	var captures := [
+		[1, 0.08, "red_tide_1_start.png"],
+		[1, 0.42, "red_tide_1_body.png"],
+		[5, 0.09, "red_tide_5_start.png"],
+		[5, 0.52, "red_tide_5_body.png"],
+		[0, 0.10, "red_tide_fade.png"],
+	]
+	for capture in captures:
+		orbits.set_stacks(int(capture[0]))
+		await get_tree().create_timer(float(capture[1])).timeout
+		await RenderingServer.frame_post_draw
+		var path := output_dir.path_join(str(capture[2]))
+		var image := get_viewport().get_texture().get_image()
+		if image == null or image.is_empty() or image.save_png(path) != OK:
+			push_error("Red Tide capture failed: %s" % path)
+			get_tree().quit(1)
+			return
+		print("RED_TIDE_CAPTURE %s" % path)
+	get_tree().quit(0)
 
 func _process(delta: float) -> void:
 	phase_time += delta
@@ -578,6 +618,9 @@ func _build_vfx_test_panel() -> void:
 	vfx_select.add_item("OGA 近战: 三种挥砍候选", 2100)
 	vfx_select.add_item("OGA 技能: 护盾/黑洞/冲击", 2200)
 	vfx_select.add_item("OGA 技能包: 圣光/血法/暗影/毒素/元素", 2300)
+	vfx_select.add_item("Status: Crimson Resonance Orb", 2400)
+	vfx_select.add_item("Status: Crimson Rune Lantern", 2500)
+	vfx_select.add_item("Status: Crimson Red Tide Orbits", 2600)
 	vfx_select.add_item("Ascension: Sky", 100)
 	vfx_select.add_item("Ascension: Land", 101)
 	vfx_select.add_item("Ascension: Human", 102)
@@ -716,6 +759,9 @@ func _clear_all_preview_nodes() -> void:
 				child.queue_free()
 	vfx_preview_effect = null
 	vfx_v2_preview_effect = null
+	if rune_preview_hud != null and is_instance_valid(rune_preview_hud):
+		rune_preview_hud.queue_free()
+	rune_preview_hud = null
 
 func _play_oga_projectile_preview(unit_id: String) -> void:
 	var spec: Dictionary = OGA_CHESS_CATALOG.projectile_for(unit_id)
@@ -803,6 +849,15 @@ func _on_vfx_play_pressed() -> void:
 		return
 	if selected_id == 2300:
 		_play_oga_pack_skill_preview()
+		return
+	if selected_id == 2400:
+		_play_crimson_resonance_orb_preview()
+		return
+	if selected_id == 2500:
+		_play_crimson_rune_lantern_preview()
+		return
+	if selected_id == 2600:
+		_play_crimson_red_tide_orbits_preview()
 		return
 	match selected_id:
 		103, 104, 105:
@@ -1215,6 +1270,81 @@ func _preview_race_basic(profile:VFXProfile3D,race:String,mode:String)->void:
 	var fx:=VFX_RACE_BASIC_ATTACK.new();fx.name="PreviewBasic_%s_%s"%[race,mode];vfx_preview_root.add_child(fx);vfx_preview_effect=fx
 	fx.play_profile(profile,{"origin":left_slot.position+Vector3(0.0,.62,0.0),"target":right_slot.position+Vector3(0.0,.34,0.0),"target_node":right_slot,"race":race,"mode":mode})
 	vfx_status_label.text="Playing: %s %s basic attack"%[race,mode]
+
+
+func _play_crimson_resonance_orb_preview() -> void:
+	auto_fight_enabled = false
+	var orb := VFX_CRIMSON_RESONANCE_ORB.new()
+	orb.name = "PreviewCrimsonResonanceOrb"
+	vfx_preview_root.add_child(orb)
+	orb.global_position = left_slot.global_position + Vector3(0.0, 1.35, 0.0)
+	orb.configure(PROFILE_CRIMSON_RESONANCE_ORB)
+	orb.set_stacks(1)
+	vfx_preview_effect = orb
+	vfx_status_label.text = "Crimson 4 Resonance: 1 → 4 → 7 → 10 layers, then fade"
+	var serial := oga_preview_serial
+	for count in [4, 7, 10, 0]:
+		await get_tree().create_timer(1.1).timeout
+		if serial != oga_preview_serial or not is_instance_valid(orb):
+			return
+		orb.set_stacks(count)
+
+
+func _make_crimson_red_tide_orbits_preview() -> CrimsonRedTideOrbits3D:
+	auto_fight_enabled = false
+	var orbits := VFX_CRIMSON_RED_TIDE_ORBITS.new() as CrimsonRedTideOrbits3D
+	orbits.name = "PreviewCrimsonRedTideOrbits"
+	vfx_preview_root.add_child(orbits)
+	orbits.global_transform = left_slot.global_transform
+	var bounds := _node_bounds_relative(left_slot, left_slot)
+	orbits.configure(PROFILE_CRIMSON_RED_TIDE_ORBITS, clampf(bounds.size.y, 0.75, 1.2))
+	vfx_preview_effect = orbits
+	return orbits
+
+
+func _play_crimson_red_tide_orbits_preview() -> void:
+	var orbits := _make_crimson_red_tide_orbits_preview()
+	orbits.set_stacks(1)
+	vfx_status_label.text = "Crimson 7 Red Tide: 1 → 2 → 3 → 4 → 5 orbits, then fade"
+	var serial := oga_preview_serial
+	for count in [2, 3, 4, 5, 0]:
+		await get_tree().create_timer(1.1).timeout
+		if serial != oga_preview_serial or not is_instance_valid(orbits):
+			return
+		orbits.set_stacks(count)
+
+
+func _play_crimson_rune_lantern_preview() -> void:
+	auto_fight_enabled = false
+	var hud := Control.new()
+	hud.name = "PreviewCrimsonRuneHud"
+	hud.position = camera.unproject_position(left_slot.global_position + Vector3(0.0, 1.35, 0.0)) - Vector2(41, 14)
+	hud.size = Vector2(82, 80)
+	hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	canvas_layer.add_child(hud)
+	rune_preview_hud = hud
+	var hp := ColorRect.new()
+	hp.position = Vector2(5, 8)
+	hp.size = Vector2(72, 9)
+	hp.color = Color(0.04, 0.04, 0.04)
+	hp.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud.add_child(hp)
+	var fill := ColorRect.new()
+	fill.position = Vector2(8, 11)
+	fill.size = Vector2(66, 4)
+	fill.color = Color(0.16, 0.78, 0.27)
+	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud.add_child(fill)
+	var badge := CRIMSON_RUNE_BADGE.new() as CrimsonRuneBadge
+	hud.add_child(badge)
+	badge.set_stacks(1)
+	vfx_status_label.text = "Crimson Rune Lantern: 1 → 3 → 6 → 9, then hide"
+	var serial := oga_preview_serial
+	for count in [3, 6, 9, 0]:
+		await get_tree().create_timer(1.2).timeout
+		if serial != oga_preview_serial or not is_instance_valid(badge):
+			return
+		badge.set_stacks(count)
 
 func _boss_composer_preview() -> BossSkillVFXComposer3D:
 	var boss_fx := BOSS_SKILL_COMPOSER.new()

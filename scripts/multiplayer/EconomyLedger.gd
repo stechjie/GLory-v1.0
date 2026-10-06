@@ -43,6 +43,7 @@ static func new_prep(start_gold: int) -> Dictionary:
 		"merc_carrots_spent_total": 0,
 		"last_harvest_round": -1,
 		"last_harvest_gain": 0,
+		"tiger_starup_count": 0,
 		"stone_draw_used_round": -1,
 		"stone_draw_count": 0,
 		"four_star_uids": {},   # uid -> {unit_id, round}：四星血统，见 _use_upgrade_stone
@@ -72,14 +73,14 @@ static func reset_round(prep: Dictionary) -> void:
 			roster.erase(uid)
 	prep["roster"] = roster
 
-static func harvest_for_round(prep: Dictionary, round_index: int) -> Dictionary:
+static func harvest_for_round(prep: Dictionary, round_index: int, bonus_rate: float = 0.0) -> Dictionary:
 	var last_round := int(prep.get("last_harvest_round", -1))
 	if round_index < 1 or last_round >= round_index:
 		return {"ok": false, "already_harvested": true, "gain": 0,
 			"carrots": int(prep.get("carrots", 0))}
 	var spent := int(prep.get("merc_carrots_spent_total", 0))
 	var tech := int(prep.get("harvest_tech_level", 0))
-	var result := CarrotEconomy.harvest(int(prep.get("carrots", 0)), spent, tech)
+	var result := CarrotEconomy.harvest(int(prep.get("carrots", 0)), spent, tech, bonus_rate)
 	prep["carrots"] = int(result.after)
 	prep["last_harvest_round"] = round_index
 	prep["last_harvest_gain"] = int(result.gain)
@@ -249,7 +250,7 @@ static func _upgrade_harvest_tech(prep: Dictionary, _payload: Dictionary, _ctx: 
 		"price": price,
 		"harvest_tech_level": level + 1,
 		"production": CarrotEconomy.total_production(
-			level + 1, int(prep.get("merc_carrots_spent_total", 0))),
+			level + 1, int(prep.get("merc_carrots_spent_total", 0)), float(_ctx.get("carrot_bonus_rate", 0.0))),
 	}}
 
 static func _hire_merc_carrot(prep: Dictionary, payload: Dictionary, ctx: Dictionary) -> Dictionary:
@@ -308,7 +309,7 @@ static func _hire_merc_carrot(prep: Dictionary, payload: Dictionary, ctx: Dictio
 		"carrots": int(prep["carrots"]),
 		"merc_carrots_spent_total": spent,
 		"farm_level": CarrotEconomy.farm_level_for_spent(spent),
-		"capacity": CarrotEconomy.capacity_for_spent(spent),
+		"capacity": CarrotEconomy.capacity_for_spent(spent, float(ctx.get("carrot_bonus_rate", 0.0))),
 		"camp_income": CarrotEconomy.income_for_spent(spent),
 	}}
 
@@ -321,7 +322,8 @@ static func _draw_upgrade_stone(prep: Dictionary, _payload: Dictionary, ctx: Dic
 	var carrots := int(prep.get("carrots", 0))
 	if carrots < cost:
 		return {"ok": false, "error": "not_enough_carrots"}
-	var capacity := CarrotEconomy.capacity_for_spent(int(prep.get("merc_carrots_spent_total", 0)))
+	var capacity := CarrotEconomy.capacity_for_spent(int(prep.get("merc_carrots_spent_total", 0)),
+		float(ctx.get("carrot_bonus_rate", 0.0)))
 	if capacity < cost:
 		return {"ok": false, "error": "capacity_too_low"}
 	var team_stones: Dictionary = ctx.get("team_stones", {})
@@ -409,6 +411,8 @@ static func _use_upgrade_stone(prep: Dictionary, payload: Dictionary, ctx: Dicti
 	team_stones[element] = int(team_stones[element]) - 1
 	granted[uid] = {"unit_id": unit_id, "round": int(ctx.get("round_index", 0)), "cost": cost}
 	prep["four_star_uids"] = granted
+	if float(ctx.get("tiger_growth_rate", 0.0)) > 0.0:
+		prep["tiger_starup_count"] = int(prep.get("tiger_starup_count", 0)) + 1
 	if roster.has(uid):
 		var upgraded: Dictionary = roster[uid]
 		upgraded["star"] = GameConstants.MAX_STAR
@@ -480,6 +484,8 @@ static func _merge(prep: Dictionary, payload: Dictionary, _ctx: Dictionary) -> D
 		roster.erase(str(raw))
 	prep["roster"] = roster
 	var uid_new := _add_unit(prep, str(first.get("unit_id", "")), star + 1, basis, "unit", keeper_uid)
+	if float(_ctx.get("tiger_growth_rate", 0.0)) > 0.0:
+		prep["tiger_starup_count"] = int(prep.get("tiger_starup_count", 0)) + 1
 	return {"ok": true, "result": {"uid": uid_new, "unit_id": str(first.get("unit_id", "")),
 		"star": star + 1, "cost_basis": basis}}
 

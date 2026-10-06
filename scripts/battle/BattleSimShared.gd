@@ -139,7 +139,7 @@ static func _place_in_lane(f: Dictionary, slot: int, team: String, lane: int) ->
 	f["lane"] = lane
 
 
-static func _append_lane_board_fighters(out: Array, board: Array, team: String, lane: int, owner_treasures: Array = [], owner_syn: Dictionary = {}, owner_slot: int = -1, owner_pet: String = "", owner_gold: int = 0) -> void:
+static func _append_lane_board_fighters(out: Array, board: Array, team: String, lane: int, owner_treasures: Array = [], owner_syn: Dictionary = {}, owner_slot: int = -1, owner_pet: String = "", owner_gold: int = 0, owner_tiger_starups: int = 0) -> void:
 	for i in board.size():
 		var cell = board[i]
 		if cell == null or typeof(cell) != TYPE_DICTIONARY:
@@ -151,6 +151,7 @@ static func _append_lane_board_fighters(out: Array, board: Array, team: String, 
 		f["owner_syn"] = owner_syn
 		f["owner_slot"] = owner_slot
 		f["owner_pet"] = owner_pet
+		f["owner_tiger_starups"] = maxi(0, owner_tiger_starups)
 		f["owner_gold"] = maxi(0, owner_gold)
 		out.append(f)
 
@@ -169,6 +170,11 @@ static func _f_treasures(f: Dictionary) -> Array:
 static func _f_has_treasure(f: Dictionary, tid: String) -> bool:
 	return tid in _f_treasures(f)
 
+
+static func _f_tiger_starups(f: Dictionary) -> int:
+	if f.has("owner_tiger_starups"):
+		return maxi(0, int(f.get("owner_tiger_starups", 0)))
+	return GameState.tiger_starup_count if str(f.get("team", "")) == "player" else 0
 
 static func _f_pet(f: Dictionary) -> String:
 	# Team units carry their owner's active pet; 1v1 player units fall back to the
@@ -251,10 +257,10 @@ static func _team_owner_ctx_for_slot(slot_idx: int) -> Dictionary:
 		if _team_slot_state(slot_idx) == "player":
 			var snap = NetworkService.team_boards.get(slot_idx, {})
 			if snap is Dictionary and not (snap as Dictionary).is_empty():
-				return {"treasures": NetProtocol.extract_treasures(snap), "syn": NetProtocol.extract_syn(snap), "pet": NetProtocol.extract_pet(snap), "gold": maxi(0, int((snap as Dictionary).get("gold", 0)))}
+				return {"treasures": NetProtocol.extract_treasures(snap), "syn": NetProtocol.extract_syn(snap), "pet": NetProtocol.extract_pet(snap), "tiger_starups": NetProtocol.extract_tiger_starups(snap), "gold": maxi(0, int((snap as Dictionary).get("gold", 0)))}
 		return _dummy_owner_ctx(slot_idx)
 	if slot_idx == 0:
-		return {"treasures": GameState.owned_treasures.duplicate(), "syn": SynergyService.current_player_flags(), "pet": PlayerProfile.get_active(), "gold": maxi(0, GameState.gold)}
+		return {"treasures": GameState.owned_treasures.duplicate(), "syn": SynergyService.current_player_flags(), "pet": PlayerProfile.get_active(), "tiger_starups": GameState.tiger_starup_count, "gold": maxi(0, GameState.gold)}
 	return _dummy_owner_ctx(slot_idx)
 
 
@@ -262,9 +268,9 @@ static func _team_owner_ctx_for_slot(slot_idx: int) -> Dictionary:
 # 4 灵 / 5 暗，战斗里也一点加成都没有。现在读 BotPlayer 推演出来的结果。
 static func _dummy_owner_ctx(slot_idx: int) -> Dictionary:
 	if _team_slot_state(slot_idx) != "dummy":
-		return {"treasures": [], "syn": {}, "pet": "", "gold": 0}
+		return {"treasures": [], "syn": {}, "pet": "", "tiger_starups": 0, "gold": 0}
 	var bot := BotPlayer.state_for(NetworkService.shared_seed, slot_idx, GameState.round_index)
-	return {"treasures": (bot.get("treasures", []) as Array).duplicate(), "syn": (bot.get("syn", {}) as Dictionary).duplicate(true), "pet": "", "gold": maxi(0, int(bot.get("gold", 0)))}
+	return {"treasures": (bot.get("treasures", []) as Array).duplicate(), "syn": (bot.get("syn", {}) as Dictionary).duplicate(true), "pet": "", "tiger_starups": 0, "gold": maxi(0, int(bot.get("gold", 0)))}
 
 
 static func _round_pick_index(size: int, salt: String, round_index: int = -1) -> int:

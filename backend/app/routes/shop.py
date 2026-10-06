@@ -7,6 +7,8 @@
     GET  /v1/me/pets             拥有的宠物 / 出战的那只 / 要不要弹三选一
     PUT  /v1/me/pets/active      设出战宠物
     POST /v1/me/pets/starter     新手三选一
+    GET  /v1/me/pets/draw        抽宠奖池与保底
+    POST /v1/me/pets/draw        钻石抽宠
 
 出战名片（POST /v1/battle/card）在 routes/loadout.py，系统邮件在 routes/mail.py。
 
@@ -31,7 +33,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
-from app import client_version, db, players, shop
+from app import client_version, db, players, shop, pet_draw
 from app.jwt_verify import Claims
 from app.rate_limit import RateLimited, SlidingWindowLimiter
 from app.routes.me import current_claims
@@ -63,6 +65,7 @@ _STATUS_BY_CODE = {
     # 「参数不对」(400)、「你没资格」(403) 分开 —— 余额不足要弹的是充值入口，
     # 另外两个要弹的是错误提示。
     "insufficient_funds": 402,
+    "pool_complete": 409,
 }
 
 # 后来才加的商品种类。客户端要在 X-Glory-Client 里声明认识它（kinds=…）才发给它：
@@ -121,6 +124,29 @@ class StarterBody(BaseModel):
 
 class ActivePetBody(BaseModel):
     pet_id: str
+
+
+class PetDrawBody(BaseModel):
+    client_draw_id: uuid.UUID
+
+
+class PetDrawStateModel(BaseModel):
+    cost: int
+    chance_percent: int
+    pity_limit: int
+    misses: int
+    owned: list[str]
+    available: list[str]
+
+
+class PetDrawReceiptModel(BaseModel):
+    draw_id: uuid.UUID
+    pet_id: str
+    coin_reward: int
+    misses: int
+    diamond: int
+    coin: int
+    replayed: bool
 
 
 class ReceiptModel(BaseModel):
@@ -250,6 +276,37 @@ async def my_pets(claims: Annotated[Claims, Depends(current_claims)]) -> PetsRes
     pets = await shop.read_pets(me.player_id)
     return PetsResponse(
         owned=pets.owned, active=pets.active, needs_starter_pick=pets.needs_starter_pick)
+
+
+@router.get("/me/pets/draw", response_model=PetDrawStateModel)
+async def pet_draw_state(
+    claims: Annotated[Claims, Depends(current_claims)],
+) -> PetDrawStateModel:
+    me = await _me(claims)
+    current = await pet_draw.state(me.player_id)
+    return PetDrawStateModel(cost=pet_draw.PRICE, chance_percent=10,
+                             pity_limit=pet_draw.PITY_LIMIT, misses=current.misses,
+                             owned=current.owned, available=current.available)
+
+
+@router.post("/me/pets/draw", response_model=PetDrawReceiptModel)
+async def draw_pet(
+    body: PetDrawBody,
+    claims: Annotated[Claims, Depends(current_claims)],
+) -> PetDrawReceiptModel:
+    me = await _me(claims)
+    _check_rate(me.player_id)
+    try:
+        receipt = await pet_draw.draw(me.player_id, body.client_draw_id)
+    except shop.ShopRejected as exc:
+        raise _reject(exc) from None
+    if not receipt.replayed:
+        log.info("宠物抽取 player=%s draw=%s pet=%s coin=%d",
+                 me.player_id, receipt.draw_id, receipt.pet_id, receipt.coin_reward)
+    return PetDrawReceiptModel(draw_id=receipt.draw_id, pet_id=receipt.pet_id,
+                               coin_reward=receipt.coin_reward, misses=receipt.misses,
+                               diamond=receipt.wallet.diamond, coin=receipt.wallet.coin,
+                               replayed=receipt.replayed)
 
 
 @router.put("/me/pets/active", response_model=PetsResponse)

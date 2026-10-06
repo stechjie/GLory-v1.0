@@ -89,6 +89,7 @@ Supabase Dashboard → SQL Editor，按编号顺序逐个执行。
 | `026_client_events.sql` | 运营数据第二批：游戏上报的事件（教学步骤、对局、战斗播放、报错、帧率），主键 (player_id, event_id) 去重；**客户端说的，只做统计**；`erase_player()` 重定义为多删这一张。设计见 `docs/运营数据.md` 第六节 |
 | `027_ranked_reward_receipts.sql` | 排位结算回执；与积分、钱包流水在同一事务写入，供玩家结算页读取实际到账金额 |
 | `028_ranked_five_tiers.sql` | 赛季归档与奖励按五档口径结算；不重写旧赛季归档。部署前核对当前赛季 0–4 档奖励配置 |
+| `029_pet_draw.sql` | 钻石宠物抽取记录与每账号保底进度；抽取、钱包、归属在同一事务中完成，客户端抽取 ID 防重复扣费 |
 
 **真库测试**：`backend/tests/pg_harness.py` 能在本机 PostgreSQL 上把这里全部文件跑一遍再测（设 `GLORY_TEST_PG`，只许本机）。
 见 `docs/运营后台设计.md` 第七节。

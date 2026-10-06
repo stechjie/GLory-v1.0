@@ -7,16 +7,29 @@ extends BattleSimShared
 static func tick_fighter(fighter: Dictionary, elapsed: float) -> void:
 	if not fighter.has("crimson_drum_atk") and not fighter.has("crimson_drum_speed") and not fighter.has("crimson_resonance_stacks"):
 		return
-	for key in ["crimson_drum_atk", "crimson_drum_speed"]:
-		if not fighter.has(key):
-			continue
-		var active: Array = []
-		for layer in fighter.get(key, []):
-			if float((layer as Dictionary).get("until", 0.0)) > elapsed:
-				active.append(layer)
-		fighter[key] = active
+	# War Drum's two stat arrays share one inactivity deadline per recipient.
+	if float(fighter.get("crimson_drum_until", 0.0)) <= elapsed:
+		fighter.crimson_drum_atk = []
+		fighter.crimson_drum_speed = []
 	if float(fighter.get("crimson_resonance_until", 0.0)) <= elapsed:
 		fighter.crimson_resonance_stacks = 0
+
+
+static func can_share_ally_buff(caster: Dictionary, ally: Dictionary, state: Dictionary) -> bool:
+	if str(caster.get("team", "")) != str(ally.get("team", "")):
+		return false
+	if not GameState.team_mode or not state.has("owner_syn_by_key"):
+		return true
+	var source_lane := int(caster.get("lane", -1))
+	var target_lane := int(ally.get("lane", -1))
+	if source_lane < 0 or target_lane < 0 or source_lane == target_lane:
+		return true
+	# A released wall alone is insufficient: at least one participant must have
+	# cleared the enemies in their own original lane.
+	if not (_lane_cleared_by_side(state, str(caster.get("team", "")), source_lane)
+			or _lane_cleared_by_side(state, str(ally.get("team", "")), target_lane)):
+		return false
+	return _reachable_lanes_for(caster, state).has(target_lane)
 
 
 static func pulse(state: Dictionary) -> void:
@@ -82,27 +95,29 @@ static func passive_attack(attacker: Dictionary, target: Dictionary, state: Dict
 				resonance(attacker, state)
 		"team_random_stack":
 			var allies: Array = state.get("player", []) if str(attacker.get("team", "")) == "player" else state.get("enemy", [])
-			var roll := RngService.rng.randi_range(0, 2)
-			if roll == 2:
-				for ally: Dictionary in allies:
-					if bool(ally.get("alive", false)):
-						_heal_unit(ally, maxi(1, int(round(float(ally.get("max_hp", 1)) * float(d.get("heal_pct", 0.05))))))
-			else:
-				var key := "crimson_drum_atk" if roll == 0 else "crimson_drum_speed"
-				var applied := false
-				for ally: Dictionary in allies:
-					if not bool(ally.get("alive", false)):
-						continue
+			var heal_this_hit := RngService.rng.randi_range(0, 2) == 2
+			var until := float(state.get("elapsed", 0.0)) + float(d.get("stack_duration", 3.0)) * (1.20 if bool(_resolve_syn(attacker, state).get("crimson_duration", false)) else 1.0)
+			var applied := false
+			for ally: Dictionary in allies:
+				if not bool(ally.get("alive", false)) or not can_share_ally_buff(attacker, ally, state):
+					continue
+				if float(ally.get("crimson_drum_until", 0.0)) <= float(state.get("elapsed", 0.0)):
+					ally.crimson_drum_atk = []
+					ally.crimson_drum_speed = []
+				ally.crimson_drum_until = until
+				for key in ["crimson_drum_atk", "crimson_drum_speed"]:
 					var layers: Array = ally.get(key, [])
 					if layers.size() >= int(d.get("max_stacks", 15)):
 						layers.pop_front()
-					layers.append({"until": float(state.get("elapsed", 0.0)) + float(d.get("stack_duration", 3.0)) * (1.20 if bool(_resolve_syn(attacker, state).get("crimson_duration", false)) else 1.0), "pct": float(d.get("stack_pct", 0.05))})
+					layers.append({"pct": float(d.get("stack_pct", 0.05))})
 					ally[key] = layers
-					applied = true
-					if str(ally.get("uid", "")) == str(attacker.get("uid", "")):
-						CrimsonRuneService.note_self_effect(attacker, state)
-				if applied:
-					resonance(attacker, state)
+				applied = true
+				if str(ally.get("uid", "")) == str(attacker.get("uid", "")):
+					CrimsonRuneService.note_self_effect(attacker, state)
+				if heal_this_hit:
+					_heal_unit(ally, maxi(1, int(round(float(ally.get("max_hp", 1)) * float(d.get("heal_pct", 0.05))))))
+			if applied:
+				resonance(attacker, state)
 	return 0
 
 
@@ -110,7 +125,7 @@ static func skill_dancer(caster: Dictionary, allies: Array, d: Dictionary, state
 	var pool: Array = []
 	var self_fallback: Dictionary = {}
 	for ally: Dictionary in allies:
-		if not bool(ally.get("alive", false)):
+		if not bool(ally.get("alive", false)) or not can_share_ally_buff(caster, ally, state):
 			continue
 		if str(ally.get("uid", "")) == str(caster.get("uid", "")):
 			self_fallback = ally

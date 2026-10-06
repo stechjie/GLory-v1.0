@@ -1,4 +1,4 @@
-﻿extends Node
+extends Node
 
 const CarrotEconomy = preload("res://scripts/economy/CarrotEconomy.gd")
 const RacePick := preload("res://scripts/units/RacePick.gd")
@@ -277,6 +277,7 @@ func _write_now() -> void:
 		"harvest_tech_level": GameState.harvest_tech_level,
 		"merc_carrots_spent_total": GameState.merc_carrots_spent_total,
 		"last_harvest_round": GameState.last_harvest_round,
+		"tiger_starup_count": GameState.tiger_starup_count,
 		"stone_draw_used_round": GameState.stone_draw_used_round,
 		"stone_draw_count": GameState.stone_draw_count,
 		"team_upgrade_stones": GameState.team_upgrade_stones,
@@ -327,6 +328,7 @@ func load_run() -> bool:
 	# Old saves have no carrot round marker. Treat the saved round as already
 	# harvested so migration cannot grant a retroactive first-round payout.
 	GameState.last_harvest_round = int(parsed.get("last_harvest_round", GameState.round_index))
+	GameState.tiger_starup_count = maxi(0, int(parsed.get("tiger_starup_count", 0)))
 	GameState.stone_draw_used_round = int(parsed.get("stone_draw_used_round", -1))
 	GameState.stone_draw_count = maxi(0, int(parsed.get("stone_draw_count", 0)))
 	GameState.team_upgrade_stones = CarrotEconomy.empty_stones()

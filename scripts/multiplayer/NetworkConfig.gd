@@ -170,7 +170,9 @@ const USE_DTLS := true
 # v35: final settlement details and server-owned rematch reservations.
 # v36: All six players share one LiveKit room; microphone track permissions
 #      enforce the selected team/all audience. Old clients must not join it.
-const NETWORK_PROTOCOL_VERSION := 36
+# v37: Tiger growth uses a new board snapshot field and server-counted star upgrades.
+#      Reject older clients during the handshake, before battle submission.
+const NETWORK_PROTOCOL_VERSION := 37
 
 # Local phone hosting is debug-only.
 const ALLOW_LOCAL_HOST_DEBUG := false

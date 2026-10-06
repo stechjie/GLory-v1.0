@@ -908,6 +908,15 @@ func fetch_pets() -> Dictionary:
 	return await _request(HTTPClient.METHOD_GET, "/v1/me/pets", null, true)
 
 
+func fetch_pet_draw_state() -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/me/pets/draw", null, true)
+
+
+func draw_pet(client_draw_id: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/me/pets/draw",
+		{"client_draw_id": client_draw_id}, true)
+
+
 # 出战宠物。服务端会校验归属 —— 没有的宠物设不上去，回 403。
 func set_active_pet(pet_id: String) -> Dictionary:
 	return await _request(HTTPClient.METHOD_PUT, "/v1/me/pets/active", {"pet_id": pet_id}, true)

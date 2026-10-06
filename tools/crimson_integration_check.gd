@@ -11,6 +11,8 @@ func _ready() -> void:
 	_h = Harness.new("crimson_integration")
 	_check_catalog()
 	_check_combat()
+	_check_lane_and_timers()
+	_check_red_tide_vfx_replay()
 	_check_runes()
 	_check_lantern()
 	_check_final_intro_lantern_timing()
@@ -33,6 +35,139 @@ func _state(player: Array, enemy: Array = [], elapsed: float = 0.0, count: int =
 		"unit_stats": {}, "log": []}
 	DamageService.set_stat_state(state)
 	return state
+
+
+func _check_lane_and_timers() -> void:
+	var old_team_mode: bool = GameState.team_mode
+	GameState.team_mode = true
+	var drummer := _fighter("lane_drummer")
+	drummer.lane = 0
+	drummer.def.skill_id = "team_random_stack"
+	drummer.def.stack_duration = 3.0
+	drummer.def.stack_pct = 0.05
+	drummer.def.max_stacks = 15
+	var middle := _fighter("lane_middle")
+	middle.lane = 1
+	var far := _fighter("lane_far")
+	far.lane = 2
+	var foes: Array = []
+	for lane in 3:
+		var foe := _fighter("lane_foe_%d" % lane, "enemy")
+		foe.lane = lane
+		foes.append(foe)
+	var state := _state([drummer, middle, far], foes, 0.0, 0)
+	state.owner_syn_by_key = {}
+	CrimsonCombat.passive_attack(drummer, foes[0], state)
+	_h.expect(drummer.get("crimson_drum_atk", []).size() == 1
+		and middle.get("crimson_drum_atk", []).is_empty()
+		and far.get("crimson_drum_atk", []).is_empty(),
+		"drum_closed_lane", "War Drum crossed a closed lane")
+	CrimsonCombat.skill_dancer(drummer, [drummer, middle, far], {"ally_count": 1}, state)
+	_h.expect(str(drummer.get("vfx_skill_target_uid", "")) == str(drummer.uid),
+		"dancer_closed_lane", "Dancer selected a teammate on a closed lane")
+	middle.alive = false
+	CrimsonCombat.passive_attack(drummer, foes[0], state)
+	_h.expect(far.get("crimson_drum_atk", []).is_empty(),
+		"drum_enemy_side_release", "Enemy-side boundary release should not share buffs between two engaged lanes")
+	middle.alive = true
+	foes[0].alive = false
+	CrimsonCombat.passive_attack(drummer, foes[1], state)
+	_h.expect(middle.get("crimson_drum_atk", []).size() == 1
+		and far.get("crimson_drum_atk", []).is_empty(),
+		"drum_open_adjacent", "An opened source lane should share with its reachable neighbor only")
+	CrimsonCombat.skill_dancer(drummer, [drummer, middle, far], {"ally_count": 1}, state)
+	_h.expect(str(drummer.get("vfx_skill_target_uid", "")) == str(middle.uid),
+		"dancer_open_adjacent", "Dancer did not reach the adjacent lane after clearing her own lane")
+	foes[1].alive = false
+	CrimsonCombat.passive_attack(drummer, foes[2], state)
+	_h.expect(far.get("crimson_drum_atk", []).size() == 1,
+		"drum_open_both_boundaries", "War Drum did not cross two released boundaries")
+	foes[0].alive = true
+	CrimsonCombat.passive_attack(drummer, foes[0], state)
+	_h.expect(middle.get("crimson_drum_atk", []).size() == 3
+		and far.get("crimson_drum_atk", []).size() == 1,
+		"drum_open_recipient", "An opened recipient lane should receive buffs without opening the source lane")
+	GameState.team_mode = old_team_mode
+
+	var timer_drummer := _fighter("timer_drummer")
+	timer_drummer.def = drummer.def.duplicate(true)
+	var timer_ally := _fighter("timer_ally")
+	var timer_state := _state([timer_drummer, timer_ally], [], 0.0, 0)
+	CrimsonCombat.passive_attack(timer_drummer, {}, timer_state)
+	timer_state.elapsed = 2.9
+	CrimsonCombat.passive_attack(timer_drummer, {}, timer_state)
+	CrimsonCombat.tick_fighter(timer_ally, 3.1)
+	_h.expect(timer_ally.get("crimson_drum_atk", []).size() == 2
+		and timer_ally.get("crimson_drum_speed", []).size() == 2,
+		"drum_group_refresh", "The first stack expired separately after a new War Drum hit")
+	CrimsonCombat.tick_fighter(timer_ally, 5.89)
+	_h.expect(timer_ally.get("crimson_drum_atk", []).size() == 2,
+		"drum_group_still_active", "The refreshed War Drum group expired early")
+	CrimsonCombat.tick_fighter(timer_ally, 5.91)
+	_h.expect(timer_ally.get("crimson_drum_atk", []).is_empty()
+		and timer_ally.get("crimson_drum_speed", []).is_empty(),
+		"drum_group_clear", "War Drum stacks should clear together after inactivity")
+	for i in 15:
+		timer_state.elapsed = 6.0 + float(i) * 0.1
+		CrimsonCombat.passive_attack(timer_drummer, {}, timer_state)
+	timer_state.elapsed = 7.5
+	CrimsonCombat.passive_attack(timer_drummer, {}, timer_state)
+	CrimsonCombat.tick_fighter(timer_ally, 9.4)
+	_h.expect(timer_ally.get("crimson_drum_atk", []).size() == 15
+		and timer_ally.get("crimson_drum_speed", []).size() == 15,
+		"drum_cap_refresh", "A hit at the 15-stack cap should refresh the whole group")
+	CrimsonCombat.tick_fighter(timer_ally, 10.51)
+	_h.expect(timer_ally.get("crimson_drum_atk", []).is_empty(),
+		"drum_cap_clear", "The capped War Drum group should clear after its refreshed timeout")
+	var resonance_unit := _fighter("resonance_timer")
+	var resonance_state := _state([resonance_unit], [], 0.0, 4)
+	CrimsonCombat.resonance(resonance_unit, resonance_state)
+	resonance_state.elapsed = 3.9
+	CrimsonCombat.resonance(resonance_unit, resonance_state)
+	CrimsonCombat.tick_fighter(resonance_unit, 4.1)
+	_h.expect(int(resonance_unit.get("crimson_resonance_stacks", 0)) == 2,
+		"resonance_group_refresh", "Resonance stacks should share a refreshed inactivity timer")
+	CrimsonCombat.tick_fighter(resonance_unit, 7.91)
+	_h.expect(int(resonance_unit.get("crimson_resonance_stacks", 0)) == 0,
+		"resonance_group_clear", "Resonance should clear together after inactivity")
+	timer_ally.crimson_resonance_stacks = 4
+	timer_ally.crimson_resonance_until = 6.0
+	timer_ally.crimson_pulse_stacks = 5
+	timer_ally.crimson_rune_stacks = 9
+	CrimsonCombat.tick_fighter(timer_ally, 6.0)
+	_h.expect(int(timer_ally.crimson_resonance_stacks) == 0
+		and int(timer_ally.crimson_pulse_stacks) == 5
+		and int(timer_ally.crimson_rune_stacks) == 9,
+		"crimson_timer_separation", "Resonance should expire while Red Tide and War Rune remain")
+
+
+func _check_red_tide_vfx_replay() -> void:
+	var fighter := _fighter("red_tide_replay")
+	var state := _state([fighter])
+	var frames: Array = []
+	BattleSimulator._replay_capture_frame(state, frames)
+	fighter.crimson_pulse_stacks = 1
+	BattleSimulator._replay_capture_frame(state, frames)
+	fighter.crimson_pulse_stacks = 5
+	BattleSimulator._replay_capture_frame(state, frames)
+	var events: Array = state.get("_replay_red_tide_stack_events", [])
+	_h.expect(events.size() == 2 and events[0] == [1, fighter.uid, 1]
+		and events[1] == [2, fighter.uid, 5],
+		"red_tide_replay_capture", "Red Tide count changes should be captured outside simulation frames")
+	var screen := BattleScreenScript.new()
+	var replay_fighter := {"crimson_pulse_stacks": 0}
+	screen.set("_replay", {"crimson_red_tide_stack_events": events})
+	screen.set("_replay_by_uid", {str(fighter.uid): replay_fighter})
+	screen.call("_apply_red_tide_stack_events", 1)
+	_h.expect(int(replay_fighter.crimson_pulse_stacks) == 1,
+		"red_tide_replay_first_stack", "Replay should show one orbit at the first Red Tide pulse")
+	screen.call("_apply_red_tide_stack_events", 2)
+	_h.expect(int(replay_fighter.crimson_pulse_stacks) == 5,
+		"red_tide_replay_five_stacks", "Replay should show five orbits at the cap")
+	screen.call("_apply_red_tide_stack_events", 0)
+	_h.expect(int(replay_fighter.crimson_pulse_stacks) == 0,
+		"red_tide_replay_rewind", "Rewinding before the first pulse should clear the orbits")
+	screen.free()
 
 
 func _check_final_intro_lantern_timing() -> void:
@@ -269,7 +404,14 @@ func _check_catalog() -> void:
 		by_id[str(unit.id)] = unit
 	_h.expect(is_equal_approx(float(by_id.crimson.block_chance), 0.20) and is_equal_approx(float(UnitFactory.apply_star_stats(by_id.crimson, 4).block_chance), 0.30), "guard_balance", "Guard block chance must be 20% / 30%")
 	_h.expect(is_equal_approx(float(by_id.drumer.stack_pct), 0.05) and is_equal_approx(float(UnitFactory.apply_star_stats(by_id.drumer, 4).stack_pct), 0.08) and int(by_id.drumer.max_stacks) == 15 and is_equal_approx(float(by_id.drumer.heal_pct), 0.05), "drummer_balance", "War Drum values are not 5% / 8%, 15 stacks, 5% heal")
-	_h.expect(is_equal_approx(float(UnitFactory.apply_star_stats(by_id.Icey, 4).damage_atk_pct), 3.0), "icey_balance", "Fourth-star Icey must deal 300% ATK")
+	var breaker_four: Dictionary = UnitFactory.apply_star_stats(by_id.armbreaker, 4)
+	_h.expect(is_equal_approx(float(by_id.armbreaker.break_chance), 1.0) and int(by_id.armbreaker.break_amount) == 2
+		and is_equal_approx(float(breaker_four.break_chance), 1.0) and int(breaker_four.break_amount) == 4,
+		"breaker_balance", "Armbreaker must reduce DEF by 2 on every hit, or 4 at four stars")
+	var icey_four: Dictionary = UnitFactory.apply_star_stats(by_id.Icey, 4)
+	_h.expect(is_equal_approx(float(by_id.Icey.damage_atk_pct), 1.10) and is_equal_approx(float(icey_four.damage_atk_pct), 1.50)
+		and is_equal_approx(float(by_id.Icey.ice_duration), 3.0) and is_equal_approx(float(icey_four.ice_duration), 5.0),
+		"icey_balance", "Icey must deal 110% / 150% ATK with 3s / 5s Ice Vulnerable")
 	_h.expect(RacePick.all_races().size() == 5 and RacePick.required_count() == 4, "four_of_five", "Exactly four races must be selected")
 	var selected := ["god", "dark", "human", "crimson"]
 	_h.expect(RacePick.sanitize(selected).size() == 4, "valid_pick", "Crimson selection rejected")
@@ -357,6 +499,35 @@ func _check_combat() -> void:
 	_h.expect(int(victim.hp) == 950, "hunter_defense", "Hunter's extra damage should respect target defense")
 	DamageService.clear_stat_context()
 
+	var drum_caster := _fighter("drumer")
+	drum_caster.def.skill_id = "team_random_stack"
+	drum_caster.def.stack_pct = 0.05
+	drum_caster.def.stack_duration = 3.0
+	drum_caster.def.max_stacks = 15
+	drum_caster.def.heal_pct = 0.05
+	var drum_recipient := _fighter("drum_recipient")
+	drum_recipient.hp = 500
+	var drum_dead := _fighter("drum_dead")
+	drum_dead.alive = false
+	state = _state([drum_caster, drum_recipient, drum_dead], [victim], 0.0, 4)
+	var drum_rng_state := RngService.rng.state
+	var drum_oracle := RandomNumberGenerator.new()
+	drum_oracle.seed = 1327
+	RngService.rng.seed = 1327
+	var drum_heals := drum_oracle.randi_range(0, 2) == 2
+	CrimsonRuneService.begin_action(drum_caster, state)
+	CrimsonCombat.passive_attack(drum_caster, victim, state)
+	CrimsonRuneService.end_action(drum_caster)
+	RngService.rng.state = drum_rng_state
+	_h.expect(drum_caster.get("crimson_drum_atk", []).size() == 1 and drum_caster.get("crimson_drum_speed", []).size() == 1
+		and drum_recipient.get("crimson_drum_atk", []).size() == 1 and drum_recipient.get("crimson_drum_speed", []).size() == 1
+		and drum_dead.get("crimson_drum_atk", []).is_empty() and drum_dead.get("crimson_drum_speed", []).is_empty(),
+		"drummer_both_buffs_on_hit", "Each War Drum hit must add both buffs to every living ally")
+	_h.expect(int(drum_recipient.hp) == (550 if drum_heals else 500),
+		"drummer_independent_heal", "The one-in-three heal must not replace either buff")
+	_h.expect(CrimsonRuneService.stack_count(drum_caster) == 1 and int(drum_caster.get("crimson_resonance_stacks", 0)) == 1,
+		"drummer_one_action", "Two buffs in one hit must award only one rune and one Resonance layer")
+
 	var drummer_ally := _fighter("drummer_ally")
 	for _i in 15:
 		drummer_ally.get_or_add("crimson_drum_atk", []).append({"pct": 0.05})
@@ -383,8 +554,8 @@ func _check_combat() -> void:
 	ice_far.pos = Vector2(200, 0)
 	state = _state([icey], [victim, ice_near, ice_boss, ice_far], 0.0, 0)
 	DamageService.begin_stat_context(state, icey)
-	CrimsonCombat.skill_icey(icey, [victim, ice_near, ice_boss, ice_far], {"damage_atk_pct": 1.7, "ice_duration": 3.0, "ice_vulnerable_pct": 0.25, "aoe_radius": 144.0}, state)
-	_h.expect(int(victim.hp) == 830 and int(ice_near.hp) == 830 and int(ice_boss.hp) < 1000, "ice_aoe_damage", "Ice skill did not damage every enemy inside two cells")
+	CrimsonCombat.skill_icey(icey, [victim, ice_near, ice_boss, ice_far], {"damage_atk_pct": 1.10, "ice_duration": 3.0, "ice_vulnerable_pct": 0.25, "aoe_radius": 144.0}, state)
+	_h.expect(int(victim.hp) == 890 and int(ice_near.hp) == 890 and int(ice_boss.hp) < 1000, "ice_aoe_damage", "Ice skill did not damage every enemy inside two cells")
 	_h.expect(str(icey.get("vfx_skill_target_uid", "")) == str(victim.uid), "ice_aoe_center", "Ice skill lost its primary target for battle focus")
 	_h.expect(int(ice_far.hp) == 1000 and not StatusEffectService.has_status(ice_far, "ice_vulnerable"), "ice_aoe_boundary", "Ice skill hit an enemy outside two cells")
 	_h.expect(is_equal_approx(float(victim.statuses.ice_vulnerable.pct), 0.25) and is_equal_approx(float(ice_near.statuses.ice_vulnerable.pct), 0.25), "ice_aoe_vulnerability", "Ice skill missed the 25% vulnerability")
@@ -399,8 +570,8 @@ func _check_combat() -> void:
 	ice_four_target.pos = Vector2(50, 0)
 	state = _state([icey_four], [ice_four_target], 0.0, 0)
 	DamageService.begin_stat_context(state, icey_four)
-	CrimsonCombat.skill_icey(icey_four, [ice_four_target], {"damage_atk_pct": 3.0, "ice_duration": 5.0, "ice_vulnerable_pct": 0.25, "aoe_radius": 144.0}, state)
-	_h.expect(int(ice_four_target.hp) == 700 and is_equal_approx(float(ice_four_target.statuses.ice_vulnerable.remaining), 5.0), "ice_star4", "Fourth-star Icey damage or duration is wrong")
+	CrimsonCombat.skill_icey(icey_four, [ice_four_target], {"damage_atk_pct": 1.50, "ice_duration": 5.0, "ice_vulnerable_pct": 0.25, "aoe_radius": 144.0}, state)
+	_h.expect(int(ice_four_target.hp) == 850 and is_equal_approx(float(ice_four_target.statuses.ice_vulnerable.remaining), 5.0), "ice_star4", "Fourth-star Icey damage or duration is wrong")
 	DamageService.clear_stat_context()
 
 	var lantern := _fighter("lattern")

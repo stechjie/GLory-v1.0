@@ -103,24 +103,24 @@
 			"name_en": "Inferno Heart"
 		},
 		{
-			"id": "future_pet_diamond_01",
+			"id": "draw_pet_squirrel",
 			"kind": "pet",
-			"grants": "pet_diamond_01",
+			"grants": "pet_squirrel",
 			"currency": "diamond",
-			"price": 750,
+			"price": 75,
 			"enabled": false,
-			"name": "即将推出",
-			"name_en": "Coming Soon"
+			"name": "松鼠",
+			"name_en": "Squirrel"
 		},
 		{
-			"id": "future_pet_diamond_02",
+			"id": "draw_pet_tiger",
 			"kind": "pet",
-			"grants": "pet_diamond_02",
+			"grants": "pet_tiger",
 			"currency": "diamond",
-			"price": 750,
+			"price": 75,
 			"enabled": false,
-			"name": "即将推出",
-			"name_en": "Coming Soon"
+			"name": "老虎",
+			"name_en": "Tiger"
 		}
 	]
 }

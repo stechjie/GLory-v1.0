@@ -153,7 +153,7 @@ static func format_skill_detail(d: Dictionary) -> String:
 		"random_ally_buff":
 			return "赤舞祝福%s：随机选择%d名不同友军（优先其他存活队友，人数不足时可选自身），各随机获得一种效果：技能剩余冷却-2秒、攻击+%s或攻速+%s，增益持续%.1f秒，同类刷新不叠加。" % [cd, int(d.get("ally_count", 1)), pct(float(d.get("buff_pct", 0.20))), pct(float(d.get("buff_pct", 0.20))), float(d.get("buff_duration", 3.0))]
 		"team_random_stack":
-			return "战鼓共振：每次普攻命中随机触发全队攻击+%s或攻速+%s，持续%.1f秒，各最多%d层（每层独立计时）；或立刻回复全队最大生命%s。" % [pct(float(d.get("stack_pct", 0.05))), pct(float(d.get("stack_pct", 0.05))), float(d.get("stack_duration", 3.0)), int(d.get("max_stacks", 15)), pct(float(d.get("heal_pct", 0.05)))]
+			return "战鼓共振：每次普攻命中使可作用的存活友军同时叠加攻击+%s和攻速+%s，各最多%d层；每次叠加刷新该棋子全部战鼓层的%.1f秒持续时间。分路战斗先作用本路，开放并连通后可跨路；另有1/3概率立刻回复可作用友军最大生命%s。" % [pct(float(d.get("stack_pct", 0.05))), pct(float(d.get("stack_pct", 0.05))), int(d.get("max_stacks", 15)), float(d.get("stack_duration", 3.0)), pct(float(d.get("heal_pct", 0.05)))]
 		"current_hp_strike":
 			var text := "血猎：普攻额外造成目标受击前当前生命%s的伤害，Boss为%s；额外伤害不暴击。" % [pct(float(d.get("current_hp_pct", 0.10))), pct(float(d.get("boss_hp_pct", 0.05)))]
 			if float(d.get("execute_atk_pct", 0.0)) > 0.0:
@@ -343,7 +343,7 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"random_ally_buff":
 			return "Crimson Dance%s: Choose %d distinct random allies. Each gets one random effect: 2s off remaining skill cooldown, +%s ATK, or +%s attack speed for %.1fs. Same-type buffs refresh." % [cd, int(d.get("ally_count", 1)), pct(float(d.get("buff_pct", 0.20))), pct(float(d.get("buff_pct", 0.20))), float(d.get("buff_duration", 3.0))]
 		"team_random_stack":
-			return "War Drum: Each landed basic hit randomly grants the team +%s ATK or +%s attack speed for %.1fs (up to %d independently timed layers), or heals %s max HP." % [pct(float(d.get("stack_pct", 0.05))), pct(float(d.get("stack_pct", 0.05))), float(d.get("stack_duration", 3.0)), int(d.get("max_stacks", 15)), pct(float(d.get("heal_pct", 0.05)))]
+			return "War Drum: Each landed basic hit gives eligible living allies +%s ATK and +%s attack speed, up to %d layers each. Every hit refreshes all War Drum layers on each recipient for %.1fs. In team battles it affects the same lane first, then connected lanes once opened; separately has a 1-in-3 chance to heal eligible allies for %s max HP." % [pct(float(d.get("stack_pct", 0.05))), pct(float(d.get("stack_pct", 0.05))), int(d.get("max_stacks", 15)), float(d.get("stack_duration", 3.0)), pct(float(d.get("heal_pct", 0.05)))]
 		"current_hp_strike":
 			var text := "Blood Hunt: Basics deal extra damage equal to %s of the target's pre-hit current HP (%s against bosses); the extra damage cannot crit." % [pct(float(d.get("current_hp_pct", 0.10))), pct(float(d.get("boss_hp_pct", 0.05)))]
 			if float(d.get("execute_atk_pct", 0.0)) > 0.0:

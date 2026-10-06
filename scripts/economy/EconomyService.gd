@@ -71,7 +71,12 @@ static func base_interest(gold_before_interest: int) -> int:
 
 # 宠物「猫」的额外利息（在 base_interest 基础上按宠物利息率加成）。pet_id 为空或非猫则为 0。
 static func pet_interest_bonus(gold_before_interest: int, pet_id: String) -> int:
-	return int(floor(float(maxi(0, gold_before_interest)) * PetService.interest_rate_bonus(pet_id)))
+	var rate := PetService.interest_rate_bonus(pet_id)
+	if rate <= 0.0:
+		return 0
+	# Round the combined 10% once; 99 gold gives 9 interest, not 4 + 4.
+	return int(floor(float(maxi(0, gold_before_interest)) * (BASE_INTEREST_RATE + rate))) \
+		- base_interest(gold_before_interest)
 
 # 3v3 的击杀金币按座位记账（result.kill_gold_by_slot），每人只拿自己打死的那份。
 # 实际结算（Main / NetworkService）与结算面板（BattleUI）必须取同一个值，

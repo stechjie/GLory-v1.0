@@ -370,6 +370,7 @@ func _execute_four_star_upgrade(where: String, index: int) -> void:
 		# 10.04：同族泄漏（原先是 `无法升四星：%s`），统一走映射表。
 		show_message(carrot_action_error_text("use_upgrade_stone", str(result.get("error", ""))))
 		return
+	GameState.record_tiger_starup()
 	var d: Dictionary = (cell as Dictionary).get("def", {})
 	show_message(("%s upgraded to four stars" if LocaleManager.get_locale() == "en" else "%s 升为四星") % DataRegistry.unit_display_name(d, LocaleManager.get_locale() == "en"))
 	# 9.17：按棋子分流。用 def.id 而不是 def.name —— 客机路径的名字会被
@@ -863,6 +864,7 @@ func _merge_copies_into_cell(target: Dictionary, incoming: Dictionary, excluded_
 			return false
 	_preserve_unique_king_growth_on_merge(target, incoming, extra)
 	target.star = star + 1
+	GameState.record_tiger_starup()
 	_last_merge_keeper_uid = str(target.get("uid", ""))
 	_last_merge_uids = [_last_merge_keeper_uid, str(incoming.get("uid", ""))]
 	if not extra.is_empty():
@@ -976,6 +978,7 @@ func _combine_copies_auto(star: int, locs: Array) -> void:
 	var keeper: Dictionary = keeper_arr[int(keeper_loc[1])]
 	_preserve_unique_king_growth_among(keeper, cells)
 	keeper.star = star + 1
+	GameState.record_tiger_starup()
 	for loc in fuse:
 		if str(loc[0]) == str(keeper_loc[0]) and int(loc[1]) == int(keeper_loc[1]):
 			continue

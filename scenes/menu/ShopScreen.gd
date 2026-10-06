@@ -363,7 +363,7 @@ func _summon_panel() -> Control:
 	col.add_theme_constant_override("separation", Tokens.GAP_S)
 	panel.add_child(col)
 	var eyebrow := Label.new()
-	eyebrow.text = _t("钻石召唤 · 预告", "DIAMOND SUMMON · PREVIEW")
+	eyebrow.text = _t("钻石召唤", "DIAMOND SUMMON")
 	eyebrow.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
 	eyebrow.add_theme_color_override("font_color", Tokens.GOLD)
 	col.add_child(eyebrow)
@@ -372,20 +372,20 @@ func _summon_panel() -> Control:
 	title.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
 	title.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
 	col.add_child(title)
-	var art := TextureRect.new()
-	art.texture = SHOP_HERO_TEX
-	art.custom_minimum_size.y = 176
-	art.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	col.add_child(art)
+	var portraits := HBoxContainer.new()
+	portraits.custom_minimum_size.y = 176
+	portraits.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	portraits.add_theme_constant_override("separation", Tokens.GAP_S)
+	col.add_child(portraits)
+	for pet_id in ["pet_squirrel", "pet_tiger"]:
+		portraits.add_child(PetPreview.build_illustration(pet_id, Vector2(142, 176)))
 	var price := Label.new()
 	price.text = _t("75 钻石 / 次", "75 gems / draw")
 	price.add_theme_font_size_override("font_size", Tokens.FONT_BUTTON)
 	price.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
 	col.add_child(price)
 	var pity := Label.new()
-	pity.text = _t("10 抽内必得新宠物  ·  当前剩余 — 抽", "New pet within 10 draws  ·  Remaining —")
+	pity.text = _t("10% 概率获得新宠物 · 第 10 抽保底", "10% new pet chance · guaranteed on draw 10")
 	pity.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
 	pity.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
 	col.add_child(pity)
