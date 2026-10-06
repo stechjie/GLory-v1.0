@@ -16,7 +16,9 @@ var data: Dictionary = {}
 var close_text := ""
 var _bubble: PanelContainer
 var _bubble_label: Label
-var _return_button: Button
+# 10.06 反馈第 5 条：面板上、下各有一排同样的按钮，两排都要能被 allow_return_retry 重新启用，
+# 所以用数组收集（原来是单个 _return_button）。
+var _return_buttons: Array = []
 
 func _ready() -> void:
 	# Both live settlement and history render these same rows. Derive the total
@@ -55,6 +57,9 @@ func _ready() -> void:
 	var winner := _label("本场胜利：" + _team_title(outcome) if outcome in [0, 1] else "本场结果：平局", Color("ff6b5a") if outcome == 0 else Color("4da3ff"), 18)
 	winner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	content.add_child(winner)
+	# 10.06 反馈第 5 条：面板一屏塞不下时，底部那排按钮要滚到底才够得着 —— 在上部再放一排
+	# 同样的按钮（返回房间 / 返回主菜单·关闭），玩家一打开面板就能操作。两排是同一份构造。
+	content.add_child(_button_row())
 	if data.get("seats", []).is_empty():
 		content.add_child(_label("本局暂无完整结算详情，请返回主菜单。", MUTED))
 	else:
@@ -63,23 +68,7 @@ func _ready() -> void:
 			content.add_child(_team(side))
 		content.add_child(_label("统计面板", TEXT, 20))
 		content.add_child(_stats())
-	var buttons := HBoxContainer.new()
-	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
-	buttons.add_theme_constant_override("separation", 24)
-	content.add_child(buttons)
-	_return_button = _button("返回房间", buttons)
-	_return_button.visible = bool(data.get("can_return_room", false))
-	_return_button.pressed.connect(func():
-		_return_button.disabled = true
-		_return_button.text = "正在返回…"
-		return_room_requested.emit())
-	var menu := _button(close_text if not close_text.is_empty() else "返回主菜单", buttons)
-	menu.add_theme_stylebox_override("normal", Tokens.panel_box(Color("e9aa43"), GOLD, 10))
-	menu.add_theme_color_override("font_color", Color("231a0d"))
-	menu.pressed.connect(func(): return_menu_requested.emit())
-	var hint := _label("↓ 本结算面板超过一屏，可上下滚动查看全部内容", MUTED, 14)
-	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	content.add_child(hint)
+	content.add_child(_button_row())
 	_bubble = PanelContainer.new()
 	_bubble.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_bubble.add_theme_stylebox_override("panel", Tokens.panel_box(Color(0.04, 0.08, 0.14, 0.9), Color.TRANSPARENT, 8))
@@ -90,8 +79,32 @@ func _ready() -> void:
 	scroll.get_v_scroll_bar().value_changed.connect(func(_v): _bubble.hide())
 
 func allow_return_retry() -> void:
-	_return_button.disabled = false
-	_return_button.text = "返回房间"
+	for button in _return_buttons:
+		if is_instance_valid(button):
+			button.disabled = false
+			button.text = "返回房间"
+
+
+# 一排操作按钮（返回房间 + 返回主菜单 / 关闭）。上、下两处共用这一份构造，
+# 保证两排的文案、配色、回调完全一致（10.06 反馈第 5 条）。
+func _button_row() -> HBoxContainer:
+	var buttons := HBoxContainer.new()
+	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
+	buttons.add_theme_constant_override("separation", 24)
+	var return_button := _button("返回房间", buttons)
+	return_button.visible = bool(data.get("can_return_room", false))
+	return_button.pressed.connect(func():
+		for other in _return_buttons:
+			if is_instance_valid(other):
+				other.disabled = true
+				other.text = "正在返回…"
+		return_room_requested.emit())
+	_return_buttons.append(return_button)
+	var menu := _button(close_text if not close_text.is_empty() else "返回主菜单", buttons)
+	menu.add_theme_stylebox_override("normal", Tokens.panel_box(Color("e9aa43"), GOLD, 10))
+	menu.add_theme_color_override("font_color", Color("231a0d"))
+	menu.pressed.connect(func(): return_menu_requested.emit())
+	return buttons
 
 func _label(value: String, color: Color = TEXT, font_size: int = 16) -> Label:
 	var label := Label.new()

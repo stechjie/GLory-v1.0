@@ -44,6 +44,9 @@ const Tokens := preload("res://ui/theme/GloryTokens.gd")
 # 9.17 第二批：BGM 走常驻 MusicService，音效走 SfxService。
 const MusicService := preload("res://ui/services/MusicService.gd")
 const SfxService := preload("res://ui/services/SfxService.gd")
+# 10.06 反馈第 8 条：房间里的「静音 / 已静音」按键要读「背景音乐」偏好，
+# 与设置页那套（PresentationSettings.music_allowed）同源。
+const Presentation := preload("res://effects/runtime/presentation/PresentationSettings.gd")
 # 房间邀请（bug提交和修复.docx 第 2 条）：文案 / 限流 / 失效判据都在这一份纯逻辑里。
 const RoomInvite := preload("res://scripts/multiplayer/RoomInvite.gd")
 # 「邀请已过时」「已经邀请过了」走全局 toast —— 与教程的「上阵棋子数目少于 N」同一个出口，
@@ -84,7 +87,7 @@ func _render_online_friends(friends: Array) -> void:
 		_friends_box.add_child(_online_friend_row(entry as Dictionary))
 
 
-# 一行在线好友（要求 2）：显示在线好友的 ID，**点一下即邀请**。
+# 一行在线好友（要求 2）：显示在线好友的昵称（10.06 起不再显示 #好友码），**点一下即邀请**。
 #
 # ⚠️ 行用 Label + gui_input，**刻意不用 Button.new()**：
 # 门禁 procedural_ui_ratchet_check 对 Team3v3Lobby.gd 的 Button.new() 基线是
@@ -94,7 +97,9 @@ func _render_online_friends(friends: Array) -> void:
 func _online_friend_row(entry: Dictionary) -> Label:
 	var code := str(entry.get("friend_code", ""))
 	var label := Label.new()
-	label.text = AccountManager.display_name(str(entry.get("player_name", "")), code)
+	# 10.06 反馈第 2 条：朋友列表**只显示昵称**，不再挂着 `#好友码`。
+	# code 仍然要留着 —— 邀请是按它发消息的（_on_invite_friend），只是不给玩家看见。
+	label.text = AccountManager.display_name(str(entry.get("player_name", "")), code, false)
 	# 9.14 反馈：「朋友列表」里的朋友 ID 要贴在框框里边、向左对齐。label 默认就是
 	# 左对齐，真正的毛病是列表容器压到了木框上（见 _build() 里 friends_scroll 的
 	# 位置说明）—— 两处一起改才看得出来。这里显式写上左对齐，免得将来换主题
@@ -528,6 +533,8 @@ func _build() -> void:
 	# 旧值 (626, 142, 420x28) 的框底 170 已经落到木牌外面了。
 	_status_lbl = _add_label("", Vector2(599, 118), Vector2(475, 24), 15,
 		Tokens.TEXT_PRIMARY, "", true)
+	# 10.06 反馈第 8 条：右上角「静音 / 已静音」，控制音乐播放。
+	_build_mute_button()
 	_build_debug_layer()
 
 func _build_slot(index: int) -> void:
@@ -688,6 +695,10 @@ func _refresh() -> void:
 	var ready_arr := _ready_arr()
 	var my_slot := _my_slot()
 	var is_host_seat := _is_host_seat()
+	# 10.06 第 8 条：静音键的文案跟「总线静音 + 音乐偏好」走，每次刷新重算，
+	# 免得在设置页关过音乐、回到房间时键上还写着「静音」。
+	if _mute_button != null and is_instance_valid(_mute_button):
+		_mute_button.text = _mute_label_text()
 	for i in 6:
 		var state := str(states[i])
 		var name_lbl: Label = _slot_name_lbls[i]
@@ -911,7 +922,7 @@ func _start_block_reason(host_ready: bool) -> String:
 	if _online() and (states.size() < 6 or ready_arr.size() < 6):
 		return _room_text("房间状态同步中", "Room state syncing")
 	if states.has("settling"):
-		return _room_text("等待结算中的玩家返回，或由房主请离", "Waiting for players to return from results or be removed by host")
+		return _room_text("等待结算中的玩家返回", "Waiting for players to return from results")
 	var side_a := 0
 	var side_b := 0
 	for i in 6:
@@ -1266,6 +1277,55 @@ func _place_voice_button(button: Button, pos: Vector2, size: Vector2) -> void:
 	button.custom_minimum_size = Vector2.ZERO
 	add_child(button)
 	_track(button, pos, size, VOICE_BTN_FONT, "left")
+
+
+# ── 房间里的「静音 / 已静音」按键（10.06 反馈第 8 条）────────────────────────
+# 对局右上角那颗键原来只在备战界面（PrepUI 顶排第三键，10-06 被改成「设定」）。
+# 本反馈要求在**房间界面**也能控制音乐播放，于是把它搬到房间里、摆在同样靠右上的位置：
+# 朋友列表木框（右锚、y 180 起）正上方，edge="right" 跟随安全区右缘。
+const MUTE_BTN_POS := Vector2(1500, 26)
+const MUTE_BTN_SIZE := Vector2(140, 62)
+const MUTE_BTN_FONT := 18
+var _mute_button: Button = null
+
+func _build_mute_button() -> void:
+	var mute_btn := PrepWidgets.make_menu_button(_mute_label_text(), MUTE_BTN_SIZE, MUTE_BTN_FONT, _toggle_mute)
+	_mute_button = mute_btn
+	mute_btn.name = "MuteButton"
+	# 同语音键：清掉 make_menu_button 设的最小尺寸，否则窗口缩小时被顶回原尺寸。
+	mute_btn.custom_minimum_size = Vector2.ZERO
+	add_child(mute_btn)
+	_track(mute_btn, MUTE_BTN_POS, MUTE_BTN_SIZE, MUTE_BTN_FONT, "right")
+
+# 两种情况都算「已静音」（与备战期那颗键同源）：
+#   ① Master 总线被静音 —— 就是本键自己按下去的那一步；
+#   ② 设置页把「背景音乐」关了 —— 进房间时也要显示已静音，两处不各说各话。
+# 只看「背景音乐」、**不看**「界面音效」：后者只掐 SFX，玩家还听得见 BGM。
+func _is_audio_muted() -> bool:
+	var master := AudioServer.get_bus_index("Master")
+	if master >= 0 and AudioServer.is_bus_mute(master):
+		return true
+	return not Presentation.music_allowed()
+
+func _toggle_mute() -> void:
+	# 全局静音：静音 Master 总线（BGM + 音效都停），引擎级状态，切场景仍生效。
+	# 目标状态从 _is_audio_muted() 反推，**不是**直接翻转总线：设置页关过「背景音乐」
+	# 时键上写着「已静音」，这一下必须把声音打开（清总线静音 + 打开音乐开关），
+	# 否则按下去只是把一个本来就没静音的总线翻成静音 —— 按了像没反应。
+	var master := AudioServer.get_bus_index("Master")
+	var want_mute := not _is_audio_muted()
+	if master >= 0:
+		AudioServer.set_bus_mute(master, want_mute)
+	if not want_mute:
+		PlayerProfile.set_presentation_toggle("music", true)
+	if _mute_button != null and is_instance_valid(_mute_button):
+		_mute_button.text = _mute_label_text()
+
+func _mute_label_text() -> String:
+	var muted := _is_audio_muted()
+	if LocaleManager.get_locale() == "en":
+		return "Muted" if muted else "Mute"
+	return "已静音" if muted else "静音"
 
 func _build_phrase_panel() -> void:
 	# 面板与按钮**都在 _build 期建好、默认隐藏**，不是点开时才创建。

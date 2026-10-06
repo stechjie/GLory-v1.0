@@ -80,15 +80,12 @@ func deploy_text() -> String:
 
 
 func _draw() -> void:
-	# 底板内缩一个发光边距，把外圈留给发光本身（见 GLOW_MARGIN 注释）。
+	# 10.06 反馈第 1 条：**去掉深色圆角底板、外圈描边与外发光**，只保留「棋子符号 + 数字」。
+	# 旧版那三层叠起来看着像一枚贴在地上的徽章（用户原话：外部的椭圆 + 中间填充的黑色底色）。
+	# box / center 仍然要算：GLOW_MARGIN 只是画布留白，图案中心点不变，
+	# PrepBoardModels 里 PREP_DEPLOY_COUNTER_VIEWPORT_SIZE 与 CANVAS_SIZE 的对应关系不受影响。
 	var box := Rect2(Vector2(GLOW_MARGIN, GLOW_MARGIN), BADGE_SIZE)
 	var center := box.get_center()
-	# 外发光：从外到内叠几圈描边，越外侧越淡 —— 顶替 StyleBoxFlat 的 shadow_size。
-	RoundedRectDraw.draw_soft_glow(self, box, float(CORNER_RADIUS), _alpha(_color, GLOW_ALPHA),
-		GLOW_RINGS, GLOW_STEP, BORDER_WIDTH)
-	draw_colored_polygon(RoundedRectDraw.rounded_rect(box, float(CORNER_RADIUS)), PLATE_BG)
-	draw_polyline(RoundedRectDraw.closed(RoundedRectDraw.rounded_rect(box, float(CORNER_RADIUS))),
-		_alpha(_color, 0.92), BORDER_WIDTH, true)
 	var font := ThemeDB.fallback_font
 	if font == null:
 		return
@@ -103,6 +100,7 @@ func _draw() -> void:
 	var baseline := center.y + (font.get_ascent(TEXT_SIZE) - font.get_descent(TEXT_SIZE)) * 0.5
 	_draw_piece_icon(Vector2(left + ICON_WIDTH * 0.5, center.y))
 	# 描边靠「同一串字画两遍」：先深色偏移一像素，再画亮色。
+	# 去掉底板之后，这层深色阴影是数字贴在草地上时**唯一**的可读性保障，别顺手删掉。
 	draw_string(font, Vector2(left + ICON_WIDTH + ICON_GAP, baseline + 1.5), text,
 		HORIZONTAL_ALIGNMENT_LEFT, -1, TEXT_SIZE, Color(0.02, 0.045, 0.035, 0.92))
 	draw_string(font, Vector2(left + ICON_WIDTH + ICON_GAP, baseline), text,

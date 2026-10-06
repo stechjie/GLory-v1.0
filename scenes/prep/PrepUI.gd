@@ -941,6 +941,12 @@ func _build_sell_zone_and_refresh(body: HBoxContainer, center_host: Control) -> 
 
 	# 只包住刷新按钮的小框（132×132）。锚在面板右侧中间，别再撑成巨框吃卡片点击。
 	# 要移动刷新：改下面 4 个 offset（框小才不会误吃点击）；锚点保持 left≤right、都在 0~1。
+	#
+	# ★ 10.06 反馈第 3 条：原来右边缘是 +25（**探出屏幕外、被裁掉一截**），看着「过于边缘」。
+	#   现在把它**摆回右侧竖列（佣兵 / 队伍佣兵 / 萝卜营地 / 萝卜计数）的正下方、水平居中**：
+	#   该列水平范围是 [W-148, W-8]（side_col，STATS_BTN_SIZE.x=140），列中心 = W-78；
+	#   刷新框宽 130 ⇒ offset_left = -78-65 = -143、offset_right = -78+65 = -13。
+	#   竖直方向本来就对得上：列底 = 2+64+6+132*3+50 = 518，刷新框顶 = 屏高-200 ≈ 520。
 	var refresh_shop := Button.new()
 	_shop.refresh_button = refresh_shop
 	refresh_shop.text = ""
@@ -951,9 +957,9 @@ func _build_sell_zone_and_refresh(body: HBoxContainer, center_host: Control) -> 
 	refresh_shop.anchor_top = 1.0
 	refresh_shop.anchor_right = 1.0
 	refresh_shop.anchor_bottom = 1.0
-	refresh_shop.offset_left = -105
+	refresh_shop.offset_left = -143
 	refresh_shop.offset_top = -200
-	refresh_shop.offset_right = 25
+	refresh_shop.offset_right = -13
 	refresh_shop.offset_bottom = -70
 	refresh_shop.focus_mode = Control.FOCUS_NONE
 	var refresh_frame := TextureRect.new()    # 循环箭头图标框（箭头已画死）
@@ -3562,10 +3568,10 @@ func _on_shop_picker_toggled(is_open: bool) -> void:
 	# 弹出「这个版本没有语音功能」。和待命格同一套处理：商店开着就整块不吃输入。
 	# 语音 v1.1（2026-09-14）起这一块是「语音」「队友」两个按钮（VoiceControls，合起来仍是 150 宽），两个一起挡。
 	# 这一行原本写的是 v1 的 _voice_button：与 v1.1 合并时 git 没报冲突，但那个变量已经没有了，PrepUI 会解析失败。
-	if _voice_controls != null:
-		_set_overlay_blocked(_voice_controls.voice_button, is_open)
-		_set_overlay_blocked(_voice_controls.audience_button, is_open)
-		_set_overlay_blocked(_voice_controls.members_button, is_open)
+	#
+	# 10.06 反馈第 3 条：刷新键已挪到右侧竖列正下方，右下角一下只剩通讯簇与它挤在一起。
+	# 于是商店开时**整簇收起**（原来只是禁输入、仍占着位置看着拥挤），关店再放回来。
+	_set_comms_ui_hidden(is_open)
 	_set_overlay_blocked(_chat_button, is_open)
 
 
@@ -3582,6 +3588,42 @@ func _set_overlay_blocked(btn: Control, blocked: bool) -> void:
 		btn.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	else:
 		btn.set_deferred("mouse_filter", Control.MOUSE_FILTER_STOP)
+
+
+# 商店开时整块隐藏**通讯簇**（10.06 反馈第 3 条）。
+#
+# ⚠ 10.06 真机复测反馈「开商店而语音 UI 没消失」的根因就在这里：
+# 第一版只藏了语音三键，可是这四个键（语音 / 队友 / 所有人 / 聊天）**外面还有一层
+# `_comms_dock`** —— 308×88 的深色圆角底板（z=19），它比最左的语音键还宽一圈，一直垫在
+# 整簇后面。只藏三键的话，那块板子连同聊天按钮原样留在右下角，玩家看到的就是
+# 「右下角那一堆根本没动」。所以要连底板与聊天按钮一起收。
+#
+# 隐藏的控件本就收不到输入，所以不必再单独禁 mouse_filter；恢复放在**下一帧**
+# （与 _set_overlay_blocked 同源的理由）——「点商店外面关店」的那一次点击不会当场打回这些键上，
+# 而且要恢复到**进来时各自的可见性**，不是硬写 true（底板/聊天键在某些模式下本来就不显示）。
+var _comms_hidden_visible: Dictionary = {}
+
+
+func _set_comms_ui_hidden(hidden: bool) -> void:
+	var members: Array = [_comms_dock, _chat_button]
+	if _voice_controls != null:
+		members.append(_voice_controls.voice_button)
+		members.append(_voice_controls.audience_button)
+		members.append(_voice_controls.members_button)
+	if hidden:
+		_comms_hidden_visible.clear()
+		for node in members:
+			if node == null or not is_instance_valid(node):
+				continue
+			_comms_hidden_visible[node] = (node as Control).visible
+			(node as Control).visible = false
+		return
+	for node in members:
+		if node == null or not is_instance_valid(node):
+			continue
+		var was := bool(_comms_hidden_visible.get(node, true))
+		(node as Control).set_deferred("visible", was)
+	_comms_hidden_visible.clear()
 
 
 
