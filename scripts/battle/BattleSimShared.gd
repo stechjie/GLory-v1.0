@@ -75,6 +75,13 @@ static func range_px_for(range_value: float) -> float:
 
 # 4×4 格子 → 模拟坐标。row 0 = 前排（面向敌人）。
 # 敌方左右镜像（云顶之弈式面对面）：对手视角的左边 = 我方屏幕的右边。
+#
+# 🔴 普通 PvP 不镜像（2026-10-06 用户定，调用方传 mirror_enemy=false）。房间里 A 在 1 正上方，
+# 战场上也是「正上方对正下方」：对面摆在他棋盘左边的，在你画面里也在左边 —— PvE 回合「查看另一队」
+# 看他打怪时在左边，到 PvP 还在左边，你左边那格正对着它。镜像的话，看到在左边、打的时候却跑到右边，
+# 布局就没法照着看到的去针对。蓝队看 PvP 只上下翻、不左右翻（BattleArena._sim_to_world_pos），
+# 自己摆的棋子方向也就跟摆放界面一样。
+# PvE 的敌方（怪、送来的佣兵）和决赛（左右对打，面对面镜像才对）照旧镜像。
 static func board_cell_pos(slot: int, team: String, center_x: float, mirror_enemy: bool = true) -> Vector2:
 	var col := slot % GameConstants.BOARD_COLUMNS
 	var row := floori(float(slot) / float(GameConstants.BOARD_COLUMNS))
@@ -133,19 +140,19 @@ static func _count_units(board: Array) -> int:
 	return c
 
 
-static func _place_in_lane(f: Dictionary, slot: int, team: String, lane: int) -> void:
-	f.pos = board_cell_pos(slot, team, float(TEAM_LANE_CENTERS[lane]))
+static func _place_in_lane(f: Dictionary, slot: int, team: String, lane: int, mirror_enemy: bool = true) -> void:
+	f.pos = board_cell_pos(slot, team, float(TEAM_LANE_CENTERS[lane]), mirror_enemy)
 	f["board_cell"] = slot
 	f["lane"] = lane
 
 
-static func _append_lane_board_fighters(out: Array, board: Array, team: String, lane: int, owner_treasures: Array = [], owner_syn: Dictionary = {}, owner_slot: int = -1, owner_pet: String = "", owner_gold: int = 0, owner_tiger_starups: int = 0) -> void:
+static func _append_lane_board_fighters(out: Array, board: Array, team: String, lane: int, owner_treasures: Array = [], owner_syn: Dictionary = {}, owner_slot: int = -1, owner_pet: String = "", owner_gold: int = 0, owner_tiger_starups: int = 0, mirror_enemy: bool = true) -> void:
 	for i in board.size():
 		var cell = board[i]
 		if cell == null or typeof(cell) != TYPE_DICTIONARY:
 			continue
 		var f := _fighter_from_cell(cell, i, team)
-		_place_in_lane(f, i, team, lane)
+		_place_in_lane(f, i, team, lane, mirror_enemy)
 		f.uid = "%s_L%d_%d" % [team, lane, i]
 		f["owner_treasures"] = owner_treasures
 		f["owner_syn"] = owner_syn
@@ -422,7 +429,8 @@ static func _dummy_merc_slots(_rng: RandomNumberGenerator) -> Array:
 	return out
 
 
-static func _append_lane_mercenaries(out: Array, merc_slots: Array, team: String, lane: int, owner_slot: int = -1) -> void:
+# mirror_enemy 必须和同一路棋盘那次调用一致：空格是按格子号算的，两边镜像不一致会把佣兵塞到棋子身上。
+static func _append_lane_mercenaries(out: Array, merc_slots: Array, team: String, lane: int, owner_slot: int = -1, mirror_enemy: bool = true) -> void:
 	# 佣兵填进这一路这一方棋盘的空格（后排优先）。空格用完（极少见：同一路
 	# 棋子 + 佣兵超过 16）就叠在最后一排中间，由推开逻辑分开。
 	var occupied := {}
@@ -437,7 +445,7 @@ static func _append_lane_mercenaries(out: Array, merc_slots: Array, team: String
 			continue
 		var f := _fighter_from_cell(cell, GameConstants.CELL_COUNT + i, team)
 		var board_slot: int = free[idx] if idx < free.size() else (GameConstants.CELL_COUNT - 3)
-		f.pos = board_cell_pos(board_slot, team, float(TEAM_LANE_CENTERS[lane]))
+		f.pos = board_cell_pos(board_slot, team, float(TEAM_LANE_CENTERS[lane]), mirror_enemy)
 		f["board_cell"] = board_slot
 		f.uid = "%s_L%d_merc%d" % [team, lane, i]
 		f["lane"] = lane

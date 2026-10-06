@@ -5,7 +5,10 @@ const BossProceduralVFX3D := preload("res://effects/BossProceduralVFX3D.gd")
 const CrystalRibbon3D := preload("res://effects/CrystalRibbon3D.gd")
 const CRYSTAL_TOON_SHADER := preload("res://shaders/battle_crystal_toon_preview.gdshader")
 const CRYSTAL_OUTLINE_SHADER := preload("res://shaders/battle_crystal_outline.gdshader")
-const LANE_WARD_SCENE := preload("res://effects/battlefield/LaneRunicWall3D.tscn")
+const LANE_WARD_SCENE := preload("res://effects/battlefield/energy_barrier/EnergyBarrierSegment.tscn")
+# 分路能量护栏的队伍颜色（用户 10-06 调好的），下标就是 GameConstants.TEAM_RED / TEAM_BLUE。
+# 和 GameConstants.TEAM_COLORS 刻意分开：那是单位光圈 / 水晶用的饱和色，护栏要更柔和。
+const LANE_BARRIER_TEAM_COLORS := [Color("f7937e"), Color("6a9ade")]
 const FinalLaneLightWall2D := preload("res://scenes/battle/FinalLaneLightWall2D.gd")
 const CRYSTAL_OUTLINE_WIDTH := 0.008
 
@@ -432,19 +435,40 @@ func _add_battle_3v3_dividers(_arena_wrap: Control) -> void:
 	if _battlefield_kind() == "final":
 		# 最终回合左右对战，不绘制半场及分路分割线。
 		return
+	var half_colors := lane_barrier_half_colors(_uses_pvp_battlefield(),
+		GameConstants.team_of_slot(NetworkService.team_local_slot))
 	for i in BATTLE_3V3_BOUNDS.size():
-		var barrier := LANE_WARD_SCENE.instantiate() as Node3D
-		barrier.name = "Battle3v3LaneBarrier%d" % i
-		# Native world geometry respects unit depth and stays below the 2D UI.
-		_battle_3d_world.add_child(barrier)
-		# Low tier keeps the boundary silhouette and disables fine rune animation.
-		barrier.set_low_quality(VFXManager.get_quality_tier() == VFXQualityBudget.Tier.LOW)
-		barrier.play_loop(i * 7)
-		# ★ 加载过场按住：这张墙此刻还没摆位（停在原点），先强制不显示。必须放在
-		# play_loop() 之后（play_loop() 自己会 visible=true），否则会被它盖掉。
-		barrier.set_preview_hidden(true)
-		_preview_walls_hidden = true
-		_3v3_barriers.append(barrier)
+		# 每条边界上下两段，在敌我半场分界线交接：_3v3_barriers[i * 2] 是 visual_min.y
+		# 那半场，[i * 2 + 1] 是 visual_max.y 那半场（颜色归属见 lane_barrier_half_colors）。
+		for half in 2:
+			var barrier := LANE_WARD_SCENE.instantiate() as Node3D
+			barrier.name = "Battle3v3LaneBarrier%d_%d" % [i, half]
+			# Native world geometry respects unit depth and stays below the 2D UI.
+			_battle_3d_world.add_child(barrier)
+			barrier.unify_color = true
+			barrier.color = half_colors[half]
+			# Low tier keeps the floor line, rune and two ribbons; particles go.
+			barrier.set_low_quality(VFXManager.get_quality_tier() == VFXQualityBudget.Tier.LOW)
+			barrier.play_loop(i * 7 + half * 3)
+			# ★ 加载过场按住：这张墙此刻还没摆位（停在原点），先强制不显示。必须放在
+			# play_loop() 之后（play_loop() 自己会 visible=true），否则会被它盖掉。
+			barrier.set_preview_hidden(true)
+			_preview_walls_hidden = true
+			_3v3_barriers.append(barrier)
+
+
+# 返回 [visual_min.y 那半场的颜色, visual_max.y 那半场的颜色]。
+# PvP：规范棋局里红队（A 队、槽位 0-2）恒在 visual_max.y 一侧，蓝队在 visual_min.y 一侧；
+#   蓝队玩家的画面由 _sim_to_world_pos 整张上下翻，颜色跟着位置走，所以六个人看到的
+#   归属一致 —— 红队那半场永远是红的、蓝队那半场永远是蓝的，各自那半场都在自己画面下方。
+# PvE / Boss：对面是怪物，不属于任何一队，整条用本地玩家所在队伍的颜色。
+static func lane_barrier_half_colors(is_pvp: bool, local_team: int) -> Array[Color]:
+	var red: Color = LANE_BARRIER_TEAM_COLORS[GameConstants.TEAM_RED]
+	var blue: Color = LANE_BARRIER_TEAM_COLORS[GameConstants.TEAM_BLUE]
+	if is_pvp:
+		return [blue, red]
+	var mine: Color = LANE_BARRIER_TEAM_COLORS[local_team]
+	return [mine, mine]
 
 func _update_3v3_dividers() -> void:
 	if _arena == null or _battle_3d_camera == null:
@@ -479,15 +503,22 @@ func _update_3v3_dividers() -> void:
 	var visual_max := _battle_visual_max()
 	var x0 := visual_min.x
 	var x1 := visual_max.x
-	for i in _3v3_barriers.size():
+	# 两段在敌我半场分界线交接，和半场底色（_sync_battle_readability_static_geometry）同一条 split_y。
+	var split_y := clampf(SIM_H * 0.5, visual_min.y, visual_max.y)
+	for i in BATTLE_3V3_BOUNDS.size():
 		var sx := lerpf(x0, x1, BATTLE_3V3_BOUNDS[i])
 		var p_top := _sim_to_world_pos(Vector2(sx, visual_min.y), false)
+		var p_mid := _sim_to_world_pos(Vector2(sx, split_y), false)
 		var p_bot := _sim_to_world_pos(Vector2(sx, visual_max.y), false)
-		var barrier := _3v3_barriers[i]
-		# Shared playable bounds exclude the forest/stone border.
-		barrier.fit_between(p_top, p_bot)
-		if not barrier.is_released() and _should_release_3v3_boundary(i):
-			barrier.play_release()
+		var min_half := _3v3_barriers[i * 2]
+		var max_half := _3v3_barriers[i * 2 + 1]
+		# Shared playable bounds exclude the forest/stone border; the two halves together span p_top..p_bot.
+		min_half.fit_between(p_top, p_mid)
+		max_half.fit_between(p_mid, p_bot)
+		# 一条边界只有一个开关，两段同一帧一起消失。
+		if not min_half.is_released() and _should_release_3v3_boundary(i):
+			min_half.play_release()
+			max_half.play_release()
 
 
 # 9.27 bug 文档第 5 条（战场隔断越界）：整套"这道隔断释放了吗"的判定已搬到
@@ -1016,10 +1047,12 @@ func _sim_to_world_pos(sim_pos: Vector2, apply_down_shift: bool = true) -> Vecto
 	var ny := sim_pos.y / SIM_H
 	var nx := sim_pos.x / SIM_W
 	if _arena_flip_y:
+		# 蓝队看 PvP：**只上下翻**（自己到下方），左右不翻（2026-10-06 用户定）。
+		# 9.25 起这里是整张转 180°（x 也翻）—— 那是为了抵消模拟里蓝队棋盘的左右镜像，
+		# 代价是分路左右也反了：蓝队 1 号 PvE 在最左路，一到 PvP 就跑到最右。
+		# 现在普通 PvP 的棋盘在模拟里就不镜像（BattleSimShared.board_cell_pos），
+		# 只上下翻：分路、棋子左右都和房间 / 摆放界面 / PvE 一致，正上方对正下方。
 		ny = 1.0 - ny
-		# 9.25：敌方棋盘在模拟里是左右镜像摆的（面对面）。从另一边看时整张图
-		# 转 180°（x 也翻），对方看到的自己的棋盘才是他摆的样子。
-		nx = 1.0 - nx
 	var x := (nx - 0.5) * BATTLE_PLAYABLE_WIDTH * BATTLE_VISUAL_SPACE_SCALE + BATTLE_PLAYABLE_OFFSET.x
 	var z := (ny - 0.5) * BATTLE_PLAYABLE_DEPTH * BATTLE_VISUAL_SPACE_SCALE + BATTLE_PLAYABLE_OFFSET.z
 	if apply_down_shift:

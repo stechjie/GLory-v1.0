@@ -140,10 +140,11 @@ func _case_color_flip_not_pinned_to_final_exclusion() -> void:
 	_h.expect(idx >= 0, "color_flip_not_assigned",
 		"BattleScreen.gd 里没有给 _color_flip 赋值 —— 配色归属没从位置镜像解耦")
 	if idx >= 0:
-		# ⚠️ 取到「空行」为止，**不要只取第一行** —— 赋值可能带行尾 `\` 续行，决赛排除
-		# 就会落在第二行上；只切第一行会让这条断言**静默失效**（变异实证曾漏过 M2）。
-		var tail := code.substr(idx, 240)
-		var window := tail.split("\n\n")[0].replace("\\\n", " ")
+		# ⚠️ 按「语句」取（_statement_at），**不要只取第一行** —— 赋值可能带行尾 `\` 续行，
+		# 决赛排除就会落在第二行上；只切第一行会让这条断言**静默失效**（变异实证曾漏过 M2）。
+		# 也不能「取到空行为止」：10-06 上游在这句后面紧接着加了决赛开场灯笼的代码
+		# （`round_index == GameState.FINAL_ROUND`），中间没有空行，被当成赋值的一部分误报。
+		var window := _statement_at(code, idx)
 		_h.expect(not window.contains("FINAL_ROUND"), "color_flip_has_final_exclusion",
 			"_color_flip 的赋值里出现了 FINAL_ROUND 排除 —— 决赛又会关掉配色翻转，bug 复发：%s"
 				% window.replace("\n", " "))
@@ -155,9 +156,20 @@ func _case_color_flip_not_pinned_to_final_exclusion() -> void:
 	var aidx := code.find("_arena_flip_y =")
 	_h.expect(aidx >= 0, "arena_flip_not_assigned", "BattleScreen.gd 里没有给 _arena_flip_y 赋值")
 	if aidx >= 0:
-		var astmt := code.substr(aidx, 240).split("\n\n")[0]
+		var astmt := _statement_at(code, aidx)
 		_h.expect(astmt.contains("FINAL_ROUND"), "arena_flip_lost_final_exclusion",
 			"_arena_flip_y 决赛排除被删掉了 —— 决赛画面会被上下镜像转坏：%s" % astmt.replace("\n", " "))
+
+
+# 从 idx 起取一条语句：取到这一行结束；行尾是 `\` 就把下一行接上（续行），直到某一行不以 `\` 结尾。
+static func _statement_at(code: String, idx: int) -> String:
+	var out := ""
+	for line in code.substr(idx).split("\n"):
+		var text := str(line).strip_edges(false, true)
+		if not text.ends_with("\\"):
+			return out + text
+		out += text.trim_suffix("\\") + " "
+	return out
 
 
 # --- 5. 结构：_display_team 读的是 _color_flip ------------------------------------

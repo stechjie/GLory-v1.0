@@ -172,7 +172,10 @@ const USE_DTLS := true
 #      enforce the selected team/all audience. Old clients must not join it.
 # v37: Tiger growth uses a new board snapshot field and server-counted star upgrades.
 #      Reject older clients during the handshake, before battle submission.
-const NETWORK_PROTOCOL_VERSION := 37
+# v38: 普通 PvP 蓝队棋盘不再左右镜像（战斗服务器算位置），蓝队画面只上下翻（客户端），2026-10-06。
+#      两半必须一起换：旧客户端配新服务器，蓝队会看到自己的棋子左右颠倒；新客户端配旧服务器也一样。
+#      和 v33 同一类（改了权威战斗结果），战斗服务器重新打包部署到 p38、和新包一起上。
+const NETWORK_PROTOCOL_VERSION := 38
 
 # Local phone hosting is debug-only.
 const ALLOW_LOCAL_HOST_DEBUG := false

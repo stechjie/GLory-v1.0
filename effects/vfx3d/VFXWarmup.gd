@@ -91,6 +91,10 @@ const EXTRA_EFFECTS := [
 	"lightning_strike", "lightning_ball", "meteor_strike",
 ]
 
+# 战场分路能量护栏（BattleArena.LANE_WARD_SCENE）：除决赛外每一局都有，6 个 shader +
+# 2 套 GPU 粒子，第一次被画出来才编译。不热的话这笔会落在第 1 回合开打那一刻。
+const LANE_BARRIER_SCENE := "res://effects/battlefield/energy_barrier/EnergyBarrierSegment.tscn"
+
 # 纯数值/经济技能，没有任何 VFX 分支。喂进去只会 push_warning 并白占一帧。
 const NO_VFX_SKILLS := ["post_battle_gold_by_star", "mirror_clone"]
 
@@ -226,6 +230,8 @@ func _collect_ids() -> Array[String]:
 	for table_name in FIRST_BATTLE_TABLES:
 		for sid in _skill_ids_of(str(table_name), str(FIRST_BATTLE_TABLES[table_name])):
 			_append_phase_id(out, seen, sid, PHASE_FIRST_BATTLE)
+	# 以 res:// 开头，_spawn_one 走整场景实例化分支。
+	_append_phase_id(out, seen, LANE_BARRIER_SCENE, PHASE_FIRST_BATTLE)
 
 	# 阶段 3：更晚才出现的。Boss 在第 5 回合、佣兵要买、阵营援军只在最终战。
 	for table_name in DEFERRED_TABLES:

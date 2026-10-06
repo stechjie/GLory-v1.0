@@ -74,6 +74,9 @@ static func prepare_team_state(forced_team: int = -1) -> Dictionary:
 	var ally_slots: Array
 	var rival_slots: Array
 	var seed_parts: Array
+	# 普通 PvP 两边棋盘都不左右镜像：正上方对正下方，同房间里 A 在 1 正上方（2026-10-06，
+	# 见 BattleSimShared.board_cell_pos）。决赛是左右对打，面对面镜像才对，照旧。
+	var mirror_enemy := not (kind == "pvp" and not is_final_round)
 	if kind == "pvp":
 		ally_slots = [0, 1, 2]
 		rival_slots = [3, 4, 5]
@@ -127,7 +130,7 @@ static func prepare_team_state(forced_team: int = -1) -> Dictionary:
 					_append_lane_boss(enemy, lane, boss_template)
 					_append_lane_monsters(enemy, lane, lane_monster_count, monster_template)
 				"pvp":
-					_append_lane_board_fighters(enemy, _team_board_for_slot(rival_slots[lane], rng), "enemy", lane, rival_ctx[lane].treasures, rival_ctx[lane].syn, rival_slots[lane], rival_ctx[lane].get("pet", ""), int(rival_ctx[lane].get("gold", 0)), int(rival_ctx[lane].get("tiger_starups", 0)))
+					_append_lane_board_fighters(enemy, _team_board_for_slot(rival_slots[lane], rng), "enemy", lane, rival_ctx[lane].treasures, rival_ctx[lane].syn, rival_slots[lane], rival_ctx[lane].get("pet", ""), int(rival_ctx[lane].get("gold", 0)), int(rival_ctx[lane].get("tiger_starups", 0)), mirror_enemy)
 				_:
 					_append_lane_monsters(enemy, lane, lane_monster_count, monster_template)
 		# Mercenaries (Legion TD 2 "send"): PvP -> own mercs fight WITH you and the
@@ -136,7 +139,7 @@ static func prepare_team_state(forced_team: int = -1) -> Dictionary:
 		for lane in 3:
 			if kind == "pvp":
 				_append_lane_mercenaries(player, _team_mercs_for_slot(ally_slots[lane], rng), "player", lane, ally_slots[lane])
-				_append_lane_mercenaries(enemy, _team_mercs_for_slot(rival_slots[lane], rng), "enemy", lane, rival_slots[lane])
+				_append_lane_mercenaries(enemy, _team_mercs_for_slot(rival_slots[lane], rng), "enemy", lane, rival_slots[lane], mirror_enemy)
 			else:
 				_append_lane_mercenaries(enemy, _team_mercs_for_slot(rival_slots[lane], rng), "enemy", lane, rival_slots[lane])
 	if is_final_round:

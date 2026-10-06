@@ -114,6 +114,12 @@ func _check_phase_membership(warmup) -> void:
 		_h.expect(warmup.phase_of(str(path)) == WarmupScript.PHASE_DEFERRED,
 			"scene_phase", "外部场景 %s 应在 deferred 阶段" % str(path))
 	_h.expect(scene_items > 0, "scene_missing", "外部 VFX 场景一个都没进队列")
+	# 分路能量护栏除决赛外每局都有：必须在第一场战斗前热完，且和战斗里真正用的是同一个场景。
+	_h.expect(warmup.phase_of(WarmupScript.LANE_BARRIER_SCENE) == WarmupScript.PHASE_FIRST_BATTLE,
+		"lane_barrier_phase", "分路能量护栏应在 first_battle 阶段预热")
+	var arena_src := FileAccess.get_file_as_string("res://scenes/battle/BattleArena.gd")
+	_h.expect(arena_src.contains("const LANE_WARD_SCENE := preload(\"%s\")" % WarmupScript.LANE_BARRIER_SCENE),
+		"lane_barrier_path", "预热的护栏场景和 BattleArena.LANE_WARD_SCENE 不是同一个")
 
 
 # The progress readout is a developer tool. Drawing it in a release build puts

@@ -29,38 +29,21 @@ func _run() -> void:
 	var camera: Camera3D = screen.get("_battle_3d_camera")
 	var lines: Array[Vector2] = []
 	var columns: Array[float] = []
-	for wall in walls:
-		var body: Node3D = wall.get("_body")
-		if body.get_child_count() != 1:
-			push_error("Light walls must not contain posts")
-			quit(1)
-			return
-		var membrane: MeshInstance3D = body.get_child(0)
-		var arrays: Array = membrane.mesh.surface_get_arrays(0)
-		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-		var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
-		var top_min := INF
-		var top_max := -INF
-		var bottom_min := INF
-		var bottom_max := -INF
-		for k in vertices.size():
-			var projected := camera.unproject_position(membrane.to_global(vertices[k]))
-			if uvs[k].x < 0.001:
-				top_min = minf(top_min, projected.y)
-				top_max = maxf(top_max, projected.y)
-			if uvs[k].x > 0.999:
-				bottom_min = minf(bottom_min, projected.y)
-				bottom_max = maxf(bottom_max, projected.y)
-		if top_max - top_min > 0.1 or bottom_max - bottom_min > 0.1:
-			push_error("Visible membrane ends are skewed")
-			quit(1)
-			return
-		var a := camera.unproject_position(wall.to_global(Vector3(0, 0.6, -wall.length * 0.4)))
-		var b := camera.unproject_position(wall.to_global(Vector3(0, 0.6, wall.length * 0.4)))
-		lines.append((b - a).normalized())
-		columns.append(a.x)
+	# 10-06：分路墙换成能量护栏（EnergyBarrierSegment），每条边界上下两段（_3v3_barriers[i * 2] / [i * 2 + 1]）。
+	# 旧符文墙「膜面两端不斜切」那条随旧墙一起删了；竖直、平行、三等分照旧验，两段要在同一条竖线上。
+	for i in walls.size():
+		var wall = walls[i]   # 不标 Node3D：barrier_length 是护栏脚本上的属性
+		var a := camera.unproject_position(wall.to_global(Vector3(0, 0.6, -wall.barrier_length * 0.4)))
+		var b := camera.unproject_position(wall.to_global(Vector3(0, 0.6, wall.barrier_length * 0.4)))
 		if absf(a.x - b.x) > 0.1:
 			push_error("Wall centerline is not vertical in battle camera")
+			quit(1)
+			return
+		if i % 2 == 0:
+			lines.append((b - a).normalized())
+			columns.append(a.x)
+		elif absf(a.x - columns[columns.size() - 1]) > 0.1:
+			push_error("The two halves of a lane boundary are not on one line")
 			quit(1)
 			return
 	if lines.size() != 2 or absf(lines[0].cross(lines[1])) > 0.0001:

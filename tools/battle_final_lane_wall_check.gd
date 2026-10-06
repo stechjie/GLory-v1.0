@@ -1,8 +1,8 @@
 extends Node
 
 # Final-round horizontal light-wall contract. It is intentionally separate
-# from battle_lane_barrier_check: the latter protects the user-approved full-
-# height vertical crystals and must not inherit final-only rules.
+# from battle_lane_barrier_check: the latter protects the regular lane barrier
+# and must not inherit final-only rules.
 
 const CheckHarness := preload("res://tools/CheckHarness.gd")
 const WallScript := preload("res://scenes/battle/FinalLaneLightWall2D.gd")
@@ -57,6 +57,8 @@ func _check_arena_wiring() -> void:
 	# 第 1 条把它换成原生 3D 符文墙后，"隔断必须铺满整条边界、不许再被缩短"
 	# 这条**用户实看定下的合同**改由"两个端点必须取自整幅战场可视上下边界"承载。
 	# 只查 `fit_between(` 不够 —— 传两个挨在一起的点也过，必须证到端点来源。
+	# 10-06 换成能量护栏后每条边界拆成上下两段（各涂所在半场的队伍色），合同随之改成
+	# 「两段在半场分界线首尾相接、合起来仍是 visual_min.y → visual_max.y」，同样不放松。
 	var span := _regular_ward_span_contract(source)
 	_h.expect(bool(span.get("ok", false)), "regular_ward_span_broken", str(span.get("detail", "")))
 	# 判据自检：直接调那个纯函数喂合成源码。不这样验，就等于让外层
@@ -82,17 +84,24 @@ static func _regular_ward_span_contract(source: String) -> Dictionary:
 	var rules := [
 		["var p_top := _sim_to_world_pos(Vector2(sx, visual_min.y), false)",
 			"普通分路墙上端点必须取自 visual_min.y（整幅战场上边界）"],
+		["var split_y := clampf(SIM_H * 0.5, visual_min.y, visual_max.y)",
+			"两段的交接点必须是敌我半场分界线（SIM_H 的一半）"],
+		["var p_mid := _sim_to_world_pos(Vector2(sx, split_y), false)",
+			"交接点必须取自 split_y"],
 		["var p_bot := _sim_to_world_pos(Vector2(sx, visual_max.y), false)",
 			"普通分路墙下端点必须取自 visual_max.y（整幅战场下边界）"],
-		["barrier.fit_between(p_top, p_bot)",
-			"普通分路墙必须按这两个端点铺满整条边界"],
+		["min_half.fit_between(p_top, p_mid)",
+			"上半段必须从上边界铺到交接点"],
+		["max_half.fit_between(p_mid, p_bot)",
+			"下半段必须从交接点铺到下边界"],
 	]
 	for rule in rules:
 		if not regular.contains(str(rule[0])):
 			return {"ok": false, "detail": str(rule[1])}
-	# "不许缩短"：普通分支里不允许再出现任何 barrier.scale 赋值。
-	if regular.contains("barrier.scale"):
-		return {"ok": false, "detail": "普通分路墙又出现 barrier.scale 赋值 —— 会把铺满的高度缩短"}
+	# "不许缩短"：普通分支里不允许再出现任何对分路墙的 scale 赋值。
+	for stmt in ["barrier.scale", "min_half.scale", "max_half.scale"]:
+		if regular.contains(stmt):
+			return {"ok": false, "detail": "普通分路墙又出现 %s 赋值 —— 会把铺满的长度缩短" % stmt}
 	return {"ok": true, "detail": ""}
 
 
@@ -113,21 +122,28 @@ static func _span_contract_probes() -> Array:
 	var nl := String.chr(10)
 	var head := "func _update_3v3_dividers() -> void:" + nl + "if _3v3_barriers.is_empty():" + nl
 	var top := "var p_top := _sim_to_world_pos(Vector2(sx, visual_min.y), false)" + nl
+	var split := "var split_y := clampf(SIM_H * 0.5, visual_min.y, visual_max.y)" + nl
+	var mid := "var p_mid := _sim_to_world_pos(Vector2(sx, split_y), false)" + nl
 	var bot := "var p_bot := _sim_to_world_pos(Vector2(sx, visual_max.y), false)" + nl
-	var fit := "barrier.fit_between(p_top, p_bot)" + nl
-	var good := head + top + bot + fit
-	var shrunk := head + top + bot + "barrier.fit_between(p_top, p_top.lerp(p_bot, 0.6))" + nl
-	var scaled := head + top + bot + fit + "barrier.scale = Vector2(0.42, maxf(0.1, (bot_y - top_y) / 512.0))" + nl
-	var wrong_end := head + "var p_top := _sim_to_world_pos(Vector2(sx, visual_max.y), false)" + nl + bot + fit
+	var ends := head + split + top + mid + bot
+	var fit_min := "min_half.fit_between(p_top, p_mid)" + nl
+	var fit_max := "max_half.fit_between(p_mid, p_bot)" + nl
+	var good := ends + fit_min + fit_max
+	var shrunk := ends + fit_min + "max_half.fit_between(p_mid, p_mid.lerp(p_bot, 0.6))" + nl
+	var scaled := good + "min_half.scale = Vector3(1.0, 0.5, 1.0)" + nl
+	var wrong_end := head + split + "var p_top := _sim_to_world_pos(Vector2(sx, visual_max.y), false)" + nl + mid + bot + fit_min + fit_max
+	var gap := ends + fit_min + "max_half.fit_between(p_mid.lerp(p_bot, 0.2), p_bot)" + nl
 	return [
 		{"name": "probe_span_ok", "ok": bool(_regular_ward_span_contract(good).get("ok", false)),
-			"detail": "合成正例（两端点齐全 + fit_between）必须通过"},
+			"detail": "合成正例（三个点齐全 + 两段首尾相接）必须通过"},
 		{"name": "probe_span_shrunk", "ok": not bool(_regular_ward_span_contract(shrunk).get("ok", true)),
-			"detail": "合成反例（把两端点缩到 60%）必须被拒"},
+			"detail": "合成反例（下半段只铺到 60%）必须被拒"},
 		{"name": "probe_span_scaled", "ok": not bool(_regular_ward_span_contract(scaled).get("ok", true)),
-			"detail": "合成反例（补一条 barrier.scale 缩短高度）必须被拒"},
+			"detail": "合成反例（补一条 min_half.scale 缩短）必须被拒"},
 		{"name": "probe_span_wrong_end", "ok": not bool(_regular_ward_span_contract(wrong_end).get("ok", true)),
 			"detail": "合成反例（上端点误用 visual_max）必须被拒"},
+		{"name": "probe_span_gap", "ok": not bool(_regular_ward_span_contract(gap).get("ok", true)),
+			"detail": "合成反例（两段之间留一道缝）必须被拒"},
 	]
 
 

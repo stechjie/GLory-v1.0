@@ -4174,3 +4174,49 @@ S5 **直接调生产映射函数** —— 外层 `_on_carrot_economy_receipt` �
 
 它钉的是摆放界面静音键的文案与点击方向；键没了，判据跟着删（`PrepUI._is_audio_muted / _toggle_mute / _mute_label_text`
 一起删了）。9.17 反馈第 5 条要的「对局里能把音乐重新打开」现在走设定页里的「背景音乐」开关。
+
+## 2026-10-06：分路光墙换成魔法能量护栏（按半场分红蓝）
+
+用户给参考图要把战斗分路的光墙改成「魔法能量护栏」（地面能量线 / 流动光带 / 随机竖光 / 悬浮符文 / 少量粒子，
+中间是空的、不要透明墙面），先出样片（`scenes/debug/EnergyBarrierReview.tscn`）、用户在编辑器里自己调好颜色和亮度后，
+要求接进战斗、按队伍红蓝分色。
+
+- 护栏：`effects/battlefield/energy_barrier/EnergyBarrierSegment.tscn`（+ `.gd` 与 6 个 shader）。
+  场景里存什么就显示什么：各层材质的颜色 / 亮度 / 速度是真值，根节点只叠加（亮度、速度是倍数；颜色要勾 `unify_color` 才统一）。
+- 接线：`BattleArena.LANE_WARD_SCENE` 换成它；每条分路边界拆成上下两段，在敌我半场分界线（`SIM_H * 0.5`，与半场底色同一条）
+  交接，各涂所在半场那一队的颜色（`LANE_BARRIER_TEAM_COLORS`：红 `#f7937e`、蓝 `#6a9ade`，用户定）。
+  PvP 规范棋局里红队在 `visual_max.y` 一侧、蓝队在 `visual_min.y` 一侧，蓝队玩家整张上下翻 ⇒ 六个人看到的归属一致、
+  自己那半场都在下方；PvE / Boss 对面是怪物，整条用本地玩家所在队伍的颜色。一条边界一个开关，两段同一帧消失。
+- 旧的 `effects/battlefield/LaneRunicWall3D.{gd,tscn}`、`lane_ward.gdshader` 已删。
+- 预热：`VFXWarmup.LANE_BARRIER_SCENE` 进 first_battle 阶段（6 个 shader + 2 套 GPU 粒子，不热会落在第 1 回合开打那一刻）。
+- 透明 3D 层的坑（以后做战斗特效都适用）：战斗 3D 层是 `transparent_bg` 的 SubViewport 叠在 2D 战场图上，
+  这一层里**加色混合 + 透明度 0 完全看不见**、半透明光晕被吃掉大半（电脑 mobile 和手机 gl_compatibility 都实测过），
+  所以护栏全部用「白芯 + 实色带 + 短柔边」的普通混合。
+
+### 门禁（换口径，不放松）
+
+- `battle_lane_barrier` **33 → 39**：旧墙「3 网格 < 1000 三角面」→「绘制节点 ≤ 12、粒子总数 ≤ 48」；
+  「宽 ≤ 0.5、高 < 1.0」→「地面线半宽 / 光带左右摆幅 ≤ 0.25 m、柱高 ≤ 0.75 m」；新增地面线网格还在（用户编辑时清空过一次）、
+  队伍色写到每一层且不改写各层自己的颜色、两个颜色就是用户定的那两个、PvP / PvE 半场配色、两段同帧开墙、交接点在半场分界线。
+  加载过场按住、策反同帧开墙等原有判据照搬。
+- `battle_final_lane_wall` **12 → 13**：`_regular_ward_span_contract` 改成「`p_top→p_mid`、`p_mid→p_bot` 两段首尾相接、
+  合起来仍铺满 visual_min.y → visual_max.y」，探针加一条「两段之间留缝必须被拒」。
+- `vfx_warmup` +2：护栏在 first_battle 阶段、路径与 `BattleArena.LANE_WARD_SCENE` 一致。
+- `cold_parse_chain` 单列护栏脚本 / 场景、预热、预览场景与三个门禁（231 项）。
+
+**变异验证**：把下半段改成只铺一半、PvP 两色对调 → `battle_lane_barrier` 红 2 条（`real_endpoints` / `pvp_half_colors`）、
+`battle_final_lane_wall` 红 1 条（`regular_ward_span_broken`）；还原后全绿。
+真实战斗截图（手机渲染方式）看过：打怪回合红 / 蓝队玩家、PvP 红 / 蓝队玩家视角。**未真机验证，未重导 EXE/APK。**
+
+## 2026-10-06：PvP 正上方对正下方（协议 38）
+
+用户反馈：蓝队「平时在最左的道，PvP 突然变去最右」。根因是模拟里蓝队棋盘左右镜像 + 蓝队画面整张转 180°。
+现在普通 PvP 两边棋盘都不镜像、蓝队画面只上下翻（决赛和 PvE 不变），详见 docs/10.06PvP分路左右对齐修复记录.md。
+
+### 新增 `tools/pvp_lane_alignment_check`（16 项）
+
+`board_cell_pos` 两种模式；真的 `prepare_team_state`（固定对局第 6 回合）里蓝队 1 号全在最左路、第 0 列在左、
+佣兵不压棋子；同一个蓝队棋盘 PvE（查看另一队）与 PvP 同侧；决赛照旧镜像；`_sim_to_world_pos` 翻转只动 z 不动 x。
+
+**变异验证**：换回「镜像 + 转 180°」→ `blue_col0_side` / `scouting_mismatch` / `flip_changes_x` / `lane_order` 四条红；
+决赛也去镜像 → `final_mirror_changed`。固定对局的冻结哈希（battle_presentation_baseline 默认第 1、2 回合，PvE）不受影响。

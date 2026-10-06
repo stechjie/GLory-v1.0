@@ -134,6 +134,19 @@ const TARGETS: Array[Dictionary] = [
 	{"kind": "script", "path": "res://scenes/menu/SettingsScreen.gd"},
 	{"kind": "script", "path": "res://scripts/autoload/SaveManager.gd"},
 	{"kind": "script", "path": "res://tools/match_exit_check.gd"},
+	# ★ 10.06 第三批：分路光墙换成能量护栏（按半场分红蓝）。BattleArena.gd 已在上面；
+	#   护栏脚本 / 场景、预热、预览场景和改过的三个门禁单列。
+	{"kind": "script", "path": "res://effects/battlefield/energy_barrier/EnergyBarrierSegment.gd"},
+	{"kind": "scene", "path": "res://effects/battlefield/energy_barrier/EnergyBarrierSegment.tscn"},
+	{"kind": "script", "path": "res://effects/vfx3d/VFXWarmup.gd"},
+	{"kind": "script", "path": "res://scenes/debug/EnergyBarrierReview.gd"},
+	{"kind": "script", "path": "res://tools/battle_lane_barrier_check.gd"},
+	{"kind": "script", "path": "res://tools/battle_final_lane_wall_check.gd"},
+	{"kind": "script", "path": "res://tools/vfx_warmup_check.gd"},
+	# ★ 10.06 第四批：PvP 正上方对正下方（蓝队棋盘不镜像、蓝队画面只上下翻，协议 38）。
+	#   BattleSimShared / BattleSimulator / BattleArena 已在上面；协议号文件和新门禁单列。
+	{"kind": "script", "path": "res://scripts/multiplayer/NetworkConfig.gd"},
+	{"kind": "script", "path": "res://tools/pvp_lane_alignment_check.gd"},
 ]
 
 
