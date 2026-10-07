@@ -4415,3 +4415,11 @@ fighter 不记阵营、结果不带人王结局、分路不传老虎成长率、
 
 **PvP 对齐恢复**：`officetest_online_parity` 在恢复后先红了一次（离线自测台还按镜像摆），把规则收成
 `BattleSimShared.mirror_enemy_for` 两边共用后转绿；`pvp_lane_alignment` 16 项、`OfficeTestSmoke` fails=0。
+
+### `tools/unit_growth_check` 81 → 84 项（10-07 晚：自动合成要报给服务器账本）
+
+真机老虎还是 0 层：买进空格后的自动合成（`_combine_copies_auto`）从没调 `_shadow_report_merge`，服务器升星次数不涨，
+老虎层数被截成 0。补 (d)：`team_active` 客机模式跑真的 `_auto_combine_all`，从 `NetworkService._tx_pending` 截下发出的
+合成意图，校验 uid 与留下的那一枚，再交给真的 `EconomyLedger.apply("merge")` 看升星次数 = 1。
+变异 2 / 2：删掉上报 → `auto_merge_reported`；上报不带留下的那一枚 → `auto_merge_payload`。
+测试里没有真服务器，发意图时会打一条 `RPC ... on yourself is not allowed`（离线 peer），不在 run_check 的引擎错误模式里。
