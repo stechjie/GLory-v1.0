@@ -17,6 +17,8 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--sign', type=Path, help='Sign an existing unsigned AAB without rebuilding')
     p.add_argument('--unsigned', action='store_true', help='Build only; defer signing until the password is available')
+    p.add_argument('--check', action='store_true', help='Check local dependencies without building or signing')
+    p.add_argument('--sync', action='store_true', help='Update GitHub and Drive before building')
     p.add_argument('--version-code', type=int, help='Override Android versionCode in the isolated build only')
     p.add_argument('--alias', help='Private-key alias in the release keystore')
     p.add_argument('--keystore', type=Path, default=b.ROOT/'build/aab/.signing/glory-release.keystore')
@@ -28,6 +30,17 @@ def main():
     if not a.unsigned and not a.keystore.is_file():
         p.error('Release keystore missing; supply --keystore or use --unsigned')
     env = b.environment(argparse.Namespace(godot=None, java_home=None, android_sdk=None, templates=None))
+    if not list((b.ROOT/'build/aab/tools').glob('bundletool-all-*.jar')):
+        raise RuntimeError('Missing official bundletool-all JAR in build/aab/tools')
+    if a.check:
+        print('AAB environment and keystore path checked; no upload authentication checked.')
+        return
+    if a.sync:
+        if a.sign:
+            p.error('--sync cannot be used with --sign')
+        subprocess.run([sys.executable, str(Path(__file__).with_name('glory_update.py'))], check=True)
+    if not a.unsigned and not os.environ.get('GLORY_KEYSTORE_PASSWORD') and not sys.stdin.isatty():
+        raise RuntimeError('Set GLORY_KEYSTORE_PASSWORD from a local secret store for unattended signing')
     out = b.ROOT/'build/aab'
     out.mkdir(parents=True, exist_ok=True)
     if a.sign:
@@ -41,7 +54,9 @@ def main():
             listed = subprocess.run([str(env['java']/'bin/keytool'), '-list', '-v', '-J-Duser.language=en', '-keystore', str(a.keystore), '-storepass:env', 'GLORY_KEYSTORE_PASSWORD'], env=child, text=True, capture_output=True)
             if listed.returncode:
                 raise RuntimeError('Unable to unlock keystore; verify keystore password.')
-            entries = re.findall(r'Alias name: (.*?)\n.*?Entry type: PrivateKeyEntry', listed.stdout, re.S)
+            entries = [re.search(r'Alias name: ([^\r\n]+)', entry)[1]
+                       for entry in re.split(r'(?=Alias name: )', listed.stdout)
+                       if 'Entry type: PrivateKeyEntry' in entry and re.search(r'Alias name: ([^\r\n]+)', entry)]
             if len(entries) != 1:
                 raise RuntimeError('Specify --alias; keystore does not contain exactly one private key.')
             a.alias = entries[0].strip()
@@ -57,7 +72,8 @@ def main():
         (out/'signature-verification.txt').write_text(verified+'\n')
         subprocess.run([str(env['java']/'bin/keytool'), '-exportcert', '-rfc', '-keystore', str(a.keystore), '-storepass:env', 'GLORY_KEYSTORE_PASSWORD', '-alias', a.alias, '-file', str(out/'upload-certificate.pem')], env=child, check=True)
         subprocess.run([sys.executable, str(Path(__file__).with_name('glory_aab_verify.py')), str(target)], check=True)
-        result.update(aab=str(target), signed=True, sha256=b.digest(target), bytes=target.stat().st_size)
+        result.update(aab=str(target), signed=True, sha256=b.digest(target), bytes=target.stat().st_size,
+                      verification=str(out/'verification'/target.stem/'result.json'))
         b.json_write(out/'latest-release.json', result)
         print('SIGNED AAB:', target, flush=True)
         return

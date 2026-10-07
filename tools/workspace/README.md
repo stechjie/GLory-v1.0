@@ -35,3 +35,20 @@
 TestFlight 自动上传必须先由账号持有人配置 App Store Connect 团队 API Key。缺少配置时脚本会明确退出，不能仅凭浏览器或 Transporter 已登录判断自动发布可用。配置入口为 `./tools/release_testflight.sh --setup`，本机说明位于 `docs/TestFlight一键发布.md`；密钥必须保存在项目外。
 
 预检通过只说明工具、资源路径和签名配置可用；实际 APK/IPA 导出以及 Apple 处理结果仍以对应构建或发布日志为准。
+
+## 每日同步与双平台内测发布（2026-10-07）
+
+- `./tools/update_sources.sh`：单独更新当前 Git upstream，然后下载正式 Drive `glory/assets`。未提交修改或分叉时停下保留现场；不要 reset/stash 覆盖本地修复。人工先提交本地修复，再合并远端；有冲突时保留本地修复语义。资源回传使用已连接 Drive 对原文件 ID 更新并校验，不把下载脚本误当成双向上传。
+- `./tools/build_aab.sh --check`：检查 AAB 环境；`--sync --version-code N` 同步后正式构建。`N` 必须高于 Play 已使用的编号。无人值守签名从本机密钥管理器注入 `GLORY_KEYSTORE_PASSWORD`（私钥密码不同则另设 `GLORY_KEY_PASSWORD`）；不将密码写进脚本、Git 或任务文本。
+- `./tools/release_google_play.sh --next-code`：查询远端构建号；`--metadata /绝对路径/aab.json` 上传已验证的正式包并发布到 `internal`。只操作内部轨道，遇到已有审核则停下，不取消其他审核。结果存于 `build/play-releases`；同包重跑先核对版本和哈希，上传结果不明时停止，不能删除状态文件后盲目重传。
+- `./tools/release_testflight.sh`：原有 Apple 发布入口，保留并复用。配置外部 API Key 后，自动选择新构建号、上传、等待处理，并加入既有“GLory 内部验证”组。
+- `./tools/release_nightly.sh`：依次同步、APK、正式 AAB、Google Play internal、TestFlight。不同平台预检失败会记录失败；不把本地构建算成已发布。`--local --build-only` 可用本地已准备的内容只打包；加 `--unsigned-aab` 可暂不签 AAB。
+- 中断后的每日流程用 `--resume build/nightly/对应时间/state.json`，已完成阶段不重复。源提交变化、上一轮上传状态不明或其他发布介入时停止并核对。日志和固定包元数据留在该次目录，APK 上传 Drive 仍由 Chrome UI 完成，不分片。
+
+首次配置：在 `.glory-tools/venv` 安装 `tools/requirements-release.txt`。Google Play 需已创建同包名应用、完成首次控制台配置，并将具备该应用测试发布权限的 OAuth 或 service-account JSON 保存在仓库外，通过 `GLORY_PLAY_CREDENTIALS` 指定。Google 网站密码不是 API 凭据。Apple 团队 API Key 使用 `./tools/release_testflight.sh --setup`。
+
+Google Play 个人测试邮箱名单需在 Console 中把 `zengridong1@163.com` 加入内部测试名单并确认生效；API 的 testers 资源只支持 Google 群组，不支持个人邮箱名单。后续每日版本沿用名单，不反复创建邀请。首次获得的测试加入链接以控制台实际返回为准。TestFlight 沿用既有内部组员；平台收到包、组内可测试、邀请发出、设备安装是不同状态，分别核实。
+
+定时任务由 Codex 在 Asia/Shanghai 每天 20:00 唤醒本聊天，运行本入口并检查平台结果。机器、外置磁盘、网络和所需凭据应可用。没有变更或仍是同一非操作状态时保持安静；完成、失败或需要用户操作时通知。服务器部署属于本次发布步骤，不隐含在每日手机内测任务内。
+
+API 依据：[Google Play 凭据](https://developers.google.com/android-publisher/getting_started)、[内测名单限制](https://developers.google.com/android-publisher/api-ref/rest/v3/edits.testers)、[提交时保护已有审核](https://developers.google.com/android-publisher/api-ref/rest/v3/edits/commit)、[Apple API](https://developer.apple.com/help/app-store-connect/get-started/app-store-connect-api/)。

@@ -264,6 +264,7 @@ glory_server_key*.pem
 /_sha256*.txt
 /_代码改动清单*.txt
 # 交付说明同样属本机 delivery/ 产物（与 _sha256*.txt 同类），不进运行仓库。
+/delivery/
 /_说明.txt
 
 # Two authored rare pets ship with the game; the older pet art stays in the external art bundle.
