@@ -1,0 +1,22 @@
+Google Play AAB 构建（从 GLory 根目录运行）
+
+./tools/build_aab.sh
+
+完成资源隔离复制、导入、模型检查、Release 导出、隐藏密码输入、正式签名与 bundletool 校验。
+输出：build/aab/*-release.aab。上传这个文件。
+本机默认密钥：build/aab/.signing/glory-release.keystore。
+不保存密码。新电脑可用 --keystore 指定原有上传密钥，不能随意更换。
+
+./tools/build_aab.sh --version-code 29
+仅覆盖隔离副本的 Android versionCode；请使用 Play Console 中尚未使用的递增编号。
+
+./tools/build_aab.sh --unsigned
+仅构建未签名中间包，不能上传。
+
+./tools/build_aab.sh --sign "build/aab/对应文件-unsigned.aab"
+使用 latest-unsigned.json 校验对应输入，再签名与校验，不重复构建。
+
+依赖：项目匹配的 Godot 导出模板、JDK 17、Android SDK、Python 3、rsync。
+官方 bundletool-all-*.jar 放在 build/aab/tools（本机已安装）。
+项目工具链沿用 glory_build.py 的环境查找方式，可设置 GODOT_BIN、GODOT_TEMPLATES、JAVA_HOME、ANDROID_HOME。
+脚本使用本地代码与资源，不执行 Git/Drive 同步，也不上传、发布 Google Play。

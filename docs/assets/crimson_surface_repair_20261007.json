@@ -1,0 +1,230 @@
+[
+  {
+    "unit": "crimson",
+    "before": [
+      {
+        "vertices": 15017,
+        "triangles": 6326,
+        "open_edges": 7270,
+        "nonmanifold_edges": 28
+      }
+    ],
+    "after": [
+      {
+        "vertices": 19070,
+        "triangles": 9156,
+        "open_edges": 387,
+        "nonmanifold_edges": 362
+      }
+    ],
+    "problems": [],
+    "sha256": "e24ef4c39095286c361f8c2f1a87b5f20ace0410e9110f22465c8a0c1f8fb032"
+  },
+  {
+    "unit": "dancer",
+    "before": [
+      {
+        "vertices": 7002,
+        "triangles": 3036,
+        "open_edges": 6496,
+        "nonmanifold_edges": 2
+      },
+      {
+        "vertices": 6060,
+        "triangles": 3249,
+        "open_edges": 5591,
+        "nonmanifold_edges": 0
+      },
+      {
+        "vertices": 1499,
+        "triangles": 669,
+        "open_edges": 1457,
+        "nonmanifold_edges": 0
+      }
+    ],
+    "after": [
+      {
+        "vertices": 12588,
+        "triangles": 6111,
+        "open_edges": 697,
+        "nonmanifold_edges": 838
+      },
+      {
+        "vertices": 2717,
+        "triangles": 1848,
+        "open_edges": 12,
+        "nonmanifold_edges": 11
+      },
+      {
+        "vertices": 3729,
+        "triangles": 2138,
+        "open_edges": 75,
+        "nonmanifold_edges": 123
+      }
+    ],
+    "problems": [],
+    "sha256": "988ba177eb617b85b40897f17e68e9653fb1d00d2ebb932ed99d7d073efec52c"
+  },
+  {
+    "unit": "drumer",
+    "before": [
+      {
+        "vertices": 6751,
+        "triangles": 2989,
+        "open_edges": 131,
+        "nonmanifold_edges": 139
+      },
+      {
+        "vertices": 6473,
+        "triangles": 3046,
+        "open_edges": 56,
+        "nonmanifold_edges": 64
+      }
+    ],
+    "after": [
+      {
+        "vertices": 6708,
+        "triangles": 2989,
+        "open_edges": 131,
+        "nonmanifold_edges": 139
+      },
+      {
+        "vertices": 6460,
+        "triangles": 3046,
+        "open_edges": 56,
+        "nonmanifold_edges": 64
+      }
+    ],
+    "problems": [],
+    "sha256": "24a56a72e7baad5ac5a124ab52bfaf60aad36ef571a7290bcb4dc470d6fa99b4"
+  },
+  {
+    "unit": "hunter",
+    "before": [
+      {
+        "vertices": 10574,
+        "triangles": 5041,
+        "open_edges": 290,
+        "nonmanifold_edges": 295
+      }
+    ],
+    "after": [
+      {
+        "vertices": 10517,
+        "triangles": 5041,
+        "open_edges": 290,
+        "nonmanifold_edges": 295
+      }
+    ],
+    "problems": [],
+    "sha256": "d3e1e9afa621b820b0c8149c22fb23ac641096d1698134f4094d1cfd78e99baa"
+  },
+  {
+    "unit": "armbreaker",
+    "before": [
+      {
+        "vertices": 11827,
+        "triangles": 5560,
+        "open_edges": 237,
+        "nonmanifold_edges": 232
+      },
+      {
+        "vertices": 3508,
+        "triangles": 1554,
+        "open_edges": 3160,
+        "nonmanifold_edges": 0
+      }
+    ],
+    "after": [
+      {
+        "vertices": 11893,
+        "triangles": 5560,
+        "open_edges": 237,
+        "nonmanifold_edges": 232
+      },
+      {
+        "vertices": 6480,
+        "triangles": 3078,
+        "open_edges": 36,
+        "nonmanifold_edges": 31
+      }
+    ],
+    "problems": [],
+    "sha256": "fe831197a34ee711787ba9b69d2adc2b97572309c695da10092ce3ce98c6229f"
+  },
+  {
+    "unit": "Icey",
+    "before": [
+      {
+        "vertices": 14993,
+        "triangles": 6251,
+        "open_edges": 10313,
+        "nonmanifold_edges": 84
+      }
+    ],
+    "after": [
+      {
+        "vertices": 19028,
+        "triangles": 8573,
+        "open_edges": 615,
+        "nonmanifold_edges": 734
+      }
+    ],
+    "problems": [],
+    "sha256": "23734541cb20beca4e57d7fcbfa263cfd8c2b4020f1b75926df274df2fbb7433"
+  },
+  {
+    "unit": "skypierce",
+    "before": [
+      {
+        "vertices": 15448,
+        "triangles": 7048,
+        "open_edges": 341,
+        "nonmanifold_edges": 323
+      }
+    ],
+    "after": [
+      {
+        "vertices": 15360,
+        "triangles": 7048,
+        "open_edges": 341,
+        "nonmanifold_edges": 323
+      }
+    ],
+    "problems": [],
+    "sha256": "40b50cb11d5528fdd20dbe1bbb4c6ef8f0be9b787c9c7d71bb2912a8ecede2fb"
+  },
+  {
+    "unit": "lattern",
+    "before": [
+      {
+        "vertices": 6086,
+        "triangles": 2494,
+        "open_edges": 402,
+        "nonmanifold_edges": 370
+      },
+      {
+        "vertices": 6234,
+        "triangles": 2902,
+        "open_edges": 98,
+        "nonmanifold_edges": 172
+      }
+    ],
+    "after": [
+      {
+        "vertices": 6033,
+        "triangles": 2494,
+        "open_edges": 402,
+        "nonmanifold_edges": 370
+      },
+      {
+        "vertices": 6206,
+        "triangles": 2902,
+        "open_edges": 98,
+        "nonmanifold_edges": 172
+      }
+    ],
+    "problems": [],
+    "sha256": "d45672797961684b4576594e96e4e1288896ec66e828445c890f237d965f02c3"
+  }
+]

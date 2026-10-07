@@ -300,6 +300,8 @@ def glb_unit(project: Path, race: str, unit_id: str, spec: dict) -> str:
     for row in refine["textures"]:
         name = f"{unit_id}_m{row['index']}"
         textures = refined_textures(project, race, unit_id, name)
+        if refine.get("repacked_uv", False):
+            textures.pop("normal", None)
         (folder / f"{name}.tres").write_text(material(race, name, spec, textures, outline), encoding="utf-8", newline="\n")
         external[row["material"]] = {"use_external/enabled": True, "use_external/path": f"{res}/{name}.tres"}
     (folder / f"{unit_id}_refined.glb.import").write_text(

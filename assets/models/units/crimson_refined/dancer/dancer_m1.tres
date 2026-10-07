@@ -1,9 +1,8 @@
-[gd_resource type="ShaderMaterial" load_steps=5 format=3]
+[gd_resource type="ShaderMaterial" load_steps=4 format=3]
 
 [ext_resource type="Shader" path="res://assets/models/units/dark_refined/shared/dark_body_two_sided.gdshader" id="1"]
 [ext_resource type="Texture2D" path="res://assets/models/units/crimson_refined/dancer/dancer_m1_albedo.png" id="2"]
 [ext_resource type="Material" path="res://assets/models/units/crimson_refined/crimson_outline.tres" id="3"]
-[ext_resource type="Texture2D" path="res://assets/models/units/crimson_refined/dancer/dancer_m1_normal.png" id="4"]
 
 [resource]
 resource_name = "dancer_m1_refined_body"
@@ -34,6 +33,3 @@ shader_parameter/rim_color = Color(1.000, 0.300, 0.240, 1)
 shader_parameter/rim_strength = 0.120
 shader_parameter/rim_power = 2.500
 shader_parameter/rim_threshold = 0.560
-shader_parameter/use_normal_map = true
-shader_parameter/normal_map_texture = ExtResource("4")
-shader_parameter/normal_map_depth = 0.150
