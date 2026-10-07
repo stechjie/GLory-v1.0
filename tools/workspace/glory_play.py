@@ -187,6 +187,9 @@ def main():
     ROOT.mkdir(parents=True, exist_ok=True)
     with b.file_lock(ROOT/'.release.lock', nonblocking=True):
         if a.next_code:
+            pending = [p for p in ROOT.glob('*.json') if json.loads(p.read_text()).get('phase') != 'complete']
+            if pending:
+                raise RuntimeError('Unfinished Play release exists; resume its exact metadata before opening another edit')
             edit = api.edit()
             try:
                 codes = [0] + [int(x['versionCode']) for x in api.inventory(edit)]

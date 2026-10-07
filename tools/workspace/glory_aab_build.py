@@ -13,6 +13,19 @@ import zipfile
 import glory_build as b
 
 
+def signing_password():
+    value = os.environ.get('GLORY_KEYSTORE_PASSWORD')
+    if value:
+        return value
+    if sys.platform == 'darwin':
+        result = subprocess.run(['security', 'find-generic-password', '-a', 'GLory',
+                                 '-s', 'com.glory.android.release', '-w'],
+                                capture_output=True, text=True, timeout=15)
+        if result.returncode == 0:
+            return result.stdout.rstrip('\r\n')
+    return None
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--sign', type=Path, help='Sign an existing unsigned AAB without rebuilding')
@@ -39,7 +52,8 @@ def main():
         if a.sign:
             p.error('--sync cannot be used with --sign')
         subprocess.run([sys.executable, str(Path(__file__).with_name('glory_update.py'))], check=True)
-    if not a.unsigned and not os.environ.get('GLORY_KEYSTORE_PASSWORD') and not sys.stdin.isatty():
+    password = None if a.unsigned else signing_password()
+    if not a.unsigned and not password and not sys.stdin.isatty():
         raise RuntimeError('Set GLORY_KEYSTORE_PASSWORD from a local secret store for unattended signing')
     out = b.ROOT/'build/aab'
     out.mkdir(parents=True, exist_ok=True)
@@ -48,7 +62,7 @@ def main():
         if Path(result['aab']).resolve() != a.sign.resolve() or b.digest(a.sign) != result['sha256']:
             raise RuntimeError('Build metadata or SHA-256 does not match the supplied AAB')
         import getpass
-        password = os.environ.get('GLORY_KEYSTORE_PASSWORD') or getpass.getpass('Keystore password: ')
+        password = password or getpass.getpass('Keystore password: ')
         child = dict(os.environ, GLORY_KEYSTORE_PASSWORD=password)
         if not a.alias:
             listed = subprocess.run([str(env['java']/'bin/keytool'), '-list', '-v', '-J-Duser.language=en', '-keystore', str(a.keystore), '-storepass:env', 'GLORY_KEYSTORE_PASSWORD'], env=child, text=True, capture_output=True)

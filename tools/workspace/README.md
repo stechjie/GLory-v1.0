@@ -52,3 +52,5 @@ Google Play 个人测试邮箱名单需在 Console 中把 `zengridong1@163.com` 
 定时任务由 Codex 在 Asia/Shanghai 每天 20:00 唤醒本聊天，运行本入口并检查平台结果。机器、外置磁盘、网络和所需凭据应可用。没有变更或仍是同一非操作状态时保持安静；完成、失败或需要用户操作时通知。服务器部署属于本次发布步骤，不隐含在每日手机内测任务内。
 
 API 依据：[Google Play 凭据](https://developers.google.com/android-publisher/getting_started)、[内测名单限制](https://developers.google.com/android-publisher/api-ref/rest/v3/edits.testers)、[提交时保护已有审核](https://developers.google.com/android-publisher/api-ref/rest/v3/edits/commit)、[Apple API](https://developer.apple.com/help/app-store-connect/get-started/app-store-connect-api/)。
+
+本机 Android 签名密码已保存到 macOS Keychain 的 `com.glory.android.release` / `GLory` 条目。AAB 脚本优先读环境变量，其次读取该 Keychain 条目；只在交互终端中回退到隐藏输入。其他机器自行配置本机密钥管理器，密钥库及密码均不随 Git 同步。

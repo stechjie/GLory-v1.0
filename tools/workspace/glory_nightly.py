@@ -84,29 +84,34 @@ def main():
         write(path, state)
         run('apk', 'glory_build.py')
         play_ready = state['build_only'] or run('play_preflight', 'glory_play.py', '--check')
-        if play_ready:
-            if 'version_code' not in state:
-                code = local_code()
-                if not state['build_only']:
-                    remote = subprocess.run([py, str(TOOLS/'glory_play.py'), '--next-code'], text=True, capture_output=True)
-                    if remote.returncode:
-                        (path.parent/'play-code.log').write_text(remote.stdout+remote.stderr)
-                        state['status'] = 'failed'; write(path, state); return 1
-                    code = max(code, int(remote.stdout.strip()))
-                state['version_code'] = code; write(path, state)
-            flags = ['--version-code', str(state['version_code'])]
-            if state['unsigned_aab']:
-                flags += ['--unsigned']
-            if run('aab', 'glory_aab_build.py', *flags):
-                saved = path.parent/'aab.json'
-                if not saved.exists():
-                    source = b.ROOT/'build/aab'/('latest-unsigned.json' if state['unsigned_aab'] else 'latest-release.json')
-                    metadata = json.loads(source.read_text())
-                    if int(metadata['version_code']) != state['version_code'] or metadata['git_commit'] != state['git_commit']:
-                        raise RuntimeError('Another AAB build intervened; refuse to select the mutable latest artifact')
-                    saved.write_bytes(source.read_bytes())
-                if not state['build_only']:
-                    run('play_upload', 'glory_play.py', '--metadata', saved)
+        try:
+            if play_ready:
+                if 'version_code' not in state:
+                    code = local_code()
+                    if not state['build_only']:
+                        remote = subprocess.run([py, str(TOOLS/'glory_play.py'), '--next-code'], text=True, capture_output=True)
+                        if remote.returncode:
+                            (path.parent/'play-code.log').write_text(remote.stdout+remote.stderr)
+                            raise RuntimeError('Google Play version query failed; see play-code.log')
+                        code = max(code, int(remote.stdout.strip()))
+                    state['version_code'] = code; write(path, state)
+                flags = ['--version-code', str(state['version_code'])]
+                if state['unsigned_aab']:
+                    flags += ['--unsigned']
+                if run('aab', 'glory_aab_build.py', *flags):
+                    saved = path.parent/'aab.json'
+                    if not saved.exists():
+                        source = b.ROOT/'build/aab'/('latest-unsigned.json' if state['unsigned_aab'] else 'latest-release.json')
+                        metadata = json.loads(source.read_text())
+                        if int(metadata['version_code']) != state['version_code'] or metadata['git_commit'] != state['git_commit']:
+                            raise RuntimeError('Another AAB build intervened; refuse to select the mutable latest artifact')
+                        saved.write_bytes(source.read_bytes())
+                    if not state['build_only']:
+                        run('play_upload', 'glory_play.py', '--metadata', saved)
+        except Exception as error:
+            state['steps']['android_pipeline'] = {'ok': False, 'error_type': type(error).__name__}
+            write(path, state)
+            print('[nightly] Android pipeline failed; continuing independent iOS work', flush=True)
         if state['build_only']:
             run('ipa', 'glory_ios_build.py', '--method', 'app-store', '--result-file', path.parent/'ipa.json')
         elif run('ios_preflight', 'glory_testflight.py', '--check'):
