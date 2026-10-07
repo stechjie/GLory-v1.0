@@ -137,9 +137,9 @@ EXPECTED_TABLES: tuple[str, ...] = (
     "analytics_account_tags",
     # 026（运营数据：游戏上报的事件）
     "analytics_client_events",
-    # 027（排位奖励回执）
+    # 027（排位结算回执）
     "ranked_reward_receipts",
-    # 029（钻石抽宠物：保底进度、抽取回执）
+    # 029（钻石抽宠与账号保底）
     "pet_draw_progress",
     "pet_draws",
 )

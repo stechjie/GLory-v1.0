@@ -1,4 +1,4 @@
-"""Diamond pet draw: one transaction, pity, and idempotent retry."""
+"""Diamond pet draw: one transaction, summon energy, and idempotent retry."""
 from __future__ import annotations
 
 import asyncio
@@ -95,7 +95,7 @@ def test_miss_replay_and_tenth_draw(draw_db, monkeypatch):
     draw_id = uuid.uuid4()
 
     miss = asyncio.run(pet_draw.draw(player, draw_id))
-    assert miss.pet_id == "" and miss.coin_reward == 100 and miss.misses == 1
+    assert miss.pet_id == "" and miss.coin_reward == 100 and miss.energy == 1
     assert miss.wallet.diamond == 475 and miss.wallet.coin == 100
     assert draw_db.money_writes == [
         {"diamond_free": -50, "diamond_paid": -25}, {"coin": 100}]
@@ -106,10 +106,32 @@ def test_miss_replay_and_tenth_draw(draw_db, monkeypatch):
 
     draw_db.misses = 9
     win = asyncio.run(pet_draw.draw(player, uuid.uuid4()))
-    assert win.pet_id == "pet_squirrel" and win.misses == 0
+    assert win.pet_id == "pet_squirrel" and win.energy == 0
     assert win.coin_reward == 0 and draw_db.grants == ["pet_squirrel"]
     state = asyncio.run(pet_draw.state(player))
     assert state.available == ["pet_tiger"]
+
+
+def test_early_pet_keeps_energy_and_never_repeats_owned_pet(draw_db, monkeypatch):
+    monkeypatch.setattr(pet_draw.secrets, "randbelow", lambda _: 0)
+    monkeypatch.setattr(pet_draw.secrets, "choice", lambda available: available[0])
+    player = uuid.uuid4()
+    draw_db.misses = 3
+
+    first = asyncio.run(pet_draw.draw(player, uuid.uuid4()))
+    assert first.pet_id == "pet_squirrel" and first.energy == 4
+    assert draw_db.owned == {"pet_squirrel"}
+
+    second = asyncio.run(pet_draw.draw(player, uuid.uuid4()))
+    assert second.pet_id == "pet_tiger" and second.energy == 5
+    assert draw_db.grants == ["pet_squirrel", "pet_tiger"]
+
+    charged_count = len(draw_db.money_writes)
+    with pytest.raises(shop.ShopRejected) as complete:
+        asyncio.run(pet_draw.draw(player, uuid.uuid4()))
+    assert complete.value.code == "pool_complete"
+    assert len(draw_db.money_writes) == charged_count
+    assert draw_db.misses == 5
 
 
 def test_rejected_draw_never_charges(draw_db):

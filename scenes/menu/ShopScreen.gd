@@ -35,7 +35,7 @@ const SHOP_MUSIC_PATH := "res://assets/audio/bgm/shop_music.mp3"
 const ConfirmDialog := preload("res://ui/components/GloryConfirmDialog.gd")
 # 新按钮一律实例化组件，不写 Button.new()：procedural_ui_ratchet 按文件只许降。
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
-const MENU_BG_TEX := preload("res://assets/ui/main_menu_live/background.png")
+const MENU_BG_TEX := preload("res://assets/ui/menu_backgrounds/shop.png")
 const SHOP_HERO_TEX := preload("res://assets/ui/shop/shop_hero_bg.png")
 const ICE_FRAME_TEX := preload("res://assets/ui/shop/frame_7day_ice.png")
 const ICE_BOARD_TEX := preload("res://assets/skins/prep/prep_skin_ice/board.png")
@@ -130,7 +130,7 @@ func _build() -> void:
 	add_child(bg)
 
 	var dim := ColorRect.new()
-	dim.color = Tokens.BACKDROP
+	dim.color = Color(0.015, 0.035, 0.045, 0.12)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(dim)
@@ -163,7 +163,7 @@ func _build() -> void:
 	_catalog_shell = PanelContainer.new()
 	_catalog_shell.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_catalog_shell.add_theme_stylebox_override(
-		"panel", Tokens.panel_box(Tokens.INK_PANEL, Tokens.INK_EDGE, Tokens.GAP_S))
+		"panel", Tokens.panel_box(Color(0, 0, 0, 0), Color(0, 0, 0, 0), 0))
 	root.add_child(_catalog_shell)
 
 	var split := HBoxContainer.new()
@@ -173,7 +173,7 @@ func _build() -> void:
 
 	var divider := ColorRect.new()
 	divider.custom_minimum_size = Vector2(1, 0)
-	divider.color = Tokens.INK_EDGE.darkened(0.42)
+	divider.color = Color(0, 0, 0, 0)
 	divider.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	split.add_child(divider)
 	_summon_panel_control = _summon_panel()
@@ -184,7 +184,7 @@ func _build() -> void:
 	_special_panel = PanelContainer.new()
 	_special_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_special_panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.INK_PANEL, Tokens.GOLD_PRESSED.darkened(0.4), Tokens.GAP_M))
+		Color(0.03, 0.10, 0.13, 0.80), Color(0.72, 0.55, 0.25, 0.62), Tokens.GAP_M))
 	root.add_child(_special_panel)
 	# 10.01 反馈（第 2 条 1）：「商城界面显示不全，但无法操作下滑」。
 	# 活动页（七日登录 / 冰雪）与外观页的内容都比一屏高：标题 + 220 高的大图 +
@@ -261,7 +261,7 @@ func _hero() -> Control:
 func _category_bar() -> Control:
 	var panel := PanelContainer.new()
 	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.SURFACE, Tokens.BORDER.darkened(0.35), Tokens.GAP_S))
+		Color(0.03, 0.09, 0.11, 0.68), Color(0.45, 0.62, 0.59, 0.35), Tokens.GAP_S))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", Tokens.GAP_S)
 	panel.add_child(row)
@@ -295,7 +295,7 @@ func _catalog_panel() -> Control:
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.SURFACE, Tokens.BORDER.darkened(0.42), Tokens.GAP_S))
+		Color(0, 0, 0, 0), Color(0, 0, 0, 0), Tokens.GAP_S))
 
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", Tokens.GAP_S)
@@ -359,7 +359,7 @@ func _summon_panel() -> Control:
 	panel.custom_minimum_size.x = 344
 	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.SURFACE, Tokens.GOLD_PRESSED, Tokens.GAP_M))
+		Color(0.035, 0.105, 0.125, 0.82), Color(0.85, 0.65, 0.29, 0.78), Tokens.GAP_M))
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", Tokens.GAP_S)
 	panel.add_child(col)
@@ -946,7 +946,7 @@ func _card(item: Dictionary) -> Control:
 	panel.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	panel.add_theme_stylebox_override(
 		"panel", Tokens.panel_box(
-			Tokens.SURFACE_RAISED,
+			Color(0.035, 0.105, 0.125, 0.80),
 			Tokens.GOLD_EDGE if selected else (Tokens.GOLD_PRESSED if owned else Tokens.BORDER),
 			Tokens.GAP_S))
 	panel.gui_input.connect(func(event: InputEvent) -> void:
@@ -1049,7 +1049,7 @@ func _preview_stage(item: Dictionary, owned: bool, preview_size: Vector2) -> Con
 	well.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	well.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	well.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.BG_DEEP, Tokens.BORDER.darkened(0.45), Tokens.GAP_S))
+		Color(0.04, 0.13, 0.15, 0.34), Color(0.48, 0.62, 0.60, 0.27), Tokens.GAP_S))
 	stage.add_child(well)
 	var center := CenterContainer.new()
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE

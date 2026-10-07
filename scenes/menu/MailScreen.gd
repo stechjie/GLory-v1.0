@@ -22,7 +22,7 @@ const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
 const MENU_BG_TEX := preload("res://assets/ui/main_menu_live/background.png")
 const Currency := preload("res://scripts/account/Currency.gd")
 
-const LIST_WIDTH := 460.0
+const LIST_WIDTH := 360.0
 const ROW_HEIGHT := 64.0
 const HEADER_BUTTON_WIDTH := 180.0
 const CHIP_ICON := Vector2(30, 30)
@@ -89,7 +89,7 @@ func _build() -> void:
 	add_child(bg)
 
 	var dim := ColorRect.new()
-	dim.color = Tokens.BACKDROP
+	dim.color = Color(0.015, 0.03, 0.035, 0.08)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(dim)
@@ -122,7 +122,8 @@ func _build() -> void:
 
 	var list_panel := PanelContainer.new()
 	list_panel.custom_minimum_size = Vector2(LIST_WIDTH, 0)
-	list_panel.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SURFACE, Tokens.BORDER, Tokens.GAP_S))
+	list_panel.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Color(0.035, 0.10, 0.12, 0.56), Color(0.55, 0.66, 0.59, 0.42), Tokens.GAP_S))
 	body.add_child(list_panel)
 	var list_scroll := TouchScrollContainer.new()
 	list_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -133,10 +134,23 @@ func _build() -> void:
 	_list_box.add_theme_constant_override("separation", Tokens.GAP_S)
 	list_scroll.add_child(_list_box)
 
+	var reading_area := HBoxContainer.new()
+	reading_area.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	reading_area.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body.add_child(reading_area)
+	var left_space := Control.new()
+	left_space.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	reading_area.add_child(left_space)
 	var detail_panel := PanelContainer.new()
-	detail_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	detail_panel.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SURFACE, Tokens.BORDER, Tokens.GAP_M))
-	body.add_child(detail_panel)
+	detail_panel.custom_minimum_size.x = 820
+	detail_panel.custom_minimum_size.y = 420
+	detail_panel.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	detail_panel.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Color(0.88, 0.80, 0.64, 0.96), Color(0.64, 0.44, 0.20, 0.88), Tokens.GAP_L))
+	reading_area.add_child(detail_panel)
+	var right_space := Control.new()
+	right_space.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	reading_area.add_child(right_space)
 	var detail_scroll := TouchScrollContainer.new()
 	detail_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	detail_panel.add_child(detail_scroll)
@@ -146,14 +160,14 @@ func _build() -> void:
 	_detail_box.add_theme_constant_override("separation", Tokens.GAP_M)
 	detail_scroll.add_child(_detail_box)
 
-	_empty_label = _label("Empty", Tokens.FONT_BODY, Tokens.TEXT_SECONDARY)
+	_empty_label = _label("Empty", Tokens.FONT_BODY, Color(0.30, 0.27, 0.21))
 	_empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_title_label = _label("Title", Tokens.FONT_TITLE, Tokens.GOLD)
-	_meta_label = _label("Meta", Tokens.FONT_CAPTION, Tokens.TEXT_SECONDARY)
+	_title_label = _label("Title", Tokens.FONT_TITLE, Color(0.29, 0.23, 0.16))
+	_meta_label = _label("Meta", Tokens.FONT_CAPTION, Color(0.42, 0.36, 0.28))
 	# 正文是纯文本（Label，不是 RichTextLabel）：写信的是管理员，但这里不需要任何格式，
 	# 不开 BBCode 就不用操心谁往正文里塞了标签。
-	_body_label = _label("Body", Tokens.FONT_BODY, Tokens.TEXT_PRIMARY)
-	_attach_title = _label("AttachTitle", Tokens.FONT_BODY, Tokens.GOLD)
+	_body_label = _label("Body", Tokens.FONT_BODY, Color(0.24, 0.23, 0.20))
+	_attach_title = _label("AttachTitle", Tokens.FONT_BODY, Color(0.40, 0.28, 0.15))
 
 	_attach_box = HFlowContainer.new()
 	_attach_box.name = "Attachments"
@@ -168,7 +182,7 @@ func _build() -> void:
 	_claim_button = _button("Claim", _t("领取", "Claim"), Theming.VARIATION_PRIMARY)
 	_claim_button.pressed.connect(func() -> void: _claim(_selected_id))
 	actions.add_child(_claim_button)
-	_delete_button = _button("Delete", _t("删除", "Delete"), Theming.VARIATION_GHOST)
+	_delete_button = _button("Delete", _t("删除", "Delete"), Theming.VARIATION_DANGER)
 	_delete_button.pressed.connect(func() -> void: _delete(_selected_id))
 	actions.add_child(_delete_button)
 
@@ -370,7 +384,8 @@ func item_text(item: Dictionary) -> String:
 
 func _chip(icon: Texture2D, text: String, dim: bool) -> Control:
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SURFACE_RAISED, Tokens.BORDER, Tokens.GAP_S))
+	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Color(0.96, 0.90, 0.77), Color(0.60, 0.45, 0.25), Tokens.GAP_S))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", Tokens.GAP_S)
 	panel.add_child(row)
@@ -387,7 +402,7 @@ func _chip(icon: Texture2D, text: String, dim: bool) -> Control:
 	label.text = text
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
-	label.add_theme_color_override("font_color", Tokens.TEXT_DISABLED if dim else Tokens.TEXT_PRIMARY)
+	label.add_theme_color_override("font_color", Color(0.48, 0.42, 0.33) if dim else Color(0.26, 0.23, 0.18))
 	row.add_child(label)
 	return panel
 

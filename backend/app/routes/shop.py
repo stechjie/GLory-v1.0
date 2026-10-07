@@ -135,6 +135,7 @@ class PetDrawStateModel(BaseModel):
     chance_percent: int
     pity_limit: int
     misses: int
+    energy: int
     owned: list[str]
     available: list[str]
 
@@ -144,6 +145,7 @@ class PetDrawReceiptModel(BaseModel):
     pet_id: str
     coin_reward: int
     misses: int
+    energy: int
     diamond: int
     coin: int
     replayed: bool
@@ -285,7 +287,8 @@ async def pet_draw_state(
     me = await _me(claims)
     current = await pet_draw.state(me.player_id)
     return PetDrawStateModel(cost=pet_draw.PRICE, chance_percent=10,
-                             pity_limit=pet_draw.PITY_LIMIT, misses=current.misses,
+                             pity_limit=pet_draw.PITY_LIMIT, misses=current.energy,
+                             energy=current.energy,
                              owned=current.owned, available=current.available)
 
 
@@ -304,7 +307,8 @@ async def draw_pet(
         log.info("宠物抽取 player=%s draw=%s pet=%s coin=%d",
                  me.player_id, receipt.draw_id, receipt.pet_id, receipt.coin_reward)
     return PetDrawReceiptModel(draw_id=receipt.draw_id, pet_id=receipt.pet_id,
-                               coin_reward=receipt.coin_reward, misses=receipt.misses,
+                               coin_reward=receipt.coin_reward, misses=receipt.energy,
+                               energy=receipt.energy,
                                diamond=receipt.wallet.diamond, coin=receipt.wallet.coin,
                                replayed=receipt.replayed)
 

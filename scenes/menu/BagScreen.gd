@@ -26,14 +26,14 @@ signal profile_requested   # 头像那块点一下 -> 资料页（换装在那�
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
-const MENU_BG_TEX := preload("res://assets/ui/main_menu_live/background.png")
+const MENU_BG_TEX := preload("res://assets/ui/menu_backgrounds/bag.png")
 const PetPreview := preload("res://scripts/pets/PetPreview.gd")
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
 const PetService := preload("res://scripts/pets/PetService.gd")
 
-const PET_CARD := Vector2(214, 244)
-const PET_PREVIEW := Vector2(176, 126)
-const PET_DETAIL_PREVIEW := Vector2(292, 226)
+const PET_CARD := Vector2(116, 108)
+const PET_PREVIEW := Vector2(88, 62)
+const PET_DETAIL_PREVIEW := Vector2(480, 376)
 const AVATAR_TILE := Vector2(126, 126)
 const DETAIL_WIDTH := 344.0
 const PET_COLUMNS := 3
@@ -62,6 +62,16 @@ var _notice_label: Label
 var _pet_count_label: Label
 var _avatar_count_label: Label
 var _tab_buttons: Dictionary = {}
+var _pet_page: Control
+var _avatar_page: Control
+var _pet_roster: Control
+var _pet_stage: CenterContainer
+var _pet_grid: GridContainer
+var _pet_detail: VBoxContainer
+var _pet_empty: Label
+var _avatar_grid: GridContainer
+var _avatar_detail: VBoxContainer
+var _avatar_empty: Label
 
 
 func _ready() -> void:
@@ -87,7 +97,7 @@ func _build() -> void:
 	add_child(bg)
 
 	var dim := ColorRect.new()
-	dim.color = Tokens.BACKDROP
+	dim.color = Color(0.015, 0.035, 0.045, 0.10)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(dim)
@@ -113,30 +123,75 @@ func _build() -> void:
 	root.add_child(_notice_label)
 
 	root.add_child(_tab_bar())
+	_pet_page = _build_pet_page()
+	root.add_child(_pet_page)
+	_avatar_page = HBoxContainer.new()
+	_avatar_page.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_avatar_page.add_theme_constant_override("separation", Tokens.GAP_M)
+	root.add_child(_avatar_page)
+	_avatar_page.add_child(_collection_panel())
+	_avatar_grid = _grid
+	_avatar_empty = _empty_label
+	_avatar_page.add_child(_detail_panel())
+	_avatar_detail = _detail
+	_avatar_page.hide()
 
-	var shell := PanelContainer.new()
-	shell.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	shell.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.INK_PANEL, Tokens.INK_EDGE, Tokens.GAP_S))
-	root.add_child(shell)
 
-	var split := HBoxContainer.new()
-	split.add_theme_constant_override("separation", Tokens.GAP_S)
-	shell.add_child(split)
-	split.add_child(_collection_panel())
-
-	var divider := ColorRect.new()
-	divider.custom_minimum_size = Vector2(1, 0)
-	divider.color = Tokens.INK_EDGE.darkened(0.42)
-	divider.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	split.add_child(divider)
-	split.add_child(_detail_panel())
+func _build_pet_page() -> Control:
+	var page := VBoxContainer.new()
+	page.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	page.add_theme_constant_override("separation", Tokens.GAP_S)
+	var content := HBoxContainer.new()
+	content.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	content.add_theme_constant_override("separation", Tokens.GAP_L)
+	page.add_child(content)
+	var exhibit := VBoxContainer.new()
+	exhibit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	exhibit.add_theme_constant_override("separation", Tokens.GAP_S)
+	content.add_child(exhibit)
+	var caption := Label.new()
+	caption.text = _t("我的伙伴", "MY COMPANIONS")
+	caption.add_theme_font_size_override("font_size", Tokens.FONT_BUTTON)
+	caption.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
+	exhibit.add_child(caption)
+	_pet_stage = CenterContainer.new()
+	_pet_stage.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_pet_stage.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_pet_stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	exhibit.add_child(_pet_stage)
+	_pet_empty = Label.new()
+	_pet_empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_pet_empty.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	exhibit.add_child(_pet_empty)
+	var information := PanelContainer.new()
+	information.custom_minimum_size.x = DETAIL_WIDTH
+	information.custom_minimum_size.y = 240
+	information.size_flags_vertical = Control.SIZE_SHRINK_END
+	information.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Color(0.035, 0.115, 0.14, 0.78), Color(0.74, 0.56, 0.24, 0.76), Tokens.GAP_L))
+	content.add_child(information)
+	_pet_detail = VBoxContainer.new()
+	_pet_detail.add_theme_constant_override("separation", Tokens.GAP_M)
+	information.add_child(_pet_detail)
+	_pet_roster = TouchScrollContainer.new()
+	_pet_roster.custom_minimum_size.y = 120
+	_pet_roster.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_pet_roster.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	page.add_child(_pet_roster)
+	_pet_grid = GridContainer.new()
+	_pet_grid.columns = 1
+	_pet_grid.add_theme_constant_override("h_separation", Tokens.GAP_S)
+	_pet_roster.add_child(_pet_grid)
+	_grid = _pet_grid
+	_detail = _pet_detail
+	_empty_label = _pet_empty
+	return page
 
 
 func _tab_bar() -> Control:
 	var panel := PanelContainer.new()
 	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.SURFACE, Tokens.BORDER.darkened(0.35), Tokens.GAP_S))
+		Color(0.025, 0.085, 0.11, 0.64), Color(0.45, 0.58, 0.56, 0.34), Tokens.GAP_S))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", Tokens.GAP_S)
 	panel.add_child(row)
@@ -147,8 +202,7 @@ func _tab_bar() -> Control:
 		var tab_id := str(entry.id)
 		var button: Button = ACTION_BUTTON.instantiate()
 		button.text = _t(str(entry.zh), str(entry.en))
-		button.custom_minimum_size = Vector2(220, Tokens.TOUCH_MIN)
-		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.custom_minimum_size = Vector2(180, Tokens.TOUCH_MIN)
 		button.pressed.connect(func() -> void: _select_tab(tab_id))
 		row.add_child(button)
 		_tab_buttons[tab_id] = button
@@ -160,7 +214,7 @@ func _collection_panel() -> Control:
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.SURFACE, Tokens.BORDER.darkened(0.42), Tokens.GAP_S))
+		Color(0.035, 0.105, 0.13, 0.46), Color(0.52, 0.65, 0.62, 0.34), Tokens.GAP_S))
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", Tokens.GAP_S)
 	panel.add_child(col)
@@ -204,7 +258,7 @@ func _detail_panel() -> Control:
 	panel.custom_minimum_size = Vector2(DETAIL_WIDTH, 0)
 	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.SURFACE, Tokens.GOLD_PRESSED.darkened(0.18), Tokens.GAP_M))
+		Color(0.035, 0.105, 0.13, 0.78), Color(0.74, 0.56, 0.24, 0.76), Tokens.GAP_M))
 	_detail = VBoxContainer.new()
 	_detail.name = "CollectionDetail"
 	_detail.add_theme_constant_override("separation", Tokens.GAP_S)
@@ -285,6 +339,14 @@ func _reload() -> void:
 func _render() -> void:
 	if _grid == null:
 		return
+	var pets := _active_tab == TAB_PETS
+	_pet_page.visible = pets
+	_avatar_page.visible = not pets
+	_grid = _pet_grid if pets else _avatar_grid
+	_detail = _pet_detail if pets else _avatar_detail
+	_empty_label = _pet_empty if pets else _avatar_empty
+	_pet_roster.visible = pets and _owned_pets.size() > 1
+	_clear_children(_pet_stage)
 	_notice_label.visible = not _notice.is_empty()
 	_notice_label.text = _notice
 	_notice_label.add_theme_color_override(
@@ -308,7 +370,7 @@ func _render() -> void:
 		return
 
 	if _active_tab == TAB_PETS:
-		_grid.columns = PET_COLUMNS
+		_grid.columns = maxi(1, _owned_pets.size())
 		if _owned_pets.is_empty():
 			_empty_label.text = _t("还没有宠物。去商店看看吧。", "No pets yet. Visit the Shop to find one.")
 			_empty_label.visible = true
@@ -317,8 +379,9 @@ func _render() -> void:
 		_empty_label.visible = false
 		if _selected_pet.is_empty() or not _owned_pets.has(_selected_pet):
 			_selected_pet = _active_pet if _owned_pets.has(_active_pet) else str(_owned_pets[0])
-		for pet_id in _owned_pets:
-			_grid.add_child(_pet_card(str(pet_id)))
+		if _owned_pets.size() > 1:
+			for pet_id in _owned_pets:
+				_grid.add_child(_pet_card(str(pet_id)))
 		_render_pet_detail(_selected_pet)
 		return
 
@@ -339,54 +402,30 @@ func _render() -> void:
 func _pet_card(pet_id: String) -> Control:
 	var active := pet_id == _active_pet
 	var selected := pet_id == _selected_pet
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size = PET_CARD
-	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	panel.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.SURFACE_RAISED,
-		Tokens.GOLD_EDGE if active else (Tokens.CYAN if selected else Tokens.BORDER),
-		Tokens.GAP_S))
-	panel.gui_input.connect(func(event: InputEvent) -> void:
+	var tile := PanelContainer.new()
+	tile.custom_minimum_size = PET_CARD
+	tile.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	tile.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Color(0.04, 0.13, 0.16, 0.84),
+		Tokens.GOLD_EDGE if selected else Color(0.5, 0.66, 0.63, 0.55), Tokens.GAP_S))
+	tile.gui_input.connect(func(event: InputEvent) -> void:
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 			_select_pet(pet_id)
 		elif event is InputEventScreenTouch and event.pressed:
 			_select_pet(pet_id))
-
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", Tokens.GAP_S)
-	panel.add_child(box)
+	box.add_theme_constant_override("separation", 0)
+	tile.add_child(box)
 	box.add_child(_pet_preview_stage(pet_id, PET_PREVIEW, active))
-
 	var name_label := Label.new()
 	name_label.text = PetService.display_name(pet_id)
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_label.clip_text = true
-	name_label.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
+	name_label.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
 	name_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
 	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(name_label)
-
-	var effect := Label.new()
-	effect.text = PetService.effect_text(pet_id)
-	effect.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	effect.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	effect.max_lines_visible = 2
-	effect.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	effect.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
-	effect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	box.add_child(effect)
-
-	var button: Button = ACTION_BUTTON.instantiate()
-	button.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
-	if active:
-		button.text = _t("出战中 ✓", "Equipped ✓")
-		button.disabled = true
-	else:
-		button.text = _t("设为出战", "Set active")
-		button.pressed.connect(func() -> void: _set_active(pet_id))
-	box.add_child(button)
-	return panel
+	return tile
 
 
 # 玩家能用的头像：目录里没卖的（免费）+ 买到的付费的。见文件头那段。
@@ -458,28 +497,28 @@ func _pet_preview_stage(pet_id: String, preview_size: Vector2, active: bool) -> 
 
 func _render_pet_detail(pet_id: String) -> void:
 	var active := pet_id == _active_pet
+	var artwork := PetPreview.build_illustration(pet_id, PET_DETAIL_PREVIEW, false)
+	_ignore_mouse_tree(artwork)
+	_pet_stage.add_child(artwork)
 	var eyebrow := Label.new()
-	eyebrow.text = _t("宠物详情", "PET DETAILS")
+	eyebrow.text = _t("伙伴档案", "COMPANION PROFILE")
 	eyebrow.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
 	eyebrow.add_theme_color_override("font_color", Tokens.GOLD)
 	_detail.add_child(eyebrow)
-	_detail.add_child(_pet_preview_stage(pet_id, PET_DETAIL_PREVIEW, active))
 	var name_label := Label.new()
 	name_label.text = PetService.display_name(pet_id)
-	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_label.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
 	_detail.add_child(name_label)
+	var rule := HSeparator.new()
+	_detail.add_child(rule)
 	var effect := Label.new()
 	effect.text = PetService.effect_text(pet_id)
-	effect.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	effect.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	effect.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
-	effect.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	effect.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
 	_detail.add_child(effect)
-	_detail.add_child(_flex_spacer())
 	var status := Label.new()
 	status.text = _t("✓ 当前出战宠物", "✓ Currently equipped") if active else _t("可设为出战", "Ready to equip")
-	status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	status.add_theme_color_override("font_color", Tokens.GOLD_HOVER if active else Tokens.TEXT_SECONDARY)
 	_detail.add_child(status)
 	var action: Button = ACTION_BUTTON.instantiate()

@@ -38,7 +38,7 @@ const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const Catalog := preload("res://scripts/account/AvatarCatalog.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
-const MENU_BG_TEX := preload("res://assets/ui/main_menu_live/background.png")
+const MENU_BG_TEX := preload("res://assets/ui/menu_backgrounds/chat.png")
 
 const LIST_WIDTH := 332.0
 const ROW_HEIGHT := 72.0
@@ -133,7 +133,7 @@ func _build() -> void:
 	add_child(bg)
 
 	var dim := ColorRect.new()
-	dim.color = Tokens.BACKDROP
+	dim.color = Color(0.01, 0.025, 0.035, 0.12)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(dim)
@@ -168,7 +168,7 @@ func _build() -> void:
 	var shell := PanelContainer.new()
 	shell.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	shell.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.INK_PANEL, Tokens.INK_EDGE, Tokens.GAP_S))
+		Color(0, 0, 0, 0), Color(0, 0, 0, 0), 0))
 	shell.visible = false
 	root.add_child(shell)
 	_dm_shell = shell
@@ -180,7 +180,7 @@ func _build() -> void:
 
 	var divider := ColorRect.new()
 	divider.custom_minimum_size = Vector2(1, 0)
-	divider.color = Tokens.INK_EDGE.darkened(0.42)
+	divider.color = Color(0, 0, 0, 0)
 	divider.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	body.add_child(divider)
 	body.add_child(_conversation_panel())
@@ -230,7 +230,7 @@ func _list_panel() -> Control:
 	panel.custom_minimum_size = Vector2(LIST_WIDTH, 0)
 	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.SURFACE, Tokens.BORDER.darkened(0.42), Tokens.GAP_S))
+		Color(0.035, 0.10, 0.13, 0.56), Color(0.47, 0.64, 0.64, 0.38), Tokens.GAP_S))
 
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", Tokens.GAP_S)
@@ -282,7 +282,7 @@ func _conversation_panel() -> Control:
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.SURFACE, Tokens.BORDER.darkened(0.42), Tokens.GAP_S))
+		Color(0.035, 0.10, 0.13, 0.38), Color(0.47, 0.64, 0.64, 0.38), Tokens.GAP_S))
 
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", Tokens.GAP_S)
@@ -293,7 +293,7 @@ func _conversation_panel() -> Control:
 	var head_panel := PanelContainer.new()
 	head_panel.custom_minimum_size = Vector2(0, 64)
 	head_panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.SURFACE_RAISED, Tokens.BORDER.darkened(0.25), Tokens.GAP_S))
+		Color(0.055, 0.15, 0.18, 0.78), Color(0.52, 0.69, 0.67, 0.42), Tokens.GAP_S))
 	col.add_child(head_panel)
 
 	var head := HBoxContainer.new()
@@ -335,7 +335,7 @@ func _conversation_panel() -> Control:
 	var message_well := PanelContainer.new()
 	message_well.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	message_well.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.BG_DEEP, Tokens.BORDER.darkened(0.55), Tokens.GAP_S))
+		Color(0.025, 0.08, 0.10, 0.28), Color(0.48, 0.63, 0.61, 0.25), Tokens.GAP_S))
 	col.add_child(message_well)
 
 	_msg_scroll = TouchScrollContainer.new()
@@ -350,7 +350,7 @@ func _conversation_panel() -> Control:
 
 	var composer := PanelContainer.new()
 	composer.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.SURFACE_RAISED, Tokens.BORDER.darkened(0.25), Tokens.GAP_S))
+		Color(0.045, 0.13, 0.16, 0.84), Color(0.54, 0.69, 0.66, 0.40), Tokens.GAP_S))
 	col.add_child(composer)
 
 	var input_row := HBoxContainer.new()

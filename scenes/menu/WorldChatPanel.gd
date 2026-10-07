@@ -40,7 +40,10 @@ var _sending := false
 func _ready() -> void:
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
-	add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SURFACE, Tokens.BORDER.darkened(0.42), Tokens.GAP_S))
+	var frame := Tokens.panel_box(Color(0.025, 0.09, 0.12, 0.08), Color(0, 0, 0, 0), Tokens.GAP_S)
+	frame.content_margin_left = 64
+	frame.content_margin_right = 64
+	add_theme_stylebox_override("panel", frame)
 	_build()
 	ChatService.world_changed.connect(_on_world_changed)
 	ChatService.world_message_added.connect(_on_world_message_added)
@@ -102,7 +105,8 @@ func _build() -> void:
 
 	var well := PanelContainer.new()
 	well.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	well.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.BG_DEEP, Tokens.BORDER.darkened(0.55), Tokens.GAP_S))
+	well.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Color(0.02, 0.07, 0.095, 0.20), Color(0.48, 0.62, 0.61, 0.27), Tokens.GAP_M))
 	col.add_child(well)
 
 	_scroll = TouchScrollContainer.new()
@@ -117,7 +121,7 @@ func _build() -> void:
 
 	var composer := PanelContainer.new()
 	composer.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.SURFACE_RAISED, Tokens.BORDER.darkened(0.25), Tokens.GAP_S))
+		Color(0.04, 0.12, 0.15, 0.86), Color(0.54, 0.69, 0.66, 0.42), Tokens.GAP_S))
 	col.add_child(composer)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", Tokens.GAP_S)
@@ -432,8 +436,10 @@ func _caption(text: String, color: Color) -> Label:
 
 func _hint(message: String) -> Control:
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SURFACE, Tokens.BORDER.darkened(0.55), Tokens.GAP_M))
-	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Color(0.035, 0.105, 0.13, 0.72), Color(0.60, 0.70, 0.63, 0.38), Tokens.GAP_M))
+	panel.custom_minimum_size.x = 460
+	panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	var label := Label.new()
 	label.text = message
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

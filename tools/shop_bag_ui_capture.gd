@@ -8,6 +8,7 @@ const SHOP := preload("res://scenes/menu/ShopScreen.gd")
 const DIAMOND_STORE := preload("res://scenes/menu/DiamondStoreDialog.gd")
 const PET_DRAW := preload("res://scenes/menu/PetDrawDialog.gd")
 const BAG := preload("res://scenes/menu/BagScreen.gd")
+const MAIL := preload("res://scenes/menu/MailScreen.tscn")
 const WINDOW := Vector2i(1280, 720)
 const OUT_DIR := "res://reports/shop_bag_ui"
 const SETTLE_FRAMES := 24
@@ -32,7 +33,9 @@ func _ready() -> void:
 	await _capture_shop_event()
 	await _capture_shop_appearance()
 	await _capture_bag_pets()
+	await _capture_bag_single_pet()
 	await _capture_bag_avatars()
+	await _capture_mail()
 	print("SHOP_BAG_UI_CAPTURE dir=%s" % OUT_DIR)
 	get_tree().quit(0)
 
@@ -145,6 +148,29 @@ func _capture_bag_avatars() -> void:
 	_show(bag)
 	await _settle_and_shot("bag_avatars_1280")
 	_clear_screen()
+
+
+func _capture_bag_single_pet() -> void:
+	var bag := _fixture_bag()
+	bag.set("_owned_pets", ["pet_cat"])
+	bag.set("_active_tab", "pets")
+	bag.set("_selected_pet", "pet_cat")
+	_show(bag)
+	await _settle_and_shot("bag_single_pet_1280")
+	_clear_screen()
+
+
+func _capture_mail() -> void:
+	MailService.apply_list([{
+		"id": 1, "title_zh": "分发宝石金币", "body_zh": "分发宝石金币",
+		"title_en": "Rewards", "body_en": "Your rewards are enclosed.",
+		"diamond": 10000, "coin": 10000, "items": [], "age_sec": 64800,
+		"expires_in_sec": 2505600, "read": true, "claimed": true,
+	}])
+	_show(MAIL.instantiate())
+	await _settle_and_shot("mail_single_1280")
+	_clear_screen()
+	MailService.reset()
 
 
 func _fixture_bag() -> Control:

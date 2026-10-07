@@ -93,6 +93,17 @@ const MIST_GHOST_HOVER := Color(1.0, 1.0, 1.0, 0.08)
 # Color(0,0,0,0) 好认，也符合「取色只在 GloryTokens」的约定。
 const MIST_NONE := Color(0.0, 0.0, 0.0, 0.0)
 
+# 森林召唤的浅米色玻璃框：保留场景透视，同时让文字和头像更清晰。
+const SUMMON_GLASS := Color(1.0, 0.96, 0.84, 0.20)
+const SUMMON_GLASS_HOVER := Color(1.0, 0.96, 0.84, 0.29)
+const SUMMON_INFO_GLASS := Color(1.0, 0.96, 0.84, 0.44)
+const SUMMON_TEXT := Color(1.0, 0.96, 0.84)
+const SUMMON_TEXT_EDGE := Color(0.26, 0.15, 0.08, 0.94)
+const SUMMON_DETAIL_INK := Color(0.17, 0.10, 0.055)
+const SUMMON_ENERGY_SHADOW := Color(0.035, 0.20, 0.12)
+const SUMMON_ENERGY_GREEN := Color(0.14, 0.73, 0.38)
+const SUMMON_ENERGY_LIGHT := Color(0.58, 0.98, 0.54)
+
 # --- 遮罩 ---------------------------------------------------------------------
 # V3 P1-02 要求 80–88%：太浅看不出模态，太深会把背景战场吃掉。
 const BACKDROP := Color(0.008, 0.016, 0.031, 0.84)
