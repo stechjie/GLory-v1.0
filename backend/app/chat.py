@@ -43,6 +43,17 @@ ROOM_INVITE_KIND = "room_invite"
 # 但**这里才是权威**：本地那份改个内存就绕过去了。
 ROOM_INVITE_RATE_SEC = 10
 
+# 组队邀请（10.07 bug 文档第 10 条，2026-10-07）。
+#
+# 排位/休闲房间的「邀请好友入队」。与 room_invite 同样做成**一条带 kind 的私聊**，
+# 理由见 scripts/multiplayer/RoomInvite.gd 文件头：「有消息 + 有音效 + 有红点 + 可已读」
+# 这四件事全部白拿，不必再造一条要单独维护红点的推送通路。
+#
+# ⚠️ 与客户端 ui/components/PartyInviteBubble.gd 的 KIND_TEAM 一致，
+# 也与 RoomInvite.PARTY_KIND 一致（tools/party_invite_bubble_check.gd 钉着）。
+# 对不上的症状：邀请气泡照弹，但聊天列表里没有那条记录、红点也不灭。
+PARTY_INVITE_KIND = "party_invite"
+
 
 class ChatRejected(RuntimeError):
     """业务规则拒绝。code 是稳定标识，message 给玩家看。"""
@@ -298,6 +309,34 @@ async def _check_invite_rules(
                 raise ChatRejected("invite_rate_limited", "邀请发得太快了，请稍后再试")
 
 
+async def _check_party_invite_rules(conn, low: uuid.UUID, high: uuid.UUID,
+                                    party_id: str) -> None:
+    """组队邀请的业务规则（10.07 第 10 条）。
+
+    比 room_invite 简单：没有「换房 10 秒间隔」那条 —— 组队邀请的限流在
+    routes/party.py 的 _invite_limiter（按邀请人滑窗）上已经有一道，
+    这里只判**同一个队伍对同一个人不重复发**（要求：被邀请方只收到一次）。
+
+    键是 (队伍, 收件人)，不含邀请人 —— 队伍里任何人点「邀请好友」都算同一支队伍，
+    换个队员再邀同一个人不该再落一条。
+    """
+    dup = await conn.fetchval(
+        """
+        select 1 from chat_messages
+        where kind = $1
+          and payload ->> 'party_id' = $2
+          and ((low_id = $3 and high_id = $4) or (low_id = $4 and high_id = $3))
+        limit 1
+        """,
+        PARTY_INVITE_KIND,
+        party_id,
+        low,
+        high,
+    )
+    if dup:
+        raise ChatRejected("party_invite_duplicate", "已经邀请过对方了")
+
+
 def _room_id_of_payload(raw: str | None) -> int:
     """从 chat_messages.payload->>'room_id' 的文本还原房间号；拿不到返回 0。
 
@@ -332,8 +371,13 @@ async def send(
 
     kind='room_invite' 时 payload 必须是 {"room_id": int}（校验在 routes/chat.py 做，
     这里只负责按它去重）。
+
+    kind='party_invite'（10.07 第 10 条）时 payload 是 {"party_id": str, "mode": str}，
+    去重口径：**同一队伍 + 同一收件人**只落一条，重复邀请不再写库、也不再推送
+    —— 与 room_invite 的 (房间, 收件人) 一致，理由同样是不想刷屏。
     """
     invite_room_id = int((payload or {}).get("room_id", 0)) if kind == ROOM_INVITE_KIND else 0
+    party_invite_id = str((payload or {}).get("party_id", "")) if kind == PARTY_INVITE_KIND else ""
     async with db.pool().acquire() as conn:
         async with conn.transaction():
             target = await _resolve(conn, target_code)
@@ -352,6 +396,8 @@ async def send(
 
             if kind == ROOM_INVITE_KIND:
                 await _check_invite_rules(conn, sender_id, low, high, invite_room_id)
+            elif kind == PARTY_INVITE_KIND and party_invite_id:
+                await _check_party_invite_rules(conn, low, high, party_invite_id)
 
             await conn.execute(
                 """

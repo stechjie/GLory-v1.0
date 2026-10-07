@@ -65,7 +65,11 @@ func _ready():
  h.expect(result.allies==["红队守护者","蓝队守护者"],"guardians","canonical player/enemy sides map to A/B")
  h.expect(result.seats[0].round_damage==200 and result.seats[3].round_damage==456,"round_damage","unit plus mercenary damage summed once")
  h.expect(result.show_details,"pvp_details","PvP has details")
- h.expect(not Settlement.build(room,[{"kind":"pve"}],0,true).show_details,"pve_no_details","PvE has return actions only")
+ # 10.07 bug 文档第 8 条：任何回合结束都有结算面板（PVE 也要算我方上阵佣兵的数据）
+ # ⇒ PVE 同样有详细战况。旧断言（`not ...show_details`）是这条修复要推翻的口径。
+ # 反向判据也要留着：判据必须真的区分 —— 一条无 kind 的 model 仍按 show_details 走。
+ h.expect(Settlement.build(room,[{"kind":"pve"}],0,true).show_details,"pve_details","PvE round also has details now")
+ h.expect(not Settlement.can_show_details({},{}),"no_kind_no_details","empty model with no kind still gated by show_details")
  var panel=SettlementPanel.new()
  panel.data={"allies":["",""]}
  h.expect(panel._team_title(0)=="红队" and panel._team_title(1)=="蓝队","empty_guardian","no empty parentheses")

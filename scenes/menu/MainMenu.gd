@@ -69,6 +69,7 @@ const ROOM_ICON_SIZE := 44
 const TEX_BACKGROUND := preload("res://assets/ui/main_menu_live/background.png")
 const TEX_PROFILE_PANEL := preload("res://assets/ui/main_menu_live/profile_panel.png")
 const TEX_PROFILE_AVATAR := preload("res://assets/ui/main_menu_live/profile_avatar.png")
+const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
 # ── 资料卡那组头像的几何（10.02 三轮）────────────────────────────────────
 # 头像 123、圆盘盒 180x175。**自定义框按内孔反推尺寸**（`_profile_hole_target()` +
 # `AvatarCatalog.frame_drawn_size`）：内孔直径对齐到「默认圆盘的内孔」≈112.9
@@ -134,6 +135,10 @@ var _coin_label: Label
 var _diamond_label: Label
 # 「聊天」图标右上角的未读红点。显隐只跟 ChatService 走（状态只有一份）。
 var _chat_dot: Label
+# ★ 10.07h 第 6 / 10 条：左侧「聊天」按钮的图标节点。房间/组队邀请气泡要
+#   从它**右边引出**（用户要求「位置要设计在『聊天』UI 旁边，以信息气泡框的形式
+#   引出」），所以得留个引用好算锚点 —— 见 `chat_invite_anchor()`。
+var _chat_icon: TextureRect
 # 「朋友」图标右上角的申请红点。显隐只跟 AccountManager 的未读申请集合走。
 var _friends_dot: Label
 # 「公告 / 活动」右上角的红点。显隐只跟 AnnouncementService 走。
@@ -327,7 +332,10 @@ func _build() -> void:
 	# 先亮再灭会在每次回主菜单时闪一下。
 	_friends_dot.visible = false
 	_add_hit(Vector2(28, 300), Vector2(132, 132), _emit_friends, "left")
-	_add_texture(TEX_CHAT, Vector2(28, 440), Vector2(132, 132), "left")
+	# ★★ 10.07h 第 6 / 10 条返工（用户真机反馈「房间邀请提示位置要设计在『聊天』UI
+	#    旁边，以信息气泡框的形式引出」）：把图标节点留个引用，好让邀请气泡算锚点。
+	#    见 `chat_invite_anchor()`。
+	_chat_icon = _add_texture(TEX_CHAT, Vector2(28, 440), Vector2(132, 132), "left")
 	_add_label(_menu_text("聊天", "Chat"), Vector2(47, 520), Vector2(94, 30), 21, "left")
 	# 未读红点压在图标右上角。hit 仍然放在最后（见上面「顺序 = 绘制层级」那条）。
 	_chat_dot = _add_label("●", Vector2(120, 444), Vector2(32, 32), 26, "left")
@@ -516,7 +524,7 @@ func _build_room_panel() -> Control:
 	list_title.add_theme_color_override("font_color", Tokens.MIST_TEXT)
 	right.add_child(list_title)
 
-	_room_scroll = ScrollContainer.new()
+	_room_scroll = TouchScrollContainer.new()
 	_room_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_room_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	right.add_child(_room_scroll)
@@ -887,6 +895,25 @@ func _emit_friends() -> void:
 # 「聊天」按钮：此前是「敬请期待」，批次 C 起进私聊界面（世界频道以后也在那个界面里）。
 func _emit_chat() -> void:
 	chat_requested.emit()
+
+
+# ★★ 10.07h 第 6 / 10 条返工：邀请气泡的锚点 —— 左侧「聊天」按钮**右侧中点**的
+# 全局屏幕坐标。气泡拿它把自己摆到按钮右边，尖角朝左指向按钮。
+#
+# 为什么用 `get_global_rect()` 现算而不是给常量：按钮走 `_track` + `_layout()`，
+# 位置 = 安全区左边 + 参考坐标 × `_layout_scale`，**随窗口尺寸/刘海安全区变**
+# （`_apply_item` 里 edge="left" 那一支）。写死一个屏幕坐标，在 16:9 桌面端对、
+# 在带灵动岛的宽屏手机上就跑偏了 —— 而用户报的正是**安卓真机**。
+#
+# 返回 `Vector2.INF` 表示「按钮现在不可能有锚点」（不在树里 / 还没布局完），
+# 由调用方决定回落到哪 —— 这里不替它猜。
+func chat_invite_anchor() -> Vector2:
+	if _chat_icon == null or not is_instance_valid(_chat_icon) or not _chat_icon.is_inside_tree():
+		return Vector2.INF
+	var rect := _chat_icon.get_global_rect()
+	if rect.size.x <= 0.0 or rect.size.y <= 0.0:
+		return Vector2.INF
+	return Vector2(rect.end.x, rect.position.y + rect.size.y * 0.5)
 
 
 func _on_chat_unread_changed(any_unread: bool) -> void:

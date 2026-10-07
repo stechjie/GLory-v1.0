@@ -6,6 +6,7 @@ const Theming := preload("res://ui/theme/GloryTheme.gd")
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const ActionButtonScene := preload("res://ui/components/GloryActionButton.tscn")
 const SfxService := preload("res://ui/services/SfxService.gd")
+const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
 
 signal back_requested
 signal replay_tutorial_requested
@@ -61,7 +62,7 @@ func _build() -> void:
 	#
 	# 靠压缩行高/间距只能把下一次溢出往后推一行；真正的修法是让它能滚。
 	# 横向禁用滚动：这一页从来不需要横向滚，开着只会让手指划错方向。
-	var scroll := ScrollContainer.new()
+	var scroll := TouchScrollContainer.new()
 	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	add_child(scroll)

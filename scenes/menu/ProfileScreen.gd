@@ -67,6 +67,7 @@ var _settings_tab: Button
 const PICKER_PRIORITY := 40
 
 const GENDER_VALUES := ["male", "female", "other"]
+const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
 # 按预期玩家分布排。加一个地区是往这里加一行 —— 不打算维护完整的 ISO 249 项，
 # 那个列表在手机上滚起来也没法用。
 const REGIONS := [
@@ -102,6 +103,11 @@ var _public_rows: VBoxContainer
 var _status: Label
 var _avatar_rect: TextureRect
 var _frame_rect: TextureRect
+var _avatar_stage: Control
+# 头像 stage 的边长、以及头像实际画出来的直径（= 默认圆盘内孔尺寸）。
+# 头像框的尺寸与落点都从这两个数推出来（同大厅口径）。
+var _stage_extent := 0.0
+var _disc_diameter := 0.0
 var _name_label: Label
 var _days_label: Label
 var _pet_label: Label
@@ -177,7 +183,7 @@ func _build() -> void:
 	#
 	# ScrollContainer 仍然留着，但它是**兜底**不是主要布局：更窄的机型
 	# （或以后往栏里加东西）时还能滚，正常比例下根本不会出现滚动条。
-	var scroll := ScrollContainer.new()
+	var scroll := TouchScrollContainer.new()
 	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	add_child(scroll)
@@ -320,28 +326,66 @@ func _identity_card() -> Control:
 	content.add_theme_constant_override("separation", Tokens.GAP_M)
 	panel.add_child(content)
 
+	# ── 头像 + 头像框的摆法（10.07 第 7 条）────────────────────────────────────
+	#
+	# ★ 这里以前是「两张 PRESET_FULL_RECT 的 TextureRect 叠在同一个方盒里，
+	#   都设 KEEP_ASPECT_CENTERED」。**这个写法在数学上就是错的**：
+	#   头像素材（330x330 / 850x825）与头像框素材（5 张商城框是 1103~1183 宽、
+	#   1330~1426 高的竖长图）**宽高比不一样**，KEEP_ASPECT 按各自的长边贴满同一个
+	#   方盒 ⇒ 两者缩出来的实际尺寸不同，"圆心"也各在其自己的方盒中心。
+	#   于是「框的内孔」和「头像的圆」不可能重合。
+	#
+	#   桌面端看起来还行，是因为资料页这个盒子小（176）而偏差被压到 1~2px；
+	#   安卓端同一份代码在别的拉伸模式下偏差被放大，就露出来了 —— 用户报的
+	#   「安卓个人资料页头像异常，与 Godot 端不一致」说的就是它。
+	#
+	# ★ 真正的「Godot 端一致」口径**已经存在**，就在大厅名牌 / 3v3 席位 / 好友列表
+	#   三处用了很久、且被 `frame_hole_check` / `seat_frame_check` 钉住：
+	#     ① 头像按**内孔直径**画（不是按盒边长）；
+	#     ② 头像框按「内孔占比」反推绘制尺寸（`frame_drawn_size`）；
+	#     ③ 框的**内孔圆心**压在头像圆心上（`frame_box_origin`，含每张框各自的内孔
+	#        偏移补偿 —— 6 张商城框的内孔在图里普遍偏上 2~3%，不补就在头像外露一圈缝）。
+	#   资料页是唯一一处没走这套几何的地方。这次把它改成同一套。
+	#
+	# ★ 量法都是**数据**不是结论：`AvatarCatalog.FRAME_HOLE_FRAC / FRAME_HOLE_OFFSET`
+	#   由 frame_hole_table.py 量出来，门禁会重新量一遍对表。这里只调用，不写死。
+	var avatar_size := 176 if _mode == Mode.SELF else 112
+	# 头像画出来的直径：与大厅同口径 —— 默认圆盘的内孔直径（box × 0.6271）。
+	var disc_diameter := float(avatar_size) * Catalog.default_disc_hole_fraction()
+	# 头像画布比头像本身大一圈，给框留位置（最厚的框约 1.13 倍宽）。
+	var stage_extent := avatar_size
+
+	_avatar_stage = Control.new()
+	_avatar_stage.custom_minimum_size = Vector2(avatar_size, avatar_size)
+	# 容器不许拉伸它：横竖都锁在 avatar_size 上，里面一切按固定像素摆。
+	_avatar_stage.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_avatar_stage.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_avatar_stage.clip_contents = false
+	_avatar_stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	# 头像：固定尺寸（不是锚定铺满），直径 = 内孔直径，画布中心 = stage 中心。
 	_avatar_rect = TextureRect.new()
-	_avatar_rect.custom_minimum_size = Vector2.ZERO
 	_avatar_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_avatar_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_avatar_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var avatar_stage := Control.new()
-	var avatar_size := 176 if _mode == Mode.SELF else 112
-	avatar_stage.custom_minimum_size = Vector2(avatar_size, avatar_size)
-	avatar_stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_avatar_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	avatar_stage.add_child(_avatar_rect)
+	_avatar_rect.position = Vector2(avatar_size - disc_diameter, avatar_size - disc_diameter) * 0.5
+	_avatar_rect.size = Vector2(disc_diameter, disc_diameter)
+	_avatar_stage.add_child(_avatar_rect)
+
+	# 头像框：绝对定位的覆盖层，尺寸与落点由 AvatarCatalog 的几何算出。
 	_frame_rect = TextureRect.new()
-	_frame_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_frame_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_frame_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_frame_rect.stretch_mode = TextureRect.STRETCH_SCALE
 	_frame_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	avatar_stage.add_child(_frame_rect)
+	_avatar_stage.add_child(_frame_rect)
+	_stage_extent = stage_extent
+	_disc_diameter = disc_diameter
 
 	if _mode == Mode.SELF:
 		var avatar_btn := Button.new()
 		avatar_btn.custom_minimum_size = Vector2(avatar_size, avatar_size)
 		avatar_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		avatar_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		avatar_btn.focus_mode = Control.FOCUS_NONE
 		avatar_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		avatar_btn.tooltip_text = _text("换头像", "Change avatar")
@@ -349,11 +393,12 @@ func _identity_card() -> Control:
 		for state in ["normal", "hover", "pressed", "hover_pressed", "disabled", "focus"]:
 			avatar_btn.add_theme_stylebox_override(state, clear_box)
 		avatar_btn.pressed.connect(_open_avatar_picker)
-		avatar_stage.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		avatar_btn.add_child(avatar_stage)
+		# 按钮本身就是正方形、不被拉伸，stage 铺满它即可。
+		_avatar_stage.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		avatar_btn.add_child(_avatar_stage)
 		content.add_child(avatar_btn)
 	else:
-		content.add_child(avatar_stage)
+		content.add_child(_avatar_stage)
 
 	var column := VBoxContainer.new()
 	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1020,17 +1065,10 @@ func _refresh() -> void:
 	# 「认不出就回落默认框」那条）。
 	var frame_id := Catalog.id_from_value(_field("avatar_frame"))
 	_frame_rect.visible = not frame_id.is_empty()
-	if _frame_rect.visible:
-		_frame_rect.texture = _profile_frame_texture(frame_id, _field("avatar_frame"))
-		_avatar_rect.offset_left = 21
-		_avatar_rect.offset_top = 21
-		_avatar_rect.offset_right = -21
-		_avatar_rect.offset_bottom = -21
-	else:
-		_avatar_rect.offset_left = 0
-		_avatar_rect.offset_top = 0
-		_avatar_rect.offset_right = 0
-		_avatar_rect.offset_bottom = 0
+	# 头像**恒定**按内孔直径画（头像大小不随框变 —— 那是「戴上框头像就变小」的旧
+	# bug，10.02 已在大厅修掉；资料页这次一并对齐）。框按内孔反推尺寸、内孔压在
+	# 头像圆心上。几何与大厅/席位/好友列表**同一份**（AvatarCatalog）。
+	_place_avatar_frame(frame_id if _frame_rect.visible else "")
 
 	var days := _field_int("days_since_created", 1)
 	_days_label.text = _text("第 %d 天" % days, "Day %d" % days)
@@ -1041,6 +1079,41 @@ func _refresh() -> void:
 		_refresh_self()
 	else:
 		_refresh_public()
+
+
+# 把头像框摆到「内孔圆心 = 头像圆心」的位置，并让它按内孔占比反推尺寸。
+#
+# 这套几何与大厅名牌（MainMenu._place_profile_frame）、3v3 席位（Team3v3Lobby）、
+# 好友列表（FriendsScreen）**同一份**，全部走 AvatarCatalog —— 需求要的
+# 「与 Godot 端一致」就是这个意思：不是照着大厅抄一遍像素值，而是共用同一套算法。
+#
+# frame_id 传空串 = 不戴框：只把头隐藏，头像仍在原处（直径不变）。
+func _place_avatar_frame(frame_id: String) -> void:
+	if _avatar_rect == null or not is_instance_valid(_avatar_rect):
+		return
+	# 头像尺寸恒定，与有没有框无关。
+	_avatar_rect.position = Vector2(_stage_extent - _disc_diameter,
+		_stage_extent - _disc_diameter) * 0.5
+	_avatar_rect.size = Vector2(_disc_diameter, _disc_diameter)
+	if _frame_rect == null or not is_instance_valid(_frame_rect):
+		return
+	if frame_id.is_empty():
+		_frame_rect.visible = false
+		return
+	_frame_rect.texture = _profile_frame_texture(frame_id, _field("avatar_frame"))
+	# 目标内孔直径 = 头像直径（内孔 ≤ 头像，否则头像外会露一圈背景缝）。
+	var target_hole := _disc_diameter
+	var drawn := Catalog.frame_drawn_size(frame_id, target_hole)
+	if drawn.x <= 0.0 or drawn.y <= 0.0:
+		# 量不到素材尺寸（资源缺失）——宁可少一个装饰，也不要画一个尺寸为 0 的框。
+		_frame_rect.visible = false
+		return
+	# frame_box_origin 给的是「框盒左上角」，未知的框在 AvatarCatalog 里按默认圆盘估。
+	var stage_center := Vector2(_stage_extent, _stage_extent) * 0.5
+	var origin := Catalog.frame_box_origin(frame_id, target_hole, stage_center)
+	_frame_rect.position = origin
+	_frame_rect.size = drawn
+	_frame_rect.visible = true
 
 
 # 资料页专用的取框函数。只有 `frame_default` 与别处不同：它读**抠空内圆**的副本，

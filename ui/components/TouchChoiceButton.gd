@@ -1,4 +1,5 @@
 extends Button
+const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
 
 # In-scene choices: native PopupMenu scroll gestures vary between Android hosts.
 signal item_selected(index: int)
@@ -57,7 +58,7 @@ func _open_choices() -> void:
 	center.add_child(panel)
 	var column := VBoxContainer.new()
 	panel.add_child(column)
-	var scroll := ScrollContainer.new()
+	var scroll := TouchScrollContainer.new()
 	var available := get_viewport_rect().size * 0.85
 	scroll.custom_minimum_size = Vector2(minf(560, available.x), minf(360, available.y - 56))
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED

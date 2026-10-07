@@ -78,6 +78,7 @@ const CRYSTAL_WATER_PATHS := [                # 水队（slot 3-5 黄紫橙）�
 	"res://assets/ui/crystals/blue_40_50.png",
 ]
 const TOP_ROW_BTN_SIZE := Vector2(96, 64)                                 # 右上角横排三键（战力/统计/设定）缩小尺寸
+const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
 # 调试：把所有按钮的点击判定区域用线条画出来。不需要时改成 false。
 const SHOW_HIT_AREAS := false
 # 调试：把所有布局控件的矩形（空间框）用黑边画出来，方便看排版。不需要时改成 false。
@@ -1051,7 +1052,7 @@ func _build_merc_panels(body: HBoxContainer, center_host: Control) -> void:
 	right_drop.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	PrepWidgets.apply_transparent_panel_style(right_drop)
 	body.add_child(right_drop)
-	_merc_scroll = ScrollContainer.new()
+	_merc_scroll = TouchScrollContainer.new()
 	_merc_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_merc_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_merc_scroll.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1358,7 +1359,21 @@ func _build_chat_record_window() -> void:
 	window.offset_bottom = COMMS_DOCK_BOTTOM - COMMS_DOCK_HEIGHT - CHAT_FLOAT_GAP
 	window.offset_top = window.offset_bottom - CHAT_LOG_HEIGHT
 	window.z_index = 20
-	window.mouse_filter = Control.MOUSE_FILTER_STOP
+	# ★★ 10.07b 第 4 条（用户真机反馈「商店最右边那张卡，靠聊天框那一端点不中，
+	#    必须有一点拖动才能选中」）：
+	#
+	# 这里是根因。这个聊天记录窗固定在右下角，`mouse_filter = STOP` ⇒ 它**整块矩形**
+	# 都吃点击。而它左边缘与商店第 4 张手牌卡的右边缘**重叠 14px**
+	# （实测：卡 x∈[998,1178]，窗 x∈[1164,1452]，y 方向也重叠 ⇒ 卡右端 4.5% 面积被盖住）。
+	# 玩家的拇指本来就容易点偏到卡片右端，落在那 14px 上就被这个窗吃掉 ——
+	# 「点一下没反应、要拖一下」正是这么来的（拖动时手指离开那块区域就恢复）。
+	#
+	# 改法：**这个窗是纯展示的**（消息记录，只有那条浮动滚动条要接收拖动），
+	# 所以整块矩形不该吃点击 ⇒ 改 IGNORE。滚动条自己 `top_level = true` +
+	# `MOUSE_FILTER_STOP`（见 FloatingChatScroll.gd），改成 IGNORE 不影响它。
+	#
+	# ⚠️ 别改回 STOP：那 14px 会重新变成「点了没反应」的盲区，而且不报错。
+	window.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var style := StyleBoxEmpty.new()
 	style.set_content_margin_all(9)
 	window.add_theme_stylebox_override("panel", style)
@@ -1369,6 +1384,10 @@ func _build_chat_record_window() -> void:
 	_chat_record_scroll.name = "PrepChatHistoryScroll"
 	_chat_record_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_chat_record_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+	# 同 window：整块矩形不吃点击（它是纯展示的历史区 + 一条独立浮动滚动条）。
+	# 漏了这一句的话，父窗 IGNORE 了、这个 ScrollContainer 仍会把那 14px 吞掉 ——
+	# 症状一模一样，且没有任何报错。
+	_chat_record_scroll.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	window.add_child(_chat_record_scroll)
 	_chat_record_list = VBoxContainer.new()
 	_chat_record_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL

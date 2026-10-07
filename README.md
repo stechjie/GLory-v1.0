@@ -1,5 +1,86 @@
 # Glory Beta 0.04
 
+## 2026-10-07：`10.07bug提交及修复.docx` 14 条
+
+按文档逐条落码。**改动只有代码 + 门禁 / 探针，无新增运行资源、未重导 EXE/APK、
+未真机验证、未同步 `GLory-v1.0`、未暂存/提交/推送。**
+
+- **第 1 条（开始游戏键明暗）** `scenes/menu/Team3v3Lobby.gd`：原来无条件跑呼吸动画 ——
+  不管能不能开局都在闪，玩家分不出「现在能不能开」。改为每帧用
+  `_update_start_pulse(_start_block_reason(true).is_empty())` 驱动：**能开局才走呼吸，不能开局压到暗态**
+  （新增 `START_PLATE_DIM`）。判据与按钮实际可用性是同一个 `_start_block_reason()`，不另写一份条件。
+- **第 2 条（图鉴补四星技能）** `scenes/menu/CodexScreen.gd`：技能文本后追加两行 ——
+  「四级升星后」（与「技能」小标题同字号）+ 四星技能文本（与其它技能文本同字号）。
+  文本取自单位数据的四星技能字段，**不是硬编码**；文案 key 进 `LocaleManager`（zh/en）。
+- **第 3 条（所有滚动区可按住滑动）** 新增 `ui/components/TouchScrollContainer.gd`
+  （`extends ScrollContainer`，`_gui_input()` 处理 `InputEventScreenDrag`），
+  **20 个文件 27 处 `ScrollContainer` 换成它**。★ 没有逐处改 `_gui_input` —— 统一在一处，
+  否则 27 份实现改一处漏 26 处。
+- **第 4 条（商店第四张卡点击不灵敏）** `scenes/prep/PrepDragButton.gd`：`DRAG_START_DISTANCE`
+  **16 → 28**。根因不是「第四张卡特殊」，是阈值太小 —— 手指按下去必然抖几像素，16 就被判成拖拽、
+  点击被吃掉。**为什么偏偏第四张最明显**：它在屏幕靠右、最贴近右手拇指自然落点，抖动量最大。
+- **第 5 条（三选一只留前三只）** `scenes/menu/PetScreen.gd`：`starter_mode` 改遍历
+  `PetService.starter_ids()`（**数据驱动**，不写死 3 个 id），不再遍历全部宠物。
+- **第 6 / 10 条（邀请气泡，两份共用）** 新建 `ui/components/PartyInviteBubble.gd`
+  （`CanvasLayer`，`BUBBLE_LAYER=1600`）：**非模态、整层 `IGNORE`、只有卡片 `STOP`**
+  （「不处理不影响主界面操作」是硬要求）；覆盖 + 补位（`MAX_VISIBLE=1`，被顶掉的进 `_pending`，
+  处理完当前这条再放出**上一个**）；**30 秒是绝对期限不是「显示 30 秒」**（每条记自己的 deadline，
+  排队等待时间照扣）；每条卡片**独立 `Timer`**；`_handled[party_id]` 供聊天红点过滤。
+  `Main` 接 `party_invite`（+提示音）/ `room_invite` / 私聊 `dm_received`（经
+  `RoomInvite.is_invite()` 判定），昵称走 `AccountManager.fetch_friends()` **现查**。
+  第 10 条的组队邀请**复用同一份组件**（`KIND_TEAM` 文案分支）—— 两份实现的「30 秒/覆盖/补位」迟早漂移。
+- **第 7 条（安卓头像与 Godot 端一致）** `scenes/menu/ProfileScreen.gd` 整段重写为
+  `AvatarCatalog.frame_drawn_size()` + `frame_box_origin()`，与大厅**共用同一套内孔几何**；
+  `AvatarCatalog` 新增 `frame_hole_center_local()`（`frame_box_origin` 的逆运算，供判据用）。
+  ★ **这条我第一次判断错了方向**：初判「stage 被拉成宽而扁」，探针 dump 实测推翻
+  （`VBoxContainer.alignment=ALIGNMENT_CENTER` ⇒ 子节点居中不拉伸，stage 恒 176×176），
+  且第一版门禁**变异后仍 PASS** ⇒ 判据不区分，整条删掉重写。**真根因**：
+  `ProfileScreen` 是**唯一没走 `AvatarCatalog` 内孔几何**的地方，旧写法「两张 `PRESET_FULL_RECT` +
+  `KEEP_ASPECT_CENTERED`」在**头像与框素材宽高比不同**时数学上就是错的（框 1103×1426 竖长、
+  头像 330×330）—— **为什么手机端才看得出来**：不同机型 `content_scale_size` 不同，
+  `KEEP_ASPECT_CENTERED` 的偏移量随容器尺寸变化，PC 端恰好落在偏移很小的一档。
+- **第 8 条（任何回合结束都出结算面板，含 PVE 佣兵）** ★ **根因是三处 `kind in ["pvp","final"]`
+  白名单串起来的**，不是「面板没做」：① `FinalSettlementData.build()` 的 `show_details`
+  ② `can_show_details()` ③ `MatchHistoryPanel.has_settlement_details()`。三处全放行，
+  但**没删判据**（无 kind 的旧 model 仍按 `show_details` 走、`settlement` 为 null 的旧局仍不给按钮）。
+  主路径 `Main._on_team_battle_finished()`：`local_settlement` 由「只在 `run_over` 时建」改为
+  **每回合都建**。★ **时序是技术核心**：`build_local()` 读 `GameState.board_slots` /
+  `mercenary_slots`（离线槽 0），**必须在 `GameState.clear_mercenaries()` 之前建** ——
+  放后面佣兵列全空，而「PVE 也要算我方上阵佣兵」正是这条的需求。服务端权威路径同样补上
+  （数据从**广播快照** `NetworkService.team_boards` 建，不受那次 `clear_mercenaries()` 影响）。
+  面板 `FinalSettlementPanel` 加 `in_progress` 模式：标题「回合结算 · 第 N 回合」、
+  按钮只有「继续」（新信号 `continue_requested`），**终局 / 历史两路不带这个键 ⇒ 文案行为一字未变**。
+- **第 9 条（房间语音 UI 只留麦克风 + 扬声器）** `scenes/menu/PartyLobby.gd` + `PartyVoice.gd`：
+  排位/休闲全是队友，去掉「队友 / 所有人」受众切换（那是自定义房间有观众才需要的）。
+- **第 11 条（成员也可邀请）** `PartyLobby` 三处 `disabled` 去掉 `not _is_host()`。
+- **第 12 条（房主退出 + 接班）** `backend/app/party.py`：`Room` 新增
+  `joined_at: dict[uuid.UUID, float]`，**`create()` 与 `join()` 都记**（`join()` 也记 =
+  「重新进入房间重新计时」）；`leave()` 扩为 4 元组 `(room, old_members, closed, migrated)`，
+  剩余为空则解散，否则 `successor = min(remaining, key=lambda pid: room.joined_at.get(pid, 0.0))`
+  —— **进房最早的人接班**。
+- **第 13 条（换模式提示）** `backend/app/routes/party.py` 的 `mode` 路由给**非房主**推
+  `party_notice`（`kind="mode_changed"`、`房主更换了{休闲|排位}模式`）；客户端 `PartyLobby`
+  新增该分支 + `_sticky_notice`（否则下一次房间状态刷新会把提示冲掉）+ `NOTICE_SEC=4.0` 计时器。
+- **第 14 条（任意成员取消回房间）** `scenes/menu/MatchQueuePanel.gd`：`_party_queue and
+  _state == "queued"` 时统一走 `cancel_party_match()`（**取消匹配**），不再按房主分叉 ——
+  以前非房主走 `leave_party()`，那是**退房**。服务端 `queued_room()` 从 `_require_host`
+  改 `_require_member`，`cancel` 路由加兜底。
+- **门禁**：新增 5 条 headless（`round_settlement` **23/0**、`party_invite_bubble` **20/0**、
+  `party_lobby_rules` **12/0**、`codex_four_star`、`party_voice_ui`）+ 1 条 stdlib 服务端测试
+  （`backend/tests/test_party_room_stdlib.py` **9/9**）。改动面涉及的既有门禁全绿：
+  `cold_parse_chain` **324/0**、`profile` **184/0**、`final_settlement` 41/0、
+  `match_history_ui` 83/0、`voice_redesign` 31/0、`frame_hole` 77/0、`chat` 293/0。
+- **变异**：第 8 条 **7/7 全红**（`其他/work/_qa_1007/mutate_1007.py`，含 ★ 核心需求
+  「`build_local` 不带佣兵列」→ `pve_mercenary_present` 红）；第 7 条 2/2 红
+  （m1 最大偏差 **26.20 px**，正是用户看到的偏移量级）；第 6/10 条 2/2 红；第 11-14 条
+  客户端 2/2 红 + 服务端 2/2 红。每条都「先备份 `.r3bak` → 改坏 → 跑门禁 → 还原 → 比 sha256」，
+  `restored=True` 逐一核对。
+- 既存红（`procedural_ui_ratchet` 3、`prep_text_coverage` 1、`dynamic_call` 24、
+  `lobby_identity03` 2、`asset_manifest` 38）**本轮零新增** —— `dynamic_call` 的本轮 5 个文件
+  `grep` 零命中。**没有擅自重建过时基线**（那是替别人背书），只给证据 + 记账。
+- **本轮无新增运行资源**（纯 `.gd` / `.tscn` / `.py`，全部可上传 ⇒ 桌面不放副本）；
+  非运行产物在 `其他/work/_qa_1007/`。详见[10.07 修复记录](docs/10.07bug提交及修复记录.md)。
+
 ## 2026-10-06：`10.06bug提交及修复.docx` 8 条
 
 按文档逐条落码。**改动只有代码 + 1 张图标素材**（`assets/ui/race_logos/crimson.png`），

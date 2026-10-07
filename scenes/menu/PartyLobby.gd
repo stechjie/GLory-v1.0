@@ -2,6 +2,10 @@ extends Control
 
 signal back_requested
 signal queue_started(mode: String, host: bool)
+# ★★ 10.07h 第 9(6) 条：队里**任意成员**取消了排队 → Main 要关掉「匹配中」弹窗。
+# `canceller` 是取消者的昵称（无数字 ID），拿不到就是空串。
+# 与 `queue_started` 配对：有开就有开，不然房主那边的面板会一直挂着。
+signal queue_canceled(canceller: String)
 
 const REF := Vector2(1672, 941)
 const BG := preload("res://assets/ui/main_menu_live/background.png")
@@ -20,6 +24,9 @@ const CREAM := Color("f8f0d8")
 const MUTED := Color("bbc5b9")
 const GREEN := Color("9cdbba")
 const DARK := Color("101b1c")
+const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
+# 「房主更换了休闲/排位模式」这类临时提示在房间里停留多久。
+const NOTICE_SEC := 4.0
 
 var _initial_mode := "casual"
 var _invite_id := ""
@@ -31,6 +38,17 @@ var _load_error := ""
 var _loading_room := false
 var _busy := false
 var _queue_opened := false
+# ★★ 10.07i 第 9(6) 条：**「队伍曾经进过排队」的闩**，与 `_queue_opened` 分开。
+#
+# 为什么不能复用 `_queue_opened`：它在 `_apply()` 里只要 `queued=false` 就被清掉
+# （见 `_apply` 末尾），而取消排队的推送**顺序**是
+#   `party` 快照（queued=false，`_apply` 顺手清了 `_queue_opened`）
+#   → `match idle`（真正说明「有人取消」的那条）
+# 于是等 `match idle` 到达时判据已经全被抹平 ⇒ 房主面板照旧挂着「匹配中」。
+#
+# 这个闩**只在「收到 idle 并处理掉」或「自己离开房间」时才落**，不被
+# `queued=false` 的快照影响 —— 它回答的是「这次 idle 是不是我这次排队的收尾」。
+var _party_queue_active := false
 var _match_found := false
 var _canvas: Control
 var _stage: Control
@@ -53,7 +71,13 @@ var _mode_casual: Button
 var _mode_ranked: Button
 var _action: Button
 var _notice: Label
-var _voice: Button
+# 10.07 第 9 条：房间语音改为「麦克风 + 扬声器」两个图标按钮（房间里只有队友，
+# 不需要听众选择）。
+var _voice_mic: Button
+var _voice_speaker: Button
+var _notice_timer: SceneTreeTimer
+# 「房主更换了休闲/排位模式」这类提示要顶过紧随其后的房间快照重绘。
+var _sticky_notice := ""
 var _party_voice: Node
 var _poll_elapsed := 0.0
 
@@ -140,7 +164,7 @@ func _build() -> void:
 	_chat_toggle = _button(_chat_panel, "⌃", Vector2(290, 8), Vector2(38, 34))
 	_style_paper_button(_chat_toggle, false)
 	_chat_toggle.pressed.connect(_toggle_chat)
-	_chat_scroll = ScrollContainer.new()
+	_chat_scroll = TouchScrollContainer.new()
 	_chat_scroll.position = Vector2(17, 47)
 	_chat_scroll.size = Vector2(308, 57)
 	_chat_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -185,7 +209,7 @@ func _build() -> void:
 	var close_friends := _button(_friends_drawer, "×", Vector2(361, 18), Vector2(37, 37))
 	_style_paper_button(close_friends, false)
 	close_friends.pressed.connect(_toggle_friends_drawer)
-	var friends_scroll := ScrollContainer.new()
+	var friends_scroll := TouchScrollContainer.new()
 	friends_scroll.position = Vector2(20, 78)
 	friends_scroll.size = Vector2(379, 463)
 	friends_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -201,7 +225,7 @@ func _build() -> void:
 	var close_pets := _button(_pets_drawer, "×", Vector2(286, 14), Vector2(38, 37))
 	_style_paper_button(close_pets, false)
 	close_pets.pressed.connect(_toggle_pets_drawer)
-	var pet_scroll := ScrollContainer.new()
+	var pet_scroll := TouchScrollContainer.new()
 	pet_scroll.position = Vector2(18, 66)
 	pet_scroll.size = Vector2(307, 305)
 	pet_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -212,17 +236,26 @@ func _build() -> void:
 	pet_scroll.add_child(_pet_list)
 	_pets_drawer.visible = false
 
-	_voice = _button(_canvas, _text("语音 · 关闭", "VOICE · OFF"), Vector2(395, 835), Vector2(203, 50))
-	_style_paper_button(_voice, false)
-	_voice.pressed.connect(_toggle_voice)
+	# 10.07 第 9 条：房间语音改为两个图标按钮 —— 麦克风 + 扬声器（房间里只有队友，
+	# 不做听众选择）。原先是一个「语音 · 关闭/收听/开麦」循环切换的文字按钮。
+	# 两个按钮并排放在原位置右侧；每个 50x50，间隔 12。
+	_voice_mic = _icon_button(_canvas, Vector2(395, 835), Vector2(50, 50))
+	_voice_mic.pressed.connect(_toggle_voice_mic)
+	_voice_speaker = _icon_button(_canvas, Vector2(457, 835), Vector2(50, 50))
+	_voice_speaker.pressed.connect(_toggle_voice_speaker)
 	_party_voice = PARTY_VOICE.new()
+	# ★ 10.07 第 9 条返工：状态一变就**重画图标**，不只改 tooltip。
+	#   旧回调只写 tooltip ⇒ 开关状态是在 `_sync_mode() → _join()` 里改的，而 `_join()`
+	#   有 `await fetch_party_voice_token()`，**图标要等这次往返回来才更新**。
+	#   玩家点一下看不到任何变化、再点一下（这次 mode 又变了、恰好撞上上一次的 await 返回）
+	#   才见到图标动 —— 真机反馈的「要按两下才切换」就是这么来的。
+	#   这里在信号到达时立刻重画，把视觉反馈从「等网络」解耦成「即时」。
 	_party_voice.state_changed.connect(func(label: String) -> void:
-		if is_instance_valid(_voice):
-			_voice.tooltip_text = label
-			var voice_mode := int(_party_voice.get("mode"))
-			_voice.text = _text("语音 · 开麦", "VOICE · TALK") if voice_mode == 2 else \
-				(_text("语音 · 收听", "VOICE · LISTEN") if voice_mode == 1 else _text("语音 · 关闭", "VOICE · OFF")))
+		if is_instance_valid(_voice_mic):
+			_voice_mic.tooltip_text = label
+		_refresh_voice_icons())
 	add_child(_party_voice)
+	_refresh_voice_icons()
 
 
 func _layout() -> void:
@@ -271,7 +304,10 @@ func _show_local_identity() -> void:
 	_chat_input.editable = false
 	_chat_input.placeholder_text = _text("队伍服务未连接", "Party service unavailable")
 	_send_button.disabled = true
-	_voice.disabled = true
+	if _voice_mic != null:
+		_voice_mic.disabled = true
+	if _voice_speaker != null:
+		_voice_speaker.disabled = true
 	_action.text = _text("开始匹配", "START MATCH")
 	_action.disabled = true
 	_style_action()
@@ -287,7 +323,9 @@ func _apply(next: Dictionary) -> void:
 	_chat_input.editable = true
 	_chat_input.placeholder_text = _text("给队友发消息…", "Message your team…")
 	_send_button.disabled = false
-	_voice.disabled = false
+	if _voice_speaker != null:
+		_voice_speaker.disabled = _local_only
+	_refresh_voice_icons()
 	var host := _is_host()
 	var mode := str(_room.get("mode", _initial_mode))
 	_pet_toggle.visible = host and not bool(_room.get("queued", false))
@@ -321,9 +359,16 @@ func _apply(next: Dictionary) -> void:
 		_notice.text = _text("等待房主开始", "Waiting for host") if ready else ""
 	if bool(_room.get("queued", false)) and not _queue_opened and _preview == "":
 		_queue_opened = true
+		# ★★ 10.07i 第 9(6) 条：进队那一刻把闩立上。它**不随 queued=false 落**，
+		#    必须活到 `match idle` 到达，否则取消提示又会被顺序问题吃掉。
+		_party_queue_active = true
 		queue_started.emit(mode, host)
 	elif not bool(_room.get("queued", false)):
+		# 注意：这里只清 `_queue_opened`，**不动** `_party_queue_active` ——
+		# 那一位的语义是「我这次排队还没收尾」，收尾在 `match idle` 那一段。
 		_queue_opened = false
+	if _sticky_notice != "":
+		_notice.text = _sticky_notice
 	_style_action()
 
 
@@ -340,10 +385,22 @@ func _render_seats() -> void:
 		if i >= members.size():
 			var add := _button(seat, "+", Vector2(37, 12), Vector2(140, 140))
 			_style_empty_seat(add)
-			add.disabled = _local_only or not _is_host() or bool(_room.get("queued", false))
+			# ★★ 10.07h 第 9(3) 条返工（用户真机反馈「成员方等待队友也要改为邀请好友，
+			#    打开可邀请好友」）：
+			#
+			#    这里原本有 `not _is_host()` —— 于是**只有房主**能点空位拉出邀请抽屉，
+			#    成员盯着一个点不动的「等待队友」。需求原话是「成员也可邀请」，
+			#    所以判据只留「本地单人 / 排队中」两条真闸。
+			#
+			#    `queued` 仍然要拦：匹配中改房间成员会被服务器拒（协议上队伍已锁定），
+			#    放行只会让玩家点开抽屉、发出去、然后收到一个失败提示 ——
+			#    不如直接不给点。这一条与房主那一侧的行为保持一致。
+			add.disabled = _local_only or bool(_room.get("queued", false))
 			add.pressed.connect(_toggle_friends_drawer)
+			# 文案：房主与成员**都要是「邀请好友」**。区别只在本地单人那档
+			# （没联网时点了也发不出去，显示「空位」比给一个必然失败的入口诚实）。
 			var empty_text := _text("空位", "OPEN SEAT") if _local_only else \
-				(_text("邀请好友", "INVITE FRIEND") if _is_host() else _text("等待队友", "OPEN SEAT"))
+				_text("邀请好友", "INVITE FRIEND")
 			var empty_name := _label(seat, empty_text,
 				Vector2(0, 169), Vector2(214, 34), 21, CREAM)
 			empty_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -419,7 +476,7 @@ func _render_friends() -> void:
 			var row := _paper_panel(_friend_list, Vector2.ZERO, Vector2(359, 82), 0.75)
 			row.custom_minimum_size = Vector2(359, 82)
 			var avatar := _friend_avatar(row, friend, Vector2(8, 7), 67)
-			avatar.disabled = _local_only or not _is_host() or not online or room_count >= 3
+			avatar.disabled = _local_only or not online or room_count >= 3
 			var code := str(friend.get("friend_code", ""))
 			avatar.pressed.connect(func() -> void: _invite(code))
 			var name := _label(row, str(friend.get("player_name", "")), Vector2(85, 13), Vector2(152, 31), 21,
@@ -429,11 +486,11 @@ func _render_friends() -> void:
 				Vector2(85, 46), Vector2(140, 24), 16, Color("438663") if online else Color("8b8d7b"))
 			var invite := _button(row, _text("邀请", "Invite"), Vector2(254, 20), Vector2(87, 42))
 			_style_paper_button(invite, true)
-			invite.disabled = _local_only or not _is_host() or not online or room_count >= 3
+			invite.disabled = _local_only or not online or room_count >= 3
 			invite.pressed.connect(func() -> void: _invite(code))
 			if online and quick_count < 3:
 				var quick := _friend_avatar(_friend_rail, friend, Vector2.ZERO, 72)
-				quick.disabled = _local_only or not _is_host() or room_count >= 3
+				quick.disabled = _local_only or room_count >= 3
 				quick.pressed.connect(func() -> void: _invite(code))
 				quick_count += 1
 	if _friends.is_empty():
@@ -526,19 +583,124 @@ func _load_friends() -> void:
 		_render_friends()
 
 
+# ★★ 10.07h 第 9(4) / 9(6) 条：收到「房主走了」「队列被撤了」这类推送时，**就地复查**
+# 一次房间状态。与 `_load_room` 的区别是**它只读不写** —— 不建房、不入房、不改模式。
+#
+# 为什么需要它：这两条推送都只说明「服务器那边变了」，变了之后我到底还算不算在房里、
+# 新快照长什么样，只有 fetch 一次才知道。原实现把「退不退房」押在**下一条别人推来的
+# 快照**上：推得到就正常，推丢/推晚就停在旧界面（用户真机看到的就是这个）。
+# 主动复查把这条路径变成**自证**，不再依赖别人的推送时序。
+#
+# `_loading_room` 仍复用：与 `_load_room` 抢同一个闸，避免两条请求同时在飞。
+# ⚠️ 不复用 `_load_room` 本身 —— 那里在拿到非 room 状态时会**自动建一个新房**，
+#    而这条路径恰恰是「我可能已经被踢了」，建房会把玩家又拖回一个空房间。
+func _refresh_room_now() -> void:
+	if _local_only or _preview != "":
+		return
+	if _loading_room:
+		return
+	_loading_room = true
+	var result: Dictionary = await AccountManager.fetch_party()
+	_loading_room = false
+	if not is_inside_tree():
+		return
+	if int(result.get("code", 0)) != 200:
+		return
+	var state: Dictionary = (result.get("body", {}) as Dictionary).get("state", {})
+	if str(state.get("state", "")) == "room":
+		_apply(state)
+	else:
+		# 复查说「我已经不在房里了」——这一条才是真·退房依据。
+		stop_party_voice()
+		back_requested.emit()
+
+
 func _on_realtime(payload: Dictionary) -> void:
-	if str(payload.get("t", "")) == "party":
+	var kind := str(payload.get("t", ""))
+	if kind == "party":
 		if str(payload.get("state", "")) == "room":
 			_apply(payload)
 		elif str(payload.get("state", "")) == "closed" and _preview == "":
-			back_requested.emit()
-	elif str(payload.get("t", "")) == "match":
+			# ★★ 10.07h 第 9(4) 条返工（用户真机反馈「房主退出后，房间依旧解散，
+			#    成员强制被返回主界面」）：**收到 closed 不等于我该退房**。
+			#
+			#    服务器在「房主退出但房里还有人」时，会把 `{"state":"closed"}` 推给
+			#    **退出的房主本人**（他确实该退），房间本身是**保留**的、房主已交接。
+			#    原实现收到 closed 就 `back_requested`，一旦这条消息因为广播口径变化
+			#    或被其它路径顺带发到成员手上，成员就被无条件踢回主界面 —— 表现就是
+			#    「房间解散了」。这里改成**先自证**：复查一次，真不在房里才退。
+			_refresh_room_now()
+	elif kind == "party_notice":
+		# 10.07 第 12/13 条：房主交接、房主换模式都会推这个。
+		# 房主交接那条服务器也发给退出的房主本人，他这时已经不在房间里，忽略掉；
+		# 留下的成员收到的是「房主换人了」，紧接着会来一条 room 快照刷新界面。
+		#
+		# ★★ 10.07h 第 9(4) 条返工（用户真机反馈「房主退出后，房间依旧解散，成员
+		#    强制被返回主界面」）：`host_left` 这条**不能直接丢**——
+		#    它正是「房主走了但队伍还在、我升级成了房主」的信号。原样 return 会让
+		#    成员在等房主端那条 `broadcast` 快照期间界面停在旧房主视图；若那条
+		#    广播有任何延迟/丢失，玩家看到的就是「房主没了、房间好像散了」。
+		#    现在收到 host_left 就地**主动复查一次**房间状态（见 `_refresh_room_now`），
+		#    自己确认还在房里就继续待着，确认不在才退 —— 不把「退房」押在别人推得上。
+		if str(payload.get("kind", "")) == "host_left":
+			_show_sticky_notice(str(payload.get("text", "")))
+			_refresh_room_now()
+			return
+		if str(payload.get("kind", "")) != "mode_changed":
+			return
+		if _preview != "" or _is_host():
+			return
+		# 服务器的顺序是「party_notice」先到、紧跟一条「party」房间快照，
+		# 而 _apply() 会按房主/队员身份重写 _notice。`_show_sticky_notice` 会把
+		# 提示词记成 sticky，_apply() 收尾时补回去（见 _apply 末尾）。
+		_show_sticky_notice(str(payload.get("text", "")))
+	elif kind == "match":
 		var match_state := str(payload.get("state", ""))
 		if match_state == "found":
 			_match_found = true
-		elif _match_found and match_state in ["queued", "idle"]:
-			stop_party_voice()
-			back_requested.emit()
+			# 凑齐了 = 这次排队正常收尾，落闩；后面即便来一条 idle 也不算「取消」。
+			_party_queue_active = false
+		elif match_state == "queued":
+			# ★★ 10.07i 第 9(6) 条再返工（用户真机反馈「再次修复后，反而 bug 增加了。
+			#    现在点开始匹配后发现匹配中弹窗消失了」）：
+			#
+			#    `queued` 是**正常排队回波**，永远不是「取消」。上一版把它和 `idle`
+			#    合在一个分支里、单靠 `was_queued` 判「有人取消」，而房主点开始匹配
+			#    时服务器先广播 party 快照（`queued=true` → `_apply` 把 `_room.queued`
+			#    置真、并发 `queue_started` 推开弹窗），**紧接着**才推这条 `match
+			#    queued`。于是这条自己的回波被读成「队友取消了」→ `queue_canceled`
+			#    → `ModalStack.pop` 把刚弹出的「匹配中」面板当场关掉。
+			#
+			#    正确判据只有一个方向：**服务器说队列没了（`idle`）才算取消**。
+			#    `queued` 只表示「还在排」，这里什么都不做 —— 面板自己会轮询/推送
+			#    刷新队列位置。
+			pass
+		elif match_state == "idle":
+			# 队列被撤掉的信号就是这个（服务器 `leave_group` + `idle_message`）。
+			# **不能只在 `_match_found` 时处理** —— 那个字段只有走到「凑齐确认」
+			# 才会置真；普通排队中被队友取消时它还是 false，于是这条推送被整个
+			# 吞掉，房主面板停在「匹配中」直到下一次 7 秒轮询才刷新。
+			#
+			# ★★ 10.07i 第 9(6) 条：判据**不能**用 `_room.queued` / `_queue_opened`
+			#    —— 服务器 `/cancel` 的顺序是「先广播 `party`（queued=false）再推
+			#    `match idle`」，等这条 idle 到达时那两个字段已被快照抹平（详见
+			#    `_party_queue_active` 字段上的注释）。
+			#    改用**闩**：进了队就立、处理完才落。落闩即「这次排队的收尾」。
+			var was_queued := _party_queue_active
+			if was_queued:
+				_party_queue_active = false
+				var canceller := str(payload.get("by_name", ""))
+				# 提示语就地显示在房间里（玩家取消排队后正是回到这个界面）。
+				# 昵称拿不到（旧版服务器 / 非组队队列）时退到不带名字的说法，
+				# 不显示成「取消了排队」这种缺主语的句子。
+				var tip := _text("%s 取消了排队" % canceller, "%s cancelled the queue" % canceller) \
+					if canceller != "" else _text("队友取消了排队", "Your teammate cancelled the queue")
+				_show_sticky_notice(tip)
+				queue_canceled.emit(canceller)
+				_refresh_room_now()
+			if _match_found:
+				stop_party_voice()
+				back_requested.emit()
 
 
 func _process(delta: float) -> void:
@@ -556,8 +718,14 @@ func _process(delta: float) -> void:
 			if str(state.get("state", "")) == "room":
 				_apply(state)
 			elif bool(_room.get("queued", false)):
-				stop_party_voice()
-				back_requested.emit()
+				# ★★ 10.07h 第 9(4) 条：排队中拿到「非 room」就退房，**必须先确认
+				#    服务端是明确答复**（`state` 字段存在且不是 room），而不是
+				#    响应体形状不对/字段缺失时的空串。空串当「不在房」会因一次
+				#    脏响应把玩家踢回主界面 —— 与「房主退出被解散」是同一类误退。
+				var explicit_none := str(state.get("state", "")) != ""
+				if explicit_none:
+					stop_party_voice()
+					back_requested.emit()
 
 
 func _change_mode(mode: String) -> void:
@@ -576,7 +744,36 @@ func _invite(code: String) -> void:
 	if _preview != "":
 		_notice.text = _text("已发送邀请", "Invitation sent")
 		return
-	_run(AccountManager.invite_to_party.bind(code))
+	# ★★ 10.07h 第 9(2) 条返工（用户真机反馈「邀请后，聊天里没有邀请的消息」）：
+	#
+	# 邀请成功后，服务端会**同时落一条私聊消息**（routes/party.py 的 chat.send，
+	# kind=party_invite），所以聊天里本该有这条。但它由服务端产生、**不会**主动推到
+	# 邀请人这一侧 —— 邀请人只有下次打开聊天界面全量拉列表时才看得到。
+	# 于是真机上就是「我邀了人，聊天里什么都没有」。
+	#
+	# 这里做两件事（都在**成功之后**）：
+	#   ① 立刻刷新会话列表（ChatService.refresh_unread），让聊天列表/红点当帧就对；
+	#   ② 在房间界面给一条 sticky 提示 —— 原来的 `_run()` 成功后会用房间快照
+	#      重绘 `_notice`，把「已发送」抹掉，玩家收不到任何反馈。
+	#
+	# 说明：这里**不**在本地伪造一条消息塞进聊天流 —— 真正的那条由服务端落库，
+	# 本地伪造会和它按 message_id 去重时打架（两条看起来一样、id 不同）。
+	#
+	# `_busy` 与 `_run()` 同一把闸：邀请是「发出去就别连点第二次」的动作
+	# （服务端还有一道 _invite_limiter，但本地先拦住能省一次 429 提示）。
+	if _busy:
+		return
+	_busy = true
+	var result: Dictionary = await AccountManager.invite_to_party(code)
+	_busy = false
+	if not is_inside_tree():
+		return
+	if int(result.get("code", 0)) != 200:
+		_notice.text = str(result.get("error", _text("邀请失败", "Invitation failed")))
+		return
+	_show_sticky_notice(_text("已发送邀请", "Invitation sent"))
+	# 不 await：这只是刷新会话列表/红点，别让房间界面等网络。
+	ChatService.refresh_unread()
 
 
 func _toggle_pet(pet_id: String) -> void:
@@ -626,9 +823,27 @@ func _act() -> void:
 
 
 func _leave() -> void:
+	# 自己退房 = 这次排队彻底结束。落闩，免得下一个房间收到一条 idle 时
+	# 被算成「队友取消了排队」（那种提示会出现在一个根本没排过队的新房间里）。
+	note_self_canceled_queue()
 	if _preview == "" and not _local_only:
 		await AccountManager.leave_party()
 	back_requested.emit()
+
+
+# ★★ 10.07i 第 9(6) 条：**「这一下取消是我自己按的」**。
+#
+# 面板按「取消排队」→ `dismissed` → `Main._on_match_queue_dismissed()` → 这里。
+# 落闩之后，服务器随之推来的那条**给自己**的裸 `idle`（不带 by_name）就只是
+# 队列收尾，不再被读成「队友取消了排队」——避免自己取消却提示别人取消。
+# 不退房、不弹提示，只落闩。
+func note_self_canceled_queue() -> void:
+	_party_queue_active = false
+	_queue_opened = false
+	if _sticky_notice == "": 
+		return
+	# 连带把「队友取消了排队」这类残留提示清掉：玩家已经回到房间，提示没有意义。
+	_clear_notice()
 
 
 func _run(action: Callable) -> void:
@@ -649,6 +864,33 @@ func _is_host() -> bool:
 	if _preview != "":
 		return _preview == "host"
 	return str(_room.get("host_code", "")) == str(AccountManager.profile.get("friend_code", ""))
+
+
+# 「房主更换了休闲/排位模式」提示到时自动清掉，别一直挂在通知栏上。
+# 显示一条「过几秒自动消失」的提示，并把它记成 sticky —— `_apply()` 收尾会把它
+# 补回 `_notice`，不会被「按房主/队员身份重写 _notice」那一步冲掉（见 _apply 末尾）。
+#
+# ★ **先清后建**：旧实现只在 `_notice_timer == null` 时建计时器，于是连着来两条提示
+#   （比如「房主换了模式」紧跟「队友取消了排队」）时，第二条沿用第一条剩下的时间，
+#   可能刚显示就消失。这里无条件把旧的杀掉重来。
+func _show_sticky_notice(text: String) -> void:
+	_sticky_notice = text
+	if is_instance_valid(_notice):
+		_notice.text = text
+	if _notice_timer != null:
+		# SceneTreeTimer 不能 kill —— 断掉回调就行（它是 RefCounted，会被回收）。
+		var old := _notice_timer
+		if old.timeout.is_connected(_clear_notice):
+			old.timeout.disconnect(_clear_notice)
+	_notice_timer = get_tree().create_timer(NOTICE_SEC)
+	_notice_timer.timeout.connect(_clear_notice)
+
+
+func _clear_notice() -> void:
+	_notice_timer = null
+	_sticky_notice = ""
+	if is_instance_valid(_notice):
+		_notice.text = ""
 
 
 func _my_member() -> Dictionary:
@@ -674,15 +916,28 @@ func _preview_room() -> Dictionary:
 			{"name": "风铃", "text": "好，宠物都在这里呢！"}], "queued": false}
 
 
-func _toggle_voice() -> void:
+func _toggle_voice_mic() -> void:
 	if _local_only:
 		return
 	if _preview != "":
 		_notice.text = _text("预览模式未连接语音", "Voice is offline in preview")
 		return
-	var error: String = _party_voice.cycle()
+	var error: String = _party_voice.set_mic_enabled(not bool(_party_voice.get("mic_enabled")))
 	if not error.is_empty():
 		_notice.text = error
+	_refresh_voice_icons()
+
+
+func _toggle_voice_speaker() -> void:
+	if _local_only:
+		return
+	if _preview != "":
+		_notice.text = _text("预览模式未连接语音", "Voice is offline in preview")
+		return
+	var error: String = _party_voice.set_speaker_enabled(not bool(_party_voice.get("speaker_enabled")))
+	if not error.is_empty():
+		_notice.text = error
+	_refresh_voice_icons()
 
 
 func stop_party_voice() -> void:
@@ -904,6 +1159,56 @@ func _button(parent: Control, value: String, pos: Vector2, dimensions: Vector2) 
 	button.size = dimensions
 	parent.add_child(button)
 	return button
+
+
+# 圆形/圆角「图标按钮」：底图用紧凑纸牌样式，图标用 TextureRect 铺在中间。
+# 图标本身 `MOUSE_FILTER_IGNORE`，点击照常落到按钮上。
+func _icon_button(parent: Control, pos: Vector2, dimensions: Vector2) -> Button:
+	var button := _button(parent, "", pos, dimensions)
+	_style_compact_button(button, false)
+	var art := TextureRect.new()
+	art.name = "VoiceIcon"
+	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	button.add_child(art)
+	art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	art.offset_left = 9
+	art.offset_right = -9
+	art.offset_top = 9
+	art.offset_bottom = -9
+	return button
+
+
+func _set_voice_icon(button: Button, key: String) -> void:
+	if button == null or not is_instance_valid(button):
+		return
+	var art := button.get_node_or_null("VoiceIcon") as TextureRect
+	if art == null:
+		return
+	if art.get_meta("voice_icon", "") == key:
+		return
+	art.texture = load("res://assets/ui/voice/%s.svg" % key)
+	art.set_meta("voice_icon", key)
+
+
+# 麦克风/扬声器图标随状态刷新。**两个开关互相独立**（10.07 第 9 条返工）：
+# 扬声器关只表示「我听不见」，不等于「我不能说」—— 所以这里**不再禁用麦克风按钮**。
+# 旧实现是 `_voice_mic.disabled = _local_only or not speaker_on`，玩家必须先把扬声器
+# 打开才能碰麦克风，正是真机反馈的「麦克风没法独立打开」。
+func _refresh_voice_icons() -> void:
+	if _party_voice == null:
+		return
+	var mic_on := bool(_party_voice.get("mic_enabled"))
+	var speaker_on := bool(_party_voice.get("speaker_enabled"))
+	_set_voice_icon(_voice_mic, "mic_on" if mic_on else "mic_off")
+	_set_voice_icon(_voice_speaker, "speaker_on" if speaker_on else "speaker_off")
+	if _voice_mic != null:
+		_voice_mic.tooltip_text = _text("关闭麦克风" if mic_on else "打开麦克风", "Toggle microphone")
+		_voice_mic.disabled = _local_only
+	if _voice_speaker != null:
+		_voice_speaker.tooltip_text = _text("关闭扬声器" if speaker_on else "打开扬声器", "Toggle speaker")
+		_voice_speaker.disabled = _local_only
 
 
 func _style_mode(button: Button, selected: bool) -> void:

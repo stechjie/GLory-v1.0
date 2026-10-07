@@ -114,10 +114,14 @@ def queued_message(position: int, mode: str) -> dict:
     return {"t": MESSAGE_TYPE, "state": "queued", "position": int(position), "mode": mode}
 
 
-def idle_message(reason: str = "") -> dict:
+def idle_message(reason: str = "", by_name: str = "") -> dict:
     out = {"t": MESSAGE_TYPE, "state": "idle"}
     if reason:
         out["reason"] = reason
+    # ★ 10.07h 第 9(6) 条：谁取消了排队。**只放昵称**（需求写明「昵称，无数字 ID」）——
+    #   客户端拿它拼「XXX 取消了排队」，不需要（也不该）知道对方的 friend_code。
+    if by_name:
+        out["by_name"] = by_name
     return out
 
 

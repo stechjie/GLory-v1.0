@@ -28,6 +28,7 @@ const HEADER_BUTTON_WIDTH := 180.0
 const CHIP_ICON := Vector2(30, 30)
 const DAY_SEC := 86400
 const HOUR_SEC := 3600
+const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
 
 var _selected_id := 0
 var _busy := false
@@ -123,7 +124,7 @@ func _build() -> void:
 	list_panel.custom_minimum_size = Vector2(LIST_WIDTH, 0)
 	list_panel.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SURFACE, Tokens.BORDER, Tokens.GAP_S))
 	body.add_child(list_panel)
-	var list_scroll := ScrollContainer.new()
+	var list_scroll := TouchScrollContainer.new()
 	list_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	list_panel.add_child(list_scroll)
 	_list_box = VBoxContainer.new()
@@ -136,7 +137,7 @@ func _build() -> void:
 	detail_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	detail_panel.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SURFACE, Tokens.BORDER, Tokens.GAP_M))
 	body.add_child(detail_panel)
-	var detail_scroll := ScrollContainer.new()
+	var detail_scroll := TouchScrollContainer.new()
 	detail_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	detail_panel.add_child(detail_scroll)
 	_detail_box = VBoxContainer.new()

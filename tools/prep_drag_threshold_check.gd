@@ -28,7 +28,8 @@ extends Node
 #   ❌ 也**判不了 `pressed` 到底发没发**：`gui_input.emit()` 只跑连在信号上的
 #      脚本处理器，**不跑 BaseButton 的内建点击逻辑**（实测这里 pressed 恒为 0）。
 #      所以本检查里不写任何 `pressed` 计数断言 —— 那会是恒真的空转断言。
-#      「点击真的生效」由上面那个非 headless 探针判（tap 0/6/12/15 → pressed=1）。
+#      「点击真的生效」由上面那个非 headless 探针判（tap 0/14/20/27 → pressed=1）。
+#      ★ 10.07 第 4 条把阈值 16 提到 28，探针的用例分界也要跟着挪（见探针内注释）。
 #   ⚠️ 因此「把 _get_drag_data 改回 return drag_payload」这个回退会被本检查的
 #      a2/a2b 与 b_*_engine_gets_null 抓住；行为侧的互补判据在那个探针里
 #      （tap12 会从 pressed=1 变 pressed=0）。两条判据互补，缺一不可。
@@ -151,7 +152,9 @@ func _assert_type(label: String, script: Script) -> void:
 		"%s：_get_drag_data 一律返回 null，引擎拿不到数据就不会起拖" % label)
 
 	# 够不到阈值：一次拖都不许起（于是那次松手不会被吞成"点了没反应"）。
-	for n in [0, 6, 12, 15]:
+	# ★ 边界随 DRAG_START_DISTANCE 提高（10.07 第 4 条：16 -> 28）同步上调，
+	#   把手机手抖区间整段纳入「算点击」。
+	for n in [0, 6, 14, 20, 27]:
 		var before: int = owner.starts
 		_gesture(btn, n)
 		h.expect(owner.starts == before and not bool(btn.get("_gesture_drag_launched")),
@@ -159,7 +162,7 @@ func _assert_type(label: String, script: Script) -> void:
 			"%s：位移 %dpx 判为点击（没起拖、宿主没收到通知）" % [label, n])
 
 	# 到阈值：必须起拖，并且通知到宿主。
-	for n in [16, 20, 48]:
+	for n in [28, 32, 64]:
 		var before: int = owner.starts
 		_gesture(btn, n)
 		h.expect(owner.starts == before + 1, "b_%s_drag%d" % [label, n],
@@ -170,13 +173,13 @@ func _assert_type(label: String, script: Script) -> void:
 	#     真正的路由级判据在非 headless 探针的 ramp 用例里。）
 	var before_ramp: int = owner.starts
 	_mouse_down(btn, Vector2(100, 60))
-	_mouse_move(btn, Vector2(112, 60))
+	_mouse_move(btn, Vector2(120, 60))
 	h.expect(owner.starts == before_ramp, "b_%s_ramp_mid_not_launched" % label,
-		"%s：先抖 12px 时不起拖（还在点击区间）" % label)
-	_mouse_move(btn, Vector2(140, 60))
+		"%s：先抖 20px 时不起拖（还在点击区间）" % label)
+	_mouse_move(btn, Vector2(180, 60))
 	h.expect(owner.starts == before_ramp + 1, "b_%s_ramp_launches_later" % label,
-		"%s：继续移到 40px 时起拖 —— 位移变大不许被锁死" % label)
-	_mouse_up(btn, Vector2(140, 60))
+		"%s：继续移到 80px 时起拖 —— 位移变大不许被锁死" % label)
+	_mouse_up(btn, Vector2(180, 60))
 
 	# 拖拽结束的转发（原实现就有，别在改写里丢掉）。
 	var before_end: int = owner.ends
@@ -197,12 +200,12 @@ func _section_threshold_edges() -> void:
 	var owner: FakeOwner = made["owner"]
 
 	btn.call("_begin_gesture", Vector2(100, 60), -1)
-	btn.call("_maybe_launch_drag", Vector2(115.99, 60))
+	btn.call("_maybe_launch_drag", Vector2(127.99, 60))
 	h.expect(owner.starts == 0 and not bool(btn.get("_gesture_drag_launched")), "c1_below_threshold_tap",
-		"15.99px 仍判点击（阈值左闭，边界不许松）")
+		"27.99px 仍判点击（阈值左闭，边界不许松）")
 
-	btn.call("_maybe_launch_drag", Vector2(116.0, 60))
-	h.expect(owner.starts == 1, "c2_at_threshold_drag", "16.0px 起拖（边界值本身算够）")
+	btn.call("_maybe_launch_drag", Vector2(128.0, 60))
+	h.expect(owner.starts == 1, "c2_at_threshold_drag", "28.0px 起拖（边界值本身算够）")
 
 	btn.call("_maybe_launch_drag", Vector2(600, 600))
 	h.expect(owner.starts == 1, "c3_single_launch_per_gesture",
@@ -243,12 +246,12 @@ func _section_touch() -> void:
 	var owner: FakeOwner = made["owner"]
 
 	_touch_down(btn, Vector2(100, 60), 0)
-	_touch_drag(btn, Vector2(112, 60), 0)
-	h.expect(owner.starts == 0 and bool(btn.get("_gesture_pressed")), "d1_touch_12px_tap",
-		"触摸位移 12px 仍算点击")
 	_touch_drag(btn, Vector2(120, 60), 0)
-	h.expect(owner.starts == 1, "d2_touch_20px_drag", "触摸位移 20px 起拖")
-	_touch_up(btn, Vector2(120, 60), 0)
+	h.expect(owner.starts == 0 and bool(btn.get("_gesture_pressed")), "d1_touch_20px_tap",
+		"触摸位移 20px 仍算点击")
+	_touch_drag(btn, Vector2(140, 60), 0)
+	h.expect(owner.starts == 1, "d2_touch_40px_drag", "触摸位移 40px 起拖")
+	_touch_up(btn, Vector2(140, 60), 0)
 	h.expect(not bool(btn.get("_gesture_pressed")), "d3_touch_release_resets",
 		"触摸抬起清掉手势状态（否则下一次按下会沿用旧起点）")
 
@@ -259,9 +262,9 @@ func _section_touch() -> void:
 	_touch_down(btn2, Vector2(100, 60), 0)
 	_touch_drag(btn2, Vector2(600, 400), 2)
 	h.expect(owner2.starts == 0, "d4_other_finger_ignored", "别的指头的拖动不参与本次手势")
-	_touch_drag(btn2, Vector2(120, 60), 0)
+	_touch_drag(btn2, Vector2(140, 60), 0)
 	h.expect(owner2.starts == 1, "d5_own_finger_still_launches", "发起手势那根指头仍能起拖")
-	_touch_up(btn2, Vector2(120, 60), 0)
+	_touch_up(btn2, Vector2(140, 60), 0)
 
 	btn.queue_free()
 	btn2.queue_free()

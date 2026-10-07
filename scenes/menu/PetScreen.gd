@@ -217,8 +217,13 @@ func _refresh_pets() -> void:
 	_active_label.text = tr("pet_active_label") % PetService.display_name(PlayerProfile.get_active())
 	for c in _cards_row.get_children():
 		c.queue_free()
-	for p in PetService.all_pets():
-		_cards_row.add_child(_build_card(str((p as Dictionary).get("id", "")), starter_mode))
+	# 首次三选一只展示 starter_ids（蘑菇/猫/兔子），不把松鼠/老虎带进来。
+	if starter_mode:
+		for pet_id in PetService.starter_ids():
+			_cards_row.add_child(_build_card(str(pet_id), starter_mode))
+	else:
+		for p in PetService.all_pets():
+			_cards_row.add_child(_build_card(str((p as Dictionary).get("id", "")), starter_mode))
 
 func _build_card(pet_id: String, starter_mode: bool) -> Control:
 	var owned := PlayerProfile.is_owned(pet_id)

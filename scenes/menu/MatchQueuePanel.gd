@@ -41,6 +41,8 @@ const ACCEPT_SEC := 30.0
 
 var _mode := "casual"
 var _party_queue := false
+# 10.07 第 14 条后取消对全队一视同仁，这个旗标不再决定行为；保留它是为了不
+# 动 configure() 的签名（Main.gd 仍然按原有位置传 host 标记）。
 var _party_host := false
 var _state := "idle"
 var _accept_deadline := 0.0
@@ -159,10 +161,9 @@ func _on_accept() -> void:
 func _on_leave() -> void:
 	SfxService.play(SfxService.CUE_UI_CONFIRM)
 	if _party_queue and _state == "queued":
-		if _party_host:
-			AccountManager.cancel_party_match()
-		else:
-			AccountManager.leave_party()
+		# 10.07 第 14 条：队里**任意成员**取消都只是取消匹配，全队回到房间。
+		# 以前非房主走 leave_party()，那是退房 —— 房主以外的队友一点取消就掉出队伍。
+		AccountManager.cancel_party_match()
 		dismissed.emit()
 		return
 	# 不等回执就关：退队列是「尽力而为」的动作，等一趟网络只会让界面卡住。

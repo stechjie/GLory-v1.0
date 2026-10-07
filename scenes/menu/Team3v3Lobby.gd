@@ -52,6 +52,7 @@ const RoomInvite := preload("res://scripts/multiplayer/RoomInvite.gd")
 # 「邀请已过时」「已经邀请过了」走全局 toast —— 与教程的「上阵棋子数目少于 N」同一个出口，
 # 所以「中上方 + 同一种格式」是天然的（要求 5）。
 const GloryToastScript := preload("res://ui/components/GloryToast.gd")
+const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
 var _slot_avatars: Array[TextureRect] = []
 var _friends_box: VBoxContainer
 var _friends_loading := false
@@ -192,14 +193,53 @@ func _flash_row(row: Control) -> void:
 # ★ 两块走在**同一条** tween 上：kill 时一起复位，不会留半亮的按钮。
 # ★ `Tokens.motion()` 在系统「减弱动态效果」下返回 0 ⇒ 自动退化成「不脉动」；
 #   此处的信息本来就靠文字（准备 ✓ / 未准备）承载，脉动只是提醒强度，丢了不丢信息。
-func _update_start_pulse(active: bool) -> void:
+#
+# ★★ 10.07 第 1 条返工：这块木牌一个按钮两种身份，明暗口径必须分开。
+#
+#   `as_host = true`（按钮写着「开始游戏」）—— 10.07 新语义：
+#       可以开始（_start_block_reason(true) 为空） → 明暗交替脉动
+#       不能开始（还有原因）                       → **常暗**（不再脉动）
+#     判据是「整局能不能开始」：旧口径下房主没准备时会一直脉动，即使房里还有别人
+#     没准备（其实点不了），玩家看不出「现在到底能不能开」。
+#
+#   `as_host = false`（按钮写着「准备」）—— **完全回到修复前（10.04）**：
+#       只按「本人准没准备」决定脉不脉动；不脉动时**一律复亮**，绝不压暗。
+#     这里不能沿用上面那套「不可开始就常暗」：队员那个「准备」压暗看起来像被禁用，
+#     而它其实随时可点（点一下就是「我准备好了」）—— 用户明确要求恢复原样。
+#
+#   `_bright` 与 `_dim` 也按身份取：修复前的脉动下界是 0.70 灰，不是 START_PLATE_DIM
+#   （0.52）—— 只回退调用点、不回退灰阶的话，「准备」的脉动会比修复前更暗。
+func _update_start_pulse(active: bool, as_host: bool = true) -> void:
 	if _start_plate == null or _start_lbl == null:
 		return
-	if active and Tokens.motion(1.0) > 0.0:
-		if _start_pulse_tween != null and _start_pulse_tween.is_valid():
-			return
-		var bright := Color(1.34, 1.24, 1.04, 1.0)
-		var dim := Color(0.70, 0.72, 0.72, 1.0)
+	var bright := Color(1.34, 1.24, 1.04, 1.0)
+	# 房主新口径用统一的常暗色；队员用修复前的浅灰下界。
+	var dim := START_PLATE_DIM if as_host else READY_PLATE_DIM_LEGACY
+	# ★★ 10.07c 返工（用户真机反馈「点击准备后还在脉动」）：
+	#   本函数每次 `_refresh()` 都调，而 `_refresh()` 是**高频**的（每次房间快照/轮询）。
+	#   旧写法在「应该脉动」这条路上**无条件 `create_tween()`**，只把新 tween 赋给
+	#   `_start_pulse_tween` —— **旧 tween 从没被 kill**。于是：
+	#     第 1 次刷新 → 建 tween#1；第 2 次 → 建 tween#2 覆盖引用，tween#1 还在跑 …
+	#   堆了 N 个 loop tween 同时在写 modulate。等玩家按下「准备」（active=false）时，
+	#   `_stop_start_pulse()` 只 kill 到**当前引用那一个**，前面泄漏的全都还在写
+	#   ⇒ **「准备√」了木牌照样明暗脉动**，而且越刷越乱。
+	#   （房主侧因为 `as_host` 有早退才没暴露；队员侧我上一轮为「严格还原修复前」
+	#    把早退去掉了，反而踩出这个泄漏 —— 修复前调用点少，掩盖了这个 bug。）
+	#
+	#   改法：把「现在该不该脉动」与「有没有在脉动」分开判：
+	#     * 该脉动 && 已经在脉动 ⇒ 沿用，不动 tween（避免刷新把脉动重置回起点）；
+	#     * 否则 ⇒ **先无条件清干净**（kill 旧 tween、复位标记），再按 active 决定要不要新建。
+	#   这样「是否脉动」由 active 唯一决定，且**任何时刻最多只有一个 tween**。
+	var want_pulse := active and Tokens.motion(1.0) > 0.0
+	if want_pulse and _pulsing:
+		return
+	# 走到这里：要么不想脉动（要收掉），要么想脉动但还没跑（要新建）。
+	# 两种情况都先把可能存在的旧 tween 清干净 —— 这一步就是堵住泄漏的那一刀。
+	_clear_pulse_tween()
+	if want_pulse:
+		if as_host:
+			# 房主侧先复位到亮态再起脉动（保证从「常暗」切到「脉动」时不卡在暗档）。
+			_set_start_plate(Color(1.0, 1.0, 1.0, 1.0))
 		var t := create_tween().set_loops()
 		t.set_trans(Tween.TRANS_SINE)
 		t.set_ease(Tween.EASE_IN_OUT)
@@ -208,17 +248,35 @@ func _update_start_pulse(active: bool) -> void:
 		t.tween_property(_start_plate, "modulate", dim, 0.9)
 		t.parallel().tween_property(_start_lbl, "modulate", dim, 0.9)
 		_start_pulse_tween = t
+		_pulsing = true
 	else:
-		_stop_start_pulse()
+		# 不脉动 ⇒ 一律复亮（房主「不可开始」再压常暗）。
+		# 「准备」按下的那一刻就走这里 ⇒ 木牌立刻停、立刻回亮，不再脉动。
+		_set_start_plate(Color(1, 1, 1, 1))
+		if as_host and not active:
+			# 不可开始 ⇒ 压暗常显。即使系统「减弱动态效果」关了脉动，
+			# 这一步也照走 —— 暗态本身就是信息（能开/不能开）。
+			_set_start_plate(START_PLATE_DIM)
 
 
-func _stop_start_pulse() -> void:
+# 木牌底图 + 文字一起上色调。
+func _set_start_plate(color: Color) -> void:
+	for node in [_start_plate, _start_lbl]:
+		if node != null:
+			node.modulate = color
+
+
+# 杀掉当前的脉动 tween 并把「在跑」标记清掉（不碰 modulate，调用方决定下一步色调）。
+func _clear_pulse_tween() -> void:
 	if _start_pulse_tween != null and _start_pulse_tween.is_valid():
 		_start_pulse_tween.kill()
 	_start_pulse_tween = null
-	for node in [_start_plate, _start_lbl]:
-		if node != null:
-			node.modulate = Color(1, 1, 1, 1)
+	_pulsing = false
+
+
+func _stop_start_pulse() -> void:
+	_clear_pulse_tween()
+	_set_start_plate(Color(1, 1, 1, 1))
 
 func _seat_profile(index: int) -> Dictionary:
 	if index == _my_slot():
@@ -267,6 +325,13 @@ const MENU_MUSIC_PATH := "res://assets/audio/bgm/menu_music.mp3"
 const TEAM_ROOM_MUSIC_PATH := "res://assets/audio/bgm/team_room_music.mp3"
 const SELFTEST_SCENE_PATH := "res://officetest/OfficeTestScreen.tscn"
 
+# 开始按钮「不可开始」时的常暗色调（10.07 第 1 条）。可在亮态(1,1,1,1)与暗态间对比。
+# 明暗交替的灰阶下界也用同一个值，保证「脉动最暗」与「常暗」看起来一样黑。
+const START_PLATE_DIM := Color(0.52, 0.54, 0.56, 1.0)
+# 「准备」按钮脉动的最暗档 —— **修复前（10.04）的原值**，不随第 1 条改动。
+# 10.07 第 1 条返工：队员侧全部回到这个灰阶，别跟着 START_PLATE_DIM 一起变深。
+const READY_PLATE_DIM_LEGACY := Color(0.70, 0.72, 0.72, 1.0)
+
 # ── 布局调试overlay ────────────────────────────────────────────────
 # 与主界面同款：黑线 = 空间划分（参考画布边界 / 功能分区 / 席位格 / 每个元素占位框）
 #               红线 = 所有按钮的点击判定区（返回 / 入座 / X / ±AI / 自测 / 开始）
@@ -308,6 +373,10 @@ var _start_lbl: Label
 # 建的时候 `modulate.a = 0`（见 `_add_hit`），脉动它等于没脉动。
 var _start_plate: TextureRect
 var _start_pulse_tween: Tween
+# 现在到底有没有一个脉动 tween 在跑。**不能只靠 `_start_pulse_tween.is_valid()` 判**：
+# 那只能说明「引用还活着」，而我要的是「我建过、还没停」。10.07c 的 tween 泄漏
+# 就是因为只看引用、每次刷新无条件新建 —— 旧 tween 没被 kill 却在跑。
+var _pulsing := false
 var _host_hint_lbl: Label
 var _selftest_btn: Button
 var _screen_bands: Array[Dictionary] = []
@@ -489,7 +558,7 @@ func _build() -> void:
 	_add_texture(TEX_FRIENDS, Vector2(1340, 180), Vector2(230, 400), "right")
 	_add_label(_room_text("朋友列表", "Friends"), Vector2(1340, 215), Vector2(230, 42), 28,
 		Tokens.GOLD_HOVER, "right", true)
-	var friends_scroll := ScrollContainer.new()
+	var friends_scroll := TouchScrollContainer.new()
 	friends_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	add_child(friends_scroll)
 	# 9.14 反馈：名字原来从 1350 起，而羊皮纸的内边在 1373 左右 —— 文字压在木框上，
@@ -773,18 +842,28 @@ func _refresh() -> void:
 	if _start_btn != null:
 		# 房主按钮不再因有人未准备而禁用——点了会显示具体原因（房主也不免检）
 		_start_btn.disabled = false
+	var my_seat_ready := my_slot >= 0 and my_slot < ready_arr.size() and bool(ready_arr[my_slot])
+	var my_seat_player := my_slot >= 0 and my_slot < states.size() and str(states[my_slot]) == "player"
 	if _start_lbl != null:
 		if is_host_seat:
 			_start_lbl.text = _room_text("开始游戏", "Start Game")
 		else:
-			var ready := my_slot >= 0 and bool(_ready_arr()[my_slot])
-			_start_lbl.text = tr("lobby_ready_done") if ready else tr("lobby_ready")
-	# 10.04 bug 文档第 2 条（房间）：颜色照旧（契合房间），只给**未准备的本人**
-	# 加提醒 —— 右下角按钮缓慢脉动（玩家选定的手法③「对本人最有效」）。
-	# 房主也算未准备（房主按「开始游戏」时才自动提交自己的 ready）。
-	var my_seat_player := my_slot >= 0 and my_slot < states.size() and str(states[my_slot]) == "player"
-	var my_seat_ready := my_slot >= 0 and my_slot < ready_arr.size() and bool(ready_arr[my_slot])
-	_update_start_pulse(my_seat_player and not my_seat_ready)
+			_start_lbl.text = tr("lobby_ready_done") if my_seat_ready else tr("lobby_ready")
+	# ★★ 10.07 第 1 条返工（用户真机反馈）：
+	#   这块木牌**一个按钮两种身份** —— 房主看到「开始游戏」，队员看到「准备」。
+	#   第 1 条的诉求原文只是「开始游戏UI」，指的是**房主那侧**（能不能开局一眼可见）；
+	#   初版把两种身份一起改了（统一 `_start_block_reason(true).is_empty()`），
+	#   于是队员那个「准备」也被压成常暗 —— 看起来像被禁用，是**误伤**。
+	#   用户明确要求：把**准备UI 恢复到修复前**。
+	#
+	#   所以这里按身份分流：
+	#     房主（「开始游戏」）→ 10.07 新口径：整局能不能开 ⇒ 能开脉动 / 不能开常暗。
+	#     队员（「准备」）    → 回到 10.04 旧口径：**本人未准备才脉动**，其余一律回亮
+	#                            （与 `_stop_start_pulse()` 的复位一致，不留暗块）。
+	if is_host_seat:
+		_update_start_pulse(_start_block_reason(true).is_empty(), true)
+	else:
+		_update_start_pulse(my_seat_player and not my_seat_ready, false)
 	if _host_hint_lbl != null:
 		_host_hint_lbl.visible = is_host_seat
 		_host_hint_lbl.text = _start_hint_text()

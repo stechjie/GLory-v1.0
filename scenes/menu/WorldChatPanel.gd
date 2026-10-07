@@ -26,6 +26,7 @@ const STICK_TO_BOTTOM_PX := 64.0
 # 气泡最宽占消息区的多少（比私聊宽：世界频道每条上面还有一行名字，左右对齐的对比没那么重要）。
 const BUBBLE_MAX_RATIO := 0.72
 const ACTIONS_MODAL_ID := "world_message_actions"
+const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
 
 var _scroll: ScrollContainer
 var _list: VBoxContainer
@@ -104,7 +105,7 @@ func _build() -> void:
 	well.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.BG_DEEP, Tokens.BORDER.darkened(0.55), Tokens.GAP_S))
 	col.add_child(well)
 
-	_scroll = ScrollContainer.new()
+	_scroll = TouchScrollContainer.new()
 	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	well.add_child(_scroll)

@@ -11,6 +11,7 @@ signal dismissed()
 
 const CELL_WIDTH := 154.0
 const CELL_HEIGHT := 150.0
+const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
 
 var _selected := ""
 var _owned: Dictionary = {}
@@ -50,7 +51,7 @@ func _build() -> void:
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
 	column.add_child(hint)
-	var scroll := ScrollContainer.new()
+	var scroll := TouchScrollContainer.new()
 	scroll.custom_minimum_size = Vector2(510, 490)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	column.add_child(scroll)

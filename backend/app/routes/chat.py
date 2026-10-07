@@ -52,7 +52,9 @@ DM_TYPE = "dm"
 # **不新开推送类型**：收件人侧的红点、音效、断线补拉全在 dm 那条链上，
 # 新类型只会多一套要单独维护的红点与音效通路。区别只在消息自带的 kind。
 ROOM_INVITE_KIND = chat.ROOM_INVITE_KIND
-_ALLOWED_KINDS = ("text", ROOM_INVITE_KIND)
+# 10.07 第 10 条：排位/休闲的组队邀请也做成一条私聊（见 chat.PARTY_INVITE_KIND）。
+PARTY_INVITE_KIND = chat.PARTY_INVITE_KIND
+_ALLOWED_KINDS = ("text", ROOM_INVITE_KIND, PARTY_INVITE_KIND)
 
 # 每人每分钟最多发多少条。**只防刷屏**，不负责总量 ——
 # 总量由「每对好友只存最近 200 条」在结构上封顶（见 database/007_chat.sql）。
@@ -181,6 +183,27 @@ def _validated_invite_payload(body: SendBody) -> dict:
     return {"room_id": room_value}
 
 
+def _validated_party_payload(body: SendBody) -> dict:
+    """把组队邀请的 payload 收敛成 {"party_id": str, "mode": str}（10.07 第 10 条）。
+
+    同 _validated_invite_payload 的道理：payload 是客户端传的就要校验。
+    party_id 空 ⇒ 收件人点「加入」会去 join 一个不存在/无效的队伍；
+    mode 只允许 casual / ranked（与 party.Room.mode 一致），坏值一律退回 casual
+    —— 界面靠它选「加入休闲还是排位」，坏值的症状是加错模式，不报错。
+    """
+    payload = body.payload or {}
+    party_value = payload.get("party_id")
+    if not isinstance(party_value, str) or not party_value.strip():
+        raise HTTPException(
+            status_code=400, detail="组队邀请缺少有效的队伍号",
+            headers={"X-Glory-Reason": "party_invite_bad_payload"},
+        )
+    mode = payload.get("mode")
+    if mode not in ("casual", "ranked"):
+        mode = "casual"
+    return {"party_id": party_value.strip(), "mode": str(mode)}
+
+
 # --- 接口 ---------------------------------------------------------------------
 
 
@@ -233,10 +256,15 @@ async def send_message(
             status_code=400, detail="不支持的消息类型",
             headers={"X-Glory-Reason": "chat_kind_invalid"},
         )
-    # 邀请的机器可读部分（房间号）在这一层校验、**不塞进 body**：
+    # 邀请的机器可读部分（房间号 / 队伍号）在这一层校验、**不塞进 body**：
     # body 要过 text_guard（压换行、限 200 字），本地化之后从里面抠号会静默失效。
     # 非邀请 kind 一律不带 payload —— 不让普通文本夹带任意字典进库。
-    payload = _validated_invite_payload(body) if kind == ROOM_INVITE_KIND else None
+    if kind == ROOM_INVITE_KIND:
+        payload = _validated_invite_payload(body)
+    elif kind == PARTY_INVITE_KIND:
+        payload = _validated_party_payload(body)
+    else:
+        payload = None
     try:
         _send_limiter.check(str(me.player_id))
     except RateLimited as exc:

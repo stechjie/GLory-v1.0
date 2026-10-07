@@ -29,6 +29,7 @@ enum Intent {
 const RESULT_CONFIRMED := "confirmed"
 const RESULT_CANCELLED := "cancelled"
 const RESULT_DISMISSED := "dismissed"
+const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
 
 var _request_id := ""
 var _intent: int = Intent.NORMAL
@@ -109,7 +110,7 @@ func _build(spec: Dictionary) -> void:
 	# 坑：ScrollContainer 的最小尺寸**不**随子节点增长，默认会塌成 0 高，
 	# 于是正文整段看不见（第一次抓图就是这样：标题和按钮在，正文没了）。
 	# 所以高度必须进树后按实际文本量算，见 _fit_body_scroll()。
-	_body_scroll = ScrollContainer.new()
+	_body_scroll = TouchScrollContainer.new()
 	_body_scroll.name = "DialogBodyScroll"
 	_body_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	box.add_child(_body_scroll)

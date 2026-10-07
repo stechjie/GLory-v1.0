@@ -41,6 +41,8 @@ class Room:
     messages: list[dict] = field(default_factory=list)
     voice_epoch: str = field(default_factory=lambda: secrets.token_hex(6))
     voice_used: bool = False
+    # 每个成员在当前队伍里的入座时刻（单调时钟）。房主退出时按它挑「待得最久」的人接班。
+    joined_at: dict[uuid.UUID, float] = field(default_factory=dict)
 
 
 class Parties:
@@ -65,6 +67,7 @@ class Parties:
             raise PartyRejected("bad_mode", "没有这个匹配模式")
         room_id = secrets.token_urlsafe(12)
         room = Room(room_id, player, mode, [player], {player: profile}, pets=pets[:MAX_PETS])
+        room.joined_at[player] = self._now()
         self._rooms[room_id] = room
         self._member_room[player] = room_id
         return room
@@ -130,29 +133,43 @@ class Parties:
         self._rotate_voice(room)
         room.members.append(player)
         room.profiles[player] = profile
+        # 重新进入房间 = 重新计时，退房时按这个时间挑新队长。
+        room.joined_at[player] = self._now()
         self._member_room[player] = room_id
         room.ready.clear()
         room.version += 1
         return room
 
-    def leave(self, player: uuid.UUID) -> tuple[Room | None, list[uuid.UUID], bool]:
+    def leave(self, player: uuid.UUID) -> tuple[Room | None, list[uuid.UUID], bool, bool]:
+        """退出队伍。返回 (房间, 原成员, 是否解散, 是否换了房主)。"""
         room = self.of(player)
         if room is None:
-            return None, [], False
+            return None, [], False, False
         old_members = room.members.copy()
         self._member_room.pop(player, None)
         if player == room.host:
-            self._close_voice(room)
-            for pid in room.members:
-                self._member_room.pop(pid, None)
-            self._rooms.pop(room.id, None)
-            return room, old_members, True
+            # 房主退出：房里还有别人就交接给「待得最久」的那位，只剩自己才解散。
+            remaining = [pid for pid in room.members if pid != player]
+            if not remaining:
+                self._close_voice(room)
+                self._member_room.pop(player, None)
+                self._rooms.pop(room.id, None)
+                return room, old_members, True, False
+            successor = min(remaining, key=lambda pid: room.joined_at.get(pid, 0.0))
+            room.host = successor
+            room.members.remove(player)
+            room.profiles.pop(player, None)
+            room.joined_at.pop(player, None)
+            room.ready.clear()
+            room.version += 1
+            return room, old_members, False, True
         room.members.remove(player)
         self._rotate_voice(room)
         room.profiles.pop(player, None)
+        room.joined_at.pop(player, None)
         room.ready.clear()
         room.version += 1
-        return room, old_members, False
+        return room, old_members, False, False
 
     def mode(self, player: uuid.UUID, mode: str) -> Room:
         room = self._require_host(player)
@@ -208,7 +225,8 @@ class Parties:
             room.version += 1
 
     def queued_room(self, player: uuid.UUID) -> Room:
-        room = self._require_host(player)
+        # 取消匹配对全队生效，所以队里任何人（不只房主）都能按。
+        room = self._require_member(player)
         if not room.queued:
             raise PartyRejected("not_queued", "队伍当前没有排队")
         return room

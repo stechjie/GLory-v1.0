@@ -199,6 +199,15 @@ static func frame_box_origin(frame_id: String, target_hole: float,
 	return disc_center - Vector2(off.x * drawn.x, off.y * drawn.y) - drawn * 0.5
 
 
+# 内孔圆心相对**框盒左上角**的偏移（绘制坐标 px）。`frame_box_origin` 的逆运算。
+#
+# 调用方拿框盒左上角 + 绘制尺寸之后，用本函数就能算出内孔实际落在哪里 ——
+# 门禁靠它断言「内孔圆心 == 头像圆心」（而不用在门禁里复刻一遍偏移计算）。
+static func frame_hole_center_local(frame_id: String, drawn: Vector2) -> Vector2:
+	var off := frame_hole_offset(frame_id)
+	return drawn * 0.5 + Vector2(off.x * drawn.x, off.y * drawn.y)
+
+
 # 素材原始像素尺寸。读不到给 (0,0)，由调用方自己判 —— 不在这里报错。
 static func frame_source_size(frame_id: String) -> Vector2:
 	var path := frame_source_path(frame_id)

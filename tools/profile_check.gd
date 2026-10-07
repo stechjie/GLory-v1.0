@@ -15,6 +15,7 @@ extends Node
 
 const CheckHarness := preload("res://tools/CheckHarness.gd")
 const Catalog := preload("res://scripts/account/AvatarCatalog.gd")
+const AvatarCatalogScript := preload("res://scripts/account/AvatarCatalog.gd")
 const ProfileScreenScript := preload("res://scenes/menu/ProfileScreen.gd")
 const AvatarPickerScript := preload("res://scenes/menu/AvatarPickerPanel.gd")
 
@@ -35,6 +36,7 @@ func _ready() -> void:
 	_case_screens_instantiate()
 	_case_region_codes_are_iso()
 	_case_nameplate_shows_avatar()
+	await _case_avatar_frame_hole_aligns()
 	_case_account_reset_keeps_device_state()
 	_h.finish(get_tree())
 
@@ -192,6 +194,77 @@ func _case_screens_instantiate() -> void:
 	_h.expect(menu.has_signal("profile_requested"), "menu_profile_signal",
 		"MainMenu 缺少 profile_requested 信号")
 	menu.free()
+
+
+# 10.07 第 7 条：安卓手机端个人资料页头像异常 —— 与 Godot 端口径不一致。
+#
+# ★ 这条判据是**几何**，不是「源码里有没有某个常量」。理由是这一处的失效方式
+#   特别隐蔽：旧写法（两张 PRESET_FULL_RECT 的 TextureRect 叠在同一个方盒里、
+#   都设 KEEP_ASPECT_CENTERED）在**头像素材与框素材宽高比相同**时结果是对的，
+#   只在两者比例不同时才错 —— 而商城框是竖长图（1103x1426 这类）、头像是 330x330
+#   或 850x825。桌面小盒子里偏差只有 1~2px 看不出来，安卓端被放大才暴露。
+#
+# 所以断言直接量**几何关系**：
+#   1. 头像框绘制尺寸 == frame_drawn_size（按内孔占比反推）；
+#   2. 框的内孔圆心 == 头像圆心（含每张框各自的内孔偏移补偿）。
+# 只要有人把它改回「两张图各缩各的」，这两条立刻红。
+func _case_avatar_frame_hole_aligns() -> void:
+	var mgr := get_node_or_null("/root/AccountManager")
+	if mgr == null:
+		return
+	var scene := load("res://scenes/menu/ProfileScreen.tscn") as PackedScene
+	if scene == null:
+		return
+	var screen := scene.instantiate() as Control
+	screen.call("configure_self")
+	add_child(screen)
+	screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	await get_tree().process_frame
+
+	var frame_ids: Array[String] = []
+	for entry in Catalog.frames():
+		frame_ids.append(str((entry as Dictionary).get("id", "")))
+	frame_ids.append("")  # 不戴框
+	for frame_id in frame_ids:
+		# 直接写 _data —— _load() 是异步的、会在我们设完之后把 _data 覆盖回服务端的值，
+		# 那样每轮量到的都是同一张框。这里要的是**逐张框**各量一遍几何。
+		var data: Dictionary = screen.get("_data")
+		data["avatar"] = "preset:avatar_001"
+		data["avatar_frame"] = ("preset:%s" % frame_id) if not frame_id.is_empty() else ""
+		data["player_name"] = "Leno"
+		data["friend_code"] = "7K2M9Q4B"
+		screen.call("_refresh")
+		await get_tree().process_frame
+		await get_tree().process_frame
+
+		var avatar: TextureRect = screen.get("_avatar_rect")
+		var frame: TextureRect = screen.get("_frame_rect")
+		if not _h.expect(avatar != null and frame != null, "avatar_nodes_present",
+				"资料页里必须有 _avatar_rect 与 _frame_rect"):
+			break
+		if frame_id.is_empty():
+			_h.expect(not frame.visible, "no_frame_hidden",
+				"没有头像框时 _frame_rect 应当隐藏")
+			continue
+		if not _h.expect(frame.visible, "frame_visible", "有头像框时 %s 应当可见" % frame_id):
+			continue
+		# ① 框的绘制尺寸必须是「按内孔反推」的那个尺寸。
+		var target_hole := avatar.size.x
+		var drawn := Catalog.frame_drawn_size(frame_id, target_hole)
+		var size_ok := absf(frame.size.x - drawn.x) <= 1.5 and absf(frame.size.y - drawn.y) <= 1.5
+		_h.expect(size_ok, "frame_drawn_size_matches",
+			"%s 的框绘制尺寸必须是按内孔反推的值 %.1fx%.1f（否则就是「按长边贴满」的旧写法），实测 %.1fx%.1f"
+				% [frame_id, drawn.x, drawn.y, frame.size.x, frame.size.y])
+		# ② 框的内孔圆心必须落在头像圆心上。
+		var hole_center := frame.position + AvatarCatalogScript.frame_hole_center_local(frame_id, frame.size)
+		var avatar_center := avatar.position + avatar.size * 0.5
+		var delta := (hole_center - avatar_center).length()
+		_h.expect(delta <= 1.5, "frame_hole_aligns_avatar",
+			"%s 的框内孔圆心必须压在头像圆心上（差 %.2f px）—— 这条是大厅与资料页口径一致的判据"
+				% [frame_id, delta])
+
+	screen.queue_free()
+	await get_tree().process_frame
 
 
 func _case_nameplate_shows_avatar() -> void:

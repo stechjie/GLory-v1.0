@@ -16,6 +16,7 @@ const WARM_GLOW := preload("res://assets/ui/main_menu_live/glow_warm.png")
 
 const POLL_ATTEMPTS := 12
 const POLL_INTERVAL := 1.25
+const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
 
 var data: Dictionary = {}
 var _result := "win"
@@ -67,7 +68,7 @@ func _build() -> void:
 	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(shade)
 
-	var scroll := ScrollContainer.new()
+	var scroll := TouchScrollContainer.new()
 	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	add_child(scroll)

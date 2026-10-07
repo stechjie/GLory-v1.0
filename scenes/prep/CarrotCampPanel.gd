@@ -1,6 +1,7 @@
 extends PanelContainer
 
 const CarrotEconomy := preload("res://scripts/economy/CarrotEconomy.gd")
+const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
 
 signal closed
 
@@ -86,7 +87,7 @@ func _build() -> void:
 	merc_title.text = "本回合佣兵（点击直接雇佣）"
 	merc_title.add_theme_color_override("font_color", Color(0.78, 0.88, 1.0))
 	merc_page.add_child(merc_title)
-	var scroll := ScrollContainer.new()
+	var scroll := TouchScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	merc_page.add_child(scroll)
@@ -108,7 +109,7 @@ func _build() -> void:
 	_stones = Label.new()
 	_stones.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	stone_page.add_child(_stones)
-	var four_star_scroll := ScrollContainer.new()
+	var four_star_scroll := TouchScrollContainer.new()
 	four_star_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	four_star_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	stone_page.add_child(four_star_scroll)

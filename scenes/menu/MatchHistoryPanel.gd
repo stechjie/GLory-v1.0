@@ -23,6 +23,8 @@ extends Control
 #    不另画一份：点按钮弹出 scenes/menu/FinalSettlementPanel.gd 本身，数据由
 #    settlement_view_data() 从历史接口的格式换成它认的格式。结算面板改了，这里跟着变。
 #    023 之前打的局没有这份数据（settlement 为 null），按钮换成一句说明。
+#    10.07 bug 文档第 8 条：结算面板对任何回合都出（含 PVE）⇒ 历史里也不再按战斗
+#    种类挡 PVE，「有 settlement 就有详细战况」。
 #
 # 5. **名字是账号现在的名字**（2026-09-29 用户定）：后端按 player_id 现取，改过名显示新名字。
 #    2026-10-04 bug 文档第 5 条（二次反馈）：这里**只显示昵称、隐藏 #好友码**
@@ -46,6 +48,7 @@ signal dismissed()
 # 一次拉多少局。后端 MAX_LIMIT 是 50；20 够翻一阵，而且六个座位的详情都在
 # 同一份响应里，拉太多是白白占内存。
 const FETCH_LIMIT := 20
+const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
 
 var _matches: Array = []
 var _selected_match := -1
@@ -103,7 +106,7 @@ func _build() -> void:
 	_summary.add_theme_font_size_override("font_size", 18)
 	_summary.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
 	column.add_child(_summary)
-	var list_scroll := ScrollContainer.new()
+	var list_scroll := TouchScrollContainer.new()
 	list_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	list_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	list_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -266,7 +269,7 @@ func _list_row(index: int) -> Control:
 			_open_settlement(item))
 		action_box.add_child(detail)
 	else:
-		action_box.add_child(_row_label(_text("本局在 PvE 回合结束，无结算详情", "PvE match, no details") if typeof(item.get("settlement")) == TYPE_DICTIONARY else _text("旧版本记录，没有详细战况", "Older record, no match details"), Tokens.TEXT_SECONDARY, 12))
+		action_box.add_child(_row_label(_text("旧版本记录，没有详细战况", "Older record, no match details"), Tokens.TEXT_SECONDARY, 12))
 	return row
 
 
@@ -372,7 +375,10 @@ static func has_settlement_details(item: Dictionary) -> bool:
 		return false
 	var kind := str(item.settlement.get("kind", ""))
 	if not kind.is_empty():
-		return kind in ["pvp", "final"]
+		# 10.07 bug 文档第 8 条：任何回合结束都有结算面板（PVE 也要算我方上阵佣兵
+		# 的数据），历史里也同步 ⇒ 有 settlement 就有详细战况，不再按战斗种类挡 PVE。
+		# 以前这里是 `kind in ["pvp", "final"]`，PVE 记录一律显示「无结算详情」。
+		return true
 	# Old records have rounds but no battle-kind field. Read the schedule without
 	# consulting GameState.final_round_played (which belongs to the current run).
 	var round_index := int(item.get("rounds", 0))

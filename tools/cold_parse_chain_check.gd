@@ -147,6 +147,43 @@ const TARGETS: Array[Dictionary] = [
 	#   BattleSimShared / BattleSimulator / BattleArena 已在上面；协议号文件和新门禁单列。
 	{"kind": "script", "path": "res://scripts/multiplayer/NetworkConfig.gd"},
 	{"kind": "script", "path": "res://tools/pvp_lane_alignment_check.gd"},
+	# ★ 10.07（10.07bug提交及修复.docx 14 条）：按「改的每个文件都要在清单里，谁坏了
+	#   就指谁」逐个单列。★ 这一批**又抓到一次同款漏网**：`ProfileScreen.gd` 与
+	#   `MatchQueuePanel.gd` 在补进清单前没单列，而 `ProfileScreen.gd` 里
+	#   `TouchScrollContainer` 的 preload 常量被批量脚本插进了 `REGIONS` 多行数组
+	#   字面量中间 —— `--check-only` 全绿、`chat_check` / `match_history_ui_check`
+	#   只靠 `load() != null` 也全绿，只有 `can_instantiate()` 才现形。
+	#   教训与 9.22、10.05 两次完全一致。
+	{"kind": "script", "path": "res://scenes/menu/PetScreen.gd"},
+	{"kind": "script", "path": "res://scenes/menu/Team3v3Lobby.gd"},
+	{"kind": "script", "path": "res://scenes/menu/CodexScreen.gd"},
+	{"kind": "script", "path": "res://scenes/menu/PartyLobby.gd"},
+	{"kind": "script", "path": "res://scenes/menu/PartyVoice.gd"},
+	{"kind": "script", "path": "res://scenes/menu/ProfileScreen.gd"},
+	{"kind": "script", "path": "res://scripts/account/AvatarCatalog.gd"},
+	{"kind": "script", "path": "res://scenes/menu/MatchQueuePanel.gd"},
+	{"kind": "script", "path": "res://scenes/prep/PrepDragButton.gd"},
+	{"kind": "script", "path": "res://ui/components/GloryConfirmDialog.gd"},
+	{"kind": "script", "path": "res://ui/components/TouchChoiceButton.gd"},
+	{"kind": "script", "path": "res://scenes/menu/AnnouncementScreen.gd"},
+	{"kind": "script", "path": "res://scenes/menu/BagScreen.gd"},
+	{"kind": "script", "path": "res://scenes/menu/ChatScreen.gd"},
+	{"kind": "script", "path": "res://scenes/menu/FramePickerPanel.gd"},
+	{"kind": "script", "path": "res://scenes/menu/FriendsScreen.gd"},
+	{"kind": "script", "path": "res://scenes/menu/MailScreen.gd"},
+	{"kind": "script", "path": "res://scenes/menu/MainMenu.gd"},
+	{"kind": "script", "path": "res://scenes/menu/RankedRewardScreen.gd"},
+	{"kind": "script", "path": "res://scenes/menu/WorldChatPanel.gd"},
+	{"kind": "script", "path": "res://scenes/prep/CarrotCampPanel.gd"},
+	{"kind": "script", "path": "res://scenes/prep/CarrotCampPanelV2.gd"},
+	{"kind": "script", "path": "res://scenes/prep/PrepUI.gd"},
+	# 本轮新写的门禁也得单列（同 10.05 那条：新代码没人「连带」解析）。
+	{"kind": "script", "path": "res://tools/codex_four_star_check.gd"},
+	{"kind": "script", "path": "res://tools/party_voice_ui_check.gd"},
+	{"kind": "script", "path": "res://tools/party_invite_bubble_check.gd"},
+	{"kind": "script", "path": "res://tools/party_lobby_rules_check.gd"},
+	{"kind": "script", "path": "res://tools/round_settlement_check.gd"},
+	{"kind": "script", "path": "res://ui/components/PartyInviteBubble.gd"},
 ]
 
 

@@ -51,9 +51,12 @@ static func build(room: Dictionary, replays: Array, outcome: int, gold_authorita
 			return int(a.get("damage_dealt", 0)) > int(b.get("damage_dealt", 0))
 		return str(a.get("owner_slot", 0)) + str(a.get("position", "")) < str(b.get("owner_slot", 0)) + str(b.get("position", "")))
 	var kind := str(replays[0].get("kind", "pve")) if not replays.is_empty() else "pve"
+	# 10.07 bug 文档第 8 条：任何回合结束都有结算面板（PVE 也要算我方上阵佣兵的数据）
+	# ⇒ 任何 kind 都能看详细战况。以前这里是 `kind in ["pvp", "final"]`，正是它把
+	# PVE 回合的「查看详情」按钮吞掉的（面板照建，只是按钮不出现，看着像没结算）。
 	return {"can_return_room": str(room.get("mode", "custom")) == "custom" and not bool(room.get("matched", false)), "outcome": outcome, "seats": seats, "stats": stats, "allies": allies,
 		"match_uid": str(room.get("match_uid", "")), "mode": str(room.get("mode", "custom")),
-		"kind": kind, "gold_authoritative": gold_authoritative, "show_details": kind in ["pvp", "final"]}
+		"kind": kind, "gold_authoritative": gold_authoritative, "show_details": true}
 
 static func units(raw: Array) -> Array:
 	var out: Array = []
@@ -73,10 +76,14 @@ static func update_round_damage(seats: Array, stats: Array) -> void:
 
 # Eligibility is a property of the completed battle, never of who won it.
 # Older servers omit show_details; their match_state still contains kind.
+#
+# 10.07 bug 文档第 8 条：任何回合结束都有结算面板（PVE 回合也要算我方上阵佣兵的
+# 数据）⇒ 这里对所有 kind 一律放行。判据本身保留（它还要认 model 里现成的
+# show_details），只是不再按战斗种类把 PVE 挡在外面。
 static func can_show_details(data: Dictionary, match_state: Dictionary, replay: Dictionary = {}) -> bool:
 	var kind := str(match_state.get("kind", replay.get("kind", data.get("kind", ""))))
 	if not kind.is_empty():
-		return kind in ["pvp", "final"]
+		return true
 	return bool(data.get("show_details", false))
 
 # Offline/custom local-host battles do not receive a server match_state.

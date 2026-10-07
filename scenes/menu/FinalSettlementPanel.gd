@@ -2,6 +2,10 @@ extends Control
 
 signal return_room_requested
 signal return_menu_requested
+# 10.07 bug 文档第 8 条：非终局回合（PVE 等）结束后也要出这张结算面板，但那时
+# 对局还没结束 —— 按钮不是「返回房间 / 返回主菜单」，而是「继续」（回到备战）。
+# 面板自己不知道回合打完要不要继续收尾，所以只发信号，由 Main 决定下一步。
+signal continue_requested
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Action := preload("res://ui/components/GloryActionButton.tscn")
@@ -14,16 +18,23 @@ var data: Dictionary = {}
 # 对局历史里复用这个面板时（MatchHistoryPanel「详细战况」），「返回主菜单」换成这里的字，
 # 按下去照样发 return_menu_requested，由历史那边关掉弹窗。
 var close_text := ""
+# 非终局回合（10.07 第 8 条）：整局还没结束，主按钮是「继续」而不是「返回房间 / 返回主菜单」。
+# 由 data 里的 "in_progress" 决定，Main 不需要额外传参（历史 / 终局都不带这个键）。
+var _mid_run := false
 var _bubble: PanelContainer
 var _bubble_label: Label
 # 10.06 反馈第 5 条：面板上、下各有一排同样的按钮，两排都要能被 allow_return_retry 重新启用，
 # 所以用数组收集（原来是单个 _return_button）。
 var _return_buttons: Array = []
+var _continue_buttons: Array = []
 
 func _ready() -> void:
 	# Both live settlement and history render these same rows. Derive the total
 	# here as well so old history records need no backfill or extra stored field.
 	preload("res://scripts/multiplayer/FinalSettlementData.gd").update_round_damage(data.get("seats", []), data.get("stats", []))
+	# 10.07 第 8 条：非终局回合也是同一张面板，标题与胜负行要按「本回合」的口径写，
+	# 不能再写「最终战」。
+	_mid_run = bool(data.get("in_progress", false))
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var background := TextureRect.new()
 	background.texture = PROFILE_BG_TEX
@@ -50,11 +61,15 @@ func _ready() -> void:
 	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	content.add_theme_constant_override("separation", 18)
 	margin.add_child(content)
-	var title := _label("最终战 · 结算", GOLD, 32)
+	# 10.07 第 8 条：非终局回合的面板写「回合结算 · 第 N 回合」；终局 / 历史保持原口径。
+	var title := _label(_mid_run_title(), GOLD, 32)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	content.add_child(title)
 	var outcome := int(data.get("outcome", 2))
-	var winner := _label("本场胜利：" + _team_title(outcome) if outcome in [0, 1] else "本场结果：平局", Color("ff6b5a") if outcome == 0 else Color("4da3ff"), 18)
+	var winner_text := "本场胜利：" + _team_title(outcome) if outcome in [0, 1] else "本场结果：平局"
+	if _mid_run:
+		winner_text = "本回合胜利：" + _team_title(outcome) if outcome in [0, 1] else "本回合结果：平局"
+	var winner := _label(winner_text, Color("ff6b5a") if outcome == 0 else Color("4da3ff"), 18)
 	winner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	content.add_child(winner)
 	# 10.06 反馈第 5 条：面板一屏塞不下时，底部那排按钮要滚到底才够得着 —— 在上部再放一排
@@ -85,12 +100,23 @@ func allow_return_retry() -> void:
 			button.text = "返回房间"
 
 
-# 一排操作按钮（返回房间 + 返回主菜单 / 关闭）。上、下两处共用这一份构造，
-# 保证两排的文案、配色、回调完全一致（10.06 反馈第 5 条）。
+# 一排操作按钮。上、下两处共用这一份构造，保证两排的文案、配色、回调完全一致
+# （10.06 反馈第 5 条）。10.07 第 8 条：非终局回合只有一颗「继续」，点了回备战。
 func _button_row() -> HBoxContainer:
 	var buttons := HBoxContainer.new()
 	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
 	buttons.add_theme_constant_override("separation", 24)
+	if _mid_run:
+		var cont := _button("继续", buttons)
+		cont.add_theme_stylebox_override("normal", Tokens.panel_box(Color("e9aa43"), GOLD, 10))
+		cont.add_theme_color_override("font_color", Color("231a0d"))
+		cont.pressed.connect(func():
+			for other in _continue_buttons:
+				if is_instance_valid(other):
+					other.disabled = true
+			continue_requested.emit())
+		_continue_buttons.append(cont)
+		return buttons
 	var return_button := _button("返回房间", buttons)
 	return_button.visible = bool(data.get("can_return_room", false))
 	return_button.pressed.connect(func():
@@ -105,6 +131,12 @@ func _button_row() -> HBoxContainer:
 	menu.add_theme_color_override("font_color", Color("231a0d"))
 	menu.pressed.connect(func(): return_menu_requested.emit())
 	return buttons
+
+# 非终局回合的标题。终局那一轮仍写「最终战」（它是真的整场结束）。
+func _mid_run_title() -> String:
+	if not _mid_run:
+		return "最终战 · 结算"
+	return "回合结算 · 第 %d 回合" % maxi(1, int(data.get("completed_round", GameState.round_index)))
 
 func _label(value: String, color: Color = TEXT, font_size: int = 16) -> Label:
 	var label := Label.new()

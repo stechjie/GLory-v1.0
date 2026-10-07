@@ -23,6 +23,8 @@ signal profile_requested(friend_code: String)
 # 私人消息里的房间邀请点了「立即参与」。Main 复用已有的加入流程
 # （先回主菜单再连，见 Main._join_room_by_id 的注释 —— 那里才有「连接中」与失败提示）。
 signal join_room_requested(room_id: int)
+# 10.07 第 10 条：私人消息里的**组队邀请**点了「加入」。Main 开队伍大厅并 join 这支队伍。
+signal join_party_requested(party_id: String)
 
 const WorldChatPanel := preload("res://scenes/menu/WorldChatPanel.gd")
 # 房间邀请（bug提交和修复.docx 第 2 条）：失效判据、文案、限流全在那一份纯逻辑里，
@@ -48,6 +50,7 @@ const BUBBLE_MAX_RATIO := 0.62
 # 离底部多近算「正看着最新消息」。在这个范围内来了新消息就跟着滚到底；
 # 往上翻历史的时候不跟 —— 否则每来一条都会把人拽回底部。
 const STICK_TO_BOTTOM_PX := 64.0
+const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
 
 var _focus_code := ""
 var _tab := ""
@@ -249,7 +252,7 @@ func _list_panel() -> Control:
 	_friend_count_label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
 	list_head.add_child(_friend_count_label)
 
-	var scroll := ScrollContainer.new()
+	var scroll := TouchScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	col.add_child(scroll)
@@ -335,7 +338,7 @@ func _conversation_panel() -> Control:
 		Tokens.BG_DEEP, Tokens.BORDER.darkened(0.55), Tokens.GAP_S))
 	col.add_child(message_well)
 
-	_msg_scroll = ScrollContainer.new()
+	_msg_scroll = TouchScrollContainer.new()
 	_msg_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_msg_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	message_well.add_child(_msg_scroll)
@@ -810,6 +813,15 @@ func _preview_text(entry: Dictionary) -> String:
 		return _text("还没有消息", "No messages yet")
 	var msg := last as Dictionary
 	var body := str(msg.get("body", ""))
+	# ★★ 10.07h 第 9(2) 条：邀请消息即使 body 为空，列表预览也不能是空白 ——
+	# 空白预览看起来就是「聊天里没有邀请消息」（用户真机反馈的原话）。
+	# 服务端两端都存了文案（组队邀请见 routes/party.py 的 _party_invite_text），
+	# 这里只是兜底：万一某条历史记录的 body 缺失/为空，也要能看出这是一条邀请。
+	if body.strip_edges().is_empty():
+		if RoomInvite.is_party_invite(msg):
+			body = _text("[组队邀请]", "[Team invite]")
+		elif RoomInvite.is_invite(msg):
+			body = _text("[房间邀请]", "[Room invite]")
 	if bool(msg.get("from_me", false)):
 		body = _text("我：", "Me: ") + body
 	return body
@@ -874,8 +886,9 @@ func _render_messages(force_bottom: bool = false) -> void:
 
 
 func _bubble(msg: Dictionary, max_width: float) -> Control:
-	# 房间邀请不是普通气泡：它要显示成「框框 + 右下角立即参与」（要求 3）。
-	if RoomInvite.is_invite(msg):
+	# 邀请（房间 or 组队）不是普通气泡：显示成「框框 + 右下角按钮」（要求 3）。
+	# 10.07 第 10 条：组队邀请走同一套渲染，只是标题/文案/按钮动作不同。
+	if RoomInvite.is_any_invite(msg):
 		return _invite_bubble(msg, max_width)
 	var mine := bool(msg.get("from_me", false))
 	var row := HBoxContainer.new()
@@ -961,14 +974,16 @@ func _invite_bubble(msg: Dictionary, max_width: float) -> Control:
 	box.add_child(col)
 
 	# 顶部小标题：和普通聊天气泡拉开距离。
+	# 10.07 第 10 条：组队邀请用「组队邀请」这个标题，与房间邀请区分开。
+	var party := RoomInvite.is_party_invite(msg)
 	var title := Label.new()
-	title.text = RoomInvite.title_text()
+	title.text = RoomInvite.party_title_text() if party else RoomInvite.title_text()
 	title.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
 	title.add_theme_color_override("font_color", Tokens.GOLD)
 	col.add_child(title)
 
 	var text := Label.new()
-	text.text = RoomInvite.display_text(msg)
+	text.text = RoomInvite.party_display_text(msg) if party else RoomInvite.display_text(msg)
 	text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	text.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
 	col.add_child(text)
@@ -989,12 +1004,24 @@ func _invite_bubble(msg: Dictionary, max_width: float) -> Control:
 	foot.add_child(stamp)
 
 	if not mine:
-		var join := _button(_text("立即参与", "Join now"),
-			func() -> void: _on_invite_join(msg))
+		# 10.07 第 10 条：组队邀请的按钮是「加入」，动作是进队伍而不是进房间。
+		var join := _button(_text("加入", "Join") if party else _text("立即参与", "Join now"),
+			func() -> void: _on_party_invite_join(msg) if party else _on_invite_join(msg))
 		join.theme_type_variation = Theming.VARIATION_PRIMARY
 		join.custom_minimum_size = Vector2(128, Tokens.TOUCH_MIN)
 		foot.add_child(join)
 	return row
+
+
+# 点组队邀请的「加入」（10.07 第 10 条）。与房间邀请不同，这里没有「邀请人还在不在房里」
+# 这一层判据 —— 队伍号失效由队伍服务在 join 时拒绝（party.PartyRejected），
+# 客户端不猜。emit 出去由 Main 接（它会开队伍大厅并 join）。
+func _on_party_invite_join(msg: Dictionary) -> void:
+	var party_id := RoomInvite.party_id_of(msg)
+	if party_id.is_empty():
+		GloryToastScript.show_text(RoomInvite.expired_text())
+		return
+	join_party_requested.emit(party_id)
 
 
 # 点「立即参与」。失效则在中上方提示「邀请已过时」（要求 5），否则走已有的加入流程。

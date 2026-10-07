@@ -41,6 +41,7 @@ const AVATAR_COLUMNS := 8
 
 const TAB_PETS := "pets"
 const TAB_AVATARS := "avatars"
+const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
 
 var _busy := false
 var _loading := true
@@ -178,7 +179,7 @@ func _collection_panel() -> Control:
 	_avatar_count_label = _count_label()
 	head.add_child(_avatar_count_label)
 
-	var scroll := ScrollContainer.new()
+	var scroll := TouchScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	col.add_child(scroll)

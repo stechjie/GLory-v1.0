@@ -25,6 +25,18 @@ extends RefCounted
 # 对不上的症状是「发出去的邀请对方收不到」或「收到的邀请渲染成一条普通文本」，都不报错。
 const KIND := "room_invite"
 
+# 10.07 第 10 条：排位/休闲的**组队邀请**也是同一种做法（带 kind 的私聊），
+# 只是 kind 与 payload 不同。与 backend/app/chat.py 的 PARTY_INVITE_KIND 一致，
+# 也与 ui/components/PartyInviteBubble.gd 的 KIND_TEAM 一致
+# （tools/party_invite_bubble_check.gd 钉着）。
+const PARTY_KIND := "party_invite"
+# 组队邀请的文案（与 PartyInviteBubble 的 invite_team_body、服务端存的那句一致）。
+const PARTY_TEXT_ZH := "快来加入队伍，一起战斗吧"
+const PARTY_TEXT_EN := "Join my team — let's fight together!"
+# 组队邀请框的小标题。
+const PARTY_TITLE_ZH := "组队邀请"
+const PARTY_TITLE_EN := "Team invite"
+
 # 邀请框上的文案（要求 3）。
 const TEXT_ZH := "我开启了新的房间，一起来玩吧"
 const TEXT_EN := "I opened a new room — come join me!"
@@ -67,6 +79,42 @@ static func make_payload(room_id: int) -> Dictionary:
 
 static func is_invite(message: Dictionary) -> bool:
 	return str(message.get("kind", "")) == KIND
+
+
+# --- 10.07 第 10 条：组队邀请 ---------------------------------------------------
+
+# 这条消息是不是一条组队邀请。
+static func is_party_invite(message: Dictionary) -> bool:
+	return str(message.get("kind", "")) == PARTY_KIND
+
+
+# 是不是**任何一种**邀请（房间 or 组队）。聊天界面用这个决定走哪个邀请气泡渲染。
+static func is_any_invite(message: Dictionary) -> bool:
+	return is_invite(message) or is_party_invite(message)
+
+
+# 从一条组队邀请里取队伍号；不是组队邀请时返回空串。
+static func party_id_of(message: Dictionary) -> String:
+	if not is_party_invite(message):
+		return ""
+	var payload: Variant = message.get("payload")
+	if not (payload is Dictionary):
+		return ""
+	return str((payload as Dictionary).get("party_id", ""))
+
+
+# 组队邀请的文案：优先服务端 body，空则退回本地。
+static func party_display_text(message: Dictionary) -> String:
+	var body := str(message.get("body", ""))
+	return body if not body.is_empty() else party_local_text()
+
+
+static func party_local_text() -> String:
+	return PARTY_TEXT_EN if _en() else PARTY_TEXT_ZH
+
+
+static func party_title_text() -> String:
+	return PARTY_TITLE_EN if _en() else PARTY_TITLE_ZH
 
 
 # 从一条消息里取房间号；不是邀请、或房间号缺失时返回 0。

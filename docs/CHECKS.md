@@ -52,6 +52,14 @@ Godot 不在 PATH 上，用 console 版才能把日志打到 stdout：
 | `tools/prep_1006_check.tscn`（10.06 批，51 条） | `10.06bug提交及修复.docx` 第 2/3/5/6/7/8 条：**朋友列表只显昵称**（`AccountManager.display_name(_, _, false)`，好友码不显示但仍用于邀请）、**商店刷新键对齐右侧竖列**（中心必须落在 `side_controls` 右缘 -78，容差 2px；右缘不许探出屏幕）、**开商店整块收起右下角通讯簇**（成员 = 语音 / 队友 / 所有人三键 + `_comms_dock` 深色底板 + `_chat_button` 五个，各自验「开→藏 / 关→回到进来时那组可见性」，不是硬写 true；走**真实入口** `_shop.toggle_picker()` 而非直接调 `_on_shop_picker_toggled()` —— 后者接线断了也全绿。用例先 `NetworkService.team_active = true`，否则 `PrepUI._build_chat_entry()` 直接 return，测的就成了「根本没有语音键」。★ **第一版只藏三键、漏了 `_comms_dock` 底板与聊天键** ⇒ 用户真机复测「开商店而语音 UI 没消失」，第二段已补齐、`checked` 45→51）、**结算面板上/下各一排「返回房间 / 返回主菜单」**（`_return_buttons` 恰好 2 个，删掉上面那排立刻红）+ 「超过一屏」提示已删、**房间顶部文案只留「等待结算中的玩家返回」**（先进有玩家 `settling` 的状态再走真实入口）、**落点在商店里不触发放置**（弹窗 / 外挂层钱袋 A / 刷新键三种矩形；`kind != shop` 与商店关着时不生效）、**房间右上角静音键**（`Master` 总线 → 已静音；按钮**刻意走 `PrepWidgets.make_menu_button`**，`Button.new()` 在 `Team3v3Lobby.gd` 的棘轮基线是恰好 3）。<br>★ 两条**结构**判据兜住行为断言够不着的地方：`_drop_on_board` / `_drop_on_bench` 都必须调用 `_shop_drop_inside_store`；计数图案 `_draw` 里不许再有 `draw_soft_glow` / `PLATE_BG` / `draw_polyline`（先例：`team_lobby_seat_label_check` 也用读源码验「两条路径共用同一函数」）。<br>★ 第 8 条用例结束**还原现场**（总线静音态 + 音乐开关），不把状态留给后面或真机。变异 13/13 全红（`其他/work/_qa_1006/mutate_1006.py`）。 |
 | `work/_qa_1006/deploy_counter_probe.tscn`（**非** headless，10.06 批，6 条） | 两条 headless 够不着的判据的出口：<br>① **第 1 条计数图案的像素真值** —— 把 `PrepDeployCounter` 塞进 `SubViewport(transparent_bg=true, disable_3d=true)` 渲成图后逐像素判：底板圆角矩形**以外整圈必须全透明**（原来那圈外发光就画在这里）、底板四角**内侧取样点必须全透明**（用户点名的「中间黑色底色」）、图案本体**必须仍在**（反向对照，否则前两条恒绿＝没判别力）。headless 的 dummy 渲染器取不到像素，所以这条只能在真窗口里跑。<br>② **第 5 条上面那排按钮的真鼠标命中** —— `Input.parse_input_event` 点上面那排「返回房间」，上下两排必须一起进「正在返回…」。headless 里只能用 `pressed.emit()` 顶替，会绕过 `BaseButton.disabled`，那是接线判据、不是命中判据。<br>证据图 `其他/work/_qa_1006/deploy_counter_probe.png`。★ 该探针在 `work/_qa_1006/` 下，**`/work/` 受 `.gitignore` ⇒ 不进仓**（本地开发者产物，先例 `work/_qa_shop/drag_fix_probe`）；复跑须用**非 headless** 命令行，别把它当成跑批门禁的一员。 |
 | `其他/work/_qa_1006/assert_crimson_logo.py`（Python，10.06 批，5 条） | 第 4 条赤律族羁绊图标去黑底。素材是静态 PNG，判据就是像素本身，不需要 Godot：**有 alpha 通道**（原来是 RGB、黑底烘焙在像素里）、**四角 alpha=0**、**最外一圈 alpha≤8**、**图案本体没被一起抹掉**（不透明像素占比 > 20%，实测 55.0%）、**与其余 4 族 logo 同口径**（`god/human/dark/undead` 也必须 RGBA + 四角透明 —— 没有这组对照，「同一种风格」这句话无法判定）。 |
+| `tools/round_settlement_check.tscn`（10.07 批，23 条） | 10.07 第 8 条：**任何回合结束都出结算面板（含 PVE）**。四层各有判据：① `pve_model_show_details` —— `FinalSettlementData.build()` 的 PVE model 必须带 `show_details`（以前 `kind in ["pvp","final"]` 把它藏掉，面板照建只是按钮没了）；② `pve_mercenary_present` ★ **核心需求** —— 直接调 `build_local()`，断言 `seats[0].mercenaries` 里**真的有**那个佣兵 id（**不查源码字符串**：「代码没报错」不代表佣兵在里面）；③ `history_pve_details` —— 历史 `has_settlement_details()` 对 `kind="pve"` 返回 true，反向验 `settlement` 为 null 的旧局仍 false；④ `main_build_before_clear` —— `Main` 里 `build_local(` 必须在 `\n\tGameState.clear_mercenaries()` **语句**之前（★ 只认语句：注释里也写了 `GameState.clear_mercenaries()` 讲「为什么必须提前建」，裸字符串 find 会把注释当语句、判据直接反转）；⑤ `mid_run_continue_btn` 等 4 条 —— 非终局面板只有「继续」、点了真发 `continue_requested`。<br>★ **`_fn_body()` 必须先把 CRLF 归一化成 LF 再 find** —— 仓库 `.gd` 是 CRLF，直接找跨行片段永远 -1，而 find 返回 -1 只会让断言安静判假（锚点行尾不一致 = 静默 SKIP）。变异 **7/7 全红**（`其他/work/_qa_1007/mutate_1007.py`）。 |
+| `tools/party_invite_bubble_check.tscn`（10.07 批，20 条） | 10.07 第 6 / 10 条：邀请气泡。单条显示、**多个覆盖**、**处理完最新的显示上一个**（补位）、同 id 去重、**TTL 恰好 30 秒**（`TIME` 类断言）、`Main` 接线（`party_invite` / `room_invite` / `dm_received` 三条都进同一个气泡，第 10 条的组队邀请复用同组件）。变异 m1（`MAX_VISIBLE` 1→5）红 3、m2（`_dismiss` 去掉 `_pump()`）红 1。 |
+| `tools/party_lobby_rules_check.tscn`（10.07 批，12 条） | 10.07 第 11-14 条的**客户端结构**判据：成员可邀请（三处 `disabled` 不再含 `not _is_host()`，反证空位「+」仍限房主）、`party_notice` 已接线、任意成员取消走 `cancel_party_match()`（不再按房主分叉）。**服务端行为**不在 GDScript 里复刻 —— 由 `backend/tests/test_party_room_stdlib.py` 直接驱动 `app/party.py`（复刻版会随生产代码漂移，测了等于没测）。变异客户端 2/2 红、服务端 2/2 红。 |
+| `backend/tests/test_party_room_stdlib.py`（Python stdlib，10.07 批，9 条） | 10.07 第 11-14 条的服务端规则：成员可邀请 / 外人不能邀请 / **房主带人退出 → 交给进房最早的人**（`min(joined_at)`）/ 房主独自退出 → 解散 / **重新进房重置席位计时** / 非房主退出不动房主 / 任意成员可取消排队 / 未排队时取消被拒 / 外人取消被拒。桩顶掉 `app.realtime` / `app.party_voice` / `app.config`，可控单调时钟。变异 m1（`min`→`max`）红 2、m2（`queued_room` 回 `_require_host`）ERROR 1。 |
+| `tools/codex_four_star_check.tscn`（10.07 批） | 10.07 第 2 条：图鉴在技能文本后补「四级升星后」+ 四星技能文本（同字号）。四星文本取自单位数据、不硬编码。 |
+| `tools/party_voice_ui_check.tscn`（10.07 批） | 10.07 第 9 条：排位/休闲房间语音 UI 只留麦克风 + 扬声器（去掉「队友 / 所有人」受众切换）。★ 夹具必须**先 `add_child` 再 `set("_bridge", ...)`** —— 项目有 `GloryVoiceDesktop` 单例，`PartyVoice._ready()` 会覆盖测试塞入的假 bridge，顺序反了就测不到。 |
+| `tools/prep_shop_hit_check.tscn`（10.07 批） | 10.07 第 4 条：备战商店第 4 张卡「靠聊天框那一端点不中」。判据两类：①**结构** —— 聊天记录窗 `PrepChatHistory` 与它**内部**的滚动容器都必须 `MOUSE_FILTER_IGNORE`（纯展示区不吃点击；★ 漏掉内层那个，症状一模一样且不报错）；②**几何** —— 卡 4 与聊天窗**真的重叠**（重叠存在才说明①不是空转），且吃点击的层级里**没有**控件盖住卡 4 的任一角落。 |
+| `tools/shop_card_tap_probe.tscn`（10.07 批，**非 headless 探针**） | 10.07 第 4 条的另一面：第 4 格「点不着」的真因是**轻点被吞**（旧 `PrepDragButton.DRAG_START_DISTANCE` 16px 太窄，手机手抖十几像素就被判成拖拽、那次松手不发 `pressed`），**不是几何遮挡**。修复后本探针应显示四张卡在 0/14/20/27px 手抖下都 `got=true`，只有真拖（≥28px）才不起点选。运行时必须**非** headless（要真窗口 + 真 `push_input`）。 |
 | `tools/battle_loading_layout_check.tscn`（10.05 返工后 **32** 条） | 战斗读条进度条右端的**出战宠物**。原有 14 条只覆盖「节点在 / 跟着 value 走 / 在播 run / 不压 HUD」，**宠物被裁掉一半时全绿**（用户 10.05 截图正是如此：读条上那只猫只剩斗篷和一块白）。返工新增 3 类 × 3 宠 × 2 入口 = **18 条几何判据**，一律走**骨骼**（`Skeleton3D.get_bone_global_pose()` —— 真正被动画驱动、被渲染的几何），**不用 `MeshInstance3D.get_aabb()`**（那是绑定姿势、且基准错半身）：<br>①`pet_feet_*`：最低那根骨头在世界空间的 y ≈ 0（脚踩地面）；<br>②`pet_fits_*`：骨骼盒投到相机后四边留白 ≥ **8%**（runner —— 播 run，摆动会吃余量）/ **5%**（front —— idle 冻结帧）；<br>③`pet_height_*`：归一化后宠物的**实际高度** ≈ `TARGET_HEIGHT`（`normalize()` 的后置条件）。<br>★ ③ 专治「`normalize()` 在模型**进树前**跑」：那时量到的是兜底盒（高 1.0）⇒ scale 0.95（真实需要 0.60）⇒ 宠物偏大 1.6 倍，而它脚底仍在 y=0、投影也勉强在框内 ⇒ ①②都会放它过去。<br>★ **门禁跑在 headless 下拿不到渲染像素**，所以判据是几何量；渲染侧的真值另用非 headless 探针取证（`work/_qa_1005d/probe_petfit_*` / `probe_petanim_*`，量不透明像素包围盒）。两者对照：`runner@1.16` 骨骼 4.2% ↔ 渲染 0.6%（擦边）；`runner@1.40` 骨骼 12.0% ↔ 渲染 9.4%（有余量）。<br>变异 **4/4 全红**（`其他/work/_mutate_1005f.py`）：把盒底退回当脚底 / 取景退回 1.16 / 把 `fit_when_ready()` 换回进树前直接 `normalize()` / 正面卡取景收紧到 1.00。 |
 
 ### 检查脚本自己写坏时会怎样（2026-09-08 实测）
@@ -4220,3 +4228,146 @@ S5 **直接调生产映射函数** —— 外层 `_on_carrot_economy_receipt` �
 
 **变异验证**：换回「镜像 + 转 180°」→ `blue_col0_side` / `scouting_mismatch` / `flip_changes_x` / `lane_order` 四条红；
 决赛也去镜像 → `final_mirror_changed`。固定对局的冻结哈希（battle_presentation_baseline 默认第 1、2 回合，PvE）不受影响。
+
+## 2026-10-07：《10.07bug提交及修复.docx》第 1 条返工 —— 把「准备」按钮恢复到修复前
+
+用户真机反馈：「我仅指修复 **开始游戏UI**，但现在的情况是你把**准备UI**也这样设置了，请你把**准备UI恢复到修复前**」，
+明确为「房间的**准备按钮**」（自定义房间右下角那块木牌）。
+
+**根因**：`Team3v3Lobby` 右下角**一个按钮两种身份** —— `_start_lbl.text` 按 `is_host_seat` 分支，
+房主写「开始游戏」、队员写「准备」。第 1 条初版 `_update_start_pulse(_start_block_reason(true).is_empty())`
+不分身份 ⇒ 队员的「准备」也被压成 `START_PLATE_DIM`（0.52 灰），看起来像被禁用（其实随时可点）= **误伤**。
+
+### 新增 `tools/start_pulse_ready_split_check`（20 项）
+
+`_update_start_pulse` 加第二参数 `as_host`（默认 `true`），两身份分流：
+房主（「开始游戏」）= 整局能不能开 ⇒ 能开脉动 / 不能开常暗；队员（「准备」）= **本人未准备才脉动**，
+不脉动时**一律复亮**，且脉动暗档回到修复前的 `READY_PLATE_DIM_LEGACY`（0.70）而非 `START_PLATE_DIM`（0.52）。
+
+判据：9 条源码结构（含两条反证 —— 初版误伤写法必须已消失、不存在不区分的单参调用）+ 11 条行为
+（真例化 `script.new()`、直接调函数验 `modulate` 落值）。
+
+**变异验证**：`其他/work/_qa_1007c/mutate_start_pulse.py` 三个变异（调用点改回不区分 / 队员暗档改回房主色 /
+拆掉 `if as_host and not active:` 守卫）→ **3 / 3 全红**，还原 sha256 一致。回归 `party_lobby_rules` 12/0、
+`cold_parse_chain` 324/0。
+
+**★ 踩坑留档（防假绿）**：首次跑 `checked=20 PASS` 但日志里有 `Invalid call. Nonexistent function
+'_update_start_pulse (via call)'` —— `Node.new() + set_script()` 下 `call()` **静默落空且不抛异常**
+⇒ 全部行为断言用初值判过。改 `script.new()` 并补 `host_has_method` 断言钉住。
+
+## 2026-10-07：第 1 条**二次返工**（10.07c）—— 点准备后还在脉动（tween 泄漏）
+
+用户真机反馈：「目前是点击准备后，还在脉动，改为**未准备时脉动，准备状态不脉动**，
+而**开始游戏UI是可进行开始时脉动，不可进行开始时暗状态**」。
+
+**根因 = tween 泄漏，不是判据写错**：`_update_start_pulse` 每次 `_refresh()` 都调（高频，
+房间快照 / 轮询），旧写法在「该脉动」路上**无条件 `create_tween()`** 且**不 kill 旧的** ——
+只把新 tween 赋给 `_start_pulse_tween`，旧的对象照样在跑 ⇒ 堆 N 个 loop tween 同时写 `modulate`。
+按「准备」时 `_stop_start_pulse()` 只 kill 到**当前引用那一个**，前面泄漏的全在跑 ⇒ 「准备 √」了照样脉动。
+（初版没暴露：房主侧有 `as_host` 早退；队员侧上一轮为严格还原修复前去掉早退，踩出这条。）
+
+### `tools/start_pulse_ready_split_check` 升到 **35 项**（原 20）
+
+改法：`want_pulse` 与 `_pulsing` 分开判 + **先无条件 `_clear_pulse_tween()` 再决定新建**
+⇒ 任何时刻最多一个 tween。新增显式状态 `_pulsing`（只靠 `tween.is_valid()` 判不出「我建过、还没停」）。
+新增判据：`ready_press_stops_pulse`、`ready_stays_stopped`、`single_tween_alive`、
+`host_ready_pulsing`、`host_blocked_not_pulsing`、`clear_before_create`、`pulsing_flag_exists`、`dedup_both_sides`。
+
+**最终口径**：队员「准备」= 未准备脉动 / 已准备不脉动；房主「开始游戏」= 可开始脉动 / 不可开始常暗。
+
+**变异验证**：`其他/work/_qa_1007c/mutate_start_pulse.py` 扩到 **5 / 5 全红**，新增两个**专打本轮 bug** 的
+`m4_no_clear_before_create`（删掉 `_clear_pulse_tween()` ⇒ 泄漏）、`m5_dedup_host_only`（防抖只看 `as_host`
+⇒ 队员侧泄漏）；还原 sha256 一致。回归 `party_lobby_rules` 12/0、`cold_parse_chain` 324/0。
+
+**★ 铁律**：循环 tween / 常驻动画必须「**先清后建**」，不能只重赋值引用 —— `create_tween()` 每次给新对象，
+旧对象不会因引用被覆盖而停下；只按 `is_valid()` 判存在会漏掉「还在跑但已失引用」的那些。
+
+
+## 2026-10-07：第三轮返工（`修复后依然存在的问题.docx`）—— 气泡引出位置 / 9(2)~9(6)
+
+用户第二轮真机复测仍报 6 组问题。本轮**不改后端接口语义**（第 9(3)/9(4) 认定病根在前端）。
+
+### 门禁变化
+
+| 门禁 | 前 | 后 | 说明 |
+| -- | -- | -- | -- |
+| `tools/party_invite_bubble_check.gd` | 29 | **58** | 新增 `_case_anchor_from_chat_button`（摆位/兜底/锚点来源/Main 接线）、`_case_bubble_look_and_feel`（HBox+Tail+InvitePanel/按钮层级/配色 token/旧字面量已删） |
+| `tools/party_lobby_rules_check.gd` | 12 | **44** | 新增 `_case_host_left_does_not_kick`、`_case_queue_canceled_wired`、`_case_mode_notice_to_members`；旧反证 `seat_slot_still_host_only` **翻转**为正证 `seat_slot_host_gate_gone`（用户本轮明确要求成员可邀请），另加 `seat_slot_keeps_queue_gate` 保住守卫 |
+| `cold_parse_chain` | 324 | **324** | 无回归（首行 `Function "wait_for()" not found` 是既存噪音） |
+| `test_party_room_stdlib`（Python） | 9 | **8 OK** | 本机无 pytest，改 `python -m unittest`；含 `test_host_leaving_with_others_hands_over_to_earliest`、`test_any_member_can_cancel_queue` |
+
+### 切片工具（本轮新增，专治假绿）
+
+`_slice_func(src, name)` / `_slice_branch(body, marker)` / `_slice_until(body, marker, end_marker)`，
+三者**一律先 `replace("\r\n", "\n")`** 再找锚点 —— 仓库 `.gd` 是 CRLF，直接 find 跨行片段永远 -1，
+而 find 返回 -1 只会让断言安静判假。
+
+### 三个被变异抓出来的假绿（都写进断言了）
+
+1. `contains("func chat_invite_anchor")` 太松 ⇒ 变异 `chat_invite_anchor_off()`（改名）**照样绿**。
+   改断言**完整签名行** `func chat_invite_anchor() -> Vector2:`。同理 `_refresh_room_now()`。
+2. `closed` 分支的「不盲退」断言写在**整文件**层面 ⇒ `host_left` 分支里也有 `_refresh_room_now()`，
+   把 `closed` 改回 `back_requested.emit()` 仍绿。改**按分支切片** + 反向断言
+   `not closed.contains("back_requested.emit()")`。
+3. `_slice_branch` 从 marker 切到下一个 `\n\t\tif ` 会**提前截断**（截到 `if _preview…`），
+   反而让 `mode_notice_shown` 误红。新增 `_slice_until` 显式给 `end_marker = "\n\telif kind == \"match\":"`。
+
+### 变异验证：`其他/work/_qa_1007h/mutate_1007h.py` —— **12 / 12 全红**
+
+m1 气泡贴回屏幕右锚 / m2 `set_anchor` 不调 `_place` / m3 删 `Tail` / m4 配色退回硬编码 /
+m5 `chat_invite_anchor` 改名 / m6 `_refresh_room_now` 改名 / m7 `closed` 改回盲退 /
+m8 `mode_changed` 改 `pass` / m9 空位按钮恢复 `not _is_host()` / m10 `_show_sticky_notice` 不清旧 timer /
+m11 后端删 `out["by_name"]` / m12 取消判据退回 `_match_found`。
+
+每条「先备份 `.r3bak` → 改坏 → 跑门禁 → 还原 → 比 sha256」，`restored=True` 逐一核对。
+
+### ★★ 本轮真实事故（写下来记账）
+
+**变异脚本运行期间编辑被变异文件 = 改动被静默回滚。**
+`mutate_1007h_v3` 后台跑的同时我改了 `PartyLobby._invite()`；脚本 `finally` 用**内存里的 `originals`**
+把文件覆盖回旧内容 ⇒ 改动丢失（直到 Edit 报「String to replace not found」才发现）。
+**规矩**：变异脚本在跑就**不许动被变异文件**；结束后用 Python 逐条核对关键改动（本轮 17 处全部 `OK`）。
+
+### ★★ 摆位铁律的延伸
+
+「从某控件引出」的浮层**不要贴屏幕边缘**（`anchor_right = 1.0` + 固定 `offset`），
+要**向宿主控件要锚点**（`MainMenu.chat_invite_anchor()` 返回聊天按钮右侧中点），
+浮层自己 `_process` 每帧重摆 ⇒ 窗口缩放/布局重排后仍贴着宿主。
+锚点取不到时必须走**同一套缩放公式**的兜底（`REF_SIZE=(1672,941)`），不能飘到角落。
+
+---
+
+## 2026-10-07 · 第四轮返工（10.07i）门禁史
+
+### 全绿（末次）
+
+| 门禁 | 结果 |
+|---|---|
+| `tools/party_lobby_rules_check.tscn` | **PASS 68 / 0**（本轮 66 → 68） |
+| `tools/party_invite_bubble_check.tscn` | **PASS 58 / 0** |
+| `tools/cold_parse_chain_check.tscn` | **PASS 324 / 0**（首行 `wait_for()` not found 为既存噪音） |
+| `tests.test_party_invite_route_stdlib`（新） | **8 / 8 OK** |
+| `tests.test_party_room_stdlib` | **9 / 9 OK** |
+| `py_compile party.py chat.py matchmaking.py party.py` | **PY_COMPILE_OK** |
+
+### 变异（`其他/work/_qa_1007i/mutate_1007i.py`）11 / 11 RED-OK
+
+A 组（Godot）：A1 闩赋值改 false / A2 `was_queued` 退回旧判据 / A3 自取消 helper 改名 /
+A4 `dismissed` 退回匿名 lambda / A5 删 `child.call("note_self_canceled_queue")`。
+B 组（AST）：B1 `_ = await chat.send` / B2 dm 改名 / B3 去 `kind` / B4 `party_invite` 改名 /
+B5 文案改字 / B6 去 `deliver_to` 守卫。全部「变红 → 还原 sha256 精确」。
+
+### ★★ 变异抓到的两处假绿（已修，计数 66 → 68）
+
+1. **A1**：`_party_queue_active` 原来只断言「字段声明 `var _party_queue_active := false` 存在」——
+   把**赋值**改成 `false`（闩永不立）照样绿。⇒ 补**正面切片**断言：`_apply` 里必须真的出现
+   `_party_queue_active = true`（用 `_slice_func(_apply)` + `_slice_branch` 钉在分支体内）。
+2. **A4**：原来是**弱否定断言** —— 只排除一个**具体** lambda 文本
+   `panel.connect("dismissed", func() -> void: ModalStack.pop(MATCH_QUEUE_MODAL_ID))`，
+   换成 `func() -> void: pass` 就绕过。⇒ 改成正面断言「连到 `_on_match_queue_dismissed`」
+   ＋ 强否定「整文件不得出现 `panel.connect("dismissed", func(`」。
+3. **B1（AST）**：`isinstance(t, ast.Name)` 会被 `_ = await chat.send(...)` 蒙过（`_` 也是 Name）。
+   ⇒ 目标名不得是 `_`，且**必须真的被读 `.deliver_to`**（证明不是死值）。
+
+**教训**：否定断言必须**穷尽写法**（排除一类而非一个字符串）；「字段存在」≠「字段被正确赋值」，
+要用滑动切片钉在**分支体内**正面断言。

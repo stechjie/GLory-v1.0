@@ -37,6 +37,12 @@ const MusicService := preload("res://ui/services/MusicService.gd")
 
 const AccountConfig := preload("res://scripts/account/AccountConfig.gd")
 const BOOTSTRAP_SCENE := "res://scenes/bootstrap/Bootstrap.tscn"
+# 10.07 第 6 / 10 条：主界面邀请气泡。**刻意不做 autoload、也不声明 class_name**，
+# 理由同上面的 UiFeedbackService / SfxService —— headless 跑门禁时不走导入，
+# 全局类名会「Identifier not declared」。
+const PartyInviteBubble := preload("res://ui/components/PartyInviteBubble.gd")
+# 自定义房间邀请的 kind / payload 判据只有一份，在 RoomInvite 里（tools/room_invite_check.gd 钉着）。
+const RoomInviteScript := preload("res://scripts/multiplayer/RoomInvite.gd")
 
 # --- 连不上账号服务器 = 回启动页 ---------------------------------------------
 #
@@ -56,6 +62,8 @@ const BOOTSTRAP_SCENE := "res://scenes/bootstrap/Bootstrap.tscn"
 # 不论在哪个界面、打没打着对局，一律先退出对局（战斗服务器把座位交给 AI，其他五个人照常打完），
 # 再回启动页显示封号原因。见 _watch_account_link。
 var _in_match_flow := false
+# 10.07 第 6 / 10 条：邀请气泡层。常驻一个实例，懒建 —— 没人邀请就不占节点。
+var _invite_bubble: CanvasLayer
 var _account_offline_sec := 0.0
 var _returning_to_login := false
 
@@ -1418,25 +1426,136 @@ func _install_realtime() -> void:
 		RealtimeService.kicked_by_other_device.connect(_on_realtime_kicked)
 	if not RealtimeService.message_received.is_connected(_on_party_realtime):
 		RealtimeService.message_received.connect(_on_party_realtime)
+	# 10.07 第 6 条：自定义房间邀请是**一条带 kind 的私聊**（见 RoomInvite 文件头），
+	# 所以它从 dm_received 进来，不是 RealtimeService 的原始推送。
+	if not ChatService.dm_received.is_connected(_on_dm_received):
+		ChatService.dm_received.connect(_on_dm_received)
+
+
+# 收到一条私聊。只有 room_invite 这一种要弹气泡 —— 其余（普通文本、世界消息）
+# 继续走聊天界面那条老路，这里不插手。
+func _on_dm_received(code: String, message: Dictionary) -> void:
+	if _in_match_flow:
+		return
+	if not RoomInviteScript.is_invite(message):
+		return
+	# 私聊推送里只带发送人的 friend_code，**不带昵称** —— 需求要「朋友XX」这句
+	# 话术，所以名字得现查一趟好友列表。查不到就退回 friend_code，
+	# 至少玩家知道是谁发的（比空字符串强）。
+	var host_name := await _friend_name_of(code)
+	_show_invite_bubble({
+		"party_id": str(RoomInviteScript.room_id_of(message)),
+		"room_id": RoomInviteScript.room_id_of(message),
+		"host_name": host_name,
+		"mode": "casual",
+		# ★ 10.07 第 6 条返工：把发件人好友码带下去 —— 气泡被处理（加入/稍后/超时）时
+		#   用它清掉那个好友的本地红点（用户要求「点击稍后 = 已读，红点消失」）。
+		"host_code": code,
+	}, PartyInviteBubble.KIND_PARTY)
+
+
+func _friend_name_of(code: String) -> String:
+	if code.is_empty():
+		return ""
+	var result: Dictionary = await AccountManager.fetch_friends()
+	if not is_inside_tree():
+		return code
+	for entry in (result.get("body", {}) as Dictionary).get("friends", []):
+		if entry is Dictionary and str((entry as Dictionary).get("friend_code", "")) == code:
+			return str((entry as Dictionary).get("player_name", code))
+	return code
 
 
 func _on_party_realtime(payload: Dictionary) -> void:
-	if str(payload.get("t", "")) != "party_invite" or _in_match_flow:
+	if _in_match_flow:
 		return
-	var room_id := str(payload.get("party_id", ""))
-	var host_name := str(payload.get("host_name", ""))
-	var en := LocaleManager.get_locale().begins_with("en")
-	DialogService.confirm({
-		"owner": self,
-		"request_id": "party_invite_" + room_id,
-		"title": "Party invitation" if en else "组队邀请",
-		"body": ("%s invited you to a party." if en else "%s 邀请你进入队伍。") % host_name,
-		"confirm_text": "Join" if en else "加入",
-		"cancel_text": "Later" if en else "稍后",
-		"on_result": func(result: String, _request_id: String) -> void:
-			if result == "confirmed":
-				_show_party_lobby(str(payload.get("mode", "casual")), room_id),
+	var kind := str(payload.get("t", ""))
+	if kind == "party_invite":
+		# 10.07 第 10 条：排位/休闲的组队邀请 —— 同样走气泡，只是措辞是「组队邀请」。
+		# 「消息提醒」这一半：与私聊同一条提示音（自定义房间邀请是走私聊链的，
+		# 提示音由 ChatService 放；组队邀请走的是本推送，所以在这里补一声）。
+		SfxService.play(SfxService.CUE_CHAT_ALERT)
+		_show_invite_bubble(payload, PartyInviteBubble.KIND_TEAM)
+	elif kind == "room_invite":
+		# 10.07 第 6 条：自定义房间的朋友邀请 —— 气泡文案「朋友XX邀请你进入房间」。
+		_show_invite_bubble(payload, PartyInviteBubble.KIND_PARTY)
+
+
+# 主界面邀请气泡的统一入口。**不用 DialogService**：需求明确写「不处理不影响
+# 主界面操作」，而确认框走 ModalStack，栈顶 backdrop 是 MOUSE_FILTER_STOP，
+# 不点就什么都干不了 —— 正好相反。气泡层整层 IGNORE，只有两个按钮吃点击。
+#
+# 三条硬性要求都落在 PartyInviteBubble 里（覆盖 / 30 秒独立计时 / 处理完最新的
+# 显示上一个），这里只负责把 payload 翻译成它要的形状、并接上「加入」的动作。
+func _show_invite_bubble(payload: Dictionary, kind: String) -> void:
+	var bubble := _invite_bubble_instance()
+	if bubble == null:
+		return
+	# ★★ 10.07h 第 6 / 10 条返工（用户真机反馈「房间邀请提示位置要设计在『聊天』
+	#   UI 旁边，以信息气泡框的形式引出」）：把主菜单「聊天」按钮的当前位置喂给气泡，
+	#   由它把气泡摆到按钮右边、尖角朝左指回来。
+	#
+	# `chat_invite_anchor()` 拿不到就返回 `Vector2.INF` → `set_anchor()` 收到后
+	# 走自己的兜底位置。**这里不判空跳过** —— 玩家在别的页面（`_menu` 已 free）
+	# 收到邀请时，气泡照样得出现，只是锚点用兜底值。
+	bubble.set_anchor(_chat_invite_anchor())
+	var invite_id := str(payload.get("party_id", payload.get("room_id", "")))
+	# ★★ 10.07 第 6/10 条返工（用户真机反馈）：
+	#   「点击稍后后，红点仍然存在，要改成点击稍后表示已读该信息，红点消失」
+	#   气泡一被处理（加入 / 稍后 / 超时）就清掉发件人的**本地**红点。
+	#   发送人好友码来自 payload 的 `host_code`（自定义房间邀请）或 `from_code`（组队邀请）。
+	#   两个来源不同但语义相同，这里统一取 —— 缺了也不报错，只是不猜着清别人的红点。
+	var sender_code := str(payload.get("host_code", payload.get("from_code", "")))
+	bubble.offer({
+		"party_id": invite_id,
+		"host_name": str(payload.get("host_name", "")),
+		"mode": str(payload.get("mode", "casual")),
+		"kind": kind,
+		"on_handled": func(_pid: String) -> void:
+			if not sender_code.is_empty():
+				ChatService.mark_seen_locally(sender_code),
+		"on_accept": func(id: String) -> void:
+			if kind == PartyInviteBubble.KIND_TEAM:
+				_show_party_lobby(str(payload.get("mode", "casual")), id)
+			else:
+				_accept_room_invite(int(payload.get("room_id", 0))),
 	})
+
+
+func _invite_bubble_instance() -> CanvasLayer:
+	if _invite_bubble != null and is_instance_valid(_invite_bubble):
+		return _invite_bubble
+	_invite_bubble = PartyInviteBubble.new() as CanvasLayer
+	# 挂在 self（Main）下：Main._clear() 只清自己 add_child 的页面节点，
+	# 而气泡层是从这里 add 的、又活着跨页面（玩家可能在别的界面收到邀请），
+	# 所以**挂在 Main 自己**、不随 _clear() 走。
+	add_child(_invite_bubble)
+	return _invite_bubble
+
+
+# ★★ 10.07h 第 6 / 10 条返工：邀请气泡要「从聊天 UI 引出」，所以得问主菜单
+# 要「聊天」按钮的实时位置。主菜单不在（已被 `_clear()` 清掉 / 还没建好 /
+# 它自己还没布局完）时返回 `Vector2.INF` —— **「不知道」是一个合法答案**，
+# 由气泡走兜底。这里不替它编一个坐标：编出来的坐标在真机上就是错的。
+func _chat_invite_anchor() -> Vector2:
+	if _menu == null or not is_instance_valid(_menu):
+		return Vector2.INF
+	if not _menu.has_method("chat_invite_anchor"):
+		return Vector2.INF
+	var anchor: Variant = _menu.call("chat_invite_anchor")
+	if anchor is Vector2:
+		return anchor as Vector2
+	return Vector2.INF
+
+
+# 气泡上点了「立即参与」—— 自定义房间邀请。复用聊天界面那条验过的加入路径
+# （_join_room_by_id 会先回主菜单再连，那里才有「连接中」与失败提示）。
+# 失效判据（离房/解散/20 分钟）在真正加入时由战斗服务器裁决并把原因显示出来，
+# 气泡这条路径不重复判一遍 —— 判据只有一份，避免两处漂移。
+func _accept_room_invite(room_id: int) -> void:
+	if room_id <= 0:
+		return
+	_join_room_by_id(room_id)
 
 
 # ⚠️ RealtimeService.start() 只挂在「登录成功」上（那只发生在启动时）。
@@ -1712,8 +1831,35 @@ func _show_party_lobby(mode: String, invite_id: String = "") -> void:
 	lobby.call("configure", mode, invite_id)
 	lobby.connect("back_requested", _show_menu)
 	lobby.connect("queue_started", _show_party_queue)
+	# ★★ 10.07h 第 9(6) 条：队里**任意成员**取消排队 → 立刻关掉「匹配中」弹窗。
+	#    原实现只有「自己取消」和「匹配成功」两条关面板的路径，别人取消时房主
+	#    那边面板照旧挂着（用户真机：房主依然显示匹配中）。
+	#    提示语由 PartyLobby 自己显示（房间界面上的 _notice），这里只管收面板。
+	lobby.connect("queue_canceled", _on_party_queue_canceled)
 	_page_back_route = func() -> void: lobby.call("_leave")
 	add_child(lobby)
+
+
+# 队友取消了排队。**无条件 pop**：这个信号只在「本来在排队」时才发，
+# 面板在就该关、不在也只是空操作（ModalStack.pop 对不存在的 id 是安全的）。
+func _on_party_queue_canceled(_canceller: String) -> void:
+	ModalStack.pop(MATCH_QUEUE_MODAL_ID)
+
+
+# ★★ 10.07i 第 9(6) 条：**自己**按了「取消排队」。
+#
+# 服务器 `/cancel` 会给全队（含自己）推一条 `match idle`，而给自己的那条
+# **不带 by_name**（见 routes/party.py：发起人收裸 idle）。房间侧的
+# `_party_queue_active` 闩此时仍是「排队中」，于是会把自己这一下读成
+# 「队友取消了排队」并弹出一条**主语错了**的提示。
+#
+# 所以在面板关掉的那一刻（dismissed）就告诉房间「是我取消的，落闩」——
+# 房间收到后那条 idle 就只是普通的收尾，不再提示。
+func _on_match_queue_dismissed() -> void:
+	ModalStack.pop(MATCH_QUEUE_MODAL_ID)
+	for child in get_children():
+		if child.has_method("note_self_canceled_queue"):
+			child.call("note_self_canceled_queue")
 
 
 func _show_party_queue(mode: String, host: bool) -> void:
@@ -1727,7 +1873,7 @@ func _show_match_queue(mode: String, party_queue: bool = false, party_host: bool
 	var panel := MatchQueuePanel.new() as Control
 	panel.call("configure", mode, party_queue, party_host)
 	panel.connect("match_ready", _on_match_ready)
-	panel.connect("dismissed", func() -> void: ModalStack.pop(MATCH_QUEUE_MODAL_ID))
+	panel.connect("dismissed", _on_match_queue_dismissed)
 	ModalStack.push(panel, {
 		"id": MATCH_QUEUE_MODAL_ID,
 		"owner": self,
@@ -2972,12 +3118,21 @@ func _on_team_battle_finished(result: Dictionary) -> void:
 	})
 	_apply_post_battle_unit_outcomes(result)
 	GameState.battle_history.append(result)
-	var local_settlement: Dictionary = {}
-	if GameState.team_hp <= 0 or GameState.enemy_team_hp <= 0 or completed_round >= GameState.FINAL_ROUND:
-		var own_replay: Dictionary = _battle._replay_own if is_instance_valid(_battle) else NetworkService.team_replay
-		var rival_replay: Dictionary = _battle._replay_rival if is_instance_valid(_battle) else NetworkService.team_replay_rival
-		var replays: Array = [own_replay, rival_replay] if local_team == TeamOutcome.TEAM_A else [rival_replay, own_replay]
-		local_settlement = preload("res://scripts/multiplayer/FinalSettlementData.gd").build_local(replays)
+	# 10.07 bug 文档第 8 条：**任何回合结束都要有结算面板**（PVE 也要算我方上阵佣兵
+	# 的数据）。以前这里只在 run_over 时才建 local_settlement ⇒ 中间回合直接跳备战，
+	# 玩家看不到本回合的战况。
+	#
+	# ★ 时序：必须在下面 GameState.clear_mercenaries() **之前**建。本地路径下
+	#   build_local → sim._team_mercs_for_slot(0) 读的就是 GameState.mercenary_slots /
+	#   board_slots（见 BattleSimShared）；清空之后再建，佣兵列会全空 —— 而「PVE 也要
+	#   计算我方上阵佣兵的数据」正是这一条的要求。
+	var own_replay: Dictionary = _battle._replay_own if is_instance_valid(_battle) else NetworkService.team_replay
+	var rival_replay: Dictionary = _battle._replay_rival if is_instance_valid(_battle) else NetworkService.team_replay_rival
+	var replays: Array = [own_replay, rival_replay] if local_team == TeamOutcome.TEAM_A else [rival_replay, own_replay]
+	var local_settlement: Dictionary = preload("res://scripts/multiplayer/FinalSettlementData.gd").build_local(replays)
+	# 本回合归属（面板胜负行）：PVE 下就是「我方这一仗赢没赢」。
+	local_settlement["outcome"] = TeamOutcome.TEAM_A if player_wins else TeamOutcome.TEAM_B
+	local_settlement["completed_round"] = completed_round
 	if kind == "pve":
 		GameState.pve_completed += 1
 	elif kind == "boss":
@@ -3012,9 +3167,32 @@ func _on_team_battle_finished(result: Dictionary) -> void:
 		local_settlement["outcome"] = GameState.team_run_outcome
 		_show_game_over(local_settlement)
 		return
-	NetworkService.team_begin_round()
-	_start_treasure_for_completed_round(completed_round)
-	_show_prep()
+	# 10.07 bug 文档第 8 条：非终局回合同样弹结算面板（含 PVE），看完点「继续」再进备战。
+	# 备战要等玩家关掉面板 —— 所以把进备战这件事挂到面板的回调上，而不是直接往下走。
+	_show_round_settlement(local_settlement, func() -> void:
+		NetworkService.team_begin_round()
+		_start_treasure_for_completed_round(completed_round)
+		_show_prep())
+
+# 非终局回合的结算面板（10.07 第 8 条）。on_continue 是玩家点「继续」之后要走的路
+# —— 面板本身不碰对局流程，只发信号，由这里决定（本地路径=进备战；服务端路径=等
+# match_state 应用完再走同一段收尾）。
+func _show_round_settlement(settlement: Dictionary, on_continue: Callable) -> void:
+	var panel := preload("res://scenes/menu/FinalSettlementPanel.gd").new()
+	var panel_data := settlement.duplicate(true)
+	# 非终局：标题写「回合结算 · 第 N 回合」，主按钮是「继续」。
+	panel_data["in_progress"] = true
+	panel.data = panel_data
+	# 面板里那颗「继续」按完就把面板摘掉，然后走 on_continue。一次性 —— 用
+	# CONNECT_ONE_SHOT 避免同一面板被复用（比如重连又弹一次）时回调跑两遍。
+	panel.continue_requested.connect(_on_round_settlement_continue.bind(panel, on_continue), CONNECT_ONE_SHOT)
+	add_child(panel)
+
+func _on_round_settlement_continue(panel: Node, on_continue: Callable) -> void:
+	if is_instance_valid(panel):
+		panel.queue_free()
+	if on_continue.is_valid():
+		on_continue.call()
 
 func _finish_server_authoritative_team_battle(result: Dictionary) -> void:
 	_battle_settlement_generation += 1
@@ -3098,8 +3276,24 @@ func _finish_server_authoritative_team_battle(result: Dictionary) -> void:
 		SaveManager.save_run()
 		_show_game_over()
 		return
-	NetworkService.team_begin_round()
-	_show_prep()
+	# 10.07 bug 文档第 8 条：服务端权威路径的非终局回合也要出结算面板。数据从
+	# **广播快照**（NetworkService.team_boards，slot -> board/mercenaries）建 ——
+	# 不走 GameState 的棋子槽，所以 _apply_team_match_state_payload 里那次
+	# clear_mercenaries() 已经把本地清空也不影响（这也正是它非终局回合安全的原因）。
+	var net_own: Dictionary = _battle._replay_own if is_instance_valid(_battle) else NetworkService.team_replay
+	var net_rival: Dictionary = _battle._replay_rival if is_instance_valid(_battle) else NetworkService.team_replay_rival
+	var net_replays: Array = [net_own, net_rival] if GameConstants.team_of_slot(NetworkService.team_local_slot) == GameConstants.TEAM_RED else [net_rival, net_own]
+	var round_settlement: Dictionary = preload("res://scripts/multiplayer/FinalSettlementData.gd").build_local(net_replays)
+	# 胜负行取本队视角：state_payload.run_outcome 是整场归属（终局才用），这里要的是
+	# 这一回合我方赢没赢。replay.result.player_wins 是 A 队视角，B 队要翻过来。
+	var net_a_wins := bool(result.get("player_wins", false))
+	var net_b_team := GameConstants.team_of_slot(NetworkService.team_local_slot) == GameConstants.TEAM_BLUE
+	round_settlement["outcome"] = (TeamOutcome.TEAM_B if net_a_wins else TeamOutcome.TEAM_A) if net_b_team else (TeamOutcome.TEAM_A if net_a_wins else TeamOutcome.TEAM_B)
+	round_settlement["completed_round"] = completed_round
+	round_settlement["local_team"] = GameConstants.team_of_slot(NetworkService.team_local_slot)
+	_show_round_settlement(round_settlement, func() -> void:
+		NetworkService.team_begin_round()
+		_show_prep())
 
 func _has_team_match_state(completed_round: int) -> bool:
 	return not NetworkService.latest_match_state.is_empty() and int(NetworkService.latest_match_state.get("completed_round", -1)) == completed_round and int(NetworkService.latest_match_state.get("protocol", -1)) == NetworkConfig.NETWORK_PROTOCOL_VERSION

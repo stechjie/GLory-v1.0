@@ -37,6 +37,7 @@ const LOCKED := Color(0.64, 0.58, 0.48)
 const BRASS := Color(0.72, 0.58, 0.25)
 const GOOD := Color(0.36, 0.50, 0.29)
 const BAD := Color(0.59, 0.27, 0.18)
+const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
 
 var _book: TextureRect
 var _left_page: Control
@@ -129,7 +130,7 @@ func _build() -> void:
 	_tab_row.add_theme_constant_override("v_separation", _sp(4))
 	left_col.add_child(_tab_row)
 
-	var scroll := ScrollContainer.new()
+	var scroll := TouchScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	left_col.add_child(scroll)
@@ -147,7 +148,7 @@ func _build() -> void:
 
 	# The longest entries (母灵, 人王) write more than a page holds, so the detail
 	# side scrolls rather than running off the bottom of the book.
-	_detail_scroll = ScrollContainer.new()
+	_detail_scroll = TouchScrollContainer.new()
 	_detail_scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_detail_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_right_page.add_child(_detail_scroll)
@@ -551,6 +552,25 @@ func _build_skill_box(entry: Dictionary, unlocked: bool) -> Control:
 		if unlocked else tr("codex_locked_text"))
 	col.add_child(body)
 
+	# 10.07 bug 文档第 2 条：补上四星技能说明。
+	# 只在「有 star4 覆写」且已解锁时出现；文案尺寸口径照需求：
+	#   「四级升星后」与上面的「技能」标签同字号（_fs(11)）；
+	#   四星技能正文与上面的一~三星正文同字号（_fs(15)）。
+	var four_star := _four_star_skill_text(entry) if unlocked else ""
+	if not four_star.is_empty():
+		var star_head := Label.new()
+		star_head.add_theme_font_size_override("font_size", _fs(11))
+		star_head.add_theme_color_override("font_color", INK_SOFT)
+		star_head.text = tr("codex_skill_4star")
+		col.add_child(star_head)
+
+		var star_body := Label.new()
+		star_body.add_theme_font_size_override("font_size", _fs(15))
+		star_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		star_body.add_theme_color_override("font_color", INK)
+		star_body.text = four_star
+		col.add_child(star_body)
+
 	if not unlocked:
 		var hint := Label.new()
 		hint.add_theme_font_size_override("font_size", _fs(11))
@@ -568,6 +588,23 @@ func _skill_text(entry: Dictionary) -> String:
 	if not raw.is_empty():
 		return UnitDetailFormat.format_skill_detail(raw)
 	return str(entry.get("skill_id", ""))
+
+
+# 10.07 bug 文档第 2 条：四星技能文案。
+#
+# ★ 唯一正确的取法：把 raw 交给 `UnitFactory.apply_star_stats(raw, 4)` 再交给
+#   `UnitDetailFormat.format_skill_detail()`。不能自己 `raw.merge(raw.star4)` 了事 ——
+#   apply_star_stats 是「产出按星级缩放的 def」的唯一解析点（它会整块覆盖 star4、
+#   再 erase 掉 star4 子对象），与战斗里四星棋子的数值同源。手动拼一份就是第二份
+#   数值真相，以后 star4 多加一个键就跟战斗对不上。
+#
+# 没有 star4 覆写（40 个族棋子里有 2 个）⇒ 返回空串，调用方不画这一段。
+func _four_star_skill_text(entry: Dictionary) -> String:
+	var raw: Dictionary = entry.get("raw", {})
+	if raw.is_empty() or typeof(raw.get("star4", null)) != TYPE_DICTIONARY:
+		return ""
+	return UnitDetailFormat.format_skill_detail(
+		UnitFactory.apply_star_stats(raw, GameConstants.MAX_STAR))
 
 func _build_stats(entry: Dictionary, unlocked: bool) -> Control:
 	var grid := GridContainer.new()

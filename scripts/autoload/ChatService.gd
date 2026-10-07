@@ -156,6 +156,26 @@ func mark_read(code: String, last_read_id: int) -> void:
 		await AccountManager.mark_chat_read(norm, last_read_id)
 
 
+# ★ 10.07 第 6/10 条：**不看聊天界面**就把某个好友的红点清掉。
+#
+# 场景：邀请气泡上点了「稍后」。用户口径是「点击稍后表示已读该信息，红点消失」——
+# 玩家根本没打开聊天界面，所以拿不到 last_read_id（那要有消息列表才知道）。
+# 这里只清本地红点、**不动服务端的已读游标**：
+#   · 服务端游标管的是「重新登录后红点还在不在」。清早了（游标前推）而消息其实没看，
+#     下次登录红点就再也不亮了 —— 那是真的会丢消息提示；
+#   · 所以只清本地。下次真正打开会话时 mark_read(code, last_read_id) 会把游标补上；
+#     万一在此之前重登，服务端照样按游标把红点亮回来，是偏保守的那一侧。
+#
+# ⚠️ 不要用 mark_read(code, 0) 来实现：那条路只在 last_read_id > 0 时才前推游标，
+#   传 0 看着一样，但语义是「我不知道读到哪」—— 留了这个函数是为了让意图显式。
+func mark_seen_locally(code: String) -> void:
+	var norm := AccountManager.normalize_friend_code(code)
+	if norm.is_empty():
+		return
+	if _unread.erase(norm):
+		unread_changed.emit(any_unread())
+
+
 # 玩家在聊天界面点了「在本设备重新连接」。这一下会把另一台设备顶下线 ——
 # 所以必须是玩家亲手点的，**绝不能自动**（否则两台设备无限互踢）。
 func reconnect_here() -> void:

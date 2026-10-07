@@ -14,6 +14,7 @@ const TEX_STONE_SKY: Texture2D = preload("res://assets/props/carrot_system/stone
 const TEX_STONE_LAND: Texture2D = preload("res://assets/props/carrot_system/stones/stone_land.png")
 const TEX_STONE_REN: Texture2D = preload("res://assets/props/carrot_system/stones/stone_ren.png")
 const TEX_STONE_REVEAL: Texture2D = preload("res://assets/props/carrot_system/vfx/atlas_stone_reveal_4x4.png")
+const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
 
 signal closed
 
@@ -267,7 +268,7 @@ func _build_stone_page() -> void:
 	_add_stone_counter(inventory, "sky", TEX_STONE_SKY, "天")
 	_add_stone_counter(inventory, "land", TEX_STONE_LAND, "地")
 	_add_stone_counter(inventory, "ren", TEX_STONE_REN, "人")
-	var upgrade_scroll := ScrollContainer.new()
+	var upgrade_scroll := TouchScrollContainer.new()
 	upgrade_scroll.custom_minimum_size.y = 54
 	upgrade_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	upgrade_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
