@@ -29,8 +29,8 @@ ns = '{http://schemas.android.com/apk/res/android}'
 m = ET.fromstring(manifest)
 sdk = m.find('uses-sdk')
 app = m.find('application')
-if not m.attrib['package'] == 'com.glory.game':
-    raise RuntimeError("AAB validation failed: m.attrib['package'] == 'com.glory.game'")
+if not m.attrib['package'] == 'com.glory.game.google':
+    raise RuntimeError("AAB validation failed: m.attrib['package'] == 'com.glory.game.google'")
 if not int(sdk.attrib[ns + 'targetSdkVersion']) >= 36:
     raise RuntimeError("AAB validation failed: int(sdk.attrib[ns + 'targetSdkVersion']) >= 36")
 if not app.attrib.get(ns + 'debuggable', 'false') == 'false':

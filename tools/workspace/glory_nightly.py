@@ -44,12 +44,16 @@ def local_code():
 
 
 def main():
+    global RUNS
     p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--android-only', action='store_true', help='Build APK/AAB and publish Play only; keep iOS in its separate Codex task')
     p.add_argument('--build-only', action='store_true', help='Build packages without store API calls or upload')
     p.add_argument('--unsigned-aab', action='store_true', help='Only with --build-only; no signing secret required')
     p.add_argument('--local', action='store_true', help='Skip Git/Drive update for an explicitly prepared local snapshot')
     p.add_argument('--resume', type=Path, help='Resume the exact saved run; completed stages are not repeated')
     args = p.parse_args()
+    if args.android_only:
+        RUNS = b.ROOT/'build/android-nightly'
     if args.unsigned_aab and not args.build_only:
         p.error('--unsigned-aab requires --build-only')
     RUNS.mkdir(parents=True, exist_ok=True)
@@ -111,29 +115,32 @@ def main():
         except Exception as error:
             state['steps']['android_pipeline'] = {'ok': False, 'error_type': type(error).__name__}
             write(path, state)
-            print('[nightly] Android pipeline failed; continuing independent iOS work', flush=True)
-        if state['build_only']:
-            run('ipa', 'glory_ios_build.py', '--method', 'app-store', '--result-file', path.parent/'ipa.json')
-        elif run('ios_preflight', 'glory_testflight.py', '--check'):
-            old = state['steps'].get('testflight', {})
-            if old.get('started') and not old.get('ok'):
-                # Use the known publisher state. Do not silently start a second build.
-                latest = b.ROOT/'build/latest-testflight-release.json'
-                if not latest.exists():
-                    raise RuntimeError('No TestFlight resume state; inspect testflight.log before retrying')
-                saved = Path(json.loads(latest.read_text())['state_file'])
-                if not state.get('testflight_state'):
-                    raise RuntimeError('Interrupted before TestFlight state was captured; inspect and reconcile publisher state manually')
-                if str(saved) != state['testflight_state']:
-                    raise RuntimeError('Another TestFlight release intervened; refusing to resume a different package')
-                run('testflight', 'glory_testflight.py', '--resume', saved)
-            else:
-                ok = run('testflight', 'glory_testflight.py', '--local')
-                latest = b.ROOT/'build/latest-testflight-release.json'
-                if latest.exists():
-                    state['testflight_state'] = json.loads(latest.read_text())['state_file']
-                    write(path, state)
+            print('[nightly] Android pipeline failed' + ('' if args.android_only else '; continuing independent iOS work'), flush=True)
+        if not args.android_only:
+            if state['build_only']:
+                run('ipa', 'glory_ios_build.py', '--method', 'app-store', '--result-file', path.parent/'ipa.json')
+            elif run('ios_preflight', 'glory_testflight.py', '--check'):
+                old = state['steps'].get('testflight', {})
+                if old.get('started') and not old.get('ok'):
+                    # Use the known publisher state. Do not silently start a second build.
+                    latest = b.ROOT/'build/latest-testflight-release.json'
+                    if not latest.exists():
+                        raise RuntimeError('No TestFlight resume state; inspect testflight.log before retrying')
+                    saved = Path(json.loads(latest.read_text())['state_file'])
+                    if not state.get('testflight_state'):
+                        raise RuntimeError('Interrupted before TestFlight state was captured; inspect and reconcile publisher state manually')
+                    if str(saved) != state['testflight_state']:
+                        raise RuntimeError('Another TestFlight release intervened; refusing to resume a different package')
+                    run('testflight', 'glory_testflight.py', '--resume', saved)
+                else:
+                    ok = run('testflight', 'glory_testflight.py', '--local')
+                    latest = b.ROOT/'build/latest-testflight-release.json'
+                    if latest.exists():
+                        state['testflight_state'] = json.loads(latest.read_text())['state_file']
+                        write(path, state)
         required = ['apk', 'aab', 'ipa'] if state['build_only'] else ['apk', 'aab', 'play_upload', 'testflight']
+        if args.android_only:
+            required = ['apk', 'aab'] if state['build_only'] else ['apk', 'aab', 'play_upload']
         state['status'] = 'complete' if all(state['steps'].get(x, {}).get('ok') for x in required) else 'failed'
         state['distribution_scope'] = 'existing internal testers; email membership requires Console verification'
         write(path, state)

@@ -110,10 +110,12 @@ def main():
             report = b.stage_project(project,b.asset_root(b.ROOT/'res'),stage,log)
         engine = b.prepare_engine(env,work)
         preset,package = b.export_preset(stage,None)
+        # This Play listing uses a distinct, user-selected application ID.
+        package = 'com.glory.game.google'
         cfg = stage/'export_presets.cfg'
         text = cfg.read_text().replace(f'name="{preset}"','name="Google Play Release"')
         text = re.sub(r'^custom_features=.*$', 'custom_features=""', text, flags=re.M)
-        values = {'gradle_build/export_format':'1','gradle_build/target_sdk':'36','package/signed':'false',
+        values = {'package/unique_name':f'"{package}"','gradle_build/export_format':'1','gradle_build/target_sdk':'36','package/signed':'false',
                   'architectures/armeabi-v7a':'true','architectures/arm64-v8a':'true',
                   'architectures/x86':'false','architectures/x86_64':'false'}
         for key,value in values.items():

@@ -49,8 +49,16 @@ TestFlight 自动上传必须先由账号持有人配置 App Store Connect 团�
 
 Google Play 个人测试邮箱名单需在 Console 中把 `zengridong1@163.com` 加入内部测试名单并确认生效；API 的 testers 资源只支持 Google 群组，不支持个人邮箱名单。后续每日版本沿用名单，不反复创建邀请。首次获得的测试加入链接以控制台实际返回为准。TestFlight 沿用既有内部组员；平台收到包、组内可测试、邀请发出、设备安装是不同状态，分别核实。
 
-定时任务由 Codex 在 Asia/Shanghai 每天 20:00 唤醒本聊天，运行本入口并检查平台结果。机器、外置磁盘、网络和所需凭据应可用。没有变更或仍是同一非操作状态时保持安静；完成、失败或需要用户操作时通知。服务器部署属于本次发布步骤，不隐含在每日手机内测任务内。
+iOS 定时任务由 Codex 在 Asia/Shanghai 每天 20:00 唤醒本聊天；Android 使用下述独立脚本调度。机器、外置磁盘、网络和所需凭据应可用。没有变更或仍是同一非操作状态时保持安静；完成、失败或需要用户操作时通知。服务器部署属于本次发布步骤，不隐含在每日手机内测任务内。
 
 API 依据：[Google Play 凭据](https://developers.google.com/android-publisher/getting_started)、[内测名单限制](https://developers.google.com/android-publisher/api-ref/rest/v3/edits.testers)、[提交时保护已有审核](https://developers.google.com/android-publisher/api-ref/rest/v3/edits/commit)、[Apple API](https://developer.apple.com/help/app-store-connect/get-started/app-store-connect-api/)。
 
 本机 Android 签名密码已保存到 macOS Keychain 的 `com.glory.android.release` / `GLory` 条目。AAB 脚本优先读环境变量，其次读取该 Keychain 条目；只在交互终端中回退到隐藏输入。其他机器自行配置本机密钥管理器，密钥库及密码均不随 Git 同步。
+
+### Android 独立内测发布
+
+Google Play 应用包名为 `com.glory.game.google`。`nightly_android.sh` 依次同步 Git/Drive、构建 APK 和签名 AAB、上传 internal；不会启动 iOS。默认读取仓库外 `~/Library/Application Support/Glory-Android/play-service-account.json`，签名密码来自现有 Keychain。
+
+运行记录保存在 `build/android-nightly`；失败后核对平台状态，再使用 `./tools/nightly_android.sh --resume build/android-nightly/时间/state.json`。上一轮未完成时拒绝开启新的发布。个人测试名单在 Console 配置，脚本沿用该名单，不发送个人邮件。
+
+本机调度使用 LaunchAgent `com.glory.android.nightly`，每日本机时间 20:00；电脑需开机、用户登录、外置工作盘已挂载。TestFlight 单独由现有 Codex 定时任务执行。

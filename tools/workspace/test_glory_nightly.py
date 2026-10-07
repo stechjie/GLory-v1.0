@@ -24,6 +24,21 @@ class NightlyTests(unittest.TestCase):
             state=json.loads(next(runs.glob('*/state.json')).read_text())
             self.assertFalse(state['steps']['android_pipeline']['ok'])
             self.assertEqual(state['status'],'failed')
+    def test_android_only_never_starts_ios_when_play_fails(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder); seen = []
+            def step(state, path, name, command):
+                seen.append(name); state['steps'][name] = {'ok': True}; return True
+            with mock.patch.object(n, 'RUNS', root/'build/nightly'), mock.patch.object(n.b, 'ROOT', root), \
+                 mock.patch.object(n.b, 'capture', return_value='sha'), mock.patch.object(n, 'local_code', return_value=31), \
+                 mock.patch.object(n, 'step', side_effect=step), \
+                 mock.patch.object(n.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1, '', 'unavailable')), \
+                 mock.patch('sys.argv', ['nightly', '--local', '--android-only']):
+                self.assertEqual(n.main(), 1)
+            self.assertNotIn('testflight', seen)
+            self.assertNotIn('ios_preflight', seen)
+            self.assertTrue((root/'build/android-nightly/latest.json').exists())
+
     def test_env_signing_secret_does_not_call_keychain(self):
         with mock.patch.dict(a.os.environ,{'GLORY_KEYSTORE_PASSWORD':'test-only'}),mock.patch.object(a.subprocess,'run') as run:
             self.assertEqual(a.signing_password(),'test-only');run.assert_not_called()

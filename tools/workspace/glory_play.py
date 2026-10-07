@@ -13,7 +13,7 @@ import subprocess
 import sys
 import glory_build as b
 
-PACKAGE = 'com.glory.game'
+PACKAGE = 'com.glory.game.google'
 ROOT = b.ROOT / 'build/play-releases'
 SCOPE = 'https://www.googleapis.com/auth/androidpublisher'
 
