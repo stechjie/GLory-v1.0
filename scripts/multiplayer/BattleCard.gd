@@ -228,6 +228,8 @@ static func _clean(raw: Dictionary) -> Dictionary:
 	# 队伍号。**-1 = 没有分配**，不是 0 —— 0 是 A 队，写错这个默认值会让所有
 	# 没分配的名片都被当成「A 队的匹配对局」。
 	out["team"] = int(raw.get("team", -1))
+	# 本队里的位置 0~2（10-08：组队房选的位置带进对局）。同理 **-1 = 没指定**。
+	out["seat"] = int(raw.get("seat", -1))
 	# 段位（第 6 步）。同理 **-1 = 没打过排位**，不是 0 —— 0 是第一段。
 	# 默认成 0 会让每个新玩家在房间里顶着一个没打过的段位。
 	out["tier"] = int(raw.get("tier", -1))
@@ -266,6 +268,12 @@ static func match_of(card: Dictionary) -> String:
 static func team_of(card: Dictionary) -> int:
 	var team := int(card.get("team", -1))
 	return team if team == 0 or team == 1 else -1
+
+
+# 这张名片指定的本队位置 0~2（组队房里选的，见 backend/app/matchmaking.allocate_seats）。-1 = 没指定。
+static func seat_of(card: Dictionary) -> int:
+	var seat := int(card.get("seat", -1))
+	return seat if seat >= 0 and seat <= 2 else -1
 
 
 static func mode_of(card: Dictionary) -> String:

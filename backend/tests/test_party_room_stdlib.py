@@ -206,6 +206,48 @@ class PartyRoomRuleTests(unittest.TestCase):
             self.parties.kick(guest, player(3))
         self.assertEqual(ctx.exception.code, "not_host")
 
+    # ---- 10-08 换位（同自定义房间点空位换座） ------------------------------
+    def _invite_and_join(self, guest):
+        self.parties.invite(self.host, guest)
+        room_id = self.parties.of(self.host).id
+        return self.parties.join(guest, room_id, card(guest.int))
+
+    def test_seats_follow_join_move_and_leave(self):
+        room = self.parties.create(self.host, card(1), "casual", [])
+        self.assertEqual(room.seats[self.host], 0, "建房的人坐 0 号位")
+        a, b = player(2), player(3)
+        self._invite_and_join(a)
+        self.assertEqual(room.seats[a], 1, "新进来的人坐第一个空位")
+        self.parties.move_seat(a, 2)
+        self.assertEqual(room.seats[a], 2)
+        self._invite_and_join(b)
+        self.assertEqual(room.seats[b], 1, "a 换走后空出来的 1 号位给新来的人")
+        # 快照带座位，客户端按它摆
+        seats = {m["friend_code"]: m["seat"] for m in self.parties.snapshot(room)["members"]}
+        self.assertEqual(seats, {card(1)["friend_code"]: 0, card(2)["friend_code"]: 2,
+                                 card(3)["friend_code"]: 1})
+        self.parties.leave(a)
+        self.assertNotIn(a, room.seats, "走了的人让出座位")
+        self.assertEqual(room.seats[b], 1, "别人的位置不动")
+
+    def test_move_seat_rules(self):
+        room = self.parties.create(self.host, card(1), "casual", [])
+        guest = player(2)
+        self._invite_and_join(guest)
+        room.ready.add(guest)
+        with self.assertRaises(party.PartyRejected) as ctx:
+            self.parties.move_seat(guest, 0)
+        self.assertEqual(ctx.exception.code, "seat_taken")
+        with self.assertRaises(party.PartyRejected) as ctx:
+            self.parties.move_seat(guest, 3)
+        self.assertEqual(ctx.exception.code, "bad_seat")
+        self.parties.move_seat(guest, 2)
+        self.assertIn(guest, room.ready, "换座不清准备（同自定义房间）")
+        room.queued = True
+        with self.assertRaises(party.PartyRejected) as ctx:
+            self.parties.move_seat(guest, 1)
+        self.assertEqual(ctx.exception.code, "in_queue")
+
     def test_kick_rejected_while_queued_or_self(self):
         room = self._room_with(player(2))
         with self.assertRaises(party.PartyRejected) as ctx:

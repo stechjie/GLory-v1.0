@@ -170,6 +170,11 @@ func last_error() -> String:
 	return _last_error
 
 
+# 已经让桥接进了房间（包括正在连）。语音面板显示状态用。
+func connected() -> bool:
+	return _connected
+
+
 # 正在说话的队友（好友码），被我屏蔽的不算 —— 屏蔽了我也听不到，头像上不该亮。
 func speaking_codes() -> Array[String]:
 	var out: Array[String] = []

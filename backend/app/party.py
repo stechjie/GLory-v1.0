@@ -43,6 +43,9 @@ class Room:
     voice_used: bool = False
     # 每个成员在当前队伍里的入座时刻（单调时钟）。房主退出时按它挑「待得最久」的人接班。
     joined_at: dict[uuid.UUID, float] = field(default_factory=dict)
+    # 成员 -> 座位 0~2（10-08，对齐自定义房间的换位）。**会带进对局**：满 3 人的队伍进了对局，
+    # 坐的就是这里选的位置（A/B/C = 不同的路），见 matchmaking._allocate_seats。
+    seats: dict[uuid.UUID, int] = field(default_factory=dict)
 
 
 class Parties:
@@ -68,6 +71,7 @@ class Parties:
         room_id = secrets.token_urlsafe(12)
         room = Room(room_id, player, mode, [player], {player: profile}, pets=pets[:MAX_PETS])
         room.joined_at[player] = self._now()
+        room.seats[player] = 0
         self._rooms[room_id] = room
         self._member_room[player] = room_id
         return room
@@ -78,13 +82,26 @@ class Parties:
             "host_code": room.profiles[room.host]["friend_code"],
             "members": [
                 {**room.profiles[pid], "ready": pid == room.host or pid in room.ready,
-                 "host": pid == room.host}
+                 "host": pid == room.host, "seat": self.seat_of(room, pid)}
                 for pid in room.members
             ],
             "pets": room.pets.copy(), "queued": room.queued,
             "version": room.version, "messages": room.messages.copy(),
             "voice_epoch": room.voice_epoch,
         }
+
+    @staticmethod
+    def seat_of(room: Room, player: uuid.UUID) -> int:
+        seat = room.seats.get(player)
+        if seat is None:
+            # 不该发生（每条入队路径都排了座位）；万一有，按入队顺序给一个，不让快照缺字段。
+            seat = room.members.index(player) if player in room.members else 0
+        return seat
+
+    @staticmethod
+    def _free_seat(room: Room) -> int:
+        taken = set(room.seats.values())
+        return next((seat for seat in range(MAX_MEMBERS) if seat not in taken), 0)
 
     def state_of(self, player: uuid.UUID) -> dict:
         room = self.of(player)
@@ -135,6 +152,7 @@ class Parties:
         room.profiles[player] = profile
         # 重新进入房间 = 重新计时，退房时按这个时间挑新队长。
         room.joined_at[player] = self._now()
+        room.seats[player] = self._free_seat(room)
         self._member_room[player] = room_id
         room.ready.clear()
         room.version += 1
@@ -160,6 +178,7 @@ class Parties:
             room.members.remove(player)
             room.profiles.pop(player, None)
             room.joined_at.pop(player, None)
+            room.seats.pop(player, None)
             room.ready.clear()
             room.version += 1
             return room, old_members, False, True
@@ -167,6 +186,7 @@ class Parties:
         self._rotate_voice(room)
         room.profiles.pop(player, None)
         room.joined_at.pop(player, None)
+        room.seats.pop(player, None)
         room.ready.clear()
         room.version += 1
         return room, old_members, False, False
@@ -183,10 +203,27 @@ class Parties:
         room.members.remove(target)
         room.profiles.pop(target, None)
         room.joined_at.pop(target, None)
+        room.seats.pop(target, None)
         # 换语音房间：被踢的人手上那把钥匙进的是旧房间（自建 LiveKit 踢人不一定作废钥匙）。
         self._rotate_voice(room)
         room.ready.clear()
         room.version += 1
+        return room
+
+    def move_seat(self, player: uuid.UUID, seat: int) -> Room:
+        """换到一个空位（10-08，同自定义房间点空位换座）。谁都能换自己；排队中不能换。
+
+        不清准备状态：自定义房间换座也保留准备（NetworkService._room_do_move）。
+        """
+        room = self._require_member(player)
+        self._require_editable(room)
+        if not 0 <= seat < MAX_MEMBERS:
+            raise PartyRejected("bad_seat", "没有这个位置")
+        if any(pid != player and taken == seat for pid, taken in room.seats.items()):
+            raise PartyRejected("seat_taken", "这个位置已经有人了")
+        if room.seats.get(player) != seat:
+            room.seats[player] = seat
+            room.version += 1
         return room
 
     def mode(self, player: uuid.UUID, mode: str) -> Room:

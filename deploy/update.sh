@@ -32,18 +32,67 @@ say() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 #
 # 包成函数之后 bash 必须先把整个文件解析完才能调用 main，
 # 之后文件怎么被改都与这次运行无关。
+# 组队房（排位 / 休闲开局前）的语音钥匙由账号服务器签（backend/app/party_voice.py），
+# 用的是和战斗服务器**同一个 LiveKit、同一把钥匙**。两个服务在同一台机器上，这里直接把
+# 战斗服务器那份配置（deploy/livekit/install_livekit.sh 第 6 步写的）复制给账号服务器。
+#
+# 原来要人手动复制（deploy/README.md「组队房语音」）。2026-10-08 线上一直没配，
+# 组队房始终显示「队伍语音尚未配置」—— 这一步就是为了不再依赖人记得做。
+#
+# 找不到就说清楚、继续更新：语音不该挡住整个后端的更新。
+sync_party_voice() {
+	local battle_user battle_home key
+	local target="$BASE/party_voice.json"
+	local env_file="$BASE/backend.env"
+	battle_user="$(systemctl show -p User --value glory-server 2>/dev/null || true)"
+	if [[ -z "$battle_user" ]] || ! id -u "$battle_user" >/dev/null 2>&1; then
+		echo "⚠️  读不到战斗服务器（glory-server）的运行用户，组队房语音没配。"
+		return 0
+	fi
+	battle_home="$(getent passwd "$battle_user" | cut -d: -f6)"
+	# 目录名 = project.godot 的 config/name（同 install_livekit.sh 的 APP_DIR_NAME）。
+	key="$battle_home/.local/share/godot/app_userdata/Glory Beta 0.04/livekit_voice.json"
+	if [[ ! -f "$key" ]]; then
+		echo "⚠️  没找到战斗服务器的语音配置：$key"
+		echo "   组队房语音没配。先按 deploy/livekit/README.md 把语音装好，再跑一次本脚本。"
+		return 0
+	fi
+	if ! cmp -s "$key" "$target"; then
+		install -m 600 -o "$SERVICE_USER" -g "$SERVICE_USER" "$key" "$target"
+		echo "已从战斗服务器复制：$key"
+	fi
+	if grep -q '^GLORY_PARTY_VOICE_CONFIG_FILE=' "$env_file" 2>/dev/null; then
+		sed -i "s|^GLORY_PARTY_VOICE_CONFIG_FILE=.*|GLORY_PARTY_VOICE_CONFIG_FILE=$target|" "$env_file"
+	else
+		echo "GLORY_PARTY_VOICE_CONFIG_FILE=$target" >> "$env_file"
+		echo "已写入 $env_file"
+	fi
+	echo "组队房语音：$target"
+}
+
 main() {
 	[[ $EUID -eq 0 ]] || { echo "请用 sudo 运行" >&2; exit 1; }
 	[[ -d "$SRC/backend" ]] || { echo "$SRC 下没有 backend/，先跑 bootstrap.sh" >&2; exit 1; }
 
-	if [[ -d "$SRC/.git" ]]; then
+	if [[ "${1:-}" == "--after-pull" ]]; then
+		say "拉取最新代码（已拉过，新版 update.sh 接着跑）"
+	elif [[ -d "$SRC/.git" ]]; then
 		say "拉取最新代码"
+		local self_before
+		self_before="$(sha256sum "$SRC/deploy/update.sh" | cut -d' ' -f1)"
 		BEFORE=$(git -C "$SRC" rev-parse --short HEAD)
 		git -C "$SRC" fetch --quiet origin
 		git -C "$SRC" reset --hard --quiet origin/main
 		AFTER=$(git -C "$SRC" rev-parse --short HEAD)
 		echo "$BEFORE -> $AFTER"
 		[[ "$BEFORE" == "$AFTER" ]] && echo "代码没变化"
+		# 本脚本自己也更新了：正在跑的这一份是旧版（见文件头），新加的步骤它根本不认识，
+		# 原来要人再跑一遍才生效（2026-10-08 组队语音那一步就差点这样漏掉）。
+		# 换成新版从这里接着跑；--after-pull 让新版跳过拉取，不会再进到这里。
+		if [[ "$(sha256sum "$SRC/deploy/update.sh" | cut -d' ' -f1)" != "$self_before" ]]; then
+			echo "update.sh 本身有更新，换新版接着跑"
+			exec bash "$SRC/deploy/update.sh" --after-pull
+		fi
 	else
 		say "跳过拉取（$SRC 不是 git 仓库）"
 	fi
@@ -105,6 +154,9 @@ main() {
 		systemctl daemon-reload
 		echo "已更新"
 	fi
+
+	say "组队房语音配置"
+	sync_party_voice
 
 	say "重启"
 	systemctl restart glory-backend

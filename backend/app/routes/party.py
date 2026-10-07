@@ -51,6 +51,10 @@ class KickBody(BaseModel):
     friend_code: str = Field(min_length=8, max_length=8)
 
 
+class SeatBody(BaseModel):
+    seat: int = Field(ge=0, le=party.MAX_MEMBERS - 1)
+
+
 class ChatBody(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
 
@@ -359,6 +363,19 @@ async def kick(body: KickBody,
     return StateResponse(state=service.snapshot(room))
 
 
+@router.put("/seat", response_model=StateResponse)
+async def seat(body: SeatBody,
+               claims: Annotated[Claims, Depends(current_claims)]) -> StateResponse:
+    """换到一个空位（10-08，同自定义房间点空位换座）。选的位置会带进对局。"""
+    me = await _me(claims)
+    try:
+        room = party.current().move_seat(me.player_id, body.seat)
+    except party.PartyRejected as exc:
+        raise _reject(exc) from None
+    await party.current().broadcast(room)
+    return StateResponse(state=party.current().snapshot(room))
+
+
 @router.put("/mode", response_model=StateResponse)
 async def mode(body: ModeBody,
                claims: Annotated[Claims, Depends(current_claims)]) -> StateResponse:
@@ -452,7 +469,9 @@ async def start(claims: Annotated[Claims, Depends(current_claims)]) -> StateResp
     ratings = {row["player_id"]: int(row["score"]) for row in rows}
     try:
         room = service.mark_queued(me.player_id, version)
-        matchmaking.current().join_group(members, room.mode, ratings)
+        # 组队房里选的位置带进对局（10-08）：满 3 人的队伍一定按它坐，见 matchmaking.allocate_seats。
+        seats = {pid: service.seat_of(room, pid) for pid in members}
+        matchmaking.current().join_group(members, room.mode, ratings, seats)
     except (party.PartyRejected, ValueError) as exc:
         service.mark_idle(room)
         if isinstance(exc, party.PartyRejected):

@@ -181,6 +181,8 @@ class _Waiter:
     party: list[uuid.UUID] = field(default_factory=list)
     # 匹配分。casual 不用（全是 0），ranked 接第 5 步的分数。
     rating: int = 0
+    # 组队房里各人选的位置（0~2，10-08）。进对局时按它坐（_allocate_seats）；单排没有。
+    seats: dict[uuid.UUID, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -188,6 +190,8 @@ class _Member:
     player_id: uuid.UUID
     team: int
     accepted: bool = False
+    # 本队里的位置 0~2；-1 = 不指定，由战斗服务器按到达顺序坐第一个空位。
+    seat: int = -1
 
 
 @dataclass
@@ -216,6 +220,8 @@ class Assignment:
     mode: str
     team: int
     expires_at: float
+    # 本队里的位置 0~2（-1 = 不指定）。写进名片，战斗服务器按它入座。
+    seat: int = -1
 
 
 class Matchmaker:
@@ -284,7 +290,8 @@ class Matchmaker:
         return queued_message(position, mode)
 
     def join_group(self, players: list[uuid.UUID], mode: str,
-                   ratings: dict[uuid.UUID, int] | None = None) -> dict:
+                   ratings: dict[uuid.UUID, int] | None = None,
+                   seats: dict[uuid.UUID, int] | None = None) -> dict:
         """一个单人或满 3 人的队伍作为一个整体进队列（PARTY_SIZES）。"""
         if mode not in OPEN_MODES or len(players) not in PARTY_SIZES \
                 or len(players) != len(set(players)):
@@ -295,7 +302,8 @@ class Matchmaker:
         score = ratings or {}
         self._party_queues[mode][leader] = _Waiter(
             mode=mode, joined_at=self._now(), party=players.copy(),
-            rating=sum(int(score.get(pid, 0)) for pid in players))
+            rating=sum(int(score.get(pid, 0)) for pid in players),
+            seats={pid: int(seat) for pid, seat in (seats or {}).items() if pid in players})
         for pid in players:
             self._party_of[pid] = leader
             self._party_disconnected.discard(pid)
@@ -496,7 +504,9 @@ class Matchmaker:
     def _form_party(self, players: list[uuid.UUID], teams: list[int], parties: list[_Waiter],
                     mode: str, now: float) -> list[tuple[uuid.UUID, dict]]:
         match_uid = new_match_uid()
-        members = [_Member(pid, team) for pid, team in zip(players, teams, strict=True)]
+        seats = allocate_seats(players, teams, parties)
+        members = [_Member(pid, team, seat=seat)
+                   for pid, team, seat in zip(players, teams, seats, strict=True)]
         pending = _Pending(match_uid, mode, members, now + ACCEPT_TIMEOUT_SEC, parties)
         self._pending[match_uid] = pending
         for member in members:
@@ -663,7 +673,7 @@ class Matchmaker:
             self._pending_of.pop(member.player_id, None)
             self._assignments[member.player_id] = Assignment(
                 match_uid=pending.match_uid, mode=pending.mode,
-                team=member.team, expires_at=expires_at)
+                team=member.team, expires_at=expires_at, seat=member.seat)
         if pending.parties:
             from app import party
             party.current().finish_for_match([m.player_id for m in pending.members])
@@ -696,6 +706,33 @@ def new_match_uid() -> str:
     会是两个编号，对不上。
     """
     return secrets.token_hex(16)
+
+
+def allocate_seats(players: list[uuid.UUID], teams: list[int],
+                   parties: list[_Waiter]) -> list[int]:
+    """每个人在本队里坐 0~2 号哪个位置，与 players 同序（10-08：组队房选的位置带进对局）。
+
+    满 3 人的队伍独占一队，三个人的位置本来就不冲突，**一定按他们选的坐**。
+    一队是几个单人时可能撞位：按 players 的先后，先到先得，撞了的坐剩下的空位。
+    没选过位置的（单排队列进来的）也给一个空位 —— 写进名片总比让战斗服务器按到达顺序排更可预期。
+    """
+    wanted: dict[uuid.UUID, int] = {}
+    for waiter in parties:
+        wanted.update(waiter.seats)
+    seats = [-1] * len(players)
+    for team in (0, 1):
+        indexes = [i for i, t in enumerate(teams) if t == team]
+        taken: set[int] = set()
+        for i in indexes:
+            seat = wanted.get(players[i], -1)
+            if 0 <= seat < TEAM_SIDE_SIZE and seat not in taken:
+                seats[i] = seat
+                taken.add(seat)
+        free = [seat for seat in range(TEAM_SIDE_SIZE) if seat not in taken]
+        for i in indexes:
+            if seats[i] < 0 and free:
+                seats[i] = free.pop(0)
+    return seats
 
 
 def assign_teams(players: list[uuid.UUID], ratings: dict[uuid.UUID, int]) -> list[int]:

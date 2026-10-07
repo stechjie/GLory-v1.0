@@ -640,6 +640,10 @@ func start_party_match() -> Dictionary:
 func cancel_party_match() -> Dictionary:
 	return await _request(HTTPClient.METHOD_POST, "/v1/party/cancel", {}, true)
 
+# 组队房里换到一个空位（10-08）。选的位置会带进对局。
+func move_party_seat(seat: int) -> Dictionary:
+	return await _request(HTTPClient.METHOD_PUT, "/v1/party/seat", {"seat": seat}, true)
+
 # 房主把队员移出队伍（10-08）。
 func kick_party_member(code: String) -> Dictionary:
 	return await _request(HTTPClient.METHOD_POST, "/v1/party/kick", {"friend_code": code}, true)

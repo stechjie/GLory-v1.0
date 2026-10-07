@@ -584,10 +584,11 @@ def test_card_carries_the_assignment_after_everyone_accepts(wired, monkeypatch, 
     """
     captured: dict = {}
 
-    async def _card(pid, match_uid="", team=-1, mode=""):
+    async def _card(pid, match_uid="", team=-1, mode="", seat=-1):
         captured["match_uid"] = match_uid
         captured["team"] = team
         captured["mode"] = mode
+        captured["seat"] = seat
         return "Ym9keQ==.c2ln"
 
     monkeypatch.setattr(loadout, "issue_card", _card)
@@ -597,22 +598,24 @@ def test_card_carries_the_assignment_after_everyone_accepts(wired, monkeypatch, 
         maker = matchmaking.current()
         maker._assignments[PLAYER_A] = matchmaking.Assignment(
             match_uid="b" * 32, mode=mode, team=1,
-            expires_at=maker._now() + 100)
+            expires_at=maker._now() + 100, seat=2)
         r = client.post("/v1/battle/card", headers={"Authorization": "Bearer token-a"})
     assert r.status_code == 200
-    assert captured == {"match_uid": "b" * 32, "team": 1, "mode": mode}
+    # seat：组队房里选的位置（10-08），名片要带过去，战斗服务器按它入座。
+    assert captured == {"match_uid": "b" * 32, "team": 1, "mode": mode, "seat": 2}
 
 
 def test_card_without_assignment_asks_for_no_match(wired, monkeypatch) -> None:
     captured: dict = {}
 
-    async def _card(pid, match_uid="", team=-1, mode=""):
+    async def _card(pid, match_uid="", team=-1, mode="", seat=-1):
         captured["match_uid"] = match_uid
         captured["team"] = team
         captured["mode"] = mode
+        captured["seat"] = seat
         return "Ym9keQ==.c2ln"
 
     monkeypatch.setattr(loadout, "issue_card", _card)
     with TestClient(app) as client:
         client.post("/v1/battle/card", headers={"Authorization": "Bearer token-a"})
-    assert captured == {"match_uid": "", "team": -1, "mode": ""}
+    assert captured == {"match_uid": "", "team": -1, "mode": "", "seat": -1}

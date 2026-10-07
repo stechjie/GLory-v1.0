@@ -51,6 +51,7 @@ func _ready() -> void:
 	_case_team_slots()
 	_case_rendezvous()
 	_case_seating_follows_the_card()
+	_case_seating_uses_party_seat()
 	_case_matched_rooms_are_private()
 	_case_match_uid_is_not_overwritten()
 	_case_report_mode()
@@ -168,6 +169,29 @@ func _case_seating_follows_the_card() -> void:
 	NetworkService._matched_try_start(room)
 	_eq(str(room.get("state", "")), NetworkService.ROOM_LOBBY, "try_start_is_a_noop_when_not_full",
 		"没坐满时 _matched_try_start 应该什么都不做")
+	_drop(room)
+
+
+# --- 4b. 组队房选的位置带进对局（10-08）----------------------------------------------
+
+func _case_seating_uses_party_seat() -> void:
+	_eq(BattleCard.seat_of(_card({})), -1, "plain_card_seat_is_minus_one",
+		"没指定位置时必须是 -1（0 是 A/1 号位，默认成 0 会把所有人往同一个位置塞）")
+	_eq(BattleCard.seat_of(_card({"match": MATCH_A, "team": 1, "seat": 2})), 2, "seat_passes_through",
+		"名片上的位置要原样透传")
+	for bad in [-1, 3, 99]:
+		_eq(BattleCard.seat_of(_card({"match": MATCH_A, "team": 1, "seat": bad})), -1, "bad_seat_ignored",
+			"位置 %d 超范围，应当当作没指定" % bad)
+
+	var room: Dictionary = NetworkService._matched_room_for(MATCH_B, "ranked")
+	_eq(NetworkService._matched_slot_for(room, 1, 2), 5, "party_seat_honoured",
+		"B 队选了 2 号位（第三个位置）就该坐 5 号座位，而不是第一个空位 3")
+	_eq(NetworkService._matched_slot_for(room, 0, 1), 1, "party_seat_team_a", "A 队 1 号位 = 1 号座位")
+	NetworkService._assign_peer_to_room(9100, room, "", _card({"match": MATCH_B, "team": 1, "seat": 2}), 5)
+	_eq(NetworkService._matched_slot_for(room, 1, 2), 3, "taken_seat_falls_back",
+		"想坐的位置已经有人：退回坐本队第一个空位，不能拒绝进房")
+	_eq(NetworkService._matched_slot_for(room, 1, -1), 3, "no_seat_first_free",
+		"没指定位置（旧名片）照旧坐本队第一个空位")
 	_drop(room)
 
 

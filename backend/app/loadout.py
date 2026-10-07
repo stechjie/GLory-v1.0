@@ -254,6 +254,7 @@ def card_payload(
     match_uid: str = "",
     team: int = -1,
     mode: str = "casual",
+    seat: int = -1,
 ) -> dict:
     """名片的 JSON 结构。字段名与 BattleCard.gd 一一对应（test_loadout 钉着）。
 
@@ -292,6 +293,10 @@ def card_payload(
         payload["team"] = int(team)
         if mode in ("casual", "ranked"):
             payload["mode"] = mode
+        # 本队里坐几号位（0~2，10-08）：组队房里选的位置带进对局。旧战斗服务器不认识这个字段，
+        # 照旧按到达顺序坐第一个空位 —— 加字段向后兼容（见上面 CARD_VERSION 那条）。
+        if 0 <= seat <= 2:
+            payload["seat"] = int(seat)
     return payload
 
 
@@ -342,6 +347,6 @@ def sign(payload: dict) -> str:
 
 
 async def issue_card(player_id: uuid.UUID, match_uid: str = "", team: int = -1,
-                     mode: str = "casual") -> str:
+                     mode: str = "casual", seat: int = -1) -> str:
     return sign(card_payload(await build_loadout(player_id), match_uid=match_uid,
-                             team=team, mode=mode))
+                             team=team, mode=mode, seat=seat))

@@ -164,6 +164,15 @@ def test_assigned_card_carries_server_chosen_mode() -> None:
     assert "mode" not in loadout.card_payload(_loadout())
 
 
+def test_assigned_card_carries_party_seat() -> None:
+    """10-08：组队房里选的位置（0~2）随名片带给战斗服务器；不是匹配对局、或没有位置就不出现这个字段。"""
+    seated = loadout.card_payload(_loadout(), match_uid="a" * 32, team=1, mode="ranked", seat=2)
+    assert seated["seat"] == 2
+    assert "seat" not in loadout.card_payload(_loadout(), match_uid="a" * 32, team=1)
+    assert "seat" not in loadout.card_payload(_loadout(), seat=1), "自定义房间的名片不带位置"
+    assert "seat" not in loadout.card_payload(_loadout(), match_uid="a" * 32, team=0, seat=3)
+
+
 def test_max_size_card_fits_what_the_battle_server_accepts(card_key) -> None:
     """🔴 最大的名片也要在战斗服务器肯收的长度以内。
 
@@ -180,7 +189,8 @@ def test_max_size_card_fits_what_the_battle_server_accepts(card_key) -> None:
         pet="p" * 32,
         races=[("r%02d" % i) + "x" * 29 for i in range(loadout.MAX_RACES)],
     )
-    card = loadout.sign(loadout.card_payload(fat))
+    # 匹配对局的名片最长（多了会合键 / 队伍 / 模式 / 位置），按它量。
+    card = loadout.sign(loadout.card_payload(fat, match_uid="f" * 32, team=1, mode="ranked", seat=2))
     # 名片是纯 ASCII（base64 + 一个点），字符数 = 字节数。
     assert card.isascii()
     assert len(card) <= limit, (

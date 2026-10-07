@@ -4861,8 +4861,7 @@ func _rpc_team_join_matched(public_id: String = "", card: String = "") -> void:
 		# 不是错误路径的终点：座位还留着的话，客户端会走重连那条路。
 		_rpc_team_action_failed.rpc_id(sender, "room_started")
 		return
-	# 显式写类型：_room_service 是 RefCounted 变量，方法调用返回 Variant。
-	var slot := int(_room_service.room_next_free_slot_on_team(room, team))
+	var slot := _matched_slot_for(room, team, BattleCard.seat_of(seat_card))
 	if slot < 0:
 		# 这一队满了。只可能是账号服务器分配错了，或者有人拿别人的名片来试。
 		_net_log("matched join refused room=%d match=%s team=%d (team full)" % [
@@ -4876,6 +4875,20 @@ func _rpc_team_join_matched(public_id: String = "", card: String = "") -> void:
 	# 再要一次「准备」就是把「一个人不点、其他五个干等」这个洞重新开一遍，
 	# 而这一版没有备战倒计时（第二节）。
 	_matched_try_start(room)
+
+# 匹配来的人坐哪：名片上带了本队位置（组队房里选的，10-08）而且那个位置空着，就坐那里；
+# 否则坐本队第一个空位（原来的做法，也是旧名片 / 旧账号服务器的路径）。
+# 位置被占只可能是同一队几个单排的人选了同一个位置 —— 账号服务器分配时已经错开，
+# 这里的退路是给「有人带着旧分配重连」这类边角情况的。
+func _matched_slot_for(room: Dictionary, team: int, seat: int) -> int:
+	if seat >= 0:
+		var wanted := team * (TEAM_SLOTS / 2) + seat
+		var states: Array = room.get("slot_states", [])
+		if wanted < states.size() and str(states[wanted]) == "empty":
+			return wanted
+	# 显式写类型：_room_service 是 RefCounted 变量，方法调用返回 Variant。
+	return int(_room_service.room_next_free_slot_on_team(room, team))
+
 
 # 会合键对应的房间；没有就新建一个。满了 / 到达全服房间上限时返回空字典。
 func _matched_room_for(match_uid: String, match_mode: String = "casual") -> Dictionary:

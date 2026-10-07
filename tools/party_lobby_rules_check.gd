@@ -130,12 +130,34 @@ func _case_member_can_invite() -> void:
 	#   ② 但**不能连 `queued` 一起放开** —— 排队中邀请会被服务端拒
 	#      （party.Room.invite → `if room.queued: raise`），放行只会给玩家一个
 	#      必然失败的入口。这条是「有意识地放开」的边界，别顺手删。
+	#
+	# ★★ 10-08 用户改口径：「按位置是换位，邀请人的功能做在朋友列表就好」（同自定义房间）。
+	#    ⇒ 空位**不再**拉出邀请抽屉，点了是换到那个位置；邀请只在好友列表里（点整行）。
+	#    上面 9(3) 那条「成员也能点」仍然成立 —— 换位谁都能换自己。
 	_h.expect(not src.contains("add.disabled = _local_only or not _is_host()"),
 		"seat_slot_host_gate_gone",
-		"空位的「+」按钮必须对成员放开（第 9(3) 条：成员方等待队友也要改为邀请好友）")
+		"空位对成员也要能点（9(3) 条；10-08 起点空位是换位，谁都能换自己）")
 	_h.expect(src.contains("add.disabled = _local_only or bool(_room.get(\"queued\", false))"),
 		"seat_slot_keeps_queue_gate",
-		"放开房主闸之后，排队中仍然不能邀请（服务端会拒）—— 别把 queued 一起删了")
+		"排队中不能换位（队伍已锁定，服务端也会拒）—— 别把 queued 一起删了")
+	_h.expect(src.contains("add.pressed.connect(_move_to_seat.bind(i))")
+			and not src.contains("add.pressed.connect(_toggle_friends_drawer)"),
+		"seat_slot_moves_not_invites",
+		"10-08：点空位 = 换到那个位置（同自定义房间），不能再拉出邀请抽屉")
+	_h.expect(src.contains("row_tap.pressed.connect(func() -> void: _invite(code))"),
+		"friend_row_invites",
+		"10-08：邀请在好友列表里，点好友那一行就是邀请（同自定义房间的好友列表）")
+	# 10-08：按键尺寸照自定义房间（Team3v3Lobby），钉住几颗主要的，免得以后又各改各的。
+	var custom := _read("res://scenes/menu/Team3v3Lobby.gd")
+	_h.expect(custom.contains("const VOICE_BTN_SIZE := Vector2(78, 60)")
+			and src.contains("const VOICE_BTN_SIZE := Vector2(78, 60)"),
+		"voice_btn_size_matches_custom", "组队房语音按钮尺寸要与自定义房间一致（78×60）")
+	_h.expect(custom.contains("const MUTE_BTN_SIZE := Vector2(140, 62)")
+			and src.contains("const TOP_BTN_SIZE := Vector2(140, 62)"),
+		"top_btn_size_matches_custom", "组队房顶排按键尺寸要与自定义房间的静音键一致（140×62）")
+	_h.expect(custom.contains("const PHRASE_BTN_SIZE := Vector2(162, 40)")
+			and src.contains("const PHRASE_BTN_SIZE := Vector2(162, 40)"),
+		"phrase_btn_size_matches_custom", "快捷短语按钮尺寸要与自定义房间一致（162×40）")
 
 
 # 第 12 / 13 条：房主交接与换模式提示走新的 party_notice 推送。

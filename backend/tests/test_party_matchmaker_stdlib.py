@@ -147,6 +147,27 @@ class PartyMatchTests(unittest.TestCase):
         self.assertEqual(states[player(1)].get("reason"), "party_declined")
         self.assertEqual(states[player(2)].get("reason"), "declined")
 
+    def test_trio_seats_carry_into_the_match(self):
+        # 10-08：组队房里选的位置带进对局。三人队独占一队，一定按他们选的坐。
+        wanted = {player(1): 2, player(2): 0, player(3): 1}
+        self.maker.join_group(TRIO.copy(), matchmaking.CASUAL, None, wanted)
+        for i in range(4, 7):
+            self.maker.join(player(i), matchmaking.CASUAL)
+        asyncio.run(self.maker.tick())
+        for i in range(1, 7):
+            self.maker.accept(player(i))
+        for pid, seat in wanted.items():
+            self.assertEqual(self.maker.assignment_for(pid).seat, seat)
+        solo_seats = sorted(self.maker.assignment_for(player(i)).seat for i in range(4, 7))
+        self.assertEqual(solo_seats, [0, 1, 2], "另一队的三个单人也要各占一个位置")
+
+    def test_solo_seat_collision_first_come_first_served(self):
+        a, b, c = player(1), player(2), player(3)
+        parties = [matchmaking._Waiter(mode=matchmaking.CASUAL, joined_at=0.0, party=[a], seats={a: 0}),
+                   matchmaking._Waiter(mode=matchmaking.CASUAL, joined_at=0.0, party=[b], seats={b: 0})]
+        seats = matchmaking.allocate_seats([a, b, c], [0, 0, 0], parties)
+        self.assertEqual(seats, [0, 1, 2], "两个单人都想坐 0 号：先到的坐，后到的坐剩下的空位")
+
     def test_cancelling_party_clears_all_members(self):
         self.maker.join_group(TRIO.copy(), matchmaking.CASUAL)
         self.assertEqual(self.maker.leave_group(player(2)), TRIO)
