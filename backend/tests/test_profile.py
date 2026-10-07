@@ -346,6 +346,8 @@ KEPT_ON_DELETE = {
     "player_bans",                                   # 封号记录：注销不能洗掉
     "player_mutes", "player_reports",                # 禁言与举报（019）：同封号，处罚记录不能靠注销洗掉
     "seven_day_login_claims",                         # 奖励领取记录：要与钱包和归属流水对账
+    "ranked_reward_receipts",                         # 排位游戏币回执（027）：与 wallet_ledger 对账
+    "pet_draws", "pet_draw_progress",                 # 钻石抽宠物（029）：花钻石的回执与保底进度，同钱包流水
 }
 
 
