@@ -202,3 +202,16 @@ func _tracked_target(fallback: Vector3, context: Dictionary) -> Vector3:
 	var tracked := to_local(target_object.global_position)
 	tracked.y = fallback.y
 	return tracked
+
+# Same contract as VFXBlockRoot.wait_for(): this composer extends Node3D, not
+# VFXBlockRoot, so it needs its own copy. Without it _overload_counter() fails to
+# compile and takes the whole battle script chain (and Main.gd) down with it (10-07).
+func wait_for(seconds: float, process_always := false) -> bool:
+	if not is_inside_tree() or is_queued_for_deletion():
+		return false
+	var tree := get_tree()
+	if tree == null:
+		return false
+	var timer := tree.create_timer(maxf(seconds, 0.0), process_always)
+	await timer.timeout
+	return is_inside_tree() and not is_queued_for_deletion()
