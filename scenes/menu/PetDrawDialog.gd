@@ -115,6 +115,8 @@ func _build() -> void:
 		"Rules · 75 gems per draw. 10% pet chance; draw 10 guarantees an unowned pet.\nNo pet: 100 coins. Early pets keep energy; only the guarantee resets it."), 17)
 	rule_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	rule_text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	rule_text.add_theme_color_override("font_color", Tokens.SUMMON_DETAIL_INK)
+	rule_text.add_theme_constant_override("outline_size", 0)
 	_rules.add_child(rule_text)
 	_notice = _label(_t("正在读取奖池…", "Loading summon pool…"), 17)
 	_notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

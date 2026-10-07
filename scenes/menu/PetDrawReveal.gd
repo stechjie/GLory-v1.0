@@ -76,6 +76,9 @@ func show_pet_info(pet_id: String, _owned: bool) -> void:
 	art.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_content.add_child(art)
 	var detail := _add_label(PetService.skill_detail_text(pet_id), 17)
+	if not LocaleManager.get_locale().begins_with("en"):
+		detail.text = detail.text.replace("。", "。\n").strip_edges()
+	detail.add_theme_constant_override("line_spacing", 3)
 	detail.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	detail.add_theme_color_override("font_color", Tokens.SUMMON_DETAIL_INK)
@@ -112,9 +115,9 @@ func _add_label(value: String, font_size: int) -> Label:
 	label.text = value
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.add_theme_font_size_override("font_size", font_size)
-	label.add_theme_color_override("font_color", Tokens.SUMMON_TEXT)
-	label.add_theme_color_override("font_outline_color", Tokens.SUMMON_TEXT_EDGE)
-	label.add_theme_constant_override("outline_size", 2)
+	label.add_theme_color_override("font_color", Tokens.SUMMON_DETAIL_INK)
+	
+	label.add_theme_constant_override("outline_size", 0)
 	_content.add_child(label)
 	return label
 
@@ -127,9 +130,9 @@ func _add_button(value: String, callback: Callable) -> void:
 	button.add_theme_stylebox_override("normal", Tokens.panel_box(Tokens.SUMMON_GLASS, Tokens.GOLD_EDGE, 8))
 	button.add_theme_stylebox_override("hover", Tokens.panel_box(Tokens.SUMMON_GLASS_HOVER, Tokens.GOLD_HOVER, 8))
 	button.add_theme_stylebox_override("pressed", Tokens.panel_box(Tokens.SUMMON_GLASS, Tokens.GOLD_PRESSED, 8))
-	button.add_theme_color_override("font_color", Tokens.SUMMON_TEXT)
-	button.add_theme_color_override("font_outline_color", Tokens.SUMMON_TEXT_EDGE)
-	button.add_theme_constant_override("outline_size", 2)
+	button.add_theme_color_override("font_color", Tokens.SUMMON_DETAIL_INK)
+	button.add_theme_color_override("font_hover_color", Tokens.SUMMON_DETAIL_INK)
+	button.add_theme_constant_override("outline_size", 0)
 	button.add_theme_font_size_override("font_size", 20)
 	button.pressed.connect(callback)
 	_content.add_child(button)
