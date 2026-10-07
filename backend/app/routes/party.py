@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Annotated
 
@@ -13,6 +14,8 @@ from app.config import get_settings
 from app.jwt_verify import Claims
 from app.rate_limit import RateLimited, SlidingWindowLimiter
 from app.routes.me import current_claims
+
+log = logging.getLogger("glory.party")
 
 router = APIRouter(prefix="/v1/party", tags=["party"])
 _chat_limiter = SlidingWindowLimiter(30, 60.0)
@@ -194,6 +197,20 @@ async def invite(body: InviteBody,
     #    现在照 routes/chat.py 的形状把同一条推送补上。
     #    `deliver_to is None` 表示「被静默丢弃」或「重发」，两种情况都不推
     #    —— 与 routes/chat.py 的判据逐字一致。
+    #
+    # ★★ 10.07n 加固（线上事故：排位里邀请好友 → 「服务器出错了（HTTP 500）」）：
+    #    事故成因是**迁移没跟上代码** —— 第 10 条用的 kind='party_invite' 不在
+    #    chat_messages 那条 check 约束里（020 只放行 text / room_invite），
+    #    insert 抛 CheckViolationError。它不属于 ChatRejected，冒到接口层就是 500。
+    #    约束本身已由 database/030_chat_party_invite.sql 放宽 —— 那是**根治**；
+    #    这里补的是**兜底**，理由是后果的严重性不对称：
+    #      · 上面 `party.current().invite()` **已经改完内存状态**了；
+    #      · 下面那条 party_invite 实时推送还没发。
+    #    于是出事的瞬间最坏：邀请在服务端算数、房主看到报错、被邀请人完全不知情
+    #    —— 表现就是「拉不了好友」，而且没有任何一边拿到可用的信息。
+    #    ⇒ 私聊这条消息是**锦上添花**（气泡 / 红点 / 可已读），它失败只该降级、
+    #      不该拦路：记一笔日志，然后照常发实时推送，至少「拉好友」这件事是成的。
+    #    下次真机日志里看到这行，就去检查对应迁移跑没跑。
     try:
         sent = await chat.send(
             me.player_id,
@@ -204,6 +221,14 @@ async def invite(body: InviteBody,
             {"party_id": room.id, "mode": room.mode},
         )
     except chat.ChatRejected:
+        # 已经邀过同一个人（chat._check_party_invite_rules）：库里那条还在，不重落、不重推。
+        sent = None
+    except Exception as exc:  # noqa: BLE001 - 见上面 10.07n 那段，故意的宽捕获
+        log.warning(
+            "组队邀请的私聊消息没落上（%s: %s），改为只走实时推送 —— "
+            "若为 CheckViolationError 请确认 database/030_chat_party_invite.sql 跑过 party=%s",
+            type(exc).__name__, exc, room.id,
+        )
         sent = None
     if sent is not None and sent.deliver_to is not None:
         # 形状与 routes/chat.py 的 MessageItem 一致（客户端两个入口共用一条解析）：
@@ -403,8 +428,26 @@ async def start(claims: Annotated[Claims, Depends(current_claims)]) -> StateResp
 
 
 @router.post("/chat", response_model=StateResponse)
-async def chat(body: ChatBody,
-               claims: Annotated[Claims, Depends(current_claims)]) -> StateResponse:
+async def send_chat(body: ChatBody,
+                    claims: Annotated[Claims, Depends(current_claims)]) -> StateResponse:
+    """队内聊天。
+
+    ★★ 这个函数**不能**叫 `chat`（2026-10-07 线上事故，10.07n 修）。
+    模块顶部有 `from app import chat, …`（私聊模块，invite() 要拿它落邀请消息）。
+    Python 的模块顶层名只有一个命名空间 ⇒ 再定义一个 `async def chat` 会**把那个
+    import 整个盖掉**，而且不报错、不警告：
+
+        invite() 里的 chat.send(...)  →  实际拿到的是**这个路由函数**
+                                      →  AttributeError: 'function' object has no attribute 'send'
+                                      →  不在 except chat.ChatRejected 里  →  HTTP 500
+
+    真机表现：排位房间里点「邀请好友」→「服务器出错了（HTTP 500），稍后再试」。
+    HTTP 路径由上面的装饰器决定，函数名只影响 OpenAPI 的 operationId，
+    所以改成 `send_chat` 对客户端没有任何影响（另一条先例：routes/chat.py 的
+    send_message 也不叫 chat）。判据见
+    backend/tests/test_no_module_shadowing_stdlib.py —— 全 backend 一律不许
+    顶层定义和 import 进来的模块同名。
+    """
     me = await _me(claims)
     try:
         _chat_limiter.check(str(me.player_id))
