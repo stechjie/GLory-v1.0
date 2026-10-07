@@ -148,6 +148,43 @@ func _case_merges_through_prep_screen() -> void:
 		_h.expect(UnitGrowth.king_stacks(king) == 3 and is_equal_approx(UnitGrowth.king_mult(king), 1.728),
 			"king_merge_keeps_growth", "合成后人王应带走 3 层 / ×1.728，实际 %d 层 / ×%.3f"
 				% [UnitGrowth.king_stacks(king), UnitGrowth.king_mult(king)])
+
+	# (d) 联机客机的自动合成要报给服务器账本（10-07 真机：买进空格 → 自动合成成二星，
+	#     服务器一次都没看见，升星次数停在 0，老虎层数被截成 0、实战没加成）。
+	#     截下真的发出去的合成意图，再交给真的账本，看服务器的升星次数会不会 +1。
+	_clear_slots()
+	GameState.board_slots[0] = _cell(TIER1_A, "x1")
+	GameState.bench_slots[0] = _cell(TIER1_A, "x2")
+	var pending_before: Array = NetworkService._tx_pending.keys()
+	NetworkService.team_active = true
+	NetworkService.is_host = false
+	screen.call("_auto_combine_all")
+	NetworkService.team_active = false
+	var merges: Array = []
+	for rid in NetworkService._tx_pending.keys():
+		if pending_before.has(rid):
+			continue
+		var tx: Dictionary = NetworkService._tx_pending[rid]
+		var args: Array = tx.get("args", [])
+		if str(tx.get("kind", "")) == "economy" and args.size() == 2 and str(args[0]) == "merge":
+			merges.append(args[1])
+		NetworkService._tx_pending.erase(rid)
+	if _h.expect(merges.size() == 1, "auto_merge_reported",
+			"联机时自动合成应向服务器账本发 1 条合成意图，实际 %d 条" % merges.size()):
+		var payload: Dictionary = merges[0]
+		var uids: Array = (payload.get("uids", []) as Array).duplicate()
+		uids.sort()
+		_h.expect(uids == ["x1", "x2"] and str(payload.get("keeper_uid", "")) == "x1", "auto_merge_payload",
+			"合成意图应是 x1 + x2、留下棋盘上那枚 x1，实际 %s / %s" % [str(uids), str(payload.get("keeper_uid", ""))])
+		var prep := EconomyLedger.new_prep(100)
+		prep["roster"] = {
+			"x1": {"unit_id": TIER1_A, "star": 1, "cost_basis": 20, "kind": "unit"},
+			"x2": {"unit_id": TIER1_A, "star": 1, "cost_basis": 20, "kind": "unit"},
+		}
+		var receipt := EconomyLedger.apply(prep, "merge", payload, {"tiger_growth_rate": PetService.tier1_growth_rate(TIGER)})
+		_h.expect(bool(receipt.get("ok", false)) and int(prep.get("tiger_starup_count", 0)) == 1, "auto_merge_counts_on_server",
+			"服务器账本按这条意图合成后升星次数应为 1（%s，次数 %d）"
+				% [str(receipt.get("error", "ok")), int(prep.get("tiger_starup_count", 0))])
 	screen.queue_free()
 	await get_tree().process_frame
 

@@ -953,11 +953,21 @@ func _combine_copies_auto(star: int, locs: Array) -> void:
 	UnitGrowth.inherit_on_merge(keeper, cells)
 	keeper.star = star + 1
 	GameState.record_tiger_starup()
+	# 自动合成也是一次合成，和手动合成一样报给服务器账本（_shadow_report_merge）。
+	# 10-07 之前这条路不报：最常见的「买进空格 → 自动合成」服务器一次都没看见 ——
+	# 账本里那几枚一星永远合不上，服务器数的升星次数也不涨，而战斗里每枚棋子的老虎层数
+	# 是按这个次数截的（NetworkService._room_clamp_growth），老虎在实战里就一直是 0。
+	_last_merge_keeper_uid = str(keeper.get("uid", ""))
+	_last_merge_uids = []
+	for c in cells:
+		if typeof(c) == TYPE_DICTIONARY:
+			_last_merge_uids.append(str((c as Dictionary).get("uid", "")))
 	for loc in fuse:
 		if str(loc[0]) == str(keeper_loc[0]) and int(loc[1]) == int(keeper_loc[1]):
 			continue
 		var arr: Array = GameState.board_slots if str(loc[0]) == "board" else GameState.bench_slots
 		arr[int(loc[1])] = null
+	_shadow_report_merge()
 
 # 出售退款 = 棋子自身售价 x 星级 x 0.5。
 #
