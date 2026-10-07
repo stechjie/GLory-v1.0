@@ -175,7 +175,13 @@ const USE_DTLS := true
 # v38: 普通 PvP 蓝队棋盘不再左右镜像（战斗服务器算位置），蓝队画面只上下翻（客户端），2026-10-06。
 #      两半必须一起换：旧客户端配新服务器，蓝队会看到自己的棋子左右颠倒；新客户端配旧服务器也一样。
 #      和 v33 同一类（改了权威战斗结果），战斗服务器重新打包部署到 p38、和新包一起上。
-const NETWORK_PROTOCOL_VERSION := 38
+# v39: 人王 / 老虎的成长改记在每枚棋子上（scripts/units/UnitGrowth.gd），开战时由战斗服务器乘上去，
+#      2026-10-07。棋盘快照 SNAPSHOT_VERSION 4→5（整块的 tiger_starups 删掉，每格多
+#      king_growth_stacks / king_mult / tiger_stacks），战斗结果的 player_survivor_slots 换成
+#      king_outcomes。改了权威战斗结果：战斗服务器重新打包部署到 p39、和新包一起上。
+#      同一批恢复 v38 的 PvP「正上方对正下方」：10-06 晚 3849d85 把它撤回过（蓝队棋盘又左右镜像、
+#      画面整张转 180°，协议号没动），用户 10-07 定恢复。p38 时期上线的包两种都有可能，所以一起顶到 39。
+const NETWORK_PROTOCOL_VERSION := 39
 
 # Local phone hosting is debug-only.
 const ALLOW_LOCAL_HOST_DEBUG := false

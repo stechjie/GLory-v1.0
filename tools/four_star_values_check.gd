@@ -258,20 +258,30 @@ func _case_cooldown_only_shortens() -> void:
 
 
 # --- 5. 减防总量不得打出负防御 -----------------------------------------------------
-# §2：每层减防 × 最大层数 ≤ 100%。
+# §2：减防总量 ≤ 100%。
+#
+# ★ 10.07：`defense_down` 在实现里**不叠层** —— 同一状态再挂一次只刷新时长、百分比取最新那次
+#   （StatusEffectService.add_status 的非中毒分支），所以总量就是单次的 def_down_pct。
+#   设计稿刺灵那一行假设「33% × 3 层」，实现从来没做叠层：数据里的 `max_stacks: 3` 没有任何
+#   代码读过（10.07 已删），这条检查却拿它去乘 —— 09-27 刺灵四星改成 0.6 之后就报
+#   「0.6 × 3 = 180%」，而实战里是单次 60%。
+#   所以先用真代码确认「不叠层」：哪天真做了叠层，这里先红，逼着回来按层数重新算上限。
 func _case_defense_shred_capped() -> void:
+	var probe := {"uid": "shred_probe", "team": "enemy", "def": {}, "statuses": {}}
+	StatusEffectService.add_status(probe, "defense_down", 5.0, {"pct": 0.3})
+	StatusEffectService.add_status(probe, "defense_down", 5.0, {"pct": 0.3})
+	var left := StatusEffectService.defense_multiplier(probe)
+	_h.expect(is_equal_approx(left, 0.7), "defense_down_stacks",
+		"两次 30%% 减防后防御剩 %.2f（不叠层应剩 0.70）—— 减防开始叠层了，下面按单次算的上限要改成按层数算" % left)
 	for row in _units():
 		var d: Dictionary = row
 		var scaled := UnitFactory.apply_star_stats(d, GameConstants.MAX_STAR)
 		if not scaled.has("def_down_pct"):
 			continue
-		var per_stack := float(scaled.get("def_down_pct", 0.0))
-		var stacks := maxi(1, int(scaled.get("max_stacks", 1)))
-		var total := per_stack * float(stacks)
-		if total > 1.0 + 0.0001:
+		var shred := float(scaled.get("def_down_pct", 0.0))
+		if shred > 1.0 + 0.0001:
 			_h.fail("defense_shred_uncapped",
-				"%s 的减防总量 %.2f × %d 层 = %.2f，超过 100%% —— 会打出负防御"
-					% [str(d.get("id", "?")), per_stack, stacks, total])
+				"%s 的四星减防 %.2f 超过 100%% —— 会打出负防御" % [str(d.get("id", "?")), shred])
 		else:
 			_h.item()
 
@@ -461,7 +471,7 @@ func _case_growth_ceiling_exists_at_every_star() -> void:
 			"%s 的 4 星层数上限 %d 低于 3 星的 %d" % [uid, four_cap, base_cap])
 		# A compounding stat with no ceiling at all is the failure this guards.
 		_h.expect(base_cap > 0, "growth_ceiling_zero",
-			"%s 的 max_stacks 是 %d —— 0 在 _grow_human_king 里等于不封顶" % [uid, base_cap])
+			"%s 的 max_stacks 是 %d —— 0 在 UnitGrowth.king_can_grow 里等于不封顶" % [uid, base_cap])
 
 
 # --- 11. The epic band must be explicit, and must not shrink at 4 star ------

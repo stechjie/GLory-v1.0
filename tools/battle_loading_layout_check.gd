@@ -240,6 +240,10 @@ func _world_bone_box(root: Node3D) -> AABB:
 		if not (current is Skeleton3D):
 			continue
 		var skeleton := current as Skeleton3D
+		# 藏着的动作子模型不画出来，不算它的骨架（10-07：老虎的跑步模型放大后，
+		# 正面预览里那副藏着的骨架把「离边距离」量小了）。
+		if not PetPreview.shown_under(root, skeleton):
+			continue
 		for i in skeleton.get_bone_count():
 			var p: Vector3 = skeleton.global_transform * skeleton.get_bone_global_pose(i).origin
 			if found:

@@ -346,8 +346,8 @@ func _find_own_human_king() -> Dictionary:
 	return {}
 
 
-# 人王技能 `unique_king_growth` 的层数上限。与 `Main._grow_human_king` /
-# `BattleVfx._human_king_can_grow` 同源：一律经 `UnitFactory.apply_star_stats`，
+# 人王技能 `unique_king_growth` 的层数上限。与正式局（UnitGrowth.king_cap，
+# `BattleVfx._human_king_can_grow` 也读它）同源：一律经 `UnitFactory.apply_star_stats`，
 # 因为 `max_stacks` 在 star4 里被覆写（★1~3 五层 / ★4 八层），`def` 是未缩放的原始表项。
 func _king_stack_cap(star: int) -> int:
 	var d := OfficeTestSim.find_def("piece", "human_king")
@@ -371,7 +371,7 @@ func _on_king_grow() -> void:
 		_refresh_king_row()
 		return
 	# ★ 不只动计数：把层数写进摆放字典 → `OfficeTestSim.def_for_placement` 按正式口径
-	#   （`Main._grow_human_king` 的 mul，只乘 hp/atk/def）重放，重建预览后属性面板 /
+	#   （UnitGrowth.grow_king，只乘 hp/atk/def）重放，重建预览后属性面板 /
 	#   长按详情看到的就是**真的加成后**的数值。
 	stacks += 1
 	_king_growth_stacks = stacks

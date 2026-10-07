@@ -67,11 +67,17 @@ func _ready() -> void:
 		"merchant_gold": 30,
 	}, 42)
 
-	# --- 复利之道：利息额外 +5% ---
-	failures += _check("复利之道", {
+	# --- 复利之道：利息额外 +5%；本回合没花金币再额外 +3%（09-29 db462f5 改版，图鉴同此）---
+	# 1000 + PVP胜100 = 1100；花过钱：利息 5%+5% → 1100 + 55 + 55 = 1210
+	failures += _check("复利之道/本回合花过金币", {
 		"gold_before": 1000, "kind": "pvp", "player_wins": true,
-		"treasures": ["money_compound"],
+		"treasures": ["money_compound"], "gold_spent_this_round": true,
 	}, 1210)
+	# 没花钱：再 +3% → 1210 + 33 = 1243
+	failures += _check("复利之道/本回合没花金币", {
+		"gold_before": 1000, "kind": "pvp", "player_wins": true,
+		"treasures": ["money_compound"], "gold_spent_this_round": false,
+	}, 1243)
 
 	# --- 安慰金随连败递增（每场 20 金）---
 	for streak: int in [1, 2, 3, 4]:

@@ -11,6 +11,7 @@ const SfxService := preload("res://ui/services/SfxService.gd")
 const PrepSkin := preload("res://scenes/prep/PrepSkin.gd")
 const PREP_RELATION_LINK_SCRIPT := preload("res://scenes/prep/PrepRelationLink3D.gd")
 const UnitActor3DScript := preload("res://effects/runtime/presentation/UnitActor3D.gd")
+const PetPreview := preload("res://scripts/pets/PetPreview.gd")
 const UnitVisualResolverScript := preload("res://effects/runtime/presentation/UnitVisualResolver.gd")
 const UnitContactShadowScript := preload("res://effects/runtime/presentation/UnitContactShadow.gd")
 const FOUR_STAR_READY_AURA := preload("res://effects/vfx3d/modules/FourStarAura3D.gd")
@@ -557,6 +558,11 @@ func refresh_tiger_stack_badge() -> void:
 	var local_slot := clampi(NetworkService.team_local_slot, 0, 5) if NetworkService.team_active else 4
 	var pet := _carrot_pet_nodes_by_slot.get(local_slot) as Node3D
 	var show := PlayerProfile.get_active() == "pet_tiger" and pet != null and is_instance_valid(pet)
+	# 摆放界面搭建时会先来一次（_setup_prep_river_background 里萝卜营地先于相机建好）：
+	# 那时没有相机，宠物也还没归一化（visible=false），位置算不出来。等 _normalize_carrot_pet
+	# 摆好宠物后会再刷一次，这里先藏着（10-07：老虎出战开局报 unproject_position on null）。
+	if show and (_prep_river_camera == null or _prep_river_viewport == null or not pet.visible):
+		show = false
 	if not show:
 		if _tiger_stack_badge != null:
 			_tiger_stack_badge.visible = false
@@ -684,10 +690,11 @@ func _carrot_pet_aabb(root: Node3D) -> AABB:
 		if not (current is MeshInstance3D):
 			continue
 		var mesh_instance := current as MeshInstance3D
-		if mesh_instance.mesh == null:
+		if mesh_instance.mesh == null or not PetPreview.shown_under(root, mesh_instance):
 			continue
-		var local := root.global_transform.affine_inverse() * mesh_instance.global_transform
-		var box := local * mesh_instance.get_aabb()
+		# 蒙皮宠物要按绑定量（松鼠按网格量会放大五十倍），只量显示着的动作模型，
+		# 见 PetPreview.mesh_box_in / shown_under。
+		var box := PetPreview.mesh_box_in(root, mesh_instance)
 		if found:
 			out = out.merge(box)
 		else:

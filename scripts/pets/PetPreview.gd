@@ -163,7 +163,7 @@ static func skeleton_bottom(root: Node3D, box: AABB) -> float:
 		if not (current is Skeleton3D):
 			continue
 		var skeleton := current as Skeleton3D
-		if skeleton.get_bone_count() == 0:
+		if skeleton.get_bone_count() == 0 or not shown_under(root, skeleton):
 			continue
 		var local := root.global_transform.affine_inverse() * skeleton.global_transform
 		for i in skeleton.get_bone_count():
@@ -252,9 +252,11 @@ static func build_runner(pet_id: String, size: Vector2 = RUNNER_SIZE,
 	viewport.add_child(camera)
 
 	viewport.add_child(model)
-	# ★ 先量包围盒、再切动作：两个都挂在模型的 `ready` 上，按连接顺序回调（先 fit 后 run）。
-	fit_when_ready(model, pet_id)
+	# ★ 先切动作、再量包围盒：两个都挂在模型的 `ready` 上，按连接顺序回调（先 run 后 fit）。
+	# 量尺寸只看显示着的子模型（shown_under），这样量到的就是读条上真正在跑的那个（10-07 起；
+	# 之前是先量后切，量的是待机模型）。
 	play_run(model)
+	fit_when_ready(model, pet_id)
 	return frame
 
 
@@ -306,7 +308,15 @@ static func play_run(model: Node3D) -> void:
 
 # 模型自己的包围盒。用遍历而不是 model.get_aabb()：Node3D 没有那个方法，
 # 而且模型是一整棵树，只有 MeshInstance3D 上才有网格。
+# 只算**现在画得出来**的那个动作模型（见 shown_under）；一个都看不到时才退回全部网格。
 static func aabb_of(root: Node3D) -> AABB:
+	var box := _mesh_box(root, true)
+	if box.size == Vector3.ZERO:
+		box = _mesh_box(root, false)
+	return box if box.size != Vector3.ZERO else AABB(Vector3.ZERO, Vector3.ONE)
+
+
+static func _mesh_box(root: Node3D, shown_only: bool) -> AABB:
 	var out := AABB()
 	var found := false
 	var stack: Array[Node] = [root]
@@ -317,16 +327,52 @@ static func aabb_of(root: Node3D) -> AABB:
 		if not (current is MeshInstance3D):
 			continue
 		var mesh_instance := current as MeshInstance3D
-		if mesh_instance.mesh == null:
+		if mesh_instance.mesh == null or (shown_only and not shown_under(root, mesh_instance)):
 			continue
-		var local := root.global_transform.affine_inverse() * mesh_instance.global_transform
-		var box := local * mesh_instance.get_aabb()
+		var box := mesh_box_in(root, mesh_instance)
 		if found:
 			out = out.merge(box)
 		else:
 			out = box
 			found = true
-	return out if found else AABB(Vector3.ZERO, Vector3.ONE)
+	return out
+
+
+# node 在 root 以下这几层里是不是都显示着。宠物的待机 / 跑 / 攻击各是一个子模型，
+# 同一时间只显示一个；藏着的那几个不该参与量尺寸、对脚底（10-07）：老虎的跑步模型
+# 原文件小约 488 倍、靠 ImportedPetAnimated.run_model_scale 放大，它的骨架算进来
+# 会把包围盒和脚底拉偏。只看到 root 为止 —— 整只宠物先藏着再归一化
+# （萝卜营地的宠物 visible=false 时量）不受影响。
+static func shown_under(root: Node, node: Node) -> bool:
+	var current := node
+	while current != null and current != root:
+		if current is Node3D and not (current as Node3D).visible:
+			return false
+		current = current.get_parent()
+	return true
+
+
+# 一个网格在 root 空间里**实际画出来**的包围盒。主界面走动的宠物（MainMenuPet）、
+# 萝卜营地的宠物（PrepBoardModels）也用这一个，别再各写一份。
+#
+# 蒙皮网格画在哪由骨架决定：骨架 × 骨头 × 绑定逆矩阵 × 顶点，网格节点自己的变换不参与。
+# 只拿 网格节点变换 × get_aabb() 去量，在骨架和网格单位不一致的模型上会差很多（10-07）：
+#   · 松鼠（CC 骨架、厘米、Armature 缩 0.01）量成 0.019、实际 1.89 → 归一化放大五十倍，主界面整个框被它占满
+#   · 老虎量成 1.95、实际 1.59 → 比别的宠物小两成
+# 猫 / 兔 / 蘑菇的绑定是单位矩阵，两种量法结果一样（逐顶点蒙皮核对过）。
+# 用静止姿势（rest）算，不随当前动作帧变。
+static func mesh_box_in(root: Node3D, mesh_instance: MeshInstance3D) -> AABB:
+	var to_root := root.global_transform.affine_inverse()
+	var skeleton := mesh_instance.get_node_or_null(mesh_instance.skeleton) as Skeleton3D
+	var skin := mesh_instance.skin
+	if skeleton != null and skin != null and skin.get_bind_count() > 0:
+		var bone := skin.get_bind_bone(0)
+		if bone < 0:
+			bone = skeleton.find_bone(skin.get_bind_name(0))
+		if bone >= 0:
+			var bind := skeleton.get_bone_global_rest(bone) * skin.get_bind_pose(0)
+			return (to_root * skeleton.global_transform * bind) * mesh_instance.get_aabb()
+	return (to_root * mesh_instance.global_transform) * mesh_instance.get_aabb()
 
 
 static func placeholder(size: Vector2 = CARD_SIZE, greyed: bool = false) -> Control:

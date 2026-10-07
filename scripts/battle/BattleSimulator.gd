@@ -74,8 +74,9 @@ static func prepare_team_state(forced_team: int = -1) -> Dictionary:
 	var ally_slots: Array
 	var rival_slots: Array
 	var seed_parts: Array
-	# 使用本地位置约定：对手棋盘面对面镜像，蓝队视角由 BattleArena 整体翻转。
-	var mirror_enemy := true
+	# 普通 PvP 两边棋盘都不左右镜像：正上方对正下方，同房间里 A 在 1 正上方（2026-10-06，
+	# 见 BattleSimShared.board_cell_pos）。决赛是左右对打，面对面镜像才对，照旧。
+	var mirror_enemy := mirror_enemy_for(kind, is_final_round)
 	if kind == "pvp":
 		ally_slots = [0, 1, 2]
 		rival_slots = [3, 4, 5]
@@ -100,7 +101,7 @@ static func prepare_team_state(forced_team: int = -1) -> Dictionary:
 		rival_ctx.append(_team_owner_ctx_for_slot(rival_slots[lane]))
 	var player: Array = []
 	for lane in 3:
-		_append_lane_board_fighters(player, lane_boards[lane], "player", lane, ally_ctx[lane].treasures, ally_ctx[lane].syn, ally_slots[lane], ally_ctx[lane].get("pet", ""), int(ally_ctx[lane].get("gold", 0)), int(ally_ctx[lane].get("tiger_starups", 0)))
+		_append_lane_board_fighters(player, lane_boards[lane], "player", lane, ally_ctx[lane].treasures, ally_ctx[lane].syn, ally_slots[lane], ally_ctx[lane].get("pet", ""), int(ally_ctx[lane].get("gold", 0)))
 	# Enemy side only exists if the opposing team has a real opponent: a host-added
 	# dummy (假想敌), or — only when online — a remote player. Offline there is just
 	# ONE real player (you), so a stray "player" slot marker must NOT count as an
@@ -129,7 +130,7 @@ static func prepare_team_state(forced_team: int = -1) -> Dictionary:
 					_append_lane_boss(enemy, lane, boss_template)
 					_append_lane_monsters(enemy, lane, lane_monster_count, monster_template)
 				"pvp":
-					_append_lane_board_fighters(enemy, _team_board_for_slot(rival_slots[lane], rng), "enemy", lane, rival_ctx[lane].treasures, rival_ctx[lane].syn, rival_slots[lane], rival_ctx[lane].get("pet", ""), int(rival_ctx[lane].get("gold", 0)), int(rival_ctx[lane].get("tiger_starups", 0)), mirror_enemy)
+					_append_lane_board_fighters(enemy, _team_board_for_slot(rival_slots[lane], rng), "enemy", lane, rival_ctx[lane].treasures, rival_ctx[lane].syn, rival_slots[lane], rival_ctx[lane].get("pet", ""), int(rival_ctx[lane].get("gold", 0)), mirror_enemy)
 				_:
 					_append_lane_monsters(enemy, lane, lane_monster_count, monster_template)
 		# Mercenaries (Legion TD 2 "send"): PvP -> own mercs fight WITH you and the
@@ -395,16 +396,12 @@ static func stamp_team_round_damages(replay_a: Dictionary, replay_b: Dictionary)
 	res_a["team_damage_rival"] = dmg_b
 	res_a["team_heal_self"] = heal_a
 	res_a["team_heal_rival"] = heal_b
-	if kind == "pvp":
-		res_a["player_survivor_slots"] = ra.get("player_survivor_slots", [])
 	replay_a["result"] = res_a
 	var res_b: Dictionary = replay_b.get("result", {})
 	res_b["team_damage_self"] = dmg_b
 	res_b["team_damage_rival"] = dmg_a
 	res_b["team_heal_self"] = heal_b
 	res_b["team_heal_rival"] = heal_a
-	if kind == "pvp":
-		res_b["player_survivor_slots"] = ra.get("enemy_survivor_slots", [])
 	replay_b["result"] = res_b
 
 static func _team_replay_self_damage(replay: Dictionary) -> int:
@@ -602,8 +599,7 @@ static func result_from_state(state: Dictionary) -> Dictionary:
 		"player_hp_max": _team_max_hp(player),
 		"enemy_hp_current": _team_current_hp(enemy),
 		"enemy_hp_max": _team_max_hp(enemy),
-		"player_survivor_slots": _survivor_slots(p_end),
-		"enemy_survivor_slots": _survivor_slots(e_end),
+		"king_outcomes": _king_outcomes(player + enemy),
 		"log": state.get("log", []),
 		"player_kill_gold": int(state.get("player_kill_gold", 0)),
 		"enemy_kill_gold": int(state.get("enemy_kill_gold", 0)),
@@ -618,11 +614,12 @@ static func result_from_state(state: Dictionary) -> Dictionary:
 static func build_tutorial_player_fighters(kind: String) -> Array:
 	var out: Array = []
 	var unique_ids := {}
+	var tiger_rate := PetService.tier1_growth_rate(PlayerProfile.get_active())
 	for i in GameState.board_slots.size():
 		var cell = GameState.board_slots[i]
 		if cell == null or _is_duplicate_unique_cell(cell, unique_ids):
 			continue
-		out.append(_fighter_from_cell(cell, i, "player"))
+		out.append(_fighter_from_cell(cell, i, "player", false, tiger_rate))
 	if kind == "pvp" or kind == "final":
 		_add_mercenary_fighters(out, GameState.mercenary_slots, "player", false)
 	return out

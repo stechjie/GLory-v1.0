@@ -5,7 +5,6 @@ const Harness := preload("res://tools/CheckHarness.gd")
 const Carrots := preload("res://scripts/economy/CarrotEconomy.gd")
 const Ledger := preload("res://scripts/multiplayer/EconomyLedger.gd")
 const Battle := preload("res://scripts/battle/BattleSimShared.gd")
-const BattleTreasures := preload("res://scripts/battle/BattleSimTreasures.gd")
 const Preview := preload("res://scripts/pets/PetPreview.gd")
 
 var _h: RefCounted
@@ -65,26 +64,20 @@ func _check_tiger_ledger() -> void:
 	_h.expect(bool(second.ok) and int(prep.tiger_starup_count) == 2,
 		"tiger_repeat", "later merges must continue the same stack")
 
+# 老虎层数记在每枚棋子上（UnitGrowth.tiger_stacks），建 fighter 时按主人的老虎成长率乘上去。
+# 完整的规则（升星给谁加、合成继承、服务器截上限）在 tools/unit_growth_check.gd。
 func _check_tiger_battle() -> void:
-	var tier1 := {"id": "test1", "hp": 100, "atk": 100, "def": 20, "tier": 1}
-	var tier2 := {"id": "test2", "hp": 100, "atk": 100, "def": 20, "tier": 2}
-	var units: Array = [
-		Battle._fighter_from_def(tier1, 0, "player", 0, 2, 3),
-		Battle._fighter_from_def(tier2, 1, "player", 1, 2, 1),
-	]
-	for fighter in units:
-		fighter["owner_pet"] = "pet_tiger"
-		fighter["owner_tiger_starups"] = 2
-		fighter["owner_treasures"] = []
-		fighter["owner_syn"] = {}
-	var log: Array[String] = []
-	BattleTreasures._apply_opening_treasures(units, log)
-	_h.expect(int(units[0].max_hp) == 110 and int(units[0].atk) == 110
-			and int(units[0].defense) == 22,
-		"tiger_tier1", "two stacks should add 10% HP/ATK/DEF to tier 1 at any star")
-	_h.expect(int(units[1].max_hp) == 100 and int(units[1].atk) == 100
-			and int(units[1].defense) == 20,
+	var rate := PetService.tier1_growth_rate("pet_tiger")
+	var tier1 := {"id": "test1", "def": {"id": "test1", "hp": 100, "atk": 100, "def": 20, "tier": 1}, "star": 1, "tiger_stacks": 2}
+	var tier2 := {"id": "test2", "def": {"id": "test2", "hp": 100, "atk": 100, "def": 20, "tier": 2}, "star": 1, "tiger_stacks": 2}
+	var f1 := Battle._fighter_from_cell(tier1, 0, "player", false, rate)
+	var f2 := Battle._fighter_from_cell(tier2, 1, "player", false, rate)
+	_h.expect(int(f1.max_hp) == 110 and int(f1.atk) == 110 and int(f1.defense) == 22,
+		"tiger_tier1", "two stacks should add 10% HP/ATK/DEF to a tier 1 piece")
+	_h.expect(int(f2.max_hp) == 100 and int(f2.atk) == 100 and int(f2.defense) == 20,
 		"tiger_tier2", "tier 2 must not receive the tiger bonus")
+	var f3 := Battle._fighter_from_cell(tier1, 0, "player", false, PetService.tier1_growth_rate("pet_cat"))
+	_h.expect(int(f3.max_hp) == 100, "tiger_other_pet", "stacks must do nothing when the owner's pet is not the tiger")
 
 func _check_models() -> void:
 	for pet_id in ["pet_squirrel", "pet_tiger"]:

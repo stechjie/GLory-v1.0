@@ -17,6 +17,8 @@ const REF_SIZE := Vector2(1672.0, 941.0)   # 与 MainMenu 同一套参考画布
 # 「播放器池 == 8」断言误伤。
 const SfxService := preload("res://ui/services/SfxService.gd")
 const Presentation := preload("res://effects/runtime/presentation/PresentationSettings.gd")
+# 包围盒用 PetPreview.aabb_of：蒙皮宠物要按绑定量，见那边 mesh_box_in 的说明。
+const PetPreview := preload("res://scripts/pets/PetPreview.gd")
 const FOOTSTEP_INTERVAL := 0.36        # 秒/步，与 MOVE_SPEED 对齐，避免脚底打滑
 const FOOTSTEP_BUS := "SFX"
 const FOOTSTEP_PLAYER_NAME := "PetFootstepPlayer"
@@ -289,33 +291,11 @@ func _spawn_pet(pet_id: String, index: int, total: int) -> void:
 
 # Meshy 出的模型尺度是随的，按包围盒归一化到统一高度，并把脚底对齐到 y=0
 func _normalize_model(node: Node3D, pet_id: String) -> void:
-	var box := _model_aabb(node)
+	var box := PetPreview.aabb_of(node)
 	var height := maxf(0.0001, box.size.y)
 	var factor := PET_TARGET_HEIGHT / height * PetService.model_scale(pet_id)
 	node.scale = Vector3.ONE * factor
 	node.position.y = -box.position.y * factor + PetService.model_y(pet_id)
-
-func _model_aabb(root: Node3D) -> AABB:
-	var out := AABB()
-	var found := false
-	var stack: Array[Node] = [root]
-	while not stack.is_empty():
-		var current: Node = stack.pop_back()
-		for child in current.get_children():
-			stack.append(child)
-		if not (current is MeshInstance3D):
-			continue
-		var mesh_instance := current as MeshInstance3D
-		if mesh_instance.mesh == null:
-			continue
-		var local := root.global_transform.affine_inverse() * mesh_instance.global_transform
-		var box := local * mesh_instance.get_aabb()
-		if found:
-			out = out.merge(box)
-		else:
-			out = box
-			found = true
-	return out if found else AABB(Vector3.ZERO, Vector3.ONE)
 
 func _make_shadow_node() -> MeshInstance3D:
 	var quad := QuadMesh.new()

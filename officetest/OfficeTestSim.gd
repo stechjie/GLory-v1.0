@@ -1,6 +1,8 @@
 class_name OfficeTestSim
 extends RefCounted
 
+const UnitGrowth := preload("res://scripts/units/UnitGrowth.gd")
+
 # ============================================================================
 # 离线自测 · 单位测试模式的战斗状态组装器(officetest 专用,不改现有逻辑)。
 #
@@ -146,23 +148,17 @@ static func def_for_placement(p: Dictionary) -> Dictionary:
 			# 同 BattleSimShared._formation_ally_def_for_hp:tier 4、cost 0。
 			def.tier = 4
 			def.cost = 0
-	# 人王「战后存活 ⇒ 全属性成长」的层数重放。
+	# 人王「战后存活 ⇒ 生命 / 攻击 / 防御成长」的层数重放。
 	#
-	# 正式局走在 `Main._grow_human_king`：`mul = 1 + post_battle_all_stat_growth`
-	# （★1~3 走 top-level、★4 走 star4 覆写），**只乘 hp / atk / def**，每层复利一次。
-	# 离线自测把层数记在摆放字典上，这里按同一口径重放 —— 这样属性面板 / 长按详情
-	# 看到的才是真的加成后的数值，而不是只有计数在动。
-	#
-	# ★ 两个数（上限与倍率）都要经 `UnitFactory.apply_star_stats` —— 读原始 `def`
-	#   会把 ★4 的倍率读成 ★1~3 的（9.14 踩过的半接线坑）。
+	# 正式局：每活一场 UnitGrowth.grow_king（层数 +1、倍率 ×(1+当前星级成长率)，到顶不长），
+	# 开战时 BattleSimShared._fighter_from_cell 把倍率乘到 hp / atk / def 上。离线自测把层数记在
+	# 摆放字典上，这里按同一份规则重放到 def —— 属性面板 / 长按详情看到的才是真的加成后的数值。
 	var stacks := int(p.get("king_growth_stacks", 0))
-	if stacks > 0 and str(def.get("skill_id", "")) == "unique_king_growth":
-		var eff: Dictionary = UnitFactory.apply_star_stats(def, star_for_placement(p))
-		var mul := 1.0 + float(eff.get("post_battle_all_stat_growth", 0.20))
+	if stacks > 0:
+		var probe := {"def": def, "star": star_for_placement(p)}
 		for _i in stacks:
-			for key in ["hp", "atk", "def"]:
-				if def.has(key):
-					def[key] = maxi(1, int(round(float(def[key]) * mul)))
+			UnitGrowth.grow_king(probe)
+		UnitGrowth.apply_to_def(def, UnitGrowth.king_mult(probe))
 	return def
 
 
@@ -206,6 +202,8 @@ static func build_test_state(config: Dictionary, display_only := false) -> Dicti
 	var enemy: Array = []
 	var by_slot := placements_by_slot(config)
 	var ctx_list: Array = []
+	# 对手棋盘镜不镜像跟正式战斗同一条规则（普通 PvP 不镜像：正上方对正下方）。
+	var mirror_enemy := BattleSimulator.mirror_enemy_for(TEST_KIND, false)
 	for slot in 6:
 		var is_red := GameConstants.team_of_slot(slot) == GameConstants.TEAM_RED
 		var team := "player" if is_red else "enemy"
@@ -221,7 +219,7 @@ static func build_test_state(config: Dictionary, display_only := false) -> Dicti
 			if f.is_empty():
 				continue
 			# 需求:全部单位统一用"棋子进战斗的起始位子"(96 个格点)。
-			BattleSimulator._place_in_lane(f, int(p.get("cell", 0)), team, lane)
+			BattleSimulator._place_in_lane(f, int(p.get("cell", 0)), team, lane, mirror_enemy)
 			f.uid = "%s_L%d_%d" % [team, lane, int(p.get("cell", 0))]
 			var owns_board_effects := str(p.get("kind", "piece")) == "piece"
 			f["owner_treasures"] = treasures if owns_board_effects else []
@@ -243,7 +241,7 @@ static func build_test_state(config: Dictionary, display_only := false) -> Dicti
 			var f := _fighter_for_placement(p, team)
 			if f.is_empty():
 				continue
-			BattleSimulator._place_in_lane(f, int(p.get("cell", 0)), team, lane)
+			BattleSimulator._place_in_lane(f, int(p.get("cell", 0)), team, lane, mirror_enemy)
 			f.slot = GameConstants.CELL_COUNT + merc_index
 			f.uid = "%s_L%d_merc%d" % [team, lane, merc_index]
 			f["owner_treasures"] = []
@@ -366,4 +364,5 @@ static func _capture_live_stats(state: Dictionary, frame_index: int, live_stats:
 static func grid_sim_pos(slot: int, cell: int) -> Vector2:
 	var team := "player" if GameConstants.team_of_slot(slot) == GameConstants.TEAM_RED else "enemy"
 	var lane := slot % GameConstants.TEAM_SIDE_SIZE
-	return BattleSimulator.board_cell_pos(cell, team, float(BattleSimulator.TEAM_LANE_CENTERS[lane]))
+	return BattleSimulator.board_cell_pos(cell, team, float(BattleSimulator.TEAM_LANE_CENTERS[lane]),
+		BattleSimulator.mirror_enemy_for(TEST_KIND, false))

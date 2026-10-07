@@ -4371,3 +4371,43 @@ B5 文案改字 / B6 去 `deliver_to` 守卫。全部「变红 → 还原 sha256
 
 **教训**：否定断言必须**穷尽写法**（排除一类而非一个字符串）；「字段存在」≠「字段被正确赋值」，
 要用滑动切片钉在**分支体内**正面断言。
+
+## 2026-10-07：人王 / 老虎的成长改记在每枚棋子上（协议 39）
+
+### 新增 `tools/unit_growth_check`（81 项）
+
+全走真代码：`GameState.record_tiger_starup`（棋盘 + 待命区一阶 +1、二阶 / 佣兵不加、后买的从 0 开始、别的宠物不加）；
+摆放界面真的合成（`PrepScreen` 的 `_auto_combine_all` / `_merge_copies_into_cell`：继承最高层数再 +1，人王带走成长最多的那份）；
+`UnitGrowth.grow_king`（三星 5 层封顶、升四星后再长 3 层且之前的不追溯）；`_fighter_from_cell` 乘成长、主人不是老虎不起作用；
+详情（`UnitDetailFormat.grown_def`）与实战数值逐项相等、按升星次数截；`_minimal_slots` → `validate_team_snapshot`
+的结构上限（人王 ≤ 回合数 / 封顶、倍率上界、NaN、字符串、二阶与佣兵剥掉、v4 快照拒收）以及战斗读棋盘那条路
+（`extract_board`）不丢成长；`_room_clamp_growth` 账本上限；`_apply_carrot_state` 跟服务器的升星次数、补回的升四星也加层；
+`_king_outcomes`（凤凰复活算活、被寄生复制到对面的不算、按座位分开）；`Main._apply_post_battle_unit_outcomes`
+（只认自己座位、阵亡移出、没出场不动、强制结果不动）；PvE 与 PvP 各一场真的 `prepare_team_state` → 打完 → `king_outcomes`。
+
+**变异验证**（`mutate_growth.py`，22 / 22 全红，每次按 sha256 还原）：升星给二阶加层、继承取最低、战斗不乘成长、
+`sanitize_cell` 丢成长、账本不截、寄生复制品算活、Main 不按座位过滤、次数不跟服务器、四星追溯、升星只数次数、
+自动 / 手动合成不继承、详情不显示成长、收棋盘不做结构上限、人王不按回合截、读缓存不截、详情不按次数截、
+fighter 不记阵营、结果不带人王结局、分路不传老虎成长率、先存后截、补回的升四星不加层。
+写门禁时两处夹具顺序会让变异漏过（合成时留下的恰好是层数高的那枚；别的座位那条排在前面被后一条盖掉），已调整。
+
+## 2026-10-07：三条「本来就红」的门禁修好 + PvP 对齐恢复
+
+用户 10-07 要求全部修复。逐条查了是代码错还是门禁过期，结论都是**门禁 / 数据没跟上同事的改动**，代码本身照设计在跑：
+
+- `treasure_set_effect` 的 `element_set`：09-29 `db462f5` 给元素套装加了每个棋子 2 秒内置冷却（图鉴 `set_element`
+  写明了），门禁还在同一时刻连打 1000 次等 ~200 次触发。改成两件事分开验：每次攻击前清冷却看触发率（207 / 1000），
+  以及时间窗 0 / 1.9 / 2.0 秒各触发 1 / 0 / 1 次（新增 `element_set_cooldown`）。时间不往后走 —— 再往后会进狂暴、伤害倍率变了。
+- `economy_settle` 的「复利之道」：09-29 同一次把复利之道改成「+5%，本回合没花金币再 +3%」，用例没给
+  `gold_spent_this_round`（缺省按没花），所以得 1243 不是 1210。拆成「花过 1210 / 没花 1243」两条。
+- `four_star_values` 的 `defense_shred_uncapped`：门禁拿刺灵数据里的 `max_stacks: 3` 去乘四星减防 0.6 = 180%。
+  但实现里 `defense_down` **不叠层**（再挂一次只刷新、百分比取最新），`max_stacks` 没有任何代码读过 —— 设计稿假设
+  「33% × 3 层」，实现从来没做叠层。删掉这个死字段，门禁改成按单次减防判上限，并加 `defense_down_stacks`：
+  用真的 `StatusEffectService` 挂两次 30% 确认不叠层（哪天做了叠层先红，逼着回来按层数重算）。
+  设计稿刺灵那一行加了订正。
+
+**变异**（`mutate_reds.py`，7 / 7 全红，sha256 还原）：元素套装去冷却、冷却改 1.5 秒、触发率改 40%；复利之道去 +3%、
+花没花判反；减防改成叠层、刺灵四星减防 120%。
+
+**PvP 对齐恢复**：`officetest_online_parity` 在恢复后先红了一次（离线自测台还按镜像摆），把规则收成
+`BattleSimShared.mirror_enemy_for` 两边共用后转绿；`pvp_lane_alignment` 16 项、`OfficeTestSmoke` fails=0。

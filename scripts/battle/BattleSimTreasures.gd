@@ -224,15 +224,8 @@ static func _apply_opening_treasures(player: Array, event_log: Array[String]) ->
 			var atk_mult := PetService.opening_atk_mult(pet_id)
 			if atk_mult != 1.0:
 				f.atk = maxi(1, int(round(float(f.atk) * atk_mult)))
-			# Tier is the unit's purchase tier; star upgrades never change it.
-			if int((f.get("def", {}) as Dictionary).get("tier", 0)) == 1 \
-					and not bool(f.get("is_mercenary", false)):
-				var tiger_mult := 1.0 + PetService.tier1_growth_rate(pet_id) * float(_f_tiger_starups(f))
-				if tiger_mult > 1.0:
-					f.max_hp = maxi(1, int(round(float(f.max_hp) * tiger_mult)))
-					f.hp = int(f.max_hp)
-					f.atk = maxi(1, int(round(float(f.atk) * tiger_mult)))
-					f.defense = maxi(0, int(round(float(f.defense) * tiger_mult)))
+			# 老虎不在这里：它的加成是每枚棋子自己的层数，建 fighter 时就乘上了
+			# （BattleSimShared._fighter_from_cell → UnitGrowth.stat_multiplier）。
 	if GameState.owned_treasures.has("ctrl_time_compress"):
 		event_log.append(TranslationServer.translate("log_time_compress"))
 

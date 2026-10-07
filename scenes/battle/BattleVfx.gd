@@ -2,10 +2,9 @@ extends "res://scenes/battle/BattleRenderer.gd"
 
 const RANGED_ATTACK_MIN_RANGE_PX := 135.0
 const _SkillVFXConfig := preload("res://effects/SkillVFXConfig.gd")
-# 9.19：人王奖励判定要读 `max_stacks` 上限，必须经 `apply_star_stats` 取
-# （star4 覆写：1~3 星 5 层 / 4 星 8 层），与 Main._grow_human_king 同一条路。
-# 本仓惯例是 preload 常量而不是裸全局类名。
-const _UnitFactoryRef := preload("res://scripts/units/UnitFactory.gd")
+# 9.19：人王奖励判定要读「还能不能再长」，与战后真正长的那一步（Main →
+# UnitGrowth.grow_king）同一个函数。本仓惯例是 preload 常量而不是裸全局类名。
+const _UnitGrowth := preload("res://scripts/units/UnitGrowth.gd")
 
 var _vfx_prev_units: Dictionary = {}
 var _vfx_seeded: bool = false
@@ -1774,7 +1773,7 @@ var _human_king_reward_played := false
 #
 # 用户给的两个硬条件**缺一不可**：
 #   ① 本次战斗**自身人王未阵亡** —— 人王的唯一技是「参战且战后仍存活才成长」
-#      （Main._apply_post_battle_unit_outcomes 按 result.player_survivor_slots 判），
+#      （Main._apply_post_battle_unit_outcomes 按 result.king_outcomes 判），
 #      阵亡的人王下一回合直接被移出棋盘，成长无从谈起；
 #   ② 本次**还有成长空间**（`king_growth_stacks < max_stacks`）—— 已经到上限
 #      就没有属性加成了，这时响奖励音是在骗玩家。
@@ -1838,21 +1837,13 @@ func _local_living_human_king() -> Dictionary:
 
 # 本座位人王这一局结束**还能不能**拿到成长。false = 已到上限，或棋盘上没有人王。
 #
-# cap 走 `UnitFactory.apply_star_stats`，与 Main._grow_human_king 同源：
-# `max_stacks` 在 star4 里被覆写（1~3 星 5 层 / 4 星 8 层），而 `cell.def` 是
-# 未做星级缩放的原始表项 —— 直接读它会把 4 星的上限读成 5 层，于是人王明明
-# 已经封顶了还在响奖励音。
+# 判据就是战后真正长的那一步用的 UnitGrowth.king_can_grow：上限按星级读
+# （`max_stacks` 在 star4 里被覆写，1~3 星 5 层 / 4 星 8 层），直接读原表项会把
+# 4 星的上限读成 5 层，于是人王明明已经封顶了还在响奖励音。
 func _human_king_can_grow() -> bool:
-	for i in GameState.board_slots.size():
-		var cell = GameState.board_slots[i]
-		if cell == null or str(cell.get("def", {}).get("skill_id", "")) != "unique_king_growth":
-			continue
-		var d: Dictionary = cell.get("def", {})
-		var effective := _UnitFactoryRef.apply_star_stats(d, int(cell.get("star", 1)))
-		var cap := int(effective.get("max_stacks", 0))
-		if cap <= 0:
-			return true
-		return int(cell.get("king_growth_stacks", 0)) < cap
+	for cell in GameState.board_slots:
+		if typeof(cell) == TYPE_DICTIONARY and _UnitGrowth.is_king(cell):
+			return _UnitGrowth.king_can_grow(cell)
 	return false
 
 

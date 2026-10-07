@@ -281,8 +281,6 @@ func _merge_three_into_cell(target: Dictionary, incoming: Dictionary, excluded_b
 func _take_extra_merge_piece(id: String, star: int, excluded_board: Array, excluded_bench: Array) -> Dictionary:
 	return {}
 
-func _unique_king_growth_score(d: Dictionary) -> float:
-	return 0.0
 func _sell_refund_for_cell(cell: Dictionary) -> int:
 	return 0
 

@@ -5,6 +5,8 @@ extends RefCounted
 # 于是抽到这里两边共用：PrepDetails 保留原方法名改为薄委托，officetest 直接调用。
 # 只依赖参数 + 全局单例（LocaleManager / GameState / RaceRelationService）。
 
+const UnitGrowth := preload("res://scripts/units/UnitGrowth.gd")
+
 static func is_en() -> bool:
 	return LocaleManager.get_locale() == "en"
 
@@ -26,10 +28,63 @@ static func purchase_price_text(d: Dictionary) -> String:
 		return ("%d carrots" if is_en() else "%d萝卜") % int(d.get("carrot_cost", 0))
 	return ("%d G" if is_en() else "%d金") % int(d.get("cost", 0))
 
+# 棋子自己的成长倍率（人王活过的场数、老虎层数，见 UnitGrowth）。cell 为空（商店卡、图鉴）= 1。
+# 老虎按**本机**出战宠物算 —— 只给自己的棋盘 / 待命区用；层数按升星次数截，联机时那个次数跟
+# 服务器账本走（NetworkService._apply_carrot_state），所以这里的数就是实战里乘上去的数。
+static func growth_multiplier(cell: Dictionary) -> float:
+	if cell.is_empty():
+		return 1.0
+	return UnitGrowth.stat_multiplier(cell, _local_tiger_rate(), GameState.tiger_starup_count)
+
+
+static func _local_tiger_rate() -> float:
+	return PetService.tier1_growth_rate(PlayerProfile.get_active())
+
+
+# 摆放界面上「这枚棋子现在的生命 / 攻击 / 防御」：按星级缩放 + 自己的成长。
+# 战斗里还会再乘种族关系、宝物、羁绊（这些详情里另有一段写）。
+static func grown_def(d: Dictionary, star: int, cell: Dictionary = {}) -> Dictionary:
+	if bool(d.get("is_mercenary", false)):
+		return d.duplicate(true)
+	var out := UnitFactory.apply_star_stats(d, star)
+	UnitGrowth.apply_to_def(out, growth_multiplier(cell))
+	return out
+
+
+# 成长那几行（人王层数 / 老虎层数）。star 用详情里显示的星级 —— 四星预览时上限按四星算。
+static func format_growth_detail(cell: Dictionary, star: int) -> String:
+	if cell.is_empty():
+		return ""
+	var probe := cell.duplicate()
+	probe["star"] = star
+	var lines: Array[String] = []
+	if UnitGrowth.is_king(probe):
+		var stacks := UnitGrowth.king_stacks(probe)
+		var cap := UnitGrowth.king_cap(probe)
+		var layers := ("%d/%d" % [stacks, cap]) if cap > 0 else str(stacks)
+		if is_en():
+			lines.append("King growth: %s stacks (HP/ATK/DEF ×%.2f)" % [layers, UnitGrowth.king_mult(probe)])
+		else:
+			lines.append("人王成长：%s 层（生命、攻击、防御 ×%.2f）" % [layers, UnitGrowth.king_mult(probe)])
+	var rate := _local_tiger_rate()
+	if rate > 0.0 and UnitGrowth.tiger_eligible(probe):
+		var tiger := mini(UnitGrowth.tiger_stacks(probe), GameState.tiger_starup_count)
+		var pct_text := int(round(rate * float(tiger) * 100.0))
+		if is_en():
+			lines.append("Tiger growth: HP/ATK/DEF +%d%% (%d stacks)" % [pct_text, tiger])
+		else:
+			lines.append("老虎成长：生命、攻击、防御 +%d%%（%d 层）" % [pct_text, tiger])
+	return "\n".join(lines)
+
+
 static func format_unit_def(d: Dictionary, star: int = 1, cell: Dictionary = {}) -> String:
 	if d.is_empty():
 		return "No details" if is_en() else "无详情"
-	var mul := GameState.star_stat_multiplier(star, d) if not bool(d.get("is_mercenary", false)) else 1.0
+	# 生命 / 攻击 / 防御显示**成长之后**的数（人王、老虎），和战斗里乘的同一份（UnitGrowth）。
+	var shown := grown_def(d, star, cell)
+	var growth_text := format_growth_detail(cell, star)
+	if not growth_text.is_empty():
+		growth_text = "\n" + growth_text
 	var uname := localized_name(d)
 	var uniq := unique_suffix(d)
 	var race := unit_race_name(str(d.get("race", "-")))
@@ -42,20 +97,20 @@ static func format_unit_def(d: Dictionary, star: int = 1, cell: Dictionary = {})
 	var skill_text := format_skill_detail(skill_def)
 	var detail: String
 	if is_en():
-		detail = "%s ★%d%s\nRace: %s  Element: %s  Tier: %d  Cost: %s\nHP: %d  ATK: %d  DEF: %d\nAS: %.2f  Crit: %.0f%%  CritDmg: %.0f%%\nRange: %s  Speed: %s\n\n[b]Skill[/b]\n%s" % [
+		detail = "%s ★%d%s\nRace: %s  Element: %s  Tier: %d  Cost: %s\nHP: %d  ATK: %d  DEF: %d\nAS: %.2f  Crit: %.0f%%  CritDmg: %.0f%%\nRange: %s  Speed: %s%s\n\n[b]Skill[/b]\n%s" % [
 			uname, star, uniq,
 			race, elem, int(d.get("tier", 0)), purchase_price_text(d),
-			int(round(float(d.get("hp", 0)) * mul)), int(skill_def.get("atk", 0)), int(round(float(d.get("def", 0)) * mul)),
+			int(shown.get("hp", 0)), int(shown.get("atk", 0)), int(shown.get("def", 0)),
 			float(d.get("attack_speed", 1.0)), float(d.get("crit", 0.0)) * 100.0, float(d.get("crit_dmg", 1.5)) * 100.0,
-			str(d.get("range", 1)), str(d.get("move_speed", 3.0)), skill_text,
+			str(d.get("range", 1)), str(d.get("move_speed", 3.0)), growth_text, skill_text,
 		]
 	else:
-		detail = "%s %d星%s\n种族：%s  属性：%s  阶级：%d  价格：%s\n生命：%d  攻击：%d  防御：%d\n攻速：%.2f  暴击：%.0f%%  暴伤：%.0f%%\n射程：%s  移速：%s\n\n[b]技能效果[/b]\n%s" % [
+		detail = "%s %d星%s\n种族：%s  属性：%s  阶级：%d  价格：%s\n生命：%d  攻击：%d  防御：%d\n攻速：%.2f  暴击：%.0f%%  暴伤：%.0f%%\n射程：%s  移速：%s%s\n\n[b]技能效果[/b]\n%s" % [
 			uname, star, uniq,
 			race, elem, int(d.get("tier", 0)), purchase_price_text(d),
-			int(round(float(d.get("hp", 0)) * mul)), int(skill_def.get("atk", 0)), int(round(float(d.get("def", 0)) * mul)),
+			int(shown.get("hp", 0)), int(shown.get("atk", 0)), int(shown.get("def", 0)),
 			float(d.get("attack_speed", 1.0)), float(d.get("crit", 0.0)) * 100.0, float(d.get("crit_dmg", 1.5)) * 100.0,
-			str(d.get("range", 1)), str(d.get("move_speed", 3.0)), skill_text,
+			str(d.get("range", 1)), str(d.get("move_speed", 3.0)), growth_text, skill_text,
 		]
 	var relation_detail := format_unit_relation_detail(cell, str(d.get("race", "")))
 	if not relation_detail.is_empty():
@@ -270,7 +325,7 @@ static func format_skill_detail(d: Dictionary) -> String:
 			# 数值全部读 def（apply_star_stats 会把 star4 的 0.3 / 8 覆盖上来）。
 			var king_growth := float(d.get("post_battle_all_stat_growth", 0.20))
 			var king_cap := int(d.get("max_stacks", 5))
-			return "人王唯一技：棋盘上只能存在一只人王。若参战且战后仍存活，全属性永久x%.1f（上限%d层）；若死亡则从棋盘移除；升星继承三只材料中成长最高的人王数值。" % [1.0 + king_growth, king_cap]
+			return "人王唯一技：棋盘上只能存在一只人王。若参战且战后仍存活，生命、攻击、防御永久x%.1f（上限%d层）；若死亡则从棋盘移除；升星继承三只材料中成长最高的人王数值。" % [1.0 + king_growth, king_cap]
 		"balance_judge":
 			return "均衡裁决：攻击当前生命高于自己的目标时，伤害+%s。" % pct(float(d.get("bonus_vs_higher_hp", 0.40)))
 		"bubble_dream":
@@ -450,7 +505,7 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"unique_king_growth":
 			var king_growth := float(d.get("post_battle_all_stat_growth", 0.20))
 			var king_cap := int(d.get("max_stacks", 5))
-			return "Human King Unique (one on board): If this unit survives a battle, all stats permanently ×%.1f (cap %d stacks). If it dies, it is removed from the board. On upgrade, inherit the highest growth value from the three materials." % [1.0 + king_growth, king_cap]
+			return "Human King Unique (one on board): If this unit survives a battle, HP/ATK/DEF permanently ×%.1f (cap %d stacks). If it dies, it is removed from the board. On upgrade, inherit the highest growth value from the three materials." % [1.0 + king_growth, king_cap]
 		"balance_judge":
 			return "Balance Judgement: Deal +%s damage against targets with more current HP than this unit." % pct(float(d.get("bonus_vs_higher_hp", 0.40)))
 		"bubble_dream":

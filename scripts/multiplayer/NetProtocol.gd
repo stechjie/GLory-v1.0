@@ -1,11 +1,15 @@
 class_name NetProtocol
 extends RefCounted
 
+const UnitGrowth := preload("res://scripts/units/UnitGrowth.gd")
+
 # v3: 每格新增 uid（棋子唯一标识）。服务端靠它认「这枚四星是不是由一次成功的
 #     升级石交易产生的」—— 只凭自报的 star=4 认不出伪造（设计文档 §5）。
 #     版本没跟着加字段一起顶，旧客户端的提交会被按新语义解析成「所有棋子 uid 为空」。
 # v4: carry Tiger star-up stacks for combat; the host stamps its ledger count.
-const SNAPSHOT_VERSION := 4
+# v5: 成长改记在每枚棋子上（UnitGrowth：king_growth_stacks / king_mult / tiger_stacks），
+#     整块棋盘的 tiger_starups 删掉。字段换了含义，旧结构必须被拒，不能按新语义读。
+const SNAPSHOT_VERSION := 5
 const BOARD_SIZE := GameConstants.CELL_COUNT
 
 # --- 载荷硬上限 -------------------------------------------------------------
@@ -30,13 +34,12 @@ static func team_board_submission(board_slots: Array, mercenary_slots: Array = [
 		"treasures": _sanitize_treasure_ids(GameState.owned_treasures),
 		"syn": SynergyService.current_player_flags(),
 		"pet": _sanitize_pet_id(PlayerProfile.get_active()),
-		"tiger_starups": maxi(0, GameState.tiger_starup_count),
 	}
 
 static func board_snapshot(board_slots: Array, mercenary_slots: Array = []) -> Dictionary:
 	# 3v3: carry this player's treasures + synergy flags + active pet so the host can
 	# apply them to THIS player's units only (per-owner effects, synced for everyone).
-	return {"version": SNAPSHOT_VERSION, "round": GameState.round_index, "board": sanitize_board(board_slots), "mercenaries": sanitize_mercenaries(mercenary_slots), "treasures": GameState.owned_treasures.duplicate(), "syn": SynergyService.current_player_flags(), "pet": _sanitize_pet_id(PlayerProfile.get_active()), "tiger_starups": maxi(0, GameState.tiger_starup_count)}
+	return {"version": SNAPSHOT_VERSION, "round": GameState.round_index, "board": sanitize_board(board_slots), "mercenaries": sanitize_mercenaries(mercenary_slots), "treasures": GameState.owned_treasures.duplicate(), "syn": SynergyService.current_player_flags(), "pet": _sanitize_pet_id(PlayerProfile.get_active())}
 
 static func validate_team_snapshot(snapshot: Variant, expected_round: int) -> Dictionary:
 	if typeof(snapshot) != TYPE_DICTIONARY:
@@ -52,7 +55,8 @@ static func validate_team_snapshot(snapshot: Variant, expected_round: int) -> Di
 	var round_id := int(d.get("round", -1))
 	if round_id != int(expected_round):
 		return {"ok": false, "reason": "wrong_round:%d" % round_id}
-	var board_result := _validate_slots(d.get("board", []), false, BOARD_SIZE)
+	# 人王层数不能超过已经打完的回合数（第 N 回合交棋盘时打完了 N-1 场）。
+	var board_result := _validate_slots(d.get("board", []), false, BOARD_SIZE, maxi(0, round_id - 1))
 	if not bool(board_result.get("ok", false)):
 		return board_result
 	var merc_result := _validate_slots(d.get("mercenaries", []), true, GameState.MERCENARY_SLOTS)
@@ -81,7 +85,6 @@ static func validate_team_snapshot(snapshot: Variant, expected_round: int) -> Di
 			# 且服务器会把它算进权威 replay 广播给全房。
 			"syn": rebuild_syn_from_board(clean_board),
 			"pet": _sanitize_pet_id(d.get("pet", "")),
-			"tiger_starups": maxi(0, int(d.get("tiger_starups", 0))),
 		}
 	}
 
@@ -101,19 +104,16 @@ static func rebuild_syn_from_board(board_slots: Array) -> Dictionary:
 static func normalize_snapshot(snapshot: Variant) -> Dictionary:
 	if typeof(snapshot) == TYPE_DICTIONARY:
 		var d: Dictionary = snapshot
-		return {"version": int(d.get("version", SNAPSHOT_VERSION)), "round": int(d.get("round", 0)), "board": sanitize_board(d.get("board", [])), "mercenaries": sanitize_mercenaries(d.get("mercenaries", [])), "treasures": d.get("treasures", []), "syn": d.get("syn", {}), "pet": _sanitize_pet_id(d.get("pet", "")), "tiger_starups": maxi(0, int(d.get("tiger_starups", 0)))}
+		return {"version": int(d.get("version", SNAPSHOT_VERSION)), "round": int(d.get("round", 0)), "board": sanitize_board(d.get("board", [])), "mercenaries": sanitize_mercenaries(d.get("mercenaries", [])), "treasures": d.get("treasures", []), "syn": d.get("syn", {}), "pet": _sanitize_pet_id(d.get("pet", ""))}
 	if typeof(snapshot) == TYPE_ARRAY:
-		return {"version": SNAPSHOT_VERSION, "round": 0, "board": sanitize_board(snapshot), "mercenaries": [], "treasures": [], "syn": {}, "pet": "", "tiger_starups": 0}
-	return {"version": SNAPSHOT_VERSION, "round": 0, "board": _empty_board(), "mercenaries": [], "treasures": [], "syn": {}, "pet": "", "tiger_starups": 0}
+		return {"version": SNAPSHOT_VERSION, "round": 0, "board": sanitize_board(snapshot), "mercenaries": [], "treasures": [], "syn": {}, "pet": ""}
+	return {"version": SNAPSHOT_VERSION, "round": 0, "board": _empty_board(), "mercenaries": [], "treasures": [], "syn": {}, "pet": ""}
 
 static func extract_treasures(snapshot: Variant) -> Array:
 	return normalize_snapshot(snapshot).get("treasures", [])
 
 static func extract_pet(snapshot: Variant) -> String:
 	return str(normalize_snapshot(snapshot).get("pet", ""))
-
-static func extract_tiger_starups(snapshot: Variant) -> int:
-	return maxi(0, int(normalize_snapshot(snapshot).get("tiger_starups", 0)))
 
 static func extract_syn(snapshot: Variant) -> Dictionary:
 	return normalize_snapshot(snapshot).get("syn", {})
@@ -179,7 +179,7 @@ static func sanitize_cell(cell: Variant) -> Variant:
 		def = _safe_def(c)
 	if def.is_empty():
 		return null
-	return {
+	var out := {
 		"id": str(c.get("id", def.get("id", ""))),
 		# uid 必须原样带过 —— 这条路径（normalize_snapshot / 本机房主）丢掉它，
 		# 棋子过一次就没血统了，之后再提交会被服务端判成伪造四星。
@@ -189,6 +189,10 @@ static func sanitize_cell(cell: Variant) -> Variant:
 		"is_mercenary": bool(c.get("is_mercenary", def.get("is_mercenary", false))),
 		"race_relations": _safe_race_relations(c.get("race_relations", {})),
 	}
+	# 成长同理：战斗读棋盘走的就是这里（BattleSimShared._team_board_for_slot → extract_board），
+	# 丢了它人王 / 老虎的加成就只剩摆放界面上显示、实战里没有。
+	UnitGrowth.sanitize_into(out, c)
+	return out
 
 static func _safe_race_relations(value: Variant) -> Dictionary:
 	if typeof(value) != TYPE_DICTIONARY:
@@ -235,17 +239,21 @@ static func _minimal_slots(slots: Variant, mercenary: bool) -> Array:
 		var cell = raw[i]
 		if cell == null or typeof(cell) != TYPE_DICTIONARY:
 			continue
-		out.append({
+		var entry := {
 			"slot": i,
 			"id": str((cell as Dictionary).get("id", "")),
 			"uid": str((cell as Dictionary).get("uid", "")),
 			"star": clampi(int((cell as Dictionary).get("star", 1)), 1, GameState.MAX_UNIT_STAR),
 			"is_mercenary": mercenary or bool((cell as Dictionary).get("is_mercenary", false)),
 			"race_relations": _safe_race_relations((cell as Dictionary).get("race_relations", {})),
-		})
+		}
+		if not mercenary:
+			entry.merge(UnitGrowth.wire_fields(cell))
+		out.append(entry)
 	return out
 
-static func _validate_slots(value: Variant, mercenary: bool, max_slots: int) -> Dictionary:
+# max_battles：人王层数的上限（已经打完的回合数）；< 0 不截。
+static func _validate_slots(value: Variant, mercenary: bool, max_slots: int, max_battles: int = -1) -> Dictionary:
 	var out := [] if mercenary else _empty_board()
 	if typeof(value) != TYPE_ARRAY:
 		return {"ok": false, "reason": "malformed_slots"}
@@ -294,6 +302,9 @@ static func _validate_slots(value: Variant, mercenary: bool, max_slots: int) -> 
 		if mercenary:
 			out.append(clean)
 		else:
+			# 结构上限在这里截（人王封顶、回合数、老虎只给一阶）；老虎的账本上限
+			# 要看房间，在 NetworkService._room_clamp_growth。
+			UnitGrowth.sanitize_into(clean, d, max_battles)
 			out[slot] = clean
 	return {"ok": true, "slots": out}
 

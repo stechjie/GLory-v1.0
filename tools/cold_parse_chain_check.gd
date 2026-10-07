@@ -184,6 +184,20 @@ const TARGETS: Array[Dictionary] = [
 	{"kind": "script", "path": "res://tools/party_lobby_rules_check.gd"},
 	{"kind": "script", "path": "res://tools/round_settlement_check.gd"},
 	{"kind": "script", "path": "res://ui/components/PartyInviteBubble.gd"},
+	# ★ 10.07 第二批：人王 / 老虎的成长改记在每枚棋子上（协议 39）。BattleSimShared /
+	#   BattleSimulator / NetworkService / Main / PrepShared / PrepBoardController /
+	#   UnitDetailFormat / BattleVfx / NetworkConfig 已在上面；新规则文件、其余改过的文件和
+	#   新门禁按同一条教训单列。
+	{"kind": "script", "path": "res://scripts/units/UnitGrowth.gd"},
+	{"kind": "script", "path": "res://scripts/battle/BattleSimTreasures.gd"},
+	{"kind": "script", "path": "res://scripts/multiplayer/NetProtocol.gd"},
+	{"kind": "script", "path": "res://scripts/autoload/GameState.gd"},
+	{"kind": "script", "path": "res://scenes/prep/panels/BattleStatsPanel.gd"},
+	{"kind": "script", "path": "res://officetest/OfficeTestSim.gd"},
+	{"kind": "script", "path": "res://officetest/OfficeTestScreen.gd"},
+	{"kind": "script", "path": "res://tools/unit_growth_check.gd"},
+	{"kind": "script", "path": "res://tools/pet_feature_check.gd"},
+	{"kind": "script", "path": "res://tools/four_star_values_check.gd"},
 ]
 
 

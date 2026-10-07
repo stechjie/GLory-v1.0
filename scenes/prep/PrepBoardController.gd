@@ -6,6 +6,7 @@ extends "res://scenes/prep/PrepFlowController.gd"
 const ShopRoll := preload("res://scripts/economy/ShopRoll.gd")
 const RacePick := preload("res://scripts/units/RacePick.gd")
 const CarrotEconomy := preload("res://scripts/economy/CarrotEconomy.gd")
+const UnitGrowth := preload("res://scripts/units/UnitGrowth.gd")
 func _drop_on_board(board_index: int, data: Variant) -> void:
 	_drop_consumed = true
 	_set_shop_sell_mode(false)
@@ -862,7 +863,8 @@ func _merge_copies_into_cell(target: Dictionary, incoming: Dictionary, excluded_
 		extra = _take_extra_merge_piece(id, star, excluded_board, excluded_bench)
 		if extra.is_empty():
 			return false
-	_preserve_unique_king_growth_on_merge(target, incoming, extra)
+	# 成长先继承（老虎取最高层数、人王取成长最多的那份），再升星、再记这一次的老虎 +1。
+	UnitGrowth.inherit_on_merge(target, [incoming, extra])
 	target.star = star + 1
 	GameState.record_tiger_starup()
 	_last_merge_keeper_uid = str(target.get("uid", ""))
@@ -890,34 +892,6 @@ func _take_extra_merge_piece(id: String, star: int, excluded_board: Array, exclu
 			return taken
 	return {}
 
-# The merged king keeps the strongest def among the pieces consumed. The growth
-# counter must travel with that def: carrying the def but keeping the keeper's
-# own counter lets a player grow a king to its cap, merge it with fresh copies,
-# and resume growing from zero with the grown stats intact — a cap bypass that
-# repeats indefinitely.
-func _preserve_unique_king_growth_on_merge(target: Dictionary, incoming: Dictionary, extra: Dictionary) -> void:
-	var best_def: Dictionary = {}
-	var best_score := -1.0
-	var best_stacks := 0
-	for cell in [target, incoming, extra]:
-		if typeof(cell) != TYPE_DICTIONARY:
-			continue
-		var d: Dictionary = cell.get("def", {})
-		if str(d.get("skill_id", "")) != "unique_king_growth":
-			continue
-		var score := _unique_king_growth_score(d)
-		if score > best_score:
-			best_score = score
-			best_def = d
-			best_stacks = int((cell as Dictionary).get("king_growth_stacks", 0))
-	if best_def.is_empty():
-		return
-	target.def = best_def.duplicate(true)
-	target.id = str(best_def.get("id", target.get("id", "")))
-	target.king_growth_stacks = best_stacks
-
-func _unique_king_growth_score(d: Dictionary) -> float:
-	return float(d.get("hp", 0))
 # TFT-style auto combine: any 3 copies of the same id+star across the board AND
 # the bench fuse into one of the next star, cascading (9 copies -> a 3★). Runs
 # after every board/bench change so the standby area levels up too.
@@ -976,7 +950,7 @@ func _combine_copies_auto(star: int, locs: Array) -> void:
 		cells.append(arr[int(loc[1])])
 	var keeper_arr: Array = GameState.board_slots if str(keeper_loc[0]) == "board" else GameState.bench_slots
 	var keeper: Dictionary = keeper_arr[int(keeper_loc[1])]
-	_preserve_unique_king_growth_among(keeper, cells)
+	UnitGrowth.inherit_on_merge(keeper, cells)
 	keeper.star = star + 1
 	GameState.record_tiger_starup()
 	for loc in fuse:
@@ -984,29 +958,6 @@ func _combine_copies_auto(star: int, locs: Array) -> void:
 			continue
 		var arr: Array = GameState.board_slots if str(loc[0]) == "board" else GameState.bench_slots
 		arr[int(loc[1])] = null
-
-# Same rule as _preserve_unique_king_growth_on_merge: the growth counter travels
-# with the def that won, or the cap can be reset by merging.
-func _preserve_unique_king_growth_among(keeper: Dictionary, cells: Array) -> void:
-	var best_def: Dictionary = {}
-	var best_score := -1.0
-	var best_stacks := 0
-	for c in cells:
-		if typeof(c) != TYPE_DICTIONARY:
-			continue
-		var d: Dictionary = (c as Dictionary).get("def", {})
-		if str(d.get("skill_id", "")) != "unique_king_growth":
-			continue
-		var score := _unique_king_growth_score(d)
-		if score > best_score:
-			best_score = score
-			best_def = d
-			best_stacks = int((c as Dictionary).get("king_growth_stacks", 0))
-	if best_def.is_empty():
-		return
-	keeper.def = best_def.duplicate(true)
-	keeper.id = str(best_def.get("id", keeper.get("id", "")))
-	keeper.king_growth_stacks = best_stacks
 
 # 出售退款 = 棋子自身售价 x 星级 x 0.5。
 #

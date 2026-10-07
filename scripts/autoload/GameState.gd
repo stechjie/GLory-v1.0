@@ -3,6 +3,7 @@ extends Node
 const CarrotEconomyRules = preload("res://scripts/economy/CarrotEconomy.gd")
 # 9.17 音效。preload 而不是全局类名（理由见 Main.gd 顶上那条注释）。
 const SfxService := preload("res://ui/services/SfxService.gd")
+const UnitGrowth := preload("res://scripts/units/UnitGrowth.gd")
 
 const START_FORMATION_HP := 50
 const START_GOLD := 100
@@ -39,7 +40,8 @@ var carrots := 0
 var harvest_tech_level := 0
 var merc_carrots_spent_total := 0
 var last_harvest_round := -1
-# Per-run Tiger stacks survive selling the upgraded unit and are saved with the run.
+# 这一局一共升过几次星（出战宠物是老虎时才数）。只用来显示「★N」和截每枚棋子的老虎层数上限 ——
+# 加成本身记在每枚棋子上（UnitGrowth.tiger_stacks）。联机时跟服务器账本那份走（_apply_carrot_state）。
 var tiger_starup_count := 0
 var stone_draw_used_round := -1
 var stone_draw_count := 0
@@ -172,9 +174,12 @@ func carrot_production() -> int:
 	return CarrotEconomyRules.total_production(harvest_tech_level, merc_carrots_spent_total,
 		PetService.carrot_bonus_rate(PlayerProfile.get_active()))
 
+# 一次升星（合成或升四星）。出战宠物是老虎时：次数 +1，手上（棋盘 + 待命区）每一枚一阶棋子
+# 老虎 +1 层（之后才买的从 0 开始）。合成要先 UnitGrowth.inherit_on_merge 再调这里。
 func record_tiger_starup() -> void:
 	if PetService.tier1_growth_rate(PlayerProfile.get_active()) > 0.0:
 		tiger_starup_count += 1
+		UnitGrowth.add_tiger_stack(board_slots + bench_slots)
 
 func carrot_farm_level() -> int:
 	return CarrotEconomyRules.farm_level_for_spent(merc_carrots_spent_total)

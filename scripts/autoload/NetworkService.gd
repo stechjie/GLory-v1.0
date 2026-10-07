@@ -192,6 +192,7 @@ enum SessionState { OFFLINE, JOINING, READY, FAILED, RECONNECTING }
 const BattleSim := preload("res://scripts/battle/BattleSimulator.gd")
 const ShopRoll := preload("res://scripts/economy/ShopRoll.gd")
 const RacePick := preload("res://scripts/units/RacePick.gd")
+const UnitGrowth := preload("res://scripts/units/UnitGrowth.gd")
 const CarrotEconomy := preload("res://scripts/economy/CarrotEconomy.gd")
 const BattleCard := preload("res://scripts/multiplayer/BattleCard.gd")
 const BattleReport := preload("res://scripts/multiplayer/BattleReport.gd")
@@ -3447,9 +3448,7 @@ func _rpc_team_submit_board(slot: int, snapshot: Dictionary) -> void:
 		# 重连也一样：手机刚重开、本机宠物缓存还是空的，交上来的棋盘里 pet 是空串 ——
 		# 照样换成座位上的，宠物不变、效果照有。
 		accepted_snapshot["pet"] = _room_seat_pet(room, slot)
-		# Pet growth is always server-counted, including the ledger's shadow phase.
-		# The client's submitted number is never trusted for combat.
-		accepted_snapshot["tiger_starups"] = maxi(0, int(_room_prep(room, slot).get("tiger_starup_count", 0)))
+		_room_clamp_growth(room, slot, accepted_snapshot)
 		boards[slot] = accepted_snapshot
 		room.boards = boards
 		# 跨回合缓存最后一次合法棋盘：该座位掉线时用它补交（room.boards 每轮清空）
@@ -3512,10 +3511,11 @@ func _restamp_cached_board(room: Dictionary, slot: int, cached: Variant) -> Dict
 	# 宠物同理，以座位上的名片为准。缓存可能来自存盘后读回的旧房间（旧版本存的是
 	# 手机自报的宠物），这里再强制一遍，缓存从哪来都不影响。
 	snap["pet"] = _room_seat_pet(room, slot)
-	snap["tiger_starups"] = maxi(0, int(_room_prep(room, slot).get("tiger_starup_count", 0)))
 	var validation := NetProtocol.validate_team_snapshot(snap, round_index)
 	if bool(validation.get("ok", false)):
-		return validation.get("snapshot", {})
+		var restamped: Dictionary = validation.get("snapshot", {})
+		_room_clamp_growth(room, slot, restamped)
+		return restamped
 	_net_log("cached board restamp failed room=%d slot=%d reason=%s (using raw cache)" % [
 		int(room.get("id", 0)), slot, str(validation.get("reason", ""))])
 	return cached as Dictionary
@@ -3739,6 +3739,16 @@ func _room_validate_provenance(room: Dictionary, slot: int, snapshot: Dictionary
 			if str((granted[uid] as Dictionary).get("unit_id", "")) != str(c.get("id", "")):
 				return {"ok": false, "reason": "forged_four_star:unit_mismatch"}
 	return {"ok": true}
+
+# 棋子成长的账本上限（UnitGrowth 顶部「信谁」）：每枚棋子的老虎层数不超过服务器账本数到的
+# 这个座位的升星次数（合成 / 升四星的意图走到 EconomyLedger 时 +1，出战宠物不是老虎就恒为 0）。
+# 结构上限（人王封顶、回合数、老虎只给一阶）已经在 NetProtocol.validate_team_snapshot 截过。
+# 客户端摆放界面按 GameState.tiger_starup_count 截同一个数（_apply_carrot_state 跟服务器这份走）。
+func _room_clamp_growth(room: Dictionary, slot: int, snapshot: Dictionary) -> void:
+	var starups := int(_room_prep(room, slot).get("tiger_starup_count", 0))
+	for cell in (snapshot.get("board", []) as Array):
+		if typeof(cell) == TYPE_DICTIONARY:
+			UnitGrowth.clamp_tiger(cell, starups)
 
 func _shadow_audit_submission(room: Dictionary, slot: int, raw_snapshot: Variant, clean: Dictionary) -> void:
 	if typeof(raw_snapshot) != TYPE_DICTIONARY:
@@ -6005,8 +6015,6 @@ func _apply_server_shop(state: Dictionary) -> void:
 
 
 func _apply_carrot_state(state: Dictionary) -> void:
-	if bool(state.get("authoritative", false)):
-		GameState.tiger_starup_count = maxi(0, int(state.get("tiger_starup_count", 0)))
 	server_four_star_cost_version = int(state.get("four_star_cost_version", 0))
 	if state.is_empty() or not bool(state.get("carrot_authoritative", false)):
 		return
@@ -6051,12 +6059,19 @@ func _apply_carrot_state(state: Dictionary) -> void:
 					GameState.gold_spent_this_round = true
 				GameState.gold = int(state.get("gold", GameState.gold)) if bool(state.get("authoritative", false)) else maxi(0, GameState.gold - int(grant.get("cost", 0)))
 				cell["star"] = GameState.MAX_UNIT_STAR
+				# 回执丢了、靠这里补上的升四星也是一次升星：老虎层数照加（次数下面跟服务器）。
+				GameState.record_tiger_starup()
 			if uid == four_star_request_uid and not four_star_request_id.is_empty():
 				_tx_consume(four_star_request_id)
 				four_star_request_id = ""
 				four_star_request_uid = ""
 				if changed:
 					_emit_recovered_four_star.call_deferred(uid)
+	# 老虎的升星次数以服务器账本为准，影子期也一样：战斗里每枚棋子的老虎层数是按这个数截的
+	# （_room_clamp_growth），本地数多了，「★N」和摆放界面上的数就会比实战多。
+	# 放在最后：上面补升四星时 record_tiger_starup 先 +1，这里再落成服务器那份。
+	if state.has("tiger_starup_count"):
+		GameState.tiger_starup_count = maxi(0, int(state.get("tiger_starup_count", 0)))
 	SaveManager.save_run()
 
 func _emit_recovered_four_star(uid: String) -> void:
@@ -6104,7 +6119,9 @@ func _apply_carrot_receipt(receipt: Dictionary) -> void:
 			# 按 uid 找那一枚棋子 —— 不按格子号：从发出意图到回执回来，玩家可能已经
 			# 把它拖到别的格子、或者棋盘被服务端快照覆盖过。
 			_apply_four_star_to_uid(str(result.get("uid", "")))
-			if not already_applied and not economy_authoritative():
+			# 每枚一阶棋子的老虎层数只在客户端记（UnitGrowth），所以权威模式也要走这一步；
+			# 次数随后由 room_state 落成服务器那份（_apply_carrot_state）。
+			if not already_applied:
 				GameState.record_tiger_starup()
 			var stones_after: Variant = result.get("team_upgrade_stones", {})
 			if typeof(stones_after) == TYPE_DICTIONARY:

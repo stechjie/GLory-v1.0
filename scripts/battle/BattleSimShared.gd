@@ -5,6 +5,7 @@ const BotBudget := preload("res://scripts/economy/BotEconomyBudget.gd")
 const BotPlayer := preload("res://scripts/economy/BotPlayer.gd")
 const ShopRoll := preload("res://scripts/economy/ShopRoll.gd")
 const BattleFrenzy := preload("res://scripts/battle/BattleFrenzyService.gd")
+const UnitGrowth := preload("res://scripts/units/UnitGrowth.gd")
 
 const HARD_TIMEOUT_SEC := 180.0
 const TICK_SEC := 0.1
@@ -73,10 +74,21 @@ static func range_px_for(range_value: float) -> float:
 	return MELEE_RANGE_PX + maxf(0.0, range_value - 1.0) * RANGE_STEP_PX
 
 
+# 这一场对手的棋盘要不要左右镜像（规则见下面 board_cell_pos 的说明）。正式战斗
+# （BattleSimulator.prepare_team_state）和离线自测（officetest/OfficeTestSim.gd）都从这里取 ——
+# 10-06 那次只改了正式战斗，自测台还按镜像摆，两边对不上（officetest_online_parity 红）。
+static func mirror_enemy_for(kind: String, is_final_round: bool) -> bool:
+	return not (kind == "pvp" and not is_final_round)
+
+
 # 4×4 格子 → 模拟坐标。row 0 = 前排（面向敌人）。
 # 敌方左右镜像（云顶之弈式面对面）：对手视角的左边 = 我方屏幕的右边。
 #
-# 保持本地棋盘约定：普通 PvP 对手按面对面镜像摆放，蓝队视角再由 BattleArena 整体翻转。
+# 🔴 普通 PvP 不镜像（2026-10-06 用户定，调用方传 mirror_enemy=false）。房间里 A 在 1 正上方，
+# 战场上也是「正上方对正下方」：对面摆在他棋盘左边的，在你画面里也在左边 —— PvE 回合「查看另一队」
+# 看他打怪时在左边，到 PvP 还在左边，你左边那格正对着它。镜像的话，看到在左边、打的时候却跑到右边，
+# 布局就没法照着看到的去针对。蓝队看 PvP 只上下翻、不左右翻（BattleArena._sim_to_world_pos），
+# 自己摆的棋子方向也就跟摆放界面一样。
 # PvE 的敌方（怪、送来的佣兵）和决赛（左右对打，面对面镜像才对）照旧镜像。
 static func board_cell_pos(slot: int, team: String, center_x: float, mirror_enemy: bool = true) -> Vector2:
 	var col := slot % GameConstants.BOARD_COLUMNS
@@ -142,19 +154,20 @@ static func _place_in_lane(f: Dictionary, slot: int, team: String, lane: int, mi
 	f["lane"] = lane
 
 
-static func _append_lane_board_fighters(out: Array, board: Array, team: String, lane: int, owner_treasures: Array = [], owner_syn: Dictionary = {}, owner_slot: int = -1, owner_pet: String = "", owner_gold: int = 0, owner_tiger_starups: int = 0, mirror_enemy: bool = true) -> void:
+static func _append_lane_board_fighters(out: Array, board: Array, team: String, lane: int, owner_treasures: Array = [], owner_syn: Dictionary = {}, owner_slot: int = -1, owner_pet: String = "", owner_gold: int = 0, mirror_enemy: bool = true) -> void:
+	# 老虎看的是**这块棋盘主人**的出战宠物（联机 = 座位名片上的那只），不是本机的。
+	var tiger_rate := PetService.tier1_growth_rate(owner_pet)
 	for i in board.size():
 		var cell = board[i]
 		if cell == null or typeof(cell) != TYPE_DICTIONARY:
 			continue
-		var f := _fighter_from_cell(cell, i, team)
+		var f := _fighter_from_cell(cell, i, team, false, tiger_rate)
 		_place_in_lane(f, i, team, lane, mirror_enemy)
 		f.uid = "%s_L%d_%d" % [team, lane, i]
 		f["owner_treasures"] = owner_treasures
 		f["owner_syn"] = owner_syn
 		f["owner_slot"] = owner_slot
 		f["owner_pet"] = owner_pet
-		f["owner_tiger_starups"] = maxi(0, owner_tiger_starups)
 		f["owner_gold"] = maxi(0, owner_gold)
 		out.append(f)
 
@@ -173,11 +186,6 @@ static func _f_treasures(f: Dictionary) -> Array:
 static func _f_has_treasure(f: Dictionary, tid: String) -> bool:
 	return tid in _f_treasures(f)
 
-
-static func _f_tiger_starups(f: Dictionary) -> int:
-	if f.has("owner_tiger_starups"):
-		return maxi(0, int(f.get("owner_tiger_starups", 0)))
-	return GameState.tiger_starup_count if str(f.get("team", "")) == "player" else 0
 
 static func _f_pet(f: Dictionary) -> String:
 	# Team units carry their owner's active pet; 1v1 player units fall back to the
@@ -260,10 +268,10 @@ static func _team_owner_ctx_for_slot(slot_idx: int) -> Dictionary:
 		if _team_slot_state(slot_idx) == "player":
 			var snap = NetworkService.team_boards.get(slot_idx, {})
 			if snap is Dictionary and not (snap as Dictionary).is_empty():
-				return {"treasures": NetProtocol.extract_treasures(snap), "syn": NetProtocol.extract_syn(snap), "pet": NetProtocol.extract_pet(snap), "tiger_starups": NetProtocol.extract_tiger_starups(snap), "gold": maxi(0, int((snap as Dictionary).get("gold", 0)))}
+				return {"treasures": NetProtocol.extract_treasures(snap), "syn": NetProtocol.extract_syn(snap), "pet": NetProtocol.extract_pet(snap), "gold": maxi(0, int((snap as Dictionary).get("gold", 0)))}
 		return _dummy_owner_ctx(slot_idx)
 	if slot_idx == 0:
-		return {"treasures": GameState.owned_treasures.duplicate(), "syn": SynergyService.current_player_flags(), "pet": PlayerProfile.get_active(), "tiger_starups": GameState.tiger_starup_count, "gold": maxi(0, GameState.gold)}
+		return {"treasures": GameState.owned_treasures.duplicate(), "syn": SynergyService.current_player_flags(), "pet": PlayerProfile.get_active(), "gold": maxi(0, GameState.gold)}
 	return _dummy_owner_ctx(slot_idx)
 
 
@@ -271,9 +279,9 @@ static func _team_owner_ctx_for_slot(slot_idx: int) -> Dictionary:
 # 4 灵 / 5 暗，战斗里也一点加成都没有。现在读 BotPlayer 推演出来的结果。
 static func _dummy_owner_ctx(slot_idx: int) -> Dictionary:
 	if _team_slot_state(slot_idx) != "dummy":
-		return {"treasures": [], "syn": {}, "pet": "", "tiger_starups": 0, "gold": 0}
+		return {"treasures": [], "syn": {}, "pet": "", "gold": 0}
 	var bot := BotPlayer.state_for(NetworkService.shared_seed, slot_idx, GameState.round_index)
-	return {"treasures": (bot.get("treasures", []) as Array).duplicate(), "syn": (bot.get("syn", {}) as Dictionary).duplicate(true), "pet": "", "tiger_starups": 0, "gold": maxi(0, int(bot.get("gold", 0)))}
+	return {"treasures": (bot.get("treasures", []) as Array).duplicate(), "syn": (bot.get("syn", {}) as Dictionary).duplicate(true), "pet": "", "gold": maxi(0, int(bot.get("gold", 0)))}
 
 
 static func _round_pick_index(size: int, salt: String, round_index: int = -1) -> int:
@@ -701,12 +709,15 @@ static func _stat_position_label(f: Dictionary) -> String:
 	return TranslationServer.translate("name_side_unit") % [team_prefix, maxi(1, slot + 1)]
 
 
-static func _fighter_from_cell(cell: Dictionary, slot: int, team: String, mirror_enemy_slot: bool = false) -> Dictionary:
+# tiger_rate：这枚棋子主人的老虎成长率（见 UnitGrowth；不是老虎就是 0）。
+static func _fighter_from_cell(cell: Dictionary, slot: int, team: String, mirror_enemy_slot: bool = false, tiger_rate: float = 0.0) -> Dictionary:
 	# 已审计（勿降级）：cell 来自 GameState.board_slots，def 随后被写入
 	# （hp/atk/def 等），浅拷会把改动泄漏回玩家棋盘数据。开战时才跑，代价可接受。
 	var d: Dictionary = cell.def.duplicate(true)
 	if not bool(cell.get("is_mercenary", false)):
-		var relation_multiplier := RaceRelationService.stat_multiplier_for_cell(cell)
+		# 种族关系 × 棋子自己的成长（人王活过的场数、老虎层数）。成长和摆放界面详情读的是
+		# 同一个函数（UnitGrowth.stat_multiplier），看到的数就是这里乘上去的数。
+		var multiplier := RaceRelationService.stat_multiplier_for_cell(cell) * UnitGrowth.stat_multiplier(cell, tiger_rate)
 		# **整份换过去**，不是只抄 hp/atk/def 三个字段。
 		# apply_star_stats 的返回值里除了缩放后的属性，还摊平了四星的 `star4` 技能
 		# 覆写（heal_pct / stun_sec / ally_def_pct / double_element_chance ...）。
@@ -714,10 +725,15 @@ static func _fighter_from_cell(cell: Dictionary, slot: int, team: String, mirror
 		# 技能数值全部停留在三星，而且原始的 `star4` 子对象还挂在 def 上 ——
 		# 那正是 apply_star_stats 特意 erase 掉的第二份数值真相。
 		d = UnitFactory.apply_star_stats(d, int(cell.get("star", 1)))
-		d.hp = maxi(1, int(round(float(d.hp) * relation_multiplier)))
-		d.atk = maxi(1, int(round(float(d.atk) * relation_multiplier)))
-		d.def = maxi(0, int(round(float(d.def) * relation_multiplier)))
-	return _fighter_from_def(d, slot, team, slot, GameConstants.CELL_COUNT, int(cell.get("star", 1)), bool(cell.get("is_mercenary", false)), false, mirror_enemy_slot)
+		d.hp = maxi(1, int(round(float(d.hp) * multiplier)))
+		d.atk = maxi(1, int(round(float(d.atk) * multiplier)))
+		d.def = maxi(0, int(round(float(d.def) * multiplier)))
+	var f := _fighter_from_def(d, slot, team, slot, GameConstants.CELL_COUNT, int(cell.get("star", 1)), bool(cell.get("is_mercenary", false)), false, mirror_enemy_slot)
+	# 战后要按「哪一枚棋子」认人王死活（_king_outcomes）。fighter.uid 是战斗内编号，会被改写，
+	# 所以另记一份棋子 uid 和它出场时的阵营。
+	f["piece_uid"] = str(cell.get("uid", ""))
+	f["piece_team"] = team
+	return f
 
 
 static func _fighter_from_def(d: Dictionary, slot: int, team: String, order: int, total: int, star: int = 1, is_mercenary: bool = false, is_formation_ally: bool = false, mirror_enemy_slot: bool = false) -> Dictionary:
@@ -1202,11 +1218,34 @@ static func _alive(fighters: Array) -> Array:
 	return out
 
 
-static func _survivor_slots(fighters: Array) -> Array[int]:
-	var out: Array[int] = []
-	for f in fighters:
-		if bool(f.get("alive", false)) and int(f.get("slot", -1)) >= 0:
-			out.append(int(f.slot))
+# 人王这一场的结局，按「主人座位 + 棋子 uid」给：Main 据此让活下来的长一层、阵亡的移出棋盘。
+#
+# 以前给的是存活者的格子号（player_survivor_slots）：三路同一个格子号分不清是谁的，而且只有
+# "player" 一侧，蓝队要靠换边。座位号和 uid 都是绝对的，两队拿同一份就行。
+# 同一枚棋子可能有好几个 fighter：凤凰复活体（同阵营，算它活下来了）、被寄生复制到对面的那份
+# （阵营变了，不算）。所以只认出场阵营里的，任何一个活着就算活。
+static func _king_outcomes(fighters: Array) -> Array:
+	var alive_by_key := {}
+	var keys: Array = []
+	for raw in fighters:
+		if typeof(raw) != TYPE_DICTIONARY:
+			continue
+		var f: Dictionary = raw
+		if bool(f.get("is_mercenary", false)) or str((f.get("def", {}) as Dictionary).get("skill_id", "")) != UnitGrowth.KING_SKILL:
+			continue
+		var uid := str(f.get("piece_uid", ""))
+		if uid.is_empty() or str(f.get("team", "")) != str(f.get("piece_team", "")):
+			continue
+		var key := "%d|%s" % [int(f.get("owner_slot", -1)), uid]
+		if not alive_by_key.has(key):
+			keys.append(key)
+			alive_by_key[key] = false
+		if bool(f.get("alive", false)) and int(f.get("hp", 0)) > 0:
+			alive_by_key[key] = true
+	var out: Array = []
+	for key in keys:
+		var parts := str(key).split("|", true, 1)
+		out.append({"owner_slot": int(parts[0]), "uid": parts[1], "alive": bool(alive_by_key[key])})
 	return out
 
 

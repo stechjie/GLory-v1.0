@@ -1,6 +1,7 @@
 extends Control
 const PlaybackRecovery := preload("res://scripts/battle/BattlePlaybackRecovery.gd")
 const CarrotEconomy := preload("res://scripts/economy/CarrotEconomy.gd")
+const UnitGrowth := preload("res://scripts/units/UnitGrowth.gd")
 
 signal public_token_request_check_requested(request_id: String)
 signal room_list_request_check_requested(request_id: String)
@@ -3118,21 +3119,20 @@ func _on_team_battle_finished(result: Dictionary) -> void:
 	})
 	_apply_post_battle_unit_outcomes(result)
 	GameState.battle_history.append(result)
-	# 10.07 bug 文档第 8 条：**任何回合结束都要有结算面板**（PVE 也要算我方上阵佣兵
-	# 的数据）。以前这里只在 run_over 时才建 local_settlement ⇒ 中间回合直接跳备战，
-	# 玩家看不到本回合的战况。
+	# 结算面板**只在整局结束（输或赢）时**出（2026-10-07 用户定）。10.07 bug 文档第 8 条原话
+	# 「任何回合结束游戏都会有结算面板」说的是**不管在哪个回合结束游戏**（包括在 PVE 回合输掉）
+	# 都要有面板、并算上佣兵 —— 不是每个回合都弹；当天一度改成每回合弹，用户否了。
 	#
 	# ★ 时序：必须在下面 GameState.clear_mercenaries() **之前**建。本地路径下
 	#   build_local → sim._team_mercs_for_slot(0) 读的就是 GameState.mercenary_slots /
-	#   board_slots（见 BattleSimShared）；清空之后再建，佣兵列会全空 —— 而「PVE 也要
-	#   计算我方上阵佣兵的数据」正是这一条的要求。
-	var own_replay: Dictionary = _battle._replay_own if is_instance_valid(_battle) else NetworkService.team_replay
-	var rival_replay: Dictionary = _battle._replay_rival if is_instance_valid(_battle) else NetworkService.team_replay_rival
-	var replays: Array = [own_replay, rival_replay] if local_team == TeamOutcome.TEAM_A else [rival_replay, own_replay]
-	var local_settlement: Dictionary = preload("res://scripts/multiplayer/FinalSettlementData.gd").build_local(replays)
-	# 本回合归属（面板胜负行）：PVE 下就是「我方这一仗赢没赢」。
-	local_settlement["outcome"] = TeamOutcome.TEAM_A if player_wins else TeamOutcome.TEAM_B
-	local_settlement["completed_round"] = completed_round
+	#   board_slots（见 BattleSimShared）；清空之后再建，佣兵列会全空。
+	var local_settlement: Dictionary = {}
+	if GameState.team_hp <= 0 or GameState.enemy_team_hp <= 0 or completed_round >= GameState.FINAL_ROUND:
+		var own_replay: Dictionary = _battle._replay_own if is_instance_valid(_battle) else NetworkService.team_replay
+		var rival_replay: Dictionary = _battle._replay_rival if is_instance_valid(_battle) else NetworkService.team_replay_rival
+		var replays: Array = [own_replay, rival_replay] if local_team == TeamOutcome.TEAM_A else [rival_replay, own_replay]
+		local_settlement = preload("res://scripts/multiplayer/FinalSettlementData.gd").build_local(replays)
+		local_settlement["completed_round"] = completed_round
 	if kind == "pve":
 		GameState.pve_completed += 1
 	elif kind == "boss":
@@ -3167,32 +3167,10 @@ func _on_team_battle_finished(result: Dictionary) -> void:
 		local_settlement["outcome"] = GameState.team_run_outcome
 		_show_game_over(local_settlement)
 		return
-	# 10.07 bug 文档第 8 条：非终局回合同样弹结算面板（含 PVE），看完点「继续」再进备战。
-	# 备战要等玩家关掉面板 —— 所以把进备战这件事挂到面板的回调上，而不是直接往下走。
-	_show_round_settlement(local_settlement, func() -> void:
-		NetworkService.team_begin_round()
-		_start_treasure_for_completed_round(completed_round)
-		_show_prep())
-
-# 非终局回合的结算面板（10.07 第 8 条）。on_continue 是玩家点「继续」之后要走的路
-# —— 面板本身不碰对局流程，只发信号，由这里决定（本地路径=进备战；服务端路径=等
-# match_state 应用完再走同一段收尾）。
-func _show_round_settlement(settlement: Dictionary, on_continue: Callable) -> void:
-	var panel := preload("res://scenes/menu/FinalSettlementPanel.gd").new()
-	var panel_data := settlement.duplicate(true)
-	# 非终局：标题写「回合结算 · 第 N 回合」，主按钮是「继续」。
-	panel_data["in_progress"] = true
-	panel.data = panel_data
-	# 面板里那颗「继续」按完就把面板摘掉，然后走 on_continue。一次性 —— 用
-	# CONNECT_ONE_SHOT 避免同一面板被复用（比如重连又弹一次）时回调跑两遍。
-	panel.continue_requested.connect(_on_round_settlement_continue.bind(panel, on_continue), CONNECT_ONE_SHOT)
-	add_child(panel)
-
-func _on_round_settlement_continue(panel: Node, on_continue: Callable) -> void:
-	if is_instance_valid(panel):
-		panel.queue_free()
-	if on_continue.is_valid():
-		on_continue.call()
+	# 整局没结束：不出结算面板，直接进下一回合的摆放界面（2026-10-07 用户定）。
+	NetworkService.team_begin_round()
+	_start_treasure_for_completed_round(completed_round)
+	_show_prep()
 
 func _finish_server_authoritative_team_battle(result: Dictionary) -> void:
 	_battle_settlement_generation += 1
@@ -3276,24 +3254,9 @@ func _finish_server_authoritative_team_battle(result: Dictionary) -> void:
 		SaveManager.save_run()
 		_show_game_over()
 		return
-	# 10.07 bug 文档第 8 条：服务端权威路径的非终局回合也要出结算面板。数据从
-	# **广播快照**（NetworkService.team_boards，slot -> board/mercenaries）建 ——
-	# 不走 GameState 的棋子槽，所以 _apply_team_match_state_payload 里那次
-	# clear_mercenaries() 已经把本地清空也不影响（这也正是它非终局回合安全的原因）。
-	var net_own: Dictionary = _battle._replay_own if is_instance_valid(_battle) else NetworkService.team_replay
-	var net_rival: Dictionary = _battle._replay_rival if is_instance_valid(_battle) else NetworkService.team_replay_rival
-	var net_replays: Array = [net_own, net_rival] if GameConstants.team_of_slot(NetworkService.team_local_slot) == GameConstants.TEAM_RED else [net_rival, net_own]
-	var round_settlement: Dictionary = preload("res://scripts/multiplayer/FinalSettlementData.gd").build_local(net_replays)
-	# 胜负行取本队视角：state_payload.run_outcome 是整场归属（终局才用），这里要的是
-	# 这一回合我方赢没赢。replay.result.player_wins 是 A 队视角，B 队要翻过来。
-	var net_a_wins := bool(result.get("player_wins", false))
-	var net_b_team := GameConstants.team_of_slot(NetworkService.team_local_slot) == GameConstants.TEAM_BLUE
-	round_settlement["outcome"] = (TeamOutcome.TEAM_B if net_a_wins else TeamOutcome.TEAM_A) if net_b_team else (TeamOutcome.TEAM_A if net_a_wins else TeamOutcome.TEAM_B)
-	round_settlement["completed_round"] = completed_round
-	round_settlement["local_team"] = GameConstants.team_of_slot(NetworkService.team_local_slot)
-	_show_round_settlement(round_settlement, func() -> void:
-		NetworkService.team_begin_round()
-		_show_prep())
+	# 整局没结束：不出结算面板，直接进下一回合（2026-10-07 用户定，同本地路径）。
+	NetworkService.team_begin_round()
+	_show_prep()
 
 func _has_team_match_state(completed_round: int) -> bool:
 	return not NetworkService.latest_match_state.is_empty() and int(NetworkService.latest_match_state.get("completed_round", -1)) == completed_round and int(NetworkService.latest_match_state.get("protocol", -1)) == NetworkConfig.NETWORK_PROTOCOL_VERSION
@@ -3454,57 +3417,33 @@ func _on_network_match_state_received(state_payload: Dictionary) -> void:
 			if _prep.has_method("_refresh_all"):
 				_prep.call_deferred("_refresh_all")
 
+# 人王（unique_king_growth）的战后结局：活过这一场的长一层（UnitGrowth.grow_king：层数 +1、
+# 倍率 ×(1+当前星级成长率)，到顶不长），阵亡的移出棋盘（remove_on_death）。PvE / Boss / PvP 都算。
+#
+# 按「主人座位 + 棋子 uid」认自己的人王（BattleSimShared._king_outcomes）。以前按存活者的格子号
+# 认：三路同一个格子号分不清是谁的 —— 别人那路同一格的棋子活着，我的人王死了也照长。
+# 成长记在格子上、开战时才乘（不再直接改 def）：联机时服务器只认它数据表里的 def，以前改 def
+# 的成长在线上一层都没生效过。
 func _apply_post_battle_unit_outcomes(result: Dictionary) -> void:
-	if not result.has("player_survivor_slots"):
+	if not result.has("king_outcomes"):
 		return
-	var survivor_slots := {}
-	for slot in result.get("player_survivor_slots", []):
-		survivor_slots[int(slot)] = true
+	var my_slot := NetworkService.team_local_slot if NetworkService.team_active else 0
+	var alive_by_uid := {}
+	for entry in result.get("king_outcomes", []):
+		if typeof(entry) != TYPE_DICTIONARY or int((entry as Dictionary).get("owner_slot", -1)) != my_slot:
+			continue
+		alive_by_uid[str((entry as Dictionary).get("uid", ""))] = bool((entry as Dictionary).get("alive", false))
 	for i in GameState.board_slots.size():
 		var cell = GameState.board_slots[i]
-		if cell == null or str(cell.get("def", {}).get("skill_id", "")) != "unique_king_growth":
+		if typeof(cell) != TYPE_DICTIONARY or not UnitGrowth.is_king(cell):
 			continue
-		if survivor_slots.has(i):
-			_grow_human_king(cell)
+		var uid := str((cell as Dictionary).get("uid", ""))
+		if uid.is_empty() or not alive_by_uid.has(uid):
+			continue
+		if bool(alive_by_uid[uid]):
+			UnitGrowth.grow_king(cell)
 		else:
 			GameState.board_slots[i] = null
-
-func _grow_human_king(cell: Dictionary) -> void:
-	var d: Dictionary = cell.get("def", {})
-	# The only compounding skill in the game, so the stack count must be capped.
-	#
-	# The cap lives at the top level of the unit def (3-star ceiling) and is
-	# overridden in `star4` (4-star ceiling). Capping only the 4-star tier — which
-	# is what an earlier pass did — inverts the tiers: an uncapped 3-star king
-	# overtakes a capped 4-star one after ~10 surviving rounds.
-	#
-	# max_stacks may come from the `star4` block, and cell.def is the raw table
-	# entry with no star scaling applied, so read it through the single parse
-	# point (UnitFactory.apply_star_stats). The growth itself still mutates the
-	# cell's own def, but both the ceiling **and** the multiplier come from there.
-	#
-	# 9.14 反馈补了后半句：当时只把 `cap` 改走 apply_star_stats，`mul` 仍读原始 d，
-	# 于是 4★ 出现「上限是 4★ 的 8 层、倍率还是 1~3★ 的 ×1.2」这种半接线状态，
-	# 与图鉴的 ×1.3 不符。同一个函数里两个数必须走同一条路。
-	var effective := UnitFactory.apply_star_stats(d, int(cell.get("star", 1)))
-	var cap := int(effective.get("max_stacks", 0))
-	if cap > 0 and int(cell.get("king_growth_stacks", 0)) >= cap:
-		return
-	var mul := 1.0 + float(effective.get("post_battle_all_stat_growth", 0.20))
-	# Growth is limited to HP / ATK / DEF, matching the star-scaling rule in
-	# docs/四星技能与数值设计规格.md §1 ("仅 HP / 攻击 / 防御三项").
-	#
-	# This used to compound attack_speed / move_speed / crit / crit_dmg / range as
-	# well. That is the exact trap §1 exists to prevent: attack speed and crit
-	# damage both multiply DPS, so a "x5.96 stat growth" was really ~119x DPS,
-	# and 16 surviving rounds reached ~22000x. crit_dmg and range are not clamped
-	# anywhere; attack speed only saturates at the 2.5 ceiling in
-	# BattleSimulator._tick_attacks.
-	for key in ["hp", "atk", "def"]:
-		if d.has(key):
-			d[key] = maxi(1, int(round(float(d[key]) * mul)))
-	cell.def = d
-	cell.king_growth_stacks = int(cell.get("king_growth_stacks", 0)) + 1
 
 func _start_treasure_for_completed_round(completed_round: int) -> void:
 	if bool(GameState.pending_treasure.get("active", false)):

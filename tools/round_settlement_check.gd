@@ -12,8 +12,10 @@ extends Node
 #      ★ 而且 build_local 读的是 GameState.mercenary_slots（离线槽 0），所以调用
 #        时机必须在 Main 的 clear_mercenaries() 之前 —— 时序那一层由主路径断言兜。
 #   3. 历史（MatchHistoryPanel）：settlement.kind == "pve" 的记录也要有详细战况。
-#   4. 接线（Main）：非终局回合也要建 settlement 并弹面板；且那次构建必须在
-#      clear_mercenaries() **之前**（否则佣兵列全空 —— 需求原话就落不了地）。
+#   4. 接线（Main）：**只在整局结束（输或赢）时**建 settlement、弹面板，非终局回合直接进
+#      摆放界面（2026-10-07 用户定）；那次构建必须在 clear_mercenaries() **之前**
+#      （否则佣兵列全空）。原话「任何回合结束游戏都会有结算面板」指的是不管在哪个回合
+#      结束游戏都要有面板 —— 当天一度改成每回合弹，用户否了。
 #
 # 运行：
 #   Godot_v4.7.2-stable_win64_console.exe --headless --path . tools/round_settlement_check.tscn
@@ -21,7 +23,6 @@ extends Node
 const CheckHarness := preload("res://tools/CheckHarness.gd")
 const Settlement := preload("res://scripts/multiplayer/FinalSettlementData.gd")
 const HistoryPanel := preload("res://scenes/menu/MatchHistoryPanel.gd")
-const PanelScript := preload("res://scenes/menu/FinalSettlementPanel.gd")
 
 const CHECK_NAME := "round_settlement"
 const MAIN_SRC := "res://scenes/main/Main.gd"
@@ -39,8 +40,7 @@ func _ready() -> void:
 	_case_pve_model_has_details()
 	_case_pve_keeps_our_mercenaries()
 	_case_history_pve_has_details()
-	_case_main_builds_every_round_before_clear()
-	await _case_mid_run_panel_uses_continue()
+	_case_main_settles_only_at_run_end()
 	_restore()
 	_h.finish(get_tree())
 
@@ -121,10 +121,11 @@ func _case_history_pve_has_details() -> void:
 		"旧版本记录（settlement 为 null）不该有详细战况")
 
 
-# --- 4. 接线：Main 每回合都建，且在 clear_mercenaries() 之前 ------------------
+# --- 4. 接线：只在整局结束时结算，且那次构建在 clear_mercenaries() 之前 ------------
 
-func _case_main_builds_every_round_before_clear() -> void:
+func _case_main_settles_only_at_run_end() -> void:
 	var src := FileAccess.get_file_as_string(MAIN_SRC)
+	# _fn_body 会把 CRLF 统一成 \n（Main.gd 是 CRLF），下面按 \n 找。
 	var body := _fn_body(src, "func _on_team_battle_finished(")
 	_h.expect(not body.is_empty(), "main_fn_found", "没找到 Main._on_team_battle_finished")
 	# ★ 注释里也会出现 `GameState.clear_mercenaries()`（说明为什么必须提前建），
@@ -132,55 +133,33 @@ func _case_main_builds_every_round_before_clear() -> void:
 	var build_at := body.find("build_local(")
 	var clear_at := body.find("\n\tGameState.clear_mercenaries()")
 	_h.expect(build_at >= 0, "main_builds_local",
-		"Main._on_team_battle_finished 里不再调 build_local（非终局回合就没结算了）")
+		"Main._on_team_battle_finished 里不再调 build_local（整局结束的面板就没数据了）")
 	_h.expect(clear_at >= 0, "main_finds_clear", "找不到 GameState.clear_mercenaries() 语句")
 	_h.expect(clear_at >= 0 and build_at >= 0 and build_at < clear_at, "main_build_before_clear",
 		"build_local 在 clear_mercenaries() 之后才跑 —— 佣兵列会是空的")
-	# 非终局分支必须真的弹面板（以前是直接 _show_prep）。
-	var show_at := body.find("_show_round_settlement(")
-	var return_at := body.find("_show_game_over(local_settlement)\n\t\treturn")
-	_h.expect(show_at >= 0, "main_shows_round_panel",
-		"非终局回合没有弹结算面板的调用")
-	_h.expect(return_at >= 0 and show_at > return_at, "main_panel_after_game_over",
-		"_show_round_settlement 不在 run_over 分支之后 —— 终局回合会重复弹面板")
-	# 服务端权威那条路也补上。
+	var guard_at := body.find("if GameState.team_hp <= 0 or GameState.enemy_team_hp <= 0 or completed_round >= GameState.FINAL_ROUND:")
+	_h.expect(guard_at >= 0 and guard_at < build_at, "main_builds_only_at_run_end",
+		"结算数据不该每回合都建 —— 只有整局结束（任一方水晶归零或打完最后一回合）才要")
+	# 非终局：game over 那个分支 return 之后直接进摆放界面，中间不许再出任何结算面板。
+	# 截「game over 那句之后 → _show_prep() 之前」这一段，里面出现 settlement 就是又弹了面板
+	#（不分大小写：当天那个函数叫 _show_round_settlement）。
+	var over_stmt := "_show_game_over(local_settlement)\n\t\treturn"
+	var over_at := body.find(over_stmt)
+	var prep_at := body.find("_show_prep()", over_at)
+	_h.expect(over_at >= 0 and prep_at > over_at, "main_mid_run_goes_to_prep",
+		"非终局回合打完应直接进摆放界面")
+	if over_at >= 0 and prep_at > over_at:
+		var mid_run := body.substr(over_at + over_stmt.length(), prep_at - over_at - over_stmt.length())
+		_h.expect(not mid_run.to_lower().contains("settlement"), "main_no_round_panel",
+			"非终局回合又弹了结算面板 —— 用户 10-07 定：只有输赢定了才进结算")
+	# 服务端权威那条路同一个规矩。
 	var server_body := _fn_body(src, "func _finish_server_authoritative_team_battle(")
-	_h.expect(server_body.contains("_show_round_settlement("), "server_path_round_panel",
-		"服务端权威路径的非终局回合没有结算面板")
-
-
-# --- 5. 面板：非终局用「继续」而不是「返回房间 / 返回主菜单」 ------------------
-
-func _case_mid_run_panel_uses_continue() -> void:
-	var panel := PanelScript.new()
-	var data := _room_fixture()
-	var model: Dictionary = Settlement.build(data, [_replay_fixture(), {}], TeamOutcome.TEAM_A, false)
-	model["in_progress"] = true
-	model["completed_round"] = 3
-	model["local_team"] = 0
-	panel.data = model
-	add_child(panel)
-	await get_tree().process_frame
-	await get_tree().process_frame
-	var texts := _texts(panel)
-	_h.expect(texts.any(func(t): return t.contains("回合结算")), "mid_run_title",
-		"非终局面板标题没写「回合结算」")
-	_h.expect(texts.has("继续"), "mid_run_continue_btn", "非终局面板没有「继续」按钮")
-	_h.expect(not texts.has("返回房间"), "mid_run_no_room_btn",
-		"非终局面板不该出现「返回房间」")
-	_h.expect(not texts.has("返回主菜单"), "mid_run_no_menu_btn",
-		"非终局面板不该出现「返回主菜单」")
-	# 点「继续」必须发 continue_requested。
-	var fired := [false]
-	panel.continue_requested.connect(func() -> void: fired[0] = true)
-	var button := _button_with_text(panel, "继续")
-	_h.expect(button != null, "mid_run_btn_found", "找不到「继续」按钮")
-	if button != null:
-		button.pressed.emit()
-		await get_tree().process_frame
-	_h.expect(fired[0], "mid_run_continue_signal", "点「继续」没有发 continue_requested")
-	panel.queue_free()
-	await get_tree().process_frame
+	var s_stmt := "_show_game_over()\n\t\treturn"
+	var s_over := server_body.find(s_stmt)
+	var s_prep := server_body.find("_show_prep()", s_over)
+	_h.expect(s_over >= 0 and s_prep > s_over
+			and not server_body.substr(s_over + s_stmt.length(), s_prep - s_over - s_stmt.length()).to_lower().contains("settlement"),
+		"server_mid_run_goes_to_prep", "服务端权威路径的非终局回合应直接进摆放界面、不弹结算面板")
 
 
 # --- 夹具 ---------------------------------------------------------------------
@@ -224,17 +203,3 @@ func _fn_body(source: String, signature: String) -> String:
 	return rest if nxt < 0 else rest.substr(0, nxt)
 
 
-func _texts(root: Node) -> Array:
-	var out: Array = []
-	for label in root.find_children("*", "Label", true, false):
-		out.append(str(label.text))
-	for button in root.find_children("*", "Button", true, false):
-		out.append(str(button.text))
-	return out
-
-
-func _button_with_text(root: Node, text: String) -> Button:
-	for button in root.find_children("*", "Button", true, false):
-		if str(button.text) == text:
-			return button
-	return null

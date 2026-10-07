@@ -195,11 +195,11 @@ func current_player_power() -> float:
 		if cell == null or typeof(cell) != TYPE_DICTIONARY:
 			continue
 		var dict: Dictionary = cell
-		var d: Dictionary = dict.get("def", {}).duplicate(true)
+		var d: Dictionary = dict.get("def", {})
 		if d.is_empty():
 			continue
-		d = UnitFactory.apply_star_stats(d, int(dict.get("star", 1)))
-		total += PrepPowerEstimate.unit_power_from_def(d)
+		# 星级 + 棋子自己的成长（人王、老虎），和详情里显示的同一份。
+		total += PrepPowerEstimate.unit_power_from_def(UnitDetailFormat.grown_def(d, int(dict.get("star", 1)), dict))
 	return total
 
 

@@ -210,8 +210,15 @@ func _probe_attack_targeting() -> void:
 
 
 # --- 4 element: AoE burst on a bystander -----------------------------------------
+#
+# 9.29 起每个棋子有 2 秒内置冷却（db462f5，图鉴 set_element：「每个棋子内置冷却 2 秒」）。
+# 所以分两件事验：
+#   · 概率：每次攻击前清掉冷却，1000 次里约 20% 触发；
+#   · 冷却：时间不走就只触发一次；过了 1.9 秒还不能再触发，满 2 秒才能。
+# 时间只在 0~2 秒里动：再往后会进狂暴（伤害倍率变了，旁观者扣血就不是 300），
+# 狂暴由 battle_frenzy_check.gd 单独验。
 
-func _element_bursts(treasures: Array) -> Dictionary:
+func _element_bursts(treasures: Array, clear_cooldown: bool, windows: Array = [0.0]) -> Dictionary:
 	RngService.rng.seed = 20260923
 	var a := _fighter(_plain_def("probe_elem", 100), "player", 0, treasures)
 	a.pos = Vector2(500.0, 330.0)
@@ -221,28 +228,40 @@ func _element_bursts(treasures: Array) -> Dictionary:
 	DamageService.begin_stat_context(st, a)
 	var bursts := 0
 	var other := 0
-	for _i in 1000:
-		var before := int(by.hp)
-		BattleSimulator._perform_attack(a, tgt, st)
-		var lost := before - int(by.hp)
-		if lost == 300:
-			bursts += 1
-		elif lost != 0:
-			other += 1
-		# Keep this set-specific probe before Frenzy I; frenzy damage scaling is
-		# covered independently by battle_frenzy_check.gd.
+	var per_window: Array = []
+	var attacks := int(1000 / windows.size())
+	for at in windows:
+		st.elapsed = float(at)
+		var window_bursts := 0
+		for _i in attacks:
+			if clear_cooldown:
+				(a.get("treasure_cd", {}) as Dictionary).erase("set_element")
+			var before := int(by.hp)
+			BattleSimulator._perform_attack(a, tgt, st)
+			var lost := before - int(by.hp)
+			if lost == 300:
+				bursts += 1
+				window_bursts += 1
+			elif lost != 0:
+				other += 1
+		per_window.append(window_bursts)
 	DamageService.clear_stat_context()
-	return {"bursts": bursts, "other": other}
+	return {"bursts": bursts, "other": other, "per_window": per_window}
 
 
 func _probe_element() -> void:
 	GameState.team_mode = true
-	var r3 := _element_bursts(ELEM_3)
-	var r4 := _element_bursts(ELEM_4)
-	print("[element] 1000 attacks, bystander 120px from target: 3 treasures bursts=%d other=%d ; 4 treasures bursts=%d other=%d" % [
+	var r3 := _element_bursts(ELEM_3, true)
+	var r4 := _element_bursts(ELEM_4, true)
+	print("[element] 1000 attacks (cooldown cleared), bystander 120px from target: 3 treasures bursts=%d other=%d ; 4 treasures bursts=%d other=%d" % [
 		int(r3.bursts), int(r3.other), int(r4.bursts), int(r4.other)])
 	_h.expect(int(r3.bursts) == 0, "element_baseline", "bursts without the set: %d" % int(r3.bursts))
 	_h.expect(int(r4.bursts) >= 150 and int(r4.bursts) <= 250, "element_set", "bursts with the set: %d (expect ~200)" % int(r4.bursts))
+	# 冷却：同一时刻 500 次攻击只该触发 1 次；1.9 秒时还在冷却；2.0 秒时恢复。
+	var cd := _element_bursts(ELEM_4, false, [0.0, 1.9, 2.0])
+	print("[element] cooldown windows t=0 / 1.9 / 2.0 bursts=%s" % str(cd.per_window))
+	_h.expect(cd.per_window == [1, 0, 1], "element_set_cooldown",
+		"每个棋子 2 秒内置冷却：三个时间窗应各触发 1 / 0 / 1 次，实际 %s" % str(cd.per_window))
 
 
 # --- 4 control: basic-attack kill refreshes the skill (9.24 改版) -----------------

@@ -599,7 +599,6 @@
                       "skill_id":  "defense_down_attack",
                       "def_down_pct":  0.30,
                       "duration":  5.0,
-                      "max_stacks":  3,
                       "model":  "res://assets/models/units/undead_refined/undead_spike/undead_spike_refined.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
