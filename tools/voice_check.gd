@@ -12,10 +12,11 @@ extends Node
 #      dll 是照着现在的源码编的；扩展声明的文件都在；LiveKit 开发包版本两处一致
 #   4. 🔴 钥匙：签名与 JWT 标准样例逐字节一致；只能进「本房间本队」的语音房间、只准发麦克风、10 分钟
 #   5. 🔴 发钥匙的规矩：谁、哪队一律从连接反查；没座位、AI 座位、服务器没配语音都不发；敌方拿不到本队的钥匙
-#   6. 🔴 踢人：换座跨队、离开 / 被踢、座位被 AI 接管都要请出语音房间，关房删两队的语音房间；
-#      对局中掉线保留座位**不踢**
+#   6. 🔴 踢人：离开 / 被踢、座位被 AI 接管都要请出语音房间，关房删本局的语音房间；
+#      对局中掉线保留座位、换座（含跨队）**不踢** —— 两队共用一个房间，踢了只能断线重连（10-08 真机）
 #   7. 旧的语音转发（语音包经战斗服务器）和电脑试用版删干净了；语音密钥不进客户端
-#   8. VoiceService 状态机（假桥接）：麦克风不自己打开、要钥匙 / 进房 / 开麦、换队重连、连不上退避重试、
+#   8. VoiceService 状态机（假桥接）：麦克风不自己打开、要钥匙 / 进房 / 开麦、换队不重连只改范围、
+#      自定义房间开局前全房间互通（匹配房不开放）、连不上退避重试、
 #      切后台断开、离开房间自动关；安卓那种「声音模式进房时定」的桥接：换档重进、钥匙再用、麦克风打不开退回只听
 #   9. 屏蔽按人（好友码）记、换座位跟着人走 = 让桥接把这个人的音量设成 0
 #  10. 没权限时开麦前先说明用途；大厅 / 备战期 / 战斗界面都接上了按钮
@@ -647,12 +648,10 @@ func _case_rpc_contract() -> void:
 func _case_kick_hooks() -> void:
 	var src := FileAccess.get_file_as_string(NETWORK_SERVICE_PATH).replace("\r\n", "\n")
 	var move := _function_body(src, "func _room_do_move(room: Dictionary, peer_id: int, from_slot: int, to_slot: int) -> void:")
-	var move_id := move.find("_voice_identity(room, from_slot)")
 	_h.item()
-	_h.expect(move_id >= 0 and move_id < move.find("_move_seat_metadata(")
-			and move.contains("if GameConstants.team_of_slot(from_slot) != GameConstants.team_of_slot(to_slot):\n\t\t_voice_seat_released(room, from_slot, voice_identity)"),
-		"voice_move_not_kicked",
-		"跨队换座：要在搬座位信息之前取语音身份，搬完把他请出旧队伍的语音房间（同队换座不用）")
+	_h.expect(not move.is_empty() and not move.contains("_voice_seat_released") and not move.contains("_voice_admin"),
+		"voice_move_kicked",
+		"换座（含跨队）不能请出语音：两队共用一个房间，踢了他只能断线重连（10-08「换到下排就没声音」）")
 	var remove := _function_body(src, "func _room_remove_peer(room: Dictionary, peer_id: int) -> void:")
 	var remove_id := remove.find("_voice_identity(room, slot)")
 	_h.item()
@@ -909,6 +908,8 @@ func _save_state() -> Dictionary:
 		"slot": NetworkService.team_local_slot,
 		"states": NetworkService.team_slot_states.duplicate(),
 		"profiles": NetworkService.team_seat_profiles.duplicate(true),
+		"match_mode": NetworkService.match_mode,
+		"phase": NetworkService.server_phase,
 	}
 
 
@@ -932,6 +933,8 @@ func _restore_state(saved: Dictionary) -> void:
 	NetworkService.team_local_slot = int(saved.slot)
 	NetworkService.team_slot_states = saved.states
 	NetworkService.team_seat_profiles = saved.profiles
+	NetworkService.match_mode = str(saved.match_mode)
+	NetworkService.server_phase = str(saved.phase)
 
 
 # 桥接状态有 0.25 秒缓存；门禁里改了假桥接之后要立刻看到。
@@ -1049,21 +1052,50 @@ func _case_state_machine() -> void:
 		"voice_mic_failure_left_talk", "开麦失败必须给原因并停在「只听」，实际档位 %d" % VoiceService.mode)
 	fake.mic_error = ""
 
-	# g) 自己跨队换座：退出旧房间、要新队伍的钥匙；旧队伍那张迟到的回复要丢掉
-	_h.item()
+	# g) 自己跨队换座：连接不动、不重新要钥匙，只把麦克风范围换成新队伍（10-08 真机「从上排换到下排就没声音」）
+	var saved_match_mode := NetworkService.match_mode
+	var saved_phase := NetworkService.server_phase
+	NetworkService.match_mode = ""
+	NetworkService.server_phase = ""
 	var before := int(requests[0])
 	var leaves := fake.leaves
+	var joins := fake.joins
+	VoiceService._process(0.1)
+	_h.item()
+	_h.expect(not fake.audience_all and str(fake.audience_ids) == str(["seat1"]),
+		"voice_team_scope_wrong", "A 队座位 0：麦克风只该开给同队真人（座位 1，AI 不算），实际 all=%s ids=%s"
+			% [str(fake.audience_all), str(fake.audience_ids)])
 	NetworkService.team_local_slot = 3
 	VoiceService._process(0.1)
-	_h.expect(fake.leaves == leaves + 1 and not fake.joined and int(requests[0]) == before + 1,
-		"voice_team_change_not_followed", "换到对面队伍后应退出旧房间并要新队伍的钥匙")
-	_reply("g1-s-t0", "", "tok-red-late", 0)
 	_h.item()
-	_h.expect(not fake.joined, "voice_stale_token_used", "换队之前那张（旧队伍的）钥匙迟到了，不能拿它进房")
-	_reply("g1-s-t1", "", "tok-blue")
+	_h.expect(fake.leaves == leaves and fake.joins == joins and fake.joined and int(requests[0]) == before,
+		"voice_team_change_reconnected", "换到对面队伍不该退房、也不该重新要钥匙（两队共用一个语音房间）")
 	_h.item()
-	_h.expect(fake.joined and str(fake.join_args[1]) == "tok-blue", "voice_new_team_not_joined",
-		"新队伍的钥匙到了应进新房间")
+	_h.expect(not fake.audience_all and str(fake.audience_ids) == str(["seat4"]),
+		"voice_team_change_scope_stale", "换队后麦克风范围应跟着新队伍（座位 4），实际 all=%s ids=%s"
+			% [str(fake.audience_all), str(fake.audience_ids)])
+
+	# g2) 用户 10-08 定的 B 方案：自定义房间开局前全房间互通；开局后回到队伍；匹配来的房间大厅也不开放
+	NetworkService.match_mode = "custom"
+	NetworkService.server_phase = NetworkService.ROOM_LOBBY
+	VoiceService._process(0.1)
+	_h.item()
+	_h.expect(fake.audience_all and (fake.audience_ids as Array).is_empty() and VoiceService.open_to_room(),
+		"voice_custom_lobby_not_open", "自定义房间开局前，麦克风应对全房间开放")
+	NetworkService.server_phase = NetworkService.ROOM_PREP
+	VoiceService._process(0.1)
+	_h.item()
+	_h.expect(not fake.audience_all and str(fake.audience_ids) == str(["seat4"]),
+		"voice_custom_started_still_open", "开局后应回到「只对队友」（玩家没选所有人）")
+	NetworkService.match_mode = "ranked"
+	NetworkService.server_phase = NetworkService.ROOM_LOBBY
+	VoiceService._process(0.1)
+	_h.item()
+	_h.expect(not fake.audience_all and not VoiceService.lobby_open_to_room(),
+		"voice_matched_lobby_open", "匹配进来的房间都是陌生人，开局前也不能对全房间开放")
+	NetworkService.match_mode = saved_match_mode
+	NetworkService.server_phase = saved_phase
+	VoiceService._process(0.1)
 
 	# h) 桥接说连不上 / 被请出房间：退房、给原因、退避之后再要钥匙
 	_h.item()

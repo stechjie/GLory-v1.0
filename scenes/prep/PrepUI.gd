@@ -2143,7 +2143,20 @@ func _build_ready_indicator() -> void:
 		badge.gui_input.connect(_on_ready_badge_input.bind(badge))
 		_ready_indicator.add_child(badge)
 		_ready_dots.append(badge)
+		VoiceControls.attach_speaking_mic(badge)
 	_refresh_ready_indicator()
+	# 头像上的「正在说话」小麦克风（10-08）：说话状态每 0.25 秒才变一次，这里 0.2 秒看一眼就够。
+	var speaking_timer := Timer.new()
+	speaking_timer.wait_time = 0.2
+	speaking_timer.autostart = true
+	speaking_timer.timeout.connect(_refresh_ready_speaking)
+	add_child(speaking_timer)
+
+
+func _refresh_ready_speaking() -> void:
+	for badge in _ready_dots:
+		if is_instance_valid(badge) and badge.has_meta("slot"):
+			VoiceControls.show_speaking_mic(badge, badge.visible and VoiceService.slot_speaking(int(badge.get_meta("slot"))))
 
 
 # 点（鼠标或手指）头像：弹出这个座位的卡片。再点同一个或点别处就关。

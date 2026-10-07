@@ -1863,8 +1863,6 @@ func _room_do_move(room: Dictionary, peer_id: int, from_slot: int, to_slot: int)
 	if str(states[from_slot]) != "player" or str(states[to_slot]) != "empty":
 		return
 	var was_ready := bool(ready[from_slot])
-	# 语音身份要在座位信息搬走之前取（跨队时要把他从旧队伍的语音房间请出去，见函数末尾）。
-	var voice_identity := _voice_identity(room, from_slot)
 	states[from_slot] = "empty"
 	ready[from_slot] = false
 	states[to_slot] = "player"
@@ -1886,9 +1884,10 @@ func _room_do_move(room: Dictionary, peer_id: int, from_slot: int, to_slot: int)
 	if int(room.get("leader_slot", 0)) == from_slot:
 		room.leader_slot = to_slot
 		_net_log("leader moved with player room=%d %d->%d" % [int(room.get("id", 0)), from_slot, to_slot])
-	# 跨队换座：旧队伍的语音房间里还留着他（钥匙只管进门），请 LiveKit 把他请出去（docs/语音LiveKit方案.md 3.3）。
-	if GameConstants.team_of_slot(from_slot) != GameConstants.team_of_slot(to_slot):
-		_voice_seat_released(room, from_slot, voice_identity)
+	# 换座（含跨队）**不碰语音**：协议 36 起六个人共用一个语音房间，没有「旧队伍的房间」可退。
+	# 谁能听到谁由各自麦克风的订阅权限决定（VoiceService._apply_audience 每帧跟着座位算）。
+	# 这里原来会请 LiveKit 把跨队的人踢出去 —— 踢的是唯一的那个房间，他只能断线重连，
+	# 用户 10-08 真机反馈「从上排换到下排第一个就没声音了」就是这一脚。
 	_touch_room(room)
 	# 房主变更、座位变更、凭证都在 room_state 里，一次全量广播就够 —— 不再需要
 	# team_leader / team_assign_slot 两条各发各的（E2）。

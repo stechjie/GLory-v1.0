@@ -130,6 +130,33 @@ GLORY_ENVIRONMENT=prod
 
 这个文件是 `chmod 600`、属主 `glory`。**不进 git，不要复制到别处，不要贴进聊天。**
 
+### 组队房语音（排位 / 休闲开局前）
+
+组队房的语音钥匙由**账号服务器**签（`backend/app/party_voice.py`），要一份 LiveKit 配置。
+没有这份配置时 `GET /v1/party/voice-token` 一直回 503，组队房里没有语音（2026-10-08 线上就是这样）。
+
+配置文件的四个字段与战斗服务器的 `livekit_voice.json` **完全一样**（`client_url` / `admin_url` /
+`api_key` / `api_secret`，见 `deploy/livekit/README.md`），直接复制一份给账号服务器：
+
+```bash
+sudo find /home -name livekit_voice.json 2>/dev/null
+```
+
+```bash
+sudo install -m 600 -o glory -g glory "上一步找到的路径" /opt/glory/party_voice.json
+```
+
+在 `/opt/glory/backend.env` 里加一行（先 `sudo grep -n PARTY_VOICE /opt/glory/backend.env` 看有没有加过）：
+
+```
+GLORY_PARTY_VOICE_CONFIG_FILE=/opt/glory/party_voice.json
+```
+
+然后 `sudo systemctl restart glory-backend`。重启会清掉内存里的队伍与排队，别在 19:00–23:00 做。
+验证：进组队房开一下扬声器，`sudo journalctl -u glory-backend --since "5 min ago" --no-pager | grep voice-token` 应是 200。
+
+换 LiveKit 钥匙时这份也要一起换（两边是同一把）。
+
 ### 启动
 
 ```bash

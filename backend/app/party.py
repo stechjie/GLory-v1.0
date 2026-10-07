@@ -171,6 +171,24 @@ class Parties:
         room.version += 1
         return room, old_members, False, False
 
+    def kick(self, host: uuid.UUID, target: uuid.UUID) -> Room:
+        """房主把一个成员移出队伍（10-08，对齐自定义房间的「×」）。排队中不能踢，要先取消匹配。"""
+        room = self._require_host(host)
+        self._require_editable(room)
+        if target == host:
+            raise PartyRejected("bad_target", "不能把自己移出队伍")
+        if target not in room.members:
+            raise PartyRejected("not_member", "这位玩家已经不在队伍里")
+        self._member_room.pop(target, None)
+        room.members.remove(target)
+        room.profiles.pop(target, None)
+        room.joined_at.pop(target, None)
+        # 换语音房间：被踢的人手上那把钥匙进的是旧房间（自建 LiveKit 踢人不一定作废钥匙）。
+        self._rotate_voice(room)
+        room.ready.clear()
+        room.version += 1
+        return room
+
     def mode(self, player: uuid.UUID, mode: str) -> Room:
         room = self._require_host(player)
         self._require_editable(room)

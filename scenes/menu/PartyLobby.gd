@@ -25,8 +25,21 @@ const MUTED := Color("bbc5b9")
 const GREEN := Color("9cdbba")
 const DARK := Color("101b1c")
 const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
+# 头像上的「正在说话」小麦克风（10-08，所有用到语音的地方共用 VoiceControls 里那两个函数）。
+const VoiceControls := preload("res://ui/components/VoiceControls.gd")
+const ChatPhrases := preload("res://scripts/multiplayer/ChatPhrases.gd")
+const ConfirmDialog := preload("res://ui/components/GloryConfirmDialog.gd")
+const Tokens := preload("res://ui/theme/GloryTokens.gd")
+# 与自定义房间的静音键同源（Team3v3Lobby 同一个 preload）。
+const Presentation := preload("res://effects/runtime/presentation/PresentationSettings.gd")
 # 「房主更换了休闲/排位模式」这类临时提示在房间里停留多久。
 const NOTICE_SEC := 4.0
+const SPEAKING_REFRESH_SEC := 0.2
+# 只能单人或满 3 人开始匹配（docs/排位系统设计.md；服务器 matchmaking.PARTY_SIZES 同口径）。
+const STARTABLE_SIZES := [1, 3]
+# 「开始匹配」能按时的明暗脉动（同自定义房间的开始键，Team3v3Lobby._update_start_pulse）。
+const START_BRIGHT := Color(1.22, 1.16, 1.0, 1.0)
+const START_DIM := Color(0.78, 0.76, 0.70, 1.0)
 
 var _initial_mode := "casual"
 var _invite_id := ""
@@ -50,6 +63,10 @@ var _queue_opened := false
 # `queued=false` 的快照影响 —— 它回答的是「这次 idle 是不是我这次排队的收尾」。
 var _party_queue_active := false
 var _match_found := false
+# 六个人都确认了（match ready）：队伍房间随即在服务器上关掉（matchmaking._finalise），
+# 而 Main 要等连上战斗服务器、进了对局大厅才收掉本界面。这几秒里本界面不能再轮询 / 复查房间 ——
+# 查到「房间没了」就会退回主界面，把正在进对局的人拉出来。
+var _match_ready := false
 var _canvas: Control
 var _stage: Control
 var _seat_layer: Control
@@ -80,6 +97,16 @@ var _notice_timer: SceneTreeTimer
 var _sticky_notice := ""
 var _party_voice: Node
 var _poll_elapsed := 0.0
+# 10-08 对齐自定义房间补上的：语音出错原因、整局静音、快捷短语、点头像的成员卡、开始键脉动。
+var _voice_status: Label
+var _mute_button: Button
+var _phrase_button: Button
+var _phrase_panel: Panel
+var _member_backdrop: Button
+var _member_card: Panel
+# 好友码 -> 座位上的头像框（挂「正在说话」小麦克风的地方）。每次重画座位都重建。
+var _seat_frames: Dictionary = {}
+var _start_tween: Tween
 
 
 func configure(mode: String, invite_id: String = "") -> void:
@@ -158,6 +185,10 @@ func _build() -> void:
 	_pet_toggle = _button(_canvas, _text("宠物", "PETS"), Vector2(1375, 49), Vector2(91, 50))
 	_style_paper_button(_pet_toggle, false)
 	_pet_toggle.pressed.connect(_toggle_pets_drawer)
+	# 10-08：整局静音（同自定义房间右上角那颗，Team3v3Lobby._toggle_mute）。
+	_mute_button = _button(_canvas, _mute_text(), Vector2(1478, 49), Vector2(130, 50))
+	_style_paper_button(_mute_button, false)
+	_mute_button.pressed.connect(_toggle_mute)
 
 	_chat_panel = _paper_panel(_canvas, Vector2(37, 730), Vector2(342, 164), 0.91)
 	_label(_chat_panel, _text("队内聊天", "PARTY CHAT"), Vector2(18, 11), Vector2(225, 33), 22, Color("425331"))
@@ -183,6 +214,10 @@ func _build() -> void:
 	_send_button = _button(_chat_panel, _text("发送", "Send"), Vector2(269, 111), Vector2(60, 40))
 	_style_paper_button(_send_button, true)
 	_send_button.pressed.connect(_send_chat)
+	# 10-08：快捷短语（同自定义房间）。点开一列短语，点哪句发哪句，走同一个队内聊天接口。
+	_phrase_button = _button(_chat_panel, _text("短语", "Quick"), Vector2(222, 8), Vector2(62, 34))
+	_style_paper_button(_phrase_button, false)
+	_phrase_button.pressed.connect(_toggle_phrase_panel)
 
 	_seat_layer = Control.new()
 	_seat_layer.position = Vector2(377, 179)
@@ -256,6 +291,17 @@ func _build() -> void:
 		_refresh_voice_icons())
 	add_child(_party_voice)
 	_refresh_voice_icons()
+	# 10-08：语音出错的原因写在两个语音按钮右边。手机上没有悬停提示，原来只写进 tooltip 等于没写。
+	_voice_status = _label(_canvas, "", Vector2(517, 831), Vector2(180, 58), 15, Color("ffe0a8"))
+	_voice_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_voice_status.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_voice_status.add_theme_color_override("font_outline_color", Color("2c1b11"))
+	_voice_status.add_theme_constant_override("outline_size", 4)
+	var speaking_timer := Timer.new()
+	speaking_timer.wait_time = SPEAKING_REFRESH_SEC
+	speaking_timer.autostart = true
+	speaking_timer.timeout.connect(_refresh_speaking)
+	add_child(speaking_timer)
 
 
 func _layout() -> void:
@@ -304,6 +350,7 @@ func _show_local_identity() -> void:
 	_chat_input.editable = false
 	_chat_input.placeholder_text = _text("队伍服务未连接", "Party service unavailable")
 	_send_button.disabled = true
+	_phrase_button.disabled = true
 	if _voice_mic != null:
 		_voice_mic.disabled = true
 	if _voice_speaker != null:
@@ -323,6 +370,7 @@ func _apply(next: Dictionary) -> void:
 	_chat_input.editable = true
 	_chat_input.placeholder_text = _text("给队友发消息…", "Message your team…")
 	_send_button.disabled = false
+	_phrase_button.disabled = false
 	if _voice_speaker != null:
 		_voice_speaker.disabled = _local_only
 	_refresh_voice_icons()
@@ -348,9 +396,15 @@ func _apply(next: Dictionary) -> void:
 			var entry: Dictionary = raw
 			if not bool(entry.get("host", false)) and not bool(entry.get("ready", false)):
 				all_ready = false
+		# 只能单人或满 3 人开始（2 人车队不排，见 STARTABLE_SIZES）。先说人数，再说准备。
+		var size_ok := STARTABLE_SIZES.has(members.size())
 		_action.text = _text("开始匹配", "START MATCH")
-		_action.disabled = not all_ready or bool(_room.get("queued", false))
-		_notice.text = _text("等待队友准备", "Waiting for team") if not all_ready else ""
+		_action.disabled = not size_ok or not all_ready or bool(_room.get("queued", false))
+		if not size_ok:
+			_notice.text = _text("只能单人或满 3 人开始匹配，再邀请一位好友吧",
+				"Queue solo or as a full team of 3 — invite one more friend")
+		else:
+			_notice.text = _text("等待队友准备", "Waiting for team") if not all_ready else ""
 	else:
 		var mine := _my_member()
 		var ready := bool(mine.get("ready", false))
@@ -370,10 +424,15 @@ func _apply(next: Dictionary) -> void:
 	if _sticky_notice != "":
 		_notice.text = _sticky_notice
 	_style_action()
+	_update_start_pulse(host and not _action.disabled)
+	# 卡片上的那个人已经不在队里了（被踢、自己走了）：卡片跟着收掉。
+	if _member_card != null and not _seat_frames.has(str(_member_card.get_meta("code", ""))):
+		_close_member_card()
 
 
 func _render_seats() -> void:
 	_clear_children(_seat_layer)
+	_seat_frames.clear()
 	var members: Array = _room.get("members", [])
 	for i in range(3):
 		var x := float(i) * 313.0
@@ -435,6 +494,16 @@ func _render_seats() -> void:
 		portrait.size = mask.size
 		var name := str(member.get("player_name", ""))
 		var code := str(member.get("friend_code", ""))
+		# 10-08：正在说话的人头像上挂小麦克风；点别人的头像弹成员卡（看资料 / 不听语音 / 移出队伍）。
+		VoiceControls.attach_speaking_mic(frame, 0.3)
+		_seat_frames[code] = frame
+		if not _local_only and code != _my_code():
+			var tap := _button(seat, "", frame.position, frame.size)
+			tap.flat = true
+			tap.focus_mode = Control.FOCUS_NONE
+			tap.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+			tap.tooltip_text = _text("查看队友", "Teammate")
+			tap.pressed.connect(_open_member_card.bind(member))
 		var name_label := _label(seat, AccountManager.display_name(name, code, false),
 			Vector2(0, 163), Vector2(214, 35), 23, CREAM)
 		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -549,29 +618,47 @@ func _load_room() -> void:
 		return
 	_loading_room = true
 	var result: Dictionary
+	var invite_error := ""
 	if _invite_id != "":
 		result = await AccountManager.join_party(_invite_id)
+		var join_code := int(result.get("code", 0))
+		if join_code != 200 and join_code != 0:
+			# 10-08：邀请过期 / 队伍满了 / 已经开始匹配 —— 说明原因，然后照常进自己的队伍。
+			# 原来会一直拿这个进不去的邀请每 30 秒重试，玩家停在一个什么都点不了的房间里。
+			# （code 0 是网络没通，那时邀请可能还有效，留着下次再试。）
+			invite_error = str(result.get("error", _text("组队邀请已失效", "Invitation expired")))
+			_invite_id = ""
+			result = await _fetch_or_create_party()
 	else:
-		result = await AccountManager.fetch_party()
-		if int(result.get("code", 0)) == 200:
-			var state: Dictionary = (result.get("body", {}) as Dictionary).get("state", {})
-			if str(state.get("state", "")) != "room":
-				result = await AccountManager.create_party(_initial_mode)
-			elif str(state.get("mode", "")) != _initial_mode and \
-				str(state.get("host_code", "")) == str(AccountManager.profile.get("friend_code", "")) and \
-				(state.get("members", []) as Array).size() == 1 and not bool(state.get("queued", false)):
-				result = await AccountManager.set_party_mode(_initial_mode)
+		result = await _fetch_or_create_party()
 	_loading_room = false
 	if not is_inside_tree():
 		return
 	if int(result.get("code", 0)) == 200:
 		_apply((result.get("body", {}) as Dictionary).get("state", {}))
+		if invite_error != "":
+			_show_sticky_notice(invite_error)
 	elif _local_only:
 		if int(result.get("code", 0)) == 404 and str(result.get("error", "")) == "Not Found":
 			_load_error = _text("组队服务未更新（404）", "Party service unavailable (404)")
 		else:
 			_load_error = str(result.get("error", _text("无法进入队伍", "Unable to join party")))
 		_notice.text = _load_error
+
+
+# 没有邀请（或邀请进不去）时：已经在队伍里就用那个队伍，没有就建一个；
+# 自己一个人的队伍模式不对就顺手改成这次进来的模式。
+func _fetch_or_create_party() -> Dictionary:
+	var result: Dictionary = await AccountManager.fetch_party()
+	if int(result.get("code", 0)) != 200:
+		return result
+	var state: Dictionary = (result.get("body", {}) as Dictionary).get("state", {})
+	if str(state.get("state", "")) != "room":
+		return await AccountManager.create_party(_initial_mode)
+	if str(state.get("mode", "")) != _initial_mode and str(state.get("host_code", "")) == _my_code() \
+			and (state.get("members", []) as Array).size() == 1 and not bool(state.get("queued", false)):
+		return await AccountManager.set_party_mode(_initial_mode)
+	return result
 
 
 func _load_friends() -> void:
@@ -595,7 +682,7 @@ func _load_friends() -> void:
 # ⚠️ 不复用 `_load_room` 本身 —— 那里在拿到非 room 状态时会**自动建一个新房**，
 #    而这条路径恰恰是「我可能已经被踢了」，建房会把玩家又拖回一个空房间。
 func _refresh_room_now() -> void:
-	if _local_only or _preview != "":
+	if _local_only or _preview != "" or _match_ready:
 		return
 	if _loading_room:
 		return
@@ -642,21 +729,26 @@ func _on_realtime(payload: Dictionary) -> void:
 		#    广播有任何延迟/丢失，玩家看到的就是「房主没了、房间好像散了」。
 		#    现在收到 host_left 就地**主动复查一次**房间状态（见 `_refresh_room_now`），
 		#    自己确认还在房里就继续待着，确认不在才退 —— 不把「退房」押在别人推得上。
-		if str(payload.get("kind", "")) == "host_left":
-			_show_sticky_notice(str(payload.get("text", "")))
-			_refresh_room_now()
-			return
-		if str(payload.get("kind", "")) != "mode_changed":
-			return
-		if _preview != "" or _is_host():
-			return
-		# 服务器的顺序是「party_notice」先到、紧跟一条「party」房间快照，
-		# 而 _apply() 会按房主/队员身份重写 _notice。`_show_sticky_notice` 会把
-		# 提示词记成 sticky，_apply() 收尾时补回去（见 _apply 末尾）。
-		_show_sticky_notice(str(payload.get("text", "")))
+		match str(payload.get("kind", "")):
+			"host_left":
+				_show_sticky_notice(str(payload.get("text", "")))
+				_refresh_room_now()
+			"kicked":
+				# 10-08 房主踢人：服务器先推这条、紧接着推 party closed（那条会复查房间并退回主界面）。
+				# 提示框挂在主界面上 —— 挂在本界面的话，界面一关提示框就跟着关了。
+				if _preview == "":
+					DialogService.info({"owner": get_parent(), "body": str(payload.get("text", ""))})
+			"mode_changed":
+				# 服务器的顺序是「party_notice」先到、紧跟一条「party」房间快照，
+				# 而 _apply() 会按房主/队员身份重写 _notice。`_show_sticky_notice` 会把
+				# 提示词记成 sticky，_apply() 收尾时补回去（见 _apply 末尾）。房主自己点的不提示。
+				if _preview == "" and not _is_host():
+					_show_sticky_notice(str(payload.get("text", "")))
 	elif kind == "match":
 		var match_state := str(payload.get("state", ""))
-		if match_state == "found":
+		if match_state == "ready":
+			_match_ready = true
+		elif match_state == "found":
 			_match_found = true
 			# 凑齐了 = 这次排队正常收尾，落闩；后面即便来一条 idle 也不算「取消」。
 			_party_queue_active = false
@@ -674,7 +766,14 @@ func _on_realtime(payload: Dictionary) -> void:
 			#    正确判据只有一个方向：**服务器说队列没了（`idle`）才算取消**。
 			#    `queued` 只表示「还在排」，这里什么都不做 —— 面板自己会轮询/推送
 			#    刷新队列位置。
-			pass
+			#
+			# 10-08：例外是「凑齐之后又回到 queued」—— 那一桌里别人没接受，我们整队被放回
+			# 队列最前面（matchmaking._dissolve 不再拆队）。这次排队还没收尾，闩要重新立上，
+			# 否则之后队友再取消排队，就提示不出「XX 取消了排队」。
+			if _match_found:
+				_match_found = false
+				_party_queue_active = true
+				_show_sticky_notice(_text("有人没有接受对局，已为你们重新排队", "Someone declined; your team is back in the queue"))
 		elif match_state == "idle":
 			# 队列被撤掉的信号就是这个（服务器 `leave_group` + `idle_message`）。
 			# **不能只在 `_match_found` 时处理** —— 那个字段只有走到「凑齐确认」
@@ -699,12 +798,24 @@ func _on_realtime(payload: Dictionary) -> void:
 				queue_canceled.emit(canceller)
 				_refresh_room_now()
 			if _match_found:
-				stop_party_voice()
-				back_requested.emit()
+				# 10-08：凑齐之后被拆桌、而且我们队里有人没接受 —— 整队回到这个房间
+				# （服务器不再在成桌时关房间，见 matchmaking._party_back_to_room）。
+				# 原来这里直接退回主界面：队伍没了、三个人各自单排。现在复查一次房间，
+				# 还在房里就留下（真不在了 _refresh_room_now 会自己退回主界面）。
+				_match_found = false
+				var reason := str(payload.get("reason", ""))
+				var who := str(payload.get("by_name", ""))
+				if reason == "declined":
+					_show_sticky_notice(_text("你没有接受对局，已回到队伍", "You did not accept; back to your party"))
+				elif reason == "party_declined":
+					_show_sticky_notice(_text("%s 没有接受对局，已回到队伍" % who, "%s declined; back to your party" % who) if who != ""
+						else _text("队友没有接受对局，已回到队伍", "A teammate declined; back to your party"))
+				queue_canceled.emit(who)
+				_refresh_room_now()
 
 
 func _process(delta: float) -> void:
-	if _preview != "" or _busy:
+	if _preview != "" or _busy or _match_ready:
 		return
 	_poll_elapsed += delta
 	if _poll_elapsed >= (30.0 if _local_only else 7.0):
@@ -945,6 +1056,196 @@ func stop_party_voice() -> void:
 		_party_voice.stop()
 
 
+func _my_code() -> String:
+	return str(AccountManager.profile.get("friend_code", ""))
+
+
+# --- 10-08 对齐自定义房间补上的功能 -----------------------------------------------------------
+
+# 头像上的「正在说话」小麦克风 + 语音出错的原因。0.2 秒一次（桥接状态本身 0.25 秒才变）。
+func _refresh_speaking() -> void:
+	if _party_voice == null:
+		return
+	var speaking: Array = _party_voice.speaking_codes()
+	var me := _my_code()
+	for code in _seat_frames:
+		var talking := speaking.has(code) or (str(code) == me and bool(_party_voice.self_speaking()))
+		VoiceControls.show_speaking_mic(_seat_frames[code], talking)
+	if _voice_status != null:
+		_voice_status.text = str(_party_voice.last_error())
+
+
+# 「开始匹配」能按时明暗脉动（同自定义房间的开始键）。任何时候最多一个 tween：
+# 该脉动且已经在脉动就不动（每次房间快照都会调到这里，重建会把脉动打回起点）。
+func _update_start_pulse(active: bool) -> void:
+	var want := active and Tokens.motion(1.0) > 0.0
+	var running := _start_tween != null and _start_tween.is_valid()
+	if want and running:
+		return
+	if running:
+		_start_tween.kill()
+	_start_tween = null
+	_action.modulate = Color.WHITE
+	if not want:
+		return
+	_start_tween = create_tween().set_loops()
+	_start_tween.set_trans(Tween.TRANS_SINE)
+	_start_tween.set_ease(Tween.EASE_IN_OUT)
+	_start_tween.tween_property(_action, "modulate", START_BRIGHT, 0.9)
+	_start_tween.tween_property(_action, "modulate", START_DIM, 0.9)
+
+
+# 整局静音：与自定义房间那颗同一个口径（Team3v3Lobby._toggle_mute）—— 静的是游戏声音（Master 总线），
+# 不是队友语音；语音走下面那两个图标。
+func _is_audio_muted() -> bool:
+	var master := AudioServer.get_bus_index("Master")
+	if master >= 0 and AudioServer.is_bus_mute(master):
+		return true
+	return not Presentation.music_allowed()
+
+
+func _mute_text() -> String:
+	return _text("已静音", "Muted") if _is_audio_muted() else _text("静音", "Mute")
+
+
+func _toggle_mute() -> void:
+	var master := AudioServer.get_bus_index("Master")
+	var want_mute := not _is_audio_muted()
+	if master >= 0:
+		AudioServer.set_bus_mute(master, want_mute)
+	if not want_mute:
+		PlayerProfile.set_presentation_toggle("music", true)
+	_mute_button.text = _mute_text()
+
+
+# 快捷短语：列在聊天框上方，点哪句发哪句（同一个队内聊天接口 —— 服务器那边就是一条普通消息）。
+func _toggle_phrase_panel() -> void:
+	if _phrase_panel != null:
+		_close_phrase_panel()
+		return
+	if _local_only:
+		return
+	var height := 300.0
+	_phrase_panel = _paper_panel(_canvas,
+		Vector2(_chat_panel.position.x, _chat_panel.position.y - height - 8.0), Vector2(342, height), 0.97)
+	_phrase_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	var scroll := TouchScrollContainer.new()
+	scroll.position = Vector2(14, 12)
+	scroll.size = Vector2(314, height - 24.0)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_phrase_panel.add_child(scroll)
+	var list := VBoxContainer.new()
+	list.custom_minimum_size.x = 300
+	list.add_theme_constant_override("separation", 6)
+	scroll.add_child(list)
+	for group in ChatPhrases.GROUP_ORDER:
+		var title := Label.new()
+		title.text = ChatPhrases.group_title(str(group))
+		title.add_theme_font_size_override("font_size", 16)
+		title.add_theme_color_override("font_color", Color("6f7a60"))
+		list.add_child(title)
+		for phrase_id in ChatPhrases.ids_in_group(str(group)):
+			var text := ChatPhrases.text(int(phrase_id))
+			var choice := _button(list, text, Vector2.ZERO, Vector2(300, 44))
+			_style_paper_button(choice, false)
+			choice.pressed.connect(_send_phrase.bind(text))
+
+
+func _close_phrase_panel() -> void:
+	if _phrase_panel != null and is_instance_valid(_phrase_panel):
+		_phrase_panel.queue_free()
+	_phrase_panel = null
+
+
+func _send_phrase(text: String) -> void:
+	_close_phrase_panel()
+	if _local_only:
+		return
+	if _preview != "":
+		var log: Array = _room.get("messages", [])
+		log.append({"name": "我", "text": text})
+		_room["messages"] = log
+		_render_chat()
+		return
+	_run(AccountManager.send_party_chat.bind(text))
+
+
+# 点队友头像：成员卡（看资料 / 不听他的语音 / 房主可以移出队伍）。点卡片外面关掉。
+func _open_member_card(member: Dictionary) -> void:
+	_close_member_card()
+	var code := str(member.get("friend_code", ""))
+	if code.is_empty():
+		return
+	var host := _is_host()
+	_member_backdrop = _button(_canvas, "", Vector2.ZERO, REF)
+	_member_backdrop.flat = true
+	_member_backdrop.focus_mode = Control.FOCUS_NONE
+	_member_backdrop.pressed.connect(_close_member_card)
+	_member_card = _paper_panel(_canvas, Vector2((REF.x - 300.0) * 0.5, 300), Vector2(300, 254 if host else 196), 0.97)
+	_member_card.mouse_filter = Control.MOUSE_FILTER_STOP
+	_member_card.set_meta("code", code)
+	var title := _label(_member_card, AccountManager.display_name(str(member.get("player_name", "")), code, false),
+		Vector2(20, 14), Vector2(260, 34), 22, Color("31412e"))
+	title.clip_text = true
+	_label(_member_card, "#" + code, Vector2(20, 46), Vector2(260, 24), 16, Color("6f7a60"))
+	var profile_btn := _button(_member_card, _text("查看资料", "View profile"), Vector2(20, 80), Vector2(260, 48))
+	_style_paper_button(profile_btn, false)
+	profile_btn.pressed.connect(_view_member_profile.bind(code))
+	var muted := VoiceService.is_code_muted(code)
+	var mute_btn := _button(_member_card, _text("恢复他的语音", "Unmute voice") if muted else _text("不听他的语音", "Mute voice"),
+		Vector2(20, 136), Vector2(260, 48))
+	_style_paper_button(mute_btn, muted)
+	mute_btn.pressed.connect(func() -> void:
+		VoiceService.set_code_muted(code, not VoiceService.is_code_muted(code))
+		_close_member_card())
+	if host:
+		var kick_btn := _button(_member_card, _text("移出队伍", "Remove from party"), Vector2(20, 192), Vector2(260, 48))
+		_style_paper_button(kick_btn, false)
+		# 排队中队伍已经锁定（服务器也会拒），先取消匹配才能踢。
+		kick_btn.disabled = bool(_room.get("queued", false))
+		kick_btn.pressed.connect(_confirm_kick.bind(code, str(member.get("player_name", ""))))
+
+
+func _close_member_card() -> void:
+	for node in [_member_card, _member_backdrop]:
+		if node != null and is_instance_valid(node):
+			node.queue_free()
+	_member_card = null
+	_member_backdrop = null
+
+
+func _view_member_profile(code: String) -> void:
+	_close_member_card()
+	if _preview != "" or code.length() != 8:
+		return
+	var screen := load("res://scenes/menu/ProfileScreen.tscn").instantiate() as Control
+	screen.configure_public(code)
+	var modal_id := "party_member_profile"
+	screen.back_requested.connect(func(): ModalStack.pop(modal_id))
+	ModalStack.push(screen, {"id": modal_id, "owner": self, "priority": 50, "dismiss_on_backdrop": false})
+
+
+func _confirm_kick(code: String, who: String) -> void:
+	_close_member_card()
+	if _preview != "":
+		_notice.text = _text("预览模式", "Preview mode")
+		return
+	DialogService.confirm({
+		"request_id": "party_kick",
+		"owner": self,
+		"title": _text("移出队伍", "Remove from party"),
+		"body": _text("把 %s 移出队伍？" % who, "Remove %s from the party?" % who),
+		"confirm_text": _text("移出", "Remove"),
+		"cancel_text": _text("取消", "Cancel"),
+		"on_result": _on_kick_result.bind(code),
+	})
+
+
+func _on_kick_result(result: String, _request_id: String, code: String) -> void:
+	if result == ConfirmDialog.RESULT_CONFIRMED:
+		_run(AccountManager.kick_party_member.bind(code))
+
+
 func _toggle_friends_drawer() -> void:
 	_pets_drawer.visible = false
 	_friends_drawer.visible = not _friends_drawer.visible
@@ -966,9 +1267,9 @@ func _toggle_chat() -> void:
 	_chat_scroll.size.y = 304 if _chat_expanded else 57
 	_chat_input.position.y = 358 if _chat_expanded else 111
 	_chat_toggle.text = "⌄" if _chat_expanded else "⌃"
-	for child in _chat_panel.get_children():
-		if child is Button and child != _chat_toggle:
-			child.position.y = 358 if _chat_expanded else 111
+	# 只有「发送」跟着输入框走；标题栏上的「短语」「⌃」不动。
+	_send_button.position.y = 358 if _chat_expanded else 111
+	_close_phrase_panel()
 	_render_chat()
 
 

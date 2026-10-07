@@ -309,8 +309,11 @@ func _case_mode_notice_to_members() -> void:
 	# ★ 切到 mode_changed 分支断言 —— 对整文件 contains 会假绿（host_left 分支里
 	#   也有同一行 `_show_sticky_notice(str(payload.get("text", "")))`，变异实测骗过一次）。
 	var realtime := _slice_func(src, "_on_realtime")
-	# mode_changed 分支：从「非 mode_changed 就 return」那行起，到 `elif kind == "match"` 为止。
-	var mode_branch := _slice_until(realtime, "!= \"mode_changed\"", "\n\telif kind == \"match\":")
+	# mode_changed 分支：10-08 起 party_notice 按 kind 走 match（host_left / kicked / mode_changed），
+	# 从 `"mode_changed":` 那一支起，到 `elif kind == "match"` 为止。
+	# （原来的锚点是「非 mode_changed 就 return」那一行，而上面 no_early_return_swallows_host_left
+	#  又禁止那一行出现 —— 两条断言不可能同时为真。）
+	var mode_branch := _slice_until(realtime, "\"mode_changed\":", "\n\telif kind == \"match\":")
 	_h.expect(not mode_branch.is_empty(), "mode_branch_present",
 		"找不到 kind=mode_changed 分支")
 	# 提示要真的写进 _notice（而不是只记 sticky 不算显示）。
@@ -318,7 +321,7 @@ func _case_mode_notice_to_members() -> void:
 		"mode_notice_shown",
 		"换模式提示必须显示出来（走 _show_sticky_notice）")
 	# 服务端只推给非房主，客户端也要保证房主自己不重复显示。
-	_h.expect(mode_branch.contains("if _preview != \"\" or _is_host():"),
+	_h.expect(mode_branch.contains("if _preview == \"\" and not _is_host():"),
 		"mode_notice_skips_host",
 		"换模式提示只给成员看（房主是自己操作的）")
 	# 提示必须能顶过紧随其后的房间快照重绘。

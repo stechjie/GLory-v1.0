@@ -176,6 +176,9 @@ func _on_audience_changed(_audience: int) -> void:
 
 
 func _toggle_audience() -> void:
+	# 自定义房间开局前全房间互通（VoiceService.lobby_open_to_room），这时按钮只是说明，不切换。
+	if VoiceService.lobby_open_to_room():
+		return
 	VoiceService.toggle_audience()
 	_refresh()
 
@@ -185,12 +188,15 @@ func _on_mute_pressed(slot: int) -> void:
 
 
 func _refresh() -> void:
-	var all := VoiceService.audience == VoiceService.Audience.ALL
+	var all := VoiceService.open_to_room()
 	_title.text = _text("全房语音", "Room Voice") if all else _text("队伍语音", "Team Voice")
 	_privacy.text = _text("传给房间全部人 · 不录音，不保存", "Everyone in room · Never recorded or stored") if all \
 		else _text("只传给同队队友 · 不录音，不保存", "Teammates only · Never recorded or stored")
-	_audience_button.text = _text("说话范围：全部人（点击切换）", "Audience: everyone (tap to change)") if all \
-		else _text("说话范围：队友（点击切换）", "Audience: team (tap to change)")
+	if VoiceService.lobby_open_to_room():
+		_audience_button.text = _text("开局前全房间互通，开局后默认只对队友", "Whole room until the match starts, then team only")
+	else:
+		_audience_button.text = _text("说话范围：全部人（点击切换）", "Audience: everyone (tap to change)") if all \
+			else _text("说话范围：队友（点击切换）", "Audience: team (tap to change)")
 	_member_title.text = _text("房间成员", "ROOM MEMBERS") if all else _text("队伍频道", "TEAM CHANNEL")
 	for i in _mode_buttons.size():
 		_mode_buttons[i].theme_type_variation = Theming.VARIATION_PRIMARY if i == VoiceService.mode \
@@ -217,7 +223,7 @@ func _refresh() -> void:
 
 func _refresh_members() -> void:
 	var mates := VoiceService.audience_members()
-	var signature := str(VoiceService.audience) + ":"
+	var signature := str(VoiceService.open_to_room()) + ":"
 	for mate in mates:
 		signature += "%d|%s|%s;" % [int(mate.slot), str(mate.name), str(mate.muted)]
 	if signature != _member_signature:

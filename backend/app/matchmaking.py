@@ -66,6 +66,10 @@ log = logging.getLogger("glory.matchmaking")
 MATCH_SIZE = 6
 TEAM_SIDE_SIZE = 3
 
+# 组队排队只收单人或满 3 人（docs/排位系统设计.md 拍板：「只能单排或满 3 人，不做 2 人车队」，
+# 用户 10-08 确认休闲也一样）。2+1 是匹配里最难受的组合：那个路人是局外人，队里还有语音。
+PARTY_SIZES = frozenset({1, TEAM_SIDE_SIZE})
+
 # 能排队的模式。第 5 步（分数 / 段位 / 信誉分）做完之后 ranked 也开了。
 #
 # ⚠️ 排位**还要过时间窗口**（19:00–23:00，`ranked.window_state`）和信誉分闸
@@ -105,6 +109,23 @@ QUEUE_GRACE_SEC = 60.0
 MESSAGE_TYPE = "match"
 
 Send = Callable[[uuid.UUID, dict], Awaitable[int]]
+
+# _spawn 起的发送任务。事件循环只弱引用任务，不留一份就可能还没跑完就被回收。
+_background: set[asyncio.Task] = set()
+
+
+def _spawn(coro: Awaitable) -> None:
+    """排一个推送任务。拆桌可能发生在同步调用里（接口、断线回调、测试），这里不等它。
+
+    没有事件循环（同步测试）就不发 —— 客户端收到 idle 之后会自己去查一次房间。
+    """
+    try:
+        task = asyncio.get_running_loop().create_task(coro)
+    except RuntimeError:
+        coro.close()
+        return
+    _background.add(task)
+    task.add_done_callback(_background.discard)
 
 
 # --- 对外的消息 ---------------------------------------------------------------
@@ -177,6 +198,8 @@ class _Pending:
     mode: str
     members: list[_Member]
     deadline: float
+    # 这一桌里的组队（原样的排队条目）。拆桌时整队放回、或整队回房间 —— **不拆成单人**。
+    parties: list[_Waiter] = field(default_factory=list)
 
     def member(self, player_id: uuid.UUID) -> _Member | None:
         for m in self.members:
@@ -262,8 +285,8 @@ class Matchmaker:
 
     def join_group(self, players: list[uuid.UUID], mode: str,
                    ratings: dict[uuid.UUID, int] | None = None) -> dict:
-        """Queue a one to three person room as one indivisible entry."""
-        if mode not in OPEN_MODES or not 1 <= len(players) <= TEAM_SIDE_SIZE \
+        """一个单人或满 3 人的队伍作为一个整体进队列（PARTY_SIZES）。"""
+        if mode not in OPEN_MODES or len(players) not in PARTY_SIZES \
                 or len(players) != len(set(players)):
             raise ValueError("队伍人数或模式无效")
         if any(self.state_of(pid)["state"] != "idle" for pid in players):
@@ -300,7 +323,8 @@ class Matchmaker:
             queue.pop(player_id, None)
         match_uid = self._pending_of.get(player_id)
         if match_uid is not None:
-            self._dissolve(self._pending[match_uid], declined_by=player_id)
+            # 拆桌的消息要**马上推给另外五个人**（原来算出来就丢了，他们要等轮询才知道）。
+            self._push(self._dissolve(self._pending[match_uid], declined_by=player_id))
         return idle_message()
 
     def on_disconnect(self, player_id: uuid.UUID) -> None:
@@ -323,7 +347,15 @@ class Matchmaker:
                 waiter.dropped_at = now
         match_uid = self._pending_of.get(player_id)
         if match_uid is not None:
-            self._dissolve(self._pending[match_uid], declined_by=player_id)
+            self._push(self._dissolve(self._pending[match_uid], declined_by=player_id))
+
+    def _push(self, messages: list[tuple[uuid.UUID, dict]]) -> None:
+        """同步路径（接口、断线回调）里产生的消息：排进事件循环发出去，不等。"""
+        if messages:
+            _spawn(self._send_all(messages))
+
+    async def _send_all(self, messages: list[tuple[uuid.UUID, dict]]) -> None:
+        await asyncio.gather(*(self._send_one(pid, payload) for pid, payload in messages))
 
     def position_of(self, player_id: uuid.UUID, mode: str) -> int:
         for index, pid in enumerate(self._queues[mode]):
@@ -409,8 +441,8 @@ class Matchmaker:
                 party_seats = self._take_party_match(mode)
                 if party_seats is None:
                     break
-                players, teams = party_seats
-                messages.extend(self._form_party(players, teams, mode, now))
+                players, teams, parties = party_seats
+                messages.extend(self._form_party(players, teams, parties, mode, now))
             while True:
                 group = self._take_group(mode, now)
                 if group is None:
@@ -436,7 +468,7 @@ class Matchmaker:
             log.warning("匹配消息发不出去 player=%s", player_id, exc_info=True)
             return 0
 
-    def _take_party_match(self, mode: str) -> tuple[list[uuid.UUID], list[int]] | None:
+    def _take_party_match(self, mode: str) -> tuple[list[uuid.UUID], list[int], list[_Waiter]] | None:
         rooms = self._party_queues[mode]
         active_rooms = [("room", pid, tuple(waiter.party))
                         for pid, waiter in rooms.items() if waiter.dropped_at <= 0.0]
@@ -448,27 +480,29 @@ class Matchmaker:
             return None
         players: list[uuid.UUID] = []
         teams: list[int] = []
+        parties: list[_Waiter] = []
         for team, side in enumerate(sides):
             for kind, leader, members in side:
-                (rooms if kind == "room" else self._queues[mode]).pop(leader)
+                waiter = (rooms if kind == "room" else self._queues[mode]).pop(leader)
                 if kind == "room":
+                    parties.append(waiter)
                     for pid in members:
                         self._party_of.pop(pid, None)
                         self._party_disconnected.discard(pid)
                 players.extend(members)
                 teams.extend([team] * len(members))
-        return players, teams
+        return players, teams, parties
 
-    def _form_party(self, players: list[uuid.UUID], teams: list[int],
+    def _form_party(self, players: list[uuid.UUID], teams: list[int], parties: list[_Waiter],
                     mode: str, now: float) -> list[tuple[uuid.UUID, dict]]:
         match_uid = new_match_uid()
         members = [_Member(pid, team) for pid, team in zip(players, teams, strict=True)]
-        pending = _Pending(match_uid, mode, members, now + ACCEPT_TIMEOUT_SEC)
+        pending = _Pending(match_uid, mode, members, now + ACCEPT_TIMEOUT_SEC, parties)
         self._pending[match_uid] = pending
         for member in members:
             self._pending_of[member.player_id] = match_uid
-        from app import party
-        party.current().finish_for_match(players)
+        # 队伍房间**留到六个人都确认**才关（_finalise）：确认阶段有人拒绝时，
+        # 队伍还要能整队放回队列、或整队回到房间（_dissolve）。
         return [(pid, found_message(match_uid, mode, ACCEPT_TIMEOUT_SEC)) for pid in players]
 
     def _take_group(self, mode: str, now: float) -> list[uuid.UUID] | None:
@@ -548,15 +582,44 @@ class Matchmaker:
 
         🔴 **没拒绝的那几个回队列最前面，而且不受任何惩罚。**
         他们已经等过一轮了，再排到队尾就是拿别人的锅罚他们。
+
+        🔴 **组队不拆**（10-08）。原来这里把每个人都当单人放回队列，而队伍房间在成桌时就关了
+        —— 三人队被拆成三个单排，下一局可能分到对面。现在按队伍处理：
+          · 队里没人拒绝：整队原样放回组队队列最前面；
+          · 队里有人拒绝 / 超时：整队回到队伍房间，不回队列。拒绝的人照罚，队友不罚 ——
+            替一个不想打的人接着排队，不是队友想要的。
         """
         self._pending.pop(pending.match_uid, None)
         bad = set(timed_out or [])
         if declined_by is not None:
             bad.add(declined_by)
         out: list[tuple[uuid.UUID, dict]] = []
-        queue = self._queues[pending.mode]
         for member in pending.members:
             self._pending_of.pop(member.player_id, None)
+        in_party: set[uuid.UUID] = set()
+        party_queue = self._party_queues[pending.mode]
+        # 倒着插到最前面：插完之后几支队伍之间的先后与原来一样。
+        for waiter in reversed(pending.parties):
+            in_party.update(waiter.party)
+            culprits = [pid for pid in waiter.party if pid in bad]
+            if culprits:
+                out.extend(self._party_back_to_room(waiter, culprits))
+                continue
+            leader = waiter.party[0]
+            waiter.dropped_at = 0.0
+            party_queue[leader] = waiter
+            party_queue.move_to_end(leader, last=False)
+            for pid in waiter.party:
+                self._party_of[pid] = leader
+        for waiter in pending.parties:
+            leader = waiter.party[0]
+            if leader in party_queue:
+                position = list(party_queue).index(leader) + 1
+                out.extend((pid, queued_message(position, pending.mode)) for pid in waiter.party)
+        queue = self._queues[pending.mode]
+        for member in pending.members:
+            if member.player_id in in_party:
+                continue
             if member.player_id in bad:
                 # 🔴 只罚没确认的那几个。另外五个一个字都不动 ——
                 # 他们已经等过排队、等过确认框了（第四节）。
@@ -572,8 +635,28 @@ class Matchmaker:
         log.info("对局解散 match=%s 拒绝/超时 %d 人", pending.match_uid, len(bad))
         return out
 
+    def _party_back_to_room(self, waiter: _Waiter,
+                            culprits: list[uuid.UUID]) -> list[tuple[uuid.UUID, dict]]:
+        """队里有人没接受：整队回队伍房间（房间还在 —— 成桌时不关，见 _form_party）。"""
+        from app import party
+        service = party.current()
+        room = next((r for r in (service.of(pid) for pid in waiter.party) if r is not None), None)
+        by_name = ""
+        if room is not None:
+            by_name = str(room.profiles.get(culprits[0], {}).get("player_name", ""))
+            service.mark_idle(room)
+            _spawn(service.broadcast(room))
+        out: list[tuple[uuid.UUID, dict]] = []
+        for pid in waiter.party:
+            if pid in culprits:
+                self._pending_penalties.append(pid)
+                out.append((pid, idle_message("declined")))
+            else:
+                out.append((pid, idle_message("party_declined", by_name=by_name)))
+        return out
+
     def _finalise(self, pending: _Pending) -> None:
-        """六个人都确认了：登记分配，等他们各自来领名片。"""
+        """六个人都确认了：登记分配，等他们各自来领名片。队伍房间这时才关。"""
         self._pending.pop(pending.match_uid, None)
         expires_at = self._now() + ASSIGNMENT_TTL_SEC
         for member in pending.members:
@@ -581,6 +664,9 @@ class Matchmaker:
             self._assignments[member.player_id] = Assignment(
                 match_uid=pending.match_uid, mode=pending.mode,
                 team=member.team, expires_at=expires_at)
+        if pending.parties:
+            from app import party
+            party.current().finish_for_match([m.player_id for m in pending.members])
         log.info("对局全员确认 match=%s mode=%s", pending.match_uid, pending.mode)
 
     def _position_updates(self, now: float) -> list[tuple[uuid.UUID, dict]]:

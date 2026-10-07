@@ -640,6 +640,10 @@ func start_party_match() -> Dictionary:
 func cancel_party_match() -> Dictionary:
 	return await _request(HTTPClient.METHOD_POST, "/v1/party/cancel", {}, true)
 
+# 房主把队员移出队伍（10-08）。
+func kick_party_member(code: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/party/kick", {"friend_code": code}, true)
+
 func send_party_chat(message: String) -> Dictionary:
 	return await _request(HTTPClient.METHOD_POST, "/v1/party/chat", {"text": message}, true)
 

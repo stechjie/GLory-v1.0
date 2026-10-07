@@ -631,6 +631,7 @@ func _build_slot(index: int) -> void:
 	material.shader = shader
 	avatar.material = material
 	_slot_avatars[index] = avatar
+	VoiceControls.attach_speaking_mic(avatar)
 	# 玩家的头像框。只画**自定义框**：默认框 / 没框时画的是上面那只金棕圆盘
 	# （10.02 改口径，与 MainMenu / ProfileScreen 完全一致 —— 那两处也只画自定义框，
 	# 默认框走「圆盘 + 大头像」这条路）。
@@ -1350,6 +1351,19 @@ func _build_voice_button() -> void:
 	_place_voice_button(_voice_controls.voice_button, VOICE_BTN_POS, VOICE_BTN_SIZE)
 	_place_voice_button(_voice_controls.audience_button, VOICE_AUDIENCE_POS, VOICE_AUDIENCE_SIZE)
 	_place_voice_button(_voice_controls.members_button, VOICE_MEMBERS_POS, VOICE_MEMBERS_SIZE)
+	# 座位头像上的「正在说话」小麦克风（10-08）。_process 在资源载入完会关掉，所以单独用计时器。
+	var speaking_timer := Timer.new()
+	speaking_timer.wait_time = SPEAKING_REFRESH_SEC
+	speaking_timer.autostart = true
+	speaking_timer.timeout.connect(_refresh_speaking)
+	add_child(speaking_timer)
+
+
+const SPEAKING_REFRESH_SEC := 0.2
+
+func _refresh_speaking() -> void:
+	for slot in _slot_avatars.size():
+		VoiceControls.show_speaking_mic(_slot_avatars[slot], VoiceService.slot_speaking(slot))
 
 func _place_voice_button(button: Button, pos: Vector2, size: Vector2) -> void:
 	# 同短语按钮：清掉 make_menu_button 设的最小尺寸，否则窗口缩小时被顶回原尺寸（见 _build_phrase_panel）。

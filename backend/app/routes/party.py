@@ -47,6 +47,10 @@ class ReadyBody(BaseModel):
     ready: bool
 
 
+class KickBody(BaseModel):
+    friend_code: str = Field(min_length=8, max_length=8)
+
+
 class ChatBody(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
 
@@ -276,6 +280,8 @@ async def leave(claims: Annotated[Claims, Depends(current_claims)]) -> StateResp
     room = service.of(me.player_id)
     if room is not None and room.queued:
         affected = matchmaking.current().leave_group(me.player_id)
+        # 已经凑成一桌、在等六个人确认时走开 = 拒绝这一桌：拆桌，队友整队回房间（matchmaking._dissolve）。
+        matchmaking.current().leave(me.player_id)
         service.mark_idle(room)
         # ★★ 10.07h 第 9(6) 条返工（用户真机反馈「其他成员取消了排位，但房主依然是
         #    显示匹配中，现改为：任意成员取消排位后，所有人返回房间，匹配中的弹窗
@@ -325,6 +331,32 @@ async def leave(claims: Annotated[Claims, Depends(current_claims)]) -> StateResp
                     })
             await service.broadcast(room)
     return StateResponse(state={"t": "party", "state": "none"})
+
+
+@router.post("/kick", response_model=StateResponse)
+async def kick(body: KickBody,
+               claims: Annotated[Claims, Depends(current_claims)]) -> StateResponse:
+    """房主把成员移出队伍（10-08，对齐自定义房间座位上的「×」）。"""
+    me = await _me(claims)
+    service = party.current()
+    room = service.of(me.player_id)
+    code = body.friend_code.strip().upper()
+    target = None
+    if room is not None:
+        target = next((pid for pid, card in room.profiles.items()
+                       if str(card.get("friend_code", "")).upper() == code), None)
+    if target is None:
+        raise HTTPException(status_code=409, detail="这位玩家已经不在队伍里")
+    try:
+        room = service.kick(me.player_id, target)
+    except party.PartyRejected as exc:
+        raise _reject(exc) from None
+    # 先说为什么、再说房间没了：客户端收到 closed 会去复查房间、退回主界面，提示要赶在那之前。
+    await realtime.hub().send_to_player(target, {
+        "t": "party_notice", "kind": "kicked", "text": "你被房主移出了队伍"})
+    await realtime.hub().send_to_player(target, {"t": "party", "state": "closed"})
+    await service.broadcast(room)
+    return StateResponse(state=service.snapshot(room))
 
 
 @router.put("/mode", response_model=StateResponse)
@@ -382,6 +414,8 @@ async def cancel(claims: Annotated[Claims, Depends(current_claims)]) -> StateRes
     except party.PartyRejected as exc:
         raise _reject(exc) from None
     members = matchmaking.current().leave_group(me.player_id)
+    # 确认阶段按取消 = 拒绝这一桌（同 leave 路由）：不拆的话那一桌会一直等他确认，超时还要罚他。
+    matchmaking.current().leave(me.player_id)
     if not members:
         # 兜底：匹配服务里已经查不到这条队列，也别把整队卡在 queued 上。
         members = room.members.copy()
@@ -404,6 +438,9 @@ async def start(claims: Annotated[Claims, Depends(current_claims)]) -> StateResp
     version = room.version
     if room.mode not in matchmaking.OPEN_MODES:
         raise HTTPException(status_code=409, detail="这个模式还未开放")
+    if len(members) not in matchmaking.PARTY_SIZES:
+        raise HTTPException(status_code=409, detail="只能单人或满 3 人开始匹配，再邀请一位好友吧",
+                            headers={"X-Glory-Reason": "party_size"})
     async with db.pool().acquire() as conn:
         for pid in members:
             reason = await ranked.queue_gate(conn, pid, room.mode)

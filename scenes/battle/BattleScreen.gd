@@ -880,6 +880,66 @@ func _setup_voice_controls() -> void:
 		add_child(control)
 		SafeArea.track(control)
 		top += VOICE_BTN_STEP
+	# 10-08：谁在说话。战斗界面没有头像，就在语音按钮下面列出来（小麦克风 + 名字），只列正在说的人。
+	_speaking_list = VBoxContainer.new()
+	_speaking_list.name = "SpeakingList"
+	_speaking_list.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	_speaking_list.offset_left = -16.0 - SPEAKING_ROW_SIZE.x
+	_speaking_list.offset_right = -16.0
+	_speaking_list.offset_top = top
+	_speaking_list.offset_bottom = top + SPEAKING_ROW_SIZE.y * 6.0
+	_speaking_list.add_theme_constant_override("separation", 4)
+	_speaking_list.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_speaking_list.z_index = 100
+	add_child(_speaking_list)
+	SafeArea.track(_speaking_list)
+	var speaking_timer := Timer.new()
+	speaking_timer.wait_time = 0.2
+	speaking_timer.autostart = true
+	speaking_timer.timeout.connect(_refresh_speaking_list)
+	add_child(speaking_timer)
+
+
+const SPEAKING_ROW_SIZE := Vector2(190, 32)
+var _speaking_list: VBoxContainer = null
+var _speaking_signature := ""
+
+func _refresh_speaking_list() -> void:
+	if _speaking_list == null or not is_instance_valid(_speaking_list):
+		return
+	var names: Array[String] = []
+	for slot in NetworkService.TEAM_SLOTS:
+		if VoiceService.slot_speaking(slot):
+			var me := slot == int(NetworkService.team_local_slot)
+			names.append(("Me" if LocaleManager.get_locale().begins_with("en") else "我") if me else VoiceService.member_name(slot))
+	var signature := "\n".join(names)
+	if signature == _speaking_signature:
+		return
+	_speaking_signature = signature
+	for child in _speaking_list.get_children():
+		_speaking_list.remove_child(child)
+		child.queue_free()
+	for speaker in names:
+		var row := HBoxContainer.new()
+		row.alignment = BoxContainer.ALIGNMENT_END
+		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.custom_minimum_size = SPEAKING_ROW_SIZE
+		var label := Label.new()
+		label.text = speaker
+		label.clip_text = true
+		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		label.add_theme_font_size_override("font_size", 18)
+		label.add_theme_color_override("font_color", VoiceControls.ACTIVE_COLOR)
+		label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+		label.add_theme_constant_override("outline_size", 5)
+		row.add_child(label)
+		var mic := Control.new()
+		mic.custom_minimum_size = Vector2(SPEAKING_ROW_SIZE.y, SPEAKING_ROW_SIZE.y)
+		mic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(mic)
+		VoiceControls.attach_speaking_mic(mic, 1.0)
+		VoiceControls.show_speaking_mic(mic, true)
+		_speaking_list.add_child(row)
 
 # Mirrors PrepScreen._setup_fps_overlay; positioned slightly off the top-left
 # corner (see bug report 9.9bug提交及修复08 #8 — old corner spot was hard to

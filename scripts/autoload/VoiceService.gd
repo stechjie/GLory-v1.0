@@ -11,7 +11,8 @@ extends Node
 #   录音 / 编码 / 网络 / 播放  各平台的桥接（安卓 Kotlin、电脑 C++ 扩展、苹果 Swift），都注册成同一个单例
 #                             Engine.get_singleton("GloryVoice")，方法见 BRIDGE_METHODS
 #   钥匙                       战斗服务器签发，只能进「本对局」的语音房间（NetworkService.team_request_voice_token）
-#   换队 / 离开时请出旧房间     战斗服务器做（钥匙只管进门）；这里只管自己跟上新队伍
+#   离开 / 被踢 / 被 AI 接管    战斗服务器把人请出语音房间（钥匙只管进门）
+#   换座（含跨队）               **不重连**：两队共用一个房间（协议 36），谁能听到我由 _apply_audience 每帧按座位重算
 #
 # 桥接的方法（名字刻意避开 Object 自带的 connect / disconnect）：
 #   hasRecordPermission() -> bool
@@ -90,15 +91,13 @@ var token_requester: Callable = Callable()
 
 var _bridge: Object = null
 var _joined := false          # 已让桥接进房（包括正在连）
-var _joined_team := -1        # 进的是哪一队的房间
 var _joined_listen_only := false
 var _room_name := ""
-# 最近一次拿到的钥匙：{url, token, room, team, at_msec}。换档重进时再用，见 TOKEN_REUSE_SEC。
+# 最近一次拿到的钥匙：{url, token, room, at_msec}。换档重进时再用，见 TOKEN_REUSE_SEC。
 var _token_cache: Dictionary = {}
 var _mic_on := false          # 已让桥接开麦
 var _awaiting_token := false
 var _awaiting_sec := 0.0
-var _requested_team := -1
 var _retry_index := 0
 var _retry_in := 0.0          # > 0：倒计时到了再要钥匙
 var _last_error := ""         # 给玩家看的原因（空 = 正常）
@@ -139,6 +138,8 @@ func is_supported() -> bool:
 
 
 func audience_label() -> String:
+	if lobby_open_to_room():
+		return _text("全房间", "Whole room")
 	return _text("队友", "Team") if audience == Audience.TEAM else _text("全部", "All")
 
 
@@ -294,6 +295,16 @@ func speaking_slots() -> Array[int]:
 	return out
 
 
+# 这个座位的人此刻在不在说话 —— 头像上的小麦克风用（VoiceControls.show_speaking_mic）。
+# 自己：开着麦、桥接说在说；别人：在说话名单里、没被我屏蔽（屏蔽了我也听不到，不该亮）。
+func slot_speaking(slot: int) -> bool:
+	if not _joined or slot < 0:
+		return false
+	if slot == int(NetworkService.team_local_slot):
+		return mode == Mode.TALK and bool(status().get("self_speaking", false))
+	return speaking_slots().has(slot) and not is_muted(slot)
+
+
 # 语音身份（好友码 / seat<N>）→ 座位号；对不上返回 -1。
 func identity_slot(identity: String) -> int:
 	if identity.begins_with("seat") and identity.substr(4).is_valid_int():
@@ -350,6 +361,24 @@ func _seat_key(slot: int) -> String:
 	return "slot:%d" % slot
 
 
+# 按好友码屏蔽 —— 组队房（PartyVoice）没有座位号，语音身份就是好友码。
+# 和座位上的屏蔽是**同一张表**：在组队房里屏蔽了谁，进了对局他还是被屏蔽的，反过来也一样。
+func is_code_muted(code: String) -> bool:
+	return _muted_keys.has("code:" + code.strip_edges())
+
+
+func set_code_muted(code: String, muted: bool) -> void:
+	var key := "code:" + code.strip_edges()
+	if code.strip_edges().is_empty() or muted == _muted_keys.has(key):
+		return
+	if muted:
+		_muted_keys[key] = true
+	else:
+		_muted_keys.erase(key)
+	_apply_volumes()
+	mutes_changed.emit()
+
+
 # 这个语音身份该不该静音：对得上座位就按座位判（含按座位号记的那条），对不上就按好友码判。
 func _identity_muted(identity: String) -> bool:
 	var slot := identity_slot(identity)
@@ -395,7 +424,7 @@ func teammates() -> Array[Dictionary]:
 
 
 func audience_members() -> Array[Dictionary]:
-	if audience == Audience.TEAM:
+	if not open_to_room():
 		return teammates()
 	var out: Array[Dictionary] = []
 	if not in_room():
@@ -439,14 +468,27 @@ func _team_audience_identities() -> Array[String]:
 func _apply_audience() -> void:
 	if not _joined or not is_supported():
 		return
+	var open := open_to_room()
 	var identities: Array[String] = []
-	if audience == Audience.TEAM:
+	if not open:
 		identities = _team_audience_identities()
-	var key := "%d:%s" % [audience, JSON.stringify(identities)]
+	var key := "%d:%s" % [1 if open else 0, JSON.stringify(identities)]
 	if key == _applied_audience:
 		return
-	_bridge.setAudience(audience == Audience.ALL, JSON.stringify(identities))
+	_bridge.setAudience(open, JSON.stringify(identities))
 	_applied_audience = key
+
+
+# 我的麦克风此刻是不是对全房间开放：自己选了「所有人」，或者在自定义房间开局前的大厅里。
+func open_to_room() -> bool:
+	return audience == Audience.ALL or lobby_open_to_room()
+
+
+# 用户 10-08 定（B 方案）：**自定义房间开局前**，全房间的人互相都听得到；开局后才按「队友 / 所有人」分。
+# 只管自定义房间 —— 匹配进来的房间（休闲 / 排位）里是陌生人，大厅阶段也只对队友说。
+# match_mode 为空（还不知道是什么房）按匹配房处理：宁可少开放。
+func lobby_open_to_room() -> bool:
+	return NetworkService.match_mode == "custom" and NetworkService.server_phase == NetworkService.ROOM_LOBBY
 
 
 # --- 每帧 ----------------------------------------------------------------------------
@@ -534,14 +576,12 @@ func _on_permission_result(permission: String, granted: bool) -> void:
 
 
 # 战斗服务器回了钥匙（或原因）。
-func _on_voice_token(url: String, token: String, room_name: String, error: String, token_team: int) -> void:
+# token_team 不看：两队共用一个房间，钥匙与队伍无关（换座不重连，见 _sync）。参数留着是因为信号带它。
+func _on_voice_token(url: String, token: String, room_name: String, error: String, _token_team: int) -> void:
 	if not _awaiting_token:
-		return   # 已经不要了（关了语音、换了队、超时之后才到）
-	if token_team >= 0 and token_team != _requested_team:
-		return
-	# 只接受当前对局的全员语音房，旧钥匙作废。
-	if error.is_empty() and (not room_name.begins_with("g%d-" % int(NetworkService.team_room_id))
-			or not room_name.ends_with("-all")):
+		return   # 已经不要了（关了语音、离开了房间、超时之后才到）
+	# 只接受当前对局的全员语音房，上一局的旧钥匙作废。
+	if error.is_empty() and not _is_current_room(room_name):
 		return
 	_awaiting_token = false
 	if mode == Mode.OFF or _bridge == null or not in_room():
@@ -549,16 +589,17 @@ func _on_voice_token(url: String, token: String, room_name: String, error: Strin
 	if not error.is_empty():
 		_token_failed(error)
 		return
-	var team := GameConstants.team_of_slot(int(NetworkService.team_local_slot))
-	if team != _requested_team:
-		return   # 要钥匙之后自己换了队：这张作废，下一帧 _sync 会重新要
-	_token_cache = {"url": url, "token": token, "room": room_name, "team": team, "at_msec": Time.get_ticks_msec()}
-	if _join(url, token, room_name, team, true):
+	_token_cache = {"url": url, "token": token, "room": room_name, "at_msec": Time.get_ticks_msec()}
+	if _join(url, token, room_name, true):
 		_sync_and_fallback()
 
 
+func _is_current_room(room_name: String) -> bool:
+	return room_name.begins_with("g%d-" % int(NetworkService.team_room_id)) and room_name.ends_with("-all")
+
+
 # 让桥接按当前档位进房。clear_error：拿新钥匙进房时清掉旧的出错原因；换档重进时保留（例如「麦克风被占用」要留给玩家看）。
-func _join(url: String, token: String, room_name: String, team: int, clear_error: bool) -> bool:
+func _join(url: String, token: String, room_name: String, clear_error: bool) -> bool:
 	var listen_only := mode == Mode.LISTEN
 	var code := str(_bridge.joinRoom(url, token, listen_only))
 	if not code.is_empty():
@@ -566,7 +607,6 @@ func _join(url: String, token: String, room_name: String, team: int, clear_error
 		_token_failed(code)
 		return false
 	_joined = true
-	_joined_team = team
 	_joined_listen_only = listen_only
 	_room_name = room_name
 	_mic_on = false
@@ -581,13 +621,13 @@ func _join(url: String, token: String, room_name: String, team: int, clear_error
 	return true
 
 
-# 换档重进：钥匙是本队的、还新，就直接再用，不去问战斗服务器。
-func _rejoin_from_cache(team: int) -> void:
-	if _token_cache.is_empty() or int(_token_cache.get("team", -1)) != team:
+# 换档重进：钥匙是本局的、还新，就直接再用，不去问战斗服务器。
+func _rejoin_from_cache() -> void:
+	if _token_cache.is_empty() or not _is_current_room(str(_token_cache.get("room", ""))):
 		return
 	if Time.get_ticks_msec() - int(_token_cache.get("at_msec", 0)) > int(TOKEN_REUSE_SEC * 1000.0):
 		return
-	_join(str(_token_cache.url), str(_token_cache.token), str(_token_cache.room), team, false)
+	_join(str(_token_cache.url), str(_token_cache.token), str(_token_cache.room), false)
 
 
 func _listen_mode_fixed() -> bool:
@@ -621,22 +661,18 @@ func _sync() -> String:
 		return ""
 	if not in_room():
 		return ""   # 重连、切场景的那一两秒：不动，等回来或等 LEAVE_GRACE_SEC 到点
-	var team := GameConstants.team_of_slot(int(NetworkService.team_local_slot))
-	if _joined and _joined_team != team:
-		# 自己跨队换了座：旧房间服务器会请他出去，这边也主动退，然后要新队伍的钥匙。
-		_leave()
-		_retry_in = 0.0
-		_retry_index = 0
+	# 换座（含跨队）在这里什么都不做：两队共用一个语音房间，连接不动；
+	# 新队伍谁能听到我，由 _apply_audience 按新座位重算（同一帧里就会调）。
 	if _joined and _listen_mode_fixed() and _joined_listen_only != (mode == Mode.LISTEN):
 		# 只听 ↔ 开麦：这个桥接的声音模式只能在进房时定（见文件头 listen_mode_fixed_at_join），退房再进。
 		_leave()
-		_rejoin_from_cache(team)
+		_rejoin_from_cache()
 		if not _joined:
 			_retry_in = 0.0
 			_retry_index = 0
 	if not _joined:
 		if not _awaiting_token and _retry_in <= 0.0:
-			_request_token(team)
+			_request_token()
 		return ""
 	var want_mic := mode == Mode.TALK
 	if want_mic == _mic_on:
@@ -659,10 +695,9 @@ func _sync_and_fallback() -> void:
 	mode_changed.emit(mode)
 
 
-func _request_token(team: int) -> void:
+func _request_token() -> void:
 	_awaiting_token = true
 	_awaiting_sec = 0.0
-	_requested_team = team
 	var sent := bool(token_requester.call()) if token_requester.is_valid() else NetworkService.team_request_voice_token()
 	if not sent:
 		_awaiting_token = false
@@ -699,7 +734,6 @@ func _leave() -> void:
 	if _joined and _bridge != null:
 		_bridge.leaveRoom()
 	_joined = false
-	_joined_team = -1
 	_joined_listen_only = false
 	_room_name = ""
 	_mic_on = false

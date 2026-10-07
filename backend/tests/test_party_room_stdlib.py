@@ -184,6 +184,38 @@ class PartyRoomRuleTests(unittest.TestCase):
             self.parties.queued_room(player(9))
         self.assertEqual(ctx.exception.code, "not_in_party")
 
+    # ---- 10-08 房主踢人 -------------------------------------------------
+    def test_host_can_kick_member(self):
+        guest = player(2)
+        room = self._room_with(guest, player(3))
+        room.ready.add(player(3))
+        epoch = room.voice_epoch
+        version = room.version
+        self.parties.kick(self.host, guest)
+        self.assertNotIn(guest, room.members)
+        self.assertNotIn(guest, room.profiles)
+        self.assertIsNone(self.parties.of(guest), "被踢的人不该再算在这个队伍里")
+        self.assertNotEqual(room.voice_epoch, epoch, "要换语音房间，旧钥匙进不了新房间")
+        self.assertFalse(room.ready, "人变了，准备状态要清掉")
+        self.assertGreater(room.version, version)
+
+    def test_member_cannot_kick(self):
+        guest = player(2)
+        self._room_with(guest, player(3))
+        with self.assertRaises(party.PartyRejected) as ctx:
+            self.parties.kick(guest, player(3))
+        self.assertEqual(ctx.exception.code, "not_host")
+
+    def test_kick_rejected_while_queued_or_self(self):
+        room = self._room_with(player(2))
+        with self.assertRaises(party.PartyRejected) as ctx:
+            self.parties.kick(self.host, self.host)
+        self.assertEqual(ctx.exception.code, "bad_target")
+        room.queued = True
+        with self.assertRaises(party.PartyRejected) as ctx:
+            self.parties.kick(self.host, player(2))
+        self.assertEqual(ctx.exception.code, "in_queue")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -107,8 +107,11 @@ func refresh() -> void:
 	if not VoiceService.last_error().is_empty():
 		voice_button.tooltip_text += "\n" + VoiceService.last_error()
 		audience_button.tooltip_text += "\n" + VoiceService.last_error()
-	members_button.text = _text("所有人", "All") if VoiceService.audience == VoiceService.Audience.ALL else _text("队友", "Team")
-	members_button.add_theme_color_override("font_color", ACTIVE_COLOR if VoiceService.audience == VoiceService.Audience.ALL else IDLE_COLOR)
+	if VoiceService.lobby_open_to_room():
+		members_button.text = _text("全房间", "Room")
+	else:
+		members_button.text = _text("所有人", "All") if VoiceService.audience == VoiceService.Audience.ALL else _text("队友", "Team")
+	members_button.add_theme_color_override("font_color", ACTIVE_COLOR if VoiceService.open_to_room() else IDLE_COLOR)
 
 func _set_icon(button: Button, key: String) -> void:
 	var art := button.get_node_or_null("VoiceIcon") as TextureRect
@@ -144,8 +147,8 @@ func request_talk() -> void:
 			"owner": _owner,
 			"title": _text("开麦需要麦克风权限", "Microphone permission"),
 			"body": _text(
-				"语音只在你开麦时使用麦克风。声音会实时传给当前选择的范围（队友或全部人），不录音、不保存。\n下一步系统会问你是否允许。",
-				"Voice uses the microphone only while your mic is on. Your voice goes to the selected audience (team or all) and is never recorded or stored.\nAndroid will ask for permission next."),
+				"语音只在你开麦时使用麦克风。自定义房间开局前，房间里所有人都能听到；开局后只传给你选的范围（队友或所有人）。不录音、不保存。\n下一步系统会问你是否允许。",
+				"Voice uses the microphone only while your mic is on. Before a custom match starts everyone in the room can hear you; after that only your chosen audience (team or all). Never recorded or stored.\nAndroid will ask for permission next."),
 			"confirm_text": _text("去开启", "Continue"),
 			"cancel_text": _text("先不用", "Not now"),
 			"on_result": _on_rationale_result,
@@ -191,6 +194,12 @@ func _on_members_pressed() -> void:
 
 func _on_audience_pressed() -> void:
 	SfxService.play(SfxService.CUE_VOICE_SWITCH)
+	if VoiceService.lobby_open_to_room():
+		# 开局前全房间互通，这时没有可选的：说清楚规则，不偷偷改一个开局后才生效的设置。
+		DialogService.info({"owner": _owner, "body": _text(
+			"开局前，房间里所有人都能互相听到。\n开局后默认只对队友说话，可以在对局里切到「所有人」。",
+			"Before the match starts, everyone in the room can hear each other.\nAfter it starts you talk to your team by default; switch to All during the match.")})
+		return
 	VoiceService.toggle_audience()
 	refresh()
 
@@ -211,3 +220,61 @@ func _apply_result(reason: String) -> void:
 
 func _text(zh: String, en: String) -> String:
 	return en if TranslationServer.get_locale().begins_with("en") else zh
+
+
+# --- 「谁在说话」的小麦克风 ---------------------------------------------------------------
+#
+# 10-08 用户要求：所有用到语音的地方，正在说话的人头像上要有个小麦克风，让人知道是谁在说。
+# 组队房、自定义房间座位、摆放界面的头像排都用这两个函数；战斗界面没有头像，单独列名字。
+# 图标用运行时 load()，不 preload：战斗服务器包不带导入过的贴图（服务器会冷启动失败）。
+
+const SPEAKING_NODE := "SpeakingMic"
+const SPEAKING_BG := Color(0.06, 0.12, 0.10, 0.92)
+
+
+# 在头像右下角挂一个（已经挂过就直接返回那一个）。fraction = 标记占头像边长的比例。
+# 全用锚点、不用像素：大厅的头像会随窗口缩放（_track），标记要跟着一起缩。头像都是正方形。
+static func attach_speaking_mic(avatar: Control, fraction: float = 0.36) -> Control:
+	var existing := avatar.get_node_or_null(SPEAKING_NODE) as Control
+	if existing != null:
+		return existing
+	var badge := Panel.new()
+	badge.name = SPEAKING_NODE
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# 拿现成的菜单按钮样式改色，不另写 StyleBoxFlat.new()（procedural_ui_ratchet 只许降不许升）。
+	var style := PrepWidgets.menu_button_style()
+	style.bg_color = SPEAKING_BG
+	style.border_color = ACTIVE_COLOR
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(999)
+	badge.add_theme_stylebox_override("panel", style)
+	_anchor_inside(badge, 1.0 - fraction, 1.0)
+	var icon := TextureRect.new()
+	icon.texture = load("res://assets/ui/voice/mic_on.svg")
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_anchor_inside(icon, 0.16, 0.84)
+	badge.add_child(icon)
+	badge.visible = false
+	avatar.add_child(badge)
+	return badge
+
+
+static func _anchor_inside(node: Control, start: float, end: float) -> void:
+	node.anchor_left = start
+	node.anchor_top = start
+	node.anchor_right = end
+	node.anchor_bottom = end
+	node.offset_left = 0
+	node.offset_top = 0
+	node.offset_right = 0
+	node.offset_bottom = 0
+
+
+static func show_speaking_mic(avatar: Control, speaking: bool) -> void:
+	if avatar == null or not is_instance_valid(avatar):
+		return
+	var badge := avatar.get_node_or_null(SPEAKING_NODE) as Control
+	if badge != null:
+		badge.visible = speaking

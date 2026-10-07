@@ -22,16 +22,26 @@ sys.modules["app.ranked"] = ranked
 
 party = types.ModuleType("app.party")
 finished = []
+idled = []
 
 
 class PartyStub:
     def finish_for_match(self, players):
         finished.append(players)
 
+    def of(self, _player):
+        return None
+
+    def mark_idle(self, room):
+        idled.append(room)
+
+    async def broadcast(self, _room):
+        return None
+
 
 party.current = lambda: PartyStub()
-sys.modules["app.party"] = party
 
+import app as app_package  # noqa: E402
 from app import matchmaking  # noqa: E402
 
 
@@ -39,9 +49,19 @@ def player(index):
     return uuid.UUID(int=index)
 
 
+TRIO = [player(1), player(2), player(3)]
+
+
 class PartyMatchTests(unittest.TestCase):
     def setUp(self):
+        # matchmaking 里是 `from app import party`（函数内现取）。整套 pytest 一起跑时，
+        # 别的测试先导入过真的 app.party，包上的 `party` 属性已经指向它 —— 只换 sys.modules 不够，
+        # 两处都换成桩，测完换回去（这一条原来在整套跑时必红）。
+        self._saved = (sys.modules.get("app.party"), getattr(app_package, "party", None))
+        sys.modules["app.party"] = party
+        app_package.party = party
         finished.clear()
+        idled.clear()
         self.sent = []
 
         async def send(pid, payload):
@@ -49,6 +69,26 @@ class PartyMatchTests(unittest.TestCase):
             return 1
 
         self.maker = matchmaking.Matchmaker(send, now=lambda: 100.0)
+
+    def tearDown(self):
+        module, attribute = self._saved
+        if module is None:
+            sys.modules.pop("app.party", None)
+        else:
+            sys.modules["app.party"] = module
+        if attribute is None:
+            if hasattr(app_package, "party"):
+                delattr(app_package, "party")
+        else:
+            app_package.party = attribute
+
+    def _match_trio_with_three_solos(self):
+        self.maker.join_group(TRIO.copy(), matchmaking.CASUAL)
+        for i in range(4, 7):
+            self.maker.join(player(i), matchmaking.CASUAL)
+        asyncio.run(self.maker.tick())
+        self.assertEqual(len(self.sent), 6)
+        self.sent.clear()
 
     def test_existing_solo_path(self):
         for i in range(1, 7):
@@ -58,24 +98,63 @@ class PartyMatchTests(unittest.TestCase):
         self.assertEqual({msg["state"] for _, msg in self.sent}, {"found"})
         self.assertFalse(finished)
 
-    def test_two_person_party_stays_together_with_four_solos(self):
-        self.maker.join_group([player(1), player(2)], matchmaking.CASUAL)
-        for i in range(3, 7):
-            self.maker.join(player(i), matchmaking.CASUAL)
-        asyncio.run(self.maker.tick())
-        self.assertEqual(len(self.sent), 6)
+    def test_two_person_party_is_rejected(self):
+        # 只能单排或满 3 人（docs/排位系统设计.md；10-08 休闲也一样）。
+        with self.assertRaises(ValueError):
+            self.maker.join_group([player(1), player(2)], matchmaking.CASUAL)
+        self.assertEqual(self.maker.state_of(player(1))["state"], "idle")
+
+    def test_trio_stays_together_and_room_closes_only_after_all_accept(self):
+        self._match_trio_with_three_solos()
+        teams = {self.maker._pending[self.maker._pending_of[pid]].member(pid).team for pid in TRIO}
+        self.assertEqual(len(teams), 1)
+        # 成桌时不关队伍房间：确认阶段有人拒绝，队伍还要能整队放回去。
+        self.assertFalse(finished)
+        for i in range(1, 7):
+            self.maker.accept(player(i))
         self.assertEqual(len(finished), 1)
-        self.assertEqual({self.maker._pending[self.maker._pending_of[player(i)]].member(player(i)).team
-                          for i in (1, 2)}, {0})
+
+    def test_solo_decline_puts_trio_back_as_a_trio(self):
+        self._match_trio_with_three_solos()
+        self.maker.leave(player(4))
+        queue = self.maker._party_queues[matchmaking.CASUAL]
+        self.assertEqual(list(queue), [player(1)])
+        self.assertEqual(queue[player(1)].party, TRIO)
+        for pid in TRIO:
+            self.assertEqual(self.maker.state_of(pid)["state"], "queued")
+            self.assertNotIn(pid, self.maker._queues[matchmaking.CASUAL])
+        self.assertEqual(self.maker._pending_penalties, [player(4)])
+        self.assertFalse(finished)
+
+    def test_decline_inside_trio_sends_trio_back_to_room(self):
+        self._match_trio_with_three_solos()
+        self.maker.leave(player(2))
+        for pid in TRIO:
+            self.assertEqual(self.maker.state_of(pid)["state"], "idle")
+        self.assertFalse(self.maker._party_queues[matchmaking.CASUAL])
+        # 只罚拒绝的那一个，队友不罚；另外三个单人回队列最前面。
+        self.assertEqual(self.maker._pending_penalties, [player(2)])
+        for i in range(4, 7):
+            self.assertEqual(self.maker.state_of(player(i))["state"], "queued")
+
+    def test_timeout_messages_keep_trio_together(self):
+        self._match_trio_with_three_solos()
+        self.maker.accept(player(1))
+        self.maker._now = lambda: 100.0 + matchmaking.ACCEPT_TIMEOUT_SEC + 1.0
+        asyncio.run(self.maker.tick())
+        states = {pid: msg for pid, msg in self.sent}
+        self.assertEqual(states[player(1)]["state"], "idle")
+        self.assertEqual(states[player(1)].get("reason"), "party_declined")
+        self.assertEqual(states[player(2)].get("reason"), "declined")
 
     def test_cancelling_party_clears_all_members(self):
-        self.maker.join_group([player(1), player(2)], matchmaking.CASUAL)
-        self.assertEqual(self.maker.leave_group(player(2)), [player(1), player(2)])
-        self.assertEqual(self.maker.state_of(player(1))["state"], "idle")
-        self.assertEqual(self.maker.state_of(player(2))["state"], "idle")
+        self.maker.join_group(TRIO.copy(), matchmaking.CASUAL)
+        self.assertEqual(self.maker.leave_group(player(2)), TRIO)
+        for pid in TRIO:
+            self.assertEqual(self.maker.state_of(pid)["state"], "idle")
 
     def test_party_only_resumes_after_all_disconnected_members_return(self):
-        self.maker.join_group([player(1), player(2)], matchmaking.CASUAL)
+        self.maker.join_group(TRIO.copy(), matchmaking.CASUAL)
         self.maker.on_disconnect(player(1))
         self.maker.on_disconnect(player(2))
         self.maker.state_of(player(1))
