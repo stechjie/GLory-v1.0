@@ -94,6 +94,15 @@ class AssetPrecedenceTests(unittest.TestCase):
             inventory.update(f"{relative.as_posix()}\t{path.stat().st_size}\t{build.digest(path)}\n".encode())
         self.assertEqual(report["actual_assets_sha256"], inventory.hexdigest())
 
+    def test_delivery_backups_are_excluded_and_old_stage_backups_ignored(self):
+        self.put(self.project / "delivery/backup/BattleSimulator.gd", "class_name BattleSimulator", 0)
+        self.stage_once()
+        self.assertFalse((self.stage / "delivery").exists())
+        old = self.put(self.stage / "delivery/old.gd", "class_name BattleSimulator", 0)
+        self.stage_once()
+        self.assertTrue((self.stage / "delivery/.gdignore").is_file())
+        self.assertEqual(old.read_text(), "class_name BattleSimulator")
+
     def test_project_newer_or_equal_wins_and_strictly_newer_resource_wins(self):
         for project_time, resource_time, selected, reason in (
             (20, 10, "project", "project_newer"),

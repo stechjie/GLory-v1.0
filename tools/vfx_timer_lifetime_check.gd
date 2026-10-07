@@ -30,4 +30,17 @@ func run() -> void:
 	normal.play_arc(Vector3(0, 2, 0), Vector3.ZERO)
 	await get_tree().create_timer(1.0).timeout
 	h.expect(not is_instance_valid(normal), "normal_completion", "An attached effect still finishes and releases itself")
+	# Check the actual composer too: it extends Node3D, not VFXBlockRoot.
+	var boss_script: Script = load("res://effects/vfx3d/boss/BossSkillVFXComposer3D.gd")
+	h.expect(boss_script != null and boss_script.can_instantiate(), "boss_compiles", "Boss composer must resolve all helper calls")
+	var hit_script: Script = load("res://effects/vfx3d/modules/VFXHitStopController.gd")
+	var hit: Node = hit_script.new()
+	add_child(hit)
+	var original_scale := Engine.time_scale
+	hit.play_hit_stop(0.075, 0.08)
+	await get_tree().create_timer(0.25, true, false, true).timeout
+	h.expect(is_equal_approx(Engine.time_scale, original_scale), "hit_stop_real_time", "Hit stop must restore time scale in real time, not slowed game time")
+	if is_instance_valid(hit):
+		hit.free()
+	Engine.time_scale = original_scale
 	h.finish(get_tree())

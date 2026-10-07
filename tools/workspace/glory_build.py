@@ -392,12 +392,16 @@ def stage_project(project, assets, stage, logdir):
     desired, descriptors, report = plan_asset_merge(project, assets)
     stage.mkdir(parents=True, exist_ok=True)
     excluded = ["/.git", "/.godot", "/assets", "/build", "/backups", "/captures", "/reports", "/logs",
-                "/work", "/backend", "/android", "/.claude", "/.codex", "/certs", "*.pem", "*.key", ".env*",
+                "/delivery", "/work", "/backend", "/android", "/.claude", "/.codex", "/certs", "*.pem", "*.key", ".env*",
                 "*.apk", "*.zip", "__pycache__", ".DS_Store", "upload ssh code.txt"]
     command = ["rsync", "-ac", "--delete", "--safe-links"]
     for value in excluded:
         command += ["--exclude", value]
     subprocess.run(command + [str(project) + "/", str(stage) + "/"], check=True)
+    # Older staging runs copied diagnostic backups; rsync preserves excluded paths.
+    # Ignore them in a reused stage without deleting any evidence.
+    if (stage / "delivery").is_dir():
+        (stage / "delivery/.gdignore").touch(exist_ok=True)
     asset_stage = stage / "assets"
     inputs_path = stage.parent / "asset-input-hashes.json"
     previous_inputs = json.loads(inputs_path.read_text()) if inputs_path.is_file() else {}

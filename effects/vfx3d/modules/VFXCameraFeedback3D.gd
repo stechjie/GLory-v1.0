@@ -30,7 +30,7 @@ func play_feedback(camera: Camera3D, profile: VFXProfile3D = null) -> void:
 	_elapsed = 0.0
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	set_process(true)
-	if not await wait_for(_duration, true):
+	if not await wait_for(_duration, true, true):
 		return
 	_restore_camera()
 	finish()

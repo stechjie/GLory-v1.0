@@ -14,7 +14,7 @@ func play_hit_stop(duration := 0.075, reduced_scale := 0.08) -> void:
 	_previous_scale = Engine.time_scale
 	_active = true
 	Engine.time_scale = clampf(reduced_scale, 0.01, 1.0)
-	if not await wait_for(duration, true):
+	if not await wait_for(duration, true, true):
 		return
 	_restore_time_scale()
 	finish()

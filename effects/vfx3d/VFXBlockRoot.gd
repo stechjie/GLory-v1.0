@@ -100,13 +100,13 @@ func _exit_tree() -> void:
 # Timer awaits can outlive a VFX node when a scene changes or a pooled block is
 # released. Capture the SceneTree before creating the timer so a detached node
 # never calls get_tree().create_timer() through a stale coroutine.
-func wait_for(seconds: float, process_always := false) -> bool:
+func wait_for(seconds: float, process_always := true, ignore_time_scale := false) -> bool:
 	if not is_inside_tree() or is_queued_for_deletion():
 		return false
 	var tree := get_tree()
 	if tree == null:
 		return false
-	var timer := tree.create_timer(maxf(seconds, 0.0), process_always)
+	var timer := tree.create_timer(maxf(seconds, 0.0), process_always, false, ignore_time_scale)
 	await timer.timeout
 	return is_inside_tree() and not is_queued_for_deletion()
 
