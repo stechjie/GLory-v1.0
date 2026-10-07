@@ -2,33 +2,33 @@
  "meshes": [
   {
    "name": "output_unwrapped",
-   "fit_residual": 1.1204321060885864e-06,
+   "fit_residual": 1.1202678237968053e-06,
    "vertices_before": 30770,
-   "vertices_after": 7002,
+   "vertices_after": 12588,
    "triangles_before": 15187,
-   "triangles_after": 3036
+   "triangles_after": 6111
   },
   {
    "name": "output_unwrapped.001",
-   "fit_residual": 3.3014014704633833e-07,
+   "fit_residual": 3.301150593823871e-07,
    "vertices_before": 16752,
-   "vertices_after": 6060,
+   "vertices_after": 2717,
    "triangles_before": 10450,
-   "triangles_after": 3249
+   "triangles_after": 1848
   },
   {
    "name": "output_unwrapped.002",
-   "fit_residual": 2.4370295858007937e-07,
+   "fit_residual": 2.4364335861198923e-07,
    "vertices_before": 18781,
-   "vertices_after": 1499,
+   "vertices_after": 3729,
    "triangles_before": 10307,
-   "triangles_after": 669
+   "triangles_after": 2138
   }
  ],
  "skins": [
   {
    "joints": 40,
-   "bind_spread": 1.8126667950577574e-06,
+   "bind_spread": 1.8126667951610942e-06,
    "rebased": true,
    "M": [
     [
@@ -58,6 +58,40 @@
    ]
   }
  ],
+ "surface_preparation": "weld_matching_skin_weights_then_recalculate",
+ "repacked_uv": true,
+ "normal_repair": {
+  "source_sha256": "a84f1a42f7cc694379e3407849110a40c386285c3e50ee4d45ebc8c27f75ff10",
+  "output_sha256": "988ba177eb617b85b40897f17e68e9653fb1d00d2ebb932ed99d7d073efec52c",
+  "non_normal_bytes_identical": true,
+  "crease_degrees": 75,
+  "meshes": [
+   {
+    "vertices": 12588,
+    "triangles": 6111,
+    "joined_edges": 5380,
+    "flat_faces_before": 229,
+    "flat_faces_after": 76,
+    "changed_normals": 3546
+   },
+   {
+    "vertices": 2717,
+    "triangles": 1848,
+    "joined_edges": 2136,
+    "flat_faces_before": 3,
+    "flat_faces_after": 1,
+    "changed_normals": 54
+   },
+   {
+    "vertices": 3729,
+    "triangles": 2138,
+    "joined_edges": 2079,
+    "flat_faces_before": 30,
+    "flat_faces_after": 10,
+    "changed_normals": 561
+   }
+  ]
+ },
  "textures": [
   {
    "material": "Material.001",
@@ -67,7 +101,8 @@
     1024,
     1024
    ],
-   "normal": "dancer_m0_normal.png"
+   "normal": "dancer_m0_normal.png",
+   "normal_map_enabled": false
   },
   {
    "material": "Material.002",
@@ -77,7 +112,8 @@
     1024,
     1024
    ],
-   "normal": "dancer_m1_normal.png"
+   "normal": "dancer_m1_normal.png",
+   "normal_map_enabled": false
   },
   {
    "material": "Material.003",
@@ -87,7 +123,8 @@
     1024,
     1024
    ],
-   "normal": "dancer_m2_normal.png"
+   "normal": "dancer_m2_normal.png",
+   "normal_map_enabled": false
   }
  ],
  "materials": [

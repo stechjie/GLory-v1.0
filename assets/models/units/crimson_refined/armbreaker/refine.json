@@ -2,19 +2,19 @@
  "meshes": [
   {
    "name": "output_unwrapped",
-   "fit_residual": 3.6471075509623467e-07,
+   "fit_residual": 3.646561119082919e-07,
    "vertices_before": 11816,
-   "vertices_after": 11827,
+   "vertices_after": 11893,
    "triangles_before": 5560,
    "triangles_after": 5560
   },
   {
    "name": "output_unwrapped.001",
-   "fit_residual": 1.903091017814412e-07,
+   "fit_residual": 1.9039943153020717e-07,
    "vertices_before": 11503,
-   "vertices_after": 3508,
+   "vertices_after": 6480,
    "triangles_before": 6424,
-   "triangles_after": 1554
+   "triangles_after": 3078
   }
  ],
  "skins": [
@@ -51,11 +51,37 @@
   },
   {
    "joints": 27,
-   "bind_spread": 3.0195112841186955e-07,
+   "bind_spread": 3.0195112832309266e-07,
    "rebased": false,
    "M": null
   }
  ],
+ "surface_preparation": "weld_matching_skin_weights_then_recalculate",
+ "repacked_uv": false,
+ "normal_repair": {
+  "source_sha256": "ec9ee9360fd0e73dcaecb3ebe3e41cff4e8106472034e9d35ed31919e368e7b9",
+  "output_sha256": "fe831197a34ee711787ba9b69d2adc2b97572309c695da10092ce3ce98c6229f",
+  "non_normal_bytes_identical": true,
+  "crease_degrees": 75,
+  "meshes": [
+   {
+    "vertices": 11893,
+    "triangles": 5560,
+    "joined_edges": 5575,
+    "flat_faces_before": 91,
+    "flat_faces_after": 35,
+    "changed_normals": 1146
+   },
+   {
+    "vertices": 6480,
+    "triangles": 3078,
+    "joined_edges": 3765,
+    "flat_faces_before": 5,
+    "flat_faces_after": 0,
+    "changed_normals": 149
+   }
+  ]
+ },
  "textures": [
   {
    "material": "Material.001",

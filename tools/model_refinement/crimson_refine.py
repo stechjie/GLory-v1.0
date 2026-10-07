@@ -21,6 +21,7 @@ import copy
 import io
 import json
 import struct
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -454,7 +455,10 @@ def main() -> None:
     doc, blob = read_glb(project / ORIGINAL.format(unit=unit))
     folder = project / REFINED_DIR.format(unit=unit)
     folder.mkdir(parents=True, exist_ok=True)
-    out, out_blob, report = refined_glb(doc, blob, np.load(args.dump))
+    dump = np.load(args.dump)
+    out, out_blob, report = refined_glb(doc, blob, dump)
+    report["surface_preparation"] = "weld_matching_skin_weights_then_recalculate" if "repacked_uv" in dump else "legacy"
+    report["repacked_uv"] = bool(dump["repacked_uv"]) if "repacked_uv" in dump else False
     write_glb(folder / f"{unit}_refined.glb", out, out_blob)
     # Meshy exports split almost every painted triangle. Smooth continuous fans
     # after decimation without re-exporting skins, UVs or animation channels.
@@ -465,6 +469,16 @@ def main() -> None:
     report["normal_repair"] = {k: normal_report[k] for k in
         ("source_sha256", "output_sha256", "non_normal_bytes_identical", "crease_degrees", "meshes")}
     report["textures"] = textures(doc, blob, unit, folder)
+    if report["repacked_uv"]:
+        for row in report["textures"]:
+            baked = Path(str(Path(args.dump).with_suffix("")) + f"_m{row['index']}_albedo.png")
+            with Image.open(baked) as image:
+                if max(image.size) > MAX_TEXTURE or image.mode not in ("RGB", "RGBA"):
+                    raise RuntimeError(f"Invalid runtime albedo bake: {baked}")
+            shutil.copyfile(baked, folder / row["albedo"])
+            # A tangent-space normal map belongs to its original UV chart basis.
+            # Never use the old map with the repacked UVs.
+            row["normal_map_enabled"] = False
     report["materials"] = [m.get("name") for m in doc["materials"]]
     (folder / "refine.json").write_text(json.dumps(report, ensure_ascii=False, indent=1) + "\n", encoding="utf-8", newline="\n")
     print(f"CRIMSON_REFINE {unit} " + json.dumps({"meshes": report["meshes"], "rebased": [s["rebased"] for s in report["skins"]]}))

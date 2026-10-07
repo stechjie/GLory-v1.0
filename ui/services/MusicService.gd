@@ -209,7 +209,7 @@ static func _sync_voice_volume() -> void:
 	var voice := VoiceService.status()
 	var talking := VoiceService.mode == VoiceService.Mode.TALK \
 		and str(voice.get("state", "")) == "connected" and bool(voice.get("mic_on", false))
-	_player.volume_linear = 0.5 if talking else 1.0
+	_player.volume_linear = (1.0 / 6.0) if talking else 1.0
 
 
 # 建播放器。**挂载一律走 `add_child.call_deferred`** —— 同 SfxService：

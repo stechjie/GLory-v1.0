@@ -99,5 +99,24 @@ func run() -> void:
 	server.test_time += 120.0
 	server._cleanup_rooms()
 	h.expect(not server._rooms.has(alive.id), "periodic_cleanup", "Periodic cleanup closes the empty room without any resume RPC")
+	# AI seats never extend room lifetime, including a departed human already
+	# replaced by AI. Exercise the periodic path in every started-match phase.
+	for phase in [server.ROOM_PREP, server.ROOM_BATTLE, server.ROOM_RESULT]:
+		var ai_room := fixture(client)
+		ai_room.state = phase
+		ai_room.slot_states = ["dummy", "dummy", "dummy", "dummy", "dummy", "dummy"]
+		var departed_at: float = ai_room.empty_since
+		server._cleanup_rooms()
+		h.expect(server._room_online_count(ai_room) == 0 and ai_room.suspended,
+			"ai_only_suspended_%s" % phase, "Six AI seats count as zero online humans")
+		server.test_time = departed_at + 119.999
+		server._cleanup_rooms()
+		h.expect(server._rooms.has(ai_room.id) and ai_room.state == phase,
+			"ai_only_grace_%s" % phase, "The room remains recoverable without advancing AI rounds before 120 seconds")
+		server.test_time = departed_at + 120.0
+		server._cleanup_rooms()
+		h.expect(not server._rooms.has(ai_room.id) and not server._token_seat.has("expiry_token")
+			and not server._public_token_seat.has("ABCDEFGHJK"),
+			"ai_only_expired_%s" % phase, "At 120 seconds the AI-only room and recovery credentials are reclaimed")
 	await cleanup()
 	h.finish(get_tree())

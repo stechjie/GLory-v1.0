@@ -38,9 +38,9 @@ func _ready() -> void:
 	for sample in [
 		[VoiceService.Mode.LISTEN, false, "connected", 1.0],
 		[VoiceService.Mode.TALK, false, "connected", 1.0],
-		[VoiceService.Mode.TALK, true, "connected", 0.5],
+		[VoiceService.Mode.TALK, true, "connected", 1.0 / 6.0],
 		[VoiceService.Mode.TALK, true, "reconnecting", 1.0],
-		[VoiceService.Mode.TALK, true, "connected", 0.5],
+		[VoiceService.Mode.TALK, true, "connected", 1.0 / 6.0],
 		[VoiceService.Mode.LISTEN, true, "connected", 1.0],
 		[VoiceService.Mode.OFF, false, "disconnected", 1.0],
 	]:
