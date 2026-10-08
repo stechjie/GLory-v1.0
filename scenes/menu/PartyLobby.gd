@@ -35,6 +35,19 @@ const Presentation := preload("res://effects/runtime/presentation/PresentationSe
 # 「房主更换了休闲/排位模式」这类临时提示在房间里停留多久。
 const NOTICE_SEC := 4.0
 const SPEAKING_REFRESH_SEC := 0.2
+# 在线状态推送的事件名。必须和 backend/app/presence.py 的 PRESENCE_EVENT 一致。
+const PRESENCE_PUSH := "presence"
+# 好友列表的兜底轮询。
+#
+# 🔴 **推送不能取代它。** 推送只覆盖「上线 / 换房间」—— 这两件事有 HTTP 请求可挂。
+# **「下线」没有事件**：进程被杀、网断了，客户端不会发「我下线了」，离线是服务端
+# 按 TTL 推算的。所以离线多久能显示出来，等于这个轮询周期，和另外两个好友界面
+# （FriendsScreen / Team3v3Lobby）保持一致的 5 秒。
+#
+# 这个常量之前**根本不存在** —— 组队房只在 _ready() 里拉一次好友，谁上线都不会变。
+# 而这个界面的「邀请」按钮是 `disabled = not online`，所以一个其实已经上线、却被
+# 显示成离线的好友**根本邀请不了**（不是文字不好看，是这个界面的主要动作被卡住）。
+const FRIENDS_REFRESH_SEC := 5.0
 # 只能单人或满 3 人开始匹配（docs/排位系统设计.md；服务器 matchmaking.PARTY_SIZES 同口径）。
 const STARTABLE_SIZES := [1, 3]
 # 10-08 用户要求：**所有按键大小照自定义房间**（Team3v3Lobby）走，图案不变。
@@ -63,6 +76,7 @@ var _invite_id := ""
 var _preview := ""
 var _room: Dictionary = {}
 var _friends: Array = []
+var _friends_busy := false
 var _local_only := true
 var _load_error := ""
 var _loading_room := false
@@ -163,6 +177,13 @@ func _ready() -> void:
 		_show_local_identity()
 		_load_room()
 		_load_friends()
+		# 兜底轮询：推送只管上线 / 换房间，下线没有事件可挂（见 FRIENDS_REFRESH_SEC）。
+		# 只在真实模式起 —— _preview 那条路的好友是写死的假数据，拉一次就被盖掉。
+		var friends_timer := Timer.new()
+		friends_timer.wait_time = FRIENDS_REFRESH_SEC
+		friends_timer.autostart = true
+		friends_timer.timeout.connect(_load_friends)
+		add_child(friends_timer)
 
 
 func _exit_tree() -> void:
@@ -695,7 +716,13 @@ func _fetch_or_create_party() -> Dictionary:
 
 
 func _load_friends() -> void:
+	# 并发守卫：5 秒一拍的轮询 + 推送触发的立即重拉，遇上慢网会叠在一起。
+	# 同 FriendsScreen._reload 的 _busy 与 Team3v3Lobby 的 _friends_loading。
+	if _friends_busy:
+		return
+	_friends_busy = true
 	var result: Dictionary = await AccountManager.fetch_friends()
+	_friends_busy = false
 	if not is_inside_tree():
 		return
 	if int(result.get("code", 0)) == 200:
@@ -737,6 +764,15 @@ func _refresh_room_now() -> void:
 
 func _on_realtime(payload: Dictionary) -> void:
 	var kind := str(payload.get("t", ""))
+	if kind == PRESENCE_PUSH:
+		# 好友上线 / 换房间（backend/app/presence.py 的 _notify_watchers）。
+		#
+		# 推送只当**失效信号**用，不拿它里面的字段去打补丁：三个界面各写一份
+		# 增量合并，就有三份会和拉回来的数据分叉的机会，而分叉的症状是
+		# 「列表闪一下又变回去」。重新拉一次最简单，也不会有第二个真相。
+		# 并发由 _load_friends 自己的 _friends_busy 挡（好几个好友同时上线时）。
+		_load_friends()
+		return
 	if kind == "party":
 		if str(payload.get("state", "")) == "room":
 			_apply(payload)
@@ -1349,6 +1385,10 @@ func _toggle_friends_drawer() -> void:
 	_friends_drawer.visible = not _friends_drawer.visible
 	_friend_rail.visible = not _friends_drawer.visible
 	_friends_toggle.visible = not _friends_drawer.visible
+	# 刚点开就该是新的，不用等下一个轮询周期。原来这个函数只翻 visible ——
+	# 配上「只在 _ready() 里拉一次」，抽屉里看到的就是进房那一刻的快照。
+	if _friends_drawer.visible and _preview == "":
+		_load_friends()
 
 
 func _toggle_pets_drawer() -> void:

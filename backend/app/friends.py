@@ -216,6 +216,28 @@ where f.status = 'accepted' and (f.low_id = $1 or f.high_id = $1)
 order by p.player_name, p.friend_code
 """
 
+# 「我上线 / 换房间了，该通知谁」—— 只要 player_id，不要资料也不要 presence。
+# 扇出一次就查一次，所以这条必须窄：好友列表那条带 players 的 join 和 presence 的
+# left join，在这里是纯浪费（推送的内容说的是**我自己**的状态，不是他们的）。
+_PRESENCE_WATCHERS = """
+select case when f.low_id = $1 then f.high_id else f.low_id end as watcher_id
+from player_friendships f
+where f.status = 'accepted' and (f.low_id = $1 or f.high_id = $1)
+"""
+
+
+async def presence_watchers(conn, player_id: uuid.UUID) -> list[uuid.UUID]:
+    """谁该收到这个人的在线状态变化。
+
+    读留在 friends.py（本文件顶部那条分工），推送由 presence.py 发 ——
+    那边负责「什么时候算变了」，这里只回答「变了通知谁」。
+
+    **传 conn 进来、不自己开连接**：调用方（presence.heartbeat）已经握着一条，
+    而心跳是这套系统里唯一的高频写，不该为了一次扇出再去池里拿一条。
+    """
+    rows = await conn.fetch(_PRESENCE_WATCHERS, player_id)
+    return [r["watcher_id"] for r in rows]
+
 
 async def list_friends(player_id: uuid.UUID) -> list[FriendSummary]:
     async with db.pool().acquire() as conn:

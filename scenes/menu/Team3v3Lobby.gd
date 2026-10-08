@@ -5,6 +5,8 @@ signal back_requested
 signal selftest_requested
 
 const REF_SIZE := Vector2(1672.0, 941.0)
+# 在线状态推送的事件名。必须和 backend/app/presence.py 的 PRESENCE_EVENT 一致。
+const PRESENCE_PUSH := "presence"
 const SLOT_LABELS := ["A", "B", "C", "1", "2", "3"]
 const SLOT_POS := [
 	Vector2(447, 229), Vector2(739, 229), Vector2(1015, 229),
@@ -66,6 +68,14 @@ var _invite_last_sec := 0
 var _invite_last_room_id := 0
 # (房间号:好友码) -> true。同一房间对同一位好友只发一次邀请消息。
 var _invited_pairs: Dictionary = {}
+
+# 好友上线 / 换房间的推送。只当**失效信号**用，不拿 payload 里的字段打补丁 ——
+# 三个界面各写一份增量合并就有三份和拉回来的数据分叉的机会，而分叉的症状是
+# 「列表闪一下又变回去」。并发由 _reload_online_friends 自己的 _friends_loading 挡。
+func _on_presence_push(payload: Dictionary) -> void:
+	if str(payload.get("t", "")) == PRESENCE_PUSH:
+		_reload_online_friends()
+
 
 func _reload_online_friends() -> void:
 	if _friends_loading or not AccountManager.is_logged_in():
@@ -397,6 +407,10 @@ func _ready() -> void:
 		NetworkService.team_lobby_changed.connect(_on_session_changed)
 	if not NetworkService.team_start_requested.is_connected(_on_team_start_requested):
 		NetworkService.team_start_requested.connect(_on_team_start_requested)
+	# 好友上线 / 换房间的推送（backend/app/presence.py）。下面那个 5 秒轮询仍然留着 ——
+	# 推送只覆盖上线，**下线没有事件可挂**（见 PartyLobby.FRIENDS_REFRESH_SEC 的说明）。
+	if not RealtimeService.message_received.is_connected(_on_presence_push):
+		RealtimeService.message_received.connect(_on_presence_push)
 	if not NetworkService.room_chat_log.entry_added.is_connected(_on_chat_logged):
 		NetworkService.room_chat_log.entry_added.connect(_on_chat_logged)
 	_build()
@@ -481,6 +495,8 @@ func _notification(what: int) -> void:
 		_layout()
 
 func _exit_tree() -> void:
+	if RealtimeService.message_received.is_connected(_on_presence_push):
+		RealtimeService.message_received.disconnect(_on_presence_push)
 	if SafeArea.changed.is_connected(_layout):
 		SafeArea.changed.disconnect(_layout)
 	if NetworkService.session_changed.is_connected(_on_session_changed):
