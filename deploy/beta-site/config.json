@@ -1,5 +1,8 @@
 {
-  "ios": {"ready": false, "url": ""},
+  "ios": {
+    "ready": true,
+    "url": "https://testflight.apple.com/join/W2p1ukJp"
+  },
   "android": {
     "ready": false,
     "mode": "group",
