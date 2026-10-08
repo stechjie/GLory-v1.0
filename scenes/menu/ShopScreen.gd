@@ -535,6 +535,12 @@ func _reload() -> void:
 		_set_notice(str(catalog.get("error", _t("商城打不开", "The shop failed to load"))), true)
 		_render()
 		return
+	var server_balance_version := str((catalog.get("body", {}) as Dictionary).get("balance_version", ""))
+	var local_balance_version := str(DataRegistry.get_table("final_status").get("balance_version", ""))
+	if not server_balance_version.is_empty() and server_balance_version != local_balance_version:
+		push_warning("Shop final status version differs: client=%s server=%s" % [
+			local_balance_version, server_balance_version])
+		_set_notice(_t("商城数值版本与当前游戏不同，请更新游戏", "Shop balance version differs; please update the game"), true)
 	# 这个包里没有图的棋盘皮肤不上架：买了也显示不出来（新皮肤要等玩家换新包）。
 	_items = ((catalog.get("body", {}) as Dictionary).get("items", []) as Array).filter(
 		func(item: Variant) -> bool:

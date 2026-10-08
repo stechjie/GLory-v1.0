@@ -33,7 +33,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
-from app import client_version, db, players, shop, pet_draw
+from app import balance_version, client_version, db, players, shop, pet_draw
 from app.jwt_verify import Claims
 from app.rate_limit import RateLimited, SlidingWindowLimiter
 from app.routes.me import current_claims
@@ -95,6 +95,7 @@ class ShopResponse(BaseModel):
     顶层数组会静默变成空（同 test_friends 钉着的那条）。"""
 
     items: list[ItemModel]
+    balance_version: str
 
 
 class WalletResponse(BaseModel):
@@ -228,7 +229,8 @@ async def catalog(x_glory_client: Annotated[str | None, Header()] = None) -> Sho
     旧包不认识的不发给它（visible_to）。
     """
     kinds = client_version.kinds_of(x_glory_client)
-    return ShopResponse(items=[ItemModel(**vars(i)) for i in shop.items() if visible_to(i, kinds)])
+    return ShopResponse(items=[ItemModel(**vars(i)) for i in shop.items() if visible_to(i, kinds)],
+                        balance_version=balance_version.current())
 
 
 @router.get("/me/wallet", response_model=WalletResponse)

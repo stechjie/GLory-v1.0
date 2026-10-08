@@ -68,6 +68,7 @@ func load_all() -> void:
 		"reads": _file_reads,
 		"elapsed_ms": snappedf(elapsed_ms, 0.1),
 		"failed": failed_files.size(),
+		"balance_version": str(get_table("final_status").get("balance_version", "")),
 	})
 	ready_changed.emit(state)
 

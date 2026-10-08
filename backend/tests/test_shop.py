@@ -215,8 +215,9 @@ def test_new_avatar_frames_cost_600_coins_and_require_ownership() -> None:
     avatars = json.loads((REPO / "data" / "avatars.json").read_text(encoding="utf-8"))
     frame_ids = {entry["id"] for entry in avatars["frames"]}
     sold = [item for item in catalog["items"] if item["id"].startswith("shop_frame_")]
-    assert len(sold) == 5
-    assert len({item["grants"] for item in sold}) == 5
+    assert len(sold) == 6
+    assert any(item["id"] == "shop_frame_pink_sakura" for item in sold)
+    assert len({item["grants"] for item in sold}) == 6
     for item in sold:
         assert item["kind"] == "avatar_frame"
         assert item["currency"] == "coin"

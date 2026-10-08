@@ -1,21 +1,24 @@
 """Export the presentation catalog from docs/balance/final status.xlsx.
 
-Usage: python tools/export_final_status.py [--check]
+Usage: python tools/export_final_status.py [--apply-runtime | --check]
 Requires openpyxl. The workbook is the editable source; the JSON is packaged by Godot.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 from pathlib import Path
 
 from openpyxl import load_workbook
 
+from final_runtime import (FILES, check_business_pages, check_code_rules,
+                           check_runtime_files, parse_code_rules, parse_runtime_sheet)
+
 ROOT = Path(__file__).resolve().parents[1]
 BOOK = ROOT / "docs/balance/final status.xlsx"
 OUTPUT = ROOT / "data/balance/final_status.json"
-SHOP = ROOT / "data/shop.json"
 
 
 def records(ws):
@@ -30,6 +33,14 @@ def text(value):
 
 def build():
     wb = load_workbook(BOOK, read_only=True, data_only=True)
+    tables = parse_runtime_sheet(wb)
+    rules = parse_code_rules(wb)
+    code_errors = check_code_rules(ROOT, rules)
+    if code_errors:
+        raise ValueError("final workbook code rules disagree with source:\n" + "\n".join(code_errors))
+    page_errors = check_business_pages(wb, tables)
+    if page_errors:
+        raise ValueError("final workbook pages disagree with 90_运行配置:\n" + "\n".join(page_errors[:20]))
     source_cell = text(wb["00_版本与口径"]["C5"].value)
     runtime_cell = text(wb["00_版本与口径"]["B6"].value)
     source_hash = re.search(r"[0-9a-f]{64}", source_cell)
@@ -95,7 +106,7 @@ def build():
             "name_cn": text(r[1]), "requires_cn": text(r[2]),
             "effect_cn": text(r[4]),
         }
-    for item in json.loads(SHOP.read_text(encoding="utf-8"))["items"]:
+    for item in tables["data/shop.json"]["items"]:
         out["shop_items"][item["id"]] = {
             "kind": item["kind"], "grants": item["grants"],
             "currency": item["currency"], "price": item["price"],
@@ -107,24 +118,43 @@ def build():
     for key, count in expected.items():
         if len(out[key]) != count:
             raise ValueError(f"{key}: expected {count}, got {len(out[key])}")
-    return out
+    payload = json.dumps({"display": out, "runtime": tables, "code_rules": rules}, ensure_ascii=False,
+                         sort_keys=True, separators=(",", ":")).encode("utf-8")
+    out["balance_version"] = hashlib.sha256(payload).hexdigest()
+    out["final_workbook_sha256"] = hashlib.sha256(BOOK.read_bytes()).hexdigest()
+    return out, tables
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true",
                         help="Fail when JSON differs from the workbook")
+    parser.add_argument("--apply-runtime", action="store_true",
+                        help="Write approved runtime JSON tables from the workbook")
     args = parser.parse_args()
-    generated = build()
+    if args.check and args.apply_runtime:
+        parser.error("--check and --apply-runtime cannot be combined")
+    generated, tables = build()
     if args.check:
         current = json.loads(OUTPUT.read_text(encoding="utf-8"))
-        if current != generated:
-            raise SystemExit("final_status.json differs from final status.xlsx")
+        runtime_errors = check_runtime_files(ROOT, tables)
+        if current != generated or runtime_errors:
+            details = ["final_status.json differs from final status.xlsx"] if current != generated else []
+            details.extend(runtime_errors[:20])
+            raise SystemExit("\n".join(details))
         print("FINAL_STATUS_EXPORT_CHECK_OK")
     else:
+        if args.apply_runtime:
+            for relative in FILES:
+                path = ROOT / relative
+                current = json.loads(path.read_text(encoding="utf-8-sig"))
+                if current != tables[relative]:
+                    path.write_text(json.dumps(tables[relative], ensure_ascii=False, indent=2) + "\n",
+                                    encoding="utf-8", newline="\n")
+                    print(f"Updated runtime {relative}")
         OUTPUT.parent.mkdir(parents=True, exist_ok=True)
         OUTPUT.write_text(json.dumps(generated, ensure_ascii=False, indent=2) + "\n",
-                          encoding="utf-8")
+                          encoding="utf-8", newline="\n")
         print(f"Exported {OUTPUT}")
 
 

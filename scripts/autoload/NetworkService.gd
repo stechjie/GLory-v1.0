@@ -615,7 +615,8 @@ func _ready() -> void:
 	# 房间服务只注入**行为**（时钟/日志/分片号）；房间域常量在服务里、门面重新导出。
 	# TEAM_SLOTS / ROOM_LOBBY / ROOM_RESULT / RESERVE_GRACE_SEC 留在门面
 	# （内部 43/24/11/5 处引用、外部还有引用），按配置传进去。
-	_transport.configure(_net_log, NetworkTransport.rpc_contract(get_script()))
+	_transport.configure(_net_log, NetworkTransport.rpc_contract(get_script()),
+		str(DataRegistry.get_table("final_status").get("balance_version", "")))
 	_match_state.configure(_now)
 	# 先配 ReconnectService：它持有 token 索引，RoomService 要注入它才能读写。
 	_reconnect_service.configure(_now, _net_log, {
@@ -716,7 +717,8 @@ func _setup_auth() -> void:
 		scene_mp.peer_authentication_failed.connect(_on_peer_authentication_failed)
 
 func _client_hello_bytes() -> PackedByteArray:
-	return NetworkTransport.client_hello_bytes(NetworkTransport.rpc_contract(get_script()))
+	return NetworkTransport.client_hello_bytes(NetworkTransport.rpc_contract(get_script()),
+		str(DataRegistry.get_table("final_status").get("balance_version", "")))
 
 func _on_peer_authenticating(id: int) -> void:
 	if _dedicated_server:

@@ -121,6 +121,15 @@
 			"enabled": false,
 			"name": "老虎",
 			"name_en": "Tiger"
+		},
+		{
+			"id": "shop_frame_pink_sakura",
+			"kind": "avatar_frame",
+			"grants": "preset:avatar_frame_shop_06",
+			"currency": "coin",
+			"price": 600,
+			"name": "樱晶蝶语",
+			"name_en": "Sakura Crystal"
 		}
 	]
 }

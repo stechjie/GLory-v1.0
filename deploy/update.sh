@@ -114,6 +114,7 @@ main() {
 	#                        starter_ids 有两处定义的话，迟早出现
 	#                        「客户端让选、服务端说不是新手宠物」。
 	#   data/seven_day_login.json  七天奖励与服务器游戏日时区。
+	#   data/balance/final_status.json  与客户端、专服核对的数值版本。
 	#
 	# **只复制后端需要的文件，不复制整个 data/。** 运行目录只放后端真正要用的东西 ——
 	# 整个 data/ 是全套游戏数值表（单位、宝物、回合、AI 曲线），后端一个都不读，
@@ -121,7 +122,7 @@ main() {
 	mkdir -p "$REPO/data"
 	# 列表里允许带子目录（pets/pets.json），所以每个文件各自 mkdir 一次父目录 ——
 	# 上面那个 mkdir 只建了 data/ 本身。
-	for f in avatars.json blocked_words.txt shop.json seven_day_login.json pets/pets.json; do
+	for f in avatars.json blocked_words.txt shop.json seven_day_login.json pets/pets.json balance/final_status.json; do
 		if [[ -f "$SRC/data/$f" ]]; then
 			mkdir -p "$(dirname "$REPO/data/$f")"
 			rsync -a "$SRC/data/$f" "$REPO/data/$f"

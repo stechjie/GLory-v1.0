@@ -258,7 +258,14 @@ def main() -> None:
         parser.error("--godot must name the matching console binary for a verified candidate")
     if args.smoke_seconds < 3:
         parser.error("--smoke-seconds must be at least 3")
+    # Stop a candidate when the editable final workbook and packaged JSON diverge.
+    balance_check = subprocess.run(
+        [sys.executable, str(source / "tools/export_final_status.py"), "--check"],
+        cwd=source, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if balance_check.returncode != 0:
+        raise ValueError("Final status gate failed: " + balance_check.stdout.strip())
     files = selected_files(source)
+    balance_version = json.loads(files["data/balance/final_status.json"])["balance_version"]
     source_hash = tree_hash(files)
     git_sha = run(["git", "-C", str(source), "rev-parse", "HEAD"]).stdout.decode().strip()
     git_dirty = bool(run(["git", "-C", str(source), "status", "--porcelain", "--untracked-files=normal"]).stdout)
@@ -281,7 +288,7 @@ def main() -> None:
     report_dir.mkdir()
     manifest = {"schema_version": 1, "built_utc": stamp, "protocol": protocol,
                 "git_sha": git_sha, "git_dirty": git_dirty, "source_tree_sha256": source_hash,
-                "godot_version": godot_version, "entry_scene": ENTRY,
+                "balance_version": balance_version, "godot_version": godot_version, "entry_scene": ENTRY,
                 "class_cache": {"generated_from_current_source": True, "named_classes": class_count},
                 "production_application_settings_preserved": True,
                 "project_derivations": ["default ServerMain entry", "flush dedicated stdout", "remove boot splash image/icon", "disable editor addon"],
@@ -313,7 +320,7 @@ def main() -> None:
     summary = {"bundle": str(final_zip), "sha256": digest(final_zip.read_bytes()),
                "bytes": final_zip.stat().st_size, "file_count": len(files),
                "source_tree_sha256": source_hash, "git_sha": git_sha, "git_dirty": git_dirty,
-               "godot_version": godot_version, "candidate_verified": bool(result["passed"]),
+               "balance_version": balance_version, "godot_version": godot_version, "candidate_verified": bool(result["passed"]),
                "smoke": result, "evidence_directory": str(report_dir)}
     (report_dir / "build.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n")
     (out_dir / (name + ".sha256")).write_text(summary["sha256"] + "  " + final_zip.name + "\n")

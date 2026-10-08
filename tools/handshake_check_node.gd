@@ -12,6 +12,7 @@ extends Node
 #
 # 用法：godot --headless --path <proj> tools/handshake_check.tscn -- --hs-case=ok|bad|silent
 
+const Transport := preload("res://scripts/multiplayer/NetworkTransport.gd")
 const PORT := 8091
 const CASE_TIMEOUT_SEC := 14.0
 
@@ -67,6 +68,9 @@ func _client_authenticating(id: int) -> void:
 			_client_mp.send_auth(id, NetworkService._client_hello_bytes())
 		"contract":
 			_client_mp.send_auth(id, var_to_bytes({"protocol": NetworkConfig.NETWORK_PROTOCOL_VERSION, "rpc_contract": "different-table"}))
+		"balance":
+			_client_mp.send_auth(id, Transport.client_hello_bytes(
+				Transport.rpc_contract(NetworkService.get_script()), "different-balance"))
 		"bad":
 			# 伪造一个不同的协议号 —— 模拟"旧客户端连新服务器"
 			_client_mp.send_auth(id, var_to_bytes({
@@ -97,7 +101,7 @@ func _finish() -> void:
 		"ok":
 			ok = _connected and _rejected.is_empty()
 			detail = "connected=%s rejected=%s" % [_connected, _rejected]
-		"bad", "contract":
+		"bad", "contract", "balance":
 			# 必须被拒、且**没有建立连接**，还要带上可读的原因
 			ok = (not _connected) and _rejected == "protocol_mismatch"
 			detail = "connected=%s rejected=%s (want protocol_mismatch)" % [_connected, _rejected]

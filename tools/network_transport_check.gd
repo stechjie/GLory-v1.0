@@ -30,6 +30,7 @@ func _run() -> void:
 	_check_hello_round_trip()
 	_check_server_accepts_matching_protocol()
 	_check_rpc_contract()
+	_check_balance_version()
 	_check_server_rejects_mismatched_protocol()
 	_check_server_rejects_oversized()
 	_check_server_rejects_garbage()
@@ -64,6 +65,21 @@ func _check_server_accepts_matching_protocol() -> void:
 	var svc := _make()
 	var v: Dictionary = svc.server_verdict(Transport.client_hello_bytes(), 42)
 	_h.expect(bool(v.get("accept", false)), "server_rejects_valid", "协议号一致的握手应放行")
+
+
+func _check_balance_version() -> void:
+	var expected := str(DataRegistry.get_table("final_status").get("balance_version", ""))
+	_h.expect(expected.length() == 64, "balance_version_present", "final status must carry a SHA-256 balance version")
+	var svc: RefCounted = Transport.new()
+	svc.configure(func(msg: String) -> void: _logs.append(msg), "", expected)
+	var matching: Dictionary = svc.server_verdict(Transport.client_hello_bytes("", expected), 42)
+	_h.expect(bool(matching.get("accept", false)), "balance_version_match", "Matching final status versions must connect")
+	var wrong: Dictionary = svc.server_verdict(Transport.client_hello_bytes("", "different"), 42)
+	_h.expect(not bool(wrong.get("accept", true)) and wrong.get("code", "") == "protocol_mismatch",
+		"balance_version_mismatch", "Different final status versions must be rejected")
+	var missing: Dictionary = svc.server_verdict(Transport.client_hello_bytes(), 42)
+	_h.expect(not bool(missing.get("accept", true)), "balance_version_missing",
+		"Clients without a final status version must be rejected by a versioned server")
 
 
 # 放行版本不匹配的客户端，会让两个版本进同一房间，症状是各种诡异的状态错乱 ——

@@ -132,6 +132,7 @@ const FRAME_HOLE_FRAC := {
 	"avatar_frame_shop_03": 0.5998,
 	"avatar_frame_shop_04": 0.6122,
 	"avatar_frame_shop_05": 0.5741,
+	"avatar_frame_shop_06": 0.5581,
 }
 
 # 内孔圆心相对**素材图心**的偏移，以图宽 / 图高为单位的分数。
@@ -151,6 +152,7 @@ const FRAME_HOLE_OFFSET := {
 	"avatar_frame_shop_03": Vector2(0.00012, 0.01123),
 	"avatar_frame_shop_04": Vector2(0.00228, -0.00272),
 	"avatar_frame_shop_05": Vector2(-0.01201, -0.00679),
+	"avatar_frame_shop_06": Vector2(-0.00233, -0.00505),
 }
 # 表里没有的框（美术刚加、还没量）：按默认圆盘估。宁可差一点，也不能算出 0 宽度。
 const FRAME_HOLE_FALLBACK := 0.6271

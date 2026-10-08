@@ -48,6 +48,12 @@
 			"name": "炽焰之心",
 			"name_en": "Inferno Heart",
 			"source": "res://assets/ui/shop/headframes/inferno.png"
+		},
+		{
+			"id": "avatar_frame_shop_06",
+			"name": "樱晶蝶语",
+			"name_en": "Sakura Crystal",
+			"source": "res://assets/ui/shop/headframes/pink_sakura.png"
 		}
 	],
 	"avatars": [

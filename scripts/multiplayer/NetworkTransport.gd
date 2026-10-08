@@ -38,11 +38,13 @@ const AUTH_MAX_PENDING := 64
 
 var _log_fn: Callable = Callable()
 var _rpc_contract := ""
+var _balance_version := ""
 
 
-func configure(log_fn: Callable, contract: String = "") -> void:
+func configure(log_fn: Callable, contract: String = "", balance_version: String = "") -> void:
 	_log_fn = log_fn
 	_rpc_contract = contract
+	_balance_version = balance_version
 
 
 func _log(message: String) -> void:
@@ -71,8 +73,11 @@ static func rpc_contract(script: Script) -> String:
 			str(result.get("class_name", "")), (method.get("default_args", []) as Array).size()]
 	return JSON.stringify({"rpc": config, "signatures": signatures}, "", true).sha256_text()
 
-static func client_hello_bytes(contract: String = "") -> PackedByteArray:
-	return var_to_bytes({"protocol": NetworkConfig.NETWORK_PROTOCOL_VERSION, "rpc_contract": contract})
+static func client_hello_bytes(contract: String = "", balance_version: String = "") -> PackedByteArray:
+	var hello := {"protocol": NetworkConfig.NETWORK_PROTOCOL_VERSION, "rpc_contract": contract}
+	if not balance_version.is_empty():
+		hello["balance_version"] = balance_version
+	return var_to_bytes(hello)
 
 
 static func auth_reject_bytes(code: String) -> PackedByteArray:
@@ -112,6 +117,11 @@ func server_verdict(data: PackedByteArray, peer_id: int) -> Dictionary:
 		var msg3 := "auth rejected peer=%d reason=rpc_contract_mismatch" % peer_id
 		_log(msg3)
 		return {"accept": false, "code": "protocol_mismatch", "log": msg3}
+	if not _balance_version.is_empty() and str(hello.get("balance_version", "")) != _balance_version:
+		var msg4 := "auth rejected peer=%d reason=balance_version_mismatch client=%s server=%s" % [
+			peer_id, str(hello.get("balance_version", "")), _balance_version]
+		_log(msg4)
+		return {"accept": false, "code": "protocol_mismatch", "log": msg4}
 	return {"accept": true, "code": "", "log": ""}
 
 
