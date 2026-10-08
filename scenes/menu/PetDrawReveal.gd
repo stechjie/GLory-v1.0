@@ -72,9 +72,10 @@ func show_pet_info(pet_id: String, _owned: bool) -> void:
 	_phase = "info"
 	_clear()
 	_add_label(PetService.display_name(pet_id), 30)
-	_panel.position = Vector2(490, 80)
-	_panel.size = Vector2(620, 560)
-	var art := PetPreview.build_illustration(pet_id, Vector2(210, 150))
+	var english := LocaleManager.get_locale().begins_with("en")
+	_panel.position = Vector2(490, 70 if english else 80)
+	_panel.size = Vector2(620, 625 if english else 560)
+	var art := PetPreview.build_illustration(pet_id, Vector2(210, 140 if english else 150))
 	art.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_content.add_child(art)
 	var reading_plate := PanelContainer.new()
@@ -85,7 +86,7 @@ func show_pet_info(pet_id: String, _owned: bool) -> void:
 	var detail := RichTextLabel.new()
 	detail.bbcode_enabled = true
 	detail.scroll_active = true
-	detail.custom_minimum_size = Vector2(0, 220)
+	detail.custom_minimum_size = Vector2(0, 285 if english else 220)
 	detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	detail.add_theme_font_size_override("normal_font_size", 18)
 	detail.add_theme_color_override("default_color", Tokens.SUMMON_DETAIL_INK)
