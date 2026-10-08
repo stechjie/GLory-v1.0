@@ -1,0 +1,9 @@
+{
+  "ios": {"ready": false, "url": ""},
+  "android": {
+    "ready": false,
+    "mode": "group",
+    "url": "https://play.google.com/apps/internaltest/4701302260400909295",
+    "group_url": ""
+  }
+}

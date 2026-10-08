@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="referrer" content="no-referrer">
+  <title>GLory · 加入游戏测试</title>
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <main>
+    <div class="brand">GLory <span>AUTO CHESS</span></div>
+    <p class="eyebrow">抢先体验 · 一起完善游戏</p>
+    <h1>下一场对局，<br>等你加入。</h1>
+    <p class="intro">选择你的设备，前往官方平台安装测试版。</p>
+    <p id="status" role="status" aria-live="polite">正在检查测试入口…</p>
+    <aside id="browser-help" hidden>请点击右上角菜单，选择“在浏览器中打开”。iPhone 使用 Safari，Android 使用 Chrome。</aside>
+    <section aria-label="选择测试平台">
+      <article id="ios-card">
+        <p class="platform">iPhone / iPad</p>
+        <h2>TestFlight 测试</h2>
+        <p>先安装 Apple TestFlight，再接受测试邀请并安装 GLory。</p>
+        <a id="ios-link" class="button disabled" aria-disabled="true">测试邀请准备中</a>
+      </article>
+      <article id="android-card">
+        <p class="platform">Android</p>
+        <h2>Google Play 测试</h2>
+        <p id="android-help">需要 Google 账号及支持 Google Play 的设备。</p>
+        <a id="group-link" class="button" hidden>1. 加入测试群组</a>
+        <a id="android-link" class="button disabled" aria-disabled="true">测试邀请准备中</a>
+      </article>
+    </section>
+    <p class="note">测试版可能存在问题。请留意游戏内公告，并将体验反馈给邀请你的主播。</p>
+    <noscript><p>请开启浏览器的 JavaScript，以显示经过验证的测试邀请入口。</p></noscript>
+    <footer>GLory · 期待与你相遇</footer>
+  </main>
+</body>
+</html>
