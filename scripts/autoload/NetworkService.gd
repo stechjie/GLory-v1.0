@@ -68,9 +68,36 @@ var _match_check_result := ""
 # 只给「退出对局」确认框说会不会扣分用（MatchExitPenalty），并随重连凭证落盘 —— app 重开后要用。
 var match_mode := ""
 
+# 状态查询的结果该不该直接放行「开新局」。判定是纯的，所以抽出来让门禁直接验
+# （同 ConnectionHealth 的做法：判定纯函数化，执行留在门面）。
+#
+# lobby 和 clear 一样放行，**不弹确认框**：大厅座位没有判负也没有扣分，没什么要
+# 他确认的（同重连面板「还在房间里没开打」那条分支的口径）。旧座位由服务器在他
+# 入座新房间时按账号 id 释放（_release_stale_seats_for_pid），「开始新游戏」那条
+# 路还会额外发一次 _rpc_abandon_seat。
+#
+# ⚠️ 协议 40 新增的 lobby 必须在这里显式认掉。漏了它，在自定义房间里坐过的人
+# **建房 / 开始游戏 / 排队会全被「暂时无法确认对局状态」堵死** —— 比幽灵座位严重得多。
+static func status_allows_new_match(status: String) -> bool:
+	return status == "clear" or status == "lobby"
+
+# 状态查询回来之后，对本地重连凭证做什么。"" = 什么都不做。
+#
+# 🔴 **lobby 必须是 ""。** 这正是改协议 40 之前的缺陷所在：大厅座位被答成 clear、
+# 凭证当场被删，玩家落在主界面没有任何路回到那个房间。
+# 而打 match_started 也不行 —— 那会让重连面板给出「退出对局」并弹判负 / 扣分确认。
+static func credential_action_for_status(status: String) -> String:
+	match status:
+		"clear":
+			return "clear_reconnect"
+		"active":
+			return "mark_match_started"
+		_:
+			return ""
+
 func allow_new_match() -> bool:
 	var result := await check_saved_match()
-	if result == "clear":
+	if status_allows_new_match(result):
 		return true
 	if result != "active":
 		DialogService.info({"request_id": "active_match_guard", "title": "提示", "body": "暂时无法确认对局状态，请检查网络后重试", "owner": self})
@@ -154,21 +181,74 @@ func check_saved_match() -> String:
 	# Never erase credentials that changed while this request was in flight.
 	if str(SaveManager.load_reconnect().get("token", "")) != token:
 		return "unknown"
-	if result == "clear":
-		SaveManager.clear_reconnect()
-	elif result == "active":
-		SaveManager.mark_match_started()
+	# 做什么由 credential_action_for_status 判（纯函数、有用例），这里只执行。
+	# "lobby"（协议 40）落在「什么都不做」那一档：
+	#   凭证留着 —— 主菜单那颗键靠 load_resumable_reconnect() 决定可见，删了玩家就
+	#               没有任何路回到那个房间（_resume_seat 本来就支持大厅座位，
+	#               Main._on_resume_completed 也会按 phase 落回房间界面）。
+	#   不打标记 —— match_started 是「这一局开打了」，会把重连面板的键变成
+	#               「退出对局」并弹判负 / 扣分确认框。只坐过房间的人不该看到那个。
+	match credential_action_for_status(result):
+		"clear_reconnect":
+			SaveManager.clear_reconnect()
+		"mark_match_started":
+			SaveManager.mark_match_started()
 	return result
+
+# 这个房间里是不是有一局**还打得下去**的对局。
+#
+# ⚠️ 大厅不算「进行中」。离开大厅座位不丢任何东西（房间还在、还能再进去），
+# 所以大厅座位可以释放；而把人从真正在打的局里拽出来，对同房另外五个人
+# 等于「别人替他跑路」，绝不能做。_release_stale_seats_for_pid 就是按这条分流的。
+#
+# 从 _active_match_for_token 抽出来的：现在有两个调用方（token 一条、账号 id 一条），
+# 判据只能有一份 —— 两份一定会分叉。
+func _room_is_active_match(room: Dictionary) -> bool:
+	if room.is_empty() or str(room.get("state", ROOM_LOBBY)) in [ROOM_LOBBY, ROOM_CLOSED] \
+			or bool(room.get("run_over", false)):
+		return false
+	# 全房没人在线、且已经过了恢复窗口：这局事实上已经没了，正在等 cleanup_rooms 收。
+	if _room_online_count(room) == 0 and float(room.get("empty_since", 0.0)) > 0.0 \
+			and _now() - float(room.empty_since) >= _room_service.suspend_grace_sec(room):
+		return false
+	return true
 
 func _active_match_for_token(token: String) -> Dictionary:
 	var seat: Dictionary = _token_seat.get(token, {})
 	var room: Dictionary = _rooms.get(int(seat.get("room_id", 0)), {})
-	if room.is_empty() or str(room.get("state", ROOM_LOBBY)) in [ROOM_LOBBY, ROOM_CLOSED] or bool(room.get("run_over", false)):
-		return {}
-	if _room_online_count(room) == 0 and float(room.get("empty_since", 0.0)) > 0.0 \
-			and _now() - float(room.empty_since) >= _room_service.suspend_grace_sec(room):
-		return {}
-	return room
+	return room if _room_is_active_match(room) else {}
+
+# 这个 token 现在是什么处境。三态，**不是两态**（协议 40）。
+#
+# 以前这里回的是 `_active_match_for_token` 的布尔值，而它把大厅当成「没有进行中的
+# 对局」—— 于是在自定义房间里杀进程、重开之后，客户端问到的答案是 `clear`，
+# 当场 `SaveManager.clear_reconnect()` 删掉凭证：玩家落在主界面、连个「返回房间」
+# 的按钮都没有，而服务器那边还替他占着座位。两边对「这个座位算不算数」判断相反。
+#
+# 🔴 **大厅不能并进 active。** 客户端收到 active 会 `mark_match_started()`，
+# 而那个标记决定重连面板给的是「退出对局」（弹判负 / 扣分确认）还是
+# 「取消并返回主菜单」（不罚、座位直接放掉）。只在房间里坐过的人被弹判负框是真伤害。
+#
+# 也**不能**让 ACTIVE_MATCH_HINT 那几道闸改用这个判据：大厅座位必须允许被顶掉 /
+# 释放，否则一个幽灵座位就能让本人永远建不了新房（见 _release_stale_seats_for_pid）。
+# 所以这是独立的第三个判据，只服务于状态查询。
+func _match_status_for_token(token: String) -> String:
+	if not _active_match_for_token(token).is_empty():
+		return "active"
+	var seat: Dictionary = _token_seat.get(token, {})
+	if seat.is_empty():
+		return "clear"
+	var room: Dictionary = _rooms.get(int(seat.get("room_id", 0)), {})
+	# 房间没了 / 已关 / 对局已结束：凭证真的死了，客户端该删。
+	if room.is_empty() or str(room.get("state", ROOM_LOBBY)) == ROOM_CLOSED \
+			or bool(room.get("run_over", false)):
+		return "clear"
+	# 只剩大厅这一种。开局中的阶段上面那句 _active_match_for_token 已经答过了；
+	# 它答 false 而房间又在 prep/battle/result，说明这房间空置超时、正等着被回收 ——
+	# 那也是「死了」，别让玩家点一个注定失败的重连。
+	if str(room.get("state", ROOM_LOBBY)) != ROOM_LOBBY:
+		return "clear"
+	return "lobby"
 
 @rpc("any_peer", "call_remote", "reliable")
 func _rpc_match_status_request(request_id: String, token: String) -> void:
@@ -178,12 +258,20 @@ func _rpc_match_status_request(request_id: String, token: String) -> void:
 	if request_id.length() > MAX_TOKEN_LEN or token.length() > MAX_TOKEN_LEN or not _rate_ok(sender, "room_list"):
 		return
 	_cleanup_rooms()
-	_rpc_match_status_result.rpc_id(sender, request_id, not _active_match_for_token(token).is_empty())
+	_rpc_match_status_result.rpc_id(sender, request_id, _match_status_for_token(token))
+
+# 协议 40：第二个参数从 `active: bool` 改成状态字符串。改签名会改 Godot 的 RPC
+# 映射，所以协议号跟着 +1（NetworkConfig 的 v40 一条）。
+# 顺带消掉一处冗余：以前服务器发 bool、客户端再推导成字符串，而下面这个变量
+# 本来就是字符串。
+const MATCH_STATUS_STATES := ["active", "lobby", "clear"]
 
 @rpc("authority", "call_remote", "reliable")
-func _rpc_match_status_result(request_id: String, active: bool) -> void:
-	if request_id == _match_check_id and not request_id.is_empty():
-		_match_check_result = "active" if active else "clear"
+func _rpc_match_status_result(request_id: String, state: String) -> void:
+	if request_id != _match_check_id or request_id.is_empty():
+		return
+	# 不认识的值当"问不出来"处理，绝不当成 clear —— 那会删掉凭证。
+	_match_check_result = state if state in MATCH_STATUS_STATES else "unknown"
 
 # HOSTING 随 1v1 P2P 路径一并移除：组队专用服务器模式下客户端只会经历
 # JOINING -> READY，服务器进程自身不用这个枚举表状态。
@@ -224,6 +312,29 @@ const LOBBY_EMPTY_TTL_SEC := 60.0
 # 已开局房间连续空房 120 秒即失效；大厅仍保留原有的后台恢复窗口。
 const ROOM_SUSPEND_GRACE_SEC := 120.0
 const LOBBY_SUSPEND_GRACE_SEC := 600.0
+# 大厅**单个座位**掉线后替他留多久。与上面两个不是一回事：那两个管的是
+# 「整个房间」还能活多久，这个管的是「别人还要盯着他那个空位多久」。
+#
+# ## 为什么不是 600（2026-10-08）
+#
+# 600 是照「手机锁屏十分钟回来还在」定的，但**大厅这条路兑现不了它**：
+# app 被杀之后重开，MainMenu 轮询 check_saved_match() 问服务器「我那局还在吗」，
+# 服务器拿 _active_match_for_token 答 —— 而它把大厅当成「没有进行中的对局」，
+# 于是回 clear，客户端**当场 SaveManager.clear_reconnect() 删掉凭证**、重连按钮
+# 不出现。玩家落在主界面、没有任何提示，而服务器还替他占着座位 10 分钟。
+# 两边对「这个座位算不算数」的判断是相反的。
+#
+# 这个保留期真正还兑现的只剩一种：**app 没关、只是网抖了一下** ——
+# 那条走 _begin_reconnect，用内存里的 session_token，不问 check_saved_match。
+# 它需要的量是「ENet 判掉线（最少 15 秒）+ 一两次重连尝试（每次上限 15 秒）」。
+# 60 秒够；再多出来的时间不被任何机制使用，只是让同房的人多看一会儿幽灵座位。
+#
+# ⚠️ 想改成「立刻释放」就把它设成 0 —— 代价是大厅里任何 15 秒以上的网络抖动
+# 都会让座位被释放、resume 失败、玩家被踢回主菜单要手动重进房间。
+const CUSTOM_LOBBY_RESERVE_GRACE_SEC := 60.0
+# 匹配出来的房间例外，仍用 LOBBY_SUSPEND_GRACE_SEC。那六个座位是账号服务器分配的，
+# 每个人手里拿着一张指向这个房间的名片，位置不能让别人顶 —— 释放的后果和
+# 自定义房间完全不同（自定义房间丢了座位重进一次就行）。
 # 匹配房间等人坐满的时限（协议 32）。六个人都在账号服务器点过确认了，
 # 所以没连上来是异常；到点用 AI 补满开打，见 _cleanup_matched_rooms。
 # 给 90 秒：够一次「点完确认 → 过加载界面 → DTLS 握手」，再留一点弱网余量。
@@ -4754,6 +4865,10 @@ func _rpc_team_create_room(public_id: String = "", card: String = "") -> void:
 	var seat_card := _accept_seat_card(sender, card)
 	if seat_card.is_empty():
 		return
+	# 一人一座（按名片上的账号 id）：清掉这人上一条连接留在别处的残留座位。
+	# 必须在名片验过之后 —— pid 从名片来；也必须在下面动状态之前。
+	if not _release_stale_seats_for_pid(sender, str(seat_card.get("pid", ""))):
+		return
 	# 一人一房不变量：不加这条时，循环调用会把 _rooms 撑爆，并在每个旧房间里留下
 	# 一个永不 ready 的幽灵座位（实测 25 次调用 = 25 个幽灵座位）。
 	var existing := _room_for_peer(sender)
@@ -4785,6 +4900,11 @@ func _rpc_team_join_room(room_id: int, public_id: String = "", card: String = ""
 	# 验过的名片会被记成「用过」；正常客户端每次请求都现领一张，不受影响。
 	var seat_card := _accept_seat_card(sender, card)
 	if seat_card.is_empty():
+		return
+	# 一人一座（按名片上的账号 id）。只清**别的连接**留下的座位，这条连接自己的
+	# 座位原样留给下面那段 —— 否则「已经在这个房间里」那条重复请求判断永远不成立，
+	# 重发一次 join 就会被重新安排座位、重新签 token。
+	if not _release_stale_seats_for_pid(sender, str(seat_card.get("pid", ""))):
 		return
 	var existing := _room_for_peer(sender)
 	if not existing.is_empty():
@@ -4840,6 +4960,12 @@ func _rpc_team_join_matched(public_id: String = "", card: String = "") -> void:
 	if match_uid.is_empty() or team < 0 or match_mode.is_empty():
 		# 名片上没有分配就走这条路 = 客户端搞错了（或者有人在试）。
 		_rpc_team_action_failed.rpc_id(sender, "no_match_assignment")
+		return
+
+	# 一人一座（按名片上的账号 id）。这条路**也要**：在自定义房间里杀了进程、
+	# 重开之后直接去排队匹配，那个自定义房间的幽灵座位照样会留 600 秒。
+	# 下面 4881 行已经保证不会把人塞进开打了的房间，所以这里释放的只会是大厅座位。
+	if not _release_stale_seats_for_pid(sender, str(seat_card.get("pid", ""))):
 		return
 
 	var existing := _room_for_peer(sender)
@@ -5584,6 +5710,78 @@ func _room_seat_pet(room: Dictionary, slot: int) -> String:
 	var pets: Dictionary = room.get("seat_pets", {})
 	return str(pets.get(slot, pets.get(str(slot), "")))
 
+
+# 一人一座：入座前把**同一个账号**在别处的残留座位清掉。
+#
+# 返回 false = 这人有一局正在打，调用方应当直接 return（本函数已经回了 ACTIVE_MATCH_HINT）。
+#
+# ## 为什么非得按账号 id 判，不能继续靠现有那两道
+#
+#   `_room_for_peer(sender)`  按 **peer_id**。杀进程重开就是一个新 peer，查不到旧座位。
+#   `_active_match_for_token` 按 **短码**。短码可以没有（没有才是常态），而且它
+#                             明确把大厅当成「没有进行中的对局」—— 大厅幽灵一律放行。
+#
+# 于是「杀进程 → 重开 → 建房/进房」会让一个账号**同时占两个座位**：旧座位还在
+# LOBBY_SUSPEND_GRACE_SEC（600 秒）的保留期里，新座位也拿到了。同房的人看到的是
+# 一个永远不 ready 的幽灵，房间还因此坐不满。
+#
+# 账号 id 来自入座时那张**账号服务器签过章的名片**（见 _room_store_seat_card），
+# 客户端伪造不了 —— 这是这台机器上唯一可信的「这是谁」。
+#
+# ## 分流
+#
+#   那房间在打 → **拒绝新入座**，一个座位都不动。把人从活局里拽出来，对同房另外
+#                 五个人等于「别人替他跑路」（结算、信誉分全要算在他头上）。
+#   那房间在大厅 → 释放旧座位。代价只是他要重新进那个房间，没有不可恢复的东西。
+#   已结束/正在回收的房间 → 不管。它的座位不挡任何人，cleanup_rooms 会连房间一起收。
+#
+# 扫描与释放**分两趟**：先整个扫完确认没有活局，才动手。边扫边放的话，遇到第二个
+# 座位是活局时，第一个座位已经被释放了 —— 玩家旧座位没了、新座位也没拿到。
+func _release_stale_seats_for_pid(peer_id: int, pid: String) -> bool:
+	# 进程内门禁（tools/ 下的探针）直接调 _assign_peer_to_room、不带名片，没有 pid 可判。
+	# 那种语境下本来就只有一个房间，照旧放行。
+	if pid.is_empty():
+		return true
+	var stale: Array = []
+	for room in _rooms.values():
+		var pids: Dictionary = room.get("seat_pid", {})
+		for slot_key in pids.keys():
+			if str(pids[slot_key]) != pid:
+				continue
+			var slot := int(slot_key)
+			# 这个座位现在挂在哪条连接上。-1 = 没有（正是杀进程留下的幽灵）。
+			var holder := -1
+			var peer_slot: Dictionary = room.get("peer_slot", {})
+			for held_peer in peer_slot.keys():
+				if int(peer_slot[held_peer]) == slot:
+					holder = int(held_peer)
+					break
+			if holder == peer_id:
+				continue   # 就是这条连接自己的座位，交给调用方那段 peer 逻辑处理
+			if _room_is_active_match(room):
+				# 判连接，同 _assign_peer_to_room 末尾那一处：peer 可能在发出请求和
+				# 这一行之间就掉了，对不存在的 peer 发包会刷错误栈、把真错误淹掉。
+				if _peer_connected(peer_id):
+					_rpc_team_action_failed.rpc_id(peer_id, ACTIVE_MATCH_HINT)
+				return false
+			if str(room.get("state", ROOM_LOBBY)) != ROOM_LOBBY or bool(room.get("run_over", false)):
+				continue
+			stale.append({"room": room, "slot": slot, "holder": holder})
+	for entry in stale:
+		var room: Dictionary = entry["room"]
+		var slot := int(entry["slot"])
+		var holder := int(entry["holder"])
+		# 同一账号在另一台设备上还连着：先把那条连接和座位脱钩，否则
+		# _room_online_count 还会把它算成在线、_room_for_peer 还能查到这个房间。
+		if holder > 0:
+			_release_rematch_reservation(room, holder)
+			(room.get("peer_slot", {}) as Dictionary).erase(holder)
+			_peer_room.erase(holder)
+		_net_log("stale seat released room=%d slot=%d holder=%d (same account seated again)" % [
+			int(room.get("id", 0)), slot, holder])
+		# 大厅分支做的正是「彻底释放 + 置空 + 广播」，不另写一份（两份一定会分叉）。
+		_room_auto_complete_seat(room, slot)
+	return true
 
 # forced_slot >= 0 = 坐指定座位（协议 32：匹配出来的对局按名片上的 team 落座）。
 # 其余路径传 -1，照旧取第一个空位。
@@ -6469,6 +6667,11 @@ func _room_remove_peer(room: Dictionary, peer_id: int) -> void:
 	_touch_room(room)
 	_broadcast_room_lobby(room)
 
+# 大厅掉线替他留多久。匹配房间按名片落座、位置不能让别人顶，所以仍用长的那个；
+# 自定义房间丢了座位重进一次就行，用短的（理由见 CUSTOM_LOBBY_RESERVE_GRACE_SEC）。
+func _lobby_reserve_grace_sec(room: Dictionary) -> float:
+	return LOBBY_SUSPEND_GRACE_SEC if bool(room.get("matched", false)) else CUSTOM_LOBBY_RESERVE_GRACE_SEC
+
 # 软移除（任何阶段的异常掉线）：座位保留为"重连中"，slot_states 仍是 "player"，
 # 棋盘/回合进度不丢；起 RESERVE_GRACE_SEC 宽限，期内 token 重连无损续上。
 func _room_reserve_peer(room: Dictionary, peer_id: int) -> void:
@@ -6483,7 +6686,7 @@ func _room_reserve_peer(room: Dictionary, peer_id: int) -> void:
 	# 宽限记账已搬到 ReconnectService.reserve_seat()。
 	_reconnect_service.reserve_seat(room, slot)
 	if str(room.get("state", ROOM_LOBBY)) == ROOM_LOBBY:
-		room.reserve_deadline[slot] = _now() + LOBBY_SUSPEND_GRACE_SEC
+		room.reserve_deadline[slot] = _now() + _lobby_reserve_grace_sec(room)
 	else:
 		# Loading/playback watchdogs remain independent of seat takeover.
 		room.reserve_deadline[slot] = _now() + MATCH_DISCONNECT_GRACE_SEC

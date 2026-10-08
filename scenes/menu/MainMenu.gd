@@ -855,12 +855,22 @@ func _on_ranked() -> void:
 
 func _refresh_saved_match() -> void:
 	while is_inside_tree() and not SaveManager.load_resumable_reconnect().is_empty():
-		await NetworkService.check_saved_match()
+		var status := await NetworkService.check_saved_match()
 		if not is_inside_tree():
 			return
+		# 协议 40 起这颗键有两种处境，文案必须跟着变：对一个**还没开打的房间**说
+		# 「重连」，玩家会以为要回到对局里去（而那边其实只是他的座位还空着）。
+		# status 为 unknown（问不出来）时不动文案，保持上一次问到的说法。
+		var label := ""
+		if status == "lobby":
+			label = _menu_text("返回房间", "Back to Room")
+		elif status == "active":
+			label = _menu_text("游戏重连", "Reconnect")
 		for child in get_children():
 			if child is Button and child.pressed.is_connected(_emit_reconnect):
 				child.visible = not SaveManager.load_resumable_reconnect().is_empty()
+				if not label.is_empty():
+					child.text = label
 		await get_tree().create_timer(3.0).timeout
 
 func _emit_prep() -> void:

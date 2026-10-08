@@ -72,8 +72,10 @@ PARTY_SIZES = frozenset({1, TEAM_SIDE_SIZE})
 
 # 能排队的模式。第 5 步（分数 / 段位 / 信誉分）做完之后 ranked 也开了。
 #
-# ⚠️ 排位**还要过时间窗口**（19:00–23:00，`ranked.window_state`）和信誉分闸
+# ⚠️ 排位**还要过时间窗口**（19:00–23:00，`ranked.accepting_now`）和信誉分闸
 # （`ranked.queue_gate`）。「在 OPEN_MODES 里」只是「这个模式存在」，不是「随时能排」。
+# 判窗口一律走 `accepting_now`，**不要直接读 `window_state`** —— 后者是发给客户端的
+# 真实时间表，前者才带 GLORY_RANKED_WINDOW_ALWAYS_OPEN 那个测试开关。
 CASUAL = "casual"
 RANKED = "ranked"
 OPEN_MODES = frozenset({CASUAL, RANKED})
@@ -443,7 +445,7 @@ class Matchmaker:
         for mode in OPEN_MODES:
             # 排位**只在窗口内凑新的一桌**（19:00–23:00，docs/排位系统设计.md 第二节）。
             # 已经开打的局不受影响 —— 00:00 关的是队列，不是对局。
-            if mode == RANKED and not ranked.window_state()["accepting"]:
+            if mode == RANKED and not ranked.accepting_now():
                 continue
             while True:
                 party_seats = self._take_party_match(mode)
