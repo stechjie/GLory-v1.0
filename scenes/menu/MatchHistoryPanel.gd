@@ -430,9 +430,14 @@ static func settlement_view_data(item: Dictionary) -> Dictionary:
 			"slot": int(e.get("slot", -1)),
 			"id": str(e.get("id", "")),
 			"name": str(e.get("name", "")),
+			# 10.08c 第 1 条：把战报里新带的英文名 / 人王持久层数接回来（短键见
+			# BattleReport._clean_stats）。旧记录没有这两项 —— 名字由结算面板按 id
+			# 回数据表兜底（FinalSettlementPanel._stat_unit_name），层数就真的没有了。
+			"name_en": str(e.get("n_en", "")),
 			"star": int(e.get("star", 1)),
 			"is_mercenary": bool(e.get("merc", false)),
 			"skill_stacks": int(e.get("stack", 0)),
+			"king_growth_stacks": clampi(int(e.get("kst", 0)), 0, 99),
 			"damage_dealt": int(e.get("dmg", 0)),
 			"damage_taken": int(e.get("taken", 0)),
 			"healing_done": int(e.get("heal", 0)),

@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://tools/probe_1008_sellzone.gd" id="1"]
+
+[node name="Probe1008SellZone" type="Node"]
+script = ExtResource("1")

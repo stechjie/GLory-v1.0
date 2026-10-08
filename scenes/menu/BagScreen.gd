@@ -72,6 +72,10 @@ var _pet_empty: Label
 var _avatar_grid: GridContainer
 var _avatar_detail: VBoxContainer
 var _avatar_empty: Label
+# 当前网格里每个瓦片 Control，按 id 建索引。选中的时候只改这几个的样式，
+# **不重建** —— 重建会踩掉正在处理这次点击的那个控件（见 _select_avatar 的注释）。
+var _avatar_tiles: Dictionary = {}   # value -> PanelContainer
+var _pet_tiles: Dictionary = {}      # pet_id -> PanelContainer
 
 
 func _ready() -> void:
@@ -380,8 +384,11 @@ func _render() -> void:
 		if _selected_pet.is_empty() or not _owned_pets.has(_selected_pet):
 			_selected_pet = _active_pet if _owned_pets.has(_active_pet) else str(_owned_pets[0])
 		if _owned_pets.size() > 1:
+			_pet_tiles.clear()
 			for pet_id in _owned_pets:
-				_grid.add_child(_pet_card(str(pet_id)))
+				var card := _pet_card(str(pet_id))
+				_pet_tiles[str(pet_id)] = card
+				_grid.add_child(card)
 		_render_pet_detail(_selected_pet)
 		return
 
@@ -394,20 +401,20 @@ func _render() -> void:
 	_empty_label.visible = false
 	if _selected_avatar.is_empty() or not avatars.has(_selected_avatar):
 		_selected_avatar = str(avatars[0])
+	_avatar_tiles.clear()
 	for value in avatars:
-		_grid.add_child(_avatar_tile(str(value)))
+		var tile := _avatar_tile(str(value))
+		_avatar_tiles[str(value)] = tile
+		_grid.add_child(tile)
 	_render_avatar_detail(_selected_avatar)
 
 
 func _pet_card(pet_id: String) -> Control:
 	var active := pet_id == _active_pet
-	var selected := pet_id == _selected_pet
 	var tile := PanelContainer.new()
 	tile.custom_minimum_size = PET_CARD
 	tile.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	tile.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Color(0.04, 0.13, 0.16, 0.84),
-		Tokens.GOLD_EDGE if selected else Color(0.5, 0.66, 0.63, 0.55), Tokens.GAP_S))
+	_apply_pet_style(tile, pet_id, active)
 	tile.gui_input.connect(func(event: InputEvent) -> void:
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 			_select_pet(pet_id)
@@ -428,6 +435,21 @@ func _pet_card(pet_id: String) -> Control:
 	return tile
 
 
+# 选中态只是**边框颜色**。把它单独抽出来，选中时只改颜色、不重建控件 ——
+# 重建会把正在处理这次点击的控件 remove_child + queue_free 掉。
+func _apply_pet_style(tile: PanelContainer, pet_id: String, active: bool) -> void:
+	var selected := pet_id == _selected_pet
+	tile.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Color(0.04, 0.13, 0.16, 0.84),
+		Tokens.GOLD_EDGE if selected else Color(0.5, 0.66, 0.63, 0.55), Tokens.GAP_S))
+
+
+func _apply_avatar_style(tile: PanelContainer, value: String) -> void:
+	tile.add_theme_stylebox_override(
+		"panel", Tokens.panel_box(Tokens.SURFACE_RAISED,
+			Tokens.GOLD_EDGE if value == _selected_avatar else Tokens.BORDER, Tokens.GAP_S))
+
+
 # 玩家能用的头像：目录里没卖的（免费）+ 买到的付费的。见文件头那段。
 func _usable_avatars() -> Array:
 	var out: Array = []
@@ -442,9 +464,7 @@ func _avatar_tile(value: String) -> Control:
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = AVATAR_TILE
 	panel.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	panel.add_theme_stylebox_override(
-		"panel", Tokens.panel_box(Tokens.SURFACE_RAISED,
-			Tokens.GOLD_EDGE if value == _selected_avatar else Tokens.BORDER, Tokens.GAP_S))
+	_apply_avatar_style(panel, value)
 	panel.gui_input.connect(func(event: InputEvent) -> void:
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 			_select_avatar(value)
@@ -584,14 +604,45 @@ func _select_pet(pet_id: String) -> void:
 	if _selected_pet == pet_id:
 		return
 	_selected_pet = pet_id
-	_render()
+	_refresh_pet_selection()
 
 
 func _select_avatar(value: String) -> void:
 	if _selected_avatar == value:
 		return
+	# ★ 10.08 反馈第 6 条：这里**不能**调 _render()。
+	#
+	# _render() 会 _clear_children(_grid)：把「正在处理这次点击」的那个瓦片
+	# remove_child + queue_free，再补一批新的。新控件本帧还没走到布局，全部堆在
+	# 第一个格子的位置上；而 Android 的 `emulate_mouse_from_touch` 会把同一次触摸
+	# 再投一路**模拟鼠标**事件 —— 它命中的是这批还没布局的新瓦片里**最上层的那一个**
+	# （子节点逆序命中 ⇒ 最后一个）。玩家看到的就是「点第一个，跳到最后一个」。
+	#
+	# 选中只改边框，没有任何理由重建列表：这里只重新上色 + 重画右侧详情。
 	_selected_avatar = value
-	_render()
+	_refresh_avatar_selection()
+
+
+# 只更新选中态，不重建控件。网格内容变了（切页签 / 重新拉数据）才走 _render()。
+func _refresh_avatar_selection() -> void:
+	for key in _avatar_tiles:
+		var tile = _avatar_tiles[key]
+		if tile is PanelContainer and is_instance_valid(tile):
+			_apply_avatar_style(tile as PanelContainer, str(key))
+	_clear_children(_avatar_detail)
+	_render_avatar_detail(_selected_avatar)
+
+
+func _refresh_pet_selection() -> void:
+	# 宠物卡上只有**边框**跟选中态有关（「出战中」徽章跟的是 _active_pet，不是选中态），
+	# 所以选宠物同样只重新上色 + 重画详情，不重建卡片。
+	for key in _pet_tiles:
+		var tile = _pet_tiles[key]
+		if tile is PanelContainer and is_instance_valid(tile):
+			_apply_pet_style(tile as PanelContainer, str(key), str(key) == _active_pet)
+	_clear_children(_pet_detail)
+	_render_pet_detail(_selected_pet)
+
 
 
 func _detail_hint(text: String) -> Label:

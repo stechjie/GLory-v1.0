@@ -30,6 +30,13 @@ const SAFE_MARGIN := 40.0
 const UI_REF_SCALE := 0.804
 
 const GRID_COLUMNS := 4
+# ★ 10.08 反馈第 2 条：分类按钮在中/英下大小不一 —— 因为按钮宽度随文字长度走
+#   （「神」vs「God」、「宝藏」vs「Treasures」）。钉一个统一的最小尺寸，
+#   配合 HFlowContainer 的等宽排布，两种语言下按钮块大小一致。
+#   高度取 Tokens.TOUCH_MIN（触摸最小点击高度），宽度给中英最长标签都放得下。
+const TAB_BUTTON_SIZE := Vector2(132.0, 44.0)
+# 图鉴里的种族徽章长按弹羁绊说明 —— 文本复用备战里那一份（不另抄）。
+const SynergyBond := preload("res://scenes/prep/panels/SynergyPanel.gd")
 const PARCHMENT := Color(0.89, 0.83, 0.69)
 const INK := Color(0.20, 0.15, 0.11)
 const INK_SOFT := Color(0.42, 0.34, 0.26)
@@ -273,6 +280,8 @@ func _build_tabs() -> void:
 		var key := str(meta.get("key", ""))
 		var btn := Button.new()
 		btn.text = tr("codex_tab_%s" % key)
+		# 统一尺寸：否则按钮宽度随标签长度走，中/英切换后大小不一（10.08 第 2 条）。
+		btn.custom_minimum_size = TAB_BUTTON_SIZE
 		btn.focus_mode = Control.FOCUS_NONE
 		btn.add_theme_font_size_override("font_size", _fs(13))
 		btn.toggle_mode = true
@@ -456,7 +465,7 @@ func _build_badges(entry: Dictionary, unlocked: bool) -> Control:
 	var race := str(entry.get("race", ""))
 	if not race.is_empty():
 		row.add_child(_emblem_badge(
-			CodexService.RACE_LOGO_DIR + race + ".png", tr("codex_tab_%s" % race)))
+			CodexService.RACE_LOGO_DIR + race + ".png", tr("codex_tab_%s" % race), race))
 	var element := str(entry.get("element", ""))
 	if not element.is_empty():
 		row.add_child(_emblem_badge(_element_icon(element),
@@ -482,7 +491,11 @@ func _build_badges(entry: Dictionary, unlocked: bool) -> Control:
 
 # Emblem above, label beneath: the round art identifies the entry, the words only
 # confirm it.
-func _emblem_badge(texture_path: String, label: String) -> Control:
+#
+# ★ 10.08 反馈第 2 条：棋子图鉴里的**种族图标**要能**长按**弹出该族的羁绊说明
+#   （文本取自备战里的那一份 —— SynergyPanel.format_synergy_effects，不在这里另抄）。
+#   race 参数只在种族徽章上传（元素 / 系列徽章传空），长按入口也就只装在种族上。
+func _emblem_badge(texture_path: String, label: String, race: String = "") -> Control:
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", _sp(2))
 	var art := TextureRect.new()
@@ -490,6 +503,11 @@ func _emblem_badge(texture_path: String, label: String) -> Control:
 	art.custom_minimum_size = Vector2(_px(58), _px(58))
 	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	# 要收 gui_input 才收得到手指按下/抬起 —— 默认 IGNORE 会让长按永不触发，
+	# 而且完全静默（没有任何报错，只是「按了没反应」）。
+	if not race.is_empty():
+		art.mouse_filter = Control.MOUSE_FILTER_STOP
+		_attach_synergy_bond_long_press(art, race)
 	col.add_child(art)
 	var lbl := Label.new()
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -498,6 +516,81 @@ func _emblem_badge(texture_path: String, label: String) -> Control:
 	lbl.text = label
 	col.add_child(lbl)
 	return col
+
+# 给种族徽章装「长按 0.7 秒弹羁绊说明」。
+#
+# 手势状态挂在控件 meta 上（与 PrepDetailOverlay.attach_long_press 同一套约定，
+# 这里只做图鉴需要的那一小份：按下起表、移动超过 8px 取消、松手停表）：
+#   长按常驻说明由 DialogService 的模态接管，所以松手不需要再收掉 —— 不会
+#   像备战浮层那样出现「松手把刚弹出来的说明又关掉」。
+func _attach_synergy_bond_long_press(art: Control, race: String) -> void:
+	var timer := Timer.new()
+	timer.one_shot = true
+	timer.wait_time = 0.7
+	art.add_child(timer)
+	art.set_meta("race_long_press_timer", timer)
+	timer.timeout.connect(func():
+		if bool(art.get_meta("race_long_press_cancelled", false)):
+			return
+		art.set_meta("race_long_press_fired", true)
+		_show_race_bond(race)
+	)
+	art.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton:
+			var mb := event as InputEventMouseButton
+			if mb.button_index != MOUSE_BUTTON_LEFT:
+				return
+			if mb.pressed:
+				art.set_meta("race_long_press_start", mb.position)
+				art.set_meta("race_long_press_cancelled", false)
+				art.set_meta("race_long_press_fired", false)
+				timer.start()
+			else:
+				timer.stop()
+				# 轻点（没长按）也把说明摊开：手机用户不一定会想到要长按，
+				# 而这条说明本来就是「看一眼」的性质，两条路都通不算坏事。
+				if not bool(art.get_meta("race_long_press_fired", false)):
+					_show_race_bond(race)
+			art.accept_event()
+		elif event is InputEventScreenTouch:
+			var touch := event as InputEventScreenTouch
+			if touch.pressed:
+				art.set_meta("race_long_press_start", touch.position)
+				art.set_meta("race_long_press_cancelled", false)
+				art.set_meta("race_long_press_fired", false)
+				timer.start()
+			else:
+				timer.stop()
+				if not bool(art.get_meta("race_long_press_fired", false)):
+					_show_race_bond(race)
+			art.accept_event()
+		elif event is InputEventMouseMotion and timer.time_left > 0.0:
+			# 挪动超过 8px = 用户在滑列表，不是长按。
+			var start: Vector2 = art.get_meta("race_long_press_start", Vector2.ZERO)
+			if (event as InputEventMouseMotion).position.distance_to(start) > 8.0:
+				art.set_meta("race_long_press_cancelled", true)
+				timer.stop()
+		elif event is InputEventScreenDrag and timer.time_left > 0.0:
+			var start2: Vector2 = art.get_meta("race_long_press_start", Vector2.ZERO)
+			if (event as InputEventScreenDrag).position.distance_to(start2) > 8.0:
+				art.set_meta("race_long_press_cancelled", true)
+				timer.stop()
+	)
+
+# 种族羁绊说明弹窗：正文**直接取备战里那份**（SynergyPanel.format_synergy_effects），
+# 不在图鉴里另抄一份 —— 两处文案以后要一起改的只有一处。
+func _show_race_bond(race: String) -> void:
+	if race.is_empty():
+		return
+	var body: String = SynergyBond.format_synergy_effects(race)
+	if body.is_empty():
+		return
+	DialogService.info({
+		"title": SynergyBond.format_synergy_title(race),
+		"body": body,
+		"confirm_text": tr("codex_bond_gotit"),
+		"owner": self,
+	})
 
 func _flat_badge(text: String, color: Color) -> Control:
 	var panel := PanelContainer.new()

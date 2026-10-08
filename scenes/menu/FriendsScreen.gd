@@ -288,6 +288,13 @@ func _run(action: Callable, ok_message: String) -> void:
 func _render() -> void:
 	if _list_box == null:
 		return
+	# ★ 10.08 反馈第 7 条：手机在「添加」页呼出键盘、正往好友码输入框里打字时，
+	#   每 5 秒一次的后台刷新会把整个列表 queue_free 重建 —— 连同 _code_input
+	#   一起销毁，LineEdit 一没，软键盘立刻自动收起（看起来就是「打一半键盘没了」）。
+	#   正在编辑就**跳过这次重建**：这一次刷新只是「顺带更新」，少刷一次没有副作用，
+	#   等玩家打完字、焦点离开，下一个 5 秒周期自然会重建。
+	if _is_editing_code():
+		return
 	for child in _list_box.get_children():
 		child.queue_free()
 	for tab_id in _tab_buttons:
@@ -502,9 +509,22 @@ func _request_row(entry: Dictionary, incoming: bool) -> Control:
 	return row
 
 
+# 玩家此刻是不是正在好友码输入框里打字？
+#
+# 「添加」页的输入框是每次重建列表时**新建**的（_render_add），所以判据不能只看
+# 对象还在不在，要看**焦点在不在它身上**：有焦点 = 键盘已经弹出来、玩家正在输入，
+# 这时候任何重建都会把键盘连带收走（10.08 反馈第 7 条）。
+# 顺带把「页签还是不是添加页」一起判了 —— 切到别的页签本来就该重建。
+func _is_editing_code() -> bool:
+	if _tab != Tab.ADD:
+		return false
+	if _code_input == null or not is_instance_valid(_code_input):
+		return false
+	return _code_input.has_focus()
+
+
 func _render_add() -> void:
 	_list_box.add_child(_section(_text("用好友码添加", "Add by friend code")))
-
 	var add_row := _card()
 	_code_input = LineEdit.new()
 	_code_input.placeholder_text = _text("输入 8 位好友码", "Enter 8-character code")

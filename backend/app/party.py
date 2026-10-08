@@ -18,6 +18,16 @@ MAX_MEMBERS = 3
 MAX_PETS = 5
 INVITE_TTL_SEC = 120.0
 CHAT_LIMIT = 30
+# 成员 WS 断开后，房间身份保留多久（单调时钟秒）。
+#
+# 为什么要有宽限：手机切后台 / 信号抖动 / 换设备重连都会先断一次 WS，那是常态
+# 不是退房。立刻把人从 room.members 里摘掉，别人的房间界面会瞬间少一个人；
+# 而这人重连回来又得重新被邀请一遍（邀请还要重发）。
+#
+# 但不能只有宽限、没有回收：**不摘就会留 ghost** —— 别人界面上他还坐在房里，
+# 他自己那边其实早就回主菜单了（10.08 反馈第 8 条「tin y」就是这个）。
+# 到期回收由 matchmaking 的后台 tick 调 prune_disconnected()，见那个函数的注释。
+LEFT_GRACE_SEC = 60.0
 
 
 class PartyRejected(RuntimeError):
@@ -46,6 +56,9 @@ class Room:
     # 成员 -> 座位 0~2（10-08，对齐自定义房间的换位）。**会带进对局**：满 3 人的队伍进了对局，
     # 坐的就是这里选的位置（A/B/C = 不同的路），见 matchmaking._allocate_seats。
     seats: dict[uuid.UUID, int] = field(default_factory=dict)
+    # 断线时刻（单调时钟）。> 0 = 这条 WS 已经断了、正在宽限期内。
+    # 重连（任何一次成功动作）会清零；宽限到期仍为 > 0 就真的摘掉（见 on_disconnect）。
+    dropped_at: dict[uuid.UUID, float] = field(default_factory=dict)
 
 
 class Parties:
@@ -153,6 +166,7 @@ class Parties:
         # 重新进入房间 = 重新计时，退房时按这个时间挑新队长。
         room.joined_at[player] = self._now()
         room.seats[player] = self._free_seat(room)
+        room.dropped_at.pop(player, None)
         self._member_room[player] = room_id
         room.ready.clear()
         room.version += 1
@@ -225,6 +239,59 @@ class Parties:
             room.seats[player] = seat
             room.version += 1
         return room
+
+    # --- 断线 / 在场（10.08 反馈第 8 条）----------------------------------------
+    #
+    # 「房间里有他、他自己却进不去」= ghost 成员。成因：WS 断开后没人通知 party，
+    # room.members 里他的那一条永久留着（snapshot 直接遍历 members，谁在表里
+    # 谁就显示在房间里）。修法两半，缺一不可：
+    #   ① on_disconnect 记下断线时刻（不立刻摘，手机切后台是常态）；
+    #   ② 后台 tick 调 prune_disconnected，宽限到期才真摘。
+    def on_disconnect(self, player: uuid.UUID) -> None:
+        """WS 断了。**不立刻退房** —— 先记断线时刻，进 LEFT_GRACE_SEC 宽限。
+
+        宽限期里他仍是成员（别人看得见他、他重连回来还在原位）。到期没人回来，
+        prune_disconnected 会把他摘掉，并像正常退房那样交接 / 解散。
+        """
+        room = self.of(player)
+        if room is None:
+            return
+        if room.dropped_at.get(player, 0.0) <= 0.0:
+            room.dropped_at[player] = self._now()
+
+    def mark_present(self, player: uuid.UUID) -> bool:
+        """这个人又活过来了（重连、或任何一次成功的房间动作）。返回是否清了标记。
+
+        调用点分散在各路由里很容易漏 —— 所以除了显式调用，join / say / set_ready
+        这些「只有活人才做得到」的动作也会顺手清（见 _touch_present）。
+        """
+        room = self.of(player)
+        if room is None:
+            return False
+        if room.dropped_at.pop(player, 0.0) > 0.0:
+            room.version += 1
+            return True
+        return False
+
+    def prune_disconnected(self) -> list[Room]:
+        """宽限到期的断线成员：按正常退房处理（交接房主 / 解散空房）。
+
+        由 matchmaking 的后台 tick 每 TICK_SEC 调一次 —— party 自己没有循环，
+        而 matchmaking 已经在同一个进程里跑循环、也已经 import 了 party
+        （见 matchmaking._expire_stale 里对 party.current() 的调用）。
+        返回**受了影响、需要重新广播**的房间。
+        """
+        now = self._now()
+        touched: dict[str, Room] = {}
+        for room in list(self._rooms.values()):
+            stale = [pid for pid in room.members
+                     if 0.0 < room.dropped_at.get(pid, 0.0) <= now - LEFT_GRACE_SEC]
+            for pid in stale:
+                _room, _members, _dissolved, _rotated = self.leave(pid)
+                if _room is not None:
+                    touched[_room.id] = _room
+        # 已经解散的房间不该再广播（leave 返回的就是被 pop 掉的那个对象）。
+        return [r for rid, r in touched.items() if self._rooms.get(rid) is r]
 
     def mode(self, player: uuid.UUID, mode: str) -> Room:
         room = self._require_host(player)
@@ -321,7 +388,14 @@ class Parties:
         room = self.of(player)
         if room is None:
             raise PartyRejected("not_in_party", "你还没有进入队伍")
+        # 能走到这里说明他刚刚做了一次**只有活人才做得到**的动作（邀请、改模式、
+        # 准备、说话…）—— 顺手把断线标记清掉，不用指望每个路由都记得调 mark_present。
+        self._touch_present(room, player)
         return room
+
+    def _touch_present(self, room: Room, player: uuid.UUID) -> None:
+        if room.dropped_at.pop(player, 0.0) > 0.0:
+            room.version += 1
 
     def _require_host(self, player: uuid.UUID) -> Room:
         room = self._require_member(player)

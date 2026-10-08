@@ -329,9 +329,14 @@ def _settlement_stat(entry: object) -> dict | None:
         "slot": _soft_int(entry.get("slot"), -1, 255),
         "id": str(entry.get("id", ""))[:MAX_ID_LEN],
         "name": str(entry.get("name", ""))[:MAX_NAME_LEN],
+        # 10.08c 第 1 条（对局历史）：英文名 + 人王持久成长层数。历史统计的语言是
+        # 「打开历史那一刻」的语言，这两样不随记录存下来就永远翻不出来 / 显示不出。
+        # 旧战报没有这两个键 → 取缺省（"" / 0），名字由客户端按 id 回数据表兜底。
+        "n_en": str(entry.get("n_en", ""))[:MAX_NAME_LEN],
         "star": _soft_int(entry.get("star"), 0, 9),
         "merc": bool(entry.get("merc", False)),
         "stack": _soft_int(entry.get("stack"), 0, 99),
+        "kst": _soft_int(entry.get("kst"), 0, 99),
         "dmg": _soft_int(entry.get("dmg"), 0, _INT_MAX),
         "taken": _soft_int(entry.get("taken"), 0, _INT_MAX),
         "heal": _soft_int(entry.get("heal"), 0, _INT_MAX),

@@ -45,6 +45,30 @@ var _replay_mode := false
 var _replay_frame := 0
 var _replay_round := -1
 var _battle_result_reported := false
+# --- 墙钟 vs 单调时钟（10.08 反馈第 3 / 5 条）----------------------------------
+#
+# 本场景里凡是「两个时刻相减」的 deadline，全都是**墙钟**（Time.get_ticks_msec()）。
+# 它在手机上是会跳的：切后台再回来，墙钟一次性跳掉几分钟 ⇒ 每个 deadline 瞬间过期
+# ⇒ 回放被判 `battle_playback_timeout`、准备被判 `battle_prepare_timeout`，
+# 玩家回来看到的是「已经进备战、但这一回合的战斗金没给」。
+#
+# 所以这里自己攒一个**只在前台推进**的毫秒表 `_mono_msec`：
+#   * 每帧按 `delta` 累加（`_process` 在后台不跑，这段天然不计入）；
+#   * 收到 NOTIFICATION_APPLICATION_PAUSED 时立刻冻结，RESUMED 时把本帧积压的
+#     `delta` 丢掉（_drop_resume_frame）。
+# 所有 deadline 的比较与写入都改用它；`Time.get_ticks_msec()` 仍留在**纯统计**处
+# （日志里的 elapsed_ms / analytics 的耗时），那是墙钟语义，本来就该算真实流逝。
+var _mono_msec := 0
+var _mono_frozen := false
+# 恢复前台后的第一帧还没处理（那时 delta 是积压值，要夹住）。
+var _resume_frame_pending := false
+# 恢复后的这一帧 delta 可能积压到几十秒 —— 不丢掉的话，回放会在单帧里被推完
+# （就是用户报的「卡屏」）。上限取 0.25 秒：比任何正常帧都宽，又远小于积压值。
+const RESUME_DELTA_CLAMP_SEC := 0.25
+# 单帧最多生成多少条回放视觉事件。`_apply_replay_frame` 要把每帧的 visual_events
+# 灌进 Director 并起特效；后台回来后若一次补几十帧，这里就是那个「卡死」的现场
+# （既存注释记过一次 683ms -> 冻结 5s -> 单帧 4655ms 的死亡螺旋）。
+const MAX_REPLAY_FRAMES_PER_FRAME := 6
 # 已灌入 visual_events 的最高回放帧号，避免重复播放同一帧的视觉事件。
 var _replay_events_applied := -1
 var _replay_drum_event_cursor := 0
@@ -213,11 +237,59 @@ func _exit_tree() -> void:
 	# 本回合的敌人资源到此为止；玩家阵容留着，下回合还要用。
 	release_round_assets()
 
+# --- 前台单调时钟（10.08 反馈第 3 / 5 条）------------------------------------
+#
+# 为什么不能用 Time.get_ticks_msec()：那是**墙钟**。手机切后台（锁屏、切应用）再
+# 回来，它会一次性跳掉几分钟，于是本场景所有 deadline 同时过期 ——
+#   回放超时 -> _fail_team_replay("battle_playback_timeout") -> 判负、战斗金不结算；
+#   准备超时 -> _fail_team_replay("battle_prepare_timeout")。
+# 这正是用户报的「切后台回来已经进备战，但没拿到回合战斗金」。
+#
+# 修法：自己攒一个**只在前台推进**的毫秒表。`_process` 在 APPLICATION_PAUSED 期间
+# 根本不会被调用，所以后台那段时间天然不计入；恢复时的积压 delta 也一并丢掉。
+#
+# `_mono_frozen` 是第二道保险：即便某个平台在后台仍然投递帧（或我们自己手动驱动
+# `_process` 做行为验证），只要收到过 PAUSED 且还没 RESUMED，这张表就一格都不走。
+# 两个条件都指向同一件事——「后台的时间不算进 deadline」。
+func _tick_monotonic_clock(delta: float) -> void:
+	if _mono_frozen:
+		# 后台期间收到帧：一毫秒都不计。delta 也不留给恢复帧（恢复帧另有夹取）。
+		return
+	# 恢复后的第一帧 delta 是积压值：夹到 RESUME_DELTA_CLAMP_SEC，既不让单调表
+	# 一次性跳掉（那等于没修），也不让回放补帧淹没这一帧（那正是「卡屏」）。
+	var step := delta
+	if _resume_frame_pending:
+		_resume_frame_pending = false
+		step = minf(delta, RESUME_DELTA_CLAMP_SEC)
+	_mono_msec += int(roundf(step * 1000.0))
+
+# 恢复前台后的第一帧：delta 是积压值（可能几十秒）。必须夹住 —— 不夹的话
+#   * 单调表一次性前进几十秒（等于没修）；
+#   * 回放在同一帧里被推进几十帧，每帧还要生成特效，正是「卡屏」的现场。
+func _drop_resume_frame() -> void:
+	_resume_frame_pending = true
+	# 积压的回放时间直接丢掉：宁可回放比实时略慢，也不能攒出无限积压
+	# （与 _process 里那道 minf 封顶同一条策略）。
+	_sim_accumulator = 0.0
+
+func _notification(what: int) -> void:
+	match what:
+		NOTIFICATION_APPLICATION_PAUSED:
+			# 后台期间 _process 不跑，单调表自然停住；_mono_frozen 是第二道保险
+			# （见 _tick_monotonic_clock），也是给日志留的一条证据。
+			_mono_frozen = true
+			_resume_frame_pending = true
+		NOTIFICATION_APPLICATION_RESUMED:
+			_mono_frozen = false
+			_drop_resume_frame()
+
 func _process(delta: float) -> void:
+	# 前台时钟先推进（切后台期间 _process 不跑，天然不计入）。
+	_tick_monotonic_clock(delta)
 	# Slow devices drop simulation accumulator time. Bound actual elapsed
 	# playback too, otherwise that deliberate slowdown can last indefinitely.
 	if NetworkService.team_active and not NetworkService.is_host and _replay_mode and not _return_emitted and _playback_deadline_msec > 0 \
-			and Time.get_ticks_msec() >= _playback_deadline_msec:
+			and _mono_msec >= _playback_deadline_msec:
 		_fail_team_replay("battle_playback_timeout")
 		return
 	# B8: keep the on-screen FPS readout live in every mode (team + tutorial).
@@ -257,11 +329,20 @@ func _process(delta: float) -> void:
 		# 敌方打得久也能看完，且己方结果照常在时间线走完后结算。
 		var own_size := (_replay_own.get("frames", []) as Array).size()
 		var timeline_end := maxi(frames.size(), own_size) if _watching_rival else frames.size()
-		while _sim_accumulator >= SIM_TICK_SEC and _replay_frame < timeline_end:
+		# 每帧的补帧数另有一道上限（见 MAX_REPLAY_FRAMES_PER_FRAME）：切后台回来时
+		# 积压的 delta 已经被 _drop_resume_frame 丢过一道，这里是第二道 —— 补帧要
+		# 生成特效，一帧补几十帧就是「卡屏」本身。
+		var steps := 0
+		while _sim_accumulator >= SIM_TICK_SEC and _replay_frame < timeline_end \
+				and steps < MAX_REPLAY_FRAMES_PER_FRAME:
 			_sim_accumulator -= SIM_TICK_SEC
+			steps += 1
 			if _replay_frame < frames.size():
 				_apply_replay_frame(_replay_frame)
 			_replay_frame += 1
+		# 补帧被砍掉时不能把 accumulator 留着 —— 否则下一帧继续补，永远追不上。
+		if steps >= MAX_REPLAY_FRAMES_PER_FRAME:
+			_sim_accumulator = minf(_sim_accumulator, SIM_TICK_SEC)
 		_refresh_visuals()
 		if _replay_frame >= timeline_end:
 			_finish_replay()
@@ -297,7 +378,8 @@ func _start_replay(replay: Dictionary) -> void:
 	_battle_setup_ready = false
 	_playback_deadline_msec = 0
 	_sim_accumulator = 0.0
-	_battle_prepare_started_msec = Time.get_ticks_msec()
+	# 单调时钟（10.08 第 3 条）：切后台再回来墙钟会跳，deadline 会瞬间过期。
+	_battle_prepare_started_msec = _mono_msec
 	battle_preparation_report = {"budget_ms": BATTLE_PREPARE_TIMEOUT_MSEC, "started_msec": _battle_prepare_started_msec}
 	_battle_prepare_deadline_msec = _battle_prepare_started_msec + BATTLE_PREPARE_TIMEOUT_MSEC
 	if _result_overlay_lbl != null:
@@ -357,7 +439,9 @@ func _start_replay(replay: Dictionary) -> void:
 		# Actors are registered now, so queued cues may resolve their anchors.
 		_readable_speed = _compute_readable_speed()
 		var playback_seconds := maxf(8.0, float((_replay_own.get("frames", []) as Array).size()) * SIM_TICK_SEC / (PLAYBACK_SPEED * _readable_speed))
-		_playback_deadline_msec = Time.get_ticks_msec() + int((playback_seconds + 20.0) * 1000.0)
+		# ★ 用单调时钟（10.08 第 3 条）：这条 deadline 的注释自己写着「Bounded actual
+		#   elapsed playback」——而墙钟在后台会跳，跳完立刻判定「播太久了」直接判负。
+		_playback_deadline_msec = _mono_msec + int((playback_seconds + 20.0) * 1000.0)
 		_presentation_director.set_playback_speed(PLAYBACK_SPEED * _readable_speed)
 
 
@@ -417,7 +501,9 @@ func _prepare_replay_assets() -> bool:
 	BattleAssetService.promote_future_to_battle(GameState.round_index)
 	VFXManager.preload_textures(texture_paths)
 	var started := Time.get_ticks_msec()
-	var deadline := started + 15000
+	# 15 秒资源预算也是 deadline：切后台回来墙钟会跳（10.08 第 3 条），
+	# 而这里失败会走 _fail_team_replay("battle_assets_timeout") ⇒ 判负、不结算金币。
+	var deadline := _mono_msec + 15000
 	var total := model_paths.size() + texture_paths.size()
 	var bar: ProgressBar = null
 	while is_inside_tree() and not _finished:
@@ -440,7 +526,7 @@ func _prepare_replay_assets() -> bool:
 			var status := ResourceLoader.load_threaded_get_status(path)
 			if status in [ResourceLoader.THREAD_LOAD_FAILED, ResourceLoader.THREAD_LOAD_INVALID_RESOURCE]:
 				failed.append(path)
-		if not failed.is_empty() or Time.get_ticks_msec() >= deadline:
+		if not failed.is_empty() or _mono_msec >= deadline:
 			bar.queue_free()
 			push_warning("[BATTLE_ASSET_FAILED] ready=%d/%d failed=%s elapsed_ms=%d" % [
 				done, total, str(failed), Time.get_ticks_msec() - started])
@@ -490,10 +576,14 @@ const BATTLE_PREPARE_PET_SIZE := Vector2(64.0, 64.0)
 # 必须「建完才开打」——否则 _apply_replay_frame 会去定位还不存在的单位。
 func _prepare_battle_models() -> void:
 	var models_started := Time.get_ticks_msec()
+	# ★ _battle_prepare_started_msec 记的是**单调表**上的起点（见 _start_replay）。
+	#   绝不能用 models_started（墙钟）覆盖：battle_preparation_report.total_ms 与
+	#   Analytics 的 replay_done.ms 都是拿它做差的，两个钟混着减会算出
+	#   「这一回合准备了 8 分钟」这种假数字。
 	if _battle_prepare_started_msec <= 0:
-		_battle_prepare_started_msec = models_started
+		_battle_prepare_started_msec = _mono_msec
 	if _battle_prepare_deadline_msec <= 0:
-		_battle_prepare_deadline_msec = Time.get_ticks_msec() + BATTLE_PREPARE_TIMEOUT_MSEC
+		_battle_prepare_deadline_msec = _mono_msec + BATTLE_PREPARE_TIMEOUT_MSEC
 	var living: Array = []
 	for f in (_state.get("player", []) + _state.get("enemy", [])):
 		if typeof(f) == TYPE_DICTIONARY and bool(f.get("alive", false)):
@@ -524,12 +614,21 @@ func _prepare_battle_models() -> void:
 	battle_preparation_report["models"] = {"count": total, "elapsed_ms": Time.get_ticks_msec() - models_started}
 	var warmup := RenderWarmup.new()
 	add_child(warmup)
+	# ★ 跨模块**边界换算**（10.08c 真机回归修的就是这一行）：
+	#   BattleRenderWarmup.prepare_replays() 内部拿 `Time.get_ticks_msec()`（墙钟）
+	#   比 deadline，而本场景的 deadline 全是 `_mono_msec`（切后台不计）。
+	#   把 `_battle_prepare_deadline_msec` 原样递过去 ⇒ 那个数远小于当前墙钟
+	#   ⇒ 一进门就判 `render_warmup_timeout` ⇒ _fail_team_replay(...) ⇒ 整场战斗
+	#   被跳过（用户报的新 bug：进战场读条后直接跳过战斗画面，开局越晚越必现）。
+	#   ⇒ 出界前必须换算：剩余预算照旧按单调表算，再贴到墙钟上。
+	var prepare_budget_left_msec := maxi(0, _battle_prepare_deadline_msec - _mono_msec)
+	var warmup_wall_cutoff_msec := warmup_cutoff_msec(prepare_budget_left_msec, Time.get_ticks_msec())
 	var render_report: Dictionary = await warmup.prepare_replays([_replay_own, _replay_rival], _battle_3d_viewport,
 		func(ready: int, count: int):
 			if is_instance_valid(bar):
 				_set_prepare_progress(bar, 40.0 + 50.0 * float(ready) / float(maxi(1, count))),
 		func() -> bool: return is_inside_tree() and not _finished and not _return_emitted,
-		_battle_prepare_deadline_msec)
+		warmup_wall_cutoff_msec)
 	battle_preparation_report["effects"] = render_report.duplicate(true)
 	warmup.queue_free()
 	if not is_inside_tree() or _finished or _return_emitted or _prepare_deadline_expired():
@@ -619,17 +718,32 @@ func _prepare_battle_models() -> void:
 		if not is_inside_tree() or _finished or _prepare_deadline_expired():
 			return
 	if is_inside_tree() and not _finished:
-		battle_preparation_report["total_ms"] = Time.get_ticks_msec() - _battle_prepare_started_msec
+		battle_preparation_report["total_ms"] = _mono_msec - _battle_prepare_started_msec
 		battle_preparation_report["ready"] = true
 		_battle_setup_ready = true
 		if is_instance_valid(_view_toggle_btn):
 			_view_toggle_btn.disabled = false
 
 func _prepare_deadline_expired() -> bool:
-	if _battle_prepare_deadline_msec > 0 and Time.get_ticks_msec() > _battle_prepare_deadline_msec:
+	if _battle_prepare_deadline_msec > 0 and _mono_msec > _battle_prepare_deadline_msec:
 		_fail_team_replay("battle_prepare_timeout")
 		return true
 	return false
+
+
+# ★ 单调 → 墙钟的**出口换算**。为什么必须有两套 clock：
+#
+#   本场景所有 deadline 都是前台单调表 `_mono_msec`（切后台不计），这是 10.08 第 3 条
+#   的修复本体。但外部模块（BattleRenderWarmup.prepare_replays）内部是拿
+#   `Time.get_ticks_msec()` 比 deadline 的。把单调值原样递过去 ⇒ 它眼里「早就超时了」
+#   ⇒ render_warmup_timeout ⇒ 整场战斗被跳过。
+#
+#   所以凡是要**跨出本文件**的 deadline，都必须在这里换成墙钟：
+#   剩余预算按单调表算（后台那段时间照旧不吃预算），再贴到当前墙钟上。
+#
+#   纯函数、不读状态 —— 门禁直接拌值验证（tools/prep_1008_check.gd）。
+static func warmup_cutoff_msec(budget_left_msec: int, wall_now_msec: int) -> int:
+	return wall_now_msec + maxi(0, budget_left_msec)
 
 # 顶部一条细进度条，接着备战界面那条蓝线继续走，避免「画面停住」的观感。
 #
@@ -836,14 +950,20 @@ func _set_watching_rival(watch_rival: bool) -> void:
 func _advance_spectate(delta: float) -> void:
 	if _spectate_done:
 		return
-	# 与主线同一个封顶策略：慢帧不得攒出无限积压。
+	# 与主线同一个封顶策略：慢帧不得攒出无限积压。补帧数另加一道上限，
+	# 理由同 _process（切后台回来一帧补几十帧 = 卡屏）。
 	_sim_accumulator = minf(_sim_accumulator + delta * PLAYBACK_SPEED * _readable_speed,
 		SIM_TICK_SEC * MAX_STEPS_PER_FRAME)
 	var frames: Array = _replay.get("frames", [])
-	while _sim_accumulator >= SIM_TICK_SEC and _replay_frame < frames.size():
+	var steps := 0
+	while _sim_accumulator >= SIM_TICK_SEC and _replay_frame < frames.size() \
+			and steps < MAX_REPLAY_FRAMES_PER_FRAME:
 		_sim_accumulator -= SIM_TICK_SEC
+		steps += 1
 		_apply_replay_frame(_replay_frame)
 		_replay_frame += 1
+	if steps >= MAX_REPLAY_FRAMES_PER_FRAME:
+		_sim_accumulator = minf(_sim_accumulator, SIM_TICK_SEC)
 	_refresh_visuals()
 	if _replay_frame >= frames.size():
 		_spectate_done = true
@@ -1348,7 +1468,7 @@ func _finish_replay() -> void:
 	_return_emitted = true
 	# 运营数据：这一回合的战斗播完了（从开始准备到播完多久）。和服务器的结算对得上 = 玩家看到了结果。
 	AnalyticsService.track("replay_done", {"round": _replay_round,
-		"ms": Time.get_ticks_msec() - _battle_prepare_started_msec})
+		"ms": _mono_msec - _battle_prepare_started_msec})
 	_stop_battle_music()
 	# 9.19：人王奖励音 + 升级闪光（见 BattleVfx._play_human_king_reward）。
 	# 本地模拟那条路在 BattleResult._emit_finished 里调，这里是 replay/组队那条。
@@ -1426,9 +1546,11 @@ func _compute_readable_speed() -> float:
 
 
 func _await_presentation_drained() -> void:
-	var deadline := Time.get_ticks_msec() + int(PRESENTATION_DRAIN_TIMEOUT_SEC * 1000.0)
+	# 同样是 deadline ⇒ 用单调时钟（10.08 第 3 条）：切后台回来墙钟一跳，
+	# 这里会把还在播的关键 cue 直接跳掉。
+	var deadline := _mono_msec + int(PRESENTATION_DRAIN_TIMEOUT_SEC * 1000.0)
 	while _presentation_director.has_blocking_cues():
-		if Time.get_ticks_msec() >= deadline:
+		if _mono_msec >= deadline:
 			push_warning("[BATTLE_PLAYBACK] presentation deadline -> authoritative result")
 			_presentation_director.skip_to_result()
 			cue_release_corpses()

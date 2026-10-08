@@ -733,6 +733,12 @@ static func _fighter_from_cell(cell: Dictionary, slot: int, team: String, mirror
 	# 所以另记一份棋子 uid 和它出场时的阵营。
 	f["piece_uid"] = str(cell.get("uid", ""))
 	f["piece_team"] = team
+	# 10.08c 第 1 条：把人王的**持久成长层数**（UnitGrowth.KING_STACKS）带上战场。
+	# 这个数记在摆放格子上（「活过几场」），战斗里的 fighter 本来没有它 ——
+	# 结算面板以前只能读 `skill_stacks`，那是战斗内的技能计数（赤舞者、破甲者
+	# 都会涨），于是「（N层）」会错贴到非人王身上、真正的人王反而读不到。
+	# 非人王取下取整落脚为 0（UnitGrowth.king_stacks 自带 is_king 判定），无害。
+	f[UnitGrowth.KING_STACKS] = UnitGrowth.king_stacks(cell)
 	return f
 
 

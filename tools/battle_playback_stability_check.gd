@@ -316,7 +316,11 @@ func _check_setup_guard() -> void:
 	await get_tree().process_frame
 	var expired := ResourceProbe.new()
 	add_child(expired)
-	expired.set("_battle_prepare_deadline_msec", Time.get_ticks_msec() - 1)
+	# 10.08c：这条 deadline 已改为**前台单调表** `_mono_msec` 驱动，布桩就得驱动
+	# 同一张表 —— 用墙钟赋值会被判成「还没到」，反而误报「没有失败出口」。
+	# 语义不变：准备阶段（资源/模型/draw）总时长必须有一个明确的失败边界。
+	expired.set("_mono_msec", 1000)
+	expired.set("_battle_prepare_deadline_msec", 999)
 	_h.expect(bool(expired.call("_prepare_deadline_expired")) and expired.asset_failure == "battle_prepare_timeout",
 		"preparation_total_deadline", "resource/model/draw preparation has one explicit failure boundary")
 	expired.queue_free()

@@ -152,12 +152,17 @@ func _check_settlement() -> void:
 	var stats: Array = payload.get("stats", [])
 	_expect(stats.size(), 6 * 30, "统计条数照抄（没到上限）")
 	var first: Dictionary = stats[0]
-	var want_keys := ["dmg", "heal", "id", "merc", "name", "own", "slot", "stack", "star", "taken"]
+	# 10.08c 第 1 条（对局历史）：n_en（英文名）与 kst（人王持久层数）是**刻意**进战报的 ——
+	# 历史统计的语言是「打开历史那一刻」的语言，这两样不落盘历史里就翻不出来 / 显示不出。
+	# buffs / debuffs 仍然不进（历史界面一个都用不上）。
+	var want_keys := ["dmg", "heal", "id", "kst", "merc", "n_en", "name", "own", "slot", "stack", "star", "taken"]
 	var got_keys: Array = first.keys()
 	got_keys.sort()
-	_expect(got_keys, want_keys, "统计是短键，没有多余字段（buffs / debuffs / name_en 不进战报）")
+	_expect(got_keys, want_keys, "统计是短键，没有多余字段（buffs / debuffs 不进战报；n_en / kst 是刻意加的）")
 	_expect(int(first.get("dmg", -1)), 123456, "造成伤害")
 	_expect(int(first.get("stack", -1)), 3, "技能层数")
+	_expect(str(first.get("n_en", "")), "Dark Dragon", "英文名随战报走（历史统计英文要靠它）")
+	_expect(int(first.get("kst", -1)), 5, "人王持久层数随战报走（历史的人王要靠它显示 N 层）")
 
 	# 🔴 棋子位置：服务器存的棋盘是 16 格数组、格子里没有 slot 键 —— 用下标。
 	# 以前缺省成 0，所有棋子都记在 0 号位。
@@ -306,6 +311,7 @@ func _sample_ctx() -> Dictionary:
 				"name_en": "Dark Dragon", "position": "棋盘%d" % i, "group": "player",
 				"team": "player", "owner_slot": slot, "lane": 1, "slot": i,
 				"is_mercenary": i >= 16, "skill_stacks": 3,
+				"king_growth_stacks": 5,
 				"damage_dealt": 123456, "damage_taken": 654321, "healing_done": 99999,
 				"debuffs": {"burn": 12, "stun": 3}, "buffs": {"shield": 5},
 			})

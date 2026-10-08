@@ -531,6 +531,10 @@ static func result_from_state(state: Dictionary) -> Dictionary:
 		var uid := str(fighter.get("uid", ""))
 		if state.get("unit_stats", {}).has(uid):
 			state.unit_stats[uid]["skill_stacks"] = int(fighter.get("skill_stacks", 0))
+			# 10.08c 第 1 条：人王的持久层数接力到统计表（格子 → fighter → unit_stats）。
+			# 结算面板的「（N层）」只读这一个字段，不再用 skill_stacks 顶替。
+			if fighter.has(UnitGrowth.KING_STACKS):
+				state.unit_stats[uid][UnitGrowth.KING_STACKS] = int(fighter.get(UnitGrowth.KING_STACKS, 0))
 	if state.has("forced_result"):
 		var forced: Dictionary = state.forced_result
 		var forced_player: Array = state.get("player", [])

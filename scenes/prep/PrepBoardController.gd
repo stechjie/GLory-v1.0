@@ -108,8 +108,54 @@ func _on_drag_started(payload: Dictionary) -> void:
 func _on_drag_ended() -> void:
 	# Released without landing on a cell -> snap into the nearest valid cell.
 	if not _drop_consumed and not _active_drag_payload.is_empty():
-		_snap_drop_to_nearest(get_global_mouse_position(), _active_drag_payload)
+		var released_at := get_global_mouse_position()
+		# ★ 10.08 反馈第 9 条：拖棋盘/待命单位松手在「商店卡片 / 金图标」上时，
+		#   那里不是任何实际拖放目标，以前会掉到这里被 **吸附回待命区** ⇒ 表现为
+		#   「丢上去没反应，卖不掉」。这里抢在吸附之前按出售处理。
+		#   命中范围比看得见的红色区域大（见 _point_in_sell_coverage）。
+		if _can_drop_to_sell(_active_drag_payload) and _point_in_sell_coverage(released_at):
+			_drop_to_sell(_active_drag_payload)
+		else:
+			_snap_drop_to_nearest(released_at, _active_drag_payload)
 	_finish_drag_state()
+
+
+# ★ 出售的**命中范围**：可见红区 ∪ 商店弹窗 ∪ 侧栏（钱袋 / 金图标 / 刷新键）。
+#
+# 为什么和「看得见的红区」不是同一个矩形（10.08c 真机回归的教训）：
+#   把红区实际放大去覆盖商店，会①压掉商店刷新按钮（用户报「商店打开后没有刷新按钮」）
+#   ②盖住待命区让棋子拖不回去（用户报「售卖区被异常放大，棋子无法回到待命区」）。
+#   ⇒ 视觉归视觉（PrepUI 里红区保持原尺寸），命中范围在这里单独放宽，玩家看不见。
+#
+# `at` 可由门禁指定落点（headless 拿不到真光标），省略时取真实鼠标位置。
+# 商店没开时只有红区本身有效 —— 那种情况下按钮本来就不在屏幕上。
+func _point_in_sell_coverage(at: Vector2 = Vector2.INF) -> bool:
+	if _shop == null:
+		return false
+	var point := get_global_mouse_position() if at == Vector2.INF else at
+	var overlay := _shop.sell_overlay
+	if overlay != null and is_instance_valid(overlay) and overlay.visible \
+			and overlay.get_global_rect().has_point(point):
+		return true
+	if not _shop.picker_open:
+		return false
+	return _point_in_shop_chrome(point)
+
+
+# 商店自己的可视部件：弹窗本体 + 侧挂控件（钱袋 A / 刷新键等）。
+# 与 _shop_drop_inside_store 用的是同一套判定（那边管「别误购」，这边管「要能卖」）。
+func _point_in_shop_chrome(point: Vector2) -> bool:
+	var panel := _shop.panel
+	if panel != null and is_instance_valid(panel) and panel.visible \
+			and panel.get_global_rect().has_point(point):
+		return true
+	var side := _shop.side_controls
+	if side != null and is_instance_valid(side) and side.visible:
+		for child in side.get_children():
+			if child is Control and (child as Control).visible \
+					and (child as Control).get_global_rect().has_point(point):
+				return true
+	return false
 
 # 拖拽收尾：清掉拖拽态，把棋盘/待命区恢复成「没在拖」的样式。
 #
@@ -170,6 +216,9 @@ func _snap_drop_to_nearest(global_pos: Vector2, payload: Dictionary) -> void:
 func _set_shop_sell_mode(enabled: bool) -> void:
 	_shop.drag_sell_mode = enabled
 	if _shop.sell_overlay != null:
+		# 红区维持原尺寸（PrepUI 里定的几何），这里只管显隐。
+		# 商店 / 金图标位置的出售由 _point_in_sell_coverage() 在 _on_drag_ended 里兜，
+		# 不靠把红区撑大 —— 撑大会挡住刷新按钮与待命区（10.08c 真机回归）。
 		_shop.sell_overlay.visible = enabled
 
 func _on_hire_mercenary(index: int) -> void:

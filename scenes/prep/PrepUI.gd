@@ -135,6 +135,10 @@ const READY_AVATAR_GAP := 4
 const READY_TEAM_GAP := 18
 const SEAT_CARD_MODAL_ID := "prep_seat_card"
 const SEAT_CARD_MODAL_PRIORITY := 40
+# 左侧「羁绊 / 宝藏」栏顶端为两行准备头像让出的高度（px）。
+# 两行头像实占 READY_AVATAR_SIZE*2 + READY_AVATAR_GAP = 116，加上顶部 8 与栏间距 8
+# ⇒ 定 132。改成别的头像尺寸时这个数要跟着动（门禁 prep_1008 会量实际 rect 兜住）。
+const SELL_LEFT_PANEL_TOP_RESERVE := 132.0
 const PrepSeatCard := preload("res://scenes/prep/panels/PrepSeatCard.gd")
 const PVP_WARNING_DWELL_SEC := 2.0
 const PVP_WARNING_FADE_SEC := 0.18
@@ -769,10 +773,23 @@ func _build_rest(root: VBoxContainer) -> void:
 	PrepWidgets.apply_transparent_panel_style(left_drop)
 	body.add_child(left_drop)
 	# 种族羁绊面板：不滚动，直接把 VBox 放进面板（内容确定放得下）。
+	#
+	# ★ 10.08 反馈第 4 条：准备头像改回上下两行后，左上角那两个头像会压到这一栏
+	#   顶上（实测头像 y ∈ [8,124]，而这一栏原来从 y=84 就开始 ⇒ 重叠 40px）。
+	#   用户在反馈里点名「把羁绊/宝藏等文本及图标向下挪动，给上下两行腾位置」。
+	#   这里在最前面插一个定高占位，把整栏内容推到两行头像底下。
+	#   —— 占位高度是实测值：READY_AVATAR_SIZE*2 + READY_AVATAR_GAP + 8(顶部) + 8(间距)。
+	var left_stack := VBoxContainer.new()
+	left_stack.add_theme_constant_override("separation", 0)
+	left_drop.add_child(left_stack)
+	var ready_avatar_reserve := Control.new()
+	ready_avatar_reserve.custom_minimum_size = Vector2(0, SELL_LEFT_PANEL_TOP_RESERVE)
+	ready_avatar_reserve.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	left_stack.add_child(ready_avatar_reserve)
 	_synergy._left_panel = VBoxContainer.new()
 	_synergy._left_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_synergy._left_panel.add_theme_constant_override("separation", 8)
-	left_drop.add_child(_synergy._left_panel)
+	left_stack.add_child(_synergy._left_panel)
 
 	var center_host := Control.new()
 	center_host.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -917,6 +934,21 @@ func _build_sell_zone_and_refresh(body: HBoxContainer, center_host: Control) -> 
 	# 常驻底部中央（与商店弹窗同一位置），独立于商店弹窗：仅拖拽 board/bench 单位时显示。
 	# z_index 高于弹窗(40)：弹窗开着时红区盖在弹窗上，丢上来直接卖，不会误触购买。
 	_shop.sell_overlay.z_index = 50
+	# ★ 10.08 反馈第 9 条（**保留原尺寸**）。
+	#
+	#   现象：拖棋子到「商店卡片」或「金图标」上松手，卖不掉。
+	#   根因：那些位置既没有红区接收，也没有兜底 —— 未落在实际拖放目标上的松手
+	#   会走到 PrepBoardController._on_drag_ended()，被 _snap_drop_to_nearest()
+	#   **吸附回最近的棋盘/待命格**，于是变成「什么都没发生」。
+	#
+	#   修法：**不动这里的几何**。红色可见区保持原大小（高 150 的底部中央一条），
+	#   命中范围由 PrepBoardController._point_in_sell_coverage() 单独判定
+	#   （红区 ∪ 商店弹窗 ∪ 侧栏钱袋/金图标/刷新键），在 _on_drag_ended 里抢先按出售处理。
+	#
+	# ★ 为什么不能把红区放大去覆盖（10.08c 真机回归，血的教训）：
+	#   把红区撑大后它会压住商店刷新按钮（用户报「商店打开后没有刷新按钮」），
+	#   并且盖住待命区导致棋子拖不回去（用户报「售卖区被异常放大，棋子无法回到待命区」）。
+	#   ⇒ **视觉区与命中区必须解耦**：看得见的红区维持原样，看不见的命中范围才放宽。
 	_shop.sell_overlay.anchor_left = 0.5
 	_shop.sell_overlay.anchor_right = 0.5
 	_shop.sell_overlay.anchor_top = 1.025
@@ -2114,36 +2146,49 @@ func show_message(text: String) -> void:
 
 
 func _build_ready_indicator() -> void:
-	# 3v3 准备状态：一排六个头像，左边三个=自己队、右边三个=对面（常量那里有为什么是一排）。
+	# 3v3 准备状态：**上下两行**头像 —— 上面一行 = 自己队 3 个，下面一行 = 对面 3 个。
 	# _ready_dots 按「位置」存头像徽章：0-2=自己队、3-5=对面；刷新时再映射到对应 slot。
 	# 点头像弹 PrepSeatCard：名字 + 不看留言 + 不听语音。
-	_ready_indicator = HBoxContainer.new()
+	#
+	# ★ 10.08 反馈第 4 条：改回「两队上下两行」（以前版本就是这样）。
+	#   2026-10-06 曾因为「56px 放大后两排压到下面的羁绊/宝藏栏」而改成一排 ——
+	#   那次没把下方内容让开。这次按用户要求两行，并把行距收进 READY_AVATAR_GAP，
+	#   整体高度仍控制在原来那一排的高度里（两行 = 56*2+4 = 116，见下面 offset_bottom）。
+	_ready_indicator = VBoxContainer.new()
 	# (7) Ready checks live in the empty TOP-LEFT corner, not the right side.
 	_ready_indicator.anchor_left = 0.0
 	_ready_indicator.anchor_right = 0.0
 	_ready_indicator.anchor_top = 0.0
 	_ready_indicator.anchor_bottom = 0.0
 	_ready_indicator.offset_left = 16
-	_ready_indicator.offset_right = 16 + READY_AVATAR_SIZE * 6 + READY_AVATAR_GAP * 4 + READY_TEAM_GAP
+	_ready_indicator.offset_right = 16 + READY_AVATAR_SIZE * 3 + READY_AVATAR_GAP * 2
 	_ready_indicator.offset_top = 8
 	_ready_indicator.offset_bottom = 8 + READY_AVATAR_SIZE
 	_ready_indicator.add_theme_constant_override("separation", READY_AVATAR_GAP)
 	_ready_indicator.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ready_indicator.z_index = 25
+	_ready_indicator.add_theme_constant_override("separation", READY_AVATAR_GAP)
 	add_child(_ready_indicator)
 	SafeArea.track(_ready_indicator)
 	_ready_dots = []
+	# 两行：0 = 自己队（3 个），1 = 对面（3 个）。
+	var rows: Array[HBoxContainer] = []
+	for r in 2:
+		var row := HBoxContainer.new()
+		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_theme_constant_override("separation", READY_AVATAR_GAP)
+		_ready_indicator.add_child(row)
+		rows.append(row)
 	for pos in 6:
-		if pos == 3:
-			var team_gap := Control.new()
-			team_gap.custom_minimum_size = Vector2(READY_TEAM_GAP - READY_AVATAR_GAP, 0)
-			team_gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			_ready_indicator.add_child(team_gap)
 		var badge := _create_ready_avatar_badge()
 		badge.gui_input.connect(_on_ready_badge_input.bind(badge))
-		_ready_indicator.add_child(badge)
+		rows[pos / 3].add_child(badge)
 		_ready_dots.append(badge)
 		VoiceControls.attach_speaking_mic(badge)
+	# 整体高度：两行头像 + 一行间距。原来只有一排（高=READY_AVATAR_SIZE），
+	# 现在改两行，这里把 offset_bottom 一并算准，否则 VBox 的 rect 会低估、
+	# 下面的「羁绊/宝藏」栏位置看起来还是老样子（用户第 4 条要求它下移腾位）。
+	_ready_indicator.offset_bottom = 8 + READY_AVATAR_SIZE * 2 + READY_AVATAR_GAP
 	_refresh_ready_indicator()
 	# 头像上的「正在说话」小麦克风（10-08）：说话状态每 0.25 秒才变一次，这里 0.2 秒看一眼就够。
 	var speaking_timer := Timer.new()

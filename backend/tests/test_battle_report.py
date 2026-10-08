@@ -312,8 +312,8 @@ def _with_settlement(**over) -> dict:
         seat["total_gold"] = 1480
     payload["allies"] = ["圣骑守护", "暗影守护"]
     payload["stats"] = [
-        {"own": 0, "slot": 3, "id": "unit_dark_dragon", "name": "暗黑巨龙", "star": 4,
-         "merc": False, "stack": 2, "dmg": 123456, "taken": 5000, "heal": 0},
+        {"own": 0, "slot": 3, "id": "unit_dark_dragon", "name": "暗黑巨龙", "n_en": "Dark Dragon",
+         "star": 4, "merc": False, "stack": 2, "kst": 5, "dmg": 123456, "taken": 5000, "heal": 0},
         {"own": 4, "slot": 0, "id": "merc_scorpio_death", "name": "死亡天蝎", "star": 0,
          "merc": True, "stack": 0, "dmg": 900, "taken": 12000, "heal": 300},
     ]
@@ -326,11 +326,31 @@ def test_settlement_is_parsed(report_key) -> None:
     assert settle["allies"] == ["圣骑守护", "暗影守护"]
     assert len(settle["stats"]) == 2
     assert settle["stats"][0] == {
-        "own": 0, "slot": 3, "id": "unit_dark_dragon", "name": "暗黑巨龙", "star": 4,
-        "merc": False, "stack": 2, "dmg": 123456, "taken": 5000, "heal": 0,
+        "own": 0, "slot": 3, "id": "unit_dark_dragon", "name": "暗黑巨龙", "n_en": "Dark Dragon",
+        "star": 4, "merc": False, "stack": 2, "kst": 5, "dmg": 123456, "taken": 5000, "heal": 0,
     }
     assert len(settle["seats"]) == 6
     assert settle["seats"][0] == {"stones": {"sky": 2, "ren": 1}, "total_gold": 1480}
+
+
+def test_settlement_keeps_english_name_and_king_stacks(report_key) -> None:
+    """10.08c 第 1 条（对局历史）：历史统计的语言是「打开历史那一刻」的语言。
+
+    英文名（n_en）与人王持久层数（kst）不随战报落盘，历史里就永远翻不出来 / 显示不出
+    —— 真机截图抓到「英文语言下整列中文、人王只有 ★1 没有层数」。
+    """
+    report = battle_report.verify(_sign(report_key, _with_settlement()))
+    first = report["settlement"]["stats"][0]
+    assert first["n_en"] == "Dark Dragon"
+    assert first["kst"] == 5
+
+
+def test_settlement_from_older_client_has_no_english_name(report_key) -> None:
+    """旧客户端的战报没有 n_en / kst：照收，取缺省（名字由客户端按 id 兜底）。"""
+    report = battle_report.verify(_sign(report_key, _with_settlement()))
+    second = report["settlement"]["stats"][1]
+    assert second["n_en"] == ""
+    assert second["kst"] == 0
 
 
 def test_report_from_an_older_battle_server_has_no_settlement(report_key) -> None:

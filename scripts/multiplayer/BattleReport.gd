@@ -53,6 +53,7 @@ extends RefCounted
 # 全静态、不持状态。
 
 const GameConstantsRef := preload("res://scripts/core/GameConstants.gd")
+const UnitGrowthRef := preload("res://scripts/units/UnitGrowth.gd")
 
 # 战报格式版本，与 backend/app/battle_report.py 的 REPORT_VERSION 一致。
 const VERSION := 1
@@ -281,9 +282,17 @@ static func _clean_stats(raw: Variant) -> Array:
 			"slot": int(d.get("slot", -1)),
 			"id": str(d.get("id", "")).left(MAX_ID_LEN),
 			"name": str(d.get("name", "")).left(MAX_NAME_LEN),
+			# 10.08c 第 1 条（对局历史）：把英文名也带上。历史面板的语言是「打开历史那一刻」
+			# 的语言，而这份记录是「对局那一刻」写死的 —— 以前只存中文名，语言切到英文后
+			# 历史统计表里整列棋子名翻不过来（真机 10.08 返工截图抓到）。
+			"n_en": str(d.get("name_en", "")).left(MAX_NAME_LEN),
 			"star": clampi(int(d.get("star", 1)), 0, GameConstantsRef.MAX_STAR),
 			"merc": bool(d.get("is_mercenary", false)),
 			"stack": clampi(int(d.get("skill_stacks", 0)), 0, 99),
+			# 人王的**持久成长层数**（UnitGrowth.KING_STACKS，格子 → fighter → unit_stats
+			# 三级接力带上来的那一份）。历史行以前只有 `stack` —— 那是战斗内技能计数，
+			# 于是历史里的人王永远显示不出「（N层）」。
+			"kst": clampi(int(d.get(UnitGrowthRef.KING_STACKS, 0)), 0, 99),
 			"dmg": maxi(0, int(d.get("damage_dealt", 0))),
 			"taken": maxi(0, int(d.get("damage_taken", 0))),
 			"heal": maxi(0, int(d.get("healing_done", 0))),

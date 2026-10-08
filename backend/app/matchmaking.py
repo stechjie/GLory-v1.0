@@ -57,7 +57,7 @@ from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
-from app import ranked
+from app import party, ranked
 from app.party_match_selection import select as select_party_seats
 
 log = logging.getLogger("glory.matchmaking")
@@ -468,6 +468,25 @@ class Matchmaker:
         if messages:
             # 逐条发、互不影响：一条连接卡住不该拖住其他人的消息。
             await asyncio.gather(*(self._send_one(pid, payload) for pid, payload in messages))
+        # 组队房间的掉线宽限到期由这里收尾（10.08 第 8 条「ghost 成员」）。
+        # 放在 tick 末尾：一秒内跑一次，够及时，也不会在断线那一刻抢锁。
+        await self._prune_party_ghosts()
+
+    async def _prune_party_ghosts(self) -> None:
+        """把「断线超过宽限还没回来」的组队房成员真正摘掉。
+
+        为什么需要它：ws 断开只是**记账**（party.on_disconnect 记一个时刻），
+        真正的摘人要等宽限过去 —— 手机切后台 / 地铁里断一下是常态，
+        一断就退房会把正常玩家踢出去。matchmaking 的 tick 每秒都跑，
+        是最自然的收尾点；摘人失败只记日志，绝不能把整轮 tick 拖挂。
+        """
+        try:
+            rooms = party.current().prune_disconnected()
+        except Exception:  # noqa: BLE001 - 摘人失败不该让整轮 tick 挂掉
+            log.exception("组队房掉线成员清理失败，这一轮放过")
+            return
+        for room in rooms:
+            log.info("组队房 %s 的掉线成员已过宽限，已剔除", room.room_id)
 
     async def _send_one(self, player_id: uuid.UUID, payload: dict) -> int:
         try:

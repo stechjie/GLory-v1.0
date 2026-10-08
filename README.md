@@ -1,5 +1,78 @@
 # Glory Beta 0.04
 
+## 2026-10-08（真机返工）：#135 重连 / #136 出售区 / #138 跳过战斗 / #137 统计面板 + 对局历史支线
+
+真机测出 10.08b 后仍存在的问题，逐条落码。**改动只有代码 + 门禁 / 测试，无新增运行资源、未重导 EXE/APK、未真机验证、本轮回测后已同步 `GLory-v1.0`、未 `git add/commit/push`（由你本地提交）。**
+
+- **#135 重连失效** ⇒ `scenes/main/Main.gd` 逐字节还原到仓版（与仓 `a0c577ffd763` 全等），拆掉上一轮推测性兜底，留 4 条守卫（`reconnect_error_branch_found` / `reconnect_uses_recoverable_failure` / `reconnect_branch_has_no_early_return` / 第 4 条）；变异已验 CAUGHT。
+- **#136 出售区（商店/金图标卖不掉 + 售卖区放大拖不回 + 没刷新按钮）** ⇒ 根因是 10.08b 自己的修法把红区运行时拉宽盖住弹窗/钱袋，在手机画布被撑成巨框压住 refresh 按钮与待命区。新口径＝**视觉区与命中区解耦**：`sell_overlay` 维持原尺寸（底部中央 896×150），命中范围由 `PrepBoardController._point_in_sell_coverage()` 单独放宽（红区 ∪ 商店弹窗 ∪ 侧栏钱袋/金图标）。多分辨率探针 `tools/sell_geom_probe.tscn`（1600×720 / 1280×720 / 2340×1080）**24/24 全绿**；变异 3 变体全 CAUGHT。
+- **#138 读条后自动跳过战斗（大概率）** ⇒ 两套时钟在模块边界混用：`BattleScreen` 的 deadline 全在前台单调表 `_mono_msec` 上，而 `BattleRenderWarmup.prepare_replays()` 内部是**墙钟** `Time.get_ticks_msec()` 比对 ⇒ 把单调值原样递过去 ⇒ 一进门判 `render_warmup_timeout` ⇒ 整场被跳过（开局越晚越必现）。修法：`warmup_cutoff_msec(budget_left, wall_now) = wall_now + maxi(0, budget_left)` 出口换算，禁止用墙钟覆盖单调起点。变异 3 变体全 CAUGHT。
+- **#137 统计面板（英文下棋子中文 / 人王不显层数 / 层数错贴痛苦女王）** ⇒ `skill_stacks` ≠ 人王层数（前者是战斗内技能计数，痛苦女王会叠到 4）；人王持久层数是 `UnitGrowth.KING_STACKS`，记在摆放格子。三级接力：`BattleSimShared._fighter_from_cell()` → `BattleSimulator.result_from_state()` → `FinalSettlementPanel._king_stacks()`。名字三处双语：`_stat_unit_name` / `_unit_name`（走 `DataRegistry.unit_display_name(..., _english())`）/ `_codex_name`。
+
+**对局历史支线（截图：英文下整列中文 + 人王无层数）**：历史统计走「短键」四段链，两端都没存英文名 / 人王层数（`BattleReport._clean_stats` 写报 → 后端 `battle_report._settlement_stat` 白名单 → `MatchHistoryPanel.settlement_view_data` 读报 → `FinalSettlementPanel`）。四处联动修：①写报加 `n_en`/`kst` 两短键；②后端白名单补 `n_en`/`kst`；③读报补 `name_en`/`king_growth_stacks`；④面板 `_stat_unit_name` **先按 id 回 `DataRegistry.canonical_unit_def` 查双语名**（救旧记录跟着「打开历史那一刻」语言走），人王层数旧记录压根没存 ⇒ **绝不凭空编数**。
+
+### 门禁 / 测试
+
+| 名称 | 条数 | 覆盖 | 变异 |
+|---|---|---|---|
+| `tools/prep_1008_check.tscn` | **163** | #137 三级接力 + 双语 + 对局历史支线四层判据 | 7 + 4 变体全 CAUGHT |
+| `tools/battle_playback_stability_check.tscn` | **145** | #138 时钟换算 | 3 变体 CAUGHT |
+| `tools/sell_geom_probe.tscn` | **24** | #136 多分辨率几何 | 3 变体 CAUGHT |
+| `tools/battle_report_check.tscn` | **54** | 战报结算白名单 `n_en`/`kst` | 2 用例 CAUGHT |
+| `tools/prep_mute_state_check.tscn` / `tools/settings_quality_check.tscn` / `tools/king_aura_stack_probe.tscn` | — | 关联回归 | — |
+| `backend/tests/test_battle_report.py` | **49** | 战报解析 + `n_en`/`kst` 保留 | 2 新用例 |
+
+关联门禁回归全绿：`final_settlement` 41/0、`unit_growth` 84/0、`unit_name_consistency` 63/0、`round_settlement` 18/0、`match_history_ui` 83/0、`cold_parse_chain` 354/0。
+
+★ 本轮同步 `GLory-v1.0` 共 63 个文件：19 个内容有差异（含对局历史支线 4 生产 + 2 测试/门禁）、44 个新增游戏内容文件（门禁/语音插件/特效/DB 迁移/历史文档）；`assets/` 白名单未跟踪不传、本地密钥/`.claude`/`.DS_Store`/`work/_qa_*` 临时探针不传。
+
+
+
+## 2026-10-08：`10.08bug提交及修复.docx` 9 条
+
+按文档逐条落码。**改动只有代码 + 门禁 / 测试，无新增运行资源、未重导 EXE/APK、
+未真机验证、未同步 `GLory-v1.0`、未暂存/提交/推送。**
+
+- **第 1 条（统计面板英文没切 /「（N层）」不限人王）** `scenes/menu/FinalSettlementPanel.gd` 全文中文
+  **硬编码、零 `tr()`** ⇒ 切英文不生效；`（%d层）` 又是**人王专属**技能叠加层数却无条件拼在名字后。
+  面板全部改走 `tr()`（`LocaleManager` 补 **31 条** zh/en），层数用
+  `DataRegistry.canonical_unit_def` + `UnitGrowth.is_king` 判定，**只在人王身上出**。
+- **第 2 条（图鉴按钮大小不一 / 种族图标要长按看羁绊）** `scenes/menu/CodexScreen.gd`：
+  分类按钮统一到 `TAB_BUTTON_SIZE = (132, 44)`（以前没给 `custom_minimum_size`，宽度随文字走）；
+  种族徽章加长按入口（0.7s，移动 >8px 取消），弹的羁绊文本**复用备战那份**
+  `SynergyPanel.format_synergy_title/_effects`，不在图鉴里另抄一份。
+- **第 3 条（切后台回来已进备战、回合战斗金没给）+ 第 5 条（对局卡屏、要重启重连）**
+  两条同一个根因：本场景所有 deadline 走**墙钟**，手机切后台再回来墙钟一次跳几分钟 ⇒
+  每个 deadline 瞬间过期 ⇒ 回放被判 `battle_playback_timeout` ⇒ `Main` 直接回菜单，
+  **没人去要权威结算**，回合战斗金永不发放；恢复帧的积压 `delta` 又让回放在单帧里补几十帧
+  （每帧起特效）= 卡屏。修法**四层**：`BattleScreen` 自攒只在前台推进的单调毫秒表
+  （后台期间一格不走，恢复帧 `delta` 夹到 0.25s，回放单帧补帧封顶 6 帧 + 累加器夹回）；
+  `Main` 端三处权威兜底（服务器已推进本回合就本地认领结算 / 权威 state 已含本回合就不报错 /
+  `battle_*` 类错误在组队下不作为结果相信）。★ 详见
+  [10.08bug提交及修复记录](docs/10.08bug提交及修复记录.md)。
+- **第 4 条（头像改上下两行）** `scenes/prep/PrepUI.gd`：准备头像从 `HBoxContainer` 一排改成
+  VBox **两行**（`rows[pos / 3]`），「羁绊 / 宝藏」文本与图标向下挪（`SELL_LEFT_PANEL_TOP_RESERVE`）。
+- **第 6 条（手机背包点第一个「人王」头像跳到最后一个）** ★ 只在 **Android 双路投递**下发生：
+  `BagScreen._select_avatar()` 走 `_render()` 整体重建，把**正在处理这次点击**的瓦片 `queue_free`
+  掉；新控件这一帧还没布局、全堆在第一个格子，而 `emulate_mouse_from_touch` 投的第二路（模拟鼠标）
+  命中的是这批未布局控件里**最上层那个**（逆序 ⇒ 最后一个）。修法：**选中只重上色、不重建**
+  （新增 `_avatar_tiles` / `_pet_tiles` 索引 + `_refresh_avatar_selection` / `_refresh_pet_selection`）。
+- **第 7 条（好友码输入框呼出键盘又自动隐藏）** `scenes/menu/FriendsScreen.gd`：5 秒轮询的
+  `_render()` 无条件 `queue_free` 重建列表 ⇒ 连输入框一起清掉、软键盘收起。改为
+  「正在编辑好友码时不动列表」（`_is_editing_code()`）。
+- **第 8 条（ghost 房间成员）** `backend/app/routes/ws.py` 断连 `finally` 里**没有**通知 party ⇒
+  掉线玩家的成员项永久残留。`party.py` 新增 60 秒掉线宽限（`on_disconnect` /
+  `mark_present` / `prune_disconnected`），`matchmaking.tick()` 定期剔除，
+  `ws.py` `finally` 里 `party.current().on_disconnect(...)`。
+- **第 9 条（拖棋子到金图标 / 商店 UI 上不触发出售）** `scenes/prep/PrepUI.gd`：红区
+  `offset_top = -SHOP_POPUP_SIZE.y + 80`、左右 `∓448` 没盖住商店弹窗与钱袋 A。改成整块盖住
+  （`-SHOP_POPUP_SIZE.y - 8`、左右半宽、`offset_bottom = 0`）+ 新增 `_sync_sell_zone_geometry()`。
+- **门禁** 新增 `tools/prep_1008_check.tscn`（**59 条**，覆盖第 1/2/3/4/5/6/9 条 + 结构守卫）、
+  `backend/tests/test_party_presence_stdlib.py`（**11 条**）。变异 **6/6 全红**（第 3/5 条 3 红 +
+  1 冗余层、第 6 条 2 红）。后端全量 A/B **CLEAN**（只在现版出现的失败 = 0，passed 673 → 684）。
+  `cold_parse_chain` PASS 354。既存红（`dynamic_call` 30 / `battle_loading_layout` 1 /
+  `prep_text_coverage` 1）原样不动，且**无一条引用本轮改动文件**。
+
 ## 2026-10-07：人王 / 老虎的成长改记在每枚棋子上（协议 39，未提交）
 
 - **老虎**：每次升星（合成、升四星），当时手上（棋盘 + 待命区）每一枚一阶棋子生命 / 攻击 / 防御 +5%，累计；

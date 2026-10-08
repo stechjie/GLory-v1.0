@@ -32,7 +32,8 @@ import re
 from fastapi import APIRouter
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from app import admission, analytics, bans, db, matchmaking, players, realtime
+from app import (admission, analytics, bans, db, matchmaking, party, players,
+                 realtime)
 from app.config import get_settings
 from app.jwt_verify import TokenError
 from app.realtime import Connection
@@ -141,6 +142,11 @@ async def realtime_endpoint(websocket: WebSocket) -> None:
         # 待确认阶段断线则当场解散那一桌 —— 让另外五个人早点回队列，
         # 比陪着一个已经不在的人干等 30 秒强（app/matchmaking.py）。
         matchmaking.current().on_disconnect(conn.player_id)
+        # 组队房间同样要给掉线的人记账（10.08 第 8 条「ghost 成员」）：
+        # 没有这一句，断线玩家的房间成员项会永久残留 —— 别人看到他在房间里，
+        # 他自己却回不来，也永远不会被剔除。真正摘人由宽限到期后的
+        # prune_disconnected() 做（见 app/party.py）。
+        party.current().on_disconnect(conn.player_id)
         log.info("WS 断开 player=%s 在线连接=%d", conn.player_id, hub.connection_count())
 
 
