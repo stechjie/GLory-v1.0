@@ -276,3 +276,17 @@ glory_server_key*.pem
 /assets/ui/pets/*
 !/assets/ui/pets/pet_squirrel_illustration.png
 !/assets/ui/pets/pet_tiger_illustration.png
+
+# October 2026 result screen and selectable avatar art.
+!/assets/ui/game_over/
+/assets/ui/game_over/*
+!/assets/ui/game_over/victory.png
+!/assets/ui/game_over/defeat.png
+!/assets/ui/unit_portraits/*.png
+!/assets/ui/avatars/
+!/assets/ui/avatars/thumb/
+/assets/ui/avatars/thumb/*
+!/assets/ui/avatars/thumb/*.png
+!/assets/ui/mercenary_portraits/
+/assets/ui/mercenary_portraits/*
+!/assets/ui/mercenary_portraits/*.png

@@ -55,121 +55,365 @@
 			"id": "avatar_001",
 			"name": "人族国王",
 			"name_en": "Human King",
-			"source": "res://assets/ui/unit_portraits/human_king.png"
+			"source": "res://assets/ui/unit_portraits/human_king.png",
+			"group": "human"
 		},
 		{
 			"id": "avatar_002",
 			"name": "人族剑士",
 			"name_en": "Swordsman",
-			"source": "res://assets/ui/unit_portraits/human_swordsman.png"
+			"source": "res://assets/ui/unit_portraits/human_swordsman.png",
+			"group": "human"
 		},
 		{
 			"id": "avatar_003",
 			"name": "人族弓手",
 			"name_en": "Archer",
-			"source": "res://assets/ui/unit_portraits/human_archer.png"
+			"source": "res://assets/ui/unit_portraits/human_archer.png",
+			"group": "human"
 		},
 		{
 			"id": "avatar_004",
 			"name": "人族法师",
 			"name_en": "Mage",
-			"source": "res://assets/ui/unit_portraits/human_mage.png"
+			"source": "res://assets/ui/unit_portraits/human_mage.png",
+			"group": "human"
 		},
 		{
 			"id": "avatar_005",
 			"name": "暗黑巨龙",
 			"name_en": "Dark Dragon",
-			"source": "res://assets/ui/unit_portraits/dark_dragon.png"
+			"source": "res://assets/ui/unit_portraits/dark_dragon.png",
+			"group": "dark"
 		},
 		{
 			"id": "avatar_006",
 			"name": "暗黑女王",
 			"name_en": "Dark Queen",
-			"source": "res://assets/ui/unit_portraits/dark_queen.png"
+			"source": "res://assets/ui/unit_portraits/dark_queen.png",
+			"group": "dark"
 		},
 		{
 			"id": "avatar_007",
 			"name": "暗黑法师",
 			"name_en": "Dark Mage",
-			"source": "res://assets/ui/unit_portraits/dark_mage.png"
+			"source": "res://assets/ui/unit_portraits/dark_mage.png",
+			"group": "dark"
 		},
 		{
 			"id": "avatar_008",
 			"name": "末日",
 			"name_en": "Doom",
-			"source": "res://assets/ui/unit_portraits/dark_doom.png"
+			"source": "res://assets/ui/unit_portraits/dark_doom.png",
+			"group": "dark"
 		},
 		{
 			"id": "avatar_009",
 			"name": "神族之王",
 			"name_en": "God King",
-			"source": "res://assets/ui/unit_portraits/god_king.png"
+			"source": "res://assets/ui/unit_portraits/god_king.png",
+			"group": "god"
 		},
 		{
 			"id": "avatar_010",
 			"name": "大天使",
 			"name_en": "Archangel",
-			"source": "res://assets/ui/unit_portraits/god_archangel.png"
+			"source": "res://assets/ui/unit_portraits/god_archangel.png",
+			"group": "god"
 		},
 		{
 			"id": "avatar_011",
 			"name": "极光",
 			"name_en": "Aurora",
-			"source": "res://assets/ui/unit_portraits/god_aurora.png"
+			"source": "res://assets/ui/unit_portraits/god_aurora.png",
+			"group": "god"
 		},
 		{
 			"id": "avatar_012",
 			"name": "女祭司",
 			"name_en": "Priestess",
-			"source": "res://assets/ui/unit_portraits/god_priestess.png"
+			"source": "res://assets/ui/unit_portraits/god_priestess.png",
+			"group": "god"
 		},
 		{
 			"id": "avatar_013",
 			"name": "亡灵泰坦",
 			"name_en": "Undead Titan",
-			"source": "res://assets/ui/unit_portraits/undead_titan.png"
+			"source": "res://assets/ui/unit_portraits/undead_titan.png",
+			"group": "undead"
 		},
 		{
 			"id": "avatar_014",
 			"name": "亡灵母体",
 			"name_en": "Undead Mother",
-			"source": "res://assets/ui/unit_portraits/undead_mother.png"
+			"source": "res://assets/ui/unit_portraits/undead_mother.png",
+			"group": "undead"
 		},
 		{
 			"id": "avatar_015",
 			"name": "尖刺",
 			"name_en": "Spike",
-			"source": "res://assets/ui/unit_portraits/undead_spike.png"
+			"source": "res://assets/ui/unit_portraits/undead_spike.png",
+			"group": "undead"
 		},
 		{
 			"id": "avatar_016",
 			"name": "剧毒",
 			"name_en": "Poison",
-			"source": "res://assets/ui/unit_portraits/undead_poison.png"
+			"source": "res://assets/ui/unit_portraits/undead_poison.png",
+			"group": "undead"
 		},
 		{
 			"id": "avatar_017",
 			"name": "狮子座 · 烈阳",
 			"name_en": "Leo",
-			"source": "res://assets/ui/mercenary_portraits/merc_leo_sun.png"
+			"source": "res://assets/ui/mercenary_portraits/merc_leo_sun.png",
+			"group": "mercenary"
 		},
 		{
 			"id": "avatar_018",
 			"name": "天蝎座 · 死神",
 			"name_en": "Scorpio",
-			"source": "res://assets/ui/mercenary_portraits/merc_scorpio_death.png"
+			"source": "res://assets/ui/mercenary_portraits/merc_scorpio_death.png",
+			"group": "mercenary"
 		},
 		{
 			"id": "avatar_019",
 			"name": "天秤座 · 裁决",
 			"name_en": "Libra",
-			"source": "res://assets/ui/mercenary_portraits/merc_libra_judge.png"
+			"source": "res://assets/ui/mercenary_portraits/merc_libra_judge.png",
+			"group": "mercenary"
 		},
 		{
 			"id": "avatar_020",
 			"name": "白羊座 · 血怒",
 			"name_en": "Aries",
-			"source": "res://assets/ui/mercenary_portraits/merc_aries_blood.png"
+			"source": "res://assets/ui/mercenary_portraits/merc_aries_blood.png",
+			"group": "mercenary"
+		},
+		{
+			"id": "avatar_021",
+			"name": "神侍",
+			"name_en": "Godhand",
+			"source": "res://assets/ui/unit_portraits/god_priest.png",
+			"group": "god"
+		},
+		{
+			"id": "avatar_022",
+			"name": "光之卫士",
+			"name_en": "Lightguard",
+			"source": "res://assets/ui/unit_portraits/god_guard.png",
+			"group": "god"
+		},
+		{
+			"id": "avatar_023",
+			"name": "天使",
+			"name_en": "Angel",
+			"source": "res://assets/ui/unit_portraits/god_angel.png",
+			"group": "god"
+		},
+		{
+			"id": "avatar_024",
+			"name": "裁决者",
+			"name_en": "Arbiter",
+			"source": "res://assets/ui/unit_portraits/god_arbiter.png",
+			"group": "god"
+		},
+		{
+			"id": "avatar_025",
+			"name": "魔童",
+			"name_en": "Imp",
+			"source": "res://assets/ui/unit_portraits/dark_imp.png",
+			"group": "dark"
+		},
+		{
+			"id": "avatar_026",
+			"name": "恐惧魔",
+			"name_en": "Fear Demon",
+			"source": "res://assets/ui/unit_portraits/dark_fear.png",
+			"group": "dark"
+		},
+		{
+			"id": "avatar_027",
+			"name": "偷袭者",
+			"name_en": "Ambusher",
+			"source": "res://assets/ui/unit_portraits/dark_scythe.png",
+			"group": "dark"
+		},
+		{
+			"id": "avatar_028",
+			"name": "魅魔",
+			"name_en": "Succubus",
+			"source": "res://assets/ui/unit_portraits/dark_suc.png",
+			"group": "dark"
+		},
+		{
+			"id": "avatar_029",
+			"name": "小灵",
+			"name_en": "Wisp",
+			"source": "res://assets/ui/unit_portraits/undead_small.png",
+			"group": "undead"
+		},
+		{
+			"id": "avatar_030",
+			"name": "寄生灵",
+			"name_en": "Leech Wisp",
+			"source": "res://assets/ui/unit_portraits/undead_parasite.png",
+			"group": "undead"
+		},
+		{
+			"id": "avatar_031",
+			"name": "飞灵",
+			"name_en": "Fly Wisp",
+			"source": "res://assets/ui/unit_portraits/undead_fly.png",
+			"group": "undead"
+		},
+		{
+			"id": "avatar_032",
+			"name": "自爆灵",
+			"name_en": "Bomb Wisp",
+			"source": "res://assets/ui/unit_portraits/undead_bomb.png",
+			"group": "undead"
+		},
+		{
+			"id": "avatar_033",
+			"name": "民兵",
+			"name_en": "Militia",
+			"source": "res://assets/ui/unit_portraits/human_militia.png",
+			"group": "human"
+		},
+		{
+			"id": "avatar_034",
+			"name": "商人",
+			"name_en": "Merchant",
+			"source": "res://assets/ui/unit_portraits/human_merchant.png",
+			"group": "human"
+		},
+		{
+			"id": "avatar_035",
+			"name": "牧师",
+			"name_en": "Cleric",
+			"source": "res://assets/ui/unit_portraits/human_cleric.png",
+			"group": "human"
+		},
+		{
+			"id": "avatar_036",
+			"name": "死侍",
+			"name_en": "Deathbound",
+			"source": "res://assets/ui/unit_portraits/human_death_servant.png",
+			"group": "human"
+		},
+		{
+			"id": "avatar_037",
+			"name": "赤卫",
+			"name_en": "Crimson Guard",
+			"source": "res://assets/ui/unit_portraits/crimson.png",
+			"group": "crimson"
+		},
+		{
+			"id": "avatar_038",
+			"name": "赤舞者",
+			"name_en": "Dancer",
+			"source": "res://assets/ui/unit_portraits/dancer.png",
+			"group": "crimson"
+		},
+		{
+			"id": "avatar_039",
+			"name": "战鼓使",
+			"name_en": "Drummer",
+			"source": "res://assets/ui/unit_portraits/drumer.png",
+			"group": "crimson"
+		},
+		{
+			"id": "avatar_040",
+			"name": "血猎者",
+			"name_en": "Hunter",
+			"source": "res://assets/ui/unit_portraits/hunter.png",
+			"group": "crimson"
+		},
+		{
+			"id": "avatar_041",
+			"name": "破甲者",
+			"name_en": "Armbreaker",
+			"source": "res://assets/ui/unit_portraits/armbreaker.png",
+			"group": "crimson"
+		},
+		{
+			"id": "avatar_042",
+			"name": "霜印使",
+			"name_en": "Icey",
+			"source": "res://assets/ui/unit_portraits/Icey.png",
+			"group": "crimson"
+		},
+		{
+			"id": "avatar_043",
+			"name": "穿云弩手",
+			"name_en": "Skypierce",
+			"source": "res://assets/ui/unit_portraits/skypierce.png",
+			"group": "crimson"
+		},
+		{
+			"id": "avatar_044",
+			"name": "赤灯使",
+			"name_en": "Lantern",
+			"source": "res://assets/ui/unit_portraits/lattern.png",
+			"group": "crimson"
+		},
+		{
+			"id": "avatar_045",
+			"name": "泡沫术士",
+			"name_en": "Bubble Mage",
+			"source": "res://assets/ui/mercenary_portraits/merc_pisces_bubble.png",
+			"group": "mercenary"
+		},
+		{
+			"id": "avatar_046",
+			"name": "甲壳守卫",
+			"name_en": "Shell Guard",
+			"source": "res://assets/ui/mercenary_portraits/merc_cancer_shell.png",
+			"group": "mercenary"
+		},
+		{
+			"id": "avatar_047",
+			"name": "黄金重骑",
+			"name_en": "Gold Charger",
+			"source": "res://assets/ui/mercenary_portraits/merc_taurus_charge.png",
+			"group": "mercenary"
+		},
+		{
+			"id": "avatar_048",
+			"name": "圣愈修女",
+			"name_en": "Holy Sister",
+			"source": "res://assets/ui/mercenary_portraits/merc_virgo_heal.png",
+			"group": "mercenary"
+		},
+		{
+			"id": "avatar_049",
+			"name": "镜像刺客",
+			"name_en": "Mirror Assassin",
+			"source": "res://assets/ui/mercenary_portraits/merc_gemini_assassin.png",
+			"group": "mercenary"
+		},
+		{
+			"id": "avatar_050",
+			"name": "星轨猎人",
+			"name_en": "Star Hunter",
+			"source": "res://assets/ui/mercenary_portraits/merc_sagittarius_rain.png",
+			"group": "mercenary"
+		},
+		{
+			"id": "avatar_051",
+			"name": "黑钢统帅",
+			"name_en": "Steel Marshal",
+			"source": "res://assets/ui/mercenary_portraits/merc_capricorn_steel.png",
+			"group": "mercenary"
+		},
+		{
+			"id": "avatar_052",
+			"name": "时空观测者",
+			"name_en": "Time Observer",
+			"source": "res://assets/ui/mercenary_portraits/merc_aquarius_time.png",
+			"group": "mercenary"
 		}
 	]
 }

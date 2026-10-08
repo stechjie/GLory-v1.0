@@ -177,7 +177,7 @@ func _show_hit_number(event: Dictionary) -> void:
 			"cue_spawn_hit_number",
 			target_uid,
 			int(event.get("amount", 0)),
-			"heal" if str(event.get("kind", "dmg")) == "heal" else "dmg",
+			str(event.get("kind", "dmg")) if str(event.get("kind", "dmg")) in ["heal", "miss"] else "dmg",
 			bool(event.get("is_crit", false)),
 			bool(event.get("skill", false)),
 			str(event.get("race", ""))

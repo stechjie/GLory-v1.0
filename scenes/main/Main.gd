@@ -2046,56 +2046,16 @@ func _show_game_over(local_settlement: Dictionary = {}) -> void:
 		reward_screen.details_requested.connect(_show_final_settlement)
 		add_child(reward_screen)
 		return
-	var bg := ColorRect.new()
-	bg.color = Color(0.05, 0.06, 0.07)
-	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
-	bg.z_index = -10
-
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(center)
-
-	var panel := VBoxContainer.new()
-	panel.custom_minimum_size = Vector2(420, 0)
-	panel.add_theme_constant_override("separation", 12)
-	center.add_child(panel)
-
-	var title := Label.new()
-	title.text = _game_over_title()
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 30)
-	title.add_theme_color_override("font_color", Color(0.96, 0.92, 0.78))
-	panel.add_child(title)
-
-	var body := Label.new()
-	body.text = _game_over_body()
-	body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	body.custom_minimum_size = Vector2(420, 90)
-	body.add_theme_color_override("font_color", Color(0.86, 0.9, 0.9))
-	panel.add_child(body)
-
-	if bool(_final_settlement_data.get("show_details", false)):
-		var detail_btn := Button.new()
-		detail_btn.text = "查看详情"
-		detail_btn.custom_minimum_size = Vector2(180, 48)
-		detail_btn.pressed.connect(_show_final_settlement)
-		panel.add_child(detail_btn)
-	else:
-		if bool(_final_settlement_data.get("can_return_room", false)):
-			var room_btn := Button.new()
-			room_btn.text = "返回房间"
-			room_btn.custom_minimum_size = Vector2(180, 48)
-			room_btn.pressed.connect(func():
-				room_btn.disabled = true
-				_return_from_settlement())
-			panel.add_child(room_btn)
-		var menu_btn := Button.new()
-		menu_btn.text = "返回主菜单"
-		menu_btn.custom_minimum_size = Vector2(180, 48)
-		menu_btn.pressed.connect(_on_return_menu_requested)
-		panel.add_child(menu_btn)
+	var result_screen := preload("res://scenes/menu/GameOverScreen.gd").new()
+	result_screen.result_kind = _game_over_kind()
+	result_screen.title_text = _game_over_title()
+	result_screen.body_text = _game_over_body()
+	result_screen.show_details = bool(_final_settlement_data.get("show_details", false))
+	result_screen.can_return_room = bool(_final_settlement_data.get("can_return_room", false))
+	result_screen.details_requested.connect(_show_final_settlement)
+	result_screen.return_room_requested.connect(_return_from_settlement)
+	result_screen.return_menu_requested.connect(_on_return_menu_requested)
+	add_child(result_screen)
 
 func _show_final_settlement() -> void:
 	_clear()
@@ -3341,6 +3301,20 @@ func _on_battle_finished(result: Dictionary = {}) -> void:
 	if GameState.team_mode:
 		_on_team_battle_finished(result)
 		return
+
+func _game_over_kind() -> String:
+	if GameState.team_mode:
+		if TeamOutcome.is_draw(GameState.team_run_outcome):
+			return "draw"
+		return "win" if GameState.team_run_won else "lose"
+	if GameState.player_formation_hp <= 0:
+		return "lose"
+	if GameState.enemy_formation_hp <= 0:
+		return "win"
+	if GameState.final_round_played and bool(_last_battle_result().get("player_wins", false)):
+		return "win"
+	return "lose"
+
 
 func _game_over_title() -> String:
 	if GameState.team_mode:

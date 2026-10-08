@@ -2016,10 +2016,10 @@ const _RACE_NUMBER_COLORS := {
 }
 
 # Spawns one floating number at a screen-space head anchor. kind is
-# "dmg" | "heal" | "shield"; crit/skill only tweak the damage styling. race colors
+# "dmg" | "heal" | "shield" | "miss"; crit/skill tweak damage styling. race colors
 # the normal-attack tier only.
 func _spawn_hit_number(head_pos: Vector2, amount: int, kind: String, crit: bool, is_skill: bool, race: String = "") -> void:
-	if amount <= 0:
+	if amount <= 0 and kind != "miss":
 		return
 	_ensure_hit_number_layer()
 	if _hit_number_pool.is_empty():
@@ -2044,6 +2044,12 @@ func _spawn_hit_number(head_pos: Vector2, amount: int, kind: String, crit: bool,
 	var dur := 0.8
 	var pop := true
 	match kind:
+		"miss":
+			color = Color(0.72, 0.91, 1.0)
+			text = "MISS"
+			font_size = 22
+			rise = 40.0
+			dur = 0.62
 		"heal":
 			color = Color(0.36, 1.0, 0.46)
 			text = "+%d" % amount

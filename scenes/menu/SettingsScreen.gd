@@ -72,20 +72,33 @@ func _build() -> void:
 	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.add_child(center)
 
+	var layout := VBoxContainer.new()
+	layout.custom_minimum_size = Vector2(1020, 0)
+	layout.add_theme_constant_override("separation", 18)
+	center.add_child(layout)
+	var columns := HBoxContainer.new()
+	columns.alignment = BoxContainer.ALIGNMENT_CENTER
+	columns.add_theme_constant_override("separation", 40)
+	layout.add_child(columns)
 	var panel := VBoxContainer.new()
-	panel.custom_minimum_size = Vector2(360, 0)
+	panel.custom_minimum_size = Vector2(440, 0)
 	panel.add_theme_constant_override("separation", 16)
-	center.add_child(panel)
+	columns.add_child(panel)
+	var right_column := VBoxContainer.new()
+	right_column.custom_minimum_size = Vector2(440, 0)
+	right_column.add_theme_constant_override("separation", 12)
+	columns.add_child(right_column)
 
 	var title := Label.new()
 	title.text = tr("settings_title")
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 24)
 	title.add_theme_color_override("font_color", Color(0.96, 0.96, 0.92))
-	panel.add_child(title)
+	layout.add_child(title)
 
 	var sep := HSeparator.new()
-	panel.add_child(sep)
+	layout.add_child(sep)
+	layout.move_child(columns, 2)
 
 	var lang_label := Label.new()
 	lang_label.text = tr("settings_language")
@@ -172,6 +185,8 @@ func _build() -> void:
 	panel.add_child(_board_guides_btn)
 	_refresh_board_guides_button()
 
+	# Presentation controls occupy the right column.
+	panel = right_column
 	# V2 P1-05 第 4 条：屏震 / 闪光 / hit-stop 三个无障碍开关。
 	# 三项默认开启 —— 它们是演出效果，默认关掉等于让绝大多数玩家看到更差的版本。
 	var sep_access := HSeparator.new()
@@ -210,7 +225,11 @@ func _build() -> void:
 		_refresh_presentation_button(key)
 
 	var sep2 := HSeparator.new()
-	panel.add_child(sep2)
+	layout.add_child(sep2)
+	var footer := HBoxContainer.new()
+	footer.alignment = BoxContainer.ALIGNMENT_CENTER
+	footer.add_theme_constant_override("separation", 24)
+	layout.add_child(footer)
 
 	if not in_match:
 		var replay_btn := ActionButtonScene.instantiate() as Button
@@ -218,7 +237,7 @@ func _build() -> void:
 		replay_btn.custom_minimum_size = Vector2(280, Tokens.TOUCH_MIN)
 		replay_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		replay_btn.pressed.connect(func(): replay_tutorial_requested.emit())
-		panel.add_child(replay_btn)
+		footer.add_child(replay_btn)
 	elif can_leave_match:
 		var leave_btn := ActionButtonScene.instantiate() as Button
 		leave_btn.name = "LeaveMatch"
@@ -227,14 +246,14 @@ func _build() -> void:
 		leave_btn.custom_minimum_size = Vector2(280, Tokens.TOUCH_MIN)
 		leave_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		leave_btn.pressed.connect(func(): leave_match_requested.emit())
-		panel.add_child(leave_btn)
+		footer.add_child(leave_btn)
 
 	var back_btn := Button.new()
 	back_btn.text = tr("settings_back")
 	back_btn.custom_minimum_size = Vector2(160, Tokens.TOUCH_MIN)
 	back_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	back_btn.pressed.connect(func(): back_requested.emit())
-	panel.add_child(back_btn)
+	footer.add_child(back_btn)
 
 # V3 P1-09：状态不能只靠颜色。
 #

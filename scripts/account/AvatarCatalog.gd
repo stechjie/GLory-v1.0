@@ -52,7 +52,7 @@ static func default_frame() -> String:
 
 
 # 选择器用的小图。缩略图由 tools/make_avatar_thumbs.py 生成 ——
-# 原图 330x330、解码后每张约 435 KB 显存，二十张一起铺出来会卡一下，
+# 原图最高 330x330、解码后每张可达约 435 KB 显存，52 张一起铺出来会卡一下，
 # 而这是每个玩家进资料页必做的第一个操作。
 static func thumb_path(avatar_id: String) -> String:
 	var dir := str(_catalog().get("thumb_dir", "res://assets/ui/avatars/thumb"))

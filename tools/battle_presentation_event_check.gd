@@ -3,6 +3,17 @@ extends Node
 const CheckHarness := preload("res://tools/CheckHarness.gd")
 const BattleSim := preload("res://scripts/battle/BattleSimulator.gd")
 const EventSchema := preload("res://scripts/battle/BattlePresentationEvent.gd")
+const Director := preload("res://effects/runtime/presentation/BattlePresentationDirector.gd")
+const LegacyAdapter := preload("res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd")
+
+class MissHost extends Node:
+	var shown: Array = []
+
+	func cue_spawn_hit_number(target_uid: String, amount: int, kind: String,
+			crit: bool, is_skill: bool, race: String) -> bool:
+		shown.append({"target_uid": target_uid, "amount": amount, "kind": kind,
+			"crit": crit, "skill": is_skill, "race": race})
+		return true
 
 var _h: RefCounted
 
@@ -14,6 +25,7 @@ func _ready() -> void:
 func _run() -> void:
 	_h = CheckHarness.new("battle_presentation_event")
 	_check_pure_schema()
+	_check_dodge_miss()
 	await _check_replay_schema()
 	_h.finish(get_tree())
 
@@ -73,6 +85,59 @@ func _check_pure_schema() -> void:
 		"unknown_warn_once", "the same unknown event type must only enter the warning cache once")
 	_h.expect(unknown_errors.has("unknown_type:future_unknown_cue"),
 		"unknown_rejected", "unknown event type was not reported by validation")
+
+
+func _check_dodge_miss() -> void:
+	var state := {"elapsed": 1.0, "visual_events": []}
+	var dodger := {"uid": "dodger", "alive": true, "hp": 100, "max_hp": 100,
+		"defense": 0, "def": {"skill_id": ""}, "dodge": 1.0, "statuses": {}}
+	DamageService.begin_stat_context(state, {"uid": "attacker"})
+	DamageService.set_hit_context("basic", false, "human", "basic_melee")
+	var dealt := DamageService.apply_damage(dodger, 25)
+	_h.expect(dealt == 0 and int(dodger.hp) == 100,
+		"dodge_no_damage", "a guaranteed dodge must still prevent damage")
+	var cues: Array = state.visual_events
+	_h.expect(cues.size() == 1 and str((cues[0] as Dictionary).get("kind", "")) == "miss",
+		"dodge_miss_cue", "a guaranteed dodge must produce one replayable Miss cue")
+	if not cues.is_empty():
+		var normalized := EventSchema.normalize(cues[0] as Dictionary, "dodge-check", 1, 0)
+		_h.expect(EventSchema.validate(normalized).is_empty(),
+			"dodge_miss_schema", "Miss cue must satisfy the replay event schema")
+		_h.expect(str(normalized.get("visibility_priority", "")) == "important",
+			"dodge_miss_priority", "Miss must not merge with ordinary ambient numbers")
+		var host := MissHost.new()
+		add_child(host)
+		var adapter := LegacyAdapter.new(host)
+		var director := Director.new()
+		director.configure(null, null, null, adapter)
+		director.begin_battle({})
+		director.enqueue_tick(1, [normalized])
+		_h.expect(host.shown.size() == 1 and str((host.shown[0] as Dictionary).get("kind", "")) == "miss"
+			and int((host.shown[0] as Dictionary).get("amount", -1)) == 0,
+			"dodge_miss_adapter", "Replay Director must deliver one zero-damage MISS to the battle UI")
+		director.dispose()
+		host.queue_free()
+	DamageService.clear_stat_context()
+
+	var skill_state := {"elapsed": 1.0, "visual_events": []}
+	DamageService.begin_stat_context(skill_state, {"uid": "caster"})
+	DamageService.set_hit_context("skill", false, "god", "test_skill")
+	var skill_landed := DamageService.skill_hit_lands(dodger)
+	_h.expect(not skill_landed and (skill_state.visual_events as Array).size() == 1
+		and bool((skill_state.visual_events[0] as Dictionary).get("skill", false)),
+		"skill_dodge_miss", "A dodged skill must emit one skill-tagged MISS")
+	DamageService.clear_stat_context()
+
+	var blocked_state := {"elapsed": 1.0, "visual_events": []}
+	var blocker := {"uid": "blocker", "alive": true, "hp": 100, "max_hp": 100,
+		"defense": 0, "def": {"skill_id": "block_guard", "block_chance": 1.0},
+		"dodge": 1.0, "statuses": {}}
+	DamageService.begin_stat_context(blocked_state, {"uid": "attacker"})
+	DamageService.set_hit_context("basic", false, "human", "basic_melee")
+	var blocked := DamageService.apply_damage(blocker, 25)
+	_h.expect(blocked == 0 and (blocked_state.visual_events as Array).is_empty(),
+		"block_not_miss", "a guaranteed block must not be labelled Miss")
+	DamageService.clear_stat_context()
 
 
 func _check_replay_schema() -> void:

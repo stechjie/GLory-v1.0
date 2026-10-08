@@ -64,6 +64,29 @@ static func _maybe_emit_hit_number(target: Dictionary, hp_damage: int) -> void:
 		"is_lethal": not bool(target.get("alive", true)),
 	})
 
+# A successful dodge has no HP damage, so it needs its own presentation cue.
+# Keep the existing RNG roll and gameplay result untouched.
+static func _emit_dodge_miss(target: Dictionary) -> void:
+	if _stat_state.is_empty() or not _hit_kind in ["basic", "skill"]:
+		return
+	var uid := str(target.get("uid", ""))
+	if uid.is_empty():
+		return
+	_append_presentation_event({
+		"type": "hit_number",
+		"kind": "miss",
+		"source_uid": _stat_source_uid,
+		"target_uid": uid,
+		"target_uids": [uid],
+		"skill_id": _hit_skill_id,
+		"skill": _hit_kind == "skill",
+		"race": _hit_source_race,
+		"amount": 0,
+		"is_crit": false,
+		"is_lethal": false,
+		"visibility_priority": "important",
+	})
+
 # Heal numbers always surface (they are far rarer than attacks). Called from
 # _heal_unit with the real post-clamp amount.
 static func emit_heal_number(target: Dictionary, amount: int) -> void:
@@ -275,7 +298,10 @@ static func skill_hit_lands(target: Dictionary) -> bool:
 	var dodge_chance := float(target.get("dodge", 0.0))
 	if target.statuses.has("dodge_bonus"):
 		dodge_chance += float(target.statuses.dodge_bonus.get("pct", 0.0))
-	return RngService.rng.randf() >= dodge_chance
+	var landed := RngService.rng.randf() >= dodge_chance
+	if not landed:
+		_emit_dodge_miss(target)
+	return landed
 
 
 # skip_dodge is reserved for a multi-pulse hit that already rolled its one dodge
@@ -297,6 +323,7 @@ static func apply_damage(target: Dictionary, amount: int, ignore_defense: bool =
 		if target.statuses.has("dodge_bonus"):
 			dodge_chance += float(target.statuses.dodge_bonus.get("pct", 0.0))
 		if RngService.rng.randf() < dodge_chance:
+			_emit_dodge_miss(target)
 			return 0
 	var remaining := amount
 	if not _stat_source_uid.is_empty() and _stat_source_uid != str(target.get("uid", "")):
