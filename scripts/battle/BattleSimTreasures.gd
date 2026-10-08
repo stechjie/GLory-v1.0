@@ -593,9 +593,9 @@ static func _process_revives(state: Dictionary) -> void:
 			f.hp = maxi(1, int(round(float(f.max_hp) * float(f.get("def", {}).get("revive_hp_pct", 0.30)))))
 			f.shield = 0
 			f.next_attack = float(state.elapsed) + 0.5
-			# 凤凰涅槃：复活即满血并获得 3 秒无敌，撑到 temporary_deaths 的强制真死（+3.1s）。
+			# 凤凰涅槃：以 40% 最大生命复活并获得 3 秒无敌，撑到 temporary_deaths 的强制真死（+3.1s）。
 			if bool(f.get("phoenix_used", false)):
-				f.hp = int(f.max_hp)
+				f.hp = maxi(1, int(round(float(f.max_hp) * 0.40)))
 				StatusEffectService.add_status(f, "invulnerable", 3.0, {})
 			# 复活即清死亡标记：之后再被打死要能重新结算击杀金，也避免用到陈旧的致死来源。
 			f.erase("kill_reward_paid")

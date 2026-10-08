@@ -537,6 +537,13 @@ func _render_pet_detail(pet_id: String) -> void:
 	effect.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
 	effect.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
 	_detail.add_child(effect)
+	var pet_detail := PetService.skill_detail_text(pet_id)
+	if not pet_detail.is_empty() and pet_detail != effect.text:
+		var detail_label := Label.new()
+		detail_label.text = pet_detail
+		detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		detail_label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+		_detail.add_child(detail_label)
 	var status := Label.new()
 	status.text = _t("✓ 当前出战宠物", "✓ Currently equipped") if active else _t("可设为出战", "Ready to equip")
 	status.add_theme_color_override("font_color", Tokens.GOLD_HOVER if active else Tokens.TEXT_SECONDARY)

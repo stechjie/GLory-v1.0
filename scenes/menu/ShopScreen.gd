@@ -1000,15 +1000,8 @@ func _card(item: Dictionary) -> Control:
 	info_col.add_child(name_label)
 	if str(item.get("kind", "")) == "pet":
 		var effect := Label.new()
-		match grants:
-			"pet_mushroom":
-				effect.text = _t("自身生命 +1%", "Self HP +1%")
-			"pet_cat":
-				effect.text = _t("金币利息 +1%", "Coin interest +1%")
-			"pet_rabbit":
-				effect.text = _t("自身攻击 +1%", "Self attack +1%")
-			_:
-				effect.text = _t("伙伴效果", "Companion effect")
+		effect.text = PetService.effect_text(grants)
+		effect.tooltip_text = PetService.skill_detail_text(grants)
 		effect.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		effect.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
 		effect.add_theme_color_override("font_color", Tokens.CYAN)

@@ -237,6 +237,7 @@ func format_synergy_detail(race: String, count: int) -> String:
 		lines.append("当前数量：%d/%d" % [count, max_threshold])
 	for item in _race_entries(race):
 		var threshold := int(item.get("threshold", 0))
+		var approved := FinalStatusCatalog.synergy_cn(race, threshold) if not PrepWidgets.is_en() else {}
 		var active := count >= threshold
 		var status := ""
 		if active:
@@ -250,8 +251,8 @@ func format_synergy_detail(race: String, count: int) -> String:
 			Tokens.GOLD.to_html(false), status])
 		lines.append("[color=#%s][b]%s[/b]\n%s[/color]" % [
 			Tokens.TEXT_PRIMARY.to_html(false) if active else Tokens.TEXT_SECONDARY.to_html(false),
-			str(item.get("name", "")),
-			str(item.get("detail", "")),
+			str(approved.get("name_cn", item.get("name", ""))),
+			str(approved.get("detail_cn", item.get("detail", ""))),
 		])
 	return "\n".join(lines)
 
@@ -268,7 +269,8 @@ func format_synergy_detail(race: String, count: int) -> String:
 static func format_synergy_effects(race: String) -> String:
 	var blocks: Array[String] = []
 	for item in _race_entries(race):
-		blocks.append("%s\n%s" % [str(item.get("name", "")), str(item.get("detail", ""))])
+		var approved := FinalStatusCatalog.synergy_cn(race, int(item.get("threshold", 0))) if not PrepWidgets.is_en() else {}
+		blocks.append("%s\n%s" % [str(approved.get("name_cn", item.get("name", ""))), str(approved.get("detail_cn", item.get("detail", "")))])
 	return "\n\n".join(blocks)
 
 

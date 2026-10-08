@@ -200,6 +200,9 @@ static func unit_element_name(element: String) -> String:
 static func format_skill_detail(d: Dictionary) -> String:
 	if is_en():
 		return format_skill_detail_en(d)
+	var approved := FinalStatusCatalog.unit_skill_cn(str(d.get("id", "")), int(d.get("star", 1)))
+	if not approved.is_empty():
+		return approved
 	var sid := str(d.get("skill_id", "none"))
 	var cd := skill_cd_text(d)
 	match sid:

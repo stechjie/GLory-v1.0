@@ -405,9 +405,10 @@ func _build_detail(entry: Dictionary) -> void:
 		_detail.add_child(_build_text_block(tr(str(pair[1])), text, unlocked))
 
 	if entry.has("effect_key"):
-		var pct := int(round(float(entry.get("effect_value", 0.0)) * 100.0))
-		var pet_body := (tr("pet_effect_%s" % str(entry.get("effect_key", ""))) % pct
-			if unlocked else tr("codex_locked_text"))
+		var pet_body := PetService.skill_detail_text(str(entry.get("id", ""))) if unlocked else tr("codex_locked_text")
+		if pet_body.is_empty():
+			var pct := int(round(float(entry.get("effect_value", 0.0)) * 100.0))
+			pet_body = tr("pet_effect_%s" % str(entry.get("effect_key", ""))) % pct
 		_detail.add_child(_build_text_block(tr("codex_effect"), pet_body, unlocked))
 
 	_detail.add_child(_build_state_line(entry, unlocked))

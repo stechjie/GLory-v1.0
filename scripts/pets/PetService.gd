@@ -56,6 +56,10 @@ static func display_name(pet_id: String) -> String:
 	return t
 
 static func effect_text(pet_id: String) -> String:
+	if LocaleManager.get_locale() == "zh":
+		var approved := FinalStatusCatalog.pet_summary_cn(pet_id)
+		if not approved.is_empty():
+			return approved
 	var e := effect_of(pet_id)
 	var effect := str(e.get("effect", ""))
 	if effect.is_empty():
@@ -68,6 +72,10 @@ static func effect_text(pet_id: String) -> String:
 	return fmt % pct
 
 static func skill_detail_text(pet_id: String) -> String:
+	if LocaleManager.get_locale() == "zh":
+		var approved := FinalStatusCatalog.pet_detail_cn(pet_id)
+		if not approved.is_empty():
+			return approved
 	var key := "pet_skill_detail_" + pet_id
 	var detail := TranslationServer.translate(key)
 	return "" if detail == key else detail

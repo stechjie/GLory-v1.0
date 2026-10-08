@@ -208,8 +208,8 @@
    "name_en": "Phoenix Rebirth",
    "requires_text": "哀鸣共鸣 + 亡魂反击",
    "requires_text_en": "Wail Resonance + Soul Counter",
-   "effect": "我方普通棋子死亡后临时复活 3 秒，3 秒结束后强制死亡",
-   "effect_en": "Allied normal pieces revive for 3s after dying, then die for good when the 3s run out"
+   "effect": "我方普通棋子死亡后以 40% 最大生命复活，获得 3 秒无敌，之后强制死亡",
+   "effect_en": "Allied normal pieces revive at 40% max HP with 3s invulnerability, then die for good"
   },
   "link_money_magic": {
    "name": "金钱魔法",

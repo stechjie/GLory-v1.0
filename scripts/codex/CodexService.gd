@@ -263,7 +263,7 @@ static func _treasures() -> Array[Dictionary]:
 			"portrait": TREASURE_ICON_DIR + str(d.get("name", "")) + ".png",
 			"icon_art": true,
 			"category": str(d.get("category", "")),
-			"effect": _localised(entry, "effect"),
+			"effect": FinalStatusCatalog.treasure_effect_cn(id) if not UnitDetailFormat.is_en() and not FinalStatusCatalog.treasure_effect_cn(id).is_empty() else _localised(entry, "effect"),
 			"trigger": _localised(entry, "trigger"),
 			"collectible": true,
 		})
@@ -285,7 +285,7 @@ static func _linkages() -> Array[Dictionary]:
 			"name_en": str(entry.get("name_en", "")),
 			"portrait": TREASURE_ICON_DIR + art + ".png",
 			"icon_art": true,
-			"effect": _localised(entry, "effect"),
+			"effect": FinalStatusCatalog.linkage_effect_cn(id) if not UnitDetailFormat.is_en() and not FinalStatusCatalog.linkage_effect_cn(id).is_empty() else _localised(entry, "effect"),
 			"requires_text": _localised(entry, "requires_text"),
 			"collectible": true,
 		})
@@ -315,7 +315,11 @@ static func set_text(category: String) -> Dictionary:
 
 static func link_text(link_id: String) -> Dictionary:
 	var links: Dictionary = _text_table().get("linkages", {})
-	return links.get(link_id, {})
+	var entry: Dictionary = links.get(link_id, {}).duplicate()
+	var approved := FinalStatusCatalog.linkage_effect_cn(link_id)
+	if not UnitDetailFormat.is_en() and not approved.is_empty():
+		entry["effect"] = approved
+	return entry
 
 static func _pets() -> Array[Dictionary]:
 	var out: Array[Dictionary] = []

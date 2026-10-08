@@ -574,6 +574,9 @@ func set_effect_text(category: String) -> String:
 func effect_text(tid: String) -> String:
 	if PrepWidgets.is_en():
 		return effect_text_en(tid)
+	var approved := FinalStatusCatalog.treasure_effect_cn(tid)
+	if not approved.is_empty():
+		return approved
 	match tid:
 		"def_iron_wall":        return "开战时我方普通棋子 DEF +10。"
 		"def_life_monument":    return "开战时我方普通棋子最大生命 +20%，当前生命同步提高；胡牌手激活后改为 +40%。"
@@ -638,9 +641,13 @@ func effect_text_en(tid: String) -> String:
 
 # 原 _treasure_link_effect_text（PrepDetails.gd）
 func link_effect_text(link_id: String) -> String:
+	if not PrepWidgets.is_en():
+		var approved := FinalStatusCatalog.linkage_effect_cn(link_id)
+		if not approved.is_empty():
+			return approved
 	if PrepWidgets.is_en():
 		match link_id:
-			"link_phoenix":           return "Friendly normal units revive at full HP with invulnerability for 3s after dying, then die for real."
+			"link_phoenix":           return "Friendly normal units revive at 40% max HP with invulnerability for 3s after dying, then die for real."
 			"link_money_magic":       return "After battle, gain an extra random 60~80G, with a 10% chance of another 200G."
 			"link_blood_covenant":    return "Flame Shatter true damage increases from 40% ATK to 100% ATK."
 			"link_paralysis_shackles":return "On successful disarm, also apply ice; target takes 25% more damage and receives 75% less healing for 4s."
@@ -653,7 +660,7 @@ func link_effect_text(link_id: String) -> String:
 			"link_hu_pai_master":     return "Activates with Life Monument + Golden Altar + Shockwave + Blood Pact + Fury Roster: immediately restore 2 Formation HP. Life Monument +40%, Shockwave stun 2s, Blood Pact ATK x1.50, roster cap 9; altar grants 100G at no HP cost, up to 3 uses per round, unavailable at HP <=10."
 		return "Synergy description not yet available."
 	match link_id:
-		"link_phoenix":           return "我方普通棋子死亡后满血复活并获得无敌，持续 3 秒，之后强制真死。"
+		"link_phoenix":           return "我方普通棋子死亡后以 40% 最大生命复活并获得无敌，持续 3 秒，之后强制真死。"
 		"link_money_magic":       return "战后额外随机 +60~80 金，10% 概率额外 +200 金。"
 		"link_blood_covenant":    return "炎焰碎裂触发时，真实伤害从 ATK 40% 提高到 ATK 100%。"
 		"link_paralysis_shackles":return "缴械成功后额外触发冰效果，使目标受伤 +25%、治疗效果 -75%，持续 4 秒。"

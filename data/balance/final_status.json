@@ -1,0 +1,1943 @@
+{
+  "schema_version": 1,
+  "title": "final status",
+  "source_workbook": "数值总表_Beta0.04_运行实值_20261008.xlsx",
+  "source_sha256": "0a574a561aff378d369eda13b92239bded1bc418d8f4dd7726c22621edadd5f6",
+  "source_runtime_utc": "2026-10-07T13:54:53",
+  "scope": "本机 Godot 运行值与用户指定文案目标；线上服务端逐项系数待核",
+  "units": {
+    "dark_imp": {
+      "name_cn": "魔童",
+      "race": "暗族",
+      "element": "人",
+      "tier": 1,
+      "cost": 20,
+      "skill_id": "curse_attack",
+      "skill_name_cn": "诅咒攻击",
+      "skill_cn_1to3": "诅咒攻击：普通攻击附带减攻8%与攻速降低8%，持续4.0秒；暗2会增强效果。",
+      "skill_cn_4": "诅咒攻击：普通攻击附带减攻32%与攻速降低32%，持续4.0秒。",
+      "skill_en_1to3": "Curse Strike: Normal attacks reduce target ATK by 8% and AS by 8% for 4.0s.",
+      "skill_raw_params": "aspd_down = 0.08\nattack_down = 0.08\nduration = 4\nmax_stacks = 2\nmodel_idle_animation = res://assets/models/units/dark_imp_motong/dark_imp_motong_idle_zombie.fbx",
+      "star4_changes": "aspd_down: 0.08 → 0.32\nattack_down: 0.08 → 0.32",
+      "stats": {
+        "1": {
+          "hp": 580,
+          "atk": 37,
+          "defense": 4
+        },
+        "2": {
+          "hp": 870,
+          "atk": 56,
+          "defense": 6
+        },
+        "3": {
+          "hp": 1740,
+          "atk": 111,
+          "defense": 12
+        },
+        "4": {
+          "hp": 2001,
+          "atk": 128,
+          "defense": 14
+        }
+      }
+    },
+    "dark_mage": {
+      "name_cn": "暗影法师",
+      "race": "暗族",
+      "element": "天",
+      "tier": 1,
+      "cost": 20,
+      "skill_id": "silence_bolt",
+      "skill_name_cn": "沉默箭",
+      "skill_cn_1to3": "沉默箭（冷却6.0秒）：沉默最近敌人3.0秒，并造成自身攻击170%伤害。",
+      "skill_cn_4": "沉默箭（冷却4.0秒）：沉默最近敌人3.0秒，并造成自身攻击340%伤害。",
+      "skill_en_1to3": "Silence Bolt (CD 6.0s): Silence the nearest enemy for 3.0s and deal 170% ATK damage.",
+      "skill_raw_params": "damage_atk_pct = 1.7\nsilence_sec = 3\nskill_cd = 6",
+      "star4_changes": "damage_atk_pct: 1.7 → 3.4\nskill_cd: 6 → 4",
+      "stats": {
+        "1": {
+          "hp": 520,
+          "atk": 48,
+          "defense": 3
+        },
+        "2": {
+          "hp": 780,
+          "atk": 72,
+          "defense": 5
+        },
+        "3": {
+          "hp": 1560,
+          "atk": 144,
+          "defense": 9
+        },
+        "4": {
+          "hp": 1794,
+          "atk": 166,
+          "defense": 10
+        }
+      }
+    },
+    "dark_fear": {
+      "name_cn": "恐惧魔",
+      "race": "暗族",
+      "element": "地",
+      "tier": 2,
+      "cost": 30,
+      "skill_id": "fear",
+      "skill_name_cn": "恐惧",
+      "skill_cn_1to3": "恐惧效果：1–3★ 为 2 秒，4★ 为 3 秒；实际状态为 fear。",
+      "skill_cn_4": "恐惧（冷却4.0秒）：使最近敌人向后逃跑3.0秒，结束后重新接近目标。",
+      "skill_en_1to3": "Fear (CD 6.0s): Make the nearest enemy retreat for 2.0s, then resume approaching its target.",
+      "skill_raw_params": "fear_sec = 2\nskill_cd = 6",
+      "star4_changes": "fear_sec: 2 → 3\nskill_cd: 6 → 4",
+      "stats": {
+        "1": {
+          "hp": 840,
+          "atk": 55,
+          "defense": 7
+        },
+        "2": {
+          "hp": 1260,
+          "atk": 83,
+          "defense": 11
+        },
+        "3": {
+          "hp": 2520,
+          "atk": 165,
+          "defense": 21
+        },
+        "4": {
+          "hp": 2898,
+          "atk": 190,
+          "defense": 24
+        }
+      }
+    },
+    "dark_queen": {
+      "name_cn": "痛苦女王",
+      "race": "暗族",
+      "element": "天",
+      "tier": 2,
+      "cost": 30,
+      "skill_id": "same_target_damage_stack",
+      "skill_name_cn": "痛苦凝视",
+      "skill_cn_1to3": "痛苦凝视：持续攻击同一目标时，每层伤害+20%，最多4层；换目标重置。",
+      "skill_cn_4": "痛苦凝视：持续攻击同一目标时，每层伤害+35%，最多6层；换目标重置。",
+      "skill_en_1to3": "Agonizing Gaze: Consecutive attacks on the same target deal +20% damage per stack (max 4 stacks). Resets on target switch.",
+      "skill_raw_params": "max_stacks = 4\nstack_damage = 0.2",
+      "star4_changes": "max_stacks: 4 → 6\nstack_damage: 0.2 → 0.35",
+      "stats": {
+        "1": {
+          "hp": 920,
+          "atk": 68,
+          "defense": 8
+        },
+        "2": {
+          "hp": 1380,
+          "atk": 102,
+          "defense": 12
+        },
+        "3": {
+          "hp": 2760,
+          "atk": 204,
+          "defense": 24
+        },
+        "4": {
+          "hp": 3174,
+          "atk": 235,
+          "defense": 28
+        }
+      }
+    },
+    "dark_scythe": {
+      "name_cn": "偷袭者",
+      "race": "暗族",
+      "element": "人",
+      "tier": 2,
+      "cost": 30,
+      "skill_id": "blink_low_def_backline",
+      "skill_name_cn": "暗影突袭",
+      "skill_cn_1to3": "暗影突袭（冷却时间5.0秒）：瞬移到低防后排敌人身边，造成自身攻击250%伤害；击杀后刷新冷却。",
+      "skill_cn_4": "暗影突袭（冷却时间5.0秒）：瞬移到低防后排敌人身边，造成自身攻击500%伤害；击杀后刷新冷却。",
+      "skill_en_1to3": "Shadow Ambush: Blink to the lowest-DEF backline enemy and deal 250% ATK damage. Cooldown resets on kill.",
+      "skill_raw_params": "damage_atk_pct = 2.5\nrefresh_on_kill = true",
+      "star4_changes": "damage_atk_pct: 2.5 → 5\ndef_down_pct: — → 0.25",
+      "stats": {
+        "1": {
+          "hp": 780,
+          "atk": 88,
+          "defense": 6
+        },
+        "2": {
+          "hp": 1170,
+          "atk": 132,
+          "defense": 9
+        },
+        "3": {
+          "hp": 2340,
+          "atk": 264,
+          "defense": 18
+        },
+        "4": {
+          "hp": 2691,
+          "atk": 304,
+          "defense": 21
+        }
+      }
+    },
+    "dark_suc": {
+      "name_cn": "魅魔",
+      "race": "暗族",
+      "element": "人",
+      "tier": 2,
+      "cost": 30,
+      "skill_id": "stun",
+      "skill_name_cn": "暗影击晕",
+      "skill_cn_1to3": "眩晕目标，并造成自身攻击 ×1.5 的技能伤害。",
+      "skill_cn_4": "暗影击晕（冷却3.5秒）：眩晕最近敌人2.0秒，并造成自身攻击150%伤害。",
+      "skill_en_1to3": "Shadow Stun (CD 5.0s): Stun the nearest enemy for 1.5s and deal 150% ATK damage.",
+      "skill_raw_params": "damage_atk_pct = 1.5\nskill_cd = 5\nstun_sec = 1.5",
+      "star4_changes": "skill_cd: 5 → 3.5\nstun_sec: 1.5 → 2",
+      "stats": {
+        "1": {
+          "hp": 860,
+          "atk": 64,
+          "defense": 7
+        },
+        "2": {
+          "hp": 1290,
+          "atk": 96,
+          "defense": 11
+        },
+        "3": {
+          "hp": 2580,
+          "atk": 192,
+          "defense": 21
+        },
+        "4": {
+          "hp": 2967,
+          "atk": 221,
+          "defense": 24
+        }
+      }
+    },
+    "dark_doom": {
+      "name_cn": "末日守卫",
+      "race": "暗族",
+      "element": "地",
+      "tier": 3,
+      "cost": 50,
+      "skill_id": "shared_hp_link",
+      "skill_name_cn": "血链",
+      "skill_cn_1to3": "血链：连接最近非Boss，非唯一棋子且星级不高于自身的敌人并使其变为我方棋子；双方共享受到的生命损失。任一方死亡后清除连接，本回合不再释放。",
+      "skill_cn_4": "血链：连接最近非Boss，非唯一棋子且星级不高于自身的敌人并使其变为我方棋子；双方共享受到的生命损失；连接期间每秒回4%最大生命。任一方死亡后清除连接，本回合不再释放。",
+      "skill_en_1to3": "Blood Chain: Link to the nearest non-Boss, non-unique enemy whose star is no higher than your own, and convert them to your side. Both share HP loss. Link breaks on either death and will not reactivate this round.",
+      "skill_raw_params": "unique_on_board = true\nuntil_target_death = true",
+      "star4_changes": "link_regen_pct: — → 0.04",
+      "stats": {
+        "1": {
+          "hp": 1640,
+          "atk": 97,
+          "defense": 16
+        },
+        "2": {
+          "hp": 2460,
+          "atk": 146,
+          "defense": 24
+        },
+        "3": {
+          "hp": 4920,
+          "atk": 291,
+          "defense": 48
+        },
+        "4": {
+          "hp": 5658,
+          "atk": 335,
+          "defense": 55
+        }
+      }
+    },
+    "dark_dragon": {
+      "name_cn": "黑龙",
+      "race": "暗族",
+      "element": "天",
+      "tier": 3,
+      "cost": 50,
+      "skill_id": "black_hole",
+      "skill_name_cn": "黑洞",
+      "skill_cn_1to3": "黑洞（冷却8.0秒）：牵引周围敌人，眩晕1.0秒，并造成自身攻击220%伤害。",
+      "skill_cn_4": "黑洞（冷却8.0秒）：牵引周围敌人，眩晕2.0秒，并造成自身攻击440%伤害。",
+      "skill_en_1to3": "Black Hole (CD 8.0s): Pull surrounding enemies, stun for 1.0s, and deal 220% ATK damage.",
+      "skill_raw_params": "damage_atk_pct = 2.2\npull_sec = 1\nunique_on_board = true",
+      "star4_changes": "damage_atk_pct: 2.2 → 4.4\npull_sec: 1 → 2",
+      "stats": {
+        "1": {
+          "hp": 1800,
+          "atk": 110,
+          "defense": 14
+        },
+        "2": {
+          "hp": 2700,
+          "atk": 165,
+          "defense": 21
+        },
+        "3": {
+          "hp": 5400,
+          "atk": 330,
+          "defense": 42
+        },
+        "4": {
+          "hp": 6210,
+          "atk": 379,
+          "defense": 48
+        }
+      }
+    },
+    "god_priest": {
+      "name_cn": "神侍",
+      "race": "神族",
+      "element": "人",
+      "tier": 1,
+      "cost": 20,
+      "skill_id": "lowest_ally_heal",
+      "skill_name_cn": "星辉祈愿",
+      "skill_cn_1to3": "星辉祈愿（冷却4.0秒）：治疗生命比例最低的友军，回复其最大生命6%；有25%概率清除负面状态。",
+      "skill_cn_4": "星辉祈愿（冷却4.0秒）：治疗生命比例最低的友军，回复其最大生命24%；有50%概率清除负面状态。",
+      "skill_en_1to3": "Starlight Prayer (CD 4.0s): Heal the ally with the lowest HP ratio by 6% of their max HP; 25% chance to cleanse debuffs.",
+      "skill_raw_params": "cleanse_chance = 0.25\nheal_pct = 0.06\nskill_cd = 4",
+      "star4_changes": "cleanse_chance: 0.25 → 0.5\nheal_pct: 0.06 → 0.24",
+      "stats": {
+        "1": {
+          "hp": 640,
+          "atk": 31,
+          "defense": 4
+        },
+        "2": {
+          "hp": 960,
+          "atk": 47,
+          "defense": 6
+        },
+        "3": {
+          "hp": 1920,
+          "atk": 93,
+          "defense": 12
+        },
+        "4": {
+          "hp": 2208,
+          "atk": 107,
+          "defense": 14
+        }
+      }
+    },
+    "god_priestess": {
+      "name_cn": "大祭司",
+      "race": "神族",
+      "element": "人",
+      "tier": 1,
+      "cost": 20,
+      "skill_id": "nearest_ally_bless",
+      "skill_name_cn": "神赐祝福",
+      "skill_cn_1to3": "神赐祝福（冷却6.0秒）：强化最近友军，攻击+8%、攻速+0.15，并清除负面状态。",
+      "skill_cn_4": "神赐祝福（冷却4.5秒）：强化最近友军，攻击+32%、攻速+0.45，并清除负面状态。",
+      "skill_en_1to3": "Divine Blessing (CD 6.0s): Buff the nearest ally — ATK +8%, AS +0.15 — and cleanse their debuffs.",
+      "skill_raw_params": "aspd_bonus = 0.15\natk_bonus = 0.08\nskill_cd = 6",
+      "star4_changes": "aspd_bonus: 0.15 → 0.45\natk_bonus: 0.08 → 0.32\nskill_cd: 6 → 4.5",
+      "stats": {
+        "1": {
+          "hp": 600,
+          "atk": 26,
+          "defense": 4
+        },
+        "2": {
+          "hp": 900,
+          "atk": 39,
+          "defense": 6
+        },
+        "3": {
+          "hp": 1800,
+          "atk": 78,
+          "defense": 12
+        },
+        "4": {
+          "hp": 2070,
+          "atk": 90,
+          "defense": 14
+        }
+      }
+    },
+    "god_angel": {
+      "name_cn": "天使",
+      "race": "神族",
+      "element": "天",
+      "tier": 2,
+      "cost": 30,
+      "skill_id": "nearby_ally_heal_buff",
+      "skill_name_cn": "光环治疗",
+      "skill_cn_1to3": "光环治疗（冷却7.0秒）：治疗自身周围友军最大生命15%，并给攻击+10%、攻速+0.15，同时清除负面状态；开场冷却2.0秒。",
+      "skill_cn_4": "光环治疗（冷却5.0秒）：治疗自身周围友军最大生命40%，并给攻击+40%、攻速+0.45，同时清除负面状态；开场冷却2.0秒。",
+      "skill_en_1to3": "Halo Heal (CD 7.0s): Heal nearby allies for 15% max HP; grant ATK +10% and AS +0.15 and cleanse debuffs; initial cooldown 2.0s.",
+      "skill_raw_params": "aspd_bonus = 0.15\natk_bonus = 0.1\nheal_pct = 0.15\nopening_cd = 2\nskill_cd = 7",
+      "star4_changes": "aspd_bonus: 0.15 → 0.45\natk_bonus: 0.1 → 0.4\ncontrol_immune_sec: — → 2\nheal_pct: 0.15 → 0.4\nskill_cd: 7 → 5",
+      "stats": {
+        "1": {
+          "hp": 1080,
+          "atk": 48,
+          "defense": 8
+        },
+        "2": {
+          "hp": 1620,
+          "atk": 72,
+          "defense": 12
+        },
+        "3": {
+          "hp": 3240,
+          "atk": 144,
+          "defense": 24
+        },
+        "4": {
+          "hp": 3726,
+          "atk": 166,
+          "defense": 28
+        }
+      }
+    },
+    "god_arbiter": {
+      "name_cn": "裁决者",
+      "race": "神族",
+      "element": "地",
+      "tier": 2,
+      "cost": 30,
+      "skill_id": "judgement_strike",
+      "skill_name_cn": "审判打击",
+      "skill_cn_1to3": "审判打击（冷却3.0秒）：对最近敌人造成自身攻击220%伤害；每次释放自身防御叠加+6%，最多5层。",
+      "skill_cn_4": "审判打击（冷却2.0秒）：对最近敌人造成自身攻击440%伤害；每次释放自身防御叠加+20%，最多5层。",
+      "skill_en_1to3": "Judgement Strike (CD 3.0s): Deal 220% ATK damage to the nearest enemy; each cast permanently stacks own DEF +6% (max 5 stacks).",
+      "skill_raw_params": "damage_atk_pct = 2.2\ndef_stack_pct = 0.06\nmax_stacks = 5\nskill_cd = 3",
+      "star4_changes": "damage_atk_pct: 2.2 → 4.4\ndef_stack_pct: 0.06 → 0.2\nskill_cd: 3 → 2",
+      "stats": {
+        "1": {
+          "hp": 1040,
+          "atk": 79,
+          "defense": 10
+        },
+        "2": {
+          "hp": 1560,
+          "atk": 119,
+          "defense": 15
+        },
+        "3": {
+          "hp": 3120,
+          "atk": 237,
+          "defense": 30
+        },
+        "4": {
+          "hp": 3588,
+          "atk": 273,
+          "defense": 35
+        }
+      }
+    },
+    "god_aurora": {
+      "name_cn": "极光射手",
+      "race": "神族",
+      "element": "天",
+      "tier": 2,
+      "cost": 30,
+      "skill_id": "true_damage_attack",
+      "skill_name_cn": "圣枪裁决",
+      "skill_cn_1to3": "圣枪裁决：普通攻击额外造成自身攻击18%真实伤害。",
+      "skill_cn_4": "圣枪裁决：普通攻击额外造成自身攻击45%真实伤害。",
+      "skill_en_1to3": "Holy Lance: Normal attacks deal bonus true damage equal to 18% ATK.",
+      "skill_raw_params": "true_damage_pct = 0.18",
+      "star4_changes": "third_hit_double: — → true\ntrue_damage_pct: 0.18 → 0.45",
+      "stats": {
+        "1": {
+          "hp": 720,
+          "atk": 77,
+          "defense": 4
+        },
+        "2": {
+          "hp": 1080,
+          "atk": 116,
+          "defense": 6
+        },
+        "3": {
+          "hp": 2160,
+          "atk": 231,
+          "defense": 12
+        },
+        "4": {
+          "hp": 2484,
+          "atk": 266,
+          "defense": 14
+        }
+      }
+    },
+    "god_guard": {
+      "name_cn": "光之卫士",
+      "race": "神族",
+      "element": "地",
+      "tier": 2,
+      "cost": 30,
+      "skill_id": "guardian_shield_taunt",
+      "skill_name_cn": "守护嘲讽",
+      "skill_cn_1to3": "守护嘲讽：战斗开始获得最大生命20%护盾，并让周围敌人优先攻击自己。",
+      "skill_cn_4": "守护嘲讽：战斗开始获得最大生命40%护盾，并让周围敌人优先攻击自己。",
+      "skill_en_1to3": "Guardian Taunt: Gain a shield equal to 20% max HP at battle start; force nearby enemies to target this unit.",
+      "skill_raw_params": "start_shield_pct = 0.2\ntaunt_radius = 180",
+      "star4_changes": "shield_control_immune: — → true\nstart_shield_pct: 0.2 → 0.4\ntaunt_radius: 180 → 240",
+      "stats": {
+        "1": {
+          "hp": 1520,
+          "atk": 46,
+          "defense": 14
+        },
+        "2": {
+          "hp": 2280,
+          "atk": 69,
+          "defense": 21
+        },
+        "3": {
+          "hp": 4560,
+          "atk": 138,
+          "defense": 42
+        },
+        "4": {
+          "hp": 5244,
+          "atk": 159,
+          "defense": 48
+        }
+      }
+    },
+    "god_archangel": {
+      "name_cn": "大天使",
+      "race": "神族",
+      "element": "天",
+      "tier": 3,
+      "cost": 50,
+      "skill_id": "random_ally_damage_reduction",
+      "skill_name_cn": "天使庇护",
+      "skill_cn_1to3": "天使庇护（冷却6.0秒）：随机友军获得50%减伤，持续6.0秒。",
+      "skill_cn_4": "天使庇护（冷却4.0秒）：随机友军获得65%减伤，持续8.0秒。",
+      "skill_en_1to3": "Angel's Guard (CD 6.0s): Grant a random ally 50% damage reduction for 6.0s.",
+      "skill_raw_params": "damage_reduction = 0.5\nduration = 6\nskill_cd = 6\nunique_on_board = true",
+      "star4_changes": "damage_reduction: 0.5 → 0.65\nduration: 6 → 8\nskill_cd: 6 → 4",
+      "stats": {
+        "1": {
+          "hp": 1700,
+          "atk": 73,
+          "defense": 15
+        },
+        "2": {
+          "hp": 2550,
+          "atk": 110,
+          "defense": 23
+        },
+        "3": {
+          "hp": 5100,
+          "atk": 219,
+          "defense": 45
+        },
+        "4": {
+          "hp": 5865,
+          "atk": 252,
+          "defense": 52
+        }
+      }
+    },
+    "god_king": {
+      "name_cn": "神王",
+      "race": "神族",
+      "element": "地",
+      "tier": 3,
+      "cost": 50,
+      "skill_id": "global_divine_blast",
+      "skill_name_cn": "神王裁决",
+      "skill_cn_1to3": "神王裁决（冷却8.0秒）：攻击神王所在战线内所有可攻击敌人，在2.0秒内分5次造成自身攻击160%加目标最大生命8%的伤害。",
+      "skill_cn_4": "神王裁决（冷却6.0秒）：攻击神王所在战线内所有可攻击敌人，在2.0秒内分5次造成自身攻击320%加目标最大生命16%的伤害。",
+      "skill_en_1to3": "Divine Judgement (CD 8.0s): Strike all attackable enemies in God King's lane, dealing 160% ATK + 8% of each target's max HP over 5 hits in 2.0s.",
+      "skill_raw_params": "damage_atk_pct = 1.6\ndamage_tick_count = 5\ndamage_tick_interval = 0.5\nmax_hp_bonus_pct = 0.08\nskill_cd = 8\nunique_on_board = true",
+      "star4_changes": "damage_atk_pct: 1.6 → 3.2\nmax_hp_bonus_pct: 0.08 → 0.16\nskill_cd: 8 → 6",
+      "stats": {
+        "1": {
+          "hp": 1800,
+          "atk": 105,
+          "defense": 16
+        },
+        "2": {
+          "hp": 2700,
+          "atk": 158,
+          "defense": 24
+        },
+        "3": {
+          "hp": 5400,
+          "atk": 315,
+          "defense": 48
+        },
+        "4": {
+          "hp": 6210,
+          "atk": 362,
+          "defense": 55
+        }
+      }
+    },
+    "human_merchant": {
+      "name_cn": "商人",
+      "race": "人族",
+      "element": "人",
+      "tier": 1,
+      "cost": 20,
+      "skill_id": "post_battle_gold_by_star",
+      "skill_name_cn": "战后经商",
+      "skill_cn_1to3": "战后经商：参与战斗后，按星级获得金币。1星+10，2星+20，3星+30，4星+40。",
+      "skill_cn_4": "战后经商：参与战斗后，按星级获得金币。1星+10，2星+20，3星+30，4星+40。",
+      "skill_en_1to3": "Trade: After each battle, gain gold by star level (★1 → +10G, ★2 → +20G, ★3 → +30G, ★4 → +40G).",
+      "skill_raw_params": "",
+      "star4_changes": "无",
+      "stats": {
+        "1": {
+          "hp": 560,
+          "atk": 29,
+          "defense": 4
+        },
+        "2": {
+          "hp": 840,
+          "atk": 44,
+          "defense": 6
+        },
+        "3": {
+          "hp": 1680,
+          "atk": 87,
+          "defense": 12
+        },
+        "4": {
+          "hp": 1932,
+          "atk": 100,
+          "defense": 14
+        }
+      }
+    },
+    "human_militia": {
+      "name_cn": "民兵",
+      "race": "人族",
+      "element": "地",
+      "tier": 1,
+      "cost": 20,
+      "skill_id": "attack_interrupt",
+      "skill_name_cn": "缴械攻击",
+      "skill_cn_1to3": "缴械攻击：普通攻击有12%概率缴械目标（1 秒内无法普攻）。",
+      "skill_cn_4": "缴械攻击：普通攻击有20%概率眩晕目标0.5秒。",
+      "skill_en_1to3": "Disarm Strike: Normal attacks have a 12% chance to disarm the target (cannot use normal attacks for 1s).",
+      "skill_raw_params": "interrupt_chance = 0.12",
+      "star4_changes": "interrupt_chance: 0.12 → 0.2\nstun_sec: — → 0.5",
+      "stats": {
+        "1": {
+          "hp": 600,
+          "atk": 35,
+          "defense": 5
+        },
+        "2": {
+          "hp": 900,
+          "atk": 53,
+          "defense": 8
+        },
+        "3": {
+          "hp": 1800,
+          "atk": 105,
+          "defense": 15
+        },
+        "4": {
+          "hp": 2070,
+          "atk": 121,
+          "defense": 17
+        }
+      }
+    },
+    "human_archer": {
+      "name_cn": "弓箭手",
+      "race": "人族",
+      "element": "天",
+      "tier": 2,
+      "cost": 30,
+      "skill_id": "every_fourth_combo",
+      "skill_name_cn": "连射",
+      "skill_cn_1to3": "连射：每第4次普通攻击额外造成自身攻击150%伤害。",
+      "skill_cn_4": "连射：每第3次普通攻击额外造成自身攻击300%伤害。",
+      "skill_en_1to3": "Rapid Fire: Every 4 attacks, deal bonus 150% ATK damage.",
+      "skill_raw_params": "combo_atk_pct = 1.5\nevery = 4",
+      "star4_changes": "combo_atk_pct: 1.5 → 3\nevery: 4 → 3",
+      "stats": {
+        "1": {
+          "hp": 760,
+          "atk": 70,
+          "defense": 3
+        },
+        "2": {
+          "hp": 1140,
+          "atk": 105,
+          "defense": 5
+        },
+        "3": {
+          "hp": 2280,
+          "atk": 210,
+          "defense": 9
+        },
+        "4": {
+          "hp": 2622,
+          "atk": 241,
+          "defense": 10
+        }
+      }
+    },
+    "human_cleric": {
+      "name_cn": "牧师",
+      "race": "人族",
+      "element": "人",
+      "tier": 2,
+      "cost": 30,
+      "skill_id": "every_fifth_group_heal",
+      "skill_name_cn": "战歌",
+      "skill_cn_1to3": "战歌：每第5次普通攻击治疗周围友军最大生命15%。",
+      "skill_cn_4": "战歌：每第4次普通攻击治疗周围友军最大生命40%。",
+      "skill_en_1to3": "War Song: Every 5 attacks, heal nearby allies for 15% of their max HP.",
+      "skill_raw_params": "every = 5\nheal_pct = 0.15",
+      "star4_changes": "every: 5 → 4\nheal_pct: 0.15 → 0.4",
+      "stats": {
+        "1": {
+          "hp": 1200,
+          "atk": 48,
+          "defense": 6
+        },
+        "2": {
+          "hp": 1800,
+          "atk": 72,
+          "defense": 9
+        },
+        "3": {
+          "hp": 3600,
+          "atk": 144,
+          "defense": 18
+        },
+        "4": {
+          "hp": 4140,
+          "atk": 166,
+          "defense": 21
+        }
+      }
+    },
+    "human_death_servant": {
+      "name_cn": "死侍",
+      "race": "人族",
+      "element": "地",
+      "tier": 2,
+      "cost": 30,
+      "skill_id": "left_neighbor_sacrifice",
+      "skill_name_cn": "死侍契约",
+      "skill_cn_1to3": "死侍契约：周围一圈友军防御+3持续5.0秒；战斗开始绑定左侧棋子，该棋子首次死亡时死侍代替其死亡并使其满血复活。",
+      "skill_cn_4": "死侍契约：周围一圈友军防御+40%持续8.0秒；战斗开始绑定左右两侧棋子，其中先死亡的棋子首次阵亡时由死侍代替其死亡并使其满血复活（死侍仅能牺牲一次）。",
+      "skill_en_1to3": "Death Pact: Grant surrounding allies DEF +3 for 5.0s. At battle start, bind to the left neighbour — when that unit first dies, this unit sacrifices itself in their place, reviving them at full HP.",
+      "skill_raw_params": "ally_def_bonus = 3\nally_def_duration = 5",
+      "star4_changes": "ally_def_duration: 5 → 8\nally_def_pct: — → 0.4",
+      "stats": {
+        "1": {
+          "hp": 1640,
+          "atk": 1,
+          "defense": 18
+        },
+        "2": {
+          "hp": 2460,
+          "atk": 1,
+          "defense": 27
+        },
+        "3": {
+          "hp": 4920,
+          "atk": 1,
+          "defense": 54
+        },
+        "4": {
+          "hp": 5658,
+          "atk": 1,
+          "defense": 62
+        }
+      }
+    },
+    "human_mage": {
+      "name_cn": "法师",
+      "race": "人族",
+      "element": "天",
+      "tier": 2,
+      "cost": 30,
+      "skill_id": "random_attribute_bolt",
+      "skill_name_cn": "随机法术",
+      "skill_cn_1to3": "随机法术：无普攻，每2.5秒对随机敌人造成攻击300%的随机属性伤害。",
+      "skill_cn_4": "随机法术：无普攻，每2.0秒对随机敌人造成攻击600%的随机属性伤害，并有20%概率触发双重施法。",
+      "skill_en_1to3": "Random Spell: No basic attack. Every 2.5s, deal 300% ATK random-element damage to a random enemy.",
+      "skill_raw_params": "damage_atk_pct = 3\nno_basic_attack = true\nskill_cd = 2.5",
+      "star4_changes": "damage_atk_pct: 3 → 6\ndouble_element_chance: — → 0.2\nskill_cd: 2.5 → 2",
+      "stats": {
+        "1": {
+          "hp": 720,
+          "atk": 72,
+          "defense": 3
+        },
+        "2": {
+          "hp": 1080,
+          "atk": 108,
+          "defense": 5
+        },
+        "3": {
+          "hp": 2160,
+          "atk": 216,
+          "defense": 9
+        },
+        "4": {
+          "hp": 2484,
+          "atk": 248,
+          "defense": 10
+        }
+      }
+    },
+    "human_swordsman": {
+      "name_cn": "剑士",
+      "race": "人族",
+      "element": "地",
+      "tier": 2,
+      "cost": 30,
+      "skill_id": "front_cone_stun",
+      "skill_name_cn": "盾击",
+      "skill_cn_1to3": "盾击（冷却5.0秒）：攻击最近敌人，造成自身攻击150%伤害并眩晕1.0秒。",
+      "skill_cn_4": "盾击（冷却5.0秒）：攻击最近敌人，造成自身攻击300%伤害并眩晕2.0秒。",
+      "skill_en_1to3": "Shield Bash (CD 5.0s): Strike the nearest enemy for 150% ATK damage and stun for 1.0s.",
+      "skill_raw_params": "damage_atk_pct = 1.5\nstun_sec = 1",
+      "star4_changes": "damage_atk_pct: 1.5 → 3\nstun_sec: 1 → 2",
+      "stats": {
+        "1": {
+          "hp": 1120,
+          "atk": 64,
+          "defense": 10
+        },
+        "2": {
+          "hp": 1680,
+          "atk": 96,
+          "defense": 15
+        },
+        "3": {
+          "hp": 3360,
+          "atk": 192,
+          "defense": 30
+        },
+        "4": {
+          "hp": 3864,
+          "atk": 221,
+          "defense": 35
+        }
+      }
+    },
+    "human_king": {
+      "name_cn": "人王",
+      "race": "人族",
+      "element": "人",
+      "tier": 3,
+      "cost": 50,
+      "skill_id": "unique_king_growth",
+      "skill_name_cn": "人王唯一技",
+      "skill_cn_1to3": "人王唯一技：棋盘上只能存在一只人王。若参战且战后仍存活，全属性永久x1.2（上限5层）；若死亡则从棋盘移除；升星继承三只材料中成长最高的人王数值。",
+      "skill_cn_4": "人王唯一技：棋盘上只能存在一只人王。若参战且战后仍存活，生命、攻击、防御永久x1.3（上限8层）；若死亡则从棋盘移除；升星继承三只材料中成长最高的人王数值。",
+      "skill_en_1to3": "Human King Unique (one on board): If this unit survives a battle, HP/ATK/DEF permanently ×1.2 (cap 5 stacks). If it dies, it is removed from the board. On upgrade, inherit the highest growth value from the three materials.",
+      "skill_raw_params": "max_stacks = 5\npost_battle_all_stat_growth = 0.2\nremove_on_death = true\nunique_on_board = true",
+      "star4_changes": "max_stacks: 5 → 8\npost_battle_all_stat_growth: 0.2 → 0.3",
+      "stats": {
+        "1": {
+          "hp": 720,
+          "atk": 55,
+          "defense": 7
+        },
+        "2": {
+          "hp": 1080,
+          "atk": 83,
+          "defense": 11
+        },
+        "3": {
+          "hp": 2160,
+          "atk": 165,
+          "defense": 21
+        },
+        "4": {
+          "hp": 2484,
+          "atk": 190,
+          "defense": 24
+        }
+      }
+    },
+    "undead_poison": {
+      "name_cn": "毒灵",
+      "race": "亡灵",
+      "element": "人",
+      "tier": 1,
+      "cost": 20,
+      "skill_id": "poison_attack",
+      "skill_name_cn": "毒击",
+      "skill_cn_1to3": "毒击：普通攻击附带中毒，每秒造成目标最大生命3%伤害，持续4.0秒；灵4毒伤x2。",
+      "skill_cn_4": "毒击：普通攻击附带中毒，每秒造成目标最大生命6%伤害，持续6.0秒；最多2层，分别扣血。",
+      "skill_en_1to3": "Poison Strike: Normal attacks apply poison — 3% max HP per second for 4.0s. Up to 2 stacks tick separately.",
+      "skill_raw_params": "poison_duration = 4\npoison_pct_max_hp = 0.03",
+      "star4_changes": "poison_duration: 4 → 6\npoison_pct_max_hp: 0.03 → 0.06",
+      "stats": {
+        "1": {
+          "hp": 660,
+          "atk": 33,
+          "defense": 5
+        },
+        "2": {
+          "hp": 990,
+          "atk": 50,
+          "defense": 8
+        },
+        "3": {
+          "hp": 1980,
+          "atk": 99,
+          "defense": 15
+        },
+        "4": {
+          "hp": 2277,
+          "atk": 114,
+          "defense": 17
+        }
+      }
+    },
+    "undead_small": {
+      "name_cn": "小灵",
+      "race": "亡灵",
+      "element": "天",
+      "tier": 1,
+      "cost": 10,
+      "skill_id": "none",
+      "skill_name_cn": "无",
+      "skill_cn_1to3": "无主动技能。",
+      "skill_cn_4": "无主动技能。",
+      "skill_en_1to3": "No active skill.",
+      "skill_raw_params": "star4_multiplier = 1.5",
+      "star4_changes": "无",
+      "stats": {
+        "1": {
+          "hp": 600,
+          "atk": 24,
+          "defense": 2
+        },
+        "2": {
+          "hp": 900,
+          "atk": 36,
+          "defense": 3
+        },
+        "3": {
+          "hp": 1800,
+          "atk": 72,
+          "defense": 6
+        },
+        "4": {
+          "hp": 2700,
+          "atk": 108,
+          "defense": 9
+        }
+      }
+    },
+    "undead_bomb": {
+      "name_cn": "自爆灵",
+      "race": "亡灵",
+      "element": "人",
+      "tier": 2,
+      "cost": 30,
+      "skill_id": "death_poison_explosion",
+      "skill_name_cn": "死亡毒爆",
+      "skill_cn_1to3": "死亡毒爆：死亡时对周围敌人造成自身攻击250%真实伤害，并施加中毒。",
+      "skill_cn_4": "死亡毒爆：死亡时对周围敌人造成自身攻击500%真实伤害，并施加中毒（最多2层，分别扣血）。",
+      "skill_en_1to3": "Death Poison Burst: On death, deal 250% ATK true damage to surrounding enemies and apply poison (up to 2 separate damage stacks).",
+      "skill_raw_params": "damage_atk_pct = 2.5",
+      "star4_changes": "damage_atk_pct: 2.5 → 5",
+      "stats": {
+        "1": {
+          "hp": 600,
+          "atk": 145,
+          "defense": 0
+        },
+        "2": {
+          "hp": 900,
+          "atk": 218,
+          "defense": 0
+        },
+        "3": {
+          "hp": 1800,
+          "atk": 435,
+          "defense": 0
+        },
+        "4": {
+          "hp": 2070,
+          "atk": 500,
+          "defense": 0
+        }
+      }
+    },
+    "undead_fly": {
+      "name_cn": "飞灵",
+      "race": "亡灵",
+      "element": "天",
+      "tier": 2,
+      "cost": 30,
+      "skill_id": "poison_attack",
+      "skill_name_cn": "毒击",
+      "skill_cn_1to3": "毒击：普通攻击附带中毒，每秒造成目标最大生命3%伤害，持续4.0秒；灵4毒伤x2。",
+      "skill_cn_4": "毒击：普通攻击附带中毒，每秒造成目标最大生命6%伤害，持续6.0秒；最多2层，分别扣血。",
+      "skill_en_1to3": "Poison Strike: Normal attacks apply poison — 3% max HP per second for 4.0s. Up to 2 stacks tick separately.",
+      "skill_raw_params": "poison_duration = 4\npoison_pct_max_hp = 0.03",
+      "star4_changes": "dodge: 0.25 → 0.4\npoison_duration: 4 → 6\npoison_pct_max_hp: 0.03 → 0.06",
+      "stats": {
+        "1": {
+          "hp": 760,
+          "atk": 66,
+          "defense": 4
+        },
+        "2": {
+          "hp": 1140,
+          "atk": 99,
+          "defense": 6
+        },
+        "3": {
+          "hp": 2280,
+          "atk": 198,
+          "defense": 12
+        },
+        "4": {
+          "hp": 2622,
+          "atk": 228,
+          "defense": 14
+        }
+      }
+    },
+    "undead_parasite": {
+      "name_cn": "寄生灵",
+      "race": "亡灵",
+      "element": "人",
+      "tier": 2,
+      "cost": 30,
+      "skill_id": "parasite_on_kill",
+      "skill_name_cn": "寄生",
+      "skill_cn_1to3": "寄生：普攻标记非 Boss 敌人，被标记敌人死亡时，召唤该敌人的分身，生命为原目标20%，攻防为原目标50%。",
+      "skill_cn_4": "寄生：普攻标记非 Boss 敌人，被标记敌人死亡时，召唤该敌人的分身，生命为原目标50%，攻防为原目标75%。",
+      "skill_en_1to3": "Parasite: When a basic attack kills a non-Boss enemy, summon its clone at 20% HP and 50% ATK/DEF.",
+      "skill_raw_params": "clone_atk_def_pct = 0.5\nclone_hp_pct = 0.2",
+      "star4_changes": "clone_atk_def_pct: 0.5 → 0.75\nclone_hp_pct: 0.2 → 0.5",
+      "stats": {
+        "1": {
+          "hp": 840,
+          "atk": 57,
+          "defense": 7
+        },
+        "2": {
+          "hp": 1260,
+          "atk": 86,
+          "defense": 11
+        },
+        "3": {
+          "hp": 2520,
+          "atk": 171,
+          "defense": 21
+        },
+        "4": {
+          "hp": 2898,
+          "atk": 197,
+          "defense": 24
+        }
+      }
+    },
+    "undead_spike": {
+      "name_cn": "刺灵",
+      "race": "亡灵",
+      "element": "天",
+      "tier": 2,
+      "cost": 30,
+      "skill_id": "defense_down_attack",
+      "skill_name_cn": "腐蚀攻击",
+      "skill_cn_1to3": "腐蚀攻击：普通攻击降低目标防御30%，持续5.0秒；暗2会增强效果。",
+      "skill_cn_4": "腐蚀攻击：普通攻击降低目标防御60%，持续8.0秒。",
+      "skill_en_1to3": "Corrosive Strike: Normal attacks reduce target DEF by 30% for 5.0s.",
+      "skill_raw_params": "def_down_pct = 0.3\nduration = 5",
+      "star4_changes": "def_down_pct: 0.3 → 0.6\nduration: 5 → 8",
+      "stats": {
+        "1": {
+          "hp": 800,
+          "atk": 62,
+          "defense": 6
+        },
+        "2": {
+          "hp": 1200,
+          "atk": 93,
+          "defense": 9
+        },
+        "3": {
+          "hp": 2400,
+          "atk": 186,
+          "defense": 18
+        },
+        "4": {
+          "hp": 2760,
+          "atk": 214,
+          "defense": 21
+        }
+      }
+    },
+    "undead_titan": {
+      "name_cn": "巨甲灵",
+      "race": "亡灵",
+      "element": "地",
+      "tier": 2,
+      "cost": 30,
+      "skill_id": "poison_reflect_armor_stack",
+      "skill_name_cn": "毒甲",
+      "skill_cn_1to3": "毒甲：受伤后反弹本次伤害15%真实伤害并使攻击者中毒；自身防御每次+14%，最多10层。",
+      "skill_cn_4": "毒甲：受伤后反弹本次伤害30%真实伤害并使攻击者中毒（最多2层，分别扣血）；自身防御每次+28%，最多10层。",
+      "skill_en_1to3": "Toxic Armor: On taking damage, reflect 15% as true damage and poison the attacker (up to 2 separate damage stacks). Own DEF stacks +14% per hit (max 10 stacks).",
+      "skill_raw_params": "armor_per_hit_pct = 0.14\nmax_stacks = 10\nreflect_taken_damage_pct = 0.15",
+      "star4_changes": "armor_per_hit_pct: 0.14 → 0.28\nreflect_taken_damage_pct: 0.15 → 0.3",
+      "stats": {
+        "1": {
+          "hp": 1500,
+          "atk": 50,
+          "defense": 21
+        },
+        "2": {
+          "hp": 2250,
+          "atk": 75,
+          "defense": 32
+        },
+        "3": {
+          "hp": 4500,
+          "atk": 150,
+          "defense": 63
+        },
+        "4": {
+          "hp": 5175,
+          "atk": 173,
+          "defense": 72
+        }
+      }
+    },
+    "undead_mother": {
+      "name_cn": "母灵",
+      "race": "亡灵",
+      "element": "地",
+      "tier": 3,
+      "cost": 50,
+      "skill_id": "unique_death_execute",
+      "skill_name_cn": "母灵处决",
+      "skill_cn_1to3": "母灵：每名玩家最多1只；3v3中多个玩家的母灵可同时生效且各自独立计数。每5个非母灵处决造成的敌军死亡触发一次；1阶/佣兵50%、2阶35%、3阶10%即死，Boss改为20%最大生命伤害。",
+      "skill_cn_4": "母灵：每名玩家最多1只；3v3中多个玩家的母灵可同时生效且各自独立计数。每4个非母灵处决造成的敌军死亡触发一次；1阶/佣兵55%、2阶35%、3阶10%即死，Boss改为30%最大生命伤害。",
+      "skill_en_1to3": "Matron: each player can field 1; in 3v3, each player's Matron works at the same time and counts independently. Every 5 enemy deaths not caused by Matron execute: Tier 1/Merc 50%, Tier 2 35%, Tier 3 10%; vs Boss deal 20% max HP instead.",
+      "skill_raw_params": "boss_max_hp_damage = 0.2\ndeath_threshold = 5\ntier1_or_merc_chance = 0.5\ntier2_chance = 0.35\ntier3_chance = 0.1\nunique_on_board = true",
+      "star4_changes": "boss_max_hp_damage: 0.2 → 0.3\ndeath_threshold: 5 → 4\ntier1_or_merc_chance: 0.5 → 0.55\ntier2_chance: 0.35 → 0.35",
+      "stats": {
+        "1": {
+          "hp": 1600,
+          "atk": 110,
+          "defense": 18
+        },
+        "2": {
+          "hp": 2400,
+          "atk": 165,
+          "defense": 27
+        },
+        "3": {
+          "hp": 4800,
+          "atk": 330,
+          "defense": 54
+        },
+        "4": {
+          "hp": 5520,
+          "atk": 379,
+          "defense": 62
+        }
+      }
+    },
+    "crimson": {
+      "name_cn": "赤卫",
+      "race": "赤族",
+      "element": "地",
+      "tier": 1,
+      "cost": 20,
+      "skill_id": "block_guard",
+      "skill_name_cn": "赤卫格挡",
+      "skill_cn_1to3": "直接普攻或技能命中时有 20% 概率完全格挡，4★ 为 30%；持续伤害跳数不触发。",
+      "skill_cn_4": "赤卫格挡：每次受到普攻或技能直击时，有30%概率完全格挡；持续伤害不触发。",
+      "skill_en_1to3": "Crimson Guard: 20% chance to fully block each direct basic or skill hit; damage-over-time ticks do not trigger it.",
+      "skill_raw_params": "block_chance = 0.2",
+      "star4_changes": "block_chance: 0.2 → 0.3",
+      "stats": {
+        "1": {
+          "hp": 650,
+          "atk": 31,
+          "defense": 7
+        },
+        "2": {
+          "hp": 975,
+          "atk": 47,
+          "defense": 11
+        },
+        "3": {
+          "hp": 1950,
+          "atk": 93,
+          "defense": 21
+        },
+        "4": {
+          "hp": 2243,
+          "atk": 107,
+          "defense": 24
+        }
+      }
+    },
+    "dancer": {
+      "name_cn": "赤舞者",
+      "race": "赤族",
+      "element": "人",
+      "tier": 1,
+      "cost": 20,
+      "skill_id": "random_ally_buff",
+      "skill_name_cn": "赤舞",
+      "skill_cn_1to3": "每 5 秒选 1 名友军，随机令技能剩余冷却 -2 秒，或攻击 / 攻速 +20% 持续 3 秒；4★ 选 2 名。",
+      "skill_cn_4": "赤舞祝福（冷却5.0秒）：随机选择2名不同友军（优先其他存活队友，人数不足时可选自身），各随机获得一种效果：技能剩余冷却-2秒、攻击+20%或攻速+20%，增益持续3.0秒，同类刷新不叠加。",
+      "skill_en_1to3": "Crimson Dance (CD 5.0s): Choose 1 distinct random allies. Each gets one random effect: 2s off remaining skill cooldown, +20% ATK, or +20% attack speed for 3.0s. Same-type buffs refresh.",
+      "skill_raw_params": "ally_count = 1\nbuff_duration = 3\nbuff_pct = 0.2\nskill_cd = 5",
+      "star4_changes": "ally_count: 1 → 2",
+      "stats": {
+        "1": {
+          "hp": 540,
+          "atk": 28,
+          "defense": 3
+        },
+        "2": {
+          "hp": 810,
+          "atk": 42,
+          "defense": 5
+        },
+        "3": {
+          "hp": 1620,
+          "atk": 84,
+          "defense": 9
+        },
+        "4": {
+          "hp": 1863,
+          "atk": 97,
+          "defense": 10
+        }
+      }
+    },
+    "drumer": {
+      "name_cn": "战鼓使",
+      "race": "赤族",
+      "element": "人",
+      "tier": 2,
+      "cost": 30,
+      "skill_id": "team_random_stack",
+      "skill_name_cn": "战鼓",
+      "skill_cn_1to3": "普攻命中使符合条件的友军攻击和攻速各 +5%，最多 15 层，持续 3 秒且每次刷新；每击有 1/3 概率治疗友军最大生命 5%；4★ 每层 +8%。",
+      "skill_cn_4": "战鼓共振：每次普攻命中使可作用的存活友军同时叠加攻击+8%和攻速+8%，各最多15层；每次叠加刷新该棋子全部战鼓层的3.0秒持续时间。分路战斗先作用本路，开放并连通后可跨路；另有1/3概率立刻回复可作用友军最大生命5%。",
+      "skill_en_1to3": "War Drum: Each landed basic hit gives eligible living allies +5% ATK and +5% attack speed, up to 15 layers each. Every hit refreshes all War Drum layers on each recipient for 3.0s. In team battles it affects the same lane first, then connected lanes once opened; separately has a 1-in-3 chance to heal eligible allies for 5% max HP.",
+      "skill_raw_params": "heal_pct = 0.05\nmax_stacks = 15\nstack_duration = 3\nstack_pct = 0.05",
+      "star4_changes": "stack_pct: 0.05 → 0.08",
+      "stats": {
+        "1": {
+          "hp": 980,
+          "atk": 52,
+          "defense": 9
+        },
+        "2": {
+          "hp": 1470,
+          "atk": 78,
+          "defense": 14
+        },
+        "3": {
+          "hp": 2940,
+          "atk": 156,
+          "defense": 27
+        },
+        "4": {
+          "hp": 3381,
+          "atk": 179,
+          "defense": 31
+        }
+      }
+    },
+    "hunter": {
+      "name_cn": "血猎者",
+      "race": "赤族",
+      "element": "天",
+      "tier": 2,
+      "cost": 30,
+      "skill_id": "current_hp_strike",
+      "skill_name_cn": "血猎",
+      "skill_cn_1to3": "普攻附加目标受击前当前生命 10% 伤害，Boss 为 5%，不暴击；4★ 增加低血处决。",
+      "skill_cn_4": "血猎：普攻额外造成目标受击前当前生命10%的伤害，Boss为5%；额外伤害不暴击。目标受击前生命低于30%时，再造成自身攻击50%伤害。",
+      "skill_en_1to3": "Blood Hunt: Basics deal extra damage equal to 10% of the target's pre-hit current HP (5% against bosses); the extra damage cannot crit.",
+      "skill_raw_params": "boss_hp_pct = 0.05\ncurrent_hp_pct = 0.1",
+      "star4_changes": "execute_atk_pct: — → 0.5\nexecute_threshold: — → 0.3",
+      "stats": {
+        "1": {
+          "hp": 760,
+          "atk": 56,
+          "defense": 4
+        },
+        "2": {
+          "hp": 1140,
+          "atk": 84,
+          "defense": 6
+        },
+        "3": {
+          "hp": 2280,
+          "atk": 168,
+          "defense": 12
+        },
+        "4": {
+          "hp": 2622,
+          "atk": 193,
+          "defense": 14
+        }
+      }
+    },
+    "armbreaker": {
+      "name_cn": "破甲者",
+      "race": "赤族",
+      "element": "地",
+      "tier": 2,
+      "cost": 30,
+      "skill_id": "stacking_def_break",
+      "skill_name_cn": "破甲",
+      "skill_cn_1to3": "每次普攻命中永久降低目标防御 2 点，可叠至零；4★ 每次降低 4 点。",
+      "skill_cn_4": "破甲：每次普攻命中有100%概率使目标防御永久降低4点，可叠加，最低为0。",
+      "skill_en_1to3": "Armor Break: Each landed basic has a 100% chance to permanently reduce target DEF by 2, stacking down to zero.",
+      "skill_raw_params": "break_amount = 2\nbreak_chance = 1",
+      "star4_changes": "break_amount: 2 → 4",
+      "stats": {
+        "1": {
+          "hp": 1180,
+          "atk": 54,
+          "defense": 12
+        },
+        "2": {
+          "hp": 1770,
+          "atk": 81,
+          "defense": 18
+        },
+        "3": {
+          "hp": 3540,
+          "atk": 162,
+          "defense": 36
+        },
+        "4": {
+          "hp": 4071,
+          "atk": 186,
+          "defense": 41
+        }
+      }
+    },
+    "Icey": {
+      "name_cn": "霜印使",
+      "race": "赤族",
+      "element": "天",
+      "tier": 2,
+      "cost": 30,
+      "skill_id": "frost_status",
+      "skill_name_cn": "霜印",
+      "skill_cn_1to3": "每 6 秒对目标周围两格敌人造成攻击 110% 伤害并附加 3 秒冰弱：受伤 +25%，Boss +13%；4★ 伤害 150%、持续 5 秒。",
+      "skill_cn_4": "霜印（冷却6.0秒）：以当前目标为中心，对2格范围内每名敌人造成自身攻击150%技能伤害，并附加冰易伤5.0秒，使其受到的伤害+25%（Boss为+13%）。",
+      "skill_en_1to3": "Frost Mark (CD 6.0s): Deal 110% ATK skill damage to each enemy within two cells of the target and apply Ice Vulnerable for 3.0s. Damage taken +25% (+13% for bosses).",
+      "skill_raw_params": "aoe_radius = 144\ndamage_atk_pct = 1.1\nice_duration = 3\nice_vulnerable_pct = 0.25\nskill_cd = 6",
+      "star4_changes": "damage_atk_pct: 1.1 → 1.5\nice_duration: 3 → 5",
+      "stats": {
+        "1": {
+          "hp": 780,
+          "atk": 68,
+          "defense": 4
+        },
+        "2": {
+          "hp": 1170,
+          "atk": 102,
+          "defense": 6
+        },
+        "3": {
+          "hp": 2340,
+          "atk": 204,
+          "defense": 12
+        },
+        "4": {
+          "hp": 2691,
+          "atk": 235,
+          "defense": 14
+        }
+      }
+    },
+    "skypierce": {
+      "name_cn": "穿云弩手",
+      "race": "赤族",
+      "element": "天",
+      "tier": 3,
+      "cost": 50,
+      "skill_id": "line_pierce",
+      "skill_name_cn": "穿云连射",
+      "skill_cn_1to3": "普攻最多穿透一线 4 个目标，依次造成攻击 100% / 80% / 60% / 40% 伤害；4★ 衰减改为每目标 10%。分别结算防御和属性。",
+      "skill_cn_4": "穿云：普攻沿直线最多命中4名敌人，第1至第4名分别受到自身攻击的100%、90%、80%、70%伤害，各自计算防御与元素克制。",
+      "skill_en_1to3": "Skypierce: Basics strike up to 4 enemies in a line for 100%, 80%, 60%, and 40% ATK damage. DEF and element are calculated separately.",
+      "skill_raw_params": "pierce_falloff = 0.2\npierce_targets = 4",
+      "star4_changes": "pierce_falloff: 0.2 → 0.1",
+      "stats": {
+        "1": {
+          "hp": 1500,
+          "atk": 104,
+          "defense": 10
+        },
+        "2": {
+          "hp": 2250,
+          "atk": 156,
+          "defense": 15
+        },
+        "3": {
+          "hp": 4500,
+          "atk": 312,
+          "defense": 30
+        },
+        "4": {
+          "hp": 5175,
+          "atk": 359,
+          "defense": 35
+        }
+      }
+    },
+    "lattern": {
+      "name_cn": "赤灯使",
+      "race": "赤族",
+      "element": "地",
+      "tier": 3,
+      "cost": 50,
+      "skill_id": "aoe_silence",
+      "skill_name_cn": "赤灯沉默",
+      "skill_cn_1to3": "开场沉默可选中路线的所有敌人 3 秒，期间攻速 -30%；4★ 沉默 4 秒、冷却 9 秒。",
+      "skill_cn_4": "赤灯禁言（冷却9.0秒）：开战立即释放，使当前可攻击路线的所有敌人沉默4.0秒；沉默期间无法释放主动技能，攻速降低30%，普攻与被动正常。本路清空后，后续施法可按分路规则影响其他路（Boss控制时长减半）。",
+      "skill_en_1to3": "Crimson Lantern (CD 10.0s): Cast at battle start and silence all enemies in currently targetable lanes for 3.0s. While silenced, active skills are blocked and attack speed is reduced by 30%; basic attacks and passives work normally. Later casts can affect other lanes after the caster's lane is cleared (boss control duration is halved).",
+      "skill_raw_params": "silence_duration = 3\nskill_cd = 10\nskill_global = true\nunique_on_board = true",
+      "star4_changes": "silence_duration: 3 → 4\nskill_cd: 10 → 9",
+      "stats": {
+        "1": {
+          "hp": 1720,
+          "atk": 82,
+          "defense": 16
+        },
+        "2": {
+          "hp": 2580,
+          "atk": 123,
+          "defense": 24
+        },
+        "3": {
+          "hp": 5160,
+          "atk": 246,
+          "defense": 48
+        },
+        "4": {
+          "hp": 5934,
+          "atk": 283,
+          "defense": 55
+        }
+      }
+    }
+  },
+  "pets": {
+    "pet_mushroom": {
+      "name_cn": "蘑菇",
+      "name_en": "Mushroom",
+      "effect_type": "生命加成",
+      "value_percent": "10%",
+      "detail_cn": "己方棋子最大生命 +10%。",
+      "scope_cn": "己方普通棋子；战斗开场",
+      "starter": true,
+      "summary_cn": "己方棋子生命 +10%",
+      "shop_item_id": "shop_pet_mushroom",
+      "shop_currency": "coin",
+      "shop_price": 500,
+      "shop_enabled": true
+    },
+    "pet_cat": {
+      "name_cn": "猫",
+      "name_en": "Cat",
+      "effect_type": "利息",
+      "value_percent": "5%",
+      "detail_cn": "金币利息率额外 +5%，与基础及复利宝藏分别计算。",
+      "scope_cn": "持有者；战后利息",
+      "starter": true,
+      "summary_cn": "金币利息 +5%",
+      "shop_item_id": "shop_pet_cat",
+      "shop_currency": "coin",
+      "shop_price": 500,
+      "shop_enabled": true
+    },
+    "pet_rabbit": {
+      "name_cn": "兔子",
+      "name_en": "Rabbit",
+      "effect_type": "攻击加成",
+      "value_percent": "10%",
+      "detail_cn": "己方棋子攻击 +10%。",
+      "scope_cn": "己方普通棋子；战斗开场",
+      "starter": true,
+      "summary_cn": "己方棋子攻击 +10%",
+      "shop_item_id": "shop_pet_rabbit",
+      "shop_currency": "coin",
+      "shop_price": 500,
+      "shop_enabled": true
+    },
+    "pet_squirrel": {
+      "name_cn": "松鼠",
+      "name_en": "Squirrel",
+      "effect_type": "萝卜采集 / 容量",
+      "value_percent": "20%",
+      "detail_cn": "每次萝卜收获额外 +20%，增量向下取整且至少 +1；己方营地萝卜容量 +20%，增量向下取整。",
+      "scope_cn": "己方采集和营地容量",
+      "starter": false,
+      "summary_cn": "萝卜采集与营地容量 +20%（采集至少多 1）",
+      "shop_item_id": "draw_pet_squirrel",
+      "shop_currency": "diamond",
+      "shop_price": 75,
+      "shop_enabled": false
+    },
+    "pet_tiger": {
+      "name_cn": "老虎",
+      "name_en": "Tiger",
+      "effect_type": "升星成长",
+      "value_percent": "5%",
+      "detail_cn": "每次自己的棋子升星永久 +1 层，棋盘和备战区、1–3 阶升星均计；每层使自己所有 1 阶棋子的生命、攻击、防御 +5%，无限累计。后来上场也继承；卖掉棋子不清层数。2–3 阶、队友和敌方不加成。",
+      "scope_cn": "自己的一阶棋子；升星永久叠层",
+      "starter": false,
+      "summary_cn": "每次升星：一阶棋子生命、攻击、防御 +5%（无限累计）",
+      "shop_item_id": "draw_pet_tiger",
+      "shop_currency": "diamond",
+      "shop_price": 75,
+      "shop_enabled": false
+    }
+  },
+  "synergies": {
+    "god": [
+      {
+        "threshold": 1,
+        "name_cn": "神族·死亡净化",
+        "detail_cn": "己方任一棋子死亡 → 随机一名己方存活棋子清除全部负面状态"
+      },
+      {
+        "threshold": 3,
+        "name_cn": "神族·吸血",
+        "detail_cn": "仅神族棋子普攻吸血 20%，按实际造成的伤害结算。"
+      },
+      {
+        "threshold": 7,
+        "name_cn": "神族·神圣脉冲",
+        "detail_cn": "神族 ≥7：从开战第 1 秒起每 5 秒，全队普通棋子无敌 1 秒；免普攻与技能伤害，中毒/流血/灼烧仍生效。"
+      }
+    ],
+    "dark": [
+      {
+        "threshold": 1,
+        "name_cn": "暗族·死亡叠伤",
+        "detail_cn": "敌方每死 3 个 → 暗族单位普攻伤害 +6%（线性叠加，代码里没有上限）"
+      },
+      {
+        "threshold": 2,
+        "name_cn": "暗族·负面增强",
+        "detail_cn": "暗族施加的减攻 / 减速 / 减防效果 +30%。"
+      },
+      {
+        "threshold": 5,
+        "name_cn": "暗族·增伤",
+        "detail_cn": "暗族单位普攻伤害 +25%"
+      },
+      {
+        "threshold": 7,
+        "name_cn": "暗族·汲取",
+        "detail_cn": "暗族普攻命中即可叠层：目标攻击 / 防御 / 攻速各 -3%/层；自身各 +3%/层，最多 15 层。"
+      }
+    ],
+    "undead": [
+      {
+        "threshold": 1,
+        "name_cn": "灵族特性·双毒",
+        "detail_cn": "灵族施加的中毒最多叠加 2 层，分别计时和造成伤害。"
+      },
+      {
+        "threshold": 2,
+        "name_cn": "灵2·剧毒抑疗",
+        "detail_cn": "目标中毒期间，其治疗与吸血获得的生命减少 30%。"
+      },
+      {
+        "threshold": 4,
+        "name_cn": "灵4·剧毒",
+        "detail_cn": "灵族中毒伤害翻倍。"
+      },
+      {
+        "threshold": 7,
+        "name_cn": "灵7·噬毒",
+        "detail_cn": "灵族单位攻击已中毒的敌人时，每次回复自身 15% 最大生命。"
+      }
+    ],
+    "human": [
+      {
+        "threshold": 1,
+        "name_cn": "人族·三连暴",
+        "detail_cn": "人族单位每第 3 次普攻必定暴击（写在普攻里，不是羁绊，任何人族棋子都吃）"
+      },
+      {
+        "threshold": 2,
+        "name_cn": "人族·开场护盾",
+        "detail_cn": "开场获得 最大生命×8% 的护盾"
+      },
+      {
+        "threshold": 7,
+        "name_cn": "人族·死亡集结",
+        "detail_cn": "人族 ≥7：己方普通棋子死亡时，同一持有人的存活普通棋子获得一层集结：按开战基础值最大生命/攻击/防御/攻速各 +20%，回复新增生命，暴击率 +20%，暴伤 +10%；可叠层。"
+      }
+    ],
+    "crimson": [
+      {
+        "threshold": 1,
+        "name_cn": "赤族·符文",
+        "detail_cn": "自身效果触发累积符文，最多 9 层；3 层暴击率 +30%，6 层攻速 ×1.6，9 层暴伤 +0.9。"
+      },
+      {
+        "threshold": 2,
+        "name_cn": "赤族·延时",
+        "detail_cn": "施加的状态时长 +20%；沉默、眩晕、打断、冰冻类额外延时最多 0.5 秒。"
+      },
+      {
+        "threshold": 4,
+        "name_cn": "赤族·共鸣",
+        "detail_cn": "赤族施加状态时自身获得 1 层共鸣，最多 10 层；每层攻击和攻速 +5%，4 秒未刷新即结束。"
+      },
+      {
+        "threshold": 7,
+        "name_cn": "赤族·脉冲",
+        "detail_cn": "开战第 2 秒起每 5 秒：赤族单位技能剩余冷却 -1 秒、清除负面、治疗最大生命 6%、获得 1 层脉冲。每层攻击、攻速、暴击率 +10%，最多 5 层。"
+      }
+    ]
+  },
+  "treasures": {
+    "def_iron_wall": {
+      "name_cn": "铁壁之护",
+      "category_cn": "防御",
+      "effect_cn": "开战时防御 +10（绝对值，不随星级缩放 → 对本来就高防的棋子收益递减）",
+      "hu_pai_text_cn": "—（不在胡牌手 5 件内）"
+    },
+    "def_life_monument": {
+      "name_cn": "生命丰碑",
+      "category_cn": "防御",
+      "effect_cn": "最大生命 ×1.20 并回满",
+      "hu_pai_text_cn": "×1.40"
+    },
+    "def_formation_heal": {
+      "name_cn": "法阵回春",
+      "category_cn": "防御",
+      "effect_cn": "胜利或平局：法阵 HP +1；失败：法阵 HP +2；不超过初始上限 50",
+      "hu_pai_text_cn": "—（胡牌手现需黄金祭坛）"
+    },
+    "def_soul_counter": {
+      "name_cn": "亡魂反击",
+      "category_cn": "防御",
+      "effect_cn": "击杀你这枚棋子的单位立刻受到 其自身最大生命×35% 真实伤害",
+      "hu_pai_text_cn": "—"
+    },
+    "def_lifesteal_emblem": {
+      "name_cn": "吸血纹章",
+      "category_cn": "防御",
+      "effect_cn": "回复 本次实际伤害×20% 生命",
+      "hu_pai_text_cn": "—"
+    },
+    "def_phantom_step": {
+      "name_cn": "幻影步伐",
+      "category_cn": "防御",
+      "effect_cn": "闪避 +20%（闪避是完全免伤，不是减伤）",
+      "hu_pai_text_cn": "—"
+    },
+    "ctrl_shockwave": {
+      "name_cn": "震荡余波",
+      "category_cn": "控制",
+      "effect_cn": "眩晕目标 1.0 秒",
+      "hu_pai_text_cn": "眩晕 2.0 秒"
+    },
+    "ctrl_corrosive_needle": {
+      "name_cn": "腐蚀毒针",
+      "category_cn": "控制",
+      "effect_cn": "目标流血：每秒 当前生命×6%，持续 3 秒",
+      "hu_pai_text_cn": "—"
+    },
+    "ctrl_interrupt_chain": {
+      "name_cn": "打断锁链",
+      "category_cn": "控制",
+      "effect_cn": "25% 概率缴械目标 1.5 秒",
+      "hu_pai_text_cn": "—"
+    },
+    "ctrl_time_compress": {
+      "name_cn": "时空压缩",
+      "category_cn": "控制",
+      "effect_cn": "本方棋子全部技能冷却 ×0.75，开场冷却也 ×0.75",
+      "hu_pai_text_cn": "—"
+    },
+    "ctrl_binding_weight": {
+      "name_cn": "束缚重压",
+      "category_cn": "控制",
+      "effect_cn": "目标移速 -25% / 攻速 -20% / 造成伤害 -20%，持续 2 秒",
+      "hu_pai_text_cn": "—"
+    },
+    "atk_blood_pact": {
+      "name_cn": "血契之刃",
+      "category_cn": "攻击",
+      "effect_cn": "攻击 ×1.25；代价：自身永久流血（每秒 当前生命×6%，999 秒）",
+      "hu_pai_text_cn": "攻击 ×1.50（流血代价不变）"
+    },
+    "atk_fury_roster": {
+      "name_cn": "狂怒阵容",
+      "category_cn": "攻击",
+      "effect_cn": "上场棋子上限 7 → 8",
+      "hu_pai_text_cn": "7 → 9"
+    },
+    "atk_burst_core": {
+      "name_cn": "爆裂核心",
+      "category_cn": "攻击",
+      "effect_cn": "暴击率 +25%",
+      "hu_pai_text_cn": "—"
+    },
+    "atk_wail_resonance": {
+      "name_cn": "哀鸣共鸣",
+      "category_cn": "攻击",
+      "effect_cn": "死者周围 180 像素内敌人各受 自身最大生命×15% 真实伤害",
+      "hu_pai_text_cn": "—"
+    },
+    "atk_frenzy_assault": {
+      "name_cn": "狂暴进攻",
+      "category_cn": "攻击",
+      "effect_cn": "每次普攻自身攻速 ×1.15（封顶 2.5）；换目标层数清零但攻速不回退",
+      "hu_pai_text_cn": "—"
+    },
+    "money_compound": {
+      "name_cn": "复利之道",
+      "category_cn": "金钱",
+      "effect_cn": "基础利息 5% 之外再加 5%；本回合未花金币再加 3%（实际结算与利息预览一致；免费刷新不算消费）",
+      "hu_pai_text_cn": "—"
+    },
+    "money_generous_fate": {
+      "name_cn": "慷慨命运",
+      "category_cn": "金钱",
+      "effect_cn": "赌博：50% 金币变为 2.5 倍 / 50% 只剩 20%",
+      "hu_pai_text_cn": "—"
+    },
+    "money_discount": {
+      "name_cn": "折扣令牌",
+      "category_cn": "金钱",
+      "effect_cn": "棋子价格 ×0.7（向上取整，最低 1 金）；与清仓特卖互斥，最多降价 60%",
+      "hu_pai_text_cn": "—"
+    },
+    "money_golden_altar": {
+      "name_cn": "黄金祭坛",
+      "category_cn": "金钱",
+      "effect_cn": "每次 -2 法阵 HP → +100 金；法阵 HP ≤10 时不可用。持有人本回合未使用：法阵 HP +1；3v3 每位持有人独立判断，最多 +3",
+      "hu_pai_text_cn": "胡牌手激活：使用不扣法阵 HP；选到胡牌手立即 +2 法阵 HP（选到当回合也生效）"
+    },
+    "money_lucky_envelope": {
+      "name_cn": "幸运信封",
+      "category_cn": "金钱",
+      "effect_cn": "战后随机 +30 / +40 / +50 金",
+      "hu_pai_text_cn": "—"
+    },
+    "elem_flame_shatter": {
+      "name_cn": "炎焰碎裂",
+      "category_cn": "属性",
+      "effect_cn": "触发火属性：额外 自身攻击×40% 真实伤害",
+      "hu_pai_text_cn": "—"
+    },
+    "elem_frost_blade": {
+      "name_cn": "冰封霜刃",
+      "category_cn": "属性",
+      "effect_cn": "25% 概率：目标移速 -35% / 攻速 -50%，持续 2 秒",
+      "hu_pai_text_cn": "—"
+    },
+    "elem_thunder_haste": {
+      "name_cn": "雷霆加速",
+      "category_cn": "属性",
+      "effect_cn": "自身攻速 +60%，持续 3 秒",
+      "hu_pai_text_cn": "—"
+    },
+    "elem_toxic_spread": {
+      "name_cn": "剧毒蔓延",
+      "category_cn": "属性",
+      "effect_cn": "触发毒属性：中毒（每秒 目标最大生命×3%，4 秒）",
+      "hu_pai_text_cn": "—"
+    }
+  },
+  "linkages": {
+    "link_phoenix": {
+      "name_cn": "凤凰涅槃",
+      "requires_cn": "哀鸣共鸣 + 亡魂反击",
+      "effect_cn": "该棋子死亡 0.1 秒后以最大生命的 40% 复活并获得 3 秒无敌，3.1 秒后强制真死；每枚棋子每场 1 次。"
+    },
+    "link_money_magic": {
+      "name_cn": "金钱魔法",
+      "requires_cn": "幸运信封 + 时空压缩",
+      "effect_cn": "战后额外随机 +60/70/80 金，另有 10% 概率再 +200 金。"
+    },
+    "link_blood_covenant": {
+      "name_cn": "血之契约",
+      "requires_cn": "炎焰碎裂 + 吸血纹章",
+      "effect_cn": "火属性伤害从 攻击×40% 提升到 攻击×100%。\n表内字段：true_damage_atk_pct = 1"
+    },
+    "link_paralysis_shackles": {
+      "name_cn": "麻痹枷锁",
+      "requires_cn": "打断锁链 + 冰封霜刃",
+      "effect_cn": "缴械触发时再附加冰效果、冰易伤 +25% 与治疗降低 75%，持续 4 秒。\n表内字段：ice_damage_taken_bonus = 0.25；heal_reduction = 0.75"
+    },
+    "link_oppression_counter": {
+      "name_cn": "压迫反击",
+      "requires_cn": "束缚重压 + 狂暴进攻",
+      "effect_cn": "被攻击时使攻击者获得狂暴进攻的一层攻速，并使攻击者攻击 -25%，持续 2 秒。"
+    },
+    "link_fraud_fate": {
+      "name_cn": "诡诈命运",
+      "requires_cn": "幻影步伐 + 慷慨命运",
+      "effect_cn": "赌博改为 60% 变为 2.5 倍 / 40% 只剩 50%。"
+    },
+    "link_iron_maiden": {
+      "name_cn": "铁处女",
+      "requires_cn": "铁壁之护 + 腐蚀毒针",
+      "effect_cn": "被攻击时（冷却 8 秒）给攻击者流血 6%/秒持续 5 秒、防御 -50% 持续 5 秒。"
+    },
+    "link_toxic_burst": {
+      "name_cn": "剧毒爆发",
+      "requires_cn": "爆裂核心 + 剧毒蔓延",
+      "effect_cn": "造成伤害后，若目标中毒则 50% 概率立刻引爆剩余全部毒伤（按剩余跳数一次性结算）并移除中毒。\n表内字段：proc_chance = 0.5"
+    },
+    "link_rich_path": {
+      "name_cn": "富裕之路",
+      "requires_cn": "复利之道 + 雷霆加速",
+      "effect_cn": "每次造成正伤害 25% 概率 +10 金（计入 bonus_gold）。\n表内字段：attack_gold_chance = 0.25"
+    },
+    "link_clearance_sale": {
+      "name_cn": "清仓特卖",
+      "requires_cn": "狂怒阵容 + 折扣令牌",
+      "effect_cn": "同队只要有一人激活，队友买棋子均享受原价 ×0.4（向上取整，最低 1 金）；与折扣令牌互斥，最多降价 60%。\n表内字段：shop_price_multiplier = 0.4"
+    },
+    "link_hu_pai_master": {
+      "name_cn": "胡牌手",
+      "requires_cn": "生命丰碑 + 黄金祭坛 + 震荡余波 + 血契之刃 + 狂怒阵容",
+      "effect_cn": "需要：生命丰碑 + 黄金祭坛 + 震荡余波 + 血契之刃 + 狂怒阵容。生命丰碑 ×1.20→×1.40；震荡余波眩晕 1→2 秒；血契之刃 ×1.25→×1.50；狂怒阵容上限 8→9。黄金祭坛使用不扣法阵 HP；选到胡牌手立即回复法阵 HP +2（上限 50）。\n表内字段：positive_effect_multiplier = 2"
+    }
+  },
+  "shop_items": {
+    "shop_pet_mushroom": {
+      "kind": "pet",
+      "grants": "pet_mushroom",
+      "currency": "coin",
+      "price": 500,
+      "enabled": true,
+      "name_cn": "蘑菇",
+      "name_en": "Mushroom"
+    },
+    "shop_pet_cat": {
+      "kind": "pet",
+      "grants": "pet_cat",
+      "currency": "coin",
+      "price": 500,
+      "enabled": true,
+      "name_cn": "猫",
+      "name_en": "Cat"
+    },
+    "shop_pet_rabbit": {
+      "kind": "pet",
+      "grants": "pet_rabbit",
+      "currency": "coin",
+      "price": 500,
+      "enabled": true,
+      "name_cn": "兔子",
+      "name_en": "Rabbit"
+    },
+    "shop_prep_skin_ice": {
+      "kind": "prep_skin",
+      "grants": "prep_skin_ice",
+      "currency": "diamond",
+      "price": 0,
+      "enabled": false,
+      "name_cn": "冰雪棋盘",
+      "name_en": "Frost Board"
+    },
+    "event_frame_7day_ice": {
+      "kind": "avatar_frame",
+      "grants": "preset:avatar_frame_7day_01",
+      "currency": "diamond",
+      "price": 0,
+      "enabled": false,
+      "name_cn": "冰雪七日头像框",
+      "name_en": "Frost Seven-Day Frame"
+    },
+    "shop_frame_emerald": {
+      "kind": "avatar_frame",
+      "grants": "preset:avatar_frame_shop_01",
+      "currency": "coin",
+      "price": 600,
+      "enabled": true,
+      "name_cn": "翡翠森境",
+      "name_en": "Emerald Grove"
+    },
+    "shop_frame_frost": {
+      "kind": "avatar_frame",
+      "grants": "preset:avatar_frame_shop_02",
+      "currency": "coin",
+      "price": 600,
+      "enabled": true,
+      "name_cn": "霜晶王冠",
+      "name_en": "Frost Crown"
+    },
+    "shop_frame_dragon": {
+      "kind": "avatar_frame",
+      "grants": "preset:avatar_frame_shop_03",
+      "currency": "coin",
+      "price": 600,
+      "enabled": true,
+      "name_cn": "鎏金龙鳞",
+      "name_en": "Gilded Dragon"
+    },
+    "shop_frame_astral": {
+      "kind": "avatar_frame",
+      "grants": "preset:avatar_frame_shop_04",
+      "currency": "coin",
+      "price": 600,
+      "enabled": true,
+      "name_cn": "星穹秘环",
+      "name_en": "Astral Halo"
+    },
+    "shop_frame_inferno": {
+      "kind": "avatar_frame",
+      "grants": "preset:avatar_frame_shop_05",
+      "currency": "coin",
+      "price": 600,
+      "enabled": true,
+      "name_cn": "炽焰之心",
+      "name_en": "Inferno Heart"
+    },
+    "draw_pet_squirrel": {
+      "kind": "pet",
+      "grants": "pet_squirrel",
+      "currency": "diamond",
+      "price": 75,
+      "enabled": false,
+      "name_cn": "松鼠",
+      "name_en": "Squirrel"
+    },
+    "draw_pet_tiger": {
+      "kind": "pet",
+      "grants": "pet_tiger",
+      "currency": "diamond",
+      "price": 75,
+      "enabled": false,
+      "name_cn": "老虎",
+      "name_en": "Tiger"
+    }
+  }
+}

@@ -60,9 +60,10 @@ func _section_content() -> void:
 		var all_names := true
 		var all_details := true
 		for item in entries:
-			if not body.contains(str(item.get("name", ""))):
+			var approved := FinalStatusCatalog.synergy_cn(race, int(item.get("threshold", 0)))
+			if not body.contains(str(approved.get("name_cn", item.get("name", "")))):
 				all_names = false
-			if not body.contains(str(item.get("detail", ""))):
+			if not body.contains(str(approved.get("detail_cn", item.get("detail", "")))):
 				all_details = false
 		h.expect(all_names, "content_%s_all_names" % race,
 			"%s 族每一条效果名都在文本里" % race)
@@ -244,7 +245,9 @@ func _click_one_race(race: String, btn: Button) -> void:
 	# 弹出来的必须是**这一族**的羁绊 —— 弹一个别族的框同样是坏的。
 	var body := _dialog_body_text()
 	var entries: Array = PanelScript._race_entries(race)
-	var first_name := "" if entries.is_empty() else str((entries[0] as Dictionary).get("name", ""))
+	var first_threshold := 0 if entries.is_empty() else int((entries[0] as Dictionary).get("threshold", 0))
+	var approved := FinalStatusCatalog.synergy_cn(race, first_threshold)
+	var first_name := str(approved.get("name_cn", ""))
 	h.expect(not first_name.is_empty() and body.contains(first_name),
 		"real_%s_body_is_own_race" % race,
 		"弹的不是 %s 自己的羁绊：框里找不到「%s」（正文前 40 字：%s）" % [
