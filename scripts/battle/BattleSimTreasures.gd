@@ -69,6 +69,13 @@ static func _process_death_explosions(state: Dictionary) -> void:
 # 条件与原实现逐条一致：目标存活 + `_can_target` + 距离 ≤ 180。
 # 返回是否真的炸到过人（供调用方判断）。
 static func apply_death_poison_explosion(victim: Dictionary, vd: Dictionary, enemies: Array) -> bool:
+	# 10.09 bug 文档第 4 条：这条爆炸（以及它挂上的毒）以前没有任何 stat source，
+	# 于是「本回合总造成伤害」里一分钱都看不到（实测见
+	# work/_qa_1009/probe_attr_paths.gd）。自爆灵自己已经阵亡、也不是这一击的攻击者，
+	# 不该凭空造一个棋子来认领；改用元素旁路，把这份伤害记到它的 owner_slot 名下，
+	# 由结算面板并入席位总伤害、不进任何棋子的个人伤害。
+	var previous_slot := DamageService.current_element_owner_slot()
+	DamageService.set_element_owner_slot(int(victim.get("owner_slot", -1)))
 	var exploded := false
 	for o in enemies:
 		if not bool(o.get("alive", false)):
@@ -80,6 +87,7 @@ static func apply_death_poison_explosion(victim: Dictionary, vd: Dictionary, ene
 		DamageService.apply_damage(o, maxi(1, int(round(float(victim.atk) * float(vd.get("damage_atk_pct", 2.5))))), true)
 		StatusEffectService.add_poison(o, 4.0, 0.03, 0.0, true)
 		exploded = true
+	DamageService.set_element_owner_slot(previous_slot)
 	return exploded
 
 

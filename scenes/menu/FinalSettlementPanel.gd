@@ -24,7 +24,12 @@ var _return_buttons: Array = []
 func _ready() -> void:
 	# Both live settlement and history render these same rows. Derive the total
 	# here as well so old history records need no backfill or extra stored field.
-	preload("res://scripts/multiplayer/FinalSettlementData.gd").update_round_damage(data.get("seats", []), data.get("stats", []))
+	# 10.09 第 4 条：无归属棋子的元素伤害账本（data.element_damage_by_slot）也一起并进来，
+	# 与 build() 同一入口。旧记录没有这个键 ⇒ 空表，行为不变。
+	var element_by_slot: Variant = data.get("element_damage_by_slot", {})
+	if typeof(element_by_slot) != TYPE_DICTIONARY:
+		element_by_slot = {}
+	preload("res://scripts/multiplayer/FinalSettlementData.gd").update_round_damage(data.get("seats", []), data.get("stats", []), element_by_slot)
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var background := TextureRect.new()
 	background.texture = PROFILE_BG_TEX

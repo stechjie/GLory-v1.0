@@ -42,7 +42,7 @@ static func add_status(fighter: Dictionary, kind: String, duration: float, param
 		if dark_bonus > 0.0:
 			if kind in ["slow", "attack_down", "damage_down", "defense_down", "defense_flat_down", "heal_reduction", "ice_vulnerable", "poison", "bleed", "bleed_nonlethal", "burn"]:
 				for key in next.keys():
-					if str(key) in ["tick_left", "source_uid", "antiheal_pct"]:
+					if str(key) in ["tick_left", "source_uid", "antiheal_pct", "element_owner_slot"]:
 						continue
 					if typeof(next[key]) == TYPE_INT or typeof(next[key]) == TYPE_FLOAT:
 						next[key] = float(next[key]) * (1.0 + dark_bonus)
@@ -153,7 +153,9 @@ static func _boss_reduced_params(kind: String, params: Dictionary) -> Dictionary
 	var next := params
 	if kind in ["slow", "attack_down", "damage_down", "defense_down", "defense_flat_down", "heal_reduction", "ice_vulnerable", "poison", "bleed", "bleed_nonlethal", "burn"]:
 		for key in next.keys():
-			if str(key) in ["tick_left", "antiheal_pct"]:
+			# element_owner_slot 是对账用的下标，不是数值型效果参数 —— 不豁免它
+			# 会被「对 boss 减半」当成 3 → 1.5 就地改坏，毒伤就会记错席位。
+			if str(key) in ["tick_left", "antiheal_pct", "element_owner_slot"]:
 				continue
 			if typeof(next[key]) == TYPE_INT or typeof(next[key]) == TYPE_FLOAT:
 				next[key] = float(next[key]) * 0.5
@@ -178,6 +180,9 @@ static func add_poison(fighter: Dictionary, duration: float = 4.0, pct_max_hp: f
 		"pct_max_hp": pct_max_hp * (1.0 + bonus),
 		"tick_left": 0.0,
 		"source_uid": DamageService.current_stat_source_uid(),
+		# 10.09 第 4 条：挂毒时若处在元素旁路里（自爆灵爆炸 / 寄生灵分身），
+		# 把 owner_slot 一起存下来 —— 这些毒后续跳的每一跳都该进「总伤害」而非某个棋子。
+		"element_owner_slot": DamageService.current_element_owner_slot(),
 		"antiheal_pct": antiheal,
 	}, pct_max_hp > 0.0 and (force_undead_stack or str(source.get("def", {}).get("race", "")) == "undead"))
 
@@ -190,20 +195,26 @@ static func add_bleed(fighter: Dictionary, duration: float = 3.0, pct_current_hp
 		"pct_current_hp": pct_current_hp,
 		"tick_left": 0.0,
 		"source_uid": DamageService.current_stat_source_uid(),
+		"element_owner_slot": DamageService.current_element_owner_slot(),
 	})
 
 
 # _tick_statuses clears the damage context before every fighter, so the caster
-# recorded above has to be put back for the duration of the tick.
+# recorded above has to be put back for the duration of the tick. 10.09 第 4 条
+# 新增的元素旁路（element_owner_slot）与 source_uid 同样要一起还原 —— 它决定了
+# 这一跳是记进某个棋子的 damage_dealt，还是记进席位级的「元素伤害」账本。
 static func _apply_dot_damage(fighter: Dictionary, amount: int, params: Dictionary) -> void:
 	var previous := DamageService.current_stat_source_uid()
+	var previous_slot := DamageService.current_element_owner_slot()
 	var source := str(params.get("source_uid", ""))
 	if not source.is_empty():
 		DamageService.set_stat_source_uid(source)
+	DamageService.set_element_owner_slot(int(params.get("element_owner_slot", -1)))
 	DamageService._dot_damage_active = true
 	DamageService.apply_damage(fighter, amount, true)
 	DamageService._dot_damage_active = false
 	DamageService.set_stat_source_uid(previous)
+	DamageService.set_element_owner_slot(previous_slot)
 
 static func interrupt(fighter: Dictionary, duration: float = 1.0) -> void:
 	# 缴械：1 秒内无法进行普通攻击（普攻在 _perform_attack 处被 has_status("interrupt") 拦下）。

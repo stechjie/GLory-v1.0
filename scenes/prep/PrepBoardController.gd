@@ -489,7 +489,22 @@ func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
 	var target = GameState.board_slots[board_index]
 	var incoming := {"id": offer.id, "uid": GameState.mint_piece_uid(), "star": 1, "def": offer.duplicate(true)}
 	if target == null:
+		# 10.09 bug 文档第 1 条：**棋盘上已有同名唯一棋子**时，不能再一句拒绝。
+		#
+		# 现场（用户口径）：「当棋盘上人王时，从商店里拖动人王到棋盘上（即便此时棋盘上
+		# 是一个一星人王，也不会自动升星），会显示『传奇棋子只能上场一个』，不会进行购买
+		# 操作」。改之前这里只有一句 `show_message(toast_unique_limit)` + `return` ——
+		# 玩家拖过来的这一枚既没升星、也没进备战区，直接被吞掉。
+		#
+		# 用户给的三条意图**与下面「上阵已满」的分流顺序完全同构**，所以共用同一份：
+		#   （1）棋盘上已上阵的同一唯一棋子**能满足升星条件** → 就地升星；
+		#   （2）不满足升星条件 → 新拖动的这一枚进入备战区（先试待命区升星，再找空位）；
+		#   （3）同（2）但备战区也满 → 这时才显示「传奇棋子只能上场一个」。
+		# 提示口径的差别只在最后一步：棋盘人口满用 `ui_pieces_full`，唯一上限用
+		# `toast_unique_limit`。
 		if bool(offer.get("unique_on_board", false)) and PrepRules.has_unique_board_unit(str(offer.get("id", "")), PrepRules.board_limit_for_def(offer)):
+			if _auto_dispatch_shop_card(shop_index, offer):
+				return
 			show_message(tr("toast_unique_limit"))
 			return
 		if GameState.normal_unit_count() >= GameState.normal_unit_cap():
@@ -503,7 +518,7 @@ func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
 			#   ② 待命区里有能升星的 → 在待命区升星（同理，省下一个格子）；
 			#   ③ 待命区还有空位 → 落到待命区（本条的正文）；
 			#   ④ 都不行 → 「棋子已满，无法购买」（第 3 条之（3）的既有口径）。
-			if _auto_dispatch_shop_when_board_full(shop_index, offer):
+			if _auto_dispatch_shop_card(shop_index, offer):
 				return
 			show_message(tr("ui_pieces_full"))
 			return
@@ -590,16 +605,29 @@ func _buy_or_merge_shop_to_bench(shop_index: int, bench_index: int) -> void:
 	SaveManager.save_run()
 	_refresh_all()
 
-# 「上阵已满」时把这张商店卡自动分流到唯一还收得下它的地方。见
-# `_buy_or_merge_shop_to_board` 的「上阵上限」分支（10.05 第 3 条返工追加）。
+# 把这张商店卡自动分流到唯一还收得下它的地方。
+#
+# **两个调用点**（都在 `_buy_or_merge_shop_to_board` 里，都是「棋盘这条路被规则挡住、
+# 但玩家手里确实还有别处能收下它」的情形）：
+#   * 「上阵已满」（10.05 第 3 条返工追加）—— 场地人口满了，先看看能不能升星/落待命区；
+#   * 「同名唯一已达上限」（10.09 bug 文档第 1 条）—— 棋盘上已有同名唯一棋子，
+#     玩家把商店里的第二枚拖了过来，得先试试升星/落待命区，不能一句拒绝吞掉。
+# 两处的分流顺序**完全同构**（① 棋盘升星 → ② 待命区升星 → ③ 待命区空位），
+# 差别只在最后那句提示由各自的调用方负责（`ui_pieces_full` / `toast_unique_limit`）。
 #
 # 返回 true = 已经把它路由出去了（买没买成、提示什么，都由被调的那两个买入函数自己负责）；
-# 返回 false = 棋盘与待命区都收不下它，由调用方给「棋子已满，无法购买」。
+# 返回 false = 棋盘与待命区都收不下它，由调用方给提示。
 #
 # 为什么单独抽一个函数而不是在分支里就地写：它必须**复用** `_buy_or_merge_shop_to_board` /
 # `_buy_or_merge_shop_to_bench` 那一整套买入流程（扣钱、`shop_sold`、影子账
 # `_shadow_report_buy`、音效、存档）。照抄一遍就等于把「哪一步会漏」的机会复制一份。
-func _auto_dispatch_shop_when_board_full(shop_index: int, offer: Dictionary) -> bool:
+#
+# ★ 第 ① 步在**唯一棋子**这条路上是活代码，不是死代码：`_auto_combine_all()` 每次改动后都会
+# 把棋盘+待命区的同名同星自动融合，所以稳态下棋盘上不会挂着可合成的成对棋子 —— 唯一能凑出
+# 一对的时刻，恰好就是「玩家正把商店这一枚放下」的当下。也就是说，棋盘上有一枚 1 星人王时，
+# 把商店的人王拖过来，第 ① 步就会把它合到那枚上去（= 用户意图(1) 就地升星）。
+# 而在「上阵已满」那条路上第 ① 步确实无事可做（同上理由，棋盘已无成对），走 ②③ 落待命区。
+func _auto_dispatch_shop_card(shop_index: int, offer: Dictionary) -> bool:
 	# ① 棋盘上先升星。走 `_buy_or_merge_shop_to_board` 自己 —— 那条路上 target 非空，
 	#    不会再回到「上阵上限」这个分支，递归一层就收。
 	var board_merge := PrepRules.first_merge_target(GameState.board_slots, offer)

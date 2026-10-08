@@ -848,6 +848,7 @@ func _process(delta: float) -> void:
 				_pong_gap_logged = true
 				_net_log("pong silence %.1fs (network degrading)" % silence)
 	_tick_pending_leave(delta)
+	_tick_pending_ready(delta)
 	_tick_tx_retry(delta)
 	# 重组缓冲的过期回收。跑在收包侧：不回收的话，一个发一半就断的下发会把
 	# 那几十 KB 一直钉在内存里（服务器重启/换局都不会碰它）。
@@ -2049,16 +2050,61 @@ func _room_kick_slot(room: Dictionary, slot: int) -> void:
 # 判断以"意图"为准，把这段窗口关掉。
 var _pending_ready := -1
 
+# 在途 ready 请求的**确认期限**（秒）。服务器既不确认也不回绝时，客户端会永远停在
+# 「意图已发出」上 —— 而 `local_ready_intent()` 正是「离开房间」那条守卫的唯一判据。
+# 这一版的 ready 没有 request/ACK + revision（见上），只能拿期限兜底，写法同
+# `_leave_deadline`：到点就作废并留一行日志，玩家至少还能退出房间。
+const READY_CONFIRM_TIMEOUT_SEC := 4.0
+var _ready_deadline := 0.0
+
+# 撤销在途 ready 意图的唯一出口：意图与它的期限必须一起清，漏一个就会留下
+# 「意图永远在途」的状态（10.09 第 3 条就是它）。
+func _clear_pending_ready(reason: String = "") -> void:
+	if _pending_ready < 0 and _ready_deadline <= 0.0:
+		return
+	_pending_ready = -1
+	_ready_deadline = 0.0
+	if not reason.is_empty():
+		_net_log("pending ready cleared: %s" % reason)
+
+# 10.09 第 3 条：在途 ready 意图的超时兜底。没有它，玩家在「服务器不确认也不回绝」
+# 的房间状态里会被**永久**锁住：按准备没反应（请求被服务器丢弃，队友看到的还是未准备），
+# 按离开提示「请先取消准备」（守卫读的就是这个撤不掉的意图）。
+func _tick_pending_ready(_delta: float) -> void:
+	if _pending_ready < 0 or _ready_deadline <= 0.0 or _now() < _ready_deadline:
+		return
+	_clear_pending_ready("expired after %.1fs without confirmation (value=%d)"
+		% [READY_CONFIRM_TIMEOUT_SEC, _pending_ready])
+
 # 本地认为自己现在是不是已准备：在途请求优先于服务器最后一次广播。
+#
+# ★ 10.09 bug 文档第 3 条：**没有座位时一律不算已准备。**
+#   `_pending_ready` 是「上一个座位」发出的在途请求，而它只有在服务器回包里的 ready 值
+#   **与意图相等**时才会被撤销（见 _rpc_room_state 尾部那一处）。可两条服务器路径会让
+#   那个回包永远不来：
+#     * `_rpc_team_set_ready`：座位 state == "settling" 时**直接 return**（连
+#       `_rpc_team_action_failed` 都不发）；
+#     * `_send_room_state`：peer 不在 `room.peer_slot` 里时**整份不发**。
+#   于是「重进刚结算完的自定义房间」这一路（结算房把没回来的人标成 settling、
+#   且不放进 peer_slot，见 _return_to_settlement_room）会让玩家带着一个永远撤不掉的
+#   `_pending_ready = 1` 留在房间界面里。而 Team3v3Lobby 那边因为没有座位
+#   （`my_slot < 0`）**按下准备也会静默 return** —— 两个出口互为唯一，
+#   玩家被永久锁在大厅：按准备没反应，按离开提示「请先取消准备」（Main.gd）。
+#   座位都没了，「准备」这件事就不存在，不能拿它锁人。
 func local_ready_intent() -> bool:
+	if team_local_slot < 0:
+		return false
 	if _pending_ready >= 0:
 		return _pending_ready == 1
-	if team_local_slot >= 0 and team_local_slot < team_ready.size():
+	if team_local_slot < team_ready.size():
 		return bool(team_ready[team_local_slot])
 	return false
 
 func team_set_ready(value: bool) -> void:
 	if team_local_slot < 0:
+		# 静默失败本身就是缺陷的成因（同上面三个入口的长注释）：这里以前一声不吭，
+		# 玩家点「准备」既没有任何反应、也没有任何日志可查（10.09 第 3 条现场）。
+		_net_log("ready ignored: no local seat (value=%s)" % str(value))
 		return
 	if is_host:
 		team_ready[team_local_slot] = value
@@ -2067,6 +2113,8 @@ func team_set_ready(value: bool) -> void:
 		_team_maybe_start_round()
 	else:
 		_pending_ready = 1 if value else 0
+		# 意图与期限一起上：服务器丢包/不回绝时靠 `_tick_pending_ready` 兜底。
+		_ready_deadline = _now() + READY_CONFIRM_TIMEOUT_SEC
 		_rpc_team_set_ready.rpc_id(1, team_local_slot, value)
 
 func team_all_ready() -> bool:
@@ -4654,7 +4702,7 @@ func reset() -> void:
 	server_phase = ""
 	_last_team_submission = {}
 	_resync_resubmitted_round = 0
-	_pending_ready = -1
+	_clear_pending_ready()
 	_reconnect_phase = ReconnectPhase.BACKOFF
 	_reconnect_attempt = 0
 	# 交易上下文属于**这一局**：换局之后旧 rid 再也不会有回执，留着只会一直重发。
@@ -5476,9 +5524,19 @@ func _rpc_room_state(envelope: Dictionary) -> void:
 	if not replay_error.is_empty():
 		_replay_receive_error(current_battle_id, replay_error)
 	# 服务器确认了在途的 ready 请求 -> 撤销本地意图（C24）
-	if _pending_ready >= 0 and team_local_slot >= 0 and team_local_slot < team_ready.size():
-		if bool(team_ready[team_local_slot]) == (_pending_ready == 1):
-			_pending_ready = -1
+	#
+	# ★ 10.09 第 3 条：除了「回包里的 ready 值 == 意图」这条原判据，再加一条
+	#   「本地座位已经不是 player」—— 座位被标成 settling/empty/dummy（重进刚结算完的
+	#   房间、被顶座、宽限转 AI）时，这个意图指向的座位已经不存在了，留着它只会把
+	#   「离开房间」那条守卫永久锁死，而按准备那边因为座位没了也发不出取消请求。
+	if _pending_ready >= 0:
+		var seat_ok := team_local_slot >= 0 and team_local_slot < team_ready.size() \
+			and team_local_slot < team_slot_states.size() \
+			and str(team_slot_states[team_local_slot]) == "player"
+		if not seat_ok:
+			_clear_pending_ready("seat no longer player (slot=%d)" % team_local_slot)
+		elif bool(team_ready[team_local_slot]) == (_pending_ready == 1):
+			_clear_pending_ready("confirmed by server")
 
 	# 凭证：token 与短码都在快照里，落地并原子写盘（B14 + C21）
 	if not incoming_token.is_empty() and incoming_token != session_token:
@@ -6913,6 +6971,10 @@ func _on_server_disconnected() -> void:
 			return
 		team_active = false
 		team_local_slot = -1
+		# 10.09 第 3 条：在途 ready 意图属于上一个座位，会话没了就必须一起清 ——
+		# 否则它会一直把「离开房间」挡在「请先取消准备」后面，而座位已经不存在，
+		# 玩家再按准备也发不出取消请求（同 _rpc_team_room_closed）。
+		_clear_pending_ready("server disconnected")
 		state = SessionState.OFFLINE
 		last_error = tr("net_err_server_disconnected")
 		session_changed.emit()
@@ -6976,6 +7038,9 @@ func _rpc_team_room_closed(reason: String) -> void:
 	team_local_slot = -1
 	team_slot_states = []
 	team_ready = []
+	# 10.09 第 3 条：这里与 _on_server_disconnected 同款 —— 座位清了，
+	# 在途 ready 意图也必须清，否则它会把「离开房间」永久挡在「请先取消准备」后面。
+	_clear_pending_ready("room closed")
 	team_seat_pets.clear()
 	team_carrot_harvest_gains.clear()
 	team_carrot_harvest_round = -1
@@ -7149,7 +7214,7 @@ func _rpc_settlement_room_switch() -> void:
 	latest_match_state = {}
 	room_chat_log.clear()
 	_match_state.reset_applied()
-	_pending_ready = -1
+	_clear_pending_ready("settlement room switch")
 
 @rpc("authority", "call_remote", "reliable")
 func _rpc_settlement_returned(ok: bool) -> void:

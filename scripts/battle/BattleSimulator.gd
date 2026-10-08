@@ -557,6 +557,9 @@ static func result_from_state(state: Dictionary) -> Dictionary:
 			"log": forced.get("log", []),
 			"kill_gold_by_slot": state.get("kill_gold_by_slot", {}),
 			"unit_stats": state.get("unit_stats", {}),
+			# 10.09 第 4 条：无归属来源（自爆灵爆炸/寄生灵分身）的元素伤害账本，
+			# 结算面板按 owner_slot 并入「本回合总造成伤害」。
+			"element_damage_by_slot": state.get("element_damage_by_slot", {}),
 		}
 	var player: Array = state.player
 	var enemy: Array = state.enemy
@@ -612,6 +615,8 @@ static func result_from_state(state: Dictionary) -> Dictionary:
 		"enemy_kills": state.get("enemy_kills", []),
 		"bonus_gold": int(state.get("bonus_gold", 0)),
 		"unit_stats": state.get("unit_stats", {}),
+		# 10.09 第 4 条：无归属来源的元素伤害账本（见上方 forced_result 分支同一字段）。
+		"element_damage_by_slot": state.get("element_damage_by_slot", {}),
 	}
 
 
@@ -1467,6 +1472,11 @@ static func _maybe_spawn_parasite_clone(killer: Dictionary, victim: Dictionary, 
 	clone.alive = true
 	clone.statuses = {}
 	clone.erase("money_set_multiplier")
+	# 10.09 bug 文档第 4 条：分身不在 `unit_stats` 里（每个 uid 只在开场登记一次），
+	# 所以它打出的伤害、它挂的毒一直无人认领（实测见 probe_attr_paths.gd 的 _case_clone_dot）。
+	# 给它打上「无归属来源」标记：归属按击杀者（也就是寄生灵自己）的席位走，进元素旁路。
+	# 注意不改 clone.owner_slot —— 那是 duplicate 自受害者来的，动它会牵动羁绊解析。
+	clone[DamageService.UNATTRIBUTED_OWNER_KEY] = int(killer.get("owner_slot", -1))
 	((state.player) if str(killer.team) == "player" else (state.enemy)).append(clone)
 	return true
 
