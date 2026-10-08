@@ -181,7 +181,18 @@ const USE_DTLS := true
 #      king_outcomes。改了权威战斗结果：战斗服务器重新打包部署到 p39、和新包一起上。
 #      同一批恢复 v38 的 PvP「正上方对正下方」：10-06 晚 3849d85 把它撤回过（蓝队棋盘又左右镜像、
 #      画面整张转 180°，协议号没动），用户 10-07 定恢复。p38 时期上线的包两种都有可能，所以一起顶到 39。
-const NETWORK_PROTOCOL_VERSION := 39
+# v40: `_rpc_match_status_result` 的第二个参数从 `active: bool` 改成状态字符串
+#      （`active` / `lobby` / `clear`），2026-10-08。改签名就会改 Godot 的 RPC 映射，
+#      所以协议号必须跟着 +1 —— 旧客户端配新服务器会在那条回复上参数个数不符。
+#      **为什么非得加第三态**：以前大厅座位被答成 `clear`，客户端当场
+#      `SaveManager.clear_reconnect()` 删掉凭证 —— 在自定义房间里杀进程、重开之后
+#      玩家落在主界面、没有任何路回到那个房间，而服务器还替他留着座位（两边判断相反）。
+#      大厅不能并进 `active`：那会让客户端 `mark_match_started()`，重连面板的键就变成
+#      「退出对局」并弹判负 / 扣分确认 —— 只在房间里坐过的人不该看到那个。
+#      同一批：一人一座按账号 id（`_release_stale_seats_for_pid`，纯服务端）、
+#      自定义大厅座位宽限 600→60 秒（`CUSTOM_LOBBY_RESERVE_GRACE_SEC`）。
+#      战斗服务器重新打包部署到 p40、和新包一起上。
+const NETWORK_PROTOCOL_VERSION := 40
 
 # Local phone hosting is debug-only.
 const ALLOW_LOCAL_HOST_DEBUG := false

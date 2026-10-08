@@ -10,7 +10,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 ranked = types.ModuleType("app.ranked")
-ranked.window_state = lambda: {"accepting": True}
+ranked.window_state = lambda *_a: {"accepting": True}
+# tick() 认的是 accepting_now（时间表 or 测试开关），不是 window_state。
+# 这个桩模块必须跟着那条缝走，否则 tick 会 AttributeError。
+ranked.accepting_now = lambda *_a: True
 
 
 async def _no_penalty(_players):

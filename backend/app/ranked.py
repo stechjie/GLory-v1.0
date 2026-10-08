@@ -452,6 +452,25 @@ def window_state(now_utc: dt.datetime | None = None) -> dict:
     }
 
 
+def accepting_now(now_utc: dt.datetime | None = None) -> bool:
+    """现在到底收不收排位的人。**两道闸只认这个函数，不要直接读 window_state。**
+
+    它和 `window_state()` 是**两件事**，故意分开：
+      window_state()  真实时间表。`/v1/match/window` 发给客户端的就是它，
+                      所以它必须永远说真话，否则按钮倒计时会和实际行为分叉
+      accepting_now() 当前的准入判定 = 时间表 **或** 测试开关
+
+    开关是 `GLORY_RANKED_WINDOW_ALWAYS_OPEN`（见 app/config.py 那一项的 🔴）。
+    分成两个函数的好处是 test_ranked.py 那组逐小时断言测的是 window_state，
+    本机 .env 里把开关打开也不会把它们搞红。
+    """
+    from app.config import get_settings
+
+    if get_settings().ranked_window_always_open:
+        return True
+    return bool(window_state(now_utc)["accepting"])
+
+
 # --- 排队前的闸（第 5b 步）--------------------------------------------------------
 
 # 不让排队的原因。原样回给客户端，所以不许带任何内部细节。
@@ -473,7 +492,7 @@ async def queue_gate(conn, player_id: uuid.UUID, mode: str,
     ⚠️ 禁赛与信誉分是**两件事**，不能合并：禁赛有到期时间，信誉分低没有。
     合并的话禁赛一到期，信誉分那条限制会跟着被解除（014 里那一列的注释同此）。
     """
-    if mode == "ranked" and not window_state(now_utc)["accepting"]:
+    if mode == "ranked" and not accepting_now(now_utc):
         return GATE_WINDOW_CLOSED
     row = await conn.fetchrow(
         "select score, banned_until from player_credit where player_id = $1", player_id)

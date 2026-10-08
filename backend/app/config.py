@@ -104,6 +104,19 @@ class Settings(BaseSettings):
     # Same LiveKit JSON shape as the battle server; secret stays server-side.
     party_voice_config_file: str = ""
 
+    # --- 测试开关：忽略排位时间窗口（app/ranked.py 的 accepting_now）------------
+    #
+    # True = 任何时候都能排位。和上面 disable_instance_lock 同类：
+    # 它存在只为两件事 —— 跑测试，以及白天要调排位流程的时候。
+    #
+    # 🔴 **生产上打开它等于把排位时间窗口整个关掉**（docs/排位系统设计.md 第二节
+    # 那条产品规则没了），而且没有任何报错 —— 症状就是「半夜也能排」。
+    #
+    # 它**不改** ranked.window_state()：那个函数继续如实返回真实时间表，
+    # 所以 /v1/match/window 不会说谎、test_ranked.py 的逐小时断言也不受影响。
+    # 读它的只有两道闸，都走 ranked.accepting_now()。
+    ranked_window_always_open: bool = False
+
     @property
     def is_dev(self) -> bool:
         return self.environment != "prod"
