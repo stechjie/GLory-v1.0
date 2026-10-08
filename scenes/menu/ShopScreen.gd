@@ -47,9 +47,9 @@ const PetService := preload("res://scripts/pets/PetService.gd")
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
 const PrepSkin := preload("res://scenes/prep/PrepSkin.gd")
 
-const CARD_SIZE := Vector2(230, 430)
+const CARD_SIZE := Vector2(230, 410)
 const PREVIEW_SIZE := Vector2(255, 230)
-const DETAIL_PREVIEW_SIZE := Vector2(280, 130)
+const DETAIL_PREVIEW_SIZE := Vector2(280, 180)
 const DETAIL_WIDTH := 316.0
 const COLUMNS := 3
 
@@ -130,7 +130,7 @@ func _build() -> void:
 	add_child(bg)
 
 	var dim := ColorRect.new()
-	dim.color = Color(0.015, 0.035, 0.045, 0.12)
+	dim.color = Tokens.SHOP_SCENE_DIM
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(dim)
@@ -184,7 +184,7 @@ func _build() -> void:
 	_special_panel = PanelContainer.new()
 	_special_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_special_panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Color(0.03, 0.10, 0.13, 0.80), Color(0.72, 0.55, 0.25, 0.62), Tokens.GAP_M))
+		Tokens.SHOP_SPECIAL, Tokens.SHOP_EDGE, Tokens.GAP_M))
 	root.add_child(_special_panel)
 	# 10.01 反馈（第 2 条 1）：「商城界面显示不全，但无法操作下滑」。
 	# 活动页（七日登录 / 冰雪）与外观页的内容都比一屏高：标题 + 220 高的大图 +
@@ -261,7 +261,7 @@ func _hero() -> Control:
 func _category_bar() -> Control:
 	var panel := PanelContainer.new()
 	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Color(0.03, 0.09, 0.11, 0.68), Color(0.45, 0.62, 0.59, 0.35), Tokens.GAP_S))
+		Tokens.SHOP_NAV, Tokens.SHOP_CLEAR, Tokens.GAP_S))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", Tokens.GAP_S)
 	panel.add_child(row)
@@ -346,7 +346,7 @@ func _detail_panel() -> Control:
 	panel.custom_minimum_size = Vector2(DETAIL_WIDTH, 0)
 	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.SURFACE, Tokens.GOLD_PRESSED.darkened(0.18), Tokens.GAP_M))
+		Tokens.SHOP_SIDE, Tokens.SHOP_EDGE, Tokens.GAP_M))
 	_detail = VBoxContainer.new()
 	_detail.name = "ItemDetail"
 	_detail.add_theme_constant_override("separation", 4)
@@ -359,7 +359,7 @@ func _summon_panel() -> Control:
 	panel.custom_minimum_size.x = 344
 	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Color(0.035, 0.105, 0.125, 0.82), Color(0.85, 0.65, 0.29, 0.78), Tokens.GAP_M))
+		Tokens.SHOP_SIDE, Tokens.SHOP_EDGE, Tokens.GAP_M))
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", Tokens.GAP_S)
 	panel.add_child(col)
@@ -371,7 +371,7 @@ func _summon_panel() -> Control:
 	var title := Label.new()
 	title.text = _t("邂逅稀有伙伴", "Meet rare companions")
 	title.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
-	title.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
+	title.add_theme_color_override("font_color", Tokens.SHOP_TEXT)
 	col.add_child(title)
 	var portraits := HBoxContainer.new()
 	portraits.custom_minimum_size.y = 176
@@ -450,7 +450,7 @@ func _header() -> Control:
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
-	title.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
+	title.add_theme_color_override("font_color", Tokens.SHOP_TEXT)
 	row.add_child(title)
 
 	# 余额与主菜单共用独立透明货币图标，不从装饰边框中裁切。
@@ -474,7 +474,7 @@ func _purse_entry(parent: HBoxContainer, tex: Texture2D, label_text: String) -> 
 	var chip := PanelContainer.new()
 	chip.custom_minimum_size = Vector2(172, Tokens.TOUCH_MIN)
 	chip.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.INK_PANEL, Tokens.INK_EDGE, Tokens.GAP_S))
+		Tokens.SHOP_CHIP, Tokens.SHOP_EDGE, Tokens.GAP_S))
 	parent.add_child(chip)
 	if label_text == _t("钻石", "Gems"):
 		chip.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
@@ -577,8 +577,7 @@ func _render() -> void:
 		var category_button := _category_buttons[category] as Button
 		category_button.visible = (_loading or str(category) == CATEGORY_PETS
 			or _category_has_items(str(category)))
-		category_button.theme_type_variation = (Theming.VARIATION_PRIMARY
-			if str(category) == _active_category else Theming.VARIATION_GHOST)
+		_style_category_button(category_button, str(category) == _active_category)
 	_event_dot.visible = bool(_login_state.get("claimable_today", false))
 	var special := _active_category in [CATEGORY_SKINS, CATEGORY_EVENT]
 	_catalog_shell.visible = not special
@@ -620,16 +619,31 @@ func _render() -> void:
 		_render_detail(_selected_item(visible_items))
 
 
+func _style_category_button(button: Button, selected: bool) -> void:
+	button.theme_type_variation = Theming.VARIATION_GHOST
+	button.add_theme_stylebox_override("normal", Tokens.button_box(
+		Tokens.SHOP_TAB_ACTIVE if selected else Tokens.SHOP_TAB_IDLE,
+		Tokens.SHOP_EDGE_ACTIVE if selected else Tokens.SHOP_CLEAR))
+	button.add_theme_stylebox_override("hover", Tokens.button_box(
+		Tokens.SHOP_TAB_HOVER, Tokens.SHOP_EDGE_ACTIVE if selected else Tokens.SHOP_EDGE))
+	button.add_theme_stylebox_override("pressed", Tokens.button_box(
+		Tokens.SHOP_TAB_ACTIVE, Tokens.SHOP_EDGE_ACTIVE))
+	button.add_theme_color_override("font_color",
+		Tokens.SHOP_TEXT if selected else Tokens.SHOP_TEXT_MUTED)
+
+
 func _section_title(title_text: String, subtitle: String) -> void:
 	var title := Label.new()
 	title.text = title_text
 	title.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
-	title.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
+	title.add_theme_color_override("font_color", Tokens.SHOP_TEXT)
 	_special_content.add_child(title)
 	var sub := Label.new()
 	sub.text = subtitle
 	sub.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	sub.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	sub.add_theme_color_override("font_color", Tokens.SHOP_TEXT_MUTED)
+	sub.add_theme_color_override("font_outline_color", Tokens.PREP_INK)
+	sub.add_theme_constant_override("outline_size", 3)
 	_special_content.add_child(sub)
 
 
@@ -698,10 +712,14 @@ func _render_appearance() -> void:
 	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	row.add_child(art)
+	var side_panel := PanelContainer.new()
+	side_panel.custom_minimum_size.x = 335
+	side_panel.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.SHOP_SIDE, Tokens.SHOP_CLEAR, Tokens.GAP_M))
+	row.add_child(side_panel)
 	var side := VBoxContainer.new()
-	side.custom_minimum_size.x = 335
 	side.add_theme_constant_override("separation", Tokens.GAP_M)
-	row.add_child(side)
+	side_panel.add_child(side)
 	var status := Label.new()
 	status.text = _t("已永久拥有", "Permanently owned") if _owned.has("prep_skin_ice") else _t(
 		"七日活动限定", "Seven-day event exclusive")
@@ -732,12 +750,12 @@ func _render_event() -> void:
 		"Claim once per game day. Every claim reveals part of the frost board; day seven unlocks it."))
 	var progress := int(_login_state.get("ice_skin_progress", 0))
 	var top := HBoxContainer.new()
-	top.custom_minimum_size.y = 220
+	top.custom_minimum_size.y = 185
 	top.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	top.add_theme_constant_override("separation", Tokens.GAP_M)
 	_special_content.add_child(top)
 	var stage := Control.new()
-	stage.custom_minimum_size = Vector2(690, 215)
+	stage.custom_minimum_size = Vector2(690, 185)
 	stage.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	stage.clip_contents = true
 	top.add_child(stage)
@@ -759,13 +777,17 @@ func _render_event() -> void:
 	badge.add_theme_stylebox_override("normal", Tokens.panel_box(
 		Color(0.02, 0.09, 0.15, 0.86), Tokens.GOLD_EDGE, 6))
 	stage.add_child(badge)
+	var side_panel := PanelContainer.new()
+	side_panel.custom_minimum_size.x = 325
+	side_panel.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.SHOP_SIDE, Tokens.SHOP_CLEAR, Tokens.GAP_S))
+	top.add_child(side_panel)
 	var side := VBoxContainer.new()
-	side.custom_minimum_size.x = 325
-	side.add_theme_constant_override("separation", Tokens.GAP_M)
-	top.add_child(side)
+	side.add_theme_constant_override("separation", Tokens.GAP_S)
+	side_panel.add_child(side)
 	var frame := TextureRect.new()
 	frame.texture = ICE_FRAME_TEX
-	frame.custom_minimum_size = Vector2(120, 120)
+	frame.custom_minimum_size = Vector2(86, 86)
 	frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	side.add_child(frame)
@@ -797,7 +819,7 @@ func _render_event() -> void:
 			rewards = (fallback as Dictionary).get("rewards", [])
 	var strip := HBoxContainer.new()
 	strip.add_theme_constant_override("separation", Tokens.GAP_S)
-	strip.custom_minimum_size.y = 150
+	strip.custom_minimum_size.y = 136
 	_special_content.add_child(strip)
 	for raw in rewards:
 		strip.add_child(_reward_card(raw as Dictionary))
@@ -819,13 +841,12 @@ func _reward_card(reward: Dictionary) -> Control:
 	var ready := day == int(_login_state.get("current_day", 0)) and bool(
 		_login_state.get("claimable_today", false))
 	var card := PanelContainer.new()
-	card.custom_minimum_size = Vector2(137, 150)
+	card.custom_minimum_size = Vector2(137, 136)
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	# 已领取的整块底色压到最深一档（BG_DEEP），与「未解锁」用的 SURFACE_RAISED
-	# 一眼可分 —— 反馈原文就是「整个框框底色要更加深沉以和其他未解锁的进行区分」。
+	# 已领取卡片使用更轻的玻璃底色，待领取卡片保留金色描边。
 	card.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.BG_DEEP if done else Tokens.SURFACE_RAISED,
-		Tokens.GOLD_EDGE if ready else (Tokens.BORDER.darkened(0.45) if done else Tokens.BORDER),
+		Tokens.SHOP_REWARD_DONE if done else Tokens.SHOP_REWARD,
+		Tokens.SHOP_EDGE_ACTIVE if ready else Tokens.SHOP_EDGE,
 		Tokens.GAP_S))
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 3)
@@ -946,8 +967,8 @@ func _card(item: Dictionary) -> Control:
 	panel.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	panel.add_theme_stylebox_override(
 		"panel", Tokens.panel_box(
-			Color(0.035, 0.105, 0.125, 0.80),
-			Tokens.GOLD_EDGE if selected else (Tokens.GOLD_PRESSED if owned else Tokens.BORDER),
+			Tokens.SHOP_CARD_SELECTED if selected else Tokens.SHOP_CARD,
+			Tokens.SHOP_EDGE_ACTIVE if selected else Tokens.SHOP_EDGE,
 			Tokens.GAP_S))
 	panel.gui_input.connect(func(event: InputEvent) -> void:
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
@@ -959,6 +980,14 @@ func _card(item: Dictionary) -> Control:
 	box.add_theme_constant_override("separation", Tokens.GAP_S)
 	panel.add_child(box)
 	box.add_child(_preview_stage(item, owned, PREVIEW_SIZE))
+	var info := PanelContainer.new()
+	info.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	info.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.SHOP_INFO, Tokens.SHOP_CLEAR, Tokens.GAP_S))
+	box.add_child(info)
+	var info_col := VBoxContainer.new()
+	info_col.add_theme_constant_override("separation", 2)
+	info.add_child(info_col)
 
 	var name_label := Label.new()
 	name_label.text = _item_name(item)
@@ -968,7 +997,7 @@ func _card(item: Dictionary) -> Control:
 	name_label.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
 	name_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
 	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	box.add_child(name_label)
+	info_col.add_child(name_label)
 	if str(item.get("kind", "")) == "pet":
 		var effect := Label.new()
 		match grants:
@@ -984,14 +1013,14 @@ func _card(item: Dictionary) -> Control:
 		effect.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
 		effect.add_theme_color_override("font_color", Tokens.CYAN)
 		effect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		box.add_child(effect)
+		info_col.add_child(effect)
 
 	var price_row := HBoxContainer.new()
 	price_row.custom_minimum_size.y = 28
 	price_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	price_row.add_theme_constant_override("separation", Tokens.GAP_S)
 	price_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	box.add_child(price_row)
+	info_col.add_child(price_row)
 	if owned:
 		var owned_text := Label.new()
 		owned_text.text = _t("收藏中", "In collection")
@@ -1049,7 +1078,7 @@ func _preview_stage(item: Dictionary, owned: bool, preview_size: Vector2) -> Con
 	well.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	well.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	well.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Color(0.04, 0.13, 0.15, 0.34), Color(0.48, 0.62, 0.60, 0.27), Tokens.GAP_S))
+		Tokens.SHOP_STAGE, Tokens.SHOP_CLEAR, Tokens.GAP_S))
 	stage.add_child(well)
 	var center := CenterContainer.new()
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1070,7 +1099,7 @@ func _preview_stage(item: Dictionary, owned: bool, preview_size: Vector2) -> Con
 		badge.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
 		badge.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
 		badge.add_theme_stylebox_override("normal", Tokens.panel_box(
-			Tokens.INK_PANEL, Tokens.GOLD_PRESSED, 2))
+			Tokens.SHOP_CHIP, Tokens.SHOP_EDGE_ACTIVE, 2))
 		badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		stage.add_child(badge)
 	return stage
@@ -1166,7 +1195,7 @@ func _render_detail(item: Dictionary) -> void:
 	status.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
 	if owned:
 		status.text = _t("✓ 已加入你的收藏", "✓ Already in your collection")
-		status.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
+		status.add_theme_color_override("font_color", Tokens.SHOP_TEXT)
 	else:
 		status.text = (_t("价格：%s", "Price: %s") % Currency.comma(price))
 		status.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY if affordable else Tokens.DANGER)

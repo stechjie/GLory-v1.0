@@ -93,15 +93,19 @@ func _build() -> void:
 	_rect(_summon, 650, 85, 300, 72)
 	_summon.pressed.connect(_begin_draw)
 	_canvas.add_child(_summon)
+	var pets_plate := _plate(_canvas, 80, 169, 355, 37, Tokens.SUMMON_TITLE_PLATE)
 	var pets_heading := _label(_t("召唤伙伴 · 点击查看技能", "Companions · tap for skills"), 18)
-	_rect(pets_heading, 80, 169, 355, 34)
-	_canvas.add_child(pets_heading)
+	pets_heading.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_rect(pets_heading, 12, 0, 331, 37)
+	pets_plate.add_child(pets_heading)
 	_pet_card("pet_squirrel", 80, 210)
 	_pet_card("pet_tiger", 80, 391)
-	var energy_title := _label(_t("森林能量", "Forest energy"), 24)
+	var energy_plate := _plate(_canvas, 1205, 180, 245, 40, Tokens.SUMMON_TITLE_PLATE)
+	var energy_title := _label(_t("森林能量", "Forest energy"), 22)
 	energy_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_rect(energy_title, 1250, 180, 260, 40)
-	_canvas.add_child(energy_title)
+	energy_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_rect(energy_title, 10, 0, 225, 40)
+	energy_plate.add_child(energy_title)
 	_energy_label = _label("", 18)
 	_energy_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_rect(_energy_label, 1220, 558, 320, 40)
@@ -139,16 +143,22 @@ func _pet_card(pet_id: String, x: float, y: float) -> void:
 	var art := PetPreview.build_illustration(pet_id, Vector2(210, 125))
 	_rect(art, 25, 2, 210, 125)
 	card.add_child(art)
+	var name_plate := _plate(card, 4, 130, 252, 35, Tokens.SUMMON_NAME_PLATE)
 	var name := _label(_t("松鼠", "Squirrel") if pet_id == "pet_squirrel" else
 		_t("老虎", "Tiger"), 22)
 	name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_rect(name, 0, 128, 260, 35)
-	card.add_child(name)
-	var owned := _label(_t("已拥有", "Owned"), 19)
+	name.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	name.add_theme_color_override("font_color", Tokens.SUMMON_DETAIL_INK)
+	name.add_theme_constant_override("outline_size", 0)
+	_rect(name, 0, 0, 252, 35)
+	name_plate.add_child(name)
+	var owned_plate := _plate(card, 8, 8, 96, 32, Tokens.SUMMON_TITLE_PLATE)
+	var owned := _label(_t("已拥有", "Owned"), 18)
 	owned.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_rect(owned, 0, 64, 260, 35)
-	card.add_child(owned)
-	_portraits[pet_id] = {"art": art, "owned": owned, "button": card}
+	owned.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_rect(owned, 0, 0, 96, 32)
+	owned_plate.add_child(owned)
+	_portraits[pet_id] = {"art": art, "owned": owned_plate, "button": card}
 
 
 func _load_state() -> void:
@@ -208,7 +218,7 @@ func _refresh_ui() -> void:
 		var portrait: Dictionary = _portraits[pet_id]
 		var owned := _owned.has(pet_id)
 		(portrait.art as Control).modulate = Color(0.38, 0.38, 0.38) if owned else Color.WHITE
-		(portrait.owned as Label).visible = owned
+		(portrait.owned as Control).visible = owned
 		(portrait.button as Button).add_theme_stylebox_override("normal", Tokens.panel_box(
 			Tokens.SUMMON_GLASS, Tokens.MIST_GHOST_EDGE if owned else Tokens.GOLD_EDGE, 4))
 	if _available.is_empty() and _energy >= 0:
@@ -299,6 +309,16 @@ func _close() -> void:
 func _rect(node: Control, x: float, y: float, w: float, h: float) -> void:
 	node.position = Vector2(x, y)
 	node.size = Vector2(w, h)
+
+
+func _plate(parent: Control, x: float, y: float, w: float, h: float, fill: Color) -> Panel:
+	var plate := Panel.new()
+	plate.add_theme_stylebox_override("panel", Tokens.flat_box(
+		fill, Tokens.SUMMON_PLATE_EDGE, 1, 8))
+	plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_rect(plate, x, y, w, h)
+	parent.add_child(plate)
+	return plate
 
 
 func _label(value: String, font_size: int) -> Label:

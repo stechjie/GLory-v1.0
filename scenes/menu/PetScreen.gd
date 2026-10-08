@@ -10,6 +10,7 @@ extends Control
 
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
+const PROFILE_BG_TEX := preload("res://assets/ui/profile/hall_of_glory.png")
 const RacePick := preload("res://scripts/units/RacePick.gd")
 # 这一页新加的按钮一律实例化这个场景，不写 Button.new() —— procedural_ui_ratchet 按文件只许降。
 const ActionButtonScene := preload("res://ui/components/GloryActionButton.tscn")
@@ -28,9 +29,12 @@ signal shop_requested   # 棋盘皮肤页点了「去商城」
 enum Tab { PETS, RACES, SKINS }
 enum SkinOwnership { NOT_LOADED, LOADING, READY, FAILED }
 
-const CARD_SIZE := Vector2(210, 280)
-const RACE_CARD_SIZE := Vector2(190, 250)
-const RACE_LOGO_SIZE := Vector2(96, 96)
+const CARD_SIZE := Vector2(200, 200)
+const PET_ART_SIZE := Vector2(160, 76)
+const PET_PAGE_ROWS := 2
+const RACE_CARD_SIZE := Vector2(174, 144)
+const RACE_LOGO_SIZE := Vector2(62, 62)
+const UNIT_TILE_SIZE := Vector2(112, 104)
 const SKIN_CARD_SIZE := Vector2(300, 0)
 const SKIN_PREVIEW_SIZE := Vector2(276, 155)   # 预览图是实机画面截的 16:9
 
@@ -42,9 +46,13 @@ var _back_btn: Button
 
 # --- 宠物页 ---
 var _pet_box: VBoxContainer
-var _cards_row: HBoxContainer
+var _cards_row: VBoxContainer
 var _hint_label: Label
 var _active_label: Label
+var _pet_page := 0
+var _pet_prev_btn: Button
+var _pet_next_btn: Button
+var _pet_page_label: Label
 
 # --- 种族页 ---
 var _race_box: VBoxContainer
@@ -52,6 +60,14 @@ var _race_hint_label: Label
 var _race_count_label: Label
 var _race_save_btn: Button
 var _race_cards: Dictionary = {}   # race -> {"panel", "name", "button", "logo"}
+var _viewed_race := ""
+var _race_roster_title: Label
+var _race_roster_grid: GridContainer
+var _race_roster_scroll: ScrollContainer
+var _race_notice: PanelContainer
+var _race_notice_label: Label
+var _unit_sold: Dictionary = {}
+var _unit_owned: Dictionary = {}
 # 草稿：玩家在页面上点来点去的那一份。只有凑满 RacePick.required_count() 个、按了「保存」
 # 才交给账号服务器 —— 选到一半（3 个）的状态绝不能存，否则存下来的就是一份不合法的选择。
 # 顺序始终跟 RacePick.all_races() 一致，这样才能直接和已保存的那份比较。
@@ -70,6 +86,7 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_race_draft = PlayerProfile.get_selected_races()
 	_build()
+	resized.connect(_on_resized)
 	if not PlayerProfile.pets_changed.is_connected(_refresh):
 		PlayerProfile.pets_changed.connect(_refresh)
 	if not PlayerProfile.races_changed.is_connected(_on_races_changed):
@@ -82,6 +99,13 @@ func _ready() -> void:
 	PlayerProfile.refresh_pets()
 	PlayerProfile.refresh_races()
 	PlayerProfile.refresh_prep_skin()
+	_load_unit_ownership()
+
+func _on_resized() -> void:
+	if _cards_row != null:
+		_refresh_pets()
+	if _race_roster_grid != null:
+		_refresh_race_roster()
 
 func _exit_tree() -> void:
 	if PlayerProfile.pets_changed.is_connected(_refresh):
@@ -97,8 +121,11 @@ func _build() -> void:
 	# 而 project.godot 也没有 gui/theme/custom —— 所以按钮走的是引擎
 	# 默认灰色样式，和游戏其它地方长得完全不是一套。
 	theme = Theming.get_theme()
-	var bg := ColorRect.new()
-	bg.color = Color(0.05, 0.06, 0.08)
+	# 与头像详情页共用完整场景，不裁切成局部装饰。
+	var bg := TextureRect.new()
+	bg.texture = PROFILE_BG_TEX
+	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
@@ -107,7 +134,7 @@ func _build() -> void:
 	var col := VBoxContainer.new()
 	col.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	col.alignment = BoxContainer.ALIGNMENT_CENTER
-	col.add_theme_constant_override("separation", 18)
+	col.add_theme_constant_override("separation", 10)
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(col)
 	# 灵动岛 / 圆角那几条让出来；背景照样铺满（ui/services/SafeArea.gd）。
@@ -115,7 +142,10 @@ func _build() -> void:
 
 	_title_label = Label.new()
 	_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_title_label.add_theme_font_size_override("font_size", 40)
+	_title_label.add_theme_font_size_override("font_size", 36)
+	_title_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	_title_label.add_theme_color_override("font_outline_color", Tokens.PREP_INK)
+	_title_label.add_theme_constant_override("outline_size", 5)
 	col.add_child(_title_label)
 
 	col.add_child(_build_tabs())
@@ -130,6 +160,7 @@ func _build() -> void:
 	_back_btn.custom_minimum_size = Vector2(120, 46)
 	_back_btn.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
 	_back_btn.position = Vector2(_back_btn.position.x - 140, 20)
+	_style_prep_button(_back_btn)
 	_back_btn.pressed.connect(func(): back_requested.emit())
 	add_child(_back_btn)
 	SafeArea.track(_back_btn)
@@ -146,6 +177,7 @@ func _build_tabs() -> Control:
 		button.text = tr(str(spec[1]))
 		button.custom_minimum_size = Vector2(180, Tokens.TOUCH_MIN)
 		button.toggle_mode = true
+		_style_prep_button(button)
 		button.pressed.connect(func() -> void: _switch_tab(tab_id))
 		_tab_buttons[tab_id] = button
 		_tab_row.add_child(button)
@@ -154,27 +186,58 @@ func _build_tabs() -> Control:
 func _build_pet_box() -> Control:
 	_pet_box = VBoxContainer.new()
 	_pet_box.alignment = BoxContainer.ALIGNMENT_CENTER
-	_pet_box.add_theme_constant_override("separation", 18)
+	_pet_box.add_theme_constant_override("separation", 10)
 	_pet_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	_hint_label = Label.new()
 	_hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_hint_label.add_theme_font_size_override("font_size", 18)
-	_hint_label.add_theme_color_override("font_color", Color(0.75, 0.78, 0.85))
+	_hint_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
 	_pet_box.add_child(_hint_label)
 
-	_cards_row = HBoxContainer.new()
+	_cards_row = VBoxContainer.new()
 	_cards_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	_cards_row.add_theme_constant_override("separation", 24)
+	_cards_row.custom_minimum_size.y = 440
+	_cards_row.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_cards_row.add_theme_constant_override("separation", 12)
 	_cards_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_pet_box.add_child(_cards_row)
 
+	var pager := HBoxContainer.new()
+	pager.alignment = BoxContainer.ALIGNMENT_CENTER
+	pager.add_theme_constant_override("separation", 16)
+	_pet_box.add_child(pager)
+	_pet_prev_btn = ActionButtonScene.instantiate() as Button
+	_pet_prev_btn.text = "〈"
+	_pet_prev_btn.custom_minimum_size = Vector2(64, Tokens.TOUCH_MIN)
+	_style_prep_button(_pet_prev_btn)
+	_pet_prev_btn.pressed.connect(_change_pet_page.bind(-1))
+	pager.add_child(_pet_prev_btn)
+	_pet_page_label = Label.new()
+	_pet_page_label.custom_minimum_size = Vector2(100, 0)
+	_pet_page_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_pet_page_label.add_theme_font_size_override("font_size", 18)
+	_pet_page_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	pager.add_child(_pet_page_label)
+	_pet_next_btn = ActionButtonScene.instantiate() as Button
+	_pet_next_btn.text = "〉"
+	_pet_next_btn.custom_minimum_size = Vector2(64, Tokens.TOUCH_MIN)
+	_style_prep_button(_pet_next_btn)
+	_pet_next_btn.pressed.connect(_change_pet_page.bind(1))
+	pager.add_child(_pet_next_btn)
+
 	_active_label = Label.new()
 	_active_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_active_label.add_theme_font_size_override("font_size", 20)
-	_active_label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.55))
+	_active_label.add_theme_font_size_override("font_size", 18)
+	_active_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	_active_label.add_theme_color_override("font_outline_color", Tokens.PREP_INK)
+	_active_label.add_theme_constant_override("outline_size", 4)
 	_pet_box.add_child(_active_label)
 	return _pet_box
+
+func _change_pet_page(delta: int) -> void:
+	_pet_page += delta
+	_refresh_pets()
 
 func _switch_tab(tab_id: int) -> void:
 	_tab = tab_id
@@ -216,62 +279,80 @@ func _refresh_pets() -> void:
 	_hint_label.visible = starter_mode
 	_active_label.text = tr("pet_active_label") % PetService.display_name(PlayerProfile.get_active())
 	for c in _cards_row.get_children():
+		_cards_row.remove_child(c)
 		c.queue_free()
-	# 首次三选一只展示 starter_ids（蘑菇/猫/兔子），不把松鼠/老虎带进来。
+	var ids: Array[String] = []
 	if starter_mode:
 		for pet_id in PetService.starter_ids():
-			_cards_row.add_child(_build_card(str(pet_id), starter_mode))
+			ids.append(str(pet_id))
 	else:
 		for p in PetService.all_pets():
-			_cards_row.add_child(_build_card(str((p as Dictionary).get("id", "")), starter_mode))
+			ids.append(str((p as Dictionary).get("id", "")))
+	var columns := 3 if starter_mode or get_viewport_rect().size.x < 1250.0 else 4
+	var page_size := columns * PET_PAGE_ROWS
+	var page_count := maxi(1, ceili(float(ids.size()) / float(page_size)))
+	_pet_page = 0 if starter_mode else clampi(_pet_page, 0, page_count - 1)
+	var row: HBoxContainer = null
+	for i in range(_pet_page * page_size, mini(ids.size(), (_pet_page + 1) * page_size)):
+		if (i - _pet_page * page_size) % columns == 0:
+			row = HBoxContainer.new()
+			row.alignment = BoxContainer.ALIGNMENT_CENTER
+			row.add_theme_constant_override("separation", 14)
+			_cards_row.add_child(row)
+		row.add_child(_build_card(ids[i], starter_mode))
+	_pet_page_label.text = "%d / %d" % [_pet_page + 1, page_count]
+	_pet_page_label.get_parent().visible = not starter_mode and page_count > 1
+	_pet_prev_btn.disabled = _pet_page == 0
+	_pet_next_btn.disabled = _pet_page >= page_count - 1
 
 func _build_card(pet_id: String, starter_mode: bool) -> Control:
 	var owned := PlayerProfile.is_owned(pet_id)
 	var is_active := PlayerProfile.get_active() == pet_id
-	# 未拥有且非首次三选一时置灰。
 	var greyed := not owned and not starter_mode
 
 	var card := PanelContainer.new()
 	card.custom_minimum_size = CARD_SIZE
-	var m := MarginContainer.new()
-	for side in ["left", "right", "top", "bottom"]:
-		m.add_theme_constant_override("margin_" + side, 12)
-	card.add_child(m)
+	card.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.PREP_GLASS, Tokens.GOLD_EDGE if is_active else Tokens.PREP_EDGE, 4))
 	var content := VBoxContainer.new()
-	content.add_theme_constant_override("separation", 10)
-	m.add_child(content)
+	content.add_theme_constant_override("separation", 2)
+	card.add_child(content)
 
-	content.add_child(PetPreview.build_illustration(pet_id, PetPreview.CARD_SIZE, greyed))
+	# 操作条在立绘上方；以后增加宠物也不会盖住脸或让按钮上下漂移。
+	var action := _build_card_button(pet_id, owned, is_active, starter_mode)
+	_style_prep_button(action, not greyed and not is_active)
+	content.add_child(action)
+	var art := PetPreview.build_illustration(pet_id, PET_ART_SIZE, false)
+	art.modulate = Color(0.73, 0.73, 0.73) if greyed else Color.WHITE
+	art.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	content.add_child(art)
 
 	var name_lbl := Label.new()
 	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	name_lbl.add_theme_font_size_override("font_size", 24)
+	name_lbl.add_theme_font_size_override("font_size", 19)
+	name_lbl.add_theme_color_override("font_color", Tokens.PREP_TEXT)
 	name_lbl.text = PetService.display_name(pet_id)
 	if is_active:
 		name_lbl.text += "  ✓"
-	if greyed:
-		name_lbl.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 	content.add_child(name_lbl)
 
 	var effect_lbl := Label.new()
 	effect_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	effect_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	effect_lbl.add_theme_font_size_override("font_size", 16)
+	effect_lbl.max_lines_visible = 2
+	effect_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	effect_lbl.add_theme_font_size_override("font_size", Tokens.FONT_MIN_READABLE)
+	effect_lbl.add_theme_color_override("font_color", Tokens.PREP_TEXT)
 	effect_lbl.text = PetService.effect_text(pet_id)
-	effect_lbl.add_theme_color_override("font_color", Color(0.45, 0.45, 0.45) if greyed else Color(0.55, 0.85, 0.55))
 	content.add_child(effect_lbl)
-
-	content.add_child(_build_card_button(pet_id, owned, is_active, starter_mode))
 	return card
 
 func _build_card_button(pet_id: String, owned: bool, is_active: bool, starter_mode: bool) -> Button:
-	var btn := Button.new()
-	btn.custom_minimum_size = Vector2(0, 44)
+	var btn := ActionButtonScene.instantiate() as Button
+	btn.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	if starter_mode:
-		# 首次三选一：任选一只作为初始宠物，选定后发信号让上层放行进主菜单。
 		btn.text = tr("pet_pick")
-		# 归属上云之后这是一次服务端往返（同购买的发货路径）。
-		# 失败就什么都不做 —— PlayerProfile 不会动缓存，界面保持原样。
 		btn.pressed.connect(func():
 			if await PlayerProfile.pick_starter(pet_id):
 				starter_picked.emit())
@@ -286,41 +367,95 @@ func _build_card_button(pet_id: String, owned: bool, is_active: bool, starter_mo
 		btn.pressed.connect(func(): await PlayerProfile.set_active(pet_id))
 	return btn
 
+func _style_prep_button(btn: Button, primary: bool = false) -> void:
+	var idle := Tokens.PREP_GLASS_RAISED if primary else Tokens.PREP_GLASS
+	btn.add_theme_stylebox_override("normal", Tokens.button_box(idle, Tokens.GOLD_EDGE if primary else Tokens.PREP_EDGE))
+	btn.add_theme_stylebox_override("hover", Tokens.button_box(Tokens.PREP_GLASS_RAISED, Tokens.GOLD_EDGE))
+	btn.add_theme_stylebox_override("pressed", Tokens.button_box(Tokens.PREP_GLASS_RAISED, Tokens.GOLD_EDGE))
+	btn.add_theme_stylebox_override("disabled", Tokens.button_box(Tokens.PREP_GLASS, Tokens.PREP_EDGE))
+	for state in ["font_color", "font_hover_color", "font_pressed_color", "font_disabled_color"]:
+		btn.add_theme_color_override(state, Tokens.PREP_TEXT_MUTED if state == "font_disabled_color" else Tokens.PREP_TEXT)
+
 # --- 种族页 -------------------------------------------------------------------
 
 func _build_race_box() -> Control:
 	_race_box = VBoxContainer.new()
 	_race_box.alignment = BoxContainer.ALIGNMENT_CENTER
-	_race_box.add_theme_constant_override("separation", 18)
+	_race_box.add_theme_constant_override("separation", 10)
 	_race_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	_race_hint_label = Label.new()
 	_race_hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_race_hint_label.add_theme_font_size_override("font_size", 18)
-	_race_hint_label.add_theme_color_override("font_color", Color(0.75, 0.78, 0.85))
+	_race_hint_label.add_theme_font_size_override("font_size", 17)
+	_race_hint_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
 	_race_box.add_child(_race_hint_label)
 
-	# 种族以后会变多：用流式容器，一行放不下就折行，而不是把卡片挤出屏幕。
 	var cards := HFlowContainer.new()
 	cards.alignment = FlowContainer.ALIGNMENT_CENTER
-	cards.add_theme_constant_override("h_separation", 24)
-	cards.add_theme_constant_override("v_separation", 18)
+	cards.add_theme_constant_override("h_separation", 12)
+	cards.add_theme_constant_override("v_separation", 10)
 	cards.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_race_box.add_child(cards)
-	# 卡片只建一次，之后点选只改状态：在按钮自己的 pressed 回调里把它从树上摘掉会出问题。
 	for race in RacePick.all_races():
 		cards.add_child(_build_race_card(race))
+	if not RacePick.all_races().is_empty():
+		_viewed_race = RacePick.all_races()[0]
+
+	var roster := PanelContainer.new()
+	roster.add_theme_stylebox_override("panel",
+		Tokens.panel_box(Tokens.PREP_GLASS, Tokens.PREP_EDGE, 12))
+	roster.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	roster.custom_minimum_size.x = 990
+	_race_box.add_child(roster)
+	var roster_col := VBoxContainer.new()
+	roster_col.add_theme_constant_override("separation", 8)
+	roster.add_child(roster_col)
+	var roster_header := HBoxContainer.new()
+	roster_header.alignment = BoxContainer.ALIGNMENT_CENTER
+	roster_col.add_child(roster_header)
+	_race_roster_title = Label.new()
+	_race_roster_title.add_theme_font_size_override("font_size", 20)
+	_race_roster_title.add_theme_color_override("font_color", Tokens.PREP_TEXT)
+	roster_header.add_child(_race_roster_title)
+	var bond_btn := ActionButtonScene.instantiate() as Button
+	bond_btn.text = "查看羁绊"
+	bond_btn.custom_minimum_size = Vector2(120, Tokens.TOUCH_MIN)
+	_style_prep_button(bond_btn)
+	bond_btn.pressed.connect(func() -> void: _show_race_bond(_viewed_race))
+	roster_header.add_child(bond_btn)
+	_race_roster_scroll = ScrollContainer.new()
+	_race_roster_scroll.custom_minimum_size = Vector2(0, 122)
+	_race_roster_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	roster_col.add_child(_race_roster_scroll)
+	_race_roster_grid = GridContainer.new()
+	_race_roster_grid.columns = 8
+	_race_roster_grid.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_race_roster_grid.add_theme_constant_override("h_separation", 8)
+	_race_roster_grid.add_theme_constant_override("v_separation", 8)
+	_race_roster_scroll.add_child(_race_roster_grid)
+
+	_race_notice = PanelContainer.new()
+	_race_notice.add_theme_stylebox_override("panel",
+		Tokens.panel_box(Tokens.PREP_NOTICE, Tokens.PREP_EDGE, 8))
+	_race_notice.visible = false
+	_race_notice.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_race_notice.custom_minimum_size.x = 990
+	_race_box.add_child(_race_notice)
+	_race_notice_label = Label.new()
+	_race_notice_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_race_notice_label.add_theme_font_size_override("font_size", 17)
+	_race_notice_label.add_theme_color_override("font_color", Tokens.PREP_INK)
+	_race_notice.add_child(_race_notice_label)
 
 	_race_count_label = Label.new()
 	_race_count_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_race_count_label.add_theme_font_size_override("font_size", 20)
-	_race_count_label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.55))
+	_race_count_label.add_theme_font_size_override("font_size", 18)
+	_race_count_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
 	_race_box.add_child(_race_count_label)
-
 	_race_save_btn = ActionButtonScene.instantiate() as Button
 	_race_save_btn.text = tr("race_pick_save")
-	_race_save_btn.theme_type_variation = Theming.VARIATION_PRIMARY
 	_race_save_btn.custom_minimum_size = Vector2(240, Tokens.TOUCH_MIN)
+	_style_prep_button(_race_save_btn, true)
 	_race_save_btn.pressed.connect(_on_race_save_pressed)
 	_race_box.add_child(_race_save_btn)
 	return _race_box
@@ -329,7 +464,7 @@ func _build_race_card(race: String) -> Control:
 	var card := PanelContainer.new()
 	card.custom_minimum_size = RACE_CARD_SIZE
 	var content := VBoxContainer.new()
-	content.add_theme_constant_override("separation", 10)
+	content.add_theme_constant_override("separation", 4)
 	card.add_child(content)
 
 	var logo := TextureButton.new()
@@ -338,28 +473,22 @@ func _build_race_card(race: String) -> Control:
 	logo.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
 	logo.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	logo.tooltip_text = SynergyBond.format_synergy_title(race)
-	logo.pressed.connect(_show_race_bond.bind(race))
+	logo.pressed.connect(_select_race_detail.bind(race))
 	var logo_path := RACE_LOGO_PATH % race
-	# 先问 exists：load 一个不存在的路径会打引擎错误，而新种族没出图是正常情况。
 	if ResourceLoader.exists(logo_path):
 		logo.texture_normal = load(logo_path) as Texture2D
 	content.add_child(logo)
 
 	var name_lbl := Label.new()
 	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	name_lbl.add_theme_font_size_override("font_size", 24)
+	name_lbl.add_theme_font_size_override("font_size", 19)
+	name_lbl.add_theme_color_override("font_color", Tokens.PREP_TEXT)
 	content.add_child(name_lbl)
-
-	var units_lbl := Label.new()
-	units_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	units_lbl.add_theme_font_size_override("font_size", 16)
-	units_lbl.add_theme_color_override("font_color", Color(0.72, 0.74, 0.80))
-	units_lbl.text = tr("race_pick_units") % RacePick.unit_count(race)
-	content.add_child(units_lbl)
 
 	var btn := ActionButtonScene.instantiate() as Button
 	btn.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
 	btn.size_flags_horizontal = Control.SIZE_FILL
+	_style_prep_button(btn)
 	btn.pressed.connect(_on_race_card_pressed.bind(race))
 	content.add_child(btn)
 
@@ -373,50 +502,160 @@ func _refresh_races() -> void:
 	var forced := RacePick.is_forced()
 	var saved: Array[String] = PlayerProfile.get_selected_races()
 	if forced:
-		# 没得选（种族数 ≤ 要选的数量）：草稿就是全部，整页锁定。
 		_race_draft = saved
-	if forced:
-		_race_hint_label.text = tr("race_pick_forced") % RacePick.all_races().size()
-	else:
-		_race_hint_label.text = tr("race_pick_hint") % need
+	_race_hint_label.text = (tr("race_pick_forced") % RacePick.all_races().size()) if forced else (tr("race_pick_hint") % need)
 	for race in _race_cards:
 		_refresh_race_card(str(race), forced)
+	_refresh_race_roster()
 	var dirty: bool = _race_draft != saved
 	_race_count_label.text = tr("race_pick_count") % [_race_draft.size(), need]
 	if dirty and not forced:
 		_race_count_label.text += "  ·  " + tr("race_pick_unsaved")
 	_race_save_btn.visible = not forced
-	_race_save_btn.disabled = _race_draft.size() != need or not dirty
+	var all_complete := true
+	for race in _race_draft:
+		if not _race_complete(race):
+			all_complete = false
+	_race_save_btn.disabled = _race_draft.size() != need or not dirty or not all_complete
 
 func _refresh_race_card(race: String, forced: bool) -> void:
 	var parts: Dictionary = _race_cards[race]
 	var picked := _race_draft.has(race)
+	var complete := _race_complete(race)
 	var name_lbl: Label = parts["name"]
 	name_lbl.text = tr("race_pick_name") % UnitDetailFormat.unit_race_name(race)
 	if picked:
 		name_lbl.text += "  ✓"
-	# 选中的描金边：光看按钮上的字，几张卡并排时一眼分不出哪几族在出战。
 	var panel: PanelContainer = parts["panel"]
-	panel.add_theme_stylebox_override("panel",
-		Tokens.panel_box(Tokens.SURFACE, Tokens.GOLD_EDGE if picked else Tokens.BORDER, 12))
+	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.PREP_GLASS if complete else Tokens.PREP_GLASS.darkened(0.22),
+		Tokens.GOLD_EDGE if picked and complete else Tokens.PREP_EDGE, 8))
+	var logo: TextureButton = parts["logo"]
+	logo.modulate = Color.WHITE if complete else Color(0.68, 0.68, 0.68)
 	var btn: Button = parts["button"]
-	if forced:
-		# 选择锁定时，种族图标仍可独立查看羁绊。
+	if not complete:
+		btn.text = "未集齐" if not TranslationServer.get_locale().begins_with("en") else "Incomplete"
+		btn.disabled = false
+	elif forced:
 		btn.text = tr("race_pick_locked")
-		btn.disabled = true
+		btn.disabled = false
 	else:
 		btn.text = tr("race_pick_deselect") if picked else tr("race_pick_select")
 		btn.disabled = false
 
+func _select_race_detail(race: String) -> void:
+	_viewed_race = race
+	_race_notice.visible = false
+	_refresh_race_roster()
+
+func _refresh_race_roster() -> void:
+	if _race_roster_grid == null or _viewed_race.is_empty():
+		return
+	_race_roster_title.text = "%s · %d" % [
+		UnitDetailFormat.unit_race_name(_viewed_race), RacePick.unit_count(_viewed_race)]
+	_race_roster_grid.columns = 4 if get_viewport_rect().size.x < 1250.0 else 8
+	_race_roster_scroll.custom_minimum_size = Vector2(0, 224 if _race_roster_grid.columns == 4 else 122)
+	for child in _race_roster_grid.get_children():
+		child.queue_free()
+	for raw in DataRegistry.get_table("race_units").get("units", []):
+		if typeof(raw) != TYPE_DICTIONARY:
+			continue
+		var unit := raw as Dictionary
+		if str(unit.get("race", "")) == _viewed_race:
+			_race_roster_grid.add_child(_build_unit_tile(unit))
+
+func _build_unit_tile(unit: Dictionary) -> Control:
+	var id := str(unit.get("id", ""))
+	var missing := _race_has_products(str(unit.get("race", ""))) and not _unit_owned.has(id)
+	var tile := PanelContainer.new()
+	tile.custom_minimum_size = UNIT_TILE_SIZE
+	tile.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.PREP_GLASS_RAISED if not missing else Tokens.PREP_GLASS,
+		Tokens.PREP_EDGE, 4))
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 1)
+	tile.add_child(col)
+	var icon := TextureRect.new()
+	icon.custom_minimum_size = Vector2(48, 48)
+	icon.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var portrait_path := "res://assets/ui/unit_portraits/%s.png" % id
+	var fallback_path := RACE_LOGO_PATH % str(unit.get("race", ""))
+	if ResourceLoader.exists(portrait_path):
+		icon.texture = load(portrait_path) as Texture2D
+	elif ResourceLoader.exists(fallback_path):
+		icon.texture = load(fallback_path) as Texture2D
+	icon.modulate = Color(0.72, 0.72, 0.72) if missing else Color.WHITE
+	col.add_child(icon)
+	var name_lbl := Label.new()
+	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_lbl.add_theme_font_size_override("font_size", 14)
+	name_lbl.add_theme_color_override("font_color", Tokens.PREP_TEXT)
+	name_lbl.text = str(unit.get("name_en", id)) if TranslationServer.get_locale().begins_with("en") else str(unit.get("name", id))
+	col.add_child(name_lbl)
+	var status := Label.new()
+	status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	status.add_theme_font_size_override("font_size", Tokens.FONT_MIN_READABLE)
+	status.add_theme_color_override("font_color", Tokens.PREP_TEXT)
+	status.text = ("Not owned" if missing else "Tier %d" % int(unit.get("tier", 1))) if TranslationServer.get_locale().begins_with("en") else ("未拥有" if missing else "%d 阶" % int(unit.get("tier", 1)))
+	col.add_child(status)
+	return tile
+
+func _race_has_products(race: String) -> bool:
+	for raw in DataRegistry.get_table("race_units").get("units", []):
+		if typeof(raw) == TYPE_DICTIONARY:
+			var unit := raw as Dictionary
+			if str(unit.get("race", "")) == race and _unit_sold.has(str(unit.get("id", ""))):
+				return true
+	return false
+
+func _race_complete(race: String) -> bool:
+	# 棋子尚未进商城的族沿用免费规则；开始上架后必须拥有该族的全部棋子。
+	if not _race_has_products(race):
+		return true
+	for raw in DataRegistry.get_table("race_units").get("units", []):
+		if typeof(raw) == TYPE_DICTIONARY:
+			var unit := raw as Dictionary
+			if str(unit.get("race", "")) == race and not _unit_owned.has(str(unit.get("id", ""))):
+				return false
+	return true
+
+func _load_unit_ownership() -> void:
+	var catalog: Dictionary = await AccountManager.fetch_shop()
+	var owned: Dictionary = await AccountManager.fetch_entitlements()
+	if not is_inside_tree():
+		return
+	if int(catalog.get("code", 0)) / 100 != 2 or int(owned.get("code", 0)) / 100 != 2:
+		return
+	_unit_sold.clear()
+	for raw in ((catalog.get("body", {}) as Dictionary).get("items", []) as Array):
+		if typeof(raw) != TYPE_DICTIONARY:
+			continue
+		var item := raw as Dictionary
+		if str(item.get("kind", "")) == "unit":
+			_unit_sold[str(item.get("grants", ""))] = true
+	_unit_owned.clear()
+	for id in ((owned.get("body", {}) as Dictionary).get("items", []) as Array):
+		_unit_owned[str(id)] = true
+	_refresh_races()
+
 func _on_race_card_pressed(race: String) -> void:
-	# 选择按钮只修改出战草稿；查看羁绊由种族图标触发。
+	_viewed_race = race
+	_refresh_race_roster()
+	if not _race_complete(race):
+		_race_notice_label.text = "请前往采购商店，集齐该种族的全部棋子后即可选择。" if not TranslationServer.get_locale().begins_with("en") else "Visit the shop to collect every unit in this race."
+		_race_notice.visible = true
+		return
+	_race_notice.visible = false
 	if RacePick.is_forced():
+		_show_race_bond(race)
 		return
 	var need := RacePick.required_count()
 	if _race_draft.has(race):
 		_race_draft.erase(race)
 	elif _race_draft.size() >= need:
-		# 满了不自动顶掉最早选的那个：玩家没说要换掉哪一族，替他决定只会让人困惑。
 		GloryToast.show_text(tr("race_pick_full") % need)
 		return
 	else:
@@ -426,12 +665,8 @@ func _on_race_card_pressed(race: String) -> void:
 				next.append(known)
 		_race_draft = next
 	_refresh_races()
+	_show_race_bond(race)
 
-# 点击种族图标时把该族的羁绊效果摊开给玩家看。
-#
-# 用 DialogService.info（只有一个「知道了」的提示框，长文自动滚）。
-# 正文纯文本：弹窗正文是 Label 不吃 BBCode，而且全文同一字号同一颜色，
-# 正好满足「字体和颜色深浅要一致」——不像战场羁绊面板那样分两种亮度。
 func _show_race_bond(race: String) -> void:
 	var body: String = SynergyBond.format_synergy_effects(race)
 	if body.is_empty():
@@ -486,6 +721,8 @@ func _build_skin_box() -> Control:
 func _build_skin_card(skin_id: String) -> Control:
 	var card := PanelContainer.new()
 	card.custom_minimum_size = SKIN_CARD_SIZE
+	card.add_theme_stylebox_override("panel",
+		Tokens.panel_box(Tokens.PREP_GLASS, Tokens.PREP_EDGE, 10))
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 10)
 	card.add_child(content)
@@ -504,17 +741,19 @@ func _build_skin_card(skin_id: String) -> Control:
 	var name_lbl := Label.new()
 	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_lbl.add_theme_font_size_override("font_size", 24)
+	name_lbl.add_theme_color_override("font_color", Tokens.PREP_TEXT)
 	content.add_child(name_lbl)
 
 	var status_lbl := Label.new()
 	status_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	status_lbl.add_theme_font_size_override("font_size", 16)
-	status_lbl.add_theme_color_override("font_color", Color(0.72, 0.74, 0.80))
+	status_lbl.add_theme_color_override("font_color", Tokens.PREP_TEXT)
 	content.add_child(status_lbl)
 
 	var btn := ActionButtonScene.instantiate() as Button
 	btn.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
 	btn.size_flags_horizontal = Control.SIZE_FILL
+	_style_prep_button(btn)
 	btn.pressed.connect(_on_skin_card_pressed.bind(skin_id))
 	content.add_child(btn)
 
@@ -568,7 +807,8 @@ func _refresh_skin_card(skin_id: String, is_active: bool) -> void:
 		name_lbl.text += "  ✓"
 	var panel: PanelContainer = parts["panel"]
 	panel.add_theme_stylebox_override("panel",
-		Tokens.panel_box(Tokens.SURFACE, Tokens.GOLD_EDGE if is_active else Tokens.BORDER, 12))
+		Tokens.panel_box(Tokens.PREP_GLASS,
+			Tokens.GOLD_EDGE if is_active else Tokens.PREP_EDGE, 10))
 	var status_lbl: Label = parts["status"]
 	var btn: Button = parts["button"]
 	var loading := _skin_ownership == SkinOwnership.LOADING or _skin_ownership == SkinOwnership.NOT_LOADED

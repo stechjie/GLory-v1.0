@@ -72,18 +72,39 @@ func show_pet_info(pet_id: String, _owned: bool) -> void:
 	_phase = "info"
 	_clear()
 	_add_label(PetService.display_name(pet_id), 30)
-	var art := PetPreview.build_illustration(pet_id, Vector2(230, 175))
+	_panel.position = Vector2(490, 80)
+	_panel.size = Vector2(620, 560)
+	var art := PetPreview.build_illustration(pet_id, Vector2(210, 150))
 	art.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_content.add_child(art)
-	var detail := _add_label(PetService.skill_detail_text(pet_id), 17)
-	if not LocaleManager.get_locale().begins_with("en"):
-		detail.text = detail.text.replace("。", "。\n").strip_edges()
-	detail.add_theme_constant_override("line_spacing", 3)
-	detail.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	detail.add_theme_color_override("font_color", Tokens.SUMMON_DETAIL_INK)
-	detail.add_theme_constant_override("outline_size", 0)
+	var reading_plate := PanelContainer.new()
+	reading_plate.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.SUMMON_READ_PLATE, Tokens.SUMMON_PLATE_EDGE, 12))
+	reading_plate.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_content.add_child(reading_plate)
+	var detail := RichTextLabel.new()
+	detail.bbcode_enabled = true
+	detail.scroll_active = true
+	detail.custom_minimum_size = Vector2(0, 220)
+	detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	detail.add_theme_font_size_override("normal_font_size", 18)
+	detail.add_theme_color_override("default_color", Tokens.SUMMON_DETAIL_INK)
+	detail.add_theme_constant_override("line_separation", 4)
+	detail.text = _skill_markup(PetService.skill_detail_text(pet_id))
+	reading_plate.add_child(detail)
 	_add_button(_t("确认", "Confirm"), _dismiss)
+
+
+func _skill_markup(raw: String) -> String:
+	var text := raw
+	if LocaleManager.get_locale().begins_with("en"):
+		text = text.replace(". ", ".\n")
+		text = text.replace("Tier 1", "[b][color=#205c3d]Tier 1[/color][/b]")
+	else:
+		text = text.replace("。", "。\n")
+		text = text.replace("1 阶", "[b][color=#205c3d]1 阶[/color][/b]")
+	text = text.replace("+5%", "[b][color=#205c3d]+5%[/color][/b]")
+	return text.strip_edges()
 
 
 func show_error(message: String, can_retry: bool) -> void:

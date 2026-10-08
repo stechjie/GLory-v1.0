@@ -30,7 +30,7 @@ func _load_balance() -> void:
 
 func _build() -> void:
 	var dim := ColorRect.new()
-	dim.color = Tokens.BACKDROP
+	dim.color = Tokens.SHOP_MODAL_DIM
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(dim)
@@ -43,7 +43,7 @@ func _build() -> void:
 	var shell := PanelContainer.new()
 	shell.custom_minimum_size = Vector2(1130, 445)
 	shell.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.BG_DEEP, Tokens.GOLD_EDGE, Tokens.GAP_L))
+		Tokens.SHOP_MODAL, Tokens.SHOP_EDGE_ACTIVE, Tokens.GAP_L))
 	center.add_child(shell)
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", Tokens.GAP_M)
@@ -101,7 +101,7 @@ func _product_card(product: Dictionary) -> Control:
 	card.custom_minimum_size = Vector2(195, 225)
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	card.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.SURFACE_RAISED, Tokens.GOLD_PRESSED, Tokens.GAP_S))
+		Tokens.SHOP_DIAMOND_CARD, Tokens.SHOP_EDGE, Tokens.GAP_S))
 	var col := VBoxContainer.new()
 	col.alignment = BoxContainer.ALIGNMENT_CENTER
 	col.add_theme_constant_override("separation", Tokens.GAP_S)
