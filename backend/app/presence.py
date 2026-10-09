@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import logging
 import uuid
@@ -167,13 +168,68 @@ async def _notify_watchers(conn, player_id: uuid.UUID, room_id: int | None, row)
         "online": True,
         "room_id": room_id if room_visible else None,
     }
+    # 查好友用调用方那条连接（本地、快、没有风险）。**发送绝不在这里 await** ——
+    # 理由见 _fan_out 顶部那段 🔴。
     try:
         watchers = await friends.presence_watchers(conn, player_id)
-        hub = _hub()
-        for watcher_id in watchers:
-            await hub.send_to_player(watcher_id, payload)
     except Exception:  # noqa: BLE001 - 推送是旁路，不许影响心跳本身
-        log.warning("在线状态推送失败 player=%s", player_id, exc_info=True)
+        log.warning("在线状态推送：查好友失败 player=%s", player_id, exc_info=True)
+        return
+    if watchers:
+        _spawn(_fan_out(watchers, payload, player_id))
+
+
+# _spawn 起的发送任务。事件循环只弱引用任务，不留一份就可能还没跑完就被回收。
+# 同 matchmaking._background。
+_background: set[asyncio.Task] = set()
+
+
+def _spawn(coro) -> None:
+    """把推送排进事件循环，**不等它**。没有事件循环（同步测试）就不发。
+
+    同 matchmaking._spawn。
+    """
+    try:
+        task = asyncio.get_running_loop().create_task(coro)
+    except RuntimeError:
+        coro.close()
+        return
+    _background.add(task)
+    task.add_done_callback(_background.discard)
+
+
+async def _fan_out(watchers: list[uuid.UUID], payload: dict, player_id: uuid.UUID) -> None:
+    """把一条在线状态推给这些人。
+
+    🔴 **这个函数绝不能在心跳的请求里被 await，也绝不能串行发。**
+    2026-10-08 线上事故就是这么来的：原实现在 `async with db.pool().acquire()` 里
+    串行 `await hub.send_to_player(...)`，而 `realtime.Hub.send()` **没有超时**
+    （只有 broadcast / publish 才包 `_send_bounded`，那两处的注释写得很清楚：
+    「一条卡住的连接（手机进了隧道、TCP 还没断）不能让排在后面的几百个人收不到」）。
+    于是只要有一个好友的 TCP 发送缓冲塞住：
+      · 那个人的心跳请求**挂住不返回**
+      · 而且**一直占着一条数据库连接**
+    心跳是 10 秒一次、每个在线玩家都在发 —— 连接池很快被占满，
+    **整个账号服务器停止响应**（登录、好友、组队、匹配一起卡）。
+    `try/except` 挡不住这种情况：卡住不是异常。
+
+    所以这里有三道：**后台任务**（心跳不等）、**并发**（互不挡）、**每条有超时**。
+    """
+    hub = _hub()
+    timeout = realtime.BROADCAST_SEND_TIMEOUT_SEC
+
+    async def one(watcher_id: uuid.UUID) -> None:
+        try:
+            await asyncio.wait_for(hub.send_to_player(watcher_id, payload), timeout)
+        except TimeoutError:
+            log.info("在线状态推送超时 watcher=%s", watcher_id)
+        except Exception:  # noqa: BLE001 - 一条发不出去不该影响其他人
+            log.warning("在线状态推送失败 watcher=%s", watcher_id, exc_info=True)
+
+    try:
+        await asyncio.gather(*(one(w) for w in watchers))
+    except Exception:  # noqa: BLE001 - 后台任务，异常只能记日志
+        log.warning("在线状态扇出失败 player=%s", player_id, exc_info=True)
 
 
 async def _record_room_transition(

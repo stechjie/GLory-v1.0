@@ -1900,11 +1900,27 @@ func _on_match_ready() -> void:
 	if NetworkService.team_active and NetworkService.team_local_slot >= 0:
 		NetworkService.disconnect_session()
 	if not NetworkService.team_join(NetworkService.DEFAULT_HOST, target_port):
-		if is_instance_valid(_menu):
-			_menu.show_connection_error(NetworkService.last_error)
+		_fail_matched_connect(NetworkService.last_error)
 		return
 	if not NetworkService.session_changed.is_connected(_on_matched_session_changed):
 		NetworkService.session_changed.connect(_on_matched_session_changed)
+
+
+# 匹配成功之后连不上战斗服务器。
+#
+# 🔴 **必须自己导航到一个能用的界面。** 原来这两处是
+# `if is_instance_valid(_menu): _menu.show_connection_error(...)` ——
+# 而从组队房进来时 `_menu` 早被 _clear() 释放了，于是**两条失败路径都是静默的**。
+#
+# 以前这个洞不太显形：PartyLobby 的 7 秒轮询会把玩家顺手弹回主界面（那正是
+# 「匹配成功跳主界面」那个 bug）。2026-10-08 补上 ready 推送之后，它的 `_match_ready`
+# 闩会正确落下、轮询停掉 —— 连接失败就变成**卡在一个队伍房间已经不存在的界面上**。
+# 所以这一处是那个修复的配套，不是顺手改的。
+func _fail_matched_connect(message: String) -> void:
+	if not is_instance_valid(_menu):
+		_show_menu()
+	if is_instance_valid(_menu) and _menu.has_method("show_connection_error"):
+		_menu.show_connection_error(message if message != "" else tr("net_err_connect_generic"))
 
 
 func _on_matched_session_changed() -> void:
@@ -1915,9 +1931,7 @@ func _on_matched_session_changed() -> void:
 			_watch_matched_lobby()
 		NetworkService.SessionState.FAILED, NetworkService.SessionState.OFFLINE:
 			_disconnect_matched_handlers()
-			if is_instance_valid(_menu):
-				var message := NetworkService.last_error if NetworkService.last_error != "" else tr("net_err_connect_generic")
-				_menu.show_connection_error(message)
+			_fail_matched_connect(NetworkService.last_error)
 
 
 func _watch_matched_lobby() -> void:

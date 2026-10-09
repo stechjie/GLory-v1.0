@@ -216,15 +216,38 @@ class _FakeHub:
         return 1
 
 
-def _notify(monkeypatch, row: dict, room_id: int | None, watchers: list[uuid.UUID]) -> _FakeHub:
-    hub = _FakeHub()
+def _wire_push(monkeypatch, hub, watchers: list[uuid.UUID]) -> None:
     monkeypatch.setattr(presence, "_hub", lambda: hub)
 
     async def _watchers(_conn, _player_id):
         return watchers
 
     monkeypatch.setattr(presence.friends, "presence_watchers", _watchers)
-    asyncio.run(presence._notify_watchers(None, uuid.UUID(int=1), room_id, row))
+
+
+async def _drain_push() -> None:
+    """把推送的后台任务跑完。
+
+    发送是 fire-and-forget（2026-10-08 线上事故之后改的：心跳绝不等推送），
+    所以 `_notify_watchers` 返回时推送还没发出去。不排空就会断言在它之前跑，
+    表现是「推送没发」的**假阴性**。次数设上界，免得真卡住时把测试挂在这儿。
+    """
+    for _ in range(20):
+        pending = list(presence._background)
+        if not pending:
+            return
+        await asyncio.gather(*pending)
+
+
+def _notify(monkeypatch, row: dict, room_id: int | None, watchers: list[uuid.UUID]) -> _FakeHub:
+    hub = _FakeHub()
+    _wire_push(monkeypatch, hub, watchers)
+
+    async def _run() -> None:
+        await presence._notify_watchers(None, uuid.UUID(int=1), room_id, row)
+        await _drain_push()
+
+    asyncio.run(_run())
     return hub
 
 
@@ -273,14 +296,83 @@ def test_push_failure_never_breaks_the_heartbeat(monkeypatch) -> None:
         async def send_to_player(self, *_a):
             raise RuntimeError("socket gone")
 
-    monkeypatch.setattr(presence, "_hub", lambda: _Broken())
+    _wire_push(monkeypatch, _Broken(), [uuid.UUID(int=2)])
 
-    async def _watchers(_conn, _player_id):
-        return [uuid.UUID(int=2)]
+    async def _run() -> None:
+        # 不抛就算过。
+        await presence._notify_watchers(None, uuid.UUID(int=1), 777, _prev(1))
+        await _drain_push()
 
-    monkeypatch.setattr(presence.friends, "presence_watchers", _watchers)
-    # 不抛就算过。
-    asyncio.run(presence._notify_watchers(None, uuid.UUID(int=1), 777, _prev(1)))
+    asyncio.run(_run())
+
+
+def test_a_wedged_socket_cannot_block_the_heartbeat(monkeypatch) -> None:
+    """🔴 2026-10-08 线上事故的回归用例。**这条比上面那条重要。**
+
+    原实现在 `async with db.pool().acquire()` 里**串行 await** `hub.send_to_player()`，
+    而 `realtime.Hub.send()` **没有超时**（只有 broadcast / publish 才包
+    `_send_bounded`，那两处注释写明「一条卡住的连接（手机进了隧道、TCP 还没断）
+    不能让排在后面的几百个人收不到」）。于是只要一个好友的 TCP 发送缓冲塞住：
+
+      · 那个人的心跳请求**挂住不返回**
+      · 而且**一直占着一条数据库连接**
+
+    心跳 10 秒一次、每个在线玩家都在发 —— 连接池很快占满，**整个账号服务器
+    停止响应**（登录 / 好友 / 组队 / 匹配一起卡）。
+
+    `try/except` 挡不住这种情况：**卡住不是异常**，所以上面那条用例是绿的，
+    事故照样发生了。要钉的是「心跳不等推送」这件事本身。
+    """
+    started = asyncio.Event()
+
+    class _Wedged:
+        async def send_to_player(self, *_a):
+            started.set()
+            await asyncio.sleep(3600)   # 永远不返回，模拟塞住的 socket
+            return 1
+
+    _wire_push(monkeypatch, _Wedged(), [uuid.UUID(int=2)])
+
+    async def _run() -> None:
+        # 卡住的发送在后台，_notify_watchers 必须立刻返回。
+        # 超时就是失败 —— 那正是线上那次的形状。
+        await asyncio.wait_for(
+            presence._notify_watchers(None, uuid.UUID(int=1), 777, _prev(1)), 1.0)
+        # 确认推送确实已经排出去了（不是因为压根没发才"没卡"）。
+        await asyncio.wait_for(started.wait(), 1.0)
+        # 别把挂着的任务留给事件循环关闭时报 "Task was destroyed but it is pending"。
+        for task in list(presence._background):
+            task.cancel()
+        await asyncio.gather(*presence._background, return_exceptions=True)
+
+    asyncio.run(_run())
+
+
+def test_a_wedged_send_is_eventually_abandoned(monkeypatch) -> None:
+    """卡住的那条发送必须**自己超时收摊**，不能永远挂在后台。
+
+    后台化之后心跳已经不会被它拖住了（上一条用例钉的是这个），但没有超时的话
+    每一次卡住都会留下一个永不结束的任务和它那份 payload —— 上线一久就是只涨
+    不降的泄漏。所以 _fan_out 里每条都包 asyncio.wait_for。
+
+    超时常量取自 realtime 模块（而且是在函数体里读的，所以这里 monkeypatch 得到）。
+    """
+    class _Wedged:
+        async def send_to_player(self, *_a):
+            await asyncio.sleep(3600)
+            return 1
+
+    _wire_push(monkeypatch, _Wedged(), [uuid.UUID(int=2)])
+    monkeypatch.setattr(presence.realtime, "BROADCAST_SEND_TIMEOUT_SEC", 0.05)
+
+    async def _run() -> None:
+        await presence._notify_watchers(None, uuid.UUID(int=1), 777, _prev(1))
+        tasks = list(presence._background)
+        assert tasks, "推送压根没排出去，这条用例就测不到超时"
+        # 没有超时的话这里会等满 1 秒然后 TimeoutError。
+        await asyncio.wait_for(asyncio.gather(*tasks), 1.0)
+
+    asyncio.run(_run())
 
 
 def test_presence_visibility_values_match_the_database() -> None:
