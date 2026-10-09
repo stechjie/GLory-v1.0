@@ -1,5 +1,55 @@
 # Glory Beta 0.04
 
+## 2026-10-09（排位房）：房主出战宠物「必须显示 + 锁死变暗 + 只听它脚步声」
+
+按真机反馈做的两轮。**显示功能基本不动**，动的是「谁出声」和「房主那行锁不锁」。**改动只有代码 + 门禁，无新增运行资源、未重导 EXE/APK、已同步 `GLory-v1.0`、未 `git add/commit/push`（由你本地提交）。**
+
+- **大厅**：显示自己**全部**宠物（现状不变），但**只有自己出战宠物**（`PlayerProfile.active_pet`）的脚步能听见 —— `scenes/menu/MainMenuPet.gd` 新增纯静态 `pet_is_audible()`，`_spawn_pet` 把它写进 `entry.audible`，`_play_footstep` 最前面按它静音。其余宠物**照常生成、照常走动**，只是走到该迈步时一声不响。
+- **排位房**：显示仍走房间共享列表（房主用「展示宠物」抽屉挑，全队看同一份），但**房主的出战宠物被强制加进这一份**（`with_host_pet()`：去重 / 缺则挤掉末位补上 / 封顶 5）—— 那行**始终打勾、`disabled` 点不动（＝走暗色样式）、不接 `pressed`**，`_toggle_pet` 另有第二道闸；**全队只有房主的出战宠物**发得出脚步（`configure_party_display(..., audible_id)`）。
+- **服务端**：`backend/app/party.py` 的 `Room` 增 `active_pets`（成员→出战宠物，**用 dict 让房主交接时 `host_pet` 自动跟新队长走**）＋ 纯静态 `_with_host_pet()`（`create` 与 `PUT /pets` 都走它，**服务端兜底：踢不掉**）；`snapshot()` 增 `"host_pet"`；`backend/app/routes/party.py` 建房/入房读 `shop.read_pets(...).active` 传下去。
+- ★ **真机复测修复（19:50）**：客户端默认连**远程已部署后端**（`scripts/account/AccountConfig.gd` 的 `DEFAULT_BACKEND_URL`），本地 `backend/` 改了**不进真机** ⇒ 快照里没有 `host_pet` ⇒ 房主那行**既不锁也不暗、还能点掉**。修法＝`_host_pet()` 加**客户端兜底**（`host_pet` 为空且自己是房主 ⇒ 用自己已知的出战宠物），显示列表也走 `_display_pet_ids()`。★ **注意：队友要看到/听到房主的宠物，仍需把后端部署到线上并重启** —— 客户端兜底只覆盖**房主本人**这一侧。
+- ★ 变暗**本来就没坏**：`_style_paper_button` 早就定义了 `disabled` 暗色样式（`Color(0.66,0.67,0.63,0.74)` ＋ 字色 `d1c8ad`），是 `disabled` 从没被置真。
+
+详见 [10.09排位房主出战宠物修复记录](docs/10.09排位房主出战宠物修复记录.md)。
+
+### 门禁 / 测试
+
+| 名称 | 条数 | 覆盖 | 变异 |
+|---|---|---|---|
+| `tools/party_lobby_rules_check.tscn` | **112**（10.09 批 98 → 112） | 房主宠物那行锁定 / 打勾 / 不接 `pressed` ＋ `host_pet_of` 3 条 ＋ `with_host_pet` 7 条真值表 ＋ **运行期真调 `_host_pet()` 3 条** | 4/4 CAUGHT |
+| `tools/pet_footstep_check.tscn` | **35**（原 22） | 只有一只发得出声：大厅＝自己的 / 排位＝房主的；`entry.audible` 静音门 ＋ 行为 | 2/2 CAUGHT |
+| `tools/cold_parse_chain_check.tscn` | 354 | 全量解析链未破坏 | — |
+| `backend/tests/test_party_room_stdlib.py` | **22**（原 14） | `_with_host_pet` 强制入列 / `PUT /pets` 踢不掉 / 快照带 `host_pet` | 2/2 CAUGHT |
+
+## 2026-10-09（真机返工）：`10.09bug提交及修复.docx` 4 条
+
+按文档逐条落码。**改动只有代码 + 门禁，无新增运行资源、未重导 EXE/APK、未真机验证、本轮回测后已同步 `GLory-v1.0`、未 `git add/commit/push`（由你本地提交）。**
+
+- **第 1 条（棋盘上已有人王时，把商店的人王拖到棋盘空格被整个吞掉）** `scenes/prep/PrepBoardController.gd`：
+  「棋盘空格」这一支以前只有一句 `show_message(toast_unique_limit)` + `return` —— 拖过来的那枚既没升星、也没进备战区，**连钱都不扣**。按文档三条意图改为复用与「上阵已满」同构的那套分流（原 `_auto_dispatch_shop_when_board_full` **改名** `_auto_dispatch_shop_card`，两个调用点同构）：① 棋盘上同名同星能升星 → **就地升星**；② 升不了 → 新的一枚**进备战区**（先试待命区升星，再找空位）；③ 备战区也满 → **这时才**提示「传奇棋子只能上场一个」。★ 第 ① 步在这条路上是**活代码**：`_auto_combine_all()` 每次改动后都会把棋盘 + 待命区的同名同星自动融合，所以稳态下棋盘不会挂着可合成的一对，唯一能凑出一对的时刻恰好就是玩家把这一枚放下的当下。实拍三例（`work/_qa_1009/probe_bug1_shot.gd`，走**真实入口** `_drop_on_board(空格, {kind:"shop"})`，棋子用人王 `human_king`）：1★→2★ / 备战区 5→6 / 不扣钱 + 提示，逐条对上。
+- **第 2 条（选了金钱类宝藏后，获得的技能按钮排进左下角宝藏区、无法使用）** `scenes/prep/PrepUI.gd`：
+  10.08 给两行准备头像让位时把 `SELL_LEFT_PANEL_TOP_RESERVE` 定成了 **132px**，实测**让多了** —— 头像底边 y=124 而羁绊栏顶端 y=216，中间**空了 92px**；整栏 400px 内容被顶到 y=616，最后两个金钱宝藏按钮（「黄金祭坛」「慷慨命运」）正好压在左下角宝藏 logo 面板（`TreasurePanel`，顶边 587）上。改成 **48px**（＝ 头像底边 124 ＋ 间距 8 − `left_drop.y` 84），整栏上移 84px。满羁绊（**棋盘上最多同时出场 4 个种族** —— 赤灯使 `lattern` 不在商店池里）＋ 满 5 枚金钱宝藏实拍复核：两种画布 gap 均为 8.0px、内容最低点 532 < 宝藏区顶边（758 画布 587 / 720 画布 549），**两个按钮完整可读可点**。
+- **第 3 条（3V3 结算后从大厅重进刚结算完的房间 → 按准备无反应、按离开提示「需要取消准备」）** `scripts/autoload/NetworkService.gd`：
+  死锁 ＝ 两个状态同时成立：① `team_local_slot == -1`（结算房把没回来的人标 `settling`、且不放进 `peer_slot` ⇒ `_send_room_state` 整份不发）；② `_pending_ready == 1`（上一次「准备」的在途意图，而它是 `Main._lobby_exit_requires_cancel()` 的**唯一**判据；服务器那两条路 —— `_rpc_team_set_ready` 遇 `settling` 座位**直接 return**、`_send_room_state` 整份不发 —— 让确认回包永远不来，于是它撤不掉）。而 `Team3v3Lobby._on_primary_pressed` 与 `NetworkService.team_set_ready` 在 `my_slot < 0` 时都**静默 return** ⇒ 两个出口互为唯一，玩家被永久锁在大厅。修法四条：**无座位一律不算已准备**（`local_ready_intent()` 早退）；会话终结路径（`reset` / 掉线 / 房间关闭 / 结算切房）统一走新增的 `_clear_pending_ready()`；`_rpc_room_state` 里**座位不再是 player 也清**；新增 `READY_CONFIRM_TIMEOUT_SEC = 4.0` 超时兜底（这一版 ready 没有 request/ACK + revision，只能拿期限兜底，写法同 `_leave_deadline`）。C24 的「在途 ready ⇒ 不许退出」原窗口**保持不变**（有专门用例钉住）。
+- **第 4 条（结算面板「本回合总造成伤害」没算元素伤害）** `scripts/battle/DamageService.gd` ＋ `StatusEffectService` / `BattleSimTreasures` / `BattleSimulator` / `FinalSettlementData` / `FinalSettlementPanel`：
+  实测口径与直觉相反 —— **普通棋子挂的毒早就计入** `stats[].damage_dealt`（归毒 18000 全额记在挂毒棋子名下）；真正丢的只有两条**没有棋子身份**的路：自爆灵的死亡爆炸及其挂上的毒（**完全不设 stat source**，实测爆炸 250 ＋ 毒 600 ＝ 850 全丢）、寄生灵分身（uid 不在 `unit_stats` 里 ⇒ 普攻与它挂的毒无人认领）；两条恰好都是**灵族**。修法：`state.element_damage_by_slot` 席位级账本 ＋ `DamageService._element_owner_slot` 旁路（≥ 0 时只进账本、**不写任何棋子 `damage_dealt`**）；`FinalSettlementData.build` / `update_round_damage` 与 `FinalSettlementPanel._ready` 把它并进席位总伤害。**按用户口径：计入「本回合总造成伤害」，不计入棋子个人伤害。**
+
+详见 [10.09bug提交及修复记录](docs/10.09bug提交及修复记录.md)。
+
+### 门禁 / 测试
+
+| 名称 | 条数 | 覆盖 | 变异 |
+|---|---|---|---|
+| `tools/prep_1005_check.tscn` | **100**（原 81） | 第 1 条三条意图：就地升星 / 进备战区 / 才拒绝 | 删唯一分支 ⇒ `failures=9` |
+| `tools/lobby050607_check.gd` `.tscn` | **18**（原 9） | 第 3 条六条：无座位不被锁、无座位无意图、房间关闭清意图、掉线清意图、意图超时、C24 窗口不被误伤 | 两处 ⇒ 红 2 / 红 1 |
+| `tools/prep_layout_1009_check.tscn`（新） | **15** | 第 2 条：量「金钱宝藏按钮 vs `TreasurePanel`」有没有重叠 ＋ 头像↔羁绊栏 gap | 改回 132 ⇒ `failures=7` |
+| `tools/settle_element_damage_check.tscn`（新） | **32** | 第 4 条：爆炸及其毒、分身、已归属毒不双计、狂暴死亡不算元素、账本并桶、3v3 全灵族恒等式 | 5 变体全 CAUGHT |
+
+关联门禁回归全绿：`cold_parse_chain` 354/0、`final_settlement` 41/0、`round_settlement` 18/0、`prep_1006` 51/0、`battle_playback_stability` 145/0、`audio_0922` 174/0、`bug_0908` 14/0、`bug_0909` 11/0、`battle_summon_identity` 53/0、`battle_frenzy` 20/0、`battle_reach_target` 43/0。
+
+★ 本次同步 `GLory-v1.0` 共 **18** 个文件：11 个内容有差异（10.09 生产代码 ＋ 两条门禁）、4 个新增门禁场景，＋ `README.md` / `docs/CHECKS.md` / `docs/10.09bug提交及修复记录.md`。`assets/` 白名单未跟踪不传、`work/_qa_*` 临时探针不传、机器随机 `tools/prep_1008_check.gd.uid` 不覆盖（判据：全工程零 `uid://` 引用）。
+
+
 ## 2026-10-08（真机返工）：#135 重连 / #136 出售区 / #138 跳过战斗 / #137 统计面板 + 对局历史支线
 
 真机测出 10.08b 后仍存在的问题，逐条落码。**改动只有代码 + 门禁 / 测试，无新增运行资源、未重导 EXE/APK、未真机验证、本轮回测后已同步 `GLory-v1.0`、未 `git add/commit/push`（由你本地提交）。**

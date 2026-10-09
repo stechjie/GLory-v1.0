@@ -40,6 +40,8 @@ const DEFAULT_FRAME_TEX := preload("res://assets/ui/shop/headframes/frame_defaul
 
 # 面板开着时的刷新间隔。**不是心跳** —— 这是读，心跳是写。
 const REFRESH_SEC := 5.0
+# 在线状态推送的事件名。必须和 backend/app/presence.py 的 PRESENCE_EVENT 一致。
+const PRESENCE_PUSH := "presence"
 const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
 
 enum Tab { FRIENDS, REQUESTS, ADD }
@@ -71,13 +73,28 @@ func _ready() -> void:
 	_refresh_timer.timeout.connect(func() -> void: await _reload(false))
 	add_child(_refresh_timer)
 	_refresh_timer.start()
+	# 好友上线 / 换房间的推送（backend/app/presence.py）。上面那个定时器仍然留着 ——
+	# 推送只覆盖上线，**下线没有事件可挂**（见 PartyLobby.FRIENDS_REFRESH_SEC 的说明）。
+	if not RealtimeService.message_received.is_connected(_on_presence_push):
+		RealtimeService.message_received.connect(_on_presence_push)
 	await _reload(true)
+
+
+# 推送只当**失效信号**用，不拿 payload 里的字段打补丁：这个界面一次拉四份
+# （好友 / 申请 / 黑名单 / 最近一起玩过），只给其中一行打补丁就会和另外三份
+# 不同步。并发由 _reload 自己的 _busy 挡。
+func _on_presence_push(payload: Dictionary) -> void:
+	if str(payload.get("t", "")) == PRESENCE_PUSH:
+		await _reload(false)
 
 
 func _exit_tree() -> void:
 	# 关掉就停。留着的话玩家在战斗里还在替一个已经不存在的界面拉好友列表。
 	if _refresh_timer != null:
 		_refresh_timer.stop()
+	# RealtimeService 是 autoload，活得比这个界面久 —— 连接必须显式断开。
+	if RealtimeService.message_received.is_connected(_on_presence_push):
+		RealtimeService.message_received.disconnect(_on_presence_push)
 	# ChatService 是 autoload，活得比这个界面久 —— 连接必须显式断开。
 	if ChatService.unread_changed.is_connected(_on_chat_unread_changed):
 		ChatService.unread_changed.disconnect(_on_chat_unread_changed)

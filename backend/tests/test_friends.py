@@ -148,6 +148,233 @@ def test_hidden_presence_is_offline_to_friends() -> None:
     assert friends._online(_ago(1), "nobody") is False
 
 
+# --- 在线状态推送（「推上线、轮询兜下线」）-------------------------------------
+#
+# 覆盖的缺陷：组队房的好友列表只在 _ready() 里拉一次，谁上线都不会变 ——
+# 而那个界面的「邀请」按钮是 `disabled = not online`，所以一个其实已经上线、
+# 却被显示成离线的好友**根本邀请不了**。
+
+
+def _prev(seconds_ago: float | None, room_id: int | None = None) -> dict:
+    """心跳之前那一行的快照。seconds_ago 为 None = 这人第一次心跳（没有这一行）。"""
+    return {
+        "last_seen_at": None if seconds_ago is None else _ago(seconds_ago),
+        "room_id": room_id,
+        "friend_code": "ABCD1234",
+        "presence_visibility": "friends",
+        "room_visibility": "friends",
+    }
+
+
+def test_repeat_heartbeat_does_not_notify() -> None:
+    """🔴 这条是整个推送方案的底线。
+
+    心跳 10 秒一拍。无条件推等于把一个事件系统变成一个**更贵的**轮询，
+    而且被好友数扇出放大了一遍。还在线、房间也没换的那一拍必须不推。
+    """
+    assert presence.should_notify(_prev(1, room_id=777), 777) is False
+
+
+def test_first_heartbeat_notifies() -> None:
+    """第一次心跳：presence 行还不存在，正是最该推的时刻。"""
+    assert presence.should_notify(_prev(None), None) is True
+    assert presence.should_notify(None, None) is True
+
+
+def test_coming_back_after_ttl_notifies() -> None:
+    """上一拍已经算离线了（杀进程、网断过）-> 这一拍是「又上线了」。"""
+    stale = friends.PRESENCE_TTL.total_seconds() + 1
+    assert presence.should_notify(_prev(stale), None) is True
+
+
+def test_room_change_notifies_while_online() -> None:
+    """换房间也要推：好友列表上显示的「他在哪个房间」要跟得上。"""
+    assert presence.should_notify(_prev(1, room_id=None), 777) is True
+    assert presence.should_notify(_prev(1, room_id=777), None) is True
+    assert presence.should_notify(_prev(1, room_id=777), 888) is True
+
+
+def test_push_ttl_comes_from_friends_not_a_second_copy() -> None:
+    """推送判「上一拍算不算离线」用的必须是 friends 那一份 TTL。
+
+    自己再定义一个的话，症状是「推说上线了、拉回来还是离线」—— 两条路各按
+    各的 TTL 算，而玩家看到的是列表闪一下又变回去。
+    """
+    just_inside = friends.PRESENCE_TTL.total_seconds() - 1
+    just_outside = friends.PRESENCE_TTL.total_seconds() + 1
+    assert presence._stale(_ago(just_inside)) is False
+    assert presence._stale(_ago(just_outside)) is True
+    assert presence._stale(None) is True
+
+
+class _FakeHub:
+    def __init__(self) -> None:
+        self.sent: list[tuple[uuid.UUID, dict]] = []
+
+    async def send_to_player(self, player_id: uuid.UUID, payload: dict) -> int:
+        self.sent.append((player_id, payload))
+        return 1
+
+
+def _wire_push(monkeypatch, hub, watchers: list[uuid.UUID]) -> None:
+    monkeypatch.setattr(presence, "_hub", lambda: hub)
+
+    async def _watchers(_conn, _player_id):
+        return watchers
+
+    monkeypatch.setattr(presence.friends, "presence_watchers", _watchers)
+
+
+async def _drain_push() -> None:
+    """把推送的后台任务跑完。
+
+    发送是 fire-and-forget（2026-10-08 线上事故之后改的：心跳绝不等推送），
+    所以 `_notify_watchers` 返回时推送还没发出去。不排空就会断言在它之前跑，
+    表现是「推送没发」的**假阴性**。次数设上界，免得真卡住时把测试挂在这儿。
+    """
+    for _ in range(20):
+        pending = list(presence._background)
+        if not pending:
+            return
+        await asyncio.gather(*pending)
+
+
+def _notify(monkeypatch, row: dict, room_id: int | None, watchers: list[uuid.UUID]) -> _FakeHub:
+    hub = _FakeHub()
+    _wire_push(monkeypatch, hub, watchers)
+
+    async def _run() -> None:
+        await presence._notify_watchers(None, uuid.UUID(int=1), room_id, row)
+        await _drain_push()
+
+    asyncio.run(_run())
+    return hub
+
+
+def test_push_reaches_every_friend(monkeypatch) -> None:
+    watchers = [uuid.UUID(int=2), uuid.UUID(int=3)]
+    hub = _notify(monkeypatch, _prev(1), 777, watchers)
+    assert [pid for pid, _ in hub.sent] == watchers
+    payload = hub.sent[0][1]
+    assert payload["t"] == presence.PRESENCE_EVENT
+    # 客户端的列表是按好友码建的，推送认不出人就没法打补丁。
+    assert payload["friend_code"] == "ABCD1234"
+    assert payload["online"] is True
+    assert payload["room_id"] == 777
+
+
+def test_hidden_presence_is_not_pushed(monkeypatch) -> None:
+    """🔴 隐身的人一个字都不推。
+
+    拉那条路守得很仔细（friends.list_friends 的两行），推这条新路很容易变成
+    一个绕过开关的后门 —— 那等于把玩家设的「隐身」悄悄作废。
+    """
+    row = _prev(1)
+    row["presence_visibility"] = "nobody"
+    hub = _notify(monkeypatch, row, 777, [uuid.UUID(int=2)])
+    assert hub.sent == []
+
+
+def test_room_hidden_still_pushes_online_without_the_room(monkeypatch) -> None:
+    """两个开关是分开的：「在不在线」和「在哪个房间」泄漏的不是一回事。"""
+    row = _prev(1)
+    row["room_visibility"] = "nobody"
+    hub = _notify(monkeypatch, row, 777, [uuid.UUID(int=2)])
+    assert len(hub.sent) == 1
+    assert hub.sent[0][1]["online"] is True
+    assert hub.sent[0][1]["room_id"] is None
+
+
+def test_push_failure_never_breaks_the_heartbeat(monkeypatch) -> None:
+    """推送是旁路，客户端那边还有慢轮询兜底。
+
+    为了一条推没发出去让心跳接口返回 500，是拿主路径给旁路赔命 ——
+    而心跳挂了的症状是**所有人**一起显示离线。
+    """
+
+    class _Broken:
+        async def send_to_player(self, *_a):
+            raise RuntimeError("socket gone")
+
+    _wire_push(monkeypatch, _Broken(), [uuid.UUID(int=2)])
+
+    async def _run() -> None:
+        # 不抛就算过。
+        await presence._notify_watchers(None, uuid.UUID(int=1), 777, _prev(1))
+        await _drain_push()
+
+    asyncio.run(_run())
+
+
+def test_a_wedged_socket_cannot_block_the_heartbeat(monkeypatch) -> None:
+    """🔴 2026-10-08 线上事故的回归用例。**这条比上面那条重要。**
+
+    原实现在 `async with db.pool().acquire()` 里**串行 await** `hub.send_to_player()`，
+    而 `realtime.Hub.send()` **没有超时**（只有 broadcast / publish 才包
+    `_send_bounded`，那两处注释写明「一条卡住的连接（手机进了隧道、TCP 还没断）
+    不能让排在后面的几百个人收不到」）。于是只要一个好友的 TCP 发送缓冲塞住：
+
+      · 那个人的心跳请求**挂住不返回**
+      · 而且**一直占着一条数据库连接**
+
+    心跳 10 秒一次、每个在线玩家都在发 —— 连接池很快占满，**整个账号服务器
+    停止响应**（登录 / 好友 / 组队 / 匹配一起卡）。
+
+    `try/except` 挡不住这种情况：**卡住不是异常**，所以上面那条用例是绿的，
+    事故照样发生了。要钉的是「心跳不等推送」这件事本身。
+    """
+    started = asyncio.Event()
+
+    class _Wedged:
+        async def send_to_player(self, *_a):
+            started.set()
+            await asyncio.sleep(3600)   # 永远不返回，模拟塞住的 socket
+            return 1
+
+    _wire_push(monkeypatch, _Wedged(), [uuid.UUID(int=2)])
+
+    async def _run() -> None:
+        # 卡住的发送在后台，_notify_watchers 必须立刻返回。
+        # 超时就是失败 —— 那正是线上那次的形状。
+        await asyncio.wait_for(
+            presence._notify_watchers(None, uuid.UUID(int=1), 777, _prev(1)), 1.0)
+        # 确认推送确实已经排出去了（不是因为压根没发才"没卡"）。
+        await asyncio.wait_for(started.wait(), 1.0)
+        # 别把挂着的任务留给事件循环关闭时报 "Task was destroyed but it is pending"。
+        for task in list(presence._background):
+            task.cancel()
+        await asyncio.gather(*presence._background, return_exceptions=True)
+
+    asyncio.run(_run())
+
+
+def test_a_wedged_send_is_eventually_abandoned(monkeypatch) -> None:
+    """卡住的那条发送必须**自己超时收摊**，不能永远挂在后台。
+
+    后台化之后心跳已经不会被它拖住了（上一条用例钉的是这个），但没有超时的话
+    每一次卡住都会留下一个永不结束的任务和它那份 payload —— 上线一久就是只涨
+    不降的泄漏。所以 _fan_out 里每条都包 asyncio.wait_for。
+
+    超时常量取自 realtime 模块（而且是在函数体里读的，所以这里 monkeypatch 得到）。
+    """
+    class _Wedged:
+        async def send_to_player(self, *_a):
+            await asyncio.sleep(3600)
+            return 1
+
+    _wire_push(monkeypatch, _Wedged(), [uuid.UUID(int=2)])
+    monkeypatch.setattr(presence.realtime, "BROADCAST_SEND_TIMEOUT_SEC", 0.05)
+
+    async def _run() -> None:
+        await presence._notify_watchers(None, uuid.UUID(int=1), 777, _prev(1))
+        tasks = list(presence._background)
+        assert tasks, "推送压根没排出去，这条用例就测不到超时"
+        # 没有超时的话这里会等满 1 秒然后 TimeoutError。
+        await asyncio.wait_for(asyncio.gather(*tasks), 1.0)
+
+    asyncio.run(_run())
+
+
 def test_presence_visibility_values_match_the_database() -> None:
     """Python 的白名单与 SQL 的 check 约束必须一致。
 

@@ -18,9 +18,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import datetime as dt
+import logging
 import uuid
 
-from app import db
+from app import db, friends, realtime
+
+log = logging.getLogger("glory.presence")
 
 VISIBILITIES = frozenset({"friends", "nobody"})
 
@@ -57,23 +62,174 @@ async def heartbeat(player_id: uuid.UUID, room_id: int | None) -> None:
         # 用 `returning` 拿不到（那返回的是更新后的行）。
         # 分成「先 select 再 upsert」两次往返也行，但心跳是这套系统里
         # 唯一的高频写，能一次做完就别做两次。
-        previous = await conn.fetchval(
+        # prev 现在多带三样（都是**改之前**的值，同一个快照）：
+        #   last_seen_at              判「是不是刚上线」—— 上一拍超过 TTL 就是刚上线。
+        #                             null = 压根没有这一行，也是刚上线
+        #   presence/room_visibility  推送要照搬拉取那边的隐私规则，见 _notify_watchers。
+        #                             心跳的 on conflict 不碰这两列，所以 prev 的值就是现值
+        #   friend_code               推送的收件人按好友码认人（客户端列表是按它建的）
+        #
+        # ⚠️ 最终 select **从 players 出发 left join prev**，不是直接 select prev ——
+        # 第一次心跳时 prev 是空集，`select ... from prev` 整行返回 None，
+        # 那恰好就是「刚上线」这个最该推的时刻，friend_code 却拿不到了。
+        row = await conn.fetchrow(
             """
             with prev as (
-                select room_id from player_presence where player_id = $1
+                select room_id, last_seen_at, presence_visibility, room_visibility
+                from player_presence where player_id = $1
             ), upsert as (
                 insert into player_presence (player_id, last_seen_at, room_id)
                 values ($1, now(), $2)
                 on conflict (player_id) do update
                   set last_seen_at = now(), room_id = excluded.room_id
             )
-            select room_id from prev
+            select p.friend_code, prev.room_id, prev.last_seen_at,
+                   prev.presence_visibility, prev.room_visibility
+            from players p left join prev on true
+            where p.player_id = $1
             """,
             player_id,
             room_id,
         )
+        previous = row["room_id"] if row is not None else None
         if previous != room_id:
             await _record_room_transition(conn, player_id, previous, room_id)
+        if should_notify(row, room_id):
+            await _notify_watchers(conn, player_id, room_id, row)
+
+
+# 在线状态变化的推送事件名。客户端在 RealtimeService 上按这个字段分发。
+PRESENCE_EVENT = "presence"
+
+
+def _stale(last_seen: dt.datetime | None) -> bool:
+    """上一拍是不是已经算离线了。TTL 用 friends 那一份，**不另定义一个** ——
+    两份 TTL 一定会分叉，而分叉的症状是「推说上线了、拉回来还是离线」。
+    """
+    if last_seen is None:
+        return True
+    return dt.datetime.now(dt.timezone.utc) - last_seen >= friends.PRESENCE_TTL
+
+
+def should_notify(row, room_id: int | None) -> bool:
+    """这一拍要不要推在线状态（docs/交友系统设计.md 第二节「推上线、轮询兜下线」）。
+
+    `row` 是心跳**之前**那一行的快照；`last_seen_at` 为 None = 这人第一次心跳。
+    判定是纯的，所以抽出来让用例直接钉 —— 这里要钉死的不是「算得对」，
+    而是下面这条：
+
+    🔴 **只在跳变时推，不是每次心跳都推。** 心跳 10 秒一拍，无条件推等于把一个
+    事件系统变成一个**更贵的**轮询（还被扇出放大了一遍）。所以「还在线、房间也
+    没换」这一拍必须返回 False。
+
+    两种跳变：
+      刚上线   上一拍压根没有，或者 last_seen_at 已经超过 TTL（= 上一拍算离线）
+      换房间   房间号和上一拍不同
+
+    ⚠️ **「下线」不在这里，也不可能在这里** —— 它没有事件可挂：进程被杀、网断了，
+    客户端不会发「我下线了」。离线是 friends._online 按 TTL 推算的，所以客户端那边
+    保留一个慢轮询兜它。要把下线也做成即时，就得加一个扫 last_seen_at 的后台循环，
+    而那需要给 last_seen_at 建索引 —— 005_friends.sql 是**刻意不建**的（每次心跳
+    都要维护的索引压在全系统最热的写上）。这个取舍没变。
+    """
+    if row is None or row["last_seen_at"] is None:
+        return True
+    if _stale(row["last_seen_at"]):
+        return True
+    return row["room_id"] != room_id
+
+
+def _hub() -> realtime.Hub:
+    """**每次现取** —— 测试会换掉它。同 mail.push_to_player / announcements.hub_broadcast。"""
+    return realtime.hub()
+
+
+async def _notify_watchers(conn, player_id: uuid.UUID, room_id: int | None, row) -> None:
+    """把「我上线了 / 我换房间了」推给在线的好友。
+
+    🔴 **隐私规则必须和拉取那条路一致**（friends.list_friends 那两行）：
+      presence_visibility != 'friends'  -> 一个字都不推。隐身的人不该因为多了一条
+                                          推送通道就被看见 —— 那是把开关悄悄作废
+      room_visibility     != 'friends'  -> 推「在线」但不带房间号。「在不在线」和
+                                          「在哪个房间」泄漏的不是一回事
+    推送失败不抛：它是**锦上添花**，客户端那边还有慢轮询兜底。为了一条推没发出去
+    让心跳接口返回 500，是拿主路径给旁路赔命。
+    """
+    if row is None:
+        return
+    # 第一次心跳时 prev 侧全是 null，而那一行刚被 insert 成默认值（两个都是 'friends'）。
+    presence_visible = (row["presence_visibility"] or "friends") == "friends"
+    room_visible = (row["room_visibility"] or "friends") == "friends"
+    if not presence_visible:
+        return
+    payload = {
+        "t": PRESENCE_EVENT,
+        "friend_code": row["friend_code"],
+        "online": True,
+        "room_id": room_id if room_visible else None,
+    }
+    # 查好友用调用方那条连接（本地、快、没有风险）。**发送绝不在这里 await** ——
+    # 理由见 _fan_out 顶部那段 🔴。
+    try:
+        watchers = await friends.presence_watchers(conn, player_id)
+    except Exception:  # noqa: BLE001 - 推送是旁路，不许影响心跳本身
+        log.warning("在线状态推送：查好友失败 player=%s", player_id, exc_info=True)
+        return
+    if watchers:
+        _spawn(_fan_out(watchers, payload, player_id))
+
+
+# _spawn 起的发送任务。事件循环只弱引用任务，不留一份就可能还没跑完就被回收。
+# 同 matchmaking._background。
+_background: set[asyncio.Task] = set()
+
+
+def _spawn(coro) -> None:
+    """把推送排进事件循环，**不等它**。没有事件循环（同步测试）就不发。
+
+    同 matchmaking._spawn。
+    """
+    try:
+        task = asyncio.get_running_loop().create_task(coro)
+    except RuntimeError:
+        coro.close()
+        return
+    _background.add(task)
+    task.add_done_callback(_background.discard)
+
+
+async def _fan_out(watchers: list[uuid.UUID], payload: dict, player_id: uuid.UUID) -> None:
+    """把一条在线状态推给这些人。
+
+    🔴 **这个函数绝不能在心跳的请求里被 await，也绝不能串行发。**
+    2026-10-08 线上事故就是这么来的：原实现在 `async with db.pool().acquire()` 里
+    串行 `await hub.send_to_player(...)`，而 `realtime.Hub.send()` **没有超时**
+    （只有 broadcast / publish 才包 `_send_bounded`，那两处的注释写得很清楚：
+    「一条卡住的连接（手机进了隧道、TCP 还没断）不能让排在后面的几百个人收不到」）。
+    于是只要有一个好友的 TCP 发送缓冲塞住：
+      · 那个人的心跳请求**挂住不返回**
+      · 而且**一直占着一条数据库连接**
+    心跳是 10 秒一次、每个在线玩家都在发 —— 连接池很快被占满，
+    **整个账号服务器停止响应**（登录、好友、组队、匹配一起卡）。
+    `try/except` 挡不住这种情况：卡住不是异常。
+
+    所以这里有三道：**后台任务**（心跳不等）、**并发**（互不挡）、**每条有超时**。
+    """
+    hub = _hub()
+    timeout = realtime.BROADCAST_SEND_TIMEOUT_SEC
+
+    async def one(watcher_id: uuid.UUID) -> None:
+        try:
+            await asyncio.wait_for(hub.send_to_player(watcher_id, payload), timeout)
+        except TimeoutError:
+            log.info("在线状态推送超时 watcher=%s", watcher_id)
+        except Exception:  # noqa: BLE001 - 一条发不出去不该影响其他人
+            log.warning("在线状态推送失败 watcher=%s", watcher_id, exc_info=True)
+
+    try:
+        await asyncio.gather(*(one(w) for w in watchers))
+    except Exception:  # noqa: BLE001 - 后台任务，异常只能记日志
+        log.warning("在线状态扇出失败 player=%s", player_id, exc_info=True)
 
 
 async def _record_room_transition(
@@ -81,7 +237,7 @@ async def _record_room_transition(
 ) -> None:
     """房间号变了才写访问记录。**不是每次心跳都写。**
 
-    心跳每 60 秒一次，逐条记录等于每个在线玩家每分钟一行；
+    心跳 10 秒一次，逐条记录等于每个在线玩家每分钟六行；
     只记进出的话，一局对战只产生一行。
 
     ⚠️ 闭合上一段用 `left_at is null` 而不是取最新一行：客户端崩溃、

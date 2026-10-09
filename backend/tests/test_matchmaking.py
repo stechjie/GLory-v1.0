@@ -21,6 +21,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import pathlib
 import re
 import uuid
@@ -97,6 +98,21 @@ def _players(count: int) -> list[uuid.UUID]:
 def _fill(maker, players, mode=matchmaking.CASUAL) -> None:
     for pid in players:
         maker.join(pid, mode)
+
+
+async def _drain_background() -> None:
+    """把 `_spawn` 排出去的推送任务跑完。
+
+    同步路径（接口、断线回调）的推送走 `Matchmaker._push` -> `_spawn`，落在事件
+    循环里。**`await asyncio.sleep(0)` 不够** —— 那只让出一次，而 `_send_all` 里面
+    还有一层 `asyncio.gather`，断言会在它完成之前就跑，表现是「推送没发」的假阴性。
+    次数设上界，免得哪天真卡住了就把测试挂在这儿。
+    """
+    for _ in range(20):
+        pending = list(matchmaking._background)
+        if not pending:
+            return
+        await asyncio.gather(*pending)
 
 
 # --- 凑人 ---------------------------------------------------------------------
@@ -179,6 +195,67 @@ async def test_all_six_must_accept(mm) -> None:
     assert maker.accept(players[5])["state"] == "ready"
     for p in players:
         assert maker.state_of(p)["state"] == "ready"
+
+
+@pytest.mark.anyio
+async def test_ready_is_pushed_to_all_six(mm) -> None:
+    """🔴 全员确认必须**推**给六个人，不能只当成第 6 个人那次 accept 的返回值。
+
+    这条以前不存在，代价不是「另外五个慢 3 秒」，而是**玩家被踢回主界面**：
+    `PartyLobby._match_ready` 这个闩只在收到 match/ready 推送时置位，而它管着那个
+    7 秒轮询。推送不存在 -> 闩永不落 -> _finalise 刚把队伍房间删掉，轮询就问出
+    「我不在房里了」-> back_requested -> 主界面。连战斗服务器那一腿要过 DTLS、
+    入座、再等另外五人到齐（上限 90 秒），7 秒轮询几乎总是先到。
+    """
+    maker, rec, _ = mm
+    players = _players(6)
+    _fill(maker, players)
+    await maker.tick()
+    for p in players:
+        maker.accept(p)
+    await _drain_background()
+    for p in players:
+        assert "ready" in rec.states_for(p), "没有给 %s 推 ready" % p
+    ready = [p for p in (rec.last_for(pid) for pid in players) if p.get("state") == "ready"]
+    assert len(ready) == 6
+    # 每个人的 team 要是自己的那一份，不是抄同一个值。
+    teams = sorted(int(p["team"]) for p in ready)
+    assert teams == [0, 0, 0, 1, 1, 1]
+
+
+@pytest.mark.anyio
+async def test_accept_response_says_i_already_accepted(mm) -> None:
+    """「按了确定没反应」的根因：found 消息在「还没按」和「按了等别人」时一模一样。
+
+    客户端 _apply() 会用 found 分支整个重画界面（按钮重新可按、文案被盖掉、
+    弹窗音效再响一遍），而 3 秒一次的轮询会不停重画 —— 所以不是一闪而过。
+    最坏的后果是玩家以为没按到而去点「拒绝」，那会把另外五个人那一桌一起拆掉。
+    """
+    maker, _, _ = mm
+    players = _players(6)
+    _fill(maker, players)
+    await maker.tick()
+    before = maker.state_of(players[0])
+    assert before["state"] == "found"
+    assert before["accepted"] is False and before["accepted_count"] == 0
+
+    after = maker.accept(players[0])
+    assert after["state"] == "found"
+    assert after["accepted"] is True, "按了确认，回包却说没按 —— 界面没法和「没按」区分开"
+    assert after["accepted_count"] == 1
+    assert after["total"] == 6
+
+    # 轮询拿到的必须和 accept 的回包一致：两条路口径不同的话，按完之后下一次
+    # 轮询又会把界面打回「没按」的样子。
+    polled = maker.state_of(players[0])
+    assert polled["accepted"] is True and polled["accepted_count"] == 1
+
+    # 别人确认了，我这边的计数要跟着涨；而「我按了没」仍然只说我自己。
+    maker.accept(players[1])
+    mine = maker.state_of(players[0])
+    assert mine["accepted"] is True and mine["accepted_count"] == 2
+    other = maker.state_of(players[2])
+    assert other["accepted"] is False and other["accepted_count"] == 2
 
 
 @pytest.mark.anyio

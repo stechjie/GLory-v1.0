@@ -208,6 +208,10 @@ func _poll() -> void:
 
 func _apply(state: Dictionary) -> void:
 	var next := str(state.get("state", "idle"))
+	# 上一个状态要在覆盖之前记下来：下面 found 分支的音效只能在**刚进入** found
+	# 时响。原来是无条件 play，而 _poll() 每 3 秒就会带着同一个 found 再走一遍
+	# _apply —— 于是那 30 秒确认窗口里弹窗音效会响十次。
+	var previous := _state
 	_state = next
 	match next:
 		"queued":
@@ -219,22 +223,43 @@ func _apply(state: Dictionary) -> void:
 			_accept_btn.disabled = false
 			_leave_btn.text = _text("取消排队", "Leave Queue")
 		"found":
-			SfxService.play(SfxService.CUE_UI_POPUP)
+			if previous != "found":
+				SfxService.play(SfxService.CUE_UI_POPUP)
 			# 倒计时只是显示，真正的时限在服务器（见文件头第 2 条）。
 			_accept_deadline = Time.get_ticks_msec() / 1000.0 + minf(
 				ACCEPT_SEC, float(state.get("accept_sec", ACCEPT_SEC)))
 			_title.text = _text("找到对局！", "Match found!")
-			_set_detail(_text("六个人都确认才开始。不确认会被移出队列。",
-				"All six must accept. Not accepting drops you from the queue."))
-			_accept_btn.visible = true
-			_accept_btn.disabled = false
+			# 「我按了没」由服务器说（协议里原来没有这一位，所以按完之后这个分支会
+			# 把界面整个重画回「没按」的样子 —— 看起来就像没按到）。
+			var accepted := bool(state.get("accepted", false))
+			var done := int(state.get("accepted_count", 0))
+			var total := int(state.get("total", 6))
+			if accepted:
+				_set_detail(_text("已确认 %d/%d，等其他人…" % [done, total],
+					"Accepted %d/%d, waiting for others…" % [done, total]))
+				# 按钮留在原位但禁用：直接隐藏会让布局跳一下，而玩家刚按完正盯着它。
+				_accept_btn.visible = true
+				_accept_btn.disabled = true
+			else:
+				_set_detail(_text("六个人都确认才开始（%d/%d）。不确认会被移出队列。" % [done, total],
+					"All six must accept (%d/%d). Not accepting drops you from the queue." % [done, total]))
+				_accept_btn.visible = true
+				_accept_btn.disabled = false
 			_leave_btn.text = _text("拒绝", "Decline")
 		"ready":
 			_title.text = _text("准备进入对局", "Entering match")
 			_set_detail(_text("正在连接对战服务器…", "Connecting to the battle server…"))
 			_accept_btn.visible = false
 			_leave_btn.visible = false
-			match_ready.emit()
+			# 🔴 **只在刚进入 ready 时发一次。**
+			#
+			# ready 现在有两条送达路径：自己那次 accept 的 HTTP 回包，和服务端
+			# `_finalise` 的推送（后者是 2026-10-08 新加的，修「匹配成功跳主界面」）。
+			# 第 6 个按确认的人会两条都收到，发两次的后果不是多余而是**有害**：
+			# Main._on_match_ready() 第二遍会再调一次 team_join()，而它开头就
+			# reset()，等于把第一次正在进行的连接亲手拆掉。
+			if previous != "ready":
+				match_ready.emit()
 		_:
 			# idle：被解散、被移出队列、或者自己退了。
 			_title.text = _text("不在队列中", "Not in queue")

@@ -148,11 +148,30 @@ def idle_message(reason: str = "", by_name: str = "") -> dict:
     return out
 
 
-def found_message(match_uid: str, mode: str, accept_sec: float) -> dict:
-    """凑齐了，等确认。**这条不带名片** —— 名片等六个人都确认完才发得出去。"""
+def found_message(match_uid: str, mode: str, accept_sec: float,
+                  accepted: bool = False, accepted_count: int = 0,
+                  total: int = MATCH_SIZE) -> dict:
+    """凑齐了，等确认。**这条不带名片** —— 名片等六个人都确认完才发得出去。
+
+    🔴 `accepted` / `accepted_count` 是**必需的，不是锦上添花**。
+
+    此前这条消息在「还没按确认」和「我按了、在等别人」两种处境下**一模一样**：
+    `accept()` 没凑齐时回的就是它。于是客户端 `_on_accept()` 把文案改成
+    「已确认，等其他人…」之后，`_apply()` 立刻用 found 分支把界面整个重画回去 ——
+    按钮重新可按、文案被盖掉、弹窗音效再响一遍，**看起来就像没按到**。
+    而且 3 秒一次的轮询会不断重画，所以不是一闪而过。
+
+    后果不只是难看：玩家没法知道自己按上了，最坏是以为没按到而去点「拒绝」，
+    那会把另外五个人那一桌一起拆掉。
+
+    `member.accepted` 服务端一直存着（见 accept），只是从来没下发过。
+    """
     return {
         "t": MESSAGE_TYPE, "state": "found", "match_uid": match_uid,
         "mode": mode, "accept_sec": int(accept_sec),
+        "accepted": bool(accepted),
+        "accepted_count": int(accepted_count),
+        "total": int(total),
     }
 
 
@@ -213,6 +232,19 @@ class _Pending:
                 return m
         return None
 
+    def found_for(self, player_id: uuid.UUID, accept_sec: float) -> dict:
+        """给这个人看的 found 消息。**三个出口共用它** ——
+        `accept()` / `state_of()` / `join()` 各拼一遍的话，总有一个会漏掉
+        `accepted`，而漏掉的症状正是「按了确定没反应」。
+        """
+        member = self.member(player_id)
+        return found_message(
+            self.match_uid, self.mode, accept_sec,
+            accepted=member is not None and member.accepted,
+            accepted_count=sum(1 for m in self.members if m.accepted),
+            total=len(self.members),
+        )
+
 
 @dataclass
 class Assignment:
@@ -267,8 +299,7 @@ class Matchmaker:
             return self.state_of(player_id)
         if player_id in self._pending_of:
             pending = self._pending[self._pending_of[player_id]]
-            return found_message(pending.match_uid, pending.mode,
-                                 max(0.0, pending.deadline - self._now()))
+            return pending.found_for(player_id, max(0.0, pending.deadline - self._now()))
         # 已经拿到分配、还没去连战斗服务器：不许重排，否则会同时出现在两局里。
         if self.assignment_for(player_id) is not None:
             assignment = self._assignments[player_id]
@@ -394,16 +425,14 @@ class Matchmaker:
         if all(m.accepted for m in pending.members):
             self._finalise(pending)
             return ready_message(pending.match_uid, pending.mode, member.team)
-        return found_message(pending.match_uid, pending.mode,
-                             max(0.0, pending.deadline - self._now()))
+        return pending.found_for(player_id, max(0.0, pending.deadline - self._now()))
 
     def state_of(self, player_id: uuid.UUID) -> dict:
         """当前状态。给 WS 断着的客户端轮询用 —— 推送不是唯一的送达路径。"""
         match_uid = self._pending_of.get(player_id)
         if match_uid is not None:
             pending = self._pending[match_uid]
-            return found_message(pending.match_uid, pending.mode,
-                                 max(0.0, pending.deadline - self._now()))
+            return pending.found_for(player_id, max(0.0, pending.deadline - self._now()))
         assignment = self.assignment_for(player_id)
         if assignment is not None:
             return ready_message(assignment.match_uid, assignment.mode, assignment.team)
@@ -687,7 +716,7 @@ class Matchmaker:
         return out
 
     def _finalise(self, pending: _Pending) -> None:
-        """六个人都确认了：登记分配，等他们各自来领名片。队伍房间这时才关。"""
+        """六个人都确认了：登记分配、**推 ready**，等他们各自来领名片。队伍房间这时才关。"""
         self._pending.pop(pending.match_uid, None)
         expires_at = self._now() + ASSIGNMENT_TTL_SEC
         for member in pending.members:
@@ -698,6 +727,25 @@ class Matchmaker:
         if pending.parties:
             from app import party
             party.current().finish_for_match([m.player_id for m in pending.members])
+        # 🔴 **这条推送以前不存在，而客户端一直在等它。**
+        #
+        # `ready_message` 原来只是 accept() / state_of() / join() 的**返回值** ——
+        # 也就是说只有第 6 个按确认的人能从自己那个 HTTP 响应里拿到 ready，另外五个
+        # 得靠 3 秒一次的轮询问出来。`found_message` 是进 tick 的 messages 真推出去的，
+        # 这条从来没有。
+        #
+        # 代价不是「慢 3 秒」，是**玩家被踢回主界面**：
+        #   PartyLobby 有一个专门的闩 `_match_ready`（它的 7 秒轮询和 _refresh_room_now
+        #   都看这个闩），而它**唯一的置位点是收到 match/ready 推送**。推送不存在 ->
+        #   闩永不落 -> 上面那行 finish_for_match 刚把队伍房间删掉，PartyLobby 的 7 秒
+        #   轮询就问出「我不在房里了」-> back_requested -> 主界面。
+        #   而连战斗服务器那一腿要过 DTLS、入座、再等另外五个人到齐（上限 90 秒），
+        #   7 秒的轮询几乎总是先到 —— 所以这是必然，不是偶发。
+        #
+        # 用 _push（同步路径排进事件循环、不等）：accept() 是同步的，而拆桌那条路
+        # （_decline）本来就是这么推的。
+        self._push([(m.player_id, ready_message(pending.match_uid, pending.mode, m.team))
+                    for m in pending.members])
         log.info("对局全员确认 match=%s mode=%s", pending.match_uid, pending.mode)
 
     def _position_updates(self, now: float) -> list[tuple[uuid.UUID, dict]]:
