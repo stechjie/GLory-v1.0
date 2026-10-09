@@ -259,5 +259,75 @@ class PartyRoomRuleTests(unittest.TestCase):
         self.assertEqual(ctx.exception.code, "in_queue")
 
 
+class PartyHostPetTests(unittest.TestCase):
+    """10.09：房主的出战宠物**必须**出现在展示列表里（不能取消），且快照带 host_pet。
+
+    展示与发声两层都靠它：客户端把「就是房主那只」的行锁死、并拿它当排位的发声宠物；
+    服务端保证它始终在 room.pets 里，并把 host_pet 送进快照。
+    """
+
+    def setUp(self):
+        self.clock = Clock()
+        self.parties = party.Parties(now=self.clock)
+        self.host = player(1)
+
+    # ---- 纯静态：强制入列的判据 ----------------------------------------
+    def test_with_host_pet_forces_inclusion(self):
+        out = party.Parties._with_host_pet(["pet_cat", "pet_rabbit"], "pet_fox")
+        self.assertEqual(out, ["pet_cat", "pet_rabbit", "pet_fox"],
+                         "房主宠物不在列表里时要补上")
+
+    def test_with_host_pet_caps_at_max(self):
+        out = party.Parties._with_host_pet(["a", "b", "c", "d", "e"], "pet_fox")
+        self.assertEqual(len(out), party.MAX_PETS)
+        self.assertIn("pet_fox", out)
+        self.assertNotIn("e", out, "满 5 只时挤掉最后一只给房主宠物让位")
+
+    def test_with_host_pet_keeps_order_and_dedups(self):
+        self.assertEqual(party.Parties._with_host_pet(["a", "b"], "a"), ["a", "b"],
+                         "已在列表里就原样（顺序不变、不重复）")
+        self.assertEqual(party.Parties._with_host_pet(["a", "a", "b"], ""), ["a", "b"],
+                         "房主没设出战宠物（空串）时只做去重")
+
+    # ---- create / 快照 -------------------------------------------------
+    def test_create_keeps_host_pet_and_snapshot(self):
+        room = self.parties.create(self.host, card(1), "casual",
+                                   ["pet_cat", "pet_rabbit"], "pet_fox")
+        self.assertIn("pet_fox", room.pets, "建房展示列表必须含房主出战宠物")
+        self.assertEqual(self.parties.snapshot(room)["host_pet"], "pet_fox",
+                         "快照要带 host_pet 给客户端")
+
+    def test_snapshot_host_pet_empty_without_active(self):
+        room = self.parties.create(self.host, card(1), "casual", ["pet_cat"])
+        self.assertEqual(self.parties.snapshot(room)["host_pet"], "",
+                         "房主没设出战宠物时 host_pet 是空串，不该报错")
+
+    # ---- PUT /pets 不能把房主宠物踢掉 ----------------------------------
+    def test_update_cannot_drop_host_pet(self):
+        room = self.parties.create(self.host, card(1), "casual", ["pet_cat"], "pet_fox")
+        self.parties.pets(self.host, ["pet_cat", "pet_rabbit"])
+        self.assertIn("pet_fox", room.pets, "房主宠物不能被取消展示")
+        self.assertEqual(room.pets, ["pet_cat", "pet_rabbit", "pet_fox"])
+
+    # ---- 房主交接 / 踢人：出战宠物记录跟着走 -----------------------------
+    def test_host_pet_follows_host_migration(self):
+        room = self.parties.create(self.host, card(1), "casual", [], "pet_fox")
+        guest = player(2)
+        self.parties.invite(self.host, guest)
+        self.parties.join(guest, room.id, card(2), "pet_owl")
+        self.parties.leave(self.host)
+        self.assertEqual(room.host, guest, "房主退出应交接给剩下的成员")
+        self.assertEqual(self.parties.snapshot(room)["host_pet"], "pet_owl",
+                         "交接后 host_pet 要跟着新队长走")
+
+    def test_kick_clears_active_pet(self):
+        room = self.parties.create(self.host, card(1), "casual", [], "pet_fox")
+        guest = player(2)
+        self.parties.invite(self.host, guest)
+        self.parties.join(guest, room.id, card(2), "pet_owl")
+        self.parties.kick(self.host, guest)
+        self.assertNotIn(guest, room.active_pets, "被踢的人不该再留着出战宠物记录")
+
+
 if __name__ == "__main__":
     unittest.main()

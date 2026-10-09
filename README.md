@@ -1,5 +1,26 @@
 # Glory Beta 0.04
 
+## 2026-10-09（排位房）：房主出战宠物「必须显示 + 锁死变暗 + 只听它脚步声」
+
+按真机反馈做的两轮。**显示功能基本不动**，动的是「谁出声」和「房主那行锁不锁」。**改动只有代码 + 门禁，无新增运行资源、未重导 EXE/APK、已同步 `GLory-v1.0`、未 `git add/commit/push`（由你本地提交）。**
+
+- **大厅**：显示自己**全部**宠物（现状不变），但**只有自己出战宠物**（`PlayerProfile.active_pet`）的脚步能听见 —— `scenes/menu/MainMenuPet.gd` 新增纯静态 `pet_is_audible()`，`_spawn_pet` 把它写进 `entry.audible`，`_play_footstep` 最前面按它静音。其余宠物**照常生成、照常走动**，只是走到该迈步时一声不响。
+- **排位房**：显示仍走房间共享列表（房主用「展示宠物」抽屉挑，全队看同一份），但**房主的出战宠物被强制加进这一份**（`with_host_pet()`：去重 / 缺则挤掉末位补上 / 封顶 5）—— 那行**始终打勾、`disabled` 点不动（＝走暗色样式）、不接 `pressed`**，`_toggle_pet` 另有第二道闸；**全队只有房主的出战宠物**发得出脚步（`configure_party_display(..., audible_id)`）。
+- **服务端**：`backend/app/party.py` 的 `Room` 增 `active_pets`（成员→出战宠物，**用 dict 让房主交接时 `host_pet` 自动跟新队长走**）＋ 纯静态 `_with_host_pet()`（`create` 与 `PUT /pets` 都走它，**服务端兜底：踢不掉**）；`snapshot()` 增 `"host_pet"`；`backend/app/routes/party.py` 建房/入房读 `shop.read_pets(...).active` 传下去。
+- ★ **真机复测修复（19:50）**：客户端默认连**远程已部署后端**（`scripts/account/AccountConfig.gd` 的 `DEFAULT_BACKEND_URL`），本地 `backend/` 改了**不进真机** ⇒ 快照里没有 `host_pet` ⇒ 房主那行**既不锁也不暗、还能点掉**。修法＝`_host_pet()` 加**客户端兜底**（`host_pet` 为空且自己是房主 ⇒ 用自己已知的出战宠物），显示列表也走 `_display_pet_ids()`。★ **注意：队友要看到/听到房主的宠物，仍需把后端部署到线上并重启** —— 客户端兜底只覆盖**房主本人**这一侧。
+- ★ 变暗**本来就没坏**：`_style_paper_button` 早就定义了 `disabled` 暗色样式（`Color(0.66,0.67,0.63,0.74)` ＋ 字色 `d1c8ad`），是 `disabled` 从没被置真。
+
+详见 [10.09排位房主出战宠物修复记录](docs/10.09排位房主出战宠物修复记录.md)。
+
+### 门禁 / 测试
+
+| 名称 | 条数 | 覆盖 | 变异 |
+|---|---|---|---|
+| `tools/party_lobby_rules_check.tscn` | **112**（10.09 批 98 → 112） | 房主宠物那行锁定 / 打勾 / 不接 `pressed` ＋ `host_pet_of` 3 条 ＋ `with_host_pet` 7 条真值表 ＋ **运行期真调 `_host_pet()` 3 条** | 4/4 CAUGHT |
+| `tools/pet_footstep_check.tscn` | **35**（原 22） | 只有一只发得出声：大厅＝自己的 / 排位＝房主的；`entry.audible` 静音门 ＋ 行为 | 2/2 CAUGHT |
+| `tools/cold_parse_chain_check.tscn` | 354 | 全量解析链未破坏 | — |
+| `backend/tests/test_party_room_stdlib.py` | **22**（原 14） | `_with_host_pet` 强制入列 / `PUT /pets` 踢不掉 / 快照带 `host_pet` | 2/2 CAUGHT |
+
 ## 2026-10-09（真机返工）：`10.09bug提交及修复.docx` 4 条
 
 按文档逐条落码。**改动只有代码 + 门禁，无新增运行资源、未重导 EXE/APK、未真机验证、本轮回测后已同步 `GLory-v1.0`、未 `git add/commit/push`（由你本地提交）。**

@@ -50,6 +50,8 @@ const PRESENCE_PUSH := "presence"
 const FRIENDS_REFRESH_SEC := 5.0
 # 只能单人或满 3 人开始匹配（docs/排位系统设计.md；服务器 matchmaking.PARTY_SIZES 同口径）。
 const STARTABLE_SIZES := [1, 3]
+# 排位房展示宠物的上限（与服务端 party.MAX_PETS 一致）：房主的出战宠物必占一席。
+const MAX_DISPLAY_PETS := 5
 # 10-08 用户要求：**所有按键大小照自定义房间**（Team3v3Lobby）走，图案不变。
 # 两个房间的设计稿都是 1672×941，尺寸一比一照搬；括号里是 Team3v3Lobby 的出处。
 const BACK_SIZE := Vector2(143, 83)            # 返回（_build 里 TEX_BACK 那颗）
@@ -386,10 +388,13 @@ func _show_local_identity() -> void:
 			"avatar": str(profile.get("avatar", AVATARS.default_avatar())),
 			"avatar_frame": str(profile.get("avatar_frame", AVATARS.default_frame())),
 			"tier": -1, "host": true, "ready": true}],
-		"pets": selected, "messages": [], "queued": false}
+		"pets": with_host_pet(selected, str(PlayerProfile.active_pet)),
+		"host_pet": str(PlayerProfile.active_pet),
+		"messages": [], "queued": false}
 	_render_seats()
 	_render_pets()
-	_stage.configure_party_display(selected, Vector2(385, 315), Vector2(920, 355))
+	_stage.configure_party_display(_display_pet_ids(), Vector2(385, 315), Vector2(920, 355),
+		_audible_pet())
 	_mode_casual.disabled = true
 	_mode_ranked.disabled = true
 	_style_mode(_mode_casual, _initial_mode == "casual")
@@ -435,7 +440,8 @@ func _apply(next: Dictionary) -> void:
 	_render_seats()
 	_render_chat()
 	_render_pets()
-	_stage.configure_party_display(_room.get("pets", []), Vector2(385, 315), Vector2(920, 355))
+	_stage.configure_party_display(_display_pet_ids(), Vector2(385, 315), Vector2(920, 355),
+		_audible_pet())
 	if _preview == "":
 		_party_voice.configure(_room)
 	var members: Array = _room.get("members", [])
@@ -628,14 +634,20 @@ func _render_pets() -> void:
 	var owned: Array = PlayerProfile.owned_pets
 	if _preview != "":
 		owned = ["pet_cat", "pet_rabbit", "pet_mushroom"]
+	var host_pet := _host_pet()
 	for raw in owned:
 		var pet_id := str(raw)
+		# 10.09：房主的出战宠物必须展示 —— 始终打勾、勾选锁死（点不动）、走暗色
+		# （复用 Button 的 disabled 样式）。其余行照旧可勾可选。
+		var locked := pet_row_locked(pet_id, host_pet)
+		var checked := selected.has(pet_id) or locked
 		var choice := ACTION.instantiate() as Button
-		choice.text = ("✓  " if selected.has(pet_id) else "○  ") + _pet_name(pet_id)
+		choice.text = ("✓  " if checked else "○  ") + _pet_name(pet_id)
 		choice.custom_minimum_size = Vector2(295, 50)
-		_style_paper_button(choice, selected.has(pet_id))
-		choice.disabled = _local_only or not _is_host() or bool(_room.get("queued", false))
-		choice.pressed.connect(func() -> void: _toggle_pet(pet_id))
+		_style_paper_button(choice, checked)
+		choice.disabled = locked or _local_only or not _is_host() or bool(_room.get("queued", false))
+		if not locked:
+			choice.pressed.connect(func() -> void: _toggle_pet(pet_id))
 		_pet_list.add_child(choice)
 	if owned.is_empty():
 		var hint := Label.new()
@@ -959,6 +971,9 @@ func _invite(code: String) -> void:
 func _toggle_pet(pet_id: String) -> void:
 	if _local_only:
 		return
+	# 10.09：房主的出战宠物不能被取消展示（UI 那行已锁死，这里是第二道闸）。
+	if pet_row_locked(pet_id, _host_pet()):
+		return
 	var chosen: Array = (_room.get("pets", []) as Array).duplicate()
 	if chosen.has(pet_id):
 		chosen.erase(pet_id)
@@ -1046,6 +1061,58 @@ func _is_host() -> bool:
 	return str(_room.get("host_code", "")) == str(AccountManager.profile.get("friend_code", ""))
 
 
+# 10.09：房主的出战宠物（服务端快照带 host_pet）。它**必须**出现在展示列表里，
+# 那行的勾选锁死（点不动 + 暗色），并且排位里只有它的脚步声能被听见。
+func _host_pet() -> String:
+	return host_pet_of(str(_room.get("host_pet", "")), _is_host(),
+		str(PlayerProfile.active_pet))
+
+
+# 排位里该发声的那只 = 房主的出战宠物。万一快照没带（旧服务端 / 房主没设置出战宠物）
+# 就退回自己的出战宠物，免得整屋静音。
+func _audible_pet() -> String:
+	var host_pet := _host_pet()
+	return host_pet if not host_pet.is_empty() else str(PlayerProfile.active_pet)
+
+
+# 舞台上该展示的宠物列表：房间选中的那批，但**房主的出战宠物必须在里头**
+# （旧服务端没把它塞进 room.pets 时由客户端补，规则与服务端 `_with_host_pet` 一致）。
+func _display_pet_ids() -> Array:
+	return with_host_pet(_room.get("pets", []), _host_pet())
+
+
+# ★ 10.09 真机复测的兜底：线上后端若还没带上 host_pet（旧版本 / 未部署），
+#   `_room.get("host_pet")` 是空串 ⇒ 房主那行既不锁也不暗（真机 bug）。
+#   但只要「房主就是本机玩家」，他的出战宠物客户端本来就知道（PlayerProfile.active_pet），
+#   所以房主这一侧照样锁得死。纯静态（入参即全部依赖）⇒ 门禁可直接喂数据驱动。
+static func host_pet_of(room_host_pet: String, is_host: bool, own_active_pet: String) -> String:
+	if room_host_pet != "":
+		return room_host_pet
+	if is_host:
+		return own_active_pet
+	return ""
+
+
+# 10.09：某一行的勾选是否该锁死 —— 房主的出战宠物必须展示、不能取消（点不动 + 暗色）。
+# 纯静态（入参即全部依赖）⇒ 门禁可以直接喂 id 驱动验证，不必实例化整个房间界面。
+static func pet_row_locked(pet_id: String, host_pet: String) -> bool:
+	return not host_pet.is_empty() and pet_id == host_pet
+
+
+# 10.09：展示列表必须含房主的出战宠物 —— 去重、缺则挤掉末位补上、封顶 MAX_DISPLAY_PETS。
+# 与服务端 `Party._with_host_pet` **同一规则**（纯静态 ⇒ 门禁可直接喂数据驱动）。
+static func with_host_pet(pet_ids: Array, host_pet: String) -> Array:
+	var out: Array = []
+	for raw in pet_ids:
+		var pet_id := str(raw)
+		if pet_id != "" and not out.has(pet_id):
+			out.append(pet_id)
+	if host_pet != "" and not out.has(host_pet):
+		out = out.slice(0, MAX_DISPLAY_PETS - 1)
+		out.append(host_pet)
+	return out.slice(0, MAX_DISPLAY_PETS)
+
+
 # 「房主更换了休闲/排位模式」提示到时自动清掉，别一直挂在通知栏上。
 # 显示一条「过几秒自动消失」的提示，并把它记成 sticky —— `_apply()` 收尾会把它
 # 补回 `_notice`，不会被「按房主/队员身份重写 _notice」那一步冲掉（见 _apply 末尾）。
@@ -1094,7 +1161,7 @@ func _preview_room() -> Dictionary:
 			 "avatar_frame": AVATARS.default_frame(), "tier": 3, "host": true, "ready": true},
 			{"friend_code": "EFGH5678", "player_name": "风铃", "avatar": AVATARS.default_avatar(),
 			 "avatar_frame": AVATARS.default_frame(), "tier": 2, "host": false, "ready": _preview == "host"},
-		], "pets": ["pet_cat", "pet_rabbit", "pet_mushroom"], "messages": [
+		], "pets": ["pet_cat", "pet_rabbit", "pet_mushroom"], "host_pet": "pet_cat", "messages": [
 			{"name": "星河", "text": "等你准备，我们就去排位。"},
 			{"name": "风铃", "text": "好，宠物都在这里呢！"}], "queued": false}
 

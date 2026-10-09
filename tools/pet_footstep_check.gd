@@ -18,6 +18,11 @@ extends Node
 #   6. **独立性行为**：5 只宠物在同一个「帧」里同时跨过步频阈值，应当**各自**响一声
 #      （这正是共享池做不到的，用纯静态 advance_footstep 直接驱动证明）；
 #   7. 静音门：关掉「界面音效」时 _play_footstep 一声不响、也不记账。
+#   8. **只发一只（10.09）**：宠物照常全部显示，但只有一只的脚步能响 —— 大厅 = 玩家
+#      自己的出战宠物（PlayerProfile.active_pet），排位 = **房主的**出战宠物（由
+#      PartyLobby 经 configure_party_display 传 audible_id 进来）。用纯静态
+#      pet_is_audible / audible_pet_id 喂 id 直接验，再验 _play_footstep 真的按
+#      entry.audible 静音（非发声那只不响、该响那只是正常响）。
 #
 # 运行：
 #   Godot_v4.7.2-stable_win64_console.exe --headless --path . tools/pet_footstep_check.tscn
@@ -37,6 +42,7 @@ func _ready() -> void:
 	_check_cue_and_file()
 	_check_call_site()
 	_check_independence_structure()
+	_check_active_pet_scope()
 	_check_cadence()
 	_check_simultaneous_independence()
 	_check_mute_gate()
@@ -117,6 +123,96 @@ func _check_independence_structure() -> void:
 		"没有为每只宠物单独建一个脚步声播放器（entry 缺少 footstep_player 键）")
 
 
+# --- 3b. 只发出战宠物（10.09）--------------------------------------------------
+
+# 显示不变（每只宠物照常出、照常走），但**只有出战宠物（PlayerProfile.active_pet）
+# 的脚步能被听见**，其余静音。分两层钉：
+#   a) 纯静态判据 pet_is_audible 的合同（喂 id 直接验，不必实例化 3D 舞台）；
+#   b) _play_footstep 真的按 entry.audible 静音 —— 非出战宠物不响、出战宠物照常响。
+func _check_active_pet_scope() -> void:
+	# a) 静态判据：命中出战宠物才可发声；没选（空串）/不是它都不行。
+	_h.expect(MainMenuPet.pet_is_audible("pet_rabbit", "pet_rabbit"),
+		"active_pet_not_audible",
+		"pet_is_audible 把「正是出战宠物」判成了不可发声")
+	_h.expect(not MainMenuPet.pet_is_audible("pet_mushroom", "pet_rabbit"),
+		"non_active_pet_audible",
+		"pet_is_audible 把「非出战宠物」也判成可发声 —— 脚步声仍会吵")
+	_h.expect(not MainMenuPet.pet_is_audible("pet_rabbit", ""),
+		"empty_active_pet_audible",
+		"没有出战宠物（active_pet 为空）时仍判可发声，应一律静音")
+
+	# a2) 外部指定发声宠物（排位 = 房主的出战宠物，10.09）：audible_pet_id 的合同。
+	#     大厅（非外部）用玩家自己的出战宠物；排位（外部）用传进来那只。
+	_h.expect(MainMenuPet.audible_pet_id(false, "", "pet_rabbit") == "pet_rabbit",
+		"lobby_audible_not_own_pet",
+		"大厅（非外部）该发声的应是玩家自己的出战宠物 active_pet")
+	_h.expect(MainMenuPet.audible_pet_id(true, "pet_cat", "pet_rabbit") == "pet_cat",
+		"party_audible_ignores_own_pet",
+		"排位（外部）该发声的应是传进来那只（房主的出战宠物），不是自己的")
+	_h.expect(not MainMenuPet.pet_is_audible("pet_rabbit",
+			MainMenuPet.audible_pet_id(true, "", "pet_rabbit")),
+		"party_missing_host_pet_audible",
+		"排位没拿到房主出战宠物（空）时，任何宠物都不该发声")
+
+	# b-1) 结构：源码必须真的引用 active_pet，并把判据接到发声链路。
+	var src := _code_only(FileAccess.get_file_as_string(
+		"res://scenes/menu/MainMenuPet.gd"))
+	_h.expect(src.contains("PlayerProfile.active_pet"),
+		"active_pet_not_referenced",
+		"MainMenuPet.gd 没引用 PlayerProfile.active_pet —— 无从判断谁是出战宠物")
+	_h.expect(src.contains("pet_is_audible("),
+		"audible_helper_unused",
+		"源码里没有调用 pet_is_audible( —— 出战宠物的判据没接到发声上")
+	_h.expect(src.contains("_external_audible_id"),
+		"external_audible_not_stored",
+		"MainMenuPet.gd 没保存 PartyLobby 传进来的发声宠物 id（_external_audible_id）")
+	_h.expect(src.contains("func _audible_pet_id() -> String:"),
+		"audible_pet_resolver_missing",
+		"要有 _audible_pet_id()：把「大厅=自己 / 排位=房主」的判据接到 spawn 上")
+
+	# b-2) 行为：真实播放器 + 真实静音门前置，验「非出战静音、出战照常响」。
+	var holder := Node3D.new()
+	add_child(holder)
+	var player := AudioStreamPlayer.new()
+	player.name = MainMenuPet.FOOTSTEP_PLAYER_NAME
+	player.bus = "SFX" if AudioServer.get_bus_index("SFX") >= 0 else "Master"
+	player.stream = load(SfxService.cue_path(SfxService.CUE_PET_FOOTSTEP)) as AudioStream
+	holder.add_child(player)
+
+	var mm = MainMenuPet.new()
+	var master := AudioServer.get_bus_index("Master")
+	var mute_before: bool = AudioServer.is_bus_mute(master) if master >= 0 else false
+	var disk_state := _snapshot_profile_file()
+	PlayerProfile.set_presentation_toggle("ui_sound", true)
+	if master >= 0:
+		AudioServer.set_bus_mute(master, false)
+
+	# 非出战宠物：audible=false ⇒ 一声不响。
+	var quiet := {"footstep_player": player, "audible": false,
+		"state": "walk", "footstep_accum": 0.0}
+	player.stop()
+	mm._play_footstep(quiet)
+	_h.expect(not player.playing, "non_active_pet_played",
+		"非出战宠物（audible=false）仍然响了脚步 —— 静音没生效")
+
+	# 出战宠物：audible=true ⇒ 照常响（不能把唯一该响的那只也静音了）。
+	var loud := {"footstep_player": player, "audible": true,
+		"state": "walk", "footstep_accum": 0.0}
+	player.stop()
+	mm._play_footstep(loud)
+	_h.expect(player.playing, "active_pet_silenced",
+		"出战宠物（audible=true）没响 —— 连唯一该响的那只也被静音了")
+
+	# 收尾：摆回「开」+ 还原磁盘（同 _check_mute_gate 的教训）。
+	PlayerProfile.set_presentation_toggle("ui_sound", true)
+	if master >= 0:
+		AudioServer.set_bus_mute(master, mute_before)
+	_h.expect(_restore_profile_file(disk_state), "profile_restore_failed_scope",
+		"收尾没能把 profile.json 还原成跑之前的字节 —— 下一跑前置条件不再可控")
+	mm.free()
+	holder.free()
+
+
 # --- 4. 步频行为：行走发声、停下静默 -----------------------------------------
 
 func _check_cadence() -> void:
@@ -188,8 +284,10 @@ func _check_mute_gate() -> void:
 	holder.add_child(player)
 
 	# 需要一只 MainMenuPet 实例来调它的 _play_footstep（纯实例方法，不依赖 _ready）。
+	# 这条只验「静音门」，所以把 audible 显式置 true，隔离掉出战宠物的判定。
 	var mm = MainMenuPet.new()
-	var entry := {"footstep_player": player, "state": "walk", "footstep_accum": 0.0}
+	var entry := {"footstep_player": player, "audible": true,
+		"state": "walk", "footstep_accum": 0.0}
 
 	var master := AudioServer.get_bus_index("Master")
 	var mute_before: bool = AudioServer.is_bus_mute(master) if master >= 0 else false

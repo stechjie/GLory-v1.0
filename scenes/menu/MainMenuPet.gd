@@ -15,6 +15,11 @@ const REF_SIZE := Vector2(1672.0, 941.0)   # 与 MainMenu 同一套参考画布
 # 破坏「所有宠物独立播放」。新播放器命名刻意避开 GlorySfxVoice* / GlorySfxLoopVoice，
 # 也**不是 root 的子节点**（挂在 pet Node3D 下），否则会被 audio_sfx_check 的
 # 「播放器池 == 8」断言误伤。
+#
+# 10.09 改口径：**宠物照常全部显示，但脚步声只发一只** —— 大厅听玩家**自己的**
+# 出战宠物（PlayerProfile.active_pet），排位听**房主的**出战宠物（由 PartyLobby 经
+# configure_party_display 传 audible_id 进来）。其余宠物仍各自持有独立播放器
+# （结构不变），只是 _play_footstep 按 entry.audible 静音。
 const SfxService := preload("res://ui/services/SfxService.gd")
 const Presentation := preload("res://effects/runtime/presentation/PresentationSettings.gd")
 # 包围盒用 PetPreview.aabb_of：蒙皮宠物要按绑定量，见那边 mesh_box_in 的说明。
@@ -73,13 +78,19 @@ var _rng := RandomNumberGenerator.new()
 var _footstep_stream: AudioStream = null
 var _external_pet_ids: Array = []
 var _use_external_pets := false
+# 10.09：排位场景下该发声的那只 —— 由 PartyLobby 传进来（房主的出战宠物）。
+# 大厅场景不用它（发声 = 玩家自己的出战宠物，见 _audible_pet_id）。
+var _external_audible_id := ""
 var _area_pos := AREA_POS
 var _area_size := AREA_SIZE
 
-func configure_party_display(ids: Array, area_pos: Vector2, area_size: Vector2) -> void:
-	var changed := not _use_external_pets or _external_pet_ids != ids
+func configure_party_display(ids: Array, area_pos: Vector2, area_size: Vector2,
+		audible_id: String = "") -> void:
+	var changed := (not _use_external_pets or _external_pet_ids != ids
+			or _external_audible_id != audible_id)
 	_use_external_pets = true
 	_external_pet_ids = ids.duplicate()
+	_external_audible_id = audible_id
 	_area_pos = area_pos
 	_area_size = area_size
 	if is_inside_tree():
@@ -225,6 +236,12 @@ func _make_shadow_texture() -> GradientTexture2D:
 	return tex
 
 # ── 宠物生成 ────────────────────────────────────────────────────
+# 10.09：当前该发声的那只 id。大厅 = 玩家自己的出战宠物；排位 = 房主的出战宠物
+# （由 configure_party_display 传进来）。判据是纯静态 audible_pet_id，便于门禁驱动。
+func _audible_pet_id() -> String:
+	return audible_pet_id(_use_external_pets, _external_audible_id,
+		str(PlayerProfile.active_pet))
+
 func _rebuild_pets() -> void:
 	for item in _pets:
 		var node := item.node as Node3D
@@ -274,6 +291,11 @@ func _spawn_pet(pet_id: String, index: int, total: int) -> void:
 		0.0, _rng.randf_range(-GROUND_HALF_Z, GROUND_HALF_Z))
 	node.position = Vector3(start.x, node.position.y, start.z)
 
+	# 10.09：只有该发声的那只（大厅=自己的出战宠物；排位=房主的出战宠物）能出声，
+	# 其余照常走、但静音。spawn 时判定一次；大厅里 active_pet 变化会经 pets_changed
+	# 触发 _rebuild_pets 重建。
+	var audible := pet_is_audible(pet_id, _audible_pet_id())
+
 	var entry := {
 		"id": pet_id,
 		"node": node,
@@ -285,6 +307,7 @@ func _spawn_pet(pet_id: String, index: int, total: int) -> void:
 		"base_y": node.position.y,
 		"footstep_player": footstep_player,
 		"footstep_accum": 0.0,
+		"audible": audible,
 	}
 	_pets.append(entry)
 	_play(node, "idle")
@@ -425,6 +448,17 @@ func _play(node: Node3D, action: String) -> void:
 
 # ── 9.26 大厅宠物脚步声 -------------------------------------------------------
 #
+# 10.09 只发出战宠物：谁该出声，用一个**纯静态**判据决定（入参即全部依赖），
+# 门禁不用实例化 3D 舞台就能直接喂 id 驱动验证。active_pet 为空（还没选出战
+# 宠物）时一律静音 —— 宁可不响，也不要满场都是脚步。
+static func pet_is_audible(pet_id: String, active_pet: String) -> bool:
+	return not active_pet.is_empty() and pet_id == active_pet
+
+# 10.09：当前该发声的那只 id。大厅（非外部）用玩家自己的出战宠物；排位（外部）
+# 用 PartyLobby 传进来的那只（房主的出战宠物）。纯静态 ⇒ 门禁可不实例化直接驱动。
+static func audible_pet_id(use_external: bool, external_id: String, active_pet: String) -> String:
+	return external_id if use_external else active_pet
+
 # advance_footstep 是**纯静态**函数：只读写传进来的 entry 字典里的
 # `state` / `footstep_accum`，不碰任何实例成员。这样门禁可以不实例化整棵
 # MainMenuPet（那只为了出一张 3D 舞台要加载宠物模型，headless 太重且易失败），
@@ -446,7 +480,10 @@ static func advance_footstep(entry: Dictionary, delta: float) -> bool:
 # 真的把这一声放出去。每宠物一个独立播放器，所以"所有宠物独立播放"天然成立 ——
 # 不走 SfxService.play()（那套有 40ms 全局重触发保护，会吞掉同帧的其余脚步）。
 # 静音门与全局一致：关掉「界面音效」或 Master 总线静音时一声不响、也不记账。
+# 10.09：出场宠物之外一律不发声（entry.audible，见 pet_is_audible）。
 func _play_footstep(entry: Dictionary) -> void:
+	if not bool(entry.get("audible", false)):
+		return
 	if not Presentation.ui_sound_allowed():
 		return
 	var player := entry.get("footstep_player", null) as AudioStreamPlayer

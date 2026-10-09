@@ -45,6 +45,11 @@ class Room:
     members: list[uuid.UUID]
     profiles: dict[uuid.UUID, dict]
     pets: list[str] = field(default_factory=list)
+    # 每个成员「出战宠物」id（10.09）。房主的出战宠物**必须**出现在展示列表里，
+    # 且排位里只有它的脚步声能被听见 —— 所以快照要带 host_pet 给客户端。
+    # 用 dict 而不是单字段：房主交接时 host_pet 自动跟着新 host 走，
+    # 不必在那个同步路径里再去查库（leave() 是纯内存操作）。
+    active_pets: dict[uuid.UUID, str] = field(default_factory=dict)
     ready: set[uuid.UUID] = field(default_factory=set)
     queued: bool = False
     version: int = 1
@@ -75,14 +80,18 @@ class Parties:
     def by_id(self, room_id: str) -> Room | None:
         return self._rooms.get(room_id)
 
-    def create(self, player: uuid.UUID, profile: dict, mode: str, pets: list[str]) -> Room:
+    def create(self, player: uuid.UUID, profile: dict, mode: str, pets: list[str],
+               active_pet: str = "") -> Room:
         existing = self.of(player)
         if existing is not None:
             return existing
         if mode not in ("casual", "ranked"):
             raise PartyRejected("bad_mode", "没有这个匹配模式")
         room_id = secrets.token_urlsafe(12)
-        room = Room(room_id, player, mode, [player], {player: profile}, pets=pets[:MAX_PETS])
+        # 初始展示列表照旧是建房者自己的宠物，但**房主的出战宠物必须在内**（10.09）。
+        room = Room(room_id, player, mode, [player], {player: profile},
+                    pets=self._with_host_pet(pets, active_pet))
+        room.active_pets[player] = active_pet
         room.joined_at[player] = self._now()
         room.seats[player] = 0
         self._rooms[room_id] = room
@@ -98,10 +107,31 @@ class Parties:
                  "host": pid == room.host, "seat": self.seat_of(room, pid)}
                 for pid in room.members
             ],
-            "pets": room.pets.copy(), "queued": room.queued,
+            "pets": room.pets.copy(),
+            "host_pet": room.active_pets.get(room.host, ""),
+            "queued": room.queued,
             "version": room.version, "messages": room.messages.copy(),
             "voice_epoch": room.voice_epoch,
         }
+
+    @staticmethod
+    def _with_host_pet(pet_ids: list[str], host_pet: str) -> list[str]:
+        """展示列表必须含房主的出战宠物（10.09）：缺了就补上，去重并封顶 MAX_PETS。
+
+        房主在客户端已经把那行锁死（点不动），所以正常路径传进来的列表本就含它；
+        这里是**服务端兜底** —— 客户端漏传 / 旧客户端 / 房主的出战宠物排在 owned 第 6 位
+        之外（建房的 `owned[:MAX_PETS]` 会把它切掉）都靠它补齐。
+
+        纯静态（入参即全部依赖）⇒ 后端单测可直接驱动，不必拉起整个房间。
+        """
+        out: list[str] = []
+        for pet_id in pet_ids:
+            if pet_id and pet_id not in out:
+                out.append(pet_id)
+        if host_pet and host_pet not in out:
+            out = out[:MAX_PETS - 1]
+            out.append(host_pet)
+        return out[:MAX_PETS]
 
     @staticmethod
     def seat_of(room: Room, player: uuid.UUID) -> int:
@@ -144,7 +174,8 @@ class Parties:
         self._invites[target, room.id] = self._now() + INVITE_TTL_SEC
         return room
 
-    def join(self, player: uuid.UUID, room_id: str, profile: dict) -> Room:
+    def join(self, player: uuid.UUID, room_id: str, profile: dict,
+             active_pet: str = "") -> Room:
         room = self._rooms.get(room_id)
         if room is None or self._invites.get((player, room_id), 0.0) <= self._now():
             raise PartyRejected("invite_expired", "组队邀请已失效")
@@ -163,6 +194,8 @@ class Parties:
         self._rotate_voice(room)
         room.members.append(player)
         room.profiles[player] = profile
+        # 记下这位成员的出战宠物：他将来若接手房主（交接），host_pet 要跟着他走。
+        room.active_pets[player] = active_pet
         # 重新进入房间 = 重新计时，退房时按这个时间挑新队长。
         room.joined_at[player] = self._now()
         room.seats[player] = self._free_seat(room)
@@ -191,6 +224,7 @@ class Parties:
             room.host = successor
             room.members.remove(player)
             room.profiles.pop(player, None)
+            room.active_pets.pop(player, None)
             room.joined_at.pop(player, None)
             room.seats.pop(player, None)
             room.ready.clear()
@@ -199,6 +233,7 @@ class Parties:
         room.members.remove(player)
         self._rotate_voice(room)
         room.profiles.pop(player, None)
+        room.active_pets.pop(player, None)
         room.joined_at.pop(player, None)
         room.seats.pop(player, None)
         room.ready.clear()
@@ -216,6 +251,7 @@ class Parties:
         self._member_room.pop(target, None)
         room.members.remove(target)
         room.profiles.pop(target, None)
+        room.active_pets.pop(target, None)
         room.joined_at.pop(target, None)
         room.seats.pop(target, None)
         # 换语音房间：被踢的人手上那把钥匙进的是旧房间（自建 LiveKit 踢人不一定作废钥匙）。
@@ -309,7 +345,9 @@ class Parties:
         self._require_editable(room)
         if len(pet_ids) > MAX_PETS or len(set(pet_ids)) != len(pet_ids):
             raise PartyRejected("bad_pets", "最多展示 5 只不重复的宠物")
-        room.pets = pet_ids.copy()
+        # 房主的出战宠物**不能被取消展示**（10.09）：客户端那行勾选已锁死，
+        # 这里再兜一层 —— 漏传 / 旧客户端也保证它在列表里。
+        room.pets = self._with_host_pet(pet_ids, room.active_pets.get(room.host, ""))
         room.version += 1
         return room
 

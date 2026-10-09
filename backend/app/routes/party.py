@@ -154,9 +154,12 @@ async def create(body: CreateBody,
     if matchmaking.current().state_of(me.player_id)["state"] != "idle":
         raise HTTPException(status_code=409, detail="请先结束当前匹配")
     try:
-        pets = (await shop.read_pets(me.player_id)).owned[:party.MAX_PETS]
+        pets_state = await shop.read_pets(me.player_id)
+        pets = pets_state.owned[:party.MAX_PETS]
+        # 10.09：把房主的出战宠物一并交给服务端 —— 它必须出现在展示列表里，
+        # 且排位里只有它的脚步声能被听见。
         room = party.current().create(me.player_id, await _public_card(me.player_id),
-                                      body.mode, pets)
+                                      body.mode, pets, pets_state.active)
     except party.PartyRejected as exc:
         raise _reject(exc) from None
     return StateResponse(state=party.current().snapshot(room))
@@ -269,8 +272,10 @@ async def join(body: JoinBody,
     if matchmaking.current().state_of(me.player_id)["state"] != "idle":
         raise HTTPException(status_code=409, detail="请先结束当前匹配")
     try:
+        # 记下入房者的出战宠物：他若接手房主（交接），排位里的发声宠物要跟着他走。
+        pets_state = await shop.read_pets(me.player_id)
         room = party.current().join(me.player_id, body.party_id,
-                                    await _public_card(me.player_id))
+                                    await _public_card(me.player_id), pets_state.active)
     except party.PartyRejected as exc:
         raise _reject(exc) from None
     await party.current().broadcast(room)

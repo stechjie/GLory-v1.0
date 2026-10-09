@@ -13,6 +13,7 @@ extends Node
 #   Godot_v4.7.2-stable_win64_console.exe --headless --path . tools/party_lobby_rules_check.tscn
 
 const CheckHarness := preload("res://tools/CheckHarness.gd")
+const LOBBY := preload("res://scenes/menu/PartyLobby.gd")
 
 const CHECK_NAME := "party_lobby_rules"
 const LOBBY_SRC := "res://scenes/menu/PartyLobby.gd"
@@ -30,6 +31,7 @@ func _ready() -> void:
 	_case_queue_canceled_wired()
 	_case_mode_notice_to_members()
 	_case_party_invite_reaches_chat()
+	_case_host_pet_forced()
 	_h.finish(get_tree())
 
 
@@ -394,3 +396,117 @@ func _case_party_invite_reaches_chat() -> void:
 		_h.expect(chat_src.contains("RoomInvite.party_display_text(msg)"),
 			"chat_party_text",
 			"组队邀请正文读 party_display_text（缺 body 时退回本地文案，不显示空白）")
+
+
+# ★★ 10.09：排位房里**房主的出战宠物必须显示**（勾选锁死 = 无法取消，且暗色），
+# 并且**只有它的脚步声能被听见**。
+#
+# 判据分两层：
+#   1. 客户端（这里）：`_render_pets` 把「就是房主那只」的行锁死 + 打勾；
+#      `_toggle_pet` 再兜一道；`_apply` 把 `_audible_pet()`（= 房主宠物，缺则退回自己）
+#      传给宠物舞台。
+#   2. 服务端行为：`backend/tests/test_party_room_stdlib.py` 直接驱动 `app/party.py`
+#      验 `_with_host_pet` 强制入列、`PUT /pets` 不能把它踢掉、快照带 `host_pet`。
+func _case_host_pet_forced() -> void:
+	var src := _read(LOBBY_SRC)
+	# 数据来源：快照里的 host_pet；快照缺它（旧服务端 / 未部署）时房主用自己已知的出战宠物兜底。
+	_h.expect(src.contains("func _host_pet() -> String:"),
+		"host_pet_helper", "要有 _host_pet() 读取快照里的房主出战宠物")
+	var host_body := _slice_func(src, "_host_pet")
+	_h.expect(host_body.contains("_room.get(\"host_pet\", \"\")"),
+		"host_pet_from_room", "_host_pet() 要真的从房间快照取 host_pet")
+	_h.expect(host_body.contains("host_pet_of(") and host_body.contains("PlayerProfile.active_pet"),
+		"host_pet_self_fallback",
+		"快照没带 host_pet 时房主要用自己的出战宠物兜底（否则真机上那行不锁不暗）")
+	# 行为：host_pet_of 的兜底合同（纯静态 ⇒ 直接喂数据驱动，不必实例化界面）。
+	_h.expect(LOBBY.host_pet_of("pet_fox", false, "pet_cat") == "pet_fox",
+		"host_pet_prefers_room", "快照带 host_pet 时以快照为准（房主/队员看到的同一只）")
+	_h.expect(LOBBY.host_pet_of("", true, "pet_cat") == "pet_cat",
+		"host_pet_self_fallback_behavior", "快照缺 host_pet 且自己是房主 ⇒ 用自己出战宠物兜底")
+	_h.expect(LOBBY.host_pet_of("", false, "pet_cat") == "",
+		"host_pet_member_no_fallback", "队员拿不到快照 host_pet 时只能留空（不冒充房主）")
+	# 行为：真 new 一个房间界面、真调一次 _host_pet() —— 静态合同绿但接线断了照样白搭。
+	var lobby := LOBBY.new()
+	var self_code := str(AccountManager.profile.get("friend_code", ""))
+	var saved_active := str(PlayerProfile.active_pet)
+	lobby._preview = ""
+	lobby._room = {"host_code": self_code, "host_pet": "", "pets": []}
+	PlayerProfile.active_pet = "pet_probe_host"
+	_h.expect(lobby._host_pet() == "pet_probe_host",
+		"host_pet_runtime_fallback",
+		"快照缺 host_pet 且自己是房主 ⇒ 运行期 _host_pet() 用自己的出战宠物兜底")
+	lobby._room["host_pet"] = "pet_probe_room"
+	_h.expect(lobby._host_pet() == "pet_probe_room",
+		"host_pet_runtime_prefers_room", "快照带 host_pet ⇒ 运行期以快照为准")
+	lobby._room = {"host_code": "%s-other" % self_code, "host_pet": "", "pets": []}
+	_h.expect(lobby._host_pet() == "",
+		"host_pet_runtime_member", "自己不是房主且快照没带 ⇒ 运行期 _host_pet() 为空")
+	PlayerProfile.active_pet = saved_active
+	lobby.free()
+	# 发声那只 = 房主宠物（缺则退回自己，免得整屋静音）。
+	var audible_body := _slice_func(src, "_audible_pet")
+	_h.expect(not audible_body.is_empty(), "audible_pet_helper", "读不到 _audible_pet()")
+	_h.expect(audible_body.contains("PlayerProfile.active_pet"),
+		"audible_pet_fallback",
+		"快照缺 host_pet 时要退回自己的出战宠物（否则整屋静音）")
+	# 展示：那行锁定 + 暗色（disabled 样式）+ 始终打勾。断言钉在 _render_pets 函数体内。
+	var render_body := _slice_func(src, "_render_pets")
+	_h.expect(not render_body.is_empty(), "render_pets_present", "读不到 _render_pets")
+	_h.expect(render_body.contains("pet_row_locked(pet_id, host_pet)"),
+		"host_pet_row_identified",
+		"锁定判据必须走纯静态 pet_row_locked（= 就是房主那只出战宠物）")
+	_h.expect(render_body.contains("choice.disabled = locked or"),
+		"host_pet_row_locked",
+		"房主出战宠物那行必须 disabled —— 点不动 = 无法取消勾选 + 走暗色样式")
+	_h.expect(render_body.contains("\"✓  \" if checked else \"○  \""),
+		"host_pet_row_checked", "锁定的那行始终打勾（不能显示成未选）")
+	_h.expect(render_body.contains("if not locked:"),
+		"locked_row_not_toggleable", "锁定那行不能再接 _toggle_pet（双保险）")
+	# 第二道闸：_toggle_pet 拒绝取消房主出战宠物。
+	var toggle_body := _slice_func(src, "_toggle_pet")
+	_h.expect(not toggle_body.is_empty(), "toggle_pet_present", "读不到 _toggle_pet")
+	_h.expect(toggle_body.contains("pet_row_locked(pet_id, _host_pet())"),
+		"toggle_pet_guards_host_pet", "_toggle_pet 必须拒绝取消房主的出战宠物")
+	# 行为：pet_row_locked 的合同（纯静态 ⇒ 直接喂 id 驱动，不必实例化整个界面）。
+	_h.expect(LOBBY.pet_row_locked("pet_fox", "pet_fox"),
+		"locked_row_not_locked", "房主出战宠物自己那行应当锁定")
+	_h.expect(not LOBBY.pet_row_locked("pet_cat", "pet_fox"),
+		"other_row_locked", "非房主出战宠物的行不该锁定（仍可勾选/取消）")
+	_h.expect(not LOBBY.pet_row_locked("pet_cat", ""),
+		"empty_host_pet_locks_all", "房主没设出战宠物（空串）时不该锁任何行")
+	# 发声接线：舞台既拿到展示列表（含房主出战宠物），也拿到发声宠物 id。
+	_h.expect(src.contains("configure_party_display(_display_pet_ids()"),
+		"stage_gets_display_pets",
+		"宠物舞台要按「含房主出战宠物」的展示列表重建（_display_pet_ids）")
+	_h.expect(src.contains("_audible_pet())"),
+		"stage_gets_audible", "宠物舞台要收到发声宠物 id（_audible_pet()）")
+	# 行为：with_host_pet 把房主出战宠物强制放进展示列表（去重 / 挤末位 / 封顶 5）。
+	_h.expect(LOBBY.with_host_pet(["a", "b"], "b") == ["a", "b"],
+		"display_keeps_existing_host_pet", "房主宠物已在列表里 ⇒ 原样保留")
+	_h.expect(LOBBY.with_host_pet(["a", "b"], "z") == ["a", "b", "z"],
+		"display_appends_missing_host_pet", "房主宠物不在列表 ⇒ 必须补上（强制显示）")
+	_h.expect(LOBBY.with_host_pet(["a", "b", "c", "d", "e"], "z") == ["a", "b", "c", "d", "z"],
+		"display_trims_to_cap", "补房主宠物后封顶 5（挤掉末位，不超上限）")
+	_h.expect(LOBBY.with_host_pet(["a", "a", "b"], "b") == ["a", "b"],
+		"display_dedupes", "展示列表要去重")
+	_h.expect(LOBBY.with_host_pet([], "z") == ["z"],
+		"display_from_empty", "空列表也要补出房主宠物")
+	_h.expect(LOBBY.with_host_pet(["a", "b"], "") == ["a", "b"],
+		"display_no_host_pet_noop", "房主没设出战宠物时不动列表")
+	_h.expect(LOBBY.with_host_pet(["a", "b", "c", "d", "e", "f"], "b") == ["a", "b", "c", "d", "e"],
+		"display_caps_existing", "房主宠物已在列、但列表超 5 ⇒ 仍要封顶 5")
+	# 服务端：快照带 host_pet；房主宠物强制入列（create 与 PUT /pets 都要）。
+	var party_src := FileAccess.get_file_as_string("res://backend/app/party.py")
+	if _h.expect(not party_src.is_empty(), "be_party_readable_1009", "读不到 backend/app/party.py"):
+		_h.expect(party_src.contains("\"host_pet\": room.active_pets.get(room.host, \"\")"),
+			"be_snapshot_host_pet", "快照必须带 host_pet（房主的出战宠物）")
+		_h.expect(party_src.contains("def _with_host_pet(pet_ids: list[str], host_pet: str)"),
+			"be_with_host_pet", "要有 _with_host_pet 把房主宠物强制放进展示列表")
+		_h.expect(party_src.contains("room.pets = self._with_host_pet(pet_ids"),
+			"be_pets_forces_host_pet", "PUT /pets 也要强制含房主出战宠物（不能取消）")
+		_h.expect(party_src.contains("pets=self._with_host_pet(pets, active_pet)"),
+			"be_create_forces_host_pet", "建房时展示列表也要含房主出战宠物")
+	var route_src := FileAccess.get_file_as_string("res://backend/app/routes/party.py")
+	if _h.expect(not route_src.is_empty(), "be_route_readable_1009", "读不到 backend/app/routes/party.py"):
+		_h.expect(route_src.contains("pets_state.active"),
+			"be_route_passes_active", "建房/入房路由要把玩家的出战宠物交给服务端")
